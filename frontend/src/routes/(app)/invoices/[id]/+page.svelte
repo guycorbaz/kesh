@@ -27,6 +27,7 @@
 		getInvoiceEmailPreview,
 		sendInvoiceEmail,
 		getInvoiceSettings,
+		writeOffInvoice,
 	} from '$lib/features/invoices/invoices.api';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
@@ -36,6 +37,7 @@
 	import SettleInvoiceDialog, {
 		type SettlementPayload,
 	} from '$lib/features/invoices/SettleInvoiceDialog.svelte';
+	import WriteOffDialog, { type WriteOffPayload } from '$lib/features/invoices/WriteOffDialog.svelte';
 	import {
 		listBankAccounts,
 		type BankAccountSummary,
@@ -59,7 +61,11 @@
 		InvoiceResponse,
 		InvoiceSettlementResponse,
 	} from '$lib/features/invoices/invoices.types';
-	import { formatInvoiceTotal, paymentStatusOf } from '$lib/features/invoices/invoice-helpers';
+	import {
+		formatExactAmount,
+		formatInvoiceTotal,
+		paymentStatusOf,
+	} from '$lib/features/invoices/invoice-helpers';
 	import { apiClient, isApiError } from '$lib/shared/utils/api-client';
 	import {
 		notifyError,
@@ -145,7 +151,19 @@
 
 	// Story 25-3-a-1 (#414) — les règlements, et leur annulation.
 	let settlements = $state<InvoiceSettlementResponse[]>([]);
+	/**
+	 * Story 25-4-d2b — la liste est-elle à jour ? Faux au DÉBUT de chaque
+	 * relecture et en cas d'échec, vrai seulement en cas de succès : sans liste
+	 * fiable, le récapitulatif ne peut pas séparer « Déjà réglé » de « Soldé ».
+	 */
+	let settlementsLoaded = $state(false);
 	let cancelTarget = $state<InvoiceSettlementResponse | null>(null);
+	/**
+	 * Story 25-4-d2b — la cible est-elle un solde ? FIGÉ à l'ouverture : quand
+	 * `cancelTarget = null` ferme le dialogue, son titre ne doit pas repasser à
+	 * « règlement » pendant l'animation.
+	 */
+	let cancelIsWriteOff = $state(false);
 	let cancelSubmitting = $state(false);
 	let cancelError = $state('');
 
@@ -169,8 +187,10 @@
 	}
 
 	async function loadSettlements() {
+		settlementsLoaded = false;
 		try {
 			settlements = await listInvoiceSettlements(id);
+			settlementsLoaded = true;
 		} catch {
 			settlements = [];
 		}
@@ -185,14 +205,21 @@
 		if (!invoice || !cancelTarget) return;
 		cancelSubmitting = true;
 		cancelError = '';
+		// Lu AVANT l'`await` : la cible est remise à `null` ensuite.
+		const wasWriteOff = cancelTarget.settlementType === 'write_off';
 		try {
 			const res = await cancelInvoiceSettlement(invoice.id, cancelTarget.id);
 			invoice = res.invoice;
 			notifySuccess(
-				i18nMsg(
-					'invoices-settlement-cancelled',
-					"Règlement annulé : l'écriture inverse a été passée.",
-				),
+				wasWriteOff
+					? i18nMsg(
+							'invoices-write-off-cancelled',
+							"Solde annulé : l'écriture inverse a été passée.",
+						)
+					: i18nMsg(
+							'invoices-settlement-cancelled',
+							"Règlement annulé : l'écriture inverse a été passée.",
+						),
 			);
 			cancelTarget = null;
 			await loadSettlements();
@@ -409,6 +436,85 @@
 	let markSubmitting = $state(false);
 	let markError = $state('');
 
+	// Story 25-4-d2b (#490) — solder le reste.
+	let writeOffOpen = $state(false);
+	let writeOffSubmitting = $state(false);
+	let writeOffError = $state('');
+
+	/** Le reste dû est-il connu et positif ? (`null` = non calculé par la réponse.) */
+	let hasAmountDue = $derived(
+		invoice?.amountDue !== null &&
+			invoice?.amountDue !== undefined &&
+			new Big(invoice.amountDue).gt(0),
+	);
+
+	/** Les soldes de la liste, en big.js. */
+	let writtenOff = $derived(
+		settlements
+			.filter((s) => s.settlementType === 'write_off')
+			.reduce((sum, s) => sum.plus(s.amount), new Big(0)),
+	);
+
+	/** Relit la facture et la liste des règlements (échecs tolérés). */
+	async function reloadInvoiceAndSettlements() {
+		try {
+			invoice = await getInvoice(id);
+		} catch (err) {
+			if (isApiError(err)) errorMsg = err.message;
+		}
+		await loadSettlements();
+	}
+
+	/**
+	 * Solde le reste. La `version` est lue dans la facture AFFICHÉE, au moment de
+	 * la confirmation. Les refus se distinguent sur `err.code`, jamais sur le
+	 * statut HTTP (un 409 peut aussi être `ILLEGAL_STATE_TRANSITION`).
+	 */
+	async function handleWriteOffConfirm(payload: WriteOffPayload) {
+		if (!invoice) return;
+		writeOffSubmitting = true;
+		writeOffError = '';
+		try {
+			const res = await writeOffInvoice(invoice.id, {
+				nature: payload.nature,
+				settledOn: payload.settledOn,
+				version: invoice.version,
+			});
+			invoice = res.invoice;
+			await loadSettlements();
+			notifySuccess(i18nMsg('invoices-write-off-success', 'Reste soldé — facture payée'));
+			writeOffOpen = false;
+		} catch (err) {
+			if (!isApiError(err)) {
+				writeOffError = i18nMsg('common-error', 'Erreur inattendue');
+				return;
+			}
+			if (err.code === 'OPTIMISTIC_LOCK_CONFLICT') {
+				writeOffError = i18nMsg(
+					'invoices-write-off-stale',
+					'La facture a changé entre-temps : vérifiez le reste dû, puis confirmez à nouveau.',
+				);
+			} else {
+				writeOffError = err.message;
+			}
+			// Toute erreur peut venir d'un état qui a bougé : relire.
+			await reloadInvoiceAndSettlements();
+			// Facture dévalidée, payée, ou plus rien à solder : le dialogue se ferme.
+			const stillOpen =
+				invoice !== null &&
+				invoice.status === 'validated' &&
+				!invoice.paidAt &&
+				invoice.amountDue !== null &&
+				new Big(invoice.amountDue).gt(0);
+			if (!stillOpen) {
+				if (writeOffError) notifyError(writeOffError);
+				writeOffOpen = false;
+			}
+		} finally {
+			writeOffSubmitting = false;
+		}
+	}
+
 	// Story 25-4-c4-b (#494) — l'arrondi à 5 centimes. Figé sur une facture émise
 	// (déjà compris dans `totalTtc`) ; en APERÇU sur un brouillon, d'après le
 	// réglage courant — le serveur le calcule, la fiche l'additionne en « estimé ».
@@ -618,6 +724,14 @@
 		sendEmailError = '';
 		try {
 			invoice = await sendInvoiceEmail(invoice.id, { subject, body });
+			// Story 25-4-d2b : la réponse de l'envoi ne calcule pas le reste dû
+			// (`amountDue: null`) — relire la facture, sans quoi le bouton « Solder
+			// le reste » et le récapitulatif resteraient sans reste connu.
+			try {
+				invoice = await getInvoice(invoice.id);
+			} catch {
+				// Échec toléré : la facture renvoyée par l'envoi reste affichée.
+			}
 			notifySuccess(i18nMsg('invoice-send-email-success', 'Facture envoyée par e-mail'));
 			sendEmailOpen = false;
 		} catch (err) {
@@ -782,6 +896,19 @@
 				<Button variant="outline" onclick={() => (markOpen = true)} data-testid="settle-open">
 					{i18nMsg('invoice-settle-button', 'Enregistrer un règlement')}
 				</Button>
+				<!-- Story 25-4-d2b (#490) : réservé au Comptable et à l'Administrateur. -->
+				{#if canManage && hasAmountDue}
+					<Button
+						variant="outline"
+						onclick={() => {
+							writeOffError = '';
+							writeOffOpen = true;
+						}}
+						data-testid="write-off-open"
+					>
+						{i18nMsg('invoices-write-off-button', 'Solder le reste')}
+					</Button>
+				{/if}
 			{/if}
 			<Button
 				onclick={downloadPdf}
@@ -1066,15 +1193,36 @@
 				  fait passer inaperçu le cas où ces lignes DISENT quelque chose.
 				-->
 				{#if invoice.amountSettled !== null && Number(invoice.amountSettled) > 0}
-					<tr class="border-t">
-						<td colspan="5" class="py-1 text-right">
-							{i18nMsg('invoice-amount-settled', 'Déjà réglé')}
-						</td>
-						<td class="py-1 text-right font-mono" data-testid="invoice-amount-settled">
-							{formatInvoiceTotal(invoice.amountSettled)}
-						</td>
-					</tr>
-					<tr>
+					<!--
+					  Story 25-4-d2b — `amountSettled` inclut les SOLDES : « Déjà
+					  réglé » les retranche, « Soldé » les montre. Sans liste fiable
+					  (en chargement ou en échec), la séparation est impossible : seul
+					  le « Reste dû », qui vient du serveur, est affiché.
+					-->
+					{#if settlementsLoaded}
+						{@const paid = new Big(invoice.amountSettled).minus(writtenOff)}
+						{#if paid.gt(0)}
+							<tr class="border-t">
+								<td colspan="5" class="py-1 text-right">
+									{i18nMsg('invoice-amount-settled', 'Déjà réglé')}
+								</td>
+								<td class="py-1 text-right font-mono" data-testid="invoice-amount-settled">
+									{formatInvoiceTotal(paid.toFixed(4))}
+								</td>
+							</tr>
+						{/if}
+						{#if writtenOff.gt(0)}
+							<tr class={paid.gt(0) ? '' : 'border-t'}>
+								<td colspan="5" class="py-1 text-right">
+									{i18nMsg('invoices-amount-written-off', 'Soldé')}
+								</td>
+								<td class="py-1 text-right font-mono" data-testid="invoice-amount-written-off">
+									{formatExactAmount(writtenOff.toFixed(4))}
+								</td>
+							</tr>
+						{/if}
+					{/if}
+					<tr class={settlementsLoaded ? '' : 'border-t'}>
 						<td colspan="5" class="py-1 text-right font-semibold">
 							{i18nMsg('invoice-amount-due', 'Reste dû')}
 						</td>
@@ -1082,7 +1230,7 @@
 							class="py-1 text-right font-mono font-semibold"
 							data-testid="invoice-amount-due"
 						>
-							{formatInvoiceTotal(invoice.amountDue ?? '0')}
+							{formatExactAmount(invoice.amountDue ?? '0')}
 						</td>
 					</tr>
 				{/if}
@@ -1096,6 +1244,7 @@
 			{canManage}
 			onCancel={(s) => {
 				cancelError = '';
+				cancelIsWriteOff = s.settlementType === 'write_off';
 				cancelTarget = s;
 			}}
 			onCancelReconciliation={(txId) => (reconciliationTxId = txId)}
@@ -1288,6 +1437,22 @@
 		onConfirm={handleSettleConfirm}
 	/>
 
+	{#if invoice.amountDue !== null}
+		<WriteOffDialog
+			open={writeOffOpen}
+			onOpenChange={(o: boolean) => {
+				writeOffOpen = o;
+				if (!o) writeOffError = '';
+			}}
+			invoiceDate={invoice.date}
+			amountDue={invoice.amountDue}
+			settings={invoiceSettings}
+			submitting={writeOffSubmitting}
+			errorMsg={writeOffError}
+			onConfirm={handleWriteOffConfirm}
+		/>
+	{/if}
+
 	<SendEmailDialog
 		open={sendEmailOpen}
 		onOpenChange={(o) => {
@@ -1336,13 +1501,20 @@
 		<Dialog.Content>
 			<Dialog.Header>
 				<Dialog.Title>
-					{i18nMsg('invoices-settlement-cancel-button', 'Annuler le règlement')}
+					{cancelIsWriteOff
+						? i18nMsg('invoices-write-off-cancel-button', 'Annuler le solde')
+						: i18nMsg('invoices-settlement-cancel-button', 'Annuler le règlement')}
 				</Dialog.Title>
 				<Dialog.Description>
-					{i18nMsg(
-						'invoices-settlement-cancel-confirm',
-						"Annuler ce règlement ? Une écriture inverse datée d'aujourd'hui sera passée au grand livre, et le montant redeviendra dû.",
-					)}
+					{cancelIsWriteOff
+						? i18nMsg(
+								'invoices-write-off-cancel-confirm',
+								"Annuler ce solde ? Une écriture inverse datée d'aujourd'hui sera passée au grand livre, TVA comprise, et le montant redeviendra dû.",
+							)
+						: i18nMsg(
+								'invoices-settlement-cancel-confirm',
+								"Annuler ce règlement ? Une écriture inverse datée d'aujourd'hui sera passée au grand livre, et le montant redeviendra dû.",
+							)}
 				</Dialog.Description>
 			</Dialog.Header>
 			{#if cancelError}
@@ -1361,7 +1533,9 @@
 					disabled={cancelSubmitting}
 					data-testid="invoice-settlement-cancel-confirm"
 				>
-					{i18nMsg('invoices-settlement-cancel-button', 'Annuler le règlement')}
+					{cancelIsWriteOff
+						? i18nMsg('invoices-write-off-cancel-button', 'Annuler le solde')
+						: i18nMsg('invoices-settlement-cancel-button', 'Annuler le règlement')}
 				</Button>
 			</Dialog.Footer>
 		</Dialog.Content>

@@ -374,7 +374,14 @@ const ATTENDU = {
 	// (`INVOICE_WRITTEN_OFF`), traduit dans les deux tables qui le reçoivent :
 	// `features/invoices/settlement-cancel.ts` (1 → 2) et
 	// `features/reconciliation/reconciliation-cancel.ts` (6 → 7).
-	sitesTotal: 1777,
+	//
+	// Story 25-4-d2b (#490) : **1777 → 1807**, recompté par ce test et par
+	// `grep -o "i18nMsg("` aux deux bornes de chaque fichier touché : la fiche
+	// facture `invoices/[id]/+page.svelte` (76 → 85 : bouton, notifications et
+	// dialogue d'annulation d'un solde, « Soldé »), `InvoiceSettlements.svelte`
+	// (10 → 12 : libellé d'un solde, « Annuler le solde »), `WriteOffDialog.svelte`
+	// (0 → 13) et `write-off.ts` (0 → 6 : quatre natures, deux aides).
+	sitesTotal: 1807,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

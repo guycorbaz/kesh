@@ -22,8 +22,9 @@
 <script lang="ts">
 	import { Button } from '$lib/components/ui/button';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
-	import { formatInvoiceTotal } from './invoice-helpers';
+	import { formatExactAmount } from './invoice-helpers';
 	import { invoiceSettlementCancelMessage } from './settlement-cancel';
+	import { writeOffNatureLabel } from './write-off';
 	import type { InvoiceSettlementResponse } from './invoices.types';
 
 	let {
@@ -39,8 +40,13 @@
 		onCancelReconciliation?: (bankTransactionId: number) => void;
 	} = $props();
 
-	function typeLabel(t: InvoiceSettlementResponse['settlementType']): string {
-		return t === 'bank_transfer'
+	function typeLabel(s: InvoiceSettlementResponse): string {
+		// Story 25-4-d2b : un solde se nomme par sa nature.
+		if (s.settlementType === 'write_off') {
+			const nature = s.writeOffNature ? writeOffNatureLabel(s.writeOffNature) : '';
+			return i18nMsg('invoices-settlements-type-write-off', 'Solde — { $nature }', { nature });
+		}
+		return s.settlementType === 'bank_transfer'
 			? i18nMsg('invoices-settlements-type-bank', 'Virement bancaire')
 			: i18nMsg('invoices-settlements-type-internal', 'Espèces ou autre compte');
 	}
@@ -67,8 +73,8 @@
 				{#each settlements as s (s.id)}
 					<tr class="border-b border-border align-top" data-testid="invoice-settlement-row">
 						<td class="py-2 pr-2">{s.settledOn}</td>
-						<td class="py-2 pr-2 text-right font-mono">{formatInvoiceTotal(s.amount)}</td>
-						<td class="py-2 pr-2">{typeLabel(s.settlementType)}</td>
+						<td class="py-2 pr-2 text-right font-mono">{formatExactAmount(s.amount)}</td>
+						<td class="py-2 pr-2" data-testid="invoice-settlement-mode">{typeLabel(s)}</td>
 						<td class="py-2 pr-2">
 							<a class="underline" href="/journal-entries/{s.journalEntryId}">
 								{i18nMsg('invoices-settlements-entry-link', "Voir l'écriture")}
@@ -83,7 +89,9 @@
 										onclick={() => onCancel(s)}
 										data-testid="invoice-settlement-cancel"
 									>
-										{i18nMsg('invoices-settlement-cancel-button', 'Annuler le règlement')}
+										{s.settlementType === 'write_off'
+											? i18nMsg('invoices-write-off-cancel-button', 'Annuler le solde')
+											: i18nMsg('invoices-settlement-cancel-button', 'Annuler le règlement')}
 									</Button>
 								{/if}
 							{:else if s.cancelBlockedBy}

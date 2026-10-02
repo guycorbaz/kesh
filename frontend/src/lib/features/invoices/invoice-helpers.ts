@@ -55,6 +55,34 @@ export function computeInvoiceTotal(lines: Pick<CreateInvoiceLineRequest, 'quant
  * Formate un montant facture (string décimal 4 décimales) au format suisse :
  * `"1500.0000"` → `"1’500.00"`. Délègue à `formatSwissAmount` (DRY).
  */
+/**
+ * Le reste dû au centime (Story 25-4-c3-b ; partagé depuis la Story 25-4-d2b).
+ * `toFixed(2)` arrondit en `roundHalfUp` (mode par défaut de big.js,
+ * `Big.RM = 1`), qui porte l'équidistant LOIN DE ZÉRO — la stratégie du serveur
+ * (`Money::round_to_centimes`, `MidpointAwayFromZero`).
+ */
+export function dueToCentime(raw: string): Big {
+	return new Big(new Big(raw).toFixed(2));
+}
+
+/**
+ * `true` si le montant porte une **fraction de centime** (10.0050, 0.0040) —
+ * comparaison de VALEURS en big.js, jamais de chaînes : « 68.1000 » n'en a
+ * pas. Même condition que le serveur (`amount != amount_due_to_centime(amount)`).
+ */
+export function hasSubCentime(raw: string): boolean {
+	return !new Big(raw).eq(dueToCentime(raw));
+}
+
+/**
+ * Un montant affiché au centime — ou aux quatre décimales s'il porte une
+ * fraction de centime, pour qu'un reste de 0.0040 ne se lise pas « 0.00 »
+ * (Story 25-4-d2b, cas de #490).
+ */
+export function formatExactAmount(raw: string): string {
+	return formatSwissAmount(new Big(raw), hasSubCentime(raw) ? 4 : 2);
+}
+
 export function formatInvoiceTotal(d: string | null | undefined): string {
 	if (!d) return '';
 	try {

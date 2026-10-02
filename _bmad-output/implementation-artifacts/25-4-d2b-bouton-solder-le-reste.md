@@ -1,6 +1,6 @@
 # Story 25.4-d2b : Solder le reste — le bouton, le dialogue, la liste
 
-Status: ready-for-dev
+Status: review
 
 **Issues : [#490]** (fermée par cette story — la PR porte `closes #490`), **[#384]** (`refs` — la 25-4-d2c, le rapport TVA,
 la fermera).
@@ -147,14 +147,14 @@ antérieur montre le motif « annulez d'abord le solde », le solde s'annule et 
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — types et API client** (`invoices.types.ts`, `invoices.api.ts` : `writeOffInvoice`).
-- [ ] **T2 — le dialogue** (AC 2).
-- [ ] **T3 — la fiche : bouton, récapitulatif** (AC 1, AC 4).
-- [ ] **T4 — la liste** (AC 3).
-- [ ] **T5 — i18n** (AC 5).
-- [ ] **T6 — manuel, CHANGELOG** (AC 6).
-- [ ] **T7 — tests** (AC 7).
-- [ ] **T8 — gates** : frontend complet, backend (non touché : `fmt`, `clippy`, et le gate complet pour la forme),
+- [x] **T1 — types et API client** (`invoices.types.ts`, `invoices.api.ts` : `writeOffInvoice`).
+- [x] **T2 — le dialogue** (AC 2).
+- [x] **T3 — la fiche : bouton, récapitulatif** (AC 1, AC 4).
+- [x] **T4 — la liste** (AC 3).
+- [x] **T5 — i18n** (AC 5).
+- [x] **T6 — manuel, CHANGELOG** (AC 6).
+- [x] **T7 — tests** (AC 7).
+- [x] **T8 — gates** : frontend complet, backend (non touché : `fmt`, `clippy`, et le gate complet pour la forme),
   **E2E complet**.
 
 ## Dev Notes
@@ -190,11 +190,87 @@ antérieur montre le motif « annulez d'abord le solde », le solde s'annule et 
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`).
+
 ### Debug Log References
+
+- **Un test passait à vide, révélé par la contre-épreuve.** « sans liste (échec de chargement), seul le « Reste dû »
+  s'affiche » interrogeait la page **avant** que le chargement de la liste ait échoué : le drapeau était encore faux,
+  que le code fût juste ou non — la mutation « drapeau toujours vrai » restait verte. Le test attend désormais la fin du
+  chargement ; la mutation est tuée.
+- **Mon remplacement des apostrophes typographiques par des droites** (`sed`) a cassé les replis entre apostrophes
+  simples du dialogue : relevé par le compilateur, chaînes repassées entre guillemets doubles (une à la main, que la
+  regex avait mal traitée).
+- **Le lint de propriété i18n** refusait que le dialogue (`features/invoices/`) réemploie deux clés `invoice-*` d'un
+  autre espace : clés propres `invoices-write-off-error-date-*`.
+- **Écarts à la fiche, assumés** : (1) `formatSwissAmount` (`journal-entries/balance.ts`) prend un nombre de décimales
+  (défaut 2) — c'est lui qui affiche 0.0040 ; (2) le « Reste dû » du récapitulatif et les montants de la liste passent
+  aussi par `formatExactAmount` (un reste de 0.0040 s'y lisait « 0.00 ») ; (3) l'exemple de #490 au CHANGELOG
+  (« avoir de 10.00 sur 10.004 ») était faux — un avoir annule toute la facture — et a été remplacé ; (4) le paragraphe
+  du manuel dit « le reste dû, exactement », non « au centime près » (le serveur solde le reste exact).
+- La première exécution de la suite E2E complète n'a **pas tourné** (chemin relatif du script de garde mémoire
+  introuvable depuis la tâche de fond, sortie 0 sans décompte) : relancée avec un chemin absolu.
 
 ### Completion Notes List
 
+- **T1** — types (`writeOffNature`, `'write_off'`, `WriteOffInvoiceRequest/Response`), `writeOffInvoice` ;
+  `dueToCentime` sorti de `SettleInvoiceDialog` vers `invoice-helpers.ts`, avec `hasSubCentime` (comparaison de valeurs
+  en big.js) et `formatExactAmount` ; `write-off.ts` : natures, intitulés (`writeOffNatureLabel`, un seul pour le
+  dialogue et la liste), aides, `isNatureOffered` (reste exact < 0.05), `missingAccount` (compte de la nature, compte
+  d'arrondi pour toute nature sur une fraction de centime, aucun pré-contrôle si les réglages sont inconnus).
+- **T2** — `WriteOffDialog.svelte` : montant affiché (quatre décimales sur une fraction de centime, phrase sur le compte
+  d'arrondi), natures proposées, compte manquant signalé et confirmation désactivée, date ; le reste se lit dans la prop,
+  seule la saisie se réinitialise à l'ouverture ; une nature qui n'est plus proposée après relecture est retirée.
+- **T3** — fiche : bouton réservé à `canManage`, masqué sans reste connu ; envoi avec la `version` de la facture
+  affichée ; refus distingués sur `err.code` (409 de version : message, dialogue ouvert ; tout refus : relecture, et
+  fermeture si la facture n'est plus validée, est payée ou n'a plus de reste) ; relecture de la facture après l'envoi
+  d'un e-mail (`amountDue: null`) ; récapitulatif « Déjà réglé » / « Soldé » en big.js, réduit au « Reste dû » sans liste
+  fiable (drapeau `settlementsLoaded` faux au début de chaque relecture) ; dialogue d'annulation et notification dits
+  « solde » pour un solde, nature figée à l'ouverture.
+- **T4** — liste : « Solde — {nature} », « Annuler le solde ».
+- **T5** — 26 clés × 4 locales (24 du dialogue, de la liste et de la fiche, 2 de date propres au dialogue) ;
+  `sitesTotal` **1777 → 1807** (recompté par fichier aux deux bornes : fiche 76 → 85, liste 10 → 12, dialogue 0 → 13,
+  `write-off.ts` 0 → 6) ; libellés en dur **44 → 45** (`writeOffNatureLabel`, `conforme` 38 → 39).
+- **T6** — manuel utilisateur : paragraphe « Solder le reste », motif « un solde existe », encadré de l'avoir
+  (« fonction prévue » → renvoi au solde) ; manuel admin : le compte d'arrondi reçoit la fraction de centime d'un solde ;
+  PDF régénérés et contrôlés aplatis. CHANGELOG : les trois sites (#490 refermé, entrée d1, entrée d2a — bouton, #496,
+  #497).
+- **T7** — périmètre `0ddfc3f2` → arbre de travail, recompté aux deux bornes : **22 tests Vitest neufs**
+  (`write-off.test.ts` 0 → 7, `WriteOffDialog.test.ts` 0 → 4, `invoice-write-off-page.test.ts` 0 → 10,
+  `InvoiceSettlements.test.ts` 7 → 8), **1 spec E2E** (`invoice-write-off.spec.ts`, verte seule sur base neuve).
+  **Quatre mutations**, toutes tuées (dont une après correction d'un test à vide, cf. Debug Log) : version envoyée à
+  zéro → 2 rouges ; dialogue jamais fermé → 1 ; drapeau toujours vrai → 1 ; compte d'arrondi vérifié pour `rounding`
+  seulement → 1.
+- **Gates** — base remise à zéro ; backend `scripts/test-fast.sh` **2614/2614** (FTL de `kesh-i18n` touchés) ; frontend
+  `check` (0 erreur, 27 avertissements préexistants), `lint-i18n-ownership`, `test:unit` **878/878**, `build`.
+- **E2E complet** — base `kesh_e2e` reconstruite, montage complet (`smtpConfigured:true`), run à 08:19 UTC : **231
+  passés, 9 échecs, 19 ignorés** — les sept **KF-029** et les deux **KF-045** (`invoices.spec.ts:415` et `:439`, qui
+  échouent avant 12:00 UTC), tous de la liste nominative ; la spec neuve passe.
+
 ### File List
+
+- `CHANGELOG.md`
+- `crates/kesh-i18n/locales/{de-CH,en-CH,fr-CH,it-CH}/messages.ftl`
+- `docs/manual/fr/admin-manual.tex, docs/manual/fr/admin-manual.pdf`
+- `docs/manual/fr/user-manual.tex, docs/manual/fr/user-manual.pdf`
+- `frontend/src/lib/features/invoices/invoice-helpers.ts`
+- `frontend/src/lib/features/invoices/invoices.api.ts`
+- `frontend/src/lib/features/invoices/invoices.types.ts`
+- `frontend/src/lib/features/invoices/InvoiceSettlements.svelte`
+- `frontend/src/lib/features/invoices/InvoiceSettlements.test.ts`
+- `frontend/src/lib/features/invoices/SettleInvoiceDialog.svelte`
+- `frontend/src/lib/features/invoices/WriteOffDialog.svelte` (nouveau)
+- `frontend/src/lib/features/invoices/WriteOffDialog.test.ts` (nouveau)
+- `frontend/src/lib/features/invoices/write-off.ts` (nouveau)
+- `frontend/src/lib/features/invoices/write-off.test.ts` (nouveau)
+- `frontend/src/lib/features/journal-entries/balance.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts`
+- `frontend/src/routes/(app)/invoices/[id]/+page.svelte`
+- `frontend/src/routes/(app)/invoices/[id]/invoice-settlements-page.test.ts`
+- `frontend/src/routes/(app)/invoices/[id]/invoice-write-off-page.test.ts` (nouveau)
+- `frontend/tests/e2e/invoice-write-off.spec.ts` (nouveau)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
@@ -225,6 +301,8 @@ antérieur montre le motif « annulez d'abord le solde », le solde s'annule et 
   la confirmation, dialogue ouvert après un 409 (M3) ; plage du manuel corrigée, asymétrie `canManage` écrite (L1, L2).
 - **2026-10-02** — Créée (Guy : « enchaîne »). Les deux limites assumées sont tracées en CR à la demande de Guy :
   #496 (encaissé et soldé à l'échéancier), #497 (statut « Soldée »).
+- **2026-10-02** — Implémentée (T1–T8). 22 Vitest et 1 spec E2E neufs, 4 mutations tuées (un test à vide corrigé).
+  Gates : backend 2614/2614, frontend 878/878, E2E 231/9 (KF-029 + KF-045). Statut → review.
 
 [#384]: https://github.com/guycorbaz/kesh/issues/384
 [#490]: https://github.com/guycorbaz/kesh/issues/490

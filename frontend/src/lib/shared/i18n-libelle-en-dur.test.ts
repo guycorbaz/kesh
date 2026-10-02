@@ -140,8 +140,16 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * à `i18nMsg` (`reconciliation-cancel-confirm-invoice` / `-entry`) : aucun littéral, donc
  * `conforme` **37 → 38** ; `ecartee` ne bouge pas. *Identifiée par la même recherche des
  * trois suffixes dans les fichiers de la story — la seule déclaration neuve qui en porte un.*
+ *
+ * ⚠️ **44 → 45, et la déclaration est NOMMÉE** : `writeOffNatureLabel`
+ * (`lib/features/invoices/write-off.ts`), né avec le solde du reste de la Story
+ * 25-4-d2b (#490). Ses quatre branches délèguent à `i18nMsg`
+ * (`invoices-write-off-nature-*`) : aucun littéral, donc `conforme` **38 → 39** ;
+ * `ecartee` ne bouge pas. *Identifiée en cherchant les suffixes `Label`, `Text`,
+ * `Display` dans les fichiers de la story — la seule déclaration neuve qui en porte
+ * un (`typeLabel`, modifié, existait déjà).*
  */
-const CANDIDATES_ATTENDUES = 44;
+const CANDIDATES_ATTENDUES = 45;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -658,7 +666,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 6, conforme: 38 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 6, conforme: 39 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

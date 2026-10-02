@@ -976,6 +976,22 @@ refusé --- un acompte, lui, passe toujours. Le rapprochement bancaire enregistr
 \textbf{La liste des règlements.} La fiche liste chaque règlement --- date, montant, mode --- avec
 un lien vers son écriture.
 
+\textbf{Solder le reste.} Quand le client ne paiera pas ce qui reste --- il a déduit un escompte,
+sa banque a retenu des frais, ou il ne paiera plus rien ---, le bouton \emph{Solder le reste} de la
+fiche (comptable ou administrateur) éteint \textbf{tout} le reste dû et le passe au compte de la
+\textbf{nature} choisie~: \emph{escompte accordé}, \emph{frais bancaires}, \emph{perte sur
+débiteur}, ou \emph{reste d'arrondi}. Le montant n'est pas saisi~: c'est le reste dû, exactement
+--- affiché aux quatre décimales s'il porte une fraction de centime. L'escompte et la perte \textbf{corrigent la TVA due} au prorata des taux de la facture~; les
+frais et l'arrondi, non. Chaque nature a son compte, choisi par un administrateur dans
+\emph{Paramètres} → \emph{Facturation}, section \emph{Solde du reste}~; sans lui, le dialogue le
+signale. Le \emph{reste d'arrondi} n'est proposé que pour un reste de moins de 5~centimes~--- c'est
+ainsi que se solde un reste trop petit pour être payé, inférieur au demi-centime. Si le reste porte
+une fraction de centime, elle va au compte de différences d'arrondi. La facture est alors
+«~payée~»~; la liste des règlements montre le solde («~Solde --- escompte accordé~»), et la fiche le
+distingue de ce qui a été encaissé (\emph{Déjà réglé} / \emph{Soldé}). Un solde s'\textbf{annule}
+comme un règlement --- bouton \emph{Annuler le solde}, contre-passation datée du jour, TVA
+comprise.
+
 \textbf{Annuler.} Un règlement enregistré par erreur ne se supprime pas~: il s'\textbf{annule par
 contre-passation}. Le bouton \emph{Annuler le règlement} de sa ligne (comptable ou
 administrateur) passe une écriture inverse \textbf{datée du jour}, retire le règlement de la
@@ -990,6 +1006,8 @@ Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~:
           \emph{à lettrer} à une autre facture --- il ne s'annule pas. Ce cas ne se présente plus
           que sur une facture créditée \emph{avant} la version 0.12.1, ou restaurée d'une sauvegarde
           antérieure~: un avoir est désormais refusé sur une facture réglée (\S\ref{sec:avoirs})~;
+    \item \textbf{le reste de la facture a été soldé}~: annulez d'abord le \textbf{solde} --- lui
+          reste annulable --- puis le règlement~;
     \item \textbf{l'exercice du règlement est clôturé}~: un administrateur doit d'abord
           \textbf{rouvrir} l'exercice~;
     \item \textbf{le règlement est rapproché} d'une transaction bancaire~: il faut d'abord
@@ -1061,7 +1079,7 @@ Kesh ne sait encore ni afficher, ni rembourser, ni imputer sur une autre facture
 refusé dès qu'un règlement existe --- même partiel ---, et Kesh le dit dans le dialogue.
 \textbf{Annulez d'abord le règlement} depuis la fiche de la facture (\S\ref{sec:reglement-client}),
 puis émettez l'avoir. Si le client ne paiera simplement pas le solde, ce n'est pas un avoir qu'il
-faut, mais passer le reste en perte --- fonction prévue.
+faut, mais \textbf{solder le reste} en perte sur débiteur (\S\ref{sec:reglement-client}).
 \end{keshwarning}
 
 \begin{keshwarning}
