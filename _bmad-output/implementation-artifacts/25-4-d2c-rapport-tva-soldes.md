@@ -1,6 +1,6 @@
 # Story 25.4-d2c : Solder le reste — le rapport TVA retranche la TVA des soldes
 
-Status: ready-for-dev
+Status: in-progress
 
 **Issue : [#384]** — fermée par cette story (la PR porte `closes #384`, titre **et** corps). Dernière des trois stories
 de la 25-4-d2. Empilée sur la 25-4-d2b (branche `story/25-4-d2c-rapport-tva-soldes`).
@@ -54,7 +54,7 @@ afin que la TVA due déclarée soit celle des contre-prestations réellement obt
 `invoice_settlements.rs` — la forme ne s'écrit qu'à un endroit). Un JSON **de forme fausse** (pas un tableau, clé
 absente, valeur non chaîne, décimal illisible — la syntaxe, elle, est garantie par `json_valid`) est une **erreur**, jamais
 un zéro silencieux : variante neuve `ReportError::CorruptData(String)`, mappée en **500** dans `From<ReportError> for AppError`
-(`kesh-api/src/errors.rs:931-975`, `match` exhaustif) **sur le précédent de `TrialBalanceUnbalanced`** (`:954-963`) :
+(`kesh-api/src/errors.rs:931-975`, `match` exhaustif) **sur le précédent de `TrialBalanceUnbalanced`** (`:953-965`) :
 `tracing::error!` puis `AppError::Internal(…)` (code `INTERNAL_ERROR`).
 
 **AC 2 — Le solde net.** `total_vat_due` et `rows` restent la TVA **facturée** (inchangés) ; un champ
@@ -158,6 +158,9 @@ CHANGELOG `[0.12.1]` : l'entrée d2a (« le rapport TVA ne retranche pas encore 
 ## Change Log
 
 - **2026-10-02** — Créée (Guy : « oui, enchaîne »).
+- **2026-10-02** — Validation P4 ciblée (Haiku) : 1 LOW (plage `errors.rs:954-963` → `:953-965`), corrigé ; cohérence de
+  l'AC 4, référence et réalisabilité de l'E2E confirmées, preuves fournies. **Boucle close** : P1 1H/1M/2L (Sonnet) →
+  P2 1H/3M/5L (Opus) → P3 3M/2L (Sonnet) → P4 0 > LOW (Haiku).
 - **2026-10-02** — Validation P3 ciblée (Sonnet) : 3 MED, 2 LOW. Retenus : l'E2E vérifie le rapport **avant**
   l'annulation (M1) ; un test par garde Rust « vide » (M2) ; section et TVA nette conditionnelles **partout** (L1) ;
   `CorruptData` sur le précédent `TrialBalanceUnbalanced` (L2). **M3 — le signal de découpage HIGH → HIGH (P1 → P2) a
