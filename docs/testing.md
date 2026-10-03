@@ -414,14 +414,16 @@ injectant un délai de 1,5 s sur le POST : l'ancien test échoue avec ce message
 corrigé passe. Corrigé (`fillProductForm` attend la réponse du serveur). *Un test qui passe rejoué
 seul n'est pas forcément pollué : il peut aussi être une course que la charge révèle.*
 
-`products.spec.ts:166` (« doublon », bouton *Créer* resté désactivé 30 s), lui, **n'a pas de cause
-établie** : ni reproduit en enchaînant les specs voisines, ni sous délai injecté des lectures ou de
+`products.spec.ts:166` (« doublon », bouton *Créer* resté désactivé 30 s — **KF-054, [#498]**), lui,
+**n'a pas de cause établie** : ni reproduit en enchaînant les specs voisines, ni sous délai injecté des lectures ou de
 la création. D'où, depuis cette date, **`trace: 'retain-on-failure'`** dans `playwright.config.ts`.
 
 ⛔ **Avant de rejouer seul un échec, mettre `frontend/test-results/` à l'abri** (`cp -r
 frontend/test-results /quelque/part/`) : Playwright vide ce répertoire au lancement, et le rejeu
 efface la trace et l'instantané du run qui a échoué — c'est exactement ce qui a privé
 `products.spec.ts:166` de diagnostic.
+
+[#498]: https://github.com/guycorbaz/kesh/issues/498
 
 ### Comment lire un rouge, dans l'ordre
 
