@@ -81,6 +81,18 @@ compte de grand livre** — son solde ne s'attribue pas à l'un d'eux. « Dernie
 relevés qui portent un solde** (un relevé sans `closing_balance` plus récent ne masque pas un plus ancien), départagé par
 `imported_at` puis `id`. **Signe** : `débit − crédit` du compte lié, quel que soit son type — c'est la convention du
 relevé (un découvert est négatif au CAMT, `DBIT`, comme le solde d'un compte de passif lié à une ligne de crédit tirée).
+**Date de valeur** (arbitrage de Guy, 2026-10-03, voie (a)) : le solde du relevé CAMT (`CLBD`) est arrêté à la date
+de **comptabilisation bancaire** (`camt053/mod.rs:541`), alors que les écritures de rapprochement sont datées à la date
+de **valeur** (`reconciliation.rs:1958`, `:2295`, `kesh-reconciliation/src/manual.rs:35`). `ledgerBalanceAtStatement`
+est donc **corrigé** par les transactions bancaires **rapprochées** du compte (`bank_transactions.status = 'reconciled'`,
+`matched_entry_id` non nul) dont les deux dates tombent de part et d'autre de `period_to` : **+ Σ `amount`** des
+transactions dont `booking_date ≤ period_to` et dont l'écriture (`journal_entries.entry_date` de `matched_entry_id`) est
+**postérieure** ; **− Σ `amount`** de celles dont `booking_date > period_to` et dont l'écriture est **antérieure ou
+égale**. La date de l'écriture est **lue**, jamais déduite de `value_date` (un rapprochement manuel peut la choisir).
+Le montant de la transaction est signé comme le relevé (`amount` du CAMT) : la correction s'ajoute au solde `débit −
+crédit` sans changement de signe. Une transaction **non rapprochée** n'entre pas dans la correction : son absence du
+grand livre est précisément l'écart que la tuile doit montrer.
+
 **Échelle** : l'écart se calcule **côté client**, en `big.js`, au centime — les deux soldes arrondis à 2 décimales
 (`.round(2, Big.roundHalfUp)`, l'arrondi du dépôt — `vat-purchase.ts:12` ; **pas** `round_dp`, qui est l'arrondi
 bancaire) avant la soustraction ; le relevé est en `DECIMAL(18,2)`, le grand livre à 4 décimales. **Partage** : le
@@ -120,6 +132,10 @@ verrait rien), compte non lié (`null`), ordre de la liste. Il est **exempté** 
   courant) ; compte sans grand livre lié → `null` ; **deux comptes bancaires sur le même compte de grand livre** →
   `ledgerBalanceAtStatement` `null` ; un compte lié de **passif** (ligne de crédit tirée) → solde et relevé de même
   signe, écart nul ; isolation par société ; non-régression de `currentBalance` / `lastTransactionDate` ;
+  **date de valeur** — un crédit de 200 comptabilisé par la banque le jour du relevé, rapproché par une écriture datée
+  du lendemain : écart **nul** ; le cas inverse (comptabilisé le lendemain, écriture du jour) : écart nul ; une
+  transaction **non rapprochée** du jour du relevé : écart égal à son montant ; un rapprochement manuel dont la date
+  d'écriture diffère de `value_date` : la date **lue** fait foi ;
 - `kesh-api` : forme de la réponse (`statementClosingBalance`, `statementDate`, `ledgerBalanceAtStatement` en chaînes) ;
 - **Vitest, par composant** — les trois tuiles sont **extraites** en composants (`features/homepage/`
   `RecentEntriesCard.svelte`, `OpenInvoicesCard.svelte`, `BankAccountsCard.svelte`, données en props, appels dans la
@@ -205,6 +221,9 @@ un solde de clôture** — un import CSV n'en a pas ; la section *Import bancair
 - Le solde comptable ne reflète un encaissement qu'une fois celui-ci **comptabilisé** (rapprochement ou règlement) : c'est
   précisément ce que l'écart avec le relevé rend visible.
 - Le relevé ne vaut que pour sa date : entre deux imports, l'écart n'est pas recalculé contre la banque réelle.
+- La correction de date de valeur ne connaît que les écritures **issues d'un rapprochement** (`matched_entry_id`). Une
+  écriture saisie à la main pour un mouvement bancaire, à une date différente de sa comptabilisation par la banque,
+  n'est pas corrigée — l'écart le montre, et c'est juste : rien ne relie cette écriture au relevé.
 
 ### Modules
 
@@ -230,6 +249,9 @@ un solde de clôture** — un import CSV n'en a pas ; la section *Import bancair
 
 ## Change Log
 
+- **2026-10-03** — Arbitrage de Guy (« ok, vas-y ») : **H1 par la voie (a)** — l'écart est corrigé par les
+  transactions rapprochées de part et d'autre de la date du relevé, la date de l'écriture étant lue via
+  `matched_entry_id` ; **pas de découpage**.
 - **2026-10-03** — Validation P2 (Opus, prompt `25-6-a-validate-prompt-p2.md`) : **1 HIGH, 6 MED, 8 LOW**.
   - Retenus :
     - l'arrondi de l'écart en `big.js` côté client (`round_dp` est bancaire) (M1) ;
@@ -243,9 +265,9 @@ un solde de clôture** — un import CSV n'en a pas ; la section *Import bancair
   - ⚠️ **H1 (HIGH) — date de valeur contre date de comptabilisation** : le relevé CAMT (`CLBD`) est un solde par date de
     comptabilisation ; les écritures de rapprochement sont datées à la date de **valeur**
     (`reconciliation.rs:1958`). Sur des livres entièrement rapprochés, un mouvement de fin de mois à valeur décalée
-    produit un écart fictif. **Deux voies, soumises à Guy** ; **non appliqué** dans l'attente.
+    produit un écart fictif. Deux voies soumises à Guy — **voie (a) retenue**, appliquée à l'AC 4.
   - ⚠️ **Signal de découpage** : sévérité maximale HIGH → HIGH (P1 → P2). Défauts **distincts** (P1 : partage,
-    solde à une date ; P2 : date de valeur), aucun recyclé. Recommandation : **ne pas découper** — arbitrage à Guy.
+    solde à une date ; P2 : date de valeur), aucun recyclé. **Arbitrage de Guy : pas de découpage.**
 - **2026-10-03** — Validation P1 (Sonnet ×3, prompt `25-6-a-validate-prompt-p1.md`) : **4 HIGH, 7 MED**, LOW.
   - **Réfuté — A1 (HIGH)**, « signe de l'écart faux pour un compte de passif ». `débit − crédit` est la convention du
     relevé quel que soit le type : un passif lié à une ligne de crédit tirée de 1000 vaut −1000, comme le relevé
