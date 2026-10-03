@@ -270,6 +270,11 @@ un solde de clôture** — un import CSV n'en a pas ; la section *Import bancair
 
 ## Change Log
 
+- **2026-10-03** — Validation P4 ciblée (Haiku, prompt `25-6-a-validate-prompt-p4.md`) : **0 finding**, preuves des
+  quatre vérifications fournies. ⚠️ Son **cas 2 chiffré est mal posé** (il garde le grand livre à 800 alors que
+  l'écriture du 30 y figure, d'où un « écart −400 volontaire ») — **refait par l'orchestrateur** : grand livre au 30 = 1000,
+  relevé = 800 (mouvement comptabilisé le 31), correction −200, écart **nul** ; la règle de la fiche est juste. **Boucle
+  close** : P1 4H/7M (Sonnet ×3) → P2 1H/6M (Opus) → P3 2M (Sonnet) → P4 0 (Haiku).
 - **2026-10-03** — Validation P3 (Sonnet, prompt `25-6-a-validate-prompt-p3.md`) : **0 CRITICAL/HIGH, 2 MED, 4 LOW**,
   retenus. La correction somme la **ligne de l'écriture sur le compte lié actuel**, pas `amount` — juste après un
   changement de lien (M1) ; le contrat de requête impose une table dérivée par compte bancaire, non-régression avec
