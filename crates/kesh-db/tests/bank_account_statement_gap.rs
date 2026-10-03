@@ -297,7 +297,8 @@ async fn une_transaction_non_rapprochee_reste_un_ecart(pool: MySqlPool) {
 
 /// ⛔ Une transaction `pending` qui porterait encore un lien vers une écriture
 /// (état incohérent, posé en SQL brut) n'entre pas dans la correction : seul
-/// `status = 'reconciled'` compte. Mutation tuée : le filtre `status` retiré.
+/// `status = 'reconciled'` compte. Mutation tuée : le filtre `status` retiré de
+/// la sous-requête `booked_before_entered_after` (le test suivant tue l'autre).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn seule_une_transaction_rapprochee_corrige(pool: MySqlPool) {
     let (seeded, ba, bank, sales) = linked(&pool).await;
@@ -323,6 +324,38 @@ async fn seule_une_transaction_rapprochee_corrige(pool: MySqlPool) {
             .await
             .ledger_balance_at_statement,
         Some(Decimal::ZERO)
+    );
+}
+
+/// ⛔ Le miroir : comptabilisée par la banque APRÈS le relevé, écriture antérieure,
+/// `pending` mais liée. Mutation tuée : le filtre `status` retiré de la
+/// sous-requête `booked_after_entered_before` — le filtre existe en deux
+/// exemplaires, chacun a son test (revue P2).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn seule_une_transaction_rapprochee_corrige_le_miroir(pool: MySqlPool) {
+    let (seeded, ba, bank, sales) = linked(&pool).await;
+    let early = entry(&pool, &seeded, ymd(2026, 3, 31), bank, sales, dec!(70)).await;
+    let imp = import(&pool, &seeded, ba, ymd(2026, 3, 31), Some(dec!(70))).await;
+    tx(
+        &pool,
+        &seeded,
+        ba,
+        imp,
+        ymd(2026, 4, 1),
+        dec!(70),
+        Some(early),
+    )
+    .await;
+    sqlx::query("UPDATE bank_transactions SET status = 'pending' WHERE matched_entry_id = ?")
+        .bind(early)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        balances(&pool, &seeded, ba)
+            .await
+            .ledger_balance_at_statement,
+        Some(dec!(70))
     );
 }
 

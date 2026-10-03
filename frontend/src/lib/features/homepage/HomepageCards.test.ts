@@ -202,4 +202,20 @@ describe('BankAccountsCard — revue P1', () => {
 		expect(screen.getByTestId('homepage-bank-gap-unavailable-1')).toBeTruthy();
 		expect(screen.queryByTestId('homepage-bank-gap-1')).toBeNull();
 	});
+
+	it('compte NON lié avec relevé : ni écart ni « non calculable » (ce n’est pas un partage)', () => {
+		render(BankAccountsCard, {
+			accounts: [
+				account({
+					journalAccountId: null,
+					currentBalance: null,
+					statementClosingBalance: '900.00',
+					statementDate: '2026-03-31',
+					ledgerBalanceAtStatement: null,
+				}),
+			],
+		});
+		expect(screen.getByTestId('homepage-bank-statement-1')).toBeTruthy();
+		expect(screen.queryByTestId('homepage-bank-gap-unavailable-1')).toBeNull();
+	});
 });

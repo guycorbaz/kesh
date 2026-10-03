@@ -371,7 +371,7 @@
 					<tr class="border-b border-border text-left">
 						<th class="py-2 pr-4 font-semibold">{i18nMsg('bank-accounts-labels-bank-name', 'Banque')}</th>
 						<th class="py-2 pr-4 font-semibold">{i18nMsg('bank-accounts-labels-iban', 'IBAN')}</th>
-						<th class="py-2 pr-4 font-semibold text-right">{i18nMsg('bank-accounts-labels-balance', 'Solde')}</th>
+						<th class="py-2 pr-4 font-semibold text-right">{i18nMsg('bank-accounts-labels-balance', 'Solde comptable')}</th>
 						<th class="py-2 pr-4 font-semibold">{i18nMsg('bank-accounts-labels-journal-account-id', 'Compte comptable lié')}</th>
 						<th class="py-2"></th>
 					</tr>

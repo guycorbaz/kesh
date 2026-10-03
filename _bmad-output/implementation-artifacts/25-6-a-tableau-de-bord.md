@@ -75,8 +75,10 @@ importé** qui porte un solde de clôture : `statementClosingBalance` (`Decimal`
 `ledgerBalanceAtStatement` (le solde comptable du compte lié **au `period_to` inclus**). L'accueil affiche, quand un relevé
 existe : « Relevé du {date} : {montant} » et, si `ledgerBalanceAtStatement ≠ statementClosingBalance`, **« Écart :
 {différence} »** (solde comptable à cette date − relevé), mis en évidence. Sans relevé, rien de plus. Les champs neufs
-sont `null` quand le compte n'a pas de compte de grand livre lié (le solde comptable ne se calcule pas) ou aucun relevé
-avec solde ; `ledgerBalanceAtStatement` (donc l'écart) est aussi `null` quand **plusieurs comptes bancaires partagent le
+sont `null` quand le compte n'a aucun relevé avec solde ; **sans compte de grand livre lié**, le relevé
+(`statementClosingBalance`, `statementDate`) est **rendu** — c'est un fait bancaire — et seuls `currentBalance` et
+`ledgerBalanceAtStatement` sont `null` (*amendé le 2026-10-03, revue de code P1, C-2 ; la première rédaction voulait les
+trois champs à `null`*) ; `ledgerBalanceAtStatement` (donc l'écart) est aussi `null` quand **plusieurs comptes bancaires partagent le
 compte de grand livre** — son solde ne s'attribue pas à l'un d'eux. « Dernier » = `period_to` le plus récent **parmi les
 relevés qui portent un solde** (un relevé sans `closing_balance` plus récent ne masque pas un plus ancien), départagé par
 `imported_at` puis `id`. **Signe** : `débit − crédit` du compte lié, quel que soit son type — c'est la convention du
@@ -333,6 +335,17 @@ Claude Opus 5.5 (`claude-opus-5-5`).
 
 ## Change Log
 
+- **2026-10-03** — Revue de code P2 (Opus, prompt `25-6-a-review-prompt-p2.md`) : **0 CRITICAL/HIGH, 2 MED, 4 LOW**,
+  retenus. **M-1** — le filtre `status` existe en **deux** exemplaires (`booked_before_entered_after`,
+  `booked_after_entered_before`) et le test de P1 n'en tuait qu'un : le symptôme de P1 reproduit sur la copie jumelle,
+  faute d'avoir grepé le symptôme. Test miroir `seule_une_transaction_rapprochee_corrige_le_miroir` ; mutation de la
+  seconde copie **exécutée et tuée**. **M-2** — l'AC 4 contredisait encore le comportement retenu en P1 (relevé sans
+  compte lié) : amendé et daté. LOW : « Trois limites » au manuel (L-1) ; repli Svelte de `bank-accounts-labels-balance`
+  à « Solde comptable » (L-2) ; test négatif « compte non lié avec relevé : pas de non calculable » (L-3) ; Vitest du
+  câblage de la page — un rejet de `listBankAccounts` mène à la tuile en échec, mutation tuée (L-4). La P2 a confirmé le
+  reclassement de F1 (aucun autre écrivain de `matched_entry_id`) et le SQL borné (5 `?` / 5 `.bind`, `currentBalance`
+  inchangé y compris pour un compte lié archivé). Gate ciblé : `fmt`, `clippy` workspace, `binary(bank_account_statement_gap)`
+  12/12, frontend `check` 0 erreur, `test:unit` **872/872**. **Gate complet au push.**
 - **2026-10-03** — Revue de code P1 (Sonnet ×3, prompt `25-6-a-review-prompt-p1.md`) : **0 CRITICAL/HIGH, 4 MED**, LOW.
   - **Retenus** :
     - un test qui ne tuait pas la mutation revendiquée (`status`) : test neuf avec une transaction `pending` liée, qui
