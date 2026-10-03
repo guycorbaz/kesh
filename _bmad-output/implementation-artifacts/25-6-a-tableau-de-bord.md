@@ -1,6 +1,6 @@
 # Story 25.6-a : Le tableau de bord dit vrai — dernières écritures, factures ouvertes, solde comptable
 
-Status: review
+Status: done
 
 **Issues : [#388], [#389]**, que cette story **ferme** : la PR porte `closes #388, closes #389` dans le **titre ET le
 corps**. Branche `story/25-6-a-tableau-de-bord`, partie de `main` (`d7c74f02`).
@@ -335,6 +335,18 @@ Claude Opus 5.5 (`claude-opus-5-5`).
 
 ## Change Log
 
+- **2026-10-03** — Revue de code P3 ciblée (Haiku, prompt `25-6-a-review-prompt-p3.md`) : **0 finding**, preuves des
+  quatre vérifications fournies et **reprises par l'orchestrateur** (deux copies du filtre `status`, aucun résidu « Deux
+  limites » / repli `'Solde'`, AC 4 cité seulement dans sa version amendée). **Boucle close** : P1 4 MED (Sonnet ×3) →
+  P2 2 MED (Opus) → P3 0 (Haiku). Gates finaux :
+  - backend complet sur base remise à zéro, **2561/2561, 4 ignorés** ;
+  - frontend `test:unit` **872/872** ;
+  - **E2E complet** sur `kesh_e2e` reconstruite, frontend et backend reconstruits (16:43 UTC) : **231 passés, 9 échoués,
+    19 ignorés**. Ce sont les 8 attendus (KF-029 ×7, KF-052) et `accounts.spec.ts:145`, `page.fill('#username')`
+    expiré sur `/login` : la signature de la **KF-053 (#478)**, vert rejoué seul. `test-results/` a été mis à l'abri
+    **avant** le rejeu — trace conservée (`target/gate-logs/test-results-final/`).
+
+  Statut → `done`.
 - **2026-10-03** — Revue de code P2 (Opus, prompt `25-6-a-review-prompt-p2.md`) : **0 CRITICAL/HIGH, 2 MED, 4 LOW**,
   retenus. **M-1** — le filtre `status` existe en **deux** exemplaires (`booked_before_entered_after`,
   `booked_after_entered_before`) et le test de P1 n'en tuait qu'un : le symptôme de P1 reproduit sur la copie jumelle,
