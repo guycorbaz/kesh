@@ -57,6 +57,11 @@ const config: PlaywrightTestConfig = {
 		baseURL: process.env.KESH_BACKEND_URL ?? 'http://127.0.0.1',
 		locale: 'fr-CH',
 		timezoneId: 'Europe/Zurich',
+		// Un échec intermittent ne se diagnostique que sur sa trace : rejoué seul,
+		// il passe, et le rejeu ÉCRASE `test-results/` — instantané compris. Sans
+		// trace conservée, la cause de `products.spec.ts:166` (2026-10-03) n'a pas
+		// pu être établie. Coût : de l'espace disque, sur les seuls échecs.
+		trace: 'retain-on-failure',
 	},
 };
 
