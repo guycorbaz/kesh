@@ -21,22 +21,30 @@ export interface BankAccountSummary {
 	/** Story v014-1 — true si soft-deleted (archivé). */
 	archived: boolean;
 	/**
-	 * Story v014-1 T5 — solde calculé serveur-side depuis journal_entry_lines.
-	 * `null` si `journal_account_id` n'est pas configuré sur ce compte (L4
-	 * limitation v0.1 — lien plan comptable obligatoire pour calcul du solde).
+	 * Story v014-1 T5 — **solde comptable** calculé serveur-side depuis
+	 * journal_entry_lines (pas le solde bancaire). `null` si `journal_account_id`
+	 * n'est pas configuré sur ce compte.
 	 *
-	 * Décimal sérialisé en string par serde (feature `serde-str`), converti
-	 * en `number` ici. La précision CHF (2 décimales en pratique) ne pose pas
-	 * de problème via Number ; si v0.2 nécessite plus de précision, migrer
-	 * vers `decimal.js`.
+	 * Story 25-6-a (#389) — reste une **chaîne décimale** (jamais un `Number`) :
+	 * tout calcul passe par `big.js`, tout affichage par `formatChfBalance`.
 	 */
-	currentBalance: number | null;
+	currentBalance: string | null;
 	/**
 	 * Story v014-1 F13 Pass 1 code review (AC#30) — date `MAX(je.entry_date)`
 	 * agrégée sur le `journal_account_id` lié. Format ISO `YYYY-MM-DD`.
 	 * `null` si journal_account_id NULL ou aucune écriture.
 	 */
 	lastTransactionDate: string | null;
+	/** Story 25-6-a — solde de clôture du dernier relevé importé (chaîne décimale). */
+	statementClosingBalance: string | null;
+	/** Story 25-6-a — date de ce relevé (`YYYY-MM-DD`). */
+	statementDate: string | null;
+	/**
+	 * Story 25-6-a — solde comptable à `statementDate`, corrigé des dates de
+	 * valeur. `null` sans relevé, sans compte lié, ou si plusieurs comptes
+	 * bancaires partagent le compte de grand livre.
+	 */
+	ledgerBalanceAtStatement: string | null;
 }
 
 /**
@@ -54,6 +62,10 @@ interface BankAccountSummaryRaw {
 	archived: boolean;
 	currentBalance: string | null;
 	lastTransactionDate: string | null;
+	// Absents des réponses de mutation (POST/PUT/PATCH/DELETE rendent un compte nu).
+	statementClosingBalance?: string | null;
+	statementDate?: string | null;
+	ledgerBalanceAtStatement?: string | null;
 }
 
 function parseBankAccount(raw: BankAccountSummaryRaw): BankAccountSummary {
@@ -66,8 +78,11 @@ function parseBankAccount(raw: BankAccountSummaryRaw): BankAccountSummary {
 		journalAccountId: raw.journalAccountId,
 		version: raw.version,
 		archived: raw.archived,
-		currentBalance: raw.currentBalance == null ? null : Number(raw.currentBalance),
+		currentBalance: raw.currentBalance ?? null,
 		lastTransactionDate: raw.lastTransactionDate,
+		statementClosingBalance: raw.statementClosingBalance ?? null,
+		statementDate: raw.statementDate ?? null,
+		ledgerBalanceAtStatement: raw.ledgerBalanceAtStatement ?? null,
 	};
 }
 

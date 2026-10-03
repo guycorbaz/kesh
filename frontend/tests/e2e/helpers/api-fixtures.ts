@@ -131,3 +131,38 @@ export async function createAndValidateInvoiceViaApi(
 		await disposeContextSafe(ctx);
 	}
 }
+
+/**
+ * Story 25-6-a (#388) — poste une écriture équilibrée à deux lignes (compte de
+ * classe 10 au débit, de classe 3 au crédit), datée du jour : la plus récente,
+ * donc en tête de la tuile « Dernières écritures ». Renvoie son id.
+ */
+export async function createJournalEntryViaApi(
+	page: Page,
+	description: string,
+	amount = '321.40',
+): Promise<number> {
+	const ctx = await authedApiContext(page);
+	try {
+		const accRes = await ctx.get('/api/v1/accounts?includeArchived=false');
+		expect(accRes.ok(), `list accounts: ${accRes.status()}`).toBeTruthy();
+		const accounts: Array<{ id: number; number: string }> = await accRes.json();
+		const debit = accounts.find((a) => /^10[0-9]{2}$/.test(a.number)) ?? accounts[0];
+		const credit = accounts.find((a) => /^3[0-9]{3}$/.test(a.number)) ?? accounts[1];
+		const res = await ctx.post('/api/v1/journal-entries', {
+			data: {
+				entryDate: new Date().toISOString().slice(0, 10),
+				journal: 'OD',
+				description,
+				lines: [
+					{ accountId: debit.id, debit: amount, credit: '0.00' },
+					{ accountId: credit.id, debit: '0.00', credit: amount },
+				],
+			},
+		});
+		expect(res.ok(), `create entry: ${res.status()}`).toBeTruthy();
+		return ((await res.json()) as { id: number }).id;
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+}

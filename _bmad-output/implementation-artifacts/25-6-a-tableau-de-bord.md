@@ -1,6 +1,6 @@
 # Story 25.6-a : Le tableau de bord dit vrai — dernières écritures, factures ouvertes, solde comptable
 
-Status: in-progress
+Status: review
 
 **Issues : [#388], [#389]**, que cette story **ferme** : la PR porte `closes #388, closes #389` dans le **titre ET le
 corps**. Branche `story/25-6-a-tableau-de-bord`, partie de `main` (`d7c74f02`).
@@ -194,10 +194,10 @@ un solde de clôture** — un import CSV n'en a pas ; la section *Import bancair
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — le dernier relevé et le solde à sa date** (AC 4, 6), `kesh-db` `bank_accounts.rs`.
-- [ ] **T2 — le DTO** (AC 4, 6), `kesh-api` `routes/bank_accounts.rs`.
-- [ ] **T3 — les montants en chaînes** (AC 5), `bank-accounts.api.ts`, `format.ts`, page des comptes bancaires, fixtures.
-- [ ] **T4 — l'accueil** (AC 1, 2, 3, 4) : trois composants extraits dans `features/homepage/`, la page qui les
+- [x] **T1 — le dernier relevé et le solde à sa date** (AC 4, 6), `kesh-db` `bank_accounts.rs`.
+- [x] **T2 — le DTO** (AC 4, 6), `kesh-api` `routes/bank_accounts.rs`.
+- [x] **T3 — les montants en chaînes** (AC 5), `bank-accounts.api.ts`, `format.ts`, page des comptes bancaires, fixtures.
+- [x] **T4 — l'accueil** (AC 1, 2, 3, 4) : trois composants extraits dans `features/homepage/`, la page qui les
   alimente ; l'i18n (4 locales, parité, `sitesTotal`, relevé des libellés en dur). Les composants appellent `i18nMsg`
   **directement** (la garde `lint-i18n-ownership` ne lit que `i18nMsg(`, `scripts/lint-i18n-ownership.js:151` — le
   relais `msg()` de la page lui échappe). **Clés neuves** : `homepage-entries-unavailable`,
@@ -207,9 +207,9 @@ un solde de clôture** — un import CSV n'en a pas ; la section *Import bancair
   `homepage-bank-statement` (« Relevé du { $date } : { $amount } », date au format suisse), `homepage-bank-gap`
   (« Écart : { $amount } ») ; `homepage-invoices-empty-guided` **réécrite** sans « première » ;
   `homepage-bank-total-liquidity` **retirée**.
-- [ ] **T5 — tests** (AC 7).
-- [ ] **T6 — manuel, CHANGELOG** (AC 8).
-- [ ] **T7 — gates** : backend complet, frontend complet, **E2E complet**.
+- [x] **T5 — tests** (AC 7).
+- [x] **T6 — manuel, CHANGELOG** (AC 8).
+- [x] **T7 — gates** : backend complet, frontend complet, **E2E complet**.
 
 ## Dev Notes
 
@@ -262,14 +262,78 @@ un solde de clôture** — un import CSV n'en a pas ; la section *Import bancair
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`).
+
 ### Debug Log References
+
+- Deux erreurs de montage dans les tests `kesh-db`, corrigées avant toute conclusion : l'archivage d'un compte bancaire
+  est la colonne `archived` (pas `active`) ; `seed_accounting_company` ne se pose qu'une fois par base (`admin` est
+  unique) — la seconde société est montée en SQL brut.
+- Garde-fous i18n recomptés depuis la source, pas ajustés : la page d'accueil pesait 17 sites (15 appels par son relais
+  `msg()`, sa déclaration, son corps) et en pèse 24 (1 + 23 dans les trois tuiles) — `sitesTotal` 1758 → 1765 ; le relais
+  disparaît — `relais` 7 → 6, `sitesNonResolus` 34 → 32.
 
 ### Completion Notes List
 
+- **T1, le dernier relevé et le solde à sa date** — `list_by_company_with_balances` rend désormais une
+  `BankAccountBalances` par compte : `current_balance` et `last_transaction_date` **inchangés** (même expression), plus le
+  dernier relevé portant un solde (`ROW_NUMBER()` sur `period_to`, `imported_at`, `id`), le solde comptable à sa date et
+  sa **correction de date de valeur** (deux sous-requêtes corrélées sur les lignes de l'écriture rapprochée, sur le compte
+  lié actuel, dédoublonnées par `je.id IN (…)`), et le décompte du partage (tous les comptes de la société, archivés
+  compris). Une requête agrégée par appel, chaque somme dans sa propre table dérivée ou sous-requête — aucune jointure
+  `bank_transactions` dans le `FROM` des lignes du grand livre.
+- **Non-régression, commit séparé et antérieur** (`8713c9de`) : verte contre le code d'origine, puis contre le code
+  réécrit — JSON `"380.0000"`, `"0"`, `null`, ordre de la liste, avec une transaction rapprochée présente.
+- **T2, le DTO** — trois champs neufs, documentés.
+- **T3, les montants en chaînes** — `currentBalance` et les champs neufs restent des chaînes ; `formatChfBalance` prend une
+  chaîne ou un `Big` (arrondi `big.js` demi loin de zéro, puis `Number` d'un montant déjà au centime) ; champs neufs
+  optionnels côté `Raw`, normalisés à `null` ; fixtures complétées.
+- **T4, l'accueil** — trois tuiles extraites dans `features/homepage/` (`RecentEntriesCard`, `OpenInvoicesCard`,
+  `BankAccountsCard`), calculs purs dans `homepage.ts` (`entryAmount`, `ledgerTotal` dédoublonné, `statementGap` au
+  centime). La page charge les quatre sources en parallèle. Dix clés neuves × 4 locales, `homepage-invoices-empty-guided`
+  réécrite, `homepage-bank-total-liquidity` retirée (parité : 28 clés `homepage-*` par locale).
+- ⚠️ **Écart à la fiche** : le testid `homepage-invoices-open-total` est remplacé par un attribut `data-amount` sur
+  `homepage-invoices-open-count` — un élément `sr-only` portant le montant brut l'aurait fait lire deux fois aux lecteurs
+  d'écran.
+- ⚠️ **Couverture E2E du relevé et de l'écart** : non exercée en E2E (il faudrait un import CAMT réel) ; tenue par les dix
+  tests `kesh-db` et par le Vitest de `BankAccountsCard`. Le passage axe porte sur l'accueil peuplé d'une écriture, d'une
+  facture et d'un compte bancaire, sans relevé.
+- **T5, tests** — **périmètre : de `91ca244f` (validation close, aucun code) à l'arbre de travail** :
+  - `kesh-db` **+10** (`bank_account_statement_gap.rs`, neuf) ;
+  - `kesh-api` **+2** (`bank_accounts_e2e.rs` : non-régression, forme des champs neufs) ;
+  - Vitest **+20** (`homepage.test.ts` 9, `HomepageCards.test.ts` 11) ;
+  - E2E **+4** (`homepage-dashboard.spec.ts`, neuf) et le helper `createJournalEntryViaApi`.
+- **Gates** (T7) : base remise à zéro, `scripts/test-fast.sh` **2559/2559, 4 ignorés** (fmt, clippy, nextest) ; frontend
+  `check` 0 erreur, `lint-i18n-ownership` PASS, `test:unit` **865/865**, `build` OK ; **E2E complet** sur `kesh_e2e`
+  reconstruite (run de 16:04 UTC) : **232 passés, 8 échoués, 19 ignorés** — les 8 attendus (KF-029 ×7,
+  `sidebar-navigation:75` KF-052) ; les 4 tests de `homepage-dashboard.spec.ts` verts.
+- **Mutations tuées** (`kesh-db`) : tri par ordre d'import ; imports sans solde admis ; borne `<` au lieu de `<=` (2
+  tests) ; correction de date de valeur retirée ; partage compté sur les seuls comptes actifs.
+- **T6, manuel et CHANGELOG** — § *Tableau de bord* réécrit, sous-section *Solde comptable, relevé et écart* (dates de
+  valeur, leurs deux limites, CAMT seul), `\label{sec:import-bancaire}` et une phrase à l'import bancaire ; PDF régénéré
+  et contrôlé aplati. CHANGELOG `[0.12.1]` : `Fixed` (#388, #389) et `Changed`. README relu : seule mention, une
+  évolution prévue en v0.5+, toujours vraie.
+
 ### File List
+
+- `CHANGELOG.md`
+- `crates/kesh-db/src/repositories/bank_accounts.rs`
+- `crates/kesh-db/tests/bank_account_statement_gap.rs` (neuf)
+- `crates/kesh-api/src/routes/bank_accounts.rs`
+- `crates/kesh-api/tests/bank_accounts_e2e.rs`
+- `crates/kesh-i18n/locales/{de-CH,en-CH,fr-CH,it-CH}/messages.ftl`
+- `docs/manual/fr/user-manual.{tex,pdf}`
+- `frontend/src/lib/features/bank-accounts/{bank-accounts.api.ts,format.ts,bank-accounts.api.test.ts,BankAccountJournalLinkForm.test.ts}`
+- `frontend/src/lib/features/homepage/{homepage.ts,RecentEntriesCard.svelte,OpenInvoicesCard.svelte,BankAccountsCard.svelte,homepage.test.ts,HomepageCards.test.ts}` (neufs)
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/src/routes/(app)/+page.svelte`
+- `frontend/src/routes/(app)/bank-accounts/+page.svelte`
+- `frontend/tests/e2e/helpers/api-fixtures.ts`
+- `frontend/tests/e2e/homepage-dashboard.spec.ts` (neuf)
 
 ## Change Log
 
+- **2026-10-03** — Implémentée (dev-story) : T1–T7, gates ci-dessus. Statut → `review`.
 - **2026-10-03** — Validation P4 ciblée (Haiku, prompt `25-6-a-validate-prompt-p4.md`) : **0 finding**, preuves des
   quatre vérifications fournies. ⚠️ Son **cas 2 chiffré est mal posé** (il garde le grand livre à 800 alors que
   l'écriture du 30 y figure, d'où un « écart −400 volontaire ») — **refait par l'orchestrateur** : grand livre au 30 = 1000,

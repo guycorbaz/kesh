@@ -93,7 +93,7 @@
 		return `${acc.number} — ${acc.name}`;
 	}
 
-	function formatBalance(balance: number | null): string {
+	function formatBalance(balance: string | null): string {
 		if (balance === null) {
 			return i18nMsg(
 				'bank-accounts-labels-balance-unavailable',

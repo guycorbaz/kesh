@@ -356,9 +356,18 @@ const ATTENDU = {
 	// quatre catalogues), l'en-tête « Solde » remplacé par « Ouverture » et
 	// « Clôture » (+1, deux clés neuves `reports-column-opening` / `-closing`), et
 	// le libellé de la ligne calculée, qui réemploie les deux clés du bilan (+2).
-	sitesTotal: 1758,
-	sitesNonResolus: 34,
-	relais: 7,
+	//
+	// Story 25-6-a (#388, #389) : **1758 → 1765**, recompté par ce test et par
+	// `grep -o "i18nMsg(\|msg('"` aux deux bornes. La page d'accueil
+	// `routes/(app)/+page.svelte` pesait **17** sites — ses 15 appels par son relais
+	// `msg()`, plus la déclaration et le corps du relais —, elle en pèse **24** : 1 dans
+	// la page et 23 dans les trois tuiles extraites (`features/homepage/`
+	// `RecentEntriesCard` 5, `OpenInvoicesCard` 8, `BankAccountsCard` 10), qui appellent
+	// `i18nMsg` directement. Le relais disparaît : `relais` **7 → 6**,
+	// `sitesNonResolus` **34 → 32** (sa déclaration et son corps).
+	sitesTotal: 1765,
+	sitesNonResolus: 32,
+	relais: 6,
 	sitesGabarit: 10,
 	litterauxMin: 1050,
 	clesDepuisTsMin: 5
@@ -434,8 +443,9 @@ const ANGLE_MORT_CLE_EN_COLONNE = 'routes/(app)/settings/vat-rates/+page.svelte:
  * ⚠️ **QUATRIÈME angle mort, écrit ici faute de pouvoir le fermer** : `findRelays`
  * travaille **par fichier**. Un relais qui serait *importé* d'un module partagé ne
  * serait recensé nulle part — et, contrairement aux autres trous, **aucun compteur ne
- * bougerait**. La règle DRY du dépôt pousse vers cette extraction : les sept relais
- * actuels sont sept copies de la même fonction de trois lignes. À traiter en 23-2.
+ * bougerait**. La règle DRY du dépôt pousse vers cette extraction : les six relais
+ * actuels sont six copies de la même fonction de trois lignes (sept jusqu'à la 25-6-a,
+ * qui a retiré celui de la page d'accueil). À traiter en 23-2.
  */
 // ⚠️ La carte des codes d'erreur d'import est LUE depuis la production, plus recopiée :
 // tant qu'elle vivait dans le composant, une entrée ajoutée passait tous les gates au vert
@@ -688,7 +698,7 @@ describe('garde i18n — les clés demandées existent au catalogue', () => {
 		).toEqual([]);
 	});
 
-	it('les 7 relais locaux sont recensés — cardinalité assertée', () => {
+	it('les 6 relais locaux sont recensés — cardinalité assertée', () => {
 		// ⚠️ **Ce garde-fou manquait au premier jet, alors que la tâche le déclarait fait.**
 		// Sans lui, un huitième relais ajouté sans que le test le sache rendrait TOUTES
 		// ses clés invisibles, en silence — le défaut que le recensement des relais avait
