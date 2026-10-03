@@ -28,7 +28,7 @@ banque.
 - **La tuile « Factures ouvertes » n'affiche aucun montant** (`+page.svelte:100-128`) : seulement « N facture(s) à
   rappeler », **pour Admin/Comptable**, depuis `/dunning/reminders` (Comptable+) — un rôle Consultation voit « Aucune
   facture ouverte » en permanence. Le résumé existe : `GET /api/v1/invoices/due-dates` (`lib.rs:751`, **tout rôle**) rend
-  `DueDatesSummary { unpaidCount, unpaidTotal, overdueCount, overdueTotal }` (`kesh-db/src/repositories/invoices.rs:870-905`)
+  `DueDatesSummary { unpaidCount, unpaidTotal, overdueCount, overdueTotal }` (`kesh-db/src/repositories/invoices.rs`, `DueDatesSummary` et `due_dates_summary`)
   — des **restes dus** depuis la 25-4-b1 (#416), factures `validated` non soldées. Client : `invoices.api.ts:118`.
 - **Le « solde bancaire » est le solde comptable** : `bank_accounts::list_by_company_with_balances`
   (`kesh-db/src/repositories/bank_accounts.rs:620-690`) rend `SUM(debit) − SUM(credit)` du compte de grand livre lié,
@@ -46,20 +46,27 @@ banque.
 ## Acceptance Criteria
 
 **AC 1 — Dernières écritures, branchées.** La tuile appelle `GET /api/v1/journal-entries?limit=5` (tri par défaut :
-date décroissante) et liste au plus **cinq** écritures : date, numéro, libellé, montant (somme des débits de
-l'écriture, en `big.js`). Chaque ligne mène à l'écriture (`/journal-entries/{id}`). Sans écriture, le texte vide actuel
+`entry_date DESC, entry_number DESC`) et liste au plus **cinq** écritures : date, numéro, libellé, montant (somme des
+débits de l'écriture, calculée côté client en `big.js` depuis les lignes que la liste rend déjà — la liste lit les
+lignes par écriture, cinq requêtes de plus : acceptable à cette taille, aucun champ d'API ajouté). Une contre-passation
+s'affiche comme toute écriture, sous son propre numéro. Chaque ligne mène à l'écriture (`/journal-entries/{id}`). Sans écriture, le texte vide actuel
 (et sa variante guidée) reste. Échec de l'appel : la tuile le dit (« indisponible ») au lieu de prétendre qu'il n'y a
-rien. Le bouton « Saisir une écriture » n'apparaît que pour Admin/Comptable (Consultation ne saisit pas).
+rien — et l'échec **prime sur la variante guidée**. Le bouton « Saisir une écriture » n'apparaît que pour Admin/Comptable (Consultation ne saisit pas).
 
-**AC 2 — Factures ouvertes, chiffrées, pour tous les rôles.** La tuile appelle `GET /api/v1/invoices/due-dates` (sans
-filtre) et affiche **N factures ouvertes — reste dû total** et, s'il y en a, **dont M échues — montant**. Les montants
+**AC 2 — Factures ouvertes, chiffrées, pour tous les rôles.** La tuile appelle `GET /api/v1/invoices/due-dates?limit=1`
+(seul le `summary` sert ; la liste paginée qui l'accompagne est réduite à une ligne) et affiche **N factures ouvertes — reste dû total** et, s'il y en a, **dont M échues — montant**. Les montants
 passent par `big.js` et le formatage suisse du dépôt. Le compteur « à rappeler » (Admin/Comptable) reste. Le bouton
 « Créer une facture » n'apparaît que pour Admin/Comptable. Sans facture ouverte, le texte vide actuel reste ; échec de
 l'appel : « indisponible ».
 
-**AC 3 — Le solde est nommé « solde comptable ».** Dans la tuile « Comptes bancaires », chaque solde est libellé
+**AC 3 — Le solde est nommé « solde comptable », et compté une fois.** Dans la tuile « Comptes bancaires », chaque solde est libellé
 **« Solde comptable »** et le total **« Total (solde comptable) »** au lieu de « Total liquidités ». Le libellé d'aide dit
-d'où vient le chiffre : le grand livre, non la banque.
+d'où vient le chiffre : le grand livre, non la banque. **Le total ne compte chaque compte de grand livre qu'une fois** :
+rien n'empêche deux comptes bancaires d'être liés au même compte (`idx_bank_accounts_journal_account` n'est pas unique,
+`validate_journal_account_id` ne contrôle pas l'usage), et le total les compterait deux fois ; une note le signale
+quand des comptes partagent un même compte lié. La clé `homepage-bank-total-liquidity` est **remplacée** par
+`homepage-bank-total-ledger` (4 locales) et le `data-testid` `homepage-bank-total-liquidity` par `homepage-bank-total`
+(cité par aucun test).
 
 **AC 4 — Le solde du dernier relevé, et l'écart.** `GET /api/v1/bank-accounts` gagne, par compte, le **dernier relevé
 importé** qui porte un solde de clôture : `statementClosingBalance` (`Decimal` | `null`), `statementDate` (`period_to`) et
@@ -67,41 +74,78 @@ importé** qui porte un solde de clôture : `statementClosingBalance` (`Decimal`
 existe : « Relevé du {date} : {montant} » et, si `ledgerBalanceAtStatement ≠ statementClosingBalance`, **« Écart :
 {différence} »** (solde comptable à cette date − relevé), mis en évidence. Sans relevé, rien de plus. Les champs neufs
 sont `null` quand le compte n'a pas de compte de grand livre lié (le solde comptable ne se calcule pas) ou aucun relevé
-avec solde. « Dernier » = `period_to` le plus récent, départagé par `imported_at` puis `id`.
+avec solde ; `ledgerBalanceAtStatement` (donc l'écart) est aussi `null` quand **plusieurs comptes bancaires partagent le
+compte de grand livre** — son solde ne s'attribue pas à l'un d'eux. « Dernier » = `period_to` le plus récent **parmi les
+relevés qui portent un solde** (un relevé sans `closing_balance` plus récent ne masque pas un plus ancien), départagé par
+`imported_at` puis `id`. **Signe** : `débit − crédit` du compte lié, quel que soit son type — c'est la convention du
+relevé (un découvert est négatif au CAMT, `DBIT`, comme le solde d'un compte de passif lié à une ligne de crédit tirée).
+**Échelle** : l'écart se calcule au centime — les deux soldes arrondis à 2 décimales (`round_dp` à mi-chemin loin de
+zéro) avant la soustraction ; le relevé est en `DECIMAL(18,2)`, le grand livre à 4 décimales.
 
 **AC 5 — Les montants ne passent plus par `Number`.** `currentBalance` et les trois champs neufs restent des **chaînes
-décimales** côté frontend (`BankAccountSummary`), le total et l'écart se calculent en `big.js`, l'affichage par le
-formateur existant (adapté à une chaîne si nécessaire). Les deux consommateurs (accueil, page des comptes bancaires)
-sont mis à jour.
+décimales** côté frontend (`BankAccountSummary`), le total et l'écart se calculent en `big.js`. `formatChfBalance`
+(`features/bank-accounts/format.ts:21`, aujourd'hui `(balance: number)`) prend une **chaîne ou un `Big`** et formate
+`new Big(v).toFixed(2)` — TypeScript refuse une chaîne nue dans `Intl.NumberFormat.format`. Les deux lecteurs de
+`currentBalance` (accueil, page des comptes bancaires) sont mis à jour ; côté `Raw`, les champs neufs sont **optionnels**
+et normalisés à `null` aux quatre sites de `parseBankAccount` (`bank-accounts.api.ts:101,125,149,164` — les routes de
+mutation rendent un `BankAccount` nu) ; les fixtures de `bank-accounts.api.test.ts` et de
+`BankAccountJournalLinkForm.test.ts` complétées.
 
-**AC 6 — L'API et la doc.** Les champs neufs dans la réponse de `GET /api/v1/bank-accounts` (et des routes qui rendent
-le même DTO, s'il y en a — à inventorier), documentés au DTO. Le calcul du solde comptable à une date partage la
-requête existante (pas de seconde copie du `SUM(debit) − SUM(credit)`).
+**AC 6 — L'API et la doc.** Les champs neufs dans la réponse de `GET /api/v1/bank-accounts` — seule route qui rend
+`BankAccountWithBalance` (`routes/bank_accounts.rs:345-356`, inventaire fait) —, documentés au DTO. **Contrat** : une
+seule requête par appel, **par compte bancaire** (et non plus par compte de grand livre) : `LEFT JOIN` du dernier relevé
+avec solde du compte bancaire, et deux sommes sur le compte lié — `SUM(debit) − SUM(credit)` toutes dates (le
+`currentBalance` d'aujourd'hui, **inchangé**) et la même somme bornée par `CASE WHEN je.entry_date <= period_to` —, pas
+de seconde copie du calcul. Un test de **non-régression** fige `currentBalance` et `lastTransactionDate` sur un jeu
+existant.
 
 **AC 7 — Tests.** Chacun aurait échoué avant le patch :
-- `kesh-db` : relevé le plus récent choisi (deux imports, `period_to` différents ; égalité départagée) ; relevé sans
-  `closing_balance` ignoré ; solde comptable **à la date du relevé** (une écriture postérieure n'y entre pas, une écriture
-  du jour même y entre) ; compte sans grand livre lié → `null` ; isolation par société ;
+- `kesh-db` : relevé le plus récent choisi — deux imports dont le **plus récent importé est le plus ancien en date**
+  (l'ordre d'import ne décide pas), et une égalité de `period_to` départagée ; un relevé sans `closing_balance` **plus
+  récent** qu'un relevé avec solde ne le masque pas ; solde comptable **à la date du relevé** (une écriture postérieure
+  n'y entre pas, une écriture du jour même y entre ; un relevé daté **après** la dernière écriture rend le solde
+  courant) ; compte sans grand livre lié → `null` ; **deux comptes bancaires sur le même compte de grand livre** →
+  `ledgerBalanceAtStatement` `null` ; un compte lié de **passif** (ligne de crédit tirée) → solde et relevé de même
+  signe, écart nul ; isolation par société ; non-régression de `currentBalance` / `lastTransactionDate` ;
 - `kesh-api` : forme de la réponse (`statementClosingBalance`, `statementDate`, `ledgerBalanceAtStatement` en chaînes) ;
-- Vitest de l'accueil (`+page.svelte` ou composants extraits) : dernières écritures listées / vide / échec ; factures
-  ouvertes chiffrées pour un rôle **Consultation** ; « dont M échues » absent à zéro ; « Solde comptable » et le total
-  renommé ; écart affiché seulement s'il est non nul ; boutons d'action absents pour Consultation ; total calculé en
-  `big.js` (cas `0.1 + 0.2`) ;
-- **E2E** : une écriture postée par l'API apparaît dans la tuile ; une facture validée apparaît dans « Factures
-  ouvertes » avec son montant (sélecteurs `data-testid`, jamais un libellé traduit — garde `e2e-selecteurs-traduits`).
+- **Vitest, par composant** — les trois tuiles sont **extraites** en composants (`features/dashboard/`
+  `RecentEntriesCard.svelte`, `OpenInvoicesCard.svelte`, `BankAccountsCard.svelte`, données en props, appels dans la
+  page) : aucune page n'est testée aujourd'hui, et monter `+page.svelte` exigerait cinq mocks. Cas : dernières écritures
+  listées / vide / vide **guidé** / échec (l'échec prime sur le guidé) ; factures ouvertes chiffrées pour un rôle
+  **Consultation** ; « dont M échues » absent à zéro ; vide guidé ; « Solde comptable » et le total renommé ; total
+  **dédoublonné** par compte lié, avec sa note ; écart affiché seulement s'il est non nul **au centime** (`"100.0049"`
+  contre `"100.00"` : pas d'écart) ; boutons d'action absents pour Consultation ; total en `big.js` (`0.1 + 0.2`) ;
+  `formatChfBalance` sur une chaîne à 4 décimales ;
+- **E2E** (sélecteurs `data-testid`, jamais un libellé traduit — garde `e2e-selecteurs-traduits`) — testids :
+  `homepage-entry-row`, `homepage-entries-unavailable`, `homepage-invoices-open-count`, `homepage-invoices-open-total`,
+  `homepage-invoices-overdue`, `homepage-bank-statement-{id}`, `homepage-bank-gap-{id}`, `homepage-bank-total` :
+  - une écriture postée par l'API apparaît dans la tuile — helper **neuf** `createJournalEntryViaApi` dans
+    `tests/e2e/helpers/api-fixtures.ts` (aucun n'existe) ;
+  - une facture validée apparaît dans « Factures ouvertes » avec son montant ;
+  - un rôle **Consultation**, créé par l'API sur le patron de `homepage-reminders.spec.ts:59-88`, voit les factures
+    ouvertes chiffrées et aucun bouton d'action — la frontière HTTP n'est vérifiée que là.
+- Les E2E existants de l'accueil (`homepage-reminders.spec.ts`, `homepage-settings.spec.ts`) gardent leurs sélecteurs :
+  les `data-testid` `homepage-card-*` et `homepage-reminders-count`, et le titre de la tuile « Comptes bancaires », sont
+  conservés.
 
 **AC 8 — Le manuel et le CHANGELOG.** `user-manual.tex` § *Tableau de bord* réécrit : les trois tuiles telles qu'elles
 sont, le solde **comptable** expliqué (le grand livre, pas la banque ; il ne reflète un encaissement qu'une fois
 celui-ci comptabilisé), le dernier relevé et l'écart, et ce que voit un rôle Consultation. PDF régénéré, contrôlé
-**aplati**. CHANGELOG `[0.12.1]` : `Fixed` (#388, #389), `Changed` (« Total liquidités » → « Total (solde comptable) »).
-README et site relus (`grep -rni "tableau de bord\|liquidit" README.md website/`).
+**aplati**. Le manuel renvoie à l'**import bancaire** pour l'origine du relevé (le solde de clôture du fichier CAMT). La capture
+`dashboard.png` (`% TODO capture`, `:220`) ne correspondra plus : limite assumée, déjà marquée. Le glossaire (« Actif :
+liquidités, créances… », `:2065`) parle de liquidités au sens comptable : **inchangé**. Manuels DE/IT/EN : un README
+chacun, rien à traduire. CHANGELOG, section `## [0.12.1] — Non publié` : `Fixed` (#388, #389), `### Changed` **à
+créer** (« Total liquidités » → « Total (solde comptable) »). README et site relus
+(`grep -rni "tableau de bord\|liquidit" README.md website/`).
 
 ## Tasks / Subtasks
 
 - [ ] **T1 — le dernier relevé et le solde à sa date** (AC 4, 6), `kesh-db` `bank_accounts.rs`.
 - [ ] **T2 — le DTO** (AC 4, 6), `kesh-api` `routes/bank_accounts.rs`.
-- [ ] **T3 — les montants en chaînes** (AC 5), `bank-accounts.api.ts`, page des comptes bancaires.
-- [ ] **T4 — l'accueil** (AC 1, 2, 3, 4) et l'i18n (4 locales, `sitesTotal`, relevé des libellés en dur).
+- [ ] **T3 — les montants en chaînes** (AC 5), `bank-accounts.api.ts`, `format.ts`, page des comptes bancaires, fixtures.
+- [ ] **T4 — l'accueil** (AC 1, 2, 3, 4) : trois composants extraits dans `features/dashboard/`, la page qui les
+  alimente ; l'i18n (4 locales, parité, `sitesTotal`, `CLES_RELEVEES` de `i18n-un-repli-par-cle.test.ts`, relevé des
+  libellés en dur).
 - [ ] **T5 — tests** (AC 7).
 - [ ] **T6 — manuel, CHANGELOG** (AC 8).
 - [ ] **T7 — gates** : backend complet, frontend complet, **E2E complet**.
@@ -119,14 +163,23 @@ README et site relus (`grep -rni "tableau de bord\|liquidit" README.md website/`
 
 ### Limites assumées
 
+- **Dépendance avec la 25-4-d** (chaîne non mergée) : la tuile suit `due-dates`, qui compte les factures `validated`
+  sans `paid_at`. Une facture **soldée** par la 25-4-d y pose `paid_at` — elle sort donc des factures ouvertes. Si ce
+  contrat changeait, la tuile compterait une facture au reste nul.
+- `due-dates` classe « échue » sur `UTC_DATE()`, non sur la date suisse : entre minuit et 1 h / 2 h, une facture peut
+  être classée un jour trop tôt. Hérité, non corrigé ici.
+- À date égale, « dernières » suit `entry_number`, unique **par exercice** : le départage n'est pas chronologique entre
+  deux exercices.
+
 - Le solde comptable ne reflète un encaissement qu'une fois celui-ci **comptabilisé** (rapprochement ou règlement) : c'est
   précisément ce que l'écart avec le relevé rend visible.
 - Le relevé ne vaut que pour sa date : entre deux imports, l'écart n'est pas recalculé contre la banque réelle.
 
 ### Modules
 
-`kesh-db` (dernier relevé, solde à une date), `kesh-api` (DTO), `frontend` (accueil, API des comptes bancaires, page des
-comptes), `kesh-i18n` (+ `docs`, `CHANGELOG`) — **quatre modules de code**, sous le seuil.
+`kesh-db` (dernier relevé, solde à une date), `kesh-api` (DTO), `frontend` (accueil et trois composants
+`features/dashboard/`, API et formateur des comptes bancaires, page des comptes, helper E2E), `kesh-i18n` (+ `docs`,
+`CHANGELOG`) — **quatre modules de code**, sous le seuil.
 
 ### References
 
@@ -146,6 +199,25 @@ comptes), `kesh-i18n` (+ `docs`, `CHANGELOG`) — **quatre modules de code**, so
 
 ## Change Log
 
+- **2026-10-03** — Validation P1 (Sonnet ×3, prompt `25-6-a-validate-prompt-p1.md`) : **4 HIGH, 7 MED**, LOW.
+  - **Réfuté — A1 (HIGH)**, « signe de l'écart faux pour un compte de passif ». `débit − crédit` est la convention du
+    relevé quel que soit le type : un passif lié à une ligne de crédit tirée de 1000 vaut −1000, comme le relevé
+    (`DBIT`). Écrit à l'AC 4, avec un test.
+  - **Retenus** :
+    - deux comptes bancaires sur un même compte de grand livre : total dédoublonné, écart `null` (A2) ;
+    - le test de l'accueil : trois composants extraits (C1) ;
+    - les cas du solde à une date : ordre d'import inversé, relevé postérieur, relevé sans solde plus récent, compte de
+      passif, échelle (C2, A6) ;
+    - le contrat de la requête et la non-régression (B1) ;
+    - `formatChfBalance` sur une chaîne (B2) ;
+    - le helper E2E et les testids (C3) ;
+    - un E2E pour le rôle Consultation (C4) ;
+    - le mode guidé (C5) ;
+    - les sites du manuel (C6) ;
+    - la clé et le testid du total (C7) ;
+    - `due-dates?limit=1` et la limite `UTC_DATE()` (A4) ;
+    - la dépendance avec la 25-4-d (A3).
+  - **LOW** : tri et montant (A5, C9, B5), les sites `Raw` (B3), les références (B4), `CLES_RELEVEES` (B6).
 - **2026-10-03** — Créée (Guy : « ok, merge et continue » ; découpage 25-6-a / 25-6-b non contesté).
 
 [#388]: https://github.com/guycorbaz/kesh/issues/388
