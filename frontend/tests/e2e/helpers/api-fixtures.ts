@@ -151,7 +151,9 @@ export async function createJournalEntryViaApi(
 		const credit = accounts.find((a) => /^3[0-9]{3}$/.test(a.number)) ?? accounts[1];
 		const res = await ctx.post('/api/v1/journal-entries', {
 			data: {
-				entryDate: new Date().toISOString().slice(0, 10),
+				// Date LOCALE (Zurich), pas UTC : entre minuit et 2 h, la date UTC est
+				// la veille — et le 1er janvier, un autre exercice.
+				entryDate: new Date().toLocaleDateString('sv-SE', { timeZone: 'Europe/Zurich' }),
 				journal: 'OD',
 				description,
 				lines: [

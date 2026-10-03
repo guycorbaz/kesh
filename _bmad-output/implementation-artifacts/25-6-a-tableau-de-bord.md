@@ -333,6 +333,35 @@ Claude Opus 5.5 (`claude-opus-5-5`).
 
 ## Change Log
 
+- **2026-10-03** — Revue de code P1 (Sonnet ×3, prompt `25-6-a-review-prompt-p1.md`) : **0 CRITICAL/HIGH, 4 MED**, LOW.
+  - **Retenus** :
+    - un test qui ne tuait pas la mutation revendiquée (`status`) : test neuf avec une transaction `pending` liée, qui
+      la tue (C-1, mutation exécutée) ;
+    - le relevé rendu **sans compte lié**, contraire à l'AC 4 et non déclaré : comportement **gardé** (le relevé est un
+      fait bancaire), documenté au DTO, au manuel et ici (C-2) ;
+    - aucun test du mappage TypeScript des champs neufs : deux Vitest, réponse de liste avec valeurs et réponse de
+      mutation sans les champs (C-3).
+  - **Reclassé** : **F1 (MED → LOW), plusieurs transactions sur une écriture**. Non atteignable : les cinq chemins de
+    rapprochement lient une écriture qu'ils viennent de créer (`reconciliation.rs:1520, 2016, 2381, 3075, 3541`).
+    L'invariant est écrit à la doc de `list_by_company_with_balances`.
+  - **LOW corrigés** :
+    - la tuile bancaire dit son échec au lieu de disparaître (A-2, F4) ;
+    - « écart non calculable » pour un compte du grand livre partagé (F3) ;
+    - `-0.00 CHF` évité (F2) ;
+    - la requête agrégée bornée aux comptes liés (F5) ;
+    - commentaires périmés (C-4) ;
+    - le chemin de menu du manuel aligné sur l'interface, « Administration → Comptes bancaires », aux trois sites, et
+      la limite « résidu après annulation » écrite (C-5) ;
+    - « Solde comptable » aussi sur la page des comptes bancaires (C-6) ;
+    - E2E : présence avant absence, date locale au lieu d'UTC (C-8, F6).
+  - **Écartés** :
+    - `canManage` lu au montage : le layout attend l'authentification (A-3, vérifié par la lentille B) ;
+    - l'isolation par société, sans conséquence aujourd'hui (C-7).
+  - **Gates de la remédiation** :
+    - backend complet sur base remise à zéro, **2560/2560**. Un premier run s'était arrêté au premier échec, un test
+      de performance de `kesh-core` hors périmètre (226 ms > 200 ms sous charge) ; il est passé au second run ;
+    - frontend `check` 0 erreur, `test:unit` **870/870**, `sitesTotal` 1765 → 1767 ;
+    - E2E de l'accueil **9/9**. **E2E complet au push.**
 - **2026-10-03** — Implémentée (dev-story) : T1–T7, gates ci-dessus. Statut → `review`.
 - **2026-10-03** — Validation P4 ciblée (Haiku, prompt `25-6-a-validate-prompt-p4.md`) : **0 finding**, preuves des
   quatre vérifications fournies. ⚠️ Son **cas 2 chiffré est mal posé** (il garde le grand livre à 800 alors que

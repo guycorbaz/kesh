@@ -10,9 +10,10 @@
 	import { ledgerTotal, statementGap } from './homepage';
 
 	interface Props {
+		state?: 'ready' | 'error';
 		accounts: BankAccountSummary[];
 	}
-	let { accounts }: Props = $props();
+	let { state = 'ready', accounts }: Props = $props();
 
 	let total = $derived(ledgerTotal(accounts));
 </script>
@@ -21,6 +22,11 @@
 	<h2 class="text-lg font-semibold text-text">
 		{i18nMsg('homepage-bank-title', 'Comptes bancaires')}
 	</h2>
+	{#if state === 'error'}
+		<p class="mt-2 text-sm text-text-muted" data-testid="homepage-bank-unavailable">
+			{i18nMsg('homepage-bank-unavailable', 'Comptes bancaires indisponibles pour le moment.')}
+		</p>
+	{:else}
 	<p class="mt-1 text-xs text-text-muted">
 		{i18nMsg('homepage-bank-ledger-help', 'Calculé depuis le grand livre, pas depuis la banque.')}
 	</p>
@@ -62,6 +68,15 @@
 							})}
 						</p>
 					{/if}
+					{#if gap === null && account.statementClosingBalance !== null && account.currentBalance !== null && account.ledgerBalanceAtStatement === null}
+						<!-- Compte du grand livre partagé : l'écart ne s'attribue à aucun compte. -->
+						<p class="text-xs text-text-muted" data-testid="homepage-bank-gap-unavailable-{account.id}">
+							{i18nMsg(
+								'homepage-bank-gap-unavailable',
+								'Écart non calculable : compte du grand livre partagé',
+							)}
+						</p>
+					{/if}
 					{#if gap !== null}
 						<p class="text-xs font-semibold text-red-700" data-testid="homepage-bank-gap-{account.id}">
 							{i18nMsg('homepage-bank-gap', 'Écart : { $amount }', {
@@ -96,4 +111,5 @@
 			</div>
 		{/if}
 	</div>
+	{/if}
 </div>

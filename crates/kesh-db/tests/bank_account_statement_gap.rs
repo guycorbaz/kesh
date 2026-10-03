@@ -275,8 +275,10 @@ async fn la_date_de_valeur_ne_cree_pas_d_ecart(pool: MySqlPool) {
     assert_eq!(b.statement_closing_balance, Some(dec!(1000)));
 }
 
-/// Une transaction NON rapprochée du jour du relevé n'est pas corrigée : son
-/// absence du grand livre est l'écart. Mutation tuée : `status` ignoré.
+/// Une transaction NON rapprochée (rapprochement annulé : `pending`, lien remis
+/// à NULL) n'est pas corrigée : son absence du grand livre est l'écart. Ce test
+/// ne tue PAS la mutation « `status` ignoré » — le lien NULL suffit à
+/// l'écarter ; c'est le test suivant qui la tue.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn une_transaction_non_rapprochee_reste_un_ecart(pool: MySqlPool) {
     let (seeded, ba, bank, sales) = linked(&pool).await;
@@ -285,6 +287,37 @@ async fn une_transaction_non_rapprochee_reste_un_ecart(pool: MySqlPool) {
     // Rapprochement annulé : `pending`, `matched_entry_id` remis à NULL.
     tx(&pool, &seeded, ba, imp, ymd(2026, 3, 31), dec!(200), None).await;
     let _ = e;
+    assert_eq!(
+        balances(&pool, &seeded, ba)
+            .await
+            .ledger_balance_at_statement,
+        Some(Decimal::ZERO)
+    );
+}
+
+/// ⛔ Une transaction `pending` qui porterait encore un lien vers une écriture
+/// (état incohérent, posé en SQL brut) n'entre pas dans la correction : seul
+/// `status = 'reconciled'` compte. Mutation tuée : le filtre `status` retiré.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn seule_une_transaction_rapprochee_corrige(pool: MySqlPool) {
+    let (seeded, ba, bank, sales) = linked(&pool).await;
+    let late = entry(&pool, &seeded, ymd(2026, 4, 1), bank, sales, dec!(200)).await;
+    let imp = import(&pool, &seeded, ba, ymd(2026, 3, 31), Some(dec!(200))).await;
+    tx(
+        &pool,
+        &seeded,
+        ba,
+        imp,
+        ymd(2026, 3, 31),
+        dec!(200),
+        Some(late),
+    )
+    .await;
+    sqlx::query("UPDATE bank_transactions SET status = 'pending' WHERE matched_entry_id = ?")
+        .bind(late)
+        .execute(&pool)
+        .await
+        .unwrap();
     assert_eq!(
         balances(&pool, &seeded, ba)
             .await

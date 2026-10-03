@@ -365,7 +365,12 @@ const ATTENDU = {
 	// `RecentEntriesCard` 5, `OpenInvoicesCard` 8, `BankAccountsCard` 10), qui appellent
 	// `i18nMsg` directement. Le relais disparaît : `relais` **7 → 6**,
 	// `sitesNonResolus` **34 → 32** (sa déclaration et son corps).
-	sitesTotal: 1765,
+	//
+	// Story 25-6-a, revue de code P1 : **1765 → 1767** — `BankAccountsCard` passe de 10 à
+	// 12 appels (`grep -o "i18nMsg("`) : l'état d'échec de la tuile
+	// (`homepage-bank-unavailable`) et l'écart non calculable d'un compte du grand
+	// livre partagé (`homepage-bank-gap-unavailable`), deux clés neuves × 4 locales.
+	sitesTotal: 1767,
 	sitesNonResolus: 32,
 	relais: 6,
 	sitesGabarit: 10,

@@ -82,9 +82,12 @@ test.describe('Tableau de bord — les tuiles disent vrai (25-6-a)', () => {
 		await login(page, username, 'MotDePasse12345');
 
 		await expect(page.getByTestId('homepage-invoices-open-count')).toBeVisible();
+		// Présence avant absence : la tuile des écritures est chargée (liste ou
+		// texte vide) avant d'affirmer qu'elle n'a pas de bouton.
+		const entriesCard = page.getByTestId('homepage-card-recent-entries');
+		await expect(entriesCard.locator('ul, p').first()).toBeVisible();
 		const invoicesCard = page.getByTestId('homepage-card-open-invoices');
 		await expect(invoicesCard.locator('a[href="/invoices"]')).toHaveCount(0);
-		const entriesCard = page.getByTestId('homepage-card-recent-entries');
 		await expect(entriesCard.locator('a[href="/journal-entries"]')).toHaveCount(0);
 	});
 

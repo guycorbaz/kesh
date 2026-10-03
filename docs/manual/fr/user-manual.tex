@@ -204,7 +204,7 @@ Si vous souhaitez \textbf{tenir votre comptabilité réelle}, choisissez le mode
 À la finalisation, Kesh met en place votre plan comptable (Sterchi PME par défaut) et votre premier exercice. Vous êtes alors prêt à saisir vos premières écritures.
 
 \begin{keshnote}
-Vous pourrez à tout moment ajouter ou modifier vos comptes bancaires après l'onboarding (\emph{Paramètres} → \emph{Comptes bancaires}) et adapter votre plan comptable (cf. section \emph{Plan comptable}).
+Vous pourrez à tout moment ajouter ou modifier vos comptes bancaires après l'onboarding (\emph{Administration} → \emph{Comptes bancaires}) et adapter votre plan comptable (cf. section \emph{Plan comptable}).
 \end{keshnote}
 
 \begin{keshtip}
@@ -237,7 +237,7 @@ une comptabilité qui en contient.
 \subsection{Solde comptable, relevé et écart}
 
 Le chiffre affiché sous chaque compte bancaire est le \textbf{solde comptable} : il vient
-du compte du grand livre lié au compte bancaire (\emph{Paramètres} → \emph{Comptes
+du compte du grand livre lié au compte bancaire (\emph{Administration} → \emph{Comptes
 bancaires}), \textbf{pas de la banque}. Il ne reflète un encaissement qu'une fois celui-ci
 comptabilisé, par un rapprochement ou un règlement. Le total ne compte qu'une fois un
 compte du grand livre partagé par plusieurs comptes bancaires.
@@ -257,8 +257,16 @@ de valeur postérieure, ne crée donc pas d'écart. Deux limites :
     écriture saisie à la main pour un mouvement bancaire, à une autre date, apparaît dans
     l'écart — rien ne la relie au relevé ;
     \item quand plusieurs comptes bancaires partagent un même compte du grand livre,
-    l'écart n'est pas affiché : le solde de ce compte ne s'attribue à aucun d'eux.
+    l'écart n'est pas calculable — la tuile l'indique : le solde de ce compte ne
+    s'attribue à aucun d'eux ;
+    \item après l'\textbf{annulation d'un rapprochement}, un mouvement comptabilisé par la
+    banque après la date du relevé mais dont l'écriture d'origine la précédait peut laisser
+    un écart fictif — l'écriture de contre-passation est datée du jour de l'annulation.
 \end{itemize}
+
+Un compte bancaire sans compte du grand livre lié n'a pas de solde comptable ; la tuile
+affiche tout de même son dernier relevé. Si les comptes bancaires ne peuvent pas être
+chargés, la tuile le dit au lieu de disparaître.
 
 \begin{keshnote}
 Les indicateurs plus riches (graphique de chiffre d'affaires, liste des
@@ -1981,7 +1989,7 @@ Vérifiez que la somme des débits égale exactement la somme des crédits (à 1
 
 \begin{itemize}
     \item Vérifiez que votre compte bancaire est configuré avec un IBAN suisse valide.
-    \item Si vous utilisez un QR-IBAN, assurez-vous qu'il est marqué comme tel dans \emph{Paramètres} → \emph{Comptes bancaires}.
+    \item Si vous utilisez un QR-IBAN, assurez-vous qu'il est marqué comme tel dans \emph{Administration} → \emph{Comptes bancaires}.
     \item Testez le PDF généré avec une application e-banking suisse (PostFinance, Twint Pro, Raiffeisen) : le QR code doit être scanné en moins d'une seconde.
 \end{itemize}
 

@@ -96,3 +96,10 @@ describe('entryAmount et formatChfBalance', () => {
 		expect(formatChfBalance('1234.5650')).toMatch(/1.234\.57/);
 	});
 });
+
+describe('formatChfBalance — zéro négatif', () => {
+	it('un montant négatif sous le centime s’affiche 0.00, pas -0.00', () => {
+		expect(formatChfBalance('-0.004')).not.toMatch(/-/);
+		expect(formatChfBalance('-0.0000')).not.toMatch(/-/);
+	});
+});

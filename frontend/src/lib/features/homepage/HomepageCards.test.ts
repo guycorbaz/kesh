@@ -182,3 +182,24 @@ describe('BankAccountsCard', () => {
 		expect(screen.getByTestId('homepage-bank-total-shared')).toBeTruthy();
 	});
 });
+
+describe('BankAccountsCard — revue P1', () => {
+	it('un échec se dit (la tuile ne disparaît plus en silence)', () => {
+		render(BankAccountsCard, { state: 'error', accounts: [] });
+		expect(screen.getByTestId('homepage-bank-unavailable')).toBeTruthy();
+	});
+
+	it('compte du grand livre partagé : l’écart est dit non calculable, pas absent', () => {
+		render(BankAccountsCard, {
+			accounts: [
+				account({
+					statementClosingBalance: '900.00',
+					statementDate: '2026-03-31',
+					ledgerBalanceAtStatement: null,
+				}),
+			],
+		});
+		expect(screen.getByTestId('homepage-bank-gap-unavailable-1')).toBeTruthy();
+		expect(screen.queryByTestId('homepage-bank-gap-1')).toBeNull();
+	});
+});

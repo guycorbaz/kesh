@@ -32,7 +32,7 @@
 	let summary = $state<DueDatesSummary | null>(null);
 	let reminderCount = $state(0);
 	let bankAccounts = $state<BankAccountSummary[]>([]);
-	let bankLoaded = $state(false);
+	let bankState = $state<LoadState>('loading');
 
 	async function loadEntries() {
 		try {
@@ -56,10 +56,10 @@
 	async function loadBankAccounts() {
 		try {
 			bankAccounts = await listBankAccounts(false);
+			bankState = 'ready';
 		} catch {
-			// Tuile cachée si l'appel échoue ou s'il n'y a aucun compte.
-		} finally {
-			bankLoaded = true;
+			// Un échec se DIT, comme sur les deux autres tuiles (revue P1).
+			bankState = 'error';
 		}
 	}
 
@@ -92,8 +92,11 @@
 <div class="grid grid-cols-1 gap-6 lg:grid-cols-3">
 	<RecentEntriesCard state={entriesState} {entries} {canManage} {isGuided} />
 	<OpenInvoicesCard state={invoicesState} {summary} {canManage} {isGuided} {reminderCount} />
-	<!-- Story v014-1 (AC#29) — tuile retirée s'il n'y a aucun compte bancaire. -->
-	{#if bankLoaded && bankAccounts.length > 0}
+	<!-- Story v014-1 (AC#29) — tuile retirée s'il n'y a aucun compte bancaire ;
+	     présente, avec son message, si le chargement échoue. -->
+	{#if bankState === 'error'}
+		<BankAccountsCard state="error" accounts={[]} />
+	{:else if bankState === 'ready' && bankAccounts.length > 0}
 		<BankAccountsCard accounts={bankAccounts} />
 	{/if}
 </div>

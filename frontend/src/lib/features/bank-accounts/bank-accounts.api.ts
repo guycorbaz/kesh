@@ -4,9 +4,10 @@
 // Story v014-1 — étendu avec CRUD complet post-onboarding :
 // - `createBankAccount`, `updateBankAccount`, `archiveBankAccount`.
 // - `listBankAccounts(includeArchived?)` avec param optionnel pour toggle UI.
-// - `BankAccountSummary` étendu avec `currentBalance: number | null` (Decimal
-//   sérialisé en string par serde, converti en `number` côté TS) et
-//   `archived: boolean`.
+// - `BankAccountSummary` étendu avec `currentBalance` et `archived: boolean`.
+//
+// Story 25-6-a (#389) — les montants restent des chaînes décimales (`big.js`
+// pour tout calcul) ; trois champs du dernier relevé.
 
 import { apiClient } from '$lib/shared/utils/api-client';
 
@@ -48,8 +49,8 @@ export interface BankAccountSummary {
 }
 
 /**
- * Type backend raw : `currentBalance` est sérialisé en string par serde
- * (Decimal feature `serde-str`). Convertir en number via `Number(...)`.
+ * Type backend raw : les montants sont sérialisés en chaînes par serde (Decimal
+ * feature `serde-str`) et le restent.
  */
 interface BankAccountSummaryRaw {
 	id: number;

@@ -29,5 +29,11 @@ export function formatChfBalance(balance: string | Big): string {
 		style: 'currency',
 		currency: 'CHF',
 		minimumFractionDigits: 2,
-	}).format(new Big(balance).round(2, Big.roundHalfUp).toNumber());
+	}).format(toCentimeNumber(balance));
+}
+
+/** Arrondi au centime ; un résultat nul rend `0`, jamais `-0` (« -0.00 CHF »). */
+function toCentimeNumber(balance: string | Big): number {
+	const rounded = new Big(balance).round(2, Big.roundHalfUp);
+	return rounded.eq(0) ? 0 : rounded.toNumber();
 }

@@ -129,7 +129,9 @@ pub struct BankAccountWithBalance {
     pub current_balance: Option<Decimal>,
     pub last_transaction_date: Option<chrono::NaiveDate>,
     /// Story 25-6-a (#389) — solde de clôture du dernier relevé importé qui en
-    /// porte un (CAMT ; un import CSV n'en a pas).
+    /// porte un (CAMT ; un import CSV n'en a pas). Rendu **même sans compte de
+    /// grand livre lié** : le relevé est un fait bancaire, seul l'écart exige le
+    /// compte lié.
     pub statement_closing_balance: Option<Decimal>,
     /// Date de ce relevé (`period_to`).
     pub statement_date: Option<chrono::NaiveDate>,

@@ -662,6 +662,13 @@ struct BalancesRow {
 /// transaction **non rapprochée** n'y entre pas — son absence du grand livre est
 /// l'écart à montrer.
 ///
+/// ⚠️ **Invariant supposé : une transaction, une écriture.** Les cinq chemins de
+/// rapprochement (`kesh-api/src/routes/reconciliation.rs`) lient chacun une
+/// écriture qu'ils viennent de créer ; aucune écriture n'est rapprochée de
+/// plusieurs transactions. Si cela changeait, la correction ajouterait la ligne
+/// entière de l'écriture là où seule la part d'une transaction franchit la date
+/// du relevé (revue P1, lentille B).
+///
 /// # Forme
 ///
 /// Une requête agrégée **par compte bancaire** ; chaque somme dans sa propre
@@ -723,6 +730,8 @@ pub async fn list_by_company_with_balances(
              FROM journal_entry_lines jel \
              INNER JOIN journal_entries je ON jel.entry_id = je.id \
              WHERE je.company_id = ? \
+               AND jel.account_id IN (SELECT journal_account_id FROM bank_accounts \
+                                      WHERE company_id = ? AND journal_account_id IS NOT NULL) \
              GROUP BY jel.account_id \
          ) agg ON agg.account_id = ba.journal_account_id \
          LEFT JOIN ( \
@@ -740,10 +749,11 @@ pub async fn list_by_company_with_balances(
          ) shared ON shared.journal_account_id = ba.journal_account_id \
          WHERE ba.company_id = ?",
     )
-    .bind(company_id)
-    .bind(company_id)
-    .bind(company_id)
-    .bind(company_id)
+    .bind(company_id) // agg : je.company_id
+    .bind(company_id) // agg : bornée aux comptes liés de la société
+    .bind(company_id) // st
+    .bind(company_id) // shared
+    .bind(company_id) // ba.company_id
     .fetch_all(pool)
     .await
     .map_err(map_db_error)?;
