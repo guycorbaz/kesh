@@ -113,7 +113,7 @@ donc (marqueur `active: false`), sinon la clôture ne concorderait pas avec le b
   La note `reports-trial-balance-period-note` est **retirée** (clé supprimée des 4 locales) — elle deviendrait fausse.
 - **CSV** : `NumeroCompte;NomCompte;SoldeOuverture;TotalDebit;TotalCredit;SoldeCloture` — la colonne `Solde` est
   **remplacée**, pas renommée en silence (CHANGELOG — ⚠️ changement incompatible pour qui lit ce CSV, dans une version
-  0.x : arbitrage de Guy à recueillir, défaut retenu : remplacer). Ligne de résultat reporté sur le patron du bilan
+  0.x : **arbitré par Guy le 2026-10-03 : remplacer**). Ligne de résultat reporté sur le patron du bilan
   (`csv.rs:139-145`) : numéro **vide**, libellé fixe « Résultat reporté (calculé) » dans la colonne du nom, ouverture et
   clôture remplies, débit et crédit vides ; puis ligne `Total` (débit, crédit ; ouverture et clôture vides).
 - **PDF** : six colonnes en A4 portrait. La mise en page à cinq colonnes occupe **déjà** toute la largeur
@@ -323,6 +323,7 @@ Claude Opus 5.5 (`claude-opus-5-5`).
 
 ## Change Log
 
+- **2026-10-03** — Arbitrage de Guy (« ok ») : la colonne CSV `Solde` est **remplacée**, comme livré.
 - **2026-10-03** — Revue de code P2 ciblée (Haiku, prompt `25-5-b-review-prompt-p2.md`) : **0 finding**, sorties des
   quatre vérifications fournies. Le seul résidu cité (« montant au compte de résultat », AC 9) relu par
   l'orchestrateur : il porte sur l'exercice entier, où l'égalité tient. **Boucle close** : P1 1 MED (Sonnet ×3) → P2 0
