@@ -37,7 +37,9 @@ afin que **le solde de clôture d'un compte de bilan soit le même nombre que ce
   `pdf.rs:699-850` (5 colonnes, A4 portrait, nom tronqué à 30 caractères, positions `MARGIN_LEFT_MM + 20/90/125/160`).
   Les libellés `ledger_opening`, `ledger_closing` et `retained_result_label` existent déjà dans `SectionLabels`
   (`pdf.rs:74-140`) ; côté écran, `reports-ledger-opening`, `reports-ledger-closing` et
-  `reports-retained-earnings-calculated` / `-loss` existent déjà dans les 4 locales.
+  `reports-retained-earnings-calculated` / `-loss` existent déjà dans les 4 locales. ⚠️ Les libellés « Solde
+  d'ouverture » / « Solde de clôture » sont **trop longs** pour les colonnes de la balance (AC 7) : seuls
+  `retained_result_label` et `reports-retained-earnings-*` sont réutilisés.
 - **Consommateurs de `TrialBalance` / `TrialBalanceRow`** (construction littérale à compléter) : `csv.rs` (tests
   `:820`, `:1128`), `pdf.rs` (`fixture_tb`, `:1810`), `benches/export.rs:100-125`. Appels de `generate` :
   `kesh-api/src/routes/reports.rs:399`, `:991` ; tests `kesh-db/tests/report_aggregates.rs` (4 sites),
@@ -56,11 +58,17 @@ afin que **le solde de clôture d'un compte de bilan soit le même nombre que ce
 période commence le premier jour de l'exercice. Le début de l'exercice est celui de `period.fiscal_year_id` (la
 `ReportPeriod` est déjà bornée à cet exercice). **Clôture = ouverture + net des mouvements** (`balance`).
 
-**AC 2 — Une seule règle, pas deux copies.** `is_debit_natured`, `signed` et la règle de borne basse sont **extraits**
-de `general_ledger.rs` dans un module partagé de `kesh-report` (ex. `crate::opening`) que les deux rapports appellent ;
-le grand livre garde son comportement (ses tests restent verts sans modification de leurs assertions). La balance
-calcule ses ouvertures en **une requête agrégée** (pas une requête par compte) : les sommes conditionnelles sur
-`entry_date` suffisent.
+**AC 2 — Une seule règle, pas deux copies — et la forme qui le permet.** La règle type → borne vit **en Rust, une
+fois** : un module partagé de `kesh-report` (ex. `crate::opening`) porte `is_debit_natured`, `signed` et
+`opening_from(t, before_start: (debit, credit), since_fy_start: (debit, credit)) -> Decimal` (bilan : la première
+paire ; résultat : la seconde ; signé par type). La balance fait **une requête agrégée** (pas une requête par compte)
+qui rend, par compte, **trois paires de sommes brutes** — `entry_date < start`, `entry_date ∈ [fy_start, start[`, et les
+mouvements de la période — **sans** `CASE` sur le type ni sur le signe en SQL (le `CASE` de signe actuel,
+`trial_balance.rs:71-75`, disparaît au profit de `signed`). Le grand livre appelle `opening_from` lui aussi (sa
+requête d'ouverture rend les deux paires) ; ses tests restent verts sans retouche d'assertion. ⚠️ `TrialBalanceRow`
+dérive `sqlx::FromRow` (`trial_balance.rs:35`) : un champ calculé en Rust ferait échouer la lecture **à l'exécution**
+(`ColumnNotFound`), invisible à la compilation — lire dans une structure brute intermédiaire, puis construire la
+ligne.
 
 **AC 3 — Les mouvements ne changent pas.** `total_debit`, `total_credit` (par ligne et au total), `balance` (net des
 mouvements) et `balanced` gardent **exactement** leur sens et leurs valeurs actuels. `balance` est documenté au champ
@@ -73,41 +81,51 @@ gagne `retained_earnings: Decimal` — **même valeur** que `BalanceSheet::retai
 `fetch_retained_earnings` (`balance_sheet.rs:333`, privée) est rendue visible au crate (`pub(crate)`), pas recopiée. Il est rendu comme une **ligne
 à part**, après les comptes, libellée « Résultat reporté (calculé) » (« Perte reportée » si négatif, comme au bilan),
 ouverture = clôture = `retained_earnings`, mouvements vides. Ce n'est **pas** une `TrialBalanceRow` (pas
-d'`account_id`, pas de lien vers le grand livre).
+d'`account_id`, pas de lien vers le grand livre). ⚠️ La bascule sur « Perte reportée » n'existe **qu'à l'écran**, comme
+au bilan (`BalanceSheetView.svelte:97-100`) ; le CSV et le PDF du bilan portent un libellé fixe (`csv.rs:140-144`,
+`pdf.rs:596-599`) — la balance fait de même.
 
-**AC 5 — Un contrôle, pas une tautologie.** `TrialBalance` gagne `opening_balanced` et `closing_balanced` (`bool`) :
-`Σ debit_sense(row.opening_balance) − retained_earnings = 0` (resp. `closing_balance`), où
+**AC 5 — Un contrôle, pas une tautologie.** `TrialBalance` gagne **un** indicateur `opening_balanced` (`bool`) :
+`Σ debit_sense(row.opening_balance) − retained_earnings = 0`, où
 `debit_sense(v) = if is_debit_natured(row.account_type) { v } else { −v }` — les soldes stockés sont **déjà signés par
 type** : les additionner sans re-signer les comptes à nature créditrice donnerait un faux ⚠️ sur des livres exacts
 (validation P1, calcul : 1000 − 600 ≠ 0 sur un jeu équilibré). Vérification chiffrée : ventes 1000 et charge 400 en
 exercice 1, balance de l'exercice 2 → ouvertures en sens débit 1000 (clients) − 400 (caisse) = 600, `retained_earnings`
-600, contrôle nul. Le résultat reporté est calculé **indépendamment** (comme au bilan), donc
+600, contrôle nul. **Pas de `closing_balanced`** (validation P2) : Σ debit_sense(clôture) = Σ debit_sense(ouverture) +
+(total débit − total crédit des mouvements), et des mouvements déséquilibrés font déjà échouer le rapport
+(`TrialBalanceUnbalanced`) — un second indicateur serait la copie du premier, une identité de construction. Le résultat reporté est calculé **indépendamment** (comme au bilan), donc
 l'égalité est une vérification réelle, pas une identité de construction. Un déséquilibre n'est **pas** une erreur (à la
-différence de `TrialBalanceUnbalanced` sur les mouvements) : il est **journalisé** (`tracing::error!`) et affiché (⚠️),
-comme `equation_holds` au bilan.
+différence de `TrialBalanceUnbalanced` sur les mouvements) : il est **journalisé** en `tracing::warn!` — le niveau
+d'`equation_holds` au bilan (`balance_sheet.rs:237`) — et affiché (⚠️).
 
 **AC 6 — La règle d'inclusion.** Un compte est rendu s'il est **actif**, **ou** s'il a un mouvement dans la période,
 **ou** si son **solde d'ouverture est non nul**. Un compte archivé à solde d'ouverture non nul sans mouvement apparaît
 donc (marqueur `active: false`), sinon la clôture ne concorderait pas avec le bilan. Doc du module mise à jour.
 
 **AC 7 — Les rendus.**
-- **Écran** (`TrialBalanceView.svelte`) : colonnes N° | Intitulé | **Ouverture** | Débit | Crédit | **Clôture** ; la
-  colonne « Solde » (net des mouvements) disparaît de l'écran ; pied : totaux débit/crédit et ✓/⚠️ des mouvements comme
-  aujourd'hui, plus un indicateur ✓/⚠️ pour l'ouverture et la clôture (AC 5) ; la ligne calculée (AC 4) avant le pied.
+- **Écran** (`TrialBalanceView.svelte`) : colonnes N° | Intitulé | **Ouverture** | Débit | Crédit | **Clôture** — clés
+  **neuves et courtes** `reports-column-opening` (« Ouverture ») et `reports-column-closing` (« Clôture ») dans les 4
+  locales (les clés du grand livre rendent « Solde d'ouverture », trop long et non ancrable) ; la colonne « Solde » (net
+  des mouvements) disparaît de l'écran ; pied : totaux débit/crédit et ✓/⚠️ des mouvements comme aujourd'hui, plus
+  ✓/⚠️ d'`opening_balanced` sous la colonne Ouverture (AC 5) ; la ligne calculée (AC 4) avant le pied.
   La note `reports-trial-balance-period-note` est **retirée** (clé supprimée des 4 locales) — elle deviendrait fausse.
 - **CSV** : `NumeroCompte;NomCompte;SoldeOuverture;TotalDebit;TotalCredit;SoldeCloture` — la colonne `Solde` est
-  **remplacée**, pas renommée en silence (CHANGELOG). Ligne de résultat reporté (libellé fr fixe, comme les autres en-têtes
-  CSV), puis ligne `Total` (débit, crédit ; ouverture et clôture vides).
+  **remplacée**, pas renommée en silence (CHANGELOG — ⚠️ changement incompatible pour qui lit ce CSV, dans une version
+  0.x : arbitrage de Guy à recueillir, défaut retenu : remplacer). Ligne de résultat reporté sur le patron du bilan
+  (`csv.rs:139-145`) : numéro **vide**, libellé fixe « Résultat reporté (calculé) » dans la colonne du nom, ouverture et
+  clôture remplies, débit et crédit vides ; puis ligne `Total` (débit, crédit ; ouverture et clôture vides).
 - **PDF** : six colonnes en A4 portrait. La mise en page à cinq colonnes occupe **déjà** toute la largeur
   (20 + 70 + 3 × 35 = 195 mm = 210 − 15, validation P1) : positions imposées `MARGIN_LEFT_MM +` **0** (N°), **20**
   (intitulé), **75** (ouverture), **105** (débit), **135** (crédit), **165** (clôture) — colonnes de montant de 30 mm
   (« -1'234'567.89 » y tient), intitulé de 55 mm tronqué à **22** caractères (au lieu de 30, constante nommée).
-  Libellés `ledger_opening` / `ledger_closing` réutilisés, ligne `retained_result_label`. Garde « vide » inchangée
+  En-têtes : deux champs **neufs** de `SectionLabels`, `col_opening` = « Ouverture » et `col_closing` = « Clôture »
+  (défauts fr de `PdfContext::fr_ch_default`) — « Solde d'ouverture » en Helvetica-Bold 10 pt mesure 29,85 mm et
+  toucherait « Débit », « Solde de clôture » finirait à 2,5 mm du bord (validation P2). Ligne `retained_result_label`. Garde « vide » inchangée
   (`rows.is_empty()`).
 - `isReportEmpty('trial-balance', …)` (`reports.api.ts:169-172`) : inchangé — les comptes actifs sont toujours rendus.
 
 **AC 8 — L'API et les types.** `openingBalance`, `closingBalance` sur chaque ligne ; `retainedEarnings`,
-`openingBalanced`, `closingBalanced` au niveau du rapport — dans la réponse de `GET /api/v1/reports/trial-balance` et dans
+`openingBalanced` au niveau du rapport — dans la réponse de `GET /api/v1/reports/trial-balance` et dans
 `reports.types.ts`. Libellés neufs éventuels dans les 4 locales, `sitesTotal` recompté depuis la source.
 
 **AC 9 — La concordance, prouvée en appelant les autres rapports.** Le motif d'échec redouté est **muet** :
@@ -120,22 +138,30 @@ Les tests appellent donc **réellement** `generate_balance_sheet`, `generate_inc
 - une période **en cours d'exercice** (mars–juin de l'exercice 2) : ouverture du compte de produits = cumul janvier–
   février ; clôture = celle du grand livre sur la même période (`section.closing`) ;
 - **la frontière** : dans la période mars–juin, une écriture datée **le 1er mars** (comptée dans les mouvements,
-  absente de l'ouverture) et une datée **le 28 février** (dans l'ouverture, absente des mouvements) — la mutation
-  `<` → `<=` compterait la première deux fois et seule la comparaison au bilan la voit ;
+  absente de l'ouverture) et une datée **la veille du début de période** (dans l'ouverture, absente des mouvements) —
+  la mutation `<` → `<=` compterait la première deux fois, et seules les comparaisons au bilan et au grand livre la
+  voient (celle au grand livre seulement si la borne n'est pas dans le module partagé) ;
 - une période **d'un seul jour** (`start = end`), une écriture ce jour-là et une la veille ;
 - le **premier exercice** d'une société (aucune écriture antérieure) : `retained_earnings = 0`, ouvertures nulles,
-  contrôles vrais ; un exercice **sans aucune écriture** : tout à zéro, contrôles vrais ;
-- des **pertes cumulées** (charges > produits en exercice 1) : `retained_earnings < 0`, libellé « Perte reportée »,
-  contrôles vrais ;
-- `opening_balanced` et `closing_balanced` vrais dans ces scénarios — et **faux** quand l'égalité est réellement
-  cassée : une ligne d'écriture **déséquilibrée insérée en SQL brut** (hors `create_in_tx`) datée dans l'exercice 1 →
-  balance de l'exercice 2 rendue (pas d'erreur : les mouvements de la période restent équilibrés), `opening_balanced`
-  et `closing_balanced` à `false`. Sans ce test, le contrôle reproduit l'angle mort d'`equation_holds`, jamais testé à
+  contrôle vrai ; une **société sans aucune écriture** : tout à zéro, contrôle vrai ; un **exercice 2 ouvert et encore
+  vide** après un exercice 1 mouvementé — la première vue réelle d'une année neuve : ouvertures = clôtures de
+  l'exercice 1 pour les comptes de bilan, nulles pour les comptes de résultat, mouvements nuls, contrôle vrai ;
+- des **pertes cumulées** (charges > produits en exercice 1) : `retained_earnings < 0`, contrôle vrai ; le libellé
+  « Perte reportée » est vérifié **dans le Vitest de la vue** (seul rendu qui bascule, AC 4) ;
+- `opening_balanced` vrai dans ces scénarios — et **faux** quand l'égalité est réellement cassée : une ligne
+  d'écriture **déséquilibrée insérée en SQL brut** (hors `create_in_tx`) datée dans l'exercice 1 — sur un compte de
+  bilan **et**, dans un second cas, sur un compte de résultat (l'écart passe alors par `retained_earnings`) → balance
+  de l'exercice 2 rendue (pas d'erreur : les mouvements de la période restent équilibrés), `opening_balanced` à
+  `false`. Sans ce test, le contrôle reproduit l'angle mort d'`equation_holds`, jamais testé à
   `false` dans le dépôt (validation P1) ;
 - un test **unitaire** de `debit_sense` (compte à nature créditrice re-signé) ;
-- un compte **archivé** à solde d'ouverture non nul, sans mouvement → présent, clôture = bilan ;
+- un compte **archivé** à solde d'ouverture non nul, sans mouvement → présent, clôture = bilan ; et un compte de
+  **résultat** archivé, mouvementé en janvier, balance de mars–juin → présent (ouverture non nulle), `opening_balanced`
+  vrai (une règle d'inclusion limitée aux comptes de bilan le ferait disparaître et le contrôle rougirait) ;
 - non-régression : mouvements, `balance`, `balanced` identiques à avant sur le jeu existant (`report_aggregates.rs`) ;
-- le test existant `general_ledger.rs:150-205` étendu à `opening` / `closing`.
+- le test existant `concordance_compte_de_resultat` (`general_ledger.rs:135-205`) étendu à `opening` / `closing` **et
+  passé à une période en cours d'exercice** — sur l'exercice entier, les deux ouvertures valent 0 par construction et
+  une mutation « ouverture toujours nulle » survivrait.
 - Rendus : CSV (en-tête à six colonnes, **valeurs** d'ouverture et de clôture dans l'ordre des colonnes, ligne de
   résultat reporté, ligne `Total`) ; PDF (rendu non vide avec la ligne calculée ; la troncature à 22 caractères testée
   sur un intitulé de 38) ; **Vitest** de la vue (`TrialBalanceView.test.ts`, à créer : colonnes, ligne calculée, ✓/⚠️, note absente) ;
@@ -148,19 +174,23 @@ comptes de résultat cumulée depuis l'origine », « règle d'inclusion sans le
 **AC 10 — Le manuel et le CHANGELOG.** `user-manual.tex` § *Balance des comptes* (`:1557-1559`) réécrit : les quatre
 colonnes, la règle d'ouverture (bilan depuis l'origine, résultat depuis le début de l'exercice), la ligne calculée,
 la concordance avec le bilan et le grand livre ; la phrase sur le **filtre de niveau de détail**, qui n'existe pas,
-**retirée**. Le grand livre (`:1561-1565`, « là où la balance dit la même chose autrement ») relu. Glossaire `:2043`
+**retirée**. Le grand livre (`:1561-1565`, « là où la balance dit la même chose autrement ») relu. Le manuel dit aussi : (a) les
+soldes de départ sont une écriture datée du premier jour du premier exercice (`:615`) — ils apparaissent donc en
+**mouvements** de cet exercice, ouverture nulle ; (b) Ouverture et Clôture sont **signées selon la nature du compte** :
+leur somme visible n'est pas nulle (1000 − 400 + 600 = 1200 dans l'exemple de l'AC 5) alors que l'écran affiche ✓ —
+le contrôle porte sur les soldes en sens débit. Glossaire `:2043`
 corrigé (« à une date donnée » → sur une période, ouverture et clôture). PDF régénéré, contrôlé **aplati**
-(`pdftotext … | tr '\n' ' ' | tr -s ' '`). CHANGELOG `[Unreleased]` : `Changed` (colonnes de l'écran, du PDF et du CSV —
+(`pdftotext … | tr '\n' ' ' | tr -s ' '`). CHANGELOG, section `## [0.12.1] — Non publié` (il n'y a pas de section `[Unreleased]`) : `Changed` (colonnes de l'écran, du PDF et du CSV —
 `Solde` remplacé) et `Fixed` (#385). README et site relus (`grep -rn "balance" README.md website/`).
 
 ## Tasks / Subtasks
 
 - [ ] **T1 — le module partagé** (AC 2) : extraire `is_debit_natured`, `signed`, la borne basse de l'ouverture ; le grand
   livre l'appelle ; ses tests verts sans retouche d'assertion.
-- [ ] **T2 — la balance** (AC 1, 3, 4, 5, 6) : requête agrégée, champs neufs, ligne calculée, contrôles, inclusion.
+- [ ] **T2 — la balance** (AC 1, 3, 4, 5, 6) : requête agrégée, champs neufs, ligne calculée, contrôle, inclusion.
 - [ ] **T3 — les rendus** CSV et PDF (AC 7), fixtures et bench complétés.
-- [ ] **T4 — l'écran, les types, l'i18n** (AC 7, 8) : vue, `reports.types.ts`, clé de note retirée des 4 locales,
-  `sitesTotal`.
+- [ ] **T4 — l'écran, les types, l'i18n** (AC 7, 8) : vue, `reports.types.ts`, clé de note retirée et deux clés de
+  colonne ajoutées dans les 4 locales, `sitesTotal`.
 - [ ] **T5 — tests** (AC 9).
 - [ ] **T6 — manuel, CHANGELOG** (AC 10).
 - [ ] **T7 — gates** : backend complet, frontend complet, **E2E complet**.
@@ -188,8 +218,8 @@ corrigé (« à une date donnée » → sur une période, ouverture et clôture)
 
 ### Modules
 
-`kesh-report` (balance, module partagé, rendus), `frontend` (vue, types, test), `kesh-i18n` (clé retirée, libellés
-éventuels), + `docs`, `CHANGELOG`. `kesh-api` : aucun changement de code attendu (la route sérialise la structure ;
+`kesh-report` (balance, module partagé, rendus, deux libellés PDF), `frontend` (vue, types, test), `kesh-i18n` (clé
+retirée, deux clés de colonne), + `docs`, `CHANGELOG`. `kesh-api` : aucun changement de code attendu (la route sérialise la structure ;
 les libellés PDF existent) — tests seulement. **Trois modules de code**, sous le seuil de la § *Règle de splitting
 préventif*.
 
@@ -212,6 +242,14 @@ préventif*.
 
 ## Change Log
 
+- **2026-10-03** — Validation P2 (Opus, prompt `25-5-b-validate-prompt-p2.md`) : **0 CRITICAL/HIGH, 4 MED, 9 LOW**,
+  retenus. `closing_balanced` retiré — copie d'`opening_balanced` par construction (M1) ; la forme de l'AC 2 prescrite
+  (sommes brutes en SQL, règle en Rust partagée avec le grand livre ; piège `FromRow`) (M2) ; libellés courts
+  « Ouverture » / « Clôture » — les en-têtes du grand livre débordent au PDF (calcul AFM) et ne s'ancrent pas en E2E
+  (M3) ; « Perte reportée » à l'écran seulement, comme au bilan (M4) ; test de concordance du grand livre en cours
+  d'exercice, « société sans écriture » et exercice 2 vide, compte de résultat archivé, `warn!`, CHANGELOG `[0.12.1]`
+  et incompatibilité CSV à arbitrer, « la veille », colonne du libellé CSV, deux phrases au manuel (L1–L8). Trend :
+  P1 1H/4M → P2 4M.
 - **2026-10-03** — Validation P1 (Sonnet ×3, prompt `25-5-b-validate-prompt-p1.md`) : **1 HIGH, 4 MED**, LOW. Retenus :
   la frontière `entry_date = start` testée, et la veille (C1, HIGH) ; la formule du sens débit écrite et chiffrée (A) ;
   le contrôle testé à `false` par une ligne déséquilibrée insérée en SQL brut (C2) ; premier exercice (C3) ; positions
