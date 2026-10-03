@@ -1096,6 +1096,8 @@ reports-column-account-name = Denominazione
 reports-column-debit = Dare
 reports-column-credit = Avere
 reports-column-balance = Saldo
+reports-column-opening = Apertura
+reports-column-closing = Chiusura
 reports-column-entry-date = Data
 reports-column-description = Causale
 
@@ -1139,7 +1141,6 @@ reports-equity-result-loss = Perdita del periodo
 reports-retained-earnings = Risultato riportato
 reports-retained-earnings-calculated = Risultato riportato (calcolato)
 reports-retained-earnings-loss = Perdita riportata
-reports-trial-balance-period-note = Il bilancio di verifica mostra il movimento del periodo (per esercizio). Il totale per conto non è comparabile con il saldo cumulato dello stesso conto nel bilancio (riporto a nuovo dall'origine).
 
 # Alerts + badges UI (2 — code review Pass 1 i18n leaks)
 reports-equation-warning = ⚠️ Equazione di bilancio non bilanciata (verificare i dati sorgente).

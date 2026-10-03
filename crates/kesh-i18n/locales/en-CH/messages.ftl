@@ -1096,6 +1096,8 @@ reports-column-account-name = Account Name
 reports-column-debit = Debit
 reports-column-credit = Credit
 reports-column-balance = Balance
+reports-column-opening = Opening
+reports-column-closing = Closing
 reports-column-entry-date = Date
 reports-column-description = Description
 
@@ -1139,7 +1141,6 @@ reports-equity-result-loss = Period loss
 reports-retained-earnings = Retained earnings
 reports-retained-earnings-calculated = Retained earnings (calculated)
 reports-retained-earnings-loss = Accumulated loss
-reports-trial-balance-period-note = The trial balance shows the movement of the period (per fiscal year). The per-account total is not comparable to the cumulative balance of the same account in the balance sheet (carry-forward from inception).
 
 # Alerts + badges UI (2 — code review Pass 1 i18n leaks)
 reports-equation-warning = ⚠️ Balance sheet equation unbalanced (verify source data).

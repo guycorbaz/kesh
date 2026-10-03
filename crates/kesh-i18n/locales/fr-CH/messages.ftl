@@ -1151,6 +1151,8 @@ reports-column-account-name = Intitulé
 reports-column-debit = Débit
 reports-column-credit = Crédit
 reports-column-balance = Solde
+reports-column-opening = Ouverture
+reports-column-closing = Clôture
 reports-column-entry-date = Date
 reports-column-description = Libellé
 
@@ -1199,7 +1201,6 @@ reports-equity-result-loss = Perte de l'exercice
 reports-retained-earnings = Résultat reporté
 reports-retained-earnings-calculated = Résultat reporté (calculé)
 reports-retained-earnings-loss = Perte reportée
-reports-trial-balance-period-note = La balance de vérification affiche le mouvement de la période (par exercice). Le total par compte n'est pas comparable au solde cumulé du même compte au bilan (report à-nouveau depuis l'origine).
 
 # Alertes + badges UI (2 — code review Pass 1 i18n leaks)
 reports-equation-warning = ⚠️ Équation bilan déséquilibrée (vérifier données source).

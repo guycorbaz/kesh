@@ -20,6 +20,7 @@ pub mod errors;
 pub mod general_ledger;
 pub mod income_statement;
 pub mod journal_report;
+pub mod opening;
 pub mod pdf;
 pub mod period;
 pub mod project_report;
