@@ -33,7 +33,7 @@ afin de **pouvoir produire, dans cinq ans, la copie exacte de la facture envoyé
 ## Les faits, vérifiés dans le code (cartographie du 2026-10-03)
 
 - **Régénéré à chaque demande** : `GET /api/v1/invoices/{id}/pdf` (`crates/kesh-api/src/routes/invoice_pdf.rs:23-56`)
-  appelle `invoice_pdf_service::render(…, state.config.locale, …)` ; `render` (`invoice_pdf_service.rs:177-269`) relit
+  appelle `invoice_pdf_service::render(…, state.config.locale, …)` ; `render` (`crates/kesh-api/src/routes/invoice_pdf_service.rs:177-269`) relit
   **en direct** la facture, le contact (nom, adresse, `client_number`), le compte bancaire principal, la société, les
   textes i18n. Il exige le statut `validated` (`:211-213`).
 - **Deux langues** : le téléchargement rend dans la langue de l'**installation** ; l'envoi par e-mail
@@ -64,19 +64,39 @@ afin de **pouvoir produire, dans cinq ans, la copie exacte de la facture envoyé
 `pdf_storage_path VARCHAR(512) NULL`, `pdf_sha256 CHAR(64) NULL`, `pdf_frozen_at DATETIME(3) NULL`,
 `pdf_language CHAR(2) NULL`, et une contrainte **tout-ou-rien** (`CHECK` : les quatre nuls, ou les quatre renseignés avec
 `CHAR_LENGTH(pdf_sha256) = 64`). DDL pur, **non breaking** (`ADD COLUMN` nullable — P1/P3, pas de bump de
-`kesh_version_min_required`). Squash de test (`crates/kesh-db/test-schema/`) et `test_schema_guard` à jour ; ligne au
+`kesh_version_min_required`). Squash de test **régénéré par `scripts/regen-test-schema.sh`**, jamais édité à la main
+(`crates/kesh-db/test-schema/README.md`) — sans quoi `the_real_migrator_matches_the_migrations_directory`
+(`test_schema_guard.rs:497`) rougit ; `migrations_upgrade_path.rs:100-104` (`assert_eq!(total, 70)`, fenêtre positionnelle
+`total - 36`, `:38`, `:57`) relevé — **70 → 71** sur cette branche, **74 → 75** si la chaîne 25-4 est mergée d'abord ; ligne au
 tableau `docs/migrations-idempotence-audit.md` et compteurs **recomptés depuis la source** (P5) ; sites positionnels
 inspectés (P6, `grep -rn "migrations.len()\|apply_migrations_up_to" crates/`) ; pas d'écriture de données (P7 sans
 objet).
+
+**AC 1-bis — L'entité et ses colonnes (validation P1, B1).** `Invoice` (`entities/invoice.rs:15`, `FromRow`) gagne les
+quatre champs. Ses colonnes sont aujourd'hui **énumérées en dur à six endroits** — `FIND_INVOICE_SCOPED_SQL`
+(`invoices.rs:52-56`), les `SELECT` de `invoices.rs:1304-1308` et `:2511-2516`, `INVOICE_COLUMNS`
+(`reconciliation.rs:49-51`) — et un oubli échoue **à l'exécution**, pas à la compilation (`invoices.rs:277`). Ces listes
+sont ramenées à **une seule constante** de colonnes (DRY), et les littéraux `Invoice { … }` des tests complétés
+(`invoice_email.rs:1452`, `exports/csv_tables.rs:1665`, `invoice_pdf_service.rs:633`, `grep -rn "dunning_paused_note:"
+crates`). `invoice_snapshot_json` (`invoices.rs:58`) porte l'empreinte.
 
 **AC 2 — Figer au premier rendu.** Un service unique `kesh-api` (ex. `issued_invoice_pdf::get_or_freeze`) est le **seul**
 chemin vers le PDF d'une facture, pour le téléchargement **et** pour l'e-mail :
 - facture **déjà figée** → relit le fichier, **vérifie** son SHA-256 contre `pdf_sha256`, rend ces octets ;
 - facture `validated` **non figée** → rend le PDF dans la **langue du client** (`resolve_language`), l'écrit par
-  `store_document` (`ext = "pdf"`), puis pose les quatre colonnes par un `UPDATE … WHERE id = ? AND company_id = ? AND
-  pdf_storage_path IS NULL` ; **si zéro ligne** (un rendu concurrent a figé avant), relit et rend le PDF figé par
-  l'autre — jamais deux documents pour une même facture ; journal d'audit `invoice.pdf_frozen` avec l'empreinte et la
-  langue ;
+  `store_document` (`ext = "pdf"`), puis pose les quatre colonnes par une fonction `kesh-db` qui fait, **dans une seule
+  transaction**, l'`UPDATE … WHERE id = ? AND company_id = ? AND pdf_storage_path IS NULL AND status = 'validated'` et
+  l'audit `invoice.pdf_frozen` (empreinte, langue, **acteur** — utilisateur ou clé d'API) — l'empreinte n'existe jamais
+  sans sa trace. ⚠️ **La garde `status = 'validated'` est indispensable** (validation P1, A1) : sans elle, une dévalidation
+  intercalée entre le rendu et l'`UPDATE` laisserait un PDF figé sur un brouillon, servi comme émis à la revalidation.
+  Le gel **ne touche pas `version`** (B2 : sinon une dévalidation ou un avoir lancés depuis une fiche ouverte avant le
+  téléchargement tomberaient en 409) ; `updated_at` bouge (`ON UPDATE`). `store_document` est synchrone et fait `fsync` :
+  appelé par `spawn_blocking` (B3) ;
+- **si zéro ligne** : relire la facture. Colonnes renseignées (un rendu concurrent a figé) → vérifier l'empreinte et
+  servir **le document de l'autre**, jamais son propre rendu ; colonnes nulles (la facture a été dévalidée, ou n'est plus
+  `validated`) → `InvoiceNotValidated`, **sans nouvelle tentative** (A2) ;
+- **échec d'écriture du fichier** (`KESH_DOCUMENTS_DIR` non inscriptible) → **500**, rien n'est servi — jamais un rendu
+  non figé présenté comme le document (C-F6) ;
 - facture `cancelled` **figée** → rend le PDF figé ; `cancelled` **non figée** ou `draft` → refus inchangé
   (`InvoiceNotValidated`).
 
@@ -84,16 +104,28 @@ Le rendu, la validation des préconditions (adresse, banque principale, nombre d
 **inchangés** : `render` reste la fonction de rendu, le service ne fait que l'encadrer.
 
 **AC 3 — L'intégrité.** Fichier figé **absent** → **410**, code dédié (`INVOICE_PDF_GONE`, sur le patron de
-`SourceDocumentGone`) — jamais une régénération silencieuse, qui produirait un autre document. Empreinte **différente** →
+`SourceDocumentGone`) — jamais une régénération silencieuse, qui produirait un autre document. Son message **nomme la
+cause et le remède** : le fichier `{empreinte}.pdf` manque sous `KESH_DOCUMENTS_DIR`, à restaurer depuis la sauvegarde de ce
+répertoire. Empreinte **différente** →
 **500** + `tracing::error!` (le fichier a été altéré) — jamais servi.
 
 **AC 4 — L'e-mail joint le document figé.** `send_invoice_email` passe par le service : la pièce jointe est **octet pour
-octet** celle du téléchargement. Le premier envoi d'une facture non figée la fige. Les rappels sont **inchangés**
+octet** celle du téléchargement. Le premier envoi d'une facture non figée la fige — **et le gel survit à un échec SMTP**
+(le document a été produit ; la facture n'est simplement pas marquée envoyée, C-F3). Le corps du message reste rédigé dans
+la langue **actuelle** du client ; si celle-ci a changé depuis le gel, la pièce jointe reste dans la langue **figée**
+(limite assumée, A4). Un client **archivé** : l'envoi reste refusé (`ContactArchived`, inchangé) ; le téléchargement, lui,
+fige avec les données du client archivé (C-F5). Les rappels sont **inchangés**
 (document distinct, [#502]).
 
 **AC 5 — La dévalidation détache.** `unvalidate` remet les quatre colonnes à `NULL` dans sa transaction ; l'audit de
 dévalidation porte l'empreinte détachée. Le fichier reste sur le disque (nommé par son empreinte, il peut être partagé ;
 le supprimer n'est pas nécessaire). À la revalidation, le premier rendu fige un **nouveau** document.
+
+**AC 5-bis — L'export de souveraineté.** `serialize_invoices_csv` (`exports/csv_tables.rs:495-521`) exporte
+`pdf_sha256` et `pdf_frozen_at` (la preuve d'émission appartient aux données de l'utilisateur ; précédent #262), et son
+test d'en-tête (`:1696-1705`) est mis à jour. Les fichiers eux-mêmes ne sont pas dans l'export (CSV). La sauvegarde
+`.keshbackup` lit les colonnes dans `INFORMATION_SCHEMA` : rien à faire, les colonnes nullables sont couvertes, et une
+sauvegarde antérieure reste importable (`check_schema_compat`, colonnes nullables non requises).
 
 **AC 6 — L'écran.** Le DTO de la facture expose `pdfFrozenAt` (et la langue) ; la fiche facture affiche le bouton PDF
 pour une facture `validated` **ou** `cancelled` **figée**, et une mention discrète « Document figé le … » quand il l'est.
@@ -104,33 +136,61 @@ Libellés dans les 4 locales.
 - le PDF est dans la **langue du client** (contact en allemand, installation en français) ;
 - l'e-mail joint **les octets du téléchargement** (et le premier envoi fige) ;
 - changer l'adresse du client **après** le gel ne change pas le PDF ;
-- deux premiers rendus **concurrents** ne figent qu'un document ;
+- **l'`UPDATE` conditionnel, de façon déterministe** : colonnes pré-posées par une autre voie, puis pose → zéro ligne,
+  et le service relit et sert le document déjà posé ; mutation « garde `pdf_storage_path IS NULL` retirée » tuée (un
+  `tokio::join!` passerait aussi sans la garde, C-F7) ;
+- **la garde de statut** : facture dévalidée entre le rendu et la pose (simulée en appelant la pose après la
+  dévalidation) → zéro ligne, rien de figé sur le brouillon ; mutation « garde `status` retirée » tuée (A1) ;
+- le gel **ne change pas `version`** ;
+- l'audit `invoice.pdf_frozen` nomme l'acteur, et partage la transaction de la pose ;
+- un envoi e-mail en **échec SMTP** laisse la facture figée, et le téléchargement suivant rend les mêmes octets ;
+- changer la **langue** du client après le gel ne change pas le PDF ;
+- une facture à **10 lignes** : erreur inchangée, rien de figé ;
+- `KESH_DOCUMENTS_DIR` non inscriptible → 500, colonnes nulles ;
+- l'export CSV porte `pdf_sha256` et `pdf_frozen_at` ;
 - fichier supprimé → 410 `INVOICE_PDF_GONE` ; fichier altéré → 500, rien servi ;
 - dévalidation → colonnes nulles, audit portant l'empreinte ; revalidation → nouveau document ;
 - facture annulée par un avoir **après** gel → PDF servi ; **sans** gel → refus ;
 - isolation : un PDF figé d'une autre société n'est jamais servi (IDOR) ;
 - la contrainte tout-ou-rien rejette un état partiel ;
 - Vitest de la fiche : bouton pour `cancelled` figée, absent pour `cancelled` non figée ; mention « figé le » ;
-- E2E : télécharger deux fois une facture rend le même fichier ; une facture annulée par un avoir garde son PDF.
+- E2E (`authedApiContext`, `pdfRes.body()`) : télécharger deux fois une facture rend le même fichier ; une facture
+  annulée par un avoir garde son PDF. Chaque test crée **sa propre** facture : les fichiers figés persistent sous
+  `/tmp/kesh-e2e/documents` d'une exécution à l'autre.
 
-**AC 8 — Le manuel et le CHANGELOG.** `user-manual.tex`, section des factures : le PDF est **figé** au premier
-téléchargement ou envoi, dans la langue du client ; il ne suit plus les modifications ultérieures ; une facture
-dévalidée puis revalidée reçoit un nouveau document ; une facture annulée garde le sien. Le manuel admin
-(`admin-manual.tex`) : `KESH_DOCUMENTS_DIR` porte aussi les PDF figés et **doit être sauvegardé à part** tant que [#503]
-n'est pas livrée. PDF régénérés, contrôlés **aplatis**. CHANGELOG `[0.12.1]` : `Fixed` (#387), `Changed` (le
+**AC 8 — Le manuel et le CHANGELOG.** Sites que le patch rend faux, **nommés** (validation P1, C-F2) —
+`grep -nE "génère le PDF|PDF QR Bill généré|téléchargeable depuis|PDF joint|ne laisse aucune trace" docs/manual/fr/user-manual.tex` :
+- `user-manual.tex:769` (« À la validation, Kesh … génère le PDF QR Bill ») et `:780` (« Validée : … PDF QR Bill
+  généré ») : le PDF est **figé au premier téléchargement ou envoi** ;
+- `:855` (« téléchargeable depuis la facture validée … pour l'archiver ») : figé, identique d'un téléchargement à
+  l'autre, et servi aussi pour une facture **annulée** qui l'a été ; un PDF figé avant l'avoir ne porte pas de mention
+  d'annulation (A8) ;
+- `:928` (« Langue de correspondance … détermine la langue de l'e-mail et du PDF joint ») : aussi du téléchargement, et
+  figée au premier rendu ;
+- `:1136` (« un PDF téléchargé puis transmis à la main ne laisse aucune trace ») : il laisse désormais une trace (audit
+  `invoice.pdf_frozen`, empreinte) ; la dévalidation reste possible tant que la facture n'a pas été envoyée **par Kesh**,
+  et détache le document — un PDF déjà transmis par vous reste valable mais n'est plus celui que Kesh conserve (A7) ;
+- `:1011` et suivantes : le **rappel**, lui, est toujours régénéré ([#502]).
+
+Manuel admin : `admin-manual.tex:741`, `:790` (`KESH_DOCUMENTS_HOST_DIR`), `:811` et la § 5.1.1 — `KESH_DOCUMENTS_DIR`
+porte aussi les **PDF de factures émises**, pièces à conserver ; il **doit être sauvegardé à part** tant que [#503] n'est
+pas livrée ; un 410 `INVOICE_PDF_GONE` se répare en restaurant le fichier `{empreinte}.pdf` dans ce répertoire. PDF régénérés, contrôlés **aplatis**. CHANGELOG `[0.12.1]` : `Fixed` (#387), `Changed` (le
 téléchargement rend la langue du client).
 
 ## Tasks / Subtasks
 
 - [ ] **T1 — migration** (AC 1) : SQL, squash, garde de schéma, audit d'idempotence, P6.
-- [ ] **T2 — le service de gel** (AC 2, 3) : `kesh-db` (lecture/pose/détachement des colonnes, `UPDATE` conditionnel),
-  `kesh-api` (service, code d'erreur 410, i18n de l'erreur).
+- [ ] **T2 — le service de gel** (AC 1-bis, 2, 3) : `kesh-db` (entité `Invoice` et **constante unique** de colonnes,
+  pose conditionnelle + audit en une transaction, détachement), `kesh-api` (service, `spawn_blocking`, code d'erreur
+  410, i18n de l'erreur).
 - [ ] **T3 — les deux consommateurs** (AC 2, 4) : route de téléchargement, envoi par e-mail.
 - [ ] **T4 — la dévalidation** (AC 5).
 - [ ] **T5 — l'écran** (AC 6).
 - [ ] **T6 — tests** (AC 7).
+- [ ] **T6-bis — export de souveraineté** (AC 5-bis).
 - [ ] **T7 — manuels, CHANGELOG** (AC 8).
-- [ ] **T8 — gates** : backend complet, frontend complet, **E2E complet**.
+- [ ] **T8 — gates** : backend complet, frontend complet, **E2E complet** — le backend E2E doit avoir
+  `KESH_DOCUMENTS_DIR` inscriptible (`docs/testing.md:167`, `:197`) : sans lui, tout téléchargement de PDF répondra 500.
 
 ## Dev Notes
 
@@ -149,10 +209,15 @@ téléchargement rend la langue du client).
 - Les fichiers figés ne sont pas dans la sauvegarde `.keshbackup` ([#503]) : après une restauration sans
   `KESH_DOCUMENTS_DIR`, ils répondent 410.
 - Une facture annulée **jamais rendue** n'a pas de PDF (refus inchangé).
+- **Fichiers orphelins** : deux premiers rendus concurrents, ou un arrêt entre l'écriture et la pose, laissent un fichier
+  jamais référencé (les rendus ne sont pas reproductibles, donc nommés différemment). Inoffensif — nommé par son
+  empreinte, jamais servi — et non nettoyé.
+- **Langue** : le corps d'un e-mail suit la langue actuelle du client, la pièce jointe la langue figée.
 
 ### Modules
 
-`kesh-db` (migration, colonnes, dévalidation), `kesh-api` (service, routes PDF et e-mail, erreur), `kesh-i18n`,
+`kesh-db` (migration, entité et colonnes, pose et dévalidation), `kesh-api` (service, routes PDF et e-mail, erreur,
+export CSV), `kesh-i18n`,
 `frontend` (fiche facture) — **quatre modules de code**, sous le seuil (+ `docs`, `CHANGELOG`).
 
 ### References
