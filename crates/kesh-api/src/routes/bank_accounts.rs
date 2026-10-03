@@ -125,8 +125,18 @@ pub struct ListBankAccountsQuery {
 pub struct BankAccountWithBalance {
     #[serde(flatten)]
     pub account: BankAccount,
+    /// **Solde comptable** du compte de grand livre lié (pas le solde bancaire).
     pub current_balance: Option<Decimal>,
     pub last_transaction_date: Option<chrono::NaiveDate>,
+    /// Story 25-6-a (#389) — solde de clôture du dernier relevé importé qui en
+    /// porte un (CAMT ; un import CSV n'en a pas).
+    pub statement_closing_balance: Option<Decimal>,
+    /// Date de ce relevé (`period_to`).
+    pub statement_date: Option<chrono::NaiveDate>,
+    /// Solde comptable à `statement_date`, corrigé des dates de valeur ; `null`
+    /// sans relevé, sans compte lié, ou si plusieurs comptes bancaires partagent
+    /// le compte de grand livre.
+    pub ledger_balance_at_statement: Option<Decimal>,
 }
 
 // ===========================================================================
@@ -352,13 +362,14 @@ pub async fn list_bank_accounts(
 
     let payload: Vec<BankAccountWithBalance> = rows
         .into_iter()
-        .map(
-            |(account, current_balance, last_transaction_date)| BankAccountWithBalance {
-                account,
-                current_balance,
-                last_transaction_date,
-            },
-        )
+        .map(|(account, balances)| BankAccountWithBalance {
+            account,
+            current_balance: balances.current_balance,
+            last_transaction_date: balances.last_transaction_date,
+            statement_closing_balance: balances.statement_closing_balance,
+            statement_date: balances.statement_date,
+            ledger_balance_at_statement: balances.ledger_balance_at_statement,
+        })
         .collect();
 
     Ok(Json(payload))

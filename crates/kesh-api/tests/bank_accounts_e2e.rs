@@ -1199,3 +1199,60 @@ async fn list_bank_accounts_balances_non_regression(pool: MySqlPool) {
         "soldes, dates et ordre de la liste, au JSON près"
     );
 }
+
+/// Story 25-6-a (#389) — les trois champs neufs traversent la frontière HTTP, en
+/// chaînes décimales (jamais des nombres JSON).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn list_bank_accounts_exposes_the_last_statement(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Consultation).await;
+    let fy = insert_fiscal_year_2026(&pool, ctx.company_id).await;
+    let revenue = create_account(
+        &pool,
+        ctx.company_id,
+        ctx.user_id,
+        "3200",
+        "Ventes",
+        AccountType::Revenue,
+    )
+    .await;
+    link(&pool, ctx.bank_account_id, ctx.asset_account_id).await;
+    insert_entry(
+        &pool,
+        ctx.company_id,
+        fy,
+        1,
+        "2026-03-10",
+        ctx.asset_account_id,
+        revenue,
+        "500.00",
+    )
+    .await;
+    sqlx::query(
+        "INSERT INTO bank_imports \
+         (company_id, bank_account_id, filename, file_hash, source_format, period_from, period_to, \
+          closing_balance, transaction_count, imported_by_user_id) \
+         VALUES (?, ?, 'r.xml', REPEAT('c', 64), 'CAMT053', '2026-03-01', '2026-03-31', 480.00, 0, ?)",
+    )
+    .bind(ctx.company_id)
+    .bind(ctx.bank_account_id)
+    .bind(ctx.user_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let app = spawn_app(pool.clone()).await;
+    let body: Value = app
+        .client
+        .get(app.url("/api/v1/bank-accounts"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    let a = &body.as_array().expect("liste")[0];
+    assert_eq!(a["statementClosingBalance"], json!("480.00"));
+    assert_eq!(a["statementDate"], json!("2026-03-31"));
+    assert_eq!(a["ledgerBalanceAtStatement"], json!("500.0000"));
+}
