@@ -997,3 +997,205 @@ async fn delete_primary_unique_is_allowed_ac10(pool: MySqlPool) {
 
     assert_eq!(resp.status(), 200);
 }
+
+// ===========================================================================
+// Story 25-6-a (#389) — non-régression des soldes, écrite et verte CONTRE LE
+// CODE D'AVANT la réécriture de `list_by_company_with_balances` (commit
+// séparé). Elle fige ce que la route rend aujourd'hui, au JSON près : une
+// assertion sur des `Decimal` ne verrait pas `"0"` devenir `"0.0000"`.
+// ===========================================================================
+
+async fn insert_fiscal_year_2026(pool: &MySqlPool, company_id: i64) -> i64 {
+    sqlx::query(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+         VALUES (?, 'Exercice 2026', '2026-01-01', '2026-12-31', 'Open')",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+/// Écriture équilibrée à deux lignes, en SQL brut. Renvoie son id.
+#[allow(clippy::too_many_arguments)]
+async fn insert_entry(
+    pool: &MySqlPool,
+    company_id: i64,
+    fiscal_year_id: i64,
+    number: i64,
+    date: &str,
+    debit_account: i64,
+    credit_account: i64,
+    amount: &str,
+) -> i64 {
+    let entry_id = sqlx::query(
+        "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, entry_date, journal, description) \
+         VALUES (?, ?, ?, ?, 'Banque', 'écriture de test')",
+    )
+    .bind(company_id)
+    .bind(fiscal_year_id)
+    .bind(number)
+    .bind(date)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    for (order, account, debit, credit) in [
+        (1, debit_account, amount, "0"),
+        (2, credit_account, "0", amount),
+    ] {
+        sqlx::query(
+            "INSERT INTO journal_entry_lines (entry_id, account_id, line_order, debit, credit) \
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(entry_id)
+        .bind(account)
+        .bind(order)
+        .bind(debit)
+        .bind(credit)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+    entry_id
+}
+
+async fn add_bank_account(pool: &MySqlPool, company_id: i64, iban: &str) -> i64 {
+    bank_accounts::create(
+        pool,
+        NewBankAccount {
+            company_id,
+            bank_name: "PostFinance".into(),
+            iban: iban.into(),
+            qr_iban: None,
+            is_primary: false,
+        },
+    )
+    .await
+    .unwrap()
+    .id
+}
+
+async fn link(pool: &MySqlPool, bank_account_id: i64, account_id: i64) {
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+        .bind(account_id)
+        .bind(bank_account_id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn list_bank_accounts_balances_non_regression(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Consultation).await;
+    let fy = insert_fiscal_year_2026(&pool, ctx.company_id).await;
+    let revenue = create_account(
+        &pool,
+        ctx.company_id,
+        ctx.user_id,
+        "3200",
+        "Ventes",
+        AccountType::Revenue,
+    )
+    .await;
+    let other_asset = create_account(
+        &pool,
+        ctx.company_id,
+        ctx.user_id,
+        "1021",
+        "Banque 2",
+        AccountType::Asset,
+    )
+    .await;
+
+    // A : lié, deux écritures (+500, −120).
+    link(&pool, ctx.bank_account_id, ctx.asset_account_id).await;
+    let e1 = insert_entry(
+        &pool,
+        ctx.company_id,
+        fy,
+        1,
+        "2026-03-10",
+        ctx.asset_account_id,
+        revenue,
+        "500.00",
+    )
+    .await;
+    insert_entry(
+        &pool,
+        ctx.company_id,
+        fy,
+        2,
+        "2026-04-02",
+        revenue,
+        ctx.asset_account_id,
+        "120.00",
+    )
+    .await;
+    // B : lié, aucune écriture. C : non lié.
+    let b = add_bank_account(&pool, ctx.company_id, "CH9300762011623852957").await;
+    link(&pool, b, other_asset).await;
+    let c = add_bank_account(&pool, ctx.company_id, "CH5604835012345678009").await;
+
+    // Une transaction RAPPROCHÉE présente sur A : la réécriture ne doit pas
+    // multiplier les lignes du grand livre par les transactions.
+    let import_id = sqlx::query(
+        "INSERT INTO bank_imports \
+         (company_id, bank_account_id, filename, file_hash, source_format, period_from, period_to, \
+          closing_balance, transaction_count, imported_by_user_id) \
+         VALUES (?, ?, 'r.xml', 'b1b2c3d4e5f6789012345678901234567890123456789012345678901234abcd', \
+                 'CAMT053', '2026-03-01', '2026-03-31', 500.00, 1, ?)",
+    )
+    .bind(ctx.company_id)
+    .bind(ctx.bank_account_id)
+    .bind(ctx.user_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO bank_transactions \
+         (company_id, import_id, bank_account_id, booking_date, amount, currency, details, status, matched_entry_id) \
+         VALUES (?, ?, ?, '2026-03-10', 500.00, 'CHF', 'tx', 'reconciled', ?)",
+    )
+    .bind(ctx.company_id)
+    .bind(import_id)
+    .bind(ctx.bank_account_id)
+    .bind(e1)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let app = spawn_app(pool.clone()).await;
+    let resp = app
+        .client
+        .get(app.url("/api/v1/bank-accounts"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let got: Vec<(i64, Value, Value)> = body
+        .as_array()
+        .expect("liste")
+        .iter()
+        .map(|r| {
+            (
+                r["id"].as_i64().unwrap(),
+                r["currentBalance"].clone(),
+                r["lastTransactionDate"].clone(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        got,
+        vec![
+            (ctx.bank_account_id, json!("380.0000"), json!("2026-04-02")),
+            (b, json!("0"), Value::Null),
+            (c, Value::Null, Value::Null),
+        ],
+        "soldes, dates et ordre de la liste, au JSON près"
+    );
+}

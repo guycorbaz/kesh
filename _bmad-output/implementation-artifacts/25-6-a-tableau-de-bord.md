@@ -1,6 +1,6 @@
 # Story 25.6-a : Le tableau de bord dit vrai — dernières écritures, factures ouvertes, solde comptable
 
-Status: ready-for-dev
+Status: in-progress
 
 **Issues : [#388], [#389]**, que cette story **ferme** : la PR porte `closes #388, closes #389` dans le **titre ET le
 corps**. Branche `story/25-6-a-tableau-de-bord`, partie de `main` (`d7c74f02`).
