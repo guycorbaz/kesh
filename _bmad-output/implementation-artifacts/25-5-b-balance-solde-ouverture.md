@@ -1,6 +1,6 @@
 # Story 25.5-b : La balance des comptes porte un solde d'ouverture — et concorde enfin avec le bilan
 
-Status: ready-for-dev
+Status: review
 
 **Issue : [#385]**, que cette story **ferme** : la PR porte `closes #385` dans le **titre ET le corps**. Seconde moitié de
 la 25-5, découpée le 2026-09-23 (la 25-5-a a fermé #386). Branche `story/25-5-b-balance-solde-ouverture`, partie de
@@ -187,15 +187,15 @@ corrigé (« à une date donnée » → sur une période, ouverture et clôture)
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — le module partagé** (AC 2) : extraire `is_debit_natured`, `signed`, la borne basse de l'ouverture ; le grand
+- [x] **T1 — le module partagé** (AC 2) : extraire `is_debit_natured`, `signed`, la borne basse de l'ouverture ; le grand
   livre l'appelle ; ses tests verts sans retouche d'assertion.
-- [ ] **T2 — la balance** (AC 1, 3, 4, 5, 6) : requête agrégée, champs neufs, ligne calculée, contrôle, inclusion.
-- [ ] **T3 — les rendus** CSV et PDF (AC 7), fixtures et bench complétés.
-- [ ] **T4 — l'écran, les types, l'i18n** (AC 7, 8) : vue, `reports.types.ts`, clé de note retirée et deux clés de
+- [x] **T2 — la balance** (AC 1, 3, 4, 5, 6) : requête agrégée, champs neufs, ligne calculée, contrôle, inclusion.
+- [x] **T3 — les rendus** CSV et PDF (AC 7), fixtures et bench complétés.
+- [x] **T4 — l'écran, les types, l'i18n** (AC 7, 8) : vue, `reports.types.ts`, clé de note retirée et deux clés de
   colonne ajoutées dans les 4 locales, `sitesTotal`.
-- [ ] **T5 — tests** (AC 9).
-- [ ] **T6 — manuel, CHANGELOG** (AC 10).
-- [ ] **T7 — gates** : backend complet, frontend complet, **E2E complet**.
+- [x] **T5 — tests** (AC 9).
+- [x] **T6 — manuel, CHANGELOG** (AC 10).
+- [x] **T7 — gates** : backend complet, frontend complet, **E2E complet**.
 
 ## Dev Notes
 
@@ -236,14 +236,91 @@ préventif*.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`).
+
 ### Debug Log References
+
+- Les dix tests de concordance ont passé **du premier coup** : aucun n'a donc été vu rouge avant le code. D'où les
+  mutations ci-dessous, qui tiennent lieu de phase rouge.
+- Deux garde-fous du frontend ont rougi au gate, et ils avaient raison :
+  - `e2e-selecteurs-traduits` : l'E2E ancrait l'en-tête « Clôture » sur son libellé traduit. Remplacé par les
+    `data-testid` `tb-col-opening` et `tb-col-closing`, et l'absence de « Solde » par un compte de six en-têtes.
+  - `i18n-libelle-en-dur` : la déclaration neuve `retainedLabel` est **nommée** dans le relevé (44 → 45,
+    `conforme` 38 → 39). Ses deux branches délèguent à `i18nMsg`.
+- Manuel : les glyphes ✓ et ⚠️ manquent dans la police (`Missing character`). Remplacés par des mots. Les dix
+  `Missing character` restants sont antérieurs à la story.
+- `cargo fmt` a reformaté le fichier de test neuf.
 
 ### Completion Notes List
 
+- **T1, le module partagé** — `crate::opening` porte `is_debit_natured`, `is_bilan`, `signed`, `debit_sense` et
+  `opening_from`. Le grand livre lit désormais les deux paires de sommes en **une** requête par compte. Quand aucun
+  exercice ne couvre `from`, la borne basse vaut `from` lui-même et la paire est nulle. Ses tests passent sans
+  retouche d'assertion ; ses deux tests unitaires de signe et de nature ont migré dans `opening.rs`.
+- **T2, la balance** — une requête agrégée rend trois paires de sommes brutes par compte, sans aucun `CASE` sur le
+  type ni sur le signe. Elle est lue dans une structure brute `RawRow`, la ligne étant construite en Rust.
+  - Règle d'inclusion : actif, ou mouvementé, ou porteur d'un solde d'ouverture.
+  - `retained_earnings` vient de `balance_sheet::fetch_retained_earnings`, passé en `pub(crate)` et non recopié.
+  - `opening_balanced` est calculé par `debit_sense` ; un écart est signalé par `tracing::warn!`.
+  - `balance`, `total_debit`, `total_credit` et `balanced` sont inchangés.
+  - Les trois tests unitaires tautologiques de `trial_balance.rs` (qui comparaient des constantes) sont remplacés
+    par trois tests de `is_opening_balanced`.
+- **T3, les rendus** — CSV à six colonnes, avec la ligne du résultat reporté sur le patron du bilan. PDF à six
+  colonnes aux positions imposées, avec l'intitulé tronqué à 22 caractères et deux libellés neufs, `col_opening` et
+  `col_closing`. Le libellé de la ligne calculée n'est pas tronqué : environ 46 mm pour 55 mm disponibles.
+- **T4, l'écran** — les colonnes Ouverture et Clôture, la ligne calculée (« Perte reportée » si elle est négative)
+  et le contrôle ✓/⚠️ d'ouverture, distinct de celui des mouvements. La note retirée a perdu sa clé dans les 4
+  locales ; deux clés neuves sont ajoutées. `sitesTotal` passe de 1756 à 1758.
+- **T5, les tests** — **périmètre : de `HEAD` = `42623926` (fiche validée, aucun code) à l'arbre de travail.**
+  - Rust, **+14 nets** :
+    - `trial_balance_opening.rs` : 10 tests neufs ;
+    - `opening.rs` : 4 tests, dont 2 migrés du grand livre (`general_ledger.rs` passe de 4 à 2) ;
+    - `pdf.rs` : +2 ;
+    - `trial_balance.rs` : 3 tests remplacés ;
+    - `csv.rs` : un test réécrit, qui porte maintenant les valeurs ;
+    - `concordance_compte_de_resultat` étendu à une période en cours d'exercice ;
+    - `reports_e2e.rs` : un test étendu à la forme de la réponse.
+  - Vitest : **+6** dans `TrialBalanceView.test.ts`, neuf. E2E : `reports.spec.ts` étendu.
+- **Gates** (T7) : base remise à zéro, `scripts/test-fast.sh` **2545/2545** (fmt, clippy, nextest) ; frontend `check`
+  0 erreur, `lint-i18n-ownership` PASS, `test:unit` **845/845**, `build` OK ; **E2E complet** sur `kesh_e2e` migrée à
+  neuf (run de 10:07 UTC) : **224 passés, 12 échoués** — les 10 attendus d'un run matinal (KF-029 ×7, KF-045 ×2
+  `invoices.spec.ts:415/439`, KF-046 `sidebar-navigation:75`) et la paire de pollution documentée `products:166` +
+  `product-revenue-account:133`, **vertes rejouées seules** ; `reports.spec.ts` vert, extension 25-5-b comprise.
+- **Mutations tuées** :
+  - `<` → `<=` sur la borne d'ouverture : 2 tests tombent ;
+  - ouverture de résultat cumulée depuis l'origine : 5 tests ;
+  - bilan borné par l'exercice (le défaut de #385) : 5 tests ;
+  - ancienne règle d'inclusion : 1 test ;
+  - contrôle tautologique : 2 tests ;
+  - à l'écran, contrôle lu sur `balanced` : 1 test ;
+  - ouverture affichée à la place de la clôture : 1 test.
+- **T6, manuel et CHANGELOG** :
+  - § *Balance des comptes* réécrite. La phrase sur le filtre de niveau de détail, qui n'existait pas, est retirée.
+  - Les deux points de la validation P2 sont écrits : les soldes de départ en mouvements, les montants signés.
+  - Le renvoi vers le grand livre est corrigé, ainsi que le glossaire ; le label `sec:soldes-depart` est posé.
+  - PDF régénéré et contrôlé aplati.
+  - CHANGELOG `[0.12.1]` : une entrée `Fixed` et une entrée `Changed`, cette dernière signalant l'incompatibilité CSV.
+  - README et site relus, toujours vrais.
+
 ### File List
+
+- `CHANGELOG.md`
+- `crates/kesh-api/tests/reports_e2e.rs`
+- `crates/kesh-i18n/locales/{de-CH,en-CH,fr-CH,it-CH}/messages.ftl`
+- `crates/kesh-report/benches/export.rs`
+- `crates/kesh-report/src/{balance_sheet.rs,csv.rs,general_ledger.rs,lib.rs,pdf.rs,trial_balance.rs}`
+- `crates/kesh-report/src/opening.rs` (neuf)
+- `crates/kesh-report/tests/general_ledger.rs`
+- `crates/kesh-report/tests/trial_balance_opening.rs` (neuf)
+- `docs/manual/fr/user-manual.{tex,pdf}`
+- `frontend/src/lib/features/reports/{TrialBalanceView.svelte,reports.types.ts}`
+- `frontend/src/lib/features/reports/TrialBalanceView.test.ts` (neuf)
+- `frontend/src/lib/shared/{i18n-keys.test.ts,i18n-libelle-en-dur.test.ts}`
+- `frontend/tests/e2e/reports.spec.ts`
 
 ## Change Log
 
+- **2026-10-03** — Implémentée (dev-story) : T1–T7, gates ci-dessus. Statut → `review`.
 - **2026-10-03** — Validation P3 ciblée (Haiku, prompt `25-5-b-validate-prompt-p3.md`) : **0 finding**, sorties des quatre
   vérifications fournies. Le point 2 (compatibilité de l'AC 2 avec le grand livre), établi par raisonnement, **repris
   par l'orchestrateur** : la période libre du grand livre (`LedgerPeriod`) impose de passer une paire nulle quand aucun

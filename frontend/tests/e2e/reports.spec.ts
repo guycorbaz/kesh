@@ -399,6 +399,15 @@ test('grand livre : une écriture postée réapparaît dans l’extrait de son c
 	await page.getByRole('button', { name: /générer/i }).click();
 	const lien = page.getByRole('link', { name: debitNumber }).first();
 	await expect(lien).toBeVisible({ timeout: 5000 });
+	// Story 25-5-b (#385) — la balance porte l'ouverture et la clôture, et la
+	// ligne calculée du résultat reporté : les champs neufs traversent la frontière.
+	const panel = page.getByRole('tabpanel');
+	await expect(page.getByTestId('tb-col-opening')).toBeVisible();
+	await expect(page.getByTestId('tb-col-closing')).toBeVisible();
+	// Six colonnes : la colonne « Solde » (net des mouvements) a disparu.
+	await expect(panel.getByRole('columnheader')).toHaveCount(6);
+	await expect(page.getByTestId('tb-retained')).toBeVisible();
+	await expect(page.getByTestId('tb-opening-check')).toHaveText('✓');
 	await lien.click();
 	await expect(page).toHaveURL(/tab=general-ledger/);
 	await expect(page).toHaveURL(new RegExp(`accountId=`));

@@ -603,7 +603,7 @@ En cas d'erreur découverte après clôture, un \textbf{administrateur} peut rou
 On rouvre les exercices \textbf{du plus récent vers l'ancien} : si un exercice postérieur est encore clôturé, Kesh refuse la réouverture et indique lequel rouvrir d'abord. Effectuer cette opération avec parcimonie pour préserver l'intégrité légale.
 \end{keshtip}
 
-\subsection{Reprise de comptabilité — soldes de départ}
+\subsection{Reprise de comptabilité — soldes de départ}\label{sec:soldes-depart}
 
 Si vous migrez vers Kesh depuis un autre logiciel comptable, l'écran \emph{Administration} → \emph{Soldes de départ} (réservé aux rôles Comptable et Administrateur) vous permet de reprendre le bilan de clôture de votre ancienne comptabilité en une seule saisie :
 
@@ -1556,13 +1556,35 @@ produire hors de Kesh, à partir de ces chiffres.
 
 \subsection{Balance des comptes}
 
-\emph{Mensuel} → \emph{Rapports} → \emph{Balance}. Liste tous les comptes avec leurs soldes débiteurs et créditeurs. Filtres : période, niveau de détail (comptes principaux uniquement, ou tous sous-comptes).
+\emph{Mensuel} → \emph{Rapports} → \emph{Balance}. Pour chaque compte, sur la période choisie : le \textbf{solde
+d'ouverture}, les \textbf{mouvements} débit et crédit, et le \textbf{solde de clôture} (ouverture + mouvements).
+
+\begin{itemize}
+    \item \textbf{L'ouverture suit la nature du compte.} Un compte de bilan (actif, passif) reporte son solde depuis
+        l'origine, tous exercices confondus ; un compte de produits ou de charges repart de zéro au début de
+        l'exercice — son ouverture ne compte que ce qui précède la période \emph{dans l'exercice}.
+    \item \textbf{La balance concorde avec le bilan et le grand livre.} La clôture d'un compte de bilan est son solde au
+        bilan à la fin de la période ; celle d'un compte de résultat, son montant au compte de résultat ; et les deux
+        colonnes sont celles du grand livre (\S\ref{sec:grand-livre}) sur la même période.
+    \item \textbf{La ligne « Résultat reporté (calculé) ».} Kesh ne passe aucune écriture de clôture : le résultat des
+        exercices antérieurs n'est porté par aucun compte. Une ligne calculée le montre, sous les comptes — la même
+        valeur qu'au bilan, « Perte reportée » à l'écran si elle est négative.
+    \item \textbf{Les montants sont signés selon la nature du compte} — positifs du côté naturel (débit pour un actif ou
+        une charge, crédit pour un passif ou un produit). La somme visible des colonnes d'ouverture et de clôture n'est
+        donc pas nulle ; le \textbf{contrôle} affiché sous l'ouverture (une coche) la vérifie en ramenant chaque solde au sens débit, résultat
+        reporté compris. Un avertissement à sa place signale une écriture déséquilibrée antérieure à la période.
+    \item \textbf{Premier exercice} : les soldes de départ saisis à la reprise sont une écriture datée du premier jour
+        de l'exercice (\S\ref{sec:soldes-depart}) — ils apparaissent donc en \emph{mouvements}, et l'ouverture vaut zéro.
+    \item Un compte \textbf{archivé} figure tant qu'il porte un solde ou un mouvement.
+\end{itemize}
+
+Seul filtre : la période.
 
 \subsection{Grand livre}\label{sec:grand-livre}
 
 \emph{Rapports} → \emph{Grand livre}. C'est l'\textbf{extrait d'un compte} : ce qui a fait son
-solde, ligne à ligne. Là où le bilan dit « clients : 84'320.15 » et où la balance dit la même
-chose autrement, le grand livre répond à la question qui suit toujours — \emph{de quoi ce solde
+solde, ligne à ligne. Là où le bilan dit « clients : 84'320.15 » et où la balance clôt ce compte au
+même nombre, le grand livre répond à la question qui suit toujours — \emph{de quoi ce solde
 est-il fait ?}
 
 Chaque compte y est encadré par trois lignes sans lesquelles ce n'est pas un extrait : le
@@ -2040,7 +2062,7 @@ Le journal d'audit garde toujours la trace de l'action originale ET de l'action 
     \item[Actif] Ce que possède l'entreprise (liquidités, créances, stocks, immobilisations). Classe 1 du plan comptable.
     \item[Amortissement] Constatation comptable de la perte de valeur d'une immobilisation sur sa durée d'utilisation.
     \item[Avoir (note de crédit)] Document qui annule tout ou partie d'une facture émise (l'inverse d'une facture).
-    \item[Balance des comptes] Liste de tous les comptes avec leurs soldes débiteurs et créditeurs à une date donnée.
+    \item[Balance des comptes] Liste des comptes avec, sur une période, leur solde d'ouverture, leurs mouvements et leur solde de clôture.
     \item[Bilan] État du patrimoine d'une entreprise à une date donnée (actifs = passifs + capitaux propres).
     \item[Capitaux propres] Fonds appartenant aux propriétaires (capital, réserves, résultat reporté). Différence entre actifs et dettes.
     \item[Charge] Coût supporté par l'entreprise (achats, salaires, loyer). Classes 4 à 6.

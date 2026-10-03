@@ -1096,6 +1096,8 @@ reports-column-account-name = Bezeichnung
 reports-column-debit = Soll
 reports-column-credit = Haben
 reports-column-balance = Saldo
+reports-column-opening = Eröffnung
+reports-column-closing = Abschluss
 reports-column-entry-date = Datum
 reports-column-description = Buchungstext
 
@@ -1139,7 +1141,6 @@ reports-equity-result-loss = Verlust der Periode
 reports-retained-earnings = Gewinnvortrag
 reports-retained-earnings-calculated = Gewinnvortrag (berechnet)
 reports-retained-earnings-loss = Verlustvortrag
-reports-trial-balance-period-note = Die Rohbilanz zeigt die Bewegung der Periode (pro Geschäftsjahr). Die Summe pro Konto ist nicht mit dem kumulierten Saldo desselben Kontos in der Bilanz vergleichbar (Saldovortrag seit Beginn).
 
 # Alerts + badges UI (2 — code review Pass 1 i18n leaks)
 reports-equation-warning = ⚠️ Bilanzgleichung ungültig (Quelldaten prüfen).

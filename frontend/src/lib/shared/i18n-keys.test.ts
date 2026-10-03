@@ -349,7 +349,14 @@ const ATTENDU = {
 	// (+4) — la section « Différences d'arrondi » : titre, aide, libellé du
 	// sélecteur (trois clés neuves `settings-invoicing-rounding-*` dans les quatre
 	// catalogues) et son option vide, qui réemploie `settings-invoicing-select-none`.
-	sitesTotal: 1756,
+	//
+	// Story 25-5-b (#385) : **1756 → 1758**, recompté par ce test et par
+	// `grep -c "i18nMsg("` aux deux bornes de `reports/TrialBalanceView.svelte`
+	// (11 → 13) — la note « mouvement de la période » retirée (−1, clé supprimée des
+	// quatre catalogues), l'en-tête « Solde » remplacé par « Ouverture » et
+	// « Clôture » (+1, deux clés neuves `reports-column-opening` / `-closing`), et
+	// le libellé de la ligne calculée, qui réemploie les deux clés du bilan (+2).
+	sitesTotal: 1758,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

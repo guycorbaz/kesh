@@ -12,6 +12,10 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ### Fixed
 
+- **La balance des comptes ne concordait pas avec le bilan ([#385](https://github.com/guycorbaz/kesh/issues/385)).** Elle ne montrait que les **mouvements** de la période : le compte « clients » de la balance 2026 ne valait pas celui du bilan 2026, qui reporte les soldes depuis l'origine. Deux rapports, un compte, deux nombres — c'est ce qu'un réviseur trouve en dix minutes.
+
+  **Désormais**, chaque compte porte son **solde d'ouverture**, ses mouvements et son **solde de clôture**. Un compte de bilan reporte son solde depuis l'origine ; un compte de produits ou de charges repart de zéro au début de l'exercice. La clôture d'un compte de bilan **est** son solde au bilan, celle d'un compte de résultat son montant au compte de résultat, et les deux concordent avec le grand livre. Une ligne **« Résultat reporté (calculé) »** porte le résultat des exercices antérieurs, qu'aucun compte ne porte faute d'écriture de clôture, et un **contrôle ✓/⚠️** vérifie que les ouvertures s'équilibrent avec elle. Un compte archivé figure tant qu'il porte un solde.
+
 - **L'export de souveraineté ne portait que la moitié de votre comptabilité.** Il promettait de quoi « migrer vers un autre logiciel » et laissait dehors **les factures fournisseurs, les avoirs, les règlements, les projets, les ordres de virement, les personnes de contact, les pièces reçues et le journal d'audit** — onze tables comptables sur les trente que compte désormais l'archive.
 
   ⚠️ **Un cas était particulièrement trompeur** : les écritures exportaient bien un identifiant de projet, mais la table des projets manquait — l'identifiant ne renvoyait donc à rien. *Un fichier qui a l'air complet est pire qu'un fichier manifestement incomplet.*
@@ -47,6 +51,8 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 - **Un rapprochement et un règlement manuel enregistrés au même moment pouvaient régler deux fois la même facture ([#480](https://github.com/guycorbaz/kesh/issues/480)).** Un règlement manuel **partiel** ne marquait pas la facture comme modifiée : une acceptation de rapprochement en cours, qui avait lu le reste dû juste avant, l'encaissait une seconde fois — une facture de 1 000.— finissait réglée 1 400.—, et le compte clients devenait créditeur sans que rien ne le signale. Chaque règlement marque désormais la facture, et l'acceptation qui arrive trop tard est refusée sans rien écrire (« la facture a changé ») : il suffit de relire les propositions. Un interblocage entre deux opérations simultanées, qui rendait une erreur interne, est maintenant rejoué par le serveur.
 
 ### Changed
+
+- **La balance des comptes change de colonnes — écran, PDF et CSV ([#385](https://github.com/guycorbaz/kesh/issues/385)).** Ouverture | Débit | Crédit | Clôture : la colonne **« Solde »**, qui était le net des mouvements de la période et se prenait pour un solde de compte, disparaît de l'écran et du PDF. ⚠️ **Dans le CSV, la colonne `Solde` est remplacée** par `SoldeOuverture` (avant `TotalDebit`) et `SoldeCloture` (en dernier) : un outil qui lit ce fichier par position doit être adapté. Le CSV porte aussi la ligne du résultat reporté. *(API : `openingBalance` et `closingBalance` par compte, `retainedEarnings` et `openingBalanced` au rapport ; `balance` garde son sens — le net des mouvements.)*
 
 - **Le bouton *Créer un avoir* s'affiche aussi sur une facture payée**, et c'est voulu. Il était masqué sur une facture payée mais pas sur une facture réglée en partie : l'écran ne couvrait que la moitié de la règle. Il reste désormais visible, et Kesh explique le refus dans le dialogue — comme le bouton *Dévalider*.
 
