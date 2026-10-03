@@ -81,16 +81,21 @@ compte de grand livre** — son solde ne s'attribue pas à l'un d'eux. « Dernie
 relevés qui portent un solde** (un relevé sans `closing_balance` plus récent ne masque pas un plus ancien), départagé par
 `imported_at` puis `id`. **Signe** : `débit − crédit` du compte lié, quel que soit son type — c'est la convention du
 relevé (un découvert est négatif au CAMT, `DBIT`, comme le solde d'un compte de passif lié à une ligne de crédit tirée).
-**Date de valeur** (arbitrage de Guy, 2026-10-03, voie (a)) : le solde du relevé CAMT (`CLBD`) est arrêté à la date
-de **comptabilisation bancaire** (`camt053/mod.rs:541`), alors que les écritures de rapprochement sont datées à la date
+**Date de valeur** (arbitrage de Guy, 2026-10-03, voie (a)) : le solde du relevé CAMT (`CLBD`, `camt053/mod.rs:541`)
+vaut à la fin de la période du relevé (`period_to`, lu de `FrToDt/ToDtTm`, `:336` — la date propre du bloc `<Bal>`
+n'est pas lue) et reflète les mouvements par date de **comptabilisation bancaire**, alors que les écritures de rapprochement sont datées à la date
 de **valeur** (`reconciliation.rs:1958`, `:2295`, `kesh-reconciliation/src/manual.rs:35`). `ledgerBalanceAtStatement`
 est donc **corrigé** par les transactions bancaires **rapprochées** du compte (`bank_transactions.status = 'reconciled'`,
-`matched_entry_id` non nul) dont les deux dates tombent de part et d'autre de `period_to` : **+ Σ `amount`** des
-transactions dont `booking_date ≤ period_to` et dont l'écriture (`journal_entries.entry_date` de `matched_entry_id`) est
-**postérieure** ; **− Σ `amount`** de celles dont `booking_date > period_to` et dont l'écriture est **antérieure ou
-égale**. La date de l'écriture est **lue**, jamais déduite de `value_date` (un rapprochement manuel peut la choisir).
-Le montant de la transaction est signé comme le relevé (`amount` du CAMT) : la correction s'ajoute au solde `débit −
-crédit` sans changement de signe. Une transaction **non rapprochée** n'entre pas dans la correction : son absence du
+`matched_entry_id` non nul) dont les deux dates tombent de part et d'autre de `period_to` : **+** le mouvement que
+l'écriture `matched_entry_id` porte **sur le compte de grand livre lié actuel** (`SUM(jel.debit − jel.credit)`,
+`jel.entry_id = matched_entry_id AND jel.account_id = <compte lié>`, une fois par écriture) pour les transactions dont
+`booking_date ≤ period_to` et dont l'écriture (`journal_entries.entry_date`) est **postérieure** ; **−** ce même
+mouvement pour celles dont `booking_date > period_to` et dont l'écriture est **antérieure ou égale**. La date de
+l'écriture est **lue**, jamais déduite de `value_date` (un rapprochement manuel peut la choisir). On somme la **ligne de
+l'écriture**, pas `bank_transactions.amount` (validation P3) : une écriture posée sur un **autre** compte — lien du compte
+bancaire **changé** après des rapprochements, `set_journal_account_id_for_company` ne le garde pas — sort d'elle-même de
+la correction, et la correction ne suppose plus que la ligne bancaire vaille `amount` (vrai aujourd'hui sur les cinq
+chemins de rapprochement, `reconciliation.rs:1575, 2022, 2386, 3082, 3547`, mais rien ne le garantit demain). Une transaction **non rapprochée** n'entre pas dans la correction : son absence du
 grand livre est précisément l'écart que la tuile doit montrer.
 
 **Échelle** : l'écart se calcule **côté client**, en `big.js`, au centime — les deux soldes arrondis à 2 décimales
@@ -119,7 +124,11 @@ seule requête par appel, **par compte bancaire** (et non plus par compte de gra
 avec solde du compte bancaire, et deux sommes sur le compte lié — `SUM(debit) − SUM(credit)` toutes dates (le
 `currentBalance` d'aujourd'hui, **inchangé**) et la même somme bornée par `CASE WHEN je.entry_date <= period_to` —, pas
 de seconde copie du calcul ; le dernier relevé par compte se réduit à une ligne avant les sommes (`ROW_NUMBER()`,
-MariaDB 10.11). ⚠️ **Le calcul actuel n'a aucun test** : un test de **non-régression** est écrit et vert **contre le code
+MariaDB 10.11). La **correction de date de valeur** se calcule dans une **table dérivée (ou sous-requête corrélée) par
+compte bancaire**, jamais par une jointure `bank_transactions ⋈ journal_entries` dans le même `FROM` que les lignes du
+grand livre — elle multiplierait ces lignes par le nombre de transactions et fausserait les deux `SUM`. Le test de
+non-régression de `currentBalance` tourne **avec des transactions rapprochées présentes**, ce qui détecte ce produit
+cartésien. ⚠️ **Le calcul actuel n'a aucun test** : un test de **non-régression** est écrit et vert **contre le code
 actuel, dans un commit séparé, avant la réécriture** — compte lié avec écritures, compte lié **sans** écriture
 (`currentBalance` sérialisé `"0"`, pas `"0.0000"` : asserté sur le **JSON** de la route, une assertion `Decimal` ne
 verrait rien), compte non lié (`null`), ordre de la liste. Il est **exempté** de la règle « aurait échoué avant ».
@@ -135,7 +144,10 @@ verrait rien), compte non lié (`null`), ordre de la liste. Il est **exempté** 
   **date de valeur** — un crédit de 200 comptabilisé par la banque le jour du relevé, rapproché par une écriture datée
   du lendemain : écart **nul** ; le cas inverse (comptabilisé le lendemain, écriture du jour) : écart nul ; une
   transaction **non rapprochée** du jour du relevé : écart égal à son montant ; un rapprochement manuel dont la date
-  d'écriture diffère de `value_date` : la date **lue** fait foi ;
+  d'écriture diffère de `value_date` : la date **lue** fait foi ; le chemin **facture** (écriture datée
+  `value_date.unwrap_or(booking_date)`, `reconciliation.rs:1270`) ; un **lien changé** après rapprochement (écritures sur
+  l'ancien compte) : hors de la correction ; un rapprochement **annulé** (`reconciliation_cancel.rs:331` —
+  `matched_entry_id` à `NULL`, `pending`) : hors de la correction ;
 - `kesh-api` : forme de la réponse (`statementClosingBalance`, `statementDate`, `ledgerBalanceAtStatement` en chaînes) ;
 - **Vitest, par composant** — les trois tuiles sont **extraites** en composants (`features/homepage/`
   `RecentEntriesCard.svelte`, `OpenInvoicesCard.svelte`, `BankAccountsCard.svelte`, données en props, appels dans la
@@ -148,7 +160,8 @@ verrait rien), compte non lié (`null`), ordre de la liste. Il est **exempté** 
   **non guidé**, sans injonction à une action qu'il ne peut faire ; « Solde comptable » et le total renommé ; total
   **dédoublonné** par compte lié, avec sa note ; écart affiché seulement s'il est non nul **au centime** (`"100.0049"`
   contre `"100.00"` : pas d'écart ; `"100.005"` contre `"100.01"` : pas d'écart — le cas qui départage l'arrondi du
-  dépôt de l'arrondi bancaire) ; boutons d'action absents pour Consultation ; total en `big.js` (`0.1 + 0.2`) ;
+  dépôt de l'arrondi bancaire ; et `"-100.005"` contre `"-100.01"` — l'écart est **signé**, et la référence
+  `vat-purchase.ts:12` ne vaut que pour des montants positifs) ; boutons d'action absents pour Consultation ; total en `big.js` (`0.1 + 0.2`) ;
   `formatChfBalance` sur une chaîne à 4 décimales ;
 - **E2E** (sélecteurs `data-testid`, jamais un libellé traduit — garde `e2e-selecteurs-traduits`) — testids :
   `homepage-entry-row`, `homepage-entries-unavailable`, `homepage-invoices-open-count`, `homepage-invoices-open-total`,
@@ -170,7 +183,8 @@ verrait rien), compte non lié (`null`), ordre de la liste. Il est **exempté** 
 **AC 8 — Le manuel et le CHANGELOG.** `user-manual.tex` § *Tableau de bord* réécrit : les trois tuiles telles qu'elles
 sont, le solde **comptable** expliqué (le grand livre, pas la banque ; il ne reflète un encaissement qu'une fois
 celui-ci comptabilisé), le dernier relevé et l'écart, et ce que voit un rôle Consultation. PDF régénéré, contrôlé
-**aplati**. Le manuel renvoie à l'**import bancaire** pour l'origine du relevé (le solde de clôture du fichier CAMT). La capture
+**aplati**. Le manuel dit que l'écart tient compte des **dates de valeur** des mouvements rapprochés, et ses limites (une écriture
+saisie à la main n'est pas reliée au relevé). Le manuel renvoie à l'**import bancaire** pour l'origine du relevé (le solde de clôture du fichier CAMT). La capture
 `dashboard.png` (`% TODO capture`, `:220`) ne correspondra plus : limite assumée, déjà marquée. Le glossaire (« Actif :
 liquidités, créances… », `:2065`) parle de liquidités au sens comptable : **inchangé**. Manuels DE/IT/EN : un README
 chacun, rien à traduire. CHANGELOG, section `## [0.12.1] — Non publié` : `Fixed` (#388, #389), sous la section `### Changed` **existante**
@@ -224,6 +238,13 @@ un solde de clôture** — un import CSV n'en a pas ; la section *Import bancair
 - La correction de date de valeur ne connaît que les écritures **issues d'un rapprochement** (`matched_entry_id`). Une
   écriture saisie à la main pour un mouvement bancaire, à une date différente de sa comptabilisation par la banque,
   n'est pas corrigée — l'écart le montre, et c'est juste : rien ne relie cette écriture au relevé.
+- **Résidu après annulation de rapprochement** : une transaction comptabilisée par la banque **après** `period_to`, dont
+  l'écriture d'origine était **antérieure ou égale** et dont le rapprochement a été annulé (la contre-passation est
+  datée du jour), redevient `pending` et sort de la correction — le grand livre à `period_to` porte l'écriture, le
+  relevé non : écart fictif. Rare.
+- La correction parcourt toutes les transactions rapprochées du compte antérieures à `period_to` à chaque ouverture de
+  l'accueil (`idx_bank_transactions_pending` sert la recherche). Acceptable à cette échelle ; `EXPLAIN` relevé à la mise
+  en œuvre.
 
 ### Modules
 
@@ -249,6 +270,13 @@ un solde de clôture** — un import CSV n'en a pas ; la section *Import bancair
 
 ## Change Log
 
+- **2026-10-03** — Validation P3 (Sonnet, prompt `25-6-a-validate-prompt-p3.md`) : **0 CRITICAL/HIGH, 2 MED, 4 LOW**,
+  retenus. La correction somme la **ligne de l'écriture sur le compte lié actuel**, pas `amount` — juste après un
+  changement de lien (M1) ; le contrat de requête impose une table dérivée par compte bancaire, non-régression avec
+  transactions rapprochées présentes (M2) ; tests annulation, lien changé, chemin facture, arrondi négatif (L1) ;
+  résidu après annulation et performance en limites (L2, L4) ; `period_to` et `CLBD` reformulés (L3) ; manuel :
+  correction et limites de la date de valeur (LOW). La P3 a vérifié que la ligne bancaire vaut `amount` sur les cinq
+  chemins de rapprochement et le sens de la correction (chiffré). Trend : P1 4H/7M → P2 1H/6M → P3 2M.
 - **2026-10-03** — Arbitrage de Guy (« ok, vas-y ») : **H1 par la voie (a)** — l'écart est corrigé par les
   transactions rapprochées de part et d'autre de la date du relevé, la date de l'écriture étant lue via
   `matched_entry_id` ; **pas de découpage**.
