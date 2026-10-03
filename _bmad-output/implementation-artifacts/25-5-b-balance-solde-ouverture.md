@@ -26,7 +26,7 @@ afin que **le solde de clôture d'un compte de bilan soit le même nombre que ce
 - **Le moteur existe — dans le grand livre** (Story 24-1). `general_ledger.rs:11-35` pose **la règle d'ouverture** :
   `Asset`/`Liability` = cumul `entry_date < from`, tous exercices ; `Revenue`/`Expense` = cumul depuis le **début de
   l'exercice contenant `from`** (0 si `from` est ce premier jour). Implémentée par `opening_balance` (`:220-275`), avec
-  `is_debit_natured` / `signed` (`:182-192`) et `fiscal_year_start_containing` (`:194-217`) — **privés au module**, et
+  `is_debit_natured` / `signed` (`:182-193`) et `fiscal_year_start_containing` (`:195-218`) — **privés au module**, et
   **requête par compte**.
 - **Un test de concordance existe déjà** entre grand livre et balance (`crates/kesh-report/tests/general_ledger.rs:150-205`) :
   il ne compare que `total_debit` / `total_credit` — les mouvements, la seule chose que la balance porte aujourd'hui.
@@ -76,8 +76,12 @@ ouverture = clôture = `retained_earnings`, mouvements vides. Ce n'est **pas** u
 d'`account_id`, pas de lien vers le grand livre).
 
 **AC 5 — Un contrôle, pas une tautologie.** `TrialBalance` gagne `opening_balanced` et `closing_balanced` (`bool`) :
-Σ des ouvertures (resp. clôtures) **exprimées en sens débit** (positif pour un compte à nature débitrice, négatif sinon)
-moins `retained_earnings` vaut zéro. Le résultat reporté est calculé **indépendamment** (comme au bilan), donc
+`Σ debit_sense(row.opening_balance) − retained_earnings = 0` (resp. `closing_balance`), où
+`debit_sense(v) = if is_debit_natured(row.account_type) { v } else { −v }` — les soldes stockés sont **déjà signés par
+type** : les additionner sans re-signer les comptes à nature créditrice donnerait un faux ⚠️ sur des livres exacts
+(validation P1, calcul : 1000 − 600 ≠ 0 sur un jeu équilibré). Vérification chiffrée : ventes 1000 et charge 400 en
+exercice 1, balance de l'exercice 2 → ouvertures en sens débit 1000 (clients) − 400 (caisse) = 600, `retained_earnings`
+600, contrôle nul. Le résultat reporté est calculé **indépendamment** (comme au bilan), donc
 l'égalité est une vérification réelle, pas une identité de construction. Un déséquilibre n'est **pas** une erreur (à la
 différence de `TrialBalanceUnbalanced` sur les mouvements) : il est **journalisé** (`tracing::error!`) et affiché (⚠️),
 comme `equation_holds` au bilan.
@@ -94,8 +98,11 @@ donc (marqueur `active: false`), sinon la clôture ne concorderait pas avec le b
 - **CSV** : `NumeroCompte;NomCompte;SoldeOuverture;TotalDebit;TotalCredit;SoldeCloture` — la colonne `Solde` est
   **remplacée**, pas renommée en silence (CHANGELOG). Ligne de résultat reporté (libellé fr fixe, comme les autres en-têtes
   CSV), puis ligne `Total` (débit, crédit ; ouverture et clôture vides).
-- **PDF** : six colonnes en A4 portrait — nom tronqué plus court (la troncature existante s'adapte), libellés
-  `ledger_opening` / `ledger_closing` réutilisés, ligne `retained_result_label`. Garde « vide » inchangée
+- **PDF** : six colonnes en A4 portrait. La mise en page à cinq colonnes occupe **déjà** toute la largeur
+  (20 + 70 + 3 × 35 = 195 mm = 210 − 15, validation P1) : positions imposées `MARGIN_LEFT_MM +` **0** (N°), **20**
+  (intitulé), **75** (ouverture), **105** (débit), **135** (crédit), **165** (clôture) — colonnes de montant de 30 mm
+  (« -1'234'567.89 » y tient), intitulé de 55 mm tronqué à **22** caractères (au lieu de 30, constante nommée).
+  Libellés `ledger_opening` / `ledger_closing` réutilisés, ligne `retained_result_label`. Garde « vide » inchangée
   (`rows.is_empty()`).
 - `isReportEmpty('trial-balance', …)` (`reports.api.ts:169-172`) : inchangé — les comptes actifs sont toujours rendus.
 
@@ -112,12 +119,26 @@ Les tests appellent donc **réellement** `generate_balance_sheet`, `generate_inc
   de produits **= 0** au premier jour de l'exercice 2 (et non le cumul de l'exercice 1) ;
 - une période **en cours d'exercice** (mars–juin de l'exercice 2) : ouverture du compte de produits = cumul janvier–
   février ; clôture = celle du grand livre sur la même période (`section.closing`) ;
-- `opening_balanced` et `closing_balanced` vrais dans ces scénarios ;
+- **la frontière** : dans la période mars–juin, une écriture datée **le 1er mars** (comptée dans les mouvements,
+  absente de l'ouverture) et une datée **le 28 février** (dans l'ouverture, absente des mouvements) — la mutation
+  `<` → `<=` compterait la première deux fois et seule la comparaison au bilan la voit ;
+- une période **d'un seul jour** (`start = end`), une écriture ce jour-là et une la veille ;
+- le **premier exercice** d'une société (aucune écriture antérieure) : `retained_earnings = 0`, ouvertures nulles,
+  contrôles vrais ; un exercice **sans aucune écriture** : tout à zéro, contrôles vrais ;
+- des **pertes cumulées** (charges > produits en exercice 1) : `retained_earnings < 0`, libellé « Perte reportée »,
+  contrôles vrais ;
+- `opening_balanced` et `closing_balanced` vrais dans ces scénarios — et **faux** quand l'égalité est réellement
+  cassée : une ligne d'écriture **déséquilibrée insérée en SQL brut** (hors `create_in_tx`) datée dans l'exercice 1 →
+  balance de l'exercice 2 rendue (pas d'erreur : les mouvements de la période restent équilibrés), `opening_balanced`
+  et `closing_balanced` à `false`. Sans ce test, le contrôle reproduit l'angle mort d'`equation_holds`, jamais testé à
+  `false` dans le dépôt (validation P1) ;
+- un test **unitaire** de `debit_sense` (compte à nature créditrice re-signé) ;
 - un compte **archivé** à solde d'ouverture non nul, sans mouvement → présent, clôture = bilan ;
 - non-régression : mouvements, `balance`, `balanced` identiques à avant sur le jeu existant (`report_aggregates.rs`) ;
 - le test existant `general_ledger.rs:150-205` étendu à `opening` / `closing`.
-- Rendus : CSV (en-tête à six colonnes, ligne de résultat reporté, ligne `Total`) ; PDF (rendu non vide avec la ligne
-  calculée) ; **Vitest** de la vue (`TrialBalanceView.test.ts`, à créer : colonnes, ligne calculée, ✓/⚠️, note absente) ;
+- Rendus : CSV (en-tête à six colonnes, **valeurs** d'ouverture et de clôture dans l'ordre des colonnes, ligne de
+  résultat reporté, ligne `Total`) ; PDF (rendu non vide avec la ligne calculée ; la troncature à 22 caractères testée
+  sur un intitulé de 38) ; **Vitest** de la vue (`TrialBalanceView.test.ts`, à créer : colonnes, ligne calculée, ✓/⚠️, note absente) ;
   test d'API sur la forme de la réponse (`reports_e2e.rs`) ; **E2E** : la balance affiche les colonnes Ouverture /
   Clôture (`reports.spec.ts`, sélecteurs ancrés).
 
@@ -155,6 +176,8 @@ corrigé (« à une date donnée » → sur une période, ouverture et clôture)
   `balance_sheet.rs:40-55`) : le compte physique reste une ligne de compte, la ligne calculée reste à part.
 - **Ne pas** borner l'ouverture des comptes de bilan par `fiscal_year_id` : c'est exactement le défaut de #385.
 - **Ne pas** introduire de filtre de niveau de détail pour rendre le manuel vrai : c'est le manuel qu'on corrige.
+- La « requête agrégée unique » (AC 2) n'est tenue par **aucun test** (pas de compteur de requêtes dans le dépôt) :
+  c'est un contrôle de **revue de code**, assumé comme tel.
 
 ### Limites assumées (à écrire au manuel et en doc de module)
 
@@ -189,6 +212,12 @@ préventif*.
 
 ## Change Log
 
+- **2026-10-03** — Validation P1 (Sonnet ×3, prompt `25-5-b-validate-prompt-p1.md`) : **1 HIGH, 4 MED**, LOW. Retenus :
+  la frontière `entry_date = start` testée, et la veille (C1, HIGH) ; la formule du sens débit écrite et chiffrée (A) ;
+  le contrôle testé à `false` par une ligne déséquilibrée insérée en SQL brut (C2) ; premier exercice (C3) ; positions
+  des six colonnes du PDF chiffrées — la largeur est déjà saturée à cinq (B) ; période d'un jour, exercice vide, pertes
+  cumulées, valeurs CSV, troncature, requête unique laissée à la revue, deux références décalées (LOW). Règle, ligne
+  calculée et contrôle **confirmés par le calcul** sur trois jeux (lentille A, mutation #385 détectée : −1000 ≠ 0).
 - **2026-10-03** — Créée (Guy : « pousse et continue »).
 
 [#385]: https://github.com/guycorbaz/kesh/issues/385
