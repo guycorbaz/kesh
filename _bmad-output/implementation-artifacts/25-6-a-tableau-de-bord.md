@@ -108,9 +108,11 @@ existant.
   `ledgerBalanceAtStatement` `null` ; un compte lié de **passif** (ligne de crédit tirée) → solde et relevé de même
   signe, écart nul ; isolation par société ; non-régression de `currentBalance` / `lastTransactionDate` ;
 - `kesh-api` : forme de la réponse (`statementClosingBalance`, `statementDate`, `ledgerBalanceAtStatement` en chaînes) ;
-- **Vitest, par composant** — les trois tuiles sont **extraites** en composants (`features/dashboard/`
+- **Vitest, par composant** — les trois tuiles sont **extraites** en composants (`features/homepage/`
   `RecentEntriesCard.svelte`, `OpenInvoicesCard.svelte`, `BankAccountsCard.svelte`, données en props, appels dans la
-  page) : aucune page n'est testée aujourd'hui, et monter `+page.svelte` exigerait cinq mocks. Cas : dernières écritures
+  page) : aucune page n'est testée aujourd'hui, et monter `+page.svelte` exigerait cinq mocks. ⚠️ Le dossier est
+  `homepage/`, pas `dashboard/` : `lint-i18n-ownership` n'admet dans `features/X/` que les clés `X-*`, et les clés de
+  l'accueil sont `homepage-*`. Cas : dernières écritures
   listées / vide / vide **guidé** / échec (l'échec prime sur le guidé) ; factures ouvertes chiffrées pour un rôle
   **Consultation** ; « dont M échues » absent à zéro ; vide guidé ; « Solde comptable » et le total renommé ; total
   **dédoublonné** par compte lié, avec sa note ; écart affiché seulement s'il est non nul **au centime** (`"100.0049"`
@@ -143,7 +145,7 @@ créer** (« Total liquidités » → « Total (solde comptable) »). README et 
 - [ ] **T1 — le dernier relevé et le solde à sa date** (AC 4, 6), `kesh-db` `bank_accounts.rs`.
 - [ ] **T2 — le DTO** (AC 4, 6), `kesh-api` `routes/bank_accounts.rs`.
 - [ ] **T3 — les montants en chaînes** (AC 5), `bank-accounts.api.ts`, `format.ts`, page des comptes bancaires, fixtures.
-- [ ] **T4 — l'accueil** (AC 1, 2, 3, 4) : trois composants extraits dans `features/dashboard/`, la page qui les
+- [ ] **T4 — l'accueil** (AC 1, 2, 3, 4) : trois composants extraits dans `features/homepage/`, la page qui les
   alimente ; l'i18n (4 locales, parité, `sitesTotal`, `CLES_RELEVEES` de `i18n-un-repli-par-cle.test.ts`, relevé des
   libellés en dur).
 - [ ] **T5 — tests** (AC 7).
@@ -178,7 +180,7 @@ créer** (« Total liquidités » → « Total (solde comptable) »). README et 
 ### Modules
 
 `kesh-db` (dernier relevé, solde à une date), `kesh-api` (DTO), `frontend` (accueil et trois composants
-`features/dashboard/`, API et formateur des comptes bancaires, page des comptes, helper E2E), `kesh-i18n` (+ `docs`,
+`features/homepage/`, API et formateur des comptes bancaires, page des comptes, helper E2E), `kesh-i18n` (+ `docs`,
 `CHANGELOG`) — **quatre modules de code**, sous le seuil.
 
 ### References
