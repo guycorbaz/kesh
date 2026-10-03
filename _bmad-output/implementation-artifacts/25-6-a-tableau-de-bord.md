@@ -62,7 +62,9 @@ l'appel : « indisponible ».
 **AC 3 — Le solde est nommé « solde comptable », et compté une fois.** Dans la tuile « Comptes bancaires », chaque solde est libellé
 **« Solde comptable »** et le total **« Total (solde comptable) »** au lieu de « Total liquidités ». Le libellé d'aide dit
 d'où vient le chiffre : le grand livre, non la banque. **Le total ne compte chaque compte de grand livre qu'une fois** :
-rien n'empêche deux comptes bancaires d'être liés au même compte (`idx_bank_accounts_journal_account` n'est pas unique,
+tous les comptes liés au même compte de grand
+livre ont **par construction** le même solde (la somme porte sur le même `account_id`) : on en garde un, sans autre
+règle ; rien n'empêche deux comptes bancaires d'être liés au même compte (`idx_bank_accounts_journal_account` n'est pas unique,
 `validate_journal_account_id` ne contrôle pas l'usage), et le total les compterait deux fois ; une note le signale
 quand des comptes partagent un même compte lié. La clé `homepage-bank-total-liquidity` est **remplacée** par
 `homepage-bank-total-ledger` (4 locales) et le `data-testid` `homepage-bank-total-liquidity` par `homepage-bank-total`
@@ -79,14 +81,22 @@ compte de grand livre** — son solde ne s'attribue pas à l'un d'eux. « Dernie
 relevés qui portent un solde** (un relevé sans `closing_balance` plus récent ne masque pas un plus ancien), départagé par
 `imported_at` puis `id`. **Signe** : `débit − crédit` du compte lié, quel que soit son type — c'est la convention du
 relevé (un découvert est négatif au CAMT, `DBIT`, comme le solde d'un compte de passif lié à une ligne de crédit tirée).
-**Échelle** : l'écart se calcule au centime — les deux soldes arrondis à 2 décimales (`round_dp` à mi-chemin loin de
-zéro) avant la soustraction ; le relevé est en `DECIMAL(18,2)`, le grand livre à 4 décimales.
+**Échelle** : l'écart se calcule **côté client**, en `big.js`, au centime — les deux soldes arrondis à 2 décimales
+(`.round(2, Big.roundHalfUp)`, l'arrondi du dépôt — `vat-purchase.ts:12` ; **pas** `round_dp`, qui est l'arrondi
+bancaire) avant la soustraction ; le relevé est en `DECIMAL(18,2)`, le grand livre à 4 décimales. **Partage** : le
+nombre de comptes bancaires liés à un même compte de grand livre se compte **en SQL, sur tous les comptes de la
+société, archivés compris** (l'historique d'un compte archivé alimente le même compte de grand livre) — la réponse ne
+dépend donc pas de `includeArchived`. **Imports CSV** : ils ne portent jamais de solde de clôture
+(`kesh-import/src/csv/parser.rs:342`) — un compte alimenté par CSV seul n'a pas de relevé, et un import CSV plus récent
+ne masque pas un relevé CAMT plus ancien.
 
 **AC 5 — Les montants ne passent plus par `Number`.** `currentBalance` et les trois champs neufs restent des **chaînes
 décimales** côté frontend (`BankAccountSummary`), le total et l'écart se calculent en `big.js`. `formatChfBalance`
 (`features/bank-accounts/format.ts:21`, aujourd'hui `(balance: number)`) prend une **chaîne ou un `Big`** et formate
 `new Big(v).toFixed(2)` — TypeScript refuse une chaîne nue dans `Intl.NumberFormat.format`. Les deux lecteurs de
-`currentBalance` (accueil, page des comptes bancaires) sont mis à jour ; côté `Raw`, les champs neufs sont **optionnels**
+`currentBalance` (accueil, page des comptes bancaires) sont mis à jour. Forme imposée :
+`format(new Big(v).round(2, Big.roundHalfUp).toNumber())` — un `string` (même issu de `toFixed`) ne compile pas, et le
+`Number` d'un montant **déjà arrondi au centime** est exact jusqu'à ~9·10¹³ CHF. Côté `Raw`, les champs neufs sont **optionnels**
 et normalisés à `null` aux quatre sites de `parseBankAccount` (`bank-accounts.api.ts:101,125,149,164` — les routes de
 mutation rendent un `BankAccount` nu) ; les fixtures de `bank-accounts.api.test.ts` et de
 `BankAccountJournalLinkForm.test.ts` complétées.
@@ -96,8 +106,11 @@ mutation rendent un `BankAccount` nu) ; les fixtures de `bank-accounts.api.test.
 seule requête par appel, **par compte bancaire** (et non plus par compte de grand livre) : `LEFT JOIN` du dernier relevé
 avec solde du compte bancaire, et deux sommes sur le compte lié — `SUM(debit) − SUM(credit)` toutes dates (le
 `currentBalance` d'aujourd'hui, **inchangé**) et la même somme bornée par `CASE WHEN je.entry_date <= period_to` —, pas
-de seconde copie du calcul. Un test de **non-régression** fige `currentBalance` et `lastTransactionDate` sur un jeu
-existant.
+de seconde copie du calcul ; le dernier relevé par compte se réduit à une ligne avant les sommes (`ROW_NUMBER()`,
+MariaDB 10.11). ⚠️ **Le calcul actuel n'a aucun test** : un test de **non-régression** est écrit et vert **contre le code
+actuel, dans un commit séparé, avant la réécriture** — compte lié avec écritures, compte lié **sans** écriture
+(`currentBalance` sérialisé `"0"`, pas `"0.0000"` : asserté sur le **JSON** de la route, une assertion `Decimal` ne
+verrait rien), compte non lié (`null`), ordre de la liste. Il est **exempté** de la règle « aurait échoué avant ».
 
 **AC 7 — Tests.** Chacun aurait échoué avant le patch :
 - `kesh-db` : relevé le plus récent choisi — deux imports dont le **plus récent importé est le plus ancien en date**
@@ -114,9 +127,12 @@ existant.
   `homepage/`, pas `dashboard/` : `lint-i18n-ownership` n'admet dans `features/X/` que les clés `X-*`, et les clés de
   l'accueil sont `homepage-*`. Cas : dernières écritures
   listées / vide / vide **guidé** / échec (l'échec prime sur le guidé) ; factures ouvertes chiffrées pour un rôle
-  **Consultation** ; « dont M échues » absent à zéro ; vide guidé ; « Solde comptable » et le total renommé ; total
+  **Consultation** ; « dont M échues » absent à zéro ; vide guidé — sans « première » (une facture émise puis soldée
+  laisse la tuile vide : « Créez votre première facture » serait faux) ; un rôle **Consultation** voit le texte vide
+  **non guidé**, sans injonction à une action qu'il ne peut faire ; « Solde comptable » et le total renommé ; total
   **dédoublonné** par compte lié, avec sa note ; écart affiché seulement s'il est non nul **au centime** (`"100.0049"`
-  contre `"100.00"` : pas d'écart) ; boutons d'action absents pour Consultation ; total en `big.js` (`0.1 + 0.2`) ;
+  contre `"100.00"` : pas d'écart ; `"100.005"` contre `"100.01"` : pas d'écart — le cas qui départage l'arrondi du
+  dépôt de l'arrondi bancaire) ; boutons d'action absents pour Consultation ; total en `big.js` (`0.1 + 0.2`) ;
   `formatChfBalance` sur une chaîne à 4 décimales ;
 - **E2E** (sélecteurs `data-testid`, jamais un libellé traduit — garde `e2e-selecteurs-traduits`) — testids :
   `homepage-entry-row`, `homepage-entries-unavailable`, `homepage-invoices-open-count`, `homepage-invoices-open-total`,
@@ -125,7 +141,12 @@ existant.
     `tests/e2e/helpers/api-fixtures.ts` (aucun n'existe) ;
   - une facture validée apparaît dans « Factures ouvertes » avec son montant ;
   - un rôle **Consultation**, créé par l'API sur le patron de `homepage-reminders.spec.ts:59-88`, voit les factures
-    ouvertes chiffrées et aucun bouton d'action — la frontière HTTP n'est vérifiée que là.
+    ouvertes chiffrées et aucun bouton d'action — la frontière HTTP n'est vérifiée que là ;
+  - un passage **axe** sur l'accueil **peuplé** (écriture, facture, compte avec relevé et écart) — celui de
+    `homepage-settings.spec.ts:65-70` tourne sur un accueil vide et ne voit rien de ce que la story ajoute. Les
+    écritures sont une liste (`ul`/`li`), chaque lien a un nom accessible, l'écart a un libellé (pas la couleur seule) ;
+  - montage déterministe : `seedTestState('with-company')` en `beforeAll` (patron `homepage-reminders.spec.ts:19`),
+    l'écriture datée pour être la plus récente.
 - Les E2E existants de l'accueil (`homepage-reminders.spec.ts`, `homepage-settings.spec.ts`) gardent leurs sélecteurs :
   les `data-testid` `homepage-card-*` et `homepage-reminders-count`, et le titre de la tuile « Comptes bancaires », sont
   conservés.
@@ -136,8 +157,9 @@ celui-ci comptabilisé), le dernier relevé et l'écart, et ce que voit un rôle
 **aplati**. Le manuel renvoie à l'**import bancaire** pour l'origine du relevé (le solde de clôture du fichier CAMT). La capture
 `dashboard.png` (`% TODO capture`, `:220`) ne correspondra plus : limite assumée, déjà marquée. Le glossaire (« Actif :
 liquidités, créances… », `:2065`) parle de liquidités au sens comptable : **inchangé**. Manuels DE/IT/EN : un README
-chacun, rien à traduire. CHANGELOG, section `## [0.12.1] — Non publié` : `Fixed` (#388, #389), `### Changed` **à
-créer** (« Total liquidités » → « Total (solde comptable) »). README et site relus
+chacun, rien à traduire. CHANGELOG, section `## [0.12.1] — Non publié` : `Fixed` (#388, #389), sous la section `### Changed` **existante**
+(« Total liquidités » → « Total (solde comptable) »). Le § *Tableau de bord* dit que **seuls les relevés CAMT.053 portent
+un solde de clôture** — un import CSV n'en a pas ; la section *Import bancaire* le dit aussi. README et site relus
 (`grep -rni "tableau de bord\|liquidit" README.md website/`).
 
 ## Tasks / Subtasks
@@ -146,8 +168,15 @@ créer** (« Total liquidités » → « Total (solde comptable) »). README et 
 - [ ] **T2 — le DTO** (AC 4, 6), `kesh-api` `routes/bank_accounts.rs`.
 - [ ] **T3 — les montants en chaînes** (AC 5), `bank-accounts.api.ts`, `format.ts`, page des comptes bancaires, fixtures.
 - [ ] **T4 — l'accueil** (AC 1, 2, 3, 4) : trois composants extraits dans `features/homepage/`, la page qui les
-  alimente ; l'i18n (4 locales, parité, `sitesTotal`, `CLES_RELEVEES` de `i18n-un-repli-par-cle.test.ts`, relevé des
-  libellés en dur).
+  alimente ; l'i18n (4 locales, parité, `sitesTotal`, relevé des libellés en dur). Les composants appellent `i18nMsg`
+  **directement** (la garde `lint-i18n-ownership` ne lit que `i18nMsg(`, `scripts/lint-i18n-ownership.js:151` — le
+  relais `msg()` de la page lui échappe). **Clés neuves** : `homepage-entries-unavailable`,
+  `homepage-invoices-unavailable`, `homepage-invoices-open` (« { $n } facture(s) ouverte(s) — { $amount } »),
+  `homepage-invoices-overdue` (« dont { $n } échue(s) — { $amount } »), `homepage-bank-ledger-balance` (« Solde
+  comptable »), `homepage-bank-ledger-help`, `homepage-bank-total-ledger`, `homepage-bank-shared-ledger-note`,
+  `homepage-bank-statement` (« Relevé du { $date } : { $amount } », date au format suisse), `homepage-bank-gap`
+  (« Écart : { $amount } ») ; `homepage-invoices-empty-guided` **réécrite** sans « première » ;
+  `homepage-bank-total-liquidity` **retirée**.
 - [ ] **T5 — tests** (AC 7).
 - [ ] **T6 — manuel, CHANGELOG** (AC 8).
 - [ ] **T7 — gates** : backend complet, frontend complet, **E2E complet**.
@@ -201,6 +230,22 @@ créer** (« Total liquidités » → « Total (solde comptable) »). README et 
 
 ## Change Log
 
+- **2026-10-03** — Validation P2 (Opus, prompt `25-6-a-validate-prompt-p2.md`) : **1 HIGH, 6 MED, 8 LOW**.
+  - Retenus :
+    - l'arrondi de l'écart en `big.js` côté client (`round_dp` est bancaire) (M1) ;
+    - la non-régression écrite contre le code actuel, avant la réécriture, JSON `"0"` (M2) ;
+    - le partage compté en SQL, archivés compris (M3) ;
+    - les textes guidés (« première ») et la variante Consultation (M4) ;
+    - axe sur l'accueil peuplé (M5) ;
+    - les imports CSV sans solde (M6) ;
+    - `formatChfBalance` qui compile (L1), `CLES_RELEVEES` retiré (L2), `### Changed` existante (L3), `i18nMsg`
+      direct (L4), clés nommées (L5), règle de dédoublonnage écrite (L6), E2E déterministes (L7).
+  - ⚠️ **H1 (HIGH) — date de valeur contre date de comptabilisation** : le relevé CAMT (`CLBD`) est un solde par date de
+    comptabilisation ; les écritures de rapprochement sont datées à la date de **valeur**
+    (`reconciliation.rs:1958`). Sur des livres entièrement rapprochés, un mouvement de fin de mois à valeur décalée
+    produit un écart fictif. **Deux voies, soumises à Guy** ; **non appliqué** dans l'attente.
+  - ⚠️ **Signal de découpage** : sévérité maximale HIGH → HIGH (P1 → P2). Défauts **distincts** (P1 : partage,
+    solde à une date ; P2 : date de valeur), aucun recyclé. Recommandation : **ne pas découper** — arbitrage à Guy.
 - **2026-10-03** — Validation P1 (Sonnet ×3, prompt `25-6-a-validate-prompt-p1.md`) : **4 HIGH, 7 MED**, LOW.
   - **Réfuté — A1 (HIGH)**, « signe de l'écart faux pour un compte de passif ». `débit − crédit` est la convention du
     relevé quel que soit le type : un passif lié à une ligne de crédit tirée de 1000 vaut −1000, comme le relevé
