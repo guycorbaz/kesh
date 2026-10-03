@@ -1,6 +1,6 @@
 # Story 25.5-b : La balance des comptes porte un solde d'ouverture — et concorde enfin avec le bilan
 
-Status: review
+Status: done
 
 **Issue : [#385]**, que cette story **ferme** : la PR porte `closes #385` dans le **titre ET le corps**. Seconde moitié de
 la 25-5, découpée le 2026-09-23 (la 25-5-a a fermé #386). Branche `story/25-5-b-balance-solde-ouverture`, partie de
@@ -323,6 +323,12 @@ Claude Opus 5.5 (`claude-opus-5-5`).
 
 ## Change Log
 
+- **2026-10-03** — Revue de code P2 ciblée (Haiku, prompt `25-5-b-review-prompt-p2.md`) : **0 finding**, sorties des
+  quatre vérifications fournies. Le seul résidu cité (« montant au compte de résultat », AC 9) relu par
+  l'orchestrateur : il porte sur l'exercice entier, où l'égalité tient. **Boucle close** : P1 1 MED (Sonnet ×3) → P2 0
+  (Haiku). Gate complet après la remédiation : base remise à zéro, `scripts/test-fast.sh` **2547/2547, 4 ignorés** ;
+  frontend inchangé depuis son gate ; E2E rejoué entre-temps : 227 passés, 9 échoués — les 9 attendus d'un run
+  matinal —, 19 ignorés. Statut → `done`.
 - **2026-10-03** — Revue de code P1 (Sonnet ×3, prompt `25-5-b-review-prompt-p1.md`) : **0 CRITICAL/HIGH, 1 MED**, LOW.
   - **C-1 (MED)** : le manuel et le CHANGELOG promettaient la concordance d'un compte de **résultat** avec le compte de
     résultat **sur toute période**. C'est faux en cours d'exercice, où le compte de résultat ne porte que les mouvements
