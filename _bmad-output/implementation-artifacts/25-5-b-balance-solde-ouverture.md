@@ -65,7 +65,9 @@ paire ; résultat : la seconde ; signé par type). La balance fait **une requêt
 qui rend, par compte, **trois paires de sommes brutes** — `entry_date < start`, `entry_date ∈ [fy_start, start[`, et les
 mouvements de la période — **sans** `CASE` sur le type ni sur le signe en SQL (le `CASE` de signe actuel,
 `trial_balance.rs:71-75`, disparaît au profit de `signed`). Le grand livre appelle `opening_from` lui aussi (sa
-requête d'ouverture rend les deux paires) ; ses tests restent verts sans retouche d'assertion. ⚠️ `TrialBalanceRow`
+requête d'ouverture rend les deux paires ; sa période est libre — quand aucun exercice ne couvre `from`,
+`fiscal_year_start_containing` rend `None` et il passe une paire **nulle** « depuis le début d'exercice », ce qui garde
+l'ouverture d'un compte de résultat à zéro comme aujourd'hui) ; ses tests restent verts sans retouche d'assertion. ⚠️ `TrialBalanceRow`
 dérive `sqlx::FromRow` (`trial_balance.rs:35`) : un champ calculé en Rust ferait échouer la lecture **à l'exécution**
 (`ColumnNotFound`), invisible à la compilation — lire dans une structure brute intermédiaire, puis construire la
 ligne.
@@ -242,6 +244,12 @@ préventif*.
 
 ## Change Log
 
+- **2026-10-03** — Validation P3 ciblée (Haiku, prompt `25-5-b-validate-prompt-p3.md`) : **0 finding**, sorties des quatre
+  vérifications fournies. Le point 2 (compatibilité de l'AC 2 avec le grand livre), établi par raisonnement, **repris
+  par l'orchestrateur** : la période libre du grand livre (`LedgerPeriod`) impose de passer une paire nulle quand aucun
+  exercice ne couvre `from` — écrit à l'AC 2 (LOW). **Boucle close** : P1 1H/4M (Sonnet ×3) → P2 4M/9L (Opus) → P3 0
+  (Haiku). ⚠️ Arbitrage de Guy attendu sur le CSV (remplacer `Solde` ou ajouter deux colonnes en fin de ligne) — défaut
+  retenu : remplacer.
 - **2026-10-03** — Validation P2 (Opus, prompt `25-5-b-validate-prompt-p2.md`) : **0 CRITICAL/HIGH, 4 MED, 9 LOW**,
   retenus. `closing_balanced` retiré — copie d'`opening_balanced` par construction (M1) ; la forme de l'AC 2 prescrite
   (sommes brutes en SQL, règle en Rust partagée avec le grand livre ; piège `FromRow`) (M2) ; libellés courts
