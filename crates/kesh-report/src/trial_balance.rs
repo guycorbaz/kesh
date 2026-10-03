@@ -35,9 +35,17 @@
 //!   Il n'y a pas de contrôle de clôture : la clôture vaut l'ouverture plus des
 //!   mouvements équilibrés, ce serait la copie du premier.
 //!
-//! # Limite connue
+//! # Limites connues
 //!
-//! Le signe est lu sur le `account_type` **courant** du compte (issues #274, #382).
+//! - Le signe est lu sur le `account_type` **courant** du compte (issues #274, #382).
+//! - Les mouvements filtrent `fiscal_year_id` **et** la date, l'ouverture la date
+//!   seule : la concordance avec le bilan suppose que toute écriture tombe dans les
+//!   bornes de son exercice — ce que `journal_entries::create_in_tx` impose
+//!   (`DateOutsideFiscalYear`), et qu'aucune mise à jour ne peut plus défaire
+//!   (Story 24-4b).
+//! - La requête lit **tout l'historique** de la société jusqu'à la fin de la
+//!   période — le prix d'une ouverture cumulée depuis l'origine, comme au bilan.
+//!   Sans mesure à ce jour ; à surveiller si l'historique grossit.
 
 use kesh_db::entities::AccountType;
 use kesh_db::repositories::fiscal_years;

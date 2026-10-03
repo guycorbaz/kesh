@@ -281,11 +281,14 @@ Claude Opus 5.5 (`claude-opus-5-5`).
     - `concordance_compte_de_resultat` étendu à une période en cours d'exercice ;
     - `reports_e2e.rs` : un test étendu à la forme de la réponse.
   - Vitest : **+6** dans `TrialBalanceView.test.ts`, neuf. E2E : `reports.spec.ts` étendu.
-- **Gates** (T7) : base remise à zéro, `scripts/test-fast.sh` **2545/2545** (fmt, clippy, nextest) ; frontend `check`
-  0 erreur, `lint-i18n-ownership` PASS, `test:unit` **845/845**, `build` OK ; **E2E complet** sur `kesh_e2e` migrée à
-  neuf (run de 10:07 UTC) : **224 passés, 12 échoués** — les 10 attendus d'un run matinal (KF-029 ×7, KF-045 ×2
+- **Gates** (T7) : base remise à zéro, `scripts/test-fast.sh` **2545/2545, 4 ignorés** (fmt, clippy, nextest) ;
+  frontend `check` 0 erreur, `lint-i18n-ownership` PASS, `test:unit` **845/845**, `build` OK ; **E2E complet** sur
+  `kesh_e2e` migrée à neuf (run de 10:07 UTC) : **224 passés, 12 échoués, 19 ignorés** — les 10 attendus d'un run matinal (KF-029 ×7, KF-045 ×2
   `invoices.spec.ts:415/439`, KF-046 `sidebar-navigation:75`) et la paire de pollution documentée `products:166` +
   `product-revenue-account:133`, **vertes rejouées seules** ; `reports.spec.ts` vert, extension 25-5-b comprise.
+- ⚠️ **Deux tests PDF prouvent moins que l'AC 9 ne le demande** (revue P1, C-2) : `…_is_not_the_empty_render` compare
+  des longueurs, et le test de troncature appelle la fonction et la constante, pas le site d'appel du rendu. Le PDF ne
+  s'inspecte pas sans extraire son texte ; limite assumée, aucune mutation PDF n'est déclarée tuée par eux.
 - **Mutations tuées** :
   - `<` → `<=` sur la borne d'ouverture : 2 tests tombent ;
   - ouverture de résultat cumulée depuis l'origine : 5 tests ;
@@ -320,6 +323,26 @@ Claude Opus 5.5 (`claude-opus-5-5`).
 
 ## Change Log
 
+- **2026-10-03** — Revue de code P1 (Sonnet ×3, prompt `25-5-b-review-prompt-p1.md`) : **0 CRITICAL/HIGH, 1 MED**, LOW.
+  - **C-1 (MED)** : le manuel et le CHANGELOG promettaient la concordance d'un compte de **résultat** avec le compte de
+    résultat **sur toute période**. C'est faux en cours d'exercice, où le compte de résultat ne porte que les mouvements
+    (mars–juin : 820 contre 570). Corrigé : clôture « depuis le début de l'exercice », égale au compte de résultat
+    quand la période commence au premier jour de l'exercice, au grand livre toujours. PDF régénéré, contrôlé aplati.
+  - **LOW corrigés** :
+    - le contrôle d'ouverture n'existait qu'à l'écran ; le PDF l'écrit désormais sous les totaux quand il tombe (A-1,
+      nouveau libellé `opening_unbalanced`, test, mutation tuée) ;
+    - un compte archivé aux mouvements compensés n'était exercé par aucun test (C-3, test neuf, mutation « inclusion
+      sur le montant net » tuée) ;
+    - les ignorés manquaient aux gates déclarés (C-4) ;
+    - la limite des deux tests PDF est écrite (C-2) ;
+    - deux limites sont écrites en doc de module : l'invariant date ↔ exercice, tenu par `create_in_tx`
+      (`DateOutsideFiscalYear`), vérifié (A-4, B-2) ; et la lecture de tout l'historique (A-5, B-1).
+  - **Écartés** :
+    - « Perte reportée » réservé à l'écran, voulu par l'AC 4 (A-2) ;
+    - la convention de signe, écrite au manuel (A-3) ;
+    - la ligne du résultat reporté affichée à 0, voulue (B-3).
+  - Gate ciblé : `fmt`, `clippy kesh-report`, `binary(trial_balance_opening)` + tests `trial_balance` 21/21. **Gate complet
+    au push.**
 - **2026-10-03** — Implémentée (dev-story) : T1–T7, gates ci-dessus. Statut → `review`.
 - **2026-10-03** — Validation P3 ciblée (Haiku, prompt `25-5-b-validate-prompt-p3.md`) : **0 finding**, sorties des quatre
   vérifications fournies. Le point 2 (compatibilité de l'AC 2 avec le grand livre), établi par raisonnement, **repris

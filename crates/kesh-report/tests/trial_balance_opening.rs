@@ -518,6 +518,46 @@ async fn archive(pool: &MySqlPool, account_id: i64) {
         .expect("compte archivé");
 }
 
+/// Un compte archivé dont les lignes de la période **se compensent** (net nul),
+/// sans ouverture : il figure — il a été mouvementé. Mutation tuée : une règle
+/// d'inclusion sur le **montant** des mouvements plutôt que sur leur existence.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn un_compte_archive_aux_mouvements_compenses_figure(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    let fy = seeded.fiscal_year_id;
+    post(
+        &pool,
+        &seeded,
+        fy,
+        ymd(2026, 3, 1),
+        "1000",
+        "1100",
+        dec!(100),
+    )
+    .await;
+    post(
+        &pool,
+        &seeded,
+        fy,
+        ymd(2026, 3, 2),
+        "1100",
+        "1000",
+        dec!(100),
+    )
+    .await;
+    archive(&pool, seeded.accounts["1100"]).await;
+    let tb = balance(
+        &pool,
+        &seeded,
+        &period(fy, ymd(2026, 1, 1), ymd(2026, 12, 31)),
+    )
+    .await;
+    assert_eq!(
+        row(&tb, "1100"),
+        (Decimal::ZERO, dec!(100), dec!(100), Decimal::ZERO)
+    );
+}
+
 /// ⛔ Un compte archivé qui porte encore un solde figure à la balance — comptes de
 /// bilan et de résultat. Mutation tuée : la règle d'inclusion d'avant (archivé =
 /// seulement s'il a un mouvement dans la période) — le compte disparaîtrait, sa

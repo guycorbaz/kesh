@@ -119,6 +119,9 @@ pub struct SectionLabels {
     pub col_opening: String,
     /// En-tête court de la colonne de clôture de la balance (Story 25-5-b).
     pub col_closing: String,
+    /// Avertissement de la balance quand les ouvertures ne s'équilibrent pas avec
+    /// le résultat reporté (Story 25-5-b) — l'écran a son ⚠️, le PDF ce texte.
+    pub opening_unbalanced: String,
     pub col_entry_date: String,
     pub col_description: String,
     // Header
@@ -175,6 +178,10 @@ impl SectionLabels {
             col_balance: "Solde".into(),
             col_opening: "Ouverture".into(),
             col_closing: "Clôture".into(),
+            // ≈ 145 mm en Helvetica-Bold 10 pt : tient sur une ligne (`write_line` ne
+            // renvoie pas à la ligne).
+            opening_unbalanced:
+                "Contrôle d'ouverture en écart : une écriture antérieure est déséquilibrée.".into(),
             col_entry_date: "Date".into(),
             col_description: "Libellé".into(),
             header_period: "Période".into(),
@@ -830,6 +837,14 @@ pub fn render_trial_balance_pdf(
         true,
     );
     builder.cursor_y -= LINE_HEIGHT_MM;
+
+    // Le contrôle d'ouverture : silencieux s'il tient, écrit s'il tombe — un PDF
+    // remis à un réviseur ne doit pas perdre le signal que l'écran affiche.
+    if !tb.opening_balanced {
+        builder.cursor_y -= LINE_HEIGHT_MM * 0.5;
+        builder.ensure_space_for_row();
+        builder.write_line(&l.opening_unbalanced, FONT_SIZE_PT, true, 0.0);
+    }
 
     builder.finalize()
 }
@@ -1988,6 +2003,17 @@ mod tests {
         let empty = render_trial_balance_pdf(&fixture_tb(true), &ctx).unwrap();
         assert!(full.starts_with(b"%PDF-1."));
         assert!(full.len() > empty.len());
+    }
+
+    #[test]
+    fn trial_balance_pdf_writes_the_opening_warning_only_when_unbalanced() {
+        // Story 25-5-b, revue P1 — le contrôle d'ouverture n'existait qu'à l'écran.
+        let ctx = PdfContext::fr_ch_default("CI Test Company");
+        let ok = render_trial_balance_pdf(&fixture_tb(false), &ctx).unwrap();
+        let mut broken = fixture_tb(false);
+        broken.opening_balanced = false;
+        let warned = render_trial_balance_pdf(&broken, &ctx).unwrap();
+        assert!(warned.len() > ok.len(), "l'avertissement doit être écrit");
     }
 
     #[test]
