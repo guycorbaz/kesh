@@ -20,6 +20,14 @@ Status: ready-for-dev
 5. **Facture annulée par un avoir** : son PDF figé, s'il existe, reste servi.
 6. **Empreinte** SHA-256 au journal d'audit au gel, **vérifiée à chaque lecture**.
 
+7. **(2026-10-04, validation P1)** **Refiger, geste d'administrateur** : un PDF figé dont le fichier a disparu (le cas
+   de toute restauration tant que [#503] n'est pas livrée) peut être **refigé** par un administrateur — nouveau document,
+   ancienne et nouvelle empreinte au journal d'audit. Sans ce geste, une facture envoyée dont le fichier manque serait
+   sans issue : la dévalidation est refusée, et rien ne refige.
+8. **(2026-10-04, validation P1)** **Le gel par tout rôle** : le premier téléchargement fige, que l'acteur soit
+   Consultation ou une clé d'API en lecture — une pièce sortie de Kesh est figée, qui que ce soit qui l'ait fait sortir ;
+   l'audit nomme l'acteur.
+
 **Hors périmètre, en CR** : figer les PDF d'avoir et de rappel ([#502]) ; emporter les fichiers dans `.keshbackup`
 ([#503]).
 
@@ -109,6 +117,21 @@ cause et le remède** : le fichier `{empreinte}.pdf` manque sous `KESH_DOCUMENTS
 répertoire. Empreinte **différente** →
 **500** + `tracing::error!` (le fichier a été altéré) — jamais servi.
 
+**AC 3-bis — Refiger (arbitrage 7).** `POST /api/v1/invoices/{id}/pdf/refreeze`, **Administrateur seulement** (bloc des
+routes d'administration, donc refusé aux clés d'API — `require_not_pat`), **sans corps** :
+- **accepté seulement si** la facture est figée **et** que son fichier est **absent** (le cas du 410) ; fichier présent →
+  **409** `INVOICE_PDF_PRESENT` (on ne remplace pas un document qui existe) ; facture non figée → **409**
+  `INVOICE_PDF_NOT_FROZEN` (le prochain rendu la figera) ; fichier présent mais **altéré** → refusé aussi (le 500
+  d'intégrité se diagnostique, il ne se recouvre pas d'un nouveau document) ;
+- rend un nouveau document par le même chemin que le gel (langue du client **actuelle**, données du moment), l'écrit,
+  et remplace les quatre colonnes **dans une transaction** avec l'audit `invoice.pdf_refrozen` portant l'**ancienne** et
+  la **nouvelle** empreinte et l'acteur ; garde `pdf_sha256 = <ancienne empreinte>` sur l'`UPDATE` (deux refigeages
+  concurrents : un seul réussit, l'autre reçoit 409) ;
+- une facture **`cancelled`** dont le fichier manque **ne peut pas** être refigée — `render` refuse ce statut : limite
+  assumée, écrite au manuel ;
+- à l'écran, la fiche facture d'un administrateur affiche, quand le téléchargement répond 410, un bouton **« Refiger le
+  document »** avec une confirmation qui dit ce que le geste fait (un nouveau document, pas l'original ; tracé).
+
 **AC 4 — L'e-mail joint le document figé.** `send_invoice_email` passe par le service : la pièce jointe est **octet pour
 octet** celle du téléchargement. Le premier envoi d'une facture non figée la fige — **et le gel survit à un échec SMTP**
 (le document a été produit ; la facture n'est simplement pas marquée envoyée, C-F3). Le corps du message reste rédigé dans
@@ -154,6 +177,10 @@ Libellés dans les 4 locales.
 - isolation : un PDF figé d'une autre société n'est jamais servi (IDOR) ;
 - la contrainte tout-ou-rien rejette un état partiel ;
 - Vitest de la fiche : bouton pour `cancelled` figée, absent pour `cancelled` non figée ; mention « figé le » ;
+- **refiger** : fichier supprimé → 410 → refigeage par un Admin → 200, nouveau document, audit avec les deux
+  empreintes ; refusé pour un Comptable (403), une clé d'API, une facture non figée (409), un fichier présent (409), une
+  facture `cancelled` ; deux refigeages concurrents → un seul ;
+- **le gel par un rôle Consultation** : le premier téléchargement d'un Consultation fige, et l'audit le nomme ;
 - E2E (`authedApiContext`, `pdfRes.body()`) : télécharger deux fois une facture rend le même fichier ; une facture
   annulée par un avoir garde son PDF. Chaque test crée **sa propre** facture : les fichiers figés persistent sous
   `/tmp/kesh-e2e/documents` d'une exécution à l'autre.
@@ -174,7 +201,9 @@ Libellés dans les 4 locales.
 
 Manuel admin : `admin-manual.tex:741`, `:790` (`KESH_DOCUMENTS_HOST_DIR`), `:811` et la § 5.1.1 — `KESH_DOCUMENTS_DIR`
 porte aussi les **PDF de factures émises**, pièces à conserver ; il **doit être sauvegardé à part** tant que [#503] n'est
-pas livrée ; un 410 `INVOICE_PDF_GONE` se répare en restaurant le fichier `{empreinte}.pdf` dans ce répertoire. PDF régénérés, contrôlés **aplatis**. CHANGELOG `[0.12.1]` : `Fixed` (#387), `Changed` (le
+pas livrée ; un 410 `INVOICE_PDF_GONE` se répare **de préférence** en restaurant le fichier `{empreinte}.pdf` dans ce répertoire —
+c'est le seul moyen de retrouver le document **original** ; à défaut, un administrateur peut **refiger** la facture
+(nouveau document, réémission tracée au journal d'audit) — sauf une facture annulée. PDF régénérés, contrôlés **aplatis**. CHANGELOG `[0.12.1]` : `Fixed` (#387), `Changed` (le
 téléchargement rend la langue du client).
 
 ## Tasks / Subtasks
@@ -184,6 +213,7 @@ téléchargement rend la langue du client).
   pose conditionnelle + audit en une transaction, détachement), `kesh-api` (service, `spawn_blocking`, code d'erreur
   410, i18n de l'erreur).
 - [ ] **T3 — les deux consommateurs** (AC 2, 4) : route de téléchargement, envoi par e-mail.
+- [ ] **T3-bis — refiger** (AC 3-bis) : route d'administration, deux codes 409, audit, bouton et confirmation à l'écran.
 - [ ] **T4 — la dévalidation** (AC 5).
 - [ ] **T5 — l'écran** (AC 6).
 - [ ] **T6 — tests** (AC 7).
@@ -237,6 +267,29 @@ export CSV), `kesh-i18n`,
 
 ## Change Log
 
+- **2026-10-04** — Validation P1 (Sonnet ×3, prompt `25-6-b-validate-prompt-p1.md`) : **4 HIGH, ~15 MED**, LOW.
+  - **HIGH retenus** :
+    - **A1** : un gel pouvait atterrir sur un **brouillon**, si une dévalidation s'intercalait entre le rendu et la pose.
+      La garde `status = 'validated'` est ajoutée à l'`UPDATE` ;
+    - **B1** : les colonnes d'`Invoice`, écrites en dur à six endroits, sont ramenées à une constante unique ;
+    - **C-F1** : le 410 sur un fichier figé perdu était une impasse. Le geste « refiger » a été soumis à Guy et retenu
+      (arbitrage 7) ;
+    - **C-F2** : six sites du manuel sont désormais nommés.
+  - **MEDIUM retenus** :
+    - le cas « zéro ligne » défini ;
+    - l'audit dans la transaction de la pose, avec l'acteur ;
+    - le gel par Consultation, soumis à Guy et accepté (arbitrage 8) ;
+    - le gel ne touche pas `version` ;
+    - `spawn_blocking` ;
+    - le squash régénéré par script, et les compteurs de `migrations_upgrade_path` ;
+    - l'export de souveraineté ;
+    - l'échec SMTP après le gel, et le changement de langue ;
+    - le client archivé ;
+    - l'écriture de fichier impossible ;
+    - un test déterministe de l'`UPDATE` conditionnel ;
+    - le PDF transmis hors de Kesh, puis détaché.
+  - **LOW** : les références (répertoire `routes/`), l'E2E et `KESH_DOCUMENTS_DIR`, la facture à 10 lignes, les fichiers
+    orphelins.
 - **2026-10-03** — Créée (Guy : « ok » aux six recommandations et aux deux CR, #502 et #503).
 
 [#387]: https://github.com/guycorbaz/kesh/issues/387
