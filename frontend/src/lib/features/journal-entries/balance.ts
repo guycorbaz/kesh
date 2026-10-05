@@ -90,8 +90,10 @@ export type LineStatus = 'empty' | 'partial' | 'valid';
  * - `new Big('99999999999999.99')` → `"99'999'999'999'999.99"` (exact)
  * - `new Big('-1234567.89')` → `"-1'234'567.89"`
  */
-export function formatSwissAmount(big: Big): string {
-	const fixed = big.toFixed(2);
+export function formatSwissAmount(big: Big, decimals = 2): string {
+	// Story 25-4-d2b : `decimals` (défaut 2) — un reste à fraction de centime
+	// (0.0040) s'affiche aux quatre décimales plutôt qu'en « 0.00 ».
+	const fixed = big.toFixed(decimals);
 	const negative = fixed.startsWith('-');
 	const unsigned = negative ? fixed.slice(1) : fixed;
 	const [intPart, decPart] = unsigned.split('.');

@@ -20,6 +20,8 @@ import type {
 	CancelSettlementResponse,
 	UpdateInvoiceRequest,
 	UpdateInvoiceSettingsRequest,
+	WriteOffInvoiceRequest,
+	WriteOffInvoiceResponse,
 } from './invoices.types';
 
 function buildQueryString(q: ListInvoicesQuery): string {
@@ -143,6 +145,17 @@ export async function settleInvoice(
 	req: SettleInvoiceRequest,
 ): Promise<SettleInvoiceResponse> {
 	return apiClient.post(`/api/v1/invoices/${id}/settlements`, req);
+}
+
+/**
+ * Solde le reste d'une facture, imputé au compte de sa nature — Story 25-4-d2b
+ * (API : 25-4-d2a). La réponse porte la facture relue.
+ */
+export async function writeOffInvoice(
+	id: number,
+	req: WriteOffInvoiceRequest,
+): Promise<WriteOffInvoiceResponse> {
+	return apiClient.post(`/api/v1/invoices/${id}/write-off`, req);
 }
 
 /** Les règlements d'une facture, avec ce qui empêche de les annuler — Story 25-3-a-1 (#414). */

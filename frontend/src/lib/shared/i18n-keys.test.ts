@@ -428,7 +428,19 @@ const ATTENDU = {
 	//
 	// Fusion dans la 25-4-d2a, 2026-10-05 : la story ajoute +2 à une base
 	// désormais de 1794 ⇒ **1796** ; `sitesNonResolus` et `relais` suivent la fusion (31, 6).
-	sitesTotal: 1796,
+	// Story 25-4-d2b (#490) : **1777 → 1807**, recompté par ce test et par
+	// `grep -o "i18nMsg("` aux deux bornes de chaque fichier touché : la fiche
+	// facture `invoices/[id]/+page.svelte` (76 → 85 : bouton, notifications et
+	// dialogue d'annulation d'un solde, « Soldé »), `InvoiceSettlements.svelte`
+	// (10 → 12 : libellé d'un solde, « Annuler le solde »), `WriteOffDialog.svelte`
+	// (0 → 13) et `write-off.ts` (0 → 6 : quatre natures, deux aides).
+	// Revue de code P1 de la 25-4-d2b : **1807 → 1808** — `WriteOffDialog.svelte`
+	// (13 → 14) : « Reste dû en cours de calcul… », le dialogue restant monté
+	// quand le reste n'est pas calculé.
+	//
+	// Fusion dans la 25-4-d2b, 2026-10-05 : la story ajoute +31 à une base
+	// désormais de 1796 ⇒ **1827** ; `sitesNonResolus` et `relais` suivent la fusion (31, 6).
+	sitesTotal: 1827,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

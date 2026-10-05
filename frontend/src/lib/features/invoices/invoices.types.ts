@@ -269,13 +269,36 @@ export interface InvoiceSettlementResponse {
 	journalEntryId: number;
 	amount: string;
 	settledOn: string;
-	settlementType: 'bank_transfer' | 'internal_account';
+	/** Story 25-4-d2a — `write_off` : un solde du reste. */
+	settlementType: 'bank_transfer' | 'internal_account' | 'write_off';
+	/** La nature d'un solde ; `null` pour un règlement. */
+	writeOffNature: WriteOffNature | null;
 	cancellable: boolean;
 	cancelBlockedBy: InvoiceSettlementCancelCode | null;
 	/** Le numéro du compte archivé, quand c'est le motif. */
 	cancelBlockedLabel: string | null;
 	/** L'identifiant de la transaction bancaire rapprochée, quand c'est le motif. */
 	cancelBlockedDocumentId: number | null;
+}
+
+/** La nature d'un solde — Story 25-4-d2a (#384, #490). */
+export type WriteOffNature = 'discount' | 'bank_fees' | 'bad_debt' | 'rounding';
+
+/**
+ * `POST /api/v1/invoices/{id}/write-off` — Story 25-4-d2a. **Sans montant** : le
+ * serveur solde le reste exact ; la `version` garde d'un écran périmé.
+ */
+export interface WriteOffInvoiceRequest {
+	nature: WriteOffNature;
+	settledOn: string;
+	version: number;
+}
+
+export interface WriteOffInvoiceResponse {
+	invoice: InvoiceResponse;
+	journalEntryId: number;
+	/** Le montant soldé : le reste exact, quatre décimales possibles. */
+	amount: string;
 }
 
 export interface CancelSettlementResponse {

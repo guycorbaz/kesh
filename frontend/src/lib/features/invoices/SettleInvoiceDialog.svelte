@@ -20,6 +20,7 @@
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
+	import { dueToCentime } from './invoice-helpers';
 
 	export type SettlementPayload = {
 		settlementType: 'bank_transfer' | 'internal_account';
@@ -54,16 +55,6 @@
 		errorMsg = '',
 		onConfirm,
 	}: Props = $props();
-
-	/**
-	 * Le reste dû au centime (Story 25-4-c3-b). `toFixed(2)` arrondit en
-	 * `roundHalfUp` (mode par défaut de big.js, `Big.RM = 1`), qui porte
-	 * l'équidistant LOIN DE ZÉRO — la stratégie du serveur
-	 * (`Money::round_to_centimes`, `MidpointAwayFromZero`).
-	 */
-	function dueToCentime(raw: string): Big {
-		return new Big(new Big(raw).toFixed(2));
-	}
 
 	/** Nombre de décimales significatives d'un montant saisi ; `Infinity` si illisible. */
 	function centimesDigits(raw: string): number {

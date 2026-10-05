@@ -56,6 +56,7 @@ vi.mock("$lib/features/invoices/invoices.api", () => ({
   getInvoiceEmailPreview: vi.fn(),
   sendInvoiceEmail: vi.fn(),
   getInvoiceSettings: vi.fn(async () => ({})),
+  writeOffInvoice: vi.fn(),
 }));
 vi.mock("$lib/features/accounts/accounts.api", () => ({
   fetchAccounts: vi.fn(async () => []),
@@ -119,6 +120,7 @@ const reglement: InvoiceSettlementResponse = {
   amount: "100.00",
   settledOn: "2026-03-05",
   settlementType: "internal_account",
+  writeOffNature: null,
   cancellable: true,
   cancelBlockedBy: null,
   cancelBlockedLabel: null,

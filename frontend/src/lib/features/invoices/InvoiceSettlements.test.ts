@@ -7,7 +7,8 @@ import { describe, it, expect, vi, afterEach } from 'vitest';
 import { render, fireEvent, cleanup } from '@testing-library/svelte';
 
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
-	i18nMsg: (_k: string, fallback: string) => fallback,
+	i18nMsg: (_k: string, fallback: string, args?: Record<string, string | number>) =>
+		args ? fallback.replace(/\{\s*\$(\w+)\s*\}/g, (_, n) => String(args[n] ?? '')) : fallback,
 }));
 
 import InvoiceSettlements from './InvoiceSettlements.svelte';
@@ -19,6 +20,7 @@ function s(partial: Partial<InvoiceSettlementResponse> & { id: number }): Invoic
 		amount: '40.00',
 		settledOn: '2026-03-05',
 		settlementType: 'internal_account',
+		writeOffNature: null,
 		cancellable: true,
 		cancelBlockedBy: null,
 		cancelBlockedLabel: null,
@@ -137,5 +139,18 @@ describe('InvoiceSettlements', () => {
 			onCancelReconciliation: vi.fn(),
 		});
 		expect(lecture.queryByTestId('invoice-settlement-cancel-reconciliation')).toBeNull();
+	});
+
+	// Story 25-4-d2b (#490) — un solde se nomme par sa nature et s'annule comme tel.
+	it('un solde affiche sa nature et « Annuler le solde » (mutation : libellé binaire)', () => {
+		const { getByTestId } = render(InvoiceSettlements, {
+			props: {
+				settlements: [s({ id: 9, settlementType: 'write_off', writeOffNature: 'discount' })],
+				canManage: true,
+				onCancel: vi.fn(),
+			},
+		});
+		expect(getByTestId('invoice-settlement-mode').textContent).toContain('Solde — Escompte accordé');
+		expect(getByTestId('invoice-settlement-cancel').textContent).toContain('Annuler le solde');
 	});
 });
