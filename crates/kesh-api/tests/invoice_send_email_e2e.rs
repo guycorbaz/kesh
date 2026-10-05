@@ -538,7 +538,8 @@ async fn contact_without_email_returns_400(pool: MySqlPool) {
     assert!(emailed_at.is_none(), "non marquée");
 }
 
-/// Facture draft → 400 INVOICE_NOT_VALIDATED (erreur héritée du service PDF).
+/// Facture draft → 400 INVOICE_NOT_VALIDATED (garde du handler depuis la Story
+/// 25-6-b — elle était auparavant héritée du rendu PDF).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn draft_invoice_returns_400_not_validated(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;

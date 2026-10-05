@@ -56,9 +56,14 @@ export interface TrialBalanceRow {
 	accountName: string;
 	accountType: AccountType;
 	active: boolean;
+	/** Story 25-5-b — solde au début de la période, signé selon la nature du compte. */
+	openingBalance: string;
 	totalDebit: string;
 	totalCredit: string;
+	/** Net des mouvements de la période — pas un solde de compte. */
 	balance: string;
+	/** Story 25-5-b — ouverture + mouvements : pour un compte de bilan, son solde au bilan. */
+	closingBalance: string;
 }
 
 export interface TrialBalanceDto {
@@ -67,6 +72,10 @@ export interface TrialBalanceDto {
 	totalDebit: string;
 	totalCredit: string;
 	balanced: boolean;
+	/** Story 25-5-b — résultat reporté calculé (exercices antérieurs), crédit-positif. */
+	retainedEarnings: string;
+	/** Story 25-5-b — Σ des ouvertures en sens débit − résultat reporté = 0. */
+	openingBalanced: boolean;
 }
 
 export type Journal = 'Achats' | 'Ventes' | 'Banque' | 'Caisse' | 'OD';

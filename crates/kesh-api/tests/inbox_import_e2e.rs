@@ -618,11 +618,16 @@ async fn import_field_too_long_returns_failed_not_500(pool: MySqlPool) {
     let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
     // Nom créancier > 70 chars (QR tiers non conforme SIX 2.2) → 1406 → FIELD_TOO_LONG.
     let long_name = "X".repeat(100);
-    std::fs::write(
-        app.inbox.join("long.png"),
-        qr_invoice_png(dec!(20.00), &long_name),
-    )
-    .unwrap();
+    let png = qr_invoice_png(dec!(20.00), &long_name);
+    std::fs::write(app.inbox.join("long.png"), &png).unwrap();
+    // Story 25-6-b (revue P1) : un fichier du même contenu existe déjà sous
+    // `KESH_DOCUMENTS_DIR` — un PDF figé, ou le justificatif d'une autre
+    // société. L'échec de cet import ne doit pas le supprimer.
+    use sha2::Digest;
+    let archived = app
+        .documents
+        .join(format!("{:x}.png", sha2::Sha256::digest(&png)));
+    std::fs::write(&archived, &png).unwrap();
 
     let resp = app
         .client
@@ -638,6 +643,10 @@ async fn import_field_too_long_returns_failed_not_500(pool: MySqlPool) {
     );
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["failed"][0]["errorCode"], "FIELD_TOO_LONG");
+    assert!(
+        archived.exists(),
+        "un fichier archivé partagé (nommé par son contenu) ne doit jamais être supprimé"
+    );
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

@@ -590,6 +590,13 @@ async fn trial_balance_total_debit_equals_total_credit(pool: MySqlPool) {
     assert_eq!(resp.status(), 200);
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["balanced"], true);
+    // Story 25-5-b — les champs neufs traversent la frontière HTTP.
+    assert_eq!(body["openingBalanced"], true);
+    assert!(body["retainedEarnings"].is_string(), "{body}");
+    let first = &body["rows"].as_array().expect("rows")[0];
+    for key in ["openingBalance", "closingBalance", "balance"] {
+        assert!(first[key].is_string(), "{key} absent : {first}");
+    }
 }
 
 // ============================================================

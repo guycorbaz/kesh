@@ -86,6 +86,14 @@ export async function unvalidateInvoice(
 	return apiClient.post(`/api/v1/invoices/${id}/unvalidate`, { version });
 }
 
+/**
+ * Refige le PDF d'une facture dont le fichier a disparu (Story 25-6-b, #387) —
+ * **Admin**. Produit un nouveau document, pas l'original. Rend la facture à jour.
+ */
+export async function refreezeInvoicePdf(id: number): Promise<InvoiceResponse> {
+	return apiClient.post(`/api/v1/invoices/${id}/pdf/refreeze`, {});
+}
+
 export async function getInvoiceSettings(): Promise<InvoiceSettingsResponse> {
 	return apiClient.get('/api/v1/company/invoice-settings');
 }
