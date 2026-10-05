@@ -597,91 +597,204 @@ pub async fn acquire_company_sentinel_lock(
     Ok(())
 }
 
+/// Soldes d'un compte bancaire, tels que la liste les rend (Story v014-1,
+/// Story 25-6-a #389).
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct BankAccountBalances {
+    /// **Solde comptable** du compte de grand livre lié — `SUM(debit) −
+    /// SUM(credit)`, toutes dates. `None` sans compte lié ; `0` si le compte lié
+    /// n'a aucune ligne.
+    pub current_balance: Option<rust_decimal::Decimal>,
+    /// `MAX(entry_date)` des lignes du compte lié.
+    pub last_transaction_date: Option<chrono::NaiveDate>,
+    /// Solde de clôture du **dernier relevé** importé qui en porte un (CAMT ;
+    /// un import CSV n'en a jamais) — `period_to` le plus récent, départagé par
+    /// `imported_at` puis `id`.
+    pub statement_closing_balance: Option<rust_decimal::Decimal>,
+    /// `period_to` de ce relevé.
+    pub statement_date: Option<chrono::NaiveDate>,
+    /// Solde comptable du compte lié **à `statement_date` inclus**, corrigé des
+    /// dates de valeur (voir [`list_by_company_with_balances`]). `None` sans
+    /// relevé, sans compte lié, ou quand **plusieurs** comptes bancaires
+    /// partagent le compte de grand livre (son solde ne s'attribue à aucun).
+    pub ledger_balance_at_statement: Option<rust_decimal::Decimal>,
+}
+
+/// Agrégats d'un compte bancaire, lus en une requête (voir
+/// [`list_by_company_with_balances`]).
+#[derive(Debug, sqlx::FromRow)]
+struct BalancesRow {
+    bank_account_id: i64,
+    balance: Option<rust_decimal::Decimal>,
+    last_entry_date: Option<chrono::NaiveDate>,
+    closing_balance: Option<rust_decimal::Decimal>,
+    period_to: Option<chrono::NaiveDate>,
+    ledger_at: Option<rust_decimal::Decimal>,
+    booked_before_entered_after: Option<rust_decimal::Decimal>,
+    booked_after_entered_before: Option<rust_decimal::Decimal>,
+    sharing: Option<i64>,
+}
+
 /// Liste les comptes bancaires avec leurs soldes calculés + date dernière
-/// transaction depuis `journal_entry_lines`.
+/// transaction depuis `journal_entry_lines`, et le dernier relevé.
 ///
 /// Story v014-1 T5 (FINDING-10 Pass 3 Opus — périmètre du calcul) :
 /// - **Pas de filtre de status** : `journal_entries` n'a pas de colonne
-///   `status` ; toute écriture insérée est par construction validée (la
-///   double-partie est balanced et toutes les FK existent — il n'y a pas
-///   de notion de draft v0.1). Donc toutes les `journal_entry_lines`
-///   participent au solde.
-/// - Pas de filtre `fiscal_year_id` : « solde depuis création » v0.1.
-/// - Pas de rollup hiérarchique (uniquement sur `journal_account_id` exact —
-///   pas sur les enfants `parent_id`). Tooltip helper text AC#27 recommande
-///   de lier le bank_account au sous-compte spécifique.
-/// - **F13 Pass 1 code review (AC#30)** : retourne aussi `last_transaction_date`
-///   = `MAX(je.entry_date)` agrégé sur le `journal_account_id` du compte.
-///   `None` si journal_account_id NULL OU aucune écriture sur ce compte.
+///   `status` ; toute écriture insérée est par construction validée. Donc
+///   toutes les `journal_entry_lines` participent au solde.
+/// - Pas de filtre `fiscal_year_id` : « solde depuis création ».
+/// - Pas de rollup hiérarchique (uniquement sur `journal_account_id` exact).
+/// - `last_transaction_date` = `MAX(je.entry_date)` sur le compte lié.
 ///
-/// Retourne `Vec<(BankAccount, Option<Decimal>, Option<NaiveDate>)>` — le
-/// solde et la date sont `None` si le bank_account n'a pas de
-/// `journal_account_id` configuré (`L4`).
+/// # Le dernier relevé et l'écart (Story 25-6-a, #389)
+///
+/// Le solde comptable n'est **pas** le solde bancaire. Pour les confronter, la
+/// liste rend le solde de clôture du dernier relevé portant un solde, et le
+/// solde comptable **à sa date**. ⚠️ Le relevé reflète les mouvements par date
+/// de **comptabilisation bancaire** (`booking_date`), alors que les écritures de
+/// rapprochement sont datées à la date de **valeur** : le solde à la date du
+/// relevé est donc **corrigé** des transactions rapprochées dont les deux dates
+/// tombent de part et d'autre de `period_to` — `+` le mouvement que leur
+/// écriture porte sur le compte lié quand la banque l'a comptabilisé avant (ou
+/// le jour même) et l'écriture après, `−` dans le cas inverse. On somme la
+/// **ligne de l'écriture sur le compte lié actuel**, pas `amount` : une écriture
+/// posée sur un ancien compte lié sort d'elle-même de la correction. Une
+/// transaction **non rapprochée** n'y entre pas — son absence du grand livre est
+/// l'écart à montrer.
+///
+/// ⚠️ **Invariant supposé : une transaction, une écriture.** Les cinq chemins de
+/// rapprochement (`kesh-api/src/routes/reconciliation.rs`) lient chacun une
+/// écriture qu'ils viennent de créer ; aucune écriture n'est rapprochée de
+/// plusieurs transactions. Si cela changeait, la correction ajouterait la ligne
+/// entière de l'écriture là où seule la part d'une transaction franchit la date
+/// du relevé (revue P1, lentille B).
+///
+/// # Forme
+///
+/// Une requête agrégée **par compte bancaire** ; chaque somme dans sa propre
+/// table dérivée ou sous-requête corrélée. ⛔ Ne jamais joindre
+/// `bank_transactions` dans le même `FROM` que les lignes du grand livre : le
+/// produit multiplierait ces lignes et fausserait les sommes.
 pub async fn list_by_company_with_balances(
     pool: &MySqlPool,
     company_id: i64,
     include_archived: bool,
-) -> Result<
-    Vec<(
-        BankAccount,
-        Option<rust_decimal::Decimal>,
-        Option<chrono::NaiveDate>,
-    )>,
-    DbError,
-> {
+) -> Result<Vec<(BankAccount, BankAccountBalances)>, DbError> {
     let accounts = list_by_company(pool, company_id, include_archived).await?;
 
     if accounts.is_empty() {
         return Ok(Vec::new());
     }
 
-    let account_ids: Vec<i64> = accounts
-        .iter()
-        .filter_map(|b| b.journal_account_id)
-        .collect();
+    let rows: Vec<BalancesRow> = sqlx::query_as(
+        "SELECT ba.id AS bank_account_id, \
+                agg.balance, agg.last_entry_date, \
+                st.closing_balance, st.period_to, \
+                CASE WHEN st.period_to IS NULL OR ba.journal_account_id IS NULL THEN NULL ELSE \
+                  (SELECT COALESCE(SUM(jel.debit) - SUM(jel.credit), 0) \
+                   FROM journal_entry_lines jel \
+                   INNER JOIN journal_entries je ON jel.entry_id = je.id \
+                   WHERE je.company_id = ba.company_id \
+                     AND jel.account_id = ba.journal_account_id \
+                     AND je.entry_date <= st.period_to) END AS ledger_at, \
+                CASE WHEN st.period_to IS NULL OR ba.journal_account_id IS NULL THEN NULL ELSE \
+                  (SELECT COALESCE(SUM(jel.debit) - SUM(jel.credit), 0) \
+                   FROM journal_entry_lines jel \
+                   INNER JOIN journal_entries je ON jel.entry_id = je.id \
+                   WHERE je.company_id = ba.company_id \
+                     AND jel.account_id = ba.journal_account_id \
+                     AND je.entry_date > st.period_to \
+                     AND je.id IN (SELECT bt.matched_entry_id FROM bank_transactions bt \
+                                   WHERE bt.bank_account_id = ba.id AND bt.company_id = ba.company_id \
+                                     AND bt.status = 'reconciled' AND bt.matched_entry_id IS NOT NULL \
+                                     AND bt.booking_date <= st.period_to)) END \
+                  AS booked_before_entered_after, \
+                CASE WHEN st.period_to IS NULL OR ba.journal_account_id IS NULL THEN NULL ELSE \
+                  (SELECT COALESCE(SUM(jel.debit) - SUM(jel.credit), 0) \
+                   FROM journal_entry_lines jel \
+                   INNER JOIN journal_entries je ON jel.entry_id = je.id \
+                   WHERE je.company_id = ba.company_id \
+                     AND jel.account_id = ba.journal_account_id \
+                     AND je.entry_date <= st.period_to \
+                     AND je.id IN (SELECT bt.matched_entry_id FROM bank_transactions bt \
+                                   WHERE bt.bank_account_id = ba.id AND bt.company_id = ba.company_id \
+                                     AND bt.status = 'reconciled' AND bt.matched_entry_id IS NOT NULL \
+                                     AND bt.booking_date > st.period_to)) END \
+                  AS booked_after_entered_before, \
+                CAST(shared.n AS SIGNED) AS sharing \
+         FROM bank_accounts ba \
+         LEFT JOIN ( \
+             SELECT jel.account_id, \
+                    COALESCE(SUM(jel.debit) - SUM(jel.credit), 0) AS balance, \
+                    MAX(je.entry_date) AS last_entry_date \
+             FROM journal_entry_lines jel \
+             INNER JOIN journal_entries je ON jel.entry_id = je.id \
+             WHERE je.company_id = ? \
+               AND jel.account_id IN (SELECT journal_account_id FROM bank_accounts \
+                                      WHERE company_id = ? AND journal_account_id IS NOT NULL) \
+             GROUP BY jel.account_id \
+         ) agg ON agg.account_id = ba.journal_account_id \
+         LEFT JOIN ( \
+             SELECT bank_account_id, closing_balance, period_to, \
+                    ROW_NUMBER() OVER (PARTITION BY bank_account_id \
+                                       ORDER BY period_to DESC, imported_at DESC, id DESC) AS rn \
+             FROM bank_imports \
+             WHERE company_id = ? AND closing_balance IS NOT NULL \
+         ) st ON st.bank_account_id = ba.id AND st.rn = 1 \
+         LEFT JOIN ( \
+             SELECT journal_account_id, COUNT(*) AS n \
+             FROM bank_accounts \
+             WHERE company_id = ? AND journal_account_id IS NOT NULL \
+             GROUP BY journal_account_id \
+         ) shared ON shared.journal_account_id = ba.journal_account_id \
+         WHERE ba.company_id = ?",
+    )
+    .bind(company_id) // agg : je.company_id
+    .bind(company_id) // agg : bornée aux comptes liés de la société
+    .bind(company_id) // st
+    .bind(company_id) // shared
+    .bind(company_id) // ba.company_id
+    .fetch_all(pool)
+    .await
+    .map_err(map_db_error)?;
 
-    if account_ids.is_empty() {
-        return Ok(accounts.into_iter().map(|b| (b, None, None)).collect());
-    }
-
-    let mut builder = sqlx::QueryBuilder::<MySql>::new(
-        "SELECT jel.account_id, \
-                COALESCE(SUM(jel.debit) - SUM(jel.credit), 0) AS balance, \
-                MAX(je.entry_date) AS last_entry_date \
-         FROM journal_entry_lines jel \
-         INNER JOIN journal_entries je ON jel.entry_id = je.id \
-         WHERE je.company_id = ",
-    );
-    builder.push_bind(company_id);
-    builder.push(" AND jel.account_id IN (");
-    let mut sep = builder.separated(", ");
-    for id in &account_ids {
-        sep.push_bind(*id);
-    }
-    builder.push(") GROUP BY jel.account_id");
-
-    let rows: Vec<(i64, rust_decimal::Decimal, Option<chrono::NaiveDate>)> = builder
-        .build_query_as()
-        .fetch_all(pool)
-        .await
-        .map_err(map_db_error)?;
-
-    use std::collections::HashMap;
-    let agg_by_account: HashMap<i64, (rust_decimal::Decimal, Option<chrono::NaiveDate>)> = rows
-        .into_iter()
-        .map(|(aid, bal, dt)| (aid, (bal, dt)))
-        .collect();
+    let by_bank_account: std::collections::HashMap<i64, BalancesRow> =
+        rows.into_iter().map(|r| (r.bank_account_id, r)).collect();
 
     Ok(accounts
         .into_iter()
-        .map(|b| match b.journal_account_id {
-            Some(aid) => match agg_by_account.get(&aid) {
-                Some((balance, date)) => (b, Some(*balance), *date),
-                // journal_account_id existe mais aucune ligne → solde = 0.00,
-                // date = None.
-                None => (b, Some(rust_decimal::Decimal::ZERO), None),
-            },
-            None => (b, None, None),
+        .map(|b| {
+            let balances = match (b.journal_account_id, by_bank_account.get(&b.id)) {
+                (Some(_), Some(r)) => {
+                    // Le partage se compte sur TOUS les comptes de la société,
+                    // archivés compris : la réponse ne dépend pas d'`include_archived`.
+                    let shared = r.sharing.unwrap_or(1) > 1;
+                    let ledger_balance_at_statement = match (
+                        r.ledger_at,
+                        r.booked_before_entered_after,
+                        r.booked_after_entered_before,
+                    ) {
+                        (Some(at), Some(plus), Some(minus)) if !shared => Some(at + plus - minus),
+                        _ => None,
+                    };
+                    BankAccountBalances {
+                        // Compte lié sans aucune ligne → 0 (comportement v014-1).
+                        current_balance: Some(r.balance.unwrap_or(rust_decimal::Decimal::ZERO)),
+                        last_transaction_date: r.last_entry_date,
+                        statement_closing_balance: r.closing_balance,
+                        statement_date: r.period_to,
+                        ledger_balance_at_statement,
+                    }
+                }
+                // Sans compte lié : ni solde comptable ni écart ; le relevé reste.
+                (None, Some(r)) => BankAccountBalances {
+                    statement_closing_balance: r.closing_balance,
+                    statement_date: r.period_to,
+                    ..Default::default()
+                },
+                (_, None) => BankAccountBalances::default(),
+            };
+            (b, balances)
         })
         .collect())
 }

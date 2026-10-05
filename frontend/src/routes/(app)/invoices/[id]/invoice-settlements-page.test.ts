@@ -100,6 +100,8 @@ function invoice(partial: Partial<InvoiceResponse> = {}): InvoiceResponse {
     projectId: null,
     dunningPausedAt: null,
     dunningPausedNote: null,
+    pdfFrozenAt: null,
+    pdfLanguage: null,
     isOverdue: false,
     amountSettled: "100.00",
     amountDue: "0.00",

@@ -89,10 +89,6 @@ const TOLEREES: readonly { cle: string; motif: string }[] = [
 		motif: "même cause que `contact-filter-search-placeholder`",
 	},
 	{
-		cle: 'invoice-pdf-error-generic',
-		motif: "« Échec du téléchargement du PDF. » contre « Erreur lors du téléchargement du PDF » — synonymes, même échec",
-	},
-	{
 		cle: 'dunning-edit',
 		motif: "« Modifier » en bouton de ligne contre « Modifier le niveau » en titre de formulaire — le catalogue affiche la forme courte, perte de précision sans ambiguïté",
 	},

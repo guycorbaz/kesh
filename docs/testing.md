@@ -202,6 +202,12 @@ démarre quand même, `/health` répond `ok`, et l'échec ne se voit qu'à l'ex�
 côté Playwright un simple `getByTestId('inbox-import-report')` introuvable. On cherche alors la panne
 dans le frontend, qui n'y est pour rien.
 
+Depuis la Story 25-6-b (#387), **tout téléchargement de PDF de facture écrit dans
+`KESH_DOCUMENTS_DIR`** (le PDF y est figé au premier rendu) : sans un répertoire inscriptible, il
+répond `500` et toutes les specs qui téléchargent un PDF de facture rougissent
+(`invoice-frozen-pdf`, `invoices`, `invoice-send-email`). Les fichiers figés persistent d'une
+exécution à l'autre : une spec qui en dépend crée sa propre facture.
+
 Sans ces deux variables, `inbox-import.spec.ts` rend **1 échec et 2 tests skippés** ; avec elles,
 **3 passés** — le round-trip complet de l'import de factures fournisseurs. Les deux se corrigent
 ensemble : `documents` n'apparaît qu'une fois `inbox` réglé, chaque erreur masquant la suivante.
@@ -405,6 +411,25 @@ même spec). Les specs `onboarding*` y contribuent le plus — elles reseedent l
 comme s'il s'agissait du huitième, toujours le même.** C'était trop précis, et donc trompeur :
 un lecteur voyant rougir une autre spec en aurait conclu à une régression. Corrigé au run du
 2026-08-27, qui a rendu un huitième différent.
+
+⚠️ **Le 2026-10-03, l'un de ces « huitièmes » s'est révélé ne PAS être de la pollution.**
+`product-revenue-account.spec.ts:133` relisait la liste des produits par l'API **sans attendre**
+le POST de création qu'il venait de déclencher : sous la charge de la suite complète, la relecture
+partait la première et rendait une liste vide (`Expected: 6, Received: undefined`). Prouvé en
+injectant un délai de 1,5 s sur le POST : l'ancien test échoue avec ce message exact, le test
+corrigé passe. Corrigé (`fillProductForm` attend la réponse du serveur). *Un test qui passe rejoué
+seul n'est pas forcément pollué : il peut aussi être une course que la charge révèle.*
+
+`products.spec.ts:166` (« doublon », bouton *Créer* resté désactivé 30 s — **KF-054, [#498]**), lui,
+**n'a pas de cause établie** : ni reproduit en enchaînant les specs voisines, ni sous délai injecté des lectures ou de
+la création. D'où, depuis cette date, **`trace: 'retain-on-failure'`** dans `playwright.config.ts`.
+
+⛔ **Avant de rejouer seul un échec, mettre `frontend/test-results/` à l'abri** (`cp -r
+frontend/test-results /quelque/part/`) : Playwright vide ce répertoire au lancement, et le rejeu
+efface la trace et l'instantané du run qui a échoué — c'est exactement ce qui a privé
+`products.spec.ts:166` de diagnostic.
+
+[#498]: https://github.com/guycorbaz/kesh/issues/498
 
 ### Comment lire un rouge, dans l'ordre
 
