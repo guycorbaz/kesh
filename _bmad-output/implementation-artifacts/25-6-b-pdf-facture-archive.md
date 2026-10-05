@@ -320,6 +320,7 @@ export CSV), `kesh-i18n`,
 
 ## Change Log
 
+- **2026-10-05** — Arbitrage de Guy (« d'accord avec tes recommandations ») : **pas de découpage**.
 - **2026-10-04** — Validation P2 (Opus, prompt `25-6-b-validate-prompt-p2.md`) : **1 HIGH, 7 MED, 8 LOW**, retenus.
   - **H1** : le chapitre « Sauvegarde et restauration » du manuel admin n'était pas nommé, alors que c'est lui qui fait
     perdre les PDF émis à la première restauration. Six sites sont ajoutés à l'AC 8.
