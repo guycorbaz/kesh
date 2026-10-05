@@ -414,7 +414,14 @@ const ATTENDU = {
 	//
 	// Fusion dans la 25-4-e, 2026-10-05 : la story ajoute +3 à une base
 	// désormais de 1785 ⇒ **1788** ; `sitesNonResolus` et `relais` suivent la fusion (31, 6).
-	sitesTotal: 1788,
+	// Story 25-4-d1 (#384) : **1769 → 1775**, recompté par ce test et par
+	// `grep -o "i18nMsg("` aux deux bornes de `settings/invoicing/+page.svelte`
+	// (41 → 47) — la section « Solde du reste » : titre, aide, trois libellés de
+	// compte, et le « — Sélectionner — » de son sélecteur.
+	//
+	// Fusion dans la 25-4-d1, 2026-10-05 : la story ajoute +6 à une base
+	// désormais de 1788 ⇒ **1794** ; `sitesNonResolus` et `relais` suivent la fusion (31, 6).
+	sitesTotal: 1794,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

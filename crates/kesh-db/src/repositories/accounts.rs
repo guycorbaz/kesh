@@ -2283,6 +2283,7 @@ mod tests {
                 role: None,
                 postable: None,
                 rounding_difference: false,
+                write_off_nature: None,
             },
             kesh_core::chart_of_accounts::ChartEntry {
                 number: "T10".into(),
@@ -2297,6 +2298,7 @@ mod tests {
                 role: None,
                 postable: None,
                 rounding_difference: false,
+                write_off_nature: None,
             },
         ];
 

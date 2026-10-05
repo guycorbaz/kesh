@@ -132,6 +132,10 @@ export interface InvoiceSettingsResponse {
 	roundTo5Centimes: boolean;
 	/** Montant minimum d'une facture, string décimale ; `null` = aucun seuil (Story 25-4-e). */
 	minimumInvoiceAmount: string | null;
+	/** Comptes des natures d'écart soldé — charge ou produit (Story 25-4-d1). */
+	defaultDiscountAccountId: number | null;
+	defaultBankFeesAccountId: number | null;
+	defaultBadDebtAccountId: number | null;
 	version: number;
 }
 
@@ -150,6 +154,10 @@ export interface UpdateInvoiceSettingsRequest {
 	roundTo5Centimes: boolean;
 	/** Montant minimum d'une facture, string décimale ; `null` = aucun seuil (Story 25-4-e). */
 	minimumInvoiceAmount: string | null;
+	/** Comptes des natures d'écart soldé — charge ou produit (Story 25-4-d1). */
+	defaultDiscountAccountId: number | null;
+	defaultBankFeesAccountId: number | null;
+	defaultBadDebtAccountId: number | null;
 	version: number;
 }
 

@@ -1838,7 +1838,7 @@ async fn reopen_lifo_blocked_returns_409_distinct_message(pool: MySqlPool) {
 /// une autre requête — crée les réglages de facturation, et le compte de
 /// différences d'arrondi y est désigné d'office : le `6940` que le plan marque.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn path_b_finalize_designates_the_charts_rounding_account(pool: MySqlPool) {
+async fn path_b_finalize_designates_the_charts_marked_accounts(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;
     let company_id: i64 = sqlx::query_scalar("SELECT id FROM companies ORDER BY id LIMIT 1")
         .fetch_one(&pool)
@@ -1878,4 +1878,28 @@ async fn path_b_finalize_designates_the_charts_rounding_account(pool: MySqlPool)
         Some(expected),
         "le compte marqué est désigné d'office"
     );
+
+    // Story 25-4-d1 (#384) — les comptes des natures d'écart soldé que le plan
+    // PME marque : 3800 (escompte), 6900 (frais bancaires), 3805 (pertes).
+    for (column, number) in [
+        ("default_discount_account_id", "3800"),
+        ("default_bank_fees_account_id", "6900"),
+        ("default_bad_debt_account_id", "3805"),
+    ] {
+        let designated: Option<i64> = sqlx::query_scalar(&format!(
+            "SELECT {column} FROM company_invoice_settings WHERE company_id = ?"
+        ))
+        .bind(company_id)
+        .fetch_one(&pool)
+        .await
+        .expect("réglages créés");
+        let expected: i64 =
+            sqlx::query_scalar("SELECT id FROM accounts WHERE company_id = ? AND number = ?")
+                .bind(company_id)
+                .bind(number)
+                .fetch_one(&pool)
+                .await
+                .unwrap_or_else(|e| panic!("le plan livré porte le {number} : {e}"));
+        assert_eq!(designated, Some(expected), "{column} désigné d'office");
+    }
 }

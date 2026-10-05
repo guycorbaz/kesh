@@ -47,6 +47,10 @@ pub struct InvoiceSettingsResponse {
     pub round_to_5_centimes: bool,
     /// Story 25-4-e (#495) — montant minimum d'une facture ; `null` = aucun seuil.
     pub minimum_invoice_amount: Option<rust_decimal::Decimal>,
+    /// Story 25-4-d1 (#384) — comptes des natures d'écart soldé.
+    pub default_discount_account_id: Option<i64>,
+    pub default_bank_fees_account_id: Option<i64>,
+    pub default_bad_debt_account_id: Option<i64>,
     pub version: i32,
 }
 
@@ -67,6 +71,9 @@ impl From<CompanyInvoiceSettings> for InvoiceSettingsResponse {
             default_rounding_account_id: s.default_rounding_account_id,
             round_to_5_centimes: s.round_to_5_centimes,
             minimum_invoice_amount: s.minimum_invoice_amount,
+            default_discount_account_id: s.default_discount_account_id,
+            default_bank_fees_account_id: s.default_bank_fees_account_id,
+            default_bad_debt_account_id: s.default_bad_debt_account_id,
             version: s.version,
         }
     }
@@ -102,6 +109,15 @@ pub struct UpdateInvoiceSettingsRequest {
     /// présent à `null` : effacé** (aucun seuil), patron du compte d'arrondi.
     #[serde(default, deserialize_with = "crate::helpers::double_option")]
     pub minimum_invoice_amount: Option<Option<rust_decimal::Decimal>>,
+    /// Story 25-4-d1 (#384) — comptes des natures d'écart soldé (escompte, frais
+    /// bancaires, perte sur débiteur). **Absent : préservé ; `null` : effacé**,
+    /// patron du compte d'arrondi.
+    #[serde(default, deserialize_with = "crate::helpers::double_option")]
+    pub default_discount_account_id: Option<Option<i64>>,
+    #[serde(default, deserialize_with = "crate::helpers::double_option")]
+    pub default_bank_fees_account_id: Option<Option<i64>>,
+    #[serde(default, deserialize_with = "crate::helpers::double_option")]
+    pub default_bad_debt_account_id: Option<Option<i64>>,
     pub version: i32,
 }
 
@@ -177,6 +193,39 @@ async fn validate_account_of(
         )));
     }
     Ok(())
+}
+
+/// Résout un compte **désigné** des réglages — compte d'arrondi (25-4-c3-a1) ou
+/// d'une nature d'écart soldé (25-4-d1) : absent du corps, la valeur en place est
+/// préservée ; présent, il est validé (charge ou produit, actif, imputable, de la
+/// société).
+///
+/// ⚠️ Validé **seulement s'il change**. Le compte désigné peut devenir archivé
+/// ou non imputable par une autre route (l'archivage n'est pas gardé, #486) ;
+/// le revalider à chaque enregistrement bloquerait tout changement SANS
+/// rapport — un format de numérotation — sur un champ que l'utilisateur n'a
+/// pas touché. L'écriture qui lit le réglage refusera d'écrire sur un compte
+/// devenu invalide : c'est là que la garde doit tenir, pas ici.
+async fn resolve_designated_account(
+    state: &AppState,
+    company_id: i64,
+    requested: Option<Option<i64>>,
+    current: Option<i64>,
+    field_label: &str,
+) -> Result<Option<i64>, AppError> {
+    let resolved = requested.unwrap_or(current);
+    if resolved != current {
+        validate_account_of(
+            state,
+            company_id,
+            resolved,
+            &[AccountType::Expense, AccountType::Revenue],
+            true,
+            field_label,
+        )
+        .await?;
+    }
+    Ok(resolved)
 }
 
 // ---------------------------------------------------------------------------
@@ -277,28 +326,39 @@ pub async fn update_invoice_settings(
 
     // Compte de différences d'arrondi (Story 25-4-c3-a1) : un écart d'arrondi est
     // un résultat, dans un sens ou dans l'autre — charge ou produit, imputable.
-    // Absent du corps : la valeur en place est préservée.
-    //
-    // ⚠️ Validé **seulement s'il change**. Le compte désigné peut devenir archivé
-    // ou non imputable par une autre route (l'archivage n'est pas gardé, #486) ;
-    // le revalider à chaque enregistrement bloquerait tout changement SANS
-    // rapport — un format de numérotation — sur un champ que l'utilisateur n'a
-    // pas touché. L'écriture de l'écart (Story 25-4-c3-b) refusera d'écrire sur un
-    // compte devenu invalide : c'est là que la garde doit tenir, pas ici.
-    let default_rounding_account_id = req
-        .default_rounding_account_id
-        .unwrap_or(current.default_rounding_account_id);
-    if default_rounding_account_id != current.default_rounding_account_id {
-        validate_account_of(
-            &state,
-            company.id,
-            default_rounding_account_id,
-            &[AccountType::Expense, AccountType::Revenue],
-            true,
-            "Compte de différences d'arrondi",
-        )
-        .await?;
-    }
+    let default_rounding_account_id = resolve_designated_account(
+        &state,
+        company.id,
+        req.default_rounding_account_id,
+        current.default_rounding_account_id,
+        "Compte de différences d'arrondi",
+    )
+    .await?;
+    // Story 25-4-d1 (#384) — les comptes des natures d'écart soldé.
+    let default_discount_account_id = resolve_designated_account(
+        &state,
+        company.id,
+        req.default_discount_account_id,
+        current.default_discount_account_id,
+        "Compte d'escompte",
+    )
+    .await?;
+    let default_bank_fees_account_id = resolve_designated_account(
+        &state,
+        company.id,
+        req.default_bank_fees_account_id,
+        current.default_bank_fees_account_id,
+        "Compte de frais bancaires",
+    )
+    .await?;
+    let default_bad_debt_account_id = resolve_designated_account(
+        &state,
+        company.id,
+        req.default_bad_debt_account_id,
+        current.default_bad_debt_account_id,
+        "Compte de pertes sur créances",
+    )
+    .await?;
 
     // Story 25-4-e (#495) — le montant minimum : strictement positif, au centime.
     let minimum_invoice_amount = req
@@ -333,6 +393,9 @@ pub async fn update_invoice_settings(
             .round_to_5_centimes
             .unwrap_or(current.round_to_5_centimes),
         minimum_invoice_amount,
+        default_discount_account_id,
+        default_bank_fees_account_id,
+        default_bad_debt_account_id,
     };
     let settings = company_invoice_settings::update(
         &state.pool,

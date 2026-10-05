@@ -44,6 +44,7 @@
   {"number": "3400", "name": {"fr": "Prestations de services", "de": "Dienstleistungsertrag", "it": "Ricavi da servizi", "en": "Service revenue"}, "type": "Revenue", "parentNumber": "30"},
   {"number": "3500", "name": {"fr": "Produits des ventes", "de": "Umsatzerlöse", "it": "Ricavi delle vendite", "en": "Sales revenue"}, "type": "Revenue", "parentNumber": "30"},
   {"number": "3800", "name": {"fr": "Autres produits", "de": "Übriger Ertrag", "it": "Altri ricavi", "en": "Other revenue"}, "type": "Revenue", "parentNumber": "30"},
+  {"number": "3805", "name": {"fr": "Pertes sur créances", "de": "Verluste aus Forderungen", "it": "Perdite su crediti", "en": "Bad debt losses"}, "type": "Revenue", "parentNumber": "30", "writeOffNature": "badDebt"},
 
   {"number": "4", "name": {"fr": "Charges directes", "de": "Direkter Aufwand", "it": "Costi diretti", "en": "Direct costs"}, "type": "Expense", "parentNumber": null},
   {"number": "40", "name": {"fr": "Charges directes des activités", "de": "Direkter Aufwand Aktivitäten", "it": "Costi diretti delle attività", "en": "Direct activity costs"}, "type": "Expense", "parentNumber": "4"},
@@ -69,7 +70,7 @@
   {"number": "6600", "name": {"fr": "Publicité et communication", "de": "Werbung und Kommunikation", "it": "Pubblicità e comunicazione", "en": "Advertising and communication"}, "type": "Expense", "parentNumber": "6"},
   {"number": "6700", "name": {"fr": "Autres charges d'exploitation", "de": "Übriger Betriebsaufwand", "it": "Altri costi operativi", "en": "Other operating costs"}, "type": "Expense", "parentNumber": "6"},
   {"number": "6800", "name": {"fr": "Amortissements", "de": "Abschreibungen", "it": "Ammortamenti", "en": "Depreciation"}, "type": "Expense", "parentNumber": "6"},
-  {"number": "6900", "name": {"fr": "Charges financières", "de": "Finanzaufwand", "it": "Oneri finanziari", "en": "Financial expenses"}, "type": "Expense", "parentNumber": "6"},
+  {"number": "6900", "name": {"fr": "Charges financières", "de": "Finanzaufwand", "it": "Oneri finanziari", "en": "Financial expenses"}, "type": "Expense", "parentNumber": "6", "writeOffNature": "bankFees"},
   {"number": "6940", "name": {"fr": "Différences d'arrondi", "de": "Rundungsdifferenzen", "it": "Differenze di arrotondamento", "en": "Rounding differences"}, "type": "Expense", "parentNumber": "6", "roundingDifference": true},
   {"number": "6950", "name": {"fr": "Produits financiers", "de": "Finanzertrag", "it": "Proventi finanziari", "en": "Financial income"}, "type": "Revenue", "parentNumber": "6"},
 

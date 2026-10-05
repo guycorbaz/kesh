@@ -42,7 +42,8 @@
   {"number": "3000", "name": {"fr": "Honoraires", "de": "Honorare", "it": "Onorari", "en": "Professional fees"}, "type": "Revenue", "parentNumber": "30", "role": "DefaultRevenue"},
   {"number": "3200", "name": {"fr": "Prestations de services", "de": "Dienstleistungsertrag", "it": "Ricavi da servizi", "en": "Service revenue"}, "type": "Revenue", "parentNumber": "30"},
   {"number": "3400", "name": {"fr": "Autres produits", "de": "Übriger Ertrag", "it": "Altri ricavi", "en": "Other revenue"}, "type": "Revenue", "parentNumber": "30"},
-  {"number": "3800", "name": {"fr": "Déductions sur prestations", "de": "Erlösminderungen", "it": "Riduzioni su prestazioni", "en": "Revenue deductions"}, "type": "Revenue", "parentNumber": "30"},
+  {"number": "3800", "name": {"fr": "Déductions sur prestations", "de": "Erlösminderungen", "it": "Riduzioni su prestazioni", "en": "Revenue deductions"}, "type": "Revenue", "parentNumber": "30", "writeOffNature": "discount"},
+  {"number": "3805", "name": {"fr": "Pertes sur créances", "de": "Verluste aus Forderungen", "it": "Perdite su crediti", "en": "Bad debt losses"}, "type": "Revenue", "parentNumber": "30", "writeOffNature": "badDebt"},
 
   {"number": "4", "name": {"fr": "Charges de matières", "de": "Materialaufwand", "it": "Costi per materiali", "en": "Cost of materials"}, "type": "Expense", "parentNumber": null},
   {"number": "40", "name": {"fr": "Charges directes", "de": "Direkter Aufwand", "it": "Costi diretti", "en": "Direct costs"}, "type": "Expense", "parentNumber": "4"},
@@ -72,7 +73,7 @@
   {"number": "6700", "name": {"fr": "Autres charges d'exploitation", "de": "Übriger Betriebsaufwand", "it": "Altri costi operativi", "en": "Other operating costs"}, "type": "Expense", "parentNumber": "6"},
   {"number": "6750", "name": {"fr": "Formation continue", "de": "Weiterbildung", "it": "Formazione continua", "en": "Continuing education"}, "type": "Expense", "parentNumber": "6"},
   {"number": "6800", "name": {"fr": "Amortissements", "de": "Abschreibungen", "it": "Ammortamenti", "en": "Depreciation"}, "type": "Expense", "parentNumber": "6"},
-  {"number": "6900", "name": {"fr": "Charges financières", "de": "Finanzaufwand", "it": "Oneri finanziari", "en": "Financial expenses"}, "type": "Expense", "parentNumber": "6"},
+  {"number": "6900", "name": {"fr": "Charges financières", "de": "Finanzaufwand", "it": "Oneri finanziari", "en": "Financial expenses"}, "type": "Expense", "parentNumber": "6", "writeOffNature": "bankFees"},
   {"number": "6940", "name": {"fr": "Différences d'arrondi", "de": "Rundungsdifferenzen", "it": "Differenze di arrotondamento", "en": "Rounding differences"}, "type": "Expense", "parentNumber": "6", "roundingDifference": true},
   {"number": "6950", "name": {"fr": "Produits financiers", "de": "Finanzertrag", "it": "Proventi finanziari", "en": "Financial income"}, "type": "Revenue", "parentNumber": "6"},
 
