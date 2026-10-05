@@ -421,7 +421,14 @@ const ATTENDU = {
 	//
 	// Fusion dans la 25-4-d1, 2026-10-05 : la story ajoute +6 à une base
 	// désormais de 1788 ⇒ **1794** ; `sitesNonResolus` et `relais` suivent la fusion (31, 6).
-	sitesTotal: 1794,
+	// Story 25-4-d2a (#384) : **1775 → 1777** — le motif « un solde existe »
+	// (`INVOICE_WRITTEN_OFF`), traduit dans les deux tables qui le reçoivent :
+	// `features/invoices/settlement-cancel.ts` (1 → 2) et
+	// `features/reconciliation/reconciliation-cancel.ts` (6 → 7).
+	//
+	// Fusion dans la 25-4-d2a, 2026-10-05 : la story ajoute +2 à une base
+	// désormais de 1794 ⇒ **1796** ; `sitesNonResolus` et `relais` suivent la fusion (31, 6).
+	sitesTotal: 1796,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

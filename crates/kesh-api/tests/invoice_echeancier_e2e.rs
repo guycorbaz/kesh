@@ -1577,3 +1577,218 @@ async fn validating_below_the_minimum_is_a_named_400(pool: MySqlPool) {
         "les deux montants : {msg}"
     );
 }
+
+// --- Story 25-4-d2a (#384, #490) — solder le reste, à la frontière HTTP --------
+
+/// Désigne la charge `4000` comme compte des trois natures.
+async fn designate_write_off_accounts(pool: &MySqlPool, company_id: i64) {
+    sqlx::query(
+        "UPDATE company_invoice_settings cis \
+         JOIN accounts a ON a.company_id = cis.company_id AND a.number = '4000' \
+         SET cis.default_discount_account_id = a.id, cis.default_bank_fees_account_id = a.id, \
+             cis.default_bad_debt_account_id = a.id \
+         WHERE cis.company_id = ?",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .expect("comptes de nature");
+}
+
+async fn invoice_version(app: &TestApp, token: &str, id: i64) -> i64 {
+    let v: serde_json::Value = app
+        .client
+        .get(app.url(&format!("/api/v1/invoices/{id}")))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    v["version"].as_i64().expect("version")
+}
+
+async fn post_write_off(
+    app: &TestApp,
+    token: &str,
+    id: i64,
+    body: serde_json::Value,
+) -> reqwest::Response {
+    app.client
+        .post(app.url(&format!("/api/v1/invoices/{id}/write-off")))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap()
+}
+
+/// ⛔ **Le solde traverse la frontière HTTP** : la facture réglée en partie est
+/// soldée et payée ; la liste porte la nature et bloque le règlement antérieur
+/// (code traduit, pas d'annulation) ; un rappel est refusé ; l'échéancier dit
+/// « Payée ».
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn write_off_via_http_settles_and_blocks_the_earlier_settlement(pool: MySqlPool) {
+    let (admin_id, company_id) = seed_base(&pool).await;
+    designate_write_off_accounts(&pool, company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let id = partially_settled_invoice(&pool, &app, &token, admin_id, company_id).await;
+    let version = invoice_version(&app, &token, id).await;
+
+    let resp = post_write_off(
+        &app,
+        &token,
+        id,
+        json!({ "nature": "discount", "settledOn": "2026-04-20", "version": version }),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(montant(&body, "amount"), dec!(68.10));
+    assert_eq!(montant(&body["invoice"], "amountDue"), dec!(0));
+    assert!(body["invoice"]["paidAt"].is_string(), "{body}");
+
+    let list: serde_json::Value = get_settlements(&app, &token, id)
+        .await
+        .json()
+        .await
+        .unwrap();
+    let rows = list.as_array().unwrap();
+    assert_eq!(rows.len(), 2);
+    let earlier = rows
+        .iter()
+        .find(|r| r["settlementType"] == "internal_account")
+        .unwrap();
+    let solde = rows
+        .iter()
+        .find(|r| r["settlementType"] == "write_off")
+        .unwrap();
+    assert_eq!(solde["writeOffNature"], "discount");
+    assert!(earlier["writeOffNature"].is_null());
+    assert_eq!(earlier["cancellable"], false);
+    assert_eq!(earlier["cancelBlockedBy"], "INVOICE_WRITTEN_OFF");
+    assert_eq!(solde["cancellable"], true);
+
+    let resp = post_cancel(&app, &token, id, earlier["id"].as_i64().unwrap()).await;
+    assert_eq!(resp.status(), 409);
+
+    // Un rappel est refusé sur la facture soldée.
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{id}/reminders/manual")))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({ "levelNumber": 1, "sentAt": "2026-04-25T10:00:00", "note": null }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 422, "{:?}", resp.text().await);
+
+    // L'échéancier dit « Payée », pas « Partiellement payée ».
+    let resp = app
+        .client
+        .get(app.url("/api/v1/invoices/due-dates/export.csv?paymentStatus=all"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let text = String::from_utf8_lossy(&resp.bytes().await.unwrap()).to_string();
+    let row = text.lines().nth(1).expect("une ligne");
+    assert!(
+        row.contains("Payée") && !row.contains("Partiellement"),
+        "ligne : {row}"
+    );
+}
+
+/// Les refus de la route : `version` périmée (409), nature inconnue (400, pas
+/// 422), Consultation (403), facture déjà soldée (400).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn write_off_route_refusals(pool: MySqlPool) {
+    let (admin_id, company_id) = seed_base(&pool).await;
+    designate_write_off_accounts(&pool, company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let id = partially_settled_invoice(&pool, &app, &token, admin_id, company_id).await;
+    let version = invoice_version(&app, &token, id).await;
+
+    let stale = post_write_off(
+        &app,
+        &token,
+        id,
+        json!({ "nature": "discount", "settledOn": "2026-04-20", "version": version - 1 }),
+    )
+    .await;
+    assert_eq!(stale.status(), 409);
+
+    let unknown = post_write_off(
+        &app,
+        &token,
+        id,
+        json!({ "nature": "gift", "settledOn": "2026-04-20", "version": version }),
+    )
+    .await;
+    assert_eq!(unknown.status(), 400);
+
+    kesh_db::repositories::users::create(
+        &pool,
+        kesh_db::entities::NewUser {
+            username: "lecteur".into(),
+            password_hash: kesh_api::auth::password::hash_password("password123").unwrap(),
+            role: kesh_db::entities::Role::Consultation,
+            active: true,
+            company_id,
+            email: None,
+        },
+    )
+    .await
+    .unwrap();
+    let lecteur = app
+        .client
+        .post(app.url("/api/v1/auth/login"))
+        .json(&json!({ "username": "lecteur", "password": "password123" }))
+        .send()
+        .await
+        .unwrap()
+        .json::<serde_json::Value>()
+        .await
+        .unwrap()["accessToken"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let forbidden = post_write_off(
+        &app,
+        &lecteur,
+        id,
+        json!({ "nature": "discount", "settledOn": "2026-04-20", "version": version }),
+    )
+    .await;
+    assert_eq!(forbidden.status(), 403);
+
+    let ok = post_write_off(
+        &app,
+        &token,
+        id,
+        json!({ "nature": "bank_fees", "settledOn": "2026-04-20", "version": version }),
+    )
+    .await;
+    assert_eq!(ok.status(), 200);
+    let version = invoice_version(&app, &token, id).await;
+    let again = post_write_off(
+        &app,
+        &token,
+        id,
+        json!({ "nature": "bank_fees", "settledOn": "2026-04-20", "version": version }),
+    )
+    .await;
+    assert_eq!(again.status(), 400);
+    let body: serde_json::Value = again.json().await.unwrap();
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("déjà payée"),
+        "{body}"
+    );
+}

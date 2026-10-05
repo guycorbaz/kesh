@@ -1291,6 +1291,85 @@ pub async fn settle_invoice_handler(
     }))
 }
 
+/// Corps de `POST /api/v1/invoices/{id}/write-off` — Story 25-4-d2a (#384).
+///
+/// ⚠️ **Sans montant** : le serveur solde le reste **exact**. D'où la
+/// **`version`**, qui remplace le garde que le montant donne au règlement
+/// manuel (le refus du trop-perçu) : un écran périmé, ou une tentative rejouée
+/// qui relirait un reste changé, est refusé en 409.
+///
+/// `nature` est une **chaîne** convertie à la main : une énumération serde
+/// rendrait 422 sur une valeur inconnue (cf. `SettleInvoiceRequest::into_parts`).
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteOffInvoiceRequest {
+    /// `discount`, `bank_fees`, `bad_debt` ou `rounding`.
+    pub nature: String,
+    pub settled_on: NaiveDate,
+    pub version: i32,
+}
+
+/// Réponse : la facture à jour, l'écriture du solde et le montant soldé.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WriteOffInvoiceResponse {
+    pub invoice: InvoiceResponse,
+    pub journal_entry_id: i64,
+    pub amount: Decimal,
+}
+
+/// `POST /api/v1/invoices/:id/write-off` — solde le reste d'une facture
+/// validée, imputé au compte de sa nature (Story 25-4-d2a, #384, #490).
+///
+/// ⚠️ **Rejoué sur interblocage** : l'ordre des verrous est celui du règlement
+/// manuel (facture → compte → exercice), qui peut former un cycle avec
+/// l'acceptation d'un rapprochement (#491). Le rejeu est sûr grâce à la
+/// `version` : une tentative qui trouve un reste changé est refusée en 409.
+pub async fn write_off_invoice_handler(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+    Json(req): Json<WriteOffInvoiceRequest>,
+) -> Result<Json<WriteOffInvoiceResponse>, AppError> {
+    use kesh_db::retry::{DEFAULT_MAX_DEADLOCK_ATTEMPTS, is_deadlock_error, retry_with};
+    let company = get_company_for(&current_user, &state.pool).await?;
+    let nature =
+        kesh_db::entities::SettlementWriteOffNature::parse(&req.nature).ok_or_else(|| {
+            AppError::Validation(format!(
+                "nature inconnue : « {} » (attendu discount | bank_fees | bad_debt | rounding)",
+                req.nature
+            ))
+        })?;
+    let outcome = retry_with(
+        DEFAULT_MAX_DEADLOCK_ATTEMPTS,
+        |err: &DbError| is_deadlock_error(err),
+        || {
+            kesh_db::repositories::invoice_settlements_write::write_off_invoice(
+                &state.pool,
+                current_user.user_id,
+                company.id,
+                id,
+                nature,
+                req.settled_on,
+                req.version,
+            )
+        },
+    )
+    .await?;
+
+    let (invoice, lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)
+        .await?
+        .ok_or(AppError::Database(DbError::NotFound))?;
+    let settled =
+        kesh_db::repositories::invoice_settlements::amount_settled(&state.pool, id).await?;
+    let due = kesh_db::repositories::invoice_settlements::amount_due(&state.pool, id).await?;
+    Ok(Json(WriteOffInvoiceResponse {
+        invoice: InvoiceResponse::from_parts(invoice, lines).with_settlement(settled, due),
+        journal_entry_id: outcome.journal_entry_id,
+        amount: outcome.amount,
+    }))
+}
+
 /// Un règlement d'une facture, tel que l'écran le liste (Story 25-3-a-1, #414).
 ///
 /// ⛔ **`cancellable` et ses trois compagnons sont calculés par la fonction même
@@ -1313,6 +1392,9 @@ pub struct InvoiceSettlementResponse {
     pub amount: Decimal,
     pub settled_on: NaiveDate,
     pub settlement_type: String,
+    /// Story 25-4-d2a — la nature d'un solde (`discount`, `bank_fees`,
+    /// `bad_debt`, `rounding`) ; `null` pour un règlement.
+    pub write_off_nature: Option<String>,
     pub cancellable: bool,
     /// Code du motif qui empêche l'annulation (`SettlementCancelBlocker::code`).
     pub cancel_blocked_by: Option<&'static str>,
@@ -1365,6 +1447,7 @@ pub async fn list_invoice_settlements_handler(
             amount: s.amount,
             settled_on: s.settled_on,
             settlement_type: s.settlement_type,
+            write_off_nature: s.write_off_nature,
             cancellable: hit.is_none(),
             cancel_blocked_by: hit.as_ref().map(|h| h.0.code()),
             cancel_blocked_label: hit.as_ref().and_then(|h| h.2.clone()),

@@ -35,8 +35,16 @@ pub struct InvoiceSettlement {
     pub settlement_type: String,
     /// Renseigné ssi `settlement_type = 'bank_transfer'` (contrainte DB).
     pub settlement_bank_account_id: Option<i64>,
-    /// Renseigné ssi `settlement_type = 'internal_account'` (contrainte DB).
+    /// Renseigné ssi `settlement_type` vaut `internal_account` ou `write_off`
+    /// (contrainte DB) — pour un solde, le compte de la nature.
     pub settlement_account_id: Option<i64>,
+    /// Nature du solde (`discount`, `bank_fees`, `bad_debt`, `rounding`),
+    /// renseignée ssi `settlement_type = 'write_off'` (Story 25-4-d2a).
+    pub write_off_nature: Option<String>,
+    /// Ventilation figée de la TVA corrigée par taux — `[{ratePercent, baseHt,
+    /// vatAmount}]`, `[]` sans TVA —, renseignée ssi `settlement_type =
+    /// 'write_off'` (Story 25-4-d2a ; lue par le rapport TVA, d2c).
+    pub write_off_vat: Option<serde_json::Value>,
     pub created_at: NaiveDateTime,
 }
 
@@ -53,7 +61,102 @@ pub struct NewInvoiceSettlement {
     /// ⚠️ **Il vit sur le RÈGLEMENT, pas sur la facture** — contrairement au
     /// symétrique fournisseur, où le règlement est unique par construction. Une
     /// facture client peut être réglée moitié en espèces, moitié par virement.
-    pub choice: SettlementChoice,
+    pub kind: SettlementKind,
+}
+
+/// Ce que la ligne enregistre : un **règlement** (mode et contrepartie) ou un
+/// **solde** du reste (Story 25-4-d2a).
+///
+/// ⛔ Le solde n'est pas une variante de [`SettlementChoice`] : celui-ci est
+/// partagé avec le fournisseur, dont le CHECK n'admet que deux modes.
+#[derive(Debug, Clone)]
+pub enum SettlementKind {
+    /// Un règlement : virement ou compte interne.
+    Choice(SettlementChoice),
+    /// Le solde du reste, imputé au compte de sa nature.
+    WriteOff {
+        nature: WriteOffNature,
+        /// Le compte de la nature, relu au moment d'écrire.
+        account_id: i64,
+        /// La ventilation figée de la TVA corrigée (`[]` sans TVA).
+        vat: serde_json::Value,
+    },
+}
+
+impl SettlementKind {
+    /// La valeur persistée en `settlement_type`.
+    pub fn type_str(&self) -> &'static str {
+        match self {
+            SettlementKind::Choice(choice) => choice.type_str(),
+            SettlementKind::WriteOff { .. } => "write_off",
+        }
+    }
+
+    /// `(settlement_bank_account_id, settlement_account_id)` —
+    /// `chk_invoice_settlements_counterparty`.
+    pub fn counterparty_refs(&self) -> (Option<i64>, Option<i64>) {
+        match self {
+            SettlementKind::Choice(choice) => choice.counterparty_refs(),
+            SettlementKind::WriteOff { account_id, .. } => (None, Some(*account_id)),
+        }
+    }
+}
+
+/// La **nature** d'un solde (Story 25-4-d2a, arbitrage du 2026-10-01).
+///
+/// Distincte de `kesh_core::chart_of_accounts::WriteOffNature`, qui marque les
+/// comptes des plans et ne connaît pas le reste d'arrondi : celui-ci a son
+/// propre compte, le compte de différences d'arrondi.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WriteOffNature {
+    /// Escompte accordé au client — TVA corrigée.
+    Discount,
+    /// Frais bancaires retenus par la banque du client — sans TVA.
+    BankFees,
+    /// Perte sur débiteur — TVA corrigée.
+    BadDebt,
+    /// Reste d'arrondi (#490) — sans TVA.
+    Rounding,
+}
+
+impl WriteOffNature {
+    /// La valeur persistée en `write_off_nature` et reçue par l'API.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Discount => "discount",
+            Self::BankFees => "bank_fees",
+            Self::BadDebt => "bad_debt",
+            Self::Rounding => "rounding",
+        }
+    }
+
+    /// La nature de sa graphie persistée — `None` si inconnue.
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw {
+            "discount" => Some(Self::Discount),
+            "bank_fees" => Some(Self::BankFees),
+            "bad_debt" => Some(Self::BadDebt),
+            "rounding" => Some(Self::Rounding),
+            _ => None,
+        }
+    }
+
+    /// `true` si la TVA est corrigée au prorata des taux de la facture
+    /// (escompte et perte, arbitrage 4 — réduction de contre-prestation).
+    pub fn corrects_vat(&self) -> bool {
+        matches!(self, Self::Discount | Self::BadDebt)
+    }
+
+    /// L'intitulé du libellé d'écriture, en **français figé** comme le libellé
+    /// des règlements (« Règlement facture … »).
+    pub fn entry_label(&self) -> &'static str {
+        match self {
+            Self::Discount => "escompte accordé",
+            Self::BankFees => "frais bancaires",
+            Self::BadDebt => "perte sur débiteur",
+            Self::Rounding => "reste d'arrondi",
+        }
+    }
 }
 
 /// Le mode de règlement, et rien d'autre : ce n'est **pas** une table de modes.

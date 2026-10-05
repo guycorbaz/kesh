@@ -152,6 +152,62 @@ where
         .collect()
 }
 
+/// La part de TVA corrigée, pour un taux, d'un **solde** (Story 25-4-d2a, #384).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct VatRateShare {
+    /// Taux en **pourcent** (ex. `dec!(8.10)`).
+    pub rate_percent: Decimal,
+    /// Part de la base HT soldée — **informative** (rapport TVA, Story 25-4-d2c) :
+    /// l'écriture n'en dépend pas.
+    pub base_ht: Decimal,
+    /// TVA corrigée à ce taux, au centime.
+    pub vat_amount: Decimal,
+}
+
+/// Ventile, au prorata des taux de la facture, la TVA que corrige le **solde**
+/// d'un montant `amount` (escompte accordé, perte sur débiteur — Story 25-4-d2a).
+///
+/// Une diminution de contre-prestation (LTVA art. 41) corrige la TVA dans la
+/// proportion où elle réduit le prix : pour chaque taux > 0 de
+/// [`vat_breakdown_by_rate`], `vat_amount = amount × TVA du taux / total_ttc` et
+/// `base_ht = amount × base du taux / total_ttc`, chacun arrondi au centime
+/// ([`Money::round_to_centimes`]). `total_ttc` est le TTC **figé** de la facture
+/// ([`invoice_total_ttc_rounded`], arrondi à 5 centimes compris : cette part, sans
+/// TVA, n'en porte pas). La formule vaut aussi pour un reste après règlement
+/// partiel : le reste suit la composition du TTC.
+///
+/// Les parts dont la TVA arrondie est nulle sont omises. Le reliquat de centimes
+/// n'est réparti nulle part : l'appelant impute `amount − Σ vat_amount` au compte
+/// de la nature, ce qui garde l'écriture équilibrée.
+///
+/// `total_ttc <= 0` ou `amount <= 0` → aucune part.
+pub fn write_off_vat_shares<I>(lines: I, total_ttc: Decimal, amount: Decimal) -> Vec<VatRateShare>
+where
+    I: IntoIterator<Item = (Decimal, Decimal)>,
+{
+    if total_ttc <= Decimal::ZERO || amount <= Decimal::ZERO {
+        return Vec::new();
+    }
+    vat_breakdown_by_rate(lines)
+        .into_iter()
+        .filter_map(|rate| {
+            let vat_amount = Money::new(amount * rate.vat_amount / total_ttc)
+                .round_to_centimes()
+                .amount();
+            if vat_amount.is_zero() {
+                return None;
+            }
+            Some(VatRateShare {
+                rate_percent: rate.rate_percent,
+                base_ht: Money::new(amount * rate.base_ht / total_ttc)
+                    .round_to_centimes()
+                    .amount(),
+                vat_amount,
+            })
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
@@ -335,5 +391,79 @@ mod tests {
         assert!(vat_breakdown_by_rate([]).is_empty());
         // Une facture 100 % exonérée n'a aucun récap TVA.
         assert!(vat_breakdown_by_rate([(dec!(500.00), dec!(0))]).is_empty());
+    }
+
+    // --- Story 25-4-d2a : le prorata de TVA d'un solde ---
+
+    #[test]
+    fn write_off_vat_shares_single_rate() {
+        // 1000.00 HT à 8.1 % → TTC 1081.00 ; un escompte de 21.62 (2 %) corrige 1.62.
+        let lines = vec![(dec!(1000.00), dec!(8.10))];
+        let shares = write_off_vat_shares(lines, dec!(1081.00), dec!(21.62));
+        assert_eq!(
+            shares,
+            vec![VatRateShare {
+                rate_percent: dec!(8.10),
+                base_ht: dec!(20.00),
+                vat_amount: dec!(1.62),
+            }]
+        );
+    }
+
+    #[test]
+    fn write_off_vat_shares_whole_ttc_returns_the_invoiced_vat() {
+        // Solder tout le TTC corrige exactement la TVA facturée, taux par taux.
+        let lines = vec![
+            (dec!(100.00), dec!(8.10)),
+            (dec!(50.00), dec!(2.60)),
+            (dec!(30.00), dec!(0)),
+        ];
+        let ttc = invoice_total_ttc(lines.clone());
+        let shares = write_off_vat_shares(lines.clone(), ttc, ttc);
+        let breakdown = vat_breakdown_by_rate(lines);
+        assert_eq!(shares.len(), 2, "le taux à 0 % ne porte aucune part");
+        for (share, rate) in shares.iter().zip(breakdown.iter()) {
+            assert_eq!(share.rate_percent, rate.rate_percent);
+            assert_eq!(share.vat_amount, rate.vat_amount);
+            assert_eq!(share.base_ht, rate.base_ht);
+        }
+    }
+
+    #[test]
+    fn write_off_vat_shares_several_rates_on_a_partial_remainder() {
+        // TTC 100×1.081 + 100×1.026 = 210.70 ; reste 21.07 (10 %) → 0.81 et 0.26.
+        let lines = vec![(dec!(100.00), dec!(8.10)), (dec!(100.00), dec!(2.60))];
+        let shares = write_off_vat_shares(lines, dec!(210.70), dec!(21.07));
+        let vats: Vec<_> = shares
+            .iter()
+            .map(|s| (s.rate_percent, s.vat_amount))
+            .collect();
+        assert_eq!(
+            vats,
+            vec![(dec!(8.10), dec!(0.81)), (dec!(2.60), dec!(0.26))]
+        );
+    }
+
+    #[test]
+    fn write_off_vat_shares_rounding_part_carries_no_vat() {
+        // 10.00 HT à 8.1 % → 10.81, arrondi figé −0.01 → TTC 10.80 : solder ce TTC
+        // corrige la TVA des lignes (0.81), l'arrondi n'en portant aucune.
+        let lines = vec![(dec!(10.00), dec!(8.10))];
+        let ttc_rounded = invoice_total_ttc_rounded(lines.clone(), dec!(-0.01)); // 10.81 → 10.80
+        let shares = write_off_vat_shares(lines, ttc_rounded, ttc_rounded);
+        assert_eq!(shares[0].vat_amount, dec!(0.81));
+    }
+
+    #[test]
+    fn write_off_vat_shares_four_decimal_amount_and_tiny_amounts() {
+        let lines = vec![(dec!(1000.00), dec!(8.10))];
+        // Montant à quatre décimales : la TVA reste au centime.
+        let shares = write_off_vat_shares(lines.clone(), dec!(1081.00), dec!(10.0050));
+        assert_eq!(shares[0].vat_amount, dec!(0.75));
+        // Un montant minuscule : part de TVA nulle → omise.
+        assert!(write_off_vat_shares(lines.clone(), dec!(1081.00), dec!(0.0040)).is_empty());
+        // Montant ou TTC non positif : aucune part.
+        assert!(write_off_vat_shares(lines.clone(), dec!(1081.00), dec!(0)).is_empty());
+        assert!(write_off_vat_shares(lines, dec!(0), dec!(10)).is_empty());
     }
 }

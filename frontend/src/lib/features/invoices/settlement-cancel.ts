@@ -12,7 +12,11 @@ import {
 	type SettlementCancelTailCode,
 } from '$lib/shared/utils/settlement-cancel-blocked';
 
-export type InvoiceSettlementCancelCode = 'INVOICE_CREDITED' | SettlementCancelTailCode;
+export type InvoiceSettlementCancelCode =
+	| 'INVOICE_CREDITED'
+	// Story 25-4-d2a (#384) : un solde existe — annuler d'abord le solde.
+	| 'INVOICE_WRITTEN_OFF'
+	| SettlementCancelTailCode;
 
 /** Le texte affiché à la place du bouton « Annuler le règlement ». */
 export function invoiceSettlementCancelMessage(
@@ -23,6 +27,12 @@ export function invoiceSettlementCancelMessage(
 		return i18nMsg(
 			'invoices-settlement-cancel-blocked-credited',
 			'Cette facture a été créditée par un avoir : ce règlement est un paiement à lettrer, il ne s\'annule pas.',
+		);
+	}
+	if (code === 'INVOICE_WRITTEN_OFF') {
+		return i18nMsg(
+			'invoices-settlement-cancel-blocked-written-off',
+			"Le reste de cette facture a été soldé : annulez d'abord le solde.",
 		);
 	}
 	return settlementCancelTailMessage(code, label);

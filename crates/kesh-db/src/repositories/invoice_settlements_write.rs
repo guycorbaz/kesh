@@ -17,7 +17,10 @@ use rust_decimal::Decimal;
 use sqlx::MySqlPool;
 
 use crate::entities::NewAuditLogEntry;
-use crate::entities::{Journal, NewInvoiceSettlement, NewJournalEntry, SettlementChoice};
+use crate::entities::{
+    Journal, NewInvoiceSettlement, NewJournalEntry, SettlementChoice, SettlementKind,
+    SettlementWriteOffNature,
+};
 use crate::errors::{DbError, SettlementCancelBlocker, map_db_error};
 use crate::repositories::invoice_settlements::PaymentAgainstDue;
 use crate::repositories::journal_entries::ReversalAuthority;
@@ -241,7 +244,7 @@ pub async fn settle_invoice(
             journal_entry_id: je.entry.id,
             amount: settled_amount,
             settled_on,
-            choice,
+            kind: crate::entities::SettlementKind::Choice(choice),
         },
     )
     .await?;
@@ -323,11 +326,271 @@ pub async fn settle_invoice(
 }
 
 // ---------------------------------------------------------------------------
+// Story 25-4-d2a (#384, #490) — solder le reste d'une facture
+// ---------------------------------------------------------------------------
+
+/// Un reste d'arrondi reste **sous** l'unité de 5 centimes : à partir de 0.05,
+/// la nature `rounding` est refusée (Story 25-4-d2a, AC 4).
+const ROUNDING_WRITE_OFF_LIMIT: Decimal = Decimal::from_parts(5, 0, 0, false, 2);
+
+/// Ce que rend un solde : l'écriture créée et le montant soldé (le reste exact).
+#[derive(Debug, Clone)]
+pub struct WriteOffOutcome {
+    pub journal_entry_id: i64,
+    pub amount: Decimal,
+}
+
+/// Solde **tout** le reste dû d'une facture validée, en l'imputant au compte de
+/// sa nature (Story 25-4-d2a, #384, #490). Patron : [`settle_invoice`].
+///
+/// - Le montant n'est pas fourni : c'est le reste **exact** (brut), si bien que
+///   la créance tombe à zéro. La garde contre un écran périmé ou une tentative
+///   rejouée est `expected_version` — la facture verrouillée doit la porter.
+/// - Escompte et perte corrigent la TVA au prorata des taux de la facture
+///   (`write_off_vat_shares`), débitée sur le compte de TVA due **courant**
+///   (comme l'avoir) ; frais bancaires et reste d'arrondi, non.
+/// - ⛔ **Tant qu'un solde existe, la facture est payée** : il éteint tout le
+///   reste, et aucun autre règlement ne s'annule avant lui
+///   (`SettlementCancelBlocker::WriteOffExists`).
+#[allow(clippy::too_many_arguments)]
+pub async fn write_off_invoice(
+    pool: &MySqlPool,
+    user_id: i64,
+    company_id: i64,
+    invoice_id: i64,
+    nature: SettlementWriteOffNature,
+    settled_on: NaiveDate,
+    expected_version: i32,
+) -> Result<WriteOffOutcome, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    // (1) Verrou facture + gardes : statut, déjà payée, version, date.
+    #[allow(clippy::type_complexity)]
+    let (
+        status,
+        sale_entry_id,
+        project_id,
+        invoice_number,
+        invoice_date,
+        paid_at,
+        version,
+        rounding_amount,
+    ): (
+        String,
+        Option<i64>,
+        Option<i64>,
+        Option<String>,
+        NaiveDate,
+        Option<chrono::NaiveDateTime>,
+        i32,
+        Decimal,
+    ) = sqlx::query_as(
+        "SELECT status, journal_entry_id, project_id, invoice_number, date, paid_at, version, \
+                rounding_amount \
+         FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE",
+    )
+    .bind(invoice_id)
+    .bind(company_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(map_db_error)?
+    .ok_or(DbError::NotFound)?;
+
+    if status != "validated" {
+        return Err(DbError::IllegalStateTransition(format!(
+            "seule une facture validée peut être soldée (statut actuel : '{status}')"
+        )));
+    }
+    // ⛔ Une facture réglée avant l'existence de `invoice_settlements` porte
+    // `paid_at` SANS aucune ligne : son reste dû vaudrait tout son TTC
+    // (`invoices.rs`, garde de dévalidation). L'avoir pose la même garde.
+    if paid_at.is_some() {
+        return Err(DbError::InvalidInput("invoiceAlreadyPaid".into()));
+    }
+    if version != expected_version {
+        return Err(DbError::OptimisticLockConflict);
+    }
+    let sale_entry_id = sale_entry_id
+        .ok_or_else(|| DbError::Invariant("facture validée sans écriture de vente".into()))?;
+    // Même tolérance d'un jour que `settle_invoice`.
+    if settled_on < invoice_date - chrono::Duration::days(1) {
+        return Err(DbError::InvalidInput("settledOnBeforeInvoiceDate".into()));
+    }
+
+    // (2) Le reste exact.
+    let amount = invoice_settlements::amount_due(&mut *tx, invoice_id).await?;
+    if amount <= Decimal::ZERO {
+        return Err(DbError::InvalidInput("nothingToWriteOff".into()));
+    }
+    // (3) Un reste d'arrondi reste sous l'unité de 5 centimes.
+    if nature == SettlementWriteOffNature::Rounding && amount >= ROUNDING_WRITE_OFF_LIMIT {
+        return Err(DbError::InvalidInput("writeOffRoundingTooLarge".into()));
+    }
+
+    // (4) Le compte de la nature, relu et revérifié au moment d'écrire ; la
+    //     créance, première ligne de débit de l'écriture de vente.
+    let nature_account_id =
+        company_invoice_settings::write_off_account_for_write(&mut tx, company_id, nature).await?;
+    let receivable_account_id: i64 = sqlx::query_scalar(
+        "SELECT jel.account_id FROM journal_entry_lines jel \
+         JOIN journal_entries je ON je.id = jel.entry_id \
+         WHERE jel.entry_id = ? AND je.company_id = ? AND jel.debit > 0 \
+         ORDER BY jel.id LIMIT 1",
+    )
+    .bind(sale_entry_id)
+    .bind(company_id)
+    .fetch_optional(&mut *tx)
+    .await
+    .map_err(map_db_error)?
+    .ok_or_else(|| DbError::Invariant("écriture de vente sans ligne de débit".into()))?;
+
+    // (5) La TVA corrigée, au prorata des taux (escompte, perte).
+    let shares = if nature.corrects_vat() {
+        let lines: Vec<(Decimal, Decimal)> =
+            sqlx::query_as("SELECT line_total, vat_rate FROM invoice_lines WHERE invoice_id = ?")
+                .bind(invoice_id)
+                .fetch_all(&mut *tx)
+                .await
+                .map_err(map_db_error)?;
+        let total_ttc = kesh_core::accounting::vat::invoice_total_ttc_rounded(
+            lines.iter().copied(),
+            rounding_amount,
+        );
+        kesh_core::accounting::vat::write_off_vat_shares(lines, total_ttc, amount)
+    } else {
+        Vec::new()
+    };
+    // (5 bis) La fraction de centime d'un reste exact à quatre décimales va au
+    //         compte de différences d'arrondi (convention du règlement au centime) ;
+    //         la nature `rounding` l'y impute déjà tout entière. Verrouillé avant
+    //         le compte de TVA : aucun autre chemin ne prend de verrou `FOR UPDATE`
+    //         sur le compte de TVA due (la validation et l'avoir le lisent dans les
+    //         réglages et y écrivent leurs lignes), si bien qu'aucun cycle n'est
+    //         connu ; l'ordre « arrondi, puis TVA » suit celui de la validation
+    //         d'une facture arrondie, par prudence (revues de code P2 et P3).
+    let rounding_account_id = if nature == SettlementWriteOffNature::Rounding {
+        Some(nature_account_id)
+    } else if amount != invoice_settlements::amount_due_to_centime(amount) {
+        Some(
+            company_invoice_settings::write_off_account_for_write(
+                &mut tx,
+                company_id,
+                SettlementWriteOffNature::Rounding,
+            )
+            .await?,
+        )
+    } else {
+        None
+    };
+
+    let vat_account_id = if shares.is_empty() {
+        None
+    } else {
+        Some(company_invoice_settings::vat_payable_account_for_write(&mut tx, company_id).await?)
+    };
+
+    // (6) Exercice ouvert, puis l'écriture au journal OD.
+    let fy = fiscal_years::find_open_covering_date(&mut tx, company_id, settled_on)
+        .await?
+        .ok_or(DbError::FiscalYearInvalid)?;
+    let label = invoice_number.unwrap_or_else(|| invoice_id.to_string());
+    let je = journal_entries::create_in_tx(
+        &mut tx,
+        fy.id,
+        user_id,
+        NewJournalEntry {
+            company_id,
+            entry_date: settled_on,
+            journal: Journal::OD,
+            description: format!("Solde facture {label} — {}", nature.entry_label()),
+            project_id,
+            lines: invoice_settlements::write_off_journal_lines(
+                nature_account_id,
+                receivable_account_id,
+                vat_account_id,
+                rounding_account_id,
+                amount,
+                &shares,
+            )?,
+        },
+        // Flux automatique : garde de postabilité désactivée (14-3b, D-A0) ; le
+        // compte de la nature a été revérifié imputable en (4).
+        false,
+    )
+    .await?;
+
+    // (7) La ligne de solde, par le même `create_in_tx` que les règlements.
+    let vat_json = invoice_settlements::write_off_vat_json(&shares);
+    invoice_settlements::create_in_tx(
+        &mut tx,
+        NewInvoiceSettlement {
+            company_id,
+            invoice_id,
+            journal_entry_id: je.entry.id,
+            amount,
+            settled_on,
+            kind: SettlementKind::WriteOff {
+                nature,
+                account_id: nature_account_id,
+                vat: vat_json.clone(),
+            },
+        },
+    )
+    .await?;
+
+    // (8) La facture est payée ; `version` bouge (invariant de `settle_invoice`).
+    let paid_at = settled_on.and_hms_opt(0, 0, 0).expect("minuit est valide");
+    let marked = sqlx::query(
+        "UPDATE invoices SET paid_at = ?, version = version + 1, updated_at = NOW(3) \
+         WHERE id = ? AND company_id = ? AND status = 'validated'",
+    )
+    .bind(paid_at)
+    .bind(invoice_id)
+    .bind(company_id)
+    .execute(&mut *tx)
+    .await
+    .map_err(map_db_error)?;
+    if marked.rows_affected() != 1 {
+        return Err(DbError::Invariant(
+            "solde : la facture n'a pas pu être marquée modifiée (version)".into(),
+        ));
+    }
+
+    // (9) L'audit, dans la même transaction.
+    let vat_corrected: Decimal = shares.iter().map(|s| s.vat_amount).sum();
+    audit_log::insert_in_tx(
+        &mut tx,
+        NewAuditLogEntry::user(
+            user_id,
+            "invoice.written_off",
+            "invoice",
+            invoice_id,
+            Some(serde_json::json!({
+                "write_off_nature": nature.as_str(),
+                "written_off_amount": amount,
+                "vat_corrected": vat_corrected,
+                "write_off_vat": vat_json,
+                "settlement_journal_entry_id": je.entry.id,
+                "settled_on": settled_on,
+            })),
+        ),
+    )
+    .await?;
+
+    tx.commit().await.map_err(map_db_error)?;
+    Ok(WriteOffOutcome {
+        journal_entry_id: je.entry.id,
+        amount,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Story 25-3-a-1 (#414) — annuler un règlement client
 // ---------------------------------------------------------------------------
 
 /// Ce qui empêche d'annuler le règlement `settlement_id` — la **tête** client
-/// (rang 1), puis la queue commune sur son écriture (rangs 2 à 5).
+/// (rang 1, puis rang 1 bis : un solde existe — Story 25-4-d2a), puis la queue
+/// commune sur son écriture (rangs 2 à 5).
 ///
 /// ⛔ **Une seule fonction pour lire et pour écrire** : `GET …/settlements`
 /// l'appelle pour masquer le bouton avant le clic, [`cancel_settlement_in_tx`]
@@ -353,8 +616,14 @@ pub async fn settlement_cancel_blocker_unlinking(
     settlement_id: i64,
     unlinking: Option<i64>,
 ) -> Result<Option<SettlementCancelHit>, DbError> {
-    let row: Option<(i64, String)> = sqlx::query_as(
-        "SELECT s.journal_entry_id, i.status FROM invoice_settlements s \
+    // Story 25-4-d2a : un solde existe-t-il sur la facture, et ce règlement
+    // en est-il un ?
+    let row: Option<(i64, String, String, bool)> = sqlx::query_as(
+        "SELECT s.journal_entry_id, i.status, s.settlement_type, \
+                EXISTS (SELECT 1 FROM invoice_settlements w \
+                        WHERE w.invoice_id = s.invoice_id AND w.company_id = s.company_id \
+                          AND w.settlement_type = 'write_off') \
+         FROM invoice_settlements s \
          JOIN invoices i ON i.id = s.invoice_id AND i.company_id = s.company_id \
          WHERE s.id = ? AND s.company_id = ?",
     )
@@ -363,7 +632,7 @@ pub async fn settlement_cancel_blocker_unlinking(
     .fetch_optional(&mut *conn)
     .await
     .map_err(map_db_error)?;
-    let (entry_id, status) = row.ok_or(DbError::NotFound)?;
+    let (entry_id, status, settlement_type, write_off_exists) = row.ok_or(DbError::NotFound)?;
 
     // Rang 1. ⚠️ Une facture qui porte un règlement ne peut être que
     // `validated` ou `cancelled` : l'encaissement exige `validated`, la
@@ -375,6 +644,11 @@ pub async fn settlement_cancel_blocker_unlinking(
     // mises à jour sur place.
     if status != "validated" {
         return Ok(Some((SettlementCancelBlocker::InvoiceCredited, None, None)));
+    }
+    // Rang 1 bis (Story 25-4-d2a) : annuler d'abord le solde. Le solde lui-même
+    // reste annulable.
+    if write_off_exists && settlement_type != "write_off" {
+        return Ok(Some((SettlementCancelBlocker::WriteOffExists, None, None)));
     }
     settlement_entry_cancel_blocker(conn, company_id, entry_id, unlinking).await
 }
@@ -470,6 +744,7 @@ pub async fn cancel_settlement_in_tx(
     //     socle, qui les refuse avec son erreur canonique.
     if let Some((
         blocker @ (SettlementCancelBlocker::InvoiceCredited
+        | SettlementCancelBlocker::WriteOffExists
         | SettlementCancelBlocker::FiscalYearClosed),
         _,
         _,

@@ -537,6 +537,11 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/invoices/{id}/settlements/{settlement_id}/cancel",
             post(routes::invoices::cancel_invoice_settlement_handler),
         )
+        // Story 25-4-d2a (#384, #490) — solder le reste (Comptable+).
+        .route(
+            "/api/v1/invoices/{id}/write-off",
+            post(routes::invoices::write_off_invoice_handler),
+        )
         // Story 21-5a — rappels débiteurs (Comptable+) : liste à rappeler groupée
         // par contact, suspension/reprise par facture, enregistrement d'un rappel manuel.
         .route(

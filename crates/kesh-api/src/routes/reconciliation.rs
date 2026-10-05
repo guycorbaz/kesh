@@ -1604,7 +1604,9 @@ async fn accept_one_invoice(
             // La réconciliation bancaire est, par définition, un virement — et
             // le compte est celui de l'import, pas un choix de l'utilisateur
             // (Story 24-3).
-            choice: kesh_db::entities::SettlementChoice::BankTransfer { bank_account_id },
+            kind: kesh_db::entities::SettlementKind::Choice(
+                kesh_db::entities::SettlementChoice::BankTransfer { bank_account_id },
+            ),
         },
     )
     .await
