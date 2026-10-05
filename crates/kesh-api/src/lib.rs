@@ -183,7 +183,7 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
     // KESH-ADMIN-ROUTES-BEGIN
     // ⚠️ Bloc borné — Story 22-4a (#167). Le test `admin_pat_denied_e2e` lit CE
     // fichier par `include_str!`, compte les constructeurs de méthode entre les
-    // deux marqueurs, et exige exactement 25. Toute route ajoutée ici sans son
+    // deux marqueurs, et exige exactement 28. Toute route ajoutée ici sans son
     // couple dans la liste du test fait ROUGIR le test : c'est le rappel qui
     // manquait, et qui a laissé 16 routes sur 19 sans garde anti-PAT.
     // Ne pas déplacer ni reformuler les marqueurs sans ajuster le test.
@@ -310,6 +310,13 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         // Elle efface `audit_log` (`kesh-seed`, `DELETE` non scopé) : c'était le
         // second des trois chemins par lesquels la piste de contrôle se perdait.
         .route("/api/v1/onboarding/reset", post(routes::onboarding::reset))
+        // Story 25-6-b (#387, arbitrage 7) : REFIGER le PDF d'une facture dont
+        // le fichier a disparu. Admin uniquement, refusé aux clés d'API : le
+        // geste remplace définitivement la référence au document d'origine.
+        .route(
+            "/api/v1/invoices/{id}/pdf/refreeze",
+            post(routes::invoice_pdf::refreeze_invoice_pdf),
+        )
         // ⚠️⚠️ TOUTE ROUTE S'AJOUTE AU-DESSUS DE CETTE LIGNE. ⚠️⚠️
         //
         // `route_layer` n'enveloppe que les routes DÉJÀ enregistrées au moment

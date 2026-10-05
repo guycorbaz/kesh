@@ -17,12 +17,12 @@
 //! ⚠️ Comparer des NOMBRES ne détecterait pas une route retirée pendant qu'une
 //! autre est ajoutée : le compte resterait égal et la dérive invisible. Le test
 //! `admin_pat_denied_e2e` peut compter, lui, parce qu'il opère sur un bloc clos
-//! entre marqueurs ; les 110 routes sont réparties dans tout le fichier.
+//! entre marqueurs ; les 111 routes sont réparties dans tout le fichier.
 //!
 //! # Deux fichiers, deux volets
 //!
-//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (110 routes) ; celui du
-//! REGISTRE est plus large (113), car trois routes mutantes vivent dans
+//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (111 routes) ; celui du
+//! REGISTRE est plus large (114), car trois routes mutantes vivent dans
 //! `routes/test_endpoints.rs` et sont montées par un `nest()`. D'où :
 //!
 //! - volet « route absente du registre » → sur les **deux** fichiers, faute de
@@ -108,6 +108,16 @@ const LIB_ROUTES: &[(&str, &str, Status)] = &[
     ("post", "payment_batches::cancel_payment_batch", Traced),
     ("post", "invoices::validate_invoice_handler", Traced),
     ("post", "invoices::unvalidate_invoice_handler", Traced),
+    // Story 25-6-b (#387) — refiger le PDF d'une facture (audit
+    // `invoice.pdf_refrozen`, dans la transaction de `invoices::refreeze_pdf`).
+    //
+    // ⚠️ ANGLE MORT ASSUMÉ : `GET /api/v1/invoices/{id}/pdf`
+    // (`invoice_pdf::get_invoice_pdf`) ÉCRIT désormais — le premier rendu fige
+    // le document et trace `invoice.pdf_frozen` —, et `HEAD` aussi, axum le
+    // servant par le handler `get`. Ce registre ne balaie que les méthodes
+    // d'écriture : cette route mutante lui échappe. Son audit est tenu par
+    // `invoices::freeze_pdf`, qui ne pose rien sans sa trace.
+    ("post", "invoice_pdf::refreeze_invoice_pdf", Traced),
     ("post", "invoices::settle_invoice_handler", Traced),
     ("post", "invoices::write_off_invoice_handler", Traced),
     ("post", "invoices::cancel_invoice_settlement_handler", Traced),
@@ -451,14 +461,14 @@ fn the_registry_partition_is_what_the_story_declares() {
         .filter(|(_, _, s)| matches!(s, NoMatter(_)))
         .count();
 
-    assert_eq!(LIB_ROUTES.len(), 110, "l'inventaire porte sur 110 routes");
+    assert_eq!(LIB_ROUTES.len(), 111, "l'inventaire porte sur 111 routes");
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
     assert_eq!(
-        traced, 92,
+        traced, 93,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
-         (25-4-d2a, #384)"
+         (25-4-d2a, #384), plus le refigeage du PDF d'une facture (25-6-b, #387)"
     );
     assert_eq!(
         exempt, 15,
@@ -467,7 +477,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     assert_eq!(no_matter, 3, "trois routes mutantes qui ne mutent rien");
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        113,
+        114,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
