@@ -1,6 +1,6 @@
 # Story 25.6-b : Le PDF d'une facture est figé — une pièce émise ne change plus
 
-Status: ready-for-dev
+Status: in-progress
 
 **Issue : [#387]**, que cette story **ferme** : la PR porte `closes #387` dans le **titre ET le corps**. Branche
 `story/25-6-b-pdf-facture-archive`, partie de `main` (`d7c74f02`). Seconde moitié de la 25-6 (la 25-6-a a traité #388 et
@@ -334,6 +334,10 @@ export CSV), `kesh-i18n`,
 
 ## Change Log
 
+- **2026-10-05** — Validation P4 ciblée (Haiku, prompt `25-6-b-validate-prompt-p4.md`) : **0 finding**. Sa première
+  vérification résumait sa sortie au lieu de la citer : **reprise par l'orchestrateur** (`audit_route_registry.rs` porte
+  bien 109, 91 et 112) ; le « six sites » restant est celui de P1, exact. **Boucle close** : P1 4H/12M (Sonnet ×3) → P2
+  1H/7M (Opus) → P3 3M (Sonnet) → P4 0 (Haiku).
 - **2026-10-05** — Validation P3 (Sonnet, prompt `25-6-b-validate-prompt-p3.md`) : **0 CRITICAL/HIGH, 3 MED, 4 LOW**,
   retenus.
   - **MED** :
