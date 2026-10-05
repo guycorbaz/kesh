@@ -370,8 +370,29 @@ const ATTENDU = {
 	// 12 appels (`grep -o "i18nMsg("`) : l'état d'échec de la tuile
 	// (`homepage-bank-unavailable`) et l'écart non calculable d'un compte du grand
 	// livre partagé (`homepage-bank-gap-unavailable`), deux clés neuves × 4 locales.
-	sitesTotal: 1767,
-	sitesNonResolus: 32,
+	// Story 25-6-b (#387) : **+9** (1758 → 1767 sur sa branche), recompté par ce test et par
+	// `grep -o "i18nMsg("` aux deux bornes de `invoices/[id]/+page.svelte`
+	// (69 → 78) — la mention « Document figé le », le bouton « Refiger le
+	// document » (deux sites : l'en-tête et le pied du dialogue), le titre, le
+	// corps et l'avertissement du dialogue, son « Annuler », le succès, et le
+	// repli générique du refus — neuf sites. Le bouton PDF, extrait dans un snippet pour servir aussi la facture
+	// annulée, n'ajoute aucun site : il n'est écrit qu'une fois.
+	//
+	// Story 25-6-b, revue P2 : **−2**, recompté par ce test et par
+	// `grep -o "i18nMsg("` aux deux bornes — fiche facture 78 → 76, fiche avoir
+	// 16 → 14, et le module partagé `shared/utils/pdf-error.ts` +2. Les deux
+	// fiches résolvaient chacune le refus de PDF (`i18nMsg(clé, err.message)` et
+	// le générique) ; elles délèguent désormais à `pdfErrorMessage`.
+	//
+	// Story 25-6-b, revue P3 : **+1** — l'avertissement « refigé, mais la
+	// fiche n'a pas pu être relue » de la fiche facture (76 → 77), clé neuve
+	// `invoice-pdf-refreeze-reload-failed` dans les 4 catalogues.
+	//
+	// Fusion de `main` (25-6-a) dans la 25-6-b, 2026-10-05 : les deux branches partaient de
+	// 1758 ; 25-6-a +9, 25-6-b +8 (+9 −2 +1) ⇒ **1775**. `sitesNonResolus` : 32 (25-6-a)
+	// − 1 (25-6-b, deux sites des fiches devenus un dans `pdf-error.ts`) ⇒ **31**.
+	sitesTotal: 1775,
+	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,
 	litterauxMin: 1050,

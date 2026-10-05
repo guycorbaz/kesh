@@ -233,6 +233,11 @@ pub struct InvoiceResponse {
     /// n'était jusqu'alors signalée par aucune surface de lecture.
     pub dunning_paused_at: Option<NaiveDateTime>,
     pub dunning_paused_note: Option<String>,
+    /// Story 25-6-b (#387, AC 6) — instant et langue du PDF figé ; `None`
+    /// tant que la facture n'a jamais été rendue depuis sa validation. Le
+    /// chemin et l'empreinte ne sortent pas : ils ne servent qu'au serveur.
+    pub pdf_frozen_at: Option<NaiveDateTime>,
+    pub pdf_language: Option<String>,
     /// P6 (review pass 2) : `is_overdue` calculé backend (source unique de
     /// vérité pour « aujourd'hui » — évite la désync TZ client/serveur).
     /// `true` ssi `status == 'validated' && paid_at IS NULL && due_date < today_utc`.
@@ -317,6 +322,8 @@ impl InvoiceResponse {
             project_id: invoice.project_id,
             dunning_paused_at: invoice.dunning_paused_at,
             dunning_paused_note: invoice.dunning_paused_note,
+            pdf_frozen_at: invoice.pdf_frozen_at,
+            pdf_language: invoice.pdf_language,
             is_overdue,
             amount_settled: None,
             amount_due: None,

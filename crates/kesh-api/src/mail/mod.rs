@@ -139,6 +139,9 @@ pub struct CapturedEmail {
     pub attachment_filename: Option<String>,
     pub attachment_content_type: Option<String>,
     pub attachment_size: usize,
+    /// Story 25-6-b (#387) — les octets de la pièce jointe, pour prouver qu'elle
+    /// est celle du téléchargement (le PDF émis, figé), pas un autre rendu.
+    pub attachment_bytes: Vec<u8>,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -225,6 +228,10 @@ impl Mailer for MockMailer {
             attachment_filename: email.attachment.as_ref().map(|a| a.filename.clone()),
             attachment_content_type: email.attachment.as_ref().map(|a| a.content_type.clone()),
             attachment_size: email.attachment.as_ref().map_or(0, |a| a.bytes.len()),
+            attachment_bytes: email
+                .attachment
+                .as_ref()
+                .map_or_else(Vec::new, |a| a.bytes.clone()),
         };
         let fail = self.fail;
         Box::pin(async move {

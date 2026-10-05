@@ -20,6 +20,7 @@
 		deleteInvoice,
 		validateInvoice,
 		unvalidateInvoice,
+		refreezeInvoicePdf,
 		settleInvoice,
 		listInvoiceSettlements,
 		cancelInvoiceSettlement,
@@ -27,6 +28,7 @@
 		sendInvoiceEmail,
 		getInvoiceSettings,
 	} from '$lib/features/invoices/invoices.api';
+	import { pdfErrorMessage } from '$lib/shared/utils/pdf-error';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import type { InvoiceSettingsResponse } from '$lib/features/invoices/invoices.types';
@@ -654,19 +656,49 @@
 
 	let pdfDownloading = $state(false);
 
-	// D2 (review pass 1 G2 D) : whitelist explicite des codes d'erreur PDF
-	// — empêche la construction dynamique de clés FTL depuis err.code
-	// (potentiel mismatch silencieux si le backend renvoie un nouveau code).
-	const PDF_ERROR_KEYS: Record<string, string> = {
-		INVOICE_NOT_VALIDATED: 'invoice-pdf-error-invoice-not-validated',
-		INVOICE_NOT_PDF_READY: 'invoice-pdf-error-invoice-not-pdf-ready',
-		INVOICE_TOO_MANY_LINES_FOR_PDF: 'error-invoice-too-many-lines-for-pdf',
-		// Story 16-3a (#151) — sans cette entrée, le message retombe sur le
-		// générique et l'utilisateur ne sait pas QUOI raccourcir.
-		INVOICE_PDF_HEADER_OVERFLOW: 'error-invoice-pdf-header-overflow',
-		PDF_GENERATION_FAILED: 'invoice-pdf-error-pdf-generation-failed',
-		NOT_FOUND: 'invoice-pdf-error-not-found',
-	};
+	// Le message d'un refus de PDF : `pdfErrorMessage` (partagé avec la fiche
+	// avoir — Story 25-6-b, revue P2).
+
+	// Story 25-6-b (#387, arbitrage 7) — le fichier du PDF figé a disparu (410).
+	// Un administrateur peut alors REFIGER : un nouveau document, pas l'original.
+	let pdfGone = $state(false);
+	let refreezeOpen = $state(false);
+	let refreezeSubmitting = $state(false);
+	let refreezeError = $state('');
+
+	/** Le bouton PDF : facture validée, ou annulée dont le document a été figé. */
+	let canDownloadPdf = $derived(
+		invoice?.status === 'validated' || (invoice?.status === 'cancelled' && !!invoice.pdfFrozenAt),
+	);
+
+	async function confirmRefreeze() {
+		if (!invoice) return;
+		refreezeSubmitting = true;
+		refreezeError = '';
+		try {
+			await refreezeInvoicePdf(invoice.id);
+			pdfGone = false;
+			refreezeOpen = false;
+			notifySuccess(i18nMsg('invoice-pdf-refreeze-done', 'Document refigé.'));
+			// La réponse du refigeage ne porte pas « Déjà réglé / Reste dû » : la
+			// fiche se relit (revue P2, F-L2). ⚠️ Hors du refigeage : un échec de
+			// cette relecture ne doit pas faire croire que le refigeage a échoué
+			// (revue P3) — la fiche garde alors son état précédent.
+			try {
+				invoice = await getInvoice(invoice.id);
+			} catch {
+				notifyError(
+					i18nMsg('invoice-pdf-refreeze-reload-failed', 'Document refigé, mais la fiche n’a pas pu être relue : rechargez la page.'),
+				);
+			}
+		} catch (err) {
+			refreezeError = isApiError(err)
+				? err.message
+				: i18nMsg('invoice-pdf-refreeze-error', 'Le document n’a pas pu être refigé.');
+		} finally {
+			refreezeSubmitting = false;
+		}
+	}
 
 	async function downloadPdf() {
 		if (!invoice) return;
@@ -674,6 +706,9 @@
 		try {
 			const res = await apiClient.getBlob(`/api/v1/invoices/${invoice.id}/pdf`);
 			const blob = await res.blob();
+			// Un téléchargement qui aboutit dit que le fichier est là (restauré
+			// depuis la sauvegarde, par exemple) : plus rien à refiger.
+			pdfGone = false;
 			if (blob.size === 0) {
 				notifyError(i18nMsg('invoice-pdf-error-empty', 'Le PDF reçu est vide.'));
 				return;
@@ -693,16 +728,9 @@
 			// Revoke différé pour laisser le navigateur récupérer le blob.
 			setTimeout(() => URL.revokeObjectURL(url), 5_000);
 		} catch (err) {
-			if (isApiError(err)) {
-				// Pass 2 : remappage vers les clés FTL réellement présentes —
-		// `INVOICE_TOO_MANY_LINES_FOR_PDF` utilise la clé legacy
-		// `error-invoice-too-many-lines-for-pdf` (existante FR/DE/IT/EN
-		// avec les arguments {count}/{max}).
-		const key = PDF_ERROR_KEYS[err.code] ?? 'invoice-pdf-error-generic';
-				notifyError(i18nMsg(key, err.message));
-			} else {
-				notifyError(i18nMsg('invoice-pdf-error-generic', 'Erreur lors du téléchargement du PDF'));
-			}
+			// Le 410 nomme le fichier à restaurer et ouvre le refigeage.
+			if (isApiError(err) && err.code === 'INVOICE_PDF_GONE') pdfGone = true;
+			notifyError(pdfErrorMessage(err));
 		} finally {
 			pdfDownloading = false;
 		}
@@ -726,6 +754,35 @@
 <svelte:head>
 	<title>Facture — Kesh</title>
 </svelte:head>
+
+{#snippet pdfButtons()}
+	{#if invoice && canDownloadPdf}
+		<Button
+			onclick={downloadPdf}
+			disabled={pdfDownloading}
+			data-testid="invoice-download-pdf"
+			aria-label={i18nMsg(
+				'invoices-download-pdf-aria-label',
+				`Télécharger la facture ${invoice.invoiceNumber ?? ''} au format PDF`,
+				{ number: invoice.invoiceNumber ?? '' },
+			)}
+		>
+			<Printer class="h-4 w-4" aria-hidden="true" />
+			{i18nMsg('invoices-download-pdf', 'Imprimer / Télécharger PDF')}
+		</Button>
+		<!-- Une facture ANNULÉE ne se refige pas (le rendu la refuse) : seule la
+		     restauration du fichier la répare. Le bouton n'y est donc pas. -->
+		{#if isAdmin && pdfGone && invoice.status === 'validated'}
+			<Button
+				variant="outline"
+				data-testid="invoice-pdf-refreeze-button"
+				onclick={() => (refreezeOpen = true)}
+			>
+				{i18nMsg('invoice-pdf-refreeze-button', 'Refiger le document')}
+			</Button>
+		{/if}
+	{/if}
+{/snippet}
 
 <div class="mb-6 flex items-center justify-between">
 	<Button variant="ghost" onclick={() => goto('/invoices')}>
@@ -763,18 +820,7 @@
 					{i18nMsg('invoice-settle-button', 'Enregistrer un règlement')}
 				</Button>
 			{/if}
-			<Button
-				onclick={downloadPdf}
-				disabled={pdfDownloading}
-				aria-label={i18nMsg(
-					'invoices-download-pdf-aria-label',
-					`Télécharger la facture ${invoice.invoiceNumber ?? ''} au format PDF`,
-					{ number: invoice.invoiceNumber ?? '' },
-				)}
-			>
-				<Printer class="h-4 w-4" aria-hidden="true" />
-				{i18nMsg('invoices-download-pdf', 'Imprimer / Télécharger PDF')}
-			</Button>
+			{@render pdfButtons()}
 			{#if canManage}
 				{#if featureFlags.smtpConfigured}
 					<Button
@@ -882,9 +928,14 @@
 			{/if}
 		</div>
 	{:else if invoice?.status === 'cancelled'}
-		<Button variant="outline" onclick={() => goto('/credit-notes')}>
-			{i18nMsg('credit-notes-view-list', 'Voir les avoirs')}
-		</Button>
+		<div class="flex gap-2">
+			<!-- Story 25-6-b (#387) : une facture annulée par un avoir garde son PDF
+			     émis, s'il a été figé ; jamais rendue, elle n'en a pas. -->
+			{@render pdfButtons()}
+			<Button variant="outline" onclick={() => goto('/credit-notes')}>
+				{i18nMsg('credit-notes-view-list', 'Voir les avoirs')}
+			</Button>
+		</div>
 	{/if}
 </div>
 
@@ -936,6 +987,14 @@
 				<div>
 					<div class="text-text-muted">{i18nMsg('invoice-detail-paid-at-label', 'Payée le')}</div>
 					<div>{invoice.paidAt.slice(0, 10)}</div>
+				</div>
+			{/if}
+			{#if invoice.pdfFrozenAt}
+				<div>
+					<div class="text-text-muted">
+						{i18nMsg('invoice-detail-pdf-frozen-at-label', 'Document figé le')}
+					</div>
+					<div data-testid="invoice-pdf-frozen-at">{invoice.pdfFrozenAt.slice(0, 10)}</div>
 				</div>
 			{/if}
 			{#if invoice.emailedAt}
@@ -1069,6 +1128,57 @@
 			<ReminderHistory {reminders} />
 		{/if}
 	</div>
+
+	<!-- Story 25-6-b (#387, arbitrage 7) — refiger : la confirmation dit ce que
+	     le geste fait (un NOUVEAU document, tracé), et conseille de restaurer
+	     d'abord — un volume de documents mal monté produit des 410 en série, et
+	     refiger remplacerait des originaux qui existent encore ailleurs. -->
+	<Dialog.Root
+		open={refreezeOpen}
+		onOpenChange={(o) => {
+			refreezeOpen = o;
+			if (!o) refreezeError = '';
+		}}
+	>
+		<Dialog.Content>
+			<Dialog.Header>
+				<Dialog.Title>
+					{i18nMsg('invoice-pdf-refreeze-title', 'Refiger le document ?')}
+				</Dialog.Title>
+			</Dialog.Header>
+			<div class="space-y-3 text-sm" data-testid="invoice-pdf-refreeze-dialog">
+				<p>
+					{i18nMsg(
+						'invoice-pdf-refreeze-body',
+						"Le fichier du PDF émis de cette facture est introuvable. Refiger produit un NOUVEAU document, avec les données et la langue du client d'aujourd'hui : ce n'est pas l'original. Le geste est tracé au journal d'audit, avec l'empreinte de l'ancien document et celle du nouveau.",
+					)}
+				</p>
+				<div class="rounded-md border border-warning bg-warning/10 px-3 py-2">
+					{i18nMsg(
+						'invoice-pdf-refreeze-restore-first',
+						"Restaurez d'abord le fichier depuis la sauvegarde du répertoire des documents, s'il y existe : c'est le seul moyen de retrouver l'original. Si plusieurs factures sont dans ce cas, vérifiez le montage de ce répertoire avant de refiger.",
+					)}
+				</div>
+			</div>
+			{#if refreezeError}
+				<div class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
+					{refreezeError}
+				</div>
+			{/if}
+			<Dialog.Footer>
+				<Button variant="outline" onclick={() => (refreezeOpen = false)}>
+					{i18nMsg('common-cancel', 'Annuler')}
+				</Button>
+				<Button
+					onclick={confirmRefreeze}
+					disabled={refreezeSubmitting}
+					data-testid="invoice-pdf-refreeze-confirm"
+				>
+					{i18nMsg('invoice-pdf-refreeze-button', 'Refiger le document')}
+				</Button>
+			</Dialog.Footer>
+		</Dialog.Content>
+	</Dialog.Root>
 
 	<Dialog.Root
 		open={deleteOpen}

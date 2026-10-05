@@ -202,6 +202,12 @@ démarre quand même, `/health` répond `ok`, et l'échec ne se voit qu'à l'ex�
 côté Playwright un simple `getByTestId('inbox-import-report')` introuvable. On cherche alors la panne
 dans le frontend, qui n'y est pour rien.
 
+Depuis la Story 25-6-b (#387), **tout téléchargement de PDF de facture écrit dans
+`KESH_DOCUMENTS_DIR`** (le PDF y est figé au premier rendu) : sans un répertoire inscriptible, il
+répond `500` et toutes les specs qui téléchargent un PDF de facture rougissent
+(`invoice-frozen-pdf`, `invoices`, `invoice-send-email`). Les fichiers figés persistent d'une
+exécution à l'autre : une spec qui en dépend crée sa propre facture.
+
 Sans ces deux variables, `inbox-import.spec.ts` rend **1 échec et 2 tests skippés** ; avec elles,
 **3 passés** — le round-trip complet de l'import de factures fournisseurs. Les deux se corrigent
 ensemble : `documents` n'apparaît qu'une fois `inbox` réglé, chaque erreur masquant la suivante.
