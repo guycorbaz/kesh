@@ -667,9 +667,10 @@
 		INVOICE_PDF_HEADER_OVERFLOW: 'error-invoice-pdf-header-overflow',
 		PDF_GENERATION_FAILED: 'invoice-pdf-error-pdf-generation-failed',
 		NOT_FOUND: 'invoice-pdf-error-not-found',
-		// Story 25-6-b (#387) — le PDF figé. Le message du 410 vient du serveur,
-		// qui nomme le fichier manquant : il est repris tel quel.
-		INVOICE_PDF_GONE: 'error-invoice-pdf-gone',
+		// Story 25-6-b (#387) — le PDF figé. ⚠️ `INVOICE_PDF_GONE` n'est PAS ici :
+		// son message nomme le fichier manquant, et le catalogue servi au
+		// frontend est résolu SANS arguments — il afficherait `{ $sha256 }`. Le
+		// message du serveur est repris tel quel (cf. `downloadPdf`).
 		INVOICE_CHANGED: 'error-invoice-changed',
 		INVOICE_CANCELLED: 'error-invoice-cancelled',
 	};
@@ -698,7 +699,7 @@
 		} catch (err) {
 			refreezeError = isApiError(err)
 				? err.message
-				: i18nMsg('invoice-pdf-error-generic', 'Erreur lors du téléchargement du PDF');
+				: i18nMsg('invoice-pdf-refreeze-error', 'Le document n’a pas pu être refigé.');
 		} finally {
 			refreezeSubmitting = false;
 		}
@@ -710,6 +711,9 @@
 		try {
 			const res = await apiClient.getBlob(`/api/v1/invoices/${invoice.id}/pdf`);
 			const blob = await res.blob();
+			// Un téléchargement qui aboutit dit que le fichier est là (restauré
+			// depuis la sauvegarde, par exemple) : plus rien à refiger.
+			pdfGone = false;
 			if (blob.size === 0) {
 				notifyError(i18nMsg('invoice-pdf-error-empty', 'Le PDF reçu est vide.'));
 				return;
@@ -729,8 +733,11 @@
 			// Revoke différé pour laisser le navigateur récupérer le blob.
 			setTimeout(() => URL.revokeObjectURL(url), 5_000);
 		} catch (err) {
-			if (isApiError(err) && err.code === 'INVOICE_PDF_GONE') pdfGone = true;
-			if (isApiError(err)) {
+			if (isApiError(err) && err.code === 'INVOICE_PDF_GONE') {
+				// Le message nomme le fichier à restaurer : repris tel quel.
+				pdfGone = true;
+				notifyError(err.message);
+			} else if (isApiError(err)) {
 				// Pass 2 : remappage vers les clés FTL réellement présentes —
 		// `INVOICE_TOO_MANY_LINES_FOR_PDF` utilise la clé legacy
 		// `error-invoice-too-many-lines-for-pdf` (existante FR/DE/IT/EN
@@ -779,7 +786,9 @@
 			<Printer class="h-4 w-4" aria-hidden="true" />
 			{i18nMsg('invoices-download-pdf', 'Imprimer / Télécharger PDF')}
 		</Button>
-		{#if isAdmin && pdfGone}
+		<!-- Une facture ANNULÉE ne se refige pas (le rendu la refuse) : seule la
+		     restauration du fichier la répare. Le bouton n'y est donc pas. -->
+		{#if isAdmin && pdfGone && invoice.status === 'validated'}
 			<Button
 				variant="outline"
 				data-testid="invoice-pdf-refreeze-button"

@@ -18,18 +18,28 @@ vi.mock("$app/navigation", () => ({ goto: vi.fn() }));
 vi.mock("$app/state", () => ({
   page: { params: { id: "5" }, url: new URL("http://localhost/invoices/5") },
 }));
+// ⚠️ Le mock honore un CATALOGUE, comme le vrai `i18nMsg` : une clé connue
+// l'emporte sur le repli, et le catalogue est résolu sans arguments (revue P1,
+// M1 — un mock qui rendait toujours le repli cachait un `{ $sha256 }` affiché).
+const CATALOGUE: Record<string, string> = {
+  "error-invoice-pdf-gone":
+    "Le fichier \u2068{ $sha256 }\u2069.pdf manque dans le répertoire des documents.",
+};
 vi.mock("$lib/shared/utils/i18n.svelte", () => ({
   i18nMsg: (
-    _k: string,
+    k: string,
     fallback: string,
     args?: Record<string, string | number>,
-  ) =>
-    args
-      ? fallback.replace(/\{\s*\$(\w+)\s*\}/g, (_, n) => String(args[n] ?? ""))
-      : fallback,
+  ) => {
+    const raw = CATALOGUE[k] ?? fallback;
+    return args
+      ? raw.replace(/\{\s*\$(\w+)\s*\}/g, (_, n) => String(args[n] ?? ""))
+      : raw;
+  },
 }));
+const notifyErrorMock = vi.hoisted(() => vi.fn());
 vi.mock("$lib/shared/utils/notify", () => ({
-  notifyError: vi.fn(),
+  notifyError: (m: string) => notifyErrorMock(m),
   notifySuccess: vi.fn(),
   notifyWarning: vi.fn(),
   notifyMissingFiscalYearOrFallback: vi.fn(() => false),
@@ -120,7 +130,7 @@ function invoice(partial: Partial<InvoiceResponse> = {}): InvoiceResponse {
 
 const gone = {
   code: "INVOICE_PDF_GONE",
-  message: "Le fichier abc.pdf manque dans le répertoire des documents.",
+  message: "Le fichier abc123.pdf manque dans le répertoire des documents.",
   status: 410,
 };
 
@@ -234,5 +244,48 @@ describe("fiche facture — refiger après un 410", () => {
     await waitFor(() => expect(getBlobMock).toHaveBeenCalled());
     await new Promise((r) => setTimeout(r, 0));
     expect(queryByTestId("invoice-pdf-refreeze-button")).toBeNull();
+  });
+
+  it("le message du 410 nomme le fichier manquant (mutation : message tiré du catalogue, `{ $sha256 }` brut)", async () => {
+    getInvoiceMock.mockResolvedValue(
+      invoice({ pdfFrozenAt: "2026-03-02T10:00:00.000" }),
+    );
+    getBlobMock.mockRejectedValue(gone);
+    const { findByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("invoice-download-pdf"));
+    await waitFor(() => expect(notifyErrorMock).toHaveBeenCalled());
+    const msg = notifyErrorMock.mock.calls[0][0] as string;
+    expect(msg).toContain("abc123.pdf");
+    expect(msg).not.toContain("$sha256");
+  });
+
+  it("pas de refigeage pour une facture annulée, même après le 410 (mutation : condition `validated` retirée)", async () => {
+    getInvoiceMock.mockResolvedValue(
+      invoice({ status: "cancelled", pdfFrozenAt: "2026-03-02T10:00:00.000" }),
+    );
+    getBlobMock.mockRejectedValue(gone);
+    const { findByTestId, queryByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("invoice-download-pdf"));
+    await waitFor(() => expect(notifyErrorMock).toHaveBeenCalled());
+    expect(queryByTestId("invoice-pdf-refreeze-button")).toBeNull();
+  });
+
+  it("un téléchargement réussi après le 410 retire le bouton (mutation : `pdfGone` jamais remis à faux)", async () => {
+    getInvoiceMock.mockResolvedValue(
+      invoice({ pdfFrozenAt: "2026-03-02T10:00:00.000" }),
+    );
+    getBlobMock
+      .mockRejectedValueOnce(gone)
+      .mockResolvedValueOnce({ blob: async () => new Blob(["%PDF-1.7"]) });
+    const createObjectURL = vi.fn(() => "blob:x");
+    Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
+    const { findByTestId, queryByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("invoice-download-pdf"));
+    await findByTestId("invoice-pdf-refreeze-button");
+    await fireEvent.click(await findByTestId("invoice-download-pdf"));
+    await waitFor(() => expect(createObjectURL).toHaveBeenCalled());
+    await waitFor(() =>
+      expect(queryByTestId("invoice-pdf-refreeze-button")).toBeNull(),
+    );
   });
 });

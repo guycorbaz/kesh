@@ -768,6 +768,13 @@ pub async fn send_invoice_email(
     let (invoice, lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
+    // ⛔ Story 25-6-b (#387, revue P1) : seule une facture VALIDÉE s'envoie.
+    // Cette garde vivait dans le rendu ; le service de gel sert le PDF figé
+    // d'une facture ANNULÉE par un avoir (pour le téléchargement), et sans elle
+    // une facture annulée repartait au client par l'API.
+    if invoice.status != "validated" {
+        return Err(AppError::InvoiceNotValidated);
+    }
     let contact = load_active_contact(&state.pool, invoice.contact_id, company.id).await?;
 
     // Destinataire VERROUILLÉ = contacts.email (décision #13 epic-20).

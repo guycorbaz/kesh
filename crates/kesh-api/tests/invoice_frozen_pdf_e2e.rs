@@ -844,3 +844,40 @@ async fn refiger_une_facture_annulee_est_refuse(pool: MySqlPool) {
     assert_eq!(resp.status(), 400);
     assert_eq!(error_code(resp).await, "INVOICE_CANCELLED");
 }
+
+/// Revue P1 (B1) : le service sert le PDF figé d'une facture annulée — pour le
+/// téléchargement. L'envoi, lui, reste réservé à une facture validée : sans sa
+/// garde, une facture annulée par un avoir repartait au client par l'API.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn une_facture_annulee_figee_ne_s_envoie_pas(pool: MySqlPool) {
+    let s = seed(&pool, None).await;
+    let id = seed_invoice(&pool, &s, 1).await;
+    let mailer = MockMailer::new();
+    let app = spawn_app(pool.clone(), mailer.clone(), unique_dir("documents")).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+    pdf_bytes(&app, &token, id).await;
+    credit_notes::create_credit_note(
+        &pool,
+        NewCreditNote {
+            company_id: s.company_id,
+            invoice_id: id,
+            date: NaiveDate::from_ymd_opt(2026, 4, 20).unwrap(),
+        },
+        s.admin_id,
+    )
+    .await
+    .unwrap();
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{id}/send-email")))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({ "subject": "Facture", "body": "Bonjour" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    assert_eq!(error_code(resp).await, "INVOICE_NOT_VALIDATED");
+    assert!(mailer.sent_emails().is_empty(), "rien n'est parti");
+    assert!(invoice(&pool, &s, id).await.emailed_at.is_none());
+}

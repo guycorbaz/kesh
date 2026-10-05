@@ -1393,6 +1393,7 @@ invoice-pdf-refreeze-title = Dokument neu festschreiben?
 invoice-pdf-refreeze-body = Die Datei des ausgestellten PDF dieser Rechnung ist nicht auffindbar. Neu festschreiben erzeugt ein NEUES Dokument mit den heutigen Daten und der heutigen Sprache des Kunden: Es ist nicht das Original. Der Vorgang wird im Prüfprotokoll festgehalten, mit dem Fingerabdruck des alten und des neuen Dokuments.
 invoice-pdf-refreeze-restore-first = Stellen Sie die Datei zuerst aus der Sicherung des Dokumentenverzeichnisses wieder her, falls sie dort vorhanden ist: Nur so erhalten Sie das Original zurück. Sind mehrere Rechnungen betroffen, prüfen Sie vor dem Neufestschreiben die Einbindung dieses Verzeichnisses.
 invoice-pdf-refreeze-done = Dokument neu festgeschrieben.
+invoice-pdf-refreeze-error = Das Dokument konnte nicht neu festgeschrieben werden.
 contact-form-language = Korrespondenzsprache
 contact-form-language-inherited = Geerbt (Sprache der Instanz)
 contact-form-salutation = Anrede

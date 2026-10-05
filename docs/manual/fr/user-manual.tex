@@ -868,13 +868,13 @@ Le PDF d'une facture est produit \textbf{une seule fois} : au premier téléchar
     \item \textbf{Modifier ensuite} vos coordonnées, l'adresse, le numéro ou la langue du client, ou la mise en page, \textbf{ne change pas} une facture déjà émise : seules les factures non encore figées en tiennent compte. C'est ce qui permet de reproduire, des années plus tard, la copie exacte de la pièce envoyée.
     \item \textbf{Qui que ce soit} qui télécharge le premier --- y compris un utilisateur en consultation ou une clé d'API en lecture --- fige le document : une pièce sortie de Kesh est figée. Le gel est inscrit au \textbf{journal d'audit}, avec l'empreinte et le nom de qui l'a déclenché.
     \item Une facture \textbf{annulée par un avoir} garde le PDF qu'elle a émis, et la fiche continue de le proposer. Ce PDF ne porte pas de mention d'annulation : c'est l'avoir qui la porte. Une facture annulée qui n'a \textbf{jamais} été téléchargée ni envoyée n'a pas de PDF.
-    \item Une facture validée \textbf{avant la version v0.12.1} est figée à son prochain téléchargement, avec les données du moment : ses PDF antérieurs n'avaient pas été conservés.
+    \item Une facture validée \textbf{avant la version v0.12.1} est figée à son prochain téléchargement, avec les données du moment : ses PDF antérieurs n'avaient pas été conservés. ⚠️ Si elle avait déjà été envoyée, le document figé \textbf{n'est pas forcément celui que le client a reçu} --- la date de la mention \emph{Document figé le} est alors postérieure à celle de l'envoi.
     \item La \textbf{dévalidation} détache le document figé (son empreinte reste au journal d'audit) ; la revalidation en figera un nouveau au premier téléchargement.
     \item Les \textbf{rappels}, eux, sont produits à chaque envoi (cf. \S\ref{sec:relances-user}) : seul le PDF de la facture est figé.
 \end{itemize}
 
 \begin{keshwarning}
-\textbf{Si le fichier figé a disparu} --- typiquement après une restauration qui n'a pas repris le répertoire des documents ---, le téléchargement est \textbf{refusé} avec un message qui nomme le fichier manquant (\texttt{<empreinte>.pdf}). Kesh ne le régénère jamais de lui-même : ce serait fabriquer une pièce qui n'a pas été émise. Le remède est de \textbf{restaurer ce fichier} depuis la sauvegarde du répertoire des documents --- c'est le seul moyen de retrouver l'original. À défaut, un \textbf{administrateur} voit apparaître sur la fiche le bouton \emph{Refiger le document} : il produit un \textbf{nouveau} document avec les données et la langue du client d'aujourd'hui, \textbf{qui n'est pas l'original}, et le journal d'audit garde l'empreinte de l'ancien et du nouveau. Une facture annulée ne peut pas être refigée : seule la restauration du fichier la répare.
+\textbf{Si le fichier figé a disparu} --- typiquement après une restauration qui n'a pas repris le répertoire des documents ---, le téléchargement est \textbf{refusé} avec un message qui nomme le fichier manquant (\texttt{<empreinte>.pdf}). Kesh ne le régénère jamais de lui-même : ce serait fabriquer une pièce qui n'a pas été émise. Le remède est de \textbf{restaurer ce fichier} depuis la sauvegarde du répertoire des documents --- c'est le seul moyen de retrouver l'original. À défaut, un \textbf{administrateur} voit apparaître sur la fiche, après ce refus, le bouton \emph{Refiger le document} : il produit un \textbf{nouveau} document avec les données et la langue du client d'aujourd'hui, \textbf{qui n'est pas l'original}, et le journal d'audit garde l'empreinte de l'ancien et du nouveau. Une facture annulée ne peut pas être refigée : seule la restauration du fichier la répare.
 \end{keshwarning}
 
 \subsection{Envoyer une facture par e-mail}\label{sec:envoi-email}
@@ -1839,7 +1839,10 @@ l'\textbf{état d'installation} (configuration, non comptabilité).
 
 ⚠️ Les \textbf{pièces justificatives} --- les fichiers eux-mêmes --- ne sont \textbf{pas encore}
 incluses. Le chemin de chaque pièce figure dans \texttt{imported\_supplier\_invoices.csv}, mais
-le document doit être sauvegardé séparément.
+le document doit être sauvegardé séparément. Il en va de même des \textbf{PDF des factures
+émises} (\S\ref{sec:pdf-fige}) : \texttt{invoices.csv} porte leur empreinte, la date et la langue
+du gel (colonnes \texttt{pdf\_sha256}, \texttt{pdf\_frozen\_at}, \texttt{pdf\_language}),
+pas le document lui-même, qui se conserve avec le répertoire des documents de l'installation.
 \end{keshnote}
 
 \subsection{Génération}

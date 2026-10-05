@@ -1393,6 +1393,7 @@ invoice-pdf-refreeze-title = Refreeze the document?
 invoice-pdf-refreeze-body = The issued PDF file of this invoice cannot be found. Refreezing produces a NEW document, with today's data and the client's current language: it is not the original. The action is recorded in the audit log, with the fingerprint of the old document and of the new one.
 invoice-pdf-refreeze-restore-first = First restore the file from the backup of the documents directory, if it is there: it is the only way to recover the original. If several invoices are affected, check how that directory is mounted before refreezing.
 invoice-pdf-refreeze-done = Document refrozen.
+invoice-pdf-refreeze-error = The document could not be refrozen.
 contact-form-language = Correspondence language
 contact-form-language-inherited = Inherited (instance language)
 contact-form-salutation = Salutation

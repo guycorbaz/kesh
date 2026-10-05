@@ -411,6 +411,30 @@ Journaux sous `target/gate-logs/` : `25-6-b-backend.log`, `25-6-b-frontend.log`,
 
 ## Change Log
 
+- **2026-10-05** — Revue de code P1 (Sonnet ×3, prompt `25-6-b-review-prompt-p1.md`) : **0 CRITICAL/HIGH, 3 MED,
+  7 LOW**, tous retenus et corrigés.
+  - **MED** :
+    - **B1** : `send-email` envoyait une facture **annulée** figée — la seule garde de statut vivait dans le rendu, que
+      le service court-circuite pour servir le PDF figé. Garde rétablie dans le handler ;
+    - **M1** (A et C, convergents) : le toast du 410 affichait `{ $sha256 }` brut — le catalogue servi au frontend est
+      résolu sans arguments et l'emporte sur `err.message`. Le message du serveur est repris tel quel ; le mock
+      Vitest honore désormais un catalogue (il rendait toujours le repli, ce qui cachait le défaut) ;
+    - **M2** : la note de l'export de souveraineté (manuel utilisateur) ne disait pas que les PDF émis n'y sont pas.
+  - **LOW** :
+    - bouton « Refiger » proposé sur une facture annulée, où le geste échoue toujours : retiré ;
+    - `pdfGone` jamais remis à faux : un téléchargement réussi le remet ;
+    - repli d'erreur du refigeage qui parlait de « téléchargement » : clé `invoice-pdf-refreeze-error` (4 locales) ;
+    - **L3** : l'import de l'inbox supprimait, sur un champ QR trop long, un fichier archivé nommé par son contenu —
+      possiblement un PDF figé ou le justificatif d'une autre société. Suppression retirée ;
+    - facture déjà envoyée avant la v0.12.1 : le document figé n'est pas forcément celui reçu — écrit au manuel ;
+    - le bouton n'apparaît qu'après un téléchargement refusé — écrit au manuel ;
+    - CHANGELOG : trois colonnes insérées dans `invoices.csv` (lecture par position), route et champs d'API.
+  - Tests neufs : 1 HTTP (B1), 1 inbox (L3), 3 Vitest. **Mutations tuées** : garde de B1 retirée, suppression de
+    l'inbox remise, message du 410 tiré du catalogue, condition `validated` du bouton retirée, `pdfGone` non remis.
+  - Recomptes de la lentille C (migrations 71, bloc admin 28, registre 110/92/113, `sitesTotal` 1767, parité i18n,
+    décomptes de tests) : **tous exacts**.
+  - Gate ciblé : `fmt`, `clippy` workspace, `binary(invoice_frozen_pdf_e2e | invoice_send_email_e2e |
+    inbox_import_e2e | invoice_pdf_e2e)` 95/95, Vitest de la fiche et `i18n-keys` 27/27. Gate complet au push.
 - **2026-10-05** — Développement (dev-story) : T1 à T8. Service de gel, refigeage, détachement, export, écran,
   manuels. Gates : backend 2583/2583, frontend 853/853, E2E 227 passés + 9 échecs attendus (+ la spec neuve rejouée
   seule après correction de son montage, 2/2). Écart de la spec sur le bloc admin (27 → 28, et non 25 → 26), recompté

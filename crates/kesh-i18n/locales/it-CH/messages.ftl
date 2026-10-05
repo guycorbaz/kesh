@@ -1393,6 +1393,7 @@ invoice-pdf-refreeze-title = Fissare di nuovo il documento?
 invoice-pdf-refreeze-body = Il file del PDF emesso di questa fattura è introvabile. Fissarlo di nuovo produce un NUOVO documento, con i dati e la lingua del cliente di oggi: non è l'originale. L'operazione è registrata nel registro di controllo, con l'impronta del vecchio documento e quella del nuovo.
 invoice-pdf-refreeze-restore-first = Ripristinate prima il file dal backup della directory dei documenti, se vi si trova: è l'unico modo per ritrovare l'originale. Se più fatture sono in questo caso, verificate il montaggio di questa directory prima di fissarle di nuovo.
 invoice-pdf-refreeze-done = Documento fissato di nuovo.
+invoice-pdf-refreeze-error = Non è stato possibile fissare di nuovo il documento.
 contact-form-language = Lingua di corrispondenza
 contact-form-language-inherited = Ereditata (lingua dell'istanza)
 contact-form-salutation = Titolo
