@@ -356,7 +356,15 @@ const ATTENDU = {
 	// quatre catalogues), l'en-tête « Solde » remplacé par « Ouverture » et
 	// « Clôture » (+1, deux clés neuves `reports-column-opening` / `-closing`), et
 	// le libellé de la ligne calculée, qui réemploie les deux clés du bilan (+2).
-	sitesTotal: 1758,
+	//
+	// Story 25-6-b (#387) : **1758 → 1767**, recompté par ce test et par
+	// `grep -o "i18nMsg("` aux deux bornes de `invoices/[id]/+page.svelte`
+	// (69 → 78) — la mention « Document figé le », le bouton « Refiger le
+	// document » (deux sites : l'en-tête et le pied du dialogue), le titre, le
+	// corps et l'avertissement du dialogue, son « Annuler », le succès, et le
+	// repli générique du refus — neuf sites. Le bouton PDF, extrait dans un snippet pour servir aussi la facture
+	// annulée, n'ajoute aucun site : il n'est écrit qu'une fois.
+	sitesTotal: 1767,
 	sitesNonResolus: 34,
 	relais: 7,
 	sitesGabarit: 10,

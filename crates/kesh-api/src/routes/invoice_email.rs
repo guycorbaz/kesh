@@ -7,7 +7,7 @@
 //!   nécessaire car les routes templates (20-1) sont Admin-only alors que
 //!   l'expéditeur est Comptable+.
 //! - `POST /api/v1/invoices/{id}/send-email` — envoie la facture (PDF
-//!   QR-facture joint via `invoice_pdf_service::render`) au **destinataire
+//!   QR-facture joint via `issued_invoice_pdf::get_or_freeze`, le PDF émis) au **destinataire
 //!   verrouillé** `contacts.email` (décision #13 epic-20 — seuls objet et
 //!   corps sont éditables), puis marque `invoices.emailed_at`/`emailed_to`
 //!   et audite `invoice.emailed`. Le texte envoyé est celui du body de la
@@ -37,6 +37,7 @@ use crate::mail::{EmailAttachment, OutgoingEmail};
 use crate::middleware::auth::CurrentUser;
 use crate::routes::invoice_pdf_service;
 use crate::routes::invoices::InvoiceResponse;
+use crate::routes::issued_invoice_pdf::{self, PdfContext};
 
 /// Réponse de `GET /api/v1/invoices/{id}/email-preview`.
 #[derive(Debug, Serialize)]
@@ -778,13 +779,21 @@ pub async fn send_invoice_email(
         return Err(AppError::InvoiceEmailEmptyContent);
     }
 
-    // Rendu PDF dans la langue du contact (le corps ET la pièce jointe
-    // partagent la même locale — décision #11 epic-20). Erreurs héritées
-    // 20-3a inchangées (validated, ≤ 9 lignes, adresse, banque primary).
-    let language = resolve_language(&contact, &company);
-    let locale = kesh_i18n::Locale::from(language.as_str());
-    let rendered =
-        invoice_pdf_service::render(&state.pool, &state.i18n, locale, &company, id).await?;
+    // Story 25-6-b (#387) : la pièce jointe est le PDF ÉMIS — octet pour
+    // octet celui du téléchargement. Le premier envoi d'une facture non
+    // figée la fige, et le gel survit à un échec SMTP : le document a été
+    // produit, la facture n'est simplement pas marquée envoyée. Le corps
+    // suit la langue ACTUELLE du contact ; la pièce jointe, la langue figée.
+    // Erreurs de rendu héritées 20-3a inchangées.
+    let ctx = PdfContext {
+        pool: &state.pool,
+        i18n: &state.i18n,
+        documents_dir: std::path::Path::new(state.config.documents_dir.as_str()),
+        company: &company,
+        user_id: current_user.user_id,
+        actor_api_key_id: current_user.api_key_id,
+    };
+    let rendered = issued_invoice_pdf::get_or_freeze(&ctx, id).await?;
 
     let email = OutgoingEmail {
         to: to.clone(),
@@ -1466,6 +1475,10 @@ mod tests {
             project_id: None,
             dunning_paused_at: None,
             dunning_paused_note: None,
+            pdf_storage_path: None,
+            pdf_sha256: None,
+            pdf_frozen_at: None,
+            pdf_language: None,
             version: 1,
             created_at: chrono::NaiveDateTime::default(),
             updated_at: chrono::NaiveDateTime::default(),

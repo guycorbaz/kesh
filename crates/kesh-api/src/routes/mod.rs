@@ -24,6 +24,7 @@ pub mod invoice_email;
 pub mod invoice_pdf;
 pub mod invoice_pdf_service;
 pub mod invoices;
+pub mod issued_invoice_pdf;
 pub mod journal_entries;
 pub mod limits;
 pub mod onboarding;

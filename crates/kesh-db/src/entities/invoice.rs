@@ -47,6 +47,14 @@ pub struct Invoice {
     /// Note optionnelle accompagnant la suspension (posée à la pause, remise à
     /// NULL à la reprise).
     pub dunning_paused_note: Option<String>,
+    /// Story 25-6-b (#387) — le PDF **figé** : chemin relatif à
+    /// `KESH_DOCUMENTS_DIR`, empreinte SHA-256, instant du gel et langue. Les
+    /// quatre sont nuls (non figée) ou tous renseignés (CHECK
+    /// `chk_invoices_frozen_pdf`). Le gel ne touche pas `version`.
+    pub pdf_storage_path: Option<String>,
+    pub pdf_sha256: Option<String>,
+    pub pdf_frozen_at: Option<NaiveDateTime>,
+    pub pdf_language: Option<String>,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,

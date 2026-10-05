@@ -46,14 +46,31 @@ use crate::util::search::{escape_boolean_ft, escape_like};
 pub(crate) const LINE_COLUMNS: &str = "id, invoice_id, position, description, quantity, \
     unit_price, vat_rate, line_total, revenue_account_id, created_at";
 
+/// Les colonnes de [`Invoice`], dans l'ordre de l'entité — **la seule liste**
+/// (Story 25-6-b, #387). Elles étaient énumérées en dur à quatre endroits, et
+/// un oubli échouait à l'exécution (`FromRow`), jamais à la compilation. Macro
+/// et non `const` : `concat!` n'accepte que des littéraux, et les requêtes
+/// constantes s'y composent.
+macro_rules! invoice_columns {
+    () => {
+        "id, company_id, contact_id, invoice_number, status, date, due_date, payment_terms, \
+         total_amount, journal_entry_id, paid_at, emailed_at, emailed_to, project_id, \
+         dunning_paused_at, dunning_paused_note, pdf_storage_path, pdf_sha256, pdf_frozen_at, \
+         pdf_language, version, created_at, updated_at"
+    };
+}
+
+/// [`invoice_columns!`] en `const`, pour les requêtes composées par `format!`.
+pub(crate) const INVOICE_COLUMNS: &str = invoice_columns!();
+
 /// Toujours scopé par `company_id` (anti-IDOR multi-tenant).
 // pub(crate) : réutilisé par `repositories::credit_notes` (lock de la
 // facture d'origine) — une seule liste de colonnes à maintenir.
-pub(crate) const FIND_INVOICE_SCOPED_SQL: &str = "SELECT id, company_id, contact_id, invoice_number, \
-    status, date, due_date, payment_terms, total_amount, journal_entry_id, paid_at, \
-    emailed_at, emailed_to, project_id, dunning_paused_at, dunning_paused_note, \
-    version, created_at, updated_at \
-    FROM invoices WHERE id = ? AND company_id = ?";
+pub(crate) const FIND_INVOICE_SCOPED_SQL: &str = concat!(
+    "SELECT ",
+    invoice_columns!(),
+    " FROM invoices WHERE id = ? AND company_id = ?"
+);
 
 /// Snapshot JSON d'une facture (entête + lignes) pour l'audit log.
 fn invoice_snapshot_json(inv: &Invoice, lines: &[InvoiceLine]) -> serde_json::Value {
@@ -93,6 +110,9 @@ fn invoice_snapshot_json(inv: &Invoice, lines: &[InvoiceLine]) -> serde_json::Va
         // P14 (review pass 3 A) : journal_entry_id tracé en audit pour
         // permettre de détecter une rupture du lien JE lors d'un mark_as_paid.
         "journalEntryId": inv.journal_entry_id,
+        // Story 25-6-b (#387) : l'empreinte du PDF figé. Au snapshot « avant »
+        // d'une dévalidation, c'est la trace du document détaché (AC 5).
+        "pdfSha256": inv.pdf_sha256,
         "version": inv.version,
         "lines": lines_json,
     })
@@ -779,6 +799,20 @@ pub async fn find_scoped_for_update_in_tx(
         .map_err(map_db_error)
 }
 
+/// Retourne une facture par ID, sans ses lignes, scopée par `company_id`.
+pub async fn find_by_id(
+    pool: &MySqlPool,
+    company_id: i64,
+    id: i64,
+) -> Result<Option<Invoice>, DbError> {
+    sqlx::query_as::<_, Invoice>(FIND_INVOICE_SCOPED_SQL)
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(map_db_error)
+}
+
 /// Retourne une facture par ID avec ses lignes, scopée par `company_id`.
 pub async fn find_by_id_with_lines(
     pool: &MySqlPool,
@@ -1301,12 +1335,11 @@ pub async fn delete(
 ) -> Result<(), DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
-    let current_opt = sqlx::query_as::<_, Invoice>(
-        "SELECT id, company_id, contact_id, invoice_number, status, date, due_date, \
-         payment_terms, total_amount, journal_entry_id, paid_at, emailed_at, emailed_to, \
-         project_id, dunning_paused_at, dunning_paused_note, version, created_at, updated_at \
-         FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE",
-    )
+    let current_opt = sqlx::query_as::<_, Invoice>(concat!(
+        "SELECT ",
+        invoice_columns!(),
+        " FROM invoices WHERE id = ? AND company_id = ? FOR UPDATE"
+    ))
     .bind(id)
     .bind(company_id)
     .fetch_optional(&mut *tx)
@@ -1572,9 +1605,16 @@ pub async fn unvalidate(
         //
         // ⚠️ `invoice_number` n'est PAS touché : c'est le critère du numéro
         // conservé.
+        //
+        // Story 25-6-b (#387, AC 5) : le PDF figé est DÉTACHÉ — les quatre
+        // colonnes repassent à `NULL` dans le même geste ; son empreinte reste
+        // au snapshot de l'audit. Le fichier, nommé par son empreinte, reste
+        // sur le disque. À la revalidation, le premier rendu fige un nouveau
+        // document.
         let rows = sqlx::query(
             "UPDATE invoices SET status = 'draft', journal_entry_id = NULL, \
-             version = version + 1 \
+             pdf_storage_path = NULL, pdf_sha256 = NULL, pdf_frozen_at = NULL, \
+             pdf_language = NULL, version = version + 1 \
              WHERE id = ? AND company_id = ? AND version = ? AND status = 'validated'",
         )
         .bind(invoice_id)
@@ -2438,6 +2478,171 @@ pub async fn mark_emailed(
     }
 }
 
+/// Le PDF d'une facture à figer — ce que le service de `kesh-api` a écrit
+/// sous `KESH_DOCUMENTS_DIR` (Story 25-6-b, #387).
+#[derive(Debug, Clone)]
+pub struct FrozenPdf {
+    /// Chemin relatif à `KESH_DOCUMENTS_DIR` (`{sha256}.pdf`).
+    pub storage_path: String,
+    /// SHA-256 hexadécimal (64 caractères) des octets écrits.
+    pub sha256: String,
+    /// Langue du rendu, `FR` / `DE` / `IT` / `EN` (CHECK `chk_invoices_frozen_pdf`).
+    pub language: String,
+}
+
+/// Pose le PDF figé d'une facture **non encore figée** (Story 25-6-b, AC 2).
+///
+/// Un seul `UPDATE` conditionnel, et l'audit `invoice.pdf_frozen` dans la même
+/// transaction — l'empreinte n'existe jamais sans sa trace. Les trois gardes
+/// sont toutes nécessaires :
+///
+/// - `pdf_storage_path IS NULL` : un rendu concurrent a pu figer avant nous ;
+///   on ne remplace jamais un document posé ;
+/// - `status = 'validated'` : une dévalidation (ou un avoir) intercalée entre
+///   le rendu et la pose laisserait sinon un PDF figé sur un brouillon ;
+/// - `version = expected_version` : la version **lue au rendu** — une
+///   séquence dévalidation → modification → revalidation passerait la seule
+///   garde de statut et figerait des lignes périmées.
+///
+/// ⚠️ Le gel **ne touche pas** `version` : une dévalidation ou un avoir lancés
+/// depuis une fiche ouverte avant le téléchargement tomberaient sinon en 409.
+///
+/// Retourne `true` si la pose a eu lieu, `false` si une garde l'a refusée —
+/// à l'appelant de relire la facture pour savoir laquelle.
+pub async fn freeze_pdf(
+    pool: &MySqlPool,
+    company_id: i64,
+    invoice_id: i64,
+    expected_version: i32,
+    pdf: &FrozenPdf,
+    user_id: i64,
+    actor_api_key_id: Option<i64>,
+) -> Result<bool, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    let result = async {
+        let rows = sqlx::query(
+            "UPDATE invoices SET pdf_storage_path = ?, pdf_sha256 = ?, \
+             pdf_frozen_at = NOW(3), pdf_language = ? \
+             WHERE id = ? AND company_id = ? AND pdf_storage_path IS NULL \
+             AND status = 'validated' AND version = ?",
+        )
+        .bind(&pdf.storage_path)
+        .bind(&pdf.sha256)
+        .bind(&pdf.language)
+        .bind(invoice_id)
+        .bind(company_id)
+        .bind(expected_version)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_db_error)?
+        .rows_affected();
+        if rows != 1 {
+            return Ok(false);
+        }
+
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::for_actor(
+                user_id,
+                actor_api_key_id,
+                "invoice.pdf_frozen",
+                "invoice",
+                invoice_id,
+                Some(serde_json::json!({
+                    "pdfSha256": pdf.sha256,
+                    "pdfLanguage": pdf.language,
+                })),
+            ),
+        )
+        .await?;
+        Ok(true)
+    }
+    .await;
+
+    match result {
+        Ok(applied) => {
+            tx.commit().await.map_err(map_db_error)?;
+            Ok(applied)
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
+}
+
+/// Remplace le PDF figé d'une facture dont le fichier a disparu — le geste
+/// d'administrateur de l'arbitrage 7 (Story 25-6-b, AC 3-bis).
+///
+/// Gardes : `pdf_sha256 = old_sha256` (deux refigeages concurrents, un seul
+/// réussit) et `status = 'validated'` (un avoir intercalé refuse). L'audit
+/// `invoice.pdf_refrozen` porte l'**ancienne** et la **nouvelle** empreinte,
+/// dans la même transaction. Retourne `true` si le remplacement a eu lieu.
+pub async fn refreeze_pdf(
+    pool: &MySqlPool,
+    company_id: i64,
+    invoice_id: i64,
+    old_sha256: &str,
+    pdf: &FrozenPdf,
+    user_id: i64,
+    actor_api_key_id: Option<i64>,
+) -> Result<bool, DbError> {
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+
+    let result = async {
+        let rows = sqlx::query(
+            "UPDATE invoices SET pdf_storage_path = ?, pdf_sha256 = ?, \
+             pdf_frozen_at = NOW(3), pdf_language = ? \
+             WHERE id = ? AND company_id = ? AND pdf_sha256 = ? \
+             AND status = 'validated'",
+        )
+        .bind(&pdf.storage_path)
+        .bind(&pdf.sha256)
+        .bind(&pdf.language)
+        .bind(invoice_id)
+        .bind(company_id)
+        .bind(old_sha256)
+        .execute(&mut *tx)
+        .await
+        .map_err(map_db_error)?
+        .rows_affected();
+        if rows != 1 {
+            return Ok(false);
+        }
+
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::for_actor(
+                user_id,
+                actor_api_key_id,
+                "invoice.pdf_refrozen",
+                "invoice",
+                invoice_id,
+                Some(serde_json::json!({
+                    "oldPdfSha256": old_sha256,
+                    "pdfSha256": pdf.sha256,
+                    "pdfLanguage": pdf.language,
+                })),
+            ),
+        )
+        .await?;
+        Ok(true)
+    }
+    .await;
+
+    match result {
+        Ok(applied) => {
+            tx.commit().await.map_err(map_db_error)?;
+            Ok(applied)
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
+}
+
 /// Charge jusqu'à `max_rows` factures validées filtrées (pour l'export CSV).
 ///
 /// Contrairement à [`list_by_company_paginated`], pas de LIMIT/OFFSET exposé :
@@ -2508,14 +2713,11 @@ pub async fn list_all_by_company(
     pool: &MySqlPool,
     company_id: i64,
 ) -> Result<Vec<Invoice>, DbError> {
-    sqlx::query_as::<_, Invoice>(
-        "SELECT id, company_id, contact_id, invoice_number, status, date, due_date, \
-         payment_terms, total_amount, journal_entry_id, paid_at, emailed_at, emailed_to, \
-         project_id, dunning_paused_at, dunning_paused_note, version, created_at, updated_at \
-         FROM invoices \
-         WHERE company_id = ? \
-         ORDER BY id",
-    )
+    sqlx::query_as::<_, Invoice>(concat!(
+        "SELECT ",
+        invoice_columns!(),
+        " FROM invoices WHERE company_id = ? ORDER BY id"
+    ))
     .bind(company_id)
     .fetch_all(pool)
     .await

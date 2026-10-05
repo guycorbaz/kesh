@@ -337,6 +337,41 @@ pub enum AppError {
     #[error("Facture non validée")]
     InvoiceNotValidated,
 
+    // --- Story 25-6-b (#387) — le PDF figé ---
+    /// La facture a été annulée par un avoir pendant le rendu de son PDF —
+    /// rien n'a été figé (400, sur le patron d'[`Self::InvoiceNotValidated`]).
+    #[error("Facture annulée")]
+    InvoiceCancelled,
+
+    /// Le PDF figé est référencé mais son fichier manque sous
+    /// `KESH_DOCUMENTS_DIR` (410). Jamais régénéré en silence : ce serait
+    /// fabriquer une pièce qui n'a pas été émise. Porte l'empreinte, que le
+    /// message nomme.
+    #[error("PDF figé introuvable : {0}.pdf")]
+    InvoicePdfGone(String),
+
+    /// La facture a changé deux fois de suite pendant le rendu de son PDF
+    /// (409) : rien n'a été figé, l'utilisateur réessaie.
+    #[error("Facture modifiée pendant le rendu du PDF")]
+    InvoiceChanged,
+
+    /// Refigeage refusé : le fichier du PDF figé est présent (409) — on ne
+    /// remplace pas un document qui existe.
+    #[error("PDF figé présent")]
+    InvoicePdfPresent,
+
+    /// Refigeage refusé : la facture n'a pas de PDF figé (409) — son
+    /// prochain rendu la figera.
+    #[error("PDF non figé")]
+    InvoicePdfNotFrozen,
+
+    /// Refigeage refusé : le fichier est présent mais son empreinte ne
+    /// correspond plus (409). Un fichier altéré se diagnostique, il ne se
+    /// recouvre pas d'un nouveau document. À la **lecture**, la même
+    /// altération répond 500 (`Internal`), rien n'est servi.
+    #[error("PDF figé altéré")]
+    InvoicePdfIntegrity,
+
     /// Un pré-requis applicatif manque pour générer le PDF : adresse contact,
     /// compte bancaire primary, IBAN invalide, etc. Le `String` contient la
     /// description i18n renvoyée au client.
@@ -1429,6 +1464,57 @@ impl IntoResponse for AppError {
             AppError::InvoiceNotPdfReady(msg) => {
                 build_response(StatusCode::BAD_REQUEST, "INVOICE_NOT_PDF_READY", &msg)
             }
+
+            // Story 25-6-b (#387) — le PDF figé.
+            AppError::InvoiceCancelled => build_response(
+                StatusCode::BAD_REQUEST,
+                "INVOICE_CANCELLED",
+                &t(
+                    "error-invoice-cancelled",
+                    "La facture a été annulée par un avoir pendant la préparation de son PDF — aucun document n'a été figé.",
+                ),
+            ),
+            AppError::InvoicePdfGone(sha256) => {
+                let fallback = format!(
+                    "Le PDF émis de cette facture est introuvable : le fichier {sha256}.pdf manque dans le répertoire des documents (KESH_DOCUMENTS_DIR). Restaurez-le depuis la sauvegarde de ce répertoire ; à défaut, un administrateur peut refiger la facture."
+                );
+                let mut args = FluentArgs::new();
+                args.set("sha256", sha256);
+                let msg = t_args("error-invoice-pdf-gone", &fallback, &args);
+                build_response(StatusCode::GONE, "INVOICE_PDF_GONE", &msg)
+            }
+            AppError::InvoiceChanged => build_response(
+                StatusCode::CONFLICT,
+                "INVOICE_CHANGED",
+                &t(
+                    "error-invoice-changed",
+                    "La facture a été modifiée pendant la préparation de son PDF. Réessayez.",
+                ),
+            ),
+            AppError::InvoicePdfPresent => build_response(
+                StatusCode::CONFLICT,
+                "INVOICE_PDF_PRESENT",
+                &t(
+                    "error-invoice-pdf-present",
+                    "Le PDF émis de cette facture est présent : il n'y a rien à refiger.",
+                ),
+            ),
+            AppError::InvoicePdfNotFrozen => build_response(
+                StatusCode::CONFLICT,
+                "INVOICE_PDF_NOT_FROZEN",
+                &t(
+                    "error-invoice-pdf-not-frozen",
+                    "Cette facture n'a pas encore de PDF figé : son prochain téléchargement le figera.",
+                ),
+            ),
+            AppError::InvoicePdfIntegrity => build_response(
+                StatusCode::CONFLICT,
+                "INVOICE_PDF_INTEGRITY",
+                &t(
+                    "error-invoice-pdf-integrity",
+                    "Le fichier du PDF émis a été altéré : son empreinte ne correspond plus. Restaurez-le depuis la sauvegarde, ou écartez-le du répertoire des documents avant de refiger.",
+                ),
+            ),
             AppError::InvoiceTooManyLinesForPdf(n) => {
                 // #151 code-review : le cap n'est plus un nombre fixe (il dépend du
                 // récap TVA et du type de document), donc message sans « max ».
