@@ -204,7 +204,7 @@ Si vous souhaitez \textbf{tenir votre comptabilité réelle}, choisissez le mode
 À la finalisation, Kesh met en place votre plan comptable (Sterchi PME par défaut) et votre premier exercice. Vous êtes alors prêt à saisir vos premières écritures.
 
 \begin{keshnote}
-Vous pourrez à tout moment ajouter ou modifier vos comptes bancaires après l'onboarding (\emph{Paramètres} → \emph{Comptes bancaires}) et adapter votre plan comptable (cf. section \emph{Plan comptable}).
+Vous pourrez à tout moment ajouter ou modifier vos comptes bancaires après l'onboarding (\emph{Administration} → \emph{Comptes bancaires}) et adapter votre plan comptable (cf. section \emph{Plan comptable}).
 \end{keshnote}
 
 \begin{keshtip}
@@ -215,16 +215,58 @@ Le mode guidé pas-à-pas est recommandé pour les nouveaux utilisateurs. Les ut
 \section{Tableau de bord}
 
 Le tableau de bord est votre page d'accueil après connexion. Il présente trois
-tuiles de synthèse avec un accès rapide à chaque section :
+tuiles de synthèse :
 
 \keshscreenshot{dashboard.png}{Tableau de bord : dernières écritures, factures ouvertes et comptes bancaires.}  % TODO capture: dashboard avec donnees demo
 
 \begin{itemize}
-    \item \textbf{Dernières écritures} — accès rapide au journal.
-    \item \textbf{Factures ouvertes} — accès rapide à la facturation.
-    \item \textbf{Comptes bancaires} — soldes calculés lorsque des comptes
-    bancaires sont configurés.
+    \item \textbf{Dernières écritures} — les cinq plus récentes (date, numéro, libellé,
+    montant), chacune menant à son détail.
+    \item \textbf{Factures ouvertes} — le nombre de factures validées non soldées et leur
+    \textbf{reste dû} total, dont la part échue. S'y ajoute, pour un comptable ou un
+    administrateur, le nombre de factures à rappeler.
+    \item \textbf{Comptes bancaires} — pour chaque compte, son \textbf{solde comptable} et,
+    si un relevé a été importé, le solde de ce relevé et l'écart entre les deux
+    (détails ci-dessous).
 \end{itemize}
+
+Un rôle \emph{Consultation} voit les mêmes chiffres, sans les boutons de saisie. Si une
+tuile ne peut pas se charger, elle le dit — elle n'affiche jamais « Aucune écriture » sur
+une comptabilité qui en contient.
+
+\subsection{Solde comptable, relevé et écart}
+
+Le chiffre affiché sous chaque compte bancaire est le \textbf{solde comptable} : il vient
+du compte du grand livre lié au compte bancaire (\emph{Administration} → \emph{Comptes
+bancaires}), \textbf{pas de la banque}. Il ne reflète un encaissement qu'une fois celui-ci
+comptabilisé, par un rapprochement ou un règlement. Le total ne compte qu'une fois un
+compte du grand livre partagé par plusieurs comptes bancaires.
+
+Quand un relevé a été importé, la tuile affiche aussi \emph{Relevé du \dots} : le solde de
+clôture du \textbf{dernier relevé} importé, à sa date. Seuls les relevés \textbf{CAMT.053}
+portent un solde de clôture — un import CSV n'en a pas (\S\ref{sec:import-bancaire}). Si
+le solde comptable à cette date diffère du relevé, la tuile affiche l'\textbf{écart}
+(solde comptable − relevé) : typiquement un mouvement bancaire pas encore rapproché.
+
+L'écart tient compte des \textbf{dates de valeur} : la banque arrête son relevé par date de
+comptabilisation, Kesh date les écritures de rapprochement à la date de valeur. Un
+mouvement comptabilisé par la banque le dernier jour du relevé, mais rapproché à une date
+de valeur postérieure, ne crée donc pas d'écart. Trois limites :
+\begin{itemize}
+    \item seule une écriture \textbf{issue d'un rapprochement} est ainsi corrigée : une
+    écriture saisie à la main pour un mouvement bancaire, à une autre date, apparaît dans
+    l'écart — rien ne la relie au relevé ;
+    \item quand plusieurs comptes bancaires partagent un même compte du grand livre,
+    l'écart n'est pas calculable — la tuile l'indique : le solde de ce compte ne
+    s'attribue à aucun d'eux ;
+    \item après l'\textbf{annulation d'un rapprochement}, un mouvement comptabilisé par la
+    banque après la date du relevé mais dont l'écriture d'origine la précédait peut laisser
+    un écart fictif — l'écriture de contre-passation est datée du jour de l'annulation.
+\end{itemize}
+
+Un compte bancaire sans compte du grand livre lié n'a pas de solde comptable ; la tuile
+affiche tout de même son dernier relevé. Si les comptes bancaires ne peuvent pas être
+chargés, la tuile le dit au lieu de disparaître.
 
 \begin{keshnote}
 Les indicateurs plus riches (graphique de chiffre d'affaires, liste des
@@ -1308,9 +1350,11 @@ facture.
 \end{keshnote}
 
 %%─────────────────────────────────────────────────────────────────────────────
-\section{Import bancaire}
+\section{Import bancaire}\label{sec:import-bancaire}
 
-L'import bancaire est l'étape clé pour automatiser votre comptabilité. Kesh supporte deux formats :
+L'import bancaire est l'étape clé pour automatiser votre comptabilité. Kesh supporte deux formats.
+Seul le CAMT.053 porte le \textbf{solde de clôture} du relevé, que le tableau de bord confronte
+au solde comptable ; un import CSV n'en a pas :
 
 \subsection{Import CAMT.053 (ISO 20022)}
 
@@ -1976,7 +2020,7 @@ Vérifiez que la somme des débits égale exactement la somme des crédits (à 1
 
 \begin{itemize}
     \item Vérifiez que votre compte bancaire est configuré avec un IBAN suisse valide.
-    \item Si vous utilisez un QR-IBAN, assurez-vous qu'il est marqué comme tel dans \emph{Paramètres} → \emph{Comptes bancaires}.
+    \item Si vous utilisez un QR-IBAN, assurez-vous qu'il est marqué comme tel dans \emph{Administration} → \emph{Comptes bancaires}.
     \item Testez le PDF généré avec une application e-banking suisse (PostFinance, Twint Pro, Raiffeisen) : le QR code doit être scanné en moins d'une seconde.
 \end{itemize}
 

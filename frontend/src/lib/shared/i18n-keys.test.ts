@@ -357,7 +357,20 @@ const ATTENDU = {
 	// « Clôture » (+1, deux clés neuves `reports-column-opening` / `-closing`), et
 	// le libellé de la ligne calculée, qui réemploie les deux clés du bilan (+2).
 	//
-	// Story 25-6-b (#387) : **1758 → 1767**, recompté par ce test et par
+	// Story 25-6-a (#388, #389) : **1758 → 1765**, recompté par ce test et par
+	// `grep -o "i18nMsg(\|msg('"` aux deux bornes. La page d'accueil
+	// `routes/(app)/+page.svelte` pesait **17** sites — ses 15 appels par son relais
+	// `msg()`, plus la déclaration et le corps du relais —, elle en pèse **24** : 1 dans
+	// la page et 23 dans les trois tuiles extraites (`features/homepage/`
+	// `RecentEntriesCard` 5, `OpenInvoicesCard` 8, `BankAccountsCard` 10), qui appellent
+	// `i18nMsg` directement. Le relais disparaît : `relais` **7 → 6**,
+	// `sitesNonResolus` **34 → 32** (sa déclaration et son corps).
+	//
+	// Story 25-6-a, revue de code P1 : **1765 → 1767** — `BankAccountsCard` passe de 10 à
+	// 12 appels (`grep -o "i18nMsg("`) : l'état d'échec de la tuile
+	// (`homepage-bank-unavailable`) et l'écart non calculable d'un compte du grand
+	// livre partagé (`homepage-bank-gap-unavailable`), deux clés neuves × 4 locales.
+	// Story 25-6-b (#387) : **+9** (1758 → 1767 sur sa branche), recompté par ce test et par
 	// `grep -o "i18nMsg("` aux deux bornes de `invoices/[id]/+page.svelte`
 	// (69 → 78) — la mention « Document figé le », le bouton « Refiger le
 	// document » (deux sites : l'en-tête et le pied du dialogue), le titre, le
@@ -365,23 +378,22 @@ const ATTENDU = {
 	// repli générique du refus — neuf sites. Le bouton PDF, extrait dans un snippet pour servir aussi la facture
 	// annulée, n'ajoute aucun site : il n'est écrit qu'une fois.
 	//
-	// Story 25-6-b, revue P2 : **1767 → 1765**, recompté par ce test et par
+	// Story 25-6-b, revue P2 : **−2**, recompté par ce test et par
 	// `grep -o "i18nMsg("` aux deux bornes — fiche facture 78 → 76, fiche avoir
 	// 16 → 14, et le module partagé `shared/utils/pdf-error.ts` +2. Les deux
 	// fiches résolvaient chacune le refus de PDF (`i18nMsg(clé, err.message)` et
 	// le générique) ; elles délèguent désormais à `pdfErrorMessage`.
 	//
-	// Story 25-6-b, revue P3 : **1765 → 1766** — l'avertissement « refigé, mais la
+	// Story 25-6-b, revue P3 : **+1** — l'avertissement « refigé, mais la
 	// fiche n'a pas pu être relue » de la fiche facture (76 → 77), clé neuve
 	// `invoice-pdf-refreeze-reload-failed` dans les 4 catalogues.
-	sitesTotal: 1766,
-	// Story 25-6-b, revue P2 : **34 → 33** — les deux `i18nMsg(key, err.message)`
-	// des fiches facture et avoir deviennent UN site, dans `pdf-error.ts`. Ses
-	// clés sont celles de `PDF_ERROR_KEYS`, toutes présentes dans les 4 locales
-	// (vérifié à la main : ce site reste non résolu par la garde, comme ceux
-	// qu'il remplace).
-	sitesNonResolus: 33,
-	relais: 7,
+	//
+	// Fusion de `main` (25-6-a) dans la 25-6-b, 2026-10-05 : les deux branches partaient de
+	// 1758 ; 25-6-a +9, 25-6-b +8 (+9 −2 +1) ⇒ **1775**. `sitesNonResolus` : 32 (25-6-a)
+	// − 1 (25-6-b, deux sites des fiches devenus un dans `pdf-error.ts`) ⇒ **31**.
+	sitesTotal: 1775,
+	sitesNonResolus: 31,
+	relais: 6,
 	sitesGabarit: 10,
 	litterauxMin: 1050,
 	clesDepuisTsMin: 5
@@ -457,8 +469,9 @@ const ANGLE_MORT_CLE_EN_COLONNE = 'routes/(app)/settings/vat-rates/+page.svelte:
  * ⚠️ **QUATRIÈME angle mort, écrit ici faute de pouvoir le fermer** : `findRelays`
  * travaille **par fichier**. Un relais qui serait *importé* d'un module partagé ne
  * serait recensé nulle part — et, contrairement aux autres trous, **aucun compteur ne
- * bougerait**. La règle DRY du dépôt pousse vers cette extraction : les sept relais
- * actuels sont sept copies de la même fonction de trois lignes. À traiter en 23-2.
+ * bougerait**. La règle DRY du dépôt pousse vers cette extraction : les six relais
+ * actuels sont six copies de la même fonction de trois lignes (sept jusqu'à la 25-6-a,
+ * qui a retiré celui de la page d'accueil). À traiter en 23-2.
  */
 // ⚠️ La carte des codes d'erreur d'import est LUE depuis la production, plus recopiée :
 // tant qu'elle vivait dans le composant, une entrée ajoutée passait tous les gates au vert
@@ -711,7 +724,7 @@ describe('garde i18n — les clés demandées existent au catalogue', () => {
 		).toEqual([]);
 	});
 
-	it('les 7 relais locaux sont recensés — cardinalité assertée', () => {
+	it('les 6 relais locaux sont recensés — cardinalité assertée', () => {
 		// ⚠️ **Ce garde-fou manquait au premier jet, alors que la tâche le déclarait fait.**
 		// Sans lui, un huitième relais ajouté sans que le test le sache rendrait TOUTES
 		// ses clés invisibles, en silence — le défaut que le recensement des relais avait
