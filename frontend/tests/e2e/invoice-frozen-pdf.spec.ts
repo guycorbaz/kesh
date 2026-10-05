@@ -8,6 +8,7 @@ import {
 import {
 	createContactWithAddressViaApi,
 	createAndValidateInvoiceViaApi,
+	ensurePrimaryBankAccountViaApi,
 } from './helpers/api-fixtures';
 
 /**
@@ -45,6 +46,8 @@ function uniq(prefix: string): string {
 test.describe('PDF figé', () => {
 	test('deux téléchargements rendent le même fichier', async ({ page }) => {
 		await login(page);
+		// Le PDF exige un compte bancaire principal.
+		await ensurePrimaryBankAccountViaApi(page);
 		const contactId = await createContactWithAddressViaApi(page, uniq('PDF Figé'));
 		const invoiceId = await createAndValidateInvoiceViaApi(page, contactId);
 
@@ -70,6 +73,8 @@ test.describe('PDF figé', () => {
 
 	test('une facture annulée par un avoir garde son PDF émis', async ({ page }) => {
 		await login(page);
+		// Le PDF exige un compte bancaire principal.
+		await ensurePrimaryBankAccountViaApi(page);
 		const contactId = await createContactWithAddressViaApi(page, uniq('PDF Annulée'));
 		const invoiceId = await createAndValidateInvoiceViaApi(page, contactId);
 

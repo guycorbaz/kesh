@@ -1,6 +1,6 @@
 # Story 25.6-b : Le PDF d'une facture est figé — une pièce émise ne change plus
 
-Status: in-progress
+Status: review
 
 **Issue : [#387]**, que cette story **ferme** : la PR porte `closes #387` dans le **titre ET le corps**. Branche
 `story/25-6-b-pdf-facture-archive`, partie de `main` (`d7c74f02`). Seconde moitié de la 25-6 (la 25-6-a a traité #388 et
@@ -256,23 +256,23 @@ téléchargement rend la langue du client).
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — migration** (AC 1) : SQL, squash, garde de schéma, audit d'idempotence, P6.
-- [ ] **T2 — le service de gel** (AC 1-bis, 2, 3) : `kesh-db` (entité `Invoice` et **constante unique** de colonnes,
+- [x] **T1 — migration** (AC 1) : SQL, squash, garde de schéma, audit d'idempotence, P6.
+- [x] **T2 — le service de gel** (AC 1-bis, 2, 3) : `kesh-db` (entité `Invoice` et **constante unique** de colonnes,
   pose conditionnelle + audit en une transaction, détachement), `kesh-api` (service, `spawn_blocking`) et **six variantes d'erreur neuves** (P3, M3 — aucune n'existe ; seule
   `InvoiceNotValidated` existe, `errors.rs:338`), chacune avec statut HTTP, code JSON et message dans les 4 locales :
   `InvoicePdfGone` (410 `INVOICE_PDF_GONE`), `InvoiceChanged` (409 `INVOICE_CHANGED`), `InvoicePdfPresent` (409
   `INVOICE_PDF_PRESENT`), `InvoicePdfNotFrozen` (409 `INVOICE_PDF_NOT_FROZEN`), `InvoicePdfIntegrity` (409
   `INVOICE_PDF_INTEGRITY`, au refigeage ; 500 à la lecture), `InvoiceCancelled` (code à fixer sur le patron
   d'`InvoiceNotValidated`).
-- [ ] **T3 — les deux consommateurs** (AC 2, 4) : route de téléchargement, envoi par e-mail.
-- [ ] **T3-bis — refiger** (AC 3-bis) : route d'administration, trois codes 409, audit, bouton et confirmation à l'écran,
+- [x] **T3 — les deux consommateurs** (AC 2, 4) : route de téléchargement, envoi par e-mail.
+- [x] **T3-bis — refiger** (AC 3-bis) : route d'administration, trois codes 409, audit, bouton et confirmation à l'écran,
   et les gardes structurelles (compte du bloc d'administration, `admin_pat_denied_e2e`, registres d'audit et de libellés).
-- [ ] **T4 — la dévalidation** (AC 5).
-- [ ] **T5 — l'écran** (AC 6).
-- [ ] **T6 — tests** (AC 7).
-- [ ] **T6-bis — export de souveraineté** (AC 5-bis).
-- [ ] **T7 — manuels, CHANGELOG** (AC 8).
-- [ ] **T8 — gates** : backend complet, frontend complet, **E2E complet** — le backend E2E doit avoir
+- [x] **T4 — la dévalidation** (AC 5).
+- [x] **T5 — l'écran** (AC 6).
+- [x] **T6 — tests** (AC 7).
+- [x] **T6-bis — export de souveraineté** (AC 5-bis).
+- [x] **T7 — manuels, CHANGELOG** (AC 8).
+- [x] **T8 — gates** : backend complet, frontend complet, **E2E complet** — le backend E2E doit avoir
   `KESH_DOCUMENTS_DIR` inscriptible (`docs/testing.md:167`, `:197`) : sans lui, tout téléchargement de PDF répondra 500.
 
 ## Dev Notes
@@ -326,14 +326,95 @@ export CSV), `kesh-i18n`,
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`).
+
 ### Debug Log References
+
+Journaux sous `target/gate-logs/` : `25-6-b-backend.log`, `25-6-b-frontend.log`, `25-6-b-e2e.log`,
+`manual-25-6-b.log`.
 
 ### Completion Notes List
 
+- **Service unique** `kesh-api/src/routes/issued_invoice_pdf.rs` (`get_or_freeze`, `pose`, `refreeze`) : seul chemin
+  vers le PDF d'une facture. L'ancienne fonction `invoice_pdf_service::render` a été **retirée** pour qu'aucun appel
+  ne contourne le gel ; `render_document` reste (rappels, #502) et porte désormais `invoice_version`. La nouvelle
+  tentative unique est extraite (`with_one_retry`) pour être testée de façon déterministe, sans course réelle.
+- **`kesh-db`** : `freeze_pdf` (trois gardes + audit `invoice.pdf_frozen` dans la transaction), `refreeze_pdf`
+  (gardes `pdf_sha256 = old` et `status`, audit `invoice.pdf_refrozen` avec les deux empreintes), `find_by_id`
+  (facture sans ses lignes). `unvalidate` détache les quatre colonnes ; `invoice_snapshot_json` porte `pdfSha256`.
+- **Liste unique de colonnes** (AC 1-bis) : `macro_rules! invoice_columns` + `const INVOICE_COLUMNS` dans
+  `repositories/invoices.rs`. Macro parce que `concat!` n'accepte que des littéraux. Les quatre sites en dur sont
+  remplacés.
+- **Six erreurs** dans `errors.rs`, messages dans les 4 locales : `INVOICE_CANCELLED` (400), `INVOICE_PDF_GONE`
+  (410, nomme `{empreinte}.pdf`), `INVOICE_CHANGED`, `INVOICE_PDF_PRESENT`, `INVOICE_PDF_NOT_FROZEN`,
+  `INVOICE_PDF_INTEGRITY` (409). À la **lecture**, un fichier altéré répond `Internal` (500), conformément à l'AC 3.
+- **Écart avec la spec, recompté depuis la source** : l'AC 3-bis annonçait le bloc d'administration à « 25 → 26 ». Il
+  comptait déjà **27** couples sur `main` (5 `GET` + 22 mutants) — la prose de `lib.rs` et de
+  `admin_pat_denied_e2e.rs` était périmée. Il passe à **28** (5 + 23) ; le test asserte `ADMIN_COUPLES.len()` et non
+  un littéral, il était donc vert malgré la prose. Prose et compteurs recalés. Les trois totaux du registre d'audit
+  sont ceux de la spec : 110 / 92 / 113.
+- **Garde non anticipée par la spec** : `chaque_colonne_du_schema_est_exportee_ou_ecartee` (25-5-a) a rougi au gate
+  complet sur `invoices.pdf_storage_path`. La colonne est inscrite à `COLONNES_HORS_EXPORT` avec son motif.
+- **Angle mort assumé** écrit dans `audit_route_registry.rs` : `GET /invoices/{id}/pdf` (et `HEAD`) écrit désormais.
+- **`MockMailer`** capture les octets de la pièce jointe (`attachment_bytes`) : sans cela, « l'e-mail joint les
+  octets du téléchargement » n'était pas prouvable.
+- **Écran** : bouton PDF extrait en snippet (facture validée, ou annulée figée), mention « Document figé le »,
+  bouton « Refiger le document » pour un admin après un 410, avec une confirmation qui conseille de restaurer
+  d'abord. `sitesTotal` 1758 → 1767 (neuf sites, ventilés dans le test).
+- **Tests neufs** (périmètre : `main` → ce commit) : 9 `kesh-db` (`tests/invoice_frozen_pdf.rs`), 23 `kesh-api` HTTP
+  et service (`tests/invoice_frozen_pdf_e2e.rs`), 3 unitaires (`with_one_retry`), 1 CSV
+  (`serialize_invoices_csv_porte_le_pdf_fige`), 8 Vitest (`invoice-pdf-page.test.ts`), 2 Playwright
+  (`invoice-frozen-pdf.spec.ts`).
+- **Mutations** (chacune restaurée puis `touch`) :
+  - 7 sur les gardes `kesh-db`, chacune tuée par le test qui la nomme : `IS NULL`, `status` (pose), `version`,
+    `pdf_sha256 = old`, `status` (refigeage), détachement, empreinte au snapshot ;
+  - 6 sur le service : gel ignoré, langue de l'instance, empreinte non contrôlée, adoption de notre propre rendu,
+    refigeage d'un fichier présent, refigeage d'une annulée — toutes tuées ;
+  - 4 sur la fiche facture : condition de gel retirée, garde `isAdmin` retirée, tout échec pose `pdfGone`, envoi
+    sans confirmation — toutes tuées.
+  - ⚠️ « Gel ignoré » n'est tuée que par la spec de la facture annulée : sur une facture validée, la seconde pose
+    échoue sur `IS NULL` et le service **adopte** le document déjà figé. La conception se défend elle-même, et ce
+    test-là ne le distingue pas.
+- **Gates**, base remise à zéro avant chacun :
+  - backend `scripts/test-fast.sh --ci` : **2583/2583**, 4 skipped. Un premier passage s'était arrêté sur la garde
+    d'export ci-dessus, corrigée avant le second ;
+  - frontend : `check` 0 erreur, `lint-i18n-ownership` PASS, `test:unit` **853/853**, `build` OK ;
+  - **E2E complet** (06:40 UTC) : 227 passés, 11 échecs, 19 skipped. Neuf sont **attendus** : KF-029 ×7, et KF-051
+    ×2 (`invoices.spec.ts:415`, `:439`, avant 12:00 UTC). Les deux autres étaient **la spec neuve**, dont le montage
+    omettait `ensurePrimaryBankAccountViaApi` (400 `INVOICE_NOT_PDF_READY`). Corrigée, elle est **rejouée seule** :
+    2/2. ⚠️ La suite complète n'a pas été relancée après cette correction, qui ne touche que le montage de la spec.
+- Manuels FR régénérés (`make admin user`), 0 référence indéfinie, texte contrôlé dans les PDF aplatis.
+
 ### File List
+
+- `CHANGELOG.md`, `README.md`, `docs/testing.md`, `docs/migrations-idempotence-audit.md`
+- `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/admin-manual.pdf`, `docs/manual/fr/user-manual.tex`,
+  `docs/manual/fr/user-manual.pdf`
+- `crates/kesh-db/migrations/20261003000001_invoices_frozen_pdf.sql` (nouveau), `crates/kesh-db/migrations.sha384`,
+  `crates/kesh-db/test-schema/0001_schema_squash.sql`, `crates/kesh-db/tests/migrations_upgrade_path.rs`
+- `crates/kesh-db/src/entities/invoice.rs`, `crates/kesh-db/src/repositories/invoices.rs`,
+  `crates/kesh-db/src/repositories/reconciliation.rs`, `crates/kesh-db/tests/invoice_frozen_pdf.rs` (nouveau)
+- `crates/kesh-api/src/routes/issued_invoice_pdf.rs` (nouveau), `crates/kesh-api/src/routes/mod.rs`,
+  `crates/kesh-api/src/routes/invoice_pdf.rs`, `crates/kesh-api/src/routes/invoice_pdf_service.rs`,
+  `crates/kesh-api/src/routes/invoice_email.rs`, `crates/kesh-api/src/routes/invoices.rs`,
+  `crates/kesh-api/src/errors.rs`, `crates/kesh-api/src/audit_labels.rs`, `crates/kesh-api/src/lib.rs`,
+  `crates/kesh-api/src/mail/mod.rs`, `crates/kesh-api/src/exports/csv_tables.rs`
+- `crates/kesh-api/tests/invoice_frozen_pdf_e2e.rs` (nouveau), `crates/kesh-api/tests/admin_pat_denied_e2e.rs`,
+  `crates/kesh-api/tests/audit_route_registry.rs`
+- `crates/kesh-reconciliation/src/matching.rs`
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`
+- `frontend/src/lib/features/invoices/invoices.api.ts`, `frontend/src/lib/features/invoices/invoices.types.ts`,
+  `frontend/src/lib/shared/i18n-keys.test.ts`, `frontend/src/routes/(app)/invoices/[id]/+page.svelte`,
+  `frontend/src/routes/(app)/invoices/[id]/invoice-pdf-page.test.ts` (nouveau),
+  `frontend/src/routes/(app)/invoices/[id]/invoice-settlements-page.test.ts`,
+  `frontend/tests/e2e/invoice-frozen-pdf.spec.ts` (nouveau)
 
 ## Change Log
 
+- **2026-10-05** — Développement (dev-story) : T1 à T8. Service de gel, refigeage, détachement, export, écran,
+  manuels. Gates : backend 2583/2583, frontend 853/853, E2E 227 passés + 9 échecs attendus (+ la spec neuve rejouée
+  seule après correction de son montage, 2/2). Écart de la spec sur le bloc admin (27 → 28, et non 25 → 26), recompté
+  depuis la source. → `review`.
 - **2026-10-05** — Validation P4 ciblée (Haiku, prompt `25-6-b-validate-prompt-p4.md`) : **0 finding**. Sa première
   vérification résumait sa sortie au lieu de la citer : **reprise par l'orchestrateur** (`audit_route_registry.rs` porte
   bien 109, 91 et 112) ; le « six sites » restant est celui de P1, exact. **Boucle close** : P1 4H/12M (Sonnet ×3) → P2

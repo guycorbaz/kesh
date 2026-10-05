@@ -2267,6 +2267,11 @@ mod tests {
     /// information que l'export ne dirait pas déjà ailleurs.
     const COLONNES_HORS_EXPORT: &[(&str, &str, &str)] = &[
         (
+            "invoices",
+            "pdf_storage_path",
+            "chemin du PDF figé sous `KESH_DOCUMENTS_DIR` (Story 25-6-b) : dérivé de `pdf_sha256` (exporté, `{sha256}.pdf`), il ne désigne qu'un fichier du serveur — les fichiers ne sont pas dans ce CSV",
+        ),
+        (
             "accounts",
             "singleton_role",
             "colonne GÉNÉRÉE (unicité d'un rôle actif) : recalculée de `role` et `active`, exportés",
