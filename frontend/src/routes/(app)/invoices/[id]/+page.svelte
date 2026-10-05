@@ -28,6 +28,7 @@
 		sendInvoiceEmail,
 		getInvoiceSettings,
 	} from '$lib/features/invoices/invoices.api';
+	import { pdfErrorMessage } from '$lib/shared/utils/pdf-error';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import type { InvoiceSettingsResponse } from '$lib/features/invoices/invoices.types';
@@ -655,25 +656,8 @@
 
 	let pdfDownloading = $state(false);
 
-	// D2 (review pass 1 G2 D) : whitelist explicite des codes d'erreur PDF
-	// — empêche la construction dynamique de clés FTL depuis err.code
-	// (potentiel mismatch silencieux si le backend renvoie un nouveau code).
-	const PDF_ERROR_KEYS: Record<string, string> = {
-		INVOICE_NOT_VALIDATED: 'invoice-pdf-error-invoice-not-validated',
-		INVOICE_NOT_PDF_READY: 'invoice-pdf-error-invoice-not-pdf-ready',
-		INVOICE_TOO_MANY_LINES_FOR_PDF: 'error-invoice-too-many-lines-for-pdf',
-		// Story 16-3a (#151) — sans cette entrée, le message retombe sur le
-		// générique et l'utilisateur ne sait pas QUOI raccourcir.
-		INVOICE_PDF_HEADER_OVERFLOW: 'error-invoice-pdf-header-overflow',
-		PDF_GENERATION_FAILED: 'invoice-pdf-error-pdf-generation-failed',
-		NOT_FOUND: 'invoice-pdf-error-not-found',
-		// Story 25-6-b (#387) — le PDF figé. ⚠️ `INVOICE_PDF_GONE` n'est PAS ici :
-		// son message nomme le fichier manquant, et le catalogue servi au
-		// frontend est résolu SANS arguments — il afficherait `{ $sha256 }`. Le
-		// message du serveur est repris tel quel (cf. `downloadPdf`).
-		INVOICE_CHANGED: 'error-invoice-changed',
-		INVOICE_CANCELLED: 'error-invoice-cancelled',
-	};
+	// Le message d'un refus de PDF : `pdfErrorMessage` (partagé avec la fiche
+	// avoir — Story 25-6-b, revue P2).
 
 	// Story 25-6-b (#387, arbitrage 7) — le fichier du PDF figé a disparu (410).
 	// Un administrateur peut alors REFIGER : un nouveau document, pas l'original.
@@ -692,7 +676,10 @@
 		refreezeSubmitting = true;
 		refreezeError = '';
 		try {
-			invoice = await refreezeInvoicePdf(invoice.id);
+			await refreezeInvoicePdf(invoice.id);
+			// La réponse du refigeage ne porte pas « Déjà réglé / Reste dû » :
+			// la fiche se relit (revue P2, F-L2).
+			invoice = await getInvoice(invoice.id);
 			pdfGone = false;
 			refreezeOpen = false;
 			notifySuccess(i18nMsg('invoice-pdf-refreeze-done', 'Document refigé.'));
@@ -733,20 +720,9 @@
 			// Revoke différé pour laisser le navigateur récupérer le blob.
 			setTimeout(() => URL.revokeObjectURL(url), 5_000);
 		} catch (err) {
-			if (isApiError(err) && err.code === 'INVOICE_PDF_GONE') {
-				// Le message nomme le fichier à restaurer : repris tel quel.
-				pdfGone = true;
-				notifyError(err.message);
-			} else if (isApiError(err)) {
-				// Pass 2 : remappage vers les clés FTL réellement présentes —
-		// `INVOICE_TOO_MANY_LINES_FOR_PDF` utilise la clé legacy
-		// `error-invoice-too-many-lines-for-pdf` (existante FR/DE/IT/EN
-		// avec les arguments {count}/{max}).
-		const key = PDF_ERROR_KEYS[err.code] ?? 'invoice-pdf-error-generic';
-				notifyError(i18nMsg(key, err.message));
-			} else {
-				notifyError(i18nMsg('invoice-pdf-error-generic', 'Erreur lors du téléchargement du PDF'));
-			}
+			// Le 410 nomme le fichier à restaurer et ouvre le refigeage.
+			if (isApiError(err) && err.code === 'INVOICE_PDF_GONE') pdfGone = true;
+			notifyError(pdfErrorMessage(err));
 		} finally {
 			pdfDownloading = false;
 		}

@@ -411,6 +411,45 @@ Journaux sous `target/gate-logs/` : `25-6-b-backend.log`, `25-6-b-frontend.log`,
 
 ## Change Log
 
+- **2026-10-05** — Revue de code P2 (Opus ×2 : R = la remédiation `8ac0a4de`, F = périmètre complet ; prompt
+  `25-6-b-review-prompt-p2.md`) : **0 CRITICAL/HIGH, 5 MED, 8 LOW**. **Deux des MED viennent de la remédiation P1** :
+  R2-2 directement, et F-M1 parce que P1 affiche désormais le message du serveur, avec ses marques invisibles.
+  - **MED** :
+    - **R2-2** : le 410 d'une facture **annulée** proposait de refiger, ce que l'écran ne permet plus. `InvoicePdfGone`
+      porte `refreezable` ; une clé `error-invoice-pdf-gone-cancelled` (4 locales) ne propose que la restauration ;
+    - **F-M1** : le message du 410 entourait l'empreinte des marques d'isolation BiDi de Fluent — copiée pour chercher
+      le fichier dans une sauvegarde, elle ne trouvait rien, et l'administrateur pouvait refiger un original qui
+      existait encore. Marques retirées dans `t_args` (tous les messages d'erreur à argument) ;
+    - **F-M2** : aucun test du gel par une clé d'API, que les deux manuels promettent tracé au nom de la clé. Test
+      HTTP ajouté (clé `read`) ;
+    - **F-M3** : le test de langue ne vérifiait que la colonne. Il vérifie désormais le document (« Rechnung »,
+      « Zahlteil », pas « Section paiement ») ;
+    - **R2-1**, **antérieur à la story** et trouvé par propagation du symptôme de M1 : « trop de lignes » affichait
+      `{ $count }` brut sur les fiches facture **et** avoir. Les deux tables sont fusionnées dans
+      `shared/utils/pdf-error.ts` (`pdfErrorMessage`), qui reprend le message du serveur pour les codes à variable.
+  - **LOW** :
+    - **R2-4** : la garde d'envoi est aussi tenue **dans le service** (`Usage::Send`), sur la facture qu'il relit ;
+    - **F-L1** : la facture est relue à chaque tentative, et un rendu d'une autre version que celle dont la langue
+      est tirée est rejoué ;
+    - **F-L2** : après un refigeage, la fiche se relit (la réponse ne porte pas « Déjà réglé / Reste dû »). ⚠️ Le
+      même défaut existe, **antérieur**, après un envoi par e-mail (`+page.svelte`, `sendInvoiceEmail`) : non traité ;
+    - **F-L3** : le message d'`INVOICE_CANCELLED` ne prétend plus que l'annulation est survenue « pendant la
+      préparation » ;
+    - **R2-3** : ordre des refus de l'envoi et commentaire de test mis à jour ;
+    - **R2-5** : tests Vitest — `setTimeout(0)` avant une assertion d'absence, `vi.spyOn` restauré ;
+    - **F-L4, F-L5** (manuels) : `HEAD` fige aussi ; une facture envoyée avant la v0.12.1 puis annulée n'a pas de
+      PDF ; une sauvegarde restaurée antérieure au gel fera figer un nouveau document.
+  - **Défaut antérieur relevé, non traité** : la communication de la QR (« Facture {numéro} ») est écrite en
+    français quelle que soit la langue du client (`invoice_pdf_service.rs:369`).
+  - Tests neufs : 3 HTTP/service, 5 Vitest (`pdf-error.test.ts`), assertions durcies sur 3 tests. **Mutations tuées**
+    (7) : marques non retirées, `refreezable` toujours vrai, garde `Usage::Send`, clé d'API non transmise, rendu dans
+    la langue de l'installation, « trop de lignes » tiré du catalogue, fiche non relue après refigeage. La relecture
+    par tentative (F-L1) n'a **pas** de test : la course n'est pas reproductible sans point d'injection.
+  - Gardes i18n recalées et ventilées : `sitesTotal` 1767 → 1765, `sitesNonResolus` 34 → 33 ; entrée tolérée
+    `invoice-pdf-error-generic` retirée de `i18n-repli-divergent-actif` (plus divergente).
+  - Gate ciblé : `fmt`, `clippy` workspace, 144 tests Rust (`invoice_frozen_pdf_e2e`, `invoice_send_email_e2e`,
+    `inbox_import_e2e`, `invoice_pdf_e2e`, `test(error)`), Vitest `shared` + fiches 210/210, `check` 0 erreur.
+    Gate complet au push.
 - **2026-10-05** — Revue de code P1 (Sonnet ×3, prompt `25-6-b-review-prompt-p1.md`) : **0 CRITICAL/HIGH, 3 MED,
   7 LOW**, tous retenus et corrigés.
   - **MED** :

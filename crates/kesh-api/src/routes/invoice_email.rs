@@ -727,9 +727,11 @@ async fn best_effort_reminder_audit(
 ///
 /// Séquence de gardes (AC #15 Story 20-3b1, dans cet ordre) :
 /// auth/tenant → rate-limit 429 → SMTP prêt 412 → facture scopée 404 →
-/// e-mail contact 400 → contenu vide 422 → rendu PDF (erreurs héritées
-/// 20-3a) → envoi SMTP (échec 500, facture NON marquée) → marquage
-/// `emailed_at` + audit → 200.
+/// facture validée 400 (Story 25-6-b : la garde vivait dans le rendu, que le
+/// service de gel court-circuite pour une facture figée) → e-mail contact 400
+/// → contenu vide 422 → PDF émis (`issued_invoice_pdf`, `Usage::Send` ; erreurs
+/// de rendu 20-3a inchangées) → envoi SMTP (échec 500, facture NON marquée,
+/// mais le gel survit) → marquage `emailed_at` + audit → 200.
 pub async fn send_invoice_email(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -800,7 +802,8 @@ pub async fn send_invoice_email(
         user_id: current_user.user_id,
         actor_api_key_id: current_user.api_key_id,
     };
-    let rendered = issued_invoice_pdf::get_or_freeze(&ctx, id).await?;
+    let rendered =
+        issued_invoice_pdf::get_or_freeze(&ctx, id, issued_invoice_pdf::Usage::Send).await?;
 
     let email = OutgoingEmail {
         to: to.clone(),

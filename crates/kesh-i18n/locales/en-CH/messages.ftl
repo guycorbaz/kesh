@@ -622,8 +622,9 @@ invoice-pdf-qr-acceptance-point = Acceptance point
 invoice-pdf-qr-separate-before-paying = Separate before paying in
 
 invoice-pdf-error-invoice-not-validated = The invoice must be validated before generating a PDF.
-error-invoice-cancelled = The invoice was cancelled by a credit note while its PDF was being prepared — no document was frozen.
+error-invoice-cancelled = The invoice is cancelled by a credit note: its PDF cannot be produced, and no document was frozen.
 error-invoice-pdf-gone = The issued PDF of this invoice cannot be found: the file { $sha256 }.pdf is missing from the documents directory (KESH_DOCUMENTS_DIR). Restore it from the backup of that directory; failing that, an administrator can refreeze the invoice.
+error-invoice-pdf-gone-cancelled = The issued PDF of this cancelled invoice cannot be found: the file { $sha256 }.pdf is missing from the documents directory (KESH_DOCUMENTS_DIR). Only restoring it from the backup of that directory repairs it.
 error-invoice-changed = The invoice was modified while its PDF was being prepared. Please try again.
 error-invoice-pdf-present = The issued PDF of this invoice is present: there is nothing to refreeze.
 error-invoice-pdf-not-frozen = This invoice has no frozen PDF yet: its next download will freeze it.

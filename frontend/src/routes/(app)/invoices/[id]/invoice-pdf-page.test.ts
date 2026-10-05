@@ -140,6 +140,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  vi.restoreAllMocks();
 });
 
 describe("fiche facture — bouton PDF d'une facture annulée", () => {
@@ -184,9 +185,22 @@ describe("fiche facture — refiger après un 410", () => {
       invoice({ pdfFrozenAt: "2026-03-02T10:00:00.000" }),
     );
     getBlobMock.mockRejectedValue(gone);
+    // La réponse du refigeage porte une AUTRE date que la relecture : si la
+    // fiche l'affichait, le test le verrait (mutation : pas de relecture).
     refreezeMock.mockResolvedValue(
-      invoice({ pdfFrozenAt: "2026-04-01T08:00:00.000" }),
+      invoice({ pdfFrozenAt: "2026-09-09T08:00:00.000" }),
     );
+    // La fiche se RELIT après le refigeage (revue P2, F-L2) : c'est cette
+    // lecture, et non la réponse du refigeage, qui doit s'afficher.
+    getInvoiceMock
+      .mockResolvedValueOnce(invoice({ pdfFrozenAt: "2026-03-02T10:00:00.000" }))
+      .mockResolvedValueOnce(
+        invoice({
+          pdfFrozenAt: "2026-04-01T08:00:00.000",
+          amountSettled: "40.00",
+          amountDue: "60.00",
+        }),
+      );
     const { findByTestId, getByTestId, queryByTestId } = render(Page);
 
     await fireEvent.click(await findByTestId("invoice-download-pdf"));
@@ -199,6 +213,7 @@ describe("fiche facture — refiger après un 410", () => {
     await fireEvent.click(getByTestId("invoice-pdf-refreeze-confirm"));
 
     await waitFor(() => expect(refreezeMock).toHaveBeenCalledWith(5));
+    await waitFor(() => expect(getInvoiceMock).toHaveBeenCalledTimes(2));
     await waitFor(() =>
       expect(getByTestId("invoice-pdf-frozen-at").textContent).toBe(
         "2026-04-01",
@@ -267,6 +282,7 @@ describe("fiche facture — refiger après un 410", () => {
     const { findByTestId, queryByTestId } = render(Page);
     await fireEvent.click(await findByTestId("invoice-download-pdf"));
     await waitFor(() => expect(notifyErrorMock).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 0));
     expect(queryByTestId("invoice-pdf-refreeze-button")).toBeNull();
   });
 
@@ -277,8 +293,10 @@ describe("fiche facture — refiger après un 410", () => {
     getBlobMock
       .mockRejectedValueOnce(gone)
       .mockResolvedValueOnce({ blob: async () => new Blob(["%PDF-1.7"]) });
-    const createObjectURL = vi.fn(() => "blob:x");
-    Object.assign(URL, { createObjectURL, revokeObjectURL: vi.fn() });
+    const createObjectURL = vi
+      .spyOn(URL, "createObjectURL")
+      .mockReturnValue("blob:x");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
     const { findByTestId, queryByTestId } = render(Page);
     await fireEvent.click(await findByTestId("invoice-download-pdf"));
     await findByTestId("invoice-pdf-refreeze-button");

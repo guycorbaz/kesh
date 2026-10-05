@@ -46,7 +46,8 @@ pub async fn get_invoice_pdf(
         user_id: current_user.user_id,
         actor_api_key_id: current_user.api_key_id,
     };
-    let rendered = issued_invoice_pdf::get_or_freeze(&ctx, id).await?;
+    let rendered =
+        issued_invoice_pdf::get_or_freeze(&ctx, id, issued_invoice_pdf::Usage::Download).await?;
 
     // Content-Disposition : filename sanitizé (par le service).
     let disposition = format!(

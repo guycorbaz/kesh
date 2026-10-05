@@ -24,7 +24,7 @@ use kesh_api::config::Config;
 use kesh_api::errors::AppError;
 use kesh_api::mail::MockMailer;
 use kesh_api::middleware::rate_limit::RateLimiter;
-use kesh_api::routes::issued_invoice_pdf::{self, IssuedPdf, PdfContext, PoseOutcome};
+use kesh_api::routes::issued_invoice_pdf::{self, IssuedPdf, PdfContext, PoseOutcome, Usage};
 use kesh_api::{AppState, build_router};
 use kesh_db::entities::Language;
 use kesh_db::entities::bank_account::NewBankAccount;
@@ -342,12 +342,31 @@ async fn le_pdf_est_dans_la_langue_du_client(pool: MySqlPool) {
     let app = spawn_app(pool.clone(), MockMailer::new(), unique_dir("documents")).await;
     let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
 
-    pdf_bytes(&app, &token, id).await;
+    let pdf = pdf_bytes(&app, &token, id).await;
     // L'installation est en français ; le client, en allemand.
     assert_eq!(
         invoice(&pool, &s, id).await.pdf_language.as_deref(),
         Some("DE")
     );
+    // Revue P2 (F-M3) : la colonne ne suffit pas — le DOCUMENT est en allemand.
+    assert!(
+        pdf_contains(&pdf, "Zahlteil"),
+        "section de paiement en allemand"
+    );
+    assert!(pdf_contains(&pdf, "Rechnung"), "titre en allemand");
+    // ⚠️ Pas « Facture » : la communication de la QR (« Facture {numéro} »)
+    // est écrite en français quelle que soit la langue — défaut antérieur.
+    assert!(
+        !pdf_contains(&pdf, "Section paiement"),
+        "pas de libellé français de la section de paiement"
+    );
+}
+
+/// Le texte des PDF de `kesh-qrbill` est écrit en Helvetica WinAnsi, en chaînes
+/// hexadécimales (`<48656C6C6F> Tj`) : on cherche le libellé sous cette forme.
+fn pdf_contains(pdf: &[u8], text: &str) -> bool {
+    let hex: String = text.bytes().map(|b| format!("{b:02X}")).collect();
+    String::from_utf8_lossy(pdf).contains(&hex)
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -482,12 +501,20 @@ async fn un_fichier_fige_supprime_repond_410(pool: MySqlPool) {
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "INVOICE_PDF_GONE");
     // Le message nomme le fichier manquant.
+    let message = body["error"]["message"].as_str().unwrap();
     assert!(
-        body["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains(inv.pdf_sha256.as_deref().unwrap()),
+        message.contains(&format!("{}.pdf", inv.pdf_sha256.as_deref().unwrap())),
         "{body}"
+    );
+    // Revue P2 (F-M1) : copié, le nom doit être exact — sans les marques
+    // d'isolation BiDi que Fluent pose autour d'une variable.
+    assert!(
+        !message.contains(['\u{2068}', '\u{2069}']),
+        "marques d'isolation dans le message : {message:?}"
+    );
+    assert!(
+        message.contains("refiger"),
+        "le remède du refigeage est proposé"
     );
     // Jamais régénéré en silence.
     assert!(!frozen_file(&app, &inv).exists());
@@ -619,7 +646,9 @@ async fn la_pose_perdante_sert_le_document_de_l_autre(pool: MySqlPool) {
     };
     let version = invoice(&pool, &s, id).await.version;
 
-    let premier = issued_invoice_pdf::get_or_freeze(&ctx, id).await.unwrap();
+    let premier = issued_invoice_pdf::get_or_freeze(&ctx, id, Usage::Download)
+        .await
+        .unwrap();
     let autre = IssuedPdf {
         bytes: b"%PDF-1.7 autre rendu".to_vec(),
         filename_base: "x".into(),
@@ -668,7 +697,9 @@ async fn un_rendu_perime_est_refuse_puis_refait(pool: MySqlPool) {
     assert!(matches!(outcome, PoseOutcome::Changed), "{outcome:?}");
     assert!(invoice(&pool, &s, id).await.pdf_storage_path.is_none());
 
-    let pdf = issued_invoice_pdf::get_or_freeze(&ctx, id).await.unwrap();
+    let pdf = issued_invoice_pdf::get_or_freeze(&ctx, id, Usage::Download)
+        .await
+        .unwrap();
     assert!(pdf.bytes.starts_with(b"%PDF-1."));
     assert_ne!(pdf.bytes, b"%PDF-1.7 ancien rendu".to_vec());
 }
@@ -717,7 +748,9 @@ async fn un_pdf_fige_d_une_autre_societe_n_est_jamais_servi(pool: MySqlPool) {
         user_id: s.admin_id,
         actor_api_key_id: None,
     };
-    issued_invoice_pdf::get_or_freeze(&ctx, id).await.unwrap();
+    issued_invoice_pdf::get_or_freeze(&ctx, id, Usage::Download)
+        .await
+        .unwrap();
 
     let mut autre = company.clone();
     autre.id = company.id + 999;
@@ -725,7 +758,7 @@ async fn un_pdf_fige_d_une_autre_societe_n_est_jamais_servi(pool: MySqlPool) {
         company: &autre,
         ..ctx
     };
-    let res = issued_invoice_pdf::get_or_freeze(&ctx_autre, id).await;
+    let res = issued_invoice_pdf::get_or_freeze(&ctx_autre, id, Usage::Download).await;
     assert!(
         matches!(
             res,
@@ -880,4 +913,117 @@ async fn une_facture_annulee_figee_ne_s_envoie_pas(pool: MySqlPool) {
     assert_eq!(error_code(resp).await, "INVOICE_NOT_VALIDATED");
     assert!(mailer.sent_emails().is_empty(), "rien n'est parti");
     assert!(invoice(&pool, &s, id).await.emailed_at.is_none());
+}
+
+/// Revue P2 (R2-2) : une facture ANNULÉE ne se refige pas — son 410 ne propose
+/// que la restauration.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn le_410_d_une_facture_annulee_ne_propose_pas_de_refiger(pool: MySqlPool) {
+    let s = seed(&pool, None).await;
+    let id = seed_invoice(&pool, &s, 1).await;
+    let app = spawn_app(pool.clone(), MockMailer::new(), unique_dir("documents")).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+    pdf_bytes(&app, &token, id).await;
+    credit_notes::create_credit_note(
+        &pool,
+        NewCreditNote {
+            company_id: s.company_id,
+            invoice_id: id,
+            date: NaiveDate::from_ymd_opt(2026, 4, 20).unwrap(),
+        },
+        s.admin_id,
+    )
+    .await
+    .unwrap();
+    let inv = invoice(&pool, &s, id).await;
+    std::fs::remove_file(frozen_file(&app, &inv)).unwrap();
+
+    let resp = get_pdf(&app, &token, id).await;
+    assert_eq!(resp.status(), 410);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let message = body["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains(inv.pdf_sha256.as_deref().unwrap()),
+        "{body}"
+    );
+    assert!(
+        !message.contains("refiger"),
+        "aucun refigeage promis : {message}"
+    );
+}
+
+/// Revue P2 (R2-4) : la garde d'envoi est tenue par le service, sur la facture
+/// qu'il relit — un appelant qui n'aurait pas contrôlé le statut est couvert.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn le_service_refuse_l_envoi_d_une_facture_annulee_figee(pool: MySqlPool) {
+    let s = seed(&pool, None).await;
+    let id = seed_invoice(&pool, &s, 1).await;
+    let (company, i18n) = ctx_parts(&pool, &s).await;
+    let documents = unique_dir("documents");
+    let ctx = PdfContext {
+        pool: &pool,
+        i18n: &i18n,
+        documents_dir: &documents,
+        company: &company,
+        user_id: s.admin_id,
+        actor_api_key_id: None,
+    };
+    issued_invoice_pdf::get_or_freeze(&ctx, id, Usage::Download)
+        .await
+        .unwrap();
+    credit_notes::create_credit_note(
+        &pool,
+        NewCreditNote {
+            company_id: s.company_id,
+            invoice_id: id,
+            date: NaiveDate::from_ymd_opt(2026, 4, 20).unwrap(),
+        },
+        s.admin_id,
+    )
+    .await
+    .unwrap();
+
+    // Le téléchargement sert la pièce émise ; l'envoi la refuse.
+    issued_invoice_pdf::get_or_freeze(&ctx, id, Usage::Download)
+        .await
+        .unwrap();
+    let res = issued_invoice_pdf::get_or_freeze(&ctx, id, Usage::Send).await;
+    assert!(matches!(res, Err(AppError::InvoiceNotValidated)), "{res:?}");
+}
+
+/// Revue P2 (F-M2, arbitrage 8) : un gel déclenché par une clé d'API en lecture
+/// est tracé AU NOM DE LA CLÉ, comme le disent les deux manuels.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn le_gel_par_une_cle_d_api_est_trace_au_nom_de_la_cle(pool: MySqlPool) {
+    let s = seed(&pool, None).await;
+    let id = seed_invoice(&pool, &s, 1).await;
+    let app = spawn_app(pool.clone(), MockMailer::new(), unique_dir("documents")).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/settings/api-keys"))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({ "name": "lecture", "scope": "read" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+    let key = resp.json::<serde_json::Value>().await.unwrap()["key"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let key_id: i64 = sqlx::query_scalar("SELECT id FROM api_keys ORDER BY id DESC LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    pdf_bytes(&app, &key, id).await;
+
+    assert!(invoice(&pool, &s, id).await.pdf_storage_path.is_some());
+    let (actor_type, actor_key, user_id, _) =
+        common::audit_actor(&pool, "invoice", id, "invoice.pdf_frozen").await;
+    assert_eq!(
+        (actor_type.as_str(), actor_key, user_id),
+        ("api_key", Some(key_id), s.admin_id)
+    );
 }

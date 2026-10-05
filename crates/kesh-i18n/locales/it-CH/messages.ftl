@@ -622,8 +622,9 @@ invoice-pdf-qr-acceptance-point = Punto di accettazione
 invoice-pdf-qr-separate-before-paying = Da staccare prima del versamento
 
 invoice-pdf-error-invoice-not-validated = La fattura deve essere convalidata prima di generare il PDF.
-error-invoice-cancelled = La fattura è stata annullata da una nota di credito durante la preparazione del suo PDF — nessun documento è stato fissato.
+error-invoice-cancelled = La fattura è annullata da una nota di credito: il suo PDF non può essere prodotto e nessun documento è stato fissato.
 error-invoice-pdf-gone = Il PDF emesso di questa fattura è introvabile: il file { $sha256 }.pdf manca nella directory dei documenti (KESH_DOCUMENTS_DIR). Ripristinatelo dal backup di questa directory; in alternativa, un amministratore può fissare di nuovo la fattura.
+error-invoice-pdf-gone-cancelled = Il PDF emesso di questa fattura annullata è introvabile: il file { $sha256 }.pdf manca nella directory dei documenti (KESH_DOCUMENTS_DIR). Solo il suo ripristino dal backup di questa directory lo ripara.
 error-invoice-changed = La fattura è stata modificata durante la preparazione del suo PDF. Riprovate.
 error-invoice-pdf-present = Il PDF emesso di questa fattura è presente: non c'è nulla da fissare di nuovo.
 error-invoice-pdf-not-frozen = Questa fattura non ha ancora un PDF fissato: il prossimo download lo fisserà.

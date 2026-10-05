@@ -68,6 +68,19 @@ pub enum PoseOutcome {
     Changed,
 }
 
+/// Ce que l'appelant fait du PDF — il décide de ce qu'une facture **annulée**
+/// figée peut encore donner.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Usage {
+    /// Téléchargement : le PDF figé d'une facture annulée reste servi
+    /// (arbitrage 5) — c'est la pièce émise.
+    Download,
+    /// Envoi au client : seule une facture **validée** s'envoie. La garde est
+    /// tenue ici, sur la facture que le service relit, et non par l'appelant
+    /// seul (revue P2, R2-4 : une annulation entre les deux lectures passait).
+    Send,
+}
+
 /// Le PDF émis de la facture `invoice_id` — le figeant s'il ne l'est pas.
 ///
 /// # Errors
@@ -79,8 +92,15 @@ pub enum PoseOutcome {
 /// - [`AppError::InvoiceChanged`] (409) si la facture change deux fois de
 ///   suite pendant le rendu ; [`AppError::InvoiceCancelled`] si un avoir
 ///   l'annule pendant le rendu.
-pub async fn get_or_freeze(ctx: &PdfContext<'_>, invoice_id: i64) -> Result<IssuedPdf, AppError> {
+pub async fn get_or_freeze(
+    ctx: &PdfContext<'_>,
+    invoice_id: i64,
+    usage: Usage,
+) -> Result<IssuedPdf, AppError> {
     let invoice = load(ctx, invoice_id).await?;
+    if usage == Usage::Send && invoice.status != "validated" {
+        return Err(AppError::InvoiceNotValidated);
+    }
     if is_frozen(&invoice) {
         return serve_frozen(ctx, &invoice).await;
     }
@@ -88,7 +108,7 @@ pub async fn get_or_freeze(ctx: &PdfContext<'_>, invoice_id: i64) -> Result<Issu
         return Err(AppError::InvoiceNotValidated);
     }
 
-    with_one_retry(|| render_and_pose(ctx, &invoice)).await
+    with_one_retry(|| render_and_pose(ctx, invoice_id)).await
 }
 
 /// Une seule nouvelle tentative : une pause des rappels, un règlement ou un
@@ -109,20 +129,30 @@ where
 }
 
 /// Un rendu dans la langue du client, puis sa pose.
-async fn render_and_pose(ctx: &PdfContext<'_>, invoice: &Invoice) -> Result<PoseOutcome, AppError> {
-    let language = client_language(ctx, invoice).await?;
+///
+/// La facture est **relue à chaque tentative** (revue P2, F-L1) : la langue
+/// se déduit de son client, qui a pu changer entre deux tentatives. Et si
+/// `render_document` a lu une autre version que celle dont la langue est
+/// tirée, la tentative est rejouée — un client changé dans l'intervalle
+/// donnerait sinon ses données dans la langue de l'ancien.
+async fn render_and_pose(ctx: &PdfContext<'_>, invoice_id: i64) -> Result<PoseOutcome, AppError> {
+    let invoice = load(ctx, invoice_id).await?;
+    let language = client_language(ctx, &invoice).await?;
     let rendered = invoice_pdf_service::render_document(
         ctx.pool,
         ctx.i18n,
         kesh_i18n::Locale::from(language.as_str()),
         ctx.company,
-        invoice.id,
+        invoice_id,
         PdfDocument::Invoice,
     )
     .await?;
+    if rendered.invoice_version != invoice.version {
+        return Ok(PoseOutcome::Changed);
+    }
     pose(
         ctx,
-        invoice.id,
+        invoice_id,
         rendered.invoice_version,
         IssuedPdf {
             bytes: rendered.bytes,
@@ -303,7 +333,11 @@ async fn serve_frozen(ctx: &PdfContext<'_>, invoice: &Invoice) -> Result<IssuedP
                 invoice.invoice_number.as_deref().unwrap_or("facture"),
             ),
         }),
-        FrozenFile::Missing => Err(AppError::InvoicePdfGone(sha256.to_string())),
+        FrozenFile::Missing => Err(AppError::InvoicePdfGone {
+            sha256: sha256.to_string(),
+            // Une facture annulée ne se refige pas (`refreeze`).
+            refreezable: invoice.status == "validated",
+        }),
         FrozenFile::Altered => {
             tracing::error!(
                 company_id = ctx.company.id,

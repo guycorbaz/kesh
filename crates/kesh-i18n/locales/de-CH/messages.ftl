@@ -622,8 +622,9 @@ invoice-pdf-qr-acceptance-point = Annahmestelle
 invoice-pdf-qr-separate-before-paying = Vor der Einzahlung abzutrennen
 
 invoice-pdf-error-invoice-not-validated = Die Rechnung muss validiert sein, bevor ein PDF erzeugt werden kann.
-error-invoice-cancelled = Die Rechnung wurde während der Erstellung ihres PDF durch eine Gutschrift storniert — es wurde kein Dokument festgeschrieben.
+error-invoice-cancelled = Die Rechnung ist durch eine Gutschrift storniert: Ihr PDF kann nicht erstellt werden, und es wurde kein Dokument festgeschrieben.
 error-invoice-pdf-gone = Das ausgestellte PDF dieser Rechnung ist nicht auffindbar: Die Datei { $sha256 }.pdf fehlt im Dokumentenverzeichnis (KESH_DOCUMENTS_DIR). Stellen Sie sie aus der Sicherung dieses Verzeichnisses wieder her; andernfalls kann ein Administrator die Rechnung neu festschreiben.
+error-invoice-pdf-gone-cancelled = Das ausgestellte PDF dieser stornierten Rechnung ist nicht auffindbar: Die Datei { $sha256 }.pdf fehlt im Dokumentenverzeichnis (KESH_DOCUMENTS_DIR). Nur ihre Wiederherstellung aus der Sicherung dieses Verzeichnisses behebt das.
 error-invoice-changed = Die Rechnung wurde während der Erstellung ihres PDF geändert. Versuchen Sie es erneut.
 error-invoice-pdf-present = Das ausgestellte PDF dieser Rechnung ist vorhanden: Es gibt nichts neu festzuschreiben.
 error-invoice-pdf-not-frozen = Diese Rechnung hat noch kein festgeschriebenes PDF: Der nächste Download schreibt es fest.

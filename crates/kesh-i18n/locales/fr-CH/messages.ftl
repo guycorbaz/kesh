@@ -655,8 +655,9 @@ invoice-pdf-qr-separate-before-paying = A détacher avant le versement
 
 # Messages d'erreur PDF (6 clés — codes applicatifs + causes détaillées)
 invoice-pdf-error-invoice-not-validated = La facture doit être validée avant de pouvoir être générée en PDF.
-error-invoice-cancelled = La facture a été annulée par un avoir pendant la préparation de son PDF — aucun document n'a été figé.
+error-invoice-cancelled = La facture est annulée par un avoir : son PDF ne peut pas être produit, et aucun document n'a été figé.
 error-invoice-pdf-gone = Le PDF émis de cette facture est introuvable : le fichier { $sha256 }.pdf manque dans le répertoire des documents (KESH_DOCUMENTS_DIR). Restaurez-le depuis la sauvegarde de ce répertoire ; à défaut, un administrateur peut refiger la facture.
+error-invoice-pdf-gone-cancelled = Le PDF émis de cette facture annulée est introuvable : le fichier { $sha256 }.pdf manque dans le répertoire des documents (KESH_DOCUMENTS_DIR). Seule sa restauration depuis la sauvegarde de ce répertoire le répare.
 error-invoice-changed = La facture a été modifiée pendant la préparation de son PDF. Réessayez.
 error-invoice-pdf-present = Le PDF émis de cette facture est présent : il n'y a rien à refiger.
 error-invoice-pdf-not-frozen = Cette facture n'a pas encore de PDF figé : son prochain téléchargement le figera.

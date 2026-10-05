@@ -42,10 +42,19 @@ pub(crate) fn t(key: &str, default: &str) -> String {
 }
 
 /// Résout un message i18n avec arguments Fluent, fallback sur `default`.
+///
+/// ⚠️ Fluent entoure chaque variable interpolée de marques d'isolation BiDi
+/// (U+2068 / U+2069), invisibles à l'écran mais **copiées** avec le texte. Un
+/// message d'erreur se lit, et parfois se copie : celui du PDF figé manquant
+/// (Story 25-6-b) nomme le fichier `{empreinte}.pdf` à chercher dans une
+/// sauvegarde — copié avec ses marques, il ne trouverait rien. Elles sont donc
+/// retirées (précédent : `routes/contacts.rs`, libellé des conditions).
 fn t_args(key: &str, default: &str, args: &FluentArgs<'_>) -> String {
     let guard = I18N.read().expect("I18N read lock");
     match guard.as_ref() {
-        Some((bundle, locale)) => bundle.format(locale, key, Some(args)),
+        Some((bundle, locale)) => bundle
+            .format(locale, key, Some(args))
+            .replace(['\u{2068}', '\u{2069}'], ""),
         None => default.to_string(),
     }
 }
@@ -338,8 +347,9 @@ pub enum AppError {
     InvoiceNotValidated,
 
     // --- Story 25-6-b (#387) — le PDF figé ---
-    /// La facture a été annulée par un avoir pendant le rendu de son PDF —
-    /// rien n'a été figé (400, sur le patron d'[`Self::InvoiceNotValidated`]).
+    /// La facture est annulée par un avoir — pendant le rendu de son PDF, ou
+    /// avant un refigeage : rien n'a été figé (400, sur le patron
+    /// d'[`Self::InvoiceNotValidated`]).
     #[error("Facture annulée")]
     InvoiceCancelled,
 
@@ -347,8 +357,13 @@ pub enum AppError {
     /// `KESH_DOCUMENTS_DIR` (410). Jamais régénéré en silence : ce serait
     /// fabriquer une pièce qui n'a pas été émise. Porte l'empreinte, que le
     /// message nomme.
-    #[error("PDF figé introuvable : {0}.pdf")]
-    InvoicePdfGone(String),
+    #[error("PDF figé introuvable : {sha256}.pdf")]
+    InvoicePdfGone {
+        sha256: String,
+        /// Le refigeage est-il possible ? Faux pour une facture annulée : le
+        /// message ne propose alors que la restauration (revue P2).
+        refreezable: bool,
+    },
 
     /// La facture a changé deux fois de suite pendant le rendu de son PDF
     /// (409) : rien n'a été figé, l'utilisateur réessaie.
@@ -1471,16 +1486,33 @@ impl IntoResponse for AppError {
                 "INVOICE_CANCELLED",
                 &t(
                     "error-invoice-cancelled",
-                    "La facture a été annulée par un avoir pendant la préparation de son PDF — aucun document n'a été figé.",
+                    "La facture est annulée par un avoir : son PDF ne peut pas être produit, et aucun document n'a été figé.",
                 ),
             ),
-            AppError::InvoicePdfGone(sha256) => {
-                let fallback = format!(
-                    "Le PDF émis de cette facture est introuvable : le fichier {sha256}.pdf manque dans le répertoire des documents (KESH_DOCUMENTS_DIR). Restaurez-le depuis la sauvegarde de ce répertoire ; à défaut, un administrateur peut refiger la facture."
-                );
+            AppError::InvoicePdfGone {
+                sha256,
+                refreezable,
+            } => {
+                // Une facture annulée ne se refige pas : son message ne propose
+                // que la restauration (revue P2, R2-2).
+                let (key, fallback) = if refreezable {
+                    (
+                        "error-invoice-pdf-gone",
+                        format!(
+                            "Le PDF émis de cette facture est introuvable : le fichier {sha256}.pdf manque dans le répertoire des documents (KESH_DOCUMENTS_DIR). Restaurez-le depuis la sauvegarde de ce répertoire ; à défaut, un administrateur peut refiger la facture."
+                        ),
+                    )
+                } else {
+                    (
+                        "error-invoice-pdf-gone-cancelled",
+                        format!(
+                            "Le PDF émis de cette facture annulée est introuvable : le fichier {sha256}.pdf manque dans le répertoire des documents (KESH_DOCUMENTS_DIR). Seule sa restauration depuis la sauvegarde de ce répertoire le répare."
+                        ),
+                    )
+                };
                 let mut args = FluentArgs::new();
                 args.set("sha256", sha256);
-                let msg = t_args("error-invoice-pdf-gone", &fallback, &args);
+                let msg = t_args(key, &fallback, &args);
                 build_response(StatusCode::GONE, "INVOICE_PDF_GONE", &msg)
             }
             AppError::InvoiceChanged => build_response(

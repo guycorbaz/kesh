@@ -364,8 +364,19 @@ const ATTENDU = {
 	// corps et l'avertissement du dialogue, son « Annuler », le succès, et le
 	// repli générique du refus — neuf sites. Le bouton PDF, extrait dans un snippet pour servir aussi la facture
 	// annulée, n'ajoute aucun site : il n'est écrit qu'une fois.
-	sitesTotal: 1767,
-	sitesNonResolus: 34,
+	//
+	// Story 25-6-b, revue P2 : **1767 → 1765**, recompté par ce test et par
+	// `grep -o "i18nMsg("` aux deux bornes — fiche facture 78 → 76, fiche avoir
+	// 16 → 14, et le module partagé `shared/utils/pdf-error.ts` +2. Les deux
+	// fiches résolvaient chacune le refus de PDF (`i18nMsg(clé, err.message)` et
+	// le générique) ; elles délèguent désormais à `pdfErrorMessage`.
+	sitesTotal: 1765,
+	// Story 25-6-b, revue P2 : **34 → 33** — les deux `i18nMsg(key, err.message)`
+	// des fiches facture et avoir deviennent UN site, dans `pdf-error.ts`. Ses
+	// clés sont celles de `PDF_ERROR_KEYS`, toutes présentes dans les 4 locales
+	// (vérifié à la main : ce site reste non résolu par la garde, comme ceux
+	// qu'il remplace).
+	sitesNonResolus: 33,
 	relais: 7,
 	sitesGabarit: 10,
 	litterauxMin: 1050,
