@@ -738,7 +738,7 @@ font échouer le démarrage si absentes.
     \toprule
     \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
     \midrule
-    KESH\_DOCUMENTS\_DIR & Archivage des justificatifs (\texttt{\{sha256\}.\{ext\}}, hors DB). & \texttt{/data/documents} \\
+    KESH\_DOCUMENTS\_DIR & Archivage des justificatifs importés \textbf{et des PDF de factures émises} (\texttt{\{sha256\}.\{ext\}}, hors DB) --- \textbf{à sauvegarder}. & \texttt{/data/documents} \\
     KESH\_INBOX\_DIR & Dossier inbox scruté à l'import. & \texttt{/data/inbox} \\
     KESH\_INBOX\_MAX\_FILE\_BYTES & Taille max d'un fichier inbox (octets). Borne [1, 524288000]. & \texttt{26214400} \\
     KESH\_INBOX\_MAX\_FILES\_PER\_RUN & Fichiers par déclenchement d'import. Borne [1, 10000]. & \texttt{200} \\
@@ -810,7 +810,11 @@ persistants (cf. \texttt{docker-compose}) :
     sous-dossier \texttt{failed/}.
     \item \texttt{KESH\_DOCUMENTS\_DIR} (défaut \texttt{/data/documents}) — le
     dossier d'archivage des justificatifs (copies des fichiers importés, nommées
-    \texttt{\{sha256\}.\{ext\}}). \textbf{Ne jamais} pointer ces deux dossiers
+    \texttt{\{sha256\}.\{ext\}}) \textbf{et des PDF de factures émises} : depuis la
+    v0.12.1, le PDF d'une facture est figé au premier téléchargement ou envoi et
+    conservé ici (\texttt{\{sha256\}.pdf}). Ce sont des \textbf{pièces à conserver},
+    que la base ne contient pas : ce dossier \textbf{doit être sauvegardé avec la
+    base} (cf. \S\ref{sec:pdf-factures-sauvegarde}). \textbf{Ne jamais} pointer ces deux dossiers
     vers \texttt{/tmp} : leur contenu serait perdu au redémarrage du conteneur.
 \end{itemize}
 
@@ -1350,7 +1354,7 @@ Kesh utilise un système de contrôle d'accès basé sur les rôles (RBAC) :
     \midrule
     Admin & Toutes les opérations d'une société : gestion des utilisateurs, paramètres de facturation, taux de TVA, plan comptable, exercices, sauvegarde/restauration complète, en plus de toutes les opérations Comptable. \\
     Comptable & Saisie et validation d'écritures, factures (clients et fournisseurs), avoirs, règlements et paiements pain.001, import bancaire, réconciliation, import de factures, rapports et exports. \\
-    Consultation & Lecture seule : consultation des écritures, factures, contacts, produits, rapports — aucune mutation. \\
+    Consultation & Lecture seule : consultation des écritures, factures, contacts, produits, rapports — aucune mutation, à une exception près : le \textbf{premier téléchargement} du PDF d'une facture le \textbf{fige} et l'inscrit au journal d'audit, quel que soit le rôle. \\
     \bottomrule
 \end{tabularx}
 
@@ -1377,10 +1381,25 @@ La sauvegarde régulière de l'instance Kesh est \textbf{critique} pour deux rai
 
 \begin{itemize}
     \item \textbf{Quotidienne} : \keshcommand{mariadb-dump} complet, conservé 30 jours, stocké en local + offsite (cloud).
+    \item \textbf{Quotidienne, avec la base} : copie du répertoire des documents (\texttt{KESH\_DOCUMENTS\_DIR}, monté depuis \texttt{KESH\_DOCUMENTS\_HOST\_DIR}) --- il porte les \textbf{PDF des factures émises}, que ni le dump ni l'export ne contiennent (cf. \S\ref{sec:pdf-factures-sauvegarde}).
     \item \textbf{Hebdomadaire} : snapshot du volume Docker \keshpath{/var/lib/docker/volumes/kesh\_db\_data} (gel cohérent via \keshcommand{docker compose stop} puis snapshot, ou via LVM/ZFS).
     \item \textbf{Mensuelle} : export ZIP de souveraineté (Story 9-2b) pour chaque company depuis l'interface utilisateur.
     \item \textbf{Annuelle} : archivage long terme conforme OLICo Art. 9 (support non-modifiable type CD-R, ou hash signé sur support modifiable WORM).
 \end{itemize}
+
+\subsection{Les PDF des factures émises}\label{sec:pdf-factures-sauvegarde}
+
+Depuis la v0.12.1, le PDF d'une facture est \textbf{figé} au premier téléchargement ou envoi : Kesh l'écrit dans \texttt{KESH\_DOCUMENTS\_DIR} sous le nom \texttt{\{sha256\}.pdf} et n'en garde en base que la référence et l'empreinte. Ce fichier est la \textbf{copie de la pièce émise} --- celle qu'un contrôle demande ---, et il n'est \textbf{ni dans le dump MariaDB, ni dans le fichier \keshcommand{.keshbackup}}\footnote{L'inclusion des fichiers dans \keshcommand{.keshbackup} est suivie par l'issue \#503.}. D'où trois règles :
+
+\begin{itemize}
+    \item \textbf{Sauvegarder} le répertoire des documents \textbf{en même temps} que la base, et le \textbf{restaurer avec elle}.
+    \item Une base restaurée sans ses documents répond, pour chaque facture figée, un refus \texttt{410 INVOICE\_PDF\_GONE} dont le message nomme le fichier manquant. \textbf{Le remède est de restaurer ce fichier} depuis la sauvegarde du répertoire : c'est le seul moyen de retrouver l'original. Si les refus arrivent en série après une mise à jour, vérifier d'abord le \textbf{montage} du volume des documents.
+    \item À défaut de sauvegarde, un administrateur peut \textbf{refiger} la facture depuis sa fiche (bouton \emph{Refiger le document}, ou \texttt{POST /api/v1/invoices/\{id\}/pdf/refreeze}) : Kesh produit un \textbf{nouveau} document, avec les données du moment --- \textbf{ce n'est pas l'original} --- et inscrit au journal d'audit l'empreinte de l'ancien et du nouveau (\texttt{invoice.pdf\_refrozen}). Le geste est irréversible et refusé à une clé d'API. Une facture \textbf{annulée} ne peut pas être refigée : seule la restauration du fichier la répare.
+\end{itemize}
+
+\begin{keshwarning}
+\textbf{Un fichier altéré} (empreinte différente de celle enregistrée) n'est \textbf{jamais servi} : le téléchargement répond une erreur serveur et la journalise. Le refigeage le refuse aussi (\texttt{409 INVOICE\_PDF\_INTEGRITY}) : un fichier altéré se \textbf{diagnostique}, il ne se recouvre pas. Restaurer \texttt{\{empreinte\}.pdf} depuis la sauvegarde ; à défaut, \textbf{écarter} le fichier altéré (le déplacer hors du répertoire), ce qui ramène au cas du fichier manquant, puis refiger.
+\end{keshwarning}
 
 \subsection{Script de sauvegarde mariadb-dump}
 
@@ -1455,10 +1474,14 @@ docker compose stop kesh-api
 zcat kesh_20260520_020000.sql.gz | docker compose exec -T db \
     mariadb -u root -p"${MARIADB_ROOT_PASSWORD}"
 
-# 4. Redemarrer Kesh
+# 4. Restaurer le repertoire des documents (PDF des factures emises,
+#    justificatifs) depuis SA sauvegarde, prise en meme temps que le dump
+rsync -a /var/backups/kesh/documents_20260520/ ./documents/
+
+# 5. Redemarrer Kesh
 docker compose start kesh-api
 
-# 5. Verifier le fonctionnement
+# 6. Verifier le fonctionnement
 curl http://localhost/health
 \end{lstlisting}
 
@@ -1492,7 +1515,7 @@ Hyper Backup est l'outil principal Synology pour les backups versionnés vers st
     \item Lancer Hyper Backup → \textbf{+ Tâche de sauvegarde de données} → choisir la destination (ex. \emph{Synology C2 Backup} pour offsite managé, \emph{S3 Storage} pour AWS/Wasabi/Backblaze, \emph{Dossier local} pour HDD USB attaché au NAS).
     \item Cocher les dossiers à backup :
         \begin{itemize}
-            \item \textbf{Obligatoire} : \keshpath{/volume1/docker/kesh/} (compose + .env + tous les volumes via bind-mount si vous utilisez le pattern Synology recommandé).
+            \item \textbf{Obligatoire} : \keshpath{/volume1/docker/kesh/} (compose + .env + tous les volumes via bind-mount si vous utilisez le pattern Synology recommandé) --- \textbf{y compris le répertoire des documents} (\texttt{KESH\_DOCUMENTS\_HOST\_DIR}), qui porte les PDF des factures émises (\S\ref{sec:pdf-factures-sauvegarde}). À restaurer avec la base.
             \item \textbf{Optionnel} : volumes Docker nommés si vous n'utilisez pas le bind-mount (rare sur DSM) — accessibles via \keshpath{/volume1/@docker/volumes/kesh\_*}.
         \end{itemize}
     \item Cocher l'application \textbf{Container Manager} dans \emph{Applications} pour backup automatique de la configuration des projets.
@@ -1580,7 +1603,7 @@ Combiner les outils pour atteindre la règle \textbf{3-2-1} (3 copies des donné
 
 \subsection{Export/import d'installation via l'interface Kesh}\label{sec:backup-ui-keshbackup}
 
-Depuis la version v0.2, Kesh permet d'\textbf{exporter et de réimporter l'intégralité d'une installation} directement depuis l'interface web d'administration, sans accès SSH ni ligne de commande. L'export produit un fichier unique \keshcommand{.keshbackup} (conteneur compressé) contenant \textbf{toutes les données d'installation} : l'ensemble des sociétés, les utilisateurs, et les données système. Cette fonction est \textbf{réservée au rôle Administrateur} et \textbf{inaccessible via une clé API (PAT)} — les opérations d'infrastructure ne transitent jamais par une intégration externe.
+Depuis la version v0.2, Kesh permet d'\textbf{exporter et de réimporter l'intégralité d'une installation} directement depuis l'interface web d'administration, sans accès SSH ni ligne de commande. L'export produit un fichier unique \keshcommand{.keshbackup} (conteneur compressé) contenant \textbf{toutes les données d'installation} : l'ensemble des sociétés, les utilisateurs, et les données système --- \textbf{à l'exception des fichiers} du répertoire des documents (justificatifs importés, PDF des factures émises), qui se sauvegardent à part (\S\ref{sec:pdf-factures-sauvegarde}, issue \#503). Cette fonction est \textbf{réservée au rôle Administrateur} et \textbf{inaccessible via une clé API (PAT)} — les opérations d'infrastructure ne transitent jamais par une intégration externe.
 
 \begin{keshnote}
 À ne pas confondre avec l'\textbf{export global per-société} (menu \textbf{Administration → Export global}, fichier CSV/ZIP) qui n'extrait les données comptables que d'\emph{une seule} entreprise pour transmission à un tiers. L'export/import \keshcommand{.keshbackup} décrit ici porte sur l'\textbf{installation complète} (toutes entreprises + comptes), pour la migration ou la restauration.
@@ -1649,7 +1672,7 @@ Kesh propose trois approches complémentaires de sauvegarde. Choisissez selon le
     \midrule
     Hyper Backup DSM & Volume Docker / MariaDB complet (niveau système, cf. \ref{sec:backup-dsm}) & Sauvegarde \textbf{planifiée automatique} quotidienne en production (NAS Synology), avec rotation et offsite. \\
     \keshcommand{mariadb-dump} CLI & Dump SQL d'une base (niveau base de données) & Sauvegarde \textbf{ponctuelle technique} ou scriptée, pour un opérateur disposant d'un accès SSH. \\
-    Export/import \keshcommand{.keshbackup} (UI) & Installation Kesh complète, portable (niveau applicatif) & \textbf{Migration entre instances} ou restauration \textbf{self-service sans SSH}, déclenchée par un administrateur depuis l'interface. \\
+    Export/import \keshcommand{.keshbackup} (UI) & Installation Kesh complète, portable (niveau applicatif) --- \textbf{sans les fichiers} du répertoire des documents (\S\ref{sec:pdf-factures-sauvegarde}) & \textbf{Migration entre instances} ou restauration \textbf{self-service sans SSH}, déclenchée par un administrateur depuis l'interface. \\
     \bottomrule
 \end{tabularx}
 
@@ -1771,7 +1794,7 @@ En complément de l'authentification web par cookie, Kesh permet à des \textbf{
     \item \textbf{Administration} : plus largement, \textbf{aucune route réservée au rôle Administrateur n'est atteignable avec une clé API}, quel que soit le rôle de son créateur --- gestion des utilisateurs et des mots de passe, paramètres de facturation et de relance, taux de TVA, niveaux de rappel, modèles d'e-mail, coordonnées de l'entreprise, suppression de facture, export et import d'installation, réouverture d'exercice. La réponse est \texttt{403 API\_KEY\_ADMIN\_FORBIDDEN}. Ces opérations se font dans l'interface web. \textbf{Attention à la version} : cette fermeture n'est pas dans la v0.9.0 --- voir l'encadré \emph{« Dans quelle version ? »} plus bas.
     \item \textbf{Journal d'audit} : la \textbf{consultation du journal} --- la liste, le vocabulaire et l'export CSV (\texttt{/api/v1/audit-log*}) --- est elle aussi \textbf{fermée aux clés API}, y compris en lecture seule et y compris pour une clé créée par un Administrateur. ⚠️ \emph{La réponse porte ici un \textbf{autre} code~: \texttt{403 API\_KEY\_MANAGEMENT\_FORBIDDEN}, et non \texttt{API\_KEY\_ADMIN\_FORBIDDEN} --- le journal n'est pas une route d'administration. Le libellé parle de «~gestion de clés~» pour des raisons historiques~; sur ces trois routes, il signifie simplement qu'une clé n'y a pas accès. Ne cherchez pas le défaut dans la configuration de la clé.} Le journal d'audit se lit dans l'interface web, par un Comptable ou un Administrateur.
     \item ⚠️ \textbf{Ce qu'une clé \texttt{read-write} peut faire depuis la v0.12.1, et qu'elle ne pouvait pas avant} : \textbf{dévalider une facture}, donc \textbf{supprimer l'écriture comptable} que sa validation avait créée. La route n'est pas réservée à l'administrateur --- elle est ouverte au Comptable, et donc aux clés --- par un choix délibéré, aligné sur les API de facturation comparables. Les huit refus de la dévalidation s'y appliquent intégralement (exercice clos, verrou de période, facture réglée, créditée, relancée, envoyée, rapprochée, contre-passée), et chaque dévalidation est journalisée sous son propre nom. Si cette capacité vous paraît trop large pour une intégration, donnez-lui une clé en \emph{lecture seule}.
-    \item \textbf{Portée} : chaque clé est en \emph{lecture seule} (\texttt{read} --- méthodes GET/HEAD/OPTIONS) ou \emph{lecture-écriture} (\texttt{read-write} --- toutes les méthodes). La permission effective est l'intersection de la portée de la clé et du rôle de son créateur --- \textbf{et l'administration en est exclue dans tous les cas} (point \emph{Administration} ci-dessus), \textbf{de même que le journal d'audit} (point précédent).
+    \item \textbf{Portée} : chaque clé est en \emph{lecture seule} (\texttt{read} --- méthodes GET/HEAD/OPTIONS ; une lecture n'écrit rien, à une exception près : le \textbf{premier téléchargement} du PDF d'une facture --- y compris une simple requête \texttt{HEAD} --- le \textbf{fige} et l'inscrit au journal d'audit au nom de la clé) ou \emph{lecture-écriture} (\texttt{read-write} --- toutes les méthodes). La permission effective est l'intersection de la portée de la clé et du rôle de son créateur --- \textbf{et l'administration en est exclue dans tous les cas} (point \emph{Administration} ci-dessus), \textbf{de même que le journal d'audit} (point précédent).
     \item \textbf{Périmètre} : une clé est liée à \textbf{une seule entreprise} (\emph{company}) et agit au nom de son créateur (rôle relu en base à chaque requête --- désactiver le créateur invalide ses clés immédiatement).
     \item \textbf{Stockage} : seul un condensé SHA-256 de la clé est conservé en base (table \texttt{api\_keys}) ; le secret en clair n'est affiché qu'une seule fois, à la création.
     \item \textbf{Expiration / révocation} : une clé peut avoir une date d'expiration optionnelle ; la révocation prend effet immédiatement.

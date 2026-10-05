@@ -3,7 +3,7 @@
 //! 4 fonctions publiques pures (input DTO → `Result<Vec<u8>, ReportError>`) :
 //! - [`render_balance_sheet_pdf`] — Bilan (Actifs / Passifs / résultat de l'exercice).
 //! - [`render_income_statement_pdf`] — Compte de résultat (Produits / Charges / résultat net).
-//! - [`render_trial_balance_pdf`] — Balance des comptes (5 colonnes : N°, Compte, Débit, Crédit, Solde).
+//! - [`render_trial_balance_pdf`] — Balance des comptes (6 colonnes : N°, Compte, Ouverture, Débit, Crédit, Clôture).
 //! - [`render_journal_report_pdf`] — Journaux (5 sections fixes, filtre optionnel).
 //!
 //! Architecture (Pass 1 AA-M1 + Decision §swiss-amount-format) :
@@ -114,6 +114,14 @@ pub struct SectionLabels {
     pub col_debit: String,
     pub col_credit: String,
     pub col_balance: String,
+    /// En-tête court de la colonne d'ouverture de la balance (Story 25-5-b) —
+    /// « Solde d'ouverture » ne tient pas dans une colonne de 30 mm.
+    pub col_opening: String,
+    /// En-tête court de la colonne de clôture de la balance (Story 25-5-b).
+    pub col_closing: String,
+    /// Avertissement de la balance quand les ouvertures ne s'équilibrent pas avec
+    /// le résultat reporté (Story 25-5-b) — l'écran a son ⚠️, le PDF ce texte.
+    pub opening_unbalanced: String,
     pub col_entry_date: String,
     pub col_description: String,
     // Header
@@ -168,6 +176,12 @@ impl SectionLabels {
             col_debit: "Débit".into(),
             col_credit: "Crédit".into(),
             col_balance: "Solde".into(),
+            col_opening: "Ouverture".into(),
+            col_closing: "Clôture".into(),
+            // ≈ 145 mm en Helvetica-Bold 10 pt : tient sur une ligne (`write_line` ne
+            // renvoie pas à la ligne).
+            opening_unbalanced:
+                "Contrôle d'ouverture en écart : une écriture antérieure est déséquilibrée.".into(),
             col_entry_date: "Date".into(),
             col_description: "Libellé".into(),
             header_period: "Période".into(),
@@ -696,7 +710,35 @@ pub fn render_income_statement_pdf(
     builder.finalize()
 }
 
-/// Génère le PDF de la balance des comptes — 5 colonnes (AC #5).
+/// Positions des six colonnes de la balance (Story 25-5-b), en mm depuis la marge
+/// gauche. A4 portrait est déjà saturé à cinq colonnes (20 + 70 + 3 × 35 = 195 mm) :
+/// quatre colonnes de montant de 30 mm (« -12'345'678.90 » ≈ 23 mm en Helvetica
+/// 10 pt) laissent 55 mm à l'intitulé.
+const TB_COL_X: [f32; 6] = [0.0, 20.0, 75.0, 105.0, 135.0, 165.0];
+
+/// Longueur maximale de l'intitulé d'un compte dans la balance PDF : 22
+/// caractères tiennent dans 55 mm, même en capitales.
+const TB_NAME_MAX_CHARS: usize = 22;
+
+/// Dessine une ligne de la balance : six cellules, `None` = cellule vide.
+fn draw_tb_row(builder: &mut PdfBuilder, cells: [Option<&str>; 6], bold: bool) {
+    let y = builder.cursor_y;
+    let font = if bold {
+        builder.font_bold.clone()
+    } else {
+        builder.font.clone()
+    };
+    let layer = builder.current_layer();
+    for (cell, x) in cells.iter().zip(TB_COL_X) {
+        if let Some(text) = cell {
+            layer.use_text(*text, FONT_SIZE_PT, Mm(MARGIN_LEFT_MM + x), Mm(y), &font);
+        }
+    }
+}
+
+/// Génère le PDF de la balance des comptes — 6 colonnes : N°, Intitulé,
+/// Ouverture, Débit, Crédit, Clôture (Story 25-5-b, #385), puis la ligne calculée
+/// du résultat reporté et les totaux des mouvements.
 pub fn render_trial_balance_pdf(
     tb: &TrialBalance,
     ctx: &PdfContext,
@@ -715,132 +757,94 @@ pub fn render_trial_balance_pdf(
         return builder.finalize();
     }
 
-    // En-têtes de colonnes (5 colonnes : N°, Compte, Débit, Crédit, Solde)
-    let col_num_x = MARGIN_LEFT_MM;
-    let col_name_x = MARGIN_LEFT_MM + 20.0;
-    let col_debit_x = MARGIN_LEFT_MM + 90.0;
-    let col_credit_x = MARGIN_LEFT_MM + 125.0;
-    let col_balance_x = MARGIN_LEFT_MM + 160.0;
-
-    {
-        let y = builder.cursor_y;
-        let layer = builder.current_layer();
-        layer.use_text(
-            &ctx.section_labels.col_account_number,
-            FONT_SIZE_PT,
-            Mm(col_num_x),
-            Mm(y),
-            &builder.font_bold,
-        );
-        layer.use_text(
-            &ctx.section_labels.col_account_name,
-            FONT_SIZE_PT,
-            Mm(col_name_x),
-            Mm(y),
-            &builder.font_bold,
-        );
-        layer.use_text(
-            &ctx.section_labels.col_debit,
-            FONT_SIZE_PT,
-            Mm(col_debit_x),
-            Mm(y),
-            &builder.font_bold,
-        );
-        layer.use_text(
-            &ctx.section_labels.col_credit,
-            FONT_SIZE_PT,
-            Mm(col_credit_x),
-            Mm(y),
-            &builder.font_bold,
-        );
-        layer.use_text(
-            &ctx.section_labels.col_balance,
-            FONT_SIZE_PT,
-            Mm(col_balance_x),
-            Mm(y),
-            &builder.font_bold,
-        );
-    }
+    let l = &ctx.section_labels;
+    draw_tb_row(
+        &mut builder,
+        [
+            Some(&l.col_account_number),
+            Some(&l.col_account_name),
+            Some(&l.col_opening),
+            Some(&l.col_debit),
+            Some(&l.col_credit),
+            Some(&l.col_closing),
+        ],
+        true,
+    );
     builder.cursor_y -= LINE_HEIGHT_MM * 1.5;
 
-    // Lignes
     for row in &tb.rows {
         builder.ensure_space_for_row();
-        let y = builder.cursor_y;
-        let layer = builder.current_layer();
-        layer.use_text(
-            &row.account_number,
-            FONT_SIZE_PT,
-            Mm(col_num_x),
-            Mm(y),
-            &builder.font,
-        );
-        // Pass 1 code-review H4 (BH1-H4) : la colonne `name` (largeur 70mm) peut
-        // déborder sur la colonne `débit` pour des libellés CH GAAP > 30 chars
-        // (e.g. « Provisions pour dépréciation d'actifs »). Truncate à 30 chars
-        // avec ellipsis Unicode pour préserver la lisibilité des colonnes
-        // débit/crédit/solde alignées. Refactor multi-ligne → v0.2 si feedback.
-        let display_name = truncate_with_ellipsis(&row.account_name, 30);
-        layer.use_text(
-            &display_name,
-            FONT_SIZE_PT,
-            Mm(col_name_x),
-            Mm(y),
-            &builder.font,
-        );
-        layer.use_text(
+        // Pass 1 code-review H4 (BH1-H4) : un intitulé trop long déborderait sur la
+        // colonne suivante — tronqué avec ellipsis Unicode.
+        let name = truncate_with_ellipsis(&row.account_name, TB_NAME_MAX_CHARS);
+        let (opening, debit, credit, closing) = (
+            format_swiss_amount(row.opening_balance),
             format_swiss_amount(row.total_debit),
-            FONT_SIZE_PT,
-            Mm(col_debit_x),
-            Mm(y),
-            &builder.font,
-        );
-        layer.use_text(
             format_swiss_amount(row.total_credit),
-            FONT_SIZE_PT,
-            Mm(col_credit_x),
-            Mm(y),
-            &builder.font,
+            format_swiss_amount(row.closing_balance),
         );
-        layer.use_text(
-            format_swiss_amount(row.balance),
-            FONT_SIZE_PT,
-            Mm(col_balance_x),
-            Mm(y),
-            &builder.font,
+        draw_tb_row(
+            &mut builder,
+            [
+                Some(&row.account_number),
+                Some(&name),
+                Some(&opening),
+                Some(&debit),
+                Some(&credit),
+                Some(&closing),
+            ],
+            false,
         );
         builder.cursor_y -= LINE_HEIGHT_MM;
     }
 
-    // Totaux
+    // Ligne calculée du résultat reporté : ouverture = clôture, sans mouvement.
+    builder.ensure_space_for_row();
+    let retained = format_swiss_amount(tb.retained_earnings);
+    // Libellé fixe, non tronqué : « Résultat reporté (calculé) » ≈ 46 mm en casse
+    // mixte, dans les 55 mm de la colonne.
+    draw_tb_row(
+        &mut builder,
+        [
+            None,
+            Some(&l.retained_result_label),
+            Some(&retained),
+            None,
+            None,
+            Some(&retained),
+        ],
+        false,
+    );
+    builder.cursor_y -= LINE_HEIGHT_MM;
+
+    // Totaux des mouvements.
     builder.cursor_y -= LINE_HEIGHT_MM * 0.5;
     builder.ensure_space_for_row();
-    {
-        let y = builder.cursor_y;
-        let layer = builder.current_layer();
-        layer.use_text(
-            &ctx.section_labels.grand_total,
-            FONT_SIZE_PT,
-            Mm(col_num_x),
-            Mm(y),
-            &builder.font_bold,
-        );
-        layer.use_text(
-            format_swiss_amount(tb.total_debit),
-            FONT_SIZE_PT,
-            Mm(col_debit_x),
-            Mm(y),
-            &builder.font_bold,
-        );
-        layer.use_text(
-            format_swiss_amount(tb.total_credit),
-            FONT_SIZE_PT,
-            Mm(col_credit_x),
-            Mm(y),
-            &builder.font_bold,
-        );
-    }
+    let (total_debit, total_credit) = (
+        format_swiss_amount(tb.total_debit),
+        format_swiss_amount(tb.total_credit),
+    );
+    draw_tb_row(
+        &mut builder,
+        [
+            Some(&l.grand_total),
+            None,
+            None,
+            Some(&total_debit),
+            Some(&total_credit),
+            None,
+        ],
+        true,
+    );
     builder.cursor_y -= LINE_HEIGHT_MM;
+
+    // Le contrôle d'ouverture : silencieux s'il tient, écrit s'il tombe — un PDF
+    // remis à un réviseur ne doit pas perdre le signal que l'écran affiche.
+    if !tb.opening_balanced {
+        builder.cursor_y -= LINE_HEIGHT_MM * 0.5;
+        builder.ensure_space_for_row();
+        builder.write_line(&l.opening_unbalanced, FONT_SIZE_PT, true, 0.0);
+    }
 
     builder.finalize()
 }
@@ -1819,14 +1823,18 @@ mod tests {
                     account_name: "Caisse".into(),
                     account_type: AccountType::Asset,
                     active: true,
+                    opening_balance: dec!(500),
                     total_debit: dec!(2000),
                     total_credit: dec!(1000),
                     balance: dec!(1000),
+                    closing_balance: dec!(1500),
                 }]
             },
             total_debit: if empty { Decimal::ZERO } else { dec!(2000) },
             total_credit: if empty { Decimal::ZERO } else { dec!(1000) },
             balanced: true,
+            retained_earnings: if empty { Decimal::ZERO } else { dec!(500) },
+            opening_balanced: true,
         }
     }
 
@@ -1984,6 +1992,37 @@ mod tests {
         let ctx = PdfContext::fr_ch_default("CI Test Company");
         let bytes = render_trial_balance_pdf(&fixture_tb(false), &ctx).unwrap();
         assert!(bytes.starts_with(b"%PDF-1."));
+    }
+
+    #[test]
+    fn trial_balance_pdf_with_retained_line_is_not_the_empty_render() {
+        // Story 25-5-b — la ligne calculée et les six colonnes : le rendu peuplé
+        // diffère du rendu vide (garde `rows.is_empty()` inchangée).
+        let ctx = PdfContext::fr_ch_default("CI Test Company");
+        let full = render_trial_balance_pdf(&fixture_tb(false), &ctx).unwrap();
+        let empty = render_trial_balance_pdf(&fixture_tb(true), &ctx).unwrap();
+        assert!(full.starts_with(b"%PDF-1."));
+        assert!(full.len() > empty.len());
+    }
+
+    #[test]
+    fn trial_balance_pdf_writes_the_opening_warning_only_when_unbalanced() {
+        // Story 25-5-b, revue P1 — le contrôle d'ouverture n'existait qu'à l'écran.
+        let ctx = PdfContext::fr_ch_default("CI Test Company");
+        let ok = render_trial_balance_pdf(&fixture_tb(false), &ctx).unwrap();
+        let mut broken = fixture_tb(false);
+        broken.opening_balanced = false;
+        let warned = render_trial_balance_pdf(&broken, &ctx).unwrap();
+        assert!(warned.len() > ok.len(), "l'avertissement doit être écrit");
+    }
+
+    #[test]
+    fn trial_balance_names_are_truncated_to_fit_six_columns() {
+        // Story 25-5-b — 55 mm pour l'intitulé : 22 caractères, ellipsis comprise.
+        let long = "Provisions pour dépréciation d'actifs"; // 37 caractères
+        let truncated = truncate_with_ellipsis(long, TB_NAME_MAX_CHARS);
+        assert_eq!(truncated.chars().count(), 22);
+        assert!(truncated.ends_with('…'));
     }
 
     #[test]

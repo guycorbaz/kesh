@@ -516,6 +516,13 @@ pub fn serialize_invoices_csv<W: Write>(rows: &[Invoice], writer: W) -> Result<(
         // #262 : suspension de relance (Story 21-5a) — idem, désormais exportée.
         "dunning_paused_at",
         "dunning_paused_note",
+        // Story 25-6-b (#387) : la preuve d'émission appartient aux données de
+        // l'utilisateur. `pdf_storage_path` n'est PAS exporté : il se dérive de
+        // l'empreinte (`{pdf_sha256}.pdf`) et ne désigne qu'un fichier du
+        // serveur — les fichiers eux-mêmes ne sont pas dans ce CSV.
+        "pdf_sha256",
+        "pdf_frozen_at",
+        "pdf_language",
         "version",
         "created_at",
         "updated_at",
@@ -543,6 +550,10 @@ pub fn serialize_invoices_csv<W: Write>(rows: &[Invoice], writer: W) -> Result<(
             // Suspension de relance débiteur (Story 21-5a).
             fmt_opt_dt(i.dunning_paused_at),
             fmt_opt_str(&i.dunning_paused_note),
+            // PDF émis figé (Story 25-6-b).
+            fmt_opt_str(&i.pdf_sha256),
+            fmt_opt_dt(i.pdf_frozen_at),
+            fmt_opt_str(&i.pdf_language),
             i.version.to_string(),
             fmt_dt(i.created_at),
             fmt_dt(i.updated_at),
@@ -1686,6 +1697,10 @@ mod tests {
             project_id: None,
             dunning_paused_at: Some(naive_dt(2026, 6, 15, 14, 0, 0)),
             dunning_paused_note: Some("litige; \"en cours\"".into()), // RFC 4180 escape
+            pdf_storage_path: Some(format!("{}.pdf", "ab".repeat(32))),
+            pdf_sha256: Some("ab".repeat(32)),
+            pdf_frozen_at: Some(naive_dt(2026, 6, 2, 9, 29, 0)),
+            pdf_language: Some("DE".into()),
             version: 3,
             created_at: naive_dt(2026, 6, 1, 8, 0, 0),
             updated_at: naive_dt(2026, 6, 15, 14, 0, 0),
@@ -1694,8 +1709,10 @@ mod tests {
 
     // ----- #262 — invoices serializer : complétude des colonnes souveraineté -----
 
-    /// Garde anti-dérive (#262) : le header DOIT lister exactement les 19 colonnes
-    /// de la struct `Invoice`, dans l'ordre. Tout `ADD COLUMN` répercuté dans la
+    /// Garde anti-dérive (#262) : le header DOIT lister les colonnes de la struct
+    /// `Invoice`, dans l'ordre — **toutes sauf une** : `pdf_storage_path`
+    /// (Story 25-6-b), exemptée parce qu'elle se dérive de `pdf_sha256` et ne
+    /// désigne qu'un fichier du serveur. 23 colonnes sur 24. Tout `ADD COLUMN` répercuté dans la
     /// struct force la mise à jour de l'export ET de ce test — symétrique de la
     /// discipline P5 (audit idempotence). Empêche qu'un champ (comme `emailed_*` /
     /// `dunning_paused_*`, jadis oubliés) manque silencieusement de l'export.
@@ -1709,7 +1726,8 @@ mod tests {
             header,
             "id;company_id;contact_id;invoice_number;status;date;due_date;\
              payment_terms;total_amount;rounding_amount;journal_entry_id;paid_at;emailed_at;emailed_to;\
-             project_id;dunning_paused_at;dunning_paused_note;version;created_at;updated_at"
+             project_id;dunning_paused_at;dunning_paused_note;pdf_sha256;pdf_frozen_at;\
+             pdf_language;version;created_at;updated_at"
         );
     }
 
@@ -1736,6 +1754,25 @@ mod tests {
         assert!(
             text.contains("\"litige; \"\"en cours\"\"\""),
             "dunning_paused_note mal échappée: {text}"
+        );
+    }
+
+    /// Story 25-6-b (#387, AC 5-bis) : l'empreinte, l'instant et la langue du
+    /// PDF émis sont exportés ; le chemin de stockage ne l'est pas.
+    #[test]
+    fn serialize_invoices_csv_porte_le_pdf_fige() {
+        let mut buf = Vec::new();
+        serialize_invoices_csv(&[sample_invoice()], &mut buf).expect("serialize ok");
+        let text = String::from_utf8(buf).expect("utf8");
+        let row = text.lines().nth(1).expect("ligne de données");
+        let sha = "ab".repeat(32);
+        assert!(
+            row.contains(&format!(";{sha};2026-06-02T09:29:00Z;DE;")),
+            "pdf_sha256 / pdf_frozen_at / pdf_language manquants: {row}"
+        );
+        assert!(
+            !row.contains(&format!("{sha}.pdf")),
+            "pdf_storage_path ne doit pas sortir: {row}"
         );
     }
 
@@ -2236,6 +2273,11 @@ mod tests {
     /// leur motif. Chacune est une colonne **technique** : aucune ne porte une
     /// information que l'export ne dirait pas déjà ailleurs.
     const COLONNES_HORS_EXPORT: &[(&str, &str, &str)] = &[
+        (
+            "invoices",
+            "pdf_storage_path",
+            "chemin du PDF figé sous `KESH_DOCUMENTS_DIR` (Story 25-6-b) : dérivé de `pdf_sha256` (exporté, `{sha256}.pdf`), il ne désigne qu'un fichier du serveur — les fichiers ne sont pas dans ce CSV",
+        ),
         (
             "accounts",
             "singleton_role",

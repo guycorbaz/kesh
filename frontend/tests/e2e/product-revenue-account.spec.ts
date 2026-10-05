@@ -110,7 +110,16 @@ async function pickAccount(
 	await expect(field).toHaveValue(`${account.number} — ${account.name}`);
 }
 
-/** Remplit le dialogue de la fiche produit et enregistre. */
+/**
+ * Remplit le dialogue de la fiche produit et enregistre — **et attend la réponse
+ * du serveur**.
+ *
+ * ⚠️ Sans cette attente, l'appelant qui relit la liste par l'API juste après
+ * court contre le POST : sous la charge de la suite complète, la relecture partait
+ * avant la création et rendait une liste vide (`defaultRevenueAccountId`
+ * `undefined`). Échec intermittent, vert rejoué seul — classé à tort en
+ * « pollution d'état » jusqu'au 2026-10-03.
+ */
 async function fillProductForm(
 	page: import('@playwright/test').Page,
 	name: string,
@@ -123,7 +132,13 @@ async function fillProductForm(
 	}
 	// ⚠️ Le libellé dépend du mode : « Créer » à la création, « Enregistrer » à
 	// l'édition (`+page.svelte:714-717`). La regex couvre les deux.
+	const saved = page.waitForResponse(
+		(r) =>
+			r.url().includes('/api/v1/products') &&
+			['POST', 'PUT'].includes(r.request().method())
+	);
 	await page.getByRole('button', { name: /^(Créer|Enregistrer)$/ }).click();
+	expect((await saved).ok(), 'la fiche produit doit être enregistrée').toBeTruthy();
 }
 
 // ===========================================================================

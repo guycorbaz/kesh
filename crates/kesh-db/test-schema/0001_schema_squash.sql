@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 71 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 72 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -714,6 +714,10 @@ CREATE TABLE `invoices` (
   `dunning_paused_at` datetime(6) DEFAULT NULL,
   `dunning_paused_note` varchar(500) DEFAULT NULL,
   `rounding_amount` decimal(19,4) NOT NULL DEFAULT 0.0000,
+  `pdf_storage_path` varchar(512) DEFAULT NULL,
+  `pdf_sha256` char(64) DEFAULT NULL,
+  `pdf_frozen_at` datetime(3) DEFAULT NULL,
+  `pdf_language` char(2) DEFAULT NULL,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_invoices_number` (`company_id`,`invoice_number`),
   KEY `idx_invoices_company_status` (`company_id`,`status`),
@@ -732,7 +736,8 @@ CREATE TABLE `invoices` (
   CONSTRAINT `chk_invoices_total_non_negative` CHECK (`total_amount` >= 0),
   CONSTRAINT `chk_invoices_validated_has_je` CHECK (`status` <> 'validated' or `journal_entry_id` is not null),
   CONSTRAINT `chk_invoices_paid_at_validated` CHECK (`paid_at` is null or `status` in ('validated','cancelled')),
-  CONSTRAINT `chk_invoices_paid_at_after_date` CHECK (`paid_at` is null or cast(`paid_at` as date) >= `date` - interval 1 day)
+  CONSTRAINT `chk_invoices_paid_at_after_date` CHECK (`paid_at` is null or cast(`paid_at` as date) >= `date` - interval 1 day),
+  CONSTRAINT `chk_invoices_frozen_pdf` CHECK (`pdf_storage_path` is null and `pdf_sha256` is null and `pdf_frozen_at` is null and `pdf_language` is null or `pdf_storage_path` is not null and `pdf_sha256` is not null and `pdf_frozen_at` is not null and `pdf_language` is not null and char_length(`pdf_sha256`) = 64 and cast(`pdf_language` as char charset binary) in (cast('FR' as char charset binary),cast('DE' as char charset binary),cast('IT' as char charset binary),cast('EN' as char charset binary)))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `journal_entries`;
