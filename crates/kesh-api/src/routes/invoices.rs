@@ -219,6 +219,12 @@ pub struct InvoiceResponse {
     /// Récapitulatif TVA par taux (#151), pour l'affichage « Sous-total HT →
     /// TVA {taux}% → Total TTC ». Vide si aucune ligne taxée (0 % / hors champ).
     pub vat_breakdown: Vec<VatBreakdownResponse>,
+    /// Story 25-4-c4-b (#494) — l'écart d'arrondi à 5 centimes : **figé** pour une
+    /// facture émise (déjà compris dans `total_ttc`) ; pour un **brouillon**, un
+    /// **aperçu** d'après le réglage courant (`rounding_is_preview`), que
+    /// `total_ttc` n'inclut PAS — seule la fiche l'additionne, en « estimé ».
+    pub rounding_amount: Decimal,
+    pub rounding_is_preview: bool,
     pub journal_entry_id: Option<i64>,
     pub paid_at: Option<NaiveDateTime>,
     /// Story 20-3b1 — dernier envoi par e-mail (`null` = jamais envoyée) et
@@ -271,6 +277,39 @@ impl InvoiceResponse {
         self.amount_due = Some(due);
         self
     }
+
+    /// Story 25-4-c4-b (#494) — sur un **brouillon**, l'aperçu de l'arrondi à 5
+    /// centimes d'après le réglage `round_to_5_centimes` : la règle du serveur
+    /// (`vat::invoice_rounding`), jamais recopiée dans le frontend. Sans effet sur
+    /// une facture émise, dont l'arrondi est figé.
+    pub(crate) fn with_rounding_preview(mut self, round_to_5_centimes: bool) -> Self {
+        if self.status == "draft" {
+            self.rounding_amount =
+                kesh_core::accounting::vat::invoice_rounding(self.total_ttc, round_to_5_centimes);
+            self.rounding_is_preview = true;
+        }
+        self
+    }
+}
+
+/// Applique l'aperçu d'arrondi à une réponse qui rend un **brouillon** — lecture,
+/// création, modification, **dévalidation** (Story 25-4-c4-b). Les réglages ne
+/// sont lus que pour un brouillon. ⚠️ La dévalidation est le cas qui compte : la
+/// fiche affiche sa réponse sans relire la facture.
+async fn with_draft_rounding_preview(
+    state: &AppState,
+    response: InvoiceResponse,
+) -> Result<InvoiceResponse, AppError> {
+    if response.status != "draft" {
+        return Ok(response);
+    }
+    // Lecture pure (revue de code P1, lentille B) : un `GET` ne doit rien écrire.
+    let enabled = kesh_db::repositories::company_invoice_settings::round_to_5_centimes(
+        &state.pool,
+        response.company_id,
+    )
+    .await?;
+    Ok(response.with_rounding_preview(enabled))
 }
 
 /// B3 (review pass 1 G2 B) : règle « en retard » centralisée — une seule
@@ -292,9 +331,11 @@ impl InvoiceResponse {
         let today = chrono::Utc::now().naive_utc().date();
         let is_overdue =
             is_invoice_overdue(&invoice.status, invoice.paid_at, invoice.due_date, today);
-        // #246 : TTC dérivé des lignes (helper canonique kesh-core).
-        let total_ttc = kesh_core::accounting::vat::invoice_total_ttc(
+        // #246 : TTC dérivé des lignes (helper canonique kesh-core), arrondi à
+        // 5 centimes figé compris (Story 25-4-c4-a ; 0 pour un brouillon).
+        let total_ttc = kesh_core::accounting::vat::invoice_total_ttc_rounded(
             lines.iter().map(|l| (l.line_total, l.vat_rate)),
+            invoice.rounding_amount,
         );
         // #151 : ventilation TVA par taux (même source, arrondi par ligne DC7).
         let vat_breakdown = kesh_core::accounting::vat::vat_breakdown_by_rate(
@@ -315,6 +356,8 @@ impl InvoiceResponse {
             total_amount: invoice.total_amount,
             total_ttc,
             vat_breakdown,
+            rounding_amount: invoice.rounding_amount,
+            rounding_is_preview: false,
             journal_entry_id: invoice.journal_entry_id,
             paid_at: invoice.paid_at,
             emailed_at: invoice.emailed_at,
@@ -654,7 +697,11 @@ pub async fn get_invoice(
         .await
         .map_err(AppError::Database)?;
     Ok(Json(
-        InvoiceResponse::from_parts(invoice, lines).with_settlement(settled, due),
+        with_draft_rounding_preview(
+            &state,
+            InvoiceResponse::from_parts(invoice, lines).with_settlement(settled, due),
+        )
+        .await?,
     ))
 }
 
@@ -733,7 +780,13 @@ pub async fn create_invoice(
         invoices::create(&state.pool, current_user.user_id, new).await?;
     Ok((
         StatusCode::CREATED,
-        Json(InvoiceResponse::from_parts(invoice, persisted_lines)),
+        Json(
+            with_draft_rounding_preview(
+                &state,
+                InvoiceResponse::from_parts(invoice, persisted_lines),
+            )
+            .await?,
+        ),
     ))
 }
 
@@ -789,7 +842,13 @@ pub async fn update_invoice(
         changes,
     )
     .await?;
-    Ok(Json(InvoiceResponse::from_parts(invoice, persisted_lines)))
+    Ok(Json(
+        with_draft_rounding_preview(
+            &state,
+            InvoiceResponse::from_parts(invoice, persisted_lines),
+        )
+        .await?,
+    ))
 }
 
 pub async fn delete_invoice(
@@ -868,7 +927,9 @@ pub async fn unvalidate_invoice_handler(
         payload.version,
     )
     .await?;
-    Ok(Json(InvoiceResponse::from_parts(invoice, lines)))
+    Ok(Json(
+        with_draft_rounding_preview(&state, InvoiceResponse::from_parts(invoice, lines)).await?,
+    ))
 }
 
 // ---------------------------------------------------------------------------

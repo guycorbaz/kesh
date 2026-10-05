@@ -273,6 +273,7 @@ journal-entry-saved = Scrittura salvata
 error-fiscal-year-closed-generic = L'esercizio contabile è chiuso — nessuna scrittura può essere aggiunta o modificata (CO art. 957-964).
 error-inactive-accounts = Uno o più conti sono archiviati o non validi.
 error-rounding-account-not-configured = Questo pagamento salda la fattura al centesimo, ma non è designato alcun conto utilizzabile per le differenze di arrotondamento: sceglierne uno in Impostazioni → Fatturazione.
+error-rounding-account-not-configured-issuance = Il totale di questo documento è arrotondato a 5 centesimi, ma non è designato alcun conto utilizzabile per le differenze di arrotondamento: sceglierne uno in Impostazioni → Fatturazione.
 
 # Conto di ricavo per riga di fattura (Story 16-1a, #152)
 invoice-line-account-subject-line = Riga { $line }
@@ -609,6 +610,7 @@ invoice-pdf-vat = IVA
 invoice-pdf-line-total = Totale
 invoice-pdf-subtotal = Subtotale
 invoice-pdf-total = Totale
+invoice-pdf-rounding = Arrotondamento
 invoice-pdf-total-ttc = Totale IVA incl.
 invoice-pdf-payment-terms = Condizioni di pagamento
 invoice-pdf-qr-section-payment = Sezione pagamento
@@ -735,6 +737,13 @@ invoice-error-bank-account-required = Scegliete un conto bancario
 invoice-error-account-required = Scegliete un conto
 
 invoice-detail-paid-at-label = Pagata il
+invoice-detail-subtotal-ht = Subtotale IVA esclusa
+invoice-detail-vat-rate = IVA { $rate }%
+invoice-detail-rounding = Arrotondamento
+invoice-detail-rounding-estimated = Arrotondamento (stimato)
+invoice-detail-total-ttc = Totale IVA inclusa
+invoice-detail-total-ttc-estimated = Totale IVA inclusa (stimato)
+invoice-detail-total = Totale
 
 invoice-error-mark-paid-not-validated = Solo le fatture convalidate possono essere contrassegnate come pagate
 invoice-error-already-unpaid = Questa fattura non è contrassegnata come pagata
@@ -1644,7 +1653,9 @@ settings-invoicing-seq-range = (NN tra 1 e 10)
 settings-invoicing-description-help = Segnaposto: {"{"}YEAR{"}"}, {"{"}INVOICE_NUMBER{"}"}, {"{"}CONTACT_NAME{"}"}.
 settings-invoicing-description-invalid = Testo di registrazione non valido
 settings-invoicing-rounding-title = Differenze di arrotondamento
-settings-invoicing-rounding-hint = Conto che riceve la differenza di al massimo mezzo centesimo che un pagamento arrotondato al centesimo lascia su una fattura. Costo o ricavo, registrabile. Se non esiste ancora, createlo nel piano dei conti e poi sceglietelo qui.
+settings-invoicing-round5-label = Arrotondare a 5 centesimi il totale delle fatture emesse
+settings-invoicing-round5-hint = La fattura riporta una riga «Arrotondamento» (123.44 → 123.45); la differenza è registrata sul conto qui sotto. Le fatture già emesse mantengono il loro totale.
+settings-invoicing-rounding-hint = Conto che riceve le differenze di arrotondamento: quella delle fatture arrotondate a 5 centesimi e il mezzo centesimo al massimo che un pagamento arrotondato al centesimo lascia su una fattura emessa senza arrotondamento. Costo o ricavo, contabilizzabile. Se non esiste ancora, crearlo nel piano dei conti, poi sceglierlo qui.
 settings-invoicing-rounding-account = Conto delle differenze di arrotondamento
 settings-invoicing-default-accounts-title = Conti predefiniti
 settings-invoicing-select-none = — Selezionare —

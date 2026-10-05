@@ -273,6 +273,7 @@ journal-entry-saved = Buchung gespeichert
 error-fiscal-year-closed-generic = Das Geschäftsjahr ist abgeschlossen — keine Buchungen können hinzugefügt oder geändert werden (OR Art. 957-964).
 error-inactive-accounts = Ein oder mehrere Konten sind archiviert oder ungültig.
 error-rounding-account-not-configured = Diese Zahlung begleicht die Rechnung auf den Rappen genau, aber es ist kein verwendbares Konto für Rundungsdifferenzen festgelegt: Wählen Sie eines unter Einstellungen → Fakturierung.
+error-rounding-account-not-configured-issuance = Der Gesamtbetrag dieses Belegs ist auf 5 Rappen gerundet, aber es ist kein verwendbares Konto für Rundungsdifferenzen festgelegt: Wählen Sie eines unter Einstellungen → Fakturierung.
 
 # Ertragskonto pro Rechnungsposition (Story 16-1a, #152)
 invoice-line-account-subject-line = Position { $line }
@@ -609,6 +610,7 @@ invoice-pdf-vat = MWST
 invoice-pdf-line-total = Total
 invoice-pdf-subtotal = Zwischentotal
 invoice-pdf-total = Total
+invoice-pdf-rounding = Rundung
 invoice-pdf-total-ttc = Total inkl. MWST
 invoice-pdf-payment-terms = Zahlungsbedingungen
 invoice-pdf-qr-section-payment = Zahlteil
@@ -735,6 +737,13 @@ invoice-error-bank-account-required = Wählen Sie ein Bankkonto
 invoice-error-account-required = Wählen Sie ein Konto
 
 invoice-detail-paid-at-label = Bezahlt am
+invoice-detail-subtotal-ht = Zwischentotal exkl. MWST
+invoice-detail-vat-rate = MWST { $rate }%
+invoice-detail-rounding = Rundung
+invoice-detail-rounding-estimated = Rundung (geschätzt)
+invoice-detail-total-ttc = Total inkl. MWST
+invoice-detail-total-ttc-estimated = Total inkl. MWST (geschätzt)
+invoice-detail-total = Total
 
 invoice-error-mark-paid-not-validated = Nur validierte Rechnungen können als bezahlt markiert werden
 invoice-error-already-unpaid = Diese Rechnung ist nicht als bezahlt markiert
@@ -1643,7 +1652,9 @@ settings-invoicing-seq-range = (NN zwischen 1 und 10)
 settings-invoicing-description-help = Platzhalter: {"{"}YEAR{"}"}, {"{"}INVOICE_NUMBER{"}"}, {"{"}CONTACT_NAME{"}"}.
 settings-invoicing-description-invalid = Ungültiger Buchungstext
 settings-invoicing-rounding-title = Rundungsdifferenzen
-settings-invoicing-rounding-hint = Konto, das die Differenz von höchstens einem halben Rappen aufnimmt, die eine auf den Rappen gerundete Zahlung auf einer Rechnung hinterlässt. Aufwand oder Ertrag, buchbar. Falls es noch nicht existiert, legen Sie es im Kontenplan an und wählen Sie es dann hier aus.
+settings-invoicing-round5-label = Gesamtbetrag ausgestellter Rechnungen auf 5 Rappen runden
+settings-invoicing-round5-hint = Die Rechnung enthält eine Zeile «Rundung» (123.44 → 123.45); die Differenz wird auf das untenstehende Konto gebucht. Bereits ausgestellte Rechnungen behalten ihren Betrag.
+settings-invoicing-rounding-hint = Konto für Rundungsdifferenzen: die der auf 5 Rappen gerundeten Rechnungen und der höchstens halbe Rappen, den eine auf den Rappen gerundete Zahlung auf einer ungerundet ausgestellten Rechnung hinterlässt. Aufwand oder Ertrag, buchbar. Falls es noch nicht existiert, legen Sie es im Kontenplan an und wählen Sie es dann hier aus.
 settings-invoicing-rounding-account = Konto für Rundungsdifferenzen
 settings-invoicing-default-accounts-title = Standardkonten
 settings-invoicing-select-none = — Auswählen —

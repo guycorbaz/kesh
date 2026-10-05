@@ -255,6 +255,7 @@ fn build_credit_note_pdf_data(
         lines: pdf_lines,
         subtotal_ht,
         vat_lines,
+        rounding: cn.rounding_amount,
         total: ttc,
         currency: Currency::Chf,
         origin_reference,
@@ -312,8 +313,10 @@ pub async fn get_credit_note_pdf(
 
     // TTC = HT + TVA (cohérent avec la contre-passation) — helper canonique
     // #246 (Story 21-2a), même arithmétique que le débit créance.
-    let ttc: Decimal = kesh_core::accounting::vat::invoice_total_ttc(
+    // Story 25-4-c4-a : arrondi figé recopié de la facture compris.
+    let ttc: Decimal = kesh_core::accounting::vat::invoice_total_ttc_rounded(
         lines.iter().map(|l| (l.line_total, l.vat_rate)),
+        cn.rounding_amount,
     );
     // #151 : récap TVA de l'avoir (montants positifs — la contre-passation gère
     // le signe séparément ; le PDF « Avoir » présente les montants crédités).
@@ -439,6 +442,7 @@ mod tests {
             status: "issued".into(),
             date: chrono::NaiveDate::from_ymd_opt(2026, 8, 6).unwrap(),
             total_amount: dec!(100.00),
+            rounding_amount: rust_decimal::Decimal::ZERO,
             journal_entry_id: None,
             version: 1,
             created_at: chrono::NaiveDateTime::default(),
@@ -459,6 +463,27 @@ mod tests {
     /// ⚠️ Et il ne part **pas** d'une fixture de facture par `..base` : le
     /// champ serait hérité et le test passerait **sans exercer aucun code
     /// d'avoir**. La `Company` est construite entière, exprès.
+    /// Story 25-4-c4-b — le PDF de l'avoir porte l'arrondi RECOPIÉ de sa facture
+    /// (revue de code P1, lentille C : l'AC 6 le promettait sans test).
+    #[test]
+    fn credit_note_pdf_carries_its_rounding() {
+        let cn = kesh_db::entities::CreditNote {
+            rounding_amount: dec!(-0.02),
+            ..credit_note()
+        };
+        let data = build_credit_note_pdf_data(
+            &cn,
+            vec![],
+            &contact(),
+            &company_with_contact_details(),
+            dec!(234.52),
+            vec![],
+            dec!(234.50),
+            None,
+        );
+        assert_eq!(data.rounding, dec!(-0.02));
+    }
+
     #[test]
     fn credit_note_pdf_carries_the_issuer_contact_details() {
         let company = company_with_contact_details();

@@ -269,6 +269,9 @@ async fn list_due_dates_default_returns_only_unpaid_validated(pool: MySqlPool) {
 async fn export_csv_has_bom_and_swiss_amounts(pool: MySqlPool) {
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
+    // Story 25-4-c4-a : le TTC de cette facture n'est pas un multiple de 5
+    // centimes ; sa validation exige un compte de différences d'arrondi.
+    designate_rounding(&pool, ids(&pool).await.0).await;
     let _ = create_validated_invoice(
         &pool,
         company_id,
@@ -335,6 +338,9 @@ async fn export_csv_over_limit_returns_400_result_too_large(pool: MySqlPool) {
     // technique : T6 testcoverage extended).
     let (admin_id, company_id) = seed_base(&pool).await;
     let contact_id = seed_contact(&pool, company_id, admin_id).await;
+    // Story 25-4-c4-a : le TTC de cette facture n'est pas un multiple de 5
+    // centimes ; sa validation exige un compte de différences d'arrondi.
+    designate_rounding(&pool, ids(&pool).await.0).await;
     let _ = create_validated_invoice(
         &pool,
         company_id,
@@ -979,6 +985,17 @@ async fn designate_rounding(pool: &MySqlPool, company_id: i64) -> i64 {
 /// est arrondie à deux décimales, `line_ttc_sql`).
 async fn raw_due_invoice(pool: &MySqlPool, unit_price: rust_decimal::Decimal) -> i64 {
     let (company_id, admin_id) = ids(pool).await;
+    // Story 25-4-c4-a : ces tests portent sur une facture émise SANS arrondi à
+    // 5 centimes — le cas que le chemin d'écart au centime (25-4-c3-b) couvre
+    // encore (réglage désactivé, factures antérieures). Le réglage est actif par
+    // défaut ; on le désactive ici, et c'est précisément le cas à tester.
+    sqlx::query(
+        "UPDATE company_invoice_settings SET round_to_5_centimes = FALSE WHERE company_id = ?",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap();
     let contact_id = seed_contact(pool, company_id, admin_id).await;
     let (id, _v) = create_validated_invoice(
         pool,
@@ -1348,4 +1365,181 @@ async fn a_revenue_rounding_account_receives_the_gap(pool: MySqlPool) {
     );
     let s = settlements_with_lines(&pool, id).await;
     assert_eq!(s[0].1[2], (rounding, dec!(0), dec!(0.0050)));
+}
+
+// --- Story 25-4-c4-b (#494) — l'arrondi visible : figé, ou en aperçu ---------
+
+async fn get_invoice_json(app: &TestApp, token: &str, id: i64) -> serde_json::Value {
+    app.client
+        .get(app.url(&format!("/api/v1/invoices/{id}")))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap()
+}
+
+fn dec_of(v: &serde_json::Value) -> rust_decimal::Decimal {
+    v.as_str()
+        .expect("décimal sérialisé en chaîne")
+        .parse()
+        .unwrap()
+}
+
+/// Un brouillon à 114.19 HT @ 8.1 % → TTC 123.44, sans le valider.
+async fn draft_123_44(pool: &MySqlPool) -> i64 {
+    let (company_id, admin_id) = ids(pool).await;
+    let contact_id = seed_contact(pool, company_id, admin_id).await;
+    let (inv, _) = invoices::create(
+        pool,
+        admin_id,
+        NewInvoice {
+            company_id,
+            contact_id,
+            date: NaiveDate::from_ymd_opt(2026, 4, 1).unwrap(),
+            due_date: None,
+            payment_terms: None,
+            lines: vec![NewInvoiceLine {
+                revenue_account_id: None,
+                description: "Prestation".into(),
+                quantity: dec!(1),
+                unit_price: dec!(114.19),
+                vat_rate: dec!(8.10),
+            }],
+            project_id: None,
+        },
+    )
+    .await
+    .unwrap();
+    inv.id
+}
+
+/// ⛔ Validée : `roundingAmount` FIGÉ, compris dans `totalTtc`, `roundingIsPreview`
+/// faux. Brouillon : un APERÇU, que `totalTtc` n'inclut pas.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_invoice_carries_its_frozen_or_previewed_rounding(pool: MySqlPool) {
+    seed_base(&pool).await;
+    let (company_id, admin_id) = ids(&pool).await;
+    designate_rounding(&pool, company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+
+    let draft = draft_123_44(&pool).await;
+    let v = get_invoice_json(&app, &token, draft).await;
+    assert_eq!(v["roundingIsPreview"], true, "got {v}");
+    assert_eq!(dec_of(&v["roundingAmount"]), dec!(0.01));
+    assert_eq!(
+        dec_of(&v["totalTtc"]),
+        dec!(123.44),
+        "l'aperçu n'altère pas le TTC"
+    );
+
+    kesh_db::repositories::invoices::validate_invoice(&pool, company_id, draft, admin_id)
+        .await
+        .unwrap();
+    let v = get_invoice_json(&app, &token, draft).await;
+    assert_eq!(v["roundingIsPreview"], false);
+    assert_eq!(dec_of(&v["roundingAmount"]), dec!(0.01));
+    assert_eq!(
+        dec_of(&v["totalTtc"]),
+        dec!(123.45),
+        "figé, compris dans le TTC"
+    );
+}
+
+/// Réglage désactivé : l'aperçu d'un brouillon est nul.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_preview_follows_the_setting(pool: MySqlPool) {
+    seed_base(&pool).await;
+    let (company_id, _) = ids(&pool).await;
+    kesh_db::test_fixtures::disable_rounding_to_5_centimes(&pool, company_id)
+        .await
+        .unwrap();
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let v = get_invoice_json(&app, &token, draft_123_44(&pool).await).await;
+    assert_eq!(dec_of(&v["roundingAmount"]), dec!(0));
+    assert_eq!(v["roundingIsPreview"], true);
+}
+
+/// ⛔ La réponse de la DÉVALIDATION porte l'aperçu : la fiche l'affiche sans
+/// relire la facture (validation P1 de la story, HIGH).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_unvalidation_response_carries_the_preview(pool: MySqlPool) {
+    seed_base(&pool).await;
+    let (company_id, admin_id) = ids(&pool).await;
+    designate_rounding(&pool, company_id).await;
+    let id = draft_123_44(&pool).await;
+    let validated =
+        kesh_db::repositories::invoices::validate_invoice(&pool, company_id, id, admin_id)
+            .await
+            .unwrap();
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{id}/unvalidate")))
+        .header("Authorization", format!("Bearer {token}"))
+        .json(&json!({ "version": validated.invoice.version }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let v: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(v["status"], "draft");
+    assert_eq!(v["roundingIsPreview"], true, "got {v}");
+    assert_eq!(dec_of(&v["roundingAmount"]), dec!(0.01));
+}
+
+/// ⛔ Désactiver le réglage ne touche aucune facture émise : son arrondi est figé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn disabling_the_setting_leaves_issued_invoices_alone(pool: MySqlPool) {
+    seed_base(&pool).await;
+    let (company_id, admin_id) = ids(&pool).await;
+    designate_rounding(&pool, company_id).await;
+    let id = draft_123_44(&pool).await;
+    kesh_db::repositories::invoices::validate_invoice(&pool, company_id, id, admin_id)
+        .await
+        .unwrap();
+    kesh_db::test_fixtures::disable_rounding_to_5_centimes(&pool, company_id)
+        .await
+        .unwrap();
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let v = get_invoice_json(&app, &token, id).await;
+    assert_eq!(dec_of(&v["roundingAmount"]), dec!(0.01));
+    assert_eq!(dec_of(&v["totalTtc"]), dec!(123.45));
+}
+
+/// ⛔ Le `GET` d'un brouillon ne s'écrit pas : sans ligne de réglages, l'aperçu
+/// prend le défaut (actif) et la ligne n'est PAS recréée — revue de code P1,
+/// lentille B (l'ancien `get_or_create_default` faisait un `INSERT IGNORE` à
+/// chaque lecture, y compris sous une clé d'API en lecture seule).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reading_a_draft_writes_nothing(pool: MySqlPool) {
+    seed_base(&pool).await;
+    let (company_id, _) = ids(&pool).await;
+    let draft = draft_123_44(&pool).await;
+    sqlx::query("DELETE FROM company_invoice_settings WHERE company_id = ?")
+        .bind(company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let v = get_invoice_json(&app, &token, draft).await;
+    assert_eq!(
+        dec_of(&v["roundingAmount"]),
+        dec!(0.01),
+        "défaut actif : {v}"
+    );
+    let rows: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM company_invoice_settings WHERE company_id = ?")
+            .bind(company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(rows, 0, "la lecture n'a rien écrit");
 }

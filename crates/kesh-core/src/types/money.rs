@@ -61,13 +61,29 @@ impl Money {
     /// Arrondi commercial au centime (2 décimales, MidpointAwayFromZero).
     ///
     /// Utilisé pour les montants CHF conformément aux règles de l'AFC
-    /// (calcul TVA par ligne). À distinguer de l'arrondi cash aux 5 centimes
-    /// (rappen) qui sera fourni séparément si nécessaire.
+    /// (calcul TVA par ligne). À distinguer de l'arrondi aux 5 centimes du
+    /// total d'une facture émise, [`Money::round_to_5_centimes`].
     pub fn round_to_centimes(&self) -> Self {
         Self(
             self.0
                 .round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
         )
+    }
+
+    /// Arrondi au multiple de **0.05** le plus proche, l'équidistant loin de zéro
+    /// (Story 25-4-c4-a, #494) : la règle suisse du total d'une facture émise.
+    ///
+    /// 123.44 → 123.45 ; 234.52 → 234.50 ; 123.425 → 123.45 ; 10.0050 → 10.00.
+    ///
+    /// Même stratégie que [`Money::round_to_centimes`], appliquée à l'échelle
+    /// des vingtièmes : `round(x × 20) / 20`.
+    pub fn round_to_5_centimes(&self) -> Self {
+        let twenty = Decimal::from(20);
+        let mut rounded = (self.0 * twenty)
+            .round_dp_with_strategy(0, RoundingStrategy::MidpointAwayFromZero)
+            / twenty;
+        rounded.rescale(2);
+        Self(rounded)
     }
 }
 
@@ -139,6 +155,27 @@ impl<'a> Sum<&'a Money> for Money {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn round_to_5_centimes_examples() {
+        use rust_decimal_macros::dec;
+        for (raw, expected) in [
+            (dec!(123.44), dec!(123.45)),
+            (dec!(234.52), dec!(234.50)),
+            (dec!(123.425), dec!(123.45)),
+            (dec!(10.0050), dec!(10.00)),
+            (dec!(0.025), dec!(0.05)),
+            (dec!(-0.025), dec!(-0.05)),
+            (dec!(0.02), dec!(0.00)),
+            (dec!(108.10), dec!(108.10)),
+        ] {
+            assert_eq!(
+                Money::new(raw).round_to_5_centimes().amount(),
+                expected,
+                "{raw}"
+            );
+        }
+    }
+
     use super::*;
     use rust_decimal_macros::dec;
 

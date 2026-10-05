@@ -71,6 +71,32 @@ where
         })
 }
 
+/// L'écart d'arrondi à 5 centimes du total d'une facture émise
+/// (Story 25-4-c4-a, #494) : `arrondi(ttc_brut) − ttc_brut`, ou `0` si le réglage
+/// de la société est inactif. Positif quand le total monte (123.44 → +0.01),
+/// négatif quand il descend (234.52 → −0.02).
+///
+/// ⛔ Calculé **une fois**, à la validation, puis figé sur la pièce
+/// (`invoices.rounding_amount`) : le recalculer d'après le réglage courant ferait
+/// diverger le reste dû et la QR de l'écriture déjà passée.
+pub fn invoice_rounding(ttc_brut: Decimal, round_to_5_centimes: bool) -> Decimal {
+    if !round_to_5_centimes {
+        return Decimal::ZERO;
+    }
+    Money::new(ttc_brut).round_to_5_centimes().amount() - ttc_brut
+}
+
+/// Le TTC d'une pièce, **arrondi figé compris** : [`invoice_total_ttc`] des lignes
+/// plus l'écart d'arrondi stocké sur la pièce (`rounding_amount`, 0 pour les
+/// pièces émises sans arrondi). Toute lecture du total d'une facture ou d'un
+/// avoir **émis** passe par ici.
+pub fn invoice_total_ttc_rounded<I>(lines: I, rounding_amount: Decimal) -> Decimal
+where
+    I: IntoIterator<Item = (Decimal, Decimal)>,
+{
+    invoice_total_ttc(lines) + rounding_amount
+}
+
 /// Une ligne du récapitulatif de TVA d'une facture, agrégée par taux (#151).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VatRateBreakdown {
@@ -128,6 +154,20 @@ where
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn invoice_rounding_examples_and_switch() {
+        use rust_decimal_macros::dec;
+        assert_eq!(invoice_rounding(dec!(123.44), true), dec!(0.01));
+        assert_eq!(invoice_rounding(dec!(234.52), true), dec!(-0.02));
+        assert_eq!(invoice_rounding(dec!(10.0050), true), dec!(-0.0050));
+        assert_eq!(invoice_rounding(dec!(108.10), true), dec!(0));
+        assert_eq!(invoice_rounding(dec!(123.44), false), dec!(0));
+        assert_eq!(
+            invoice_total_ttc_rounded([(dec!(114.20), dec!(8.1))], dec!(0.01)),
+            invoice_total_ttc([(dec!(114.20), dec!(8.1))]) + dec!(0.01)
+        );
+    }
+
     use super::*;
 
     #[test]

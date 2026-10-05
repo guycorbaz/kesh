@@ -335,8 +335,11 @@ fn build_qrbill_inputs(
     // « Total TTC » est le TTC canonique (helper kesh-core, même arithmétique
     // que le débit créance) — `total_amount` est le HT comptable et ne doit
     // JAMAIS être présenté comme montant dû.
-    let total_ttc = kesh_core::accounting::vat::invoice_total_ttc(
+    //
+    // Story 25-4-c4-a (#494) : arrondi à 5 centimes figé à la validation compris.
+    let total_ttc = kesh_core::accounting::vat::invoice_total_ttc_rounded(
         lines.iter().map(|l| (l.line_total, l.vat_rate)),
+        invoice.rounding_amount,
     );
 
     // Story 25-4-b2 (#416, AC 7) : la QR d'un rappel porte le RESTE DÛ — la même
@@ -421,6 +424,8 @@ fn build_qrbill_inputs(
         lines: invoice_lines_pdf,
         subtotal_ht,
         vat_lines,
+        // Story 25-4-c4-b : l'arrondi figé de la facture — un rappel montre aussi le sien.
+        rounding: invoice.rounding_amount,
         total: total_ttc,
         currency: Currency::Chf,
         origin_reference: None,
@@ -631,6 +636,7 @@ mod tests {
             due_date: None,
             payment_terms: None,
             total_amount: dec!(100.00),
+            rounding_amount: dec!(0),
             journal_entry_id: None,
             paid_at: None,
             emailed_at: None,
@@ -678,6 +684,37 @@ mod tests {
     /// factures seraient sorties sans coordonnées pendant que les avoirs en
     /// portaient — la dissymétrie exacte que la story nomme « le piège qui
     /// coûterait le plus cher », et le document principal était le côté nu.
+    /// Story 25-4-c4-b — la facture ET le rappel portent l'arrondi figé de la
+    /// facture (revue de code P1, lentille C : l'AC 6 le promettait sans test).
+    #[test]
+    fn invoice_and_reminder_pdf_carry_the_frozen_rounding() {
+        let inv = kesh_db::entities::Invoice {
+            rounding_amount: dec!(0.01),
+            ..invoice()
+        };
+        for doc in [
+            PdfDocument::Invoice,
+            PdfDocument::Reminder(ReminderAmounts {
+                amount_settled: dec!(0),
+                amount_due: dec!(100.00),
+                fees: dec!(0),
+            }),
+        ] {
+            let (_qr, data) = build_qrbill_inputs(
+                &inv,
+                &[],
+                &contact_with_structured_address(),
+                &company_with_contact_details(),
+                &primary_bank(),
+                "CH",
+                "CH",
+                doc,
+            )
+            .expect("montage exploitable");
+            assert_eq!(data.rounding, dec!(0.01));
+        }
+    }
+
     #[test]
     fn invoice_pdf_carries_the_issuer_contact_details() {
         let company = company_with_contact_details();

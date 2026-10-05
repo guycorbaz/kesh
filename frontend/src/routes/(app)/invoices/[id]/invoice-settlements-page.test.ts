@@ -91,6 +91,8 @@ function invoice(partial: Partial<InvoiceResponse> = {}): InvoiceResponse {
     totalAmount: "100.00",
     totalTtc: "100.00",
     vatBreakdown: [],
+    roundingAmount: "0",
+    roundingIsPreview: false,
     journalEntryId: 9,
     paidAt: "2026-03-05T00:00:00",
     emailedAt: null,
@@ -210,5 +212,49 @@ describe("fiche facture — créer un avoir sur une facture réglée (Story 25-4
     await waitFor(() => expect(createCreditNoteMock).toHaveBeenCalledTimes(1));
     const erreur = await findByTestId("invoice-credit-note-error");
     expect(erreur.textContent).toContain("annulez-le d'abord");
+  });
+
+  // Story 25-4-c4-b (#494) — la ligne « Arrondi » du récapitulatif.
+  it("une facture émise arrondie montre la ligne « Arrondi », signée (mutation : ligne retirée)", async () => {
+    getInvoiceMock.mockResolvedValue(
+      invoice({ roundingAmount: "0.01", roundingIsPreview: false, totalTtc: "123.45" }),
+    );
+    const { findByTestId } = render(Page);
+    const row = await findByTestId("invoice-detail-rounding");
+    expect(row.textContent).toContain("Arrondi");
+    expect(row.textContent).not.toContain("estimé");
+    expect(row.textContent).toContain("+0.01");
+  });
+
+  it("un brouillon montre l'aperçu « estimé » et un total qui l'inclut (mutation : total sans l'aperçu)", async () => {
+    getInvoiceMock.mockResolvedValue(
+      invoice({
+        status: "draft",
+        roundingAmount: "-0.02",
+        roundingIsPreview: true,
+        totalTtc: "234.52",
+      }),
+    );
+    const { findByTestId, container } = render(Page);
+    const row = await findByTestId("invoice-detail-rounding");
+    expect(row.textContent).toContain("Arrondi (estimé)");
+    expect(row.textContent).toContain("-0.02");
+    expect(container.textContent).toContain("Total TTC (estimé)");
+    expect(container.textContent).toContain("234.50");
+  });
+
+  it("un écart infra-centime ne montre pas « +0.00 » (mutation : décision sur la valeur brute)", async () => {
+    getInvoiceMock.mockResolvedValue(
+      invoice({ roundingAmount: "0.0004", roundingIsPreview: false, totalTtc: "123.4500" }),
+    );
+    const { findByText, queryByTestId } = render(Page);
+    expect(await findByText("F-2026-005", { exact: false })).toBeTruthy();
+    expect(queryByTestId("invoice-detail-rounding")).toBeNull();
+  });
+
+  it("sans arrondi, aucune ligne « Arrondi »", async () => {
+    const { findByText, queryByTestId } = render(Page);
+    expect(await findByText("F-2026-005", { exact: false })).toBeTruthy();
+    expect(queryByTestId("invoice-detail-rounding")).toBeNull();
   });
 });

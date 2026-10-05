@@ -348,8 +348,12 @@ pub enum DbError {
     /// ⛔ **Variante dédiée, et non `ConfigurationRequired`** : le mapping de
     /// celle-ci jette le champ et rend un code générique, alors que le refus doit
     /// dire QUOI configurer — *Paramètres → Facturation*.
+    ///
+    /// Story 25-4-c4-a (#494) : le **contexte** dit qui a besoin du compte — un
+    /// paiement qui solde au centime, ou une pièce émise arrondie à 5 centimes —,
+    /// pour que le message ne parle pas de paiement là où il n'y en a pas.
     #[error("Aucun compte de différences d'arrondi utilisable n'est désigné")]
-    RoundingAccountNotConfigured,
+    RoundingAccountNotConfigured { context: RoundingContext },
 
     /// La date fournie ne tombe pas dans l'exercice courant de l'entité
     /// modifiée. Story 3.3 : empêche le déplacement d'une écriture vers
@@ -676,6 +680,16 @@ pub enum DbError {
     Sqlx(#[source] sqlx::Error),
 }
 
+/// Qui réclame le compte de différences d'arrondi (Story 25-4-c4-a, #494).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RoundingContext {
+    /// Un paiement égal au reste arrondi au centime solde la facture
+    /// (règlement manuel, rapprochement — Story 25-4-c3-b).
+    Payment,
+    /// Une pièce émise — facture validée, avoir — porte un arrondi à 5 centimes.
+    Issuance,
+}
+
 impl DbError {
     /// Code d'erreur structuré pour le mapping API (utilisé par `kesh-api`
     /// pour construire les réponses d'erreur JSON).
@@ -689,7 +703,7 @@ impl DbError {
             Self::IllegalStateTransition(_) => "ILLEGAL_STATE_TRANSITION",
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
             Self::InactiveOrInvalidAccounts => "INACTIVE_OR_INVALID_ACCOUNTS",
-            Self::RoundingAccountNotConfigured => "ROUNDING_ACCOUNT_NOT_CONFIGURED",
+            Self::RoundingAccountNotConfigured { .. } => "ROUNDING_ACCOUNT_NOT_CONFIGURED",
             Self::DateOutsideFiscalYear => "DATE_OUTSIDE_FISCAL_YEAR",
             Self::AccountHasEntries { .. } => "ACCOUNT_HAS_ENTRIES",
             Self::AccountRoleAlreadyAssigned { .. } => "ACCOUNT_ROLE_ALREADY_ASSIGNED",

@@ -200,6 +200,52 @@ pub async fn seed_accounting_company(pool: &MySqlPool) -> Result<SeededCompany, 
     })
 }
 
+/// Désigne un compte de **différences d'arrondi** (6940, charge) dans les
+/// réglages de facturation de `company_id` et rend son id — Story 25-4-c4-a.
+///
+/// `seed_accounting_company` n'en crée pas (ses comptes sont comptés par
+/// d'autres tests). Or l'arrondi à 5 centimes est actif par défaut : un test
+/// qui valide une facture au TTC non multiple de 0.05 doit soit appeler ceci —
+/// l'arrondi fait alors partie de ce qu'il vérifie —, soit désactiver le
+/// réglage (`round_to_5_centimes = FALSE`) s'il porte sur une facture émise
+/// sans arrondi.
+pub async fn designate_rounding_account(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<i64, FixtureError> {
+    let id = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type) \
+         VALUES (?, '6940', 'Différences d''arrondi', 'Expense')",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await?
+    .last_insert_id() as i64;
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_rounding_account_id = ? WHERE company_id = ?",
+    )
+    .bind(id)
+    .bind(company_id)
+    .execute(pool)
+    .await?;
+    Ok(id)
+}
+
+/// Désactive l'arrondi à 5 centimes pour `company_id` — pour les tests qui
+/// portent sur une facture émise SANS arrondi (Story 25-4-c4-a).
+pub async fn disable_rounding_to_5_centimes(
+    pool: &MySqlPool,
+    company_id: i64,
+) -> Result<(), FixtureError> {
+    sqlx::query(
+        "UPDATE company_invoice_settings SET round_to_5_centimes = FALSE WHERE company_id = ?",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 /// Variante de [`seed_accounting_company`] qui **omet le `fiscal_year`**.
 ///
 /// Cas d'usage : tester l'AC #34 de Story 9-1 (Issue #90) — page `/reports`

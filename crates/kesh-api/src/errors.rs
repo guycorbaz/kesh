@@ -2954,14 +2954,25 @@ impl IntoResponse for AppError {
                 ),
                 // Story 25-4-c3-b (#476) — un écart d'arrondi à écrire, et pas de
                 // compte utilisable pour le recevoir. Le message dit OÙ agir.
-                DbError::RoundingAccountNotConfigured => build_response(
-                    StatusCode::BAD_REQUEST,
-                    "ROUNDING_ACCOUNT_NOT_CONFIGURED",
-                    &t(
-                        "error-rounding-account-not-configured",
-                        "Ce paiement solde la facture au centime, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation.",
-                    ),
-                ),
+                // Story 25-4-c4-a : le message suit le CONTEXTE — une pièce émise
+                // arrondie à 5 centimes n'est pas un paiement.
+                DbError::RoundingAccountNotConfigured { context } => {
+                    let (key, fallback) = match context {
+                        kesh_db::errors::RoundingContext::Payment => (
+                            "error-rounding-account-not-configured",
+                            "Ce paiement solde la facture au centime, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation.",
+                        ),
+                        kesh_db::errors::RoundingContext::Issuance => (
+                            "error-rounding-account-not-configured-issuance",
+                            "Le total de cette pièce est arrondi à 5 centimes, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation.",
+                        ),
+                    };
+                    build_response(
+                        StatusCode::BAD_REQUEST,
+                        "ROUNDING_ACCOUNT_NOT_CONFIGURED",
+                        &t(key, fallback),
+                    )
+                }
                 // Story 16-1a (#152) — comptes de produit de ligne de facture.
                 // Le générique `INACTIVE_OR_INVALID_ACCOUNTS` ci-dessus ne nomme
                 // aucune ligne ; sur une facture pouvant en porter 200, ce

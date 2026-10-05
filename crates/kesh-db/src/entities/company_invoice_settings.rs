@@ -38,9 +38,15 @@ pub struct CompanyInvoiceSettings {
     /// Compte de **différences d'arrondi** — charge ou produit, actif et
     /// imputable — qui reçoit l'écart d'un demi-centime au plus qu'un paiement
     /// arrondi au centime laisse sur une facture (Story 25-4-c3-a1, #476).
-    /// Facultatif : il n'est lu que quand un écart se présente (Story 25-4-c3-b).
+    /// Lu seulement quand un écart se présente — mais l'arrondi à 5 centimes des
+    /// pièces émises (Story 25-4-c4-a), actif par défaut, en produit un sur la
+    /// plupart des factures : sans ce compte, leur validation est refusée.
     /// Un réglage et non un rôle de compte (arbitrage du 2026-09-30).
     pub default_rounding_account_id: Option<i64>,
+    /// Arrondir à 5 centimes le total des pièces émises (Story 25-4-c4-a, #494).
+    /// Actif par défaut ; lu à la validation, qui fige l'écart sur la pièce. Son
+    /// API et son écran viennent avec la Story 25-4-c4-b.
+    pub round_to_5_centimes: bool,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -65,4 +71,7 @@ pub struct CompanyInvoiceSettingsUpdate {
     /// Story 25-4-c3-a1 — absent du corps, il vaut `None` (comme les comptes
     /// TVA) : le remplacement est intégral.
     pub default_rounding_account_id: Option<i64>,
+    /// Story 25-4-c4-b (#494) — la valeur **résolue** (la route préserve un champ
+    /// absent du corps de la requête).
+    pub round_to_5_centimes: bool,
 }

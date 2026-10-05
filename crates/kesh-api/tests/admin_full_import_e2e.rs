@@ -2389,3 +2389,131 @@ async fn full_import_without_rounding_account_column_leaves_the_setting_null(poo
         "un backup sans la colonne laisse le réglage vide : {rounding:?}"
     );
 }
+
+/// Story 25-4-c4-a (#494) — Un brouillon portant un arrondi figé (montage brut)
+/// et une société au réglage désactivé : l'export puis l'import restituent
+/// `invoices.rounding_amount` et `round_to_5_centimes` à l'identique.
+async fn seed_rounding_state(pool: &MySqlPool, company_id: i64) {
+    let contact_id = sqlx::query(
+        "INSERT INTO contacts (company_id, contact_type, name, is_client) \
+         VALUES (?, 'Personne', 'Client arrondi', TRUE)",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .expect("contact")
+    .last_insert_id() as i64;
+    let invoice_id = sqlx::query(
+        "INSERT INTO invoices (company_id, contact_id, status, date, total_amount, rounding_amount) \
+         VALUES (?, ?, 'draft', '2026-06-15', 234.52, -0.02)",
+    )
+    .bind(company_id)
+    .bind(contact_id)
+    .execute(pool)
+    .await
+    .expect("facture")
+    .last_insert_id() as i64;
+    // Un avoir aussi (brouillon, montage brut) : sans lui, la colonne
+    // `credit_notes.rounding_amount` ne serait exercée par aucun des deux tests
+    // (revue de code P1, lentille B).
+    sqlx::query(
+        "INSERT INTO credit_notes (company_id, contact_id, invoice_id, status, date, total_amount, rounding_amount) \
+         VALUES (?, ?, ?, 'draft', '2026-06-20', 234.52, -0.02)",
+    )
+    .bind(company_id)
+    .bind(contact_id)
+    .bind(invoice_id)
+    .execute(pool)
+    .await
+    .expect("avoir");
+    sqlx::query(
+        "INSERT INTO company_invoice_settings (company_id, round_to_5_centimes) VALUES (?, FALSE) \
+         ON DUPLICATE KEY UPDATE round_to_5_centimes = FALSE",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .expect("réglage");
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_restores_the_rounding_columns(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = seed_admin(&pool, "arrondi_5ct").await;
+    seed_rounding_state(&pool, ctx.company_id).await;
+
+    let backup = export_backup(&app, &ctx.jwt).await;
+    let (manifest, data) = unzip(&backup);
+    import_ok(&app, &ctx.jwt, &manifest, &data).await;
+
+    let rounding: Vec<rust_decimal::Decimal> =
+        sqlx::query_scalar("SELECT rounding_amount FROM invoices")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(rounding, vec![rust_decimal_macros::dec!(-0.02)]);
+    let cn_rounding: Vec<rust_decimal::Decimal> =
+        sqlx::query_scalar("SELECT rounding_amount FROM credit_notes")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        cn_rounding,
+        vec![rust_decimal_macros::dec!(-0.02)],
+        "arrondi de l'avoir restauré"
+    );
+    let enabled: Vec<bool> =
+        sqlx::query_scalar("SELECT round_to_5_centimes FROM company_invoice_settings")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        enabled,
+        vec![false],
+        "le réglage désactivé survit à l'import"
+    );
+}
+
+/// Une sauvegarde ANTÉRIEURE à la migration `20261001000001` (sans les trois
+/// colonnes) s'importe : les pièces reprennent un arrondi nul — elles ont été
+/// émises sans — et le réglage son défaut, actif.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_without_rounding_columns_takes_the_defaults(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = seed_admin(&pool, "arrondi_absent_5ct").await;
+    seed_rounding_state(&pool, ctx.company_id).await;
+
+    let backup = export_backup(&app, &ctx.jwt).await;
+    let (mut manifest, data) = unzip(&backup);
+    strip_column(&mut manifest, "invoices", "rounding_amount");
+    strip_column(&mut manifest, "credit_notes", "rounding_amount");
+    strip_column(
+        &mut manifest,
+        "company_invoice_settings",
+        "round_to_5_centimes",
+    );
+    import_ok(&app, &ctx.jwt, &manifest, &data).await;
+
+    let rounding: Vec<rust_decimal::Decimal> =
+        sqlx::query_scalar("SELECT rounding_amount FROM invoices")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(rounding, vec![rust_decimal::Decimal::ZERO]);
+    let cn_rounding: Vec<rust_decimal::Decimal> =
+        sqlx::query_scalar("SELECT rounding_amount FROM credit_notes")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        cn_rounding,
+        vec![rust_decimal::Decimal::ZERO],
+        "avoir émis sans arrondi"
+    );
+    let enabled: Vec<bool> =
+        sqlx::query_scalar("SELECT round_to_5_centimes FROM company_invoice_settings")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert!(enabled.iter().all(|e| *e), "défaut actif : {enabled:?}");
+}

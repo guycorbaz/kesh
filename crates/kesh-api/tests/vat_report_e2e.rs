@@ -330,6 +330,11 @@ async fn vat_report_aggregates_by_rate_validated_only(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn vat_report_rounds_per_line_not_global(pool: MySqlPool) {
     let (admin_id, company_id, fy_id) = seed_base(&pool).await;
+    // Story 25-4-c4-a : ce test porte sur l'arrondi de TVA PAR LIGNE ; la facture
+    // est émise sans arrondi à 5 centimes, qui ne touche de toute façon pas la TVA.
+    kesh_db::test_fixtures::disable_rounding_to_5_centimes(&pool, company_id)
+        .await
+        .unwrap();
     let contact_id = seed_contact(&pool, company_id, admin_id, "Client A").await;
     create_validated_invoice(
         &pool,

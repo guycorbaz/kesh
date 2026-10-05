@@ -32,6 +32,9 @@ pub struct CreditNote {
     pub date: NaiveDate,
     /// HT (Σ line_total), miroir de `invoices.total_amount`.
     pub total_amount: Decimal,
+    /// Écart d'arrondi à 5 centimes, **recopié de la facture** à l'émission
+    /// (Story 25-4-c4-a, #494) : l'avoir total éteint exactement le TTC arrondi.
+    pub rounding_amount: Decimal,
     /// Référence vers l'écriture de contre-passation. NULL seulement en `draft`.
     pub journal_entry_id: Option<i64>,
     pub version: i32,

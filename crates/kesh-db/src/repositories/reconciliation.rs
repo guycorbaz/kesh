@@ -126,7 +126,7 @@ where
     // référencer l'alias `amount_due` sans dupliquer l'expression (SQL
     // n'autorise pas un alias de SELECT dans le WHERE).
     sqlx::query_as::<_, UnpaidInvoiceCandidate>(&format!(
-        "SELECT {INVOICE_COLUMNS}, {due} AS amount_due, COALESCE(lt.ttc, 0) AS total_ttc \
+        "SELECT {INVOICE_COLUMNS}, {due} AS amount_due, {ttc} AS total_ttc \
          FROM invoices i {joins} \
          WHERE i.company_id = ? \
            AND i.status = 'validated' \
@@ -136,6 +136,7 @@ where
          HAVING amount_due BETWEEN ? - ? AND ? + ? \
          LIMIT 50",
         due = INVOICE_AMOUNT_DUE_DERIVED_SQL,
+        ttc = crate::repositories::invoices::INVOICE_TTC_DERIVED_SQL,
         joins = amount_due_derived_joins(),
     ))
     .bind(company_id)

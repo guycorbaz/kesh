@@ -66,6 +66,17 @@ async fn make_contact(pool: &MySqlPool, seeded: &SeededCompany) -> i64 {
     .id
 }
 
+/// La société de test, avec un compte de différences d'arrondi désigné
+/// (Story 25-4-c4-a) : l'arrondi à 5 centimes, actif par défaut, entre ainsi
+/// dans ce que les deux formes du reste dû doivent tenir d'accord.
+async fn seeded_with_rounding(pool: &MySqlPool) -> SeededCompany {
+    let seeded = seed_accounting_company(pool).await.expect("seed");
+    kesh_db::test_fixtures::designate_rounding_account(pool, seeded.company_id)
+        .await
+        .expect("compte d'arrondi");
+    seeded
+}
+
 /// Une facture validée par le **vrai chemin** (écriture de vente TVA comprise) —
 /// jamais par le helper à 0 % de `invoice_settlement.rs`.
 async fn validated(
@@ -181,7 +192,7 @@ async fn credited_scalar(pool: &MySqlPool, invoice_id: i64) -> Decimal {
 /// l'écriture de l'avoir porte à la créance. Multi-taux, arrondis limites.
 #[sqlx::test(migrations = "./test-schema")]
 async fn credited_amount_is_ttc_and_matches_the_ledger(pool: MySqlPool) {
-    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let seeded = seeded_with_rounding(&pool).await;
     let contact = make_contact(&pool, &seeded).await;
     let invoice_id = validated(
         &pool,
@@ -205,8 +216,10 @@ async fn credited_amount_is_ttc_and_matches_the_ledger(pool: MySqlPool) {
         .map(|l| l.credit)
         .sum();
 
-    // 1000 + 81.00 ; 123.45 + 3.21 ; 0.05 + 0.00 (sous-centime) = 1207.71
-    assert_eq!(ledger_credit, dec!(1207.71), "crédit créance de l'avoir");
+    // 1000 + 81.00 ; 123.45 + 3.21 ; 0.05 + 0.00 (sous-centime) = 1207.71 brut,
+    // arrondi à 5 centimes à la validation → 1207.70 ; l'avoir recopie l'arrondi
+    // (Story 25-4-c4-a) et crédite donc la créance de 1207.70.
+    assert_eq!(ledger_credit, dec!(1207.70), "crédit créance de l'avoir");
     assert_eq!(credited_scalar(&pool, invoice_id).await, ledger_credit);
     assert_ne!(
         issued.credit_note.total_amount, ledger_credit,
@@ -217,7 +230,7 @@ async fn credited_amount_is_ttc_and_matches_the_ledger(pool: MySqlPool) {
 /// AC 8 — facture créditée, jamais réglée : il ne reste rien à payer.
 #[sqlx::test(migrations = "./test-schema")]
 async fn amount_due_of_a_credited_invoice_is_zero(pool: MySqlPool) {
-    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let seeded = seeded_with_rounding(&pool).await;
     let contact = make_contact(&pool, &seeded).await;
     let invoice_id = validated(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00))]).await;
     credit(&pool, &seeded, invoice_id).await;
@@ -233,7 +246,7 @@ async fn amount_due_of_a_credited_invoice_is_zero(pool: MySqlPool) {
 /// −40, un trop-perçu visible — pas `TVA − 40`, et pas écrêté à zéro.
 #[sqlx::test(migrations = "./test-schema")]
 async fn amount_due_after_settlement_then_legacy_credit_is_minus_settled(pool: MySqlPool) {
-    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let seeded = seeded_with_rounding(&pool).await;
     let contact = make_contact(&pool, &seeded).await;
     let invoice_id = validated(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00))]).await;
     settle_then_legacy_credit(&pool, &seeded, contact, invoice_id, dec!(40.00)).await;
@@ -246,7 +259,7 @@ async fn amount_due_after_settlement_then_legacy_credit_is_minus_settled(pool: M
 /// règlement, deux règlements, avoir émis, avoir brouillon, état hérité.
 #[sqlx::test(migrations = "./test-schema")]
 async fn settled_and_credited_forms_are_at_parity(pool: MySqlPool) {
-    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let seeded = seeded_with_rounding(&pool).await;
     let contact = make_contact(&pool, &seeded).await;
     let lines = [(dec!(8.10), dec!(100.00)), (dec!(2.60), dec!(33.33))];
 
@@ -355,7 +368,7 @@ fn unpaid_query() -> invoices::InvoiceListQuery {
 /// AC 7 — les totaux du résumé somment le reste dû : 108.10 réglé 40 pèse 68.10.
 #[sqlx::test(migrations = "./test-schema")]
 async fn due_dates_summary_totals_are_amount_due(pool: MySqlPool) {
-    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let seeded = seeded_with_rounding(&pool).await;
     let contact = make_contact(&pool, &seeded).await;
     let partial = validated(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00))]).await;
     settle(&pool, &seeded, partial, dec!(40.00)).await;
@@ -377,7 +390,7 @@ async fn due_dates_summary_totals_are_amount_due(pool: MySqlPool) {
 /// et le reste dû : la liste paginée ET l'export.
 #[sqlx::test(migrations = "./test-schema")]
 async fn list_items_carry_amount_due(pool: MySqlPool) {
-    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let seeded = seeded_with_rounding(&pool).await;
     let contact = make_contact(&pool, &seeded).await;
     let partial = validated(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00))]).await;
     settle(&pool, &seeded, partial, dec!(40.00)).await;
@@ -396,7 +409,8 @@ async fn list_items_carry_amount_due(pool: MySqlPool) {
         assert_eq!(p.amount_due, dec!(68.10), "{surface} : reste dû");
         let o = items.iter().find(|i| i.id == open).expect(surface);
         assert_eq!(o.amount_settled, Decimal::ZERO, "{surface}");
-        assert_eq!(o.amount_due, dec!(10.81), "{surface}");
+        // 10.81 brut, arrondi à 5 centimes à la validation (Story 25-4-c4-a).
+        assert_eq!(o.amount_due, dec!(10.80), "{surface}");
     }
 }
 
@@ -404,7 +418,7 @@ async fn list_items_carry_amount_due(pool: MySqlPool) {
 /// aucune surface agrégée : liste, export et résumé repèsent le TTC entier.
 #[sqlx::test(migrations = "./test-schema")]
 async fn cancelled_settlement_leaves_the_aggregates(pool: MySqlPool) {
-    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let seeded = seeded_with_rounding(&pool).await;
     let contact = make_contact(&pool, &seeded).await;
     let inv = validated(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00))]).await;
     let entry = settle(&pool, &seeded, inv, dec!(40.00)).await;

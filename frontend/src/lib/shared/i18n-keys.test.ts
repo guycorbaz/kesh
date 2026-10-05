@@ -399,7 +399,16 @@ const ATTENDU = {
 	// Fusion de `main` dans la 25-4-c3-b, 2026-10-05 : base commune 1756 ; `main` +19
 	// (25-5-b, 25-6-a, 25-6-b), 25-4-c3-b +1 ⇒ **1776**. `sitesNonResolus` et `relais`
 	// suivent `main` (31, 6) — la c3-b n'y touche pas.
-	sitesTotal: 1776,
+	// Story 25-4-c4-b (#494) : **1757 → 1766**, recompté par ce test et par
+	// `grep -o "i18nMsg("` aux deux bornes — `invoices/[id]/+page.svelte` (69 → 76 :
+	// le récapitulatif passé en libellés traduits, sept sites dont la ligne
+	// « Arrondi » et ses variantes « estimé ») et `settings/invoicing/+page.svelte`
+	// (36 → 38 : la case « Arrondir à 5 centimes » et son aide).
+	//
+	// Fusion de `main` (via la 25-4-c3-b) dans la 25-4-c4, 2026-10-05 : la c4 ajoute
+	// +9 à une base désormais de 1776 ⇒ **1785** ; `sitesNonResolus` et `relais` suivent
+	// la fusion (31, 6) — la c4 n'y touche pas.
+	sitesTotal: 1785,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,
