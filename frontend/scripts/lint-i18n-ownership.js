@@ -30,6 +30,8 @@ const KNOWN_VIOLATIONS = new Set([
   'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-error-settled-on-before-invoice-date',
   'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-error-amount-positive',
   'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-error-amount-over-due',
+  // Story 25-4-c3-b (#476) — refus d'un montant à plus de deux décimales.
+  'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-error-amount-scale',
   'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-error-bank-account-required',
   'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-error-account-required',
   'src/lib/features/invoices/SettleInvoiceDialog.svelte:invoice-settle-dialog-title',

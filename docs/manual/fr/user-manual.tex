@@ -1027,7 +1027,14 @@ mode (virement sur un compte bancaire, ou espèces et tout autre compte), le mon
 Kesh passe l'écriture \emph{Débit contrepartie / Crédit débiteurs} et calcule ce qui reste dû.
 Un règlement \textbf{partiel} est permis~: la facture reste validée, avec son reste dû, et
 redevient «~payée~» quand le solde atteint zéro. Un montant supérieur au reste dû est
-\textbf{refusé}. Le rapprochement bancaire enregistre, lui, ses règlements tout seul.
+\textbf{refusé}, de même qu'un montant à plus de deux décimales.
+
+\textbf{Au centime.} Une facture dont le total porte plus de deux décimales (quantité ou prix
+fractionnaire) se règle au \textbf{reste dû arrondi au centime}~: c'est le montant que le
+dialogue propose. Payer 10.01 une facture de 10.0050 la \textbf{solde}~: l'écriture porte alors
+une \textbf{troisième ligne}, l'écart d'un demi-centime au plus, sur le compte de différences
+d'arrondi désigné dans \emph{Paramètres} → \emph{Facturation}. Sans ce compte, un tel paiement est
+refusé --- un acompte, lui, passe toujours. Le rapprochement bancaire enregistre, lui, ses règlements tout seul.
 
 \textbf{La liste des règlements.} La fiche liste chaque règlement --- date, montant, mode --- avec
 un lien vers son écriture.
@@ -1455,12 +1462,12 @@ La réconciliation consiste à rapprocher les transactions bancaires importées 
 Chaque candidate reçoit un score, somme de trois critères :
 
 \begin{itemize}
-    \item \textbf{Montant} (50\,\%) : le montant de la transaction égale exactement le reste dû. Il n'y a pas de score intermédiaire : un écart d'un centime donne zéro sur ce critère.
+    \item \textbf{Montant} (50\,\%) : le montant de la transaction égale exactement le reste dû \textbf{arrondi au centime}. Il n'y a pas de score intermédiaire : un écart d'un centime donne zéro sur ce critère.
     \item \textbf{Référence} (40\,\%) : la référence de la transaction contient le numéro de la facture, ou l'inverse (score plein) ; ou les deux commencent par les mêmes quatre caractères au moins (demi-score).
     \item \textbf{Contact} (10\,\%) : le nom de la contrepartie contient celui du client de la facture, ou l'inverse.
 \end{itemize}
 
-La meilleure candidate est affichée avec son score et le \textbf{montant qui reste à payer}. Si la facture est déjà réglée en partie, ce montant est suivi du total d'origine --- par exemple « 600, reste dû sur 1000 » --- pour que vous la reconnaissiez. Une candidate dont le score vaut zéro n'est pas proposée. Rien n'est jamais rapproché sans votre acceptation : il n'y a ni seuil de confiance réglable, ni acceptation automatique.
+La meilleure candidate est affichée avec son score et le \textbf{montant qui reste à payer}, au centime. Si la facture est déjà réglée en partie, ce montant est suivi du total d'origine --- par exemple « 600, reste dû sur 1000 » --- pour que vous la reconnaissiez. Une candidate dont le score vaut zéro n'est pas proposée. Rien n'est jamais rapproché sans votre acceptation : il n'y a ni seuil de confiance réglable, ni acceptation automatique.
 
 \subsubsection{Acceptation des propositions}
 
@@ -1474,7 +1481,7 @@ La meilleure candidate est affichée avec son score et le \textbf{montant qui re
 Pour chaque transaction :
 
 \begin{itemize}
-    \item \emph{Accepter} : valide le rapprochement. L'écriture comptable est créée automatiquement (Débit 1020 Banque / Crédit 1100 Débiteurs).
+    \item \emph{Accepter} : valide le rapprochement. L'écriture comptable est créée automatiquement (Débit 1020 Banque / Crédit 1100 Débiteurs). Si la transaction solde une facture dont le reste porte plus de deux décimales, l'écart d'arrondi passe en troisième ligne, comme pour un règlement manuel (\S\ref{sec:reglement-client}) ; sans compte de différences d'arrondi, la proposition échoue avec le code \texttt{ROUNDING\_ACCOUNT\_NOT\_CONFIGURED}.
     \item \emph{Rejeter} : la proposition est ignorée. La transaction reste à rapprocher manuellement.
     \item \emph{Modifier} : sélectionner une autre facture ou écriture.
 \end{itemize}

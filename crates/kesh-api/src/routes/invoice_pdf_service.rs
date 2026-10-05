@@ -24,7 +24,7 @@ use kesh_qrbill::{
     QrBillError, QrBillI18n, Reference, ReminderPdf,
     validation::{build_qrr, normalize_iban},
 };
-use rust_decimal::{Decimal, RoundingStrategy};
+use rust_decimal::Decimal;
 use std::collections::HashMap;
 
 use crate::errors::AppError;
@@ -114,7 +114,8 @@ pub struct ReminderAmounts {
 /// reste de 0.004 est refusé ici, au lieu d'atteindre une QR invalide et de
 /// ressortir en `INVOICE_NOT_PDF_READY`.
 pub fn reminder_amount_due(raw: Decimal) -> Result<Decimal, AppError> {
-    let due = raw.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero);
+    // Story 25-4-c3-b (AC 1) : la définition unique du reste dû au centime.
+    let due = kesh_db::repositories::invoice_settlements::amount_due_to_centime(raw);
     if due <= Decimal::ZERO {
         return Err(AppError::ReminderNothingDue);
     }

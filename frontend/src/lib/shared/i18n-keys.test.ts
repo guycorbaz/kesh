@@ -391,7 +391,15 @@ const ATTENDU = {
 	// Fusion de `main` (25-6-a) dans la 25-6-b, 2026-10-05 : les deux branches partaient de
 	// 1758 ; 25-6-a +9, 25-6-b +8 (+9 −2 +1) ⇒ **1775**. `sitesNonResolus` : 32 (25-6-a)
 	// − 1 (25-6-b, deux sites des fiches devenus un dans `pdf-error.ts`) ⇒ **31**.
-	sitesTotal: 1775,
+	// Story 25-4-c3-b (#476) : **1756 → 1757**, recompté par ce test et par
+	// `grep -o "i18nMsg("` aux deux bornes de `SettleInvoiceDialog.svelte`
+	// (18 → 19) — le refus d'un montant à plus de deux décimales,
+	// `invoice-error-amount-scale`, clé neuve dans les quatre catalogues.
+	//
+	// Fusion de `main` dans la 25-4-c3-b, 2026-10-05 : base commune 1756 ; `main` +19
+	// (25-5-b, 25-6-a, 25-6-b), 25-4-c3-b +1 ⇒ **1776**. `sitesNonResolus` et `relais`
+	// suivent `main` (31, 6) — la c3-b n'y touche pas.
+	sitesTotal: 1776,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

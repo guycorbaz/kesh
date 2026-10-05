@@ -4671,3 +4671,289 @@ async fn two_acceptances_of_the_same_balance_settle_it_once(pool: MySqlPool) {
             .unwrap();
     assert_eq!(settled, vec![dec!(700.0000)], "un seul règlement");
 }
+
+// ============================================================
+// Story 25-4-c3-b (#476) — le reste dû au centime, et l'écart en écriture
+// ============================================================
+
+/// Désigne un compte de différences d'arrondi (6940, charge) dans les réglages
+/// de facturation — `setup_company` n'en crée aucun. Rend son id.
+async fn designate_rounding_account(pool: &MySqlPool, company_id: i64) -> i64 {
+    let id = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
+         VALUES (?, '6940', 'Différences d''arrondi', 'Expense', 1, 1)",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .expect("compte 6940")
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO company_invoice_settings (company_id, default_rounding_account_id) VALUES (?, ?) \
+         ON DUPLICATE KEY UPDATE default_rounding_account_id = VALUES(default_rounding_account_id)",
+    )
+    .bind(company_id)
+    .bind(id)
+    .execute(pool)
+    .await
+    .expect("réglage du compte d'arrondi");
+    id
+}
+
+/// Une facture au reste brut de **10.0050** et une transaction de `tx_amount`,
+/// référencée ou non. Rend `(invoice_id, tx_id)`.
+async fn half_centime_invoice_and_tx(
+    pool: &MySqlPool,
+    ctx: &CompanyCtx,
+    number: &str,
+    tx_amount: Decimal,
+    reference: &str,
+) -> (i64, i64) {
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let (inv_id, _je) = seed_validated_invoice(
+        pool,
+        ctx.company_id,
+        ctx.contact_id,
+        number,
+        NaiveDate::from_ymd_opt(2026, 4, 20).unwrap(),
+        dec!(10.0050),
+    )
+    .await;
+    let tx_ids = seed_bank_transactions(
+        pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash(number),
+        day,
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            Some(day),
+            tx_amount,
+            "CHF",
+            reference,
+            None,
+        )],
+    )
+    .await;
+    (inv_id, tx_ids[0])
+}
+
+/// Lignes `(compte, débit, crédit)` d'une écriture, dans l'ordre.
+async fn entry_lines(pool: &MySqlPool, entry_id: i64) -> Vec<(i64, Decimal, Decimal)> {
+    sqlx::query_as(
+        "SELECT account_id, debit, credit FROM journal_entry_lines WHERE entry_id = ? \
+         ORDER BY line_order, id",
+    )
+    .bind(entry_id)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// Ce qu'une facture n'a pas encore reçu, pour les assertions « rien d'écrit ».
+async fn settlements_and_paid_at(pool: &MySqlPool, inv_id: i64) -> (i64, Option<NaiveDateTime>) {
+    sqlx::query_as(
+        "SELECT (SELECT COUNT(*) FROM invoice_settlements WHERE invoice_id = i.id), i.paid_at \
+         FROM invoices i WHERE i.id = ?",
+    )
+    .bind(inv_id)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// ⛔ **Un virement de 10.01 solde une facture de 10.0050**, sur le seul score de
+/// montant : candidat affiché au centime, accepté, règlement enregistré au reste
+/// BRUT, écart de 0.0050 au crédit du compte d'arrondi, créance soldée à zéro.
+///
+/// Avant la story : score de montant 0 (10.01 ≠ 10.005), donc
+/// `RECONCILIATION_SCORE_TOO_LOW` — et même accepté, trop-perçu refusé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_centime_payment_settles_a_half_centime_invoice_with_a_rounding_line(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Centime", "CH4431999123000889012", Role::Comptable).await;
+    let rounding = designate_rounding_account(&pool, ctx.company_id).await;
+    let (inv_id, tx_id) =
+        half_centime_invoice_and_tx(&pool, &ctx, "INV-CT-1", dec!(10.01), "sans rapport").await;
+    let app = spawn_app(pool.clone()).await;
+
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reconciliation/proposals?bankAccountId={}",
+            ctx.bank_account_id
+        )))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    let body: Value = resp.json().await.unwrap();
+    let cand = body["proposals"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["bankTransactionId"] == tx_id)
+        .and_then(|p| {
+            p["candidates"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|c| c["invoiceId"] == inv_id)
+                .cloned()
+        })
+        .expect("la facture est candidate");
+    assert_eq!(cand["score"]["amountScore"], 1.0, "comparé au centime");
+    assert_eq!(
+        cand["invoiceAmount"], "10.01",
+        "affiché au centime, pas « 10.005 »"
+    );
+    assert!(
+        cand["invoiceTotalTtc"].is_null(),
+        "reste et TTC égaux au centime : pas de mention, got {cand:?}"
+    );
+
+    let body = post_accept_one(&app, &ctx, tx_id, inv_id).await;
+    assert_eq!(
+        body["accepted"].as_array().map(Vec::len),
+        Some(1),
+        "failed = {:?}",
+        body["failed"]
+    );
+
+    let (settled, entry_id): (Decimal, i64) = sqlx::query_as(
+        "SELECT amount, journal_entry_id FROM invoice_settlements WHERE invoice_id = ?",
+    )
+    .bind(inv_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(settled, dec!(10.0050), "⛔ réglé au reste BRUT");
+    assert_eq!(
+        entry_lines(&pool, entry_id).await,
+        vec![
+            (ctx.bank_ledger_account_id, dec!(10.01), dec!(0)),
+            (ctx.receivable_account_id, dec!(0), dec!(10.0050)),
+            (rounding, dec!(0), dec!(0.0050)),
+        ],
+        "trois lignes : banque du payé, créance du brut, écart au crédit"
+    );
+    assert_eq!(
+        receivable_balance(&pool, ctx.receivable_account_id).await,
+        Decimal::ZERO,
+        "⛔ la créance se ferme exactement"
+    );
+    let (_, paid_at) = settlements_and_paid_at(&pool, inv_id).await;
+    assert!(paid_at.is_some(), "la facture est soldée");
+    let details: Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'invoice.paid' AND entity_id = ?",
+    )
+    .bind(inv_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        details["rounding_difference"]
+            .as_str()
+            .map(|s| s.parse::<Decimal>().unwrap()),
+        Some(dec!(0.0050)),
+        "l'audit nomme l'écart, got {details:?}"
+    );
+}
+
+/// 10.02 sur 10.0050 reste un trop-perçu : la référence donne un score, c'est la
+/// garde à double borne qui refuse.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn two_centimes_over_a_half_centime_invoice_is_an_overpayment(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Trop2", "CH4431999123000889012", Role::Comptable).await;
+    designate_rounding_account(&pool, ctx.company_id).await;
+    let (inv_id, tx_id) =
+        half_centime_invoice_and_tx(&pool, &ctx, "INV-CT-2", dec!(10.02), "INV-CT-2").await;
+    let app = spawn_app(pool.clone()).await;
+
+    let body = post_accept_one(&app, &ctx, tx_id, inv_id).await;
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "got {body:?}");
+    assert_eq!(failed[0]["errorCode"], "RECONCILIATION_OVERPAYMENT");
+    assert_eq!(settlements_and_paid_at(&pool, inv_id).await, (0, None));
+}
+
+/// ⛔ **Sans compte d'arrondi utilisable, rien ne s'écrit** — refus
+/// per-proposal (pattern batch), réglage absent puis compte archivé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_rounding_gap_without_a_usable_account_is_refused_per_proposal(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "SansArr", "CH4431999123000889012", Role::Comptable).await;
+    let (inv_id, tx_id) =
+        half_centime_invoice_and_tx(&pool, &ctx, "INV-CT-3", dec!(10.01), "INV-CT-3").await;
+    let app = spawn_app(pool.clone()).await;
+
+    let body = post_accept_one(&app, &ctx, tx_id, inv_id).await;
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "got {body:?}");
+    assert_eq!(failed[0]["errorCode"], "ROUNDING_ACCOUNT_NOT_CONFIGURED");
+    assert_eq!(settlements_and_paid_at(&pool, inv_id).await, (0, None));
+
+    let rounding = designate_rounding_account(&pool, ctx.company_id).await;
+    sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+        .bind(rounding)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let body = post_accept_one(&app, &ctx, tx_id, inv_id).await;
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(
+        failed[0]["errorCode"], "ROUNDING_ACCOUNT_NOT_CONFIGURED",
+        "archivé depuis sa désignation (#486) : revérifié au moment d'écrire"
+    );
+    assert_eq!(settlements_and_paid_at(&pool, inv_id).await, (0, None));
+    let status: String = sqlx::query_scalar("SELECT status FROM bank_transactions WHERE id = ?")
+        .bind(tx_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "pending", "la transaction reste à rapprocher");
+}
+
+/// ⛔ **Dé-rapprocher un règlement à trois lignes contre-passe les trois** : le
+/// reste dû redevient le brut d'avant, créance et compte d'arrondi reviennent.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn cancelling_a_three_line_reconciliation_reverses_the_rounding_line(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Annul3", "CH4431999123000889012", Role::Comptable).await;
+    ensure_fiscal_year_today(&pool, ctx.company_id).await;
+    let rounding = designate_rounding_account(&pool, ctx.company_id).await;
+    let (inv_id, tx_id) =
+        half_centime_invoice_and_tx(&pool, &ctx, "INV-CT-4", dec!(10.01), "INV-CT-4").await;
+    let app = spawn_app(pool.clone()).await;
+    let body = post_accept_one(&app, &ctx, tx_id, inv_id).await;
+    assert_eq!(
+        body["accepted"].as_array().map(Vec::len),
+        Some(1),
+        "got {body:?}"
+    );
+
+    let (st, done) = cancel_reco(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(st, 200, "got {done:?}");
+    let reversal_id = done["reversalJournalEntryId"].as_i64().unwrap();
+    assert_eq!(
+        entry_lines(&pool, reversal_id).await,
+        vec![
+            (ctx.bank_ledger_account_id, dec!(0), dec!(10.01)),
+            (ctx.receivable_account_id, dec!(10.0050), dec!(0)),
+            (rounding, dec!(0.0050), dec!(0)),
+        ],
+        "les trois lignes, retournées"
+    );
+    assert_eq!(
+        receivable_balance(&pool, ctx.receivable_account_id).await,
+        dec!(10.0050),
+        "la créance revient au reste brut"
+    );
+    assert_eq!(receivable_balance(&pool, rounding).await, Decimal::ZERO);
+    let due = kesh_db::repositories::invoice_settlements::amount_due(&pool, inv_id)
+        .await
+        .unwrap();
+    assert_eq!(due, dec!(10.0050));
+    assert_eq!(settlements_and_paid_at(&pool, inv_id).await, (0, None));
+}

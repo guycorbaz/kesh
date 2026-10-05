@@ -93,7 +93,9 @@ const BANK_TX_COLUMNS: &str = "id, company_id, import_id, bank_account_id, booki
 ///    (#420, Story 25-4-c) — après le HT (#246 : une facture avec TVA ne
 ///    matchait jamais) puis le TTC (une facture réglée en partie ne matchait
 ///    jamais son solde). Le reste dû est pris **brut** : la tolérance couvre
-///    l'écart à son arrondi au centime (au plus 0.005).
+///    l'écart à son arrondi au centime (au plus 0.005). ⛔ Pas de `ROUND` ici :
+///    l'arrondi a UNE définition, `invoice_settlements::amount_due_to_centime`,
+///    appliquée par l'appelant au score et à l'affichage (Story 25-4-c3-b).
 ///
 /// ⛔ **Forme jointe** ([`amount_due_derived_joins`] +
 /// [`INVOICE_AMOUNT_DUE_DERIVED_SQL`]) : c'est une liste, la forme corrélée y
