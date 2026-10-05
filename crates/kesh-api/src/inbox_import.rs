@@ -526,7 +526,6 @@ async fn process_one_file(
             );
         }
     };
-    let storage_path = doc.storage_path.clone();
 
     // (8) Staging : INSERT imported_supplier_invoices (status='to_complete').
     let new = NewImportedSupplierInvoice::from_scanned(company_id, &scanned, doc);
@@ -556,10 +555,11 @@ async fn process_one_file(
                 }
                 DbError::DataLengthOrRange(_) => {
                     // Champ QR tiers sur-long (hors SIX 2.2) → échec par-fichier
-                    // propre (D2). Nettoyage best-effort de l'orphelin archivé
-                    // (content-addressed → idempotent : un ré-import réécrirait
-                    // le même chemin).
-                    let _ = std::fs::remove_file(documents_root.join(&storage_path));
+                    // propre (D2). ⛔ Le fichier archivé n'est PAS supprimé : nommé
+                    // par son contenu, il peut être partagé — justificatif d'une
+                    // autre société, ou PDF de facture figé (Story 25-6-b) au même
+                    // octet près. Un orphelin est inoffensif ; une suppression à
+                    // tort ferait répondre 410 à une pièce émise.
                     dispose_failed(
                         path,
                         failed_dir,

@@ -204,7 +204,7 @@ Si vous souhaitez \textbf{tenir votre comptabilité réelle}, choisissez le mode
 À la finalisation, Kesh met en place votre plan comptable (Sterchi PME par défaut) et votre premier exercice. Vous êtes alors prêt à saisir vos premières écritures.
 
 \begin{keshnote}
-Vous pourrez à tout moment ajouter ou modifier vos comptes bancaires après l'onboarding (\emph{Paramètres} → \emph{Comptes bancaires}) et adapter votre plan comptable (cf. section \emph{Plan comptable}).
+Vous pourrez à tout moment ajouter ou modifier vos comptes bancaires après l'onboarding (\emph{Administration} → \emph{Comptes bancaires}) et adapter votre plan comptable (cf. section \emph{Plan comptable}).
 \end{keshnote}
 
 \begin{keshtip}
@@ -215,16 +215,58 @@ Le mode guidé pas-à-pas est recommandé pour les nouveaux utilisateurs. Les ut
 \section{Tableau de bord}
 
 Le tableau de bord est votre page d'accueil après connexion. Il présente trois
-tuiles de synthèse avec un accès rapide à chaque section :
+tuiles de synthèse :
 
 \keshscreenshot{dashboard.png}{Tableau de bord : dernières écritures, factures ouvertes et comptes bancaires.}  % TODO capture: dashboard avec donnees demo
 
 \begin{itemize}
-    \item \textbf{Dernières écritures} — accès rapide au journal.
-    \item \textbf{Factures ouvertes} — accès rapide à la facturation.
-    \item \textbf{Comptes bancaires} — soldes calculés lorsque des comptes
-    bancaires sont configurés.
+    \item \textbf{Dernières écritures} — les cinq plus récentes (date, numéro, libellé,
+    montant), chacune menant à son détail.
+    \item \textbf{Factures ouvertes} — le nombre de factures validées non soldées et leur
+    \textbf{reste dû} total, dont la part échue. S'y ajoute, pour un comptable ou un
+    administrateur, le nombre de factures à rappeler.
+    \item \textbf{Comptes bancaires} — pour chaque compte, son \textbf{solde comptable} et,
+    si un relevé a été importé, le solde de ce relevé et l'écart entre les deux
+    (détails ci-dessous).
 \end{itemize}
+
+Un rôle \emph{Consultation} voit les mêmes chiffres, sans les boutons de saisie. Si une
+tuile ne peut pas se charger, elle le dit — elle n'affiche jamais « Aucune écriture » sur
+une comptabilité qui en contient.
+
+\subsection{Solde comptable, relevé et écart}
+
+Le chiffre affiché sous chaque compte bancaire est le \textbf{solde comptable} : il vient
+du compte du grand livre lié au compte bancaire (\emph{Administration} → \emph{Comptes
+bancaires}), \textbf{pas de la banque}. Il ne reflète un encaissement qu'une fois celui-ci
+comptabilisé, par un rapprochement ou un règlement. Le total ne compte qu'une fois un
+compte du grand livre partagé par plusieurs comptes bancaires.
+
+Quand un relevé a été importé, la tuile affiche aussi \emph{Relevé du \dots} : le solde de
+clôture du \textbf{dernier relevé} importé, à sa date. Seuls les relevés \textbf{CAMT.053}
+portent un solde de clôture — un import CSV n'en a pas (\S\ref{sec:import-bancaire}). Si
+le solde comptable à cette date diffère du relevé, la tuile affiche l'\textbf{écart}
+(solde comptable − relevé) : typiquement un mouvement bancaire pas encore rapproché.
+
+L'écart tient compte des \textbf{dates de valeur} : la banque arrête son relevé par date de
+comptabilisation, Kesh date les écritures de rapprochement à la date de valeur. Un
+mouvement comptabilisé par la banque le dernier jour du relevé, mais rapproché à une date
+de valeur postérieure, ne crée donc pas d'écart. Trois limites :
+\begin{itemize}
+    \item seule une écriture \textbf{issue d'un rapprochement} est ainsi corrigée : une
+    écriture saisie à la main pour un mouvement bancaire, à une autre date, apparaît dans
+    l'écart — rien ne la relie au relevé ;
+    \item quand plusieurs comptes bancaires partagent un même compte du grand livre,
+    l'écart n'est pas calculable — la tuile l'indique : le solde de ce compte ne
+    s'attribue à aucun d'eux ;
+    \item après l'\textbf{annulation d'un rapprochement}, un mouvement comptabilisé par la
+    banque après la date du relevé mais dont l'écriture d'origine la précédait peut laisser
+    un écart fictif — l'écriture de contre-passation est datée du jour de l'annulation.
+\end{itemize}
+
+Un compte bancaire sans compte du grand livre lié n'a pas de solde comptable ; la tuile
+affiche tout de même son dernier relevé. Si les comptes bancaires ne peuvent pas être
+chargés, la tuile le dit au lieu de disparaître.
 
 \begin{keshnote}
 Les indicateurs plus riches (graphique de chiffre d'affaires, liste des
@@ -603,7 +645,7 @@ En cas d'erreur découverte après clôture, un \textbf{administrateur} peut rou
 On rouvre les exercices \textbf{du plus récent vers l'ancien} : si un exercice postérieur est encore clôturé, Kesh refuse la réouverture et indique lequel rouvrir d'abord. Effectuer cette opération avec parcimonie pour préserver l'intégrité légale.
 \end{keshtip}
 
-\subsection{Reprise de comptabilité — soldes de départ}
+\subsection{Reprise de comptabilité — soldes de départ}\label{sec:soldes-depart}
 
 Si vous migrez vers Kesh depuis un autre logiciel comptable, l'écran \emph{Administration} → \emph{Soldes de départ} (réservé aux rôles Comptable et Administrateur) vous permet de reprendre le bilan de clôture de votre ancienne comptabilité en une seule saisie :
 
@@ -766,7 +808,7 @@ dans la recherche. La forme imprimée sur les documents officiels,
     \item Compte de réception : le compte bancaire QR-IBAN de l'agence.
 \end{itemize}
 
-À la validation, Kesh attribue le numéro \texttt{F-2026-0042}, génère le PDF QR Bill, et crée l'écriture comptable automatique (Débit 1100 Débiteurs / Crédit 3200 Honoraires).
+À la validation, Kesh attribue le numéro \texttt{F-2026-0042} et crée l'écriture comptable automatique (Débit 1100 Débiteurs / Crédit 3200 Honoraires). Le PDF QR Bill est produit et \textbf{figé} au premier téléchargement ou au premier envoi (cf. \S\ref{sec:pdf-fige}).
 
 \medskip
 \noindent\emph{Variante ventilée.} Si l'agence souhaite distinguer ses activités, elle affecte la ligne 1 au compte \texttt{3200 Honoraires} et la ligne 2 au compte \texttt{3400 Maintenance}. L'écriture générée porte alors \textbf{deux lignes de crédit distinctes} — Crédit 3200 pour CHF 4'500.00 et Crédit 3400 pour CHF 450.00 — au lieu d'un crédit unique. Le compte de résultat devient exploitable sans reclassement manuel a posteriori. Les lignes laissées vides suivent le compte de produit par défaut de la société et s'y regroupent — y compris celles qui viennent du catalogue, dont le compte a été vidé après la recopie. Si les lignes de la facture portent un taux de TVA, Kesh comptabilise aussi automatiquement la TVA due au compte de TVA (p.~ex. 2200) ; ici l'agence n'est pas assujettie, l'écriture se limite donc à CHF 4'950.00 (cf. \emph{Décompte TVA}).
@@ -777,7 +819,7 @@ Une facture passe par trois états :
 
 \begin{enumerate}
     \item \textbf{Brouillon} : modification libre, n'apparaît pas dans les rapports. Un brouillon n'a en général \emph{pas} de numéro --- sauf s'il vient d'être \textbf{dévalidé}, auquel cas il \textbf{conserve} celui qu'il portait, et le reprendra à la revalidation (cf. \S\ref{sec:suppression-facture}).
-    \item \textbf{Validée} : numéro définitif attribué, PDF QR Bill généré, écriture comptable créée automatiquement (Débit 1100 Débiteurs / Crédit 3000 Ventes + 2200 TVA), et \textbf{comptes de produit figés}. Une facture validée n'est plus modifiable : le compte de chaque ligne reste néanmoins \textbf{consultable} dans la colonne « Compte de produit » de l'écran de détail, où les lignes suivant le compte par défaut de la société l'affichent avec la mention \emph{(défaut)}. C'est le moyen de contrôler la ventilation sans avoir à ouvrir l'écriture comptable et à la relire à l'envers.
+    \item \textbf{Validée} : numéro définitif attribué, PDF QR Bill disponible (figé au premier téléchargement ou envoi), écriture comptable créée automatiquement (Débit 1100 Débiteurs / Crédit 3000 Ventes + 2200 TVA), et \textbf{comptes de produit figés}. Une facture validée n'est plus modifiable : le compte de chaque ligne reste néanmoins \textbf{consultable} dans la colonne « Compte de produit » de l'écran de détail, où les lignes suivant le compte par défaut de la société l'affichent avec la mention \emph{(défaut)}. C'est le moyen de contrôler la ventilation sans avoir à ouvrir l'écriture comptable et à la relire à l'envers.
     \item \textbf{Payée} : \textbf{soldée} par un ou plusieurs règlements --- enregistrés à la main
           depuis la fiche, ou par le rapprochement d'une transaction bancaire entrante
           (\S\ref{sec:reglement-client}). Une facture réglée en partie reste \emph{validée}, avec
@@ -802,6 +844,8 @@ Le bloc en haut à gauche du PDF porte votre \textbf{nom}, votre \textbf{adresse
 
 Les \textbf{avoirs} portent les mêmes coordonnées, à l'identique.
 
+\textbf{Une facture déjà émise ne change plus} : vos coordonnées s'impriment sur les factures dont le PDF n'est pas encore figé. Celui d'une facture déjà téléchargée ou envoyée reste tel qu'il a été émis (cf. \S\ref{sec:pdf-fige}).
+
 \begin{keshwarning}
 \textbf{Une coordonnée très longue est raccourcie à l'affichage} (suivie de «~\ldots~») pour ne pas empiéter sur le bloc de droite, qui porte le numéro et la date de la facture. La valeur complète reste intacte dans vos réglages.
 
@@ -816,7 +860,7 @@ Le bloc en haut à \textbf{droite} du PDF porte le titre du document, son numér
 
 Elle rend deux services : votre client rapproche la facture de son propre dossier fournisseur, et vous-même remontez d'une facture papier au contact en saisissant ce numéro dans la \textbf{recherche} du carnet d'adresses.
 
-\textbf{Où le saisir} : sur la \textbf{fiche du contact}, champ \emph{Numéro de client}, sous le numéro IDE. La valeur apparaît ensuite sur toutes les factures adressées à ce contact, \textbf{avoirs compris}.
+\textbf{Où le saisir} : sur la \textbf{fiche du contact}, champ \emph{Numéro de client}, sous le numéro IDE. La valeur apparaît ensuite sur toutes les factures adressées à ce contact dont le PDF n'est pas encore figé, \textbf{avoirs compris} --- une facture déjà émise ne change plus (cf. \S\ref{sec:pdf-fige}).
 
 \begin{keshnote}
 \textbf{Kesh ne génère aucun numéro de client}, et n'impose aucun format : \texttt{42}, \texttt{CLI-2026-00042} ou une référence dictée par votre client conviennent également. Le champ est facultatif ; un contact sans numéro n'affiche simplement aucune ligne sur le PDF, et rien ne bouge dans la mise en page.
@@ -847,20 +891,38 @@ Le numéro de facture est généré automatiquement selon un pattern configurabl
 
 \keshscreenshot{facture-qrbill.png}{Exemple de PDF de facture avec section de paiement QR Bill 2.2 détachable en bas de page.}  % TODO capture: PDF facture QR Bill (donnees factices)
 
-À la validation, Kesh génère un PDF conforme au standard \href{https://www.six-group.com/en/products-services/banking-services/standardization/qr-bill.html}{QR Bill 2.2} (norme suisse 2020+) :
+Le PDF d'une facture validée est conforme au standard \href{https://www.six-group.com/en/products-services/banking-services/standardization/qr-bill.html}{QR Bill 2.2} (norme suisse 2020+) :
 
 \begin{itemize}
     \item Format A4, page principale + section de paiement séparable en bas.
     \item QR code suisse contenant toutes les informations de paiement (créancier, débiteur, montant, IBAN, référence structurée, communication).
-    \item Section de paiement en français (modifiable selon la langue du client).
+    \item Facture et section de paiement dans la \textbf{langue de correspondance du client} (fiche contact --- sinon la langue de l'instance).
     \item Compatible scan par les e-banking suisses et applications mobiles (Raiffeisen, PostFinance, UBS, Credit Suisse, Migros Bank, etc.).
 \end{itemize}
 
-Le PDF est téléchargeable depuis la facture validée — pour l'imprimer (envoi postal) ou l'archiver. Depuis la version v0.6, Kesh peut aussi l'\textbf{envoyer directement par e-mail} à votre client, sans passer par votre messagerie : voir la sous-section suivante.
+Le PDF est téléchargeable depuis la facture validée — pour l'imprimer (envoi postal) ou l'archiver. Il est \textbf{identique d'un téléchargement à l'autre} : c'est le document émis, figé (cf. \S\ref{sec:pdf-fige}). Depuis la version v0.6, Kesh peut aussi l'\textbf{envoyer directement par e-mail} à votre client, sans passer par votre messagerie : voir la sous-section suivante.
 
 \begin{keshtip}
 La référence structurée du QR Bill est calculée selon la norme ISO 11649 (RF Reference) ou le format suisse QRR (Référence Kesh). Le choix du format dépend du compte bancaire de réception : les comptes IBAN suisses standard utilisent IS0 11649, les comptes QR-IBAN utilisent QRR.
 \end{keshtip}
+
+\subsubsection{Le PDF émis est figé}\label{sec:pdf-fige}
+
+Le PDF d'une facture est produit \textbf{une seule fois} : au premier téléchargement ou au premier envoi par e-mail qui suit la validation, dans la langue de correspondance du client. Kesh le conserve alors tel quel, avec son \textbf{empreinte} (SHA-256), et c'est ce même fichier, octet pour octet, que rendent ensuite chaque téléchargement et chaque envoi. La fiche facture l'indique par la mention \emph{Document figé le} suivie de la date.
+
+\begin{itemize}
+    \item \textbf{Modifier ensuite} vos coordonnées, l'adresse, le numéro ou la langue du client, ou la mise en page, \textbf{ne change pas} une facture déjà émise : seules les factures non encore figées en tiennent compte. C'est ce qui permet de reproduire, des années plus tard, la copie exacte de la pièce envoyée.
+    \item \textbf{Qui que ce soit} qui télécharge le premier --- y compris un utilisateur en consultation ou une clé d'API en lecture --- fige le document : une pièce sortie de Kesh est figée. Le gel est inscrit au \textbf{journal d'audit}, avec l'empreinte et le nom de qui l'a déclenché.
+    \item Une facture \textbf{annulée par un avoir} garde le PDF qu'elle a émis, et la fiche continue de le proposer. Ce PDF ne porte pas de mention d'annulation : c'est l'avoir qui la porte. Une facture annulée dont le PDF n'a \textbf{jamais été figé} --- jamais téléchargée ni envoyée, ou envoyée seulement avant la v0.12.1 --- n'a pas de PDF.
+    \item Une facture validée \textbf{avant la version v0.12.1} est figée à son prochain téléchargement, avec les données du moment : ses PDF antérieurs n'avaient pas été conservés. ⚠️ Si elle avait déjà été envoyée, le document figé \textbf{n'est pas forcément celui que le client a reçu} --- la date de la mention \emph{Document figé le} est alors postérieure à celle de l'envoi.
+    \item La \textbf{restauration d'une sauvegarde} antérieure au gel ramène la facture à l'état non figé : son prochain téléchargement figera un \textbf{nouveau} document. L'ancien reste dans le répertoire des documents, et son empreinte au journal d'audit.
+    \item La \textbf{dévalidation} détache le document figé (son empreinte reste au journal d'audit) ; la revalidation en figera un nouveau au premier téléchargement.
+    \item Les \textbf{rappels}, eux, sont produits à chaque envoi (cf. \S\ref{sec:relances-user}) : seul le PDF de la facture est figé.
+\end{itemize}
+
+\begin{keshwarning}
+\textbf{Si le fichier figé a disparu} --- typiquement après une restauration qui n'a pas repris le répertoire des documents ---, le téléchargement est \textbf{refusé} avec un message qui nomme le fichier manquant (\texttt{<empreinte>.pdf}). Kesh ne le régénère jamais de lui-même : ce serait fabriquer une pièce qui n'a pas été émise. Le remède est de \textbf{restaurer ce fichier} depuis la sauvegarde du répertoire des documents --- c'est le seul moyen de retrouver l'original. À défaut, un \textbf{administrateur} voit apparaître sur la fiche, après ce refus, le bouton \emph{Refiger le document} : il produit un \textbf{nouveau} document avec les données et la langue du client d'aujourd'hui, \textbf{qui n'est pas l'original}, et le journal d'audit garde l'empreinte de l'ancien et du nouveau. Une facture annulée ne peut pas être refigée : seule la restauration du fichier la répare.
+\end{keshwarning}
 
 \subsection{Envoyer une facture par e-mail}\label{sec:envoi-email}
 
@@ -881,7 +943,11 @@ une fenêtre pré-remplie :
           Les deux restent modifiables avant l'envoi : ce que vous voyez est
           ce qui part.
     \item \textbf{Pièce jointe} : la QR-facture PDF, attachée
-          automatiquement.
+          automatiquement --- le document \textbf{figé}, octet pour octet
+          celui du téléchargement (\S\ref{sec:pdf-fige}). Le premier envoi
+          d'une facture jamais téléchargée la fige, même si l'envoi échoue.
+          Si la langue du client a changé depuis le gel, le message suit la
+          nouvelle langue et la pièce jointe garde la sienne.
 \end{itemize}
 
 Après l'envoi, la fiche facture affiche \emph{Envoyée le} suivi de la date
@@ -929,7 +995,8 @@ les modèles par défaut — rien à configurer.
 \begin{itemize}
     \item \textbf{Fiche contact} : le champ \emph{Langue de correspondance}
           (héritée de l'instance, ou FR/DE/IT/EN) détermine la langue de
-          l'e-mail \textbf{et} du PDF joint ; le champ \emph{Civilité}
+          l'e-mail \textbf{et} celle du PDF de la facture --- téléchargé ou
+          joint ---, figée au premier rendu (\S\ref{sec:pdf-fige}) ; le champ \emph{Civilité}
           (Neutre/Monsieur/Madame, contacts de type Personne) personnalise la
           formule d'appel. Une entreprise reçoit toujours la formule neutre.
     \item \textbf{Adresse de réponse} : \emph{Paramètres → Organisation →
@@ -1038,7 +1105,7 @@ Depuis la version \textbf{0.7}, l'écran \emph{Factures → Rappels} (réservé 
     \item Une \textbf{protection anti-double-envoi} empêche qu'un double-clic n'envoie deux fois le même rappel. Une facture arrivée au \textbf{dernier niveau} reste affichée avec le badge « Dernier niveau atteint » (poursuite à envisager) — elle ne disparaît jamais silencieusement.
 \end{itemize}
 
-\paragraph{Ce que réclame un rappel.} Un rappel réclame ce que le client \textbf{doit encore} : le \textbf{reste dû} de la facture, après ses règlements partiels --- le montant total s'il n'a rien payé. Le courrier annonce ce reste, augmenté des frais de rappel s'il y en a ; à frais nuls, il ne parle pas de frais. Si un règlement est enregistré \textbf{entre l'ouverture de l'aperçu et l'envoi}, l'envoi est \textbf{refusé} : le courrier validé annoncerait un autre montant que la QR-facture jointe. Fermez puis rouvrez l'aperçu, qui reprend le nouveau reste. Le PDF joint n'est pas la facture réémise, c'est un \textbf{rappel} : il en porte le titre, rappelle le numéro de la facture d'origine et, sous le total, ce qui est \textbf{déjà réglé} puis le \textbf{reste à payer} (ces deux lignes n'apparaissent qu'après un règlement). Sa \textbf{QR-facture porte le reste dû}, avec la même référence que la facture : le rapprochement bancaire propose la facture pour un paiement de ce montant, même après des règlements partiels. Les \textbf{frais de rappel n'y sont jamais inclus} : ils figurent sur une ligne à part, avec la mention qu'ils ne sont pas compris dans le bulletin de versement.
+\paragraph{Ce que réclame un rappel.} Un rappel réclame ce que le client \textbf{doit encore} : le \textbf{reste dû} de la facture, après ses règlements partiels --- le montant total s'il n'a rien payé. Le courrier annonce ce reste, augmenté des frais de rappel s'il y en a ; à frais nuls, il ne parle pas de frais. Si un règlement est enregistré \textbf{entre l'ouverture de l'aperçu et l'envoi}, l'envoi est \textbf{refusé} : le courrier validé annoncerait un autre montant que la QR-facture jointe. Fermez puis rouvrez l'aperçu, qui reprend le nouveau reste. Le PDF joint n'est pas la facture réémise, c'est un \textbf{rappel}, produit à chaque envoi --- il n'est pas figé comme le PDF de la facture (\S\ref{sec:pdf-fige}) : il en porte le titre, rappelle le numéro de la facture d'origine et, sous le total, ce qui est \textbf{déjà réglé} puis le \textbf{reste à payer} (ces deux lignes n'apparaissent qu'après un règlement). Sa \textbf{QR-facture porte le reste dû}, avec la même référence que la facture : le rapprochement bancaire propose la facture pour un paiement de ce montant, même après des règlements partiels. Les \textbf{frais de rappel n'y sont jamais inclus} : ils figurent sur une ligne à part, avec la mention qu'ils ne sont pas compris dans le bulletin de versement.
 
 \begin{keshwarning}
 Les frais de rappel ne sont \textbf{pas comptabilisés} par Kesh. Un client qui paie le montant du courrier (reste dû \emph{et} frais) ne verra pas son versement \textbf{proposé} au rapprochement, puisqu'il dépasse ce qui reste à payer ; saisi comme règlement manuel, il est \textbf{refusé comme trop-perçu}. Seul le montant de la QR-facture s'enregistre (issue \#401).
@@ -1163,7 +1230,10 @@ Le refus \textbf{nomme toujours son motif}~:
     \item facture \textbf{envoyée au client} par Kesh~: refus \textbf{sec}, que rien ne lève. Une
           facture que le client détient se corrige par un \textbf{avoir} (\S\ref{sec:avoirs}).
           ⚠️ Kesh ne connaît que ce qu'il a envoyé lui-même~: un PDF téléchargé puis transmis à la
-          main ne laisse aucune trace~;
+          main ne bloque pas la dévalidation. Son premier téléchargement est bien inscrit au
+          journal d'audit (gel du document, cf. \S\ref{sec:pdf-fige}), et la dévalidation
+          \textbf{détache} ce document~: celui que vous avez transmis reste valable, mais n'est plus
+          celui que Kesh conserve~;
     \item écriture \textbf{rapprochée} d'une transaction bancaire~;
     \item écriture d'un \textbf{exercice clos}~;
     \item écriture déjà \textbf{contre-passée}~;
@@ -1310,9 +1380,11 @@ facture.
 \end{keshnote}
 
 %%─────────────────────────────────────────────────────────────────────────────
-\section{Import bancaire}
+\section{Import bancaire}\label{sec:import-bancaire}
 
-L'import bancaire est l'étape clé pour automatiser votre comptabilité. Kesh supporte deux formats :
+L'import bancaire est l'étape clé pour automatiser votre comptabilité. Kesh supporte deux formats.
+Seul le CAMT.053 porte le \textbf{solde de clôture} du relevé, que le tableau de bord confronte
+au solde comptable ; un import CSV n'en a pas :
 
 \subsection{Import CAMT.053 (ISO 20022)}
 
@@ -1586,13 +1658,38 @@ produire hors de Kesh, à partir de ces chiffres.
 
 \subsection{Balance des comptes}
 
-\emph{Mensuel} → \emph{Rapports} → \emph{Balance}. Liste tous les comptes avec leurs soldes débiteurs et créditeurs. Filtres : période, niveau de détail (comptes principaux uniquement, ou tous sous-comptes).
+\emph{Mensuel} → \emph{Rapports} → \emph{Balance}. Pour chaque compte, sur la période choisie : le \textbf{solde
+d'ouverture}, les \textbf{mouvements} débit et crédit, et le \textbf{solde de clôture} (ouverture + mouvements).
+
+\begin{itemize}
+    \item \textbf{L'ouverture suit la nature du compte.} Un compte de bilan (actif, passif) reporte son solde depuis
+        l'origine, tous exercices confondus ; un compte de produits ou de charges repart de zéro au début de
+        l'exercice — son ouverture ne compte que ce qui précède la période \emph{dans l'exercice}.
+    \item \textbf{La balance concorde avec le bilan et le grand livre.} La clôture d'un compte de bilan est son solde au
+        bilan à la fin de la période ; celle d'un compte de résultat, son montant \textbf{depuis le début de l'exercice} —
+        égal au compte de résultat quand la période commence au premier jour de l'exercice, puisque le compte de
+        résultat ne porte que les mouvements de la période choisie. Ouverture et clôture sont, dans tous les cas,
+        celles du grand livre (\S\ref{sec:grand-livre}) sur la même période.
+    \item \textbf{La ligne « Résultat reporté (calculé) ».} Kesh ne passe aucune écriture de clôture : le résultat des
+        exercices antérieurs n'est porté par aucun compte. Une ligne calculée le montre, sous les comptes — la même
+        valeur qu'au bilan, « Perte reportée » à l'écran si elle est négative.
+    \item \textbf{Les montants sont signés selon la nature du compte} — positifs du côté naturel (débit pour un actif ou
+        une charge, crédit pour un passif ou un produit). La somme visible des colonnes d'ouverture et de clôture n'est
+        donc pas nulle ; le \textbf{contrôle} affiché sous l'ouverture (une coche) la vérifie en ramenant chaque solde au sens débit, résultat
+        reporté compris. Un avertissement à sa place signale une écriture déséquilibrée antérieure à la période ; le PDF
+        l'écrit en toutes lettres sous les totaux.
+    \item \textbf{Premier exercice} : les soldes de départ saisis à la reprise sont une écriture datée du premier jour
+        de l'exercice (\S\ref{sec:soldes-depart}) — ils apparaissent donc en \emph{mouvements}, et l'ouverture vaut zéro.
+    \item Un compte \textbf{archivé} figure tant qu'il porte un solde ou un mouvement.
+\end{itemize}
+
+Seul filtre : la période.
 
 \subsection{Grand livre}\label{sec:grand-livre}
 
 \emph{Rapports} → \emph{Grand livre}. C'est l'\textbf{extrait d'un compte} : ce qui a fait son
-solde, ligne à ligne. Là où le bilan dit « clients : 84'320.15 » et où la balance dit la même
-chose autrement, le grand livre répond à la question qui suit toujours — \emph{de quoi ce solde
+solde, ligne à ligne. Là où le bilan dit « clients : 84'320.15 » et où la balance clôt ce compte au
+même nombre, le grand livre répond à la question qui suit toujours — \emph{de quoi ce solde
 est-il fait ?}
 
 Chaque compte y est encadré par trois lignes sans lesquelles ce n'est pas un extrait : le
@@ -1826,7 +1923,10 @@ l'\textbf{état d'installation} (configuration, non comptabilité).
 
 ⚠️ Les \textbf{pièces justificatives} --- les fichiers eux-mêmes --- ne sont \textbf{pas encore}
 incluses. Le chemin de chaque pièce figure dans \texttt{imported\_supplier\_invoices.csv}, mais
-le document doit être sauvegardé séparément.
+le document doit être sauvegardé séparément. Il en va de même des \textbf{PDF des factures
+émises} (\S\ref{sec:pdf-fige}) : \texttt{invoices.csv} porte leur empreinte, la date et la langue
+du gel (colonnes \texttt{pdf\_sha256}, \texttt{pdf\_frozen\_at}, \texttt{pdf\_language}),
+pas le document lui-même, qui se conserve avec le répertoire des documents de l'installation.
 \end{keshnote}
 
 \subsection{Génération}
@@ -1959,7 +2059,7 @@ Vérifiez que la somme des débits égale exactement la somme des crédits (à 1
 
 \begin{itemize}
     \item Vérifiez que votre compte bancaire est configuré avec un IBAN suisse valide.
-    \item Si vous utilisez un QR-IBAN, assurez-vous qu'il est marqué comme tel dans \emph{Paramètres} → \emph{Comptes bancaires}.
+    \item Si vous utilisez un QR-IBAN, assurez-vous qu'il est marqué comme tel dans \emph{Administration} → \emph{Comptes bancaires}.
     \item Testez le PDF généré avec une application e-banking suisse (PostFinance, Twint Pro, Raiffeisen) : le QR code doit être scanné en moins d'une seconde.
 \end{itemize}
 
@@ -2079,7 +2179,7 @@ Le journal d'audit garde toujours la trace de l'action originale ET de l'action 
     \item[Actif] Ce que possède l'entreprise (liquidités, créances, stocks, immobilisations). Classe 1 du plan comptable.
     \item[Amortissement] Constatation comptable de la perte de valeur d'une immobilisation sur sa durée d'utilisation.
     \item[Avoir (note de crédit)] Document qui annule tout ou partie d'une facture émise (l'inverse d'une facture).
-    \item[Balance des comptes] Liste de tous les comptes avec leurs soldes débiteurs et créditeurs à une date donnée.
+    \item[Balance des comptes] Liste des comptes avec, sur une période, leur solde d'ouverture, leurs mouvements et leur solde de clôture.
     \item[Bilan] État du patrimoine d'une entreprise à une date donnée (actifs = passifs + capitaux propres).
     \item[Capitaux propres] Fonds appartenant aux propriétaires (capital, réserves, résultat reporté). Différence entre actifs et dettes.
     \item[Charge] Coût supporté par l'entreprise (achats, salaires, loyer). Classes 4 à 6.

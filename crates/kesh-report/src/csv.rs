@@ -249,8 +249,11 @@ pub fn render_income_statement_csv<W: Write>(
 
 /// Génère le CSV de la balance des comptes (AC #14).
 ///
-/// Colonnes : `NumeroCompte;NomCompte;TotalDebit;TotalCredit;Solde`. Ligne
-/// finale totaux débit/crédit avec colonnes solde vide.
+/// Colonnes : `NumeroCompte;NomCompte;SoldeOuverture;TotalDebit;TotalCredit;SoldeCloture`
+/// — Story 25-5-b (#385) : la colonne `Solde` (net des mouvements, pris pour un
+/// solde de compte) est **remplacée** par l'ouverture et la clôture. Après les
+/// comptes, la ligne calculée du résultat reporté (numéro vide, comme au bilan),
+/// puis la ligne `Total` (mouvements ; ouverture et clôture vides).
 pub fn render_trial_balance_csv<W: Write>(
     tb: &TrialBalance,
     mut writer: W,
@@ -261,9 +264,10 @@ pub fn render_trial_balance_csv<W: Write>(
     wtr.write_record([
         "NumeroCompte",
         "NomCompte",
+        "SoldeOuverture",
         "TotalDebit",
         "TotalCredit",
-        "Solde",
+        "SoldeCloture",
     ])
     .map_err(map_csv_err)?;
 
@@ -276,15 +280,29 @@ pub fn render_trial_balance_csv<W: Write>(
         wtr.write_record([
             &row.account_number,
             &row.account_name,
+            &format_amount_iso(row.opening_balance),
             &format_amount_iso(row.total_debit),
             &format_amount_iso(row.total_credit),
-            &format_amount_iso(row.balance),
+            &format_amount_iso(row.closing_balance),
         ])
         .map_err(map_csv_err)?;
     }
 
+    // Ligne calculée : libellé fixe, comme au CSV du bilan.
+    let retained = format_amount_iso(tb.retained_earnings);
+    wtr.write_record([
+        "",
+        "Résultat reporté (calculé)",
+        &retained,
+        "",
+        "",
+        &retained,
+    ])
+    .map_err(map_csv_err)?;
+
     wtr.write_record([
         "Total",
+        "",
         "",
         &format_amount_iso(tb.total_debit),
         &format_amount_iso(tb.total_credit),
@@ -856,6 +874,8 @@ mod tests {
             total_debit: Decimal::ZERO,
             total_credit: Decimal::ZERO,
             balanced: true,
+            retained_earnings: Decimal::ZERO,
+            opening_balanced: true,
         };
         let mut buf = Vec::new();
         render_trial_balance_csv(&tb, &mut buf).unwrap();
@@ -1166,24 +1186,35 @@ mod tests {
                 account_name: "Caisse".into(),
                 account_type: AccountType::Asset,
                 active: true,
+                opening_balance: dec!(1000),
                 total_debit: dec!(200),
                 total_credit: dec!(50),
                 balance: dec!(150),
+                closing_balance: dec!(1150),
             }],
             total_debit: dec!(200),
             total_credit: dec!(50),
             balanced: true,
+            retained_earnings: dec!(-600),
+            opening_balanced: true,
         };
         let mut buf = Vec::new();
         render_trial_balance_csv(&tb, &mut buf).unwrap();
         let body = String::from_utf8(buf[3..].to_vec()).unwrap();
         let lines: Vec<&str> = body.split("\r\n").filter(|l| !l.is_empty()).collect();
-        assert_eq!(lines.len(), 3, "1 header + 1 row + 1 total = 3 lines");
+        assert_eq!(
+            lines.len(),
+            4,
+            "1 header + 1 row + résultat reporté + 1 total = 4 lines"
+        );
         assert_eq!(
             lines[0],
-            "NumeroCompte;NomCompte;TotalDebit;TotalCredit;Solde"
+            "NumeroCompte;NomCompte;SoldeOuverture;TotalDebit;TotalCredit;SoldeCloture"
         );
-        assert!(lines[2].starts_with("Total;"));
+        // Story 25-5-b — l'ouverture et la clôture dans l'ordre des colonnes.
+        assert_eq!(lines[1], "1000;Caisse;1000.00;200.00;50.00;1150.00");
+        assert_eq!(lines[2], ";Résultat reporté (calculé);-600.00;;;-600.00");
+        assert_eq!(lines[3], "Total;;;200.00;50.00;");
     }
 
     // Story 21-7 — CSV balance âgée.

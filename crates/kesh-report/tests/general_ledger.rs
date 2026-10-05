@@ -204,6 +204,47 @@ async fn concordance_compte_de_resultat(pool: MySqlPool) {
         section.closing, is_row.balance,
         "la clôture doit égaler le montant du compte de résultat"
     );
+
+    // Story 25-5-b — en cours d'exercice (à partir du 1er mars), la vente de
+    // février fait l'ouverture du compte de ventes ; le grand livre et la balance
+    // doivent la porter de la même façon, et clore au même nombre. Sur
+    // l'exercice entier, les deux ouvertures vaudraient 0 par construction.
+    let (from, to) = (ymd(2026, 3, 1), ymd(2026, 12, 31));
+    let mid_ledger = generate(
+        &pool,
+        seeded.company_id,
+        &LedgerPeriod::new(from, to).expect("période"),
+        &LedgerOptions::default(),
+    )
+    .await
+    .expect("grand livre en cours d'exercice");
+    let mid_section = mid_ledger
+        .sections
+        .iter()
+        .find(|s| s.account_id == ventes)
+        .expect("le compte de ventes doit figurer");
+    let mid_rp = ReportPeriod {
+        fiscal_year_id: seeded.fiscal_year_id,
+        start_date: from,
+        end_date: to,
+    };
+    let mid_tb = generate_trial_balance(&pool, seeded.company_id, &mid_rp)
+        .await
+        .expect("balance en cours d'exercice");
+    let mid_row = mid_tb
+        .rows
+        .iter()
+        .find(|r| r.account_id == ventes)
+        .expect("le compte doit figurer à la balance");
+    assert_eq!(mid_section.opening, dec!(1000.00));
+    assert_eq!(
+        mid_section.opening, mid_row.opening_balance,
+        "l'ouverture doit concorder entre grand livre et balance"
+    );
+    assert_eq!(
+        mid_section.closing, mid_row.closing_balance,
+        "la clôture doit concorder entre grand livre et balance"
+    );
 }
 
 /// La partie double, vue depuis le grand livre : c'est le test le moins cher du

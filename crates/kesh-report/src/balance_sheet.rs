@@ -330,7 +330,7 @@ async fn fetch_cumulative_section(
 ///
 /// **Couture (AC-G)** : même borne date `entry_date < before` que
 /// `fetch_cumulative_section` ; un snapshot de clôture stockera aussi ce report.
-async fn fetch_retained_earnings(
+pub(crate) async fn fetch_retained_earnings(
     pool: &MySqlPool,
     company_id: i64,
     before: NaiveDate,

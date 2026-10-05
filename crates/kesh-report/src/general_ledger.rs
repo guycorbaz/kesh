@@ -10,6 +10,9 @@
 //!
 //! # La règle du solde d'ouverture — le cœur du module
 //!
+//! Elle vit dans [`crate::opening`], **partagée avec la balance des comptes**
+//! (Story 25-5-b) : une seule règle, que les deux rapports appliquent.
+//!
 //! Elle **diffère selon le type de compte**, et c'est ce qu'un lecteur pressé
 //! prendra de travers :
 //!
@@ -53,6 +56,7 @@ use serde::Serialize;
 use sqlx::MySqlPool;
 
 use crate::errors::ReportError;
+use crate::opening::{is_bilan, is_debit_natured, opening_from, signed};
 
 /// Plafond de lignes rendues en une fois, aligné sur le patron du dépôt.
 ///
@@ -178,20 +182,6 @@ struct RawAccount {
     active: bool,
 }
 
-/// `true` si le compte a le débit pour côté naturel.
-fn is_debit_natured(t: AccountType) -> bool {
-    matches!(t, AccountType::Asset | AccountType::Expense)
-}
-
-/// Applique la convention de signe du dépôt — celle de la balance et du bilan.
-fn signed(t: AccountType, debit: Decimal, credit: Decimal) -> Decimal {
-    if is_debit_natured(t) {
-        debit - credit
-    } else {
-        credit - debit
-    }
-}
-
 /// Début de l'exercice contenant `date`, s'il en existe un.
 ///
 /// Sert **uniquement** aux comptes de résultat : c'est la borne basse de leur
@@ -217,10 +207,13 @@ async fn fiscal_year_start_containing(
     Ok(row.map(|r| r.0))
 }
 
-/// Solde d'ouverture d'un compte au `from` — **la règle centrale du module**.
+/// Solde d'ouverture d'un compte au `from` — **la règle centrale du module**,
+/// appliquée par [`opening_from`] (module partagé avec la balance des comptes).
 ///
-/// Comptes de bilan : cumul depuis l'origine. Comptes de résultat : cumul depuis
-/// le début de leur exercice. Voir la documentation du module pour le pourquoi.
+/// Une requête lit les deux paires de sommes brutes : avant `from`, et depuis le
+/// début de l'exercice contenant `from`. Quand aucun exercice ne couvre `from`, la
+/// borne basse vaut `from` lui-même : la seconde paire est nulle, et l'ouverture
+/// d'un compte de résultat aussi.
 async fn opening_balance(
     pool: &MySqlPool,
     company_id: i64,
@@ -228,50 +221,28 @@ async fn opening_balance(
     account_type: AccountType,
     from: NaiveDate,
 ) -> Result<Decimal, ReportError> {
-    // Borne basse : aucune pour un compte de bilan ; le début de l'exercice pour
-    // un compte de résultat. `None` ⇒ ouverture nulle, la borne haute étant
-    // exclusive et égale à la borne basse.
-    let lower: Option<NaiveDate> = match account_type {
-        AccountType::Asset | AccountType::Liability => None,
-        AccountType::Revenue | AccountType::Expense => {
-            match fiscal_year_start_containing(pool, company_id, from).await? {
-                Some(start) => Some(start),
-                // Aucun exercice ne couvre `from` : rien à reporter.
-                None => return Ok(Decimal::ZERO),
-            }
-        }
-    };
+    let fy_start = fiscal_year_start_containing(pool, company_id, from)
+        .await?
+        .unwrap_or(from);
 
-    let sql = match lower {
-        Some(_) => {
-            "SELECT COALESCE(SUM(jel.debit), 0) AS d, COALESCE(SUM(jel.credit), 0) AS c \
-             FROM journal_entry_lines jel \
-             INNER JOIN journal_entries je ON je.id = jel.entry_id \
-             WHERE jel.account_id = ? AND je.company_id = ? \
-               AND je.entry_date >= ? AND je.entry_date < ?"
-        }
-        None => {
-            "SELECT COALESCE(SUM(jel.debit), 0) AS d, COALESCE(SUM(jel.credit), 0) AS c \
-             FROM journal_entry_lines jel \
-             INNER JOIN journal_entries je ON je.id = jel.entry_id \
-             WHERE jel.account_id = ? AND je.company_id = ? \
-               AND je.entry_date < ?"
-        }
-    };
+    let (bd, bc, sd, sc) = sqlx::query_as::<_, (Decimal, Decimal, Decimal, Decimal)>(
+        "SELECT COALESCE(SUM(jel.debit), 0), COALESCE(SUM(jel.credit), 0), \
+                COALESCE(SUM(CASE WHEN je.entry_date >= ? THEN jel.debit ELSE 0 END), 0), \
+                COALESCE(SUM(CASE WHEN je.entry_date >= ? THEN jel.credit ELSE 0 END), 0) \
+         FROM journal_entry_lines jel \
+         INNER JOIN journal_entries je ON je.id = jel.entry_id \
+         WHERE jel.account_id = ? AND je.company_id = ? AND je.entry_date < ?",
+    )
+    .bind(fy_start)
+    .bind(fy_start)
+    .bind(account_id)
+    .bind(company_id)
+    .bind(from)
+    .fetch_one(pool)
+    .await
+    .map_err(kesh_db::errors::map_db_error)?;
 
-    let mut q = sqlx::query_as::<_, (Decimal, Decimal)>(sql)
-        .bind(account_id)
-        .bind(company_id);
-    if let Some(lo) = lower {
-        q = q.bind(lo);
-    }
-    let (d, c) = q
-        .bind(from)
-        .fetch_one(pool)
-        .await
-        .map_err(kesh_db::errors::map_db_error)?;
-
-    Ok(signed(account_type, d, c))
+    Ok(opening_from(account_type, (bd, bc), (sd, sc)))
 }
 
 /// Comptes à rendre : ceux qui ont un mouvement sur la période **ou** un solde
@@ -560,38 +531,9 @@ pub async fn generate(
     })
 }
 
-/// `true` pour un compte de bilan — dont le solde se reporte d'un exercice à
-/// l'autre.
-fn is_bilan(t: AccountType) -> bool {
-    matches!(t, AccountType::Asset | AccountType::Liability)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn d(v: i64) -> Decimal {
-        Decimal::from(v)
-    }
-
-    #[test]
-    fn signe_suit_la_nature_du_compte() {
-        // Convention du dépôt, reprise telle quelle de la balance et du bilan.
-        assert_eq!(signed(AccountType::Asset, d(100), d(30)), d(70));
-        assert_eq!(signed(AccountType::Expense, d(100), d(30)), d(70));
-        assert_eq!(signed(AccountType::Liability, d(30), d(100)), d(70));
-        assert_eq!(signed(AccountType::Revenue, d(30), d(100)), d(70));
-    }
-
-    #[test]
-    fn seuls_les_comptes_de_bilan_reportent_leur_solde() {
-        // C'est ce qui commande la borne basse du solde d'ouverture, et la
-        // remise à zéro du solde progressif au passage d'exercice.
-        assert!(is_bilan(AccountType::Asset));
-        assert!(is_bilan(AccountType::Liability));
-        assert!(!is_bilan(AccountType::Revenue));
-        assert!(!is_bilan(AccountType::Expense));
-    }
 
     #[test]
     fn periode_inversee_est_refusee() {
