@@ -355,6 +355,15 @@ pub enum DbError {
     #[error("Aucun compte de différences d'arrondi utilisable n'est désigné")]
     RoundingAccountNotConfigured { context: RoundingContext },
 
+    /// Le total TTC arrondi d'une facture est inférieur au montant minimum fixé
+    /// dans les paramètres de facturation (Story 25-4-e, #495) : elle ne s'émet
+    /// pas. Les deux montants voyagent avec l'erreur pour que le message les nomme.
+    #[error("Total {total} inférieur au montant minimum {minimum}")]
+    InvoiceBelowMinimum {
+        total: rust_decimal::Decimal,
+        minimum: rust_decimal::Decimal,
+    },
+
     /// La date fournie ne tombe pas dans l'exercice courant de l'entité
     /// modifiée. Story 3.3 : empêche le déplacement d'une écriture vers
     /// un autre exercice via un simple changement de date.
@@ -704,6 +713,7 @@ impl DbError {
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
             Self::InactiveOrInvalidAccounts => "INACTIVE_OR_INVALID_ACCOUNTS",
             Self::RoundingAccountNotConfigured { .. } => "ROUNDING_ACCOUNT_NOT_CONFIGURED",
+            Self::InvoiceBelowMinimum { .. } => "INVOICE_BELOW_MINIMUM",
             Self::DateOutsideFiscalYear => "DATE_OUTSIDE_FISCAL_YEAR",
             Self::AccountHasEntries { .. } => "ACCOUNT_HAS_ENTRIES",
             Self::AccountRoleAlreadyAssigned { .. } => "ACCOUNT_ROLE_ALREADY_ASSIGNED",

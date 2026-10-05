@@ -2517,3 +2517,36 @@ async fn full_import_without_rounding_columns_takes_the_defaults(pool: MySqlPool
             .unwrap();
     assert!(enabled.iter().all(|e| *e), "défaut actif : {enabled:?}");
 }
+
+/// Story 25-4-e (#495) — une sauvegarde antérieure, sans la colonne du montant
+/// minimum, s'importe : le réglage reste vide (aucun seuil).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_without_minimum_amount_column_leaves_no_threshold(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = seed_admin(&pool, "minimum_absent").await;
+    sqlx::query(
+        "INSERT INTO company_invoice_settings (company_id, minimum_invoice_amount) VALUES (?, 5.00) \
+         ON DUPLICATE KEY UPDATE minimum_invoice_amount = 5.00",
+    )
+    .bind(ctx.company_id)
+    .execute(&pool)
+    .await
+    .expect("réglage");
+    let backup = export_backup(&app, &ctx.jwt).await;
+    let (mut manifest, data) = unzip(&backup);
+    strip_column(
+        &mut manifest,
+        "company_invoice_settings",
+        "minimum_invoice_amount",
+    );
+    import_ok(&app, &ctx.jwt, &manifest, &data).await;
+    let minimum: Vec<Option<rust_decimal::Decimal>> =
+        sqlx::query_scalar("SELECT minimum_invoice_amount FROM company_invoice_settings")
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert!(
+        !minimum.is_empty() && minimum.iter().all(Option::is_none),
+        "{minimum:?}"
+    );
+}

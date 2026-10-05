@@ -408,7 +408,13 @@ const ATTENDU = {
 	// Fusion de `main` (via la 25-4-c3-b) dans la 25-4-c4, 2026-10-05 : la c4 ajoute
 	// +9 à une base désormais de 1776 ⇒ **1785** ; `sitesNonResolus` et `relais` suivent
 	// la fusion (31, 6) — la c4 n'y touche pas.
-	sitesTotal: 1785,
+	// Story 25-4-e (#495) : **1766 → 1769**, recompté par ce test et par
+	// `grep -o "i18nMsg("` aux deux bornes de `settings/invoicing/+page.svelte`
+	// (38 → 41) — la section « Montant minimum » : titre, libellé, aide.
+	//
+	// Fusion dans la 25-4-e, 2026-10-05 : la story ajoute +3 à une base
+	// désormais de 1785 ⇒ **1788** ; `sitesNonResolus` et `relais` suivent la fusion (31, 6).
+	sitesTotal: 1788,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

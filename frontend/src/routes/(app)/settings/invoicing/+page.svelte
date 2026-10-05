@@ -45,6 +45,8 @@
 	let roundingId = $state<number | null>(null);
 	// Story 25-4-c4-b : actif par défaut côté serveur ; relu au chargement.
 	let roundTo5 = $state(true);
+	// Story 25-4-e : vide = aucun seuil.
+	let minimumAmount = $state('');
 	let salesJournal = $state<JournalCode>('Ventes');
 	let version = $state(0);
 
@@ -102,6 +104,7 @@
 			vatDecompteId = s.defaultVatDecompteAccountId;
 			roundingId = s.defaultRoundingAccountId;
 			roundTo5 = s.roundTo5Centimes;
+			minimumAmount = s.minimumInvoiceAmount ?? '';
 			salesJournal = s.defaultSalesJournal;
 			version = s.version;
 		} catch (err) {
@@ -137,6 +140,7 @@
 				defaultVatDecompteAccountId: vatDecompteId,
 				defaultRoundingAccountId: roundingId,
 				roundTo5Centimes: roundTo5,
+				minimumInvoiceAmount: minimumAmount.trim() === '' ? null : minimumAmount.trim(),
 				defaultSalesJournal: salesJournal,
 				journalEntryDescriptionTemplate: descriptionTemplate,
 				version,
@@ -161,6 +165,7 @@
 						vatDecompteId = fresh.defaultVatDecompteAccountId;
 						roundingId = fresh.defaultRoundingAccountId;
 						roundTo5 = fresh.roundTo5Centimes;
+						minimumAmount = fresh.minimumInvoiceAmount ?? '';
 						salesJournal = fresh.defaultSalesJournal;
 						version = fresh.version;
 					} catch {
@@ -397,6 +402,31 @@
 						<option value={a.id}>{a.number} — {a.name}</option>
 					{/each}
 				</select>
+			</div>
+		</section>
+
+		<section class="space-y-3 rounded-lg border border-border bg-white p-6 shadow-sm">
+			<h2 class="text-lg font-semibold">
+				{i18nMsg('settings-invoicing-minimum-title', 'Montant minimum')}
+			</h2>
+			<div>
+				<label class="mb-1 block text-sm font-medium" for="{uid}-minimum">
+					{i18nMsg('settings-invoicing-minimum-label', "Montant minimum d'une facture")}
+				</label>
+				<input
+					id="{uid}-minimum"
+					type="text"
+					inputmode="decimal"
+					data-testid="settings-minimum-invoice-amount"
+					class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
+					bind:value={minimumAmount}
+				/>
+				<p class="mt-1 text-xs text-text-muted" data-testid="settings-minimum-hint">
+					{i18nMsg(
+						'settings-invoicing-minimum-hint',
+						"Une facture dont le total est inférieur ne peut pas être validée. Laissez vide pour n'appliquer aucun seuil. Les avoirs ne sont pas concernés.",
+					)}
+				</p>
 			</div>
 		</section>
 

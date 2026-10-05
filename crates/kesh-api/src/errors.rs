@@ -2902,6 +2902,30 @@ impl IntoResponse for AppError {
                 // ⚠️ Le message NOMME LES DEUX BORNES — jusqu'où les livres sont
                 // fermés, et de quand est l'écriture refusée. Un refus qui ne dit
                 // pas où s'arrête le verrou envoie l'utilisateur deviner.
+                // Story 25-4-e (#495) — la facture sous le montant minimum : le
+                // message nomme les deux montants, au centime.
+                DbError::InvoiceBelowMinimum { total, minimum } => {
+                    let money = |d: rust_decimal::Decimal| {
+                        d.round_dp_with_strategy(
+                            2,
+                            rust_decimal::RoundingStrategy::MidpointAwayFromZero,
+                        )
+                        .to_string()
+                    };
+                    let fallback = format!(
+                        "Le total de cette facture, CHF {}, est inférieur au montant minimum fixé dans Paramètres → Facturation, CHF {}.",
+                        money(total),
+                        money(minimum)
+                    );
+                    let mut args = FluentArgs::new();
+                    args.set("total", money(total));
+                    args.set("minimum", money(minimum));
+                    build_response(
+                        StatusCode::BAD_REQUEST,
+                        "INVOICE_BELOW_MINIMUM",
+                        &t_args("error-invoice-below-minimum", &fallback, &args),
+                    )
+                }
                 DbError::PeriodLocked {
                     locked_through,
                     attempted,

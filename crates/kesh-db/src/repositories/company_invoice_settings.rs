@@ -30,7 +30,7 @@ const COLUMNS: &str = "company_id, invoice_number_format, default_receivable_acc
     default_vat_recoverable_account_id, default_vat_decompte_account_id, \
     default_sales_journal, journal_entry_description_template, \
     credit_note_number_format, default_payable_account_id, \
-    default_rounding_account_id, round_to_5_centimes, \
+    default_rounding_account_id, round_to_5_centimes, minimum_invoice_amount, \
     version, created_at, updated_at";
 
 fn settings_snapshot_json(s: &CompanyInvoiceSettings) -> serde_json::Value {
@@ -48,6 +48,7 @@ fn settings_snapshot_json(s: &CompanyInvoiceSettings) -> serde_json::Value {
         "defaultPayableAccountId": s.default_payable_account_id,
         "defaultRoundingAccountId": s.default_rounding_account_id,
         "roundTo5Centimes": s.round_to_5_centimes,
+        "minimumInvoiceAmount": s.minimum_invoice_amount,
         "version": s.version,
     })
 }
@@ -129,6 +130,7 @@ fn is_no_op_change(
         && before.default_payable_account_id == changes.default_payable_account_id
         && before.default_rounding_account_id == changes.default_rounding_account_id
         && before.round_to_5_centimes == changes.round_to_5_centimes
+        && before.minimum_invoice_amount == changes.minimum_invoice_amount
 }
 
 /// Met à jour la config (tous les champs) avec verrou optimiste et audit.
@@ -182,7 +184,7 @@ pub async fn update(
              default_sales_journal = ?, \
              journal_entry_description_template = ?, credit_note_number_format = ?, \
              default_payable_account_id = ?, default_rounding_account_id = ?, \
-             round_to_5_centimes = ?, version = version + 1 \
+             round_to_5_centimes = ?, minimum_invoice_amount = ?, version = version + 1 \
          WHERE company_id = ? AND version = ?",
     )
     .bind(&changes.invoice_number_format)
@@ -197,6 +199,7 @@ pub async fn update(
     .bind(changes.default_payable_account_id)
     .bind(changes.default_rounding_account_id)
     .bind(changes.round_to_5_centimes)
+    .bind(changes.minimum_invoice_amount)
     .bind(company_id)
     .bind(expected_version)
     .execute(&mut *tx)
@@ -496,7 +499,7 @@ pub async fn insert_with_defaults(
                     cis.default_sales_journal, \
                     cis.journal_entry_description_template, cis.credit_note_number_format, \
                     cis.default_payable_account_id, cis.default_rounding_account_id, \
-                    cis.round_to_5_centimes, \
+                    cis.round_to_5_centimes, cis.minimum_invoice_amount, \
                     cis.version, cis.created_at, cis.updated_at \
              FROM company_invoice_settings cis \
              JOIN accounts ar ON ar.id = cis.default_receivable_account_id AND ar.active = TRUE \
@@ -620,7 +623,7 @@ pub async fn insert_with_defaults_in_tx(
                     cis.default_sales_journal, \
                     cis.journal_entry_description_template, cis.credit_note_number_format, \
                     cis.default_payable_account_id, cis.default_rounding_account_id, \
-                    cis.round_to_5_centimes, \
+                    cis.round_to_5_centimes, cis.minimum_invoice_amount, \
                     cis.version, cis.created_at, cis.updated_at \
              FROM company_invoice_settings cis \
              JOIN accounts ar ON ar.id = cis.default_receivable_account_id AND ar.active = TRUE \

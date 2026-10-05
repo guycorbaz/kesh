@@ -2043,6 +2043,22 @@ pub async fn validate_invoice(
         if (ttc_brut + rounding_amount).is_zero() {
             return Err(DbError::InvalidInput("invoiceTotalZero".into()));
         }
+        // (2 bis'') Story 25-4-e (#495) — le montant minimum, comparé au total
+        // ARRONDI (celui que le client paiera ; le brut si l'arrondi est désactivé),
+        // avant de réclamer un compte d'arrondi. Égal au seuil : accepté.
+        //
+        // ⛔ Comparé AU CENTIME (revue de code P1, lentille A) : arrondi désactivé, le
+        // total garde jusqu'à quatre décimales, et 4.995 aurait été refusé sous un
+        // seuil de 5.00 avec un message affichant « 5.00 inférieur à 5.00 ». Le
+        // montant comparé est celui que le client paie, et celui que le message nomme.
+        if let Some(minimum) = settings.minimum_invoice_amount {
+            let total = kesh_core::types::Money::new(ttc_brut + rounding_amount)
+                .round_to_centimes()
+                .amount();
+            if total < minimum {
+                return Err(DbError::InvoiceBelowMinimum { total, minimum });
+            }
+        }
         let rounding = if rounding_amount.is_zero() {
             None
         } else {

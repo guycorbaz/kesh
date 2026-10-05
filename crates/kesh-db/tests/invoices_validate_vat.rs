@@ -923,3 +923,129 @@ mod arrondi_5_centimes {
         assert_eq!(inv.rounding_amount, dec!(0));
     }
 }
+
+// ---------------------------------------------------------------------------
+// Story 25-4-e (#495) — le montant minimum d'une facture
+// ---------------------------------------------------------------------------
+
+mod montant_minimum {
+    use super::*;
+    use kesh_db::entities::NewCreditNote;
+    use kesh_db::repositories::credit_notes;
+    use kesh_db::test_fixtures::designate_rounding_account;
+
+    async fn set_minimum(pool: &MySqlPool, company_id: i64, minimum: Option<Decimal>) {
+        sqlx::query(
+            "UPDATE company_invoice_settings SET minimum_invoice_amount = ? WHERE company_id = ?",
+        )
+        .bind(minimum)
+        .bind(company_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    async fn setup(pool: &MySqlPool) -> (SeededCompany, i64) {
+        let seeded = seed_accounting_company(pool).await.unwrap();
+        let contact = make_contact(pool, seeded.company_id, seeded.admin_user_id).await;
+        designate_rounding_account(pool, seeded.company_id)
+            .await
+            .unwrap();
+        (seeded, contact)
+    }
+
+    /// ⛔ Sous le seuil : refus dédié, nommant les deux montants, la facture reste
+    /// brouillon ; égal au seuil : accepté.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn below_the_minimum_is_refused_equal_is_accepted(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        set_minimum(&pool, seeded.company_id, Some(dec!(5.00))).await;
+
+        let err = create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(4.50))])
+            .await
+            .expect_err("4.50 < 5.00");
+        assert!(
+            matches!(err, DbError::InvoiceBelowMinimum { total, minimum }
+                if total == dec!(4.50) && minimum == dec!(5.00)),
+            "got {err:?}"
+        );
+        let drafts: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM invoices WHERE company_id = ? AND status = 'draft'",
+        )
+        .bind(seeded.company_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(drafts, 1, "rien d'écrit, la facture reste brouillon");
+
+        create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(5.00))])
+            .await
+            .expect("égal au seuil : accepté");
+    }
+
+    /// ⛔ Le seuil se compare au total ARRONDI : 4.98 brut, arrondi à 5.00, passe un
+    /// seuil de 5.00.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn the_minimum_compares_to_the_rounded_total(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        set_minimum(&pool, seeded.company_id, Some(dec!(5.00))).await;
+        let v = create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(4.98))])
+            .await
+            .expect("4.98 → 5.00 : au seuil");
+        assert_eq!(v.invoice.rounding_amount, dec!(0.02));
+    }
+
+    /// ⛔ Arrondi désactivé, un total à quatre décimales est comparé AU CENTIME :
+    /// 4.995 vaut 5.00 et passe un seuil de 5.00 ; 4.994 vaut 4.99 et est refusé, le
+    /// message nommant 4.99 (revue de code P1, lentille A).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn the_minimum_compares_at_the_centime(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        kesh_db::test_fixtures::disable_rounding_to_5_centimes(&pool, seeded.company_id)
+            .await
+            .unwrap();
+        set_minimum(&pool, seeded.company_id, Some(dec!(5.00))).await;
+        create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(4.995))])
+            .await
+            .expect("4.995 → 5.00 au centime : au seuil");
+        let err = create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(4.994))])
+            .await
+            .expect_err("4.994 → 4.99");
+        assert!(
+            matches!(err, DbError::InvoiceBelowMinimum { total, .. } if total == dec!(4.99)),
+            "got {err:?}"
+        );
+    }
+
+    /// Aucun seuil (le défaut) : une facture de 0.05 se valide.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn no_minimum_by_default(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(0.05))])
+            .await
+            .expect("aucun seuil");
+    }
+
+    /// L'avoir n'est pas soumis au seuil : une facture émise avant qu'un seuil plus
+    /// haut soit fixé se crédite.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn a_credit_note_ignores_the_minimum(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let v = create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(3.00))])
+            .await
+            .expect("validate");
+        set_minimum(&pool, seeded.company_id, Some(dec!(10.00))).await;
+        credit_notes::create_credit_note(
+            &pool,
+            NewCreditNote {
+                company_id: seeded.company_id,
+                invoice_id: v.invoice.id,
+                date: NaiveDate::from_ymd_opt(INVOICE_DATE.0, INVOICE_DATE.1, INVOICE_DATE.2)
+                    .unwrap(),
+            },
+            seeded.admin_user_id,
+        )
+        .await
+        .expect("avoir sous le seuil : accepté");
+    }
+}

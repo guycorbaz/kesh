@@ -1036,3 +1036,82 @@ async fn settings_round_to_5_centimes_is_exposed_and_preserved(pool: MySqlPool) 
     assert_eq!(status, 200, "{body}");
     assert_eq!(body["roundTo5Centimes"], true);
 }
+
+/// Story 25-4-e (#495) — `minimumInvoiceAmount` : posé, **préservé** s'il est
+/// absent, **effacé** à `null` ; nul, négatif ou à trois décimales : 400.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn settings_minimum_invoice_amount_is_set_preserved_cleared_and_validated(pool: MySqlPool) {
+    truncate_all(&pool).await.expect("truncate");
+    let (company_id, _accounts) = create_seeded_company(&pool).await;
+    create_company_user_with_role(&pool, company_id, "alice", "password123", Role::Admin).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app, "alice", "password123").await;
+
+    let put = |value: Option<serde_json::Value>| {
+        let app = &app;
+        let token = token.clone();
+        async move {
+            let settings: serde_json::Value = app
+                .client
+                .get(app.url("/api/v1/company/invoice-settings"))
+                .header("Authorization", format!("Bearer {token}"))
+                .send()
+                .await
+                .expect("get")
+                .json()
+                .await
+                .expect("json");
+            let mut body = json!({
+                "invoiceNumberFormat": settings["invoiceNumberFormat"],
+                "defaultReceivableAccountId": settings["defaultReceivableAccountId"],
+                "defaultRevenueAccountId": settings["defaultRevenueAccountId"],
+                "defaultVatPayableAccountId": settings["defaultVatPayableAccountId"],
+                "defaultVatRecoverableAccountId": settings["defaultVatRecoverableAccountId"],
+                "defaultVatDecompteAccountId": settings["defaultVatDecompteAccountId"],
+                "defaultSalesJournal": settings["defaultSalesJournal"],
+                "journalEntryDescriptionTemplate": settings["journalEntryDescriptionTemplate"],
+                "version": settings["version"],
+            });
+            if let Some(v) = value {
+                body["minimumInvoiceAmount"] = v;
+            }
+            let resp = app
+                .client
+                .put(app.url("/api/v1/company/invoice-settings"))
+                .header("Authorization", format!("Bearer {token}"))
+                .json(&body)
+                .send()
+                .await
+                .expect("put");
+            let status = resp.status().as_u16();
+            let body: serde_json::Value = resp.json().await.unwrap_or(serde_json::Value::Null);
+            (status, body)
+        }
+    };
+    let amount = |b: &serde_json::Value| {
+        b["minimumInvoiceAmount"]
+            .as_str()
+            .map(|s| s.parse::<rust_decimal::Decimal>().unwrap())
+    };
+
+    let (status, body) = put(Some(json!("5.00"))).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(amount(&body), Some(rust_decimal_macros::dec!(5.00)));
+    let (status, body) = put(None).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        amount(&body),
+        Some(rust_decimal_macros::dec!(5.00)),
+        "absent : préservé"
+    );
+    for bad in ["0", "-1.00", "4.005", "1000000000.01"] {
+        let (status, body) = put(Some(json!(bad))).await;
+        assert_eq!(status, 400, "{bad} : {body}");
+    }
+    let (status, body) = put(Some(serde_json::Value::Null)).await;
+    assert_eq!(status, 200, "{body}");
+    assert!(
+        body["minimumInvoiceAmount"].is_null(),
+        "null : effacé — {body}"
+    );
+}
