@@ -100,7 +100,8 @@ chemin vers le PDF d'une facture, pour le téléchargement **et** pour l'e-mail 
 - facture `validated` **non figée** → rend le PDF dans la **langue du client** (`resolve_language`), l'écrit par
   `store_document` (`ext = "pdf"`), puis pose les quatre colonnes par une fonction `kesh-db` qui fait, **dans une seule
   transaction**, l'`UPDATE … WHERE id = ? AND company_id = ? AND pdf_storage_path IS NULL AND status = 'validated' AND version = ?`
-  (la **version lue au rendu** — `render` en expose une variante qui la rend, validation P2, M1) et
+  (la **version lue au rendu** — c'est `render_document`, qui charge la facture (`invoice_pdf_service.rs:198-215`), qui
+  la rend ; ses appelants « rappel » (`invoice_email.rs:557`, `:1239`) l'ignorent ; validation P2, M1) et
   l'audit `invoice.pdf_frozen` (empreinte, langue, **acteur** — utilisateur ou clé d'API) — l'empreinte n'existe jamais
   sans sa trace. ⚠️ **La garde `status = 'validated'` est indispensable** (validation P1, A1) : sans elle, une dévalidation
   intercalée entre le rendu et l'`UPDATE` laisserait un PDF figé sur un brouillon, servi comme émis à la revalidation.
@@ -114,7 +115,9 @@ chemin vers le PDF d'une facture, pour le téléchargement **et** pour l'e-mail 
   **annulée par un avoir** intercalé) → `InvoiceNotValidated` (ou `InvoiceCancelled` pour une annulée — un code qui dit
   vrai, P2 L5), **sans nouvelle tentative** ; colonnes nulles et facture **`validated` à une autre version** (elle a
   changé pendant le rendu) → **une seule** nouvelle tentative (rendu + pose), puis **409** `INVOICE_CHANGED` si la
-  course se répète ;
+  course se répète. En pratique : une pause des rappels, un règlement ou un avoir **concurrents**, dans la seconde du
+  rendu, déclenchent la nouvelle tentative ; un envoi par e-mail non (`mark_emailed` ne touche pas `version`) — pas de
+  409 en usage normal (P3, L2) ;
 - **échec d'écriture du fichier** (`KESH_DOCUMENTS_DIR` non inscriptible) → **500**, rien n'est servi — jamais un rendu
   non figé présenté comme le document (C-F6) ;
 - facture `cancelled` **figée** → rend le PDF figé ; `cancelled` **non figée** ou `draft` → refus inchangé
@@ -149,7 +152,9 @@ routes d'administration, donc refusé aux clés d'API — `require_not_pat`), **
   des 410 en série ; refiger remplacerait définitivement des originaux qui existent encore ailleurs, P2 L6) ;
 - ⚠️ **gardes structurelles** que la route fait rougir (P2, M3) : le compte des constructeurs du bloc d'administration
   (`lib.rs:186`, **25 → 26**) et `admin_pat_denied_e2e.rs` (`:46`, `:757`, `ADMIN_COUPLES`) ; le registre des routes
-  d'audit (`audit_route_registry.rs`, `LIB_ROUTES` : `("post", "…refreeze…", Traced)`) ; le registre des libellés
+  d'audit (`audit_route_registry.rs`, `LIB_ROUTES` : `("post", "…refreeze…", Traced)`) **et ses trois totaux**
+  (`:436-470`) — `LIB_ROUTES.len()` **109 → 110**, routes tracées **91 → 92** (message de l'assertion réécrit),
+  `LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len()` **112 → 113** ; le registre des libellés
   (`audit_label_registry.rs` : `invoice.pdf_frozen` et `invoice.pdf_refrozen` dans `audit_labels::ACTIONS`, libellé dans
   les 4 `.ftl` ; si l'action est un paramètre d'une fonction commune, le site entre dans `SITES_INDIRECTS`).
 
@@ -188,6 +193,9 @@ Libellés dans les 4 locales.
 - **la garde de statut** : facture dévalidée entre le rendu et la pose (simulée en appelant la pose après la
   dévalidation) → zéro ligne, rien de figé sur le brouillon ; mutation « garde `status` retirée » tuée (A1) ;
 - le gel **ne change pas `version`** ;
+- **la garde `version`** (P3, M2) : dévalidation → modification → revalidation, puis pose avec l'**ancienne** version →
+  zéro ligne, la nouvelle tentative rend et fige les **nouvelles** lignes ; une course qui se répète → 409
+  `INVOICE_CHANGED` ; mutation « garde `version` retirée » tuée ;
 - l'audit `invoice.pdf_frozen` nomme l'acteur, et partage la transaction de la pose ;
 - un envoi e-mail en **échec SMTP** laisse la facture figée, et le téléchargement suivant rend les mêmes octets ;
 - changer la **langue** du client après le gel ne change pas le PDF ;
@@ -201,8 +209,8 @@ Libellés dans les 4 locales.
 - la contrainte tout-ou-rien rejette un état partiel ;
 - Vitest de la fiche : bouton pour `cancelled` figée, absent pour `cancelled` non figée ; mention « figé le » ;
 - **refiger** : fichier supprimé → 410 → refigeage par un Admin → 200, nouveau document, audit avec les deux
-  empreintes ; refusé pour un Comptable (403), une clé d'API, une facture non figée (409), un fichier présent (409), une
-  facture `cancelled` ; deux refigeages concurrents → un seul ;
+  empreintes ; refusé pour un Comptable (403), une clé d'API, une facture non figée (409), un fichier présent (409), un
+  fichier **altéré** (409 `INVOICE_PDF_INTEGRITY`), une facture `cancelled` ; deux refigeages concurrents → un seul ;
 - **le gel par un rôle Consultation** : le premier téléchargement d'un Consultation fige, et l'audit le nomme ;
 - E2E (`authedApiContext`, `pdfRes.body()`) : télécharger deux fois une facture rend le même fichier ; une facture
   annulée par un avoir garde son PDF. Chaque test crée **sa propre** facture : les fichiers figés persistent sous
@@ -219,6 +227,8 @@ Libellés dans les 4 locales.
 - `:855` (« téléchargeable depuis la facture validée … pour l'archiver ») : figé, identique d'un téléchargement à
   l'autre, et servi aussi pour une facture **annulée** qui l'a été ; un PDF figé avant l'avoir ne porte pas de mention
   d'annulation (A8) ;
+- `:879` (« Pièce jointe : la QR-facture PDF, attachée ») : c'est le PDF **figé**, octet pour octet celui du
+  téléchargement ;
 - `:928` (« Langue de correspondance … détermine la langue de l'e-mail et du PDF joint ») : aussi du téléchargement, et
   figée au premier rendu ;
 - `:1136` (« un PDF téléchargé puis transmis à la main ne laisse aucune trace ») : il laisse désormais une trace (audit
@@ -248,8 +258,12 @@ téléchargement rend la langue du client).
 
 - [ ] **T1 — migration** (AC 1) : SQL, squash, garde de schéma, audit d'idempotence, P6.
 - [ ] **T2 — le service de gel** (AC 1-bis, 2, 3) : `kesh-db` (entité `Invoice` et **constante unique** de colonnes,
-  pose conditionnelle + audit en une transaction, détachement), `kesh-api` (service, `spawn_blocking`, code d'erreur
-  410, i18n de l'erreur).
+  pose conditionnelle + audit en une transaction, détachement), `kesh-api` (service, `spawn_blocking`) et **six variantes d'erreur neuves** (P3, M3 — aucune n'existe ; seule
+  `InvoiceNotValidated` existe, `errors.rs:338`), chacune avec statut HTTP, code JSON et message dans les 4 locales :
+  `InvoicePdfGone` (410 `INVOICE_PDF_GONE`), `InvoiceChanged` (409 `INVOICE_CHANGED`), `InvoicePdfPresent` (409
+  `INVOICE_PDF_PRESENT`), `InvoicePdfNotFrozen` (409 `INVOICE_PDF_NOT_FROZEN`), `InvoicePdfIntegrity` (409
+  `INVOICE_PDF_INTEGRITY`, au refigeage ; 500 à la lecture), `InvoiceCancelled` (code à fixer sur le patron
+  d'`InvoiceNotValidated`).
 - [ ] **T3 — les deux consommateurs** (AC 2, 4) : route de téléchargement, envoi par e-mail.
 - [ ] **T3-bis — refiger** (AC 3-bis) : route d'administration, trois codes 409, audit, bouton et confirmation à l'écran,
   et les gardes structurelles (compte du bloc d'administration, `admin_pat_denied_e2e`, registres d'audit et de libellés).
@@ -320,10 +334,22 @@ export CSV), `kesh-i18n`,
 
 ## Change Log
 
+- **2026-10-05** — Validation P3 (Sonnet, prompt `25-6-b-validate-prompt-p3.md`) : **0 CRITICAL/HIGH, 3 MED, 4 LOW**,
+  retenus.
+  - **MED** :
+    - les trois totaux du registre des routes d'audit (109, 91, 112), que la route fera rougir (M1) ;
+    - les tests de la garde `version` et du refigeage d'un fichier altéré (M2) ;
+    - les six variantes d'erreur à créer, nommées à la T2 (M3).
+  - **LOW** :
+    - « cinq » sites et non « six » pour H1 de P2 ;
+    - la fenêtre de la garde `version` écrite — pas de 409 en usage normal, `mark_emailed` ne touche pas `version` ;
+    - `render_document` porte la version ;
+    - le site `:879` (pièce jointe).
+  - La P3 a vérifié chaque site de manuel cité et chaque garde structurelle. Trend : P1 4H/12M → P2 1H/7M → P3 3M.
 - **2026-10-05** — Arbitrage de Guy (« d'accord avec tes recommandations ») : **pas de découpage**.
 - **2026-10-04** — Validation P2 (Opus, prompt `25-6-b-validate-prompt-p2.md`) : **1 HIGH, 7 MED, 8 LOW**, retenus.
   - **H1** : le chapitre « Sauvegarde et restauration » du manuel admin n'était pas nommé, alors que c'est lui qui fait
-    perdre les PDF émis à la première restauration. Six sites sont ajoutés à l'AC 8.
+    perdre les PDF émis à la première restauration. Cinq sites sont ajoutés à l'AC 8.
   - **M1** : la garde de statut ne fermait pas la séquence dévalidation → modification → revalidation. La pose est aussi
     gardée par la version lue au rendu, avec une seule nouvelle tentative, puis `INVOICE_CHANGED`.
   - **M2** : six autres sites du manuel, dont « Consultation : aucune mutation » et la portée `read` des clés d'API.
