@@ -370,7 +370,11 @@ const ATTENDU = {
 	// 16 → 14, et le module partagé `shared/utils/pdf-error.ts` +2. Les deux
 	// fiches résolvaient chacune le refus de PDF (`i18nMsg(clé, err.message)` et
 	// le générique) ; elles délèguent désormais à `pdfErrorMessage`.
-	sitesTotal: 1765,
+	//
+	// Story 25-6-b, revue P3 : **1765 → 1766** — l'avertissement « refigé, mais la
+	// fiche n'a pas pu être relue » de la fiche facture (76 → 77), clé neuve
+	// `invoice-pdf-refreeze-reload-failed` dans les 4 catalogues.
+	sitesTotal: 1766,
 	// Story 25-6-b, revue P2 : **34 → 33** — les deux `i18nMsg(key, err.message)`
 	// des fiches facture et avoir deviennent UN site, dans `pdf-error.ts`. Ses
 	// clés sont celles de `PDF_ERROR_KEYS`, toutes présentes dans les 4 locales

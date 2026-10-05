@@ -1395,6 +1395,7 @@ invoice-pdf-refreeze-body = Il file del PDF emesso di questa fattura è introvab
 invoice-pdf-refreeze-restore-first = Ripristinate prima il file dal backup della directory dei documenti, se vi si trova: è l'unico modo per ritrovare l'originale. Se più fatture sono in questo caso, verificate il montaggio di questa directory prima di fissarle di nuovo.
 invoice-pdf-refreeze-done = Documento fissato di nuovo.
 invoice-pdf-refreeze-error = Non è stato possibile fissare di nuovo il documento.
+invoice-pdf-refreeze-reload-failed = Documento fissato di nuovo, ma la scheda non ha potuto essere ricaricata: ricaricate la pagina.
 contact-form-language = Lingua di corrispondenza
 contact-form-language-inherited = Ereditata (lingua dell'istanza)
 contact-form-salutation = Titolo

@@ -306,4 +306,25 @@ describe("fiche facture — refiger après un 410", () => {
       expect(queryByTestId("invoice-pdf-refreeze-button")).toBeNull(),
     );
   });
+
+  it("le refigeage réussi mais la relecture échoue : le dialogue se ferme, pas de faux échec (mutation : relecture dans le même try)", async () => {
+    getInvoiceMock
+      .mockResolvedValueOnce(invoice({ pdfFrozenAt: "2026-03-02T10:00:00.000" }))
+      .mockRejectedValueOnce(new Error("réseau"));
+    getBlobMock.mockRejectedValue(gone);
+    refreezeMock.mockResolvedValue(invoice());
+    const { findByTestId, getByTestId, queryByTestId } = render(Page);
+    await fireEvent.click(await findByTestId("invoice-download-pdf"));
+    await fireEvent.click(await findByTestId("invoice-pdf-refreeze-button"));
+    await fireEvent.click(getByTestId("invoice-pdf-refreeze-confirm"));
+
+    await waitFor(() => expect(refreezeMock).toHaveBeenCalledWith(5));
+    await waitFor(() =>
+      expect(queryByTestId("invoice-pdf-refreeze-dialog")).toBeNull(),
+    );
+    expect(queryByTestId("invoice-pdf-refreeze-button")).toBeNull();
+    expect(
+      notifyErrorMock.mock.calls.some((c) => String(c[0]).includes("rechargez")),
+    ).toBe(true);
+  });
 });

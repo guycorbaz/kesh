@@ -1492,6 +1492,7 @@ invoice-pdf-refreeze-body = Le fichier du PDF émis de cette facture est introuv
 invoice-pdf-refreeze-restore-first = Restaurez d'abord le fichier depuis la sauvegarde du répertoire des documents, s'il y existe : c'est le seul moyen de retrouver l'original. Si plusieurs factures sont dans ce cas, vérifiez le montage de ce répertoire avant de refiger.
 invoice-pdf-refreeze-done = Document refigé.
 invoice-pdf-refreeze-error = Le document n’a pas pu être refigé.
+invoice-pdf-refreeze-reload-failed = Document refigé, mais la fiche n’a pas pu être relue : rechargez la page.
 contact-form-language = Langue de correspondance
 contact-form-language-inherited = Héritée (langue de l'instance)
 contact-form-salutation = Civilité

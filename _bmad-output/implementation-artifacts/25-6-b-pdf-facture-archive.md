@@ -411,6 +411,23 @@ Journaux sous `target/gate-logs/` : `25-6-b-backend.log`, `25-6-b-frontend.log`,
 
 ## Change Log
 
+- **2026-10-05** — Revue de code P3 (Sonnet ×2 : R = la remédiation `b2eeaab9`, C = acceptation ; prompt
+  `25-6-b-review-prompt-p3.md`) : **0 CRITICAL/HIGH/MEDIUM, 8 LOW** — **critère d'arrêt atteint**. Trend : P1 3M/7L
+  → P2 5M/8L (dont 2 MED nés de P1) → P3 0 > LOW. Recomptes de la lentille C (migrations 71, bloc admin 28, registre
+  110/92/113, parité des 15 clés neuves, tests de P2) **tous exacts**.
+  - **Appliqués** (quatre touchent la production, d'où une passe ciblée P4) :
+    - relecture après refigeage isolée de son `try` : un échec de lecture ne se fait plus passer pour un échec du
+      refigeage (clé `invoice-pdf-refreeze-reload-failed`, 4 locales ; `sitesTotal` 1765 → 1766) ;
+    - une facture figée entre deux tentatives est **adoptée** (`render_and_pose`), sous la garde de l'usage ;
+    - la garde `Usage::Send` vaut aussi à l'adoption dans `pose` (avoir intercalé après un gel concurrent) ;
+    - refus du refigeage : le statut est examiné avant l'empreinte — une dévalidation intercalée ne répond plus
+      « rien à refiger » ;
+    - décompte de P1 corrigé (test inbox durci, pas neuf) ; CHANGELOG : clé d'API, `HEAD`, restauration, annulée.
+  - **Non appliqué** : retrait des marques d'isolation de tous les messages à argument (`t_args`), y compris un
+    texte de droite à gauche — même choix que `contacts.rs`, marginal en contexte suisse.
+  - Tests : 1 service neuf (`un_envoi_n_adopte_pas_le_gel_d_une_facture_annulee_entre_temps`), 1 Vitest neuf. Deux
+    mutations tuées (garde d'adoption retirée, relecture remise dans le même `try`). Le réordonnancement du refus de
+    refigeage n'a **pas** de test : la course n'est pas reproductible sans point d'injection.
 - **2026-10-05** — Revue de code P2 (Opus ×2 : R = la remédiation `8ac0a4de`, F = périmètre complet ; prompt
   `25-6-b-review-prompt-p2.md`) : **0 CRITICAL/HIGH, 5 MED, 8 LOW**. **Deux des MED viennent de la remédiation P1** :
   R2-2 directement, et F-M1 parce que P1 affiche désormais le message du serveur, avec ses marques invisibles.
@@ -468,7 +485,8 @@ Journaux sous `target/gate-logs/` : `25-6-b-backend.log`, `25-6-b-frontend.log`,
     - facture déjà envoyée avant la v0.12.1 : le document figé n'est pas forcément celui reçu — écrit au manuel ;
     - le bouton n'apparaît qu'après un téléchargement refusé — écrit au manuel ;
     - CHANGELOG : trois colonnes insérées dans `invoices.csv` (lecture par position), route et champs d'API.
-  - Tests neufs : 1 HTTP (B1), 1 inbox (L3), 3 Vitest. **Mutations tuées** : garde de B1 retirée, suppression de
+  - Tests (périmètre `9d842984` → `8ac0a4de`) : 1 HTTP neuf (B1), 3 Vitest neufs, et 1 test inbox existant
+    **durci** (`import_field_too_long_returns_failed_not_500`, pas un test neuf — corrigé en P3). **Mutations tuées** : garde de B1 retirée, suppression de
     l'inbox remise, message du 410 tiré du catalogue, condition `validated` du bouton retirée, `pdfGone` non remis.
   - Recomptes de la lentille C (migrations 71, bloc admin 28, registre 110/92/113, `sitesTotal` 1767, parité i18n,
     décomptes de tests) : **tous exacts**.

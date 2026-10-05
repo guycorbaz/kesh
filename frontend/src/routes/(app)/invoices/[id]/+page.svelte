@@ -677,12 +677,20 @@
 		refreezeError = '';
 		try {
 			await refreezeInvoicePdf(invoice.id);
-			// La réponse du refigeage ne porte pas « Déjà réglé / Reste dû » :
-			// la fiche se relit (revue P2, F-L2).
-			invoice = await getInvoice(invoice.id);
 			pdfGone = false;
 			refreezeOpen = false;
 			notifySuccess(i18nMsg('invoice-pdf-refreeze-done', 'Document refigé.'));
+			// La réponse du refigeage ne porte pas « Déjà réglé / Reste dû » : la
+			// fiche se relit (revue P2, F-L2). ⚠️ Hors du refigeage : un échec de
+			// cette relecture ne doit pas faire croire que le refigeage a échoué
+			// (revue P3) — la fiche garde alors son état précédent.
+			try {
+				invoice = await getInvoice(invoice.id);
+			} catch {
+				notifyError(
+					i18nMsg('invoice-pdf-refreeze-reload-failed', 'Document refigé, mais la fiche n’a pas pu être relue : rechargez la page.'),
+				);
+			}
 		} catch (err) {
 			refreezeError = isApiError(err)
 				? err.message

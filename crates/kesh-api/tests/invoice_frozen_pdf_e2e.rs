@@ -653,7 +653,7 @@ async fn la_pose_perdante_sert_le_document_de_l_autre(pool: MySqlPool) {
         bytes: b"%PDF-1.7 autre rendu".to_vec(),
         filename_base: "x".into(),
     };
-    match issued_invoice_pdf::pose(&ctx, id, version, autre, Language::Fr)
+    match issued_invoice_pdf::pose(&ctx, id, version, autre, Language::Fr, Usage::Download)
         .await
         .unwrap()
     {
@@ -691,7 +691,7 @@ async fn un_rendu_perime_est_refuse_puis_refait(pool: MySqlPool) {
         bytes: b"%PDF-1.7 ancien rendu".to_vec(),
         filename_base: "x".into(),
     };
-    let outcome = issued_invoice_pdf::pose(&ctx, id, v_rendu, rendu, Language::Fr)
+    let outcome = issued_invoice_pdf::pose(&ctx, id, v_rendu, rendu, Language::Fr, Usage::Download)
         .await
         .unwrap();
     assert!(matches!(outcome, PoseOutcome::Changed), "{outcome:?}");
@@ -728,7 +728,7 @@ async fn une_devalidation_intercalee_ne_laisse_rien_de_fige(pool: MySqlPool) {
         bytes: b"%PDF-1.7 rendu".to_vec(),
         filename_base: "x".into(),
     };
-    let res = issued_invoice_pdf::pose(&ctx, id, v, rendu, Language::Fr).await;
+    let res = issued_invoice_pdf::pose(&ctx, id, v, rendu, Language::Fr, Usage::Download).await;
     assert!(matches!(res, Err(AppError::InvoiceNotValidated)), "{res:?}");
     assert!(invoice(&pool, &s, id).await.pdf_storage_path.is_none());
 }
@@ -1026,4 +1026,51 @@ async fn le_gel_par_une_cle_d_api_est_trace_au_nom_de_la_cle(pool: MySqlPool) {
         (actor_type.as_str(), actor_key, user_id),
         ("api_key", Some(key_id), s.admin_id)
     );
+}
+
+/// Revue P3 (L3) : la garde de l'envoi vaut aussi pour une facture RELUE en
+/// cours de route — figée par un autre rendu puis annulée, elle n'est pas
+/// adoptée pour un envoi.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn un_envoi_n_adopte_pas_le_gel_d_une_facture_annulee_entre_temps(pool: MySqlPool) {
+    let s = seed(&pool, None).await;
+    let id = seed_invoice(&pool, &s, 1).await;
+    let (company, i18n) = ctx_parts(&pool, &s).await;
+    let documents = unique_dir("documents");
+    let ctx = PdfContext {
+        pool: &pool,
+        i18n: &i18n,
+        documents_dir: &documents,
+        company: &company,
+        user_id: s.admin_id,
+        actor_api_key_id: None,
+    };
+    let version = invoice(&pool, &s, id).await.version;
+    // Un rendu concurrent fige, puis un avoir annule.
+    issued_invoice_pdf::get_or_freeze(&ctx, id, Usage::Download)
+        .await
+        .unwrap();
+    credit_notes::create_credit_note(
+        &pool,
+        NewCreditNote {
+            company_id: s.company_id,
+            invoice_id: id,
+            date: NaiveDate::from_ymd_opt(2026, 4, 20).unwrap(),
+        },
+        s.admin_id,
+    )
+    .await
+    .unwrap();
+
+    let rendu = || IssuedPdf {
+        bytes: b"%PDF-1.7 rendu de l'envoi".to_vec(),
+        filename_base: "x".into(),
+    };
+    let res = issued_invoice_pdf::pose(&ctx, id, version, rendu(), Language::Fr, Usage::Send).await;
+    assert!(matches!(res, Err(AppError::InvoiceNotValidated)), "{res:?}");
+    // Le téléchargement, lui, adopte la pièce émise.
+    let res = issued_invoice_pdf::pose(&ctx, id, version, rendu(), Language::Fr, Usage::Download)
+        .await
+        .unwrap();
+    assert!(matches!(res, PoseOutcome::Adopted(_)), "{res:?}");
 }

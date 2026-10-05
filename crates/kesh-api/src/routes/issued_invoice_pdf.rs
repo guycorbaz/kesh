@@ -108,7 +108,7 @@ pub async fn get_or_freeze(
         return Err(AppError::InvoiceNotValidated);
     }
 
-    with_one_retry(|| render_and_pose(ctx, invoice_id)).await
+    with_one_retry(|| render_and_pose(ctx, invoice_id, usage)).await
 }
 
 /// Une seule nouvelle tentative : une pause des rappels, un règlement ou un
@@ -135,8 +135,18 @@ where
 /// `render_document` a lu une autre version que celle dont la langue est
 /// tirée, la tentative est rejouée — un client changé dans l'intervalle
 /// donnerait sinon ses données dans la langue de l'ancien.
-async fn render_and_pose(ctx: &PdfContext<'_>, invoice_id: i64) -> Result<PoseOutcome, AppError> {
+///
+/// Une facture figée **entre deux tentatives** (par un rendu concurrent) est
+/// adoptée telle quelle, sous la garde de l'usage (revue P3).
+async fn render_and_pose(
+    ctx: &PdfContext<'_>,
+    invoice_id: i64,
+    usage: Usage,
+) -> Result<PoseOutcome, AppError> {
     let invoice = load(ctx, invoice_id).await?;
+    if is_frozen(&invoice) {
+        return adopt(ctx, &invoice, usage).await;
+    }
     let language = client_language(ctx, &invoice).await?;
     let rendered = invoice_pdf_service::render_document(
         ctx.pool,
@@ -159,6 +169,7 @@ async fn render_and_pose(ctx: &PdfContext<'_>, invoice_id: i64) -> Result<PoseOu
             filename_base: rendered.filename_base,
         },
         language,
+        usage,
     )
     .await
 }
@@ -177,6 +188,7 @@ pub async fn pose(
     rendered_version: i32,
     rendered: IssuedPdf,
     language: Language,
+    usage: Usage,
 ) -> Result<PoseOutcome, AppError> {
     let (frozen, rendered) = store(ctx.documents_dir, rendered, language).await?;
     let applied = invoices::freeze_pdf(
@@ -203,7 +215,7 @@ pub async fn pose(
     // Zéro ligne : relire pour savoir laquelle des trois gardes a refusé.
     let after = load(ctx, invoice_id).await?;
     if is_frozen(&after) {
-        return Ok(PoseOutcome::Adopted(serve_frozen(ctx, &after).await?));
+        return adopt(ctx, &after, usage).await;
     }
     match after.status.as_str() {
         "validated" => Ok(PoseOutcome::Changed),
@@ -280,15 +292,32 @@ pub async fn refreeze(ctx: &PdfContext<'_>, invoice_id: i64) -> Result<IssuedPdf
         return Ok(rendered);
     }
 
-    // Refusé : un avoir intercalé, ou un refigeage concurrent qui a gagné.
+    // Refusé : un avoir ou une dévalidation intercalés, ou un refigeage
+    // concurrent qui a gagné. Le statut d'abord : une dévalidation met
+    // l'empreinte à NULL, qui différerait aussi de l'ancienne (revue P3).
     let after = load(ctx, invoice_id).await?;
-    if after.status == "cancelled" {
-        Err(AppError::InvoiceCancelled)
-    } else if after.pdf_sha256.as_deref() != Some(old_sha256.as_str()) {
-        Err(AppError::InvoicePdfPresent)
-    } else {
-        Err(AppError::InvoiceChanged)
+    match after.status.as_str() {
+        "cancelled" => Err(AppError::InvoiceCancelled),
+        "validated" if after.pdf_sha256.as_deref() != Some(old_sha256.as_str()) => {
+            Err(AppError::InvoicePdfPresent)
+        }
+        "validated" => Err(AppError::InvoiceChanged),
+        _ => Err(AppError::InvoiceNotValidated),
     }
+}
+
+/// Sert le document figé par un autre — sauf à un envoi, si la facture n'est
+/// plus validée : la garde `Usage::Send` vaut aussi pour une facture relue en
+/// cours de route (revue P3, un avoir intercalé après un gel concurrent).
+async fn adopt(
+    ctx: &PdfContext<'_>,
+    invoice: &Invoice,
+    usage: Usage,
+) -> Result<PoseOutcome, AppError> {
+    if usage == Usage::Send && invoice.status != "validated" {
+        return Err(AppError::InvoiceNotValidated);
+    }
+    Ok(PoseOutcome::Adopted(serve_frozen(ctx, invoice).await?))
 }
 
 /// `true` si la facture porte un PDF figé (les quatre colonnes vont ensemble,

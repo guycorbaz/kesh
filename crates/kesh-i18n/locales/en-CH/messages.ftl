@@ -1395,6 +1395,7 @@ invoice-pdf-refreeze-body = The issued PDF file of this invoice cannot be found.
 invoice-pdf-refreeze-restore-first = First restore the file from the backup of the documents directory, if it is there: it is the only way to recover the original. If several invoices are affected, check how that directory is mounted before refreezing.
 invoice-pdf-refreeze-done = Document refrozen.
 invoice-pdf-refreeze-error = The document could not be refrozen.
+invoice-pdf-refreeze-reload-failed = Document refrozen, but the invoice could not be reloaded: please reload the page.
 contact-form-language = Correspondence language
 contact-form-language-inherited = Inherited (instance language)
 contact-form-salutation = Salutation
