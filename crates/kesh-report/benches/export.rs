@@ -109,9 +109,11 @@ fn make_trial_balance(n: usize) -> TrialBalance {
                 AccountType::Liability
             },
             active: true,
+            opening_balance: Decimal::from(250),
             total_debit: Decimal::from(100),
             total_credit: Decimal::from(100),
             balance: Decimal::from(0),
+            closing_balance: Decimal::from(250),
         })
         .collect();
     let total_debit: Decimal = rows.iter().map(|r| r.total_debit).sum();
@@ -122,6 +124,8 @@ fn make_trial_balance(n: usize) -> TrialBalance {
         total_debit,
         total_credit,
         balanced: true,
+        retained_earnings: Decimal::ZERO,
+        opening_balanced: true,
     }
 }
 

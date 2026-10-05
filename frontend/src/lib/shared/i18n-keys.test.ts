@@ -350,31 +350,84 @@ const ATTENDU = {
 	// sélecteur (trois clés neuves `settings-invoicing-rounding-*` dans les quatre
 	// catalogues) et son option vide, qui réemploie `settings-invoicing-select-none`.
 	//
+	// Story 25-5-b (#385) : **1756 → 1758**, recompté par ce test et par
+	// `grep -c "i18nMsg("` aux deux bornes de `reports/TrialBalanceView.svelte`
+	// (11 → 13) — la note « mouvement de la période » retirée (−1, clé supprimée des
+	// quatre catalogues), l'en-tête « Solde » remplacé par « Ouverture » et
+	// « Clôture » (+1, deux clés neuves `reports-column-opening` / `-closing`), et
+	// le libellé de la ligne calculée, qui réemploie les deux clés du bilan (+2).
+	//
+	// Story 25-6-a (#388, #389) : **1758 → 1765**, recompté par ce test et par
+	// `grep -o "i18nMsg(\|msg('"` aux deux bornes. La page d'accueil
+	// `routes/(app)/+page.svelte` pesait **17** sites — ses 15 appels par son relais
+	// `msg()`, plus la déclaration et le corps du relais —, elle en pèse **24** : 1 dans
+	// la page et 23 dans les trois tuiles extraites (`features/homepage/`
+	// `RecentEntriesCard` 5, `OpenInvoicesCard` 8, `BankAccountsCard` 10), qui appellent
+	// `i18nMsg` directement. Le relais disparaît : `relais` **7 → 6**,
+	// `sitesNonResolus` **34 → 32** (sa déclaration et son corps).
+	//
+	// Story 25-6-a, revue de code P1 : **1765 → 1767** — `BankAccountsCard` passe de 10 à
+	// 12 appels (`grep -o "i18nMsg("`) : l'état d'échec de la tuile
+	// (`homepage-bank-unavailable`) et l'écart non calculable d'un compte du grand
+	// livre partagé (`homepage-bank-gap-unavailable`), deux clés neuves × 4 locales.
+	// Story 25-6-b (#387) : **+9** (1758 → 1767 sur sa branche), recompté par ce test et par
+	// `grep -o "i18nMsg("` aux deux bornes de `invoices/[id]/+page.svelte`
+	// (69 → 78) — la mention « Document figé le », le bouton « Refiger le
+	// document » (deux sites : l'en-tête et le pied du dialogue), le titre, le
+	// corps et l'avertissement du dialogue, son « Annuler », le succès, et le
+	// repli générique du refus — neuf sites. Le bouton PDF, extrait dans un snippet pour servir aussi la facture
+	// annulée, n'ajoute aucun site : il n'est écrit qu'une fois.
+	//
+	// Story 25-6-b, revue P2 : **−2**, recompté par ce test et par
+	// `grep -o "i18nMsg("` aux deux bornes — fiche facture 78 → 76, fiche avoir
+	// 16 → 14, et le module partagé `shared/utils/pdf-error.ts` +2. Les deux
+	// fiches résolvaient chacune le refus de PDF (`i18nMsg(clé, err.message)` et
+	// le générique) ; elles délèguent désormais à `pdfErrorMessage`.
+	//
+	// Story 25-6-b, revue P3 : **+1** — l'avertissement « refigé, mais la
+	// fiche n'a pas pu être relue » de la fiche facture (76 → 77), clé neuve
+	// `invoice-pdf-refreeze-reload-failed` dans les 4 catalogues.
+	//
+	// Fusion de `main` (25-6-a) dans la 25-6-b, 2026-10-05 : les deux branches partaient de
+	// 1758 ; 25-6-a +9, 25-6-b +8 (+9 −2 +1) ⇒ **1775**. `sitesNonResolus` : 32 (25-6-a)
+	// − 1 (25-6-b, deux sites des fiches devenus un dans `pdf-error.ts`) ⇒ **31**.
 	// Story 25-4-c3-b (#476) : **1756 → 1757**, recompté par ce test et par
 	// `grep -o "i18nMsg("` aux deux bornes de `SettleInvoiceDialog.svelte`
 	// (18 → 19) — le refus d'un montant à plus de deux décimales,
 	// `invoice-error-amount-scale`, clé neuve dans les quatre catalogues.
 	//
+	// Fusion de `main` dans la 25-4-c3-b, 2026-10-05 : base commune 1756 ; `main` +19
+	// (25-5-b, 25-6-a, 25-6-b), 25-4-c3-b +1 ⇒ **1776**. `sitesNonResolus` et `relais`
+	// suivent `main` (31, 6) — la c3-b n'y touche pas.
 	// Story 25-4-c4-b (#494) : **1757 → 1766**, recompté par ce test et par
 	// `grep -o "i18nMsg("` aux deux bornes — `invoices/[id]/+page.svelte` (69 → 76 :
 	// le récapitulatif passé en libellés traduits, sept sites dont la ligne
 	// « Arrondi » et ses variantes « estimé ») et `settings/invoicing/+page.svelte`
 	// (36 → 38 : la case « Arrondir à 5 centimes » et son aide).
 	//
+	// Fusion de `main` (via la 25-4-c3-b) dans la 25-4-c4, 2026-10-05 : la c4 ajoute
+	// +9 à une base désormais de 1776 ⇒ **1785** ; `sitesNonResolus` et `relais` suivent
+	// la fusion (31, 6) — la c4 n'y touche pas.
 	// Story 25-4-e (#495) : **1766 → 1769**, recompté par ce test et par
 	// `grep -o "i18nMsg("` aux deux bornes de `settings/invoicing/+page.svelte`
 	// (38 → 41) — la section « Montant minimum » : titre, libellé, aide.
 	//
+	// Fusion dans la 25-4-e, 2026-10-05 : la story ajoute +3 à une base
+	// désormais de 1785 ⇒ **1788** ; `sitesNonResolus` et `relais` suivent la fusion (31, 6).
 	// Story 25-4-d1 (#384) : **1769 → 1775**, recompté par ce test et par
 	// `grep -o "i18nMsg("` aux deux bornes de `settings/invoicing/+page.svelte`
 	// (41 → 47) — la section « Solde du reste » : titre, aide, trois libellés de
 	// compte, et le « — Sélectionner — » de son sélecteur.
 	//
+	// Fusion dans la 25-4-d1, 2026-10-05 : la story ajoute +6 à une base
+	// désormais de 1788 ⇒ **1794** ; `sitesNonResolus` et `relais` suivent la fusion (31, 6).
 	// Story 25-4-d2a (#384) : **1775 → 1777** — le motif « un solde existe »
 	// (`INVOICE_WRITTEN_OFF`), traduit dans les deux tables qui le reçoivent :
 	// `features/invoices/settlement-cancel.ts` (1 → 2) et
 	// `features/reconciliation/reconciliation-cancel.ts` (6 → 7).
 	//
+	// Fusion dans la 25-4-d2a, 2026-10-05 : la story ajoute +2 à une base
+	// désormais de 1794 ⇒ **1796** ; `sitesNonResolus` et `relais` suivent la fusion (31, 6).
 	// Story 25-4-d2b (#490) : **1777 → 1807**, recompté par ce test et par
 	// `grep -o "i18nMsg("` aux deux bornes de chaque fichier touché : la fiche
 	// facture `invoices/[id]/+page.svelte` (76 → 85 : bouton, notifications et
@@ -384,9 +437,12 @@ const ATTENDU = {
 	// Revue de code P1 de la 25-4-d2b : **1807 → 1808** — `WriteOffDialog.svelte`
 	// (13 → 14) : « Reste dû en cours de calcul… », le dialogue restant monté
 	// quand le reste n'est pas calculé.
-	sitesTotal: 1808,
-	sitesNonResolus: 34,
-	relais: 7,
+	//
+	// Fusion dans la 25-4-d2b, 2026-10-05 : la story ajoute +31 à une base
+	// désormais de 1796 ⇒ **1827** ; `sitesNonResolus` et `relais` suivent la fusion (31, 6).
+	sitesTotal: 1827,
+	sitesNonResolus: 31,
+	relais: 6,
 	sitesGabarit: 10,
 	litterauxMin: 1050,
 	clesDepuisTsMin: 5
@@ -462,8 +518,9 @@ const ANGLE_MORT_CLE_EN_COLONNE = 'routes/(app)/settings/vat-rates/+page.svelte:
  * ⚠️ **QUATRIÈME angle mort, écrit ici faute de pouvoir le fermer** : `findRelays`
  * travaille **par fichier**. Un relais qui serait *importé* d'un module partagé ne
  * serait recensé nulle part — et, contrairement aux autres trous, **aucun compteur ne
- * bougerait**. La règle DRY du dépôt pousse vers cette extraction : les sept relais
- * actuels sont sept copies de la même fonction de trois lignes. À traiter en 23-2.
+ * bougerait**. La règle DRY du dépôt pousse vers cette extraction : les six relais
+ * actuels sont six copies de la même fonction de trois lignes (sept jusqu'à la 25-6-a,
+ * qui a retiré celui de la page d'accueil). À traiter en 23-2.
  */
 // ⚠️ La carte des codes d'erreur d'import est LUE depuis la production, plus recopiée :
 // tant qu'elle vivait dans le composant, une entrée ajoutée passait tous les gates au vert
@@ -716,7 +773,7 @@ describe('garde i18n — les clés demandées existent au catalogue', () => {
 		).toEqual([]);
 	});
 
-	it('les 7 relais locaux sont recensés — cardinalité assertée', () => {
+	it('les 6 relais locaux sont recensés — cardinalité assertée', () => {
 		// ⚠️ **Ce garde-fou manquait au premier jet, alors que la tâche le déclarait fait.**
 		// Sans lui, un huitième relais ajouté sans que le test le sache rendrait TOUTES
 		// ses clés invisibles, en silence — le défaut que le recensement des relais avait
