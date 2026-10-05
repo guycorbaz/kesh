@@ -108,6 +108,8 @@ function invoice(partial: Partial<InvoiceResponse> = {}): InvoiceResponse {
     totalAmount: "100.00",
     totalTtc: "100.00",
     vatBreakdown: [],
+    roundingAmount: "0",
+    roundingIsPreview: false,
     journalEntryId: 9,
     paidAt: null,
     emailedAt: null,
