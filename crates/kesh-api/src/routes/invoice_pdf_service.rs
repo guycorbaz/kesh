@@ -74,6 +74,10 @@ pub struct RenderedInvoicePdf {
     /// de son attachment). Dérivé de `invoice.invoice_number` via
     /// `sanitize_filename`.
     pub filename_base: String,
+    /// Story 25-6-b (#387) — la `version` de la facture **lue pour ce rendu**.
+    /// Le gel la pose en garde : une facture qui a changé pendant le rendu
+    /// n'est jamais figée sur des données périmées.
+    pub invoice_version: i32,
 }
 
 /// Le document à produire (Story 25-4-b2, #416) : la facture, ou un **rappel**
@@ -162,40 +166,25 @@ pub async fn reminder_amounts(
     })
 }
 
-/// Génère le PDF QR-facture d'une facture **validée**, scopée à
-/// `company` (anti-IDOR).
+/// Génère le PDF QR-facture d'une facture **validée** — la facture ou un
+/// rappel (Story 25-4-b2) —, scopée à `company` (anti-IDOR).
 ///
 /// Contrat d'autorisation : `company` DOIT provenir d'une source déjà
 /// autorisée pour l'utilisateur courant (typiquement `get_company_for`) —
 /// le service ne re-vérifie pas ce droit. Le scoping de la facture est
 /// garanti par `find_by_id_with_lines(pool, company.id, …)`.
 ///
-/// Reproduit exactement la séquence historique de `get_invoice_pdf`
-/// (Story 5.3) : chargement facture + lignes, validations (statut,
-/// nombre de lignes, contact, compte bancaire primary), mapping
-/// `kesh-qrbill`, génération. Toutes les erreurs remontent en `AppError`
-/// avec les mêmes variantes que le endpoint historique.
-pub async fn render(
-    pool: &sqlx::MySqlPool,
-    i18n: &kesh_i18n::I18nBundle,
-    locale: Locale,
-    company: &Company,
-    invoice_id: i64,
-) -> Result<RenderedInvoicePdf, AppError> {
-    render_document(
-        pool,
-        i18n,
-        locale,
-        company,
-        invoice_id,
-        PdfDocument::Invoice,
-    )
-    .await
-}
-
-/// [`render`], pour un document au choix : la facture, ou un rappel (Story
-/// 25-4-b2). Le titre du rappel est résolu dans `locale` — celle du contact
+/// Séquence : chargement facture + lignes, validations (statut, nombre de
+/// lignes, contact, compte bancaire primary), mapping `kesh-qrbill`,
+/// génération. Le titre du rappel est résolu dans `locale` — celle du contact
 /// pour un envoi —, pas dans celle de l'installation.
+///
+/// ⛔ **Story 25-6-b (#387) : la facture ne se rend plus directement.** Son
+/// PDF passe par `issued_invoice_pdf::get_or_freeze`, qui le fige au premier
+/// rendu et le relit ensuite ; appeler ici avec [`PdfDocument::Invoice`]
+/// produirait un document qui n'est pas celui émis. L'ancienne fonction
+/// `render` a été retirée pour cette raison. Les rappels, eux, restent
+/// régénérés (#502).
 pub async fn render_document(
     pool: &sqlx::MySqlPool,
     i18n: &kesh_i18n::I18nBundle,
@@ -266,6 +255,7 @@ pub async fn render_document(
     Ok(RenderedInvoicePdf {
         bytes,
         filename_base,
+        invoice_version: invoice.version,
     })
 }
 
@@ -648,6 +638,10 @@ mod tests {
             project_id: None,
             dunning_paused_at: None,
             dunning_paused_note: None,
+            pdf_storage_path: None,
+            pdf_sha256: None,
+            pdf_frozen_at: None,
+            pdf_language: None,
             version: 1,
             created_at: chrono::NaiveDateTime::default(),
             updated_at: chrono::NaiveDateTime::default(),

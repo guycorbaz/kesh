@@ -45,10 +45,9 @@ use crate::repositories::invoice_settlements::{
     INVOICE_AMOUNT_DUE_DERIVED_SQL, amount_due_derived_joins,
 };
 
-/// Colonnes Invoice pour SELECT (cohérent FIND_INVOICE_SCOPED_SQL).
-const INVOICE_COLUMNS: &str = "id, company_id, contact_id, invoice_number, status, date, \
-     due_date, payment_terms, total_amount, journal_entry_id, paid_at, emailed_at, emailed_to, \
-     project_id, dunning_paused_at, dunning_paused_note, version, created_at, updated_at";
+// Colonnes Invoice pour SELECT — la liste unique de `repositories::invoices`
+// (Story 25-6-b).
+use super::invoices::INVOICE_COLUMNS;
 
 /// Facture candidate à la réconciliation, accompagnée de son **reste dû** et
 /// de son **TTC**.

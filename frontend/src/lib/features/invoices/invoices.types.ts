@@ -81,6 +81,13 @@ export interface InvoiceResponse {
 	/** Story 21-6a (D10) — rappels suspendus. `null` = rappels actifs. */
 	dunningPausedAt: string | null;
 	dunningPausedNote: string | null;
+	/**
+	 * Story 25-6-b (#387) — instant et langue (`FR`/`DE`/`IT`/`EN`) du PDF
+	 * émis, figé au premier téléchargement ou envoi. `null` = jamais rendue
+	 * depuis sa validation.
+	 */
+	pdfFrozenAt: string | null;
+	pdfLanguage: string | null;
 	/** Calculé backend (P6 review pass 2). Source unique de vérité pour le badge « en retard ». */
 	isOverdue: boolean;
 	/**

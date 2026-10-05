@@ -1,5 +1,8 @@
 <script lang="ts">
 	// Story 9-1 — Vue Balance des comptes.
+	// Story 25-5-b (#385) — ouverture, mouvements, clôture, et la ligne calculée du
+	// résultat reporté : la clôture d'un compte de bilan est son solde au bilan.
+	import Big from 'big.js';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { formatReportAmount, formatSwissDate, isReportEmpty, ledgerHref } from './reports.api';
 	import type { TrialBalanceDto } from './reports.types';
@@ -9,6 +12,18 @@
 	}
 	let { dto }: Props = $props();
 	let empty = $derived(isReportEmpty('trial-balance', dto));
+
+	// « Perte reportée » si négatif, comme au bilan — l'écran seul bascule.
+	let retainedLabel = $derived.by(() => {
+		try {
+			if (new Big(dto.retainedEarnings).lt(0)) {
+				return i18nMsg('reports-retained-earnings-loss', 'Perte reportée');
+			}
+		} catch {
+			// Montant illisible : libellé neutre.
+		}
+		return i18nMsg('reports-retained-earnings-calculated', 'Résultat reporté (calculé)');
+	});
 
 	const fmt = formatReportAmount;
 </script>
@@ -24,25 +39,24 @@
 			{i18nMsg('reports-error-no-entries-in-period', 'Aucune écriture dans la période sélectionnée.')}
 		</p>
 	{:else}
-		<p class="rounded bg-amber-50 p-3 text-sm text-amber-900" role="note">
-			{i18nMsg(
-				'reports-trial-balance-period-note',
-				'La balance de vérification affiche le mouvement de la période (par exercice). Le total par compte n’est pas comparable au solde cumulé du même compte au bilan (report à-nouveau depuis l’origine).',
-			)}
-		</p>
 		<table class="w-full border-collapse">
 			<thead>
 				<tr class="border-b bg-gray-50 text-left text-sm">
 					<th class="px-2 py-1">{i18nMsg('reports-column-account-number', 'N°')}</th>
 					<th class="px-2 py-1">{i18nMsg('reports-column-account-name', 'Intitulé')}</th>
+					<th class="px-2 py-1 text-right" data-testid="tb-col-opening"
+						>{i18nMsg('reports-column-opening', 'Ouverture')}</th
+					>
 					<th class="px-2 py-1 text-right">{i18nMsg('reports-column-debit', 'Débit')}</th>
 					<th class="px-2 py-1 text-right">{i18nMsg('reports-column-credit', 'Crédit')}</th>
-					<th class="px-2 py-1 text-right">{i18nMsg('reports-column-balance', 'Solde')}</th>
+					<th class="px-2 py-1 text-right" data-testid="tb-col-closing"
+						>{i18nMsg('reports-column-closing', 'Clôture')}</th
+					>
 				</tr>
 			</thead>
 			<tbody>
 				{#each dto.rows as r (r.accountId)}
-					<tr class:opacity-60={!r.active}>
+					<tr class:opacity-60={!r.active} data-testid="tb-row">
 						<td class="px-2 py-1 font-mono">
 							<a
 								class="text-indigo-700 hover:underline"
@@ -57,18 +71,38 @@
 									>{i18nMsg('reports-archived-label', 'archivé')}</span
 								>{/if}
 						</td>
+						<td class="px-2 py-1 text-right font-mono">{fmt(r.openingBalance)}</td>
 						<td class="px-2 py-1 text-right font-mono">{fmt(r.totalDebit)}</td>
 						<td class="px-2 py-1 text-right font-mono">{fmt(r.totalCredit)}</td>
-						<td class="px-2 py-1 text-right font-mono">{fmt(r.balance)}</td>
+						<td class="px-2 py-1 text-right font-mono">{fmt(r.closingBalance)}</td>
 					</tr>
 				{/each}
+				<tr class="italic" data-testid="tb-retained">
+					<td></td>
+					<td class="px-2 py-1">{retainedLabel}</td>
+					<td class="px-2 py-1 text-right font-mono">{fmt(dto.retainedEarnings)}</td>
+					<td></td>
+					<td></td>
+					<td class="px-2 py-1 text-right font-mono">{fmt(dto.retainedEarnings)}</td>
+				</tr>
 			</tbody>
 			<tfoot>
 				<tr class="border-t font-semibold">
 					<td colspan="2" class="px-2 py-1">{i18nMsg('reports-grand-total', 'Total général')}</td>
+					<td
+						class="px-2 py-1 text-right"
+						class:text-red-700={!dto.openingBalanced}
+						data-testid="tb-opening-check"
+					>
+						{dto.openingBalanced ? '✓' : '⚠️'}
+					</td>
 					<td class="px-2 py-1 text-right font-mono">{fmt(dto.totalDebit)}</td>
 					<td class="px-2 py-1 text-right font-mono">{fmt(dto.totalCredit)}</td>
-					<td class="px-2 py-1 text-right" class:text-red-700={!dto.balanced}>
+					<td
+						class="px-2 py-1 text-right"
+						class:text-red-700={!dto.balanced}
+						data-testid="tb-movements-check"
+					>
 						{dto.balanced ? '✓' : '⚠️'}
 					</td>
 				</tr>
