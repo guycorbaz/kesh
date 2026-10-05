@@ -358,6 +358,37 @@ pub fn write_off_vat_json(
     )
 }
 
+/// Relit la ventilation figée d'un solde (`write_off_vat`), telle que l'écrit
+/// [`write_off_vat_json`] — la forme ne vit qu'ici (Story 25-4-d2c, #384).
+///
+/// Une forme fausse — pas un tableau, clé absente, valeur non chaîne, décimal
+/// illisible — est une **erreur** (message décrivant le défaut), jamais un zéro :
+/// la syntaxe JSON, elle, est garantie par la contrainte `json_valid` de la base.
+pub fn parse_write_off_vat(
+    value: &serde_json::Value,
+) -> Result<Vec<kesh_core::accounting::vat::VatRateShare>, String> {
+    let items = value
+        .as_array()
+        .ok_or_else(|| format!("write_off_vat n'est pas un tableau : {value}"))?;
+    items
+        .iter()
+        .map(|item| {
+            let field = |key: &str| -> Result<Decimal, String> {
+                let raw = item.get(key).and_then(|v| v.as_str()).ok_or_else(|| {
+                    format!("write_off_vat : clé « {key} » absente ou non chaîne dans {item}")
+                })?;
+                raw.parse::<Decimal>()
+                    .map_err(|e| format!("write_off_vat : « {key} » illisible ({raw}) : {e}"))
+            };
+            Ok(kesh_core::accounting::vat::VatRateShare {
+                rate_percent: field("ratePercent")?,
+                base_ht: field("baseHt")?,
+                vat_amount: field("vatAmount")?,
+            })
+        })
+        .collect()
+}
+
 /// Enregistre un règlement dans la transaction courante.
 ///
 /// ⚠️ **Ne pose PAS `paid_at`** : c'est à l'appelant de le faire, et seulement
@@ -574,5 +605,45 @@ mod tests {
             settlement_journal_lines(1, 2, dec!(10.01), dec!(10.0050), None),
             Err(DbError::Invariant(_))
         ));
+    }
+
+    /// Story 25-4-d2c — la lecture relit exactement ce que l'écriture produit.
+    #[test]
+    fn la_ventilation_d_un_solde_se_relit_telle_qu_ecrite() {
+        use kesh_core::accounting::vat::VatRateShare;
+        let shares = vec![
+            VatRateShare {
+                rate_percent: dec!(8.10),
+                base_ht: dec!(123.45),
+                vat_amount: dec!(10.00),
+            },
+            VatRateShare {
+                rate_percent: dec!(2.60),
+                base_ht: dec!(50.0000),
+                vat_amount: dec!(1.30),
+            },
+        ];
+        assert_eq!(
+            parse_write_off_vat(&write_off_vat_json(&shares)),
+            Ok(shares)
+        );
+        assert_eq!(parse_write_off_vat(&serde_json::json!([])), Ok(vec![]));
+    }
+
+    /// Story 25-4-d2c — chaque forme fausse est une erreur, jamais un zéro.
+    #[test]
+    fn une_ventilation_de_forme_fausse_est_une_erreur() {
+        let ok = serde_json::json!({"ratePercent": "8.1", "baseHt": "1", "vatAmount": "0.08"});
+        assert!(parse_write_off_vat(&serde_json::json!([ok])).is_ok());
+        for bad in [
+            serde_json::json!({"items": []}),
+            serde_json::json!(null),
+            serde_json::json!([{"baseHt": "1", "vatAmount": "0.08"}]),
+            serde_json::json!([{"ratePercent": 8.1, "baseHt": "1", "vatAmount": "0.08"}]),
+            serde_json::json!([{"ratePercent": "8.1", "baseHt": "1", "vatAmount": "abc"}]),
+            serde_json::json!(["8.1"]),
+        ] {
+            assert!(parse_write_off_vat(&bad).is_err(), "accepté : {bad}");
+        }
     }
 }

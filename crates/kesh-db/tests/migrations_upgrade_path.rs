@@ -105,7 +105,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
         total, 75,
-        "75 migrations attendues (dont Story 25-6-b : invoices_frozen_pdf ; dont Story 25-6-b : invoices_frozen_pdf ; 73 précédentes + Story 25-4-d2a : invoice_settlements_write_off)"
+        "75 migrations attendues (dont Story 25-6-b : invoices_frozen_pdf ; dont Story 25-6-b : invoices_frozen_pdf ; dont Story 25-6-b : invoices_frozen_pdf ; 73 précédentes + Story 25-4-d2a : invoice_settlements_write_off)"
     );
 
     // Étape 1 : applique toutes les migrations sauf les 41 dernières. La

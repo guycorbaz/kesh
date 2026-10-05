@@ -1190,6 +1190,9 @@ reports-vat-column-vat-due = VAT due
 reports-vat-total-base-ht = Total net turnover
 reports-vat-recoverable = Recoverable VAT
 reports-vat-balance = Balance
+reports-vat-write-off-title = Reductions in consideration (write-offs)
+reports-vat-total-write-off = Total VAT on write-offs
+reports-vat-due-net = Net VAT due
 reports-vat-reconciliation-warning = The VAT return does not match the accounting entries (difference: { $delta }). Check validated entries modified manually.
 
 reports-filter-period = Period

@@ -1190,6 +1190,9 @@ reports-vat-column-vat-due = Geschuldete MwSt
 reports-vat-total-base-ht = Total Umsatz netto
 reports-vat-recoverable = Vorsteuer
 reports-vat-balance = Saldo
+reports-vat-write-off-title = Entgeltsminderungen (Ausbuchungen)
+reports-vat-total-write-off = Total MWST der Ausbuchungen
+reports-vat-due-net = Geschuldete MWST netto
 reports-vat-reconciliation-warning = Die Abrechnung stimmt nicht mit den Buchungen überein (Differenz: { $delta }). Prüfen Sie manuell geänderte validierte Buchungen.
 
 reports-filter-period = Periode

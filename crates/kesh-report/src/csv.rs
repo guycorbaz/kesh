@@ -392,7 +392,12 @@ pub fn render_vat_report_csv<W: Write>(
     // Story 18-1d : un rapport sans vente (rows vide) mais avec de la TVA
     // récupérable (achats seuls) n'est PAS vide — il faut écrire le récapitulatif.
     // On ne court-circuite que si AUSSI récupérable == 0.
-    if report.rows.is_empty() && report.total_vat_recoverable == Decimal::ZERO {
+    // Story 25-4-d2c : un rapport sans vente ni récupérable mais avec des soldes
+    // n'est pas vide non plus.
+    if report.rows.is_empty()
+        && report.total_vat_recoverable == Decimal::ZERO
+        && report.write_off_rows.is_empty()
+    {
         wtr.flush().map_err(map_io_err)?;
         return Ok(());
     }
@@ -419,6 +424,33 @@ pub fn render_vat_report_csv<W: Write>(
         &format_amount_iso(report.total_vat_due),
     ])
     .map_err(map_csv_err)?;
+    // Story 25-4-d2c : les diminutions de contre-prestation (soldes) — seulement
+    // s'il y en a dans la période. Une ligne de TITRE (première colonne seule) les
+    // distingue des lignes de vente, de même forme.
+    if !report.write_off_rows.is_empty() {
+        wtr.write_record(["Diminutions de contre-prestation (soldes)", "", ""])
+            .map_err(map_csv_err)?;
+        for row in &report.write_off_rows {
+            wtr.write_record([
+                &format_amount_iso(row.rate),
+                &format_amount_iso(row.base_ht),
+                &format_amount_iso(row.vat),
+            ])
+            .map_err(map_csv_err)?;
+        }
+        wtr.write_record([
+            "Total TVA des soldes",
+            "",
+            &format_amount_iso(report.total_vat_write_off),
+        ])
+        .map_err(map_csv_err)?;
+        wtr.write_record([
+            "TVA due nette",
+            "",
+            &format_amount_iso(report.total_vat_due_net),
+        ])
+        .map_err(map_csv_err)?;
+    }
     wtr.write_record([
         "TVA récupérable",
         "",
@@ -1324,5 +1356,82 @@ mod tests {
         assert!(out.contains("Exercice 2026"), "le nom manque : {out}");
         // L'id (3) ne doit pas s'être glissé dans la colonne Exercice.
         assert!(!out.contains(";12;3;"), "l'id d'exercice est rendu : {out}");
+    }
+
+    // --- Story 25-4-d2c — les soldes dans le CSV du rapport TVA ---
+
+    fn vat_report(rows: bool, write_offs: bool) -> crate::vat_report::VatReport {
+        use crate::vat_report::{VatReport, VatReportRow, VatWriteOffRow};
+        let rows = if rows {
+            vec![VatReportRow {
+                rate: dec!(8.10),
+                category: None,
+                base_ht: dec!(1000.00),
+                vat_due: dec!(81.00),
+            }]
+        } else {
+            vec![]
+        };
+        let total_vat_due: Decimal = rows.iter().map(|r| r.vat_due).sum();
+        let write_off_rows = if write_offs {
+            vec![VatWriteOffRow {
+                rate: dec!(8.10),
+                base_ht: dec!(20.00),
+                vat: dec!(1.62),
+            }]
+        } else {
+            vec![]
+        };
+        let total_vat_write_off: Decimal = write_off_rows.iter().map(|r| r.vat).sum();
+        VatReport {
+            period: period(),
+            total_base_ht: rows.iter().map(|r| r.base_ht).sum(),
+            rows,
+            total_vat_due,
+            write_off_rows,
+            total_vat_write_off,
+            total_vat_due_net: total_vat_due - total_vat_write_off,
+            total_vat_recoverable: Decimal::ZERO,
+            vat_balance: total_vat_due - total_vat_write_off,
+            reconciliation_delta: Decimal::ZERO,
+            reconciliation_status: "ok".to_string(),
+        }
+    }
+
+    fn csv_of(report: &crate::vat_report::VatReport) -> String {
+        let mut buf = Vec::new();
+        render_vat_report_csv(report, &mut buf).unwrap();
+        String::from_utf8(buf).unwrap()
+    }
+
+    #[test]
+    fn vat_csv_writes_the_write_off_section_with_a_title_row() {
+        let csv = csv_of(&vat_report(true, true));
+        assert!(
+            csv.contains("Diminutions de contre-prestation (soldes);;"),
+            "ligne de titre, première colonne seule : {csv}"
+        );
+        assert!(csv.contains("8.10;20.00;1.62"), "ligne par taux : {csv}");
+        assert!(csv.contains("Total TVA des soldes;;1.62"), "{csv}");
+        assert!(csv.contains("TVA due nette;;79.38"), "{csv}");
+        assert!(
+            csv.contains("Solde;;79.38"),
+            "le solde est sur le net : {csv}"
+        );
+    }
+
+    #[test]
+    fn vat_csv_without_write_offs_is_unchanged() {
+        let csv = csv_of(&vat_report(true, false));
+        assert!(!csv.contains("Diminutions"), "{csv}");
+        assert!(!csv.contains("TVA due nette"), "{csv}");
+    }
+
+    #[test]
+    fn vat_csv_with_write_offs_only_is_not_empty() {
+        // Garde « vide » (`render_vat_report_csv`) : ni vente ni récupérable,
+        // mais un solde → pas le seul en-tête.
+        let csv = csv_of(&vat_report(false, true));
+        assert!(csv.contains("Total TVA des soldes;;1.62"), "{csv}");
     }
 }

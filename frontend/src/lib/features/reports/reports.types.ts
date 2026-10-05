@@ -119,11 +119,23 @@ export interface VatReportRow {
 	vatDue: string; // Decimal string
 }
 
+/** Story 25-4-d2c — une diminution de contre-prestation (TVA des soldes), par taux. */
+export interface VatWriteOffRow {
+	rate: string; // Decimal string, %
+	baseHt: string; // Decimal string
+	vat: string; // Decimal string
+}
+
 export interface VatReportDto {
 	period: ReportPeriod;
 	rows: VatReportRow[];
 	totalBaseHt: string;
 	totalVatDue: string;
+	/** Story 25-4-d2c — la TVA des soldes (escompte, perte) datés dans la période. */
+	writeOffRows: VatWriteOffRow[];
+	totalVatWriteOff: string;
+	/** TVA due nette = TVA facturée − TVA des soldes ; le solde (`vatBalance`) en part. */
+	totalVatDueNet: string;
 	totalVatRecoverable: string; // solde compte impôt préalable (Story 18-1d)
 	vatBalance: string;
 	/** Écart de réconciliation TVA due (dérivée − solde grand livre périmètre ventes), Story 18-1e. */

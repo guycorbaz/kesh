@@ -440,7 +440,13 @@ const ATTENDU = {
 	//
 	// Fusion dans la 25-4-d2b, 2026-10-05 : la story ajoute +31 à une base
 	// désormais de 1796 ⇒ **1827** ; `sitesNonResolus` et `relais` suivent la fusion (31, 6).
-	sitesTotal: 1827,
+	// Story 25-4-d2c (#384) : **1808 → 1811** — `reports/VatReportView.svelte`
+	// (9 → 12) : la section des diminutions de contre-prestation (titre, total
+	// de la TVA des soldes, TVA due nette).
+	//
+	// Fusion dans la 25-4-d2c, 2026-10-05 : la story ajoute +3 à une base
+	// désormais de 1827 ⇒ **1830** ; `sitesNonResolus` et `relais` suivent la fusion (31, 6).
+	sitesTotal: 1830,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

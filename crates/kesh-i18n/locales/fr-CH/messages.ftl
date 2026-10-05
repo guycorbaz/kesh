@@ -1257,6 +1257,9 @@ reports-vat-column-vat-due = TVA due
 reports-vat-total-base-ht = Total CA HT
 reports-vat-recoverable = TVA récupérable
 reports-vat-balance = Solde
+reports-vat-write-off-title = Diminutions de contre-prestation (soldes)
+reports-vat-total-write-off = Total TVA des soldes
+reports-vat-due-net = TVA due nette
 reports-vat-reconciliation-warning = Le décompte ne correspond pas aux écritures comptables (écart : { $delta }). Vérifiez les écritures validées modifiées manuellement.
 
 # Filtres (4)

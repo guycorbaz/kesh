@@ -23,6 +23,13 @@ pub enum ReportError {
     #[error("projet analytique introuvable (project_id={project_id})")]
     ProjectNotFound { project_id: i64 },
 
+    /// Une donnée persistée a une forme impossible à relire — p. ex. la
+    /// ventilation figée d'un solde (`invoice_settlements.write_off_vat`, Story
+    /// 25-4-d2c). Mappé 500 côté handler : c'est un invariant cassé, jamais une
+    /// erreur de l'utilisateur, et jamais un zéro silencieux.
+    #[error("donnée corrompue : {0}")]
+    CorruptData(String),
+
     /// La période fournie est invalide (start > end, etc.).
     #[error("période invalide : {reason}")]
     PeriodInvalid { reason: String },
