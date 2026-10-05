@@ -1,6 +1,6 @@
 # Story 25.6-b : Le PDF d'une facture est figé — une pièce émise ne change plus
 
-Status: review
+Status: done
 
 **Issue : [#387]**, que cette story **ferme** : la PR porte `closes #387` dans le **titre ET le corps**. Branche
 `story/25-6-b-pdf-facture-archive`, partie de `main` (`d7c74f02`). Seconde moitié de la 25-6 (la 25-6-a a traité #388 et
@@ -411,6 +411,16 @@ Journaux sous `target/gate-logs/` : `25-6-b-backend.log`, `25-6-b-frontend.log`,
 
 ## Change Log
 
+- **2026-10-05** — Revue de code P4 **ciblée** (Haiku, une lentille, prompt `25-6-b-review-prompt-p4.md`, sur
+  `78b16da6` seul) : **0 finding**. Le « 0 » de Haiku a été **vérifié par l'orchestrateur** (`grep -nF` : les trois
+  chemins qui servent un PDF figé — lecture directe et deux adoptions — sont sous la garde `Usage::Send` ; le `match`
+  du refus de refigeage donne un code juste pour chaque statut). **Boucle close en 4 passes** : P1 Sonnet ×3 3M/7L →
+  P2 Opus ×2 5M/8L → P3 Sonnet ×2 0 > LOW (8L) → P4 Haiku ciblée 0. Modèles en rotation, prompts versionnés p1–p4.
+  - **Gates complets** (base remise à zéro) : backend `scripts/test-fast.sh --ci` **2588/2588** (4 skipped) ;
+    frontend `check` 0 erreur, `lint-i18n-ownership` PASS, `test:unit` **862/862**, `build` OK ; **E2E complet**
+    (07:25 UTC) **229 passés**, 19 skipped, **9 échecs, tous attendus** : KF-029 ×7 et KF-051 ×2
+    (`invoices.spec.ts:415`, `:439`, avant 12:00 UTC). La spec neuve `invoice-frozen-pdf` passe dans la suite.
+  - → **`done`**.
 - **2026-10-05** — Revue de code P3 (Sonnet ×2 : R = la remédiation `b2eeaab9`, C = acceptation ; prompt
   `25-6-b-review-prompt-p3.md`) : **0 CRITICAL/HIGH/MEDIUM, 8 LOW** — **critère d'arrêt atteint**. Trend : P1 3M/7L
   → P2 5M/8L (dont 2 MED nés de P1) → P3 0 > LOW. Recomptes de la lentille C (migrations 71, bloc admin 28, registre
