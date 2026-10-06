@@ -375,7 +375,11 @@ dit pourquoi il est impossible.
     (4) deux compléments du même compte → un seul réussit ;
     (5) **deux exercices**, une contre-passation d'une écriture de l'exercice du jour en vol (validation P5, R5-2) →
     le complément est rejoué ou la contre-passation échoue ; dans les deux cas, **aucun état incohérent** (l'écriture
-    et sa contre-passation, ou ni l'une ni l'autre ; le complément au plus une fois).
+    et sa contre-passation, ou ni l'une ni l'autre ; le complément au plus une fois). Montage : une transaction de
+    test tient l'exercice du jour `FOR UPDATE` ; le complément est lancé et vu en attente sur la requête `fiscal_years`
+    (il tient alors le premier exercice) ; la contre-passation est lancée et vue en attente ; la transaction de test
+    est annulée. L'ordre d'obtention n'est pas maîtrisé, et l'assertion n'en dépend pas : elle porte sur l'**état
+    final**, qu'il y ait eu interblocage ou non.
     **Mutations tuées** (validation P4) : « comptes saisis sans `FOR UPDATE` » par (1) — l'instantané s'ouvrirait
     avant la validation de l'écriture concurrente — et par (3) ; « lecture « jamais mouvementé » avant l'étape 2 » par
     (1) ; « société prise en exclusif » par (2) — l'écriture figée demande ensuite `companies` en partagé pour son
@@ -513,6 +517,16 @@ de découpage (+ `docs`, `CHANGELOG`, hors décompte des modules de code).
 ### File List
 
 ## Change Log
+
+- **2026-10-06** — Validation P7, **passe ciblée** (Haiku, prompt `25-7-validate-prompt-p7-ciblee.md`, braquée sur
+  `0a8e2ae6..c6819583`) : **0 finding**, axes déclarés. Vérifié par l'orchestrateur (CLAUDE.md : un « 0 » se vérifie) :
+  aucun résidu `FOR SHARE` hors Change Log, aucun « quatre entrelacements » ; `accounting::validate` existe
+  (`kesh-core/src/accounting/balance.rs:150`, `JournalEntryDraft → BalancedEntry`). **Un écart** : la passe déclare
+  l'entrelacement (5) « testé avec un montage d'attente » alors que la fiche n'en décrivait aucun — montage écrit (LOW).
+  **Validation close** : P1 1 C / 4 H → P2 4 H → P3 2 H / 6 M → P4 3 H / 6 M → P5 1 H / 3 M → P6 1 M (mesurée) → P7 0
+  (+ 1 LOW de l'orchestrateur). Modèles : Sonnet ×3, Opus ×2, Sonnet ×2, Opus ×2, Sonnet ×2, mesure, Haiku ciblé.
+  Signal de recyclage (D5) levé en P4, déclaré ; traité par un changement de méthode (AC 4 par règle et propriétés,
+  puis mesure sur la base) plutôt que par découpage, la zone tenant dans une fonction `kesh-db`.
 
 - **2026-10-06** — Validation P6 (orchestrateur, **mesurée** et non lue : les requêtes de l'AC 4 exécutées sur
   `kesh-mariadb-dev` 10.11.16, `EXPLAIN` puis transaction annulée) : **1 MEDIUM**, retenu. Syntaxe de toutes les
