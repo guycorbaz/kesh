@@ -865,6 +865,8 @@ opening-balances-intro = Enter the balances of your balance-sheet accounts carri
 opening-balances-account = Account
 opening-balances-debit = Debit
 opening-balances-credit = Credit
+opening-balances-credit-for = Credit of account { $number } “{ $name }”
+opening-balances-debit-for = Debit of account { $number } “{ $name }”
 opening-balances-total-debit = Total debits
 opening-balances-total-credit = Total credits
 opening-balances-diff = Difference
@@ -927,7 +929,7 @@ error-opening-complement-not-balance-account = Account { $account } is an income
 error-opening-complement-account-moved = Account { $account } already has movements: correct it in the journal, by a reversal or a correcting entry.
 error-opening-complement-no-lines = Enter at least one account to complete.
 error-opening-complement-too-many-lines = Too many lines for a single complement.
-error-opening-complement-invalid-amount = Each line carries a strictly positive amount, at most four decimals, as a debit OR a credit.
+error-opening-complement-invalid-amount = Each line carries a strictly positive amount, at most four decimals, as a debit OR a credit; their total must stay within the same limit.
 error-opening-complement-duplicate-account = The same account appears on two lines: merge them.
 
 

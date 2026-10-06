@@ -592,6 +592,25 @@ Claude Opus 5.5 (orchestrateur), 2026-10-06.
 
 ## Change Log
 
+- **2026-10-06** — Revue de code P3 (Sonnet ×2 : R = remédiation P2, F = ce que P1 et P2 n'ont pas regardé ; prompt
+  `25-7-review-prompt-p3.md`) : **0 CRITICAL, 0 HIGH, 2 MEDIUM, 10 LOW**.
+  - **MEDIUM** (tous deux **d'origine**, aucun né de P2) : un refus métier rechargeait la liste **à vide** et faisait
+    ressaisir tous les comptes (F-1) → fusion par `account.id`, test à deux lignes dont une disparaît ; aucun nom
+    accessible sur les champs de montant (F-2) → `aria-label` « Débit / Crédit du compte N « nom » » × 4 locales sur
+    les deux grilles, `scope="col"` sur les en-têtes, test.
+  - **LOW** : garde `SHAPE_REFUSALS` sans test (R3-1, F-3) → test « refus de forme : ni rechargement ni saisie perdue »
+    ; ancien nom du rôle resté au manuel (R3-2) → corrigé, et la mention du compte 2970 en `:394` aussi ; message de
+    dépassement qui ne nommait pas le total (R3-3) → message × 4 et repli ; ligne trop longue (R3-4) ; `fetchAccounts`
+    en échec sous `ALREADY_HAS_ENTRIES` (F-4) et liste vidée par un complément (F-5) → tests ; `confirm` jamais
+    restauré (F-7) → `afterEach`. **Non faits, déclarés** : fixture `NO_ENTRIES` combinée à `ALREADY_HAS_ENTRIES`
+    dans deux tests hérités (F-6, sans effet) ; `role="status"` inséré avec son contenu (F-8, l'avertissement reste
+    visible et non bloquant) ; `aria-describedby` d'un montant invalide (part de F-2, le bouton désactivé et
+    `aria-invalid` restent les signaux).
+  - Mutations jouées et tuées : saisie vidée au rechargement ; exclusion des refus de forme retirée. `sitesTotal`
+    1864 → **1868** (64 sites dans la page).
+  - Gates : `kesh-api` ciblé (`opening_balances_e2e` et complément, 29/29 ; seul un message Rust a changé), fmt et
+    clippy du workspace verts ; frontend complet **966/966**. Passe P4 complète (Opus) : P3 a trouvé deux MEDIUM.
+
 - **2026-10-06** — Revue de code P2 (Opus ×2 : R = remédiation P1, F = code complet ; prompt
   `25-7-review-prompt-p2.md`) : **0 CRITICAL, 0 HIGH, 1 MEDIUM, 10 LOW**, tous retenus sauf mention.
   - **MEDIUM** : `complete_each_refusal_has_its_code` dépendait de l'année (F-1) — dès le 2027-01-01, l'exercice 2026

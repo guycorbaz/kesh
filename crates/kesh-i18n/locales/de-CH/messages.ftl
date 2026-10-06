@@ -865,6 +865,8 @@ opening-balances-intro = Erfassen Sie die Saldi Ihrer Bilanzkonten aus Ihrer bis
 opening-balances-account = Konto
 opening-balances-debit = Soll
 opening-balances-credit = Haben
+opening-balances-credit-for = Haben des Kontos { $number } «{ $name }»
+opening-balances-debit-for = Soll des Kontos { $number } «{ $name }»
 opening-balances-total-debit = Total Soll
 opening-balances-total-credit = Total Haben
 opening-balances-diff = Differenz
@@ -927,7 +929,7 @@ error-opening-complement-not-balance-account = Das Konto { $account } ist ein Er
 error-opening-complement-account-moved = Das Konto { $account } hat bereits Bewegungen: Korrigieren Sie es im Journal, durch eine Stornobuchung oder eine Korrekturbuchung.
 error-opening-complement-no-lines = Erfassen Sie mindestens ein zu ergänzendes Konto.
 error-opening-complement-too-many-lines = Zu viele Zeilen für eine einzige Ergänzung.
-error-opening-complement-invalid-amount = Jede Zeile trägt einen streng positiven Betrag mit höchstens vier Dezimalstellen, im Soll ODER im Haben.
+error-opening-complement-invalid-amount = Jede Zeile trägt einen streng positiven Betrag mit höchstens vier Dezimalstellen, im Soll ODER im Haben; ihre Summe muss in derselben Grenze bleiben.
 error-opening-complement-duplicate-account = Dasselbe Konto steht auf zwei Zeilen: Fassen Sie sie zusammen.
 
 

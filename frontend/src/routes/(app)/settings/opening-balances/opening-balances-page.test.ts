@@ -16,7 +16,7 @@
 // Mocks (hoistés AVANT l'import du composant) : API opening-balances +
 // accounts + i18n (fallback) + notify.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 import type { OpeningBalancesStatus } from '$lib/features/opening-balances/opening-balances.types';
@@ -52,6 +52,13 @@ vi.mock('$lib/features/accounts/accounts.api', () => ({
 }));
 
 import Page from './+page.svelte';
+
+// `window.confirm` est espionné par certains tests : le restaurer après chacun,
+// pour qu'un test futur qui l'appellerait sans le simuler ne l'hérite pas
+// (revue de code P3, F-7).
+afterEach(() => {
+	if (vi.isMockFunction(window.confirm)) vi.mocked(window.confirm).mockRestore();
+});
 
 function acc(overrides: Partial<AccountResponse>): AccountResponse {
 	return {
@@ -732,6 +739,94 @@ describe('AC 6 — le mode « compléter »', () => {
 		);
 		expect(getStatusMock).toHaveBeenCalledTimes(2);
 		expect(screen.getByTestId('opening-balances-complete-error')).toBeTruthy();
+	});
+
+	it('refus de FORME → ni rechargement ni saisie perdue', async () => {
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		completeMock.mockRejectedValue({
+			code: 'OPENING_COMPLEMENT_INVALID_AMOUNT',
+			message: 'Montant invalide.',
+			status: 400,
+		});
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-debit-1100', '10');
+		const btn = screen.getByTestId('opening-balances-complete-submit') as HTMLButtonElement;
+		await waitFor(() => expect(btn.disabled).toBe(false));
+		await fireEvent.click(btn);
+		await screen.findByTestId('opening-balances-complete-error');
+		expect(getStatusMock).toHaveBeenCalledTimes(1);
+		expect(
+			(screen.getByTestId('opening-balances-complete-debit-1100') as HTMLInputElement).value
+		).toBe('10');
+	});
+
+	it('refus métier → la saisie des comptes encore proposés est conservée', async () => {
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		completeMock.mockRejectedValue({
+			code: 'OPENING_COMPLEMENT_ACCOUNT_MOVED',
+			message: 'Le compte 1100 a déjà des mouvements.',
+			status: 409,
+		});
+		getStatusMock.mockResolvedValueOnce(completableStatus());
+		getStatusMock.mockResolvedValue(
+			completableStatus({
+				completableAccounts: [{ id: 6, number: '2000', name: 'Dettes', accountType: 'Liability' }],
+			})
+		);
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-debit-1100', '10');
+		await type('opening-balances-complete-credit-2000', '25');
+		const btn = screen.getByTestId('opening-balances-complete-submit') as HTMLButtonElement;
+		await waitFor(() => expect(btn.disabled).toBe(false));
+		await fireEvent.click(btn);
+		await waitFor(() =>
+			expect(screen.queryByTestId('opening-balances-complete-debit-1100')).toBeNull()
+		);
+		expect(
+			(screen.getByTestId('opening-balances-complete-credit-2000') as HTMLInputElement).value
+		).toBe('25');
+	});
+
+	it('complément qui vide la liste → texte NO_COMPLETABLE_ACCOUNT', async () => {
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		completeMock.mockResolvedValue({ id: 9 });
+		getStatusMock.mockResolvedValueOnce(
+			completableStatus({
+				completableAccounts: [{ id: 7, number: '1100', name: 'Poste', accountType: 'Asset' }],
+			})
+		);
+		getStatusMock.mockResolvedValue(
+			completableStatus({ canComplete: false, completeReason: 'NO_COMPLETABLE_ACCOUNT', completableAccounts: [] })
+		);
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-debit-1100', '10');
+		const btn = screen.getByTestId('opening-balances-complete-submit') as HTMLButtonElement;
+		await waitFor(() => expect(btn.disabled).toBe(false));
+		await fireEvent.click(btn);
+		const unavailable = await screen.findByTestId('opening-balances-complete-unavailable');
+		expect(unavailable.getAttribute('data-reason')).toBe('NO_COMPLETABLE_ACCOUNT');
+	});
+
+	it('les comptes ne se chargent pas → le complément reste disponible', async () => {
+		fetchAccountsMock.mockRejectedValue({ code: 'NETWORK_ERROR', message: 'boom' });
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		expect(await screen.findByTestId('opening-balances-complete')).toBeTruthy();
+		expect(screen.queryByTestId('opening-balances-status-error')).toBeNull();
+	});
+
+	it('chaque champ de montant porte un nom accessible', async () => {
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		expect(
+			screen.getByTestId('opening-balances-complete-debit-1100').getAttribute('aria-label')
+		).toBe('Débit du compte 1100 « Poste »');
+		expect(screen.getByLabelText('Crédit du compte 2000 « Dettes »')).toBeTruthy();
 	});
 
 	it('montant invalide → Compléter désactivé', async () => {

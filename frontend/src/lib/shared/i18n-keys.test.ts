@@ -451,7 +451,9 @@ const ATTENDU = {
 	// à-nouveau (trois variantes), grille de complément (titre, introduction, date,
 	// contrepartie, bouton, confirmation, succès) et six raisons d'indisponibilité.
 	// Relevé du test, recoupé par `grep -o` sur le fichier aux deux bornes (+34).
-	sitesTotal: 1864,
+	// Revue de code P3 de la 25-7 : **1864 → 1868** — un nom accessible sur les quatre
+	// champs de montant (`opening-balances-debit-for` / `-credit-for`, 60 → 64).
+	sitesTotal: 1868,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

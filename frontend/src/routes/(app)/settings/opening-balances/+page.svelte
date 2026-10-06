@@ -110,10 +110,14 @@
 					(a.accountType === 'Asset' || a.accountType === 'Liability')
 			)
 			.map((account) => ({ account, debit: '', credit: '' }));
+		// Au rechargement (après un refus métier), la saisie des comptes ENCORE
+		// proposés est conservée : seul le compte fautif disparaît (revue de code
+		// P3, F-1 — reconstruire à vide faisait tout ressaisir).
+		const previous = new Map(complementRows.map((r) => [r.account.id, r]));
 		complementRows = (status?.completableAccounts ?? []).map((account) => ({
 			account,
-			debit: '',
-			credit: ''
+			debit: previous.get(account.id)?.debit ?? '',
+			credit: previous.get(account.id)?.credit ?? ''
 		}));
 
 		loading = false;
@@ -246,7 +250,11 @@
 			// la liste périmée : recharger le status, sinon chaque nouvel essai
 			// échoue à l'identique (revue de code P1, E-F1). Le message, posé
 			// avant, survit au rechargement — il est affiché hors de la grille.
-			if (isApiError(err) && err.code.startsWith('OPENING_COMPLEMENT_') && !SHAPE_REFUSALS.has(err.code)) {
+			if (
+				isApiError(err) &&
+				err.code.startsWith('OPENING_COMPLEMENT_') &&
+				!SHAPE_REFUSALS.has(err.code)
+			) {
 				await load();
 			}
 		} finally {
@@ -449,9 +457,9 @@
 					<table class="w-full border-collapse text-sm">
 						<thead>
 							<tr class="border-b border-border text-left text-xs uppercase tracking-wider text-text-muted">
-								<th class="py-2 pr-2">{i18nMsg('opening-balances-account', 'Compte')}</th>
-								<th class="w-40 py-2 pr-2 text-right">{i18nMsg('opening-balances-debit', 'Débit')}</th>
-								<th class="w-40 py-2 text-right">{i18nMsg('opening-balances-credit', 'Crédit')}</th>
+								<th scope="col" class="py-2 pr-2">{i18nMsg('opening-balances-account', 'Compte')}</th>
+								<th scope="col" class="w-40 py-2 pr-2 text-right">{i18nMsg('opening-balances-debit', 'Débit')}</th>
+								<th scope="col" class="w-40 py-2 text-right">{i18nMsg('opening-balances-credit', 'Crédit')}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -472,6 +480,7 @@
 												if (row.debit !== '') row.credit = '';
 											}}
 											aria-invalid={!isValidAmount(row.debit)}
+											aria-label={i18nMsg('opening-balances-debit-for', 'Débit du compte { $number } « { $name } »', { number: row.account.number, name: row.account.name })}
 											data-testid="opening-balances-complete-debit-{row.account.number}"
 										/>
 									</td>
@@ -486,6 +495,7 @@
 												if (row.credit !== '') row.debit = '';
 											}}
 											aria-invalid={!isValidAmount(row.credit)}
+											aria-label={i18nMsg('opening-balances-credit-for', 'Crédit du compte { $number } « { $name } »', { number: row.account.number, name: row.account.name })}
 											data-testid="opening-balances-complete-credit-{row.account.number}"
 										/>
 									</td>
@@ -569,9 +579,9 @@
 		<table class="w-full border-collapse text-sm" data-testid="opening-balances-grid">
 			<thead>
 				<tr class="border-b border-border text-left text-xs uppercase tracking-wider text-text-muted">
-					<th class="py-2 pr-2">{i18nMsg('opening-balances-account', 'Compte')}</th>
-					<th class="w-40 py-2 pr-2 text-right">{i18nMsg('opening-balances-debit', 'Débit')}</th>
-					<th class="w-40 py-2 text-right">{i18nMsg('opening-balances-credit', 'Crédit')}</th>
+					<th scope="col" class="py-2 pr-2">{i18nMsg('opening-balances-account', 'Compte')}</th>
+					<th scope="col" class="w-40 py-2 pr-2 text-right">{i18nMsg('opening-balances-debit', 'Débit')}</th>
+					<th scope="col" class="w-40 py-2 text-right">{i18nMsg('opening-balances-credit', 'Crédit')}</th>
 				</tr>
 			</thead>
 			<tbody>
@@ -601,7 +611,8 @@
 								bind:value={row.debit}
 								oninput={() => onDebitInput(row)}
 								aria-invalid={!isValidAmount(row.debit)}
-								data-testid="opening-balances-debit-{row.account.number}"
+								aria-label={i18nMsg('opening-balances-debit-for', 'Débit du compte { $number } « { $name } »', { number: row.account.number, name: row.account.name })}
+											data-testid="opening-balances-debit-{row.account.number}"
 							/>
 						</td>
 						<td class="py-1.5">
@@ -613,7 +624,8 @@
 								bind:value={row.credit}
 								oninput={() => onCreditInput(row)}
 								aria-invalid={!isValidAmount(row.credit)}
-								data-testid="opening-balances-credit-{row.account.number}"
+								aria-label={i18nMsg('opening-balances-credit-for', 'Crédit du compte { $number } « { $name } »', { number: row.account.number, name: row.account.name })}
+											data-testid="opening-balances-credit-{row.account.number}"
 							/>
 						</td>
 					</tr>

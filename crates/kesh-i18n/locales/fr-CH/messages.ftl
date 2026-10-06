@@ -915,6 +915,8 @@ opening-balances-intro = Saisissez les soldes de vos comptes de bilan repris de 
 opening-balances-account = Compte
 opening-balances-debit = Débit
 opening-balances-credit = Crédit
+opening-balances-credit-for = Crédit du compte { $number } « { $name } »
+opening-balances-debit-for = Débit du compte { $number } « { $name } »
 opening-balances-total-debit = Total débits
 opening-balances-total-credit = Total crédits
 opening-balances-diff = Différence
@@ -977,7 +979,7 @@ error-opening-complement-not-balance-account = Le compte { $account } est un com
 error-opening-complement-account-moved = Le compte { $account } a déjà des mouvements : corrigez-le dans le journal, par une contre-passation ou une écriture de correction.
 error-opening-complement-no-lines = Saisissez au moins un compte à compléter.
 error-opening-complement-too-many-lines = Trop de lignes pour un seul complément.
-error-opening-complement-invalid-amount = Chaque ligne porte un montant strictement positif, au plus quatre décimales, au débit OU au crédit.
+error-opening-complement-invalid-amount = Chaque ligne porte un montant strictement positif, au plus quatre décimales, au débit OU au crédit ; leur total doit rester dans la même limite.
 error-opening-complement-duplicate-account = Un même compte figure sur deux lignes : regroupez-les.
 
 

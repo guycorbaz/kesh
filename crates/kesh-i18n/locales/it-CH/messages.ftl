@@ -865,6 +865,8 @@ opening-balances-intro = Inserisci i saldi dei tuoi conti di bilancio ripresi da
 opening-balances-account = Conto
 opening-balances-debit = Dare
 opening-balances-credit = Avere
+opening-balances-credit-for = Avere del conto { $number } «{ $name }»
+opening-balances-debit-for = Dare del conto { $number } «{ $name }»
 opening-balances-total-debit = Totale dare
 opening-balances-total-credit = Totale avere
 opening-balances-diff = Differenza
@@ -927,7 +929,7 @@ error-opening-complement-not-balance-account = Il conto { $account } è un conto
 error-opening-complement-account-moved = Il conto { $account } ha già movimenti: correggilo nel giornale, con uno storno o una registrazione di rettifica.
 error-opening-complement-no-lines = Inserisci almeno un conto da completare.
 error-opening-complement-too-many-lines = Troppe righe per un solo completamento.
-error-opening-complement-invalid-amount = Ogni riga porta un importo strettamente positivo, al massimo quattro decimali, in dare O in avere.
+error-opening-complement-invalid-amount = Ogni riga porta un importo strettamente positivo, al massimo quattro decimali, in dare O in avere; il loro totale deve restare nello stesso limite.
 error-opening-complement-duplicate-account = Lo stesso conto compare su due righe: raggruppale.
 
 
