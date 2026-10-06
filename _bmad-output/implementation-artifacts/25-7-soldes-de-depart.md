@@ -455,7 +455,7 @@ que des `data-testid` (garde `e2e-selecteurs-traduits`).
 - [x] **T4 — Playwright** (AC 7) : parcours de complément ; spec existante adaptée.
 - [ ] **T5 — manuel, CHANGELOG** (AC 8) ; issue du TOCTOU préexistant (Limites), ouverte avec l'accord de Guy et
   citée à la PR.
-- [ ] **T6 — gates** : backend complet (repositories `kesh-db` : gate complet même en cours de boucle), frontend
+- [x] **T6 — gates** : backend complet (repositories `kesh-db` : gate complet même en cours de boucle), frontend
   complet, **E2E complet au dernier commit de code** (décision D7).
 
 ## Dev Notes
@@ -591,6 +591,14 @@ Claude Opus 5.5 (orchestrateur), 2026-10-06.
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
+
+- **2026-10-06** — Revue de code P5, **passe ciblée** (Haiku, prompt `25-7-review-prompt-p5-ciblee.md`, diff
+  `5ac148e8..b8b3d56e`) : **0 finding**, axes déclarés ; vérifié par l'orchestrateur (replis Rust et Svelte identiques
+  au fr-CH octet pour octet, `{ $date }` dans les 4 locales). Aucune remédiation : **boucle close**.
+  **Gates finaux au dernier commit de code `b8b3d56e`** (D7) : backend complet **2738/2738** (base remise à zéro,
+  `target/gate-logs/backend-257-final.log`) ; frontend 969/969 (passe P4) ; **E2E complet** (`e2e-257-final.log`,
+  départ 11:06 UTC) **238 passés, 9 échoués, 19 ignorés** — les 9 de la liste attendue (KF-029 ×7, KF-051 ×2 avant
+  12:00 UTC), aucun hors liste. Reste T5 : l'issue du TOCTOU, à l'accord de Guy.
 
 - **2026-10-06** — Revue de code P4 (Opus ×2, prompt `25-7-review-prompt-p4.md`) : **0 CRITICAL, 0 HIGH, 0 MEDIUM,
   7 LOW** — **la boucle converge**. La lentille F n'a trouvé aucun défaut d'origine qui perde ou fausse une écriture
