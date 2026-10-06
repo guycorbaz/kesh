@@ -28,6 +28,7 @@
 		parseAmount
 	} from '$lib/features/journal-entries/balance';
 	import { formatSwissDate } from '$lib/features/reports/reports.api';
+	import type Big from 'big.js';
 
 	// ------------------------------------------------------------------
 	// État de chargement (P3-BH3-2) : le statut pilote grille-vs-verrou,
@@ -240,7 +241,14 @@
 			// Le serveur localise ses refus (codes OPENING_COMPLEMENT_*) : tel quel.
 			completeError = isApiError(err)
 				? err.message
-				: i18nMsg('opening-balances-status-error', 'Impossible de charger l’état des soldes de départ.');
+				: i18nMsg('opening-balances-complete-error', 'Le complément n’a pas pu être enregistré. Réessayez.');
+			// Un refus métier (compte mouvementé entre-temps, date, report…) rend
+			// la liste périmée : recharger le status, sinon chaque nouvel essai
+			// échoue à l'identique (revue de code P1, E-F1). Le message, posé
+			// avant, survit au rechargement — il est affiché hors de la grille.
+			if (isApiError(err) && err.code.startsWith('OPENING_COMPLEMENT_')) {
+				await load();
+			}
 		} finally {
 			completing = false;
 		}
@@ -285,6 +293,10 @@
 	}
 
 	const formatNumber = formatSwissAmount;
+	/** Deux décimales, ou quatre si le montant en porte davantage (saisie jusqu'à 4). */
+	function formatExact(amount: Big): string {
+		return formatSwissAmount(amount, amount.round(2).eq(amount) ? 2 : 4);
+	}
 </script>
 
 <svelte:head>
@@ -475,13 +487,13 @@
 							{i18nMsg(
 								'opening-balances-complete-counterpart-credit',
 								'Contrepartie : { $amount } au crédit du compte { $number }.',
-								{ amount: formatNumber(counterpart.amount), number: status.retainedEarningsAccount.number }
+								{ amount: formatExact(counterpart.amount), number: status.retainedEarningsAccount.number }
 							)}
 						{:else if counterpart.side === 'debit'}
 							{i18nMsg(
 								'opening-balances-complete-counterpart-debit',
 								'Contrepartie : { $amount } au débit du compte { $number }.',
-								{ amount: formatNumber(counterpart.amount), number: status.retainedEarningsAccount.number }
+								{ amount: formatExact(counterpart.amount), number: status.retainedEarningsAccount.number }
 							)}
 						{:else if complementLines.length > 0}
 							{i18nMsg(
@@ -490,11 +502,6 @@
 							)}
 						{/if}
 					</p>
-					{#if completeError}
-						<p class="text-sm text-destructive" data-testid="opening-balances-complete-error" role="alert">
-							{completeError}
-						</p>
-					{/if}
 					<div class="flex justify-end">
 						<Button
 							onclick={handleComplete}
@@ -514,6 +521,12 @@
 					data-reason={status.completeReason}
 				>
 					{unavailableMessage(status.completeReason)}
+				</p>
+			{/if}
+			{#if completeError}
+				<!-- Hors de la grille : il survit au rechargement qui suit un refus. -->
+				<p class="text-sm text-destructive" data-testid="opening-balances-complete-error" role="alert">
+					{completeError}
 				</p>
 			{/if}
 		{/if}
@@ -638,12 +651,12 @@
 		<div class="rounded-md border border-border p-4 text-sm tabular-nums" data-testid="opening-balances-bilan-totals">
 			<dl class="grid grid-cols-2 gap-x-4 gap-y-1">
 				<dt>{i18nMsg('opening-balances-total-assets', 'Actifs')}</dt>
-				<dd class="text-right" data-testid="opening-balances-total-assets">{formatNumber(totals.assets)}</dd>
+				<dd class="text-right" data-testid="opening-balances-total-assets">{formatExact(totals.assets)}</dd>
 				<dt>{i18nMsg('opening-balances-total-liabilities', 'Passifs et capitaux (hors report)')}</dt>
-				<dd class="text-right" data-testid="opening-balances-total-liabilities">{formatNumber(totals.liabilities)}</dd>
+				<dd class="text-right" data-testid="opening-balances-total-liabilities">{formatExact(totals.liabilities)}</dd>
 				<dt>{i18nMsg('opening-balances-amount-to-carry', 'Montant à porter au compte de report')}</dt>
 				<dd class="text-right" data-testid="opening-balances-amount-to-carry" data-side={totals.amountToCarry.gt(0) ? 'credit' : totals.amountToCarry.lt(0) ? 'debit' : 'none'}>
-					{formatNumber(totals.amountToCarry.abs())}
+					{formatExact(totals.amountToCarry.abs())}
 					{#if totals.amountToCarry.gt(0)}
 						{i18nMsg('opening-balances-side-credit', 'au crédit')}
 					{:else if totals.amountToCarry.lt(0)}
@@ -651,9 +664,9 @@
 					{/if}
 				</dd>
 				<dt>{i18nMsg('opening-balances-retained-entered', 'Report saisi')}</dt>
-				<dd class="text-right" data-testid="opening-balances-retained-entered">{formatNumber(totals.retainedEntered)}</dd>
+				<dd class="text-right" data-testid="opening-balances-retained-entered">{formatExact(totals.retainedEntered)}</dd>
 				<dt>{i18nMsg('opening-balances-remaining-gap', 'Écart restant')}</dt>
-				<dd class="text-right" data-testid="opening-balances-remaining-gap">{formatNumber(totals.remainingGap)}</dd>
+				<dd class="text-right" data-testid="opening-balances-remaining-gap">{formatExact(totals.remainingGap)}</dd>
 			</dl>
 			<p class="mt-2 text-text-muted">
 				{i18nMsg(

@@ -222,8 +222,11 @@ de `create_in_tx_inner`, `journal_entries.rs:250-262`).
    d'ouverture ou un `lock_books` en vol, qui la prennent en exclusif ; la borne est **figée** jusqu'au commit ;
 2. **les comptes** :
    - comptes saisis, **par clé primaire** : `SELECT … FROM accounts WHERE id IN (…) AND company_id = ? ORDER BY id
-     FOR UPDATE` — l'accès se fait **par la clé primaire**, le filtre `company_id` évitant de verrouiller les comptes
-     d'une autre société (validation P5, R5-4/F5-9) ; un parcours d'un index commençant par `company_id`
+     FOR UPDATE` — ⛔ **le filtre `company_id` ne suffit PAS** à épargner le compte d'une autre société : la ligne de la
+     clé primaire est verrouillée avant que le filtre ne l'écarte (**mesuré** à deux sessions, revue de code P1, B-F1 ;
+     l'affirmation contraire de la validation P5 était fausse). Les identifiants de la société sont donc lus **avant**
+     la transaction, en autocommit — hors de l'instantané, et un compte ne change jamais de société —, et seuls
+     ceux-là sont verrouillés ; un parcours d'un index commençant par `company_id`
      verrouillerait tous les comptes de la société (validation P4, R4-6) : l'`EXPLAIN` de cette requête **et des deux
      requêtes d'exercice** (étape 3, F5-5) est relevé au développement et cité au Dev Agent Record ; un identifiant
      absent du résultat → `ACCOUNT_INVALID` ; chacun de la société (sinon `ACCOUNT_INVALID`), actif, postable, de bilan (`Asset`/`Liability`), et ne
@@ -588,6 +591,26 @@ Claude Opus 5.5 (orchestrateur), 2026-10-06.
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
+
+- **2026-10-06** — Revue de code P1 (Sonnet ×3, prompt `25-7-review-prompt-p1.md`, diff `85b51f5f..281afc54`) :
+  **0 CRITICAL, 0 HIGH, 4 MEDIUM, ~11 LOW**, tous retenus.
+  - **MEDIUM** : le verrou des comptes atteignait le compte d'une **autre société** avant que le filtre ne l'écarte
+    (B-F1, **mesuré** à deux sessions — `compte étranger VERROUILLÉ`) → tri des comptes de la société en autocommit
+    avant la transaction, test qui tient le compte étranger et exige un refus sans attente (mutation « sans tri »
+    tuée par le délai) ; refus du complément sans rechargement : liste périmée, nouvel essai voué au même refus (E-F1)
+    → rechargement sur tout `OPENING_COMPLEMENT_*`, message affiché hors de la grille pour survivre ; deux raisons du
+    status sans test (A-M1) → `le_status_rend_no_open_fiscal_year_et_report_non_imputable` ; le Playwright neuf lisait
+    des libellés traduits et le bilan au lieu de la balance (A-M2) → solde de clôture lu par l'API
+    `reports/trial-balance`.
+  - **LOW** : montants à quatre décimales arrondis à l'affichage (E2) → `formatExact` ; repli « charger » sur un échec
+    d'enregistrement (E3) → clé `opening-balances-complete-error` × 4 ; tests manquants (E4) → variante `TODAY`,
+    confirmation refusée, refus serveur avec rechargement, montant invalide, quatre décimales ; premier exercice futur
+    (B-F2) → comportement fixé par un test unitaire ; montants sans borne (B-F3) → plafond `DECIMAL(19,4)` ; « Le compte
+    ? » (B-F4) → l'identifiant envoyé par le client ; conditions du complément et « actifs et passifs » au manuel
+    (A-L2) ; remède du refus `ACCOUNT_MOVED` aligné sur le manuel × 4 (A-L3). Non corrigé, déclaré : le scénario
+    Playwright pose l'ouverture sur 2970 lui-même et non sur 2000 (A-L1) — plus proche du cas réel.
+  - Gates : backend complet **2737/2737** (base remise à zéro avant), frontend **961/961**, Playwright ciblé 3/3. E2E
+    complet au dernier commit de code (D7).
 
 - **2026-10-06** — Développement (`bmad-dev-story`, Opus 5.5) : T1 à T4 et le manuel / CHANGELOG / README de T5 ;
   gates backend 2735/2735, frontend 956/956, E2E complet 238 passés et 9 échecs tous attendus. Deux écarts à la fiche,

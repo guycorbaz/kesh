@@ -1143,7 +1143,7 @@ fn opening_complement_refusal_response(
         R::AccountMoved => (
             StatusCode::CONFLICT,
             "error-opening-complement-account-moved",
-            format!("Le compte {account} a déjà des mouvements : corrigez-le par une écriture manuelle."),
+            format!("Le compte {account} a déjà des mouvements : corrigez-le dans le journal, par une contre-passation ou une écriture de correction."),
         ),
     };
     build_response(status, reason.code(), &t_args(key, &fallback, &args))
@@ -2495,9 +2495,15 @@ impl IntoResponse for AppError {
             AppError::Database(db_err) => match db_err {
                 DbError::OpeningComplementRefused {
                     reason,
+                    account_id,
                     account_number,
-                    ..
-                } => opening_complement_refusal_response(reason, account_number.as_deref()),
+                } => {
+                    // Le numéro quand le compte est de la société ; sinon
+                    // l'identifiant que le client a lui-même envoyé (rien n'est
+                    // révélé d'une autre société).
+                    let label = account_number.or_else(|| account_id.map(|id| format!("#{id}")));
+                    opening_complement_refusal_response(reason, label.as_deref())
+                }
                 DbError::NotFound => build_response(
                     StatusCode::NOT_FOUND,
                     "NOT_FOUND",

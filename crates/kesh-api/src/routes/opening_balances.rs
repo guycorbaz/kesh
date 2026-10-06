@@ -504,7 +504,11 @@ fn parse_complement_amount(raw: Option<&str>) -> Result<Decimal, AppError> {
         return Ok(Decimal::ZERO);
     }
     let value = Decimal::from_str(raw).map_err(|_| invalid())?;
-    if value.is_sign_negative() || value.normalize().scale() > 4 {
+    // Borne de `DECIMAL(19,4)` : quinze chiffres entiers. Au-delà, l'insertion
+    // échouerait — et la somme des lignes pourrait dépasser la capacité de
+    // `Decimal` avant même d'y arriver (revue de code P1, B-F3).
+    let max = Decimal::from_str("999999999999999.9999").expect("borne constante");
+    if value.is_sign_negative() || value.normalize().scale() > 4 || value > max {
         return Err(invalid());
     }
     Ok(value)
@@ -648,6 +652,7 @@ mod tests {
             line(1, Some("-5"), None),
             line(1, Some("abc"), None),
             line(1, Some("1.00001"), None),
+            line(1, Some("1000000000000000"), None),
             line(1, None, None),
         ] {
             assert_eq!(

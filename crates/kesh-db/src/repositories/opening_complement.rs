@@ -426,8 +426,28 @@ pub async fn create_opening_complement(
     description: String,
     today: NaiveDate,
 ) -> Result<JournalEntryWithLines, DbError> {
+    // Les comptes de la société parmi ceux saisis, lus **hors** de la
+    // transaction (autocommit) : sous REPEATABLE READ, une lecture ordinaire
+    // dans la transaction ouvrirait l'instantané avant les verrous. Un compte ne
+    // change jamais de société, donc ce tri ne peut pas devenir faux ensuite.
+    //
+    // ⛔ Sans lui, le `FOR UPDATE` par clé primaire verrouillait le compte d'une
+    // AUTRE société avant que le filtre `company_id` ne l'écarte — mesuré à deux
+    // sessions (revue de code P1, B-F1). Un identifiant étranger n'est donc
+    // jamais verrouillé ; il est refusé `ACCOUNT_INVALID` à l'étape des refus.
+    let owned = owned_account_ids(pool, company_id, lines).await?;
     let mut tx = pool.begin().await.map_err(map_db_error)?;
-    match create_in_open_tx(&mut tx, company_id, user_id, lines, description, today).await {
+    match create_in_open_tx(
+        &mut tx,
+        company_id,
+        user_id,
+        lines,
+        &owned,
+        description,
+        today,
+    )
+    .await
+    {
         Ok(result) => {
             tx.commit().await.map_err(map_db_error)?;
             Ok(result)
@@ -439,11 +459,38 @@ pub async fn create_opening_complement(
     }
 }
 
+/// Identifiants des comptes saisis qui appartiennent à la société, triés.
+async fn owned_account_ids(
+    pool: &MySqlPool,
+    company_id: i64,
+    lines: &[ComplementLine],
+) -> Result<Vec<i64>, DbError> {
+    if lines.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut qb: QueryBuilder<MySql> =
+        QueryBuilder::new("SELECT id FROM accounts WHERE company_id = ");
+    qb.push_bind(company_id).push(" AND id IN (");
+    {
+        let mut sep = qb.separated(", ");
+        for line in lines {
+            sep.push_bind(line.account_id);
+        }
+    }
+    qb.push(") ORDER BY id");
+    qb.build_query_scalar()
+        .fetch_all(pool)
+        .await
+        .map_err(map_db_error)
+}
+
+#[allow(clippy::too_many_arguments)]
 async fn create_in_open_tx(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,
     user_id: i64,
     lines: &[ComplementLine],
+    owned: &[i64],
     description: String,
     today: NaiveDate,
 ) -> Result<JournalEntryWithLines, DbError> {
@@ -463,23 +510,28 @@ async fn create_in_open_tx(
     let mut ids: Vec<i64> = lines.iter().map(|l| l.account_id).collect();
     ids.sort_unstable();
     ids.dedup();
-    let mut qb: QueryBuilder<MySql> = QueryBuilder::new(
-        "SELECT id, number, account_type, active, postable, role FROM accounts WHERE id IN (",
-    );
-    {
-        let mut sep = qb.separated(", ");
-        for id in &ids {
-            sep.push_bind(*id);
+    // Verrou par clé primaire sur les SEULS comptes de la société (cf.
+    // `owned_account_ids`) ; le filtre `company_id` reste en défense.
+    let locked: Vec<LockedAccount> = if owned.is_empty() {
+        Vec::new()
+    } else {
+        let mut qb: QueryBuilder<MySql> = QueryBuilder::new(
+            "SELECT id, number, account_type, active, postable, role FROM accounts WHERE id IN (",
+        );
+        {
+            let mut sep = qb.separated(", ");
+            for id in owned {
+                sep.push_bind(*id);
+            }
         }
-    }
-    qb.push(") AND company_id = ")
-        .push_bind(company_id)
-        .push(" ORDER BY id FOR UPDATE");
-    let locked: Vec<LockedAccount> = qb
-        .build_query_as()
-        .fetch_all(&mut **tx)
-        .await
-        .map_err(map_db_error)?;
+        qb.push(") AND company_id = ")
+            .push_bind(company_id)
+            .push(" ORDER BY id FOR UPDATE");
+        qb.build_query_as()
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(map_db_error)?
+    };
 
     let retained: Option<RetainedEarningsAccount> =
         sqlx::query_as(&format!("{RETAINED_SQL} LOCK IN SHARE MODE"))
@@ -653,6 +705,19 @@ mod tests {
         let got = decide_date(&first, Some(&first), None, d(2026, 6, 1)).unwrap();
         assert_eq!(got.date, d(2026, 1, 1));
         assert_eq!(got.branch, ComplementDateBranch::OpeningDay);
+    }
+
+    /// Un premier exercice ouvert qui commence APRÈS `today` : la branche (a)
+    /// date le complément de son premier jour — comme l'écriture d'ouverture,
+    /// elle-même datée de ce jour (revue de code P1, B-F2 : comportement fixé).
+    #[test]
+    fn branche_a_premier_exercice_futur() {
+        let first = fy(1, (2027, 1, 1), (2027, 12, 31), "Open");
+        let got = decide_date(&first, None, None, d(2026, 6, 1)).unwrap();
+        assert_eq!(
+            (got.date, got.branch),
+            (d(2027, 1, 1), ComplementDateBranch::OpeningDay)
+        );
     }
 
     #[test]

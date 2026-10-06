@@ -218,10 +218,20 @@ test('compléter un compte oublié après la génération', async ({ page }) => 
 	// Rechargé : le compte complété n'est plus proposé.
 	await expect(page.getByTestId(`opening-balances-complete-debit-${forgotten}`)).toHaveCount(0);
 
-	// La balance le porte : total actifs 5'750.00.
-	await page.goto('/reports');
-	await page.waitForLoadState('networkidle');
-	await page.getByRole('button', { name: /générer/i }).click();
-	await expect(page.getByText(/total actifs/i)).toBeVisible({ timeout: 5000 });
-	await expect(page.getByText(/5.750\.00/).first()).toBeVisible();
+	// La balance le porte (revue de code P1, A-M2 : par l'API, sans libellé
+	// traduit ni format monétaire) : solde de clôture 750 sur le compte oublié.
+	const api = await authedApiContext(page);
+	try {
+		const status = await (await api.get('/api/v1/opening-balances/status')).json();
+		const resp = await api.get(
+			`/api/v1/reports/trial-balance?fiscalYearId=${status.fiscalYear.id}`
+		);
+		expect(resp.ok(), await resp.text()).toBeTruthy();
+		const tb = await resp.json();
+		const row = tb.rows.find((r: { accountNumber: string }) => r.accountNumber === forgotten);
+		expect(row, `ligne ${forgotten} dans la balance`).toBeTruthy();
+		expect(Number(row.closingBalance)).toBe(750);
+	} finally {
+		await disposeContextSafe(api);
+	}
 });

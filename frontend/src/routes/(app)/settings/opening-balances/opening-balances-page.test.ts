@@ -682,6 +682,80 @@ describe('AC 6 — le mode « compléter »', () => {
 		expect(screen.queryByTestId('opening-balances-complete-unavailable')).toBeNull();
 	});
 
+	it('date du jour (régularisation) : variante TODAY', async () => {
+		getStatusMock.mockResolvedValue(
+			completableStatus({ complementDate: '2026-10-06', complementDateKind: 'TODAY' })
+		);
+		render(Page);
+		const date = await screen.findByTestId('opening-balances-complete-date');
+		expect(date.getAttribute('data-kind')).toBe('TODAY');
+		expect(date.textContent).toContain('régularisation');
+		expect(date.textContent).toContain('06.10.2026');
+	});
+
+	it('confirmation refusée → aucun envoi', async () => {
+		vi.spyOn(window, 'confirm').mockReturnValue(false);
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-debit-1100', '10');
+		const btn = screen.getByTestId('opening-balances-complete-submit') as HTMLButtonElement;
+		await waitFor(() => expect(btn.disabled).toBe(false));
+		await fireEvent.click(btn);
+		expect(completeMock).not.toHaveBeenCalled();
+	});
+
+	it('refus serveur → message affiché ET status rechargé (la liste périmée disparaît)', async () => {
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		completeMock.mockRejectedValue({
+			code: 'OPENING_COMPLEMENT_ACCOUNT_MOVED',
+			message: 'Le compte 1100 a déjà des mouvements.',
+			status: 409,
+		});
+		getStatusMock.mockResolvedValueOnce(completableStatus());
+		getStatusMock.mockResolvedValue(
+			completableStatus({
+				completableAccounts: [{ id: 6, number: '2000', name: 'Dettes', accountType: 'Liability' }],
+			})
+		);
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-debit-1100', '10');
+		const btn = screen.getByTestId('opening-balances-complete-submit') as HTMLButtonElement;
+		await waitFor(() => expect(btn.disabled).toBe(false));
+		await fireEvent.click(btn);
+
+		const err = await screen.findByTestId('opening-balances-complete-error');
+		expect(err.textContent).toContain('1100 a déjà des mouvements');
+		await waitFor(() =>
+			expect(screen.queryByTestId('opening-balances-complete-debit-1100')).toBeNull()
+		);
+		expect(getStatusMock).toHaveBeenCalledTimes(2);
+		expect(screen.getByTestId('opening-balances-complete-error')).toBeTruthy();
+	});
+
+	it('montant invalide → Compléter désactivé', async () => {
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-debit-1100', '12.345678');
+		expect((screen.getByTestId('opening-balances-complete-submit') as HTMLButtonElement).disabled).toBe(
+			true
+		);
+	});
+
+	it('une contrepartie à quatre décimales s’affiche exacte', async () => {
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-debit-1100', '0.0040');
+		await waitFor(() =>
+			expect(screen.getByTestId('opening-balances-complete-counterpart').textContent).toContain(
+				'0.0040'
+			)
+		);
+	});
+
 	it('le bandeau ne propose plus de supprimer toutes les écritures', async () => {
 		getStatusMock.mockResolvedValue(completableStatus());
 		render(Page);

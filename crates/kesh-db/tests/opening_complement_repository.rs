@@ -388,6 +388,30 @@ async fn refus_compte_d_une_autre_societe(pool: MySqlPool) {
     };
     let (reason, account_id) = refusal(complete(&pool, &co, &[line], d(2026, 6, 1)).await);
     assert_eq!((reason, account_id), (R::AccountInvalid, Some(foreign)));
+
+    // ⛔ Le compte étranger n'est jamais VERROUILLÉ (revue de code P1, B-F1 :
+    // le `FOR UPDATE` par clé primaire le verrouillait avant que le filtre
+    // `company_id` ne l'écarte). Une transaction tient ce compte : le complément
+    // doit rendre son refus sans attendre.
+    let mut holder = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM accounts WHERE id = ? FOR UPDATE")
+        .bind(foreign)
+        .execute(&mut *holder)
+        .await
+        .unwrap();
+    let line = ComplementLine {
+        account_id: foreign,
+        debit: dec!(5),
+        credit: Decimal::ZERO,
+    };
+    let r = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        complete(&pool, &co, &[line], d(2026, 6, 1)),
+    )
+    .await
+    .expect("le complément ne doit pas attendre le verrou d'un compte étranger");
+    assert_eq!(refusal(r).0, R::AccountInvalid);
+    holder.rollback().await.unwrap();
 }
 
 #[sqlx::test(migrations = "./test-schema")]
@@ -619,6 +643,31 @@ async fn le_status_rend_la_raison_prioritaire(pool: MySqlPool) {
         .await
         .unwrap();
     assert_eq!(s.complete_reason(), "DATE_LOCKED");
+}
+
+/// Les deux raisons que seul le POST exerçait (revue de code P1, A-M1).
+#[sqlx::test(migrations = "./test-schema")]
+async fn le_status_rend_no_open_fiscal_year_et_report_non_imputable(pool: MySqlPool) {
+    let co = setup(&pool, &[year_span(2026)]).await;
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+        .bind(co.acc["2970"])
+        .execute(&pool)
+        .await
+        .unwrap();
+    let s = opening_complement::complement_status(&pool, co.company_id, d(2026, 6, 1))
+        .await
+        .unwrap();
+    assert_eq!(
+        (s.can_complete(), s.complete_reason()),
+        (false, "RETAINED_EARNINGS_NOT_POSTABLE")
+    );
+
+    // La date prime sur le report : premier exercice clos, rien d'ouvert pour le jour.
+    set_status(&pool, co.fy[0], "Closed").await;
+    let s = opening_complement::complement_status(&pool, co.company_id, d(2027, 6, 1))
+        .await
+        .unwrap();
+    assert_eq!(s.complete_reason(), "NO_OPEN_FISCAL_YEAR");
 }
 
 // ============================================================
