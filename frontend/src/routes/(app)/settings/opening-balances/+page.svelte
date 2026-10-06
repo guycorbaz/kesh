@@ -114,11 +114,15 @@
 		// proposés est conservée : seul le compte fautif disparaît (revue de code
 		// P3, F-1 — reconstruire à vide faisait tout ressaisir).
 		const previous = new Map(complementRows.map((r) => [r.account.id, r]));
-		complementRows = (status?.completableAccounts ?? []).map((account) => ({
-			account,
-			debit: previous.get(account.id)?.debit ?? '',
-			credit: previous.get(account.id)?.credit ?? ''
-		}));
+		// Un rechargement du status qui ÉCHOUE ne touche pas à la saisie : elle
+		// survit à « Réessayer » (revue de code P4, R4-4).
+		if (statusResult.status === 'fulfilled') {
+			complementRows = (status?.completableAccounts ?? []).map((account) => ({
+				account,
+				debit: previous.get(account.id)?.debit ?? '',
+				credit: previous.get(account.id)?.credit ?? ''
+			}));
+		}
 
 		loading = false;
 	}
@@ -221,10 +225,14 @@
 
 	async function handleComplete() {
 		if (!canSubmitComplement) return;
+		// La date est dans la confirmation : elle peut avoir changé depuis la
+		// saisie (verrou de période posé, rechargement après un refus — revue de
+		// code P4, R4-2), et c'est le dernier écran avant l'écriture.
 		const ok = window.confirm(
 			i18nMsg(
 				'opening-balances-complete-confirm',
-				'Enregistrer cette écriture de complément ? Elle ne se modifie plus ensuite.'
+				'Enregistrer cette écriture de complément, datée du { $date } ? Elle ne se modifie plus ensuite.',
+				{ date: formatSwissDate(status?.complementDate ?? '') }
 			)
 		);
 		if (!ok) return;
@@ -304,7 +312,7 @@
 			case 'NO_COMPLETABLE_ACCOUNT':
 				return i18nMsg(
 					'opening-balances-complete-unavailable-no-completable-account',
-					'Tous les comptes de bilan en service et imputables ont déjà des mouvements : il ne reste aucun compte à compléter. Un montant faux se corrige dans le journal.'
+					'Tous les comptes de bilan proposables — en service, imputables, hors compte de report — ont déjà des mouvements : il ne reste aucun compte à compléter. Un montant faux se corrige dans le journal.'
 				);
 			default:
 				return i18nMsg('opening-balances-status-error', 'Impossible de charger l’état des soldes de départ.');
@@ -612,7 +620,7 @@
 								oninput={() => onDebitInput(row)}
 								aria-invalid={!isValidAmount(row.debit)}
 								aria-label={i18nMsg('opening-balances-debit-for', 'Débit du compte { $number } « { $name } »', { number: row.account.number, name: row.account.name })}
-											data-testid="opening-balances-debit-{row.account.number}"
+								data-testid="opening-balances-debit-{row.account.number}"
 							/>
 						</td>
 						<td class="py-1.5">
@@ -625,7 +633,7 @@
 								oninput={() => onCreditInput(row)}
 								aria-invalid={!isValidAmount(row.credit)}
 								aria-label={i18nMsg('opening-balances-credit-for', 'Crédit du compte { $number } « { $name } »', { number: row.account.number, name: row.account.name })}
-											data-testid="opening-balances-credit-{row.account.number}"
+								data-testid="opening-balances-credit-{row.account.number}"
 							/>
 						</td>
 					</tr>

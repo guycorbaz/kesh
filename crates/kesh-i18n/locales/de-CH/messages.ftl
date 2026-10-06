@@ -909,7 +909,7 @@ opening-balances-complete-counterpart-debit = Gegenbuchung: { $amount } im Soll 
 opening-balances-complete-counterpart-none = Die Zeilen gleichen sich aus: keine Gegenbuchung.
 opening-balances-complete-submit = Ergänzen
 opening-balances-complete-submitting = Speichern…
-opening-balances-complete-confirm = Diese Ergänzungsbuchung speichern? Sie kann danach nicht mehr geändert werden.
+opening-balances-complete-confirm = Diese Ergänzungsbuchung mit Datum { $date } speichern? Sie kann danach nicht mehr geändert werden.
 opening-balances-complete-success = Ergänzung gespeichert.
 opening-balances-complete-error = Die Ergänzung konnte nicht gespeichert werden. Versuchen Sie es erneut.
 opening-balances-complete-unavailable-no-entries = Das Unternehmen hat noch keine Buchungen: Verwenden Sie die Erstellung der Eröffnungsbilanz.
@@ -917,7 +917,7 @@ opening-balances-complete-unavailable-no-open-fiscal-year = Kein offenes Geschä
 opening-balances-complete-unavailable-date-locked = Das heutige Datum liegt in der gesperrten Periode: Die Ergänzung kann nicht datiert werden.
 opening-balances-complete-unavailable-no-retained-earnings = Kein Konto in Gebrauch trägt die Rolle «Gewinn-/Verlustvortrag»: Weisen Sie sie im Kontenplan zu, um ein vergessenes Konto zu ergänzen.
 opening-balances-complete-unavailable-retained-earnings-not-postable = Das Gewinnvortragskonto ist nicht bebuchbar: Machen Sie es bebuchbar, um ein vergessenes Konto zu ergänzen.
-opening-balances-complete-unavailable-no-completable-account = Alle bebuchbaren Bilanzkonten in Gebrauch haben bereits Bewegungen: Es bleibt kein Konto zu ergänzen. Ein falscher Betrag wird im Journal korrigiert.
+opening-balances-complete-unavailable-no-completable-account = Alle vorschlagbaren Bilanzkonten — in Gebrauch, bebuchbar, ohne Vortragskonto — haben bereits Bewegungen: Es bleibt kein Konto zu ergänzen. Ein falscher Betrag wird im Journal korrigiert.
 error-opening-complement-no-entries = Das Unternehmen hat noch keine Buchungen: Erfassen Sie die Anfangssaldi mit der Erstellung der Eröffnungsbilanz.
 error-opening-complement-no-open-fiscal-year = Kein offenes Geschäftsjahr umfasst das heutige Datum: Die Ergänzung kann nicht datiert werden.
 error-opening-complement-date-locked = Das heutige Datum liegt in der gesperrten Periode: Die Ergänzung kann nicht datiert werden.
@@ -929,7 +929,7 @@ error-opening-complement-not-balance-account = Das Konto { $account } ist ein Er
 error-opening-complement-account-moved = Das Konto { $account } hat bereits Bewegungen: Korrigieren Sie es im Journal, durch eine Stornobuchung oder eine Korrekturbuchung.
 error-opening-complement-no-lines = Erfassen Sie mindestens ein zu ergänzendes Konto.
 error-opening-complement-too-many-lines = Zu viele Zeilen für eine einzige Ergänzung.
-error-opening-complement-invalid-amount = Jede Zeile trägt einen streng positiven Betrag mit höchstens vier Dezimalstellen, im Soll ODER im Haben; ihre Summe muss in derselben Grenze bleiben.
+error-opening-complement-invalid-amount = Jede Zeile trägt einen streng positiven Betrag mit höchstens vier Dezimalstellen, im Soll ODER im Haben; die daraus folgende Gegenbuchung (Soll minus Haben) darf 999’999’999’999’999.9999 nicht übersteigen.
 error-opening-complement-duplicate-account = Dasselbe Konto steht auf zwei Zeilen: Fassen Sie sie zusammen.
 
 

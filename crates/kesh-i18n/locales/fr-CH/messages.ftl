@@ -959,7 +959,7 @@ opening-balances-complete-counterpart-debit = Contrepartie : { $amount } au déb
 opening-balances-complete-counterpart-none = Les lignes s’équilibrent entre elles : aucune contrepartie.
 opening-balances-complete-submit = Compléter
 opening-balances-complete-submitting = Enregistrement…
-opening-balances-complete-confirm = Enregistrer cette écriture de complément ? Elle ne se modifie plus ensuite.
+opening-balances-complete-confirm = Enregistrer cette écriture de complément, datée du { $date } ? Elle ne se modifie plus ensuite.
 opening-balances-complete-success = Complément enregistré.
 opening-balances-complete-error = Le complément n’a pas pu être enregistré. Réessayez.
 opening-balances-complete-unavailable-no-entries = La société n’a encore aucune écriture : utilisez la génération du bilan d’ouverture.
@@ -967,7 +967,7 @@ opening-balances-complete-unavailable-no-open-fiscal-year = Aucun exercice ouver
 opening-balances-complete-unavailable-date-locked = La date du jour tombe dans la période verrouillée : le complément ne peut pas être daté.
 opening-balances-complete-unavailable-no-retained-earnings = Aucun compte en service ne porte le rôle « Bénéfice/perte reporté » : attribuez-le dans le plan comptable pour compléter un compte oublié.
 opening-balances-complete-unavailable-retained-earnings-not-postable = Le compte de bénéfice reporté n’est pas imputable : rendez-le imputable pour compléter un compte oublié.
-opening-balances-complete-unavailable-no-completable-account = Tous les comptes de bilan en service et imputables ont déjà des mouvements : il ne reste aucun compte à compléter. Un montant faux se corrige dans le journal.
+opening-balances-complete-unavailable-no-completable-account = Tous les comptes de bilan proposables — en service, imputables, hors compte de report — ont déjà des mouvements : il ne reste aucun compte à compléter. Un montant faux se corrige dans le journal.
 error-opening-complement-no-entries = La société n’a encore aucune écriture : saisissez les soldes de départ avec la génération du bilan d’ouverture.
 error-opening-complement-no-open-fiscal-year = Aucun exercice ouvert ne couvre la date du jour : le complément ne peut pas être daté.
 error-opening-complement-date-locked = La date du jour tombe dans la période verrouillée : le complément ne peut pas être daté.
@@ -979,7 +979,7 @@ error-opening-complement-not-balance-account = Le compte { $account } est un com
 error-opening-complement-account-moved = Le compte { $account } a déjà des mouvements : corrigez-le dans le journal, par une contre-passation ou une écriture de correction.
 error-opening-complement-no-lines = Saisissez au moins un compte à compléter.
 error-opening-complement-too-many-lines = Trop de lignes pour un seul complément.
-error-opening-complement-invalid-amount = Chaque ligne porte un montant strictement positif, au plus quatre décimales, au débit OU au crédit ; leur total doit rester dans la même limite.
+error-opening-complement-invalid-amount = Chaque ligne porte un montant strictement positif, au plus quatre décimales, au débit OU au crédit ; la contrepartie qui en résulte (débits moins crédits) ne peut dépasser 999’999’999’999’999.9999.
 error-opening-complement-duplicate-account = Un même compte figure sur deux lignes : regroupez-les.
 
 

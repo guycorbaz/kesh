@@ -493,7 +493,7 @@ fn invalid_amount() -> AppError {
     complement_invalid(
         "OPENING_COMPLEMENT_INVALID_AMOUNT",
         "error-opening-complement-invalid-amount",
-        "Chaque ligne porte un montant strictement positif, au plus quatre décimales, au débit OU au crédit ; leur total doit rester dans la même limite.",
+        "Chaque ligne porte un montant strictement positif, au plus quatre décimales, au débit OU au crédit ; la contrepartie qui en résulte (débits moins crédits) ne peut dépasser 999’999’999’999’999.9999.",
     )
 }
 

@@ -909,7 +909,7 @@ opening-balances-complete-counterpart-debit = Contropartita: { $amount } in dare
 opening-balances-complete-counterpart-none = Le righe si compensano tra loro: nessuna contropartita.
 opening-balances-complete-submit = Completa
 opening-balances-complete-submitting = Salvataggio…
-opening-balances-complete-confirm = Salvare questa registrazione di completamento? Non sarà più modificabile in seguito.
+opening-balances-complete-confirm = Salvare questa registrazione di completamento, datata { $date }? Non sarà più modificabile in seguito.
 opening-balances-complete-success = Completamento salvato.
 opening-balances-complete-error = Non è stato possibile salvare il completamento. Riprova.
 opening-balances-complete-unavailable-no-entries = L’azienda non ha ancora registrazioni: usa la generazione del bilancio di apertura.
@@ -917,7 +917,7 @@ opening-balances-complete-unavailable-no-open-fiscal-year = Nessun esercizio ape
 opening-balances-complete-unavailable-date-locked = La data odierna cade nel periodo bloccato: il completamento non può essere datato.
 opening-balances-complete-unavailable-no-retained-earnings = Nessun conto in uso ha il ruolo «Utile/perdita riportato»: assegnalo nel piano dei conti per completare un conto dimenticato.
 opening-balances-complete-unavailable-retained-earnings-not-postable = Il conto dell’utile riportato non è registrabile: rendilo registrabile per completare un conto dimenticato.
-opening-balances-complete-unavailable-no-completable-account = Tutti i conti di bilancio in uso e registrabili hanno già movimenti: non resta alcun conto da completare. Un importo errato si corregge nel giornale.
+opening-balances-complete-unavailable-no-completable-account = Tutti i conti di bilancio proponibili — in uso, registrabili, escluso il conto di riporto — hanno già movimenti: non resta alcun conto da completare. Un importo errato si corregge nel giornale.
 error-opening-complement-no-entries = L’azienda non ha ancora registrazioni: inserisci i saldi iniziali con la generazione del bilancio di apertura.
 error-opening-complement-no-open-fiscal-year = Nessun esercizio aperto copre la data odierna: il completamento non può essere datato.
 error-opening-complement-date-locked = La data odierna cade nel periodo bloccato: il completamento non può essere datato.
@@ -929,7 +929,7 @@ error-opening-complement-not-balance-account = Il conto { $account } è un conto
 error-opening-complement-account-moved = Il conto { $account } ha già movimenti: correggilo nel giornale, con uno storno o una registrazione di rettifica.
 error-opening-complement-no-lines = Inserisci almeno un conto da completare.
 error-opening-complement-too-many-lines = Troppe righe per un solo completamento.
-error-opening-complement-invalid-amount = Ogni riga porta un importo strettamente positivo, al massimo quattro decimali, in dare O in avere; il loro totale deve restare nello stesso limite.
+error-opening-complement-invalid-amount = Ogni riga porta un importo strettamente positivo, al massimo quattro decimali, in dare O in avere; la contropartita che ne risulta (dare meno avere) non può superare 999’999’999’999’999.9999.
 error-opening-complement-duplicate-account = Lo stesso conto compare su due righe: raggruppale.
 
 

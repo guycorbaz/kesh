@@ -592,6 +592,26 @@ Claude Opus 5.5 (orchestrateur), 2026-10-06.
 
 ## Change Log
 
+- **2026-10-06** — Revue de code P4 (Opus ×2, prompt `25-7-review-prompt-p4.md`) : **0 CRITICAL, 0 HIGH, 0 MEDIUM,
+  7 LOW** — **la boucle converge**. La lentille F n'a trouvé aucun défaut d'origine qui perde ou fausse une écriture
+  (montant, sens, compte, date, exercice, langue comptable).
+  - **LOW corrigés** : message de dépassement qui renvoyait à « la même limite » sans la donner, et parlait d'un
+    « total » au lieu de la contrepartie (R4-1) → borne écrite × 4 et repli ; date absente de la confirmation alors
+    qu'elle peut changer entre la saisie et l'envoi (R4-2) → `{ $date }` dans `opening-balances-complete-confirm` × 4 ;
+    noms accessibles de la grille de génération sans test (R4-3) → test ; saisie perdue si le rechargement échoue
+    (R4-4) → `complementRows` reconstruit seulement sur un status obtenu, test, mutation tuée ; indentation ; libellé du
+    complément jamais vérifié dans une autre langue comptable (F4-1) → le test `de-CH` complète un compte et affirme
+    « Ergänzung der Anfangssaldi » ; message `NO_COMPLETABLE_ACCOUNT` faux quand le compte de report n'est pas
+    mouvementé (F4-2) → « proposables — en service, imputables, hors compte de report » × 4.
+  - **Non corrigé, arbitrage de conception déjà documenté** (F4-3) : la branche (a) date du premier jour du premier
+    exercice et non de l'écriture d'ouverture, faute de marqueur de celle-ci — un exercice antérieur créé après la
+    génération déplace la date ; écrit au manuel (keshtip) et aux Limites.
+  - Gates : `kesh-api` ciblé 29/29 (seuls un test et un message Rust), fmt et clippy du workspace verts ; frontend
+    complet **969/969**.
+  - Trend de la boucle : P1 4 M (Sonnet ×3) → P2 1 M (Opus ×2) → P3 2 M (Sonnet ×2, tous d'origine) → P4 0 > LOW
+    (Opus ×2). La remédiation de P4 touche du code de production (écran, messages) : **passe ciblée P5** (Haiku, D6)
+    braquée sur elle.
+
 - **2026-10-06** — Revue de code P3 (Sonnet ×2 : R = remédiation P2, F = ce que P1 et P2 n'ont pas regardé ; prompt
   `25-7-review-prompt-p3.md`) : **0 CRITICAL, 0 HIGH, 2 MEDIUM, 10 LOW**.
   - **MEDIUM** (tous deux **d'origine**, aucun né de P2) : un refus métier rechargeait la liste **à vide** et faisait

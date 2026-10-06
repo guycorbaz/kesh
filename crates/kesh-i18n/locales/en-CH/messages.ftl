@@ -909,7 +909,7 @@ opening-balances-complete-counterpart-debit = Counterpart: { $amount } debited t
 opening-balances-complete-counterpart-none = The lines balance each other: no counterpart.
 opening-balances-complete-submit = Complete
 opening-balances-complete-submitting = Saving…
-opening-balances-complete-confirm = Save this complement entry? It cannot be changed afterwards.
+opening-balances-complete-confirm = Save this complement entry, dated { $date }? It cannot be changed afterwards.
 opening-balances-complete-success = Complement saved.
 opening-balances-complete-error = The complement could not be saved. Try again.
 opening-balances-complete-unavailable-no-entries = The company has no journal entries yet: use the opening balance sheet generation.
@@ -917,7 +917,7 @@ opening-balances-complete-unavailable-no-open-fiscal-year = No open fiscal year 
 opening-balances-complete-unavailable-date-locked = Today's date falls in the locked period: the complement cannot be dated.
 opening-balances-complete-unavailable-no-retained-earnings = No account in use holds the “Retained earnings” role: assign it in the chart of accounts to complete a forgotten account.
 opening-balances-complete-unavailable-retained-earnings-not-postable = The retained earnings account is not postable: make it postable to complete a forgotten account.
-opening-balances-complete-unavailable-no-completable-account = Every balance-sheet account in use and postable already has movements: no account is left to complete. A wrong amount is corrected in the journal.
+opening-balances-complete-unavailable-no-completable-account = Every balance-sheet account that can be offered — in use, postable, other than the retained earnings account — already has movements: no account is left to complete. A wrong amount is corrected in the journal.
 error-opening-complement-no-entries = The company has no journal entries yet: enter the starting balances with the opening balance sheet generation.
 error-opening-complement-no-open-fiscal-year = No open fiscal year covers today's date: the complement cannot be dated.
 error-opening-complement-date-locked = Today's date falls in the locked period: the complement cannot be dated.
@@ -929,7 +929,7 @@ error-opening-complement-not-balance-account = Account { $account } is an income
 error-opening-complement-account-moved = Account { $account } already has movements: correct it in the journal, by a reversal or a correcting entry.
 error-opening-complement-no-lines = Enter at least one account to complete.
 error-opening-complement-too-many-lines = Too many lines for a single complement.
-error-opening-complement-invalid-amount = Each line carries a strictly positive amount, at most four decimals, as a debit OR a credit; their total must stay within the same limit.
+error-opening-complement-invalid-amount = Each line carries a strictly positive amount, at most four decimals, as a debit OR a credit; the resulting counterpart (debits minus credits) cannot exceed 999’999’999’999’999.9999.
 error-opening-complement-duplicate-account = The same account appears on two lines: merge them.
 
 

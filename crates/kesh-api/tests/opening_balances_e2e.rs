@@ -1097,6 +1097,30 @@ async fn post_description_uses_company_accounting_language(pool: MySqlPool) {
         body["description"], "Eröffnungsbilanz — Anfangssaldi",
         "description en de-CH (langue comptable de la company), pas fr-CH (locale serveur)"
     );
+
+    // Story 25-7 (revue de code P4, F4-1) : le COMPLÉMENT aussi prend la langue
+    // comptable de la société, pas la locale du serveur.
+    let forgotten = create_acc(
+        &pool,
+        de_user,
+        de_company,
+        "1020",
+        "Post",
+        AccountType::Asset,
+        None,
+    )
+    .await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/opening-balances/complete"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "lines": [line(forgotten, "40.00", "0")] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["description"], "Ergänzung der Anfangssaldi");
 }
 
 /// Pass 4 (BH4/ECH4 convergés) : le POST rend le MÊME verdict que

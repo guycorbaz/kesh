@@ -819,6 +819,50 @@ describe('AC 6 — le mode « compléter »', () => {
 		expect(screen.queryByTestId('opening-balances-status-error')).toBeNull();
 	});
 
+	it('grille de génération : les champs portent eux aussi un nom accessible', async () => {
+		getStatusMock.mockResolvedValue(readyStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-grid');
+		expect(screen.getByLabelText('Débit du compte 1000 « Banque »')).toBeTruthy();
+		expect(screen.getByLabelText('Crédit du compte 2970 « Report à nouveau »')).toBeTruthy();
+	});
+
+	it('un rechargement qui échoue ne perd pas la saisie', async () => {
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		completeMock.mockRejectedValue({
+			code: 'OPENING_COMPLEMENT_ACCOUNT_MOVED',
+			message: 'Le compte 1100 a déjà des mouvements.',
+			status: 409,
+		});
+		getStatusMock.mockResolvedValueOnce(completableStatus());
+		getStatusMock.mockRejectedValueOnce({ code: 'NETWORK_ERROR', message: 'boom' });
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-credit-2000', '25');
+		await type('opening-balances-complete-debit-1100', '10');
+		const btn = screen.getByTestId('opening-balances-complete-submit') as HTMLButtonElement;
+		await waitFor(() => expect(btn.disabled).toBe(false));
+		await fireEvent.click(btn);
+		await fireEvent.click(await screen.findByTestId('opening-balances-retry'));
+		await screen.findByTestId('opening-balances-complete');
+		expect(
+			(screen.getByTestId('opening-balances-complete-credit-2000') as HTMLInputElement).value
+		).toBe('25');
+	});
+
+	it('la confirmation nomme la date de l’écriture', async () => {
+		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-debit-1100', '10');
+		const btn = screen.getByTestId('opening-balances-complete-submit') as HTMLButtonElement;
+		await waitFor(() => expect(btn.disabled).toBe(false));
+		await fireEvent.click(btn);
+		expect(confirm.mock.calls[0][0]).toContain('01.01.2026');
+	});
+
 	it('chaque champ de montant porte un nom accessible', async () => {
 		getStatusMock.mockResolvedValue(completableStatus());
 		render(Page);
