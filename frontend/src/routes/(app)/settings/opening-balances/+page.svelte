@@ -8,10 +8,19 @@
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import { accountRoleKey, type AccountResponse } from '$lib/features/accounts/accounts.types';
 	import {
+		completeOpeningBalances,
 		generateOpeningBalances,
 		getOpeningBalancesStatus
 	} from '$lib/features/opening-balances/opening-balances.api';
-	import type { OpeningBalancesStatus } from '$lib/features/opening-balances/opening-balances.types';
+	import type {
+		CompletableAccount,
+		OpeningBalancesStatus
+	} from '$lib/features/opening-balances/opening-balances.types';
+	import {
+		complementCounterpart,
+		computeOpeningTotals,
+		retainedEarningsWarning
+	} from '$lib/features/opening-balances/opening-balances-totals';
 	import {
 		computeBalance,
 		formatSwissAmount,
@@ -40,6 +49,17 @@
 
 	let submitting = $state(false);
 	let submitError = $state<string | null>(null);
+
+	// Mode « compléter » (Story 25-7, AC 6) : une ligne par compte complétable
+	// que rend le STATUS — la liste n'est jamais recalculée côté client.
+	interface ComplementRow {
+		account: CompletableAccount;
+		debit: string;
+		credit: string;
+	}
+	let complementRows = $state<ComplementRow[]>([]);
+	let completing = $state(false);
+	let completeError = $state<string | null>(null);
 
 	// Jeton de génération (Pass 3 review, ECH3-1) : rend la course
 	// last-writer-wins impossible PAR CONSTRUCTION — un load() périmé (lancé
@@ -89,6 +109,11 @@
 					(a.accountType === 'Asset' || a.accountType === 'Liability')
 			)
 			.map((account) => ({ account, debit: '', credit: '' }));
+		complementRows = (status?.completableAccounts ?? []).map((account) => ({
+			account,
+			debit: '',
+			credit: ''
+		}));
 
 		loading = false;
 	}
@@ -119,6 +144,27 @@
 	);
 
 	const canGenerate = $derived(!submitting && balance.isBalanced);
+
+	// Totaux actif / passif et montant à porter (AC 2), avertissement du report
+	// à-nouveau (AC 1) — il signale, il ne bloque pas : `canGenerate` l'ignore.
+	const totals = $derived(computeOpeningTotals(rows));
+	const warning = $derived(retainedEarningsWarning(accounts, rows, balance.isBalanced));
+
+	// Complément : lignes saisies, contrepartie en direct (arbitrage 3).
+	const complementLines = $derived(
+		complementRows.filter((r) => {
+			if (r.debit === '' && r.credit === '') return false;
+			if (!isValidAmount(r.debit) || !isValidAmount(r.credit)) return true;
+			return parseAmount(r.debit).gt(0) || parseAmount(r.credit).gt(0);
+		})
+	);
+	const complementInvalid = $derived(
+		complementRows.some((r) => !isValidAmount(r.debit) || !isValidAmount(r.credit))
+	);
+	const counterpart = $derived(complementCounterpart(complementLines));
+	const canSubmitComplement = $derived(
+		!completing && complementLines.length > 0 && !complementInvalid
+	);
 
 	/** Débit/Crédit mutuellement exclusifs par ligne : saisir l'un vide l'autre. */
 	function onDebitInput(row: GridRow) {
@@ -165,6 +211,76 @@
 			}
 		} finally {
 			submitting = false;
+		}
+	}
+
+	async function handleComplete() {
+		if (!canSubmitComplement) return;
+		const ok = window.confirm(
+			i18nMsg(
+				'opening-balances-complete-confirm',
+				'Enregistrer cette écriture de complément ? Elle ne se modifie plus ensuite.'
+			)
+		);
+		if (!ok) return;
+		completing = true;
+		completeError = null;
+		try {
+			await completeOpeningBalances({
+				lines: complementLines.map((r) => ({
+					accountId: r.account.id,
+					debit: r.debit === '' ? '0' : r.debit.replace(',', '.'),
+					credit: r.credit === '' ? '0' : r.credit.replace(',', '.')
+				}))
+			});
+			notifySuccess(i18nMsg('opening-balances-complete-success', 'Complément enregistré.'));
+			// Le compte complété disparaît de la liste : c'est le status qui le dit.
+			await load();
+		} catch (err) {
+			// Le serveur localise ses refus (codes OPENING_COMPLEMENT_*) : tel quel.
+			completeError = isApiError(err)
+				? err.message
+				: i18nMsg('opening-balances-status-error', 'Impossible de charger l’état des soldes de départ.');
+		} finally {
+			completing = false;
+		}
+	}
+
+	/** Message du mode « compléter » indisponible, par `completeReason`. */
+	function unavailableMessage(reason: string): string {
+		switch (reason) {
+			case 'NO_ENTRIES':
+				return i18nMsg(
+					'opening-balances-complete-unavailable-no-entries',
+					'La société n’a encore aucune écriture : utilisez la génération du bilan d’ouverture.'
+				);
+			case 'NO_OPEN_FISCAL_YEAR':
+				return i18nMsg(
+					'opening-balances-complete-unavailable-no-open-fiscal-year',
+					'Aucun exercice ouvert ne couvre la date du jour : le complément ne peut pas être daté.'
+				);
+			case 'DATE_LOCKED':
+				return i18nMsg(
+					'opening-balances-complete-unavailable-date-locked',
+					'La date du jour tombe dans la période verrouillée : le complément ne peut pas être daté.'
+				);
+			case 'NO_RETAINED_EARNINGS':
+				return i18nMsg(
+					'opening-balances-complete-unavailable-no-retained-earnings',
+					'Aucun compte actif ne porte le rôle « Bénéfice reporté » : attribuez-le dans le plan comptable pour compléter un compte oublié.'
+				);
+			case 'RETAINED_EARNINGS_NOT_POSTABLE':
+				return i18nMsg(
+					'opening-balances-complete-unavailable-retained-earnings-not-postable',
+					'Le compte de bénéfice reporté n’est pas imputable : rendez-le imputable pour compléter un compte oublié.'
+				);
+			case 'NO_COMPLETABLE_ACCOUNT':
+				return i18nMsg(
+					'opening-balances-complete-unavailable-no-completable-account',
+					'Tous les comptes de bilan actifs ont déjà des mouvements : il ne reste aucun compte à compléter. Un montant faux se corrige dans le journal.'
+				);
+			default:
+				return i18nMsg('opening-balances-status-error', 'Impossible de charger l’état des soldes de départ.');
 		}
 	}
 
@@ -230,7 +346,7 @@
 				{:else if status.reason === 'ALREADY_HAS_ENTRIES'}
 					{i18nMsg(
 						'opening-balances-locked-already-has-entries',
-						'La société contient déjà des écritures : le bilan d’ouverture est verrouillé. Corrigez l’écriture d’ouverture directement dans le journal, ou supprimez toutes les écritures pour recommencer.'
+						'La société contient déjà des écritures : le bilan d’ouverture a été généré et ne se régénère plus. Un compte de bilan oublié se complète ci-dessous ; un montant faux sur un compte déjà saisi se corrige dans le journal, par une contre-passation ou une écriture de correction.'
 					)}
 				{:else}
 					<!-- reason inconnue (skew de version, évolution future) : pas de
@@ -265,6 +381,142 @@
 				{/if}
 			</div>
 		</div>
+
+		{#if status.reason === 'ALREADY_HAS_ENTRIES'}
+			<!-- Mode « compléter » (Story 25-7, AC 6) : seulement sous ce bandeau-là —
+			     sous NO_FISCAL_YEAR / FIRST_YEAR_CLOSED, il conseillerait une
+			     génération impossible. -->
+			{#if status.canComplete && status.retainedEarningsAccount}
+				<section class="space-y-4" data-testid="opening-balances-complete">
+					<h2 class="text-lg font-semibold">
+						{i18nMsg('opening-balances-complete-title', 'Compléter un compte oublié')}
+					</h2>
+					<p class="text-sm text-text-muted">
+						{i18nMsg(
+							'opening-balances-complete-intro',
+							'Saisissez le solde des seuls comptes de bilan oubliés à l’ouverture. Kesh porte la contrepartie sur le compte de report { $number } « { $name } ».',
+							{
+								number: status.retainedEarningsAccount.number,
+								name: status.retainedEarningsAccount.name
+							}
+						)}
+					</p>
+					<p class="text-sm text-text-muted" data-testid="opening-balances-complete-date" data-kind={status.complementDateKind}>
+						{#if status.complementDateKind === 'TODAY'}
+							{i18nMsg(
+								'opening-balances-complete-date-today',
+								'L’écriture sera datée du { $date }, dans l’exercice « { $name } » : une régularisation, le premier jour de l’ouverture n’étant plus modifiable.',
+								{
+									date: formatSwissDate(status.complementDate ?? ''),
+									name: status.complementFiscalYear?.name ?? ''
+								}
+							)}
+						{:else}
+							{i18nMsg(
+								'opening-balances-complete-date-opening',
+								'L’écriture sera datée du { $date }, premier jour de l’exercice « { $name } » : le compte oublié faisait partie de l’ouverture.',
+								{
+									date: formatSwissDate(status.complementDate ?? ''),
+									name: status.complementFiscalYear?.name ?? ''
+								}
+							)}
+						{/if}
+						{i18nMsg('opening-balances-complete-date-note', 'La date est confirmée à l’enregistrement.')}
+					</p>
+					<table class="w-full border-collapse text-sm">
+						<thead>
+							<tr class="border-b border-border text-left text-xs uppercase tracking-wider text-text-muted">
+								<th class="py-2 pr-2">{i18nMsg('opening-balances-account', 'Compte')}</th>
+								<th class="w-40 py-2 pr-2 text-right">{i18nMsg('opening-balances-debit', 'Débit')}</th>
+								<th class="w-40 py-2 text-right">{i18nMsg('opening-balances-credit', 'Crédit')}</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each complementRows as row (row.account.id)}
+								<tr class="border-b border-border/50" data-testid="opening-balances-complete-row-{row.account.number}">
+									<td class="py-1.5 pr-2">
+										<span class="tabular-nums font-medium">{row.account.number}</span>
+										<span class="ml-2">{row.account.name}</span>
+									</td>
+									<td class="py-1.5 pr-2">
+										<Input
+											type="text"
+											inputmode="decimal"
+											placeholder="0.00"
+											class="text-right tabular-nums"
+											bind:value={row.debit}
+											oninput={() => {
+												if (row.debit !== '') row.credit = '';
+											}}
+											aria-invalid={!isValidAmount(row.debit)}
+											data-testid="opening-balances-complete-debit-{row.account.number}"
+										/>
+									</td>
+									<td class="py-1.5">
+										<Input
+											type="text"
+											inputmode="decimal"
+											placeholder="0.00"
+											class="text-right tabular-nums"
+											bind:value={row.credit}
+											oninput={() => {
+												if (row.credit !== '') row.debit = '';
+											}}
+											aria-invalid={!isValidAmount(row.credit)}
+											data-testid="opening-balances-complete-credit-{row.account.number}"
+										/>
+									</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+					<p class="text-sm" data-testid="opening-balances-complete-counterpart" data-side={counterpart.side}>
+						{#if counterpart.side === 'credit'}
+							{i18nMsg(
+								'opening-balances-complete-counterpart-credit',
+								'Contrepartie : { $amount } au crédit du compte { $number }.',
+								{ amount: formatNumber(counterpart.amount), number: status.retainedEarningsAccount.number }
+							)}
+						{:else if counterpart.side === 'debit'}
+							{i18nMsg(
+								'opening-balances-complete-counterpart-debit',
+								'Contrepartie : { $amount } au débit du compte { $number }.',
+								{ amount: formatNumber(counterpart.amount), number: status.retainedEarningsAccount.number }
+							)}
+						{:else if complementLines.length > 0}
+							{i18nMsg(
+								'opening-balances-complete-counterpart-none',
+								'Les lignes s’équilibrent entre elles : aucune contrepartie.'
+							)}
+						{/if}
+					</p>
+					{#if completeError}
+						<p class="text-sm text-destructive" data-testid="opening-balances-complete-error" role="alert">
+							{completeError}
+						</p>
+					{/if}
+					<div class="flex justify-end">
+						<Button
+							onclick={handleComplete}
+							disabled={!canSubmitComplement}
+							data-testid="opening-balances-complete-submit"
+						>
+							{completing
+								? i18nMsg('opening-balances-complete-submitting', 'Enregistrement…')
+								: i18nMsg('opening-balances-complete-submit', 'Compléter')}
+						</Button>
+					</div>
+				</section>
+			{:else}
+				<p
+					class="text-sm text-text-muted"
+					data-testid="opening-balances-complete-unavailable"
+					data-reason={status.completeReason}
+				>
+					{unavailableMessage(status.completeReason)}
+				</p>
+			{/if}
+		{/if}
 	{:else if status && status.canEnter}
 		<!-- Grille de saisie (statut READY). -->
 		<p class="text-sm text-text-muted" data-testid="opening-balances-intro">
@@ -380,6 +632,66 @@
 				{/if}
 			</div>
 		</div>
+
+		<!-- Totaux actif / passif et montant à porter (AC 2). Il aide la saisie ; le
+		     contrôle, c'est la comparaison avec l'ancien bilan (dite à côté). -->
+		<div class="rounded-md border border-border p-4 text-sm tabular-nums" data-testid="opening-balances-bilan-totals">
+			<dl class="grid grid-cols-2 gap-x-4 gap-y-1">
+				<dt>{i18nMsg('opening-balances-total-assets', 'Actifs')}</dt>
+				<dd class="text-right" data-testid="opening-balances-total-assets">{formatNumber(totals.assets)}</dd>
+				<dt>{i18nMsg('opening-balances-total-liabilities', 'Passifs et capitaux (hors report)')}</dt>
+				<dd class="text-right" data-testid="opening-balances-total-liabilities">{formatNumber(totals.liabilities)}</dd>
+				<dt>{i18nMsg('opening-balances-amount-to-carry', 'Montant à porter au compte de report')}</dt>
+				<dd class="text-right" data-testid="opening-balances-amount-to-carry" data-side={totals.amountToCarry.gt(0) ? 'credit' : totals.amountToCarry.lt(0) ? 'debit' : 'none'}>
+					{formatNumber(totals.amountToCarry.abs())}
+					{#if totals.amountToCarry.gt(0)}
+						{i18nMsg('opening-balances-side-credit', 'au crédit')}
+					{:else if totals.amountToCarry.lt(0)}
+						{i18nMsg('opening-balances-side-debit', 'au débit')}
+					{/if}
+				</dd>
+				<dt>{i18nMsg('opening-balances-retained-entered', 'Report saisi')}</dt>
+				<dd class="text-right" data-testid="opening-balances-retained-entered">{formatNumber(totals.retainedEntered)}</dd>
+				<dt>{i18nMsg('opening-balances-remaining-gap', 'Écart restant')}</dt>
+				<dd class="text-right" data-testid="opening-balances-remaining-gap">{formatNumber(totals.remainingGap)}</dd>
+			</dl>
+			<p class="mt-2 text-text-muted">
+				{i18nMsg(
+					'opening-balances-compare-hint',
+					'Comparez les totaux Actifs et Passifs à ceux du bilan de votre ancienne comptabilité : une saisie équilibrée peut encore être fausse si un montant a été porté sur le mauvais compte.'
+				)}
+			</p>
+		</div>
+
+		{#if warning}
+			<!-- Avertissement du report à-nouveau (AC 1) : il signale, il ne bloque
+			     pas — le bouton « Générer » reste actif. -->
+			<div
+				class="rounded-md border border-amber-500 bg-amber-50 p-4 text-sm dark:bg-amber-950/30"
+				data-testid="opening-balances-no-retained-earnings"
+				data-kind={warning.kind}
+				role="status"
+			>
+				{#if warning.kind === 'NO_ROLE'}
+					{i18nMsg(
+						'opening-balances-warning-no-retained-role',
+						'Aucun compte actif ne porte le rôle « Bénéfice reporté » : Kesh ne peut pas vérifier où le report à-nouveau est porté. Attribuez ce rôle dans le plan comptable, et comparez les totaux Actifs et Passifs à ceux de l’ancien bilan.'
+					)}
+				{:else if warning.kind === 'NOT_POSTABLE'}
+					{i18nMsg(
+						'opening-balances-warning-retained-not-postable',
+						'Le compte de report { $number } « { $name } » n’est pas imputable : il n’apparaît pas dans la grille, et le report à-nouveau ne peut pas y être porté. Rendez-le imputable dans le plan comptable.',
+						{ number: warning.account.number, name: warning.account.name }
+					)}
+				{:else}
+					{i18nMsg(
+						'opening-balances-warning-no-retained-earnings',
+						'La saisie est équilibrée sans rien sur le compte de report { $number } « { $name } ». Le report à-nouveau — la différence entre les actifs et les passifs de votre ancien bilan — doit y être porté : soit l’écart a été mis sur un autre compte, soit le report vaut réellement zéro. Comparez les totaux Actifs et Passifs à ceux de l’ancien bilan.',
+						{ number: warning.account.number, name: warning.account.name }
+					)}
+				{/if}
+			</div>
+		{/if}
 
 		{#if submitError}
 			<p class="text-sm text-destructive" data-testid="opening-balances-submit-error" role="alert">

@@ -1,6 +1,6 @@
 # Story 25.7 : Soldes de départ — avertir si le report à-nouveau manque, compléter un compte oublié
 
-Status: ready-for-dev
+Status: review
 
 **Issue : [#445]**, que cette story **ferme** : la PR porte `closes #445` dans le **titre ET le corps**. Branche
 `story/25-7-soldes-de-depart`, partie de `chore/epic-25-retrospective` (la rétrospective de l'Epic 25 voyage dans la
@@ -440,16 +440,16 @@ que des `data-testid` (garde `e2e-selecteurs-traduits`).
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — `kesh-db`** (AC 4, 5, 7) : recherche du compte de rôle par société ; liste des comptes complétables ;
+- [x] **T1 — `kesh-db`** (AC 4, 5, 7) : recherche du compte de rôle par société ; liste des comptes complétables ;
   choix de la date (arbitrage 2, `today` en paramètre) ; `create_opening_complement` (société `LOCK IN SHARE MODE` ; comptes `FOR UPDATE` par clé
   primaire ; compte de report `LOCK IN SHARE MODE` ; deux exercices, une ligne chacun ; lectures ordinaires « jamais
   mouvementé » et `NO_ENTRIES` ; refus dans l'ordre de l'AC 3 ; contrepartie ; `accounting::validate` ;
   `create_in_tx`) ; variante d'erreur ; tests de dépôt dont les **cinq** entrelacements de l'AC 7 ; `EXPLAIN` relevés.
-- [ ] **T2 — `kesh-api`** (AC 3, 4, 5, 9) : status étendu ; route `POST …/complete` ; variante d'`AppError` et ses
+- [x] **T2 — `kesh-api`** (AC 3, 4, 5, 9) : status étendu ; route `POST …/complete` ; variante d'`AppError` et ses
   codes ; messages × 4 locales ; registre des routes d'audit ; tests e2e (neufs et adaptés).
-- [ ] **T3 — l'écran** (AC 1, 2, 6) : avertissement, totaux, grille de complément ; types et API de la feature ;
+- [x] **T3 — l'écran** (AC 1, 2, 6) : avertissement, totaux, grille de complément ; types et API de la feature ;
   Vitest (neufs et adaptés) ; `sitesTotal` ; messages de verrou réécrits × 4 locales et replis.
-- [ ] **T4 — Playwright** (AC 7) : parcours de complément ; spec existante adaptée.
+- [x] **T4 — Playwright** (AC 7) : parcours de complément ; spec existante adaptée.
 - [ ] **T5 — manuel, CHANGELOG** (AC 8) ; issue du TOCTOU préexistant (Limites), ouverte avec l'accord de Guy et
   citée à la PR.
 - [ ] **T6 — gates** : backend complet (repositories `kesh-db` : gate complet même en cours de boucle), frontend
@@ -510,13 +510,88 @@ de découpage (+ `docs`, `CHANGELOG`, hors décompte des modules de code).
 
 ### Agent Model Used
 
+Claude Opus 5.5 (orchestrateur), 2026-10-06.
+
 ### Debug Log References
+
+- `target/gate-logs/backend-257-dev.log` — gate backend complet (`scripts/test-fast.sh --ci`, base remise à zéro
+  avant) : **2735 tests, 2735 passés**, 4 ignorés ; fmt et clippy `-D warnings` verts.
+- Gate frontend complet : `npm run check` 0 erreur ; `lint-i18n-ownership` PASS ; `test:unit` **956/956** (104
+  fichiers) ; `build` vert.
+- Playwright ciblé `opening-balances.spec.ts` : **3/3**. E2E complet sur le commit de dev
+  (`target/gate-logs/e2e-257-dev.log`, départ 10:07 UTC) : **238 passés, 9 échoués, 19 ignorés** — les 9 sont la
+  liste attendue (`docs/testing.md`) : KF-029 ×7 (`mode-expert:26/:41`, `onboarding-path-b:65/:92`,
+  `onboarding:57/:77/:150`) et KF-051 ×2 (`invoices:415/:439`, run avant 12:00 UTC) ; aucun hors liste. À rejouer au
+  dernier commit de code de la revue (D7).
 
 ### Completion Notes List
 
+- **`kesh-db`** — module neuf `repositories/opening_complement.rs` : `create_opening_complement` suit la règle de
+  l'AC 4 (société `LOCK IN SHARE MODE` ; comptes saisis `FOR UPDATE` par clé primaire, filtre `company_id` ; compte de
+  report `LOCK IN SHARE MODE` ; premier exercice puis candidat du jour, une ligne chacun ; lectures ordinaires « jamais
+  mouvementé » et « a des écritures » ; refus dans l'ordre ; contrepartie ; `accounting::validate` ; `create_in_tx`).
+  `complement_status` (lectures sans verrou) et `decide_date` (arbitrage 2, pure). Variante
+  `DbError::OpeningComplementRefused { reason, account_id, account_number }` — le compte fautif est **nommé** par son
+  numéro quand il appartient à la société (jamais pour un compte d'une autre société).
+- **`EXPLAIN` relevés** (MariaDB 10.11.16, base de dev) : comptes saisis `range` sur `PRIMARY` ; premier exercice `ref`
+  sur `uq_fiscal_years_company_start_date`, **sans** `filesort` ; candidat du jour `range` sur le même index ; compte de
+  report par l'index unique `uq_accounts_company_singleton_role`. Sonde à deux sessions de la validation P6 :
+  `25-7-validate-p6-lockprobe.sh`.
+- **`kesh-api`** — `POST /api/v1/opening-balances/complete` (`comptable_routes`), contrôles de forme dans le handler,
+  appel enveloppé dans `retry_with` ; status étendu (`canComplete`, `completeReason`, `completableAccounts`,
+  `complementDate`, `complementFiscalYear`, `retainedEarningsAccount`).
+  **Écarts à la fiche, assumés** : (1) un champ `complementDateKind` (`OPENING_DAY` / `TODAY`) s'ajoute au status —
+  l'AC 6 demande d'afficher « la date prévue **et sa raison** », que la date seule ne donne pas ; (2) les refus de
+  `kesh-db` sont mappés dans le `match` global de `AppError::Database` (statut et code dérivés de la raison, comme
+  `EntryIsPosted`), et les refus de forme du handler par une variante `AppError::OpeningComplementInvalid` — l'AC 5
+  envisageait une variante unique, le contrat (code par cause, statut de la table) est le même.
+- **i18n** — 43 clés neuves × 4 locales (`opening-balances-*` de l'écran, `opening-balances-complement-description`,
+  13 `error-opening-complement-*`) ; `opening-balances-locked-already-has-entries` et
+  `error-opening-balances-already-has-entries` réécrits × 4 locales, replis Rust (`opening_balances.rs`, deux sites) et
+  Svelte compris.
+- **Écran** — calculs dans `opening-balances-totals.ts` (pur, big.js) : totaux et montant à porter (AC 2),
+  avertissement à trois variantes (AC 1), contrepartie du complément (AC 6). Section de complément **seulement** sous
+  `ALREADY_HAS_ENTRIES`. `sitesTotal` 1830 → **1864** (relevé du test ; `grep -o` aux deux bornes : 26 → 60).
+- **Tests** (périmètre `HEAD` de validation → commit de dev) : `kesh-db` **22** d'intégration neufs + **7** unitaires ;
+  `kesh-api` e2e 21 → **26**, unitaires 3 → **5** ; Vitest page 19 → **33**, calculs **6** neufs ; Playwright 2 →
+  **3**. Le double d'`i18nMsg` du test de page interpole désormais ses variables.
+- **Mutations jouées et tuées** (chacune restaurée, octet vérifié par `cmp`) : comptes saisis sans `FOR UPDATE` → (1)
+  et (3) ; garde « jamais mouvementé » retirée → `refus_compte_mouvemente` ; sens de la contrepartie inversé →
+  `la_contrepartie_va_au_report_dans_le_bon_sens` ; société prise en exclusif → (2), **interblocage 1213 observé** ;
+  lecture « jamais mouvementé » avant le verrou des comptes → (1) ; avertissement toujours masqué → 3 tests Vitest ;
+  contrepartie inversée côté écran → 2 tests Vitest. **Non jouée** : « rejeu retiré » — aucun montage d'interblocage
+  déterministe dont le complément soit la victime (l'entrelacement (5) accepte les deux issues) ; limite écrite.
+- **Reste** : l'issue du TOCTOU préexistant (Limites, T5) attend l'accord de Guy.
+
 ### File List
 
+- `crates/kesh-db/src/repositories/opening_complement.rs` (neuf)
+- `crates/kesh-db/src/repositories/mod.rs`
+- `crates/kesh-db/src/errors.rs`
+- `crates/kesh-db/tests/opening_complement_repository.rs` (neuf)
+- `crates/kesh-api/src/routes/opening_balances.rs`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/src/lib.rs`
+- `crates/kesh-api/tests/opening_balances_e2e.rs`
+- `crates/kesh-api/tests/audit_route_registry.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`
+- `frontend/src/lib/features/opening-balances/opening-balances.types.ts`
+- `frontend/src/lib/features/opening-balances/opening-balances.api.ts`
+- `frontend/src/lib/features/opening-balances/opening-balances-totals.ts` (neuf)
+- `frontend/src/lib/features/opening-balances/opening-balances-totals.test.ts` (neuf)
+- `frontend/src/routes/(app)/settings/opening-balances/+page.svelte`
+- `frontend/src/routes/(app)/settings/opening-balances/opening-balances-page.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/tests/e2e/opening-balances.spec.ts`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
+- `CHANGELOG.md`, `README.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+
 ## Change Log
+
+- **2026-10-06** — Développement (`bmad-dev-story`, Opus 5.5) : T1 à T4 et le manuel / CHANGELOG / README de T5 ;
+  gates backend 2735/2735, frontend 956/956, E2E complet 238 passés et 9 échecs tous attendus. Deux écarts à la fiche,
+  assumés (Completion Notes). Reste : l'issue du TOCTOU (accord de Guy).
 
 - **2026-10-06** — Validation P7, **passe ciblée** (Haiku, prompt `25-7-validate-prompt-p7-ciblee.md`, braquée sur
   `0a8e2ae6..c6819583`) : **0 finding**, axes déclarés. Vérifié par l'orchestrateur (CLAUDE.md : un « 0 » se vérifie) :

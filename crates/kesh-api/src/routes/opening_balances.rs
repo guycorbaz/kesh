@@ -5,6 +5,10 @@
 //!   `FIRST_YEAR_CLOSED` / `ALREADY_HAS_ENTRIES`).
 //! - `POST /api/v1/opening-balances` — génère l'écriture d'ouverture (une OD
 //!   équilibrée datée au `start_date` du premier exercice).
+//! - `POST /api/v1/opening-balances/complete` — **complète** un compte de bilan
+//!   oublié, une fois l'ouverture générée (Story 25-7, #445) : écriture
+//!   d'ajustement dont la contrepartie est portée au compte de report, calculée
+//!   par le serveur (`kesh_db::repositories::opening_complement`).
 //!
 //! Les deux routes sont montées dans `comptable_routes`
 //! (`require_comptable_role`) — Consultation → 403, non-auth → 401. **PAS**
@@ -41,6 +45,7 @@ use kesh_db::errors::DbError;
 use kesh_db::repositories::fiscal_years::{
     FY_OPENING_ALREADY_HAS_ENTRIES_KEY, FY_OPENING_FIRST_YEAR_CLOSED_KEY,
 };
+use kesh_db::repositories::opening_complement::{self, ComplementLine, ComplementStatus};
 use kesh_db::repositories::{accounts, fiscal_years, journal_entries};
 use kesh_i18n::Locale;
 
@@ -98,6 +103,73 @@ pub struct OpeningBalancesStatusResponse {
     pub can_enter: bool,
     /// `READY` / `NO_FISCAL_YEAR` / `FIRST_YEAR_CLOSED` / `ALREADY_HAS_ENTRIES`.
     pub reason: &'static str,
+    /// Mode « compléter » (Story 25-7, AC 3) : vrai seulement si
+    /// `complete_reason = READY`.
+    pub can_complete: bool,
+    /// `READY` / `NO_ENTRIES` / `NO_OPEN_FISCAL_YEAR` / `DATE_LOCKED` /
+    /// `NO_RETAINED_EARNINGS` / `RETAINED_EARNINGS_NOT_POSTABLE` /
+    /// `NO_COMPLETABLE_ACCOUNT`.
+    pub complete_reason: &'static str,
+    /// Comptes de bilan actifs, imputables, jamais mouvementés, hors compte de
+    /// report.
+    pub completable_accounts: Vec<CompletableAccountDto>,
+    /// Date prévue du complément — **indicative** : le POST la recalcule sous
+    /// verrou.
+    pub complement_date: Option<NaiveDate>,
+    /// `OPENING_DAY` (premier jour du premier exercice) ou `TODAY`
+    /// (régularisation datée du jour).
+    pub complement_date_kind: Option<&'static str>,
+    /// Exercice qui porterait le complément.
+    pub complement_fiscal_year: Option<ComplementFiscalYearDto>,
+    /// Compte de report (rôle `RetainedEarnings`), quand il existe.
+    pub retained_earnings_account: Option<RetainedEarningsAccountDto>,
+}
+
+/// Compte proposé au complément.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CompletableAccountDto {
+    pub id: i64,
+    pub number: String,
+    pub name: String,
+    pub account_type: String,
+}
+
+/// Exercice qui porterait le complément.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ComplementFiscalYearDto {
+    pub id: i64,
+    pub name: String,
+}
+
+/// Compte de report.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RetainedEarningsAccountDto {
+    pub id: i64,
+    pub number: String,
+    pub name: String,
+}
+
+/// Body de `POST /api/v1/opening-balances/complete` — les seuls comptes
+/// oubliés ; la contrepartie est calculée par le serveur.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpeningComplementRequest {
+    pub lines: Vec<OpeningComplementLineRequest>,
+}
+
+/// Ligne de complément : une seule colonne non nulle ; l'autre vaut `"0"`, est
+/// vide ou absente.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpeningComplementLineRequest {
+    pub account_id: i64,
+    #[serde(default)]
+    pub debit: Option<String>,
+    #[serde(default)]
+    pub credit: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -121,7 +193,7 @@ fn map_opening_balances_error(err: DbError) -> AppError {
         DbError::Invariant(ref s) if s == FY_OPENING_ALREADY_HAS_ENTRIES_KEY => {
             AppError::IllegalState(t(
                 "error-opening-balances-already-has-entries",
-                "La société contient déjà des écritures : le bilan d'ouverture ne peut plus être généré. Corrigez l'écriture d'ouverture via le journal.",
+                "La société contient déjà des écritures : le bilan d'ouverture ne peut plus être généré. Un compte oublié se complète depuis l'écran Soldes de départ.",
             ))
         }
         DbError::Invariant(ref s) if s == FY_OPENING_FIRST_YEAR_CLOSED_KEY => {
@@ -163,13 +235,18 @@ pub async fn opening_balances_status(
     Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<OpeningBalancesStatusResponse>, AppError> {
     let first = fiscal_years::find_first_by_company(&state.pool, current_user.company_id).await?;
+    let complement = opening_complement::complement_status(
+        &state.pool,
+        current_user.company_id,
+        chrono::Utc::now().date_naive(),
+    )
+    .await?;
+    let respond = |fiscal_year, can_enter, reason| {
+        Json(status_response(fiscal_year, can_enter, reason, &complement))
+    };
 
     let Some(fy) = first else {
-        return Ok(Json(OpeningBalancesStatusResponse {
-            fiscal_year: None,
-            can_enter: false,
-            reason: "NO_FISCAL_YEAR",
-        }));
+        return Ok(respond(None, false, "NO_FISCAL_YEAR"));
     };
 
     let summary = OpeningBalancesFiscalYear {
@@ -185,26 +262,53 @@ pub async fn opening_balances_status(
     // `first-year-closed` serait un mauvais conseil.
     let count = journal_entries::count_by_company(&state.pool, current_user.company_id).await?;
     if count > 0 {
-        return Ok(Json(OpeningBalancesStatusResponse {
-            fiscal_year: Some(summary),
-            can_enter: false,
-            reason: "ALREADY_HAS_ENTRIES",
-        }));
+        return Ok(respond(Some(summary), false, "ALREADY_HAS_ENTRIES"));
     }
 
     if summary.status == FiscalYearStatus::Closed {
-        return Ok(Json(OpeningBalancesStatusResponse {
-            fiscal_year: Some(summary),
-            can_enter: false,
-            reason: "FIRST_YEAR_CLOSED",
-        }));
+        return Ok(respond(Some(summary), false, "FIRST_YEAR_CLOSED"));
     }
 
-    Ok(Json(OpeningBalancesStatusResponse {
-        fiscal_year: Some(summary),
-        can_enter: true,
-        reason: "READY",
-    }))
+    Ok(respond(Some(summary), true, "READY"))
+}
+
+/// Assemble la réponse du status : champs historiques + mode « compléter ».
+fn status_response(
+    fiscal_year: Option<OpeningBalancesFiscalYear>,
+    can_enter: bool,
+    reason: &'static str,
+    complement: &ComplementStatus,
+) -> OpeningBalancesStatusResponse {
+    OpeningBalancesStatusResponse {
+        fiscal_year,
+        can_enter,
+        reason,
+        can_complete: complement.can_complete(),
+        complete_reason: complement.complete_reason(),
+        completable_accounts: complement
+            .completable_accounts
+            .iter()
+            .map(|a| CompletableAccountDto {
+                id: a.id,
+                number: a.number.clone(),
+                name: a.name.clone(),
+                account_type: a.account_type.clone(),
+            })
+            .collect(),
+        complement_date: complement.date.as_ref().map(|d| d.date),
+        complement_date_kind: complement.date.as_ref().map(|d| d.branch.as_str()),
+        complement_fiscal_year: complement.date.as_ref().map(|d| ComplementFiscalYearDto {
+            id: d.fiscal_year_id,
+            name: d.fiscal_year_name.clone(),
+        }),
+        retained_earnings_account: complement.retained_earnings.as_ref().map(|r| {
+            RetainedEarningsAccountDto {
+                id: r.id,
+                number: r.number.clone(),
+                name: r.name.clone(),
+            }
+        }),
+    }
 }
 
 /// `POST /api/v1/opening-balances` — génère l'écriture d'ouverture (Comptable+).
@@ -283,7 +387,7 @@ pub async fn generate_opening_balances(
     if count > 0 {
         return Err(AppError::IllegalState(t(
             "error-opening-balances-already-has-entries",
-            "La société contient déjà des écritures : le bilan d'ouverture ne peut plus être généré. Corrigez l'écriture d'ouverture via le journal.",
+            "La société contient déjà des écritures : le bilan d'ouverture ne peut plus être généré. Un compte oublié se complète depuis l'écran Soldes de départ.",
         )));
     }
 
@@ -374,9 +478,205 @@ pub async fn generate_opening_balances(
     ))
 }
 
+/// Contrôle de forme refusé (AC 4, « dans le handler »).
+fn complement_invalid(error_code: &'static str, key: &str, fallback: &str) -> AppError {
+    AppError::OpeningComplementInvalid {
+        error_code,
+        message: t(key, fallback),
+    }
+}
+
+/// Montant d'une colonne : absente, vide ou `"0"` → zéro ; sinon un décimal
+/// strictement positif d'au plus quatre décimales (`DECIMAL(19,4)` : au-delà,
+/// l'arrondi à l'écriture déséquilibrerait la contrepartie calculée avant lui).
+fn invalid_amount() -> AppError {
+    complement_invalid(
+        "OPENING_COMPLEMENT_INVALID_AMOUNT",
+        "error-opening-complement-invalid-amount",
+        "Chaque ligne porte un montant strictement positif, au plus quatre décimales, au débit OU au crédit.",
+    )
+}
+
+fn parse_complement_amount(raw: Option<&str>) -> Result<Decimal, AppError> {
+    let invalid = invalid_amount;
+    let raw = raw.map(str::trim).unwrap_or("");
+    if raw.is_empty() {
+        return Ok(Decimal::ZERO);
+    }
+    let value = Decimal::from_str(raw).map_err(|_| invalid())?;
+    if value.is_sign_negative() || value.normalize().scale() > 4 {
+        return Err(invalid());
+    }
+    Ok(value)
+}
+
+/// Contrôles de forme du complément, **sans lecture de la base** (AC 4) :
+/// au moins une ligne, plafond `MAX_LINES_PER_ENTRY − 1` (une ligne réservée à
+/// la contrepartie), montants valides sur une seule colonne, comptes distincts.
+fn parse_complement_lines(req: &OpeningComplementRequest) -> Result<Vec<ComplementLine>, AppError> {
+    if req.lines.is_empty() {
+        return Err(complement_invalid(
+            "OPENING_COMPLEMENT_NO_LINES",
+            "error-opening-complement-no-lines",
+            "Saisissez au moins un compte à compléter.",
+        ));
+    }
+    if req.lines.len() > MAX_LINES_PER_ENTRY - 1 {
+        return Err(complement_invalid(
+            "OPENING_COMPLEMENT_TOO_MANY_LINES",
+            "error-opening-complement-too-many-lines",
+            "Trop de lignes pour un seul complément.",
+        ));
+    }
+    let mut lines = Vec::with_capacity(req.lines.len());
+    let mut seen = std::collections::HashSet::new();
+    for line in &req.lines {
+        let debit = parse_complement_amount(line.debit.as_deref())?;
+        let credit = parse_complement_amount(line.credit.as_deref())?;
+        // Exactement une colonne non nulle.
+        if (debit > Decimal::ZERO) == (credit > Decimal::ZERO) {
+            return Err(invalid_amount());
+        }
+        if !seen.insert(line.account_id) {
+            return Err(complement_invalid(
+                "OPENING_COMPLEMENT_DUPLICATE_ACCOUNT",
+                "error-opening-complement-duplicate-account",
+                "Un même compte figure sur deux lignes : regroupez-les.",
+            ));
+        }
+        lines.push(ComplementLine {
+            account_id: line.account_id,
+            debit,
+            credit,
+        });
+    }
+    Ok(lines)
+}
+
+/// `POST /api/v1/opening-balances/complete` — complète un ou plusieurs comptes
+/// de bilan oubliés à l'ouverture (Story 25-7, AC 4). Comptable+.
+///
+/// Les contrôles de forme se font ici ; les gardes métier, la date, la
+/// contrepartie et l'écriture se font sous verrou dans
+/// [`opening_complement::create_opening_complement`]. L'appel est rejoué sur
+/// interblocage (`retry_with`) : le dépôt n'ayant pas d'ordre de verrouillage
+/// unique, des cycles résiduels existent (fiche de la story, section
+/// « Cycles ») ; chaque tentative refait toutes les gardes.
+pub async fn complete_opening_balances(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Json(req): Json<OpeningComplementRequest>,
+) -> Result<(StatusCode, Json<JournalEntryResponse>), AppError> {
+    use kesh_db::retry::{DEFAULT_MAX_DEADLOCK_ATTEMPTS, is_deadlock_error, retry_with};
+
+    let lines = parse_complement_lines(&req)?;
+    let company = get_company_for(&current_user, &state.pool).await?;
+    let locale = Locale::from(company.accounting_language.as_str());
+    let description = state
+        .i18n
+        .format(&locale, "opening-balances-complement-description", None);
+    let today = chrono::Utc::now().date_naive();
+
+    let result = retry_with(
+        DEFAULT_MAX_DEADLOCK_ATTEMPTS,
+        |err: &DbError| is_deadlock_error(err),
+        || {
+            let pool = state.pool.clone();
+            let lines = lines.clone();
+            let description = description.clone();
+            async move {
+                opening_complement::create_opening_complement(
+                    &pool,
+                    company.id,
+                    current_user.user_id,
+                    &lines,
+                    description,
+                    today,
+                )
+                .await
+            }
+        },
+    )
+    .await?;
+
+    Ok((
+        StatusCode::CREATED,
+        Json(JournalEntryResponse::from(result)),
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn line(
+        account_id: i64,
+        debit: Option<&str>,
+        credit: Option<&str>,
+    ) -> OpeningComplementLineRequest {
+        OpeningComplementLineRequest {
+            account_id,
+            debit: debit.map(Into::into),
+            credit: credit.map(Into::into),
+        }
+    }
+
+    fn code_of(r: Result<Vec<ComplementLine>, AppError>) -> &'static str {
+        match r {
+            Err(AppError::OpeningComplementInvalid { error_code, .. }) => error_code,
+            other => panic!("attendu un refus de forme, obtenu {other:?}"),
+        }
+    }
+
+    #[test]
+    fn complement_forme_refus_par_cause() {
+        let req = |lines| OpeningComplementRequest { lines };
+        assert_eq!(
+            code_of(parse_complement_lines(&req(vec![]))),
+            "OPENING_COMPLEMENT_NO_LINES"
+        );
+        let many = (0..MAX_LINES_PER_ENTRY as i64)
+            .map(|i| line(i, Some("1"), None))
+            .collect();
+        assert_eq!(
+            code_of(parse_complement_lines(&req(many))),
+            "OPENING_COMPLEMENT_TOO_MANY_LINES"
+        );
+        for bad in [
+            line(1, Some("0"), Some("0")),
+            line(1, Some("5"), Some("5")),
+            line(1, Some("-5"), None),
+            line(1, Some("abc"), None),
+            line(1, Some("1.00001"), None),
+            line(1, None, None),
+        ] {
+            assert_eq!(
+                code_of(parse_complement_lines(&req(vec![bad]))),
+                "OPENING_COMPLEMENT_INVALID_AMOUNT"
+            );
+        }
+        assert_eq!(
+            code_of(parse_complement_lines(&req(vec![
+                line(1, Some("5"), None),
+                line(1, None, Some("5")),
+            ]))),
+            "OPENING_COMPLEMENT_DUPLICATE_ACCOUNT"
+        );
+    }
+
+    #[test]
+    fn complement_forme_accepte_zero_vide_ou_absent_dans_l_autre_colonne() {
+        let ok = parse_complement_lines(&OpeningComplementRequest {
+            lines: vec![
+                line(1, Some("12.3400"), Some("0")),
+                line(2, Some(""), Some("5")),
+                line(3, None, Some("0.0001")),
+            ],
+        })
+        .unwrap();
+        assert_eq!(ok.len(), 3);
+        assert_eq!(ok[0].debit, Decimal::from_str("12.34").unwrap());
+    }
 
     /// `ALREADY_HAS_ENTRIES` → 409 code partagé + message distinct (D7).
     #[test]

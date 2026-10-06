@@ -84,6 +84,8 @@ const LIB_ROUTES: &[(&str, &str, Status)] = &[
     ("post", "companies::lock_company_books", Traced),
     ("post", "journal_entries::reverse_journal_entry", Traced),
     ("post", "opening_balances::generate_opening_balances", Traced),
+    // Story 25-7 (#445) : l'audit vient de `create_in_tx` (`journal_entry.created`).
+    ("post", "opening_balances::complete_opening_balances", Traced),
     ("post", "contacts::create_contact", Traced),
     ("put", "contacts::update_contact", Traced),
     ("put", "contacts::archive_contact", Traced),
@@ -461,14 +463,15 @@ fn the_registry_partition_is_what_the_story_declares() {
         .filter(|(_, _, s)| matches!(s, NoMatter(_)))
         .count();
 
-    assert_eq!(LIB_ROUTES.len(), 111, "l'inventaire porte sur 111 routes");
+    assert_eq!(LIB_ROUTES.len(), 112, "l'inventaire porte sur 112 routes");
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
     assert_eq!(
-        traced, 93,
+        traced, 94,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
-         (25-4-d2a, #384), plus le refigeage du PDF d'une facture (25-6-b, #387)"
+         (25-4-d2a, #384), plus le refigeage du PDF d'une facture (25-6-b, #387), plus le \
+         complément des soldes de départ (25-7, #445)"
     );
     assert_eq!(
         exempt, 15,
@@ -477,7 +480,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     assert_eq!(no_matter, 3, "trois routes mutantes qui ne mutent rien");
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        114,
+        115,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }

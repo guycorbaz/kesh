@@ -1143,3 +1143,325 @@ async fn post_closed_with_entries_409_already_has_entries(pool: MySqlPool) {
         "message already-has-entries attendu (pas « rouvrez »), obtenu: {msg}"
     );
 }
+
+// ===========================================================================
+// Story 25-7 (#445) — compléter un compte oublié
+// ===========================================================================
+
+/// Génère l'ouverture 1000 / 2970 par l'API : la société n'est plus vierge,
+/// 2000 reste jamais mouvementé.
+async fn generate_opening(app: &TestApp, token: &str, seed: &Seed) {
+    let resp = app
+        .client
+        .post(app.url("/api/v1/opening-balances"))
+        .header("Authorization", auth(token))
+        .json(&json!({ "lines": [
+            line(seed.asset, "1000.00", "0"),
+            line(seed.retained, "0", "1000.00"),
+        ]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+}
+
+async fn post_complete(app: &TestApp, token: &str, body: Value) -> (u16, Value) {
+    let resp = app
+        .client
+        .post(app.url("/api/v1/opening-balances/complete"))
+        .header("Authorization", auth(token))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    (status, resp.json().await.unwrap_or(Value::Null))
+}
+
+/// 201 : le passif oublié, contrepartie au débit du report, date de
+/// l'ouverture (branche a), libellé dans la langue comptable.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn complete_happy_path_counterpart_on_retained_earnings(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let seed = seed_ready(&pool).await;
+    generate_opening(&app, &token, &seed).await;
+
+    let (status, body) = post_complete(
+        &app,
+        &token,
+        json!({ "lines": [{ "accountId": seed.liability, "credit": "30.00" }] }),
+    )
+    .await;
+    assert_eq!(status, 201, "{body}");
+    assert_eq!(body["journal"], "OD");
+    assert_eq!(body["entryDate"], "2026-01-01");
+    assert_eq!(body["description"], "Complément des soldes de départ");
+    let lines = body["lines"].as_array().unwrap();
+    assert_eq!(lines.len(), 2);
+    let on = |id: i64| lines.iter().find(|l| l["accountId"] == id).unwrap();
+    assert_eq!(
+        Decimal::from_str_exact(on(seed.liability)["credit"].as_str().unwrap()).unwrap(),
+        dec!(30)
+    );
+    assert_eq!(
+        Decimal::from_str_exact(on(seed.retained)["debit"].as_str().unwrap()).unwrap(),
+        dec!(30)
+    );
+}
+
+/// Chaque code de l'AC 5, avec son statut HTTP.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn complete_each_refusal_has_its_code(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let seed = seed_ready(&pool).await;
+
+    // Société vierge.
+    let (s, b) = post_complete(
+        &app,
+        &token,
+        json!({ "lines": [line(seed.liability, "0", "1")] }),
+    )
+    .await;
+    assert_eq!(
+        (s, b["error"]["code"].as_str().unwrap()),
+        (409, "OPENING_COMPLEMENT_NO_ENTRIES")
+    );
+
+    generate_opening(&app, &token, &seed).await;
+    let revenue = create_acc(
+        &pool,
+        seed.user_id,
+        seed.company_id,
+        "3000",
+        "Ventes",
+        AccountType::Revenue,
+        None,
+    )
+    .await;
+
+    let cases: Vec<(Value, u16, &str)> = vec![
+        (json!({ "lines": [] }), 400, "OPENING_COMPLEMENT_NO_LINES"),
+        (
+            json!({ "lines": (0..500).map(|i| line(i, "1", "0")).collect::<Vec<_>>() }),
+            400,
+            "OPENING_COMPLEMENT_TOO_MANY_LINES",
+        ),
+        (
+            json!({ "lines": [line(seed.liability, "1", "1")] }),
+            400,
+            "OPENING_COMPLEMENT_INVALID_AMOUNT",
+        ),
+        (
+            json!({ "lines": [line(seed.liability, "0.00001", "0")] }),
+            400,
+            "OPENING_COMPLEMENT_INVALID_AMOUNT",
+        ),
+        (
+            json!({ "lines": [line(seed.liability, "1", "0"), line(seed.liability, "0", "1")] }),
+            400,
+            "OPENING_COMPLEMENT_DUPLICATE_ACCOUNT",
+        ),
+        (
+            json!({ "lines": [line(seed.asset, "1", "0")] }),
+            409,
+            "OPENING_COMPLEMENT_ACCOUNT_MOVED",
+        ),
+        (
+            json!({ "lines": [line(revenue, "1", "0")] }),
+            400,
+            "OPENING_COMPLEMENT_NOT_BALANCE_ACCOUNT",
+        ),
+        (
+            json!({ "lines": [line(999_999, "1", "0")] }),
+            400,
+            "OPENING_COMPLEMENT_ACCOUNT_INVALID",
+        ),
+        (
+            json!({ "lines": [line(seed.retained, "0", "1")] }),
+            400,
+            "OPENING_COMPLEMENT_RETAINED_EARNINGS_LINE",
+        ),
+    ];
+    for (body, status, code) in cases {
+        let (s, b) = post_complete(&app, &token, body).await;
+        assert_eq!(
+            (s, b["error"]["code"].as_str().unwrap_or("?")),
+            (status, code),
+            "{b}"
+        );
+    }
+
+    // Le compte fautif est NOMMÉ par son numéro.
+    let (_, b) = post_complete(
+        &app,
+        &token,
+        json!({ "lines": [line(seed.asset, "1", "0")] }),
+    )
+    .await;
+    assert!(
+        b["error"]["message"].as_str().unwrap().contains("1000"),
+        "{b}"
+    );
+
+    // Compte de report non imputable, puis sans rôle.
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+        .bind(seed.retained)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (s, b) = post_complete(
+        &app,
+        &token,
+        json!({ "lines": [line(seed.liability, "0", "1")] }),
+    )
+    .await;
+    assert_eq!(
+        (s, b["error"]["code"].as_str().unwrap()),
+        (409, "OPENING_COMPLEMENT_RETAINED_EARNINGS_NOT_POSTABLE")
+    );
+    sqlx::query("UPDATE accounts SET role = NULL WHERE id = ?")
+        .bind(seed.retained)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (s, b) = post_complete(
+        &app,
+        &token,
+        json!({ "lines": [line(seed.liability, "0", "1")] }),
+    )
+    .await;
+    assert_eq!(
+        (s, b["error"]["code"].as_str().unwrap()),
+        (409, "OPENING_COMPLEMENT_NO_RETAINED_EARNINGS")
+    );
+
+    // Date : aujourd'hui verrouillé (cas défensif, posé directement), puis
+    // aucun exercice ouvert.
+    let today = chrono::Utc::now().date_naive();
+    sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
+        .bind(today)
+        .bind(seed.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (s, b) = post_complete(
+        &app,
+        &token,
+        json!({ "lines": [line(seed.liability, "0", "1")] }),
+    )
+    .await;
+    assert_eq!(
+        (s, b["error"]["code"].as_str().unwrap()),
+        (409, "OPENING_COMPLEMENT_DATE_LOCKED")
+    );
+    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+        .bind(seed.fy_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (s, b) = post_complete(
+        &app,
+        &token,
+        json!({ "lines": [line(seed.liability, "0", "1")] }),
+    )
+    .await;
+    assert_eq!(
+        (s, b["error"]["code"].as_str().unwrap()),
+        (409, "OPENING_COMPLEMENT_NO_OPEN_FISCAL_YEAR")
+    );
+}
+
+/// Isolation : le compte d'une autre société est refusé comme inconnu, sans
+/// en révéler le numéro.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn complete_foreign_account_is_invalid(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let seed = seed_ready(&pool).await;
+    generate_opening(&app, &token, &seed).await;
+    let other: i64 = sqlx::query(
+        "INSERT INTO companies (name, address, org_type, accounting_language, instance_language) \
+         VALUES ('Autre', 'Rue 1', 'Independant', 'FR', 'FR')",
+    )
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let foreign: i64 = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type) VALUES (?, '1999', 'Étranger', 'Asset')",
+    )
+    .bind(other)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let (s, b) = post_complete(&app, &token, json!({ "lines": [line(foreign, "1", "0")] })).await;
+    assert_eq!(
+        (s, b["error"]["code"].as_str().unwrap()),
+        (400, "OPENING_COMPLEMENT_ACCOUNT_INVALID")
+    );
+    assert!(
+        !b["error"]["message"].as_str().unwrap().contains("1999"),
+        "{b}"
+    );
+}
+
+/// Consultation → 403 ; non-auth → 401.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn complete_rbac_consultation_403_unauth_401(pool: MySqlPool) {
+    let (app, _token) = bootstrap_admin(&pool).await;
+    let seed = seed_ready(&pool).await;
+    let consultation = create_consultation_user_and_login(&app, &pool).await;
+    let body = json!({ "lines": [line(seed.liability, "0", "1")] });
+    let (s, _) = post_complete(&app, &consultation, body.clone()).await;
+    assert_eq!(s, 403);
+    let resp = app
+        .client
+        .post(app.url("/api/v1/opening-balances/complete"))
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 401);
+}
+
+/// Le status annonce le mode « compléter » sans toucher aux champs existants.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn status_announces_complement(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let seed = seed_ready(&pool).await;
+
+    let body = get_status(&app, &token).await;
+    assert_eq!(
+        (body["reason"].as_str(), body["canEnter"].as_bool()),
+        (Some("READY"), Some(true))
+    );
+    assert_eq!(body["canComplete"], false);
+    assert_eq!(body["completeReason"], "NO_ENTRIES");
+
+    generate_opening(&app, &token, &seed).await;
+    let body = get_status(&app, &token).await;
+    assert_eq!(body["reason"], "ALREADY_HAS_ENTRIES");
+    assert_eq!(body["canComplete"], true);
+    assert_eq!(body["completeReason"], "READY");
+    assert_eq!(body["complementDate"], "2026-01-01");
+    assert_eq!(body["complementDateKind"], "OPENING_DAY");
+    assert_eq!(body["retainedEarningsAccount"]["number"], "2970");
+    let numbers: Vec<&str> = body["completableAccounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["number"].as_str().unwrap())
+        .collect();
+    assert_eq!(numbers, vec!["2000"]);
+
+    let (s, _) = post_complete(
+        &app,
+        &token,
+        json!({ "lines": [line(seed.liability, "0", "1")] }),
+    )
+    .await;
+    assert_eq!(s, 201);
+    let body = get_status(&app, &token).await;
+    assert_eq!(body["canComplete"], false);
+    assert_eq!(body["completeReason"], "NO_COMPLETABLE_ACCOUNT");
+}

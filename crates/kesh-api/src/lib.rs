@@ -391,6 +391,11 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/opening-balances/status",
             get(routes::opening_balances::opening_balances_status),
         )
+        // Story 25-7 (#445) : compléter un compte de bilan oublié à l'ouverture.
+        .route(
+            "/api/v1/opening-balances/complete",
+            post(routes::opening_balances::complete_opening_balances),
+        )
         // Story 4.1 : mutations carnet d'adresses
         .route("/api/v1/contacts", post(routes::contacts::create_contact))
         .route(

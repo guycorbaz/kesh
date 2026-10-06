@@ -943,6 +943,15 @@ pub enum AppError {
         details: Option<serde_json::Value>,
     },
 
+    /// Contrôle de forme refusé sur `POST /api/v1/opening-balances/complete`
+    /// (Story 25-7, #445) → **400** avec un code `OPENING_COMPLEMENT_*` par
+    /// cause (aucune ligne, trop de lignes, montant, compte en double).
+    #[error("Complément des soldes de départ refusé [{error_code}] : {message}")]
+    OpeningComplementInvalid {
+        error_code: &'static str,
+        message: String,
+    },
+
     /// `GET .../source-document` : la facture n'a **pas** de justificatif stocké
     /// (row absente, ou facture créée directement 12-2 sans import — L5) →
     /// `404 SOURCE_DOCUMENT_NOT_FOUND`. JAMAIS 500.
@@ -1077,6 +1086,67 @@ fn build_response(status: StatusCode, code: &'static str, message: &str) -> Resp
         }),
     )
         .into_response()
+}
+
+/// Réponse d'un refus de complément des soldes de départ (Story 25-7, AC 5) :
+/// statut, code et message **par cause**. Les refus qui portent sur un compte le
+/// nomment par son numéro — un identifiant de base ne se comprend pas.
+fn opening_complement_refusal_response(
+    reason: kesh_db::repositories::opening_complement::OpeningComplementRefusal,
+    account_number: Option<&str>,
+) -> Response {
+    use kesh_db::repositories::opening_complement::OpeningComplementRefusal as R;
+    let account = account_number.unwrap_or("?");
+    let mut args = FluentArgs::new();
+    args.set("account", account.to_string());
+    let (status, key, fallback) = match reason {
+        R::NoEntries => (
+            StatusCode::CONFLICT,
+            "error-opening-complement-no-entries",
+            "La société n'a encore aucune écriture : saisissez les soldes de départ avec la génération du bilan d'ouverture.".to_string(),
+        ),
+        R::NoOpenFiscalYear => (
+            StatusCode::CONFLICT,
+            "error-opening-complement-no-open-fiscal-year",
+            "Aucun exercice ouvert ne couvre la date du jour : le complément ne peut pas être daté.".to_string(),
+        ),
+        R::DateLocked => (
+            StatusCode::CONFLICT,
+            "error-opening-complement-date-locked",
+            "La date du jour tombe dans la période verrouillée : le complément ne peut pas être daté.".to_string(),
+        ),
+        R::NoRetainedEarnings => (
+            StatusCode::CONFLICT,
+            "error-opening-complement-no-retained-earnings",
+            "Aucun compte actif ne porte le rôle « Bénéfice reporté » : attribuez-le dans le plan comptable, la contrepartie du complément y est portée.".to_string(),
+        ),
+        R::RetainedEarningsNotPostable => (
+            StatusCode::CONFLICT,
+            "error-opening-complement-retained-earnings-not-postable",
+            "Le compte de bénéfice reporté n'est pas imputable : rendez-le imputable dans le plan comptable.".to_string(),
+        ),
+        R::AccountInvalid => (
+            StatusCode::BAD_REQUEST,
+            "error-opening-complement-account-invalid",
+            format!("Le compte {account} est inconnu, archivé ou non imputable."),
+        ),
+        R::RetainedEarningsLine => (
+            StatusCode::BAD_REQUEST,
+            "error-opening-complement-retained-earnings-line",
+            format!("Le compte {account} est le compte de bénéfice reporté : sa contrepartie est calculée par Kesh, ne le saisissez pas."),
+        ),
+        R::NotBalanceAccount => (
+            StatusCode::BAD_REQUEST,
+            "error-opening-complement-not-balance-account",
+            format!("Le compte {account} est un compte de résultat : seuls les comptes de bilan se complètent."),
+        ),
+        R::AccountMoved => (
+            StatusCode::CONFLICT,
+            "error-opening-complement-account-moved",
+            format!("Le compte {account} a déjà des mouvements : corrigez-le par une écriture manuelle."),
+        ),
+    };
+    build_response(status, reason.code(), &t_args(key, &fallback, &args))
 }
 
 impl IntoResponse for AppError {
@@ -2376,6 +2446,11 @@ impl IntoResponse for AppError {
                     .into_response()
             }
 
+            AppError::OpeningComplementInvalid {
+                error_code,
+                message,
+            } => build_response(StatusCode::BAD_REQUEST, error_code, &message),
+
             AppError::SourceDocumentNotFound => build_response(
                 StatusCode::NOT_FOUND,
                 "SOURCE_DOCUMENT_NOT_FOUND",
@@ -2418,6 +2493,11 @@ impl IntoResponse for AppError {
             }
 
             AppError::Database(db_err) => match db_err {
+                DbError::OpeningComplementRefused {
+                    reason,
+                    account_number,
+                    ..
+                } => opening_complement_refusal_response(reason, account_number.as_deref()),
                 DbError::NotFound => build_response(
                     StatusCode::NOT_FOUND,
                     "NOT_FOUND",
