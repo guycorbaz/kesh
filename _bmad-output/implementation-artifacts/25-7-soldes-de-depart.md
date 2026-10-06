@@ -592,6 +592,25 @@ Claude Opus 5.5 (orchestrateur), 2026-10-06.
 
 ## Change Log
 
+- **2026-10-06** — Revue de code P2 (Opus ×2 : R = remédiation P1, F = code complet ; prompt
+  `25-7-review-prompt-p2.md`) : **0 CRITICAL, 0 HIGH, 1 MEDIUM, 10 LOW**, tous retenus sauf mention.
+  - **MEDIUM** : `complete_each_refusal_has_its_code` dépendait de l'année (F-1) — dès le 2027-01-01, l'exercice 2026
+    du montage ne couvrait plus `today` et la route rendait `NO_OPEN_FISCAL_YEAR` avant `DATE_LOCKED` → un exercice
+    couvre toujours le jour réel, la clôture porte sur tous les exercices. Défaut **d'origine**, non né de P1.
+  - **LOW** : arrondi à deux décimales resté dans le bandeau d'équilibre (R-L1, propagation de E2 oubliée) →
+    `formatExact` ; rechargement aussi sur les refus de forme, qui vidait la saisie (R-L2) → exclus ; contrepartie
+    non bornée (R-L3, F-6) → borne de la somme, test ; garde de liste vide sans effet en aval (R-L4a) → refus en tête
+    de `create_opening_complement` ; libellé `#id` non épinglé (R-L4b) → assertion ; entrelacement (5) vrai par
+    construction (F-2) et (4) sans attente observée (F-7) → **déclaré** dans leurs doc-comments, non réécrits ; nom du
+    rôle cité dans les messages différent de celui du plan comptable fr/de/it (F-3) → « Bénéfice/perte reporté »,
+    « Gewinn-/Verlustvortrag », « Utile/perdita riportato » ; « actif » au sens « en service », et message faux pour
+    les comptes non imputables (F-4) → « en service et imputables » × 4 ; CHANGELOG et manuel simplificateurs (F-5)
+    → condition du verrou, sens de la contrepartie par l'écart global, complément de régularisation sorti de la puce
+    « Premier exercice », dévalidation qui rend un compte complétable. Non fait : un test Vitest dédié à l'écart à
+    quatre décimales du bandeau (R-L1) — le chemin est le même `formatExact` que celui testé pour la contrepartie.
+  - Gates : backend complet **2738/2738** (base remise à zéro), frontend **961/961**.
+  - Trend : P1 4 M → P2 1 M (d'origine). Passe P3 complète (Sonnet ×2) : P2 a encore trouvé un MEDIUM.
+
 - **2026-10-06** — Revue de code P1 (Sonnet ×3, prompt `25-7-review-prompt-p1.md`, diff `85b51f5f..281afc54`) :
   **0 CRITICAL, 0 HIGH, 4 MEDIUM, ~11 LOW**, tous retenus.
   - **MEDIUM** : le verrou des comptes atteignait le compte d'une **autre société** avant que le filtre ne l'écarte

@@ -435,6 +435,12 @@ pub async fn create_opening_complement(
     // AUTRE société avant que le filtre `company_id` ne l'écarte — mesuré à deux
     // sessions (revue de code P1, B-F1). Un identifiant étranger n'est donc
     // jamais verrouillé ; il est refusé `ACCOUNT_INVALID` à l'étape des refus.
+    // L'appelant garantit au moins une ligne (la route refuse `NO_LINES`) ; un
+    // appel direct sans ligne est un défaut de l'appelant, pas une requête SQL
+    // `IN ()` invalide (revue de code P2, R-L4a).
+    if lines.is_empty() {
+        return Err(DbError::InvalidInput("opening-complement:no-lines".into()));
+    }
     let owned = owned_account_ids(pool, company_id, lines).await?;
     let mut tx = pool.begin().await.map_err(map_db_error)?;
     match create_in_open_tx(
@@ -465,9 +471,6 @@ async fn owned_account_ids(
     company_id: i64,
     lines: &[ComplementLine],
 ) -> Result<Vec<i64>, DbError> {
-    if lines.is_empty() {
-        return Ok(Vec::new());
-    }
     let mut qb: QueryBuilder<MySql> =
         QueryBuilder::new("SELECT id FROM accounts WHERE company_id = ");
     qb.push_bind(company_id).push(" AND id IN (");

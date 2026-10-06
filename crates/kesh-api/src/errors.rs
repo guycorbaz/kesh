@@ -1118,7 +1118,7 @@ fn opening_complement_refusal_response(
         R::NoRetainedEarnings => (
             StatusCode::CONFLICT,
             "error-opening-complement-no-retained-earnings",
-            "Aucun compte actif ne porte le rôle « Bénéfice reporté » : attribuez-le dans le plan comptable, la contrepartie du complément y est portée.".to_string(),
+            "Aucun compte en service ne porte le rôle « Bénéfice/perte reporté » : attribuez-le dans le plan comptable, la contrepartie du complément y est portée.".to_string(),
         ),
         R::RetainedEarningsNotPostable => (
             StatusCode::CONFLICT,

@@ -16,7 +16,7 @@ mod common;
 
 use std::sync::Arc;
 
-use chrono::{NaiveDate, TimeDelta};
+use chrono::{Datelike, NaiveDate, TimeDelta};
 use common::create_test_company;
 use kesh_api::auth::bootstrap::ensure_admin_user;
 use kesh_api::config::Config;
@@ -1336,8 +1336,14 @@ async fn complete_each_refusal_has_its_code(pool: MySqlPool) {
     );
 
     // Date : aujourd'hui verrouillé (cas défensif, posé directement), puis
-    // aucun exercice ouvert.
+    // aucun exercice ouvert. ⛔ Indépendant de l'horloge (revue de code P2,
+    // F-1) : un exercice couvre TOUJOURS le jour réel — sans lui, à partir du
+    // 2027-01-01, l'exercice 2026 du montage ne couvrirait plus `today` et la
+    // route rendrait `NO_OPEN_FISCAL_YEAR` avant `DATE_LOCKED`.
     let today = chrono::Utc::now().date_naive();
+    if today.year() != 2026 {
+        create_fy(&pool, seed.user_id, seed.company_id, today.year()).await;
+    }
     sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
         .bind(today)
         .bind(seed.company_id)
@@ -1354,8 +1360,8 @@ async fn complete_each_refusal_has_its_code(pool: MySqlPool) {
         (s, b["error"]["code"].as_str().unwrap()),
         (409, "OPENING_COMPLEMENT_DATE_LOCKED")
     );
-    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
-        .bind(seed.fy_id)
+    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE company_id = ?")
+        .bind(seed.company_id)
         .execute(&pool)
         .await
         .unwrap();
@@ -1399,10 +1405,10 @@ async fn complete_foreign_account_is_invalid(pool: MySqlPool) {
         (s, b["error"]["code"].as_str().unwrap()),
         (400, "OPENING_COMPLEMENT_ACCOUNT_INVALID")
     );
-    assert!(
-        !b["error"]["message"].as_str().unwrap().contains("1999"),
-        "{b}"
-    );
+    let message = b["error"]["message"].as_str().unwrap();
+    assert!(!message.contains("1999"), "{b}");
+    // Le refus nomme l'identifiant que le client a envoyé (revue de code P2, R-L4b).
+    assert!(message.contains(&format!("#{foreign}")), "{b}");
 }
 
 /// Consultation → 403 ; non-auth → 401.

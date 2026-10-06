@@ -554,6 +554,13 @@ fn parse_complement_lines(req: &OpeningComplementRequest) -> Result<Vec<Compleme
             credit,
         });
     }
+    // La contrepartie (Σ débit − Σ crédit) doit tenir elle aussi dans
+    // `DECIMAL(19,4)` : chaque ligne bornée ne suffit pas, leur somme pourrait
+    // dépasser (revue de code P2, F-6 / R-L3).
+    let gap: Decimal = lines.iter().map(|l| l.debit - l.credit).sum();
+    if gap.abs() > Decimal::from_str("999999999999999.9999").expect("borne constante") {
+        return Err(invalid_amount());
+    }
     Ok(lines)
 }
 
@@ -667,6 +674,23 @@ mod tests {
             ]))),
             "OPENING_COMPLEMENT_DUPLICATE_ACCOUNT"
         );
+    }
+
+    #[test]
+    fn complement_forme_borne_la_contrepartie() {
+        let max = "999999999999999";
+        let req = OpeningComplementRequest {
+            lines: vec![line(1, Some(max), None), line(2, Some(max), None)],
+        };
+        assert_eq!(
+            code_of(parse_complement_lines(&req)),
+            "OPENING_COMPLEMENT_INVALID_AMOUNT"
+        );
+        // Deux lignes maximales qui se compensent : la contrepartie est nulle.
+        let req = OpeningComplementRequest {
+            lines: vec![line(1, Some(max), None), line(2, None, Some(max))],
+        };
+        assert!(parse_complement_lines(&req).is_ok());
     }
 
     #[test]

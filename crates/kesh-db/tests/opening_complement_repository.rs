@@ -823,7 +823,10 @@ async fn entrelacement_3_archivage_en_vol(pool: MySqlPool) {
     assert_eq!(refusal(task.await.unwrap()).0, R::AccountInvalid);
 }
 
-/// (4) Deux compléments du même compte : un seul réussit.
+/// (4) Deux compléments du même compte : un seul réussit. Lancés par
+/// `tokio::join!`, sans attente observée : une exécution l'un après l'autre
+/// satisfait aussi l'assertion (revue de code P2, F-7) — la sérialisation sur le
+/// verrou des comptes est prouvée par (1) et (3), pas par celui-ci.
 #[sqlx::test(migrations = "./test-schema")]
 async fn entrelacement_4_deux_complements_du_meme_compte(pool: MySqlPool) {
     let co = setup(&pool, &[year_span(2026)]).await;
@@ -843,6 +846,12 @@ async fn entrelacement_4_deux_complements_du_meme_compte(pool: MySqlPool) {
 /// jour en vol. L'ordre d'obtention n'est pas maîtrisé ; l'assertion porte sur
 /// l'état final : chaque issue est un succès ou un interblocage, et la base
 /// reflète exactement les succès.
+///
+/// ⚠️ **Ce que ce test ne prouve PAS** (revue de code P2, F-2) : que le cycle se
+/// forme, ni qu'un ordre de verrous plutôt qu'un autre est tenu — la base
+/// reflète les succès par la seule atomicité des transactions. Il prouve
+/// l'absence d'**autre** erreur qu'un interblocage, et aucune mutation de l'ordre
+/// des verrous ne le ferait rougir. Le rejeu reste sans test (fiche, Limites).
 #[sqlx::test(migrations = "./test-schema")]
 async fn entrelacement_5_contre_passation_en_vol(pool: MySqlPool) {
     let y = Utc::now().date_naive().year();

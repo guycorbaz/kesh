@@ -246,13 +246,24 @@
 			// la liste périmée : recharger le status, sinon chaque nouvel essai
 			// échoue à l'identique (revue de code P1, E-F1). Le message, posé
 			// avant, survit au rechargement — il est affiché hors de la grille.
-			if (isApiError(err) && err.code.startsWith('OPENING_COMPLEMENT_')) {
+			if (isApiError(err) && err.code.startsWith('OPENING_COMPLEMENT_') && !SHAPE_REFUSALS.has(err.code)) {
 				await load();
 			}
 		} finally {
 			completing = false;
 		}
 	}
+
+	/**
+	 * Refus de FORME du handler : la liste n'est pas périmée, la saisie se
+	 * corrige — on ne recharge pas, ce qui la viderait (revue de code P2, R-L2).
+	 */
+	const SHAPE_REFUSALS = new Set([
+		'OPENING_COMPLEMENT_NO_LINES',
+		'OPENING_COMPLEMENT_TOO_MANY_LINES',
+		'OPENING_COMPLEMENT_INVALID_AMOUNT',
+		'OPENING_COMPLEMENT_DUPLICATE_ACCOUNT'
+	]);
 
 	/** Message du mode « compléter » indisponible, par `completeReason`. */
 	function unavailableMessage(reason: string): string {
@@ -275,7 +286,7 @@
 			case 'NO_RETAINED_EARNINGS':
 				return i18nMsg(
 					'opening-balances-complete-unavailable-no-retained-earnings',
-					'Aucun compte actif ne porte le rôle « Bénéfice reporté » : attribuez-le dans le plan comptable pour compléter un compte oublié.'
+					'Aucun compte en service ne porte le rôle « Bénéfice/perte reporté » : attribuez-le dans le plan comptable pour compléter un compte oublié.'
 				);
 			case 'RETAINED_EARNINGS_NOT_POSTABLE':
 				return i18nMsg(
@@ -285,7 +296,7 @@
 			case 'NO_COMPLETABLE_ACCOUNT':
 				return i18nMsg(
 					'opening-balances-complete-unavailable-no-completable-account',
-					'Tous les comptes de bilan actifs ont déjà des mouvements : il ne reste aucun compte à compléter. Un montant faux se corrige dans le journal.'
+					'Tous les comptes de bilan en service et imputables ont déjà des mouvements : il ne reste aucun compte à compléter. Un montant faux se corrige dans le journal.'
 				);
 			default:
 				return i18nMsg('opening-balances-status-error', 'Impossible de charger l’état des soldes de départ.');
@@ -622,15 +633,15 @@
 			<div class="space-x-4 text-sm">
 				<span>
 					<strong>{i18nMsg('opening-balances-total-debit', 'Total débits')} :</strong>
-					<span data-testid="opening-balances-total-debit">{formatNumber(balance.totalDebit)}</span>
+					<span data-testid="opening-balances-total-debit">{formatExact(balance.totalDebit)}</span>
 				</span>
 				<span>
 					<strong>{i18nMsg('opening-balances-total-credit', 'Total crédits')} :</strong>
-					<span data-testid="opening-balances-total-credit">{formatNumber(balance.totalCredit)}</span>
+					<span data-testid="opening-balances-total-credit">{formatExact(balance.totalCredit)}</span>
 				</span>
 				<span>
 					<strong>{i18nMsg('opening-balances-diff', 'Différence')} :</strong>
-					<span data-testid="opening-balances-diff">{formatNumber(balance.diff)}</span>
+					<span data-testid="opening-balances-diff">{formatExact(balance.diff)}</span>
 				</span>
 			</div>
 			<div class="text-sm font-medium">
@@ -688,7 +699,7 @@
 				{#if warning.kind === 'NO_ROLE'}
 					{i18nMsg(
 						'opening-balances-warning-no-retained-role',
-						'Aucun compte actif ne porte le rôle « Bénéfice reporté » : Kesh ne peut pas vérifier où le report à-nouveau est porté. Attribuez ce rôle dans le plan comptable, et comparez les totaux Actifs et Passifs à ceux de l’ancien bilan.'
+						'Aucun compte en service ne porte le rôle « Bénéfice/perte reporté » : Kesh ne peut pas vérifier où le report à-nouveau est porté. Attribuez ce rôle dans le plan comptable, et comparez les totaux Actifs et Passifs à ceux de l’ancien bilan.'
 					)}
 				{:else if warning.kind === 'NOT_POSTABLE'}
 					{i18nMsg(
