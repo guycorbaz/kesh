@@ -17,12 +17,11 @@ par cet écran (décisions D2, D3).
    - une écriture **contre-passée** garde ses lignes (`reverses_entry_id`) : le compte reste mouvementé. En
      particulier, après la contre-passation de toute l'écriture d'ouverture, **plus aucun compte de l'ouverture n'est
      complétable** — le remède est alors une écriture manuelle ;
-     - une écriture **détruite** retire ses lignes : côté utilisateur, le seul chemin qui détruise une écriture est la
-    **dévalidation d'une facture** (`invoices::unvalidate` → `delete_in_tx(…, false)`, `invoices.rs:1654`) — une
-    écriture comptabilisée ne se supprime plus depuis le gel (refus `EntryIsPosted` dans `delete_in_tx`,
-    `journal_entries.rs:1005`) ; hors usage courant, la remise à zéro de la démo et la restauration d'une sauvegarde
-    détruisent aussi des écritures. Le compte
-     redevient alors complétable s'il n'avait pas d'autre mouvement ;
+   - une écriture **détruite** retire ses lignes : côté utilisateur, le seul chemin qui détruise une écriture est la
+     **dévalidation d'une facture** (`invoices::unvalidate` → `delete_in_tx(…, false)`, `invoices.rs:1654`) — une
+     écriture comptabilisée ne se supprime plus depuis le gel (refus `EntryIsPosted` dans `delete_in_tx`,
+     `journal_entries.rs:1005`) ; hors usage courant, la remise à zéro de la démo et la restauration d'une sauvegarde
+     détruisent aussi des écritures. Le compte redevient alors complétable s'il n'avait pas d'autre mouvement ;
    - un compte **archivé** n'est pas proposé (il doit être actif et postable) ; réactivé, il l'est s'il n'a jamais été
      mouvementé.
 2. **Date de l'ajustement** — « aujourd'hui » est la **date UTC** du serveur (`Utc::now().date_naive()`, comme
@@ -39,7 +38,7 @@ par cet écran (décisions D2, D3).
      l'exercice suivant est déjà clos, son bilan reporté en est aussi modifié — propriété de toute écriture dans le
      premier exercice, écrite au manuel ;
    - (b) sinon (premier exercice clos, ou son premier jour dans la période verrouillée) : **aujourd'hui**, dans
-     l'exercice **ouvert** qui couvre cette date (`find_open_covering_date`) — une régularisation, comme le dit
+     l'exercice **ouvert** qui couvre cette date (sous verrou, par la requête à une ligne de l'AC 4 étape 3 ; le status, sans verrou) — une régularisation, comme le dit
      l'issue ;
    - (c) si aucun exercice ouvert ne couvre aujourd'hui → refus `OPENING_COMPLEMENT_NO_OPEN_FISCAL_YEAR` ; si
      aujourd'hui est lui-même dans la période verrouillée → refus `OPENING_COMPLEMENT_DATE_LOCKED` — **défensif** :
@@ -105,7 +104,8 @@ disproportionnée.
   puis `companies` (partagé, en-tête), puis ses comptes (partagé, lignes).
 - ⛔ **Deux familles d'écritures ordinaires, deux ordres (validation P3, R-1).** Une écriture **sans projet** prend son
   exercice, puis `companies` en partagé (clé étrangère). Une écriture **taguée projet** — et les flux facture et
-  fournisseur — prend d'abord la sentinelle `companies … FOR UPDATE` (`projects.rs:99` →
+  fournisseur **quand ils portent un projet** (`validate_invoice` ne la prend jamais, `invoices.rs:1978-1983` ;
+  `supplier_invoices.rs:282-284` seulement avec `project_id`) — prend d'abord la sentinelle `companies … FOR UPDATE` (`projects.rs:99` →
   `bank_accounts.rs:592`), puis l'exercice : c'est l'ordre global déclaré du dépôt, `companies → projects →
   fiscal_years` (Pattern 5, `journal_entries.rs:256-259`). Les deux familles forment déjà un cycle entre elles — c'est
   préexistant. Un interblocage finit en 500 (`map_db_error`, `crates/kesh-db/src/errors.rs:781-813`, ne traite pas
@@ -182,7 +182,9 @@ champs existants** (`canEnter`, `reason`, `fiscalYear`) :
 `canComplete` est vrai **seulement** si `completeReason = READY` — donc s'il existe au moins un compte complétable.
 **Priorité d'évaluation** (validation P2, R-5 ; une seule raison rendue, la première qui s'applique — l'ordre suit
 celui du POST ; la branche (a)/(b) de l'arbitrage 2 est choisie d'abord, et `NO_OPEN_FISCAL_YEAR` comme `DATE_LOCKED`
-ne s'évaluent qu'en branche (b), validation P3 R-8) : `NO_ENTRIES` (y compris aucun exercice : rien à compléter) >
+ne s'évaluent qu'en branche (b), validation P3 R-8 ; le POST évalue ses refus dans ce même ordre, **après** toutes
+ses lectures, AC 4 étape 5 ; `NO_COMPLETABLE_ACCOUNT` n'a pas de refus POST propre : le POST nomme le compte fautif,
+`ACCOUNT_MOVED` ou un autre code par compte) : `NO_ENTRIES` (y compris aucun exercice : rien à compléter) >
 `NO_OPEN_FISCAL_YEAR` > `DATE_LOCKED` >
 `NO_RETAINED_EARNINGS` > `RETAINED_EARNINGS_NOT_POSTABLE` > `NO_COMPLETABLE_ACCOUNT` > `READY`. Lecture sans verrou :
 le POST fait autorité.
@@ -192,70 +194,91 @@ credit }] }` — **sans** la contrepartie.
 
 **Dans le handler**, avant toute transaction (contrôles de forme, sans lecture de la base) : au moins une ligne ;
 plafond `MAX_LINES_PER_ENTRY − 1` (une ligne réservée à la contrepartie) ; montants parsés en `Decimal`, strictement
-positifs, une seule colonne par ligne ; comptes distincts. Chacun a son code (AC 5).
+positifs, **au plus quatre décimales** (l'échelle de `DECIMAL(19,4)` : au-delà, l'arrondi à l'écriture
+déséquilibrerait la contrepartie calculée avant lui), une seule colonne par ligne — l'autre vaut `"0"` ou est absente,
+comme l'envoie l'écran (`+page.svelte:143-144`) ; comptes distincts. Chacun a son code (AC 5).
 
 **Dans `kesh-db`** — fonction nouvelle, p. ex. `journal_entries::create_opening_complement(pool, company_id, user_id,
-actor_api_key_id, lines, description, today)` —, **une seule transaction**, dans cet ordre, qui est **l'ordre global
-du dépôt** (`companies → fiscal_years`, Pattern 5), la société étant prise **en partagé** (validation P3, R-1/H1/H2) :
+lines, description, today)` (l'audit vient de `create_in_tx`, qui n'enregistre que l'utilisateur, `journal_entries.rs:472-480`),
+**une seule transaction**.
+
+⛔ **Principe (validation P4, après trois passes dont tous les défauts graves venaient de l'ordre des verrous)** : le
+dépôt n'a **pas** d'ordre de verrouillage unique — une écriture sans projet prend l'exercice puis ses comptes, le
+règlement et la passation en perte prennent un compte en exclusif puis l'exercice (`invoice_settlements_write.rs:157`
+puis `:200` ; `supplier_invoices.rs:639` puis `:662` ; `company_invoice_settings.rs:468`), la contre-passation
+l'écriture puis les exercices. **Aucun ordre ne rend le complément exempt de cycle**, et la fiche ne le prétend pas.
+Elle garantit trois choses, qui ne dépendent pas de l'ordre : (i) **aucun complément sur un compte mouvementé**,
+archivé ou de résultat ; (ii) **aucune écriture** dans un exercice clos ou une période verrouillée ; (iii) **tout
+cycle résiduel à deux passe par un compte visé** par le complément (section « Cycles »). Elle s'obtient par une règle
+simple : **tous les verrous d'abord, une ligne par requête ; les lectures ordinaires ensuite ; les refus évalués en
+dernier, dans l'ordre de priorité de l'AC 3** — l'ordre des refus n'est pas celui des lectures (patron de l'étape 0-bis
+de `create_in_tx_inner`, `journal_entries.rs:250-262`).
+
 1. **la société, en partagé** : `SELECT books_locked_through FROM companies WHERE id = ? FOR SHARE` — compatible
-   avec le partagé que prend l'en-tête d'une écriture sans projet ; attend (sans rien tenir) une écriture taguée, une
-   génération d'ouverture ou un `lock_books` en vol, qui la prennent en exclusif ; la borne est **figée** jusqu'au
-   commit ;
-2. **les exercices, toujours les deux** (validation P3, H2) : le premier exercice (variante en transaction,
-   `ORDER BY start_date, id LIMIT 1 FOR UPDATE` ; aucun → refus `NO_ENTRIES` : sans exercice, il n'y a rien à
-   compléter), **puis** l'exercice ouvert qui couvre `today` (`find_open_covering_date`, `FOR UPDATE` ; un seul verrou
-   s'il est le premier), dans l'ordre des dates de début — **avant** de choisir la branche. La **date** se décide
-   ensuite (arbitrage 2), avec la borne de l'étape 1 : jamais un exercice verrouillé après coup ;
-3. **`NO_ENTRIES`**, par une lecture **ordinaire** (`SELECT EXISTS (SELECT 1 FROM journal_entries WHERE company_id =
-   ?)`), **non verrouillante** (validation P3, H1) : un `FOR SHARE` sur une ligne d'écriture formerait un cycle avec
-   la contre-passation et `delete_in_tx` (dévalidation), qui verrouillent l'écriture **puis** l'exercice
-   (`journal_entries.rs:1019`, `:1530`). La génération d'ouverture ne peut pas être en vol (étape 1). ⚠️ Cette lecture
-   **ouvre l'instantané** de la transaction (REPEATABLE READ) : toute lecture qui suit et doit voir le dernier état
-   est donc **verrouillante** ;
-4. **les comptes saisis et le compte de report** :
-   - comptes saisis : `SELECT … FROM accounts WHERE company_id = ? AND id IN (…) ORDER BY id FOR UPDATE` — chacun de
-     la société (un identifiant absent du résultat → `ACCOUNT_INVALID`), actif, postable, de bilan
-     (`Asset`/`Liability`), et ne portant **pas** le rôle `RetainedEarnings` ; l'exclusif est **nécessaire** : il
-     arrête la première écriture concurrente sur le compte, dont les lignes demandent un partagé (clé étrangère) ;
-   - compte de report, de la société : `… WHERE company_id = ? AND singleton_role = 'RetainedEarnings' FOR SHARE` —
-     **partagé** (validation P3, R-3) : il suffit à le figer contre un archivage, et il reste compatible avec le
-     partagé que prennent les lignes d'une écriture ordinaire sur 2970 ; présent et postable, sinon refus ;
-5. **« jamais mouvementé »**, par une lecture **verrouillante** : `SELECT account_id FROM journal_entry_lines WHERE
-   account_id IN (…) LIMIT 1 FOR SHARE`. Une écriture **non validée** sur ces comptes a déjà été attendue à l'étape 4
-   (son partagé de clé étrangère contre l'exclusif) ; ce verrou est donc là pour **voir** celle qui a été validée
-   pendant cette attente — une lecture ordinaire lirait l'instantané de l'étape 3 et la manquerait ;
+   avec le partagé que prend l'en-tête d'une écriture sans projet ; attend une écriture taguée, une génération
+   d'ouverture ou un `lock_books` en vol, qui la prennent en exclusif ; la borne est **figée** jusqu'au commit ;
+2. **les comptes** :
+   - comptes saisis, **par clé primaire** : `SELECT … FROM accounts WHERE id IN (…) ORDER BY id FOR UPDATE` — la
+     société contrôlée **dans le code** (validation P4, R4-6 : un parcours d'un index commençant par `company_id`
+     verrouillerait tous les comptes de la société ; l'`EXPLAIN` est relevé au développement et cité au Dev Agent
+     Record) ; chacun de la société (sinon `ACCOUNT_INVALID`), actif, postable, de bilan (`Asset`/`Liability`), et ne
+     portant **pas** le rôle `RetainedEarnings` ; l'exclusif est **nécessaire** : il arrête la première écriture
+     concurrente sur le compte, dont les lignes demandent un partagé (clé étrangère) ;
+   - compte de report, de la société : `… WHERE company_id = ? AND singleton_role = 'RetainedEarnings' FOR SHARE`
+     (index unique, une ligne) — **partagé** : il suffit à le figer contre un archivage, et reste compatible avec le
+     partagé que prennent les lignes d'une écriture ordinaire sur 2970 ;
+3. **les exercices, une ligne chacun** (validation P4, R4-1/F-2 : `find_open_covering_date` n'est **pas** réutilisé —
+   ses colonnes `end_date` et `status` hors index lui font verrouiller tous les exercices parcourus) :
+   - le premier : `SELECT … FROM fiscal_years WHERE company_id = ? ORDER BY start_date, id LIMIT 1 FOR UPDATE` ;
+   - le candidat du jour : `… WHERE company_id = ? AND start_date <= ? ORDER BY start_date DESC LIMIT 1 FOR UPDATE`
+     — les exercices ne se chevauchent pas, c'est le seul qui puisse couvrir `today` ; sa fin et son statut sont
+     contrôlés **dans le code** ; un seul verrou s'il est le premier ;
+   les deux sont toujours verrouillés, **avant** de choisir la branche de l'arbitrage 2 ;
+4. **les lectures ordinaires**, après tous les verrous — l'instantané de la transaction (REPEATABLE READ) s'ouvre donc
+   **ici**, et tout ce que lisent ensuite les lectures ordinaires de `create_in_tx` (`books_locked_through`, les
+   comptes de `validate_lines_accounts_in_tx`) est cohérent avec les verrous tenus (validation P4, R4-4) :
+   - **« jamais mouvementé »** : `SELECT account_id FROM journal_entry_lines WHERE account_id IN (…) LIMIT 1` — une
+     écriture non validée sur ces comptes a été attendue à l'étape 2, et plus aucune ne peut y écrire ; aucun verrou
+     d'intervalle sur `idx_jel_account` ;
+   - **`NO_ENTRIES`** : `SELECT EXISTS (SELECT 1 FROM journal_entries WHERE company_id = ?)` — ne verrouille aucune
+     ligne d'écriture (cycle avec la contre-passation et la dévalidation, validation P3 H1) ;
+5. **les refus**, dans l'ordre de priorité de l'AC 3 : `NO_ENTRIES` (dont « aucun exercice ») ; puis la **date**
+   (arbitrage 2 : branche (a) ou (b), avec la borne de l'étape 1) et ses refus `NO_OPEN_FISCAL_YEAR`, `DATE_LOCKED` ;
+   puis `NO_RETAINED_EARNINGS`, `RETAINED_EARNINGS_NOT_POSTABLE` ; puis, par compte, `ACCOUNT_INVALID`,
+   `RETAINED_EARNINGS_LINE`, `NOT_BALANCE_ACCOUNT`, `ACCOUNT_MOVED` ;
 6. **la contrepartie** (arbitrage 3) : écart = Σ débit − Σ crédit des lignes saisies ; > 0 → une ligne **au crédit**
    du compte de report de ce montant ; < 0 → **au débit** ; = 0 → aucune ligne ;
 7. `create_in_tx(…, enforce_postable = true)` — exercice clos, bornes, période verrouillée, audit
    `journal_entry.created`.
 
-**Ce qui sérialise** (et que les tests prouvent) : deux compléments → l'exercice de l'étape 2 ; un complément et une
-écriture ordinaire **du même exercice** → ce même exercice ; **d'un autre exercice**, lignes insérées non validées →
-l'exclusif de l'étape 4 contre le partagé de clé étrangère, puis la lecture verrouillante de l'étape 5 ; une
-génération d'ouverture, une écriture taguée, `lock_books` → l'étape 1 ; un archivage du compte → l'étape 4.
+**Ce qui sérialise** (et que les tests prouvent) : une écriture en vol **sur un compte visé**, de quelque exercice
+que ce soit → l'exclusif de l'étape 2 contre son partagé de clé étrangère ; un archivage du compte → l'étape 2 ; deux
+compléments du même compte → l'étape 2 ; une écriture du même exercice ne touchant **aucun** compte visé → l'exercice
+de l'étape 3 ; une génération d'ouverture, une écriture taguée, `lock_books` → l'étape 1.
 
-**Cycles : ceux qui restent, et pourquoi on les garde** (validation P3, R-1/R-3/H1) :
-- avec la génération, une écriture taguée, `lock_books`, la contre-passation, la dévalidation : **aucun** cycle à deux
-  dans l'ordre ci-dessus ;
-- **à trois, par la file d'attente** : InnoDB fait attendre une demande partagée derrière une demande exclusive
-  **en attente**. Si une écriture taguée attend `companies` en exclusif pendant que le complément la tient en partagé,
-  une écriture sans projet qui tient l'exercice voulu par le complément attend derrière elle. C'est le cycle **déjà
-  présent** entre écritures taguées et non taguées ; le complément n'en crée pas de nouvelle classe ;
-- **sur les comptes** : une écriture ordinaire d'un autre exercice qui mouvemente, au même instant, **deux** comptes
-  que le complément veut compléter, dans l'ordre inverse de leurs `id`. Il faut deux comptes jamais mouvementés,
-  touchés pour la première fois par une même écriture, pendant le complément : le cas est étroit, et il est **dit**.
+**Cycles : ceux qui restent** (validation P3 R-1/R-3/H1, P4 R4-1/R4-3) :
+- **à deux, toujours par un compte visé** : une transaction concurrente qui tient l'exercice voulu par le complément
+  (étape 3) et demande ensuite un compte qu'il tient en exclusif (étape 2) — une écriture du même exercice qui
+  mouvemente **pour la première fois** un compte visé, ou la contre-passation d'une écriture qui le porte (auquel cas
+  le compte est déjà mouvementé et le complément l'aurait refusé). Le règlement et la passation en perte, qui prennent
+  le compte **puis** l'exercice, suivent le même ordre que le complément : pas de cycle ;
+- **à trois, par la file d'attente** : InnoDB fait attendre une demande partagée derrière une demande exclusive **en
+  attente** (écriture taguée sur `companies`). C'est le cycle **déjà présent** entre écritures taguées et non taguées ;
+  le complément n'en crée pas de nouvelle classe.
 
 **Rejeu** : la route s'enveloppe dans `kesh_db::retry::retry_with` sur `is_deadlock_error` (précédents
 `onboarding.rs:614`, `invoices.rs:1343`, `reconciliation.rs:850`). Il ne protège que le complément : si InnoDB choisit
 l'autre transaction pour victime, celle-ci rend une 500, comme le font déjà aujourd'hui les cycles entre écritures
-ordinaires. Le rejeu est sûr, chaque tentative refaisant toutes les gardes.
+ordinaires. ⚠️ Au moment d'un cycle, le complément n'a modifié **aucune** ligne (toutes ses écritures sont à
+l'étape 7), ce qui en fait en pratique la victime la plus légère pour InnoDB — une tendance, non une garantie. Le rejeu est sûr, chaque tentative refaisant toutes les gardes.
 
 Réponse `201 + JournalEntryResponse`, journal `OD`, libellé « Complément des soldes de départ » (clé i18n, langue
 comptable de la société).
 
 **AC 5 — Les erreurs.** Une variante de `DbError` portant une énumération de refus (p. ex.
 `DbError::OpeningComplementRefused { reason, account_id }`), mappée vers une variante d'`AppError` à **code par cause**
-(patron `errors.rs:939`, `error_code: &'static str`) — ⛔ **jamais** un `DbError::Invariant` non mappé, qui
+(patron `errors.rs:939`, `error_code: &'static str` ; ce patron ne rend qu'un 400 : la variante neuve
+**dérive le statut HTTP de la raison**, selon la table) — ⛔ **jamais** un `DbError::Invariant` non mappé, qui
 deviendrait une 500 :
 
 | Refus | HTTP | Code | Clé i18n |
@@ -275,21 +298,24 @@ deviendrait une 500 :
 | Même compte sur deux lignes | 400 | `OPENING_COMPLEMENT_DUPLICATE_ACCOUNT` | `error-opening-complement-duplicate-account` |
 
 Les quatre dernières viennent du handler (contrôles de forme, AC 4) ; les autres de la variante `kesh-db`. Les erreurs
-que `create_in_tx` peut encore rendre (`FiscalYearClosed`, `DateOutsideFiscalYear`, `PeriodLocked`) sont
-**défensives** — les gardes précédentes les rendent inatteignables — et remontent par `AppError::from`. Messages dans
+que `create_in_tx` peut encore rendre (`FiscalYearClosed`, `DateOutsideFiscalYear`, `PeriodLocked`,
+`InactiveOrInvalidAccounts`) sont **défensives** — les gardes précédentes les rendent inatteignables — et remontent par `AppError::from`. Messages dans
 les **4 locales**.
 
 **AC 6 — L'écran du mode « compléter ».** Quand `canEnter = false`, l'écran garde **toujours** le bandeau de verrou
 existant (`data-testid="opening-balances-locked"`, `data-reason`, liens vers le bilan et le journal) — ce qui a été
-généré reste dit, et le Playwright existant (`opening-balances.spec.ts:107-112`) reste vrai. **En dessous** :
+généré reste dit, et le Playwright existant (`opening-balances.spec.ts:107-112`) reste vrai. **En dessous, et
+seulement si `reason = ALREADY_HAS_ENTRIES`** (validation P4, F-4 : sous `NO_FISCAL_YEAR` ou `FIRST_YEAR_CLOSED`,
+`completeReason = NO_ENTRIES` conseillerait une génération impossible ; ces bandeaux restent seuls, Vitest le prouve) :
 - si `canComplete = true`, une grille de **complément** (`data-testid="opening-balances-complete"`) :
   - les seuls `completableAccounts` du status (la liste n'est **pas** recalculée côté client) ;
   - la contrepartie calculée en direct sur le compte de report (sens et montant, arbitrage 3 — y compris « aucune
     contrepartie » quand les lignes s'équilibrent) ;
   - la date prévue et sa raison (exercice d'ouverture, ou régularisation datée du jour), avec la mention qu'elle est
     confirmée à l'enregistrement ;
-  - ses lignes ont leurs propres `data-testid` (`opening-balances-complete-debit-{n}`, `…-credit-{n}`) — **jamais**
-    ceux de la grille d'ouverture (`opening-balances-debit-{n}`, `opening-balances-grid`), que le Playwright existant
+  - ses lignes ont leurs propres `data-testid` (`opening-balances-complete-debit-{number}`, `…-credit-{number}`, numéro
+    du compte, comme le code actuel `+page.svelte:322`, `:334`) — **jamais** ceux de la grille d'ouverture
+    (`opening-balances-debit-{number}`, `opening-balances-grid`), que le Playwright existant
     affirme absents après génération ;
   - un bouton « Compléter » (`data-testid="opening-balances-complete-submit"`) avec confirmation ;
   - après succès, rechargement : le compte complété disparaît de la liste ;
@@ -312,35 +338,39 @@ dit pourquoi il est impossible.
     facture** (`invoices::unvalidate`), le compte débiteurs dont c'était le seul mouvement → redevenu complétable ;
   - **entrelacements** (patron `test_fixtures::attendre_une_requete_en_cours`, réglé sur la requête où le complément
     **attend réellement**) :
-    (1) une écriture **ordinaire du même exercice, sans projet**, en vol (figée par une transaction tenue à la main
-    **après** son verrou d'exercice et **avant** son en-tête, montage de `reconciliation_e2e.rs:4408-4425`) → le
-    complément attend sur l'exercice (étape 2), puis refuse `ACCOUNT_MOVED` — **aucun interblocage** ;
-    (2) une écriture ordinaire d'**un autre exercice**, lignes insérées non validées → le complément attend à
-    l'**étape 4** (exclusif contre le partagé de clé étrangère), puis, l'écriture validée, refuse `ACCOUNT_MOVED` par
-    la lecture verrouillante de l'étape 5 ;
-    (3) un **archivage** du compte saisi, en vol → le complément attend à l'étape 4, puis refuse `ACCOUNT_INVALID` ;
+    (1) une écriture ordinaire, **lignes insérées non validées sur un compte visé** (d'un autre exercice, pour isoler
+    le compte de l'exercice) → le complément attend sur la requête `accounts … FOR UPDATE` (étape 2), puis, l'écriture
+    validée, refuse `ACCOUNT_MOVED` ;
+    (2) une écriture ordinaire **du même exercice**, ne touchant **aucun** compte visé, figée après son verrou
+    d'exercice et avant son en-tête — montage : une transaction de test prend l'exercice `FOR UPDATE`, attend que le
+    complément soit vu en attente sur la requête `fiscal_years`, puis appelle `create_in_tx` (`pub`, `:187`) et
+    valide → le complément attend à l'étape 3, puis **réussit** ; aucun interblocage ;
+    (3) un **archivage** du compte saisi, en vol → le complément attend à l'étape 2, puis refuse `ACCOUNT_INVALID` ;
     (4) deux compléments du même compte → un seul réussit.
-    **Mutations tuées** (validation P2 F3/R-2, révisées en P3 R-2/M1/M2) : « comptes saisis sans `FOR UPDATE` » par
-    (3) (en (2), la lecture de l'étape 5 attendrait encore les lignes non validées) ; « étape 5 sans `FOR SHARE` » par (2) — l'instantané, ouvert à l'étape 3 avant l'attente, ne voit pas
-    l'écriture validée pendant celle-ci ; « société prise **après** les exercices » par (1) n'est **pas** promise :
-    elle ne cycle qu'avec une écriture taguée, dont la victime n'est pas déterministe — limite écrite, sans test.
+    **Mutations tuées** (validation P4) : « comptes saisis sans `FOR UPDATE` » par (1) — l'instantané s'ouvrirait
+    avant la validation de l'écriture concurrente — et par (3) ; « lecture « jamais mouvementé » avant l'étape 2 » par
+    (1) ; « société prise en exclusif » par (2) — l'écriture figée demande ensuite `companies` en partagé pour son
+    en-tête : interblocage observé (complément rejoué ou écriture en erreur, le test l'affirme).
 - **`kesh-api`** : la route (201, chaque code de l'AC 5, RBAC Consultation 403, isolation entre sociétés) ; le status
   (`canComplete` et chaque `completeReason`, `completableAccounts`).
 - **Vitest** : avertissement présent / absent / non bloquant, et ses deux variantes (AC 1) ; totaux, montant à porter et
   écart restant, y compris un compte contre-nature, **et le montant à porter qui vaut 0 sur une saisie équilibrée
   sans compte de report** (AC 2, épingle la limite) ; grille de complément, contrepartie en direct, liste vide
   impossible (`canComplete` faux), verrou avec `completeReason` (AC 6).
-- **Tests existants adaptés** (validation P1, C3) : les mocks Vitest de `ALREADY_HAS_ENTRIES` (`:206-216`, `:360-384`,
-  `:400-419`) reçoivent les champs neufs (`canComplete: false`, `completeReason`) ; leur assertion du bandeau de verrou
-  est conservée (AC 6 le garde toujours) ; les tests e2e du status vérifient la nouvelle forme ; le Playwright
-  `:107-112` reste vrai tel quel (le bandeau reste affiché ; la société `with-company` porte 2970 et des comptes non
-  mouvementés : la grille de complément apparaît en plus, sans casser l'assertion).
-- **Playwright** : générer l'ouverture **sans** un compte de bilan (p. ex. 1020), puis le compléter, et voir la balance
-  le porter.
+- **Tests existants adaptés** (validation P1 C3, P4 F-5) : **les six** mocks `OpeningBalancesStatus` de
+  `opening-balances-page.test.ts` — `readyStatus()`, `:181` (`NO_FISCAL_YEAR`), `:194` (`FIRST_YEAR_CLOSED`), `:209`,
+  `:365`, `:399` (`ALREADY_HAS_ENTRIES`) — reçoivent les champs neufs, **obligatoires** dans le type ; l'assertion du
+  bandeau de verrou est conservée (AC 6 le garde toujours) ; les tests e2e du status vérifient la nouvelle forme ; le
+  Playwright `:107-112` reste vrai tel quel — le preset `with-company` n'a que cinq comptes, **sans rôle**
+  (`test_fixtures.rs:126-133`, `opening-balances.spec.ts:40-43`) : après génération, `completeReason =
+  NO_RETAINED_EARNINGS`, et c'est le texte `complete-unavailable` qui s'affiche sous le bandeau.
+- **Playwright** (validation P4, F-1) : créer par l'API un compte 2970 de rôle `RetainedEarnings` (`POST
+  /api/v1/accounts` accepte `role`, `routes/accounts.rs:37`) ; générer l'ouverture **sans** `1100 Banque CI` ; compléter
+  1100 ; voir la balance le porter. L'exercice seedé couvre 2020-2030 : branche (a), date 2020-01-01.
 - **Mutations** tuées et nommées : garde « jamais mouvementé » retirée ; sens de la contrepartie inversé ; avertissement
   toujours masqué ; les mutations de verrou ci-dessus ; rejeu retiré (si un montage d'interblocage déterministe existe,
-  sur le patron `accept_replays_the_batch_when_it_is_the_deadlock_victim`, `reconciliation_e2e.rs:4408-4425` ; sinon la
-  limite est écrite).
+  sur le patron `accept_replays_the_batch_when_it_is_the_deadlock_victim`, `reconciliation_e2e.rs:4408-4425` — un
+  autre montage, cité pour sa technique de transaction lestée ; sinon la limite est écrite).
 
 **AC 8 — Le manuel et le CHANGELOG.** `user-manual.tex` :
 - `:654-659` : l'avertissement du report à-nouveau, les totaux et le montant à porter — avec sa limite (il ne
@@ -354,7 +384,7 @@ dit pourquoi il est impossible.
 - les bords de la date (arbitrage 2) : minuit UTC, clôture dans le désordre ;
 - `README.md` § « Fonctionnalités » (`:46`) : le complément. Regardés et sans effet : `README.md:214` (feuille de route),
   `docs/i18n-glossaire.md:112`, `docs/kesh-specifications.txt` (FR62) — à reconfirmer au patch.
-Greper les **valeurs** « définitivement », « supprimez toutes » (« delete all », « Löschen Sie alle », « elimina
+Greper **sans casse** (`grep -i`) les **valeurs** « définitivement », « supprimez toutes » (« delete all », « Löschen Sie alle », « elimina
 tutte »), « directement dans le journal », « via le journal » (« directly in the journal », « im Journal », « nel
 giornale », « tramite il giornale »), « contre-pass » dans les manuels, les **4 catalogues** et les replis Rust
 (`opening_balances.rs:124` et `:286`) et Svelte (`+page.svelte:233`). PDF régénéré, contrôlé **aplati**. CHANGELOG
@@ -372,7 +402,7 @@ que des `data-testid` (garde `e2e-selecteurs-traduits`).
 ## Tasks / Subtasks
 
 - [ ] **T1 — `kesh-db`** (AC 4, 5, 7) : recherche du compte de rôle par société ; liste des comptes complétables ;
-  choix de la date (arbitrage 2, `today` en paramètre) ; `create_opening_complement` (société en partagé, exercices, comptes
+  choix de la date (arbitrage 2, `today` en paramètre) ; `create_opening_complement` (société en partagé, comptes, exercices, lectures, refus
   `FOR UPDATE`, « jamais mouvementé » verrouillant, contrepartie, `create_in_tx`) ; variante d'erreur ; tests de
   dépôt dont les **quatre** entrelacements de l'AC 7.
 - [ ] **T2 — `kesh-api`** (AC 3, 4, 5, 9) : status étendu ; route `POST …/complete` ; variante d'`AppError` et ses
@@ -380,7 +410,8 @@ que des `data-testid` (garde `e2e-selecteurs-traduits`).
 - [ ] **T3 — l'écran** (AC 1, 2, 6) : avertissement, totaux, grille de complément ; types et API de la feature ;
   Vitest (neufs et adaptés) ; `sitesTotal` ; messages de verrou réécrits × 4 locales et replis.
 - [ ] **T4 — Playwright** (AC 7) : parcours de complément ; spec existante adaptée.
-- [ ] **T5 — manuel, CHANGELOG** (AC 8).
+- [ ] **T5 — manuel, CHANGELOG** (AC 8) ; issue du TOCTOU préexistant (Limites), ouverte avec l'accord de Guy et
+  citée à la PR.
 - [ ] **T6 — gates** : backend complet (repositories `kesh-db` : gate complet même en cours de boucle), frontend
   complet, **E2E complet au dernier commit de code** (décision D7).
 
@@ -390,10 +421,12 @@ que des `data-testid` (garde `e2e-selecteurs-traduits`).
 
 - ⛔ **Ne pas verrouiller `companies` en exclusif**, ni **après** les exercices : le premier forme un cycle avec une
   écriture sans projet, le second avec une écriture taguée et la génération. Suivre l'ordre de l'AC 4.
+- ⛔ **Ne pas réutiliser `find_open_covering_date`** sous verrou : il verrouille tous les exercices qu'il parcourt.
+- ⛔ **Ne pas intercaler de lecture ordinaire entre les verrous** : elle ouvrirait l'instantané avant eux.
 - ⛔ **Ne pas verrouiller une ligne d'écriture** (`journal_entries … FOR SHARE`) pour `NO_ENTRIES` : cycle avec la
   contre-passation et la dévalidation.
-- ⛔ **Ne pas lire « jamais mouvementé » par une lecture ordinaire** : elle lit l'instantané, ouvert par la lecture de
-  `NO_ENTRIES`, et ne voit pas une écriture validée pendant l'attente de l'étape 4.
+- ⛔ **Ne pas lire « jamais mouvementé » avant le verrou des comptes** : l'instantané s'ouvrirait avant la validation
+  d'une écriture concurrente, et la lecture ne la verrait pas.
 - **Ne pas toucher au mode « ouverture »** : `create_opening_entry`, ses gardes et ses tests restent tels quels.
 - **Ne pas recalculer côté client** la liste des comptes complétables ni la date.
 - **Ne pas bloquer** sur l'avertissement de l'AC 1.
@@ -409,14 +442,18 @@ que des `data-testid` (garde `e2e-selecteurs-traduits`).
   écriture de correction manuelle.
 - **Après contre-passation de toute l'ouverture**, plus aucun compte de l'ouverture n'est complétable (arbitrage 1).
 - **La date du status est indicative** (arbitrage 2).
-- **Cycles résiduels** (AC 4) : à trois par la file d'attente d'InnoDB (préexistant entre écritures taguées et non
-  taguées), et sur deux comptes saisis mouvementés pour la première fois par une même écriture concurrente. La victime
-  autre que le complément rend une 500, comme aujourd'hui entre écritures ordinaires.
-- **Verrous d'intervalle** (validation P3, R-7) : le `FOR SHARE` de l'étape 5 pose des verrous next-key sur
-  `idx_jel_account` ; une écriture d'un autre exercice sur un compte **voisin dans l'index** peut attendre le commit du
-  complément. Une attente, pas un cycle.
+- **Cycles résiduels** (AC 4) : à deux, toujours par un compte visé (première écriture concurrente sur ce compte, du
+  même exercice) ; à trois, par la file d'attente d'InnoDB (préexistant). La victime autre que le complément rend une
+  500, comme aujourd'hui entre écritures ordinaires.
 - **`NO_ENTRIES` non verrouillé** : si l'unique écriture de la société est dévalidée pendant le complément, celui-ci
   passe et devient la première écriture. Cas sans dommage comptable (l'écriture reste équilibrée).
+- **MariaDB ≥ 11.6** (`innodb_snapshot_isolation = ON`, `reconciliation.rs:1692-1696`) : sans effet ici, puisque
+  aucune lecture verrouillante ne suit l'ouverture de l'instantané ; l'image reste figée en 10.11
+  (`docker-compose.yml:4`, `ci.yml:50`).
+- **Branche (a) et ouverture** (validation P4, F-10) : « le premier jour du premier exercice » est la date de
+  l'écriture d'ouverture **si elle existe** ; un exercice antérieur créé après la génération (`fiscal_years::create` ne
+  contrôle que le chevauchement), ou une société qui a des écritures sans ouverture, datent le complément ailleurs.
+  Écrit au manuel.
 
 ### Modules
 
@@ -439,6 +476,29 @@ de découpage (+ `docs`, `CHANGELOG`, hors décompte des modules de code).
 ### File List
 
 ## Change Log
+
+- **2026-10-06** — Validation P4 (Opus ×2 : R = ordre des verrous de chaque transaction concurrente, F = périmètre
+  complet ; prompt `25-7-validate-prompt-p4.md`) : **3 HIGH, 6 MEDIUM, 12 LOW**, tous retenus.
+  - **HIGH** : `find_open_covering_date … FOR UPDATE` verrouille tous les exercices parcourus (`end_date`, `status`
+    hors index) → cycle avec toute contre-passation (R4-1, F-2) ; l'entrelacement (2) pouvait ne tuer aucune mutation
+    (R4-2) ; le preset Playwright n'a ni 2970 ni rôle, le parcours prescrit était impossible (F-1, vérifié
+    `test_fixtures.rs:126-133`).
+  - **MEDIUM** : cycle avec le règlement et la passation en perte, qui prennent le compte puis l'exercice (R4-3) ;
+    instantané ouvert avant des verrous, relu par `create_in_tx` (R4-4) ; refus de date avant `NO_ENTRIES` (F-3) ;
+    section de complément sous des bandeaux où la génération est impossible (F-4) ; six mocks à adapter, non trois
+    (F-5).
+  - **LOW** : verrous d'intervalle (R4-5, disparus) ; plan de l'étape des comptes (R4-6) ; ordre des refus distinct de
+    celui des lectures (R4-7) ; paramètre `actor_api_key_id` sans destination (F-6) ; grep sans casse (F-7) ;
+    `data-testid` par numéro (F-8) ; statut HTTP de la variante (F-9) ; branche (a) sans ouverture (F-10) ; issue du
+    TOCTOU (F-11, en T5) ; montage de l'entrelacement (F-12) ; précisions de contrat dont l'échelle décimale (F-13) ;
+    mise en forme (F-14).
+  - **Remède de principe** : l'AC 4 ne cherche plus un ordre sans cycle, qui n'existe pas dans ce dépôt ; il suit une
+    règle — tous les verrous d'abord, une ligne par requête ; les lectures ordinaires ensuite ; les refus en dernier —
+    et garantit trois propriétés indépendantes de l'ordre. Les cycles résiduels passent tous par un compte visé.
+  - Trend : P1 1 C / 4 H → P2 4 H → P3 2 H / 6 M → P4 3 H / 6 M. ⚠️ **Signal de découpage (D5) : recyclage.** Trois
+    passes de suite, les défauts graves viennent de la remédiation précédente, dans la même zone (l'ordre des
+    verrous). Déclaré à Guy. La zone est confinée à une fonction `kesh-db` ; le remède change de méthode plutôt que de
+    retoucher l'ordre une quatrième fois. Passe P5 : complète sur l'AC 4 et l'AC 7.
 
 - **2026-10-06** — Validation P3 (Sonnet ×2 : R = la remédiation `e25e8bb4`, C = complétude ; prompt
   `25-7-validate-prompt-p3.md`) : **2 HIGH, 6 MEDIUM, ~8 LOW**, tous retenus, vérifiés au code.
