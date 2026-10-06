@@ -145,7 +145,7 @@ disproportionnée.
 avertissement (`data-testid="opening-balances-no-retained-earnings"`) qui nomme ce compte (numéro, libellé) et dit
 pourquoi : le report à-nouveau — la différence entre actifs et passifs de l'ancien bilan — doit y être porté ; une
 saisie équilibrée sans lui signifie que l'écart a été porté sur un autre compte, ou que le report vaut réellement
-zéro. **Il signale, il ne bloque pas** (doctrine #301) : le bouton « Générer » reste actif. Cas distincts, chacun son
+zéro ; il invite à **comparer les totaux Actifs et Passifs affichés (AC 2) à ceux de l'ancien bilan**. **Il signale, il ne bloque pas** (doctrine #301) : le bouton « Générer » reste actif. Cas distincts, chacun son
 texte : aucun compte actif ne porte le rôle ; le compte qui le porte n'est pas postable (il n'est alors pas dans la
 grille). Le rôle se lit sur `account.role` (`accounts.types.ts:54`).
 
@@ -214,8 +214,11 @@ l'étape 5 (et le verrou partagé que prend l'insertion des lignes sur le compte
 une génération d'ouverture → `NO_ENTRIES` de l'étape 2 ; un archivage du compte → l'étape 3 ; `lock_books` → l'étape 2.
 
 **Rejeu** : la route s'enveloppe dans `kesh_db::retry::retry_with` sur `is_deadlock_error` (précédents
-`onboarding.rs:614`, `invoices.rs:1343`, `reconciliation.rs:850`), par défense — l'ordre ci-dessus ne laisse plus de
-cycle connu ; le rejeu est sûr, chaque tentative refaisant toutes les gardes.
+`onboarding.rs:614`, `invoices.rs:1343`, `reconciliation.rs:850`). L'ordre ci-dessus ne forme aucun cycle avec une
+écriture ordinaire ; **il en reste un avec la génération d'ouverture** (`create_opening_entry` prend `companies` en
+exclusif puis l'exercice ; le complément l'exercice puis `companies` en partagé), atteignable seulement sur une société
+**sans écriture** — où le complément refuse de toute façon `NO_ENTRIES`. Le rejeu le résout : la victime rejouée voit
+l'état de l'autre et rend son refus nommé. Le rejeu est sûr, chaque tentative refaisant toutes les gardes.
 
 Réponse `201 + JournalEntryResponse`, journal `OD`, libellé « Complément des soldes de départ » (clé i18n, langue
 comptable de la société).
