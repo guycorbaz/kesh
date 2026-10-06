@@ -453,8 +453,8 @@ que des `data-testid` (garde `e2e-selecteurs-traduits`).
 - [x] **T3 — l'écran** (AC 1, 2, 6) : avertissement, totaux, grille de complément ; types et API de la feature ;
   Vitest (neufs et adaptés) ; `sitesTotal` ; messages de verrou réécrits × 4 locales et replis.
 - [x] **T4 — Playwright** (AC 7) : parcours de complément ; spec existante adaptée.
-- [ ] **T5 — manuel, CHANGELOG** (AC 8) ; issue du TOCTOU préexistant (Limites), ouverte avec l'accord de Guy et
-  citée à la PR.
+- [x] **T5 — manuel, CHANGELOG** (AC 8) ; issue du TOCTOU préexistant (Limites), ouverte avec l'accord de Guy et
+  citée à la PR : **#513**.
 - [x] **T6 — gates** : backend complet (repositories `kesh-db` : gate complet même en cours de boucle), frontend
   complet, **E2E complet au dernier commit de code** (décision D7).
 
@@ -480,7 +480,7 @@ que des `data-testid` (garde `e2e-selecteurs-traduits`).
 
 - **TOCTOU préexistant du mode « ouverture »** : le refus des comptes de résultat (`opening_balances.rs:300-319`) lit
   les types hors du verrou de `create_opening_entry`. Fenêtre étroite (changer le type d'un compte pendant une
-  génération), antérieure à la story, **hors périmètre** — à tracer en issue.
+  génération), antérieure à la story, **hors périmètre** — tracé en **#513**.
 - **Un montant faux** sur un compte déjà saisi ne se corrige pas par le complément (le compte est mouvementé) : une
   écriture de correction manuelle.
 - **Après contre-passation de toute l'ouverture**, plus aucun compte de l'ouverture n'est complétable (arbitrage 1).
@@ -564,7 +564,7 @@ Claude Opus 5.5 (orchestrateur), 2026-10-06.
   lecture « jamais mouvementé » avant le verrou des comptes → (1) ; avertissement toujours masqué → 3 tests Vitest ;
   contrepartie inversée côté écran → 2 tests Vitest. **Non jouée** : « rejeu retiré » — aucun montage d'interblocage
   déterministe dont le complément soit la victime (l'entrelacement (5) accepte les deux issues) ; limite écrite.
-- **Reste** : l'issue du TOCTOU préexistant (Limites, T5) attend l'accord de Guy.
+- **Issue du TOCTOU préexistant** (Limites, T5) : ouverte avec l'accord de Guy, **#513**.
 
 ### File List
 
@@ -591,6 +591,9 @@ Claude Opus 5.5 (orchestrateur), 2026-10-06.
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
+
+- **2026-10-06** — T5 close : issue du TOCTOU préexistant du mode « ouverture » ouverte avec l'accord de Guy (**#513**).
+  Aucun code touché ; les gates du dernier commit de code (`b8b3d56e`) restent ceux de référence.
 
 - **2026-10-06** — Revue de code P5, **passe ciblée** (Haiku, prompt `25-7-review-prompt-p5-ciblee.md`, diff
   `5ac148e8..b8b3d56e`) : **0 finding**, axes déclarés ; vérifié par l'orchestrateur (replis Rust et Svelte identiques
