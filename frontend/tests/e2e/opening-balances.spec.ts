@@ -110,6 +110,12 @@ test('parcours migrant : grille READY → saisie équilibrée → génération �
 	await expect(page.getByTestId('opening-balances-goto-balance-sheet')).toBeVisible();
 	await expect(page.getByTestId('opening-balances-goto-journal')).toBeVisible();
 	await expect(page.getByTestId('opening-balances-grid')).not.toBeVisible();
+	// Story 25-7 : le preset n'a aucun compte de rôle « Bénéfice reporté » —
+	// le complément est indisponible, et l'écran dit pourquoi.
+	await expect(page.getByTestId('opening-balances-complete-unavailable')).toHaveAttribute(
+		'data-reason',
+		'NO_RETAINED_EARNINGS'
+	);
 
 	// Présence des soldes au bilan (/reports) — l'OD datée fy_start est
 	// incluse nativement dans le calcul cumulatif.
@@ -136,4 +142,96 @@ test('bouton Générer désactivé tant que la saisie est déséquilibrée', asy
 	// Débit seul (déséquilibré) → toujours désactivé.
 	await page.getByTestId(`opening-balances-debit-${assetNumber}`).fill('1000');
 	await expect(generate).toBeDisabled();
+});
+
+/**
+ * Story 25-7 (#445) — compléter un compte oublié.
+ *
+ * Le preset `with-company` n'a pas de compte de report : on le crée par l'API
+ * AVANT la génération (il sert alors de contrepartie, cf. `getGridAccounts`).
+ * L'ouverture porte le premier actif ; le second, oublié, est complété ensuite.
+ * L'exercice seedé couvre 2020-2030 et il est ouvert : branche (a), le
+ * complément est daté du premier jour de l'exercice.
+ */
+test('compléter un compte oublié après la génération', async ({ page }) => {
+	await seedTestState('with-company');
+	await login(page);
+
+	const ctx = await authedApiContext(page);
+	let forgotten: string;
+	try {
+		const created = await ctx.post('/api/v1/accounts', {
+			data: {
+				number: '2970',
+				name: 'Bénéfice reporté',
+				accountType: 'Liability',
+				role: 'RetainedEarnings',
+			},
+		});
+		expect(created.ok(), await created.text()).toBeTruthy();
+		const resp = await ctx.get('/api/v1/accounts?includeArchived=false');
+		const accounts: Array<{ number: string; accountType: string; postable: boolean; active: boolean }> =
+			await resp.json();
+		const assets = accounts
+			.filter((a) => a.accountType === 'Asset' && a.postable && a.active)
+			.map((a) => a.number)
+			.sort();
+		expect(assets.length, 'il faut deux actifs : un saisi, un oublié').toBeGreaterThanOrEqual(2);
+		forgotten = assets[1];
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+
+	await page.goto('/settings/opening-balances');
+	await expect(page.getByTestId('opening-balances-grid')).toBeVisible();
+	const { assetNumber, equityNumber } = await getGridAccounts(page);
+	expect(equityNumber).toBe('2970');
+	expect(assetNumber).not.toBe(forgotten);
+
+	await page.getByTestId(`opening-balances-debit-${assetNumber}`).fill('5000');
+	await page.getByTestId(`opening-balances-credit-${equityNumber}`).fill('5000');
+	// Report porté : pas d'avertissement.
+	await expect(page.getByTestId('opening-balances-no-retained-earnings')).not.toBeVisible();
+	await page.getByTestId('opening-balances-generate').click();
+	await expect(page.getByTestId('opening-balances-locked')).toHaveAttribute(
+		'data-reason',
+		'ALREADY_HAS_ENTRIES'
+	);
+
+	// Le mode « compléter » : l'actif oublié est proposé, celui de l'ouverture non.
+	const complete = page.getByTestId('opening-balances-complete');
+	await expect(complete).toBeVisible();
+	await expect(page.getByTestId(`opening-balances-complete-debit-${assetNumber}`)).toHaveCount(0);
+	await expect(page.getByTestId('opening-balances-complete-date')).toHaveAttribute(
+		'data-kind',
+		'OPENING_DAY'
+	);
+
+	await page.getByTestId(`opening-balances-complete-debit-${forgotten}`).fill('750');
+	await expect(page.getByTestId('opening-balances-complete-counterpart')).toHaveAttribute(
+		'data-side',
+		'credit'
+	);
+	page.once('dialog', (d) => void d.accept());
+	await page.getByTestId('opening-balances-complete-submit').click();
+
+	// Rechargé : le compte complété n'est plus proposé.
+	await expect(page.getByTestId(`opening-balances-complete-debit-${forgotten}`)).toHaveCount(0);
+
+	// La balance le porte (revue de code P1, A-M2 : par l'API, sans libellé
+	// traduit ni format monétaire) : solde de clôture 750 sur le compte oublié.
+	const api = await authedApiContext(page);
+	try {
+		const status = await (await api.get('/api/v1/opening-balances/status')).json();
+		const resp = await api.get(
+			`/api/v1/reports/trial-balance?fiscalYearId=${status.fiscalYear.id}`
+		);
+		expect(resp.ok(), await resp.text()).toBeTruthy();
+		const tb = await resp.json();
+		const row = tb.rows.find((r: { accountNumber: string }) => r.accountNumber === forgotten);
+		expect(row, `ligne ${forgotten} dans la balance`).toBeTruthy();
+		expect(Number(row.closingBalance)).toBe(750);
+	} finally {
+		await disposeContextSafe(api);
+	}
 });

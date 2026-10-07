@@ -10,6 +10,12 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [0.12.1] — Non publié
 
+### Added
+
+- **Soldes de départ : compléter un compte oublié, et un avertissement quand le report à-nouveau manque ([#445](https://github.com/guycorbaz/kesh/issues/445)).** Une fois l'écriture d'ouverture générée, l'écran se verrouillait : un compte de bilan oublié à la reprise ne se rattrapait qu'en contre-passant toute l'ouverture et en ressaisissant tout. L'écran passe désormais en mode **compléter** : il propose les comptes de bilan jamais mouvementés, et Kesh crée une écriture « Complément des soldes de départ » dont il **calcule lui-même la contrepartie** sur le compte de bénéfice reporté — datée du premier jour de l'ouverture si le premier exercice est encore ouvert et ce jour hors de la période verrouillée, sinon du jour, en régularisation.
+
+  À la saisie, la grille affiche maintenant le total des **actifs**, celui des **passifs**, et le **montant à porter** au compte de report ; si la saisie s'équilibre **sans rien sur ce compte**, un avertissement le signale — l'écart a peut-être été porté ailleurs. Il ne bloque pas. ⚠️ **Le seul vrai contrôle reste de comparer les totaux Actifs et Passifs à ceux de votre ancien bilan** : une saisie équilibrée peut encore être fausse si un montant a été mis sur le mauvais compte. Le message du verrou, qui conseillait de « supprimer toutes les écritures » — geste impossible depuis le gel des écritures —, est corrigé dans les quatre langues.
+
 ### Fixed
 
 - **Le PDF d'une facture changeait après son émission ([#387](https://github.com/guycorbaz/kesh/issues/387)).** Kesh le régénérait à chaque téléchargement, à partir des données du moment : modifier vos coordonnées, l'adresse du client ou la mise en page modifiait aussi les factures **déjà envoyées**, et deux téléchargements successifs ne rendaient jamais le même fichier. Impossible, dans ces conditions, de produire la copie exacte d'une pièce émise.

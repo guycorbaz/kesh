@@ -658,6 +658,20 @@ pub enum DbError {
         attempted: chrono::NaiveDate,
     },
 
+    /// Complément des soldes de départ refusé (Story 25-7, #445).
+    ///
+    /// Le statut HTTP et le code se dérivent de la raison côté API ;
+    /// `account_id` / `account_number` désignent le compte fautif pour les
+    /// refus par compte.
+    /// ⛔ Jamais un `Invariant` : ce sont des refus métier, pas des défauts.
+    #[error("Complément des soldes de départ refusé ({})", .reason.code())]
+    OpeningComplementRefused {
+        reason: crate::repositories::opening_complement::OpeningComplementRefusal,
+        account_id: Option<i64>,
+        /// Numéro du compte fautif, quand il appartient à la société.
+        account_number: Option<String>,
+    },
+
     /// Aucun exercice ouvert ne couvre la date fournie (Story 5.2).
     /// Distinct de `FiscalYearClosed` — l'exercice est peut-être
     /// inexistant (date hors de tous les exercices connus) OU clôturé.
@@ -754,6 +768,7 @@ impl DbError {
             Self::EntryIsPosted => "ENTRY_IS_POSTED",
             Self::PeriodLocked { .. } => "PERIOD_LOCKED",
             Self::FiscalYearInvalid => "FISCAL_YEAR_INVALID",
+            Self::OpeningComplementRefused { reason, .. } => reason.code(),
             Self::ConfigurationRequired(_) => "CONFIGURATION_REQUIRED",
             Self::ConnectionUnavailable(_) => "CONNECTION_UNAVAILABLE",
             Self::InvalidInput(_) => "INVALID_INPUT",

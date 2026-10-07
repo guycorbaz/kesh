@@ -391,7 +391,7 @@ Les plans comptables livrés avec Kesh comportent une classe~9 — \emph{Bilan d
 \end{keshnote}
 
 \begin{keshwarning}
-\textbf{Si vous arrivez d'un autre logiciel, n'utilisez pas le 9000 pour votre bilan d'ouverture.} La reprise se fait par l'écran \emph{Administration} → \emph{Soldes de départ} (voir «~Reprise de comptabilité~»), et votre report accumulé se pose sur le compte \emph{Bénéfice reporté} (2970 dans les plans standards).
+\textbf{Si vous arrivez d'un autre logiciel, n'utilisez pas le 9000 pour votre bilan d'ouverture.} La reprise se fait par l'écran \emph{Administration} → \emph{Soldes de départ} (voir «~Reprise de comptabilité~»), et votre report accumulé se pose sur le compte \emph{Bénéfice/perte reporté} (2970 dans les plans standards).
 
 Avant la version qui introduit cette règle, un à-nouveau passé par le 9000 partait \textbf{en charges} sans le moindre avertissement~: le bilan restait équilibré, mais le résultat de l'exercice était faux du montant du bilan, et le report à-nouveau l'était aussi.
 \end{keshwarning}
@@ -653,18 +653,36 @@ Si vous migrez vers Kesh depuis un autre logiciel comptable, l'écran \emph{Admi
     \item \textbf{Préparez le bilan de clôture} de votre ancien logiciel (actifs, passifs, capitaux propres, report à-nouveau accumulé).
     \item \textbf{Ouvrez l'écran} : la grille liste vos comptes de bilan actifs et postables (actifs et passifs — jamais les comptes de produits ou de charges, qui fausseraient le résultat de l'exercice).
     \item \textbf{Saisissez les soldes} colonne Débit ou Crédit, ligne par ligne. Le total débit, le total crédit et la différence s'affichent en direct.
-    \item \textbf{Équilibrez via le report à-nouveau} : posez votre report accumulé sur le compte de rôle \emph{Bénéfice reporté} (2970 dans les plans standards) — au crédit pour un bénéfice cumulé, au \textbf{débit} pour une perte reportée.
+    \item \textbf{Équilibrez via le report à-nouveau} : posez votre report accumulé sur le compte de rôle \emph{Bénéfice/perte reporté} (2970 dans les plans standards) — au crédit pour un bénéfice cumulé, au \textbf{débit} pour une perte reportée.
     \item \textbf{Générez} : le bouton \emph{Générer l'écriture d'ouverture} (actif seulement une fois la saisie équilibrée) crée \textbf{une écriture OD équilibrée datée au 1\textsuperscript{er} jour de votre premier exercice}. Votre bilan est juste dès le premier jour.
 \end{enumerate}
 
-\begin{keshnote}
-L'écran n'est disponible que tant que la société ne contient \textbf{aucune écriture} (dans aucun exercice). Une fois l'écriture d'ouverture générée, il se verrouille \textbf{définitivement} --- et l'écriture, comme toutes les autres, ne se modifie ni ne se supprime plus.
+Sous la grille, Kesh affiche aussi le total des \textbf{Actifs}, celui des \textbf{Passifs et capitaux} (compte de report exclu), et le \textbf{montant à porter au compte de report} pour équilibrer — au crédit s'il est positif, au débit s'il est négatif. Quand la saisie est équilibrée \textbf{sans rien sur le compte de report}, un avertissement le signale~: soit l'écart a été mis sur un autre compte, soit votre report vaut réellement zéro. Il ne bloque pas la génération. Deux variantes le remplacent quand aucun compte en service ne porte le rôle \emph{Bénéfice/perte reporté}, ou quand ce compte n'est pas imputable.
 
-Pour corriger un solde de départ, on procède donc comme un comptable~: \textbf{contre-passez} l'écriture d'ouverture depuis sa fiche, puis saisissez une écriture manuelle portant les soldes justes. Vous obtenez trois écritures au lieu d'une, et une piste de correction lisible --- ce qui est précisément l'objet de la règle.
+\begin{keshwarning}
+\textbf{Le montant à porter aide la saisie, il ne contrôle rien une fois la saisie équilibrée.} Si le report a été mis par erreur sur un autre compte de passif, ce montant est compté dans les passifs, et le montant à porter vaut zéro. \textbf{Le vrai contrôle} est de comparer les totaux Actifs et Passifs affichés à ceux du bilan de votre ancienne comptabilité~: ils doivent être identiques.
+\end{keshwarning}
+
+\begin{keshnote}
+La génération n'est disponible que tant que la société ne contient \textbf{aucune écriture} (dans aucun exercice). L'écriture d'ouverture, comme toutes les autres, ne se modifie ni ne se supprime ensuite.
+\end{keshnote}
+
+\subsubsection{Compléter un compte oublié}
+
+Une fois l'ouverture générée, l'écran passe en mode \emph{compléter}~: sous le rappel de ce qui a été généré, il propose les comptes de bilan --- actifs et passifs --- \textbf{jamais mouvementés}~: en service, imputables, sans aucune ligne d'écriture dans aucun exercice. Il faut pour cela un compte de rôle \emph{Bénéfice/perte reporté} en service et imputable et, pour une régularisation, un exercice ouvert qui couvre la date du jour~; à défaut, l'écran dit ce qui manque. Saisissez le solde des seuls comptes oubliés, puis \emph{Compléter}~: Kesh crée une écriture OD «~Complément des soldes de départ~», dont il \textbf{calcule lui-même la contrepartie} sur le compte de rôle \emph{Bénéfice/perte reporté}~: elle équilibre l'ensemble des lignes saisies --- au crédit quand leurs débits l'emportent (un actif oublié, saisi au débit), au débit dans le cas contraire (un passif, saisi au crédit). Si les lignes saisies s'équilibrent entre elles, il n'y a pas de contrepartie.
+
+\begin{itemize}
+    \item \textbf{La date.} Si votre premier exercice est encore ouvert et que son premier jour n'est pas dans la période verrouillée, le complément est daté de ce premier jour~: le compte oublié faisait partie de l'ouverture, et les soldes d'ouverture --- donc tout rapport déjà tiré sur cet exercice --- en sont modifiés. Si un exercice suivant est déjà clôturé, son bilan reporté l'est aussi. Sinon, le complément est une \textbf{régularisation datée du jour}, dans l'exercice ouvert qui couvre cette date. La date annoncée par l'écran est indicative~; elle est confirmée à l'enregistrement.
+    \item \textbf{Le jour est celui du serveur, en temps universel}~: entre minuit et une ou deux heures du matin, heure suisse, c'est encore la veille --- le 1\textsuperscript{er} janvier, une régularisation peut tomber dans l'exercice précédent, ou être refusée s'il est clôturé.
+    \item \textbf{La numérotation.} Daté du premier jour, le complément porte pourtant le numéro suivant du journal~: dans cet exercice, l'ordre des numéros cesse de suivre l'ordre des dates.
+\end{itemize}
+
+\begin{keshnote}
+\textbf{Un montant faux sur un compte déjà saisi ne se complète pas}~: le compte est mouvementé. On le corrige comme un comptable, dans le journal --- en \textbf{contre-passant} l'écriture fautive depuis sa fiche, ou par une écriture de correction. Une écriture contre-passée garde ses lignes~: ses comptes restent mouvementés. En particulier, \textbf{après la contre-passation de toute l'écriture d'ouverture, plus aucun de ses comptes n'est complétable}~; les soldes justes se saisissent alors par une écriture manuelle. À l'inverse, la \textbf{dévalidation d'une facture} supprime son écriture~: un compte dont c'était le seul mouvement redevient complétable.
 \end{keshnote}
 
 \begin{keshtip}
-Si votre premier exercice Kesh ne doit pas commencer au 1\textsuperscript{er} janvier de l'année courante (exercice décalé ou reprise antérieure), créez d'abord l'exercice voulu via \emph{Administration} → \emph{Exercices comptables} — l'écriture d'ouverture est datée au premier jour du \textbf{premier} exercice existant.
+Si votre premier exercice Kesh ne doit pas commencer au 1\textsuperscript{er} janvier de l'année courante (exercice décalé ou reprise antérieure), créez d'abord l'exercice voulu via \emph{Administration} → \emph{Exercices comptables} — l'écriture d'ouverture est datée au premier jour du \textbf{premier} exercice existant. Un exercice antérieur créé \emph{après} la génération devient à son tour le premier~: un complément serait alors daté de son premier jour, et non de celui de l'écriture d'ouverture.
 \end{keshtip}
 
 %%─────────────────────────────────────────────────────────────────────────────
@@ -1680,6 +1698,8 @@ d'ouverture}, les \textbf{mouvements} débit et crédit, et le \textbf{solde de 
         l'écrit en toutes lettres sous les totaux.
     \item \textbf{Premier exercice} : les soldes de départ saisis à la reprise sont une écriture datée du premier jour
         de l'exercice (\S\ref{sec:soldes-depart}) — ils apparaissent donc en \emph{mouvements}, et l'ouverture vaut zéro.
+    \item \textbf{Complément des soldes de départ} : daté du jour (régularisation), il apparaît en \emph{mouvements} de
+        l'exercice qui porte cette date, généralement un exercice ultérieur au premier.
     \item Un compte \textbf{archivé} figure tant qu'il porte un solde ou un mouvement.
 \end{itemize}
 

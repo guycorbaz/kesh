@@ -31,6 +31,7 @@ pub mod invoices;
 pub mod journal_entries;
 pub mod journal_entry_number_sequences;
 pub mod onboarding;
+pub mod opening_complement;
 pub mod password_reset_tokens;
 pub mod payment_batches;
 pub mod products;

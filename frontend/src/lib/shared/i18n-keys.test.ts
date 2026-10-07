@@ -446,7 +446,14 @@ const ATTENDU = {
 	//
 	// Fusion dans la 25-4-d2c, 2026-10-05 : la story ajoute +3 à une base
 	// désormais de 1827 ⇒ **1830** ; `sitesNonResolus` et `relais` suivent la fusion (31, 6).
-	sitesTotal: 1830,
+	// Story 25-7 (#445) : **1830 → 1864** — `settings/opening-balances/+page.svelte`
+	// (26 → 60) : totaux actif / passif et montant à porter, avertissement du report
+	// à-nouveau (trois variantes), grille de complément (titre, introduction, date,
+	// contrepartie, bouton, confirmation, succès) et six raisons d'indisponibilité.
+	// Relevé du test, recoupé par `grep -o` sur le fichier aux deux bornes (+34).
+	// Revue de code P3 de la 25-7 : **1864 → 1868** — un nom accessible sur les quatre
+	// champs de montant (`opening-balances-debit-for` / `-credit-for`, 60 → 64).
+	sitesTotal: 1868,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

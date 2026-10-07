@@ -4,7 +4,11 @@
 
 import { apiClient } from '$lib/shared/utils/api-client';
 import type { JournalEntryResponse } from '$lib/features/journal-entries/journal-entries.types';
-import type { OpeningBalancesRequest, OpeningBalancesStatus } from './opening-balances.types';
+import type {
+	OpeningBalancesRequest,
+	OpeningBalancesStatus,
+	OpeningComplementRequest
+} from './opening-balances.types';
 
 /** État de l'écran « Soldes de départ » (verrou vs grille, D6). */
 export async function getOpeningBalancesStatus(): Promise<OpeningBalancesStatus> {
@@ -21,4 +25,15 @@ export async function generateOpeningBalances(
 	req: OpeningBalancesRequest
 ): Promise<JournalEntryResponse> {
 	return apiClient.post<JournalEntryResponse>('/api/v1/opening-balances', req);
+}
+
+/**
+ * Complète un ou plusieurs comptes de bilan oubliés à l'ouverture (Story 25-7) :
+ * le serveur calcule la contrepartie sur le compte de report et la date. Les
+ * refus portent un code `OPENING_COMPLEMENT_*` et un message localisé.
+ */
+export async function completeOpeningBalances(
+	req: OpeningComplementRequest
+): Promise<JournalEntryResponse> {
+	return apiClient.post<JournalEntryResponse>('/api/v1/opening-balances/complete', req);
 }

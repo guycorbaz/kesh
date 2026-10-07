@@ -16,16 +16,19 @@
 // Mocks (hoistés AVANT l'import du composant) : API opening-balances +
 // accounts + i18n (fallback) + notify.
 
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/svelte';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 import type { OpeningBalancesStatus } from '$lib/features/opening-balances/opening-balances.types';
 
 vi.mock('$app/environment', () => ({ browser: true }));
 
-// i18nMsg renvoie le fallback (déterministe, couvre la copie fallback svelte).
+// i18nMsg renvoie le fallback (déterministe, couvre la copie fallback svelte),
+// variables interpolées — les messages de la Story 25-7 nomment des comptes et
+// des montants, que les tests vérifient.
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
-	i18nMsg: (_key: string, fallback: string) => fallback,
+	i18nMsg: (_key: string, fallback: string, args?: Record<string, unknown>) =>
+		fallback.replace(/\{ \$(\w+) \}/g, (_m: string, k: string) => String(args?.[k] ?? '')),
 }));
 
 const notifySuccessMock = vi.fn();
@@ -36,9 +39,11 @@ vi.mock('$lib/shared/utils/notify', () => ({
 
 const getStatusMock = vi.fn<() => Promise<OpeningBalancesStatus>>();
 const generateMock = vi.fn();
+const completeMock = vi.fn();
 vi.mock('$lib/features/opening-balances/opening-balances.api', () => ({
 	getOpeningBalancesStatus: () => getStatusMock(),
 	generateOpeningBalances: (req: unknown) => generateMock(req),
+	completeOpeningBalances: (req: unknown) => completeMock(req),
 }));
 
 const fetchAccountsMock = vi.fn<() => Promise<AccountResponse[]>>();
@@ -47,6 +52,13 @@ vi.mock('$lib/features/accounts/accounts.api', () => ({
 }));
 
 import Page from './+page.svelte';
+
+// `window.confirm` est espionné par certains tests : le restaurer après chacun,
+// pour qu'un test futur qui l'appellerait sans le simuler ne l'hérite pas
+// (revue de code P3, F-7).
+afterEach(() => {
+	if (vi.isMockFunction(window.confirm)) vi.mocked(window.confirm).mockRestore();
+});
 
 function acc(overrides: Partial<AccountResponse>): AccountResponse {
 	return {
@@ -85,17 +97,33 @@ const NON_POSTABLE = acc({
 });
 const ARCHIVED = acc({ id: 5, number: '1090', name: 'Ancien', accountType: 'Asset', active: false });
 
+/**
+ * Champs du mode « compléter » (Story 25-7) pour les statuts qui ne
+ * l'exercent pas. `NO_ENTRIES` est la raison d'une société vierge.
+ */
+const NO_COMPLEMENT = {
+	canComplete: false,
+	completeReason: 'NO_ENTRIES',
+	completableAccounts: [],
+	complementDate: null,
+	complementDateKind: null,
+	complementFiscalYear: null,
+	retainedEarningsAccount: null,
+} as const satisfies Partial<OpeningBalancesStatus>;
+
 function readyStatus(): OpeningBalancesStatus {
 	return {
 		fiscalYear: { id: 12, name: 'Exercice 2026', startDate: '2026-01-01', status: 'Open' },
 		canEnter: true,
 		reason: 'READY',
+	...NO_COMPLEMENT,
 	};
 }
 
 beforeEach(() => {
 	getStatusMock.mockReset();
 	generateMock.mockReset();
+	completeMock.mockReset();
 	fetchAccountsMock.mockReset();
 	notifySuccessMock.mockReset();
 	fetchAccountsMock.mockResolvedValue([
@@ -178,7 +206,7 @@ describe('états chargement / erreur (P3-BH3-2)', () => {
 
 describe('état verrouillé — les 4 reasons (D6)', () => {
 	it('NO_FISCAL_YEAR → verrou avec message, pas de grille', async () => {
-		getStatusMock.mockResolvedValue({ fiscalYear: null, canEnter: false, reason: 'NO_FISCAL_YEAR' });
+		getStatusMock.mockResolvedValue({ fiscalYear: null, canEnter: false, reason: 'NO_FISCAL_YEAR', ...NO_COMPLEMENT });
 
 		render(Page);
 
@@ -193,6 +221,7 @@ describe('état verrouillé — les 4 reasons (D6)', () => {
 			fiscalYear: { id: 12, name: 'Exercice 2026', startDate: '2026-01-01', status: 'Closed' },
 			canEnter: false,
 			reason: 'FIRST_YEAR_CLOSED',
+		...NO_COMPLEMENT,
 		});
 
 		render(Page);
@@ -208,6 +237,7 @@ describe('état verrouillé — les 4 reasons (D6)', () => {
 			fiscalYear: { id: 12, name: 'Exercice 2026', startDate: '2026-01-01', status: 'Open' },
 			canEnter: false,
 			reason: 'ALREADY_HAS_ENTRIES',
+		...NO_COMPLEMENT,
 		});
 
 		render(Page);
@@ -364,6 +394,7 @@ describe('équilibre et génération (D3)', () => {
 			fiscalYear: { id: 12, name: 'Exercice 2026', startDate: '2026-01-01', status: 'Open' },
 			canEnter: false,
 			reason: 'ALREADY_HAS_ENTRIES',
+		...NO_COMPLEMENT,
 		});
 
 		render(Page);
@@ -398,6 +429,7 @@ describe('équilibre et génération (D3)', () => {
 			fiscalYear: { id: 12, name: 'Exercice 2026', startDate: '2026-01-01', status: 'Open' },
 			canEnter: false,
 			reason: 'ALREADY_HAS_ENTRIES',
+		...NO_COMPLEMENT,
 		});
 
 		render(Page);
@@ -440,5 +472,434 @@ describe('équilibre et génération (D3)', () => {
 
 		const err = await screen.findByTestId('opening-balances-submit-error');
 		expect(err.textContent).toContain('La société contient déjà des écritures.');
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Story 25-7 (#445) — avertissement, totaux, complément
+// ---------------------------------------------------------------------------
+
+async function type(testId: string, value: string) {
+	await fireEvent.input(screen.getByTestId(testId), { target: { value } });
+}
+
+describe('AC 1 — avertissement du report à-nouveau', () => {
+	it('saisie équilibrée sans rien sur 2970 → avertissement NO_AMOUNT qui nomme le compte, Générer reste actif', async () => {
+		getStatusMock.mockResolvedValue(readyStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-grid');
+
+		await type('opening-balances-debit-1000', '100');
+		await type('opening-balances-credit-2000', '100');
+
+		const warning = await screen.findByTestId('opening-balances-no-retained-earnings');
+		expect(warning.getAttribute('data-kind')).toBe('NO_AMOUNT');
+		expect(warning.textContent).toContain('2970');
+		const btn = screen.getByTestId('opening-balances-generate') as HTMLButtonElement;
+		await waitFor(() => expect(btn.disabled).toBe(false));
+	});
+
+	it('montant porté sur 2970 → pas d’avertissement', async () => {
+		getStatusMock.mockResolvedValue(readyStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-grid');
+
+		await type('opening-balances-debit-1000', '100');
+		await type('opening-balances-credit-2970', '100');
+
+		await waitFor(() =>
+			expect(
+				(screen.getByTestId('opening-balances-generate') as HTMLButtonElement).disabled
+			).toBe(false)
+		);
+		expect(screen.queryByTestId('opening-balances-no-retained-earnings')).toBeNull();
+	});
+
+	it('saisie non équilibrée → pas d’avertissement', async () => {
+		getStatusMock.mockResolvedValue(readyStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-grid');
+		await type('opening-balances-debit-1000', '100');
+		expect(screen.queryByTestId('opening-balances-no-retained-earnings')).toBeNull();
+	});
+
+	it('aucun compte ne porte le rôle → variante NO_ROLE', async () => {
+		fetchAccountsMock.mockResolvedValue([ASSET, LIABILITY]);
+		getStatusMock.mockResolvedValue(readyStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-grid');
+		await type('opening-balances-debit-1000', '100');
+		await type('opening-balances-credit-2000', '100');
+		const warning = await screen.findByTestId('opening-balances-no-retained-earnings');
+		expect(warning.getAttribute('data-kind')).toBe('NO_ROLE');
+	});
+
+	it('compte de report non imputable → variante NOT_POSTABLE', async () => {
+		fetchAccountsMock.mockResolvedValue([ASSET, LIABILITY, { ...RETAINED, postable: false }]);
+		getStatusMock.mockResolvedValue(readyStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-grid');
+		expect(screen.queryByTestId('opening-balances-debit-2970')).toBeNull();
+		await type('opening-balances-debit-1000', '100');
+		await type('opening-balances-credit-2000', '100');
+		const warning = await screen.findByTestId('opening-balances-no-retained-earnings');
+		expect(warning.getAttribute('data-kind')).toBe('NOT_POSTABLE');
+		expect(warning.textContent).toContain('2970');
+	});
+});
+
+describe('AC 2 — totaux actif / passif et montant à porter', () => {
+	it('montant à porter = actifs − passifs, au crédit du report', async () => {
+		getStatusMock.mockResolvedValue(readyStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-grid');
+
+		await type('opening-balances-debit-1000', '1000');
+		await type('opening-balances-credit-2000', '600');
+
+		expect(screen.getByTestId('opening-balances-total-assets').textContent).toBe('1’000.00');
+		expect(screen.getByTestId('opening-balances-total-liabilities').textContent).toBe('600.00');
+		const carry = screen.getByTestId('opening-balances-amount-to-carry');
+		expect(carry.getAttribute('data-side')).toBe('credit');
+		expect(carry.textContent).toContain('400.00');
+
+		await type('opening-balances-credit-2970', '400');
+		expect(screen.getByTestId('opening-balances-retained-entered').textContent).toBe('400.00');
+		expect(screen.getByTestId('opening-balances-remaining-gap').textContent).toBe('0.00');
+	});
+
+	it('épingle la limite : équilibrée sans report, le montant à porter vaut 0', async () => {
+		getStatusMock.mockResolvedValue(readyStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-grid');
+		await type('opening-balances-debit-1000', '1000');
+		await type('opening-balances-credit-2000', '1000');
+		const carry = screen.getByTestId('opening-balances-amount-to-carry');
+		expect(carry.getAttribute('data-side')).toBe('none');
+		expect(carry.textContent).toContain('0.00');
+	});
+});
+
+function completableStatus(overrides: Partial<OpeningBalancesStatus> = {}): OpeningBalancesStatus {
+	return {
+		fiscalYear: { id: 12, name: 'Exercice 2026', startDate: '2026-01-01', status: 'Open' },
+		canEnter: false,
+		reason: 'ALREADY_HAS_ENTRIES',
+		canComplete: true,
+		completeReason: 'READY',
+		completableAccounts: [
+			{ id: 7, number: '1100', name: 'Poste', accountType: 'Asset' },
+			{ id: 6, number: '2000', name: 'Dettes', accountType: 'Liability' },
+		],
+		complementDate: '2026-01-01',
+		complementDateKind: 'OPENING_DAY',
+		complementFiscalYear: { id: 12, name: 'Exercice 2026' },
+		retainedEarningsAccount: { id: 2, number: '2970', name: 'Report à nouveau' },
+		...overrides,
+	};
+}
+
+describe('AC 6 — le mode « compléter »', () => {
+	it('sous ALREADY_HAS_ENTRIES : le bandeau reste, la grille de complément ne liste que les comptes du status', async () => {
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		expect(screen.getByTestId('opening-balances-locked').getAttribute('data-reason')).toBe(
+			'ALREADY_HAS_ENTRIES'
+		);
+		expect(screen.getByTestId('opening-balances-complete-debit-1100')).toBeTruthy();
+		expect(screen.getByTestId('opening-balances-complete-credit-2000')).toBeTruthy();
+		// 1000 (mouvementé) n'est pas proposé ; la grille d'ouverture est absente.
+		expect(screen.queryByTestId('opening-balances-complete-debit-1000')).toBeNull();
+		expect(screen.queryByTestId('opening-balances-grid')).toBeNull();
+		expect(screen.queryByTestId('opening-balances-debit-1100')).toBeNull();
+	});
+
+	it('contrepartie en direct : actif → crédit du report, passif → débit, équilibre → aucune', async () => {
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		const cp = () => screen.getByTestId('opening-balances-complete-counterpart');
+
+		await type('opening-balances-complete-debit-1100', '250');
+		await waitFor(() => expect(cp().getAttribute('data-side')).toBe('credit'));
+		expect(cp().textContent).toContain('250.00');
+		expect(cp().textContent).toContain('2970');
+
+		await type('opening-balances-complete-credit-2000', '300');
+		await waitFor(() => expect(cp().getAttribute('data-side')).toBe('debit'));
+		expect(cp().textContent).toContain('50.00');
+
+		await type('opening-balances-complete-credit-2000', '250');
+		await waitFor(() => expect(cp().getAttribute('data-side')).toBe('none'));
+		expect(cp().textContent).toContain('aucune contrepartie');
+	});
+
+	it('Compléter envoie les seules lignes saisies, puis recharge le status', async () => {
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		completeMock.mockResolvedValue({ id: 9 });
+		getStatusMock.mockResolvedValueOnce(completableStatus());
+		getStatusMock.mockResolvedValue(
+			completableStatus({
+				completableAccounts: [{ id: 6, number: '2000', name: 'Dettes', accountType: 'Liability' }],
+			})
+		);
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+
+		await type('opening-balances-complete-debit-1100', '250,5');
+		const btn = screen.getByTestId('opening-balances-complete-submit') as HTMLButtonElement;
+		await waitFor(() => expect(btn.disabled).toBe(false));
+		await fireEvent.click(btn);
+
+		await waitFor(() =>
+			expect(completeMock).toHaveBeenCalledWith({
+				lines: [{ accountId: 7, debit: '250.5', credit: '0' }],
+			})
+		);
+		await waitFor(() =>
+			expect(screen.queryByTestId('opening-balances-complete-debit-1100')).toBeNull()
+		);
+		expect(notifySuccessMock).toHaveBeenCalledTimes(1);
+	});
+
+	it('Compléter désactivé tant que rien n’est saisi', async () => {
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		expect((screen.getByTestId('opening-balances-complete-submit') as HTMLButtonElement).disabled).toBe(true);
+	});
+
+	it('canComplete faux → texte qui dit pourquoi, avec la raison', async () => {
+		getStatusMock.mockResolvedValue(
+			completableStatus({ canComplete: false, completeReason: 'NO_COMPLETABLE_ACCOUNT', completableAccounts: [] })
+		);
+		render(Page);
+		const unavailable = await screen.findByTestId('opening-balances-complete-unavailable');
+		expect(unavailable.getAttribute('data-reason')).toBe('NO_COMPLETABLE_ACCOUNT');
+		expect(unavailable.textContent).toContain('aucun compte à compléter');
+		expect(screen.queryByTestId('opening-balances-complete')).toBeNull();
+	});
+
+	it('sous NO_FISCAL_YEAR / FIRST_YEAR_CLOSED : aucune section de complément', async () => {
+		getStatusMock.mockResolvedValue({ fiscalYear: null, canEnter: false, reason: 'NO_FISCAL_YEAR', ...NO_COMPLEMENT });
+		render(Page);
+		await screen.findByTestId('opening-balances-locked');
+		expect(screen.queryByTestId('opening-balances-complete')).toBeNull();
+		expect(screen.queryByTestId('opening-balances-complete-unavailable')).toBeNull();
+	});
+
+	it('date du jour (régularisation) : variante TODAY', async () => {
+		getStatusMock.mockResolvedValue(
+			completableStatus({ complementDate: '2026-10-06', complementDateKind: 'TODAY' })
+		);
+		render(Page);
+		const date = await screen.findByTestId('opening-balances-complete-date');
+		expect(date.getAttribute('data-kind')).toBe('TODAY');
+		expect(date.textContent).toContain('régularisation');
+		expect(date.textContent).toContain('06.10.2026');
+	});
+
+	it('confirmation refusée → aucun envoi', async () => {
+		vi.spyOn(window, 'confirm').mockReturnValue(false);
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-debit-1100', '10');
+		const btn = screen.getByTestId('opening-balances-complete-submit') as HTMLButtonElement;
+		await waitFor(() => expect(btn.disabled).toBe(false));
+		await fireEvent.click(btn);
+		expect(completeMock).not.toHaveBeenCalled();
+	});
+
+	it('refus serveur → message affiché ET status rechargé (la liste périmée disparaît)', async () => {
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		completeMock.mockRejectedValue({
+			code: 'OPENING_COMPLEMENT_ACCOUNT_MOVED',
+			message: 'Le compte 1100 a déjà des mouvements.',
+			status: 409,
+		});
+		getStatusMock.mockResolvedValueOnce(completableStatus());
+		getStatusMock.mockResolvedValue(
+			completableStatus({
+				completableAccounts: [{ id: 6, number: '2000', name: 'Dettes', accountType: 'Liability' }],
+			})
+		);
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-debit-1100', '10');
+		const btn = screen.getByTestId('opening-balances-complete-submit') as HTMLButtonElement;
+		await waitFor(() => expect(btn.disabled).toBe(false));
+		await fireEvent.click(btn);
+
+		const err = await screen.findByTestId('opening-balances-complete-error');
+		expect(err.textContent).toContain('1100 a déjà des mouvements');
+		await waitFor(() =>
+			expect(screen.queryByTestId('opening-balances-complete-debit-1100')).toBeNull()
+		);
+		expect(getStatusMock).toHaveBeenCalledTimes(2);
+		expect(screen.getByTestId('opening-balances-complete-error')).toBeTruthy();
+	});
+
+	it('refus de FORME → ni rechargement ni saisie perdue', async () => {
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		completeMock.mockRejectedValue({
+			code: 'OPENING_COMPLEMENT_INVALID_AMOUNT',
+			message: 'Montant invalide.',
+			status: 400,
+		});
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-debit-1100', '10');
+		const btn = screen.getByTestId('opening-balances-complete-submit') as HTMLButtonElement;
+		await waitFor(() => expect(btn.disabled).toBe(false));
+		await fireEvent.click(btn);
+		await screen.findByTestId('opening-balances-complete-error');
+		expect(getStatusMock).toHaveBeenCalledTimes(1);
+		expect(
+			(screen.getByTestId('opening-balances-complete-debit-1100') as HTMLInputElement).value
+		).toBe('10');
+	});
+
+	it('refus métier → la saisie des comptes encore proposés est conservée', async () => {
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		completeMock.mockRejectedValue({
+			code: 'OPENING_COMPLEMENT_ACCOUNT_MOVED',
+			message: 'Le compte 1100 a déjà des mouvements.',
+			status: 409,
+		});
+		getStatusMock.mockResolvedValueOnce(completableStatus());
+		getStatusMock.mockResolvedValue(
+			completableStatus({
+				completableAccounts: [{ id: 6, number: '2000', name: 'Dettes', accountType: 'Liability' }],
+			})
+		);
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-debit-1100', '10');
+		await type('opening-balances-complete-credit-2000', '25');
+		const btn = screen.getByTestId('opening-balances-complete-submit') as HTMLButtonElement;
+		await waitFor(() => expect(btn.disabled).toBe(false));
+		await fireEvent.click(btn);
+		await waitFor(() =>
+			expect(screen.queryByTestId('opening-balances-complete-debit-1100')).toBeNull()
+		);
+		expect(
+			(screen.getByTestId('opening-balances-complete-credit-2000') as HTMLInputElement).value
+		).toBe('25');
+	});
+
+	it('complément qui vide la liste → texte NO_COMPLETABLE_ACCOUNT', async () => {
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		completeMock.mockResolvedValue({ id: 9 });
+		getStatusMock.mockResolvedValueOnce(
+			completableStatus({
+				completableAccounts: [{ id: 7, number: '1100', name: 'Poste', accountType: 'Asset' }],
+			})
+		);
+		getStatusMock.mockResolvedValue(
+			completableStatus({ canComplete: false, completeReason: 'NO_COMPLETABLE_ACCOUNT', completableAccounts: [] })
+		);
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-debit-1100', '10');
+		const btn = screen.getByTestId('opening-balances-complete-submit') as HTMLButtonElement;
+		await waitFor(() => expect(btn.disabled).toBe(false));
+		await fireEvent.click(btn);
+		const unavailable = await screen.findByTestId('opening-balances-complete-unavailable');
+		expect(unavailable.getAttribute('data-reason')).toBe('NO_COMPLETABLE_ACCOUNT');
+	});
+
+	it('les comptes ne se chargent pas → le complément reste disponible', async () => {
+		fetchAccountsMock.mockRejectedValue({ code: 'NETWORK_ERROR', message: 'boom' });
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		expect(await screen.findByTestId('opening-balances-complete')).toBeTruthy();
+		expect(screen.queryByTestId('opening-balances-status-error')).toBeNull();
+	});
+
+	it('grille de génération : les champs portent eux aussi un nom accessible', async () => {
+		getStatusMock.mockResolvedValue(readyStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-grid');
+		expect(screen.getByLabelText('Débit du compte 1000 « Banque »')).toBeTruthy();
+		expect(screen.getByLabelText('Crédit du compte 2970 « Report à nouveau »')).toBeTruthy();
+	});
+
+	it('un rechargement qui échoue ne perd pas la saisie', async () => {
+		vi.spyOn(window, 'confirm').mockReturnValue(true);
+		completeMock.mockRejectedValue({
+			code: 'OPENING_COMPLEMENT_ACCOUNT_MOVED',
+			message: 'Le compte 1100 a déjà des mouvements.',
+			status: 409,
+		});
+		getStatusMock.mockResolvedValueOnce(completableStatus());
+		getStatusMock.mockRejectedValueOnce({ code: 'NETWORK_ERROR', message: 'boom' });
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-credit-2000', '25');
+		await type('opening-balances-complete-debit-1100', '10');
+		const btn = screen.getByTestId('opening-balances-complete-submit') as HTMLButtonElement;
+		await waitFor(() => expect(btn.disabled).toBe(false));
+		await fireEvent.click(btn);
+		await fireEvent.click(await screen.findByTestId('opening-balances-retry'));
+		await screen.findByTestId('opening-balances-complete');
+		expect(
+			(screen.getByTestId('opening-balances-complete-credit-2000') as HTMLInputElement).value
+		).toBe('25');
+	});
+
+	it('la confirmation nomme la date de l’écriture', async () => {
+		const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-debit-1100', '10');
+		const btn = screen.getByTestId('opening-balances-complete-submit') as HTMLButtonElement;
+		await waitFor(() => expect(btn.disabled).toBe(false));
+		await fireEvent.click(btn);
+		expect(confirm.mock.calls[0][0]).toContain('01.01.2026');
+	});
+
+	it('chaque champ de montant porte un nom accessible', async () => {
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		expect(
+			screen.getByTestId('opening-balances-complete-debit-1100').getAttribute('aria-label')
+		).toBe('Débit du compte 1100 « Poste »');
+		expect(screen.getByLabelText('Crédit du compte 2000 « Dettes »')).toBeTruthy();
+	});
+
+	it('montant invalide → Compléter désactivé', async () => {
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-debit-1100', '12.345678');
+		expect((screen.getByTestId('opening-balances-complete-submit') as HTMLButtonElement).disabled).toBe(
+			true
+		);
+	});
+
+	it('une contrepartie à quatre décimales s’affiche exacte', async () => {
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		await screen.findByTestId('opening-balances-complete');
+		await type('opening-balances-complete-debit-1100', '0.0040');
+		await waitFor(() =>
+			expect(screen.getByTestId('opening-balances-complete-counterpart').textContent).toContain(
+				'0.0040'
+			)
+		);
+	});
+
+	it('le bandeau ne propose plus de supprimer toutes les écritures', async () => {
+		getStatusMock.mockResolvedValue(completableStatus());
+		render(Page);
+		const locked = await screen.findByTestId('opening-balances-locked');
+		expect(locked.textContent).not.toContain('supprimez');
+		expect(locked.textContent).toContain('ci-dessous');
 	});
 });
