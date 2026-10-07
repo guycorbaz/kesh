@@ -10,6 +10,8 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [0.12.1] — 2026-10-07
 
+⚠️ **Cette version n'est pas encore destinée à tenir une comptabilité réelle.** Elle achève la première vague de correction — l'export de souveraineté porte désormais toute la comptabilité, le reste dû est juste partout, une erreur se corrige par contre-passation au lieu de s'effacer. Mais plusieurs fonctions nécessaires à un exercice complet manquent encore. Elle s'installe, elle s'exerce, elle ne tient pas vos livres.
+
 ### Ajouté
 
 - **Un montant minimum de facture, au choix de chaque société ([#495](https://github.com/guycorbaz/kesh/issues/495)).** *Paramètres → Facturation* porte une section *Montant minimum* : une facture dont le total — arrondi, celui que le client paiera — est inférieur au seuil ne peut pas être validée, avec un message qui donne les deux montants (`INVOICE_BELOW_MINIMUM`). Vide par défaut, c'est-à-dire aucun seuil ; les avoirs n'y sont pas soumis. *(API : `minimumInvoiceAmount` dans `GET` et `PUT /company/invoice-settings` ; absent du corps, préservé ; à `null`, effacé.)*
