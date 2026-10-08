@@ -356,6 +356,23 @@ Journaux non versionnés sous `target/gate-logs/` : `15-7a1-gate-complet.log`, `
   `sidebar-navigation.spec.ts:75`, huitième listé dans `docs/testing.md` § « Les échecs attendus »,
   **vert au rejeu isolé** (4 passés). Journaux : `target/gate-logs/15-7a1-{gate-complet,front,e2e,e2e-backend}-p1.log`.
 
+### Intégration sur `5e4bec50`
+
+- `main` a avancé à `5e4bec50` (15-5d mergée, #565). Rebase de la branche : **un conflit**, le registre
+  `epic-15-choix-autonomes.md`, résolu par union (234 entrées, **aucun identifiant en double**). Aucun
+  conflit de code : la 15-5d touche `invoices`, `credit_notes`, `errors`, `test_fixtures` et l'i18n, aucun
+  fichier de cette story ; les lignes citées de `routes/onboarding.rs` (`:211`, `:250`, `:377`, `:615`,
+  `:649`, `:717`, `:802`) sont inchangées, revérifiées au grep.
+- **Gates réellement exécutés sur l'état rebasé** (tête de code `7b92d8c2`) : bases `kesh_157a1` et
+  `kesh_e2e_157a1` remises à zéro (DROP/CREATE, migrations, seed sur la première), après `wait-kesh.sh` ;
+  `scripts/test-fast.sh` **vert — 2889 exécutés, 2889 passés, 4 ignorés** ; frontend : `check` 0 erreur
+  (27 avertissements préexistants), `lint-i18n-ownership` PASS, `test:unit` **112 fichiers / 1091 tests**,
+  `build` vert ; **E2E complet** (backend `:3009`, secrets générés par `openssl rand`,
+  `KESH_COOKIE_SECURE=false`) : **246 passés, 8 échecs, 19 ignorés** — les sept KF-029 (#97) et
+  `sidebar-navigation.spec.ts:75`, listé dans `docs/testing.md` § « Les échecs attendus », **vert au rejeu
+  isolé** (4 passés). Backend arrêté par son PID. Journaux :
+  `target/gate-logs/15-7a1-{gate-complet,front,e2e,e2e-backend}-5e4b.log`.
+
 ### File List
 
 - `crates/kesh-db/src/repositories/accounts.rs` — `bulk_create_from_chart_in_tx`, enveloppe, `count_by_company` générique
