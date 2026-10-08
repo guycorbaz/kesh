@@ -3394,3 +3394,10 @@ l'import (#458–#461).
 - **Retenu** : aucun écart ne change une règle ni un AC ⇒ le développement enchaîne sans arrêt. Les références de la fiche ne sont pas réécrites (texte validé) ; la table de correspondance est au Change Log de la fiche (« Alignement sur le livré »).
 - **Écarté** : réécrire chaque numéro de ligne dans le corps de la fiche (bruit dans un texte validé ; les numéros dériveront encore au rebase).
 - **Réversible** : oui (aucun code).
+
+## C-15-7a1-2 — 15-7a1, développement : choix d'exécution non fixés par la fiche
+
+- **Contexte** : quelques détails de forme n'étaient pas fixés par la fiche validée.
+- **Retenu** : (a) `UpsertPrimaryOutcome::into_account()` porte la projection sur `BankAccount` de l'enveloppe pool (une seule écriture de la règle « `Created`, `after` ou `Unchanged` ») ; (b) les quatre taux du seed vivent dans une constante `DEFAULT_SWISS_RATES` du module, liés en `Decimal::new(mantisse, 2)` (pas de littéral SQL, pas de `CAST`) ; (c) `insert_with_defaults_in_tx` calcule `let inserted = rows == 1` et le rend sur **les deux** sorties de succès — la mutation 4 (« `true` en dur ») porte ainsi sur une seule ligne ; (d) test 6 : la seconde société du montage a `ide_number = None`, le numéro IDE de `sample_new_company` étant unique (`uq_companies_ide_number`) ; (e) test 4 : l'erreur `InactiveOrInvalidAccounts` est vérifiée à travers l'enveloppe pool sur une société sans plan.
+- **Écarté** : un `match` dupliqué dans l'enveloppe pool pour projeter l'issue ; garder l'`INSERT` multi-lignes et rendre les taux par relecture (ne distingue pas inséré/préexistant).
+- **Réversible** : oui (local au code de la story).

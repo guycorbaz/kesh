@@ -1,6 +1,6 @@
 # Story 15.7a1 : Le socle transactionnel de l'onboarding
 
-Status: in-progress
+Status: review
 
 <!-- Née le 2026-10-08 du découpage de la 15-7a (choix C-15-7-19), à la passe de validation P2.
      Patron « story-zéro + rollout » du CLAUDE.md (§ Règle de splitting préventif) : cette fiche
@@ -190,11 +190,11 @@ devient « rend les taux réellement insérés, dans l'ordre du seed »), `clear
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — `accounts`** (AC 2) — `bulk_create_from_chart_in_tx`, enveloppe, `count_by_company` générique.
-- [ ] **T2 — `bank_accounts`** (AC 3) — `UpsertPrimaryOutcome`, `upsert_primary_in_tx`, enveloppe.
-- [ ] **T3 — `company_invoice_settings`, `vat_rates`** (AC 4, 5) — fin du MIRROR, taux ligne à ligne, adaptation de deux appels de test (`:1084`, `:1174`) ; les deux appels de `finalize` et le troisième appel de test (`:953`) compilent inchangés.
-- [ ] **T4 — `companies::clear_stub_in_tx`, `onboarding::lock_state_in_tx`** (AC 6, 7) ; doc-comments (AC 8).
-- [ ] **T5 — Tests et gates** (Dev Notes § Tests) — `kesh-db` touché ⇒ **gate complet même en cours de boucle** ; base de gate remise à zéro avant ; le frontend n'est pas touché, mais l'E2E complet tourne au dernier commit de code (règle D7) et se juge contre les échecs attendus de `docs/testing.md`.
+- [x] **T1 — `accounts`** (AC 2) — `bulk_create_from_chart_in_tx`, enveloppe, `count_by_company` générique.
+- [x] **T2 — `bank_accounts`** (AC 3) — `UpsertPrimaryOutcome`, `upsert_primary_in_tx`, enveloppe.
+- [x] **T3 — `company_invoice_settings`, `vat_rates`** (AC 4, 5) — fin du MIRROR, taux ligne à ligne, adaptation de deux appels de test (`:1084`, `:1174`) ; les deux appels de `finalize` et le troisième appel de test (`:953`) compilent inchangés.
+- [x] **T4 — `companies::clear_stub_in_tx`, `onboarding::lock_state_in_tx`** (AC 6, 7) ; doc-comments (AC 8).
+- [x] **T5 — Tests et gates** (Dev Notes § Tests) — `kesh-db` touché ⇒ **gate complet même en cours de boucle** ; base de gate remise à zéro avant ; le frontend n'est pas touché, mais l'E2E complet tourne au dernier commit de code (règle D7) et se juge contre les échecs attendus de `docs/testing.md`.
 
 ## Dev Notes
 
@@ -280,11 +280,82 @@ Consigner au Dev Agent Record.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), agent de développement en autonomie (Epic 15), worktree
+`/home/gcorbaz/devel/kesh-15-7a1`, cible cargo propre, bases dédiées `kesh_157a1` / `kesh_e2e_157a1`.
+
 ### Debug Log References
+
+Journaux non versionnés sous `target/gate-logs/` : `15-7a1-gate-complet.log`, `15-7a1-e2e.log`,
+`15-7a1-e2e-backend.log`, `15-7a1-mut-{1,1b,2,3,4,5,6,7,7b,8}.log`.
 
 ### Completion Notes List
 
+- **T0 — alignement sur le livré** : dérives de lignes seulement, aucun AC changé (C-15-7a1-1, Change Log).
+- **Compilation** : après le changement des types de retour, `cargo build --workspace --all-targets`
+  n'a cassé que les deux appels de test prévus (`company_invoice_settings_repository.rs:1084`,
+  `:1174`) ; `:953` et les deux appels de `finalize` (`routes/onboarding.rs:717`, `:741`) ont compilé
+  **inchangés** — constaté au compilateur, pas seulement à la lecture. `routes/onboarding` n'est pas
+  touché (`git diff 9cb5083b..HEAD -- crates/kesh-api/src` : vide).
+- **Tests neufs** (périmètre `9cb5083b..HEAD`, recompté par `grep -c 'sqlx::test'` aux deux bornes) :
+  **7** fonctions de test neuves (`accounts_repository` 0 → 2, `bank_accounts_repository` 23 → 24,
+  `companies_repository` 18 → 19, `company_invoice_settings_repository` 22 → 23,
+  `onboarding_repository` 7 → 8, `vat_rates_repository` 18 → 19) ; le test 8 **prolonge**
+  `full_path_b_flow` (7 → 7 fonctions dans `onboarding_path_b_e2e.rs`), sans modifier aucune
+  assertion existante.
+- **Mutations** — dix, chacune seule, fichier restauré puis touché (`os.utime`), restauration
+  vérifiée octet pour octet ; chaque rouge lu à son message :
+
+  | # | rouge observé |
+  |---|---|
+  | 1 | `aucun commit interne` : 86 au lieu de 0 |
+  | 1b | erreur SQL 1064 près de `) ORDER BY number` |
+  | 2 | non-compilation `E0308` à l'appel `count_by_company(&mut *tx, …)` (preuve de signature) |
+  | 3 | `Unchanged attendu, obtenu Updated` |
+  | 4 | `second appel : la ligne existait déjà` |
+  | 5 | `second appel : rien d'inséré` (quatre taux rendus) |
+  | 6 | second `clear_stub_in_tx` rend `true` |
+  | 7 | pas de 1205 : la seconde connexion lit la ligne |
+  | 7b | idem (fonction sur `SELECT_SQL`, constante intacte) |
+  | 8 | `une ligne de réglages de facturation` : 0 au lieu de 1 |
+
+- **Greps de l'AC 8** (sorties relevées, tri manuel) :
+  `grep -nE "MIRROR|intentionally duplicated|Duplication note|count_by_company"` sur les quatre
+  fichiers → `company_invoice_settings.rs:15`, `:69`, `:101` (portent sur
+  `get_or_create_default{,_in_tx}`, **hors périmètre**, laissés) ; `:527` (le docstring neuf qui dit
+  la disparition du MIRROR) ; `accounts.rs:261`, `:267`, `:270` (doc et signature neuves) ; `:411`
+  (doc de `retype_impact`, qui cite `journal_entries::count_by_company` — reste vrai). Rollbacks par
+  plage : `bulk_create_from_chart` → `:1005` seul (`let _ = tx.rollback().await;`, best-effort) ;
+  `bulk_create_from_chart_in_tx` → 0 ; `upsert_primary` → `:195` (`Unchanged`, rollback propagé comme
+  avant) et `:203` (best-effort) ; `upsert_primary_in_tx` → 0 ; `insert_with_defaults` → `:571`
+  (best-effort) ; `insert_with_defaults_in_tx` → 0. Les sites « pas d'audit » et ceux qui nomment
+  `seed_demo` sont laissés à la 15-7a2 et à la 15-7b1, comme l'attribue la fiche index.
+- **Gates réellement exécutés, au dernier commit de code `a76a6dbc`** : base `kesh_157a1` remise à
+  zéro (DROP/CREATE, migrations, seed) ; `scripts/test-fast.sh` (fmt + clippy `-D warnings` +
+  nextest) **vert — 2844 exécutés, 2844 passés, 4 ignorés** ; frontend (non touché) : `npm run
+  check` 0 erreur, `lint-i18n-ownership` PASS, `test:unit` 111 fichiers / 1086 tests verts, `build`
+  vert ; **E2E complet** (backend `:3009`, base `kesh_e2e_157a1` migrée, secrets générés,
+  `KESH_COOKIE_SECURE=false`) : **249 passés, 7 échecs, 17 ignorés** — les sept échecs sont
+  exactement les sept KF-029 (#97) de `docs/testing.md` § « Les échecs attendus »
+  (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
+  `:77`, `:150`) ; pas de huitième.
+- Ni manuel, ni CHANGELOG : rien de visible ne change (Dev Notes). Choix C-15-7a1-2.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/accounts.rs` — `bulk_create_from_chart_in_tx`, enveloppe, `count_by_company` générique
+- `crates/kesh-db/src/repositories/bank_accounts.rs` — `UpsertPrimaryOutcome`, `upsert_primary_in_tx`, enveloppe
+- `crates/kesh-db/src/repositories/company_invoice_settings.rs` — fin du MIRROR, `(réglages, inséré)`
+- `crates/kesh-db/src/repositories/vat_rates.rs` — taux ligne à ligne, `Vec<VatRate>`
+- `crates/kesh-db/src/repositories/companies.rs` — `clear_stub_in_tx`
+- `crates/kesh-db/src/repositories/onboarding.rs` — `LOCK_SQL`, `lock_state_in_tx`
+- `crates/kesh-db/tests/accounts_repository.rs` — **neuf** (tests 1, 2)
+- `crates/kesh-db/tests/bank_accounts_repository.rs` — test 3
+- `crates/kesh-db/tests/company_invoice_settings_repository.rs` — test 4 ; deux appels adaptés ; docstrings « délégation »
+- `crates/kesh-db/tests/vat_rates_repository.rs` — test 5
+- `crates/kesh-db/tests/companies_repository.rs` — test 6
+- `crates/kesh-db/tests/onboarding_repository.rs` — test 7
+- `crates/kesh-api/tests/onboarding_path_b_e2e.rs` — test 8 (`finalize` ajouté à `full_path_b_flow`)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`, `epic-15-choix-autonomes.md`, cette fiche
 
 ## Change Log
 
@@ -403,3 +474,7 @@ Consigner au Dev Agent Record.
   `MULTI-TENANT-SCOPING-PATTERNS.md:322` → `:298`/`:317`. Fait nouveau sans effet ici : `finalize` est
   enveloppé par `retry_app_on_deadlock("onboarding::finalize", …)` (15-5e2) — la route n'est pas touchée
   par cette fiche.
+- 2026-10-08/09 — **Développement** (`bmad-dev-story`, commit `a76a6dbc`) : T1 à T5 faits ; 7 tests neufs
+  + le test 8 prolongeant `full_path_b_flow` ; 10 mutations, toutes rouges pour la raison attendue ;
+  gate complet vert (2844/2844, 4 ignorés) et E2E complet aux seuls 7 échecs KF-029 attendus, au dernier
+  commit de code. Choix C-15-7a1-2. Statut → `review`.
