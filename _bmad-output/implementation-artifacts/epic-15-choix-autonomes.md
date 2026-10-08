@@ -796,3 +796,85 @@ l'import (#458–#461).
 - **Retenu** : story unique. **Ligne de découpe pré-déclarée** si la validation montre une
   non-convergence par recyclage : la suppression (AC 9–11, T3, son bouton et son E2E) part en
   15-8b ; la modification de l'écriture manuelle et d'ouverture reste en 15-8a.
+- **Réversible** : oui.
+
+## C-15-8-10 — Ordre des verrous du `PUT` : l'écriture seule, puis les projets, puis l'exercice
+
+- **Contexte** : validation P1 (R1/F1, HIGH). Le `FOR UPDATE` de l'écriture doit être le premier acte de la
+  transaction (décision de l'orchestrateur), sans quoi la garde lit une vue `REPEATABLE READ` antérieure à l'attente
+  du verrou. Mais l'ancien `update` validait les projets (sentinelle `companies` puis `FOR UPDATE` des projets)
+  **avant** de verrouiller l'écriture **avec son exercice**.
+- **Retenu** : étape 1 = l'écriture **seule** (`FOR UPDATE` sans jointure) ; 1-bis = projets (sentinelle puis projets,
+  seulement pour les tags nouveaux) ; 1-ter = l'exercice ; 1-quater = borne lue sans verrou. Le **refus** projet est
+  gardé et rendu à l'étape 6, avec les comptes, pour que l'exercice clos et le gel parlent d'abord (AC 7).
+- **Écartées** : verrouiller écriture et exercice ensemble puis les projets — inverse l'ordre de la création
+  (`companies → projects → fiscal_years`) et fait se bloquer en croix deux saisies taguées du même exercice ; garder
+  les projets avant l'écriture en lecture verrouillante — contraire à la décision « verrou de l'écriture d'abord ».
+- **Vérifié** : aucun appelant de la sentinelle ne verrouille ensuite une écriture existante (grep, 2026-10-08) ; à
+  revérifier au développement. Un cycle résiduel serait un 1213 d'InnoDB, pas une attente infinie.
+- **Réversible** : oui (ordre interne d'une fonction).
+
+## C-15-8-11 — Un `PUT` identique sur une écriture à compte archivé rend 400, pas 200
+
+- **Contexte** : R2 — l'AC 3 (« `PUT` identique → 200 ») contredisait l'AC 4 (« compte archivé, y compris sur une ligne
+  inchangée → 400 ») pour ce cas.
+- **Retenu** : 400 `INACTIVE_OR_INVALID_ACCOUNTS`. Le no-op vient après toutes les gardes (héritage KF-004) ; le test
+  `update_no_op_with_inactive_account_returns_inactive_error` de l'ancien `update` est rétabli tel quel.
+- **Écartée** : 200 no-op — un « rien à faire » sur une écriture que l'enregistrement refuserait ferait croire
+  qu'elle est saine.
+- **Réversible** : oui.
+
+## C-15-8-12 — Après suppression de l'ouverture seule, la nouvelle ouverture porte le numéro 2
+
+- **Contexte** : R10 — le compteur de la 25-2-c ne réattribue jamais un numéro.
+- **Retenu** : l'accepter, le dire au manuel (§ soldes de départ) et l'asserter (AC 13). Le trou est expliqué par
+  l'instantané `journal_entry.deleted`.
+- **Écartée** : réinitialiser le compteur quand la société redevient vierge — rouvrirait la réattribution que la
+  25-2-c a fermée, pour un gain cosmétique.
+- **Réversible** : oui.
+
+## C-15-8-13 — Deux fonctions : la garde d'écriture et le motif d'écran
+
+- **Contexte** : R5 — une seule `modification_blocker` devait servir l'écriture (filtre D2 seul) et l'écran (neuf
+  motifs, dont l'exercice clos et la période), avec deux précédences et deux vocabulaires de codes.
+- **Retenu** : `modification_guard` (D2 seule, rend `Option<ReversalBlockerHit>`, `AccountArchived` exclu) partagée
+  par `update` et `delete_in_tx`, convertie en erreur par `modification_refusal` ; `modification_blocker` (écran)
+  l'appelle, entre l'exercice clos et la période, et rend `Option<ModificationBlocker>`. Une table de correspondance
+  écrite en dur (seul écart : `ALREADY_REVERSED` ↔ `ENTRY_IS_REVERSED`) fait l'assertion de l'AC 14.
+- **Écartée** : renommer `ALREADY_REVERSED` à l'écran en `ENTRY_IS_REVERSED` — perdrait la réutilisation des clés
+  `journal-entries-reverse-blocked-*` et créerait un second vocabulaire côté écran.
+- **Réversible** : oui.
+
+## C-15-8-14 — Rôle Consultation : « Modifier », « Supprimer » et « Contre-passer » masqués
+
+- **Contexte** : R10 — « Contre-passer » est aujourd'hui affiché à Consultation et rend 403 au clic ; « Modifier » et
+  « Supprimer » auraient hérité du même défaut.
+- **Retenu** : les trois boutons, et le lien « Historique », absents pour ce rôle (lu dans `authState`) ; le 403 du
+  serveur reste le refus qui fait autorité. « Contre-passer » est aligné dans la même story, puisque le geste est le
+  même et sur la même page.
+- **Écartée** : assumer des boutons qui échouent en 403 — un bouton qui ne peut qu'échouer ne renseigne pas.
+- **Réversible** : oui.
+
+## C-15-8-15 — Le formulaire se rétablit par inversion du commit du gel, sur cinq fichiers seulement
+
+- **Contexte** : F3 — « rétablir depuis `d2910022` » écraserait la prop `booksLockedThrough` et le `min` de date de la
+  24-4c (`54ae4a70`).
+- **Retenu** : `git show 08e20353 -- <fichier> | git apply -R --3way` sur `form-helpers.ts`, `form-helpers.test.ts`,
+  `journal-entries.api.ts`, `journal-entries.types.ts` (nets, vérifié par `--check`) et `JournalEntryForm.svelte`
+  (conflit à résoudre en gardant la 24-4c). **Pas** sur la page de liste (le mode édition y vivait, C-15-8-7 l'écarte),
+  ni sur la spec E2E de liste, ni sur `i18n-keys.test.ts` (cinq fois modifié depuis), ni à l'aveugle sur
+  `e2e-selecteurs-traduits.test.ts`.
+- **Écartée** : copier l'état `d2910022` — perte silencieuse de la protection de saisie 24-4c.
+- **Réversible** : oui.
+
+## C-15-8-16 — La préparation extraite du `POST` passe avant son pré-contrôle d'exercice
+
+- **Contexte** : R11 / D4 — la préparation (trim, longueurs, parse, `accounting::validate`) est extraite dans
+  `prepare_new_journal_entry`, commune au `POST` et au `PUT`. Dans le `POST` actuel, `find_covering_date` s'intercale
+  entre le parse et `validate`.
+- **Retenu** : `prepare_new_journal_entry` d'un bloc, puis `find_covering_date` : un corps à la fois déséquilibré
+  **et** sans exercice rend désormais `ENTRY_UNBALANCED` avant `NO_FISCAL_YEAR`. Cohérent avec « les refus de forme
+  précèdent toute lecture de la base ». Le développeur grepe les tests du `POST` qui cumuleraient les deux causes.
+- **Écartée** : couper la fonction en deux (parse / validate) pour garder l'ordre exact — deux fonctions là où une
+  suffit, pour un cas de double faute.
+- **Réversible** : oui.
