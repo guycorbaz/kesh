@@ -2237,3 +2237,70 @@ l'import (#458–#461).
   - **L-5** : inventaire nommé (`PUT /invoices/{id}` avec changement de projet, archivage de projet, clôture et réouverture d'exercice) ajouté au point (iv) du registre comme angle mort, sans cycle démontré. Issue à ouvrir par l'orchestrateur (amélioration, `v0.2-milestone`), pour que la limitation soit tracée.
 - **Écartées** : un test dynamique neuf pour `split` et `complete_import` (B-1 = L-4) — accepté LOW, angle mort (iii bis) déjà écrit ; fermer le volet (c bis) par un relevé lexical maintenant — hors périmètre, c'est la machinerie de la 15-11b.
 - **Réversible** : oui.
+
+## C-15-11a-1 — 15-11a (dev) : forme du test `configuration_transmise` — fonctions pures, deux listes de plus que la fiche, garde de tri par octets
+
+- **Contexte** : l'AC8 décrit les contrôles (T, V, E, F, S) et leurs listes fermées ; elle laisse la structure du test à l'implémentation.
+- **Retenu** : chaque contrôle est une **fonction pure** sur des chaînes (`controle_transmission`, `controle_valeur`, `controle_raisons_valeurs`, `controle_env_example`, `controle_fantomes`, `source_montage`/`sources_montages`), appelée par les tests du dépôt **et** par les tests (S) sur sources synthétiques — l'auto-test exerce le code même qui juge le dépôt. Deux listes non nommées par la fiche, toutes deux avec contrôle de raison : **`VALEURS_COMPOSEES`** (l'exception « `DATABASE_URL` de `docker-compose.yml` » de (V), contrôlée par la présence de `${MARIADB_` dans la valeur) et **`MONTAGES`** (les trois cibles et leurs sources exigées, Y préfixe / P exacte). La garde `garde_liste_lues` vérifie aussi que `LUES` est **triée par octets et sans doublon** et que `AJOUTS` compte 28 couples. `HOTE` se contrôle sur les **entrées analysées** de `volumes:` de `kesh-api` (un commentaire qui nomme la variable ne compte pas — c'est ce qui fait rougir M14 en (E)) ; `MARIADB` sur le texte de `docker-compose.yml`.
+- **Constaté en route** : le tri de `sort -u` sous la locale française place `FILE_BYTES` avant `FILES_PER_RUN` ; Rust compare les octets (`S` < `_`). La commande de l'en-tête du test porte donc `LC_ALL=C sort -u`.
+- **Effet de bord, écrit** : M10 (`${KESH_SMTP_HSOT:-}`) rougit **deux fois** — (V) et (F), le jeton `KESH_SMTP_HSOT` étant un fantôme du corpus compose. La fiche n'annonçait que (V).
+- **Écartées** : un test monolithique par fichier (l'auto-test aurait dû recopier la logique) ; dériver `VALEURS_COMPOSEES` d'une détection « contient un `${` étranger » (une interpolation d'une autre variable sous une clé passerait en silence).
+- **Réversible** : oui (test seul).
+
+## C-15-11a-2 — 15-11a (dev) : l'ordre du test du secret JWT collecte les écarts au lieu de s'arrêter au premier
+
+- **Contexte** : sous M25 (contrôle des placeholders redescendu après la longueur), `config_rejects_jwt_secret_generate_me_case_insensitive` s'arrêtait sur `GENERATE_ME` ; le cas `xchange-mex` (F3-8 : remontée de `change-me` avant la longueur) n'était alors **jamais exercé** par la mutation.
+- **Retenu** : la boucle du test collecte les écarts et asserte la liste vide à la fin ; M25 nomme désormais les **deux** cas (`"GENERATE_ME" → WeakJwtSecret { 11 }`, `"xchange-mex" → WeakJwtSecret { 11 }`). Commit séparé (`80231b62`), M20 et M25 rejouées après.
+- **Écartées** : un test par cas (six tests de plus pour une seule règle) ; laisser tel quel (le cas `xchange-mex` n'aurait été prouvé par aucune mutation).
+- **Réversible** : oui.
+
+## C-15-11a-3 — 15-11a (dev) : mise en page de `sec:env-vars` — `\paragraph{…}\mbox{}\\`, `sloppypar` et deux `\par` ; un seul des deux gestes essayé
+
+- **Contexte** : AC12 j demande zéro `Overfull \hbox` entre `\label{sec:env-vars}` et `\subsubsection{Import de factures depuis un dossier}`, par un même geste sur les dix titres, choisi « après essai » entre `\paragraph{…}\mbox{}\\` et `\subsubsection*{…}`, sans toucher `kesh-style.sty`.
+- **Retenu** : `\paragraph{…}\mbox{}\\` sur les dix titres (texte inchangé, `\paragraph` hors table des matières, numérotation inchangée). Il supprime l'essentiel des débordements ; **trois causes de plus** restaient dans la section, sans lien avec le titre en ligne : (a) les paragraphes de prose — dont les deux nouveaux de l'AC12 a — qui portent de longs `\texttt` insécables (`crates/kesh-api/src/config.rs`, `KESH_SMTP_PASSWORD='pa$word'`) : enveloppés dans `sloppypar` ; (b) les deux tableaux précédés d'un texte dans le même paragraphe (SMTP, chemins d'hôte) : `\par\noindent` avant `\begin{tabularx}` ; (c) la cellule `DATABASE_URL` : `\allowbreak` après `PASS@`. Résultat mesuré : **0** `Overfull` dans les bornes (67 → 52 au total), **aucun** nouveau ailleurs (comparaison par contenu des boîtes, avant/après). Les cinq débordements que les nouveaux paragraphes de la sous-section « Passer à la 0.13.0 » et des items `:1020`/`:1260`/`:2235` créaient ont été traités de même (`sloppypar`).
+- **Écart déclaré** : `\subsubsection*{…}` **n'a pas été essayé** — le premier geste a suffi ; il aurait aussi changé la taille et l'espacement des titres.
+- **Réversible** : oui.
+
+## C-15-11a-4 — 15-11a (dev) : la procédure de mise à jour gagne une sous-section, l'encadré « relisez » avant les gestes ; quatre sites de plus que la fiche
+
+- **Contexte** : AC12 f décrit le contenu (voie recommandée, vérification par Compose, deux gestes, encadré, vérification fonctionnelle) sans fixer la place exacte.
+- **Retenu** : le point 3 de la *Procédure de mise à jour standard* devient « Mettre à jour le fichier compose — obligatoire pour passer à la 0.13.0 » et renvoie à une nouvelle `\subsubsection{Passer à la 0.13.0 : …}\label{sec:maj-0-13}`, placée après l'encadré de sauvegarde (la 15-7b3, rebasée, placera son texte après elle). L'encadré « Relisez votre `.env` » vient **avant** la voie recommandée et les gestes, donc avant tout `up -d`. Les lignes des deux `lstlisting` sont **extraites du compose final** par script (15 + 13 + 2), aucune n'est repliée dans le PDF (`pdftotext -layout` : 30 lignes `KESH_…: ${…}` entières).
+- **Sites ajoutés par la propagation** (grep du symptôme) : `admin-manual.tex` § *Reset du mot de passe administrateur (break-glass)* (« Retirez ensuite `KESH_ADMIN_PASSWORD` » → « puis `docker compose up -d kesh-api` ») ; *Étape 5* Synology (« se connecter avec le compte admin renseigné dans `.env` » → `/setup` sur base vide) ; une `keshnote` après la méthode GUI de Container Manager (AC12 i) ; la ligne `:1239` perd « (Optionnel) » — c'est le geste qui retire les variables du conteneur.
+- **Correction en cours de route** : la réécriture du bloc Synology `:537-539` avait d'abord supprimé la ligne `openssl rand -base64 32 # → MARIADB_…` ; rétablie (« mot de passe MariaDB, repris dans `DATABASE_URL` »).
+- **Réversible** : oui (documentation).
+
+## C-15-11a-5 — 15-11a (dev) : montage E2E — port 3004, répertoires inbox/documents dans le scratchpad, secrets générés
+
+- **Contexte** : plusieurs worktrees de l'Epic 15 font tourner leurs E2E sur le même MariaDB ; la recette du dépôt emploie `/tmp/kesh-e2e/*` et des secrets fixes.
+- **Retenu** : base `kesh_e2e_1511a`, port **3004** (vérifié libre), `KESH_INBOX_DIR`/`KESH_DOCUMENTS_DIR` dans `scratchpad/e2e-1511a/` (aucun partage de répertoire avec un autre agent), `KESH_JWT_SECRET` = `openssl rand -hex 32`, `KESH_ADMIN_PASSWORD` = 24 caractères aléatoires (l'AC16 refuse désormais tout gabarit), les quatre `KESH_SMTP_*` de la recette ; `/health` contrôlé (`smtpConfigured: true`) avant la suite.
+- **Réversible** : oui (montage local).
+
+## C-15-11a-6 — 15-11a (revue de code P1) : vide = défaut pour sept variables, par une garde de `match` et non par une nouvelle fonction
+
+- **Contexte** : B1 = E-1 = A-L3 (MEDIUM) — les compose transmettent `${NOM:-}` ; `KESH_ADMIN_BACKUP_DIR` vide devenait le chemin `""` (sauvegarde pré-import écrite dans `/app`), `KESH_LANG` vide avertissait « Locale '' non reconnue », et les cinq numériques (`KESH_PASSWORD_MIN_LENGTH`, `KESH_BANK_IMPORT_MAX_MB`, `KESH_ADMIN_EXPORT_INMEM_MB`, `KESH_ADMIN_IMPORT_MAX_MB`, `KESH_SMTP_PORT`) avertissaient « invalide » à chaque démarrage. Décision de l'orchestrateur : corriger ces sept dans la 15-11a, la 15-11b généralisant à toutes.
+- **Retenu** : `KESH_ADMIN_BACKUP_DIR` et `KESH_LANG` passent par `opt_trimmed_env` (vide ou blanc = absent, valeur trimée) ; les cinq numériques gardent leur `env::var` et gagnent un bras `Ok(val) if val.trim().is_empty() => <défaut>` — une valeur non blanche garde exactement son comportement (pas de trim : `" 12 "` reste « invalide » pour `KESH_PASSWORD_MIN_LENGTH`, comme avant). Tests : `from_env_empty_or_blank_vars_take_code_default_silently` (vide et blanc, valeurs ET absence de tout message nommant la variable, capture `tracing` locale avec assertion de montage) et son témoin `from_env_non_empty_invalid_values_still_warn`. Mutations : chacune des sept lectures remise dans sa forme d'avant → rouge (7/7).
+- **Écartées** : une fonction `non_blank_env` (écrite puis retirée) — elle aurait ajouté un jeton de lecture que l'inventaire de `LUES` (grep `env::var|opt_trimmed_env|parse_strict_bool|env_flag_enabled`) ne voit pas, et changé l'inventaire de la 15-11b plus que nécessaire ; `${KESH_ADMIN_BACKUP_DIR:-/tmp}` dans les compose (recopie le défaut, contraire à C75 et rouge au test (V)) ; `opt_trimmed_env` pour les numériques (trimerait une valeur non blanche : changement de comportement que la 15-11b assume, pas la 15-11a).
+- **Effet de bord écrit** : `KESH_LANG=" de "` donne désormais `de` (trim d'`opt_trimmed_env`) au lieu de l'avertissement puis `fr` ; `KESH_ADMIN_BACKUP_DIR` est trimé.
+- **Propagation** : le doc-comment d'`is_loopback_host`, détaché de sa fonction et collé au-dessus d'`opt_trimmed_env` **avant** la story (même symptôme que B4), est rattaché à sa fonction dans le même commit.
+- **Frontière avec la 15-11b**, et ce qu'il faut reporter dans sa fiche : voir le Change Log de la 15-11a (revue P1).
+- **Réversible** : oui.
+
+## C-15-11a-7 — 15-11a (intégration sur `9cb5083b`) : union du registre avec dédoublonnage, PDF utilisateur restauré, six rouges E2E jugés au rejeu isolé
+
+- **Contexte** : rebase de la 15-11a sur `origin/main` après le merge de la 15-5e2. Le commit de planification
+  reporté de la branche (`63c73e59`) portait un bloc C66–C74 **déjà présent** sur `main` ; l'union brute des deux
+  côtés l'aurait mis deux fois. `make admin user` régénère aussi `user-manual.pdf`, que la branche ne modifie pas.
+  L'E2E rend 13 échecs, dont six hors de la liste de `docs/testing.md`.
+- **Retenu** : (a) registre — union des deux côtés, puis suppression du second bloc C66–C74 après contrôle
+  qu'il est **identique octet pour octet** au premier (`diff` vide) ; ensemble des titres égal à l'union de
+  `origin/main` et de la branche, aucun doublon ; (b) `sprint-status.yaml` — les deux en-têtes `last_updated`
+  gardés, celui de la 15-11a passé en « (19) » ; (c) `user-manual.pdf` régénéré au texte identique à celui de
+  `main` → version de `main` gardée (aucun octet changé sans raison) ; `admin-manual.pdf` régénéré et commité ;
+  (d) les six rouges hors liste (`contact-duplicate-probe.spec.ts:78`, `:113`, `contacts.spec.ts:39`,
+  `onboarding.spec.ts:33`, `:119`, `invoice-frozen-pdf.spec.ts:74`) rejoués **seuls** sur le même backend :
+  six verts ; signature KF-053 (#478 : `page.fill('#username')`, run allongé à 13,5 min) plus une pollution.
+  Pas de second run complet.
+- **Écartées** : garder les deux blocs C66–C74 (doublon de titres, recherche par numéro ambiguë) ; commiter le
+  PDF utilisateur régénéré (bruit binaire sans changement de texte) ; relancer la suite E2E entière (la règle
+  du dépôt juge un rouge au rejeu isolé, et les six passent).
+- **Réversible** : oui (sauvegarde `backup/15-11a-pre-rebase-2` sur `7d0fd45b`).

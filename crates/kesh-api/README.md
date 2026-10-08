@@ -35,7 +35,7 @@ tests/
 | `KESH_HOST` | non | `127.0.0.1` | Interface d'écoute. Set `0.0.0.0` explicitement en prod (reverse proxy en front). **Incompatible avec `KESH_TEST_MODE=true` si non-loopback.** |
 | `KESH_TEST_MODE` | non | `false` | `true`/`1` active `/api/v1/_test/*` (seed/reset DB). **DEV/CI ONLY** — refuse le démarrage si combiné avec un `KESH_HOST` non-loopback. |
 | `KESH_ADMIN_USERNAME` | non | `admin` | Username du compte admin bootstrap (FR3) |
-| `KESH_ADMIN_PASSWORD` | non | `changeme` | Mot de passe admin bootstrap (logué en warning s'il vaut `changeme`) |
+| `KESH_ADMIN_PASSWORD` | non | *vide* | Mot de passe admin bootstrap. Absent ou vide → onboarding `/setup`. Si posé : ≥ 12 caractères ; **refus au démarrage** s'il vaut `changeme`, contient `GENERATE_ME` ou est un gabarit entre chevrons `<…>` |
 | `KESH_JWT_EXPIRY_MINUTES` | non | `15` | Durée de vie de l'access token, borné `[1, 1440]` |
 | `KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS` | non | `30` | Lifetime absolu du refresh token, borné `[1, 365]` |
 | `KESH_REFRESH_INACTIVITY_MINUTES` | non | `15` | Sliding expiration : inactivité avant expiration du refresh token `[1, 1440]` |
@@ -52,9 +52,11 @@ openssl rand -hex 32
 ```
 
 Produit une chaîne hex de 64 caractères = 32 bytes d'entropie. **Ne jamais
-committer un vrai secret dans le repo.** Le fichier `.env.example` contient
-une valeur factice `change-me-32-bytes-minimum-secret-generate-with-openssl-rand-hex-32`
-qui est explicitement rejetée au démarrage via un warning.
+committer un vrai secret dans le repo.** Le fichier `.env.example` porte le
+placeholder `<GENERATE_ME: openssl rand -hex 32>`, et `docker-compose.yml` le
+défaut de garde `change-me-32-bytes-…` : tous deux sont **refusés au démarrage**
+(erreur fatale `ConfigError::InsecureJwtSecret`), comme toute valeur contenant
+`change-me` ou `GENERATE_ME`, ou de la forme `<…>`.
 
 ### Comportement au démarrage (story 1.5)
 
@@ -62,7 +64,9 @@ qui est explicitement rejetée au démarrage via un warning.
 2. **Config** chargée depuis l'environnement. Erreur fatale (`exit 1`) si :
    - `DATABASE_URL` manquante
    - `KESH_JWT_SECRET` manquante
+   - `KESH_JWT_SECRET` placeholder — contient `change-me` ou `GENERATE_ME`, ou de la forme `<…>` (`ConfigError::InsecureJwtSecret`, contrôlé avant la longueur)
    - `KESH_JWT_SECRET` < 32 bytes (`ConfigError::WeakJwtSecret`)
+   - `KESH_ADMIN_PASSWORD` posé et placeholder — `changeme`, contient `GENERATE_ME`, ou de la forme `<…>` (`ConfigError::InsecureAdminPassword`) — ou de moins de 12 caractères (`ConfigError::WeakAdminPassword`)
 3. **Pool MariaDB** créé. **Erreur fatale si la DB est indisponible** — l'authentification ne peut pas fonctionner sans DB (revirement partiel de la story 1.2 qui démarrait en mode dégradé).
 4. **Migrations** appliquées via `kesh_db::MIGRATOR.run(&pool)`. Cela inclut automatiquement toutes les migrations du crate `kesh-db`.
 5. **Bootstrap admin** (`ensure_admin_user`) : si la table `users` est vide, un compte admin est créé à partir de `KESH_ADMIN_USERNAME` / `KESH_ADMIN_PASSWORD`. Idempotent, tolérant aux races (voir Dev Notes story 1.5).

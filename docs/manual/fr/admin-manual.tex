@@ -224,6 +224,8 @@ curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/main/docker-compose.
     -o docker-compose.yml
 \end{lstlisting}
 
+Ce fichier désigne l'image publiée \texttt{gcorbaz/kesh:latest} : \keshcommand{docker compose up -d} la télécharge, aucune construction depuis les sources n'est nécessaire.
+
 \subsubsection{Étape 3 — Créer le fichier \texttt{.env}}
 
 Copier le fichier d'exemple et l'adapter :
@@ -233,15 +235,19 @@ curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/main/.env.example \
     -o .env
 \end{lstlisting}
 
-Éditer \keshpath{.env} et renseigner au minimum les variables suivantes (cf. section \ref{sec:env-vars} pour la liste complète) :
+Éditer \keshpath{.env} et renseigner au minimum les variables suivantes (cf. section \ref{sec:env-vars} pour la liste complète).
+
+\textbf{\texttt{KESH\_JWT\_SECRET} est obligatoire et se génère} : générez le secret (\keshcommand{openssl rand -hex 32}) et collez-le à la place du placeholder ; vérifiez : \keshcommand{grep KESH\_JWT\_SECRET .env} ne doit montrer ni \texttt{GENERATE\_ME}, ni \texttt{change-me}, ni valeur entre chevrons \texttt{<…>}. Sans secret, Kesh refuse de démarrer, y compris avec \keshpath{docker-compose.yml}, dont le défaut \texttt{change-me…} est refusé à dessein ; le placeholder \texttt{<GENERATE\_ME: …>} laissé tel quel est refusé depuis la 0.13.0. Les variables \texttt{KESH\_ADMIN\_*} restent optionnelles (onboarding \keshpath{/setup}). Avec \keshpath{docker-compose.yml}, \texttt{DATABASE\_URL} est \textbf{composée} des \texttt{MARIADB\_*} par le compose : la ligne \texttt{DATABASE\_URL} de \keshpath{.env} y est ignorée (elle sert \keshpath{docker-compose.prod.yml}).
+
+Remplacez chaque valeur entre chevrons \texttt{<…>} : recopiée telle quelle, elle fait refuser le démarrage (depuis la 0.13.0) pour \texttt{KESH\_JWT\_SECRET} et \texttt{KESH\_ADMIN\_PASSWORD} ; pour les mots de passe MariaDB, rien ne la refuse — choisissez-les vous-même.
 
 \begin{lstlisting}[language=bash]
 # Secret JWT — générer avec : openssl rand -hex 32 (minimum 32 octets)
-KESH_JWT_SECRET=<secret aleatoire, min. 32 octets, sans "change-me">
+KESH_JWT_SECRET=<secret aleatoire, min. 32 octets, sans change-me ni GENERATE_ME>
 
-# Compte administrateur initial (bootstrap si la base est vide)
-KESH_ADMIN_USERNAME=admin
-KESH_ADMIN_PASSWORD=<mot de passe fort, min. 12 caracteres>
+# Optionnel — sans elles, l'administrateur se crée à l'écran /setup
+# KESH_ADMIN_USERNAME=admin
+# KESH_ADMIN_PASSWORD=<mot de passe fort, min. 12 caracteres>
 
 # Mot de passe DB (conteneur MariaDB)
 MARIADB_ROOT_PASSWORD=<mot de passe fort>
@@ -534,17 +540,20 @@ cd /volume1/docker/kesh
 curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/main/docker-compose.prod.yml -o docker-compose.yml
 curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/main/.env.example -o .env
 
-# Générer les secrets obligatoires (DOIVENT remplacer les placeholders dans .env)
+# Secrets obligatoires : KESH_JWT_SECRET, DATABASE_URL (et les mots de
+# passe de votre MariaDB) -- ils DOIVENT remplacer les placeholders de .env
 openssl rand -hex 32   # → KESH_JWT_SECRET
+openssl rand -base64 32 # → mot de passe MariaDB (repris dans DATABASE_URL)
+# Optionnel : sans KESH_ADMIN_PASSWORD, l'administrateur se crée à l'écran
+# /setup ; si vous décommentez la ligne, remplacez son placeholder
 openssl rand -base64 24 # → KESH_ADMIN_PASSWORD
-openssl rand -base64 32 # → MARIADB_ROOT_PASSWORD et MARIADB_PASSWORD
 
 # Éditer .env avec vi/nano pour remplacer les <GENERATE_ME: ...> et <EDIT: ...>
 sudo nano .env
 \end{lstlisting}
 
 \begin{keshwarning}
-\textbf{Sécurité} : ne jamais laisser les valeurs par défaut \keshcommand{changeme} ou \keshcommand{change-me-32-bytes-...} dans \keshpath{.env}. Story 10-1 du hardening Kesh fait fail-fast au boot si ces placeholders restent — c'est intentionnel pour protéger les utilisateurs débutants qui oublient cette étape.
+\textbf{Sécurité} : ne jamais laisser les valeurs par défaut \keshcommand{changeme} ou \keshcommand{change-me-32-bytes-...}, le placeholder \keshcommand{<GENERATE\_ME: ...>} du gabarit, ni aucune valeur entre chevrons \texttt{<…>} dans \keshpath{.env} pour \texttt{KESH\_JWT\_SECRET} et \texttt{KESH\_ADMIN\_PASSWORD}. Kesh fait fail-fast au boot si ces placeholders restent — c'est intentionnel pour protéger les utilisateurs débutants qui oublient cette étape.
 \end{keshwarning}
 
 \subsubsection{Étape 3 — Importer le projet dans Container Manager}
@@ -564,6 +573,10 @@ sudo nano .env
     \item Container Manager affiche un preview du compose. Vérifier que les services attendus apparaissent (\keshcommand{kesh-api}, \keshcommand{mariadb}, éventuellement \keshcommand{traefik} si vous l'avez ajouté).
     \item Cliquer \textbf{Suivant} → \textbf{Démarrer le projet maintenant} → \textbf{Terminé}.
 \end{enumerate}
+
+\begin{keshnote}
+Pour appliquer ensuite une modification de \keshpath{.env} ou du compose, passez par SSH : \keshcommand{sudo docker compose up -d} dans \keshpath{/volume1/docker/kesh} (méthode CLI ci-dessous). L'action de l'interface de Container Manager qui recréerait le conteneur et relirait \keshpath{.env} n'est pas documentée ici.
+\end{keshnote}
 
 \paragraph{Méthode CLI (équivalente, scriptable)}
 
@@ -629,7 +642,7 @@ curl -k https://kesh.local/health
 # {"status":"ok","db":true,"version":"<version dynamique>","forgotPasswordEnabled":false}
 \end{lstlisting}
 
-Ouvrir un navigateur sur \keshcommand{https://kesh.local} et se connecter avec le compte admin renseigné dans \keshpath{.env}. Le wizard d'onboarding démarre automatiquement (création de la première company, choix du plan comptable, configuration des exercices).
+Ouvrir un navigateur sur \keshcommand{https://kesh.local} : sur une base vide sans \texttt{KESH\_ADMIN\_*}, l'écran \keshpath{/setup} crée le compte administrateur ; sinon, se connecter avec le compte admin renseigné dans \keshpath{.env}. Le wizard d'onboarding démarre automatiquement (création de la première company, choix du plan comptable, configuration des exercices).
 
 \subsubsection{Limitations Container Manager DSM}
 
@@ -645,54 +658,66 @@ Ouvrir un navigateur sur \keshcommand{https://kesh.local} et se connecter avec l
 
 \subsection{Variables d'environnement complètes}\label{sec:env-vars}
 
-Toute la configuration Kesh passe par des variables d'environnement, conformément à la philosophie \href{https://12factor.net/config}{Twelve-Factor App}. Le fichier \keshpath{.env} est chargé automatiquement par Docker Compose.
+Toute la configuration Kesh passe par des variables d'environnement, conformément à la philosophie \href{https://12factor.net/config}{Twelve-Factor App}.
 
+\begin{sloppypar}
+\textbf{Comment \keshpath{.env} atteint Kesh.} Docker Compose lit \keshpath{.env} pour remplir les \texttt{\$\{…\}} du fichier compose ; il ne le transmet pas au conteneur. \textbf{Seules les variables listées sous \texttt{environment:} du service \texttt{kesh-api} atteignent Kesh.} Les compose fournis les listent toutes, sauf \texttt{KESH\_STATIC\_DIR} et \texttt{KESH\_LOCALES\_DIR} (fixées par l'image Docker) et \texttt{KESH\_TEST\_MODE} (jamais en production). Une modification de \keshpath{.env} s'applique par \keshcommand{docker compose up -d}, \textbf{pas} par \keshcommand{docker compose restart}, qui redémarre le conteneur avec son environnement d'origine. Avec les compose fournis, une variable facultative que \keshpath{.env} ne pose pas, ou laisse vide, prend son défaut, sans avertissement ; seule exception, une ligne \texttt{KESH\_LOG\_FILE\_PATH=} laissée vide désactive le journal fichier.
+\end{sloppypar}
+
+\begin{sloppypar}
+\textbf{Une valeur qui contient \texttt{\$} se met entre apostrophes simples} (\texttt{KESH\_SMTP\_PASSWORD='pa\$word'}), notamment pour \texttt{KESH\_SMTP\_PASSWORD} — sinon Compose la tronque au \texttt{\$}, avec un seul avertissement à \keshcommand{docker compose up}. L'écriture \texttt{\$\$} n'échappe le \texttt{\$} que pour Compose (un \keshcommand{cargo run} hors Docker lit \texttt{pa\$\$word} comme \texttt{pa}). Attention : \keshcommand{docker compose config} réaffiche tout \texttt{\$} en \texttt{\$\$} — ce n'est pas la valeur reçue par Kesh.
+\end{sloppypar}
+
+\begin{sloppypar}
 Les tableaux ci-dessous listent \textbf{toutes} les variables lues par
 \texttt{kesh-api} (référence : \texttt{crates/kesh-api/src/config.rs} et
 \texttt{main.rs}), par thème. Une valeur hors borne ou invalide déclenche un
 warning au démarrage et retombe sur le défaut ; les variables « obligatoires »
 font échouer le démarrage si absentes.
+\end{sloppypar}
 
-\paragraph{Obligatoires (démarrage refusé si absentes).}
+\paragraph{Obligatoires (démarrage refusé si absentes).}\mbox{}\\
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lX}
     \toprule
     \keshtableheader{Variable} & \keshtableheader{Description} \\
     \midrule
-    DATABASE\_URL & URL de connexion MariaDB : \texttt{mysql://USER:PASS@HÔTE:PORT/BASE}. \\
-    KESH\_JWT\_SECRET & Secret HS256 des JWT. \textbf{$\geq$ 32 octets}. Générer : \keshcommand{openssl rand -hex 32}. Rejeté s'il contient \texttt{change-me}. \\
+    DATABASE\_URL & URL de connexion MariaDB : \texttt{mysql://USER:PASS@}\allowbreak\texttt{HÔTE:PORT/BASE}. \\
+    KESH\_JWT\_SECRET & Secret HS256 des JWT. \textbf{$\geq$ 32 octets}. Générer : \keshcommand{openssl rand -hex 32}. Rejeté s'il contient \texttt{change-me} ou \texttt{GENERATE\_ME} (sans égard à la casse), ou s'il est un gabarit entre chevrons \texttt{<…>}. \\
     \bottomrule
 \end{tabularx}
 
+\begin{sloppypar}
 \emph{Note} — \texttt{MARIADB\_ROOT\_PASSWORD}, \texttt{MARIADB\_USER},
 \texttt{MARIADB\_PASSWORD}, \texttt{MARIADB\_DATABASE} ne sont pas lues par
 \texttt{kesh-api} : elles configurent le \textbf{conteneur MariaDB} dans
 \texttt{docker-compose}. \texttt{DATABASE\_URL} doit rester cohérente avec elles.
+\end{sloppypar}
 
-\paragraph{Serveur \& réseau.}
+\paragraph{Serveur \& réseau.}\mbox{}\\
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
     \toprule
     \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
     \midrule
     KESH\_HOST & Adresse d'écoute (\texttt{0.0.0.0} en Docker, reverse proxy en frontal). & \texttt{127.0.0.1} \\
     KESH\_PORT & Port d'écoute (0/invalide $\to$ 80). & \texttt{80} \\
-    KESH\_STATIC\_DIR & Répertoire du SPA compilé servi en fallback. & \texttt{frontend/build} \\
-    KESH\_LOCALES\_DIR & Répertoire des traductions (FTL). & \emph{embarqué} \\
+    KESH\_STATIC\_DIR & Répertoire du SPA compilé servi en fallback. Fixé par l'image Docker (\texttt{/app/static}) ; \texttt{frontend/build} hors Docker. & \texttt{frontend/build} \\
+    KESH\_LOCALES\_DIR & Répertoire des traductions (FTL). Fixé par l'image Docker (\texttt{/app/locales}) ; dossier du dépôt hors Docker. & \emph{embarqué} \\
     KESH\_LANG & Locale de l'instance (\texttt{fr}/\texttt{de}/\texttt{it}/\texttt{en}). & \texttt{fr} \\
     \bottomrule
 \end{tabularx}
 
-\paragraph{Compte administrateur \& onboarding.}
+\paragraph{Compte administrateur \& onboarding.}\mbox{}\\
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
     \toprule
     \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
     \midrule
     KESH\_ADMIN\_USERNAME & Admin bootstrap (base vide) \emph{ou} recovery break-glass. Vide $\to$ onboarding \texttt{/setup}. & \emph{vide} \\
-    KESH\_ADMIN\_PASSWORD & Mot de passe admin. Si renseigné : $\geq$ 12 caractères, refusé si \texttt{changeme}. & \emph{vide} \\
+    KESH\_ADMIN\_PASSWORD & Mot de passe admin. Si renseigné : $\geq$ 12 caractères, refusé s'il vaut \texttt{changeme}, contient \texttt{GENERATE\_ME} ou est un gabarit entre chevrons \texttt{<…>}. & \emph{vide} \\
     KESH\_PRODUCTION\_RESET & Autorise le reset d'onboarding au-delà de l'étape 2 (\texttt{true}/\texttt{1}). & \texttt{false} \\
     \bottomrule
 \end{tabularx}
 
-\paragraph{Authentification, session \& sécurité.}
+\paragraph{Authentification, session \& sécurité.}\mbox{}\\
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
     \toprule
     \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
@@ -708,7 +733,7 @@ font échouer le démarrage si absentes.
     \bottomrule
 \end{tabularx}
 
-\paragraph{Journalisation.}
+\paragraph{Journalisation.}\mbox{}\\
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
     \toprule
     \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
@@ -721,7 +746,7 @@ font échouer le démarrage si absentes.
     \bottomrule
 \end{tabularx}
 
-\paragraph{Import bancaire, export \& sauvegarde.}
+\paragraph{Import bancaire, export \& sauvegarde.}\mbox{}\\
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
     \toprule
     \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
@@ -729,11 +754,11 @@ font échouer le démarrage si absentes.
     KESH\_BANK\_IMPORT\_MAX\_MB & Taille max fichier bank-import (CAMT.053/CSV), MiB. Borne [1, 100]. & \texttt{10} \\
     KESH\_ADMIN\_EXPORT\_INMEM\_MB & Plafond in-memory de l'export \texttt{.keshbackup} (au-delà : streaming). Borne [1, 2048]. & \texttt{50} \\
     KESH\_ADMIN\_IMPORT\_MAX\_MB & Taille max upload \texttt{.keshbackup} à l'import. Borne [1, 10240]. & \texttt{512} \\
-    KESH\_ADMIN\_BACKUP\_DIR & Répertoire du backup automatique pré-import. & \texttt{/tmp} \\
+    KESH\_ADMIN\_BACKUP\_DIR & Répertoire du backup automatique pré-import. Vide = défaut. & \texttt{/tmp} \\
     \bottomrule
 \end{tabularx}
 
-\paragraph{Import de factures depuis un dossier (\S\ref{sec:inbox-import}).}
+\paragraph{Import de factures depuis un dossier (\S\ref{sec:inbox-import}).}\mbox{}\\
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
     \toprule
     \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
@@ -746,7 +771,7 @@ font échouer le démarrage si absentes.
     \bottomrule
 \end{tabularx}
 
-\paragraph{E-mails sortants (SMTP) : envoi de factures et recovery de mot de passe.}
+\paragraph{E-mails sortants (SMTP) : envoi de factures et recovery de mot de passe.}\mbox{}\\
 La configuration SMTP sert \textbf{deux fonctions indépendantes} (v0.6) :
 l'\textbf{envoi de factures par e-mail} s'active dès que les quatre variables
 \texttt{KESH\_SMTP\_HOST/USER/PASSWORD/FROM} sont renseignées (sans elles, le
@@ -754,7 +779,7 @@ bouton d'envoi est simplement grisé — jamais de refus de démarrage) ; le
 \textbf{recovery de mot de passe} exige \emph{en plus}
 \texttt{KESH\_FEATURE\_FORGOT\_PASSWORD=true} et \texttt{KESH\_PUBLIC\_BASE\_URL}
 — et là, si le flag est actif, la config complète est \textbf{obligatoire}
-(démarrage refusé sinon).
+(démarrage refusé sinon).\par\noindent
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
     \toprule
     \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
@@ -770,7 +795,7 @@ bouton d'envoi est simplement grisé — jamais de refus de démarrage) ; le
     \bottomrule
 \end{tabularx}
 
-\paragraph{Développement / test (jamais en production).}
+\paragraph{Développement / test (jamais en production).}\mbox{}\\
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
     \toprule
     \keshtableheader{Variable} & \keshtableheader{Description} & \keshtableheader{Défaut} \\
@@ -779,9 +804,14 @@ bouton d'envoi est simplement grisé — jamais de refus de démarrage) ; le
     \bottomrule
 \end{tabularx}
 
-\paragraph{Chemins host des bind mounts (\texttt{docker-compose}, pas lus par l'app).}
+\paragraph{Chemins host des bind mounts (\texttt{docker-compose}, pas lus par l'app).}\mbox{}\\
 Où les dossiers du conteneur sont montés sur l'hôte, pour un accès depuis le PC
-(SMB / Synology Drive). Pointez vers un dossier partagé DSM (\texttt{/volume1/...}).
+(SMB / Synology Drive). Ce tableau vaut pour \keshpath{docker-compose.yml}
+\textbf{seul} : pointez alors vers un dossier partagé DSM (\texttt{/volume1/...}).
+Avec \keshpath{docker-compose.prod.yml} (installation Synology de ce manuel), les
+montages sont fixes --- \keshpath{./inbox}, \keshpath{./documents}, \keshpath{./log}
+dans le répertoire du compose --- et ces trois variables sont \textbf{sans effet}
+(une version configurable est suivie par l'issue \#558).\par\noindent
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
     \toprule
     \keshtableheader{Variable} & \keshtableheader{Monte sur} & \keshtableheader{Défaut host} \\
@@ -992,10 +1022,10 @@ Le \emph{bootstrap} crée seulement une \textbf{company provisoire} (placeholder
 Pour les déploiements automatisés (CI, Test, scripts de provisioning), il reste possible de créer l'administrateur \emph{déclarativement} via les variables \keshpath{.env} — équivalent strict du comportement v0.1.0/v0.1.1 :
 
 \begin{enumerate}
-    \item Renseigner \keshpath{KESH\_ADMIN\_USERNAME=admin} et \keshpath{KESH\_ADMIN\_PASSWORD=<mot-de-passe-fort-12-chars>} dans \keshpath{.env} \emph{avant} le premier démarrage.
+    \item Renseigner \keshpath{KESH\_ADMIN\_USERNAME=admin} et \keshpath{KESH\_ADMIN\_PASSWORD=<mot-de-passe-fort-12-chars>} dans \keshpath{.env} \emph{avant} le premier démarrage --- en remplaçant la valeur entre chevrons : recopiée telle quelle, elle fait refuser le démarrage (depuis la 0.13.0).
     \item Démarrer la stack (\keshcommand{docker compose up -d}). Le boot crée la company stub \textbf{et} l'administrateur en une seule passe.
     \item Se connecter directement avec ces identifiants — pas d'écran \keshpath{/setup}.
-    \item \textbf{Retirer les variables \keshpath{KESH\_ADMIN\_*} de \keshpath{.env}} après la première connexion réussie (sinon, chaque redémarrage logge un warning « retirer les vars »).
+    \item \textbf{Retirer les variables \keshpath{KESH\_ADMIN\_*} de \keshpath{.env}} après la première connexion réussie, puis \keshcommand{docker compose up -d} (sinon, chaque redémarrage logge un warning « retirer les vars » ; un \keshcommand{restart} garde les variables dans le conteneur).
     \item Changer le mot de passe administrateur via l'UI dès que possible.
 \end{enumerate}
 
@@ -1231,7 +1261,7 @@ Depuis la version \textbf{v0.1.2}, Kesh permet de réinitialiser le mot de passe
 
 \begin{enumerate}
     \item \textbf{Stopper le container} : \keshcommand{docker compose stop kesh-api} (la DB reste accessible pour les autres clients).
-    \item \textbf{Éditer \keshpath{.env}} : décommenter (ou ajouter) les deux variables :
+    \item \textbf{Éditer \keshpath{.env}} : décommenter (ou ajouter) les deux variables, en remplaçant la valeur entre chevrons (recopiée telle quelle, elle fait refuser le démarrage depuis la 0.13.0) :
 \begin{lstlisting}[language=bash]
 KESH_ADMIN_USERNAME=admin            # le username de votre compte admin
 KESH_ADMIN_PASSWORD=<nouveau-mdp-12+>  # nouveau mot de passe (>= 12 chars)
@@ -1243,7 +1273,7 @@ ERROR bootstrap: Recovery effectue -- RETIRER LES VARS DE .ENV
 \end{lstlisting}
     \item \textbf{Se connecter} via l'écran de login avec le nouveau mot de passe. Les sessions actives sur ce compte ont été révoquées par le recovery — les autres onglets/devices devront se reconnecter.
     \item \textbf{Retirer les variables \keshpath{KESH\_ADMIN\_*} de \keshpath{.env}} (les recommenter ou les supprimer). Tant qu'elles restent en place, un \keshpath{WARN bootstrap: retirer les vars de .env} apparaît à chaque redémarrage (no-op silencieux côté DB grâce à la détection « hash identique »).
-    \item \emph{(Optionnel)} Redémarrer une dernière fois (\keshcommand{docker compose restart kesh-api}) pour confirmer que les warnings bootstrap ont disparu des logs — preuve que les variables \keshpath{KESH\_ADMIN\_*} sont bien retirées.
+    \item \begin{sloppypar}Appliquer le retrait (\keshcommand{docker compose up -d kesh-api} --- un \keshcommand{restart} garderait les variables dans le conteneur) et confirmer que les warnings bootstrap ont disparu des logs — preuve que les variables \keshpath{KESH\_ADMIN\_*} sont bien retirées.\end{sloppypar}
 \end{enumerate}
 
 \begin{keshwarning}
@@ -1293,7 +1323,7 @@ Depuis la version \textbf{v0.1.3}, la variable d'environnement \keshpath{KESH\_C
 \begin{lstlisting}[language=bash]
 KESH_COOKIE_SECURE=false
 \end{lstlisting}
-    \item Redémarrer le container : \keshcommand{docker compose restart kesh-api}.
+    \item \begin{sloppypar}Appliquer la modification : \keshcommand{docker compose up -d kesh-api} (un \keshcommand{restart} ne relit pas \keshpath{.env}).\end{sloppypar}
     \item Les logs au boot affichent un warning explicite rappelant le compromis sécurité :
 \begin{lstlisting}[language=bash]
 WARN config: KESH_COOKIE_SECURE=false -- cookies session emis SANS le
@@ -1388,7 +1418,7 @@ La sauvegarde régulière de l'instance Kesh est \textbf{critique} pour deux rai
 
 \begin{itemize}
     \item \textbf{Quotidienne} : \keshcommand{mariadb-dump} complet, conservé 30 jours, stocké en local + offsite (cloud).
-    \item \textbf{Quotidienne, avec la base} : copie du répertoire des documents (\texttt{KESH\_DOCUMENTS\_DIR}, monté depuis \texttt{KESH\_DOCUMENTS\_HOST\_DIR}) --- il porte les \textbf{PDF des factures émises}, que ni le dump ni l'export ne contiennent (cf. \S\ref{sec:pdf-factures-sauvegarde}).
+    \item \textbf{Quotidienne, avec la base} : copie du répertoire des documents (\texttt{KESH\_DOCUMENTS\_DIR}, monté depuis \keshpath{./documents} avec \keshpath{docker-compose.prod.yml} ; avec \keshpath{docker-compose.yml}, depuis le dossier de \texttt{KESH\_DOCUMENTS\_HOST\_DIR} s'il est posé) --- il porte les \textbf{PDF des factures émises}, que ni le dump ni l'export ne contiennent (cf. \S\ref{sec:pdf-factures-sauvegarde}).
     \item \textbf{Hebdomadaire} : snapshot du volume Docker \keshpath{/var/lib/docker/volumes/kesh\_db\_data} (gel cohérent via \keshcommand{docker compose stop} puis snapshot, ou via LVM/ZFS).
     \item \textbf{Mensuelle} : export ZIP de souveraineté (Story 9-2b) pour chaque company depuis l'interface utilisateur.
     \item \textbf{Annuelle} : archivage long terme conforme OLICo Art. 9 (support non-modifiable type CD-R, ou hash signé sur support modifiable WORM).
@@ -1522,7 +1552,7 @@ Hyper Backup est l'outil principal Synology pour les backups versionnés vers st
     \item Lancer Hyper Backup → \textbf{+ Tâche de sauvegarde de données} → choisir la destination (ex. \emph{Synology C2 Backup} pour offsite managé, \emph{S3 Storage} pour AWS/Wasabi/Backblaze, \emph{Dossier local} pour HDD USB attaché au NAS).
     \item Cocher les dossiers à backup :
         \begin{itemize}
-            \item \textbf{Obligatoire} : \keshpath{/volume1/docker/kesh/} (compose + .env + tous les volumes via bind-mount si vous utilisez le pattern Synology recommandé) --- \textbf{y compris le répertoire des documents} (\texttt{KESH\_DOCUMENTS\_HOST\_DIR}), qui porte les PDF des factures émises (\S\ref{sec:pdf-factures-sauvegarde}). À restaurer avec la base.
+            \item \textbf{Obligatoire} : \keshpath{/volume1/docker/kesh/} (compose + .env + tous les volumes via bind-mount si vous utilisez le pattern Synology recommandé) --- \textbf{y compris le répertoire des documents} (\keshpath{./documents} avec \keshpath{docker-compose.prod.yml} ; avec \keshpath{docker-compose.yml}, le dossier de \texttt{KESH\_DOCUMENTS\_HOST\_DIR} s'il est posé --- à ajouter alors à la tâche de sauvegarde), qui porte les PDF des factures émises (\S\ref{sec:pdf-factures-sauvegarde}). À restaurer avec la base.
             \item \textbf{Optionnel} : volumes Docker nommés si vous n'utilisez pas le bind-mount (rare sur DSM) — accessibles via \keshpath{/volume1/@docker/volumes/kesh\_*}.
         \end{itemize}
     \item Cocher l'application \textbf{Container Manager} dans \emph{Applications} pour backup automatique de la configuration des projets.
@@ -1666,7 +1696,7 @@ Il n'existe pas de commande qui rejouerait les reprises \textbf{sans} restaurer 
 \begin{itemize}
     \item \keshcommand{KESH\_ADMIN\_IMPORT\_MAX\_MB} — taille maximale d'un fichier \keshcommand{.keshbackup} importé, en Mio (défaut \textbf{512}, bornes [1, 10240]).
     \item \keshcommand{KESH\_ADMIN\_EXPORT\_INMEM\_MB} — plafond d'assemblage en mémoire de l'export ; au-delà, l'export est streamé via un fichier temporaire (défaut \textbf{50}, bornes [1, 2048]).
-    \item \keshcommand{KESH\_ADMIN\_BACKUP\_DIR} — répertoire de la sauvegarde automatique pré-import (défaut \keshpath{/tmp}, créé s'il n'existe pas).
+    \item \keshcommand{KESH\_ADMIN\_BACKUP\_DIR} — répertoire de la sauvegarde automatique pré-import (défaut \keshpath{/tmp}, y compris quand la variable est vide ; créé s'il n'existe pas).
 \end{itemize}
 
 \subsubsection{Quelle méthode de sauvegarde choisir ?}
@@ -1713,7 +1743,7 @@ Les versions de Kesh sont publiées sur GitHub avec un tag \texttt{vX.Y.Z} (vers
 \begin{enumerate}
     \item \textbf{Sauvegarder} la base de données et le volume \texttt{kesh\_db\_data} (cf. section précédente).
     \item \textbf{Lire le changelog} de la nouvelle version pour identifier les breaking changes éventuels et les migrations nécessaires.
-    \item \textbf{Mettre à jour} \keshpath{docker-compose.yml} si nécessaire (nouvelles env vars, changement d'image).
+    \item \textbf{Mettre à jour le fichier compose} --- \textbf{obligatoire pour passer à la 0.13.0} (\S\ref{sec:maj-0-13}) : re-télécharger le compose et y reporter ses adaptations locales, puis vérifier les placeholders de \keshpath{.env}. Pour les versions suivantes : selon le changelog (nouvelles variables, changement d'image).
     \item \textbf{Tirer la nouvelle image} : \keshcommand{docker compose pull kesh-api}.
     \item \textbf{Redémarrer} : \keshcommand{docker compose up -d kesh-api}.
     \item \textbf{Vérifier} les logs : \keshcommand{docker compose logs -f kesh-api} pour s'assurer que les migrations DB se sont bien déroulées.
@@ -1723,6 +1753,92 @@ Les versions de Kesh sont publiées sur GitHub avec un tag \texttt{vX.Y.Z} (vers
 \begin{keshwarning}
 Toujours sauvegarder \textbf{avant} la mise à jour. Une migration DB peut être irréversible. En cas de problème, la restauration depuis sauvegarde reste votre filet de sécurité.
 \end{keshwarning}
+
+\subsubsection{Passer à la 0.13.0 : le compose et le fichier \texttt{.env}}\label{sec:maj-0-13}
+
+Jusqu'à la 0.12, les compose fournis ne transmettaient pas à Kesh seize variables que \keshpath{.env} proposait de régler (e-mails, mot de passe oublié, sortie de la démonstration, langue, plafonds…) : les modifier restait sans effet, sans aucun message. Le défaut est dans le \textbf{fichier compose que vous détenez} : la nouvelle image seule ne corrige rien, et le compose de la 0.13.0 s'emploie avec l'image 0.13.0.
+
+\begin{keshwarning}
+\textbf{Relisez votre \keshpath{.env} avant de mettre à jour : des lignes jusqu'ici sans effet le deviennent.}
+
+\textbf{Refus de démarrer} --- le message nomme la variable (\keshcommand{docker compose logs kesh-api}) :
+\begin{itemize}
+    \item \texttt{KESH\_SMTP\_TLS} ou \texttt{KESH\_FEATURE\_FORGOT\_PASSWORD} d'une valeur autre que \texttt{true}/\texttt{false}/\texttt{1}/\texttt{0} (espaces de tête et de fin ignorés), sur les deux compose --- même sans le mot de passe oublié pour \texttt{KESH\_SMTP\_TLS} ;
+    \item \texttt{KESH\_COOKIE\_SECURE} d'une valeur autre que \texttt{true}/\texttt{false}/\texttt{1}/\texttt{0}, sur \keshpath{docker-compose.prod.yml}, où il était ignoré ;
+    \item \texttt{KESH\_FEATURE\_FORGOT\_PASSWORD=true} avec l'une des cinq \texttt{KESH\_SMTP\_HOST}/\texttt{\_USER}/\texttt{\_PASSWORD}/\texttt{\_FROM}, \texttt{KESH\_PUBLIC\_BASE\_URL} absente, un \texttt{KESH\_SMTP\_FROM} mal formé (« Nom <email> ») ou un \texttt{KESH\_SMTP\_HOST} au format \texttt{hôte:port} ;
+    \item \texttt{KESH\_FEATURE\_FORGOT\_PASSWORD=true} avec une configuration SMTP complète dont le mailer ne se construit pas (adresse \texttt{KESH\_SMTP\_FROM} refusée, échec de l'initialisation STARTTLS) : « le build du mailer SMTP a échoué … abandon » (sans le mot de passe oublié, le même échec rend seulement l'envoi de factures indisponible) ;
+    \item \texttt{KESH\_JWT\_SECRET} resté au placeholder du gabarit ou à une valeur entre chevrons ; \texttt{KESH\_ADMIN\_PASSWORD} décommenté sans remplacer le sien, ou recopié d'un exemple de ce manuel (\texttt{<mot de passe fort, …>}, \texttt{<nouveau-mdp-12+>}).
+\end{itemize}
+
+\textbf{Effets sans refus} : \texttt{KESH\_PRODUCTION\_RESET} posé lors d'une ancienne démonstration réautorise, \textbf{sur une installation restée en démonstration}, la réinitialisation, qui vide toutes les données de la société ; les quatre \texttt{KESH\_SMTP\_HOST}/\texttt{\_USER}/\texttt{\_PASSWORD}/\texttt{\_FROM} posées « pour plus tard » activent l'envoi de factures par e-mail, et avec \texttt{KESH\_FEATURE\_FORGOT\_PASSWORD=true} (et \texttt{KESH\_PUBLIC\_BASE\_URL}) la réinitialisation du mot de passe par e-mail --- quiconque connaît l'adresse d'un utilisateur peut alors demander un lien ; \texttt{KESH\_COOKIE\_SECURE=false} sur \keshpath{docker-compose.prod.yml} émet des cookies sans \texttt{Secure} ; \texttt{KESH\_ADMIN\_BACKUP\_DIR} (un chemin non monté fait écrire dans le conteneur) ; \texttt{KESH\_LANG} ; \texttt{KESH\_PASSWORD\_MIN\_LENGTH} sur \keshpath{docker-compose.yml} s'applique côté serveur, alors que trois écrans gardent 12 en dur : au-dessous de 12, les écrans refusent quand même ; au-dessus, l'écran accepte et le serveur refuse ; une ligne \texttt{KESH\_LOG\_FILE\_PATH=} \textbf{vide} désactive désormais le journal fichier ; et plus généralement toute ligne décommentée de ces seize variables.
+
+\textbf{Un \keshpath{.env} copié du gabarit sans modification} ne change pas de comportement --- les seules lignes actives du gabarit parmi ces variables valent leur défaut (\texttt{KESH\_LANG=fr}, \texttt{KESH\_PASSWORD\_MIN\_LENGTH=12}, \texttt{KESH\_BANK\_IMPORT\_MAX\_MB=10}, \texttt{KESH\_COOKIE\_SECURE=true}) --- \textbf{sauf} le secret JWT laissé au placeholder, désormais refusé. Un \texttt{KESH\_ADMIN\_PASSWORD} absent ou vide ne change rien avec \keshpath{docker-compose.prod.yml}, et cesse de faire refuser le démarrage avec \keshpath{docker-compose.yml}.
+\end{keshwarning}
+
+\textbf{Voie recommandée : re-télécharger le compose} --- \keshpath{docker-compose.yml}, ou, sur Synology, \keshpath{docker-compose.prod.yml} enregistré sous \keshpath{docker-compose.yml} (\S\ref{sec:synology}) --- \textbf{et y reporter vos seules adaptations locales} (port \texttt{8080:80}, réseau, chemins des montages). Un montage modifié à la main et non reporté revient à \keshpath{./documents} (ou \keshpath{./inbox}, \keshpath{./log}) : justificatifs et PDF paraissent alors disparus --- ils sont toujours dans l'ancien dossier. Les commandes s'exécutent depuis le répertoire du compose (\keshpath{/volume1/docker/kesh} sur Synology) ; avec un autre nom de fichier, ajoutez \keshcommand{-f <son fichier>} à chaque commande \keshcommand{docker compose}. Puis \keshcommand{docker compose pull} \textbf{avant} \keshcommand{docker compose up -d}.
+
+\begin{sloppypar}
+\textbf{Vérifier les placeholders} (Kesh 0.13.0 refuse de démarrer si \texttt{KESH\_JWT\_SECRET} ou \texttt{KESH\_ADMIN\_PASSWORD} est resté au placeholder \texttt{<GENERATE\_ME: …>} du gabarit ou à une valeur entre chevrons \texttt{<…>}). Le contrôle se demande à Compose lui-même, le compose final en place --- Compose lit \keshpath{.env} à sa façon (\texttt{export}, espaces autour de \texttt{=}, guillemets, fins de ligne Windows), qu'aucun \texttt{grep} sur \keshpath{.env} n'imite sûrement :
+\end{sloppypar}
+
+\begin{lstlisting}[language=bash]
+sudo docker compose config \
+  | grep -iE 'KESH_(JWT_SECRET|ADMIN_PASSWORD): .? *(<|.*generate_me)'
+\end{lstlisting}
+
+\begin{sloppypar}
+La commande doit rester \textbf{muette}. Dans le cas qu'elle détecte, elle affiche la ligne trouvée --- un placeholder, non un secret. Elle est un sur-ensemble du refus de Kesh (une valeur qui commence par \texttt{<} sans finir par \texttt{>} y apparaît aussi, que Kesh accepte). Si elle montre \texttt{KESH\_JWT\_SECRET} : générez le secret (\keshcommand{openssl rand -hex 32}) \textbf{avant} le \keshcommand{up -d} --- les sessions ouvertes sont alors perdues, chacun se reconnecte. Si elle montre \texttt{KESH\_ADMIN\_PASSWORD} : choisissez un vrai mot de passe ($\geq$ 12 caractères) ou recommentez la ligne (onboarding \keshpath{/setup} sur une base vide, sans effet sur une base qui a déjà un administrateur). Faute de quoi Kesh refuse de démarrer.
+\end{sloppypar}
+
+\paragraph{Pour qui garde son fichier compose : deux gestes.}\mbox{}\\
+Sous \texttt{environment:} du service \texttt{kesh-api} :
+\begin{enumerate}
+    \item \textbf{ajouter} les lignes \textbf{nouvelles}, et elles seules --- pour \keshpath{docker-compose.yml} :
+\begin{lstlisting}[language=bash]
+      KESH_LANG: ${KESH_LANG:-}
+      KESH_PASSWORD_MIN_LENGTH: ${KESH_PASSWORD_MIN_LENGTH:-}
+      KESH_BANK_IMPORT_MAX_MB: ${KESH_BANK_IMPORT_MAX_MB:-}
+      KESH_SMTP_HOST: ${KESH_SMTP_HOST:-}
+      KESH_SMTP_PORT: ${KESH_SMTP_PORT:-}
+      KESH_SMTP_USER: ${KESH_SMTP_USER:-}
+      KESH_SMTP_PASSWORD: ${KESH_SMTP_PASSWORD:-}
+      KESH_SMTP_FROM: ${KESH_SMTP_FROM:-}
+      KESH_SMTP_TLS: ${KESH_SMTP_TLS:-}
+      KESH_PUBLIC_BASE_URL: ${KESH_PUBLIC_BASE_URL:-}
+      KESH_FEATURE_FORGOT_PASSWORD: ${KESH_FEATURE_FORGOT_PASSWORD:-}
+      KESH_PRODUCTION_RESET: ${KESH_PRODUCTION_RESET:-}
+      KESH_ADMIN_BACKUP_DIR: ${KESH_ADMIN_BACKUP_DIR:-}
+      KESH_ADMIN_EXPORT_INMEM_MB: ${KESH_ADMIN_EXPORT_INMEM_MB:-}
+      KESH_ADMIN_IMPORT_MAX_MB: ${KESH_ADMIN_IMPORT_MAX_MB:-}
+\end{lstlisting}
+    pour \keshpath{docker-compose.prod.yml} :
+\begin{lstlisting}[language=bash]
+      KESH_COOKIE_SECURE: ${KESH_COOKIE_SECURE:-}
+      KESH_SMTP_HOST: ${KESH_SMTP_HOST:-}
+      KESH_SMTP_PORT: ${KESH_SMTP_PORT:-}
+      KESH_SMTP_USER: ${KESH_SMTP_USER:-}
+      KESH_SMTP_PASSWORD: ${KESH_SMTP_PASSWORD:-}
+      KESH_SMTP_FROM: ${KESH_SMTP_FROM:-}
+      KESH_SMTP_TLS: ${KESH_SMTP_TLS:-}
+      KESH_PUBLIC_BASE_URL: ${KESH_PUBLIC_BASE_URL:-}
+      KESH_FEATURE_FORGOT_PASSWORD: ${KESH_FEATURE_FORGOT_PASSWORD:-}
+      KESH_PRODUCTION_RESET: ${KESH_PRODUCTION_RESET:-}
+      KESH_ADMIN_BACKUP_DIR: ${KESH_ADMIN_BACKUP_DIR:-}
+      KESH_ADMIN_EXPORT_INMEM_MB: ${KESH_ADMIN_EXPORT_INMEM_MB:-}
+      KESH_ADMIN_IMPORT_MAX_MB: ${KESH_ADMIN_IMPORT_MAX_MB:-}
+\end{lstlisting}
+    \item \textbf{remplacer} les lignes \textbf{existantes} qui changent de forme, dans les deux compose --- ligne remplacée, jamais dupliquée :
+\begin{lstlisting}[language=bash]
+      KESH_ADMIN_PASSWORD: ${KESH_ADMIN_PASSWORD:-}
+      KESH_LOG_FILE_PATH: ${KESH_LOG_FILE_PATH-/var/log/kesh/kesh.log}
+\end{lstlisting}
+\end{enumerate}
+\begin{sloppypar}
+Puis \keshcommand{docker compose config -q} (qui refuse une clé en double), vérifier que \keshcommand{docker compose config} montre \texttt{KESH\_SMTP\_HOST} et \texttt{KESH\_PRODUCTION\_RESET}, et \keshcommand{docker compose up -d}.
+\end{sloppypar}
+
+
+Vérification fonctionnelle : \keshcommand{curl http://127.0.0.1/health} montre \texttt{"smtpConfigured":true} si le SMTP est posé.
 
 \subsection{Mise à jour majeure (changement de version X)}
 
@@ -2122,11 +2238,14 @@ l'admin existant et \texttt{KESH\_ADMIN\_PASSWORD} avec le nouveau mot de passe
 docker compose up -d kesh-api   # relit .env au démarrage
 \end{lstlisting}
 
+\begin{sloppypar}
 Au démarrage, si un admin portant ce nom d'utilisateur existe déjà, son mot de
 passe est réinitialisé sur la nouvelle valeur. Retirez ensuite
-\texttt{KESH\_ADMIN\_PASSWORD} du \keshpath{.env}. Si le recovery par email est
+\texttt{KESH\_ADMIN\_PASSWORD} du \keshpath{.env}, puis
+\keshcommand{docker compose up -d kesh-api}. Si le recovery par email est
 activé (\texttt{KESH\_FEATURE\_FORGOT\_PASSWORD=true}), l'utilisateur peut aussi
 passer par le lien « Mot de passe oublié ».
+\end{sloppypar}
 
 \subsection{Données corrompues détectées}
 

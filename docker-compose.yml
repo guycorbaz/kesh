@@ -28,6 +28,12 @@ services:
 
   # --- API Kesh (Rust + Frontend statique) ---
   kesh-api:
+    # Image publiée : `docker compose up -d` la TIRE (ce fichier s'installe seul,
+    # sans les sources). Depuis un clone du dépôt, `docker compose up -d --build`
+    # construit depuis les sources — et ÉTIQUETTE ce build `gcorbaz/kesh:latest`,
+    # que les `up -d` suivants emploient sans tirer ; pour revenir à l'image
+    # publiée : `docker compose pull kesh-api`.
+    image: gcorbaz/kesh:latest
     build:
       context: .
       dockerfile: Dockerfile
@@ -37,6 +43,12 @@ services:
       mariadb:
         condition: service_healthy
     environment:
+      # ⚠️ Seules les variables listées ici atteignent Kesh : Compose lit `.env`
+      # pour remplir les `${…}` de ce fichier, sans le transmettre au conteneur.
+      # Une variable ajoutée au code doit l'être ici — test `configuration_transmise`.
+      # Après une modification de `.env` : `docker compose up -d` (un `restart`
+      # ne relit pas `.env`).
+      #
       # Base de données — correspond au service mariadb ci-dessus
       DATABASE_URL: mysql://${MARIADB_USER:-kesh}:${MARIADB_PASSWORD:-kesh_dev}@mariadb:3306/${MARIADB_DATABASE:-kesh}
 
@@ -44,9 +56,10 @@ services:
       KESH_PORT: ${KESH_PORT:-80}
       KESH_HOST: ${KESH_HOST:-0.0.0.0}  # 0.0.0.0 en docker-compose (reverse proxy fronts)
 
-      # Admin initial
+      # Admin initial — optionnel : vide → onboarding `/setup` au premier accès.
+      # Si posé : ≥ 12 caractères, ni `changeme`, ni placeholder du gabarit.
       KESH_ADMIN_USERNAME: ${KESH_ADMIN_USERNAME:-admin}
-      KESH_ADMIN_PASSWORD: ${KESH_ADMIN_PASSWORD:-changeme}
+      KESH_ADMIN_PASSWORD: ${KESH_ADMIN_PASSWORD:-}
 
       # Authentification
       KESH_JWT_SECRET: ${KESH_JWT_SECRET:-change-me-32-bytes-minimum-secret-generate-with-openssl-rand-hex-32}
@@ -67,9 +80,10 @@ services:
       # Logging — stdout (docker logs) + fichier avec rotation (Story v011-1).
       RUST_LOG: ${RUST_LOG:-info}
       # Écrit AUSSI les logs dans un fichier /var/log/kesh/kesh.log (bind-monté
-      # sur l'hôte, cf. volumes) avec rotation. Opt-out : KESH_LOG_FILE_PATH=""
-      # dans .env → stdout uniquement (le mount ./log devient inutilisé).
-      KESH_LOG_FILE_PATH: ${KESH_LOG_FILE_PATH:-/var/log/kesh/kesh.log}
+      # sur l'hôte, cf. volumes) avec rotation. Opt-out : une ligne
+      # `KESH_LOG_FILE_PATH=` VIDE dans .env → stdout uniquement. Tiret SANS
+      # deux-points : le défaut ne vaut que pour une variable absente de .env.
+      KESH_LOG_FILE_PATH: ${KESH_LOG_FILE_PATH-/var/log/kesh/kesh.log}
       KESH_LOG_FILE_ROTATION: ${KESH_LOG_FILE_ROTATION:-daily}
       KESH_LOG_FILE_MAX_FILES: ${KESH_LOG_FILE_MAX_FILES:-7}
       KESH_LOG_FILE_FORMAT: ${KESH_LOG_FILE_FORMAT:-pretty}
@@ -80,6 +94,33 @@ services:
       KESH_INBOX_MAX_FILE_BYTES: ${KESH_INBOX_MAX_FILE_BYTES:-26214400}
       KESH_INBOX_MAX_FILES_PER_RUN: ${KESH_INBOX_MAX_FILES_PER_RUN:-200}
       KESH_INBOX_MAX_PDF_PAGES: ${KESH_INBOX_MAX_PDF_PAGES:-20}
+
+      # Les variables ci-dessous, en `${NOM:-}`, arrivent vides quand `.env` ne les
+      # pose pas ou les laisse vides : vide (ou blanc) = défaut du code, sans
+      # avertissement (manuel d'administration, § Variables d'environnement).
+
+      # Localisation, politique de mot de passe, import bancaire
+      KESH_LANG: ${KESH_LANG:-}
+      KESH_PASSWORD_MIN_LENGTH: ${KESH_PASSWORD_MIN_LENGTH:-}
+      KESH_BANK_IMPORT_MAX_MB: ${KESH_BANK_IMPORT_MAX_MB:-}
+
+      # E-mails sortants (envoi de factures) et mot de passe oublié par e-mail
+      KESH_SMTP_HOST: ${KESH_SMTP_HOST:-}
+      KESH_SMTP_PORT: ${KESH_SMTP_PORT:-}
+      KESH_SMTP_USER: ${KESH_SMTP_USER:-}
+      KESH_SMTP_PASSWORD: ${KESH_SMTP_PASSWORD:-}
+      KESH_SMTP_FROM: ${KESH_SMTP_FROM:-}
+      KESH_SMTP_TLS: ${KESH_SMTP_TLS:-}
+      KESH_PUBLIC_BASE_URL: ${KESH_PUBLIC_BASE_URL:-}
+      KESH_FEATURE_FORGOT_PASSWORD: ${KESH_FEATURE_FORGOT_PASSWORD:-}
+
+      # Sortie de la démonstration (réinitialisation d'une installation de démo)
+      KESH_PRODUCTION_RESET: ${KESH_PRODUCTION_RESET:-}
+
+      # Export / import d'installation (.keshbackup)
+      KESH_ADMIN_BACKUP_DIR: ${KESH_ADMIN_BACKUP_DIR:-}
+      KESH_ADMIN_EXPORT_INMEM_MB: ${KESH_ADMIN_EXPORT_INMEM_MB:-}
+      KESH_ADMIN_IMPORT_MAX_MB: ${KESH_ADMIN_IMPORT_MAX_MB:-}
     ports:
       - "80:80"
     volumes:

@@ -24,9 +24,15 @@
 #   - `ports: "127.0.0.1:80:80"` (restriction host-side au loopback de
 #     l'hôte NAS — accès LAN privé v0.1.0, décision D5). Reverse proxy DSM
 #     futur v0.2+ déposera son frontal en façade.
-#   - `KESH_JWT_SECRET` et `KESH_ADMIN_PASSWORD` doivent être définis dans le
-#     `.env` user-side (cf. `.env.example`). Les defaults insecure type
-#     `changeme` ou `change-me-32-bytes-...` font fail-fast au boot (Story 10-1).
+#   - `DATABASE_URL` et `KESH_JWT_SECRET` doivent être définis dans le `.env`
+#     user-side (cf. `.env.example`). `KESH_ADMIN_PASSWORD` est OPTIONNEL :
+#     absent → l'administrateur se crée à l'écran `/setup` au premier accès ;
+#     si posé, ≥ 12 caractères et ≠ `changeme`. Les valeurs insecure —
+#     `changeme`, `change-me-32-bytes-...`, le placeholder `<GENERATE_ME: ...>`
+#     du gabarit ou toute valeur entre chevrons `<...>` — font fail-fast au boot.
+#   - Seules les variables listées sous `environment:` atteignent Kesh ; après
+#     une modification de `.env` : `docker compose up -d` (un `restart` ne
+#     relit pas `.env`).
 #
 # **Logs & ressources** :
 #   - Log rotation `json-file` 10 MB × 5 fichiers max = 50 MB plafond.
@@ -40,7 +46,8 @@
 #
 #     # 2. Configurer .env depuis le template
 #     cp .env.example .env
-#     # éditer .env : DATABASE_URL, KESH_JWT_SECRET, KESH_ADMIN_PASSWORD
+#     # éditer .env : DATABASE_URL, KESH_JWT_SECRET (openssl rand -hex 32)
+#     # — KESH_ADMIN_PASSWORD optionnel (sinon onboarding /setup)
 #
 #     # 3. Démarrer
 #     docker compose -f docker-compose.prod.yml up -d
@@ -56,6 +63,12 @@ services:
     container_name: kesh-api
     restart: unless-stopped
     environment:
+      # ⚠️ Seules les variables listées ici atteignent Kesh : Compose lit `.env`
+      # pour remplir les `${…}` de ce fichier, sans le transmettre au conteneur.
+      # Une variable ajoutée au code doit l'être ici — test `configuration_transmise`.
+      # Après une modification de `.env` : `docker compose up -d` (un `restart`
+      # ne relit pas `.env`).
+      #
       # Base de données — URL exacte fournie par l'utilisateur via .env
       DATABASE_URL: ${DATABASE_URL}
 
@@ -64,14 +77,15 @@ services:
       KESH_PORT: ${KESH_PORT:-80}
       KESH_HOST: 0.0.0.0
 
-      # Admin initial — utilisé uniquement au tout premier boot avec table
-      # users vide (bootstrap.rs idempotent). Doit ≥ 12 chars et ≠ "changeme"
-      # (case-insensitive) sinon fail-fast Story 10-1.
+      # Admin initial — OPTIONNEL : absent ou vide → onboarding `/setup` au
+      # premier accès (table users vide). Si posé : ≥ 12 chars, ≠ "changeme"
+      # (case-insensitive), ni placeholder du gabarit, sinon fail-fast.
       KESH_ADMIN_USERNAME: ${KESH_ADMIN_USERNAME:-admin}
-      KESH_ADMIN_PASSWORD: ${KESH_ADMIN_PASSWORD}
+      KESH_ADMIN_PASSWORD: ${KESH_ADMIN_PASSWORD:-}
 
-      # Authentification — KESH_JWT_SECRET doit ≥ 32 chars et NE PAS
-      # contenir "change-me" sinon fail-fast Story 10-1.
+      # Authentification — KESH_JWT_SECRET OBLIGATOIRE : ≥ 32 chars, sans
+      # "change-me" ni "GENERATE_ME", et pas une valeur entre chevrons <...>,
+      # sinon fail-fast. Générer : openssl rand -hex 32
       KESH_JWT_SECRET: ${KESH_JWT_SECRET}
       KESH_JWT_EXPIRY_MINUTES: ${KESH_JWT_EXPIRY_MINUTES:-15}
       KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS: ${KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS:-30}
@@ -97,9 +111,10 @@ services:
       # Logs fichier avec rotation (Story v011-1, Issue #119) — EN PLUS de
       # stdout/`docker logs`. Écrits dans /var/log/kesh (monté sur ./log côté
       # hôte, co-localisé avec .env + DB pour le scope unique Hyper Backup).
-      # Opt-out : `KESH_LOG_FILE_PATH=""` dans .env → stdout pur (le mount
-      # ./log devient alors inutilisé mais inoffensif).
-      KESH_LOG_FILE_PATH: ${KESH_LOG_FILE_PATH:-/var/log/kesh/kesh.log}
+      # Opt-out : une ligne `KESH_LOG_FILE_PATH=` VIDE dans .env → stdout pur
+      # (le mount ./log devient alors inutilisé mais inoffensif). Tiret SANS
+      # deux-points : le défaut ne vaut que pour une variable absente de .env.
+      KESH_LOG_FILE_PATH: ${KESH_LOG_FILE_PATH-/var/log/kesh/kesh.log}
       KESH_LOG_FILE_ROTATION: ${KESH_LOG_FILE_ROTATION:-daily}
       KESH_LOG_FILE_MAX_FILES: ${KESH_LOG_FILE_MAX_FILES:-7}
       KESH_LOG_FILE_FORMAT: ${KESH_LOG_FILE_FORMAT:-pretty}
@@ -111,11 +126,37 @@ services:
       KESH_INBOX_MAX_FILE_BYTES: ${KESH_INBOX_MAX_FILE_BYTES:-26214400}
       KESH_INBOX_MAX_FILES_PER_RUN: ${KESH_INBOX_MAX_FILES_PER_RUN:-200}
       KESH_INBOX_MAX_PDF_PAGES: ${KESH_INBOX_MAX_PDF_PAGES:-20}
+
+      # Les variables ci-dessous, en `${NOM:-}`, arrivent vides quand `.env` ne les
+      # pose pas ou les laisse vides : vide (ou blanc) = défaut du code, sans
+      # avertissement (manuel d'administration, § Variables d'environnement).
+
+      # Cookies de session `Secure` (défaut true ; false = HTTP-only LAN strict)
+      KESH_COOKIE_SECURE: ${KESH_COOKIE_SECURE:-}
+
+      # E-mails sortants (envoi de factures) et mot de passe oublié par e-mail
+      KESH_SMTP_HOST: ${KESH_SMTP_HOST:-}
+      KESH_SMTP_PORT: ${KESH_SMTP_PORT:-}
+      KESH_SMTP_USER: ${KESH_SMTP_USER:-}
+      KESH_SMTP_PASSWORD: ${KESH_SMTP_PASSWORD:-}
+      KESH_SMTP_FROM: ${KESH_SMTP_FROM:-}
+      KESH_SMTP_TLS: ${KESH_SMTP_TLS:-}
+      KESH_PUBLIC_BASE_URL: ${KESH_PUBLIC_BASE_URL:-}
+      KESH_FEATURE_FORGOT_PASSWORD: ${KESH_FEATURE_FORGOT_PASSWORD:-}
+
+      # Sortie de la démonstration (réinitialisation d'une installation de démo)
+      KESH_PRODUCTION_RESET: ${KESH_PRODUCTION_RESET:-}
+
+      # Export / import d'installation (.keshbackup)
+      KESH_ADMIN_BACKUP_DIR: ${KESH_ADMIN_BACKUP_DIR:-}
+      KESH_ADMIN_EXPORT_INMEM_MB: ${KESH_ADMIN_EXPORT_INMEM_MB:-}
+      KESH_ADMIN_IMPORT_MAX_MB: ${KESH_ADMIN_IMPORT_MAX_MB:-}
     ports:
       # Restriction host-side au loopback NAS (LAN privé v0.1.0, D5).
       # Accès via SSH tunnel ou reverse proxy DSM (futur v0.2+).
       - "127.0.0.1:80:80"
     volumes:
+      # Montages fixes : les KESH_*_HOST_DIR de .env sont sans effet ici (issue #558).
       # Logs fichier (Story v011-1) — répertoire host ./log/ relatif au cwd
       # du compose. Créé au 1er boot, owned root:root (le container tourne en
       # root) — cf. warning permissions dans .env.example.

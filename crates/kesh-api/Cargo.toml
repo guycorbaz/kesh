@@ -79,3 +79,6 @@ tempfile = "3"
 # Story 15-5e1 (choix C70) — le volet (c) du registre des routes analyse le
 # corps des handlers avec l'analyseur de Rust (déjà au Cargo.lock, 2.0.118).
 syn = { version = "2", features = ["full", "visit"] }
+# Story 15-11a (#550, choix C72) — analyseur YAML des compose pour le test
+# `configuration_transmise` (pur Rust, sans serde). Dépendance de test seule.
+yaml-rust2 = "0.13.0"

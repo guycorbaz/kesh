@@ -78,7 +78,8 @@ docker compose -f docker-compose.dev.yml up -d
 
 # 3. Configurer l'environnement
 cp .env.example .env
-# Adapter les valeurs dans .env
+# Adapter les valeurs dans .env, dont KESH_JWT_SECRET (openssl rand -hex 32) —
+# le placeholder <GENERATE_ME: …> laissé tel quel est refusé au démarrage
 
 # 4. Frontend (hot reload)
 cd frontend
