@@ -3578,3 +3578,10 @@ l'import (#458–#461).
   seuil de taille qui avait fait diverger la 15-1 d'août) ; renommer les fiches (les clés du registre et du
   `sprint-status` y renvoient).
 - **Réversible** : oui (planification).
+
+## C-15-11b-1 — 15-11b (dev, T0) : alignement sur le livré de la 15-11a — inventaire recompté, tests « valeur vide » remplacés, capture de la 15-11a réutilisée
+
+- **Contexte** : la revue de code P1 de la 15-11a (C-15-11a-6) a fait passer `KESH_ADMIN_BACKUP_DIR` et `KESH_LANG` à `opt_trimmed_env` et donné aux cinq numériques un bras « vide = défaut ». Recompté sur `HEAD` `b2b09f34` : 34 sites (et non 36), `Config::from_env` 24 lectures littérales, 7 appels `opt_trimmed_env`, identifiant `env` 38 fois en production (`config.rs` 33), ensemble lu 41, table `EMPLACEMENTS_AUTORISES` 22 entrées (le nombre 31 des appels `Littéral` de `Config::from_env` est inchangé : 24 + 7). Trois des tests « valeur vide » prescrits (`KESH_ADMIN_BACKUP_DIR`, `KESH_SMTP_PORT`, `KESH_LANG` vides) seraient verts avant le changement : ils ne prouveraient rien. Une capture `tracing` locale existe déjà dans le module de test de `config.rs` (`from_env_with_logs`), avec son témoin.
+- **Retenu** : fiche mise à jour (Change Log « Alignement sur le livré ») ; tests remplacés par des cas qui discriminent sur `HEAD` — `KESH_INBOX_DIR=""`, `KESH_PASSWORD_MIN_LENGTH=" 14 "`, `KESH_SMTP_PORT=" 2525 "` (valeur + capture), `KESH_COOKIE_SECURE="   "`, `KESH_LOG_FILE_ROTATION=""` (avertissement collecté par `LogConfig::from_env`) — en plus de `KESH_HOST`, `KESH_JWT_SECRET`, `DATABASE_URL`, `KESH_PORT`, `KESH_DOCUMENTS_DIR` ; capture de la 15-11a réutilisée (DRY) au lieu d'une seconde couche `Layer` ; `reset_env()` complété de six noms (`KESH_DOCUMENTS_DIR`, `KESH_INBOX_DIR`, quatre `KESH_LOG_FILE_*`).
+- **Écartées** : garder les trois tests non discriminants comme preuves (ils seraient verts avant le T2 — mémoire « tests qui prouvent moins ») ; écrire la couche `Layer` de la fiche (duplication d'un outil présent) ; s'arrêter après le T0 (aucun écart ne change une règle ni un AC sur le fond : l'AC2 change de cas, pas de règle).
+- **Réversible** : oui.

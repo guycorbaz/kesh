@@ -1,6 +1,6 @@
 # Story 15.11b : Une seule fonction lit l'environnement — le vide vaut l'absence — et le test qui lit le code remplace la liste écrite à la main
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Créée le 2026-10-08 par l'agent de découpage, en autonomie (consignes de l'Epic 15), par découpage
      de la Story 15-11 après sa validation P3 (signal D5 levé deux fois, par recyclage — choix C77).
@@ -23,9 +23,10 @@ Status: ready-for-dev
    (C70). **Un seul `syn`** : la 15-11b réutilise cette ligne (union des features : `full`, `visit` au
    moins), et ajoute `proc-macro2` (feature `span-locations`). `Cargo.lock` repris de `main` puis régénéré
    par `cargo check -p kesh-api --tests`, jamais fusionné à la main.
-3. **Avant le tag v0.13.0** (souhaité) : sans elle, la 0.13.0 émettrait au démarrage les avertissements
-   « invalide » décrits par la 15-11a (§ *Le vide avant la 15-11b*) et écrirait la sauvegarde pré-import
-   dans `/app`. Non bloquant pour la sûreté (aucun refus de démarrer).
+3. **Avant le tag v0.13.0** (souhaité). Non bloquant pour la sûreté (aucun refus de démarrer). *(Alignement
+   sur le livré, T0 : la revue de code P1 de la 15-11a — C-15-11a-6 — a déjà supprimé les avertissements
+   « invalide » et la sauvegarde pré-import dans `/app` pour les sept variables qu'elle transmet en
+   `${NOM:-}` ; ce motif d'urgence ne vaut plus. Reste : le vide et le trim de toutes les autres.)*
 
 ## Story
 
@@ -45,10 +46,23 @@ arrive **vide**. Et une ligne laissée vide dans `.env` arrive vide **quelle que
 aujourd'hui sa règle : `opt_trimmed_env`, `parse_strict_bool`, `env_flag_enabled` et les variables
 d'administration traitent le vide comme absent ; `KESH_SMTP_PORT` avertit « invalide » puis prend 587,
 `KESH_ADMIN_BACKUP_DIR` prend un chemin **vide**, `KESH_LANG` passe `""` à `Locale::from`, `DATABASE_URL`
-vide échoue plus tard à la connexion. Une seule fonction, imposée par le test, règle la question une fois :
+vide échoue plus tard à la connexion. *(T0 : depuis C-15-11a-6, `KESH_SMTP_PORT`, `KESH_ADMIN_BACKUP_DIR`,
+`KESH_LANG` et les quatre autres numériques d'administration traitent déjà le vide comme absent ; restent
+`KESH_HOST`, `KESH_PORT`, `DATABASE_URL`, `KESH_JWT_SECRET`, `KESH_DOCUMENTS_DIR`, `KESH_INBOX_DIR`, les
+variables JWT, de session, de limitation, d'inbox et de journal, `KESH_STATIC_DIR`, `KESH_LOCALES_DIR`,
+`RUST_LOG`.)* Une seule fonction, imposée par le test, règle la question une fois :
 **vide = absent**, partout.
 
 ## Inventaire des sites de lecture — refait depuis le code le 2026-10-08
+
+> **Recompte du T0 (2026-10-09, `HEAD` = `b2b09f34`, sur `8f9811d8` qui porte la 15-11a)** : la 15-11a a
+> fait passer `KESH_ADMIN_BACKUP_DIR` et `KESH_LANG` de `env::var` à `opt_trimmed_env`. D'où : **34 sites**
+> (et non 36) — `config.rs` **30** (**24** lectures littérales dans `Config::from_env`, 4 dans
+> `LogConfig::from_env`, 2 des helpers), `main.rs` 2, `logging.rs` 1, `routes/onboarding.rs` 1 ; appels
+> `opt_trimmed_env("…")` **7** (et non 5) ; identifiant `env` en production **38** (`config.rs` **33**) ;
+> ensemble lu **41**, inchangé ; appels `env_nonempty` littéraux de `Config::from_env` après le T2 :
+> 24 + 7 = **31**, inchangé. Les chiffres du paragraphe suivant sont ceux d'avant la 15-11a, conservés
+> pour la trace.
 
 **36 sites de lecture** en production (`grep -cE 'env::var(_os)?\(' ` par fichier, hors items
 `#[cfg(test)]` — les huit de `kesh-db/src` sont tous dans des `mod tests`) : `config.rs` **32** (26 lectures
@@ -107,8 +121,8 @@ occurrences.
    **perdu** ; le contrat doc-commenté le dit (« avertissement émis par `tracing`, perdu s'il précède
    l'abonné ») ; le module journal, qui collecte ses avertissements pour les rejouer
    (`config.rs:1331-1334`), n'est **pas** étendu au non-UTF-8 (angle mort).
-   **Tous les lecteurs de production passent par elle** — inventaire fermé : les **35** autres sites
-   (`config.rs` 31 : 26 de `Config::from_env`, 4 de `LogConfig::from_env`, celui de `parse_strict_bool` ;
+   **Tous les lecteurs de production passent par elle** — inventaire fermé : les **33** autres sites
+   (`config.rs` 29 : 24 de `Config::from_env`, 4 de `LogConfig::from_env`, celui de `parse_strict_bool` ;
    `main.rs` 2 ; `logging.rs` 1 — `RUST_LOG`, par `EnvFilter::DEFAULT_ENV` — ; `routes/onboarding.rs` 1 —
    `env_flag_enabled`) —, **sans exception**. **Hors de `config.rs`, l'appel s'écrit par chemin qualifié,
    sans aucun `use` d'`env_nonempty`** (R-1 = F-2 de la P2) : `kesh_api::config::env_nonempty(…)` dans
@@ -119,7 +133,11 @@ occurrences.
    commencer à `env_nonempty` (AC3) : les entrées de la table n'en dépendent pas. Ainsi : le seul « vide signifiant », `KESH_LOG_FILE_PATH`, a dans le
    code le même sens que l'absence (pas de journal fichier, `LogConfig::from_raw` filtre déjà le vide — test
    `config.rs:2315`) ; sa distinction vit côté compose (15-11a, AC2 ii).
-   **Changements de comportement, à écrire au Dev Agent Record lecteur par lecteur** (relevé au T0) :
+   **Changements de comportement, à écrire au Dev Agent Record lecteur par lecteur** (relevé au T0 —
+   *pour `KESH_SMTP_PORT`, les quatre numériques d'administration, `KESH_ADMIN_BACKUP_DIR` et `KESH_LANG`,
+   l'« avant » du vide est désormais « défaut sans avertissement » (C-15-11a-6) : la 15-11b n'y change plus
+   que le trim d'une valeur non blanche des cinq numériques — `KESH_LANG` et `KESH_ADMIN_BACKUP_DIR` sont
+   déjà trimées*) :
    pour chaque variable, ce que produisait une valeur vide (ou à bords blancs) avant et ce qu'elle produit
    après — la table nomme **au moins** : `RUST_LOG=""` (avant : erreurs seules — `EnvFilter::new("")` ne
    pose aucune directive et garde le défaut `ERROR` — `tracing-subscriber` 0.3.23 : `EnvFilter::new` vaut
@@ -172,7 +190,24 @@ occurrences.
    avertissement capté** (avant : un avertissement) ; `KESH_LANG=""` → `Locale::FrCh` **et zéro
    avertissement capté** (avant : l'avertissement de `kesh_i18n`, `Locale::from`). Les deux derniers ne
    discriminent **que par la capture** — la valeur est la même avant et après.
-   **Comment « sans avertissement » s'asserte** (F6) : une **capture `tracing` locale** dans le module de
+   **⚠️ Alignement sur le livré (T0)** : `KESH_ADMIN_BACKUP_DIR=""`, `KESH_SMTP_PORT=""` et `KESH_LANG=""`
+   **ne discriminent plus** — la 15-11a (C-15-11a-6) les rend déjà au défaut sans avertissement, et son
+   test `from_env_empty_or_blank_vars_take_code_default_silently` le vérifie (gardé tel quel, vert avant et
+   après). Ils sont **remplacés** par des cas qui discriminent sur `HEAD` (relevés au code) :
+   `KESH_INBOX_DIR=""` → `/data/inbox` (avant `""`) ; `KESH_PASSWORD_MIN_LENGTH=" 14 "` → 14 (avant :
+   avertissement « invalide » puis 12 — le trim d'une valeur **non blanche**, que la 15-11a ne fait pas) ;
+   `KESH_SMTP_PORT=" 2525 "` → 2525 **et zéro avertissement capté nommant `KESH_SMTP_PORT`** (avant :
+   avertissement puis 587) ; `KESH_COOKIE_SECURE="   "` → `true` (avant : `InvalidCookieSecureValue`) ;
+   `KESH_LOG_FILE_ROTATION=""` par `LogConfig::from_env` → aucun avertissement collecté (avant : un
+   avertissement « invalide »). Restent : `KESH_HOST`, `KESH_JWT_SECRET`, `DATABASE_URL`, `KESH_PORT`
+   (trim), `KESH_DOCUMENTS_DIR`.
+   **Comment « sans avertissement » s'asserte** (F6) — *T0 : la 15-11a a déjà posé dans le module de
+   test de `config.rs` une capture locale, `from_env_with_logs()` (abonné `fmt` écrivant dans un tampon,
+   installé par `tracing::subscriber::with_default` pour l'appel), avec son témoin
+   `from_env_non_empty_invalid_values_still_warn` (`KESH_SMTP_PORT="abc"` → un avertissement nommant la
+   variable). Elle est **réutilisée** (DRY) au lieu de la couche décrite ci-dessous ; les assertions sont
+   bornées au message nommant la variable (`KESH_SMTP_PORT`), et une assertion de montage vérifie que la
+   capture voit la ligne « Locale instance » (C-15-11b-1)* : une **capture `tracing` locale** dans le module de
    test de `config.rs`, sur le modèle de `crates/kesh-api/tests/common/capture_rejeu.rs` (15-5e1 — non
    importable depuis un test unitaire, le motif est reproduit en une vingtaine de lignes) : une couche
    `tracing_subscriber::Layer` qui compte les événements de niveau `WARN` (toutes cibles), installée par
@@ -190,7 +225,9 @@ occurrences.
    de la 15-11 ; R-2 de la P2 de la 15-11b) : il retire déjà les 22 noms que les tests existants posent
    (25 noms au total, vérifié le 2026-10-08) ; il n'y manque que **trois** variables, que les tests neufs
    posent ou dont ils assertent le défaut — `KESH_ADMIN_BACKUP_DIR`, `KESH_DOCUMENTS_DIR`,
-   `KESH_INBOX_DIR`. Contrôle, à refaire au T2 sur les tests écrits, qui voit aussi les `set_var(` écrits sur deux
+   `KESH_INBOX_DIR`. *(T0 : la 15-11a l'a porté à **28** noms, dont `KESH_ADMIN_BACKUP_DIR` ; manquent
+   `KESH_DOCUMENTS_DIR`, `KESH_INBOX_DIR`, et les quatre `KESH_LOG_FILE_*` que pose le test neuf de
+   `LogConfig::from_env`.)* Contrôle, à refaire au T2 sur les tests écrits, qui voit aussi les `set_var(` écrits sur deux
    lignes (R-7 = F7 — huit `env::set_var(\n "KESH_JWT_SECRET", …)`) :
    `grep -Pzo 'set_var\(\s*"\K[A-Z_]+' crates/kesh-api/src/config.rs | tr '\0' '\n' | sort -u`, comparé à
    sa liste.
@@ -469,9 +506,9 @@ occurrences.
   dépendances `syn` (union) et `proc-macro2` (`span-locations`). **Asserter l'égalité de l'ensemble lu
   calculé et de `LUES`** (41 noms ; écart écrit), puis **retirer `LUES`** du test. Constater le **rouge
   attendu** — **exactement** ceci, et rien d'autre :
-  - **(L)** : les occurrences hors liste — les **39** `env` de lecture ou d'import (`config.rs` 35,
+  - **(L)** : les occurrences hors liste — les **37** `env` de lecture ou d'import (`config.rs` 33,
     `main.rs` 2, `logging.rs` 1, `routes/onboarding.rs` 1 ; le `temp_dir` d'`admin.rs` est couvert) et les
-    **6** `opt_trimmed_env` (définition et cinq appels) ; les **8** entrées qui portent sur `env_nonempty`
+    **8** `opt_trimmed_env` (définition et sept appels — T0) ; les **8** entrées qui portent sur `env_nonempty`
     (ses deux entrées propres, ses trois entrées `Littéral`, et les trois corps d'indirection
     `parse_strict_bool`, `init_tracing`, `env_flag_enabled` — 2 + 3 + 3 = 8), périmées. Les entrées
     `dotenvy`, `temp_dir`, les définitions d'indirection, l'appel `init_tracing` de `main`, les appels
@@ -487,10 +524,9 @@ occurrences.
   test `:2501`, et les constater **rouges** un par un (le témoin de capture est **vert**). Sorties au Dev
   Agent Record.
 - [ ] **T2 — `env_nonempty` et bascule** (AC2) : la fonction (doc-comment sans jeton `KESH_` fictif), la
-  bascule des 35 sites, `opt_trimmed_env` retirée **et son jeton transitoire avec elle** — ⚠️ le
-  doc-comment `config.rs:1348-1363` qui précède `opt_trimmed_env` est celui d'`is_loopback_host`
-  (`:1413`, aujourd'hui sans doc) : le **replacer** sur `is_loopback_host`, ni le supprimer avec
-  `opt_trimmed_env` ni le laisser se recoller à l'élément suivant (R-8) ; `use std::env;` de production
+  bascule des 33 sites (T0 ; 35 avant la 15-11a), `opt_trimmed_env` retirée **et son jeton transitoire
+  avec elle** — ~~le doc-comment qui précède `opt_trimmed_env` est celui d'`is_loopback_host` (R-8)~~
+  **sans objet** (T0 : la 15-11a l'a déjà rattaché à sa fonction, C-15-11a-6) ; `use std::env;` de production
   retiré (le module de test reçoit le sien) ; commentaires `:838`, `:1028`, `:2195` mis à jour ;
   `reset_env()` complété des trois variables (AC2) ; appels qualifiés hors de `config.rs`, sans `use`
   (AC2) ; tests unitaires d'`env_nonempty`.
@@ -708,3 +744,35 @@ découpage (C77).
   - Comptes **recomptés depuis cette fiche** : AC **6**, tâches **7** (T0-T6), mutations **17** (M1-M17 ;
     16 rouges, 1 verte — M6), entrées `EMPLACEMENTS_AUTORISES` **22**, modules de code **4** — seuil de
     découpage non franchi.
+- 2026-10-09 — **T0 : alignement sur le livré de la 15-11a** (agent de développement, autonomie ; choix
+  **C-15-11b-1**). Relevé sur `HEAD` `b2b09f34` (`origin/main` `8f9811d8` + planification). 15-11a et
+  15-5e1 mergées (`syn = { version = "2", features = ["full", "visit"] }` en dev-dépendance de `kesh-api`,
+  `proc-macro2` 1.0.106 au `Cargo.lock`). Écarts, tous recomptés à la source (`grep -cE 'env::var(_os)?\('`
+  par fichier, lignes < `#[cfg(test)]` de `config.rs:1499`) :
+  - **Inventaire** : `config.rs` 32 → **30** sites (`Config::from_env` 26 → **24**), total 36 → **34**,
+    « les 35 autres » → **33** (`config.rs` 31 → **29**), appels `opt_trimmed_env("…")` 5 → **7**
+    (`KESH_LANG`, `KESH_ADMIN_BACKUP_DIR` en plus), identifiant `env` en production 40 → **38** (`config.rs`
+    35 → **33**), ensemble lu **41** inchangé, appels `Littéral` d'`env_nonempty` attendus dans
+    `Config::from_env` **31** inchangé (24 + 7). Table `EMPLACEMENTS_AUTORISES` : **22** entrées, recomptées.
+  - **Rouge exact du T1** : **37** `env` hors liste (`config.rs` 33, `main.rs` 2, `logging.rs` 1,
+    `routes/onboarding.rs` 1) et **8** `opt_trimmed_env` (définition + sept appels) ; **8** entrées périmées
+    (inchangé).
+  - **Tests « valeur vide »** : `KESH_ADMIN_BACKUP_DIR`, `KESH_SMTP_PORT`, `KESH_LANG` vides ne discriminent
+    plus (test de la 15-11a `from_env_empty_or_blank_vars_take_code_default_silently`, gardé) ; remplacés par
+    `KESH_INBOX_DIR=""`, `KESH_PASSWORD_MIN_LENGTH=" 14 "`, `KESH_SMTP_PORT=" 2525 "` (valeur et capture),
+    `KESH_COOKIE_SECURE="   "`, `KESH_LOG_FILE_ROTATION=""` (avertissement collecté). Capture : celle de la
+    15-11a (`from_env_with_logs`) est réutilisée, et son témoin `from_env_non_empty_invalid_values_still_warn`
+    tient lieu de témoin obligatoire.
+  - **`reset_env()`** : 28 noms (et non 25) ; manquent `KESH_DOCUMENTS_DIR`, `KESH_INBOX_DIR` et les quatre
+    `KESH_LOG_FILE_*` (et non trois variables).
+  - **R-8 sans objet** : le doc-comment d'`is_loopback_host` est déjà rattaché.
+  - **Citations relocalisées par le texte** : `config.rs` — `use std::env;` `:7`, `Config::from_env`
+    `:572-1222`, contrôle de longueur du secret `:683`, `KESH_DOCUMENTS_DIR`/`KESH_INBOX_DIR` `:982-987`,
+    `LogConfig::from_env` `:1375-1382`, `opt_trimmed_env` `:1388`, `parse_strict_bool` `:1441`, commentaires
+    `" true"` `:859`, `:1062`, `:2594`, test `"  true  "` `:2900`, `reset_env` `:1577` ; M5 : `main.rs:337`
+    (« recovery break-glass KESH_ADMIN_USERNAME/KESH_ADMIN_PASSWORD ») ; manuel — règle de transmission
+    `admin-manual.tex:664` (dit déjà, pour les compose fournis, « une variable facultative que `.env` ne pose
+    pas, ou laisse vide, prend son défaut »), phrase « obligatoires » `:672-676`, ligne `KESH_JWT_SECRET`
+    `:689`, `KESH_COOKIE_SECURE` `:1343` ; `.env.example:130-132` (`KESH_COOKIE_SECURE`).
+  - Aucun écart ne change une règle ni un AC sur le fond (l'AC2 change de cas de test, non de règle) :
+    développement enchaîné.
