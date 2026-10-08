@@ -2057,6 +2057,7 @@ mod tests {
     #[test]
     fn config_rejects_jwt_secret_generate_me_case_insensitive() {
         let _guard = env_lock();
+        let mut ecarts = Vec::new();
         for secret in [
             "abcdefghij-generate_me-abcdefghijabcdefg",
             "abcdefghij-Generate_Me-abcdefghijabcdefg",
@@ -2071,11 +2072,16 @@ mod tests {
                 env::set_var("KESH_JWT_SECRET", secret);
             }
             let result = Config::from_env();
-            assert!(
-                matches!(result, Err(ConfigError::InsecureJwtSecret)),
-                "expected InsecureJwtSecret for {secret:?}, got {result:?}"
-            );
+            // Écarts collectés, non assertés un à un : une régression d'ordre
+            // doit nommer TOUS les cas atteints (`GENERATE_ME` et `xchange-mex`).
+            if !matches!(result, Err(ConfigError::InsecureJwtSecret)) {
+                ecarts.push(format!("{secret:?} → {result:?}"));
+            }
         }
+        assert!(
+            ecarts.is_empty(),
+            "expected InsecureJwtSecret for: {ecarts:#?}"
+        );
     }
 
     /// Même règle pour le mot de passe admin ; `generate_me` seul (11
