@@ -393,6 +393,31 @@ test.describe("Page écritures — modifier et supprimer depuis la fiche (Storie
     }
   }
 
+  /** Modifie le libellé d'une écriture par l'API (`PUT`, version courante) : rend la fiche « Modifiée ». */
+  async function modifierLibelle(page: import("@playwright/test").Page, id: number, nouveau: string) {
+    const courant = await lireEcriture(page, id);
+    const ctx = await authedApiContext(page);
+    try {
+      const put = await ctx.put(`/api/v1/journal-entries/${id}`, {
+        data: {
+          entryDate: courant.entryDate,
+          journal: courant.journal,
+          description: nouveau,
+          version: courant.version,
+          lines: courant.lines.map((l) => ({
+            accountId: l.accountId,
+            debit: l.debit,
+            credit: l.credit,
+            projectId: l.projectId,
+          })),
+        },
+      });
+      expect(put.status(), await put.text()).toBe(200);
+    } finally {
+      await disposeContextSafe(ctx);
+    }
+  }
+
   test("modifier depuis la fiche : le libellé change, le numéro reste", async ({ page }) => {
     await login(page);
     const libelle = `Modification E2E ${Date.now()}`;
@@ -481,10 +506,15 @@ test.describe("Page écritures — modifier et supprimer depuis la fiche (Storie
     await expect(page.getByTestId("modification-blocked-reason")).toHaveCount(0);
   });
 
-  test("rôle Consultation : ni Modifier, ni Contre-passer, ni Supprimer, ni Historique", async ({ page }) => {
+  test("rôle Consultation : ni Modifier, ni Contre-passer, ni Supprimer, ni Historique — mais « Modifiée »", async ({ page }) => {
     await login(page);
     const libelle = `Consultation E2E ${Date.now()}`;
     const origine = await creerEcriture(page, libelle);
+    // Revue P1 (A2) : l'écriture est MODIFIÉE avant le passage à Consultation,
+    // pour que la mention « Modifiée » (visible à tous les rôles, C-15-8b-4)
+    // soit exercée sur ce rôle — sans quoi une régression qui la cacherait ne
+    // rougirait nulle part.
+    await modifierLibelle(page, origine.id, `${libelle} corrigé`);
     const username = `consult-je-${Date.now()}`;
     const ctx = await authedApiContext(page);
     try {
@@ -512,6 +542,8 @@ test.describe("Page écritures — modifier et supprimer depuis la fiche (Storie
     // d'audit est refusé à Consultation (403).
     await expect(page.getByTestId("delete-entry")).toHaveCount(0);
     await expect(page.getByTestId("entry-history-link")).toHaveCount(0);
+    // …mais la mention « Modifiée », elle, est visible à tous les rôles.
+    await expect(page.getByTestId("entry-modified")).toBeVisible();
   });
 
   test("supprimer depuis la fiche : confirmation, retour à la liste, l'écriture a disparu", async ({ page }) => {
@@ -561,27 +593,7 @@ test.describe("Page écritures — modifier et supprimer depuis la fiche (Storie
     await expect(page.getByTestId("entry-modified")).toHaveCount(0);
 
     // Modification par l'API, puis relecture de la fiche.
-    const courant = await lireEcriture(page, origine.id);
-    const ctx = await authedApiContext(page);
-    try {
-      const put = await ctx.put(`/api/v1/journal-entries/${origine.id}`, {
-        data: {
-          entryDate: courant.entryDate,
-          journal: courant.journal,
-          description: `${libelle} corrigé`,
-          version: courant.version,
-          lines: courant.lines.map((l) => ({
-            accountId: l.accountId,
-            debit: l.debit,
-            credit: l.credit,
-            projectId: l.projectId,
-          })),
-        },
-      });
-      expect(put.status(), await put.text()).toBe(200);
-    } finally {
-      await disposeContextSafe(ctx);
-    }
+    await modifierLibelle(page, origine.id, `${libelle} corrigé`);
     await page.goto(`/journal-entries/${origine.id}`);
     await expect(page.getByTestId("entry-modified")).toBeVisible();
 

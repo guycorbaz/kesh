@@ -170,8 +170,9 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * | `journal-entry-open`, le lien de la liste vers la fiche qui remplace les deux boutons ✎ et 🗑 | **+1** |
  * | **total** | **−11** |
  *
- * ⛔ La baisse est **délibérée** : le `PUT` et le `DELETE` d'une écriture ne rendent plus que
- * 409 `ENTRY_IS_POSTED`, donc les écrans qui les appelaient n'existent plus. Une borne qui
+ * ⛔ La baisse est **délibérée** : à la 24-4b, le `PUT` et le `DELETE` d'une écriture ne
+ * rendaient plus que 409 `ENTRY_IS_POSTED` (jusqu'aux Stories 15-8a et 15-8b, qui les ont
+ * rouverts sur la fiche), donc les écrans de la liste qui les appelaient n'existaient plus. Une borne qui
  * rougit sur une baisse fait le même travail que sur une hausse — elle exige qu'on dise
  * pourquoi.
  *

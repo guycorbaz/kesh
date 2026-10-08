@@ -451,7 +451,7 @@ Claude Opus 5.5 (agent de développement, autonomie complète — consignes de l
 ### Completion Notes List
 
 **T0 — inventaire.** Fait à la clôture de la validation (table « Décalages mesurés après la 15-8a », AC 10 refermée).
-Grep de l'AC 10 **après** la story, hors `_bmad-output/` : **6 lignes**, exactement la liste fermée — `CHANGELOG.md:15`
+Grep de l'AC 10 **après** la story, hors `_bmad-output/` : **5 lignes** (« 6 » écrit au dev, recompté à la revue P1, A5), exactement la liste fermée — `CHANGELOG.md:15`
 et `:17` (section `[0.13.0]` : l'entrée de la 15-8a, puis celle de la suppression qui dit `ENTRY_IS_POSTED` retiré),
 `docs/api-external.md:221` (parenthèse historique du `PUT`) et `:259` (sa jumelle pour le `DELETE`, écrite par T7),
 `frontend/src/lib/shared/i18n-keys.test.ts:174` (paragraphe historique). Les 35 autres sites ont disparu.

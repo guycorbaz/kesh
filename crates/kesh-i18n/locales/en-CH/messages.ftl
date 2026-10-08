@@ -279,7 +279,7 @@ journal-entry-delete-confirm-delete = Delete
 journal-entry-deleted = Entry deleted
 journal-entry-modified = Modified
 journal-entry-history = History
-error-fiscal-year-closed-generic = The fiscal year is closed — no entries can be added or modified (Swiss CO art. 957-964).
+error-fiscal-year-closed-generic = The fiscal year is closed — no entries can be added, modified or deleted (Swiss CO art. 957-964).
 error-inactive-accounts = One or more accounts are archived or invalid.
 error-account-not-postable = { $count ->
     [one] Account { $numbers } is not postable (grouping, result or closing account): choose a postable account.

@@ -2531,10 +2531,18 @@ async fn period_lock_closed_year_and_later_year_refuse_the_delete(pool: MySqlPoo
         avant
     );
 
-    // Tout rouvert : la suppression passe.
+    // Tout rouvert, borne posée la VEILLE de la date (l'écriture est le
+    // lendemain de la borne) : la suppression passe — c'est l'autre côté du
+    // seuil inclusif testé plus haut, fixé ici sur le chemin de la route
+    // (revue P1, A3) et non seulement en `mod tests` de `kesh-db`.
     set_status(&pool, fy_id, "Open").await;
+    poser_borne(&pool, company_id, Some(date.pred_opt().unwrap())).await;
     let (status, body) = delete_entry(&app, &token, id).await;
-    assert_eq!(status, 204, "rouverts, le même DELETE passe : {body}");
+    poser_borne(&pool, company_id, None).await;
+    assert_eq!(
+        status, 204,
+        "rouverts, borne la veille, le même DELETE passe : {body}"
+    );
 }
 
 /// Story 15-8b, AC 4-bis — **la précédence du `DELETE`**, chaque paire montée

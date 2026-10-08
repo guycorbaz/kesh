@@ -279,7 +279,7 @@ journal-entry-delete-confirm-delete = Löschen
 journal-entry-deleted = Buchung gelöscht
 journal-entry-modified = Geändert
 journal-entry-history = Verlauf
-error-fiscal-year-closed-generic = Das Geschäftsjahr ist abgeschlossen — keine Buchungen können hinzugefügt oder geändert werden (OR Art. 957-964).
+error-fiscal-year-closed-generic = Das Geschäftsjahr ist abgeschlossen — keine Buchungen können hinzugefügt, geändert oder gelöscht werden (OR Art. 957-964).
 error-inactive-accounts = Ein oder mehrere Konten sind archiviert oder ungültig.
 error-account-not-postable = { $count ->
     [one] Das Konto { $numbers } ist nicht bebuchbar (Sammel-, Ergebnis- oder Abschlusskonto): Wählen Sie ein bebuchbares Konto.

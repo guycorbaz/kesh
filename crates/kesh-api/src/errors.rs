@@ -3124,7 +3124,7 @@ impl IntoResponse for AppError {
                     "FISCAL_YEAR_CLOSED",
                     &t(
                         "error-fiscal-year-closed-generic",
-                        "L'exercice comptable est clôturé — aucune écriture ne peut y être ajoutée ou modifiée (CO art. 957-964).",
+                        "L'exercice comptable est clôturé — aucune écriture ne peut y être ajoutée, modifiée ou supprimée (CO art. 957-964).",
                     ),
                 ),
                 DbError::InactiveOrInvalidAccounts => build_response(

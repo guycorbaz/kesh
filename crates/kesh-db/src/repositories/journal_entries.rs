@@ -1548,7 +1548,10 @@ async fn update_in_tx(
 /// postérieur clos, ni contre-passée ni contre-passation, aucune pièce, pas un
 /// paiement détaché, date postérieure à la borne du verrou de période. Les
 /// refus, leur ordre et la sérialisation sont au doc-comment de
-/// [`delete_in_tx`]. Sur erreur, le drop de la transaction fait le rollback.
+/// [`delete_in_tx`] — c'est cette fonction-ci qu'on ouvre en premier quand on
+/// cherche pourquoi un `DELETE` échoue, d'où ce renvoi explicite (un
+/// doc-comment périmé à cet endroit a déjà égaré une journée de revue, 24-4b).
+/// Sur erreur, le drop de la transaction fait le rollback.
 ///
 /// `actor_api_key_id` : `Some` quand la route est appelée par une clé d'API —
 /// la trace `journal_entry.deleted` porte alors la clé (C-15-8-8), et non le
@@ -1556,10 +1559,6 @@ async fn update_in_tx(
 ///
 /// ⚠️ **Le numéro n'est jamais réattribué** (compteur de la 25-2-c) : la
 /// suppression creuse un trou, expliqué par l'instantané de l'audit.
-///
-/// ⚠️ Cette précision est ici parce qu'un doc-comment périmé a déjà égaré une
-/// journée entière de revue (24-4b) : c'est cette fonction qu'on ouvre en
-/// premier quand on cherche pourquoi un `DELETE` échoue.
 pub async fn delete_by_id(
     pool: &MySqlPool,
     company_id: i64,

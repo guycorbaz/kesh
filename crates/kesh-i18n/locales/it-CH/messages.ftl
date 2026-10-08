@@ -279,7 +279,7 @@ journal-entry-delete-confirm-delete = Elimina
 journal-entry-deleted = Scrittura eliminata
 journal-entry-modified = Modificata
 journal-entry-history = Cronologia
-error-fiscal-year-closed-generic = L'esercizio contabile è chiuso — nessuna scrittura può essere aggiunta o modificata (CO art. 957-964).
+error-fiscal-year-closed-generic = L'esercizio contabile è chiuso — nessuna scrittura può essere aggiunta, modificata o eliminata (CO art. 957-964).
 error-inactive-accounts = Uno o più conti sono archiviati o non validi.
 error-account-not-postable = { $count ->
     [one] Il conto { $numbers } non è registrabile (conto di raggruppamento, di risultato o di chiusura): scegliere un conto registrabile.
