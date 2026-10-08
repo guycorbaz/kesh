@@ -1846,3 +1846,27 @@ l'import (#458–#461).
 - **Écartée** : un test à interblocage fabriqué (deux transactions croisées sur l'écriture et l'exercice) — coûteux,
   fragile, et la règle de choix de la victime d'InnoDB en déciderait.
 - **Réversible** : oui — à ajouter si un cycle est un jour identifié.
+
+## C-15-8b-7 — 15-8b (clôture de la revue P1) : E2E sur le port 3008, le 3001 étant pris par un autre projet
+
+- **Contexte** : le prompt de clôture fixait le port E2E 3001. Au moment du gate, `127.0.0.1:3001` était tenu par
+  `opengmao-server` (`/home/gcorbaz/devel/opengmao`), un autre projet de la station — pas un agent Kesh.
+- **Retenu** : backend E2E sur **3008** (libre, vérifié par `ss -ltn`), `KESH_BACKEND_URL=http://127.0.0.1:3008` côté
+  runner ; même binaire (`target-158`, copié dans le scratchpad), même base `kesh_e2e_158` remise à zéro, répertoires
+  inbox/documents neufs (`/tmp/kesh-e2e-158b`).
+- **Écartées** : arrêter le processus d'`opengmao` (hors périmètre, pas le nôtre) ; attendre qu'il libère le port
+  (aucune échéance connue).
+- **Réversible** : oui — le port n'est qu'un paramètre de montage, rien n'est versionné.
+
+## C-15-8b-8 — 15-8b (revue P1, E-2) : le message générique d'exercice clos étendu à « supprimée », pas de clé dédiée au `DELETE`
+
+- **Contexte** : `DbError::FiscalYearClosed` rend `error-fiscal-year-closed-generic` (« … ne peut y être ajoutée ou
+  modifiée »), que le `DELETE` refusé sur exercice clos rend aussi.
+- **Retenu** : reformuler la clé existante dans les quatre locales et son repli Rust (`errors.rs`) — « ajoutée, modifiée
+  ou supprimée » / « hinzugefügt, geändert oder gelöscht » / « added, modified or deleted » / « aggiunta, modificata o
+  eliminata ». Aucune clé neuve : `sitesTotal` et l'inventaire des sites inchangés. La variante datée
+  (`error-fiscal-year-closed`, `{ $date }`) n'est pas touchée : elle est rendue par la saisie et la modification, pas par
+  la suppression.
+- **Écartée** : une clé dédiée au `DELETE` — il faudrait distinguer l'erreur au niveau de `DbError` ou de la route pour
+  un gain nul (la phrase étendue reste vraie pour les trois gestes).
+- **Réversible** : oui (texte seul).
