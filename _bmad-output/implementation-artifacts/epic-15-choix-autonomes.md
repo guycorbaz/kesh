@@ -2184,3 +2184,42 @@ l'import (#458–#461).
   « ordre des verrous », né de la remédiation C43) : déclaré au Project Lead ; traité localement, pas
   de découpage.
 - **Réversible** : oui (fiche seulement ; code non écrit).
+
+## C-15-5e2-1 — 15-5e2 / T0 : le cycle du test 8 se forme sur MariaDB 10.11.16 ; relevés sur `HEAD`
+
+- **Contexte** : T0 de la 15-5e2 (AC2, choix C86) — former à la main, avant de l'écrire, le cycle du test 8 (`post_manual` victime), sur la base dédiée `kesh_155e2` (`10.11.16-MariaDB-ubu2204`, `innodb_deadlock_detect = ON`, `innodb_deadlock_report = full`) ; refaire les relevés de l'en-tête sur `HEAD` (`688fed25`, qui porte la 15-8b).
+- **Mesures** : session A alourdie (500 lignes de lest), `SELECT id FROM companies WHERE id = 1 FOR UPDATE` ; session B — la requête réelle de `find_open_covering_date` (`… FROM fiscal_years WHERE company_id = 1 AND start_date <= … AND end_date >= … AND status = 'Open' LIMIT 1 FOR UPDATE`) puis `SELECT id FROM companies WHERE id = 1 FOR UPDATE`, qui attend ; A demande `SELECT id FROM fiscal_years WHERE id = 1 FOR UPDATE` → **B reçoit 1213, A obtient son verrou** (`SHOW ENGINE INNODB STATUS` : la transaction 2, B, est la victime). Le montage de l'AC2 tient sans adaptation ; le test 8 est écrit **en vert**, non comme angle mort. Relevés : partition de départ **10 / 12 / 4 / 89** (la 15-8b est mergée) ; **sept** sites `retry_with` dans `src/routes` ; inventaire au symptôme **394 lignes / 62 fichiers** (272 / 42 sous `src` et `docs`, 122 / 20 sous `tests`).
+- **Réversible** : sans objet (mesure).
+
+## C-15-5e2-2 — 15-5e2 : noms d'opération des routes rejouées ici
+
+- **Contexte** : l'AC1 fixe les trois noms de la famille `AppError` ; les neuf routes `DbError` n'en ont pas.
+- **Retenu** : `"<module>::<action>"` sur le module de la route et le verbe du dépôt : `invoices::unvalidate`, `credit_notes::create`, `supplier_invoices::pay`, `supplier_invoices::cancel`, `supplier_invoices::cancel_settlement`, `payment_batches::confirm`, `journal_entries::create`, `journal_entries::reverse`, `opening_balances::generate`. Les six sites migrés gardent leur nom (équivalence exacte).
+- **Écartée** : le nom du handler (`create_journal_entry`…) — plus long, et incohérent avec les noms déjà posés par la 15-5e1 (`invoices::settle`, `supplier_invoices::create`).
+- **Réversible** : oui (seule la journalisation porte ces noms).
+
+## C-15-5e2-3 — 15-5e2 : frontière des fonctions « une tentative » de `post_manual` et `post_split`
+
+- **Contexte** : l'AC1 demande une fonction « une tentative » qui ouvre la transaction, prend le verrou nommé, écrit et conclut, avec les contrôles qui lisent la transaction **dedans**, dans leur ordre.
+- **Retenu** : les contrôles 0 à 4bis (`post_manual`) et 0 à 7 (`post_split`) — validation du corps, lectures **sur le pool**, hors transaction et non verrouillantes — restent dans le handler, avant l'enveloppe ; la tentative commence au `begin()` et reprend tel quel le bloc sous `with_account_lock` et son `match`. Ce que la tentative consomme est reconstruit en elle (libellé pour le manuel ; lignes de ventilation, détails d'audit et libellé de l'écriture pour la ventilation). `complete_import_once` reçoit tout le corps de l'ancien handler sauf la résolution de la société (le verrou du `staging` est son premier acte).
+- **Écartée** : faire entrer les pré-vols dans la tentative — ils ne lisent rien que la transaction verrouille, et les rejouer ne changerait que la latence ; ils auraient aussi changé la place des refus (AC6).
+- **Réversible** : oui.
+
+## C-15-5e2-4 — 15-5e2 : forme du volet (c bis) et de son banc
+
+- **Contexte** : l'AC1 fixe le test `no_route_calls_retry_with_except_post_accept` (analyse `syn` de chaque fichier de `src/routes/`, échec nommant fichier et fonction).
+- **Retenu** : un visiteur qui tient la **pile** des fonctions (`ItemFn` et méthodes `ImplItemFn`) et attribue chaque appel `retry_with` (`ExprCall` au dernier segment, ou `ExprMethodCall`) à la fonction la plus proche — un appel hors fonction est relevé `<hors fonction>` ; balayage **récursif** de `src/routes/` (aucun sous-répertoire aujourd'hui) ; garde « détecteur cassé » si moins de onze fichiers. Un **banc** neuf, `the_primitive_visitor_names_the_enclosing_function`, éprouve le visiteur sur un source synthétique (commentaire, chaîne et doc-comment ignorés ; fermeture, méthode et chemin qualifié vus) — au-delà de l'AC, pour la même raison que le banc du volet (c) : un détecteur qui ne s'éprouve qu'en mutant le dépôt ne s'éprouve pas.
+- **Écartée** : réutiliser `CherchePlusieursFn` — il cherche un nom donné et ne verrait pas une fonction inconnue.
+- **Réversible** : oui.
+
+## C-15-5e2-5 — 15-5e2 : relevés de l'inventaire au symptôme — précisions « pour cette paire »
+
+- **Contexte** : AC3, tri bloc par bloc ; les commentaires « gardés, vrais pour la paire qu'ils nomment » reçoivent une précision si le texte laisse entendre plus.
+- **Retenu** : précisés — `projects.rs` (« Ordre de verrouillage global » → convention de Pattern 5, « évite, **pour cette paire** »), `supplier_invoices.rs` étape (0) et `reconciliation_rules.rs` (« anti-ABBA avec l'archivage d'un projet »), `invoices.rs` (`update` : « l'ordre de la création » au lieu de « l'ordre de verrous global »), `reconciliation_cancel.rs` (le côté fiche facture est rejoué depuis la 15-5e1, #463) ; deux phrases de tests décrites comme vraies **dans leur montage** (`opening_complement_repository.rs:746`, `fiscal_years_repository.rs:1071`), assertions et messages d'`expect` intacts. Gardés sans retouche : `journal_entry_number_sequences.rs` (entre créations), `invoices.rs:1074-1078` (borné aux `invoices` / `invoice_lines`), `:2014`, `:2124` (paire avec création et modification), `company_invoice_settings.rs:312` (ordre entre comptes désignés, sans prétention d'absence de cycle), `onboarding.rs:232`, `:683`, `:850`, `:907` (sérialisation et déterminisme de sélection, hors sujet).
+- **Réversible** : oui (commentaires).
+
+## C-15-5e2-6 — 15-5e2 : Pattern 5 et manuel d'administration — choix de forme
+
+- **Contexte** : AC3 (Pattern 5) et AC5 (`99-kesh.cnf`).
+- **Retenu** : (a) le Pattern 5 reste **en anglais**, langue du document ; « Global Lock Order » devient « a frequency convention, not a guarantee », nomme les trois verrous partagés de clé étrangère et les quatre flux inversés ; la table gagne la ligne du lot de rapprochement (`accept_batch`, ordre par proposition et entre propositions) et les lignes du `PUT` et du `DELETE` (ordre seul), leurs raisons, cycles, mitigation et tests passant dans **« Notes »** sous la table ; la puce « Resolution status » nomme les deux enveloppes et le registre ; l'exemple « How to use » de la 15-5e1 est gardé, et « Required » dit que la forme générique `retry_with` est réservée à `post_accept` dans `src/routes/`. (b) Au manuel d'administration, la consigne `innodb_deadlock_detect` est un **commentaire** du listing, sans ligne `innodb_deadlock_detect = ON` : « laisser à sa valeur par défaut » ne demande rien d'écrire.
+- **Réversible** : oui.

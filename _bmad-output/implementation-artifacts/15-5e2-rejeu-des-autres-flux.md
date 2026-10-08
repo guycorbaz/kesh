@@ -1,6 +1,6 @@
 # Story 15.5e2 : Rejeu sur interblocage des autres flux d'écriture — rollout, commentaires d'ordre, manuels
 
-Status: ready-for-dev
+Status: review
 
 <!-- Sous-story de la 15-5e (fiche index `15-5e-ordre-des-verrous-reglements.md`, statut `split`),
      créée le 2026-10-08 par le découpage décidé à la validation P3 de la 15-5e (finding F3-2, choix
@@ -701,7 +701,7 @@ recopiées ici.
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Refaire les relevés** sur `HEAD` (la 15-5e1 est mergée ; **relever si la 15-8b l'est**
+- [x] **T0 — Refaire les relevés** sur `HEAD` (la 15-5e1 est mergée ; **relever si la 15-8b l'est**
       et le consigner — l'en-tête dit ce qui en dépend) : la remontée de l'AC1 de la 15-5e1 (une
       route qui écrit au journal absente de la table **bloque la story**) ; la partition du registre
       (9 / 13 / 4 / 89 sur `cecd5d1d`, 10 / 12 / 4 / 89 après la 15-8b) ; pour chacune des routes
@@ -722,7 +722,7 @@ recopiées ici.
       corps de `complete_import`, `post_manual` et `post_split` peuvent passer par référence (AC1,
       F5-2) ; si la 15-5d ou la 15-8b a mergé avant, les passages des manuels relocalisés par leur
       texte (AC5, R5-1) ; consigner au Dev Agent Record.
-- [ ] **T1 — Le rollout** (AC1) : les routes `ARejouer` (13, ou 12 après la 15-8b), dont les trois
+- [x] **T1 — Le rollout** (AC1) : les routes `ARejouer` (13, ou 12 après la 15-8b), dont les trois
       fonctions « une tentative » de `complete_import`, `post_manual`, `post_split` ; la migration
       des sites `retry_with` (cinq, ou six avec le `DELETE`, dont `onboarding::finalize`) **plus**
       le prédicat de `post_accept` et ses deux commentaires `:873`, `:880` (B-3, R6-5, R6-2) ; le
@@ -734,7 +734,7 @@ recopiées ici.
       d'`invoice_settlements_write.rs:485`, de `journal_entries.rs:1225-1228` et des six sites de
       `crates/*/tests` (AC1, R6-1) ; le **test 8** (AC2, F6-1) — ou son angle mort écrit si T0
       n'a pas formé le cycle. **Revue fichier par fichier** (Dev Notes).
-- [ ] **T2 — Les commentaires d'ordre et le Pattern 5** (AC3) : `journal_entries.rs` (étapes 0 et
+- [x] **T2 — Les commentaires d'ordre et le Pattern 5** (AC3) : `journal_entries.rs` (étapes 0 et
       0-bis, `create_opening_entry`), `accept_one_rule`, `accept_one_split`, `post_manual`,
       `post_split`, `fiscal_years.rs:489-502` (réécrit et remis à sa place) et `:12-18` (doc du
       module), `journal_entries.rs:1683-1684`, `onboarding.rs:592-595` ; le Pattern 5 hors les deux
@@ -742,15 +742,15 @@ recopiées ici.
       « Lock sequence », paragraphe « Notes » sous la table) ; l'inventaire au symptôme (385 lignes
       sur `cecd5d1d`, motif étendu en P6, insensible à la casse, recompté en T0), trié bloc par bloc
       au Dev Agent Record.
-- [ ] **T3 — Documentation** (AC4, AC5) : `docs/api-external.md` (phrase générale avec
+- [x] **T3 — Documentation** (AC4, AC5) : `docs/api-external.md` (phrase générale avec
       l'énumération des routes rejouées ouvertes aux clés, et sa converse) ; CHANGELOG ; les deux passages
       `SERIALIZABLE` des manuels et la consigne `innodb_deadlock_detect` (#484) ; deux PDF régénérés,
       brochure non commitée, contrôlés aplatis ; relevé élargi (17 lignes sur `cecd5d1d`) trié,
       consigné ; les trois documents laissés faux par la 15-5e1 contrôlés justes.
-- [ ] **T4 — Les mutations** (AC2) : six lancées (dont celle de `post_manual`, qui doit faire
+- [x] **T4 — Les mutations** (AC2) : six lancées (dont celle de `post_manual`, qui doit faire
       rougir le volet (c) **et** le test 8, et celle de `finalize`, qui doit faire rougir le volet
       (c bis)), une consignée sans exécution.
-- [ ] **T5 — Gates** : gate complet backend (`scripts/test-fast.sh`, base remise à zéro avant) —
+- [x] **T5 — Gates** : gate complet backend (`scripts/test-fast.sh`, base remise à zéro avant) —
       **même en cours de boucle de revue**, la story touchant des repositories `kesh-db` (commentaires)
       et le registre ; gate frontend complet (rien n'y change : il le confirme) ; **E2E Playwright
       complet au dernier commit de code** (décision D7), jugé fichier par fichier contre
@@ -868,11 +868,242 @@ inventaire) restent relues par les passes de validation.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), `bmad-dev-story` en autonomie (consignes de l'Epic 15). Worktree
+`/home/gcorbaz/devel/kesh-15-5e2`, branche `story/15-5e2-rejeu-des-autres-flux`, cible cargo
+`CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-15-5e2/target`, bases dédiées `kesh_155e2` (gate) et
+`kesh_e2e_155e2` (E2E). Commit de code : `6125d50b`.
+
 ### Debug Log References
+
+- Gate backend : `target/gate-logs/15-5e2-gate-backend.log` ; gate frontend :
+  `target/gate-logs/15-5e2-gate-frontend.log` ; E2E : `target/gate-logs/15-5e2-e2e.log` (worktree,
+  non versionnés).
 
 ### Completion Notes List
 
+**T0 — relevés sur `HEAD` (`688fed25`, qui porte la 15-8b ; choix C-15-5e2-1).**
+
+- **La 15-8b est mergée** (`ec675288`) : partition de départ **10 `Rejouee` / 12 `ARejouer` / 4 / 89
+  = 115** (recomptée sur le registre). Aucune route qui écrit au journal hors de la table.
+- **Cycle du test 8 formé à la main** sur `10.11.16-MariaDB-ubu2204` (`innodb_deadlock_detect = ON`,
+  `innodb_deadlock_report = full`, relevé `SHOW VARIABLES` — T3 aussi) : session A alourdie (500
+  lignes) tient `companies` `FOR UPDATE` ; session B prend l'exercice par la requête réelle de
+  `find_open_covering_date` puis attend `companies` ; A demande l'exercice → **B reçoit 1213**, A
+  obtient son verrou (`SHOW ENGINE INNODB STATUS`). **Le test 8 est écrit en vert**, non comme angle
+  mort.
+- **Sept sites `retry_with`** dans `crates/kesh-api/src/routes` (`invoices.rs` write_off,
+  `opening_balances.rs` complete, `journal_entries.rs` PUT et DELETE, `reconciliation.rs` accept et
+  cancel, `onboarding.rs` finalize). **Équivalences** vérifiées à la lecture : les six migrés
+  passaient `DEFAULT_MAX_DEADLOCK_ATTEMPTS` — l'enveloppe aussi — ; prédicat `|err: &DbError|
+  is_deadlock_error(err)` = celui de `retry_on_deadlock` (via `retry_on_deadlock_with`) ; prédicat
+  en ligne `matches!(err, AppError::Database(db) if is_deadlock_error(db))` = `is_app_deadlock` à la
+  lettre ; noms d'opération inchangés. `post_accept` : seule la forme du prédicat change
+  (`crate::retry::is_app_deadlock(err) || matches!(err, AppError::ReconciliationTransactionAborted)`).
+- **Routes à rejouer** — chemin d'erreur, effets de bord, entrées, contrôles, route par route :
+  `unvalidate`, `create_credit_note`, `pay`, `cancel`, `cancel_settlement` (fournisseur),
+  `confirm_batch`, `reverse` — une fonction de dépôt qui ouvre et conclut sa transaction, rend
+  `DbError` par `map_db_error` (le 1213 reste `DbError::Sqlx` : `errors.rs:1048`, aucun cas 1213),
+  aucun effet de bord hors transaction ; entrées `Copy` (`SettlementChoice` est `Copy`,
+  `NewCreditNote` construit dans la fermeture, `req.payment_date` `Copy`). `create_journal_entry` et
+  `generate_opening_balances` : `NewJournalEntry` **cloné par tentative**, pré-contrôles sur le pool
+  (lecture de l'exercice, comptage, types de comptes en transaction de lecture annulée) gardés
+  **avant** la fermeture et dans leur ordre ; `map_err` / `map_opening_balances_error` **après** le
+  rejeu. Les trois extractions : les corps `CompleteImportRequest`, `ManualMatchBody`, `SplitBody`
+  passent **par référence** (aucun `Clone` à dériver) ; `complete_import_once` garde verrou du
+  `staging`, statut, devise, IBAN/QRR, montant **dans cet ordre** après le verrou ; dans
+  `post_manual_once` et `post_split_once`, les erreurs sqlx passent par
+  `ReconciliationError::Db(DbError::Sqlx)` ou `?` (`From<DbError>`), le `match` les rend en
+  `AppError::Database(db_err)` après `rollback` — forme reconnue par `is_app_deadlock`. Choix de
+  frontière : C-15-5e2-3.
+- **Flux qui prennent l'exercice avant la sentinelle et les projets** : les quatre de l'AC3
+  (`accept_one_rule`, `accept_one_split`, `post_manual`, `post_split`) ; aucun autre trouvé par
+  l'inventaire (les autres appelants de `validate_taggable_in_tx` — saisie fournisseur, factures,
+  règles, `create_in_tx` étape 0 — la prennent avant l'exercice ; le `PUT` verrouille d'abord
+  l'écriture, déjà écrit).
+- **Routes rejouées ouvertes aux clés API** : les 22 routes `Rejouee` sont montées dans
+  `comptable_routes` (`crates/kesh-api/src/lib.rs:347-727`), ouvertes à une clé `read-write` ;
+  `update_invoice_settings` (rejouée, `SansEcritureAuJournal`) est dans `admin_routes`, fermée aux
+  clés.
+- **Doc-comments canoniques** de `validate_invoice` et `supplier_invoices::create_in_tx` : disent
+  l'ordre réel sur `HEAD` (la 15-5d n'est pas mergée) ; les deux passages du Pattern 5 de la 15-5e1
+  (« Why Lock Ordering Matters », exemple « How to use ») disent toujours vrai — à la réserve près,
+  écrite dans « Required », que la forme générique `retry_with` est réservée à `post_accept` dans
+  `src/routes/`.
+- **Inventaire au symptôme** (motif de l'AC3, insensible à la casse) : sur `HEAD`, **394 lignes / 62
+  fichiers** (272 / 42 sous `crates/*/src` et `docs/*.md`, 122 / 20 sous `crates/*/tests`) — 385 sur
+  `cecd5d1d` + la 15-8b ; après cette story, **462 lignes / 64 fichiers** (324 / 44 ; 138 / 20), la
+  hausse venant des doc-comments « rejouée sur interblocage » et des tests neufs.
+
+**T1 — rollout (AC1).** Douze routes `ARejouer` passées par une enveloppe : neuf `DbError`
+(`invoices::unvalidate`, `credit_notes::create`, `supplier_invoices::pay`, `supplier_invoices::cancel`,
+`supplier_invoices::cancel_settlement`, `payment_batches::confirm`, `journal_entries::create`,
+`journal_entries::reverse`, `opening_balances::generate` — noms : C-15-5e2-2) et trois `AppError`
+(`imported_supplier_invoices::complete`, `reconciliation::manual`, `reconciliation::split`), chacune
+avec un doc-comment d'une ligne renvoyant à l'enveloppe. Six sites `retry_with` migrés (`write_off`,
+`opening_balances::complete`, `PUT`, `DELETE`, `reconciliation::cancel`, `onboarding::finalize`) ;
+`post_accept` garde `retry_with`, prédicat réécrit, commentaires `:873`, `:880` → `is_app_deadlock`.
+Contrôles : `grep -rn "is_deadlock_error" crates/kesh-api/src` ne rend que `retry.rs` ;
+`grep -rn "retry_with(" crates/kesh-api/src/routes` ne rend que `post_accept` (`reconciliation.rs:890`) ;
+`grep -rn "retry_with" crates/*/src crates/*/tests docs --include=*.rs --include=*.md` ne rend plus
+que les occurrences légitimes de l'AC1 (les deux `retry.rs`, `post_accept` et la doc d'`accept_once`,
+l'exemple générique et la phrase « Required » du Pattern 5, `capture_rejeu.rs:6`,
+`reconciliation_e2e.rs:4414`, le registre — `RETRY_WITH_AUTORISE`, `PRIMITIVE`, volet (c bis), bancs
+synthétiques —) et `onboarding.rs:600`, réécrit en « la primitive » pour ne plus nommer
+`retry_with`. Registre : `ARejouer` retiré, partition **22 / 4 / 89 = 115**, volet (c) sur 22
+routes, `ENVELOPPES` sans `retry_with`, `RETRY_WITH_AUTORISE = &["post_accept"]`, banc du visiteur
+transposé (`qualifie`, `turbofish` → `retry_on_deadlock` / `retry_app_on_deadlock` ; `dans_un_bloc`,
+`aide` idem) avec un cas négatif `primitive_seule` et un cas autorisé `post_accept`, volet (c bis)
+`no_route_calls_retry_with_except_post_accept` et son banc
+`the_primitive_visitor_names_the_enclosing_function` (C-15-5e2-4), limites (ii), (iii bis), (vi)
+réécrites. Mentions de `retry_with` réécrites : `opening_complement.rs` (doc du module, doc de
+`create_opening_complement`), « 5 bis » (`invoice_settlements_write.rs`), `journal_entries.rs`
+(doc d'`update`, « Where This Applies »), `journal_entry_reversal_e2e.rs` (mutation tuée),
+`journal_entries_modification.rs`, et dans le registre `:89`, `:119`, `:165`, `:600` d'alors. Le doc
+de `delete_in_tx` ne nommait pas `retry_with` (rien à changer).
+
+**Test 8** (`manual_match_is_replayed_when_it_is_the_deadlock_victim`, `rejeu_interblocage_e2e.rs`) :
+montage avec projet (compte bancaire lié à `1100`, contrepartie `4000`, transaction bancaire du jour
+de −150, projet actif) ; la transaction de test tient la sentinelle, la route attend sur
+`["companies", "FOR UPDATE"]`, la transaction de test demande l'exercice ; assertions : `200`, une
+seule écriture créée, transaction bancaire `reconciled` par l'écriture rendue, une seule entrée
+d'audit `reconciliation.manual_matched`, témoin `exiger_un_rejeu("reconciliation::manual")`.
+
+**T2 — commentaires d'ordre et Pattern 5 (AC3).** Réécrits : étape 0 de `create_in_tx_inner`,
+étape 0-bis (puce « Verrous » retirée, en-tête ajusté, « Refus » et « Lecture NON verrouillante »
+gardés), `create_opening_entry` (deux passages), la suite du renvoi à l'étape 0-bis dans
+`delete_in_tx` (« inverserait l'ordre global » retiré, renvoi et « Seuil INCLUSIF » gardés),
+Step 11bis d'`accept_one_rule`, Step j d'`accept_one_split`, Step 6bis de `post_manual` (qui
+affirmait l'inverse), Step 11 de `post_split` ; `fiscal_years.rs` : doc-comment de
+`find_open_covering_date` **remis à sa place** et réécrit, doc du module (`:12-18`) réécrite ;
+`onboarding.rs` (ex-`:592-595`, « MUST follow the same order to avoid cross-table deadlocks »).
+Précisions « pour cette paire » et tri des autres blocs : C-15-5e2-5. Pattern 5 : « Global Lock
+Order » en convention de fréquence (verrous partagés `fk_journal_entries_company`, `fk_jel_account`,
+`fk_jel_project` ; les quatre flux inversés ; le rejeu et le registre) ; « Where This Applies » :
+lignes `POST /supplier-invoices` et `invoices::validate_invoice` par renvoi aux doc-comments
+canoniques, ligne du lot de rapprochement (`accept_batch`, ordre par proposition et entre
+propositions, cycle de #536), lignes du `PUT` et du `DELETE` reprises de la « Deny list »,
+paragraphe « Notes » ; « Mitigation » réécrite ; puces « CI lint » et « Deny list » et rubrique
+« Deny list » retirées ; « Required » et « When to Use » réécrits ; « Code Reference » (C-15-5e2-6).
+Aucun numéro de ligne au Pattern 5.
+
+Tri de l'inventaire, bloc par bloc (lu entier) — verdicts :
+- *réécrites ici* : les blocs ci-dessus ;
+- *réécrites par la 15-5e1 et vraies* : `kesh-db/src/retry.rs` (63 lignes), `kesh-api/src/retry.rs`,
+  doc-comments canoniques (`invoices.rs:1921-1961`, `supplier_invoices.rs:249-286`), « 5 bis »,
+  doc-comments des routes rejouées par la 15-5e1 ;
+- *vraies pour la paire ou le montage qu'elles nomment* : `projects.rs:77-81`,
+  `supplier_invoices.rs:320-325`, `reconciliation_rules.rs:190-191` (précisés),
+  `journal_entry_number_sequences.rs:128-131`, `invoices.rs:1074-1078`, `:1099-1101` (précisé),
+  `:2014`, `:2124`, `opening_complement.rs:26-37` (« Le dépôt n'a pas d'ordre de verrouillage
+  unique ») ; tests `opening_complement_repository.rs:746`/`:800`, `fiscal_years_repository.rs:1051`/
+  `:1071` (précisés, assertions intactes), `journal_entries_modification.rs`,
+  `journal_entry_reversal_e2e.rs`, `reconciliation_e2e.rs:4409-4523` (historique gardé),
+  `rejeu_interblocage_e2e.rs`, `audit_route_registry.rs`, `capture_rejeu.rs` ;
+- *hors sujet* (autre mécanisme) : « cycle » de vie / de crates / CPU (`audit.rs:5`,
+  `dunning_reminders.rs`, `password.rs:90`, `chart_of_accounts/mod.rs:48`, `account.rs:84`,
+  `users.rs:41`, `invoices.rs:1483`, `:2213`, `:4448`, `dunning_eligibility.rs:35`,
+  `imported_supplier_invoices.rs:287`, `docs/testing.md:46` et les tests homologues), « même ordre »
+  de lignes ou de refus (`credit_notes.rs:225`, `audit_log.rs`, `bank_imports.rs:1170`,
+  `journal_entries.rs:664`, `opening_balances.rs:389`, `kesh-qrbill/src/types.rs:347` et les tests
+  homologues), auto-interblocages de connexion (`onboarding.rs:282`, `admin.rs:257`,
+  `kesh-seed/src/lib.rs:117`), interblocages de lacunes d'`INSERT` (`email_templates.rs:20-30`,
+  `:245`), test de concurrence de `invoices.rs:5430-5488`, `errors.rs` (kesh-api, kesh-reconciliation),
+  `inbox_import.rs:126` (verrou nommé de connexion), `company_invoice_settings.rs:312` (ordre entre
+  comptes désignés), `invoice_settlements_write.rs:709`, `onboarding.rs:232`, `:683`, `:850`,
+  `:907`, `reconciliation_cancel.rs:256` (mis à jour, #463), `docs/api-external.md` (phrases de rejeu,
+  vraies).
+Aucune occurrence n'affirme encore une absence de cycle sans la borner à une paire ou à un montage.
+
+**T3 — documentation (AC4, AC5).** `docs/api-external.md` § 10 : phrase générale sous la table,
+énumérant les 22 routes rejouées ouvertes aux clés, hors restauration et effacement de la démo, et
+sa converse ; « après plusieurs tentatives » → « après trois tentatives » (acceptation d'un
+rapprochement) ; phrases du `PUT` et du `DELETE` non touchées. CHANGELOG `[0.13.0]` « Corrigé » :
+ligne de la 15-5e1 remplacée par le texte final, #536 en entier, et ligne #484 ajoutée ; « Modifié »
+non touché. Manuels (#484) : `user-manual.tex:982` (numérotation : compteur verrouillé, contrainte
+d'unicité, rejeu, réserve des trois tentatives), `admin-manual.tex:885-896` (commentaire de
+`99-kesh.cnf` : `REPEATABLE READ`, verrous de ligne et nommés, relance automatique jusqu'à trois
+tentatives, consigne `innodb_deadlock_detect` à sa valeur `ON` — lignes ASCII ≤ 70 caractères,
+vérifié par script). `make admin user` : `Overfull` **69 → 69** (admin) et **26 → 26** (utilisateur),
+compte relevé sur un build des `.tex` d'avant la modification puis après ; brochure ni régénérée ni
+modifiée. PDF aplatis (`pdftotext -nopgbrk | tr | tr -s | sed` des ligatures) : `SERIALIZABLE`
+absent des deux, phrases neuves présentes (le commentaire du listing traverse un saut de page, texte
+complet). Relevé élargi (motif de l'AC5) sur les `.tex` après modification : **23 lignes** — les
+lignes neuves du commentaire `99-kesh.cnf` (`:885`, `:887`, `:888`, `:890`, `:891`, `:893`, `:894`)
+et `user-manual.tex:982`, vraies ; `transaction-isolation = REPEATABLE-READ`, vrai ; `:1402` (« en
+même temps », sauvegarde), `:1864` (verrou de base, table d'audit), dix « isolation » multi-société
+(`admin-manual.tex:86`, `:939`, `:955`, `:961`, `:2249`, `user-manual.tex:2075`, `:2078`,
+`marketing-brochure.tex:207`, `:317`, `:318`), `marketing-brochure.tex:360` (Rust) — hors sujet. Les
+trois documents laissés faux par la 15-5e1 (api-external, manuel utilisateur, manuel
+d'administration) sont justes.
+
+**T4 — mutations (AC2)**, chacune : copie, mutation, gate ciblé, restauration, `touch`, et contrôle
+`git diff` identique avant / après (script `mut.py` hors dépôt) :
+1. enveloppe retirée de `create_journal_entry` → **volet (c) rouge** ;
+2. enveloppe retirée de `pay_supplier_invoice` (doc-comment de `cancel_supplier_invoice` nommant
+   l'enveloppe juste après) → **volet (c) rouge** sur `pay_supplier_invoice` ;
+3. enveloppe retirée de `post_manual` → **volet (c) rouge et test 8 rouge** (`500 INTERNAL_ERROR`) ;
+4. `retry_with` recopié dans `write_off_invoice_handler` → **volet (c) et volet (c bis) rouges** ;
+   idem dans `update_journal_entry` → **les deux rouges** ;
+5. `onboarding::finalize` remis en `retry_with` à prédicat en ligne → **volet (c bis) rouge**, en
+   nommant `onboarding.rs : fn finalize` ;
+6. `ARejouer` remis à la main au registre → ne compile pas (variante retirée) : consigné, non lancé.
+Après restauration : `binary(rejeu_interblocage_e2e) | binary(audit_route_registry)` 18/18 vert.
+
+**T5 — gates**, au commit de code `6125d50b`, cible cargo du worktree, base `kesh_155e2` remise à
+zéro (DROP/CREATE, migrations, seed) avant :
+- **backend** : `scripts/test-fast.sh` (fmt, clippy `-D warnings`, nextest) — **2837 / 2837
+  passés, 4 ignorés** (107,8 s) ; vert ;
+- **frontend** : `npm run check` 0 erreur (27 avertissements préexistants), `lint-i18n-ownership`
+  vert, `test:unit` **1086 / 1086** (111 fichiers), `build` vert ;
+- **E2E Playwright complet** (backend `./target/debug/kesh-api` du worktree sur le port **3005**,
+  base `kesh_e2e_155e2` remise à zéro et migrée, secrets générés par `openssl rand`,
+  `KESH_COOKIE_SECURE=false`, `KESH_TEST_MODE=true` des deux côtés, SMTP factices, inbox et
+  documents en scratchpad, `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64`, run de 19:40 UTC) :
+  **246 passés / 8 échoués / 19 ignorés**. Jugés contre `docs/testing.md` § « Les échecs attendus » :
+  les **7 KF-029** (#97 : `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150`) et `sidebar-navigation.spec.ts:75`, **rejoué seul : vert
+  (1,4 s)** — pollution d'état, non KF-046 ni régression. Aucune spec ne touche les routes modifiées
+  hors du chemin nominal ; aucun rouge hors liste. Backend E2E arrêté après le run.
+
 ### File List
+
+- `crates/kesh-api/src/routes/credit_notes.rs`
+- `crates/kesh-api/src/routes/imported_supplier_invoices.rs`
+- `crates/kesh-api/src/routes/invoices.rs`
+- `crates/kesh-api/src/routes/journal_entries.rs`
+- `crates/kesh-api/src/routes/onboarding.rs`
+- `crates/kesh-api/src/routes/opening_balances.rs`
+- `crates/kesh-api/src/routes/payment_batches.rs`
+- `crates/kesh-api/src/routes/reconciliation.rs`
+- `crates/kesh-api/src/routes/supplier_invoices.rs`
+- `crates/kesh-api/tests/audit_route_registry.rs`
+- `crates/kesh-api/tests/journal_entry_reversal_e2e.rs`
+- `crates/kesh-api/tests/rejeu_interblocage_e2e.rs`
+- `crates/kesh-db/src/repositories/fiscal_years.rs`
+- `crates/kesh-db/src/repositories/invoice_settlements_write.rs`
+- `crates/kesh-db/src/repositories/invoices.rs`
+- `crates/kesh-db/src/repositories/journal_entries.rs`
+- `crates/kesh-db/src/repositories/opening_complement.rs`
+- `crates/kesh-db/src/repositories/projects.rs`
+- `crates/kesh-db/src/repositories/reconciliation_cancel.rs`
+- `crates/kesh-db/src/repositories/reconciliation_rules.rs`
+- `crates/kesh-db/src/repositories/supplier_invoices.rs`
+- `crates/kesh-db/tests/fiscal_years_repository.rs`
+- `crates/kesh-db/tests/journal_entries_modification.rs`
+- `crates/kesh-db/tests/opening_complement_repository.rs`
+- `docs/MULTI-TENANT-SCOPING-PATTERNS.md`
+- `docs/api-external.md`
+- `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/admin-manual.pdf`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/15-5e2-rejeu-des-autres-flux.md`,
+  `_bmad-output/implementation-artifacts/sprint-status.yaml`,
+  `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md`
+
+Décompte (recompté, `git diff --stat 688fed25 6125d50b`) : **32 fichiers** au commit de code (dont
+2 PDF), 998 insertions, 369 suppressions ; tests neufs sur ce périmètre : **3** (`#[test]` du
+registre 9 → 11, `#[sqlx::test]` de `rejeu_interblocage_e2e.rs` 6 → 7). Aucune migration, aucune clé
+i18n, aucun fichier `frontend`.
 
 ## Change Log
 
@@ -1087,3 +1318,15 @@ inventaire) restent relues par les passes de validation.
   brut qui ne prend pas le verrou nommé `GET_LOCK` ; ce verrou ne sérialise que deux ROUTES entre elles et
   n'empêche donc pas le cycle route / test décrit. **Validation CLOSE.** Trend : P1 1 HIGH / 6 MEDIUM → … → P5 0
   → alignement sur le livré (C85) → P6 2 MEDIUM (Opus ×2) → P7 ciblée 0 (Haiku).
+- 2026-10-08 — **Développement** (`bmad-dev-story`, Claude Opus 5.5 ; commit de code `6125d50b`,
+  sur `688fed25` — `origin/main` `ec675288`, qui porte les 15-5e1, 15-8a et 15-8b). La 15-8b étant
+  mergée : départ **10 / 12 / 4 / 89**, arrivée **22 / 0 / 4 / 89 = 115** ; **douze** routes rejouées
+  (neuf `DbError`, trois `AppError` extraites en fonctions « une tentative ») et **six** sites
+  `retry_with` migrés à équivalence exacte, `post_accept` seul à le garder. **T0** : cycle du test 8
+  formé à la main sur MariaDB 10.11.16 (la route est la victime) — le test 8 est écrit en vert.
+  Volet (c bis) et son banc ajoutés au registre ; commentaires d'ordre, Pattern 5, `api-external.md`
+  § 10, CHANGELOG et manuels (#484) réécrits ; deux PDF régénérés, `Overfull` inchangés. Mutations :
+  six lancées, toutes rouges comme attendu, une consignée sans exécution. Choix **C-15-5e2-1** à
+  **C-15-5e2-6**. Gates au commit de code : voir T5 du Dev Agent Record. Statut → `review`.
+  **Décompte** (recompté) : 6 AC, 6 tâches T0–T5 cochées ; 3 tests neufs (`main` → `6125d50b`) ;
+  inventaire au symptôme 394 / 62 sur `HEAD` d'origine, 462 / 64 après.
