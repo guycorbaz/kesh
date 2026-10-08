@@ -166,8 +166,17 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * `conforme` inchangé. ⚠️ Les noms gardent le suffixe `Label` **à dessein** : un nom
  * en `…Message` aurait fait sortir les deux fonctions du relevé — un compteur qui
  * baisse parce que le détecteur ne voit plus, pas parce que le défaut a disparu.
+ *
+ * ⚠️ **47 → 48 (46 → 47 avant le rebase sur la 15-8a), et la déclaration est NOMMÉE** : `failedProposalLabel`
+ * (`lib/features/reconciliation/failed-proposal-label.ts`), né avec les libellés des refus
+ * par lot de la Story 15-5c (#492). Toutes ses branches délèguent à `i18nMsg`
+ * (`reconciliation-failed-*`, ou une clé `error-*` / `reconciliation-*` réutilisée) :
+ * aucun littéral, donc `conforme` **40 → 41** ; `ecartee` ne bouge pas. *Identifiée en
+ * cherchant les suffixes `Label`, `Text`, `Display` dans les fichiers de la story — la
+ * seule déclaration neuve qui en porte un (`describeTx`, `snapshotSelected`,
+ * `rejectedAccountNumbers` n'en portent pas).*
  */
-const CANDIDATES_ATTENDUES = 47;
+const CANDIDATES_ATTENDUES = 48;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -684,7 +693,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 7, conforme: 40 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 7, conforme: 41 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

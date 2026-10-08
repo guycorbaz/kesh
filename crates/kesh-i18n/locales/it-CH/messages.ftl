@@ -274,7 +274,7 @@ journal-entry-edit = Modifica
 error-fiscal-year-closed-generic = L'esercizio contabile è chiuso — nessuna scrittura può essere aggiunta o modificata (CO art. 957-964).
 error-inactive-accounts = Uno o più conti sono archiviati o non validi.
 error-account-not-postable = { $count ->
-    [one] Il conto { $numbers } non è registrabile (conto di raggruppamento, di risultato o di chiusura): scegli un conto registrabile.
+    [one] Il conto { $numbers } non è registrabile (conto di raggruppamento, di risultato o di chiusura): scegliere un conto registrabile.
    *[other] I conti { $numbers } non sono registrabili (conti di raggruppamento, di risultato o di chiusura): scegli conti registrabili.
 }
 error-rounding-account-not-configured = Questo pagamento salda la fattura al centesimo, ma non è designato alcun conto utilizzabile per le differenze di arrotondamento: sceglierne uno in Impostazioni → Fatturazione.
@@ -1050,6 +1050,28 @@ reconciliation-labels-no-candidate = Nessuna corrispondenza
 reconciliation-labels-amount-due-of = residuo su { $total }
 reconciliation-labels-success-suffix = operazione/i riuscita/e.
 reconciliation-labels-failed = Errori parziali
+# Story 15-5c (#492) — etichette dei rifiuti di un lotto di riconciliazione (`failed[]`).
+reconciliation-failed-account-not-found = Un conto di contropartita è introvabile o archiviato.
+reconciliation-failed-account-not-postable = Conto non registrabile: { $numbers }. Un conto di raggruppamento, di risultato o di chiusura non riceve scritture: scegliere un conto registrabile.
+reconciliation-failed-account-not-postable-generic = Un conto di contropartita non è registrabile: un conto di raggruppamento, di risultato o di chiusura non riceve scritture. Scegliere un conto registrabile.
+reconciliation-failed-bank-account-not-configured = Il conto bancario non è collegato ad alcun conto contabile attivo: collegarne uno in Amministrazione → Conti bancari.
+reconciliation-failed-bank-account-not-found = Conto bancario introvabile.
+reconciliation-failed-bank-transaction-not-found = Transazione bancaria introvabile.
+reconciliation-failed-database-error = Errore della banca dati: riprovare; se il problema persiste, contattare il supporto.
+reconciliation-failed-invoice-not-found = Fattura introvabile.
+reconciliation-failed-invoice-sale-entry-malformed = La scrittura di vendita di questa fattura non ha una riga sul conto debitori: il pagamento non può essere registrato.
+reconciliation-failed-period-locked = La data di questa transazione cade nel periodo bloccato: nessuna scrittura può esservi datata (vedere il blocco del periodo).
+reconciliation-failed-project-archived = Il progetto analitico è archiviato.
+reconciliation-failed-project-not-found = Progetto analitico introvabile.
+reconciliation-failed-currency-mismatch = Solo le transazioni in CHF possono essere riconciliate con una fattura o una regola.
+reconciliation-failed-overpayment = L'importo della transazione supera il saldo dovuto della fattura.
+reconciliation-failed-payment-before-invoice = Il pagamento è anteriore di più di un giorno alla data della fattura: non può saldarla, anche se è stata proposta.
+reconciliation-failed-rule-mismatch = Il conto di contropartita della regola è cambiato: ricaricare la pagina.
+reconciliation-failed-rule-no-longer-matches = La regola non corrisponde più a questa transazione: è stata modificata nel frattempo.
+reconciliation-failed-rule-not-found = Regola introvabile o disattivata.
+reconciliation-failed-score-too-low = La fattura non corrisponde abbastanza alla transazione per essere riconciliata.
+reconciliation-failed-transaction-not-pending = Questa transazione non è più in attesa di riconciliazione.
+reconciliation-failed-unknown = Rifiuto non riconosciuto ({ $code }).
 reconciliation-cols-tx-date = Data
 reconciliation-cols-tx-amount = Importo
 reconciliation-cols-tx-counterparty = Controparte
