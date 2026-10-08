@@ -612,6 +612,7 @@ pub async fn finalize(
     // (pool, current_user) garantissent que la closure est `Fn` et non
     // `FnOnce`.
     retry_with(
+        "onboarding::finalize",
         DEFAULT_MAX_DEADLOCK_ATTEMPTS,
         |err: &AppError| matches!(err, AppError::Database(db_err) if is_deadlock_error(db_err)),
         || {

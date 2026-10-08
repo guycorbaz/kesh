@@ -76,3 +76,6 @@ reqwest = { version = "0.12", features = ["json", "multipart", "cookies"] }
 rust_decimal_macros = "1.40"
 # Story v011-1 — répertoire temporaire pour le test d'intégration logs fichier.
 tempfile = "3"
+# Story 15-5e1 (choix C70) — le volet (c) du registre des routes analyse le
+# corps des handlers avec l'analyseur de Rust (déjà au Cargo.lock, 2.0.118).
+syn = { version = "2", features = ["full", "visit"] }

@@ -673,6 +673,7 @@ pub async fn update_journal_entry(
     )?;
 
     let updated = retry_with(
+        "journal_entries::update",
         DEFAULT_MAX_DEADLOCK_ATTEMPTS,
         |err: &DbError| is_deadlock_error(err),
         || {

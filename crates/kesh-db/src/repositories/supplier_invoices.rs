@@ -245,6 +245,46 @@ pub async fn create(
 /// `company_id` est destructuré depuis `new.company_id` (jamais un paramètre
 /// séparé — source unique). Retourne [`SupplierInvoiceWithLines`] (kesh-db) ; le
 /// handler HTTP construit `SupplierInvoiceResponse` (kesh-api) via `from_parts`.
+///
+/// # Ordre des verrous
+///
+/// Doc-comment canonique de l'ordre des verrous côté achat (Story 15-5e1, AC5),
+/// numéroté comme les étapes du code :
+///
+/// ```text
+/// (0)    projects / companies   projet analytique : sentinelle companies puis
+///                               projet FOR UPDATE (validate_taggable_in_tx),
+///                               seulement si un projet est renseigné
+/// (1)    contacts               fournisseur, lu SANS verrou
+/// (2)    —                      passe de FORME des lignes : aucun verrou
+/// (2 bis) company_invoice_settings  INSERT IGNORE puis FOR UPDATE
+///                               (get_or_create_default_in_tx) — avancé AVANT les
+///                               comptes de charge et l'exercice (choix C55)
+/// (2 ter) accounts              passe des COMPTES : chaque compte de charge
+///                               FOR UPDATE, dans l'ordre des lignes (sans tri)
+/// (3)    fiscal_years           find_open_covering_date
+/// (5)    journal_entries        create_in_tx — compteur des écritures FOR UPDATE ;
+///                               l'insertion reprend des verrous PARTAGÉS sur
+///                               companies et sur chaque compte écrit
+///                               (fk_jel_account), donc APRÈS l'exercice
+/// ```
+///
+/// L'exigence du compte créanciers (`ConfigurationRequired`) reste jugée
+/// **après** l'exercice : seul l'**appel** des réglages est avancé, et il ne
+/// refuse rien (hors erreur de base) — aucun refus ne change de place.
+///
+/// Cet ordre est une **convention qui réduit la fréquence** des interblocages,
+/// pas une garantie : la ligne des réglages ordonne la plupart des saisies d'une
+/// même société sans les sérialiser à coup sûr (un `INSERT IGNORE` en doublon y
+/// pose un verrou partagé, mesuré sur MariaDB 10.11 — deux saisies qui le
+/// tiennent puis demandent l'exclusif s'interbloquent), et l'insertion des
+/// lignes reprend les comptes après l'exercice. Les comptes de charge ne sont
+/// pas triés : les cycles qui restent (deux saisies aux comptes croisés, une
+/// charge imputée au compte d'arrondi contre un règlement client par compte
+/// interne avec écart) sont couverts par le **rejeu des routes** — la saisie
+/// (`POST /supplier-invoices`, Story 15-5e1) et la complétion d'une facture
+/// importée (15-5e2). La règle générale est écrite au doc-comment de
+/// [`super::invoices::validate_invoice`].
 pub async fn create_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     new: NewSupplierInvoice,
@@ -322,6 +362,14 @@ pub async fn create_in_tx(
             ));
         }
     }
+    // (2 bis) Réglages de la société, AVANT les comptes de charge et l'exercice
+    // (Story 15-5e1, AC5, choix C55) : l'ordre « réglages → exercice » devient
+    // commun à la saisie et à la validation d'une facture client. Un refus de
+    // forme (passe ci-dessus) ne prend ainsi aucun verrou. L'exigence du compte
+    // créanciers reste jugée plus bas, après l'exercice.
+    let settings =
+        company_invoice_settings::get_or_create_default_in_tx(&mut *tx, company_id).await?;
+
     let mut non_postable: Vec<NonPostableAccount> = Vec::new();
     for line in &lines {
         let line_total = line.quantity * line.unit_price;
@@ -376,9 +424,8 @@ pub async fn create_in_tx(
         .await?
         .ok_or(DbError::FiscalYearInvalid)?;
 
-    // (4) Config company : comptes créanciers 2000 (requis) + 1171 récupérable (optionnel).
-    let settings =
-        company_invoice_settings::get_or_create_default_in_tx(&mut *tx, company_id).await?;
+    // (4) Config company (chargée en (2 bis)) : comptes créanciers 2000 (requis)
+    // + 1171 récupérable (optionnel).
     let payable_account_id = settings
         .default_payable_account_id
         .ok_or_else(|| DbError::ConfigurationRequired("default_payable_account_id".into()))?;

@@ -866,6 +866,9 @@ pub async fn delete_invoice(
 /// Transition atomique `draft → validated` : attribue un numéro,
 /// génère l'écriture comptable, persiste. Renvoie la facture
 /// validée (incluant `invoiceNumber`, `journalEntryId`, statut).
+///
+/// ⚠️ **Rejouée sur interblocage** (Story 15-5e1, #536) par l'enveloppe
+/// `DbError` [`kesh_db::retry::retry_on_deadlock`].
 pub async fn validate_invoice_handler(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -874,8 +877,10 @@ pub async fn validate_invoice_handler(
     let company = get_company_for(&current_user, &state.pool).await?;
     // Review P3 : utiliser directement le résultat transactionnel au lieu
     // d'un re-fetch post-commit (évite une fenêtre de race + DB roundtrip).
-    let validated =
-        invoices::validate_invoice(&state.pool, company.id, id, current_user.user_id).await?;
+    let validated = kesh_db::retry::retry_on_deadlock("invoices::validate", || {
+        invoices::validate_invoice(&state.pool, company.id, id, current_user.user_id)
+    })
+    .await?;
     Ok(Json(InvoiceResponse::from_parts(
         validated.invoice,
         validated.lines,
@@ -1258,6 +1263,9 @@ pub struct SettleInvoiceResponse {
 /// ⛔ **Remplace `mark-paid` / `unmark-paid`, supprimés.** Depuis la 24-2 un
 /// règlement produit son écriture ; un marquage qui n'écrivait rien n'a plus
 /// d'usage légitime, et son annulation gratuite non plus.
+///
+/// ⚠️ **Rejoué sur interblocage** (Story 15-5e1, #491) par l'enveloppe
+/// `DbError` [`kesh_db::retry::retry_on_deadlock`].
 pub async fn settle_invoice_handler(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -1266,15 +1274,17 @@ pub async fn settle_invoice_handler(
 ) -> Result<Json<SettleInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
     let (choice, amount, settled_on) = req.into_parts()?;
-    let outcome = kesh_db::repositories::invoice_settlements_write::settle_invoice(
-        &state.pool,
-        current_user.user_id,
-        company.id,
-        id,
-        choice,
-        amount,
-        settled_on,
-    )
+    let outcome = kesh_db::retry::retry_on_deadlock("invoices::settle", || {
+        kesh_db::repositories::invoice_settlements_write::settle_invoice(
+            &state.pool,
+            current_user.user_id,
+            company.id,
+            id,
+            choice,
+            amount,
+            settled_on,
+        )
+    })
     .await?;
 
     let (invoice, lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)
@@ -1341,6 +1351,7 @@ pub async fn write_off_invoice_handler(
             ))
         })?;
     let outcome = retry_with(
+        "invoices::write_off",
         DEFAULT_MAX_DEADLOCK_ATTEMPTS,
         |err: &DbError| is_deadlock_error(err),
         || {
@@ -1475,19 +1486,24 @@ pub struct CancelSettlementResponse {
 /// couvre ; la ligne de règlement est retirée ; `paid_at` retombe si le
 /// résiduel redevient positif. Les refus : 409 avec le code du motif, ou 400
 /// qui nomme les comptes archivés.
+///
+/// ⚠️ **Rejouée sur interblocage** (Story 15-5e1, #463) par l'enveloppe
+/// `DbError` [`kesh_db::retry::retry_on_deadlock`].
 pub async fn cancel_invoice_settlement_handler(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path((id, settlement_id)): Path<(i64, i64)>,
 ) -> Result<Json<CancelSettlementResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    let done = kesh_db::repositories::invoice_settlements_write::cancel_settlement(
-        &state.pool,
-        current_user.user_id,
-        company.id,
-        id,
-        settlement_id,
-    )
+    let done = kesh_db::retry::retry_on_deadlock("invoices::cancel_settlement", || {
+        kesh_db::repositories::invoice_settlements_write::cancel_settlement(
+            &state.pool,
+            current_user.user_id,
+            company.id,
+            id,
+            settlement_id,
+        )
+    })
     .await?;
 
     let (invoice, lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)

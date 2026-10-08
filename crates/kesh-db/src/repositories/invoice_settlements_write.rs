@@ -473,12 +473,17 @@ pub async fn write_off_invoice(
     };
     // (5 bis) La fraction de centime d'un reste exact à quatre décimales va au
     //         compte de différences d'arrondi (convention du règlement au centime) ;
-    //         la nature `rounding` l'y impute déjà tout entière. Verrouillé avant
-    //         le compte de TVA : aucun autre chemin ne prend de verrou `FOR UPDATE`
-    //         sur le compte de TVA due (la validation et l'avoir le lisent dans les
-    //         réglages et y écrivent leurs lignes), si bien qu'aucun cycle n'est
-    //         connu ; l'ordre « arrondi, puis TVA » suit celui de la validation
-    //         d'une facture arrondie, par prudence (revues de code P2 et P3).
+    //         la nature `rounding` l'y impute déjà tout entière.
+    //         Ordre des verrous de ce flux (Story 15-5e1) : compte de la nature
+    //         (étape 4), puis compte d'arrondi (ici), puis compte de TVA due, puis
+    //         exercice (étape 6) — l'ordre « arrondi, puis TVA » suit celui de la
+    //         validation d'une facture arrondie. Ce n'est PAS une absence de cycle :
+    //         le règlement client par compte interne verrouille `FOR UPDATE` le
+    //         compte qu'on lui désigne, TVA due comprise, et l'insertion des lignes
+    //         de l'écriture reprend ces comptes (verrous partagés, `fk_jel_account`)
+    //         APRÈS l'exercice. Un interblocage reste donc possible ; la route est
+    //         rejouée (`write_off_invoice_handler`, `retry_with`), cf. la règle au
+    //         doc-comment de `invoices::validate_invoice`.
     let rounding_account_id = if nature == SettlementWriteOffNature::Rounding {
         Some(nature_account_id)
     } else if amount != invoice_settlements::amount_due_to_centime(amount) {

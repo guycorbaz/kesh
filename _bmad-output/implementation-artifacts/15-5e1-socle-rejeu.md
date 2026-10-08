@@ -1,6 +1,6 @@
 # Story 15.5e1 : Socle du rejeu sur interblocage — les enveloppes, le registre, les trois routes des issues, la saisie fournisseur et l'enregistrement des réglages de facturation
 
-Status: ready-for-dev
+Status: review
 
 <!-- Sous-story de la 15-5e (fiche index `15-5e-ordre-des-verrous-reglements.md`, statut `split`),
      créée le 2026-10-08 par le découpage décidé à la validation P3 de la 15-5e (finding F3-2, choix
@@ -689,7 +689,7 @@ invisibles à l'utilisateur.**
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Refaire les relevés** sur `HEAD` (les 15-5a et 15-5b sont mergées, `f289414e` ; la
+- [x] **T0 — Refaire les relevés** sur `HEAD` (les 15-5a et 15-5b sont mergées, `f289414e` ; la
       fiche est recalée sur ce commit) : la remontée de l'AC1 (commandes en Dev Notes), comparée à la
       table — **une route absente bloque la story** ; pour les cinq routes de l'AC3, le chemin
       d'erreur (aucune conversion qui fasse sortir une erreur sqlx de `DbError::Sqlx` avant le
@@ -715,20 +715,20 @@ invisibles à l'utilisateur.**
       MySQL ≥ 8.0.18 et MariaDB ≥ 11.4.5 (MDEV-34877) peuvent ne pas former ce cycle, sauf si
       R3-7 est vraie — le témoin du rejeu rend ce cas visible au lieu de le masquer ;
       consigner au Dev Agent Record.
-- [ ] **T1 — Le patron et les cinq routes** (AC2, AC3) : le module `kesh_api::retry`
+- [x] **T1 — Le patron et les cinq routes** (AC2, AC3) : le module `kesh_api::retry`
       (`retry_app_on_deadlock`, `is_app_deadlock`, `pub mod retry;`) ; le paramètre `operation` de
       `retry_with`, `retry_on_deadlock` et `retry_on_deadlock_with`, le `warn!` avec son champ ; les
       cinq sites directs, les six appels de tests et l'exemple `ignore` qui gagnent un nom ; les
       quatre routes des issues et de la saisie, et l'enregistrement des réglages de facturation
       (C70) ; doc-comments.
-- [ ] **T2 — L'ordre et les commentaires** (AC5) : l'appel des réglages de la saisie fournisseur ; le
+- [x] **T2 — L'ordre et les commentaires** (AC5) : l'appel des réglages de la saisie fournisseur ; le
       doc-comment canonique ; le commentaire « 5 bis » ; le doc-comment du module `retry.rs`.
-- [ ] **T3 — Les tests** (AC4) : les tests 1 à 5 et 7 ; la seconde colonne du registre
+- [x] **T3 — Les tests** (AC4) : les tests 1 à 5 et 7 ; la seconde colonne du registre
       `audit_route_registry.rs`, ses tests (c) — analyse par `syn` 2 (`[dev-dependencies]` de
       `kesh-api`), avec le test du visiteur sur source synthétique — et (d), l'en-tête 111/114
       corrigé ; mutations consignées.
-- [ ] **T4 — Documentation** (AC6) : les deux lignes du CHANGELOG (« Corrigé », « Modifié »).
-- [ ] **T5 — Gates** : gate complet backend (`scripts/test-fast.sh`, base remise à zéro avant) —
+- [x] **T4 — Documentation** (AC6) : les deux lignes du CHANGELOG (« Corrigé », « Modifié »).
+- [x] **T5 — Gates** : gate complet backend (`scripts/test-fast.sh`, base remise à zéro avant) —
       **même en cours de boucle de revue**, la story touchant des repositories `kesh-db` ; gate
       frontend complet (rien n'y change : il le confirme) ; **E2E Playwright complet au dernier commit
       de code** (décision D7), jugé fichier par fichier contre `docs/testing.md` § « Les échecs
@@ -1018,11 +1018,92 @@ recyclage — deux trous successifs du scanner textuel — par un changement de 
 
 ### Agent Model Used
 
+Claude Opus 5.5 (agent de développement, autonomie complète — Epic 15).
+
 ### Debug Log References
+
+- Mesures T0 : base dédiée `kesh_155e1` sur `10.11.16-MariaDB-ubu2204`, `innodb_deadlock_detect = 1`.
+- Gate backend : `scripts/test-fast.sh` (DATABASE_URL → `kesh_155e1`, remise à zéro DROP/CREATE + migrations + seed juste avant).
+- E2E : backend du worktree (binaire copié) sur le port 3002, base `kesh_e2e_155e1` neuve, `KESH_COOKIE_SECURE=false`, SMTP factices, répertoires inbox/documents dédiés.
 
 ### Completion Notes List
 
+**T0 — relevés sur `HEAD` (`778513aa`)**
+- **Code identique à `f289414e`** : `git diff --stat f289414e HEAD -- crates` est vide ; les numéros de ligne de la fiche valent donc tels quels.
+- **Remontée de l'AC1 refaite** (les quatre commandes des Dev Notes) : 57 lignes pour la première (commentaires exclus), 18 pour la deuxième, 99 pour la troisième (identique au relevé de la fiche). Chaque site d'écriture au journal se rattache à une ligne de la table ; aucune route absente. Les homonymes, aides de test et faux amis sont ceux que la fiche trie (`accounts.rs:1302`, `:1351` sont sous `#[cfg(test)]`, `:1089`).
+- **Chemin d'erreur des cinq routes** : les seuls `map_err` qui ne passent pas par `map_db_error` dans `invoice_settlements_write`, `supplier_invoices`, `company_invoice_settings`, `invoices` et `journal_entries` convertissent des erreurs non sqlx (`last_insert_id`, rendu du numéro). **Effets de bord** : `grep -nE "tokio::fs|std::fs|smtp|mailer|reqwest"` sur ces dépôts : vide. **Entrées clonées** : `SettlementChoice` est `Copy` (règlement), `NewSupplierInvoice` et `CompanyInvoiceSettingsUpdate` sont `Clone`, la validation et l'annulation ne prennent que des identifiants.
+- **Invariant `GET_LOCK`** : les cinq `begin()` de `routes/reconciliation.rs` (`:926`, `:2749`, `:3170`, `:3687`, `:3995`) sont suivis de `with_account_lock` sans requête intermédiaire ; `with_account_lock` lit `DATABASE()` puis `GET_LOCK` avant la fermeture. L'invariant tient.
+- **R3-7 : VRAIE** sur 10.11.16. `INSERT IGNORE` en doublon non conclu, puis `SELECT … FOR UPDATE` d'une autre connexion → **1205** ; `INNODB_LOCKS` montre un verrou **`S` RECORD** sur `PRIMARY` tenu par l'`INSERT IGNORE`. ⚠️ **À l'orchestrateur** : ouvrir l'issue prévue par l'AC5 (réécrire `get_or_create_default_in_tx` : `SELECT … FOR UPDATE` d'abord, `INSERT IGNORE` seulement si la ligne manque — hors de cette story, C66 (b)). Choix **C-15-5e1-1**.
+- **Cycle du test 7 formé à la main** : connexion lourde (500 lignes de lest) en `LOCK IN SHARE MODE`, `UPDATE company_invoice_settings` d'une autre connexion en attente, puis `SELECT … FOR UPDATE` de la lourde → **l'`UPDATE` sort en 1213, la lourde obtient son verrou**. Le montage tient sur la version épinglée, sans adaptation. Note : MySQL ≥ 8.0.18 et MariaDB ≥ 11.4.5 (MDEV-34877) accordent l'`X` au détenteur du `S` sans attendre ; mais `company_invoice_settings::update` commence par un `INSERT IGNORE` et, R3-7 étant vraie, la route y tient un `S` : le cycle du test devrait s'y former aussi (non mesuré hors 10.11). Le témoin du rejeu reste la garde.
+
+**T1 — le patron et les cinq routes**
+- `kesh_db::retry` : `retry_with(operation, max_attempts, should_retry, f)`, `retry_on_deadlock(operation, f)`, `retry_on_deadlock_with(operation, max_attempts, f)` ; `tracing::warn!(target: "kesh_db::retry", operation, attempt, max_attempts, backoff_ms, …)` ; six appels de tests et exemple `ignore` nommés.
+- `kesh_api::retry` (neuf, `pub mod retry;`) : `is_app_deadlock`, `retry_app_on_deadlock`.
+- Cinq sites directs de `retry_with` nommés (`reconciliation::accept`, `reconciliation::cancel`, `invoices::write_off`, `opening_balances::complete`, `onboarding::finalize`), rien d'autre.
+- Rejouées par l'enveloppe `DbError` : `invoices::validate`, `invoices::settle`, `invoices::cancel_settlement`, `supplier_invoices::create` (`NewSupplierInvoice` cloné par tentative), `company_invoice_settings::update` (`CompanyInvoiceSettingsUpdate` cloné ; lectures préalables laissées hors de la fermeture). Une ligne de doc-comment chacune.
+
+**T2 — ordre et commentaires**
+- `supplier_invoices::create_in_tx` : `get_or_create_default_in_tx` avancé entre la passe de forme et la passe des comptes ; `ConfigurationRequired("default_payable_account_id")` reste après l'exercice. Doc-comment « # Ordre des verrous » écrit (renvoi à `validate_invoice` pour la règle).
+- `validate_invoice` : doc-comment canonique réécrit (étapes (1), (1 bis), (2), (2 bis'), (2 quater), (3), (4)-(5), (7), règle « convention qui réduit la fréquence ; la défense est le rejeu », jamais « sérialise ») ; les deux phrases fausses retirées. **Sans numéros de ligne** (choix **C-15-5e1-2**).
+- « 5 bis » de `write_off_invoice` réécrit en place (ordre nature → arrondi → TVA due → exercice, cycle possible, route rejouée), code inchangé.
+- Doc du module `kesh_db::retry` et de `DEFAULT_MAX_DEADLOCK_ATTEMPTS` : les trois prémisses fausses remplacées ; `GET_LOCK` et `innodb_deadlock_detect` écrits.
+
+**T3 — tests** (nouveaux, périmètre `HEAD` `778513aa` → arbre de travail)
+- `rejeu_interblocage_e2e.rs` : **6** tests (1 à 5 et 7) ; `common/capture_rejeu.rs` : couche de capture du témoin (aucune crate ajoutée).
+- `audit_route_registry.rs` : seconde colonne `Rejeu` sur les 115 lignes ; **3** tests neufs — volet (c) `every_replayed_route_calls_an_envelope` (par `syn` 2), `the_envelope_visitor_sees_calls_and_only_calls` (source synthétique), volet (d) `the_replay_partition_is_what_the_story_declares` (8 / 13 / 4 / 90 = 115) ; en-tête 111/114 → 112/115 ; doc-comment du module (points (i) à (vi)). Déstructurations adaptées : la partition d'audit, l'exemption, les deux projections.
+- `Cargo.toml` : `syn = { version = "2", features = ["full", "visit"] }` en `[dev-dependencies]` ; `Cargo.lock` : une ligne `"syn 2.0.118"` aux dépendances de `kesh-api`, aucune version neuve.
+- **Harnais recopié** (`test_config`, `spawn_app`, `forge_jwt`) : copie assumée (C70) ; la factorisation du harnais E2E de `kesh-api/tests` reste à ouvrir en issue par l'orchestrateur.
+- **Mutations** (choix **C-15-5e1-3** ; lancées sur `binary(rejeu_interblocage_e2e) | binary(audit_route_registry)`, fichier restauré puis `touch`) — toutes rouges comme attendu :
+
+  | mutation | rouge observé |
+  |---|---|
+  | enveloppe retirée de `settle_invoice_handler` | test 2 (500) + volet (c) |
+  | … de `cancel_invoice_settlement_handler` | test 3 (500) + volet (c) |
+  | … de `validate_invoice_handler` | test 4 (500) + volet (c) |
+  | … de `create_supplier_invoice` | test 5 (500) + volet (c) |
+  | … de `update_invoice_settings` | test 7 (500) seul (volet (c) ne l'examine pas) |
+  | témoin : la demande qui ferme le cycle retirée (aide `victime`) | **seul le témoin** rougit, aux tests 2, 3, 4, 5 et 7 (statuts et comptes verts) |
+  | `retry_with` retiré de `post_cancel_reconciliation` | volet (c) |
+  | enveloppe de `settle_invoice_handler` retirée **et** nommée en commentaire dans le corps | volet (c) + test 2 |
+  | `retry_app_on_deadlock` à une tentative | test 1 (un appel au lieu de deux) |
+  | prédicat qui reconnaît le 1205 | test 1 |
+
+**T4** — `CHANGELOG.md`, `[0.13.0] — Non publié` : une entrée « Modifié » (journalisation en avertissement) et une entrée « Corrigé » (#463, #491 ; #536 en partie), dans la forme des entrées de la section.
+
+**T5 — gates réellement exécutés, sur l'arbre de travail final (dernier état du code)**
+- Backend complet `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest), base `kesh_155e1` remise à zéro juste avant : **2793 exécutés, 2793 passés, 4 ignorés** (110,8 s). Écart avec la 15-5b (2784) : +9 = 6 + 3, recompté (`grep -c '#\[sqlx::test'` sur le fichier neuf ; `#[test]` du registre 6 → 9).
+- Frontend : `npm run check` 0 erreur (27 avertissements préexistants), `lint-i18n-ownership` PASS, `test:unit` **979 / 979** (107 fichiers), `build` OK. Rien n'y change.
+- **E2E complet** (Playwright, base `kesh_e2e_155e1` neuve, backend sur 3002) : **240 passés, 7 échoués, 19 ignorés** (9,7 min). Les 7 sont exactement les sept KF-029 (#97) de `docs/testing.md` § « Les échecs attendus » (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) ; ni huitième variable, ni KF-045 (run de l'après-midi), ni KF-046.
+- Manuels : non touchés (AC6 : manuels et Pattern 5 à la 15-5e2). `docs/MULTI-TENANT-SCOPING-PATTERNS.md:338-351` appelle encore `retry_with` sans nom d'opération : l'un des quatre documents faux entre ce merge et celui de la 15-5e2, nommés à l'AC6.
+
+**Propagation post-patch** : `Toute divergence de cet ordre`, `Aucun chemin ne verrouille`, `deadlocks cross-table`, `la plus jeune`, `aucun cycle n'est connu`, `Acceptable vs. un 500` grepés sur `crates/` et `docs/` : restent la phrase neuve du module `retry.rs` (« non la plus jeune ») ; `retry_with(` sans nom dans `docs/MULTI-TENANT-SCOPING-PATTERNS.md` (attendu, AC6).
+
+**Points à vérifier en revue** : la 15-5e2 restreint `retry_with` à `post_accept` dans le volet (c) ; les numéros de ligne de la fiche (`validate_invoice` `:1916-1929` etc.) sont décalés par les doc-comments réécrits.
+
 ### File List
+
+- `CHANGELOG.md`
+- `Cargo.lock`
+- `crates/kesh-api/Cargo.toml`
+- `crates/kesh-api/src/lib.rs`
+- `crates/kesh-api/src/retry.rs` (neuf)
+- `crates/kesh-api/src/routes/company_invoice_settings.rs`
+- `crates/kesh-api/src/routes/invoices.rs`
+- `crates/kesh-api/src/routes/onboarding.rs`
+- `crates/kesh-api/src/routes/opening_balances.rs`
+- `crates/kesh-api/src/routes/reconciliation.rs`
+- `crates/kesh-api/src/routes/supplier_invoices.rs`
+- `crates/kesh-api/tests/audit_route_registry.rs`
+- `crates/kesh-api/tests/common/capture_rejeu.rs` (neuf)
+- `crates/kesh-api/tests/common/mod.rs`
+- `crates/kesh-api/tests/rejeu_interblocage_e2e.rs` (neuf)
+- `crates/kesh-db/src/repositories/invoice_settlements_write.rs`
+- `crates/kesh-db/src/repositories/invoices.rs`
+- `crates/kesh-db/src/repositories/supplier_invoices.rs`
+- `crates/kesh-db/src/retry.rs`
+- `_bmad-output/implementation-artifacts/15-5e1-socle-rejeu.md`
+- `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
@@ -1213,3 +1294,4 @@ recyclage — deux trous successifs du scanner textuel — par un changement de 
   1 MEDIUM (recyclage, méthode remplacée par `syn`) → P6 1 MEDIUM (recyclage, témoin du rejeu) → P7 0.
   Modèles : Sonnet, Opus, Sonnet, Opus, Sonnet, Opus, Haiku (ciblée). Signaux D5 des P5 et P6 déclarés au
   Project Lead.
+- **2026-10-08 — Développement** (`bmad-dev-story`, Opus 5.5, autonomie complète) : T0 à T5 faits. R3-7 mesurée **vraie** sur MariaDB 10.11.16 (issue à ouvrir par l'orchestrateur), cycle du test 7 formé à la main ; patron (`kesh_db::retry` nommé, `kesh_api::retry`), cinq routes rejouées, avance des réglages de la saisie fournisseur, doc-comments canoniques, « 5 bis », registre à deux colonnes (volets (c) par `syn`, (d)), tests 1 à 5 et 7 avec témoin, dix mutations rouges, CHANGELOG. Gates : backend 2793/2793 (4 ignorés), frontend 979/979, E2E 240 passés / 7 KF-029 attendus. Choix **C-15-5e1-1** à **3**. Statut → `review`.

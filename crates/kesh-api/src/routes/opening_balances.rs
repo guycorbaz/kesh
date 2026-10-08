@@ -592,6 +592,7 @@ pub async fn complete_opening_balances(
     let today = chrono::Utc::now().date_naive();
 
     let result = retry_with(
+        "opening_balances::complete",
         DEFAULT_MAX_DEADLOCK_ATTEMPTS,
         |err: &DbError| is_deadlock_error(err),
         || {

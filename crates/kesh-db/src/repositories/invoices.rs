@@ -1913,20 +1913,48 @@ pub(in crate::repositories) fn generate_invoice_journal_lines_rounded(
 /// génère l'écriture comptable associée, et bascule son statut en
 /// `validated`. Le tout dans une transaction atomique.
 ///
-/// # Ordre des locks (canonique — Story 5.2 section Concurrence)
+/// # Ordre des locks (canonique — Story 5.2, réécrit par la Story 15-5e1)
 ///
-/// 1. `invoices` (`SELECT ... FOR UPDATE` sur la facture à valider).
-///    1 bis. `accounts` — le compte de différences d'arrondi, **seulement** s'il
-///    y a un écart à 5 centimes (`company_invoice_settings::rounding_account_for_write`,
-///    Story 25-4-c4-a). Aucun chemin ne verrouille `accounts` avant `invoices`
-///    ou `fiscal_years`.
-/// 2. `fiscal_years` (via [`fiscal_years::find_open_covering_date`]).
-/// 3. `invoice_number_sequences` (via [`invoice_number_sequences::next_number_for`]).
-/// 4. `journal_entries` (via [`journal_entries::create_in_tx`]).
-/// 5. INSERTs + UPDATE invoices + INSERT audit.
+/// L'ordre **réel**, numéroté comme les étapes du code :
 ///
-/// **Toute divergence de cet ordre = risque de deadlock** avec des
-/// créations manuelles concurrentes de `journal_entries`.
+/// ```text
+/// (1)        invoices                  FOR UPDATE sur la facture
+/// (1 bis)    projects                  lu SANS verrou
+/// (2)        company_invoice_settings  INSERT IGNORE puis FOR UPDATE
+///                                      (get_or_create_default_in_tx)
+/// (2 bis')   accounts                  compte de différences d'arrondi, FOR UPDATE,
+///                                      seulement s'il y a un écart
+/// (2 quater) accounts                  verrou PARTAGÉ sur le compte de produit par la
+///                                      clé étrangère de invoice_lines.revenue_account_id,
+///                                      SEULEMENT si une ligne n'a pas encore de compte
+///                                      de produit (UPDATE invoice_lines de
+///                                      matérialisation)
+/// (3)        fiscal_years              find_open_covering_date
+/// (4)-(5)    invoice_number_sequences  le compteur, FOR UPDATE, SEULEMENT si la
+///                                      facture n'a pas encore de numéro (une
+///                                      revalidation reprend le sien sans le toucher)
+/// (7)        journal_entries           create_in_tx — après l'exercice, le compteur des
+///                                      écritures FOR UPDATE
+///                                      (journal_entry_number_sequences) ; l'insertion
+///                                      reprend des verrous PARTAGÉS : companies
+///                                      (fk_journal_entries_company), chaque compte
+///                                      écrit (fk_jel_account), chaque projet tagué
+///                                      (fk_jel_project)
+/// ```
+///
+/// L'étape (2 ter) ne prend aucun verrou.
+///
+/// **La règle.** Cet ordre est une **convention qui réduit la fréquence** des
+/// interblocages entre les flux qui la suivent ; il ne peut pas les exclure,
+/// puisque l'insertion des lignes de l'écriture reprend `accounts` **après**
+/// l'exercice. La ligne des réglages, tenue `FOR UPDATE` jusqu'au commit,
+/// ordonne la plupart des flux d'une même société ; un interblocage entre eux
+/// reste possible — l'`INSERT IGNORE` d'une ligne déjà présente y pose un verrou
+/// partagé, et deux transactions qui le tiennent puis demandent l'exclusif
+/// s'interbloquent — et il est rejoué. **La défense est le rejeu des routes**
+/// (enveloppes [`crate::retry::retry_on_deadlock`] et
+/// `kesh_api::retry::retry_app_on_deadlock`, Story 15-5e1) : la victime d'un
+/// 1213 est annulée en entier et rejouée sans que l'utilisateur le voie.
 ///
 /// # Erreurs
 ///

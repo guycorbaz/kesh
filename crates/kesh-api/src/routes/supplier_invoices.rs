@@ -327,6 +327,10 @@ pub async fn get_supplier_invoice(
 }
 
 /// `POST /api/v1/supplier-invoices` — enregistre une facture fournisseur (Comptable+).
+///
+/// ⚠️ **Rejouée sur interblocage** (Story 15-5e1, choix C66) par l'enveloppe
+/// `DbError` [`kesh_db::retry::retry_on_deadlock`] ; le `NewSupplierInvoice` est
+/// cloné à chaque tentative.
 pub async fn create_supplier_invoice(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -356,7 +360,10 @@ pub async fn create_supplier_invoice(
             })
             .collect(),
     };
-    let created = supplier_invoices::create(&state.pool, new, current_user.user_id).await?;
+    let created = kesh_db::retry::retry_on_deadlock("supplier_invoices::create", || {
+        supplier_invoices::create(&state.pool, new.clone(), current_user.user_id)
+    })
+    .await?;
     Ok((
         StatusCode::CREATED,
         Json(SupplierInvoiceResponse::from_parts(

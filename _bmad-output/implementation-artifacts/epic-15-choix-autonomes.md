@@ -1729,3 +1729,24 @@ l'import (#458–#461).
   - **Signal D5 déclaré au Project Lead** : MEDIUM → MEDIUM, et recyclage (F6-1 naît du test 7 ajouté par la remédiation P5). Traité par un renforcement des preuves (témoin, mutation, mesure en T0), sans découpage ni module de production de plus (onze, inchangé).
 - **Écartées** : (a) mesurer l'attente de la requête `FOR UPDATE` du test (qu'elle n'aboutisse qu'après l'annulation de la route) — preuve indirecte et sensible au temps, là où l'événement du rejeu est la chose même ; (b) une crate de capture (`tracing-test`) — dépendance neuve pour ce qu'une couche de trente lignes fait ; (c) un abonné global installé une fois (`set_global_default`) — impose un filtrage par opération entre tests d'un même processus, inutile sur un runtime à un fil ; (d) remonter le test 7 sur un cycle à deux ressources — la route n'en tient qu'une, la ligne des réglages ; (e) épingler la version de MariaDB par un test — hors du périmètre ; le témoin suffit à rendre la dérive visible.
 - **Réversible** : oui (fiches seulement, code non écrit).
+
+## C-15-5e1-1 — 15-5e1 / T0 : R3-7 mesurée VRAIE sur MariaDB 10.11.16, cycle du test 7 formé à la main
+
+- **Contexte** : T0 de la 15-5e1 (choix C70, C74) — mesurer l'hypothèse R3-7 et former à la main le cycle du test 7 avant de l'écrire, sur la base de dev (`10.11.16-MariaDB-ubu2204`, `innodb_deadlock_detect = 1`), base dédiée `kesh_155e1`.
+- **Mesures** : (1) **R3-7** — connexion A : `START TRANSACTION; INSERT IGNORE INTO company_invoice_settings (company_id) VALUES (1)` sur une ligne existante (`ROW_COUNT() = 0`), sans conclure ; connexion B (`innodb_lock_wait_timeout = 2`) : `SELECT … WHERE company_id = 1 FOR UPDATE` → **1205** ; `information_schema.INNODB_LOCKS` pendant l'attente : A tient un verrou **`S` RECORD** sur `PRIMARY` (ligne 1), B demande `X`. **R3-7 est vraie** sur la version épinglée. (2) **Cycle du test 7** — A alourdie (500 lignes de lest), `LOCK IN SHARE MODE` sur la ligne ; B `UPDATE company_invoice_settings … WHERE company_id = 1` attend ; A `SELECT … FOR UPDATE` → **B sort en 1213, A obtient son verrou**. Le montage de la fiche tient : aucune adaptation.
+- **Conséquences** : la fiche (AC5) le prévoyait : la réécriture de `get_or_create_default_in_tx` (`SELECT … FOR UPDATE` d'abord, `INSERT IGNORE` seulement si la ligne manque) **reste hors de cette story** (C66 (b)) ; **l'orchestrateur ouvre une issue**. À noter : `company_invoice_settings::update` commence lui-même par un `INSERT IGNORE` ; sous R3-7, la route du test 7 tient donc un `S` avant son `UPDATE`, et le cycle du test se formerait aussi sur MariaDB ≥ 11.4.5 / MySQL ≥ 8.0.18 — par R3-7, pas par l'ancien comportement. Le témoin du rejeu reste la garde.
+- **Réversible** : sans objet (mesure).
+
+## C-15-5e1-2 — 15-5e1 : les doc-comments canoniques écrivent l'ordre sans numéros de ligne
+
+- **Contexte** : l'AC5 donne le bloc de l'ordre de `validate_invoice` avec, en colonne de droite, les numéros de ligne relevés (`:1953`, `:2004-2006`, …).
+- **Retenu** : le doc-comment reprend l'ordre, les étapes et leurs conditions **sans** les numéros de ligne ; idem pour celui de `supplier_invoices::create_in_tx`. Les étapes du code portent déjà les mêmes numéros (`// (1)`, `// (2 bis')`, …), ce qui suffit à la 15-5d pour y renvoyer.
+- **Écartée** : recopier les numéros — le doc-comment est au-dessus du code qu'il décrit, sa propre longueur les décale dès l'écriture, et rien ne les recontrôle : une référence fausse au premier commit.
+- **Réversible** : oui.
+
+## C-15-5e1-3 — 15-5e1 : technique des mutations de l'AC4
+
+- **Contexte** : les mutations « retirer l'enveloppe » doivent faire rougir le test « route victime » **et** le volet (c) ; celle du témoin doit faire rougir le seul témoin.
+- **Retenu** : (a) l'enveloppe est remplacée par une fonction `sans_rejeu(op, f)` ajoutée au fichier muté, qui appelle la fermeture une fois — la route garde sa forme et compile, son corps ne nomme plus aucune enveloppe ; pour `post_cancel_reconciliation`, `retry_with` est remplacé de même par `sans_rejeu_w` ; (b) la mutation du témoin est posée dans l'aide commune `victime` (la demande qui ferme le cycle est retirée) : elle couvre d'un coup les tests 2, 3, 4, 5 et 7, au-delà des 2 et 7 que la fiche exige ; (c) la variante « témoin muté **et** enveloppe retirée » n'a pas été lancée séparément (la fiche la donne pour équivalente). Chaque mutation : copie de sauvegarde, application, `binary(rejeu_interblocage_e2e) | binary(audit_route_registry)`, restauration, `touch`.
+- **Écartée** : supprimer l'appel à la main (fermeture déballée) — plus long, et sujet à erreur de reconstitution ; le shim produit le même comportement observable.
+- **Réversible** : oui (rien n'est versionné du script de mutation).
