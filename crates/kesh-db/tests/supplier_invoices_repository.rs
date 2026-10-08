@@ -420,6 +420,180 @@ async fn create_with_non_postable_expense_account_is_rejected(pool: MySqlPool) {
     )
     .await
     .unwrap_err();
+    // Story 15-5a (#429) — réécrit à dessein : le refus porte son vrai nom et
+    // nomme le compte (auparavant `InactiveOrInvalidAccounts`).
+    assert_eq!(
+        named_non_postable(&err),
+        vec![(ctx.seeded.accounts["4000"], "4000".to_string())],
+        "got {err:?}"
+    );
+}
+
+/// Story 15-5a — `(id, numéro)` des comptes nommés par un `AccountsNotPostable`,
+/// ou panique sur toute autre erreur.
+fn named_non_postable(err: &DbError) -> Vec<(i64, String)> {
+    match err {
+        DbError::AccountsNotPostable(list) => list
+            .iter()
+            .map(|a| (a.account_id, a.account_number.clone()))
+            .collect(),
+        other => panic!("attendu AccountsNotPostable, obtenu {other:?}"),
+    }
+}
+
+/// Story 15-5a — un second compte de charge, actif et imputable.
+async fn second_expense_account(pool: &MySqlPool, ctx: &Ctx, number: &str) -> i64 {
+    sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type) VALUES (?, ?, 'Charge 2', 'Expense')",
+    )
+    .bind(ctx.seeded.company_id)
+    .bind(number)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+async fn set_flag(pool: &MySqlPool, account_id: i64, column: &str, value: bool) {
+    sqlx::query(&format!("UPDATE accounts SET {column} = ? WHERE id = ?"))
+        .bind(value)
+        .bind(account_id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+/// Story 15-5a (AC4) — un compte de charge ARCHIVÉ reste
+/// `InactiveOrInvalidAccounts` (cause (a)).
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_with_archived_expense_account_is_inactive_or_invalid(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    set_flag(&pool, ctx.seeded.accounts["4000"], "active", false).await;
+    let err = supplier_invoices::create(
+        &pool,
+        one_line(&ctx, dec!(100.00), dec!(0)),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap_err();
+    assert!(
+        matches!(err, DbError::InactiveOrInvalidAccounts),
+        "got {err:?}"
+    );
+}
+
+/// Story 15-5a (AC4, finding M4) — un compte d'ACTIF non imputable proposé
+/// comme compte de charge cumule (a) mauvais type et (b) non imputable : la
+/// cause (a) prime.
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_with_non_postable_asset_as_expense_is_inactive_or_invalid(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    set_flag(&pool, ctx.seeded.accounts["1000"], "postable", false).await;
+    let mut new = one_line(&ctx, dec!(100.00), dec!(0));
+    new.lines[0].expense_account_id = ctx.seeded.accounts["1000"];
+    let err = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, DbError::InactiveOrInvalidAccounts),
+        "got {err:?}"
+    );
+}
+
+/// Story 15-5a (AC4, C22) — deux lignes sur deux comptes de charge non
+/// imputables : UN seul refus les nomme tous deux, triés par numéro.
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_with_two_non_postable_expense_lines_names_both(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let other = second_expense_account(&pool, &ctx, "4400").await;
+    let first = ctx.seeded.accounts["4000"];
+    set_flag(&pool, first, "postable", false).await;
+    set_flag(&pool, other, "postable", false).await;
+
+    let mut new = one_line(&ctx, dec!(100.00), dec!(0));
+    let mut second = new.lines[0].clone();
+    second.expense_account_id = other;
+    // Ordre des lignes inverse de l'ordre des numéros : le refus trie.
+    new.lines.insert(0, second);
+    let err = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        named_non_postable(&err),
+        vec![(first, "4000".to_string()), (other, "4400".to_string())]
+    );
+}
+
+/// Story 15-5a (C22) — ordre des passes : la FORME de toutes les lignes est
+/// jugée avant les COMPTES. Ligne 1 au compte non imputable, ligne 2 de
+/// quantité nulle → refus de forme.
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_form_of_later_line_wins_over_non_postable_account(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    set_flag(&pool, ctx.seeded.accounts["4000"], "postable", false).await;
+    let other = second_expense_account(&pool, &ctx, "4400").await;
+
+    let mut new = one_line(&ctx, dec!(100.00), dec!(0));
+    let mut bad = new.lines[0].clone();
+    bad.expense_account_id = other;
+    bad.quantity = dec!(0);
+    new.lines.push(bad);
+    let err = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, DbError::IllegalStateTransition(_)),
+        "got {err:?}"
+    );
+}
+
+/// Story 15-5a (C22) — ligne 1 au compte ARCHIVÉ, ligne 2 de prix négatif →
+/// refus de forme (seul changement d'ordre observable de la story).
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_form_of_later_line_wins_over_archived_account(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    set_flag(&pool, ctx.seeded.accounts["4000"], "active", false).await;
+    let other = second_expense_account(&pool, &ctx, "4400").await;
+
+    let mut new = one_line(&ctx, dec!(100.00), dec!(0));
+    let mut bad = new.lines[0].clone();
+    bad.expense_account_id = other;
+    bad.unit_price = dec!(-5);
+    new.lines.push(bad);
+    let err = supplier_invoices::create(&pool, new, ctx.seeded.admin_user_id)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, DbError::IllegalStateTransition(_)),
+        "got {err:?}"
+    );
+}
+
+/// Story 15-5a (AC4) — règlement fournisseur sur un compte interne ARCHIVÉ :
+/// `InactiveOrInvalidAccounts` (cause (a)).
+#[sqlx::test(migrations = "./test-schema")]
+async fn pay_with_archived_account_is_inactive_or_invalid(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let created = supplier_invoices::create(
+        &pool,
+        one_line(&ctx, dec!(100.00), dec!(0)),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap();
+    set_flag(&pool, ctx.seeded.accounts["1000"], "active", false).await;
+    let err = supplier_invoices::pay(
+        &pool,
+        ctx.seeded.company_id,
+        created.invoice.id,
+        SettlementChoice::InternalAccount {
+            account_id: ctx.seeded.accounts["1000"],
+        },
+        d(2026, 6, 20),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap_err();
     assert!(
         matches!(err, DbError::InactiveOrInvalidAccounts),
         "got {err:?}"
@@ -466,8 +640,11 @@ async fn pay_with_non_postable_account_is_rejected(pool: MySqlPool) {
     )
     .await
     .unwrap_err();
-    assert!(
-        matches!(err, DbError::InactiveOrInvalidAccounts),
+    // Story 15-5a (#429) — réécrit à dessein : `AccountsNotPostable` nommant le
+    // compte (auparavant `InactiveOrInvalidAccounts`).
+    assert_eq!(
+        named_non_postable(&err),
+        vec![(ctx.seeded.accounts["1000"], "1000".to_string())],
         "got {err:?}"
     );
 }

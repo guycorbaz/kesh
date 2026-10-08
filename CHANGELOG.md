@@ -8,6 +8,14 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.13.0] — Non publié
+
+### Modifié
+
+- **Un compte non imputable est refusé sous son vrai nom ([#429](https://github.com/guycorbaz/kesh/issues/429), [#427](https://github.com/guycorbaz/kesh/issues/427)).** Saisir une écriture sur un compte de regroupement, sur le compte de résultat de l'exercice ou sur un compte de clôture était refusé avec le message « Un ou plusieurs comptes sont archivés ou invalides » — faux pour ce motif : on cherchait un compte archivé qui ne l'était pas. Le refus le dit désormais, et **nomme le ou les comptes** : « Le compte 9000 n’est pas imputable (compte de regroupement, de résultat ou de clôture) : choisissez un compte imputable. » Sont concernés la saisie manuelle d'une écriture, l'écriture d'ouverture (soldes de départ), le règlement d'une facture client sur un compte interne, la saisie et la complétion d'une facture fournisseur importée (compte de charge), et le règlement d'une facture fournisseur sur un compte interne. Un compte inconnu, archivé ou d'une autre société garde l'ancien refus. ⚠️ **Changement visible d'une intégration par clé d'API** : ces routes répondent désormais `400 ACCOUNT_NOT_POSTABLE`, avec `details.rejected[{accountId, accountNumber}]`, au lieu de `400 INACTIVE_OR_INVALID_ACCOUNTS`. Sur une facture fournisseur, une ligne de forme invalide (quantité, prix ou taux de TVA) est désormais signalée avant un défaut de compte d'une ligne précédente.
+
+---
+
 ## [0.12.1] — 2026-10-07
 
 ⚠️ **Cette version n'est pas encore destinée à tenir une comptabilité réelle.** Elle achève la première vague de correction — l'export de souveraineté porte désormais toute la comptabilité, le reste dû est juste partout, une erreur se corrige par contre-passation au lieu de s'effacer. Mais plusieurs fonctions nécessaires à un exercice complet manquent encore. Elle s'installe, elle s'exerce, elle ne tient pas vos livres.

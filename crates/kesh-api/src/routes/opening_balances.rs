@@ -22,8 +22,11 @@
 //! - aucun exercice / premier exercice clos / compte de résultat / < 2 lignes /
 //!   montant négatif → **400** `VALIDATION_ERROR` (messages distincts) ;
 //! - déséquilibre → **400** `ENTRY_UNBALANCED` ;
-//! - compte inexistant / archivé / non-postable / cross-tenant → **400**
-//!   `INACTIVE_OR_INVALID_ACCOUNTS` (garde `journal_entries` existante).
+//! - compte inexistant / archivé / cross-tenant → **400**
+//!   `INACTIVE_OR_INVALID_ACCOUNTS` (garde `journal_entries` existante) ;
+//! - compte de la société, actif, mais non imputable → **400**
+//!   `ACCOUNT_NOT_POSTABLE`, avec `details.rejected[{accountId, accountNumber}]`
+//!   (même garde, Story 15-5a).
 
 use std::str::FromStr;
 
@@ -187,7 +190,7 @@ pub struct OpeningComplementLineRequest {
 ///   divergerait en `FISCAL_YEAR_CLOSED`).
 ///
 /// Toute autre erreur retombe vers le mapping global (`INACTIVE_OR_INVALID_ACCOUNTS`,
-/// `NotFound` → 404, …).
+/// `ACCOUNT_NOT_POSTABLE`, `NotFound` → 404, …).
 fn map_opening_balances_error(err: DbError) -> AppError {
     match err {
         DbError::Invariant(ref s) if s == FY_OPENING_ALREADY_HAS_ENTRIES_KEY => {

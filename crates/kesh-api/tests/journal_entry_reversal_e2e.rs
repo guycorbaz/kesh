@@ -412,7 +412,7 @@ async fn reverse_succeeds_when_a_project_was_archived_since(pool: MySqlPool) {
 /// le compte à réactiver.
 ///
 /// ⛔ C'est l'asymétrie voulue avec le projet : `enforce_postable = false` ne
-/// lève pas la garde `active = TRUE`, qui est inconditionnelle.
+/// lève pas la garde `active`, qui est inconditionnelle.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reverse_refuses_when_an_account_was_archived_since(pool: MySqlPool) {
     let (app, token, company_id, fy_id) = setup(&pool).await;

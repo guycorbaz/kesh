@@ -176,6 +176,8 @@
 					case 'ENTRY_UNBALANCED':
 					case 'DATE_OUTSIDE_FISCAL_YEAR':
 					case 'INACTIVE_OR_INVALID_ACCOUNTS':
+					// Story 15-5a — le message du serveur nomme le ou les comptes.
+					case 'ACCOUNT_NOT_POSTABLE':
 					case 'VALIDATION_ERROR':
 						toast.error(err.message);
 						break;

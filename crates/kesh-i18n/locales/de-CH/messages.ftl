@@ -272,6 +272,10 @@ journal-od = Diverse Operationen
 journal-entry-saved = Buchung gespeichert
 error-fiscal-year-closed-generic = Das Geschäftsjahr ist abgeschlossen — keine Buchungen können hinzugefügt oder geändert werden (OR Art. 957-964).
 error-inactive-accounts = Ein oder mehrere Konten sind archiviert oder ungültig.
+error-account-not-postable = { $count ->
+    [one] Das Konto { $numbers } ist nicht bebuchbar (Sammel-, Ergebnis- oder Abschlusskonto): Wählen Sie ein bebuchbares Konto.
+   *[other] Die Konten { $numbers } sind nicht bebuchbar (Sammel-, Ergebnis- oder Abschlusskonten): Wählen Sie bebuchbare Konten.
+}
 error-rounding-account-not-configured = Diese Zahlung begleicht die Rechnung auf den Rappen genau, aber es ist kein verwendbares Konto für Rundungsdifferenzen festgelegt: Wählen Sie eines unter Einstellungen → Fakturierung.
 error-rounding-account-not-configured-issuance = Der Gesamtbetrag dieses Belegs ist auf 5 Rappen gerundet, aber es ist kein verwendbares Konto für Rundungsdifferenzen festgelegt: Wählen Sie eines unter Einstellungen → Fakturierung.
 error-write-off-account-not-configured-discount = Es ist kein verwendbares Skontokonto festgelegt: Wählen Sie eines unter Einstellungen → Fakturierung, Abschnitt Restbetrag ausbuchen.

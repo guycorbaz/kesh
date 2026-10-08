@@ -272,6 +272,10 @@ journal-od = Operazioni diverse
 journal-entry-saved = Scrittura salvata
 error-fiscal-year-closed-generic = L'esercizio contabile è chiuso — nessuna scrittura può essere aggiunta o modificata (CO art. 957-964).
 error-inactive-accounts = Uno o più conti sono archiviati o non validi.
+error-account-not-postable = { $count ->
+    [one] Il conto { $numbers } non è registrabile (conto di raggruppamento, di risultato o di chiusura): scegli un conto registrabile.
+   *[other] I conti { $numbers } non sono registrabili (conti di raggruppamento, di risultato o di chiusura): scegli conti registrabili.
+}
 error-rounding-account-not-configured = Questo pagamento salda la fattura al centesimo, ma non è designato alcun conto utilizzabile per le differenze di arrotondamento: sceglierne uno in Impostazioni → Fatturazione.
 error-rounding-account-not-configured-issuance = Il totale di questo documento è arrotondato a 5 centesimi, ma non è designato alcun conto utilizzabile per le differenze di arrotondamento: sceglierne uno in Impostazioni → Fatturazione.
 error-write-off-account-not-configured-discount = Nessun conto sconti utilizzabile è designato: sceglietene uno in Impostazioni → Fatturazione, sezione Saldo del residuo.

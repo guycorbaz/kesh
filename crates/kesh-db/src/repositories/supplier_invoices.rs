@@ -21,7 +21,7 @@ use crate::entities::{
     NewAuditLogEntry, NewJournalEntryLine, NewSupplierInvoice, SettlementChoice, SupplierInvoice,
     SupplierInvoiceLine,
 };
-use crate::errors::{DbError, map_db_error};
+use crate::errors::{DbError, NonPostableAccount, map_db_error};
 use crate::repositories::audit_log;
 
 /// SELECT scopé multi-tenant (anti-IDOR — toujours `AND company_id = ?`).
@@ -302,6 +302,10 @@ pub async fn create_in_tx(
     let mut pairs: Vec<(Decimal, Decimal, i64)> = Vec::with_capacity(lines.len());
     let mut computed_lines: Vec<(Decimal, &crate::entities::NewSupplierInvoiceLine)> =
         Vec::with_capacity(lines.len());
+    // Story 15-5a (choix C22) — DEUX passes : la FORME de toutes les lignes
+    // d'abord (refus immédiat, dans l'ordre des lignes), puis les COMPTES. Les
+    // comptes non imputables sont collectés pour être tous nommés par un seul
+    // refus ; la forme d'une ligne ultérieure doit donc avoir été jugée avant.
     for line in &lines {
         let line_total = line.quantity * line.unit_price;
         if line.quantity <= Decimal::ZERO
@@ -317,6 +321,10 @@ pub async fn create_in_tx(
                 "taux de TVA hors bornes (0-100)".into(),
             ));
         }
+    }
+    let mut non_postable: Vec<NonPostableAccount> = Vec::new();
+    for line in &lines {
+        let line_total = line.quantity * line.unit_price;
         // Compte de charge : doit exister, être actif, company-scoped, de type
         // Expense (AC6 — sinon l'écriture débiterait un Passif/Actif) **et
         // imputable**.
@@ -332,8 +340,8 @@ pub async fn create_in_tx(
         // atteignable que par appel direct à l'API — comme pour le règlement
         // fournisseur, fermé au même titre : *une garde serveur ne se déduit pas
         // d'un filtre d'écran.*
-        let acct: Option<(bool, bool, String)> = sqlx::query_as(
-            "SELECT active, postable, account_type FROM accounts \
+        let acct: Option<(bool, bool, String, String)> = sqlx::query_as(
+            "SELECT active, postable, account_type, number FROM accounts \
              WHERE id = ? AND company_id = ? FOR UPDATE",
         )
         .bind(line.expense_account_id)
@@ -341,12 +349,26 @@ pub async fn create_in_tx(
         .fetch_optional(&mut **tx)
         .await
         .map_err(map_db_error)?;
+        // Story 15-5a — ordre des refus : (a) inconnu, autre société, archivé
+        // ou d'un autre type que `Expense` → `InactiveOrInvalidAccounts`,
+        // immédiatement et même si le compte est AUSSI non imputable ; (b)
+        // sinon, non imputable → collecté, nommé après la passe si aucune
+        // ligne n'est en (a).
         match acct {
-            Some((true, true, ref t)) if t == "Expense" => {}
+            Some((true, true, ref t, _)) if t == "Expense" => {}
+            Some((true, false, ref t, number)) if t == "Expense" => {
+                non_postable.push(NonPostableAccount {
+                    account_id: line.expense_account_id,
+                    account_number: number,
+                });
+            }
             _ => return Err(DbError::InactiveOrInvalidAccounts),
         }
         pairs.push((line_total, line.vat_rate, line.expense_account_id));
         computed_lines.push((line_total, line));
+    }
+    if !non_postable.is_empty() {
+        return Err(DbError::accounts_not_postable(non_postable));
     }
 
     // (3) Exercice ouvert couvrant la date de facture.
@@ -635,8 +657,8 @@ pub async fn pay_in_tx(
                 // de revue de code de la Story 24-5, #375) — la lentille avait
                 // nommé ce fichier pour SA validation de compte de charge, pas
                 // pour ce site-ci.
-                let account: Option<(bool, bool)> = sqlx::query_as(
-                    "SELECT active, postable FROM accounts WHERE id = ? AND company_id = ? \
+                let account: Option<(bool, bool, String)> = sqlx::query_as(
+                    "SELECT active, postable, number FROM accounts WHERE id = ? AND company_id = ? \
                      FOR UPDATE",
                 )
                 .bind(account_id)
@@ -644,8 +666,17 @@ pub async fn pay_in_tx(
                 .fetch_optional(&mut **tx)
                 .await
                 .map_err(map_db_error)?;
+                // Story 15-5a — ordre des refus : (a) inconnu, autre société ou
+                // archivé → `InactiveOrInvalidAccounts` ; (b) sinon, non
+                // imputable → `AccountsNotPostable`, qui nomme le compte.
                 match account {
-                    Some((true, true)) => {}
+                    Some((true, true, _)) => {}
+                    Some((true, false, number)) => {
+                        return Err(DbError::accounts_not_postable([NonPostableAccount {
+                            account_id,
+                            account_number: number,
+                        }]));
+                    }
                     _ => return Err(DbError::InactiveOrInvalidAccounts),
                 }
                 (

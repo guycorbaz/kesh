@@ -3072,6 +3072,42 @@ impl IntoResponse for AppError {
                         "Un ou plusieurs comptes sont archivés ou invalides.",
                     ),
                 ),
+                // Story 15-5a (#429, choix C3/C16/C18/C29) — un compte de la
+                // société, actif, mais non imputable. Le message NOMME les
+                // comptes et la cause ; le détail est celui du jumeau
+                // `ACCOUNT_ARCHIVED`, construit par l'accesseur unique
+                // `NonPostableAccounts::details()`.
+                //
+                // ⚠️ `count` est passé comme NOMBRE Fluent : en chaîne, le
+                // sélecteur `[one]` ne s'appliquerait jamais et le singulier
+                // retomberait sur `*[other]`. La clé est inscrite à
+                // `SELECTEURS_RESOLUS_COTE_SERVEUR` (kesh-i18n) : elle n'est
+                // résolue qu'ici, avec ses arguments.
+                DbError::AccountsNotPostable(accounts) => {
+                    let numbers = accounts.numbers().join(", ");
+                    let count = accounts.len();
+                    let fallback = if count == 1 {
+                        format!(
+                            "Le compte {numbers} n’est pas imputable (compte de regroupement, de résultat ou de clôture) : choisissez un compte imputable."
+                        )
+                    } else {
+                        format!(
+                            "Les comptes {numbers} ne sont pas imputables (comptes de regroupement, de résultat ou de clôture) : choisissez des comptes imputables."
+                        )
+                    };
+                    let mut args = FluentArgs::new();
+                    args.set("numbers", numbers);
+                    args.set("count", count);
+                    let msg = t_args("error-account-not-postable", &fallback, &args);
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "ACCOUNT_NOT_POSTABLE",
+                            "message": msg,
+                            "details": accounts.details(),
+                        }
+                    });
+                    (StatusCode::BAD_REQUEST, Json(body)).into_response()
+                }
                 // Story 25-4-c3-b (#476) — un écart d'arrondi à écrire, et pas de
                 // compte utilisable pour le recevoir. Le message dit OÙ agir.
                 // Story 25-4-c4-a : le message suit le CONTEXTE — une pièce émise

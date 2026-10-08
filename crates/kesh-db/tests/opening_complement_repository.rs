@@ -362,6 +362,25 @@ async fn refus_par_compte(pool: MySqlPool) {
     );
 }
 
+/// Story 15-5a (AC5, finding P2 F-2) — la branche `|| !a.postable` de
+/// `check_lines` n'était exercée par aucun test. Un compte de la société, ACTIF,
+/// de bilan, ne différant d'un compte accepté que par `postable = FALSE` →
+/// `(AccountInvalid, Some(id))`, rendu par le contrôle préalable du complément
+/// AVANT `create_in_tx` (le complément garde son code propre).
+#[sqlx::test(migrations = "./test-schema")]
+async fn refus_compte_non_imputable(pool: MySqlPool) {
+    let co = setup(&pool, &[year_span(2026)]).await;
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+        .bind(co.acc["1100"])
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        refusal(complete(&pool, &co, &[debit(&co, "1100", dec!(5))], d(2026, 6, 1)).await),
+        (R::AccountInvalid, Some(co.acc["1100"]))
+    );
+}
+
 #[sqlx::test(migrations = "./test-schema")]
 async fn refus_compte_d_une_autre_societe(pool: MySqlPool) {
     let co = setup(&pool, &[year_span(2026)]).await;
