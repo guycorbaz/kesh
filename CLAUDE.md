@@ -577,7 +577,34 @@ Pourquoi : dans les deux cas, la story est trop large pour être tenue dans un s
 
 **Exception** : si un *split forcé* introduit des cycles de dépendance Cargo ou des merges intermédiaires impossibles à tester en isolation, garder la story unique et documenter explicitement la dérogation dans le story file (section `Dérogation règle de splitting` avec justification + accepted risk).
 
-## Tech debt management — zero carry-forward policy
+## Priorités des défauts — la règle qui gouverne le choix des epics
+
+**Règle** : chaque défaut ouvert porte un label de priorité, et c'est lui qui ordonne le travail.
+
+| Label | Niveau | Critère |
+|---|---|---|
+| `P1` | critique | erreur comptable (écriture, solde ou compte faux), perte ou corruption de données, conformité légale, sécurité |
+| `P2` | haute | comportement faux sans effet sur les comptes — erreur 500, opération enregistrée mais annoncée en échec, piste de contrôle incomplète |
+| `P3` | moyenne | manuel qui décrit autre chose que le code, test défaillant, dette de code |
+| `P4` | basse | orthographe, traduction, cosmétique |
+
+Trois engagements par epic, dans cet ordre :
+
+1. **Le nombre de bugs baisse.** Bug = issue ouverte portant `bug` ou `known-failure`. Il se compte au kickoff et à la rétrospective, et les deux nombres s'écrivent dans la rétrospective :
+   ```sh
+   gh issue list --state open --limit 500 --json labels \
+     --jq '[.[]|select([.labels[].name]|any(.=="bug" or .=="known-failure"))]|length'
+   ```
+2. **Aucun P1 ne passe d'un epic à l'autre, dans la mesure du possible.** Ce ne sera pas toujours tenable — un P1 qui reste doit alors être nommé à la rétrospective, avec la raison.
+3. **L'epic livre une fonctionnalité nouvelle si c'est possible** — la baisse des défauts restant prioritaire.
+
+Toute nouvelle issue de défaut reçoit sa priorité à la création. Point de départ, au triage du 2026-10-08 : **49 bugs**, dont 14 P1 (9 dans le jalon de la TVA), 11 P2, 16 P3 et 8 P4 — plus trois issues de documentation ou de dette pure, classées P3 mais hors décompte faute de label `bug` (#291, #458, #438).
+
+*(Décidé par Guy le 2026-10-08, au triage de dette D4 de la rétrospective de l'Epic 25. Remplace la politique « zero carry-forward » ci-dessous, qui exigeait de solder toute la dette de catégorie A avant chaque kickoff et avait été contournée plusieurs fois : une règle contournée à chaque fois n'est plus une règle. La section suivante reste pour l'historique et pour le vocabulaire A/B/C qu'emploient les rétrospectives passées.)*
+
+## Tech debt management — zero carry-forward policy (remplacée le 2026-10-08)
+
+⚠️ **Remplacée par § « Priorités des défauts »** ci-dessus. Conservée pour l'historique.
 
 **Règle projet** : pas de cumul de dette technique inter-epic. À chaque rétrospective d'epic, **toutes les vraies dettes (catégorie A ci-dessous) doivent être adressées (fix appliqué OU explicitement reclassées en catégorie B avec justification + story de remédiation planifiée)** avant le kickoff de l'Epic N+1.
 
