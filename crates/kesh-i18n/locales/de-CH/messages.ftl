@@ -1065,6 +1065,7 @@ reconciliation-failed-project-archived = Das Analyseprojekt ist archiviert.
 reconciliation-failed-project-not-found = Analyseprojekt nicht gefunden.
 reconciliation-failed-currency-mismatch = Nur Transaktionen in CHF können mit einer Rechnung oder einer Regel abgeglichen werden.
 reconciliation-failed-overpayment = Der Betrag der Transaktion übersteigt den offenen Betrag der Rechnung.
+reconciliation-failed-payment-before-invoice = Die Zahlung liegt mehr als einen Tag vor dem Rechnungsdatum: Sie kann die Rechnung nicht begleichen, auch wenn diese vorgeschlagen wurde.
 reconciliation-failed-rule-mismatch = Das Gegenkonto der Regel hat sich geändert: Laden Sie die Seite neu.
 reconciliation-failed-rule-no-longer-matches = Die Regel passt nicht mehr auf diese Transaktion: Sie wurde inzwischen geändert.
 reconciliation-failed-rule-not-found = Regel nicht gefunden oder deaktiviert.

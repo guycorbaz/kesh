@@ -30,6 +30,16 @@ vi.mock('$lib/features/accounts/accounts.api', () => ({
 	fetchAccounts: vi.fn().mockResolvedValue([]),
 }));
 
+// Revue de code P1 de la 15-5c (B1, E3) — les deux modales sont remplacées par une doublure
+// qui appelle `onSuccess` d'un clic : seul le bilan du parent est en cause ici, et les
+// modales ont leurs propres tests.
+vi.mock('./ManualMatchModal.svelte', async () => ({
+	default: (await import('./ModalSuccessStub.test.svelte')).default,
+}));
+vi.mock('./TransactionSplitModal.svelte', async () => ({
+	default: (await import('./ModalSuccessStub.test.svelte')).default,
+}));
+
 // Mock i18n util pour rendre le composant déterministe (renvoie le
 // fallback fourni en deuxième argument, variables `{ $x }` interpolées).
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
@@ -324,8 +334,10 @@ describe('ReconciliationProposals — refus du serveur lisibles (Story 15-5b, AC
 // Story 15-5c (AC3, #492, choix C38) — les refus d'un lot s'affichent par leur
 // LIBELLÉ et désignent la transaction par sa date, son montant et sa
 // contrepartie ; ils restent visibles quand le lot a vidé la liste.
-// ⚠️ Le second `getProposals` est explicitement distinct du premier : un mock à
-// valeur constante ne verrait pas une transaction sortie de la liste.
+// ⚠️ Dans les tests 2 et 3, le second `getProposals` est explicitement distinct du premier
+// (liste vidée) : un mock à valeur constante ne verrait pas une transaction sortie de la
+// liste. Le test 1 garde la transaction en liste — il ne mord donc pas sur le relevé avant
+// rechargement, que les tests 2 et 3 couvrent.
 describe('ReconciliationProposals — refus par lot lisibles (Story 15-5c, AC3)', () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
@@ -430,5 +442,75 @@ describe('ReconciliationProposals — refus par lot lisibles (Story 15-5c, AC3)'
 		const item = await findByTestId('reconciliation-failed-item');
 		expect(item.getAttribute('data-tx-id')).toBe('2');
 		expect(item.textContent).toContain('Compte non imputable : 3000');
+	});
+
+	// Revue de code P1 (A-3) : une transaction absente du lot relevé garde `TX #<id>` en repli.
+	it('désigne par TX #<id> un refus dont la transaction n’a pas été relevée', async () => {
+		mockApi.getProposals
+			.mockResolvedValueOnce({
+				proposals: [makeProposalWithCandidate(42, 101, 1.0)],
+				hasMore: false,
+			} satisfies GetProposalsResponse)
+			.mockResolvedValueOnce({ proposals: [], hasMore: false } satisfies GetProposalsResponse);
+		mockApi.acceptProposals.mockResolvedValue({
+			accepted: [],
+			failed: [
+				{ bankTransactionId: 99, errorCode: 'BANK_TRANSACTION_NOT_FOUND', details: null },
+			],
+		} satisfies AcceptResponse);
+
+		const { findByTestId, getByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		await fireEvent.click(await findByTestId('tx-checkbox'));
+		await fireEvent.click(getByTestId('reconciliation-accept-btn'));
+
+		const item = await findByTestId('reconciliation-failed-item');
+		expect(item.textContent).toContain('TX #99');
+		expect(item.textContent).toContain('Transaction bancaire introuvable.');
+		expect(item.textContent).not.toContain('ACME GMBH');
+	});
+
+	// Revue de code P1 (B1, E3) : une affectation manuelle ou un éclatement réussi ouvre un
+	// nouveau bilan ; celui du lot précédent ne doit pas lui survivre.
+	it.each([
+		['une affectation manuelle', 'manual-match-button'],
+		['un éclatement', 'split-button'],
+	])('efface le bilan du lot précédent après %s', async (_cas, bouton) => {
+		mockApi.getProposals
+			.mockResolvedValueOnce({
+				proposals: [makeProposalWithCandidate(1, 101, 1.0), makeProposalWithCandidate(2, 102, 1.0)],
+				hasMore: false,
+			} satisfies GetProposalsResponse)
+			.mockResolvedValue({
+				proposals: [makeProposalWithCandidate(2, 102, 1.0)],
+				hasMore: false,
+			} satisfies GetProposalsResponse);
+		mockApi.acceptProposals.mockResolvedValue({
+			accepted: [
+				{
+					bankTransactionId: 1,
+					invoiceId: 101,
+					journalEntryId: 9,
+					score: { total: 1.0, amountScore: 1.0, referenceScore: 1.0, contactScore: 0.0 },
+				},
+			],
+			failed: [{ bankTransactionId: 2, errorCode: 'PERIOD_LOCKED', details: null }],
+		} satisfies AcceptResponse);
+
+		const { findAllByTestId, findByTestId, getByTestId, queryByTestId } = render(
+			ReconciliationProposals,
+			{ bankAccountId: 17 },
+		);
+		for (const cb of await findAllByTestId('tx-checkbox')) await fireEvent.click(cb);
+		await fireEvent.click(getByTestId('reconciliation-accept-btn'));
+		await findByTestId('reconciliation-failed-item');
+		expect(getByTestId('reconciliation-success')).toBeTruthy();
+
+		await fireEvent.click((await findAllByTestId(bouton))[0]);
+		await fireEvent.click(await findByTestId('stub-modal-success'));
+
+		await vi.waitFor(() => {
+			expect(queryByTestId('reconciliation-failed')).toBeNull();
+			expect(queryByTestId('reconciliation-success')).toBeNull();
+		});
 	});
 });

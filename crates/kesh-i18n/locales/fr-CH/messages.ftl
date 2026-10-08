@@ -1127,6 +1127,7 @@ reconciliation-failed-project-archived = Le projet analytique est archivé.
 reconciliation-failed-project-not-found = Projet analytique introuvable.
 reconciliation-failed-currency-mismatch = Seules les transactions en CHF peuvent être rapprochées d’une facture ou d’une règle.
 reconciliation-failed-overpayment = Le montant de la transaction dépasse le reste dû de la facture.
+reconciliation-failed-payment-before-invoice = Le paiement est daté de plus d’un jour avant la facture : il ne peut pas la régler, même si elle a été proposée.
 reconciliation-failed-rule-mismatch = Le compte de contrepartie de la règle a changé : rechargez la page.
 reconciliation-failed-rule-no-longer-matches = La règle ne correspond plus à cette transaction : elle a été modifiée entre-temps.
 reconciliation-failed-rule-not-found = Règle introuvable ou désactivée.

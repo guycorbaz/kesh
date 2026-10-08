@@ -21,8 +21,26 @@
  * ⚠️ **Les clés sont écrites en toutes lettres, jamais construites par gabarit** : une clé
  * statique est vue par `i18n-keys.test.ts` dès qu'elle manque d'un catalogue.
  *
- * ⚠️ **Seul `ACCOUNT_NOT_POSTABLE` lit son `details`** (AC2). `PERIOD_LOCKED` porte
- * `lockedThrough` et `attempted`, que le libellé ne lit pas : limite assumée (choix C32).
+ * ⚠️ **Deux codes seulement lisent leur `details`** : `ACCOUNT_NOT_POSTABLE` (AC2), pour
+ * nommer les comptes, et `RECONCILIATION_INVOICE_NOT_ELIGIBLE`, pour la seule raison
+ * `payment_date_before_invoice_date` (revue de code P1, E1 — choix C-15-5c-3). Cette raison
+ * est la seule qu'un utilisateur rencontre sans avoir rien fait de travers : la proposition
+ * retient les factures datées de 30 jours avant à 30 jours après la transaction, alors que
+ * l'acceptation refuse un paiement antérieur de plus d'un jour à la facture (#548). Les
+ * autres raisons gardent le libellé générique.
+ *
+ * ⚠️ **Plusieurs causes sous un libellé unique — limite assumée (choix C32, C37)** :
+ * - `PERIOD_LOCKED` porte `lockedThrough` et `attempted`, que le libellé ne lit pas ;
+ * - `RECONCILIATION_INVOICE_NOT_ELIGIBLE` porte six raisons dans `details.reason`
+ *   (`invoice_not_validated`, `invoice_already_paid`, `invoice_journal_entry_not_set`,
+ *   `payment_date_before_invoice_date`, `payment_date_outside_window`,
+ *   `race_during_update`) : une seule a son libellé, les cinq autres partagent
+ *   « n'est pas éligible » ;
+ * - `VALIDATION_ERROR` porte six raisons sur sept sites (`splits_count_out_of_range`,
+ *   `split_description_too_long`, `split_amount_not_positive`, `split_amount_scale_too_high`,
+ *   `counterparty_equals_bank_ledger`, `zero_amount_transaction`), toutes rendues
+ *   « Erreur de validation » par la clé globale `error-validation`.
+ * Le code brut reste en `title` de chaque refus, pour le support.
  */
 import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 
@@ -47,8 +65,19 @@ export function rejectedAccountNumbers(details: unknown): string[] {
 }
 
 /**
+ * Raison d'un `details` de la forme `{ reason: "<raison>" }`, ou `null` pour toute autre forme.
+ * Même prudence que `rejectedAccountNumbers` : `details` est typé `unknown`.
+ */
+export function failureReason(details: unknown): string | null {
+	if (typeof details !== 'object' || details === null) return null;
+	const reason = (details as { reason?: unknown }).reason;
+	return typeof reason === 'string' ? reason : null;
+}
+
+/**
  * Libellé traduit d'un `errorCode` de `failed[]`. `details` n'est lu que pour
- * `ACCOUNT_NOT_POSTABLE` ; un code inconnu rend un repli qui cite le code.
+ * `ACCOUNT_NOT_POSTABLE` et `RECONCILIATION_INVOICE_NOT_ELIGIBLE` ; un code inconnu rend
+ * un repli qui cite le code.
  */
 export function failedProposalLabel(code: string, details?: unknown): string {
 	switch (code) {
@@ -122,6 +151,12 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 				'Seules les transactions en CHF peuvent être rapprochées d’une facture ou d’une règle.'
 			);
 		case 'RECONCILIATION_INVOICE_NOT_ELIGIBLE':
+			if (failureReason(details) === 'payment_date_before_invoice_date') {
+				return i18nMsg(
+					'reconciliation-failed-payment-before-invoice',
+					'Le paiement est daté de plus d’un jour avant la facture : il ne peut pas la régler, même si elle a été proposée.'
+				);
+			}
 			return i18nMsg(
 				'reconciliation-errors-invoice-not-eligible',
 				"Cette facture n'est pas éligible à la réconciliation."

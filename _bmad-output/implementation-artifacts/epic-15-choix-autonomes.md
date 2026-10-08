@@ -1594,3 +1594,22 @@ l'import (#458–#461).
 - **Écarté** : citer l'annulation d'un rapprochement comme chemin de retour d'une transaction rejetée
   (elle ne s'y applique pas) ; citer le seuil de 0,5 (API seulement).
 - **Réversible** : oui (texte).
+
+## C-15-5c-3 — 15-5c (revue P1, E1) : un libellé dédié au « paiement antérieur à la facture », le moteur inchangé
+
+- **Contexte** : finding E1 (MEDIUM) de la revue de code P1. La proposition retient les factures datées
+  de 30 jours avant à 30 jours après la transaction (`find_unpaid_invoices_for_window`, sur la date de
+  comptabilisation), alors que l'acceptation refuse un paiement antérieur de plus d'un jour à la facture
+  (`accept_one_invoice`, sur la date de valeur à défaut de comptabilisation) : une facture postérieure au
+  paiement peut être proposée puis refusée. L'alignement du moteur est l'issue #548 (P3), hors story.
+- **Retenu** : documenter et expliquer. `details.reason` porte la chaîne stable
+  `payment_date_before_invoice_date`, posée par un seul site (`reconciliation.rs`) : le cas se distingue
+  sûrement. D'où une clé neuve `reconciliation-failed-payment-before-invoice` (4 locales + repli), lue par
+  `failedProposalLabel` derrière une garde de type (`failureReason`) ; les cinq autres raisons du code
+  gardent le libellé générique. Le manuel (§ Algorithme de matching, paragraphe « Une facture proposée peut
+  être refusée à l'acceptation », et la FAQ « aucun match automatique ») explique le refus et précise que
+  le règlement depuis la fiche applique la même borne (`invoice_settlements_write.rs:96`).
+- **Écarté** : modifier la fenêtre de proposition (#548) ; un libellé par raison (`race_during_update`,
+  `invoice_already_paid`… : hors du finding, et le choix C37 d'un libellé par code reste la règle) ;
+  laisser le libellé générique alors que la raison est lisible sans ambiguïté.
+- **Réversible** : oui (un `if` et une clé).

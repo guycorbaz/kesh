@@ -1563,6 +1563,8 @@ La réconciliation consiste à passer en comptabilité les transactions bancaire
 
 À l'ouverture de la page de réconciliation, Kesh cherche, pour chaque transaction bancaire en attente (créditrice, en CHF), les factures qui pourraient lui correspondre. Une facture est \textbf{candidate} si elle est validée et pas encore payée, si la transaction tombe dans les \textbf{30 jours qui précèdent ou suivent la date de la facture} --- sa date, pas son échéance --- et si \textbf{ce qui reste à payer} --- son \textbf{reste dû} : le montant total, moins l'avoir éventuel, moins les règlements déjà enregistrés --- égale le montant de la transaction à 5 centimes près. Un virement qui \textbf{solde} une facture déjà réglée en partie est donc reconnu : la proposition porte sur le reste, pas sur le montant d'origine. Un paiement reçu \textbf{plus de 30 jours après la date de la facture} --- une facture payée avec retard, ou après un rappel --- n'est en revanche \textbf{pas proposé}~: enregistrez alors le règlement depuis la fiche de la facture (\S\ref{sec:reglement-client}).
 
+\paragraph{Une facture proposée peut être refusée à l'acceptation.}\label{sec:facture-posterieure} La fenêtre de 30 jours joue dans les deux sens, si bien qu'une facture datée \textbf{après} le paiement peut être proposée. Or un paiement ne peut pas précéder la facture qu'il règle de \textbf{plus d'un jour}~: à l'acceptation, Kesh compare la date de la facture à la \textbf{date de valeur} de la transaction --- à défaut, à sa date de comptabilisation --- et refuse la ligne, qui apparaît dans les \emph{Échecs partiels} avec le motif «~Le paiement est daté de plus d'un jour avant la facture~». Le même refus s'applique au règlement saisi depuis la fiche de la facture. Vérifiez la date de la facture~: si le paiement est réellement antérieur --- un acompte, par exemple ---, il ne règle pas cette facture.
+
 Chaque candidate reçoit un score, somme de trois critères :
 
 \begin{itemize}
@@ -1571,7 +1573,7 @@ Chaque candidate reçoit un score, somme de trois critères :
     \item \textbf{Contact} (10\,\%) : le nom de la contrepartie contient celui du client de la facture, ou l'inverse.
 \end{itemize}
 
-Une candidate dont le score vaut zéro n'est pas proposée. Quand aucune facture n'est candidate, la réconciliation propose à la place la \textbf{règle d'affectation} qui correspond à la transaction, s'il y en a une (\S\ref{sec:regles-affectation})~; elle s'affiche avec un score de 1. Rien n'est jamais passé en comptabilité sans votre acceptation : il n'y a ni seuil de confiance réglable, ni acceptation automatique.
+Une candidate dont le score vaut zéro n'est pas proposée. Quand aucune facture n'est candidate, la réconciliation propose à la place la \textbf{règle d'affectation} qui correspond à la transaction, s'il y en a une (\S\ref{sec:regles-affectation})~; elle s'affiche avec un score de 100\,\%. Rien n'est jamais passé en comptabilité sans votre acceptation : il n'y a ni seuil de confiance réglable, ni acceptation automatique.
 
 \subsubsection{Accepter ou rejeter les propositions}
 
@@ -1602,7 +1604,7 @@ Si la candidate proposée ne convient pas, ou s'il n'y en a aucune~:
 
 \begin{enumerate}
     \item Cliquer sur \emph{Affecter manuellement} sur la ligne de la transaction.
-    \item Choisir le \textbf{compte de contrepartie}~: le sélecteur propose les comptes des classes 5, 6 et 7 (charges et produits), actifs et imputables. Compléter au besoin la description, la date de valeur et le projet analytique.
+    \item Choisir le \textbf{compte de contrepartie}~: le sélecteur propose les comptes des classes 5, 6 et 7, et eux seuls, actifs et imputables. Compléter au besoin la description, la date de valeur et le projet analytique.
     \item Cliquer sur \emph{Affecter}.
 \end{enumerate}
 
@@ -2165,7 +2167,7 @@ Oui, si :
 
 \begin{itemize}
     \item Aucune facture validée et non payée n'a un \textbf{reste dû} égal au montant de la transaction \textbf{à 5 centimes près}.
-    \item La transaction tombe à plus de \textbf{30 jours de la date de la facture} --- de sa date, pas de son échéance~: une facture payée avec retard, ou après un rappel, n'est pas proposée.
+    \item La transaction tombe à plus de \textbf{30 jours de la date de la facture} --- de sa date, pas de son échéance~: une facture payée avec retard, ou après un rappel, n'est pas proposée. À l'inverse, une facture datée de plus d'un jour \textbf{après} le paiement peut être proposée, mais elle sera refusée à l'acceptation (\S\ref{sec:facture-posterieure}).
     \item La transaction est un débit, ou n'est pas en CHF~: seules les transactions créditrices en CHF reçoivent une facture candidate.
     \item Le score de la facture est nul~: la référence de la transaction ne contient pas le \textbf{numéro de la facture}, le nom de la contrepartie ne correspond pas au nom du client, et le montant n'est pas exactement le reste dû au centime.
     \item Aucune règle d'affectation ne correspond --- ou la règle qui correspondrait est écartée parce que son compte de contrepartie a été archivé ou est devenu non imputable. Une règle n'est d'ailleurs affichée que s'il n'y a \textbf{aucune} facture candidate.
@@ -2174,8 +2176,8 @@ Oui, si :
 Que faire ensuite dépend de la transaction~:
 
 \begin{itemize}
-    \item Pour un \textbf{paiement de client}, enregistrez le règlement \textbf{depuis la fiche de la facture} (\emph{Enregistrer un règlement}, \S\ref{sec:reglement-client}). N'utilisez ni \emph{Affecter manuellement} ni \emph{Éclater}~: ils ne proposent que des comptes de charges et de produits, et la facture resterait due. Ne créez pas non plus de règle d'affectation pour un paiement de client~: elle porterait le paiement en produit --- le produit serait compté deux fois, et la facture resterait due, sans que rien le signale. La transaction bancaire reste ensuite dans la liste de la réconciliation~: Kesh ne la relie pas au règlement saisi depuis la fiche.
-    \item Pour une \textbf{charge} ou un produit divers, utilisez \emph{Affecter manuellement} ou \emph{Éclater}~; pour une charge récurrente (loyer, abonnement, frais bancaires), créez une règle d'affectation.
+    \item Pour un \textbf{paiement de client}, enregistrez le règlement \textbf{depuis la fiche de la facture} (\emph{Enregistrer un règlement}, \S\ref{sec:reglement-client}). N'utilisez ni \emph{Affecter manuellement} ni \emph{Éclater}~: ils ne proposent que les comptes des classes 5, 6 et 7, et la facture resterait due. Ne créez pas non plus de règle d'affectation pour un paiement de client~: elle porterait le paiement en produit --- le produit serait compté deux fois, et la facture resterait due, sans que rien le signale. La transaction bancaire reste ensuite dans la liste de la réconciliation~: Kesh ne la relie pas au règlement saisi depuis la fiche.
+    \item Pour une \textbf{charge} diverse, utilisez \emph{Affecter manuellement} ou \emph{Éclater}~; pour une charge récurrente (loyer, abonnement, frais bancaires), créez une règle d'affectation.
 \end{itemize}
 
 \subsection{Comment changer la langue d'une facture ?}

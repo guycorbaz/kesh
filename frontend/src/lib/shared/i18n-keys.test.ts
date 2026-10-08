@@ -475,7 +475,11 @@ const ATTENDU = {
 	// `ReconciliationProposals.svelte` reste à 18 (compteur et échecs partiels déplacés,
 	// non dupliqués). Relevé du test, recoupé par `grep -o "i18nMsg("` aux deux bornes ;
 	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (aucun site dynamique ajouté).
-	sitesTotal: 1903,
+	// Revue de code P1 de la 15-5c (E1) : **1903 → 1904** (1895 → 1896 avant le rebase sur la 15-8a) — `failed-proposal-label.ts`
+	// (27 → 28) : libellé dédié à la raison `payment_date_before_invoice_date` de
+	// `RECONCILIATION_INVOICE_NOT_ELIGIBLE`. Recoupé par `grep -c "i18nMsg("` aux deux bornes ;
+	// la doublure `ModalSuccessStub.test.svelte` est hors collecte (suffixe `.test.`).
+	sitesTotal: 1904,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

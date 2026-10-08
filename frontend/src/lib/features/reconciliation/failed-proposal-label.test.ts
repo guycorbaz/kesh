@@ -17,7 +17,11 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 	},
 }));
 
-import { failedProposalLabel, rejectedAccountNumbers } from './failed-proposal-label';
+import {
+	failedProposalLabel,
+	failureReason,
+	rejectedAccountNumbers,
+} from './failed-proposal-label';
 
 /** Code → clé lue (réutilisée `error-*` / `reconciliation-*`, ou neuve), choix C37. */
 const EXPECTED_KEYS: Record<string, string> = {
@@ -108,6 +112,36 @@ describe('failedProposalLabel', () => {
 			attempted: '2026-03-15',
 		});
 		expect(label).not.toContain('2026-03-31');
+	});
+
+	// Revue de code P1 (E1, choix C-15-5c-3) : la proposition peut offrir une facture
+	// postérieure au paiement que l'acceptation refuse (#548) ; cette raison-là a son libellé.
+	it('RECONCILIATION_INVOICE_NOT_ELIGIBLE : libellé dédié au paiement antérieur à la facture', () => {
+		const label = failedProposalLabel('RECONCILIATION_INVOICE_NOT_ELIGIBLE', {
+			reason: 'payment_date_before_invoice_date',
+		});
+		expect(calls).toEqual(['reconciliation-failed-payment-before-invoice']);
+		expect(label).toContain('plus d’un jour avant la facture');
+	});
+
+	it.each([
+		['invoice_already_paid', { reason: 'invoice_already_paid' }],
+		['payment_date_outside_window', { reason: 'payment_date_outside_window', window_days: 30 }],
+		['raison non chaîne', { reason: 1 }],
+		['details absent', null],
+	])('RECONCILIATION_INVOICE_NOT_ELIGIBLE (%s) garde le libellé générique', (_cas, details) => {
+		failedProposalLabel('RECONCILIATION_INVOICE_NOT_ELIGIBLE', details);
+		expect(calls).toEqual(['reconciliation-errors-invoice-not-eligible']);
+	});
+});
+
+describe('failureReason', () => {
+	it('ne rend que la raison chaîne d’un objet', () => {
+		expect(failureReason({ reason: 'x' })).toBe('x');
+		expect(failureReason({ reason: 3 })).toBeNull();
+		expect(failureReason('x')).toBeNull();
+		expect(failureReason(null)).toBeNull();
+		expect(failureReason([])).toBeNull();
 	});
 });
 

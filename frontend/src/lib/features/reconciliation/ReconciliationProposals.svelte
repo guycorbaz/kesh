@@ -71,6 +71,19 @@
 		failedTx = next;
 	}
 
+	/**
+	 * Efface le bilan du dernier lot — compteur, *Échecs partiels* et transactions relevées.
+	 *
+	 * Revue de code P1 de la 15-5c (B1, E3) : le bilan est rendu hors des branches de la liste
+	 * (C38) ; sans remise à zéro, celui d'un lot ancien survivait à une affectation manuelle ou
+	 * à un éclatement. Appelée à l'ouverture de tout nouveau bilan — lot, affectation, éclatement.
+	 */
+	function clearBatchReport(): void {
+		failed = [];
+		lastSuccessCount = 0;
+		failedTx = new Map();
+	}
+
 	/** « date · montant devise · contrepartie », ou `TX #<id>` si la transaction n'a pas été relevée. */
 	function describeTx(id: number): string {
 		const t = failedTx.get(id);
@@ -126,6 +139,7 @@
 	}
 
 	async function onManualSuccess() {
+		clearBatchReport();
 		manualOpen = false;
 		manualProposal = null;
 		await load();
@@ -137,6 +151,7 @@
 	}
 
 	async function onSplitSuccess() {
+		clearBatchReport();
 		splitOpen = false;
 		splitProposal = null;
 		await load();
@@ -153,8 +168,7 @@
 		if (selected.size === 0) return;
 		busy = true;
 		errorMsg = null;
-		failed = [];
-		lastSuccessCount = 0;
+		clearBatchReport();
 		snapshotSelected();
 		try {
 			// γ refactor — pour chaque txId sélectionné, retrouver la
@@ -199,8 +213,7 @@
 		if (selected.size === 0) return;
 		busy = true;
 		errorMsg = null;
-		failed = [];
-		lastSuccessCount = 0;
+		clearBatchReport();
 		snapshotSelected();
 		try {
 			const ids = Array.from(selected);

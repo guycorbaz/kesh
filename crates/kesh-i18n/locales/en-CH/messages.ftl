@@ -1065,6 +1065,7 @@ reconciliation-failed-project-archived = The analytical project is archived.
 reconciliation-failed-project-not-found = Analytical project not found.
 reconciliation-failed-currency-mismatch = Only CHF transactions can be reconciled with an invoice or a rule.
 reconciliation-failed-overpayment = The transaction amount exceeds the amount due on the invoice.
+reconciliation-failed-payment-before-invoice = The payment is dated more than one day before the invoice: it cannot settle it, even though the invoice was proposed.
 reconciliation-failed-rule-mismatch = The rule's counterpart account has changed: reload the page.
 reconciliation-failed-rule-no-longer-matches = The rule no longer matches this transaction: it has been changed in the meantime.
 reconciliation-failed-rule-not-found = Rule not found or deactivated.
