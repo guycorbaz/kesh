@@ -518,7 +518,7 @@ créance ni de l'arrondi.
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Rebase et recompte** avant de coder : rebase sur `main` après le merge des 15-5a à 15-5e ;
+- [x] **T0 — Rebase et recompte** *(fait le 2026-10-08 sur `9cb5083b` — Change Log « Alignement sur le livré (T0) » ; la story **attend le merge de la 15-5d**, C-15-6a-1)* avant de coder : rebase sur `main` après le merge des 15-5a à 15-5e ;
   **refaire tous les numéros de ligne** cités par cette fiche sur `HEAD` ; **lire** le doc-comment
   canonique de `validate_invoice`, le commentaire « 5 bis » et le Pattern 5 tels que la 15-5e (et la
   15-5d) les laissent (AC7, AC9) ; **constater** que la route `POST /api/v1/credit-notes` est rejouée
@@ -911,6 +911,65 @@ ligne et sa place (finding F6-5 de la P6) : `credit_note_uses_materialized_accou
 
 ### Completion Notes List
 
+**T0 — relevés (2026-10-08, sur `origin/main` `9cb5083b` ; branche de la 15-5d lue à `5624ca78`, non mergée).**
+
+- **Rejeu de la route — constaté.** `crates/kesh-api/src/routes/credit_notes.rs:187` (`create_credit_note`)
+  appelle `kesh_db::retry::retry_on_deadlock("credit_notes::create", …)` (`:193`), doc-comment « Rejouée sur
+  interblocage (Story 15-5e2, #536) » (`:184-186`) ; registre `crates/kesh-api/tests/audit_route_registry.rs:220`
+  : `("post", "credit_notes::create_credit_note", Traced, Rejouee)`. Le rejeu vient de la **15-5e2** (la fiche
+  écrit « 15-5e » : la 15-5e a été découpée en 15-5e1/15-5e2, C61). `is_deadlock_error` : `crates/kesh-db/src/retry.rs:115` ;
+  `retry_on_deadlock` : `:150`. Fichier des tests de rejeu : `crates/kesh-api/tests/rejeu_interblocage_e2e.rs` (existe).
+- **Helper de verrou de liste — forme sur la branche de la 15-5d** (`company_invoice_settings.rs`, ~`:595-740` à
+  `5624ca78`) : `lock_designated_accounts_in_tx(conn, company_id, ids) -> Result<DesignatedAccountsSnapshot, DbError>`,
+  **`pub(in crate::repositories)`** ; **déjà en partagé** (`LOCK IN SHARE MODE`, choix C87 de la 15-5d — il n'y a
+  plus d'appelant `FOR UPDATE`) ; **déjà** le patron `owned_account_ids` (C88 : lecture non verrouillante des ids
+  de la société, puis verrou sur ces seuls ids, `company_id` gardé en défense) ; plan épinglé
+  `FORCE INDEX (PRIMARY)` ; ids triés et dédoublonnés, `ORDER BY id` ; ne refuse rien. Type de ligne :
+  `LockedDesignatedAccount { id, number, active, postable }`, **privé**, enveloppé dans le newtype
+  `DesignatedAccountsSnapshot(Vec<…>)`. Son doc-comment liste « l'avoir, qui relit la créance et la TVA due dans
+  les réglages du moment sans ce contrôle (C35) » parmi « ce qui n'est pas contrôlé ici » (AC7 : à réécrire).
+  **Absent de `HEAD`** (`grep -rn "lock_designated_accounts_in_tx" crates/` vide).
+- **Ordres de verrous relevés** (relevé, sans exigence de conformité, R6-3) :
+  validation `invoices.rs:1921-1957` (doc-comment canonique réécrit par la 15-5e1 : facture → réglages
+  `FOR UPDATE` → arrondi `FOR UPDATE` → produit en partagé par clé étrangère → exercice `:2205` → séquence →
+  écriture) ; la 15-5d y insère, sur sa branche, le S de la créance et de la TVA due **après** l'arrondi et
+  **avant** l'exercice (`invoice_settlements_write.rs` « 5 bis » de sa branche) ;
+  règlement client `invoice_settlements_write.rs:48` : facture, compte de contrepartie `FOR UPDATE`
+  (`:122`, `:159`), arrondi (`:200`), exercice (`:211`) ;
+  solde du reste `:367` : nature (étape 4), arrondi (`:474-499`), TVA due, exercice (`:509`) — commentaire
+  « 5 bis » `:474-486` ;
+  saisie fournisseur `supplier_invoices.rs` : réglages `:376` **avant** l'exercice `:429` (le cycle (iv) l'exclut à
+  juste titre — R7-5 tranché).
+- **Commentaire de classement de la 15-5b** dans `accept_one_invoice` : c'est le **doc-comment** de la fonction
+  (`reconciliation.rs:1216-1222`, « la créance est lue **sur l'écriture de vente** de la facture »), sans numéro
+  de ligne ni requête citée ; il reste vrai après l'AC2. Le bloc remplacé est `(b)` `:1464-1501`.
+- **Textes de la 15-5e lus** : doc-comment canonique de `validate_invoice` (ne mentionne pas l'avoir) ; « 5 bis »
+  (ne mentionne pas l'avoir) ; Pattern 5 `docs/MULTI-TENANT-SCOPING-PATTERNS.md:285-335` — **aucune ligne pour
+  l'avoir**, et les lignes des flux comptables y sont désormais **par renvoi au doc-comment canonique** (« the
+  order is written there only », C68). → aucune phrase décrivant l'ancien ordre de l'avoir (AC7 : « rien »).
+- **Manuel** (lu en entier, `HEAD` et branche 15-5d) : sur `HEAD`, `user-manual.tex:382` (4) dit « un compte
+  désigné … devenu non imputable … reste utilisé par les écritures automatiques (validation d'une facture,
+  **avoir**, facture fournisseur) ». Sur la branche 15-5d, `:380` (« Deux exceptions, voulues : l'**avoir** relit
+  la créance et la TVA due dans les réglages au moment de l'avoir, sans les contrôler ») et `:928` (§ « Un compte
+  des réglages devenu non imputable » : « L'avoir, lui, n'est pas soumis à ce contrôle … même si sa créance ou sa
+  TVA due est devenue non imputable ») — la phrase sur la **créance** deviendra fausse (AC8). `admin-manual.tex`
+  : rien sur l'avoir et les réglages hors `:2035` (« un avoir le reprend et l'annule »), qui reste vrai.
+  Numéros actuels : `sec:avoirs` `:1226`, puce « revient à zéro » `:1232`, `keshwarning` produit archivé `:1249`,
+  `sec:plan-comptable-archivage` `:361` (avertissement `:364`), arrondi `:924`, balance âgée `:1836` ;
+  `admin-manual.tex:2035`.
+- **Tests** : `credit_notes_repository.rs` compte **9** `#[sqlx::test]` sur `HEAD` (`:101` … `:593`, inchangé) ;
+  **la 15-5d n'y ajoute rien** : son test de C35 est `credit_note_is_exempt_from_the_guard`, dans
+  `crates/kesh-db/tests/invoices_validate_vat.rs` (`~:1395-1416` sur sa branche, module des tests de la 15-5d) ;
+  le test 13 se ré-ancre là. Son test `foreign_account_is_never_locked_and_is_refused` (même fichier) mesure déjà
+  l'identifiant étranger : le test 17 sera **vert d'emblée** (cas prévu par la fiche).
+- **Inventaire recompté** (commandes de la fiche) : deux écrivains neufs depuis `1920381e` —
+  `journal_entries::update` (15-8a, `INSERT INTO journal_entry_lines` `journal_entries.rs:1480`) et
+  `journal_entries::delete_in_tx` (15-8b, `:1648`). **Hors classe** (lignes saisies ; suppression) ; tous deux
+  refusent une écriture **possédée par une pièce** (`journal_entries.rs:45`, `:1163`, motifs `:1955-1965`), donc
+  l'écriture de vente d'une facture validée reste **gelée** — la prémisse des deux lecteurs tient. Ils
+  s'ajoutent aux partenaires possibles du cycle (iv) (ils tiennent l'exercice sans la ligne des réglages) — liste
+  déjà déclarée non exhaustive. Aucun autre site neuf ne relit créance, dette ou arrondi.
+
 ### File List
 
 ## Change Log
@@ -1178,3 +1237,41 @@ ligne et sa place (finding F6-5 de la P6) : `credit_note_uses_materialized_accou
   - **Suite** : la **P8** (dernière passe du plafond de 8) sera une passe **ciblée** sur ce commit, la
     remédiation P7 ne touchant que la fiche et le registre (aucun code de production).
   - Décompte après passe : **9 AC, 7 tâches (T0–T6), 18 tests** (16 neufs, 2 modifiés : 9 et 13) — inchangé.
+
+- 2026-10-08 — **Alignement sur le livré (T0)**, sur `origin/main` `9cb5083b` (15-5a, 15-5b, 15-5c, 15-5e1,
+  15-5e2, 15-8a, 15-8b mergées ; **15-5d non mergée**, branche lue à `5624ca78`). Relevés au Dev Agent Record.
+  Écarts (C-15-6a-1) :
+  1. **15-5d non mergée — dépendance ferme : la story attend.** Le helper de verrou de liste
+     (`lock_designated_accounts_in_tx`) et le test de C35 n'existent que sur sa branche. La fiche dit « si l'une
+     n'est pas mergée au moment de T0, la story attend » (finding R6-10) et C-15-6-35 a écarté la branche « si la
+     15-5d n'est pas mergée » : **développement suspendu après le T0**.
+  2. **Helper déjà en partagé, sans mode** (C87 de la 15-5d) : le paramètre `AccountLockMode` de l'AC6 n'a plus
+     d'objet — aucun appelant exclusif. L'AC6 prévoyait d'ajouter le mode « si T0 la trouve sans paramètre » pour
+     que la 15-5d passe `Exclusive` ; elle passerait `Share` : la 15-6a **emploie le helper tel quel**, sans mode.
+     Forme, non règle.
+  3. **Type de ligne privé** (`LockedDesignatedAccount`, dans le newtype `DesignatedAccountsSnapshot`), helper
+     `pub(in crate::repositories)` : cas prévu (AC6, C-15-6-36) — la 15-6a les rend **`pub`** sous ces noms (le
+     test 17 l'appelle de `tests/`), sans second type.
+  4. **`owned_account_ids` déjà adopté** (C88 de la 15-5d) : test 17 vert d'emblée (cas prévu par la fiche) ;
+     plan épinglé `FORCE INDEX (PRIMARY)` — l'`EXPLAIN` de l'AC6 se relève sur ce plan.
+  5. **Test 13 ailleurs** : le test de C35 est dans `invoices_validate_vat.rs`, pas dans
+     `credit_notes_repository.rs` (qui reste à 9 tests) ; il se ré-ancre là.
+  6. **Rejeu de la route par la 15-5e2** (et non « la 15-5e », découpée — C61) : constaté, rien à poser.
+  7. **Pattern 5 par renvoi** (C68 de la 15-5e2) : la ligne de l'avoir (AC9) prendra la forme des autres flux
+     comptables — renvoi au doc-comment « Ordre des locks » de `create_credit_note` —, non la séquence recopiée.
+  8. **Deux écrivains neufs** (15-8a `update`, 15-8b `delete_in_tx`) : hors classe, et gardés par la pièce — les
+     lignes de l'écriture de vente restent gelées.
+  9. **Numéros de ligne** : ceux de `credit_notes.rs` ont peu bougé (`:362-364` créance, `:365-367` produit,
+     `:429-440` ids de la 6 ter, `:442-446` filtre `active = TRUE`, `:449-498` refus, `:507-512` appel du
+     générateur, `:525` arrondi, `:609-611` commentaire « inverse exact ») ; ailleurs : `invoices.rs` doc de
+     `generate_invoice_journal_lines_rounded` `:1870-1884`, validation `:1971`, créance `:2041-2042`, arrondi
+     `Issuance` `:2101`, exercice `:2205` ; copies de la requête de créance `invoice_settlements_write.rs:104-115`
+     et `:445-456`, `reconciliation.rs:1475-1501` ; rapprochement : arrondi `:1537`, exercice `:1570`,
+     `UPDATE invoices` `:1753` ; `fiscal_years.rs:550-555` ; `errors.rs` (kesh-db) `ArchivedAccount` `:403`,
+     `ReversalAccountsArchived` `:846-856`, `RoundingContext::Issuance` `:972`, code `:1010`, `map_db_error`
+     `:1048` ; `kesh-api/src/errors.rs` bras `ReversalAccountsArchived` `:3018-3050`, bras
+     `CreditNoteRevenueAccountsArchived` `:3254`, son test `:3814` ; `accounts::archive` `:646` ;
+     `archived_accounts_in_tx` `journal_entries.rs:2380` ; `test_fixtures.rs:560` (délai `:586`) ;
+     `fr-CH/messages.ftl:304` (`credit-note-revenue-account-archived`), `:289` (`…-issuance`).
+  **Aucun écart ne change une règle métier ni un AC sur le fond** (2, 3, 4, 5, 7 sont des cas que la fiche
+  prévoyait ou des formes) ; le seul bloquant est le 1.

@@ -4363,3 +4363,26 @@ l'import (#458–#461).
 - **Réversible** : oui, tant qu'elle n'est pas développée. **Pour le message de PR** (F7-6) : `closes #523`
   renvoie au commentaire du 2026-10-08 sur #523 — la contrainte « sans casser le refus nommé de #486 » est levée
   en esprit, pas à la lettre (l'assertion de `invoices_validate_vat.rs:846` change).
+
+## C-15-6a-1 — 15-6a : T0 fait, développement suspendu jusqu'au merge de la 15-5d ; helper employé tel quel (partagé, sans mode), rendu `pub` sans second type
+
+- **Contexte** : T0 de la 15-6a sur `origin/main` `9cb5083b`. La 15-5d (helper `lock_designated_accounts_in_tx`,
+  test de C35) est développée et revue (branche `story/15-5d-garde-usage-comptes-reglage`, `5624ca78`) mais **non
+  mergée**. La fiche en fait une dépendance **ferme** (« si l'une n'est pas mergée au moment de T0, la story
+  attend », R6-10 ; C-15-6-35 a écarté la branche « si la 15-5d n'est pas mergée »). Sur la branche de la 15-5d,
+  le helper est déjà en **partagé seul** (C87), déjà sur le patron `owned_account_ids` (C88), `FORCE INDEX
+  (PRIMARY)`, `pub(in crate::repositories)`, type de ligne privé `LockedDesignatedAccount` dans le newtype
+  `DesignatedAccountsSnapshot` ; son test de C35 est dans `invoices_validate_vat.rs`.
+- **Retenu** : (1) **arrêt après le T0**, relevés et écarts consignés (Change Log de la fiche, « Alignement sur le
+  livré (T0) ») ; (2) une fois la 15-5d mergée, la 15-6a **emploie le helper tel quel, sans paramètre de mode**
+  (aucun appelant exclusif ne reste ; un mode à une seule valeur serait du code mort) et rend `pub` la fonction,
+  `LockedDesignatedAccount` et l'accès aux lignes de `DesignatedAccountsSnapshot` sous leurs noms (C-15-6-36 :
+  un seul type) ; (3) le test 13 se ré-ancre dans `invoices_validate_vat.rs`, le test 17 est attendu vert
+  d'emblée ; (4) la ligne Pattern 5 de l'avoir prend la forme « par renvoi » (C68).
+- **Écartées** : fusionner la branche de la 15-5d dans celle de la 15-6a (les consignes interdisent tout merge ;
+  et la résolution du conflit 15-5d ↔ 15-5e2 sur `invoice_settlements_write.rs` reviendrait à qui merge la 15-5d) ;
+  écrire un helper jumeau (contraire au critère DRY de l'AC6, conflit certain au merge) ; développer T1/T2 seuls
+  (story livrée en deux temps, sans motif — T1/T2 ne prennent qu'une fraction du travail).
+- **Réversible** : oui. **À faire par l'orchestrateur** : merger la 15-5d, puis relancer le développement de la
+  15-6a sur `main` à jour (le T0 n'aura à refaire que les numéros de ligne des fichiers que la 15-5d touche :
+  `company_invoice_settings.rs`, `invoices.rs`, `invoice_settlements_write.rs`, `invoices_validate_vat.rs`, manuels).
