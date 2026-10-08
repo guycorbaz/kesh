@@ -466,6 +466,20 @@ Claude Opus 5.5 (`claude-opus-5-5`), agent de développement de l'Epic 15, en au
   KF-029 et `sidebar-navigation.spec.ts:75` (KF-046 #424, listée dans `docs/testing.md`, **verte rejouée
   seule**) ; aucun rouge hors liste. Mutations (restaurées, fichier retouché) : retirer
   `clearBatchReport()` d'`onManualSuccess`/`onSplitSuccess` et rendre le repli vide → 3 rouges.
+- **Intégration sur `main` après la 15-8a (`52a9b19b`) — gates rejoués sur l'état rebasé, au commit
+  `38739f65`** (dernier commit de code ; C-15-5c-4, C-15-5c-5). Bases `kesh` et `kesh_e2e` recréées
+  (DROP/CREATE + 75 migrations + seed de `kesh`, conteneur non redémarré). `scripts/test-fast.sh` —
+  fmt, clippy, nextest **2809 exécutés, 2809 verts, 4 ignorés** (+5 sur 2804 : les tests de la 15-8a,
+  la 15-5c n'ajoutant aucun test Rust). Frontend : `check` 0 erreur (27 avertissements),
+  `lint-i18n-ownership` vert, `test:unit` **111 fichiers, 1086/1086**, `build` vert. Bornes recomptées
+  sur l'état rebasé et vérifiées par les tests : `sitesTotal` **1904** (1876 de la 15-8a + 28 de la
+  15-5c), `CANDIDATES_ATTENDUES` **48** (`ecartee` 7, `conforme` 41). PDF utilisateur régénéré
+  (`make user`, 79 pages, aucune référence indéfinie ; contrôlé aplati : le paragraphe « Une facture
+  proposée peut être refusée à l'acceptation » de la 15-5c et « tant que son exercice est ouvert » de
+  la 15-8a présents). E2E complet (port 3000, `kesh_e2e`, montage complet, `smtpConfigured: true`,
+  lancé à 16:17 UTC) : **244 verts, 7 rouges, 19 ignorés** — les sept KF-029 de `docs/testing.md`
+  § « Les échecs attendus », aucun rouge hors liste ; specs `reconciliation*` et `journal-entr*`
+  vertes.
 
 ### Completion Notes List
 
@@ -572,7 +586,7 @@ Claude Opus 5.5 (`claude-opus-5-5`), agent de développement de l'Epic 15, en au
 - `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
 - `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
 - `CHANGELOG.md`
-- `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md` (C-15-5c-1, C-15-5c-2, C-15-5c-3)
+- `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md` (C-15-5c-1 à C-15-5c-5)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 - `_bmad-output/implementation-artifacts/15-5c-rapprochement-libelles-et-manuel.md`
 
@@ -722,3 +736,8 @@ Claude Opus 5.5 (`claude-opus-5-5`), agent de développement de l'Epic 15, en au
   `frontend/src/lib/features/reconciliation/failed-proposal-label.ts:154` ; `clearBatchReport()` est appelée aux quatre
   débuts de bilan (`ReconciliationProposals.svelte:142`, `:154`, `:171`, `:216`). **Boucle de revue CLOSE** (P1 Sonnet
   ×3 : 1 MEDIUM, 10 LOW → P2 ciblée Haiku : 0).
+- 2026-10-08 — **Intégration sur `main` après le merge de la 15-8a** (`52a9b19b`) : branche reconstruite
+  (planification rejouée d'un bloc par `cherry-pick -m 2`, puis les sept commits de la 15-5c ; C-15-5c-4),
+  registre et `sprint-status.yaml` fusionnés par union, CHANGELOG/`.tex`/`.ftl` sans conflit, PDF
+  régénéré, compteurs i18n recomptés (`sitesTotal` 1904, `CANDIDATES_ATTENDUES` 48 ; C-15-5c-5). Gates
+  rejoués au commit `38739f65` : backend 2809/2809, frontend 1086/1086, E2E 244 verts / 7 KF-029.
