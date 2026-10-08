@@ -1,5 +1,6 @@
 //! Rejeu sur interblocage — Story 15-5e1 (AC4, tests 1 à 5 et 7 ; #463, #491,
-//! #536 pour la validation).
+//! #536 pour la validation) ; Story 15-12a (tests 9 et 10 : clôture et création
+//! d'un exercice ; #543).
 //!
 //! Chaque test « route victime » monte un interblocage **déterministe** sur le
 //! patron de `accept_replays_the_batch_when_it_is_the_deadlock_victim`
@@ -1238,4 +1239,142 @@ async fn credit_note_route_replays_when_it_is_the_deadlock_victim(pool: MySqlPoo
         "un seul numéro d'avoir tiré : {corps}"
     );
     capture.exiger_un_rejeu("credit_notes::create");
+}
+
+// ============================================================
+// Tests 9 et 10 — clôture et création d'un exercice victimes (Story 15-12a,
+// AC 6 ; #543)
+// ============================================================
+
+/// Insère un exercice `année` (1er janvier – 31 décembre) de statut `statut`,
+/// par SQL : le montage pose un état, il ne teste pas la création.
+async fn exercice_sql(pool: &MySqlPool, company_id: i64, annee: i32, statut: &str) -> i64 {
+    sqlx::query(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+         VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(company_id)
+    .bind(format!("Exercice {annee} (rejeu)"))
+    .bind(NaiveDate::from_ymd_opt(annee, 1, 1).unwrap())
+    .bind(NaiveDate::from_ymd_opt(annee, 12, 31).unwrap())
+    .bind(statut)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+/// Test 9 — `POST /fiscal-years/{N}/close`, victime, est **rejouée**.
+///
+/// Montage : M **clos**, N **ouvert**, M < N (antérieurs à l'exercice
+/// 2020-2030 du semis). La transaction lourde tient N ; la clôture, lancée en
+/// tâche, verrouille M **par sa clé primaire** à l'étape (b') — explicitement,
+/// quel que soit son statut — puis est vue en attente de N à l'étape (c)
+/// (motif de `LOCK_IN_COMPANY_SQL` ; l'exécution étant séquentielle, voir (c)
+/// en cours prouve que (b') a rendu et tient M). La transaction demande M :
+/// cycle ; InnoDB annule la clôture, plus légère ; la transaction obtient M
+/// (`.expect`), annule ; la route rejoue et rend **200**, N clos.
+///
+/// ⛔ **Tue la mutation (ix)** (appeler `fiscal_years::close` hors de son
+/// enveloppe dans la route) : 500, et pas de témoin de rejeu.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn fiscal_year_close_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let capture = CaptureRejeu::installer();
+    let m = exercice_sql(&pool, ctx.company_id(), 2010, "Closed").await;
+    let n = exercice_sql(&pool, ctx.company_id(), 2015, "Open").await;
+
+    let mut lourde = transaction_lourde(&pool).await;
+    sqlx::query("SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE")
+        .bind(n)
+        .fetch_one(&mut *lourde)
+        .await
+        .unwrap();
+
+    let route = requete_en_tache(
+        &ctx,
+        reqwest::Method::POST,
+        &format!("/api/v1/fiscal-years/{n}/close"),
+        None,
+    );
+    let (status, corps) = victime(
+        &pool,
+        lourde,
+        route,
+        &["SELECT id, company_id", "WHERE id = ", "FOR UPDATE"],
+        "SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE",
+        m,
+    )
+    .await;
+
+    assert_eq!(status, 200, "⛔ l'interblocage doit être rejoué : {corps}");
+    assert_eq!(corps["status"], "Closed");
+    let audits: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'fiscal_year.closed' AND entity_id = ?",
+    )
+    .bind(n)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(audits, 1, "une seule entrée d'audit");
+    capture.exiger_un_rejeu("fiscal_years::close");
+}
+
+/// Test 10 — `POST /fiscal-years`, victime, est **rejouée**.
+///
+/// Montage (mesuré en T0, Story 15-12a) : M **clos**, Y **ouvert**, M < X < Y.
+/// La transaction lourde tient Y ; la création de X, lancée en tâche, lit — donc
+/// verrouille — M dans son pré-contrôle de chevauchement, et bute sur Y (borne
+/// de ce parcours, ou sa garde `find_later_closed_in_tx` : le motif tolère les
+/// deux, seule la création s'exécute pendant l'attente). La transaction demande
+/// M : cycle ; la création, plus légère, est annulée ; la transaction obtient M,
+/// annule ; la route rejoue et rend **201**.
+///
+/// ⛔ **Tue la mutation (x)** (appeler `fiscal_years::create` hors de son
+/// enveloppe dans la route) : 500, et pas de témoin de rejeu.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn fiscal_year_creation_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let capture = CaptureRejeu::installer();
+    let m = exercice_sql(&pool, ctx.company_id(), 2010, "Closed").await;
+    let y = exercice_sql(&pool, ctx.company_id(), 2015, "Open").await;
+
+    let mut lourde = transaction_lourde(&pool).await;
+    sqlx::query("SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE")
+        .bind(y)
+        .fetch_one(&mut *lourde)
+        .await
+        .unwrap();
+
+    let route = requete_en_tache(
+        &ctx,
+        reqwest::Method::POST,
+        "/api/v1/fiscal-years",
+        Some(json!({
+            "name": "Exercice 2012",
+            "startDate": "2012-01-01",
+            "endDate": "2012-12-31"
+        })),
+    );
+    let (status, corps) = victime(
+        &pool,
+        lourde,
+        route,
+        &["fiscal_years", "FOR UPDATE"],
+        "SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE",
+        m,
+    )
+    .await;
+
+    assert_eq!(status, 201, "⛔ l'interblocage doit être rejoué : {corps}");
+    assert_eq!(corps["name"], "Exercice 2012");
+    let n: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM fiscal_years WHERE company_id = ? AND name = 'Exercice 2012'",
+    )
+    .bind(ctx.company_id())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(n, 1, "un seul exercice créé");
+    capture.exiger_un_rejeu("fiscal_years::create");
 }

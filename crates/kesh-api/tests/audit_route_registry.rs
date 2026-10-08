@@ -55,10 +55,11 @@
 //!   C'est la classification de l'inventaire de l'AC1, recontrôlée en revue.
 //! - **(ii)** que le 1213 **atteint** le prédicat : le volet (c) est statique —
 //!   il voit l'appel, pas le chemin de l'erreur ; une conversion faite dans la
-//!   fermeture le passerait. Seuls les tests 2 à 5 et 7 de
-//!   `rejeu_interblocage_e2e.rs` le prouvent dynamiquement, pour cinq routes de
-//!   la famille `DbError` (quatre qui écrivent au journal, et l'enregistrement
-//!   des réglages de facturation). Pour la famille `AppError`, le test 1 éprouve
+//!   fermeture le passerait. Seuls les tests 2 à 5, 7, 9 et 10 de
+//!   `rejeu_interblocage_e2e.rs` le prouvent dynamiquement, pour sept routes de
+//!   la famille `DbError` (quatre qui écrivent au journal, l'enregistrement des
+//!   réglages de facturation, et — Story 15-12a — la clôture et la création
+//!   d'un exercice, enveloppe `kesh_db::retry`). Pour la famille `AppError`, le test 1 éprouve
 //!   le prédicat et l'enveloppe, et le test 8 le chemin propre aux routes à
 //!   verrou nommé sur `reconciliation::manual` (1213 levé sous le verrou,
 //!   `match` du handler, `RELEASE_LOCK`, `rollback`, nouvelle tentative) ; pour
@@ -69,8 +70,9 @@
 //!   l'enveloppe **enveloppe l'écriture** : le volet (c) est vrai dès qu'un
 //!   appel de ce nom figure dans le corps. Un handler `Rejouee` qui
 //!   envelopperait une lecture et ferait l'écriture hors de la fermeture
-//!   resterait vert. Ont une preuve dynamique : les cinq routes des tests 2 à 5
-//!   et 7 de `rejeu_interblocage_e2e.rs` et `reconciliation::manual` (test 8 du
+//!   resterait vert. Ont une preuve dynamique : les sept routes des tests 2 à
+//!   5, 7, 9 et 10 de `rejeu_interblocage_e2e.rs` (dont `close_fiscal_year` et
+//!   `create_fiscal_year`, Story 15-12a) et `reconciliation::manual` (test 8 du
 //!   même fichier, Story 15-5e2) ;
 //!   `accept_replays_the_batch_when_it_is_the_deadlock_victim`
 //!   (`reconciliation_e2e.rs`) pour `reconciliation::accept` ;
@@ -94,19 +96,34 @@
 //!   que **toute route mutante a été examinée**. Autres candidates nommées en
 //!   revue P1 de la 15-5e2 (L-5), sans cycle démontré : `PUT /invoices/{id}`
 //!   quand le projet change (sentinelle, projet, facture),
-//!   `POST /projects/{id}/archive`, `POST /fiscal-years/{id}/close` et
-//!   `/reopen` — elles prennent des verrous que les flux rejoués prennent aussi.
+//!   `POST /projects/{id}/archive` et `POST /fiscal-years/{id}/reopen` — elles
+//!   prennent des verrous que les flux rejoués prennent aussi. Pour `/reopen`,
+//!   le cycle est nommé : la réouverture tient Y-1 puis parcourt les
+//!   postérieurs ; une contre-passation tient une origine postérieure puis
+//!   parcourt depuis le premier exercice (préexistant). Et le **renommage**
+//!   (`PUT /fiscal-years/{id}`, Story 15-12a) : il tient l'exercice puis son
+//!   homonyme, la clôture tient ses antérieurs puis l'exercice — renommer un
+//!   exercice au nom d'un antérieur pendant sa clôture peut faire du renommage
+//!   la victime, en 500, sur un renommage que le pré-contrôle aurait refusé.
+//!   `POST /fiscal-years/{id}/close` n'est plus de la liste : elle est rejouée
+//!   (point (vi)).
 //! - **(v)** quoi que ce soit d'une route `GET` : l'extracteur ne balaie que
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **deux routes `SansEcritureAuJournal` sont rejouées quand même** :
-//!   `onboarding::finalize` (enveloppe `AppError`, Story 15-5e2) et
+//! - **(vi)** **quatre routes `SansEcritureAuJournal` sont rejouées quand
+//!   même** : `onboarding::finalize` (enveloppe `AppError`, Story 15-5e2),
 //!   `company_invoice_settings::update_invoice_settings` (enveloppe `DbError`,
-//!   exposée par l'avance des réglages de la saisie fournisseur — choix C70). La
-//!   colonne dit l'inventaire de l'AC1, pas la présence d'une enveloppe, et le
-//!   volet (c) ne les examine pas : la seconde est tenue par le test 7 de
-//!   `rejeu_interblocage_e2e.rs`, la première par sa revue — et le volet
+//!   exposée par l'avance des réglages de la saisie fournisseur — choix C70),
+//!   et — Story 15-12a, #543 — `fiscal_years::create_fiscal_year` et
+//!   `fiscal_years::close_fiscal_year` (enveloppe `DbError`
+//!   `kesh_db::retry::retry_on_deadlock`, opérations `fiscal_years::create` /
+//!   `fiscal_years::close` : la clôture dans l'ordre et la garde de création
+//!   forment des cycles avec la contre-passation et entre elles). La colonne
+//!   dit l'inventaire de l'AC1, pas la présence d'une enveloppe, et le volet
+//!   (c) ne les examine pas : `update_invoice_settings` est tenue par le test
+//!   7 de `rejeu_interblocage_e2e.rs`, la clôture et la création d'un exercice
+//!   par ses tests 9 et 10, `onboarding::finalize` par sa revue — et le volet
 //!   (c bis) interdit qu'elle revienne à un `retry_with` à prédicat écrit en
 //!   ligne.
 //! - **(vii)** — **angles morts assumés du volet (c bis)** (revue P1 de la

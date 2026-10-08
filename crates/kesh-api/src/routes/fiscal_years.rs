@@ -133,6 +133,16 @@ fn map_create_error(err: DbError) -> AppError {
                 "FK violation impossible (JWT scope) — investigate: {m}"
             ))
         }
+        // Story 15-12a (#543, C-15-12a-1) — un exercice postérieur est clos :
+        // même code et mêmes `details` que le mapping global, message propre
+        // à la création.
+        DbError::LaterFiscalYearClosed {
+            fiscal_year_id,
+            fiscal_year_name,
+        } => AppError::FiscalYearBeforeClosedYear {
+            fiscal_year_id,
+            fiscal_year_name,
+        },
         // Tout le reste (Sqlx, ConnectionUnavailable, NotFound, ...) → mapping standard.
         other => AppError::from(other),
     }
@@ -236,9 +246,17 @@ pub async fn create_fiscal_year(
         end_date: req.end_date,
     };
 
-    let fy = fiscal_years::create(&state.pool, current_user.user_id, new)
-        .await
-        .map_err(map_create_error)?;
+    // Story 15-12a (AC 6) — rejouée sur interblocage : la création verrouille
+    // ses antérieurs (pré-contrôles) puis ses postérieurs (garde de
+    // l'invariant I) ; elle peut former un cycle avec une clôture ou une
+    // contre-passation. Transaction unique, sûre à relancer.
+    let fy = kesh_db::retry::retry_on_deadlock("fiscal_years::create", || {
+        let new = new.clone();
+        let pool = state.pool.clone();
+        async move { fiscal_years::create(&pool, current_user.user_id, new).await }
+    })
+    .await
+    .map_err(map_create_error)?;
 
     Ok((StatusCode::CREATED, Json(FiscalYearResponse::from(fy))))
 }
@@ -275,7 +293,14 @@ pub async fn update_fiscal_year(
 /// `POST /api/v1/fiscal-years/{id}/close` — transition Open → Closed (Comptable+).
 ///
 /// Renvoie 409 `ILLEGAL_STATE_TRANSITION` si l'exercice est déjà clos
-/// (mappé automatiquement via `AppError::Database(DbError::IllegalStateTransition)`).
+/// (mappé automatiquement via `AppError::Database(DbError::IllegalStateTransition)`),
+/// et 409 `EARLIER_FISCAL_YEAR_OPEN` si un exercice antérieur est encore ouvert
+/// (Story 15-12a, #543 — `details` nomment le plus ancien, à clôturer d'abord).
+///
+/// Rejouée sur interblocage (Story 15-12a, AC 6) : la clôture verrouille ses
+/// antérieurs puis l'exercice, et forme un cycle avec une contre-passation ou
+/// une annulation d'une écriture de l'exercice (preuve :
+/// `rejeu_interblocage_e2e.rs`).
 pub async fn close_fiscal_year(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -285,12 +310,14 @@ pub async fn close_fiscal_year(
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
 
-    let fy = fiscal_years::close(
-        &state.pool,
-        current_user.user_id,
-        current_user.company_id,
-        id,
-    )
+    let fy = kesh_db::retry::retry_on_deadlock("fiscal_years::close", || {
+        fiscal_years::close(
+            &state.pool,
+            current_user.user_id,
+            current_user.company_id,
+            id,
+        )
+    })
     .await?;
     Ok(Json(FiscalYearResponse::from(fy)))
 }
