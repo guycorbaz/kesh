@@ -262,6 +262,11 @@ pub async fn upsert_primary(pool: &MySqlPool, new: NewBankAccount) -> Result<Ban
 /// retourne `AppError::BankAccountNotFound` anti-énumération). Un compte
 /// archivé est immuable hors `un-archive` workflow (L1 v0.1 — pas de
 /// restoration UI).
+///
+/// **Ordre des erreurs** (Story 15-5b, AC12) : `DbError::NotFound` →
+/// `DbError::OptimisticLockConflict` → court-circuit no-op (valeur inchangée,
+/// rien n'est contrôlé) → `DbError::AccountsNotPostable` (nouveau compte lié
+/// actif et non imputable).
 pub async fn set_journal_account_id_for_company(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,
@@ -305,6 +310,14 @@ pub async fn set_journal_account_id_for_company(
     // `audit_log::insert_in_tx`.
     if existing.journal_account_id == journal_account_id {
         return Ok((existing.clone(), existing));
+    }
+
+    // Story 15-5b (AC12, choix C10) — postabilité du nouveau compte lié, sous
+    // le verrou de la ligne et seulement si la valeur change (court-circuit
+    // no-op ci-dessus) : un compte lié devenu non imputable après coup reste
+    // accepté tel quel (D-A0).
+    if let Some(account_id) = journal_account_id {
+        super::accounts::ensure_postable_if_active_in_tx(tx, company_id, account_id).await?;
     }
 
     // M4 defense-in-depth : ajout `AND company_id = ?` au scope de l'UPDATE.
@@ -353,6 +366,14 @@ pub async fn set_journal_account_id_for_company(
 /// → 404 anti-énumération).
 ///
 /// Retourne `(updated, before)` cohérent avec `set_journal_account_id_for_company`.
+///
+/// **Ordre des erreurs** (Story 15-5b, AC12) : `DbError::NotFound` (compte
+/// bancaire inconnu, d'une autre société ou archivé) →
+/// `DbError::OptimisticLockConflict` (version périmée) →
+/// `DbError::AccountsNotPostable` (nouveau compte lié actif et non imputable,
+/// contrôlé seulement s'il change). Un refus abandonne la transaction du
+/// caller : une démotion de l'ancien principal faite dans la même transaction
+/// est annulée avec elle.
 pub async fn update_for_company(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,
@@ -379,6 +400,15 @@ pub async fn update_for_company(
 
     if existing.version != expected_version {
         return Err(DbError::OptimisticLockConflict);
+    }
+
+    // Story 15-5b (AC12, choix C10) — postabilité du compte lié, sous le
+    // verrou, **seulement s'il change** et n'est pas `NULL` : un PUT qui
+    // renvoie le compte en place, devenu non imputable après coup, passe.
+    if new_journal_account_id != existing.journal_account_id
+        && let Some(account_id) = new_journal_account_id
+    {
+        super::accounts::ensure_postable_if_active_in_tx(tx, company_id, account_id).await?;
     }
 
     let rows = sqlx::query(

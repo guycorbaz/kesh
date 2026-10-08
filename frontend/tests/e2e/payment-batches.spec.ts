@@ -50,7 +50,7 @@ async function ensureSetup(page: import('@playwright/test').Page): Promise<{
 		}>;
 		const payable = accounts.find((a) => a.number === '2000');
 		const expense = accounts.find((a) => a.accountType === 'Expense' && a.active && a.postable);
-		const liquid = accounts.find((a) => a.accountType === 'Asset' && a.active);
+		const liquid = accounts.find((a) => a.accountType === 'Asset' && a.active && a.postable);
 		expect(payable && expense && liquid).toBeTruthy();
 
 		// Config compte créanciers si absent.

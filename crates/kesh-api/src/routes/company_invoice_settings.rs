@@ -7,6 +7,15 @@
 //! La validation métier (format, comptes Asset/Revenue actifs,
 //! journal whitelist) vit ici. Le repository ne fait que persister +
 //! auditer.
+//!
+//! **Postabilité à la désignation** (Story 15-5b, #429, choix C3) : tous les
+//! comptes désignés ici — les six champs historiques comme les comptes
+//! d'arrondi et d'écart soldé — sont refusés **non imputables** (compte de
+//! regroupement, de résultat ou de clôture) quand leur valeur **change**. Une
+//! valeur inchangée n'est pas re-contrôlée sur ce point (exemption « inchangé »,
+//! patron de [`resolve_designated_account`]) : un compte devenu non imputable
+//! après coup ne bloque pas l'enregistrement des réglages. Ce n'est **pas** une
+//! garde à l'usage — celle des comptes de réglage est portée par la Story 15-5d.
 
 use axum::extract::State;
 use axum::{Extension, Json};
@@ -94,7 +103,13 @@ pub struct UpdateInvoiceSettingsRequest {
     /// gère pas encore ; sans ça, tout enregistrement des réglages échouait en 422.
     #[serde(default)]
     pub credit_note_number_format: Option<String>,
-    pub default_payable_account_id: Option<i64>,
+    /// Story 12.2 — compte créanciers. **Absent du corps : préservé** (Story
+    /// 15-5b, #521, choix C25 — patron du compte d'arrondi) : l'écran
+    /// *Paramètres → Facturation* ne l'envoie pas, et chaque enregistrement
+    /// l'effaçait, si bien que la saisie d'une facture fournisseur échouait
+    /// ensuite en `ConfigurationRequired`. **Présent à `null` : effacé.**
+    #[serde(default, deserialize_with = "crate::helpers::double_option")]
+    pub default_payable_account_id: Option<Option<i64>>,
     /// Story 25-4-c3-a1 (#476) — compte de différences d'arrondi. **Absent du
     /// corps : préservé** (comme `credit_note_number_format`, #216), pour qu'un
     /// client qui ignore encore le champ — clé d'API, onglet ouvert avant la mise
@@ -130,10 +145,15 @@ fn parse_journal(raw: &str) -> Result<Journal, AppError> {
         .map_err(|_| AppError::Validation(format!("Journal inconnu : '{raw}'")))
 }
 
+/// Valide un des six comptes **historiques** des réglages (créance, produit,
+/// TVA due, TVA récupérable, décompte TVA, créanciers) : existence, société,
+/// `active` et type, toujours ; postabilité **seulement si la valeur change**
+/// par rapport à `current` (Story 15-5b, AC10, AC11 — exemption « inchangé »).
 async fn validate_account(
     state: &AppState,
     company_id: i64,
     account_id: Option<i64>,
+    current: Option<i64>,
     expected: AccountType,
     field_label: &str,
 ) -> Result<(), AppError> {
@@ -142,7 +162,7 @@ async fn validate_account(
         company_id,
         account_id,
         &[expected],
-        false,
+        account_id != current,
         field_label,
     )
     .await
@@ -154,8 +174,10 @@ async fn validate_account(
 /// ⚠️ `require_postable` est exigé pour un compte que des **écritures
 /// automatiques** utiliseront : elles passent `enforce_postable = false`
 /// (`journal_entries::create_in_tx`), si bien que la garde doit tenir ici, au
-/// moment où le compte est désigné. Les champs historiques ne l'exigent pas
-/// (comportement inchangé).
+/// moment où le compte est désigné. Tous les champs l'exigent désormais quand
+/// la valeur **change** — les six champs historiques depuis la Story 15-5b
+/// (#429) ; une valeur inchangée en est exemptée, pour qu'un compte devenu non
+/// imputable après coup ne bloque pas tout enregistrement.
 async fn validate_account_of(
     state: &AppState,
     company_id: i64,
@@ -189,7 +211,7 @@ async fn validate_account_of(
     }
     if require_postable && !account.postable {
         return Err(AppError::Validation(format!(
-            "{field_label} : compte non imputable (compte de regroupement ou de clôture)"
+            "{field_label} : compte non imputable (compte de regroupement, de résultat ou de clôture)"
         )));
     }
     Ok(())
@@ -272,11 +294,13 @@ pub async fn update_invoice_settings(
     // 3. Valider le journal (whitelist via FromStr).
     let journal = parse_journal(&req.default_sales_journal)?;
 
-    // 4. Valider les comptes (existence, scope company, type, actif).
+    // 4. Valider les comptes (existence, scope company, type, actif ; imputable
+    //    si la valeur change — Story 15-5b, AC10).
     validate_account(
         &state,
         company.id,
         req.default_receivable_account_id,
+        current.default_receivable_account_id,
         AccountType::Asset,
         "Compte créance",
     )
@@ -285,6 +309,7 @@ pub async fn update_invoice_settings(
         &state,
         company.id,
         req.default_revenue_account_id,
+        current.default_revenue_account_id,
         AccountType::Revenue,
         "Compte produit",
     )
@@ -294,6 +319,7 @@ pub async fn update_invoice_settings(
         &state,
         company.id,
         req.default_vat_payable_account_id,
+        current.default_vat_payable_account_id,
         AccountType::Liability,
         "Compte TVA due",
     )
@@ -302,6 +328,7 @@ pub async fn update_invoice_settings(
         &state,
         company.id,
         req.default_vat_recoverable_account_id,
+        current.default_vat_recoverable_account_id,
         AccountType::Asset,
         "Compte TVA récupérable",
     )
@@ -310,19 +337,31 @@ pub async fn update_invoice_settings(
         &state,
         company.id,
         req.default_vat_decompte_account_id,
+        current.default_vat_decompte_account_id,
         AccountType::Liability,
         "Compte décompte TVA",
     )
     .await?;
     // Compte créanciers (Story 12.2) : contrepartie achat fournisseur = Liability.
-    validate_account(
-        &state,
-        company.id,
-        req.default_payable_account_id,
-        AccountType::Liability,
-        "Compte créanciers",
-    )
-    .await?;
+    // Story 15-5b (AC19, #521) : absent du corps → valeur en place préservée,
+    // **sans contrôle** (on ne refuse pas un enregistrement pour un champ que
+    // le client n'a pas envoyé) ; `null` → effacé ; valeur → validée, et sur la
+    // postabilité si elle change (AC10, AC11).
+    let default_payable_account_id = match req.default_payable_account_id {
+        None => current.default_payable_account_id,
+        Some(requested) => {
+            validate_account(
+                &state,
+                company.id,
+                requested,
+                current.default_payable_account_id,
+                AccountType::Liability,
+                "Compte créanciers",
+            )
+            .await?;
+            requested
+        }
+    };
 
     // Compte de différences d'arrondi (Story 25-4-c3-a1) : un écart d'arrondi est
     // un résultat, dans un sens ou dans l'autre — charge ou produit, imputable.
@@ -386,7 +425,7 @@ pub async fn update_invoice_settings(
         default_sales_journal: journal,
         journal_entry_description_template: req.journal_entry_description_template,
         credit_note_number_format,
-        default_payable_account_id: req.default_payable_account_id,
+        default_payable_account_id,
         default_rounding_account_id,
         // Changer le réglage ne touche aucune pièce émise : leur arrondi est figé.
         round_to_5_centimes: req

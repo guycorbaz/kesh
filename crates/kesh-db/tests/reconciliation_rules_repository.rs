@@ -941,3 +941,164 @@ async fn update_validates_new_project_but_grandfathers_unchanged(pool: MySqlPool
     tx.commit().await.unwrap();
     assert_eq!(cleared.default_project_id, None);
 }
+
+// ---------------------------------------------------------------------------
+// Story 15-5b (AC7, AC8, #427) — `DbError::AccountsNotPostable` rendue par le
+// dépôt, dans la transaction.
+// ---------------------------------------------------------------------------
+
+async fn set_not_postable(pool: &MySqlPool, account_id: i64) {
+    sqlx::query("UPDATE accounts SET postable = FALSE, version = version + 1 WHERE id = ?")
+        .bind(account_id)
+        .execute(pool)
+        .await
+        .expect("set not postable");
+}
+
+fn assert_accounts_not_postable(
+    res: Result<kesh_db::entities::ReconciliationRule, DbError>,
+    account_id: i64,
+    number: &str,
+) {
+    match res {
+        Err(DbError::AccountsNotPostable(list)) => {
+            let v: Vec<(i64, String)> = list
+                .iter()
+                .map(|a| (a.account_id, a.account_number.clone()))
+                .collect();
+            assert_eq!(v, vec![(account_id, number.to_string())]);
+        }
+        other => panic!("attendu AccountsNotPostable, obtenu {other:?}"),
+    }
+}
+
+/// AC7 — `create_in_tx` refuse un compte actif non imputable, sans rien créer.
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_in_tx_rejects_non_postable_account(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "Alpha SA").await;
+    let user_id = create_test_user(&pool, "alice", company_id).await;
+    let account_id = create_test_account(&pool, company_id, user_id, "6510", "Telecom").await;
+    set_not_postable(&pool, account_id).await;
+
+    let mut tx = pool.begin().await.unwrap();
+    let res = reconciliation_rules::create_in_tx(
+        &mut tx,
+        company_id,
+        user_id,
+        &make_rule(
+            "R",
+            ReconciliationMatchType::CounterpartyContains,
+            "Swisscom",
+            account_id,
+            100,
+        ),
+    )
+    .await;
+    drop(tx);
+    assert_accounts_not_postable(res, account_id, "6510");
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM reconciliation_rules WHERE company_id = ?")
+            .bind(company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 0);
+}
+
+/// AC8 — `update_in_tx` : changer de compte vers un non imputable et
+/// réactiver sur un compte devenu non imputable sont refusés ; renommer ou
+/// désactiver ne le sont pas (exemption « inchangé ») ; le refus précède le
+/// conflit de version.
+#[sqlx::test(migrations = "./test-schema")]
+async fn update_in_tx_guards_account_change_and_reactivation(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "Alpha SA").await;
+    let user_id = create_test_user(&pool, "alice", company_id).await;
+    let account_id = create_test_account(&pool, company_id, user_id, "6510", "Telecom").await;
+    let other = create_test_account(&pool, company_id, user_id, "6511", "Mobile").await;
+
+    let mut tx = pool.begin().await.unwrap();
+    let r = reconciliation_rules::create_in_tx(
+        &mut tx,
+        company_id,
+        user_id,
+        &make_rule(
+            "R",
+            ReconciliationMatchType::CounterpartyContains,
+            "Swisscom",
+            account_id,
+            100,
+        ),
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    set_not_postable(&pool, other).await;
+
+    // (a) changement de compte vers un non imputable, version périmée : le
+    // refus de postabilité passe avant le conflit de version (choix C10).
+    let mut tx = pool.begin().await.unwrap();
+    let res = reconciliation_rules::update_in_tx(
+        &mut tx,
+        company_id,
+        user_id,
+        r.id,
+        99,
+        &UpdateReconciliationRule {
+            counterparty_account_id: Some(other),
+            ..Default::default()
+        },
+    )
+    .await;
+    drop(tx);
+    assert_accounts_not_postable(res, other, "6511");
+
+    // Le compte en place devient non imputable : renommer en le renvoyant,
+    // puis désactiver, passent.
+    set_not_postable(&pool, account_id).await;
+    let mut tx = pool.begin().await.unwrap();
+    let r2 = reconciliation_rules::update_in_tx(
+        &mut tx,
+        company_id,
+        user_id,
+        r.id,
+        1,
+        &UpdateReconciliationRule {
+            label: Some("Renommée".into()),
+            counterparty_account_id: Some(account_id),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("renommer à compte inchangé");
+    let r3 = reconciliation_rules::update_in_tx(
+        &mut tx,
+        company_id,
+        user_id,
+        r.id,
+        r2.version,
+        &UpdateReconciliationRule {
+            active: Some(false),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("désactiver");
+    tx.commit().await.unwrap();
+
+    // (b) réactivation à compte inchangé : refusée.
+    let mut tx = pool.begin().await.unwrap();
+    let res = reconciliation_rules::update_in_tx(
+        &mut tx,
+        company_id,
+        user_id,
+        r.id,
+        r3.version,
+        &UpdateReconciliationRule {
+            active: Some(true),
+            ..Default::default()
+        },
+    )
+    .await;
+    drop(tx);
+    assert_accounts_not_postable(res, account_id, "6510");
+}

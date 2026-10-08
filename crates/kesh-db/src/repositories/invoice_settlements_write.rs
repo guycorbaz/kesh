@@ -150,9 +150,10 @@ pub async fn settle_invoice(
             // finding P3-1 — CRITICAL. Le défaut que la 24-5 ferme était
             // rouvert ICI, et par un geste ORDINAIRE : « Enregistrer un
             // règlement » → « Compte interne » → 9000. Ce n'était donc pas le
-            // trou « API seulement » que le manuel décrivait. Les trois flux de
-            // réconciliation, eux, restent ouverts et sont suivis par #427 —
-            // mais aucun de leurs écrans n'offre ces comptes.
+            // trou « API seulement » que le manuel décrivait. Les flux de
+            // rapprochement (manuel, ventilé, propositions ventilées et par
+            // règle) gardent désormais leur compte **client** en amont, dans
+            // leurs handlers (Story 15-5b, #427).
             let account: Option<(bool, bool, String)> = sqlx::query_as(
                 "SELECT active, postable, number FROM accounts \
                  WHERE id = ? AND company_id = ? FOR UPDATE",

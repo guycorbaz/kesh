@@ -2045,3 +2045,488 @@ async fn cancelling_a_rule_reconciliation_reverses_its_entry(pool: MySqlPool) {
             .unwrap();
     assert_eq!(reverses, Some(entry_id));
 }
+
+// ============================================================
+// Story 15-5b (AC4, AC5, AC7, AC8, AC16, #427) — compte de contrepartie non
+// imputable
+// ============================================================
+
+/// Rend un compte **non imputable** sans le désactiver — l'état d'un compte
+/// scindé en sous-comptes (règle 14-3a). Patron de
+/// `products_revenue_account_e2e.rs::set_account_not_postable`. Le compte ne
+/// diffère d'un compte accepté que par `postable`.
+async fn set_account_not_postable(pool: &MySqlPool, account_id: i64) {
+    sqlx::query("UPDATE accounts SET postable = FALSE, version = version + 1 WHERE id = ?")
+        .bind(account_id)
+        .execute(pool)
+        .await
+        .expect("set account not postable");
+}
+
+async fn rule_version(pool: &MySqlPool, rule_id: i64) -> i32 {
+    sqlx::query_scalar("SELECT version FROM reconciliation_rules WHERE id = ?")
+        .bind(rule_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+async fn patch_rule_raw(app: &TestApp, jwt: &str, rule_id: i64, body: Value) -> reqwest::Response {
+    app.client
+        .patch(app.url(&format!("/api/v1/reconciliation/rules/{rule_id}")))
+        .bearer_auth(jwt)
+        .json(&body)
+        .send()
+        .await
+        .unwrap()
+}
+
+/// Une règle sur le compte de contrepartie du contexte, puis un second compte
+/// de charge (`6511`), imputable, pour les changements de compte.
+async fn rule_on_ctx_account(app: &TestApp, ctx: &Ctx) -> i64 {
+    create_rule_ok(
+        app,
+        &ctx.jwt,
+        json!({
+            "label": "Swisscom",
+            "matchType": "counterparty_contains",
+            "matchValue": "Swisscom",
+            "counterpartyAccountId": ctx.counterparty_account_id,
+        }),
+    )
+    .await["id"]
+        .as_i64()
+        .unwrap()
+}
+
+async fn assert_not_postable(resp: reqwest::Response, account_id: i64, number: &str) {
+    assert_eq!(resp.status(), 400);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ACCOUNT_NOT_POSTABLE", "{body}");
+    assert_eq!(
+        body["error"]["details"]["rejected"],
+        json!([{ "accountId": account_id, "accountNumber": number }])
+    );
+}
+
+/// AC4 — l'acceptation d'une règle dont le compte est devenu non imputable
+/// échoue **par proposition** : HTTP 200, `failed[]` `ACCOUNT_NOT_POSTABLE`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_with_rule_fails_when_counterparty_not_postable(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let (rule_id, tx_id) = create_rule_and_tx(
+        &pool,
+        &app,
+        &ctx,
+        "Swisscom Schweiz AG",
+        "Swisscom",
+        dec!(-150.00),
+        "CHF",
+        Some(NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()),
+    )
+    .await;
+    set_account_not_postable(&pool, ctx.counterparty_account_id).await;
+    let resp = post_accept_rule(
+        &app,
+        &ctx.jwt,
+        ctx.bank_account_id,
+        tx_id,
+        rule_id,
+        ctx.counterparty_account_id,
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["accepted"].as_array().unwrap().is_empty(), "{body}");
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(failed[0]["errorCode"], "ACCOUNT_NOT_POSTABLE");
+    assert_eq!(
+        failed[0]["details"],
+        json!({ "rejected": [{ "accountId": ctx.counterparty_account_id, "accountNumber": "6510" }] })
+    );
+    let status: String = sqlx::query_scalar("SELECT status FROM bank_transactions WHERE id = ?")
+        .bind(tx_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "pending");
+}
+
+/// AC4 (priorité) — compte archivé **et** non imputable : `failed[]`
+/// `ACCOUNT_NOT_FOUND`, l'anti-énumération prime.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_with_rule_archived_non_postable_reports_not_found(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let (rule_id, tx_id) = create_rule_and_tx(
+        &pool,
+        &app,
+        &ctx,
+        "Swisscom Schweiz AG",
+        "Swisscom",
+        dec!(-150.00),
+        "CHF",
+        Some(NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()),
+    )
+    .await;
+    set_account_not_postable(&pool, ctx.counterparty_account_id).await;
+    archive_account(
+        &pool,
+        ctx.counterparty_account_id,
+        ctx.user_id,
+        ctx.company_id,
+    )
+    .await;
+    let resp = post_accept_rule(
+        &app,
+        &ctx.jwt,
+        ctx.bank_account_id,
+        tx_id,
+        rule_id,
+        ctx.counterparty_account_id,
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(failed[0]["errorCode"], "ACCOUNT_NOT_FOUND");
+}
+
+/// AC5 — une règle dont le compte est devenu non imputable n'est plus
+/// proposée ; la règle suivante qui correspond l'est à sa place.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn get_proposals_skips_rule_with_non_postable_account_and_proposes_next(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let fallback = create_account_with_type(
+        &pool,
+        ctx.company_id,
+        ctx.user_id,
+        "6511",
+        "Telecom mobile",
+        AccountType::Expense,
+    )
+    .await;
+    // Priorité 10 (gagnante) sur le compte qui deviendra non imputable ;
+    // priorité 20 sur un compte imputable.
+    create_rule_ok(
+        &app,
+        &ctx.jwt,
+        json!({
+            "label": "Swisscom prioritaire",
+            "matchType": "counterparty_contains",
+            "matchValue": "Swisscom",
+            "counterpartyAccountId": ctx.counterparty_account_id,
+            "priority": 10,
+        }),
+    )
+    .await;
+    create_rule_ok(
+        &app,
+        &ctx.jwt,
+        json!({
+            "label": "Swisscom repli",
+            "matchType": "counterparty_contains",
+            "matchValue": "Schweiz",
+            "counterpartyAccountId": fallback,
+            "priority": 20,
+        }),
+    )
+    .await;
+    set_account_not_postable(&pool, ctx.counterparty_account_id).await;
+    create_pending_bank_tx(
+        &pool,
+        ctx.company_id,
+        ctx.user_id,
+        ctx.bank_account_id,
+        dec!(-150.00),
+        "Swisscom Schweiz AG",
+        None,
+        None,
+        "CHF",
+        Some(NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()),
+    )
+    .await;
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reconciliation/proposals?bankAccountId={}",
+            ctx.bank_account_id
+        )))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let candidates = body["proposals"][0]["candidates"].as_array().unwrap();
+    let rules: Vec<&Value> = candidates
+        .iter()
+        .filter(|c| c["candidateType"] == "rule")
+        .collect();
+    assert_eq!(rules.len(), 1, "{body}");
+    assert_eq!(rules[0]["counterpartyAccountId"].as_i64(), Some(fallback));
+}
+
+/// AC7 — création sur un compte non imputable : 400 `ACCOUNT_NOT_POSTABLE`,
+/// aucune règle créée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn rule_create_rejects_non_postable_account(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    set_account_not_postable(&pool, ctx.counterparty_account_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let resp = post_rule_raw(
+        &app,
+        &ctx.jwt,
+        json!({
+            "label": "R1",
+            "matchType": "counterparty_contains",
+            "matchValue": "Swisscom",
+            "counterpartyAccountId": ctx.counterparty_account_id,
+        }),
+    )
+    .await;
+    assert_not_postable(resp, ctx.counterparty_account_id, "6510").await;
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM reconciliation_rules WHERE company_id = ?")
+            .bind(ctx.company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(count, 0, "aucune règle créée");
+}
+
+/// AC7 (ordre) — projet par défaut archivé **et** compte non imputable : le
+/// refus du projet passe d'abord.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn rule_create_archived_project_refused_before_non_postable(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    set_account_not_postable(&pool, ctx.counterparty_account_id).await;
+    let project_id = create_project(&pool, ctx.company_id, "ARCH", true).await;
+    let app = spawn_app(pool.clone()).await;
+    let resp = post_rule_raw(
+        &app,
+        &ctx.jwt,
+        json!({
+            "label": "R1",
+            "matchType": "counterparty_contains",
+            "matchValue": "Swisscom",
+            "counterpartyAccountId": ctx.counterparty_account_id,
+            "defaultProjectId": project_id,
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), 409);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ILLEGAL_STATE_TRANSITION", "{body}");
+}
+
+/// AC8 (a) — PATCH vers un **autre** compte non imputable : 400.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn rule_patch_to_other_non_postable_account_is_rejected(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let rule_id = rule_on_ctx_account(&app, &ctx).await;
+    let other = create_account_with_type(
+        &pool,
+        ctx.company_id,
+        ctx.user_id,
+        "6511",
+        "Telecom mobile",
+        AccountType::Expense,
+    )
+    .await;
+    set_account_not_postable(&pool, other).await;
+    let resp = patch_rule_raw(
+        &app,
+        &ctx.jwt,
+        rule_id,
+        json!({ "expectedVersion": 1, "counterpartyAccountId": other }),
+    )
+    .await;
+    assert_not_postable(resp, other, "6511").await;
+}
+
+/// AC8 (exemption) — le formulaire renvoie toujours le compte : un PATCH
+/// renvoyant le **même** compte, devenu non imputable, sur une règle active,
+/// passe ; désactiver passe aussi ; un PATCH sans compte passe.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn rule_patch_unchanged_non_postable_account_is_exempt(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let rule_id = rule_on_ctx_account(&app, &ctx).await;
+    set_account_not_postable(&pool, ctx.counterparty_account_id).await;
+
+    let resp = patch_rule_raw(
+        &app,
+        &ctx.jwt,
+        rule_id,
+        json!({
+            "expectedVersion": 1,
+            "label": "Renommée",
+            "counterpartyAccountId": ctx.counterparty_account_id,
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+
+    let resp = patch_rule_raw(
+        &app,
+        &ctx.jwt,
+        rule_id,
+        json!({ "expectedVersion": rule_version(&pool, rule_id).await, "priority": 50 }),
+    )
+    .await;
+    assert_eq!(resp.status(), 200, "PATCH sans compte");
+
+    let resp = patch_rule_raw(
+        &app,
+        &ctx.jwt,
+        rule_id,
+        json!({ "expectedVersion": rule_version(&pool, rule_id).await, "active": false }),
+    )
+    .await;
+    assert_eq!(resp.status(), 200, "désactiver");
+}
+
+/// AC8 (b) — réactiver une règle désactivée dont le compte est devenu non
+/// imputable : 400, **même à compte inchangé** (choix C9) ; la réactiver
+/// **avec** un nouveau compte imputable passe.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn rule_patch_reactivation_on_non_postable_account_is_rejected(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let rule_id = rule_on_ctx_account(&app, &ctx).await;
+    let resp = patch_rule_raw(
+        &app,
+        &ctx.jwt,
+        rule_id,
+        json!({ "expectedVersion": 1, "active": false }),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    set_account_not_postable(&pool, ctx.counterparty_account_id).await;
+
+    let resp = patch_rule_raw(
+        &app,
+        &ctx.jwt,
+        rule_id,
+        json!({ "expectedVersion": rule_version(&pool, rule_id).await, "active": true }),
+    )
+    .await;
+    assert_not_postable(resp, ctx.counterparty_account_id, "6510").await;
+    let active: bool = sqlx::query_scalar("SELECT active FROM reconciliation_rules WHERE id = ?")
+        .bind(rule_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(!active, "la règle reste désactivée");
+
+    let replacement = create_account_with_type(
+        &pool,
+        ctx.company_id,
+        ctx.user_id,
+        "6511",
+        "Telecom mobile",
+        AccountType::Expense,
+    )
+    .await;
+    let resp = patch_rule_raw(
+        &app,
+        &ctx.jwt,
+        rule_id,
+        json!({
+            "expectedVersion": rule_version(&pool, rule_id).await,
+            "active": true,
+            "counterpartyAccountId": replacement,
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+}
+
+/// AC8 (ordre) — compte archivé : 404 avant tout ; compte non imputable
+/// **avec une version périmée** : 400 `ACCOUNT_NOT_POSTABLE` avant le 409
+/// (choix C10).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn rule_patch_error_order(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let rule_id = rule_on_ctx_account(&app, &ctx).await;
+    let other = create_account_with_type(
+        &pool,
+        ctx.company_id,
+        ctx.user_id,
+        "6511",
+        "Telecom mobile",
+        AccountType::Expense,
+    )
+    .await;
+    set_account_not_postable(&pool, other).await;
+    // Version périmée : la règle est à 2 après ce PATCH.
+    let resp = patch_rule_raw(
+        &app,
+        &ctx.jwt,
+        rule_id,
+        json!({ "expectedVersion": 1, "label": "v2" }),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    let resp = patch_rule_raw(
+        &app,
+        &ctx.jwt,
+        rule_id,
+        json!({ "expectedVersion": 1, "counterpartyAccountId": other }),
+    )
+    .await;
+    assert_not_postable(resp, other, "6511").await;
+
+    archive_account(&pool, other, ctx.user_id, ctx.company_id).await;
+    let resp = patch_rule_raw(
+        &app,
+        &ctx.jwt,
+        rule_id,
+        json!({ "expectedVersion": 1, "counterpartyAccountId": other }),
+    )
+    .await;
+    assert_eq!(resp.status(), 404);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ACCOUNT_NOT_FOUND");
+}
+
+/// Hors périmètre écrit — réactiver une règle désactivée dont le compte est
+/// **archivé et non imputable** garde le comportement actuel (accepté) : la
+/// variante n'est émise que pour un compte actif.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn rule_patch_reactivation_on_archived_non_postable_account_keeps_behaviour(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let rule_id = rule_on_ctx_account(&app, &ctx).await;
+    let resp = patch_rule_raw(
+        &app,
+        &ctx.jwt,
+        rule_id,
+        json!({ "expectedVersion": 1, "active": false }),
+    )
+    .await;
+    assert_eq!(resp.status(), 200);
+    set_account_not_postable(&pool, ctx.counterparty_account_id).await;
+    archive_account(
+        &pool,
+        ctx.counterparty_account_id,
+        ctx.user_id,
+        ctx.company_id,
+    )
+    .await;
+    let resp = patch_rule_raw(
+        &app,
+        &ctx.jwt,
+        rule_id,
+        json!({ "expectedVersion": rule_version(&pool, rule_id).await, "active": true }),
+    )
+    .await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+}

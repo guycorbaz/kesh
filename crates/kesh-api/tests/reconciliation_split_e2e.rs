@@ -996,3 +996,100 @@ async fn split_rejects_already_reconciled(pool: MySqlPool) {
         "RECONCILIATION_TRANSACTION_NOT_PENDING"
     );
 }
+
+// ============================================================
+// Story 15-5b (AC2, AC16, #427) — comptes de contrepartie non imputables
+// ============================================================
+
+/// Rend un compte **non imputable** sans le désactiver (patron
+/// `products_revenue_account_e2e.rs::set_account_not_postable`).
+async fn set_account_not_postable(pool: &MySqlPool, account_id: i64) {
+    sqlx::query("UPDATE accounts SET postable = FALSE, version = version + 1 WHERE id = ?")
+        .bind(account_id)
+        .execute(pool)
+        .await
+        .expect("set account not postable");
+}
+
+async fn assert_nothing_written(pool: &MySqlPool, company_id: i64, tx_id: i64) {
+    let je_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE company_id = ?")
+            .bind(company_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(je_count, 0, "aucune écriture créée");
+    let status: String = sqlx::query_scalar("SELECT status FROM bank_transactions WHERE id = ?")
+        .bind(tx_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "pending", "transaction toujours pending");
+}
+
+/// Story 15-5b (AC2) — une ligne non imputable sur trois : 400
+/// `ACCOUNT_NOT_POSTABLE`, le détail nomme ce compte (une fois, même s'il
+/// porte deux lignes), rien n'est écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn split_rejects_non_postable_counterparty(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = setup_split_ctx(&pool, "split_not_postable", "CH1000000000000000001").await;
+    set_account_not_postable(&pool, ctx.cp_b_account_id).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/split"))
+        .header("Authorization", format!("Bearer {}", ctx.jwt))
+        .json(&serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "bankTransactionId": ctx.tx_id,
+            "splits": [
+                { "counterpartyAccountId": ctx.cp_a_account_id, "amount": "5000", "description": "Ligne" },
+                { "counterpartyAccountId": ctx.cp_b_account_id, "amount": "4500", "description": "Ligne" },
+                { "counterpartyAccountId": ctx.cp_b_account_id, "amount": "1200", "description": "Ligne" },
+            ],
+            "valueDate": "2026-05-31"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ACCOUNT_NOT_POSTABLE");
+    assert_eq!(
+        body["error"]["details"]["rejected"],
+        serde_json::json!([{ "accountId": ctx.cp_b_account_id, "accountNumber": "5700" }])
+    );
+    assert_nothing_written(&pool, ctx.company_id, ctx.tx_id).await;
+}
+
+/// Story 15-5b (AC2, priorité) — une ligne **manquante** et une ligne non
+/// imputable : 404 `ACCOUNT_NOT_FOUND` (prioritaire), rien n'est écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn split_missing_and_non_postable_is_404_first(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = setup_split_ctx(&pool, "split_missing_np", "CH1000000000000000001").await;
+    set_account_not_postable(&pool, ctx.cp_b_account_id).await;
+    let unknown = ctx.cp_c_account_id + 100_000;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/split"))
+        .header("Authorization", format!("Bearer {}", ctx.jwt))
+        .json(&serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "bankTransactionId": ctx.tx_id,
+            "splits": [
+                { "counterpartyAccountId": unknown, "amount": "5000", "description": "Ligne" },
+                { "counterpartyAccountId": ctx.cp_b_account_id, "amount": "5700", "description": "Ligne" },
+            ],
+            "valueDate": "2026-05-31"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ACCOUNT_NOT_FOUND");
+    assert_nothing_written(&pool, ctx.company_id, ctx.tx_id).await;
+}

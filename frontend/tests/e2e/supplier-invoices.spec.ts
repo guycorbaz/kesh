@@ -74,7 +74,7 @@ async function ensureConfigAndAccounts(page: import('@playwright/test').Page): P
 		}>;
 		const payable = accounts.find((a) => a.number === '2000');
 		const expense = accounts.find((a) => a.accountType === 'Expense' && a.active && a.postable);
-		const internal = accounts.find((a) => a.accountType === 'Asset' && a.active);
+		const internal = accounts.find((a) => a.accountType === 'Asset' && a.active && a.postable);
 		expect(payable, 'compte 2000 attendu dans le plan comptable').toBeTruthy();
 		expect(expense, 'un compte de charge attendu').toBeTruthy();
 		expect(internal, 'un compte Asset attendu').toBeTruthy();

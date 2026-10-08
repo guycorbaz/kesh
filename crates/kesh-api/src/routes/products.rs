@@ -302,10 +302,15 @@ pub async fn get_product(
 
 /// Valide le compte de produit choisi sur une fiche article — décision **D3**.
 ///
-/// Trois critères, et **`postable` en est délibérément exclu** : le code jumeau
-/// `company_invoice_settings::validate_account` ne le contrôle pas davantage,
-/// et le sanctionner ici bloquerait l'édition d'un article sur un champ que
-/// l'utilisateur n'a pas touché.
+/// Trois critères, et **`postable` en est délibérément exclu** : l'article ne
+/// poste rien — son compte est recopié sur la ligne de facture, où la garde
+/// tient (`NotPostable` à la validation de la facture) — et le sanctionner ici
+/// bloquerait l'édition d'un article sur un champ que l'utilisateur n'a pas
+/// touché (exemption « inchangé » de **D4**). *(La justification d'origine
+/// invoquait le code jumeau `company_invoice_settings::validate_account`, qui
+/// ne contrôlait pas non plus `postable` ; il le contrôle depuis la Story
+/// 15-5b quand la valeur change — l'argument est tombé, la décision D3 reste,
+/// choix C6.)*
 ///
 /// ⚠️ Les trois critères sont **calqués** sur ce jumeau, jamais appelés : il
 /// est privé à son module, et son retour (`AppError::Validation`) porte un code

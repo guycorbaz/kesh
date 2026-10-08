@@ -193,7 +193,11 @@ pub async fn create(
 /// MANUELLE (`create` pool-level). Les flux automatiques appelants directs
 /// (invoices, credit_notes, supplier_invoices, reconciliation) passent `false` —
 /// ils postent sur des comptes de config approuvés, potentiellement devenus
-/// non-postables (14-3a), qu'on ne doit pas rejeter.
+/// non-postables (14-3a), qu'on ne doit pas rejeter. Ceux de leurs comptes qui
+/// viennent du **client** sont gardés **en amont** : les flux de rapprochement
+/// contrôlent leur compte de contrepartie dans leurs handlers (Story 15-5b,
+/// #427) — passer `true` ici rejetterait aussi le compte bancaire, compte de
+/// configuration toléré devenu non imputable (D-A0).
 pub async fn create_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     fiscal_year_id: i64,

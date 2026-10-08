@@ -12,6 +12,7 @@
   `failed`.
 -->
 <script lang="ts">
+	import { errorMessageOf } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import {
 		acceptProposals,
@@ -65,7 +66,7 @@
 			selected = new Set();
 		} catch (e) {
 			if (myGen !== loadGen) return;
-			errorMsg = e instanceof Error ? e.message : String(e);
+			errorMsg = errorMessageOf(e);
 		} finally {
 			if (myGen === loadGen) loading = false;
 		}
@@ -157,7 +158,7 @@
 			failed = r.failed;
 			await load();
 		} catch (e) {
-			errorMsg = e instanceof Error ? e.message : String(e);
+			errorMsg = errorMessageOf(e);
 		} finally {
 			busy = false;
 		}
@@ -175,7 +176,7 @@
 			failed = r.failed;
 			await load();
 		} catch (e) {
-			errorMsg = e instanceof Error ? e.message : String(e);
+			errorMsg = errorMessageOf(e);
 		} finally {
 			busy = false;
 		}

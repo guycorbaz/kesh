@@ -656,3 +656,42 @@ l'import (#458–#461).
 - **Écartée** : un test par écran (trois) — les deux `catch` fournisseurs affichent `err.message` sans
   `switch` sur ce code, un test n'y attraperait rien de plus qu'une lecture.
 - **Réversible** : oui.
+
+## C-15-5b-1 — 15-5b (dev) : un helper `errorMessageOf` plutôt que sept copies du motif
+
+- **Contexte** : l'AC14 fait passer sept `catch` au motif `isApiError(e) ? e.message : (e instanceof
+  Error ? e.message : String(e))`. Sept copies d'une même expression contredisent la règle DRY du
+  `CLAUDE.md`, et une huitième copie divergente est le défaut le plus probable.
+- **Retenu** : `errorMessageOf(err: unknown)` dans `frontend/src/lib/shared/utils/api-client.ts`, à côté
+  d'`isApiError`, appelé par les sept sites ; même comportement que le patron de `ManualMatchModal`.
+  La mutation du helper (branche `ApiError` retirée) fait rougir les sept tests AC14.
+- **Écarté** : recopier l'expression à chaque site (lettre de l'AC14) ; migrer aussi les sites hors
+  module (`reports/+page.svelte`, `settings/+page.svelte`) — signalés hors périmètre par la P1.
+- **Réversible** : oui.
+
+## C-15-5b-2 — 15-5b (dev) : tests de page nommés `*-page.test.ts`, pas `+page.test.ts`
+
+- **Contexte** : T4 et T5 demandent un test neuf `bank-accounts/+page.test.ts` et un test de la page des
+  règles. SvelteKit **réserve** le préfixe `+` dans `src/routes/` ; les tests de page existants s'y
+  nomment `accounts-page.test.ts`, `contacts-page.test.ts`, etc.
+- **Retenu** : `bank-accounts/bank-accounts-page.test.ts` et `reconciliation/rules/rules-page.test.ts`.
+- **Réversible** : oui (renommage).
+
+## C-15-5b-3 — 15-5b (dev) : un seul contrôle partagé dans le dépôt `accounts`
+
+- **Contexte** : l'AC7, l'AC8 et l'AC12 placent la même lecture (`SELECT number, postable, active`,
+  refus si `active && !postable`) dans deux dépôts (`reconciliation_rules`, `bank_accounts`), quatre
+  sites.
+- **Retenu** : `accounts::ensure_postable_if_active_in_tx`, appelé par les quatre sites ; il construit
+  `DbError::accounts_not_postable`. La mutation M7d (condition `active` retirée) fait rougir le test du
+  hors-périmètre « règle réactivée sur un compte archivé et non imputable ».
+- **Écarté** : un helper privé par dépôt (deux copies).
+- **Réversible** : oui.
+
+## C-15-5b-4 — 15-5b (dev) : la mutation de #521 porte sur la résolution, pas sur le type
+
+- **Contexte** : T6 demande, pour l'AC19, la mutation « champ remis en `Option<i64>` ». Remettre le type
+  oblige à réécrire la résolution et la validation : la mutation ne retirerait plus une seule garde.
+- **Retenu** : mutation `None => None` (absent → effacé, comportement d'avant #521) dans la résolution ;
+  `absent_payable_account_is_preserved` rougit. Même pouvoir de détection, un seul point modifié.
+- **Réversible** : oui (un test de mutation).
