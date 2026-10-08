@@ -1439,7 +1439,7 @@ pub async fn delete(
     // le laisser aurait été inoffensif en apparence — un brouillon n'ayant pas
     // de `journal_entry_id`, le `if let` ne se serait jamais déclenché. C'est
     // précisément ce qui le rendait dangereux : **rien n'aurait rougi**, et
-    // `enforce_immutability = false` aurait gardé ici un second appelant
+    // le drapeau `false` de `delete_in_tx` aurait gardé ici un second appelant
     // fantôme, prêt à revivre au premier chemin qui rattacherait une écriture
     // à un brouillon.
     //
@@ -1647,11 +1647,16 @@ pub async fn unvalidate(
         // Étape 5 : l'écriture part APRÈS que la facture a lâché sa référence —
         // la FK `journal_entry_id` est `ON DELETE RESTRICT`.
         //
-        // ⚠️ `enforce_immutability = false` : le gel de la 24-4b est levé ici, et
-        // ici seulement. Les trois autres gardes de `delete_in_tx` — exercice
-        // clos, contre-passation, période verrouillée (#443) — tiennent.
+        // ⚠️ `enforce_ownership = false` (Story 15-8b) : la garde de la
+        // modification — dont « possédée par une facture » — n'a pas de sens
+        // ici, c'est la facture qui supprime SA propre écriture, sous ses
+        // propres gardes. Celles de `delete_in_tx` qui ne dépendent pas du
+        // drapeau — exercice clos, contre-passation, période verrouillée (#443)
+        // — tiennent. ⚠️ L'exercice postérieur clos n'est contrôlé que sur le
+        // chemin de la route (C-15-8-29) : défaut préexistant, signalé. Pas de
+        // clé d'API ici (`None`) : `unvalidate` n'en reçoit pas (hors périmètre).
         if let Some(je_id) = current.journal_entry_id {
-            journal_entries::delete_in_tx(&mut tx, company_id, je_id, user_id, false).await?;
+            journal_entries::delete_in_tx(&mut tx, company_id, je_id, user_id, None, false).await?;
         }
 
         // Étape 6 : l'audit NOMME le geste, avec l'état d'avant.

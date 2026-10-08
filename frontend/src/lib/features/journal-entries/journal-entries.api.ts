@@ -66,9 +66,10 @@ export async function updateJournalEntry(
 }
 
 /**
- * ⚠️ **Sans appelant dans la 15-8a** : le `DELETE` rend encore 409
- * `ENTRY_IS_POSTED`. Revenue avec l'inversion du gel, gardée pour la 15-8b, qui
- * rouvre la suppression dans le même cadre que la modification.
+ * Supprime une écriture (Story 15-8b, #532) — dans le cadre de la
+ * modification : exercice ouvert, aucun exercice postérieur clos, aucune pièce,
+ * hors période verrouillée. Les refus sont nommés par le serveur ; le numéro
+ * n'est jamais réattribué. Appelée par la fiche (`journal-entries/[id]`).
  */
 export async function deleteJournalEntry(id: number): Promise<void> {
 	return apiClient.delete(`/api/v1/journal-entries/${id}`);

@@ -12,18 +12,23 @@
 //! ⚠️ **Ils ne garantissent NI la continuité, NI l'univocité dans le temps** :
 //!
 //! - supprimer l'écriture n° 42 au milieu laisse un **trou définitif** ;
-//! - supprimer la **dernière** fait **réattribuer son numéro** à la suivante,
-//!   qui aura un contenu différent.
+//! - supprimer la **dernière** laisse aussi un trou : depuis le compteur de la
+//!   Story 25-2-c (#381), un numéro libéré n'est **jamais réattribué**
+//!   (`un_numero_libere_n_est_jamais_reattribue`) — sans quoi il désignerait
+//!   une écriture au contenu différent.
 //!
 //! Le commentaire de la migration `20260412000001_journal_entries.sql` affirme
 //! « jamais de trou » : c'est **faux**, et ce fichier ne peut plus être corrigé
 //! (P8 — son checksum est enregistré, le modifier empêche le démarrage).
 //!
 //! Pour un contrôleur, une séquence ni continue ni univoque est un signal
-//! d'alarme. C'est une raison de plus de corriger par contre-passation — ou,
-//! tant que l'exercice est ouvert, par modification tracée ([`update`], Story
-//! 15-8a), qui garde le numéro — plutôt que par suppression. Suivi : issues du jalon « Vague 1 » (audit du
-//! 2026-08-26).
+//! d'alarme. C'est pourquoi une erreur se corrige de préférence par
+//! contre-passation — ou, tant que l'exercice est ouvert, par modification
+//! tracée ([`update`], Story 15-8a), qui garde le numéro. La suppression
+//! ([`delete_by_id`], Story 15-8b) reste possible dans le même cadre que la
+//! modification : elle creuse un trou, que son instantané d'audit
+//! `journal_entry.deleted` explique. Suivi : issues du jalon « Vague 1 »
+//! (audit du 2026-08-26).
 //!
 //! # Defense in depth
 //!
@@ -39,7 +44,8 @@
 //! Une écriture se modifie ([`update`]) tant que son exercice est ouvert,
 //! qu'aucun exercice postérieur n'est clos, qu'aucune pièce ne la possède et
 //! que sa période n'est pas verrouillée ; chaque modification est tracée avant
-//! et après. La suppression reste refusée par la route jusqu'à la Story 15-8b.
+//! et après. La suppression ([`delete_by_id`], Story 15-8b) suit le même
+//! cadre et la même garde, tracée par un instantané complet.
 //!
 //! # Immutabilité post-clôture (FR24, CO art. 957-964)
 //!
@@ -1533,82 +1539,102 @@ async fn update_in_tx(
 }
 
 /// Supprime une écriture et ses lignes (CASCADE), avec enregistrement
-/// audit atomique.
+/// audit atomique — **le chemin de la route** `DELETE
+/// /api/v1/journal-entries/{id}` (Story 15-8b, #532).
 ///
-/// Étapes :
-/// 1. BEGIN tx
-/// 2. SELECT FOR UPDATE join fiscal_year (lock entry + FY)
-/// 3. Dans `delete_in_tx` : exercice clos → `FiscalYearClosed` ; écriture
-///    contre-passée → `EntryIsReversed` (3-bis) ; gel → `EntryIsPosted` (3-ter) ;
-///    période verrouillée → `PeriodLocked` (3-quater, #443). Sur erreur, le drop
-///    de la transaction fait le rollback.
-/// 4. Snapshot "before" (re-fetch lines)
-/// 5. INSERT audit_log (AVANT le DELETE pour préserver la trace)
-/// 6. DELETE FROM journal_entries → lignes suivent par CASCADE
-/// 7. COMMIT
+/// Ouvre la transaction et appelle [`delete_in_tx`] avec
+/// `enforce_ownership = true` : la suppression suit **le cadre de la
+/// modification** ([`update`], Story 15-8a) — exercice ouvert, aucun exercice
+/// postérieur clos, ni contre-passée ni contre-passation, aucune pièce, pas un
+/// paiement détaché, date postérieure à la borne du verrou de période. Les
+/// refus, leur ordre et la sérialisation sont au doc-comment de
+/// [`delete_in_tx`] — c'est cette fonction-ci qu'on ouvre en premier quand on
+/// cherche pourquoi un `DELETE` échoue, d'où ce renvoi explicite (un
+/// doc-comment périmé à cet endroit a déjà égaré une journée de revue, 24-4b).
+/// Sur erreur, le drop de la transaction fait le rollback.
 ///
-/// ⛔ **Story 24-4b (#380) — DEPUIS LE GEL, CETTE FONCTION NE DÉPASSE JAMAIS
-/// L'ÉTAPE 3.** Elle appelle `delete_in_tx` avec `enforce_immutability = true`,
-/// qui refuse en [`DbError::EntryIsPosted`] : ni snapshot, ni audit, ni DELETE.
-/// Les étapes 4 à 7 ci-dessus décrivent le chemin que suit encore
-/// `invoices::delete` et `invoices::unvalidate`, les deux appelants à passer
-/// `false`. ⚠️ Le second est arrivé avec la 25-2-b-1 (#440) ; la 25-2-b-2
-/// retire le premier.
+/// `actor_api_key_id` : `Some` quand la route est appelée par une clé d'API —
+/// la trace `journal_entry.deleted` porte alors la clé (C-15-8-8), et non le
+/// seul créateur de la clé.
 ///
-/// ⚠️ Cette précision est ici parce qu'un doc-comment périmé a déjà égaré une
-/// journée entière de revue sur la story précédente : c'est cette fonction
-/// qu'on ouvre en premier quand on cherche pourquoi un `DELETE` échoue.
+/// ⚠️ **Le numéro n'est jamais réattribué** (compteur de la 25-2-c) : la
+/// suppression creuse un trou, expliqué par l'instantané de l'audit.
 pub async fn delete_by_id(
     pool: &MySqlPool,
     company_id: i64,
     id: i64,
     user_id: i64,
+    actor_api_key_id: Option<i64>,
 ) -> Result<(), DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
     // En cas d'Err, `delete_in_tx` ne rollback pas (n'a qu'un &mut) : `tx` est
     // droppé ici, ce qui déclenche le rollback automatique sqlx.
-    //
-    // ⛔ Story 24-4b (#380) — `enforce_immutability = true` : c'est LE chemin de
-    // la route `DELETE /api/v1/journal-entries/{id}`, et il est gelé.
-    delete_in_tx(&mut tx, company_id, id, user_id, true).await?;
+    delete_in_tx(&mut tx, company_id, id, user_id, actor_api_key_id, true).await?;
     tx.commit().await.map_err(map_db_error)?;
     Ok(())
 }
 
-/// Variante `_in_tx` de [`delete_by_id`] : exécute les étapes 2 à 6 (lock de
-/// l'écriture et de l'exercice, gardes 3 à 3-quater, snapshot, audit, DELETE
-/// CASCADE) dans une transaction
-/// fournie par l'appelant, **sans** BEGIN/COMMIT. Permet à un autre repo de
-/// supprimer l'écriture liée dans la MÊME transaction atomique (ex.
-/// `invoices::delete` d'une facture validée — #219).
+/// Supprime une écriture dans une transaction fournie par l'appelant,
+/// **sans** BEGIN/COMMIT : verrou de l'écriture et de son exercice, gardes,
+/// instantané, audit `journal_entry.deleted`, `DELETE` (les lignes suivent par
+/// CASCADE). Permet à un autre repository de supprimer l'écriture liée dans la
+/// MÊME transaction atomique (`invoices::unvalidate`).
 ///
 /// N'exécute **pas** de rollback en cas d'erreur (n'a qu'un `&mut` sur la tx) :
-/// l'appelant, propriétaire de la transaction, est responsable du rollback
-/// (le drop de `Transaction` déclenche le rollback automatique sqlx).
+/// l'appelant, propriétaire de la transaction, en est responsable (le drop de
+/// `Transaction` déclenche le rollback automatique sqlx).
 ///
-/// # `enforce_immutability` — Story 24-4b (#380)
+/// # Ordre des refus — testé paire par paire (Story 15-8b, AC 4-bis)
 ///
-/// ⛔ **`true` gèle l'écriture** : toute écriture étant comptabilisée dès son
-/// insertion, la suppression est refusée en [`DbError::EntryIsPosted`]. C'est
-/// ce que passe [`delete_by_id`], donc la route.
+/// Par étape (les étiquettes sont celles des commentaires du corps) :
 ///
-/// ⚠️ **`false` n'est passé que par `invoices::delete` et
-/// `invoices::unvalidate`** (25-2-b-1, #440), et l'exception est
-/// voulue : ni l'un ni l'autre ne supprime une écriture — ils traitent **une
-/// facture**, dont l'écriture part avec elle, sous les gardes propres de
-/// l'appelant. ⛔ **Ces gardes ne sont PAS les mêmes des deux côtés, et ne pas
-/// le dire égare** : `delete` en porte trois (non payée, non créditée, sans
-/// historique de rappels) ; `unvalidate` cinq — les deux dernières à
-/// l'identique, la **première élargie** (`invoice_settlements` OU `paid_at`,
-/// donc le règlement **partiel** aussi), plus l'envoi au client et le
-/// rapprochement bancaire. ⚠️ Le règlement partiel n'est donc pas une garde de
-/// plus : c'est la même, en plus large. Cf. le doc-comment de chacune. ⚠️ Le gel levé, les autres
-/// gardes de cette fonction tiennent — exercice clos, contre-passation et
-/// **verrou de période** (#443) : `false` ne lève que le gel. Le geler reviendrait à retirer la
-/// **dévalidation** d'une facture (#440) — une décision de facturation, pas
-/// d'écriture. ⚠️ La suppression directe d'une facture validée (#219), qui
-/// passait aussi `false`, n'existe plus depuis la 25-2-b-2. Le résidu est
-/// assumé et tracé (cf. #380, #381).
+/// - **2** — écriture introuvable ou d'une autre société → [`DbError::NotFound`] ;
+/// - **3** — exercice de l'écriture clos → [`DbError::FiscalYearClosed`] ;
+/// - **2-bis** (`enforce_ownership`) — un exercice **postérieur** clos →
+///   [`DbError::LaterFiscalYearClosed`] : le bilan est cumulatif, supprimer
+///   une écriture de N réécrirait le bilan d'un N+1 clos (C-15-8-22). Lu sous
+///   verrou avant l'étape 3, rendu après elle ;
+/// - **3-bis** — écriture contre-passée → [`DbError::EntryIsReversed`] ;
+/// - **3-ter** (`enforce_ownership`) — la garde de la modification
+///   ([`modification_guard`] → [`modification_refusal`]) : contre-passation,
+///   pièce, rapprochement bancaire, paiement détaché →
+///   [`DbError::EntryNotModifiable`] ;
+/// - **3-quater** — date ≤ `books_locked_through` (seuil inclusif) →
+///   [`DbError::PeriodLocked`] : le verrou de période parle en dernier, comme à
+///   la création et au `PUT`.
+///
+/// ⛔ **La garde est la seule barrière pour trois refus** : la contre-passation
+/// elle-même (la clé `RESTRICT` ne protège que l'origine), le paiement détaché
+/// (aucune colonne ne le référence) et surtout l'écriture **rapprochée** —
+/// `bank_transactions.matched_entry_id` est en `ON DELETE SET NULL` : sans la
+/// garde, la suppression réussirait et laisserait la transaction bancaire
+/// `reconciled` sans lien, en silence.
+///
+/// # Sérialisation (règle de la 15-8a, D2)
+///
+/// Le **premier acte** est le `SELECT … FOR UPDATE` joint (écriture **et**
+/// exercice) ; les exercices postérieurs se verrouillent juste après
+/// ([`super::fiscal_years::find_later_closed_in_tx`]), **avant** toute lecture
+/// ordinaire. La première lecture ordinaire (`reversed_by`, étape 3-bis) ouvre donc
+/// la vue **après** l'attente d'une contre-passation ou d'une clôture
+/// concurrente : elle voit leur commit. Une lecture ordinaire placée avant le
+/// verrou figerait une vue antérieure, et la garde ne verrait pas la
+/// contre-passation (test `delete_waits_for_a_concurrent_reversal_then_refuses`,
+/// `kesh-db/tests/journal_entries_modification.rs`). ⚠️ Ces tests reconnaissent
+/// la requête de l'étape 2 à son texte (`je.fiscal_year_id`, `FOR UPDATE`) : la
+/// changer, c'est changer leurs motifs.
+///
+/// # `enforce_ownership` — qui passe quoi
+///
+/// - **`true`** : [`delete_by_id`], donc la route. Les étapes 2-bis et 3-ter
+///   s'appliquent.
+/// - **`false`** : `invoices::unvalidate` seul (25-2-b-1, #440) — la facture
+///   supprime **sa** propre écriture, sous ses propres gardes (non réglée, même
+///   partiellement, non créditée, sans rappel, non envoyée, non rapprochée) : la
+///   garde « possédée par une facture » n'y aurait pas de sens. Les étapes 3,
+///   3-bis et 3-quater tiennent quand même. ⚠️ L'exercice postérieur clos **n'y est pas
+///   contrôlé** (C-15-8-29) : défaut préexistant, signalé pour une issue avec la
+///   création et le règlement.
 ///
 /// ⛔ **Le drapeau vit ICI et non chez l'appelant** : une garde posée dans
 /// `delete_by_id` laisserait `delete_in_tx` nu, et un futur appelant obtiendrait
@@ -1618,12 +1644,14 @@ pub(crate) async fn delete_in_tx(
     company_id: i64,
     id: i64,
     user_id: i64,
-    enforce_immutability: bool,
+    actor_api_key_id: Option<i64>,
+    enforce_ownership: bool,
 ) -> Result<(), DbError> {
-    // Étape 2 : lock entry + fiscal_year. `entry_date` vient avec, pour la garde
-    // du verrou de période (étape 3-quater) — sans seconde lecture de la ligne.
-    let locked: Option<(i64, String, NaiveDate)> = sqlx::query_as(
-        "SELECT je.fiscal_year_id, fy.status, je.entry_date \
+    // Étape 2 — PREMIER ACTE : verrou de l'écriture et de son exercice. La date
+    // et le début d'exercice viennent avec : ni seconde lecture de la ligne, ni
+    // lecture ordinaire avant le verrou (cf. « Sérialisation »).
+    let locked: Option<(i64, String, NaiveDate, NaiveDate)> = sqlx::query_as(
+        "SELECT je.fiscal_year_id, fy.status, je.entry_date, fy.start_date \
          FROM journal_entries je \
          JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
          WHERE je.id = ? AND je.company_id = ? \
@@ -1635,18 +1663,37 @@ pub(crate) async fn delete_in_tx(
     .await
     .map_err(map_db_error)?;
 
-    let (_fy_id, fy_status, entry_date) = match locked {
+    let (_fy_id, fy_status, entry_date, fy_start) = match locked {
         None => return Err(DbError::NotFound),
         Some(row) => row,
     };
 
-    // Étape 3 : statut FY.
+    // Étape 2-bis (Story 15-8b, C-15-8-22) — les exercices POSTÉRIEURS clos,
+    // verrouillés et lus à l'état courant, juste après le verrou joint et avant
+    // toute lecture ordinaire. Seulement sur le chemin de la route
+    // (C-15-8-29) : la dévalidation garde son comportement.
+    let later_closed = if enforce_ownership {
+        super::fiscal_years::find_later_closed_in_tx(tx, company_id, fy_start).await?
+    } else {
+        None
+    };
+
+    // Étape 3 : exercice de l'écriture clos — il parle avant l'exercice
+    // postérieur (AC 4-bis).
     if fy_status == "Closed" {
         return Err(DbError::FiscalYearClosed);
     }
+    // Étape 2-bis, verdict — exercice postérieur clos, rendu APRÈS l'étape 3
+    // (lu avant elle pour le verrou, il parle après l'exercice de l'écriture).
+    if let Some(later) = later_closed {
+        return Err(DbError::LaterFiscalYearClosed {
+            fiscal_year_id: later.id,
+            fiscal_year_name: later.name,
+        });
+    }
 
     // Étape 3-bis (Story 24-4a, #380) : une écriture CONTRE-PASSÉE ne se
-    // supprime plus — la supprimer effacerait la correction, ce que l'art. 958f
+    // supprime pas — la supprimer effacerait la correction, ce que l'art. 958f
     // CO interdit précisément.
     //
     // ⚠️ La FK `RESTRICT` refuserait de toute façon, mais avec une 1451 au
@@ -1655,29 +1702,22 @@ pub(crate) async fn delete_in_tx(
         return Err(DbError::EntryIsReversed);
     }
 
-    // Étape 3-ter (Story 24-4b, #380) : le GEL. Une écriture comptabilisée ne
-    // se supprime pas — et toutes le sont, dès l'insertion.
+    // Étape 3-ter (Story 15-8b, #532) : la garde de la MODIFICATION, dans la
+    // transaction, sous le verrou — remplace le gel inconditionnel de la 24-4b.
+    // Une pièce, une contre-passation, un rapprochement ou un paiement détaché
+    // ne se suppriment pas plus qu'ils ne se modifient.
     //
-    // ⛔ L'ORDRE EST LE POINT LE PLUS FACILE À CASSER DE CETTE STORY. Ce refus
-    // vient APRÈS celui de l'étape 3-bis : sur une écriture déjà contre-passée,
-    // répondre « corrigez-la par une contre-passation » serait un conseil FAUX,
-    // et `ENTRY_IS_REVERSED` deviendrait injoignable par toute route — son test
-    // de la 24-4a passerait au vert en mesurant autre chose.
-    if enforce_immutability {
-        return Err(DbError::EntryIsPosted);
+    // ⛔ APRÈS l'étape 3-bis (une écriture contre-passée garde son code de la
+    // 24-4a) et AVANT le verrou de période (une facture ancienne répond par sa
+    // pièce, qui dit où la corriger — c'est aussi ce que l'écran affiche).
+    if enforce_ownership && let Some(guard) = modification_guard(tx, company_id, id).await? {
+        return Err(modification_refusal(guard));
     }
 
     // Étape 3-quater (Story 25-2-b-zero, #443) : le VERROU DE PÉRIODE. Une
     // écriture datée d'une période verrouillée ne disparaît pas — sans quoi les
     // totaux d'un trimestre déjà déclaré changeraient en silence, le rapport TVA
-    // se recalculant à la volée. La 24-4c ne le contrôlait qu'à la création :
-    // le gel suffisait sur la route, mais `false` (suppression d'une facture
-    // validée) passait.
-    //
-    // ⛔ APRÈS le gel, et c'est délibéré : sur la route gelée, une écriture de
-    // période verrouillée reste un `409 ENTRY_IS_POSTED`, comme avant cette
-    // garde. C'est la règle de la création — le verrou de période parle en
-    // dernier.
+    // se recalculant à la volée. Il parle en dernier, comme à la création.
     //
     // ⚠️ Lecture NON verrouillante, pour la raison écrite à l'étape 0-bis de
     // `create_in_tx_inner` ; ici elle évite en plus de prendre un verrou sur
@@ -1719,13 +1759,15 @@ pub(crate) async fn delete_in_tx(
     let snapshot = entry_snapshot_json(&before_entry, &before_lines);
 
     // Étape 5 : INSERT audit_log AVANT le DELETE (ordre critique — la
-    // trace doit exister avant que la source disparaisse).
+    // trace doit exister avant que la source disparaisse). Par ACTEUR : une
+    // suppression par clé d'API porte la clé (C-15-8-8).
     audit_log::insert_in_tx(
         tx,
-        NewAuditLogEntry::user(
+        NewAuditLogEntry::for_actor(
             user_id,
-            "journal_entry.deleted".to_string(),
-            "journal_entry".to_string(),
+            actor_api_key_id,
+            "journal_entry.deleted",
+            "journal_entry",
             id,
             Some(snapshot),
         ),
@@ -2728,10 +2770,11 @@ mod tests {
         let libere = troisieme.entry.entry_number;
 
         // Supprimer LA DERNIÈRE — c'est le seul cas qui produisait la
-        // réattribution. `delete_in_tx` avec `enforce_immutability = false` est
-        // le dernier chemin de suppression du dépôt depuis le gel de l'Epic 24.
+        // réattribution. `enforce_ownership = false` : le chemin de la
+        // dévalidation ; la route (`delete_by_id`, Story 15-8b) passe par le
+        // même compteur, sous la garde de la modification.
         let mut tx = pool.begin().await.unwrap();
-        delete_in_tx(&mut tx, company_id, troisieme.entry.id, admin, false)
+        delete_in_tx(&mut tx, company_id, troisieme.entry.id, admin, None, false)
             .await
             .unwrap();
         tx.commit().await.unwrap();
@@ -2791,7 +2834,7 @@ mod tests {
         .unwrap();
 
         let mut tx = pool.begin().await.unwrap();
-        delete_in_tx(&mut tx, company_id, milieu.entry.id, admin, false)
+        delete_in_tx(&mut tx, company_id, milieu.entry.id, admin, None, false)
             .await
             .unwrap();
         tx.commit().await.unwrap();
@@ -3005,7 +3048,7 @@ mod tests {
     }
 
     /// Crée une écriture datée **du jour**, pose la borne à `borne`, tente
-    /// `delete_in_tx(…, enforce_immutability)`, retire la borne, et rend le
+    /// `delete_in_tx(…, enforce_ownership)`, retire la borne, et rend le
     /// résultat — la ligne existe-t-elle encore, en second.
     ///
     /// ⚠️ **L'écriture est datée du jour, et c'est ce qui rend le montage sûr
@@ -3029,7 +3072,7 @@ mod tests {
     /// garde est une pure comparaison de dates.
     async fn supprimer_sous_borne(
         recul: Option<i64>,
-        enforce_immutability: bool,
+        enforce_ownership: bool,
     ) -> (Result<(), DbError>, bool) {
         let pool = test_pool().await;
         let (company_id, fy_id, admin) = setup(&pool).await;
@@ -3053,7 +3096,8 @@ mod tests {
                 company_id,
                 entree.entry.id,
                 admin,
-                enforce_immutability,
+                None,
+                enforce_ownership,
             )
             .await;
             if r.is_ok() {
@@ -3074,8 +3118,8 @@ mod tests {
         (resultat, reste == 1)
     }
 
-    /// ⛔ Le cas que #443 décrit : le gel levé (`false`, suppression d'une
-    /// facture validée), une écriture datée **du jour même de la borne** ne
+    /// ⛔ Le cas que #443 décrit : sur le chemin de la dévalidation (`false`),
+    /// une écriture datée **du jour même de la borne** ne
     /// disparaît pas. Le seuil est inclusif, comme à la création.
     #[tokio::test]
     async fn la_suppression_refuse_une_ecriture_datee_du_jour_de_la_borne() {
@@ -3114,17 +3158,305 @@ mod tests {
         assert!(!reste);
     }
 
-    /// ⛔ L'ORDRE : sur le chemin gelé (la route), une écriture de période
-    /// verrouillée reste un `EntryIsPosted` — le contrat d'avant cette garde.
-    /// Placée avant le gel, elle rendrait `PeriodLocked` et ce test rougirait.
+    /// ⛔ L'ORDRE (Story 15-8b, AC 4-bis) : sur le chemin de la route
+    /// (`enforce_ownership = true`), une écriture **manuelle** de période
+    /// verrouillée rend `PeriodLocked` — rien d'autre ne la retient.
     #[tokio::test]
-    async fn le_gel_parle_avant_le_verrou_de_periode() {
+    async fn la_route_refuse_une_ecriture_manuelle_de_periode_verrouillee() {
         let (resultat, reste) = supprimer_sous_borne(Some(0), true).await;
         assert!(
-            matches!(resultat, Err(DbError::EntryIsPosted)),
-            "attendu EntryIsPosted, obtenu {resultat:?}"
+            matches!(resultat, Err(DbError::PeriodLocked { .. })),
+            "attendu PeriodLocked, obtenu {resultat:?}"
         );
         assert!(reste);
+    }
+
+    /// Les causes de refus qu'un test de précédence monte ENSEMBLE sur une même
+    /// écriture (Story 15-8b, AC 4-bis).
+    #[derive(Default, Clone, Copy)]
+    struct Causes {
+        /// l'exercice de l'écriture est clos
+        exercice_clos: bool,
+        /// un exercice postérieur est clos
+        posterieur_clos: bool,
+        /// une facture (brouillon) référence l'écriture visée
+        facture: bool,
+        /// l'écriture visée a été contre-passée
+        contre_passee: bool,
+        /// l'écriture visée EST une contre-passation
+        contre_passation: bool,
+        /// la borne du verrou de période est posée au jour de l'écriture
+        borne: bool,
+    }
+
+    /// Monte `causes` sur une écriture datée du jour, puis tente
+    /// `delete_in_tx(…, enforce_ownership = true)` — **tout dans une seule
+    /// transaction, annulée à la fin** : ni la clôture d'un exercice, ni la
+    /// facture, ni la borne ne survivent au test, même s'il rougit (KF-039 —
+    /// ces tests partagent la base). Rend le résultat et si l'écriture visée
+    /// existe encore après le refus (lu dans la transaction, avant l'annulation).
+    async fn supprimer_avec(causes: Causes) -> (Result<(), DbError>, bool) {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let jour = chrono::Utc::now().naive_utc().date();
+        let origine = create(
+            &pool,
+            fy_id,
+            admin,
+            mk_entry(company_id, jour, paire(a1, a2)),
+        )
+        .await
+        .unwrap();
+
+        let mut tx = pool.begin().await.unwrap();
+        let mut cible = origine.entry.id;
+        if causes.contre_passee || causes.contre_passation {
+            let inverse = reverse_in_tx(&mut tx, company_id, origine.entry.id, admin)
+                .await
+                .unwrap();
+            if causes.contre_passation {
+                cible = inverse.entry.id;
+            }
+        }
+        if causes.facture {
+            let contact_id = sqlx::query(
+                "INSERT INTO contacts (company_id, contact_type, name) \
+                 VALUES (?, 'Entreprise', 'Client 15-8b')",
+            )
+            .bind(company_id)
+            .execute(&mut *tx)
+            .await
+            .unwrap()
+            .last_insert_id() as i64;
+            sqlx::query(
+                "INSERT INTO invoices (company_id, contact_id, invoice_number, status, date, journal_entry_id) \
+                 VALUES (?, ?, 'F-158B-1', 'draft', ?, ?)",
+            )
+            .bind(company_id)
+            .bind(contact_id)
+            .bind(jour)
+            .bind(cible)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        }
+        if causes.posterieur_clos {
+            let fin: NaiveDate =
+                sqlx::query_scalar("SELECT end_date FROM fiscal_years WHERE id = ?")
+                    .bind(fy_id)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .unwrap();
+            let debut = fin + chrono::Duration::days(1);
+            sqlx::query(
+                "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+                 VALUES (?, 'Exercice postérieur 15-8b', ?, ?, 'Closed') \
+                 ON DUPLICATE KEY UPDATE status = 'Closed'",
+            )
+            .bind(company_id)
+            .bind(debut)
+            .bind(debut + chrono::Duration::days(364))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        }
+        if causes.exercice_clos {
+            sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+                .bind(fy_id)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+        }
+        if causes.borne {
+            sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
+                .bind(jour)
+                .bind(company_id)
+                .execute(&mut *tx)
+                .await
+                .unwrap();
+        }
+
+        let resultat = delete_in_tx(&mut tx, company_id, cible, admin, None, true).await;
+        let reste: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE id = ?")
+            .bind(cible)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        tx.rollback().await.unwrap();
+        (resultat, reste == 1)
+    }
+
+    /// ⛔ **Le test d'ordre qui remplace celui du gel** (Story 15-8b, AC 4-bis,
+    /// findings R3-1/F2) : une écriture **de facture** sous la borne →
+    /// `EntryNotModifiable(Owned { OwnedByInvoice, .. })`, et non `PeriodLocked`
+    /// — la pièce dit où corriger, c'est aussi ce que l'écran affiche.
+    /// ⛔ Mutation tuée : permuter les étapes 3-ter et 3-quater.
+    #[tokio::test]
+    async fn la_garde_parle_avant_le_verrou_de_periode() {
+        let (resultat, reste) = supprimer_avec(Causes {
+            facture: true,
+            borne: true,
+            ..Causes::default()
+        })
+        .await;
+        assert!(
+            matches!(
+                resultat,
+                Err(DbError::EntryNotModifiable(ModificationGuard::Owned {
+                    blocker: ReversalBlocker::OwnedByInvoice,
+                    ..
+                }))
+            ),
+            "attendu OwnedByInvoice, obtenu {resultat:?}"
+        );
+        assert!(reste, "l'écriture refusée doit rester");
+    }
+
+    /// AC 4-bis — exercice clos ET pièce → `FiscalYearClosed`.
+    #[tokio::test]
+    async fn l_exercice_clos_parle_avant_la_piece() {
+        let (resultat, reste) = supprimer_avec(Causes {
+            exercice_clos: true,
+            facture: true,
+            ..Causes::default()
+        })
+        .await;
+        assert!(
+            matches!(resultat, Err(DbError::FiscalYearClosed)),
+            "obtenu {resultat:?}"
+        );
+        assert!(reste);
+    }
+
+    /// AC 4-bis — exercice clos ET exercice postérieur clos → `FiscalYearClosed`.
+    /// ⛔ Mutation tuée : rendre le verdict de 2-bis avant l'étape 3.
+    #[tokio::test]
+    async fn l_exercice_clos_parle_avant_l_exercice_posterieur() {
+        let (resultat, reste) = supprimer_avec(Causes {
+            exercice_clos: true,
+            posterieur_clos: true,
+            ..Causes::default()
+        })
+        .await;
+        assert!(
+            matches!(resultat, Err(DbError::FiscalYearClosed)),
+            "obtenu {resultat:?}"
+        );
+        assert!(reste);
+    }
+
+    /// AC 4-bis — exercice postérieur clos ET pièce → `LaterFiscalYearClosed`.
+    #[tokio::test]
+    async fn l_exercice_posterieur_parle_avant_la_piece() {
+        let (resultat, reste) = supprimer_avec(Causes {
+            posterieur_clos: true,
+            facture: true,
+            ..Causes::default()
+        })
+        .await;
+        assert!(
+            matches!(resultat, Err(DbError::LaterFiscalYearClosed { .. })),
+            "obtenu {resultat:?}"
+        );
+        assert!(reste);
+    }
+
+    /// AC 4-bis — exercice postérieur clos ET écriture contre-passée →
+    /// `LaterFiscalYearClosed`.
+    #[tokio::test]
+    async fn l_exercice_posterieur_parle_avant_la_contre_passation() {
+        let (resultat, reste) = supprimer_avec(Causes {
+            posterieur_clos: true,
+            contre_passee: true,
+            ..Causes::default()
+        })
+        .await;
+        assert!(
+            matches!(resultat, Err(DbError::LaterFiscalYearClosed { .. })),
+            "obtenu {resultat:?}"
+        );
+        assert!(reste);
+    }
+
+    /// AC 4-bis — exercice clos ET écriture contre-passée → `FiscalYearClosed`.
+    #[tokio::test]
+    async fn l_exercice_clos_parle_avant_la_contre_passee() {
+        let (resultat, reste) = supprimer_avec(Causes {
+            exercice_clos: true,
+            contre_passee: true,
+            ..Causes::default()
+        })
+        .await;
+        assert!(
+            matches!(resultat, Err(DbError::FiscalYearClosed)),
+            "obtenu {resultat:?}"
+        );
+        assert!(reste);
+    }
+
+    /// AC 4-bis — une contre-passation sous la borne → `IS_A_REVERSAL`, pas
+    /// `PeriodLocked`. ⛔ La base ne refuserait pas : la clé `RESTRICT` ne
+    /// protège que l'origine.
+    #[tokio::test]
+    async fn la_contre_passation_parle_avant_le_verrou_de_periode() {
+        let (resultat, reste) = supprimer_avec(Causes {
+            contre_passation: true,
+            borne: true,
+            ..Causes::default()
+        })
+        .await;
+        assert!(
+            matches!(
+                resultat,
+                Err(DbError::EntryNotModifiable(ModificationGuard::Owned {
+                    blocker: ReversalBlocker::IsAReversal,
+                    ..
+                }))
+            ),
+            "obtenu {resultat:?}"
+        );
+        assert!(reste);
+    }
+
+    /// Le chemin de la dévalidation (`enforce_ownership = false`) ignore
+    /// l'exercice postérieur clos (C-15-8-29) — défaut préexistant, signalé ;
+    /// ce test le FIXE par écrit pour qu'un changement se voie.
+    #[tokio::test]
+    async fn la_devalidation_ne_voit_pas_l_exercice_posterieur() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let jour = chrono::Utc::now().naive_utc().date();
+        let e = create(
+            &pool,
+            fy_id,
+            admin,
+            mk_entry(company_id, jour, paire(a1, a2)),
+        )
+        .await
+        .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        let fin: NaiveDate = sqlx::query_scalar("SELECT end_date FROM fiscal_years WHERE id = ?")
+            .bind(fy_id)
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+        let debut = fin + chrono::Duration::days(1);
+        sqlx::query(
+            "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+             VALUES (?, 'Exercice postérieur 15-8b', ?, ?, 'Closed') \
+             ON DUPLICATE KEY UPDATE status = 'Closed'",
+        )
+        .bind(company_id)
+        .bind(debut)
+        .bind(debut + chrono::Duration::days(364))
+        .execute(&mut *tx)
+        .await
+        .unwrap();
+        let r = delete_in_tx(&mut tx, company_id, e.entry.id, admin, None, false).await;
+        tx.rollback().await.unwrap();
+        assert!(r.is_ok(), "obtenu {r:?}");
     }
 
     #[tokio::test]

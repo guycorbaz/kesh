@@ -120,8 +120,8 @@ impl ReversalBlocker {
 ///
 /// C'est la **garde d'écriture** : rendue par
 /// `journal_entries::modification_guard`, convertie en erreur par
-/// `journal_entries::modification_refusal`. La 15-8b l'appliquera aussi à la
-/// suppression.
+/// `journal_entries::modification_refusal`. La Story 15-8b l'applique aussi à
+/// la suppression (`journal_entries::delete_in_tx`, étape 3-ter).
 ///
 /// ⛔ **L'inventaire des propriétaires n'est pas réécrit ici** : `Owned` porte un
 /// motif de `reversal_blockers` — jamais `AccountArchived`, qui n'est pas un gel
@@ -866,28 +866,10 @@ pub enum DbError {
     #[error("Écriture contre-passée : modification et suppression refusées")]
     EntryIsReversed,
 
-    /// L'écriture est comptabilisée : elle ne se supprime pas (Story 24-4b,
-    /// #380).
-    ///
-    /// ⚠️ **Un seul émetteur reste** depuis la Story 15-8a (#532), qui a rouvert
-    /// la modification : `journal_entries::delete_in_tx` (étape 3-ter), donc le
-    /// `DELETE` de la route. La Story 15-8b le fait passer sous la garde de
-    /// modification et retire cette variante.
-    ///
-    /// ⛔ Toute écriture l'est **dès son insertion** — il n'existe pas de statut
-    /// brouillon, et la story n'en introduit pas. Le refus est donc
-    /// inconditionnel, et c'est l'exigence de l'art. 958f CO : la correction
-    /// doit être **apparente**, ce que seule la contre-passation permet.
-    ///
-    /// ⚠️ Ce refus vient **après** [`DbError::EntryIsReversed`] : sur une
-    /// écriture déjà contre-passée, conseiller la contre-passation serait un
-    /// conseil faux. Mappé vers HTTP **409** `ENTRY_IS_POSTED`.
-    #[error("Écriture comptabilisée : suppression refusée")]
-    EntryIsPosted,
-
-    /// L'écriture ne se **modifie** pas : une pièce la possède, c'est une
-    /// contre-passation, ou c'est le paiement détaché d'une facture fournisseur
-    /// annulée (Story 15-8a, #532, D2).
+    /// L'écriture ne se **modifie** ni ne se **supprime** : une pièce la
+    /// possède, c'est une contre-passation, ou c'est le paiement détaché d'une
+    /// facture fournisseur annulée (Story 15-8a, #532, D2 ; la suppression,
+    /// Story 15-8b, passe par la même garde).
     ///
     /// ⛔ Jamais construite avec `Owned { blocker: AlreadyReversed }` : une
     /// écriture contre-passée rend [`DbError::EntryIsReversed`], le code de la
@@ -902,9 +884,10 @@ pub enum DbError {
     /// ⛔ Le seuil est **inclusif** : une borne au 31.03 refuse le 31.03.
     ///
     /// ⚠️ C'est un **400**, pas un 409 : ce qui est invalide, c'est la **date
-    /// proposée**, pas l'état d'une ressource qu'on voudrait changer. La 24-4b
-    /// a figé l'asymétrie — `ENTRY_IS_POSTED` porte sur l'écriture qu'on veut
-    /// modifier, `PERIOD_LOCKED` sur la date qu'on propose.
+    /// proposée** — ou la date de l'écriture qu'on voudrait supprimer —, pas
+    /// l'état d'une ressource. Les refus d'état (pièce, contre-passation :
+    /// [`DbError::EntryNotModifiable`], [`DbError::EntryIsReversed`]) sont des
+    /// 409, et parlent AVANT ce verrou au `PUT` comme au `DELETE`.
     ///
     /// Les deux dates voyagent avec l'erreur pour que le message les NOMME :
     /// un refus qui ne dit pas jusqu'où les livres sont fermés n'est pas
@@ -1032,7 +1015,6 @@ impl DbError {
             Self::InvoiceNumberFiscalYearMismatch => "INVOICE_NUMBER_FISCAL_YEAR_MISMATCH",
             Self::InvoiceMustBeUnvalidatedFirst => "INVOICE_MUST_BE_UNVALIDATED_FIRST",
             Self::EntryIsReversed => "ENTRY_IS_REVERSED",
-            Self::EntryIsPosted => "ENTRY_IS_POSTED",
             // ⚠️ Repli générique, comme `EntryNotReversable` : le code EXPOSÉ
             // vient du mappage `kesh-api`, qui rend `guard.code()`.
             Self::EntryNotModifiable(_) => "ENTRY_NOT_MODIFIABLE",

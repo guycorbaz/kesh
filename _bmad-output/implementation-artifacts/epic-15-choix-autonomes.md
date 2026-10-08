@@ -1646,6 +1646,19 @@ l'import (#458–#461).
   `conforme`) : `ecartee: 7, conforme: 41`. Les commentaires des deux stories sont conservés, la
   15-5c datée « avant le rebase ». Vérifié par les tests eux-mêmes (`vitest run src/lib/shared/`,
   194/194), pas par addition seule.
+
+## C-15-8b-1 — 15-8b (clôture de la validation) : `journal-entries.api.ts` tranché DEDANS, l'AC 10 refermée sur `HEAD`
+
+- **Contexte** : la P4 ciblée laissait un MEDIUM (M1) — la liste « fermée » de l'AC 10 portait `journal-entries.api.ts:58`
+  « effacé par l'inversion de la 15-8a — à vérifier ». Vérifié sur `52a9b19b` : le site **existe** (`:70`), dans le
+  doc-comment de `deleteJournalEntry` que la 15-8a a rétabli en annonçant la 15-8b.
+- **Retenu** : le site est **dans** la liste des disparitions ; T4 réécrit le doc-comment quand la fonction gagne son
+  appelant. L'inventaire complet a été refait sur `HEAD` (38 lignes hors `_bmad-output/`) : deux sites neufs de la
+  15-8a — `CHANGELOG.md:15` (dans `[0.13.0]`, réécrit) et `docs/api-external.md:221` (fait historique, **reste**) — et un
+  sortant (`journal-entries.spec.ts:285`, reformulé par la 15-8a). Numéros de ligne remesurés dans une table de
+  décalages en tête des Dev Notes plutôt que réécrits un à un dans la prose (la table fait foi).
+- **Écartées** : le mettre dans les résidus « qui restent » (la phrase devient fausse au merge de cette story) ;
+  réécrire chaque numéro dans la prose (plus de cent sites, risque d'erreur supérieur au bénéfice).
 - **Réversible** : oui.
 
 ## C66 — 15-5e1 : la saisie fournisseur rejouée dès la 15-5e1, avec l'avance de ses réglages
@@ -1769,3 +1782,119 @@ l'import (#458–#461).
 - **Écartées** : classer le `PUT` `ARejouer("15-5e2")` (faux : il est déjà rejoué, le volet (c) le confirme) ; rebase commit par commit (conflits d'ajout répétés sans valeur, précédent C-15-5c-4) ; ne pas rejouer la planification `597e4126..778513aa` (la fiche 15-5e1 et les prompts versionnés de ses validations P5–P7 manqueraient à main).
 - **Conséquence pour la 15-5e2** (à reporter dans sa fiche par l'orchestrateur) : il existe désormais **six** sites `retry_with` (`onboarding::finalize`, `opening_balances::complete`, `invoices::write_off`, `reconciliation::accept` et `reconciliation::cancel`, et le `PUT` des écritures) ; sa cible de registre devient **22 `Rejouee` / 4 / 89** et non 21 / 4 / 90, et le `PUT` est un site `retry_with` de plus à migrer vers une enveloppe (ou à justifier).
 - **Réversible** : oui (`backup/15-5e1-avant-integration`).
+## C-15-8b-2 — 15-8b (dev) : cible cargo DÉDIÉE au worktree, la cible partagée mélange les worktrees
+
+- **Contexte** : la consigne 8 prescrit `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh/target` (cible partagée). Sur ce
+  worktree, `cargo build -p kesh-api` a compilé `kesh-api` contre un `kesh-db` **d'une autre branche** (erreurs
+  « no `ModificationGuard` », signatures de `retry_with` différentes) sans recompiler `kesh-db` : cargo hache les
+  dépendances de chemin **relativement à la racine du workspace**, si bien que deux worktrees produisent les mêmes
+  artefacts et se les volent, le fingerprint pointant les sources de l'autre arbre. Les deux premiers `cargo build`
+  « verts » de cette story ne prouvaient donc rien.
+- **Retenu** : `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh/target-158` (le nom que le prompt prévoyait), compilation à
+  froid (3 min 19). Tous les gates déclarés ici ont tourné sur cette cible.
+- **Écartée** : continuer sur la cible partagée — résultats non attribuables à l'arbre testé.
+- **Réversible** : oui. ⚠️ **À signaler à l'orchestrateur** : tout agent d'un autre worktree sur la cible partagée est
+  exposé au même mélange — un gate vert peut y avoir testé le code d'une autre branche.
+
+## C-15-8b-3 — 15-8b (dev) : tests d'ordre de `mod tests` montés dans UNE transaction annulée
+
+- **Contexte** : AC 4-bis demande les paires de précédence aussi dans `mod tests`, qui travaillent sur la base
+  **partagée** (`test_pool`). Clore un exercice, poser une borne ou lier une facture à une écriture y laisserait un
+  résidu qui fait rougir le gate suivant (KF-039, cas b).
+- **Retenu** : helper `supprimer_avec(Causes)` — l'écriture est créée normalement, puis **toutes** les causes (facture
+  brouillon + contact, contre-passation par `reverse_in_tx`, exercice postérieur clos, exercice clos, borne) sont
+  posées **dans la transaction** passée à `delete_in_tx`, le résultat lu, puis la transaction **annulée**. La « facture »
+  est un brouillon inséré en SQL avec `journal_entry_id` (suffisant pour `reversal_blockers`). Sept tests d'ordre, plus
+  `la_route_refuse_une_ecriture_manuelle_de_periode_verrouillee` (cas séparé, AC 4-bis) et
+  `la_devalidation_ne_voit_pas_l_exercice_posterieur` (fige C-15-8-29 par écrit).
+- **Écartée** : monter via l'API (déjà fait au niveau HTTP, `the_precedence_of_the_delete_refusals_is_fixed`) ; poser
+  les causes par le pool puis nettoyer (un test qui rougit laisse le résidu).
+- **Réversible** : oui.
+
+## C-15-8b-4 — 15-8b (dev) : « Modifiée » visible à tous les rôles, « Historique » dès la création
+
+- **Contexte** : D4 dit « Modifiée » quand `version > 1`, et « Supprimer » et « Historique » absents au rôle
+  Consultation ; il ne dit ni si « Modifiée » l'est aussi, ni si le lien attend une modification.
+- **Retenu** : la mention « Modifiée » est affichée **à tous les rôles** (c'est un fait sur l'écriture, pas un geste) ;
+  le lien « Historique » est affiché **aux rôles Administrateur et Comptable, même avant toute modification** (la
+  création est déjà au journal d'audit, et une suppression future d'une autre écriture ne s'y voit pas autrement).
+- **Écartée** : lier le lien à `version > 1` — l'historique d'une écriture jamais modifiée existe (sa création).
+- **Réversible** : oui, une condition dans `[id]/+page.svelte`.
+
+## C-15-8b-5 — 15-8b (dev) : AC 7 testé dans `opening_balances_e2e.rs`, pas dans `journal_entry_reversal_e2e.rs`
+
+- **Contexte** : l'AC 7 asserte le statut `READY`, la génération sous le numéro 2 et `completableAccounts` après
+  suppression de l'ouverture. Les helpers de ces routes (`seed_ready`, `get_status`, `post_complete`) vivent dans
+  `opening_balances_e2e.rs`.
+- **Retenu** : deux tests neufs là (`deleting_the_only_opening_entry_reopens_the_generation_under_number_2`,
+  `deleting_the_opening_among_other_entries_makes_its_unmoved_accounts_completable`, ce dernier asserte aussi que la
+  banque mouvementée ailleurs n'est **pas** complétable — finding F10 — et que le complément se supprime en 204) ; le
+  test de la 15-8a `the_opening_entry_is_modifiable_and_still_reversable` est **renommé**
+  `the_opening_entry_is_modifiable_reversable_and_deletable` et sa moitié `DELETE` inversée (204). La « porte de la
+  contre-passation » y est désormais vérifiée par `reversable = true` au détail (contre-passer puis supprimer est
+  impossible : une écriture contre-passée ne se supprime pas).
+- **Réversible** : oui.
+
+## C-15-8b-6 — 15-8b (dev) : pas de test de rejeu d'interblocage propre au `DELETE`
+
+- **Contexte** : D2 enveloppe le `DELETE` dans `retry_with` « par uniformité, aucun cycle connu ». La 15-8a a un test
+  qui force le `PUT` à perdre un interblocage réel (`the_put_replays_a_deadlock_it_lost`), monté sur le cycle
+  projet ↔ exercice — que le `DELETE` ne prend pas (aucun projet verrouillé).
+- **Retenu** : l'AC 6 est tenue par le `grep -nF "retry_with"` (le `PUT` **et** le `DELETE`) et la ligne de Pattern 5 ;
+  pas de test de rejeu : sans cycle connu, il faudrait fabriquer un interblocage artificiel, qui prouverait le
+  montage plutôt que le handler.
+- **Écartée** : un test à interblocage fabriqué (deux transactions croisées sur l'écriture et l'exercice) — coûteux,
+  fragile, et la règle de choix de la victime d'InnoDB en déciderait.
+- **Réversible** : oui — à ajouter si un cycle est un jour identifié.
+
+## C-15-8b-7 — 15-8b (clôture de la revue P1) : E2E sur le port 3008, le 3001 étant pris par un autre projet
+
+- **Contexte** : le prompt de clôture fixait le port E2E 3001. Au moment du gate, `127.0.0.1:3001` était tenu par
+  `opengmao-server` (`/home/gcorbaz/devel/opengmao`), un autre projet de la station — pas un agent Kesh.
+- **Retenu** : backend E2E sur **3008** (libre, vérifié par `ss -ltn`), `KESH_BACKEND_URL=http://127.0.0.1:3008` côté
+  runner ; même binaire (`target-158`, copié dans le scratchpad), même base `kesh_e2e_158` remise à zéro, répertoires
+  inbox/documents neufs (`/tmp/kesh-e2e-158b`).
+- **Écartées** : arrêter le processus d'`opengmao` (hors périmètre, pas le nôtre) ; attendre qu'il libère le port
+  (aucune échéance connue).
+- **Réversible** : oui — le port n'est qu'un paramètre de montage, rien n'est versionné.
+
+## C-15-8b-8 — 15-8b (revue P1, E-2) : le message générique d'exercice clos étendu à « supprimée », pas de clé dédiée au `DELETE`
+
+- **Contexte** : `DbError::FiscalYearClosed` rend `error-fiscal-year-closed-generic` (« … ne peut y être ajoutée ou
+  modifiée »), que le `DELETE` refusé sur exercice clos rend aussi.
+- **Retenu** : reformuler la clé existante dans les quatre locales et son repli Rust (`errors.rs`) — « ajoutée, modifiée
+  ou supprimée » / « hinzugefügt, geändert oder gelöscht » / « added, modified or deleted » / « aggiunta, modificata o
+  eliminata ». Aucune clé neuve : `sitesTotal` et l'inventaire des sites inchangés. La variante datée
+  (`error-fiscal-year-closed`, `{ $date }`) n'est pas touchée : elle est rendue par la saisie et la modification, pas par
+  la suppression.
+- **Écartée** : une clé dédiée au `DELETE` — il faudrait distinguer l'erreur au niveau de `DbError` ou de la route pour
+  un gain nul (la phrase étendue reste vraie pour les trois gestes).
+- **Réversible** : oui (texte seul).
+
+## C-15-8b-9 — 15-8b (intégration) : rebasée sur `origin/main` (`de1e1c26`, 15-5e1) ; le `DELETE` nommé et classé `Rejouee`
+
+- **Contexte** : `origin/main` porte la 15-5e1 (`de1e1c26`) : `retry_with` prend un nom d'opération en premier
+  argument (C62), le registre des routes a une colonne de rejeu et un volet (c) qui vérifie par `syn` que chaque route
+  `Rejouee` appelle une enveloppe, et Pattern 5 a été réécrit (signature nommée, ligne du `PUT`). La 15-5e1 avait
+  classé `DELETE /journal-entries/{id}` **`ARejouer("15-5e2")`** — et non `SansEcritureAuJournal`, comme le prompt
+  d'intégration le supposait : le `DELETE` existait déjà (il rendait `ENTRY_IS_POSTED`) et la remontée de l'AC1 de la
+  15-5e1 l'avait compté parmi les routes qui écrivent au journal.
+- **Retenu** : rebase des sept commits de la story ; conflits résolus par union (registre des choix — C66 à
+  C-15-5e1-5 avant les C-15-8b —, en-têtes `last_updated` de `sprint-status.yaml`, ligne 15-11 conservée, une seule
+  ligne 15-8b, YAML rechargé) ; CHANGELOG `[0.13.0]` fusionné sans conflit (les entrées des deux côtés présentes) ;
+  aucun `.ftl`, `.tex`, PDF ni fichier frontend touché par la 15-5e1, donc ni recompte de `sitesTotal` /
+  `CANDIDATES_ATTENDUES` ni régénération de PDF (vérifiés par les tests eux-mêmes). Le `retry_with` du `DELETE` reçoit
+  **`"journal_entries::delete"`** (forme `module::opération`, comme `"journal_entries::update"`), au commit de
+  développement même pour que chaque commit rebasé compile. Pattern 5 : la ligne du `PUT` de la 15-5e1 gardée, celle
+  du `DELETE` alignée sur la signature nommée. Registre des routes : `DELETE` → **`Traced, Rejouee`** ; volet (c) :
+  **10** routes examinées ; partition de rejeu **10 `Rejouee` / 12 `ARejouer` / 4 `Exemptee` / 89
+  `SansEcritureAuJournal` = 115** (et non 10 / 13 / 4 / 88 : le `DELETE` quitte `ARejouer`, pas
+  `SansEcritureAuJournal`) ; limite (iii bis) : le `DELETE` relève de la revue fichier par fichier (pas de test de
+  rejeu propre, C-15-8b-6). Les empreintes citées dans la fiche (`8cfb3759`) sont celles d'avant ce rebase ; le
+  commit correspondant est désormais `a6e06547`.
+- **Écartées** : garder `ARejouer("15-5e2")` (faux : le handler est déjà rejoué, le volet (c) le confirme) ;
+  migrer le `DELETE` vers l'enveloppe `retry_on_deadlock` (c'est le rollout de la 15-5e2, qui migre aussi le `PUT`).
+- **Conséquence pour la 15-5e2** (à reporter dans sa fiche par l'orchestrateur) : une route de moins à rejouer
+  (**12** `ARejouer`), un site `retry_with` de plus à migrer (**sept** : les six de C-15-5e1-5 et le `DELETE`) ; sa
+  cible finale de registre reste **22 `Rejouee` / 4 / 89** si toutes les `ARejouer` y passent.
+- **Réversible** : oui.

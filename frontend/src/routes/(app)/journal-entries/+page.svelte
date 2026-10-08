@@ -265,8 +265,8 @@
 		}
 	}
 
-	// --- Saisie (story 3.3) — l'édition vit sur la fiche (Story 15-8a) ; la
-	// suppression reste refusée (Story 15-8b) ---
+	// --- Saisie (story 3.3) — l'édition et la suppression vivent sur la fiche
+	// (Stories 15-8a, 15-8b) ---
 	function openCreate() {
 		mode = 'create';
 	}

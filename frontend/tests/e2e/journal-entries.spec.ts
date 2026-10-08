@@ -345,7 +345,7 @@ test.describe("Page écritures — la liste mène à la fiche, où l'on corrige 
   });
 });
 
-test.describe("Page écritures — modifier depuis la fiche (Story 15-8a, #532)", () => {
+test.describe("Page écritures — modifier et supprimer depuis la fiche (Stories 15-8a, 15-8b, #532)", () => {
   type Compte = { id: number; number: string; postable: boolean; active: boolean };
 
   /** Crée une écriture par l'API, rend son id, son numéro et sa version. */
@@ -388,6 +388,31 @@ test.describe("Page écritures — modifier depuis la fiche (Story 15-8a, #532)"
         entryDate: string;
         journal: string;
       };
+    } finally {
+      await disposeContextSafe(ctx);
+    }
+  }
+
+  /** Modifie le libellé d'une écriture par l'API (`PUT`, version courante) : rend la fiche « Modifiée ». */
+  async function modifierLibelle(page: import("@playwright/test").Page, id: number, nouveau: string) {
+    const courant = await lireEcriture(page, id);
+    const ctx = await authedApiContext(page);
+    try {
+      const put = await ctx.put(`/api/v1/journal-entries/${id}`, {
+        data: {
+          entryDate: courant.entryDate,
+          journal: courant.journal,
+          description: nouveau,
+          version: courant.version,
+          lines: courant.lines.map((l) => ({
+            accountId: l.accountId,
+            debit: l.debit,
+            credit: l.credit,
+            projectId: l.projectId,
+          })),
+        },
+      });
+      expect(put.status(), await put.text()).toBe(200);
     } finally {
       await disposeContextSafe(ctx);
     }
@@ -457,7 +482,7 @@ test.describe("Page écritures — modifier depuis la fiche (Story 15-8a, #532)"
     expect((await lireEcriture(page, origine.id)).description).toBe(`${libelle} par l'API`);
   });
 
-  test("écriture de facture : pas de Modifier, le motif est affiché", async ({ page }) => {
+  test("écriture de facture : ni Modifier ni Supprimer, le motif est affiché", async ({ page }) => {
     await login(page);
     const contact = await createContactWithAddressViaApi(page, `Modif facture ${Date.now()}`);
     const invoiceId = await createAndValidateInvoiceViaApi(page, contact);
@@ -475,14 +500,21 @@ test.describe("Page écritures — modifier depuis la fiche (Story 15-8a, #532)"
     // Présence avant absence : la fiche est chargée avant d'affirmer l'absence.
     await expect(page.getByTestId("reverse-blocked-reason")).toBeVisible();
     await expect(page.getByTestId("edit-entry")).toHaveCount(0);
+    // Story 15-8b — « Supprimer » suit le même `modifiable` : absent, pas grisé.
+    await expect(page.getByTestId("delete-entry")).toHaveCount(0);
     // Même motif que la contre-passation (OWNED_BY_INVOICE) : affiché une seule fois.
     await expect(page.getByTestId("modification-blocked-reason")).toHaveCount(0);
   });
 
-  test("rôle Consultation : ni Modifier ni Contre-passer", async ({ page }) => {
+  test("rôle Consultation : ni Modifier, ni Contre-passer, ni Supprimer, ni Historique — mais « Modifiée »", async ({ page }) => {
     await login(page);
     const libelle = `Consultation E2E ${Date.now()}`;
     const origine = await creerEcriture(page, libelle);
+    // Revue P1 (A2) : l'écriture est MODIFIÉE avant le passage à Consultation,
+    // pour que la mention « Modifiée » (visible à tous les rôles, C-15-8b-4)
+    // soit exercée sur ce rôle — sans quoi une régression qui la cacherait ne
+    // rougirait nulle part.
+    await modifierLibelle(page, origine.id, `${libelle} corrigé`);
     const username = `consult-je-${Date.now()}`;
     const ctx = await authedApiContext(page);
     try {
@@ -506,6 +538,72 @@ test.describe("Page écritures — modifier depuis la fiche (Story 15-8a, #532)"
     await expect(page.getByTestId("edit-entry")).toHaveCount(0);
     await expect(page.getByTestId("reverse-entry")).toHaveCount(0);
     await expect(page.getByTestId("modification-blocked-reason")).toHaveCount(0);
+    // Story 15-8b — ni « Supprimer », ni le lien « Historique » : le journal
+    // d'audit est refusé à Consultation (403).
+    await expect(page.getByTestId("delete-entry")).toHaveCount(0);
+    await expect(page.getByTestId("entry-history-link")).toHaveCount(0);
+    // …mais la mention « Modifiée », elle, est visible à tous les rôles.
+    await expect(page.getByTestId("entry-modified")).toBeVisible();
+  });
+
+  test("supprimer depuis la fiche : confirmation, retour à la liste, l'écriture a disparu", async ({ page }) => {
+    await login(page);
+    const libelle = `Suppression E2E ${Date.now()}`;
+    const origine = await creerEcriture(page, libelle);
+
+    await page.goto(`/journal-entries/${origine.id}`);
+    await page.getByTestId("delete-entry").click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.getByTestId("delete-entry-confirm").click();
+
+    await expect(page).toHaveURL(/\/journal-entries$/, { timeout: 10000 });
+    const ctx = await authedApiContext(page);
+    try {
+      const resp = await ctx.get(`/api/v1/journal-entries/${origine.id}`);
+      expect(resp.status(), "l'écriture a disparu").toBe(404);
+    } finally {
+      await disposeContextSafe(ctx);
+    }
+  });
+
+  test("annuler la suppression : la fiche reste, l'écriture aussi", async ({ page }) => {
+    await login(page);
+    const libelle = `Suppression annulée E2E ${Date.now()}`;
+    const origine = await creerEcriture(page, libelle);
+
+    await page.goto(`/journal-entries/${origine.id}`);
+    await page.getByTestId("delete-entry").click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await page.getByTestId("delete-entry-cancel").click();
+
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page).toHaveURL(new RegExp(`/journal-entries/${origine.id}$`));
+    await expect(page.locator("dl")).toContainText(libelle);
+    expect((await lireEcriture(page, origine.id)).description).toBe(libelle);
+  });
+
+  test("après modification : « Modifiée » et « Historique », qui ouvre le journal d'audit filtré", async ({ page }) => {
+    await login(page);
+    const libelle = `Historique E2E ${Date.now()}`;
+    const origine = await creerEcriture(page, libelle);
+
+    // Avant toute modification : le lien est là, la mention non.
+    await page.goto(`/journal-entries/${origine.id}`);
+    await expect(page.getByTestId("entry-history-link")).toBeVisible();
+    await expect(page.getByTestId("entry-modified")).toHaveCount(0);
+
+    // Modification par l'API, puis relecture de la fiche.
+    await modifierLibelle(page, origine.id, `${libelle} corrigé`);
+    await page.goto(`/journal-entries/${origine.id}`);
+    await expect(page.getByTestId("entry-modified")).toBeVisible();
+
+    await page.getByTestId("entry-history-link").click();
+    await expect(page).toHaveURL(
+      new RegExp(`/audit-log\\?entityType=journal_entry&entityId=${origine.id}$`),
+    );
+    await expect(page.getByTestId("audit-log-filter-entity-id")).toHaveValue(String(origine.id));
+    // La création et la modification de CETTE écriture, rien d'autre.
+    await expect(page.getByTestId("audit-log-row")).toHaveCount(2, { timeout: 10000 });
   });
 });
 

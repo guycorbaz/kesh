@@ -170,8 +170,9 @@ const RACINE_FTL = '../crates/kesh-i18n/locales';
  * | `journal-entry-open`, le lien de la liste vers la fiche qui remplace les deux boutons ✎ et 🗑 | **+1** |
  * | **total** | **−11** |
  *
- * ⛔ La baisse est **délibérée** : le `PUT` et le `DELETE` d'une écriture ne rendent plus que
- * 409 `ENTRY_IS_POSTED`, donc les écrans qui les appelaient n'existent plus. Une borne qui
+ * ⛔ La baisse est **délibérée** : à la 24-4b, le `PUT` et le `DELETE` d'une écriture ne
+ * rendaient plus que 409 `ENTRY_IS_POSTED` (jusqu'aux Stories 15-8a et 15-8b, qui les ont
+ * rouverts sur la fiche), donc les écrans de la liste qui les appelaient n'existaient plus. Une borne qui
  * rougit sur une baisse fait le même travail que sur une hausse — elle exige qu'on dise
  * pourquoi.
  *
@@ -479,7 +480,15 @@ const ATTENDU = {
 	// (27 → 28) : libellé dédié à la raison `payment_date_before_invoice_date` de
 	// `RECONCILIATION_INVOICE_NOT_ELIGIBLE`. Recoupé par `grep -c "i18nMsg("` aux deux bornes ;
 	// la doublure `ModalSuccessStub.test.svelte` est hors collecte (suffixe `.test.`).
-	sitesTotal: 1904,
+	// Story 15-8b (#532) : **1876 → 1885** (+9 ; **1904 → 1913** sur l'état rebasé après la 15-5c), la suppression depuis la fiche et
+	// l'historique, tous dans `routes/(app)/journal-entries/[id]/+page.svelte`
+	// (10 → 19, recompté par `grep -o` aux deux bornes) : le bouton « Supprimer »
+	// (`journal-entry-delete`), les quatre textes de la confirmation
+	// (`journal-entry-delete-confirm-{title,message,cancel,delete}`), le toast
+	// (`journal-entry-deleted`), le repli d'erreur du refus (`error-unexpected`),
+	// la mention « Modifiée » (`journal-entry-modified`) et le lien « Historique »
+	// (`journal-entry-history`).
+	sitesTotal: 1913,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

@@ -1729,3 +1729,148 @@ async fn the_opening_entry_is_corrected_by_modification(pool: MySqlPool) {
         put_entry(&app, &token, complement_id, &put_body(&complement, lignes)).await;
     assert_eq!(status, 200, "{body}");
 }
+
+// ===========================================================================
+// Story 15-8b (#532) — l'écriture d'ouverture et le complément se SUPPRIMENT
+// ===========================================================================
+
+/// `DELETE /journal-entries/{id}`, rend (statut, corps).
+async fn delete_entry(app: &TestApp, token: &str, id: i64) -> (u16, Value) {
+    let resp = app
+        .client
+        .delete(app.url(&format!("/api/v1/journal-entries/{id}")))
+        .header("Authorization", auth(token))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    (status, resp.json().await.unwrap_or(Value::Null))
+}
+
+/// `POST /opening-balances` 1000 / 2970, rend l'écriture créée.
+async fn generate_opening_entry(app: &TestApp, token: &str, seed: &Seed) -> Value {
+    let resp = app
+        .client
+        .post(app.url("/api/v1/opening-balances"))
+        .header("Authorization", auth(token))
+        .json(&json!({ "lines": [
+            line(seed.asset, "1000.00", "0"),
+            line(seed.retained, "0", "1000.00"),
+        ]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+    resp.json().await.unwrap()
+}
+
+/// AC 7 · D3 — **l'ouverture, seule écriture de la société, se supprime** : la
+/// société redevient vierge, la génération est de nouveau proposée (`READY`)
+/// et réussit — sous le **numéro 2** : le compteur de la 25-2-c ne réattribue
+/// jamais un numéro (C-15-8-12, assumé).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn deleting_the_only_opening_entry_reopens_the_generation_under_number_2(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let seed = seed_ready(&pool).await;
+
+    let ouverture = generate_opening_entry(&app, &token, &seed).await;
+    assert_eq!(ouverture["entryNumber"].as_i64(), Some(1));
+    assert_eq!(
+        get_status(&app, &token).await["reason"],
+        "ALREADY_HAS_ENTRIES"
+    );
+
+    let (status, body) = delete_entry(&app, &token, ouverture["id"].as_i64().unwrap()).await;
+    assert_eq!(status, 204, "{body}");
+
+    let status_body = get_status(&app, &token).await;
+    assert_eq!(status_body["reason"], "READY");
+    assert_eq!(status_body["canEnter"], true);
+
+    let seconde = generate_opening_entry(&app, &token, &seed).await;
+    assert_eq!(
+        seconde["entryNumber"].as_i64(),
+        Some(2),
+        "le numéro 1 n'est jamais réattribué : {seconde}"
+    );
+}
+
+/// AC 7 · D3 · finding F10 — **l'ouverture supprimée parmi d'autres
+/// écritures** : la génération reste refusée ; un compte de l'ouverture **sans
+/// autre mouvement** redevient complétable, un compte **mouvementé ailleurs**
+/// (la banque) ne l'est pas — il se ressaisit par une OD. Le complément se
+/// supprime (204) comme l'ouverture.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn deleting_the_opening_among_other_entries_makes_its_unmoved_accounts_completable(
+    pool: MySqlPool,
+) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let seed = seed_ready(&pool).await;
+    let provision = create_acc(
+        &pool,
+        seed.user_id,
+        seed.company_id,
+        "2100",
+        "Provision",
+        AccountType::Liability,
+        None,
+    )
+    .await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/opening-balances"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "lines": [
+            line(seed.asset, "1000.00", "0"),
+            line(provision, "0", "400.00"),
+            line(seed.retained, "0", "600.00"),
+        ]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+    let ouverture: Value = resp.json().await.unwrap();
+    // Une autre écriture mouvemente la banque (1000) et les dettes (2000).
+    post_normal_entry(
+        &pool,
+        &seed,
+        seed.fy_id,
+        NaiveDate::from_ymd_opt(2026, 3, 1).unwrap(),
+    )
+    .await;
+
+    let (status, body) = delete_entry(&app, &token, ouverture["id"].as_i64().unwrap()).await;
+    assert_eq!(status, 204, "{body}");
+
+    let status_body = get_status(&app, &token).await;
+    assert_eq!(
+        status_body["reason"], "ALREADY_HAS_ENTRIES",
+        "la génération reste refusée"
+    );
+    let numbers: Vec<&str> = status_body["completableAccounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["number"].as_str().unwrap())
+        .collect();
+    assert!(
+        numbers.contains(&"2100"),
+        "2100, sans autre mouvement, redevient complétable : {numbers:?}"
+    );
+    assert!(
+        !numbers.contains(&"1000"),
+        "1000, mouvementé ailleurs, ne redevient pas complétable : {numbers:?}"
+    );
+
+    // Le complément se supprime comme l'ouverture.
+    let (s, complement) = post_complete(
+        &app,
+        &token,
+        json!({ "lines": [line(provision, "0", "400.00")] }),
+    )
+    .await;
+    assert_eq!(s, 201, "{complement}");
+    let (status, body) = delete_entry(&app, &token, complement["id"].as_i64().unwrap()).await;
+    assert_eq!(status, 204, "{body}");
+}

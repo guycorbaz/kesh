@@ -5,8 +5,9 @@
 //! 24-4b avait supprimé `journal_entries::update` et refusé le `DELETE`, donc
 //! plus rien n'était réécrivable. ⚠️ Depuis la Story 15-8a, `update` est
 //! rétablie, et le verrou de période la garde sur l'**ancienne ET la nouvelle**
-//! date (étape 7, testé dans `journal_entry_reversal_e2e.rs`) ; le `DELETE` :
-//! Story 15-8b. Ce qui restait ouvert ici, c'est l'**ANTIDATAGE** —
+//! date (étape 7, testé dans `journal_entry_reversal_e2e.rs`) ; le `DELETE`,
+//! rouvert par la Story 15-8b, l'est sur la date de l'écriture (même fichier).
+//! Ce qui restait ouvert ici, c'est l'**ANTIDATAGE** —
 //! créer aujourd'hui une écriture datée d'un trimestre déjà déclaré, ce qui
 //! change ses totaux de TVA sans que rien ne le signale, le rapport TVA se
 //! recalculant à la volée.
