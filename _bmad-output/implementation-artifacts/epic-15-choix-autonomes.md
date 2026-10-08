@@ -695,3 +695,15 @@ l'import (#458–#461).
 - **Retenu** : mutation `None => None` (absent → effacé, comportement d'avant #521) dans la résolution ;
   `absent_payable_account_is_preserved` rougit. Même pouvoir de détection, un seul point modifié.
 - **Réversible** : oui (un test de mutation).
+
+## C-15-5b-5 — 15-5b (revue) : clôture de la boucle sur 13 LOW acceptés
+
+- **Contexte** : la passe P1 (Sonnet, trois lentilles) rend 0 CRITICAL, 0 HIGH, 0 MEDIUM et 13 LOW.
+- **Retenu** : clore la boucle après P1. Seul A-1 = E1 (virgule de la documentation) est corrigé. B2
+  (duplication, `errorMessageOf` non repris dans deux modales) et B4/E3 (lecture sans verrou des nouveaux
+  contrôles) exigeraient de toucher la production, donc de rouvrir une passe de revue pour des défauts de
+  niveau LOW ; ils sont tracés : B4 avec la dette de #522, B2 comme dette LOW de la fiche, B3/A-3 par #520,
+  B1/E4 par la 15-5c (#492).
+- **Écarté** : corriger B2/B4 dans cette story (la remédiation de production appelle une nouvelle passe,
+  et « la sévérité se déplace vers ce qu'on vient d'écrire »).
+- **Réversible** : oui (une story de dette).

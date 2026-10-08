@@ -1,6 +1,6 @@
 # Story 15.5b : Gardes de postabilité côté serveur — rapprochement, règles, réglages de facturation, compte bancaire
 
-Status: review
+Status: done
 
 <!-- Issue de la story 15-5, DÉCOUPÉE le 2026-10-08 après la passe de validation P1 (choix C7 de
      `epic-15-choix-autonomes.md`). Sous-story de « rollout » : elle applique aux surfaces neuves la
@@ -964,3 +964,26 @@ Claude Opus 5.5 (`bmad-dev-story`, worktree `kesh-15-5b`, branche `story/15-5b-g
   toutes rouges. Gate complet backend 2784/2784, frontend 979/979, E2E 235 passés / 12 échecs tous
   attendus (7 KF-029, KF-046, 4 KF-053 verts rejoués seuls). Choix C-15-5b-1 à C-15-5b-4. Statut
   `review`.
+- 2026-10-08 — **Revue de code close** (`bmad-code-review`, Claude Sonnet 5.5, trois lentilles en contexte
+  frais : Blind Hunter B, Edge Case Hunter E, Acceptance Auditor A ; diff `33116a29..c0aee2d3` ; prompt
+  `15-5b-review-prompt-p1.md`, rapports `target/gate-logs/15-5b-review-p1-{B,E,A}.md`). Trend : **P1 : 0
+  CRITICAL / 0 HIGH / 0 MEDIUM, 13 LOW** (B 6, E 4, A 3) — critère d'arrêt atteint dès la première passe
+  (« uniquement des LOW »). Sort de chaque LOW :
+  - **A-1 = E1** (`docs/api-external.md`, séparateur manquant avant `POST /supplier-invoices/{id}/pay`) :
+    **corrigé** (virgule rétablie, une seule occurrence).
+  - **B1 / E4** (codes bruts de `failed[]` affichés tels quels, `details.rejected` ignoré) : accepté,
+    attribué à la **15-5c (#492)**.
+  - **B2** (duplication du contrôle ; `errorMessageOf` non repris dans deux modales) : accepté, **dette
+    LOW** — le corriger touche la production.
+  - **B3 / A-3** (motif `e instanceof Error ? e.message : String(e)` encore présent, dont
+    `settings/+page.svelte:236/:260`) : accepté, hors module, écarté par C-15-5b-1 ; suivi **#520**.
+  - **B4 / E3** (contrôles de postabilité lus sans verrou, fenêtre étroite, création de compte bancaire
+    hors transaction) : accepté, **même dette que #522**, consignée au doc-comment du helper.
+  - **B5** (variable `active_account_ids` devenue « actifs et imputables ») et **B6 / C10** (400 avant 409,
+    documenté) : acceptés, nit / comportement voulu.
+  - **E2** (réactivation d'une règle dont le compte est archivé non refusée) : accepté, hors périmètre de
+    l'AC8, comportement antérieur inchangé.
+  - **A-2** (codes de `failed[]` dits en prose, non en liste) : accepté, conforme dans le fond.
+  Axes exercés : chaque AC contre code et noms de tests, recompte des tests (+30 backend, +10 frontend,
+  conformes), PDF aplatis, grep de résidus, inventaire du motif `String(e)`. Non exercés : exécution des
+  tests et des mutations (revue en lecture seule). Choix C-15-5b-5. Statut `done`.
