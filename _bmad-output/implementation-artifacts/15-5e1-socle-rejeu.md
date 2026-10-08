@@ -665,11 +665,16 @@ invisibles à l'utilisateur.**
    Pattern 5 sont à la 15-5e2. Aucun texte visible de l'utilisateur ne décrit aujourd'hui le 500 des
    cinq routes (`grep -nE "INTERNAL_ERROR|interblocage|deadlock" docs/api-external.md
    website/*.html README.md` sur `f289414e` : seules `api-external.md:307` et `:317`, propres au
-   rapprochement, qui restent vraies). **Quatre documents restent faux entre le merge de cette story
-   et celui de la 15-5e2** (finding F4-8 ; exception de la règle d'inclusion : plusieurs stories y
-   contribuent, la 15-5e2 les réécrit) — à ne pas prendre pour un oubli : l'exemple « How to use
-   the retry helper » du Pattern 5 (`docs/MULTI-TENANT-SCOPING-PATTERNS.md:338-351`), qui appelle
-   `retry_with` sans nom d'opération et ne compilerait plus ; `docs/api-external.md`, qui ne dit le
+   rapprochement, qui restent vraies). **Exception, revue de code P1 (B-2 = E-1, décision de
+   l'orchestrateur)** : deux passages du Pattern 5 que le code de cette story rendait faux sont
+   corrigés **ici** — le paragraphe « Why Lock Ordering Matters » (`:291`, « MariaDB does not detect
+   cross-table deadlocks proactively » : InnoDB les détecte, `innodb_deadlock_detect = ON` mesuré
+   sur 10.11.16, et la défense est le rejeu) et l'exemple « How to use the retry helper »
+   (`:338-351`, `retry_with` sans nom d'opération, qui ne compilait plus). Le reste du Pattern 5
+   (« Global Lock Order », tableau « Where This Applies », « Used on `finalize` ») reste à la
+   15-5e2. **Trois documents restent faux entre le merge de cette story et celui de la 15-5e2**
+   (finding F4-8 ; exception de la règle d'inclusion : plusieurs stories y contribuent, la 15-5e2
+   les réécrit) — à ne pas prendre pour un oubli : `docs/api-external.md`, qui ne dit le
    rejeu que du rapprochement (`:307`, `:317`) alors que le règlement, son annulation, la validation
    et la saisie fournisseur, ouverts aux clés API, le sont désormais (§ 10, `:401`, à la 15-5e2) ;
    `docs/manual/fr/user-manual.tex:909` (« transaction DB `SERIALIZABLE` » à la validation, l'une
@@ -1067,6 +1072,8 @@ Claude Opus 5.5 (agent de développement, autonomie complète — Epic 15).
   | enveloppe de `settle_invoice_handler` retirée **et** nommée en commentaire dans le corps | volet (c) + test 2 |
   | `retry_app_on_deadlock` à une tentative | test 1 (un appel au lieu de deux) |
   | prédicat qui reconnaît le 1205 | test 1 |
+  | *(revue P1, A2)* témoin muté (aide `victime`) **et** enveloppe retirée de `settle_invoice_handler` | test 2 par le **seul témoin** (la requête aboutit, aucun `warn!`), plus les tests 3, 4, 5 et 7 (témoin, aide commune) et le volet (c) |
+  | *(revue P1, E-3)* `error!` d'épuisement retiré de `retry_with` | test 1, volet (f) (`epuisements` vide) |
 
 **T4** — `CHANGELOG.md`, `[0.13.0] — Non publié` : une entrée « Modifié » (journalisation en avertissement) et une entrée « Corrigé » (#463, #491 ; #536 en partie), dans la forme des entrées de la section.
 
@@ -1074,7 +1081,7 @@ Claude Opus 5.5 (agent de développement, autonomie complète — Epic 15).
 - Backend complet `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest), base `kesh_155e1` remise à zéro juste avant : **2793 exécutés, 2793 passés, 4 ignorés** (110,8 s). Écart avec la 15-5b (2784) : +9 = 6 + 3, recompté (`grep -c '#\[sqlx::test'` sur le fichier neuf ; `#[test]` du registre 6 → 9).
 - Frontend : `npm run check` 0 erreur (27 avertissements préexistants), `lint-i18n-ownership` PASS, `test:unit` **979 / 979** (107 fichiers), `build` OK. Rien n'y change.
 - **E2E complet** (Playwright, base `kesh_e2e_155e1` neuve, backend sur 3002) : **240 passés, 7 échoués, 19 ignorés** (9,7 min). Les 7 sont exactement les sept KF-029 (#97) de `docs/testing.md` § « Les échecs attendus » (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) ; ni huitième variable, ni KF-045 (run de l'après-midi), ni KF-046.
-- Manuels : non touchés (AC6 : manuels et Pattern 5 à la 15-5e2). `docs/MULTI-TENANT-SCOPING-PATTERNS.md:338-351` appelle encore `retry_with` sans nom d'opération : l'un des quatre documents faux entre ce merge et celui de la 15-5e2, nommés à l'AC6.
+- Manuels : non touchés (AC6 : manuels et reste du Pattern 5 à la 15-5e2). *(Revue P1 : le paragraphe `:291` et l'exemple `:338-351` du Pattern 5 sont corrigés ici — AC6 ajusté, trois documents faux entre les deux merges et non plus quatre.)*
 
 **Propagation post-patch** : `Toute divergence de cet ordre`, `Aucun chemin ne verrouille`, `deadlocks cross-table`, `la plus jeune`, `aucun cycle n'est connu`, `Acceptable vs. un 500` grepés sur `crates/` et `docs/` : restent la phrase neuve du module `retry.rs` (« non la plus jeune ») ; `retry_with(` sans nom dans `docs/MULTI-TENANT-SCOPING-PATTERNS.md` (attendu, AC6).
 
@@ -1295,3 +1302,13 @@ Claude Opus 5.5 (agent de développement, autonomie complète — Epic 15).
   Modèles : Sonnet, Opus, Sonnet, Opus, Sonnet, Opus, Haiku (ciblée). Signaux D5 des P5 et P6 déclarés au
   Project Lead.
 - **2026-10-08 — Développement** (`bmad-dev-story`, Opus 5.5, autonomie complète) : T0 à T5 faits. R3-7 mesurée **vraie** sur MariaDB 10.11.16 (issue à ouvrir par l'orchestrateur), cycle du test 7 formé à la main ; patron (`kesh_db::retry` nommé, `kesh_api::retry`), cinq routes rejouées, avance des réglages de la saisie fournisseur, doc-comments canoniques, « 5 bis », registre à deux colonnes (volets (c) par `syn`, (d)), tests 1 à 5 et 7 avec témoin, dix mutations rouges, CHANGELOG. Gates : backend 2793/2793 (4 ignorés), frontend 979/979, E2E 240 passés / 7 KF-029 attendus. Choix **C-15-5e1-1** à **3**. Statut → `review`.
+- **2026-10-08 — Revue de code P1** (`bmad-code-review`, trois lentilles Sonnet, prompt `15-5e1-review-prompt-p1.md` ; rapports `target/gate-logs/15-5e1-review-p1-{B,E,A}.md`) : **0 CRITICAL, 0 HIGH, 2 MEDIUM distincts** (B-1 ; B-2 = E-1), **LOW** : B-3, B-4 = E-2, B-5 = E-4, E-3, A1, A2, A3. Remédiation (Opus 5.5, décisions de l'orchestrateur, formes au choix **C-15-5e1-4**), commit `1dc41152` :
+  - **B-1 MEDIUM** — le volet (b) du test 1 rendait au pool une connexion à `innodb_lock_wait_timeout = 1`, que (d) pouvait reprendre (1205 au lieu de 1213, faux rouge intermittent) : connexion **détachée** du pool et fermée après son `ROLLBACK`. Aucun autre `SET SESSION` dans le fichier ni dans le module de capture.
+  - **B-2 = E-1 MEDIUM** — `docs/MULTI-TENANT-SCOPING-PATTERNS.md` : paragraphe « Why Lock Ordering Matters » réécrit (InnoDB détecte les interblocages, `innodb_deadlock_detect = ON` mesuré sur 10.11.16 ; la défense est le rejeu, l'ordre réduit la fréquence ; renvoi aux doc-comments canoniques) et exemple « How to use the retry helper » refait avec nom d'opération (`retry_app_on_deadlock`, `retry_on_deadlock`, `retry_with`). **AC6 ajusté** : trois documents faux entre les deux merges, non plus quatre ; le reste du Pattern 5 reste à la 15-5e2.
+  - **E-3** — le rejeu épuisé est journalisé (`error!`, cible `kesh_db::retry`, `operation`, `attempts`) dans `kesh_db::retry::retry_with`, seule boucle (l'enveloppe `kesh_api::retry` la réutilise) ; volets (e) et (f) ajoutés au test 1 (trois vraies 1213 : deux `warn!` puis un `error!` nommé ; une erreur métier n'en journalise aucun) ; témoin étendu d'une liste `epuisements` ; doc du module et CHANGELOG (« Modifié ») complétés.
+  - **A1** — doc-comment `# Ordre des verrous` de `supplier_invoices::create_in_tx` aligné sur les étiquettes du code : `(2 ter)` (inexistante) devient `(2, suite)`, posée aussi en commentaire en tête de la boucle des comptes ; `(4)` ajoutée. La 15-5d (branche de planification) ne cite pour `create_in_tx` aucun numéro (`:528`, ordre par noms « réglages → comptes de charge → comptes désignés → exercice ») : ses comptes désignés se placeront entre `(2, suite)` et `(3)`. Ses renvois numérotés (`(2 bis')`, `(2 ter)` `:194`, `(2 quater)`) visent `validate_invoice`, dont les étiquettes existent au code.
+  - **A2** — la mutation « témoin muté **et** enveloppe retirée » est lancée : test 2 rouge par le seul témoin (et volet (c)) ; portée au tableau des mutations, avec celle de l'`error!` d'épuisement (test 1 rouge).
+  - **LOW sans code** : **B-3** (les prédicats en ligne de `onboarding.rs`, `reconciliation.rs` ×2, `invoices.rs`, `opening_balances.rs` restent jusqu'à la 15-5e2, qui les migre vers `is_app_deadlock` / `is_deadlock_error` — à écrire dans sa fiche) ; **B-4 = E-2** (limite **(iii bis)** écrite au doc-comment du registre : le volet (c) ne prouve pas que l'enveloppe enveloppe l'écriture ; preuve dynamique pour cinq routes plus `reconciliation::accept`, revue pour les trois autres) ; **B-5 = E-4** (aucune action : faux rouge seulement, documenté) ; **A3** (doc-comments des cinq handlers sur deux à trois lignes : forme laissée, le fond est conforme).
+  - **Propagation post-patch** : `cross-table`, `retry_with(` sans nom, `2 ter` grepés sur `crates/`, `docs/`, `website/` et les fiches 15-5e1 / 15-5e2 / 15-5d : restent `routes/onboarding.rs:595` (« to avoid cross-table deadlocks », jumelle que la 15-5e2 réécrit, sa fiche `:248`), « Used on `finalize` » du Pattern 5 `:328` (reste du Pattern 5, 15-5e2), les « cross-table » de `fiscal_years.rs` (exacts : table isolée), les `retry_with(` du source synthétique du registre (voulus), les `(2 ter)` de `validate_invoice` (existent au code). **La fiche 15-5e2** (`:261`, `:299`) prévoit encore de corriger `:289-291` et `:338-351` : déjà faits ici — à ajuster par l'orchestrateur.
+  - **Gates réellement exécutés, au commit `1dc41152`** : bases `kesh_155e1` et `kesh_e2e_155e1` remises à zéro (DROP/CREATE, migrations, seed) ; `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) **2793 exécutés, 2793 passés, 4 ignorés** (189,4 s ; même nombre de tests, les ajouts sont des volets du test 1) ; frontend `check` 0 erreur (27 avertissements préexistants), `lint-i18n-ownership` PASS, `test:unit` **979 / 979** (107 fichiers), `build` OK ; **E2E complet** (backend du worktree sur 3002) : **238 passés, 9 échoués, 19 ignorés** (9,8 min) — les sept KF-029 de `docs/testing.md`, plus `journal-entries.spec.ts:81` et `sidebar-navigation.spec.ts:75`, **tous deux verts rejoués seuls** (pollution d'état ; `sidebar-navigation:75` passant seul, ce n'est pas la KF-046). Mutations restaurées, fichiers `touch`és.
+  - Statut : reste `review` jusqu'à la passe ciblée sur `1dc41152`.
