@@ -985,3 +985,141 @@ l'import (#458–#461).
   `KNOWN_VIOLATIONS` (agrandit la dette #30) ; offrir l'assistant TVA en édition (il ajoute des lignes d'achat à une
   écriture existante, cas non spécifié).
 - **Réversible** : oui.
+
+## C-15-8-22 — Modification et suppression refusées dès qu'un exercice postérieur est clos
+
+- **Contexte** : validation P3, finding F1 de la 15-8b (MEDIUM), qui vaut pour la 15-8a. Le bilan est **cumulatif**
+  (`kesh-report/src/balance_sheet.rs:9`, « tous exercices confondus ») et `fiscal_years::close` n'exige pas que
+  l'exercice précédent soit clos (`fiscal_years.rs:739` ; seule `reopen` a une garde LIFO, `find_later_closed_in_tx`).
+  L'état « N ouvert, N+1 clos » est atteignable : modifier ou supprimer une écriture de N réécrivait le bilan d'un N+1
+  tenu pour clos. Décision de l'orchestrateur (consigne 1 de la passe).
+- **Retenu** : nouvelle condition du cadre D1 (15-8a) : aucun exercice **postérieur** à celui de l'écriture n'est clos.
+  Refus **400 `LATER_FISCAL_YEAR_CLOSED`** (`DbError::LaterFiscalYearClosed { fiscal_year_id, fiscal_year_name }`,
+  `details.fiscalYearId` / `fiscalYearName`, clé `journal-entries-modify-blocked-later-fiscal-year-closed` partagée par
+  le serveur et l'écran) ; précédence : juste après `FISCAL_YEAR_CLOSED`, avant tout 409 ; verrou : réutilisation de
+  `find_later_closed_in_tx` (`FOR UPDATE` sur l'intervalle `start_date > ?`), **après** l'exercice de l'écriture —
+  ordre écriture → [companies → projets] → exercice → exercices postérieurs (`PUT`), écriture + exercice → exercices
+  postérieurs (`DELETE`, étape 2-bis, avant la première lecture ordinaire) ; motif d'écran `LATER_FISCAL_YEAR_CLOSED`
+  (onze codes au lieu de dix) lu par une sœur non verrouillante, `find_later_closed`, au `SELECT` partagé ; tests de
+  refus, de précédence et de concurrence (clôture de N+1 non commitée), avec mutation ; manuel (§ clôture).
+- **Écartées** : l'inscrire au registre comme angle mort assumé — le défaut fausse un bilan clos, exactement ce que la
+  clôture protège ; imposer l'ordre des clôtures dans `fiscal_years::close` — ferme la cause pour l'avenir, mais pas les
+  installations où l'état existe déjà, et change un geste hors du périmètre de #532 ; un `400 FISCAL_YEAR_CLOSED`
+  réutilisé — il dirait « l'exercice de cette date est clos », faux ici.
+- **Coûts assumés** : le verrou d'intervalle sérialise brièvement le `PUT`/`DELETE` d'une écriture ancienne avec les
+  créations de tous les exercices postérieurs ; les trois cycles hérités valent aussi pour les exercices postérieurs
+  (rejoués par `retry_with`).
+- **Signalé pour une issue** : le même trou existe pour la création, la dévalidation, le règlement et toute écriture
+  datée dans un exercice antérieur à un exercice clos — défaut préexistant, hors périmètre.
+- **Réversible** : oui (une étape de la garde).
+
+## C-15-8-23 — Projets existants lus par une lecture ordinaire après le verrou de l'écriture (corrige C-15-8-19)
+
+- **Contexte** : validation P3, findings R3-2 (15-8a) et F1 (15-8a), MEDIUM. Le `LOCK IN SHARE MODE` retenu par
+  C-15-8-19 sur `journal_entry_lines` posait, sous `REPEATABLE READ`, un verrou d'intervalle jusqu'à l'enregistrement
+  suivant (jusqu'au *supremum* pour la dernière écriture), **avant** le verrou de l'exercice : quatrième cycle, non
+  hérité, avec une création du même exercice — dont la victime pouvait être la création, non rejouée (500). « Coût
+  nul » était faux.
+- **Retenu** (consigne 2 de l'orchestrateur) : lecture **ordinaire** des projets existants **après** l'étape 1 —
+  l'écriture verrouillée, ses lignes sont stables. La vue `REPEATABLE READ` s'ouvre donc à 1-bis, avant les verrous des
+  projets et des exercices : la garde reste juste (tout ce qui la change passe par la ligne verrouillée de l'écriture ;
+  le paiement détaché est sûr par atomicité du commit) ; l'exercice et les exercices postérieurs sont lus en lecture
+  verrouillante (état courant) ; la borne `books_locked_through` peut être périmée — même tolérance qu'à la création.
+  La seconde mutation de l'AC 8 tombe. Les cycles restants (les trois hérités, étendus aux exercices postérieurs) sont
+  nommés et couverts par `retry_with`.
+- **Écartées** : garder le verrou partagé et nommer le quatrième cycle — il frappe une création non rejouée ;
+  verrouiller tous les projets du corps puis trier « anciens / nouveaux » après la vue — exige une variante de
+  `validate_taggable_in_tx` qui tolère l'archivé, pour un gain limité à la fraîcheur de la borne.
+- **Correction d'une entrée antérieure** : C-15-8-19, point « la lecture des projets existants se fait en `LOCK IN
+  SHARE MODE` » et option écartée « (b) de R2-2 … coût nul » — révisés ici.
+- **Réversible** : oui.
+
+## C-15-8-24 — `modification_guard` prend une connexion ; corrections de renvois de C-15-8-5, C-15-8-10, C-15-8-12, C-15-8-13
+
+- **Contexte** : validation P3, finding R3-1 de la 15-8a (MEDIUM). `modification_guard(executor, …)` générique enchaîne
+  deux lectures (`reversal_blockers`, puis la trace d'audit) ; `reversal_blockers` prend son exécuteur par valeur : un
+  `E: Executor` ne sert qu'une fois. La correction R2-15 avait déplacé le défaut sur `modification_guard` au lieu de le
+  corriger. LOW R3-3 (15-8a) et R3-3/F8 (15-8b) : renvois périmés du registre.
+- **Retenu** (consigne 3) : `modification_guard(conn: &mut sqlx::MySqlConnection, company_id, id)` — `update` et
+  `delete_in_tx` passent `&mut **tx` ; `modification_blocker(pool: &MySqlPool, …)` fait `pool.acquire()` et enchaîne ses
+  cinq lectures sur la connexion.
+- **Corrections d'entrées antérieures** (sans les réécrire) :
+  - **C-15-8-5** : `DbError::EntryNotModifiable { blocker, document_id, document_label }` est devenu
+    `DbError::EntryNotModifiable(ModificationGuard)` (tuple, `ModificationGuard::Owned { … }` ou
+    `::DetachedSupplierSettlement { … }`, C-15-8-20) ; `ENTRY_IS_POSTED` n'est retiré qu'à la 15-8b.
+  - **C-15-8-10** : la phrase « Un cycle résiduel serait un 1213 d'InnoDB, pas une attente infinie » est fausse
+    (C-15-8-19 l'a retirée de la fiche) : un cycle non détecté finit en 1205 après 50 s, non rejoué, donc 500. L'ordre
+    s'est aussi allongé des exercices postérieurs (C-15-8-22).
+  - **C-15-8-12** : « l'asserter (AC 13) » — c'est l'**AC 7** de la 15-8b depuis le découpage.
+  - **C-15-8-13** : `modification_guard` rend `Result<Option<ModificationGuard>, DbError>` (pas
+    `Option<ReversalBlockerHit>`), prend une connexion ; la table de correspondance est l'assertion de l'**AC 12** de
+    la 15-8a (pas l'AC 14) ; `modification_blocker` lit aussi l'exercice postérieur clos.
+- **Écartée** : `modification_guard` sur `&mut Transaction` — l'écran n'a pas de transaction ; en ouvrir une pour lire
+  serait plus lourd qu'un `acquire()`.
+- **Réversible** : oui.
+
+## C-15-8-25 — Paiement détaché lu dans l'audit : trois réserves écrites, dette #541, requête bornée par société
+
+- **Contexte** : validation P3, finding F7 de la 15-8a (LOW, trois réserves non écrites).
+- **Retenu** (consigne 6) : la fiche écrit (1) que la lecture d'audit **révise** le garde-fou de la 25-3-c (« ne pas le
+  rechercher dans l'audit », `supplier-invoices/[id]/+page.svelte:409-411`, arbitrage Q1) — le commentaire se reformule ;
+  (2) le faux positif possible après restauration (fusion d'`audit_log`, `backup.rs:438-455`) — limite assumée, dite au
+  manuel administrateur ; (3) le coût de `JSON_VALUE`, non indexable, à chaque `GET` et `PUT`. Renvoi à **#541** (dette
+  structurelle : la colonne qui garde le lien). Requête bornée par société des deux côtés : `si.company_id = ?` **et**
+  `al.company_id = ?` (filtre strict, patron `audit_log.rs:204`) ; faux négatif résiduel nommé (trace sans société).
+- **Écartée** : `al.company_id = ? OR al.company_id IS NULL` — rouvre le faux positif inter-sociétés que le filtre ferme,
+  pour un cas (utilisateur sans société au moment de l'annulation) que l'écrivain ne produit pas en pratique.
+- **Réversible** : oui (une condition de jointure).
+
+## C-15-8-26 — `README.md:29` édité par la 15-8b seule
+
+- **Contexte** : validation P3, findings R3-4 et F3 de la 15-8b (LOW) : les deux fiches éditaient la même ligne, et la
+  15-8b citait « … et supprimables » comme s'il existait déjà.
+- **Retenu** : la 15-8b seule écrit la forme finale — « écritures validées, modifiables et supprimables tant que
+  l'exercice est ouvert ». La 15-8a n'y touche pas : entre les deux merges, la ligne tait la modification sans rien
+  affirmer de faux. `README.md:219` (ligne de la v0.12.0) est historique et reste.
+- **Écartée** : la 15-8a écrit « modifiables », la 15-8b complète — conflit de merge garanti sur une ligne, pour un
+  état intermédiaire de quelques jours.
+- **Réversible** : oui.
+
+## C-15-8-27 — Contrôles de manuel sur les PDF aplatis, motifs complétés, `.ftl` contrôlé ; message d'`ENTRY_IS_POSTED` réécrit
+
+- **Contexte** : validation P3, findings R3-6, F6, F9 (15-8a), R3-6, F9 (15-8b), F4 (15-8a) — tous LOW. Le balisage TeX
+  (`\textbf{imposée}`) coupe les tournures dans le `.tex` ; des formulations échappaient aux motifs (« seul chemin »,
+  « passent par contre-passation », « ni modifiée ni supprimée ») ; la tournure naturelle du paiement détaché heurtait un
+  motif ; le `.ftl` n'était pas contrôlé, et le message d'`ENTRY_IS_POSTED` (« ne se modifie plus … contre-passez-la »)
+  devenait faux dès la 15-8a pour le `DELETE` d'une écriture modifiable.
+- **Retenu** (consigne 7) : le contrôle **fait foi sur les PDF aplatis** (`grep -oiE`, qui compte les occurrences) ;
+  motifs complétés (`seul chemin`, `passent par (la )?contre-passation`, `seule voie de correction`, `ni modifiée ni
+  supprimée`) ; `fr-CH/messages.ftl` grepé, les trois autres locales relues à la main ; lignes de base mesurées
+  (15-8a : 11 / 5 / 2 ; 15-8b : 5 / 2 / 0) ; tournures **prescrites** pour le paiement détaché et pour la clé de
+  l'exercice postérieur clos, qui ne heurtent aucun motif. La 15-8a réécrit la clé `journal-entries-blocked-posted`
+  (« … ne se supprime pas. Pour la corriger, modifiez-la tant que son exercice est ouvert, ou contre-passez-la »), son
+  repli Rust et le `#[error]` ; la 15-8b les retire.
+- **Écartée** : garder le contrôle sur le `.tex` — passe à tort sur les phrases balisées ; exiger que 15-8a et 15-8b
+  partent dans la même release au lieu de réécrire le message — contrainte de calendrier pour une story urgente.
+- **Réversible** : oui.
+
+## C-15-8-28 — 15-8a : dérogation écrite à la règle de splitting, pas de nouveau découpage
+
+- **Contexte** : validation P3, finding F2 de la 15-8a (MEDIUM). La fiche touche encore plus de cinq modules de premier
+  niveau ; l'exception du `CLAUDE.md` (cycle Cargo, merge non testable) ne s'applique pas — un `PUT` sans écran est
+  testable.
+- **Retenu** (consigne 4) : **pas** de découpage supplémentaire ; section « Dérogation règle de splitting » écrite dans
+  la 15-8a — story URGENTE demandée par le Project Lead, déjà issue d'un découpage (15-8 → 15-8a / 15-8b), et un `PUT`
+  sans écran ne rend aucun service à l'utilisateur qui l'attend ; risque accepté (revue d'un périmètre large), contenu
+  par la passe ciblée de fin de boucle. **Repli écrit** si une passe recycle : 15-8a-1 (API : D1–D7, D9, D10 ; AC 1–13,
+  15, 16, 18) / 15-8a-2 (écran et manuel : D8 ; AC 14, 17).
+- **Écartée** : couper maintenant en 15-8a-1 / 15-8a-2 — retarde la correction que Guy attend, sans défaut de conception
+  qui l'exige (les findings P3 sont distincts et ne recyclent pas).
+- **Réversible** : oui (le repli est écrit).
+
+## C-15-8-29 — 15-8b : l'exercice postérieur clos ne garde le `DELETE` que sur le chemin de la route
+
+- **Contexte** : C-15-8-22 au `DELETE`. `delete_in_tx` a deux appelants : la route (`enforce_ownership = true`) et
+  `invoices::unvalidate` (`false`), dont l'AC 3 de la 15-8b exige le comportement inchangé.
+- **Retenu** : l'étape 2-bis (exercices postérieurs clos) ne s'exécute que si `enforce_ownership` ; la dévalidation garde
+  son comportement, et le même trou y est signalé pour une issue avec la création et le règlement (C-15-8-22).
+- **Écartée** : l'appliquer aussi à la dévalidation — change un flux de facturation hors du périmètre de #532, sans
+  spécification de son message ni de son écran.
+- **Réversible** : oui.

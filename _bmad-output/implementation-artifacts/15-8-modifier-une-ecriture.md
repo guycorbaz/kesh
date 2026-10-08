@@ -15,12 +15,12 @@ Story 24-4b (gel inconditionnel, #380).
 
 | | fiche | ce qu'elle porte | issue |
 |---|---|---|---|
-| **15-8a** | `15-8a-modifier-une-ecriture.md` | **La modification** (`PUT`) d'une écriture manuelle et de l'écriture d'ouverture : le cadre (exercice ouvert, ni contre-passée ni contre-passation, aucune pièce, pas un paiement détaché, hors période verrouillée), la garde `modification_guard` et son garde-fou d'inventaire, l'audit avant/après par utilisateur ou clé d'API, le rejeu sur interblocage, le motif d'écran du détail, « Modifier » sur la fiche et le formulaire en mode édition, le manuel et la documentation de ce geste | `refs #532` |
+| **15-8a** | `15-8a-modifier-une-ecriture.md` | **La modification** (`PUT`) d'une écriture manuelle et de l'écriture d'ouverture : le cadre (exercice ouvert, aucun exercice postérieur clos, ni contre-passée ni contre-passation, aucune pièce, pas un paiement détaché, hors période verrouillée), la garde `modification_guard` et son garde-fou d'inventaire, l'audit avant/après par utilisateur ou clé d'API, le rejeu sur interblocage, le motif d'écran du détail, « Modifier » sur la fiche et le formulaire en mode édition, le manuel et la documentation de ce geste | `refs #532` |
 | **15-8b** | `15-8b-supprimer-une-ecriture.md` | **La suppression** (`DELETE`) dans le même cadre, l'historique visible sur la fiche (« Modifiée », « Historique »), la suppression de l'ouverture qui rouvre la génération, le retrait d'`ENTRY_IS_POSTED`, et ce qui reste du manuel | `closes #532` |
 
 ⚠️ **L'ordre n'est pas indifférent** : **15-5a → 15-8a → 15-8b**. La 15-8a s'écrit contre le contrat de refus des
 comptes posé par la 15-5a (`ACCOUNT_NOT_POSTABLE`, `exempt_ids` retiré, section `## [0.13.0]` du CHANGELOG) et se
-rebase sur `main` après son merge ; la 15-8b réutilise la garde, les types et l'écran de la 15-8a, et ne commence
+rebase sur `main` après son merge — **fait** le 2026-10-08, sur `b11a074a`, à la validation P3 ; la 15-8b réutilise la garde, les types et l'écran de la 15-8a, et ne commence
 qu'après son merge.
 
 ## Pourquoi le découpage
@@ -54,9 +54,17 @@ modification d'abord, qui est le geste que Guy attend (corriger son ouverture in
 | C-15-8-16 | préparation extraite du `POST` avant son pré-contrôle d'exercice | 15-8a |
 | C-15-8-17 | découpage 15-8a / 15-8b | les deux |
 | C-15-8-18 | dépendance à la 15-5a, deux refus de compte | 15-8a |
-| C-15-8-19 | rejeu sur interblocage, cycles nommés, Pattern 5, projets lus en `LOCK IN SHARE MODE` | 15-8a (`PUT`), 15-8b (`DELETE`) |
+| C-15-8-19 | rejeu sur interblocage, cycles nommés, Pattern 5, projets lus en `LOCK IN SHARE MODE` — **révisé par C-15-8-23** | 15-8a (`PUT`), 15-8b (`DELETE`) |
 | C-15-8-20 | paiement détaché d'une facture fournisseur annulée, gelé par la trace d'audit | 15-8a (pose), 15-8b (emploie) |
 | C-15-8-21 | modale de conflit écartée de l'inversion, prop `onStale`, clés `journal-entries-*` | 15-8a |
+| C-15-8-22 | modification et suppression refusées dès qu'un exercice **postérieur** est clos (`LATER_FISCAL_YEAR_CLOSED`) | 15-8a (pose), 15-8b (emploie) |
+| C-15-8-23 | projets existants lus par une lecture ordinaire après le verrou de l'écriture — **révise C-15-8-19** | 15-8a |
+| C-15-8-24 | `modification_guard` sur une connexion, `pool.acquire()` à l'écran ; corrige les renvois de C-15-8-5, 10, 12, 13 | les deux |
+| C-15-8-25 | paiement détaché : trois réserves écrites, dette #541, requête bornée par société | 15-8a (pose), 15-8b (emploie) |
+| C-15-8-26 | `README.md:29` édité par la 15-8b seule | 15-8b |
+| C-15-8-27 | contrôles de manuel sur les PDF aplatis, motifs complétés, `.ftl` ; message d'`ENTRY_IS_POSTED` réécrit | les deux |
+| C-15-8-28 | dérogation écrite à la règle de splitting, repli 15-8a-1 / 15-8a-2 | 15-8a |
+| C-15-8-29 | l'exercice postérieur clos ne garde le `DELETE` que sur le chemin de la route | 15-8b |
 
 ## Change Log
 
