@@ -12,6 +12,43 @@ use crate::errors::{DbError, map_db_error};
 const SELECT_SQL: &str = "SELECT id, step_completed, is_demo, ui_mode, version, created_at, updated_at \
      FROM onboarding_state LIMIT 1";
 
+/// Requête du verrou d'état d'onboarding : la ligne singleton, `FOR UPDATE`,
+/// par l'index unique `uq_onboarding_singleton` (Story 15-7a1).
+///
+/// Publique parce que **partagée avec le test 7 du dépôt**
+/// (`tests/onboarding_repository.rs`), qui l'exécute sur une seconde connexion
+/// pour prouver que le verrou est tenu — n'est pas une API à étendre. Elle
+/// n'est **pas** dérivée de [`SELECT_SQL`] : celle-ci finit par `LIMIT 1` sans
+/// `WHERE`, et y accoler `FOR UPDATE` serait une autre requête (balayage au lieu
+/// de l'index unique, autres verrous de trou sur table vide).
+pub const LOCK_SQL: &str = "SELECT id, step_completed, is_demo, ui_mode, version, created_at, updated_at \
+     FROM onboarding_state WHERE singleton = TRUE FOR UPDATE";
+
+/// Verrouille la ligne d'état d'onboarding **dans la transaction de
+/// l'appelant** et la rend (`None` si la ligne n'existe pas) — Story 15-7a1,
+/// choix C-15-7-20.
+///
+/// Primitive **sans** comparaison d'étape ni `rollback` : le sort de `None` et
+/// la vérification de l'étape sont décidés par chaque appelant. Ne commite
+/// jamais.
+///
+/// ⚠️ **Ordre d'appel** : `lock_state_in_tx` s'appelle **en premier** dans la
+/// transaction, avant toute lecture cohérente (non verrouillante). Sous
+/// REPEATABLE READ, la première lecture cohérente fige l'instantané ; une garde
+/// fondée sur une lecture ultérieure (par ex.
+/// `accounts::count_by_company(&mut *tx, …) == 0`) n'est exacte que si ce
+/// verrou l'a précédée. Ordre des verrous de référence :
+/// `docs/MULTI-TENANT-SCOPING-PATTERNS.md` (onboarding_state, puis company,
+/// puis accounts).
+pub async fn lock_state_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+) -> Result<Option<OnboardingState>, DbError> {
+    sqlx::query_as::<_, OnboardingState>(LOCK_SQL)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)
+}
+
 /// Retourne l'état d'onboarding (ou None si jamais initialisé).
 pub async fn get_state(pool: &MySqlPool) -> Result<Option<OnboardingState>, DbError> {
     sqlx::query_as::<_, OnboardingState>(SELECT_SQL)

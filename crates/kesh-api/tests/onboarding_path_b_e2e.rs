@@ -275,6 +275,49 @@ async fn full_path_b_flow(pool: MySqlPool) {
     let body: serde_json::Value = resp.json().await.unwrap();
     assert_eq!(body["stepCompleted"], 7);
     assert_eq!(body["isDemo"], false);
+
+    // Story 15-7a1 (test 8) — finalisation, puis état après `finalize`. Seul test
+    // qui traverse les quatre fonctions du socle par la route de production :
+    // `bulk_create_from_chart` (accounting-language), `upsert_primary`
+    // (bank-account), `insert_with_defaults_in_tx` et
+    // `seed_default_swiss_rates_in_tx` (finalize).
+    let resp = app
+        .client
+        .post(app.url("/api/v1/onboarding/finalize"))
+        .header("Authorization", auth(&token))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["stepCompleted"], 8);
+
+    let company_id: i64 = sqlx::query_scalar("SELECT id FROM companies ORDER BY id LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let categories: Vec<String> =
+        sqlx::query_scalar("SELECT category FROM vat_rates WHERE company_id = ? ORDER BY id")
+            .bind(company_id)
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(categories, ["normal", "special", "reduced", "exempt"]);
+    let settings_rows: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM company_invoice_settings WHERE company_id = ?")
+            .bind(company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(settings_rows, 1, "une ligne de réglages de facturation");
+    // `user.created` : bootstrap (`ensure_admin_user`) ; `fiscal_year.created` :
+    // `fiscal_years::create_if_absent_in_tx` dans `finalize`. Aucune autre trace
+    // (#434 : l'onboarding n'en écrit pas encore — c'est la 15-7a2).
+    let actions: Vec<String> = sqlx::query_scalar("SELECT action FROM audit_log ORDER BY id")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(actions, ["user.created", "fiscal_year.created"]);
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

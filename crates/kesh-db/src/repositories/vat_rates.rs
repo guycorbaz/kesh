@@ -275,32 +275,59 @@ pub async fn deactivate_for_company(
         .ok_or(DbError::NotFound)
 }
 
-/// Seed transactionnel : insère les 4 taux suisses 2024+ pour `company_id`
+/// Les 4 taux suisses 2024+ posés par le seed, **dans l'ordre du seed** :
+/// `(category, label, taux en centièmes de pour-cent)`, tous valides dès le
+/// 2024-01-01 sans fin.
+const DEFAULT_SWISS_RATES: [(&str, &str, i64); 4] = [
+    ("normal", "product-vat-normal", 810),
+    ("special", "product-vat-special", 380),
+    ("reduced", "product-vat-reduced", 260),
+    ("exempt", "product-vat-exempt", 0),
+];
+
+/// Seed transactionnel des 4 taux suisses 2024+ pour `company_id`
 /// **dans la transaction du caller** (Path B onboarding, atomicité globale).
 ///
-/// **`INSERT IGNORE`** idempotent (UNIQUE `(company_id, rate, valid_from)`).
+/// Rend les taux **réellement insérés**, dans l'ordre du seed (`normal`,
+/// `special`, `reduced`, `exempt`) — Story 15-7a1 : quatre `INSERT IGNORE`
+/// d'une ligne ; une ligne est insérée ssi `rows_affected == 1`, son id est
+/// `last_insert_id`, la ligne rendue est relue par id. Un taux déjà présent
+/// (UNIQUE `(company_id, rate, valid_from)`) n'est pas rendu ; un second appel
+/// rend un `Vec` vide. **Ne commite jamais.**
+///
 /// Story 11-1 : pose explicitement `category` (`normal`/`special`/`reduced`/
 /// `exempt`) — sinon le défaut `'custom'` casserait la continuité par catégorie.
 /// **Pas d'audit log** : seed = contexte système.
 pub async fn seed_default_swiss_rates_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
-) -> Result<(), DbError> {
-    sqlx::query(
-        "INSERT IGNORE INTO vat_rates (company_id, category, label, rate, valid_from, valid_to) \
-         VALUES \
-            (?, 'normal',  'product-vat-normal',  8.10, '2024-01-01', NULL), \
-            (?, 'special', 'product-vat-special', 3.80, '2024-01-01', NULL), \
-            (?, 'reduced', 'product-vat-reduced', 2.60, '2024-01-01', NULL), \
-            (?, 'exempt',  'product-vat-exempt',  0.00, '2024-01-01', NULL)",
-    )
-    .bind(company_id)
-    .bind(company_id)
-    .bind(company_id)
-    .bind(company_id)
-    .execute(&mut **tx)
-    .await
-    .map_err(map_db_error)?;
+) -> Result<Vec<VatRate>, DbError> {
+    let mut inserted = Vec::with_capacity(DEFAULT_SWISS_RATES.len());
+    for (category, label, rate) in DEFAULT_SWISS_RATES {
+        let result = sqlx::query(
+            "INSERT IGNORE INTO vat_rates (company_id, category, label, rate, valid_from, valid_to) \
+             VALUES (?, ?, ?, ?, '2024-01-01', NULL)",
+        )
+        .bind(company_id)
+        .bind(category)
+        .bind(label)
+        .bind(Decimal::new(rate, 2))
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+
+        if result.rows_affected() == 1 {
+            let id = i64::try_from(result.last_insert_id()).map_err(|_| {
+                DbError::Invariant("last_insert_id overflow (vat_rates seed)".into())
+            })?;
+            let row = find_by_id_for_company(tx, company_id, id)
+                .await?
+                .ok_or_else(|| {
+                    DbError::Invariant(format!("vat_rate {id} introuvable après INSERT (seed)"))
+                })?;
+            inserted.push(row);
+        }
+    }
 
     // Assertion post-seed (transforme un échec silencieux d'INSERT IGNORE en
     // erreur explicite). Borne `>= 4` : tolère qu'un admin ait déjà ajouté des
@@ -317,7 +344,7 @@ pub async fn seed_default_swiss_rates_in_tx(
         )));
     }
 
-    Ok(())
+    Ok(inserted)
 }
 
 /// Variante pool : ouvre une transaction interne, commit. Utilisée par

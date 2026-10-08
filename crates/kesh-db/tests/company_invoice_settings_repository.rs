@@ -937,6 +937,9 @@ async fn insert_with_defaults_fails_fast_when_no_receivable_role(pool: MySqlPool
 /// actif portant le rôle `Receivable`, l'init de config échoue en
 /// `InactiveOrInvalidAccounts` sans écrire de ligne. Contrairement à la variante
 /// pool (qui rollback elle-même), le rollback est ici à la charge de l'appelant.
+///
+/// ⚠️ Depuis la Story 15-7a1, la variante pool **délègue** à celle-ci : le
+/// « miroir » de ces deux tests prouve la délégation, plus une parité de corps.
 #[sqlx::test(migrations = "./test-schema")]
 async fn insert_with_defaults_in_tx_fails_fast_when_no_receivable_role(pool: MySqlPool) {
     let company_id = company_with_pme_chart(&pool, "No Receivable Co (tx)").await;
@@ -1063,6 +1066,10 @@ async fn company_with_chart(pool: &MySqlPool, name: &str, org_type: OrgType) -> 
 
 /// Story 25-4-c3-a2 (#476) — pour **chaque** plan livré, la création des réglages
 /// désigne d'office le compte marqué du plan (`6940`), par les deux variantes.
+///
+/// ⚠️ Depuis la Story 15-7a1, la variante pool **délègue** à la variante `_in_tx` :
+/// ce test ne prouve plus une parité entre deux corps, seulement que la
+/// délégation rend le même résultat. Ne pas le compter comme garde de parité.
 #[sqlx::test(migrations = "./test-schema")]
 async fn insert_with_defaults_designates_the_charts_rounding_account(pool: MySqlPool) {
     for (i, org_type) in [OrgType::Pme, OrgType::Association, OrgType::Independant]
@@ -1081,9 +1088,10 @@ async fn insert_with_defaults_designates_the_charts_rounding_account(pool: MySql
 
         let tx_variant = company_with_chart(&pool, &format!("Arrondi tx {i}"), org_type).await;
         let mut tx = pool.begin().await.unwrap();
-        let settings = company_invoice_settings::insert_with_defaults_in_tx(&mut tx, tx_variant)
-            .await
-            .expect("insert_with_defaults_in_tx");
+        let (settings, _inserted) =
+            company_invoice_settings::insert_with_defaults_in_tx(&mut tx, tx_variant)
+                .await
+                .expect("insert_with_defaults_in_tx");
         tx.commit().await.unwrap();
         assert_eq!(
             settings.default_rounding_account_id,
@@ -1151,6 +1159,9 @@ async fn insert_with_defaults_does_not_touch_existing_settings(pool: MySqlPool) 
 /// désigne d'office les comptes des natures d'écart soldé que le plan marque,
 /// par les deux variantes. Le plan des associations ne marque pas d'escompte :
 /// son 3800 est « Autres produits », et le réglage reste vide.
+///
+/// ⚠️ Depuis la Story 15-7a1, la variante pool **délègue** à la variante `_in_tx` :
+/// le passage « par les deux variantes » prouve la délégation, plus une parité.
 #[sqlx::test(migrations = "./test-schema")]
 async fn insert_with_defaults_designates_the_charts_write_off_accounts(pool: MySqlPool) {
     for (i, (org_type, discount)) in [
@@ -1170,7 +1181,7 @@ async fn insert_with_defaults_designates_the_charts_write_off_accounts(pool: MyS
                     .expect("insert_with_defaults")
             } else {
                 let mut tx = pool.begin().await.unwrap();
-                let settings =
+                let (settings, _inserted) =
                     company_invoice_settings::insert_with_defaults_in_tx(&mut tx, company)
                         .await
                         .expect("insert_with_defaults_in_tx");
@@ -1341,4 +1352,76 @@ async fn update_write_off_accounts_round_trip(pool: MySqlPool) {
         .unwrap();
         assert!(audited >= 1, "{field} : l'audit porte le compte");
     }
+}
+
+/// Test 4 (Story 15-7a1, AC 4) — `insert_with_defaults_in_tx` rend
+/// `(réglages, inséré)` : `true` au premier appel, `false` au second sur la même
+/// société ; l'enveloppe pool rend les mêmes réglages ; et
+/// `InactiveOrInvalidAccounts` traverse l'enveloppe **inchangée**.
+#[sqlx::test(migrations = "./test-schema")]
+async fn insert_with_defaults_in_tx_reports_whether_it_inserted(pool: MySqlPool) {
+    let company = company_with_pme_chart(&pool, "Inséré ou non").await;
+
+    let mut tx = pool.begin().await.unwrap();
+    let (first, inserted) = company_invoice_settings::insert_with_defaults_in_tx(&mut tx, company)
+        .await
+        .expect("premier appel");
+    assert!(inserted, "premier appel : la ligne est insérée");
+    let (second, inserted_again) =
+        company_invoice_settings::insert_with_defaults_in_tx(&mut tx, company)
+            .await
+            .expect("second appel");
+    assert!(!inserted_again, "second appel : la ligne existait déjà");
+    assert_eq!(second.company_id, first.company_id);
+    assert_eq!(
+        second.default_receivable_account_id,
+        first.default_receivable_account_id
+    );
+    tx.commit().await.unwrap();
+
+    let via_pool = company_invoice_settings::insert_with_defaults(&pool, company)
+        .await
+        .expect("enveloppe pool");
+    assert_eq!(via_pool.company_id, first.company_id);
+    assert_eq!(via_pool.version, first.version);
+    assert_eq!(
+        via_pool.default_receivable_account_id,
+        first.default_receivable_account_id
+    );
+    assert_eq!(
+        via_pool.default_revenue_account_id,
+        first.default_revenue_account_id
+    );
+
+    // Société sans compte débiteurs : l'erreur traverse l'enveloppe telle quelle.
+    let bare = companies::create(
+        &pool,
+        NewCompany {
+            name: "Sans comptes".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
+            ide_number: None,
+            org_type: OrgType::Pme,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    let result = company_invoice_settings::insert_with_defaults(&pool, bare).await;
+    assert!(
+        matches!(
+            result,
+            Err(kesh_db::errors::DbError::InactiveOrInvalidAccounts)
+        ),
+        "obtenu {result:?}"
+    );
 }

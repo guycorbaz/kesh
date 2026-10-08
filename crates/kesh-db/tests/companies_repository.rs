@@ -445,3 +445,55 @@ async fn update_recomposes_address_when_structured_columns_are_filled(pool: MySq
         "adresse structurée renseignée → `address` doit être recomposée depuis elle"
     );
 }
+
+async fn stub_flag_and_version(pool: &MySqlPool, id: i64) -> (bool, i32) {
+    sqlx::query_as("SELECT is_stub, version FROM companies WHERE id = ?")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Test 6 (Story 15-7a1, AC 6) — `clear_stub_in_tx` lève le drapeau d'une
+/// société provisoire et bumpe `version` ; rien sur un second appel ni sur une
+/// société non provisoire.
+#[sqlx::test(migrations = "./test-schema")]
+async fn clear_stub_in_tx_clears_only_a_stub_and_bumps_version(pool: MySqlPool) {
+    let stub = companies::create(&pool, sample_new_company())
+        .await
+        .unwrap()
+        .id;
+    // Aucune fonction de kesh-db n'insère de stub : montage en SQL brut.
+    sqlx::query("UPDATE companies SET is_stub = TRUE WHERE id = ?")
+        .bind(stub)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let mut other_company = sample_new_company();
+    other_company.name = "Non provisoire SA".into();
+    other_company.ide_number = None;
+    let regular = companies::create(&pool, other_company).await.unwrap().id;
+
+    let (flag, v0) = stub_flag_and_version(&pool, stub).await;
+    assert!(flag);
+
+    let mut tx = pool.begin().await.unwrap();
+    assert!(companies::clear_stub_in_tx(&mut tx, stub).await.unwrap());
+    tx.commit().await.unwrap();
+    assert_eq!(stub_flag_and_version(&pool, stub).await, (false, v0 + 1));
+
+    let mut tx = pool.begin().await.unwrap();
+    assert!(!companies::clear_stub_in_tx(&mut tx, stub).await.unwrap());
+    tx.commit().await.unwrap();
+    assert_eq!(
+        stub_flag_and_version(&pool, stub).await,
+        (false, v0 + 1),
+        "second appel : version inchangée"
+    );
+
+    let before = stub_flag_and_version(&pool, regular).await;
+    let mut tx = pool.begin().await.unwrap();
+    assert!(!companies::clear_stub_in_tx(&mut tx, regular).await.unwrap());
+    tx.commit().await.unwrap();
+    assert_eq!(stub_flag_and_version(&pool, regular).await, before);
+}

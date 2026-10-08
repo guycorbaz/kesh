@@ -92,3 +92,68 @@ async fn update_step_with_expert_mode(pool: MySqlPool) {
         .unwrap();
     assert_eq!(updated.ui_mode, Some(UiMode::Expert));
 }
+
+/// Test 7 (Story 15-7a1, AC 7) — `lock_state_in_tx` rend la ligne et **tient le
+/// verrou** : tant que sa transaction est ouverte, une connexion dédiée (hors
+/// pool, pour que son `SET SESSION` ne retourne pas au pool) qui exécute la même
+/// requête `LOCK_SQL` échoue en 1205 ; après `rollback`, elle réussit. Sans
+/// ligne, la fonction rend `None`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn lock_state_in_tx_holds_the_row_lock(pool: MySqlPool) {
+    use sqlx::{Connection, MySqlConnection};
+
+    let initial = onboarding::init_state(&pool).await.unwrap();
+
+    let mut tx = pool.begin().await.unwrap();
+    let locked = onboarding::lock_state_in_tx(&mut tx)
+        .await
+        .unwrap()
+        .expect("ligne présente");
+    assert_eq!(locked.id, initial.id);
+    assert_eq!(locked.version, initial.version);
+
+    let mut other = MySqlConnection::connect_with(&pool.connect_options())
+        .await
+        .expect("connexion dédiée");
+    sqlx::query("SET SESSION innodb_lock_wait_timeout = 1")
+        .execute(&mut other)
+        .await
+        .unwrap();
+    let mut other_tx = other.begin().await.unwrap();
+    let blocked = sqlx::query(onboarding::LOCK_SQL)
+        .fetch_optional(&mut *other_tx)
+        .await;
+    let code = match &blocked {
+        Err(sqlx::Error::Database(db)) => db
+            .try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>()
+            .map(|e| e.number()),
+        _ => None,
+    };
+    assert_eq!(
+        code,
+        Some(1205),
+        "verrou tenu : attente expirée, obtenu {blocked:?}"
+    );
+    other_tx.rollback().await.unwrap();
+
+    tx.rollback().await.unwrap();
+
+    let mut other_tx = other.begin().await.unwrap();
+    let freed = sqlx::query(onboarding::LOCK_SQL)
+        .fetch_optional(&mut *other_tx)
+        .await
+        .expect("après rollback, la requête réussit");
+    assert!(freed.is_some());
+    other_tx.rollback().await.unwrap();
+    other.close().await.unwrap();
+
+    onboarding::delete_state(&pool).await.unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    assert!(
+        onboarding::lock_state_in_tx(&mut tx)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    tx.rollback().await.unwrap();
+}

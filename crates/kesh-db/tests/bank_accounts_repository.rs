@@ -1110,3 +1110,87 @@ async fn update_for_company_guards_only_a_changed_account(pool: MySqlPool) {
     .await
     .expect("compte inchangé : accepté");
 }
+
+/// Test 3 (Story 15-7a1, AC 3) — `upsert_primary_in_tx` rend ce qu'il a
+/// réellement fait : `Created`, `Updated { before, after }`, `Unchanged` (sans
+/// annuler : la transaction reste utilisable) ; et ne commite jamais.
+#[sqlx::test(migrations = "./test-schema")]
+async fn upsert_primary_in_tx_reports_created_updated_unchanged(pool: MySqlPool) {
+    use bank_accounts::UpsertPrimaryOutcome;
+
+    let company_id = create_test_company(&pool).await;
+    let payload = |bank: &str| NewBankAccount {
+        company_id,
+        bank_name: bank.into(),
+        iban: "CH9300762011623852957".into(),
+        qr_iban: None,
+        is_primary: true,
+    };
+
+    // Rollback après `Created` ⇒ aucune ligne (aucun commit interne).
+    let mut tx = pool.begin().await.unwrap();
+    let outcome = bank_accounts::upsert_primary_in_tx(&mut tx, payload("UBS"))
+        .await
+        .unwrap();
+    assert!(
+        matches!(outcome, UpsertPrimaryOutcome::Created(_)),
+        "{outcome:?}"
+    );
+    tx.rollback().await.unwrap();
+    assert!(
+        bank_accounts::find_primary(&pool, company_id)
+            .await
+            .unwrap()
+            .is_none(),
+        "rollback après Created : aucune ligne"
+    );
+
+    // Created, commité.
+    let mut tx = pool.begin().await.unwrap();
+    let created = match bank_accounts::upsert_primary_in_tx(&mut tx, payload("UBS"))
+        .await
+        .unwrap()
+    {
+        UpsertPrimaryOutcome::Created(a) => a,
+        other => panic!("Created attendu, obtenu {other:?}"),
+    };
+    tx.commit().await.unwrap();
+    assert_eq!(created.bank_name, "UBS");
+
+    // Updated { before, after }.
+    let mut tx = pool.begin().await.unwrap();
+    let (before, after) = match bank_accounts::upsert_primary_in_tx(&mut tx, payload("PostFinance"))
+        .await
+        .unwrap()
+    {
+        UpsertPrimaryOutcome::Updated { before, after } => (before, after),
+        other => panic!("Updated attendu, obtenu {other:?}"),
+    };
+    tx.commit().await.unwrap();
+    assert_eq!(before.bank_name, "UBS", "before = valeurs d'avant");
+    assert_eq!(before.version, created.version);
+    assert_eq!(after.bank_name, "PostFinance");
+    assert_eq!(after.version, before.version + 1);
+
+    // Unchanged : version inchangée, transaction toujours utilisable.
+    let mut tx = pool.begin().await.unwrap();
+    let unchanged = match bank_accounts::upsert_primary_in_tx(&mut tx, payload("PostFinance"))
+        .await
+        .unwrap()
+    {
+        UpsertPrimaryOutcome::Unchanged(a) => a,
+        other => panic!("Unchanged attendu, obtenu {other:?}"),
+    };
+    assert_eq!(
+        unchanged.version, after.version,
+        "no-op : version inchangée"
+    );
+    let still_usable: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM bank_accounts WHERE company_id = ?")
+            .bind(company_id)
+            .fetch_one(&mut *tx)
+            .await
+            .expect("transaction toujours utilisable après Unchanged");
+    assert_eq!(still_usable, 1);
+    tx.rollback().await.unwrap();
+}
