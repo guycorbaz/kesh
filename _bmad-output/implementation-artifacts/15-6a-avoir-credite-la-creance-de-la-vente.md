@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+in-progress
 
 <!-- Spécifiée le 2026-10-08 en autonomie (bmad-create-story), fille de la 15-6 découpée d'emblée
      (choix C-15-6-1). Choix propres : C-15-6-2 (révisé par C-15-6-7 et C-15-6-8). Validation P1
@@ -1275,3 +1275,35 @@ ligne et sa place (finding F6-5 de la P6) : `credit_note_uses_materialized_accou
      `fr-CH/messages.ftl:304` (`credit-note-revenue-account-archived`), `:289` (`…-issuance`).
   **Aucun écart ne change une règle métier ni un AC sur le fond** (2, 3, 4, 5, 7 sont des cas que la fiche
   prévoyait ou des formes) ; le seul bloquant est le 1.
+
+- 2026-10-09 — **T0 repris sur le livré, après le merge de la 15-5d** (`origin/main` `5e4bec50` ; branche
+  rebasée, registre et `sprint-status.yaml` par union — C-15-6a-2). Le relevé du 2026-10-08, fait sur la
+  branche de la 15-5d à `5624ca78`, est **confirmé au code mergé** :
+  `crates/kesh-db/src/repositories/company_invoice_settings.rs:698` `lock_designated_accounts_in_tx(conn,
+  company_id, ids) -> Result<DesignatedAccountsSnapshot, DbError>`, `pub(in crate::repositories)`, **partagé
+  seul** (`LOCK IN SHARE MODE`, aucun appelant exclusif : `invoices.rs:2158`, `supplier_invoices.rs:468`),
+  patron `owned_account_ids` (lecture non verrouillante `:711-727`), `FORCE INDEX (PRIMARY)` (`:740`),
+  ids triés et dédoublonnés, ne refuse rien ; type de ligne `LockedDesignatedAccount { id, number, active,
+  postable }` **privé** (`:595`), dans le newtype `DesignatedAccountsSnapshot` à champ privé (`:606`). Son
+  doc-comment cite l'avoir parmi « ce qui n'est pas contrôlé ici » (`:684-686`, AC7 : à réécrire).
+  - **Écart 1 levé** : la 15-5d est mergée, le développement reprend.
+  - **Écarts 2 à 5, 7, 8 inchangés** : helper employé tel quel, **sans paramètre de mode** (`AccountLockMode`
+    n'a plus d'objet — un mode à une seule valeur serait du code mort) ; le contrat de l'AC6 (« paramétrée
+    par le mode », `Share` / `Exclusive`) se lit donc **sans** son premier tiret, le reste du contrat tient
+    (une requête, `ORDER BY id`, quatre colonnes, ne refuse rien, `pub`, un seul type). Rendus `pub` : la
+    fonction, `LockedDesignatedAccount` (champs compris) et `DesignatedAccountsSnapshot`, avec un accesseur
+    `accounts() -> &[LockedDesignatedAccount]` (le newtype garde son champ privé — `check_written` reste la
+    seule voie de la garde à l'usage). Test 13 : `credit_note_is_exempt_from_the_guard`,
+    `invoices_validate_vat.rs:1399` ; test 17 attendu vert d'emblée (`owned_account_ids`, cf.
+    `foreign_account_is_never_locked_and_is_refused`, `:1434`). `credit_notes_repository.rs` : **9**
+    `#[sqlx::test]`.
+  - **Manuel tel que la 15-5d le laisse** (lu en entier) : `user-manual.tex:380` (« Deux exceptions,
+    voulues~: l'avoir relit la créance et la TVA due dans les réglages … sans les contrôler ») et `:928`
+    (« L'avoir, lui, n'est pas soumis à ce contrôle … même si sa créance ou sa TVA due est devenue non
+    imputable ») — la moitié « créance » devient fausse (AC8, à corriger). `sec:avoirs` `:1228`, puce
+    « revient à zéro » `:1234`, `keshwarning` produit archivé `:1251`, archivage `:361` / `:364`, arrondi
+    `:924`, balance âgée `:1846-1851`.
+  - **Copies de la requête de créance** : `invoice_settlements_write.rs:104-115` et `:445-456`,
+    `reconciliation.rs:1475-1501` ; doc `invoices.rs:1892`. La route de l'avoir et le Pattern 5 : inchangés
+    depuis le 2026-10-08.
+  **Aucun écart ne change une règle ou un AC sur le fond.** Statut `in-progress`.

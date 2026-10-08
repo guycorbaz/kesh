@@ -4386,3 +4386,19 @@ l'import (#458–#461).
 - **Réversible** : oui. **À faire par l'orchestrateur** : merger la 15-5d, puis relancer le développement de la
   15-6a sur `main` à jour (le T0 n'aura à refaire que les numéros de ligne des fichiers que la 15-5d touche :
   `company_invoice_settings.rs`, `invoices.rs`, `invoice_settlements_write.rs`, `invoices_validate_vat.rs`, manuels).
+
+## C-15-6a-2 — 15-6a (dev) : rebase sur `5e4bec50` par union ; helper de la 15-5d rendu `pub` avec un accesseur, sans mode
+
+- **Contexte** : la 15-5d est mergée (`5e4bec50`) ; la branche de la 15-6a portait la planification (fiches 15-6*,
+  registre) et le T0. Rebase : conflit du registre (entrées disjointes — 15-11a/15-5d côté `main`, C-15-6-1 à 36
+  côté branche) et de l'en-tête de `sprint-status.yaml` (deux lignes `(19)`). Au code mergé, le helper
+  `lock_designated_accounts_in_tx` est partagé seul, privé au module `repositories`, et rend un newtype à champ privé.
+- **Retenu** : (1) union sans dédoublonnage nécessaire (aucun titre commun, vérifié par `uniq -d`) ; la ligne
+  `last_updated` du T0 renumérotée `(24)` et placée en tête, la mention de sa numérotation d'origine gardée ;
+  (2) le helper est employé **tel quel, sans paramètre de mode** (C-15-6a-1 confirmé) ; sont rendus `pub` la
+  fonction, `LockedDesignatedAccount` (champs `pub`) et `DesignatedAccountsSnapshot`, auquel s'ajoute un
+  accesseur en lecture `accounts()`. Le champ du newtype reste privé : on ne fabrique pas d'instantané hors du
+  helper, et `check_written` reste `pub(in crate::repositories)`.
+- **Écartées** : rendre le champ du newtype `pub` (permettrait de construire un faux instantané hors du verrou) ;
+  un second type pour l'avoir (C-15-6-36) ; ajouter un mode à une seule valeur.
+- **Réversible** : oui (visibilité seule).
