@@ -272,6 +272,10 @@ journal-od = Miscellaneous
 journal-entry-saved = Entry saved
 error-fiscal-year-closed-generic = The fiscal year is closed — no entries can be added or modified (Swiss CO art. 957-964).
 error-inactive-accounts = One or more accounts are archived or invalid.
+error-account-not-postable = { $count ->
+    [one] Account { $numbers } is not postable (grouping, result or closing account): choose a postable account.
+   *[other] Accounts { $numbers } are not postable (grouping, result or closing accounts): choose postable accounts.
+}
 error-rounding-account-not-configured = This payment settles the invoice to the centime, but no usable rounding-difference account is designated: choose one in Settings → Invoicing.
 error-rounding-account-not-configured-issuance = The total of this document is rounded to 5 centimes, but no usable rounding-difference account is designated: choose one in Settings → Invoicing.
 error-write-off-account-not-configured-discount = No usable discount account is designated: choose one in Settings → Invoicing, section Writing off the remainder.

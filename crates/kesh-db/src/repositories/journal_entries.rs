@@ -53,7 +53,7 @@ use crate::entities::{
     Journal, JournalEntry, JournalEntryLine, JournalEntryWithLines, NewJournalEntry,
     NewJournalEntryLine,
 };
-use crate::errors::{ArchivedAccount, DbError, ReversalBlocker, map_db_error};
+use crate::errors::{ArchivedAccount, DbError, NonPostableAccount, ReversalBlocker, map_db_error};
 use crate::repositories::audit_log;
 use crate::util::search::escape_boolean_ft;
 
@@ -63,21 +63,31 @@ const ENTRY_COLUMNS: &str = "id, company_id, fiscal_year_id, entry_number, entry
 const LINE_COLUMNS: &str = "id, entry_id, account_id, line_order, debit, credit, project_id";
 
 /// Valide que chaque compte référencé par les lignes d'une écriture existe,
-/// appartient à `company_id` et est actif. Facteur commun de [`create_in_tx`]
-/// et [`update`] (validation historiquement dupliquée aux deux endroits).
+/// appartient à `company_id`, est actif et — si `enforce_postable` — imputable.
+/// Appelée par [`create_in_tx`] (étape 2), seul chemin d'écriture d'une ligne
+/// d'écriture depuis que la modification n'existe plus (Story 24-4b : la route
+/// rend `409 ENTRY_IS_POSTED`).
 ///
-/// Garde de postabilité (Story 14-3b, D-A0) — **saisie manuelle uniquement** :
-/// si `enforce_postable`, un compte `postable = FALSE` est rejeté, SAUF s'il
-/// figure dans `exempt_ids` (grandfather PAR COMPTE à l'update, D-A1 : un compte
-/// déjà référencé par l'écriture reste éditable même devenu non-postable après
-/// coup). Les flux automatiques (facture/avoir/réconciliation) passent
-/// `enforce_postable = false` : ils postent sur des comptes de config approuvés,
-/// dont l'un pourrait légitimement être devenu non-postable (14-3a) — leur
-/// imposer la garde casserait le moteur comptable.
+/// **Ordre des refus** (Story 15-5a, #429 — « une seule raison, la plus
+/// bloquante d'abord », patron de `validate_line_revenue_accounts_in_tx`) :
 ///
-/// **Rollback-agnostique** : retourne `Err(DbError::InactiveOrInvalidAccounts)`
-/// sans toucher à la transaction — le caller décide du rollback (`create_in_tx`
-/// délègue au caller, `update` rollback autour de l'appel).
+/// 1. un compte demandé **absent** (inconnu ou d'une autre société) ou
+///    **archivé** → [`DbError::InactiveOrInvalidAccounts`]. Cette garde `active`
+///    est **inconditionnelle** : elle ne dépend pas d'`enforce_postable` ;
+/// 2. sinon, si `enforce_postable`, tout compte `postable = FALSE` →
+///    [`DbError::AccountsNotPostable`], qui **nomme** tous ces comptes. Il n'est
+///    construit qu'après le contrôle d'appartenance : un compte d'une autre
+///    société ne livre jamais son numéro (KF-002).
+///
+/// La décision se prend en Rust, et non par une clause `WHERE` : une clause
+/// filtrerait le compte sans dire **pourquoi** il manque. La liste des flux qui
+/// passent `enforce_postable = false` est au doc-comment de [`create_in_tx`].
+///
+/// Lecture **sans verrou** (`FOR UPDATE` absent) : défaut antérieur, hors
+/// périmètre de la 15-5a (choix C21).
+///
+/// **Rollback-agnostique** : rend l'erreur sans toucher à la transaction — le
+/// caller décide du rollback.
 ///
 /// Précondition : `account_ids` non vide (garanti par les callers, qui rejettent
 /// une écriture sans lignes en amont — un `IN ()` serait du SQL invalide).
@@ -86,48 +96,48 @@ async fn validate_lines_accounts_in_tx(
     company_id: i64,
     account_ids: &[i64],
     enforce_postable: bool,
-    exempt_ids: &[i64],
 ) -> Result<(), DbError> {
     let placeholders = account_ids
         .iter()
         .map(|_| "?")
         .collect::<Vec<_>>()
         .join(",");
-    let mut accounts_sql = format!(
-        "SELECT id FROM accounts \
-         WHERE company_id = ? AND active = TRUE AND id IN ({placeholders})"
+    // Ni `active` ni `postable` dans le `WHERE` : la raison d'un refus se
+    // décide ci-dessous, en Rust (Story 15-5a).
+    let accounts_sql = format!(
+        "SELECT id, number, active, postable FROM accounts \
+         WHERE company_id = ? AND id IN ({placeholders})"
     );
-    // Garde de postabilité conditionnelle (D-A0) : la clause n'est ajoutée qu'en
-    // saisie manuelle. Les comptes de `exempt_ids` (déjà référencés, D-A1) sont
-    // tolérés même non-postables.
-    if enforce_postable {
-        if exempt_ids.is_empty() {
-            accounts_sql.push_str(" AND postable = TRUE");
-        } else {
-            let exempt_placeholders = exempt_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-            accounts_sql.push_str(&format!(
-                " AND (postable = TRUE OR id IN ({exempt_placeholders}))"
-            ));
-        }
-    }
 
-    let mut q = sqlx::query_scalar::<_, i64>(&accounts_sql).bind(company_id);
+    let mut q = sqlx::query_as::<_, (i64, String, bool, bool)>(&accounts_sql).bind(company_id);
     for id in account_ids {
         q = q.bind(id);
     }
-    if enforce_postable {
-        for id in exempt_ids {
-            q = q.bind(id);
-        }
-    }
-    let valid_ids: Vec<i64> = q.fetch_all(&mut **tx).await.map_err(map_db_error)?;
+    let found: Vec<(i64, String, bool, bool)> =
+        q.fetch_all(&mut **tx).await.map_err(map_db_error)?;
 
     let mut unique_requested: Vec<i64> = account_ids.to_vec();
     unique_requested.sort_unstable();
     unique_requested.dedup();
 
-    if valid_ids.len() != unique_requested.len() {
+    // (1) Absent (inconnu / autre société) ou archivé — prime sur tout.
+    if found.len() != unique_requested.len() || found.iter().any(|(_, _, active, _)| !active) {
         return Err(DbError::InactiveOrInvalidAccounts);
+    }
+
+    // (2) Non imputable — saisie manuelle seulement.
+    if enforce_postable {
+        let non_postable: Vec<NonPostableAccount> = found
+            .into_iter()
+            .filter(|(_, _, _, postable)| !postable)
+            .map(|(account_id, account_number, _, _)| NonPostableAccount {
+                account_id,
+                account_number,
+            })
+            .collect();
+        if !non_postable.is_empty() {
+            return Err(DbError::accounts_not_postable(non_postable));
+        }
     }
     Ok(())
 }
@@ -214,8 +224,8 @@ pub async fn create_in_tx(
 /// automatiques document-level (cf. `pay_succeeds_when_project_archived_after_tagging`).
 ///
 /// ⚠️ **L'asymétrie avec le compte archivé est VOULUE** : un compte archivé fait
-/// échouer la contre-passation (la garde `active = TRUE` de [`validate_accounts`]
-/// protège tous les flux, et poster sur un compte archivé le ressusciterait),
+/// échouer la contre-passation (la garde `active` de
+/// [`validate_lines_accounts_in_tx`] protège tous les flux, et poster sur un compte archivé le ressusciterait),
 /// alors qu'un projet archivé est toléré. Étiqueter une ligne n'est pas écrire
 /// dans un compte.
 ///
@@ -334,10 +344,10 @@ async fn create_in_tx_inner(
     }
 
     let account_ids: Vec<i64> = new.lines.iter().map(|l| l.account_id).collect();
-    // Validation factorisée (helper rollback-agnostique). En création, aucun
-    // compte n'est encore référencé → `exempt_ids` vide ; la garde de
-    // postabilité dépend de `enforce_postable` (D-A0).
-    validate_lines_accounts_in_tx(tx, new.company_id, &account_ids, enforce_postable, &[]).await?;
+    // Validation factorisée (helper rollback-agnostique). La garde de
+    // postabilité dépend de `enforce_postable` (D-A0) ; un compte non imputable
+    // est refusé sous son nom, `AccountsNotPostable` (Story 15-5a).
+    validate_lines_accounts_in_tx(tx, new.company_id, &account_ids, enforce_postable).await?;
 
     // Étape 3 : consommer le prochain entry_number au COMPTEUR.
     //
@@ -1719,7 +1729,7 @@ pub async fn reverse(
 /// Les comptes de `account_ids` qui sont **archivés** (`active = FALSE`).
 ///
 /// ⛔ Existe parce que `enforce_postable = false` NE lève PAS la garde
-/// `active = TRUE` de [`validate_accounts`], qui est inconditionnelle.
+/// `active` de [`validate_lines_accounts_in_tx`], qui est inconditionnelle.
 async fn archived_accounts_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
@@ -3644,7 +3654,8 @@ mod tests {
 
     /// AC-A / D-A0 — `create` pool-level (SAISIE MANUELLE, `enforce_postable =
     /// true`) : accepte une écriture sur des comptes postables, refuse une ligne
-    /// visant un compte non-postable en `InactiveOrInvalidAccounts`.
+    /// visant un compte non-postable — sous son nom, `AccountsNotPostable`,
+    /// depuis la Story 15-5a (#429 ; auparavant `InactiveOrInvalidAccounts`).
     #[tokio::test]
     async fn test_create_manual_rejects_non_postable_line() {
         let pool = test_pool().await;
@@ -3672,10 +3683,105 @@ mod tests {
         );
         let result = create(&pool, fy_id, admin_user_id, ko).await;
         set_postable(&pool, a2, true).await; // restaurer AVANT l'assert (base partagée)
+        // Story 15-5a — réécrit à dessein : le refus nomme le compte, `(id, n°)`.
+        let a2_number = account_number(&pool, a2).await;
+        match result {
+            Err(DbError::AccountsNotPostable(list)) => {
+                let named: Vec<(i64, String)> = list
+                    .iter()
+                    .map(|a| (a.account_id, a.account_number.clone()))
+                    .collect();
+                assert_eq!(named, vec![(a2, a2_number)]);
+            }
+            other => panic!(
+                "compte non-postable en saisie manuelle → AccountsNotPostable, obtenu {other:?}"
+            ),
+        }
+        delete_all_by_company(&pool, company_id).await.unwrap();
+    }
+
+    async fn account_number(pool: &MySqlPool, account_id: i64) -> String {
+        sqlx::query_scalar("SELECT number FROM accounts WHERE id = ?")
+            .bind(account_id)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    async fn set_active(pool: &MySqlPool, account_id: i64, active: bool) {
+        sqlx::query("UPDATE accounts SET active = ? WHERE id = ?")
+            .bind(active)
+            .bind(account_id)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    /// Story 15-5a (AC3, T6 ii) — DEUX comptes non imputables dans la même
+    /// écriture : un seul refus les nomme tous deux, triés par numéro
+    /// (ordre lexicographique, C31). Les comptes ne diffèrent d'un compte
+    /// accepté que par `postable`.
+    #[tokio::test]
+    async fn test_create_manual_names_every_non_postable_account_sorted() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+
+        set_postable(&pool, a1, false).await;
+        set_postable(&pool, a2, false).await;
+        let ko = mk_entry(
+            company_id,
+            today,
+            vec![line(a2, dec!(10), dec!(0)), line(a1, dec!(0), dec!(10))],
+        );
+        let result = create(&pool, fy_id, admin_user_id, ko).await;
+        set_postable(&pool, a1, true).await;
+        set_postable(&pool, a2, true).await;
+
+        let mut expected = vec![
+            (a1, account_number(&pool, a1).await),
+            (a2, account_number(&pool, a2).await),
+        ];
+        expected.sort_by(|x, y| x.1.cmp(&y.1).then(x.0.cmp(&y.0)));
+        match result {
+            Err(DbError::AccountsNotPostable(list)) => {
+                let named: Vec<(i64, String)> = list
+                    .iter()
+                    .map(|a| (a.account_id, a.account_number.clone()))
+                    .collect();
+                assert_eq!(named, expected);
+            }
+            other => {
+                panic!("attendu AccountsNotPostable nommant les deux comptes, obtenu {other:?}")
+            }
+        }
+        delete_all_by_company(&pool, company_id).await.unwrap();
+    }
+
+    /// Story 15-5a (AC3, T6 iii) — un compte ARCHIVÉ et un compte non imputable
+    /// dans la même écriture : le défaut le plus bloquant gagne,
+    /// `InactiveOrInvalidAccounts`.
+    #[tokio::test]
+    async fn test_create_manual_archived_wins_over_non_postable() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin_user_id) = setup(&pool).await;
+        let (a1, a2) = two_accounts(&pool, company_id).await;
+        let today = chrono::Utc::now().naive_utc().date();
+
+        set_active(&pool, a1, false).await;
+        set_postable(&pool, a2, false).await;
+        let ko = mk_entry(
+            company_id,
+            today,
+            vec![line(a1, dec!(10), dec!(0)), line(a2, dec!(0), dec!(10))],
+        );
+        let result = create(&pool, fy_id, admin_user_id, ko).await;
+        set_active(&pool, a1, true).await;
+        set_postable(&pool, a2, true).await;
         assert!(
             matches!(result, Err(DbError::InactiveOrInvalidAccounts)),
-            "compte non-postable en saisie manuelle → InactiveOrInvalidAccounts, obtenu {:?}",
-            result
+            "archivé + non imputable → InactiveOrInvalidAccounts (priorité), obtenu {result:?}"
         );
         delete_all_by_company(&pool, company_id).await.unwrap();
     }
@@ -3714,7 +3820,8 @@ mod tests {
     }
 
     /// AC-E — le compte de résultat (`CurrentYearResult`, non-postable par
-    /// construction `is_postable`) est refusé à la saisie manuelle.
+    /// construction `is_postable`) est refusé à la saisie manuelle — sous son
+    /// nom, `AccountsNotPostable`, depuis la Story 15-5a (#429).
     #[tokio::test]
     async fn test_create_manual_rejects_result_account() {
         let pool = test_pool().await;
@@ -3730,10 +3837,25 @@ mod tests {
         .fetch_optional(&pool)
         .await
         .unwrap();
-        let Some(rid) = result_account_id else {
-            // Plan sans compte de résultat annoté → rien à vérifier (les 3 charts
-            // standards en portent un, cf. 2979).
-            return;
+        // Story 15-5a — le test passait À VIDE sur la base de dev seedée
+        // (`scripts/seed-dev-db.sql` ne pose aucun compte de rôle
+        // `CurrentYearResult`) : il rendait vert sans rien exercer. Faute de
+        // compte de résultat, on en crée un temporaire, supprimé en fin de test.
+        let (rid, temporary) = match result_account_id {
+            Some(rid) => (rid, false),
+            None => {
+                let id = sqlx::query(
+                    "INSERT INTO accounts (company_id, number, name, account_type, role, postable) \
+                     VALUES (?, '2979', 'Résultat de l''exercice (test 15-5a)', 'Liability', \
+                     'CurrentYearResult', FALSE)",
+                )
+                .bind(company_id)
+                .execute(&pool)
+                .await
+                .unwrap()
+                .last_insert_id() as i64;
+                (id, true)
+            }
         };
         let postable: bool = sqlx::query_scalar("SELECT postable FROM accounts WHERE id = ?")
             .bind(rid)
@@ -3751,12 +3873,32 @@ mod tests {
             vec![line(a1, dec!(10), dec!(0)), line(rid, dec!(0), dec!(10))],
         );
         let res = create(&pool, fy_id, admin_user_id, new).await;
-        assert!(
-            matches!(res, Err(DbError::InactiveOrInvalidAccounts)),
-            "saisie manuelle sur le compte de résultat doit être rejetée, obtenu {:?}",
-            res
-        );
+        // Story 15-5a — réécrit à dessein : nouveau code, le compte est nommé.
+        match res {
+            Err(DbError::AccountsNotPostable(list)) => {
+                let ids: Vec<i64> = list.iter().map(|a| a.account_id).collect();
+                assert_eq!(ids, vec![rid]);
+            }
+            other => {
+                if temporary {
+                    let _ = sqlx::query("DELETE FROM accounts WHERE id = ?")
+                        .bind(rid)
+                        .execute(&pool)
+                        .await;
+                }
+                panic!(
+                    "saisie manuelle sur le compte de résultat → AccountsNotPostable, obtenu {other:?}"
+                )
+            }
+        }
         delete_all_by_company(&pool, company_id).await.unwrap();
+        if temporary {
+            sqlx::query("DELETE FROM accounts WHERE id = ?")
+                .bind(rid)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
     }
 
     // -----------------------------------------------------------------------

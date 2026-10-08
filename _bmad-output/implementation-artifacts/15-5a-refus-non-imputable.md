@@ -1,6 +1,6 @@
 # Story 15.5a : Le refus « compte non imputable », sous son vrai nom
 
-Status: ready-for-dev
+Status: review
 
 <!-- Issue de la story 15-5, DÉCOUPÉE le 2026-10-08 après la passe de validation P1 (choix C7 de
      `epic-15-choix-autonomes.md`). Sous-story « zéro » du patron « story-zéro qui pose le patron +
@@ -211,7 +211,7 @@ garde neuve.
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Refaire l'inventaire des lecteurs de l'ancien code** sur `HEAD` et le comparer à l'AC7 :
+- [x] **T0 — Refaire l'inventaire des lecteurs de l'ancien code** sur `HEAD` et le comparer à l'AC7 :
   ```sh
   grep -rnE "InactiveOrInvalid[^A]|InactiveOrInvalidAccounts|INACTIVE_OR_INVALID_ACCOUNTS" \
     crates frontend/src frontend/tests --include=*.rs --include=*.ts --include=*.svelte
@@ -219,70 +219,70 @@ garde neuve.
   (le motif `InactiveOrInvalid[^A]` attrape les `contains("InactiveOrInvalid")` que le motif plein
   rate — finding C-1). Trier **chaque** ligne (non imputable / autre motif / commentaire) au Dev Agent
   Record ; un site neuf non trié bloque la story.
-- [ ] **T1 — La variante** (AC1)
-  - [ ] `NonPostableAccount`, `NonPostableAccounts` (champ privé, `new` trieur/dédoublonneur,
+- [x] **T1 — La variante** (AC1)
+  - [x] `NonPostableAccount`, `NonPostableAccounts` (champ privé, `new` trieur/dédoublonneur,
         `debug_assert!` non vide), `DbError::AccountsNotPostable(NonPostableAccounts)` avec son attribut
         `#[error("…")]` et le raccourci `accounts_not_postable` dans `crates/kesh-db/src/errors.rs` ;
         doc-comment : pourquoi elle existe (commentaire de #429, précédent
         `RevenueAccountRejection::NotPostable`, choix C3, C16, C17) ; `error_code()` →
         `"ACCOUNT_NOT_POSTABLE"`. Compléter le `match` exhaustif de `errors.rs:~745`.
-  - [ ] Tests unitaires du constructeur : entrée désordonnée et dupliquée → triée par numéro **dans
+  - [x] Tests unitaires du constructeur : entrée désordonnée et dupliquée → triée par numéro **dans
         l'ordre lexicographique** (attendu fixé : `["1000", "10000", "1010", "2000"]` pour une entrée
         `["2000", "1010", "10000", "1000"]`), puis par identifiant à numéro égal, dédoublonnée par
         identifiant ; entrée vide → panique en `debug` (`#[should_panic]`, sous
         `#[cfg(debug_assertions)]`) ; `details()` rend exactement
         `{"rejected":[{"accountId":…,"accountNumber":…}, …]}` dans cet ordre (C29, C31).
-  - [ ] Bras dans `crates/kesh-api/src/errors.rs`, à côté de `InactiveOrInvalidAccounts` (`:3067`) :
+  - [x] Bras dans `crates/kesh-api/src/errors.rs`, à côté de `InactiveOrInvalidAccounts` (`:3067`) :
         400, code, `t_args("error-account-not-postable", repli, args{numbers, count})` — `count`
         posé comme **nombre** Fluent (`FluentValue::from(usize)`), jamais comme chaîne —,
         `"details": accounts.details()` (C29 ; forme du bras `ReversalAccountsArchived`, `:2945-2972`).
-- [ ] **T2 — Le message** (AC2) : la clé dans les quatre `messages.ftl` ; l'inscription dans
+- [x] **T2 — Le message** (AC2) : la clé dans les quatre `messages.ftl` ; l'inscription dans
       `SELECTEURS_RESOLUS_COTE_SERVEUR` (`loader.rs:367`) avec son commentaire « où » ; le test du
       garde-fou (`loader.rs:496-510`) vert ; `npm run lint-i18n-ownership` vert ; un test Rust par locale
       (patron des tests i18n de `kesh-i18n`, `bundle.format` **avec arguments**) vérifie que la clé se
       résout **au singulier et au pluriel** et contient le numéro passé.
-- [ ] **T3 — Saisie manuelle** (AC3) : réécrire `validate_lines_accounts_in_tx` (requête + décision en
+- [x] **T3 — Saisie manuelle** (AC3) : réécrire `validate_lines_accounts_in_tx` (requête + décision en
       Rust ; retrait d'`exempt_ids` et de l'argument `&[]` de son appelant) et **son doc-comment**, que
       cette story possède seule (choix C23) : il annonce encore `Err(DbError::InactiveOrInvalidAccounts)`
       seul, un « facteur commun de `create_in_tx` et `update` » et un grandfather « à l'update » qui
       n'existent plus. Le nouveau doc-comment renvoie au doc-comment de `create_in_tx` pour la liste des
       flux qui passent `enforce_postable = false`, **sans la répéter** (ce paragraphe-là appartient à la
       15-5b).
-- [ ] **T4 — Les trois gardes de la 24-5** (AC4) : `SELECT active, postable, number[, account_type]`
+- [x] **T4 — Les trois gardes de la 24-5** (AC4) : `SELECT active, postable, number[, account_type]`
       (verrou conservé) ; ordre (a) puis (b) ; deux passes dans la boucle des lignes de facture
       fournisseur. **Un commentaire neuf** au `match` de chaque site dit l'ordre (a)/(b). Les commentaires
       existants qui précèdent les `SELECT` décrivent ce qui est exigé (actif et imputable) et restent
       vrais : **ne pas les réécrire** — en particulier, le commentaire du compte interne de
       `invoice_settlements_write.rs` qui se termine par « restent ouverts et sont suivis par #427 »
       appartient à la 15-5b (choix C23).
-- [ ] **T5 — Ouverture et écrans** (AC5, AC6)
-  - [ ] `crates/kesh-api/src/routes/opening_balances.rs` : la doc de module (`:25-26`, « compte
+- [x] **T5 — Ouverture et écrans** (AC5, AC6)
+  - [x] `crates/kesh-api/src/routes/opening_balances.rs` : la doc de module (`:25-26`, « compte
         inexistant / archivé / non-postable / cross-tenant → `INACTIVE_OR_INVALID_ACCOUNTS` ») est
         réécrite (non imputable → `ACCOUNT_NOT_POSTABLE`) ; l'énumération d'exemples du mapping global
         (`:189`) gagne `ACCOUNT_NOT_POSTABLE`. **Verdict écrit** : `:332` et `:405` parlent d'ids
         **absents** (inexistant / autre société) et restent justes — aucun changement.
-  - [ ] `JournalEntryForm.svelte:178` : le `case`. Lecture des `catch` des autres écrans (AC6, dont
+  - [x] `JournalEntryForm.svelte:178` : le `case`. Lecture des `catch` des autres écrans (AC6, dont
         `supplier-invoices/import/+page.svelte`), consignée.
-- [ ] **T6 — Tests** (AC3, AC4, AC5, AC7, AC8)
-  - [ ] Réécrire les tests de l'AC7 (liste fermée + ce que T0 aura trouvé).
-  - [ ] `kesh-db` — saisie manuelle : (i) un compte non imputable → `AccountsNotPostable` nommant
+- [x] **T6 — Tests** (AC3, AC4, AC5, AC7, AC8)
+  - [x] Réécrire les tests de l'AC7 (liste fermée + ce que T0 aura trouvé).
+  - [x] `kesh-db` — saisie manuelle : (i) un compte non imputable → `AccountsNotPostable` nommant
         `(id, n°)` ; (ii) **deux** comptes non imputables → les deux, triés par numéro ; (iii) un
         archivé **et** un non imputable dans la même écriture → `InactiveOrInvalidAccounts` (priorité) ;
         (iv) `enforce_postable = false` sur un non imputable → accepté (déjà couvert par
         `test_create_in_tx_auto_flow_allows_non_postable`, le citer).
-  - [ ] `kesh-db` — gardes 24-5 : pour chacune, non imputable → `AccountsNotPostable` ; archivé →
+  - [x] `kesh-db` — gardes 24-5 : pour chacune, non imputable → `AccountsNotPostable` ; archivé →
         `InactiveOrInvalidAccounts` ; et pour le compte de charge, **un compte d'actif non imputable**
         → `InactiveOrInvalidAccounts` (cumul (a)+(b), finding M4) ; deux lignes de charge non
         imputables → un seul refus nommant les deux ; **ordre des passes** (C22) : ligne 1 au compte non
         imputable + ligne 2 de quantité nulle → `IllegalStateTransition` ; ligne 1 au compte archivé +
         ligne 2 de prix négatif → `IllegalStateTransition`.
-  - [ ] `kesh-db` — complément de soldes (`crates/kesh-db/tests/opening_complement_repository.rs`, patron
+  - [x] `kesh-db` — complément de soldes (`crates/kesh-db/tests/opening_complement_repository.rs`, patron
         `refus_par_compte`, `:343`) : une ligne sur un compte de la société, actif, `postable = FALSE`
         → `(AccountInvalid, Some(id))`.
-  - [ ] `kesh-api` : `opening_balances_e2e.rs` — une ligne d'ouverture sur un compte non imputable →
+  - [x] `kesh-api` : `opening_balances_e2e.rs` — une ligne d'ouverture sur un compte non imputable →
         400 `ACCOUNT_NOT_POSTABLE` et `details.rejected == [{accountId, accountNumber}]` ;
         `reports_e2e.rs:1953` asserte aussi `details.rejected`.
-  - [ ] **Le pont `count`/`numbers` du bras API est testé de bout en bout** (finding P3 F-1) — dans
+  - [x] **Le pont `count`/`numbers` du bras API est testé de bout en bout** (finding P3 F-1) — dans
         `opening_balances_e2e.rs`, dont le montage appelle `init_error_i18n` (`:79`) : sans lui, `t_args`
         rend le repli Rust et le sélecteur Fluent n'est jamais exercé (c'est le cas de `reports_e2e.rs`,
         qui n'asserte que le code). Deux cas, locale `fr-CH` : **un** compte non imputable → le
@@ -290,25 +290,25 @@ garde neuve.
         « invalide » ; **deux** comptes → « Les comptes », les deux numéros dans l'ordre de C31.
         **Mutation** : `count` passé en chaîne, puis retiré des arguments → le cas « un compte »
         rougit (le sélecteur retombe sur `*[other]`) ; consigner au Dev Agent Record.
-  - [ ] Le **compte de test ne diffère d'un compte accepté que par `postable`** (même société, actif,
+  - [x] Le **compte de test ne diffère d'un compte accepté que par `postable`** (même société, actif,
         bon type), et l'assertion porte sur la **variante / le code**, jamais sur le seul statut 400.
-  - [ ] **Mutation** : pour chacune des quatre gardes, retirer la branche (b) une fois → le test
+  - [x] **Mutation** : pour chacune des quatre gardes, retirer la branche (b) une fois → le test
         négatif rougit (il retombe sur `InactiveOrInvalidAccounts` ou passe) ; idem pour la branche
         `|| !a.postable` de `check_lines` ; restaurer **et toucher le fichier** (mémoire « mutation
         restaurée, binaire périmé »). Consigner la liste au Dev Agent Record.
-- [ ] **T7 — Propagation et documentation** (AC9)
-  - [ ] `CHANGELOG.md` et `docs/api-external.md` (AC9).
-  - [ ] Manuel : `grep -n "archivés ou invalides\|INACTIVE_OR_INVALID" docs/manual/fr/*.tex` et
+- [x] **T7 — Propagation et documentation** (AC9)
+  - [x] `CHANGELOG.md` et `docs/api-external.md` (AC9).
+  - [x] Manuel : `grep -n "archivés ou invalides\|INACTIVE_OR_INVALID" docs/manual/fr/*.tex` et
         `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o "archivés ou invalides"`
         — attendu : aucune occurrence pour ce motif ; consigner le résultat.
-  - [ ] **Grep du symptôme** (règle *Propagation post-patch*) : les commentaires qui disent qu'un compte
+  - [x] **Grep du symptôme** (règle *Propagation post-patch*) : les commentaires qui disent qu'un compte
         non imputable est refusé en `InactiveOrInvalidAccounts` / « archivés ou invalides » —
         `grep -rnE "non.?postable.*InactiveOrInvalid|InactiveOrInvalid.*non.?postable|INACTIVE_OR_INVALID_ACCOUNTS" crates`
         — sont réécrits, en particulier `journal_entries.rs:3647` (doc du test réécrit à l'AC7).
         **Verdict déjà établi en validation P2** : `crates/kesh-db/tests/invoices_line_revenue_account.rs:567`
         et `:708` (compte **archivé**) et `crates/kesh-db/src/repositories/accounts.rs:276` (id
         **absent**) ne portent pas ce motif — les relire, ne pas les réécrire sauf fait nouveau.
-  - [ ] **Commentaires qui décrivent la clause SQL que l'AC3 retire** (finding P3 F-2, attribution
+  - [x] **Commentaires qui décrivent la clause SQL que l'AC3 retire** (finding P3 F-2, attribution
         C23 : ils parlent de la garde de `validate_lines_accounts_in_tx`, que cette story réécrit) :
         `grep -rnE "clause .active|garde .active|validate_accounts.\]|active = TRUE.,? qui est inconditionnelle" crates`
         (six lignes sur `92770300`). **Verdict établi en
@@ -327,7 +327,7 @@ garde neuve.
           et, hors du motif mais relu, `errors.rs:11`
           (« la garde `active` … inconditionnelle », sans désigner de clause) → **justes, inchangés** ;
         Tout site neuf rendu par la commande est trié de même au Dev Agent Record.
-- [ ] **T8 — Gates** : gate complet backend (`scripts/test-fast.sh`, base remise à zéro avant) —
+- [x] **T8 — Gates** : gate complet backend (`scripts/test-fast.sh`, base remise à zéro avant) —
       **même en cours de boucle de revue** (la story touche des repositories `kesh-db`) ; gate frontend
       complet ; **E2E Playwright complet au dernier commit de code** (décision D7), jugé fichier par
       fichier contre `docs/testing.md` § « Les échecs attendus ».
@@ -428,11 +428,197 @@ règle de splitting.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`bmad-dev-story`, autonomie déléguée — consignes de l'Epic 15), worktree
+`kesh-15-5a`, branche `story/15-5a-refus-non-imputable`.
+
 ### Debug Log References
+
+- Journaux de gate (scratchpad de session, non versionnés) : `gate1.log` (test-fast), `e2e.log`
+  (Playwright).
+- Vitest : les 104 fichiers échouaient d'abord en « Cannot find module '/@fs/…/kesh/frontend/node_modules/…' »
+  — le lien symbolique `frontend/node_modules` du worktree sort de la racine servie par Vite. Remplacé
+  par une copie en liens durs (`cp -al`) du `node_modules` du dépôt principal : défaut du montage du
+  worktree, pas du code ; rien de versionné n'a changé.
 
 ### Completion Notes List
 
+**T0 — inventaire des lecteurs de l'ancien code** (commande de T0 sur `HEAD` = `38bbd272`, avant
+toute modification ; chaque ligne triée) :
+
+| Site | Tri | Sort |
+|---|---|---|
+| `kesh-db/src/repositories/journal_entries.rs:78`, `:130` | garde de la saisie manuelle (doc + refus) | réécrits (T3) |
+| `journal_entries.rs:3647`, `:3676-3677`, `:3755` | tests non imputable | réécrits (AC7) |
+| `kesh-db/src/repositories/invoice_settlements_write.rs:166` | garde 24-5, `_ =>` | converti (T4) |
+| `kesh-db/src/repositories/supplier_invoices.rs:346`, `:649` | gardes 24-5, `_ =>` | converties (T4) |
+| `kesh-db/tests/invoice_settlement.rs:311` | compte **archivé**, `contains` | reste `InactiveOrInvalid`, passé en `matches!` |
+| `kesh-db/tests/invoice_settlement.rs:354` | non imputable | réécrit (AC7) |
+| `kesh-db/tests/supplier_invoices_repository.rs:424`, `:470` | non imputable | réécrits (AC7) |
+| `supplier_invoices_repository.rs:388` (type), `:672` (autre société) | autre motif | inchangés |
+| `kesh-api/tests/reports_e2e.rs:1953` | non imputable (9000) | réécrit (AC7) |
+| `kesh-api/src/routes/opening_balances.rs:26`, `:189` | doc de module / mapping | réécrits (T5) |
+| `opening_balances.rs:332`, `:405` | ids **absents** | justes, inchangés (verdict T5) |
+| `kesh-api/tests/opening_balances_e2e.rs:703`, `:770` | autre société | inchangés (AC5) |
+| `kesh-api/src/errors.rs:3067-3069` | bras de l'ancienne variante | inchangé (le nouveau bras s'y ajoute) |
+| `kesh-api/src/errors.rs:3124` | commentaire 16-1a (comptes de produit) | juste, inchangé |
+| `kesh-api/src/routes/reconciliation.rs:3000` | compte bancaire **archivé** | juste, inchangé (surface de la 15-5b) |
+| `kesh-api/src/routes/onboarding.rs:194`, `:713`, `:727`, `kesh-seed/src/lib.rs:208` | rôles absents de `insert_with_defaults_in_tx` | inchangés (AC8) |
+| `kesh-api/tests/fiscal_years_e2e.rs:1025` | rôles absents (fixture) | inchangé |
+| `kesh-db/src/repositories/company_invoice_settings.rs:597`, `:601`, `:667`, `:735`, `:792` ; `kesh-db/tests/company_invoice_settings_repository.rs:116-959` | réglages de facturation (comptes absents / inactifs) | inchangés — surface de la 15-5b |
+| `kesh-db/src/repositories/invoices.rs:2086` | compte de produit archivé ou retypé | juste, inchangé |
+| `kesh-db/src/repositories/credit_notes.rs:427` | compte archivé | juste, inchangé |
+| `kesh-db/src/repositories/accounts.rs:276` ; `kesh-db/tests/opening_balances_repository.rs:304` | id absent | justes, inchangés |
+| `kesh-db/tests/invoices_validate_vat.rs:5`, `:284`, `:301-302` | compte TVA archivé | inchangés (AC8) |
+| `kesh-db/tests/invoices_line_revenue_account.rs:567`, `:708` | compte archivé | justes, inchangés (verdict P2) |
+| `kesh-db/src/errors.rs:350`, `:467`, `:745` | définition / doc / `error_code` | inchangés |
+| `frontend/…/JournalEntryForm.svelte:178` | groupe `err.message` | `case 'ACCOUNT_NOT_POSTABLE'` ajouté (AC6) |
+
+Aucun site neuf hors de la liste de l'AC7.
+
+**Ce qui a été implémenté**
+
+- **AC1** — `NonPostableAccount`, `NonPostableAccounts` (champ privé ; `new` dédoublonne par
+  identifiant puis trie par numéro lexicographique puis identifiant ; `debug_assert!` non vide ;
+  `iter()`, `numbers()`, `len()`, `is_empty()` — choix **C-15-5a-4** ; `details()` seul constructeur du
+  JSON), `DbError::AccountsNotPostable` avec `#[error]`, raccourci `DbError::accounts_not_postable`,
+  `error_code()` → `ACCOUNT_NOT_POSTABLE`. Bras `kesh-api` : 400, `t_args` avec `numbers` et `count`
+  **nombre** Fluent (`usize`), repli FR singulier/pluriel, `details: accounts.details()`. Le `match`
+  exhaustif de `error_code()` est complété ; aucun autre `match` exhaustif sur `DbError` n'a exigé
+  de bras (compilation du workspace).
+- **AC2** — clé `error-account-not-postable` dans les quatre locales, sélecteur `[one]` / `*[other]`,
+  texte FR exact de l'AC ; vocabulaire DE/IT/EN de la parenthèse : choix **C-15-5a-2**. Inscrite à
+  `SELECTEURS_RESOLUS_COTE_SERVEUR` avec son « où ».
+- **AC3** — `validate_lines_accounts_in_tx` : `SELECT id, number, active, postable` sans clause
+  `active`/`postable` ; (1) absent ou archivé → `InactiveOrInvalidAccounts` ; (2) si
+  `enforce_postable`, non imputables → `accounts_not_postable` (tous nommés). `exempt_ids` retiré, ainsi
+  que l'argument `&[]` de l'appelant. Doc-comment réécrit (C23), sans répéter la liste des flux de
+  `create_in_tx`. Pas de `FOR UPDATE` (C21).
+- **AC4** — trois gardes : `number` ajouté au `SELECT` (verrou conservé), bras (b) explicite, `_ =>`
+  (a) inchangé, commentaire d'ordre (a)/(b) neuf à chaque `match` ; commentaires existants non
+  réécrits (C23). Boucle des lignes fournisseur en **deux passes** (C22).
+- **AC5** — l'ouverture hérite par `create_in_tx` ; prouvé de bout en bout (tests ci-dessous). Le
+  complément garde `OPENING_COMPLEMENT_ACCOUNT_INVALID` ; sa branche `|| !a.postable` est désormais
+  testée et mutée.
+- **AC6** — `case 'ACCOUNT_NOT_POSTABLE'` dans `JournalEntryForm.svelte`. **Lecture des `catch`**, écran
+  par écran : règlement d'une facture client — `invoices/[id]/+page.svelte:582-588` et
+  `invoices/due-dates/+page.svelte:265-270`, `markError = err.message` affiché par
+  `SettleInvoiceDialog` (`errorMsg`) ; saisie d'une facture fournisseur —
+  `supplier-invoices/+page.svelte:213-214`, `formError = err.message` ; règlement fournisseur —
+  `supplier-invoices/[id]/+page.svelte:112-113`, `payError = err.message` ; complétion d'une facture
+  importée — `supplier-invoices/import/+page.svelte:267-301`, `completeErrorLabel` rabat le `default`
+  sur `err.message` ; soldes de départ — `settings/opening-balances/+page.svelte:208-213`,
+  `submitError = err.message`. **Aucun écran n'affiche de repli générique** pour ce code : rien à
+  corriger.
+- **AC7** — les tests de la liste fermée sont réécrits avec un commentaire qui cite la 15-5a, en
+  `matches!` / `match` sur la variante (plus aucun `contains("InactiveOrInvalid")` dans le dépôt).
+  ⚠️ **`test_create_manual_rejects_result_account` passait à vide** sur la base de dev seedée (aucun
+  compte `CurrentYearResult` — vérifié par requête) : il crée désormais un compte de résultat
+  temporaire faute d'en trouver un (choix **C-15-5a-1**), et la mutation M1 le fait rougir.
+- **AC8** — restés verts sans modification, au gate complet : `test_create_in_tx_auto_flow_allows_non_postable`
+  (cas iv de T6), `reverse_succeeds_when_an_account_became_non_postable`, `invoices_validate_vat.rs`,
+  les tests de `company_invoice_settings_repository.rs`, d'onboarding et de seed,
+  `post_cross_tenant_account_inactive_or_invalid`.
+- **AC9** — `CHANGELOG.md` : section `## [0.13.0] — Non publié` créée (motif exact de
+  `prepare-release.sh:189`), rubrique **Modifié**. `docs/api-external.md` § 10 : lignes
+  `ACCOUNT_NOT_POSTABLE` et `INACTIVE_OR_INVALID_ACCOUNTS` (choix **C-15-5a-3**). **Manuel** : contrôle
+  exercé et sans objet — `grep -n "archivés ou invalides\|INACTIVE_OR_INVALID" docs/manual/fr/*.tex` :
+  0 ligne ; `pdftotext … | tr '\n' ' ' | tr -s ' ' | grep -o "archivés ou invalides\|INACTIVE_OR_INVALID"`
+  sur les trois PDF FR (`user-manual`, `admin-manual`, `marketing-brochure`) : 0 occurrence chacun.
+  `user-manual.tex:390` décrit la protection sans citer de message : juste, inchangé.
+  `admin-manual.tex` : sans objet. Aucun PDF régénéré (aucun `.tex` touché).
+
+**T7 — grep du symptôme**
+- `grep -rnE "non.?postable.*InactiveOrInvalid|InactiveOrInvalid.*non.?postable|INACTIVE_OR_INVALID_ACCOUNTS" crates`
+  après patch : seuls restent des sites triés ci-dessus (absents, archivés, autre société), plus le
+  doc-comment réécrit de `reports_e2e.rs` qui cite l'ancien code comme historique.
+- `grep -rnE "clause .active|garde .active|validate_accounts.\]|active = TRUE.,? qui est inconditionnelle" crates` :
+  réécrits `kesh-db/src/errors.rs` (doc de `ReversalAccountsArchived`, « la garde `active` … décidée en
+  Rust »), `journal_entries.rs` (doc de `create_in_tx_inner` et de `archived_accounts_in_tx`, liens
+  vers [`validate_lines_accounts_in_tx`]), `journal_entry_reversal_e2e.rs:415` ; justes et inchangés :
+  `errors.rs:11`, `errors.rs:~599` (ex-`:484`), `credit_notes.rs:423-424`. Plus aucune occurrence de
+  `[validate_accounts]`.
+
+**Tests ajoutés** (périmètre : `origin/main` (`c9be146a`) → arbre de travail du commit de dev,
+recomptés par `grep -cE '#\[(tokio::)?test|#\[sqlx::test'` aux deux bornes) : **+16** —
+`kesh-db/src/errors.rs` 0 → 4 (tri lexicographique + dédoublonnage, `details()`, panique sur vide en
+debug, `error_code`) ; `kesh-i18n/src/loader.rs` 16 → 17 (singulier/pluriel des quatre locales par
+`format` avec arguments, texte FR exact) ; `journal_entries.rs` 38 → 40 (deux comptes nommés triés ;
+archivé prioritaire) ; `supplier_invoices_repository.rs` 37 → 43 (charge archivée ; actif non
+imputable comme charge → (a) ; deux lignes non imputables → un refus ; ordre des passes ×2 ;
+règlement fournisseur archivé) ; `opening_complement_repository.rs` 23 → 24 (complément sur compte non
+imputable → `(AccountInvalid, Some(id))`) ; `opening_balances_e2e.rs` 26 → 28 (singulier : code,
+`details.rejected`, « Le compte », numéro, ni « archiv » ni « invalide » ; pluriel : « Les comptes »,
+« 10000, 2100 »). Réécrits sans changement de nombre : `invoice_settlement.rs` (17),
+`reports_e2e.rs` (38), plus deux tests de `journal_entries.rs` et deux de
+`supplier_invoices_repository.rs`. Total nextest : 2754 = 2738 (v0.12.1) + 16.
+
+**Mutations** (chacune appliquée seule, tests ciblés lancés, fichier restauré **puis touché**) :
+
+| Mutant | Tests qui rougissent |
+|---|---|
+| M1 — saisie manuelle : branche (b) retirée | `test_create_manual_rejects_non_postable_line`, `…_names_every_non_postable_account_sorted`, `…_rejects_result_account` (3/3) |
+| M2 — règlement client : bras (b) retiré | `un_compte_non_imputable_est_refuse` |
+| M3 — compte de charge : bras (b) retiré | `create_with_non_postable_expense_account_is_rejected`, `create_with_two_non_postable_expense_lines_names_both` |
+| M4 — règlement fournisseur : bras (b) retiré | `pay_with_non_postable_account_is_rejected` |
+| M5 — `check_lines` : `\|\| !a.postable` retiré | `refus_compte_non_imputable` |
+| M6 — `count` passé en chaîne | `post_non_postable_account_is_named_singular` (le pluriel reste vert, attendu) |
+| M7 — `count` retiré des arguments | `post_non_postable_account_is_named_singular` |
+| M8 — boucle fournisseur ramenée à une passe | `create_form_of_later_line_wins_over_archived_account` (son jumeau « non imputable » reste vert : en une passe, le compte non imputable est collecté et la forme de la ligne suivante refuse quand même — seul le cas archivé distingue les deux ordres, ce que dit l'AC4) |
+
+**Gates — au dernier commit de code (ce commit)**
+1. Base de dev remise à zéro (`restart mariadb` + `sqlx migrate run` + `seed-dev-db.sql`) avant le
+   gate complet.
+2. `scripts/test-fast.sh` : `cargo fmt --check` vert, `clippy --workspace --all-targets -D warnings` vert,
+   **nextest 2754 exécutés, 2754 passés, 4 ignorés** (103,9 s).
+3. Frontend : `npm run check` 0 erreur (27 avertissements préexistants, 5 fichiers, aucun touché) ;
+   `npm run lint-i18n-ownership` PASS ; `npm run test:unit` **104 fichiers, 969 tests verts** ;
+   `npm run build` vert.
+4. **E2E complet** (montage du `CLAUDE.md` / `docs/testing.md` : backend du commit servant
+   `frontend/build`, `kesh_e2e` neuve — vidée par la remise à zéro de MariaDB — et migrée,
+   `KESH_INBOX_DIR`/`KESH_DOCUMENTS_DIR`/`KESH_SMTP_*`, `KESH_TEST_MODE` des deux côtés ;
+   `/health` : `smtpConfigured: true`) — lancé à 12:19 UTC : **239 passés, 9 échoués, 18 ignorés**
+   (10,3 min). Jugés fichier par fichier :
+   - `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
+     `:77`, `:150` — **KF-029 (#97)**, les sept attendus ;
+   - `onboarding-path-b.spec.ts:27` — hors liste : échec dans le **`beforeEach`** (`page.fill('#username')`
+     en timeout), le même crochet que `:65` (KF-029) ; **rejoué seul : passe le crochet puis est
+     ignoré** (`test.fixme`, KF-032) — pas une régression, la story ne touche ni le login ni
+     l'onboarding ;
+   - `sidebar-navigation.spec.ts:75` — **rejoué seul : vert** (1,4 s) ⇒ pollution d'état, non la
+     KF-046.
+   KF-045 (#421) ne s'est pas déclenchée (run après 12:00 UTC). Aucune spec touchant la saisie
+   d'écriture, les soldes de départ ou les factures n'a échoué. **Verdict : aucune régression.**
+
+**Reste / à signaler**
+- Le verrou de `validate_lines_accounts_in_tx` (C21) : hors périmètre, issue de dette à ouvrir par
+  l'orchestrateur.
+- Le `frontend/node_modules` en lien symbolique des worktrees casse Vitest (cf. Debug Log).
+
 ### File List
+
+- `CHANGELOG.md`
+- `docs/api-external.md`
+- `crates/kesh-db/src/errors.rs`
+- `crates/kesh-db/src/repositories/journal_entries.rs`
+- `crates/kesh-db/src/repositories/invoice_settlements_write.rs`
+- `crates/kesh-db/src/repositories/supplier_invoices.rs`
+- `crates/kesh-db/tests/invoice_settlement.rs`
+- `crates/kesh-db/tests/supplier_invoices_repository.rs`
+- `crates/kesh-db/tests/opening_complement_repository.rs`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/src/routes/opening_balances.rs`
+- `crates/kesh-api/tests/opening_balances_e2e.rs`
+- `crates/kesh-api/tests/reports_e2e.rs`
+- `crates/kesh-api/tests/journal_entry_reversal_e2e.rs`
+- `crates/kesh-i18n/locales/fr-CH/messages.ftl`
+- `crates/kesh-i18n/locales/de-CH/messages.ftl`
+- `crates/kesh-i18n/locales/it-CH/messages.ftl`
+- `crates/kesh-i18n/locales/en-CH/messages.ftl`
+- `crates/kesh-i18n/src/loader.rs`
+- `frontend/src/lib/features/journal-entries/JournalEntryForm.svelte`
+- `_bmad-output/implementation-artifacts/15-5a-refus-non-imputable.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md`
 
 ## Change Log
 
@@ -513,3 +699,11 @@ règle de splitting.
   **Propagation post-patch** : `trié`, `triée par numéro`, `accountNumbers`, `validate_accounts`,
   `clause .active`, `details()` grepés sur les fiches 15-5, 15-5a, 15-5b, 15-5c et le registre.
   **Une passe P4 suit** (un MEDIUM en P3).
+- 2026-10-08 — **Implémentation** (`bmad-dev-story`, Claude Opus 5.5) : T0 à T8. Variante
+  `DbError::AccountsNotPostable` / code `ACCOUNT_NOT_POSTABLE` / `details.rejected[{accountId,
+  accountNumber}]`, message à sélecteur dans les quatre locales, saisie manuelle réécrite (décision en
+  Rust, `exempt_ids` retiré), trois gardes de la 24-5 converties (boucle fournisseur en deux passes),
+  tests figés réécrits, +16 tests, huit mutations tuées, CHANGELOG `[0.13.0]`, `api-external.md`.
+  Gate complet backend 2754/2754, frontend 969/969, E2E 239 passés / 9 échoués — tous jugés (sept
+  KF-029, un crochet KF-029 sur un test `fixme`, une pollution). Choix C-15-5a-1 à C-15-5a-4. Statut →
+  `review`.

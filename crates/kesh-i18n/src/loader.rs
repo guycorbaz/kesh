@@ -364,7 +364,16 @@ mod tests {
     ///
     /// `contact-payment-terms-days-label` l'est par `routes/contacts.rs`, via
     /// `i18n.format(&locale, clé, Some(&args))`.
-    const SELECTEURS_RESOLUS_COTE_SERVEUR: &[&str] = &["contact-payment-terms-days-label"];
+    ///
+    /// `error-account-not-postable` (Story 15-5a, choix C18) l'est par le bras
+    /// `DbError::AccountsNotPostable` de `kesh-api/src/errors.rs`, via `t_args`
+    /// avec `numbers` et `count` (nombre Fluent). C'est sûr : le frontend affiche
+    /// `err.message`, déjà résolu par le serveur, et ne lit jamais cette clé dans
+    /// son dictionnaire.
+    const SELECTEURS_RESOLUS_COTE_SERVEUR: &[&str] = &[
+        "contact-payment-terms-days-label",
+        "error-account-not-postable",
+    ];
 
     /// Les clés d'un `.ftl` dont la valeur contient une expression **`select`**.
     ///
@@ -785,6 +794,57 @@ mod tests {
             manquantes.join("\n    "),
             obsoletes.len(),
             obsoletes.join("\n    ")
+        );
+    }
+
+    /// Story 15-5a (AC2) — la clé du refus « compte non imputable » se résout,
+    /// **avec arguments**, au singulier et au pluriel dans les quatre locales,
+    /// et nomme les numéros passés. Testée par `format` avec arguments : le
+    /// dictionnaire du frontend (`all_messages`) rendrait toujours `*[other]`.
+    #[test]
+    fn account_not_postable_resolves_singular_and_plural_in_every_locale() {
+        let bundle = I18nBundle::load(&locales_dir()).unwrap();
+        const KEY: &str = "error-account-not-postable";
+        for locale in Locale::ALL {
+            let mut one = FluentArgs::new();
+            one.set("numbers", "1000");
+            one.set("count", 1usize);
+            let singulier = bundle
+                .format(&locale, KEY, Some(&one))
+                .replace(['\u{2068}', '\u{2069}'], "");
+
+            let mut many = FluentArgs::new();
+            many.set("numbers", "1000, 2000");
+            many.set("count", 2usize);
+            let pluriel = bundle
+                .format(&locale, KEY, Some(&many))
+                .replace(['\u{2068}', '\u{2069}'], "");
+
+            assert_ne!(singulier, KEY, "{locale:?} : clé absente");
+            assert!(singulier.contains("1000"), "{locale:?} : {singulier}");
+            assert!(pluriel.contains("1000, 2000"), "{locale:?} : {pluriel}");
+            assert_ne!(
+                singulier,
+                pluriel.replace("1000, 2000", "1000"),
+                "{locale:?} : le singulier doit différer du pluriel — sélecteur inopérant"
+            );
+            let bas = format!("{singulier} {pluriel}").to_lowercase();
+            for interdit in ["archiv", "invalid", "ungültig", "non valid"] {
+                assert!(
+                    !bas.contains(interdit),
+                    "{locale:?} : « {interdit} » dans {bas}"
+                );
+            }
+        }
+        // Le texte FR exact du singulier (AC2).
+        let mut one = FluentArgs::new();
+        one.set("numbers", "1000");
+        one.set("count", 1usize);
+        assert_eq!(
+            bundle
+                .format(&Locale::FrCh, KEY, Some(&one))
+                .replace(['\u{2068}', '\u{2069}'], ""),
+            "Le compte 1000 n’est pas imputable (compte de regroupement, de résultat ou de clôture) : choisissez un compte imputable."
         );
     }
 }

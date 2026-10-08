@@ -307,8 +307,10 @@ async fn un_compte_archive_est_refuse(pool: MySqlPool) {
     )
     .await
     .expect_err("un compte archivé doit être refusé");
+    // Story 15-5a — `matches!` sur la variante (un `contains` passerait pour
+    // une variante voisine) ; un compte archivé reste `InactiveOrInvalidAccounts`.
     assert!(
-        format!("{err:?}").contains("InactiveOrInvalid"),
+        matches!(err, DbError::InactiveOrInvalidAccounts),
         "got {err:?}"
     );
 }
@@ -350,10 +352,18 @@ async fn un_compte_non_imputable_est_refuse(pool: MySqlPool) {
     )
     .await
     .expect_err("un compte non imputable doit être refusé");
-    assert!(
-        format!("{err:?}").contains("InactiveOrInvalid"),
-        "got {err:?}"
-    );
+    // Story 15-5a (#429) — réécrit à dessein : le refus porte son vrai nom et
+    // nomme le compte (auparavant `InactiveOrInvalidAccounts`).
+    match &err {
+        DbError::AccountsNotPostable(list) => {
+            let named: Vec<(i64, &str)> = list
+                .iter()
+                .map(|a| (a.account_id, a.account_number.as_str()))
+                .collect();
+            assert_eq!(named, vec![(caisse, "1000")]);
+        }
+        other => panic!("attendu AccountsNotPostable, obtenu {other:?}"),
+    }
 
     // Et rien n'a été écrit : ni règlement, ni écriture.
     assert_eq!(

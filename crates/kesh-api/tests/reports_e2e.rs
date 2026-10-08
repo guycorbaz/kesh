@@ -1889,8 +1889,10 @@ async fn closing_account_balance_reaches_both_report_surfaces(pool: MySqlPool) {
 /// **La garde qui ferme le chemin**, et elle existe déjà (Story 14-3b).
 ///
 /// Une fois le compte non imputable — ce que le plan livré et le backfill
-/// produisent —, la création d'écriture est refusée. ⛔ Aucun code d'erreur neuf
-/// n'est introduit par cette story : on vérifie **celui qui existe**.
+/// produisent —, la création d'écriture est refusée. Le code de ce refus a
+/// changé **délibérément** à la Story 15-5a (#429, choix C3) :
+/// `ACCOUNT_NOT_POSTABLE`, qui nomme le compte, au lieu de
+/// `INACTIVE_OR_INVALID_ACCOUNTS`, « archivés ou invalides », faux pour ce motif.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn posting_to_a_closed_closing_account_is_refused(pool: MySqlPool) {
     let ctx = setup_full(&pool, "co_24_5_refus", Role::Comptable).await;
@@ -1937,22 +1939,25 @@ async fn posting_to_a_closed_closing_account_is_refused(pool: MySqlPool) {
         "poster sur un compte de cloture doit etre refuse par la garde de la 14-3b"
     );
 
-    // L'AC 13 porte sur le code d'erreur AUTANT que sur le statut : « avec son code
-    // d'erreur ACTUEL, sans en inventer un neuf ». Sans cette assertion, un refus
-    // survenant pour une AUTRE raison — toujours en 400 — passerait pour la garde
-    // qu'on croit mesurer.
+    // Le code d'erreur est asserté AUTANT que le statut : sans cette assertion,
+    // un refus survenant pour une AUTRE raison — toujours en 400 — passerait pour
+    // la garde qu'on croit mesurer.
     //
-    // ⚠️ Le MESSAGE n'est délibérément pas asserté : il passe par
-    // `t("error-inactive-accounts", …)` et change avec la locale — l'asserter
-    // attacherait ce test à une traduction. C'est le patron du fichier (les quatre
-    // autres refus n'assertent que leur code). L'AC a été amendée en ce sens en
-    // passe 2 de revue de code (finding P2-5) ; son libellé d'origine demandait
-    // « son code d'erreur ET son message », que ce test ne tenait qu'à moitié.
+    // ⚠️ Le MESSAGE n'est délibérément pas asserté ici : il change avec la
+    // locale, et ce montage n'initialise pas l'i18n des erreurs. C'est le patron
+    // du fichier ; le message (singulier, pluriel) est éprouvé de bout en bout
+    // par `opening_balances_e2e.rs`, qui l'initialise (Story 15-5a).
+    //
+    // Story 15-5a (#429) — réécrit à dessein : le code neuf est délibéré (C3) ;
+    // le détail nomme le compte refusé.
     let body: Value = resp.json().await.unwrap();
     assert_eq!(
-        body["error"]["code"], "INACTIVE_OR_INVALID_ACCOUNTS",
-        "aucun code d'erreur neuf n'est introduit par cette story : c'est le refus \
-         existant de la 14-3b qui doit parler"
+        body["error"]["code"], "ACCOUNT_NOT_POSTABLE",
+        "le refus de la garde 14-3b porte son vrai nom depuis la Story 15-5a"
+    );
+    assert_eq!(
+        body["error"]["details"]["rejected"],
+        serde_json::json!([{ "accountId": acc_9000, "accountNumber": "9000" }])
     );
 }
 

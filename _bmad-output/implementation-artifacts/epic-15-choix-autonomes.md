@@ -482,3 +482,39 @@ l'import (#458–#461).
 - **Signalé à l'orchestrateur** : une transaction rejetée n'est plus atteignable depuis l'interface
   (candidat à une issue).
 - **Réversible** : oui.
+
+## C-15-5a-1 — 15-5a (dev) : le test du compte de résultat ne passe plus à vide
+
+- **Contexte** : l'AC7 demande de réécrire `test_create_manual_rejects_result_account` vers
+  `AccountsNotPostable`. Sur la base de dev seedée (`scripts/seed-dev-db.sql`), la société n'a **aucun**
+  compte de rôle `CurrentYearResult` : le test sortait par `return` et rendait vert sans rien exercer —
+  constaté par requête sur la base remise à zéro. Le réécrire tel quel aurait certifié une réécriture
+  jamais exécutée.
+- **Retenu** : faute de compte de résultat, le test en crée un temporaire (`2979`, `Liability`, rôle
+  `CurrentYearResult`, `postable = FALSE`) et le supprime en fin de test. La mutation M1 le fait rougir.
+- **Écarté** : laisser le `return` (test muet) ; modifier le seed partagé (hors périmètre, effets sur
+  d'autres tests).
+- **Réversible** : oui (un test).
+
+## C-15-5a-2 — 15-5a (dev) : vocabulaire DE/IT/EN de la parenthèse
+
+- **Contexte** : l'AC2 fixe le texte FR exact et le terme « non imputable » des trois autres locales
+  (bebuchbar, registrabile, postable), pas les mots de la parenthèse (regroupement, résultat, clôture),
+  qu'aucune clé existante ne traduit.
+- **Retenu** : DE « Sammel-, Ergebnis- oder Abschlusskonto », IT « conto di raggruppamento, di risultato
+  o di chiusura », EN « grouping, result or closing account », avec accord singulier / pluriel.
+- **Réversible** : oui (quatre lignes `.ftl`) ; à relire par un locuteur.
+
+## C-15-5a-3 — 15-5a (dev) : `INACTIVE_OR_INVALID_ACCOUNTS` entre aussi dans la table de `api-external.md`
+
+- **Contexte** : C24 demande une ligne `ACCOUNT_NOT_POSTABLE` au § 10 ; la ligne dit ce qu'il remplace
+  et quand l'ancien code reste rendu, or `INACTIVE_OR_INVALID_ACCOUNTS` n'y figurait pas.
+- **Retenu** : deux lignes — l'ancien code (inconnu, archivé, autre société, non nommé) et le nouveau.
+- **Réversible** : oui.
+
+## C-15-5a-4 — 15-5a (dev) : accesseurs `len()` / `is_empty()` sur `NonPostableAccounts`
+
+- **Contexte** : l'AC1 nomme `iter()` et `numbers()` ; le bras API a besoin du nombre (`count`), et
+  clippy (`len_without_is_empty`) exige `is_empty()` dès qu'un `len()` public existe.
+- **Retenu** : `len()` et `is_empty()` en lecture seule ; le champ reste privé, l'invariant intact.
+- **Réversible** : oui.

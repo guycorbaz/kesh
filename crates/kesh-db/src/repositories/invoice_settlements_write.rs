@@ -21,7 +21,7 @@ use crate::entities::{
     Journal, NewInvoiceSettlement, NewJournalEntry, SettlementChoice, SettlementKind,
     SettlementWriteOffNature,
 };
-use crate::errors::{DbError, SettlementCancelBlocker, map_db_error};
+use crate::errors::{DbError, NonPostableAccount, SettlementCancelBlocker, map_db_error};
 use crate::repositories::invoice_settlements::PaymentAgainstDue;
 use crate::repositories::journal_entries::ReversalAuthority;
 use crate::repositories::settlement_cancellation::{
@@ -153,16 +153,26 @@ pub async fn settle_invoice(
             // trou « API seulement » que le manuel décrivait. Les trois flux de
             // réconciliation, eux, restent ouverts et sont suivis par #427 —
             // mais aucun de leurs écrans n'offre ces comptes.
-            let account: Option<(bool, bool)> = sqlx::query_as(
-                "SELECT active, postable FROM accounts WHERE id = ? AND company_id = ? FOR UPDATE",
+            let account: Option<(bool, bool, String)> = sqlx::query_as(
+                "SELECT active, postable, number FROM accounts \
+                 WHERE id = ? AND company_id = ? FOR UPDATE",
             )
             .bind(account_id)
             .bind(company_id)
             .fetch_optional(&mut *tx)
             .await
             .map_err(map_db_error)?;
+            // Story 15-5a — ordre des refus : (a) inconnu, autre société ou
+            // archivé → `InactiveOrInvalidAccounts` ; (b) sinon, non imputable
+            // → `AccountsNotPostable`, qui nomme le compte.
             match account {
-                Some((true, true)) => account_id,
+                Some((true, true, _)) => account_id,
+                Some((true, false, number)) => {
+                    return Err(DbError::accounts_not_postable([NonPostableAccount {
+                        account_id,
+                        account_number: number,
+                    }]));
+                }
                 _ => return Err(DbError::InactiveOrInvalidAccounts),
             }
         }

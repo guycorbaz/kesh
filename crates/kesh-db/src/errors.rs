@@ -294,6 +294,100 @@ pub struct ArchivedAccount {
     pub account_number: Option<String>,
 }
 
+/// Un compte refusé parce qu'il n'est **pas imputable** (Story 15-5a, #429).
+///
+/// Jumeau d'[`ArchivedAccount`], à une différence près : le numéro n'est pas
+/// optionnel. La variante [`DbError::AccountsNotPostable`] n'est émise que pour
+/// un compte **de la société et actif** — un compte inconnu ou d'une autre
+/// société reste [`DbError::InactiveOrInvalidAccounts`] (anti-énumération
+/// KF-002) —, si bien que son numéro est toujours connu (choix C16).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NonPostableAccount {
+    pub account_id: i64,
+    /// Numéro du compte au plan comptable, tel que l'utilisateur le connaît.
+    pub account_number: String,
+}
+
+/// Liste **triée, dédoublonnée et non vide** des comptes non imputables d'un
+/// refus (Story 15-5a, choix C17 et C31).
+///
+/// Le champ est privé : la seule façon d'en construire une est
+/// [`NonPostableAccounts::new`], qui trie par numéro dans l'**ordre
+/// lexicographique de la chaîne** (`"1000" < "10000" < "1010" < "2000"` — le
+/// numéro est une chaîne, un tri numérique échouerait sur un numéro non
+/// numérique), puis par identifiant à numéro égal, et dédoublonne par
+/// identifiant. Le message et le détail JSON sont donc déterministes quel que
+/// soit l'ordre des lignes de la requête.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NonPostableAccounts(Vec<NonPostableAccount>);
+
+impl NonPostableAccounts {
+    /// Construit la liste : dédoublonnage par identifiant, puis tri (numéro
+    /// lexicographique, puis identifiant).
+    ///
+    /// **Précondition** : au moins un compte. Une liste vide produirait un
+    /// message sans numéro ; elle est vérifiée par `debug_assert!` — un appelant
+    /// ne construit ce refus que lorsqu'il a trouvé un compte en défaut.
+    pub fn new(accounts: impl IntoIterator<Item = NonPostableAccount>) -> Self {
+        let mut list: Vec<NonPostableAccount> = accounts.into_iter().collect();
+        // Dédoublonnage par identifiant d'abord (un même compte porté par
+        // plusieurs lignes), puis tri d'affichage.
+        list.sort_by_key(|a| a.account_id);
+        list.dedup_by_key(|a| a.account_id);
+        list.sort_by(|a, b| {
+            a.account_number
+                .cmp(&b.account_number)
+                .then(a.account_id.cmp(&b.account_id))
+        });
+        debug_assert!(
+            !list.is_empty(),
+            "NonPostableAccounts::new : la liste des comptes refusés est vide"
+        );
+        Self(list)
+    }
+
+    /// Les comptes, dans l'ordre d'affichage.
+    pub fn iter(&self) -> impl Iterator<Item = &NonPostableAccount> {
+        self.0.iter()
+    }
+
+    /// Les numéros, dans l'ordre d'affichage.
+    pub fn numbers(&self) -> Vec<&str> {
+        self.0.iter().map(|a| a.account_number.as_str()).collect()
+    }
+
+    /// Nombre de comptes refusés.
+    pub fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    /// Toujours faux pour une liste construite par [`Self::new`] (précondition).
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// **Seul constructeur** du détail JSON du refus (choix C29) :
+    /// `{ "rejected": [{ "accountId", "accountNumber" }] }`, dans l'ordre de la
+    /// liste — la forme du jumeau `ACCOUNT_ARCHIVED`.
+    ///
+    /// Le bras HTTP 400 de `kesh-api` l'appelle, et les `failed[].details` des
+    /// endpoints batch l'appelleront (Story 15-5b) ; aucun autre site ne
+    /// construit ce JSON, pour qu'un même refus n'ait qu'une forme.
+    pub fn details(&self) -> serde_json::Value {
+        let rejected: Vec<serde_json::Value> = self
+            .0
+            .iter()
+            .map(|a| {
+                serde_json::json!({
+                    "accountId": a.account_id,
+                    "accountNumber": a.account_number,
+                })
+            })
+            .collect();
+        serde_json::json!({ "rejected": rejected })
+    }
+}
+
 /// Erreurs des opérations de persistance MariaDB.
 ///
 /// Les messages `Display` sont destinés au logging serveur uniquement.
@@ -348,6 +442,27 @@ pub enum DbError {
     /// UX clair sans leak du détail interne.
     #[error("Un ou plusieurs comptes sont archivés ou invalides")]
     InactiveOrInvalidAccounts,
+
+    /// Un ou plusieurs comptes **de la société, actifs**, ne sont pas
+    /// imputables : compte de regroupement (`postable = FALSE`), de résultat
+    /// (rôle `CurrentYearResult`) ou de clôture (Story 15-5a, #429).
+    ///
+    /// Pourquoi une variante dédiée (choix C3) : ces refus étaient rendus en
+    /// [`DbError::InactiveOrInvalidAccounts`], « archivés ou invalides », message
+    /// faux pour ce motif — l'utilisateur cherchait un compte archivé qui ne
+    /// l'était pas. Précédent : [`RevenueAccountRejection::NotPostable`], propre
+    /// aux lignes de facture et donc non réutilisé.
+    ///
+    /// Ordre des causes : un compte inconnu, d'une autre société ou archivé
+    /// reste `InactiveOrInvalidAccounts` et **prime** — cette variante ne nomme
+    /// que des comptes dont l'appartenance a été contrôlée (KF-002).
+    ///
+    /// Construite par [`DbError::accounts_not_postable`] ; la liste est triée,
+    /// dédoublonnée et non vide par construction ([`NonPostableAccounts`]).
+    /// Mappé vers HTTP **400** `ACCOUNT_NOT_POSTABLE`, détail
+    /// [`NonPostableAccounts::details`].
+    #[error("Un ou plusieurs comptes ne sont pas imputables")]
+    AccountsNotPostable(NonPostableAccounts),
 
     /// Un paiement solde une facture au centime et produit un écart d'arrondi,
     /// mais aucun compte de différences d'arrondi utilisable n'est désigné dans
@@ -604,9 +719,9 @@ pub enum DbError {
     /// Un ou plusieurs comptes de l'écriture d'origine ont été **archivés**
     /// depuis (Story 24-4a, #380).
     ///
-    /// ⛔ `enforce_postable = false` NE SUFFIT PAS : la clause `active = TRUE` de
-    /// la validation des comptes est **inconditionnelle**, seule `postable` est
-    /// gouvernée par le drapeau.
+    /// ⛔ `enforce_postable = false` NE SUFFIT PAS : la garde `active` de la
+    /// validation des comptes (décidée en Rust depuis la Story 15-5a) est
+    /// **inconditionnelle**, seule `postable` est gouvernée par le drapeau.
     ///
     /// Mappé vers HTTP **400** `ACCOUNT_ARCHIVED` — même statut que le gabarit
     /// [`DbError::CreditNoteRevenueAccountsArchived`] dont il reprend la forme.
@@ -731,6 +846,12 @@ pub enum RoundingContext {
 }
 
 impl DbError {
+    /// Raccourci de construction de [`DbError::AccountsNotPostable`] : trie,
+    /// dédoublonne et vérifie la non-vacuité par [`NonPostableAccounts::new`].
+    pub fn accounts_not_postable(accounts: impl IntoIterator<Item = NonPostableAccount>) -> Self {
+        Self::AccountsNotPostable(NonPostableAccounts::new(accounts))
+    }
+
     /// Code d'erreur structuré pour le mapping API (utilisé par `kesh-api`
     /// pour construire les réponses d'erreur JSON).
     pub fn error_code(&self) -> &'static str {
@@ -743,6 +864,7 @@ impl DbError {
             Self::IllegalStateTransition(_) => "ILLEGAL_STATE_TRANSITION",
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
             Self::InactiveOrInvalidAccounts => "INACTIVE_OR_INVALID_ACCOUNTS",
+            Self::AccountsNotPostable(_) => "ACCOUNT_NOT_POSTABLE",
             Self::RoundingAccountNotConfigured { .. } => "ROUNDING_ACCOUNT_NOT_CONFIGURED",
             Self::WriteOffAccountNotConfigured { .. } => "WRITE_OFF_ACCOUNT_NOT_CONFIGURED",
             Self::InvoiceBelowMinimum { .. } => "INVOICE_BELOW_MINIMUM",
@@ -829,4 +951,67 @@ pub fn map_db_error(err: sqlx::Error) -> DbError {
         }
     }
     DbError::Sqlx(err)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn acc(id: i64, number: &str) -> NonPostableAccount {
+        NonPostableAccount {
+            account_id: id,
+            account_number: number.to_string(),
+        }
+    }
+
+    /// Story 15-5a (C17, C31) — ordre lexicographique du numéro, puis
+    /// identifiant ; dédoublonnage par identifiant.
+    #[test]
+    fn non_postable_accounts_sorted_lexicographically_then_by_id_and_deduped() {
+        let list = NonPostableAccounts::new([
+            acc(4, "2000"),
+            acc(3, "1010"),
+            acc(2, "10000"),
+            acc(1, "1000"),
+            acc(3, "1010"), // doublon
+        ]);
+        assert_eq!(list.numbers(), vec!["1000", "10000", "1010", "2000"]);
+        assert_eq!(list.len(), 4);
+
+        // Numéro égal (deux sociétés ne se mélangent jamais, mais l'ordre doit
+        // rester total) : départage par identifiant.
+        let tie = NonPostableAccounts::new([acc(9, "1000"), acc(5, "1000")]);
+        let ids: Vec<i64> = tie.iter().map(|a| a.account_id).collect();
+        assert_eq!(ids, vec![5, 9]);
+    }
+
+    /// Story 15-5a (C29) — `details()` rend exactement la forme du jumeau
+    /// `ACCOUNT_ARCHIVED`, dans l'ordre de la liste.
+    #[test]
+    fn non_postable_accounts_details_shape() {
+        let list = NonPostableAccounts::new([acc(7, "2000"), acc(3, "1000")]);
+        assert_eq!(
+            list.details(),
+            serde_json::json!({
+                "rejected": [
+                    { "accountId": 3, "accountNumber": "1000" },
+                    { "accountId": 7, "accountNumber": "2000" },
+                ]
+            })
+        );
+    }
+
+    /// Story 15-5a (C17) — précondition « non vide ».
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "liste des comptes refusés est vide")]
+    fn non_postable_accounts_empty_panics_in_debug() {
+        let _ = NonPostableAccounts::new(std::iter::empty());
+    }
+
+    #[test]
+    fn accounts_not_postable_error_code() {
+        let err = DbError::accounts_not_postable([acc(1, "1000")]);
+        assert_eq!(err.error_code(), "ACCOUNT_NOT_POSTABLE");
+    }
 }

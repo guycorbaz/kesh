@@ -770,6 +770,111 @@ async fn post_cross_tenant_account_inactive_or_invalid(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "INACTIVE_OR_INVALID_ACCOUNTS");
 }
 
+/// Story 15-5a — un compte de bilan de la société, actif, mais NON imputable.
+/// Il ne diffère d'un compte accepté que par `postable`.
+async fn create_non_postable_acc(
+    pool: &MySqlPool,
+    seed: &Seed,
+    number: &str,
+    account_type: AccountType,
+) -> i64 {
+    accounts::create(
+        pool,
+        seed.user_id,
+        NewAccount {
+            company_id: seed.company_id,
+            number: number.into(),
+            name: "Regroupement".into(),
+            account_type,
+            parent_id: None,
+            role: None,
+            postable: false,
+        },
+    )
+    .await
+    .unwrap()
+    .id
+}
+
+/// Story 15-5a (AC5, T6, finding P3 F-1) — UNE ligne d'ouverture sur un compte
+/// non imputable : 400 `ACCOUNT_NOT_POSTABLE`, le détail nomme le compte, et le
+/// message — résolu par le sélecteur Fluent, ce montage appelant
+/// `init_error_i18n` — est au SINGULIER, sans « archivé » ni « invalide ».
+///
+/// ⚠️ C'est le seul test qui éprouve le pont `count`/`numbers` du bras API :
+/// `count` passé en chaîne ou omis ferait retomber le sélecteur sur `*[other]`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_non_postable_account_is_named_singular(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let seed = seed_ready(&pool).await;
+    let group = create_non_postable_acc(&pool, &seed, "2100", AccountType::Liability).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/opening-balances"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "lines": [
+            line(seed.asset, "100.00", "0"),
+            line(group, "0", "100.00"),
+        ]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ACCOUNT_NOT_POSTABLE");
+    assert_eq!(
+        body["error"]["details"]["rejected"],
+        json!([{ "accountId": group, "accountNumber": "2100" }])
+    );
+    let msg = body["error"]["message"].as_str().unwrap_or("");
+    assert!(msg.starts_with("Le compte "), "singulier attendu : {msg}");
+    assert!(msg.contains("2100"), "le numéro doit être nommé : {msg}");
+    assert!(
+        !msg.contains("archiv") && !msg.contains("invalide"),
+        "le message ne doit dire ni archivé ni invalide : {msg}"
+    );
+}
+
+/// Story 15-5a (AC5, T6) — DEUX comptes non imputables : le message est au
+/// PLURIEL et nomme les deux numéros dans l'ordre lexicographique (C31) ; le
+/// détail les porte dans le même ordre.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_two_non_postable_accounts_are_named_plural(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let seed = seed_ready(&pool).await;
+    let liab_group = create_non_postable_acc(&pool, &seed, "2100", AccountType::Liability).await;
+    let asset_group = create_non_postable_acc(&pool, &seed, "10000", AccountType::Asset).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/opening-balances"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "lines": [
+            line(liab_group, "0", "100.00"),
+            line(asset_group, "100.00", "0"),
+        ]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ACCOUNT_NOT_POSTABLE");
+    assert_eq!(
+        body["error"]["details"]["rejected"],
+        json!([
+            { "accountId": asset_group, "accountNumber": "10000" },
+            { "accountId": liab_group, "accountNumber": "2100" },
+        ])
+    );
+    let msg = body["error"]["message"].as_str().unwrap_or("");
+    assert!(msg.starts_with("Les comptes "), "pluriel attendu : {msg}");
+    assert!(
+        msg.contains("10000, 2100"),
+        "numéros dans l'ordre C31 : {msg}"
+    );
+}
+
 // ===========================================================================
 // POST — RBAC
 // ===========================================================================
