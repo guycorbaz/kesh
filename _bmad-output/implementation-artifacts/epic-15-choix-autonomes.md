@@ -4442,3 +4442,486 @@ l'import (#458–#461).
   ce qui interdit de clore après elle) ; un test du second `Invariant` par désactivation de la contrainte
   (`SET check_constraint_checks = 0`) — il monterait un état que la base interdit, sans valeur de preuve.
 - **Réversibilité** : totale ; la dette se solde par une story de quelques lignes.
+## C100 — 15-12, remédiation de la validation P1 : révise C89 (preuve, ordre des verrous, réparation, dérogation)
+- **Contexte** : validation P1 de la 15-12 (lentilles R et F, Opus) — 1 HIGH, 4 MEDIUM, 14 LOW distincts,
+  aucun recyclé. Trois points de C89 sont faux ou mal fondés : la preuve du filet (point 4) prêtait à la
+  lecture verrouillante de la clôture un rôle dans le scénario « écrivain dans N », où elle n'en a
+  aucun ; l'ordre des verrous (point 3) affirmait que toutes les acquisitions d'exercice deviennent
+  ascendantes ; la réparation (point 5) prescrivait de rouvrir le plus proche postérieur clos, que la
+  garde LIFO refuse dès qu'un plus récent est clos. L'argument de non-découpage (point 6) reposait sur
+  la preuve réfutée.
+- **Retenu** :
+  1. **Preuve** : la sûreté du filet repose sur (α) l'invariant I sur tout état validé — c'est lui qui
+     dépend de la lecture verrouillante de la clôture, face à la course réouverture/clôture — et (β) le
+     verrou de son exercice tenu par l'écrivain. Test 13 a **ordonné** (réouverture de N simulée et non
+     validée, `close(L)` lancée, bloquée, puis validation de la réouverture → refus
+     `EarlierFiscalYearOpen(N)`), qui tue la mutation (ii) sur l'état final ; l'ancien 13 c (écrivain dans
+     N) est retiré ; la course libre `reopen_close_concurrent_is_serialized` est remplacée.
+  2. **Test « refus parasite »** (ex-13 d, désormais 13 c) : forme **ordonnée** plutôt que l'ensemble
+     des issues admises — seule à garder contre le refus parasite, son objet.
+  3. **Ordre des verrous** : la clôture est ascendante comme `reopen`, la garde 15-8a et
+     `find_open_covering_date` pris seuls ; la contre-passation (`reverse_in_tx_inner`) et les quatre
+     annulations qui la portent verrouillent l'exercice de l'origine puis parcourent depuis le premier
+     exercice (ordre inverse) : cycle possible avec la clôture, résolu par le rejeu des deux côtés (cinq
+     routes `Rejouee`, clôture enveloppée par l'AC 6) ; test 13 d à deux connexions, victime forcée si
+     InnoDB le permet (mesure en T0), mutation (ix). Le cycle réouverture/contre-passation, préexistant,
+     reste nommé au point (iv) du registre.
+  4. **Réparation de l'état hérité** : d'abord clôturer l'exercice ouvert le plus ancien (l'AC 1
+     l'accepte, geste du Comptable), puis les suivants dans l'ordre ; sinon, un administrateur rouvre
+     les exercices clos **à partir du plus récent** (seul ordre que LIFO accepte). Bandeau à trois noms
+     (`$open`, `$closed`, `$latest`) ; message global neutre, sans prescription de réouverture et
+     valable à la création d'un exercice.
+  5. **Restauration en vol** : angle mort assumé, écrit (le verrou de `full_import` ne sérialise qu'avec
+     les autres imports) — et non plus « exclue ».
+  6. **Clé du lot** : `reconciliation-failed-later-fiscal-year-closed` avec `$name` lu dans
+     `details.fiscalYearName` (troisième code lu par `details`).
+  7. **Base partagée** : les tests qui posent un postérieur clos le retirent ; mode d'échec écrit dans
+     `docs/testing.md` ; pas de réparation dans `ensure_open_fiscal_year` (masquerait un résidu).
+  8. **Pas de découpage**, sur un argument neuf : décompte refait, **11** modules ; la coupe A/B laisse
+     7 et 8 modules (aucune moitié sous le seuil) et le remède de la règle (patron puis déploiement
+     mécanique) n'a pas de prise ; les deux moitiés réécriraient les mêmes paragraphes de doc ; les
+     défauts de P1 sont d'origine et se rangent par thème. **Déclencheur de repli élargi** : premier
+     défaut recyclé, quel qu'en soit l'objet, ou non-convergence (D5) → 15-12a / 15-12b.
+- **Écartées** : asserter l'ensemble des issues au 13 c (ne garde plus contre le refus parasite) ;
+  forcer l'entrelacement du 13 a par un verrou d'intervalle sur `audit_log` (proposition F1 — plus
+  fragile que la réouverture simulée, et dépendante de la place de l'audit dans `reopen`) ; garder « tout
+  est ascendant » en rendant les annulations ascendantes (refonte de cinq flux rejoués pour un cycle
+  que le rejeu résout déjà) ; prescrire la seule réouverture (geste réservé à l'administrateur, plus
+  long, et faux dans l'ordre d'origine) ; découper maintenant en 15-12a/15-12b (cf. point 8).
+- **Réversible** : oui (fiche seulement ; code non écrit). Le Project Lead peut imposer la coupe.
+
+## C101 — 15-1a : la migration du lettrage relève `kesh_version_min_required` à 0.13.0 (révise C90), et ce que cela fait à la release
+- **Contexte** : validation P1 de la 15-1a (Opus ×2), findings R-1 = F1 (HIGH). C90 avait conclu « pas de
+  bump » sur la liste P3 et nommé un risque inexact (une v0.12.1 ne modifie ni ne supprime aucune écriture
+  manuelle — `PUT`/`DELETE` y rendent `ENTRY_IS_POSTED`, vérifié sur le tag). Le risque réel : une v0.12.1
+  relancée sur une base où la 15-1a2 a posé des groupes `document` annule un règlement, un paiement ou un
+  rapprochement **sans dissoudre le groupe** — facture due, grand livre « soldée », faux rattachement
+  muet. Précédent `20260814000001` : bump sur un changement de sémantique d'écriture, sans opération P3.
+- **Retenu** (décision de l'orchestrateur) : dernière instruction `UPDATE _kesh_version SET
+  kesh_version_min_required = '0.13.0' WHERE id = 1;` dans la migration de la **15-1a** (c'est elle qui
+  introduit l'état) ; P2-bis : les dix crates à `0.13.0` dans le même commit ; P7 : `EXEMPT_MIGRATIONS`,
+  `Durable`, patron `post_restore.rs:512-525` ; gate runtime complet ; `migrations_fresh_install.rs:244`
+  passe de `0.10.0` à `0.13.0` ; CHANGELOG : avertissement de non-retour (précédent v0.10.0).
+- **Conséquence pour la release** (lue dans `scripts/prepare-release.sh`, non exécuté) : le script refuse
+  quand la version des crates égale la cible (« version cible identique », `exit 1`) **avant** son
+  pré-vol. `prepare-release.sh 0.13.0` refusera donc, et **ne lancera ni** la datation du CHANGELOG **ni**
+  le contrôle des exemptions périssables. La v0.13.0 se publiera comme la v0.10.0 (`a80a36c1`) :
+  CHANGELOG daté à la main **et** contrôle périssable lancé à la main (`cargo run -q -p kesh-db --example
+  perishable_exemptions`, puis la recherche de tag dans l'intervalle). ⚠️ À trancher hors story (chore) :
+  apprendre au script le cas « déjà bumpé » (sauter l'étape 1, garder le pré-vol), ou écrire la
+  procédure manuelle dans la checklist de release.
+- **Écartées** : maintenir « pas de bump » (contraire au précédent et à la définition P1) ; bumper dans la
+  15-1a2 seulement (la 15-1a aurait livré des colonnes qu'un ancien binaire ignore, et la 15-1a2 écrit déjà
+  des données, P7 classe A) ; risque accepté sans bump (faux rattachement muet).
+- **Réversible** : oui tant que non développé ; une fois publiée, une migration ne se modifie plus (P8).
+
+## C102 — 15-1a : la garde `ENTRY_LETTERED` hors du drapeau `enforce_ownership`, et son motif d'écran (révise C97)
+- **Contexte** : findings R-3 = F2 (la garde posée dans `modification_guard` n'est pas évaluée par
+  `invoices::unvalidate`, qui appelle `delete_in_tx(…, false)`) et R-2 = F3 (HIGH : `modification_guard`
+  sert aussi `modification_blocker`, le `GET` de la fiche, hors transaction — le motif sortirait vide à
+  l'écran et un `FOR UPDATE` y attendrait derrière tout lettrage).
+- **Retenu** : variante `ModificationGuard::Lettered { code }` (`code()` = `ENTRY_LETTERED`, `label()` = le
+  code), rendue par une fonction **distincte** `lettering_guard(conn, company_id, id, Lecture)` ; appel
+  **inconditionnel** dans `delete_in_tx` (étape 3-ter-bis) et `update_in_tx`, `Lecture::Conseil` (sans
+  verrou) dans `modification_blocker`. Frontend dès la 15-1a : union `ModificationBlocker`,
+  `modificationBlockerLabel`, `editRefusalOutcome` → `'stale'`, `ATTENDU` 11 → 12, clé
+  `journal-entries-modify-blocked-lettered` quatre locales, « onze » → « douze ». Test
+  `delete_in_tx(…, false)` sur écriture lettrée → refus.
+- **Écartées** : le motif dans `modification_guard` (manque la dévalidation) ; une garde dans
+  `unvalidate` seul (un point de passage de plus à tenir) ; exclure le motif de l'écran (bouton offert,
+  `PUT` refusé) ; deux fonctions de lecture (elles divergeraient) — un paramètre.
+- **Réversible** : oui (fiche seulement).
+
+## C103 — 15-1a : séquence des verrous du lettrage — premier acte verrouillant, exercices exclusifs dans le sens de la clôture, exercice tenu en mode système (révise R7 de la reprise)
+- **Contexte** : findings R-5 = F4 (découvrir les en-têtes par une lecture ordinaire ouvre la vue avant
+  le verrou ; un nombre de lignes affectées inattendu finissait en `Invariant` → 500), R-6 = F7 (verrou
+  partagé suivi d'un exclusif : interblocage d'escalade structurel ; `ORDER BY id` contraire à la clôture
+  de la 15-12, `start_date`), R-4 (R7 et AC5 en désaccord sur le mode système).
+- **Retenu** : (1) premier acte = une lecture `FOR UPDATE` **jointe** lignes ⋈ en-têtes, scopée par
+  société, qui découvre et verrouille d'un coup — aucune lecture ordinaire avant ; plan vérifié par
+  `EXPLAIN` ; (2) mode `Manual` : exercices des lignes `FOR UPDATE ORDER BY start_date, id` ; (3) mode
+  `System { held_open_fiscal_year_id }` : **aucun** verrou d'exercice dans la primitive — l'appelant tient
+  déjà un exercice ouvert couvrant une ligne et le passe ; vérification sans requête, manquement →
+  `Invariant` (défaut d'appelant) ; (4) compte d'`UPDATE` inattendu → 409 `LETTERING_CONCURRENT_CHANGE`.
+  ⚠️ **Affinement de la décision 7 de l'orchestrateur** (« exercices `FOR UPDATE ORDER BY start_date` ») :
+  appliquée telle quelle au mode système, la contre-passation — qui tient l'exercice **du jour** quand elle
+  lettre — reprendrait ensuite les exercices **antérieurs** de l'origine, à rebours de la clôture de la
+  15-12, qui n'est pas rejouée. Interblocage résiduel avec `update_in_tx`/`delete_in_tx` (ligne avant
+  en-tête dans l'acte 1) : nommé, absorbé par le rejeu (les trois routes sont `Rejouee`).
+- **Écartées** : lecture ordinaire de découverte puis comparaison (contraire à la doctrine « le verrou
+  d'abord ») ; lignes `FOR UPDATE` puis en-têtes en deux actes (même cycle, une requête de plus) ;
+  verrouiller les exercices en mode système (cycle avec la clôture) ; `Invariant` sur le compte d'`UPDATE`.
+- **Réversible** : oui (fiche seulement).
+
+## C104 — 15-1a : la lettrabilité est exigée à la création d'un groupe, jamais à sa dissolution (révise C96)
+- **Contexte** : finding F8 (+ R-21) — un compte lettrable peut cesser de l'être : retypage d'un compte
+  mouvementé (`confirm_retype`, Story 25-2-a) ou rattachement d'un `bank_accounts`. La fiche ne disait pas
+  ce que deviennent les groupes existants (mémoire « invariant dans le temps »).
+- **Retenu** : les groupes existants restent **intacts** (le solde constaté reste vrai) et
+  **dissolubles** ; la dissolution ne contrôle pas la lettrabilité ; l'invariant `lettering_invariants`
+  ne la contrôle pas, par décision ; test : retyper 1100 en `Expense` puis `DELETE` → 204, idem après
+  rattachement bancaire. Ce que la 15-1b affiche pour un tel compte est sa question.
+- **Écartées** : dissoudre d'office au retypage (écriture cachée dans un geste de plan comptable) ;
+  refuser le retypage d'un compte lettré (bloque une correction légitime) ; groupe indissoluble.
+- **Réversible** : oui.
+
+## C105 — 15-1a : lettrer comme délettrer exige au moins une ligne sur un exercice ouvert ; la 15-12 passe avant (révise C94 et D3)
+- **Contexte** : findings F6 (lettrer deux lignes d'exercices clos réécrit les postes ouverts « au » d'une
+  date close — la vue ne connaît pas la date du lettrage — exactement ce que C94 refuse au délettrage) et
+  R-7 = F5 (C94 repose sur « les clos forment un préfixe », C89, Story 15-12, non déclarée en dépendance ;
+  l'état « N ouvert, N+1 clos » est atteignable aujourd'hui).
+- **Retenu** : règle **symétrique** en mode `Manual` — un groupe entièrement dans des exercices clos ne se
+  crée ni ne se défait (409 `LETTERING_FISCAL_YEARS_CLOSED`, une clé) ; à cheval, permis. En mode
+  système, garanti par l'exercice tenu (C103). **La 15-12 est un prérequis** : ordre **15-12 → 15-1a →
+  15-1a2 → 15-1b → 15-1c**, écrit dans la fiche, l'index `15-1-lettrage.md`, `epics.md` et
+  `sprint-status.yaml`. FR86 (« tant que l'exercice est ouvert ») est **interprété** pour un groupe à
+  cheval, consigné aux Dev Notes. ⚠️ **D3 (« lettrer toujours permis ») était un arbitrage de Guy
+  (août)** : cette révision, prise en autonomie, est à lui présenter à la revue finale. Point laissé à la
+  15-1a2 : sa migration de rattrapage poserait-elle des groupes historiques entièrement clos ?
+  (recommandation du socle : non, par symétrie).
+- **Écartées** : asymétrie acceptée (lettrer libre) — la réécriture du passé est la même dans les deux
+  sens ; dater le lettrage (une colonne de plus, et une vue « au » plus lourde) ; durcir AC5 sans la 15-12
+  (« refus si une ligne est antérieure à un exercice clos ») — duplique la 15-12 au lieu d'en dépendre.
+- **Réversible** : oui (fiche seulement) ; revenir à D3 coûte le retrait d'une branche de refus.
+
+## C106 — 15-1a : un groupe `reversal` contenant une ligne de pièce n'est pas dissoluble à la main ; la promesse « paiement à lettrer » quitte la documentation (révise C97 et C93)
+- **Contexte** : findings F9 (la contre-passation d'une écriture de pièce lettre `{L, L'}` ; une
+  dissolution manuelle ouvrirait la paire pour toujours, R5 interdisant de la relettrer) et F10 (le
+  manuel `:1169`, `:1696` et `api-external.md` `:325`, `:386` disent le règlement d'une facture créditée
+  « paiement **à lettrer** » ; R5 l'interdit — motif `OwnedBySettlement` — et le groupe `document` ne peut
+  le prendre).
+- **Retenu** : dissolution manuelle d'un groupe `reversal` dont une ligne relève d'une pièce (motifs
+  `OwnedBy*`, rangs 3 à 6) → 409 `LETTERING_LINE_OWNED_BY_DOCUMENT` (clé réutilisée) ; test nommé. Le
+  manuel et l'API sont réécrits **dans la 15-1a** sans promesse de lettrage manuel ; le **traitement**
+  du règlement d'une facture créditée est renvoyé à la 15-1a2 (section « Reçu de la 15-1a » de sa fiche :
+  exception à R5, groupe incluant l'avoir, ou cas ouvert et dit).
+- **Écartées** : exempter de R5 la relettre `{L, L'}` (une seconde voie de lettrage manuel de lignes de
+  pièce) ; laisser la promesse au manuel jusqu'à la 15-1a2 (documentation fausse dès la 15-1a).
+- **Réversible** : oui.
+
+## C107 — 15-12 découpée en 15-12a (l'ordre) et 15-12b (le filet) à la validation P2 (révise C89 point 6 et C100 point 8)
+- **Contexte** : validation P2 de la 15-12 (Sonnet ×2 ; rapports `target/gate-logs/15-12-p2-{R,F}.md`) —
+  F3 (MEDIUM) : la dérogation au découpage ne relève pas de l'exception que le `CLAUDE.md` codifie (cycles
+  Cargo, merges intermédiaires intestables) ; R3 (LOW) : « la dépendance B → A est à sens unique » est
+  fausse (l'AC 5 de A rendait le message de l'AC 9, rangé dans B ; doc-comments de A citant le filet).
+  **Décision de l'orchestrateur**, inscrite ici : découper maintenant, quand la coupe ne coûte que des
+  fiches (aucun code écrit), plutôt qu'au premier défaut recyclé, où elle coûterait une branche entamée.
+- **Retenu** : coupe de repli déjà décrite par la fiche, avec l'AC 9 (message neutre et sa clé) déplacé
+  dans la **15-12a**, et toute dépendance A → B réglée (A livrable et testable seule) :
+  - **15-12a** « l'ordre » (`refs #543`) : AC 1-7, 9, 13, 14, 17, 22, et la part A des AC 19, 21, 23 ;
+  - **15-12b** « le filet » (`closes #543`) : AC 8, 10, 11, 12, 15, 16, 18, 20, et la part B des AC 19,
+    21, 23.
+  Numérotation des AC **conservée** de la 15-12 (références croisées stables : « AC 13 b », « mutation
+  (ii) ») ; un AC partagé porte la mention « part A » / « part B ». Tâches renumérotées par fiche, chacune
+  avec son origine (« ex-T4 »). La fiche `15-12-cloture-dans-l-ordre.md` devient un index ; sa version
+  complète avant découpage est au commit `dae3a618`.
+- **Ce que la coupe ne règle pas, et qui est dit** : recomptés au même critère (un module dont seul un doc-comment change compte), A touche 8
+  modules de premier niveau et B 9 ; les deux dépassent encore 5. Le remède de la règle (patron puis déploiement mécanique) n'a pas de
+  prise ; un découpage plus fin séparerait des AC qui se testent ensemble (l'ordre de `close` et sa
+  concurrence ; le filet et son inventaire). Signal déclaré au Project Lead, dans les deux fiches.
+- **Écartées** : garder la story entière (dérogation hors de l'exception codifiée) ; découper en trois
+  (écran à part) — l'écran des exercices porte à la fois le bouton (A) et le bandeau (B), un tiers écran
+  dépendrait des deux autres.
+- **Réversible** : oui (fiches seulement).
+
+## C108 — 15-12b : le refus `LATER_FISCAL_YEAR_CLOSED` du lot, trois voies, un seul constructeur, code littéral
+- **Contexte** : R1 = F1 (MEDIUM) — `accept_one_rule` (`routes/reconciliation.rs:2528-2555` sur `8f9811d8`)
+  n'emprunte pas `project_error_to_failed_proposal` : son repli en ligne rend `DATABASE_ERROR`. F8 (LOW) :
+  le décompte « 26 codes » de `failed-proposal-label.ts` ne compte que les littéraux + `ACCOUNT_NOT_POSTABLE`.
+- **Retenu** : un constructeur unique `later_fiscal_year_closed_failed_proposal` (patron de
+  `period_locked_failed_proposal`, `:186-193` : « un seul constructeur pour les DEUX sites »), qui pose le
+  code par un **littéral** `"LATER_FISCAL_YEAR_CLOSED"` (visible au `grep` du décompte, qui passe à 27 :
+  26 littéraux + `ACCOUNT_NOT_POSTABLE`), appelé par un bras de `project_error_to_failed_proposal`
+  (facture, ventilé) **et** par la branche en ligne de `accept_one_rule`, à côté de son `PeriodLocked`.
+  Un test par voie ; mutations (vii-a) et (vii-b).
+- **Écartées** : aiguiller l'`Err(e)` de la règle vers `project_error_to_failed_proposal` — son bras
+  `NotFound → PROJECT_NOT_FOUND` mal-étiquetterait un `NotFound` étranger au projet, ce que le commentaire
+  de la règle (`:2531-2534`) et le doc-comment du mapper (`:180-181`) écartent expressément ; poser le code par `err.error_code()` (invisible au
+  `grep` du décompte).
+- **Réversible** : oui.
+
+## C109 — 15-12a : la preuve de l'enveloppe de la clôture est un test HTTP ; celle de la création, un test HTTP si T0 trouve un interblocage forçable, sinon la revue
+- **Contexte** : R2 (MEDIUM) — la mutation (ix) « clôture hors de son enveloppe » ne peut être tuée par un
+  test `kesh-db` : l'enveloppe y serait écrite par le test lui-même. `close_fiscal_year` et
+  `create_fiscal_year` restent `SansEcritureAuJournal`, que le volet (c) du registre n'examine pas.
+- **Retenu** : test `fiscal_year_close_is_replayed_when_it_is_the_deadlock_victim` dans
+  `crates/kesh-api/tests/rejeu_interblocage_e2e.rs`, patron des tests 2 à 5 (transaction lourde qui tient N,
+  la route vue en attente à l'étape (c), la transaction demande M que la requête (b) a verrouillé,
+  témoin `warn!` de `kesh_db::retry` nommant `fiscal_years::close`). Pour la création : même patron si la
+  mesure de l'AC 13 b montre un interblocage dont la victime se laisse forcer ; sinon la mutation (x) est
+  écrite « tenue par revue » au Dev Agent Record et au point (vi) du registre, comme `onboarding::finalize`.
+  Le test 13 d (`kesh-db`) garde son objet — le cycle existe et se résout — sans prétendre tuer (ix).
+- **Écartées** : retirer (ix) et tenir les deux enveloppes par la revue (un rouge possible vaut mieux
+  qu'une relecture) ; classer les deux routes `Rejouee` (elles n'écrivent pas au journal : le registre
+  mentirait sur sa première colonne).
+- **Réversible** : oui.
+
+## C110 — 15-12a : `OPEN_COVERING_DATE_SQL` reçoit `ORDER BY start_date ASC`
+- **Contexte** : F2 (MEDIUM) — l'ordre « ascendant » de `find_open_covering_date` était affirmé (AC 3, 13 d,
+  14) sans que la requête le tienne : pas d'`ORDER BY`, trois index utilisables sur `company_id`
+  (`uq_fiscal_years_company_name`, `uq_fiscal_years_company_start_date`, index de la FK), plan au choix de
+  l'optimiseur.
+- **Retenu** : `… AND status = 'Open' ORDER BY start_date ASC LIMIT 1` (constante partagée avec
+  `has_open_covering_date`, lecture seule : résultat inchangé, une seule ligne peut correspondre, les
+  exercices ne se chevauchant pas). **Sans `, id`** : `(company_id, start_date)` est unique
+  (`uq_fiscal_years_company_start_date`), le départage ne peut pas servir — et les deux autres requêtes du
+  module (`FIND_LATER_CLOSED_SQL`, la neuve `FIND_EARLIER_OPEN_SQL`) s'écrivent `ORDER BY start_date ASC`.
+  `EXPLAIN` des trois requêtes mesuré en T0 (index `uq_fiscal_years_company_start_date`, pas de
+  `filesort`), écrit au Dev Agent Record.
+- **Écartées** : écrire que l'ordre dépend du plan (le doc-comment canonique de l'AC 14 et le test 13 d
+  reposeraient sur un fait non tenu) ; `FORCE INDEX` (fige un nom d'index dans une requête).
+- **Réversible** : oui.
+
+## C111 — 15-12a : le message neutre garde le conseil de la contre-passation et prescrit l'ordre LIFO ; l'ancienne clé est alignée
+- **Contexte** : F5 (LOW) — le message neutre de l'AC 9 faisait perdre au `PUT`/`DELETE` le conseil de la
+  contre-passation, et la fiche renvoyait à un bandeau qui ne s'affiche pas à la création d'un exercice
+  (état sain). R4 (LOW) — l'ancienne clé `journal-entries-modify-blocked-later-fiscal-year-closed`
+  prescrit encore « Un administrateur peut rouvrir cet exercice », le geste que C100 a réfuté.
+- **Retenu** : message de la clé neuve terminé par la marche à suivre valable dans tous les cas (corriger
+  une écriture par contre-passation ; sinon, un administrateur rouvre les exercices clôturés en commençant
+  par le plus récent) ; l'ancienne clé, toujours lue par la fiche d'écriture, reçoit la même prescription,
+  aux quatre catalogues et dans le repli de `blocker-messages.ts`.
+- **Écartées** : garder l'ancienne clé telle quelle et l'écrire comme limite (texte faux dans l'état même
+  où il s'affiche) ; renvoyer au bandeau (absent à la création).
+- **Réversible** : oui.
+
+## C112 — Ordre 15-12a → 15-12b → 15-1a ; le prérequis réel de la 15-1a est la 15-12a
+- **Contexte** : C105 faisait de la 15-12 un prérequis de la 15-1a (« les clos forment un préfixe »). R6 et
+  F11 (LOW) : la 15-1a dit la clôture « non rejouée » (vrai sur `main`, faux dès la 15-12a), et l'invariant I
+  n'est garanti que pour les états sains.
+- **Retenu** : **la 15-12a est le prérequis réel** (elle tient l'invariant et rend la clôture rejouée). La
+  15-12b n'est pas requise par la 15-1a — son filet couvre la création et la suppression d'écritures, pas
+  le lettrage — mais **passe avant de préférence** : les deux touchent `journal_entries::delete_in_tx`
+  (la 15-12b lève la condition `enforce_ownership` sur la lecture des postérieurs clos, la 15-1a y pose
+  `ENTRY_LETTERED` hors de ce drapeau) ; la seconde mergée écrit la précédence des deux refus. Ordre écrit :
+  **15-12a → 15-12b → 15-1a → 15-1a2 → 15-1b → 15-1c**. Ce que la 15-1a doit porter (fiche en validation,
+  non modifiée ici) est rendu à l'orchestrateur : corriger « la clôture n'est pas rejouée » et dire ce que
+  devient sa règle des exercices dans l'état hérité (tolérer, garder comme 15-8a, ou écrire la limite).
+- **Écartées** : faire de la 15-12b un prérequis dur (rien dans la 15-1a ne lit le filet).
+- **Réversible** : oui.
+
+## C113 — 15-1a : une ligne est « en période ouverte » si son exercice est ouvert, qu'aucun exercice postérieur n'est clos et que sa date dépasse le verrou de période ; lettrer comme délettrer en exigent une (révise C105)
+- **Contexte** : validation P2 de la 15-1a (Sonnet ×2 ; `target/gate-logs/15-1a-p2-{R,F}.md`). F-3 (MEDIUM) :
+  R7 permettait de lettrer et délettrer dans une période verrouillée (« la marque n'est pas une écriture »),
+  au rebours de l'argument F6 qui fonde le refus pour les exercices clos — la vue « au » d'une date (15-1b)
+  compte soldé à X tout groupe entièrement daté ≤ X, quelle que soit la date de pose ; lettrer deux lignes
+  du 15 mars sous un verrou au 31 mars réécrit les « postes ouverts au 31.03 » remis au fiduciaire. Le
+  manuel (`user-manual.tex:578-583`) dit que verrouiller « fige » la période. S'y ajoute le point reçu de
+  la 15-12 (C112) : dans l'**état hérité** (sauvegarde v0.12.x, SQL direct), un groupe tout entier dans
+  N ouvert sous N+1 clos passait la règle « au moins une ligne sur un exercice ouvert », et ni la 15-12a
+  ni la 15-12b ne le gardent.
+- **Retenu** (décision de l'orchestrateur pour le verrou de période ; choix de l'agent pour l'état
+  hérité) : une ligne est **« en période ouverte »** ssi (i) son exercice est `Open`, (ii) aucun exercice
+  postérieur n'est `Closed` (patron de la garde 15-8a — on **garde** l'état hérité plutôt que de le
+  tolérer ou d'écrire la limite), (iii) sa date est strictement postérieure à `books_locked_through`
+  (seuil inclusif, comme partout). En mode `Manual`, lettrer comme délettrer exigent au moins une telle
+  ligne ; sinon 409 **`LETTERING_ALL_LINES_IN_CLOSED_PERIODS`** (une clé, qui **remplace**
+  `LETTERING_FISCAL_YEARS_CLOSED` — elle ne disait pas le verrou). La borne se lit ordinairement, après
+  les verrous d'exercices (même tolérance qu'à la création et au `PUT`). Les informations (ii) viennent
+  de la même lecture verrouillante que les exercices (C114). En mode `System`, non évaluée par la
+  primitive : la ligne de l'exercice tenu vient d'être écrite et a passé les gardes de la création ; le
+  (ii) n'y est garanti qu'avec la 15-12b — limite écrite. Manuel : phrase symétrique au § du verrou de
+  période ; tests nommés (borne exacte, état hérité posé par SQL). Nom « en période ouverte » choisi pour
+  ne pas se confondre avec « ligne ouverte » (non lettrée).
+- **Écartées** : garder « permis » sous le verrou et écrire que la vue « au D » est réécrite après coup
+  (contredit le manuel et l'argument F6) ; deux codes distincts (exercice / verrou) — une ligne du groupe
+  peut être close pour une raison, une autre pour l'autre, le refus porte sur le groupe ; tolérer l'état
+  hérité (la vue « au » de N+1 serait réécrite, précisément ce que la règle protège) ; écrire la limite
+  sans garde (une requête suffit à la fermer).
+- **Réversible** : oui (fiche seulement) ; revenir à « permis » sous le verrou retire la condition (iii).
+
+## C114 — 15-1a : les exercices se verrouillent par un parcours ascendant de `(company_id, start_date)`, pas par un `ORDER BY` sur une liste d'`id` (révise C103 point 2)
+- **Contexte** : R2-2 = F-5 (MEDIUM / LOW) — `SELECT … WHERE id IN (…) … ORDER BY start_date, id FOR
+  UPDATE` ne fixe pas l'ordre d'acquisition : InnoDB verrouille au fil du parcours (ici la clé
+  primaire) et trie ensuite, soit l'ordre des `id`, celui que C103 voulait écarter. Décision de
+  l'orchestrateur : s'aligner sur la 15-12a (C110) ou verrouiller un par un après tri en Rust ; choisir la
+  forme qui garantit l'ordre et écrire la mesure T0.
+- **Retenu** : (a) `MIN(start_date)` des exercices des lignes, lu **sans verrou** (`start_date` immuable,
+  15-12a AC 3 (a)), après l'acte 1 ; (b) `SELECT id, start_date, status FROM fiscal_years WHERE company_id
+  = ? AND start_date >= ? ORDER BY start_date ASC FOR UPDATE` — parcours d'intervalle de
+  `uq_fiscal_years_company_start_date`, qui verrouille l'exercice le plus ancien du groupe **et tous les
+  postérieurs** dans l'ordre chronologique, et rend d'un coup l'information « exercice postérieur clos »
+  de C113. `EXPLAIN` mesuré en T0 (attendu : `range` sur cet index, sans `filesort`), écrit au Dev Agent
+  Record ; **repli écrit d'avance** si le plan diffère : `(id, start_date)` lus sans verrou, tri en Rust,
+  verrous un par un. Test avec deux exercices aux `id` inversés par rapport aux dates, face à `close`.
+  Pas de `, id` (`(company_id, start_date)` est unique, C110).
+- **Écartées** : la forme « un par un » d'emblée (plus de requêtes, et elle ne rend pas l'information
+  « postérieur clos » sans une requête de plus) ; `FORCE INDEX` (fige un nom d'index — écarté aussi par
+  C110) ; garder `ORDER BY` sur la liste d'`id` en se fiant au plan.
+- **Réversible** : oui.
+
+## C115 — 15-1a : le motif du bump `min_required` réécrit au plus juste, et ce que `sqlx` fait déjà (révise le motif de C101, pas sa décision)
+- **Contexte** : F-1 (MEDIUM) — C101 et la fiche disaient la v0.12.1 « seul binaire antérieur publié »
+  ne modifiant aucune écriture manuelle. Faux : v0.10.0, v0.11.0, v0.11.1 sont publiés, routent `PUT` et
+  `DELETE /journal-entries/{id}` (`v0.11.1:crates/kesh-api/src/lib.rs:337-338`, sans `ENTRY_IS_POSTED`)
+  et démarrent contre `min_required = '0.10.0'`. Le motif ira dans l'en-tête de la migration, que P8 fige.
+  En vérifiant, l'agent a relevé un fait que ni C101 ni la passe n'avaient écrit : `kesh_db::MIGRATOR`
+  garde `ignore_missing = false` (défaut de `sqlx` 0.8.6, `Migrator::run` →
+  `validate_applied_migrations` → `MigrateError::VersionMissing`), si bien qu'un binaire antérieur
+  refuse **déjà** de démarrer contre une base portant une migration qu'il ne connaît pas
+  (`kesh-api/src/main.rs:138`) ; et l'import de la v0.12.1 refuse une colonne inconnue
+  (`check_schema_compat` (c1), `unknownColumns`).
+- **Retenu** : la décision de bumper tient (P1/P2 ne présument pas de `sqlx`, et le bump rend le refus
+  explicite, précoce — avant `sqlx`, en nommant les versions — et porté au manifeste des sauvegardes).
+  Le motif écrit : tout binaire publié antérieur (v0.10.0 à v0.12.1) ignore le lettrage ; les v0.10.0 à
+  v0.11.1 modifient et suppriment des écritures manuelles, les v0.12.x annulent règlements, paiements et
+  rapprochements, sans dissoudre les groupes. **En-tête de migration arrêté dans la fiche** (cinq lignes)
+  pour être recopié tel quel. ⚠️ **Signalé à l'orchestrateur** : la prémisse de la § « Migration breaking
+  policy » du `CLAUDE.md` (« un binaire antérieur pourrait démarrer et corrompre ») n'est pas vraie sous
+  le réglage actuel de `sqlx` — le bump n'est pas la seule barrière, il en est la forme lisible. Ce n'est
+  pas à cette story de réécrire la politique.
+- **Écartées** : garder le motif « v0.12.1 seule » (faux, et figé par P8) ; renoncer au bump au motif
+  que `sqlx` refuse déjà (la politique l'exige, et un futur `set_ignore_missing(true)` rouvrirait le
+  risque en silence).
+- **Réversible** : oui tant que la migration n'est pas écrite ; ensuite, non (P8).
+
+## C116 — 15-1a : la contre-passation relit les lignes de l'écriture inverse après les avoir lettrées
+- **Contexte** : F-4 (MEDIUM) — `reverse_in_tx_inner` rend `created`, lu par `create_in_tx_inner` avant
+  tout lettrage ; la route en fait son `201`. L'API, ouverte aux clés, dirait `letteringCode: null` sur une
+  ligne lettrée en base ; aucun test d'AC9 ne lisait le corps.
+- **Retenu** : si au moins un groupe a été posé, `created.lines` est remplacé par une relecture `SELECT
+  {LINE_COLUMNS} … WHERE entry_id = ? ORDER BY line_order` dans la transaction, **dans
+  `reverse_in_tx_inner`** (tous les appelants de `reverse_in_tx` en profitent) ; AC9 (a) asserte le corps
+  du `201`.
+- **Écartées** : relire dans la route seule (les autres appelants garderaient une valeur fausse) ;
+  recalculer les champs en mémoire depuis le retour de `create_group_in_tx` (deux sources de la même
+  vérité — la base et un calcul).
+- **Réversible** : oui.
+
+## C117 — 15-1a / 15-12b : précédence des refus dans `delete_in_tx`, écrite et testée par la seconde des deux à merger
+- **Contexte** : reçu de la remédiation de la 15-12 (`9b403aaf`) — la 15-12b rend l'étape 2-bis
+  (« exercice postérieur clos ») inconditionnelle ; la 15-1a pose 3-ter-bis (`ENTRY_LETTERED`),
+  inconditionnelle aussi. Les deux se recouvrent sur la dévalidation et sur la route.
+- **Retenu** : ordre **2-bis avant 3-ter-bis** (l'état des exercices parle avant la marque, comme
+  `FISCAL_YEAR_CLOSED` avant `LATER_FISCAL_YEAR_CLOSED`). La seconde story mergée l'écrit au doc-comment
+  « Ordre des refus » de `delete_in_tx` et le teste par une paire (écriture lettrée dans N, N+1 clos,
+  `enforce_ownership` à `false` et à `true` → `LaterFiscalYearClosed`), mutation « permuter les étapes ».
+  Dans l'ordre préféré (C112), c'est la 15-1a (T0 relève l'état, T4 l'applique). ⚠️ Si la 15-1a est
+  mergée la première, la paire revient à la 15-12b : **à reporter dans la fiche 15-12b par
+  l'orchestrateur** (fiche en validation P3, non modifiée ici).
+- **Écartées** : 3-ter-bis avant 2-bis (dirait « délettrez d'abord » à qui ne pourrait de toute façon
+  rien supprimer — et le délettrage serait lui-même refusé, C113 (ii)).
+- **Réversible** : oui.
+
+## C118 — 15-1a : pas de découpage malgré le premier critère franchi au grain des modules métier ; couture écrite
+- **Contexte** : F-13 (LOW) — l'argument de P1 (« amendement D5 : aucun recyclage ») ne qualifiait que le
+  second critère ; au grain des modules métier, le premier est franchi (une dizaine) ; F-1 et F-2 sont
+  des faits écrits par la remédiation de P1.
+- **Retenu** : pas de découpage. La couture naturelle — (i) schéma, primitive, routes, audit, exports ;
+  (ii) gardes d'AC8, R6, frontend, manuel — produit deux stories qui touchent toutes deux
+  `repositories/journal_entries` et `kesh-api`, la seconde intestable sans la première ; les défauts nés
+  de P1 sont des faits recopiés (un motif, une liste de tests), non une règle métier qui ne converge
+  pas. **Déclencheur écrit** : si la P3 trouve un défaut né d'un correctif de P2 sur une règle métier
+  (R7, AC4, AC5, AC8), découper selon cette couture avant toute P4. Signal déclaré au Project Lead.
+- **Écartées** : découper maintenant sur le modèle de C107 (la 15-12 avait deux moitiés indépendantes ;
+  ici la seconde dépend entièrement de la première).
+- **Réversible** : oui (fiches seulement).
+
+## C119 — 15-12a : les exercices antérieurs se verrouillent un par un par clé primaire, dans l'ordre lu sans verrou, puis relecture verrouillante après l'exercice clôturé (révise C110 ; à reporter sur C114)
+- **Contexte** : validation P3 de la 15-12 (Opus ×2 ; `target/gate-logs/15-12-p3-{R,F}.md`). F2 (MEDIUM) —
+  « ascendant **par construction** » était faux : un `ORDER BY` fixe l'ordre du résultat, InnoDB verrouille
+  dans l'ordre du **parcours** choisi par l'optimiseur, et le dépôt a déjà mesuré un `filesort` qui
+  verrouille tous les exercices d'une société (`opening_complement.rs:278-281`). L'ordre des `id` diverge
+  de celui des `start_date` dès qu'un exercice antérieur est créé après un postérieur. **Décision de
+  l'orchestrateur** : garantir l'ordre indépendamment du plan ; choisir entre `FORCE INDEX` + `EXPLAIN`
+  mesuré et testé, et une lecture des `id` triés sans verrou suivie de verrous un par un — de préférence la
+  forme dont la garantie ne dépend d'aucune mesure.
+- **Retenu** : `close` en six temps — (a) `start_date` de Y sans verrou ; (b) `LIST_EARLIER_SQL` : `SELECT
+  id … WHERE company_id = ? AND start_date < ? ORDER BY start_date ASC`, sans verrou, tous statuts ; (b')
+  `LOCK_EARLIER_BY_ID_SQL` : `SELECT id … WHERE id = ? AND company_id = ? FOR UPDATE`, un par un dans cet
+  ordre, par une boucle Rust (un exercice disparu est ignoré) ; (c) Y par clé primaire `FOR UPDATE`
+  (`fetch_optional` → `NotFound`), verdict « déjà clos » ; (d) `FIND_EARLIER_OPEN_SQL … FOR UPDATE`,
+  **relecture verrouillante** qui rend le verdict `EarlierFiscalYearOpen` sur l'état validé ; (e) `UPDATE`,
+  audit. L'ordre des antérieurs **connus** est celui du code. `OPEN_COVERING_DATE_SQL` reste **sans**
+  `ORDER BY` (C110 révisé : un `ORDER BY` n'aurait fixé que le résultat, déjà unique, et rien ne dépend de
+  l'ordre de ses verrous). `EXPLAIN` de (d) et de `FIND_LATER_CLOSED_SQL` mesuré en T0 à titre
+  **descriptif**, dans les deux régimes (une / plusieurs sociétés).
+- **Ce qui est perdu, écrit dans la fiche** : (1) les verrous de clé suivante et d'intervalle d'un
+  parcours — un exercice antérieur **créé** après la vue de (a) (fantôme) n'est ni listé ni verrouillé ;
+  (d) le lit (lecture verrouillante : état validé), et une création postérieure à la prise de Y l'attend
+  (sa garde `find_later_closed_in_tx` examine Y), sauf si un exercice clos s'interpose, auquel cas elle
+  est refusée ; (2) une requête par antérieur ; (3) (d) reste un parcours dont les acquisitions **nouvelles**
+  dépendent du plan — fantômes, ou autres lignes de la société sous un mauvais plan —, mais elle vient
+  quand la clôture tient Y et les antérieurs connus : un cycle qui y naît est absorbé par le rejeu de la
+  clôture ; l'invariant I n'en dépend pas. Effets de bord favorables : le point d'arrêt des tests 13 d et
+  de l'AC 6 devient (c), déterministe ; l'hypothèse « le parcours garde le verrou d'une ligne qu'il ne
+  retient pas » n'a plus d'objet (M est verrouillé explicitement).
+- **Pour la 15-1a (C114, à réviser par l'orchestrateur)** : même forme — lire sans verrou les `id` (et
+  `start_date`) des exercices concernés, `ORDER BY start_date ASC` ; les verrouiller **un par un** par
+  `SELECT … WHERE id = ? AND company_id = ? FOR UPDATE` dans cet ordre, en lisant `status` sous le verrou ;
+  puis une relecture verrouillante **seulement** si un fantôme peut changer le verdict. Pour la règle
+  « en période ouverte » de C113, l'information « postérieur clos » se lit sur les lignes verrouillées ; un
+  exercice postérieur **créé** pendant ce temps naît `Open` et ne peut être clôturé tant qu'un antérieur
+  ouvert tenu par le lettrage l'est (la clôture, C119, le verrouille avant) — à vérifier par la 15-1a sur
+  sa propre liste, non supposé ici. Le « repli écrit d'avance » de C114 devient la forme principale ; le
+  parcours `start_date >= ? ORDER BY start_date ASC FOR UPDATE` et son `EXPLAIN` attendu sont abandonnés.
+- **Écartées** : `FORCE INDEX (uq_fiscal_years_company_start_date)` avec test sur l'`EXPLAIN` — la garantie
+  y reste une mesure, valable pour la version de MariaDB testée, et fige un nom d'index (le dépôt emploie
+  `FORCE INDEX (PRIMARY)` en 15-5d pour **borner** des verrous partagés, pas pour ordonner des verrous
+  exclusifs) ; garder le parcours et écrire que l'ordre dépend du plan (l'argument contre le cycle avec
+  `reopen`, non rejouée, n'aurait plus de fondement) ; passer la transaction de clôture en `READ
+  COMMITTED` pour relire sans verrou l'état validé (nouveau patron d'isolation dans un dépôt qui raisonne
+  partout en `REPEATABLE READ`).
+- **Réversible** : oui (fiches seulement).
+
+## C120 — 15-12b : les prédicteurs d'annulation ne connaissent pas le filet — angle mort assumé, non un rang neuf
+- **Contexte** : F1 (MEDIUM) — `settlement_cancellation::settlement_entry_cancel_blocker` (queue commune
+  de `cancelBlockedBy`, `settlementCancelBlockedBy`) contrôle au rang 5 qu'un exercice ouvert couvre le
+  jour, pas qu'aucun postérieur à celui-ci n'est clos ; dans cet état hérité, quatre écrans annoncent
+  l'annulation possible et le clic rend `400 LATER_FISCAL_YEAR_CLOSED`. Option préférée de
+  l'orchestrateur : un rang après `NoOpenFiscalYearToday`, avec test ; sinon l'angle mort écrit.
+- **Retenu** : **angle mort assumé, écrit** — au doc-comment de `settlement_entry_cancel_blocker`, à côté
+  de la « Limite assumée » existante du verrou de période du jour (même nature : refus du socle au clic,
+  non reproduit par la lecture) ; dans `docs/api-external.md` (`:319`, `:353`, `:361`) ; un test qui fixe le
+  comportement (prédicteur `None`, annulation `LaterFiscalYearClosed`), patron C-15-8-29, pour qu'il
+  rougisse le jour où le rang est ajouté. **Issue à ouvrir** (P3) pour le rang.
+- **Pourquoi pas l'option préférée** : le rang ajoute une variante à `SettlementCancelBlocker`, trois bras
+  aux `match` exhaustifs de `kesh-api/src/errors.rs`, trois `switch` exhaustifs (`never`) côté écran
+  (`settlement-cancel-blocked.ts`, `reconciliation-cancel.ts`, `invoice-cancel.ts`) et leurs types, des
+  clés ×4 et la documentation des champs : cinq modules de premier niveau de plus, sur une fiche que la
+  dérogation (C121) vient d'accepter à dix — pour un état hérité étroit (un exercice **futur** clôturé
+  d'avance) dont le refus au clic est exact et porte sa marche à suivre (AC 9 de la 15-12a). Le module a
+  déjà un précédent d'angle mort de même nature.
+- **Écartées** : le rang (ci-dessus) ; ne rien écrire (site non résolu et non écrit — la règle du
+  `CLAUDE.md` l'interdit).
+- **Réversible** : oui — l'issue porte le rang ; le test qui fixe l'angle mort rougira alors.
+
+## C121 — 15-12a et 15-12b : dérogation à la règle de découpage, écrite dans la forme codifiée
+- **Contexte** : F9 (LOW) — les deux fiches filles franchissent encore le premier critère (8 et 9
+  modules ; 10 pour la 15-12b après C120) avec un « signal déclaré » qui n'avait pas la forme que le
+  `CLAUDE.md` exige (section « Dérogation règle de splitting », risque accepté). **Décision de
+  l'orchestrateur** : dérogation **acceptée** — la story a déjà été découpée une fois selon la seule couture
+  naturelle (C107) ; un second découpage ferait des stories non testables isolément (exception écrite du
+  `CLAUDE.md`).
+- **Retenu** : section « Dérogation règle de splitting » dans chaque fiche (modules recomptés, motif,
+  risque accepté — une revue moins fine par module ; mitigation : passe ciblée sur chaque remédiation,
+  inventaires refaits à chaque passe), signal déclaré à Guy.
+- **Écartées** : redécouper (sous-stories intestables seules) ; garder le seul « signal déclaré » (forme
+  non codifiée).
+- **Réversible** : oui (fiches seulement).
+
+## C122 — 15-12a : les autres textes qui prescrivent une réouverture sans ordre restent hors périmètre, avec une issue
+- **Contexte** : F8 (LOW) — le symptôme que C111 corrige pour l'ancienne clé (« rouvrez l'exercice »,
+  geste refusé par LIFO dès qu'un exercice plus récent est clos) vit aussi dans les messages d'annulation
+  refusée pour exercice clos (règlement, rapprochement, facture fournisseur), dans
+  `error-fiscal-year-reopen-blocked`, `error-opening-balances-first-year-closed`, leurs replis Rust et
+  frontend, et quatre phrases du manuel utilisateur (relevé par la valeur sur `5e4bec50`, liste dans la
+  fiche 15-12a, § « Hors périmètre »).
+- **Retenu** : hors périmètre, préexistant, **écrit** dans la 15-12a avec la liste des sites ; **issue à
+  ouvrir** (P3) pour les aligner sur la prescription de C111.
+- **Écartées** : les aligner ici (cinq clés ×4, trois replis, trois modules frontend et le manuel de plus,
+  hors du défaut #543) ; ne rien écrire.
+- **Réversible** : oui.
+
+## C123 — 15-12b / 15-12a : deux tranchages de forme (projectId de la voie « règle », rubriques du CHANGELOG)
+- **Contexte** : R4 (LOW) — la fiche promettait `projectId` « s'il y a un projet » alors que la branche en
+  ligne d'`accept_one_rule` passe `None` à son `PeriodLocked` (la règle a un `default_project_id`). F10
+  (LOW) — la 15-12a rangeait sous `### Corrigé` un changement de contrat d'API (refus neufs, clôture ouverte
+  aux clés).
+- **Retenu** : (1) voie « règle » : `projectId` **omis** (`None`), comme son `PeriodLocked` — les deux refus
+  de la même branche publient les mêmes `details` ; le test l'asserte ; (2) CHANGELOG : le défaut sous
+  `### Corrigé`, le changement de contrat sous `### Modifié`, patron des entrées #532 de `[0.13.0]`.
+- **Écartées** : (1) passer `default_project_id` au seul refus neuf (deux refus d'une même branche aux
+  `details` divergents) ; (2) tout sous `Corrigé` (une intégration par clé chercherait le changement de
+  comportement sous `Modifié`).
+- **Réversible** : oui.
