@@ -47,7 +47,7 @@ use kesh_db::test_fixtures::{
     disable_rounding_to_5_centimes, seed_accounting_company,
 };
 use serde_json::{Value, json};
-use sqlx::{MySql, MySqlPool, Transaction};
+use sqlx::{Connection, MySql, MySqlPool, Transaction};
 
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
 const TEST_ADMIN_PASSWORD: &str = "e2e-test-admin-password";
@@ -433,6 +433,11 @@ async fn the_predicates_and_the_app_envelope_recognise_a_real_deadlock(pool: MyS
         .fetch_one(&mut *tient)
         .await
         .unwrap();
+    // ⚠️ Le délai d'une seconde est une variable de SESSION : un `ROLLBACK` ne
+    // la remet pas. Rendue au pool, cette connexion pourrait servir de
+    // transaction légère à (d), où une attente de plus d'une seconde finirait
+    // en 1205 au lieu de la 1213 attendue (revue P1, B-1). La connexion est
+    // donc DÉTACHÉE du pool et fermée après usage.
     let mut attend = pool.acquire().await.unwrap();
     sqlx::query("SET SESSION innodb_lock_wait_timeout = 1")
         .execute(&mut *attend)
@@ -447,6 +452,7 @@ async fn the_predicates_and_the_app_envelope_recognise_a_real_deadlock(pool: MyS
         .await
         .expect_err("l'attente devait dépasser une seconde");
     sqlx::query("ROLLBACK").execute(&mut *attend).await.unwrap();
+    attend.detach().close().await.unwrap();
     tient.rollback().await.unwrap();
     let delai = map_db_error(delai);
     assert!(
@@ -486,7 +492,9 @@ async fn the_predicates_and_the_app_envelope_recognise_a_real_deadlock(pool: MyS
         "deux appels : la victime, le rejeu"
     );
 
-    // (e) L'enveloppe : une erreur métier n'est pas rejouée.
+    // (e) L'enveloppe : une erreur métier n'est pas rejouée — ni rejeu ni
+    // épuisement journalisés.
+    let capture = CaptureRejeu::installer();
     let appels = Arc::new(AtomicU32::new(0));
     let resultat: Result<(), AppError> =
         kesh_api::retry::retry_app_on_deadlock("test::rejeu", || {
@@ -505,6 +513,33 @@ async fn the_predicates_and_the_app_envelope_recognise_a_real_deadlock(pool: MyS
         appels.load(Ordering::SeqCst),
         1,
         "une erreur métier : un seul appel"
+    );
+    assert!(capture.operations().is_empty() && capture.epuisements().is_empty());
+
+    // (f) L'enveloppe épuisée (revue P1, E-3) : une vraie 1213 à chacune des
+    // trois tentatives → deux `warn!` de rejeu, puis un `error!` qui nomme
+    // l'opération, et l'erreur remonte telle quelle.
+    let appels = Arc::new(AtomicU32::new(0));
+    let resultat: Result<(), AppError> =
+        kesh_api::retry::retry_app_on_deadlock("test::epuise", || {
+            let appels = appels.clone();
+            let pool = pool.clone();
+            async move {
+                appels.fetch_add(1, Ordering::SeqCst);
+                Err(AppError::Database(provoquer_un_interblocage(&pool).await))
+            }
+        })
+        .await;
+    assert!(
+        matches!(&resultat, Err(e) if kesh_api::retry::is_app_deadlock(e)),
+        "la dernière 1213 remonte : {resultat:?}"
+    );
+    assert_eq!(appels.load(Ordering::SeqCst), 3, "trois tentatives");
+    assert_eq!(capture.operations(), vec!["test::epuise"; 2]);
+    assert_eq!(
+        capture.epuisements(),
+        vec!["test::epuise"],
+        "l'épuisement du rejeu doit être journalisé avec le nom de l'opération"
     );
 }
 

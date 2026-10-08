@@ -38,7 +38,9 @@
 //! **Journalisation.** Chaque nouvelle tentative émet un `tracing::warn!` de
 //! cible `kesh_db::retry` qui porte le nom de l'opération (`operation`, p. ex.
 //! `"invoices::settle"`), le numéro de la tentative et le backoff : la ligne
-//! dit quelle route a été rejouée, même sous `RUST_LOG=warn`.
+//! dit quelle route a été rejouée, même sous `RUST_LOG=warn`. Un rejeu
+//! **épuisé** (interblocage encore à la dernière tentative) émet un
+//! `tracing::error!` de même cible, avec `operation` et `attempts`.
 //!
 //! Cf. `docs/MULTI-TENANT-SCOPING-PATTERNS.md` Pattern 5 pour la convention
 //! d'ordre des verrous, qui réduit la fréquence des interblocages sans les
@@ -187,8 +189,10 @@ where
 /// `operation` nomme l'opération rejouée (p. ex. `"reconciliation::accept"`) :
 /// avant chaque nouvelle tentative, un `tracing::warn!` de cible
 /// `kesh_db::retry` porte ce nom (champ `operation`), le numéro de la
-/// tentative, le nombre maximal et le backoff. Une erreur épuisée n'est pas
-/// journalisée ici : elle remonte à l'appelant (500 journalisé en erreur).
+/// tentative, le nombre maximal et le backoff. Quand l'erreur est encore
+/// retryable à la dernière tentative, un `tracing::error!` de même cible porte
+/// `operation` et le nombre de tentatives (`attempts`) avant que l'erreur
+/// remonte à l'appelant.
 pub async fn retry_with<F, Fut, T, E, P>(
     operation: &'static str,
     max_attempts: u32,
@@ -208,7 +212,21 @@ where
         match result {
             Ok(value) => return Ok(value),
             Err(err) => {
-                if !should_retry(&err) || attempt >= attempts {
+                if !should_retry(&err) {
+                    return Err(err);
+                }
+                if attempt >= attempts {
+                    // Rejeu épuisé (revue P1, E-3) : sans cette ligne,
+                    // l'exploitant ne voit que les `warn!` des rejeux puis un
+                    // 500 qui ne nomme pas l'opération. Niveau `error!` — et
+                    // non `warn!` — pour qu'un abandon ne soit jamais compté
+                    // comme un rejeu par qui filtre les `warn!` de cette cible.
+                    tracing::error!(
+                        target: "kesh_db::retry",
+                        operation,
+                        attempts,
+                        "rejeu épuisé : l'erreur reste retryable après le nombre maximal de tentatives"
+                    );
                     return Err(err);
                 }
                 // M-002 review remediation : `2u64.pow(attempt-1)` panic en

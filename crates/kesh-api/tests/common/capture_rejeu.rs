@@ -21,9 +21,11 @@ use tracing::{Event, Level, Subscriber};
 use tracing_subscriber::layer::{Context, Layer, SubscriberExt};
 
 /// Couche qui retient la valeur du champ `operation` de chaque événement
-/// `WARN` de cible `kesh_db::retry`.
+/// `WARN` (un rejeu) et de chaque événement `ERROR` (un rejeu épuisé) de cible
+/// `kesh_db::retry`.
 struct CoucheRejeu {
     operations: Arc<Mutex<Vec<String>>>,
+    epuisements: Arc<Mutex<Vec<String>>>,
 }
 
 /// Lit le champ `operation` d'un événement.
@@ -47,13 +49,18 @@ impl Visit for LitOperation {
 impl<S: Subscriber> Layer<S> for CoucheRejeu {
     fn on_event(&self, event: &Event<'_>, _ctx: Context<'_, S>) {
         let meta = event.metadata();
-        if meta.target() != "kesh_db::retry" || *meta.level() != Level::WARN {
+        if meta.target() != "kesh_db::retry" {
             return;
         }
+        let liste = match *meta.level() {
+            Level::WARN => &self.operations,
+            Level::ERROR => &self.epuisements,
+            _ => return,
+        };
         let mut lecteur = LitOperation::default();
         event.record(&mut lecteur);
         if let Some(operation) = lecteur.0 {
-            self.operations.lock().unwrap().push(operation);
+            liste.lock().unwrap().push(operation);
         }
     }
 }
@@ -62,6 +69,7 @@ impl<S: Subscriber> Layer<S> for CoucheRejeu {
 pub struct CaptureRejeu {
     _garde: DefaultGuard,
     operations: Arc<Mutex<Vec<String>>>,
+    epuisements: Arc<Mutex<Vec<String>>>,
 }
 
 impl CaptureRejeu {
@@ -69,19 +77,27 @@ impl CaptureRejeu {
     /// **avant** la première requête du test).
     pub fn installer() -> Self {
         let operations = Arc::new(Mutex::new(Vec::new()));
+        let epuisements = Arc::new(Mutex::new(Vec::new()));
         let couche = CoucheRejeu {
             operations: operations.clone(),
+            epuisements: epuisements.clone(),
         };
         let garde = tracing::subscriber::set_default(tracing_subscriber::registry().with(couche));
         Self {
             _garde: garde,
             operations,
+            epuisements,
         }
     }
 
     /// Les opérations dont un rejeu a été journalisé, dans l'ordre.
     pub fn operations(&self) -> Vec<String> {
         self.operations.lock().unwrap().clone()
+    }
+
+    /// Les opérations dont l'épuisement du rejeu a été journalisé (`error!`).
+    pub fn epuisements(&self) -> Vec<String> {
+        self.epuisements.lock().unwrap().clone()
     }
 
     /// Exige au moins un rejeu journalisé pour `operation` — sans quoi le test

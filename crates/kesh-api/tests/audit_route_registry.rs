@@ -58,6 +58,16 @@
 //!   revue fichier par fichier.
 //! - **(iii)** une enveloppe appelée par une fonction auxiliaire du handler : le
 //!   nom doit figurer dans le corps du handler lui-même — c'est la forme exigée.
+//! - **(iii bis)** — **angle mort assumé** (revue P1, B-4 = E-2) — que
+//!   l'enveloppe **enveloppe l'écriture** : le volet (c) est vrai dès qu'un
+//!   appel de ce nom figure dans le corps. Un handler `Rejouee` qui
+//!   envelopperait une lecture et ferait l'écriture hors de la fermeture
+//!   resterait vert. Les tests 2 à 5 et 7 de `rejeu_interblocage_e2e.rs` le
+//!   prouvent dynamiquement pour leurs cinq routes, et
+//!   `accept_replays_the_batch_when_it_is_the_deadlock_victim`
+//!   (`reconciliation_e2e.rs`) pour `reconciliation::accept` ; pour
+//!   `invoices::write_off`, `reconciliation::cancel` et
+//!   `opening_balances::complete`, c'est la revue fichier par fichier.
 //! - **(iv)** — **angle mort assumé** — qu'une route `SansEcritureAuJournal` qui
 //!   prend un verrou ne soit pas la **victime** d'un cycle avec un flux qui écrit
 //!   au journal. P. ex. `accept_batch` tient un verrou partagé sur la ligne

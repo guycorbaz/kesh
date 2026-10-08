@@ -260,9 +260,13 @@ pub async fn create(
 /// (2 bis) company_invoice_settings  INSERT IGNORE puis FOR UPDATE
 ///                               (get_or_create_default_in_tx) — avancé AVANT les
 ///                               comptes de charge et l'exercice (choix C55)
-/// (2 ter) accounts              passe des COMPTES : chaque compte de charge
-///                               FOR UPDATE, dans l'ordre des lignes (sans tri)
+/// (2, suite) accounts           passe des COMPTES de l'étape (2), après (2 bis) :
+///                               chaque compte de charge FOR UPDATE, dans l'ordre
+///                               des lignes (sans tri)
 /// (3)    fiscal_years           find_open_covering_date
+/// (4)    —                      exigence du compte créanciers
+///                               (ConfigurationRequired) sur les réglages lus en
+///                               (2 bis) : aucun verrou neuf
 /// (5)    journal_entries        create_in_tx — compteur des écritures FOR UPDATE ;
 ///                               l'insertion reprend des verrous PARTAGÉS sur
 ///                               companies et sur chaque compte écrit
@@ -370,6 +374,7 @@ pub async fn create_in_tx(
     let settings =
         company_invoice_settings::get_or_create_default_in_tx(&mut *tx, company_id).await?;
 
+    // (2, suite) Passe des COMPTES de l'étape (2), après les réglages.
     let mut non_postable: Vec<NonPostableAccount> = Vec::new();
     for line in &lines {
         let line_total = line.quantity * line.unit_price;
