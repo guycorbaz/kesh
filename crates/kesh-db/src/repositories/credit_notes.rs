@@ -131,6 +131,34 @@ pub async fn list(
     Ok((items, total))
 }
 
+/// La TVA d'un avoir **agrégée par taux** — somme des TVA arrondies par ligne,
+/// itération par taux croissant (Story 15-6a, AC6 ; choix C-15-6-32).
+///
+/// **Source unique** de « l'avoir émet de la TVA » ([`credit_note_emits_vat`]) :
+/// le générateur [`generate_credit_note_journal_lines`] l'emploie pour écrire
+/// les lignes, et [`create_credit_note`] pour décider, **avant** l'exercice, si
+/// le compte de TVA due fait partie des comptes à verrouiller. Un
+/// `any(vat_rate > 0)` en divergerait (une ligne à taux positif dont la TVA
+/// s'arrondit à zéro).
+fn credit_note_vat_by_rate(
+    lines: &[(Decimal, Decimal, Option<i64>)],
+) -> std::collections::BTreeMap<Decimal, Decimal> {
+    use kesh_core::accounting::vat::line_vat_amount;
+    let mut vat_by_rate = std::collections::BTreeMap::new();
+    for (line_total, vat_rate, _) in lines {
+        *vat_by_rate.entry(*vat_rate).or_insert(Decimal::ZERO) +=
+            line_vat_amount(*line_total, *vat_rate);
+    }
+    vat_by_rate
+}
+
+/// L'avoir écrit-il au moins une ligne de TVA due ? — total des TVA agrégées
+/// par [`credit_note_vat_by_rate`] strictement positif (somme des arrondis par
+/// ligne, jamais réarrondie).
+fn credit_note_emits_vat(vat_by_rate: &std::collections::BTreeMap<Decimal, Decimal>) -> bool {
+    vat_by_rate.values().copied().sum::<Decimal>() > Decimal::ZERO
+}
+
 /// Génère les lignes de l'écriture de **contre-passation** d'un avoir (DC2).
 ///
 /// Inverse exact de `invoices::generate_invoice_journal_lines` (swap débit↔crédit,
@@ -191,24 +219,21 @@ fn generate_credit_note_journal_lines(
     vat_payable_account_id: Option<i64>,
 ) -> Result<Vec<crate::entities::NewJournalEntryLine>, DbError> {
     use crate::entities::NewJournalEntryLine;
-    use kesh_core::accounting::vat::line_vat_amount;
     use std::collections::BTreeMap;
 
     let mut total_ht = Decimal::ZERO;
     // Agrégation HT par compte effectif : miroir strict de la facture (D4/D5).
     let mut ht_by_account: BTreeMap<i64, Decimal> = BTreeMap::new();
-    // Agrégation TVA par taux : BTreeMap → itération ASC (cohérent facture, AC6).
-    let mut vat_by_rate: BTreeMap<Decimal, Decimal> = BTreeMap::new();
-
-    for (line_total, vat_rate, revenue_account_id) in lines {
+    for (line_total, _, revenue_account_id) in lines {
         total_ht += *line_total;
         let effective_account = revenue_account_id.unwrap_or(default_revenue_account_id);
         *ht_by_account
             .entry(effective_account)
             .or_insert(Decimal::ZERO) += *line_total;
-        let vat = line_vat_amount(*line_total, *vat_rate);
-        *vat_by_rate.entry(*vat_rate).or_insert(Decimal::ZERO) += vat;
     }
+    // Agrégation TVA par taux : BTreeMap → itération ASC (cohérent facture, AC6).
+    // Source unique, partagée avec le calcul des comptes à verrouiller.
+    let vat_by_rate = credit_note_vat_by_rate(lines);
 
     // Somme des arrondis par ligne — NE PAS réarrondir.
     let total_vat: Decimal = vat_by_rate.values().copied().sum();
@@ -237,7 +262,7 @@ fn generate_credit_note_journal_lines(
 
     // (2..N) Débit TVA due par taux > 0 (annule la TVA due). Compte requis
     // seulement si une ligne doit réellement être émise.
-    if total_vat > Decimal::ZERO {
+    if credit_note_emits_vat(&vat_by_rate) {
         let vat_account = vat_payable_account_id.ok_or_else(|| {
             DbError::ConfigurationRequired("default_vat_payable_account_id".into())
         })?;
@@ -258,6 +283,38 @@ fn generate_credit_note_journal_lines(
 
 /// Crée et émet un avoir total contre-passant une facture validée (single-step,
 /// DC5). Transaction atomique miroir de `invoices::validate_invoice`.
+///
+/// # Les comptes de l'avoir (Story 15-6a, #473, #523)
+///
+/// La contre-passation vise les **comptes que la vente a mouvementés** : la
+/// **créance** et l'**arrondi** sont relus sur l'écriture de vente
+/// ([`super::invoice_settlements::sale_receivable_account`],
+/// [`super::invoice_settlements::sale_rounding_account`]), les **comptes de
+/// produit** sur les lignes de la facture (D5). Seuls le **produit de repli**
+/// des lignes sans compte (D-B2) et la **TVA due** (#525, angle mort tracé)
+/// viennent encore des réglages du moment.
+///
+/// # Ordre des locks
+///
+/// ```text
+/// (1) invoices                       FOR UPDATE
+///     invoice_settlements            FOR UPDATE   (garde 25-4-a)
+///     credit_notes (avoir existant)  FOR UPDATE
+/// (3) company_invoice_settings       FOR UPDATE   (get_or_create_default_in_tx)
+/// (3 ter) accounts — tous les comptes que l'avoir écrit, LOCK IN SHARE MODE, par id
+/// (4) fiscal_years                   FOR UPDATE
+/// (5) credit_note_number_sequences   FOR UPDATE
+/// (7) journal_entries / journal_entry_lines (S de clé étrangère sur chaque compte)
+/// ```
+///
+/// La règle de l'epic est au doc-comment canonique de
+/// [`super::invoices::validate_invoice`] : l'ordre est une **convention qui
+/// réduit la fréquence** des interblocages, il ne les exclut pas, et la
+/// **défense est le rejeu** de la route (`POST /api/v1/credit-notes`, rejouée
+/// sur interblocage — Story 15-5e2). Propre à l'avoir : la ligne des réglages,
+/// prise avant les comptes, le sérialise avec la validation et la saisie
+/// fournisseur, qui la prennent aussi avant l'exercice ; deux avoirs simultanés
+/// ne se sérialisent que là (S contre S sur les comptes ne bloque pas).
 pub async fn create_credit_note(
     pool: &MySqlPool,
     new: NewCreditNote,
@@ -357,14 +414,131 @@ pub async fn create_credit_note(
         .map_err(map_db_error)?;
 
         // (3) Config company (lazy create + lock).
+        //
+        // ⛔ La CRÉANCE ne vient plus des réglages (Story 15-6a, #473) : ils
+        // disent quel compte débitera la prochaine facture, pas celui que
+        // celle-ci a débité. Elle se lit en (3 bis) sur l'écriture de vente, et
+        // un réglage débiteurs vide n'empêche plus d'émettre un avoir. Viennent
+        // encore des réglages : le produit de REPLI des lignes sans compte
+        // (D-B2, exigé ici comme avant) et la TVA due (#525, angle mort tracé).
         let settings =
             company_invoice_settings::get_or_create_default_in_tx(&mut tx, company_id).await?;
-        let receivable_account_id = settings.default_receivable_account_id.ok_or_else(|| {
-            DbError::ConfigurationRequired("default_receivable_account_id".into())
-        })?;
         let revenue_account_id = settings
             .default_revenue_account_id
             .ok_or_else(|| DbError::ConfigurationRequired("default_revenue_account_id".into()))?;
+
+        // (3 bis) Les comptes de la VENTE (Story 15-6a, #473, #523) : la créance
+        // (première ligne au débit) et, si la facture porte un arrondi, le compte
+        // d'arrondi (dernière ligne, recoupée avec l'arrondi figé). Lectures
+        // simples : les lignes d'une écriture de vente sont gelées. L'ÉTAT de ces
+        // comptes, lui, ne l'est pas — il se lit sous verrou en (3 ter).
+        let sale_entry_id = invoice
+            .journal_entry_id
+            .ok_or_else(|| DbError::Invariant("facture validée sans écriture de vente".into()))?;
+        let receivable_account_id =
+            super::invoice_settlements::sale_receivable_account(&mut tx, company_id, sale_entry_id)
+                .await?
+                .ok_or_else(|| {
+                    DbError::Invariant("écriture de vente sans ligne de débit".into())
+                })?;
+        let rounding_amount = invoice.rounding_amount;
+        // ⛔ Un arrondi NUL n'exige aucun compte — factures émises sans arrondi,
+        // antérieures comprises (validation P3 de la 25-4-c4-a).
+        let rounding_account_id = if rounding_amount.is_zero() {
+            None
+        } else {
+            Some(
+                super::invoice_settlements::sale_rounding_account(
+                    &mut tx,
+                    company_id,
+                    sale_entry_id,
+                    rounding_amount,
+                )
+                .await?,
+            )
+        };
+
+        // (3 ter) Tous les comptes que l'avoir écrira, verrouillés EN PARTAGE,
+        // en une requête, par identifiant, AVANT l'exercice (Story 15-6a, AC6 ;
+        // choix C-15-6-24, C-15-6-29, C-15-6-32).
+        //
+        // Pourquoi un verrou : fermer une COURSE DE LECTURE. Sous REPEATABLE
+        // READ, une lecture simple rend l'instantané de la transaction — ouvert
+        // dès le snapshot des lignes (2) — et ne voit pas un archivage validé
+        // depuis ; c'est le trou de la garde `active` de `create_in_tx`. Lu ici
+        // sous verrou, `active` est frais, et un archivage concurrent
+        // (`UPDATE accounts`, verrou exclusif) attend la fin de l'avoir au lieu
+        // de le précéder.
+        //
+        // Pourquoi PARTAGÉ : c'est assez pour faire attendre un `UPDATE`, et S
+        // contre S ne bloque pas — l'insertion des lignes reprend de toute façon
+        // un S de clé étrangère sur chaque compte écrit. Un exclusif ajouterait
+        // un cycle avec les flux qui tiennent la créance en S (rapprochement).
+        //
+        // Pourquoi TOUS les comptes écrits : la course de lecture vaut pour
+        // chacun — créance et arrondi de la vente, TVA due si l'avoir en émet
+        // (même source que le générateur), comptes de produit effectifs. La
+        // 6 ter lit `active` dans ce résultat, non dans une lecture simple.
+        //
+        // Pourquoi avant l'exercice : convention du doc-comment canonique de
+        // `validate_invoice` (comptes → exercice), qui réduit la fréquence des
+        // interblocages sans les exclure ; la défense est le rejeu de la route.
+        let triplets: Vec<(Decimal, Decimal, Option<i64>)> = invoice_lines
+            .iter()
+            .map(|l| (l.line_total, l.vat_rate, l.revenue_account_id))
+            .collect();
+        let vat_payable_to_lock = if credit_note_emits_vat(&credit_note_vat_by_rate(&triplets)) {
+            // Réglage vide : rien à verrouiller, le générateur rend son refus
+            // `ConfigurationRequired` à sa place, en (7).
+            settings.default_vat_payable_account_id
+        } else {
+            None
+        };
+        let revenue_ids: Vec<i64> = triplets
+            .iter()
+            .map(|(_, _, a)| a.unwrap_or(revenue_account_id))
+            .collect();
+        let mut ids: Vec<i64> = std::iter::once(receivable_account_id)
+            .chain(rounding_account_id)
+            .chain(vat_payable_to_lock)
+            .chain(revenue_ids)
+            .collect();
+        ids.sort_unstable();
+        ids.dedup();
+        let locked =
+            company_invoice_settings::lock_designated_accounts_in_tx(&mut tx, company_id, &ids)
+                .await?;
+        let locked = locked.accounts();
+        // Ligne absente : compte d'une autre société sur une écriture ou une
+        // ligne corrompue — inatteignable par l'application (aucune clé
+        // étrangère ne porte la société, un `UPDATE` direct y parvient).
+        if locked.len() != ids.len() {
+            return Err(DbError::Invariant(
+                "compte de l'avoir introuvable dans la société".into(),
+            ));
+        }
+        // Créance, arrondi, TVA due archivés → refus nommé, avant l'exercice.
+        // Les comptes de produit archivés restent à la 6 ter, à sa place.
+        let archived: Vec<crate::errors::ArchivedAccount> = locked
+            .iter()
+            .filter(|a| {
+                !a.active
+                    && (a.id == receivable_account_id
+                        || Some(a.id) == rounding_account_id
+                        || Some(a.id) == vat_payable_to_lock)
+            })
+            .map(|a| crate::errors::ArchivedAccount {
+                account_id: a.id,
+                account_number: Some(a.number.clone()),
+            })
+            .collect();
+        if !archived.is_empty() {
+            return Err(DbError::CreditNoteAccountsArchived(archived));
+        }
+        let locked_accounts: std::collections::HashMap<i64, (bool, String)> = locked
+            .iter()
+            .map(|a| (a.id, (a.active, a.number.clone())))
+            .collect();
 
         // (4) Exercice ouvert couvrant la date de l'avoir (DC10).
         let fy = fiscal_years::find_open_covering_date(&mut tx, company_id, date)
@@ -441,45 +615,19 @@ pub async fn create_credit_note(
                 // ne porte (miroir du `None` côté facture).
                 sites.push((0, revenue_account_id));
             }
-            let mut ids: Vec<i64> = sites.iter().map(|(_, a)| *a).collect();
-            ids.sort_unstable();
-            ids.dedup();
-
-            let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-            let sql = format!(
-                "SELECT id, number FROM accounts \
-                 WHERE company_id = ? AND active = TRUE AND id IN ({placeholders})"
-            );
-            let mut q = sqlx::query_as::<_, (i64, String)>(&sql).bind(company_id);
-            for id in &ids {
-                q = q.bind(id);
-            }
-            let active_rows = q.fetch_all(&mut *tx).await.map_err(map_db_error)?;
-            let active_ids: std::collections::HashSet<i64> =
-                active_rows.iter().map(|(id, _)| *id).collect();
-
-            if active_ids.len() != ids.len() {
-                // Récupérer les numéros des comptes inactifs pour un message
-                // actionnable (le SELECT ci-dessus les a exclus).
-                let placeholders = ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
-                let sql = format!(
-                    "SELECT id, number FROM accounts \
-                     WHERE company_id = ? AND id IN ({placeholders})"
-                );
-                let mut q = sqlx::query_as::<_, (i64, String)>(&sql).bind(company_id);
-                for id in &ids {
-                    q = q.bind(id);
-                }
-                let numbers: std::collections::HashMap<i64, String> = q
-                    .fetch_all(&mut *tx)
-                    .await
-                    .map_err(map_db_error)?
-                    .into_iter()
-                    .collect();
-
+            // ⚠️ `active` se lit dans le résultat du verrou (3 ter), jamais dans
+            // une lecture simple : sous REPEATABLE READ, celle-ci rendrait
+            // l'instantané d'avant le verrou (Story 15-6a, AC6). Chaque compte
+            // y est présent — la ligne absente a été refusée en (3 ter).
+            let inactive = |account_id: &i64| {
+                !locked_accounts
+                    .get(account_id)
+                    .is_some_and(|(active, _)| *active)
+            };
+            if sites.iter().any(|(_, a)| inactive(a)) {
                 let mut rejected: Vec<crate::errors::RejectedRevenueAccount> = sites
                     .iter()
-                    .filter(|(_, a)| !active_ids.contains(a))
+                    .filter(|(_, a)| inactive(a))
                     .map(
                         |(position, account_id)| crate::errors::RejectedRevenueAccount {
                             line_number: if *position == 0 {
@@ -488,7 +636,9 @@ pub async fn create_credit_note(
                                 Some(*position)
                             },
                             account_id: *account_id,
-                            account_number: numbers.get(account_id).cloned(),
+                            account_number: locked_accounts
+                                .get(account_id)
+                                .map(|(_, number)| number.clone()),
                             reason: crate::errors::RevenueAccountRejection::Inactive,
                         },
                     )
@@ -499,11 +649,7 @@ pub async fn create_credit_note(
             }
         }
 
-        // (7) Écriture de contre-passation.
-        let triplets: Vec<(Decimal, Decimal, Option<i64>)> = invoice_lines
-            .iter()
-            .map(|l| (l.line_total, l.vat_rate, l.revenue_account_id))
-            .collect();
+        // (7) Écriture de contre-passation (triplets calculés en (3 ter)).
         let mut entry_lines = generate_credit_note_journal_lines(
             &triplets,
             receivable_account_id,
@@ -517,17 +663,11 @@ pub async fn create_credit_note(
         // ajusté ; l'écart passe en ligne finale, au DÉBIT du compte d'arrondi
         // s'il était positif sur la facture, au CRÉDIT s'il était négatif.
         //
-        // ⛔ Un arrondi NUL n'exige aucun compte — factures émises sans arrondi,
-        // antérieures comprises (validation P3 de la story). Le compte est
-        // revérifié au moment d'écrire (#486 : il a pu être archivé depuis).
-        let rounding_amount = invoice.rounding_amount;
-        if !rounding_amount.is_zero() {
-            let rounding_account_id = super::company_invoice_settings::rounding_account_for_write(
-                &mut tx,
-                company_id,
-                crate::errors::RoundingContext::Issuance,
-            )
-            .await?;
+        // ⛔ Le compte est celui que la VENTE a mouvementé (Story 15-6a, #523),
+        // lu en (3 bis) et contrôlé actif sous verrou en (3 ter) — non celui que
+        // les réglages désignent aujourd'hui : sinon l'ancien compte garderait
+        // l'écart et le nouveau prendrait l'opposé.
+        if let Some(rounding_account_id) = rounding_account_id {
             entry_lines[0].credit += rounding_amount;
             entry_lines.push(crate::entities::NewJournalEntryLine {
                 account_id: rounding_account_id,
@@ -607,8 +747,10 @@ pub async fn create_credit_note(
             .bind(line.vat_rate)
             .bind(line.line_total)
             // Story 16-1a (D5) : le compte de la ligne de facture est recopié
-            // dans le snapshot — c'est ce qui rend la contre-passation
-            // l'« inverse exact » même si le défaut société change ensuite.
+            // dans le snapshot — c'est ce qui rend le DÉBIT de produit l'inverse
+            // exact du crédit de la facture, même si le défaut société change
+            // ensuite. La créance et l'arrondi, eux, ne sont pas recopiés : ils
+            // sont relus sur l'écriture de vente (Story 15-6a, #473, #523).
             .bind(line.revenue_account_id)
             .execute(&mut *tx)
             .await

@@ -1216,7 +1216,8 @@ async fn accept_one(
 /// **Postabilité — pas de garde ici, et c'est voulu** (Story 15-5b, AC6) :
 /// aucun compte de cette écriture ne vient du client. Le compte bancaire est
 /// un compte de configuration (D-A0, toléré devenu non imputable) ; la créance
-/// est lue **sur l'écriture de vente** de la facture ; le compte d'arrondi vient
+/// est lue **sur l'écriture de vente** de la facture
+/// (`invoice_settlements::sale_receivable_account`, Story 15-6a) ; le compte d'arrondi vient
 /// des réglages, déjà gardé `postable = TRUE` par
 /// `company_invoice_settings::rounding_account_for_write`. Les deux autres
 /// flux d'acceptation (`split`, `rule`) et les rapprochements manuel et ventilé
@@ -1467,28 +1468,19 @@ async fn accept_one_invoice(
     //     facture et son encaissement. Miroir strict de l'étape (2) de
     //     `pay_in_tx`, qui lit la ligne de CRÉDIT de l'écriture d'achat.
     //
-    //     La créance est la PREMIÈRE ligne au débit de l'écriture de vente, en
-    //     position 0, pour le TTC — d'où `ORDER BY jel.id LIMIT 1`. ⚠️ Pas la
-    //     SEULE : un arrondi à 5 centimes négatif (Story 25-4-c4-a) ajoute une
-    //     ligne de débit, toujours APRÈS la créance
-    //     (`generate_invoice_journal_lines_rounded`).
-    let receivable_row: Option<(i64,)> = sqlx::query_as(
-        "SELECT jel.account_id FROM journal_entry_lines jel \
-         JOIN journal_entries je ON je.id = jel.entry_id \
-         WHERE jel.entry_id = ? AND je.company_id = ? AND jel.debit > 0 \
-         ORDER BY jel.id LIMIT 1",
-    )
-    .bind(sale_entry_id)
-    .bind(company_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(|e| FailedProposal {
-        bank_transaction_id,
-        error_code: "DATABASE_ERROR".to_string(),
-        details: Some(serde_json::json!({ "message": e.to_string() })),
-    })?;
+    //     Lecteur partagé avec le règlement, le solde du reste et l'avoir
+    //     (Story 15-6a) : la règle et l'ordre des lignes (créance PREMIÈRE ligne
+    //     au débit, arrondi négatif après elle) sont à son doc-comment.
+    let receivable_row =
+        invoice_settlements::sale_receivable_account(tx, company_id, sale_entry_id)
+            .await
+            .map_err(|e| FailedProposal {
+                bank_transaction_id,
+                error_code: "DATABASE_ERROR".to_string(),
+                details: Some(serde_json::json!({ "message": e.to_string() })),
+            })?;
     let receivable_account_id = match receivable_row {
-        Some((id,)) => id,
+        Some(id) => id,
         None => {
             return Err(FailedProposal {
                 bank_transaction_id,

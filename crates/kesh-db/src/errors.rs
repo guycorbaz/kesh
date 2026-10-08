@@ -877,6 +877,23 @@ pub enum DbError {
     #[error("Comptes archivés sur l'écriture à contre-passer ({})", .0.len())]
     ReversalAccountsArchived(Vec<ArchivedAccount>),
 
+    /// Un compte que l'**avoir** écrit hors des comptes de produit — la
+    /// **créance** et le compte d'**arrondi** que la vente a mouvementés, ou le
+    /// compte de **TVA due** des réglages — a été **archivé** (Story 15-6a, #473,
+    /// #523 ; choix C-15-6-25, C-15-6-29).
+    ///
+    /// Lu **sous verrou partagé**, avant l'exercice (`create_credit_note`) : un
+    /// archivage concurrent attend la fin de l'avoir, et l'état actif est frais.
+    /// Jumelle de [`DbError::ReversalAccountsArchived`] — l'avoir **est** une
+    /// contre-passation — dont elle reprend la forme et le code
+    /// (`ACCOUNT_ARCHIVED`, HTTP **400**, `details.rejected[]`, ordre des
+    /// identifiants) ; seul le message diffère (« Impossible d'émettre
+    /// l'avoir »), pour parler le vocabulaire du geste. Un compte de **produit**
+    /// archivé reste nommé par ligne par
+    /// [`DbError::CreditNoteRevenueAccountsArchived`].
+    #[error("Comptes archivés sur l'avoir à émettre ({})", .0.len())]
+    CreditNoteAccountsArchived(Vec<ArchivedAccount>),
+
     /// L'écriture a été contre-passée : on ne la modifie ni ne la supprime
     /// plus (Story 24-4a ; la modification, Story 15-8a).
     ///
@@ -990,7 +1007,9 @@ pub enum RoundingContext {
     /// Un paiement égal au reste arrondi au centime solde la facture
     /// (règlement manuel, rapprochement — Story 25-4-c3-b).
     Payment,
-    /// Une pièce émise — facture validée, avoir — porte un arrondi à 5 centimes.
+    /// Une facture validée porte un arrondi à 5 centimes. L'**avoir** n'y passe
+    /// plus : il contre-passe l'arrondi sur le compte que la vente a mouvementé
+    /// (Story 15-6a, #523 — `invoice_settlements::sale_rounding_account`).
     Issuance,
 }
 
@@ -1031,6 +1050,7 @@ impl DbError {
             // celui-ci n'est que le repli générique du mapping structuré.
             Self::EntryNotReversable { .. } => "ENTRY_NOT_REVERSABLE",
             Self::ReversalAccountsArchived(_) => "ACCOUNT_ARCHIVED",
+            Self::CreditNoteAccountsArchived(_) => "ACCOUNT_ARCHIVED",
             Self::InvoiceNotUnvalidatable { blocker, .. } => blocker.code(),
             Self::SettlementNotCancellable { blocker } => blocker.code(),
             Self::ReconciliationNotCancellable { blocker } => blocker.code(),

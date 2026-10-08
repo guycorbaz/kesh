@@ -99,20 +99,12 @@ pub async fn settle_invoice(
 
     // (2) ⛔ Le compte de créance vient de l'écriture de vente. Miroir strict de
     //     l'étape (2) de `pay_in_tx`, qui lit la ligne de CRÉDIT de l'achat.
-    //     La créance est la PREMIÈRE ligne au débit — pas la seule si l'arrondi
-    //     à 5 centimes est négatif (Story 25-4-c4-a), qui vient après elle.
-    let receivable_account_id: i64 = sqlx::query_scalar(
-        "SELECT jel.account_id FROM journal_entry_lines jel \
-         JOIN journal_entries je ON je.id = jel.entry_id \
-         WHERE jel.entry_id = ? AND je.company_id = ? AND jel.debit > 0 \
-         ORDER BY jel.id LIMIT 1",
-    )
-    .bind(sale_entry_id)
-    .bind(company_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(map_db_error)?
-    .ok_or_else(|| DbError::Invariant("écriture de vente sans ligne de débit".into()))?;
+    //     Lecteur partagé (Story 15-6a) : la règle et l'ordre des lignes sont à
+    //     son doc-comment.
+    let receivable_account_id: i64 =
+        invoice_settlements::sale_receivable_account(&mut tx, company_id, sale_entry_id)
+            .await?
+            .ok_or_else(|| DbError::Invariant("écriture de vente sans ligne de débit".into()))?;
 
     // (3) Contrepartie selon le mode.
     let counterparty_account_id = match choice {
@@ -439,21 +431,14 @@ pub async fn write_off_invoice(
     }
 
     // (4) Le compte de la nature, relu et revérifié au moment d'écrire ; la
-    //     créance, première ligne de débit de l'écriture de vente.
+    //     créance, lue sur l'écriture de vente par le lecteur partagé
+    //     (Story 15-6a).
     let nature_account_id =
         company_invoice_settings::write_off_account_for_write(&mut tx, company_id, nature).await?;
-    let receivable_account_id: i64 = sqlx::query_scalar(
-        "SELECT jel.account_id FROM journal_entry_lines jel \
-         JOIN journal_entries je ON je.id = jel.entry_id \
-         WHERE jel.entry_id = ? AND je.company_id = ? AND jel.debit > 0 \
-         ORDER BY jel.id LIMIT 1",
-    )
-    .bind(sale_entry_id)
-    .bind(company_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(map_db_error)?
-    .ok_or_else(|| DbError::Invariant("écriture de vente sans ligne de débit".into()))?;
+    let receivable_account_id: i64 =
+        invoice_settlements::sale_receivable_account(&mut tx, company_id, sale_entry_id)
+            .await?
+            .ok_or_else(|| DbError::Invariant("écriture de vente sans ligne de débit".into()))?;
 
     // (5) La TVA corrigée, au prorata des taux (escompte, perte).
     let shares = if nature.corrects_vat() {

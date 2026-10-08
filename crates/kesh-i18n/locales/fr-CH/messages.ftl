@@ -306,6 +306,7 @@ invoice-line-account-not-revenue = { $subject } : le compte { $number } n'est pa
 invoice-line-account-not-postable = { $subject } : le compte { $number } n'est pas imputable — choisissez un autre compte
 invoice-line-revenue-account-invalid = Compte de produit invalide — { $detail }
 credit-note-revenue-account-archived = Impossible d'émettre l'avoir — { $detail }. Réactivez le ou les comptes concernés.
+credit-note-account-archived = Impossible d'émettre l'avoir — compte(s) archivé(s) : { $detail }. Réactivez le ou les comptes concernés.
 invoice-error-total-zero = Cette facture est d'un montant total nul : elle ne peut pas être validée. Renseignez au moins une ligne avec un prix unitaire supérieur à zéro.
 credit-note-error-total-zero = Cette facture est d'un montant total nul : aucun avoir ne peut être émis.
 
