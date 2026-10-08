@@ -15,15 +15,16 @@ gardé pour ne pas casser les renvois.
 
 | | fiche | ce qu'elle porte | issues |
 |---|---|---|---|
-| **15-5e1** | `15-5e1-socle-rejeu.md` | **Socle (story-zéro)** : l'inventaire fermé des routes qui écrivent au journal (21 + 4 exemptées), gravé dans une seconde colonne du registre `audit_route_registry.rs` (statut transitoire `ARejouer` pour le rollout, volet (c) robuste) ; les deux enveloppes nommées (`kesh_db::retry::retry_on_deadlock`, `kesh_api::retry::retry_app_on_deadlock`, prédicat `is_app_deadlock`) ; le nom d'opération en champ du `warn!` de `retry_with` ; les **trois routes des issues** rejouées — validation d'une facture, règlement client, annulation d'un règlement client — avec leurs tests « route victime » sur une vraie 1213 et le test du prédicat ; ce que la 15-5d attend de l'ordre des verrous (doc-comment canonique, avance des réglages de la saisie fournisseur, « 5 bis », module `retry.rs`) ; la ligne du CHANGELOG | `closes #463`, `closes #491` ; `refs #536`, `refs #429` |
-| **15-5e2** | `15-5e2-rejeu-des-autres-flux.md` | **Rollout** : les 18 autres routes `Rejouee` (14 à rejouer, 3 sites existants migrés vers les enveloppes, `post_accept` inchangée), revue fichier par fichier ; le registre sans `ARejouer` ; les commentaires d'ordre restants et l'inventaire au symptôme (étendu aux tests) ; le Pattern 5 ; `docs/api-external.md` § 10 ; le CHANGELOG étendu ; les manuels (#484) | `closes #536`, `closes #484` ; `refs #463`, `refs #491` |
+| **15-5e1** | `15-5e1-socle-rejeu.md` | **Socle (story-zéro)** : l'inventaire fermé des routes qui écrivent au journal (21 + 4 exemptées), gravé dans une seconde colonne du registre `audit_route_registry.rs` (statut transitoire `ARejouer` pour le rollout, volet (c) analysé par `syn` — C70) ; les deux enveloppes nommées (`kesh_db::retry::retry_on_deadlock`, `kesh_api::retry::retry_app_on_deadlock`, prédicat `is_app_deadlock`) ; le nom d'opération en champ du `warn!` de `retry_with` ; les **trois routes des issues** rejouées — validation d'une facture, règlement client, annulation d'un règlement client — et la **saisie d'une facture fournisseur** (C66), plus l'enregistrement des réglages de facturation (C70), avec leurs tests « route victime » sur une vraie 1213 et le test du prédicat et de l'enveloppe `AppError` ; ce que la 15-5d attend de l'ordre des verrous (doc-comment canonique, avance des réglages de la saisie fournisseur, « 5 bis », module `retry.rs`) ; la ligne du CHANGELOG | `closes #463`, `closes #491` ; `refs #536`, `refs #429` |
+| **15-5e2** | `15-5e2-rejeu-des-autres-flux.md` | **Rollout** : les 17 autres routes `Rejouee` (13 à rejouer, 3 sites existants migrés vers les enveloppes, `post_accept` inchangée), revue fichier par fichier ; le registre sans `ARejouer` ; les commentaires d'ordre restants et l'inventaire au symptôme (étendu aux tests) ; le Pattern 5 ; `docs/api-external.md` § 10 ; le CHANGELOG étendu ; les manuels (#484) | `closes #536`, `closes #484` ; `refs #463`, `refs #491` |
 
 ⚠️ **L'ordre** : 15-5a → 15-5b → **15-5e1** → (15-5e2, 15-5d), ces deux dernières dans un ordre
-libre (choix C65). La 15-5d dépend de la **15-5e1 seule** : rejeu de la validation, avance des
-réglages de la saisie fournisseur, doc-comment canonique (numérotation (2 bis')) et « 5 bis » y sont
-posés. Le rejeu de la saisie fournisseur et de la complétion d'import vient avec la 15-5e2 : si la
-15-5d merge avant elle, ces deux routes portent ses verrous sans rejeu jusqu'à ce merge — une victime
-y rend 500 comme aujourd'hui.
+libre (choix C65, révisé par C66 et C68). La 15-5d dépend de la **15-5e1 seule** : rejeu de la
+validation et de la saisie fournisseur, avance des réglages de la saisie fournisseur, doc-comments
+canoniques (numérotation (2 bis')) et « 5 bis » y sont posés. Le rejeu de la complétion d'import
+vient avec la 15-5e2 : si la 15-5d merge avant elle, cette route porte ses verrous sans rejeu jusqu'à
+ce merge — une victime y rend 500 comme aujourd'hui. Pour la documentation, l'ordre est sûr dans les
+deux sens : le Pattern 5 renvoie aux doc-comments canoniques au lieu de recopier l'ordre (C68).
 
 ## Pourquoi le découpage
 
@@ -55,7 +56,13 @@ appliquées **dans les deux fiches filles**, pas ici.
 | C62 | noms des enveloppes ; nom d'opération en champ de l'événement | 15-5e1 |
 | C63 | statut transitoire `ARejouer` ; volet (c) robuste ; `retry_with` restreint à `post_accept` | 15-5e1, 15-5e2 |
 | C64 | la ligne du CHANGELOG voyage avec les issues ; PDF de la brochure restauré | 15-5e1, 15-5e2 |
-| C65 | la 15-5d dépend de la 15-5e1 seule | 15-5e1, 15-5d |
+| C65 | la 15-5d dépend de la 15-5e1 seule (révisé par C66, C68) | 15-5e1, 15-5e2, 15-5d |
+| C66 | la saisie fournisseur rejouée par la 15-5e1, avec l'avance de ses réglages ; R3-7 non tranchée (hypothèse forte mesurée en T0 depuis C70) ; révise C55 et C65 | 15-5e1, 15-5e2, 15-5d |
+| C67 | dérogation de découpage de la 15-5e1 (dix modules, onze depuis C70) ; signal D5 déclaré | 15-5e1 |
+| C68 | le Pattern 5 renvoie aux doc-comments canoniques ; révise C65 | 15-5e2, 15-5d |
+| C69 | remédiations P4 de moindre portée ; constat sur C57 | 15-5e1, 15-5e2 |
+| C70 | remédiation P5 : volet (c) du registre analysé par `syn` (recyclage, signal D5) ; réglages de facturation rejoués ; R3-7 mesurée en T0 ; révise C67 (onze modules) et C69 | 15-5e1, 15-5e2, 15-5d |
+| C74 | remédiation P6 : témoin du rejeu (`warn!` de `kesh_db::retry` capté) aux tests 2 à 5 et 7 ; cycle du test 7 borné à MariaDB 10.11, formé en T0 ; corrige C70 (« indépendant de R3-7 ») ; signal D5 | 15-5e1, 15-5e2 |
 
 ## Change Log
 
@@ -189,3 +196,22 @@ appliquées **dans les deux fiches filles**, pas ici.
   90 à la 15-5e1, 21 / 4 / 90 à la 15-5e2). Décomptes des filles : **15-5e1 : 7 AC, 6 tâches** ;
   **15-5e2 : 6 AC, 6 tâches**. **Prochaine passe** : une passe complète (**Opus**, rotation D6) sur
   chacune des deux fiches filles, le découpage ayant redistribué tout le corps.
+- 2026-10-08 — **Validation P4 des deux fiches filles** (Opus ×2 par fiche, lentilles R et F ;
+  rapports `target/gate-logs/15-5e{1,2}-p4-{R,F}.md`) : **15-5e1** 0 CRITICAL / 0 HIGH / 3 MEDIUM /
+  19 LOW (le bilan du rapport R annonce 9 LOW, il en détaille 10, R4-2 à R4-11) ; **15-5e2** 0 / 0 / 5 MEDIUM / 15 LOW. Choix **C66** (la saisie fournisseur passe à la
+  15-5e1 : partition 8 / 13 / 4 / 90 = 115 à la 15-5e1, 17 routes à la 15-5e2), **C67** (dérogation de
+  découpage de la 15-5e1, signal D5), **C68** (Pattern 5 par renvoi aux doc-comments canoniques),
+  **C69**. Table des sous-stories, ordre et table des choix mis à jour. Détail au Change Log de
+  chaque fiche fille.
+- 2026-10-08 — **Validation P5 des deux fiches filles** (Sonnet ×2 par fiche, lentilles R et F ;
+  rapports `target/gate-logs/15-5e{1,2}-p5-{R,F}.md`) : **15-5e1** 0 / 0 / 1 MEDIUM (R5-1 = F5-1,
+  recyclage du volet (c) — signal D5 déclaré, changement de méthode : analyse par `syn`) / 11 LOW ;
+  **15-5e2** 0 / 0 / 0 / 9 LOW — **boucle de validation close**. Choix **C70** (volet (c) par
+  `syn` ; enregistrement des réglages de facturation rejoué par la 15-5e1, test 7 ; R3-7 hypothèse
+  forte, mesurée en T0 ; onze modules, révise C67). La 15-5e1 attend une passe ciblée (P6).
+- 2026-10-08 — **Validation P6 de la 15-5e1** (Opus ×2, lentilles R et F ; rapports
+  `target/gate-logs/15-5e1-p6-{R,F}.md`) : 0 / 0 / 1 MEDIUM (F6-1 : le test 7 pouvait passer sans
+  rejeu sur MariaDB ≥ 11.4.5 ou MySQL ≥ 8.0.18 ; recyclage de la remédiation P5, signal D5 déclaré)
+  / 10 LOW distincts. Choix **C74** : témoin du rejeu aux tests 2 à 5 et 7, cycle du test 7 formé
+  en T0 sur la version épinglée ; propagation à la 15-5e2 (cinq routes `DbError`, forme du
+  CHANGELOG). La 15-5e1 attend une passe ciblée (P7).

@@ -37,15 +37,18 @@ est préservé, `Option<Option<i64>>` ; l'AC10 : les six champs refusent un comp
 désignation ; la parenthèse « de regroupement, de résultat ou de clôture » de `validate_account_of`).
 **Et de la 15-5e1** (`15-5e1-socle-rejeu.md`, choix C52, réécrite selon C54, découpée par C61 —
 « Socle du rejeu sur interblocage »), **et pas de la 15-5e2** (choix C65) : le **rejeu de la
-validation d'une facture** et le patron des enveloppes ; l'avance des réglages de la saisie fournisseur
+validation d'une facture et de la saisie d'une facture fournisseur** (la seconde depuis le choix
+C66) et le patron des enveloppes ; l'avance des réglages de la saisie fournisseur
 avant les comptes de charge ; le doc-comment canonique de `validate_invoice` (numérotation **(2 bis')**)
 et le commentaire « 5 bis » réécrits. Cette story **suppose ce rejeu et cette avance en place** et y
 place son verrou ; elle n'en redécrit que ce qui la concerne et **renvoie à la 15-5e1** pour le reste.
-Le rejeu de la **saisie fournisseur** et de la **complétion d'une facture importée** vient avec la
-**15-5e2** (`15-5e2-rejeu-des-autres-flux.md`), dans un ordre de merge libre : si cette story merge
-avant elle, ces deux routes portent le verrou de l'accesseur sans être encore rejouées, et une victime
-d'interblocage y rend `500` comme aujourd'hui jusqu'au merge de la 15-5e2 — une fenêtre de même
-nature que l'état actuel, pas une régression de nature.
+Le rejeu de la **complétion d'une facture importée** vient avec la **15-5e2**
+(`15-5e2-rejeu-des-autres-flux.md`), dans un ordre de merge libre : si cette story merge avant elle,
+cette route porte le verrou de l'accesseur sans être encore rejouée, et une victime d'interblocage y
+rend `500` comme aujourd'hui jusqu'au merge de la 15-5e2 — une fenêtre de même nature que l'état
+actuel, pas une régression de nature. L'ordre de merge est sûr aussi pour la documentation : le
+Pattern 5 de la 15-5e2 **renvoie** aux doc-comments canoniques que cette story met à jour (AC9),
+il ne recopie pas l'ordre (choix C68).
 Ne pas commencer avant le merge de la 15-5e1. **Indépendante de la 15-5c** : elles touchent des
 passages distincts du manuel ; seule la borne `sitesTotal` de `i18n-keys.test.ts` est commune — celle
 qui merge en second la relève sur l'état rebasé.
@@ -224,8 +227,8 @@ n'en dépend. D'où le découpage (choix C33).
      pas** : l'insertion des lignes reprend la créance, la TVA due et les créanciers par la clé
      étrangère `fk_jel_account`, **après** l'exercice (finding F1-1 de la P1 de la 15-5e), et un
      compte interne de règlement peut être l'un de ces comptes (`invoice_settlements_write.rs:135-137`).
-     Un interblocage restant est **rejoué** par les routes (15-5e1 pour la validation, 15-5e2 pour la
-     saisie fournisseur et la complétion d'import) ; cette story n'affirme l'absence
+     Un interblocage restant est **rejoué** par les routes (15-5e1 pour la validation et la saisie
+     fournisseur, 15-5e2 pour la complétion d'import) ; cette story n'affirme l'absence
      d'aucun cycle. D'où les deux temps de l'accesseur : **verrouiller tôt tous les candidats,
      contrôler tard les seuls rôles écrits**. Verrouiller un candidat que le générateur n'écrira pas
      (TVA due d'une facture sans TVA) coûte un verrou de ligne superflu, jamais un refus ;
@@ -522,7 +525,11 @@ n'en dépend. D'où le découpage (choix C33).
      d'arrondi, AC5 de la 15-5e1 — gagne les comptes désignés, verrouillés après le compte d'arrondi
      et avant `fiscal_years`, par identifiant croissant ; finding R2-1 de la 15-5d, et R2-1 de la P2
      de la 15-5e) — et de
-     `supplier_invoices::create_in_tx` (réglages → comptes de charge → comptes désignés → exercice) ;
+     `supplier_invoices::create_in_tx` (réglages → comptes de charge → comptes désignés → exercice) —
+     ces deux doc-comments sont les **seuls lieux** où l'ordre de ces flux est écrit : le Pattern 5
+     (`docs/MULTI-TENANT-SCOPING-PATTERNS.md`, réécrit par la 15-5e2) y renvoie sans le recopier
+     (choix C68), si bien que cette story n'a pas à le toucher, dans quelque ordre que les deux
+     merges arrivent ;
      la limite **L2** de D-A0 est citée comme **révisée** pour ces quatre comptes
      (`14-3b-consommateurs-roles.md:188`).
    - Le commentaire « 5 bis » du solde du reste (`invoice_settlements_write.rs`), **réécrit en place
@@ -561,10 +568,10 @@ n'en dépend. D'où le découpage (choix C33).
       tests et module des réglages) — **un lecteur qui écrit, absent de l'AC1 et de l'AC3, bloque la
       story** ; refaire le grep des appelants des générateurs (AC1, 25 occurrences sur `ac1719b9`, ventilées) et
       celui des contournements E2E (AC6, trois sites) ; **vérifier que la 15-5e1 est en place** — rejeu
-      de la validation, réglages de la saisie fournisseur avant les comptes de charge, doc-comment
-      canonique de `validate_invoice` et « 5 bis » réécrits ; **relever si la 15-5e2 est mergée** (rejeu
-      de la saisie fournisseur et de la complétion d'import) et le consigner, sans en faire une
-      condition (C65) — et
+      de la validation et de la saisie fournisseur, réglages de la saisie fournisseur avant les comptes
+      de charge, doc-comments canoniques de `validate_invoice` et de `supplier_invoices::create_in_tx`
+      et « 5 bis » réécrits ; **relever si la 15-5e2 est mergée** (rejeu de la complétion d'import) et
+      le consigner, sans en faire une condition (C65, C66) — et
       relever les deux cases où l'accesseur s'insère (AC1, « L'ordre des verrous ») ; **un écart bloque
       la story** (la 15-5d ne réordonne aucun flux existant) ;
       **relever le texte exact que la 15-5b aura laissé** dans les encadrés `user-manual.tex:380` et
@@ -642,9 +649,12 @@ elle :
 | flux | ce que la 15-5d ajoute | sa place |
 |---|---|---|
 | validation d'une facture | **créance + TVA due** (`ORDER BY id`, accesseur) | après l'arrondi (`invoices.rs:2065`), avant l'exercice (`:2172`) |
-| saisie / complétion fournisseur | **créanciers + TVA récupérable** (`ORDER BY id`, accesseur) | après les comptes de charge (`supplier_invoices.rs:300-350`), avant l'exercice (`:352-355`) — réglages déjà avancés par la 15-5e1 |
+| saisie / complétion fournisseur | **créanciers + TVA récupérable** (`ORDER BY id`, accesseur) | après les comptes de charge (`supplier_invoices.rs:301-372`), avant l'exercice (`:374-377`) — réglages déjà avancés par la 15-5e1 |
 
-*(Lignes relevées sur `f8a569a7`, avant les 15-5a, 15-5b et 15-5e : T0 les refait.)*
+*(Lignes relues sur `f289414e`, après le merge des 15-5a et 15-5b — celles de la saisie
+fournisseur recalées à la P5 de la 15-5e1, finding R5-3 ; la 15-5e1 déplace encore l'appel des
+réglages et réécrit les doc-comments : T0 les refait. Le doc-comment canonique de `create_in_tx`,
+réécrit par la 15-5e1, fait foi.)*
 
 Les interblocages dont **la place de l'accesseur réduit la fréquence** : (i) validation ↔ solde du
 reste sur la TVA due (F2-1, test 1 de l'AC7 — le solde verrouille la TVA due avant l'exercice,
@@ -730,8 +740,9 @@ n'envoient pas le champ.
   15-5d garde la place de son accesseur et les trois tests qui la figent.
 - **C54** — la défense contre l'interblocage est le rejeu (15-5e réécrite) ; les verrous de cette
   story restent, ses affirmations d'absence de cycle sont retirées.
-- **C65** — cette story dépend de la 15-5e1 seule ; le rejeu de la saisie fournisseur et de la
-  complétion d'import vient avec la 15-5e2, ordre de merge libre.
+- **C65** — cette story dépend de la 15-5e1 seule ; le rejeu de la complétion d'import vient avec la
+  15-5e2, ordre de merge libre (**révisé par C66** : la saisie fournisseur est rejouée par la 15-5e1 ;
+  **et par C68** : le Pattern 5 renvoie aux doc-comments canoniques que l'AC9 met à jour).
 
 ### Fichiers touchés (prévision)
 
@@ -783,9 +794,10 @@ inséparables (C34), et elle est revue en **passes complètes**.
 
 - Issues : #429 (et son commentaire) ; #473, #523, #525 (avoir) ; #521 (15-5b).
 - Fiches : `15-5-gardes-postabilite-serveur.md` (mère, `split`), `15-5a-refus-non-imputable.md`,
-  `15-5b-gardes-surfaces-neuves.md`, `15-5e1-socle-rejeu.md` (le rejeu de la validation, l'avance des réglages, le doc-comment canonique —
-  dépendance), `15-5e2-rejeu-des-autres-flux.md` (le rejeu des autres routes, dont la saisie
-  fournisseur — sans dépendance), `15-5e-ordre-des-verrous-reglements.md` (index, `split`) ;
+  `15-5b-gardes-surfaces-neuves.md`, `15-5e1-socle-rejeu.md` (le rejeu de la validation et de la
+  saisie fournisseur, l'avance des réglages, les doc-comments canoniques — dépendance),
+  `15-5e2-rejeu-des-autres-flux.md` (le rejeu des autres routes, dont la complétion d'import — sans
+  dépendance), `15-5e-ordre-des-verrous-reglements.md` (index, `split`) ;
   `14-3b-consommateurs-roles.md` (D-A0, L2).
 - `CLAUDE.md` : § *Inventorier les sites NON RÉSOLUS*, § *Le prompt d'une passe doit NOMMER le
   manuel*, § *Test Locally First* (exception `kesh-db`), § *Règle de splitting préventif*.
@@ -1040,3 +1052,15 @@ inséparables (C34), et elle est revue en **passes complètes**.
   occurrences restantes sont historiques (C48, C52, C53, C54, finding F1-1 « de la P1 de la 15-5e »,
   relevé « avant les 15-5a, 15-5b et 15-5e ») ou le nom de la fiche index. Décompte inchangé :
   9 AC, 8 tâches T0–T7.
+- 2026-10-08 — **Alignement sur la validation P4 des 15-5e1 et 15-5e2** (choix **C66**, **C68**) :
+  (1) la **saisie fournisseur** est désormais rejouée par la **15-5e1**, avec l'avance de ses réglages
+  (finding F4-1 de la P4 de la 15-5e1) — en-tête des dépendances, « L'ordre des verrous », T0 et
+  References : seule la complétion d'import reste à la 15-5e2 ; (2) le Pattern 5 de la 15-5e2
+  **renvoie** aux doc-comments canoniques de `validate_invoice` et de `supplier_invoices::create_in_tx`
+  au lieu de recopier l'ordre (finding F4-3 = R4-1 de la P4 de la 15-5e2) : vérifié que l'AC9 de cette
+  story met **déjà** ces deux doc-comments à jour quand elle y place ses verrous ; l'AC9 le dit
+  désormais, et dit que cette story n'a pas à toucher le Pattern 5 — l'ordre de merge 15-5d / 15-5e2
+  est sûr dans les deux sens. Aucun changement de fond. Propagation : `saisie fournisseur et la
+  complétion`, `15-5e2 pour la`, `de la saisie fournisseur et de la complétion` grepés sur le corps
+  (hors Change Log) : plus d'occurrence qui confie la saisie à la 15-5e2. Décompte inchangé : **9 AC,
+  8 tâches T0–T7** (recompté).

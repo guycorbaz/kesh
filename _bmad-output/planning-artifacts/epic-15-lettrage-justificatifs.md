@@ -19,6 +19,13 @@ de leur reprise.
 2026-10-08, dont #518, l'issue du lettrage créée ce jour-là). Périmètre, ordre et sortie de
 15-3 et 15-4 : choix C1 et C2 du registre.
 
+**Story 15-11 — la configuration transmise (ajoutée le 2026-10-08, #550)** : les compose distribués
+ne transmettent au conteneur que leurs blocs `environment:` ; 16 des 41 variables lues par le code
+n'y figurent pas, dont toute la configuration SMTP et `KESH_PRODUCTION_RESET` — envoi d'e-mails et
+sortie de la démonstration impossibles sur une installation standard. Fiche
+`15-11-configuration-transmise.md`, closes #550, refs #534 ; choix C71–C73. Indépendante en code ;
+la recette de la 15-7b2 en dépend.
+
 **Décompte des bugs au kickoff** : 49 (§ *Priorités des défauts* du `CLAUDE.md`). Il doit
 avoir baissé à la rétrospective.
 

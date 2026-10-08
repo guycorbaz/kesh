@@ -17,15 +17,16 @@ découpage se lit au commit `428985c8`.
 | **15-5b** | `15-5b-gardes-surfaces-neuves.md` | **Rollout** : les gardes neuves — rapprochement manuel et ventilé, acceptation `split` et `rule`, `get_proposals`, création / modification / réactivation des règles, six réglages de facturation, compte comptable d'un compte bancaire ; le compte créanciers préservé (#521) ; les `catch` de l'écran des règles ; les `<select>` du compte bancaire ; les deux encadrés du manuel (désignation) | `closes #427`, `refs #429`, `closes #521` |
 | **15-5c** | `15-5c-rapprochement-libelles-et-manuel.md` | Les libellés traduits des refus par lot (`failed[]`) ; la réécriture du manuel du rapprochement (bouton *Modifier*, lot « atomique », manuel et éclatement, règles d'affectation, FAQ) | `closes #481`, `closes #492`, `closes #519` ; cite #526, #527, #529 |
 | **15-5e** | `15-5e-ordre-des-verrous-reglements.md` | **Index (`split`, choix C61)** — rejeu sur interblocage des flux d'écriture (réécrite selon C54), découpée après sa validation P3 en 15-5e1 et 15-5e2 ; historique des passes P1–P3 | — |
-| **15-5e1** | `15-5e1-socle-rejeu.md` | **Socle du rejeu** : inventaire fermé des routes qui écrivent au journal gravé dans le registre `audit_route_registry.rs` (seconde colonne, statut transitoire `ARejouer`) ; deux enveloppes nommées, nom d'opération dans le `warn!` ; les trois routes des issues (validation, règlement client, son annulation) et leurs tests « route victime » ; doc-comment canonique, avance des réglages de la saisie fournisseur, « 5 bis », module `retry.rs` ; ligne du CHANGELOG | `closes #463`, `closes #491` ; `refs #536`, `refs #429` |
-| **15-5e2** | `15-5e2-rejeu-des-autres-flux.md` | **Rollout du rejeu** : les 18 autres routes `Rejouee` (14 à rejouer, 3 migrées, `post_accept` inchangée) ; commentaires d'ordre restants, inventaire au symptôme, Pattern 5 ; `api-external` ; CHANGELOG étendu ; manuels (#484) | `closes #536`, `closes #484` |
+| **15-5e1** | `15-5e1-socle-rejeu.md` | **Socle du rejeu** : inventaire fermé des routes qui écrivent au journal gravé dans le registre `audit_route_registry.rs` (seconde colonne, statut transitoire `ARejouer`) ; deux enveloppes nommées, nom d'opération dans le `warn!` ; les trois routes des issues (validation, règlement client, son annulation) et la saisie fournisseur (C66), et leurs tests « route victime » ; doc-comment canonique, avance des réglages de la saisie fournisseur, « 5 bis », module `retry.rs` ; ligne du CHANGELOG | `closes #463`, `closes #491` ; `refs #536`, `refs #429` |
+| **15-5e2** | `15-5e2-rejeu-des-autres-flux.md` | **Rollout du rejeu** : les 17 autres routes `Rejouee` (13 à rejouer, 3 migrées, `post_accept` inchangée) ; commentaires d'ordre restants, inventaire au symptôme, Pattern 5 ; `api-external` ; CHANGELOG étendu ; manuels (#484) | `closes #536`, `closes #484` |
 | **15-5d** | `15-5d-garde-usage-comptes-reglage.md` | La garde **à l'usage** des comptes de réglage (créance, TVA due, créanciers, TVA récupérable) à la validation d'une facture et à la saisie d'une facture fournisseur — variante `DesignatedAccountsNotPostable`, révision de la limite L2 de D-A0, accesseur placé dans l'ordre de la 15-5e ; le compte créanciers exposé à l'écran des réglages ; l'avoir exempté, raison écrite | `closes #429` |
 
 ⚠️ **L'ordre n'est pas indifférent** : 15-5a → 15-5b → (15-5c, 15-5e1 → (15-5e2, 15-5d)). La 15-5b émet la
 variante que la 15-5a pose ; la 15-5c affiche le refus que la 15-5b émet dans `failed[]` et décrit le
 comportement des règles qu'elle fixe ; la 15-5e1 place un appel entre les deux passes que la 15-5a écrit et touche un fichier que la 15-5b
-réécrit ; la 15-5d s'appuie sur l'AC19 et l'AC10 de la 15-5b, et sur le rejeu de la validation et l'avance
-des réglages de la **15-5e1 seule** (choix C65) ; la 15-5e2 et la 15-5d se mergent dans un ordre libre.
+réécrit ; la 15-5d s'appuie sur l'AC19 et l'AC10 de la 15-5b, et sur le rejeu de la validation et de la saisie
+fournisseur et l'avance des réglages de la **15-5e1 seule** (choix C65, C66) ; la 15-5e2 et la 15-5d se mergent
+dans un ordre libre, sûr aussi pour la documentation (C68).
 La 15-5c est **indépendante** des 15-5d, 15-5e1 et 15-5e2 (seule la borne `sitesTotal` est commune avec la
 15-5d). Chacune ne commence
 qu'après le merge de celles dont elle dépend.
@@ -107,7 +108,13 @@ passe P1 ont été appliquées **dans les deux fiches filles**, pas ici.
 | C62 | noms des enveloppes ; nom d'opération en champ de l'événement | 15-5e1 |
 | C63 | statut transitoire `ARejouer`, volet (c) robuste, `retry_with` restreint | 15-5e1, 15-5e2 |
 | C64 | la ligne du CHANGELOG voyage avec les issues ; PDF de la brochure restauré | 15-5e1, 15-5e2 |
-| C65 | la 15-5d dépend de la 15-5e1 seule | 15-5e1, 15-5d |
+| C65 | la 15-5d dépend de la 15-5e1 seule (révisé par C66, C68) | 15-5e1, 15-5e2, 15-5d |
+| C66 | la saisie fournisseur rejouée par la 15-5e1 avec l'avance de ses réglages | 15-5e1, 15-5e2, 15-5d |
+| C67 | dérogation de découpage de la 15-5e1 ; signal D5 déclaré | 15-5e1 |
+| C68 | le Pattern 5 renvoie aux doc-comments canoniques | 15-5e2, 15-5d |
+| C69 | remédiations P4 de moindre portée des 15-5e1 / 15-5e2 | 15-5e1, 15-5e2 |
+| C70 | remédiation P5 des 15-5e1 / 15-5e2 : volet (c) par `syn`, réglages de facturation rejoués | 15-5e1, 15-5e2 |
+| C74 | remédiation P6 de la 15-5e1 : témoin du rejeu aux tests « route victime », cycle du test 7 borné à MariaDB 10.11 ; corrige C70 | 15-5e1, 15-5e2 |
 
 ## Change Log
 
@@ -190,3 +197,7 @@ passe P1 ont été appliquées **dans les deux fiches filles**, pas ici.
   **15-5e2** (rollout, commentaires, Pattern 5, manuels ; `closes #536 #484`) ; la 15-5e devient une
   fiche index. La **15-5d** ne dépend plus que de la 15-5e1 (**C65**). Choix **C62** à **C64**
   consignés. Table des sous-stories, ordre et table des choix (C57 à C65) mis à jour.
+- 2026-10-08 — **Validation P4 des 15-5e1 et 15-5e2** : la saisie fournisseur passe de la 15-5e2 à la
+  15-5e1 (choix **C66**) ; le Pattern 5 renvoie aux doc-comments canoniques (choix **C68**) ;
+  dérogation de découpage de la 15-5e1 (choix **C67**) ; **C69**. Table des sous-stories, ordre et
+  table des choix mis à jour (C65 révisé, C66 à C69 ajoutés). Détail aux Change Logs des fiches filles.
