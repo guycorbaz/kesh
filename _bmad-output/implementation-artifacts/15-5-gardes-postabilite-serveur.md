@@ -5,19 +5,21 @@
 split
 
 ⛔ **CORPS VIDÉ — cette fiche ne contient plus ni critères, ni tâches, ni inventaire.** Elle ne garde
-que les pointeurs vers ses deux moitiés et l'historique de la passe qui a conduit au découpage.
+que les pointeurs vers ses trois sous-stories et l'historique des passes qui ont conduit au découpage.
 *(La définition du statut `split` l'impose ; précédents : 15-1, 17-2.)* La version complète d'avant
 découpage se lit au commit `428985c8`.
 
-## Les deux sous-stories
+## Les trois sous-stories
 
 | | fiche | ce qu'elle porte | issues |
 |---|---|---|---|
-| **15-5a** | `15-5a-refus-non-imputable.md` | **Socle** : la variante `DbError::AccountsNotPostable`, le code `ACCOUNT_NOT_POSTABLE`, son message (4 locales, pluriel), sa conversion sur la saisie manuelle, l'écriture d'ouverture et les trois gardes de la 24-5 ; les tests qui figeaient l'ancien code ; l'ordre des causes ; le détail `accountNumbers` | `refs #427`, `refs #429` |
-| **15-5b** | `15-5b-gardes-surfaces-neuves.md` | **Rollout** : les gardes neuves — rapprochement manuel et ventilé, acceptation `split` et `rule`, `get_proposals`, création / modification / réactivation des règles, six réglages de facturation, compte comptable d'un compte bancaire ; l'écran des refus par lot ; le manuel | `closes #427`, `closes #429`, `closes #492`, `closes #519` |
+| **15-5a** | `15-5a-refus-non-imputable.md` | **Socle** : la variante `DbError::AccountsNotPostable` (newtype trié, non vide), le code `ACCOUNT_NOT_POSTABLE`, son message (4 locales, pluriel résolu côté serveur), sa conversion sur la saisie manuelle, l'écriture d'ouverture et les trois gardes de la 24-5 ; les tests qui figeaient l'ancien code ; l'ordre des causes ; le détail `rejected[{accountId, accountNumber}]` ; `docs/api-external.md` | `refs #427`, `refs #429` |
+| **15-5b** | `15-5b-gardes-surfaces-neuves.md` | **Rollout** : les gardes neuves — rapprochement manuel et ventilé, acceptation `split` et `rule`, `get_proposals`, création / modification / réactivation des règles, six réglages de facturation, compte comptable d'un compte bancaire ; le compte créanciers préservé (#521) ; les `catch` de l'écran des règles ; les `<select>` du compte bancaire ; les deux encadrés du manuel | `closes #427`, `closes #429`, `closes #521` |
+| **15-5c** | `15-5c-rapprochement-libelles-et-manuel.md` | Les libellés traduits des refus par lot (`failed[]`) ; la réécriture du manuel du rapprochement (bouton *Modifier*, lot « atomique », manuel et éclatement, règles d'affectation, FAQ) | `closes #481`, `closes #492`, `closes #519` |
 
-⚠️ **L'ordre n'est pas indifférent** : la 15-5b émet la variante que la 15-5a pose. Elle ne commence
-qu'après le merge de la 15-5a.
+⚠️ **L'ordre n'est pas indifférent** : 15-5a → 15-5b → 15-5c. La 15-5b émet la variante que la 15-5a
+pose ; la 15-5c affiche le refus que la 15-5b émet dans `failed[]` et décrit le comportement des règles
+qu'elle fixe. Chacune ne commence qu'après le merge de la précédente.
 
 ## Pourquoi le découpage
 
@@ -39,13 +41,25 @@ passe P1 ont été appliquées **dans les deux fiches filles**, pas ici.
 | C5 | compte d'un compte bancaire : postabilité seule ; le reste de #474 à la 15-6 | 15-5b |
 | C6 | angles morts assumés (fiche article, compte bancaire à l'usage, rôles, avoir) | 15-5b |
 | C7 | découpage | les deux |
-| C8 | libellés traduits pour tous les codes de `failed[]` (#492) | 15-5b |
+| C8 | libellés traduits pour tous les codes de `failed[]` (#492) | 15-5c (depuis C15) |
 | C9 | règle périmée : plus proposée, réactivation refusée, pas de migration | 15-5b |
 | C10 | contrôle « inchangé » dans la transaction, ordre des erreurs conservé | 15-5b |
-| C11 | réécriture du § *Règles d'affectation automatique* (#519) | 15-5b |
-| C12 | `withCurrentAccount` sur les `<select>` du compte bancaire | 15-5b |
-| C13 | clé de détail `accountNumbers` commune ; ordre des causes | 15-5a, 15-5b |
+| C11 | réécriture du § *Règles d'affectation automatique* (#519) | 15-5c (depuis C15) |
+| C12 | `withCurrentAccount` sur les `<select>` du compte bancaire (corrigé par C26) | 15-5b |
+| C13 | ordre des causes ; sa clé `accountNumbers` est **révisée par C16** | 15-5a, 15-5b |
 | C14 | les `catch` de l'écran des règles lisent `ApiError` (« [object Object] ») | 15-5b |
+| C15 | troisième sous-story 15-5c (libellés de `failed[]`, manuel du rapprochement, #481) | 15-5b, 15-5c |
+| C16 | détail `rejected[{accountId, accountNumber}]`, forme du jumeau `ACCOUNT_ARCHIVED` | 15-5a, 15-5b, 15-5c |
+| C17 | newtype `NonPostableAccounts` à champ privé, trié, non vide | 15-5a |
+| C18 | sélecteur Fluent inscrit à `SELECTEURS_RESOLUS_COTE_SERVEUR` | 15-5a |
+| C19 | « de regroupement, de résultat ou de clôture » | 15-5a, 15-5b |
+| C20 | `exempt_ids` retiré | 15-5a |
+| C21 | verrou de `validate_lines_accounts_in_tx` hors périmètre | 15-5a |
+| C22 | boucle des factures fournisseur : forme d'abord, comptes ensuite | 15-5a |
+| C23 | chaque commentaire réécrit par une seule story | 15-5a, 15-5b |
+| C24 | `docs/api-external.md` | 15-5a, 15-5b |
+| C25 | #521 : compte créanciers absent du corps → préservé | 15-5b |
+| C26 | `BankAccountJournalLinkForm` reçoit la liste complète | 15-5b |
 
 ## Change Log
 
@@ -83,3 +97,13 @@ passe P1 ont été appliquées **dans les deux fiches filles**, pas ici.
 
   **Découpage (C7)** : statut `split`, corps vidé. Les deux fiches filles portent chacune la remédiation
   qui leur revient et leur propre Change Log ; la passe P2 se lance **sur chacune**.
+- 2026-10-08 — **Passe de validation P2** sur les deux fiches filles (prompts versionnés
+  `15-5a-validate-prompt-p2.md` et `15-5b-validate-prompt-p2.md` ; deux lentilles **Opus** par fiche,
+  R chasseur de régressions et F adversaire de périmètre complet). **0 CRITICAL, 0 HIGH** sur l'une et
+  l'autre ; **15-5a : 5 MEDIUM, 9 LOW distincts ; 15-5b : 6 MEDIUM, 8 LOW distincts** (détail et
+  origine de chaque MEDIUM selon l'amendement D5 dans le Change Log de chaque fiche). Sur le finding
+  F-3 de la 15-5b, l'orchestrateur a **découpé une troisième fois** : la **15-5c** reprend les libellés
+  de `failed[]` (#492) et le manuel du rapprochement (#519, et #481 qu'elle ferme entièrement) (choix
+  **C15**). L'issue **#521** (compte créanciers effacé à l'enregistrement des réglages), créée par
+  l'orchestrateur sur le finding F-1 de la 15-5b, est confiée à la 15-5b (choix C25). Choix C15 à C26
+  consignés.

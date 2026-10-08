@@ -215,3 +215,175 @@ l'import (#458–#461).
   `settings/+page.svelte:236`, `:260`) sont signalés pour une issue, hors périmètre.
 - **Écartée** : corriger tous les sites du dépôt dans la 15-5b (hors de son module, et de son sujet).
 - **Réversible** : oui.
+
+## C15 — 15-5 : troisième sous-story, 15-5c (libellés des refus par lot et manuel du rapprochement)
+
+- **Contexte** : passe de validation P2 de la 15-5b, finding F-3 (MEDIUM, lentille F) — la 15-5b se
+  présentait comme un rollout « strictement mécanique » alors qu'elle portait un module neuf de 26
+  libellés traduits en quatre locales (#492) et la réécriture d'une section du manuel (#519). Le
+  finding F-2 de la même passe a ajouté au manuel quatre passages faux du rapprochement (manuel,
+  éclatement, bouton *Modifier*, FAQ) et l'acceptation par lot « atomique », qui recoupent l'issue
+  **#481** — dont les trois points (Modifier, lot atomique, manuel et éclatement « par facture ») sont
+  tous couverts.
+- **Retenu** : une **15-5c** (`15-5c-rapprochement-libelles-et-manuel.md`) reprend le premier volet de
+  l'ancien AC14 de la 15-5b (libellés de `failed[]`) et toute la réécriture du manuel du rapprochement ;
+  elle **ferme #481, #492 et #519** et dépend de la 15-5b (qui émet `ACCOUNT_NOT_POSTABLE` dans
+  `failed[]`). La 15-5b garde les gardes, le second volet de l'AC14 (C14), l'AC13, la levée des réserves
+  du manuel (`user-manual.tex:380`, `:390`) et ajoute #521 (C25) ; elle ferme #427, #429, #521.
+- **Écartées** : garder tout dans la 15-5b (le mode de revue « fichier par fichier » promis au rollout
+  ne tient pas pour un manuel ni pour un module de libellés) ; mettre le manuel dans une story de
+  documentation hors epic (le passage *Acceptation par lot* et la section des règles décrivent des
+  comportements que la 15-5b change).
+- **Réversible** : oui, tant qu'aucune des trois n'est développée.
+- **Reste non strictement mécanique dans la 15-5b, et c'est assumé** : AC5 (filtre de `get_proposals`),
+  AC8 b (réactivation refusée), AC13 (écran) et AC19 (#521). Ils restent couverts par les passes de
+  validation et de revue de code ordinaires, pas par la seule revue fichier par fichier.
+
+## C16 — 15-5a : le détail du refus a la forme de son jumeau `ACCOUNT_ARCHIVED` (révise C13)
+
+- **Contexte** : finding F-1 (MEDIUM) de la P2 de la 15-5a. C13 fixait `details.accountNumbers:
+  [String]`, alors que le refus jumeau `ACCOUNT_ARCHIVED` rend `details.rejected[{accountId,
+  accountNumber}]` (`crates/kesh-api/src/errors.rs`, bras `ReversalAccountsArchived`) et que les autres
+  corps du dépôt nomment un compte par `accountId` + `accountNumber`. Le client envoie des
+  identifiants : sans eux, il ne peut pas désigner la ligne fautive.
+- **Retenu** : `details.rejected: [{ accountId, accountNumber }]`, **au corps du 400 comme dans
+  `failed[].details`** (15-5b). La variante porte les deux, par une structure **jumelle**
+  `NonPostableAccount { account_id: i64, account_number: String }` — et non `ArchivedAccount` elle-même,
+  dont le numéro est `Option` parce qu'un compte inconnu n'en a pas ; ici le compte est toujours de la
+  société et actif, le numéro toujours connu (anti-énumération KF-002 inchangée). Le JSON a exactement
+  la forme du jumeau.
+- **Écartées** : garder `accountNumbers` (deux formes pour deux refus voisins, et des identifiants
+  perdus) ; réutiliser `ArchivedAccount` (un `None` impossible deviendrait représentable).
+- **Réversible** : oui avant la release v0.13.0 ; après, la clé fait partie du contrat.
+
+## C17 — 15-5a : la variante ne se construit que triée, dédoublonnée et non vide
+
+- **Contexte** : finding R-3 (MEDIUM) — l'AC1 promettait une variante « construite seulement par le
+  constructeur trieur » alors que `DbError::AccountsNotPostable(Vec<String>)` était constructible par
+  n'importe qui ; F-6 (LOW) — un itérable vide aurait produit un message sans numéro, accordé au
+  singulier en français.
+- **Retenu** : la variante porte un newtype `NonPostableAccounts` à **champ privé**, construit seulement
+  par `NonPostableAccounts::new(impl IntoIterator<Item = NonPostableAccount>)`, qui trie par numéro et
+  dédoublonne par identifiant ; précondition « non vide » vérifiée par `debug_assert!` (un appelant qui
+  la viole est un bogue, pas une entrée utilisateur). La garantie tient par le système de types, pas par
+  une consigne.
+- **Écartée** : retirer l'affirmation et tester le tri à chaque site (la garantie redeviendrait une
+  discipline).
+- **Réversible** : oui.
+
+## C18 — 15-5a : le pluriel du message passe par un sélecteur Fluent résolu côté serveur
+
+- **Contexte** : finding R-1 (MEDIUM) — le sélecteur `[one]`/`*[other]` de l'AC2 aurait fait rougir le
+  garde-fou `SELECTEURS_RESOLUS_COTE_SERVEUR` (`crates/kesh-i18n/src/loader.rs`, test associé), qui
+  refuse tout sélecteur non inscrit parce que le dictionnaire servi au frontend le fige sur `*[other]`.
+- **Retenu** : garder le sélecteur et **inscrire la clé** `error-account-not-postable` dans
+  `SELECTEURS_RESOLUS_COTE_SERVEUR`, en disant où elle est résolue (bras `AccountsNotPostable` de
+  `crates/kesh-api/src/errors.rs`, par `t_args` avec `count`). Le frontend n'affiche jamais cette clé
+  depuis son dictionnaire : il affiche `err.message`, déjà résolu par le serveur. `loader.rs` entre aux
+  fichiers touchés.
+- **Écartée** : deux clés plates `-one` / `-other` (patron « et N autres », justifié là parce que le
+  frontend résout la clé lui-même — ce n'est pas le cas ici).
+- **Réversible** : oui.
+
+## C19 — 15-5a/15-5b : un compte non imputable est « de regroupement, de résultat ou de clôture »
+
+- **Contexte** : finding R-2 (MEDIUM) — la parenthèse « (compte de regroupement ou de clôture) » omet le
+  compte de résultat (rôle `CurrentYearResult`, 2979), que `is_postable` exclut et que
+  `test_create_manual_rejects_result_account` refuse. Le message existant de `validate_account_of`
+  (`company_invoice_settings.rs`) porte le même défaut.
+- **Retenu** : « (compte de regroupement, de résultat ou de clôture) » dans les quatre locales et le
+  repli Rust de la 15-5a ; la 15-5b corrige de même le message de `validate_account_of`.
+- **Écartée** : retirer la parenthèse (elle dit à l'utilisateur pourquoi, ce qui est le but de la story).
+- **Réversible** : oui.
+
+## C20 — 15-5a : le paramètre `exempt_ids` est retiré
+
+- **Contexte** : findings R-8 / F-3 (LOW) — `validate_lines_accounts_in_tx(…, exempt_ids)` n'a plus
+  qu'un appelant, qui passe `&[]` ; la modification d'une écriture n'existe plus depuis la 24-4b (la
+  route rend `409 ENTRY_IS_POSTED`). Son doc-comment décrit encore un `update` inexistant.
+- **Retenu** : le retirer dans la 15-5a, qui réécrit de toute façon la requête et le doc-comment ; le
+  doc-comment dit pourquoi il a disparu.
+- **Écartée** : le garder avec une doc corrigée (code mort qui complique la requête neuve).
+- **Réversible** : oui — si une modification d'écriture revenait, l'exemption serait à repenser de
+  toute façon.
+
+## C21 — 15-5a : le verrou de `validate_lines_accounts_in_tx` reste hors périmètre
+
+- **Contexte** : finding F-8 (LOW) — la saisie manuelle lit les comptes **sans verrou**, alors que les
+  trois gardes de la 24-5 lisent `FOR UPDATE`. La 15-5a réécrit cette requête.
+- **Retenu** : ne pas changer le verrouillage dans la 15-5a ; l'écrire comme hors périmètre. Raisons : le
+  défaut est antérieur (14-3b) et ne concerne pas le *nom* du refus, objet de la story ; et poser un
+  verrou sur les lignes `accounts` du chemin le plus fréquent (toute saisie manuelle, l'ouverture, le
+  complément) change l'ordre d'acquisition des verrous face aux flux qui verrouillent déjà ces comptes —
+  un risque d'interblocage qu'aucune mesure n'a évalué.
+- **Écartée** : `FOR SHARE` / `FOR UPDATE` dans la 15-5a.
+- **Réversible** : oui. **Signalé à l'orchestrateur** pour une issue de dette (course : un compte archivé
+  ou rendu non imputable entre le contrôle et l'insertion d'une saisie manuelle).
+
+## C22 — 15-5a : la boucle des lignes de facture fournisseur valide la forme d'abord, les comptes ensuite
+
+- **Contexte** : findings R-4 / F-5 (LOW) — collecter les comptes non imputables « après la boucle »
+  changeait l'ordre relatif des refus : une ligne 1 au compte non imputable et une ligne 2 de quantité
+  nulle rendaient le refus de forme, là où une ligne 1 au compte archivé rendait le refus de compte.
+- **Retenu** : deux passes. D'abord la **forme** de toutes les lignes (quantité et prix strictement
+  positifs, taux de TVA dans 0–100), dans l'ordre des lignes, refus immédiat — l'ordre des refus de forme
+  entre eux est celui d'aujourd'hui ; puis les **comptes**, ligne par ligne : (a) refus immédiat, (b)
+  collecté et rendu après la passe. Le seul changement observable — une ligne i en défaut de compte et
+  une ligne j > i en défaut de forme rendent désormais le refus de forme — est écrit à l'AC4 et testé.
+- **Écartée** : garder une seule boucle et écrire l'ordre hybride (la règle « forme avant comptes » est
+  plus simple à dire et à tester).
+- **Réversible** : oui.
+
+## C23 — 15-5a/15-5b : chaque commentaire est réécrit par une seule story
+
+- **Contexte** : findings R-9 (15-5a), R-5 et F-10 (15-5b) — le doc-comment de
+  `validate_lines_accounts_in_tx` et le commentaire du compte interne de `invoice_settlements_write.rs`
+  étaient réécrits par les deux stories, désignés par des numéros de ligne que la 15-5a décale.
+- **Retenu** : attribution par **contenu** —
+  - 15-5a : le doc-comment de `validate_lines_accounts_in_tx` (cause nommée, `exempt_ids` retiré ; il
+    renvoie au doc-comment de `create_in_tx` pour la liste des flux au lieu de la répéter) ; un
+    commentaire **neuf** au `match` de chacune des trois gardes de la 24-5 (ordre (a)/(b)) ; la doc de
+    module de `routes/opening_balances.rs`.
+  - 15-5b : le paragraphe `enforce_postable` du doc-comment de `create_in_tx` (liste des flux) et le
+    commentaire du compte interne de `invoice_settlements_write.rs` qui contient « restent ouverts et
+    sont suivis par #427 » — que la 15-5a ne touche pas.
+  - La 15-5b **refait son T0 des numéros de ligne après le merge de la 15-5a**.
+- **Réversible** : oui.
+
+## C24 — 15-5a/15-5b : la documentation des intégrateurs suit le contrat
+
+- **Contexte** : finding F-4 (MEDIUM, 15-5b, transverse) — `docs/api-external.md` documente les codes
+  de `failed[]` de `/reconciliation/accept` et tient la table des codes d'erreur (§ 10) ; aucune des deux
+  fiches ne la nommait.
+- **Retenu** : 15-5a (AC9) ajoute `ACCOUNT_NOT_POSTABLE` à la table du § 10, avec `details.rejected[]` et
+  les routes qui le rendent ; 15-5b (AC18) l'ajoute aux codes de `failed[]` de l'acceptation et dit le
+  refus des routes de rapprochement manuel et ventilé.
+- **Réversible** : oui.
+
+## C25 — 15-5b : le compte créanciers absent du corps est préservé (#521)
+
+- **Contexte** : finding F-1 (MEDIUM) de la P2 de la 15-5b — l'écran *Paramètres → Facturation*
+  n'envoie jamais `defaultPayableAccountId`, et le serveur le traite comme `None` : chaque
+  enregistrement efface le compte créanciers, et la facture fournisseur échoue ensuite. Issue **#521**,
+  créée par l'orchestrateur, confiée à la 15-5b.
+- **Retenu** : `default_payable_account_id: Option<Option<i64>>` désérialisé par
+  `crate::helpers::double_option` — **absent : préservé, sans contrôle ; `null` : effacé ; valeur :
+  validée** (patron #216 et 25-4-c3-a1, `resolve_designated_account`) ; la garde de postabilité « si la
+  valeur change » de l'AC10 s'y applique. Le champ **n'est pas exposé à l'écran** dans cette story.
+- **Écartées** : exposer le champ à l'écran (élargit la 15-5b d'un formulaire, sans nécessité pour
+  fermer le défaut) ; garder `Option<i64>` et faire envoyer le champ par l'écran (un onglet ouvert
+  avant la mise à jour, ou tout client qui ignore le champ, l'effacerait encore).
+- **Réversible** : oui. Les contournements des E2E (`payment-batches.spec.ts`, `inbox-import.spec.ts`)
+  restent valides et ne sont pas retirés.
+
+## C26 — 15-5b : correction de C12 — le formulaire de lien ne protégeait rien
+
+- **Contexte** : finding R-1 (MEDIUM) de la P2 de la 15-5b. C12 disait que
+  `BankAccountJournalLinkForm.svelte` « le fait déjà » ; or la page lui passe `accounts={linkableAccounts}`
+  (`bank-accounts/+page.svelte`), liste déjà filtrée `active && postable` : `withCurrentAccount` n'y
+  retrouve jamais le compte devenu non imputable, et le champ s'affiche vide (défaut #271) sur la
+  troisième surface.
+- **Retenu** : la 15-5b passe aussi la **liste complète** (`accounts={accounts}`) à
+  `BankAccountJournalLinkForm`, qui filtre lui-même ses options ; test Vitest. C12 reste valable pour les
+  deux `<select>` de la page.
+- **Réversible** : oui.
