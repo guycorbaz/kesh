@@ -518,3 +518,13 @@ l'import (#458–#461).
   clippy (`len_without_is_empty`) exige `is_empty()` dès qu'un `len()` public existe.
 - **Retenu** : `len()` et `is_empty()` en lecture seule ; le champ reste privé, l'invariant intact.
 - **Réversible** : oui.
+
+## C-15-5a-5 — 15-5a (revue de code) : clôture sur LOW acceptés
+
+- **Contexte** : la passe P1 (Sonnet, trois lentilles) rend 0 CRITICAL, 0 HIGH, 0 MEDIUM et 13 LOW.
+- **Retenu** : corriger A-2 (documentation seule) et accepter les douze autres, écrits au Change Log. Le
+  plus tentant, B-2 (non-vacuité en `debug_assert!` seulement), toucherait la production : cela
+  rouvrirait une passe et le gate pour une liste qu'aucun appelant ne peut produire vide.
+- **Écartées** : durcir B-2 en erreur à l'exécution ; ajouter les tests HTTP E-2/E-3/A-3 (routes qui
+  propagent sans remappage).
+- **Réversible** : oui (les LOW restent tracés au Change Log de la fiche).

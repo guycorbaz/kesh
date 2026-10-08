@@ -1,6 +1,6 @@
 # Story 15.5a : Le refus « compte non imputable », sous son vrai nom
 
-Status: review
+Status: done
 
 <!-- Issue de la story 15-5, DÉCOUPÉE le 2026-10-08 après la passe de validation P1 (choix C7 de
      `epic-15-choix-autonomes.md`). Sous-story « zéro » du patron « story-zéro qui pose le patron +
@@ -707,3 +707,18 @@ imputable → `(AccountInvalid, Some(id))`) ; `opening_balances_e2e.rs` 26 → 2
   Gate complet backend 2754/2754, frontend 969/969, E2E 239 passés / 9 échoués — tous jugés (sept
   KF-029, un crochet KF-029 sur un test `fixme`, une pollution). Choix C-15-5a-1 à C-15-5a-4. Statut →
   `review`.
+- 2026-10-08 — **Revue de code, clôture** (`bmad-code-review`, Sonnet 5.5 en trois lentilles : Blind Hunter,
+  Edge Case Hunter, Acceptance Auditor). Trend : P1 = 0 CRITICAL, 0 HIGH, 0 MEDIUM, 13 LOW (périmètre :
+  la branche contre `main`) ; uniquement des LOW, la boucle s'arrête (CLAUDE.md § Review Iteration Rule).
+  Sort des LOW :
+  - **A-2 corrigé** (documentation seule) : `docs/api-external.md`, lignes `INACTIVE_OR_INVALID_ACCOUNTS`
+    (mauvais type du compte de charge) et `ACCOUNT_NOT_POSTABLE` (un compte archivé ou invalide sur une
+    autre ligne de la même écriture prime sur un compte non imputable).
+  - **Acceptés et écrits** : B-1/E-4, résidu du compte 2979 en cas de panic d'un test ; B-2/E-1,
+    non-vacuité de `NonPostableAccounts` seulement en `debug_assert!` (aucun appelant ne peut produire
+    une liste vide) ; B-3, `case` redondant ; B-4, doc-comment non reformaté ; E-2, E-3 et A-3, tests HTTP
+    absents sur des routes qui propagent l'erreur sans remappage ; A-1, test qui ne mord pas (son jumeau
+    « archivé » prouve l'ordre) ; A-4, tutoiement italien « scegli » ; A-5, journaux de gate hors dépôt
+    (chiffres déjà au Dev Agent Record : nextest 2754/2754, vitest 969, E2E 239 passés / 9 échoués).
+  - Aucune ligne de code de production ni de test touchée par cette clôture. Choix C-15-5a-5. Statut →
+    `done`.
