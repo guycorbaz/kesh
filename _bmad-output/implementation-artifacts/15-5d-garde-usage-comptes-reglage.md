@@ -1,6 +1,6 @@
 # Story 15.5d : Les comptes de réglage contrôlés à l'usage — créance, TVA, créanciers, et le compte créanciers à l'écran
 
-Status: ready-for-dev
+Status: review
 
 <!-- Quatrième sous-story de la 15-5, créée le 2026-10-08 à la passe de validation P4 de la 15-5b
      (finding F4-3, choix C33 de `epic-15-choix-autonomes.md`). Elle reprend de la 15-5b l'ancien AC20
@@ -781,7 +781,7 @@ n'en dépend. D'où le découpage (choix C33).
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Refaire les relevés** sur `HEAD` (15-5a, 15-5b, 15-5e1 mergées ; **la 15-8b aussi** — la
+- [x] **T0 — Refaire les relevés** sur `HEAD` (15-5a, 15-5b, 15-5e1 mergées ; **la 15-8b aussi** — la
       branche part de `main` après son merge, ou se rebase dessus —, R5-1) : numéros de ligne de
       `invoices.rs` (génération, `create_in_tx`, `:1849-1852`), `supplier_invoices.rs`, `credit_notes.rs`,
       des écrans et des manuels ; refaire le grep des lecteurs des quatre comptes
@@ -809,7 +809,7 @@ n'en dépend. D'où le découpage (choix C33).
       le copier au Dev Agent Record et, s'il ne contient aucun des motifs du grep de T6, **ajouter à ce
       grep** le motif qui le retrouve (finding R1-8 de la P1) ; relever le montage que la 15-5b a
       écrit dans `company_invoice_settings_postable_e2e.rs` (AC7 : `setup`, jeton Admin seul).
-- [ ] **T1 — La garde** (AC1, AC3) : les rôles rendus par les deux générateurs (`DesignatedRole`,
+- [x] **T1 — La garde** (AC1, AC3) : les rôles rendus par les deux générateurs (`DesignatedRole`,
       branches de `total_vat > 0`), rendus par `GeneratedLines` (C50), leurs appelants adaptés — dont
       les 19 tests, mécaniquement ; l'accesseur de `company_invoice_settings` en deux temps — verrou
       de tous les candidats (`ORDER BY id LOCK IN SHARE MODE`, partagé — C87 —, avant l'exercice,
@@ -820,9 +820,9 @@ n'en dépend. D'où le découpage (choix C33).
       fixées à l'AC1 (après l'arrondi ou les comptes de charge, avant l'exercice) ; la variante `DesignatedAccountsNotPostable` (`error_code()` → `"ACCOUNT_NOT_POSTABLE"`,
       `match` exhaustif de `kesh-db/src/errors.rs`) et son bras dans `crates/kesh-api/src/errors.rs` (400,
       `t_args`, `details()`) ; doc-comments.
-- [ ] **T2 — Le message** (AC2) : la clé dans les quatre `messages.ftl`, inscrite à
+- [x] **T2 — Le message** (AC2) : la clé dans les quatre `messages.ftl`, inscrite à
       `SELECTEURS_RESOLUS_COTE_SERVEUR` ; tests Rust par locale, singulier et pluriel.
-- [ ] **T3 — Les écrans** (AC4, AC5) : lecture des trois `catch` de l'AC4, consignée ;
+- [x] **T3 — Les écrans** (AC4, AC5) : lecture des trois `catch` de l'AC4, consignée ;
       `ACCOUNT_NOT_POSTABLE` ajouté aux codes qui ferment le dialogue de validation (C46) ; le `<select>`
       du compte créanciers, ses types, le mock de `settings-invoicing-page.test.ts`, sa clé i18n
       (quatre locales) ; borne `sitesTotal` de
@@ -830,10 +830,10 @@ n'en dépend. D'où le découpage (choix C33).
       (1904 sur `cecd5d1d`, à ne pas reprendre : 15-5c, 15-8a et 15-8b l'ont fait bouger), ventilation recomptée
       (`sitesTotal`, `sitesNonResolus`, `relais`, `sitesGabarit`, `litterauxMin`, `clesDepuisTsMin`) et
       écrite au Dev Agent Record.
-- [ ] **T4 — Les E2E** (AC6) : les trois contournements gardés, leur commentaire réécrit (le seed
+- [x] **T4 — Les E2E** (AC6) : les trois contournements gardés, leur commentaire réécrit (le seed
       `seed_accounting_company` ne désigne pas le compte créanciers) ; non-régression jugée sur la
       **suite E2E complète** de T7.
-- [ ] **T5 — Les tests** (AC7) : `kesh-db` (dont « même compte pour deux rôles » et « deux comptes
+- [x] **T5 — Les tests** (AC7) : `kesh-db` (dont « même compte pour deux rôles » et « deux comptes
       distincts », ordre des refus avec l'exercice, identifiant d'une autre société — sonde **et**
       refus `InactiveOrInvalidAccounts` (F6-5) —, les **trois**
       tests de place du verrou — deux vers l'exercice, un vers l'arrondi — et le **test de mode**
@@ -841,11 +841,11 @@ n'en dépend. D'où le découpage (choix C33).
       sondes `NOWAIT` jugées sur le code `1205`, doc-comment d'`attendre_une_requete_en_cours`
       réécrit — C88), `kesh-api` (`company_invoice_settings_postable_e2e.rs`, `inbox_import_e2e.rs`),
       Vitest (réglages, écran de validation) ; mutations consignées.
-- [ ] **T6 — Manuel, API, CHANGELOG** (AC8, AC9) ; PDF régénérés et contrôlés aplatis (ligatures
+- [x] **T6 — Manuel, API, CHANGELOG** (AC8, AC9) ; PDF régénérés et contrôlés aplatis (ligatures
       normalisées) ; **grep du symptôme** (règle *Propagation post-patch*) :
       `grep -rnE "reprend les comptes de la facture|sous-compte imputable|inverse exact|n'est pas exposé|aucun autre chemin ne prend de verrou|aucun cycle n'est|garde à l'usage des comptes de réglage viendra|n'envoie pas ce compte|Quatre cas|#429" docs/manual/fr/*.tex docs/api-external.md crates frontend/src CHANGELOG.md`
       — chaque occurrence est réécrite ou justifiée au Dev Agent Record.
-- [ ] **T7 — Gates** : gate complet backend (`scripts/test-fast.sh`, base remise à zéro avant) — **même
+- [x] **T7 — Gates** : gate complet backend (`scripts/test-fast.sh`, base remise à zéro avant) — **même
       en cours de boucle de revue**, la story touchant des repositories `kesh-db` ; gate frontend
       complet ; **E2E Playwright complet au dernier commit de code** (décision D7), jugé fichier par
       fichier contre `docs/testing.md` § « Les échecs attendus ».
@@ -1195,11 +1195,223 @@ reste est soumis au Project Lead.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), agent de développement, worktree `/home/gcorbaz/devel/kesh-15-5d`, branche
+`story/15-5d-garde-usage-comptes-reglage` partie d'`origin/main` `ec675288` (+ `c005b074`, planification). Cible cargo
+propre : `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-15-5d/target`. Bases dédiées : `kesh_155d` (gate, migrée et seedée),
+`kesh_e2e_155d` (E2E, migrée), remises à zéro par `DROP`/`CREATE` (jamais de redémarrage du conteneur).
+
 ### Debug Log References
+
+- Gate backend : `scratchpad/gate155d.log` ; Vitest : `scratchpad/vitest155d.log` ; E2E : `scratchpad/e2e155d/run1.log`
+  (répertoire de session de l'orchestrateur, non versionné) ; journaux de mutation : `scratchpad/mut155d/*.log`.
 
 ### Completion Notes List
 
+**T0 — relevés sur `HEAD` (`c005b074` : 15-5a, 15-5b, 15-5c, 15-5e1, 15-8a, 15-8b mergées).**
+
+- *15-5e1 en place* : rejeu `"invoices::validate"` (`routes/invoices.rs:880`) et `"supplier_invoices::create"`
+  (`routes/supplier_invoices.rs:363`) par `kesh_db::retry::retry_on_deadlock` ; `(2 bis)` (réglages) avant les comptes
+  de charge (`supplier_invoices.rs:369-375`) ; doc-comments canoniques `invoices.rs:1921-1970` et
+  `supplier_invoices.rs:249-291` ; « 5 bis » `invoice_settlements_write.rs:474-486`. **15-5e2 non mergée** (branche en
+  développement ailleurs) : la complétion d'import porte le verrou de l'accesseur sans être encore rejouée — fenêtre
+  annoncée par la fiche.
+- *Cases d'insertion* : vente, fin du bloc `let rounding` (`invoices.rs:2095-2105`), avant `(2 ter)` `:2107`,
+  `(2 quater)` `:2146` et `(3)` `:2204` ; achat, entre `(2, suite)` (`:377-425`) et `(3)` (`:427-430`). Aucun écart.
+- *Générateurs* : `invoices.rs:1789` (branche TVA `:1856`), `_rounded` `:1884` (transmission `:1891`), achat
+  `supplier_invoices.rs:105` (branche `:129`) ; appels de production `invoices.rs:2280`, `supplier_invoices.rs:439` ;
+  `credit_notes.rs:933` (test 16-1a) ; l'avoir a son générateur (`credit_notes.rs:187`, appelé `:507`, réglages
+  `:362`, `create_in_tx` `:548`). `grep … | grep -v "///"` : **25** occurrences, même ventilation (3 / 1 / 2 / 19).
+- *Lecteurs des quatre comptes* (`grep -rnE "default_(receivable|payable|vat_payable|vat_recoverable)_account_id"
+  crates/*/src`, hors module des réglages et tests) : `invoices.rs` (validation), `supplier_invoices.rs` (saisie),
+  `credit_notes.rs` (avoir, exempté — AC3), `vat_report.rs:174` (lecture seule), `exports/csv_tables.rs` (lecture
+  seule), commentaires de `post_restore.rs` et `errors.rs`. **Aucun lecteur qui écrive hors AC1/AC3.**
+- *E2E* : `grep -rn "defaultPayableAccountId == null" frontend/tests/e2e` → **3** sites (`payment-batches.spec.ts:59`,
+  `inbox-import.spec.ts:93`, `supplier-invoices.spec.ts:86`).
+- *(a bis) confirmé* : `payment_batches::confirm_batch` n'appelle `pay_in_tx` qu'en `SettlementChoice::BankTransfer`
+  (`payment_batches.rs:364`) ; l'acceptation par lot prend l'arrondi (`routes/reconciliation.rs:1535`) puis l'exercice
+  (`:1568`) ; aucun `FOR UPDATE` neuf sur un des quatre comptes après l'exercice
+  (`grep -rn "FROM accounts.*FOR UPDATE" crates/kesh-db/src/repositories` : seuls les `singleton_role` de
+  `insert_with_defaults`).
+- *`EXPLAIN` à la main* (base de gate peuplée de 1000 comptes sur deux sociétés, puis remise à zéro) :
+  `SELECT id, number, active, postable FROM accounts WHERE company_id = 1 AND id IN (2, 3) ORDER BY id LOCK IN SHARE MODE`
+  → **`range` sur `PRIMARY`**, *Using where*, aucun `filesort` ; un seul identifiant → **`const`**. Même plan sur la
+  base à cinq comptes. Lecture non verrouillante des identifiants : `range` sur `PRIMARY`.
+- *Mesures* (MariaDB **10.11.16**, deux sessions) : une sonde `SELECT … FOR UPDATE NOWAIT` contre une ligne tenue en
+  partagé rend **`ERROR 1205`** (*Lock wait timeout exceeded*) — confirmé ; un partagé sur `IN (8, 12)` (PRIMARY,
+  point par point) laisse **libres** les lignes 9 (autre société) et 10 (même société) entre les deux ; la forme
+  fautive `company_id = 1 AND id IN (8, 9)` (9 étranger) **verrouille** la ligne étrangère (`1205`) — d'où le patron
+  `owned_account_ids`. ⚠️ **Mesure neuve, qui contredit la lettre de l'AC7** : `SELECT id FROM accounts WHERE id IN
+  (…) LOCK IN SHARE MODE` passe par l'index secondaire couvrant `fk_accounts_parent` et **ne verrouille pas** la clé
+  primaire (sonde `FOR UPDATE NOWAIT` réussie) — voir test 4 ci-dessous et **C-15-5d-1**.
+- *Texte laissé par la 15-5b* : `user-manual.tex:382` — « Quatre cas échappent encore à ce contrôle […] (4)~un compte
+  \textbf{désigné dans les réglages de facturation} et devenu non imputable après sa désignation reste utilisé par
+  les écritures automatiques (validation d'une facture, avoir, facture fournisseur). Si vous scindez un tel compte, un
+  administrateur peut désigner à sa place l'un de ses sous-comptes, dans \emph{Paramètres} → \emph{Facturation}. » ;
+  `user-manual.tex:394` (note des comptes de clôture : « Les cas qui échappent encore au contrôle — un compte devenu
+  non imputable \emph{après} avoir été choisi — sont énumérés à la section «~Rôles des comptes~». ») ;
+  `admin-manual.tex:2027` — « un compte non imputable est refusé au moment où vous le désignez --- un compte déjà
+  désigné, devenu non imputable depuis, ne bloque pas l'enregistrement des autres réglages. » Le motif `Quatre cas`
+  du grep de T6 retrouve le premier ; **ajouté au grep** : `reste utilisé par les écritures automatiques`.
+- *Montage de `company_invoice_settings_postable_e2e.rs`* : `setup` (`:226-283`) — société nue, Admin, douze comptes,
+  `PUT` des réglages, jeton Admin forgé (`forge_admin_jwt`) ; ni exercice, ni contact, ni taux : non employé (AC7).
+
+**T1 — la garde.** `DesignatedRole` (4 variantes, `SALE` / `PURCHASE`, `designated_id` par `match` exhaustif,
+`candidate_ids`), `GeneratedLines { lines, roles }` (`#[derive(Debug)]`), `DesignatedAccountsSnapshot`,
+`lock_designated_accounts_in_tx` (lecture non verrouillante des identifiants de la société, puis `SELECT id, number,
+active, postable … ORDER BY id LOCK IN SHARE MODE` sur eux seuls) et `check_written` (absent ou inactif →
+`InactiveOrInvalidAccounts` ; sinon non imputables → `DesignatedAccountsNotPostable(NonPostableAccounts::new(…))`),
+dans `company_invoice_settings.rs`, en `pub(in crate::repositories)`. Générateurs adaptés (rôle de TVA inséré dans la
+branche `total_vat > 0`), 19 tests adaptés mécaniquement (`.lines`). Appels : `(2 bis', suite)` à la vente,
+`(2, désignés)` à l'achat, mêmes étiquettes au code et aux doc-comments canoniques ; contrôle entre la génération et
+`create_in_tx`. Variante `DbError::DesignatedAccountsNotPostable` (`ACCOUNT_NOT_POSTABLE`), bras HTTP 400 par
+`account_not_postable_response`, partagé avec la variante de la 15-5a (C-15-5d-3). *Refus de l'accesseur vérifié à la
+lecture* (tests « archivé » et « autre société », qui prouvent le résultat, non l'auteur) : `check_written` rend
+`InactiveOrInvalidAccounts` dès qu'un rôle écrit n'a pas de ligne dans l'instantané ou une ligne `active = FALSE`,
+**avant** `create_in_tx` — la lecture du code le confirme (`company_invoice_settings.rs`, `match self.0.iter().find(…)`,
+bras `_ => return Err(DbError::InactiveOrInvalidAccounts)`).
+
+**T2 — le message.** `error-designated-account-not-postable`, quatre locales, `[one]` / `*[other]`, inscrite à
+`SELECTEURS_RESOLUS_COTE_SERVEUR` ; test `designated_account_not_postable_resolves_singular_and_plural_in_every_locale`
+(singulier, pluriel, menu de chaque locale, « administrat/amministrat », texte FR exact au singulier et au pluriel).
+
+**T3 — les écrans.** Lecture des trois `catch` : `invoices/[id]/+page.svelte` (`confirmValidate`, `:373`) affiche
+`err.message`, branche propre à `CONFIGURATION_REQUIRED` (`:409`) que `ACCOUNT_NOT_POSTABLE` n'emprunte pas ;
+`ACCOUNT_NOT_POSTABLE` **ajouté** à la liste de fermeture (`:430-431` sur la base) — C46. `supplier-invoices/+page.svelte:213-214`
+(`if (isApiError(err)) formError = err.message`) et `supplier-invoices/import/+page.svelte:261`
+(`completeErrorLabel`, `default: return err.message` `:300`) : `err.message` tel quel, aucune branche ajoutée.
+Compte créanciers à l'écran : `<select>` `data-testid="settings-payable-account"` juste après la créance,
+`withCurrentAccount(liabilityAccounts, payableId, accounts)`, lu au chargement et à la relecture sur conflit, envoyé ;
+types `InvoiceSettingsResponse` / `UpdateInvoiceSettingsRequest` ; mock du test. Clé
+`settings-invoicing-payable-account` (quatre locales). **Borne `sitesTotal` : 1913 → 1915** (+2, `grep -o 'i18nMsg('`
+sur la page des réglages aux deux bornes : 47 → 49 ; la fiche facture reste à 93) ; `sitesNonResolus` 31, `relais` 6,
+`sitesGabarit` 10, `litterauxMin` 1050, `clesDepuisTsMin` 5 inchangés (le test passe avec ces valeurs).
+
+**T4 — E2E.** Les trois contournements gardés, leur commentaire réécrit (« le seed `with-company`
+(`seed_accounting_company`) ne désigne pas le compte créanciers »). Jugés sur la suite complète (T7) : les trois specs
+vertes (`supplier-invoices` 3/3, `payment-batches` 1/1, `inbox-import` 1 passé, 2 `skip` de conception).
+
+**T5 — les tests** (périmètre : de `ec675288` au commit de développement `43205b2c`).
+- `kesh-db`, `invoices_validate_vat.rs`, module `garde_usage_comptes_reglage` (**12** tests) : créance non imputable ;
+  TVA due avec / sans TVA / arrondie à zéro ; deux comptes distincts (`count = 2`) ; un compte pour deux rôles
+  (`len = 1`, un seul élément de `details.rejected`) ; ordre — compte de produit explicite (`InvalidRevenueAccounts`,
+  `NotPostable`), TVA due absente (`ConfigurationRequired`), exercice clos (`FiscalYearInvalid`) ; archivé
+  (`InactiveOrInvalidAccounts`) ; avoir exempté (C35) ; autre société (sonde + refus, C-15-5d-2) ; **test de place 1** ;
+  **test de mode 4**. Montage sous `disable_rounding_to_5_centimes`.
+- `kesh-db`, `supplier_invoices_repository.rs`, module `garde_usage_comptes_reglage` (**4**) : créanciers ; TVA
+  récupérable avec / sans TVA ; exercice clos ; **test de place 2**.
+- `kesh-db`, `invoice_amount_due_parity.rs` (**1**) : **test de place 3** (arrondi avant les comptes désignés).
+- `kesh-i18n` (**1**) ; `kesh-api` (**2**) : `company_invoice_settings_postable_e2e.rs` (validation par un Comptable,
+  `init_error_i18n` ajouté à `spawn_app`), `inbox_import_e2e.rs` (complétion : 400, staging `to_complete`, 0 facture).
+- Vitest (**5**) : `settings-invoicing-page.test.ts` (+3 : affichage d'un compte non imputable en place, envoi,
+  relecture sur conflit) ; `invoice-validate-page.test.ts` neuf (+2 : Comptable et Admin).
+- Total recompté : **20** tests Rust neufs (12 + 4 + 1 + 1 + 2 ; gate 2834 → 2854) et **5** Vitest (1086 → 1091).
+- Sondes `NOWAIT` jugées sur `1205` par `test_fixtures::sonde_verrou_nowait` (toute autre erreur panique) ;
+  doc-comment d'`attendre_une_requete_en_cours` réécrit (R6-2).
+
+**Mutations** (gate ciblé `test(garde_usage_comptes_reglage) | test(place_3)`, 17 tests ; fichier restauré par copie
+puis `touch` après chacune ; `git status` propre vérifié) — toutes **rouges** :
+
+| mutation | tests rouges |
+|---|---|
+| M1 rôle `Receivable` non inséré | créance ; deux comptes ; place 1 |
+| M2 rôle `VatPayable` non inséré | TVA due avec/sans ; deux comptes |
+| M3 rôle `Payable` non inséré | créanciers ; place 2 |
+| M4 rôle `VatRecoverable` non inséré | TVA récupérable |
+| M5 contrôle retiré (vente) | 5 tests de vente |
+| M6 contrôle retiré (achat) | 3 tests d'achat |
+| M7 verrou de vente après l'exercice | place 1 ; autre société |
+| M8 verrou d'achat après l'exercice | place 2 |
+| M9 verrou de vente avant l'arrondi | place 3 |
+| M10 accesseur en `FOR UPDATE` | **mode 4** (après correction C-15-5d-1 ; avant, il restait vert) ; places 1 et 2 (motifs) |
+| M11 accesseur sans verrou | places 1 et 2 ; autre société (témoin) |
+| M12 patron `owned_account_ids` retiré | autre société (sonde `1205`) — conforme à la mesure d'`opening_complement.rs` |
+| M13 `VatPayable` hors de la branche `total_vat > 0` | TVA due (cas « arrondie à zéro » et « sans TVA ») |
+| M14 `NonPostableAccounts::new` sans dédoublonnage | un compte pour deux rôles |
+
+Frontend : F1 (`ACCOUNT_NOT_POSTABLE` dans la branche `CONFIGURATION_REQUIRED`) → 2/2 rouges ; F2 (retiré de la
+fermeture) → 2/2 ; F3 (compte non envoyé) → 1 ; F4 (non relu sur conflit) → 1 ; F5 (sans `withCurrentAccount`) → 3.
+Comme écrit à l'AC7, les tests « archivé » et « autre société » (refus) ne sont **pas** attendus rouges sous la
+suppression de la branche « absent ou inactif » : `create_in_tx` rendrait le même refus.
+
+**T6 — manuel, API, CHANGELOG.** `user-manual.tex` : encadré *Rôles des comptes* (garde à l'usage, exceptions de
+l'avoir et du compte de produit par défaut, « Trois cas »), note des comptes de clôture (renvoi), § *Validation d'une
+facture* (paragraphe « Un compte des réglages devenu non imputable »), § *Saisir une facture fournisseur* (compte
+créanciers, TVA récupérable, refus ; `\label{sec:saisie-facture-fournisseur}`), § *Importer des factures* (renvoi) ;
+`admin-manual.tex` § *Configuration des comptes TVA* (blocage à l'usage) + paragraphe *Compte créanciers*. PDF
+régénérés (`make -C docs/manual fr`, 0 référence indéfinie), contrôlés aplatis (`pdftotext -nopgbrk | tr | sed` +
+ligatures et apostrophe typographique normalisées) : phrases neuves présentes (7 dans le manuel utilisateur, 3 dans
+l'administrateur), « Quatre cas », « reste utilisé par les écritures automatiques », « Si vous scindez un tel compte »
+absents ; valeur `Quatre` absente du `.tex`, `Trois cas` une fois. Brochure régénérée mais **non commitée** (source
+inchangée). `docs/api-external.md` : ligne `ACCOUNT_NOT_POSTABLE` du § 10 (validation, saisie, complétion) ; table du
+solde du reste « absent ou inutilisable — archivé, non imputable ». `CHANGELOG.md` `[0.13.0]` : rubrique **`### Ajouté`
+créée en tête** (compte créanciers) ; entrée #427/#429 (« Limites ») et entrée #521 (« n'envoyait pas ce compte … voir
+*Ajouté* ») réécrites ; entrée *Corrigé* neuve avec la ligne d'action. Commentaire « 5 bis » : une phrase. Doc-comments :
+accesseur (deux temps, pourquoi partagé, `owned_account_ids`, verrous d'intervalle, ce qui n'est pas contrôlé, L2
+révisée), `validate_invoice` (`(2 bis', suite)`, disjonction par type, « # Erreurs » : ordre des refus),
+`supplier_invoices::create_in_tx` (`(2, désignés)`, phrase des cycles complétée). **Grep du symptôme** (motifs de T6
++ `reste utilisé par les écritures automatiques`) : restent `user-manual.tex:1234` (« l'inverse exact », passage de
+l'avoir — non réécrit, #473/#525, **signalé**), des « inverse exact » sans rapport (`credit_notes.rs:611`,
+`supplier_invoice_scan_qr_e2e.rs:9`, migration `20260729000001`, `invoices/[id]/+page.svelte:954`), des
+« n'est pas exposé(e) » sans rapport (`reconciliation_rule.rs:105`, `test_fixtures.rs:44`, `reconciliation_e2e.rs:570`),
+« sous-compte imputable » d'un test de la 15-5b (`bank-accounts-page.test.ts:62`), et les mentions `#429`
+d'attribution (stories 15-5a, 15-5b, 15-5d) — toutes justes.
+
+**T7 — gates, au commit de code `43205b2c`** (dernier commit de code ; le commit suivant ne porte que la fiche, le
+registre et `sprint-status.yaml`) :
+- base `kesh_155d` remise à zéro (`DROP`/`CREATE`, migrations, seed), attente des gates des autres agents
+  (`wait-kesh.sh`), **`scripts/test-fast.sh`** (fmt + clippy `-D warnings` + nextest) : **2854 passés / 2854, 4
+  ignorés**, 125 s ;
+- frontend : `npm run check` 0 erreur (27 avertissements, aucun sur les fichiers touchés),
+  `lint-i18n-ownership` PASS, **`test:unit` 112 fichiers, 1091 / 1091**, `build` vert ;
+- **E2E complet** : backend `target/debug/kesh-api` (cible du worktree) sur le port **3006**, base `kesh_e2e_155d`,
+  secrets générés (`openssl rand`), `KESH_COOKIE_SECURE=false`, `KESH_STATIC_DIR=frontend/build` du worktree, SMTP
+  factices, répertoires inbox/documents de session ; runner `KESH_TEST_MODE=true`,
+  `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE=ubuntu24.04-x64` : **247 passés, 7 échecs, 19 `skip`** — les 7 sont exactement les
+  KF-029 de `docs/testing.md` (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150`) ; aucun échec hors liste. Backend arrêté après la suite.
+
+**Signalés, non traités** (AC3, AC4, AC8) :
+- le **type** d'un compte désigné n'est pas contrôlé à l'usage (angle mort préexistant ; le compte d'arrondi, lui, le
+  contrôle — `usable_designated_account`) : à aligner dans une autre story ;
+- `INVOICE_LINE_REVENUE_ACCOUNT_INVALID` ne ferme pas le dialogue de validation ;
+- le passage de l'avoir du manuel (`user-manual.tex:1234`, « l'inverse exact … la créance client, le produit et la TVA
+  due ») relève de #473 et #525 ;
+- hors périmètre, relevé au développement : le piège de l'index couvrant (C-15-5d-1) vaut pour toute bloqueuse de test
+  écrite `SELECT id … LOCK IN SHARE MODE` sur `accounts`.
+
+**Choix consignés** : C-15-5d-1 à C-15-5d-4 (`epic-15-choix-autonomes.md`).
+
 ### File List
+
+- `CHANGELOG.md`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/tests/company_invoice_settings_postable_e2e.rs`
+- `crates/kesh-api/tests/inbox_import_e2e.rs`
+- `crates/kesh-db/src/errors.rs`
+- `crates/kesh-db/src/repositories/company_invoice_settings.rs`
+- `crates/kesh-db/src/repositories/credit_notes.rs`
+- `crates/kesh-db/src/repositories/invoice_settlements_write.rs`
+- `crates/kesh-db/src/repositories/invoices.rs`
+- `crates/kesh-db/src/repositories/supplier_invoices.rs`
+- `crates/kesh-db/src/test_fixtures.rs`
+- `crates/kesh-db/tests/invoice_amount_due_parity.rs`
+- `crates/kesh-db/tests/invoices_validate_vat.rs`
+- `crates/kesh-db/tests/supplier_invoices_repository.rs`
+- `crates/kesh-i18n/locales/{de-CH,en-CH,fr-CH,it-CH}/messages.ftl`
+- `crates/kesh-i18n/src/loader.rs`
+- `docs/api-external.md`
+- `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/admin-manual.pdf`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
+- `frontend/src/lib/features/invoices/invoices.types.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/src/routes/(app)/invoices/[id]/+page.svelte`
+- `frontend/src/routes/(app)/invoices/[id]/invoice-validate-page.test.ts` (neuf)
+- `frontend/src/routes/(app)/settings/invoicing/+page.svelte`
+- `frontend/src/routes/(app)/settings/invoicing/settings-invoicing-page.test.ts`
+- `frontend/tests/e2e/{inbox-import,payment-batches,supplier-invoices}.spec.ts`
+- `_bmad-output/implementation-artifacts/15-5d-garde-usage-comptes-reglage.md`,
+  `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md`,
+  `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
@@ -1598,3 +1810,12 @@ reste est soumis au Project Lead.
   bloquée finit aussitôt et `interrompre` le détecte ; la sonde `NOWAIT` (1205) et le refus après commit complètent la
   preuve. **Validation CLOSE.** Trend : P1 4 MEDIUM → P2 1 HIGH / 3 MEDIUM → P3 2 MEDIUM → P4 ciblée 0 → alignement
   (C85) → P5 1 HIGH / 4 MEDIUM → P6 2 MEDIUM → P7 ciblée 0. Signaux D5 : C47, C88 (dérogation écrite).
+- **2026-10-08 — Développement (`bmad-dev-story`, Claude Opus 5.5)**, commit de code `43205b2c`. Garde à l'usage des
+  quatre comptes de réglage (accesseur en deux temps, verrou partagé aux places `(2 bis', suite)` et `(2, désignés)`,
+  contrôle des rôles écrits), variante `DesignatedAccountsNotPostable`, message à quatre locales, compte créanciers à
+  l'écran, dialogue de validation fermé sur `ACCOUNT_NOT_POSTABLE`, manuels, API, CHANGELOG. T0 : aucune mesure ne
+  contredit l'intention de la fiche ; une contredit **la lettre** du test 4 (bloqueuse `SELECT id … LOCK IN SHARE MODE`
+  servie par un index secondaire couvrant, qui ne verrouille pas la clé primaire — mutation `FOR UPDATE` restée verte),
+  corrigée au plus près de l'intention (C-15-5d-1). 20 tests Rust et 5 Vitest neufs ; 14 mutations backend et 5
+  frontend, toutes rouges. Gates au commit de code : backend 2854/2854 (4 ignorés), Vitest 1091/1091, E2E 247 passés /
+  7 KF-029. Choix C-15-5d-1 à C-15-5d-4. Statut → `review`.

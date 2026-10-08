@@ -2355,3 +2355,64 @@ l'import (#458–#461).
 - **Signalé à l'orchestrateur, hors périmètre** : le doc-comment d'`accounts::delete_all_by_company`
   (`accounts.rs:1063`) annonce « utilisé par reset_demo », ce qui est faux.
 - **Réversible** : oui (fiche seulement ; code non écrit).
+
+## C-15-5d-1 — 15-5d (dev) : la bloqueuse du test de mode lit `name`, et vérifie elle-même ce qu'elle tient
+
+- **Contexte** : l'AC7 (test 4) fait tenir à la bloqueuse la créance et la TVA due « en partagé » par
+  `SELECT id FROM accounts WHERE id IN (…) LOCK IN SHARE MODE`. Écrit ainsi, le test **passait sous la mutation
+  « accesseur en `FOR UPDATE` »** — celle qu'il existe pour attraper. Mesuré au développement (MariaDB 10.11.16, base
+  de gate à cinq comptes) : le plan de cette requête est `index` sur **`fk_accounts_parent`**, *Using index* — un
+  index secondaire couvrant —, et un verrou **partagé** posé par un index secondaire couvrant ne verrouille **pas**
+  la ligne de la clé primaire ; une sonde `FOR UPDATE NOWAIT` sur la créance réussit alors que la bloqueuse est
+  censée la tenir. La clé étrangère `fk_jel_account` et l'accesseur, eux, verrouillent la clé primaire.
+- **Retenu** : la bloqueuse lit `SELECT id, name …` (`name` n'est dans aucun index secondaire : plan `range` sur
+  `PRIMARY`), et le test **vérifie son propre montage** par deux sondes `NOWAIT` qui doivent échouer (`1205`) avant
+  de lancer la validation. Sous la mutation `FOR UPDATE`, le test rougit désormais (attente sur les comptes, panique
+  au bout de dix secondes). Commentaire écrit au test.
+- **Écartées** : `FORCE INDEX (PRIMARY)` (lie le test à un nom d'index et cache la raison) ; garder la requête de la
+  fiche (test vert à vide).
+- **Portée** : le même piège guette **tout** test qui simule un verrou partagé par `SELECT id … LOCK IN SHARE MODE`
+  sur `accounts` : à signaler à la revue (axe « bloqueuses des tests de verrou »). L'accesseur n'est pas concerné :
+  il lit `active` et `postable`, hors de tout index secondaire (`EXPLAIN` : `range`/`const` sur `PRIMARY`).
+- **Réversibilité** : totale (test seul).
+
+## C-15-5d-2 — 15-5d (dev) : le test « identifiant d'une autre société » passe par le vrai flux
+
+- **Contexte** : l'AC7 fait appeler l'accesseur de verrou par une connexion de test. L'accesseur est
+  `pub(in crate::repositories)` (même visibilité que les générateurs, F5-7) : un test d'intégration ne l'atteint pas.
+- **Retenu** : une bloqueuse tient l'exercice (`FOR UPDATE`) ; la **validation réelle** est lancée et vue en attente
+  sur l'exercice — donc passée l'accesseur, ses verrous posés ; la sonde `NOWAIT` sur la ligne étrangère doit
+  réussir, et une sonde témoin sur la créance doit échouer (`1205` : l'accesseur tient bien la créance). Puis la
+  bloqueuse annule et la validation rend `InactiveOrInvalidAccounts`, rien d'écrit. Mutation « patron
+  `owned_account_ids` retiré » : rouge.
+- **Écartées** : rendre l'accesseur `pub` pour le seul test (élargit une surface que C50/F5-7 ont voulue étroite).
+- **Réversibilité** : totale.
+
+## C-15-5d-3 — 15-5d (dev) : forme du contrôle, réponse HTTP commune, sonde partagée, test de l'avoir
+
+- **Contrôle** : le second temps est une méthode de l'instantané, `DesignatedAccountsSnapshot::check_written(roles,
+  settings)` ; la traduction rôle → identifiant est le `match` exhaustif de `DesignatedRole::designated_id` (C44), les
+  candidats `DesignatedRole::SALE` / `PURCHASE`. Un rôle écrit sans compte désigné (impossible : le générateur a
+  refusé `ConfigurationRequired`) rend `DbError::Invariant` plutôt qu'un `continue` muet.
+- **HTTP** : les bras `AccountsNotPostable` et `DesignatedAccountsNotPostable` partagent
+  `account_not_postable_response(key, fallback, accounts)` (`kesh-api/src/errors.rs`) — même code, même détail, seule
+  la clé du message diffère (règle DRY).
+- **Sonde** : `test_fixtures::sonde_verrou_nowait(pool, sql, id)` — `true` si la sonde réussit, `false` sur `1205`,
+  panique sur toute autre erreur ; partagée par les tests de vente et d'achat.
+- **Avoir** : le test « l'avoir est exempté » (C35) vit dans le module `garde_usage_comptes_reglage` de
+  `invoices_validate_vat.rs` (il en réutilise le montage), et non dans `credit_notes_repository.rs` comme la fiche
+  le prévoyait.
+- **Réversibilité** : totale.
+
+## C-15-5d-4 — 15-5d (dev) : le manuel passe de « quatre cas » à « trois », la garde à l'usage écrite à part
+
+- **Contexte** : l'AC8 réécrit le cas (4) de l'encadré *Rôles des comptes* (« un compte désigné … reste utilisé ») et
+  la phrase « Si vous scindez un tel compte … ».
+- **Retenu** : la garde à l'usage est écrite dans le **premier** paragraphe de l'encadré (où sont les contrôles), avec
+  ses deux exceptions (avoir, compte de produit par défaut) et le remède « un compte imputable — l'un de ses
+  sous-comptes, si vous l'avez scindé » ; l'énumération des cas qui échappent devient **« Trois cas »** (valeur
+  recomptée, `grep` du `.tex` et du PDF aplati). La note des comptes de clôture renvoie désormais à cette section pour
+  « le contrôle à l'usage … et les cas qui échappent encore » (sa phrase précédente ne disait plus tout). Le passage
+  de l'avoir (« l'inverse exact », `user-manual.tex:1234`) n'est pas réécrit (AC8 : #473, #525) ; la brochure n'est
+  pas commitée (régénérée par `make fr`, sans changement de source).
+- **Réversibilité** : totale (texte).
