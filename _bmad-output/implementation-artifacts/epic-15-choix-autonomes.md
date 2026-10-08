@@ -107,3 +107,111 @@ l'import (#458–#461).
 - **Écartée** : étendre la garde à la fiche article — sans écriture comptable propre, elle aurait
   ajouté une surface et une exemption pour rien.
 - **Réversible** : oui.
+
+## C7 — 15-5 : découpage en 15-5a et 15-5b
+
+- **Contexte** : la passe de validation P1 de la 15-5 (findings M5 et C-4) relève que la story touche
+  plus de cinq modules — `kesh-db`, `kesh-api` (erreurs et cinq modules de routes), `kesh-i18n`,
+  `frontend`, manuels — et que la fiche se dispensait de la règle de splitting préventif par l'argument
+  « les gardes sont mécaniques », qui n'est pas une dérogation codifiée (la seule : les cycles Cargo).
+- **Retenu** : découper selon le patron « story-zéro qui pose le patron + rollout ».
+  **15-5a-refus-non-imputable** : variante `DbError::AccountsNotPostable`, code `ACCOUNT_NOT_POSTABLE`,
+  message (4 locales, pluriel), conversion de la saisie manuelle, de l'écriture d'ouverture et des trois
+  gardes de la 24-5, tests qui figeaient l'ancien code, ordre des causes, détail structuré, CHANGELOG ;
+  `refs #427 refs #429`. **15-5b-gardes-surfaces-neuves** : rapprochement, règles, réglages de
+  facturation, compte bancaire, écran des refus par lot, manuel ; `closes #427 #429 #492 #519`. La 15-5b
+  dépend de la 15-5a. La 15-5 passe `split`, corps vidé.
+- **Écartées** : garder la story unique avec une section « Dérogation » (l'argument n'est pas une
+  dérogation prévue) ; découper par surface (cinq stories pour une même garde).
+- **Conséquence** : la 15-5b reste au-dessus de cinq modules — c'est la nature d'un rollout, que la règle
+  prévoit de revoir fichier par fichier ; c'est le mode de revue demandé dans la fiche.
+- **Réversible** : oui, en refusionnant les fiches avant tout développement.
+
+## C8 — 15-5b : les refus par lot du rapprochement, lisibles
+
+- **Contexte** : findings B1/M2. `ReconciliationProposals.svelte:362` affiche `failed[]` en code brut ;
+  les refus neufs de la 15-5b (`ACCOUNT_NOT_POSTABLE`) s'y liraient tels quels. L'issue #492 décrit le
+  même défaut pour tous les codes.
+- **Retenu** : la 15-5b ajoute un libellé traduit par `errorCode` pour **tous** les codes de `failed[]`
+  (26 relevés), sur le patron `failedItemLabel` (clés littérales, repli avec le code brut) ; elle ferme
+  #492. La phrase « Aucun changement d'écran n'est requis » est supprimée.
+- **Écartées** : ne traduire que `ACCOUNT_NOT_POSTABLE` (un écran à moitié traduit, #492 resterait
+  ouvert pour le reste) ; assumer l'angle mort (le refus neuf serait illisible).
+- **Réversible** : oui.
+
+## C9 — 15-5b : la règle de rapprochement dont le compte n'est plus imputable
+
+- **Contexte** : findings C-2/M3. L'exemption « inchangé » du PATCH (C4) laissait un PATCH
+  `active:true` ressusciter une règle dont le compte est devenu non imputable ; la fiche ne disait pas
+  ce que l'utilisateur voit des règles déjà en base.
+- **Retenu** : une telle règle n'est plus proposée (AC5) ; son acceptation est refusée (AC4) ; sa
+  **réactivation** (`before.active = false`, `PATCH active:true`) est refusée en `ACCOUNT_NOT_POSTABLE`
+  même si le compte est inchangé ; une règle déjà active sur un tel compte reste en base, listée, éditable
+  et désactivable — **sans migration** ; le manuel le dit. Test dédié.
+- **Écartées** : une migration qui désactive ces règles (écrit des données pour un cas que l'écran gère,
+  et P7 imposerait un triage de rejeu) ; refuser tout PATCH d'une telle règle (on ne pourrait plus la
+  désactiver ni la renommer).
+- **Réversible** : oui, une condition dans `update_in_tx`.
+
+## C10 — 15-5b : où se place le contrôle « inchangé »
+
+- **Contexte** : findings B2/C-6. Lire la valeur en place **avant** la validation du compte, hors
+  transaction, aurait changé l'ordre des erreurs existant (un compte bancaire inconnu aurait rendu une
+  erreur de compte avant `BankAccountNotFound`) et lu une valeur possiblement périmée.
+- **Retenu** : pour le compte bancaire (PUT, PATCH), le contrôle de postabilité se fait **dans la
+  transaction**, dans le dépôt, sous le verrou `FOR UPDATE` que `update_for_company` et
+  `set_journal_account_id_for_company` posent déjà, sur la valeur en place qu'ils lisent ; l'ordre des
+  erreurs existant est conservé et le nouveau refus vient en dernier. Même principe pour la règle, dans
+  `reconciliation_rules::update_in_tx`, à côté du contrôle « si changé » du projet par défaut. L'ordre est
+  écrit dans les AC et testé.
+- **Écartée** : la lecture préalable dans le handler (proposée par la fiche d'origine).
+- **Réversible** : oui.
+
+## C11 — 15-5b : le manuel des règles d'affectation
+
+- **Contexte** : l'issue #519 (ouverte par l'orchestrateur, finding L5) constate que
+  `user-manual.tex` § *Règles d'affectation automatique* décrit un écran et un comportement inexistants
+  (écritures brouillon à l'import, option *auto-validate rules*).
+- **Retenu** : la 15-5b réécrit la section sur le comportement réel — elle touche ces règles, et le
+  manuel doit dire ce qu'elle change (C9) ; elle ferme #519.
+- **Écartée** : laisser #519 à une story documentaire séparée (la 15-5b aurait écrit une phrase juste au
+  milieu d'une section fausse).
+- **Réversible** : sans objet (documentation).
+
+## C12 — 15-5b : le compte lié reste visible dans le formulaire du compte bancaire
+
+- **Contexte** : finding C-7 (« à vérifier »). Vérifié au code de Svelte 5.55 (`bindings/select.js`) :
+  quand la valeur liée d'un `<select>` n'est dans aucune option, Svelte pose `selectedIndex = -1` —
+  champ vide — mais ne réécrit pas la variable ; le PUT renvoie donc l'identifiant en place et
+  l'exemption joue. Le défaut est d'affichage : le lien existe, le champ paraît vide (cas de #271).
+- **Retenu** : la 15-5b passe les deux `<select>` de `bank-accounts/+page.svelte` à `withCurrentAccount`,
+  comme `BankAccountJournalLinkForm.svelte` le fait déjà.
+- **Écartée** : écrire le fait et ne rien changer (l'exemption serait juste, l'écran trompeur).
+- **Réversible** : oui.
+
+## C13 — 15-5a/15-5b : la forme du détail et l'ordre des causes
+
+- **Contexte** : findings L2/B4 et M4. Le détail structuré du refus n'était pas fixé (la fiche demandait
+  `accountIds` dans `failed[]`, la variante porte des numéros, le 404 voisin porte `missingAccountIds`) ;
+  l'ordre entre « non imputable » et « mauvais type » n'était pas tranché.
+- **Retenu** : `details.accountNumbers` (numéros triés, dédupliqués) **partout** où
+  `ACCOUNT_NOT_POSTABLE` est émis — corps du 400 et `failed[].details`. Les numéros ne révèlent rien :
+  le refus n'est émis que pour un compte de la société, actif. Ordre : inconnu / autre société / archivé
+  / mauvais type d'abord (`InactiveOrInvalidAccounts` ou 404), non imputable ensuite ; sur une liste de
+  lignes, le refus le plus bloquant gagne et le refus non imputable nomme tous les comptes.
+- **Écartée** : des identifiants (`accountIds`) — l'utilisateur ne les voit nulle part.
+- **Réversible** : oui avant release ; après, la clé fait partie du contrat.
+
+## C14 — 15-5b : les refus de l'écran des règles ne doivent pas s'afficher « [object Object] »
+
+- **Contexte** : trouvé en refaisant l'axe « écrans » pendant la remédiation de P1. Le client d'API lève
+  un `ApiError` objet simple, pas une instance d'`Error` ; `RuleFormModal.svelte:104` et
+  `RulesList.svelte:64`, `:87` font `e instanceof Error ? e.message : String(e)` — le refus que la 15-5b
+  ajoute à la création, à la modification et à la réactivation d'une règle s'afficherait
+  « [object Object] ».
+- **Retenu** : la 15-5b passe ces trois `catch`, ainsi que trois de `ReconciliationProposals.svelte` et
+  celui de `reconciliation/rules/+page.svelte` (même motif, même module), au patron `isApiError` de
+  `ManualMatchModal.svelte`. Les sites hors module (`reports/+page.svelte:210`,
+  `settings/+page.svelte:236`, `:260`) sont signalés pour une issue, hors périmètre.
+- **Écartée** : corriger tous les sites du dépôt dans la 15-5b (hors de son module, et de son sujet).
+- **Réversible** : oui.
