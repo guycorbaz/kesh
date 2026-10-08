@@ -1,6 +1,6 @@
 # Story 15.8b : Supprimer une écriture tant que son exercice est ouvert, et l'historique sur la fiche
 
-Status: ready-for-dev
+Status: review
 
 <!-- Issue de la story 15-8, DÉCOUPÉE le 2026-10-08 après la validation P2 (choix C-15-8-17 de
      `epic-15-choix-autonomes.md`). Elle porte la SUPPRESSION, l'historique visible sur la fiche et le retrait
@@ -268,10 +268,10 @@ le bundle est chargé et la clé absente (le piège S1-C1 de la 24-4b).
 
 ## Tâches
 
-- [ ] **T0 — Branche et inventaire au sol** (AC 10, 12) : brancher sur `main` après le merge de la 15-8a ; revérifier
+- [x] **T0 — Branche et inventaire au sol** (AC 10, 12) : brancher sur `main` après le merge de la 15-8a ; revérifier
       les numéros de ligne cités ; exécuter les greps des Dev Notes et relever leur **sortie complète** au Dev Agent
       Record, triée ligne par ligne.
-- [ ] **T1 — `delete_in_tx`** (AC 1–5, 4-bis) : `enforce_immutability` → `enforce_ownership`, étape 3-ter = garde de
+- [x] **T1 — `delete_in_tx`** (AC 1–5, 4-bis) : `enforce_immutability` → `enforce_ownership`, étape 3-ter = garde de
       la 15-8a (`&mut **tx`) ; étape 2-bis neuve — `fy.start_date` au `SELECT` joint, `find_later_closed_in_tx` si
       `enforce_ownership` (C-15-8-22, C-15-8-29) ; tests de précédence de l'AC 4-bis et leurs deux mutations ; `actor_api_key_id` sur `delete_by_id` et `delete_in_tx`, audit par `for_actor` ; `invoices::unvalidate`
       passe `None` ; doc-comments de `delete_by_id` (`:924-949`) et `delete_in_tx` (`:967-1004`) **réécrits** (⛔ la
@@ -279,30 +279,30 @@ le bundle est chargé et la clé absente (le piège S1-C1 de la 24-4b).
       en-tête de module (`:1-40`, « corriger par contre-passation plutôt que par suppression ») revu ; appelants de test
       de `delete_in_tx` dans `mod tests` (`:2123`, `:2182`, helper `:2439`) mis à la nouvelle signature (finding F12) ;
       tests de concurrence (AC 5, dont l'exercice postérieur clos) et leurs mutations
-- [ ] **T2 — Retrait du gel** (AC 10) : `EntryIsPosted` et son doc, sa branche `kesh-api` et son commentaire
+- [x] **T2 — Retrait du gel** (AC 10) : `EntryIsPosted` et son doc, sa branche `kesh-api` et son commentaire
       (`:2986-2996`, ce qu'il en reste), la clé ×4, doc de `PeriodLocked`
-- [ ] **T3 — Route** (AC 1, 6, 8) : `api_key_id` passé au `DELETE` ; handler enveloppé dans `retry_with` ;
+- [x] **T3 — Route** (AC 1, 6, 8) : `api_key_id` passé au `DELETE` ; handler enveloppé dans `retry_with` ;
       doc-comment du `DELETE` (`:609-610`, « asymétrie volontaire avec UPDATE ») revu ; tests de clé d'API (AC 1),
       colonne `DELETE` de la table de correspondance (AC 8), paires de précédence au niveau de l'API (AC 4-bis)
-- [ ] **T4 — Écran** (AC 9, 10) : « Supprimer », confirmation, « Modifiée », « Historique », rôle Consultation ;
+- [x] **T4 — Écran** (AC 9, 10) : « Supprimer », confirmation, « Modifiée », « Historique », rôle Consultation ;
       doc-comment de `deleteJournalEntry` (`journal-entries.api.ts:67-71`) réécrit — il annonce encore le 409 du gel ; clés i18n ×4
       (liste fermée de D4) ; `i18n-keys.test.ts` (`ATTENDU.sitesTotal`) **avec sa ventilation** ;
       `e2e-selecteurs-traduits.test.ts` selon les sélecteurs réellement employés
-- [ ] **T5 — Playwright** (AC 9) — `tests/e2e/journal-entries.spec.ts`, parcours **depuis la fiche** remplaçant les
+- [x] **T5 — Playwright** (AC 9) — `tests/e2e/journal-entries.spec.ts`, parcours **depuis la fiche** remplaçant les
       specs de liste de suppression retirées par la 24-4b :
-  - [ ] « suppression avec confirmation » → `supprimer depuis la fiche : confirmation, retour à la liste, l'écriture a disparu`
-  - [ ] « annulation suppression » → `annuler la suppression : la fiche reste, l'écriture aussi`
-  - [ ] neufs : `après modification : « Modifiée » et « Historique », qui ouvre le journal d'audit filtré` ; `rôle
+  - [x] « suppression avec confirmation » → `supprimer depuis la fiche : confirmation, retour à la liste, l'écriture a disparu`
+  - [x] « annulation suppression » → `annuler la suppression : la fiche reste, l'écriture aussi`
+  - [x] neufs : `après modification : « Modifiée » et « Historique », qui ouvre le journal d'audit filtré` ; `rôle
         Consultation : ni Supprimer ni Historique` ; `écriture de facture : ni Modifier ni Supprimer, le motif est affiché`
         (étend la spec de la 15-8a)
-- [ ] **T6 — Tests qui changent de sens** (liste ci-dessous) : réécrits, **pas** supprimés en bloc ; chaque test retiré
+- [x] **T6 — Tests qui changent de sens** (liste ci-dessous) : réécrits, **pas** supprimés en bloc ; chaque test retiré
       nommé au Dev Agent Record avec son remplaçant
-- [ ] **T7 — Documentation** (AC 12) — cf. Dev Notes ; `make fr`, PDF commités, contrôle de l'AC 12 **sur les PDF
+- [x] **T7 — Documentation** (AC 12) — cf. Dev Notes ; `make fr`, PDF commités, contrôle de l'AC 12 **sur les PDF
       aplatis** (il fait foi) et sur `fr-CH/messages.ftl`, table des matières ; `README.md:29` (C-15-8-26)
-- [ ] **T8 — Gates** (⛔ complets — exception `kesh-db`)
-  - [ ] base remise à zéro (KF-039), `scripts/test-fast.sh` sous `mem-guard`
-  - [ ] `npm run check` · `lint-i18n-ownership` · `test:unit` · `build`
-  - [ ] suite Playwright **complète au dernier commit de code**, jugée fichier par fichier contre `docs/testing.md`
+- [x] **T8 — Gates** (⛔ complets — exception `kesh-db`)
+  - [x] base remise à zéro (KF-039), `scripts/test-fast.sh` sous `mem-guard`
+  - [x] `npm run check` · `lint-i18n-ownership` · `test:unit` · `build`
+  - [x] suite Playwright **complète au dernier commit de code**, jugée fichier par fichier contre `docs/testing.md`
         § « Les échecs attendus »
 
 ## Hors périmètre
@@ -424,11 +424,127 @@ archivés de `docs/`.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (agent de développement, autonomie complète — consignes de l'Epic 15).
+
 ### Debug Log References
+
+- ⛔ **Cible cargo** : la cible partagée `target/` mélangeait les worktrees (un `kesh-api` compilé contre le `kesh-db`
+  d'une autre branche, sans recompilation) — tous les gates ci-dessous ont tourné sur la cible **dédiée**
+  `target-158` (C-15-8b-2).
+- Gate ciblé (cible dédiée, base `kesh_158` remise à zéro) : `journal_entries_modification`,
+  `journal_entry_reversal_e2e`, `opening_balances_e2e`, `period_lock_e2e`, tests `journal_entries` et `invoices` de la
+  lib `kesh-db` — **209 passés, 0 échec**.
+- **Gate complet** (`scripts/test-fast.sh`, base `kesh_158` remise à zéro juste avant — DROP/CREATE, migrations,
+  seed) : fmt, clippy `-D warnings`, nextest — **2825 passés, 0 échec, 4 ignorés**.
+- Frontend : `npm run check` 0 erreur (27 avertissements, aucun dans les fichiers touchés) ; `lint-i18n-ownership`
+  PASS ; `test:unit` **1036 passés / 110 fichiers** ; `build` vert.
+- **E2E complet** (Playwright, backend `target-158` sur le port 3001, base `kesh_e2e_158` remise à zéro —
+  DROP/CREATE + migrations, sans seed SQL : le harnais sème par `/_test/seed` —, `KESH_COOKIE_SECURE=false`,
+  `KESH_TEST_MODE=true` des deux côtés, SMTP factice, inbox/documents dans `/tmp/kesh-e2e-158`), sur l'arbre du commit
+  de dev : **242 passés, 12 échecs, 19 ignorés**. Jugés fichier par fichier contre `docs/testing.md` § « Les échecs
+  attendus » : **8 attendus** (7 KF-029 — `mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`,
+  `:77`, `:150` — et `sidebar-navigation:75`, KF-046) ; **4 hors liste** — `accounts:54`, `auth:22`,
+  `bank-account-journal-link:86`, `bank-accounts-crud:76` (timeouts sur `#username` / `#coord-address`, profil
+  KF-053) — **4/4 verts rejoués seuls** : pollution. Aucune spec de `journal-entries.spec.ts` en échec (les trois
+  neuves et les deux étendues passent).
 
 ### Completion Notes List
 
+**T0 — inventaire.** Fait à la clôture de la validation (table « Décalages mesurés après la 15-8a », AC 10 refermée).
+Grep de l'AC 10 **après** la story, hors `_bmad-output/` : **6 lignes**, exactement la liste fermée — `CHANGELOG.md:15`
+et `:17` (section `[0.13.0]` : l'entrée de la 15-8a, puis celle de la suppression qui dit `ENTRY_IS_POSTED` retiré),
+`docs/api-external.md:221` (parenthèse historique du `PUT`) et `:259` (sa jumelle pour le `DELETE`, écrite par T7),
+`frontend/src/lib/shared/i18n-keys.test.ts:174` (paragraphe historique). Les 35 autres sites ont disparu.
+
+**T1 — `delete_in_tx`.** `enforce_immutability` → `enforce_ownership` ; étape 2-bis (`fy.start_date` au `SELECT`
+joint, `find_later_closed_in_tx` si `enforce_ownership`, **lu** avant l'étape 3, **rendu** après elle) ; étape 3-ter =
+`modification_guard` → `modification_refusal` ; `actor_api_key_id` et audit `for_actor` ; `unvalidate` passe `None,
+false`. Doc-comments de `delete_by_id`/`delete_in_tx` et en-tête de module réécrits (l'en-tête affirmait encore que
+supprimer la dernière écriture « fait réattribuer son numéro » — faux depuis la 25-2-c, corrigé). Tests d'ordre dans
+`mod tests` montés dans une transaction annulée (C-15-8b-3).
+
+**Mutations** (déclarées, toutes **tuées**, fichier restauré par `cp` puis `touch`, `cmp` identique à l'original) :
+
+| mutation | rougit |
+|---|---|
+| M1 — permuter 3-ter et 3-quater (garde après le verrou de période) | `la_garde_parle_avant_le_verrou_de_periode`, `la_contre_passation_parle_avant_le_verrou_de_periode`, `the_precedence_of_the_delete_refusals_is_fixed` |
+| M2 — rendre le verdict de 2-bis avant l'étape 3 | `l_exercice_clos_parle_avant_l_exercice_posterieur`, `the_precedence_of_the_delete_refusals_is_fixed` |
+| M3 — lecture ordinaire (la borne) avant le `FOR UPDATE` | `delete_waits_for_a_concurrent_reversal_then_refuses` — A rend `ForeignKeyViolation` (1451 sur `fk_journal_entries_reverses`), exactement ce que l'AC 5 prédisait |
+| M4 — `find_later_closed` (lecture ordinaire) au lieu de `find_later_closed_in_tx` | `delete_waits_for_a_concurrent_close_of_a_later_year_then_refuses` |
+
+**T2 — retrait du gel.** `DbError::EntryIsPosted`, son bras de `code()`, son mappage `kesh-api` et son commentaire,
+la clé `journal-entries-blocked-posted` ×4 retirés ; doc de `PeriodLocked` reformulé. Clé
+`journal-entries-modify-blocked-detached-settlement` réécrite ×4 + repli Rust + repli TS (tournure sans motif de
+l'AC 12).
+
+**T3 — route.** `DELETE` enveloppé dans `retry_with` (`grep -nF "retry_with" crates/kesh-api/src/routes/journal_entries.rs`
+rend le `PUT` `:675` et le `DELETE`), `api_key_id` transmis, doc-comment réécrit. Pas de test de rejeu propre
+(C-15-8b-6).
+
+**T4 — écran.** « Supprimer » (absent quand `modifiable` est faux), confirmation `role="dialog"`, toast, retour à la
+liste, refus → toast + rechargement ; « Modifiée » (`version > 1`, tous rôles) et « Historique »
+(Administrateur/Comptable) — C-15-8b-4. Huit clés ×4 (liste fermée de D4). `sitesTotal` 1876 → 1885, ventilé (+9,
+`grep -o` aux deux bornes : 10 → 19). Aucun sélecteur traduit neuf (`e2e-selecteurs-traduits` vert sans changement).
+Doc-comment de `deleteJournalEntry` réécrit.
+
+**T5 — Playwright** (`journal-entries.spec.ts`, 21 → 24 tests) : neufs « supprimer depuis la fiche… », « annuler la
+suppression… », « après modification : « Modifiée » et « Historique »… » ; étendus et renommés « écriture de facture :
+ni Modifier ni Supprimer, le motif est affiché » et « rôle Consultation : ni Modifier, ni Contre-passer, ni Supprimer,
+ni Historique ».
+
+**T6 — tests qui changent de sens** (aucun supprimé sans remplaçant) :
+
+| retiré / changé | remplaçant |
+|---|---|
+| `deleting_a_posted_entry_is_refused` | `deleting_a_manual_entry_removes_it_traces_it_and_never_reuses_its_number` (AC 1) |
+| `a_reversed_entry_answers_reversed_not_posted` | `a_reversed_entry_answers_reversed_on_put_and_delete` |
+| `a_closed_fiscal_year_answers_before_both_conflicts` | `a_closed_fiscal_year_answers_before_any_conflict` (exercice clos + contre-passée, + pièce ; `PUT` et `DELETE`) |
+| `the_opening_entry_is_modifiable_and_still_reversable` | `the_opening_entry_is_modifiable_reversable_and_deletable` (moitié `DELETE` inversée, 204) |
+| `each_screen_code_maps_to_its_put_refusal` | `each_screen_code_maps_to_its_put_and_delete_refusal` (colonne `DELETE`, AC 8 ; `modifiable` → 204) |
+| `an_entry_of_a_closed_year_stays_correctable` | inchangé de nom, `DELETE` → 400 ajouté |
+| `le_gel_parle_avant_le_verrou_de_periode` (`mod tests`) | `la_garde_parle_avant_le_verrou_de_periode` + `la_route_refuse_une_ecriture_manuelle_de_periode_verrouillee` |
+| `deleting_a_reversed_entry_is_refused_but_bulk_delete_still_works` | **reste** |
+
+Neufs : `a_read_write_key_deletes_and_is_traced_as_the_key` (AC 1), `every_document_owned_entry_refuses_the_delete_and_stays_intact`
+(AC 2, 4 — transaction bancaire assertée intacte), `period_lock_closed_year_and_later_year_refuse_the_delete` (AC 4),
+`the_precedence_of_the_delete_refusals_is_fixed` (AC 4-bis), deux tests de concurrence (AC 5), deux tests de soldes de
+départ (AC 7, C-15-8b-5), sept tests d'ordre et `la_devalidation_ne_voit_pas_l_exercice_posterieur` en `mod tests`.
+**Décompte** (`grep -c '#\[sqlx::test\|#\[tokio::test\]'`, de `52a9b19b`/`42b13a62` au commit de dev) :
+`journal_entry_reversal_e2e.rs` 37 → 41, `opening_balances_e2e.rs` 29 → 31, `journal_entries_modification.rs` 5 → 7,
+`journal_entries.rs` (`mod tests`) 49 → 57 ; `journal-entries.spec.ts` 21 → 24.
+
+**T7 — documentation.** Manuel utilisateur (§ 7.4 renommée « Modifier ou supprimer une écriture » — table des matières
+vérifiée dans le PDF —, Supprimer, Modifiée/Historique, note de contre-passation « deux voies », Numérotation, clôture,
+soldes de départ : numéro 2 et compte déjà mouvementé ressaisi par OD, paiement détaché et FAQ par la tournure
+prescrite, FAQ « revenir en arrière ») ; manuel administrateur (`:1797` clé `read-write`, `:1836`, `:1838` « deux
+voies », `:1839` suppressions tracées) ; `docs/api-external.md` (section « Supprimer une écriture », 9 refus, tableau des
+routes, deux codes) ; Pattern 5 (ligne `DELETE`, deny list à deux entrées) ; `CHANGELOG.md` ; `README.md:29`. `make fr`
+— 0 « ?? ». **Contrôle AC 12 sur les PDF aplatis** : motif 15-8b → **0 / 0**, `.ftl` → **0** (ligne de base sur les
+PDF de `52a9b19b` : **2** côté utilisateur, **1** côté administrateur — les nombres 5/2 de la fiche datent d'avant la
+15-8a) ; motif de l'AC 17 de la 15-8a → **0 / 0 / 0**. Passage conservé, relu à la main : `user-manual.tex` « Quand
+l'écriture ne se modifie pas, elle ne se supprime pas non plus » (vrai, hors motif).
+
+**Hors périmètre, à signaler à l'orchestrateur** : l'audit par clé d'API de la dévalidation (`unvalidate` ne reçoit
+pas de clé) ; l'exercice postérieur clos non contrôlé sur la dévalidation (C-15-8-29, fixé par un test) — issue
+#543 ou neuve ; le mélange de la cible cargo partagée entre worktrees (C-15-8b-2).
+
 ### File List
+
+- `CHANGELOG.md`, `README.md`
+- `crates/kesh-api/src/errors.rs`, `crates/kesh-api/src/routes/journal_entries.rs`
+- `crates/kesh-api/tests/journal_entry_reversal_e2e.rs`, `crates/kesh-api/tests/opening_balances_e2e.rs`,
+  `crates/kesh-api/tests/period_lock_e2e.rs`
+- `crates/kesh-db/src/errors.rs`, `crates/kesh-db/src/repositories/invoices.rs`,
+  `crates/kesh-db/src/repositories/journal_entries.rs`, `crates/kesh-db/tests/journal_entries_modification.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`
+- `docs/MULTI-TENANT-SCOPING-PATTERNS.md`, `docs/api-external.md`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`, `docs/manual/fr/admin-manual.tex`,
+  `docs/manual/fr/admin-manual.pdf`
+- `frontend/src/lib/features/journal-entries/blocker-messages.ts`,
+  `frontend/src/lib/features/journal-entries/journal-entries.api.ts`, `frontend/src/lib/shared/i18n-keys.test.ts`,
+  `frontend/src/routes/(app)/journal-entries/[id]/+page.svelte`, `frontend/tests/e2e/journal-entries.spec.ts`
+- `_bmad-output/implementation-artifacts/15-8b-supprimer-une-ecriture.md`, `sprint-status.yaml`,
+  `epic-15-choix-autonomes.md` (C-15-8b-2 à C-15-8b-6)
 
 ### Change Log
 
@@ -437,3 +553,4 @@ archivés de `docs/`.
 | 2026-10-08 | **Créée par découpage** de la 15-8 après la validation P2 (choix C-15-8-17) ; spec, P1 et P2 au Change Log de l'index `15-8-modifier-une-ecriture.md`. Remédiations de la P2 propres à la suppression : motifs du test de concurrence `DELETE` (R2-8), rejeu sur interblocage du `DELETE` (F2, C-15-8-19), paiement détaché refusé au `DELETE` (F3, C-15-8-20), appelants de test de `delete_in_tx` (F12), sortie attendue du grep de l'AC 10 (R2-12), contrôle aplati élargi (R2-4, F5). **Recompte** (cette fiche) : 12 AC, 9 tâches (T0 à T8), 5 décisions (D1 à D5). |
 | 2026-10-08 | **Validation P3** (deux lentilles **Sonnet**, contexte frais, lecture seule ; prompt versionné `15-8b-validate-prompt-p3.md` ; rapports `target/gate-logs/15-8b-p3-{R,F}.md`). **R** : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 6 LOW ; **F** : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 8 LOW. Doublons : R3-1 = F2, R3-2 = F6, R3-3 = F8, R3-4 = F3 — soit **2 MEDIUM et 11 LOW distincts**. **Tout appliqué**, sur décisions de l'orchestrateur : **exercice postérieur clos** (F1, MEDIUM) — cadre, étape 2-bis de `delete_in_tx` (`fy.start_date`, `find_later_closed_in_tx` avant la première lecture ordinaire), seulement sur le chemin de la route (C-15-8-22, C-15-8-29) ; **précédence du `DELETE`** (R3-1, F2, MEDIUM) — AC 4-bis : paires de causes dont pièce + borne → 409 `OWNED_BY_INVOICE` et exercice clos + pièce → 400 `FISCAL_YEAR_CLOSED`, test d'ordre `la_garde_parle_avant_le_verrou_de_periode` à la place du test du gel, mutations « permuter 3-ter et 3-quater » et « permuter 2-bis et 3 » ; tests e2e qui changent de sens ajoutés (`:1317`/`:1331`, `:1341`). **LOW** : mutation de l'AC 5 décrite juste (A bute sur la clé `RESTRICT`, 1451 — R3-2, F6) ; choix applicables complétés (C-15-8-1, 5, 7, 13 ; renvois corrigés par C-15-8-24 — R3-3, F8) ; `README.md:29` édité par cette story seule, forme finale (R3-4, F3 — C-15-8-26) ; « T1 : le doc-comment le dit » (R3-5) ; motif de l'AC 12 complété (`ni modifiée ni supprimée`), contrôle sur les PDF aplatis, ligne de base mesurée 5 / 2 / 0 (R3-6 — C-15-8-27) ; inventaire des résidus d'`ENTRY_IS_POSTED` en liste fermée (F4) ; `MATCHED_BANK_TRANSACTION` (`ON DELETE SET NULL`) parmi les refus que seule la garde apporte, transaction bancaire assertée intacte (F5) ; D2 : « aucun cycle connu, rejeu par uniformité » (F7) ; tournure prescrite du paiement détaché, texte de sa clé sans motif (F9) ; compte déjà mouvementé non re-complétable, au manuel (F10) ; `test_fixtures.rs:585-588`. R3-7 (`unvalidate` sans clé d'API) : rien à corriger dans la fiche, **re-signalé à l'orchestrateur**. **Signal D5** : MEDIUM en P2 et P3 ; défauts distincts, aucun né d'une remédiation de cette fiche — pas de découpage (4 modules de premier niveau, F). **Propagation** : grep des symptômes dans les trois fiches 15-8 (`dix`, `fait passer A`, `les deux 409`, `et supprimables`, `583-586`, `coût nul`). **Recompte** (cette fiche, `grep`) : **13** critères (AC 1 à 12 et 4-bis), 9 tâches (T0 à T8), 5 décisions (D1 à D5). |
 | 2026-10-08 | **Validation close** (agent de développement, avant T0, sur `52a9b19b` — 15-8a mergée). Reste de la P4 ciblée (Haiku, `target/gate-logs/15-8b-p4-ciblee.md`) : **1 MEDIUM** (M1 — l'AC 10 se disait « liste fermée » et contenait un « à vérifier »). **Tranché au code** : `journal-entries.api.ts` porte **encore** `ENTRY_IS_POSTED` (`:70`, doc-comment de `deleteJournalEntry` posé par la 15-8a) — l'inversion ne l'a pas effacé ; il est **dedans**, à faire disparaître (T4 le réécrit). **Inventaire refait sur `HEAD`** : 38 lignes hors `_bmad-output/` ; deux sites **neufs** apportés par la 15-8a — `CHANGELOG.md:15` (son entrée, réécrite dans la même section) et `docs/api-external.md:221` (parenthèse historique, qui reste) ; `journal-entries.spec.ts:285` **sort** de la liste (bloc reformulé par la 15-8a). AC 10 réécrite en liste réellement fermée (3 qui restent, 35 qui disparaissent, nommés ligne à ligne) — C-15-8b-1. **Numéros de ligne** : table « Décalages mesurés après la 15-8a » ajoutée en tête des Dev Notes (les décalages vont jusqu'à +1021 lignes dans `journal_entry_reversal_e2e.rs`) ; `the_opening_entry_is_frozen_but_still_correctable` a été **renommé** par la 15-8a. AC 4 : le montage commun s'appelle `monter_les_pieces`. **`closes #532` → `refs #532`** : l'issue a été fermée par la 15-8a. Aucun CRITICAL/HIGH/MEDIUM ouvert : **validation close**. |
+| 2026-10-08 | **Développement** (`bmad-dev-story`, Opus 5.5, autonomie). T0–T8 faits : `DELETE` dans le cadre de la 15-8a (étape 2-bis, garde 3-ter, audit par acteur, `retry_with`), retrait du gel, écran (Supprimer, confirmation, « Modifiée », « Historique »), Playwright, documentation (manuels régénérés, contrôle AC 12 à 0 sur les PDF aplatis). Quatre mutations déclarées, quatre tuées. Gates : complet backend 2825/2825 ; frontend check/lint/1036 unitaires/build verts ; E2E 242 passés, 8 échecs attendus + 4 de pollution verts rejoués seuls. Choix C-15-8b-2 à C-15-8b-6. |

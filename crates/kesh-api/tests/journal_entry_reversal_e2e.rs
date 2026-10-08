@@ -16,8 +16,12 @@
 //! Story 15-8a (#532) : le `PUT` rouvert — modification nominale et tracée,
 //! clé d'API, refus de forme, contrôles de la saisie, période et exercices
 //! clos (dont un exercice postérieur), pièces et paiement détaché, précédence,
-//! et la table de correspondance entre motifs d'écran et refus d'écriture. Le
-//! `DELETE` reste gelé jusqu'à la 15-8b.
+//! et la table de correspondance entre motifs d'écran et refus d'écriture.
+//!
+//! Story 15-8b (#532) : le `DELETE` rouvert dans le même cadre — suppression
+//! nominale tracée, clé d'API, pièces (dont le rapprochement, intact), paiement
+//! détaché, exercices clos et postérieur, verrou de période, précédence, et la
+//! colonne `DELETE` de la table de correspondance.
 
 mod common;
 
@@ -1192,7 +1196,7 @@ async fn no_document_ever_points_at_a_reversed_entry(pool: MySqlPool) {
 }
 
 // ---------------------------------------------------------------------------
-// Story 15-8a (#532) — le `PUT` rouvert ; le `DELETE` reste gelé (15-8b)
+// Story 15-8a (#532) — le `PUT` rouvert ; Story 15-8b — le `DELETE` aussi
 // ---------------------------------------------------------------------------
 
 /// `PUT` sur une écriture, avec un corps brut.
@@ -2095,11 +2099,12 @@ async fn the_precedence_of_the_put_refusals_is_fixed(pool: MySqlPool) {
 
 /// AC 12 — **la table de correspondance**, écrite en dur : pour chacun des
 /// onze codes d'écran, un montage qui ne porte QUE cette cause ; le détail rend
-/// le code, et le `PUT` identique rend le refus associé. `ALREADY_REVERSED` ↔
+/// le code, et le `PUT` identique rend le refus associé — et (Story 15-8b, AC 8)
+/// le `DELETE` **le même**. `ALREADY_REVERSED` ↔
 /// `ENTRY_IS_REVERSED` est le seul écart de nom, voulu. Un compte archivé ou
 /// non imputable ne rend PAS l'écriture non modifiable.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn each_screen_code_maps_to_its_put_refusal(pool: MySqlPool) {
+async fn each_screen_code_maps_to_its_put_and_delete_refusal(pool: MySqlPool) {
     let (app, token, company_id, fy_id) = setup(&pool).await;
     let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
     let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
@@ -2176,6 +2181,12 @@ async fn each_screen_code_maps_to_its_put_refusal(pool: MySqlPool) {
             (*statut, Some(*put_code)),
             "{ecran}"
         );
+        let (status, body) = delete_entry(&app, &token, *id).await;
+        assert_eq!(
+            (status.as_u16(), body["error"]["code"].as_str()),
+            (*statut, Some(*put_code)),
+            "DELETE — {ecran}"
+        );
         vus.insert(ecran);
     }
     let e = detail(&app, &token, pieces[0].entry).await;
@@ -2192,6 +2203,12 @@ async fn each_screen_code_maps_to_its_put_refusal(pool: MySqlPool) {
     assert_eq!(
         (status.as_u16(), body["error"]["code"].as_str()),
         (400, Some("PERIOD_LOCKED"))
+    );
+    let (status, body) = delete_entry(&app, &token, verrouillee).await;
+    assert_eq!(
+        (status.as_u16(), body["error"]["code"].as_str()),
+        (400, Some("PERIOD_LOCKED")),
+        "DELETE — PERIOD_LOCKED"
     );
     vus.insert("PERIOD_LOCKED");
     poser_borne(&pool, company_id, None).await;
@@ -2213,6 +2230,8 @@ async fn each_screen_code_maps_to_its_put_refusal(pool: MySqlPool) {
     );
     let corps = corps_identique(&app, &token, libre).await;
     assert_eq!(put_json(&app, &token, libre, &corps).await.0, 200);
+    // `modifiable = true` → le DELETE rend 204.
+    assert_eq!(delete_entry(&app, &token, libre).await.0, 204);
 
     // Compte archivé / non imputable : modifiable reste VRAI, le PUT rend le 400.
     for (colonne, attendu) in [
@@ -2246,30 +2265,336 @@ async fn each_screen_code_maps_to_its_put_refusal(pool: MySqlPool) {
     }
 }
 
-/// AC 3 (24-4b) — le `DELETE` reste refusé jusqu'à la 15-8b, avec un message
-/// qui nomme désormais les DEUX chemins de correction.
+/// Story 15-8b (#532), AC 1 — **supprimer une écriture manuelle** : 204,
+/// l'écriture et ses lignes disparaissent, une trace `journal_entry.deleted`
+/// porte l'instantané complet (lignes comprises) et l'acteur ; la création
+/// suivante ne reprend **pas** le numéro (compteur de la 25-2-c).
+///
+/// ⛔ Avant la 15-8b, ce test s'appelait `deleting_a_posted_entry_is_refused`
+/// et prouvait le gel (un 409 inconditionnel) ; il est **inversé**, non supprimé.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn deleting_a_posted_entry_is_refused(pool: MySqlPool) {
+async fn deleting_a_manual_entry_removes_it_traces_it_and_never_reuses_its_number(pool: MySqlPool) {
+    let (app, token, company_id, fy_id) = setup(&pool).await;
+    let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
+    let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
+    let id = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
+    let numero: i64 = sqlx::query_scalar("SELECT entry_number FROM journal_entries WHERE id = ?")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    let (status, body) = delete_entry(&app, &token, id).await;
+    assert_eq!(status, 204, "{body}");
+
+    let (entetes, lignes): (i64, i64) = sqlx::query_as(
+        "SELECT (SELECT COUNT(*) FROM journal_entries WHERE id = ?), \
+                (SELECT COUNT(*) FROM journal_entry_lines WHERE entry_id = ?)",
+    )
+    .bind(id)
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        (entetes, lignes),
+        (0, 0),
+        "l'écriture et ses lignes ont disparu"
+    );
+
+    let (actor_type, details): (String, Option<Value>) = sqlx::query_as(
+        "SELECT actor_type, details_json FROM audit_log \
+         WHERE entity_type = 'journal_entry' AND entity_id = ? AND action = 'journal_entry.deleted'",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(actor_type, "user");
+    let details = details.expect("instantané");
+    assert_eq!(details["entryNumber"].as_i64(), Some(numero));
+    assert_eq!(
+        details["lines"].as_array().map(Vec::len),
+        Some(2),
+        "l'instantané porte les lignes : {details}"
+    );
+
+    let suivante = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
+    let suivant: i64 = sqlx::query_scalar("SELECT entry_number FROM journal_entries WHERE id = ?")
+        .bind(suivante)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(
+        suivant > numero,
+        "le numéro {numero} ne doit jamais être réattribué ; reçu {suivant}"
+    );
+}
+
+/// Story 15-8b, AC 1 · C-15-8-8 — une clé `read-write` supprime, et la trace
+/// porte **la clé** (`actor_type = 'api_key'`, `actor_api_key_id`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_read_write_key_deletes_and_is_traced_as_the_key(pool: MySqlPool) {
     let (app, token, company_id, fy_id) = setup(&pool).await;
     let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
     let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
     let id = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
 
-    let (status, body) = delete_entry(&app, &token, id).await;
-    assert_eq!(status, 409);
-    assert_eq!(body["error"]["code"].as_str(), Some("ENTRY_IS_POSTED"));
-    let message = body["error"]["message"].as_str().unwrap_or_default();
-    assert!(
-        message.contains("modifiez-la") && message.contains("contre-passez-la"),
-        "le refus doit nommer la modification et la contre-passation : {message}"
-    );
-
-    let reste: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE id = ?")
-        .bind(id)
-        .fetch_one(&pool)
+    let resp = app
+        .client
+        .post(app.url("/api/v1/settings/api-keys"))
+        .bearer_auth(&token)
+        .json(&json!({ "name": "integration-15-8b", "scope": "read-write" }))
+        .send()
         .await
         .unwrap();
-    assert_eq!(reste, 1, "l'écriture doit toujours être là");
+    assert_eq!(resp.status(), 201, "création de clé");
+    let cle = resp.json::<Value>().await.unwrap()["key"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let key_id: i64 =
+        sqlx::query_scalar("SELECT id FROM api_keys WHERE name = 'integration-15-8b'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    let (status, body) = delete_entry(&app, &cle, id).await;
+    assert_eq!(status, 204, "{body}");
+
+    let (actor_type, actor_key): (String, Option<i64>) = sqlx::query_as(
+        "SELECT actor_type, actor_api_key_id FROM audit_log \
+         WHERE entity_id = ? AND action = 'journal_entry.deleted'",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(actor_type, "api_key");
+    assert_eq!(actor_key, Some(key_id));
+}
+
+/// Story 15-8b, AC 2 · AC 4 — **chaque pièce retient son écriture** : le
+/// `DELETE` rend 409 sous le code du motif, `details.documentId` = la pièce, et
+/// l'écriture reste, lignes et en-tête identiques. ⛔ **L'écriture rapprochée** :
+/// la clé `matched_entry_id` est en `ON DELETE SET NULL` — sans la garde, la
+/// suppression réussirait et laisserait la transaction bancaire `reconciled`
+/// sans lien ; la ligne `bank_transactions` est donc assertée intacte. Une
+/// contre-passée rend `ENTRY_IS_REVERSED`, une contre-passation `IS_A_REVERSAL`
+/// (la clé `RESTRICT` ne protège que l'origine), le paiement détaché
+/// `DETACHED_SUPPLIER_SETTLEMENT` (aucune colonne ne le référence).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn every_document_owned_entry_refuses_the_delete_and_stays_intact(pool: MySqlPool) {
+    let (app, token, company_id, fy_id) = setup(&pool).await;
+    let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
+    let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
+    let pieces = monter_les_pieces(&pool, company_id, fy_id, d, c).await;
+
+    async fn transaction_bancaire(pool: &MySqlPool, id: i64) -> (Option<i64>, String) {
+        sqlx::query_as("SELECT matched_entry_id, status FROM bank_transactions WHERE id = ?")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+
+    for piece in &pieces {
+        let avant = (
+            header_of(&pool, piece.entry).await,
+            lines_of(&pool, piece.entry).await,
+        );
+        let banque_avant = if piece.code == "MATCHED_BANK_TRANSACTION" {
+            Some(transaction_bancaire(&pool, piece.document_id).await)
+        } else {
+            None
+        };
+        let (status, body) = delete_entry(&app, &token, piece.entry).await;
+        assert_eq!(status, 409, "{} — {body}", piece.quoi);
+        assert_eq!(body["error"]["code"], piece.code, "{}", piece.quoi);
+        assert_eq!(
+            body["error"]["details"]["documentId"].as_i64(),
+            Some(piece.document_id),
+            "{}",
+            piece.quoi
+        );
+        assert_eq!(
+            (
+                header_of(&pool, piece.entry).await,
+                lines_of(&pool, piece.entry).await
+            ),
+            avant,
+            "{} : rien ne bouge",
+            piece.quoi
+        );
+        if let Some(banque_avant) = banque_avant {
+            let banque_apres = transaction_bancaire(&pool, piece.document_id).await;
+            assert_eq!(
+                banque_apres, banque_avant,
+                "la transaction bancaire est intacte"
+            );
+            assert_eq!(banque_apres.0, Some(piece.entry));
+        }
+    }
+
+    // Contre-passée, et contre-passation.
+    let origin = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
+    let (_, created) = post_reverse(&app, &token, origin).await;
+    let reversal = created["id"].as_i64().unwrap();
+    let (status, body) = delete_entry(&app, &token, origin).await;
+    assert_eq!(
+        (status.as_u16(), body["error"]["code"].as_str()),
+        (409, Some("ENTRY_IS_REVERSED"))
+    );
+    let avant = (
+        header_of(&pool, reversal).await,
+        lines_of(&pool, reversal).await,
+    );
+    let (status, body) = delete_entry(&app, &token, reversal).await;
+    assert_eq!(
+        (status.as_u16(), body["error"]["code"].as_str()),
+        (409, Some("IS_A_REVERSAL"))
+    );
+    assert_eq!(
+        (
+            header_of(&pool, reversal).await,
+            lines_of(&pool, reversal).await
+        ),
+        avant
+    );
+
+    // Le paiement détaché d'une facture fournisseur annulée.
+    let paiement = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
+    let facture = detacher_un_paiement(&pool, company_id, fy_id, (d, c), paiement).await;
+    let (status, body) = delete_entry(&app, &token, paiement).await;
+    assert_eq!(status, 409, "{body}");
+    assert_eq!(body["error"]["code"], "DETACHED_SUPPLIER_SETTLEMENT");
+    assert_eq!(
+        body["error"]["details"]["documentId"].as_i64(),
+        Some(facture)
+    );
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap_or_default()
+            .contains("FF-DET-1"),
+        "{body}"
+    );
+}
+
+/// Story 15-8b, AC 4 — le verrou de période (seuil inclusif), l'exercice clos
+/// seul, et **l'exercice postérieur clos seul** (C-15-8-22) : 400 nommant N+1,
+/// puis 204 une fois N+1 rouvert. Après chaque refus, l'écriture est intacte.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn period_lock_closed_year_and_later_year_refuse_the_delete(pool: MySqlPool) {
+    let (app, token, company_id, fy_id) = setup(&pool).await;
+    let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
+    let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
+    let annee = annee_courante();
+    let date = NaiveDate::from_ymd_opt(annee, 6, 15).unwrap();
+    let id = make_entry_on(&pool, company_id, fy_id, d, c, date).await;
+    let avant = (header_of(&pool, id).await, lines_of(&pool, id).await);
+
+    // Date = borne (inclusif) → refus.
+    poser_borne(&pool, company_id, Some(date)).await;
+    let (status, body) = delete_entry(&app, &token, id).await;
+    poser_borne(&pool, company_id, None).await;
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(body["error"]["code"], "PERIOD_LOCKED");
+    assert_eq!(
+        (header_of(&pool, id).await, lines_of(&pool, id).await),
+        avant
+    );
+
+    // Exercice postérieur clos, seule cause → nommé ; rouvert → 204.
+    let n1 = exercice_de(&pool, company_id, annee + 1, "Closed").await;
+    let (status, body) = delete_entry(&app, &token, id).await;
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(body["error"]["code"], "LATER_FISCAL_YEAR_CLOSED");
+    assert_eq!(body["error"]["details"]["fiscalYearId"].as_i64(), Some(n1));
+    assert_eq!(
+        body["error"]["details"]["fiscalYearName"],
+        format!("Exercice {}", annee + 1)
+    );
+    assert_eq!(
+        (header_of(&pool, id).await, lines_of(&pool, id).await),
+        avant
+    );
+
+    // Exercice clos, seule cause (le postérieur rouvert).
+    set_status(&pool, n1, "Open").await;
+    set_status(&pool, fy_id, "Closed").await;
+    let (status, body) = delete_entry(&app, &token, id).await;
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(body["error"]["code"], "FISCAL_YEAR_CLOSED");
+    assert_eq!(
+        (header_of(&pool, id).await, lines_of(&pool, id).await),
+        avant
+    );
+
+    // Tout rouvert : la suppression passe.
+    set_status(&pool, fy_id, "Open").await;
+    let (status, body) = delete_entry(&app, &token, id).await;
+    assert_eq!(status, 204, "rouverts, le même DELETE passe : {body}");
+}
+
+/// Story 15-8b, AC 4-bis — **la précédence du `DELETE`**, chaque paire montée
+/// avec ses DEUX causes (le pendant de `the_precedence_of_the_put_refusals_is_fixed`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_precedence_of_the_delete_refusals_is_fixed(pool: MySqlPool) {
+    let (app, token, company_id, fy_id) = setup(&pool).await;
+    let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
+    let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
+    let pieces = monter_les_pieces(&pool, company_id, fy_id, d, c).await;
+    let doc = pieces[0].entry; // facture client
+    let reversed = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
+    let (s, created) = post_reverse(&app, &token, reversed).await;
+    assert_eq!(s, 201);
+    let reversal = created["id"].as_i64().unwrap();
+    let plain = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
+
+    async fn code(app: &TestApp, token: &str, id: i64) -> (u16, String) {
+        let (status, body) = delete_entry(app, token, id).await;
+        (
+            status.as_u16(),
+            body["error"]["code"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+        )
+    }
+
+    // Pièce + période verrouillée → code de la pièce ; contre-passation +
+    // période verrouillée → IS_A_REVERSAL.
+    poser_borne(&pool, company_id, Some(Utc::now().date_naive())).await;
+    let piece_sous_borne = code(&app, &token, doc).await;
+    let contre_passation_sous_borne = code(&app, &token, reversal).await;
+    poser_borne(&pool, company_id, None).await;
+    assert_eq!(piece_sous_borne, (409, "OWNED_BY_INVOICE".into()));
+    assert_eq!(contre_passation_sous_borne, (409, "IS_A_REVERSAL".into()));
+
+    // Exercice postérieur clos + contre-passée, + pièce → LATER.
+    let later = exercice_de(&pool, company_id, annee_courante() + 1, "Closed").await;
+    for id in [reversed, doc] {
+        assert_eq!(
+            code(&app, &token, id).await,
+            (400, "LATER_FISCAL_YEAR_CLOSED".into())
+        );
+    }
+    // Exercice clos + exercice postérieur clos → FISCAL_YEAR_CLOSED.
+    set_status(&pool, fy_id, "Closed").await;
+    assert_eq!(
+        code(&app, &token, plain).await,
+        (400, "FISCAL_YEAR_CLOSED".into())
+    );
+    // Exercice clos + pièce, exercice clos + contre-passée (postérieur rouvert)
+    // → FISCAL_YEAR_CLOSED.
+    set_status(&pool, later, "Open").await;
+    for id in [doc, reversed] {
+        assert_eq!(
+            code(&app, &token, id).await,
+            (400, "FISCAL_YEAR_CLOSED".into())
+        );
+    }
 }
 
 /// AC 2, 3 — un `id` inconnu **ou d'une autre société** rend 404, jamais 409.
@@ -2335,15 +2660,14 @@ async fn put_and_delete_never_leak_the_existence_of_a_foreign_entry(pool: MySqlP
     }
 }
 
-/// AC 5 — **la précédence**, testée en montant les DEUX causes à la fois.
+/// AC 5 (24-4b) · Story 15-8b, AC 4 — une écriture **contre-passée** répond
+/// `ENTRY_IS_REVERSED` au `PUT` **et** au `DELETE`, le code de la 24-4a.
 ///
-/// ⛔ C'est le point le plus facile à casser de la story. Si le gel s'exprimait
-/// avant `ENTRY_IS_REVERSED`, l'utilisateur lirait « corrigez-la par une
-/// contre-passation » **sur une écriture déjà contre-passée** — un conseil faux —
-/// et le code `ENTRY_IS_REVERSED` deviendrait injoignable par toute route, son
-/// test de la 24-4a passant au vert en mesurant autre chose.
+/// ⛔ Avant la 15-8b, ce test s'appelait `a_reversed_entry_answers_reversed_not_posted`
+/// et distinguait ce code de celui du gel ; le gel retiré, il ne restait rien à
+/// distinguer — il est **réécrit** pour tenir le code sur les deux verbes.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn a_reversed_entry_answers_reversed_not_posted(pool: MySqlPool) {
+async fn a_reversed_entry_answers_reversed_on_put_and_delete(pool: MySqlPool) {
     let (app, token, company_id, fy_id) = setup(&pool).await;
     let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
     let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
@@ -2351,26 +2675,38 @@ async fn a_reversed_entry_answers_reversed_not_posted(pool: MySqlPool) {
     let (created, _) = post_reverse(&app, &token, origin).await;
     assert_eq!(created, 201);
 
-    // Les deux causes sont vraies : l'écriture est comptabilisée ET contre-passée.
     let (status, body) = delete_entry(&app, &token, origin).await;
     assert_eq!(status, 409);
     assert_eq!(
         body["error"]["code"].as_str(),
         Some("ENTRY_IS_REVERSED"),
-        "c'est ENTRY_IS_REVERSED qui doit répondre, pas ENTRY_IS_POSTED"
+        "DELETE sur une écriture contre-passée : {body}"
+    );
+    let corps = corps_identique(&app, &token, origin).await;
+    let (status, body) = put_json(&app, &token, origin, &corps).await;
+    assert_eq!(status, 409);
+    assert_eq!(
+        body["error"]["code"].as_str(),
+        Some("ENTRY_IS_REVERSED"),
+        "PUT sur une écriture contre-passée : {body}"
     );
 }
 
-/// AC 6 — l'exercice clos précède les **deux** 409, y compris quand l'écriture
-/// est aussi déjà contre-passée.
+/// AC 6 (24-4b) · Story 15-8b, AC 4-bis — l'exercice clos précède **tout**
+/// conflit : écriture clos ET contre-passée, et écriture clos ET de pièce,
+/// `PUT` et `DELETE` → 400 `FISCAL_YEAR_CLOSED`.
 ///
 /// ⚠️ Le cas est atteignable : la 24-4a autorise de contre-passer une écriture
 /// d'un exercice clos, la contre-passation tombant dans l'exercice courant.
+/// ⛔ Avant la 15-8b, ce test s'appelait `a_closed_fiscal_year_answers_before_both_conflicts`
+/// (« les deux 409 ») ; l'un des deux n'existe plus.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn a_closed_fiscal_year_answers_before_both_conflicts(pool: MySqlPool) {
+async fn a_closed_fiscal_year_answers_before_any_conflict(pool: MySqlPool) {
     let (app, token, company_id, fy_id) = setup(&pool).await;
     let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
     let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
+    let pieces = monter_les_pieces(&pool, company_id, fy_id, d, c).await;
+    let doc = pieces[0].entry;
     let origin = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
     let (created, _) = post_reverse(&app, &token, origin).await;
     assert_eq!(created, 201);
@@ -2381,16 +2717,15 @@ async fn a_closed_fiscal_year_answers_before_both_conflicts(pool: MySqlPool) {
         .await
         .unwrap();
 
-    let (status, body) = delete_entry(&app, &token, origin).await;
-    assert_eq!(
-        status, 400,
-        "l'exercice clos précède les deux 409, or on a reçu : {body}"
-    );
-    // Story 15-8a (AC 7) — et le `PUT` de même : exercice clos ET contre-passée.
-    let corps = corps_identique(&app, &token, origin).await;
-    let (status, body) = put_json(&app, &token, origin, &corps).await;
-    assert_eq!(status, 400, "{body}");
-    assert_eq!(body["error"]["code"], "FISCAL_YEAR_CLOSED");
+    for (id, quoi) in [(origin, "contre-passée"), (doc, "de pièce")] {
+        let (status, body) = delete_entry(&app, &token, id).await;
+        assert_eq!(status, 400, "DELETE, exercice clos et {quoi} : {body}");
+        assert_eq!(body["error"]["code"], "FISCAL_YEAR_CLOSED");
+        let corps = corps_identique(&app, &token, id).await;
+        let (status, body) = put_json(&app, &token, id, &corps).await;
+        assert_eq!(status, 400, "PUT, exercice clos et {quoi} : {body}");
+        assert_eq!(body["error"]["code"], "FISCAL_YEAR_CLOSED");
+    }
 }
 
 /// AC 7 — Consultation reçoit 403 sur les deux verbes, **avant** tout refus
@@ -2410,13 +2745,15 @@ async fn consultation_can_neither_rewrite_nor_delete(pool: MySqlPool) {
 }
 
 /// AC 2 (15-8a) · I3 — **l'écriture d'ouverture se modifie** : débit et
-/// crédit inversés, c'est le cas déclencheur de #532. La suppression, elle,
-/// reste refusée jusqu'à la 15-8b ; la contre-passation reste offerte.
+/// crédit inversés, c'est le cas déclencheur de #532. La contre-passation reste
+/// offerte ; et — Story 15-8b, AC 7 — elle **se supprime** (le statut des soldes
+/// de départ et le numéro 2 sont tenus par `opening_balances_e2e.rs`).
 ///
 /// ⛔ Avant la 15-8a, ce test s'appelait `the_opening_entry_is_frozen_but_still_correctable`
-/// et prouvait le gel ; il est **inversé** pour le `PUT`, non supprimé.
+/// et prouvait le gel ; inversé pour le `PUT` par la 15-8a, puis pour le
+/// `DELETE` par la 15-8b — jamais supprimé.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn the_opening_entry_is_modifiable_and_still_reversable(pool: MySqlPool) {
+async fn the_opening_entry_is_modifiable_reversable_and_deletable(pool: MySqlPool) {
     let (app, token, company_id, fy_id) = setup(&pool).await;
     let d = make_account(&pool, company_id, "1020", AccountType::Asset).await;
     let c = make_account(&pool, company_id, "2800", AccountType::Liability).await;
@@ -2469,13 +2806,19 @@ async fn the_opening_entry_is_modifiable_and_still_reversable(pool: MySqlPool) {
         ]
     );
 
-    let (status, body) = delete_entry(&app, &token, ouverture).await;
-    assert_eq!(status, 409);
-    assert_eq!(body["error"]["code"].as_str(), Some("ENTRY_IS_POSTED"));
-
     // I4 — la porte de la contre-passation reste ouverte.
-    let (status, _) = post_reverse(&app, &token, ouverture).await;
-    assert_eq!(status, 201);
+    let ecran = detail(&app, &token, ouverture).await;
+    assert_eq!(ecran["reversable"], true, "{ecran}");
+
+    // Story 15-8b, AC 7 — et la suppression aboutit.
+    let (status, body) = delete_entry(&app, &token, ouverture).await;
+    assert_eq!(status, 204, "{body}");
+    let reste: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE id = ?")
+        .bind(ouverture)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(reste, 0);
 }
 
 /// I3 — une écriture d'un exercice **clos** reste contre-passable ; le `PUT` y
@@ -2548,6 +2891,10 @@ async fn an_entry_of_a_closed_year_stays_correctable(pool: MySqlPool) {
     // Story 15-8a — le `PUT` y est refusé (exercice clos)…
     let corps = corps_identique(&app, &token, ancienne).await;
     let (status, body) = put_json(&app, &token, ancienne, &corps).await;
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(body["error"]["code"], "FISCAL_YEAR_CLOSED");
+    // … Story 15-8b — le `DELETE` aussi …
+    let (status, body) = delete_entry(&app, &token, ancienne).await;
     assert_eq!(status, 400, "{body}");
     assert_eq!(body["error"]["code"], "FISCAL_YEAR_CLOSED");
 

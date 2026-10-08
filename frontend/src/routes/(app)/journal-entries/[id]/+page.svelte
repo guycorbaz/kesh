@@ -5,6 +5,7 @@
 	import { ArrowLeft } from '@lucide/svelte';
 	import Big from 'big.js';
 	import {
+		deleteJournalEntry,
 		getJournalEntry,
 		reverseJournalEntry
 	} from '$lib/features/journal-entries/journal-entries.api';
@@ -32,6 +33,9 @@
 	/** Story 24-4a (#380) — contre-passation. */
 	let showReverseConfirm = $state(false);
 	let reversing = $state(false);
+	/** Story 15-8b (#532) — suppression, dans le cadre de la modification. */
+	let showDeleteConfirm = $state(false);
+	let deleting = $state(false);
 	let accounts = $state<AccountResponse[]>([]);
 	let accountsLoadError = $state(false);
 	let accountsById = $derived(new Map(accounts.map((a) => [a.id, a])));
@@ -233,6 +237,30 @@
 		void loadEntry(id);
 	}
 
+	/**
+	 * Supprime l'écriture (Story 15-8b, #532), puis ramène à la liste. Un refus
+	 * — course perdue (409), exercice clos, période verrouillée — affiche le
+	 * message du serveur et relit la fiche : son motif d'écran dit pourquoi.
+	 */
+	async function confirmDelete() {
+		if (!entry || deleting) return;
+		deleting = true;
+		try {
+			await deleteJournalEntry(entry.id);
+			toast.success(i18nMsg('journal-entry-deleted', 'Écriture supprimée'));
+			showDeleteConfirm = false;
+			await goto('/journal-entries');
+		} catch (err) {
+			toast.error(
+				isApiError(err) ? err.message : i18nMsg('error-unexpected', 'Erreur inattendue.')
+			);
+			showDeleteConfirm = false;
+			void loadEntry(id);
+		} finally {
+			deleting = false;
+		}
+	}
+
 	async function confirmReverse() {
 		if (!entry || reversing) return;
 		reversing = true;
@@ -264,8 +292,9 @@
 	</Button>
 	<!-- ⛔ Les boutons sont ABSENTS, pas désactivés, quand le geste n'est pas
 	     possible : un bouton grisé n'explique rien. Le motif est affiché à leur
-	     place, traduit depuis le code rendu par le serveur. Rôle Consultation :
-	     ni l'un ni l'autre, sans motif (C-15-8-14). -->
+	     place, traduit depuis le code rendu par le serveur. « Supprimer » suit le
+	     même `modifiable` que « Modifier » : le cadre est le même (Story 15-8b).
+	     Rôle Consultation : aucun des trois, sans motif (C-15-8-14). -->
 	{#if entry && canWrite && !editing}
 		<div class="flex flex-col items-end gap-2">
 			<div class="flex gap-2">
@@ -277,6 +306,13 @@
 						onclick={startEdit}
 					>
 						{i18nMsg('journal-entry-edit', 'Modifier')}
+					</Button>
+					<Button
+						variant="outline"
+						data-testid="delete-entry"
+						onclick={() => (showDeleteConfirm = true)}
+					>
+						{i18nMsg('journal-entry-delete', 'Supprimer')}
 					</Button>
 				{/if}
 				{#if entry.reversable}
@@ -325,6 +361,28 @@
 	/>
 {:else if entry}
 	<h1 class="mb-4 text-2xl font-semibold text-text">Écriture n°{entry.entryNumber}</h1>
+
+	<!-- Story 15-8b (#532) — la correction doit rester apparente : « Modifiée »
+	     dès la première modification, et l'historique au journal d'audit
+	     (refusé au rôle Consultation, d'où le lien absent — C-15-8-14). -->
+	{#if entry.version > 1 || canWrite}
+		<p class="mb-4 flex gap-3 text-sm">
+			{#if entry.version > 1}
+				<span class="text-text-muted" data-testid="entry-modified">
+					{i18nMsg('journal-entry-modified', 'Modifiée')}
+				</span>
+			{/if}
+			{#if canWrite}
+				<a
+					class="underline"
+					data-testid="entry-history-link"
+					href="/audit-log?entityType=journal_entry&entityId={entry.id}"
+				>
+					{i18nMsg('journal-entry-history', 'Historique')}
+				</a>
+			{/if}
+		</p>
+	{/if}
 
 	<!-- Renvois croisés : la correction doit se VOIR depuis les deux bouts. -->
 	{#if entry.reversesEntryId}
@@ -433,6 +491,51 @@
 					disabled={reversing}
 				>
 					{i18nMsg('journal-entries-reverse-confirm', 'Contre-passer')}
+				</Button>
+			</div>
+		</div>
+	</div>
+{/if}
+
+<!-- Confirmation de suppression — Story 15-8b (#532). -->
+{#if showDeleteConfirm && entry}
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
+		role="dialog"
+		aria-modal="true"
+		aria-labelledby="delete-confirm-title"
+		aria-describedby="delete-confirm-desc"
+	>
+		<div class="bg-card border border-border rounded-lg p-6 max-w-md mx-4 shadow-lg">
+			<h2 id="delete-confirm-title" class="text-lg font-semibold mb-2">
+				{i18nMsg('journal-entry-delete-confirm-title', "Supprimer l'écriture n° { $number } ?", {
+					number: entry.entryNumber
+				})}
+			</h2>
+			<p id="delete-confirm-desc" class="text-sm text-text-muted mb-4">
+				{i18nMsg(
+					'journal-entry-delete-confirm-message',
+					"Son numéro ne sera pas réattribué : un trou restera dans la numérotation. La suppression sera inscrite au journal d'audit, avec le contenu complet de l'écriture."
+				)}
+			</p>
+			<div class="flex justify-end gap-2">
+				<Button
+					type="button"
+					variant="outline"
+					data-testid="delete-entry-cancel"
+					onclick={() => (showDeleteConfirm = false)}
+					disabled={deleting}
+				>
+					{i18nMsg('journal-entry-delete-confirm-cancel', 'Annuler')}
+				</Button>
+				<Button
+					type="button"
+					variant="destructive"
+					data-testid="delete-entry-confirm"
+					onclick={confirmDelete}
+					disabled={deleting}
+				>
+					{i18nMsg('journal-entry-delete-confirm-delete', 'Supprimer')}
 				</Button>
 			</div>
 		</div>

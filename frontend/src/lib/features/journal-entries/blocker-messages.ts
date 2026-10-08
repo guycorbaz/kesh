@@ -103,7 +103,7 @@ export function modificationBlockerLabel(
 		case 'DETACHED_SUPPLIER_SETTLEMENT':
 			return i18nMsg(
 				'journal-entries-modify-blocked-detached-settlement',
-				'Cette écriture est le paiement d’une facture fournisseur annulée : l’argent est sorti, elle ne se modifie pas. Corrigez-la par une contre-passation.'
+				'Ce paiement appartient à une facture fournisseur annulée : l’argent est sorti, il reste figé. Corrigez-le par une contre-passation.'
 			);
 		case 'IS_A_REVERSAL':
 		case 'ALREADY_REVERSED':

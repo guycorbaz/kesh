@@ -698,20 +698,52 @@ pub async fn update_journal_entry(
     Ok(Json(JournalEntryResponse::from(updated)))
 }
 
-/// DELETE /api/v1/journal-entries/{id} — supprime une écriture avec
-/// enregistrement audit atomique. Refusé si l'exercice est clos.
+/// DELETE /api/v1/journal-entries/{id} — supprime une écriture **dans le cadre
+/// de la modification** (Story 15-8b, #532) : exercice ouvert, aucun exercice
+/// postérieur clos, ni contre-passée ni contre-passation, aucune pièce, pas un
+/// paiement détaché, date postérieure à la borne du verrou de période. Réponse
+/// `204`. Les refus et leur ordre sont au doc-comment de
+/// [`journal_entries::delete_in_tx`] ; le mappage HTTP est le même qu'au `PUT`
+/// (même garde, mêmes codes).
+///
+/// La trace `journal_entry.deleted` porte l'instantané complet et l'acteur —
+/// la **clé d'API** quand c'est elle qui appelle (C-15-8-8). Le numéro de
+/// l'écriture n'est jamais réattribué.
+///
+/// ⛔ **Rejoué sur interblocage** (`retry_with`, C-15-8-19) — par uniformité
+/// avec le `PUT`, pas pour un cycle connu : l'ordre de verrous est écriture et
+/// exercice (jointure) → exercices postérieurs → contrôles des clés étrangères
+/// au `DELETE`, sans autre `INSERT` que l'audit. La transaction est rejouée
+/// entière ; l'interblocage l'a annulée sans rien écrire.
 pub async fn delete_journal_entry(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, AppError> {
+    use kesh_db::errors::DbError;
+    use kesh_db::retry::{DEFAULT_MAX_DEADLOCK_ATTEMPTS, is_deadlock_error, retry_with};
+
     let company = get_company_for(&current_user, &state.pool).await?;
 
-    // Propagation directe via `?` : `DbError::FiscalYearClosed` est mappé
-    // par le match exhaustif dans `errors.rs` vers 400 avec le message
-    // générique i18n (asymétrie volontaire avec UPDATE qui a la date de
-    // la requête, cf. story 3.3 §Décisions H3).
-    journal_entries::delete_by_id(&state.pool, company.id, id, current_user.user_id).await?;
+    retry_with(
+        "journal_entries::delete",
+        DEFAULT_MAX_DEADLOCK_ATTEMPTS,
+        |err: &DbError| is_deadlock_error(err),
+        || {
+            let pool = state.pool.clone();
+            async move {
+                journal_entries::delete_by_id(
+                    &pool,
+                    company.id,
+                    id,
+                    current_user.user_id,
+                    current_user.api_key_id,
+                )
+                .await
+            }
+        },
+    )
+    .await?;
 
     Ok(StatusCode::NO_CONTENT)
 }

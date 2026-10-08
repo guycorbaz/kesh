@@ -26,7 +26,7 @@
 
 ## Fonctionnalités
 
-- **Comptabilité en partie double** — plan comptable suisse, écritures validées, journal d'audit consultable à l'écran
+- **Comptabilité en partie double** — plan comptable suisse, écritures validées, modifiables et supprimables tant que l'exercice est ouvert, journal d'audit consultable à l'écran
 - **Carnet d'adresses & catalogue produits** — contacts, conditions de paiement, TVA
 - **Facturation QR Bill 2.2** — génération PDF conforme au standard suisse, **adresses structurées (type S)** conformes à l'exigence SIX en vigueur (rue / n° / NPA / localité séparés) ; le PDF émis est **figé** au premier téléchargement ou envoi, dans la langue du client, et rendu ensuite à l'identique ✓
 - **Ventilation du chiffre d'affaires par ligne de facture** — chaque ligne peut porter son propre **compte de produit** (honoraires, marchandises, prestations…), sélectionnable dans le formulaire ; une ligne laissée vide suit le compte par défaut de la société, affiché explicitement. L'écriture comptable ventile le crédit sur les bons comptes dès la validation, avoirs compris — compte de résultat exploitable sans reclassement manuel ✓

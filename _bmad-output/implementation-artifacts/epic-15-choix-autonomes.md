@@ -1782,3 +1782,67 @@ l'import (#458–#461).
 - **Écartées** : classer le `PUT` `ARejouer("15-5e2")` (faux : il est déjà rejoué, le volet (c) le confirme) ; rebase commit par commit (conflits d'ajout répétés sans valeur, précédent C-15-5c-4) ; ne pas rejouer la planification `597e4126..778513aa` (la fiche 15-5e1 et les prompts versionnés de ses validations P5–P7 manqueraient à main).
 - **Conséquence pour la 15-5e2** (à reporter dans sa fiche par l'orchestrateur) : il existe désormais **six** sites `retry_with` (`onboarding::finalize`, `opening_balances::complete`, `invoices::write_off`, `reconciliation::accept` et `reconciliation::cancel`, et le `PUT` des écritures) ; sa cible de registre devient **22 `Rejouee` / 4 / 89** et non 21 / 4 / 90, et le `PUT` est un site `retry_with` de plus à migrer vers une enveloppe (ou à justifier).
 - **Réversible** : oui (`backup/15-5e1-avant-integration`).
+## C-15-8b-2 — 15-8b (dev) : cible cargo DÉDIÉE au worktree, la cible partagée mélange les worktrees
+
+- **Contexte** : la consigne 8 prescrit `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh/target` (cible partagée). Sur ce
+  worktree, `cargo build -p kesh-api` a compilé `kesh-api` contre un `kesh-db` **d'une autre branche** (erreurs
+  « no `ModificationGuard` », signatures de `retry_with` différentes) sans recompiler `kesh-db` : cargo hache les
+  dépendances de chemin **relativement à la racine du workspace**, si bien que deux worktrees produisent les mêmes
+  artefacts et se les volent, le fingerprint pointant les sources de l'autre arbre. Les deux premiers `cargo build`
+  « verts » de cette story ne prouvaient donc rien.
+- **Retenu** : `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh/target-158` (le nom que le prompt prévoyait), compilation à
+  froid (3 min 19). Tous les gates déclarés ici ont tourné sur cette cible.
+- **Écartée** : continuer sur la cible partagée — résultats non attribuables à l'arbre testé.
+- **Réversible** : oui. ⚠️ **À signaler à l'orchestrateur** : tout agent d'un autre worktree sur la cible partagée est
+  exposé au même mélange — un gate vert peut y avoir testé le code d'une autre branche.
+
+## C-15-8b-3 — 15-8b (dev) : tests d'ordre de `mod tests` montés dans UNE transaction annulée
+
+- **Contexte** : AC 4-bis demande les paires de précédence aussi dans `mod tests`, qui travaillent sur la base
+  **partagée** (`test_pool`). Clore un exercice, poser une borne ou lier une facture à une écriture y laisserait un
+  résidu qui fait rougir le gate suivant (KF-039, cas b).
+- **Retenu** : helper `supprimer_avec(Causes)` — l'écriture est créée normalement, puis **toutes** les causes (facture
+  brouillon + contact, contre-passation par `reverse_in_tx`, exercice postérieur clos, exercice clos, borne) sont
+  posées **dans la transaction** passée à `delete_in_tx`, le résultat lu, puis la transaction **annulée**. La « facture »
+  est un brouillon inséré en SQL avec `journal_entry_id` (suffisant pour `reversal_blockers`). Sept tests d'ordre, plus
+  `la_route_refuse_une_ecriture_manuelle_de_periode_verrouillee` (cas séparé, AC 4-bis) et
+  `la_devalidation_ne_voit_pas_l_exercice_posterieur` (fige C-15-8-29 par écrit).
+- **Écartée** : monter via l'API (déjà fait au niveau HTTP, `the_precedence_of_the_delete_refusals_is_fixed`) ; poser
+  les causes par le pool puis nettoyer (un test qui rougit laisse le résidu).
+- **Réversible** : oui.
+
+## C-15-8b-4 — 15-8b (dev) : « Modifiée » visible à tous les rôles, « Historique » dès la création
+
+- **Contexte** : D4 dit « Modifiée » quand `version > 1`, et « Supprimer » et « Historique » absents au rôle
+  Consultation ; il ne dit ni si « Modifiée » l'est aussi, ni si le lien attend une modification.
+- **Retenu** : la mention « Modifiée » est affichée **à tous les rôles** (c'est un fait sur l'écriture, pas un geste) ;
+  le lien « Historique » est affiché **aux rôles Administrateur et Comptable, même avant toute modification** (la
+  création est déjà au journal d'audit, et une suppression future d'une autre écriture ne s'y voit pas autrement).
+- **Écartée** : lier le lien à `version > 1` — l'historique d'une écriture jamais modifiée existe (sa création).
+- **Réversible** : oui, une condition dans `[id]/+page.svelte`.
+
+## C-15-8b-5 — 15-8b (dev) : AC 7 testé dans `opening_balances_e2e.rs`, pas dans `journal_entry_reversal_e2e.rs`
+
+- **Contexte** : l'AC 7 asserte le statut `READY`, la génération sous le numéro 2 et `completableAccounts` après
+  suppression de l'ouverture. Les helpers de ces routes (`seed_ready`, `get_status`, `post_complete`) vivent dans
+  `opening_balances_e2e.rs`.
+- **Retenu** : deux tests neufs là (`deleting_the_only_opening_entry_reopens_the_generation_under_number_2`,
+  `deleting_the_opening_among_other_entries_makes_its_unmoved_accounts_completable`, ce dernier asserte aussi que la
+  banque mouvementée ailleurs n'est **pas** complétable — finding F10 — et que le complément se supprime en 204) ; le
+  test de la 15-8a `the_opening_entry_is_modifiable_and_still_reversable` est **renommé**
+  `the_opening_entry_is_modifiable_reversable_and_deletable` et sa moitié `DELETE` inversée (204). La « porte de la
+  contre-passation » y est désormais vérifiée par `reversable = true` au détail (contre-passer puis supprimer est
+  impossible : une écriture contre-passée ne se supprime pas).
+- **Réversible** : oui.
+
+## C-15-8b-6 — 15-8b (dev) : pas de test de rejeu d'interblocage propre au `DELETE`
+
+- **Contexte** : D2 enveloppe le `DELETE` dans `retry_with` « par uniformité, aucun cycle connu ». La 15-8a a un test
+  qui force le `PUT` à perdre un interblocage réel (`the_put_replays_a_deadlock_it_lost`), monté sur le cycle
+  projet ↔ exercice — que le `DELETE` ne prend pas (aucun projet verrouillé).
+- **Retenu** : l'AC 6 est tenue par le `grep -nF "retry_with"` (le `PUT` **et** le `DELETE`) et la ligne de Pattern 5 ;
+  pas de test de rejeu : sans cycle connu, il faudrait fabriquer un interblocage artificiel, qui prouverait le
+  montage plutôt que le handler.
+- **Écartée** : un test à interblocage fabriqué (deux transactions croisées sur l'écriture et l'exercice) — coûteux,
+  fragile, et la règle de choix de la victime d'InnoDB en déciderait.
+- **Réversible** : oui — à ajouter si un cycle est un jour identifié.

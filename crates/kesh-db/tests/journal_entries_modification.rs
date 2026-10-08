@@ -1,4 +1,5 @@
-//! Story 15-8a (#532) — la modification d'une écriture, côté base.
+//! Story 15-8a (#532) — la modification d'une écriture, côté base ; Story
+//! 15-8b — la suppression, pour la sérialisation (famille 2).
 //!
 //! Trois familles de tests, toutes sur le squash (`test-schema`), que
 //! `test_schema_guard.rs` prouve égal au schéma de `MIGRATOR` :
@@ -410,6 +411,107 @@ async fn update_waits_for_a_concurrent_close_of_a_later_year_then_refuses(pool: 
             .is_finished())
         .await,
         "le PUT doit attendre sur le verrou des exercices postérieurs"
+    );
+    b.commit().await.unwrap();
+
+    let result = a.await.unwrap();
+    match result {
+        Err(DbError::LaterFiscalYearClosed {
+            fiscal_year_id,
+            fiscal_year_name,
+        }) => {
+            assert_eq!(fiscal_year_id, suivant);
+            assert_eq!(fiscal_year_name, "Exercice 2027");
+        }
+        other => panic!("attendu LaterFiscalYearClosed, obtenu {other:?}"),
+    }
+    assert_eq!(
+        description_de(&pool, e.entry.id).await,
+        ("origine".to_string(), e.entry.version)
+    );
+}
+
+/// Story 15-8b (#532), AC 5 — le pendant `DELETE` : une contre-passation **en
+/// cours** ; la suppression l'attend sur le verrou joint de `delete_in_tx`
+/// (écriture **et** exercice), puis la voit et refuse — `EntryIsReversed`,
+/// écriture intacte.
+///
+/// ⚠️ Les motifs sont ceux du `SELECT` de `delete_in_tx`
+/// (`je.fiscal_year_id`, `FOR UPDATE`), pas ceux du `PUT` : ce `SELECT` ne
+/// contient pas `je.version`, et `attendre_une_requete_en_cours` paniquerait.
+///
+/// ⛔ **Tue** « une lecture ordinaire (la borne) avant le `FOR UPDATE` » : la
+/// vue se figerait avant le commit de B, `reversed_by` ne verrait pas la
+/// contre-passation, la garde non plus, et A ne rendrait plus `EntryIsReversed`
+/// — elle buterait sur la clé `RESTRICT` de `reverses_entry_id` (1451). Le test
+/// exige le **code**. ⚠️ Limite nommée : pour les motifs sans clé `RESTRICT`
+/// (paiement détaché, rapprochement en `SET NULL`), la propriété repose sur le
+/// même verrou et la même règle, sans test de concurrence propre.
+#[sqlx::test(migrations = "./test-schema")]
+async fn delete_waits_for_a_concurrent_reversal_then_refuses(pool: MySqlPool) {
+    let s = societe(&pool).await;
+    let e = ecriture(&pool, &s, s.fiscal_year_id, d(2026, 3, 1)).await;
+
+    let mut b = pool.begin().await.unwrap();
+    journal_entries::reverse_in_tx(&mut b, s.company_id, e.entry.id, s.admin_user_id)
+        .await
+        .expect("contre-passation de B");
+
+    let a = {
+        let pool = pool.clone();
+        let (cid, uid, id) = (s.company_id, s.admin_user_id, e.entry.id);
+        tokio::spawn(async move { journal_entries::delete_by_id(&pool, cid, id, uid, None).await })
+    };
+    assert!(
+        attendre_une_requete_en_cours(&pool, &["je.fiscal_year_id", "FOR UPDATE"], || a
+            .is_finished())
+        .await,
+        "le DELETE doit attendre sur le verrou de l'écriture"
+    );
+    b.commit().await.unwrap();
+
+    let result = a.await.unwrap();
+    assert!(
+        matches!(result, Err(DbError::EntryIsReversed)),
+        "attendu EntryIsReversed, obtenu {result:?}"
+    );
+    assert_eq!(
+        description_de(&pool, e.entry.id).await,
+        ("origine".to_string(), e.entry.version)
+    );
+}
+
+/// Story 15-8b, AC 5 · C-15-8-22 — la clôture **en cours** d'un exercice
+/// postérieur : la suppression l'attend sur le verrou d'intervalle des
+/// exercices postérieurs (étape 2-bis), puis la voit et refuse —
+/// `LaterFiscalYearClosed` nommant N+1, écriture intacte.
+///
+/// ⛔ **Tue** « lire les exercices postérieurs par une lecture ordinaire » : le
+/// `DELETE` ne bloquerait plus, lirait la vue d'avant le commit de B, et
+/// supprimerait une écriture que le bilan clos de N+1 reprend.
+#[sqlx::test(migrations = "./test-schema")]
+async fn delete_waits_for_a_concurrent_close_of_a_later_year_then_refuses(pool: MySqlPool) {
+    let s = societe(&pool).await;
+    let suivant = exercice(&pool, &s, "Exercice 2027", 2027, "Open").await;
+    let e = ecriture(&pool, &s, s.fiscal_year_id, d(2026, 3, 1)).await;
+
+    let mut b = pool.begin().await.unwrap();
+    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+        .bind(suivant)
+        .execute(&mut *b)
+        .await
+        .unwrap();
+
+    let a = {
+        let pool = pool.clone();
+        let (cid, uid, id) = (s.company_id, s.admin_user_id, e.entry.id);
+        tokio::spawn(async move { journal_entries::delete_by_id(&pool, cid, id, uid, None).await })
+    };
+    assert!(
+        attendre_une_requete_en_cours(&pool, &["ORDER BY start_date ASC", "FOR UPDATE"], || a
+            .is_finished())
+        .await,
+        "le DELETE doit attendre sur le verrou des exercices postérieurs"
     );
     b.commit().await.unwrap();
 

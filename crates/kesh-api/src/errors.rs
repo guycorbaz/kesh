@@ -2801,7 +2801,7 @@ impl IntoResponse for AppError {
                         }
                         ModificationGuard::DetachedSupplierSettlement { .. } => (
                             "journal-entries-modify-blocked-detached-settlement",
-                            "Cette écriture est le paiement d'une facture fournisseur annulée : l'argent est sorti, elle ne se modifie pas. Corrigez-la par une contre-passation.",
+                            "Ce paiement appartient à une facture fournisseur annulée : l'argent est sorti, il reste figé. Corrigez-le par une contre-passation.",
                         ),
                     };
                     entry_document_refusal_response(
@@ -3062,15 +3062,6 @@ impl IntoResponse for AppError {
                         "Cette écriture a été contre-passée : elle ne peut plus être modifiée ni supprimée.",
                     ),
                 ),
-                // ⛔ Story 24-4b (#380) — le gel. Depuis la Story 15-8a (#532),
-                // le PUT ne passe plus par lui : la modification a ses propres
-                // refus (exercice clos, exercice postérieur clos, garde
-                // d'écriture `EntryNotModifiable`, verrou de période). Seul le
-                // DELETE rend encore `ENTRY_IS_POSTED`, jusqu'à la Story 15-8b ;
-                // le message NOMME les deux chemins de correction.
-                //
-                // ⚠️ 409 et non 400 : c'est un conflit d'ÉTAT de la ressource,
-                // pas une donnée d'entrée invalide (asymétrie posée en 24-4a).
                 // ⛔ Story 24-4c (#380) — le verrou de période. **400 et non 409** :
                 // ce qui est invalide, c'est la DATE PROPOSÉE, pas l'état de la
                 // ressource visée (asymétrie figée par la 24-4a et suivie par la
@@ -3120,15 +3111,6 @@ impl IntoResponse for AppError {
                         &t_args("journal-entries-period-locked", &fallback, &args),
                     )
                 }
-                DbError::EntryIsPosted => build_response(
-                    StatusCode::CONFLICT,
-                    "ENTRY_IS_POSTED",
-                    &t(
-                        "journal-entries-blocked-posted",
-                        "Une écriture comptabilisée ne se supprime pas. Pour la corriger, \
-                         modifiez-la tant que son exercice est ouvert, ou contre-passez-la.",
-                    ),
-                ),
                 DbError::IllegalStateTransition(m) => {
                     tracing::warn!("illegal state: {m}");
                     build_response(
