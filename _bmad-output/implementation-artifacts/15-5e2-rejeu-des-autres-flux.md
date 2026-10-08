@@ -1,6 +1,6 @@
 # Story 15.5e2 : Rejeu sur interblocage des autres flux d'écriture — rollout, commentaires d'ordre, manuels
 
-Status: review
+Status: done
 
 <!-- Sous-story de la 15-5e (fiche index `15-5e-ordre-des-verrous-reglements.md`, statut `split`),
      créée le 2026-10-08 par le découpage décidé à la validation P3 de la 15-5e (finding F3-2, choix
@@ -1376,3 +1376,9 @@ i18n, aucun fichier `frontend`.
   point (iv) du registre ; issue d'amélioration à ouvrir). Choix **C-15-5e2-7**. Gates au commit
   `ee77f450` : backend 2837 / 2837, frontend 1086 / 1086, E2E 249 / 7 KF-029 / 17. Statut reste
   `review` jusqu'à la passe ciblée.
+- **2026-10-08 — Revue de code P2 ciblée (Haiku, une lentille, prompt `15-5e2-review-prompt-p2-ciblee.md`) sur
+  `ee77f450` : 0 finding.** Rapport : `target/gate-logs/15-5e2-review-p2-ciblee.md`. La lentille déclarant « aucun axe
+  non exercé » sans rien avoir exécuté, l'orchestrateur a repris le point le plus fragile : dans
+  `conclude_locked_attempt`, chaque branche d'erreur fait `rollback`, sauf `TransactionAborted` qui fait
+  `drop(tx_outer)` — rollback implicite, identique aux trois anciennes branches (`git show ee77f450^`). **Boucle de
+  revue CLOSE** (P1 Sonnet ×3 : 1 MEDIUM, 15 LOW → P2 ciblée Haiku : 0). Statut `done`.
