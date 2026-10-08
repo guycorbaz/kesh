@@ -65,7 +65,9 @@
 //!   resterait vert. Les tests 2 à 5 et 7 de `rejeu_interblocage_e2e.rs` le
 //!   prouvent dynamiquement pour leurs cinq routes, et
 //!   `accept_replays_the_batch_when_it_is_the_deadlock_victim`
-//!   (`reconciliation_e2e.rs`) pour `reconciliation::accept` ; pour
+//!   (`reconciliation_e2e.rs`) pour `reconciliation::accept`,
+//!   `the_put_replays_a_deadlock_it_lost` (`journal_entry_reversal_e2e.rs`,
+//!   15-8a) pour `journal_entries::update` ; pour
 //!   `invoices::write_off`, `reconciliation::cancel` et
 //!   `opening_balances::complete`, c'est la revue fichier par fichier.
 //! - **(iv)** — **angle mort assumé** — qu'une route `SansEcritureAuJournal` qui
