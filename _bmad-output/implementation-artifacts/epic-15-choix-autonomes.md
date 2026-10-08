@@ -2304,3 +2304,54 @@ l'import (#458–#461).
   PDF utilisateur régénéré (bruit binaire sans changement de texte) ; relancer la suite E2E entière (la règle
   du dépôt juge un rouge au rejeu isolé, et les six passent).
 - **Réversible** : oui (sauvegarde `backup/15-11a-pre-rebase-2` sur `7d0fd45b`).
+
+## C88 — 15-5d : remédiation de la validation P6 — cycles (a bis) examinés, dérogation écrite au découpage (signal D5 de la P5), `owned_account_ids` adopté d'emblée (tranche C51), montage et sondes des tests
+
+- **Contexte** : validation P6 de la 15-5d (Sonnet ×2 ; `target/gate-logs/15-5d-p6-{R,F}.md`) :
+  R 0 MEDIUM / 5 LOW, F 2 MEDIUM / 3 LOW — 2 MEDIUM, 8 LOW distincts, aucun né de la remédiation C87.
+  **F6-1** : la fiche renvoyait au développeur, comme « non examinés », le lot pain.001 et
+  l'acceptation par lot du rapprochement, qui se tranchent à la lecture. **F6-2** : le critère D5
+  (recyclage) n'était pas appliqué à la lettre au HIGH F5-1 de la P5 — le constat « traité
+  localement » décrivait l'étendue du correctif, non la nature du défaut. Décisions de
+  l'orchestrateur, appliquées par l'agent de remédiation. Les entrées antérieures (C51, C87) ne sont
+  pas réécrites.
+- **Retenu** :
+  1. **Cycle (a bis)** aux Dev Notes : lot pain.001 (`confirm_batch` → `pay_in_tx` en
+     `BankTransfer` seul : facture, `bank_accounts`, exercice, jamais de `FOR UPDATE` sur les comptes
+     désignés) et acceptation par lot (exercice tenu, créance en partagé par `fk_jel_account` ; seul
+     exclusif après l'exercice : le compte d'arrondi, cycle préexistant couvert par #536 / 15-5e2) —
+     classe (a), aucun cycle neuf ; T0 **confirme**. **Remplacement du plan et désarchivage** relus au
+     code (axe non exercé de la lentille R) : la plage `accounts.rs:1070-1216` est
+     `delete_all_by_company`, **sans appelant**, suivie des tests ; `reset_demo` supprime en
+     autocommit (aucun verrou tenu entre deux instructions) ; le chargement d'un plan n'écrit que des
+     `INSERT` sur une société sans réglages ; `reactivate` ne verrouille rien avant son `UPDATE` —
+     ni chemin de défaut, ni cycle (un attendeur qui ne tient rien n'est maillon d'aucun cycle).
+  2. **Dérogation règle de splitting** (section neuve de la fiche) : signal D5 écrit tel qu'il est
+     (F5-1 né de C43 ; thème « ordre des verrous » en P2, P3, P5) ; la seule coupe disponible —
+     AC5/AC6, l'écran du compte créanciers et les contournements E2E — ne porte pas l'axe recyclé, qui
+     est au cœur de la garde : découper ne traiterait pas la cause. Risque accepté ; P6 dernière passe
+     complète, P7 ciblée ; si une passe ciblée trouve encore un défaut de verrou né d'une remédiation,
+     la coupe AC5/AC6 s'applique sans nouvelle délibération.
+  3. **`owned_account_ids` adopté d'emblée** (R6-5) : lecture non verrouillante des identifiants de
+     la société dans la transaction, puis verrou partagé sur eux seuls — tranche ce que C51 laissait
+     au résultat du test ; le test « autre société » reste, mutation « patron retiré » ajoutée ; il
+     asserte aussi le refus `InactiveOrInvalidAccounts` (F6-5), avec la limite du test « archivé »
+     écrite (résultat, non auteur).
+  4. **Montage** (R6-1) : tous les tests de vente sauf le test 3 sous `disable_rounding_to_5_centimes`
+     — choisi plutôt qu'un TTC multiple de 0.05, que le test « TVA arrondie à zéro » ne peut pas tenir ;
+     achat sans objet (aucune étape d'arrondi).
+  5. Finitions : `NOWAIT` premier emploi, erreur attendue `1205` (mesurée en 10.11.16 par la lentille
+     R), test discriminant sur ce code (R6-4) ; doc-comment d'`attendre_une_requete_en_cours` réécrit,
+     `test_fixtures.rs` aux fichiers touchés (R6-2) ; lettres des cycles expliquées, non renumérotées
+     (R6-3) ; rubrique `### Ajouté` à créer en tête de `[0.13.0]` (F6-3) ; verrous d'intervalle au
+     doc-comment de l'accesseur, `EXPLAIN` à la main en T0, renvoi à C-15-8-23 (F6-4).
+- **Écartées** : (a) découper sur la coupe AC5/AC6 — elle laisse l'axe recyclé entier d'un côté ;
+  (b) un TTC multiple de 0.05 au lieu de désactiver l'arrondi — inapplicable au test « TVA arrondie à
+  zéro » ; (c) laisser le patron `owned_account_ids` au rouge du test — décision certaine différée
+  pour rien ; (d) renuméroter les cycles — C87 cite les lettres.
+- **Signal D5 — à présenter au Project Lead (Guy) en fin d'epic** : la 15-5d a franchi le critère de
+  recyclage en P5 (HIGH F5-1 né de C43) et n'est pas découpée ; la dérogation est écrite dans la fiche
+  (« Dérogation règle de splitting »). En P6, la sévérité baisse (HIGH → MEDIUM) et rien n'est recyclé.
+- **Signalé à l'orchestrateur, hors périmètre** : le doc-comment d'`accounts::delete_all_by_company`
+  (`accounts.rs:1063`) annonce « utilisé par reset_demo », ce qui est faux.
+- **Réversible** : oui (fiche seulement ; code non écrit).
