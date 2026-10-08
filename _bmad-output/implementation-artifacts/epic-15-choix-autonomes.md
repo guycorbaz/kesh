@@ -49,3 +49,61 @@ l'import (#458–#461).
 | 15-9 | Cycle de paiement des factures fournisseurs ; état « envoyée » des factures clients | #460, #461 |
 
 *(La numérotation 15-8 et 15-9 peut changer à leur spécification ; ce registre le dira.)*
+
+## C3 — 15-5 : la forme du refus « compte non imputable »
+
+- **Contexte** : le commentaire de #429 relève que toutes les gardes de postabilité refusent avec
+  `InactiveOrInvalidAccounts` (« archivés ou invalides »), message que le dépôt avait déjà rejeté en
+  16-1a pour ce motif. La 15-5 ajoute de nouvelles gardes : il faut décider sous quel nom elles
+  refusent.
+- **Retenu** : une variante `DbError::AccountsNotPostable(Vec<String>)` (numéros des comptes), code
+  HTTP 400 `ACCOUNT_NOT_POSTABLE`, message traduit qui nomme la cause et les comptes. Appliquée aux
+  nouvelles gardes **et** aux existantes — saisie manuelle (14-3b) et trois gardes de la 24-5. Les
+  réglages de facturation gardent leur style `VALIDATION_ERROR` nommant le champ, déjà employé pour
+  leurs comptes désignés.
+- **Écartées** : garder `InactiveOrInvalidAccounts` (le défaut signalé reste) ; une variante par
+  surface (trois codes pour une même cause) ; réutiliser `RevenueAccountRejection` (propre aux
+  lignes de facture).
+- **Conséquence visible** : pour un compte non imputable, la saisie manuelle rend désormais
+  `ACCOUNT_NOT_POSTABLE` au lieu de `INACTIVE_OR_INVALID_ACCOUNTS` — changement de contrat pour une
+  intégration par clé d'API, à écrire au CHANGELOG. Le test `reports_e2e` qui figeait l'ancien code
+  (AC 13 de la 24-5) est réécrit à dessein.
+- **Réversible** : oui, avant release ; après, le code d'erreur fait partie du contrat.
+
+## C4 — 15-5 : où s'applique l'exemption d'un compte déjà en place
+
+- **Contexte** : #427 demande de reprendre « le mécanisme d'exemption pour un compte déjà
+  référencé » (#271), à juger surface par surface.
+- **Retenu** : exemption « contrôlé seulement si la valeur change » pour les réglages de
+  facturation (six champs historiques), le compte d'un compte bancaire (PUT, PATCH) et le PATCH d'une
+  règle de rapprochement — patron de `resolve_designated_account` et de la décision D4 des articles.
+  **Aucune** exemption pour les rapprochements manuels, ventilés et proposés : le compte y est choisi
+  à l'instant. **Aucune** pour l'acceptation par règle : une règle dont le compte est devenu non
+  imputable (scindé en sous-comptes) est périmée ; elle n'est plus proposée et son acceptation est
+  refusée.
+- **Écartées** : exempter l'acceptation par règle (ce serait poster sur un compte de regroupement,
+  le défaut même) ; contrôler les réglages même inchangés (bloquerait tout enregistrement après
+  l'ajout d'un sous-compte, sur un champ non touché).
+- **Réversible** : oui, une condition par site.
+
+## C5 — 15-5 : le compte comptable d'un compte bancaire entre dans la story, pour sa postabilité seule
+
+- **Contexte** : #474 note que `bank_accounts.rs` accepte n'importe quel compte d'actif comme compte
+  d'un compte bancaire. Deux défauts s'y mêlent : la postabilité (famille de #427/#429) et le compte
+  débiteurs (fond de #474).
+- **Retenu** : la 15-5 ajoute la garde de **postabilité** (avec exemption « inchangé ») aux trois
+  routes du compte bancaire ; le refus du compte débiteurs reste à la 15-6.
+- **Écartée** : tout laisser à la 15-6 (la même famille serait traitée par deux stories, et la 15-6
+  hériterait d'un trou que la 15-5 prétend fermer).
+- **Réversible** : oui.
+
+## C6 — 15-5 : les angles morts assumés
+
+- **Retenu, hors périmètre et écrit dans la story** : la fiche article (la décision D3 exclut
+  `postable` ; la garde vit sur la ligne de facture — seule sa justification, devenue fausse, est
+  réécrite) ; le compte bancaire **à l'usage** (D-A0 : un compte de configuration devenu non
+  imputable continue de servir) ; les comptes désignés par **rôle** à la création des réglages
+  (choix de l'application) ; l'avoir (snapshot de la facture, D5-bis).
+- **Écartée** : étendre la garde à la fiche article — sans écriture comptable propre, elle aurait
+  ajouté une surface et une exemption pour rien.
+- **Réversible** : oui.
