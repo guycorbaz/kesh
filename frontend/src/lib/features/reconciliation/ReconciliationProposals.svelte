@@ -10,6 +10,13 @@
   on affiche « Aucune correspondance » sans checkbox (tx
   non-sélectionnable). Erreurs partielles affichées en bas via
   `failed`.
+
+  Story 15-5c (AC3, #492, choix C38) — chaque refus de `failed[]` est affiché
+  par son LIBELLÉ traduit (`failedProposalLabel`) et désigne la transaction par
+  sa date, son montant et sa contrepartie, relevés AVANT le rechargement qui
+  suit le lot (la transaction acceptée ou rejetée n'est plus dans la liste
+  ensuite). Le compteur et les *Échecs partiels* restent affichés même quand
+  le lot a vidé la liste.
 -->
 <script lang="ts">
 	import { errorMessageOf } from '$lib/shared/utils/api-client';
@@ -24,6 +31,7 @@
 		ReconciliationProposal,
 	} from './reconciliation.types';
 	import ScoreBadge from './ScoreBadge.svelte';
+	import { failedProposalLabel } from './failed-proposal-label';
 	import ManualMatchModal from './ManualMatchModal.svelte';
 	import TransactionSplitModal from './TransactionSplitModal.svelte';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
@@ -49,7 +57,28 @@
 	let busy = $state(false);
 	let errorMsg = $state<string | null>(null);
 	let failed = $state<FailedProposal[]>([]);
+	// Story 15-5c (AC3) — transactions du lot, relevées avant le `load()` qui
+	// suit : un refus doit pouvoir nommer une transaction sortie de la liste.
+	let failedTx = $state<Map<number, ReconciliationProposal['transaction']>>(new Map());
 	let lastSuccessCount = $state(0);
+
+	/** Relève, avant l'envoi d'un lot, les transactions qui le composent. */
+	function snapshotSelected(): void {
+		const next = new Map<number, ReconciliationProposal['transaction']>();
+		for (const p of proposals) {
+			if (selected.has(p.bankTransactionId)) next.set(p.bankTransactionId, p.transaction);
+		}
+		failedTx = next;
+	}
+
+	/** « date · montant devise · contrepartie », ou `TX #<id>` si la transaction n'a pas été relevée. */
+	function describeTx(id: number): string {
+		const t = failedTx.get(id);
+		if (!t) return `TX #${id}`;
+		return [t.bookingDate, `${t.amount} ${t.currency}`, t.counterpartyName]
+			.filter((v) => v !== null && v !== undefined && v !== '')
+			.join(' · ');
+	}
 
 	// H7 Pass 1 code review — generation tag pour drop les responses
 	// `getProposals` stale (race sur fast account switch).
@@ -125,6 +154,8 @@
 		busy = true;
 		errorMsg = null;
 		failed = [];
+		lastSuccessCount = 0;
+		snapshotSelected();
 		try {
 			// γ refactor — pour chaque txId sélectionné, retrouver la
 			// candidate top-1 (candidates[0]) dans la proposal courante.
@@ -169,6 +200,8 @@
 		busy = true;
 		errorMsg = null;
 		failed = [];
+		lastSuccessCount = 0;
+		snapshotSelected();
 		try {
 			const ids = Array.from(selected);
 			const r = await rejectProposals(bankAccountId, ids);
@@ -184,6 +217,14 @@
 </script>
 
 <section data-testid="reconciliation-proposals">
+	<!-- Story 15-5c (AC3, C38) — le compteur du dernier lot, hors des branches
+	     de la liste : il reste visible quand le lot l'a vidée. -->
+	{#if lastSuccessCount > 0}
+		<p class="mb-2 text-green-700" data-testid="reconciliation-success">
+			{lastSuccessCount}
+			{i18nMsg('reconciliation-labels-success-suffix', 'opération(s) réussie(s).')}
+		</p>
+	{/if}
 	{#if loading}
 		<p class="text-text-muted" data-testid="reconciliation-loading">
 			{i18nMsg('reconciliation-labels-loading', 'Chargement des propositions…')}
@@ -218,13 +259,6 @@
 				{i18nMsg('reconciliation-actions-reject', 'Rejeter')}
 			</button>
 		</div>
-
-		{#if lastSuccessCount > 0}
-			<p class="mb-2 text-green-700" data-testid="reconciliation-success">
-				{lastSuccessCount}
-				{i18nMsg('reconciliation-labels-success-suffix', 'opération(s) réussie(s).')}
-			</p>
-		{/if}
 
 		<table class="w-full table-auto text-sm" data-testid="reconciliation-table">
 			<thead>
@@ -351,20 +385,28 @@
 			{accounts}
 			onSuccess={onSplitSuccess}
 		/>
+	{/if}
 
-		{#if failed.length > 0}
-			<div class="mt-4" data-testid="reconciliation-failed">
-				<h3 class="font-semibold text-red-700">
-					{i18nMsg('reconciliation-labels-failed', 'Échecs partiels')}
-				</h3>
-				<ul class="list-disc pl-6 text-sm">
-					{#each failed as f (f.bankTransactionId)}
-						<li>
-							TX #{f.bankTransactionId} — {f.errorCode}
-						</li>
-					{/each}
-				</ul>
-			</div>
-		{/if}
+	<!-- Story 15-5c (AC3, C38) — hors de la branche « liste non vide » : un lot
+	     qui vide la liste (tous les refus de « Rejeter » portent sur une
+	     transaction sortie de la liste) doit encore montrer son bilan. -->
+	{#if failed.length > 0}
+		<div class="mt-4" data-testid="reconciliation-failed">
+			<h3 class="font-semibold text-red-700">
+				{i18nMsg('reconciliation-labels-failed', 'Échecs partiels')}
+			</h3>
+			<ul class="list-disc pl-6 text-sm">
+				{#each failed as f (f.bankTransactionId)}
+					<li
+						data-testid="reconciliation-failed-item"
+						data-tx-id={f.bankTransactionId}
+						data-error-code={f.errorCode}
+						title={f.errorCode}
+					>
+						{describeTx(f.bankTransactionId)} — {failedProposalLabel(f.errorCode, f.details)}
+					</li>
+				{/each}
+			</ul>
+		</div>
 	{/if}
 </section>

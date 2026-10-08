@@ -1,6 +1,6 @@
 # Story 15.5c : Le rapprochement se lit — libellés des refus par lot et manuel du rapprochement
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Troisième sous-story de la 15-5, créée le 2026-10-08 à la passe de validation P2 de la 15-5b
      (finding F-3, choix C15 de `epic-15-choix-autonomes.md`). Elle reprend de la 15-5b le premier volet

@@ -1552,3 +1552,45 @@ l'import (#458–#461).
   message et le classement d'écran) ; E4 (borne de verrou en ISO brut, préexistant côté serveur) ; E5 (422 de
   l'extracteur, commun à toutes les routes) ; E6 (coût du `GET` et faux négatif résiduel, déjà déclarés).
 - **Réversible** : oui — chacun peut faire l'objet d'une issue ; B-2 et E2 sont les deux à reprendre en premier.
+
+## C-15-5c-1 — 15-5c (dev) : la réutilisation de C37 s'étend aux clés `reconciliation-*` existantes
+
+- **Contexte** : C37 dit de lire une clé `error-*` existante quand elle convient mot pour mot et sans
+  variable. Trois codes de `failed[]` ont déjà un message exact dans l'espace `reconciliation-`, propre
+  à la fonctionnalité (donc permis par `lint-i18n-ownership`) : `RECONCILIATION_ALREADY_RECONCILED`
+  (`reconciliation-errors-already-reconciled`), `RECONCILIATION_INVOICE_NOT_ELIGIBLE`
+  (`reconciliation-errors-invoice-not-eligible`), `RECONCILIATION_SPLIT_IMBALANCE`
+  (`reconciliation-split-error-imbalance`). Par ailleurs `FISCAL_YEAR_INVALID` et
+  `RECONCILIATION_FISCAL_YEAR_CLOSED` naissent du même constat (`find_open_covering_date` ne trouve aucun
+  exercice ouvert) : `error-fiscal-year-invalid` (« Aucun exercice ouvert ne couvre cette date. ») est
+  exact pour les deux, alors que `error-fiscal-year-closed-generic` affirmerait une clôture qui peut être
+  une absence.
+- **Retenu** : lire ces clés existantes (8 codes sur 26 lisent une clé existante, 7 clés distinctes :
+  `error-rounding-account-not-configured`, `error-fiscal-year-invalid` ×2, `error-internal`,
+  `error-validation`, et les trois `reconciliation-*`) ; 20 clés neuves `reconciliation-failed-*` pour les 18 autres codes
+  (dont la variante sans numéros d'`ACCOUNT_NOT_POSTABLE` et le repli `-unknown`, qui porte `{ $code }`,
+  valeur que le client possède). `BANK_ACCOUNT_NOT_CONFIGURED` et `RECONCILIATION_RULE_NOT_FOUND` ont une
+  clé neuve : les messages existants (`reconciliation-manual-bank-account-not-configured`, qui cite le
+  chemin brut `/bank-accounts` ; `reconciliation-rules-error-not-found`, « Règle introuvable. », alors que
+  le code couvre aussi une règle désactivée) ne conviennent pas mot pour mot.
+- **Écarté** : dupliquer les traductions existantes (deux copies divergent) ; une clé par code même
+  quand le constat est identique.
+- **Réversible** : oui (une clé par `case`).
+
+## C-15-5c-2 — 15-5c (dev) : le manuel décrit l'écran, et nomme les trois défauts cités sans les promettre corrigés
+
+- **Contexte** : AC5–AC9. Le manuel décrivait des fonctions inexistantes ; la story ne corrige ni #526,
+  ni #527, ni #529.
+- **Retenu** : sous-section fusionnée *Accepter ou rejeter les propositions* ; *Rejeter* dit que la
+  transaction quitte la liste, reste visible sans action dans le détail de son import, et qu'aucun geste
+  ne la rapproche ensuite (conseil : ne rejeter que ce qu'on ne comptabilisera pas par ce chemin) ; la FAQ
+  est réécrite en deux temps (pourquoi rien n'est proposé ; que faire selon la nature de la transaction),
+  avec l'interdiction explicite d'une règle pour un paiement de client ; la règle dont le compte devient
+  non imputable « laisse la place à la règle suivante qui correspond » — fait relevé au code
+  (`first_matching_rule` filtre sur l'ensemble des comptes imputables, `reconciliation.rs:586-591`), que la
+  fiche ne disait pas. `user-manual.tex:1861` (« rapprochement manuel », section des projets) est aligné
+  sur « affectation manuelle ». Seul `user-manual.pdf` est régénéré (`make user`) : l'administrateur et la
+  brochure ne changent pas.
+- **Écarté** : citer l'annulation d'un rapprochement comme chemin de retour d'une transaction rejetée
+  (elle ne s'y applique pas) ; citer le seuil de 0,5 (API seulement).
+- **Réversible** : oui (texte).

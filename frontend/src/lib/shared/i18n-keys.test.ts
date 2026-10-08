@@ -468,7 +468,14 @@ const ATTENDU = {
 	//   - `features/journal-entries/blocker-messages.ts` (0 → 12, +12) : les huit
 	//     motifs de contre-passation déplacés, plus les quatre motifs propres à la
 	//     modification (`journal-entries-modify-blocked-*`).
-	sitesTotal: 1876,
+	// Story 15-5c (#492) : **1876 → 1903 (+27 ; 1868 → 1895 avant le rebase sur la 15-8a)** — `reconciliation/failed-proposal-label.ts`
+	// (0 → 27) : un site par code de `failed[]` (25 `case`, `FISCAL_YEAR_INVALID` et
+	// `RECONCILIATION_FISCAL_YEAR_CLOSED` partageant le leur), plus la variante sans
+	// numéros d'`ACCOUNT_NOT_POSTABLE` et le repli des codes inconnus.
+	// `ReconciliationProposals.svelte` reste à 18 (compteur et échecs partiels déplacés,
+	// non dupliqués). Relevé du test, recoupé par `grep -o "i18nMsg("` aux deux bornes ;
+	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (aucun site dynamique ajouté).
+	sitesTotal: 1903,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

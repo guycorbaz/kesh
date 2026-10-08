@@ -1187,7 +1187,7 @@ Depuis la version \textbf{0.7}, l'écran \emph{Factures → Rappels} (réservé 
     \item Une \textbf{protection anti-double-envoi} empêche qu'un double-clic n'envoie deux fois le même rappel. Une facture arrivée au \textbf{dernier niveau} reste affichée avec le badge « Dernier niveau atteint » (poursuite à envisager) — elle ne disparaît jamais silencieusement.
 \end{itemize}
 
-\paragraph{Ce que réclame un rappel.} Un rappel réclame ce que le client \textbf{doit encore} : le \textbf{reste dû} de la facture, après ses règlements partiels --- le montant total s'il n'a rien payé. Le courrier annonce ce reste, augmenté des frais de rappel s'il y en a ; à frais nuls, il ne parle pas de frais. Si un règlement est enregistré \textbf{entre l'ouverture de l'aperçu et l'envoi}, l'envoi est \textbf{refusé} : le courrier validé annoncerait un autre montant que la QR-facture jointe. Fermez puis rouvrez l'aperçu, qui reprend le nouveau reste. Le PDF joint n'est pas la facture réémise, c'est un \textbf{rappel}, produit à chaque envoi --- il n'est pas figé comme le PDF de la facture (\S\ref{sec:pdf-fige}) : il en porte le titre, rappelle le numéro de la facture d'origine et, sous le total, ce qui est \textbf{déjà réglé} puis le \textbf{reste à payer} (ces deux lignes n'apparaissent qu'après un règlement). Sa \textbf{QR-facture porte le reste dû}, avec la même référence que la facture : le rapprochement bancaire propose la facture pour un paiement de ce montant, même après des règlements partiels. Les \textbf{frais de rappel n'y sont jamais inclus} : ils figurent sur une ligne à part, avec la mention qu'ils ne sont pas compris dans le bulletin de versement.
+\paragraph{Ce que réclame un rappel.} Un rappel réclame ce que le client \textbf{doit encore} : le \textbf{reste dû} de la facture, après ses règlements partiels --- le montant total s'il n'a rien payé. Le courrier annonce ce reste, augmenté des frais de rappel s'il y en a ; à frais nuls, il ne parle pas de frais. Si un règlement est enregistré \textbf{entre l'ouverture de l'aperçu et l'envoi}, l'envoi est \textbf{refusé} : le courrier validé annoncerait un autre montant que la QR-facture jointe. Fermez puis rouvrez l'aperçu, qui reprend le nouveau reste. Le PDF joint n'est pas la facture réémise, c'est un \textbf{rappel}, produit à chaque envoi --- il n'est pas figé comme le PDF de la facture (\S\ref{sec:pdf-fige}) : il en porte le titre, rappelle le numéro de la facture d'origine et, sous le total, ce qui est \textbf{déjà réglé} puis le \textbf{reste à payer} (ces deux lignes n'apparaissent qu'après un règlement). Sa \textbf{QR-facture porte le reste dû}, avec la même référence que la facture. La réconciliation bancaire ne propose toutefois la facture que si le paiement arrive dans les \textbf{30 jours de la date de la facture} --- ce qui, après un rappel, est rarement le cas~: enregistrez alors le règlement depuis la fiche de la facture (\S\ref{sec:reglement-client}). Les \textbf{frais de rappel n'y sont jamais inclus} : ils figurent sur une ligne à part, avec la mention qu'ils ne sont pas compris dans le bulletin de versement.
 
 \begin{keshwarning}
 Les frais de rappel ne sont \textbf{pas comptabilisés} par Kesh. Un client qui paie le montant du courrier (reste dû \emph{et} frais) ne verra pas son versement \textbf{proposé} au rapprochement, puisqu'il dépasse ce qui reste à payer ; saisi comme règlement manuel, il est \textbf{refusé comme trop-perçu}. Seul le montant de la QR-facture s'enregistre (issue \#401).
@@ -1553,15 +1553,15 @@ Importez vos relevés bancaires \textbf{au moins une fois par semaine} pour faci
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Réconciliation bancaire}
 
-La réconciliation consiste à rapprocher les transactions bancaires importées avec les écritures comptables ou les factures de votre comptabilité.
+La réconciliation consiste à passer en comptabilité les transactions bancaires importées. Kesh ne rapproche pas une transaction d'une écriture qui existerait déjà~: il \textbf{crée} l'écriture, soit en réglant une facture client, soit en imputant la transaction à un compte de contrepartie --- par une règle d'affectation, manuellement ou en l'éclatant sur plusieurs comptes.
 
 \subsection{Réconciliation automatique}
 
-\keshscreenshot{reconciliation-auto.png}{Propositions de réconciliation automatique entre transactions bancaires et factures.}  % TODO capture: ecran reconciliation auto (propositions)
+\keshscreenshot{reconciliation-auto.png}{Propositions de réconciliation~: une ligne par transaction en attente, avec la candidate proposée, son score et la case à cocher.}  % TODO capture: ecran reconciliation auto (propositions)
 
 \subsubsection{Algorithme de matching}
 
-À l'ouverture de la page de réconciliation, Kesh cherche, pour chaque transaction bancaire en attente (créditrice, en CHF), les factures qui pourraient lui correspondre. Une facture est \textbf{candidate} si elle est validée et pas encore payée, datée à 30 jours au plus de la transaction, et si \textbf{ce qui reste à payer} --- son \textbf{reste dû} : le montant total, moins l'avoir éventuel, moins les règlements déjà enregistrés --- égale le montant de la transaction à 5 centimes près. Un virement qui \textbf{solde} une facture déjà réglée en partie est donc reconnu : la proposition porte sur le reste, pas sur le montant d'origine.
+À l'ouverture de la page de réconciliation, Kesh cherche, pour chaque transaction bancaire en attente (créditrice, en CHF), les factures qui pourraient lui correspondre. Une facture est \textbf{candidate} si elle est validée et pas encore payée, si la transaction tombe dans les \textbf{30 jours qui précèdent ou suivent la date de la facture} --- sa date, pas son échéance --- et si \textbf{ce qui reste à payer} --- son \textbf{reste dû} : le montant total, moins l'avoir éventuel, moins les règlements déjà enregistrés --- égale le montant de la transaction à 5 centimes près. Un virement qui \textbf{solde} une facture déjà réglée en partie est donc reconnu : la proposition porte sur le reste, pas sur le montant d'origine. Un paiement reçu \textbf{plus de 30 jours après la date de la facture} --- une facture payée avec retard, ou après un rappel --- n'est en revanche \textbf{pas proposé}~: enregistrez alors le règlement depuis la fiche de la facture (\S\ref{sec:reglement-client}).
 
 Chaque candidate reçoit un score, somme de trois critères :
 
@@ -1571,82 +1571,86 @@ Chaque candidate reçoit un score, somme de trois critères :
     \item \textbf{Contact} (10\,\%) : le nom de la contrepartie contient celui du client de la facture, ou l'inverse.
 \end{itemize}
 
-La meilleure candidate est affichée avec son score et le \textbf{montant qui reste à payer}, au centime. Si la facture est déjà réglée en partie, ce montant est suivi du total d'origine --- par exemple « 600, reste dû sur 1000 » --- pour que vous la reconnaissiez. Une candidate dont le score vaut zéro n'est pas proposée. Rien n'est jamais rapproché sans votre acceptation : il n'y a ni seuil de confiance réglable, ni acceptation automatique.
+Une candidate dont le score vaut zéro n'est pas proposée. Quand aucune facture n'est candidate, la réconciliation propose à la place la \textbf{règle d'affectation} qui correspond à la transaction, s'il y en a une (\S\ref{sec:regles-affectation})~; elle s'affiche avec un score de 1. Rien n'est jamais passé en comptabilité sans votre acceptation : il n'y a ni seuil de confiance réglable, ni acceptation automatique.
 
-\subsubsection{Acceptation des propositions}
+\subsubsection{Accepter ou rejeter les propositions}
 
-\emph{Mensuel} → \emph{Réconciliation}. La page affiche :
-
-\begin{itemize}
-    \item Les transactions bancaires non rapprochées (avec proposition s'il y en a).
-    \item Les factures impayées candidates.
-\end{itemize}
-
-Pour chaque transaction :
+\emph{Mensuel} → \emph{Réconciliation}, puis choisir le compte bancaire. La page liste les transactions \textbf{en attente} de ce compte --- les 100 plus récentes au plus ---, une par ligne, avec leur date, leur montant, leur contrepartie, et \textbf{une} candidate~:
 
 \begin{itemize}
-    \item \emph{Accepter} : valide le rapprochement. L'écriture comptable est créée automatiquement (Débit 1020 Banque / Crédit 1100 Débiteurs). Si la transaction solde une facture dont le reste porte plus de deux décimales, l'écart d'arrondi passe en troisième ligne, comme pour un règlement manuel (\S\ref{sec:reglement-client}) ; sans compte de différences d'arrondi, la proposition échoue avec le code \texttt{ROUNDING\_ACCOUNT\_NOT\_CONFIGURED}.
-    \item \emph{Rejeter} : la proposition est ignorée. La transaction reste à rapprocher manuellement.
-    \item \emph{Modifier} : sélectionner une autre facture ou écriture.
+    \item la candidate affichée est la \textbf{première} que propose Kesh~: la facture la mieux notée s'il y en a une, avec son numéro et le \textbf{montant qui reste à payer}, au centime --- si la facture est déjà réglée en partie, ce montant est suivi du total d'origine, par exemple «~600, reste dû sur 1000~»~;
+    \item une \textbf{règle} n'est affichée, avec le badge \emph{Règle} et la mention «~libellé → compte~», que s'il n'y a \textbf{aucune} facture candidate --- même une facture de score faible passe devant elle~;
+    \item sans candidate, la ligne indique «~Aucune correspondance~» et n'a pas de case à cocher.
 \end{itemize}
 
-\subsubsection{Acceptation par lot}
+Cochez les transactions à traiter, puis cliquez sur l'un des deux boutons placés au-dessus de la liste~:
 
-Si plusieurs propositions sont à valider d'un coup, cocher les transactions concernées et cliquer sur \emph{Accepter sélectionnées}. L'opération est atomique : soit toutes les transactions sont rapprochées avec succès, soit aucune. Les transactions ayant échoué (par exemple racing condition avec un autre utilisateur ayant déjà rapproché la facture) sont reportées dans une liste \emph{failed[]} avec un code d'erreur précis (cf. \emph{Pattern batch FailedProposal} dans la doc CLAUDE.md projet).
+\begin{itemize}
+    \item \emph{Accepter (N)} --- N est le nombre de lignes cochées --- accepte, pour chaque ligne, \textbf{la candidate affichée}. Pour une facture, l'écriture de règlement est créée (Débit banque / Crédit débiteurs). Si la transaction solde une facture dont le reste porte plus de deux décimales, l'écart d'arrondi passe en troisième ligne, comme pour un règlement manuel (\S\ref{sec:reglement-client}) ; sans compte de différences d'arrondi, la ligne apparaît dans les \emph{Échecs partiels} avec le message «~aucun compte de différences d'arrondi utilisable n'est désigné~» --- désignez-en un dans \emph{Paramètres} → \emph{Facturation}. Pour une règle, l'écriture est passée entre la banque et le compte de contrepartie de la règle.
+    \item \emph{Rejeter} écarte la proposition~: la transaction est marquée comme revue et \textbf{quitte la liste} de la réconciliation. Elle reste visible dans le \textbf{détail de son import} (\emph{Import bancaire}, puis l'import), avec le statut «~pending~», mais \textbf{sans aucune action}~: aucun geste de l'interface ne permet ensuite de la passer en comptabilité. Ne rejetez donc une transaction que si vous ne comptez pas la comptabiliser par ce chemin.
+\end{itemize}
+
+Pour imputer une transaction autrement qu'à la candidate affichée, utilisez les boutons de sa ligne~: \emph{Affecter manuellement} ou \emph{Éclater} (ci-dessous).
+
+\paragraph{Un refus n'empêche pas les autres.} Chaque ligne cochée est traitée pour elle-même~: les transactions acceptées le sont, même si d'autres sont refusées. Kesh affiche le nombre d'opérations réussies puis, sous le titre \emph{Échecs partiels}, chaque transaction refusée --- désignée par sa date, son montant et sa contrepartie --- avec le motif du refus en clair~: période verrouillée, exercice fermé, facture déjà réglée entre-temps, compte non imputable, etc. Il en va de même pour \emph{Rejeter}. Ce bilan reste affiché même quand le lot a vidé la liste.
 
 \subsection{Réconciliation manuelle}
 
-\keshscreenshot{reconciliation-manuelle.png}{Rapprochement manuel : sélection explicite de la facture correspondant à une transaction.}  % TODO capture: ecran reconciliation manuelle
+\keshscreenshot{reconciliation-manuelle.png}{Affectation manuelle~: choix du compte de contrepartie d'une transaction.}  % TODO capture: ecran reconciliation manuelle
 
-Si aucune proposition automatique n'est pertinente :
+Si la candidate proposée ne convient pas, ou s'il n'y en a aucune~:
 
 \begin{enumerate}
-    \item Cliquer sur \emph{Rapprocher manuellement} sur une transaction non rapprochée.
-    \item Sélectionner une facture impayée OU une écriture comptable existante OU créer une nouvelle écriture à la volée.
-    \item Valider.
+    \item Cliquer sur \emph{Affecter manuellement} sur la ligne de la transaction.
+    \item Choisir le \textbf{compte de contrepartie}~: le sélecteur propose les comptes des classes 5, 6 et 7 (charges et produits), actifs et imputables. Compléter au besoin la description, la date de valeur et le projet analytique.
+    \item Cliquer sur \emph{Affecter}.
 \end{enumerate}
+
+Kesh passe \textbf{une} écriture entre le compte de la banque et ce compte de contrepartie. L'affectation manuelle ne règle \textbf{pas} une facture~: le compte débiteurs n'est pas proposé. Pour un paiement de client que la réconciliation ne propose pas, enregistrez le règlement depuis la fiche de la facture (\S\ref{sec:reglement-client}).
 
 \subsection{Éclatement d'une transaction (split)}
 
-\keshscreenshot{reconciliation-split.png}{Éclatement d'une transaction bancaire en plusieurs écritures (paiement partiel, ventilation).}  % TODO capture: ecran split
+\keshscreenshot{reconciliation-split.png}{Éclatement d'une transaction bancaire~: ventilation de son montant sur plusieurs comptes, en une seule écriture.}  % TODO capture: ecran split
 
-Cas d'usage : votre banque crédite votre compte d'un virement groupé de CHF 5'000 correspondant en réalité à 3 factures (CHF 2'000 + CHF 1'500 + CHF 1'500).
+Cas d'usage : un prélèvement de carte de crédit de CHF 480 couvre des frais de déplacement, des fournitures et un abonnement, à imputer sur trois comptes de charges.
 
 \begin{enumerate}
-    \item Cliquer sur la transaction → \emph{Éclater}.
-    \item Saisir les montants des sous-éléments (somme = montant initial).
-    \item Pour chaque sous-élément, choisir la facture ou l'écriture correspondante.
+    \item Cliquer sur \emph{Éclater} sur la ligne de la transaction.
+    \item Saisir les lignes~: pour chacune, un \textbf{compte} --- choisi dans le même sélecteur que l'affectation manuelle (classes 5, 6 et 7, actifs et imputables) ---, un montant, une description et, au besoin, un projet analytique. Deux lignes au moins, cinquante au plus~; la somme doit égaler le montant de la transaction.
     \item Valider.
 \end{enumerate}
 
-L'écriture comptable globale est éclatée en N écritures (1 par sous-élément).
+Kesh passe \textbf{une seule} écriture à plusieurs lignes~: la banque d'un côté, chaque compte de la ventilation de l'autre. Comme l'affectation manuelle, l'éclatement ne règle pas de facture.
 
-\subsection{Règles d'affectation automatique}
+\subsection{Règles d'affectation automatique}\label{sec:regles-affectation}
 
-\keshscreenshot{reconciliation-regles.png}{Définition d'une règle d'affectation automatique des transactions récurrentes.}  % TODO capture: ecran regles d'affectation
+\keshscreenshot{reconciliation-regles.png}{Liste des règles d'affectation~: libellé, type de correspondance, valeur, compte de contrepartie, priorité et état.}  % TODO capture: ecran regles d'affectation
 
-\emph{Administration} → \emph{Règles d'affectation}. Définir des règles pour automatiser la création d'écritures pour les transactions récurrentes.
+\emph{Administration} → \emph{Règles d'affectation}. Une règle reconnaît une transaction récurrente --- loyer, abonnement, frais bancaires --- et \textbf{propose} de l'imputer à un compte de charge ou de produit. Elle ne crée \textbf{aucune} écriture d'elle-même~: rien ne se passe à l'import, la proposition apparaît dans la réconciliation et c'est vous qui l'acceptez.
 
-Exemple : tous les ordres permanents loyer (CHF 2'500 chaque 1\textsuperscript{er} du mois vers le bailleur) → règle qui crée automatiquement l'écriture Débit 6000 Loyer / Crédit 1020 CCP.
+Exemple : le loyer est prélevé chaque mois par la régie. Une règle «~Loyer~», de type \emph{Contrepartie contient} et de valeur «~Régie~», vers le compte de charge du loyer, propose chaque mois d'imputer la transaction à ce compte.
 
 \subsubsection{Création d'une règle}
 
 \begin{enumerate}
     \item \emph{Administration} → \emph{Règles d'affectation} → \emph{Nouvelle règle}.
-    \item Saisir le \textbf{nom} de la règle (ex. « Loyer mensuel »).
-    \item Définir les \textbf{conditions} : libellé contient « LOYER » OU montant entre 2'400 et 2'600 OU compte tiers IBAN = CH00 ...
-    \item Définir l'\textbf{action} : créer écriture Débit compte X / Crédit compte Y avec libellé Z.
-    \item Définir la \textbf{priorité} : règles évaluées dans l'ordre des priorités.
-    \item Sauvegarder.
+    \item Saisir le \textbf{libellé} de la règle (ex. «~Loyer~»).
+    \item Choisir le \textbf{type} de correspondance --- \emph{Contrepartie contient}, \emph{Contrepartie exacte}, \emph{Référence contient} ou \emph{IBAN exact} --- et saisir la \textbf{valeur} cherchée. Une règle porte \textbf{une seule} condition. Le type ne se choisit qu'à la création~: il ne se modifie plus ensuite.
+    \item Choisir le \textbf{compte de contrepartie}~: un compte de charge ou de produit, actif et imputable.
+    \item Fixer la \textbf{priorité}, de 1 à 1000~: le \textbf{plus petit} nombre l'emporte.
+    \item Au besoin, choisir un \textbf{projet analytique par défaut}.
+    \item Cliquer sur \emph{Créer}.
 \end{enumerate}
 
 \subsubsection{Application des règles}
 
-Lors de l'import bancaire, Kesh applique automatiquement les règles aux transactions importées. Les écritures sont créées en mode brouillon par défaut (validation manuelle) ou en mode validé direct (option \emph{auto-validate rules}).
+Une règle ne s'applique qu'aux transactions en CHF, et seulement quand \textbf{aucune facture} n'est candidate pour la transaction. Les règles actives sont essayées par \textbf{priorité croissante}, puis de la plus ancienne à la plus récente~; \textbf{seule la première} qui correspond est proposée. La colonne \emph{Appliquée} compte les acceptations.
 
-\subsubsection{Acceptation par lot d'écritures issues de règles}
+\subsubsection{Désactiver, archiver, réactiver}
 
-Si plusieurs écritures sont en brouillon issues des règles d'affectation, cocher et valider en lot. Même pattern \emph{FailedProposal per-proposal} qu'en réconciliation : retour HTTP 200 avec \texttt{\{ accepted, failed \}}.
+\emph{Désactiver} et \emph{Archiver} produisent le même état~: la règle n'est plus proposée, et la liste l'affiche «~Archivée~», grisée. \emph{Réactiver} la remet en service. Les écritures déjà passées par une règle ne sont pas touchées.
+
+Une règle dont le \textbf{compte de contrepartie} a été archivé, ou est devenu \textbf{non imputable} (scindé en sous-comptes, par exemple), n'est \textbf{plus proposée}~: la règle suivante qui correspond l'est à sa place, s'il y en a une. La liste l'affiche pourtant toujours «~Active~» --- sa colonne d'état ne connaît que \emph{Active} et \emph{Archivée}~: si une règle «~Active~» ne propose plus rien, vérifiez son compte. Une règle dont le compte est non imputable se modifie, mais, une fois désactivée, ne se réactive pas sans changer de compte.
 
 \subsection{Annuler un rapprochement}\label{sec:annuler-rapprochement}
 
@@ -1913,7 +1917,7 @@ L'affectation est \textbf{optionnelle} et disponible sur \textbf{tous les flux d
           de régularisation peut ainsi ventiler ses charges sur plusieurs projets).
     \item \textbf{Factures de vente et fournisseurs} — un projet au niveau du document,
           propagé à toutes les lignes de l'écriture générée.
-    \item \textbf{Réconciliation bancaire} — projet lors d'un rapprochement manuel,
+    \item \textbf{Réconciliation bancaire} — projet lors d'une affectation manuelle,
           projet \emph{par ligne} lors d'une ventilation, et \textbf{projet par défaut}
           sur une règle d'affectation (chaque transaction réconciliée via la règle est
           alors taguée automatiquement).
@@ -2160,12 +2164,19 @@ Vérifiez que la somme des débits égale exactement la somme des crédits (à 1
 Oui, si :
 
 \begin{itemize}
-    \item Le montant ne correspond à aucune facture impayée à 1 CHF près.
-    \item La référence ne correspond à aucune référence QR Bill structurée.
-    \item Le libellé est trop vague (« Virement », « Versement », sans détail).
+    \item Aucune facture validée et non payée n'a un \textbf{reste dû} égal au montant de la transaction \textbf{à 5 centimes près}.
+    \item La transaction tombe à plus de \textbf{30 jours de la date de la facture} --- de sa date, pas de son échéance~: une facture payée avec retard, ou après un rappel, n'est pas proposée.
+    \item La transaction est un débit, ou n'est pas en CHF~: seules les transactions créditrices en CHF reçoivent une facture candidate.
+    \item Le score de la facture est nul~: la référence de la transaction ne contient pas le \textbf{numéro de la facture}, le nom de la contrepartie ne correspond pas au nom du client, et le montant n'est pas exactement le reste dû au centime.
+    \item Aucune règle d'affectation ne correspond --- ou la règle qui correspondrait est écartée parce que son compte de contrepartie a été archivé ou est devenu non imputable. Une règle n'est d'ailleurs affichée que s'il n'y a \textbf{aucune} facture candidate.
 \end{itemize}
 
-Procédez à un rapprochement manuel, ou créez une règle d'affectation pour les transactions récurrentes.
+Que faire ensuite dépend de la transaction~:
+
+\begin{itemize}
+    \item Pour un \textbf{paiement de client}, enregistrez le règlement \textbf{depuis la fiche de la facture} (\emph{Enregistrer un règlement}, \S\ref{sec:reglement-client}). N'utilisez ni \emph{Affecter manuellement} ni \emph{Éclater}~: ils ne proposent que des comptes de charges et de produits, et la facture resterait due. Ne créez pas non plus de règle d'affectation pour un paiement de client~: elle porterait le paiement en produit --- le produit serait compté deux fois, et la facture resterait due, sans que rien le signale. La transaction bancaire reste ensuite dans la liste de la réconciliation~: Kesh ne la relie pas au règlement saisi depuis la fiche.
+    \item Pour une \textbf{charge} ou un produit divers, utilisez \emph{Affecter manuellement} ou \emph{Éclater}~; pour une charge récurrente (loyer, abonnement, frais bancaires), créez une règle d'affectation.
+\end{itemize}
 
 \subsection{Comment changer la langue d'une facture ?}
 
@@ -2248,7 +2259,7 @@ Le journal d'audit garde toujours la trace de l'action originale ET de l'action 
 \begin{itemize}
     \item Saisissez les écritures \textbf{le plus tôt possible}, idéalement le jour même de la transaction.
     \item Utilisez des libellés \textbf{descriptifs et standardisés} : facilite la recherche et la lecture des rapports.
-    \item Liez systématiquement les transactions bancaires aux factures via la référence QR Bill structurée.
+    \item Faites figurer le \textbf{numéro de la facture} dans la référence du paiement~: c'est lui que la réconciliation compare à la référence de la transaction.
     \item Vérifiez votre balance mensuellement : tout écart suspect doit être investigué immédiatement.
     \item Gardez votre plan comptable \textbf{simple et stable}. Évitez de créer des sous-comptes inutiles : ils alourdissent l'analyse.
 \end{itemize}
@@ -2286,7 +2297,7 @@ Le journal d'audit garde toujours la trace de l'action originale ET de l'action 
     \item[Provision] Charge estimée et comptabilisée d'avance pour un risque ou une dépense future probable.
     \item[QR Bill] Standard suisse 2020+ de facture avec QR code (SIX Group).
     \item[QR-IBAN] IBAN spécial pour les paiements QR Bill avec référence structurée.
-    \item[Réconciliation bancaire] Rapprochement des transactions du relevé bancaire avec les écritures comptables (factures, paiements).
+    \item[Réconciliation bancaire] Passage en comptabilité des transactions du relevé bancaire~: Kesh crée l'écriture, en réglant une facture client ou en imputant un compte de contrepartie.
     \item[Référence structurée] Référence numérique unique attachée à un paiement (ISO 11649 ou QRR).
     \item[Report à nouveau] Solde d'un compte de bilan reporté d'un exercice sur le suivant à la clôture.
     \item[Sous-compte (auxiliaire)] Compte de détail rattaché à un compte principal (ex. 1100.1 pour un client important).
