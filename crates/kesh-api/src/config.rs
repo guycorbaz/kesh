@@ -1300,6 +1300,13 @@ impl Default for LogConfig {
 impl LogConfig {
     /// Parsing pur depuis des valeurs déjà extraites de l'environnement.
     /// Testable sans toucher l'état global du process.
+    ///
+    /// Le trim et le filtre du vide de `file_path` sont **volontairement**
+    /// redondants avec [`env_nonempty`] (Story 15-11b) : `from_env` ne passe
+    /// que des valeurs non vides et trimées, mais les tests appellent
+    /// `from_raw` directement avec des valeurs brutes (`Some("")`, `Some("  ")`),
+    /// et la règle « vide = absent » doit tenir pour eux aussi. Ne pas retirer
+    /// sans réécrire ces tests.
     fn from_raw(
         file_path: Option<String>,
         rotation: Option<String>,
@@ -1853,6 +1860,35 @@ mod tests {
         let config = r.expect("blank is treated as absent");
         assert!(config.cookie_secure);
         assert!(!config.test_mode);
+    }
+
+    /// Revue P1 (B1) : les espaces de tête et de fin ne font pas partie du
+    /// secret JWT — 31 caractères bordés d'un espace font 31 octets, et le
+    /// démarrage est refusé (`WeakJwtSecret`), comme le disent le manuel et
+    /// le CHANGELOG. Rouge si le secret est lu brut (mutation au Change Log
+    /// de la fiche 15-11b).
+    #[test]
+    fn from_env_jwt_secret_blank_edges_do_not_count() {
+        let _guard = env_lock();
+        let corps = "a".repeat(31);
+        for brut in [format!(" {corps}"), format!("{corps} ")] {
+            assert_eq!(brut.len(), 32, "montage : 32 octets bruts");
+            let (r, _) = from_env_with(&[("KESH_JWT_SECRET", brut.as_str())]);
+            assert!(
+                matches!(r, Err(ConfigError::WeakJwtSecret { actual_bytes: 31 })),
+                "brut={brut:?}, got {r:?}"
+            );
+        }
+    }
+
+    /// Revue P1 (B1) : `KESH_TEST_MODE=" true "` est accepté (valeur trimée),
+    /// la garde loopback restant inchangée (`from_env_with` pose
+    /// `KESH_HOST=127.0.0.1`). Rouge si la valeur est lue brute.
+    #[test]
+    fn from_env_test_mode_trimmed_true_is_accepted() {
+        let _guard = env_lock();
+        let (r, _) = from_env_with(&[("KESH_TEST_MODE", " true ")]);
+        assert!(r.expect("\" true \" est accepté").test_mode);
     }
 
     /// Le journal fichier : une valeur vide vaut une absence, sans

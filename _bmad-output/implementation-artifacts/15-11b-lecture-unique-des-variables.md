@@ -239,7 +239,9 @@ occurrences.
    **Ce que le test affirme, et rien de plus** : il ne reconnaît **aucune forme d'appel** ; il relève
    **chaque occurrence** d'un jeton surveillé dans le flux de jetons du code de production et exige qu'elle
    figure, à son emplacement et sous sa forme, dans une liste fermée. **Faux rouge possible** (une ligne à
-   ajouter à la liste) ; **faux vert impossible pour le code du workspace** (F-6 de la P2) — toute lecture
+   ajouter à la liste) ; **faux vert impossible pour le code du workspace** (F-6 de la P2 ; *précisé en
+   revue de code P1 : pour toute lecture écrite dans `crates/*/src` par un jeton surveillé — `build.rs`,
+   `examples/` et `benches/` ne sont pas lus*) — toute lecture
    écrite dans `crates/*/src` passe par `std::env`, `dotenvy` ou une API de dépendance surveillée par un
    jeton (`EnvFilter`, `Builder`, `init`…). Une **dépendance qui lit l'environnement par son API interne**,
    sans qu'aucun jeton du workspace le trahisse, est un **angle mort écrit**, avec la liste connue et la
@@ -604,6 +606,13 @@ permet de la valider à part, sans retarder la correction de #550 dont dépend l
   aucune telle dépendance dans le workspace aujourd'hui.
 - Littéraux de chaîne d'octets (`b"…"`) et caractères : non retenus par (F).
 - **`include!`** et **`#[path]`** vers un fichier hors `crates/*/src` : non lus (aucun aujourd'hui).
+- **`build.rs`, `examples/`, `benches/`** : hors `crates/*/src`, non lus (revue de code P1, B4/E2) ; au
+  2026-10-09, aucun `build.rs`, et `kesh-db/examples/perishable_exemptions.rs`,
+  `kesh-payment/examples/gen_golden.rs`, `kesh-report/benches/export.rs` ne lisent aucune variable.
+- **Défaut appliqué au vide de `KESH_STATIC_DIR` et `KESH_LOCALES_DIR`** : (L) prouve leur passage par
+  `env_nonempty`, aucun test de comportement ne prouve le défaut — `main` ne les lit qu'après la connexion
+  à la base (revue de code P1, B3). Celui de `RUST_LOG` a son test (`rust_log_vide_vaut_info`, binaire
+  lancé).
 - **Avertissement non-UTF-8 perdu** pour les lecteurs qui précèdent l'abonné `tracing` (AC2).
 - **Module hors ligne `#[cfg(test)] mod x;`** : son fichier n'est pas exclu (faux rouge possible).
 - **`TMPDIR`** (`std::env::temp_dir()`, `routes/admin.rs:80`) : occurrence **inventoriée et autorisée**,
@@ -917,3 +926,56 @@ un doc-comment et une source synthétique) ; tests de `config.rs` 80 → **91** 
   1 verte, familles exactes. Écarts à la fiche : ceux du T0 (C-15-11b-1) ; `quote` en dev-dépendance
   (lecture des attributs de tête, C-15-11b-2) ; garde sans assertion du nombre d'entrées (C-15-11b-2) ;
   fenêtres : aucun écart. Statut **review**.
+- 2026-10-09 — **Revue de code P1** (Sonnet ×3, contextes frais, diff `8f9811d8..eac870ae` : lentille B
+  `target/gate-logs/15-11b-review-p1-B.md` — 0 CRITICAL / 0 HIGH / **1 MEDIUM** / 4 LOW ; lentille E
+  `…-E.md` — 0 / 0 / 0 / 5 LOW ; lentille A `…-A.md` — 0 / 0 / 0 / 5 LOW). Recoupements : B1 = A-2,
+  B2 = E4, B4 = E2. Remédiation (agent de remédiation, autonomie ; choix **C-15-11b-3**) **sans aucune ligne
+  de code de production exécutable** : tests, doc-comment, `.env.example`, manuel, CHANGELOG.
+  - **B1 = A-2 (MEDIUM)** : `from_env_jwt_secret_blank_edges_do_not_count` (`" "` + 31 car. et 31 car. +
+    `" "` → `WeakJwtSecret { actual_bytes: 31 }`, montage : 32 octets bruts) et
+    `from_env_test_mode_trimmed_true_is_accepted` (`KESH_TEST_MODE=" true "` → `test_mode`).
+  - **B3 (LOW)** : `rust_log_vide_vaut_info` (`configuration_transmise.rs`) lance le binaire `kesh-api`
+    (environnement vidé, répertoire temporaire, `DATABASE_URL` et `KESH_JWT_SECRET` vides →
+    refus de configuration, `KESH_LOG_FILE_ROTATION` invalide → avertissement rejoué) : avec `RUST_LOG=""`
+    et `"   "`, l'avertissement passe (`info`) ; témoin `RUST_LOG=error`, il est masqué ; assertion de
+    montage sur « Erreur de configuration ». `KESH_STATIC_DIR` et `KESH_LOCALES_DIR` vides : **non
+    testés** — lus après la connexion à la base, un test de comportement exigerait un démarrage complet ou
+    une extraction de code de production ; écrits comme angle mort (§ *Angles morts*, en-tête du test).
+  - **Mutations** (temporaires, restaurées, fichier `touch`é ; `target/gate-logs/15-11b-review-p1-mutations.txt`) :
+    **MR1** `env_nonempty("KESH_JWT_SECRET")` → `std::env::var("KESH_JWT_SECRET").ok()` : rouge
+    `from_env_jwt_secret_blank_edges_do_not_count` ; **MR2** idem `KESH_TEST_MODE` : rouge
+    `from_env_test_mode_trimmed_true_is_accepted` ; **MR3** `logging.rs`
+    `crate::config::env_nonempty(EnvFilter::DEFAULT_ENV)` → `std::env::var(EnvFilter::DEFAULT_ENV).ok()` :
+    rouge `rust_log_vide_vaut_info` (sur l'assertion de l'avertissement, `RUST_LOG=""`, sortie réduite à
+    l'erreur) ; **MR4** normalisation `r#` retirée du test : rouge `s_lectures_hors_liste_rougissent_et_lisent`.
+    Quatre rouges sur quatre.
+  - **E1 (LOW)** : identifiant brut — le relevé retire le préfixe `r#` avant de comparer aux jetons
+    surveillés ; cas (S) `std::r#env::var("X")` (rouge, `X` lu).
+  - **E3 (LOW)** : `exclure_si` ne pousse une plage qu'une fois (`visit_stmt` puis `visit_item` sur un
+    `Stmt::Item`) : `Analyse::exclusions` est un nombre de plages.
+  - **B4 = E2 (LOW)** : « faux vert impossible pour le code du workspace » ramené, dans le test et à l'AC3, à
+    « pour toute lecture écrite dans `crates/*/src` par un jeton surveillé » ; angles morts écrits :
+    `build.rs`, `examples/`, `benches/`, lectures internes aux dépendances (déjà écrites), `r#env` désormais
+    relevé.
+  - **B2 = E4 (LOW)** : doc-comment de `LogConfig::from_raw` — le trim et le filtre du vide y sont
+    volontairement redondants avec `env_nonempty` (appels directs des tests avec des valeurs brutes).
+  - **B5 (LOW)** : l'exception `KESH_LOG_FILE_PATH` qualifiée « sous Docker » (son absence laisse le compose
+    poser son défaut, `${KESH_LOG_FILE_PATH-…}`), et « hors Docker, vide et absente le désactivent toutes
+    deux » — `.env.example`, manuel `admin-manual.tex:664`, CHANGELOG.
+  - **A-1 (LOW)** : intertitre `admin-manual.tex:679` « démarrage refusé si absentes ou vides » ; PDF
+    régénéré (`make admin`, 76 pages, 54 `Overfull \hbox` comme avant, aucun aux lignes touchées), contrôlé
+    aplati (`target/gate-logs/15-11b-p1-admin-flat.txt`) : les trois phrases nouvelles présentes, l'ancien
+    intertitre absent.
+  - **A-3 (LOW)** : `.env.example` dit que `DATABASE_URL` et `KESH_JWT_SECRET` vides font refuser le démarrage.
+  - **A-4 (LOW)** : les cas (S) `dotenvy::var("X")` et `use crate::config::env_nonempty;` sont jugés contre
+    une liste vide ; la protection réelle de l'autorisation `dotenvy :: dotenv ( )` et de l'entrée
+    `env_nonempty` vient des mutations **M9** et **M11** (rouges, `15-11b-mutations.txt`), non du (S). Pas
+    de test ajouté.
+  - **A-5** : sans action.
+  - Tests recomptés (`grep -cE '^\s*#\[test\]'`, de `6f82b763` à ce commit) : `config.rs` 91 → **93** (+2),
+    `configuration_transmise.rs` 21 → **22** (+1).
+  - **Gate** : ciblé seulement — `cargo fmt --all -- --check` vert, `cargo clippy --workspace --all-targets
+    -- -D warnings` vert, `cargo nextest run -p kesh-api -E 'binary(configuration_transmise) |
+    (binary(kesh_api) & test(/^config::/))'` **115/115** (`target/gate-logs/15-11b-review-p1-gate-cible.txt`).
+    Gate complet et E2E **non rejoués** : la remédiation ne touche aucune ligne de production exécutable
+    (le dernier commit de code de production reste `4185e32f`) ; au push.

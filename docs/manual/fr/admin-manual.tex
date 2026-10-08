@@ -661,7 +661,7 @@ Ouvrir un navigateur sur \keshcommand{https://kesh.local} : sur une base vide sa
 Toute la configuration Kesh passe par des variables d'environnement, conformément à la philosophie \href{https://12factor.net/config}{Twelve-Factor App}.
 
 \begin{sloppypar}
-\textbf{Comment \keshpath{.env} atteint Kesh.} Docker Compose lit \keshpath{.env} pour remplir les \texttt{\$\{…\}} du fichier compose ; il ne le transmet pas au conteneur. \textbf{Seules les variables listées sous \texttt{environment:} du service \texttt{kesh-api} atteignent Kesh.} Les compose fournis les listent toutes, sauf \texttt{KESH\_STATIC\_DIR} et \texttt{KESH\_LOCALES\_DIR} (fixées par l'image Docker) et \texttt{KESH\_TEST\_MODE} (jamais en production). Une modification de \keshpath{.env} s'applique par \keshcommand{docker compose up -d}, \textbf{pas} par \keshcommand{docker compose restart}, qui redémarre le conteneur avec son environnement d'origine. Avec les compose fournis, une variable facultative que \keshpath{.env} ne pose pas, ou laisse vide, prend son défaut, sans avertissement. Plus généralement, une ligne laissée vide vaut une ligne absente, sauf \texttt{KESH\_LOG\_FILE\_PATH} (vide = pas de journal fichier) ; les espaces de tête et de fin sont ignorés.
+\textbf{Comment \keshpath{.env} atteint Kesh.} Docker Compose lit \keshpath{.env} pour remplir les \texttt{\$\{…\}} du fichier compose ; il ne le transmet pas au conteneur. \textbf{Seules les variables listées sous \texttt{environment:} du service \texttt{kesh-api} atteignent Kesh.} Les compose fournis les listent toutes, sauf \texttt{KESH\_STATIC\_DIR} et \texttt{KESH\_LOCALES\_DIR} (fixées par l'image Docker) et \texttt{KESH\_TEST\_MODE} (jamais en production). Une modification de \keshpath{.env} s'applique par \keshcommand{docker compose up -d}, \textbf{pas} par \keshcommand{docker compose restart}, qui redémarre le conteneur avec son environnement d'origine. Avec les compose fournis, une variable facultative que \keshpath{.env} ne pose pas, ou laisse vide, prend son défaut, sans avertissement. Plus généralement, une ligne laissée vide vaut une ligne absente, sauf, sous Docker, \texttt{KESH\_LOG\_FILE\_PATH} (vide = pas de journal fichier, absente = le défaut du compose ; hors Docker, vide et absente désactivent toutes deux le journal fichier) ; les espaces de tête et de fin sont ignorés.
 \end{sloppypar}
 
 \begin{sloppypar}
@@ -676,7 +676,7 @@ warning au démarrage et retombe sur le défaut ; les variables « obligatoires 
 font échouer le démarrage si absentes ou vides.
 \end{sloppypar}
 
-\paragraph{Obligatoires (démarrage refusé si absentes).}\mbox{}\\
+\paragraph{Obligatoires (démarrage refusé si absentes ou vides).}\mbox{}\\
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lX}
     \toprule
     \keshtableheader{Variable} & \keshtableheader{Description} \\

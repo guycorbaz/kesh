@@ -39,6 +39,14 @@
 //! FFI ; les identifiants synthétisés par une macro procédurale ; les
 //! littéraux d'octets ; `include!` et `#[path]` hors `crates/*/src` ; le
 //! fichier d'un module hors ligne `#[cfg(test)] mod x;` (faux rouge possible).
+//! Les fichiers hors `crates/*/src` — `build.rs`, `examples/`, `benches/` —
+//! ne sont pas lus (aucun ne lit l'environnement au 2026-10-09 ; un futur
+//! qui le ferait ne rougirait pas). Les identifiants bruts (`r#env`) sont
+//! normalisés et relevés. (L) établit le **passage** par `env_nonempty`, non le
+//! défaut qui s'ensuit : pour `KESH_STATIC_DIR` et `KESH_LOCALES_DIR` (lus
+//! par `main` après la connexion à la base), le défaut appliqué à une valeur
+//! vide n'a pas de test de comportement ; celui de `RUST_LOG` en a un
+//! (`rust_log_vide_vaut_info`).
 //! `TMPDIR` (`std::env::temp_dir()`) est inventorié mais non compté dans
 //! l'ensemble lu. `docker-compose.dev.yml` (pile de développement, non
 //! distribuée) n'est pas contraint.
@@ -926,8 +934,11 @@ fn corpus_texte() -> Vec<(String, String)> {
 // Le test ne reconnaît AUCUNE forme d'appel. Il relève chaque occurrence d'un
 // jeton surveillé dans le flux de jetons du code de production et exige
 // qu'elle figure, à son emplacement et sous sa forme, dans la liste fermée
-// [`EMPLACEMENTS_AUTORISES`]. Faux rouge possible (une ligne à ajouter) ; faux
-// vert impossible pour le code du workspace.
+// [`EMPLACEMENTS_AUTORISES`]. Faux rouge possible (une ligne à ajouter) ; pas
+// de faux vert pour une lecture écrite dans `crates/*/src` par un jeton
+// surveillé — et rien de plus n'est affirmé (revue P1, B4/E2) : `build.rs`,
+// `examples/` et `benches/` ne sont pas lus, ni les lectures internes aux
+// dépendances (voir « Ce qu'elle n'établit PAS » en tête du fichier).
 
 /// Jetons surveillés (identifiants, comparés exactement). Toute lecture de
 /// l'environnement écrite dans `crates/*/src` passe par l'un d'eux :
@@ -1265,7 +1276,12 @@ impl Plages {
     fn exclure_si<T: quote::ToTokens + syn::spanned::Spanned>(&mut self, n: &T) {
         if attributs_de_tete(n).iter().any(attribut_de_test) {
             let (debut, fin) = plage(n);
-            self.exclues.push((debut, fin));
+            // `visit_stmt` puis `visit_item` présentent le même nœud pour un
+            // `Stmt::Item` : on ne compte une plage qu'une fois (revue P1, E3),
+            // pour que `Analyse::exclusions` soit un nombre de plages.
+            if !self.exclues.contains(&(debut, fin)) {
+                self.exclues.push((debut, fin));
+            }
         }
     }
 
@@ -1484,7 +1500,11 @@ fn parcourir(
                 }
             }
             TokenTree::Ident(id) => {
-                let jeton = id.to_string();
+                // Identifiant brut (`r#env`) : son `Display` garde le préfixe
+                // `r#`, qu'on retire pour le comparer aux jetons surveillés
+                // (revue P1, E1).
+                let brut = id.to_string();
+                let jeton = brut.strip_prefix("r#").unwrap_or(&brut).to_string();
                 if !JETONS_SURVEILLES.contains(&jeton.as_str()) {
                     continue;
                 }
@@ -2025,6 +2045,8 @@ fn s_lectures_hors_liste_rougissent_et_lisent() {
     for (src, nom) in [
         (r#"fn f() { let _ = std::env::var("X"); }"#, Some("X")),
         (r#"fn f() { let _ = dotenvy::var("X"); }"#, Some("X")),
+        // Identifiant brut (revue P1, E1).
+        (r#"fn f() { let _ = std::r#env::var("X"); }"#, Some("X")),
         (
             r#"fn f() { tracing::info!("{:?}", std::env::var_os("X")); }"#,
             Some("X"),
@@ -2195,4 +2217,69 @@ fn s_fantomes_du_code() {
     // Commentaire `//` : invisible.
     let a = analyser_un("// KESH_FANTOME\nfn f() {}");
     assert!(controle_fantomes(&a.litteraux, &lues).is_empty());
+}
+
+// ---------------------------------------------------------------------------
+// Comportement du binaire (revue P1, B3)
+// ---------------------------------------------------------------------------
+
+/// Lance le binaire `kesh-api` dans un environnement vidé, dans un répertoire
+/// temporaire (aucun `.env` à charger), avec `RUST_LOG` posé à `rust_log` et
+/// les deux variables obligatoires **vides** : `Config::from_env` refuse, et le
+/// binaire sort en erreur avant toute connexion. `KESH_LOG_FILE_ROTATION`
+/// invalide fait rejouer un avertissement (`warn`) par `main` après
+/// l'installation de l'abonné. Rend la sortie complète (stdout + stderr).
+fn sortie_du_binaire_sans_configuration(rust_log: &str) -> String {
+    let dir = tempfile::tempdir().expect("répertoire temporaire");
+    let sortie = std::process::Command::new(env!("CARGO_BIN_EXE_kesh-api"))
+        .current_dir(dir.path())
+        .env_clear()
+        .env("RUST_LOG", rust_log)
+        .env("NO_COLOR", "1")
+        .env("DATABASE_URL", "")
+        .env("KESH_JWT_SECRET", "")
+        .env("KESH_LOG_FILE_ROTATION", "inconnue")
+        .output()
+        .expect("lancement du binaire kesh-api");
+    assert!(
+        !sortie.status.success(),
+        "le binaire doit refuser de démarrer sans configuration"
+    );
+    format!(
+        "{}{}",
+        String::from_utf8_lossy(&sortie.stdout),
+        String::from_utf8_lossy(&sortie.stderr)
+    )
+}
+
+/// `RUST_LOG=""` vaut une absence : le niveau `info` s'applique, et
+/// l'avertissement de `KESH_LOG_FILE_ROTATION` est émis. Lu brut,
+/// `EnvFilter::new("")` ne laissait passer que les erreurs (CHANGELOG 0.13.0,
+/// « Modifié ») — mutation rouge au Change Log de la fiche 15-11b.
+#[test]
+fn rust_log_vide_vaut_info() {
+    for rust_log in ["", "   "] {
+        let sortie = sortie_du_binaire_sans_configuration(rust_log);
+        // Assertion de montage : la sortie n'est pas muette, et le refus
+        // vient bien de la configuration.
+        assert!(
+            sortie.contains("Erreur de configuration"),
+            "RUST_LOG={rust_log:?} : refus de configuration attendu, sortie : {sortie}"
+        );
+        assert!(
+            sortie.contains("KESH_LOG_FILE_ROTATION='inconnue' invalide"),
+            "RUST_LOG={rust_log:?} : le niveau `info` doit laisser passer l'avertissement, sortie : {sortie}"
+        );
+    }
+    // Témoin : `RUST_LOG=error` masque l'avertissement — l'assertion
+    // ci-dessus discrimine donc bien le niveau appliqué.
+    let sortie = sortie_du_binaire_sans_configuration("error");
+    assert!(
+        sortie.contains("Erreur de configuration"),
+        "sortie : {sortie}"
+    );
+    assert!(
+        !sortie.contains("KESH_LOG_FILE_ROTATION='inconnue' invalide"),
+        "RUST_LOG=error ne doit pas laisser passer un avertissement, sortie : {sortie}"
+    );
 }
