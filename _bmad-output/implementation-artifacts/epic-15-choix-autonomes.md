@@ -201,6 +201,9 @@ l'import (#458–#461).
   lignes, le refus le plus bloquant gagne et le refus non imputable nomme tous les comptes.
 - **Écartée** : des identifiants (`accountIds`) — l'utilisateur ne les voit nulle part.
 - **Réversible** : oui avant release ; après, la clé fait partie du contrat.
+- *Renvoi (ajouté le 2026-10-08, validation P3 de la 15-5a, finding R3-3 ; l'entrée n'est pas
+  réécrite)* : la clé `details.accountNumbers` est **révisée par C16** —
+  `details.rejected[{accountId, accountNumber}]`. L'ordre des causes, lui, reste en vigueur.
 
 ## C14 — 15-5b : les refus de l'écran des règles ne doivent pas s'afficher « [object Object] »
 
@@ -386,4 +389,96 @@ l'import (#458–#461).
 - **Retenu** : la 15-5b passe aussi la **liste complète** (`accounts={accounts}`) à
   `BankAccountJournalLinkForm`, qui filtre lui-même ses options ; test Vitest. C12 reste valable pour les
   deux `<select>` de la page.
+- **Réversible** : oui.
+
+## C27 — 15-5b : les comptes de réglage sont contrôlés à l'usage, pas seulement à la désignation
+
+- **Contexte** : finding F-1 (MEDIUM) de la P3 de la 15-5b — l'exemption « inchangé » de l'AC11 laisse
+  en place un réglage devenu non imputable, et les flux de validation d'une facture et de saisie d'une
+  facture fournisseur y écrivent avec `enforce_postable = false` : le défaut de #429 subsistait alors
+  que l'inventaire (b) le disait traité. Le compte d'arrondi, lui, est relu à l'usage
+  (`rounding_account_for_write`).
+- **Retenu** (décision de l'orchestrateur) : la 15-5b ajoute un contrôle **à l'usage** de la créance et
+  de la TVA due (validation d'une facture) et des créanciers et de la TVA récupérable (création d'une
+  facture fournisseur, donc aussi complétion d'un import), chacun **seulement s'il reçoit une ligne** ;
+  refus `ACCOUNT_NOT_POSTABLE` avec `details.rejected` (forme : C28). L'exemption « inchangé » reste à
+  la désignation — c'est l'usage qui refuse.
+- **Compatibilité avec D-A0, vérifiée** : D-A0 (14-3b) exempte les flux automatiques de la garde de
+  `create_in_tx` ; sa limite L2 prévoyait exactement cette remédiation (« re-vérifier `postable` à la
+  résolution avec message dédié — amélioration future si un besoin se manifeste »,
+  `14-3b-consommateurs-roles.md:188`). La garde est en amont, `create_in_tx` et son drapeau sont
+  inchangés ; L2 est **révisée** pour ces quatre comptes. L'angle mort « compte bancaire à l'usage »
+  (C6) n'est pas touché : il relève de D-A0 elle-même.
+- **Laissé tel quel, et écrit** : le compte de produit par défaut (exemption délibérée D3-bis de la
+  16-1a) ; le compte de décompte TVA (lu par aucun flux d'écriture).
+- **Écartées** : écrire l'angle mort sans le fermer (#429 resterait ouverte en fait, fermée en titre) ;
+  supprimer l'exemption « inchangé » (bloquerait l'enregistrement des réglages, #271).
+- **Réversible** : oui (aucune migration) ; le code d'erreur fait partie du contrat dès v0.13.0.
+
+## C28 — 15-5b : le refus à l'usage a son propre message, et le même contrat
+
+- **Contexte** : C27. Le message de la 15-5a (« choisissez un compte imputable ») ne sert à rien à qui
+  valide une facture : il n'a pas choisi ce compte sur la pièce ; il faut lui dire **où** agir.
+- **Retenu** : une variante `DbError::DesignatedAccountsNotPostable(NonPostableAccounts)`, rendue sous le
+  **même code** `ACCOUNT_NOT_POSTABLE` et le **même** `details` (`NonPostableAccounts::details()`, C29) —
+  un seul contrat pour l'intégrateur —, avec une clé neuve `error-designated-account-not-postable`
+  (sélecteur `[one]`/`*[other]` inscrit à `SELECTEURS_RESOLUS_COTE_SERVEUR`) qui renvoie à *Paramètres →
+  Facturation* et demande d'y désigner un sous-compte imputable. Un compte archivé ou absent n'est pas
+  refusé par cette garde (chemin actuel, `InactiveOrInvalidAccounts`).
+- **Divergence assumée** : le solde du reste refuse une TVA due inutilisable en `ConfigurationRequired`
+  (`vat_payable_account_for_write`, 25-4-d2a) ; il n'est pas aligné dans cette story.
+- **Écartées** : réutiliser `AccountsNotPostable` (message inexact pour ce cas) ; un champ « contexte »
+  dans `NonPostableAccounts` (alourdit le type de la 15-5a pour un seul consommateur) ; un code neuf
+  (deux codes pour une même cause).
+- **Réversible** : oui avant v0.13.0.
+
+## C29 — 15-5a/15-5b : un seul constructeur du JSON `details.rejected`
+
+- **Contexte** : findings R3-3 et F-4 (LOW) de la P3 de la 15-5b — le JSON `rejected` était construit à
+  deux endroits (bras d'`errors.rs` de la 15-5a, `accept_one_split` / `accept_one_rule` de la 15-5b),
+  libres de dériver.
+- **Retenu** : la 15-5a pose `NonPostableAccounts::details(&self) -> serde_json::Value`
+  (`{ "rejected": [{ "accountId", "accountNumber" }] }`, `serde_json` étant déjà une dépendance de
+  `kesh-db`) ; le bras API, les deux `failed[].details` et le refus à l'usage (C28) l'appellent.
+- **Écartée** : un test d'égalité entre deux constructions (la duplication resterait).
+- **Réversible** : oui.
+
+## C30 — 15-5b : la création d'une règle est gardée dans le dépôt, comme sa modification
+
+- **Contexte** : finding F-5 (LOW) de la P3 de la 15-5b — le POST de règle n'était gardé que par le
+  pré-vol du handler, hors transaction, alors que le PATCH l'est dans `update_in_tx`.
+- **Retenu** : contrôle dans `reconciliation_rules::create_in_tx`, dans la transaction, après la
+  validation du projet par défaut et avant l'`INSERT`, refus si `active && !postable` ; le pré-vol
+  `validate_counterparty_account` reste inchangé (404). Ordre : forme → 404 compte → refus du projet →
+  400 non imputable → 409 doublon.
+- **Écartée** : pré-vol seul, course écrite (deux patrons pour une même règle métier).
+- **Réversible** : oui.
+
+## C31 — 15-5a : ordre des comptes nommés — lexicographique, puis identifiant
+
+- **Contexte** : finding F-3 (LOW) de la P3 de la 15-5a — « trié par numéro » laissait ouvert l'ordre
+  numérique ou lexicographique, et l'ordre à numéro égal.
+- **Retenu** : ordre **lexicographique de la chaîne** (`String` de Rust), puis identifiant ; attendu
+  fixé dans les tests (`["1000", "10000", "1010", "2000"]`).
+- **Écartée** : ordre numérique (un numéro n'est pas garanti numérique ; un tri qui échoue sur un numéro
+  alphanumérique est pire qu'un ordre lexicographique).
+- **Réversible** : oui.
+
+## C32 — 15-5c : l'écran réel du rapprochement, vérifié au code ; `PERIOD_LOCKED` sans détail
+
+- **Contexte** : findings R-1 et F-1 (MEDIUM) de la P1 de la 15-5c, qui se contredisaient sur le filtre
+  des sélecteurs de compte, et F-1 sur les boutons ; F-6 (LOW) sur `PERIOD_LOCKED`.
+- **Constaté au code** : les deux modales réduisent la liste aux classes **5, 6, 7** par préfixe
+  (`ManualMatchModal.svelte:65-69`, `TransactionSplitModal.svelte:71-73`), puis `AccountAutocomplete`
+  ne garde que les comptes **actifs et imputables** (`:200-207`) — R-1 et F avaient chacun raison sur
+  un des deux filtres. L'écran des propositions n'a que deux boutons **de lot** (« Accepter (N) »,
+  « Rejeter », sur les cases cochées) et deux boutons **par ligne** (« Affecter manuellement »,
+  « Éclater ») ; la candidate affichée est une facture **ou** une règle. Une transaction **rejetée**
+  quitte la liste, et aucun écran ne la montre plus.
+- **Retenu** : l'AC7 écrit les deux filtres ; l'AC5 fusionne *Acceptation des propositions* et
+  *Acceptation par lot* en une sous-section qui décrit cet écran ; le manuel dit le sort d'une
+  transaction rejetée sans promettre de chemin inexistant. Le libellé de `PERIOD_LOCKED` ne lit pas son
+  `details` : limite assumée, écrite.
+- **Signalé à l'orchestrateur** : une transaction rejetée n'est plus atteignable depuis l'interface
+  (candidat à une issue).
 - **Réversible** : oui.

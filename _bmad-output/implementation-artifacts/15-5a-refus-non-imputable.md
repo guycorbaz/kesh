@@ -9,7 +9,8 @@ Status: ready-for-dev
      détail est révisée par C16), C16 (forme du détail), C17 (construction de la variante), C18 (pluriel
      Fluent), C19 (parenthèse du message), C20 (`exempt_ids` retiré), C21 (verrou hors périmètre), C22
      (ordre de la boucle fournisseur), C23 (frontière des commentaires), C24 (documentation des
-     intégrateurs). Validation P2 faite (Change Log). -->
+     intégrateurs), C29 (accesseur unique du détail `rejected`), C31 (ordre lexicographique puis
+     identifiant). Validations P2 et P3 faites (Change Log). -->
 
 **Issues** : `refs #427`, `refs #429` — **ne ferme rien** (c'est la 15-5b qui ferme #427 et #429).
 Elle traite le **commentaire de #429** : toutes les gardes de postabilité refusent aujourd'hui avec
@@ -46,8 +47,14 @@ garde neuve.
      a pas ; ici le compte est toujours de la société et actif, son numéro toujours connu (choix C16) ;
    - `pub struct NonPostableAccounts(Vec<NonPostableAccount>)` — **champ privé** ; seul constructeur
      `NonPostableAccounts::new(impl IntoIterator<Item = NonPostableAccount>) -> Self`, qui **trie par
-     numéro** et **dédoublonne par identifiant**, avec la précondition « non vide » vérifiée par
-     `debug_assert!` ; accesseurs en lecture (`iter()`, `numbers()`) (choix C17) ;
+     numéro dans l'ordre lexicographique de la chaîne** (`"1000" < "10000" < "1010" < "2000"` — le
+     numéro est une `String`, et un tri numérique échouerait sur un numéro non numérique), **puis par
+     identifiant** à numéro égal, et **dédoublonne par identifiant**, avec la précondition « non vide »
+     vérifiée par `debug_assert!` ; accesseurs en lecture (`iter()`, `numbers()`) (choix C17, C31) ;
+   - l'**accesseur unique du détail JSON** `NonPostableAccounts::details(&self) -> serde_json::Value`,
+     qui rend `{ "rejected": [{ "accountId", "accountNumber" }] }` dans l'ordre de la liste —
+     `serde_json` est déjà une dépendance de `kesh-db`. Le bras d'`errors.rs` de `kesh-api` **et** les
+     `failed[].details` de la 15-5b l'appellent ; aucun autre site ne construit ce JSON (choix C29) ;
    - la variante `DbError::AccountsNotPostable(NonPostableAccounts)`, avec son attribut thiserror
      `#[error("Un ou plusieurs comptes ne sont pas imputables")]` (patron de
      `InactiveOrInvalidAccounts`, `errors.rs:349`), et un raccourci
@@ -56,8 +63,9 @@ garde neuve.
    dédoublonnée et non vide** — c'est le système de types qui le garantit, pas une consigne. Son
    `error_code()` rend `"ACCOUNT_NOT_POSTABLE"`. `crates/kesh-api/src/errors.rs` la mappe en
    **HTTP 400**, code `ACCOUNT_NOT_POSTABLE`, avec un corps
-   `{ "error": { "code", "message", "details": { "rejected": [{ "accountId", "accountNumber" }] } } }`
-   — **exactement la forme du jumeau `ACCOUNT_ARCHIVED`** (bras `DbError::ReversalAccountsArchived`,
+   `{ "error": { "code", "message", "details": { "rejected": [{ "accountId", "accountNumber" }] } } }`,
+   dont `details` est **la valeur rendue par `NonPostableAccounts::details()`** —
+   **exactement la forme du jumeau `ACCOUNT_ARCHIVED`** (bras `DbError::ReversalAccountsArchived`,
    `crates/kesh-api/src/errors.rs:2945-2972`). Le client envoie des identifiants : `accountId` lui dit
    quelle ligne corriger, `accountNumber` le dit à l'utilisateur. Les deux sont exposés sans risque : la
    variante n'est émise que pour un compte **de la société et actif** (anti-énumération KF-002
@@ -94,9 +102,11 @@ garde neuve.
 ### Les gardes existantes nomment la cause
 
 3. **AC3 — Saisie manuelle** (`validate_lines_accounts_in_tx`,
-   `crates/kesh-db/src/repositories/journal_entries.rs:84`). La requête lit
-   `id, number, active, postable` **sans** clause `active` ni `postable` dans le `WHERE` (seulement
-   `company_id` et `id IN (…)`), et la décision se prend en Rust, dans cet ordre :
+   `crates/kesh-db/src/repositories/journal_entries.rs:84`). La requête **actuelle** (`:96-105`) filtre
+   `active = TRUE` dans le `WHERE` et y ajoute `postable = TRUE` si `enforce_postable` — elle perd ainsi
+   la raison de l'absence. La requête **réécrite** lit `id, number, active, postable` **sans** clause
+   `active` ni `postable` dans le `WHERE` (seulement `company_id` et `id IN (…)`), et la décision se
+   prend en Rust, dans cet ordre :
    1. un identifiant demandé **absent** du résultat (inconnu ou d'une autre société) **ou** un compte
       **archivé** → `InactiveOrInvalidAccounts` (inchangé) ;
    2. sinon, si `enforce_postable`, tout compte `postable = FALSE` →
@@ -132,7 +142,8 @@ garde neuve.
      de **forme** (`IllegalStateTransition`) — testé (T6) ;
    - `crates/kesh-db/src/repositories/supplier_invoices.rs:639-650` (règlement fournisseur, compte
      interne).
-   La **complétion d'une facture importée** (`imported_supplier_invoices.rs:243`, qui appelle
+   La **complétion d'une facture importée** (route
+   `crates/kesh-api/src/routes/imported_supplier_invoices.rs:243`, qui appelle
    `supplier_invoices::create_in_tx`) hérite de la conversion sans changement de code.
 5. **AC5 — L'écriture d'ouverture hérite du nom juste ; le complément ne bouge pas, et c'est prouvé.**
    `create_opening_entry` (`fn` `journal_entries.rs:562`, appel de `create_in_tx` `:634`,
@@ -215,12 +226,16 @@ garde neuve.
         doc-comment : pourquoi elle existe (commentaire de #429, précédent
         `RevenueAccountRejection::NotPostable`, choix C3, C16, C17) ; `error_code()` →
         `"ACCOUNT_NOT_POSTABLE"`. Compléter le `match` exhaustif de `errors.rs:~745`.
-  - [ ] Tests unitaires du constructeur : entrée désordonnée et dupliquée → triée par numéro,
-        dédoublonnée par identifiant ; entrée vide → panique en `debug` (`#[should_panic]`, sous
-        `#[cfg(debug_assertions)]`).
+  - [ ] Tests unitaires du constructeur : entrée désordonnée et dupliquée → triée par numéro **dans
+        l'ordre lexicographique** (attendu fixé : `["1000", "10000", "1010", "2000"]` pour une entrée
+        `["2000", "1010", "10000", "1000"]`), puis par identifiant à numéro égal, dédoublonnée par
+        identifiant ; entrée vide → panique en `debug` (`#[should_panic]`, sous
+        `#[cfg(debug_assertions)]`) ; `details()` rend exactement
+        `{"rejected":[{"accountId":…,"accountNumber":…}, …]}` dans cet ordre (C29, C31).
   - [ ] Bras dans `crates/kesh-api/src/errors.rs`, à côté de `InactiveOrInvalidAccounts` (`:3067`) :
-        400, code, `t_args("error-account-not-postable", repli, args{numbers, count})`,
-        `details.rejected` (forme du bras `ReversalAccountsArchived`, `:2945-2972`).
+        400, code, `t_args("error-account-not-postable", repli, args{numbers, count})` — `count`
+        posé comme **nombre** Fluent (`FluentValue::from(usize)`), jamais comme chaîne —,
+        `"details": accounts.details()` (C29 ; forme du bras `ReversalAccountsArchived`, `:2945-2972`).
 - [ ] **T2 — Le message** (AC2) : la clé dans les quatre `messages.ftl` ; l'inscription dans
       `SELECTEURS_RESOLUS_COTE_SERVEUR` (`loader.rs:367`) avec son commentaire « où » ; le test du
       garde-fou (`loader.rs:496-510`) vert ; `npm run lint-i18n-ownership` vert ; un test Rust par locale
@@ -267,6 +282,14 @@ garde neuve.
   - [ ] `kesh-api` : `opening_balances_e2e.rs` — une ligne d'ouverture sur un compte non imputable →
         400 `ACCOUNT_NOT_POSTABLE` et `details.rejected == [{accountId, accountNumber}]` ;
         `reports_e2e.rs:1953` asserte aussi `details.rejected`.
+  - [ ] **Le pont `count`/`numbers` du bras API est testé de bout en bout** (finding P3 F-1) — dans
+        `opening_balances_e2e.rs`, dont le montage appelle `init_error_i18n` (`:79`) : sans lui, `t_args`
+        rend le repli Rust et le sélecteur Fluent n'est jamais exercé (c'est le cas de `reports_e2e.rs`,
+        qui n'asserte que le code). Deux cas, locale `fr-CH` : **un** compte non imputable → le
+        `message` commence par « Le compte », contient son numéro, ne contient ni « archiv » ni
+        « invalide » ; **deux** comptes → « Les comptes », les deux numéros dans l'ordre de C31.
+        **Mutation** : `count` passé en chaîne, puis retiré des arguments → le cas « un compte »
+        rougit (le sélecteur retombe sur `*[other]`) ; consigner au Dev Agent Record.
   - [ ] Le **compte de test ne diffère d'un compte accepté que par `postable`** (même société, actif,
         bon type), et l'assertion porte sur la **variante / le code**, jamais sur le seul statut 400.
   - [ ] **Mutation** : pour chacune des quatre gardes, retirer la branche (b) une fois → le test
@@ -285,6 +308,25 @@ garde neuve.
         **Verdict déjà établi en validation P2** : `crates/kesh-db/tests/invoices_line_revenue_account.rs:567`
         et `:708` (compte **archivé**) et `crates/kesh-db/src/repositories/accounts.rs:276` (id
         **absent**) ne portent pas ce motif — les relire, ne pas les réécrire sauf fait nouveau.
+  - [ ] **Commentaires qui décrivent la clause SQL que l'AC3 retire** (finding P3 F-2, attribution
+        C23 : ils parlent de la garde de `validate_lines_accounts_in_tx`, que cette story réécrit) :
+        `grep -rnE "clause .active|garde .active|validate_accounts.\]|active = TRUE.,? qui est inconditionnelle" crates`
+        (six lignes sur `92770300`). **Verdict établi en
+        validation P3, sur `92770300`** — l'affirmation de fond (« la garde `active` ne dépend pas
+        d'`enforce_postable` ») **reste vraie** après l'AC3 (étape 1, en Rust) ; seule la désignation
+        devient fausse :
+        - `crates/kesh-db/src/errors.rs:607-608` (« la clause `active = TRUE` ») → **réécrire** : la
+          garde `active`, désormais décidée en Rust ;
+        - `crates/kesh-db/src/repositories/journal_entries.rs:217` et `:1722` (« la garde
+          `active = TRUE` de [`validate_accounts`] ») → **réécrire** : le lien d'intra-doc vise une
+          fonction qui n'existe pas (défaut antérieur) — le faire pointer sur
+          [`validate_lines_accounts_in_tx`] et dire « la garde `active` » ;
+        - `crates/kesh-api/tests/journal_entry_reversal_e2e.rs:415` (« la garde `active = TRUE`, qui est
+          inconditionnelle ») → **réécrire** de même (« la garde `active` ») ;
+        - `crates/kesh-db/src/errors.rs:484`, `crates/kesh-db/src/repositories/credit_notes.rs:423-424`
+          et, hors du motif mais relu, `errors.rs:11`
+          (« la garde `active` … inconditionnelle », sans désigner de clause) → **justes, inchangés** ;
+        Tout site neuf rendu par la commande est trié de même au Dev Agent Record.
 - [ ] **T8 — Gates** : gate complet backend (`scripts/test-fast.sh`, base remise à zéro avant) —
       **même en cours de boucle de revue** (la story touche des repositories `kesh-db`) ; gate frontend
       complet ; **E2E Playwright complet au dernier commit de code** (décision D7), jugé fichier par
@@ -343,6 +385,9 @@ garde neuve.
 - **C22** — forme d'abord, comptes ensuite, dans la boucle fournisseur.
 - **C23** — chaque commentaire réécrit par une seule story.
 - **C24** — `docs/api-external.md`.
+- **C29** — `NonPostableAccounts::details()`, seul constructeur du JSON `details.rejected` (bras API de
+  cette story, `failed[]` et refus à l'usage de la 15-5b).
+- **C31** — ordre lexicographique du numéro, puis identifiant.
 
 ### Fichiers touchés (prévision)
 
@@ -352,7 +397,8 @@ garde neuve.
 `frontend/src/lib/features/journal-entries/JournalEntryForm.svelte`,
 tests (`crates/kesh-db/tests/{invoice_settlement,supplier_invoices_repository,opening_complement_repository}.rs`,
 `crates/kesh-api/tests/{reports_e2e,opening_balances_e2e}.rs`, `mod tests` de `journal_entries.rs`),
-`CHANGELOG.md`, `docs/api-external.md`. **Aucune migration** (P1–P8 sans objet). Modules de premier
+commentaires (`crates/kesh-db/src/errors.rs`, `journal_entries.rs`, `crates/kesh-api/tests/journal_entry_reversal_e2e.rs`,
+T7), `CHANGELOG.md`, `docs/api-external.md`. **Aucune migration** (P1–P8 sans objet). Modules de premier
 niveau : `kesh-db`, `kesh-api` (erreurs), `kesh-i18n`, `frontend/journal-entries` — sous le seuil de la
 règle de splitting.
 
@@ -443,3 +489,27 @@ règle de splitting.
   **Décisions de l'orchestrateur** : C15 à C24 pour cette fiche (C16 révise C13). **Propagation
   post-patch** : `accountNumbers`, `regroupement ou de clôture`, `exempt_ids`, `:634` / `:770` / `925`
   grepés sur les fiches 15-5, 15-5a, 15-5b, 15-5c et le registre.
+- 2026-10-08 — **Passe de validation P3** (prompt versionné `15-5a-validate-prompt-p3.md` ; deux
+  lentilles **Sonnet** en contexte frais : **R** chasseur de régressions de la remédiation P2
+  (`92770300`), **F** adversaire de périmètre complet ; rotation D6 : P1 Sonnet ×3 → P2 Opus ×2 → P3
+  Sonnet ×2). **0 CRITICAL, 0 HIGH.** Bruts : R 0 MEDIUM + 3 LOW, F 1 MEDIUM + 2 LOW ; aucun doublon
+  inter-lentilles → **1 MEDIUM et 5 LOW distincts**. Trend : P1 (15-5 entière) 7 MEDIUM / 8 LOW → P2
+  5 MEDIUM / 9 LOW → **P3 1 MEDIUM / 5 LOW**.
+
+  | finding | sév. | objet | sort | origine (amendement D5) |
+  |---|---|---|---|---|
+  | F-1 | MEDIUM | le pont `count`/`numbers` du bras API n'était testé nulle part : T2 teste la clé par `bundle.format`, `reports_e2e.rs` n'appelle pas `init_error_i18n` et n'asserte que le code — `count` passé en chaîne retomberait sur `*[other]`, tests verts | T1 (`count` nombre Fluent), T6 : test de bout en bout dans `opening_balances_e2e.rs` (montage `init_error_i18n`, `:79`), 1 compte / 2 comptes, singulier / pluriel, mutants `count` chaîne et absent | **né de la remédiation** (sélecteur introduit en P1, inscrit en P2) |
+  | R3-1 | LOW | AC4 : `imported_supplier_invoices.rs:243` désignait le dépôt homonyme | chemin complet `crates/kesh-api/src/routes/…` | — |
+  | R3-2 | LOW | AC3 décrivait au présent la requête réécrite | AC3 distingue la requête actuelle (`:96-105`) et la requête réécrite | — |
+  | R3-3 | LOW | registre : C13 dit encore `details.accountNumbers` sans renvoi | ligne de renvoi ajoutée à C13 (l'entrée n'est pas réécrite), vers C16 | — |
+  | F-2 | LOW | commentaires « clause / garde `active = TRUE` » rendus inexacts par l'AC3 ; lien `[validate_accounts]` mort | T7 : grep et verdict site par site (réécrits : `kesh-db/src/errors.rs:607-608`, `journal_entries.rs:217`, `:1722`, `journal_entry_reversal_e2e.rs:415` ; justes : `errors.rs:11`, `:484`, `credit_notes.rs:423-424`) — attribution C23 | — |
+  | F-3 | LOW | « trié par numéro » ambigu | AC1, T1 : lexicographique, puis identifiant, attendu fixé (C31) | — |
+
+  **Ajouté par décision de l'orchestrateur** (findings R3-3 et F-4 de la P3 de la 15-5b) : l'accesseur
+  unique `NonPostableAccounts::details()` (AC1, T1, choix **C29**), que la 15-5b appelle.
+  **Signal de la règle de découpage** : sévérité **MEDIUM → MEDIUM** (P2 → P3), mais **un** MEDIUM,
+  distinct de ceux de P2, sur la seule surface de test : convergence, pas recyclage — aucun découpage
+  (amendement D5) ; déclaré au Project Lead par l'orchestrateur. **Décisions** : C29, C31.
+  **Propagation post-patch** : `trié`, `triée par numéro`, `accountNumbers`, `validate_accounts`,
+  `clause .active`, `details()` grepés sur les fiches 15-5, 15-5a, 15-5b, 15-5c et le registre.
+  **Une passe P4 suit** (un MEDIUM en P3).
