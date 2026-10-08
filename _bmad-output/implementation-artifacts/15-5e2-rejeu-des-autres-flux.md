@@ -1077,6 +1077,22 @@ zéro (DROP/CREATE, migrations, seed) avant :
   (1,4 s)** — pollution d'état, non KF-046 ni régression. Aucune spec ne touche les routes modifiées
   hors du chemin nominal ; aucun rouge hors liste. Backend E2E arrêté après le run.
 
+**Revue de code P1 — remédiation** (commit `ee77f450`, cible cargo
+`CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-15-5e2/target`). Mutation L-1 (lecture de
+`was_previously_rejected` neutralisée à `false` dans `post_manual_once`, ce qu'écrivait la
+pré-lecture) : test 8 **rouge** (`Some("false")` contre `Some("true")`) ; restaurée, `touch`, test 8
+vert. Gates au commit `ee77f450`, bases `kesh_155e2` et `kesh_e2e_155e2` remises à zéro
+(DROP/CREATE, migrations, seed pour la première) :
+- **backend** : `scripts/test-fast.sh` (fmt, clippy `-D warnings`, nextest) — **2837 / 2837 passés,
+  4 ignorés** (117,4 s) ; vert (aucun test neuf : le test 8 est étendu) ;
+- **frontend** : `npm run check` 0 erreur (27 avertissements préexistants), `lint-i18n-ownership`
+  vert, `test:unit` **1086 / 1086** (111 fichiers), `build` vert ;
+- **E2E Playwright complet** (backend du worktree, port 3005, secrets `openssl rand`, SMTP factices,
+  inbox et documents en scratchpad, `KESH_TEST_MODE` des deux côtés) : **249 passés / 7 échoués /
+  17 ignorés** (10,3 min). Les 7 sont les **KF-029** (#97 : `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) ; aucun rouge hors
+  liste. Backend arrêté après le run.
+
 ### File List
 
 - `crates/kesh-api/src/routes/credit_notes.rs`
@@ -1343,3 +1359,20 @@ i18n, aucun fichier `frontend`.
   **C-15-5e2-6**. Gates au commit de code : voir T5 du Dev Agent Record. Statut → `review`.
   **Décompte** (recompté) : 6 AC, 6 tâches T0–T5 cochées ; 3 tests neufs (`main` → `6125d50b`) ;
   inventaire au symptôme 394 / 62 sur `HEAD` d'origine, 462 / 64 après.
+- 2026-10-08 — **Revue de code P1** (Sonnet ×3 : B 6 LOW, E 5 LOW, A 1 MEDIUM / 4 LOW ; 15 findings,
+  12 distincts après doublons L-1 = B-2 et L-3 = B-4 = A5). Remédiation au commit `ee77f450` :
+  **A1 (MEDIUM)** doc-comments de `post_manual` et `post_split` « Rejouée sur interblocage » ;
+  **L-1 = B-2** audit (`was_previously_rejected`, montant) lu dans la tentative, test 8 étendu,
+  mutation rouge ; **B-3** `conclude_locked_attempt` factorise le `match` des deux tentatives ;
+  **B-5** clone du pool retiré des cinq fermetures migrées ; **L-3 = B-4 = A5** angles morts du
+  volet (c bis) écrits (registre, point (vii) ; Dev Notes) ; **A2, A3** décomptes recomptés (31
+  fichiers, 959 insertions ; relevé 21 lignes) ; **A4** Pattern 5 renvoie à la règle ; **B-6**
+  cosmétiques (`{settlementId}` gardé, convention du document). **LOW acceptés** : **B-1 = L-4**
+  (pas de test dynamique pour `split` et `complete_import` — angle mort (iii bis) déjà écrit, forme
+  identique à `manual` relue par deux lentilles) ; **L-2** (postabilité de la contrepartie non
+  revérifiée sous verrou — préexistante, D-A0, le rejeu n'allonge la fenêtre que du backoff) ;
+  **L-5** (écrivains hors journal victimes possibles : `PUT /invoices/{id}` avec changement de
+  projet, archivage de projet, clôture et réouverture d'exercice — sans cycle démontré, nommés au
+  point (iv) du registre ; issue d'amélioration à ouvrir). Choix **C-15-5e2-7**. Gates au commit
+  `ee77f450` : backend 2837 / 2837, frontend 1086 / 1086, E2E 249 / 7 KF-029 / 17. Statut reste
+  `review` jusqu'à la passe ciblée.
