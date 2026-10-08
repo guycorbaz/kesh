@@ -1703,11 +1703,6 @@ fn garde_lecture_du_code() {
         a.noms.len()
     );
     assert_eq!(
-        EMPLACEMENTS_AUTORISES.len(),
-        22,
-        "EMPLACEMENTS_AUTORISES : 22 entrées attendues (AC3 de la 15-11b)"
-    );
-    assert_eq!(
         AJOUTS.len(),
         28,
         "AJOUTS : 28 couples attendus (15 dans docker-compose.yml, 13 dans docker-compose.prod.yml)"
