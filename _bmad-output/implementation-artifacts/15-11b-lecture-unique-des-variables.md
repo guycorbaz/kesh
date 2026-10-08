@@ -1,6 +1,6 @@
 # Story 15.11b : Une seule fonction lit l'environnement — le vide vaut l'absence — et le test qui lit le code remplace la liste écrite à la main
 
-Status: review
+Status: done
 
 <!-- Créée le 2026-10-08 par l'agent de découpage, en autonomie (consignes de l'Epic 15), par découpage
      de la Story 15-11 après sa validation P3 (signal D5 levé deux fois, par recyclage — choix C77).
@@ -773,6 +773,25 @@ aux deux bornes ; périmètre : `origin/main` `8f9811d8` → `HEAD`) : tests de
 un doc-comment et une source synthétique) ; tests de `config.rs` 80 → **91** (+11 : 9 « valeur vide »
 — dont `cookie_secure_trimmed_value_is_accepted` —, 2 d'`env_nonempty`).
 
+**Clôture — gates réellement exécutés sur l'état rebasé** (rebase sur `origin/main` `5e4bec50`, 15-5d ;
+dernier commit de code `9aa1974d`, la remédiation P1 rebasée — D7) :
+- base `kesh_1511b` remise à zéro (`DROP`/`CREATE`, 75 migrations, seed ; aucun redémarrage du
+  conteneur) puis **`scripts/test-fast.sh`** (fmt + clippy + nextest) : **2902/2902, 4 ignorés**
+  (`target/gate-logs/15-11b-cloture-backend.log`) ; le test lexical (L) vert sur le code rebasé (les
+  fichiers Rust apportés par la 15-5d n'ajoutent aucune lecture hors liste).
+- **Frontend complet** : `npm run check` 0 erreur (27 avertissements), `lint-i18n-ownership` PASS,
+  `test:unit` **1091/1091** (112 fichiers), `build` vert (`15-11b-cloture-frontend.log`).
+- **E2E complet** : base `kesh_e2e_1511b` remise à zéro et migrée, backend `9aa1974d` + PDF sur le port
+  3004, secrets `openssl rand`, `KESH_COOKIE_SECURE=false`, `KESH_INBOX_DIR`/`KESH_DOCUMENTS_DIR` du
+  worktree, quatre `KESH_SMTP_*` (`/health` `smtpConfigured: true`), `KESH_TEST_MODE=true` des deux côtés :
+  **247 passés, 7 échoués, 19 ignorés** — les 7 sont ceux de la KF-029 (#97) de `docs/testing.md`
+  (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
+  `:77`, `:150`), comparés fichier par fichier : zéro régression (`15-11b-cloture-e2e.log`). Backend
+  arrêté par son PID.
+- `admin-manual.pdf` régénéré (`latexmk -xelatex`) sur le `.tex` fusionné (15-5d + 15-11b), contrôlé
+  aplati : « Compte créanciers », « Les avoirs ne sont pas soumis », « ne font pas partie du secret »,
+  « une ligne laissée vide vaut une ligne absente » présents.
+
 ### File List
 
 - `crates/kesh-api/src/config.rs`
@@ -979,3 +998,16 @@ un doc-comment et une source synthétique) ; tests de `config.rs` 80 → **91** 
     (binary(kesh_api) & test(/^config::/))'` **115/115** (`target/gate-logs/15-11b-review-p1-gate-cible.txt`).
     Gate complet et E2E **non rejoués** : la remédiation ne touche aucune ligne de production exécutable
     (le dernier commit de code de production reste `4185e32f`) ; au push.
+- 2026-10-09 — **Revue de code P2 ciblée** (Haiku, contexte frais, une lentille braquée sur la seule
+  remédiation `387a6aa0` ; prompt `15-11b-review-prompt-p2-ciblee.md`, rapport
+  `target/gate-logs/15-11b-review-p2-ciblee.md`) : **0 finding**, axes exercés et non exercés déclarés.
+  L'orchestrateur a vérifié lui-même que `rust_log_vide_vaut_info` lance le vrai binaire
+  (`CARGO_BIN_EXE_kesh-api`, `env_clear`, répertoire temporaire). La remédiation P1 ne touchant aucune ligne
+  de production exécutable, la boucle est **close** (règle « ce qui permet de CLORE la boucle »).
+  **Trend** : P1 (Sonnet ×3) 1 MEDIUM / 14 LOW → P2 ciblée (Haiku) 0. Aucun reclassement.
+- 2026-10-09 — **Clôture** (agent de clôture, autonomie ; choix **C-15-11b-4**). Rebase sur `origin/main`
+  `5e4bec50` (15-5d) : conflits de registre et de `sprint-status.yaml` résolus par union (ligne
+  `last_updated` renumérotée), `admin-manual.tex` fusionné sans conflit, `admin-manual.pdf` régénéré ; aucun
+  conflit de code. Gates complets sur l'état rebasé (Dev Agent Record) : backend **2902/2902** (4 ignorés),
+  Vitest **1091/1091**, E2E **247 / 7 KF-029**. Statut **done**. L'issue #550 est déjà fermée (par la
+  15-11a) : la PR la référence (`refs #550`) sans la fermer.

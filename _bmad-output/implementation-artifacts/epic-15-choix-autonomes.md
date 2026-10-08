@@ -3599,3 +3599,18 @@ l'import (#458–#461).
 - **Retenu** : pour `RUST_LOG`, un test d'intégration qui lance le binaire `kesh-api` (`CARGO_BIN_EXE_kesh-api`, environnement vidé, répertoire temporaire, obligatoires vides → sortie en refus de configuration) et observe si l'avertissement rejoué de `KESH_LOG_FILE_ROTATION` passe ; témoin `RUST_LOG=error`. Pour les deux répertoires, angle mort écrit (en-tête du test, § *Angles morts* de la fiche). Le dédoublonnage des plages exclues (E3) et la normalisation `r#` (E1) sont faits dans le test.
 - **Écartées** : extraire une fonction `niveau_de_log()` / `repertoire_statique()` (code de production, interdit à cette remédiation) ; démarrer le binaire complet contre une base pour observer `KESH_LOCALES_DIR` (coût, base partagée, processus à arrêter) ; renommer le champ `exclusions` au lieu de dédoublonner.
 - **Réversible** : oui.
+
+## C-15-11b-4 — 15-11b (clôture) : rebasée sur `origin/main` (`5e4bec50`, 15-5d) ; registre et sprint-status par union, PDF régénéré
+
+- **Contexte** : la 15-5d a été mergée pendant la revue de la 15-11b ; elle touche le registre,
+  `sprint-status.yaml`, le CHANGELOG et `admin-manual.tex`/`.pdf`.
+- **Retenu** : rebase (non merge) ; registre par union (les entrées C89–C99 reportées par la branche après
+  C-15-5d-8) ; `sprint-status.yaml` par union, la ligne `last_updated` de la branche renumérotée (24),
+  celle de la clôture (25) ; `admin-manual.tex` fusionné par git sans conflit, le PDF binaire pris de la
+  branche pendant le rebase puis **régénéré** sur le `.tex` fusionné et contrôlé aplati. CHANGELOG `[0.13.0]`
+  sans conflit, une seule rubrique de chaque. Aucun conflit de code ; le test lexical (L) vert sur l'état
+  rebasé. Gates complets rejoués (backend, frontend, E2E).
+- **Écartées** : merge de `main` dans la branche (historique moins lisible) ; garder le PDF de l'un des deux
+  côtés (il aurait omis l'apport de l'autre).
+- **Réversible** : oui (rebase ; branche poussée).
+
