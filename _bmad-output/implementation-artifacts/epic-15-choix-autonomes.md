@@ -707,3 +707,92 @@ l'import (#458–#461).
 - **Écarté** : corriger B2/B4 dans cette story (la remédiation de production appelle une nouvelle passe,
   et « la sévérité se déplace vers ce qu'on vient d'écrire »).
 - **Réversible** : oui (une story de dette).
+## C-15-8-1 — La clé 15-8 passe à la modification d'une écriture (#532)
+- **Contexte** : C2 réservait « 15-8 » à l'import automatique du dossier (#459, #458), en
+  précisant que la numérotation pouvait changer. Le 2026-10-08, Guy a demandé en urgence la
+  modification d'une écriture tant que l'exercice est ouvert (#532) ; l'orchestrateur a attribué
+  la clé `15-8-modifier-une-ecriture`.
+- **Retenu** : 15-8 = #532. L'import du dossier et le cycle fournisseurs prendront les numéros
+  suivants à leur spécification (15-9, 15-10).
+- **Réversible** : oui, ce n'est qu'un nom de clé ; aucun fichier de l'import n'existe encore.
+## C-15-8-2 — La suppression est rouverte, dans le même cadre que la modification
+- **Contexte** : #532 laisse la suppression « à trancher ». La 24-4b l'avait fermée avec la
+  modification.
+- **Retenu** : `DELETE /journal-entries/{id}` aboutit sous **exactement** les gardes de la
+  modification (exercice ouvert, période non verrouillée, ni contre-passée ni contre-passation,
+  aucune pièce), avec l'instantané complet au journal d'audit (`journal_entry.deleted`, déjà
+  écrit par `delete_in_tx`). Le numéro n'est jamais réattribué (compteur de la 25-2-c) : le trou
+  est visible et expliqué par l'audit.
+- **Écartées** : (a) suppression toujours refusée — l'écriture d'ouverture saisie par erreur,
+  ou une écriture en double, ne s'effacerait qu'en la contre-passant, trois écritures pour une ;
+  et un cadre à deux règles pour deux gestes de même nature serait plus difficile à expliquer
+  que le même cadre ; (b) suppression sans trace — contraire à #532 point 1.
+- **Réversible** : oui — remettre le refus dans `delete_in_tx` (une garde).
+## C-15-8-3 — Une écriture modifiée ne change ni de numéro ni d'exercice
+- **Contexte** : le numéro est tiré d'un compteur **par exercice** (25-2-c) et l'unicité porte sur
+  `(company_id, fiscal_year_id, entry_number)`. Déplacer une écriture dans un autre exercice
+  obligerait à lui donner un numéro neuf.
+- **Retenu** : la nouvelle date doit tomber dans l'exercice **de l'écriture** — sinon
+  `400 DATE_OUTSIDE_FISCAL_YEAR` (message existant : « La date n'est pas dans l'exercice courant
+  de cette écriture »). Le numéro, l'exercice et l'`id` sont immuables ; changer d'exercice se fait
+  en supprimant puis en ressaisissant.
+- **Écartée** : renuméroter dans l'exercice cible — un numéro changeant sous une écriture
+  existante est ce que la 25-2-c a fermé.
+- **Réversible** : oui, mais coûteux (renumérotation).
+## C-15-8-4 — Les contrôles de saisie s'appliquent strictement, sans « grandfathering » de compte
+- **Contexte** : l'ancien `update` (supprimé par la 24-4b) exemptait de la garde de postabilité
+  les comptes déjà présents sur l'écriture (14-3b, D-A1). #532 exige « les mêmes contrôles qu'à
+  la saisie (comptes actifs et imputables) ».
+- **Retenu** : toutes les lignes, anciennes comme nouvelles, sont contrôlées comme à la création
+  (`active = TRUE`, `postable = TRUE`). Un compte archivé ou devenu non imputable doit être
+  remplacé pour enregistrer. Les **projets** déjà présents sur l'écriture restent tolérés même
+  archivés (grandfathering de l'ancien `update`) : étiqueter n'est pas imputer — asymétrie déjà
+  admise par la 24-4a.
+- **Écartée** : reprendre l'exemption D-A1 — contraire à la lettre de #532, et elle laisserait une
+  écriture modifiée aujourd'hui porter un compte qu'aucune saisie n'accepterait.
+- **Réversible** : oui (paramètre `exempt_ids` déjà présent dans `validate_lines_accounts_in_tx`).
+## C-15-8-5 — Le motif de refus réutilise l'inventaire de la contre-passation
+- **Contexte** : il faut refuser la modification de toute écriture référencée par une pièce. La
+  24-4a tient déjà l'inventaire exact (`reversal_blockers`) : contre-passation, contre-passée,
+  facture, avoir, facture fournisseur (achat et règlement), règlement client (solde compris),
+  transaction bancaire rapprochée, compte archivé.
+- **Retenu** : la modification et la suppression réutilisent `reversal_blockers` **sans** le motif
+  « compte archivé » (il ne gèle pas : on peut remplacer le compte). Codes : `ENTRY_IS_REVERSED`
+  (409, existant, message élargi à « modifiée ni supprimée ») pour une écriture déjà contre-passée ;
+  pour les autres motifs, un nouveau `DbError::EntryNotModifiable { blocker, document_id,
+  document_label }` rendu en 409 **sous le code du motif** (`IS_A_REVERSAL`, `OWNED_BY_INVOICE`,
+  …, `MATCHED_BANK_TRANSACTION`) avec `details.documentId` / `details.documentNumber` — la forme
+  exacte du refus de contre-passation, que l'API externe documente déjà, et le même message (il
+  nomme le chemin de la pièce). `ENTRY_IS_POSTED` et `DbError::EntryIsPosted` sont **retirés**
+  (plus d'émetteur). Un garde-fou d'inventaire (`information_schema`) rougit si une table neuve
+  référence `journal_entries` ou si `journal_entry_lines` gagne une colonne — c'est ce qui forcera
+  le triage du lettrage (15-1a).
+- **Écartée** : une seconde liste de propriétaires écrite à la main — deux inventaires divergent.
+## C-15-8-6 — L'historique se lit au journal d'audit, depuis la fiche
+- **Contexte** : #532 laisse à trancher l'affichage de l'historique des versions sur la fiche.
+- **Retenu** : la fiche indique « Modifiée » quand `version > 1` (seule la modification fait
+  bouger `version`) et porte un lien « Historique » vers `/audit-log?entityType=journal_entry&entityId={id}`
+  (écran existant, réservé Comptable/Admin ; le lien est masqué pour Consultation). L'instantané
+  avant/après, lignes comprises, est dans `details`.
+- **Écartée** : un écran de versions avec différentiel ligne à ligne — hors de l'urgence ; le
+  journal d'audit porte déjà l'information complète.
+- **Réversible** : oui ; un écran de versions peut s'ajouter plus tard sans rien défaire.
+## C-15-8-7 — Modifier et supprimer se font depuis la fiche, pas depuis la liste
+- **Retenu** : la liste garde son seul lien vers la fiche (24-4b). La fiche porte « Modifier »
+  (formulaire de saisie en mode édition, pré-rempli) et « Supprimer » (confirmation), absents —
+  pas grisés — avec le motif quand l'écriture n'est pas modifiable. La fiche est l'endroit où le
+  motif de refus et la contre-passation sont déjà expliqués.
+- **Écartée** : remettre ✎ et 🗑 sur chaque ligne de la liste — il faudrait y calculer
+  l'éditabilité ligne par ligne (cinq jointures), ce que la 24-4a a refusé pour la liste.
+## C-15-8-8 — `PUT` et `DELETE` restent ouverts aux clés API en écriture
+- **Retenu** : comme la création, la contre-passation et la dévalidation, ils sont ouverts aux clés
+  `read-write` ; l'API externe et le manuel administrateur le disent. La trace d'audit porte la clé.
+- **Écartée** : les réserver à l'interface — une intégration qui crée des écritures doit pouvoir
+  corriger les siennes, et le précédent de la dévalidation (#440) va dans ce sens.
+## C-15-8-9 — Pas de découpage : la règle n'est pas déclenchée
+- **Contexte** : cinq zones touchées (`kesh-db`, `kesh-api`, `kesh-i18n`, `frontend`, `docs`) —
+  le seuil est « plus de cinq ». Un seul mécanisme (deux verbes rouverts sous une garde commune),
+  aucune migration.
+- **Retenu** : story unique. **Ligne de découpe pré-déclarée** si la validation montre une
+  non-convergence par recyclage : la suppression (AC 9–11, T3, son bouton et son E2E) part en
+  15-8b ; la modification de l'écriture manuelle et d'ouverture reste en 15-8a.
