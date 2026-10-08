@@ -126,8 +126,8 @@ export interface InvoiceSettingsResponse {
 	defaultVatDecompteAccountId: number | null;
 	/**
 	 * Compte créanciers (dette fournisseurs, passif) — crédité par la saisie d'une
-	 * facture fournisseur (Story 15-5d, choix C34). Le serveur le rendait déjà ;
-	 * absent d'une requête de mise à jour, il est préservé (Story 15-5b, AC19).
+	 * facture fournisseur (Story 15-5d, choix C34). `null` : non désigné ; un compte
+	 * désigné peut être devenu non imputable depuis, et l'écran le montre en place.
 	 */
 	defaultPayableAccountId: number | null;
 	defaultSalesJournal: JournalCode;
@@ -153,9 +153,10 @@ export interface UpdateInvoiceSettingsRequest {
 	defaultVatRecoverableAccountId: number | null;
 	defaultVatDecompteAccountId: number | null;
 	/**
-	 * Compte créanciers (dette fournisseurs, passif) — crédité par la saisie d'une
-	 * facture fournisseur (Story 15-5d, choix C34). Le serveur le rendait déjà ;
-	 * absent d'une requête de mise à jour, il est préservé (Story 15-5b, AC19).
+	 * Compte créanciers (dette fournisseurs, passif) — l'écran l'envoie toujours
+	 * (Story 15-5d, choix C34) ; `null` l'efface. Le serveur accepte aussi une
+	 * requête qui l'omet et le préserve alors (Story 15-5b, AC19), forme que ce
+	 * type ne produit pas.
 	 */
 	defaultPayableAccountId: number | null;
 	defaultSalesJournal: JournalCode;

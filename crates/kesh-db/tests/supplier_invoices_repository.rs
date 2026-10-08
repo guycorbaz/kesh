@@ -2139,8 +2139,14 @@ mod garde_usage_comptes_reglage {
     use super::*;
     use kesh_db::test_fixtures::{attendre_une_requete_en_cours, sonde_verrou_nowait};
 
-    const ACCESSEUR: &[&str] = &["FROM accounts WHERE company_id", "LOCK IN SHARE MODE"];
+    const ACCESSEUR: &[&str] = &[
+        "FROM accounts FORCE INDEX (PRIMARY) WHERE company_id",
+        "LOCK IN SHARE MODE",
+    ];
     const SONDE_EXERCICE: &str = "SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE NOWAIT";
+    /// Motifs de `fiscal_years::find_open_covering_date`.
+    const EXERCICE: &[&str] = &["FROM fiscal_years", "FOR UPDATE"];
+    const SONDE_COMPTE: &str = "SELECT id FROM accounts WHERE id = ? FOR UPDATE NOWAIT";
 
     async fn set_postable(pool: &MySqlPool, account_id: i64, postable: bool) {
         sqlx::query("UPDATE accounts SET postable = ? WHERE id = ?")
@@ -2294,5 +2300,64 @@ mod garde_usage_comptes_reglage {
             vec![(payable, "2000".to_string())]
         );
         assert_nothing_written(&pool, &ctx).await;
+    }
+
+    /// **Test de mode — achat** (revue de code P1, E2) : le verrou des comptes
+    /// désignés de la saisie est **partagé**, patron du test de mode 4 de la
+    /// vente. L'accesseur est commun aux deux flux ; ce test couvre le site
+    /// d'achat lui-même (ses candidats, sa place).
+    ///
+    /// La bloqueuse reproduit ce que tient un règlement fournisseur à
+    /// l'insertion de ses lignes : l'exercice en exclusif, les créanciers (et
+    /// la TVA récupérable) en partagé. La saisie est vue en attente **sur
+    /// l'exercice** — donc passée l'accesseur malgré les partagés de la
+    /// bloqueuse. Sous un accesseur en `FOR UPDATE`, elle attendrait sur les
+    /// comptes, et `attendre_une_requete_en_cours` paniquerait.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn mode_purchase_lock_is_shared(pool: MySqlPool) {
+        let ctx = setup(&pool).await;
+        let payable = ctx.seeded.accounts["2000"];
+        let recoverable = ctx.recoverable_id;
+
+        let mut bloqueuse = pool.begin().await.unwrap();
+        sqlx::query("SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE")
+            .bind(ctx.seeded.fiscal_year_id)
+            .fetch_all(&mut *bloqueuse)
+            .await
+            .unwrap();
+        // ⛔ `name` est lu À DESSEIN (C-15-5d-1) : `SELECT id … LOCK IN SHARE
+        // MODE` est couvert par l'index secondaire `fk_accounts_parent` et ne
+        // verrouillerait pas la ligne de la clé primaire.
+        sqlx::query("SELECT id, name FROM accounts WHERE id IN (?, ?) LOCK IN SHARE MODE")
+            .bind(payable)
+            .bind(recoverable)
+            .fetch_all(&mut *bloqueuse)
+            .await
+            .unwrap();
+        // Le montage lui-même est vérifié : les deux lignes sont bien tenues.
+        for compte in [payable, recoverable] {
+            assert!(
+                !sonde_verrou_nowait(&pool, SONDE_COMPTE, compte).await,
+                "la bloqueuse doit tenir le compte {compte} en partagé"
+            );
+        }
+        let (p, new, u) = (
+            pool.clone(),
+            one_line(&ctx, dec!(100.00), dec!(8.10)),
+            ctx.seeded.admin_user_id,
+        );
+        let tache = tokio::spawn(async move { supplier_invoices::create(&p, new, u).await });
+        let vue = attendre_une_requete_en_cours(&pool, EXERCICE, || tache.is_finished()).await;
+        assert!(
+            vue,
+            "la saisie a fini sans attendre l'exercice : {:?}",
+            tache.await.map(|r| r.map(|_| ()))
+        );
+        bloqueuse.rollback().await.unwrap();
+
+        tache
+            .await
+            .expect("tâche")
+            .expect("la saisie réussit une fois l'exercice rendu");
     }
 }

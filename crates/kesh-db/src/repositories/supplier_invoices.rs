@@ -304,7 +304,13 @@ pub async fn create(
 /// tiennent puis demandent l'exclusif s'interbloquent), et l'insertion des
 /// lignes reprend les comptes après l'exercice. Les comptes désignés de
 /// `(2, désignés)` (passif, actif) et les comptes de charge (`Expense`) sont
-/// disjoints par type, et leur verrou est **partagé** (Story 15-5d) : il suffit
+/// disjoints **tant que les types désignés sont respectés** — ce qui n'est pas
+/// contrôlé après la désignation (angle mort assumé, revue de code P1, B-3) :
+/// un compte désigné retypé en charge et imputé par une ligne prend un verrou
+/// exclusif en `(2, suite)` puis partagé en `(2, désignés)`, et deux saisies
+/// croisées sur deux tels comptes peuvent s'interbloquer ; ce cycle étroit
+/// relève du **rejeu des routes**, comme les autres ci-dessous. Le verrou des
+/// comptes désignés est **partagé** (Story 15-5d) : il suffit
 /// contre l'archivage et le passage à non imputable, qui écrivent la ligne du
 /// compte, et reste compatible avec le verrou partagé que `fk_jel_account`
 /// pose sur les créanciers dans un règlement fournisseur qui tient déjà

@@ -1076,7 +1076,10 @@ mod garde_usage_comptes_reglage {
     /// Motifs de la requête VERROUILLANTE de l'accesseur
     /// (`lock_designated_accounts_in_tx`) ; la lecture préalable des identifiants
     /// de la société ne porte pas `LOCK IN SHARE MODE`.
-    const ACCESSEUR: &[&str] = &["FROM accounts WHERE company_id", "LOCK IN SHARE MODE"];
+    const ACCESSEUR: &[&str] = &[
+        "FROM accounts FORCE INDEX (PRIMARY) WHERE company_id",
+        "LOCK IN SHARE MODE",
+    ];
     /// Motifs de `fiscal_years::find_open_covering_date`.
     const EXERCICE: &[&str] = &["FROM fiscal_years", "FOR UPDATE"];
     const SONDE_EXERCICE: &str = "SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE NOWAIT";
@@ -1352,6 +1355,31 @@ mod garde_usage_comptes_reglage {
         let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
         sqlx::query("UPDATE accounts SET active = FALSE, postable = FALSE WHERE id = ?")
             .bind(seeded.accounts["1100"])
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let err = validate(&pool, &seeded, id).await.expect_err("refusée");
+        assert!(
+            matches!(err, DbError::InactiveOrInvalidAccounts),
+            "attendu InactiveOrInvalidAccounts, obtenu {err:?}"
+        );
+        assert_nothing_written(&pool, &seeded, id).await;
+    }
+
+    /// Priorité des refus **en mélange** (C49 ; revue de code P1, E2) :
+    /// créance non imputable ET TVA due archivée →
+    /// `InactiveOrInvalidAccounts`, et non la variante qui nommerait la
+    /// créance. Le contrôle juge « absent ou inactif » sur TOUS les rôles écrits
+    /// avant de nommer un compte non imputable, quel que soit l'ordre des rôles
+    /// (la créance précède la TVA due).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn archived_account_wins_over_a_non_postable_one(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        set_postable(&pool, seeded.accounts["1100"], false).await;
+        sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+            .bind(seeded.accounts["2000"])
             .execute(&pool)
             .await
             .unwrap();

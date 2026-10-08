@@ -2416,3 +2416,54 @@ l'import (#458–#461).
   de l'avoir (« l'inverse exact », `user-manual.tex:1234`) n'est pas réécrit (AC8 : #473, #525) ; la brochure n'est
   pas commitée (régénérée par `make fr`, sans changement de source).
 - **Réversibilité** : totale (texte).
+
+## C-15-5d-5 — 15-5d (revue P1) : le plan de l'accesseur épinglé par `FORCE INDEX (PRIMARY)`
+
+- **Contexte** : finding B-1 (LOW) de la revue de code P1 — l'absence de verrous d'intervalle de la requête
+  verrouillante de `lock_designated_accounts_in_tx` reposait sur un plan `range`/`const` sur `PRIMARY` **mesuré**, que
+  rien ne garantissait sur une table réelle (index secondaires `uq_accounts_company_number` et
+  `uq_accounts_company_singleton_role`, tous deux préfixés par `company_id`).
+- **Retenu** : `FROM accounts FORCE INDEX (PRIMARY) WHERE company_id = ? AND id IN (…) ORDER BY id LOCK IN SHARE MODE`
+  sur la seule requête **verrouillante** (la lecture non verrouillante des identifiants de la société n'en a pas
+  besoin : elle ne pose aucun verrou). `EXPLAIN` relevé sur `kesh_155d` : `range` sur `PRIMARY`, *Using where*, deux
+  identifiants ; `const` pour un seul. Les motifs `ACCESSEUR` des tests de place 1 et 2 suivent le texte de la requête
+  (sans cela, ils attendraient en vain et paniqueraient).
+- **Écarté** : un test qui épinglerait le plan par `EXPLAIN` (le plan dépend des statistiques de la base de test, à
+  cinq comptes ; l'indice le fixe à la source) ; laisser le risque écrit seulement.
+- **Ce que les tests voient, et ce qu'ils ne voient pas** : la suppression de l'indice fait rougir les tests de place
+  1 et 2 — parce que leur motif ne reconnaît plus la requête, **non** parce qu'un verrou d'intervalle apparaîtrait.
+  L'effet sur le plan n'est établi que par l'`EXPLAIN`.
+- **Réversibilité** : totale (une clause SQL, deux constantes de test).
+
+## C-15-5d-6 — 15-5d (revue P1) : les LOW acceptés, et ce qui reste écrit comme angle mort
+
+- **Contexte** : revue de code P1, Sonnet ×3 — B 3 LOW, E 1 MEDIUM et 5 LOW, A 2 LOW. E1 (MEDIUM), B-1, B-2, B-3, A-1
+  et la moitié de E2 sont corrigés (Change Log de la fiche).
+- **Retenu, sans correction** :
+  - **E2, reste** : côté achat, ni test « archivé », ni « compte étranger », ni « deux rôles ». Accepté : l'accesseur
+    et `check_written` sont **communs** aux deux flux et couverts côté vente (archivé, étranger avec sonde, deux rôles,
+    priorité en mélange) ; ce que le site d'achat a en propre — ses candidats (`DesignatedRole::PURCHASE`), sa place,
+    son mode — est couvert par les tests créanciers, TVA récupérable, place 2 et le **test de mode d'achat** ajouté.
+  - **E3** : la garantie « aucun archivage entre le contrôle et l'insertion » n'est testée que pour `postable`.
+    Accepté : `active` et `postable` sont lus par la **même** lecture verrouillante de la même ligne ; un `UPDATE` de
+    l'un ou l'autre prend le même verrou exclusif de ligne. Le test de place 1 exerce ce chemin.
+  - **E4** : la lecture non verrouillante des identifiants de la société (patron `owned_account_ids`) se fait dans
+    l'instantané REPEATABLE READ de l'appelant. Un compte **créé et désigné** par un `PUT` des réglages après
+    l'ouverture de cet instantané, mais avant le verrou des réglages de l'appelant, en serait absent : refus
+    `InactiveOrInvalidAccounts` d'un compte valide. **Angle mort écrit** : refus sûr (rien n'est écrit), réessayable,
+    fenêtre de l'ordre de la milliseconde. Ajouté au doc-comment de l'accesseur.
+  - **E5** : la complétion d'une facture importée (`routes/imported_supplier_invoices.rs`) prend désormais les
+    verrous partagés de l'accesseur sans être rejouée sur interblocage. **Dépendance écrite** : son rejeu relève de la
+    **15-5e2** (rollout du rejeu, closes #536 #484), déjà prévu par la fiche de la 15-5e1 et la phrase des cycles du
+    doc-comment de `supplier_invoices::create_in_tx`. Rien à faire dans la 15-5d.
+  - **E6** : aucun test ne rougit si `ORDER BY id` disparaît. Accepté : deux verrous partagés sont compatibles,
+    l'ordre est ici d'hygiène.
+  - **A-2** : le test de l'avoir exempté vit dans `invoices_validate_vat.rs` et non `credit_notes_repository.rs` ;
+    écart déjà déclaré (C-15-5d-3).
+  - **B-3** : la disjonction par type n'est pas contrôlée après la désignation. Les doc-comments disent désormais
+    pourquoi la vente n'a pas de cycle (deux partagés, quel que soit le type) et, côté achat, écrivent le cycle étroit
+    d'un compte désigné retypé en charge comme angle mort couvert par le rejeu de la route.
+- **E1, ce qui a été corrigé et ce qui ne l'était pas** : l'encadré *Rôles des comptes* (`user-manual.tex`, « Deux
+  exceptions, voulues ») disait déjà l'exemption de l'avoir ; le paragraphe de la validation, non. Une phrase y est
+  ajoutée, avec la raison (« une facture émise doit rester annulable ») et le renvoi.
+- **Réversibilité** : totale.

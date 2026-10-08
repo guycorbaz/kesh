@@ -1964,9 +1964,14 @@ pub(in crate::repositories) fn generate_invoice_journal_lines_rounded(
 ///
 /// L'étape (2 ter) ne prend aucun verrou.
 ///
-/// Les comptes désignés de `(2 bis', suite)` (actif, passif) et les comptes de
-/// produit de `(2 quater)` (`Revenue`) sont disjoints par type : leur ordre
-/// relatif n'ouvre aucun cycle entre eux. Le verrou des comptes désignés est
+/// Les comptes désignés de `(2 bis', suite)` et les comptes de produit de
+/// `(2 quater)` sont tous deux verrouillés **en partagé** : deux verrous
+/// partagés sont compatibles, leur ordre relatif n'ouvre donc aucun cycle entre
+/// eux, **quel que soit le type** des comptes. Ce n'est pas une disjonction de
+/// types qui le garantit — le type d'un compte désigné n'est pas contrôlé après
+/// sa désignation ([`super::company_invoice_settings`], angle mort assumé), et
+/// un compte retypé peut se retrouver des deux côtés (revue de code P1, B-3).
+/// Le verrou des comptes désignés est
 /// **partagé** : il suffit contre l'archivage et le passage à non imputable,
 /// qui écrivent la ligne du compte, et il reste compatible avec les verrous
 /// partagés que `fk_jel_account` pose sur ces comptes dans les flux qui

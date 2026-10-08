@@ -619,9 +619,9 @@ pub(in crate::repositories) struct DesignatedAccountsSnapshot(Vec<LockedDesignat
 ///
 /// # Le verrou : partagé, une requête, `ORDER BY id`
 ///
-/// `SELECT id, number, active, postable FROM accounts WHERE company_id = ? AND
-/// id IN (…) ORDER BY id LOCK IN SHARE MODE` (syntaxe MariaDB 10.11 : pas de
-/// `FOR SHARE`). L'ordre de verrouillage entre les comptes est celui des
+/// `SELECT id, number, active, postable FROM accounts FORCE INDEX (PRIMARY)
+/// WHERE company_id = ? AND id IN (…) ORDER BY id LOCK IN SHARE MODE` (syntaxe
+/// MariaDB 10.11 : pas de `FOR SHARE`). L'ordre de verrouillage entre les comptes est celui des
 /// identifiants.
 ///
 /// **Pourquoi partagé suffit** (C87) : le verrou n'a qu'un but, qu'aucun
@@ -655,6 +655,13 @@ pub(in crate::repositories) struct DesignatedAccountsSnapshot(Vec<LockedDesignat
 /// défense. Un identifiant écarté est absent de l'instantané, et le contrôle le
 /// refuse comme tel.
 ///
+/// **Angle mort assumé** (revue de code P1, E4 ; C-15-5d-6) : cette lecture se
+/// fait dans l'instantané REPEATABLE READ de l'appelant, ouvert avant le verrou
+/// des réglages. Un compte **créé et désigné** par un enregistrement des
+/// réglages entre ces deux instants en est absent, et la garde le refuse
+/// (`InactiveOrInvalidAccounts`) bien qu'il soit valide. Le refus est sûr
+/// (rien n'est écrit) et un nouvel essai passe.
+///
 /// # Verrous d'intervalle
 ///
 /// En REPEATABLE READ, une lecture verrouillante qu'InnoDB parcourt **par
@@ -663,7 +670,11 @@ pub(in crate::repositories) struct DesignatedAccountsSnapshot(Vec<LockedDesignat
 /// `range` sur `PRIMARY` (`const` pour un seul identifiant), sans `filesort` :
 /// une liste `IN` de clés primaires, que MariaDB 10.11 lit point par point — un
 /// compte voisin, de la société ou non, reste libre (mesuré en T0 de la Story
-/// 15-5d par une sonde `FOR UPDATE NOWAIT`). Précédent qui a écarté `LOCK IN
+/// 15-5d par une sonde `FOR UPDATE NOWAIT`). Ce plan est **épinglé** par
+/// `FORCE INDEX (PRIMARY)` (revue de code P1, B-1) : sur une table réelle,
+/// l'optimiseur pourrait sinon choisir un index secondaire commençant par
+/// `company_id` et y poser des verrous *next-key*, qui bloqueraient la création
+/// d'un compte de la société pendant une validation. Précédent qui a écarté `LOCK IN
 /// SHARE MODE` sur un parcours de plage : `journal_entries.rs`, C-15-8-23.
 ///
 /// # Ce qui n'est pas contrôlé ici
@@ -719,8 +730,13 @@ pub(in crate::repositories) async fn lock_designated_accounts_in_tx(
 
     // Le verrou PARTAGÉ, sur les seuls identifiants de la société, par ordre
     // d'identifiant ; le filtre `company_id` reste en défense.
-    let mut qb: QueryBuilder<MySql> =
-        QueryBuilder::new("SELECT id, number, active, postable FROM accounts WHERE company_id = ");
+    // `FORCE INDEX (PRIMARY)` épingle le plan (revue de code P1, B-1) : sans lui,
+    // l'optimiseur pourrait parcourir un index secondaire commençant par
+    // `company_id` (`uq_accounts_company_number`,
+    // `uq_accounts_company_singleton_role`) et y poser des verrous d'intervalle.
+    let mut qb: QueryBuilder<MySql> = QueryBuilder::new(
+        "SELECT id, number, active, postable FROM accounts FORCE INDEX (PRIMARY) WHERE company_id = ",
+    );
     qb.push_bind(company_id).push(" AND id IN (");
     {
         let mut sep = qb.separated(", ");
