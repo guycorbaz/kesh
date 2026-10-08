@@ -731,7 +731,7 @@ rebase) ; et deux lignes neuves au même tableau : `LATER_FISCAL_YEAR_CLOSED` (4
 3. **Audit avant/après.** Toute modification effective écrit **une** entrée `journal_entry.updated` (entité
    `journal_entry`, id de l'écriture) dont `details.before` égale l'état antérieur et `details.after` l'état final,
    **lignes comprises** (compte, débit, crédit, ordre, projet). **Par clé d'API** : le même `PUT` porté par une clé
-   `read-write` écrit `actor_type = 'ApiKey'` et `actor_api_key_id` = l'id de la clé (test dédié). Un `PUT` identique à
+   `read-write` écrit `actor_type = 'api_key'` et `actor_api_key_id` = l'id de la clé (test dédié). Un `PUT` identique à
    l'état présent, sur une écriture qui passe **toutes** les gardes → 200, **aucune** entrée, `version` inchangée — ⚠️
    un `PUT` identique sur une écriture portant un compte archivé ou non imputable n'est **pas** un no-op : il rend le
    400 de l'AC 4 (C-15-8-18).

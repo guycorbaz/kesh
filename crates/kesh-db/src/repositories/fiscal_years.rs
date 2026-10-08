@@ -655,8 +655,9 @@ pub async fn find_later_closed_in_tx(
 /// requêtes écrites à la main qui finiraient par diverger (Story 15-8a, C-15-8-24).
 ///
 /// ⚠️ Les tests de concurrence de la Story 15-8a reconnaissent la requête
-/// verrouillante à son texte (`attendre_une_requete_en_cours`, motif
-/// `start_date > ?`) : le changer, c'est changer leurs motifs.
+/// verrouillante à son texte (`attendre_une_requete_en_cours`, motifs
+/// `ORDER BY start_date ASC` et `FOR UPDATE`) : le changer, c'est changer leurs
+/// motifs.
 const FIND_LATER_CLOSED_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
      FROM fiscal_years \
      WHERE company_id = ? AND start_date > ? AND status = 'Closed' \

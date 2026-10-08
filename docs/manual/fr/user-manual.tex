@@ -493,7 +493,11 @@ Le bouton n'est offert que si \textbf{toutes} ces conditions tiennent~:
     \item l'\textbf{exercice} de l'écriture est \textbf{ouvert}~;
     \item \textbf{aucun exercice postérieur n'est clôturé}~: le bilan étant cumulatif depuis
           l'origine, un exercice suivant clôturé reprend cette écriture dans ses soldes ---
-          la modifier réécrirait son bilan~;
+          la modifier réécrirait son bilan. ⚠️ Cette garde ne couvre encore \textbf{que la
+          modification}~: saisir une écriture neuve, contre-passer, régler, dévalider ou
+          compléter les soldes de départ dans un exercice ouvert reste possible quand un
+          exercice postérieur est clôturé, et change alors son bilan reporté --- limite
+          connue, suivie par l'issue~\#543~;
     \item sa date est \textbf{après} la période verrouillée (\S\ref{sec:verrou-periode})~---
           et la nouvelle date aussi~;
     \item \textbf{aucune pièce} ne la possède~: l'écriture d'une facture, d'un avoir, d'une
@@ -688,7 +692,7 @@ Le nouvel exercice s'ouvre vide. Les comptes du bilan sont automatiquement repor
 La clôture est un simple \textbf{verrou} : elle ne génère aucune écriture. Le report des soldes de bilan d'un exercice à l'autre est \textbf{calculé en temps réel} depuis l'origine (report à-nouveau automatique), sans écriture de clôture ni de report à passer. La clôture :
 
 \begin{itemize}
-    \item Verrouille l'exercice : plus aucune écriture ne peut y être \textbf{saisie} tant qu'il reste clôturé (immutabilité, CO art. 957-964). C'est aussi la clôture qui \textbf{ferme la modification}~: une écriture se modifie tant que son exercice est ouvert \textbf{et qu'aucun exercice postérieur n'est clôturé} --- le bilan étant cumulatif, clôturer l'exercice suivant fige aussi celui-ci. La suppression d'une écriture reste refusée, clôture ou non.
+    \item Verrouille l'exercice : plus aucune écriture ne peut y être \textbf{saisie} tant qu'il reste clôturé (immutabilité, CO art. 957-964). C'est aussi la clôture qui \textbf{ferme la modification}~: une écriture se modifie tant que son exercice est ouvert \textbf{et qu'aucun exercice postérieur n'est clôturé} --- le bilan étant cumulatif, clôturer l'exercice suivant fige aussi celui-ci (pour la modification seulement~: les autres écritures restent possibles dans l'exercice ouvert, limite suivie par l'issue~\#543). La suppression d'une écriture reste refusée, clôture ou non.
     \item Inscrit l'opération dans le journal d'audit (\texttt{audit\_log}).
     \item N'affecte pas le report à-nouveau, qui reste calculé automatiquement — les rapports finaux (bilan, compte de résultat, balance) demeurent consultables et exportables (CSV/PDF).
 \end{itemize}

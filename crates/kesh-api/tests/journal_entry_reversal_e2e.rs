@@ -1518,6 +1518,34 @@ async fn putting_an_entry_rewrites_it_and_traces_before_and_after(pool: MySqlPoo
     .unwrap();
     assert_eq!(n, 1, "un no-op ne laisse pas de trace");
 
+    // I2 — sur DEUX modifications effectives : autant de traces que
+    // `version − 1`, et l'« avant » de la seconde est l'« après » de la première.
+    let mut seconde = corps_identique(&app, &token, id).await;
+    seconde["description"] = json!("Écriture corrigée deux fois");
+    let (status, body) = put_json(&app, &token, id, &seconde).await;
+    assert_eq!(status, 200, "corps : {body}");
+    let version = body["version"].as_i64().expect("version");
+    let traces: Vec<(Value,)> = sqlx::query_as(
+        "SELECT details_json FROM audit_log \
+         WHERE entity_type = 'journal_entry' AND entity_id = ? AND action = 'journal_entry.updated' \
+         ORDER BY id",
+    )
+    .bind(id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        traces.len() as i64,
+        version - 1,
+        "I2 : nombre de traces = version − 1"
+    );
+    assert_eq!(traces.len(), 2);
+    assert_eq!(traces[1].0["before"], traces[0].0["after"]);
+    assert_eq!(
+        traces[1].0["after"]["description"],
+        "Écriture corrigée deux fois"
+    );
+
     // I4 — la modification ne retire pas la contre-passation.
     let (status, _) = post_reverse(&app, &token, id).await;
     assert_eq!(status, 201);
@@ -1566,6 +1594,101 @@ async fn a_read_write_key_modifies_and_is_traced_as_the_key(pool: MySqlPool) {
     .unwrap();
     assert_eq!(actor_type, "api_key");
     assert_eq!(actor_key, Some(key_id));
+}
+
+/// AC 9 · C-15-8-19 — le handler `PUT` **rejoue** réellement un interblocage
+/// (revue de code P1, B-5). Le cycle projet ↔ exercice de
+/// `update_and_a_reversal_of_the_same_year_can_deadlock` (kesh-db) est monté
+/// ici à travers HTTP, en forçant le `PUT` à être la **victime** : B, qui tient
+/// l'exercice, a d'abord écrit quelques centaines de lignes (InnoDB sacrifie la
+/// transaction la plus légère — undo et verrous). Quand B obtient le projet en
+/// exclusif, c'est que la transaction du `PUT` a été annulée par la 1213 : elle
+/// tenait ce projet et attendait l'exercice que B tient encore. Le `PUT` doit
+/// alors rendre 200, au second passage, une fois B parti.
+///
+/// ⛔ **Tue** « retirer `retry_with` du handler » : la 1213 remonte en 500.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_put_replays_a_deadlock_it_lost(pool: MySqlPool) {
+    let (app, token, company_id, fy_id) = setup(&pool).await;
+    let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
+    let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
+    let id = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
+    let p = sqlx::query(
+        "INSERT INTO projects (company_id, code, name, archived, version) \
+         VALUES (?, 'P-REJEU', 'P', FALSE, 0)",
+    )
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let mut corps = corps_identique(&app, &token, id).await;
+    corps["lines"][0]["projectId"] = json!(p);
+    corps["description"] = json!("Projet posé après un interblocage");
+
+    // B : lourde (des centaines de lignes d'undo, dans une table que le `PUT`
+    // ne verrouille pas), puis l'exercice de l'écriture.
+    let mut b = pool.begin().await.unwrap();
+    let valeurs = vec!["(1, 'test.weight', 'test', 0)"; 500].join(", ");
+    sqlx::query(&format!(
+        "INSERT INTO audit_log (user_id, action, entity_type, entity_id) VALUES {valeurs}"
+    ))
+    .execute(&mut *b)
+    .await
+    .unwrap();
+    sqlx::query("SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE")
+        .bind(fy_id)
+        .execute(&mut *b)
+        .await
+        .unwrap();
+
+    // A : le `PUT`, qui verrouille le projet NOUVEAU puis attend l'exercice.
+    let a = {
+        let app = TestApp {
+            base_url: app.base_url.clone(),
+            client: app.client.clone(),
+        };
+        let token = token.clone();
+        let corps = corps.clone();
+        tokio::spawn(async move { put_json(&app, &token, id, &corps).await })
+    };
+    assert!(
+        kesh_db::test_fixtures::attendre_une_requete_en_cours(
+            &pool,
+            &[
+                "SELECT status, start_date, end_date FROM fiscal_years",
+                "FOR UPDATE"
+            ],
+            || a.is_finished()
+        )
+        .await,
+        "le PUT doit attendre sur l'exercice, projet déjà tenu"
+    );
+
+    // B ferme le cycle. Obtenir le projet en EXCLUSIF prouve que la
+    // transaction du `PUT`, qui le tenait, a été annulée par l'interblocage.
+    sqlx::query("SELECT id FROM projects WHERE id = ? FOR UPDATE")
+        .bind(p)
+        .execute(&mut *b)
+        .await
+        .expect("B doit gagner : le PUT, plus léger, est la victime de la 1213");
+    b.rollback().await.unwrap();
+
+    let (status, body) = a.await.unwrap();
+    assert_eq!(status, 200, "le PUT rejoué doit aboutir ; corps : {body}");
+    assert_eq!(body["description"], "Projet posé après un interblocage");
+    assert_eq!(
+        body["version"].as_i64(),
+        corps["version"].as_i64().map(|v| v + 1)
+    );
+    let n: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE entity_id = ? AND action = 'journal_entry.updated'",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(n, 1, "un seul passage a écrit : la victime n'a rien laissé");
 }
 
 /// AC 10 · AC 7 — les refus de **forme** précèdent toute lecture de la base :

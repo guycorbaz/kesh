@@ -2059,6 +2059,16 @@ async fn export_global_zip_carries_a_modified_entry_and_its_trace(pool: MySqlPoo
     )
     .await
     .unwrap();
+    // Création antidatée : `updated_at` (DATETIME(3)) ne peut alors coïncider
+    // avec la date de création par hasard, et l'export doit montrer qu'il a bougé.
+    sqlx::query(
+        "UPDATE journal_entries SET created_at = '2020-01-01 00:00:00.000', \
+         updated_at = '2020-01-01 00:00:00.000' WHERE id = ?",
+    )
+    .bind(created.entry.id)
+    .execute(&pool)
+    .await
+    .unwrap();
     let modified = journal_entries::update(
         &pool,
         ctx.company_id,
@@ -2131,6 +2141,16 @@ async fn export_global_zip_carries_a_modified_entry_and_its_trace(pool: MySqlPoo
         "état présent : version incrémentée"
     );
     assert_eq!(row[col("description")], "Apres modification");
+    assert!(
+        row[col("created_at")].starts_with("2020-01-01"),
+        "la création garde sa date : {}",
+        row[col("created_at")]
+    );
+    assert!(
+        !row[col("updated_at")].is_empty() && !row[col("updated_at")].starts_with("2020-01-01"),
+        "état présent : `updated_at` porte la modification : {}",
+        row[col("updated_at")]
+    );
 
     let raw = entry_bytes(&entries, "audit_log.csv");
     let text = std::str::from_utf8(&raw[3..]).unwrap();
@@ -2139,7 +2159,10 @@ async fn export_global_zip_carries_a_modified_entry_and_its_trace(pool: MySqlPoo
         .find(|l| l.contains("journal_entry.updated"))
         .expect("la trace de la modification est exportée");
     assert!(
-        trace.contains("before") && trace.contains("after") && trace.contains("Avant modification"),
+        trace.contains("before")
+            && trace.contains("after")
+            && trace.contains("Avant modification")
+            && trace.contains("Apres modification"),
         "la trace porte l'avant et l'après : {trace}"
     );
 }

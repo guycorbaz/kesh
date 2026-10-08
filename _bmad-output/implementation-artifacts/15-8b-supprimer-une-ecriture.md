@@ -156,7 +156,7 @@ le bundle est chargé et la clé absente (le piège S1-C1 de la 24-4b).
 
 1. **Supprimer une écriture manuelle** → **204** ; l'écriture et ses lignes ont disparu ; une entrée
    `journal_entry.deleted` porte l'instantané complet et l'acteur (utilisateur, ou clé d'API : `actor_type =
-   'ApiKey'`, `actor_api_key_id`) ; la **création suivante** du même exercice ne reprend **pas** le numéro (compteur
+   'api_key'`, `actor_api_key_id`) ; la **création suivante** du même exercice ne reprend **pas** le numéro (compteur
    25-2-c).
 2. **Supprimer une contre-passation** → 409 `IS_A_REVERSAL` (D1 : la base ne l'aurait pas refusé).
 3. **Dévalidation inchangée** : `invoices::unvalidate` (`enforce_ownership = false`) supprime toujours l'écriture de

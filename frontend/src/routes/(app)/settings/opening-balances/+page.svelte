@@ -444,7 +444,7 @@
 						{#if status.complementDateKind === 'TODAY'}
 							{i18nMsg(
 								'opening-balances-complete-date-today',
-								'L’écriture sera datée du { $date }, dans l’exercice « { $name } » : une régularisation, le premier jour de l’ouverture n’étant plus modifiable.',
+								'L’écriture sera datée du { $date }, dans l’exercice « { $name } » : une régularisation, le premier jour de l’ouverture n’acceptant plus d’écriture (exercice clôturé ou période verrouillée).',
 								{
 									date: formatSwissDate(status.complementDate ?? ''),
 									name: status.complementFiscalYear?.name ?? ''
