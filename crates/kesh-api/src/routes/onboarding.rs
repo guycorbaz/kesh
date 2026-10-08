@@ -609,13 +609,11 @@ pub async fn finalize(
     // KF-002-H-002 (#43) : la closure ci-dessous est rappelée intégralement
     // si MariaDB rollback la tx pour deadlock (cycle de locks détecté avec
     // une autre tx). Le rollback est implicite côté DB ; côté Rust on ne
-    // garde rien — chaque retry refait `pool.begin()`. Les captures clonées
-    // (pool, current_user) garantissent que la closure est `Fn` et non
-    // `FnOnce`.
+    // garde rien — chaque retry refait `pool.begin()`. La fermeture ne prête
+    // que des références (`&state.pool`, `&current_user`) : elle est `Fn` et
+    // non `FnOnce`, sans clone par tentative (revue P1 de la 15-5e2, B-5).
     crate::retry::retry_app_on_deadlock("onboarding::finalize", || {
-        let pool = state.pool.clone();
-        let current_user = current_user.clone();
-        async move { finalize_inner(&pool, &current_user).await }
+        finalize_inner(&state.pool, &current_user)
     })
     .await
     .map(Json)

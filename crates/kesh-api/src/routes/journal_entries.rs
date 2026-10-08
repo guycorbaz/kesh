@@ -668,9 +668,10 @@ pub async fn create_journal_entry(
 /// ⛔ **Rejoué sur interblocage** par l'enveloppe `DbError`
 /// [`kesh_db::retry::retry_on_deadlock`] (C-15-8-19, Story 15-5e2) : l'ordre de
 /// verrous du `PUT` referme trois cycles hérités (ligne du `PUT` dans « Where
-/// This Applies » du Pattern 5). La transaction est rejouée entière — le repository ouvre et ferme la sienne,
-/// l'interblocage l'a annulée sans rien écrire, et le contrôle de `version`
-/// refuserait un second passage. La préparation reste hors de la fermeture.
+/// This Applies » du Pattern 5). La transaction est rejouée entière — le
+/// repository ouvre et ferme la sienne, l'interblocage l'a annulée sans rien
+/// écrire, et le contrôle de `version` refuserait un second passage. La
+/// préparation reste hors de la fermeture.
 pub async fn update_journal_entry(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -687,11 +688,11 @@ pub async fn update_journal_entry(
     )?;
 
     let updated = kesh_db::retry::retry_on_deadlock("journal_entries::update", || {
-        let pool = state.pool.clone();
+        let pool = &state.pool;
         let new = new.clone();
         async move {
             journal_entries::update(
-                &pool,
+                pool,
                 company.id,
                 id,
                 req.version,
@@ -733,10 +734,10 @@ pub async fn delete_journal_entry(
     let company = get_company_for(&current_user, &state.pool).await?;
 
     kesh_db::retry::retry_on_deadlock("journal_entries::delete", || {
-        let pool = state.pool.clone();
+        let pool = &state.pool;
         async move {
             journal_entries::delete_by_id(
-                &pool,
+                pool,
                 company.id,
                 id,
                 current_user.user_id,

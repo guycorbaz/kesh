@@ -598,12 +598,12 @@ pub async fn complete_opening_balances(
     let today = chrono::Utc::now().date_naive();
 
     let result = kesh_db::retry::retry_on_deadlock("opening_balances::complete", || {
-        let pool = state.pool.clone();
+        let pool = &state.pool;
         let lines = lines.clone();
         let description = description.clone();
         async move {
             opening_complement::create_opening_complement(
-                &pool,
+                pool,
                 company.id,
                 current_user.user_id,
                 &lines,

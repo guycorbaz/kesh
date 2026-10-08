@@ -91,7 +91,11 @@
 //!   sentinelle des routes de `projects`, `bank_accounts`, `vat`,
 //!   `dunning_levels`) ferme le cycle et, plus légère, rend 500. Rare, et hors de
 //!   la promesse (« les routes qui écrivent au journal ») : le registre établit
-//!   que **toute route mutante a été examinée**.
+//!   que **toute route mutante a été examinée**. Autres candidates nommées en
+//!   revue P1 de la 15-5e2 (L-5), sans cycle démontré : `PUT /invoices/{id}`
+//!   quand le projet change (sentinelle, projet, facture),
+//!   `POST /projects/{id}/archive`, `POST /fiscal-years/{id}/close` et
+//!   `/reopen` — elles prennent des verrous que les flux rejoués prennent aussi.
 //! - **(v)** quoi que ce soit d'une route `GET` : l'extracteur ne balaie que
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
@@ -105,6 +109,20 @@
 //!   `rejeu_interblocage_e2e.rs`, la première par sa revue — et le volet
 //!   (c bis) interdit qu'elle revienne à un `retry_with` à prédicat écrit en
 //!   ligne.
+//! - **(vii)** — **angles morts assumés du volet (c bis)** (revue P1 de la
+//!   15-5e2, L-3 = B-4 = A5). Le volet reconnaît un appel au **dernier
+//!   segment** du chemin appelé (`retry_with`) dans un arbre `syn` ; il ne voit
+//!   donc PAS : (a) un alias — `use kesh_db::retry::retry_with as r;` puis
+//!   `r(…)` ; (b) un appel placé dans une macro — `syn` ne descend pas dans un
+//!   `TokenStream` de macro : pour le volet (c), c'est un faux rouge, pour le
+//!   (c bis) un **faux vert** ; (c) un appel hors de `src/routes/` (`lib.rs`,
+//!   `middleware`, module d'aide), le seul répertoire qu'il balaie ; (d)
+//!   l'exemption [`RETRY_WITH_AUTORISE`] désigne une fonction par son **seul
+//!   nom** : une autre `fn post_accept`, dans un autre fichier de
+//!   `src/routes/`, serait tolérée. La méthode qui fermerait (a) et (b) est le
+//!   relevé lexical par jetons de la 15-11b (choix C78 : parcours du flux de
+//!   jetons complet, macros comprises, de chaque `.rs` de production) ; elle
+//!   n'est pas introduite ici.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -993,6 +1011,10 @@ fn appels_de_la_primitive(source: &str) -> Result<Vec<String>, String> {
 ///
 /// Il échoue aussi si une fonction de [`RETRY_WITH_AUTORISE`] n'appelle plus
 /// la primitive : la liste ne doit pas survivre à son objet.
+///
+/// ⛔ Ce qu'il ne voit pas — alias `use … as`, appel dans une macro, appel
+/// hors de `src/routes/`, exemption par le seul nom de fonction — est écrit au
+/// point (vii) du doc-comment du module.
 #[test]
 fn no_route_calls_retry_with_except_post_accept() {
     let racine = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/routes");

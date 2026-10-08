@@ -368,7 +368,7 @@ kesh_db::retry::retry_with(
 ).await
 ```
 
-Required: a deadlock (1213) rolls back the **whole** victim transaction — counters and audit rows included —, so replaying it is safe **as long as every write lives in that transaction**. The rule, written in the doc-comments of `kesh_db::retry` and `kesh_api::retry` (Story 15-5e1), is: one attempt = one new transaction (`begin()` … `commit()` inside the closure); no side effect outside the transaction (e-mail, file, network); checks that read what the transaction locks stay **inside** the attempt, in their order; inputs the attempt consumes are cloned per attempt; and no conversion lets the 1213 leave `DbError::Sqlx` before the predicate. ⚠️ The generic `retry_with` form above is the primitive the envelopes call: in `src/routes/`, only `post_accept` (predicate widened to 1305) may call it directly — the route registry fails otherwise.
+Required: a deadlock (1213) rolls back the **whole** victim transaction — counters and audit rows included —, so replaying it is safe **as long as every write lives in that transaction**. The rule that makes an attempt replayable lives in the doc-comment of `kesh_db::retry::retry_on_deadlock` and in the module doc-comment of `kesh_api::retry` (Story 15-5e1) — read it there; Pattern 5 does not restate it, so that no third copy has to be kept true. ⚠️ The generic `retry_with` form above is the primitive the envelopes call: in `src/routes/`, only `post_accept` (predicate widened to 1305) may call it directly — the route registry fails otherwise.
 
 ### When to Use
 

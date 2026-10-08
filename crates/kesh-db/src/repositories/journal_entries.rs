@@ -288,12 +288,10 @@ async fn create_in_tx_inner(
     // Étape 0-bis (Story 24-4c, #380) : LIRE la borne du verrou de période.
     //
     // ⛔ ELLE SE LIT ICI ET S'ÉVALUE PLUS BAS, et cette dissociation est
-    // délibérée : le moment de la LECTURE et l'ordre des REFUS ne sont pas le
-    // même.
-    //
-    //   - **Refus** : le verrou de période parle EN DERNIER. Dire « période
-    //     verrouillée » à quelqu'un qui s'est trompé d'exercice l'enverrait
-    //     corriger la mauvaise chose.
+    // délibérée : le moment de la LECTURE n'est pas l'ordre des REFUS. Le
+    // verrou de période parle EN DERNIER : dire « période verrouillée » à
+    // quelqu'un qui s'est trompé d'exercice l'enverrait corriger la mauvaise
+    // chose.
     //
     // ⚠️ Lecture NON verrouillante, volontairement. Prendre un `FOR SHARE`
     // bloquerait chaque création derrière toute pose de borne concurrente pour

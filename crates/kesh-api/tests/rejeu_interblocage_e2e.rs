@@ -1077,6 +1077,22 @@ async fn manual_match_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool
             "projectId": projet,
         })),
     );
+    // Revue P1 de la 15-5e2 (L-1/B-2) : la route a fait ses pré-lectures et
+    // attend la sentinelle ; on marque la transaction bancaire comme rejetée
+    // (validée, hors de toute transaction tenue) AVANT de fermer le cycle. La
+    // tentative rejouée doit lire cette valeur — l'audit en écrivait une
+    // pré-lue, périmée, tant qu'elle était capturée avant la première
+    // tentative.
+    assert!(
+        attendre_une_requete_en_cours(&pool, &["companies", "FOR UPDATE"], || route.is_finished())
+            .await,
+        "la route devait attendre la sentinelle"
+    );
+    sqlx::query("UPDATE bank_transactions SET auto_match_rejected_at = NOW(3) WHERE id = ?")
+        .bind(transaction)
+        .execute(&pool)
+        .await
+        .unwrap();
     let (status, corps) = victime(
         &pool,
         lourde,
@@ -1123,6 +1139,19 @@ async fn manual_match_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool
         .await,
         1,
         "une seule entrée d'audit"
+    );
+    let rejetee_avant: Option<String> = sqlx::query_scalar(
+        "SELECT CAST(JSON_EXTRACT(details_json, '$.was_previously_rejected') AS CHAR) FROM audit_log \
+         WHERE action = 'reconciliation.manual_matched' AND entity_id = ?",
+    )
+    .bind(transaction)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        rejetee_avant.as_deref(),
+        Some("true"),
+        "⛔ l'audit écrit ce que la tentative rejouée a lu, pas une pré-lecture périmée"
     );
     capture.exiger_un_rejeu("reconciliation::manual");
 }

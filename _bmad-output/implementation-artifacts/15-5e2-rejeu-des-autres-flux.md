@@ -783,6 +783,15 @@ restent un **angle mort assumé** (AC2), couvert par la revue seule, `post_split
 `post_manual`, sur la route sœur) et `complete_import` (verrou du `staging`, `match` local,
 `rollback`, et l'ordre des contrôles lus sur le `staging` — finding F5-1) — et `post_manual`
 aussi si T0 ne forme pas le cycle du test 8.
+**Angles morts du volet (c bis)** (revue P1, L-3 = B-4 = A5 ; écrits au point (vii) du doc-comment
+du registre) : il reconnaît `retry_with` au **dernier segment** du chemin appelé, dans un arbre
+`syn`, et ne voit donc pas (a) un alias `use kesh_db::retry::retry_with as r;` puis `r(…)`, (b) un
+appel dans une macro (`syn` ne descend pas dans un `TokenStream` : **faux vert** pour (c bis), là où
+c'est un faux rouge pour (c)), (c) un appel hors de `src/routes/`, seul répertoire balayé, (d)
+l'exemption `RETRY_WITH_AUTORISE` désigne `post_accept` par son **seul nom**, quel que soit le
+fichier. La méthode qui fermerait (a) et (b) à moindre coût est le relevé lexical par jetons de la
+15-11b (C78) ; elle n'est pas introduite ici.
+
 Ce que la revue doit voir, route par route : (1) la fermeture commence par la transaction et finit par
 le commit ; (2) aucun contrôle qui lit la transaction n'en sort, aucun refus ne change de place ; (3)
 les entrées consommées sont clonées dans la fermeture ; (4) la conversion d'erreur propre à la route
@@ -939,7 +948,9 @@ Claude Opus 5.5 (`claude-opus-5-5`), `bmad-dev-story` en autonomie (consignes de
 `supplier_invoices::cancel_settlement`, `payment_batches::confirm`, `journal_entries::create`,
 `journal_entries::reverse`, `opening_balances::generate` — noms : C-15-5e2-2) et trois `AppError`
 (`imported_supplier_invoices::complete`, `reconciliation::manual`, `reconciliation::split`), chacune
-avec un doc-comment d'une ligne renvoyant à l'enveloppe. Six sites `retry_with` migrés (`write_off`,
+avec un doc-comment d'une ligne renvoyant à l'enveloppe — ⚠️ **faux au commit `6125d50b` pour
+`post_manual` et `post_split`** (seuls leur corps et leurs fonctions « une tentative » le disaient),
+corrigé en remédiation de la revue P1 (finding A1). Six sites `retry_with` migrés (`write_off`,
 `opening_balances::complete`, `PUT`, `DELETE`, `reconciliation::cancel`, `onboarding::finalize`) ;
 `post_accept` garde `retry_with`, prédicat réécrit, commentaires `:873`, `:880` → `is_app_deadlock`.
 Contrôles : `grep -rn "is_deadlock_error" crates/kesh-api/src` ne rend que `retry.rs` ;
@@ -1027,9 +1038,10 @@ vérifié par script). `make admin user` : `Overfull` **69 → 69** (admin) et *
 compte relevé sur un build des `.tex` d'avant la modification puis après ; brochure ni régénérée ni
 modifiée. PDF aplatis (`pdftotext -nopgbrk | tr | tr -s | sed` des ligatures) : `SERIALIZABLE`
 absent des deux, phrases neuves présentes (le commentaire du listing traverse un saut de page, texte
-complet). Relevé élargi (motif de l'AC5) sur les `.tex` après modification : **23 lignes** — les
-lignes neuves du commentaire `99-kesh.cnf` (`:885`, `:887`, `:888`, `:890`, `:891`, `:893`, `:894`)
-et `user-manual.tex:982`, vraies ; `transaction-isolation = REPEATABLE-READ`, vrai ; `:1402` (« en
+complet). Relevé élargi (motif de l'AC5) sur les `.tex` après modification : **21 lignes**
+(recompté en revue P1, finding A3 : « 23 » était faux, et la ventilation comptait deux fois `:891`) —
+les sept lignes du commentaire `99-kesh.cnf` (`:885`, `:887`, `:888`, `:890`, `:891` =
+`transaction-isolation = REPEATABLE-READ`, `:893`, `:894`) et `user-manual.tex:982`, vraies ; `:1402` (« en
 même temps », sauvegarde), `:1864` (verrou de base, table d'audit), dix « isolation » multi-société
 (`admin-manual.tex:86`, `:939`, `:955`, `:961`, `:2249`, `user-manual.tex:2075`, `:2078`,
 `marketing-brochure.tex:207`, `:317`, `:318`), `marketing-brochure.tex:360` (Rust) — hors sujet. Les
@@ -1100,8 +1112,9 @@ zéro (DROP/CREATE, migrations, seed) avant :
   `_bmad-output/implementation-artifacts/sprint-status.yaml`,
   `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md`
 
-Décompte (recompté, `git diff --stat 688fed25 6125d50b`) : **32 fichiers** au commit de code (dont
-2 PDF), 998 insertions, 369 suppressions ; tests neufs sur ce périmètre : **3** (`#[test]` du
+Décompte (recompté en revue P1, finding A2, `git diff --shortstat 688fed25 6125d50b`) : **31
+fichiers** au commit de code (dont 2 PDF), **959 insertions**, 369 suppressions (« 32 fichiers,
+998 insertions » était faux) ; tests neufs sur ce périmètre : **3** (`#[test]` du
 registre 9 → 11, `#[sqlx::test]` de `rejeu_interblocage_e2e.rs` 6 → 7). Aucune migration, aucune clé
 i18n, aucun fichier `frontend`.
 
