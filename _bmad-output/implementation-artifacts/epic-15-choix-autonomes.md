@@ -1646,6 +1646,19 @@ l'import (#458–#461).
   `conforme`) : `ecartee: 7, conforme: 41`. Les commentaires des deux stories sont conservés, la
   15-5c datée « avant le rebase ». Vérifié par les tests eux-mêmes (`vitest run src/lib/shared/`,
   194/194), pas par addition seule.
+
+## C-15-8b-1 — 15-8b (clôture de la validation) : `journal-entries.api.ts` tranché DEDANS, l'AC 10 refermée sur `HEAD`
+
+- **Contexte** : la P4 ciblée laissait un MEDIUM (M1) — la liste « fermée » de l'AC 10 portait `journal-entries.api.ts:58`
+  « effacé par l'inversion de la 15-8a — à vérifier ». Vérifié sur `52a9b19b` : le site **existe** (`:70`), dans le
+  doc-comment de `deleteJournalEntry` que la 15-8a a rétabli en annonçant la 15-8b.
+- **Retenu** : le site est **dans** la liste des disparitions ; T4 réécrit le doc-comment quand la fonction gagne son
+  appelant. L'inventaire complet a été refait sur `HEAD` (38 lignes hors `_bmad-output/`) : deux sites neufs de la
+  15-8a — `CHANGELOG.md:15` (dans `[0.13.0]`, réécrit) et `docs/api-external.md:221` (fait historique, **reste**) — et un
+  sortant (`journal-entries.spec.ts:285`, reformulé par la 15-8a). Numéros de ligne remesurés dans une table de
+  décalages en tête des Dev Notes plutôt que réécrits un à un dans la prose (la table fait foi).
+- **Écartées** : le mettre dans les résidus « qui restent » (la phrase devient fausse au merge de cette story) ;
+  réécrire chaque numéro dans la prose (plus de cent sites, risque d'erreur supérieur au bénéfice).
 - **Réversible** : oui.
 
 ## C66 — 15-5e1 : la saisie fournisseur rejouée dès la 15-5e1, avec l'avance de ses réglages

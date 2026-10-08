@@ -10,7 +10,7 @@ Status: ready-for-dev
      C-15-8-5, C-15-8-10, C-15-8-12 et C-15-8-13 ; C-15-8-28, la dérogation, ne vaut que pour la 15-8a). Historique
      des passes P1 et P2 : Change Log de l'index `15-8-modifier-une-ecriture.md` ; P3 : Change Log de cette fiche. -->
 
-**Issue : [#532]** — ⛔ **`closes #532`** (dans le titre ou le corps de la PR : le dépôt merge en squash). ⚠️ URGENTE.
+**Issue : [#532]** — **`refs #532`** : l'issue a été **fermée par la 15-8a** (PR #553, `52a9b19b`) ; la PR de cette story la référence sans la fermer (clôture de la validation, 2026-10-08).
 
 **Dépendances** — ⛔ **la 15-8a passe AVANT** (`15-8a-modifier-une-ecriture.md`) ; la 15-5a est **mergée**
 (`b11a074a`). Cette story **réutilise** ce que la 15-8a pose, sans le redéfinir : le cadre D1 (dont le paiement détaché
@@ -20,7 +20,9 @@ trois champs du détail, la table de correspondance code d'écran ↔ refus (onz
 se branche sur `main` **après le merge de la 15-8a**. ⚠️ **Les numéros de ligne ci-dessous sont ceux de `main` avant
 la 15-5a** : la table des décalages mesurés au rebase sur la 15-5a est en T0 de la 15-8a (`journal_entries.rs` : `+10`
 à partir de `:82` ; `kesh-db/src/errors.rs` : `+115` pour les variantes, `+122` pour `code()`) ; la 15-8a les décalera
-encore — tout se **revérifie** (T0).
+encore — tout se **revérifie** (T0). ⛔ **À la clôture de la validation, les sites décisifs ont été remesurés sur
+`52a9b19b` (15-8a mergée)** : table « Décalages mesurés après la 15-8a » en tête des Dev Notes. Elle fait foi sur les
+numéros de ligne de cette fiche.
 
 ## Story
 
@@ -163,8 +165,8 @@ le bundle est chargé et la clé absente (le piège S1-C1 de la 24-4b).
    sa facture — ses tests existants restent verts, sans réécriture.
 4. **Gardes** : pour **chacune** des pièces de l'AC 6 de la 15-8a (facture, avoir, facture fournisseur — achat et
    règlement —, règlement client, solde `write_off`, transaction bancaire rapprochée) le `DELETE` rend **409 sous le
-   code du motif** avec `details.documentId`, sur le **même montage** (`every_document_owned_entry_is_refused`, tel que
-   la 15-8a l'a étendu) ; une écriture contre-passée → 409 `ENTRY_IS_REVERSED` ; le **paiement détaché** d'une facture
+   code du motif** avec `details.documentId`, sur le **même montage** (`monter_les_pieces`, celui
+   d'`every_document_owned_entry_is_refused` et de son pendant `PUT` de la 15-8a) ; une écriture contre-passée → 409 `ENTRY_IS_REVERSED` ; le **paiement détaché** d'une facture
    fournisseur annulée → 409 `DETACHED_SUPPLIER_SETTLEMENT` ; **exercice clos seul** → 400 `FISCAL_YEAR_CLOSED` ;
    **exercice postérieur clos seul** (N ouvert, N+1 clos) → 400 `LATER_FISCAL_YEAR_CLOSED` nommant N+1, et 204 après
    réouverture de N+1 (C-15-8-22) ; date ≤ borne (seuil inclusif) → 400 `PERIOD_LOCKED`. Après chaque refus, lignes et
@@ -222,14 +224,30 @@ le bundle est chargé et la clé absente (le piège S1-C1 de la 24-4b).
 10. **Retraits** : `DbError::EntryIsPosted`, le code `ENTRY_IS_POSTED`, la clé `journal-entries-blocked-posted` (quatre
     catalogues) et `enforce_immutability` n'existent plus ; ⛔ greper **le dépôt entier** —
     `grep -rn "ENTRY_IS_POSTED\|EntryIsPosted\|enforce_immutability\|blocked-posted" . --exclude-dir={node_modules,target,.git,.svelte-kit}`
-    — et trier à la main (leçon de la 24-4b). **Sortie attendue, liste fermée** (finding F4) : des fichiers sous
+    — et trier à la main (leçon de la 24-4b). **Sortie attendue, liste fermée** (finding F4 ; **remesurée sur
+    `52a9b19b`**, finding M1 de la validation P4 — C-15-8b-1). **Restent**, et eux seuls : des fichiers sous
     `_bmad-output/` (story files historiques, registre des choix, `sprint-status.yaml`, prompts de validation, ces
-    fiches — qui **ne se réécrivent pas** quand ce sont des archives) ; la section `## [0.13.0]` du `CHANGELOG.md` qui
-    dit `ENTRY_IS_POSTED` retiré ; et `frontend/src/lib/shared/i18n-keys.test.ts:174` — paragraphe **historique** de la
-    ventilation (« 1630 → 1619 à la 24-4b »), qui dit un fait passé et **reste**. Doivent avoir **disparu** : le message
-    d'assertion `journal_entry_reversal_e2e.rs:1331` (test réécrit, T6), `frontend/tests/e2e/journal-entries.spec.ts:285`
-    (commentaire du bloc de la 24-4b, reformulé), `frontend/src/lib/features/journal-entries/journal-entries.api.ts:58`
-    (effacé par l'inversion de la 15-8a — à vérifier). Toute autre ligne est un résidu.
+    fiches — qui **ne se réécrivent pas** quand ce sont des archives) ; dans `CHANGELOG.md`, la seule section
+    `## [0.13.0]`, qui dit `ENTRY_IS_POSTED` retiré ; `docs/api-external.md:221` — parenthèse **historique** posée par la
+    15-8a (« de la v0.12.0 à la v0.12.1, ce `PUT` rendait toujours 409 `ENTRY_IS_POSTED` »), un fait passé qui
+    **reste** (et sa jumelle pour le `DELETE`, si T7 l'écrit) ; et `frontend/src/lib/shared/i18n-keys.test.ts:174` —
+    paragraphe **historique** de la ventilation (« 1630 → 1619 à la 24-4b »), qui **reste**. **Doivent avoir disparu**
+    (inventaire de `52a9b19b` : **38** lignes hors `_bmad-output/` — 3 qui restent ci-dessus, `CHANGELOG.md:15`
+    [0.13.0] — l'entrée de la 15-8a, dont la mention « que le `DELETE` rend encore » est réécrite —, `api-external.md:221`
+    et `i18n-keys.test.ts:174` ; **35** qui disparaissent) :
+    `kesh-db/src/errors.rs:884`, `:886`, `:906`, `:1035` ; `kesh-api/src/errors.rs:3069`, `:3123`, `:3125`, `:3127` ;
+    `kesh-db/src/repositories/journal_entries.rs:1542`, `:1551-1552`, `:1571`, `:1589`, `:1592`, `:1621`, `:1666-1667`,
+    `:1678`, `:2731`, `:3008`, `:3032`, `:3056`, `:3118`, `:3124-3125` ; `kesh-db/src/repositories/invoices.rs:1442`,
+    `:1650` ; la clé dans les quatre `messages.ftl` (fr `:361`, de/en/it `:367`) ;
+    `kesh-api/tests/journal_entry_reversal_e2e.rs:2260` (`deleting_a_posted_entry_is_refused`), `:2360` (message
+    d'assertion de `a_reversed_entry_answers_reversed_not_posted`), `:2474` (moitié `DELETE` de
+    `the_opening_entry_is_modifiable_and_still_reversable`) — tests réécrits, T6 ; et
+    `frontend/src/lib/features/journal-entries/journal-entries.api.ts:70` — ⛔ **tranché : DEDANS, à faire disparaître.**
+    L'inversion de la 15-8a **n'a pas effacé** ce site : elle a rétabli `deleteJournalEntry` avec un doc-comment qui dit
+    « Sans appelant dans la 15-8a : le `DELETE` rend encore 409 `ENTRY_IS_POSTED` » (`:68-71`). Cette story lui donne
+    son appelant (D4) et rend la phrase fausse : le doc-comment est **réécrit** (T4). ⚠️ `frontend/tests/e2e/journal-entries.spec.ts:285`,
+    que la rédaction P3 listait, **ne rend plus rien** : la 15-8a a reformulé le bloc (`:278-290`) — il sort de la liste.
+    Toute autre ligne est un résidu.
 11. **Audit** : `journal_entry.deleted` reste dans `ACTIONS` ; `audit_route_registry.rs:83` garde le `DELETE` à `Traced`.
 12. **Documentation** : manuel utilisateur et administrateur, `docs/api-external.md`, `CHANGELOG.md` et
     `README.md:29` (C-15-8-26) disent la suppression (cf. Dev Notes) ; PDF régénérés. ⛔ **Contrôle** (C-15-8-27,
@@ -266,7 +284,8 @@ le bundle est chargé et la clé absente (le piège S1-C1 de la 24-4b).
 - [ ] **T3 — Route** (AC 1, 6, 8) : `api_key_id` passé au `DELETE` ; handler enveloppé dans `retry_with` ;
       doc-comment du `DELETE` (`:609-610`, « asymétrie volontaire avec UPDATE ») revu ; tests de clé d'API (AC 1),
       colonne `DELETE` de la table de correspondance (AC 8), paires de précédence au niveau de l'API (AC 4-bis)
-- [ ] **T4 — Écran** (AC 9) : « Supprimer », confirmation, « Modifiée », « Historique », rôle Consultation ; clés i18n ×4
+- [ ] **T4 — Écran** (AC 9, 10) : « Supprimer », confirmation, « Modifiée », « Historique », rôle Consultation ;
+      doc-comment de `deleteJournalEntry` (`journal-entries.api.ts:67-71`) réécrit — il annonce encore le 409 du gel ; clés i18n ×4
       (liste fermée de D4) ; `i18n-keys.test.ts` (`ATTENDU.sitesTotal`) **avec sa ventilation** ;
       `e2e-selecteurs-traduits.test.ts` selon les sélecteurs réellement employés
 - [ ] **T5 — Playwright** (AC 9) — `tests/e2e/journal-entries.spec.ts`, parcours **depuis la fiche** remplaçant les
@@ -294,6 +313,32 @@ le bundle est chargé et la clé absente (le piège S1-C1 de la 24-4b).
 - **Réinitialiser le compteur** quand la société redevient vierge : non (C-15-8-12).
 
 ## Dev Notes
+
+### Décalages mesurés après la 15-8a (`52a9b19b`, clôture de la validation)
+
+Les numéros cités dans cette fiche ont été écrits sur `main` **avant** la 15-5a et la 15-8a. Remesurés à la clôture de
+la validation ; **cette table fait foi** (T0 la revérifie sur la branche).
+
+| site cité dans la fiche | sur `52a9b19b` |
+|---|---|
+| `kesh-db/src/errors.rs:626-638`, `:647`, `:768` (`EntryIsPosted`, doc de `PeriodLocked`, `code()`) | `:884-886` (doc et variante), `:906` (doc de `PeriodLocked`), `:1035` (bras de `code()`) |
+| `kesh-api/src/errors.rs:2986-2996`, `:3042-3050`, `:3046` | commentaire `:3064-3072`, branche `:3123-3130` (clé `:3127`) |
+| `journal_entries.rs:924-949` (doc de `delete_by_id`) | `:1535-1560` ; fonction `:1561-1576` |
+| `journal_entries.rs:967-1004` (doc de `delete_in_tx`) | `:1578-1615` ; fonction `:1616-1742` |
+| `journal_entries.rs:1005` / `:1014-1019` (`SELECT … FOR UPDATE` joint) | `:1616` / `:1625-1631` |
+| `:1043` (3-bis, `reversed_by`) · `:1047-1066` (3-ter, gel) · `:1075-1081` (borne) · `:1114` (`NewAuditLogEntry::user`) | `:1654` · `:1658-1668` · `:1686-1692` · `:1725` |
+| `journal_entries.rs:2087` (`un_numero_libere_n_est_jamais_reattribue`) | `:2698` |
+| `mod tests` : `:2120-2121` (commentaire), `:2123`, `:2182` (appelants), helper `:2396-2444`/`:2439`, `:2465`, `le_gel_parle_avant_le_verrou_de_periode` `:2509` | `:2731`, `:2734`, `:2794` ; helper `supprimer_sous_borne` `:3030-3060` (doc `:3008`) ; `:3118-3125` ; `le_gel…` `:3121` |
+| garde de la 15-8a : `modification_guard` / `modification_refusal` | `journal_entries.rs:998` / `:1047` ; `fiscal_years::find_later_closed_in_tx` `fiscal_years.rs:639` |
+| `invoices.rs:1442`, `:1650`, `:1654` (appel de `delete_in_tx`), `unvalidate` `:1486-1492` | **inchangés** |
+| `kesh-api/src/routes/journal_entries.rs:609-623` (handler `DELETE`) | `:700-716` ; `retry_with` du `PUT` `:675` |
+| `kesh-api/tests/journal_entry_reversal_e2e.rs` : `:727` (`deleting_a_reversed_entry_is_refused_but_bulk_delete_still_works`) · `every_document_owned_entry_is_refused` | `:827` · `:714` |
+| idem : `:1231` (`deleting_a_posted_entry_is_refused`) · `:1317`/`:1331` · `:1341` · `:1445` | `:2252` · `:2346`/`:2360` · `:2370` · `:2488` |
+| idem : `the_opening_entry_is_frozen_but_still_correctable` (`:1386`) | ⚠️ **renommé par la 15-8a** `the_opening_entry_is_modifiable_and_still_reversable` (`:2419`) ; sa moitié `DELETE` encore refusée `:2472-2474` |
+| `kesh-api/tests/audit_route_registry.rs:83` (`DELETE` → `Traced`) | `:84` |
+| `frontend/…/journal-entries.api.ts:58` | `:67-74` (doc-comment `:67-71`, AC 10) |
+| `frontend/tests/e2e/journal-entries.spec.ts:285` | bloc `:278-290`, reformulé par la 15-8a — ne contient plus `ENTRY_IS_POSTED` |
+| manuels (`user-manual.tex`, `admin-manual.tex`) | ⚠️ **non remesurés ici** : la 15-8a les a réécrits — les sites se retrouvent par les motifs de l'AC 12 (T0/T7) |
 
 ### Les sites de la suppression — inventaire au sol (2026-10-08)
 
@@ -391,3 +436,4 @@ archivés de `docs/`.
 |---|---|
 | 2026-10-08 | **Créée par découpage** de la 15-8 après la validation P2 (choix C-15-8-17) ; spec, P1 et P2 au Change Log de l'index `15-8-modifier-une-ecriture.md`. Remédiations de la P2 propres à la suppression : motifs du test de concurrence `DELETE` (R2-8), rejeu sur interblocage du `DELETE` (F2, C-15-8-19), paiement détaché refusé au `DELETE` (F3, C-15-8-20), appelants de test de `delete_in_tx` (F12), sortie attendue du grep de l'AC 10 (R2-12), contrôle aplati élargi (R2-4, F5). **Recompte** (cette fiche) : 12 AC, 9 tâches (T0 à T8), 5 décisions (D1 à D5). |
 | 2026-10-08 | **Validation P3** (deux lentilles **Sonnet**, contexte frais, lecture seule ; prompt versionné `15-8b-validate-prompt-p3.md` ; rapports `target/gate-logs/15-8b-p3-{R,F}.md`). **R** : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 6 LOW ; **F** : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 8 LOW. Doublons : R3-1 = F2, R3-2 = F6, R3-3 = F8, R3-4 = F3 — soit **2 MEDIUM et 11 LOW distincts**. **Tout appliqué**, sur décisions de l'orchestrateur : **exercice postérieur clos** (F1, MEDIUM) — cadre, étape 2-bis de `delete_in_tx` (`fy.start_date`, `find_later_closed_in_tx` avant la première lecture ordinaire), seulement sur le chemin de la route (C-15-8-22, C-15-8-29) ; **précédence du `DELETE`** (R3-1, F2, MEDIUM) — AC 4-bis : paires de causes dont pièce + borne → 409 `OWNED_BY_INVOICE` et exercice clos + pièce → 400 `FISCAL_YEAR_CLOSED`, test d'ordre `la_garde_parle_avant_le_verrou_de_periode` à la place du test du gel, mutations « permuter 3-ter et 3-quater » et « permuter 2-bis et 3 » ; tests e2e qui changent de sens ajoutés (`:1317`/`:1331`, `:1341`). **LOW** : mutation de l'AC 5 décrite juste (A bute sur la clé `RESTRICT`, 1451 — R3-2, F6) ; choix applicables complétés (C-15-8-1, 5, 7, 13 ; renvois corrigés par C-15-8-24 — R3-3, F8) ; `README.md:29` édité par cette story seule, forme finale (R3-4, F3 — C-15-8-26) ; « T1 : le doc-comment le dit » (R3-5) ; motif de l'AC 12 complété (`ni modifiée ni supprimée`), contrôle sur les PDF aplatis, ligne de base mesurée 5 / 2 / 0 (R3-6 — C-15-8-27) ; inventaire des résidus d'`ENTRY_IS_POSTED` en liste fermée (F4) ; `MATCHED_BANK_TRANSACTION` (`ON DELETE SET NULL`) parmi les refus que seule la garde apporte, transaction bancaire assertée intacte (F5) ; D2 : « aucun cycle connu, rejeu par uniformité » (F7) ; tournure prescrite du paiement détaché, texte de sa clé sans motif (F9) ; compte déjà mouvementé non re-complétable, au manuel (F10) ; `test_fixtures.rs:585-588`. R3-7 (`unvalidate` sans clé d'API) : rien à corriger dans la fiche, **re-signalé à l'orchestrateur**. **Signal D5** : MEDIUM en P2 et P3 ; défauts distincts, aucun né d'une remédiation de cette fiche — pas de découpage (4 modules de premier niveau, F). **Propagation** : grep des symptômes dans les trois fiches 15-8 (`dix`, `fait passer A`, `les deux 409`, `et supprimables`, `583-586`, `coût nul`). **Recompte** (cette fiche, `grep`) : **13** critères (AC 1 à 12 et 4-bis), 9 tâches (T0 à T8), 5 décisions (D1 à D5). |
+| 2026-10-08 | **Validation close** (agent de développement, avant T0, sur `52a9b19b` — 15-8a mergée). Reste de la P4 ciblée (Haiku, `target/gate-logs/15-8b-p4-ciblee.md`) : **1 MEDIUM** (M1 — l'AC 10 se disait « liste fermée » et contenait un « à vérifier »). **Tranché au code** : `journal-entries.api.ts` porte **encore** `ENTRY_IS_POSTED` (`:70`, doc-comment de `deleteJournalEntry` posé par la 15-8a) — l'inversion ne l'a pas effacé ; il est **dedans**, à faire disparaître (T4 le réécrit). **Inventaire refait sur `HEAD`** : 38 lignes hors `_bmad-output/` ; deux sites **neufs** apportés par la 15-8a — `CHANGELOG.md:15` (son entrée, réécrite dans la même section) et `docs/api-external.md:221` (parenthèse historique, qui reste) ; `journal-entries.spec.ts:285` **sort** de la liste (bloc reformulé par la 15-8a). AC 10 réécrite en liste réellement fermée (3 qui restent, 35 qui disparaissent, nommés ligne à ligne) — C-15-8b-1. **Numéros de ligne** : table « Décalages mesurés après la 15-8a » ajoutée en tête des Dev Notes (les décalages vont jusqu'à +1021 lignes dans `journal_entry_reversal_e2e.rs`) ; `the_opening_entry_is_frozen_but_still_correctable` a été **renommé** par la 15-8a. AC 4 : le montage commun s'appelle `monter_les_pieces`. **`closes #532` → `refs #532`** : l'issue a été fermée par la 15-8a. Aucun CRITICAL/HIGH/MEDIUM ouvert : **validation close**. |
