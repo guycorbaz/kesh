@@ -1,5 +1,29 @@
 # Epic 15 — Lettrage, justificatifs & compléments
 
+## 🔁 Relance du 2026-10-08 — en autonomie, après la vague 1
+
+**Décision de Guy (2026-10-08)** : l'Epic 15 est l'epic suivant, augmenté des cinq P1 hors
+TVA (#427, #429, #434, #473, #474), et conduit **en autonomie complète** — les choix sont
+consignés dans `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md`, que Guy
+relira à la fin. Cible : **v0.13.0**.
+
+**Ce qui a changé depuis le kickoff du 2026-08-24, et que la suite de ce document ignore** :
+les Epics 24 et 25 ont créé `invoice_settlements` — l'encaissement produit enfin son
+écriture, une facture se règle en plusieurs fois, son reste dû se calcule. La décision **D2**
+ci-dessous (« pas de paiement partiel ») et la définition d'« ouvert » de **D1** (« ni lettré
+ni marqué payé ») ont été écrites **avant** ce modèle. Les fiches 15-1a/b/c sont donc à
+**relire contre `invoice_settlements` avant tout développement** — c'est la première tâche
+de leur reprise.
+
+**Critère de clôture** : le jalon GitHub « Épique 15 » à zéro issue ouverte (11 issues au
+2026-10-08, dont #518, l'issue du lettrage créée ce jour-là). Périmètre, ordre et sortie de
+15-3 et 15-4 : choix C1 et C2 du registre.
+
+**Décompte des bugs au kickoff** : 49 (§ *Priorités des défauts* du `CLAUDE.md`). Il doit
+avoir baissé à la rétrospective.
+
+---
+
 **Statut** : 🚧 kickoff le 2026-08-24
 **Cible release** : v0.12 (à confirmer)
 **Origine** : `epics.md` § *Epic 14 : Justificatifs, Lettrage & Compléments v0.2* (renuméroté 15 à la rétrospective de l'Epic 5)
