@@ -715,3 +715,10 @@ Claude Opus 5.5 (`claude-opus-5-5`), agent de développement de l'Epic 15, en au
   *Debug Log References* (backend 2804/2804, frontend 1029/1029, E2E 239 / 8 rouges attendus / 19).
   La remédiation touche du code de production (composant et module de libellés) : **une passe ciblée
   sur `1f481654` reste à lancer** selon la règle de clôture. Statut : `done` (gate vert).
+- **2026-10-08 — Revue de code P2 ciblée (Haiku, une lentille, prompt `15-5c-review-prompt-p2-ciblee.md`) sur
+  `1f481654` : 0 finding.** Rapport : `target/gate-logs/15-5c-review-p2-ciblee.md`. Le rapport ne listant pas ses axes
+  non exercés, l'orchestrateur a repris lui-même les deux axes porteurs : la raison `payment_date_before_invoice_date`
+  n'est posée qu'à `crates/kesh-api/src/routes/reconciliation.rs:1337` et lue à
+  `frontend/src/lib/features/reconciliation/failed-proposal-label.ts:154` ; `clearBatchReport()` est appelée aux quatre
+  débuts de bilan (`ReconciliationProposals.svelte:142`, `:154`, `:171`, `:216`). **Boucle de revue CLOSE** (P1 Sonnet
+  ×3 : 1 MEDIUM, 10 LOW → P2 ciblée Haiku : 0).
