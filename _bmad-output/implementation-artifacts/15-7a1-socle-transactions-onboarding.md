@@ -1,6 +1,6 @@
 # Story 15.7a1 : Le socle transactionnel de l'onboarding
 
-Status: review
+Status: done
 
 <!-- Née le 2026-10-08 du découpage de la 15-7a (choix C-15-7-19), à la passe de validation P2.
      Patron « story-zéro + rollout » du CLAUDE.md (§ Règle de splitting préventif) : cette fiche
@@ -339,6 +339,22 @@ Journaux non versionnés sous `target/gate-logs/` : `15-7a1-gate-complet.log`, `
   (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
   `:77`, `:150`) ; pas de huitième.
 - Ni manuel, ni CHANGELOG : rien de visible ne change (Dev Notes). Choix C-15-7a1-2.
+- **Revue de code P1 et clôture** (commit `1405a92d` après rebase sur `origin/main` `8f9811d8`, 15-11a
+  comprise) : deux commentaires rectifiés (`company_invoice_settings.rs`, renvois « variante pool ») et
+  **3 tests neufs** (périmètre : commit de dev `03191a8c` → `1405a92d`, recompté par
+  `grep -c 'sqlx::test'` aux deux bornes : `accounts_repository` 2 → 3, `bank_accounts_repository`
+  24 → 26). Mutation exécutée sur le test de l'enveloppe `bulk_create_from_chart` (« `commit` au lieu de
+  `rollback` » sur erreur) : rouge, `left: 86`, fichier restauré et touché. Angle mort assumé, écrit dans
+  le test : la branche `OptimisticLockConflict` de `upsert_primary_in_tx` (inatteignable sous le
+  `SELECT … FOR UPDATE` de la même transaction). Choix C-15-7a1-3.
+- **Gates réellement exécutés sur l'état rebasé, au dernier commit de code `1405a92d`** : bases
+  `kesh_157a1` et `kesh_e2e_157a1` remises à zéro (DROP/CREATE, migrations ; seed sur la première) ;
+  `scripts/test-fast.sh` **vert — 2867 exécutés, 2867 passés, 4 ignorés** ; frontend : `check` 0 erreur
+  (27 avertissements préexistants), `lint-i18n-ownership` PASS, `test:unit` 111 fichiers / 1086 tests,
+  `build` vert ; **E2E complet** (backend `:3009`, secrets générés par `openssl rand`,
+  `KESH_COOKIE_SECURE=false`) : **246 passés, 8 échecs, 19 ignorés** — les sept KF-029 (#97) et
+  `sidebar-navigation.spec.ts:75`, huitième listé dans `docs/testing.md` § « Les échecs attendus »,
+  **vert au rejeu isolé** (4 passés). Journaux : `target/gate-logs/15-7a1-{gate-complet,front,e2e,e2e-backend}-p1.log`.
 
 ### File List
 
@@ -356,6 +372,7 @@ Journaux non versionnés sous `target/gate-logs/` : `15-7a1-gate-complet.log`, `
 - `crates/kesh-db/tests/onboarding_repository.rs` — test 7
 - `crates/kesh-api/tests/onboarding_path_b_e2e.rs` — test 8 (`finalize` ajouté à `full_path_b_flow`)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`, `epic-15-choix-autonomes.md`, cette fiche
+- `_bmad-output/implementation-artifacts/15-7a2-trace-installation-production.md`, `15-7b1-trace-demonstration.md` — Change Log : constats de la revue P1 reportés
 
 ## Change Log
 
@@ -478,3 +495,26 @@ Journaux non versionnés sous `target/gate-logs/` : `15-7a1-gate-complet.log`, `
   + le test 8 prolongeant `full_path_b_flow` ; 10 mutations, toutes rouges pour la raison attendue ;
   gate complet vert (2844/2844, 4 ignorés) et E2E complet aux seuls 7 échecs KF-029 attendus, au dernier
   commit de code. Choix C-15-7a1-2. Statut → `review`.
+- 2026-10-09 — **Revue de code P1 — CLOSE** (prompt versionné `15-7a1-review-prompt-p1.md` ; trois
+  lentilles Sonnet en contexte frais, B Blind Hunter, E Edge Case Hunter, A Acceptance Auditor ; rapports
+  `target/gate-logs/15-7a1-review-p1-{B,E,A}.md`, non versionnés). Bruts, recomptés depuis les rapports :
+  B **3 LOW**, E **4 LOW**, A **2 LOW** ; aucun CRITICAL, HIGH ni MEDIUM. Après fusion (B-1 = A-1) :
+  **8 LOW distincts**.
+
+  | finding | lentilles | objet | sort |
+  |---|---|---|---|
+  | B-1 = A-1 | B, A | `company_invoice_settings.rs` : « cf. variante pool » / « cf. pool variant » renvoient à une variante sans corps | justification d'origine portée dans la variante `_in_tx` ; grep du symptôme (`pool variant\|variante pool`) : restent des mentions légitimes de la délégation |
+  | A-2 | A | « `OptimisticLockConflict` sans annuler » non prouvé par un test | **angle mort assumé** écrit dans le test : branche inatteignable sous le `SELECT … FOR UPDATE` de la même transaction |
+  | B-3 | B | branches d'erreur des enveloppes et « pas de commit » sur `Updated` non testées | trois tests neufs ; mutation exécutée sur l'enveloppe `bulk_create_from_chart` |
+  | B-2 | B | fonctions sans appelant de production | accepté (socle) ; reporté au Change Log de la 15-7a2 |
+  | E-1 | E | trois copies en ligne de `LOCK_SQL` dans `routes/onboarding.rs` | reporté à la 15-7a2 (AC 8.2) |
+  | E-2 | E | `seed_demo` lève `is_stub` sans `clear_stub_in_tx` | reporté à la 15-7b1 (son § 2) |
+  | E-3 | E | garde « aucun compte » lue sur le pool, hors verrou | reporté à la 15-7a2 (AC 8.2, point 4), avec le booléen « inséré » relu à chaque tentative de `finalize` rejouée |
+  | E-4 | E | erreur de statement : insertions partielles visibles d'un appelant qui avale l'erreur | accepté (contrat « l'appelant annule » documenté) |
+
+  **Pas de passe ciblée** : la remédiation ne touche que deux commentaires et des tests, **aucune ligne
+  de production exécutable** — c'est la condition qui permet de clore la boucle (§ « La passe ciblée »).
+  **Trend** : P1 0 au-dessus de LOW. **Modèles** : Sonnet ×3. **Reclassements** : aucun. Rebase sur
+  `origin/main` `8f9811d8` (15-11a) : un conflit, le registre, résolu par union (225 entrées, aucun
+  identifiant en double). Gate complet, frontend et E2E complet verts au dernier commit de code
+  (Dev Agent Record). Choix C-15-7a1-3. Statut → `done`.
