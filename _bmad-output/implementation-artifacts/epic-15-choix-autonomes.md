@@ -1898,3 +1898,342 @@ l'import (#458–#461).
   (**12** `ARejouer`), un site `retry_with` de plus à migrer (**sept** : les six de C-15-5e1-5 et le `DELETE`) ; sa
   cible finale de registre reste **22 `Rejouee` / 4 / 89** si toutes les `ARejouer` y passent.
 - **Réversible** : oui.
+
+## C75 — 15-11 : remédiation P1 — les ajouts en `${KESH_X:-}`, une fonction de lecture unique (vide = absent) ; révise C71
+
+- **Contexte** : validation P1 de la 15-11 (Sonnet ×2 ; `target/gate-logs/15-11-p1-{R,F}.md`) : 13 MEDIUM bruts, 8 distincts, 13 LOW. Le cœur : la **clé sans valeur** retenue par C71 (a) ne protège pas du vide — une ligne `KESH_X=` vide de `.env` est transmise comme chaîne vide (mesuré, Compose 2.40.3), et `KESH_SMTP_PORT`, `KESH_ADMIN_BACKUP_DIR`, `KESH_LANG` ne la traitent pas comme une absence ; (b) n'a été mesurée que sur une version de Compose, alors que la cible (Synology Container Manager) en embarque une inconnue (R2/F6, R3/F2, F1). Et l'opt-out documenté `KESH_LOG_FILE_PATH=` vide est sans effet sous `${…:-défaut}` (F3).
+- **Retenu** (décisions de l'orchestrateur) :
+  - **Compose** : chaque variable ajoutée s'écrit `KESH_X: ${KESH_X:-}` (ou `${KESH_X:-défaut}` pour un défaut de déploiement voulu et documenté) — l'interpolation depuis `.env` est le mécanisme de base, documenté depuis Compose v1. La clé sans valeur est **interdite** par le test (V). **Révise C71** sur ce seul point ; `env_file` reste interdit, la liste explicite reste (C71 n'est pas réécrite).
+  - **Code** : une fonction unique `config::env_nonempty(name) -> Option<String>` dans `kesh-api` (trim ; vide ou espaces → `None` ; non-UTF-8 → `None` avec avertissement ; absorbe `opt_trimmed_env`). Les **36** sites de lecture de production (`config.rs` 32, `main.rs` 2, `logging.rs` 1, `routes/onboarding.rs` 1) se réduisent à **un** ; `EXCEPTIONS_LECTURE` vide. Le test (L) rougit sur toute lecture hors d'elle, sur tout import de `std::env::var*` ou renommage de `std::env`, et la règle `cfg(test)` est écrite (items, instructions, `all` seul exclu).
+  - **`KESH_LOG_FILE_PATH`** : seul « vide signifiant » trouvé (recensement de `.env.example` et des 36 lecteurs ; `KESH_ADMIN_*` « vide » = absent dans le code). **Écart avec la consigne** : l'orchestrateur la voulait « exception écrite de la fonction unique » ; elle n'en a pas besoin — dans le code, vide et absent signifient déjà tous deux « pas de journal fichier » (`LogConfig::from_raw` filtre le vide, test `config.rs:2315`). La distinction ne vit que dans le compose : forme `${KESH_LOG_FILE_PATH-/var/log/kesh/kesh.log}` (sans deux-points), liste fermée `VIDE_SIGNIFIANT` contrôlée par (V) et par la documentation du vide dans `.env.example`, mutation M20.
+  - **Trim** : `KESH_COOKIE_SECURE` et `KESH_TEST_MODE` acceptent désormais `" true "` (le test `config.rs:2501` et trois commentaires sont mis à jour) — alignement sur `parse_strict_bool`, qui trime déjà ; `"True"`/`"yes"` restent refusés.
+  - **AC15** (lecture unique) et **AC16** (propagation `restart` → `up -d` : `admin-manual.tex:1239`, `:1289`, `DOCKER_START.md:62`, `:106` ; la recette de la 15-7b2 reste à la 15-7b2, rebasée après la 15-11, C-15-7-51) ; garde-fous structurels `image:` et montages (M18, M19) ; « Action requise » avec bloc exact et liste des lignes de `.env` qui deviennent actives ; #551/#552 citées (15-12) ; écart avec l'« Attendu » de #550 déclaré (`KESH_STATIC_DIR`/`KESH_LOCALES_DIR` conservées dans `.env.example`, avec note). Mutations 16 → 21, AC 14 → 16.
+  - **Découpage** : un crate, cinq modules de code — seuil non franchi ; coupe 15-11a (lecture unique) / 15-11b (compose, docs) signalée, non appliquée.
+- **Écartées** : (a) garder la clé sans valeur et durcir seulement trois lecteurs — laisse la dépendance de version et la règle du vide à la discipline de chaque lecteur futur ; (b) `${X:-}` sans fonction unique — transmettrait le vide à des lecteurs qui ne le traitent pas ; (c) une exception de code pour `KESH_LOG_FILE_PATH` — sans objet (même sens dans le code) ; (d) ne pas trimer dans `env_nonempty` — deux politiques coexisteraient, et les lecteurs d'`opt_trimmed_env` trimaient déjà.
+- **Réversible** : oui (fiche seulement, code non écrit).
+
+## C76 — 15-11 : remédiation P2 — `KESH_ADMIN_PASSWORD` sans défaut dans `docker-compose.yml`, liste « relisez » fermée, `dotenvy` et macros vus par le test
+
+- **Contexte** : validation P2 de la 15-11 (Opus ×2 ; `target/gate-logs/15-11-p2-{R,F}.md`) : 9 MEDIUM bruts, 7 distincts, 17 LOW. Le plus lourd (F1) : `docker-compose.yml` transmet `KESH_ADMIN_PASSWORD: ${…:-changeme}` ; absent de `.env`, il vaut `changeme`, que `Config::from_env` refuse (`InsecureAdminPassword`) — l'onboarding `/setup` que le manuel recommande est impossible sur ce compose, et le retrait des variables après un break-glass fait refuser le démarrage. La fiche l'écartait par un argument faux.
+- **Retenu** (décisions de l'orchestrateur, appliquées par l'agent de remédiation) :
+  - **F1** : dans Y, `KESH_ADMIN_PASSWORD: ${KESH_ADMIN_PASSWORD:-}` (vide = absent → `None` → setup-required, vérifié au code : `config.rs:619-637`, `auth/bootstrap.rs:62-69`) ; P, déjà `${KESH_ADMIN_PASSWORD}`, inchangé sur la valeur, ses commentaires « obligatoire » corrigés ; `KESH_ADMIN_USERNAME` reste `${…:-admin}` (le bootstrap exige le couple). Le risque — `/setup` ouvert au premier venu sur base vide, Y publiant `80:80` — est **écrit comme comportement existant et documenté** (`admin-manual.tex:980`, flux recommandé depuis v0.1.2, celui de P depuis toujours), non comme un risque nouveau.
+  - **Garde-fou ajouté par l'agent** (choix propre, non demandé) : liste fermée `SANS_DEFAUT` = {`KESH_ADMIN_PASSWORD`} au test (V) — formes `${NOM:-}` ou `${NOM}` seules ; contrôle de la raison : la ligne de `.env.example` est commentée ; mutation M22. Motif : une correction sans test se défait en silence (« un patch vient avec son test »). Écarté : ne rien garder (régression muette possible) ; interdire tout défaut égal à une valeur refusée par le code (exige de recopier les règles de `Config::from_env` dans le test).
+  - **R2-1** : (L) compte comme noms lus les arguments littéraux des sites directs (`env::var("X")`, `dotenvy::var("X")`), qui restent rouges comme sites ; **choix propre** : entrée transitoire `opt_trimmed_env` dans `INDIRECTIONS` du T1 au T3, pour que les cinq noms qu'elle lit ne passent pas pour fantômes au T1 (écarté : laisser le T1 rougir sur ces cinq noms en le déclarant — rouge plus large que le défaut de #550, preuve brouillée).
+  - **R2-2 = F2, R2-3 = F3, R2-4, R2-5** : propagation du trim (`admin-manual.tex:1306`, `.env.example:110-111`, `espaces` au grep) ; liste « relisez » fermée depuis les variantes de `ConfigError` ; trois gestes au lieu d'un bloc à coller, `docker compose config -q` avant `up -d` ; commentaire `KESH_LOG_FILE_PATH` réécrit, (V) contrôlé par le marqueur « contrairement aux autres variables » et le refus de « ou absent ».
+  - **F4** : `dotenvy::var*` est un site, son import interdit, (S) et M23 ; `TMPDIR` angle mort.
+  - **O-1 (trouvé à la remédiation)** : (F) parcourt les littéraux de chaîne des macros — les deux messages porteurs du fantôme sont dans `write!` et `tracing::info!`, invisibles à `syn` ; sans cela M11 restait verte.
+  - **Signal D5** : MEDIUM → MEDIUM, plusieurs défauts nés de la remédiation P1 (R2-1, R2-2, R2-4, R2-5), traités localement ; un crate, cinq modules : pas de découpage. Déclaré au Project Lead.
+  - **Issue à ouvrir par l'orchestrateur** (F14) : `docker-compose.dev.yml` ne démarre pas sans `.env` (`KESH_ADMIN_PASSWORD: ${…:-admin}`, 5 caractères → `WeakAdminPassword`), alors que le README et le site y mènent.
+- **Écartées** : (a) pour F1, la voie (b) du rapport — ouvrir une issue et écrire le défaut sans le corriger : laisserait la procédure recommandée en échec sur le fichier que l'AC5 fait devenir le fichier d'installation générique ; (b) passer aussi `KESH_ADMIN_USERNAME` à `${…:-}` : sans effet (couple exigé), et change une ligne de plus chez l'exploitant.
+- **Réversible** : oui (fiche seulement, code non écrit).
+
+## C77 — 15-11 : découpage en 15-11a (compose, documentation, test à liste fermée) et 15-11b (lecture unique, test qui lit le code)
+
+- **Contexte** : validation P3 de la 15-11 (Sonnet ×2 ; `target/gate-logs/15-11-p3-{R,F}.md`) : R 2 MEDIUM / 7 LOW, F 4 MEDIUM / 6 LOW — 4 MEDIUM distincts plus F-4 (processus). Le **signal D5 est levé pour la deuxième fois, et par recyclage** : P1 → P2, 4 des 8 MEDIUM distincts naissaient de la remédiation P1 ; P2 → P3, 3 des 4 MEDIUM distincts naissent de la remédiation P2 (R3-1 = F-1, rouge exact du T1 ; F-2, exclusion `cfg(test)` de (F) ; F-3, `proc-macro2` non déclaré — les deux derniers nés du parcours des macros ajouté en P2). Ils se concentrent dans la machinerie du test qui lit le code (règles L/F/E, `syn`/`proc_macro2`). L'exception de l'amendement D5 (défauts distincts **et** non issus d'une remédiation) ne s'applique pas.
+- **Retenu** (décision de l'orchestrateur, appliquée par l'agent de découpage) :
+  - **15-11a-compose-transmet-la-configuration** (`closes #550`, `refs #534`) : compose (ajouts `${KESH_X:-}`, `KESH_LOG_FILE_PATH` en `${X-défaut}`, `KESH_ADMIN_PASSWORD` sans défaut), `image:`, montages de P, fantôme `KESH_ADMIN_RESET` (textes du code compris), `.env.example`, manuel, `DOCKER_START.md`, `up -d`, « relisez », gestes de mise à jour, CHANGELOG **Corrigé**, `docker compose config -q` en CI, `docs/ci.md`. Test **simple**, qui ne lit pas le code Rust : liste fermée `LUES` des 41 variables, écrite en dur, reproduite par une commande `grep` documentée ; (T), (V), (E), (F) sur les corpus texte, (S). Dépendance de test : `yaml-rust2` seule. 15 AC, 10 tâches, 19 mutations. La 15-7b2 dépend d'elle seule.
+  - **15-11b-lecture-unique-des-variables** (`refs #550`) : `config::env_nonempty`, migration des 36 sites, test (L) par `syn` et (F) étendu au code et aux macros, qui **remplace** `LUES` (égalité assertée au T1) ; `proc-macro2` en dev-dépendance ; CHANGELOG **Modifié**. Dépend de la 15-11a et de la 15-5e1 (un seul `syn`, lock régénéré). 6 AC, 7 tâches, 11 mutations.
+  - **15-11** devient une fiche index (`split`), qui garde son Change Log P1–P3 ; version complète au commit d69fdcca.
+  - **Choix propre de l'agent — sûreté d'un merge de la 15-11a seule** : vérifié au code que les 16 ajouts, arrivés vides, ne font refuser le démarrage d'aucune installation (`KESH_COOKIE_SECURE` vide → `true`, booléens stricts → défaut, SMTP → `None`) ; effets transitoires écrits (avertissements « invalide » pour cinq variables numériques et `KESH_LANG`, sauvegarde pré-import dans `/app` pour `KESH_ADMIN_BACKUP_DIR` vide). La 15-11b est « attendue avant le tag v0.13.0 », non bloquante. Écarté : déplacer dans la 15-11a un correctif ponctuel des trois lecteurs (`KESH_SMTP_PORT`, `KESH_ADMIN_BACKUP_DIR`, `KESH_LANG`) — c'est la règle « vide = absent » de la 15-11b, morcelée, et l'inventaire du test ne la garderait pas.
+  - **Choix propre — partage des textes** : la règle générale « une ligne vide vaut une ligne absente » et le trim (`.env.example` en-tête et `:109-111`, `admin-manual.tex:1306`, entrée CHANGELOG **Modifié**) vont à la 15-11b, qui les rend vrais ; la 15-11a garde le seul sens du vide qu'elle établit (`KESH_LOG_FILE_PATH`, marqueur « contrairement aux autres variables »).
+  - **Choix propre — mutations** : la 15-11a ne mute aucun `.rs` de production (M3 simule une variable ajoutée en l'ajoutant à `LUES`) ; la 15-11b reprend les mutations du code et en ajoute deux (M10 : entrée d'`INDIRECTIONS` retirée ; M11 : doc-comment fantôme).
+  - **R3-5 (registre)** : précise **C75** — les ajouts s'écrivent **tous** en `${KESH_X:-}` (R2-9) ; la parenthèse « ou `${KESH_X:-défaut}` pour un défaut de déploiement voulu » de C75 ne vaut que pour les entrées existantes. Le titre de C71 (« ajouts en clé sans valeur ») et les « seize mutations » de C72 sont historiques (révisés par C75, C76 et ce découpage). C71, C72, C75 ne sont pas réécrites.
+- **Écartées** : (a) poursuivre la validation de la 15-11 entière avec une passe P4 — le recyclage montre que chaque remédiation de la machinerie (L)/(F) fait naître le défaut suivant, et la 15-7b2 attend ; (b) la coupe signalée en P1 (15-11a = lecture unique, 15-11b = compose) — met en premier la partie instable et retarde ce dont dépend la 15-7b2 ; (c) un test 15-11a qui lirait le code par expression régulière — c'est la méthode textuelle dont la 15-5e1 a dû sortir (C70), et elle serait jetée par la 15-11b.
+- **Réversible** : oui (fiches seulement, code non écrit ; la version complète reste au commit d69fdcca).
+
+## C78 — 15-11b : remédiation P1 — le test qui lit le code devient LEXICAL (sortie d'un recyclage de quatre passes)
+
+- **Contexte** : validation P1 de la 15-11b (Opus 5.5 ×2 ; `target/gate-logs/15-11b-p1-{R,F}.md`) : R 5 MEDIUM / 8 LOW, F 3 MEDIUM / 8 LOW — 6 MEDIUM distincts (F2 ≈ R-2 + R-3 ; F3 = R-4). **Signal D5 levé, par recyclage** : R-1 naît de la remédiation R3-7 ; R-1, R-2, R-3 = F2 et F1 portent sur la même machinerie sémantique (reconnaissance des formes d'appel, imports, indirections « à un site », macros à motifs) que les passes P1-P3 de la 15-11. Quatre passes successives ont trouvé chacune la forme que la remédiation précédente ne voyait pas.
+- **Retenu** (décision de l'orchestrateur, appliquée par l'agent de remédiation) : le test ne reconnaît plus de formes. Il parcourt le **flux de jetons** complet (`proc_macro2`, groupes, macros et attributs compris) de chaque `.rs` de production, relève **chaque occurrence** des jetons surveillés — `env` (hors `env!`), `dotenvy`, `from_default_env`, `try_from_default_env`, et les indirections `env_nonempty`, `parse_strict_bool`, `env_flag_enabled`, `init_tracing` (`opt_trimmed_env` du T1 au T2) —, la rattache à son **emplacement** (fichier + élément englobant le plus intérieur, visiteur `syn`, plages `cfg(test)` exclues) et à sa **fenêtre** (jetons suivants jusqu'au premier groupe `( … )`), et la confronte à une liste fermée `EMPLACEMENTS_AUTORISES` (fichier, emplacement, jeton, forme `Exacte`/`Littéral`, nombre exact ; 17 entrées attendues). Occurrence hors liste → rouge ; entrée au nombre différent → rouge. Faux rouge possible, faux vert impossible pour toute lecture par `std::env`, `dotenvy` ou un jeton surveillé — et rien de plus n'est affirmé. Les noms lus restent tirés des littéraux (fenêtres de lecture, autorisées ou non) plus `RUST_LOG` par `EnvFilter::DEFAULT_ENV`. (F) code devient lexical aussi : tout littéral de chaîne du flux, donc doc-comments, macros **et attributs** (`#[error]`).
+- **Choix propres de l'agent** : (a) surveiller l'identifiant `env` **en entier** plutôt que `var`/`var_os`/`vars`/`vars_os` après `env ::` — un `use std::env::{self, var_os}` place `var_os` dans un groupe où il n'est pas précédé de `env ::`, et un `use std::env as e` ferait disparaître le préfixe ; surveiller `env` couvre les deux, au prix d'inventorier `std::env::temp_dir()` (`routes/admin.rs:80`), qui devient une entrée autorisée ; (b) ajouter `from_default_env` / `try_from_default_env` aux jetons (F8 c, coût nul) ; (c) rattachement par position (`proc-macro2` feature `span-locations`, côté cible seulement) plutôt que par réémission des jetons de chaque élément ; (d) `main.rs` appelle `env_nonempty` par chemin, sans `use` (un `use` serait une occurrence à autoriser, de fenêtre `env_nonempty` nue, indiscernable d'une référence non appelée) ; (e) R-5 : tests « valeur vide » discriminants, constatés rouges avant le T2, et capture `tracing` locale avec témoin positif pour les deux cas qui ne diffèrent que par l'avertissement ; (f) mutations 11 → 15.
+- **Écartées** : (a) corriger chaque finding dans la machinerie sémantique (R-1 : site = paramètre de la fonction ; R-2 : liste de motifs de macro élargie ; R-3 : règles de référence et d'alias) — c'est la cinquième itération du même recyclage ; (b) découper encore — la story est déjà le produit d'un découpage, et le défaut est de méthode, non de taille ; (c) un test par expression régulière sur le texte — il verrait les commentaires et ne saurait pas exclure `cfg(test)`.
+- **Fiche 15-11a non modifiée** : aucun finding ne l'exige.
+- **Réversible** : oui (fiche seulement, code non écrit).
+
+## C79 — 15-11a : remédiation P1 — troisième source de la liste « relisez » (chemins d'hôte de P), garde du placeholder `GENERATE_ME` du secret JWT (#557)
+
+- **Contexte** : validation P1 de la 15-11a (Opus 5.5 ×2 ; `target/gate-logs/15-11a-p1-{R,F}.md`) : R 2 MEDIUM / 6 LOW, F 1 HIGH / 1 MEDIUM / 6 LOW ; R1-1 = F1-1, R1-7 = F1-7 — 14 findings distincts (1 HIGH, 2 MEDIUM, 11 LOW). Le HIGH : la liste « relisez votre `.env` », déclarée fermée, ne tirait ses entrées que du code (`ConfigError`, `process::exit`) et ignorait ce que le **compose** change — d'abord les `KESH_*_HOST_DIR` de `docker-compose.prod.yml`, que le manuel conseille de poser sur Synology et qui, honorées après la mise à jour, montent `/data/documents` sur un autre dossier (justificatifs et PDF figés « disparus », un refigement produisant un nouveau document). R1-2 : le placeholder actif du gabarit, `KESH_JWT_SECRET=<GENERATE_ME: openssl rand -hex 32>` (35 caractères), est accepté par `Config::from_env` — issue #557 ouverte par l'orchestrateur.
+- **Retenu** (décisions de l'orchestrateur, appliquées par l'agent de remédiation) : (1) troisième source fermée « interpolations du compose nouvellement prises en compte ou dont la forme change » (T0, AC12 f, AC13), revérifiée au T8 contre `git diff main -- docker-compose*.yml` ; avertissement **en tête et en gras** du CHANGELOG et de la procédure de mise à jour, avec recette `grep`/`sed`/`rsync -a`/`diff -rq` (rejouée au scratchpad) ; (2) **AC16** : refus de tout secret contenant `GENERATE_ME` (sans égard à la casse), test qui lit la ligne réelle du gabarit, mutations M20 et M23, CHANGELOG **Sécurité** ; la fiche passe à `closes #550`, `closes #557` ; (3) `DOCKER_START.md:13, 23, 38-40` corrigés (F1-2) ; (4) tous les LOW.
+- **Choix propres de l'agent** :
+  - **Même variante `InsecureJwtSecret`** plutôt qu'une neuve : même défaut (placeholder non remplacé), même action (`openssl rand -hex 32`), appelants et tests existants inchangés ; une variante neuve dupliquerait message et traitement sans différence d'action. Variante unitaire (ne porte ni la valeur ni la sous-chaîne).
+  - **Test unitaire qui lit `.env.example` par `include_str!`** (dans `mod tests`) plutôt qu'une copie du placeholder : le symptôme est « la ligne active du gabarit, recopiée, est acceptée » ; un test sur une copie resterait vert si le gabarit changeait de placeholder (M23 le prouve). Assertion de montage : valeur ≥ 32 caractères, sinon `WeakJwtSecret` masquerait le contrôle.
+  - **R1-5 : `KESH_ADMIN_PASSWORD` de P passe aussi à `${…:-}`** (plutôt qu'écrire au manuel que l'avertissement de Compose est attendu) ; `SANS_DEFAUT` n'admet plus que `${NOM:-}` ; M22. Même valeur, une seule forme, plus d'avertissement sur le flux `/setup` recommandé.
+  - **F1-8 : liste fermée `AJOUTS`** des 28 couples (variable, compose), forme `${NOM:-}` seule, vérifiée **quand la clé est présente** (l'absence reste le rouge de (T) : un seul rouge par défaut) ; M21. Écarté : règle de revue non outillée.
+  - **F1-4 : `$` → `$$`** (consigne de l'orchestrateur), **mesuré** avant d'être écrit (Compose 2.40.3 : `pa$$word`, `'pa$word'`, `"pa$$word"` → `pa$word` ; `pa$word` et `"pa$word"` → `pa`, avec avertissement) ; le manuel cite aussi les apostrophes simples.
+  - **Hors périmètre, signalé** : `KESH_ADMIN_PASSWORD=<GENERATE_ME: …>` (`.env.example:82`, commenté) serait accepté si décommenté tel quel — même défaut, moindre ; l'orchestrateur décide (extension de #557 ou issue). La fiche 15-7b2 (worktree `kesh-15-7`) n'est pas modifiée : ses lignes 540-541 disent encore « 15-11 » (R1-6), et son motif de contrôle n'énumère pas les nouvelles mentions de `KESH_PRODUCTION_RESET` au manuel et au CHANGELOG (F1-5) — report par l'orchestrateur.
+  - **Signal D5 non déclencheur** : le HIGH est un défaut d'origine (la troisième source manquait depuis la conception de la liste), distinct, non né d'une remédiation. Modules de code recomptés : 3 (`config`, `main`, `lib`), l'AC16 vivant dans `config.rs`.
+- **Comptes** : AC 15 → **16**, tâches 10, mutations 19 → **23**, modules 3.
+- **Écartées** : (a) une variante `ConfigError` neuve pour `GENERATE_ME` (ci-dessus) ; (b) refuser tout secret commençant par `<` — plus large que le défaut constaté et sans gain (un placeholder court est déjà refusé par la longueur) ; (c) traiter `KESH_ADMIN_PASSWORD` au placeholder dans la même AC — hors de la décision de l'orchestrateur, signalé.
+- **Réversible** : oui (fiche seulement, code non écrit).
+
+## C80 — 15-11b : remédiation P2 — appels qualifiés d'`env_nonempty`, API de lecture de `tracing-subscriber` surveillée, promesse bornée au code du workspace
+
+- **Contexte** : validation P2 de la 15-11b (Sonnet ×2 ; rapports `target/gate-logs/15-11b-p2-{R,F}.md`) — 2 MEDIUM distincts (R-1 = F-2 : un `use` d'`env_nonempty` dans `logging.rs`/`onboarding.rs` rougirait sans que la fiche le prescrive ; F-1 : `EnvFilter::from_env("X")` et le `Builder` lisent une variable sans jeton surveillé), 11 LOW. Non recyclés : aucun ne naît du patch de la P1 (amendement D5, pas de découpage).
+- **Retenu** (décisions de l'orchestrateur) : (1) appel par chemin qualifié hors de `config.rs`, aucun `use` ; M12 réécrite ; (2) `EnvFilter` devient un jeton surveillé, entrées de `logging.rs` recomptées ; (3) la promesse de l'AC3 devient « faux vert impossible pour le code du workspace », les lectures internes aux dépendances sont un angle mort écrit avec la liste connue et sa méthode ; (4) tous les LOW traités.
+- **Choix propres de l'agent** :
+  - **`kesh_api::config::…` dans `main.rs`, non `crate::config::…`** : `main.rs` est le crate binaire, sans module `config` (il importe `kesh_api::…`) ; `crate::config` n'y compilerait pas. `crate::config::…` dans `logging.rs` et `routes/onboarding.rs`. La fenêtre commence à `env_nonempty` : les 17 entrées de la P1 restent exactes.
+  - **Jetons surveillés étendus au-delà d'`EnvFilter`** : `Builder`, `with_env_var`, `from_env_lossy`, `try_from_env` — le constructeur s'atteint par `tracing_subscriber::filter::Builder` sans le jeton `EnvFilter` (ré-export `filter::env::Builder`, `Default` implémenté), et sa méthode `from_env` est homonyme de `Config::from_env` ; **`init` et `try_init`** — `tracing_subscriber::fmt::init()`/`try_init()` lisent `RUST_LOG` par `EnvFilter::from_default_env()` interne (`fmt/mod.rs:1200-1204`), trouvé en lisant les sources pendant la remédiation. Coût : 0 occurrence pour tous sauf `init` (1, `logging.rs:162`). Faux rouge futur possible sur un `fn init` ailleurs : prix accepté.
+  - **Entrées : 17 → 22** (`EnvFilter` ×4 : `use`, type de retour et `EnvFilter::new(raw)` de `build_log_filter`, `DEFAULT_ENV` d'`init_tracing` ; `init` ×1). Le `[`EnvFilter`]` du doc-comment `:96` est un littéral, non un identifiant.
+  - **Règle de fenêtre amendée** : un groupe `{ … }` ou `[ … ]` termine la fenêtre (exclu) ; sans cela, le type de retour `-> EnvFilter { … }` s'étendait jusqu'à la fonction suivante. Les fenêtres existantes ne changent pas (toutes s'arrêtent avant sur `( … )`, `;` ou `,`).
+  - **Mutations M16** (`EnvFilter::from_env("…")`, (L)+(T)+(E)) et **M17** (`filter::Builder::default().from_env_lossy()`, (L) seule) : 15 → 17.
+  - **F-4 rectifié au code** : les quatre `KESH_LOG_FILE_*` sont déjà trimés en aval (`from_raw`, `LogRotation::parse`, `LogFormat::parse`, `parse_max_files`) ; l'exemple des rapports (« `" daily"` devient valide ») est faux ; seul le vide change (avertissement « invalide » → défaut silencieux). Écrit tel quel dans la table avant/après.
+  - **Vérification de la liste des dépendances (F-6)** : `cargo tree -p kesh-api --depth 1 -e normal` (28 dépendances directes hors `kesh-*`) + `sqlx-core`/`sqlx-mysql` 0.8.6, `grep -rlE 'env::var|var_os\(|getenv'` dans le `src/` de chaque paquet du registre, chaque site lu. API appelable : `dotenvy` et `tracing-subscriber` seulement (tous deux surveillés). Lectures internes à nom fixe : `NO_COLOR` (`fmt::Layer::default`, **lu en production** par `fmt::layer()`), `TOKIO_WORKER_THREADS`, `TZ` (`chrono`, `time`). Transitives non examinées. **Nuance pour l'orchestrateur** : « autres : aucun » est vrai pour les API de lecture, pas pour les lectures internes, d'où la liste.
+- **Écartées** : (a) un `use` autorisé par deux entrées supplémentaires (19) — ouvre une forme de plus, l'appel qualifié n'en ouvre aucune ; (b) écrire `Builder`/`fmt::init` en angles morts plutôt que les surveiller — coût nul à surveiller, et `fmt::init()` est la ligne canonique des exemples de `tracing-subscriber`, la plus probable à être écrite ; (c) une garde de classement des dépendances nouvelles (suggestion F-6) — hors du périmètre de la story, angle mort écrit à la place.
+- **Réversible** : oui (fiche seulement, code non écrit).
+
+## C81 — 15-11a : remédiation P2 — placeholder refusé aussi pour `KESH_ADMIN_PASSWORD`, recette de déplacement réécrite et rejouée, tableaux de `sec:env-vars` repris de la 15-7b2
+
+- **Contexte** : validation P2 de la 15-11a (Sonnet 5.5 ×2 ; `target/gate-logs/15-11a-p2-{R,F}.md`) : R 4 MEDIUM / 7 LOW, F 3 MEDIUM / 8 LOW (le bilan du rapport F en annonce 7 ; recompté F2-4 à F2-11) ; recoupements R2-3 = F2-1, R2-2 = F2-2 (+ F2-9), R2-4 ≈ F2-5 + F2-6 — 17 findings distincts (5 MEDIUM, 12 LOW). MEDIUM : `KESH_ADMIN_PASSWORD=<GENERATE_ME: …>` décommenté accepté (crée un administrateur au mot de passe publié) ; recette de P1 qui réécrit les droits de la destination (`rsync -a`) et copie au mauvais endroit en affichant « copie identique » (guillemets, `\r`) ; propagation du placeholder incomplète (README de crate hors du grep) ; tableaux de `sec:env-vars` rognés dans le PDF, rendant intenables les contrôles PDF de l'AC12.
+- **Retenu** (décisions de l'orchestrateur, appliquées par l'agent de remédiation) : (1) AC16 étendue au mot de passe admin, constante commune, variante `InsecureAdminPassword` réutilisée, test calqué sur l'AC16 c, M24, AC12 e et AC13, manuel `:537-539` (mot de passe admin optionnel) ; placeholder contrôlé avant la longueur pour les deux (F2-8) ; (2) recette de déplacement réécrite et rejouée au scratchpad sur cas piégés ; (3) la 15-11a reprend la correction des dix tableaux (AC12 j) — la 15-7b2 n'a plus à le faire ; (4) propagation complète du symptôme, grep du T8 étendu à `README.md` et `crates/*/README.md` ; (5) tous les LOW, dont `DOCKER_START.md` en `docker compose` v2 et la brochure.
+- **Choix propres de l'agent** :
+  - **M25 en plus de M24** : le changement d'ordre (F2-8) est un comportement neuf, asserté par un cas du test `…_generate_me_case_insensitive` (secret court `GENERATE_ME`) ; sans mutation qui le voie rouge, cette assertion pourrait être muette. Coût : une mutation.
+  - **Constante `TEMPLATE_PLACEHOLDERS = ["generate_me"]`** commune, les refus propres à chaque variable (`change-me` en sous-chaîne pour le secret, `changeme` en égalité pour le mot de passe) restant à leur place : les deux formes historiques n'ont pas la même sémantique (sous-chaîne / égalité), les fusionner aurait changé le refus existant du mot de passe.
+  - **Le test qui lit le gabarit asserte que la valeur extraite contient `GENERATE_ME`** et qu'il y a exactement une ligne en colonne 0 (R2-9) : sans la première assertion, un gabarit sans placeholder ferait passer le test à vide ; l'ancienne assertion « ≥ 32 caractères » tombe avec le nouvel ordre.
+  - **Recette** : plus de `mkdir -p` (la destination, dossier partagé DSM, se crée dans File Station, avec les droits du partage ; c'est `mkdir -p` qui fabriquait le dossier `"`) ; `S=""`/`S=sudo` explicite plutôt que `sudo` partout (`sudo` seulement pour `docker compose`, et pour la copie sur « Permission denied » — le conteneur tourne en root mais ses fichiers sont lisibles) ; sous-shell pour qu'un `exit 1` ne ferme pas la session SSH ; messages ASCII ; lignes ≤ 76 caractères parce que le style `kesh` de `lstlisting` replie les lignes longues (`breaklines = true`, `kesh-style.sty:224`), ce qui rendrait la commande non recopiable ; gestion de `export` et d'un commentaire de fin de ligne. Rejouée sous `dash`, `bash` et BusyBox sur dix `.env` piégés ; **non mesurée sur DSM**.
+  - **CHANGELOG sans ligne de commande de copie** : une ligne `rsync` isolée de ses gardes reproduirait le défaut de la P1 ; il renvoie à la recette du manuel.
+  - **F2-7 : clé i18n `error-invoice-pdf-gone` non modifiée** — le message est juste hors mise à jour (fichier réellement perdu), et les quatre locales sortent du périmètre ; la nuance « ne refigez pas avant d'avoir vérifié le montage » est au manuel et au CHANGELOG.
+  - **F2-11 : brochure corrigée** plutôt que déclarée hors périmètre — une phrase, et le PDF est régénéré par le même `make fr`.
+  - **`crates/kesh-api/README.md`** : seules les affirmations fausses sur les refus (`:38`, `:55-57`, `:62-65`) sont corrigées ; l'inventaire partiel de variables et l'exemple de requête restent hors périmètre, écrit.
+  - **AC12 j** : le geste (`\paragraph{…}\mbox{}\\` ou `\subsubsection*{…}`) est **laissé à l'essai** au développement, comme dans la fiche 15-7b2 — non mesuré ici (compilation LaTeX hors du périmètre d'une remédiation de spec) ; le critère de choix est écrit (supprimer l'`Overfull` sans toucher la table des matières ni la numérotation).
+  - **Signal D5** : HIGH → MEDIUM, critère « égale ou supérieure » non atteint ; 3 des 5 MEDIUM nés de la remédiation P1 (recette, propagation de l'AC16), 2 d'origine ; une seule zone (procédure de mise à jour du manuel), 3 modules de code : pas de découpage, **déclaré**.
+- **Comptes** : AC 16 (AC12 gagne (j)), tâches 10, mutations 23 → **25**, tests unitaires de l'AC16 3 → **5**, modules 3.
+- **À faire par l'orchestrateur** : étendre le texte de #557 au mot de passe admin ; ajuster la fiche 15-7b2 (worktree `kesh-15-7` : retirer la mise en page des dix tableaux de son AC 11 ligne `:691` et de son T7, et ajouter à sa liste de motif les mentions nouvelles de `KESH_PRODUCTION_RESET`).
+- **Écartées** : (a) une variante `ConfigError` neuve pour le mot de passe admin au placeholder — même défaut, même action ; (b) modifier `\titleformat{\paragraph}` dans `kesh-style.sty` — touche les trois manuels ; (c) garder `mkdir -p` — il crée la destination sans les droits du partage et masquait l'erreur d'extraction ; (d) corriger la clé i18n — hors périmètre, message juste hors mise à jour ; (e) reporter le contrôle PDF des tableaux à la 15-7b2 (option b de F2-3) — décision contraire de l'orchestrateur.
+- **Réversible** : oui (fiche seulement, code non écrit).
+
+## C82 — Une cible cargo par worktree (incident de la cible partagée)
+
+- **Contexte** : les consignes des agents (n° 8) imposaient `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh/target` à tous
+  les worktrees, pour éviter des compilations à froid. L'agent de la 15-8b a constaté que `kesh-api` y avait été
+  compilé contre le `kesh-db` d'une autre branche, sans recompilation ni erreur : cargo calcule l'empreinte des
+  crates du workspace par chemin relatif, si bien que deux worktrees partagent leurs artefacts. Un gate peut donc
+  avoir testé le code d'une autre branche.
+- **Portée évaluée** : les PR fusionnées (#545 15-5b, #553 15-8a, #556 15-5c) ont toutes eu une CI GitHub verte,
+  qui compile à neuf et rejoue la suite backend complète : leur code fusionné est validé indépendamment. La 15-8a et
+  la 15-8b ont utilisé une cible propre (`target-158`). Le risque résiduel porte sur les **E2E locaux** des 15-5b,
+  15-5c et 15-5e1 (la CI ne lance qu'un smoke) : un backend d'une autre branche a pu servir. La 15-5c ne touchait
+  aucun fichier Rust ; la 15-5e1 refait ses gates sur sa propre cible avant sa PR.
+- **Retenu** : chaque worktree a sa cible (`<worktree>/target`) ; consigne 8 réécrite, consigne 9 (attente des
+  gates) filtrée sur le répertoire courant des processus (`wait-kesh.sh`).
+- **Écarté** : garder la cible partagée en forçant des `cargo clean -p` (fragile, oubliable).
+- **Réversible** : oui. À présenter au Project Lead en fin d'epic comme incident de méthode.
+
+## C83 — 15-11a : remédiation P3 — AC4 abandonnée (montages fixes de `docker-compose.prod.yml`, recette de déplacement retirée, #558), gabarits `<…>` refusés ; révise C73, C77, C79 et C81
+
+- **Contexte** : validation P3 de la 15-11a (Opus 5.5 ×2 ; `target/gate-logs/15-11a-p3-{R,F}.md`) : R 3 MEDIUM / 10 LOW, F 4 MEDIUM / 8 LOW ; 20 findings distincts (6 MEDIUM, 14 LOW). La recette de déplacement des dossiers montés (AC12 f, née en P1 de l'AC4) est en défaut pour la **troisième passe de suite** : elle lit `.env` avec `grep`/`sed` alors que Compose admet `KEY = v`, `KEY: v`, un commentaire après tabulation… — « rien à faire » en silence, ou copie au mauvais endroit affichée « copie identique » (R3-1 = F3-1) ; une destination non vide l'arrête sans consigne (F3-2) ; ses lignes se replient dans l'encadré (R3-2). Signal D5 levé par **recyclage** (même machinerie qu'en R2-1/R2-2). F3-3 : le déplacement sortait les PDF figés de la sauvegarde Hyper Backup documentée. F3-4 : les gabarits entre chevrons du manuel (`<mot de passe fort, …>`, `<nouveau-mdp-12+>`…) sont acceptés comme mot de passe admin.
+- **Retenu (décisions de l'orchestrateur)** : (1) **abandon de l'AC4** — P garde `./documents`, `./inbox`, `./log` ; la recette et son encadré disparaissent ; les `KESH_*_HOST_DIR` restent au gabarit et au manuel (elles servent `docker-compose.yml`, et les règles (E)/(F) du test les admettent), marquées « sans effet avec `docker-compose.prod.yml` » ; version configurable renvoyée à l'**issue #558** ; (2) **AC16** : refus, pour `KESH_JWT_SECRET` et `KESH_ADMIN_PASSWORD`, de toute valeur de la forme `<…>` (après trim), en plus de `GENERATE_ME` ; (3) contrôle `Overfull` borné aux dix tableaux ; (4) tous les LOW.
+- **Choix propres de l'agent** :
+  - **Le test GARDE l'état des montages** plutôt que de les ignorer : (T) exige des sources exactement `./log`, `./inbox`, `./documents` dans P et `${KESH_*_HOST_DIR:-` dans Y (M14 réécrite sur Y, M28 neuve sur P, message qui renvoie à #558). Raison : sans garde, une contribution future pourrait rendre P configurable « en passant » — exactement le changement dont trois passes ont montré le danger. La story #558 retirera la garde délibérément. Écarté : supprimer toute contrainte de montage (silence) ; exiger `${NOM` « dans un des deux compose » (moins lisible que nommer Y).
+  - **(E) cherche `${NOM` dans les `volumes:` de `docker-compose.yml` seul** — le rouge (E) du T1 disparaît ; (E) reste exercé par M3, M7, M12, M14.
+  - **Numéro d'AC4 conservé** (« montages inchangés ») pour ne pas décaler seize renvois.
+  - **La vérification des placeholders passe par Compose** (`sudo docker compose config | grep -iE 'KESH_(JWT_SECRET|ADMIN_PASSWORD): .?(<|.*generate_me)'`) au lieu d'un `grep` sur `.env` (R3-13 = F3-11) : c'est la leçon même de R3-1 — ne pas réimplémenter le lecteur de `.env`. Sur-ensemble assumé (une valeur commençant par `<` sans `>` final apparaît), écrit au manuel ; motif à mesurer au T6 sur `.env` piégés, et à corriger — non à déclarer en limite — si le rendu YAML de Compose y échappe.
+  - **Fonction commune `is_template_placeholder`** (sous-chaînes de `TEMPLATE_PLACEHOLDERS` **ou** forme `<…>` après trim local) : une seule définition pour les deux contrôles ; le trim est local parce que le secret JWT n'est pas trimé à la lecture avant la 15-11b. Le contrôle `change-me` et celui du placeholder du secret forment une seule condition, avant la longueur (M25 la redescend entière ; cas `xchange-mex`, F3-8).
+  - **M27** (ordre du contrôle admin, R3-7) : même motif que M25 en C81 — une assertion d'ordre sans mutation qui la voie rouge peut être muette.
+  - **Manuel** : `:243-244` (exemple de l'*Étape 3*) passent en commentaire, « optionnel » — la phrase « au minimum les variables suivantes » cessait d'être vraie depuis C81 ; les quatre gabarits restent des gabarits manifestes, avec « remplacez la valeur entre chevrons ».
+  - **`:1384` et `:1518`** (sauvegarde) précisés par compose : seul résidu de F3-3, qui disparaît pour P ; la précision pour `docker-compose.yml` décrit une situation antérieure à la story.
+  - **`Overfull` de `sec:inbox-import` (`821--825`)** : laissé hors périmètre (préexistant, hors des dix tableaux, non touché par l'abandon) — couvert par « aucun `Overfull` nouveau ».
+- **Révisions explicites** : **C73** — « montages de P en `${KESH_*_HOST_DIR:-…}` » est **retiré** (le reste de C73 tient) ; **C77** — la 15-11a ne livre plus les chemins d'hôte de P ; **C79** — la troisième source de la liste « relisez » perd les montages (garde `KESH_LOG_FILE_PATH`, `KESH_ADMIN_PASSWORD`) et l'écarté (b) « refuser tout secret commençant par `<` » est **renversé** (forme `<…>` complète, pour les deux variables) ; **C81** — la recette de déplacement réécrite et rejouée, son choix « messages ASCII, lignes ≤ 76, `S=sudo` », et la nuance F2-7 (clé `error-invoice-pdf-gone`) deviennent **sans objet**.
+- **Comptes** : AC 16, tâches 10, mutations 25 → **28**, tests unitaires de l'AC16 5 → **6**, lignes ajoutées aux compose 28, modules 3.
+- **À faire par l'orchestrateur** : (a) **#558** : y reporter la recette retirée et les findings P1-P3 qui la concernent (R1-1, R2-1, R2-2, R3-1 = F3-1, F3-2, R3-2, F3-3) comme cahier des charges ; (b) **#557** : étendre le texte à la forme `<…>` ; (c) issue de F14 (`docker-compose.dev.yml` sans `.env`) : y ajouter `website/index.html:189` (F3-10) ; (d) fiche 15-7b2 (worktree `kesh-15-7`) : cellule `:1314` et T7 en `docker compose up -d` (F3-12) ; (e) signaler au Project Lead `CLAUDE.md:180` (`KESH_ADMIN_PASSWORD='<12+ caractères>'`, refusé recopié tel quel) ; (f) vérifier que la 15-7b3 ne touche pas `admin-manual.tex:1384`/`:1518`.
+- **Écartées** : (a) corriger la recette une quatrième fois en lisant la source par `docker compose config` (proposition de R3-1/F3-1) — elle résout la lecture mais garde la copie, la destination non vide, la sauvegarde et la largeur : la machinerie reste ; (b) sortir la recette dans une story sœur liée à l'AC4 — l'AC4 n'apporte rien que les exploitants de P attendent avant #558 ; (c) retirer les `KESH_*_HOST_DIR` du gabarit — `docker-compose.yml` les emploie réellement ; (d) réécrire les exemples du manuel sans chevrons (option b de F3-4) — la règle de forme ferme la classe, présente et à venir.
+- **Réversible** : oui (fiche seulement, code non écrit) ; #558 reprend la fonctionnalité.
+
+## C84 — 15-11a : clôture de la validation (P4, 0 au-dessus de LOW) — `$` entre apostrophes simples, motif de vérification élargi, coordination avec la 15-7b3 ; marque C73, C77, C79, C81 comme révisés par C83
+
+- **Contexte** : validation P4 de la 15-11a (Sonnet 5.5 ×2 ; `target/gate-logs/15-11a-p4-{R,F}.md`) : R 14 LOW, F 9 LOW, 0 au-dessus de LOW ; 20 LOW distincts. La validation **converge** ; les LOW sont appliqués à la fiche, sans nouvelle passe.
+- **Révisions par C83, annotées ici (F4-1)** — les entrées d'origine ne sont pas réécrites ; qui les lit seules doit savoir : **C73** — « montages de P en `${KESH_*_HOST_DIR:-…}` » est **retiré** (P garde ses montages fixes) ; **C77** — la 15-11a ne livre plus les chemins d'hôte de P, et ses comptes « 15 AC, 10 tâches, 19 mutations » sont périmés (16 AC, 10 tâches, 28 mutations à la clôture) ; **C79** — la troisième source de la liste « relisez » perd les montages, et l'écarté (b) « refuser tout secret commençant par `<` » est **renversé** (forme `<…>` refusée) ; **C81** — la recette de déplacement « réécrite et rejouée » n'est **plus une décision vivante** : elle est retirée avec l'AC4 (cahier des charges de #558).
+- **Choix propres de l'agent** :
+  - **`$` dans une valeur : apostrophes simples d'abord** (R4-13). Mesuré au scratchpad : Compose 2.40.3 et `dotenvy` 0.15.7 (lu par `cargo run`, `main.rs:44`) lisent `'pa$word'` littéralement ; `pa$$word` vaut `pa$word` pour Compose mais `pa` pour `dotenvy` ; `"pa$word"`/`"pa$$word"` sont des erreurs d'analyse pour `dotenvy` ; `"it's pa\$word"` vaut `it's pa$word` dans les deux. `.env.example` (qui sert aux deux) ne dit plus `$$` ; le manuel le cite en second, comme échappement propre à Compose ; `docker compose config` réaffiche tout `$` en `$$`, écrit. Écarté : garder `$$` en tête (faux hors Docker) ; `\$` sans guillemets (Compose le lit `pa\`, mesuré).
+  - **Motif de vérification `: .? *(<|.*generate_me)`** (R4-14) : `.? *` au lieu de `.?`, conformément à la consigne de C83 (« corriger le motif, non le déclarer en limite ») ; rejoué sur dix-sept `.env` (quatorze piégés montrés, trois témoins muets) ; seconde ligne de 70 caractères (≤ 76). Le sur-ensemble s'élargit d'un cas (un caractère, des espaces, puis `<`), écrit. Écarté : `.{0,6}` (borne arbitraire).
+  - **M23 réécrite sur `REMPLACER_MOI: openssl rand -hex 32`** (R4-5) : ni `<…>`, ni `GENERATE_ME`, ni `change-me`, ≥ 32 — le refus manquerait aussi si l'assertion de montage tombait. Écarté : garder `<A_GENERER: …>` en corrigeant seulement le rationnel (la mutation n'exercerait plus que l'assertion de montage).
+  - **Listes `HOTE` et `MARIADB` écrites en dur** (R4-11), avec contrôle de raison et rouge sur entrée inutilisée — comme les autres listes fermées. Écarté : les dériver des `volumes:` (un montage supprimé ferait disparaître la variable de la liste en silence).
+  - **Extraction de la source d'un montage** (R4-12 = F4-8) : recherche de `:<cible>` final (ou suivi de `:ro`/`:rw`), forme longue rouge, chaque cible exactement une fois.
+  - **Coordination avec la 15-7b3** (R4-1 = F4-2) : ordre 15-11a d'abord ; la 15-7b3 relocalise par le texte et place son texte après l'énumération et l'encadré de la 15-11a. Clôt l'action (f) de C83 : `:1384`/`:1518` libres ; `:1704-1717` partagé ; `:1734-1749` voisin.
+- **À faire par l'orchestrateur** : (a) **#558** : remplacer « les retire de la documentation » par « les marque *sans effet* avec le compose de production » et « 70 caractères » par 76 (R4-4) ; (b) **fiche 15-7b3** (worktree `kesh-15-7`) : déclarer la zone partagée — voir le rapport de clôture ; (c) les actions (a) à (e) de C83 restent dues si elles ne sont pas faites.
+- **Comptes** : AC 16, tâches 10, mutations 28, tests unitaires de l'AC16 6, lignes ajoutées aux compose 28, modules 3.
+- **Réversible** : oui (fiche seulement, code non écrit).
+
+## C85 — 15-5d et 15-5e2 : alignement sur le livré (15-5e1, 15-8a, 15-8b)
+
+- **Contexte** : la 15-5e1 (PR #559, `de1e1c26`) et la 15-8a (PR #553) sont mergées, la 15-8b est en
+  cours de rebase (worktree `kesh-15-8`). Les fiches 15-5d et 15-5e2, écrites avant, citaient une
+  partition, des sites `retry_with`, des passages du Pattern 5 et des numéros de ligne périmés. Code
+  relu sur `cecd5d1d` (branche de planification qui intègre `de1e1c26`). Fiches seules, aucun code.
+- **Retenu** :
+  1. **Partition d'arrivée de la 15-5e2 : 22 `Rejouee` / 0 / 4 / 89 = 115, dans les deux ordres de
+     merge avec la 15-8b.** Mesuré : 9 / 13 / 4 / 89 sur `cecd5d1d` (recompté sur le registre) ;
+     **10 / 12 / 4 / 89** sur le worktree de la 15-8b (diff non commité de son rebase) — le `DELETE`
+     était `ARejouer("15-5e2")`, il passe `Rejouee`, et le nombre de `SansEcritureAuJournal` ne bouge
+     pas. ⚠️ **La prévision transmise à l'agent (10 / 13 / 4 / 88, puis 23 / 4 / 88) ne correspond pas
+     au registre** : elle supposait le `DELETE` classé `SansEcritureAuJournal` ; il ne l'est pas. La
+     fiche écrit le mesuré. Écarté : écrire la prévision (fausse sur le source).
+  2. **Tous les sites `retry_with` directs des routes migrent vers une enveloppe, sauf
+     `post_accept`.** Six sur `cecd5d1d` (`invoices::write_off`, `opening_balances::complete`,
+     `journal_entries::update` de la 15-8a, `reconciliation::cancel`, `onboarding::finalize`,
+     `reconciliation::accept`), sept avec le `DELETE` de la 15-8b. Chaque migration est une
+     équivalence exacte (même `DEFAULT_MAX_DEADLOCK_ATTEMPTS`, même prédicat, même nom) ;
+     `post_accept` garde `retry_with` pour son prédicat élargi au 1305, réécrit
+     `is_app_deadlock(err) || matches!(…TransactionAborted)`. C'est aussi la migration des
+     prédicats en ligne laissée à la 15-5e2 (finding B-3 de la revue de code de la 15-5e1). **Révise
+     la fiche 15-5e2** (« `onboarding::finalize` garde son `retry_with` », finding F4-11) : la garder
+     aurait laissé un prédicat en ligne identique à `is_app_deadlock` pour un gain nul. Écarté :
+     garder `finalize` en `retry_with` avec `is_app_deadlock` comme prédicat (DRY partiel, un
+     `retry_with` direct de plus à justifier).
+  3. **La rubrique « Deny list » du Pattern 5, posée par la 15-8a (et complétée par la 15-8b), est
+     versée à « Where This Applies »** quand la 15-5e2 retire la rubrique : ordre, raison, cycles
+     hérités et tests gardés ; seule la colonne « Mitigation » change (enveloppe). Raison : sans
+     ordre global, « divergent » n'a plus de référence, mais l'analyse des cycles du `PUT` est la
+     plus précise du document. Écarté : retirer les lignes avec la rubrique (perte d'information) ;
+     garder une « Deny list » d'un ordre qui n'existe plus.
+  4. **Étiquettes des comptes désignés de la 15-5d** : `(2 bis', suite)` à la validation (juste après
+     le bloc `let rounding` qui clôt `(2 bis')`, avant `(2 ter)`, `(2 quater)` et `(3)`) ; `(2 ter)`
+     à la saisie fournisseur (entre `(2, suite)` et `(3)`, étiquette libre dans cette fonction).
+     Chacune présente au doc-comment **et** au code (leçon A1 de la revue de code de la 15-5e1).
+     Écarté : réutiliser `(2 ter)` à la validation (déjà pris, sans verrou) ; laisser le choix au dev
+     sans le fixer (deux passes l'auraient relu chacune à sa façon).
+  5. **Inventaire au symptôme de la 15-5e2 recompté : 347 lignes / 52 fichiers** sur `cecd5d1d`
+     (205 / 42 sur `f289414e`) — l'écart vient surtout des fichiers écrits par la 15-5e1 et la 15-8a ;
+     chaque occurrence reste triée, bloc par bloc. Relevé élargi des manuels : **17 lignes** (la ligne
+     « atomique » réécrite par la 15-5c ne sort plus).
+  6. **15-5d** : rien de la 15-5c n'y est (libellés de `failed[]` propres au rapprochement) ;
+     `sitesTotal` (1904 sur `cecd5d1d`) se recompte sur l'état rebasé ; aucun test de rejeu prévu,
+     témoin `tests/common/capture_rejeu.rs` nommé pour le cas où.
+- **À faire par l'orchestrateur** : (a) informer l'agent de la 15-8b que sa partition attendue est
+  **10 / 12 / 4 / 89** (et non 10 / 13 / 4 / 88) — son diff de rebase l'écrit déjà ainsi ; (b) passe
+  ciblée de validation sur cet alignement (sections listées aux Change Logs des deux fiches) ;
+  (c) la 15-5e1 a laissé « à ajuster par l'orchestrateur » la mention de la 15-5e2 sur `:289-291` et
+  `:338-351` du Pattern 5 : fait ici.
+- **Réversible** : oui (fiches seulement).
+
+## C86 — 15-5e2 : remédiation de la validation P6 — test « route victime » sur `post_manual` (révise C56 et l'écart de C69), volet (c bis), contrôle `retry_with` étendu aux tests
+
+- **Contexte** : validation P6 de la 15-5e2 (Opus ×2, première passe après l'alignement C85 ; `target/gate-logs/15-5e2-p6-{R,F}.md`) : 2 MEDIUM distincts (R6-1, F6-1), 15 LOW. R6-1 : le contrôle `grep -rn "retry_with" crates/*/src docs` de l'AC1 ne voit pas `crates/*/tests`, où six mentions deviennent fausses du fait même des migrations décidées par C85 — critère de clôture qui certifie l'absence de résidus qu'il ne peut pas voir. F6-1 : C56 (et l'écart consigné en C69) excluait un test dynamique au rollout ; le harnais livré par la 15-5e1 (`victime`, `transaction_lourde`, `CaptureRejeu`) rend désormais un test « route victime » sur `post_manual` abordable (~70 lignes), et c'est précisément le chemin que l'AC2 déclarait non exercé. Décisions de l'orchestrateur, appliquées par l'agent de remédiation.
+- **Retenu** :
+  - **R6-1** : le contrôle couvre `crates/*/src crates/*/tests docs` ; six sites nommés et réécrits (`journal_entry_reversal_e2e.rs:1609`, `journal_entries_modification.rs:441`, `audit_route_registry.rs:89` — limite (vi), nommée à côté de (iii bis) —, `:119`, `:165`, `:600`) ; occurrences légitimes listées (`capture_rejeu.rs:6`, `reconciliation_e2e.rs:4414`, sources synthétiques du banc du visiteur).
+  - **F6-1 — C56 révisé** : la 15-5e2 ajoute le **test 8** (`manual_match_is_replayed_when_it_is_the_deadlock_victim`, `rejeu_interblocage_e2e.rs`), montage avec projet — la transaction de test, lourde, tient la sentinelle `companies` puis demande l'exercice ; la route tient l'exercice (étape 6) et attend la sentinelle (`validate_taggable_in_tx`, étape 6bis) —, témoin `exiger_un_rejeu("reconciliation::manual")`, mutation « enveloppe de `post_manual` retirée » → rouge. T0 forme d'abord le cycle à la main sur MariaDB 10.11 ; s'il ne se forme pas, le test est écrit comme angle mort et la fiche le dit. L'angle mort « famille `AppError` non exercée » est retiré de l'AC2 et des Dev Notes, ramené à `post_split` et `complete_import`. Noms d'opération des trois routes `AppError` fixés : `imported_supplier_invoices::complete`, `reconciliation::manual`, `reconciliation::split`.
+  - **LOW, tous appliqués** : R6-2 = F6-2 (commentaires de `post_accept` → `is_app_deadlock`) ; R6-3 ; R6-4 = F6-6 (forme fixée : ordre dans « Lock sequence », paragraphe « Notes » sous la table, « diverges » reformulé) ; R6-5 (cinq sites migrés, six avec le `DELETE`) ; R6-6 (§ 10 d'`api-external.md`, phrases sous la table) ; R6-7 ; **F6-4** (`ENVELOPPES` sans `retry_with`, liste `RETRY_WITH_AUTORISE = ["post_accept"]`, banc transposé, cas négatif) ; **F6-5** (garde durable de la migration de `finalize` : volet (c bis), test `no_route_calls_retry_with_except_post_accept` qui parse par `syn` tout `crates/kesh-api/src/routes/` et refuse `retry_with` hors de `post_accept` quel que soit le statut de la route, plus une mutation) ; F6-7 (motif de l'inventaire étendu : 385 lignes / 62 fichiers sur `cecd5d1d`) ; F6-8 ; F6-9 (routes rejouées énumérées dans `api-external.md`, phrase converse) ; F6-10 (consigne de rebase de la 15-8b dans l'en-tête).
+  - **Signal D5** déclaré : MEDIUM après une P5 à 0 ; R6-1 né de la remédiation C85, F6-1 contestation d'un choix dont la prémisse a changé ; aucun recyclage, pas de découpage.
+- **Écartées** : maintenir C56 en écrivant pourquoi le test resterait prohibitif (F6-1, option 2) — le harnais existe, le coût est d'une page ; un test « route victime » aussi pour `post_split` et `complete_import` — `post_split` suit le chemin de `post_manual`, exercé sur la route sœur, et le montage de `complete_import` (`staging` ↔ réglages) n'est pas établi ; restreindre le contrôle `is_deadlock_error` au code hors commentaires (R6-2, option 2) — les commentaires de `post_accept` doivent nommer le prédicat réel.
+- **Réversible** : oui (fiche seule ; aucun code écrit).
+- **À propager par l'orchestrateur** : la consigne de rebase de F6-10 dans la fiche 15-8b (worktree `kesh-15-8`).
+
+## C87 — 15-5d : remédiation de la validation P5 — verrou partagé des comptes désignés (révise C43 et le mode fixé depuis), étiquette d'achat `(2, désignés)` (révise C85), développement après la 15-8b
+
+- **Contexte** : validation P5 de la 15-5d (Opus ×2, première passe complète après l'alignement C85 ;
+  `target/gate-logs/15-5d-p5-{R,F}.md`) : 1 HIGH, 4 MEDIUM, 8 LOW distincts. **F5-1 (HIGH)** : le
+  `FOR UPDATE` que C43 posait sur les comptes désignés **avant** l'exercice formait un cycle
+  **systématique** avec tous les flux qui prennent l'exercice puis reprennent la créance, la TVA due ou
+  les créanciers en verrou **partagé** par `fk_jel_account` (règlement client par virement, solde du
+  reste, rapprochement, avoir, règlement fournisseur) — et la fiche disait que ces places « réduisent
+  la fréquence ». Décisions de l'orchestrateur, appliquées par l'agent de remédiation. Les entrées
+  antérieures (C43, C51, C53, C85) ne sont pas réécrites.
+- **Retenu** :
+  1. **Verrou partagé** : `… WHERE company_id = ? AND id IN (…) ORDER BY id LOCK IN SHARE MODE`
+     (MariaDB 10.11 ; pas `FOR SHARE`). Il suffit au but de l'accesseur : l'archivage, la case
+     *imputable*, le retypage (`accounts::update`, `accounts::archive`) et la création d'un sous-compte
+     **écrivent** la ligne du compte par un `UPDATE`, qui prend un exclusif et attend. **Vérifié au
+     code** (`accounts.rs:466-470`, `:558`, `:654-658`, `:669`, `:194`) : ces routes ne verrouillent
+     **pas** la ligne avant leur propre contrôle (lecture simple de l'instantané) ; c'est l'`UPDATE`
+     lui-même qui pose l'exclusif. Le verrou partagé garantit donc « aucune écriture de la ligne entre
+     le verrou de l'accesseur et le commit », et la lecture verrouillante lit la dernière version
+     validée. Compatible avec les partagés de clé étrangère : le cycle de F5-1 ne se forme plus.
+  2. **Plus aucune affirmation de baisse de fréquence** : les Dev Notes énumèrent les cycles examinés —
+     ne se forment plus ou pas : (a) F5-1, (b) validation ↔ solde du reste sur la TVA due, (c') saisie
+     ↔ règlement fournisseur par compte interne, (g) flux de même nature ; **restent possibles**, rares
+     et rejoués : (c) validation arrondie ↔ règlement client par compte interne = créance ou TVA due
+     avec écart (exclusif contre partagé — aucune place ne ferme à la fois (b) et (c)), (b') solde du
+     reste dont la nature est un compte de produit des lignes validées (né de l'accesseur), (d) trois
+     parties dont une modification du compte (partagé en file derrière un exclusif en attente) ; non
+     examinés : lot de paiement, acceptation par lot du rapprochement. Établi par lecture, non
+     reproduit.
+  3. **Tests de l'AC7 réécrits** : chaque test tient lui-même le verrou concurrent (un `UPDATE …
+     postable = FALSE` non validé, un `FOR UPDATE`, un `LOCK IN SHARE MODE`) et constate l'attente sur
+     une requête nommée ; test 1 (vente) et test 2 (achat) : attente sur l'accesseur, sonde de
+     l'exercice `NOWAIT` qui réussit, puis lecture fraîche (refus après le commit de la bloqueuse) ;
+     test 3 inchangé (arrondi avant) ; **test 4 neuf, de mode** (la bloqueuse tient l'exercice et les
+     comptes en partagé ; la validation est vue en attente sur l'exercice — seul test qui rougit si
+     l'accesseur repasse en `FOR UPDATE`). **L'ancien test 1** (escompte ↔ validation, deux flux réels)
+     est **retiré** : sous l'exclusif, il formait lui-même le cycle de F5-1. Mutations du mode
+     ajoutées (exclusif → test 4 ; sans verrou → tests 1 et 2).
+  4. **Étiquette d'achat `(2, désignés)`** au doc-comment et au code (finding R5-4) — révise C85,
+     item 4 : `(2 ter)` venait d'être retirée de cette fonction (finding A1 de la 15-5e1), et le
+     doc-comment de `validate_invoice`, auquel celui d'achat renvoie, dit « (2 ter) ne prend aucun
+     verrou ».
+  5. **La 15-5d se développe sur `main` après le merge de la 15-8b** (PR #560), ou se rebase dessus
+     (finding R5-1 : la 15-8b touche `invoices.rs` — +5 lignes avant `validate_invoice` —, les deux
+     `errors.rs`, les quatre `messages.ftl`, `i18n-keys.test.ts`, `docs/api-external.md`,
+     `CHANGELOG.md`, les manuels et leurs PDF) ; relocalisation par le texte. Avec la 15-5e2, l'ordre
+     de merge reste indifférent pour l'ordre des verrous, **pas** pour les fichiers communs (PDF à
+     régénérer, `user-manual.tex`, `CHANGELOG.md`, « 5 bis » — R5-6).
+  6. Corrections de fait : le compte de produit d'une ligne non imputable rend
+     `INVOICE_LINE_REVENUE_ACCOUNT_INVALID` (`InvalidRevenueAccounts`, 16-1a), pas
+     `ACCOUNT_NOT_POSTABLE` — AC1, justification de C46 à l'AC4, test d'ordre de l'AC7 (F5-2) ; deux
+     phrases du CHANGELOG `[0.13.0]` réécrites par l'AC9, motifs ajoutés au grep de T6 (F5-3) ;
+     montage `kesh-api` complété par des fixtures existantes — `seed_accounting_company`,
+     `disable_rounding_to_5_centimes`, contact, Comptable par `users::create` + login,
+     `init_error_i18n` (F5-4 = R5-3) ; angle mort « type » écrit à l'AC3 (F5-8) ; dérivés de
+     `GeneratedLines` / `DesignatedRole` et leur module (F5-7) ; « Quatre cas » repris ensemble (F5-6) ;
+     « devenu non imputable » élargi (F5-5) ; numéros relocalisés (R5-2, F5-9, R5-5).
+- **Écartées** : (a) garder `FOR UPDATE` en écrivant le cycle comme introduit — un cycle systématique
+  sur la ligne la plus chaude d'une société pour aucun gain de garantie ; (b) déplacer l'accesseur
+  avant l'arrondi — fermerait (c) mais ouvrirait le symétrique de (b) contre le solde du reste avec
+  écart ; (c) découper la story sur le signal D5 — le défaut recyclé (ordre des verrous, né de C43)
+  se traite localement, sans toucher d'autre module ; (d) `(2 quater)` côté achat — libre mais sans
+  rapport de sens avec le `(2 quater)` de la vente.
+- **Signal D5** : la sévérité **monte** (P4 ciblée 0 → P5 HIGH) et le HIGH est **recyclé** (thème
+  « ordre des verrous », né de la remédiation C43) : déclaré au Project Lead ; traité localement, pas
+  de découpage.
+- **Réversible** : oui (fiche seulement ; code non écrit).
+
+## C-15-5e2-1 — 15-5e2 / T0 : le cycle du test 8 se forme sur MariaDB 10.11.16 ; relevés sur `HEAD`
+
+- **Contexte** : T0 de la 15-5e2 (AC2, choix C86) — former à la main, avant de l'écrire, le cycle du test 8 (`post_manual` victime), sur la base dédiée `kesh_155e2` (`10.11.16-MariaDB-ubu2204`, `innodb_deadlock_detect = ON`, `innodb_deadlock_report = full`) ; refaire les relevés de l'en-tête sur `HEAD` (`688fed25`, qui porte la 15-8b).
+- **Mesures** : session A alourdie (500 lignes de lest), `SELECT id FROM companies WHERE id = 1 FOR UPDATE` ; session B — la requête réelle de `find_open_covering_date` (`… FROM fiscal_years WHERE company_id = 1 AND start_date <= … AND end_date >= … AND status = 'Open' LIMIT 1 FOR UPDATE`) puis `SELECT id FROM companies WHERE id = 1 FOR UPDATE`, qui attend ; A demande `SELECT id FROM fiscal_years WHERE id = 1 FOR UPDATE` → **B reçoit 1213, A obtient son verrou** (`SHOW ENGINE INNODB STATUS` : la transaction 2, B, est la victime). Le montage de l'AC2 tient sans adaptation ; le test 8 est écrit **en vert**, non comme angle mort. Relevés : partition de départ **10 / 12 / 4 / 89** (la 15-8b est mergée) ; **sept** sites `retry_with` dans `src/routes` ; inventaire au symptôme **394 lignes / 62 fichiers** (272 / 42 sous `src` et `docs`, 122 / 20 sous `tests`).
+- **Réversible** : sans objet (mesure).
+
+## C-15-5e2-2 — 15-5e2 : noms d'opération des routes rejouées ici
+
+- **Contexte** : l'AC1 fixe les trois noms de la famille `AppError` ; les neuf routes `DbError` n'en ont pas.
+- **Retenu** : `"<module>::<action>"` sur le module de la route et le verbe du dépôt : `invoices::unvalidate`, `credit_notes::create`, `supplier_invoices::pay`, `supplier_invoices::cancel`, `supplier_invoices::cancel_settlement`, `payment_batches::confirm`, `journal_entries::create`, `journal_entries::reverse`, `opening_balances::generate`. Les six sites migrés gardent leur nom (équivalence exacte).
+- **Écartée** : le nom du handler (`create_journal_entry`…) — plus long, et incohérent avec les noms déjà posés par la 15-5e1 (`invoices::settle`, `supplier_invoices::create`).
+- **Réversible** : oui (seule la journalisation porte ces noms).
+
+## C-15-5e2-3 — 15-5e2 : frontière des fonctions « une tentative » de `post_manual` et `post_split`
+
+- **Contexte** : l'AC1 demande une fonction « une tentative » qui ouvre la transaction, prend le verrou nommé, écrit et conclut, avec les contrôles qui lisent la transaction **dedans**, dans leur ordre.
+- **Retenu** : les contrôles 0 à 4bis (`post_manual`) et 0 à 7 (`post_split`) — validation du corps, lectures **sur le pool**, hors transaction et non verrouillantes — restent dans le handler, avant l'enveloppe ; la tentative commence au `begin()` et reprend tel quel le bloc sous `with_account_lock` et son `match`. Ce que la tentative consomme est reconstruit en elle (libellé pour le manuel ; lignes de ventilation, détails d'audit et libellé de l'écriture pour la ventilation). `complete_import_once` reçoit tout le corps de l'ancien handler sauf la résolution de la société (le verrou du `staging` est son premier acte).
+- **Écartée** : faire entrer les pré-vols dans la tentative — ils ne lisent rien que la transaction verrouille, et les rejouer ne changerait que la latence ; ils auraient aussi changé la place des refus (AC6).
+- **Réversible** : oui.
+
+## C-15-5e2-4 — 15-5e2 : forme du volet (c bis) et de son banc
+
+- **Contexte** : l'AC1 fixe le test `no_route_calls_retry_with_except_post_accept` (analyse `syn` de chaque fichier de `src/routes/`, échec nommant fichier et fonction).
+- **Retenu** : un visiteur qui tient la **pile** des fonctions (`ItemFn` et méthodes `ImplItemFn`) et attribue chaque appel `retry_with` (`ExprCall` au dernier segment, ou `ExprMethodCall`) à la fonction la plus proche — un appel hors fonction est relevé `<hors fonction>` ; balayage **récursif** de `src/routes/` (aucun sous-répertoire aujourd'hui) ; garde « détecteur cassé » si moins de onze fichiers. Un **banc** neuf, `the_primitive_visitor_names_the_enclosing_function`, éprouve le visiteur sur un source synthétique (commentaire, chaîne et doc-comment ignorés ; fermeture, méthode et chemin qualifié vus) — au-delà de l'AC, pour la même raison que le banc du volet (c) : un détecteur qui ne s'éprouve qu'en mutant le dépôt ne s'éprouve pas.
+- **Écartée** : réutiliser `CherchePlusieursFn` — il cherche un nom donné et ne verrait pas une fonction inconnue.
+- **Réversible** : oui.
+
+## C-15-5e2-5 — 15-5e2 : relevés de l'inventaire au symptôme — précisions « pour cette paire »
+
+- **Contexte** : AC3, tri bloc par bloc ; les commentaires « gardés, vrais pour la paire qu'ils nomment » reçoivent une précision si le texte laisse entendre plus.
+- **Retenu** : précisés — `projects.rs` (« Ordre de verrouillage global » → convention de Pattern 5, « évite, **pour cette paire** »), `supplier_invoices.rs` étape (0) et `reconciliation_rules.rs` (« anti-ABBA avec l'archivage d'un projet »), `invoices.rs` (`update` : « l'ordre de la création » au lieu de « l'ordre de verrous global »), `reconciliation_cancel.rs` (le côté fiche facture est rejoué depuis la 15-5e1, #463) ; deux phrases de tests décrites comme vraies **dans leur montage** (`opening_complement_repository.rs:746`, `fiscal_years_repository.rs:1071`), assertions et messages d'`expect` intacts. Gardés sans retouche : `journal_entry_number_sequences.rs` (entre créations), `invoices.rs:1074-1078` (borné aux `invoices` / `invoice_lines`), `:2014`, `:2124` (paire avec création et modification), `company_invoice_settings.rs:312` (ordre entre comptes désignés, sans prétention d'absence de cycle), `onboarding.rs:232`, `:683`, `:850`, `:907` (sérialisation et déterminisme de sélection, hors sujet).
+- **Réversible** : oui (commentaires).
+
+## C-15-5e2-6 — 15-5e2 : Pattern 5 et manuel d'administration — choix de forme
+
+- **Contexte** : AC3 (Pattern 5) et AC5 (`99-kesh.cnf`).
+- **Retenu** : (a) le Pattern 5 reste **en anglais**, langue du document ; « Global Lock Order » devient « a frequency convention, not a guarantee », nomme les trois verrous partagés de clé étrangère et les quatre flux inversés ; la table gagne la ligne du lot de rapprochement (`accept_batch`, ordre par proposition et entre propositions) et les lignes du `PUT` et du `DELETE` (ordre seul), leurs raisons, cycles, mitigation et tests passant dans **« Notes »** sous la table ; la puce « Resolution status » nomme les deux enveloppes et le registre ; l'exemple « How to use » de la 15-5e1 est gardé, et « Required » dit que la forme générique `retry_with` est réservée à `post_accept` dans `src/routes/`. (b) Au manuel d'administration, la consigne `innodb_deadlock_detect` est un **commentaire** du listing, sans ligne `innodb_deadlock_detect = ON` : « laisser à sa valeur par défaut » ne demande rien d'écrire.
+- **Réversible** : oui.
+
+## C-15-5e2-7 — 15-5e2 : remédiation de la revue de code P1 — choix de forme
+
+- **Contexte** : revue P1 (Sonnet ×3 ; `target/gate-logs/15-5e2-review-p1-{B,E,A}.md`) : 1 MEDIUM (A1), 14 LOW, dont trois doublons (L-1 = B-2, L-3 = B-4 = A5).
+- **Retenu** :
+  - **L-1 = B-2** : `was_previously_rejected` et le montant de l'audit sont lus dans la tentative, sur la transaction bancaire re-lue sous verrou (`post_manual_once`, `post_split_once`), et ne sont plus des paramètres. Preuve par **extension du test 8** plutôt que par un test neuf : entre l'attente de la route sur la sentinelle et la fermeture du cycle, une écriture validée pose `auto_match_rejected_at` ; l'audit doit dire `true`. Mutation (lecture neutralisée à `false`, ce qu'écrivait la pré-lecture) : rouge, `Some("false")` contre `Some("true")`. Ceci amende **C-15-5e2-3** : les pré-lectures du handler n'alimentent plus aucune écriture.
+  - **B-3** : `conclude_locked_attempt(tx_outer, lock_result, flow)` porte le `match` commun ; seule différence conservée, le nom de route dans le 500 défensif des variants `Rule*` (même texte qu'avant).
+  - **B-5** étendu aux **cinq** fermetures migrées qui clonaient le pool (les trois nommées, plus `onboarding::finalize` et `reconciliation::cancel`), pour une seule forme ; `post_accept` (non migré, `retry_with`) inchangé.
+  - **L-3 = B-4 = A5** : angles morts écrits (point (vii) du doc-comment du registre, doc du volet, Dev Notes), non fermés — la méthode lexicale de la 15-11b (C78) est nommée, non introduite.
+  - **A4** : le « Required » du Pattern 5 renvoie aux doc-comments de `kesh_db::retry::retry_on_deadlock` et du module `kesh_api::retry`, sans recopier les clauses.
+  - **B-6** : liste orpheline de l'étape 0-bis refondue en phrase ; ligne longue de la doc de `update_journal_entry` recoupée ; `{settlementId}` de `docs/api-external.md:488` **gardé** — c'est la convention du document (camelCase, même graphie à `:321`, `{reminderId}`, `{documentNumber}`), non celle des chemins Axum.
+  - **L-5** : inventaire nommé (`PUT /invoices/{id}` avec changement de projet, archivage de projet, clôture et réouverture d'exercice) ajouté au point (iv) du registre comme angle mort, sans cycle démontré. Issue à ouvrir par l'orchestrateur (amélioration, `v0.2-milestone`), pour que la limitation soit tracée.
+- **Écartées** : un test dynamique neuf pour `split` et `complete_import` (B-1 = L-4) — accepté LOW, angle mort (iii bis) déjà écrit ; fermer le volet (c bis) par un relevé lexical maintenant — hors périmètre, c'est la machinerie de la 15-11b.
+- **Réversible** : oui.

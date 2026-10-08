@@ -942,3 +942,216 @@ async fn invoice_settings_update_is_replayed_when_it_is_the_deadlock_victim(pool
     assert_eq!(audits_apres, audits_avant + 1, "une seule entrée d'audit");
     capture.exiger_un_rejeu("company_invoice_settings::update");
 }
+
+// ============================================================
+// Test 8 — rapprochement manuel victime (Story 15-5e2, AC2 ; choix C86)
+// ============================================================
+
+/// Un compte bancaire lié au compte de grand livre `1100` de la société, et
+/// une transaction bancaire `pending` datée du jour, de `montant` CHF.
+async fn transaction_bancaire_en_attente(
+    pool: &MySqlPool,
+    ctx: &Contexte,
+    montant: &str,
+) -> (i64, i64) {
+    use kesh_db::entities::{
+        BankImportSourceFormat, NewBankAccount, NewBankImport, NewBankTransaction,
+    };
+    use kesh_db::repositories::{bank_accounts, bank_imports};
+    use std::str::FromStr;
+
+    let compte_bancaire = bank_accounts::create(
+        pool,
+        NewBankAccount {
+            company_id: ctx.company_id(),
+            bank_name: "UBS".into(),
+            iban: "CH4431999123000889013".into(),
+            qr_iban: None,
+            is_primary: true,
+        },
+    )
+    .await
+    .expect("compte bancaire")
+    .id;
+    sqlx::query(
+        "UPDATE bank_accounts SET journal_account_id = ?, version = version + 1 WHERE id = ?",
+    )
+    .bind(ctx.compte("1100"))
+    .bind(compte_bancaire)
+    .execute(pool)
+    .await
+    .unwrap();
+
+    let jour = aujourd_hui();
+    let montant = rust_decimal::Decimal::from_str(montant).unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    let (_, inserees) = bank_imports::create_with_transactions(
+        &mut tx,
+        NewBankImport {
+            company_id: ctx.company_id(),
+            bank_account_id: compte_bancaire,
+            filename: "releve.xml".into(),
+            file_hash: format!("{:0>64}", "rejeu-manuel"),
+            source_format: BankImportSourceFormat::Camt053V04,
+            statement_id: Some("REJEU-8".into()),
+            period_from: jour,
+            period_to: jour,
+            opening_balance: None,
+            closing_balance: None,
+            transaction_count: 1,
+            imported_by_user_id: ctx.societe.admin_user_id,
+        },
+        vec![NewBankTransaction {
+            company_id: ctx.company_id(),
+            bank_account_id: compte_bancaire,
+            booking_date: jour,
+            value_date: Some(jour),
+            amount: montant,
+            currency: "CHF".into(),
+            reference: Some("REJEU-MANUEL".into()),
+            details: "Frais du rejeu".into(),
+            end_to_end_id: None,
+            transaction_id: None,
+            counterparty_iban: None,
+            counterparty_name: None,
+        }],
+    )
+    .await
+    .expect("import bancaire");
+    tx.commit().await.unwrap();
+    (compte_bancaire, inserees[0].id)
+}
+
+/// ⛔ **Le seul test dynamique de la famille `AppError` avec verrou nommé**
+/// (Story 15-5e2, finding F6-1) : 1213 levé sous le verrou nommé du compte
+/// bancaire, converti par le `match` de `post_manual_once`, `RELEASE_LOCK`
+/// par `with_account_lock`, `rollback`, nouvelle tentative.
+///
+/// Montage **avec projet** : la route prend l'exercice `FOR UPDATE` (étape 6)
+/// **puis** la sentinelle `companies` (étape 6bis, `validate_taggable_in_tx`).
+/// La transaction de test, lourde, tient la sentinelle ; la route bloque sur
+/// elle ; la transaction de test demande l'exercice : cycle, la route est la
+/// victime. Le verrou nommé, hors du graphe d'InnoDB, ne participe pas au
+/// cycle — la transaction de test ne le demande pas. Cycle formé à la main
+/// sur MariaDB 10.11.16 en T0 (Dev Agent Record de la 15-5e2).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn manual_match_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let exercice = exercice_du_jour(&pool, ctx.company_id()).await;
+    let (compte_bancaire, transaction) =
+        transaction_bancaire_en_attente(&pool, &ctx, "-150.00").await;
+    let projet = sqlx::query(
+        "INSERT INTO projects (company_id, parent_id, code, name, archived) \
+         VALUES (?, NULL, 'REJEU-8', 'Projet du rejeu', FALSE)",
+    )
+    .bind(ctx.company_id())
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let ecritures_avant = compter(
+        &pool,
+        "SELECT COUNT(*) FROM journal_entries WHERE company_id = ?",
+        ctx.company_id(),
+    )
+    .await;
+    let capture = CaptureRejeu::installer();
+
+    let mut lourde = transaction_lourde(&pool).await;
+    sqlx::query("SELECT id FROM companies WHERE id = ? FOR UPDATE")
+        .bind(ctx.company_id())
+        .fetch_one(&mut *lourde)
+        .await
+        .unwrap();
+
+    // La route tient l'exercice (étape 6), puis attend la sentinelle (6bis).
+    let route = requete_en_tache(
+        &ctx,
+        reqwest::Method::POST,
+        "/api/v1/reconciliation/manual",
+        Some(json!({
+            "bankAccountId": compte_bancaire,
+            "bankTransactionId": transaction,
+            "counterpartyAccountId": ctx.compte("4000"),
+            "description": "Frais du rejeu",
+            "projectId": projet,
+        })),
+    );
+    // Revue P1 de la 15-5e2 (L-1/B-2) : la route a fait ses pré-lectures et
+    // attend la sentinelle ; on marque la transaction bancaire comme rejetée
+    // (validée, hors de toute transaction tenue) AVANT de fermer le cycle. La
+    // tentative rejouée doit lire cette valeur — l'audit en écrivait une
+    // pré-lue, périmée, tant qu'elle était capturée avant la première
+    // tentative.
+    assert!(
+        attendre_une_requete_en_cours(&pool, &["companies", "FOR UPDATE"], || route.is_finished())
+            .await,
+        "la route devait attendre la sentinelle"
+    );
+    sqlx::query("UPDATE bank_transactions SET auto_match_rejected_at = NOW(3) WHERE id = ?")
+        .bind(transaction)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (status, corps) = victime(
+        &pool,
+        lourde,
+        route,
+        &["companies", "FOR UPDATE"],
+        "SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE",
+        exercice,
+    )
+    .await;
+
+    assert_eq!(status, 200, "⛔ l'interblocage doit être rejoué : {corps}");
+    assert_eq!(
+        compter(
+            &pool,
+            "SELECT COUNT(*) FROM journal_entries WHERE company_id = ?",
+            ctx.company_id()
+        )
+        .await,
+        ecritures_avant + 1,
+        "une seule écriture créée"
+    );
+    let (statut, rapprochee_par): (String, Option<i64>) =
+        sqlx::query_as("SELECT status, matched_entry_id FROM bank_transactions WHERE id = ?")
+            .bind(transaction)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        statut, "reconciled",
+        "la transaction bancaire est rapprochée"
+    );
+    assert_eq!(
+        rapprochee_par,
+        corps["journalEntryId"].as_i64(),
+        "rapprochée une seule fois, par l'écriture rendue"
+    );
+    assert_eq!(
+        compter(
+            &pool,
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'reconciliation.manual_matched' \
+             AND entity_id = ?",
+            transaction
+        )
+        .await,
+        1,
+        "une seule entrée d'audit"
+    );
+    let rejetee_avant: Option<String> = sqlx::query_scalar(
+        "SELECT CAST(JSON_EXTRACT(details_json, '$.was_previously_rejected') AS CHAR) FROM audit_log \
+         WHERE action = 'reconciliation.manual_matched' AND entity_id = ?",
+    )
+    .bind(transaction)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        rejetee_avant.as_deref(),
+        Some("true"),
+        "⛔ l'audit écrit ce que la tentative rejouée a lu, pas une pré-lecture périmée"
+    );
+    capture.exiger_un_rejeu("reconciliation::manual");
+}

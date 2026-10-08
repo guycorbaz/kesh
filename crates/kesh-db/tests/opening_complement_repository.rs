@@ -743,7 +743,9 @@ async fn entrelacement_1_ecriture_en_vol_sur_le_compte_vise(pool: MySqlPool) {
 }
 
 /// (2) Une écriture du MÊME exercice, sans compte visé, qui tient l'exercice :
-/// le complément attend sur l'exercice, puis réussit — aucun interblocage.
+/// le complément attend sur l'exercice, puis réussit — aucun interblocage **dans
+/// ce montage**, où les deux transactions ne se disputent que des ressources
+/// prises dans le même sens (ce n'est pas une absence de cycle en général).
 ///
 /// Tue « société prise en exclusif » : l'écriture, une fois l'exercice tenu,
 /// demande `companies` en partagé pour son en-tête.

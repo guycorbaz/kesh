@@ -482,8 +482,8 @@ pub async fn write_off_invoice(
     //         compte qu'on lui désigne, TVA due comprise, et l'insertion des lignes
     //         de l'écriture reprend ces comptes (verrous partagés, `fk_jel_account`)
     //         APRÈS l'exercice. Un interblocage reste donc possible ; la route est
-    //         rejouée (`write_off_invoice_handler`, `retry_with`), cf. la règle au
-    //         doc-comment de `invoices::validate_invoice`.
+    //         rejouée (`write_off_invoice_handler`, enveloppe `retry_on_deadlock`),
+    //         cf. la règle au doc-comment de `invoices::validate_invoice`.
     let rounding_account_id = if nature == SettlementWriteOffNature::Rounding {
         Some(nature_account_id)
     } else if amount != invoice_settlements::amount_due_to_centime(amount) {

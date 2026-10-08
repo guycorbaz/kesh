@@ -374,6 +374,9 @@ pub async fn create_supplier_invoice(
 }
 
 /// `POST /api/v1/supplier-invoices/{id}/pay` — règlement binaire (Comptable+).
+///
+/// ⚠️ **Rejouée sur interblocage** (Story 15-5e2) par l'enveloppe `DbError`
+/// [`kesh_db::retry::retry_on_deadlock`].
 pub async fn pay_supplier_invoice(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -382,14 +385,16 @@ pub async fn pay_supplier_invoice(
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
     let (choice, payment_date) = req.into_choice()?;
-    supplier_invoices::pay(
-        &state.pool,
-        company.id,
-        id,
-        choice,
-        payment_date,
-        current_user.user_id,
-    )
+    kesh_db::retry::retry_on_deadlock("supplier_invoices::pay", || {
+        supplier_invoices::pay(
+            &state.pool,
+            company.id,
+            id,
+            choice,
+            payment_date,
+            current_user.user_id,
+        )
+    })
     .await?;
     Ok(Json(
         SupplierInvoiceResponse::load_with_settlement_cancellation(&state.pool, company.id, id)
@@ -402,13 +407,19 @@ pub async fn pay_supplier_invoice(
 /// contre-passe l'écriture d'achat par le socle ; payée, son règlement reste au
 /// grand livre, détaché. La réponse est relue avec ses champs de lecture, dans
 /// un seul instantané.
+///
+/// ⚠️ **Rejouée sur interblocage** (Story 15-5e2) par l'enveloppe `DbError`
+/// [`kesh_db::retry::retry_on_deadlock`].
 pub async fn cancel_supplier_invoice(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    supplier_invoices::cancel(&state.pool, company.id, id, current_user.user_id).await?;
+    kesh_db::retry::retry_on_deadlock("supplier_invoices::cancel", || {
+        supplier_invoices::cancel(&state.pool, company.id, id, current_user.user_id)
+    })
+    .await?;
     Ok(Json(
         SupplierInvoiceResponse::load_with_settlement_cancellation(&state.pool, company.id, id)
             .await?,
@@ -428,15 +439,19 @@ pub struct CancelSupplierSettlementResponse {
 /// règlement d'une facture `paid` par contre-passation datée du jour et la
 /// ramène à `open` (Comptable+, Story 25-3-a-2, #414). Le lot de paiement
 /// confirmé qui l'a éventuellement réglée n'est pas modifié.
+///
+/// ⚠️ **Rejouée sur interblocage** (Story 15-5e2) par l'enveloppe `DbError`
+/// [`kesh_db::retry::retry_on_deadlock`].
 pub async fn cancel_supplier_invoice_settlement(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<Json<CancelSupplierSettlementResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    let done =
+    let done = kesh_db::retry::retry_on_deadlock("supplier_invoices::cancel_settlement", || {
         supplier_invoices::cancel_settlement(&state.pool, company.id, id, current_user.user_id)
-            .await?;
+    })
+    .await?;
     Ok(Json(CancelSupplierSettlementResponse {
         invoice: SupplierInvoiceResponse::load_with_settlement_cancellation(
             &state.pool,

@@ -180,21 +180,27 @@ pub async fn get_credit_note(
 }
 
 /// `POST /api/v1/credit-notes` — crée et émet un avoir (Comptable+, RBAC routing).
+///
+/// ⚠️ **Rejouée sur interblocage** (Story 15-5e2, #536) par l'enveloppe
+/// `DbError` [`kesh_db::retry::retry_on_deadlock`] ; le `NewCreditNote` est
+/// construit dans la fermeture, à chaque tentative.
 pub async fn create_credit_note(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Json(req): Json<CreateCreditNoteRequest>,
 ) -> Result<(StatusCode, Json<CreditNoteResponse>), AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    let issued = credit_notes::create_credit_note(
-        &state.pool,
-        kesh_db::entities::NewCreditNote {
-            company_id: company.id,
-            invoice_id: req.invoice_id,
-            date: req.date,
-        },
-        current_user.user_id,
-    )
+    let issued = kesh_db::retry::retry_on_deadlock("credit_notes::create", || {
+        credit_notes::create_credit_note(
+            &state.pool,
+            kesh_db::entities::NewCreditNote {
+                company_id: company.id,
+                invoice_id: req.invoice_id,
+                date: req.date,
+            },
+            current_user.user_id,
+        )
+    })
     .await?;
     Ok((
         StatusCode::CREATED,

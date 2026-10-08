@@ -238,6 +238,9 @@ pub async fn get_payment_batch_pain001(
 }
 
 /// `POST /api/v1/payment-batches/{id}/confirm` — confirmer (Comptable+).
+///
+/// ⚠️ **Rejouée sur interblocage** (Story 15-5e2) par l'enveloppe `DbError`
+/// [`kesh_db::retry::retry_on_deadlock`].
 pub async fn confirm_payment_batch(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -245,13 +248,15 @@ pub async fn confirm_payment_batch(
     Json(req): Json<ConfirmPaymentBatchRequest>,
 ) -> Result<Json<PaymentBatchResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
-    let b = payment_batches::confirm_batch(
-        &state.pool,
-        company.id,
-        id,
-        req.payment_date,
-        current_user.user_id,
-    )
+    let b = kesh_db::retry::retry_on_deadlock("payment_batches::confirm", || {
+        payment_batches::confirm_batch(
+            &state.pool,
+            company.id,
+            id,
+            req.payment_date,
+            current_user.user_id,
+        )
+    })
     .await?;
     Ok(Json(PaymentBatchResponse::from_parts(b.batch, b.items)))
 }

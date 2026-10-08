@@ -33,7 +33,8 @@
 //! lectures ordinaires ensuite (l'instantané REPEATABLE READ s'ouvre là, après
 //! les verrous) ; les refus en dernier, dans l'ordre de priorité du status. Les
 //! cycles résiduels sont décrits dans la fiche de la story (section
-//! « Cycles ») ; l'appelant enveloppe l'appel dans `retry_with`.
+//! « Cycles ») ; l'appelant enveloppe l'appel dans l'enveloppe `DbError`
+//! [`crate::retry::retry_on_deadlock`].
 //!
 //! ⛔ `FOR SHARE` est une **erreur de syntaxe** sur MariaDB 10.11 : le verrou
 //! partagé s'écrit `LOCK IN SHARE MODE`.
@@ -402,7 +403,8 @@ fn refused(reason: OpeningComplementRefusal, account: Option<(i64, Option<String
 }
 
 /// Crée l'écriture de complément (AC 4). Une seule transaction ; l'appelant
-/// l'enveloppe dans `retry_with` (cycles résiduels, cf. doc du module).
+/// l'enveloppe dans [`crate::retry::retry_on_deadlock`] (cycles résiduels, cf.
+/// doc du module).
 ///
 /// Ordre (règle « verrous d'abord, une ligne par requête ») :
 /// 1. `companies` en **partagé** (`LOCK IN SHARE MODE`) : fige

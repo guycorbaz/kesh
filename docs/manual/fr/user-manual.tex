@@ -979,7 +979,7 @@ Le numéro de facture est généré automatiquement selon un pattern configurabl
     \item Pattern par défaut : \texttt{F-AAAA-NNNN} (ex. F-2026-0042).
     \item Patterns alternatifs : \texttt{INV-AAAAMM-NNN}, \texttt{F\{company\_id\}-AAAA-NNNN}, etc.
     \item La numérotation est séquentielle dans un exercice (CO Art. 957a al. 2 ch. 5 « traçabilité ») : les numéros sont attribués dans l'ordre et \textbf{jamais réattribués}. Elle peut en revanche comporter des \textbf{trous} --- supprimer un brouillon déjà numéroté en laisse un, le compteur ne redescendant pas. Un trou se voit et s'explique ; c'est la réattribution qui serait fautive, et elle n'a pas lieu.
-    \item L'attribution du numéro se fait dans une transaction DB \texttt{SERIALIZABLE} pour garantir l'unicité même en cas de validations concurrentes.
+    \item Deux validations simultanées reçoivent toujours deux numéros distincts : le compteur de numérotation est \textbf{verrouillé} le temps de la validation, et une contrainte d'unicité de la base interdit d'attribuer deux fois le même numéro. Une validation qui croise une autre opération (un rapprochement bancaire, par exemple) est \textbf{rejouée automatiquement} ; si le conflit se répète trois fois de suite, la validation échoue sans rien enregistrer et peut simplement être relancée.
 \end{itemize}
 
 \subsection{Génération du PDF avec QR Bill}

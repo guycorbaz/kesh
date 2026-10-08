@@ -870,16 +870,18 @@ pub async fn post_accept(
     // ⛔ **Rejeu au plus dehors** — transaction neuve, verrou de compte repris —,
     // patron de `post_cancel_reconciliation`. Deux causes, deux formes :
     // - un 1213 qui remonte **directement** par un `?` (`SAVEPOINT`, `RELEASE`)
-    //   arrive en `AppError::Database(DbError::Sqlx(_))`, que `is_deadlock_error`
+    //   arrive en `AppError::Database(DbError::Sqlx(_))`, que `is_app_deadlock`
     //   reconnaît ;
     // - un 1213 levé **dans** une proposition y est absorbé en `FailedProposal` ;
     //   InnoDB a pourtant annulé toute la transaction, et c'est le
     //   `ROLLBACK TO SAVEPOINT` suivant qui échoue (1305) — `accept_batch` le
     //   remonte en `ReconciliationError::TransactionAborted`, rendu ici en
     //   `AppError::ReconciliationTransactionAborted`.
-    // ⚠️ Prédicat LOCAL à cette route : `is_deadlock_error` reste 1213 seul, un
-    // 1305 ailleurs dans le crate n'a pas ce sens.
-    use kesh_db::retry::{DEFAULT_MAX_DEADLOCK_ATTEMPTS, is_deadlock_error, retry_with};
+    // ⚠️ Prédicat LOCAL à cette route : `is_app_deadlock` reste 1213 seul, un
+    // 1305 ailleurs dans le crate n'a pas ce sens. C'est pourquoi cette route
+    // garde `retry_with` au lieu de l'enveloppe `retry_app_on_deadlock` — seule
+    // exception, tenue par le registre (`RETRY_WITH_AUTORISE`).
+    use kesh_db::retry::{DEFAULT_MAX_DEADLOCK_ATTEMPTS, retry_with};
     let company_id = current_user.company_id;
     let user_id = current_user.user_id;
     // Story 17-2a (DC5 cat ii) — attribution PAT propagée dans les helpers/closures.
@@ -889,7 +891,7 @@ pub async fn post_accept(
         "reconciliation::accept",
         DEFAULT_MAX_DEADLOCK_ATTEMPTS,
         |err: &AppError| {
-            matches!(err, AppError::Database(db) if is_deadlock_error(db))
+            crate::retry::is_app_deadlock(err)
                 || matches!(err, AppError::ReconciliationTransactionAborted)
         },
         || {
@@ -2130,6 +2132,11 @@ async fn accept_one_split(
     // (multi-usage). La validation projet (existant/company/non archivé) est
     // faite per-ligne par create_in_tx (étape 0) — mappée en FailedProposal
     // ci-dessous plutôt qu'en DATABASE_ERROR opaque.
+    // ⚠️ Ordre des verrous : l'exercice est DÉJÀ verrouillé (Step i) ; l'étape
+    // 0 de `create_in_tx` prend ensuite la sentinelle et les projets des
+    // lignes — l'ordre INVERSE de `journal_entries::create`. Un cycle peut se
+    // former : `post_accept` est rejouée, comme l'autre côté du cycle ; l'ordre
+    // n'en réduit que la fréquence (Pattern 5, « Global Lock Order »).
     let split_details: Vec<SplitDetail> = splits
         .iter()
         .map(|s| SplitDetail {
@@ -2489,6 +2496,12 @@ async fn accept_one_rule(
     // document-level (19-2 DC2) → validation explicite avant create_in_tx.
     // Projet archivé/absent → FailedProposal per-proposition (PROJECT_ARCHIVED
     // / PROJECT_NOT_FOUND), jamais d'AppError globale.
+    // ⚠️ Ordre des verrous : l'exercice est DÉJÀ verrouillé (Step 10) ;
+    // `validate_taggable_in_tx` prend ensuite la sentinelle `companies` puis le
+    // projet — l'ordre INVERSE de `journal_entries::create` et de
+    // `create_opening_entry`. Un cycle peut se former : `post_accept` est
+    // rejouée (son `retry_with`, 1213 et 1305), comme l'autre côté du cycle ;
+    // l'ordre n'en réduit que la fréquence (Pattern 5, « Global Lock Order »).
     let default_project_id = rule.default_project_id;
     if let Some(pid) = default_project_id
         && let Err(e) = projects::validate_taggable_in_tx(tx, company_id, &[pid]).await
@@ -3024,6 +3037,10 @@ pub struct ManualMatchResponse {
 ///    4bis. `tx.amount != 0` → 400 VALIDATION_ERROR (zero_amount_transaction, F7''' Pass 3).
 /// 5. (inside lock 5-9) : re-fetch tx (TOCTOU) + fiscal_year + create_in_tx
 ///    + UPDATE bank_transactions optimistic lock + audit log.
+///
+/// ⚠️ **Rejouée sur interblocage** (Story 15-5e2) par l'enveloppe
+/// [`crate::retry::retry_app_on_deadlock`], opération `reconciliation::manual` ;
+/// la transaction vit dans [`post_manual_once`].
 pub async fn post_manual(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -3154,36 +3171,63 @@ pub async fn post_manual(
         return Err(AppError::Validation("zero_amount_transaction".to_string()));
     }
 
-    // Capture les inputs handler-side avant de move dans la closure.
-    // P-H3 Pass 1 code review : `resolved_value_date` calculé handler-side
-    // était dead code (la closure recalcule indépendamment depuis ses
-    // captures `body.value_date` + `tx.value_date` + `booking_date`).
-    // Supprimé.
-    let was_previously_rejected = bank_transaction.auto_match_rejected_at.is_some();
-    let bank_transaction_amount = bank_transaction.amount;
-    let description = body.description.clone().unwrap_or_default();
+    // Revue P1 de la 15-5e2 (L-1/B-2) : ce que l'audit écrit
+    // (`was_previously_rejected`, montant) n'est plus capturé ici mais relu
+    // DANS la tentative, sur la transaction bancaire re-lue à l'étape 5 — une
+    // valeur lue avant la première tentative pouvait être périmée à la
+    // suivante. `bank_transaction` ne sert qu'aux pré-contrôles.
+    drop(bank_transaction);
 
-    // Step 5+ — tout le reste inside `with_account_lock` (atomicité
-    // §validation-handler-side step 9 : steps 5-9 ne PAS sortir audit_log
-    // de la closure — F2'''' Pass 6 Opus).
-    let mut tx_outer = state
-        .pool
+    // `counterparty` (Account complet) consommé jusque ici par les checks
+    // step 3 (active=true). Drop explicite pour signaler la fin d'usage.
+    drop(counterparty);
+
+    // Step 5+ — tout le reste dans UNE tentative (`post_manual_once`), que
+    // l'enveloppe `AppError` rejoue en entier sur interblocage (Story 15-5e2) :
+    // transaction neuve, verrou de compte repris. Les contrôles 0 à 4bis
+    // ci-dessus lisent hors transaction et restent hors de la fermeture ; ceux
+    // qui lisent ce que la transaction verrouille (re-fetch, exercice, projet)
+    // sont dans la tentative, dans leur ordre.
+    crate::retry::retry_app_on_deadlock("reconciliation::manual", || {
+        post_manual_once(&state.pool, &body, &current_user, bank_ledger_account_id)
+    })
+    .await
+    .map(Json)
+}
+
+/// Une tentative de `POST /reconciliation/manual` (Story 15-5e2) : transaction
+/// neuve, verrou nommé du compte bancaire, étapes 5 à 9 (re-fetch de la
+/// transaction bancaire, exercice, projet, écriture, `UPDATE`, audit), commit.
+///
+/// ⛔ Un 1213 levé sous le verrou nommé remonte en
+/// `ReconciliationError::Db(DbError::Sqlx(_))`, rendu par le `match` en
+/// `AppError::Database(DbError::Sqlx(_))` **après** `rollback` — `with_account_lock`
+/// a déjà relâché le verrou nommé — : c'est la forme que reconnaît le prédicat
+/// de [`crate::retry::retry_app_on_deadlock`]. Le corps est reçu **par
+/// référence** ; ce que la tentative consomme (le libellé) est cloné en elle,
+/// et ce que l'audit écrit (`was_previously_rejected`, montant) est lu sur la
+/// transaction bancaire re-lue à l'étape 5, jamais avant la tentative.
+async fn post_manual_once(
+    pool: &sqlx::MySqlPool,
+    body: &ManualMatchBody,
+    current_user: &CurrentUser,
+    bank_ledger_account_id: i64,
+) -> Result<ManualMatchResponse, AppError> {
+    let description = body.description.clone().unwrap_or_default();
+    let mut tx_outer = pool
         .begin()
         .await
         .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
     let bank_account_id = body.bank_account_id;
     let bank_transaction_id = body.bank_transaction_id;
     let counterparty_account_id = body.counterparty_account_id;
-    // P-H3 Pass 1 code review : suppression `counterparty_number` (dead
-    // code spéculatif pour logging futur).
     let user_id = current_user.user_id;
     // Story 17-2a (DC5 cat ii) — attribution PAT propagée dans les helpers/closures.
     let actor_api_key_id = current_user.api_key_id;
     let company_id = current_user.company_id;
-    // `counterparty` (Account complet) consommé jusque ici par les checks
-    // step 3 (active=true). Drop explicite pour signaler la fin d'usage.
-    drop(counterparty);
 
+    // Étapes 5 à 9 dans `with_account_lock` (atomicité §validation-handler-side
+    // step 9 : l'audit ne sort PAS de la closure — F2'''' Pass 6 Opus).
     let lock_result: Result<i64, ReconciliationError> = with_account_lock(
         &mut tx_outer,
         company_id,
@@ -3212,6 +3256,10 @@ pub async fn post_manual(
             let bank_tx_version_pre = tx.version;
             let booking_date = tx.booking_date;
             let entry_date = body.value_date.or(tx.value_date).unwrap_or(booking_date);
+            // Valeurs de l'audit (étape 9), lues dans la tentative (revue P1
+            // de la 15-5e2, L-1/B-2).
+            let was_previously_rejected = tx.auto_match_rejected_at.is_some();
+            let bank_transaction_amount = tx.amount;
 
             // Step 6 — find_open_covering_date avec FOR UPDATE row lock
             // intra-tx (advisory lock orthogonal). Si None (NoFiscalYear
@@ -3227,10 +3275,14 @@ pub async fn post_manual(
 
             // Step 6bis (Story 19-5) — valide le projet analytique document-level
             // AVANT create_in_tx (le repo ne valide pas `new.project_id`, 19-2
-            // DC2). Projet inconnu → 404, archivé → 409 (mapping DbError). Ordre
-            // de lock : validate_taggable_in_tx prend le sentinel companies puis
-            // FOR UPDATE projets, cohérent Pattern 5 (avant le lock fiscal_years
-            // pris par create_in_tx).
+            // DC2). Projet inconnu → 404, archivé → 409 (mapping DbError).
+            // ⚠️ Ordre des verrous : l'exercice est DÉJÀ verrouillé (étape 6) ;
+            // `validate_taggable_in_tx` prend ensuite la sentinelle `companies`
+            // puis les projets — l'ordre INVERSE de `journal_entries::create`
+            // (étape 0 puis étape 1) et de `create_opening_entry`. Un cycle peut
+            // donc se former ; la route est rejouée (enveloppe `AppError`, Story
+            // 15-5e2), et l'ordre ne fait qu'en réduire la fréquence (Pattern 5,
+            // « Global Lock Order »).
             if let Some(pid) = body.project_id {
                 projects::validate_taggable_in_tx(tx_inner, company_id, &[pid])
                     .await
@@ -3314,89 +3366,13 @@ pub async fn post_manual(
     )
     .await;
 
-    // F1'''' Pass 6 Opus — match exhaustif sur tous les variants
-    // `ReconciliationError`. Le compilateur Rust force la complétude.
-    match lock_result {
-        Ok(journal_entry_id) => {
-            tx_outer
-                .commit()
-                .await
-                .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
-            Ok(Json(ManualMatchResponse {
-                bank_transaction_id,
-                journal_entry_id,
-            }))
-        }
-        // P-H4 Pass 1 code review : remplacement `drop(tx_outer)` par
-        // `rollback().await` explicite pour signaler l'intention. Le
-        // rollback peut échouer (connexion DB perdue) — on ignore
-        // l'erreur car l'erreur principale (AccountLocked, FiscalYearClosed,
-        // Db, ...) est plus signifiante. Pattern idiomatique Rust + plus
-        // explicite que le drop implicite.
-        // Note résiduelle : les handlers 8-4 (`post_accept`/`post_reject`)
-        // utilisent encore `drop(tx_outer)`. Cohérence reportée Story 11+
-        // (out-of-scope 8-5a-base).
-        Err(ReconciliationError::AccountLocked {
-            bank_account_id,
-            timeout_secs,
-        }) => {
-            let _ = tx_outer.rollback().await;
-            Err(AppError::ReconciliationAccountLocked {
-                bank_account_id,
-                timeout_secs,
-            })
-        }
-        Err(ReconciliationError::LockReleaseFailed {
-            bank_account_id, ..
-        }) => {
-            let _ = tx_outer.rollback().await;
-            Err(AppError::ReconciliationLockReleaseFailed { bank_account_id })
-        }
-        Err(ReconciliationError::FiscalYearClosed { entry_date }) => {
-            let _ = tx_outer.rollback().await;
-            Err(AppError::ReconciliationFiscalYearClosed { entry_date })
-        }
-        Err(ReconciliationError::Db(db_err)) => {
-            let _ = tx_outer.rollback().await;
-            Err(AppError::Database(db_err))
-        }
-        Err(ReconciliationError::Database(e)) => {
-            let _ = tx_outer.rollback().await;
-            Err(AppError::Database(DbError::Sqlx(e)))
-        }
-        // Story 8-5a-bis — branche exhaustive (post_manual ne fait pas
-        // de split, unreachable en pratique).
-        Err(ReconciliationError::TransactionAborted { source }) => {
-            drop(tx_outer);
-            Err(transaction_aborted_outside_accept(&source))
-        }
-        Err(ReconciliationError::SplitImbalance {
-            expected,
-            actual,
-            difference,
-        }) => {
-            let _ = tx_outer.rollback().await;
-            Err(AppError::ReconciliationSplitImbalance {
-                expected,
-                actual,
-                difference,
-            })
-        }
-        // Story 8-5b — branche exhaustive (post_manual ne touche pas
-        // aux rules). Unreachable en pratique.
-        Err(
-            ReconciliationError::RuleNotFound { .. }
-            | ReconciliationError::RuleNoLongerMatches { .. }
-            | ReconciliationError::RuleMismatch { .. }
-            | ReconciliationError::RuleDuplicate { .. },
-        ) => {
-            let _ = tx_outer.rollback().await;
-            tracing::error!("Story 8-5b Rule variant propagated to post_manual — defensive 500");
-            Err(AppError::Internal(
-                "internal: unexpected Rule variant in post_manual".into(),
-            ))
-        }
-    }
+    // F1'''' Pass 6 Opus — match exhaustif, factorisé avec `post_split_once`
+    // (revue P1 de la 15-5e2, B-3) dans [`conclude_locked_attempt`].
+    let journal_entry_id = conclude_locked_attempt(tx_outer, lock_result, "post_manual").await?;
+    Ok(ManualMatchResponse {
+        bank_transaction_id,
+        journal_entry_id,
+    })
 }
 
 // ============================================================
@@ -3460,6 +3436,10 @@ pub struct SplitResponse {
 /// step 6bis `tx.amount != 0` (M2''') → 400 VALIDATION_ERROR ;
 /// step 7 `validate_split_balance` → 400 RECONCILIATION_SPLIT_IMBALANCE ;
 /// steps 8-13 inside lock : re-fetch tx + fiscal_year + create_in_tx + UPDATE optimistic + audit.
+///
+/// ⚠️ **Rejouée sur interblocage** (Story 15-5e2) par l'enveloppe
+/// [`crate::retry::retry_app_on_deadlock`], opération `reconciliation::split` ;
+/// la transaction vit dans [`post_split_once`].
 pub async fn post_split(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -3645,9 +3625,40 @@ pub async fn post_split(
         });
     }
 
-    // Capture inputs handler-side avant move dans closure.
-    let was_previously_rejected = bank_transaction.auto_match_rejected_at.is_some();
-    let bank_transaction_amount = bank_transaction.amount;
+    // Revue P1 de la 15-5e2 (L-1/B-2) : ce que l'audit écrit est relu DANS la
+    // tentative, sur la transaction bancaire re-lue à l'étape 8. Le montant
+    // d'une transaction importée ne change pas : l'équilibre contrôlé à
+    // l'étape 7 sur la pré-lecture reste valable sous verrou.
+    drop(bank_transaction);
+
+    // Steps 8-13 dans UNE tentative (`post_split_once`), que l'enveloppe
+    // `AppError` rejoue en entier sur interblocage (Story 15-5e2) : transaction
+    // neuve, verrou de compte repris. Les contrôles 0 à 7 ci-dessus lisent hors
+    // transaction et restent hors de la fermeture.
+    crate::retry::retry_app_on_deadlock("reconciliation::split", || {
+        post_split_once(&state.pool, &body, &current_user, bank_ledger_account_id)
+    })
+    .await
+    .map(Json)
+}
+
+/// Une tentative de `POST /reconciliation/split` (Story 15-5e2) : transaction
+/// neuve, verrou nommé du compte bancaire, étapes 8 à 13 (re-fetch, exercice,
+/// écriture, `UPDATE`, audit), commit.
+///
+/// ⛔ Même chemin d'erreur que [`post_manual_once`] : un 1213 levé sous le
+/// verrou nommé est rendu par le `match` en `AppError::Database(DbError::Sqlx(_))`
+/// après `rollback`, la forme que reconnaît le prédicat de
+/// [`crate::retry::retry_app_on_deadlock`]. Le corps est reçu **par
+/// référence** ; ce que la tentative consomme (lignes, détails d'audit,
+/// libellé) est reconstruit en elle, et `was_previously_rejected` comme le
+/// montant de l'audit sont lus sur la transaction bancaire re-lue à l'étape 8.
+async fn post_split_once(
+    pool: &sqlx::MySqlPool,
+    body: &SplitBody,
+    current_user: &CurrentUser,
+    bank_ledger_account_id: i64,
+) -> Result<SplitResponse, AppError> {
     let splits_for_lock: Vec<SplitDetail> = body
         .splits
         .iter()
@@ -3683,8 +3694,7 @@ pub async fn post_split(
     );
 
     // Steps 8-13 inside `with_account_lock`.
-    let mut tx_outer = state
-        .pool
+    let mut tx_outer = pool
         .begin()
         .await
         .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
@@ -3714,6 +3724,10 @@ pub async fn post_split(
             let bank_tx_version_pre = tx.version;
             let booking_date = tx.booking_date;
             let entry_date = body_value_date.or(tx.value_date).unwrap_or(booking_date);
+            // Valeurs de l'audit (étape 13), lues dans la tentative (revue P1
+            // de la 15-5e2, L-1/B-2).
+            let was_previously_rejected = tx.auto_match_rejected_at.is_some();
+            let bank_transaction_amount = tx.amount;
 
             // Step 9 — find_open_covering_date.
             let fiscal_year =
@@ -3732,6 +3746,11 @@ pub async fn post_split(
             );
 
             // Step 11 — create_in_tx atomique.
+            // ⚠️ Ordre des verrous : l'exercice est DÉJÀ verrouillé (étape 9) ;
+            // l'étape 0 de `create_in_tx` prend ensuite la sentinelle et les
+            // projets des lignes — l'ordre INVERSE de `journal_entries::create`.
+            // Un cycle peut se former ; la route est rejouée (enveloppe
+            // `AppError`, Story 15-5e2), l'ordre n'en réduit que la fréquence.
             let je =
                 // Flux automatique (réconciliation) : garde postabilité off (14-3b, D-A0).
                 journal_entries::create_in_tx(tx_inner, fiscal_year.id, user_id, new_je, false)
@@ -3788,16 +3807,38 @@ pub async fn post_split(
     )
     .await;
 
+    let journal_entry_id = conclude_locked_attempt(tx_outer, lock_result, "post_split").await?;
+    Ok(SplitResponse {
+        bank_transaction_id,
+        journal_entry_id,
+    })
+}
+
+/// Conclut une tentative de `post_manual` ou `post_split` (revue P1 de la
+/// Story 15-5e2, B-3 : le `match` était recopié dans les deux) : `commit` si la
+/// fermeture de `with_account_lock` a réussi, sinon `rollback` et conversion de
+/// la [`ReconciliationError`] en [`AppError`]. `flow` nomme la route dans le
+/// 500 défensif des variants `Rule*`.
+///
+/// ⛔ Un 1213 sort de la branche `Db` en `AppError::Database(DbError::Sqlx(_))`
+/// **intact** : c'est la forme que reconnaît le prédicat de
+/// [`crate::retry::retry_app_on_deadlock`]. Le `match` est exhaustif (F1''''
+/// Pass 6 Opus) : le compilateur force la complétude à tout variant ajouté.
+///
+/// P-H4 Pass 1 (8-5a-base) : `rollback().await` explicite plutôt que `drop` ;
+/// son échec éventuel est ignoré, l'erreur principale étant plus signifiante.
+async fn conclude_locked_attempt(
+    tx_outer: sqlx::Transaction<'_, sqlx::MySql>,
+    lock_result: Result<i64, ReconciliationError>,
+    flow: &'static str,
+) -> Result<i64, AppError> {
     match lock_result {
         Ok(journal_entry_id) => {
             tx_outer
                 .commit()
                 .await
                 .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
-            Ok(Json(SplitResponse {
-                bank_transaction_id,
-                journal_entry_id,
-            }))
+            Ok(journal_entry_id)
         }
         Err(ReconciliationError::AccountLocked {
             bank_account_id,
@@ -3827,6 +3868,8 @@ pub async fn post_split(
             let _ = tx_outer.rollback().await;
             Err(AppError::Database(DbError::Sqlx(e)))
         }
+        // Story 8-5a-bis — ni `post_manual` ni `post_split` n'ouvrent de
+        // savepoint : branche exhaustive, inatteignable en pratique.
         Err(ReconciliationError::TransactionAborted { source }) => {
             drop(tx_outer);
             Err(transaction_aborted_outside_accept(&source))
@@ -3843,8 +3886,8 @@ pub async fn post_split(
                 difference,
             })
         }
-        // Story 8-5b — branche exhaustive (post_split ne touche pas
-        // aux rules). Unreachable en pratique.
+        // Story 8-5b — branche exhaustive (ces routes ne touchent pas aux
+        // règles). Inatteignable en pratique.
         Err(
             ReconciliationError::RuleNotFound { .. }
             | ReconciliationError::RuleNoLongerMatches { .. }
@@ -3852,10 +3895,10 @@ pub async fn post_split(
             | ReconciliationError::RuleDuplicate { .. },
         ) => {
             let _ = tx_outer.rollback().await;
-            tracing::error!("Story 8-5b Rule variant propagated to post_split — defensive 500");
-            Err(AppError::Internal(
-                "internal: unexpected Rule variant in post_split".into(),
-            ))
+            tracing::error!("Story 8-5b Rule variant propagated to {flow} — defensive 500");
+            Err(AppError::Internal(format!(
+                "internal: unexpected Rule variant in {flow}"
+            )))
         }
     }
 }
@@ -3944,7 +3987,8 @@ pub struct CancelReconciliationResponse {
 /// ⛔ **Rejeu sur interblocage, au plus dehors.** Une acceptation de
 /// proposition verrouille l'exercice du jour avant la facture ; ce geste, la
 /// facture avant l'exercice du jour : sur deux comptes bancaires, ils peuvent
-/// s'interbloquer (1213). `retry_with` rejoue alors **toute** l'opération —
+/// s'interbloquer (1213). L'enveloppe `AppError`
+/// [`crate::retry::retry_app_on_deadlock`] rejoue alors **toute** l'opération —
 /// transaction neuve, verrou de compte repris —, patron de
 /// `onboarding::finalize` (KF-002-H-002, #43). ⚠️ Le prédicat porte sur
 /// `AppError` : le mapping ci-dessous **préserve** `DbError::Sqlx`, sans quoi
@@ -3954,21 +3998,12 @@ pub async fn post_cancel_reconciliation(
     Extension(current_user): Extension<CurrentUser>,
     axum::extract::Path(id): axum::extract::Path<i64>,
 ) -> Result<Json<CancelReconciliationResponse>, AppError> {
-    use kesh_db::retry::{DEFAULT_MAX_DEADLOCK_ATTEMPTS, is_deadlock_error, retry_with};
     let company_id = current_user.company_id;
     let user_id = current_user.user_id;
     let actor_api_key_id = current_user.api_key_id;
-    retry_with(
-        "reconciliation::cancel",
-        DEFAULT_MAX_DEADLOCK_ATTEMPTS,
-        |err: &AppError| matches!(err, AppError::Database(db) if is_deadlock_error(db)),
-        || {
-            let pool = state.pool.clone();
-            async move {
-                cancel_reconciliation_once(&pool, company_id, id, user_id, actor_api_key_id).await
-            }
-        },
-    )
+    crate::retry::retry_app_on_deadlock("reconciliation::cancel", || {
+        cancel_reconciliation_once(&state.pool, company_id, id, user_id, actor_api_key_id)
+    })
     .await
     .map(Json)
 }
