@@ -1,6 +1,6 @@
 # Story 15.5c : Le rapprochement se lit — libellés des refus par lot et manuel du rapprochement
 
-Status: in-progress
+Status: review
 
 <!-- Troisième sous-story de la 15-5, créée le 2026-10-08 à la passe de validation P2 de la 15-5b
      (finding F-3, choix C15 de `epic-15-choix-autonomes.md`). Elle reprend de la 15-5b le premier volet
@@ -332,22 +332,22 @@ choix C32) — c'est lui que les AC5 à AC7 décrivent :
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Refaire les relevés** sur `HEAD`, après le merge de la 15-5b : la liste des codes de
+- [x] **T0 — Refaire les relevés** sur `HEAD`, après le merge de la 15-5b : la liste des codes de
       l'AC1 (commande citée **et** contrôle des formes non littérales) et les numéros de ligne du
       manuel (AC5–AC9). Tout code ou passage neuf est classé au Change Log.
-- [ ] **T1 — Le module de libellés** (AC1, AC2) : `failed-proposal-label.ts` et
+- [x] **T1 — Le module de libellés** (AC1, AC2) : `failed-proposal-label.ts` et
       `failed-proposal-label.test.ts` — chaque code de la liste, **écrite en dur dans le test**, rend un
       libellé distinct du repli ; la clé lue par code (réutilisée `error-*` ou neuve, C37) est écrite
       au Dev Agent Record ; `ACCOUNT_NOT_POSTABLE` nomme les numéros de `details.rejected` ; un
       `details` absent, `null`, ou d'une autre forme → libellé sans numéros ; un code inconnu → repli
       avec le code.
-- [ ] **T2 — Les clés** (AC4) : quatre `messages.ftl` ; `lint-i18n-ownership` ; borne `sitesTotal`
+- [x] **T2 — Les clés** (AC4) : quatre `messages.ftl` ; `lint-i18n-ownership` ; borne `sitesTotal`
       relevée délibérément, ventilation recomptée ; `cargo test -p kesh-i18n` (les tests du chargeur
       lisent les `.ftl`).
-- [ ] **T3 — L'affichage** (AC3) : `ReconciliationProposals.svelte:362` (date, montant, contrepartie,
+- [x] **T3 — L'affichage** (AC3) : `ReconciliationProposals.svelte:362` (date, montant, contrepartie,
       relevés avant le `load()`) ; *Échecs partiels* et compteur hors de la branche vide ; trois tests
       de `ReconciliationProposals.test.ts`.
-- [ ] **T4 — Le manuel** (AC5–AC9) : l'introduction (`:1493`), `:1511`, la sous-section fusionnée
+- [x] **T4 — Le manuel** (AC5–AC9) : l'introduction (`:1493`), `:1511`, la sous-section fusionnée
       *Accepter ou rejeter les propositions* (ex-*Acceptation des propositions* et *Acceptation par
       lot*), le rapprochement manuel, l'éclatement, les règles et la FAQ, **légendes des captures
       comprises** ; **relire au code** le filtre des deux sélecteurs (`ManualMatchModal.svelte:65-69`,
@@ -356,12 +356,12 @@ choix C32) — c'est lui que les AC5 à AC7 décrivent :
       jours avant d'écrire ; la FAQ **et sa phrase finale** `:2105`, `:1126`, `:2188`, `:2226` ; PDF
       régénéré, commité, contrôlé aplati **ligatures normalisées** ; `admin-manual.tex` `:82` et `:2033`
       contrôlés.
-- [ ] **T5 — Propagation** (règle *Propagation post-patch*) :
+- [x] **T5 — Propagation** (règle *Propagation post-patch*) :
       `grep -rnE "auto-validate|atomique|CLAUDE\.md|Modifier.*facture|N écritures|par facture|brouillon|Rapprocher manuellement|sélectionnées|candidates|meilleure candidate|1 CHF près|QR Bill structurée|ROUNDING.ACCOUNT|propose la facture|rapprochement manuel|écritures comptables|annul.*rapproch|texttt\{[A-Z]+.?_[A-Z]" docs/manual/fr/*.tex`
       et le même motif sur le PDF aplati, ligatures normalisées (où le `\_` devient `_`) ; chaque occurrence qui décrit le
       rapprochement est réécrite ou justifiée au Dev Agent Record — en particulier tout **code brut**
       d'erreur cité au manuel utilisateur (finding P1 R-2). `CHANGELOG.md` (AC9).
-- [ ] **T6 — Gates** : gate frontend complet (`npm run check`, `lint-i18n-ownership`, `test:unit`,
+- [x] **T6 — Gates** : gate frontend complet (`npm run check`, `lint-i18n-ownership`, `test:unit`,
       `build`) ; `cargo test -p kesh-i18n` ; gate backend complet avant le push (règle *Test Locally
       First*) ; **E2E Playwright complet au dernier commit de code** (décision D7), jugé fichier par
       fichier contre `docs/testing.md` § « Les échecs attendus ».
@@ -434,11 +434,124 @@ splitting.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), agent de développement de l'Epic 15, en autonomie (worktree
+`kesh-15-5c`).
+
 ### Debug Log References
+
+- Gate backend : `scripts/test-fast.sh` sur base `kesh` remise à zéro (DROP/CREATE + migrations +
+  seed, sans redémarrer le conteneur) — fmt, clippy, nextest **2784 exécutés, 2784 verts, 4 ignorés**.
+- Gate frontend : `npm run check` (0 erreur, 27 avertissements préexistants), `lint-i18n-ownership`
+  vert, `npm run test:unit` **108 fichiers, 1020/1020** (dont **41 tests neufs** de `f289414e` à
+  `b48a1231` : 38 dans `failed-proposal-label.test.ts`, 3 dans `ReconciliationProposals.test.ts`,
+  9 → 12, recomptés par Vitest), `npm run build` vert ; `cargo test -p kesh-i18n`
+  **31/31**.
+- E2E complet au commit de code `b48a1231`, base `kesh_e2e` recréée, montage complet (SMTP, inbox,
+  documents ; `smtpConfigured: true` vérifié) : **240 verts, 7 rouges, 19 ignorés**. Les 7 rouges sont
+  les sept KF-029 de `docs/testing.md` § « Les échecs attendus » (`mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) ; aucun hors liste ;
+  les dix specs `reconciliation*` sont vertes.
+- Mutations frontend (restaurées, fichier retouché) : libellé remplacé par `f.errorCode` → 3 rouges ;
+  `describeTx` toujours `TX #<id>` → 2 rouges ; bloc *Échecs partiels* remis sous condition
+  `proposals.length > 0` → 2 rouges.
 
 ### Completion Notes List
 
+- **T0 — relevés sur `HEAD` (`f289414e`)** : la commande de l'AC1 rend **25** littéraux, identiques à la
+  liste de la fiche ; le contrôle des formes non littérales rend `:163` (le champ de `FailedProposal`)
+  et `:239` (`DbError::AccountsNotPostable(list).error_code()`, soit `ACCOUNT_NOT_POSTABLE`) ; la
+  conversion `project_error_to_failed_proposal` ne pose que des littéraux déjà relevés
+  (`PROJECT_ARCHIVED`, `PROJECT_NOT_FOUND`, `PERIOD_LOCKED`, `DATABASE_ERROR`). **26 codes, aucun neuf.**
+  Manuel : la section *Réconciliation bancaire* commençait à `:1495` (fiche : `:1491`), soit un
+  décalage de +4 sur toute la plage ; FAQ `:2099`, bonnes pratiques `:2192`, glossaire `:2230`, rappels
+  `:1130` ; aucun passage neuf hors de ceux de la fiche, sinon `:1861` (§ projets analytiques,
+  « rapprochement manuel » → « affectation manuelle », C-15-5c-2).
+- **T1 — clé lue, code par code** (C37, C-15-5c-1) :
+  `ACCOUNT_NOT_FOUND` → `reconciliation-failed-account-not-found` ;
+  `ACCOUNT_NOT_POSTABLE` → `reconciliation-failed-account-not-postable` (avec `{ $numbers }` lus de
+  `details.rejected`) ou `reconciliation-failed-account-not-postable-generic` (sans numéros) ;
+  `BANK_ACCOUNT_NOT_CONFIGURED` → `reconciliation-failed-bank-account-not-configured` ;
+  `BANK_ACCOUNT_NOT_FOUND` → `reconciliation-failed-bank-account-not-found` ;
+  `BANK_TRANSACTION_NOT_FOUND` → `reconciliation-failed-bank-transaction-not-found` ;
+  `DATABASE_ERROR` → `reconciliation-failed-database-error` ;
+  `FISCAL_YEAR_INVALID` → `error-fiscal-year-invalid` (réutilisée) ;
+  `INTERNAL_ERROR` → `error-internal` (réutilisée) ;
+  `INVOICE_NOT_FOUND` → `reconciliation-failed-invoice-not-found` ;
+  `INVOICE_SALE_ENTRY_MALFORMED` → `reconciliation-failed-invoice-sale-entry-malformed` ;
+  `PERIOD_LOCKED` → `reconciliation-failed-period-locked` ;
+  `PROJECT_ARCHIVED` → `reconciliation-failed-project-archived` ;
+  `PROJECT_NOT_FOUND` → `reconciliation-failed-project-not-found` ;
+  `RECONCILIATION_ALREADY_RECONCILED` → `reconciliation-errors-already-reconciled` (réutilisée) ;
+  `RECONCILIATION_CURRENCY_MISMATCH` → `reconciliation-failed-currency-mismatch` ;
+  `RECONCILIATION_FISCAL_YEAR_CLOSED` → `error-fiscal-year-invalid` (réutilisée : même constat que
+  `FISCAL_YEAR_INVALID`, aucun exercice ouvert ne couvre la date) ;
+  `RECONCILIATION_INVOICE_NOT_ELIGIBLE` → `reconciliation-errors-invoice-not-eligible` (réutilisée) ;
+  `RECONCILIATION_OVERPAYMENT` → `reconciliation-failed-overpayment` ;
+  `RECONCILIATION_RULE_MISMATCH` → `reconciliation-failed-rule-mismatch` ;
+  `RECONCILIATION_RULE_NO_LONGER_MATCHES` → `reconciliation-failed-rule-no-longer-matches` ;
+  `RECONCILIATION_RULE_NOT_FOUND` → `reconciliation-failed-rule-not-found` ;
+  `RECONCILIATION_SCORE_TOO_LOW` → `reconciliation-failed-score-too-low` ;
+  `RECONCILIATION_SPLIT_IMBALANCE` → `reconciliation-split-error-imbalance` (réutilisée) ;
+  `RECONCILIATION_TRANSACTION_NOT_PENDING` → `reconciliation-failed-transaction-not-pending` ;
+  `ROUNDING_ACCOUNT_NOT_CONFIGURED` → `error-rounding-account-not-configured` (réutilisée) ;
+  `VALIDATION_ERROR` → `error-validation` (réutilisée) ;
+  code inconnu → `reconciliation-failed-unknown` (« Refus non reconnu ({ $code }) »).
+  Soit **8 codes sur 26** sur une clé existante (7 clés distinctes) et **20 clés neuves**.
+  **`PERIOD_LOCKED` n'utilise pas `details`** (`lockedThrough`, `attempted`) : limite assumée (C32),
+  le libellé renvoie au verrou de période ; seul `ACCOUNT_NOT_POSTABLE` lit son détail (AC2).
+- **T2** : 20 clés `reconciliation-failed-*` dans chacune des quatre locales (recompté :
+  `grep -c '^reconciliation-failed-'` = 20 × 4), plates (aucun sélecteur) ; terminologie alignée sur
+  `error-account-not-postable` de chaque locale (*bebuchbar*, *registrabile*, *grouping*).
+  **Borne `sitesTotal` : 1868 → 1895 (+27)**, relevée par le test et recoupée par `grep -o "i18nMsg("`
+  aux deux bornes : `failed-proposal-label.ts` 0 → 27 (25 `case` porteurs d'un appel — deux codes
+  partagent le leur —, la variante sans numéros, le repli), `ReconciliationProposals.svelte` 18 → 18 ;
+  `sitesNonResolus` 31, `relais` 6, `sitesGabarit` 10 inchangés (assertions exactes vertes),
+  `litterauxMin` et `clesDepuisTsMin` inchangés. **Garde voisine** :
+  `i18n-libelle-en-dur.test.ts` (`CANDIDATES_ATTENDUES`) a rougi aussi — `failedProposalLabel` porte le
+  suffixe `Label` — : **46 → 47**, `conforme` **40 → 41**, déclaration nommée dans le commentaire.
+- **T3** : ligne de refus « date · montant devise · contrepartie — libellé », relevée par
+  `snapshotSelected()` avant l'appel au serveur (donc avant le `load()`), repli `TX #<id>` ; code brut en
+  `title` et `data-error-code` ; compteur (en tête de section) et *Échecs partiels* (en pied) sortis de la
+  chaîne `{#if loading} … {:else}` ; le compteur est remis à zéro au début de chaque lot. Trois tests
+  ajoutés à `ReconciliationProposals.test.ts` (acceptation, rejet, liste vidée — second `getProposals`
+  explicitement distinct).
+- **T4** : section réécrite (C-15-5c-2). `admin-manual.tex` contrôlé : `:82` (« Réconciliation
+  automatique et manuelle … avec règles d'affectation ») reste vrai ; `:2033` (« refusé … avec un message
+  qui renvoie à *Paramètres* → *Facturation* ») **devient exact par l'AC3** — le lot affiche désormais
+  `error-rounding-account-not-configured` au lieu du code brut. Admin non modifié, non régénéré. PDF
+  utilisateur régénéré (`make user`, 77 pages, sans référence indéfinie), contrôlé aplati ligatures
+  normalisées : les 16 phrases retirées sont absentes (« La meilleure candidate est affichée »,
+  « Accepter sélectionnées », « Rapprocher manuellement », « atomique », « CLAUDE.md », « failed[] »,
+  « auto-validate », « 1 CHF près », « QR Bill structurée », « ROUNDING_ACCOUNT », « propose la facture
+  pour un paiement », « reste à rapprocher manuellement », « en N écritures », …), les nouvelles
+  présentes (« Affecter manuellement », « Accepter (N) », « Échecs partiels », « 30 jours de la date de
+  la facture », « une seule écriture », « classes 5, 6 et 7 », « sans aucune action », « produit serait
+  compté deux fois », …). Brochure non régénérée, inchangée.
+  **Fait relevé au code, absent de la fiche** : une règle dont le compte n'est plus imputable ou est
+  archivé est **sautée**, et la règle suivante qui correspond est proposée à sa place
+  (`first_matching_rule` sur l'ensemble des comptes imputables, `reconciliation.rs:586-591`) — le manuel
+  l'écrit.
+- **T5 — propagation** : le motif de la tâche, sur `docs/manual/fr/*.tex`, ne rend plus que des
+  occurrences hors rapprochement ou justes : `admin-manual.tex` — variables d'environnement
+  `KESH_*`/`MARIADB_*` en `\texttt` (pas des codes d'erreur), `user-manual.tex` — `brouillon` des
+  factures et des écritures, *Annuler un rapprochement* (juste : transaction rapprochée), `écritures
+  comptables` du journal et de la TVA. Aucun code d'erreur brut ne reste au manuel utilisateur.
+- **T6** : cf. *Debug Log References*.
+
 ### File List
+
+- `frontend/src/lib/features/reconciliation/failed-proposal-label.ts` (neuf)
+- `frontend/src/lib/features/reconciliation/failed-proposal-label.test.ts` (neuf)
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte`
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md` (C-15-5c-1, C-15-5c-2)
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/implementation-artifacts/15-5c-rapprochement-libelles-et-manuel.md`
 
 ## Change Log
 
@@ -547,3 +660,9 @@ splitting.
 
   Décompte inchangé : **9 AC, 7 tâches T0–T6** (recompté). Fiche prête pour le développement, après le
   merge de la 15-5b.
+- 2026-10-08 — **Développement** (`bmad-dev-story`, Opus 5.5). Module de libellés des 26 codes de
+  `failed[]` (8 sur clé existante, 20 clés neuves × 4 locales), affichage des refus par transaction et
+  hors de la branche vide, manuel du rapprochement réécrit et PDF régénéré, CHANGELOG. Bornes relevées :
+  `sitesTotal` 1868 → 1895, `CANDIDATES_ATTENDUES` 46 → 47 (garde non prévue par la fiche). Gates :
+  backend 2784/2784 (4 ignorés), frontend 1020/1020, `kesh-i18n` 31/31, E2E 240 verts / 7 rouges KF-029
+  / 19 ignorés, au commit de code `b48a1231`. Choix C-15-5c-1, C-15-5c-2. Statut : `review`.
