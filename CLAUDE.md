@@ -598,6 +598,8 @@ Trois engagements par epic, dans cet ordre :
 2. **Aucun P1 ne passe d'un epic à l'autre, dans la mesure du possible.** Ce ne sera pas toujours tenable — un P1 qui reste doit alors être nommé à la rétrospective, avec la raison.
 3. **L'epic livre une fonctionnalité nouvelle si c'est possible** — la baisse des défauts restant prioritaire.
 
+⚠️ **Report assumé : les neuf P1 de la TVA** (jalon « Vague 2 » : #390 à #397, #401). Ce sont des erreurs comptables du produit, et ils restent P1. Mais le seul utilisateur réel de Kesh **n'est pas assujetti à la TVA** (personne physique), si bien qu'ils ne font obstacle à aucune comptabilité tenue. Ils sont donc reportés d'epic en epic, **nommés à chaque rétrospective** comme l'exige l'engagement 2 — et ce report tombe dès que Kesh tient, ou est proposé pour tenir, les livres d'un assujetti. *(Décision de Guy, 2026-10-08 ; elle prolonge celle de la rétrospective de l'Epic 24 — « vague 1, puis comptabilité personnelle, puis TVA ».)*
+
 Toute nouvelle issue de défaut reçoit sa priorité à la création. Point de départ, au triage du 2026-10-08 : **49 bugs**, dont 14 P1 (9 dans le jalon de la TVA), 11 P2, 16 P3 et 8 P4 — plus trois issues de documentation ou de dette pure, classées P3 mais hors décompte faute de label `bug` (#291, #458, #438).
 
 *(Décidé par Guy le 2026-10-08, au triage de dette D4 de la rétrospective de l'Epic 25. Remplace la politique « zero carry-forward » ci-dessous, qui exigeait de solder toute la dette de catégorie A avant chaque kickoff et avait été contournée plusieurs fois : une règle contournée à chaque fois n'est plus une règle. La section suivante reste pour l'historique et pour le vocabulaire A/B/C qu'emploient les rétrospectives passées.)*
