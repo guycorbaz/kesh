@@ -1,6 +1,6 @@
 # Story 15.7a1 : Le socle transactionnel de l'onboarding
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Née le 2026-10-08 du découpage de la 15-7a (choix C-15-7-19), à la passe de validation P2.
      Patron « story-zéro + rollout » du CLAUDE.md (§ Règle de splitting préventif) : cette fiche
@@ -394,3 +394,12 @@ Consigner au Dev Agent Record.
   (R, F) en contexte frais, Sonnet en P1, Opus en P2, Sonnet en P3 ; une lentille Haiku en P4 ciblée. **Reclassements** : aucun ;
   signal D5 de la P2 (recyclage R-1) déclaré et suivi sans découpage (C-15-7-30). Recompte inchangé :
   **8 AC, 5 tâches, 8 tests, 10 mutations**.
+- 2026-10-08 — **Alignement sur le livré (T0 du développement)**, sur `HEAD` `0f6dfabb` (= `origin/main`
+  `9cb5083b` + report de la planification). Chaque référence relocalisée par le texte. **Aucun écart ne
+  change une règle ni un AC** — choix C-15-7a1-1. Dérives de lignes (fiche → `HEAD`) : `accounts.rs`
+  `:925-934` → `:967-976`, `:941-943` → `:983-985`, `:991` → `:1033` ; `routes/onboarding.rs` `:653` →
+  `:649`, `:806` → `:802`, `:721` → `:717`, `:720-738` → `:716-734`, `:745` → `:741`, `:682` → `:678` ;
+  `fiscal_years.rs:314` → `:320` ; `journal_entries.rs:495` → `:527` ;
+  `MULTI-TENANT-SCOPING-PATTERNS.md:322` → `:298`/`:317`. Fait nouveau sans effet ici : `finalize` est
+  enveloppé par `retry_app_on_deadlock("onboarding::finalize", …)` (15-5e2) — la route n'est pas touchée
+  par cette fiche.
