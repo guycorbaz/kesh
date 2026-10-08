@@ -32,6 +32,7 @@ use crate::entities::audit_log::NewAuditLogEntry;
 use crate::entities::invoice::{Invoice, InvoiceLine, InvoiceUpdate, NewInvoice, NewInvoiceLine};
 use crate::errors::{DbError, UnvalidationBlocker, map_db_error};
 use crate::repositories::audit_log;
+use crate::repositories::company_invoice_settings::{DesignatedRole, GeneratedLines};
 use crate::repositories::invoice_settlements::{
     INVOICE_AMOUNT_DUE_DERIVED_SQL, INVOICE_AMOUNT_SETTLED_DERIVED_SQL, amount_due_derived_joins,
 };
@@ -1791,10 +1792,15 @@ pub(in crate::repositories) fn generate_invoice_journal_lines(
     receivable_account_id: i64,
     default_revenue_account_id: i64,
     vat_payable_account_id: Option<i64>,
-) -> Result<Vec<crate::entities::NewJournalEntryLine>, DbError> {
+) -> Result<GeneratedLines, DbError> {
     use crate::entities::NewJournalEntryLine;
     use kesh_core::accounting::vat::line_vat_amount;
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    // Story 15-5d (C39) — les rôles de réglage effectivement écrits : la créance
+    // toujours, la TVA due dans la seule branche qui l'écrit.
+    let mut roles: BTreeSet<DesignatedRole> = BTreeSet::new();
+    roles.insert(DesignatedRole::Receivable);
 
     let mut total_ht = Decimal::ZERO;
     // Montant HT agrégé par compte de produit effectif (Story 16-1a, D4).
@@ -1857,6 +1863,7 @@ pub(in crate::repositories) fn generate_invoice_journal_lines(
         let vat_account = vat_payable_account_id.ok_or_else(|| {
             DbError::ConfigurationRequired("default_vat_payable_account_id".into())
         })?;
+        roles.insert(DesignatedRole::VatPayable);
         for amount in vat_by_rate.values() {
             if *amount > Decimal::ZERO {
                 entry_lines.push(NewJournalEntryLine {
@@ -1869,7 +1876,10 @@ pub(in crate::repositories) fn generate_invoice_journal_lines(
         }
     }
 
-    Ok(entry_lines)
+    Ok(GeneratedLines {
+        lines: entry_lines,
+        roles,
+    })
 }
 
 /// L'écriture de vente **avec l'arrondi à 5 centimes** (Story 25-4-c4-a, #494) :
@@ -1887,16 +1897,16 @@ pub(in crate::repositories) fn generate_invoice_journal_lines_rounded(
     default_revenue_account_id: i64,
     vat_payable_account_id: Option<i64>,
     rounding: Option<(i64, Decimal)>,
-) -> Result<Vec<crate::entities::NewJournalEntryLine>, DbError> {
-    let mut entry_lines = generate_invoice_journal_lines(
+) -> Result<GeneratedLines, DbError> {
+    let mut generated = generate_invoice_journal_lines(
         lines,
         receivable_account_id,
         default_revenue_account_id,
         vat_payable_account_id,
     )?;
     if let Some((account_id, amount)) = rounding.filter(|(_, a)| !a.is_zero()) {
-        entry_lines[0].debit += amount;
-        entry_lines.push(crate::entities::NewJournalEntryLine {
+        generated.lines[0].debit += amount;
+        generated.lines.push(crate::entities::NewJournalEntryLine {
             account_id,
             debit: if amount < Decimal::ZERO {
                 -amount
@@ -1911,7 +1921,7 @@ pub(in crate::repositories) fn generate_invoice_journal_lines_rounded(
             project_id: None,
         });
     }
-    Ok(entry_lines)
+    Ok(generated)
 }
 
 /// Valide une facture brouillon : lui attribue un numéro définitif,
@@ -1929,6 +1939,11 @@ pub(in crate::repositories) fn generate_invoice_journal_lines_rounded(
 ///                                      (get_or_create_default_in_tx)
 /// (2 bis')   accounts                  compte de différences d'arrondi, FOR UPDATE,
 ///                                      seulement s'il y a un écart
+/// (2 bis', suite) accounts             comptes désignés (créance, TVA due),
+///                                      LOCK IN SHARE MODE (partagé), ORDER BY id
+///                                      — Story 15-5d, lock_designated_accounts_in_tx ;
+///                                      tous les candidats, même la TVA due d'une
+///                                      facture sans TVA
 /// (2 quater) accounts                  verrou PARTAGÉ sur le compte de produit par la
 ///                                      clé étrangère de invoice_lines.revenue_account_id,
 ///                                      SEULEMENT si une ligne n'a pas encore de compte
@@ -1949,6 +1964,22 @@ pub(in crate::repositories) fn generate_invoice_journal_lines_rounded(
 ///
 /// L'étape (2 ter) ne prend aucun verrou.
 ///
+/// Les comptes désignés de `(2 bis', suite)` et les comptes de produit de
+/// `(2 quater)` sont tous deux verrouillés **en partagé** : deux verrous
+/// partagés sont compatibles, leur ordre relatif n'ouvre donc aucun cycle entre
+/// eux, **quel que soit le type** des comptes. Ce n'est pas une disjonction de
+/// types qui le garantit — le type d'un compte désigné n'est pas contrôlé après
+/// sa désignation ([`super::company_invoice_settings`], angle mort assumé), et
+/// un compte retypé peut se retrouver des deux côtés (revue de code P1, B-3).
+/// Le verrou des comptes désignés est
+/// **partagé** : il suffit contre l'archivage et le passage à non imputable,
+/// qui écrivent la ligne du compte, et il reste compatible avec les verrous
+/// partagés que `fk_jel_account` pose sur ces comptes dans les flux qui
+/// prennent l'exercice d'abord (règlement, solde du reste, rapprochement,
+/// avoir). Il suit l'arrondi, comme le solde du reste (arrondi, puis TVA due).
+/// Il **révise la limite L2** de D-A0 (Story 14-3b) pour la créance et la TVA
+/// due.
+///
 /// **La règle.** Cet ordre est une **convention qui réduit la fréquence** des
 /// interblocages entre les flux qui la suivent ; il ne peut pas les exclure,
 /// puisque l'insertion des lignes de l'écriture reprend `accounts` **après**
@@ -1968,6 +1999,20 @@ pub(in crate::repositories) fn generate_invoice_journal_lines_rounded(
 /// - [`DbError::FiscalYearInvalid`] : aucun exercice ouvert pour `invoice.date`.
 /// - [`DbError::ConfigurationRequired`] : comptes par défaut absents.
 /// - [`DbError::OptimisticLockConflict`] : race sur l'UPDATE final (défensif).
+///
+/// **Ordre des refus de la garde à l'usage** (Story 15-5d, #429). Le verrou de
+/// `(2 bis', suite)` ne refuse rien, il ne déplace donc aucun refus. Le refus
+/// des comptes désignés vient **après** tous les autres — total nul, montant
+/// minimum, compte d'arrondi, comptes de produit des lignes (`(2 ter)` :
+/// [`DbError::InvalidRevenueAccounts`], raison `NotPostable` pour un compte non
+/// imputable), exercice ([`DbError::FiscalYearInvalid`], bien que le verrou le
+/// précède), TVA due **absente** (`ConfigurationRequired` du générateur) — et
+/// juste avant `create_in_tx`, sur les seuls rôles **écrits** (la TVA due
+/// seulement si `total_vat > 0`) :
+/// - [`DbError::InactiveOrInvalidAccounts`] : un compte désigné écrit absent,
+///   d'une autre société ou archivé ;
+/// - [`DbError::DesignatedAccountsNotPostable`] : sinon, les comptes désignés
+///   écrits non imputables, tous nommés (400 `ACCOUNT_NOT_POSTABLE`).
 pub async fn validate_invoice(
     pool: &MySqlPool,
     company_id: i64,
@@ -2103,6 +2148,19 @@ pub async fn validate_invoice(
             .await?;
             Some((account_id, rounding_amount))
         };
+
+        // (2 bis', suite) Story 15-5d (#429) — les comptes DÉSIGNÉS que cette
+        // validation peut écrire (créance, TVA due), verrouillés EN PARTAGÉ
+        // (`LOCK IN SHARE MODE`, `ORDER BY id`), après le compte d'arrondi et
+        // AVANT l'exercice (3). Rien n'est refusé ici : le contrôle des seuls
+        // rôles écrits vient après la génération (7). Pourquoi partagé, pourquoi
+        // à cette place : doc-comment de `lock_designated_accounts_in_tx`.
+        let designated = company_invoice_settings::lock_designated_accounts_in_tx(
+            &mut tx,
+            company_id,
+            &DesignatedRole::candidate_ids(&DesignatedRole::SALE, &settings),
+        )
+        .await?;
 
         // (2 ter) Story 16-1a (AC8, AC8-bis) — re-validation AU POSTING des
         // comptes de produit effectivement postés.
@@ -2277,13 +2335,20 @@ pub async fn validate_invoice(
         // (compte produit par ligne) s'y branche sans 2e refactor de cette fonction.
         let journal: Journal = settings.default_sales_journal;
 
-        let entry_lines = generate_invoice_journal_lines_rounded(
+        let generated = generate_invoice_journal_lines_rounded(
             &lines_before,
             receivable_account_id,
             revenue_account_id,
             settings.default_vat_payable_account_id,
             rounding,
         )?;
+        // Story 15-5d (#429) — la garde à l'usage : les seuls comptes de réglage
+        // que l'écriture écrit (la TVA due seulement si `total_vat > 0`), sur
+        // l'instantané verrouillé en (2 bis', suite). Absent ou archivé →
+        // `InactiveOrInvalidAccounts` ; non imputable →
+        // `DesignatedAccountsNotPostable`.
+        designated.check_written(&generated.roles, &settings)?;
+        let entry_lines = generated.lines;
 
         let je = journal_entries::create_in_tx(
             &mut tx,
@@ -3007,8 +3072,9 @@ mod tests {
     #[test]
     fn gen_lines_single_rate() {
         let lines = [make_line(dec!(1000.00), dec!(8.10))];
-        let je =
-            generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        let je = generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE))
+            .unwrap()
+            .lines;
         assert_eq!(je.len(), 3, "créance + produit + 1 ligne TVA");
         // (0) créance TTC = 1000 + 81 = 1081.
         assert_eq!(je[0].account_id, RECEIVABLE);
@@ -3030,8 +3096,9 @@ mod tests {
             make_line(dec!(500.00), dec!(0)),
             make_line(dec!(250.00), dec!(0)),
         ];
-        let je =
-            generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        let je = generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE))
+            .unwrap()
+            .lines;
         assert_eq!(je.len(), 2, "créance + produit, aucune TVA");
         assert!(
             je.iter().all(|l| l.account_id != VAT_DUE),
@@ -3050,8 +3117,9 @@ mod tests {
             make_line(dec!(1000.00), dec!(8.10)),
             make_line(dec!(500.00), dec!(2.60)),
         ];
-        let je =
-            generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        let je = generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE))
+            .unwrap()
+            .lines;
         assert_eq!(je.len(), 4, "créance + produit + 2 lignes TVA");
         // total TVA = 81.00 (8.1%) + 13.00 (2.6%) = 94 ; créance = 1500 + 94 = 1594.
         assert_eq!(je[0].debit, dec!(1594.00));
@@ -3073,8 +3141,9 @@ mod tests {
             make_line(dec!(1000.00), dec!(8.10)),
             make_line(dec!(400.00), dec!(0)),
         ];
-        let je =
-            generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        let je = generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE))
+            .unwrap()
+            .lines;
         assert_eq!(
             je.len(),
             3,
@@ -3092,8 +3161,9 @@ mod tests {
     fn gen_lines_rate_rounds_to_zero() {
         // line_vat_amount(0.01, 8.1) = round(0.00081) = 0.00.
         let lines = [make_line(dec!(0.01), dec!(8.10))];
-        let je =
-            generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        let je = generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE))
+            .unwrap()
+            .lines;
         assert_eq!(je.len(), 2, "TVA arrondie à 0 → pas de ligne 2200");
         assert_eq!(je[0].debit, dec!(0.01), "créance = HT (TVA nulle)");
         assert_eq!(sum_debit(&je), sum_credit(&je));
@@ -3108,8 +3178,9 @@ mod tests {
             make_line(dec!(0.07), dec!(8.10)),
             make_line(dec!(0.07), dec!(8.10)),
         ];
-        let je =
-            generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        let je = generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE))
+            .unwrap()
+            .lines;
         assert_eq!(je.len(), 3, "une seule ligne TVA (même taux)");
         assert_eq!(
             je[2].credit,
@@ -3138,7 +3209,9 @@ mod tests {
     #[test]
     fn gen_lines_no_vat_account_ok_when_no_vat() {
         let lines = [make_line(dec!(1000.00), dec!(0))];
-        let je = generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, None).unwrap();
+        let je = generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, None)
+            .unwrap()
+            .lines;
         assert_eq!(je.len(), 2, "pas de TVA → compte TVA due non requis");
         assert_eq!(sum_debit(&je), sum_credit(&je));
     }
@@ -3172,8 +3245,9 @@ mod tests {
             make_line_on(dec!(1000.00), dec!(0), Some(REVENUE_SERVICES)),
             make_line_on(dec!(400.00), dec!(0), Some(REVENUE_GOODS)),
         ];
-        let je =
-            generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        let je = generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE))
+            .unwrap()
+            .lines;
         assert_eq!(je.len(), 3, "créance + 2 crédits produit, pas de TVA");
         assert_eq!(je[0].debit, dec!(1400.00), "créance = HT total");
         assert_eq!(credit_on(&je, REVENUE_SERVICES), dec!(1000.00));
@@ -3196,8 +3270,9 @@ mod tests {
             make_line_on(dec!(500.00), dec!(2.60), Some(REVENUE_SERVICES)),
             make_line_on(dec!(400.00), dec!(8.10), Some(REVENUE_GOODS)),
         ];
-        let je =
-            generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        let je = generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE))
+            .unwrap()
+            .lines;
         assert_eq!(je.len(), 5, "créance + 2 comptes produit + 2 taux de TVA");
         // HT ventilé : 1500 sur 3200, 400 sur 3400.
         assert_eq!(credit_on(&je, REVENUE_SERVICES), dec!(1500.00));
@@ -3217,8 +3292,9 @@ mod tests {
             make_line_on(dec!(1000.00), dec!(0), Some(REVENUE_SERVICES)),
             make_line_on(dec!(0.00), dec!(0), Some(REVENUE_GOODS)),
         ];
-        let je =
-            generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        let je = generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE))
+            .unwrap()
+            .lines;
         assert_eq!(je.len(), 2, "le compte à montant nul est filtré");
         assert!(
             je.iter().all(|l| l.account_id != REVENUE_GOODS),
@@ -3237,8 +3313,9 @@ mod tests {
             make_line_on(dec!(600.00), dec!(0), None),
             make_line_on(dec!(400.00), dec!(0), Some(REVENUE)),
         ];
-        let je =
-            generate_invoice_journal_lines(&merged, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        let je = generate_invoice_journal_lines(&merged, RECEIVABLE, REVENUE, Some(VAT_DUE))
+            .unwrap()
+            .lines;
         assert_eq!(je.len(), 2, "une SEULE ligne de crédit produit");
         assert_eq!(credit_on(&je, REVENUE), dec!(1000.00));
 
@@ -3248,8 +3325,9 @@ mod tests {
             make_line_on(dec!(600.00), dec!(0), None),
             make_line_on(dec!(400.00), dec!(0), None),
         ];
-        let je_null =
-            generate_invoice_journal_lines(&all_null, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        let je_null = generate_invoice_journal_lines(&all_null, RECEIVABLE, REVENUE, Some(VAT_DUE))
+            .unwrap()
+            .lines;
         assert_eq!(je.len(), je_null.len());
         for (a, b) in je.iter().zip(je_null.iter()) {
             assert_eq!(
@@ -3270,8 +3348,9 @@ mod tests {
             make_line_on(dec!(200.00), dec!(0), Some(REVENUE_SERVICES)),
             make_line_on(dec!(300.00), dec!(0), Some(REVENUE)),
         ];
-        let je =
-            generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE)).unwrap();
+        let je = generate_invoice_journal_lines(&lines, RECEIVABLE, REVENUE, Some(VAT_DUE))
+            .unwrap()
+            .lines;
         assert_eq!(je.len(), 4, "créance + 3 comptes produit");
         let accounts: Vec<i64> = je[1..].iter().map(|l| l.account_id).collect();
         assert_eq!(

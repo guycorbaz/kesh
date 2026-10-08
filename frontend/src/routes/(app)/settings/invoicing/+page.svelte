@@ -43,6 +43,10 @@
 	let receivableId = $state<number | null>(null);
 	let revenueId = $state<number | null>(null);
 	let vatPayableId = $state<number | null>(null);
+	// Story 15-5d (C34) : le compte créanciers, que la saisie d'une facture
+	// fournisseur crédite et que la garde à l'usage contrôle — sans ce champ, son
+	// refus renverrait à un réglage invisible.
+	let payableId = $state<number | null>(null);
 	let vatRecoverableId = $state<number | null>(null);
 	let vatDecompteId = $state<number | null>(null);
 	let roundingId = $state<number | null>(null);
@@ -85,6 +89,9 @@
 	let receivableOptions = $derived(withCurrentAccount(assetAccounts, receivableId, accounts));
 	let revenueOptions = $derived(withCurrentAccount(revenueAccounts, revenueId, accounts));
 	let vatPayableOptions = $derived(withCurrentAccount(liabilityAccounts, vatPayableId, accounts));
+	// Même filtre que la TVA due (le serveur exige un passif) ; la valeur
+	// courante reste proposée même devenue non imputable (#271).
+	let payableOptions = $derived(withCurrentAccount(liabilityAccounts, payableId, accounts));
 	let vatRecoverableOptions = $derived(
 		withCurrentAccount(assetAccounts, vatRecoverableId, accounts),
 	);
@@ -130,6 +137,7 @@
 			receivableId = s.defaultReceivableAccountId;
 			revenueId = s.defaultRevenueAccountId;
 			vatPayableId = s.defaultVatPayableAccountId;
+			payableId = s.defaultPayableAccountId;
 			vatRecoverableId = s.defaultVatRecoverableAccountId;
 			vatDecompteId = s.defaultVatDecompteAccountId;
 			roundingId = s.defaultRoundingAccountId;
@@ -176,6 +184,7 @@
 				defaultReceivableAccountId: receivableId,
 				defaultRevenueAccountId: revenueId,
 				defaultVatPayableAccountId: vatPayableId,
+				defaultPayableAccountId: payableId,
 				defaultVatRecoverableAccountId: vatRecoverableId,
 				defaultVatDecompteAccountId: vatDecompteId,
 				defaultRoundingAccountId: roundingId,
@@ -204,6 +213,7 @@
 						receivableId = fresh.defaultReceivableAccountId;
 						revenueId = fresh.defaultRevenueAccountId;
 						vatPayableId = fresh.defaultVatPayableAccountId;
+						payableId = fresh.defaultPayableAccountId;
 						vatRecoverableId = fresh.defaultVatRecoverableAccountId;
 						vatDecompteId = fresh.defaultVatDecompteAccountId;
 						roundingId = fresh.defaultRoundingAccountId;
@@ -308,6 +318,22 @@
 				>
 					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
 					{#each receivableOptions as a (a.id)}
+						<option value={a.id}>{a.number} — {a.name}</option>
+					{/each}
+				</select>
+			</div>
+			<div>
+				<label class="mb-1 block text-sm font-medium" for="payable">
+					{i18nMsg('settings-invoicing-payable-account', 'Compte créanciers (Passif)')}
+				</label>
+				<select
+					id="payable"
+					data-testid="settings-payable-account"
+					class="w-full rounded-md border border-border bg-white px-3 py-2 text-sm"
+					bind:value={payableId}
+				>
+					<option value={null}>{i18nMsg('settings-invoicing-select-none', '— Sélectionner —')}</option>
+					{#each payableOptions as a (a.id)}
 						<option value={a.id}>{a.number} — {a.name}</option>
 					{/each}
 				</select>

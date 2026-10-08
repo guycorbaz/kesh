@@ -377,9 +377,9 @@ Lors de la mise à jour vers cette version, Kesh a \textbf{pré-attribué les r�
 \end{keshwarning}
 
 \begin{keshnote}
-Dans cette version, l'indicateur \emph{postable} \textbf{bloque la saisie manuelle} : Kesh refuse une écriture saisie à la main dont une ligne vise un compte non imputable — un compte de regroupement, le compte de résultat de l'exercice ou un compte de clôture. Les autres chemins d'écriture le vérifient aussi~: la validation d'une facture contrôle le compte de produit de chaque ligne, l'enregistrement d'un règlement son compte de contrepartie, la saisie d'une facture fournisseur son compte de charge~; le rapprochement bancaire — manuel, éclaté, ou par acceptation d'une proposition — refuse un compte de contrepartie non imputable, et une règle d'affectation ne peut ni être créée sur un tel compte, ni y être déplacée, ni être réactivée s'il l'est devenu. Les réglages de facturation refusent un compte non imputable \textbf{au moment où vous le désignez}, et la fiche d'un compte bancaire refuse d'y lier un tel compte.
+Dans cette version, l'indicateur \emph{postable} \textbf{bloque la saisie manuelle} : Kesh refuse une écriture saisie à la main dont une ligne vise un compte non imputable — un compte de regroupement, le compte de résultat de l'exercice ou un compte de clôture. Les autres chemins d'écriture le vérifient aussi~: la validation d'une facture contrôle le compte de produit de chaque ligne, l'enregistrement d'un règlement son compte de contrepartie, la saisie d'une facture fournisseur son compte de charge~; le rapprochement bancaire — manuel, éclaté, ou par acceptation d'une proposition — refuse un compte de contrepartie non imputable, et une règle d'affectation ne peut ni être créée sur un tel compte, ni y être déplacée, ni être réactivée s'il l'est devenu. Les réglages de facturation refusent un compte non imputable \textbf{au moment où vous le désignez}, et la fiche d'un compte bancaire refuse d'y lier un tel compte. Un compte \textbf{désigné dans les réglages de facturation} et devenu non imputable \emph{après} sa désignation --- la créance, la TVA due, le compte créanciers, la TVA récupérable --- est contrôlé \textbf{au moment où une écriture automatique veut l'utiliser}~: la validation d'une facture et la saisie (ou la complétion) d'une facture fournisseur sont alors refusées, avec un message qui nomme le compte et renvoie à \emph{Paramètres} → \emph{Facturation}, où un administrateur doit désigner à sa place un compte imputable --- l'un de ses sous-comptes, si vous l'avez scindé. Deux exceptions, voulues~: l'\textbf{avoir} relit la créance et la TVA due dans les réglages au moment de l'avoir, sans les contrôler, pour qu'une facture émise reste toujours annulable~; et le \textbf{compte de produit par défaut} n'est pas contrôlé à l'usage.
 
-Quatre cas échappent encore à ce contrôle, parce qu'un compte peut devenir non imputable \emph{après} avoir été choisi — typiquement quand vous lui créez des sous-comptes~: (1)~le compte comptable d'un compte bancaire \textbf{déjà lié} reste accepté, et continue de servir au rapprochement et aux règlements~; (2)~une règle d'affectation active dont le compte est devenu non imputable reste affichée «~Active~», mais Kesh ne la propose plus~; (3)~le compte de produit d'une \textbf{fiche article} n'est pas contrôlé sur la fiche — il l'est sur la ligne de facture, sauf s'il s'agit du compte de produit par défaut~; (4)~un compte \textbf{désigné dans les réglages de facturation} et devenu non imputable après sa désignation reste utilisé par les écritures automatiques (validation d'une facture, avoir, facture fournisseur). Si vous scindez un tel compte, un administrateur peut désigner à sa place l'un de ses sous-comptes, dans \emph{Paramètres} → \emph{Facturation}.
+Trois cas échappent encore à ce contrôle, parce qu'un compte peut devenir non imputable \emph{après} avoir été choisi — typiquement quand vous lui créez des sous-comptes~: (1)~le compte comptable d'un compte bancaire \textbf{déjà lié} reste accepté, et continue de servir au rapprochement et aux règlements~; (2)~une règle d'affectation active dont le compte est devenu non imputable reste affichée «~Active~», mais Kesh ne la propose plus~; (3)~le compte de produit d'une \textbf{fiche article} n'est pas contrôlé sur la fiche — il l'est sur la ligne de facture, sauf s'il s'agit du compte de produit par défaut.
 
 Une écriture déjà enregistrée \textbf{se modifie} tant que son exercice est ouvert (voir «~Modifier une écriture~») --- et la modification applique la \textbf{même} garde, \textbf{à toutes ses lignes, y compris celles que vous ne touchez pas}~: si un compte est devenu non imputable depuis la saisie, l'enregistrement est refusé avec un message qui \textbf{nomme} ce compte, et il faut le remplacer.
 \end{keshnote}
@@ -391,7 +391,7 @@ Les plans comptables livrés avec Kesh comportent une classe~9 — \emph{Bilan d
 \textbf{Kesh n'en passe aucune}~: le bilan, le compte de résultat et le report à-nouveau sont \textbf{recalculés en permanence} à partir de vos écritures. Ces trois comptes n'ont donc, ici, aucun usage — et Kesh \textbf{refuse toute écriture saisie à la main} qui les vise, exactement comme pour le compte \emph{Résultat de l'exercice}, dont il calcule aussi le solde.
 
 \begin{keshnote}
-\textbf{Cette protection ne se limite pas à la saisie manuelle}~: comme pour tout compte non imputable (voir «~Rôles des comptes~»), la validation d'une facture refuse un compte de produit non imputable — sauf s'il s'agit du compte de produit \emph{par défaut} que vous avez configuré —, l'enregistrement d'un règlement refuse un compte de contrepartie non imputable, la saisie d'une facture fournisseur refuse un compte de charge non imputable, et le rapprochement bancaire (manuel, éclaté, propositions et règles d'affectation), les réglages de facturation et le compte comptable d'un compte bancaire refusent eux aussi un compte de clôture. Les cas qui échappent encore au contrôle — un compte devenu non imputable \emph{après} avoir été choisi — sont énumérés à la section «~Rôles des comptes~».
+\textbf{Cette protection ne se limite pas à la saisie manuelle}~: comme pour tout compte non imputable (voir «~Rôles des comptes~»), la validation d'une facture refuse un compte de produit non imputable — sauf s'il s'agit du compte de produit \emph{par défaut} que vous avez configuré —, l'enregistrement d'un règlement refuse un compte de contrepartie non imputable, la saisie d'une facture fournisseur refuse un compte de charge non imputable, et le rapprochement bancaire (manuel, éclaté, propositions et règles d'affectation), les réglages de facturation et le compte comptable d'un compte bancaire refusent eux aussi un compte de clôture. Ce qui se passe quand un compte devient non imputable \emph{après} avoir été choisi --- le contrôle à l'usage des comptes des réglages de facturation, et les cas qui échappent encore au contrôle --- est décrit à la section «~Rôles des comptes~».
 \end{keshnote}
 
 \begin{keshwarning}
@@ -925,6 +925,8 @@ Une facture passe par trois états :
 
 \paragraph{Le montant minimum d'une facture.} Une facture d'un très petit montant coûte souvent plus à traiter qu'elle ne rapporte. Dans \emph{Paramètres} → \emph{Facturation}, section \emph{Montant minimum}, vous pouvez fixer un seuil : une facture dont le total --- arrondi, celui que le client paiera --- lui est \textbf{inférieur} ne peut pas être validée, et le message donne les deux montants. Le brouillon reste enregistrable. Un total égal au seuil est accepté. Laissé vide (c'est le défaut), aucun seuil ne s'applique. Les \textbf{avoirs} ne sont pas concernés : ils annulent une facture déjà émise, quel que soit son montant.
 
+\paragraph{Un compte des réglages devenu non imputable.} La validation écrit sur la \textbf{créance} et, si la facture porte de la TVA, sur la \textbf{TVA due} désignées dans \emph{Paramètres} → \emph{Facturation}. Si l'un de ces comptes est devenu non imputable depuis sa désignation (sous-comptes créés, case \emph{imputable} décochée), la validation est refusée avec un message qui \textbf{nomme le compte} et renvoie à ces paramètres~; la facture reste en brouillon. Un administrateur y désigne un compte imputable, puis la validation se relance telle quelle. L'\textbf{avoir}, lui, n'est \textbf{pas} soumis à ce contrôle, et c'est voulu~: une facture émise doit rester annulable, même si sa créance ou sa TVA due est devenue non imputable depuis (voir «~Rôles des comptes~»).
+
 \subsection{Vos coordonnées sur la facture}\label{sec:coordonnees-emetteur}
 
 Le bloc en haut à gauche du PDF porte votre \textbf{nom}, votre \textbf{adresse} et votre \textbf{numéro IDE}. Vous pouvez y ajouter vos \textbf{coordonnées de contact} --- téléphone, e-mail et site web --- pour qu'un client qui a une question sur la facture puisse vous joindre depuis le document lui-même.
@@ -1360,6 +1362,7 @@ paiement à charger dans votre e-banking. Ces écrans sont dans le menu
 \emph{Quotidien}.
 
 \subsection{Saisir une facture fournisseur}
+\label{sec:saisie-facture-fournisseur}
 
 \emph{Quotidien} → \emph{Factures fournisseurs} → \emph{Nouvelle facture}. Renseigner
 le fournisseur (un contact marqué « fournisseur »), la date, l'échéance
@@ -1368,6 +1371,14 @@ le fournisseur (un contact marqué « fournisseur »), la date, l'échéance
 applicable — l'impôt préalable est comptabilisé automatiquement). À la validation,
 Kesh passe l'écriture d'achat (charge + TVA préalable au débit, dette fournisseur
 au crédit).
+
+La dette fournisseur est portée au \textbf{compte créanciers} désigné dans
+\emph{Paramètres} → \emph{Facturation} (section \emph{Comptes par défaut}), et
+l'impôt préalable au compte de \textbf{TVA récupérable} de la même page. Si le
+compte créanciers --- ou, pour une facture qui porte de la TVA, le compte de TVA
+récupérable --- n'est pas imputable, la saisie est refusée avec un message qui
+nomme le compte et renvoie à ces paramètres, où un administrateur doit le
+remplacer~; rien n'est enregistré.
 
 \subsection{Régler une facture fournisseur}
 
@@ -1463,7 +1474,11 @@ rapport indique les fichiers acceptés, en échec et les avertissements.
 Pour chaque facture importée, cliquez sur \textbf{« Compléter »} : choisissez le
 fournisseur et saisissez les lignes (compte de charge, TVA). Kesh vérifie que le
 total TTC \textbf{correspond exactement} au montant du QR avant de créer la
-facture fournisseur définitive (ensuite réglable comme ci-dessus). Vous pouvez
+facture fournisseur définitive (ensuite réglable comme ci-dessus). La complétion
+crée cette facture par le même chemin que la saisie~: elle est refusée de la même
+façon si le compte créanciers ou la TVA récupérable des réglages n'est pas
+imputable (\S\ref{sec:saisie-facture-fournisseur}), et la facture importée reste
+\emph{à compléter}. Vous pouvez
 aussi \textbf{écarter} une entrée, et \textbf{consulter le justificatif d'origine}
 depuis la fiche de la facture (« Voir la facture d'origine »).
 

@@ -460,3 +460,89 @@ async fn cancelled_settlement_leaves_the_aggregates(pool: MySqlPool) {
         assert_eq!(i.amount_due, dec!(108.10), "{surface} : reste dû");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Story 15-5d (#429) — test de place 3 : l'arrondi avant les comptes désignés
+// ---------------------------------------------------------------------------
+
+/// **Test de place 3** — la validation prend le compte d'arrondi AVANT les
+/// comptes désignés (choix C53 ; même ordre « arrondi, puis TVA due » que le
+/// solde du reste).
+///
+/// Facture brouillon avec TVA et arrondie (100.01 à 8.1 % : TTC 108.11, écart
+/// −0.01). La bloqueuse verrouille la ligne du compte d'arrondi ; la validation
+/// est vue en attente sur ce compte (requête de `rounding_account_for_write`) ;
+/// des sondes `FOR UPDATE NOWAIT` sur la TVA due puis sur la créance
+/// réussissent : la validation ne les tient pas encore. Sous l'ordre fautif
+/// (accesseur avant l'arrondi), elle les tiendrait en partagé, et une sonde
+/// exclusive échouerait aussitôt (`1205`). La bloqueuse annule ; la validation
+/// réussit.
+#[sqlx::test(migrations = "./test-schema")]
+async fn place_3_rounding_account_precedes_designated_accounts(pool: MySqlPool) {
+    use kesh_db::test_fixtures::{attendre_une_requete_en_cours, sonde_verrou_nowait};
+    const SONDE_COMPTE: &str = "SELECT id FROM accounts WHERE id = ? FOR UPDATE NOWAIT";
+
+    let seeded = seed_accounting_company(&pool).await.expect("seed");
+    let rounding = kesh_db::test_fixtures::designate_rounding_account(&pool, seeded.company_id)
+        .await
+        .expect("compte d'arrondi");
+    let contact = make_contact(&pool, &seeded).await;
+    let (inv, _) = invoices::create(
+        &pool,
+        seeded.admin_user_id,
+        NewInvoice {
+            company_id: seeded.company_id,
+            contact_id: contact,
+            date: d(2026, 6, 15),
+            due_date: None,
+            payment_terms: None,
+            lines: vec![NewInvoiceLine {
+                revenue_account_id: None,
+                description: "Ligne".into(),
+                quantity: dec!(1),
+                unit_price: dec!(100.01),
+                vat_rate: dec!(8.10),
+            }],
+            project_id: None,
+        },
+    )
+    .await
+    .expect("create invoice");
+
+    let mut bloqueuse = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM accounts WHERE id = ? FOR UPDATE")
+        .bind(rounding)
+        .fetch_all(&mut *bloqueuse)
+        .await
+        .unwrap();
+    let (p, c, u, id) = (
+        pool.clone(),
+        seeded.company_id,
+        seeded.admin_user_id,
+        inv.id,
+    );
+    let tache = tokio::spawn(async move { invoices::validate_invoice(&p, c, id, u).await });
+    let vue = attendre_une_requete_en_cours(
+        &pool,
+        &["FROM accounts WHERE id", "account_type IN", "FOR UPDATE"],
+        || tache.is_finished(),
+    )
+    .await;
+    assert!(
+        vue,
+        "la validation n'a pas été vue en attente sur le compte d'arrondi : {:?}",
+        tache.await.map(|r| r.map(|_| ()))
+    );
+    assert!(
+        sonde_verrou_nowait(&pool, SONDE_COMPTE, seeded.accounts["2000"]).await,
+        "la TVA due ne doit pas être tenue avant le compte d'arrondi"
+    );
+    assert!(
+        sonde_verrou_nowait(&pool, SONDE_COMPTE, seeded.accounts["1100"]).await,
+        "la créance ne doit pas être tenue avant le compte d'arrondi"
+    );
+    bloqueuse.rollback().await.unwrap();
+
+    let validated = tache.await.expect("tâche").expect("la validation réussit");
+    assert_eq!(validated.invoice.rounding_amount, dec!(-0.01));
+}

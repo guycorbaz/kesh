@@ -370,9 +370,14 @@ mod tests {
     /// avec `numbers` et `count` (nombre Fluent). C'est sûr : le frontend affiche
     /// `err.message`, déjà résolu par le serveur, et ne lit jamais cette clé dans
     /// son dictionnaire.
+    ///
+    /// `error-designated-account-not-postable` (Story 15-5d, choix C28/C36) l'est
+    /// par le bras `DbError::DesignatedAccountsNotPostable`, par le même helper
+    /// (`account_not_postable_response`) et les mêmes arguments.
     const SELECTEURS_RESOLUS_COTE_SERVEUR: &[&str] = &[
         "contact-payment-terms-days-label",
         "error-account-not-postable",
+        "error-designated-account-not-postable",
     ];
 
     /// Les clés d'un `.ftl` dont la valeur contient une expression **`select`**.
@@ -845,6 +850,86 @@ mod tests {
                 .format(&Locale::FrCh, KEY, Some(&one))
                 .replace(['\u{2068}', '\u{2069}'], ""),
             "Le compte 1000 n’est pas imputable (compte de regroupement, de résultat ou de clôture) : choisissez un compte imputable."
+        );
+    }
+
+    /// Story 15-5d (AC2) — la clé du refus « compte DÉSIGNÉ non imputable » se
+    /// résout, avec arguments, au singulier et au pluriel dans les quatre
+    /// locales ; elle nomme les numéros, renvoie aux réglages de facturation et
+    /// dit qu'un administrateur doit agir (choix C36).
+    #[test]
+    fn designated_account_not_postable_resolves_singular_and_plural_in_every_locale() {
+        let bundle = I18nBundle::load(&locales_dir()).unwrap();
+        const KEY: &str = "error-designated-account-not-postable";
+        for locale in Locale::ALL {
+            let mut one = FluentArgs::new();
+            one.set("numbers", "1100");
+            one.set("count", 1usize);
+            let singulier = bundle
+                .format(&locale, KEY, Some(&one))
+                .replace(['\u{2068}', '\u{2069}'], "");
+
+            let mut many = FluentArgs::new();
+            many.set("numbers", "1100, 2000");
+            many.set("count", 2usize);
+            let pluriel = bundle
+                .format(&locale, KEY, Some(&many))
+                .replace(['\u{2068}', '\u{2069}'], "");
+
+            assert_ne!(singulier, KEY, "{locale:?} : clé absente");
+            assert!(singulier.contains("1100"), "{locale:?} : {singulier}");
+            assert!(pluriel.contains("1100, 2000"), "{locale:?} : {pluriel}");
+            assert_ne!(
+                singulier,
+                pluriel.replace("1100, 2000", "1100"),
+                "{locale:?} : le singulier doit différer du pluriel — sélecteur inopérant"
+            );
+            // Où agir : le menu tel que la locale l'affiche.
+            let menu = match locale {
+                Locale::FrCh => "Paramètres → Facturation",
+                Locale::DeCh => "Einstellungen → Fakturierung",
+                Locale::ItCh => "Impostazioni → Fatturazione",
+                Locale::EnCh => "Settings → Invoicing",
+            };
+            for texte in [&singulier, &pluriel] {
+                assert!(
+                    texte.contains(menu),
+                    "{locale:?} : « {menu} » absent de {texte}"
+                );
+            }
+            // Qui agit (C36).
+            let admin = format!("{singulier} {pluriel}").to_lowercase();
+            assert!(
+                ["administrat", "amministrat"]
+                    .iter()
+                    .any(|m| admin.contains(m)),
+                "{locale:?} : l'administrateur n'est pas nommé : {admin}"
+            );
+            for interdit in ["archiv", "invalid", "ungültig", "non valid", "sous-compte"] {
+                assert!(
+                    !admin.contains(interdit),
+                    "{locale:?} : « {interdit} » dans {admin}"
+                );
+            }
+        }
+        // Le texte FR exact (AC2), au singulier et au pluriel.
+        let mut one = FluentArgs::new();
+        one.set("numbers", "1100");
+        one.set("count", 1usize);
+        assert_eq!(
+            bundle
+                .format(&Locale::FrCh, KEY, Some(&one))
+                .replace(['\u{2068}', '\u{2069}'], ""),
+            "Le compte 1100, désigné dans Paramètres → Facturation, n’est pas imputable (compte de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à sa place un compte imputable."
+        );
+        let mut many = FluentArgs::new();
+        many.set("numbers", "1100, 2000");
+        many.set("count", 2usize);
+        assert_eq!(
+            bundle
+                .format(&Locale::FrCh, KEY, Some(&many))
+                .replace(['\u{2068}', '\u{2069}'], ""),
+            "Les comptes 1100, 2000, désignés dans Paramètres → Facturation, ne sont pas imputables (comptes de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à leur place des comptes imputables."
         );
     }
 }

@@ -2304,3 +2304,195 @@ l'import (#458–#461).
   PDF utilisateur régénéré (bruit binaire sans changement de texte) ; relancer la suite E2E entière (la règle
   du dépôt juge un rouge au rejeu isolé, et les six passent).
 - **Réversible** : oui (sauvegarde `backup/15-11a-pre-rebase-2` sur `7d0fd45b`).
+
+## C88 — 15-5d : remédiation de la validation P6 — cycles (a bis) examinés, dérogation écrite au découpage (signal D5 de la P5), `owned_account_ids` adopté d'emblée (tranche C51), montage et sondes des tests
+
+- **Contexte** : validation P6 de la 15-5d (Sonnet ×2 ; `target/gate-logs/15-5d-p6-{R,F}.md`) :
+  R 0 MEDIUM / 5 LOW, F 2 MEDIUM / 3 LOW — 2 MEDIUM, 8 LOW distincts, aucun né de la remédiation C87.
+  **F6-1** : la fiche renvoyait au développeur, comme « non examinés », le lot pain.001 et
+  l'acceptation par lot du rapprochement, qui se tranchent à la lecture. **F6-2** : le critère D5
+  (recyclage) n'était pas appliqué à la lettre au HIGH F5-1 de la P5 — le constat « traité
+  localement » décrivait l'étendue du correctif, non la nature du défaut. Décisions de
+  l'orchestrateur, appliquées par l'agent de remédiation. Les entrées antérieures (C51, C87) ne sont
+  pas réécrites.
+- **Retenu** :
+  1. **Cycle (a bis)** aux Dev Notes : lot pain.001 (`confirm_batch` → `pay_in_tx` en
+     `BankTransfer` seul : facture, `bank_accounts`, exercice, jamais de `FOR UPDATE` sur les comptes
+     désignés) et acceptation par lot (exercice tenu, créance en partagé par `fk_jel_account` ; seul
+     exclusif après l'exercice : le compte d'arrondi, cycle préexistant couvert par #536 / 15-5e2) —
+     classe (a), aucun cycle neuf ; T0 **confirme**. **Remplacement du plan et désarchivage** relus au
+     code (axe non exercé de la lentille R) : la plage `accounts.rs:1070-1216` est
+     `delete_all_by_company`, **sans appelant**, suivie des tests ; `reset_demo` supprime en
+     autocommit (aucun verrou tenu entre deux instructions) ; le chargement d'un plan n'écrit que des
+     `INSERT` sur une société sans réglages ; `reactivate` ne verrouille rien avant son `UPDATE` —
+     ni chemin de défaut, ni cycle (un attendeur qui ne tient rien n'est maillon d'aucun cycle).
+  2. **Dérogation règle de splitting** (section neuve de la fiche) : signal D5 écrit tel qu'il est
+     (F5-1 né de C43 ; thème « ordre des verrous » en P2, P3, P5) ; la seule coupe disponible —
+     AC5/AC6, l'écran du compte créanciers et les contournements E2E — ne porte pas l'axe recyclé, qui
+     est au cœur de la garde : découper ne traiterait pas la cause. Risque accepté ; P6 dernière passe
+     complète, P7 ciblée ; si une passe ciblée trouve encore un défaut de verrou né d'une remédiation,
+     la coupe AC5/AC6 s'applique sans nouvelle délibération.
+  3. **`owned_account_ids` adopté d'emblée** (R6-5) : lecture non verrouillante des identifiants de
+     la société dans la transaction, puis verrou partagé sur eux seuls — tranche ce que C51 laissait
+     au résultat du test ; le test « autre société » reste, mutation « patron retiré » ajoutée ; il
+     asserte aussi le refus `InactiveOrInvalidAccounts` (F6-5), avec la limite du test « archivé »
+     écrite (résultat, non auteur).
+  4. **Montage** (R6-1) : tous les tests de vente sauf le test 3 sous `disable_rounding_to_5_centimes`
+     — choisi plutôt qu'un TTC multiple de 0.05, que le test « TVA arrondie à zéro » ne peut pas tenir ;
+     achat sans objet (aucune étape d'arrondi).
+  5. Finitions : `NOWAIT` premier emploi, erreur attendue `1205` (mesurée en 10.11.16 par la lentille
+     R), test discriminant sur ce code (R6-4) ; doc-comment d'`attendre_une_requete_en_cours` réécrit,
+     `test_fixtures.rs` aux fichiers touchés (R6-2) ; lettres des cycles expliquées, non renumérotées
+     (R6-3) ; rubrique `### Ajouté` à créer en tête de `[0.13.0]` (F6-3) ; verrous d'intervalle au
+     doc-comment de l'accesseur, `EXPLAIN` à la main en T0, renvoi à C-15-8-23 (F6-4).
+- **Écartées** : (a) découper sur la coupe AC5/AC6 — elle laisse l'axe recyclé entier d'un côté ;
+  (b) un TTC multiple de 0.05 au lieu de désactiver l'arrondi — inapplicable au test « TVA arrondie à
+  zéro » ; (c) laisser le patron `owned_account_ids` au rouge du test — décision certaine différée
+  pour rien ; (d) renuméroter les cycles — C87 cite les lettres.
+- **Signal D5 — à présenter au Project Lead (Guy) en fin d'epic** : la 15-5d a franchi le critère de
+  recyclage en P5 (HIGH F5-1 né de C43) et n'est pas découpée ; la dérogation est écrite dans la fiche
+  (« Dérogation règle de splitting »). En P6, la sévérité baisse (HIGH → MEDIUM) et rien n'est recyclé.
+- **Signalé à l'orchestrateur, hors périmètre** : le doc-comment d'`accounts::delete_all_by_company`
+  (`accounts.rs:1063`) annonce « utilisé par reset_demo », ce qui est faux.
+- **Réversible** : oui (fiche seulement ; code non écrit).
+
+## C-15-5d-1 — 15-5d (dev) : la bloqueuse du test de mode lit `name`, et vérifie elle-même ce qu'elle tient
+
+- **Contexte** : l'AC7 (test 4) fait tenir à la bloqueuse la créance et la TVA due « en partagé » par
+  `SELECT id FROM accounts WHERE id IN (…) LOCK IN SHARE MODE`. Écrit ainsi, le test **passait sous la mutation
+  « accesseur en `FOR UPDATE` »** — celle qu'il existe pour attraper. Mesuré au développement (MariaDB 10.11.16, base
+  de gate à cinq comptes) : le plan de cette requête est `index` sur **`fk_accounts_parent`**, *Using index* — un
+  index secondaire couvrant —, et un verrou **partagé** posé par un index secondaire couvrant ne verrouille **pas**
+  la ligne de la clé primaire ; une sonde `FOR UPDATE NOWAIT` sur la créance réussit alors que la bloqueuse est
+  censée la tenir. La clé étrangère `fk_jel_account` et l'accesseur, eux, verrouillent la clé primaire.
+- **Retenu** : la bloqueuse lit `SELECT id, name …` (`name` n'est dans aucun index secondaire : plan `range` sur
+  `PRIMARY`), et le test **vérifie son propre montage** par deux sondes `NOWAIT` qui doivent échouer (`1205`) avant
+  de lancer la validation. Sous la mutation `FOR UPDATE`, le test rougit désormais (attente sur les comptes, panique
+  au bout de dix secondes). Commentaire écrit au test.
+- **Écartées** : `FORCE INDEX (PRIMARY)` (lie le test à un nom d'index et cache la raison) ; garder la requête de la
+  fiche (test vert à vide).
+- **Portée** : le même piège guette **tout** test qui simule un verrou partagé par `SELECT id … LOCK IN SHARE MODE`
+  sur `accounts` : à signaler à la revue (axe « bloqueuses des tests de verrou »). L'accesseur n'est pas concerné :
+  il lit `active` et `postable`, hors de tout index secondaire (`EXPLAIN` : `range`/`const` sur `PRIMARY`).
+- **Réversibilité** : totale (test seul).
+
+## C-15-5d-2 — 15-5d (dev) : le test « identifiant d'une autre société » passe par le vrai flux
+
+- **Contexte** : l'AC7 fait appeler l'accesseur de verrou par une connexion de test. L'accesseur est
+  `pub(in crate::repositories)` (même visibilité que les générateurs, F5-7) : un test d'intégration ne l'atteint pas.
+- **Retenu** : une bloqueuse tient l'exercice (`FOR UPDATE`) ; la **validation réelle** est lancée et vue en attente
+  sur l'exercice — donc passée l'accesseur, ses verrous posés ; la sonde `NOWAIT` sur la ligne étrangère doit
+  réussir, et une sonde témoin sur la créance doit échouer (`1205` : l'accesseur tient bien la créance). Puis la
+  bloqueuse annule et la validation rend `InactiveOrInvalidAccounts`, rien d'écrit. Mutation « patron
+  `owned_account_ids` retiré » : rouge.
+- **Écartées** : rendre l'accesseur `pub` pour le seul test (élargit une surface que C50/F5-7 ont voulue étroite).
+- **Réversibilité** : totale.
+
+## C-15-5d-3 — 15-5d (dev) : forme du contrôle, réponse HTTP commune, sonde partagée, test de l'avoir
+
+- **Contrôle** : le second temps est une méthode de l'instantané, `DesignatedAccountsSnapshot::check_written(roles,
+  settings)` ; la traduction rôle → identifiant est le `match` exhaustif de `DesignatedRole::designated_id` (C44), les
+  candidats `DesignatedRole::SALE` / `PURCHASE`. Un rôle écrit sans compte désigné (impossible : le générateur a
+  refusé `ConfigurationRequired`) rend `DbError::Invariant` plutôt qu'un `continue` muet.
+- **HTTP** : les bras `AccountsNotPostable` et `DesignatedAccountsNotPostable` partagent
+  `account_not_postable_response(key, fallback, accounts)` (`kesh-api/src/errors.rs`) — même code, même détail, seule
+  la clé du message diffère (règle DRY).
+- **Sonde** : `test_fixtures::sonde_verrou_nowait(pool, sql, id)` — `true` si la sonde réussit, `false` sur `1205`,
+  panique sur toute autre erreur ; partagée par les tests de vente et d'achat.
+- **Avoir** : le test « l'avoir est exempté » (C35) vit dans le module `garde_usage_comptes_reglage` de
+  `invoices_validate_vat.rs` (il en réutilise le montage), et non dans `credit_notes_repository.rs` comme la fiche
+  le prévoyait.
+- **Réversibilité** : totale.
+
+## C-15-5d-4 — 15-5d (dev) : le manuel passe de « quatre cas » à « trois », la garde à l'usage écrite à part
+
+- **Contexte** : l'AC8 réécrit le cas (4) de l'encadré *Rôles des comptes* (« un compte désigné … reste utilisé ») et
+  la phrase « Si vous scindez un tel compte … ».
+- **Retenu** : la garde à l'usage est écrite dans le **premier** paragraphe de l'encadré (où sont les contrôles), avec
+  ses deux exceptions (avoir, compte de produit par défaut) et le remède « un compte imputable — l'un de ses
+  sous-comptes, si vous l'avez scindé » ; l'énumération des cas qui échappent devient **« Trois cas »** (valeur
+  recomptée, `grep` du `.tex` et du PDF aplati). La note des comptes de clôture renvoie désormais à cette section pour
+  « le contrôle à l'usage … et les cas qui échappent encore » (sa phrase précédente ne disait plus tout). Le passage
+  de l'avoir (« l'inverse exact », `user-manual.tex:1234`) n'est pas réécrit (AC8 : #473, #525) ; la brochure n'est
+  pas commitée (régénérée par `make fr`, sans changement de source).
+- **Réversibilité** : totale (texte).
+
+## C-15-5d-5 — 15-5d (revue P1) : le plan de l'accesseur épinglé par `FORCE INDEX (PRIMARY)`
+
+- **Contexte** : finding B-1 (LOW) de la revue de code P1 — l'absence de verrous d'intervalle de la requête
+  verrouillante de `lock_designated_accounts_in_tx` reposait sur un plan `range`/`const` sur `PRIMARY` **mesuré**, que
+  rien ne garantissait sur une table réelle (index secondaires `uq_accounts_company_number` et
+  `uq_accounts_company_singleton_role`, tous deux préfixés par `company_id`).
+- **Retenu** : `FROM accounts FORCE INDEX (PRIMARY) WHERE company_id = ? AND id IN (…) ORDER BY id LOCK IN SHARE MODE`
+  sur la seule requête **verrouillante** (la lecture non verrouillante des identifiants de la société n'en a pas
+  besoin : elle ne pose aucun verrou). `EXPLAIN` relevé sur `kesh_155d` : `range` sur `PRIMARY`, *Using where*, deux
+  identifiants ; `const` pour un seul. Les motifs `ACCESSEUR` des tests de place 1 et 2 suivent le texte de la requête
+  (sans cela, ils attendraient en vain et paniqueraient).
+- **Écarté** : un test qui épinglerait le plan par `EXPLAIN` (le plan dépend des statistiques de la base de test, à
+  cinq comptes ; l'indice le fixe à la source) ; laisser le risque écrit seulement.
+- **Ce que les tests voient, et ce qu'ils ne voient pas** : la suppression de l'indice fait rougir les tests de place
+  1 et 2 — parce que leur motif ne reconnaît plus la requête, **non** parce qu'un verrou d'intervalle apparaîtrait.
+  L'effet sur le plan n'est établi que par l'`EXPLAIN`.
+- **Réversibilité** : totale (une clause SQL, deux constantes de test).
+
+## C-15-5d-6 — 15-5d (revue P1) : les LOW acceptés, et ce qui reste écrit comme angle mort
+
+- **Contexte** : revue de code P1, Sonnet ×3 — B 3 LOW, E 1 MEDIUM et 5 LOW, A 2 LOW. E1 (MEDIUM), B-1, B-2, B-3, A-1
+  et la moitié de E2 sont corrigés (Change Log de la fiche).
+- **Retenu, sans correction** :
+  - **E2, reste** : côté achat, ni test « archivé », ni « compte étranger », ni « deux rôles ». Accepté : l'accesseur
+    et `check_written` sont **communs** aux deux flux et couverts côté vente (archivé, étranger avec sonde, deux rôles,
+    priorité en mélange) ; ce que le site d'achat a en propre — ses candidats (`DesignatedRole::PURCHASE`), sa place,
+    son mode — est couvert par les tests créanciers, TVA récupérable, place 2 et le **test de mode d'achat** ajouté.
+  - **E3** : la garantie « aucun archivage entre le contrôle et l'insertion » n'est testée que pour `postable`.
+    Accepté : `active` et `postable` sont lus par la **même** lecture verrouillante de la même ligne ; un `UPDATE` de
+    l'un ou l'autre prend le même verrou exclusif de ligne. Le test de place 1 exerce ce chemin.
+  - **E4** : la lecture non verrouillante des identifiants de la société (patron `owned_account_ids`) se fait dans
+    l'instantané REPEATABLE READ de l'appelant. Un compte **créé et désigné** par un `PUT` des réglages après
+    l'ouverture de cet instantané, mais avant le verrou des réglages de l'appelant, en serait absent : refus
+    `InactiveOrInvalidAccounts` d'un compte valide. **Angle mort écrit** : refus sûr (rien n'est écrit), réessayable,
+    fenêtre de l'ordre de la milliseconde. Ajouté au doc-comment de l'accesseur.
+  - **E5** : la complétion d'une facture importée (`routes/imported_supplier_invoices.rs`) prend désormais les
+    verrous partagés de l'accesseur sans être rejouée sur interblocage. **Dépendance écrite** : son rejeu relève de la
+    **15-5e2** (rollout du rejeu, closes #536 #484), déjà prévu par la fiche de la 15-5e1 et la phrase des cycles du
+    doc-comment de `supplier_invoices::create_in_tx`. Rien à faire dans la 15-5d.
+  - **E6** : aucun test ne rougit si `ORDER BY id` disparaît. Accepté : deux verrous partagés sont compatibles,
+    l'ordre est ici d'hygiène.
+  - **A-2** : le test de l'avoir exempté vit dans `invoices_validate_vat.rs` et non `credit_notes_repository.rs` ;
+    écart déjà déclaré (C-15-5d-3).
+  - **B-3** : la disjonction par type n'est pas contrôlée après la désignation. Les doc-comments disent désormais
+    pourquoi la vente n'a pas de cycle (deux partagés, quel que soit le type) et, côté achat, écrivent le cycle étroit
+    d'un compte désigné retypé en charge comme angle mort couvert par le rejeu de la route.
+- **E1, ce qui a été corrigé et ce qui ne l'était pas** : l'encadré *Rôles des comptes* (`user-manual.tex`, « Deux
+  exceptions, voulues ») disait déjà l'exemption de l'avoir ; le paragraphe de la validation, non. Une phrase y est
+  ajoutée, avec la raison (« une facture émise doit rester annulable ») et le renvoi.
+- **Réversibilité** : totale.
+
+## C-15-5d-7 — 15-5d (intégration) : rebasée sur `origin/main` (`9cb5083b`, 15-5e2) ; « 5 bis » fusionné, fiche de la branche retenue
+
+- **Contexte** : `origin/main` porte la 15-5e2 (rejeu des douze autres routes, commentaires d'ordre, Pattern 5,
+  `api-external.md` § 10, CHANGELOG, manuels #484). Rebase des huit commits de la 15-5d.
+- **Option retenue** : (1) fiche de la story — la version de `main` (`41f41e60`, validation P5) est un ancêtre de
+  celle de la branche : version de la branche prise entière ; (2) registre et `sprint-status.yaml` — union, la ligne
+  `last_updated` de la 15-5d renumérotée (19) au-dessus de celle de la 15-5e2 (18) ; (3) commentaire « 5 bis » — la
+  formulation de la 15-5e2 (« enveloppe `retry_on_deadlock` ») gardée et le paragraphe de la 15-5d (verrou partagé
+  de la TVA due à la validation, même ordre « arrondi, puis TVA due ») placé à sa suite ; (4) PDF — régénérés sur
+  l'état rebasé, jamais fusionnés. Les doc-comments canoniques, le CHANGELOG, `api-external.md` et les `.tex` ont
+  fusionné sans conflit et ont été relus ; aucune mention `retry_with` ajoutée par la story.
+- **Écartées** : reprendre la fiche de `main` et y rejouer les passes P6–P7 (perte du texte validé) ; garder
+  `retry_with` dans « 5 bis » (contredit la migration de la 15-5e2).
+- **Réversible** : oui (rebase local, branche poussée seulement après les gates).
+
+## C-15-5d-8 — 15-5d (intégration) : rebasée sur `origin/main` (`8f9811d8`, 15-11a) ; registre et sprint-status par union, PDF régénérés
+
+- **Contexte** : `origin/main` porte la 15-11a (compose, `config.rs` qui refuse les gabarits de secrets, manuel
+  d'administration remis en page, CHANGELOG avec rubrique Sécurité). PR #565 en conflit.
+- **Option retenue** : registre — union par ordre d'arrivée (`C-15-11a-1..7` de `main`, puis `C88` et
+  `C-15-5d-1..7`), contrôlée par comparaison des titres `## ` aux deux bornes ; `sprint-status.yaml` — union des
+  lignes `last_updated`, celles de la 15-5d renumérotées (21) et (22) ; PDF — régénérés par `make admin user` après
+  `touch` des `.tex`, jamais fusionnés. CHANGELOG et `.tex` ont fusionné sans conflit et ont été relus (une rubrique
+  de chaque, mise en page des tableaux de la 15-11a intacte). Montage E2E à secrets générés par `openssl rand`.
+- **Écartées** : renuméroter les entrées de la 15-5d (la fiche les cite) ; garder les numéros (19)/(20) de la
+  branche dans `sprint-status.yaml` (doublons avec ceux de la 15-11a).
+- **Réversible** : oui (rebase ; poussé par `--force-with-lease` après les gates).
+

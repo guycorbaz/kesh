@@ -591,6 +591,28 @@ pub enum DbError {
     #[error("Un ou plusieurs comptes ne sont pas imputables")]
     AccountsNotPostable(NonPostableAccounts),
 
+    /// Un ou plusieurs comptes **désignés dans les réglages de facturation** —
+    /// créance, TVA due, créanciers, TVA récupérable —, de la société et actifs,
+    /// ne sont pas imputables au moment où un flux automatique veut y écrire
+    /// (Story 15-5d, #429 ; choix C27, C28).
+    ///
+    /// Jumelle de [`DbError::AccountsNotPostable`] : **même code**
+    /// (`ACCOUNT_NOT_POSTABLE`), **même détail** ([`NonPostableAccounts::details`]),
+    /// un seul contrat pour l'intégrateur. Elle n'en diffère que par le
+    /// **message**, qui dit où agir — *Paramètres → Facturation* — et qui peut le
+    /// faire (un administrateur, choix C36) : le compte n'a pas été choisi dans
+    /// la requête, il vient des réglages.
+    ///
+    /// Émise par le contrôle des comptes désignés
+    /// (`company_invoice_settings::DesignatedAccountsSnapshot::check_written`),
+    /// à la validation d'une facture et à la saisie (ou la complétion) d'une
+    /// facture fournisseur. Un compte désigné absent, d'une autre société ou
+    /// archivé reste [`DbError::InactiveOrInvalidAccounts`] et prime (C49).
+    #[error(
+        "Un ou plusieurs comptes désignés dans les réglages de facturation ne sont pas imputables"
+    )]
+    DesignatedAccountsNotPostable(NonPostableAccounts),
+
     /// Un paiement solde une facture au centime et produit un écart d'arrondi,
     /// mais aucun compte de différences d'arrondi utilisable n'est désigné dans
     /// les paramètres de facturation (Story 25-4-c3-b, #476) : réglage vide, ou
@@ -993,6 +1015,7 @@ impl DbError {
             Self::LaterFiscalYearClosed { .. } => "LATER_FISCAL_YEAR_CLOSED",
             Self::InactiveOrInvalidAccounts => "INACTIVE_OR_INVALID_ACCOUNTS",
             Self::AccountsNotPostable(_) => "ACCOUNT_NOT_POSTABLE",
+            Self::DesignatedAccountsNotPostable(_) => "ACCOUNT_NOT_POSTABLE",
             Self::RoundingAccountNotConfigured { .. } => "ROUNDING_ACCOUNT_NOT_CONFIGURED",
             Self::WriteOffAccountNotConfigured { .. } => "WRITE_OFF_ACCOUNT_NOT_CONFIGURED",
             Self::InvoiceBelowMinimum { .. } => "INVOICE_BELOW_MINIMUM",

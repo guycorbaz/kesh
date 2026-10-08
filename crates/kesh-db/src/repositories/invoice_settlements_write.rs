@@ -484,6 +484,10 @@ pub async fn write_off_invoice(
     //         APRÈS l'exercice. Un interblocage reste donc possible ; la route est
     //         rejouée (`write_off_invoice_handler`, enveloppe `retry_on_deadlock`),
     //         cf. la règle au doc-comment de `invoices::validate_invoice`.
+    //         Depuis la Story 15-5d, la validation verrouille elle aussi la TVA
+    //         due (et la créance), EN PARTAGÉ, après le compte d'arrondi et AVANT
+    //         l'exercice — le même ordre « arrondi, puis TVA due » que ce flux ; un
+    //         interblocage restant entre eux est rejoué par les deux routes.
     let rounding_account_id = if nature == SettlementWriteOffNature::Rounding {
         Some(nature_account_id)
     } else if amount != invoice_settlements::amount_due_to_centime(amount) {

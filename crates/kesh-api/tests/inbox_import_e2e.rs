@@ -1273,3 +1273,68 @@ async fn download_source_document_404_410_and_idor(pool: MySqlPool) {
         .unwrap();
     assert_eq!(r_idor.status(), 404);
 }
+
+// ============================================================
+// Story 15-5d (#429) — la garde À L'USAGE à la complétion
+// ============================================================
+
+/// La complétion d'une facture importée crée la facture fournisseur par le
+/// même chemin que la saisie (`supplier_invoices::create_in_tx`) : un compte
+/// créanciers désigné **devenu non imputable** la refuse en 400
+/// `ACCOUNT_NOT_POSTABLE` ; rollback total — le staging reste `to_complete`,
+/// aucune facture fournisseur n'est créée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn complete_refuses_a_designated_payable_made_non_postable(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let app = spawn_app(pool.clone(), 25 * 1024 * 1024).await;
+    let staging_id = seed_staging(
+        &pool,
+        ctx.seeded.company_id,
+        "CHF",
+        false,
+        "NON",
+        None,
+        Some(dec!(100.00)),
+        "Robert SA",
+        "x.png",
+    )
+    .await;
+    // Le compte créanciers, désigné par `setup`, puis rendu non imputable.
+    let payable = ctx.seeded.accounts["2000"];
+    sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+        .bind(payable)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let resp = app
+        .client
+        .post(app.url(&format!(
+            "/api/v1/imported-supplier-invoices/{staging_id}/complete"
+        )))
+        .bearer_auth(&ctx.jwt)
+        .json(&complete_body(
+            ctx.supplier_id,
+            ctx.seeded.accounts["4000"],
+            dec!(1),
+            dec!(100.00),
+            dec!(0),
+        ))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status();
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(body["error"]["code"], "ACCOUNT_NOT_POSTABLE", "{body}");
+    assert_eq!(
+        body["error"]["details"]["rejected"],
+        json!([{ "accountId": payable, "accountNumber": "2000" }]),
+        "{body}"
+    );
+    assert_eq!(staging_status(&pool, staging_id).await, "to_complete");
+    assert_eq!(
+        supplier_invoice_count(&pool, ctx.seeded.company_id).await,
+        0
+    );
+}

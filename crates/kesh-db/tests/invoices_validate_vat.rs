@@ -1049,3 +1049,555 @@ mod montant_minimum {
         .expect("avoir sous le seuil : accepté");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Story 15-5d (#429) — la garde À L'USAGE des comptes de réglage, côté vente
+// ---------------------------------------------------------------------------
+
+/// La créance et la TVA due désignées dans les réglages, contrôlées au moment où
+/// la validation y écrit : `DesignatedAccountsNotPostable` (AC1, AC7).
+///
+/// Montage commun (finding R6-1, choix C88) : `seed_accounting_company` (créance
+/// `1100`, TVA due `2000`, exercice 2020-2030), **puis l'arrondi à 5 centimes
+/// désactivé** — sans quoi une facture au TTC non multiple de 0.05 réclamerait un
+/// compte d'arrondi que ce montage ne désigne pas, et s'arrêterait AVANT
+/// l'accesseur. Chaque compte de test est **désigné avant** d'être rendu non
+/// imputable : le chemin réel (l'exemption « inchangé » de la 15-5b l'a laissé en
+/// place).
+mod garde_usage_comptes_reglage {
+    use super::*;
+    use kesh_db::entities::NewCreditNote;
+    use kesh_db::errors::RevenueAccountRejection;
+    use kesh_db::repositories::credit_notes;
+    use kesh_db::test_fixtures::{
+        attendre_une_requete_en_cours, disable_rounding_to_5_centimes, sonde_verrou_nowait,
+    };
+
+    /// Motifs de la requête VERROUILLANTE de l'accesseur
+    /// (`lock_designated_accounts_in_tx`) ; la lecture préalable des identifiants
+    /// de la société ne porte pas `LOCK IN SHARE MODE`.
+    const ACCESSEUR: &[&str] = &[
+        "FROM accounts FORCE INDEX (PRIMARY) WHERE company_id",
+        "LOCK IN SHARE MODE",
+    ];
+    /// Motifs de `fiscal_years::find_open_covering_date`.
+    const EXERCICE: &[&str] = &["FROM fiscal_years", "FOR UPDATE"];
+    const SONDE_EXERCICE: &str = "SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE NOWAIT";
+    const SONDE_COMPTE: &str = "SELECT id FROM accounts WHERE id = ? FOR UPDATE NOWAIT";
+
+    async fn setup(pool: &MySqlPool) -> (SeededCompany, i64) {
+        let seeded = seed_accounting_company(pool).await.unwrap();
+        disable_rounding_to_5_centimes(pool, seeded.company_id)
+            .await
+            .unwrap();
+        let contact = make_contact(pool, seeded.company_id, seeded.admin_user_id).await;
+        (seeded, contact)
+    }
+
+    /// Une facture brouillon, `(taux, prix unitaire, compte de produit)` à
+    /// quantité 1.
+    async fn draft(
+        pool: &MySqlPool,
+        seeded: &SeededCompany,
+        contact_id: i64,
+        lines: &[(Decimal, Decimal, Option<i64>)],
+    ) -> i64 {
+        let new = NewInvoice {
+            company_id: seeded.company_id,
+            contact_id,
+            date: NaiveDate::from_ymd_opt(INVOICE_DATE.0, INVOICE_DATE.1, INVOICE_DATE.2).unwrap(),
+            due_date: None,
+            payment_terms: None,
+            lines: lines
+                .iter()
+                .map(|(rate, price, account)| NewInvoiceLine {
+                    revenue_account_id: *account,
+                    description: "Ligne".into(),
+                    quantity: dec!(1),
+                    unit_price: *price,
+                    vat_rate: *rate,
+                })
+                .collect(),
+            project_id: None,
+        };
+        invoices::create(pool, seeded.admin_user_id, new)
+            .await
+            .expect("create invoice")
+            .0
+            .id
+    }
+
+    async fn validate(
+        pool: &MySqlPool,
+        seeded: &SeededCompany,
+        invoice_id: i64,
+    ) -> Result<invoices::ValidatedInvoice, DbError> {
+        invoices::validate_invoice(pool, seeded.company_id, invoice_id, seeded.admin_user_id).await
+    }
+
+    async fn set_postable(pool: &MySqlPool, account_id: i64, postable: bool) {
+        sqlx::query("UPDATE accounts SET postable = ? WHERE id = ?")
+            .bind(postable)
+            .bind(account_id)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    /// `(id, numéro)` des comptes nommés par un `DesignatedAccountsNotPostable`.
+    fn designated_rejected(err: DbError) -> Vec<(i64, String)> {
+        match err {
+            DbError::DesignatedAccountsNotPostable(list) => list
+                .iter()
+                .map(|a| (a.account_id, a.account_number.clone()))
+                .collect(),
+            other => panic!("attendu DesignatedAccountsNotPostable, obtenu {other:?}"),
+        }
+    }
+
+    /// La facture est restée brouillon et la société n'a aucune écriture.
+    async fn assert_nothing_written(pool: &MySqlPool, seeded: &SeededCompany, invoice_id: i64) {
+        let status: String = sqlx::query_scalar("SELECT status FROM invoices WHERE id = ?")
+            .bind(invoice_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!(status, "draft", "la facture doit rester brouillon");
+        let entries: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE company_id = ?")
+                .bind(seeded.company_id)
+                .fetch_one(pool)
+                .await
+                .unwrap();
+        assert_eq!(entries, 0, "aucune écriture ne doit avoir été passée");
+    }
+
+    /// Créance non imputable → validation refusée, le compte nommé `(id, n°)`.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn receivable_not_postable_refuses_validation(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        let receivable = seeded.accounts["1100"];
+        set_postable(&pool, receivable, false).await;
+
+        let err = validate(&pool, &seeded, id).await.expect_err("refusée");
+        assert_eq!(err.error_code(), "ACCOUNT_NOT_POSTABLE");
+        assert_eq!(
+            designated_rejected(err),
+            vec![(receivable, "1100".to_string())]
+        );
+        assert_nothing_written(&pool, &seeded, id).await;
+    }
+
+    /// TVA due non imputable : avec TVA → refusée ; sans TVA → validée ; à taux
+    /// positif dont la TVA arrondit à zéro → validée (le prédicat est
+    /// `total_vat > 0`, non « une ligne à taux > 0 »).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn vat_payable_not_postable_refuses_only_when_vat_is_written(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let vat = seeded.accounts["2000"];
+        let with_vat = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        let without_vat = draft(&pool, &seeded, contact, &[(dec!(0), dec!(100.00), None)]).await;
+        // HT 0.01 à 8.1 % : TVA arrondie à 0.00, aucune ligne de TVA due.
+        let rounds_to_zero =
+            draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(0.01), None)]).await;
+        set_postable(&pool, vat, false).await;
+
+        let err = validate(&pool, &seeded, with_vat)
+            .await
+            .expect_err("avec TVA : refusée");
+        assert_eq!(designated_rejected(err), vec![(vat, "2000".to_string())]);
+
+        validate(&pool, &seeded, without_vat)
+            .await
+            .expect("sans TVA : la TVA due n'est pas écrite, la validation passe");
+        validate(&pool, &seeded, rounds_to_zero)
+            .await
+            .expect("TVA arrondie à zéro : la TVA due n'est pas écrite, la validation passe");
+    }
+
+    /// Créance ET TVA due non imputables, sur deux comptes DISTINCTS → un seul
+    /// refus qui les nomme tous deux (`count = 2`, pluriel).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn receivable_and_vat_payable_are_named_in_one_refusal(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        let (receivable, vat) = (seeded.accounts["1100"], seeded.accounts["2000"]);
+        set_postable(&pool, receivable, false).await;
+        set_postable(&pool, vat, false).await;
+
+        let err = validate(&pool, &seeded, id).await.expect_err("refusée");
+        assert_eq!(
+            designated_rejected(err),
+            vec![(receivable, "1100".to_string()), (vat, "2000".to_string())]
+        );
+        assert_nothing_written(&pool, &seeded, id).await;
+    }
+
+    /// Un même compte désigné pour DEUX rôles (créance et TVA due), rendu non
+    /// imputable, facture avec TVA → nommé UNE fois (`count = 1`, singulier) :
+    /// le dédoublonnage de `NonPostableAccounts::new` est atteint par l'accesseur
+    /// (choix C40).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn one_account_for_two_roles_is_named_once(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let receivable = seeded.accounts["1100"];
+        sqlx::query(
+            "UPDATE company_invoice_settings SET default_vat_payable_account_id = ? \
+             WHERE company_id = ?",
+        )
+        .bind(receivable)
+        .bind(seeded.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        set_postable(&pool, receivable, false).await;
+
+        let err = validate(&pool, &seeded, id).await.expect_err("refusée");
+        let DbError::DesignatedAccountsNotPostable(list) = err else {
+            panic!("attendu DesignatedAccountsNotPostable, obtenu {err:?}");
+        };
+        assert_eq!(list.len(), 1, "le compte commun doit être nommé une fois");
+        assert_eq!(list.details()["rejected"].as_array().unwrap().len(), 1);
+        assert_eq!(list.numbers(), vec!["1100"]);
+    }
+
+    /// Ordre des refus — le compte de produit EXPLICITE d'une ligne non
+    /// imputable passe avant : `InvalidRevenueAccounts`, raison `NotPostable`
+    /// (Story 16-1a ; finding F5-2).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn line_revenue_account_refusal_comes_first(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let services: i64 = sqlx::query(
+            "INSERT INTO accounts (company_id, number, name, account_type) \
+             VALUES (?, '3200', 'Prestations', 'Revenue')",
+        )
+        .bind(seeded.company_id)
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        let id = draft(
+            &pool,
+            &seeded,
+            contact,
+            &[(dec!(8.10), dec!(100.00), Some(services))],
+        )
+        .await;
+        set_postable(&pool, services, false).await;
+        set_postable(&pool, seeded.accounts["1100"], false).await;
+
+        let err = validate(&pool, &seeded, id).await.expect_err("refusée");
+        match err {
+            DbError::InvalidRevenueAccounts(rejected) => {
+                assert_eq!(rejected[0].reason, RevenueAccountRejection::NotPostable);
+            }
+            other => panic!("attendu InvalidRevenueAccounts, obtenu {other:?}"),
+        }
+    }
+
+    /// Ordre des refus — TVA due ABSENTE (et créance non imputable) →
+    /// `ConfigurationRequired` du générateur, avant la garde (finding F4-5).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn missing_vat_payable_comes_before_the_guard(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        sqlx::query(
+            "UPDATE company_invoice_settings SET default_vat_payable_account_id = NULL \
+             WHERE company_id = ?",
+        )
+        .bind(seeded.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        set_postable(&pool, seeded.accounts["1100"], false).await;
+
+        let err = validate(&pool, &seeded, id).await.expect_err("refusée");
+        assert!(
+            matches!(&err, DbError::ConfigurationRequired(f) if f == "default_vat_payable_account_id"),
+            "attendu ConfigurationRequired, obtenu {err:?}"
+        );
+    }
+
+    /// Ordre des refus — aucun exercice ouvert ET créance non imputable →
+    /// `FiscalYearInvalid` : le verrou des comptes précède l'exercice, leur
+    /// refus non (finding F2-1, C43).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn no_open_fiscal_year_comes_before_the_guard(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+            .bind(seeded.fiscal_year_id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        set_postable(&pool, seeded.accounts["1100"], false).await;
+
+        let err = validate(&pool, &seeded, id).await.expect_err("refusée");
+        assert!(
+            matches!(err, DbError::FiscalYearInvalid),
+            "attendu FiscalYearInvalid, obtenu {err:?}"
+        );
+    }
+
+    /// Compte de réglage ARCHIVÉ → `InactiveOrInvalidAccounts`, rendu par
+    /// l'accesseur (C49) — la variante neuve n'est pas émise.
+    ///
+    /// ⚠️ Ce test prouve le **résultat**, non **qui** le produit : sans la course
+    /// d'archivage entre l'instantané et le verrou, le contrôle non verrouillant
+    /// de `create_in_tx` rendrait le même refus. Le refus de l'accesseur est
+    /// vérifié à la lecture (Dev Agent Record) ; sa mutation n'est pas attendue
+    /// rouge.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn archived_designated_account_is_inactive_or_invalid(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        sqlx::query("UPDATE accounts SET active = FALSE, postable = FALSE WHERE id = ?")
+            .bind(seeded.accounts["1100"])
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let err = validate(&pool, &seeded, id).await.expect_err("refusée");
+        assert!(
+            matches!(err, DbError::InactiveOrInvalidAccounts),
+            "attendu InactiveOrInvalidAccounts, obtenu {err:?}"
+        );
+        assert_nothing_written(&pool, &seeded, id).await;
+    }
+
+    /// Priorité des refus **en mélange** (C49 ; revue de code P1, E2) :
+    /// créance non imputable ET TVA due archivée →
+    /// `InactiveOrInvalidAccounts`, et non la variante qui nommerait la
+    /// créance. Le contrôle juge « absent ou inactif » sur TOUS les rôles écrits
+    /// avant de nommer un compte non imputable, quel que soit l'ordre des rôles
+    /// (la créance précède la TVA due).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn archived_account_wins_over_a_non_postable_one(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        set_postable(&pool, seeded.accounts["1100"], false).await;
+        sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+            .bind(seeded.accounts["2000"])
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let err = validate(&pool, &seeded, id).await.expect_err("refusée");
+        assert!(
+            matches!(err, DbError::InactiveOrInvalidAccounts),
+            "attendu InactiveOrInvalidAccounts, obtenu {err:?}"
+        );
+        assert_nothing_written(&pool, &seeded, id).await;
+    }
+
+    /// L'AVOIR est exempté de la garde à l'usage, délibérément (C35) : une
+    /// facture dont la créance des réglages est devenue non imputable reste
+    /// annulable.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn credit_note_is_exempt_from_the_guard(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        validate(&pool, &seeded, id).await.expect("validée");
+        set_postable(&pool, seeded.accounts["1100"], false).await;
+
+        credit_notes::create_credit_note(
+            &pool,
+            NewCreditNote {
+                company_id: seeded.company_id,
+                invoice_id: id,
+                date: NaiveDate::from_ymd_opt(INVOICE_DATE.0, INVOICE_DATE.1, INVOICE_DATE.2)
+                    .unwrap(),
+            },
+            seeded.admin_user_id,
+        )
+        .await
+        .expect("l'avoir est émis malgré la créance non imputable (C35)");
+    }
+
+    /// Un compte d'une AUTRE société posé comme TVA due des réglages
+    /// (choix C51, C88 ; findings F3-5, F6-5).
+    ///
+    /// (1) **Il n'est jamais verrouillé** : la validation est tenue en attente sur
+    /// l'exercice — donc PASSÉE l'accesseur, ses verrous posés — et une sonde
+    /// `FOR UPDATE NOWAIT` sur la ligne étrangère réussit. Sous la mutation qui
+    /// retire le patron `owned_account_ids` (verrou posé directement sur
+    /// `company_id = ? AND id IN (…)`), la ligne étrangère est verrouillée avant
+    /// que le filtre ne l'écarte, et la sonde échoue (`1205`).
+    ///
+    /// (2) **Il est refusé** `InactiveOrInvalidAccounts` (branche « absent de
+    /// l'instantané »). ⚠️ Même limite que le test « archivé » : sans cette
+    /// branche, le contrôle non verrouillant de `create_in_tx` rendrait le même
+    /// refus — le test prouve le résultat, non qui le produit.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn foreign_account_is_never_locked_and_is_refused(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let other_company: i64 = sqlx::query(
+            "INSERT INTO companies (name, address, org_type, accounting_language, \
+             instance_language) VALUES ('Autre SA', 'Rue 3\n1000 Lausanne', 'Independant', \
+             'FR', 'FR')",
+        )
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        let foreign: i64 = sqlx::query(
+            "INSERT INTO accounts (company_id, number, name, account_type) \
+             VALUES (?, '2200', 'TVA due étrangère', 'Liability')",
+        )
+        .bind(other_company)
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        sqlx::query(
+            "UPDATE company_invoice_settings SET default_vat_payable_account_id = ? \
+             WHERE company_id = ?",
+        )
+        .bind(foreign)
+        .bind(seeded.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+
+        // La bloqueuse tient l'exercice : la validation s'y arrêtera, après
+        // l'accesseur.
+        let mut bloqueuse = pool.begin().await.unwrap();
+        sqlx::query("SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE")
+            .bind(seeded.fiscal_year_id)
+            .fetch_all(&mut *bloqueuse)
+            .await
+            .unwrap();
+        let (p, c, u) = (pool.clone(), seeded.company_id, seeded.admin_user_id);
+        let tache = tokio::spawn(async move { invoices::validate_invoice(&p, c, id, u).await });
+        let vue = attendre_une_requete_en_cours(&pool, EXERCICE, || tache.is_finished()).await;
+        assert!(
+            vue,
+            "la validation a fini sans attendre l'exercice : {:?}",
+            tache.await.map(|r| r.map(|_| ()))
+        );
+        assert!(
+            sonde_verrou_nowait(&pool, SONDE_COMPTE, foreign).await,
+            "le compte d'une autre société ne doit pas être verrouillé par l'accesseur"
+        );
+        // Témoin : la créance, elle, est tenue (en partagé) par l'accesseur.
+        assert!(
+            !sonde_verrou_nowait(&pool, SONDE_COMPTE, seeded.accounts["1100"]).await,
+            "la créance de la société doit être verrouillée par l'accesseur"
+        );
+        bloqueuse.rollback().await.unwrap();
+
+        let err = tache.await.expect("tâche").expect_err("refusée");
+        assert!(
+            matches!(err, DbError::InactiveOrInvalidAccounts),
+            "attendu InactiveOrInvalidAccounts, obtenu {err:?}"
+        );
+        assert_nothing_written(&pool, &seeded, id).await;
+    }
+
+    /// **Test de place 1** — vente : le verrou des comptes désignés précède
+    /// l'exercice, et il lit la ligne FRAÎCHE (C43, C87).
+    ///
+    /// La bloqueuse exécute l'`UPDATE accounts SET postable = FALSE` de la créance
+    /// sans conclure (le geste réel d'un passage à non imputable : verrou
+    /// exclusif). La validation est vue en attente **sur l'accesseur** ; une
+    /// sonde sur l'exercice réussit : la validation ne le tient pas encore. La
+    /// bloqueuse valide ; la validation lit la ligne fraîche et refuse.
+    ///
+    /// Sous l'ordre fautif (verrou après l'exercice), la sonde échoue ; sous un
+    /// accesseur sans verrou, la tâche n'est jamais vue en attente sur
+    /// l'accesseur — le test rougit dans les deux cas.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn place_1_sale_lock_precedes_fiscal_year_and_reads_fresh(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        let receivable = seeded.accounts["1100"];
+
+        let mut bloqueuse = pool.begin().await.unwrap();
+        sqlx::query("UPDATE accounts SET postable = FALSE WHERE id = ?")
+            .bind(receivable)
+            .execute(&mut *bloqueuse)
+            .await
+            .unwrap();
+        let (p, c, u) = (pool.clone(), seeded.company_id, seeded.admin_user_id);
+        let tache = tokio::spawn(async move { invoices::validate_invoice(&p, c, id, u).await });
+        let vue = attendre_une_requete_en_cours(&pool, ACCESSEUR, || tache.is_finished()).await;
+        assert!(
+            vue,
+            "la validation n'a pas été vue en attente sur l'accesseur : {:?}",
+            tache.await.map(|r| r.map(|_| ()))
+        );
+        assert!(
+            sonde_verrou_nowait(&pool, SONDE_EXERCICE, seeded.fiscal_year_id).await,
+            "la validation ne doit pas encore tenir l'exercice"
+        );
+        bloqueuse.commit().await.unwrap();
+
+        let err = tache.await.expect("tâche").expect_err("refusée");
+        assert_eq!(
+            designated_rejected(err),
+            vec![(receivable, "1100".to_string())]
+        );
+        assert_nothing_written(&pool, &seeded, id).await;
+    }
+
+    /// **Test de mode 4** — vente : le verrou des comptes désignés est PARTAGÉ
+    /// (C87 ; le seul test qui rougit si l'accesseur repasse en `FOR UPDATE`).
+    ///
+    /// La bloqueuse reproduit ce que tient un règlement client à l'insertion de
+    /// ses lignes : l'exercice en exclusif, la créance et la TVA due en partagé.
+    /// La validation est vue en attente **sur l'exercice** — donc passée
+    /// l'accesseur malgré les partagés de la bloqueuse. Sous un accesseur en
+    /// `FOR UPDATE`, elle attendrait sur les comptes, et
+    /// `attendre_une_requete_en_cours` paniquerait au bout de dix secondes.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn mode_4_sale_lock_is_shared(pool: MySqlPool) {
+        let (seeded, contact) = setup(&pool).await;
+        let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
+        let (receivable, vat) = (seeded.accounts["1100"], seeded.accounts["2000"]);
+
+        let mut bloqueuse = pool.begin().await.unwrap();
+        sqlx::query("SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE")
+            .bind(seeded.fiscal_year_id)
+            .fetch_all(&mut *bloqueuse)
+            .await
+            .unwrap();
+        // ⛔ `name` est lu À DESSEIN : `SELECT id … LOCK IN SHARE MODE` est
+        // couvert par un index secondaire (`fk_accounts_parent`, mesuré par
+        // `EXPLAIN` sur ce montage à cinq comptes), et un verrou PARTAGÉ posé
+        // par un index secondaire couvrant ne verrouille PAS la ligne de la clé
+        // primaire — celle que prennent `fk_jel_account` et l'accesseur. La
+        // bloqueuse ne tiendrait alors rien, et le test passerait sous un
+        // accesseur en `FOR UPDATE` (constaté au développement : mutation
+        // restée verte). `name` n'est dans aucun index secondaire.
+        sqlx::query("SELECT id, name FROM accounts WHERE id IN (?, ?) LOCK IN SHARE MODE")
+            .bind(receivable)
+            .bind(vat)
+            .fetch_all(&mut *bloqueuse)
+            .await
+            .unwrap();
+        // Le montage lui-même est vérifié : les deux lignes sont bien tenues.
+        for compte in [receivable, vat] {
+            assert!(
+                !sonde_verrou_nowait(&pool, SONDE_COMPTE, compte).await,
+                "la bloqueuse doit tenir le compte {compte} en partagé"
+            );
+        }
+        let (p, c, u) = (pool.clone(), seeded.company_id, seeded.admin_user_id);
+        let tache = tokio::spawn(async move { invoices::validate_invoice(&p, c, id, u).await });
+        let vue = attendre_une_requete_en_cours(&pool, EXERCICE, || tache.is_finished()).await;
+        assert!(
+            vue,
+            "la validation a fini sans attendre l'exercice : {:?}",
+            tache.await.map(|r| r.map(|_| ()))
+        );
+        bloqueuse.rollback().await.unwrap();
+
+        tache
+            .await
+            .expect("tâche")
+            .expect("la validation réussit une fois l'exercice rendu");
+    }
+}

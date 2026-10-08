@@ -124,6 +124,12 @@ export interface InvoiceSettingsResponse {
 	defaultVatPayableAccountId: number | null;
 	defaultVatRecoverableAccountId: number | null;
 	defaultVatDecompteAccountId: number | null;
+	/**
+	 * Compte créanciers (dette fournisseurs, passif) — crédité par la saisie d'une
+	 * facture fournisseur (Story 15-5d, choix C34). `null` : non désigné ; un compte
+	 * désigné peut être devenu non imputable depuis, et l'écran le montre en place.
+	 */
+	defaultPayableAccountId: number | null;
 	defaultSalesJournal: JournalCode;
 	journalEntryDescriptionTemplate: string;
 	/** Compte de différences d'arrondi — charge ou produit (Story 25-4-c3-a1). */
@@ -146,6 +152,13 @@ export interface UpdateInvoiceSettingsRequest {
 	defaultVatPayableAccountId: number | null;
 	defaultVatRecoverableAccountId: number | null;
 	defaultVatDecompteAccountId: number | null;
+	/**
+	 * Compte créanciers (dette fournisseurs, passif) — l'écran l'envoie toujours
+	 * (Story 15-5d, choix C34) ; `null` l'efface. Le serveur accepte aussi une
+	 * requête qui l'omet et le préserve alors (Story 15-5b, AC19), forme que ce
+	 * type ne produit pas.
+	 */
+	defaultPayableAccountId: number | null;
 	defaultSalesJournal: JournalCode;
 	journalEntryDescriptionTemplate: string;
 	/** Compte de différences d'arrondi — charge ou produit (Story 25-4-c3-a1). */

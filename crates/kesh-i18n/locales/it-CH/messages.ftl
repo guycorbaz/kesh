@@ -285,6 +285,10 @@ error-account-not-postable = { $count ->
     [one] Il conto { $numbers } non è registrabile (conto di raggruppamento, di risultato o di chiusura): scegliere un conto registrabile.
    *[other] I conti { $numbers } non sono registrabili (conti di raggruppamento, di risultato o di chiusura): scegli conti registrabili.
 }
+error-designated-account-not-postable = { $count ->
+    [one] Il conto { $numbers }, designato in Impostazioni → Fatturazione, non è registrabile (conto di raggruppamento, di risultato o di chiusura): un amministratore deve designarvi al suo posto un conto registrabile.
+   *[other] I conti { $numbers }, designati in Impostazioni → Fatturazione, non sono registrabili (conti di raggruppamento, di risultato o di chiusura): un amministratore deve designarvi al loro posto conti registrabili.
+}
 error-rounding-account-not-configured = Questo pagamento salda la fattura al centesimo, ma non è designato alcun conto utilizzabile per le differenze di arrotondamento: sceglierne uno in Impostazioni → Fatturazione.
 error-rounding-account-not-configured-issuance = Il totale di questo documento è arrotondato a 5 centesimi, ma non è designato alcun conto utilizzabile per le differenze di arrotondamento: sceglierne uno in Impostazioni → Fatturazione.
 error-write-off-account-not-configured-discount = Nessun conto sconti utilizzabile è designato: sceglietene uno in Impostazioni → Fatturazione, sezione Saldo del residuo.
@@ -1798,6 +1802,7 @@ settings-invoicing-load-error = Errore di caricamento
 settings-invoicing-save-error = Errore durante il salvataggio
 settings-invoicing-journal = Giornale
 settings-invoicing-receivable-account = Conto crediti verso clienti (Attivo)
+settings-invoicing-payable-account = Conto debiti verso fornitori (Passivo)
 settings-invoicing-revenue-account = Conto ricavi (Ricavo)
 settings-invoicing-save = Salva
 settings-invoicing-save-success = Configurazione salvata

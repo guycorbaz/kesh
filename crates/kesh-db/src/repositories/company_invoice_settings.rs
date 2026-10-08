@@ -16,13 +16,18 @@
 //! d'autre. Le fallback HRTB générique sur `Executor` est notoirement
 //! fragile avec SQLx 0.8 — duplication préférée (cf. spec pass 2 P13).
 
+use std::collections::BTreeSet;
+
 use sqlx::mysql::MySqlPool;
+use sqlx::{MySql, QueryBuilder};
 
 use crate::entities::audit_log::NewAuditLogEntry;
 use crate::entities::{
     AccountRole, AccountType, CompanyInvoiceSettings, CompanyInvoiceSettingsUpdate, Journal,
 };
-use crate::errors::{DbError, RoundingContext, map_db_error};
+use crate::errors::{
+    DbError, NonPostableAccount, NonPostableAccounts, RoundingContext, map_db_error,
+};
 use crate::repositories::audit_log;
 
 const COLUMNS: &str = "company_id, invoice_number_format, default_receivable_account_id, \
@@ -505,6 +510,303 @@ async fn usable_designated_account(
     .fetch_optional(&mut *conn)
     .await
     .map_err(map_db_error)
+}
+
+// ---------------------------------------------------------------------------
+// Story 15-5d (#429) — la garde À L'USAGE des comptes de réglage
+// ---------------------------------------------------------------------------
+
+/// Un **champ** des réglages de facturation qu'un générateur d'écriture a
+/// effectivement écrit (Story 15-5d, choix C39, C44).
+///
+/// Type neuf plutôt qu'[`AccountRole`] (C44) : il désigne un champ des
+/// réglages, non le rôle que le plan attribue au compte (un compte désigné ne
+/// porte pas forcément ce rôle) ; ses quatre variantes se traduisent en champs
+/// par un `match` exhaustif ([`DesignatedRole::designated_id`]) ; et il dérive
+/// `Ord`, qu'exige le `BTreeSet` de [`GeneratedLines`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(in crate::repositories) enum DesignatedRole {
+    /// `default_receivable_account_id` — la créance de la facture de vente.
+    Receivable,
+    /// `default_vat_payable_account_id` — la TVA due de la facture de vente.
+    VatPayable,
+    /// `default_payable_account_id` — le compte créanciers de la facture
+    /// fournisseur.
+    Payable,
+    /// `default_vat_recoverable_account_id` — la TVA récupérable (impôt
+    /// préalable) de la facture fournisseur.
+    VatRecoverable,
+}
+
+impl DesignatedRole {
+    /// Les rôles qu'une **validation de facture** peut écrire : ses candidats.
+    pub(in crate::repositories) const SALE: [DesignatedRole; 2] =
+        [DesignatedRole::Receivable, DesignatedRole::VatPayable];
+    /// Les rôles qu'une **saisie de facture fournisseur** peut écrire.
+    pub(in crate::repositories) const PURCHASE: [DesignatedRole; 2] =
+        [DesignatedRole::Payable, DesignatedRole::VatRecoverable];
+
+    /// L'identifiant que les réglages désignent pour ce rôle (`None` : champ
+    /// vide).
+    pub(in crate::repositories) fn designated_id(
+        self,
+        settings: &CompanyInvoiceSettings,
+    ) -> Option<i64> {
+        match self {
+            DesignatedRole::Receivable => settings.default_receivable_account_id,
+            DesignatedRole::VatPayable => settings.default_vat_payable_account_id,
+            DesignatedRole::Payable => settings.default_payable_account_id,
+            DesignatedRole::VatRecoverable => settings.default_vat_recoverable_account_id,
+        }
+    }
+
+    /// Les identifiants désignés pour `roles` — les **candidats** d'un flux,
+    /// qu'il les écrive ou non ; un champ vide n'y entre pas.
+    pub(in crate::repositories) fn candidate_ids(
+        roles: &[DesignatedRole],
+        settings: &CompanyInvoiceSettings,
+    ) -> Vec<i64> {
+        roles
+            .iter()
+            .filter_map(|r| r.designated_id(settings))
+            .collect()
+    }
+}
+
+/// Les lignes d'une écriture générée, **avec** les rôles de réglage qu'elle
+/// écrit effectivement (Story 15-5d, choix C39, C50).
+///
+/// La garde ne contrôle que les comptes de ces rôles : aucun recalcul de la
+/// TVA hors du générateur, aucune inspection des `account_id` des lignes —
+/// ambiguë dès qu'un même compte joue deux rôles, ou qu'un compte de réglage
+/// coïncide avec un compte de produit ou de charge d'une ligne.
+#[derive(Debug)]
+pub(in crate::repositories) struct GeneratedLines {
+    /// Les lignes de l'écriture, telles que `journal_entries::create_in_tx` les
+    /// attend.
+    pub lines: Vec<crate::entities::NewJournalEntryLine>,
+    /// Les rôles de réglage effectivement écrits par ces lignes.
+    pub roles: BTreeSet<DesignatedRole>,
+}
+
+/// Un compte désigné tel que l'a lu le verrou de
+/// [`lock_designated_accounts_in_tx`].
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct LockedDesignatedAccount {
+    id: i64,
+    number: String,
+    active: bool,
+    postable: bool,
+}
+
+/// L'instantané **verrouillé** des comptes candidats d'un flux, rendu par
+/// [`lock_designated_accounts_in_tx`] ; ses lignes restent verrouillées (en
+/// partagé) jusqu'au commit, il n'y a donc rien à relire pour le contrôle.
+#[derive(Debug)]
+pub(in crate::repositories) struct DesignatedAccountsSnapshot(Vec<LockedDesignatedAccount>);
+
+/// **Premier temps** de la garde à l'usage des comptes de réglage (Story 15-5d,
+/// #429 ; choix C27, C43, C49, C51, C87, C88) : verrouille **tous les comptes
+/// candidats** du flux et rend leur instantané, **sans rien refuser**.
+///
+/// Les candidats sont les comptes que les réglages désignent pour les rôles que
+/// le flux **peut** écrire, qu'il les écrive ou non ([`DesignatedRole::SALE`],
+/// [`DesignatedRole::PURCHASE`]) : la génération, qui dira lesquels sont
+/// effectivement écrits, vient après l'exercice, et le verrou doit le précéder.
+/// Verrouiller un candidat que le générateur n'écrira pas (TVA due d'une
+/// facture sans TVA) coûte un verrou partagé superflu, jamais un refus. Le
+/// **second temps** est [`DesignatedAccountsSnapshot::check_written`].
+///
+/// # Le verrou : partagé, une requête, `ORDER BY id`
+///
+/// `SELECT id, number, active, postable FROM accounts FORCE INDEX (PRIMARY)
+/// WHERE company_id = ? AND id IN (…) ORDER BY id LOCK IN SHARE MODE` (syntaxe
+/// MariaDB 10.11 : pas de `FOR SHARE`). L'ordre de verrouillage entre les comptes est celui des
+/// identifiants.
+///
+/// **Pourquoi partagé suffit** (C87) : le verrou n'a qu'un but, qu'aucun
+/// archivage ni passage à non imputable ne s'insère entre le contrôle et
+/// l'insertion de l'écriture. Or ces gestes **écrivent** la ligne du compte —
+/// `accounts::update` (case *imputable*, rôle, retypage), `accounts::archive`,
+/// la création d'un sous-compte (`UPDATE accounts SET postable = FALSE` sur le
+/// parent) — et tout `UPDATE` prend un verrou **exclusif** de ligne, qui attend
+/// la fin d'une transaction tenant un verrou partagé. Une lecture verrouillante,
+/// partagée comme exclusive, lit la **dernière version validée** (et attend un
+/// `UPDATE` non encore validé), non l'instantané de la transaction.
+///
+/// **Pourquoi pas `FOR UPDATE`** : il n'ajouterait rien à cette garantie, et il
+/// formait un cycle **systématique** avec les flux qui prennent l'exercice puis
+/// reprennent la créance, la TVA due ou les créanciers en **partagé** par la clé
+/// étrangère `fk_jel_account` (règlement client, solde du reste, rapprochement,
+/// avoir, règlement fournisseur) — finding F5-1. Deux partagés sont
+/// compatibles. Les cycles qui **restent** sont rejoués par les routes (Story
+/// 15-5e1 ; règle au doc-comment de
+/// [`super::invoices::validate_invoice`]).
+///
+/// # Un identifiant d'une autre société n'est jamais verrouillé
+///
+/// Une lecture verrouillante par clé primaire verrouille la ligne **avant** que
+/// le filtre `company_id` ne l'écarte (mesuré : `opening_complement.rs`, revue
+/// de code P1 de la story du complément d'ouverture, B-F1 ; remesuré en T0 de
+/// la Story 15-5d). D'où le patron `owned_account_ids` (C88) : une lecture
+/// **non verrouillante** des identifiants de la société — un compte ne change
+/// jamais de société, elle est exacte sans verrou —, puis la lecture
+/// verrouillante sur ces **seuls** identifiants, le filtre `company_id` gardé en
+/// défense. Un identifiant écarté est absent de l'instantané, et le contrôle le
+/// refuse comme tel.
+///
+/// **Angle mort assumé** (revue de code P1, E4 ; C-15-5d-6) : cette lecture se
+/// fait dans l'instantané REPEATABLE READ de l'appelant, ouvert avant le verrou
+/// des réglages. Un compte **créé et désigné** par un enregistrement des
+/// réglages entre ces deux instants en est absent, et la garde le refuse
+/// (`InactiveOrInvalidAccounts`) bien qu'il soit valide. Le refus est sûr
+/// (rien n'est écrit) et un nouvel essai passe.
+///
+/// # Verrous d'intervalle
+///
+/// En REPEATABLE READ, une lecture verrouillante qu'InnoDB parcourt **par
+/// plage** pose des verrous *next-key* ; une recherche d'égalité sur la clé
+/// primaire ne verrouille que la ligne trouvée. Le plan de cette requête est
+/// `range` sur `PRIMARY` (`const` pour un seul identifiant), sans `filesort` :
+/// une liste `IN` de clés primaires, que MariaDB 10.11 lit point par point — un
+/// compte voisin, de la société ou non, reste libre (mesuré en T0 de la Story
+/// 15-5d par une sonde `FOR UPDATE NOWAIT`). Ce plan est **épinglé** par
+/// `FORCE INDEX (PRIMARY)` (revue de code P1, B-1) : sur une table réelle,
+/// l'optimiseur pourrait sinon choisir un index secondaire commençant par
+/// `company_id` et y poser des verrous *next-key*, qui bloqueraient la création
+/// d'un compte de la société pendant une validation. Précédent qui a écarté `LOCK IN
+/// SHARE MODE` sur un parcours de plage : `journal_entries.rs`, C-15-8-23.
+///
+/// # Ce qui n'est pas contrôlé ici
+///
+/// - le **type** du compte (angle mort assumé, préexistant — un compte désigné
+///   retypé après sa désignation reste utilisé ; le compte d'arrondi, lui,
+///   contrôle son type) ;
+/// - le **compte bancaire** (D-A0, C6), le **compte de produit par défaut**
+///   (D3-bis de la 16-1a), le compte de **décompte TVA** (lu par aucun flux
+///   d'écriture) ;
+/// - **l'avoir**, qui relit la créance et la TVA due dans les réglages du moment
+///   sans ce contrôle, délibérément (C35 : ces lectures sont elles-mêmes le
+///   défaut de #473 et #525) ;
+/// - le **solde du reste** garde son refus `ConfigurationRequired` pour une TVA
+///   due inutilisable ([`vat_payable_account_for_write`]) — divergence assumée
+///   (C28).
+///
+/// `journal_entries::create_in_tx` garde `enforce_postable = false` (D-A0) : la
+/// garde est en amont, sur les seuls comptes de réglage. Elle révise la limite
+/// **L2** de D-A0 (`14-3b-consommateurs-roles.md`) pour ces quatre comptes.
+pub(in crate::repositories) async fn lock_designated_accounts_in_tx(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    ids: &[i64],
+) -> Result<DesignatedAccountsSnapshot, DbError> {
+    let mut ids = ids.to_vec();
+    ids.sort_unstable();
+    ids.dedup();
+    if ids.is_empty() {
+        return Ok(DesignatedAccountsSnapshot(Vec::new()));
+    }
+
+    // Les identifiants de la société, lus SANS verrou (patron `owned_account_ids`,
+    // C88) : un identifiant étranger n'est jamais verrouillé.
+    let mut qb: QueryBuilder<MySql> =
+        QueryBuilder::new("SELECT id FROM accounts WHERE company_id = ");
+    qb.push_bind(company_id).push(" AND id IN (");
+    {
+        let mut sep = qb.separated(", ");
+        for id in &ids {
+            sep.push_bind(*id);
+        }
+    }
+    qb.push(") ORDER BY id");
+    let owned: Vec<i64> = qb
+        .build_query_scalar()
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(map_db_error)?;
+    if owned.is_empty() {
+        return Ok(DesignatedAccountsSnapshot(Vec::new()));
+    }
+
+    // Le verrou PARTAGÉ, sur les seuls identifiants de la société, par ordre
+    // d'identifiant ; le filtre `company_id` reste en défense.
+    // `FORCE INDEX (PRIMARY)` épingle le plan (revue de code P1, B-1) : sans lui,
+    // l'optimiseur pourrait parcourir un index secondaire commençant par
+    // `company_id` (`uq_accounts_company_number`,
+    // `uq_accounts_company_singleton_role`) et y poser des verrous d'intervalle.
+    let mut qb: QueryBuilder<MySql> = QueryBuilder::new(
+        "SELECT id, number, active, postable FROM accounts FORCE INDEX (PRIMARY) WHERE company_id = ",
+    );
+    qb.push_bind(company_id).push(" AND id IN (");
+    {
+        let mut sep = qb.separated(", ");
+        for id in &owned {
+            sep.push_bind(*id);
+        }
+    }
+    qb.push(") ORDER BY id LOCK IN SHARE MODE");
+    let locked: Vec<LockedDesignatedAccount> = qb
+        .build_query_as()
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(map_db_error)?;
+    Ok(DesignatedAccountsSnapshot(locked))
+}
+
+impl DesignatedAccountsSnapshot {
+    /// **Second temps** de la garde (Story 15-5d ; choix C39, C40, C49) :
+    /// contrôle, sur l'instantané verrouillé, **les seuls comptes des rôles
+    /// effectivement écrits** par le générateur (`roles`), traduits en
+    /// identifiants par les réglages qui ont servi à la génération.
+    ///
+    /// Appelé **entre** la génération des lignes et
+    /// `journal_entries::create_in_tx`. Refuse, dans cet ordre :
+    ///
+    /// 1. un compte d'un rôle écrit **absent de l'instantané** (inexistant, ou
+    ///    d'une autre société) **ou inactif** (archivé) →
+    ///    [`DbError::InactiveOrInvalidAccounts`] — le refus que `create_in_tx`
+    ///    rend pour ce cas, sans nommer le compte (anti-énumération) ;
+    /// 2. sinon, les comptes de la société, actifs et **non imputables** →
+    ///    [`DbError::DesignatedAccountsNotPostable`], un seul refus qui les nomme
+    ///    tous. La liste est construite par [`NonPostableAccounts::new`], qui
+    ///    **dédoublonne par identifiant** : un même compte désigné pour deux
+    ///    rôles est nommé une fois (C40).
+    ///
+    /// Pourquoi ici et non le contrôle de `create_in_tx` : ce dernier est une
+    /// lecture **non verrouillante**, qui lit l'instantané REPEATABLE READ ouvert
+    /// avant le verrou ; un compte archivé entre les deux y paraîtrait encore
+    /// actif. L'instantané de [`lock_designated_accounts_in_tx`], lui, est frais.
+    pub(in crate::repositories) fn check_written(
+        &self,
+        roles: &BTreeSet<DesignatedRole>,
+        settings: &CompanyInvoiceSettings,
+    ) -> Result<(), DbError> {
+        let mut non_postable: Vec<NonPostableAccount> = Vec::new();
+        for role in roles {
+            // Un rôle écrit a forcément un compte : le générateur a refusé
+            // `ConfigurationRequired` sinon.
+            let id = role.designated_id(settings).ok_or_else(|| {
+                DbError::Invariant(format!(
+                    "rôle de réglage {role:?} écrit par le générateur sans compte désigné"
+                ))
+            })?;
+            match self.0.iter().find(|a| a.id == id) {
+                Some(a) if a.active && a.postable => {}
+                Some(a) if a.active => non_postable.push(NonPostableAccount {
+                    account_id: a.id,
+                    account_number: a.number.clone(),
+                }),
+                _ => return Err(DbError::InactiveOrInvalidAccounts),
+            }
+        }
+        if non_postable.is_empty() {
+            Ok(())
+        } else {
+            Err(DbError::DesignatedAccountsNotPostable(
+                NonPostableAccounts::new(non_postable),
+            ))
+        }
+    }
 }
 
 /// Creates company_invoice_settings with auto-prefill of default accounts resolved

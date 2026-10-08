@@ -426,9 +426,15 @@
 				}
 				// Review P13 : fermer le dialog sur erreurs non-retryables
 				// (l'utilisateur doit corriger la config ou l'exercice avant de réessayer).
+				// Story 15-5d (choix C46) : `ACCOUNT_NOT_POSTABLE` ne peut venir, à la
+				// validation, que d'un compte DÉSIGNÉ dans les réglages et devenu non
+				// imputable — réessayer rend le même refus. Son message dit déjà où
+				// agir et qui le peut : il n'emprunte PAS la branche
+				// `CONFIGURATION_REQUIRED` ci-dessus, il est affiché tel quel.
 				if (
 					err.code === 'FISCAL_YEAR_INVALID' ||
-					err.code === 'CONFIGURATION_REQUIRED'
+					err.code === 'CONFIGURATION_REQUIRED' ||
+					err.code === 'ACCOUNT_NOT_POSTABLE'
 				) {
 					validateOpen = false;
 				}

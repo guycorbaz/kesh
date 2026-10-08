@@ -936,7 +936,8 @@ mod tests {
             3000,
             Some(2200),
         )
-        .unwrap();
+        .unwrap()
+        .lines;
 
         let triplets: Vec<(Decimal, Decimal, Option<i64>)> = invoice_lines
             .iter()
