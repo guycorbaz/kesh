@@ -2483,3 +2483,16 @@ l'import (#458–#461).
   `retry_with` dans « 5 bis » (contredit la migration de la 15-5e2).
 - **Réversible** : oui (rebase local, branche poussée seulement après les gates).
 
+## C-15-5d-8 — 15-5d (intégration) : rebasée sur `origin/main` (`8f9811d8`, 15-11a) ; registre et sprint-status par union, PDF régénérés
+
+- **Contexte** : `origin/main` porte la 15-11a (compose, `config.rs` qui refuse les gabarits de secrets, manuel
+  d'administration remis en page, CHANGELOG avec rubrique Sécurité). PR #565 en conflit.
+- **Option retenue** : registre — union par ordre d'arrivée (`C-15-11a-1..7` de `main`, puis `C88` et
+  `C-15-5d-1..7`), contrôlée par comparaison des titres `## ` aux deux bornes ; `sprint-status.yaml` — union des
+  lignes `last_updated`, celles de la 15-5d renumérotées (21) et (22) ; PDF — régénérés par `make admin user` après
+  `touch` des `.tex`, jamais fusionnés. CHANGELOG et `.tex` ont fusionné sans conflit et ont été relus (une rubrique
+  de chaque, mise en page des tableaux de la 15-11a intacte). Montage E2E à secrets générés par `openssl rand`.
+- **Écartées** : renuméroter les entrées de la 15-5d (la fiche les cite) ; garder les numéros (19)/(20) de la
+  branche dans `sprint-status.yaml` (doublons avec ceux de la 15-11a).
+- **Réversible** : oui (rebase ; poussé par `--force-with-lease` après les gates).
+

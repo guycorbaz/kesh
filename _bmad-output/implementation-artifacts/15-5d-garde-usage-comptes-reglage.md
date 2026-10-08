@@ -1437,6 +1437,37 @@ Cible cargo du worktree : `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-15-5d/targe
   `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`), aucun hors liste. Backend arrêté par
   son PID. Journaux : `target/gate-logs/integration-{backend,frontend,e2e}.log`.
 
+#### Intégration sur `origin/main` (`8f9811d8`, 15-11a) — 2026-10-09
+
+Rebase des neuf commits de la story sur `origin/main` `8f9811d8` (la 15-11a : compose de production, `.env.example`,
+refus des gabarits de secrets dans `config.rs`, manuel d'administration, CHANGELOG avec une rubrique Sécurité).
+Cible cargo du worktree : `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-15-5d/target`. Choix C-15-5d-8.
+
+- *Conflits et résolutions* : registre des choix (deux fois — union : `C-15-11a-1..7` de `main`, puis `C88` et
+  `C-15-5d-1..7` de la branche ; aucun titre `## ` perdu de part ni d'autre, aucun en double, contrôlé par `comm`
+  sur les titres) ; `sprint-status.yaml` (deux fois — union des lignes `last_updated`, celles de la 15-5d
+  renumérotées (21) et (22) au-dessus de celle de la 15-11a (20) ; YAML valide, aucune clé en double) ; PDF
+  d'administration (binaire : provisoirement celui de `main`, puis **régénéré**). Fusionnés sans conflit et relus :
+  `CHANGELOG.md` `[0.13.0]` (une seule rubrique de chaque : *Ajouté*, *Modifié*, *Corrigé*, *Sécurité* ; l'entrée
+  *Ajouté* et les deux entrées *Corrigé* de la 15-5d en place), `admin-manual.tex` (paragraphe *Compte créanciers*
+  de la 15-5d ; tableaux de `sec:env-vars` et sous-section « Passer à la 0.13.0 » de la 15-11a intacts),
+  `user-manual.tex`.
+- *PDF* : `touch` des deux `.tex` puis `make admin user` ; aucune référence indéfinie, aucun débordement aux lignes
+  ajoutées par la story. Contrôlés aplatis (`pdftotext | tr '\n' ' '`) : « Compte créanciers. », « Passer à la
+  0.13.0 » (×2) et `GENERATE_ME` (×8) dans le manuel d'administration ; « Trois cas échappent », « la saisie est
+  refusée avec un message qui nomme le compte » et « La complétion crée cette facture par le même chemin » dans le
+  manuel utilisateur ; aucun `??`.
+- *Gates sur l'état rebasé* (`844aa3c4`, code identique au commit poussé) : bases `kesh_155d` et `kesh_e2e_155d`
+  remises à zéro (`DROP`/`CREATE`, migrations, seed de `kesh_155d` ; conteneur non redémarré), `wait-kesh.sh` ;
+  **`scripts/test-fast.sh`** (fmt, clippy `-D warnings`, nextest) : **2879 / 2879, 4 ignorés**, 112 s ; frontend :
+  `check` 0 erreur (27 avertissements), `lint-i18n-ownership` PASS, **`test:unit` 112 fichiers, 1091 / 1091**, `build`
+  vert ; **E2E complet** (backend `target/debug/kesh-api` du worktree, port 3006, base `kesh_e2e_155d`, secrets
+  **générés** par `openssl rand` — la 15-11a refuse `GENERATE_ME` et `<…>` —, `KESH_COOKIE_SECURE=false`, SMTP
+  factices, inbox/documents de session, runner `KESH_TEST_MODE=true`) : **247 passés, 7 échecs, 19 `skip`** — les
+  7 KF-029 de `docs/testing.md` (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150`), aucun hors liste. Backend arrêté par son PID. Journaux :
+  `target/gate-logs/integration2-{backend,frontend,e2e,e2e-backend}.log`.
+
 ### File List
 
 - `CHANGELOG.md`
