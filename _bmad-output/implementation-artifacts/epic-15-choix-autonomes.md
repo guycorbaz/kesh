@@ -528,3 +528,91 @@ l'import (#458–#461).
 - **Écartées** : durcir B-2 en erreur à l'exécution ; ajouter les tests HTTP E-2/E-3/A-3 (routes qui
   propagent sans remappage).
 - **Réversible** : oui (les LOW restent tracés au Change Log de la fiche).
+## C33 — 15-5b/15-5d : la garde à l'usage des comptes de réglage sort de la 15-5b
+
+- **Contexte** : validation P4 de la 15-5b (lentilles Opus R et F). Finding F4-3 (MEDIUM) : l'AC20,
+  ajouté en P3 (C27, C28), est une **règle métier neuve** — révision de la limite L2 de D-A0 —, pas un
+  rollout ; et les deux HIGH de la passe (R4-1 = F4-1) en sont **nés**. Sévérité P3 → P4 : MEDIUM →
+  HIGH, défauts nés du correctif précédent — le recyclage que l'amendement D5 désigne comme déclencheur.
+- **Retenu** (décision de l'orchestrateur) : nouvelle fiche **15-5d-garde-usage-comptes-reglage**, qui
+  reprend l'AC20 et tout ce qui s'y rattache (C27, C28, la révision de L2, la variante
+  `DesignatedAccountsNotPostable`, la clé `error-designated-account-not-postable`, ses tests, ses
+  passages de manuel, sa part de `docs/api-external.md` et du CHANGELOG), plus l'exposition du compte
+  créanciers (C34) et l'exemption de l'avoir (C35). Elle **dépend de 15-5a et 15-5b**, est indépendante
+  de la 15-5c, et porte `closes #429` ; la 15-5b passe à `refs #429` et garde `closes #427 closes
+  #521`. La 15-5b n'est pas renumérotée (19 AC, AC1–AC19).
+- **Écartées** : garder l'AC20 dans la 15-5b et l'y faire revoir en passes complètes (la § *Une story de
+  rollout* ne le justifiait plus) ; retirer la garde à l'usage de l'epic (#429 resterait ouverte en
+  fait).
+- **Réversible** : oui (aucun code écrit).
+
+## C34 — 15-5d : le compte créanciers est exposé à l'écran des réglages (révise C25)
+
+- **Contexte** : findings R4-1 = F4-1 (HIGH) de la P4 de la 15-5b. C25 avait écarté l'exposition de
+  `defaultPayableAccountId` « sans nécessité pour fermer le défaut » ; la garde à l'usage (C27) a créé
+  cette nécessité : son refus renvoie à *Paramètres → Facturation*, où le champ n'existe pas — la
+  saisie de toute facture fournisseur serait bloquée sans recours à l'écran.
+- **Retenu** (décision de l'orchestrateur) : la 15-5d ajoute au formulaire un `<select>` *Compte
+  créanciers (Passif)*, filtré comme la TVA due (`active && postable && Liability`), la valeur courante
+  préservée par `withCurrentAccount` (#271), lue, relue sur conflit et envoyée ; types TypeScript
+  complétés ; clé `settings-invoicing-payable-account`. L'AC19 de la 15-5b (absent du corps = préservé)
+  reste le filet des clients qui n'envoient pas le champ. Les contournements E2E
+  (`payment-batches.spec.ts`, `inbox-import.spec.ts`) sont retirés s'ils deviennent inutiles, sur
+  constat (specs rejouées sans eux sur base fraîche).
+- **Écartées** : sortir les créanciers de la garde à l'usage (angle mort de plus, pour un compte que
+  l'utilisateur ne peut pas régler) ; un message distinct pour les créanciers (n'ouvre pas de recours).
+- **Réversible** : oui.
+
+## C35 — 15-5d : l'avoir est exempté de la garde à l'usage, avec sa vraie raison
+
+- **Contexte** : findings R4-2 = F4-2 (MEDIUM) de la P4 de la 15-5b. L'avoir ne reprend de la facture que
+  ses **comptes de produit** ; la **créance** et la **TVA due** sont relues dans les réglages **du
+  moment** (`credit_notes.rs:360-364`, `:507-512`) et postées sans garde. La fiche disait « snapshot de
+  la facture » (inventaire (a) #11) et l'AC17 (iv) « reprend les comptes de la facture d'origine » :
+  faux.
+- **Retenu** (décision de l'orchestrateur) : exemption **délibérée** et écrite. Ces lectures sont
+  elles-mêmes le défaut à corriger : la créance sera lue **sur l'écriture de vente** par la 15-6a (#473,
+  et #523 pour le compte d'arrondi), la TVA due relève de #525 (report TVA) ; une garde posée sur le
+  compte des réglages serait défaite par ces corrections et bloquerait l'annulation d'une facture sur
+  un compte que l'avoir ne devrait pas lire. Inventaire (a) #11, AC15 et AC17 de la 15-5b corrigés ; un
+  test de la 15-5d fige l'exemption.
+- **Écartée** : garder l'avoir à l'usage comme la validation (cohérent avec C27, mais transitoire et
+  contraire à « une pièce émise reste annulable »).
+- **Réversible** : oui.
+
+## C36 — 15-5d : le message du refus à l'usage — « un compte imputable », « un administrateur doit »
+
+- **Contexte** : findings R4-5 = F4-6 (LOW) de la P4 de la 15-5b. Le texte de C28 disait « désignez-y un
+  sous-compte imputable » : le remède « sous-compte » ne vaut que pour un compte de regroupement, et la
+  phrase s'adressait à un Comptable qui valide une facture sans accès à la page des réglages (Admin).
+- **Retenu** : « … n'est pas imputable (…) : un administrateur doit y désigner à sa place un compte
+  imputable » — vrai pour les deux rôles et pour un client d'API, sans branche d'écran par rôle.
+- **Écartée** : une branche par rôle dans chaque `catch` (patron de `CONFIGURATION_REQUIRED` à la
+  validation d'une facture) — trois écrans à modifier, et un client d'API n'en profiterait pas.
+- **Réversible** : oui avant v0.13.0.
+
+## C37 — 15-5c : une clé `error-*` existante est lue directement quand elle convient
+
+- **Contexte** : findings R-7 et F-13 (LOW) de la P2 de la 15-5c — l'AC1 disait que le libellé de
+  `ROUNDING_ACCOUNT_NOT_CONFIGURED` « reprend » `error-rounding-account-not-configured`, sans dire s'il
+  fallait lire la clé ou en copier le texte ; certains messages serveur portent une variable que le
+  client n'a pas.
+- **Retenu** : une clé `error-*` existante qui convient **mot pour mot et sans variable** est **lue
+  directement** (l'espace `error-` est global pour le lint d'ownership) — c'est le cas de la clé
+  d'arrondi ; sinon, clé neuve `reconciliation-failed-*`, sans la variable. Le Dev Agent Record dit, par
+  code, quelle clé est lue.
+- **Écartée** : dupliquer toutes les traductions sous `reconciliation-failed-*` (quatre locales à tenir
+  en double).
+- **Réversible** : oui.
+
+## C38 — 15-5c : les échecs partiels restent visibles, et désignent la transaction
+
+- **Contexte** : findings F-5 et F-6 (LOW) de la P2 de la 15-5c — le bloc *Échecs partiels* vit dans la
+  branche « liste non vide » et disparaît quand le lot vide la liste (cas de tous les refus de
+  *Rejeter*) ; `TX #<id>` désigne un identifiant que l'écran n'affiche nulle part.
+- **Retenu** : bloc et compteur sortis de la branche ; la ligne de refus affiche la date, le montant et la
+  contrepartie relevés **avant** le rechargement, `TX #<id>` en repli ; un test où le second chargement
+  rend une liste vide.
+- **Écartée** : écrire la limite au manuel (l'AC6 promet déjà les refus de *Rejeter* en clair : il
+  faut qu'ils s'affichent).
+- **Réversible** : oui.
