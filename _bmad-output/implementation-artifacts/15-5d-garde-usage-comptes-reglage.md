@@ -1,6 +1,6 @@
 # Story 15.5d : Les comptes de réglage contrôlés à l'usage — créance, TVA, créanciers, et le compte créanciers à l'écran
 
-Status: review
+Status: done
 
 <!-- Quatrième sous-story de la 15-5, créée le 2026-10-08 à la passe de validation P4 de la 15-5b
      (finding F4-3, choix C33 de `epic-15-choix-autonomes.md`). Elle reprend de la 15-5b l'ancien AC20
@@ -1864,3 +1864,9 @@ registre et `sprint-status.yaml`) :
   KF-029. Incident de procédure signalé par la lentille E (`git checkout --detach`, rétabli, sans effet). Statut
   maintenu à `review` : **passe ciblée P2** (une lentille, Haiku, D6) à lancer sur `a8bab77b` — la remédiation touche du
   code de production (une clause SQL, des doc-comments). Choix C-15-5d-5, C-15-5d-6.
+- **2026-10-08 — Revue de code P2 ciblée (Haiku, une lentille, prompt `15-5d-review-prompt-p2-ciblee.md`) sur
+  `a8bab77b` : 0 finding.** Rapport : `target/gate-logs/15-5d-review-p2-ciblee.md`. Repris par l'orchestrateur sur le
+  point le plus risqué : le motif des tests de place (`crates/kesh-db/tests/invoices_validate_vat.rs:1080`,
+  `FROM accounts FORCE INDEX (PRIMARY) WHERE company_id`) suit exactement la requête de l'accesseur
+  (`company_invoice_settings.rs:738`), et les tests de place 1 et 2 sont verts au gate complet — l'attente est donc
+  bien vue. **Boucle de revue CLOSE** (P1 Sonnet ×3 : 1 MEDIUM, 9 LOW → P2 ciblée Haiku : 0). Statut `done`.
