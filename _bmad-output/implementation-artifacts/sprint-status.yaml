@@ -1,3 +1,4 @@
+# last_updated: 2026-10-08 (22) (15-5d intégrée sur la 15-5e2 — rebase sur 9cb5083b, « 5 bis » fusionné, PDF régénérés ; gates sur l'état rebasé : backend 2859/2859, Vitest 1091/1091, E2E 247 / 7 KF-029 ; choix C-15-5d-7)
 # last_updated: 2026-10-08 (21) (15-5d développée, en review — garde à l'usage des comptes de réglage, verrou partagé, compte créanciers à l'écran ; gates au commit de code : backend 2854/2854, Vitest 1091/1091, E2E 247 / 7 KF-029 ; choix C-15-5d-1..4)
 # last_updated: 2026-10-08 (20) (15-11a intégrée sur 9cb5083b — gates 2857/2857, E2E 241 / 7 KF-029 + 6 KF-053 verts seuls ; choix C-15-11a-7)
 # last_updated: 2026-10-08 (19) (15-11a revue de code P1 remédiée — vide = défaut pour sept variables ; rebasée sur ec675288 ; gates 2854/2854, E2E 247 / 7 KF-029 ; choix C-15-11a-6)

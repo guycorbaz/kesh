@@ -1406,6 +1406,37 @@ registre et `sprint-status.yaml`) :
   `docs/testing.md` (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
   `:77`, `:150`), aucun hors liste. Journaux : `scratchpad/gate155d-p1.log`, `front155d-p1.log`, `e2e155d/run-p1.log`.
 
+#### Intégration sur `origin/main` (`9cb5083b`, 15-5e2) — 2026-10-08
+
+Rebase des huit commits de la story sur `origin/main` `9cb5083b` (la 15-5e2 ; la 15-11a, PR #564, n'y était pas).
+Cible cargo du worktree : `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-15-5d/target`. Choix C-15-5d-7.
+
+- *Conflits et résolutions* : fiche de la story (la version de `main` est une version de validation antérieure,
+  ancêtre de celle de la branche — `41f41e60` ⊂ `1ae63831` — : version de la branche retenue) ; registre des choix
+  (union : `C-15-5e2-1..7` puis `C88`, aucune entrée perdue) ; `sprint-status.yaml` (union des lignes `last_updated`,
+  celle de la 15-5d renumérotée (19) ; YAML valide, aucune clé en double) ; commentaire « 5 bis » de
+  `invoice_settlements_write.rs` (formulation de la 15-5e2 — « enveloppe `retry_on_deadlock` » — gardée, le
+  paragraphe de la 15-5d sur le verrou partagé de la TVA due ajouté à sa suite) ; PDF des deux manuels (binaires :
+  provisoirement ceux de `main`, puis **régénérés** par `make admin user` sur l'état rebasé). Fusionnés sans conflit et
+  relus : doc-comments canoniques de `validate_invoice` (`(2 bis', suite)`) et de `supplier_invoices::create_in_tx`
+  (`(2, désignés)`) — la 15-5e2 n'y a touché que des commentaires voisins (`update`, étape (0)) ; `CHANGELOG.md`
+  `[0.13.0]` (`### Ajouté` de la 15-5d, entrées de la 15-5e2 sous `Corrigé`) ; `docs/api-external.md` § 10 ; les deux
+  `.tex`. Aucune mention `retry_with` introduite par la story (grep du diff `origin/main..HEAD`).
+- *Registre des routes* : la story ne touche pas `audit_route_registry.rs` ; la partition de `main` (22 / 0 / 4 / 89)
+  est tenue par son test, vert au gate. *Compteurs i18n* : `sitesTotal` 1915 et `CANDIDATES_ATTENDUES` 48, la 15-5e2
+  ne touchant pas le frontend ; verts au Vitest de l'état rebasé.
+- *PDF* : contrôlés aplatis (`pdftotext | tr '\n' ' '`) : « rejouée automatiquement » (15-5e2) et « compte
+  créanciers » ×4 (15-5d) dans le manuel utilisateur ; `innodb_deadlock_detect` (15-5e2) et le paragraphe *Compte
+  créanciers* dans le manuel d'administration ; plus aucune occurrence de `SERIALIZABLE`.
+- *Gates sur l'état rebasé* : bases `kesh_155d` et `kesh_e2e_155d` remises à zéro (`DROP`/`CREATE`, migrations, seed
+  de `kesh_155d`), `wait-kesh.sh` ; **`scripts/test-fast.sh`** (fmt, clippy `-D warnings`, nextest) : **2859 / 2859,
+  4 ignorés**, 128 s ; frontend : `check`, `lint-i18n-ownership`, **`test:unit` 112 fichiers, 1091 / 1091**, `build`
+  verts ; **E2E complet** (backend `target/debug/kesh-api` du worktree, port 3006, base `kesh_e2e_155d`, secrets
+  générés, `KESH_COOKIE_SECURE=false`, SMTP factices, inbox/documents de session, runner `KESH_TEST_MODE=true`) :
+  **247 passés, 7 échecs, 19 `skip`** — les 7 KF-029 de `docs/testing.md` (`mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`), aucun hors liste. Backend arrêté par
+  son PID. Journaux : `target/gate-logs/integration-{backend,frontend,e2e}.log`.
+
 ### File List
 
 - `CHANGELOG.md`
@@ -1870,3 +1901,6 @@ registre et `sprint-status.yaml`) :
   `FROM accounts FORCE INDEX (PRIMARY) WHERE company_id`) suit exactement la requête de l'accesseur
   (`company_invoice_settings.rs:738`), et les tests de place 1 et 2 sont verts au gate complet — l'attente est donc
   bien vue. **Boucle de revue CLOSE** (P1 Sonnet ×3 : 1 MEDIUM, 9 LOW → P2 ciblée Haiku : 0). Statut `done`.
+- **2026-10-08 — Intégration** : rebasée sur `origin/main` `9cb5083b` (15-5e2) ; conflits résolus par union ou
+  fusion des deux intentions (« 5 bis », registre, `sprint-status.yaml`), PDF régénérés ; gates sur l'état rebasé :
+  backend 2859/2859 (4 ignorés), Vitest 1091/1091, E2E 247 / 7 KF-029. Choix C-15-5d-7.

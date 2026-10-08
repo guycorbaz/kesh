@@ -2467,3 +2467,19 @@ l'import (#458–#461).
   exceptions, voulues ») disait déjà l'exemption de l'avoir ; le paragraphe de la validation, non. Une phrase y est
   ajoutée, avec la raison (« une facture émise doit rester annulable ») et le renvoi.
 - **Réversibilité** : totale.
+
+## C-15-5d-7 — 15-5d (intégration) : rebasée sur `origin/main` (`9cb5083b`, 15-5e2) ; « 5 bis » fusionné, fiche de la branche retenue
+
+- **Contexte** : `origin/main` porte la 15-5e2 (rejeu des douze autres routes, commentaires d'ordre, Pattern 5,
+  `api-external.md` § 10, CHANGELOG, manuels #484). Rebase des huit commits de la 15-5d.
+- **Option retenue** : (1) fiche de la story — la version de `main` (`41f41e60`, validation P5) est un ancêtre de
+  celle de la branche : version de la branche prise entière ; (2) registre et `sprint-status.yaml` — union, la ligne
+  `last_updated` de la 15-5d renumérotée (19) au-dessus de celle de la 15-5e2 (18) ; (3) commentaire « 5 bis » — la
+  formulation de la 15-5e2 (« enveloppe `retry_on_deadlock` ») gardée et le paragraphe de la 15-5d (verrou partagé
+  de la TVA due à la validation, même ordre « arrondi, puis TVA due ») placé à sa suite ; (4) PDF — régénérés sur
+  l'état rebasé, jamais fusionnés. Les doc-comments canoniques, le CHANGELOG, `api-external.md` et les `.tex` ont
+  fusionné sans conflit et ont été relus ; aucune mention `retry_with` ajoutée par la story.
+- **Écartées** : reprendre la fiche de `main` et y rejouer les passes P6–P7 (perte du texte validé) ; garder
+  `retry_with` dans « 5 bis » (contredit la migration de la 15-5e2).
+- **Réversible** : oui (rebase local, branche poussée seulement après les gates).
+
