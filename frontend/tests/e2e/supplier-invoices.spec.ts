@@ -79,7 +79,9 @@ async function ensureConfigAndAccounts(page: import('@playwright/test').Page): P
 		expect(expense, 'un compte de charge attendu').toBeTruthy();
 		expect(internal, 'un compte Asset attendu').toBeTruthy();
 
-		// Configurer default_payable_account_id si absent (remplacement intégral des settings).
+		// Le seed `with-company` (`seed_accounting_company`) ne désigne pas le compte
+		// créanciers : on le pose ici quand il manque (Story 15-5d, AC6 — contournement
+		// gardé ; il ne dépend pas de #521).
 		const sRes = await ctx.get('/api/v1/company/invoice-settings');
 		expect(sRes.ok()).toBeTruthy();
 		const s = await sRes.json();

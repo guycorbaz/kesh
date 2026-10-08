@@ -1167,6 +1167,34 @@ fn entry_document_refusal_response(
     (StatusCode::CONFLICT, Json(body)).into_response()
 }
 
+/// Réponse **400 `ACCOUNT_NOT_POSTABLE`** commune aux deux variantes qui la
+/// portent — [`DbError::AccountsNotPostable`] (Story 15-5a) et
+/// [`DbError::DesignatedAccountsNotPostable`] (Story 15-5d) : même code, même
+/// détail ([`kesh_db::errors::NonPostableAccounts::details`], choix C29), seul
+/// le **message** diffère (`key`).
+///
+/// ⚠️ `count` est passé comme NOMBRE Fluent : en chaîne, le sélecteur `[one]`
+/// ne s'appliquerait jamais. Chaque `key` est inscrite à
+/// `SELECTEURS_RESOLUS_COTE_SERVEUR` (kesh-i18n).
+fn account_not_postable_response(
+    key: &str,
+    fallback: &str,
+    accounts: &kesh_db::errors::NonPostableAccounts,
+) -> Response {
+    let mut args = FluentArgs::new();
+    args.set("numbers", accounts.numbers().join(", "));
+    args.set("count", accounts.len());
+    let msg = t_args(key, fallback, &args);
+    let body = serde_json::json!({
+        "error": {
+            "code": "ACCOUNT_NOT_POSTABLE",
+            "message": msg,
+            "details": accounts.details(),
+        }
+    });
+    (StatusCode::BAD_REQUEST, Json(body)).into_response()
+}
+
 /// Réponse d'un refus de complément des soldes de départ (Story 25-7, AC 5) :
 /// statut, code et message **par cause**. Les refus qui portent sur un compte le
 /// nomment par son numéro — un identifiant de base ne se comprend pas.
@@ -3158,18 +3186,39 @@ impl IntoResponse for AppError {
                             "Les comptes {numbers} ne sont pas imputables (comptes de regroupement, de résultat ou de clôture) : choisissez des comptes imputables."
                         )
                     };
-                    let mut args = FluentArgs::new();
-                    args.set("numbers", numbers);
-                    args.set("count", count);
-                    let msg = t_args("error-account-not-postable", &fallback, &args);
-                    let body = serde_json::json!({
-                        "error": {
-                            "code": "ACCOUNT_NOT_POSTABLE",
-                            "message": msg,
-                            "details": accounts.details(),
-                        }
-                    });
-                    (StatusCode::BAD_REQUEST, Json(body)).into_response()
+                    account_not_postable_response(
+                        "error-account-not-postable",
+                        &fallback,
+                        &accounts,
+                    )
+                }
+                // Story 15-5d (#429, choix C28, C36) — un compte DÉSIGNÉ dans les
+                // réglages de facturation (créance, TVA due, créanciers, TVA
+                // récupérable) est devenu non imputable et un flux veut y écrire.
+                // Même code et même détail que le bras précédent (un seul contrat
+                // pour l'intégrateur) ; le message dit OÙ agir et QUI peut le
+                // faire — la validation et la saisie fournisseur sont ouvertes au
+                // Comptable, la page des réglages à l'Admin seul.
+                //
+                // ⚠️ `count` en NOMBRE Fluent, comme ci-dessus ; clé inscrite à
+                // `SELECTEURS_RESOLUS_COTE_SERVEUR` (kesh-i18n).
+                DbError::DesignatedAccountsNotPostable(accounts) => {
+                    let numbers = accounts.numbers().join(", ");
+                    let count = accounts.len();
+                    let fallback = if count == 1 {
+                        format!(
+                            "Le compte {numbers}, désigné dans Paramètres → Facturation, n’est pas imputable (compte de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à sa place un compte imputable."
+                        )
+                    } else {
+                        format!(
+                            "Les comptes {numbers}, désignés dans Paramètres → Facturation, ne sont pas imputables (comptes de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à leur place des comptes imputables."
+                        )
+                    };
+                    account_not_postable_response(
+                        "error-designated-account-not-postable",
+                        &fallback,
+                        &accounts,
+                    )
                 }
                 // Story 25-4-c3-b (#476) — un écart d'arrondi à écrire, et pas de
                 // compte utilisable pour le recevoir. Le message dit OÙ agir.

@@ -67,6 +67,7 @@ function settings(overrides: Partial<InvoiceSettingsResponse> = {}): InvoiceSett
 		defaultVatPayableAccountId: null,
 		defaultVatRecoverableAccountId: null,
 		defaultVatDecompteAccountId: null,
+		defaultPayableAccountId: null,
 		defaultSalesJournal: 'Ventes',
 		journalEntryDescriptionTemplate: '{YEAR}-{INVOICE_NUMBER}',
 		defaultRoundingAccountId: null,
@@ -223,5 +224,65 @@ describe('Paramètres → Facturation — solde du reste', () => {
 			defaultBankFeesAccountId: 4,
 			defaultBadDebtAccountId: null,
 		});
+	});
+});
+
+// Story 15-5d (#429, choix C34) — le compte créanciers, à l'écran. C'est le
+// CHEMIN DE CORRECTION que désigne le refus « compte désigné non imputable » :
+// sans ce champ, la saisie de toute facture fournisseur bloquée sur des
+// créanciers devenus non imputables n'avait aucun recours à l'écran.
+describe('Paramètres → Facturation — compte créanciers', () => {
+	// Le compte créanciers en place, DEVENU non imputable (sous-comptes créés) :
+	// avec un compte imputable, l'affichage marcherait sans `withCurrentAccount`.
+	const NON_POSTABLE_PAYABLE = account(7, '2000', 'Liability', { postable: false });
+
+	beforeEach(() => {
+		fetchAccountsMock.mockResolvedValue([...ACCOUNTS, NON_POSTABLE_PAYABLE]);
+	});
+
+	it('affiche le compte en place même devenu non imputable, et ne propose sinon que les passifs actifs et imputables (mutation : liste sans la valeur courante)', async () => {
+		getInvoiceSettingsMock.mockResolvedValue(settings({ defaultPayableAccountId: 7 }));
+		const { findByTestId } = render(Page);
+		const select = (await findByTestId('settings-payable-account')) as HTMLSelectElement;
+		await waitFor(() => expect(select.value).toBe('7'));
+		const values = optionValues(select);
+		expect(values).toContain('7'); // en place, préservé (#271)
+		expect(values).toContain('2'); // passif imputable
+		expect(values).not.toContain('1'); // actif
+		expect(values).not.toContain('5'); // charge non imputable
+		expect(values).not.toContain('6'); // archivé
+	});
+
+	it('envoie le compte choisi à l’enregistrement (mutation : champ non envoyé)', async () => {
+		getInvoiceSettingsMock.mockResolvedValue(settings({ defaultPayableAccountId: 7 }));
+		updateInvoiceSettingsMock.mockResolvedValue(settings({ defaultPayableAccountId: 2, version: 4 }));
+		const { findByTestId, container } = render(Page);
+		const select = (await findByTestId('settings-payable-account')) as HTMLSelectElement;
+		await waitFor(() => expect(select.value).toBe('7'));
+		const option = Array.from(select.options).find((o) => o.textContent?.includes('2200'))!;
+		option.selected = true;
+		await fireEvent.change(select);
+		await fireEvent.submit(container.querySelector('form')!);
+		await waitFor(() => expect(updateInvoiceSettingsMock).toHaveBeenCalledTimes(1));
+		expect(updateInvoiceSettingsMock.mock.calls[0][0]).toMatchObject({
+			defaultPayableAccountId: 2,
+		});
+	});
+
+	it('la relecture sur conflit de version reprend le compte créanciers (mutation : champ non relu)', async () => {
+		getInvoiceSettingsMock
+			.mockResolvedValueOnce(settings({ defaultPayableAccountId: null }))
+			.mockResolvedValueOnce(settings({ defaultPayableAccountId: 7, version: 9 }));
+		updateInvoiceSettingsMock.mockRejectedValue({
+			code: 'OPTIMISTIC_LOCK_CONFLICT',
+			status: 409,
+			message: 'Conflit de version',
+		});
+		const { findByTestId, container } = render(Page);
+		const select = (await findByTestId('settings-payable-account')) as HTMLSelectElement;
+		await waitFor(() => expect(select.value).toBe(''));
+		await fireEvent.submit(container.querySelector('form')!);
+		await waitFor(() => expect(getInvoiceSettingsMock).toHaveBeenCalledTimes(2));
+		await waitFor(() => expect(select.value).toBe('7'));
 	});
 });

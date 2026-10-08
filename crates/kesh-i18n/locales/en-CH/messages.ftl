@@ -285,6 +285,10 @@ error-account-not-postable = { $count ->
     [one] Account { $numbers } is not postable (grouping, result or closing account): choose a postable account.
    *[other] Accounts { $numbers } are not postable (grouping, result or closing accounts): choose postable accounts.
 }
+error-designated-account-not-postable = { $count ->
+    [one] Account { $numbers }, designated in Settings → Invoicing, is not postable (grouping, result or closing account): an administrator must designate a postable account there instead.
+   *[other] Accounts { $numbers }, designated in Settings → Invoicing, are not postable (grouping, result or closing accounts): an administrator must designate postable accounts there instead.
+}
 error-rounding-account-not-configured = This payment settles the invoice to the centime, but no usable rounding-difference account is designated: choose one in Settings → Invoicing.
 error-rounding-account-not-configured-issuance = The total of this document is rounded to 5 centimes, but no usable rounding-difference account is designated: choose one in Settings → Invoicing.
 error-write-off-account-not-configured-discount = No usable discount account is designated: choose one in Settings → Invoicing, section Writing off the remainder.
@@ -1804,6 +1808,7 @@ settings-invoicing-load-error = Loading error
 settings-invoicing-save-error = Error while saving
 settings-invoicing-journal = Journal
 settings-invoicing-receivable-account = Trade receivables account (Asset)
+settings-invoicing-payable-account = Trade payables account (Liability)
 settings-invoicing-revenue-account = Revenue account (Revenue)
 settings-invoicing-save = Save
 settings-invoicing-save-success = Configuration saved

@@ -89,6 +89,9 @@ async function ensureConfigAndExpense(page: import('@playwright/test').Page): Pr
 		const expense = accounts.find((a) => a.accountType === 'Expense' && a.active && a.postable);
 		expect(payable, 'compte 2000 attendu').toBeTruthy();
 		expect(expense, 'un compte de charge attendu').toBeTruthy();
+		// Le seed `with-company` (`seed_accounting_company`) ne désigne pas le compte
+		// créanciers : on le pose ici quand il manque (Story 15-5d, AC6 — contournement
+		// gardé ; il ne dépend pas de #521).
 		const s = await (await ctx.get('/api/v1/company/invoice-settings')).json();
 		if (s.defaultPayableAccountId == null) {
 			const putRes = await ctx.put('/api/v1/company/invoice-settings', {

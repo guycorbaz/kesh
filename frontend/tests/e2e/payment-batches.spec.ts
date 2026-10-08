@@ -53,7 +53,9 @@ async function ensureSetup(page: import('@playwright/test').Page): Promise<{
 		const liquid = accounts.find((a) => a.accountType === 'Asset' && a.active && a.postable);
 		expect(payable && expense && liquid).toBeTruthy();
 
-		// Config compte créanciers si absent.
+		// Le seed `with-company` (`seed_accounting_company`) ne désigne pas le compte
+		// créanciers : on le pose ici quand il manque (Story 15-5d, AC6 — contournement
+		// gardé ; il ne dépend pas de #521).
 		const sRes = await ctx.get('/api/v1/company/invoice-settings');
 		const s = await sRes.json();
 		if (s.defaultPayableAccountId == null) {

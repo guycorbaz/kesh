@@ -549,9 +549,10 @@ pub async fn seed_contact_and_product(
 /// utilisateur, qui n'a pas le privilège `PROCESS` mais voit ses propres
 /// connexions.
 ///
-/// ⚠️ **Couplé à la forme textuelle de la requête** : un verrou écrit
-/// autrement (`LOCK IN SHARE MODE`) ne serait pas vu. Changer la forme du
-/// verrou, c'est changer les motifs.
+/// ⚠️ **Couplé à la forme textuelle de la requête** : les motifs doivent
+/// figurer dans le texte de la requête (`INFO LIKE`) — un verrou d'une autre
+/// forme (`FOR UPDATE`, `LOCK IN SHARE MODE`) n'est vu que si les motifs le
+/// nomment. Changer la forme du verrou, c'est changer les motifs.
 ///
 /// `interrompre` est consulté à chaque tour : s'il rend `true` (la tâche
 /// observée a fini sans attendre), la fonction rend `false` aussitôt, pour que
@@ -587,6 +588,37 @@ pub async fn attendre_une_requete_en_cours(
             "aucune requête contenant {motifs:?} n'a été vue en cours"
         );
         tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    }
+}
+
+/// **Sonde de verrou** (Story 15-5d) : exécute `sql` — une lecture verrouillante
+/// `… WHERE id = ? FOR UPDATE NOWAIT` —, en autocommit, sur une connexion du
+/// pool, avec `id` lié.
+///
+/// Rend `true` si la sonde **réussit** (la ligne n'est tenue par personne dans
+/// un mode incompatible), `false` si elle échoue **aussitôt** sur un verrou —
+/// sous MariaDB 10.11, `NOWAIT` contre une ligne tenue rend **`1205`** (*Lock
+/// wait timeout exceeded*, mesuré en T0 de la Story 15-5d ; et non le `3572` de
+/// MySQL). Toute autre erreur fait **paniquer** : une sonde qui échoue pour
+/// une autre raison ne doit pas passer pour un verrou.
+///
+/// En autocommit, le verrou de la sonde est rendu à la fin de l'instruction :
+/// elle ne retient rien après son retour.
+pub async fn sonde_verrou_nowait(pool: &MySqlPool, sql: &str, id: i64) -> bool {
+    match sqlx::query(sql).bind(id).fetch_all(pool).await {
+        Ok(_) => true,
+        Err(e) => {
+            let numero = e
+                .as_database_error()
+                .and_then(|d| d.try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>())
+                .map(|m| m.number());
+            assert_eq!(
+                numero,
+                Some(1205),
+                "la sonde « {sql} » a échoué pour une autre raison qu'un verrou : {e:?}"
+            );
+            false
+        }
     }
 }
 

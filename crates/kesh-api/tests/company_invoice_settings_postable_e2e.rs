@@ -8,6 +8,11 @@
 //! (`VALIDATION_ERROR`) **et** le message qui nomme le champ — un 400 venu
 //! d'ailleurs (type, version) ne passerait pas.
 //!
+//! Story 15-5d (#429) — la garde **à l'usage** : la validation d'une facture
+//! dont la créance désignée est devenue non imputable est refusée en 400
+//! `ACCOUNT_NOT_POSTABLE`, avec un message qui renvoie à *Paramètres →
+//! Facturation* et à un administrateur — servi ici à un **Comptable**.
+//!
 //! Pré-requis : MariaDB démarré localement.
 
 use std::net::SocketAddr;
@@ -69,6 +74,9 @@ async fn spawn_app(pool: MySqlPool) -> TestApp {
         )
         .expect("load test i18n"),
     );
+    // Story 15-5d : sans lui, le `message` d'un refus n'est pas résolu par le
+    // dictionnaire (patron `invoice_unvalidate_e2e.rs`).
+    kesh_api::errors::init_error_i18n(i18n.clone(), config.locale);
     let state = AppState::new_for_tests(pool, Arc::new(config), Arc::new(rate_limiter), i18n);
     let app = build_router(state.clone(), "nonexistent-static-dir".to_string());
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -434,4 +442,146 @@ async fn null_clears_and_value_replaces_payable_account(pool: MySqlPool) {
     let resp = put(&app, &ctx, &body).await;
     assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
     assert_eq!(stored_payable(&pool, ctx.company_id).await, None);
+}
+
+// ---------------------------------------------------------------------------
+// Story 15-5d (#429) — la garde À L'USAGE, par la route de validation
+// ---------------------------------------------------------------------------
+
+/// La validation d'une facture dont la **créance désignée** est devenue non
+/// imputable : 400 `ACCOUNT_NOT_POSTABLE`, `details.rejected`, un message qui
+/// renvoie à *Paramètres → Facturation*, nomme le numéro et dit qu'un
+/// administrateur doit agir — servi à un **Comptable**, qui n'a pas accès à la
+/// page des réglages (choix C36). La facture reste brouillon.
+///
+/// Montage (findings F5-4 = R5-3) : `setup` ne suffit pas à valider une facture
+/// (ni exercice, ni contact, ni taux) ; il est remplacé par
+/// `seed_accounting_company` (exercice, comptes, réglages : créance `1100`, TVA
+/// due `2000`, taux), l'arrondi à 5 centimes désactivé, un contact client et un
+/// utilisateur Comptable connecté par la vraie route de login.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn validation_refuses_a_designated_receivable_made_non_postable(pool: MySqlPool) {
+    use kesh_db::entities::contact::{ContactType, NewContact, Salutation};
+    use kesh_db::entities::{NewInvoice, NewInvoiceLine};
+    use kesh_db::repositories::{contacts, invoices};
+    use rust_decimal_macros::dec;
+
+    let app = spawn_app(pool.clone()).await;
+    let seeded = kesh_db::test_fixtures::seed_accounting_company(&pool)
+        .await
+        .unwrap();
+    kesh_db::test_fixtures::disable_rounding_to_5_centimes(&pool, seeded.company_id)
+        .await
+        .unwrap();
+    let contact_id = contacts::create(
+        &pool,
+        seeded.admin_user_id,
+        NewContact {
+            company_id: seeded.company_id,
+            contact_type: ContactType::Personne,
+            name: "Client X".into(),
+            first_name: None,
+            last_name: None,
+            is_client: true,
+            is_supplier: false,
+            address: Some("Rue 1\n1000 Lausanne".into()),
+            address_street: None,
+            address_building: None,
+            address_postal_code: None,
+            address_city: None,
+            address_country: None,
+            email: None,
+            phone: None,
+            ide_number: None,
+            client_number: None,
+            default_payment_terms: None,
+            default_payment_terms_days: None,
+            language: None,
+            salutation: Salutation::Neutre,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    let (invoice, _) = invoices::create(
+        &pool,
+        seeded.admin_user_id,
+        NewInvoice {
+            company_id: seeded.company_id,
+            contact_id,
+            date: chrono::NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
+            due_date: None,
+            payment_terms: None,
+            lines: vec![NewInvoiceLine {
+                revenue_account_id: None,
+                description: "Prestation".into(),
+                quantity: dec!(1),
+                unit_price: dec!(100.00),
+                vat_rate: dec!(8.10),
+            }],
+            project_id: None,
+        },
+    )
+    .await
+    .unwrap();
+
+    // La créance, DÉSIGNÉE (par le seed), puis rendue non imputable.
+    let receivable = seeded.accounts["1100"];
+    set_postable(&pool, receivable, false).await;
+
+    users::create(
+        &pool,
+        NewUser {
+            username: "comptable".into(),
+            password_hash: hash_password("comptable123").unwrap(),
+            role: Role::Comptable,
+            active: true,
+            company_id: seeded.company_id,
+            email: None,
+        },
+    )
+    .await
+    .unwrap();
+    let login = app
+        .client
+        .post(app.url("/api/v1/auth/login"))
+        .json(&json!({ "username": "comptable", "password": "comptable123" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(login.status(), 200, "login du Comptable");
+    let token = login.json::<Value>().await.unwrap()["accessToken"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/invoices/{}/validate", invoice.id)))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ACCOUNT_NOT_POSTABLE", "{body}");
+    assert_eq!(
+        body["error"]["details"]["rejected"],
+        json!([{ "accountId": receivable, "accountNumber": "1100" }]),
+        "{body}"
+    );
+    let message = body["error"]["message"].as_str().unwrap();
+    for attendu in ["Paramètres → Facturation", "1100", "administrateur"] {
+        assert!(
+            message.contains(attendu),
+            "« {attendu} » absent : {message}"
+        );
+    }
+
+    let status: String = sqlx::query_scalar("SELECT status FROM invoices WHERE id = ?")
+        .bind(invoice.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "draft", "la facture doit rester brouillon");
 }

@@ -14,6 +14,8 @@
 //! Helper de génération d'écriture en kesh-db (PAS kesh-core : `NewJournalEntryLine`
 //! et `DbError` y sont définis — dépendance circulaire sinon [O-C1]).
 
+use std::collections::BTreeSet;
+
 use rust_decimal::Decimal;
 use sqlx::MySqlPool;
 
@@ -23,6 +25,7 @@ use crate::entities::{
 };
 use crate::errors::{DbError, NonPostableAccount, map_db_error};
 use crate::repositories::audit_log;
+use crate::repositories::company_invoice_settings::{DesignatedRole, GeneratedLines};
 
 /// SELECT scopé multi-tenant (anti-IDOR — toujours `AND company_id = ?`).
 const FIND_SCOPED_SQL: &str = "SELECT id, company_id, contact_id, supplier_invoice_number, status, \
@@ -106,8 +109,13 @@ fn generate_purchase_journal_lines(
     lines: &[(Decimal, Decimal, i64)],
     payable_account_id: i64,
     recoverable_account_id: Option<i64>,
-) -> Result<(Vec<NewJournalEntryLine>, Decimal), DbError> {
+) -> Result<(GeneratedLines, Decimal), DbError> {
     use kesh_core::accounting::vat::line_vat_amount;
+
+    // Story 15-5d (C39) — les rôles de réglage effectivement écrits : les
+    // créanciers toujours, la TVA récupérable dans la seule branche qui l'écrit.
+    let mut roles: BTreeSet<DesignatedRole> = BTreeSet::new();
+    roles.insert(DesignatedRole::Payable);
 
     let mut total_ht = Decimal::ZERO;
     let mut total_vat = Decimal::ZERO;
@@ -130,6 +138,7 @@ fn generate_purchase_journal_lines(
         let vat_account = recoverable_account_id.ok_or_else(|| {
             DbError::ConfigurationRequired("default_vat_recoverable_account_id".into())
         })?;
+        roles.insert(DesignatedRole::VatRecoverable);
         entry_lines.push(NewJournalEntryLine {
             account_id: vat_account,
             debit: total_vat,
@@ -147,7 +156,13 @@ fn generate_purchase_journal_lines(
         project_id: None,
     });
 
-    Ok((entry_lines, total_ttc))
+    Ok((
+        GeneratedLines {
+            lines: entry_lines,
+            roles,
+        },
+        total_ttc,
+    ))
 }
 
 /// Récupère une facture fournisseur + ses lignes (scopé company). `None` si introuvable.
@@ -263,6 +278,11 @@ pub async fn create(
 /// (2, suite) accounts           passe des COMPTES de l'étape (2), après (2 bis) :
 ///                               chaque compte de charge FOR UPDATE, dans l'ordre
 ///                               des lignes (sans tri)
+/// (2, désignés) accounts        comptes désignés (créanciers, TVA récupérable),
+///                               LOCK IN SHARE MODE (partagé), ORDER BY id
+///                               — Story 15-5d, lock_designated_accounts_in_tx ;
+///                               tous les candidats, même la TVA récupérable
+///                               d'une facture sans TVA
 /// (3)    fiscal_years           find_open_covering_date
 /// (4)    —                      exigence du compte créanciers
 ///                               (ConfigurationRequired) sur les réglages lus en
@@ -282,7 +302,14 @@ pub async fn create(
 /// même société sans les sérialiser à coup sûr (un `INSERT IGNORE` en doublon y
 /// pose un verrou partagé, mesuré sur MariaDB 10.11 — deux saisies qui le
 /// tiennent puis demandent l'exclusif s'interbloquent), et l'insertion des
-/// lignes reprend les comptes après l'exercice. Les comptes de charge ne sont
+/// lignes reprend les comptes après l'exercice. Les comptes désignés de
+/// `(2, désignés)` (passif, actif) et les comptes de charge (`Expense`) sont
+/// disjoints par type, et leur verrou est **partagé** (Story 15-5d) : il suffit
+/// contre l'archivage et le passage à non imputable, qui écrivent la ligne du
+/// compte, et reste compatible avec le verrou partagé que `fk_jel_account`
+/// pose sur les créanciers dans un règlement fournisseur qui tient déjà
+/// l'exercice ; il précède l'exercice, comme le compte interne d'un règlement
+/// fournisseur. Les comptes de charge ne sont
 /// pas triés : les cycles qui restent (deux saisies aux comptes croisés, une
 /// charge imputée au compte d'arrondi contre un règlement client par compte
 /// interne avec écart) sont couverts par le **rejeu des routes** — la saisie
@@ -425,6 +452,20 @@ pub async fn create_in_tx(
         return Err(DbError::accounts_not_postable(non_postable));
     }
 
+    // (2, désignés) Story 15-5d (#429) — les comptes DÉSIGNÉS que cette saisie
+    // peut écrire (créanciers, TVA récupérable), lus dans les réglages de (2 bis),
+    // verrouillés EN PARTAGÉ (`LOCK IN SHARE MODE`, `ORDER BY id`), après les
+    // comptes de charge et AVANT l'exercice (3). Rien n'est refusé ici : le
+    // contrôle des seuls rôles écrits vient après la génération (5). Un compte
+    // créanciers `None` n'est simplement pas candidat ; son exigence (4) ne
+    // bouge pas.
+    let designated = company_invoice_settings::lock_designated_accounts_in_tx(
+        &mut *tx,
+        company_id,
+        &DesignatedRole::candidate_ids(&DesignatedRole::PURCHASE, &settings),
+    )
+    .await?;
+
     // (3) Exercice ouvert couvrant la date de facture.
     let fy = fiscal_years::find_open_covering_date(&mut *tx, company_id, invoice_date)
         .await?
@@ -437,11 +478,18 @@ pub async fn create_in_tx(
         .ok_or_else(|| DbError::ConfigurationRequired("default_payable_account_id".into()))?;
 
     // (5) Écriture d'achat.
-    let (entry_lines, total_ttc) = generate_purchase_journal_lines(
+    let (generated, total_ttc) = generate_purchase_journal_lines(
         &pairs,
         payable_account_id,
         settings.default_vat_recoverable_account_id,
     )?;
+    // Story 15-5d (#429) — la garde à l'usage : les seuls comptes de réglage
+    // écrits (la TVA récupérable seulement si la TVA totale est positive), sur
+    // l'instantané verrouillé en (2, désignés). Absent ou archivé →
+    // `InactiveOrInvalidAccounts` ; non imputable →
+    // `DesignatedAccountsNotPostable`.
+    designated.check_written(&generated.roles, &settings)?;
+    let entry_lines = generated.lines;
     let number_label = supplier_invoice_number.clone().unwrap_or_default();
     let description = format!("Facture fournisseur {number_label} - {contact_name}");
     let je = journal_entries::create_in_tx(
@@ -1383,7 +1431,8 @@ mod tests {
     fn purchase_lines_single_rate() {
         // 1000 HT @8.1% → D 6000=1000, D 1171=81, C 2000=1081.
         let lines = vec![(dec!(1000), dec!(8.1), 6000)];
-        let (je, ttc) = generate_purchase_journal_lines(&lines, 2000, Some(1171)).unwrap();
+        let (generated, ttc) = generate_purchase_journal_lines(&lines, 2000, Some(1171)).unwrap();
+        let je = generated.lines;
         assert_eq!(je.len(), 3);
         assert_eq!(
             (je[0].account_id, je[0].debit, je[0].credit),
@@ -1407,7 +1456,8 @@ mod tests {
     fn purchase_lines_multi_same_account_distinct_lines() {
         // 2 lignes, même compte de charge 6000 → 2 lignes débit distinctes (pas d'agrégation).
         let lines = vec![(dec!(100), dec!(8.1), 6000), (dec!(200), dec!(8.1), 6000)];
-        let (je, _) = generate_purchase_journal_lines(&lines, 2000, Some(1171)).unwrap();
+        let (generated, _) = generate_purchase_journal_lines(&lines, 2000, Some(1171)).unwrap();
+        let je = generated.lines;
         // 2 lignes charge + 1 ligne TVA + 1 ligne 2000 = 4.
         assert_eq!(je.len(), 4);
         assert_eq!(je[0].account_id, 6000);
@@ -1420,7 +1470,8 @@ mod tests {
     fn purchase_lines_zero_vat_omits_1171() {
         // Tout exonéré → pas de ligne 1171 (évite debit=0 & credit=0).
         let lines = vec![(dec!(1000), dec!(0), 6000)];
-        let (je, ttc) = generate_purchase_journal_lines(&lines, 2000, None).unwrap();
+        let (generated, ttc) = generate_purchase_journal_lines(&lines, 2000, None).unwrap();
+        let je = generated.lines;
         assert_eq!(je.len(), 2);
         assert_eq!((je[0].account_id, je[0].debit), (6000, dec!(1000)));
         assert_eq!((je[1].account_id, je[1].credit), (2000, dec!(1000)));

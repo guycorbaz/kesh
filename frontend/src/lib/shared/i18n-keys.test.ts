@@ -488,7 +488,12 @@ const ATTENDU = {
 	// (`journal-entry-deleted`), le repli d'erreur du refus (`error-unexpected`),
 	// la mention « Modifiée » (`journal-entry-modified`) et le lien « Historique »
 	// (`journal-entry-history`).
-	sitesTotal: 1913,
+	// Story 15-5d (#429, choix C34) : **1913 → 1915** (+2), le compte créanciers dans
+	// `routes/(app)/settings/invoicing/+page.svelte` (47 → 49, recompté par `grep -o`
+	// aux deux bornes) : son libellé (`settings-invoicing-payable-account`) et l'option
+	// vide de son sélecteur (`settings-invoicing-select-none`). `sitesNonResolus`,
+	// `relais`, `sitesGabarit` inchangés (aucun site dynamique ajouté).
+	sitesTotal: 1915,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

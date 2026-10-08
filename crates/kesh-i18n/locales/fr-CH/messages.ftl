@@ -285,6 +285,10 @@ error-account-not-postable = { $count ->
     [one] Le compte { $numbers } n’est pas imputable (compte de regroupement, de résultat ou de clôture) : choisissez un compte imputable.
    *[other] Les comptes { $numbers } ne sont pas imputables (comptes de regroupement, de résultat ou de clôture) : choisissez des comptes imputables.
 }
+error-designated-account-not-postable = { $count ->
+    [one] Le compte { $numbers }, désigné dans Paramètres → Facturation, n’est pas imputable (compte de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à sa place un compte imputable.
+   *[other] Les comptes { $numbers }, désignés dans Paramètres → Facturation, ne sont pas imputables (comptes de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à leur place des comptes imputables.
+}
 error-rounding-account-not-configured = Ce paiement solde la facture au centime, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation.
 error-rounding-account-not-configured-issuance = Le total de cette pièce est arrondi à 5 centimes, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation.
 error-write-off-account-not-configured-discount = Aucun compte d'escompte utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation, section Solde du reste.
@@ -615,6 +619,7 @@ settings-invoicing-format-label = Format de numérotation
 settings-invoicing-format-help = Placeholders : {"{"}YEAR{"}"}, {"{"}FY{"}"}, {"{"}SEQ{"}"}, {"{"}SEQ:NN{"}"}
 settings-invoicing-format-preview = Aperçu
 settings-invoicing-receivable-account = Compte créance client (Actif)
+settings-invoicing-payable-account = Compte créanciers (Passif)
 settings-invoicing-revenue-account = Compte produit (Revenue)
 settings-invoicing-journal = Journal
 settings-invoicing-description-template = Libellé de l'écriture comptable

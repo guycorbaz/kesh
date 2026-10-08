@@ -285,6 +285,10 @@ error-account-not-postable = { $count ->
     [one] Das Konto { $numbers } ist nicht bebuchbar (Sammel-, Ergebnis- oder Abschlusskonto): Wählen Sie ein bebuchbares Konto.
    *[other] Die Konten { $numbers } sind nicht bebuchbar (Sammel-, Ergebnis- oder Abschlusskonten): Wählen Sie bebuchbare Konten.
 }
+error-designated-account-not-postable = { $count ->
+    [one] Das unter Einstellungen → Fakturierung festgelegte Konto { $numbers } ist nicht bebuchbar (Sammel-, Ergebnis- oder Abschlusskonto): Eine Administratorin oder ein Administrator muss dort stattdessen ein bebuchbares Konto festlegen.
+   *[other] Die unter Einstellungen → Fakturierung festgelegten Konten { $numbers } sind nicht bebuchbar (Sammel-, Ergebnis- oder Abschlusskonten): Eine Administratorin oder ein Administrator muss dort stattdessen bebuchbare Konten festlegen.
+}
 error-rounding-account-not-configured = Diese Zahlung begleicht die Rechnung auf den Rappen genau, aber es ist kein verwendbares Konto für Rundungsdifferenzen festgelegt: Wählen Sie eines unter Einstellungen → Fakturierung.
 error-rounding-account-not-configured-issuance = Der Gesamtbetrag dieses Belegs ist auf 5 Rappen gerundet, aber es ist kein verwendbares Konto für Rundungsdifferenzen festgelegt: Wählen Sie eines unter Einstellungen → Fakturierung.
 error-write-off-account-not-configured-discount = Es ist kein verwendbares Skontokonto festgelegt: Wählen Sie eines unter Einstellungen → Fakturierung, Abschnitt Restbetrag ausbuchen.
@@ -1797,6 +1801,7 @@ settings-invoicing-load-error = Fehler beim Laden
 settings-invoicing-save-error = Fehler beim Speichern
 settings-invoicing-journal = Journal
 settings-invoicing-receivable-account = Konto Forderungen aus Lieferungen und Leistungen (Aktiv)
+settings-invoicing-payable-account = Konto Verbindlichkeiten aus Lieferungen und Leistungen (Passiv)
 settings-invoicing-revenue-account = Ertragskonto (Ertrag)
 settings-invoicing-save = Speichern
 settings-invoicing-save-success = Konfiguration gespeichert
