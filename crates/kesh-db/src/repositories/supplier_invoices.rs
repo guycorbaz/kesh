@@ -320,8 +320,9 @@ pub async fn create_in_tx(
     // (0) Projet analytique optionnel (Story 19-3) : s'il est renseigné, il doit
     // exister, appartenir à la même company et ne pas être archivé (sinon la dépense
     // serait taguée sur un projet clos). Le helper prend le sentinel `companies`
-    // AVANT le `FOR UPDATE` projets (Pattern 5, anti-deadlock ABBA — code-review
-    // Pass 3 Opus 19-3) et ferme la race d'archivage concurrent. Extrait en helper
+    // AVANT le `FOR UPDATE` projets (Pattern 5, anti-deadlock ABBA avec
+    // l'archivage d'un projet — code-review Pass 3 Opus 19-3) et ferme la race
+    // d'archivage concurrent. Extrait en helper
     // partagé en Story 19-2 (réutilisé par le tag par-ligne des écritures manuelles).
     if let Some(pid) = project_id {
         super::projects::validate_taggable_in_tx(tx, company_id, &[pid]).await?;

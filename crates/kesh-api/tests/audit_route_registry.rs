@@ -1,5 +1,7 @@
 //! Registre des routes mutantes et sa garde — Story 25-1b (AC 11), étendu au
-//! rejeu sur interblocage par la Story 15-5e1 (AC1, AC4 test 6 ; choix C58).
+//! rejeu sur interblocage par la Story 15-5e1 (AC1, AC4 test 6 ; choix C58),
+//! achevé par la Story 15-5e2 (plus aucune route « à rejouer », `retry_with`
+//! restreint à `post_accept`).
 //!
 //! Chaque route mutante porte **deux statuts** : son statut d'audit
 //! ([`Status`]) et son statut de rejeu ([`Rejeu`]). Une route ajoutée demain
@@ -41,7 +43,10 @@
 //! journal** (Story 15-5e1, AC1 — remonté depuis les primitives d'écriture au
 //! journal jusqu'aux handlers) : toute route mutante y est classée, et le volet
 //! (c) ([`every_replayed_route_calls_an_envelope`]) échoue sur une route
-//! `Rejouee` dont le handler n'appelle aucune enveloppe.
+//! `Rejouee` dont le handler n'appelle aucune enveloppe. Le volet (c bis)
+//! ([`no_route_calls_retry_with_except_post_accept`]) échoue sur tout appel
+//! direct à la primitive `retry_with` dans `src/routes/`, **quel que soit le
+//! statut de la route**, hors des handlers de [`RETRY_WITH_AUTORISE`].
 //!
 //! ⛔ Il n'établit PAS :
 //!
@@ -54,24 +59,28 @@
 //!   `rejeu_interblocage_e2e.rs` le prouvent dynamiquement, pour cinq routes de
 //!   la famille `DbError` (quatre qui écrivent au journal, et l'enregistrement
 //!   des réglages de facturation). Pour la famille `AppError`, le test 1 éprouve
-//!   le prédicat et l'enveloppe, et le chemin propre à chaque route relève de la
-//!   revue fichier par fichier.
+//!   le prédicat et l'enveloppe, et le test 8 le chemin propre aux routes à
+//!   verrou nommé sur `reconciliation::manual` (1213 levé sous le verrou,
+//!   `match` du handler, `RELEASE_LOCK`, `rollback`, nouvelle tentative) ; pour
+//!   les autres routes, c'est la revue fichier par fichier.
 //! - **(iii)** une enveloppe appelée par une fonction auxiliaire du handler : le
 //!   nom doit figurer dans le corps du handler lui-même — c'est la forme exigée.
 //! - **(iii bis)** — **angle mort assumé** (revue P1, B-4 = E-2) — que
 //!   l'enveloppe **enveloppe l'écriture** : le volet (c) est vrai dès qu'un
 //!   appel de ce nom figure dans le corps. Un handler `Rejouee` qui
 //!   envelopperait une lecture et ferait l'écriture hors de la fermeture
-//!   resterait vert. Les tests 2 à 5 et 7 de `rejeu_interblocage_e2e.rs` le
-//!   prouvent dynamiquement pour leurs cinq routes, et
+//!   resterait vert. Ont une preuve dynamique : les cinq routes des tests 2 à 5
+//!   et 7 de `rejeu_interblocage_e2e.rs` et `reconciliation::manual` (test 8 du
+//!   même fichier, Story 15-5e2) ;
 //!   `accept_replays_the_batch_when_it_is_the_deadlock_victim`
-//!   (`reconciliation_e2e.rs`) pour `reconciliation::accept`,
+//!   (`reconciliation_e2e.rs`) pour `reconciliation::accept` ;
 //!   `the_put_replays_a_deadlock_it_lost` (`journal_entry_reversal_e2e.rs`,
-//!   15-8a) pour `journal_entries::update` ; pour
-//!   `invoices::write_off`, `reconciliation::cancel`,
-//!   `opening_balances::complete` et `journal_entries::delete` (15-8b, rejouée
-//!   par uniformité avec le `PUT`, sans cycle connu — choix C-15-8b-6), c'est la
-//!   revue fichier par fichier.
+//!   15-8a) pour `journal_entries::update`. Pour toutes les autres routes
+//!   `Rejouee` — dont `reconciliation::split` et
+//!   `imported_supplier_invoices::complete`, les deux autres fonctions « une
+//!   tentative » extraites par la 15-5e2, et `journal_entries::delete` (15-8b,
+//!   rejouée par uniformité avec le `PUT`, sans cycle connu — choix
+//!   C-15-8b-6) —, c'est la revue fichier par fichier.
 //! - **(iv)** — **angle mort assumé** — qu'une route `SansEcritureAuJournal` qui
 //!   prend un verrou ne soit pas la **victime** d'un cycle avec un flux qui écrit
 //!   au journal. P. ex. `accept_batch` tient un verrou partagé sur la ligne
@@ -88,12 +97,14 @@
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
 //! - **(vi)** **deux routes `SansEcritureAuJournal` sont rejouées quand même** :
-//!   `onboarding::finalize` (`retry_with`) et
+//!   `onboarding::finalize` (enveloppe `AppError`, Story 15-5e2) et
 //!   `company_invoice_settings::update_invoice_settings` (enveloppe `DbError`,
 //!   exposée par l'avance des réglages de la saisie fournisseur — choix C70). La
 //!   colonne dit l'inventaire de l'AC1, pas la présence d'une enveloppe, et le
 //!   volet (c) ne les examine pas : la seconde est tenue par le test 7 de
-//!   `rejeu_interblocage_e2e.rs`, la première par sa revue.
+//!   `rejeu_interblocage_e2e.rs`, la première par sa revue — et le volet
+//!   (c bis) interdit qu'elle revienne à un `retry_with` à prédicat écrit en
+//!   ligne.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -118,11 +129,12 @@ use Status::{Exempt, NoMatter, Traced};
 enum Rejeu {
     /// Écrit au journal et rejouée : son handler appelle une enveloppe
     /// (`retry_on_deadlock`, `retry_on_deadlock_with`, `retry_app_on_deadlock`
-    /// ou, jusqu'à la 15-5e2, `retry_with`) — contrôlé par le volet (c).
+    /// — ou la primitive pour les seuls handlers de [`RETRY_WITH_AUTORISE`]) —
+    /// contrôlé par le volet (c).
+    ///
+    /// Le statut transitoire `ARejouer` de la 15-5e1 a été retiré par la
+    /// 15-5e2, qui a rejoué toutes les routes qu'il portait.
     Rejouee,
-    /// Écrit au journal, **pas encore** rejouée : statut transitoire, qui nomme
-    /// la story qui la rejoue et que celle-ci retire.
-    ARejouer(&'static str),
     /// N'écrit pas au journal (inventaire de l'AC1). Ne dit rien de la présence
     /// d'une enveloppe — cf. point (vi) du doc-comment du module.
     SansEcritureAuJournal,
@@ -130,7 +142,7 @@ enum Rejeu {
     Exemptee(&'static str),
 }
 
-use Rejeu::{ARejouer, Exemptee, Rejouee, SansEcritureAuJournal};
+use Rejeu::{Exemptee, Rejouee, SansEcritureAuJournal};
 
 /// Les routes mutantes de `crates/kesh-api/src/lib.rs`, par identité
 /// `(verbe, module::handler)`.
@@ -162,16 +174,18 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("put", "accounts::update_account", Traced, SansEcritureAuJournal),
     ("put", "accounts::archive_account", Traced, SansEcritureAuJournal),
     ("put", "accounts::reactivate_account", Traced, SansEcritureAuJournal),
-    ("post", "journal_entries::create_journal_entry", Traced, ARejouer("15-5e2")),
+    ("post", "journal_entries::create_journal_entry", Traced, Rejouee),
     // Story 15-8a (#532) : l'audit `journal_entry.updated` vient de `journal_entries::update`.
-    // Rejouée par la 15-8a (`retry_with`, C-15-8-19), nommée à l'intégration de la 15-5e1.
+    // Rejouée par la 15-8a (C-15-8-19), nommée à l'intégration de la 15-5e1 ; enveloppe
+    // `DbError` depuis la 15-5e2.
     ("put", "journal_entries::update_journal_entry", Traced, Rejouee),
     // Story 15-8b (#532) : l'audit `journal_entry.deleted` vient de `journal_entries::delete_in_tx`.
-    // Rejouée par la 15-8b (`retry_with`, par uniformité avec le `PUT`), nommée à son intégration.
+    // Rejouée par la 15-8b (par uniformité avec le `PUT`), nommée à son intégration ; enveloppe
+    // `DbError` depuis la 15-5e2.
     ("delete", "journal_entries::delete_journal_entry", Traced, Rejouee),
     ("post", "companies::lock_company_books", Traced, SansEcritureAuJournal),
-    ("post", "journal_entries::reverse_journal_entry", Traced, ARejouer("15-5e2")),
-    ("post", "opening_balances::generate_opening_balances", Traced, ARejouer("15-5e2")),
+    ("post", "journal_entries::reverse_journal_entry", Traced, Rejouee),
+    ("post", "opening_balances::generate_opening_balances", Traced, Rejouee),
     // Story 25-7 (#445) : l'audit vient de `create_in_tx` (`journal_entry.created`).
     ("post", "opening_balances::complete_opening_balances", Traced, Rejouee),
     ("post", "contacts::create_contact", Traced, SansEcritureAuJournal),
@@ -185,19 +199,19 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("put", "products::archive_product", Traced, SansEcritureAuJournal),
     ("post", "invoices::create_invoice", Traced, SansEcritureAuJournal),
     ("put", "invoices::update_invoice", Traced, SansEcritureAuJournal),
-    ("post", "credit_notes::create_credit_note", Traced, ARejouer("15-5e2")),
+    ("post", "credit_notes::create_credit_note", Traced, Rejouee),
     ("post", "supplier_invoices::create_supplier_invoice", Traced, Rejouee),
-    ("post", "supplier_invoices::pay_supplier_invoice", Traced, ARejouer("15-5e2")),
-    ("post", "supplier_invoices::cancel_supplier_invoice", Traced, ARejouer("15-5e2")),
+    ("post", "supplier_invoices::pay_supplier_invoice", Traced, Rejouee),
+    ("post", "supplier_invoices::cancel_supplier_invoice", Traced, Rejouee),
     ("post", "supplier_invoices::scan_qr_supplier_invoice", NoMatter("parsing pur du payload SPC, aucun accès base"), SansEcritureAuJournal),
     ("post", "imported_supplier_invoices::post_inbox_import", Traced, SansEcritureAuJournal),
-    ("post", "imported_supplier_invoices::complete_import", Traced, ARejouer("15-5e2")),
+    ("post", "imported_supplier_invoices::complete_import", Traced, Rejouee),
     ("post", "imported_supplier_invoices::discard_import", Traced, SansEcritureAuJournal),
     ("post", "payment_batches::create_payment_batch", Traced, SansEcritureAuJournal),
-    ("post", "payment_batches::confirm_payment_batch", Traced, ARejouer("15-5e2")),
+    ("post", "payment_batches::confirm_payment_batch", Traced, Rejouee),
     ("post", "payment_batches::cancel_payment_batch", Traced, SansEcritureAuJournal),
     ("post", "invoices::validate_invoice_handler", Traced, Rejouee),
-    ("post", "invoices::unvalidate_invoice_handler", Traced, ARejouer("15-5e2")),
+    ("post", "invoices::unvalidate_invoice_handler", Traced, Rejouee),
     // Story 25-6-b (#387) — refiger le PDF d'une facture (audit
     // `invoice.pdf_refrozen`, dans la transaction de `invoices::refreeze_pdf`).
     //
@@ -211,7 +225,7 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("post", "invoices::settle_invoice_handler", Traced, Rejouee),
     ("post", "invoices::write_off_invoice_handler", Traced, Rejouee),
     ("post", "invoices::cancel_invoice_settlement_handler", Traced, Rejouee),
-    ("post", "supplier_invoices::cancel_supplier_invoice_settlement", Traced, ARejouer("15-5e2")),
+    ("post", "supplier_invoices::cancel_supplier_invoice_settlement", Traced, Rejouee),
     ("put", "dunning_reminders::pause_dunning", Traced, SansEcritureAuJournal),
     ("put", "dunning_reminders::resume_dunning", Traced, SansEcritureAuJournal),
     ("post", "dunning_reminders::record_manual_reminder", Traced, SansEcritureAuJournal),
@@ -228,8 +242,8 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("delete", "bank_profiles::delete", Traced, SansEcritureAuJournal),
     ("post", "reconciliation::post_accept", Traced, Rejouee),
     ("post", "reconciliation::post_reject", Traced, SansEcritureAuJournal),
-    ("post", "reconciliation::post_manual", Traced, ARejouer("15-5e2")),
-    ("post", "reconciliation::post_split", Traced, ARejouer("15-5e2")),
+    ("post", "reconciliation::post_manual", Traced, Rejouee),
+    ("post", "reconciliation::post_split", Traced, Rejouee),
     // Story 25-3-b (#418) — `reconciliation.cancelled`.
     ("post", "reconciliation::post_cancel_reconciliation", Traced, Rejouee),
     ("post", "bank_accounts::create_bank_account", Traced, SansEcritureAuJournal),
@@ -601,33 +615,53 @@ fn every_exemption_names_the_issue_that_follows_it() {
 // ---------------------------------------------------------------------------
 
 /// Les enveloppes de rejeu, cherchées par le **dernier segment** du chemin
-/// appelé. `retry_with` n'est accepté que jusqu'à la 15-5e2, qui le restreint à
-/// `post_accept`.
+/// appelé. La primitive [`PRIMITIVE`] n'en est pas une : elle n'est acceptée
+/// que dans les handlers de [`RETRY_WITH_AUTORISE`] (Story 15-5e2).
 const ENVELOPPES: &[&str] = &[
     "retry_on_deadlock",
     "retry_on_deadlock_with",
     "retry_app_on_deadlock",
-    "retry_with",
 ];
+
+/// Les seuls handlers autorisés à appeler la primitive `retry_with`
+/// directement (Story 15-5e2, choix C85) : `post_accept`, dont le prédicat est
+/// élargi au 1305 (`ReconciliationTransactionAborted`), propre à la route. Le
+/// volet (c) y accepte la primitive comme enveloppe ; le volet (c bis)
+/// ([`no_route_calls_retry_with_except_post_accept`]) refuse tout autre appel
+/// direct dans `src/routes/`, et exige que celui-ci existe encore.
+const RETRY_WITH_AUTORISE: &[&str] = &["post_accept"];
+
+/// Nom de la primitive de rejeu, réservée aux handlers de [`RETRY_WITH_AUTORISE`].
+const PRIMITIVE: &str = "retry_with";
 
 /// Visiteur `syn` du **corps** d'un handler : vrai dès qu'il rencontre un appel
 /// à une enveloppe — `ExprCall` dont la fonction est un chemin terminé par l'un
-/// des noms de [`ENVELOPPES`], ou `ExprMethodCall` de ce nom.
+/// des noms de [`ENVELOPPES`], ou `ExprMethodCall` de ce nom ; et, pour un
+/// handler de [`RETRY_WITH_AUTORISE`] seulement (`accepte_primitive`), un appel
+/// à la primitive [`PRIMITIVE`].
 ///
 /// ⚠️ Les deux surcharges **rappellent** l'implémentation par défaut : sans ce
 /// rappel, le visiteur ne descendrait plus sous un appel et manquerait
-/// `Ok(retry_with(…).await.map_err(…)?)`. Il ne descend pas, en revanche, dans
-/// les items déclarés dans le corps (`fn`, `impl`, `mod` imbriqués).
+/// `Ok(retry_on_deadlock(…).await.map_err(…)?)`. Il ne descend pas, en
+/// revanche, dans les items déclarés dans le corps (`fn`, `impl`, `mod`
+/// imbriqués).
 #[derive(Default)]
 struct ChercheEnveloppe {
     trouve: bool,
+    accepte_primitive: bool,
+}
+
+impl ChercheEnveloppe {
+    fn est_enveloppe(&self, nom: &syn::Ident) -> bool {
+        ENVELOPPES.iter().any(|e| nom == e) || (self.accepte_primitive && nom == PRIMITIVE)
+    }
 }
 
 impl<'ast> syn::visit::Visit<'ast> for ChercheEnveloppe {
     fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
         if let syn::Expr::Path(chemin) = &*node.func
             && let Some(dernier) = chemin.path.segments.last()
-            && ENVELOPPES.iter().any(|e| dernier.ident == e)
+            && self.est_enveloppe(&dernier.ident)
         {
             self.trouve = true;
         }
@@ -635,7 +669,7 @@ impl<'ast> syn::visit::Visit<'ast> for ChercheEnveloppe {
     }
 
     fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
-        if ENVELOPPES.iter().any(|e| node.method == e) {
+        if self.est_enveloppe(&node.method) {
             self.trouve = true;
         }
         syn::visit::visit_expr_method_call(self, node);
@@ -661,7 +695,8 @@ impl<'ast> syn::visit::Visit<'ast> for CherchePlusieursFn<'_> {
     }
 }
 
-/// Le corps du handler `nom` appelle-t-il une enveloppe ? `Err` (message qui
+/// Le corps du handler `nom` appelle-t-il une enveloppe ? La primitive n'en
+/// est une que si `nom` figure à [`RETRY_WITH_AUTORISE`]. `Err` (message qui
 /// nomme la cause) si le source ne se parse pas, ou si aucun `fn` — ou plus
 /// d'un — ne porte ce nom : une route `Rejouee` n'est jamais sautée.
 fn handler_appelle_une_enveloppe(source: &str, nom: &str) -> Result<bool, String> {
@@ -674,7 +709,10 @@ fn handler_appelle_une_enveloppe(source: &str, nom: &str) -> Result<bool, String
     cherche.visit_file(&fichier);
     match cherche.corps.as_slice() {
         [corps] => {
-            let mut visiteur = ChercheEnveloppe::default();
+            let mut visiteur = ChercheEnveloppe {
+                trouve: false,
+                accepte_primitive: RETRY_WITH_AUTORISE.contains(&nom),
+            };
             visiteur.visit_block(corps);
             Ok(visiteur.trouve)
         }
@@ -712,8 +750,10 @@ fn every_replayed_route_calls_an_envelope() {
             Ok(true) => examinees += 1,
             Ok(false) => panic!(
                 "⛔ route `{verbe} {identite}` classée Rejouee, mais le corps de son \
-                 handler n'appelle aucune enveloppe ({ENVELOPPES:?}). Envelopper son \
-                 écriture (Story 15-5e1, AC2) ou corriger son statut de rejeu."
+                 handler n'appelle aucune enveloppe ({ENVELOPPES:?} ; la primitive \
+                 `{PRIMITIVE}` n'est acceptée que pour {RETRY_WITH_AUTORISE:?}). \
+                 Envelopper son écriture (Story 15-5e1, AC2) ou corriger son \
+                 statut de rejeu."
             ),
             Err(cause) => panic!(
                 "⛔ route `{verbe} {identite}` (Rejouee) : handler introuvable dans {} — \
@@ -722,7 +762,10 @@ fn every_replayed_route_calls_an_envelope() {
             ),
         }
     }
-    assert_eq!(examinees, 10, "les dix routes Rejouee ont été examinées");
+    assert_eq!(
+        examinees, 22,
+        "les vingt-deux routes Rejouee ont été examinées"
+    );
 }
 
 /// Le visiteur du volet (c), éprouvé sur un **source synthétique** : muter les
@@ -747,11 +790,11 @@ fn the_envelope_visitor_sees_calls_and_only_calls() {
         }
 
         pub async fn qualifie() -> Result<(), E> {
-            kesh_db::retry::retry_with("x", 3, p, f).await
+            kesh_db::retry::retry_on_deadlock("x", f).await
         }
 
         pub async fn turbofish() -> Result<(), E> {
-            retry_with::<_, _, (), E, _>("x", 3, p, f).await
+            retry_app_on_deadlock::<_, _, ()>("x", f).await
         }
 
         pub async fn methode() -> Result<(), E> {
@@ -769,7 +812,7 @@ fn the_envelope_visitor_sees_calls_and_only_calls() {
 
         pub async fn dans_un_bloc() -> Result<(), E> {
             {
-                { retry_with("x", 3, p, f).await }
+                { retry_on_deadlock("x", f).await }
             }
         }
 
@@ -778,6 +821,14 @@ fn the_envelope_visitor_sees_calls_and_only_calls() {
         }
 
         async fn aide() -> Result<(), E> {
+            retry_app_on_deadlock("x", f).await
+        }
+
+        pub async fn primitive_seule() -> Result<(), E> {
+            kesh_db::retry::retry_with("x", 3, p, f).await
+        }
+
+        pub async fn post_accept() -> Result<(), E> {
             retry_with("x", 3, p, f).await
         }
 
@@ -798,6 +849,7 @@ fn the_envelope_visitor_sees_calls_and_only_calls() {
         "dans_une_fermeture",
         "dans_un_bloc",
         "aide",
+        "post_accept",
     ] {
         assert_eq!(
             handler_appelle_une_enveloppe(source, trouve),
@@ -805,7 +857,14 @@ fn the_envelope_visitor_sees_calls_and_only_calls() {
             "l'appel de `{trouve}` doit être trouvé"
         );
     }
-    for absent in ["doc_du_suivant", "ailleurs", "item_imbrique"] {
+    // `primitive_seule` : la primitive `retry_with` n'est PAS une enveloppe
+    // pour un handler hors de `RETRY_WITH_AUTORISE` (Story 15-5e2).
+    for absent in [
+        "doc_du_suivant",
+        "ailleurs",
+        "item_imbrique",
+        "primitive_seule",
+    ] {
         assert_eq!(
             handler_appelle_une_enveloppe(source, absent),
             Ok(false),
@@ -832,10 +891,6 @@ fn the_envelope_visitor_sees_calls_and_only_calls() {
 fn the_replay_partition_is_what_the_story_declares() {
     let tout: Vec<_> = LIB_ROUTES.iter().chain(TEST_ENDPOINT_ROUTES).collect();
     let rejouees = tout.iter().filter(|(_, _, _, r)| *r == Rejouee).count();
-    let a_rejouer = tout
-        .iter()
-        .filter(|(_, _, _, r)| matches!(r, ARejouer(_)))
-        .count();
     let exemptees = tout
         .iter()
         .filter(|(_, _, _, r)| matches!(r, Exemptee(_)))
@@ -846,13 +901,15 @@ fn the_replay_partition_is_what_the_story_declares() {
         .count();
 
     assert_eq!(
-        rejouees, 10,
+        rejouees, 22,
         "5 rejouées avant la 15-5e1 (write_off, accept, cancel du rapprochement, \
          complément des soldes de départ, modification d'une écriture — 15-8a) + 4 par \
          elle (validation, règlement, annulation de règlement, saisie fournisseur) + la \
-         suppression d'une écriture (15-8b)"
+         suppression d'une écriture (15-8b) + 12 par la 15-5e2 (dévalidation, avoir, \
+         règlement, annulation et annulation de règlement fournisseurs, lot de \
+         paiement, écriture manuelle et contre-passation, bilan d'ouverture, \
+         complétion d'import, rapprochement manuel et ventilé)"
     );
-    assert_eq!(a_rejouer, 12, "12 routes rejouées par la 15-5e2");
     assert_eq!(
         exemptees, 4,
         "full_import, onboarding::reset, /seed, /reset"
@@ -861,14 +918,179 @@ fn the_replay_partition_is_what_the_story_declares() {
         sans_ecriture, 89,
         "88 routes de lib.rs, plus /password-reset-token de test_endpoints.rs"
     );
-    assert_eq!(rejouees + a_rejouer + exemptees + sans_ecriture, tout.len());
+    assert_eq!(rejouees + exemptees + sans_ecriture, tout.len());
     assert_eq!(tout.len(), 115);
-    for (verbe, identite, _, rejeu) in &tout {
-        if let ARejouer(fiche) = rejeu {
-            assert_eq!(
-                *fiche, "15-5e2",
-                "`{verbe} {identite}` : le statut transitoire nomme la story qui le retire"
-            );
+}
+
+/// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive
+/// [`PRIMITIVE`] — `ExprCall` dont le chemin se termine par ce nom, ou
+/// `ExprMethodCall` de ce nom —, avec le nom de la **fonction** (libre ou
+/// méthode) qui le contient au plus près. Un appel hors de toute fonction
+/// (initialiseur de `const`, `static`) est relevé sous `<hors fonction>`.
+#[derive(Default)]
+struct ChercheLaPrimitive {
+    pile: Vec<String>,
+    appels: Vec<String>,
+}
+
+impl ChercheLaPrimitive {
+    fn releve(&mut self) {
+        let fonction = self
+            .pile
+            .last()
+            .cloned()
+            .unwrap_or_else(|| "<hors fonction>".to_string());
+        self.appels.push(fonction);
+    }
+}
+
+impl<'ast> syn::visit::Visit<'ast> for ChercheLaPrimitive {
+    fn visit_item_fn(&mut self, node: &'ast syn::ItemFn) {
+        self.pile.push(node.sig.ident.to_string());
+        syn::visit::visit_item_fn(self, node);
+        self.pile.pop();
+    }
+
+    fn visit_impl_item_fn(&mut self, node: &'ast syn::ImplItemFn) {
+        self.pile.push(node.sig.ident.to_string());
+        syn::visit::visit_impl_item_fn(self, node);
+        self.pile.pop();
+    }
+
+    fn visit_expr_call(&mut self, node: &'ast syn::ExprCall) {
+        if let syn::Expr::Path(chemin) = &*node.func
+            && let Some(dernier) = chemin.path.segments.last()
+            && dernier.ident == PRIMITIVE
+        {
+            self.releve();
+        }
+        syn::visit::visit_expr_call(self, node);
+    }
+
+    fn visit_expr_method_call(&mut self, node: &'ast syn::ExprMethodCall) {
+        if node.method == PRIMITIVE {
+            self.releve();
+        }
+        syn::visit::visit_expr_method_call(self, node);
+    }
+}
+
+/// Les fonctions d'un source qui appellent la primitive, une entrée par appel.
+fn appels_de_la_primitive(source: &str) -> Result<Vec<String>, String> {
+    use syn::visit::Visit;
+    let fichier = syn::parse_file(source).map_err(|e| format!("source non analysable : {e}"))?;
+    let mut visiteur = ChercheLaPrimitive::default();
+    visiteur.visit_file(&fichier);
+    Ok(visiteur.appels)
+}
+
+/// **Volet (c bis)** — Story 15-5e2 (finding F6-5) : aucun fichier de
+/// `src/routes/` n'appelle la primitive `retry_with` hors des fonctions de
+/// [`RETRY_WITH_AUTORISE`], **quel que soit le statut de la route** — le volet
+/// (c) n'examine que les routes `Rejouee`, et une route
+/// `SansEcritureAuJournal` (`onboarding::finalize`) pourrait sinon revenir à
+/// un `retry_with` à prédicat écrit en ligne sans que rien ne rougisse.
+///
+/// Il échoue aussi si une fonction de [`RETRY_WITH_AUTORISE`] n'appelle plus
+/// la primitive : la liste ne doit pas survivre à son objet.
+#[test]
+fn no_route_calls_retry_with_except_post_accept() {
+    let racine = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/routes");
+    let mut fichiers: Vec<std::path::PathBuf> = Vec::new();
+    let mut a_voir = vec![racine.clone()];
+    while let Some(dossier) = a_voir.pop() {
+        for entree in std::fs::read_dir(&dossier)
+            .unwrap_or_else(|e| panic!("{} illisible : {e}", dossier.display()))
+        {
+            let chemin = entree.expect("entrée de répertoire").path();
+            if chemin.is_dir() {
+                a_voir.push(chemin);
+            } else if chemin.extension().is_some_and(|x| x == "rs") {
+                fichiers.push(chemin);
+            }
         }
     }
+    fichiers.sort();
+    assert!(
+        fichiers.len() > 10,
+        "⛔ le balayage de src/routes/ n'a trouvé que {} fichier(s) — c'est le \
+         détecteur qui est cassé",
+        fichiers.len()
+    );
+
+    let mut interdits: Vec<String> = Vec::new();
+    let mut autorises_vus: BTreeSet<String> = BTreeSet::new();
+    for chemin in &fichiers {
+        let source = std::fs::read_to_string(chemin)
+            .unwrap_or_else(|e| panic!("{} illisible : {e}", chemin.display()));
+        let appels = appels_de_la_primitive(&source)
+            .unwrap_or_else(|e| panic!("{} : {e}", chemin.display()));
+        let nom_fichier = chemin
+            .strip_prefix(&racine)
+            .unwrap_or(chemin)
+            .display()
+            .to_string();
+        for fonction in appels {
+            if RETRY_WITH_AUTORISE.contains(&fonction.as_str()) {
+                autorises_vus.insert(fonction);
+            } else {
+                interdits.push(format!("{nom_fichier} : fn {fonction}"));
+            }
+        }
+    }
+    assert!(
+        interdits.is_empty(),
+        "⛔ appel(s) direct(s) à la primitive `{PRIMITIVE}` hors de \
+         {RETRY_WITH_AUTORISE:?} : {interdits:?}\n\n\
+         Passer par une enveloppe — `kesh_db::retry::retry_on_deadlock` (erreur \
+         `DbError`) ou `kesh_api::retry::retry_app_on_deadlock` (erreur \
+         `AppError`) —, qui porte le prédicat d'interblocage au lieu de le \
+         réécrire en ligne (Story 15-5e2)."
+    );
+    let manquants: Vec<&&str> = RETRY_WITH_AUTORISE
+        .iter()
+        .filter(|f| !autorises_vus.contains(**f))
+        .collect();
+    assert!(
+        manquants.is_empty(),
+        "⛔ {manquants:?} figure(nt) à RETRY_WITH_AUTORISE mais n'appelle(nt) plus \
+         `{PRIMITIVE}` : retirer l'entrée — la liste ne survit pas à son objet"
+    );
+}
+
+/// Le visiteur du volet (c bis), éprouvé sur un source synthétique.
+#[test]
+fn the_primitive_visitor_names_the_enclosing_function() {
+    let source = r#"
+        /// retry_with( dans un doc-comment
+        pub async fn propre() -> Result<(), E> {
+            // retry_with(1, p, f)
+            let _ = "retry_with(";
+            retry_app_on_deadlock("x", f).await
+        }
+
+        pub async fn fautive() -> Result<(), E> {
+            let g = || async { kesh_db::retry::retry_with("x", 3, p, f).await };
+            g().await
+        }
+
+        impl T {
+            async fn methode(&self) -> Result<(), E> {
+                self.retry_with("x", 3, p, f).await
+            }
+        }
+
+        pub async fn post_accept() -> Result<(), E> {
+            retry_with("x", 3, p, f).await
+        }
+    "#;
+    assert_eq!(
+        appels_de_la_primitive(source),
+        Ok(vec![
+            "fautive".to_string(),
+            "methode".to_string(),
+            "post_accept".to_string(),
+        ])
+    );
+    assert!(appels_de_la_primitive("fn cassé( {").is_err());
 }

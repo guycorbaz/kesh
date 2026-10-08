@@ -540,7 +540,7 @@ async fn delete_waits_for_a_concurrent_close_of_a_later_year_then_refuses(pool: 
 /// A modifie E1 en y posant un projet NOUVEAU P (verrou de P à l'étape 1-bis),
 /// puis attend l'exercice que B tient ; B demande P en partagé. InnoDB casse le
 /// cycle par une erreur 1213, que `is_deadlock_error` reconnaît — c'est ce que
-/// le handler `PUT` rejoue (`retry_with`).
+/// le handler `PUT` rejoue (enveloppe `retry_on_deadlock`).
 #[sqlx::test(migrations = "./test-schema")]
 async fn update_and_a_reversal_of_the_same_year_can_deadlock(pool: MySqlPool) {
     let s = societe(&pool).await;

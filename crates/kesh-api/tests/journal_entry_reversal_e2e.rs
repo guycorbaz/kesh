@@ -1610,7 +1610,8 @@ async fn a_read_write_key_modifies_and_is_traced_as_the_key(pool: MySqlPool) {
 /// tenait ce projet et attendait l'exercice que B tient encore. Le `PUT` doit
 /// alors rendre 200, au second passage, une fois B parti.
 ///
-/// ⛔ **Tue** « retirer `retry_with` du handler » : la 1213 remonte en 500.
+/// ⛔ **Tue** « retirer l'enveloppe `retry_on_deadlock` du handler » : la 1213
+/// remonte en 500.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn the_put_replays_a_deadlock_it_lost(pool: MySqlPool) {
     let (app, token, company_id, fy_id) = setup(&pool).await;

@@ -1068,7 +1068,8 @@ async fn reopen_close_concurrent_is_serialized(pool: MySqlPool) {
         .unwrap();
 
     // reopen(FY2025) [garde LIFO lit FY2026] vs close(FY2026) [Open→Closed],
-    // concurrents. Le FOR UPDATE sérialise → pas de deadlock, chaque future
+    // concurrents. Le FOR UPDATE sérialise → pas de deadlock DANS CE MONTAGE
+    // (deux transactions sur la seule table `fiscal_years`), chaque future
     // résout en Ok ou en une DbError définie.
     let p1 = pool.clone();
     let p2 = pool.clone();

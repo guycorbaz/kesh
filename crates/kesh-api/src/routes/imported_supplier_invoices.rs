@@ -120,6 +120,10 @@ pub struct CompleteImportRequest {
 /// séquence (verrou staging → validations métier → `create_in_tx` → `UPDATE
 /// completed`) vit dans **une transaction** ; sur échec, rollback total (pas
 /// d'écriture comptable partielle, staging reste `to_complete`).
+///
+/// ⚠️ **Rejouée sur interblocage** (Story 15-5e2) par l'enveloppe `AppError`
+/// [`crate::retry::retry_app_on_deadlock`] : la transaction vit dans
+/// [`complete_import_once`], une tentative.
 pub async fn complete_import(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -127,10 +131,36 @@ pub async fn complete_import(
     Json(req): Json<CompleteImportRequest>,
 ) -> Result<Json<SupplierInvoiceResponse>, AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
+    let created =
+        crate::retry::retry_app_on_deadlock("imported_supplier_invoices::complete", || {
+            complete_import_once(&state.pool, &current_user, company.id, id, &req)
+        })
+        .await?;
+    Ok(Json(SupplierInvoiceResponse::from_parts(
+        created.invoice,
+        created.lines,
+    )))
+}
+
+/// Une tentative de la complétion d'une facture importée : ouvre la
+/// transaction, verrouille le `staging`, contrôle (statut, devise, IBAN,
+/// montant — **après** le verrou, dans cet ordre, car ils lisent la ligne
+/// verrouillée), crée la facture réelle, marque le `staging` et conclut.
+///
+/// Le corps est reçu **par référence** : chaque tentative reconstruit ce
+/// qu'elle consomme. Les erreurs de base arrivent en
+/// `AppError::Database(DbError::Sqlx(_))`, ce que le prédicat de
+/// [`crate::retry::retry_app_on_deadlock`] reconnaît.
+async fn complete_import_once(
+    pool: &sqlx::MySqlPool,
+    current_user: &CurrentUser,
+    company_id: i64,
+    id: i64,
+    req: &CompleteImportRequest,
+) -> Result<supplier_invoices::SupplierInvoiceWithLines, AppError> {
     let user_id = current_user.user_id;
 
-    let mut tx = state
-        .pool
+    let mut tx = pool
         .begin()
         .await
         .map_err(|e| AppError::Database(map_db_error(e)))?;
@@ -138,7 +168,7 @@ pub async fn complete_import(
     let result = async {
         // (1) Verrou staging + garde anti-double / anti-IDOR (scopé company).
         let staging =
-            imported_supplier_invoices::find_by_id_scoped_for_update(&mut tx, company.id, id)
+            imported_supplier_invoices::find_by_id_scoped_for_update(&mut tx, company_id, id)
                 .await?
                 .ok_or(AppError::ImportedInvoiceNotFound)?;
 
@@ -227,7 +257,7 @@ pub async fn complete_import(
 
         // (7) Création de la facture réelle dans la MÊME transaction (DC6).
         let new = NewSupplierInvoice {
-            company_id: company.id,
+            company_id,
             contact_id: req.contact_id,
             supplier_invoice_number: req.supplier_invoice_number.clone(),
             invoice_date: req.invoice_date,
@@ -245,7 +275,7 @@ pub async fn complete_import(
         // Lien staging → facture réelle + passage `completed`.
         imported_supplier_invoices::mark_completed(
             &mut tx,
-            company.id,
+            company_id,
             id,
             created.invoice.id,
         )
@@ -259,7 +289,7 @@ pub async fn complete_import(
         audit_log::insert_in_tx(
             &mut tx,
             NewAuditLogEntry::from_current_user(
-                &current_user,
+                current_user,
                 "imported_supplier_invoice.completed",
                 "imported_supplier_invoice",
                 id,
@@ -279,10 +309,7 @@ pub async fn complete_import(
             tx.commit()
                 .await
                 .map_err(|e| AppError::Database(map_db_error(e)))?;
-            Ok(Json(SupplierInvoiceResponse::from_parts(
-                created.invoice,
-                created.lines,
-            )))
+            Ok(created)
         }
         Err(e) => {
             let _ = tx.rollback().await;

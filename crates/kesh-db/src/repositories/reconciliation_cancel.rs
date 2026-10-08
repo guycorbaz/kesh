@@ -254,7 +254,8 @@ pub struct ReconciliationCancellation {
 ///    `cancel_settlement_in_tx` ; les deux ne se croisent que sur le **même**
 ///    règlement annulé au même instant depuis la fiche facture et depuis
 ///    l'import — l'interblocage (1213) est alors rejoué par la route du
-///    dé-rapprochement ; côté fiche facture, cf. #463 ;
+///    dé-rapprochement, et côté fiche facture par celle de l'annulation du
+///    règlement (Story 15-5e1, #463) ;
 /// 3. verrou de l'écriture **et de son exercice** avant de juger — sans lui,
 ///    une clôture validée entre la lecture du rang 2 et la contre-passation
 ///    passerait inaperçue (leçon de la revue de la 25-3-a-1) ;

@@ -913,6 +913,9 @@ pub struct UnvalidateInvoiceRequest {
 /// publique porte `revert_issue`) : c'est un **élargissement**, jusqu'ici aucune
 /// clé ne pouvait détruire l'écriture d'une facture. Une clé `read` reste
 /// refusée par le gate de portée, sur la méthode.
+///
+/// ⚠️ **Rejouée sur interblocage** (Story 15-5e2) par l'enveloppe `DbError`
+/// [`kesh_db::retry::retry_on_deadlock`].
 pub async fn unvalidate_invoice_handler(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -924,13 +927,15 @@ pub async fn unvalidate_invoice_handler(
     // raison qu'à la validation (`validate_invoice_handler`, « Review P3 ») :
     // entre le commit et une seconde lecture, une suppression concurrente du
     // brouillon rendrait un `404` sur une mutation déjà faite et auditée.
-    let (invoice, lines) = invoices::unvalidate(
-        &state.pool,
-        company.id,
-        id,
-        current_user.user_id,
-        payload.version,
-    )
+    let (invoice, lines) = kesh_db::retry::retry_on_deadlock("invoices::unvalidate", || {
+        invoices::unvalidate(
+            &state.pool,
+            company.id,
+            id,
+            current_user.user_id,
+            payload.version,
+        )
+    })
     .await?;
     Ok(Json(
         with_draft_rounding_preview(&state, InvoiceResponse::from_parts(invoice, lines)).await?,
@@ -1331,17 +1336,16 @@ pub struct WriteOffInvoiceResponse {
 /// `POST /api/v1/invoices/:id/write-off` — solde le reste d'une facture
 /// validée, imputé au compte de sa nature (Story 25-4-d2a, #384, #490).
 ///
-/// ⚠️ **Rejoué sur interblocage** : l'ordre des verrous est celui du règlement
-/// manuel (facture → compte → exercice), qui peut former un cycle avec
-/// l'acceptation d'un rapprochement (#491). Le rejeu est sûr grâce à la
-/// `version` : une tentative qui trouve un reste changé est refusée en 409.
+/// ⚠️ **Rejoué sur interblocage**, comme toute route qui écrit au journal, par
+/// l'enveloppe `DbError` [`kesh_db::retry::retry_on_deadlock`]. Le rejeu est
+/// sûr grâce à la `version` : une tentative qui trouve un reste changé est
+/// refusée en 409.
 pub async fn write_off_invoice_handler(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
     Json(req): Json<WriteOffInvoiceRequest>,
 ) -> Result<Json<WriteOffInvoiceResponse>, AppError> {
-    use kesh_db::retry::{DEFAULT_MAX_DEADLOCK_ATTEMPTS, is_deadlock_error, retry_with};
     let company = get_company_for(&current_user, &state.pool).await?;
     let nature =
         kesh_db::entities::SettlementWriteOffNature::parse(&req.nature).ok_or_else(|| {
@@ -1350,22 +1354,17 @@ pub async fn write_off_invoice_handler(
                 req.nature
             ))
         })?;
-    let outcome = retry_with(
-        "invoices::write_off",
-        DEFAULT_MAX_DEADLOCK_ATTEMPTS,
-        |err: &DbError| is_deadlock_error(err),
-        || {
-            kesh_db::repositories::invoice_settlements_write::write_off_invoice(
-                &state.pool,
-                current_user.user_id,
-                company.id,
-                id,
-                nature,
-                req.settled_on,
-                req.version,
-            )
-        },
-    )
+    let outcome = kesh_db::retry::retry_on_deadlock("invoices::write_off", || {
+        kesh_db::repositories::invoice_settlements_write::write_off_invoice(
+            &state.pool,
+            current_user.user_id,
+            company.id,
+            id,
+            nature,
+            req.settled_on,
+            req.version,
+        )
+    })
     .await?;
 
     let (invoice, lines) = invoices::find_by_id_with_lines(&state.pool, company.id, id)

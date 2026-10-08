@@ -12,10 +12,14 @@
 //!
 //! Les fns mutatrices [`create`], [`update_name`], [`close`], [`reopen`] ouvrent
 //! leur propre transaction interne et auditent via `audit_log::insert_in_tx`.
-//! Aucune chaîne de locks cross-table : `fiscal_years` est isolé.
-//! [`find_open_covering_date`] reste utilisé par `invoices::validate_invoice`
-//! qui acquiert d'abord le lock sur `invoices` puis sur `fiscal_years`
-//! (Pattern 5).
+//! Ces fonctions mutatrices ne verrouillent que `fiscal_years` (et l'audit).
+//! [`find_open_covering_date`], en revanche, verrouille l'exercice **au sein
+//! d'une transaction métier** qui prend d'autres verrous (validation d'une
+//! facture, règlements, rapprochements, écritures…) : l'ordre de chaque flux
+//! est à son doc-comment (pour la validation, celui de
+//! `invoices::validate_invoice`), et la place de l'exercice n'y est qu'une
+//! convention de fréquence — la défense contre l'interblocage est le rejeu
+//! (Story 15-5e1).
 //!
 //! Le pré-check `find_overlapping` + `find_by_name` (FOR UPDATE) au sein
 //! de `create` distingue les deux UNIQUE constraints existantes
@@ -486,20 +490,6 @@ pub async fn find_covering_date(
     .map_err(map_db_error)
 }
 
-/// Retourne l'exercice **ouvert** qui couvre une date donnée, avec lock
-/// `SELECT ... FOR UPDATE` — utilisé dans une transaction multi-étapes
-/// (ex. `invoices::validate_invoice` Story 5.2) pour empêcher une
-/// clôture concurrente entre le check et la fin de la transaction.
-///
-/// Distinct de [`find_covering_date`] : (a) filtre `status = 'Open'`
-/// (ignorent les exercices clos), (b) prend un `Transaction` au lieu
-/// d'un `Pool` (doit s'exécuter dans la transaction métier du caller),
-/// (c) applique `FOR UPDATE` sur la row trouvée.
-///
-/// Ordre des locks (Story 5.2 section Concurrence) : `fiscal_years`
-/// s'acquiert **après** `invoices` et **avant** `invoice_number_sequences`
-/// et `journal_entries`. Toute divergence = risque de deadlock avec
-/// `journal_entries::create_in_tx` en cours sur la même company.
 /// L'exercice qui couvre `date`, **quel que soit son statut**, dans une
 /// transaction fournie (Story 25-2-b-1, #440).
 ///
@@ -540,6 +530,23 @@ const OPEN_COVERING_DATE_SQL: &str = "SELECT id, company_id, name, start_date, e
      WHERE company_id = ? AND start_date <= ? AND end_date >= ? AND status = 'Open' \
      LIMIT 1";
 
+/// Retourne l'exercice **ouvert** qui couvre une date donnée, avec lock
+/// `SELECT ... FOR UPDATE` — utilisé dans une transaction multi-étapes
+/// (ex. `invoices::validate_invoice` Story 5.2) pour empêcher une
+/// clôture concurrente entre le check et la fin de la transaction.
+///
+/// Distinct de [`find_covering_date`] : (a) filtre `status = 'Open'`
+/// (ignorent les exercices clos), (b) prend un `Transaction` au lieu
+/// d'un `Pool` (doit s'exécuter dans la transaction métier du caller),
+/// (c) applique `FOR UPDATE` sur la row trouvée.
+///
+/// Place du verrou : la place de l'exercice dans l'ordre d'un flux est une
+/// **convention de fréquence** (Pattern 5, « Global Lock Order » ; l'ordre de
+/// la validation est au doc-comment canonique de `invoices::validate_invoice`) :
+/// elle réduit les interblocages, elle ne les exclut pas — des flux prennent
+/// l'exercice avant la sentinelle et les projets, d'autres après. La défense
+/// est le **rejeu** des routes qui écrivent au journal (Story 15-5e1 ;
+/// enveloppes de [`crate::retry`]).
 pub async fn find_open_covering_date(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,

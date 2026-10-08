@@ -290,9 +290,9 @@ pub async fn list_invoices(
 
 When a transaction holds multiple row-level locks (`SELECT ... FOR UPDATE`), two concurrent transactions acquiring the same locks **in reverse order** form a deadlock cycle. InnoDB **detects** such a cycle at wait time, whether it spans one table or several (`innodb_deadlock_detect = ON`, the default — measured `1` on MariaDB 10.11.16), and immediately rolls back a victim transaction, which receives error 1213 (`ER_LOCK_DEADLOCK`) without waiting for `innodb_lock_wait_timeout`. Without a replay, that victim is a 500 for the user. **The defence is the replay of the route** (`kesh_db::retry`, `kesh_api::retry`, Story 15-5e1); a consistent lock order only **reduces the frequency** of such cycles. The canonical lock orders are written in the doc-comments of `invoices::validate_invoice` and `supplier_invoices::create_in_tx`; the module doc of `crates/kesh-db/src/retry.rs` describes what InnoDB does (and does not: a cycle through a `GET_LOCK` named lock is not detected).
 
-### Global Lock Order (v0.1)
+### Global Lock Order — a frequency convention, not a guarantee
 
-**All transactions that lock more than one row MUST acquire locks in this order:**
+**Transactions that lock more than one row SHOULD acquire locks in this order:**
 
 ```
 1. onboarding_state  (singleton row, taken first)
@@ -302,7 +302,13 @@ When a transaction holds multiple row-level locks (`SELECT ... FOR UPDATE`), two
 5. company_invoice_settings  (settings row for the target company)
 ```
 
-Rationale: this matches the natural dependency direction (state machine → tenant → tenant data → tenant settings). Reverse-order acquisition creates a deadlock cycle.
+Rationale: this matches the natural dependency direction (state machine → tenant → tenant data → tenant settings), and following it **reduces the frequency** of deadlocks. It **cannot exclude** them (Story 15-5e1, choice C54), for three reasons:
+
+- **Shared locks taken at insertion.** Every flow that writes to the journal takes, when it inserts the entry and its lines, **shared** locks through the foreign keys — `fk_journal_entries_company` on the `companies` row, `fk_jel_account` on each account written, `fk_jel_project` on each project tagged — **after** the fiscal year lock. No "accounts before fiscal year" order holds end to end.
+- **Flows that take the fiscal year first.** The rule batch proposal (`accept_one_rule`: fiscal year, then the `companies` sentinel and the rule's project through `validate_taggable_in_tx`), the split batch proposal (`accept_one_split`: fiscal year, then step 0 of `create_in_tx` on the lines' projects), the manual match with a project (`post_manual`: fiscal year at step 6, then sentinel and project at step 6bis) and the split match (`post_split`: fiscal year, then step 0 of `create_in_tx`) all take **fiscal year, then sentinel and projects** — the reverse of `journal_entries::create` (step 0, then step 1), of `create_opening_entry` (sentinel, then fiscal year) and of the supplier invoice with a project.
+- **Flows that lock their own row first.** The `PUT` and `DELETE` of journal entries lock the entry before anything else (see their rows below).
+
+**The defence is the replay.** Every route that writes to the journal is replayed on deadlock by an envelope — `kesh_db::retry::retry_on_deadlock` (error `DbError`) or `kesh_api::retry::retry_app_on_deadlock` (error `AppError`) —, and the route registry (`crates/kesh-api/tests/audit_route_registry.rs`) keeps the closed list of those routes and checks that each one calls an envelope.
 
 ### Where This Applies
 
@@ -312,29 +318,28 @@ Rationale: this matches the natural dependency direction (state machine → tena
 | `POST /onboarding/coordinates`, `/org-type`, `/accounting-language` | company only (single lock, safe) | same |
 | `POST /onboarding/reset` | onboarding_state (gate-check only — released before reset_demo) | `routes/onboarding.rs` reset |
 | `kesh_seed::seed_demo` | companies (count-validation only — released before destructive ops) | `kesh-seed/src/lib.rs` |
-| `POST /supplier-invoices` (create, si `projectId`) | companies (sentinel) → projects (`FOR UPDATE`) → accounts → company_invoice_settings | `repositories/supplier_invoices.rs::create_in_tx` (Story 19-3) |
+| `POST /supplier-invoices` (create) | see the canonical doc-comment of `supplier_invoices::create_in_tx` (« Ordre des verrous ») — the order is written there only | `repositories/supplier_invoices.rs::create_in_tx` (Story 19-3, 15-5e1) |
 | `POST /projects/*` (create/update/archive/unarchive) | companies (sentinel) → projects | `routes/projects.rs` (Story 19-1) |
 | `fiscal_years::create / update_name / close / find_*_locked` | fiscal_years only (single table, internal tx) — `FOR UPDATE` locks pour pré-check unicité/overlap et figer le before-snapshot d'audit log. Pas de chaîne cross-table. | `kesh-db/src/repositories/fiscal_years.rs` |
-| `invoices::validate_invoice` | invoices → fiscal_years (via `find_open_covering_date`) → invoice_number_sequences → journal_entries | `kesh-db/src/repositories/invoices.rs` |
+| `invoices::validate_invoice` | see the canonical doc-comment of `invoices::validate_invoice` (« Ordre des locks ») — the order is written there only | `kesh-db/src/repositories/invoices.rs` |
+| `POST /reconciliation/accept` (`accept_batch`) | **Per proposal**: rounding account (`rounding_account_for_write`), then fiscal year (`find_open_covering_date`) for an invoice proposal (`accept_one_invoice`); fiscal year, then sentinel and projects for a rule or split proposal (`accept_one_rule`, `accept_one_split`). **Between proposals**, in the same transaction (one savepoint per proposal): the fiscal year held by proposal *n* precedes the rounding account, the sentinel or the projects of proposal *n+1* — **fiscal year → rounding account** at the batch level, the reverse of `invoices::validate_invoice`: that is the cycle of #536, closed by replaying both sides | `routes/reconciliation.rs` |
+| `PUT /api/v1/journal-entries/{id}` (Story 15-8a, #532) | **journal_entries → [companies → projects] → fiscal_years (the entry's year, then later years by `start_date`) → (accounts, shared, via the FKs of the line `INSERT`)** | `repositories/journal_entries.rs::update` |
+| `DELETE /api/v1/journal-entries/{id}` (Story 15-8b, #532) | **journal_entries + fiscal_years (the entry and its year, one joined `FOR UPDATE`) → fiscal_years (later years by `start_date`) → (FK checks of the `DELETE` on the rows that reference the entry)**, no `INSERT` but the audit row | `repositories/journal_entries.rs::delete_in_tx` |
+
+**Notes:**
+
+- **`PUT /journal-entries/{id}`** — The entry's `FOR UPDATE` must be the **first act** of the transaction: under `REPEATABLE READ`, any plain read before it would freeze a read view older than the wait, and the guard would miss a reversal committed meanwhile (`journal_entries::update`, doc-comment « Sérialisation »). Locking the entry before `companies → projects` reverses the order of creation (a frequency convention, cf. Global Lock Order). Three **inherited** cycles remain, each also valid for every later fiscal year the PUT locks: **fiscal year ↔ account** (customer settlement, opening complement), **fiscal year ↔ companies** (creation / reversal / settlement inserting a header), **project ↔ fiscal year** (reversal of an entry of the same year carrying the project). Mitigation: replayed (`retry_on_deadlock`, `"journal_entries::update"`) — the repository opens and closes its own transaction, the deadlock rolled it back, and the `version` check refuses a second pass. ⚠️ A cycle InnoDB does not detect ends in `innodb_lock_wait_timeout` (1205, **not** retried) → 500. Tested: `update_and_a_reversal_of_the_same_year_can_deadlock` (`kesh-db/tests/journal_entries_modification.rs`).
+- **`DELETE /journal-entries/{id}`** — Same first-act rule as the `PUT`: the joined `FOR UPDATE` comes before any plain read, so the guard sees a reversal or a later-year close committed while it waited (`journal_entries::delete_in_tx`, doc-comment « Sérialisation »). It takes neither the `companies` sentinel, nor a project, nor an account. **No known cycle.** Mitigation: replayed (`retry_on_deadlock`, `"journal_entries::delete"`) **by uniformity with the `PUT`**, not for a known cycle — the transaction is replayed whole and the deadlock rolled it back. Tested: `delete_waits_for_a_concurrent_reversal_then_refuses`, `delete_waits_for_a_concurrent_close_of_a_later_year_then_refuses` (`kesh-db/tests/journal_entries_modification.rs`).
 
 ### Known Risk — KF-002-H-002 (resolved 2026-05-03)
 
 **Issue:** `seed_demo` and `reset` use a **lock-and-release** pattern: they acquire `FOR UPDATE` only for count-validation (seed_demo) or gate-check (reset), then **commit before** the destructive sub-operation runs (`bulk_create_from_chart`, `companies::update`, `reset_demo`). The lock therefore serializes only the precondition check, NOT the side-effect. A concurrent endpoint running between commit and side-effect can leave inconsistent state visible (handled via `DbError::NotFound`/`OptimisticLockConflict` retries today). Additionally, if a future endpoint takes locks in `accounts → company → onboarding_state` order (reverse), it can deadlock against `finalize`.
 
-**Mitigation (v0.1):** write endpoints follow the documented order, **except those listed in the deny list below** (two since Story 15-8b). New endpoints **MUST** follow it or be added to the deny list.
+**Mitigation:** the lock order above is a convention that reduces the frequency of deadlocks; the defence is the replay. Every route that writes to the journal is replayed by an envelope, and the route registry (`crates/kesh-api/tests/audit_route_registry.rs`) holds the closed list of those routes, checks that each one calls an envelope, and forbids a direct call to the `retry_with` primitive in `src/routes/` outside `post_accept`. A new route that writes to the journal is added to the registry, replayed.
 
 **Resolution status:**
 
-- ✅ **Deadlock-retry helper** (`crates/kesh-db/src/retry.rs`) — catches `ER_LOCK_DEADLOCK` (1213, **not** 1205 `lock_wait_timeout`) and retries with exponential backoff (50 → 100 ms between attempts 1↔2 and 2↔3; max 3 attempts → ≈ 150 ms added latency worst case). Used on `finalize` via `retry_with(...)` wrapper. Closure must be idempotent (re-runs full BEGIN → COMMIT). [Fix issue #43]
-- ⏳ **CI lint** (grep-detect `FOR UPDATE` + verify global order) — deferred to a future sprint (effort vs. value tradeoff: review discipline + Pattern 5 doc covers it for now).
-- ✅ **Deny list of divergent endpoints** — two entries (Story 15-8a, `PUT /journal-entries/{id}` ; Story 15-8b, `DELETE /journal-entries/{id}`). Any new endpoint that intentionally diverges MUST add a row in the table below with rationale.
-
-**Deny list (endpoints with intentionally divergent lock ordering):**
-
-| Endpoint | Reason | Mitigation |
-|---|---|---|
-| `PUT /api/v1/journal-entries/{id}` (Story 15-8a, #532) — order **journal_entries → [companies → projects] → fiscal_years (the entry's year, then later years by `start_date`) → (accounts, shared, via the FKs of the line `INSERT`)** | The entry's `FOR UPDATE` must be the **first act** of the transaction: under `REPEATABLE READ`, any plain read before it would freeze a read view older than the wait, and the guard would miss a reversal committed meanwhile (`journal_entries::update`, doc-comment « Sérialisation »). Locking the entry before `companies → projects` diverges from creation. Three **inherited** cycles remain, each also valid for every later fiscal year the PUT locks: **fiscal year ↔ account** (customer settlement, opening complement), **fiscal year ↔ companies** (creation / reversal / settlement inserting a header), **project ↔ fiscal year** (reversal of an entry of the same year carrying the project). | Handler wrapped in `retry_with("journal_entries::update", DEFAULT_MAX_DEADLOCK_ATTEMPTS, …)` (operation name since Story 15-5e1) — the repository opens and closes its own transaction, the deadlock rolled it back, and the `version` check refuses a second pass. ⚠️ A cycle InnoDB does not detect ends in `innodb_lock_wait_timeout` (1205, **not** retried) → 500. Tested: `update_and_a_reversal_of_the_same_year_can_deadlock` (`kesh-db/tests/journal_entries_modification.rs`). |
-| `DELETE /api/v1/journal-entries/{id}` (Story 15-8b, #532) — order **journal_entries + fiscal_years (the entry and its year, one joined `FOR UPDATE`) → fiscal_years (later years by `start_date`) → (FK checks of the `DELETE` on the rows that reference the entry)**, no `INSERT` but the audit row | Same first-act rule as the `PUT`: the joined `FOR UPDATE` comes before any plain read, so the guard sees a reversal or a later-year close committed while it waited (`journal_entries::delete_in_tx`, doc-comment « Sérialisation »). It takes neither the `companies` sentinel, nor a project, nor an account. **No known cycle.** | Handler wrapped in `retry_with("journal_entries::delete", DEFAULT_MAX_DEADLOCK_ATTEMPTS, …)` (operation name since Story 15-5e1) **by uniformity with the `PUT`**, not for a known cycle — the transaction is replayed whole and the deadlock rolled it back. Tested: `delete_waits_for_a_concurrent_reversal_then_refuses`, `delete_waits_for_a_concurrent_close_of_a_later_year_then_refuses` (`kesh-db/tests/journal_entries_modification.rs`). |
+- ✅ **Deadlock-retry envelopes** (`crates/kesh-db/src/retry.rs`, `crates/kesh-api/src/retry.rs`) — catch `ER_LOCK_DEADLOCK` (1213, **not** 1205 `lock_wait_timeout`) and retry with exponential backoff (50 → 100 ms between attempts 1↔2 and 2↔3; max 3 attempts → ≈ 150 ms added latency worst case): `retry_on_deadlock` for a route whose write is one repository function, `retry_app_on_deadlock` for a route whose transaction is opened in the handler (`finalize` among them). The route registry lists the replayed routes. [Fix issue #43; Stories 15-5e1, 15-5e2]
 
 **How to use the retry helper for new endpoints:**
 
@@ -363,21 +368,23 @@ kesh_db::retry::retry_with(
 ).await
 ```
 
-Required: `handler_inner` must be **idempotent** under retry (same outcome regardless of how many times it's called with the same args). Typical patterns: idempotent `INSERT IGNORE`, conditional `UPDATE ... WHERE version = ?` (optimistic lock), early-return on already-finalized state. **Non-idempotent operations** (counters, append-only audit log inserts) require careful inspection — prefer wrapping a smaller transactional core inside the closure.
+Required: a deadlock (1213) rolls back the **whole** victim transaction — counters and audit rows included —, so replaying it is safe **as long as every write lives in that transaction**. The rule, written in the doc-comments of `kesh_db::retry` and `kesh_api::retry` (Story 15-5e1), is: one attempt = one new transaction (`begin()` … `commit()` inside the closure); no side effect outside the transaction (e-mail, file, network); checks that read what the transaction locks stay **inside** the attempt, in their order; inputs the attempt consumes are cloned per attempt; and no conversion lets the 1213 leave `DbError::Sqlx` before the predicate. ⚠️ The generic `retry_with` form above is the primitive the envelopes call: in `src/routes/`, only `post_accept` (predicate widened to 1305) may call it directly — the route registry fails otherwise.
 
 ### When to Use
 
-✅ Apply this rule when a transaction:
+✅ **The envelope applies to every route that writes to the journal** — whatever the number of tables it locks; the route registry checks it.
+
+✅ **The lock order remains a frequency convention** for any transaction that:
 - Calls `SELECT ... FOR UPDATE` on more than one table
 - Calls a helper function that itself locks (transitive locking)
 - Calls a repository fn whose internal locks are not documented (audit it before extending)
 
-❌ Single-row locks don't need this discipline — but document the lock acquisition site so reviewers can spot it later.
+❌ Single-row locks don't need the order — but document the lock acquisition site so reviewers can spot it later.
 
 ### Code Reference
 
 ```rust
-// CORRECT: lock in documented order
+// CORRECT: lock in documented order (reduces the frequency of deadlocks)
 async fn finalize() -> Result<...> {
     let mut tx = pool.begin().await?;
     let state = sqlx::query_as!("SELECT ... FROM onboarding_state ... FOR UPDATE")  // 1st
@@ -390,14 +397,15 @@ async fn finalize() -> Result<...> {
 ```
 
 ```rust
-// WRONG: reverse order will deadlock against finalize
+// WRONG: reverse order makes a deadlock against finalize far more likely
 async fn bad_handler() -> Result<...> {
     let mut tx = pool.begin().await?;
     let accounts = sqlx::query!("SELECT ... FROM accounts WHERE ... FOR UPDATE")  // accounts FIRST
         .fetch_all(&mut *tx).await?;
     let state = sqlx::query!("SELECT ... FROM onboarding_state ... FOR UPDATE")  // onboarding_state SECOND
         .fetch_one(&mut *tx).await?;
-    // Deadlock cycle: this tx holds accounts, finalize() holds onboarding_state, both wait
+    // Deadlock cycle: this tx holds accounts, finalize() holds onboarding_state, both wait —
+    // InnoDB rolls back one of them (1213); only a replay hides it from the user
 }
 ```
 

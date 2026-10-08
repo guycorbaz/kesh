@@ -477,6 +477,9 @@ pub async fn get_journal_entry(
 /// ⛔ **Crée une écriture, n'en modifie aucune.** L'origine reste intacte : c'est
 /// l'exigence de l'art. 958f CO — la correction doit être apparente, non
 /// substituée à ce qu'elle corrige.
+///
+/// ⚠️ **Rejouée sur interblocage** (Story 15-5e2) par l'enveloppe `DbError`
+/// [`kesh_db::retry::retry_on_deadlock`].
 pub async fn reverse_journal_entry(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -484,8 +487,10 @@ pub async fn reverse_journal_entry(
 ) -> Result<(StatusCode, Json<JournalEntryResponse>), AppError> {
     let company = get_company_for(&current_user, &state.pool).await?;
 
-    let created =
-        journal_entries::reverse(&state.pool, company.id, id, current_user.user_id).await?;
+    let created = kesh_db::retry::retry_on_deadlock("journal_entries::reverse", || {
+        journal_entries::reverse(&state.pool, company.id, id, current_user.user_id)
+    })
+    .await?;
 
     Ok((
         StatusCode::CREATED,
@@ -581,6 +586,10 @@ fn prepare_new_journal_entry(
 }
 
 /// POST /api/v1/journal-entries — crée une écriture en partie double.
+///
+/// ⚠️ **Rejouée sur interblocage** (Story 15-5e2) par l'enveloppe `DbError`
+/// [`kesh_db::retry::retry_on_deadlock`] ; le `NewJournalEntry` est cloné à
+/// chaque tentative, et la correspondance d'erreur vient après le rejeu.
 pub async fn create_journal_entry(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -620,15 +629,22 @@ pub async fn create_journal_entry(
     // Création atomique (re-lock FY + numérotation + INSERT + balance check).
     // P2 : mapping stable via variants DbError dédiés (plus de matching sur
     // le contenu du message).
-    let result = journal_entries::create(&state.pool, fiscal_year.id, current_user.user_id, new)
-        .await
-        .map_err(|e| match e {
-            // Race condition : clôture concurrente après le pré-check.
-            kesh_db::errors::DbError::FiscalYearClosed => AppError::FiscalYearClosed {
-                date: req.entry_date.to_string(),
-            },
-            other => AppError::from(other),
-        })?;
+    let result = kesh_db::retry::retry_on_deadlock("journal_entries::create", || {
+        journal_entries::create(
+            &state.pool,
+            fiscal_year.id,
+            current_user.user_id,
+            new.clone(),
+        )
+    })
+    .await
+    .map_err(|e| match e {
+        // Race condition : clôture concurrente après le pré-check.
+        kesh_db::errors::DbError::FiscalYearClosed => AppError::FiscalYearClosed {
+            date: req.entry_date.to_string(),
+        },
+        other => AppError::from(other),
+    })?;
 
     Ok((
         StatusCode::CREATED,
@@ -649,9 +665,10 @@ pub async fn create_journal_entry(
 /// pré-contrôle `find_covering_date` : l'exercice est celui **de l'écriture**,
 /// connu seulement sous le verrou.
 ///
-/// ⛔ **Rejoué sur interblocage** (`retry_with`, C-15-8-19) : l'ordre de
-/// verrous du `PUT` referme trois cycles hérités (exception de Pattern 5). La
-/// transaction est rejouée entière — le repository ouvre et ferme la sienne,
+/// ⛔ **Rejoué sur interblocage** par l'enveloppe `DbError`
+/// [`kesh_db::retry::retry_on_deadlock`] (C-15-8-19, Story 15-5e2) : l'ordre de
+/// verrous du `PUT` referme trois cycles hérités (ligne du `PUT` dans « Where
+/// This Applies » du Pattern 5). La transaction est rejouée entière — le repository ouvre et ferme la sienne,
 /// l'interblocage l'a annulée sans rien écrire, et le contrôle de `version`
 /// refuserait un second passage. La préparation reste hors de la fermeture.
 pub async fn update_journal_entry(
@@ -660,9 +677,6 @@ pub async fn update_journal_entry(
     Path(id): Path<i64>,
     Json(req): Json<UpdateJournalEntryRequest>,
 ) -> Result<Json<JournalEntryResponse>, AppError> {
-    use kesh_db::errors::DbError;
-    use kesh_db::retry::{DEFAULT_MAX_DEADLOCK_ATTEMPTS, is_deadlock_error, retry_with};
-
     let company = get_company_for(&current_user, &state.pool).await?;
     let new = prepare_new_journal_entry(
         company.id,
@@ -672,27 +686,22 @@ pub async fn update_journal_entry(
         &req.lines,
     )?;
 
-    let updated = retry_with(
-        "journal_entries::update",
-        DEFAULT_MAX_DEADLOCK_ATTEMPTS,
-        |err: &DbError| is_deadlock_error(err),
-        || {
-            let pool = state.pool.clone();
-            let new = new.clone();
-            async move {
-                journal_entries::update(
-                    &pool,
-                    company.id,
-                    id,
-                    req.version,
-                    current_user.user_id,
-                    current_user.api_key_id,
-                    new,
-                )
-                .await
-            }
-        },
-    )
+    let updated = kesh_db::retry::retry_on_deadlock("journal_entries::update", || {
+        let pool = state.pool.clone();
+        let new = new.clone();
+        async move {
+            journal_entries::update(
+                &pool,
+                company.id,
+                id,
+                req.version,
+                current_user.user_id,
+                current_user.api_key_id,
+                new,
+            )
+            .await
+        }
+    })
     .await?;
 
     Ok(Json(JournalEntryResponse::from(updated)))
@@ -710,7 +719,8 @@ pub async fn update_journal_entry(
 /// la **clé d'API** quand c'est elle qui appelle (C-15-8-8). Le numéro de
 /// l'écriture n'est jamais réattribué.
 ///
-/// ⛔ **Rejoué sur interblocage** (`retry_with`, C-15-8-19) — par uniformité
+/// ⛔ **Rejoué sur interblocage** par l'enveloppe `DbError`
+/// [`kesh_db::retry::retry_on_deadlock`] (C-15-8-19, Story 15-5e2) — par uniformité
 /// avec le `PUT`, pas pour un cycle connu : l'ordre de verrous est écriture et
 /// exercice (jointure) → exercices postérieurs → contrôles des clés étrangères
 /// au `DELETE`, sans autre `INSERT` que l'audit. La transaction est rejouée
@@ -720,29 +730,21 @@ pub async fn delete_journal_entry(
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
 ) -> Result<StatusCode, AppError> {
-    use kesh_db::errors::DbError;
-    use kesh_db::retry::{DEFAULT_MAX_DEADLOCK_ATTEMPTS, is_deadlock_error, retry_with};
-
     let company = get_company_for(&current_user, &state.pool).await?;
 
-    retry_with(
-        "journal_entries::delete",
-        DEFAULT_MAX_DEADLOCK_ATTEMPTS,
-        |err: &DbError| is_deadlock_error(err),
-        || {
-            let pool = state.pool.clone();
-            async move {
-                journal_entries::delete_by_id(
-                    &pool,
-                    company.id,
-                    id,
-                    current_user.user_id,
-                    current_user.api_key_id,
-                )
-                .await
-            }
-        },
-    )
+    kesh_db::retry::retry_on_deadlock("journal_entries::delete", || {
+        let pool = state.pool.clone();
+        async move {
+            journal_entries::delete_by_id(
+                &pool,
+                company.id,
+                id,
+                current_user.user_id,
+                current_user.api_key_id,
+            )
+            .await
+        }
+    })
     .await?;
 
     Ok(StatusCode::NO_CONTENT)

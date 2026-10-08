@@ -265,10 +265,16 @@ async fn create_in_tx_inner(
     reverses_entry_id: Option<i64>,
 ) -> Result<JournalEntryWithLines, DbError> {
     // Étape 0 : validation des projets analytiques par-ligne (Story 19-2).
-    // AVANT le lock fiscal_years pour respecter l'ordre de verrouillage global
-    // companies → projects → fiscal_years (Pattern 5) : le flux fournisseur 19-3
-    // prend déjà sentinel + projects en amont de cet appel — valider ici après
-    // le lock fiscal_years créerait une inversion ABBA inter-flux.
+    // Elle précède l'étape 1 (le re-verrou de l'exercice) : sentinelle et
+    // projets avant l'exercice, la convention de Pattern 5 (« Global Lock
+    // Order »), qui RÉDUIT LA FRÉQUENCE des interblocages sans les exclure.
+    // ⚠️ Elle ne précède PAS l'exercice que l'appelant a souvent déjà pris :
+    // pour `journal_entries::create` elle vient avant l'exercice ; les flux qui
+    // verrouillent l'exercice avant d'appeler `create_in_tx` (lot de
+    // rapprochement par ventilation, rapprochement ventilé — l'étape 0 sur les
+    // projets des lignes) prennent l'ordre INVERSE, exercice puis sentinelle et
+    // projets. Un cycle reste donc possible ; la défense est le rejeu des deux
+    // côtés (enveloppes de `kesh_db::retry` / `kesh_api::retry`).
     //
     // Périmètre : UNIQUEMENT les tags par-ligne explicites. `new.project_id`
     // (document-level 19-3) n'est PAS re-validé ici — les flux pay/cancel
@@ -282,13 +288,9 @@ async fn create_in_tx_inner(
     // Étape 0-bis (Story 24-4c, #380) : LIRE la borne du verrou de période.
     //
     // ⛔ ELLE SE LIT ICI ET S'ÉVALUE PLUS BAS, et cette dissociation est
-    // délibérée : **l'ordre des VERROUS et l'ordre des REFUS ne sont pas le
-    // même**, et les confondre casserait l'un ou l'autre.
+    // délibérée : le moment de la LECTURE et l'ordre des REFUS ne sont pas le
+    // même.
     //
-    //   - **Verrous** : `companies` vient EN PREMIER dans l'ordre global
-    //     (companies → projects → fiscal_years, Pattern 5). Lire la borne après
-    //     le lock `fiscal_years` de l'étape 1 créerait une inversion ABBA avec
-    //     le flux fournisseur 19-3, qui prend déjà sentinel + projects en amont.
     //   - **Refus** : le verrou de période parle EN DERNIER. Dire « période
     //     verrouillée » à quelqu'un qui s'est trompé d'exercice l'enverrait
     //     corriger la mauvaise chose.
@@ -563,8 +565,10 @@ where
 ///
 /// **Note atomicité** : l'écriture d'ouverture n'a aucun `project_id` (DTO sans
 /// champ projet) → `create_in_tx` court-circuite l'Étape 0 (validation projets)
-/// et ne verrouille QUE `fiscal_years` — pas d'inversion de l'ordre de verrou
-/// global `companies → projects → fiscal_years` (P3-ECH confirmé).
+/// et ne verrouille QUE `fiscal_years` — l'ordre reste sentinelle puis
+/// exercice, la convention de Pattern 5, qui réduit la fréquence des
+/// interblocages sans les exclure (P3-ECH confirmé) : la route est rejouée
+/// (enveloppe `retry_on_deadlock`, Story 15-5e2).
 ///
 /// **Portée exacte de la sérialisation** (Pass 1 BH-1 + Pass 3 BH3-1 code
 /// review) : la garde « company vierge » est **company-wide**, donc le verrou
@@ -576,8 +580,11 @@ where
 /// entre les deux pré-checks hors-lock) — sans lui, chacune verrouillerait une
 /// ligne `fiscal_years` distincte, les deux liraient `count == 0` et
 /// commiteraient un **doublon d'ouverture** (bilan doublé, Pass 3 BH3-1).
-/// L'ordre `companies → fiscal_years` respecte l'ordre de verrou global
-/// (`companies → projects → fiscal_years`) — pas d'inversion ABBA.
+/// L'ordre `companies → fiscal_years` suit la convention de Pattern 5
+/// (`companies → projects → fiscal_years`), qui réduit la fréquence des
+/// interblocages sans les exclure : les flux qui prennent l'exercice avant la
+/// sentinelle (rapprochements par règle, ventilation, manuel à projet) en
+/// forment l'inverse, et les deux côtés sont rejoués.
 ///
 /// Une écriture normale postée concurremment dans un **autre** exercice ne se
 /// sérialise pas avec la génération (elle ne prend pas le sentinel) — mais
@@ -1229,9 +1236,10 @@ enum UpdateOutcome {
 ///   étrangère du projet à l'insertion des lignes copiées.
 ///
 /// InnoDB casse un tel cycle par l'erreur **1213**, que le handler **rejoue**
-/// (`retry_with`). Un cycle non détecté finit par l'expiration du délai
-/// (**1205**, non rejouée) : un 500. Le `PUT` figure à la liste des exceptions
-/// de Pattern 5 (`docs/MULTI-TENANT-SCOPING-PATTERNS.md`).
+/// (enveloppe `DbError` [`crate::retry::retry_on_deadlock`]). Un cycle non
+/// détecté finit par l'expiration du délai (**1205**, non rejouée) : un 500. Le
+/// `PUT` a sa ligne dans la table « Where This Applies » de Pattern 5
+/// (`docs/MULTI-TENANT-SCOPING-PATTERNS.md`), cycles et test compris.
 ///
 /// Deux coûts, assumés : le verrou des exercices postérieurs porte sur **tout**
 /// l'intervalle `start_date > ?` (le statut n'est pas indexé) — un `PUT` sur un
@@ -1720,9 +1728,7 @@ pub(crate) async fn delete_in_tx(
     // se recalculant à la volée. Il parle en dernier, comme à la création.
     //
     // ⚠️ Lecture NON verrouillante, pour la raison écrite à l'étape 0-bis de
-    // `create_in_tx_inner` ; ici elle évite en plus de prendre un verrou sur
-    // `companies` APRÈS ceux de l'étape 2, ce qui inverserait l'ordre global.
-    // Seuil INCLUSIF, le même qu'à la création.
+    // `create_in_tx_inner`. Seuil INCLUSIF, le même qu'à la création.
     let books_locked_through: Option<NaiveDate> =
         sqlx::query_scalar("SELECT books_locked_through FROM companies WHERE id = ?")
             .bind(company_id)

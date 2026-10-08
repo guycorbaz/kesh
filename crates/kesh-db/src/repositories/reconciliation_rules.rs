@@ -188,7 +188,8 @@ pub async fn create_in_tx(
 ) -> Result<ReconciliationRule, DbError> {
     // Story 19-5 — valide le projet analytique par défaut (s'il est fourni)
     // AVANT l'INSERT : projet existant, de la company, non archivé. Prend le
-    // sentinel companies puis `FOR UPDATE` sur le projet (Pattern 5, anti-ABBA).
+    // sentinel companies puis `FOR UPDATE` sur le projet (Pattern 5, anti-ABBA
+    // avec l'archivage d'un projet).
     if let Some(pid) = new_rule.default_project_id {
         super::projects::validate_taggable_in_tx(tx, company_id, &[pid]).await?;
     }

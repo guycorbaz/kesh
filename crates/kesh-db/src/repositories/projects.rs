@@ -74,11 +74,13 @@ pub async fn find_by_id_in_tx(
 /// Valide un ensemble de projets analytiques pour un tagging (Epic 19) : chaque
 /// id doit exister, appartenir à `company_id` et ne pas être archivé.
 ///
-/// Ordre de verrouillage global (docs/MULTI-TENANT-SCOPING-PATTERNS.md, Pattern 5) :
-/// verrou sentinelle `companies` **une seule fois**, PUIS `FOR UPDATE` sur les
-/// lignes projets — évite l'inversion ABBA (deadlock) avec le chemin d'archivage
-/// (`set_archived` prend le sentinel puis met à jour le projet) et ferme la race
-/// d'archivage concurrent. No-op si `project_ids` est vide (aucun verrou pris).
+/// Ordre des verrous (convention de docs/MULTI-TENANT-SCOPING-PATTERNS.md,
+/// Pattern 5) : verrou sentinelle `companies` **une seule fois**, PUIS
+/// `FOR UPDATE` sur les lignes projets — évite, **pour cette paire**, l'inversion
+/// ABBA (deadlock) avec le chemin d'archivage (`set_archived` prend le sentinel
+/// puis met à jour le projet) et ferme la race d'archivage concurrent. Avec les
+/// autres flux (l'exercice pris avant ou après), l'ordre n'est qu'une
+/// convention de fréquence : la défense est le rejeu des routes. No-op si `project_ids` est vide (aucun verrou pris).
 /// Les ids dupliqués sont dédupliqués en interne — les callers peuvent passer
 /// les tags par-ligne bruts (plusieurs lignes sur le même projet).
 ///

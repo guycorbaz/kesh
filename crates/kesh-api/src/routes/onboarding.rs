@@ -589,44 +589,41 @@ pub async fn skip_bank(
 ///
 /// F1 CRITICAL VALIDATION: Ensure account pre-fill succeeded (1100, 3000 not NULL).
 ///
-/// LOCK ORDERING (see docs/MULTI-TENANT-SCOPING-PATTERNS.md Pattern 5):
-/// This handler acquires three sequential FOR UPDATE locks in the order
-/// `onboarding_state → companies → accounts`. New endpoints with multiple
-/// locks MUST follow the same order to avoid cross-table deadlocks.
+/// ORDRE DES VERROUS (cf. `docs/MULTI-TENANT-SCOPING-PATTERNS.md`, Pattern 5) :
+/// ce handler prend trois `FOR UPDATE` successifs, dans l'ordre
+/// `onboarding_state → companies → accounts`. Cet ordre est une **convention
+/// de fréquence** : il réduit les interblocages, il ne les exclut pas — la
+/// défense est le rejeu (Story 15-5e2).
 ///
-/// KF-002-H-002 (#43) closed 2026-05-03 : la fonction est wrappée dans
-/// `retry_with` (kesh-db) qui catch ER_LOCK_DEADLOCK (1213) et rejoue la
-/// closure jusqu'à `DEFAULT_MAX_DEADLOCK_ATTEMPTS` fois (3) avec backoff
-/// exponentiel. Les business errors (`OnboardingStepAlreadyCompleted`,
-/// `Validation`, etc.) ne sont PAS retryables et passent immédiatement.
+/// KF-002-H-002 (#43) closed 2026-05-03 : la fonction est enveloppée dans
+/// l'enveloppe `AppError` [`crate::retry::retry_app_on_deadlock`] (Story
+/// 15-5e2 — jusque-là la primitive, à prédicat écrit en ligne), qui reconnaît
+/// ER_LOCK_DEADLOCK (1213) et rejoue la tentative jusqu'à
+/// `DEFAULT_MAX_DEADLOCK_ATTEMPTS` fois (3) avec backoff exponentiel. Les
+/// business errors (`OnboardingStepAlreadyCompleted`, `Validation`, etc.) ne
+/// sont PAS retryables et passent immédiatement.
 pub async fn finalize(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<OnboardingResponse>, AppError> {
-    use kesh_db::retry::{DEFAULT_MAX_DEADLOCK_ATTEMPTS, is_deadlock_error, retry_with};
-
     // KF-002-H-002 (#43) : la closure ci-dessous est rappelée intégralement
     // si MariaDB rollback la tx pour deadlock (cycle de locks détecté avec
     // une autre tx). Le rollback est implicite côté DB ; côté Rust on ne
     // garde rien — chaque retry refait `pool.begin()`. Les captures clonées
     // (pool, current_user) garantissent que la closure est `Fn` et non
     // `FnOnce`.
-    retry_with(
-        "onboarding::finalize",
-        DEFAULT_MAX_DEADLOCK_ATTEMPTS,
-        |err: &AppError| matches!(err, AppError::Database(db_err) if is_deadlock_error(db_err)),
-        || {
-            let pool = state.pool.clone();
-            let current_user = current_user.clone();
-            async move { finalize_inner(&pool, &current_user).await }
-        },
-    )
+    crate::retry::retry_app_on_deadlock("onboarding::finalize", || {
+        let pool = state.pool.clone();
+        let current_user = current_user.clone();
+        async move { finalize_inner(&pool, &current_user).await }
+    })
     .await
     .map(Json)
 }
 
 /// Logique transactionnelle de `finalize()`. Extraite pour être enveloppable
-/// par `retry_with` — la closure de retry doit pouvoir relancer toute la tx
+/// par [`crate::retry::retry_app_on_deadlock`] — la fermeture rejouée doit
+/// pouvoir relancer toute la tx
 /// (BEGIN → SELECT FOR UPDATE → … → COMMIT) après un rollback déclenché par
 /// MariaDB sur deadlock.
 ///

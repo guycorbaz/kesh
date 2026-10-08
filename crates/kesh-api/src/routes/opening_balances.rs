@@ -338,6 +338,10 @@ fn status_response(
 /// 4. `create_opening_entry` : sentinel `companies` + garde « company vierge »
 ///    puis statut, **sous** les `FOR UPDATE` (autorité anti-course,
 ///    P1-C1/P3-BH3-1/P4).
+///
+/// ⚠️ **Rejouée sur interblocage** (Story 15-5e2) par l'enveloppe `DbError`
+/// [`kesh_db::retry::retry_on_deadlock`] ; le `NewJournalEntry` est cloné à
+/// chaque tentative, et `map_opening_balances_error` s'applique après le rejeu.
 pub async fn generate_opening_balances(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -465,13 +469,15 @@ pub async fn generate_opening_balances(
 
     // Création atomique dédiée : statut + « company vierge » sous le
     // `fiscal_years FOR UPDATE` (P1-C1) — PAS le wrapper `create()`.
-    let result = journal_entries::create_opening_entry(
-        &state.pool,
-        company.id,
-        fiscal_year.id,
-        current_user.user_id,
-        new,
-    )
+    let result = kesh_db::retry::retry_on_deadlock("opening_balances::generate", || {
+        journal_entries::create_opening_entry(
+            &state.pool,
+            company.id,
+            fiscal_year.id,
+            current_user.user_id,
+            new.clone(),
+        )
+    })
     .await
     .map_err(map_opening_balances_error)?;
 
@@ -573,16 +579,16 @@ fn parse_complement_lines(req: &OpeningComplementRequest) -> Result<Vec<Compleme
 /// Les contrôles de forme se font ici ; les gardes métier, la date, la
 /// contrepartie et l'écriture se font sous verrou dans
 /// [`opening_complement::create_opening_complement`]. L'appel est rejoué sur
-/// interblocage (`retry_with`) : le dépôt n'ayant pas d'ordre de verrouillage
-/// unique, des cycles résiduels existent (fiche de la story, section
-/// « Cycles ») ; chaque tentative refait toutes les gardes.
+/// interblocage par l'enveloppe `DbError` [`kesh_db::retry::retry_on_deadlock`],
+/// comme toute route qui écrit au journal : l'ordre des verrous ne fait que
+/// réduire la fréquence des interblocages, des cycles résiduels existent (fiche
+/// de la story 25-7, section « Cycles ») ; chaque tentative refait toutes les
+/// gardes.
 pub async fn complete_opening_balances(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Json(req): Json<OpeningComplementRequest>,
 ) -> Result<(StatusCode, Json<JournalEntryResponse>), AppError> {
-    use kesh_db::retry::{DEFAULT_MAX_DEADLOCK_ATTEMPTS, is_deadlock_error, retry_with};
-
     let lines = parse_complement_lines(&req)?;
     let company = get_company_for(&current_user, &state.pool).await?;
     let locale = Locale::from(company.accounting_language.as_str());
@@ -591,27 +597,22 @@ pub async fn complete_opening_balances(
         .format(&locale, "opening-balances-complement-description", None);
     let today = chrono::Utc::now().date_naive();
 
-    let result = retry_with(
-        "opening_balances::complete",
-        DEFAULT_MAX_DEADLOCK_ATTEMPTS,
-        |err: &DbError| is_deadlock_error(err),
-        || {
-            let pool = state.pool.clone();
-            let lines = lines.clone();
-            let description = description.clone();
-            async move {
-                opening_complement::create_opening_complement(
-                    &pool,
-                    company.id,
-                    current_user.user_id,
-                    &lines,
-                    description,
-                    today,
-                )
-                .await
-            }
-        },
-    )
+    let result = kesh_db::retry::retry_on_deadlock("opening_balances::complete", || {
+        let pool = state.pool.clone();
+        let lines = lines.clone();
+        let description = description.clone();
+        async move {
+            opening_complement::create_opening_complement(
+                &pool,
+                company.id,
+                current_user.user_id,
+                &lines,
+                description,
+                today,
+            )
+            .await
+        }
+    })
     .await?;
 
     Ok((

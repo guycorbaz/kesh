@@ -1096,7 +1096,7 @@ pub async fn update(
     // (grandfathering du tag inchangé — un projet archivé après la pose du tag
     // ne bloque pas l'édition des autres champs du brouillon, leçon 19-2).
     // Pré-lecture NON verrouillée scopée company, AVANT le FOR UPDATE facture,
-    // pour respecter l'ordre de verrous global companies → projects → invoices
+    // pour suivre l'ordre de la création, companies → projects → invoices
     // (le sentinel du helper ne doit jamais être pris en détenant la ligne
     // facture — inversion ABBA avec create). Race bénigne : la valeur re-lue
     // sous lock plus bas fait foi pour le no-op check.
