@@ -1,6 +1,6 @@
 # Story 15.11a : Les compose de production transmettent toute la configuration écrite dans `.env` — et un test qui compare les compose à la liste des variables lues
 
-Status: in-progress
+Status: review
 
 <!-- Créée le 2026-10-08 par l'agent de découpage, en autonomie (consignes de l'Epic 15), par découpage
      de la Story 15-11 après sa validation P3 (signal D5 levé deux fois, par recyclage — choix C77).
@@ -1067,7 +1067,7 @@ KESH_TEST_MODE IN PRODUCTION »). Exception nommée du test, **interdite** de li
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Relevé** (AC1) : refaire l'inventaire depuis `main` à jour (commande de la § *Inventaire
+- [x] **T0 — Relevé** (AC1) : refaire l'inventaire depuis `main` à jour (commande de la § *Inventaire
   fermé*), comparer à la table, écrire l'écart. Refaire la table § *Le vide avant la 15-11b* (dont
   `create_dir_all("")` et l'emplacement réel de la sauvegarde pré-import, mesurés). Refaire la liste fermée
   « relisez » (AC12 f) depuis ses **trois** sources : `ConfigError` (dont les deux variantes étendues par l'AC16),
@@ -1081,7 +1081,7 @@ KESH_TEST_MODE IN PRODUCTION »). Exception nommée du test, **interdite** de li
   (`${X:-}` absente, posée, vide ; `${X-d}` absente, vide ; valeur `.env` contenant `$`, `$$`, `'…$…'` ; et les mêmes valeurs lues par `dotenvy` — `cargo run`,
   R4-13 —, en décodant le réaffichage `$` → `$$` de `config`).
   Version de Synology Container Manager non mesurable depuis le poste — le noter.
-- [ ] **T1 — Test d'abord, rouge** (AC8) : écrire `configuration_transmise.rs` (`LUES`, `AJOUTS`, T, V, E,
+- [x] **T1 — Test d'abord, rouge** (AC8) : écrire `configuration_transmise.rs` (`LUES`, `AJOUTS`, T, V, E,
   F, S) ; dépendance de test `yaml-rust2` (C72). Constater le **rouge attendu** sur l'état actuel —
   **exactement** ceci, et rien d'autre :
   - **(T)** : les **16** variables manquantes, soit **28** couples (variable, compose) — les 12 « par
@@ -1103,14 +1103,14 @@ KESH_TEST_MODE IN PRODUCTION »). Exception nommée du test, **interdite** de li
   - **garde `LUES`** : verte ; **(S)** : vert.
   Tout rouge hors de cette liste, ou tout élément de la liste resté vert, est un défaut du test à corriger
   avant le T2. Sortie au Dev Agent Record — c'est la preuve que le test voit le défaut de #550.
-- [ ] **T2 — Compose** (AC2, AC3, AC4, AC5) : les 28 lignes en `${KESH_X:-}`, `KESH_LOG_FILE_PATH` en
+- [x] **T2 — Compose** (AC2, AC3, AC4, AC5) : les 28 lignes en `${KESH_X:-}`, `KESH_LOG_FILE_PATH` en
   `${…-…}` dans les deux, `KESH_ADMIN_PASSWORD` en `${…:-}` dans les deux, les commentaires (dont ceux de P
   sur le mot de passe admin, aucun qui nomme `KESH_PRODUCTION_RESET`, « `--build` pour construire depuis
   les sources » dans Y), `image:` dans Y ; **montages de P inchangés** (AC4 abandonnée, C83), une ligne
   de commentaire au-dessus d'eux : *« Montages fixes : les `KESH_*_HOST_DIR` de `.env` sont sans effet
   ici (issue #558). »* — les commentaires existants `:97-101`, `:107-108`, `:119-127` restent vrais (F3-9,
   vérifié).
-- [ ] **T3 — `.env.example`** (AC6) **, fantôme** (AC7) **et garde des placeholders** (AC16) : bloc
+- [x] **T3 — `.env.example`** (AC6) **, fantôme** (AC7) **et garde des placeholders** (AC16) : bloc
   « Chemins internes », en-tête (règle de transmission, `up -d`, `KESH_JWT_SECRET` obligatoire et à
   générer, valeur contenant `$` entre apostrophes simples — AC6 h), commentaires de `KESH_LOG_FILE_PATH`, `KESH_JWT_SECRET` et `KESH_SMTP_PASSWORD` ;
   les cinq sites `KESH_ADMIN_RESET` (`.env.example:235`, `config.rs:158`, `:319`, `main.rs:337`,
@@ -1123,9 +1123,9 @@ KESH_TEST_MODE IN PRODUCTION »). Exception nommée du test, **interdite** de li
   contrôles dans l'ordre de l'AC16 (placeholder avant longueur), les messages et les doc-comments (dont
   `:184`, `:663-667`, `:1800-1803`, `:1811`) ; les six verts, et les tests existants du secret et du mot
   de passe admin toujours verts. Les blocs d'hôte de `.env.example` (AC6 i).
-- [ ] **T4 — Vert** : le test passe ; gate ciblé.
-- [ ] **T5 — Mutations M1-M28** (AC9), une à une, restauration vérifiée par `git diff --stat` vide.
-- [ ] **T6 — Docker sans démarrer** (AC5, AC10, AC11) : `config --format json` ×2 avec les quatre `.env` de
+- [x] **T4 — Vert** : le test passe ; gate ciblé.
+- [x] **T5 — Mutations M1-M28** (AC9), une à une, restauration vérifiée par `git diff --stat` vide.
+- [x] **T6 — Docker sans démarrer** (AC5, AC10, AC11) : `config --format json` ×2 avec les quatre `.env` de
   l'AC10 ; `--dry-run up -d` avant/après dans un répertoire vide ; `config -q` tel que l'étape CI le
   lancera. Répertoires d'essai dans le scratchpad, supprimés ensuite ; aucun réseau, volume ni conteneur
   créé (`docker ps -a`, `docker network ls` avant/après). *(La recette de déplacement n'existe plus,
@@ -1141,8 +1141,8 @@ KESH_TEST_MODE IN PRODUCTION »). Exception nommée du test, **interdite** de li
   chaque cas piégé, reste muette pour les témoins ; au Dev Agent Record, avec `docker compose version`. Si
   le rendu YAML de Compose met la valeur sous une forme que le motif ne voit pas, **corriger le motif au
   manuel et dans la fiche**, ne pas l'écrire comme limite.
-- [ ] **T7 — CI** (AC11) et `docs/ci.md`.
-- [ ] **T8 — Manuel** (AC12, dont la mise en page des dix tableaux de `sec:env-vars` — AC12 j —, AC15),
+- [x] **T7 — CI** (AC11) et `docs/ci.md`.
+- [x] **T8 — Manuel** (AC12, dont la mise en page des dix tableaux de `sec:env-vars` — AC12 j —, AC15),
   **brochure** (AC12 h), **`DOCKER_START.md`** (AC5, AC15, passage à `docker compose`), **`README.md`** et
   **`crates/kesh-api/README.md`** (AC16 d) puis **CHANGELOG** (AC13 : **Corrigé** et **Sécurité**).
   Revérification de la troisième source de la liste « relisez » (T0). `make fr` de l'état **d'avant**
@@ -1158,7 +1158,7 @@ KESH_TEST_MODE IN PRODUCTION »). Exception nommée du test, **interdite** de li
   — tout site neuf lu ; **`git diff main -- docker-compose.prod.yml`** ne touche **aucune** ligne sous
   `volumes:` hors le commentaire du T2 (C83) ; rappel au Dev Agent Record : la 15-7b2 rebasée écrit
   `docker compose up -d` dans sa recette (AC15).
-- [ ] **T9 — Gates** (AC14) et Dev Agent Record (décomptes recomptés depuis la source, avec leur périmètre).
+- [x] **T9 — Gates** (AC14) et Dev Agent Record (décomptes recomptés depuis la source, avec leur périmètre).
 
 ## Dev Notes
 
@@ -1383,11 +1383,209 @@ Le test vit avec les tests d'intégration de `kesh-api` (patron `audit_route_reg
 
 ### Agent Model Used
 
+Claude Opus 5.5 (agent de développement, autonomie — consignes de l'Epic 15). Worktree
+`/home/gcorbaz/devel/kesh-15-11a`, **cible cargo propre** `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-15-11a/target`
+(compilation à froid au début de la session) ; bases dédiées `kesh_1511a` (gate) et `kesh_e2e_1511a` (E2E).
+
 ### Debug Log References
+
+Sorties brutes dans le scratchpad de la session (non versionnées) : `t1-rouge.log` (T1), `mut1511a/M*.log`
+(T5), `t6-1511a/ac10.out` (AC10), `gate-complet.log`, `vitest.log`, `e2e-1511a/e2e.log`.
 
 ### Completion Notes List
 
+**T0 — relevé, refait le 2026-10-08 sur la base `ef39dd54` (`origin/main`).**
+- Inventaire : la commande de la § *Inventaire fermé* rend **40** noms, plus `RUST_LOG` (`logging.rs:130`,
+  `EnvFilter::DEFAULT_ENV`) = **41** — identiques à la table. Classes : 22 transmises par les deux, 4 par un
+  seul, 12 par aucun (38 à transmettre), 2 fixées par l'image, 1 interdite ; 3 hôte, 4 MariaDB ; **0 fantôme**
+  après la story. **Aucun écart**, aucune variable ajoutée par une story mergée entre-temps.
+- § *Le vide avant la 15-11b* : table confirmée au code (`config.rs:809-829`, `:831-833`, `:863-937`,
+  `:1031-1036`, `:1070-1083`, `:1367`, `:1395-1410` ; `onboarding.rs:45-53`). **Mesuré** :
+  `std::fs::create_dir_all("")` rend `Ok(())` et `Path::new("").join("f.keshbackup")` rend `"f.keshbackup"`
+  (relatif) — la sauvegarde pré-import d'un `KESH_ADMIN_BACKUP_DIR` vide s'écrit donc dans le répertoire
+  courant, `/app` (`WORKDIR`, `Dockerfile:41`).
+- Liste « relisez », trois sources : (1) `ConfigError` atteignables par une variable nouvellement transmise —
+  `InvalidBoolValue` (`KESH_SMTP_TLS`, `KESH_FEATURE_FORGOT_PASSWORD`), `InvalidCookieSecureValue` (P),
+  `IncompleteSmtpConfig` ; étendues par l'AC16 : `InsecureJwtSecret`, `InsecureAdminPassword` ; (2)
+  `process::exit` de `main.rs` atteignables : `:67` (erreur de `Config`) et `:322` (mailer non construit avec
+  le mot de passe oublié) — les neuf autres (`:87`, `:126`, `:133`, `:140`, `:161`, `:167`, `:185`, `:239`,
+  `:373`) dépendent de la base, des migrations, de l'i18n ou du bind, non d'une variable ajoutée ; (3)
+  interpolations dont la forme change : `KESH_LOG_FILE_PATH` et `KESH_ADMIN_PASSWORD` (les deux compose).
+  **Revérifiée au T8** contre `git diff ef39dd54 -- docker-compose.yml docker-compose.prod.yml` : seules ces
+  deux interpolations changent, plus la ligne `image:` de Y et les 28 ajouts ; **aucune ligne de montage**
+  (le bloc `volumes:` de P ne gagne que le commentaire du T2). Aucun écart.
+- Constat rassurant revérifié : les seules lignes **actives** de `.env.example` parmi les 16 sont
+  `KESH_COOKIE_SECURE=true`, `KESH_LANG=fr`, `KESH_PASSWORD_MIN_LENGTH=12`, `KESH_BANK_IMPORT_MAX_MB=10`.
+- Compose : `Docker Compose version 2.40.3+ds1-0ubuntu1`. Mesures (`env -i … docker compose config --format
+  json`, scratchpad `t0-1511a`) : `${A:-}` absente → `''` ; posée → la valeur ; `C=` → `''` ; `${D-/def}`
+  absente → `/def` ; `E=` vide → `''` ; `P1=pa$word` → `pa` (quatre avertissements « The "word" variable is
+  not set ») ; `pa$$word`, `'pa$word'`, `"pa$$word"` → réaffichés `pa$$word` (valeur reçue `pa$word`) ;
+  `"it's pa\$word"` → `it's pa$$word` (reçue `it's pa$word`). `dotenvy` 0.15.7 (petit programme du
+  scratchpad, `from_path_iter`) : `pa$word` → `pa`, `pa$$word` → `pa`, `'pa$word'` → `pa$word`, `"pa$$word"`
+  et `"pa$word"` → **erreur d'analyse**, `"it's pa\$word"` → `it's pa$word`. Le tableau de la fiche et R4-13
+  sont confirmés.
+- Synology Container Manager : version non mesurable depuis le poste — non mesuré.
+
+**T1 — rouge constaté, exactement l'attendu** (`cargo nextest run -p kesh-api --test configuration_transmise`) :
+(T) **29** écarts — les 28 couples manquants (12 « par aucun » × 2, `KESH_COOKIE_SECURE` dans P, `KESH_LANG`,
+`KESH_PASSWORD_MIN_LENGTH`, `KESH_BANK_IMPORT_MAX_MB` dans Y) et l'`image:` absente de Y ; aucun rouge de
+montage, aucune faute de frappe. (V) **5** — `KESH_ADMIN_PASSWORD` dans Y (`:-changeme`) et dans P (`${…}`),
+`KESH_LOG_FILE_PATH` dans les deux, le contrôle `VIDE_SIGNIFIANT` de `.env.example:208` ; aucun rouge
+`AJOUTS`. (E) **0**. (F) **1** — `KESH_ADMIN_RESET` dans `.env.example`. Garde `LUES` et (S) verts — après
+une correction du test lui-même : `LUES` était triée selon la locale (`FILE_BYTES` avant `FILES_PER_RUN`) et
+la garde de tri par octets l'a refusée (C-15-11a-1).
+
+**T2-T4.** 28 lignes ajoutées (15 dans Y, 13 dans P — recompté : 16 et 14 occurrences de `${KESH_…:-}`,
+`KESH_ADMIN_PASSWORD` comprise) ; `KESH_PRODUCTION_RESET` : **une ligne par fichier** (`grep -n`). Défauts des
+quatre variables à double forme = défauts du code : `KESH_COOKIE_SECURE` (Y `true`, `config.rs:1031-1036`
+`true`), `KESH_LANG` (P `fr`, code `"fr"`), `KESH_PASSWORD_MIN_LENGTH` (P `12`, code 12),
+`KESH_BANK_IMPORT_MAX_MB` (P `10`, code 10). AC16 : constante `TEMPLATE_PLACEHOLDERS`, fonction
+`is_template_placeholder`, deux contrôles avant la longueur ; tests écrits d'abord — **5 rouges** (placeholder
+du gabarit accepté pour les deux variables, `generate_me` accepté, `<…>` accepté), le témoin
+`config_accepts_generated_jwt_secret` vert —, puis verts. Témoin admin existant : le mot de passe
+`"valid-test-pw-12chars"` de `set_minimum_required()` (`config_from_env_with_database_url` et la plupart des
+tests). Aucun test équivalent à `config_accepts_generated_jwt_secret` n'existait (`TEST_JWT_SECRET` n'est pas
+hexadécimal) : il est écrit. Gate ciblé de l'AC14 (`binary(configuration_transmise) | (package(kesh-api) &
+(test(jwt_secret) | test(admin_password)))`) : **28 passés** ; `cargo fmt --check` et `cargo clippy
+--workspace --all-targets -D warnings` verts.
+
+**T5 — 28 mutations, toutes rouges**, chacune restaurée par `git checkout` puis `touch`, `git diff --stat`
+vide après chacune (script du scratchpad `mut1511a/mutations.py`). Rouges observés (test : message) :
+M1 (T, P) · M2 (T, Y) · M3 (T ×2 : Y et P ; E : sans ligne d'affectation) · M4 (T : exception transmise) ·
+M5 (T : `FixeeParImage` sans `ENV`) · M6 (T : exception transmise) · M7 (E et F) · M8 (F : `KESH_ADMIN_` +
+`RESET`) · M9 (V : clé sans valeur) · M10 (V : autre variable interpolée ; **et F** : jeton `KESH_SMTP_HSOT`,
+non annoncé par la fiche) · M11 (T : `env_file`, renvoi à C71) · M12 (E) · M13 (T : `image:`) · M14 (T :
+source du montage ; E : `HOTE`) · M15 (V : `VIDE_SIGNIFIANT`) · M16 (V : `SANS_DEFAUT`) · M17 (V : « ou
+absent ») · M18 (F : `KESH_ESSAI_FANTOME` dans `admin-manual.tex`) · M19 (V : `SANS_DEFAUT` non commentée ;
+**et** `config_rejects_admin_password_left_at_template_placeholder` : aucune ligne `#KESH_ADMIN_PASSWORD=`) ·
+M20 (`config_rejects_jwt_secret_left_at_template_placeholder`, `…_jwt_secret_generate_me_case_insensitive`,
+`…_jwt_secret_and_admin_password_in_angle_brackets` — ce dernier sur
+`<un-gabarit-de-plus-de-32-caracteres-ici>` accepté) · M21 (V : `AJOUTS`) · M22 (V : `SANS_DEFAUT`) · M23
+(`config_rejects_jwt_secret_left_at_template_placeholder` : l'assertion de montage « ne porte plus le
+placeholder `GENERATE_ME` » rougit la première) · M24 (`…_admin_password_left_at_template_placeholder`,
+`…_admin_password_generate_me_case_insensitive`, `…_in_angle_brackets`) · M25 (`…_in_angle_brackets` : `<x>` →
+`WeakJwtSecret { 3 }` ; `…_jwt_secret_generate_me_case_insensitive` : `GENERATE_ME` **et** `xchange-mex` →
+`WeakJwtSecret { 11 }` — après C-15-11a-2) · M26 (`…_in_angle_brackets`) · M27
+(`…_admin_password_generate_me_case_insensitive` : `generate_me` → `WeakAdminPassword { 11 }` ;
+`…_in_angle_brackets` : `<x>` → `WeakAdminPassword { 3 }`) · M28 (T : montage fixe exigé, renvoi à #558 et
+C83). M20 et M25 rejouées après le commit `80231b62`.
+
+**T6 — Docker, sans démarrer** (scratchpad `t6-1511a`, `t6-dry`, `t6-pieges` ; `docker ps -a`, `docker network
+ls`, `docker volume ls` identiques avant/après : aucun conteneur, réseau ni volume créé).
+- AC10 (compose finaux, `env -i`, sortie JSON recomptée par script) : (i) complet — **38/38** clés dans les
+  deux, valeur posée partout sauf `DATABASE_URL` de Y (`mysql://kesh:kesh_dev@mariadb:3306/kesh`, composée) et
+  `KESH_HOST` de P (`0.0.0.0`) ; 0 avertissement. (ii) absent — 38 clés présentes, **aucun `null`** ; Y : **22**
+  non vides, **16** vides (15 ajouts + `KESH_ADMIN_PASSWORD`), **0** avertissement ; P : **22** non vides, **16**
+  vides (13 ajouts + `DATABASE_URL`, `KESH_JWT_SECRET`, `KESH_ADMIN_PASSWORD`), **2** avertissements
+  (`DATABASE_URL`, `KESH_JWT_SECRET`) ; `KESH_LOG_FILE_PATH` = `/var/log/kesh/kesh.log` dans les deux. (iii)
+  `KESH_SMTP_PORT=` et `KESH_LOG_FILE_PATH=` → `''` dans les deux. (iv) `KESH_DOCUMENTS_HOST_DIR=/essai/documents`
+  → source `/essai/documents` dans Y, `<répertoire d'essai>/documents` dans P ; sans la ligne,
+  `<répertoire d'essai>/documents` dans les deux.
+- AC5 : `gcorbaz/kesh:latest` **absente** localement avant l'essai (`docker image ls gcorbaz/kesh` : seuls
+  `0.1.2-rc1`, `0.1.3-rc1`, `v011-5-test`) ; dans un répertoire ne contenant que le compose et un `.env`
+  d'essai, `docker compose --dry-run up -d` : **avant** (compose de `ef39dd54`) → « kesh-api ==> naming to
+  avant-kesh-api … Built » (construction) ; **après** → « kesh-api Pulling / Pulled », **zéro** ligne `build`.
+  Pas de repli `pull_policy` nécessaire.
+- AC11 : `docker compose -f … config -q` **sans `.env`** : exit 0 pour les deux (P : deux avertissements, pas
+  d'échec) — l'étape CI n'a pas besoin de `.env` d'essai. Vérifié en plus : une clé dupliquée fait échouer
+  `config -q` (« mapping key "KESH_SMTP_HOST" already defined », exit 1).
+- Vérification des placeholders de l'AC12 f, **copiée du `.tex` final** (`sudo` retiré ; lignes de 28 et 70
+  caractères), rejouée contre Y **et** P sur onze `.env` : neuf piégés **montrés** (`<GENERATE_ME: …>` nu,
+  avec `export `, avec espaces autour de `=`, entre guillemets, avec `\r` ; `<nouveau-mdp-12+>` ; `<mot de
+  passe fort, min. 12 caracteres>` ; `generate_me-et-12-caracteres` ; `"   <x>  "`, rendu `'   <x>  '` par
+  Compose) ; deux témoins **muets** (64 hexadécimaux, `pw<valide>12chars`). Le motif voit la forme rendue par
+  Compose dans tous les cas : aucune correction nécessaire.
+
+**T7.** Étape `Validate compose files` dans `docker-build` (avant le build) ; `docs/ci.md:12` et `:117`.
+
+**T8 — documentation.**
+- Manuel : sites de la fiche traités (AC12 a-j, AC15), plus quatre de la propagation (C-15-11a-4).
+  Inventaire des gabarits entre chevrons (grep du T8) : les sept lignes du relevé P4, relocalisées
+  (`.env.example:103`, `:109` ; `admin-manual.tex:246`, `:250` — devenue commentaire —, `:1018` (ex-`:988`),
+  `:1260` (ex-`:1230`) ; `CLAUDE.md:180`), **plus un site neuf, lu** : `CHANGELOG.md:37`, l'entrée **Sécurité**,
+  qui cite `KESH_JWT_SECRET=<GENERATE_ME: …>` comme exemple de la valeur désormais refusée — description du
+  défaut, non gabarit à recopier ; laissé. Mise en page des dix tableaux : C-15-11a-3.
+- PDF régénérés (`make fr`), contrôlés aplatis avec ligatures **et apostrophes typographiques** normalisées
+  (`’` → `'` : sans elle, « Rejeté s'il contient » rend 0 — le PDF porte `s’il`) : présents « Seules les
+  variables listées sous environment: », « apostrophes simples », `pa$$word`, « réaffiche tout », `grep
+  KESH_JWT_SECRET .env`, « Rejeté s'il contient » (1), « GENERATE_ME (sans égard à la casse) », « gabarit
+  entre chevrons » (2), « Remplacez chaque valeur entre chevrons », « Optionnel : sans KESH_ADMIN_PASSWORD »,
+  « re-télécharger le compose », « deux gestes », « chemins des montages », « sans effet » (4),
+  `HÔTE:PORT/BASE`, « Relisez votre .env » ; **absent** `docker compose restart kesh-api` (0). Les deux lignes
+  de la commande de vérification se retrouvent **chacune sur une ligne** de `pdftotext -layout` (espaces
+  normalisés des deux côtés) ; les 30 lignes `KESH_…: ${…}` des `lstlisting` des deux gestes sont entières.
+  Cellules `KESH_STATIC_DIR` / `KESH_LOCALES_DIR` entières au `-layout` (« Fixé par l'image Docker
+  (/app/static) ; frontend/build hors Docker », « … (/app/locales) ; dossier du dé-pôt hors Docker »), colonne
+  « Défaut host » des chemins d'hôte entière.
+- `.log` : état d'avant relevé par un `make admin` sur `1bd55491` (**67** `Overfull \hbox`) ; après : **52**,
+  **0** entre `\label{sec:env-vars}` et `\subsubsection{Import de factures depuis un dossier}`, **aucun nouveau**
+  ailleurs (comparaison des boîtes par contenu). Le `\paragraph{Note Synology (chemins symboliques).}` de
+  `sec:inbox-import` déborde toujours (défaut antérieur, hors périmètre).
+- `user-manual.tex` : grep `SMTP`, `KESH\\_`, `démonstration` — `:295`, `:1049` (`KESH\_SMTP\_*`), `:2090`,
+  `:2099` : rien à modifier ; son PDF, régénéré sans changement de source, a été **restauré**.
+- Brochure : `:542` corrigée, PDF régénéré, phrase contrôlée aplatie.
+- `DOCKER_START.md` : douze commandes `docker-compose` → `docker compose` (`grep -nE 'docker-compose '` rend
+  0) ; « Compose v1 non mesuré ». `README.md`, `crates/kesh-api/README.md` (AC16 d ; l'exemple de requête
+  `"password": "changeme"` et l'inventaire partiel restent hors périmètre). **Effet sur la pile de dev**, écrit :
+  un `.env` copié du gabarit sans remplacer le secret fait refuser `cargo run` (`main.rs:44` lit `.env`) et
+  `docker-compose.dev.yml` (`${KESH_JWT_SECRET:-dev-secret…}` cède à `.env`) — voulu, message clair ; le
+  contrôle `grep -rn GENERATE_ME frontend/ scripts/ .github/` (vide) ne voit pas cet effet, qui passe par une
+  copie.
+- Grep de l'AC7 : `grep -rn 'KESH_ADMIN_RESET' --exclude-dir={target,node_modules,_bmad-output,.git}
+  --exclude=CHANGELOG.md .` → **vide**.
+- Grep de l'AC15 (`compose restart|docker-compose restart|redémarr` sur manuels, `*.md`, `docs/*.md`,
+  `.env.example`, compose, `website`) : traités `admin-manual.tex` § « Comment .env atteint Kesh » (règle
+  écrite), `:1021` (ex-`:991`), `:1269` (ex-`:1239`, « (Optionnel) » retiré), `:1319` (ex-`:1289`), `:2238` ;
+  `:1268` (ex-`:1238`) lu, corrigé par ricochet ; déjà justes : `:1262` (ex-`:1232`), `:1741` (procédure de
+  mise à jour, `up -d kesh-api`), `:2231` (break-glass, `up -d`) ; `DOCKER_START.md` § *Redémarrer* (consigne `up -d`
+  ajoutée) et ex-`:106` (« Puis appliquez : `docker compose up -d` ») ; hors sujet : `admin-manual.tex:649`
+  (auto-restart DSM), `:847`, `:863`, `:1121`, `:1583`, `:2057`, `:2274` ; `.env.example:170`, `:185` ;
+  `docs/testing.md` (conteneur MariaDB de dev) ; `CHANGELOG.md:622`, `:630`, `:742`, `:749` (versions
+  publiées, historiques). La recette de la 15-7b2 n'est pas touchée : **rappel**, la 15-7b2 rebasée écrit
+  `docker compose up -d` dans sa recette.
+- CHANGELOG `[0.13.0]` : entrée **Corrigé** (#550) et section **Sécurité** (#557).
+
+
+**T9 — gates réellement exécutés**, cible cargo `/home/gcorbaz/devel/kesh-15-11a/target` :
+- **Gate backend complet** au commit `edd45a6c` (dernier commit de code : `80231b62` ; `edd45a6c` n'ajoute que
+  de la documentation), base `kesh_1511a` remise à zéro juste avant (`DROP`/`CREATE`, migrations, seed ; aucun
+  redémarrage du conteneur), après `wait-kesh.sh` : `scripts/test-fast.sh` (`fmt --check`, `clippy --workspace
+  --all-targets -D warnings`, nextest) — **2827 passés, 4 ignorés, 0 échec**.
+- **Frontend** (non touché par la story, exécuté quand même) : `npm run check` 0 erreur (27 avertissements
+  préexistants), `lint-i18n-ownership` PASS, `test:unit` **111 fichiers / 1086 tests passés**, `build` vert.
+- **E2E complet** au même commit, base `kesh_e2e_1511a` reconstruite, backend `target/debug/kesh-api` sur le
+  port **3004**, `KESH_COOKIE_SECURE=false`, `KESH_STATIC_DIR` du worktree, `KESH_JWT_SECRET` et
+  `KESH_ADMIN_PASSWORD` générés (C-15-11a-5) : **244 passés, 7 échoués, 19 ignorés (10,1 min)**. Les sept
+  échecs sont **exactement** les sept KF-029 (#97) de `docs/testing.md` § *Les échecs attendus* :
+  `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`,
+  `:150`. Aucun huitième variable ce run ; run de l'après-midi (KF-045 hors fenêtre). Backend arrêté.
+- Commit postérieur aux gates : documentation seule (`admin-manual.tex` — ligne `openssl rand -base64 32` du
+  bloc Synology rétablie, C-15-11a-4 —, son PDF, la fiche, le registre). Après lui : `make admin` refait, 52
+  `Overfull`, aucun nouveau, 0 dans `sec:env-vars`.
+- Contrôles de l'AC14 : `grep -rn GENERATE_ME frontend/ scripts/ .github/` → **vide** ; le montage E2E local
+  n'emploie ni `GENERATE_ME` ni forme `<…>`.
+
+**À signaler (hors fiche, pour l'orchestrateur)** : `CLAUDE.md:180` (recette E2E) écrit
+`KESH_ADMIN_PASSWORD='<12+ caractères>'`, désormais refusé s'il est recopié tel quel (le `CLAUDE.md` n'est pas
+modifié) ; `website/index.html:189` et `docker-compose.dev.yml` (F14, F3-10) restent à verser à leur issue ;
+fiche 15-7b2 / 15-7b3 : le report des zones partagées est à faire (§ *Coordination*) ; #557 et #558 : mises à
+jour de texte demandées par C83/C84.
+
 ### File List
+
+- `docker-compose.yml`, `docker-compose.prod.yml`, `.env.example`
+- `crates/kesh-api/src/config.rs`, `crates/kesh-api/src/main.rs`, `crates/kesh-api/src/lib.rs`
+- `crates/kesh-api/tests/configuration_transmise.rs` (neuf)
+- `crates/kesh-api/Cargo.toml`, `Cargo.lock` (`yaml-rust2` 0.13.0, dépendance de test ; entrent `hashlink`
+  0.12.2 — à côté de 0.10.0, sans conséquence — et `foldhash` 0.2.0)
+- `crates/kesh-api/README.md`, `README.md`, `DOCKER_START.md`, `CHANGELOG.md`
+- `.github/workflows/ci.yml`, `docs/ci.md`
+- `docs/manual/fr/admin-manual.tex` + `.pdf`, `docs/manual/fr/marketing-brochure.tex` + `.pdf`
+- `_bmad-output/implementation-artifacts/15-11a-compose-transmet-la-configuration.md`,
+  `_bmad-output/implementation-artifacts/sprint-status.yaml` (lignes 15-11 / 15-11a / 15-11b reportées),
+  `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md` (C-15-11a-1 à 5)
+- Non touchés, comme prévu : `Dockerfile`, `docs/manual/shared/kesh-style.sty`, `user-manual.tex` (+ PDF),
+  `kesh-db`, frontend.
 
 ## Change Log
 
@@ -1598,3 +1796,11 @@ Le test vit avec les tests d'intégration de `kesh-api` (patron `audit_route_reg
     toutes rouges ; M3 trois rouges, M7, M14 et M19 deux), tests unitaires de l'AC16 **6**, lignes
     ajoutées aux compose **28** (15 dans Y, 13 dans P), modules de code **3** — seuil de découpage non
     franchi.
+- 2026-10-08 — **Développement (dev-story, autonomie ; choix C-15-11a-1 à 5).** T0-T9 faits : 28 lignes de
+  compose, AC16 (`is_template_placeholder`, deux contrôles avant la longueur, 6 tests), test
+  `configuration_transmise` (12 tests : 5 sur le dépôt, 7 d'auto-test), 28 mutations toutes rouges, AC10/AC5
+  mesurés sans conteneur, manuel (dix tableaux remis en page, sous-section « Passer à la 0.13.0 »), brochure,
+  `DOCKER_START.md`, READMEs, CHANGELOG (Corrigé + Sécurité), étape CI. Gates : backend 2827/2827 (4 ignorés),
+  frontend vert, E2E 244 passés / 7 échecs attendus (KF-029). Tests unitaires de `config.rs` : 72 → 78
+  (`ef39dd54` → `HEAD`). Statut → `review`.
+

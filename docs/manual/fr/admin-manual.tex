@@ -543,6 +543,7 @@ curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/main/.env.example -o
 # Secrets obligatoires : KESH_JWT_SECRET, DATABASE_URL (et les mots de
 # passe de votre MariaDB) -- ils DOIVENT remplacer les placeholders de .env
 openssl rand -hex 32   # → KESH_JWT_SECRET
+openssl rand -base64 32 # → mot de passe MariaDB (repris dans DATABASE_URL)
 # Optionnel : sans KESH_ADMIN_PASSWORD, l'administrateur se crée à l'écran
 # /setup ; si vous décommentez la ligne, remplacez son placeholder
 openssl rand -base64 24 # → KESH_ADMIN_PASSWORD
