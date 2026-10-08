@@ -1,6 +1,6 @@
 # Story 15.5e1 : Socle du rejeu sur interblocage — les enveloppes, le registre, les trois routes des issues, la saisie fournisseur et l'enregistrement des réglages de facturation
 
-Status: review
+Status: done
 
 <!-- Sous-story de la 15-5e (fiche index `15-5e-ordre-des-verrous-reglements.md`, statut `split`),
      créée le 2026-10-08 par le découpage décidé à la validation P3 de la 15-5e (finding F3-2, choix
@@ -1312,3 +1312,4 @@ Claude Opus 5.5 (agent de développement, autonomie complète — Epic 15).
   - **Propagation post-patch** : `cross-table`, `retry_with(` sans nom, `2 ter` grepés sur `crates/`, `docs/`, `website/` et les fiches 15-5e1 / 15-5e2 / 15-5d : restent `routes/onboarding.rs:595` (« to avoid cross-table deadlocks », jumelle que la 15-5e2 réécrit, sa fiche `:248`), « Used on `finalize` » du Pattern 5 `:328` (reste du Pattern 5, 15-5e2), les « cross-table » de `fiscal_years.rs` (exacts : table isolée), les `retry_with(` du source synthétique du registre (voulus), les `(2 ter)` de `validate_invoice` (existent au code). **La fiche 15-5e2** (`:261`, `:299`) prévoit encore de corriger `:289-291` et `:338-351` : déjà faits ici — à ajuster par l'orchestrateur.
   - **Gates réellement exécutés, au commit `1dc41152`** : bases `kesh_155e1` et `kesh_e2e_155e1` remises à zéro (DROP/CREATE, migrations, seed) ; `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) **2793 exécutés, 2793 passés, 4 ignorés** (189,4 s ; même nombre de tests, les ajouts sont des volets du test 1) ; frontend `check` 0 erreur (27 avertissements préexistants), `lint-i18n-ownership` PASS, `test:unit` **979 / 979** (107 fichiers), `build` OK ; **E2E complet** (backend du worktree sur 3002) : **238 passés, 9 échoués, 19 ignorés** (9,8 min) — les sept KF-029 de `docs/testing.md`, plus `journal-entries.spec.ts:81` et `sidebar-navigation.spec.ts:75`, **tous deux verts rejoués seuls** (pollution d'état ; `sidebar-navigation:75` passant seul, ce n'est pas la KF-046). Mutations restaurées, fichiers `touch`és.
   - Statut : reste `review` jusqu'à la passe ciblée sur `1dc41152`.
+- **2026-10-08 — Revue de code P2 ciblée** (Haiku, `15-5e1-review-prompt-p2-ciblee.md`) sur `1dc41152` : **0 finding** ; axe non couvert (assertion qui échouerait avant le `detach`) sans effet, chaque `#[sqlx::test]` ayant son propre pool — vérifié par l'orchestrateur. **Boucle de revue CLOSE** (P1 Sonnet ×3 : 3 MEDIUM, 9 LOW → P2 ciblée : 0). Statut → `done`.
