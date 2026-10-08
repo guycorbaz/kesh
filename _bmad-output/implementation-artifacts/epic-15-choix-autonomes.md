@@ -4925,3 +4925,20 @@ l'import (#458–#461).
   `details` divergents) ; (2) tout sous `Corrigé` (une intégration par clé chercherait le changement de
   comportement sous `Modifié`).
 - **Réversible** : oui.
+
+## C-15-12a-1 — 15-12a (T0) : un message propre au refus de création d'un exercice
+- **Contexte** : F3 de la validation P4 (LOW) — le texte de l'AC 9 (`error-later-fiscal-year-closed`),
+  qui sert au `PUT` et au `DELETE` d'une écriture, servait aussi à `POST /fiscal-years` (AC 5) ; sa phrase
+  « une écriture se corrige alors par une contre-passation » ne répond à rien à l'écran de création.
+  L'AC 9 exige de garder ce conseil pour les écritures (F5 de P2) ; le message ne pouvait donc pas devenir
+  commun en le perdant. L'orchestrateur demandait un « message adapté à la création ».
+- **Retenu** : une clé dédiée, `error-fiscal-year-create-later-closed` (×4 locales, repli Rust), rendue
+  par une variante d'`AppError` (`FiscalYearBeforeClosedYear { fiscal_year_id, fiscal_year_name }`) que
+  `map_create_error` produit à partir de `DbError::LaterFiscalYearClosed`. **Code (`LATER_FISCAL_YEAR_CLOSED`),
+  statut (400) et `details` inchangés** — une intégration ne voit que le texte changer. La 15-12b ne lit
+  que la clé de l'AC 9, qui ne bouge pas.
+- **Écartées** : un seul message sans conseil de contre-passation (contredit l'AC 9) ; un message unique
+  allongé des deux cas (plus long, et à moitié hors sujet à chaque fois) ; un champ de plus dans
+  `DbError::LaterFiscalYearClosed` pour choisir le texte (fait porter à la couche base une décision
+  d'affichage).
+- **Réversible** : oui (une variante et une clé à retirer).

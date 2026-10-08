@@ -31,7 +31,7 @@ T12, T13), l'ex-T4 étant répartie (le message dans la T3 de la 15-12a, le file
 Mutations : (i)-(iv), (viii), (ix) et la neuve (x) dans la 15-12a ; (v), (vi), (vii-a), (vii-b) dans la
 15-12b.
 
-**Ordre écrit** (C112) : **15-12a → 15-12b → 15-1a → 15-1a2 → 15-1b → 15-1c**. Le **prérequis réel** de la
+**Ordre écrit** (C112, mis à jour au découpage de la 15-1a, C125) : **15-12a → 15-12b → 15-1a-i → 15-1a-ii** (puis 15-1b, 15-1c). Le **prérequis réel** de la
 15-1a est la **15-12a** (l'invariant I, la clôture rejouée) ; la 15-12b passe avant de préférence, les
 deux touchant `journal_entries::delete_in_tx`. ⚠️ La v0.13.0 ne se tague pas sans la 15-12b (#543, P1 ;
 et le message neutre de la 15-12a n'est vrai de l'état hérité qu'avec le filet).

@@ -1,6 +1,6 @@
 # Story 15.12a : Clôturer les exercices dans l'ordre — l'invariant, ses trois transitions, son écran
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Créée le 2026-10-09 par DÉCOUPAGE de la Story 15-12 à la remédiation de sa validation P2 (décision de
      l'orchestrateur, choix C107 de `epic-15-choix-autonomes.md`). Version complète de la 15-12 avant
@@ -17,7 +17,13 @@ Status: ready-for-dev
      sur le `main` du moment, par leur texte. ⚠️ **`main` a avancé depuis** : `5e4bec50` (15-5d mergée)
      décale notamment `kesh-api/src/errors.rs` (+28 lignes : bras `LaterFiscalYearClosed` `:2847`),
      `invoices.rs` (+1 à +79 lignes) et les catalogues (+4 lignes : fr-CH `:376`). Les relevés **refaits
-     en P3** le sont sur `5e4bec50` et le disent. -->
+     en P3** le sont sur `5e4bec50` et le disent.
+     ✅ **T0 (2026-10-09, développement)** : tous les numéros de ligne cités sont **relocalisés sur
+     `5e4bec50`** (base de la branche `story/15-12a-cloture-dans-l-ordre`), par leur texte ; ceux qui
+     avaient bougé sont corrigés en place (R1, R2, AC 9, AC 23), les autres ont été retrouvés
+     identiques. Les LOW de la validation P4 (rapports `target/gate-logs/15-12a-p4-{R,F}.md`) sont
+     appliqués, sauf R7 (fiche 15-1a, à l'orchestrateur). Mesures T0 au Dev Agent Record. -->
+
 
 **Issues** : **refs #543** (P1 — « on peut écrire dans un exercice ouvert alors qu'un exercice postérieur
 est déjà clos — le bilan clos change en silence »). Cette fiche rend l'état fautif **inatteignable** à
@@ -103,13 +109,16 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
   **reste juste** : l'ordre ascendant évite le cycle, le rejeu ne fait que l'absorber s'il survient.
   ⚠️ **La forme** de ce verrouillage s'aligne sur l'AC 3 (C119, validation P3) : un parcours
   d'intervalle `… ORDER BY start_date ASC FOR UPDATE` ne fixe pas l'ordre des verrous (il dépend du
-  plan) — la 15-1a lit sans verrou les `id` triés par `start_date`, puis les verrouille **un par un par
-  clé primaire** dans cet ordre, et relit sous verrou ce que ses fantômes pourraient changer (C114, à
-  réviser par l'orchestrateur dans la fiche 15-1a).
+  plan). **Fait (C125)** — la 15-1a a depuis été découpée en **15-1a-i** (marque du lettrage) et
+  **15-1a-ii** (gardes) : verrous par clé primaire, un par un dans l'ordre de `start_date`, bornés aux
+  exercices qui portent une ligne du groupe ; l'exercice postérieur clos est lu sans verrou par
+  `find_later_closed`. Aucun fantôme n'en change le verdict : le lettrage n'a pas de relecture sous
+  verrou à faire.
 - Dans l'**état hérité**, l'invariant ne tient pas : un groupe entièrement dans un exercice ouvert N, sous
   un N+1 clos, passe la règle « au moins une ligne sur un exercice ouvert ». Ni cette fiche ni la 15-12b
   ne le refusent ; la 15-1a l'a tranché (C113 : elle **garde** l'état hérité, patron 15-8a).
-- ⛔ **Cette fiche ne modifie pas la 15-1a** (en validation) : le point est porté à l'orchestrateur.
+- ⛔ **Cette fiche ne modifie pas les fiches 15-1a-i / 15-1a-ii** : le point est porté à l'orchestrateur.
+- **Ordre** : 15-12a → 15-12b → 15-1a-i → 15-1a-ii.
 
 ## Acceptance Criteria
 
@@ -132,8 +141,11 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
 3. **Ordre des verrous de `close`**, écrit à son doc-comment et tenu par le **code**, non par le plan
    de l'optimiseur *(réécrit en P3 : F2, F5, F6, R3 ; C119, qui révise C110)* :
    (a) lecture **non verrouillante** de `start_date` de Y (scopée `(id, company_id)`) — `start_date` est
-   **immuable** (seuls `close`, `reopen` et `update_name` écrivent `fiscal_years`, et `update_name` ne
-   touche que `name` : `fiscal_years.rs:400`) ; absente → `NotFound` ;
+   **immuable** : aucun `UPDATE` du code de production n'écrit `start_date` (les `UPDATE fiscal_years`
+   hors `#[cfg(test)]` sont ceux de `close`, `reopen` — statut — et `update_name` — `name` seul,
+   `fiscal_years.rs:400`) ; une ligne supprimée puis recréée (`kesh-seed` `reset_demo`,
+   `lib.rs:275`) prend un autre `id` et sort de (b) ; la restauration d'une sauvegarde est l'angle
+   mort déclaré (Dev Notes) *(F5 de P4)* ; absente → `NotFound` ;
    (b) **liste des antérieurs, sans verrou** — constante `LIST_EARLIER_SQL` : `SELECT id FROM
    fiscal_years WHERE company_id = ? AND start_date < ? ORDER BY start_date ASC`, **tous statuts** (un
    antérieur clos dans la vue peut être en cours de réouverture) ;
@@ -141,8 +153,13 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
    `LOCK_EARLIER_BY_ID_SQL` : `SELECT id FROM fiscal_years WHERE id = ? AND company_id = ? FOR UPDATE`.
    Un exercice listé en (b) et disparu depuis (`onboarding::reset` efface les exercices de la société)
    est ignoré : la relecture (d) fait foi ;
-   (c) `SELECT … WHERE id = ? AND company_id = ? FOR UPDATE` sur Y (statut courant), par
-   `fetch_optional` — Y disparu depuis (a) → `NotFound`, jamais une panique (F6) ; verdict « déjà clos » ;
+   (c) verrou de Y — constante **`LOCK_IN_COMPANY_SQL`** : `SELECT id, company_id, name, start_date,
+   end_date, status, created_at, updated_at FROM fiscal_years WHERE id = ? AND company_id = ? FOR
+   UPDATE`, c'est-à-dire **le texte que `reopen` et `update_name` écrivent déjà chacun à la main**,
+   extrait en une constante partagée par les trois (DRY ; F1 = R5 de P4). Sa liste de colonnes est
+   **la condition du motif** de l'AC 13 (`["SELECT id, company_id", "WHERE id = ", "FOR UPDATE"]`),
+   qui en est tiré : une forme réduite (`SELECT status …`) le rendrait aveugle. Par `fetch_optional`
+   — Y disparu depuis (a) → `NotFound`, jamais une panique (F6) ; verdict « déjà clos » ;
    (d) **relecture verrouillante** — constante `FIND_EARLIER_OPEN_SQL` : `SELECT … FROM fiscal_years
    WHERE company_id = ? AND start_date < ? AND status = 'Open' ORDER BY start_date ASC LIMIT 1 FOR
    UPDATE`. Lecture verrouillante, donc sur l'état **validé le plus récent** et non sur la vue fixée en
@@ -202,9 +219,10 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
    puis `find_open_covering_date(today)` (`:2300`) parcourt un intervalle qui contient les exercices
    **antérieurs** à l'origine — depuis le premier exercice de la société sous le plan par l'index, toute
    la société sous un autre plan — et les verrouille **après** elle. Mêmes deux temps, précédés du
-   verrou de la pièce, dans `supplier_invoices::cancel_in_tx` (`:952-956`, puis `reverse_owned_in_tx`
-   `:979`), `supplier_invoices::cancel_settlement_in_tx` (`:1159`, puis `:1188`),
-   `invoice_settlements_write::cancel_settlement_in_tx` (`:749`, puis `:773`) et
+   verrou de la pièce, dans `supplier_invoices::cancel_in_tx` (`:1008`, puis `reverse_owned_in_tx`
+   `:1033`), `supplier_invoices::cancel_settlement_in_tx` (`:1213`, puis `:1242`),
+   `invoice_settlements_write::cancel_settlement_in_tx` (`:753`, puis `:777`) *(relocalisés sur
+   `5e4bec50` en T0, R1 de P4)* et
    `reconciliation_cancel::cancel_in_tx` (`:310`, puis `reverse_in_tx` `:370`). Un cycle avec la
    clôture est donc **possible, quel que soit le plan** : `close(N)` tient un antérieur M (étape b') et
    demande N (étape c) ; la contre-passation d'une écriture de N tient N et demande M. Il se résout par
@@ -216,7 +234,15 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
    antérieur à la fin de X), puis demande les postérieurs (`find_later_closed_in_tx`, AC 5) ; une
    contre-passation ou une annulation d'une écriture d'un exercice N postérieur à X tient N, puis
    parcourt depuis le premier exercice. Résolu par le rejeu des deux côtés (création : AC 6 ; flux :
-   `Rejouee`). Les requêtes (b), (b') et (d) sont des **constantes**, pas des chaînes écrites deux fois.
+   `Rejouee`). Les requêtes (b), (b'), (c) et (d) sont des **constantes**, pas des chaînes écrites deux
+   fois.
+   ⚠️ **« Se résout par le rejeu » a une borne** (F6 de P4) : l'enveloppe fait au plus
+   **trois tentatives** (`DEFAULT_MAX_DEADLOCK_ATTEMPTS = 3`, `kesh-db/src/retry.rs:71`), et un
+   dépassement du délai d'attente de verrou (`1205`, `innodb_lock_wait_timeout` = 50 s) n'est **pas**
+   rejoué (`retry.rs:96-99`). Conséquence nouvelle pour la clôture : elle attend désormais en (b')
+   tout écrivain en vol qui tient un exercice antérieur (les écrivains verrouillent par parcours
+   depuis le premier exercice, `find_open_covering_date`) ; une attente de plus de 50 s rend un 500.
+   Préexistant pour la contre-passation, nouveau pour la clôture ; écrit aux Dev Notes.
 
 4. **HTTP.** `POST /api/v1/fiscal-years/{id}/close` rend **`409`** code **`EARLIER_FISCAL_YEAR_OPEN`**,
    `details.fiscalYearId` / `details.fiscalYearName` (l'exercice à clôturer d'abord), message
@@ -232,13 +258,21 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
    exercice **clôturé** de la société : `DbError::LaterFiscalYearClosed { fiscal_year_id,
    fiscal_year_name }` (le **plus proche** postérieur clos, `find_later_closed_in_tx` — lecture
    **verrouillante**, cf. AC 13 b), après les pré-contrôles existants (longueur du nom, chevauchement,
-   nom en double) et avant l'`INSERT`. HTTP **`400 LATER_FISCAL_YEAR_CLOSED`** (mapping global ;
-   `map_create_error` le laisse passer par son bras `other`), message de l'**AC 9** (même fiche).
+   nom en double) et avant l'`INSERT`. HTTP **`400 LATER_FISCAL_YEAR_CLOSED`**, mêmes `details` que le
+   mapping global, mais **message propre à la création** *(T0, F3 de P4, choix C-15-12a-1)* : le texte
+   de l'AC 9 conseille la contre-passation d'**une écriture**, ce qui ne répond à rien de ce que tente
+   l'écran de création. `map_create_error` intercepte donc `DbError::LaterFiscalYearClosed` et le rend
+   par une variante d'`AppError` dédiée (`FiscalYearBeforeClosedYear { fiscal_year_id,
+   fiscal_year_name }`), clé neuve **`error-fiscal-year-create-later-closed`** — fr-CH : « L'exercice
+   « { $name } », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucun exercice
+   ne peut être créé avant sa date de début tant qu'il l'est. Pour créer celui-ci, un administrateur
+   rouvre d'abord les exercices clôturés, en commençant par le plus récent. » (textes DE/IT/EN : AC 9).
+   Code, statut et `details` restent ceux de l'AC 9.
    `create_for_seed` (une seule société neuve, un seul exercice : `kesh-seed/src/lib.rs:168`) et
    `create_if_absent_in_tx` (n'insère que si la société n'a **aucun** exercice) ne peuvent pas produire
    l'état fautif et ne changent pas — écrit à leur doc-comment. **Test HTTP** (`fiscal_years_e2e.rs`) :
    `POST /fiscal-years` sous un exercice clos → `400 LATER_FISCAL_YEAR_CLOSED`, corps complet
-   (`details.fiscalYearId` / `fiscalYearName`, message de l'AC 9) ; paire de précédence : une demande
+   (`details.fiscalYearId` / `fiscalYearName`, message de création ci-dessus) ; paire de précédence : une demande
    qui **chevauche** un exercice et précède un exercice clos rend **`400 VALIDATION_ERROR`**, message
    `error-fiscal-year-overlap` (pré-contrôle existant, qui parle d'abord : `FY_OVERLAP_KEY` est la clé
    interne de `DbError::Invariant`, que `map_create_error` traduit en `AppError::Validation` —
@@ -273,7 +307,12 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
    - **création** : même patron si la mesure de l'AC 13 b montre un interblocage dont la victime se
      laisse forcer (`fiscal_year_creation_is_replayed_when_it_is_the_deadlock_victim`) ; **sinon**, la
      mutation (x) est écrite « tenue par revue » au Dev Agent Record et au point (vi) du registre, comme
-     `onboarding::finalize`.
+     `onboarding::finalize`. ✅ **Mesuré en T0 : la victime se laisse forcer** — montage M clos, Y
+     ouvert, M < X < Y ; la transaction lourde tient Y par clé primaire ; `POST /fiscal-years` (X) passe
+     son pré-contrôle `find_overlapping` (qui lit, donc verrouille, M) et bute sur Y dans
+     `find_later_closed_in_tx` (motif `["start_date > ", "FOR UPDATE"]`) ; la transaction demande M :
+     interblocage, la création (plus légère) est annulée, la transaction obtient M, annule ; la route
+     rejoue et rend **201**. Le test est donc écrit, et il tue la mutation (x).
    **Le doc-comment du registre est mis à jour** (propagation) : le point (iv) (`:94-98`) retire
    `POST /fiscal-years/{id}/close` des routes non rejouées exposées au cycle (il y garde `/reopen`, en
    nommant le cycle réouverture/contre-passation, préexistant et hors de cette story) ; le point (vi)
@@ -301,8 +340,8 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
 
 9. **Message neutre** *(déplacé de la 15-12b à la découpe, R3/C107 : l'AC 5 le rend dès cette fiche ;
    complété en P2, F5/R4/C111)*. Le mapping global de `DbError::LaterFiscalYearClosed`
-   (`kesh-api/src/errors.rs:2815-2842`) lit une **clé neuve** `error-later-fiscal-year-closed`, aux
-   quatre locales et dans le repli Rust (qui remplace celui de `:2823-2825`). Texte fr-CH de
+   (`kesh-api/src/errors.rs:2843-2872` sur `5e4bec50`) lit une **clé neuve** `error-later-fiscal-year-closed`, aux
+   quatre locales et dans le repli Rust (qui remplace celui de `:2851-2853`). Texte fr-CH de
    référence : « L'exercice « { $name } », postérieur, est clôturé, et son bilan reprend tout ce qui le
    précède : rien ne peut être enregistré, modifié ou supprimé avant sa date de début tant qu'il l'est.
    Une écriture se corrige alors par une contre-passation ; sinon, un administrateur rouvre les
@@ -313,7 +352,46 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
    - elle ne prescrit **jamais** de rouvrir « { $name } » : ce serait refusé par la garde LIFO dès qu'un
      exercice plus récent est clos (C100) ; « en commençant par le plus récent » est le seul ordre que
      LIFO accepte, et il vaut aussi à la création d'un exercice (état sain, où le bandeau de la 15-12b ne
-     s'affiche pas : le message porte lui-même la marche à suivre — F5).
+     s'affiche pas : le message porte lui-même la marche à suivre — F5). ⚠️ **À la création d'un
+     exercice, c'est la clé dédiée de l'AC 5 qui parle** (T0, C-15-12a-1) : le conseil de
+     contre-passation n'y a pas d'objet.
+   **Textes des trois autres locales** *(T0, F3 de P4)* — termes du glossaire `docs/i18n-glossaire.md`
+   (ligne *clôture (d'exercice)* : *Abschluss* / *chiusura* / *closing*, jamais « fermer » — KF-041 ;
+   *contre-passation* : *Stornobuchung* / *storno* / *reversal*, comme les clés voisines) :
+   - `error-later-fiscal-year-closed` — de-CH : « Das spätere Geschäftsjahr „{ $name }“ ist
+     abgeschlossen, und seine Bilanz enthält alles, was ihm vorangeht: Vor seinem Beginn kann nichts
+     erfasst, geändert oder gelöscht werden, solange es abgeschlossen ist. Eine Buchung wird dann durch
+     eine Stornobuchung korrigiert; andernfalls eröffnet eine Administratorin oder ein Administrator
+     die abgeschlossenen Geschäftsjahre wieder, beginnend mit dem neuesten. » ; it-CH : « L’esercizio
+     successivo « { $name } » è chiuso, e il suo bilancio riprende tutto ciò che lo precede: nulla può
+     essere registrato, modificato o eliminato prima della sua data d’inizio finché lo è. Una scrittura
+     si corregge allora con uno storno; altrimenti, un amministratore riapre gli esercizi chiusi,
+     cominciando dal più recente. » ; en-CH : « The later fiscal year "{ $name }" is closed, and its
+     balance sheet includes everything before it: nothing can be recorded, changed or deleted before
+     its start date while it is closed. An entry is then corrected with a reversal; otherwise, an
+     administrator reopens the closed fiscal years, starting with the most recent. »
+   - `error-fiscal-year-create-later-closed` (AC 5) — même première proposition, puis de-CH : « Vor
+     seinem Beginn kann kein Geschäftsjahr erstellt werden, solange es abgeschlossen ist. Um dieses zu
+     erstellen, eröffnet eine Administratorin oder ein Administrator zuerst die abgeschlossenen
+     Geschäftsjahre wieder, beginnend mit dem neuesten. » ; it-CH : « nessun esercizio può essere creato
+     prima della sua data d’inizio finché lo è. Per crearlo, un amministratore riapre prima gli esercizi
+     chiusi, cominciando dal più recente. » ; en-CH : « no fiscal year can be created before its start
+     date while it is closed. To create this one, an administrator first reopens the closed fiscal
+     years, starting with the most recent. »
+   - ancienne clé alignée (ci-dessous), première phrase inchangée, puis de-CH : « Korrigieren Sie sie
+     durch eine Stornobuchung; andernfalls eröffnet eine Administratorin oder ein Administrator die
+     abgeschlossenen Geschäftsjahre wieder, beginnend mit dem neuesten. » ; it-CH : « Correggetela con
+     uno storno; altrimenti, un amministratore riapre gli esercizi chiusi, cominciando dal più
+     recente. » ; en-CH : « Correct it with a reversal; otherwise, an administrator reopens the closed
+     fiscal years, starting with the most recent. »
+   - `error-fiscal-year-close-earlier-open` (AC 4) et `fiscal-year-close-blocked-earlier-open` (AC 17) —
+     de-CH : « Schliessen Sie zuerst das Geschäftsjahr „{ $name }“ ab, das älter und noch offen ist[:
+     Die Bilanz ist kumulativ, und ein Geschäftsjahr wird erst nach allen vorangehenden
+     abgeschlossen]. » ; it-CH : « Chiudi prima l’esercizio « { $name } », più vecchio e ancora
+     aperto[: il bilancio è cumulativo, e un esercizio si chiude solo dopo tutti quelli che lo
+     precedono]. » ; en-CH : « First close fiscal year "{ $name }", which is earlier and still open[:
+     the balance sheet is cumulative, and a fiscal year can only be closed after all those before
+     it]. » (entre crochets : la seconde proposition, propre à la clé de l'API).
    Le texte actuel (`journal-entries-modify-blocked-later-fiscal-year-closed`, « elle reste figée…
    corrigez par une contre-passation ») ne vaut que pour la modification ; la clé neuve sert désormais
    au `PUT`, au `DELETE` et à la création d'un exercice (la 15-12b y ajoute la saisie, les règlements, la
@@ -325,9 +403,10 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
    bilan reprend cette écriture : elle reste figée tant qu'il l'est. Corrigez-la par une
    contre-passation ; sinon, un administrateur rouvre les exercices clôturés, en commençant par le plus
    récent. » **Sites, relevés sur `8f9811d8` par la valeur** (`grep -rnE "rouvrir cet exercice|reopen that
-   fiscal year|wieder eröffnen;|riaprire quell"` hors fiches et PDF) : `crates/kesh-i18n/locales/fr-CH/messages.ftl:372`,
-   `de-CH/messages.ftl:378`, `it-CH/messages.ftl:378`, `en-CH/messages.ftl:378`, repli de
-   `blocker-messages.ts:94` — et le repli Rust `errors.rs:2824`, qui disparaît avec le passage à la clé
+   fiscal year|wieder eröffnen;|riaprire quell"` hors fiches et PDF ; **relocalisés sur `5e4bec50` en T0**) :
+   `crates/kesh-i18n/locales/fr-CH/messages.ftl:376`, `de-CH/messages.ftl:382`,
+   `it-CH/messages.ftl:382`, `en-CH/messages.ftl:382`, repli de
+   `blocker-messages.ts:94` — et le repli Rust `errors.rs:2852`, qui disparaît avec le passage à la clé
    neuve. Le `grep` se refait après correctif et ne doit plus rien rendre hors des fiches de la 15-8a.
    Code, statut (`400`) et `details` inchangés.
 
@@ -338,6 +417,10 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
     final** et l'issue de **chaque** côté, et **force** l'entrelacement qu'il teste : une course libre
     (`tokio::spawn` × 2) ne tombe qu'au hasard dans la fenêtre qui compte (C100). La session W est une
     transaction de test qui tient un verrou.
+    ⚠️ **Désignations** *(T0, R4 de P4)* : les **tests** s'écrivent toujours « 13 a » … « 13 d » (et
+    « 13 b1 », « 13 b2 » pour les deux configurations du 13 b) ; les **étapes** de `close` s'écrivent
+    « étape (a) » … « étape (e) », « étape (b') ». Une lettre seule entre parenthèses, ci-dessous, est
+    une étape dans la liste des motifs, un test dans la liste des tests.
     **« Attendre la clôture », ce que l'aide sait voir (R7, F9)** : `attendre_une_requete_en_cours`
     (`test_fixtures.rs:560-590`) compte les **autres** connexions de la base dont `PROCESSLIST.INFO`
     contient tous les motifs : elle voit une requête **en cours d'exécution**, qu'elle soit bloquée ou
@@ -383,7 +466,15 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
       (b1) sans aucun exercice antérieur à X ; (b2) avec un exercice **clos** antérieur à X — là, le
       pré-contrôle `find_overlapping` de la création (parcours depuis le premier exercice) et le verrou
       (b') de la clôture portent tous deux sur ce premier exercice et s'y rencontrent probablement
-      (sérialisation, sans interblocage). Dans les deux cas, la propriété ne dépend pas du mécanisme :
+      (sérialisation, sans interblocage). ✅ **Mesuré en T0** (MariaDB 10.11.16, trois sessions à la
+      main, la clôture bloquée en étape (c) par une session qui tient Y, la création lancée ensuite) :
+      **13 b1 — sérialisation** : la création passe ses pré-contrôles, bute sur Y dans
+      `find_later_closed_in_tx`, attend la clôture et lit Y **clos** → `LaterFiscalYearClosed` ;
+      **13 b2 — interblocage**, contrairement à la supposition : la clôture tient M (étape (b')), la
+      création lit M dans `find_overlapping` et l'attend, la clôture, Y obtenu, demande en étape (d) le
+      verrou d'index de M que la création a posé — cycle ; victime observée : la création, qui rejouée
+      lit Y clos. La phrase de l'AC 6 (« peut se résoudre par un interblocage ») est donc **confirmée**.
+      Dans les deux cas, la propriété ne dépend pas du mécanisme :
       une création validée avant que la clôture ne tienne Y est lue par (d) ; une création postérieure
       attend Y (AC 3, « ce que cette forme perd »). Un test par configuration ; chacun écrit le mécanisme
       observé (interblocage rejoué, ou sérialisation) dans son doc-comment, et la phrase de l'AC 6 est
@@ -407,8 +498,16 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
       T0 mesure si la victime se laisse forcer (W alourdie d'abord, patron des tests de rejeu). **Objet de
       ce test : le cycle existe et se résout** — il ne prétend **pas** tuer la mutation (ix), l'enveloppe
       y étant écrite par le test (R2) ; c'est le test HTTP de l'AC 6 qui la tue.
+      ✅ **Mesuré en T0** : la victime est **la clôture**, W alourdie (500 lignes) **ou non** — W obtient
+      M. ⚠️ **Qui libère W** *(F6 de P4)* : la clôture rejouée rebute en étape (b') sur M, que W tient
+      désormais ; le test **annule W dès que W a obtenu M, puis seulement** attend la clôture — un `join`
+      d'abord attendrait `innodb_lock_wait_timeout` (`1205`, jamais rejoué). Si, contre la mesure, W
+      était la victime, W reçoit un 1213 et le test l'annule de même.
     L'ancien **13 c** de la création (« un écrivain dans N contre `close(N+1)` ») est **retiré** (C100).
-    Chaque test nomme, dans son doc-comment, la **mutation qu'il tue** (AC 19).
+    Chaque test nomme, dans son doc-comment, la **mutation qu'il tue** (AC 19) — **sauf** le 13 d
+    (preuve d'existence et de résolution du cycle, aucune mutation) et les 13 b1 / 13 b2, dont la
+    propriété (« jamais X ouvert, Y clos ») est tenue par les gardes (i) et (iv) ensemble ; ils
+    l'écrivent ainsi *(T0, R3 de P4)*.
 
 14. **Doc-comments canoniques** *(révisé en P3 : C119, R5, F5)*. Le doc-comment du module
     `fiscal_years.rs` (§ « Lock ordering & audit », `:11-22`) dit que les mutatrices « ne verrouillent
@@ -464,6 +563,12 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
     test Vitest qui **rougit** si la branche « déjà clôturé » attrape ce code. La boîte de création
     affiche le message de `LATER_FISCAL_YEAR_CLOSED` (chemin générique actuel — à vérifier, pas à
     supposer).
+    ⚠️ **`frontend/src/lib/shared/i18n-keys.test.ts` porte des bornes exactes** *(T0, F2 de P4)* —
+    sur `5e4bec50` : `sitesTotal: 1915`, `sitesNonResolus: 31`, `relais: 6`, `sitesGabarit: 10`,
+    `litterauxMin: 1050` (`:496-500`). Chaque `msg(…)` / `i18nMsg(…)` ajouté à `+page.svelte` bouge
+    `sitesTotal` : la borne se **recompte depuis la source** aux deux bornes du diff (règle de
+    l'en-tête du fichier : recompter, ne pas ajuster), avec une ligne d'historique, et le décompte va
+    au Dev Agent Record.
 
 ### Ce qui doit être prouvé, et le reste
 
@@ -534,6 +639,9 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
     autre connexion n'exécute de requête pendant ces attentes — aucune confusion aujourd'hui. T0 le
     vérifie ; si les deux sites restent tels quels, l'écrire au Dev Agent Record, sinon passer au motif
     discriminant `"start_date > "`.
+    **Côté frontend** *(T0, F2 de P4)* : `i18n-keys.test.ts` (bornes exactes, AC 17) et
+    `fiscal-years-page.test.ts` ; `blocker-messages.test.ts` asserte un fragment du repli
+    (« exercice postérieur Exercice 2027 est clôturé ») que la réécriture de l'AC 9 conserve.
 
 22. **E2E Playwright** (`frontend/tests/e2e/fiscal-years.spec.ts`) : le test « crée un exercice 2031,
     le renomme puis le clôture » (`:56-96`) **casse** — l'exercice seedé 2020-2030 est ouvert. Il est
@@ -557,12 +665,19 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
       qu'après tous ceux qui le précèdent, si bien qu'une écriture se modifie tant que son exercice est
       ouvert ; et si des données antérieures (installation mise à jour, sauvegarde restaurée) portent
       déjà un exercice clôturé après un exercice ouvert, cet exercice ouvert reste figé pour la
-      modification et la suppression. ⚠️ Seuls **restent** la parenthèse « pour la modification et la
+      modification et la suppression. **Deux autres phrases** *(T0, F4 de P4)* : `:752` (complément
+      des soldes de départ — « Si un exercice suivant est déjà clôturé, son bilan reporté l'est
+      aussi », un état que le premier exercice ouvert ne peut plus avoir sous un exercice clos que par
+      des données antérieures) et `:762` (« Un exercice antérieur créé \emph{après} la génération
+      devient à son tour le premier », désormais refusé si un exercice postérieur est clôturé) —
+      incise à chacune. ⚠️ Seuls **restent** la parenthèse « pour la modification et la
       suppression seulement… limite suivie par l'issue #543 » de ce même item et l'avertissement des
       conditions de modification (`:494-500`) : ils décrivent l'état hérité, que seule la 15-12b ferme.
     - **Manuel admin** (`admin-manual.tex`, recalé sur `8f9811d8`) : paragraphe « Réouverture d'un
       exercice clôturé » (`:1381-1382`) — la clôture dans l'ordre, symétrique de la garde de réouverture.
-      Les lignes `:1920` et `:1959` (« si aucun exercice postérieur n'est clôturé ») restent vraies.
+      Les puces `:1920` (« aucun exercice postérieur clôturé », clé `read-write`) et `:1959` (« si
+      aucun exercice postérieur n'est clôturé ») restent vraies *(relocalisées par le texte en T0, F7
+      de P4)*.
     - **`docs/api-external.md`** — `:484` (tableau des erreurs) : ligne neuve **`409
       EARLIER_FISCAL_YEAR_OPEN`** (`POST /fiscal-years/{id}/close`, `details`) ; `LATER_FISCAL_YEAR_CLOSED`
       gagne la création d'exercice (`POST /fiscal-years`) parmi ses routes ; changement de contrat signalé
@@ -599,7 +714,9 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
         son texte ou sur celui du repli Rust.
 - [ ] **T1 — Clôture dans l'ordre (dépôt)** (AC 1, 2, 3, 7, 14) *(ex-T1)*
   - [ ] `DbError::EarlierFiscalYearOpen { fiscal_year_id, fiscal_year_name }` (+ `error_code()` si la
-        famille l'exige — suivre `LaterFiscalYearClosed`, `errors.rs:198/210/221/562/993`).
+        famille l'exige — suivre `DbError::LaterFiscalYearClosed` : variante `errors.rs:562`,
+        `error_code()` `:1015` ; `ModificationBlocker::LaterFiscalYearClosed` (`:198-221`) est une
+        autre énumération et **ne change pas** — T0, R2 de P4).
   - [ ] Constantes `LIST_EARLIER_SQL`, `LOCK_EARLIER_BY_ID_SQL`, `FIND_EARLIER_OPEN_SQL` ; `close`
         réordonné en (a)-(b)-(b')-(c)-(d)-(e), la boucle (b') en Rust (C119) ; `OPEN_COVERING_DATE_SQL`
         **inchangée** (C119 révise C110) ; doc-comments (module, `close`, `FIND_LATER_CLOSED_SQL` et
@@ -686,6 +803,18 @@ registre).
   une contre-passation (elle tient Y-1 et demande les postérieurs ; la contre-passation tient une
   origine postérieure et parcourt depuis le premier exercice). Préexistant, sans rapport avec la
   clôture dans l'ordre : nommé au point (iv) du registre (AC 6), qui le porte déjà pour `/reopen`.
+- **Hors de cette story, écrit — cycle clôture ↔ renommage** *(T0, R9 de P4)* : `update_name` tient
+  l'exercice renommé Y (`LOCK_IN_COMPANY_SQL`), puis verrouille l'exercice **homonyme**
+  (`… WHERE company_id = ? AND name = ? AND id <> ? FOR UPDATE`). Renommer Y au nom d'un antérieur M
+  tient Y et demande M ; `close(Y)` tient M (étape (b')) et demande Y : cycle, **nouveau** (la clôture
+  ne verrouillait pas ses antérieurs). La victime peut être le renommage, route
+  `PUT /fiscal-years/{id}` **non rejouée** → 500, sur un renommage que le pré-contrôle aurait refusé
+  de toute façon (`FY_NAME_DUPLICATE`). Très rare et bénin ; nommé au point (iv) du registre avec
+  `/reopen`, pas de code.
+- **Attente bornée** *(T0, F6 de P4)* : la clôture attend désormais en étape (b') tout écrivain en vol
+  qui tient un exercice antérieur ; au-delà de `innodb_lock_wait_timeout` (50 s), `1205` → 500, non
+  rejoué. Préexistant pour la contre-passation, nouveau pour la clôture ; accepté (une transaction
+  d'écriture dure quelques millisecondes).
 
 ### Codes et messages
 
@@ -723,9 +852,13 @@ l'objet).
   (`:820`), `supplier-invoices-cancel-blocked-fiscal-year-closed` (`:1949`), `error-fiscal-year-reopen-blocked`
   (`:922`, « rouvrez-le d'abord » sans dire lequel — le bouton le nomme, l'API non),
   `error-opening-balances-first-year-closed` (`:959`) et leurs trois autres locales ; replis Rust
-  (`kesh-api/src/errors.rs:2978`, `:3509`, `:3546`) et frontend (`settlement-cancel-blocked.ts:39`,
-  `reconciliation-cancel.ts:60`, `invoice-cancel.ts:43`) ; manuel utilisateur (`:1405`, `:1427`,
-  `:1714`, `:2242`). **Issue à ouvrir par l'orchestrateur** (P3 : texte qui décrit un geste que le code
+  (`kesh-api/src/errors.rs:2978`, `:3509`, `:3546`, et — complétés en T0, R6 de P4 —
+  `kesh-api/src/routes/fiscal_years.rs:178`, `routes/opening_balances.rs:205`, `:406`) et frontend
+  (`settlement-cancel-blocked.ts:39`, `reconciliation-cancel.ts:60`, `invoice-cancel.ts:43`) ; manuel
+  utilisateur (`:719` — « peut rouvrir l'exercice directement », légitime pour la procédure —,
+  `:1405`, `:1427`, `:1714`, `:2242`). ⚠️ Des tests Vitest **figent** le texte courant
+  (`InvoiceSettlements.test.ts`, `reconciliation-cancel.test.ts`, `CancelReconciliationDialog.test.ts`,
+  `settlement-cancel-blocked.test.ts`, `invoice-settlements-page.test.ts`) : l'issue les nommera. **Issue à ouvrir par l'orchestrateur** (P3 : texte qui décrit un geste que le code
   refuse dans un cas), qui les alignera sur la prescription de C111 — « en commençant par le plus
   récent ».
 
@@ -800,6 +933,48 @@ l'AC 21, `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`,
 
 ### Agent Model Used
 
+Claude Opus 5.5 (agent de développement, worktree `/home/gcorbaz/devel/kesh-15-12a`).
+
+### Mesures T0 (2026-10-09, MariaDB 10.11.16, base de mesure `kesh_1512a_t0`)
+
+- **Isolement et délai** : `REPEATABLE-READ`, `innodb_lock_wait_timeout = 50`.
+- **`EXPLAIN` (descriptif, C119 — rien n'en dépend)** de `FIND_EARLIER_OPEN_SQL` (étape (d)) et de
+  `FIND_LATER_CLOSED_SQL`, chacun en `… FOR UPDATE`, ainsi que de `LIST_EARLIER_SQL` :
+  - régime « une société » (quatre exercices, le plus ancien créé en dernier — `id` inversés), avant et
+    après `ANALYZE TABLE` : `type = range`, `key = uq_fiscal_years_company_start_date`, `Extra = Using
+    index condition; Using where` (liste : `Using where; Using index`) — **pas de `filesort`** ;
+  - régime « plusieurs sociétés » (six sociétés, vingt exercices chacune), avant et après `ANALYZE` :
+    même plan, `rows` 15-16 (la société seule).
+  ⇒ `FIND_LATER_CLOSED_SQL` **suit l'index** dans les deux régimes : la limite préexistante de `reopen`
+  et de la garde 15-8a (plan qui ne suivrait pas l'index) n'est **pas** observée ; rien à signaler.
+- **AC 13 b — création contre clôture** (trois sessions `mariadb`, la clôture bloquée en étape (c) par
+  une session qui tient Y, la création lancée 0,5 s après) :
+  - **b1** (aucun exercice antérieur à X) : **sérialisation** — la création bute sur Y dans
+    `find_later_closed_in_tx`, attend la clôture, lit Y clos (refus `LaterFiscalYearClosed`).
+  - **b2** (M clos antérieur à X) : **interblocage** (1213) — victime observée : la création ; la
+    clôture valide. (Mesure faite d'abord sans l'étape (b') par erreur de script : la victime était
+    alors la clôture, en étape (d) ; refaite avec (b').)
+- **Preuve HTTP de l'enveloppe de création** (montage de l'AC 6) : W alourdie (500 lignes) tient Y ; la
+  création bute en `find_later_closed_in_tx` ; W demande M → **la création est la victime, W obtient
+  M**. Déterministe sur deux essais. ⇒ test HTTP écrit, mutation (x) testée.
+- **AC 13 d — clôture contre contre-passation** (M clos, N ouvert, T ouvert couvrant le jour) : W tient
+  N ; la clôture prend M (b') et bute sur N (c) ; W lance `OPEN_COVERING_DATE_SQL … FOR UPDATE` :
+  **interblocage, victime la clôture**, que W soit alourdie ou non ; W obtient M.
+- **Écritures de `fiscal_years` hors tests** (`git grep`) : `INSERT` (`create`, `create_if_absent_in_tx`,
+  `insert_fiscal_year_in_tx`), `UPDATE` de statut (`close`, `reopen`) et de nom (`update_name`),
+  `DELETE` (`kesh-seed` `reset_demo`) ; les autres (`accounts.rs`, `invoices.rs`, `journal_entries.rs`)
+  sont dans des `mod tests`. Aucun `UPDATE` de `start_date`.
+- **`find_later_closed(_in_tx)?`** : la version verrouillante est appelée par `reopen`
+  (`fiscal_years.rs:911`), `journal_entries::update` (`:1365`) et `delete_in_tx` (`:1682`) ; la version
+  libre par `GET /journal-entries/{id}` (`:1101`). Conforme à l'AC 14.
+- **Motifs existants** `["ORDER BY start_date ASC", "FOR UPDATE"]` (`journal_entries_modification.rs:410`,
+  `:511`) : `journal_entries::update` / `delete` n'appellent pas `close`, et aucune autre connexion
+  n'exécute de requête pendant ces attentes — **laissés tels quels** (AC 21).
+- **Ancienne clé (AC 9)** : sites relocalisés (fr-CH `:376`, autres `:382`, `blocker-messages.ts:94`,
+  repli Rust `errors.rs:2852`) ; seule assertion de test sur son texte :
+  `blocker-messages.test.ts:27`, fragment conservé par la réécriture.
+- **Forme de `PROCESSLIST.INFO`** : constatée au premier test à deux connexions (T4), consignée là.
+
 ### Debug Log References
 
 ### Completion Notes List
@@ -807,6 +982,16 @@ l'AC 21, `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`,
 ### File List
 
 ## Change Log
+
+- 2026-10-09 — **T0 (développement)** : 15 des 16 LOW de la validation P4 appliqués à la fiche (F1 = R5
+  constante `LOCK_IN_COMPANY_SQL` ; F2 bornes de `i18n-keys.test.ts` ; F3 textes DE/IT/EN, glossaire,
+  message propre à la création — C-15-12a-1 ; F4/F7 manuel ; F5 immutabilité de `start_date` ; F6 qui
+  libère W au 13 d, trois tentatives, `1205` ; R1, R2 numéros de ligne ; R3 mutations des 13 b / 13 d ;
+  R4 désignations ; R6 inventaire hors périmètre ; R8 `sprint-status.yaml` — entrées 15-12 reportées sur
+  la branche ; R9 cycle clôture ↔ renommage). R7 (fiche 15-1a) laissé à l'orchestrateur ; frontière 15-1a
+  mise à jour sur sa demande (découpage 15-1a-i / 15-1a-ii, C125). Numéros de ligne relocalisés sur
+  `5e4bec50`. Mesures T0 au Dev Agent Record : aucune ne change une règle ni un AC sur le fond — b2
+  interbloque (l'AC 6 le prévoyait), la création se laisse forcer en victime (test HTTP écrit).
 
 - 2026-10-09 — **Créée au découpage de la 15-12** (remédiation de la validation P2, décision de
   l'orchestrateur, C107). Historique de la 15-12 (création C89 ; validation P1, Opus ×2 : 1 HIGH / 4
