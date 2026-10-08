@@ -4,7 +4,6 @@
 //! Les secrets (`jwt_secret`, `database_url`, `admin_password`) sont masqués
 //! dans `Debug` pour éviter toute fuite via les logs `tracing`.
 
-use std::env;
 use std::time::Duration;
 
 use chrono::TimeDelta;
@@ -573,11 +572,11 @@ impl Config {
         #[cfg(not(test))]
         dotenvy::dotenv().ok();
 
-        let database_url =
-            env::var("DATABASE_URL").map_err(|_| ConfigError::MissingVar("DATABASE_URL".into()))?;
+        let database_url = env_nonempty("DATABASE_URL")
+            .ok_or_else(|| ConfigError::MissingVar("DATABASE_URL".into()))?;
 
-        let port = match env::var("KESH_PORT") {
-            Ok(val) => match val.parse::<u16>() {
+        let port = match env_nonempty("KESH_PORT") {
+            Some(val) => match val.parse::<u16>() {
                 Ok(0) => {
                     tracing::warn!("KESH_PORT=0 invalide, utilisation du port par défaut 80");
                     80
@@ -591,19 +590,19 @@ impl Config {
                     80
                 }
             },
-            Err(_) => 80,
+            None => 80,
         };
 
         // Défaut `127.0.0.1` (sécurité par défaut — Story 6.4 T7.6). Pour
         // un bind public en prod (reverse proxy en front), set explicitement
         // `KESH_HOST=0.0.0.0` dans `.env` ou docker-compose.prod.yml.
-        let host = env::var("KESH_HOST").unwrap_or_else(|_| "127.0.0.1".into());
+        let host = env_nonempty("KESH_HOST").unwrap_or_else(|| "127.0.0.1".into());
 
         // Story v011-5 — admin vars OPTIONNELLES (refactor AC #0).
         //
-        // Comportement :
+        // Comportement (lecture par `env_nonempty`, Story 15-11b) :
         // - Var absente OU vide après trim → `None`.
-        // - Var renseignée non-vide → `Some(s)`, validée sécu.
+        // - Var renseignée non-vide → `Some(s)` trimée, validée sécu.
         //
         // Rationale : un opérateur qui set explicitement les vars s'engage à
         // respecter la politique sécu (longueur, pas "changeme"). Un opérateur
@@ -612,32 +611,12 @@ impl Config {
         //
         // Préserve le trim (patch V1 — admin inloggable si username/password
         // trimmé côté client mais stocké brut côté DB).
-        let admin_username: Option<String> = match env::var("KESH_ADMIN_USERNAME") {
-            Ok(v) => {
-                let trimmed = v.trim().to_string();
-                if trimmed.is_empty() {
-                    None
-                } else {
-                    Some(trimmed)
-                }
-            }
-            Err(_) => None,
-        };
+        let admin_username: Option<String> = env_nonempty("KESH_ADMIN_USERNAME");
 
-        let admin_password: Option<String> = match env::var("KESH_ADMIN_PASSWORD") {
-            Ok(v) => {
-                let trimmed = v.trim().to_string();
-                if trimmed.is_empty() {
-                    None
-                } else {
-                    Some(trimmed)
-                }
-            }
-            Err(_) => None,
-        };
+        let admin_password: Option<String> = env_nonempty("KESH_ADMIN_PASSWORD");
 
         // Validations sécu UNIQUEMENT si Some(non-empty) (l'invariant
-        // « Some ⟹ !is_empty() » est garanti par le branchement ci-dessus).
+        // « Some ⟹ !is_empty() » est garanti par `env_nonempty`).
         if let Some(ref p) = admin_password {
             // Story 10-1 T1.3 : refus fail-fast case-insensitive de "changeme".
             // Story 15-11a (#557) : et de tout placeholder du gabarit
@@ -661,8 +640,10 @@ impl Config {
 
         // --- Story 1.5 : JWT ---
 
-        let jwt_secret = env::var("KESH_JWT_SECRET")
-            .map_err(|_| ConfigError::MissingVar("KESH_JWT_SECRET".into()))?;
+        // Story 15-11b : lu par `env_nonempty` — vide = absent (`MissingVar`),
+        // et les espaces de tête et de fin ne font pas partie du secret.
+        let jwt_secret = env_nonempty("KESH_JWT_SECRET")
+            .ok_or_else(|| ConfigError::MissingVar("KESH_JWT_SECRET".into()))?;
 
         // Story 10-1 T1.5 : refus fail-fast si le secret contient le
         // placeholder `change-me` (défaut de garde de `docker-compose.yml`).
@@ -686,8 +667,8 @@ impl Config {
         }
 
         // KESH_JWT_EXPIRY_MINUTES : optionnel, défaut 15, borne 1-1440
-        let jwt_expiry_minutes = match env::var("KESH_JWT_EXPIRY_MINUTES") {
-            Ok(val) => match val.parse::<i64>() {
+        let jwt_expiry_minutes = match env_nonempty("KESH_JWT_EXPIRY_MINUTES") {
+            Some(val) => match val.parse::<i64>() {
                 Ok(m) if (1..=1440).contains(&m) => m,
                 Ok(m) => {
                     tracing::warn!(
@@ -704,13 +685,13 @@ impl Config {
                     15
                 }
             },
-            Err(_) => 15,
+            None => 15,
         };
         let jwt_expiry = TimeDelta::minutes(jwt_expiry_minutes);
 
         // KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS : optionnel, défaut 30, borne 1-365
-        let refresh_token_days = match env::var("KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS") {
-            Ok(val) => match val.parse::<i64>() {
+        let refresh_token_days = match env_nonempty("KESH_REFRESH_TOKEN_MAX_LIFETIME_DAYS") {
+            Some(val) => match val.parse::<i64>() {
                 Ok(d) if (1..=365).contains(&d) => d,
                 Ok(d) => {
                     tracing::warn!(
@@ -727,14 +708,14 @@ impl Config {
                     30
                 }
             },
-            Err(_) => 30,
+            None => 30,
         };
         let refresh_token_max_lifetime = TimeDelta::days(refresh_token_days);
 
         // --- Story 1.6 : session & rate limiting ---
 
-        let refresh_inactivity_minutes = match env::var("KESH_REFRESH_INACTIVITY_MINUTES") {
-            Ok(val) => match val.parse::<i64>() {
+        let refresh_inactivity_minutes = match env_nonempty("KESH_REFRESH_INACTIVITY_MINUTES") {
+            Some(val) => match val.parse::<i64>() {
                 Ok(m) if (1..=1440).contains(&m) => m,
                 Ok(m) => {
                     tracing::warn!(
@@ -751,12 +732,12 @@ impl Config {
                     15
                 }
             },
-            Err(_) => 15,
+            None => 15,
         };
         let refresh_inactivity = TimeDelta::minutes(refresh_inactivity_minutes);
 
-        let rate_limit_window_minutes = match env::var("KESH_RATE_LIMIT_WINDOW_MINUTES") {
-            Ok(val) => match val.parse::<i64>() {
+        let rate_limit_window_minutes = match env_nonempty("KESH_RATE_LIMIT_WINDOW_MINUTES") {
+            Some(val) => match val.parse::<i64>() {
                 Ok(m) if (1..=1440).contains(&m) => m,
                 Ok(m) => {
                     tracing::warn!(
@@ -773,12 +754,12 @@ impl Config {
                     15
                 }
             },
-            Err(_) => 15,
+            None => 15,
         };
         let rate_limit_window = TimeDelta::minutes(rate_limit_window_minutes);
 
-        let rate_limit_max_attempts = match env::var("KESH_RATE_LIMIT_MAX_ATTEMPTS") {
-            Ok(val) => match val.parse::<u32>() {
+        let rate_limit_max_attempts = match env_nonempty("KESH_RATE_LIMIT_MAX_ATTEMPTS") {
+            Some(val) => match val.parse::<u32>() {
                 Ok(n) if (1..=100).contains(&n) => n,
                 Ok(n) => {
                     tracing::warn!(
@@ -795,11 +776,11 @@ impl Config {
                     5
                 }
             },
-            Err(_) => 5,
+            None => 5,
         };
 
-        let rate_limit_block_minutes = match env::var("KESH_RATE_LIMIT_BLOCK_MINUTES") {
-            Ok(val) => match val.parse::<i64>() {
+        let rate_limit_block_minutes = match env_nonempty("KESH_RATE_LIMIT_BLOCK_MINUTES") {
+            Some(val) => match val.parse::<i64>() {
                 Ok(m) if (1..=1440).contains(&m) => m,
                 Ok(m) => {
                     tracing::warn!(
@@ -816,16 +797,13 @@ impl Config {
                     30
                 }
             },
-            Err(_) => 30,
+            None => 30,
         };
         let rate_limit_block_duration = TimeDelta::minutes(rate_limit_block_minutes);
 
         // --- Story 1.7 : politique de mot de passe ---
-        let password_min_length = match env::var("KESH_PASSWORD_MIN_LENGTH") {
-            // Story 15-11a (revue P1, B1) — vide ou blanc = absente : les
-            // compose transmettent `${KESH_PASSWORD_MIN_LENGTH:-}` ; défaut sans avertissement.
-            Ok(val) if val.trim().is_empty() => 12,
-            Ok(val) => match val.parse::<u32>() {
+        let password_min_length = match env_nonempty("KESH_PASSWORD_MIN_LENGTH") {
+            Some(val) => match val.parse::<u32>() {
                 Ok(n) if (8..=128).contains(&n) => n,
                 Ok(n) => {
                     tracing::warn!(
@@ -842,28 +820,28 @@ impl Config {
                     12
                 }
             },
-            Err(_) => 12,
+            None => 12,
         };
 
         // --- Story 2.1 : internationalisation ---
         // Story 15-11a (revue P1, B1) — vide ou blanc = absente : les compose
         // transmettent `${KESH_LANG:-}`, la chaîne vide doit donner le défaut
         // `fr` sans l'avertissement « Locale '' non reconnue ».
-        let locale_str = opt_trimmed_env("KESH_LANG").unwrap_or_else(|| "fr".into());
+        let locale_str = env_nonempty("KESH_LANG").unwrap_or_else(|| "fr".into());
         let locale = kesh_i18n::Locale::from(locale_str.as_str());
         tracing::info!("Locale instance : {}", locale);
 
         // --- Story 6.4 : mode test (endpoints /api/v1/_test/*) ---
         // Parsing strict (code review P7) : seules `"true"` et `"1"`
-        // sont acceptées comme vérité. Toute autre valeur non vide
-        // (ex: `"True"`, `"yes"`, `" true"`) est rejetée avec une
+        // sont acceptées comme vérité (valeur trimée par `env_nonempty` :
+        // `" true "` est accepté, Story 15-11b). Toute autre valeur non vide
+        // (ex: `"True"`, `"yes"`) est rejetée avec une
         // erreur explicite — évite qu'un opérateur croie test_mode
         // actif alors que l'endpoint est 404.
-        let test_mode = match env::var("KESH_TEST_MODE") {
-            Ok(val) if val == "true" || val == "1" => true,
-            Ok(val) if val.is_empty() => false,
-            Ok(val) => return Err(ConfigError::InvalidTestModeValue { got: val }),
-            Err(_) => false,
+        let test_mode = match env_nonempty("KESH_TEST_MODE") {
+            Some(val) if val == "true" || val == "1" => true,
+            Some(val) => return Err(ConfigError::InvalidTestModeValue { got: val }),
+            None => false,
         };
 
         // Garde-fou sécurité (AC #6bis) : refus de démarrage si test_mode
@@ -881,11 +859,8 @@ impl Config {
         // KESH_BANK_IMPORT_MAX_MB : optionnel, défaut 10, borne [1, 100]
         // (Story 8-1b T6.10 + O4 validate Pass 3). Interprétation MiB
         // binaire (1 MiB = 1024² bytes), voir M3 validate Pass 2.
-        let bank_import_max_mib = match env::var("KESH_BANK_IMPORT_MAX_MB") {
-            // Story 15-11a (revue P1, B1) — vide ou blanc = absente : les
-            // compose transmettent `${KESH_BANK_IMPORT_MAX_MB:-}` ; défaut sans avertissement.
-            Ok(val) if val.trim().is_empty() => 10,
-            Ok(val) => match val.parse::<u32>() {
+        let bank_import_max_mib = match env_nonempty("KESH_BANK_IMPORT_MAX_MB") {
+            Some(val) => match val.parse::<u32>() {
                 Ok(m) if (1..=100).contains(&m) => m,
                 Ok(m) => {
                     tracing::warn!(
@@ -902,17 +877,14 @@ impl Config {
                     10
                 }
             },
-            Err(_) => 10,
+            None => 10,
         };
 
         // Story 17-3a (DC8) — KESH_ADMIN_EXPORT_INMEM_MB : optionnel, défaut 50,
         // borne [1, 2048]. Au-delà du plafond, l'export `.keshbackup` spille sur
         // fichier temporaire + streaming. Log WARN si > 500 (RAM à surveiller).
-        let admin_export_inmem_mib = match env::var("KESH_ADMIN_EXPORT_INMEM_MB") {
-            // Story 15-11a (revue P1, B1) — vide ou blanc = absente : les
-            // compose transmettent `${KESH_ADMIN_EXPORT_INMEM_MB:-}` ; défaut sans avertissement.
-            Ok(val) if val.trim().is_empty() => 50,
-            Ok(val) => match val.parse::<u32>() {
+        let admin_export_inmem_mib = match env_nonempty("KESH_ADMIN_EXPORT_INMEM_MB") {
+            Some(val) => match val.parse::<u32>() {
                 Ok(m) if (1..=2048).contains(&m) => {
                     if m > 500 {
                         tracing::warn!(
@@ -937,17 +909,14 @@ impl Config {
                     50
                 }
             },
-            Err(_) => 50,
+            None => 50,
         };
 
         // Story 17-3c (DC5) — KESH_ADMIN_IMPORT_MAX_MB : optionnel, défaut 512,
         // borne [1, 10240]. Plafond de l'upload `.keshbackup` à l'import
         // (DefaultBodyLimit). Pattern parse+borne+warn identique à bank-import.
-        let admin_import_max_mib = match env::var("KESH_ADMIN_IMPORT_MAX_MB") {
-            // Story 15-11a (revue P1, B1) — vide ou blanc = absente : les
-            // compose transmettent `${KESH_ADMIN_IMPORT_MAX_MB:-}` ; défaut sans avertissement.
-            Ok(val) if val.trim().is_empty() => 512,
-            Ok(val) => match val.parse::<u32>() {
+        let admin_import_max_mib = match env_nonempty("KESH_ADMIN_IMPORT_MAX_MB") {
+            Some(val) => match val.parse::<u32>() {
                 Ok(m) if (1..=10240).contains(&m) => m,
                 Ok(m) => {
                     tracing::warn!(
@@ -964,7 +933,7 @@ impl Config {
                     512
                 }
             },
-            Err(_) => 512,
+            None => 512,
         };
 
         // Story 17-3c (DC5) — KESH_ADMIN_BACKUP_DIR : répertoire du backup
@@ -975,24 +944,24 @@ impl Config {
         // ferait écrire le backup pré-import dans le répertoire courant
         // (`/app` dans l'image) au lieu de `/tmp`.
         let admin_backup_dir =
-            opt_trimmed_env("KESH_ADMIN_BACKUP_DIR").unwrap_or_else(|| "/tmp".to_string());
+            env_nonempty("KESH_ADMIN_BACKUP_DIR").unwrap_or_else(|| "/tmp".to_string());
 
         // Story 12-5b (#194) — KESH_DOCUMENTS_DIR : stockage des justificatifs
         // importés. Défaut `/data/documents` (volume persistant Docker, PAS /tmp).
         let documents_dir =
-            env::var("KESH_DOCUMENTS_DIR").unwrap_or_else(|_| "/data/documents".to_string());
+            env_nonempty("KESH_DOCUMENTS_DIR").unwrap_or_else(|| "/data/documents".to_string());
 
         // Story 12-5c (#194) — KESH_INBOX_DIR : répertoire scruté à l'import.
         // Défaut `/data/inbox` (volume persistant Docker, PAS /tmp).
-        let inbox_dir = env::var("KESH_INBOX_DIR").unwrap_or_else(|_| "/data/inbox".to_string());
+        let inbox_dir = env_nonempty("KESH_INBOX_DIR").unwrap_or_else(|| "/data/inbox".to_string());
 
         // KESH_INBOX_MAX_FILE_BYTES : optionnel, défaut 25 Mo, borne [1, 500] Mo.
         // Pattern parse+borne+warn (cf. KESH_BANK_IMPORT_MAX_MB). La borne haute
         // évite qu'un fichier multi-Go soit accepté (le check stat précède toute
         // lecture, mais le décodage image/pdfium charge ensuite en RAM).
         const INBOX_DEFAULT_MAX_FILE_BYTES: u64 = 25 * 1024 * 1024;
-        let inbox_max_file_bytes = match env::var("KESH_INBOX_MAX_FILE_BYTES") {
-            Ok(val) => match val.trim().parse::<u64>() {
+        let inbox_max_file_bytes = match env_nonempty("KESH_INBOX_MAX_FILE_BYTES") {
+            Some(val) => match val.parse::<u64>() {
                 Ok(n) if (1..=500 * 1024 * 1024).contains(&n) => n,
                 Ok(n) => {
                     tracing::warn!(
@@ -1011,12 +980,12 @@ impl Config {
                     INBOX_DEFAULT_MAX_FILE_BYTES
                 }
             },
-            Err(_) => INBOX_DEFAULT_MAX_FILE_BYTES,
+            None => INBOX_DEFAULT_MAX_FILE_BYTES,
         };
 
         // KESH_INBOX_MAX_FILES_PER_RUN : optionnel, défaut 200, borne [1, 10000].
-        let inbox_max_files_per_run = match env::var("KESH_INBOX_MAX_FILES_PER_RUN") {
-            Ok(val) => match val.trim().parse::<usize>() {
+        let inbox_max_files_per_run = match env_nonempty("KESH_INBOX_MAX_FILES_PER_RUN") {
+            Some(val) => match val.parse::<usize>() {
                 Ok(n) if (1..=10_000).contains(&n) => n,
                 Ok(n) => {
                     tracing::warn!(
@@ -1033,13 +1002,13 @@ impl Config {
                     200
                 }
             },
-            Err(_) => 200,
+            None => 200,
         };
 
         // KESH_INBOX_MAX_PDF_PAGES : optionnel, défaut 20, borne [1, 500].
         // Câblé à DecodeConfig.max_pages (12-5b) côté service d'import.
-        let inbox_max_pdf_pages = match env::var("KESH_INBOX_MAX_PDF_PAGES") {
-            Ok(val) => match val.trim().parse::<usize>() {
+        let inbox_max_pdf_pages = match env_nonempty("KESH_INBOX_MAX_PDF_PAGES") {
+            Some(val) => match val.parse::<usize>() {
                 Ok(n) if (1..=500).contains(&n) => n,
                 Ok(n) => {
                     tracing::warn!(
@@ -1053,21 +1022,21 @@ impl Config {
                     20
                 }
             },
-            Err(_) => 20,
+            None => 20,
         };
 
         // v0.1.3 hotfix (Issue #136) — KESH_COOKIE_SECURE override.
         // Parsing strict (cohérent KESH_TEST_MODE P7) : seules `"true"`/`"1"`/
-        // `"false"`/`"0"` acceptées. Toute autre valeur (`"True"`, `"yes"`,
-        // `" true"`...) → fail-fast pour éviter qu'un opérateur croie avoir
+        // `"false"`/`"0"` acceptées, après trim (`env_nonempty`, Story 15-11b :
+        // `" true "` est accepté, vide ou blanc = absent). Toute autre valeur
+        // (`"True"`, `"yes"`...) → fail-fast pour éviter qu'un opérateur croie avoir
         // désactivé Secure alors qu'il reste actif (= cookies sniffables
         // silencieusement OU UX broken silencieusement).
-        let cookie_secure = match env::var("KESH_COOKIE_SECURE") {
-            Ok(val) if val == "true" || val == "1" => true,
-            Ok(val) if val == "false" || val == "0" => false,
-            Ok(val) if val.is_empty() => true,
-            Ok(val) => return Err(ConfigError::InvalidCookieSecureValue { got: val }),
-            Err(_) => true,
+        let cookie_secure = match env_nonempty("KESH_COOKIE_SECURE") {
+            Some(val) if val == "true" || val == "1" => true,
+            Some(val) if val == "false" || val == "0" => false,
+            Some(val) => return Err(ConfigError::InvalidCookieSecureValue { got: val }),
+            None => true,
         };
 
         // Warning explicite au boot si Secure désactivé — l'opérateur doit voir
@@ -1084,28 +1053,24 @@ impl Config {
 
         // Story 17-4b (DC7) — Recovery de mot de passe par email (SMTP).
         // Vars optionnelles tant que le feature est désactivé. Pattern
-        // opt-string trim+filter (cf. KESH_ADMIN_USERNAME) pour les strings.
-        let smtp_host = opt_trimmed_env("KESH_SMTP_HOST");
-        let smtp_user = opt_trimmed_env("KESH_SMTP_USER");
-        let smtp_password = opt_trimmed_env("KESH_SMTP_PASSWORD");
-        let smtp_from = opt_trimmed_env("KESH_SMTP_FROM");
+        // `env_nonempty` (trim + vide = absent) pour les strings.
+        let smtp_host = env_nonempty("KESH_SMTP_HOST");
+        let smtp_user = env_nonempty("KESH_SMTP_USER");
+        let smtp_password = env_nonempty("KESH_SMTP_PASSWORD");
+        let smtp_from = env_nonempty("KESH_SMTP_FROM");
         // Review 17-4b Pass 1 (P4-4 umbrella) — strip du slash final pour éviter
         // le double-slash `{base}//reset-password` côté 17-4c. Un base-url réduit
         // à "/" (ou "///") devient vide → None (re-filter après strip).
-        let public_base_url = opt_trimmed_env("KESH_PUBLIC_BASE_URL")
+        let public_base_url = env_nonempty("KESH_PUBLIC_BASE_URL")
             .map(|s| s.trim_end_matches('/').to_string())
             .filter(|s| !s.is_empty());
 
         // KESH_SMTP_PORT : int borné [1, 65535] (= u16), défaut 587 (STARTTLS
         // submission). Pattern parse+borne+warn (cf. KESH_ADMIN_EXPORT_INMEM_MB).
-        // Review Pass 2 — trim avant parse (cohérence parse_strict_bool /
-        // opt_trimmed_env) : un espace dans `.env` ne doit pas silencieusement
-        // retomber sur le défaut 587.
-        let smtp_port: u16 = match env::var("KESH_SMTP_PORT") {
-            // Story 15-11a (revue P1, B1) — vide ou blanc = absente : les
-            // compose transmettent `${KESH_SMTP_PORT:-}` ; défaut sans avertissement.
-            Ok(val) if val.trim().is_empty() => 587,
-            Ok(val) => match val.trim().parse::<u16>() {
+        // Valeur trimée par `env_nonempty` (Story 15-11b) : un espace dans
+        // `.env` ne doit pas silencieusement retomber sur le défaut 587.
+        let smtp_port: u16 = match env_nonempty("KESH_SMTP_PORT") {
+            Some(val) => match val.parse::<u16>() {
                 Ok(p) if p >= 1 => p,
                 Ok(_) => {
                     tracing::warn!("KESH_SMTP_PORT=0 invalide, utilisation du défaut 587");
@@ -1119,7 +1084,7 @@ impl Config {
                     587
                 }
             },
-            Err(_) => 587,
+            None => 587,
         };
 
         // KESH_SMTP_TLS : strict bool, défaut true (STARTTLS).
@@ -1374,38 +1339,42 @@ impl LogConfig {
     /// appel précède `Config::from_env()` qui charge `.env` de son côté).
     pub fn from_env() -> (LogConfig, Vec<String>) {
         Self::from_raw(
-            env::var("KESH_LOG_FILE_PATH").ok(),
-            env::var("KESH_LOG_FILE_ROTATION").ok(),
-            env::var("KESH_LOG_FILE_MAX_FILES").ok(),
-            env::var("KESH_LOG_FILE_FORMAT").ok(),
+            env_nonempty("KESH_LOG_FILE_PATH"),
+            env_nonempty("KESH_LOG_FILE_ROTATION"),
+            env_nonempty("KESH_LOG_FILE_MAX_FILES"),
+            env_nonempty("KESH_LOG_FILE_FORMAT"),
         )
     }
 }
 
-/// Story 17-4b — lit une var d'env optionnelle, trim, et filtre la chaîne vide
-/// → `None`. Pattern partagé des vars optionnelles (cf. `KESH_ADMIN_USERNAME`).
-/// **Invariant garanti** : `Some(s) ⟹ !s.is_empty()`.
-fn opt_trimmed_env(var: &str) -> Option<String> {
-    match env::var(var) {
+/// **La seule fonction qui lit l'environnement** (Story 15-11b, C75) : tous
+/// les lecteurs de production passent par elle, et le test
+/// `configuration_transmise` (famille (L)) l'impose.
+///
+/// Contrat : une variable absente, vide ou faite d'espaces vaut `None` — une
+/// ligne laissée vide dans `.env` (ou transmise vide par un compose en
+/// `${NOM:-}`) produit le défaut du lecteur, comme une ligne absente. Sinon la
+/// valeur est rendue **trimée** (espaces de tête et de fin retirés).
+/// **Invariant** : `Some(s) ⟹ !s.is_empty()`.
+///
+/// Une valeur non-UTF-8 vaut `None`, précédée d'un avertissement émis par
+/// `tracing` — perdu s'il précède l'installation de l'abonné (lecteurs du
+/// journal fichier et du niveau de log, lus avant `init_tracing`).
+pub fn env_nonempty(name: &str) -> Option<String> {
+    match std::env::var_os(name)?.into_string() {
         Ok(v) => {
-            let trimmed = v.trim().to_string();
-            if trimmed.is_empty() {
-                None
-            } else {
-                Some(trimmed)
-            }
+            let trimmed = v.trim();
+            (!trimmed.is_empty()).then(|| trimmed.to_string())
         }
-        // Review 17-4b Pass 1 — distinguer NotUnicode de NotPresent : une var
-        // présente mais non-UTF-8 traitée silencieusement comme absente
-        // produirait un message fail-fast trompeur (« var absente/vide »).
-        Err(env::VarError::NotUnicode(_)) => {
+        // Une var présente mais non-UTF-8 traitée silencieusement comme
+        // absente produirait un message fail-fast trompeur (« var absente »).
+        Err(_) => {
             tracing::warn!(
                 "{} contient des octets non-UTF-8 — ignorée (traitée comme absente)",
-                var
+                name
             );
             None
         }
-        Err(env::VarError::NotPresent) => None,
     }
 }
 
@@ -1422,8 +1391,9 @@ const TEMPLATE_PLACEHOLDERS: &[&str] = &["generate_me"];
 /// `openssl rand -hex`/`-base64` n'a jamais cette forme ; un `<` ou un `>` à
 /// l'intérieur d'une valeur reste admis.
 ///
-/// Le trim est local au contrôle : le secret JWT n'est pas trimé à la lecture,
-/// et `" <x> "` doit être refusé quand même. Sert aux contrôles de
+/// Le trim est local au contrôle : il ne présume pas de la lecture (depuis la
+/// Story 15-11b, `env_nonempty` trime déjà les deux secrets), et `" <x> "` doit
+/// être refusé quand même. Sert aux contrôles de
 /// `KESH_JWT_SECRET` et de `KESH_ADMIN_PASSWORD` dans [`Config::from_env`].
 fn is_template_placeholder(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
@@ -1439,20 +1409,17 @@ fn is_template_placeholder(value: &str) -> bool {
 /// toute autre valeur → `ConfigError::InvalidBoolValue` (refus fail-fast, évite
 /// qu'un `"True"`/`"yes"` soit silencieusement interprété comme `false`).
 fn parse_strict_bool(var: &str, default: bool) -> Result<bool, ConfigError> {
-    match env::var(var) {
-        // Review 17-4b Pass 1 — trim avant comparaison, cohérent avec
-        // `opt_trimmed_env` : un espace invisible dans un `.env` édité à la
-        // main (`KESH_SMTP_TLS=true `) ne doit pas échouer le boot.
-        Ok(raw) => match raw.trim() {
-            "true" | "1" => Ok(true),
-            "false" | "0" => Ok(false),
-            "" => Ok(default),
-            other => Err(ConfigError::InvalidBoolValue {
-                var: var.to_string(),
-                got: other.to_string(),
-            }),
-        },
-        Err(_) => Ok(default),
+    // Lecture par `env_nonempty` (Story 15-11b) : valeur trimée — un espace
+    // invisible dans un `.env` édité à la main (`KESH_SMTP_TLS=true `) ne doit
+    // pas échouer le boot — et vide = absente.
+    match env_nonempty(var).as_deref() {
+        Some("true" | "1") => Ok(true),
+        Some("false" | "0") => Ok(false),
+        Some(other) => Err(ConfigError::InvalidBoolValue {
+            var: var.to_string(),
+            got: other.to_string(),
+        }),
+        None => Ok(default),
     }
 }
 
@@ -1554,6 +1521,7 @@ pub(crate) mod test_helpers {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::env;
     use std::sync::{Mutex, MutexGuard, OnceLock};
 
     /// Secret de test ≥ 32 bytes, utilisé dans tous les tests qui ont
@@ -1609,6 +1577,13 @@ mod tests {
             env::remove_var("KESH_ADMIN_EXPORT_INMEM_MB");
             env::remove_var("KESH_ADMIN_IMPORT_MAX_MB");
             env::remove_var("KESH_ADMIN_BACKUP_DIR");
+            // Story 15-11b — variables des tests « valeur vide ».
+            env::remove_var("KESH_DOCUMENTS_DIR");
+            env::remove_var("KESH_INBOX_DIR");
+            env::remove_var("KESH_LOG_FILE_PATH");
+            env::remove_var("KESH_LOG_FILE_ROTATION");
+            env::remove_var("KESH_LOG_FILE_MAX_FILES");
+            env::remove_var("KESH_LOG_FILE_FORMAT");
         }
     }
 
@@ -1738,6 +1713,170 @@ mod tests {
         }
         assert!(logs.contains("Locale 'xx' non reconnue"), "got: {logs:?}");
         reset_env();
+    }
+
+    // --- Story 15-11b (C75) : vide ou blanc = absent, valeur trimée, pour
+    // TOUS les lecteurs. Chacun de ces tests était rouge avant `env_nonempty`
+    // (sortie au Dev Agent Record de la fiche 15-11b).
+
+    /// Prépare le minimum requis, pose `vars`, appelle `from_env` sous la
+    /// capture locale. Le caller tient `env_lock()`.
+    pub(super) fn from_env_with(vars: &[(&str, &str)]) -> (Result<Config, ConfigError>, String) {
+        reset_env();
+        set_minimum_required();
+        unsafe {
+            env::set_var("KESH_HOST", "127.0.0.1");
+            for (k, v) in vars {
+                env::set_var(k, v);
+            }
+        }
+        let out = from_env_with_logs();
+        reset_env();
+        out
+    }
+
+    /// `env_nonempty` : absente, vide, blanche → `None` ; valeur trimée.
+    #[test]
+    fn env_nonempty_contract() {
+        const VAR: &str = "KESH_ADMIN_BACKUP_DIR";
+        let _guard = env_lock();
+        reset_env();
+        assert_eq!(env_nonempty(VAR), None, "absente");
+        for (raw, attendu) in [
+            ("", None),
+            ("   ", None),
+            (" x ", Some("x")),
+            ("x", Some("x")),
+        ] {
+            unsafe { env::set_var(VAR, raw) };
+            assert_eq!(env_nonempty(VAR).as_deref(), attendu, "raw={raw:?}");
+        }
+        reset_env();
+    }
+
+    /// `env_nonempty` : une valeur non-UTF-8 vaut `None`, avec un avertissement.
+    #[cfg(unix)]
+    #[test]
+    fn env_nonempty_non_utf8_is_none_with_warning() {
+        use std::os::unix::ffi::OsStringExt;
+        const VAR: &str = "KESH_ADMIN_BACKUP_DIR";
+        let _guard = env_lock();
+        reset_env();
+        unsafe { env::set_var(VAR, std::ffi::OsString::from_vec(vec![b'a', 0xff])) };
+        let capture = LogCapture::default();
+        let writer = capture.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(move || writer.clone())
+            .with_ansi(false)
+            .finish();
+        let lu = tracing::subscriber::with_default(subscriber, || env_nonempty(VAR));
+        reset_env();
+        assert_eq!(lu, None);
+        let logs = String::from_utf8_lossy(&capture.0.lock().unwrap()).into_owned();
+        assert!(
+            logs.contains(VAR) && logs.contains("non-UTF-8"),
+            "avertissement attendu : {logs:?}"
+        );
+    }
+
+    #[test]
+    fn from_env_empty_host_takes_loopback_default() {
+        let _guard = env_lock();
+        let (r, _) = from_env_with(&[("KESH_HOST", "")]);
+        assert_eq!(r.expect("Config should load").host, "127.0.0.1");
+    }
+
+    #[test]
+    fn from_env_empty_jwt_secret_is_missing() {
+        let _guard = env_lock();
+        let (r, _) = from_env_with(&[("KESH_JWT_SECRET", "")]);
+        assert!(
+            matches!(&r, Err(ConfigError::MissingVar(v)) if v == "KESH_JWT_SECRET"),
+            "got {r:?}"
+        );
+    }
+
+    #[test]
+    fn from_env_empty_database_url_is_missing() {
+        let _guard = env_lock();
+        let (r, _) = from_env_with(&[("DATABASE_URL", "")]);
+        assert!(
+            matches!(&r, Err(ConfigError::MissingVar(v)) if v == "DATABASE_URL"),
+            "got {r:?}"
+        );
+    }
+
+    #[test]
+    fn from_env_port_is_trimmed() {
+        let _guard = env_lock();
+        let (r, _) = from_env_with(&[("KESH_PORT", " 8080 ")]);
+        assert_eq!(r.expect("Config should load").port, 8080);
+    }
+
+    #[test]
+    fn from_env_empty_documents_and_inbox_dirs_take_defaults() {
+        let _guard = env_lock();
+        let (r, _) = from_env_with(&[("KESH_DOCUMENTS_DIR", ""), ("KESH_INBOX_DIR", "")]);
+        let config = r.expect("Config should load");
+        assert_eq!(config.documents_dir, "/data/documents");
+        assert_eq!(config.inbox_dir, "/data/inbox");
+    }
+
+    /// Le trim d'une valeur NON blanche des numériques (que la 15-11a ne
+    /// faisait pas) : lue, sans avertissement.
+    #[test]
+    fn from_env_numeric_values_are_trimmed_silently() {
+        let _guard = env_lock();
+        let (r, logs) = from_env_with(&[
+            ("KESH_PASSWORD_MIN_LENGTH", " 14 "),
+            ("KESH_SMTP_PORT", " 2525 "),
+        ]);
+        let config = r.expect("Config should load");
+        assert_eq!(config.password_min_length, 14);
+        assert_eq!(config.smtp_port, 2525);
+        // Assertion de montage : la capture n'est pas muette.
+        assert!(
+            logs.contains("Locale instance"),
+            "capture inopérante : {logs:?}"
+        );
+        for var in ["KESH_PASSWORD_MIN_LENGTH", "KESH_SMTP_PORT"] {
+            assert!(!logs.contains(var), "{var} ne doit pas avertir : {logs:?}");
+        }
+    }
+
+    /// Espaces seuls : défaut (cookie `Secure`, mode test inactif), au lieu
+    /// du refus de démarrer.
+    #[test]
+    fn from_env_blank_strict_bools_take_defaults() {
+        let _guard = env_lock();
+        let (r, _) = from_env_with(&[("KESH_COOKIE_SECURE", "   "), ("KESH_TEST_MODE", "   ")]);
+        let config = r.expect("blank is treated as absent");
+        assert!(config.cookie_secure);
+        assert!(!config.test_mode);
+    }
+
+    /// Le journal fichier : une valeur vide vaut une absence, sans
+    /// avertissement « invalide ».
+    #[test]
+    fn log_config_empty_values_take_defaults_silently() {
+        let _guard = env_lock();
+        reset_env();
+        unsafe {
+            env::set_var("KESH_LOG_FILE_PATH", "");
+            env::set_var("KESH_LOG_FILE_ROTATION", "");
+            env::set_var("KESH_LOG_FILE_MAX_FILES", "");
+            env::set_var("KESH_LOG_FILE_FORMAT", "");
+        }
+        let (config, warnings) = LogConfig::from_env();
+        reset_env();
+        assert_eq!(config.file_path, None);
+        assert_eq!(config.rotation, LogRotation::Daily);
+        assert_eq!(config.max_files, DEFAULT_LOG_MAX_FILES);
+        assert_eq!(config.format, LogFormat::Pretty);
+        assert!(
+            warnings.is_empty(),
+            "aucun avertissement attendu : {warnings:?}"
+        );
     }
 
     fn set_minimum_required() {
@@ -2591,7 +2730,7 @@ mod tests {
     }
 
     /// Code review P7 : parsing strict de `KESH_TEST_MODE`. Les variantes
-    /// `"True"`, `"yes"`, `" true"` ne doivent PAS être silencieusement
+    /// `"True"`, `"yes"` ne doivent PAS être silencieusement
     /// interprétées comme `false` — elles produisent `InvalidTestModeValue`
     /// pour éviter l'ambiguïté "je pensais que test_mode était actif".
     #[test]
@@ -2798,7 +2937,7 @@ mod tests {
 
 #[cfg(test)]
 mod cookie_secure_tests {
-    use super::tests::{env_lock, reset_env};
+    use super::tests::{env_lock, from_env_with, reset_env};
     use super::*;
     use std::env;
 
@@ -2897,7 +3036,9 @@ mod cookie_secure_tests {
     #[test]
     fn cookie_secure_invalid_value_fails_fast() {
         let _guard = env_lock();
-        for invalid_val in &["True", "TRUE", "yes", "on", "  true  ", "True ", "no"] {
+        // Story 15-11b : `"  true  "` est désormais trimé et accepté (test
+        // `cookie_secure_trimmed_true_is_accepted`) ; `"True "` reste refusé.
+        for invalid_val in &["True", "TRUE", "yes", "on", "True ", "no"] {
             unsafe {
                 env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
                 env::set_var(
@@ -2914,6 +3055,18 @@ mod cookie_secure_tests {
                 invalid_val,
                 result
             );
+        }
+    }
+
+    /// Story 15-11b — `KESH_COOKIE_SECURE` est trimé : `"  true  "` et
+    /// `"  false  "` sont acceptés.
+    #[test]
+    fn cookie_secure_trimmed_value_is_accepted() {
+        let _guard = env_lock();
+        for (raw, attendu) in [("  true  ", true), ("  false  ", false)] {
+            let (r, _) = from_env_with(&[("KESH_COOKIE_SECURE", raw)]);
+            let config = r.unwrap_or_else(|e| panic!("{raw:?} should be valid, got {e:?}"));
+            assert_eq!(config.cookie_secure, attendu, "raw={raw:?}");
         }
     }
 
@@ -3134,7 +3287,7 @@ mod smtp_config_tests {
     }
 
     /// Review Pass 1 — bool strict avec espaces parasites (`.env` édité à la
-    /// main) : trim avant comparaison, cohérent avec `opt_trimmed_env`.
+    /// main) : trim avant comparaison, cohérent avec `env_nonempty`.
     #[test]
     fn strict_bool_trims_whitespace() {
         let _guard = env_lock();

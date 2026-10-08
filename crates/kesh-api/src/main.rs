@@ -216,15 +216,16 @@ async fn main() {
     }
 
     // 6. i18n (story 2.1)
-    let locales_dir =
-        std::path::PathBuf::from(std::env::var("KESH_LOCALES_DIR").unwrap_or_else(|_| {
+    let locales_dir = std::path::PathBuf::from(
+        kesh_api::config::env_nonempty("KESH_LOCALES_DIR").unwrap_or_else(|| {
             // En dev : relatif au binaire, en prod : /app/locales
             if std::path::Path::new("crates/kesh-i18n/locales").exists() {
                 "crates/kesh-i18n/locales".to_string()
             } else {
                 "locales".to_string()
             }
-        }));
+        }),
+    );
     let i18n_bundle = match kesh_i18n::I18nBundle::load(&locales_dir) {
         Ok(b) => {
             tracing::info!(
@@ -244,7 +245,8 @@ async fn main() {
     kesh_api::errors::init_error_i18n(i18n_bundle.clone(), config.locale);
 
     // 7. Build router + serve
-    let static_dir = std::env::var("KESH_STATIC_DIR").unwrap_or_else(|_| "frontend/build".into());
+    let static_dir = kesh_api::config::env_nonempty("KESH_STATIC_DIR")
+        .unwrap_or_else(|| "frontend/build".into());
     let bind_addr = format!("{}:{}", config.host, config.port);
 
     let rate_limiter = RateLimiter::new(&config);

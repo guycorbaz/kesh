@@ -126,8 +126,9 @@ fn build_log_filter(raw: &str) -> EnvFilter {
 /// d'ouverture → dégradation stdout-only).
 #[must_use = "le WorkerGuard doit rester vivant pour flush les logs fichier"]
 pub fn init_tracing(cfg: &LogConfig) -> Option<WorkerGuard> {
-    // Niveau de log : `RUST_LOG` si défini, sinon `info`.
-    let raw = std::env::var(EnvFilter::DEFAULT_ENV).unwrap_or_else(|_| "info".into());
+    // Niveau de log : `RUST_LOG` si défini et non vide, sinon `info` (lecture
+    // par `env_nonempty`, Story 15-11b : `RUST_LOG=""` vaut une absence).
+    let raw = crate::config::env_nonempty(EnvFilter::DEFAULT_ENV).unwrap_or_else(|| "info".into());
     let filter = build_log_filter(&raw);
 
     // Layer stdout — reproduit le comportement historique (`docker logs`).

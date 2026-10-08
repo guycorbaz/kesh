@@ -43,12 +43,11 @@ async fn best_effort_rollback(tx: sqlx::Transaction<'_, sqlx::MySql>) {
 /// silent mismatch (e.g. operator setting `"true"` for a `"1"`-only check)
 /// would lead to confusing rejection of legitimate operations.
 fn env_flag_enabled(name: &str) -> bool {
-    match std::env::var(name) {
-        Ok(v) => matches!(
-            v.trim().to_ascii_lowercase().as_str(),
-            "1" | "true" | "yes" | "on"
-        ),
-        Err(_) => false,
+    // Lecture par `config::env_nonempty` (Story 15-11b) : valeur trimée,
+    // vide = absente.
+    match crate::config::env_nonempty(name) {
+        Some(v) => matches!(v.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"),
+        None => false,
     }
 }
 

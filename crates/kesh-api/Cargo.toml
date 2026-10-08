@@ -79,6 +79,15 @@ tempfile = "3"
 # Story 15-5e1 (choix C70) — le volet (c) du registre des routes analyse le
 # corps des handlers avec l'analyseur de Rust (déjà au Cargo.lock, 2.0.118).
 syn = { version = "2", features = ["full", "visit"] }
+# Story 15-11b (#550, C78) — le test `configuration_transmise` relève les
+# jetons du code de production dans le flux `proc_macro2` (positions par la
+# feature `span-locations`). Dépendance directe nécessaire pour nommer
+# `TokenStream`/`TokenTree` ; déjà au Cargo.lock (1.0.106).
+proc-macro2 = { version = "1", features = ["span-locations"] }
+# Story 15-11b (C-15-11b-2) — `ToTokens` pour lire les attributs de tête de
+# tout élément ou instruction (exclusion `cfg(test)`). Déjà au Cargo.lock
+# (dépendance de `syn`) : aucun paquet neuf.
+quote = "1"
 # Story 15-11a (#550, choix C72) — analyseur YAML des compose pour le test
 # `configuration_transmise` (pur Rust, sans serde). Dépendance de test seule.
 yaml-rust2 = "0.13.0"
