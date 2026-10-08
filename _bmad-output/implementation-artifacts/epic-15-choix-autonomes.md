@@ -1613,3 +1613,37 @@ l'import (#458–#461).
   `invoice_already_paid`… : hors du finding, et le choix C37 d'un libellé par code reste la règle) ;
   laisser le libellé générique alors que la raison est lisible sans ambiguïté.
 - **Réversible** : oui (un `if` et une clé).
+
+## C-15-5c-4 — 15-5c (intégration) : la planification rejouée d'un bloc, les commits de la 15-5c un à un
+
+- **Contexte** : rebase de la branche sur `origin/main` (`52a9b19b`, 15-8a mergée). La branche
+  portait 18 commits de planification (`1920381e..98846b5e`) bâtis sur un main **antérieur** aux
+  squashes de la 15-5a et de la 15-5b — squashes qui en contenaient déjà une partie —, puis le
+  commit de fusion `f289414e` qui réintégrait main. Un `git rebase` les aurait rejoués un à un sur
+  un registre et un `sprint-status.yaml` qui les portaient déjà en partie : conflits d'ajout à
+  chaque commit, sans valeur.
+- **Retenu** : la branche est reconstruite sur `origin/main` par `cherry-pick -m 2 f289414e` (le
+  delta exact de la planification par rapport au main d'alors : story files 15-5d, 15-5e, 15-5e1,
+  15-5e2, prompts, C42–C65), puis les sept commits de la 15-5c rejoués un à un. L'arbre obtenu
+  diffère de l'ancien exactement par les 61 fichiers du delta de la 15-8a (contrôlé par
+  `git diff --stat` des deux côtés). Ancienne tête conservée sous `backup/15-5c-avant-rebase`.
+- **Résolutions** : registre et en-têtes de `sprint-status.yaml` par **union** (entrées
+  C-15-8-* et C-15-8a-* de main, puis C-15-5c-*) ; CHANGELOG `[0.13.0]`, `.tex` et les quatre
+  `messages.ftl` fusionnés sans conflit ; PDF pris côté main à chaque conflit puis **régénéré**
+  (`make user`, 79 pages, contrôle sur texte aplati des deux paragraphes neufs).
+- **Écarté** : rebase commit par commit des 18 commits de planification (conflits d'ajout répétés,
+  aucun gain : la PR est fusionnée en squash) ; rebase des seuls commits 15-5c sur `f289414e`
+  (aurait **perdu** la planification 15-5d/15-5e, absente de main).
+- **Réversible** : oui (`backup/15-5c-avant-rebase`).
+
+## C-15-5c-5 — 15-5c (intégration) : compteurs i18n recomptés sur l'état rebasé
+
+- **Contexte** : la 15-8a et la 15-5c ajoutaient chacune des sites `i18nMsg(` et une déclaration
+  candidate de l'angle « libellés en dur ».
+- **Retenu** : `sitesTotal` **1868 → 1876** (15-8a) **→ 1904** (15-5c : +27 au dev, +1 en revue
+  P1) ; `CANDIDATES_ATTENDUES` **46 → 48** (`reversalBlockerLabel`/`modificationBlockerLabel` de la
+  15-8a déplacent `blockedLabel` et ajoutent un `ecartee`, `failedProposalLabel` de la 15-5c un
+  `conforme`) : `ecartee: 7, conforme: 41`. Les commentaires des deux stories sont conservés, la
+  15-5c datée « avant le rebase ». Vérifié par les tests eux-mêmes (`vitest run src/lib/shared/`,
+  194/194), pas par addition seule.
+- **Réversible** : oui.
