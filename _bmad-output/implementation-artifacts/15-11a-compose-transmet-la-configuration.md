@@ -1596,6 +1596,42 @@ ls`, `docker volume ls` identiques avant/après : aucun conteneur, réseau ni vo
 - Contrôles de l'AC14 : `grep -rn GENERATE_ME frontend/ scripts/ .github/` → **vide** ; le montage E2E local
   n'emploie ni `GENERATE_ME` ni forme `<…>`.
 
+**Revue de code P1 — remédiation, rebase et gates** (cible cargo `/home/gcorbaz/devel/kesh-15-11a/target`) :
+- Remédiation : commit `47a1a656` (après rebase ; `2119ae97` avant). Rebase sur `origin/main` = `ec675288`
+  (15-5e1 `de1e1c26` et 15-8b `ec675288` mergées) ; conflits : fiche index `15-11` (version découpée gardée),
+  `sprint-status.yaml` (union des en-têtes, ligne `15-11-configuration-transmise: ready-for-dev` périmée de
+  `main` retirée — clé en double — ; YAML relu par `yaml.safe_load`), `crates/kesh-api/Cargo.toml` (`syn` de la
+  15-5e1 **et** `yaml-rust2`), `CHANGELOG.md` (entrées #463/#491 et #550 gardées toutes deux),
+  `admin-manual.pdf` (régénéré par `make admin` à chaque conflit, jamais fusionné).
+- Tests neufs (`config.rs`) : `from_env_empty_or_blank_vars_take_code_default_silently` (valeurs vide et
+  blanche ; capture `tracing` locale avec assertion de montage) et `from_env_non_empty_invalid_values_still_warn`
+  (témoin). Tests de `config::tests` : **78 → 80** (de `5f1046a7` à `HEAD`), 72 sur `main` (`ec675288`).
+  **Mutations** (gate ciblé `test(from_env_empty_or_blank_vars_take_code_default_silently)`, fichier restauré et
+  `touch` après chacune) : chacune des sept lectures remise dans sa forme d'avant — `KESH_ADMIN_BACKUP_DIR`,
+  `KESH_LANG` en `env::var(…).unwrap_or_else(…)`, retrait du bras « vide » pour les cinq numériques — **7/7
+  rouges**.
+- **Gate backend complet** au dernier commit de code (`47a1a656`), base `kesh_1511a` remise à zéro (`DROP`/
+  `CREATE`, migrations, seed ; aucun redémarrage du conteneur), après `wait-kesh.sh` : `scripts/test-fast.sh`
+  (`fmt --check`, `clippy --workspace --all-targets -D warnings`, nextest) — **2854 passés, 4 ignorés, 0
+  échec**.
+- **Frontend** : `npm run check` 0 erreur (27 avertissements préexistants), `lint-i18n-ownership` PASS,
+  `test:unit` **111 fichiers / 1086 tests**, `build` vert.
+- **E2E complet** au même commit, base `kesh_e2e_1511a` reconstruite (migrations), backend
+  `target/debug/kesh-api` sur le port **3004**, montage de C-15-11a-5 (secrets générés : `openssl rand -hex 32`,
+  24 caractères aléatoires ; `/health` `smtpConfigured: true` contrôlé avant) : **247 passés, 7 échoués, 19
+  ignorés (10,1 min)** ; les sept échecs sont **exactement** les sept KF-029 (#97) de `docs/testing.md`
+  (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`,
+  `:150`). Backend arrêté.
+- **`docker compose config`** des deux compose, copiés dans le scratchpad (aucun conteneur) : sans `.env`,
+  `docker-compose.yml` muet, `docker-compose.prod.yml` un seul avertissement (`KESH_JWT_SECRET` non posée) ;
+  avec un `.env` minimal (base, secret, mots de passe MariaDB), `config -q` muet pour les deux, et les sept
+  variables de la remédiation arrivent vides (`""`) sauf, dans le compose de prod, `KESH_LANG`,
+  `KESH_PASSWORD_MIN_LENGTH`, `KESH_BANK_IMPORT_MAX_MB` qui y portaient déjà un défaut (`fr`, `12`, `10`) —
+  vide = défaut du code, couvert par le test neuf.
+- Manuel : `make admin` au dernier état, 52 `Overfull` (inchangé), **0** dans `sec:env-vars` ; PDF aplati
+  (`pdftotext | tr | sed` des ligatures) : « ou laisse vide, prend son défaut » 1, « Vide = défaut » 1, « y
+  compris quand la variable est vide » 1. `.github/workflows/ci.yml` : toujours non exécuté localement.
+
 **À signaler (hors fiche, pour l'orchestrateur)** : `CLAUDE.md:180` (recette E2E) écrit
 `KESH_ADMIN_PASSWORD='<12+ caractères>'`, désormais refusé s'il est recopié tel quel (le `CLAUDE.md` n'est pas
 modifié) ; `website/index.html:189` et `docker-compose.dev.yml` (F14, F3-10) restent à verser à leur issue ;
@@ -1835,3 +1871,41 @@ jour de texte demandées par C83/C84.
   frontend vert, E2E 244 passés / 7 échecs attendus (KF-029). Tests unitaires de `config.rs` : 72 → 78
   (`ef39dd54` → `HEAD`). Statut → `review`.
 
+- 2026-10-08 — **Revue de code P1** (Sonnet ×3 lentilles : Blind Hunter, Edge Case Hunter, Acceptance
+  Auditor ; rapports `target/gate-logs/15-11a-review-p1-{B,E,A}.md`) et **remédiation** (agent de remédiation,
+  autonomie ; choix **C-15-11a-6**). Bilan brut : B 1 MEDIUM / 3 LOW, E 1 MEDIUM / 3 LOW (+1 INFO), A 0 MEDIUM /
+  4 LOW ; **distincts : 1 MEDIUM, 5 LOW** (B1 = E-1 = A-L3 ; B4 = E-3 = A-L1 ; E-4 = A-L4 ; E-2 ⊂ B1 ; B2 ; B3 ;
+  A-L2). Décisions de l'orchestrateur, appliquées :
+  - **B1 = E-1 = A-L3 (MEDIUM)** : `KESH_ADMIN_BACKUP_DIR` et `KESH_LANG` lues par `opt_trimmed_env` (vide ou
+    blanc = absente) ; les cinq numériques traitent le vide/blanc comme absent (défaut sans avertissement), une
+    valeur non vide invalide garde son comportement. Deux tests, sept mutations rouges. Compose (commentaire
+    de tête), manuel (`:664`, tableau `:757`, `:1692`, PDF), `.env.example:170` et CHANGELOG (#550) disent
+    « vide = défaut ». Frontière avec la 15-11b écrite (§ *Le vide avant la 15-11b*, « Mise à jour »).
+    E-2 (avertissements parasites) tombe avec lui.
+  - **B4 = E-3 = A-L1** : doc-comment de `parse_strict_bool` rattaché à sa fonction ; `TEMPLATE_PLACEHOLDERS`
+    et `is_template_placeholder` gardent le leur. **Propagation** (grep du symptôme « doc-comment détaché ») :
+    celui d'`is_loopback_host`, collé au-dessus d'`opt_trimmed_env` **avant** la story, rattaché aussi.
+  - **E-4 = A-L4** : angle mort écrit (gabarits `<EDIT: …>` non refusés ; `KESH_ADMIN_PASSWORD` ne refuse que
+    `changeme` exact, la garde de l'AC16 ne couvre pas `change-me-…`, vérifié au code).
+  - **A-L2** : Dev Agent Record corrigé — `edd45a6c` porte aussi l'étape CI, non exécutée localement.
+  - **B2** : tombe avec B1 (la justification de la forme `${X:-}` est désormais vérifiée par le test « vide
+    = défaut » pour les sept variables qui ne l'étaient pas). **B3** : faux positifs bornés, déjà documentés —
+    rien de plus.
+  - **Ce qu'il faut reporter dans la fiche 15-11b** (non modifiée ici ; à faire à son T0 ou par
+    l'orchestrateur) : (1) `:27-28` et `:44-47` — la 15-11a seule ne produit plus d'avertissement « invalide »
+    ni de sauvegarde dans `/app`, et `KESH_SMTP_PORT`, `KESH_ADMIN_BACKUP_DIR`, `KESH_LANG` (ainsi que les
+    quatre autres numériques) traitent déjà le vide comme absent ; (2) inventaire : lectures littérales de
+    `Config::from_env` **26 → 24**, `config.rs` **32 → 30** sites, total **36 → 34**, « les 35 autres » →
+    **33** (`:69`, `:110-111` : `config.rs` 31 → **29**, dont 26 → 24), appels `opt_trimmed_env("…")` **5 →
+    7**, identifiant `env` en production **40 → 38** (`config.rs` 35 → **33**), `:472` « 39 » → **37**,
+    `:474` « 6 `opt_trimmed_env` (définition et cinq appels) » → **8** (sept appels) ; ensemble lu inchangé
+    (**41**) ; (3) `:131-135`, `:170-172` et `:658-659` — pour ces sept variables l'« avant » devient « défaut
+    sans avertissement » : la 15-11b n'y change plus que le **trim** d'une valeur non blanche des cinq
+    numériques ; ses tests « valeur vide » discriminants sur `KESH_SMTP_PORT`, `KESH_LANG` et
+    `KESH_ADMIN_BACKUP_DIR` ne discriminent plus avant/après (ceux de `KESH_DOCUMENTS_DIR`, `DATABASE_URL`,
+    `KESH_PORT` le font toujours) ; la 15-11a a déjà un test « vide = défaut » (`config.rs`) que la 15-11b
+    peut reprendre ou étendre ; (4) `:489-493` (R-8) — le doc-comment d'`is_loopback_host` n'est plus
+    au-dessus d'`opt_trimmed_env` : la précaution est sans objet.
+  - Rebase sur `origin/main` (`ec675288` : 15-5e1 et 15-8b) ; gates réels au Dev Agent Record : backend
+    **2854/2854** (4 ignorés), frontend 1086, E2E **247 / 7 KF-029**. Statut : **review** jusqu'à la passe
+    ciblée sur la remédiation (`47a1a656`, qui touche du code de production : la boucle n'est pas close).
