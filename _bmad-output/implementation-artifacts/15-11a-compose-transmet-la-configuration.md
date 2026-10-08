@@ -1,6 +1,6 @@
 # Story 15.11a : Les compose de production transmettent toute la configuration écrite dans `.env` — et un test qui compare les compose à la liste des variables lues
 
-Status: review
+Status: done
 
 <!-- Créée le 2026-10-08 par l'agent de découpage, en autonomie (consignes de l'Epic 15), par découpage
      de la Story 15-11 après sa validation P3 (signal D5 levé deux fois, par recyclage — choix C77).
@@ -1909,3 +1909,9 @@ jour de texte demandées par C83/C84.
   - Rebase sur `origin/main` (`ec675288` : 15-5e1 et 15-8b) ; gates réels au Dev Agent Record : backend
     **2854/2854** (4 ignorés), frontend 1086, E2E **247 / 7 KF-029**. Statut : **review** jusqu'à la passe
     ciblée sur la remédiation (`47a1a656`, qui touche du code de production : la boucle n'est pas close).
+- **2026-10-08 — Revue de code P2 ciblée (Haiku, une lentille, prompt `15-11a-review-prompt-p2-ciblee.md`) sur
+  `47a1a656` : 0 finding**, axes exercés et non exercés déclarés. Rapport : `target/gate-logs/15-11a-review-p2-ciblee.md`.
+  Repris par l'orchestrateur sur l'axe 1 : pour chacune des cinq variables numériques, le défaut du bras « vide »
+  (`Ok(val) if val.trim().is_empty()`) est identique à celui du bras `Err(_)` (absente) — 12, 10, 50, 512, 587 ;
+  `KESH_LANG` et `KESH_ADMIN_BACKUP_DIR` gardent `fr` et `/tmp`. **Boucle de revue CLOSE** (P1 Sonnet ×3 : 1 MEDIUM,
+  10 LOW → P2 ciblée Haiku : 0). Statut `done`.
