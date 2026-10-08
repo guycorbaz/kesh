@@ -493,7 +493,12 @@ const ATTENDU = {
 	// aux deux bornes) : son libellé (`settings-invoicing-payable-account`) et l'option
 	// vide de son sélecteur (`settings-invoicing-select-none`). `sitesNonResolus`,
 	// `relais`, `sitesGabarit` inchangés (aucun site dynamique ajouté).
-	sitesTotal: 1915,
+	// Story 15-12a (#543) : **1915 → 1916** (+1), le `title` du bouton « Clôturer »
+	// désactivé sous un exercice antérieur ouvert (`fiscal-year-close-blocked-earlier-open`)
+	// dans `routes/(app)/settings/fiscal-years/+page.svelte` (56 → 57, recompté par
+	// `grep -oE "\b(msg|i18nMsg)\("` aux deux bornes, `5e4bec50` et la branche).
+	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (un littéral).
+	sitesTotal: 1916,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,
