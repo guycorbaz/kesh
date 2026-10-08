@@ -878,3 +878,110 @@ l'import (#458–#461).
 - **Écartée** : couper la fonction en deux (parse / validate) pour garder l'ordre exact — deux fonctions là où une
   suffit, pour un cas de double faute.
 - **Réversible** : oui.
+
+## C-15-8-17 — Découpage de la 15-8 en 15-8a (modifier) et 15-8b (supprimer)
+
+- **Contexte** : validation P2, finding F6 (MEDIUM) — comptée à la granularité de la règle de découpage (« modules
+  métier de premier niveau »), la story touche bien plus de cinq modules ; C-15-8-9 n'en comptait que cinq « zones » et
+  omettait `kesh-report`. Ce n'est pas un recyclage, et l'amendement D5 ne couvre pas ce critère : le signal est déclaré.
+  Décision de l'orchestrateur, pour livrer vite ce que Guy attend (corriger son ouverture inversée).
+- **Retenu** : la ligne de découpe pré-déclarée par C-15-8-9. **15-8a** — la modification (`PUT`) de l'écriture manuelle
+  et d'ouverture, sa garde, son audit avant/après, l'écran d'édition, le manuel et la doc de ce geste (`refs #532`).
+  **15-8b** — la suppression (`DELETE`), l'historique visible sur la fiche (« Modifiée », « Historique »), le retrait
+  d'`ENTRY_IS_POSTED`, le reste du manuel (`closes #532`). 15-8b dépend de 15-8a. La fiche 15-8 devient l'index
+  (`split`). Révise C-15-8-9.
+- **Écartées** : garder une story unique (signal levé, règle non dérogeable par l'argument « un seul mécanisme ») ;
+  couper par couche (backend / écran) — livrerait un `PUT` sans écran, inutilisable par Guy.
+- **Conséquence assumée** : entre les deux merges, le `DELETE` garde `409 ENTRY_IS_POSTED` ; le manuel de la 15-8a dit
+  vrai pour cet état intermédiaire.
+- **Réversible** : oui (refusionner deux fiches non développées).
+
+## C-15-8-18 — La 15-8a passe après la 15-5a : deux refus de compte, pas un
+
+- **Contexte** : validation P2, finding F1 (HIGH). La 15-5a (revue close, PR #535), ordonnée avant la 15-8 (C2), a
+  retiré `exempt_ids` de `validate_lines_accounts_in_tx`, introduit `400 ACCOUNT_NOT_POSTABLE` avec
+  `details.rejected[{accountId, accountNumber}]` (compte actif non imputable), laissé `400 INACTIVE_OR_INVALID_ACCOUNTS`
+  au compte inconnu, d'une autre société ou archivé (qui prime), et créé `## [0.13.0] — Non publié`. La fiche 15-8
+  attendait un seul refus et chargeait T2 de retirer `exempt_ids`.
+- **Retenu** : la 15-8a s'écrit contre l'état « 15-5a mergée » et se rebase sur `main` après ce merge (T0). Partout,
+  les deux refus sont séparés : AC 3, AC 4, AC 12 (table de correspondance), D4 étape 6. **C-15-8-11 est révisé** : un
+  `PUT` identique sur une écriture à compte archivé rend `INACTIVE_OR_INVALID_ACCOUNTS`, à compte devenu non imputable
+  `ACCOUNT_NOT_POSTABLE` (test jumeau neuf). `test_update_refuses_a_line_on_an_account_made_non_postable` attend
+  `AccountsNotPostable` nommant le compte. T2 ne retire plus `exempt_ids`. Le formulaire garde le
+  `case 'ACCOUNT_NOT_POSTABLE'` de la 15-5a ; `docs/api-external.md` ajoute le `PUT` à la liste des routes qui le rendent.
+- **Correction d'une entrée antérieure** : la réversibilité écrite à C-15-8-4 (« paramètre `exempt_ids` déjà présent »)
+  est périmée — le paramètre n'existe plus après la 15-5a ; revenir sur C-15-8-4 exigerait de le réintroduire (finding
+  R2-9).
+- **Écartée** : écrire la 15-8a contre `main` d'avant la 15-5a — conflit garanti sur `validate_lines_accounts_in_tx`
+  et sur le formulaire, et un contrat de refus que le serveur ne rendrait plus.
+- **Réversible** : oui.
+
+## C-15-8-19 — Rejeu sur interblocage du `PUT` (et du `DELETE`), cycles nommés, projets lus en verrou partagé
+
+- **Contexte** : validation P2, findings F2, R2-2, R2-3 (MEDIUM). L'ordre écriture → [companies → projets] → exercice
+  n'entre en cycle avec aucune sentinelle, mais il entre dans trois cycles **hérités** : exercice ↔ compte (règlement,
+  complément : compte puis exercice ; le `PUT` : exercice puis verrou partagé de clé étrangère sur le compte) ;
+  exercice ↔ `companies` (le `PUT` tient la sentinelle et attend l'exercice ; une création tient l'exercice et prend le
+  verrou partagé de clé étrangère `company_id`) ; projet ↔ exercice (avec la contre-passation d'une écriture taguée). Le
+  `PUT` n'avait pas de `retry_with`, et la fiche affirmait « jamais une attente infinie », contre la doctrine de
+  `retry.rs:7-10` et de Pattern 5 (50 s puis 500). Par ailleurs la lecture des projets existants, ordinaire, ouvrait la
+  vue `REPEATABLE READ` avant les verrous des projets et de l'exercice.
+- **Retenu** : le handler `PUT` est enveloppé dans `retry_with(DEFAULT_MAX_DEADLOCK_ATTEMPTS, is_deadlock_error, …)` ;
+  les trois cycles sont nommés dans la fiche et le doc-comment ; la phrase fausse est retirée (1213 rejoué, 1205 non
+  rejoué → 500) ; le `PUT` entre à la « Deny list » de Pattern 5 (`docs/MULTI-TENANT-SCOPING-PATTERNS.md`) avec ordre,
+  raison et mitigation ; la lecture des projets existants se fait en `LOCK IN SHARE MODE` — la vue s'ouvre ainsi après
+  le dernier verrou (une seconde mutation la tient, AC 8) ; un test à deux connexions établit que le cycle projet ↔
+  exercice produit bien un interblocage (AC 9). Le `DELETE` de la 15-8b est enveloppé de même : son rejeu coûte trois
+  lignes, sans effet hors de la transaction.
+- **Écartées** : (b) de R2-2 — garder une lecture ordinaire et dire que la vue s'ouvre à 1-bis : plus faible pour un
+  coût nul de la lecture verrouillante (l'écriture est déjà tenue en exclusif) ; réordonner les verrous pour supprimer
+  les cycles — impossible sans contredire la règle « le verrou de l'écriture d'abord » (D2), et le dépôt n'a pas d'ordre
+  unique (`opening_complement.rs:26-35`).
+- **Réversible** : oui.
+
+## C-15-8-20 — Le paiement détaché d'une facture fournisseur annulée reste gelé, par la trace d'audit
+
+- **Contexte** : validation P2, finding F3 (MEDIUM). `supplier_invoices::cancel_in_tx` annule une facture **payée**
+  en contre-passant l'achat, **sans** contre-passer le règlement, puis remet `settlement_journal_entry_id` à `NULL`
+  (arbitrage de Guy du 2026-09-26). Plus aucune colonne ne référence l'écriture de règlement : sous le cadre de la 15-8,
+  elle devenait modifiable et supprimable — une sortie de banque réelle. Consigne de l'orchestrateur : chercher un
+  marqueur structurel de l'origine ; sinon, l'annulation doit laisser une trace qui gèle l'écriture, par la solution la
+  moins invasive.
+- **Constat au sol** : **aucun marqueur structurel d'origine** — `journal_entries` n'a que `journal` (partagé avec la
+  saisie manuelle) et `reverses_entry_id` ; l'audit `journal_entry.created` est écrit pour tous les flux par
+  `create_in_tx_inner`. La seule trace est l'audit du geste : `supplier_invoice.cancelled`,
+  `details_json.settlementJournalEntryId` (`supplier_invoices.rs:931-935`), écrit depuis la 25-3-c.
+- **Retenu** : la garde de modification (`modification_guard`, 15-8a D2) lit cette trace — jointure
+  `supplier_invoices` (même société, `status = 'cancelled'`) × `audit_log` (index `idx_audit_log_entity`), sur
+  `JSON_VALUE(details_json, '$.settlementJournalEntryId')` — et refuse en **409 `DETACHED_SUPPLIER_SETTLEMENT`**, avec
+  l'id et le numéro de la facture. Le motif est **hors** `reversal_blockers` : la contre-passation du paiement reste
+  offerte, comme le manuel le promet. Nouveau code d'écran (dix au lieu de neuf), nouvelle clé
+  `journal-entries-modify-blocked-detached-settlement`, cas de test à l'AC 6 (15-8a) et à l'AC 4 (15-8b), manuel
+  `user-manual.tex:1331-1337` et FAQ `:2140`. Ni migration, ni changement du geste d'annulation.
+- **Écartées** : garder la colonne `settlement_journal_entry_id` à l'annulation — rendrait le paiement
+  `OwnedBySupplierInvoice`, donc **non contre-passable**, et changerait le sens d'une colonne qu'une facture `cancelled`
+  ne porte pas aujourd'hui (revient sur l'arbitrage du 2026-09-26) ; contre-passer aussi le règlement à l'annulation —
+  idem ; une colonne ou une table neuve qui garde le lien — migration, hors du périmètre d'une story urgente ; accepter
+  le paiement comme une écriture manuelle — écarté par la consigne.
+- **Limite assumée, signalée pour une issue** : une référence lue dans un journal d'audit n'est pas une clé étrangère —
+  le garde-fou d'inventaire D3 ne la voit pas, et un futur geste de « rattachement » d'un paiement détaché (le manuel
+  l'annonce) devra la revoir. Une issue doit porter la colonne structurelle qui la remplacera.
+- **Réversible** : oui (une branche de la garde).
+
+## C-15-8-21 — Formulaire : la modale de conflit ne revient pas avec l'inversion du gel
+
+- **Contexte** : validation P2, findings R2-1 et F4 (MEDIUM), F8 (LOW). L'inversion de `08e20353` sur
+  `JournalEntryForm.svelte` (C-15-8-15) restaure la modale de conflit de la Story 3.3 (`showConflictDialog`,
+  `case 'OPTIMISTIC_LOCK_CONFLICT'` qui l'ouvre, prop `onConflictReload`, `handleConflictReload`, balisage, clés
+  `journal-entry-conflict-*`), que D8 remplace par un toast puis un rechargement. Les clés neuves du formulaire
+  étaient nommées `journal-entry-…`, préfixe que `lint-i18n-ownership` refuse dans `features/journal-entries/`.
+- **Retenu** : la modale est **écartée** du bloc inversé, nommément ; une prop neuve `onStale` (appelée après le toast
+  par `FISCAL_YEAR_CLOSED`, les 409 de course et `OPTIMISTIC_LOCK_CONFLICT`) remplace `onConflictReload` ;
+  `{#if !isEdit}` autour de l'assistant TVA est **repris** (l'assistant compose une écriture d'achat neuve, réservé à la
+  création) ; les trois entrées périmées `journal-entry-conflict-*` de `KNOWN_VIOLATIONS` sont retirées ; les clés du
+  formulaire prennent le préfixe `journal-entries-` (`journal-entries-edit-conflict`,
+  `journal-entries-line-account-unusable`) ; `case 'PERIOD_LOCKED'` est nommé.
+- **Écartées** : garder la modale (contraire à D8, et elle rouvre quatre clés retirées) ; inscrire les nouvelles clés à
+  `KNOWN_VIOLATIONS` (agrandit la dette #30) ; offrir l'assistant TVA en édition (il ajoute des lignes d'achat à une
+  écriture existante, cas non spécifié).
+- **Réversible** : oui.
