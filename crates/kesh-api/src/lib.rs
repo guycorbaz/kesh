@@ -21,6 +21,7 @@ pub mod logging;
 pub mod mail;
 pub mod middleware;
 pub mod qr_decode;
+pub mod retry;
 pub mod routes;
 pub(crate) mod util;
 

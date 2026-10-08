@@ -1970,6 +1970,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sqlx",
+ "syn 2.0.118",
  "tempfile",
  "thiserror 2.0.18",
  "time",

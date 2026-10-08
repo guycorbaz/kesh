@@ -1,19 +1,50 @@
-//! Helpers de retry pour les erreurs DB transitoires.
+//! Rejeu des transactions victimes d'un interblocage InnoDB (1213).
 //!
-//! Usage typique : envelopper un handler ou une section qui acquiert
-//! plusieurs `SELECT ... FOR UPDATE` et qui pourrait deadlocker contre une
-//! tx concurrente prenant les mêmes locks dans l'ordre inverse.
+//! **Ce qu'InnoDB fait d'un interblocage.** InnoDB détecte un cycle de verrous
+//! **au moment de l'attente** (`innodb_deadlock_detect`, `ON` par défaut) et
+//! annule **aussitôt** une transaction victime, qui reçoit l'erreur 1213
+//! (`ER_LOCK_DEADLOCK`) — il n'attend pas `innodb_lock_wait_timeout`, que ce
+//! cycle traverse une seule table ou plusieurs. La victime est la transaction
+//! la plus **légère** (lignes modifiées et verrous tenus), non la plus jeune ;
+//! les tests « route victime » de `crates/kesh-api/tests/rejeu_interblocage_e2e.rs`
+//! et `accept_replays_the_batch_when_it_is_the_deadlock_victim`
+//! (`reconciliation_e2e.rs`) reposent sur cette règle. Toute la transaction
+//! de la victime est annulée : rien n'en est écrit, et la rejouer depuis son
+//! `begin()` est sûr.
 //!
-//! KF-002-H-002 (#43) : MariaDB ne détecte pas les deadlocks cross-table
-//! avant `innodb_lock_wait_timeout` (50s par défaut), surfaçant comme un
-//! `500 Internal Server Error` côté user. En enveloppant les sections
-//! sensibles dans `retry_on_deadlock`, on rejoue automatiquement la tx
-//! après un backoff exponentiel court — la deadlock-victim est typiquement
-//! choisie par InnoDB (rollback de la tx la plus jeune), donc le retry
-//! repart proprement.
+//! **Pourquoi un rejeu, et non un ordre des verrous** (Story 15-5e1, choix
+//! C54). Tout flux qui écrit au journal reprend, à l'insertion des lignes, un
+//! verrou partagé sur chaque compte écrit (`fk_jel_account`) **après** le
+//! verrou de l'exercice : aucun ordre « comptes avant exercice » ne tient de
+//! bout en bout. L'ordre des verrous écrit aux doc-comments canoniques
+//! (`invoices::validate_invoice`, `supplier_invoices::create_in_tx`) est une
+//! convention qui **réduit la fréquence** des interblocages ; le rejeu des
+//! routes les rend **invisibles** à l'utilisateur. Les routes rejouées passent
+//! par l'enveloppe `DbError` de ce module ([`retry_on_deadlock`]) ou par
+//! l'enveloppe `AppError` de `kesh_api::retry` ; l'inventaire des routes qui
+//! écrivent au journal et leur statut de rejeu sont tenus par le registre
+//! `crates/kesh-api/tests/audit_route_registry.rs`.
 //!
-//! Cf. `docs/MULTI-TENANT-SCOPING-PATTERNS.md` Pattern 5 pour la doc des
-//! ordres de locks canoniques.
+//! **Ce qu'InnoDB ne détecte pas.** Un cycle qui passe par un verrou nommé
+//! `GET_LOCK` (`kesh-reconciliation/src/mutex.rs`) **et** un verrou de ligne
+//! n'est pas vu par le détecteur : il finit en 1205
+//! (`innodb_lock_wait_timeout`) ou en `GET_LOCK = 0` (409
+//! `RECONCILIATION_ACCOUNT_LOCKED`), jamais rejoué. Aucun ne se forme
+//! aujourd'hui parce que **chaque flux de rapprochement prend son `GET_LOCK`
+//! avant tout verrou de ligne** — invariant à garder. Et le rejeu suppose
+//! `innodb_deadlock_detect = ON` : désactivé, chaque 1213 devient un 1205 que
+//! rien ne rejoue.
+//!
+//! **Journalisation.** Chaque nouvelle tentative émet un `tracing::warn!` de
+//! cible `kesh_db::retry` qui porte le nom de l'opération (`operation`, p. ex.
+//! `"invoices::settle"`), le numéro de la tentative et le backoff : la ligne
+//! dit quelle route a été rejouée, même sous `RUST_LOG=warn`. Un rejeu
+//! **épuisé** (interblocage encore à la dernière tentative) émet un
+//! `tracing::error!` de même cible, avec `operation` et `attempts`.
+//!
+//! Cf. `docs/MULTI-TENANT-SCOPING-PATTERNS.md` Pattern 5 pour la convention
+//! d'ordre des verrous, qui réduit la fréquence des interblocages sans les
+//! exclure.
 
 use crate::errors::DbError;
 use std::future::Future;
@@ -25,17 +56,18 @@ use std::time::Duration;
 /// l'application. Le retry redémarre la tx du début.
 const MARIADB_DEADLOCK_ERROR_CODE: u16 = 1213;
 
-/// Nombre maximum de tentatives par défaut (1 essai initial + 2 retries).
+/// Nombre maximum de tentatives par défaut (1 essai initial + 2 rejeux).
 ///
 /// Choix conservateur :
-/// - Sous charge nominale, la probabilité de deadlock répété est très
-///   faible (chaque retry attend que les autres tx finissent).
-/// - 3 tentatives → 2 sleeps (entre 1↔2 et 2↔3) ≈ 150 ms de latence pire
-///   cas ajoutée (50 + 100 ms backoff). Le 3e essai n'est suivi d'aucun
-///   sleep — le helper return Err si l'attempt 3 échoue. Acceptable vs.
-///   un 500 sur `innodb_lock_wait_timeout` (50 s).
+/// - Sous charge nominale, la probabilité d'un interblocage répété est très
+///   faible (chaque rejeu attend que les autres transactions finissent).
+/// - 3 tentatives → 2 pauses (entre 1↔2 et 2↔3) ≈ 150 ms de latence au pire
+///   (50 + 100 ms de backoff). La 3e tentative n'est suivie d'aucune pause —
+///   l'enveloppe rend l'erreur si elle échoue. L'alternative au rejeu n'est
+///   pas une attente : InnoDB annule la victime aussitôt, et sans rejeu
+///   l'utilisateur reçoit un 500 immédiat.
 /// - Au-delà de 3, le risque d'une boucle qui empile la latence dépasse
-///   la valeur ajoutée du retry.
+///   la valeur ajoutée du rejeu.
 pub const DEFAULT_MAX_DEADLOCK_ATTEMPTS: u32 = 3;
 
 /// Backoff initial entre la 1re et la 2e tentative.
@@ -84,42 +116,65 @@ pub fn is_deadlock_error(err: &DbError) -> bool {
     matches!(err, DbError::Sqlx(sqlx_err) if is_deadlock_sqlx(sqlx_err))
 }
 
-/// Exécute une closure asynchrone avec retry automatique en cas de
-/// deadlock MariaDB. Utilise `DEFAULT_MAX_DEADLOCK_ATTEMPTS` (3).
+/// **Enveloppe `DbError`** : exécute une fermeture asynchrone et la rejoue
+/// si elle échoue sur un interblocage (1213). Utilise
+/// `DEFAULT_MAX_DEADLOCK_ATTEMPTS` (3).
 ///
-/// La closure DOIT être idempotente : elle sera ré-appelée intégralement
-/// si le 1er essai deadlock. En pratique cela signifie qu'elle commence
-/// par un `pool.begin()` et finit par `tx.commit()` (le ROLLBACK est
-/// automatique sur deadlock côté InnoDB).
+/// Elle sert les routes dont l'écriture est **une** fonction de dépôt qui
+/// ouvre et conclut sa propre transaction et rend `Result<_, DbError>`
+/// (Story 15-5e1, AC2). Règles :
+/// - **une tentative = une transaction neuve** : la fermeture commence par
+///   `pool.begin()` (ou appelle une fonction qui le fait) et finit par le
+///   `commit()` ; InnoDB a déjà annulé la transaction de la victime ;
+/// - la fermeture est `Fn` : ce que la route consomme par déplacement (le
+///   corps de la requête, un `New…` construit à partir de lui) se **clone
+///   dans** la fermeture, à chaque tentative ;
+/// - aucun effet de bord hors transaction (e-mail, fichier, réseau) dans la
+///   fermeture ;
+/// - la conversion en `AppError` se fait **après** le rejeu, jamais dans la
+///   fermeture : une erreur sqlx convertie en une autre variante rendrait le
+///   rejeu muet.
+///
+/// `operation` nomme la route (p. ex. `"invoices::settle"`) ; il est porté
+/// par le `warn!` émis avant chaque nouvelle tentative.
 ///
 /// # Examples
 ///
 /// ```ignore
-/// retry_on_deadlock(|| async {
-///     let mut tx = pool.begin().await?;
-///     // ... SELECT FOR UPDATE + UPDATE ...
-///     tx.commit().await?;
-///     Ok(())
-/// }).await?
+/// let entry = retry_on_deadlock("journal_entries::create", || {
+///     let new = new.clone();
+///     async move { journal_entries::create(&pool, fy_id, user_id, new).await }
+/// })
+/// .await?;
 /// ```
-pub async fn retry_on_deadlock<F, Fut, T>(f: F) -> Result<T, DbError>
+pub async fn retry_on_deadlock<F, Fut, T>(operation: &'static str, f: F) -> Result<T, DbError>
 where
     F: Fn() -> Fut,
     Fut: Future<Output = Result<T, DbError>>,
 {
-    retry_on_deadlock_with(DEFAULT_MAX_DEADLOCK_ATTEMPTS, f).await
+    retry_on_deadlock_with(operation, DEFAULT_MAX_DEADLOCK_ATTEMPTS, f).await
 }
 
 /// Variante de `retry_on_deadlock` avec `max_attempts` paramétrable.
 ///
 /// `max_attempts` doit être ≥ 1 (1 = pas de retry, équivaut à appeler
 /// la closure une fois). Une valeur `0` est traitée comme `1`.
-pub async fn retry_on_deadlock_with<F, Fut, T>(max_attempts: u32, f: F) -> Result<T, DbError>
+pub async fn retry_on_deadlock_with<F, Fut, T>(
+    operation: &'static str,
+    max_attempts: u32,
+    f: F,
+) -> Result<T, DbError>
 where
     F: Fn() -> Fut,
     Fut: Future<Output = Result<T, DbError>>,
 {
-    retry_with(max_attempts, |e: &DbError| is_deadlock_error(e), f).await
+    retry_with(
+        operation,
+        max_attempts,
+        |e: &DbError| is_deadlock_error(e),
+        f,
+    )
+    .await
 }
 
 /// Helper de retry générique pour tout type d'erreur `E`.
@@ -130,7 +185,20 @@ where
 /// convertir l'erreur en `DbError` côté handler.
 ///
 /// Backoff exponentiel : 50 ms × 2^(attempt-1). `max_attempts` clampé à ≥ 1.
-pub async fn retry_with<F, Fut, T, E, P>(max_attempts: u32, should_retry: P, f: F) -> Result<T, E>
+///
+/// `operation` nomme l'opération rejouée (p. ex. `"reconciliation::accept"`) :
+/// avant chaque nouvelle tentative, un `tracing::warn!` de cible
+/// `kesh_db::retry` porte ce nom (champ `operation`), le numéro de la
+/// tentative, le nombre maximal et le backoff. Quand l'erreur est encore
+/// retryable à la dernière tentative, un `tracing::error!` de même cible porte
+/// `operation` et le nombre de tentatives (`attempts`) avant que l'erreur
+/// remonte à l'appelant.
+pub async fn retry_with<F, Fut, T, E, P>(
+    operation: &'static str,
+    max_attempts: u32,
+    should_retry: P,
+    f: F,
+) -> Result<T, E>
 where
     F: Fn() -> Fut,
     Fut: Future<Output = Result<T, E>>,
@@ -144,7 +212,21 @@ where
         match result {
             Ok(value) => return Ok(value),
             Err(err) => {
-                if !should_retry(&err) || attempt >= attempts {
+                if !should_retry(&err) {
+                    return Err(err);
+                }
+                if attempt >= attempts {
+                    // Rejeu épuisé (revue P1, E-3) : sans cette ligne,
+                    // l'exploitant ne voit que les `warn!` des rejeux puis un
+                    // 500 qui ne nomme pas l'opération. Niveau `error!` — et
+                    // non `warn!` — pour qu'un abandon ne soit jamais compté
+                    // comme un rejeu par qui filtre les `warn!` de cette cible.
+                    tracing::error!(
+                        target: "kesh_db::retry",
+                        operation,
+                        attempts,
+                        "rejeu épuisé : l'erreur reste retryable après le nombre maximal de tentatives"
+                    );
                     return Err(err);
                 }
                 // M-002 review remediation : `2u64.pow(attempt-1)` panic en
@@ -157,8 +239,9 @@ where
                     .saturating_mul(multiplier)
                     .min(MAX_BACKOFF_MS);
                 let backoff = Duration::from_millis(backoff_ms);
-                tracing::debug!(
+                tracing::warn!(
                     target: "kesh_db::retry",
+                    operation,
                     attempt,
                     max_attempts = attempts,
                     backoff_ms = backoff.as_millis() as u64,
@@ -186,7 +269,7 @@ mod tests {
     async fn returns_ok_on_first_success_no_retry() {
         let calls = Arc::new(AtomicU32::new(0));
         let calls_clone = calls.clone();
-        let result: Result<i32, DbError> = retry_on_deadlock(|| {
+        let result: Result<i32, DbError> = retry_on_deadlock("test::retry", || {
             let calls = calls_clone.clone();
             async move {
                 calls.fetch_add(1, Ordering::SeqCst);
@@ -202,7 +285,7 @@ mod tests {
     async fn passes_non_deadlock_errors_through_immediately() {
         let calls = Arc::new(AtomicU32::new(0));
         let calls_clone = calls.clone();
-        let result: Result<i32, DbError> = retry_on_deadlock(|| {
+        let result: Result<i32, DbError> = retry_on_deadlock("test::retry", || {
             let calls = calls_clone.clone();
             async move {
                 calls.fetch_add(1, Ordering::SeqCst);
@@ -222,7 +305,7 @@ mod tests {
     async fn max_attempts_one_means_no_retry() {
         let calls = Arc::new(AtomicU32::new(0));
         let calls_clone = calls.clone();
-        let result: Result<i32, DbError> = retry_on_deadlock_with(1, || {
+        let result: Result<i32, DbError> = retry_on_deadlock_with("test::retry", 1, || {
             let calls = calls_clone.clone();
             async move {
                 calls.fetch_add(1, Ordering::SeqCst);
@@ -238,7 +321,7 @@ mod tests {
     async fn max_attempts_zero_treated_as_one() {
         let calls = Arc::new(AtomicU32::new(0));
         let calls_clone = calls.clone();
-        let _: Result<i32, DbError> = retry_on_deadlock_with(0, || {
+        let _: Result<i32, DbError> = retry_on_deadlock_with("test::retry", 0, || {
             let calls = calls_clone.clone();
             async move {
                 calls.fetch_add(1, Ordering::SeqCst);
@@ -315,7 +398,7 @@ mod tests {
         let pool_b = pool.clone();
 
         let task_a = tokio::spawn(async move {
-            retry_on_deadlock(|| {
+            retry_on_deadlock("test::retry", || {
                 let pool = pool_a.clone();
                 async move {
                     let mut tx = pool.begin().await.map_err(crate::errors::map_db_error)?;
@@ -345,7 +428,7 @@ mod tests {
         });
 
         let task_b = tokio::spawn(async move {
-            retry_on_deadlock(|| {
+            retry_on_deadlock("test::retry", || {
                 let pool = pool_b.clone();
                 async move {
                     let mut tx = pool.begin().await.map_err(crate::errors::map_db_error)?;

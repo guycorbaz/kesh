@@ -265,6 +265,10 @@ pub async fn get_invoice_settings(
 }
 
 /// `PUT /api/v1/company/invoice-settings` — mise à jour config (Admin).
+///
+/// ⚠️ **Rejouée sur interblocage** (Story 15-5e1, choix C70) par l'enveloppe
+/// `DbError` [`kesh_db::retry::retry_on_deadlock`] ; la `version` du corps est
+/// rejugée à chaque tentative par le verrou optimiste de `update`.
 pub async fn update_invoice_settings(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -436,13 +440,15 @@ pub async fn update_invoice_settings(
         default_bank_fees_account_id,
         default_bad_debt_account_id,
     };
-    let settings = company_invoice_settings::update(
-        &state.pool,
-        company.id,
-        req.version,
-        current_user.user_id,
-        update,
-    )
+    let settings = kesh_db::retry::retry_on_deadlock("company_invoice_settings::update", || {
+        company_invoice_settings::update(
+            &state.pool,
+            company.id,
+            req.version,
+            current_user.user_id,
+            update.clone(),
+        )
+    })
     .await?;
 
     Ok(Json(settings.into()))

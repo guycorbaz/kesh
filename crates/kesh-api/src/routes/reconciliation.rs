@@ -886,6 +886,7 @@ pub async fn post_accept(
     let actor_api_key_id = current_user.api_key_id;
     let bank_account_id = body.bank_account_id;
     retry_with(
+        "reconciliation::accept",
         DEFAULT_MAX_DEADLOCK_ATTEMPTS,
         |err: &AppError| {
             matches!(err, AppError::Database(db) if is_deadlock_error(db))
@@ -3958,6 +3959,7 @@ pub async fn post_cancel_reconciliation(
     let user_id = current_user.user_id;
     let actor_api_key_id = current_user.api_key_id;
     retry_with(
+        "reconciliation::cancel",
         DEFAULT_MAX_DEADLOCK_ATTEMPTS,
         |err: &AppError| matches!(err, AppError::Database(db) if is_deadlock_error(db)),
         || {

@@ -118,3 +118,6 @@ pub async fn audit_count(pool: &MySqlPool) -> i64 {
         .await
         .expect("comptage des entrées d'audit")
 }
+
+/// Témoin du rejeu sur interblocage (Story 15-5e1, choix C74).
+pub mod capture_rejeu;

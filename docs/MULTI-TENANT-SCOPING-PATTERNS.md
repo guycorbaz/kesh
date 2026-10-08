@@ -288,7 +288,7 @@ pub async fn list_invoices(
 
 ### Why Lock Ordering Matters
 
-When a transaction holds multiple row-level locks (`SELECT ... FOR UPDATE`), MariaDB does not detect cross-table deadlocks proactively. Two concurrent transactions acquiring the same locks **in reverse order** will deadlock until `innodb_lock_wait_timeout` (50s default) elapses, returning a 500 to the user.
+When a transaction holds multiple row-level locks (`SELECT ... FOR UPDATE`), two concurrent transactions acquiring the same locks **in reverse order** form a deadlock cycle. InnoDB **detects** such a cycle at wait time, whether it spans one table or several (`innodb_deadlock_detect = ON`, the default — measured `1` on MariaDB 10.11.16), and immediately rolls back a victim transaction, which receives error 1213 (`ER_LOCK_DEADLOCK`) without waiting for `innodb_lock_wait_timeout`. Without a replay, that victim is a 500 for the user. **The defence is the replay of the route** (`kesh_db::retry`, `kesh_api::retry`, Story 15-5e1); a consistent lock order only **reduces the frequency** of such cycles. The canonical lock orders are written in the doc-comments of `invoices::validate_invoice` and `supplier_invoices::create_in_tx`; the module doc of `crates/kesh-db/src/retry.rs` describes what InnoDB does (and does not: a cycle through a `GET_LOCK` named lock is not detected).
 
 ### Global Lock Order (v0.1)
 
@@ -333,20 +333,32 @@ Rationale: this matches the natural dependency direction (state machine → tena
 
 | Endpoint | Reason | Mitigation |
 |---|---|---|
-| `PUT /api/v1/journal-entries/{id}` (Story 15-8a, #532) — order **journal_entries → [companies → projects] → fiscal_years (the entry's year, then later years by `start_date`) → (accounts, shared, via the FKs of the line `INSERT`)** | The entry's `FOR UPDATE` must be the **first act** of the transaction: under `REPEATABLE READ`, any plain read before it would freeze a read view older than the wait, and the guard would miss a reversal committed meanwhile (`journal_entries::update`, doc-comment « Sérialisation »). Locking the entry before `companies → projects` diverges from creation. Three **inherited** cycles remain, each also valid for every later fiscal year the PUT locks: **fiscal year ↔ account** (customer settlement, opening complement), **fiscal year ↔ companies** (creation / reversal / settlement inserting a header), **project ↔ fiscal year** (reversal of an entry of the same year carrying the project). | Handler wrapped in `retry_with(DEFAULT_MAX_DEADLOCK_ATTEMPTS, is_deadlock_error, …)` — the repository opens and closes its own transaction, the deadlock rolled it back, and the `version` check refuses a second pass. ⚠️ A cycle InnoDB does not detect ends in `innodb_lock_wait_timeout` (1205, **not** retried) → 500. Tested: `update_and_a_reversal_of_the_same_year_can_deadlock` (`kesh-db/tests/journal_entries_modification.rs`). |
+| `PUT /api/v1/journal-entries/{id}` (Story 15-8a, #532) — order **journal_entries → [companies → projects] → fiscal_years (the entry's year, then later years by `start_date`) → (accounts, shared, via the FKs of the line `INSERT`)** | The entry's `FOR UPDATE` must be the **first act** of the transaction: under `REPEATABLE READ`, any plain read before it would freeze a read view older than the wait, and the guard would miss a reversal committed meanwhile (`journal_entries::update`, doc-comment « Sérialisation »). Locking the entry before `companies → projects` diverges from creation. Three **inherited** cycles remain, each also valid for every later fiscal year the PUT locks: **fiscal year ↔ account** (customer settlement, opening complement), **fiscal year ↔ companies** (creation / reversal / settlement inserting a header), **project ↔ fiscal year** (reversal of an entry of the same year carrying the project). | Handler wrapped in `retry_with("journal_entries::update", DEFAULT_MAX_DEADLOCK_ATTEMPTS, …)` (operation name since Story 15-5e1) — the repository opens and closes its own transaction, the deadlock rolled it back, and the `version` check refuses a second pass. ⚠️ A cycle InnoDB does not detect ends in `innodb_lock_wait_timeout` (1205, **not** retried) → 500. Tested: `update_and_a_reversal_of_the_same_year_can_deadlock` (`kesh-db/tests/journal_entries_modification.rs`). |
 
 **How to use the retry helper for new endpoints:**
 
 ```rust
-use kesh_db::retry::{is_deadlock_error, retry_with, DEFAULT_MAX_DEADLOCK_ATTEMPTS};
+// Route whose transaction is opened in the handler (`Result<_, AppError>`):
+kesh_api::retry::retry_app_on_deadlock("module::operation", || {
+    let pool = state.pool.clone();
+    async move { handler_inner(&pool, /* args */).await }
+})
+.await
 
-retry_with(
-    DEFAULT_MAX_DEADLOCK_ATTEMPTS,
-    |err: &AppError| matches!(err, AppError::Database(db) if is_deadlock_error(db)),
-    || {
-        let pool = state.pool.clone();
-        async move { handler_inner(&pool, /* args */).await }
-    },
+// Route whose write is one repository function (`Result<_, DbError>`):
+kesh_db::retry::retry_on_deadlock("module::operation", || {
+    let new = new.clone();
+    async move { repository::create(&pool, new).await }
+})
+.await
+
+// Generic form — the first argument names the operation, carried by the
+// `warn!` (target `kesh_db::retry`) emitted before each new attempt:
+kesh_db::retry::retry_with(
+    "module::operation",
+    kesh_db::retry::DEFAULT_MAX_DEADLOCK_ATTEMPTS,
+    kesh_api::retry::is_app_deadlock,
+    || { /* … */ },
 ).await
 ```
 
