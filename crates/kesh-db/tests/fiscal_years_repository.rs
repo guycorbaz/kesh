@@ -11,7 +11,11 @@ use kesh_db::repositories::fiscal_years::{
     FY_OVERLAP_KEY, FY_REOPEN_ALREADY_OPEN_KEY, FY_REOPEN_LIFO_BLOCKED_KEY,
 };
 use kesh_db::repositories::{audit_log, companies, fiscal_years, users};
+use kesh_db::retry::retry_on_deadlock;
+use kesh_db::test_fixtures::attendre_une_requete_en_cours;
 use sqlx::MySqlPool;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 fn sample_new_company() -> NewCompany {
     NewCompany {
@@ -869,6 +873,10 @@ async fn reopen_lifo_permissive_when_later_open(pool: MySqlPool) {
 /// P4-LOW — LIFO 3 exercices intercalés (Closed-Open-Closed) : reopen FY1 bloqué
 /// en citant FY3 (le plus proche postérieur clos via ORDER BY start_date ASC
 /// LIMIT 1 — prouve que la query n'a pas besoin de notion d'adjacence).
+///
+/// ⚠️ Story 15-12a : « FY2 ouvert sous FY3 clos » est l'état **hérité** que la
+/// clôture refuse désormais de produire — FY3 est donc clos **par SQL**. Le test
+/// garde la garde LIFO pour les données qui portent déjà cet état.
 #[sqlx::test(migrations = "./test-schema")]
 async fn reopen_lifo_three_years_intercalated(pool: MySqlPool) {
     let company_id = create_company(&pool).await;
@@ -884,13 +892,11 @@ async fn reopen_lifo_three_years_intercalated(pool: MySqlPool) {
     y3.company_id = company_id;
     let fy3 = fiscal_years::create(&pool, user_id, y3).await.unwrap();
 
-    // FY1 clos, FY2 ouvert, FY3 clos.
+    // FY1 clos, FY2 ouvert, FY3 clos — ce dernier par SQL (état hérité).
     fiscal_years::close(&pool, user_id, company_id, fy1.id)
         .await
         .unwrap();
-    fiscal_years::close(&pool, user_id, company_id, fy3.id)
-        .await
-        .unwrap();
+    poser_clos(&pool, fy3.id).await;
 
     // Rouvrir FY1 est bloqué : FY3 (postérieur, clos) existe — même avec FY2
     // ouvert intercalé, la garde ne dépend pas de l'adjacence.
@@ -1047,71 +1053,6 @@ async fn close_already_closed_message_no_longer_claims_reopen_forbidden(pool: My
     }
 }
 
-/// P1-M6 — course concurrente `reopen(FY_N)` vs `close(FY_{N+1})` sérialisée par
-/// le `FOR UPDATE` : l'issue est déterministe (pas de deadlock, pas de panic) et
-/// l'état final est cohérent. Documente l'hypothèse next-key locking de la
-/// garde LIFO (filtre `status` non indexé).
-#[sqlx::test(migrations = "./test-schema")]
-async fn reopen_close_concurrent_is_serialized(pool: MySqlPool) {
-    let company_id = create_company(&pool).await;
-    let user_id = create_admin_user(&pool, company_id).await;
-
-    // FY_N clos, FY_{N+1} ouvert.
-    let mut y2025 = ny("Exercice 2025", 2025);
-    y2025.company_id = company_id;
-    let fy2025 = fiscal_years::create(&pool, user_id, y2025).await.unwrap();
-    let mut y2026 = ny("Exercice 2026", 2026);
-    y2026.company_id = company_id;
-    let fy2026 = fiscal_years::create(&pool, user_id, y2026).await.unwrap();
-    fiscal_years::close(&pool, user_id, company_id, fy2025.id)
-        .await
-        .unwrap();
-
-    // reopen(FY2025) [garde LIFO lit FY2026] vs close(FY2026) [Open→Closed],
-    // concurrents. Le FOR UPDATE sérialise → pas de deadlock DANS CE MONTAGE
-    // (deux transactions sur la seule table `fiscal_years`), chaque future
-    // résout en Ok ou en une DbError définie.
-    let p1 = pool.clone();
-    let p2 = pool.clone();
-    let reopen_fut = tokio::spawn(async move {
-        fiscal_years::reopen(&p1, user_id, company_id, fy2025.id, "motif".to_string()).await
-    });
-    let close_fut =
-        tokio::spawn(async move { fiscal_years::close(&p2, user_id, company_id, fy2026.id).await });
-
-    let (reopen_res, close_res) = tokio::join!(reopen_fut, close_fut);
-    let reopen_res = reopen_res.expect("reopen task should not panic");
-    let close_res = close_res.expect("close task should not panic");
-
-    // Aucune des deux ne doit produire une erreur inattendue (Sqlx/deadlock).
-    // reopen : soit Ok (a gagné la course avant close), soit LIFO blocked (close
-    // a commit d'abord). close : Ok (FY2026 était Open).
-    assert!(
-        reopen_res.is_ok()
-            || matches!(&reopen_res, Err(DbError::Invariant(k)) if k == FY_REOPEN_LIFO_BLOCKED_KEY),
-        "reopen outcome must be Ok or LIFO-blocked, got {reopen_res:?}"
-    );
-    assert!(
-        close_res.is_ok(),
-        "close(FY2026 Open) should succeed, got {close_res:?}"
-    );
-
-    // État final : chaque exercice a un statut valide (pas de corruption).
-    let fy2025_final = fiscal_years::find_by_id(&pool, fy2025.id)
-        .await
-        .unwrap()
-        .unwrap();
-    let fy2026_final = fiscal_years::find_by_id(&pool, fy2026.id)
-        .await
-        .unwrap()
-        .unwrap();
-    assert_eq!(fy2026_final.status, FiscalYearStatus::Closed);
-    assert!(matches!(
-        fy2025_final.status,
-        FiscalYearStatus::Open | FiscalYearStatus::Closed
-    ));
-}
-
 // ---------------------------------------------------------------------------
 // find_first_by_company() — Story 14-4 (bilan d'ouverture)
 // ---------------------------------------------------------------------------
@@ -1191,4 +1132,651 @@ async fn find_first_by_company_is_tenant_scoped(pool: MySqlPool) {
         .expect("premier exercice de A");
     assert_eq!(first_a.name, "Exercice A 2025");
     assert_eq!(first_a.company_id, company_a);
+}
+
+// ---------------------------------------------------------------------------
+// Story 15-12a (#543) — les exercices se clôturent dans l'ordre (invariant I)
+// ---------------------------------------------------------------------------
+
+/// Pose `status = 'Closed'` **par SQL**, hors de `close` : le seul moyen, depuis
+/// la Story 15-12a, de fabriquer l'état hérité « exercice ouvert suivi d'un
+/// exercice clos ».
+async fn poser_clos(pool: &MySqlPool, id: i64) {
+    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+/// Crée l'exercice `année` (1er janvier – 31 décembre) de la société.
+async fn exercice(pool: &MySqlPool, user_id: i64, company_id: i64, annee: i32) -> i64 {
+    let mut new = ny(&format!("Exercice {annee}"), annee);
+    new.company_id = company_id;
+    fiscal_years::create(pool, user_id, new).await.unwrap().id
+}
+
+async fn statut(pool: &MySqlPool, id: i64) -> Option<FiscalYearStatus> {
+    fiscal_years::find_by_id(pool, id)
+        .await
+        .unwrap()
+        .map(|fy| fy.status)
+}
+
+/// Nombre de lignes d'audit `action` pour l'exercice `id`.
+async fn audits(pool: &MySqlPool, action: &str, id: i64) -> i64 {
+    sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE action = ? AND entity_type = 'fiscal_year' \
+         AND entity_id = ?",
+    )
+    .bind(action)
+    .bind(id)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// Nombre d'exercices de la société.
+async fn nombre_exercices(pool: &MySqlPool, company_id: i64) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM fiscal_years WHERE company_id = ?")
+        .bind(company_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Motif `attendre_une_requete_en_cours` de l'étape (c) de `close` — le verrou
+/// de l'exercice par clé primaire (`LOCK_IN_COMPANY_SQL`) : sa liste de colonnes
+/// l'oppose à l'étape (b'), `WHERE id = ` aux requêtes par société, `FOR UPDATE`
+/// à l'étape (a).
+const MOTIF_ETAPE_C: &[&str] = &["SELECT id, company_id", "WHERE id = ", "FOR UPDATE"];
+
+/// Motif du pré-contrôle de chevauchement de la création (`find_overlapping`) —
+/// `end_date >= ` l'oppose à toutes les requêtes de `close`.
+const MOTIF_CHEVAUCHEMENT: &[&str] = &["end_date >= ", "LIMIT 1 FOR UPDATE"];
+
+/// AC 1 — refus : un exercice antérieur est ouvert → `EarlierFiscalYearOpen`,
+/// **rien d'écrit** (ni statut, ni audit `fiscal_year.closed`).
+///
+/// ⛔ **Tue la mutation (i)** (retirer la garde de `close`).
+#[sqlx::test(migrations = "./test-schema")]
+async fn close_is_refused_while_an_earlier_year_is_open(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+    let y2025 = exercice(&pool, user_id, company_id, 2025).await;
+    let y2026 = exercice(&pool, user_id, company_id, 2026).await;
+
+    let result = fiscal_years::close(&pool, user_id, company_id, y2026).await;
+    match result {
+        Err(DbError::EarlierFiscalYearOpen {
+            fiscal_year_id,
+            fiscal_year_name,
+        }) => {
+            assert_eq!(fiscal_year_id, y2025);
+            assert_eq!(fiscal_year_name, "Exercice 2025");
+        }
+        other => panic!("attendu EarlierFiscalYearOpen, obtenu {other:?}"),
+    }
+    assert_eq!(statut(&pool, y2026).await, Some(FiscalYearStatus::Open));
+    assert_eq!(audits(&pool, "fiscal_year.closed", y2026).await, 0);
+
+    // Dans l'ordre, les deux passent.
+    fiscal_years::close(&pool, user_id, company_id, y2025)
+        .await
+        .unwrap();
+    fiscal_years::close(&pool, user_id, company_id, y2026)
+        .await
+        .unwrap();
+    assert_eq!(statut(&pool, y2026).await, Some(FiscalYearStatus::Closed));
+}
+
+/// AC 1 — le refus nomme le **plus ancien** antérieur ouvert, et le trouve par
+/// la **date**, non par l'`id` : 2024 est créé **après** 2025, ses `id` sont
+/// donc inversés par rapport aux dates.
+#[sqlx::test(migrations = "./test-schema")]
+async fn close_names_the_oldest_earlier_open_year_whatever_the_ids(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+    let y2025 = exercice(&pool, user_id, company_id, 2025).await;
+    let y2024 = exercice(&pool, user_id, company_id, 2024).await;
+    let y2026 = exercice(&pool, user_id, company_id, 2026).await;
+    assert!(y2024 > y2025, "montage : 2024 doit avoir le plus grand id");
+
+    let result = fiscal_years::close(&pool, user_id, company_id, y2026).await;
+    assert!(
+        matches!(&result, Err(DbError::EarlierFiscalYearOpen { fiscal_year_id, fiscal_year_name })
+            if *fiscal_year_id == y2024 && fiscal_year_name == "Exercice 2024"),
+        "attendu EarlierFiscalYearOpen nommant 2024, obtenu {result:?}"
+    );
+    // 2025 se clôture-t-il ? Non : 2024 le précède, ouvert.
+    let result = fiscal_years::close(&pool, user_id, company_id, y2025).await;
+    assert!(
+        matches!(&result, Err(DbError::EarlierFiscalYearOpen { fiscal_year_id, .. }) if *fiscal_year_id == y2024),
+        "attendu EarlierFiscalYearOpen nommant 2024, obtenu {result:?}"
+    );
+}
+
+/// AC 1 — les exercices d'une **autre société** sont ignorés.
+#[sqlx::test(migrations = "./test-schema")]
+async fn close_ignores_the_open_years_of_another_company(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+    let other = create_other_company(&pool).await;
+    let other_user = create_admin_user(&pool, other).await;
+    let _autre_2025 = exercice(&pool, other_user, other, 2025).await;
+    let y2026 = exercice(&pool, user_id, company_id, 2026).await;
+
+    fiscal_years::close(&pool, user_id, company_id, y2026)
+        .await
+        .unwrap();
+    assert_eq!(statut(&pool, y2026).await, Some(FiscalYearStatus::Closed));
+}
+
+/// AC 2 — précédence, paire `NotFound` > `EarlierFiscalYearOpen` : un exercice
+/// inexistant, ou d'une autre société, rend `NotFound` même si la société a un
+/// exercice ouvert antérieur à tout.
+#[sqlx::test(migrations = "./test-schema")]
+async fn close_precedence_not_found_before_earlier_open(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+    let _y2020 = exercice(&pool, user_id, company_id, 2020).await;
+    let other = create_other_company(&pool).await;
+    let other_user = create_admin_user(&pool, other).await;
+    let autre_2026 = exercice(&pool, other_user, other, 2026).await;
+
+    let missing = fiscal_years::close(&pool, user_id, company_id, 999_999).await;
+    assert!(matches!(missing, Err(DbError::NotFound)), "{missing:?}");
+    let cross = fiscal_years::close(&pool, user_id, company_id, autre_2026).await;
+    assert!(matches!(cross, Err(DbError::NotFound)), "{cross:?}");
+    assert_eq!(
+        statut(&pool, autre_2026).await,
+        Some(FiscalYearStatus::Open)
+    );
+}
+
+/// AC 2 — précédence, paire « déjà clos » > `EarlierFiscalYearOpen` : dans
+/// l'état **hérité** (2025 ouvert, 2026 clos par SQL), re-clore 2026 répond
+/// « déjà clos » — l'état de l'exercice lui-même parle d'abord.
+#[sqlx::test(migrations = "./test-schema")]
+async fn close_precedence_already_closed_before_earlier_open(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+    let _y2025 = exercice(&pool, user_id, company_id, 2025).await;
+    let y2026 = exercice(&pool, user_id, company_id, 2026).await;
+    poser_clos(&pool, y2026).await;
+
+    let result = fiscal_years::close(&pool, user_id, company_id, y2026).await;
+    assert!(
+        matches!(result, Err(DbError::IllegalStateTransition(_))),
+        "attendu IllegalStateTransition, obtenu {result:?}"
+    );
+}
+
+/// AC 3 (c), F6 — l'exercice **disparaît** entre l'étape (a) et l'étape (c) :
+/// `NotFound`, jamais une panique. W tient Y ; la clôture bute en (c) ; W
+/// supprime Y (sans écriture) et valide.
+#[sqlx::test(migrations = "./test-schema")]
+async fn close_returns_not_found_when_the_year_vanishes_before_its_lock(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+    let y2026 = exercice(&pool, user_id, company_id, 2026).await;
+
+    let mut w = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE")
+        .bind(y2026)
+        .execute(&mut *w)
+        .await
+        .unwrap();
+    let cloture = {
+        let pool = pool.clone();
+        tokio::spawn(async move { fiscal_years::close(&pool, user_id, company_id, y2026).await })
+    };
+    assert!(
+        attendre_une_requete_en_cours(&pool, MOTIF_ETAPE_C, || cloture.is_finished()).await,
+        "la clôture doit être vue en cours à l'étape (c)"
+    );
+    sqlx::query("DELETE FROM fiscal_years WHERE id = ?")
+        .bind(y2026)
+        .execute(&mut *w)
+        .await
+        .unwrap();
+    w.commit().await.unwrap();
+
+    let result = cloture.await.expect("la clôture ne doit pas paniquer");
+    assert!(matches!(result, Err(DbError::NotFound)), "{result:?}");
+}
+
+/// AC 5 — création : refusée si un exercice **postérieur** est clos ; le refus
+/// nomme le **plus proche** ; rien n'est inséré, rien n'est audité.
+///
+/// ⛔ **Tue la mutation (iv)** (retirer la garde de `create`).
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_is_refused_before_a_closed_year(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+    let y2026 = exercice(&pool, user_id, company_id, 2026).await;
+    let y2027 = exercice(&pool, user_id, company_id, 2027).await;
+    fiscal_years::close(&pool, user_id, company_id, y2026)
+        .await
+        .unwrap();
+    fiscal_years::close(&pool, user_id, company_id, y2027)
+        .await
+        .unwrap();
+    let avant = nombre_exercices(&pool, company_id).await;
+
+    let mut new = ny("Exercice 2025", 2025);
+    new.company_id = company_id;
+    let result = fiscal_years::create(&pool, user_id, new).await;
+    match result {
+        Err(DbError::LaterFiscalYearClosed {
+            fiscal_year_id,
+            fiscal_year_name,
+        }) => {
+            assert_eq!(fiscal_year_id, y2026, "le plus proche postérieur clos");
+            assert_eq!(fiscal_year_name, "Exercice 2026");
+        }
+        other => panic!("attendu LaterFiscalYearClosed, obtenu {other:?}"),
+    }
+    assert_eq!(nombre_exercices(&pool, company_id).await, avant);
+    let audits_creation: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'fiscal_year.created' \
+         AND JSON_UNQUOTE(JSON_EXTRACT(details_json, '$.name')) = 'Exercice 2025'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(audits_creation, 0);
+}
+
+/// AC 5 — un exercice postérieur **ouvert** ne gêne pas : créer un exercice
+/// antérieur reste permis (l'invariant I ne porte que sur les clos).
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_before_an_open_year_is_allowed(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+    let _y2026 = exercice(&pool, user_id, company_id, 2026).await;
+    let y2025 = exercice(&pool, user_id, company_id, 2025).await;
+    assert_eq!(statut(&pool, y2025).await, Some(FiscalYearStatus::Open));
+}
+
+/// AC 5 — précédence : une demande qui **chevauche** un exercice et précède un
+/// exercice clos rend le chevauchement (pré-contrôle existant, qui parle
+/// d'abord).
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_precedence_overlap_before_later_closed(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+    let y2024 = exercice(&pool, user_id, company_id, 2024).await;
+    let y2026 = exercice(&pool, user_id, company_id, 2026).await;
+    // 2025 n'existe pas : clôturer 2024 puis 2026 respecte l'ordre.
+    fiscal_years::close(&pool, user_id, company_id, y2024)
+        .await
+        .unwrap();
+    fiscal_years::close(&pool, user_id, company_id, y2026)
+        .await
+        .unwrap();
+
+    let new = NewFiscalYear {
+        company_id,
+        name: "Exercice décalé".into(),
+        start_date: NaiveDate::from_ymd_opt(2024, 7, 1).unwrap(),
+        end_date: NaiveDate::from_ymd_opt(2025, 6, 30).unwrap(),
+    };
+    let result = fiscal_years::create(&pool, user_id, new).await;
+    assert!(
+        matches!(&result, Err(DbError::Invariant(k)) if k == FY_OVERLAP_KEY),
+        "attendu FY_OVERLAP_KEY, obtenu {result:?}"
+    );
+}
+
+/// AC 13 a — **la preuve de l'invariant I sous concurrence** : une réouverture
+/// de N **en cours** contre `close(L)` (N clos, L ouvert, L > N).
+///
+/// W refait les gestes de `reopen` sans les valider (verrou de N, lecture des
+/// postérieurs clos, `UPDATE … 'Open'`). La clôture est lancée dans son
+/// enveloppe et vue **en cours** (l'aide voit une requête qui s'exécute ; c'est
+/// le montage — W tient N, que l'étape (b') demande — qui en fait une attente).
+/// W valide : la relecture verrouillante (d) lit N **ouvert** → refus.
+///
+/// ⛔ **Tue la mutation (ii)** (relecture (d) non verrouillante) : la clôture
+/// lirait (d) dans sa vue, fixée en (a) avant la validation de W — N clos —, et
+/// passerait : état final « N ouvert, L clos ». Remplace l'ancien
+/// `reopen_close_concurrent_is_serialized`, course libre qui admettait cet état.
+#[sqlx::test(migrations = "./test-schema")]
+async fn close_sees_a_concurrent_reopening_of_an_earlier_year(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+    let n = exercice(&pool, user_id, company_id, 2025).await;
+    let l = exercice(&pool, user_id, company_id, 2026).await;
+    fiscal_years::close(&pool, user_id, company_id, n)
+        .await
+        .unwrap();
+    let n_start = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
+
+    let mut w = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE")
+        .bind(n)
+        .execute(&mut *w)
+        .await
+        .unwrap();
+    assert!(
+        fiscal_years::find_later_closed_in_tx(&mut w, company_id, n_start)
+            .await
+            .unwrap()
+            .is_none()
+    );
+    sqlx::query("UPDATE fiscal_years SET status = 'Open' WHERE id = ?")
+        .bind(n)
+        .execute(&mut *w)
+        .await
+        .unwrap();
+
+    let cloture = {
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            retry_on_deadlock("fiscal_years::close", || {
+                fiscal_years::close(&pool, user_id, company_id, l)
+            })
+            .await
+        })
+    };
+    assert!(
+        attendre_une_requete_en_cours(&pool, &["fiscal_years", "FOR UPDATE"], || cloture
+            .is_finished())
+        .await,
+        "la clôture doit être vue en cours, bloquée sur N"
+    );
+    w.commit().await.unwrap();
+
+    let result = cloture.await.unwrap();
+    assert!(
+        matches!(&result, Err(DbError::EarlierFiscalYearOpen { fiscal_year_id, .. }) if *fiscal_year_id == n),
+        "attendu EarlierFiscalYearOpen nommant N, obtenu {result:?}"
+    );
+    assert_eq!(statut(&pool, n).await, Some(FiscalYearStatus::Open));
+    assert_eq!(statut(&pool, l).await, Some(FiscalYearStatus::Open));
+    assert_eq!(audits(&pool, "fiscal_year.closed", l).await, 0);
+}
+
+/// AC 13 c — une clôture de N **en cours** contre `close(N+1)` (N et N+1
+/// ouverts) : garde contre un refus **parasite**. W pose `'Closed'` sur N sans
+/// valider ; `close(N+1)` est vue en cours, bloquée sur N à l'étape (b') ; W
+/// valide ; `close(N+1)` **réussit**. Forme ordonnée : lancées librement,
+/// `close(N+1)` pourrait lire N ouvert la première et refuser légitimement.
+///
+/// ⛔ **Tue la mutation (ii)** : sous une relecture (d) non verrouillante, la
+/// vue fixée en (a) montre N ouvert → refus parasite.
+#[sqlx::test(migrations = "./test-schema")]
+async fn close_after_a_concurrent_close_of_the_previous_year_succeeds(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+    let n = exercice(&pool, user_id, company_id, 2025).await;
+    let suivant = exercice(&pool, user_id, company_id, 2026).await;
+
+    let mut w = pool.begin().await.unwrap();
+    sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+        .bind(n)
+        .execute(&mut *w)
+        .await
+        .unwrap();
+    let cloture = {
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            retry_on_deadlock("fiscal_years::close", || {
+                fiscal_years::close(&pool, user_id, company_id, suivant)
+            })
+            .await
+        })
+    };
+    assert!(
+        attendre_une_requete_en_cours(&pool, &["fiscal_years", "FOR UPDATE"], || cloture
+            .is_finished())
+        .await,
+        "la clôture de N+1 doit être vue en cours, bloquée sur N"
+    );
+    w.commit().await.unwrap();
+
+    let result = cloture.await.unwrap();
+    assert!(result.is_ok(), "close(N+1) doit réussir : {result:?}");
+    assert_eq!(statut(&pool, n).await, Some(FiscalYearStatus::Closed));
+    assert_eq!(statut(&pool, suivant).await, Some(FiscalYearStatus::Closed));
+}
+
+/// Déroule le test 13 b : `create(X)` contre `close(Y)`, X antérieur à Y, tous
+/// deux dans leur enveloppe de rejeu. Entrelacement forcé : W tient Y ; la
+/// clôture est vue en étape (c) ; la création est vue à l'étape où elle bute
+/// (`motif_creation` — dans les deux configurations mesurées, son pré-contrôle
+/// de chevauchement : sur Y en b1, sur M en b2) ; W valide. Rend les deux
+/// issues et le nombre de tentatives de chaque côté.
+async fn creation_contre_cloture(
+    pool: &MySqlPool,
+    user_id: i64,
+    company_id: i64,
+    y: i64,
+    x_annee: i32,
+    motif_creation: &[&str],
+) -> (
+    Result<kesh_db::entities::FiscalYear, DbError>,
+    Result<kesh_db::entities::FiscalYear, DbError>,
+    u32,
+    u32,
+) {
+    let mut w = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE")
+        .bind(y)
+        .execute(&mut *w)
+        .await
+        .unwrap();
+
+    let essais_cloture = Arc::new(AtomicU32::new(0));
+    let cloture = {
+        let pool = pool.clone();
+        let essais = essais_cloture.clone();
+        tokio::spawn(async move {
+            retry_on_deadlock("fiscal_years::close", || {
+                essais.fetch_add(1, Ordering::SeqCst);
+                fiscal_years::close(&pool, user_id, company_id, y)
+            })
+            .await
+        })
+    };
+    assert!(
+        attendre_une_requete_en_cours(pool, MOTIF_ETAPE_C, || cloture.is_finished()).await,
+        "la clôture doit être vue à l'étape (c), bloquée sur Y"
+    );
+
+    let essais_creation = Arc::new(AtomicU32::new(0));
+    let creation = {
+        let pool = pool.clone();
+        let essais = essais_creation.clone();
+        let mut new = ny(&format!("Exercice {x_annee}"), x_annee);
+        new.company_id = company_id;
+        tokio::spawn(async move {
+            retry_on_deadlock("fiscal_years::create", || {
+                essais.fetch_add(1, Ordering::SeqCst);
+                fiscal_years::create(&pool, user_id, new.clone())
+            })
+            .await
+        })
+    };
+    assert!(
+        attendre_une_requete_en_cours(pool, motif_creation, || creation.is_finished()).await,
+        "la création doit être vue en cours, bloquée ({motif_creation:?})"
+    );
+    w.commit().await.unwrap();
+
+    let c = cloture.await.unwrap();
+    let k = creation.await.unwrap();
+    (
+        c,
+        k,
+        essais_cloture.load(Ordering::SeqCst),
+        essais_creation.load(Ordering::SeqCst),
+    )
+}
+
+/// Asserte la propriété du 13 b : **jamais** « X ouvert, Y clos », et des
+/// issues cohérentes de part et d'autre.
+async fn jamais_x_ouvert_sous_y_clos(
+    pool: &MySqlPool,
+    company_id: i64,
+    y: i64,
+    x_annee: i32,
+    cloture: &Result<kesh_db::entities::FiscalYear, DbError>,
+    creation: &Result<kesh_db::entities::FiscalYear, DbError>,
+) {
+    let x: Option<i64> =
+        sqlx::query_scalar("SELECT id FROM fiscal_years WHERE company_id = ? AND name = ?")
+            .bind(company_id)
+            .bind(format!("Exercice {x_annee}"))
+            .fetch_optional(pool)
+            .await
+            .unwrap();
+    let y_clos = statut(pool, y).await == Some(FiscalYearStatus::Closed);
+    assert!(
+        !(y_clos && x.is_some()),
+        "état fautif atteint : X ouvert sous Y clos (clôture {cloture:?}, création {creation:?})"
+    );
+    match (cloture, creation) {
+        (Ok(_), Err(DbError::LaterFiscalYearClosed { fiscal_year_id, .. })) => {
+            assert_eq!(*fiscal_year_id, y);
+        }
+        (Err(DbError::EarlierFiscalYearOpen { fiscal_year_id, .. }), Ok(fy)) => {
+            assert_eq!(*fiscal_year_id, fy.id);
+        }
+        other => panic!("issues incohérentes : {other:?}"),
+    }
+}
+
+/// AC 13 b1 — `create(X)` contre `close(Y)`, **aucun exercice antérieur à X**.
+///
+/// **Mécanisme observé** (ce test, trois exécutions) : **sérialisation** — le
+/// pré-contrôle `find_overlapping` de la création lit Y (la borne de son
+/// parcours) et l'attend derrière la clôture ; la clôture valide ; la création
+/// reprend, lit Y clos dans sa garde et refuse (`LaterFiscalYearClosed`), en une
+/// seule tentative. (À la main, en T0, la création avait passé ce pré-contrôle
+/// et buté dans sa garde : même issue, autre point d'arrêt — le test fait foi.)
+/// Aucune mutation propre : la propriété est tenue par les gardes (i) et (iv)
+/// ensemble.
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_against_close_without_earlier_year_never_leaves_an_open_year_under_a_closed_one(
+    pool: MySqlPool,
+) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+    let y = exercice(&pool, user_id, company_id, 2026).await;
+
+    let (c, k, essais_c, essais_k) =
+        creation_contre_cloture(&pool, user_id, company_id, y, 2025, MOTIF_CHEVAUCHEMENT).await;
+    eprintln!("13 b1 : tentatives clôture = {essais_c}, création = {essais_k}");
+    jamais_x_ouvert_sous_y_clos(&pool, company_id, y, 2025, &c, &k).await;
+}
+
+/// AC 13 b2 — `create(X)` contre `close(Y)`, **un exercice clos M antérieur à
+/// X**.
+///
+/// **Mécanisme observé** (T0, puis ce test) : **interblocage** — la clôture
+/// tient M (étape (b')) ; la création lit M dans `find_overlapping` et l'attend
+/// (c'est là qu'elle est vue en cours, après avoir posé le verrou d'index de
+/// M) ; la clôture, Y obtenu, demande en étape (d) ce verrou d'index : cycle. Victime observée : la création, qui, rejouée, lit Y
+/// clos et refuse. Aucune mutation propre (gardes (i) et (iv) ensemble).
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_against_close_with_a_closed_earlier_year_never_leaves_an_open_year_under_a_closed_one(
+    pool: MySqlPool,
+) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+    let m = exercice(&pool, user_id, company_id, 2020).await;
+    fiscal_years::close(&pool, user_id, company_id, m)
+        .await
+        .unwrap();
+    let y = exercice(&pool, user_id, company_id, 2026).await;
+
+    let (c, k, essais_c, essais_k) =
+        creation_contre_cloture(&pool, user_id, company_id, y, 2025, MOTIF_CHEVAUCHEMENT).await;
+    eprintln!("13 b2 : tentatives clôture = {essais_c}, création = {essais_k}");
+    jamais_x_ouvert_sous_y_clos(&pool, company_id, y, 2025, &c, &k).await;
+}
+
+/// AC 13 d — `close(N)` contre une **contre-passation** (cycle de l'AC 3 ; M
+/// clos, N ouvert, T ouvert couvrant le jour du serveur, M < N < T).
+///
+/// W refait les deux temps de `reverse_in_tx_inner` : verrou de N par clé
+/// primaire, puis `find_open_covering_date(today)`, dont le parcours part du
+/// premier exercice et contient M. La clôture est lancée entre les deux et vue
+/// en étape (c) — ce qui prouve que l'étape (b') a rendu et tient M. W demande
+/// alors M : **interblocage**. Victime mesurée (T0) : la clôture, que W soit
+/// alourdie ou non — W obtient M. ⚠️ La clôture rejouée rebuterait en (b') sur
+/// M, que W tient : le test **annule W d'abord**, puis attend la clôture.
+///
+/// **Objet** : le cycle existe et se résout — la clôture, dans son enveloppe,
+/// finit acceptée. Il ne tue **aucune** mutation : l'enveloppe y est écrite par
+/// le test ; c'est le test HTTP de rejeu (`rejeu_interblocage_e2e.rs`) qui tue
+/// la mutation (ix).
+#[sqlx::test(migrations = "./test-schema")]
+async fn close_against_a_reversal_deadlocks_and_the_replay_resolves_it(pool: MySqlPool) {
+    use chrono::Datelike;
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+    let today = chrono::Utc::now().date_naive();
+    let m = exercice(&pool, user_id, company_id, today.year() - 6).await;
+    let n = exercice(&pool, user_id, company_id, today.year() - 5).await;
+    let _t = exercice(&pool, user_id, company_id, today.year()).await;
+    fiscal_years::close(&pool, user_id, company_id, m)
+        .await
+        .unwrap();
+
+    let mut w = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE")
+        .bind(n)
+        .execute(&mut *w)
+        .await
+        .unwrap();
+
+    let essais = Arc::new(AtomicU32::new(0));
+    let cloture = {
+        let pool = pool.clone();
+        let essais = essais.clone();
+        tokio::spawn(async move {
+            retry_on_deadlock("fiscal_years::close", || {
+                essais.fetch_add(1, Ordering::SeqCst);
+                fiscal_years::close(&pool, user_id, company_id, n)
+            })
+            .await
+        })
+    };
+    assert!(
+        attendre_une_requete_en_cours(&pool, MOTIF_ETAPE_C, || cloture.is_finished()).await,
+        "la clôture doit être vue à l'étape (c), bloquée sur N"
+    );
+
+    // Second temps de la contre-passation : l'exercice du jour.
+    let w_issue = fiscal_years::find_open_covering_date(&mut w, company_id, today).await;
+    let w_victime = match &w_issue {
+        Ok(fy) => {
+            assert!(fy.is_some(), "T couvre le jour");
+            false
+        }
+        Err(e) => {
+            assert!(
+                kesh_db::retry::is_deadlock_error(e),
+                "W ne peut échouer que par un interblocage : {e:?}"
+            );
+            true
+        }
+    };
+    w.rollback().await.unwrap();
+
+    let result = cloture.await.unwrap();
+    assert!(
+        result.is_ok(),
+        "la clôture doit finir acceptée : {result:?}"
+    );
+    assert_eq!(statut(&pool, n).await, Some(FiscalYearStatus::Closed));
+    // Le cycle a bien eu lieu : l'une des deux transactions en a été victime.
+    let tentatives = essais.load(Ordering::SeqCst);
+    assert!(
+        w_victime || tentatives == 2,
+        "un interblocage était attendu (tentatives de la clôture : {tentatives}, W victime : {w_victime})"
+    );
 }
