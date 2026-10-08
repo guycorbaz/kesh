@@ -56,7 +56,7 @@ test.describe('Page exercices — affichage', () => {
 });
 
 test.describe('Page exercices — création + clôture', () => {
-	test('crée un exercice 2031, le renomme puis le clôture', async ({ page }) => {
+	test('crée un exercice 2031, le renomme, puis clôture les exercices dans l’ordre', async ({ page }) => {
 		// Reset DB déjà appliqué via test.beforeEach (Code Review Pass 1 F16).
 		await goToFiscalYears(page);
 
@@ -79,15 +79,30 @@ test.describe('Page exercices — création + clôture', () => {
 		await page.getByRole('button', { name: 'Enregistrer' }).click();
 		await expect(page.locator('tr', { hasText: 'FY 2031' })).toBeVisible({ timeout: 5000 });
 
-		// Clôturer.
+		// Story 15-12a (#543) — les exercices se clôturent DANS L'ORDRE : 2031
+		// est précédé de l'exercice seedé, ouvert. Son bouton « Clôturer » est
+		// désactivé, et son `title` nomme l'exercice à clôturer d'abord — le nom
+		// COMPLET du seed (`test_fixtures.rs`, `scripts/seed-dev-db.sql`).
 		const rowFy = page.locator('tr', { hasText: 'FY 2031' }).first();
-		await rowFy.getByRole('button', { name: /Clôturer/ }).click();
+		const closeFy = rowFy.locator('[data-testid^="fiscal-year-close-"]');
+		await expect(closeFy).toBeDisabled();
+		await expect(closeFy).toHaveAttribute('title', /« Exercice CI 2020-2030 »/);
+
+		// Clôturer d'abord l'exercice seedé.
+		const rowSeed = page.locator('tr', { hasText: 'Exercice CI 2020-2030' }).first();
+		await rowSeed.locator('[data-testid^="fiscal-year-close-"]').click();
 		// KF-047 (#344) — ⚠️ ce sélecteur visait `/définitivement/`, un mot qui
 		// n'existe PLUS dans ce dialogue : le libellé de confirmation dit « Clôturer »,
 		// et le corps explique qu'un administrateur peut rouvrir l'exercice. Le texte
 		// a donc été corrigé — **la clôture n'est pas définitive** — et le test est
 		// resté sur l'ancien mot. C'est l'angle mort de KF-043 (#326) : un sélecteur
 		// figé sur un libellé ne survit pas à sa correction. Visé par `data-testid`.
+		await page.getByTestId('fiscal-year-close-confirm').click();
+		await expect(rowSeed.getByText(/Clôturé/)).toBeVisible({ timeout: 5000 });
+
+		// Puis 2031, désormais permis.
+		await expect(closeFy).toBeEnabled({ timeout: 5000 });
+		await closeFy.click();
 		await page.getByTestId('fiscal-year-close-confirm').click();
 
 		// Le statut passe à Clôturé et le bouton Clôturer disparaît.
