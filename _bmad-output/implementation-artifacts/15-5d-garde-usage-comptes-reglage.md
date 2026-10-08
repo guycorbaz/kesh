@@ -1381,6 +1381,31 @@ registre et `sprint-status.yaml`) :
 
 **Choix consignés** : C-15-5d-1 à C-15-5d-4 (`epic-15-choix-autonomes.md`).
 
+**Revue de code P1 — remédiation** (Claude Opus 5.5, worktree `/home/gcorbaz/devel/kesh-15-5d`,
+`CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-15-5d/target`, bases `kesh_155d` et `kesh_e2e_155d`). Commit de code
+`a8bab77b` ; aucun commit sur `origin/main` depuis `ec675288` (`git fetch` le 2026-10-08) : rebase sans objet.
+- *`EXPLAIN` de la requête épinglée* (`kesh_155d`, B-1, C-15-5d-5) : `SELECT id, number, active, postable FROM accounts
+  FORCE INDEX (PRIMARY) WHERE company_id = 1 AND id IN (2, 3) ORDER BY id LOCK IN SHARE MODE` → `range` sur `PRIMARY`,
+  `key_len` 8, *Using where*, aucun `filesort` ; un seul identifiant → `const`. Index secondaires de `accounts` relevés :
+  `uq_accounts_company_number` (`company_id`, `number`), `uq_accounts_company_singleton_role`, `fk_accounts_parent`.
+- *Tests neufs* (périmètre `43205b2c` → `a8bab77b`) : **2** — `archived_account_wins_over_a_non_postable_one`
+  (`invoices_validate_vat.rs`, priorité C49 en mélange) et `mode_purchase_lock_is_shared`
+  (`supplier_invoices_repository.rs`, bloqueuse lisant `name`, montage vérifié par sondes). Gate 2854 → **2856**.
+- *Mutations* (gate ciblé `test(garde_usage_comptes_reglage) | test(place_3)`, 19 tests ; fichier restauré par copie
+  puis `touch`) : M15 `check_written` qui nomme les non imputables avant de refuser l'inactif → priorité en mélange
+  **rouge** ; M16 accesseur en `FOR UPDATE` → mode 4, mode d'achat, places 1 et 2 **rouges** ; M17 `FORCE INDEX` retiré
+  → places 1 et 2 **rouges** (par leur motif de requête, non par un verrou d'intervalle — C-15-5d-5).
+- *Manuels* : PDF régénérés (`make -C docs/manual fr`, 0 référence indéfinie), aplatis : « L'avoir, lui, n'est pas
+  soumis à ce contrôle, et c'est voulu » présent (utilisateur) ; « configuration requise »). L'usage côté comptable »
+  contigu (administrateur). Brochure non modifiée.
+- *Gates au commit de code `a8bab77b`* : bases remises à zéro (`DROP`/`CREATE`, migrations, seed sur `kesh_155d`),
+  `wait-kesh.sh` ; **`scripts/test-fast.sh`** : **2856 / 2856, 4 ignorés**, 121 s ; frontend : `check` 0 erreur (27
+  avertissements), `lint-i18n-ownership` PASS, **`test:unit` 112 fichiers, 1091 / 1091**, `build` vert ; **E2E
+  complet** (port 3006, base `kesh_e2e_155d`, secrets générés, `KESH_COOKIE_SECURE=false`, SMTP factices,
+  inbox/documents de session, runner `KESH_TEST_MODE=true`) : **247 passés, 7 échecs, 19 `skip`** — les 7 KF-029 de
+  `docs/testing.md` (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
+  `:77`, `:150`), aucun hors liste. Journaux : `scratchpad/gate155d-p1.log`, `front155d-p1.log`, `e2e155d/run-p1.log`.
+
 ### File List
 
 - `CHANGELOG.md`
@@ -1819,3 +1844,23 @@ registre et `sprint-status.yaml`) :
   corrigée au plus près de l'intention (C-15-5d-1). 20 tests Rust et 5 Vitest neufs ; 14 mutations backend et 5
   frontend, toutes rouges. Gates au commit de code : backend 2854/2854 (4 ignorés), Vitest 1091/1091, E2E 247 passés /
   7 KF-029. Choix C-15-5d-1 à C-15-5d-4. Statut → `review`.
+- **2026-10-08 — Revue de code P1** (Sonnet ×3, lentilles B, E, A ; prompt `15-5d-review-prompt-p1.md` ; rapports
+  `target/gate-logs/15-5d-review-p1-{B,E,A}.md`) : **0 CRITICAL, 0 HIGH, 1 MEDIUM, 10 LOW** (B 3 LOW ; E 1 MEDIUM, 5
+  LOW ; A 2 LOW). Remédiation `a8bab77b` (Claude Opus 5.5) :
+  | Finding | Sév. | Traitement |
+  |---|---|---|
+  | E1 | MEDIUM | `user-manual.tex`, paragraphe « Un compte des réglages devenu non imputable » : l'avoir n'est pas soumis au contrôle, raison (« une facture émise doit rester annulable ») et renvoi ; PDF régénéré et contrôlé aplati. L'encadré *Rôles des comptes* le disait déjà (« Deux exceptions, voulues ») — la preuve du rapport sur ce point est inexacte, le manque du paragraphe de la validation réel |
+  | B-1 | LOW | `FORCE INDEX (PRIMARY)` sur la requête verrouillante ; `EXPLAIN` au Dev Agent Record ; motifs `ACCESSEUR` des tests de place alignés (C-15-5d-5) |
+  | B-2 | LOW | doc-comments distincts réponse / requête (`invoices.types.ts`) |
+  | B-3 | LOW | doc-comments de `validate_invoice` et `supplier_invoices::create_in_tx` : la vente n'a pas de cycle parce que les deux verrous sont partagés, non par le type ; l'achat écrit le cycle d'un compte désigné retypé en charge, angle mort couvert par le rejeu |
+  | A-1 | LOW | la phrase de renvoi « Décompte TVA » revient au paragraphe des comptes TVA ; PDF régénéré |
+  | E2 | LOW | test de priorité C49 en mélange ; test de mode partagé côté achat ; archivé / étranger / deux rôles côté achat acceptés (accesseur commun couvert — C-15-5d-6) |
+  | E3, E6, A-2 | LOW | acceptés (C-15-5d-6) |
+  | E4 | LOW | angle mort écrit au doc-comment de l'accesseur (faux refus sûr d'un compte créé et désigné après l'instantané) |
+  | E5 | LOW | dépendance écrite : le rejeu de la complétion d'import relève de la 15-5e2 (C-15-5d-6) |
+  Propagation : `grep -rniE "disjoint"` sur `crates/*/src` et `docs/` — plus de site affirmant la disjonction par
+  type hors la phrase réécrite de l'achat ; reste la Dev Note de la fiche (§ ordre des verrous, texte de spécification
+  historique, non réécrit). Gates au commit de code `a8bab77b` : backend 2856/2856, Vitest 1091/1091, E2E 247 / 7
+  KF-029. Incident de procédure signalé par la lentille E (`git checkout --detach`, rétabli, sans effet). Statut
+  maintenu à `review` : **passe ciblée P2** (une lentille, Haiku, D6) à lancer sur `a8bab77b` — la remédiation touche du
+  code de production (une clause SQL, des doc-comments). Choix C-15-5d-5, C-15-5d-6.
