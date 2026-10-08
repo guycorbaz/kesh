@@ -657,6 +657,307 @@ l'import (#458–#461).
   `switch` sur ce code, un test n'y attraperait rien de plus qu'une lecture.
 - **Réversible** : oui.
 
+## C42 — 15-5d : révision de C39 — l'avoir n'appelle pas les générateurs de la garde
+
+- **Contexte** : findings R2-2 (MEDIUM) et F2-3 (LOW) de la validation P2 de la 15-5d. C39 écrit
+  « L'avoir, autre appelant, ignore les rôles (C35) » ; l'appelant cité (`credit_notes.rs:933`) est un
+  test de 16-1a, dans `mod tests` (ouvert à `:743`). L'avoir de production passe par son propre
+  générateur, `generate_credit_note_journal_lines` (`credit_notes.rs:187`, appelé à `:507-512`).
+- **Retenu** : C39 tient pour son mécanisme (les rôles rendus par les deux générateurs de la garde) ;
+  sa phrase sur l'avoir est remplacée par : l'avoir **n'appelle pas** ces générateurs, il a le sien,
+  que la story ne touche pas — c'est la forme exacte de son exemption (C35). Ventilation des 25
+  occurrences écrite à l'AC1 : 3 définitions, 1 transmission, 2 appels de production, 19 tests.
+- **Écartée** : faire rendre des rôles au générateur de l'avoir — hors périmètre (C35 : #473, #523,
+  #525).
+- **Réversible** : oui (texte de fiche).
+
+## C43 — 15-5d : les comptes de réglage verrouillés avant l'exercice
+
+- **Contexte** : finding F2-1 (HIGH) = R2-1 (MEDIUM) de la validation P2 de la 15-5d. La garde,
+  placée entre la génération et `create_in_tx`, verrouillait la créance et la TVA due **après**
+  l'exercice ; le solde du reste verrouille la TVA due **avant** lui
+  (`invoice_settlements_write.rs:487-491`) → cycle (1213, 500). L'ordre canonique écrit à
+  `invoices.rs:1916-1925` met `accounts` (1 bis) avant `fiscal_years` (2) ; les règlements par compte
+  interne le suivent aussi. Constat voisin, F2-8 : `supplier_invoices::create_in_tx` verrouille
+  l'exercice (`:353`) avant les réglages (`:358-359`), à l'inverse de `validate_invoice`.
+- **Retenu** (décision de l'orchestrateur) : l'accesseur en **deux temps** — verrouiller **tous** les
+  comptes candidats du flux (vente : créance et TVA due ; achat : créanciers et TVA récupérable),
+  une requête `ORDER BY id FOR UPDATE`, **avant** `find_open_covering_date` (après le compte d'arrondi
+  côté vente, après les comptes de charge côté achat), sans refuser ; **contrôler** après la
+  génération les seuls rôles écrits (C39 inchangé), sur l'instantané verrouillé. Côté achat, les
+  réglages sont chargés **avant la boucle des comptes de charge** : ordre réglages → comptes →
+  exercice, celui de la validation ; cela ferme l'inversion F2-8 (et sa variante réglages / comptes) —
+  aucune KF à ouvrir. Les refus gardent leur priorité (l'exercice précède le refus de la garde) ; un
+  test de non-interblocage à deux connexions (`attendre_une_requete_en_cours`) et un test d'ordre
+  « exercice absent + compte non imputable » le figent.
+- **Écartées** : (a) lecture non verrouillante (patron `validate_line_revenue_accounts_in_tx`) —
+  rouvre la course que le verrou ferme, sur des comptes que le solde du reste verrouille déjà ;
+  (b) générer les lignes et garder avant l'exercice — déplace des refus (la garde passerait avant
+  `FiscalYearInvalid`, et l'ordre des refus que les AC figent changerait) ; (c) laisser l'inversion F2-8 à une KF — la correction la ferme sans coût propre.
+- **Réversible** : oui (code non écrit).
+
+## C44 — 15-5d : `DesignatedRole`, type neuf plutôt qu'`AccountRole`
+
+- **Contexte** : finding F2-4 (LOW) de la validation P2 de la 15-5d — `AccountRole`
+  (`crates/kesh-db/src/entities/account.rs:90-102`) porte déjà `Receivable`, `Payable`,
+  `VatRecoverable`, `VatPayable` ; la règle DRY veut un type neuf justifié.
+- **Retenu** : `DesignatedRole` à quatre variantes. Il désigne un **champ des réglages** effectivement
+  écrit, non le rôle que le plan donne au compte (un compte désigné ne porte pas forcément ce rôle) ;
+  ses quatre variantes se traduisent en champs par un `match` exhaustif, sans bras mort pour les neuf
+  autres rôles ; `AccountRole` ne dérive pas `Ord`, qu'exige le `BTreeSet`.
+- **Écartée** : réemployer `AccountRole` — bras `_ =>` ou `unreachable!()` pour neuf variantes
+  (proscrit par le garde-fou défensif du `CLAUDE.md`), et confusion de deux notions.
+- **Réversible** : oui.
+
+## C45 — 15-5d : les contournements E2E du compte créanciers restent (révise C34)
+
+- **Contexte** : findings R2-3 (MEDIUM), F2-2 (MEDIUM) et R2-4 (LOW) de la validation P2 de la 15-5d.
+  C34 prévoyait leur retrait « sur constat (specs rejouées sans eux sur base fraîche) », sur la
+  prémisse que le seed E2E désigne le compte créanciers. Il ne le fait pas : les presets
+  `with-company` / `post-onboarding` appellent `seed_accounting_company`
+  (`test_endpoints.rs:184`), dont l'`INSERT` (`test_fixtures.rs:156-170`) ne pose pas
+  `default_payable_account_id`. Et les contournements sont **trois**, non deux
+  (`supplier-invoices.spec.ts:86` en plus).
+- **Retenu** : les trois restent ; leur commentaire est réécrit (« le seed `with-company` ne désigne
+  pas le compte créanciers ») ; inventaire par la commande
+  `grep -rn "defaultPayableAccountId == null" frontend/tests/e2e`. La suite E2E complète reste le
+  juge de non-régression.
+- **Écartée** : étendre `seed_accounting_company` au compte créanciers — rayon d'impact sur tous les
+  tests `kesh-db` / `kesh-api` qui l'emploient, sans gain pour la garde.
+- **Réversible** : oui.
+
+## C46 — 15-5d : le dialogue de validation se ferme sur `ACCOUNT_NOT_POSTABLE`
+
+- **Contexte** : finding F2-6 (LOW) de la validation P2 de la 15-5d — l'écran de validation ferme le
+  dialogue pour les « erreurs non-retryables » (`invoices/[id]/+page.svelte:428-434` :
+  `FISCAL_YEAR_INVALID`, `CONFIGURATION_REQUIRED`) ; `ACCOUNT_NOT_POSTABLE` n'y est pas.
+- **Retenu** : le code est ajouté à la liste. Qu'il vienne d'un compte de réglage (15-5d) ou d'un
+  compte de produit d'une ligne (15-5a), réessayer depuis le dialogue rend le même refus ; le message
+  reste affiché par `notifyError`. Le test d'écran de l'AC7 l'assère.
+- **Écartée** : le laisser ouvert — un bouton « Valider » qui ne peut que rééchouer.
+- **Réversible** : oui.
+
+## C47 — 15-5d : le signal de découpage D5 (MEDIUM → HIGH, recyclé) ne la découpe pas
+
+- **Contexte** : à la passe P2 de la 15-5d, la sévérité est remontée (HIGH, ordre des verrous), et le défaut venait de
+  la place de la garde fixée par la remédiation P4 de la 15-5b — c'est le « recyclage » que vise l'amendement D5 du
+  CLAUDE.md, qui appelle normalement un découpage.
+- **Retenu (orchestrateur)** : pas de découpage. La 15-5d porte une seule règle métier (la garde à l'usage) et l'écran
+  qui la rend praticable ; la découper séparerait la garde de son ordre de verrouillage, qui est précisément l'objet du
+  défaut. Le défaut a été corrigé à la racine (verrou avant l'exercice, conforme à l'ordre canonique écrit à
+  `invoices.rs:1916-1925`) et une passe complète P3 suit.
+- **Écartée** : découper en « garde » / « écran » — l'écran n'est pour rien dans le défaut.
+- **Réversible** : oui ; si la P3 recycle encore, découpage.
+
+## C48 — 15-5d : « l'arrondi d'abord » — le règlement client et le solde du reste réordonnés (révise C43)
+
+- **Contexte** : findings R3-1 (MEDIUM) = F3-1 (MEDIUM) de la validation P3 de la 15-5d. C43 affirmait
+  que « les règlements par compte interne » suivent l'ordre canonique. Le règlement client ne le suit
+  pas pour la paire de comptes : il verrouille le compte interne (`invoice_settlements_write.rs:157`),
+  puis le compte d'arrondi en cas d'écart (`:181-191`), puis l'exercice (`:200`) ; la validation, après
+  la story, prend l'arrondi (`invoices.rs:2065`) puis la créance et la TVA due. Le compte interne
+  pouvant être n'importe quel compte actif et imputable — créance ou TVA due comprises —, la garde
+  formait un cycle neuf (1213, 500).
+- **Retenu** (décision de l'orchestrateur) : le règlement client par compte interne calcule le
+  classement du paiement (`amount_due`, `classify_payment`, lectures pures) avant l'étape (3), prend
+  le compte d'arrondi (cas `SettlesWithRounding`) **avant** le compte interne, puis l'exercice ; le
+  virement est inchangé (il ne verrouille que `bank_accounts`). Seul changement de priorité des
+  refus : le compte d'arrondi inutilisable passe avant le compte interne invalide ; le trop-perçu
+  reste rendu après le compte interne. **Ajout de la remédiation** : ce réordonnancement crée à son
+  tour un cycle avec le **solde du reste** (nature `:433` puis arrondi `:475`) quand le compte interne
+  choisi est le compte de la nature ; le solde prend donc lui aussi l'arrondi **avant** la nature
+  (ses deux conditions — nature `Rounding`, reste hors centime — sont connues dès l'étape (2)). Règle
+  écrite : parmi les comptes, l'arrondi d'abord. Un test de non-interblocage règlement ↔ validation
+  (compte interne = TVA due), avec une sonde `FOR UPDATE NOWAIT` qui rend le test indépendant de
+  l'ordre d'attribution des verrous ; tests d'ordre des refus des deux flux ; mutation.
+- **Restent, écrits et non déclarés absents** : le lot de rapprochement (exercice puis arrondi, #536,
+  finding F3-3) ; l'avoir d'une facture arrondie (exercice `credit_notes.rs:370`, puis arrondi `:525`
+  — même inversion, préexistante, relevée par le grep de la remédiation, **à tracer**) ; un compte de
+  nature désigné sur la créance ou la TVA due (angle mort assumé).
+- **Écartées** : (a) déclarer le cycle comme angle mort assumé (configuration atypique) — l'API la
+  permet, la conséquence est un 500, et le correctif ne coûte qu'un déplacement ; (b) réordonner le
+  seul règlement — ouvre le cycle symétrique avec le solde du reste ; (c) faire verrouiller par le
+  solde la nature et la TVA due dans une seule requête `ORDER BY id` — ne règle rien pour l'arrondi
+  et élargit la story.
+- **Réversible** : oui (code non écrit).
+
+## C49 — 15-5d : l'accesseur refuse lui-même un compte désigné absent ou inactif
+
+- **Contexte** : finding F3-4 (LOW) de la validation P3 de la 15-5d. L'accesseur laissait un compte
+  archivé au contrôle de `create_in_tx` (`journal_entries.rs:96-99`), lecture non verrouillante qui,
+  sous REPEATABLE READ, lit l'instantané ouvert avant le verrou : un compte archivé entre les deux y
+  paraît actif, et l'écriture passe. L'argument (a) de C43 (« rouvre la course que le verrou ferme »)
+  n'était donc vrai qu'à moitié.
+- **Retenu** : au contrôle, sur la ligne fraîche tenue sous verrou, l'accesseur rend d'abord
+  `InactiveOrInvalidAccounts` pour un compte d'un rôle écrit absent de l'instantané ou inactif, puis
+  `DesignatedAccountsNotPostable` pour les comptes actifs non imputables. Même variante et même code
+  qu'aujourd'hui pour le premier cas ; le contrat de la 15-5a (ne nommer qu'un compte actif de la
+  société) est tenu.
+- **Écartée** : écrire la course comme limite (fenêtre de quelques millisecondes) — le verrou tient
+  déjà la ligne, la refuser ne coûte qu'une condition.
+- **Limite écrite** : le test du compte archivé prouve le résultat, non qui le produit ; le refus de
+  l'accesseur est vérifié à la lecture.
+- **Réversible** : oui.
+
+## C50 — 15-5d : la signature des générateurs — `GeneratedLines { lines, roles }`
+
+- **Contexte** : finding F3-6 (LOW) de la validation P3 de la 15-5d — « les rôles rendus avec les
+  lignes » laissait au dev le choix du type, dont dépendent 19 tests.
+- **Retenu** : `struct GeneratedLines { pub lines: Vec<NewJournalEntryLine>, pub roles: BTreeSet<DesignatedRole> }`,
+  visible dans `crate::repositories` ; vente : `Result<GeneratedLines, DbError>` ; achat :
+  `Result<(GeneratedLines, Decimal), DbError>`. Les 19 tests lisent `.lines`, sans autre changement.
+- **Écartées** : un triplet (lisibilité) ; une fonction compagnon qui recalculerait les rôles (DRY,
+  C39).
+- **Réversible** : oui.
+
+## C51 — 15-5d : un identifiant d'une autre société dans le verrou des comptes désignés
+
+- **Contexte** : finding F3-5 (LOW) de la validation P3 de la 15-5d. Le dépôt a mesuré qu'un
+  `FOR UPDATE` par clé primaire verrouille la ligne d'une autre société avant que le filtre
+  `company_id` ne l'écarte (`opening_complement.rs:431-440`), et qu'un plan par `filesort` verrouille
+  tout ce qu'il parcourt (`:274-288`).
+- **Retenu** : un test pose un compte d'une autre société dans les réglages (par SQL) et vérifie, par
+  une seconde connexion `FOR UPDATE NOWAIT`, que l'accesseur ne le verrouille pas ; si le test montre
+  le contraire, l'accesseur prend le patron `owned_account_ids` (identifiants de la société lus sans
+  verrou, puis `FOR UPDATE` sur eux seuls). L'`EXPLAIN` de la requête est relevé au Dev Agent Record.
+- **Écartée** : filtrer d'office — les identifiants viennent des réglages, gardés à la désignation
+  par la 15-5b ; le filtre ne s'impose que si la mesure le demande.
+- **Réversible** : oui.
+
+## C52 — 15-5d : la clause de C47 joue, l'ordre des verrous sort en 15-5e
+
+- **Contexte** : C47 avait écarté le découpage de la 15-5d « sauf si la P3 recycle encore ». La P3 a recyclé en partie : F3-2 (aucun test du changement d'ordre côté achat) naît de la remédiation P2, et la remédiation P3 a dû étendre le réordonnancement à deux flux de production de plus (règlement client par compte interne, solde du reste — C48).
+- **Retenu (orchestrateur)** : la 15-5d est découpée. **15-5e-ordre-des-verrous-reglements** porte le réalignement des flux de règlement sur l'ordre canonique (arrondi → comptes → exercice) — règlement client par compte interne, solde du reste, règlement et saisie fournisseur — avec ses tests de non-interblocage ; elle passe **avant** la 15-5d, qui garde la garde à l'usage, son accesseur et l'écran du compte créanciers, et suppose l'ordre déjà en place.
+- **Écartée** : poursuivre sans découper — C47 l'avait promis, et la story n'a cessé de grossir à chaque remédiation.
+- **Réversible** : oui (refusionner les deux fiches).
+
+## C53 — 15-5e / 15-5d : la ligne de partage du découpage C52
+
+- **Contexte** : C52 sort l'ordre des verrous de la 15-5d. Trois éléments n'ont pas de place évidente :
+  les tests de non-interblocage (deux d'entre eux n'existent que par le verrou de l'accesseur, que la
+  15-5d crée), le commentaire « 5 bis » du solde du reste (sa réécriture affirmait que la validation
+  verrouille la TVA due, ce qui n'est vrai qu'après la 15-5d) et la phrase du doc-comment canonique de
+  `validate_invoice` (`invoices.rs:1920-1922`, « Aucun chemin ne verrouille `accounts` avant `invoices`
+  ou `fiscal_years` »), fausse aujourd'hui : le règlement client et le solde du reste prennent leurs
+  comptes **avant** l'exercice, comme l'ordre canonique le prescrit.
+- **Retenu** :
+  - **15-5e** réordonne les flux **existants** — règlement client par compte interne (arrondi avant
+    compte interne), solde du reste (arrondi avant nature), saisie fournisseur (réglages après projet
+    et fournisseur, avant les comptes de charge) — et porte les tests qui figent **ces** ordres, chacun
+    par une sonde `FOR UPDATE NOWAIT` décisive : l'ancien test 3 de la 15-5d (règlement client ↔
+    validation), et **deux sondes neuves**, solde du reste (arrondi tenu, compte de la nature libre) et
+    saisie fournisseur (réglages tenus, compte de charge et exercice libres). Elle réécrit la phrase
+    fausse du doc-comment canonique et le commentaire « 5 bis » **sans** y prêter à la validation un
+    verrou qu'elle n'a pas encore. Elle porte une ligne de CHANGELOG (rubrique « Modifié ») pour le seul
+    changement visible : la priorité des refus du règlement par compte interne et du solde du reste.
+  - **15-5d** garde les tests de non-interblocage 1 (solde du reste ↔ validation) et 2 (règlement
+    fournisseur ↔ saisie fournisseur), qui figent la **place de son accesseur** par rapport à
+    l'exercice et rougissent sous sa mutation, et gagne un **test 3 neuf** — une sonde : la
+    validation tient l'arrondi sans tenir encore la créance ni la TVA due —, seul à rougir si
+    l'accesseur passe **avant** l'arrondi (la sonde du test de la 15-5e porte sur le règlement et ne
+    voit pas cette mutation) ; elle complète le doc-comment canonique (créance et TVA due à l'étape 1 bis) et le
+    commentaire « 5 bis » (la validation verrouille désormais la TVA due avant l'exercice), et compte le
+    test de la 15-5e comme non-régression.
+  - Fait relevé au découpage, **raisonné et non mesuré** : deux cycles existent **dès aujourd'hui**,
+    sans la garde — règlement client avec écart sur un compte interne = TVA due (TVA due, puis arrondi)
+    contre solde du reste à escompte d'un reste hors centime (arrondi, puis TVA due) ; validation
+    (réglages `invoices.rs:2006`, puis exercice `:2172`) contre saisie fournisseur (exercice
+    `supplier_invoices.rs:353`, puis réglages `:358-359`, finding F2-8 de la P2 de la 15-5d). La 15-5e
+    les ferme ; elle n'est donc pas un simple préalable de la 15-5d.
+- **Écartées** : (a) les trois tests de non-interblocage dans la 15-5e — les tests 1 et 2 y seraient
+  verts par construction (sans l'accesseur, aucune tâche n'attend sur les comptes désignés) : des tests
+  qui ne prouvent rien ; (b) les sondes neuves omises : côté achat, le déplacement des réglages ne change
+  aucun refus, rien d'autre ne le figerait ; côté solde, l'ordre des refus ne fige l'ordre des verrous
+  que tant que verrou et refus vivent dans le même appel (`write_off_account_for_write`) — un accesseur
+  en deux temps, comme celui de la 15-5d, les découplerait sans que le test d'ordre des refus rougisse ;
+  (c) faire écrire à la 15-5e le commentaire final, validation comprise — il serait faux entre les deux merges.
+- **Réversible** : oui (fiches seulement, code non écrit).
+
+## C54 — 15-5e : la défense contre l'interblocage est le rejeu, pas un ordre parfait des verrous
+
+- **Contexte** : la validation P1 de la 15-5e (lentille F, F1-1 HIGH) établit que **tout** flux d'écriture reprend un verrou partagé sur `accounts` APRÈS l'exercice, par la clé étrangère `fk_jel_account` à l'insertion des lignes. Aucun ordre « comptes avant exercice » ne peut donc être tenu de bout en bout ; chaque passe de validation des 15-5d, 15-5e, 15-6a et 15-6b a trouvé un cycle de plus, et la recherche d'un ordre global sans cycle ne converge pas. Deux issues ouvertes décrivent précisément l'absence de rejeu : #463 (annulation d'un règlement client), #491 (règlement manuel contre rapprochement).
+- **Retenu (orchestrateur)** : la 15-5e change d'objet. Elle devient **le rejeu sur interblocage (erreur 1213) de tous les flux d'écriture qui ne l'ont pas** — règlement client et fournisseur, annulation de règlement, avoir, validation de facture, saisie fournisseur, lots, rapprochement manuel et ventilé —, sur le patron existant `kesh_db::retry::retry_with` (déjà en place sur le solde du reste, l'onboarding, les soldes de départ et l'acceptation du rapprochement) ; un inventaire fermé des routes d'écriture, chacune rejouée ou exemptée avec raison ; un test qui prouve le prédicat sur une vraie 1213. Elle ferme **#463** et **#491**, et **#536** si le rejeu la couvre. Les réordonnancements simples déjà spécifiés qui ne coûtent rien sont gardés ; les affirmations d'absence de cycle sont retirées partout, et le doc-comment canonique dit la règle vraie : l'ordre réduit la fréquence des interblocages, le rejeu les rend invisibles à l'utilisateur.
+- **Conséquence pour les 15-5d, 15-6a, 15-6b** : leurs verrous restent (ils ferment des courses de lecture, ce qui est leur vrai rôle) ; elles cessent d'affirmer l'absence de cycle et renvoient au rejeu de la 15-5e.
+- **Écartée** : continuer à chercher un ordre global sans cycle — impossible tant que la clé étrangère reprend le compte après l'exercice, et chaque passe en trouve un nouveau.
+- **Réversible** : oui.
+
+## C55 — 15-5e : ce qui reste de l'ordre des verrous après C54
+
+- **Contexte** : C54 garde « les réordonnancements simples déjà spécifiés qui ne coûtent rien ». La fiche validée en P1 en portait trois — règlement client par compte interne : l'arrondi avant le compte interne (ancien AC2) ; solde du reste : l'arrondi avant la nature (ancien AC3) ; saisie fournisseur : les réglages avant les comptes de charge (ancien AC4) — et la P1 demandait de trier les comptes de charge par identifiant (R1-3).
+- **Retenu** : garder **la seule avance des réglages de la saisie fournisseur** (un appel déplacé, aucun refus ne bouge ; ordre « réglages → exercice » commun avec la validation ; la ligne des réglages sérialise les saisies, F1-6 ; la 15-5d en a besoin pour verrouiller ses candidats avant l'exercice), placée entre la passe de forme et la passe des comptes de la 15-5a (F1-7). **Retirer** les anciens AC2 et AC3 : ils ne ferment aucune course de lecture, déplacent deux priorités de refus visibles de l'intégrateur, avancent le classement du paiement et coûtaient trois tests à sonde dont l'un ne prouvait rien (F1-4) ; le cycle qu'ils visaient sur la créance n'était d'ailleurs pas fermé (F1-1). **Ne pas trier** les comptes de charge : le seul cycle que le tri fermerait (deux saisies aux comptes croisés) est déjà sérialisé par la ligne des réglages, et celui qui reste (compte de charge = compte d'arrondi, contre un règlement par compte interne) ne dépend pas de cet ordre. Les commentaires faux (doc-comment canonique, « 5 bis », `write_off_invoice_handler`, module `retry.rs`, Pattern 5) sont réécrits pour dire la règle vraie, sans changer de code.
+- **Écartées** : tout garder (coût et refus déplacés pour un gain de fréquence que le rejeu rend invisible) ; tout retirer, avance des réglages comprise (casse la 15-5d) ; trier les comptes de charge (code sans effet sur un cycle réel).
+- **Réversible** : oui — les réordonnancements retirés restent décrits au Change Log de la 15-5e.
+
+## C56 — 15-5e : la forme du rejeu — deux enveloppes partagées, un registre des routes
+
+- **Contexte** : quatre routes rejouent déjà leurs écritures au journal, chacune en recopiant son `retry_with` ; dix-sept sont à rejouer ; la story exige un inventaire fermé, et touche plus de cinq modules (signal de la règle de découpage).
+- **Retenu** : `kesh_db::retry::retry_on_deadlock` (existante, inutilisée par les routes) pour les routes dont l'écriture est une fonction de dépôt qui possède sa transaction ; une enveloppe `AppError` neuve dans `kesh-api` pour les trois routes dont la transaction est ouverte dans le handler (extraites en fonctions « une tentative », patron `accept_once`) ; migration des trois sites existants à prédicat simple ; `post_accept` garde son prédicat élargi (1305) ; `onboarding::finalize`, qui n'écrit pas au journal, n'est pas touché. L'inventaire est gardé par un **registre testé** de toutes les routes mutantes (patron `audit_route_registry.rs`), qui vérifie aussi la présence de l'enveloppe dans le corps de chaque handler « rejoué ». Deux routes exemptées, raison écrite : l'import d'instance (`/admin/full-import`) et l'effacement de la démo (`/onboarding/reset`). **Dérogation de découpage** écrite à la fiche : le patron existe, la story en est le rollout mécanique, une découpe laisserait des routes non rejouées entre deux merges ; signal déclaré au Project Lead.
+- **Écartées** : rejouer dans les dépôts (les fonctions `_in_tx` ne possèdent pas la transaction) ; un rejeu générique par middleware Axum (le corps de requête est consommé, et le handler peut faire des relectures hors transaction qu'on ne veut pas rejouer) ; découper en story-zéro + rollout (le patron existe déjà).
+- **Réversible** : oui.
+
+## C57 — 15-5e : #536 fermée par le rejeu
+
+- **Contexte** : #536 (lot de rapprochement ↔ validation, exercice et arrondi pris en sens inverses) attend « l'ordre canonique, ou le rejeu sur interblocage ; un test à deux connexions ». L'acceptation rejoue déjà (#480) ; la validation, victime, rend 500. L'issue cite aussi l'avoir d'une facture arrondie (même inversion), qu'elle confie à la 15-6a.
+- **Retenu** : `closes #536` — la validation est rejouée, avec un test où elle est la victime d'une vraie 1213 ; les deux côtés deviennent invisibles à l'utilisateur. La création d'avoir est rejouée au même titre : la 15-6a n'a plus besoin de réordonner l'avoir pour #536 (signalé à l'orchestrateur ; fiche 15-6a non touchée ici).
+- **Écartée** : `refs #536` — le rejeu couvre tout ce que l'issue attend.
+- **Réversible** : oui.
+
+## C58 — 15-5e : le registre des routes rejouées est une seconde colonne du registre d'audit
+
+- **Contexte** : la validation P2 de la 15-5e (finding F2-3 MEDIUM) relève que la fiche prescrivait un registre neuf (`rejeu_route_registry.rs`) « sur le patron » d'`audit_route_registry.rs` : sans autre consigne, l'extracteur de routes (`extract_counted`), les deux volets `lib.rs` / `test_endpoints.rs` et la garde du troisième fichier auraient été recopiés, et toute route ajoutée aurait dû l'être dans deux registres (règle DRY). Arbitrage de l'orchestrateur : étendre le registre existant ou partager son extracteur — trancher.
+- **Retenu** : **une seconde colonne de statut** (`Rejouee` / `SansEcritureAuJournal` / `Exemptee`) dans `LIB_ROUTES` et `TEST_ENDPOINT_ROUTES` d'`audit_route_registry.rs`, plus deux tests dans le même fichier (présence d'une enveloppe dans le corps des handlers `Rejouee` ; partition recomptée : 21 / 4 / reste). Une route ajoutée s'examine une fois pour les deux propriétés ; les volets « absente du registre », « absente du code » et la garde du troisième fichier servent tels quels. Le doc-comment du module dit ce que la colonne n'établit pas (classification, atteinte du prédicat, angle mort de la victime sans écriture au journal).
+- **Écartée** : un module partagé sous `tests/common/` utilisé par deux registres — supprime la copie de l'extracteur, mais garde **deux listes** de routes à tenir, donc deux examens par route ajoutée et deux listes qui peuvent dériver.
+- **Réversible** : oui (fiche seulement ; au dev, scinder une colonne en fichier reste mécanique).
+
+## C59 — 15-5e : les rejeux sont journalisés au niveau `warn`, avec le nom de l'opération
+
+- **Contexte** : finding F2-8 (LOW) — `retry_with` journalise chaque rejeu en `debug` ; avec 21 routes rejouées, l'exploitant ne verrait plus jamais un interblocage, et la thèse de C54 (l'ordre des verrous réduit la fréquence) ne se mesurerait plus. Le serveur n'a pas de span de requête (aucun `TraceLayer`), donc un `warn` nu ne dirait pas quelle route.
+- **Retenu** : le `tracing::debug!` de `retry_with` passe à `warn!` ; chaque enveloppe prend un nom d'opération (`&'static str`) et exécute le rejeu dans un span qui le porte ; `post_accept` et `onboarding::finalize`, qui appellent `retry_with` directement, s'instrumentent de même.
+- **Écartées** : `info` (filtré par une configuration de production à `warn`) ; changer la signature de `retry_with` pour y passer le nom (touche tous les sites pour un gain nul face au span) ; un compteur de métriques (aucune infrastructure de métriques dans Kesh).
+- **Réversible** : oui (niveau de journal).
+
+## C60 — 15-5e : #484 (manuels « SERIALIZABLE ») fermée par la 15-5e
+
+- **Contexte** : finding F2-4 (MEDIUM) — `user-manual.tex:905` et `admin-manual.tex:885-886` affirment des transactions `SERIALIZABLE` qui n'existent pas (isolation `REPEATABLE READ`, verrous de ligne, contrainte d'unicité) ; c'est l'issue ouverte #484. Le relevé des manuels de l'AC6, une liste de mots sans `SERIALIZABLE`, ne pouvait pas le voir. Décision de l'orchestrateur : la 15-5e la ferme.
+- **Retenu** : `closes #484` ; les deux passages réécrits sur le mécanisme réel (compteur verrouillé, unicité, rejeu sur interblocage ; l'admin : `REPEATABLE READ` gardé, verrous de ligne et nommés, rejeu) ; le manuel admin gagne la consigne de laisser `innodb_deadlock_detect` à `ON` (finding F2-7) ; PDF régénérés et contrôlés aplatis ; relevé élargi (`SERIALIZABLE|isolation|concurren|simultan|en même temps|…`) trié occurrence par occurrence.
+- **Écartée** : laisser #484 à une story ultérieure — la 15-5e écrit précisément la règle que ces passages devraient décrire, et le CHANGELOG qu'elle ajoute contredirait sinon les manuels.
+- **Réversible** : oui.
+
+## C61 — 15-5e : découpage en 15-5e1 (socle du rejeu) et 15-5e2 (rollout)
+
+- **Contexte** : la validation P3 de la 15-5e (finding F3-2 MEDIUM) établit que la dérogation de découpage de C56 ne repose pas sur l'exception que la § *Règle de splitting préventif* prévoit (cycles Cargo, merges intermédiaires impossibles à tester) : « le patron existe » est contredit par l'AC2 (deux enveloppes, un changement de signature, la journalisation), et « des routes resteraient non rejouées entre deux merges » décrit l'état actuel, pas une impossibilité de tester. Décision de l'orchestrateur : découper selon le patron « story-zéro + rollout ».
+- **Retenu** : **15-5e1-socle-rejeu** — les deux enveloppes nommées, le paramètre `operation` et le `warn!`, le registre (seconde colonne d'`audit_route_registry.rs`), l'inventaire, les trois routes des issues (règlement client #491, annulation de règlement #463, validation #536) et leurs tests « route victime » ; `closes #463 #491`, `refs #536`. S'y ajoute ce que la 15-5d attend de l'ordre des verrous (C65) : doc-comment canonique de `validate_invoice`, avance des réglages de la saisie fournisseur, « 5 bis », module `retry.rs`, et la ligne du CHANGELOG (C64). **15-5e2-rejeu-des-autres-flux** — les 18 autres routes `Rejouee` (14 à rejouer, 3 migrées, `post_accept` inchangée), les commentaires d'ordre restants, l'inventaire au symptôme, le Pattern 5, les manuels (#484), le CHANGELOG étendu, `api-external` ; `closes #536 #484`. La 15-5e devient la fiche index (`split`). **Révise C56** sur deux points : la dérogation de découpage (écartée) et « deux routes exemptées » (quatre depuis C58 / la P2).
+- **Écartées** : (a) réécrire la dérogation sur le critère effectif de la règle — aucun cycle Cargo ni merge non testable ne la fonde ; (b) un troisième morceau pour la documentation (#484) — elle décrit le mécanisme complet, qui n'existe qu'après le rollout ; (c) laisser à la 15-5e2 le doc-comment canonique et l'avance des réglages — la 15-5d en dépendrait alors.
+- **Réversible** : oui (fiches seulement, code non écrit).
+
+## C62 — 15-5e1 : noms des enveloppes ; le nom d'opération est un champ de l'événement `warn`
+
+- **Contexte** : findings F3-1 et R3-3 (le volet (c) du registre cherche les enveloppes par leur nom, laissé « au choix du dev » pour l'enveloppe `AppError`, sans visibilité fixée) et F3-3 (C59 portait le nom d'opération par un span `info`, désactivé sous `RUST_LOG=warn` — la configuration même que C59 invoquait pour écarter `info` ; l'événement `warn` perdait alors son nom).
+- **Retenu** : `kesh_db::retry::retry_on_deadlock(operation, f)` et `retry_on_deadlock_with(operation, max_attempts, f)` ; module `crates/kesh-api/src/retry.rs` déclaré `pub mod retry;`, fonction `kesh_api::retry::retry_app_on_deadlock(operation, f)`, prédicat exposé `kesh_api::retry::is_app_deadlock(&AppError) -> bool`. `retry_with` gagne un premier paramètre `operation: &'static str`, porté par le `tracing::warn!` lui-même (champ `operation`). Conséquence assumée : les cinq sites directs de `retry_with` et les six appels de tests de `retry.rs` gagnent un nom dans la 15-5e1. **Révise C59** (le span est abandonné).
+- **Écartées** : `warn_span!` (un span reste un mécanisme de plus pour une seule donnée, et dépend du niveau du span et non de l'événement) ; une variante `retry_with_named` à côté de `retry_with` (deux fonctions pour un même rôle, contraire au DRY).
+- **Réversible** : oui.
+
+## C63 — 15-5e1 / 15-5e2 : statut transitoire `ARejouer`, volet (c) robuste, `retry_with` restreint
+
+- **Contexte** : le registre est posé par la 15-5e1 alors que quatorze routes qui écrivent au journal ne seront rejouées que par la 15-5e2 ; et le volet (c), textuel, laissait passer un handler sans enveloppe suivi du doc-comment d'une route qui la nomme (F3-1).
+- **Retenu** : un statut **`ARejouer("15-5e2")`** dans la 15-5e1 (partition 7 `Rejouee` / 14 `ARejouer` / 4 `Exemptee` / 90 `SansEcritureAuJournal` = 115), **retiré** par la 15-5e2 (21 / 4 / 90). Volet (c) : commentaires retirés avant le match, fenêtre coupée au premier attribut / doc-comment / item qui suit le corps, recherche de `nom(` ou `nom::<` ; ces précautions testées sur un source synthétique ; mutations sur plusieurs familles. `retry_with` accepté pour toute route `Rejouee` dans la 15-5e1 (quatre sites l'appellent), restreint à `post_accept` dans la 15-5e2.
+- **Écartées** : classer les quatorze routes `Rejouee` dès la 15-5e1 (le volet (c) rougirait) ou `SansEcritureAuJournal` (faux, et la 15-5e2 devrait reclasser sans garde) ; un analyseur syntaxique (`syn`) dans le test — dépendance de développement neuve pour un gain que les trois précautions et leur test donnent déjà.
+- **Réversible** : oui.
+
+## C64 — 15-5e1 / 15-5e2 : la ligne du CHANGELOG voyage avec les issues qu'elle ferme ; PDF de la brochure
+
+- **Contexte** : le découpage demandé plaçait le CHANGELOG dans la 15-5e2, alors que la 15-5e1 ferme #463 et #491. La règle d'inclusion du `CLAUDE.md` veut la documentation dans la PR qui motive le changement, et le précédent de l'Epic 24 (neuf livraisons absentes du CHANGELOG) montre ce que coûte un correctif publié sans sa ligne. Finding F3-9 : `make fr` régénère aussi la brochure, dont la source ne change pas.
+- **Retenu** : la 15-5e1 écrit la ligne « Corrigé » de ses trois routes (avec la réserve des trois tentatives, F3-9) ; la 15-5e2 l'étend aux autres opérations et ajoute la ligne #484. Après `make fr`, `marketing-brochure.pdf` est restauré (`git checkout`), seuls les PDF des deux manuels modifiés sont commités.
+- **Écartées** : tout le CHANGELOG en 15-5e2 (une release entre les deux merges publierait #463 et #491 sans ligne) ; commiter la brochure régénérée (octets changés sans texte changé, bruit dans l'historique des PDF).
+- **Réversible** : oui.
+
+## C65 — 15-5d : dépend de la 15-5e1 seule
+
+- **Contexte** : la 15-5d supposait « la 15-5e » en place : rejeu de la validation, de la saisie fournisseur et de la complétion d'import, avance des réglages de la saisie fournisseur, doc-comment canonique (étape (2 bis')), « 5 bis ». L'orchestrateur veut qu'elle ne dépende que du socle.
+- **Retenu** : la 15-5e1 porte le rejeu de la validation, l'avance des réglages, le doc-comment canonique et « 5 bis » ; la 15-5d dépend d'elle seule. Le rejeu de la saisie fournisseur et de la complétion d'import vient avec la 15-5e2, dans un ordre de merge libre : si la 15-5d merge avant, ces deux routes portent ses verrous sans rejeu jusqu'au merge de la 15-5e2 — une victime y rend 500 comme aujourd'hui (fenêtre de même nature que l'état actuel, pas une régression de nature). Écrit dans les 15-5e1, 15-5e2, 15-5d et l'index.
+- **Écartées** : (a) faire dépendre la 15-5d des deux sous-stories (contraire à la décision) ; (b) avancer en 15-5e1 le rejeu de la saisie fournisseur et de la complétion d'import — la seconde exige l'extraction d'une fonction « une tentative » à l'enveloppe `AppError`, c'est du rollout.
+- **Réversible** : oui.
+
 ## C-15-5b-1 — 15-5b (dev) : un helper `errorMessageOf` plutôt que sept copies du motif
 
 - **Contexte** : l'AC14 fait passer sept `catch` au motif `isApiError(e) ? e.message : (e instanceof

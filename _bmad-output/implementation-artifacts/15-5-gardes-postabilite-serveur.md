@@ -5,23 +5,29 @@
 split
 
 ⛔ **CORPS VIDÉ — cette fiche ne contient plus ni critères, ni tâches, ni inventaire.** Elle ne garde
-que les pointeurs vers ses quatre sous-stories et l'historique des passes qui ont conduit au découpage.
+que les pointeurs vers ses sous-stories (cinq, dont la 15-5e, elle-même découpée en 15-5e1 et 15-5e2 — choix C61) et l'historique des passes qui ont conduit au découpage.
 *(La définition du statut `split` l'impose ; précédents : 15-1, 17-2.)* La version complète d'avant
 découpage se lit au commit `428985c8`.
 
-## Les quatre sous-stories
+## Les sous-stories
 
 | | fiche | ce qu'elle porte | issues |
 |---|---|---|---|
 | **15-5a** | `15-5a-refus-non-imputable.md` | **Socle** : la variante `DbError::AccountsNotPostable` (newtype trié, non vide), le code `ACCOUNT_NOT_POSTABLE`, son message (4 locales, pluriel résolu côté serveur), sa conversion sur la saisie manuelle, l'écriture d'ouverture et les trois gardes de la 24-5 ; les tests qui figeaient l'ancien code ; l'ordre des causes ; le détail `rejected[{accountId, accountNumber}]` ; `docs/api-external.md` | `refs #427`, `refs #429` |
 | **15-5b** | `15-5b-gardes-surfaces-neuves.md` | **Rollout** : les gardes neuves — rapprochement manuel et ventilé, acceptation `split` et `rule`, `get_proposals`, création / modification / réactivation des règles, six réglages de facturation, compte comptable d'un compte bancaire ; le compte créanciers préservé (#521) ; les `catch` de l'écran des règles ; les `<select>` du compte bancaire ; les deux encadrés du manuel (désignation) | `closes #427`, `refs #429`, `closes #521` |
 | **15-5c** | `15-5c-rapprochement-libelles-et-manuel.md` | Les libellés traduits des refus par lot (`failed[]`) ; la réécriture du manuel du rapprochement (bouton *Modifier*, lot « atomique », manuel et éclatement, règles d'affectation, FAQ) | `closes #481`, `closes #492`, `closes #519` ; cite #526, #527, #529 |
-| **15-5d** | `15-5d-garde-usage-comptes-reglage.md` | La garde **à l'usage** des comptes de réglage (créance, TVA due, créanciers, TVA récupérable) à la validation d'une facture et à la saisie d'une facture fournisseur — variante `DesignatedAccountsNotPostable`, révision de la limite L2 de D-A0 ; le compte créanciers exposé à l'écran des réglages ; l'avoir exempté, raison écrite | `closes #429` |
+| **15-5e** | `15-5e-ordre-des-verrous-reglements.md` | **Index (`split`, choix C61)** — rejeu sur interblocage des flux d'écriture (réécrite selon C54), découpée après sa validation P3 en 15-5e1 et 15-5e2 ; historique des passes P1–P3 | — |
+| **15-5e1** | `15-5e1-socle-rejeu.md` | **Socle du rejeu** : inventaire fermé des routes qui écrivent au journal gravé dans le registre `audit_route_registry.rs` (seconde colonne, statut transitoire `ARejouer`) ; deux enveloppes nommées, nom d'opération dans le `warn!` ; les trois routes des issues (validation, règlement client, son annulation) et leurs tests « route victime » ; doc-comment canonique, avance des réglages de la saisie fournisseur, « 5 bis », module `retry.rs` ; ligne du CHANGELOG | `closes #463`, `closes #491` ; `refs #536`, `refs #429` |
+| **15-5e2** | `15-5e2-rejeu-des-autres-flux.md` | **Rollout du rejeu** : les 18 autres routes `Rejouee` (14 à rejouer, 3 migrées, `post_accept` inchangée) ; commentaires d'ordre restants, inventaire au symptôme, Pattern 5 ; `api-external` ; CHANGELOG étendu ; manuels (#484) | `closes #536`, `closes #484` |
+| **15-5d** | `15-5d-garde-usage-comptes-reglage.md` | La garde **à l'usage** des comptes de réglage (créance, TVA due, créanciers, TVA récupérable) à la validation d'une facture et à la saisie d'une facture fournisseur — variante `DesignatedAccountsNotPostable`, révision de la limite L2 de D-A0, accesseur placé dans l'ordre de la 15-5e ; le compte créanciers exposé à l'écran des réglages ; l'avoir exempté, raison écrite | `closes #429` |
 
-⚠️ **L'ordre n'est pas indifférent** : 15-5a → 15-5b → (15-5c, 15-5d). La 15-5b émet la variante que
-la 15-5a pose ; la 15-5c affiche le refus que la 15-5b émet dans `failed[]` et décrit le comportement
-des règles qu'elle fixe ; la 15-5d s'appuie sur l'AC19 et l'AC10 de la 15-5b. La 15-5c et la 15-5d
-sont **indépendantes** l'une de l'autre (seule la borne `sitesTotal` est commune). Chacune ne commence
+⚠️ **L'ordre n'est pas indifférent** : 15-5a → 15-5b → (15-5c, 15-5e1 → (15-5e2, 15-5d)). La 15-5b émet la
+variante que la 15-5a pose ; la 15-5c affiche le refus que la 15-5b émet dans `failed[]` et décrit le
+comportement des règles qu'elle fixe ; la 15-5e1 place un appel entre les deux passes que la 15-5a écrit et touche un fichier que la 15-5b
+réécrit ; la 15-5d s'appuie sur l'AC19 et l'AC10 de la 15-5b, et sur le rejeu de la validation et l'avance
+des réglages de la **15-5e1 seule** (choix C65) ; la 15-5e2 et la 15-5d se mergent dans un ordre libre.
+La 15-5c est **indépendante** des 15-5d, 15-5e1 et 15-5e2 (seule la borne `sitesTotal` est commune avec la
+15-5d). Chacune ne commence
 qu'après le merge de celles dont elle dépend.
 
 ## Pourquoi le découpage
@@ -75,6 +81,33 @@ passe P1 ont été appliquées **dans les deux fiches filles**, pas ici.
 | C36 | message du refus à l'usage | 15-5d |
 | C37 | clés `error-*` réutilisées | 15-5c |
 | C38 | échecs partiels toujours visibles, ligne désignée | 15-5c |
+| C39 | prédicat de la garde à l'usage : rôles rendus par le générateur (révisé par C42) | 15-5d |
+| C40 | un même compte désigné pour deux rôles est nommé une fois | 15-5d |
+| C41 | l'écran de validation prouvé par un test Vitest | 15-5d |
+| C42 | l'avoir n'appelle pas les générateurs de la garde | 15-5d |
+| C43 | ordre des verrous : comptes avant l'exercice, réglages de la saisie fournisseur avancés (révisé par C48) | 15-5d (place de l'accesseur), 15-5e (flux existants) |
+| C44 | `DesignatedRole`, type neuf | 15-5d |
+| C45 | contournements E2E du compte créanciers gardés (révise C34) | 15-5d |
+| C46 | le dialogue de validation se ferme sur `ACCOUNT_NOT_POSTABLE` | 15-5d |
+| C47 | signal de découpage de la P2 de la 15-5d : pas de découpage, sauf recyclage en P3 | 15-5d |
+| C48 | « l'arrondi d'abord » : règlement client et solde du reste réordonnés | 15-5e (depuis C52) |
+| C49 | l'accesseur refuse lui-même un compte absent ou inactif | 15-5d |
+| C50 | `GeneratedLines { lines, roles }` | 15-5d |
+| C51 | identifiant d'une autre société dans le verrou des comptes désignés | 15-5d |
+| C52 | cinquième sous-story 15-5e (l'ordre des verrous sort de la 15-5d) | 15-5d, 15-5e |
+| C53 | ligne de partage entre 15-5e et 15-5d (flux existants et leurs sondes ; place de l'accesseur et ses tests) | 15-5d, 15-5e |
+| C54 | la défense contre l'interblocage est le rejeu, pas un ordre parfait des verrous (orchestrateur) | 15-5e (réécrite), 15-5d |
+| C55 | ce qui reste de l'ordre des verrous : l'avance des réglages de la saisie fournisseur ; ni « l'arrondi d'abord », ni tri des comptes de charge | 15-5e |
+| C56 | forme du rejeu : deux enveloppes partagées, registre des routes, dérogation de découpage (révisée par C61) | 15-5e1, 15-5e2 |
+| C57 | #536 fermée par le rejeu | 15-5e1 (validation), 15-5e2 (avoir, `closes`) |
+| C58 | le registre des routes rejouées est une seconde colonne du registre d'audit | 15-5e1, 15-5e2 |
+| C59 | rejeux journalisés en `warn` avec le nom de l'opération (révisé par C62) | 15-5e1 |
+| C60 | #484 (manuels « SERIALIZABLE ») fermée | 15-5e2 |
+| C61 | découpage de la 15-5e en 15-5e1 (socle) et 15-5e2 (rollout) | 15-5e, 15-5e1, 15-5e2 |
+| C62 | noms des enveloppes ; nom d'opération en champ de l'événement | 15-5e1 |
+| C63 | statut transitoire `ARejouer`, volet (c) robuste, `retry_with` restreint | 15-5e1, 15-5e2 |
+| C64 | la ligne du CHANGELOG voyage avec les issues ; PDF de la brochure restauré | 15-5e1, 15-5e2 |
+| C65 | la 15-5d dépend de la 15-5e1 seule | 15-5e1, 15-5d |
 
 ## Change Log
 
@@ -133,3 +166,27 @@ passe P1 ont été appliquées **dans les deux fiches filles**, pas ici.
   porte `closes #429`, la 15-5b passe à `refs #429`. La 15-5c cite sans les corriger #526, #527 et
   #529. Choix C33 à C38 consignés. Signaux de la règle de découpage (amendement D5) déclarés au Project
   Lead dans le Change Log de chaque fiche.
+- 2026-10-08 — **Passes de validation P1 à P3 de la 15-5d** (Sonnet, Opus, Sonnet) : choix C39 à C51,
+  détail au Change Log de la fiche. Sur la condition posée par C47 (« si la P3 recycle encore,
+  découpage »), remplie en partie (F3-2 né de la remédiation P2, réordonnancement étendu à deux flux
+  de plus en P3), l'orchestrateur a **découpé une cinquième fois** (choix **C52**) : la **15-5e**
+  reprend le réalignement des flux de règlement sur l'ordre canonique des verrous, avec ses tests de
+  concurrence ; elle passe **avant** la 15-5d, qui garde la garde à l'usage, la place de son
+  accesseur et `closes #429`. Ligne de partage consignée en **C53**. Table des choix complétée de C39
+  à C53.
+- 2026-10-08 — **Validation P1 de la 15-5e, puis réécriture selon C54.** La lentille F a établi (F1-1,
+  HIGH) que l'insertion des lignes reprend les comptes par la clé étrangère `fk_jel_account` après
+  l'exercice : aucun ordre « comptes avant exercice » ne tient. L'orchestrateur a changé l'objet de la
+  15-5e (choix **C54**) : elle devient le **rejeu sur interblocage** de toutes les routes qui écrivent
+  au journal et ferme **#463**, **#491** et **#536** ; de l'ordre ne restent que l'avance des réglages
+  de la saisie fournisseur et des commentaires vrais (choix **C55** à **C57**). La 15-5d garde sa garde
+  et ses verrous ; ses affirmations d'absence de cycle sont retirées. Table des choix complétée de C54
+  à C57.
+- 2026-10-08 — **Validations P2 et P3 de la 15-5e, puis découpage.** P2 (Opus ×2) : 6 MEDIUM distincts,
+  12 LOW — registre partagé (**C58**), rejeux en `warn` (**C59**), #484 fermée (**C60**). P3 (Sonnet ×2) :
+  2 MEDIUM, 14 LOW ; F3-2 établit que la dérogation de découpage de la 15-5e ne reposait pas sur
+  l'exception de la règle → **découpage** (choix **C61**) en **15-5e1** (socle : enveloppes nommées,
+  registre, trois routes des issues, ce que la 15-5d attend de l'ordre ; `closes #463 #491`) et
+  **15-5e2** (rollout, commentaires, Pattern 5, manuels ; `closes #536 #484`) ; la 15-5e devient une
+  fiche index. La **15-5d** ne dépend plus que de la 15-5e1 (**C65**). Choix **C62** à **C64**
+  consignés. Table des sous-stories, ordre et table des choix (C57 à C65) mis à jour.
