@@ -926,3 +926,187 @@ async fn archived_invariants_archive_for_company_on_already_archived_returns_not
         "archive_for_company sur compte déjà archivé doit retourner NotFound (F6 Pass 3 Opus), got: {result:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Story 15-5b (AC12, #427) — `DbError::AccountsNotPostable` rendue par le
+// dépôt, sous le verrou de la ligne, seulement si le compte lié change.
+// ---------------------------------------------------------------------------
+
+async fn set_not_postable(pool: &MySqlPool, account_id: i64) {
+    sqlx::query("UPDATE accounts SET postable = FALSE, version = version + 1 WHERE id = ?")
+        .bind(account_id)
+        .execute(pool)
+        .await
+        .expect("set not postable");
+}
+
+fn assert_not_postable<T: std::fmt::Debug>(res: Result<T, DbError>, account_id: i64, number: &str) {
+    match res {
+        Err(DbError::AccountsNotPostable(list)) => {
+            let v: Vec<(i64, String)> = list
+                .iter()
+                .map(|a| (a.account_id, a.account_number.clone()))
+                .collect();
+            assert_eq!(v, vec![(account_id, number.to_string())]);
+        }
+        other => panic!("attendu AccountsNotPostable, obtenu {other:?}"),
+    }
+}
+
+fn bank_payload(company_id: i64) -> NewBankAccount {
+    NewBankAccount {
+        company_id,
+        bank_name: "UBS".into(),
+        iban: "CH9300762011623852957".into(),
+        qr_iban: None,
+        is_primary: true,
+    }
+}
+
+/// AC12 — `set_journal_account_id_for_company` : un nouveau compte non
+/// imputable est refusé ; le même compte, devenu non imputable une fois lié,
+/// court-circuite sans contrôle.
+#[sqlx::test(migrations = "./test-schema")]
+async fn set_journal_account_id_guards_only_a_changed_account(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+    let user_id = create_test_user(&pool, company_id, "admin").await;
+    let linked = create_account(
+        &pool,
+        company_id,
+        user_id,
+        "1020",
+        "Banque",
+        AccountType::Asset,
+    )
+    .await;
+    let target = create_account(
+        &pool,
+        company_id,
+        user_id,
+        "1021",
+        "Banque 2",
+        AccountType::Asset,
+    )
+    .await;
+    let bank_account_id = create_bank_account(&pool, company_id).await;
+
+    let mut tx = pool.begin().await.unwrap();
+    let (after, _) = bank_accounts::set_journal_account_id_for_company(
+        &mut tx,
+        company_id,
+        bank_account_id,
+        Some(linked),
+        1,
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    set_not_postable(&pool, linked).await;
+    set_not_postable(&pool, target).await;
+
+    let mut tx = pool.begin().await.unwrap();
+    let res = bank_accounts::set_journal_account_id_for_company(
+        &mut tx,
+        company_id,
+        bank_account_id,
+        Some(target),
+        after.version,
+    )
+    .await;
+    drop(tx);
+    assert_not_postable(res, target, "1021");
+
+    let mut tx = pool.begin().await.unwrap();
+    bank_accounts::set_journal_account_id_for_company(
+        &mut tx,
+        company_id,
+        bank_account_id,
+        Some(linked),
+        after.version,
+    )
+    .await
+    .expect("inchangé : no-op, sans contrôle");
+}
+
+/// AC12 — `update_for_company` : idem, et la version périmée passe avant.
+#[sqlx::test(migrations = "./test-schema")]
+async fn update_for_company_guards_only_a_changed_account(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+    let user_id = create_test_user(&pool, company_id, "admin").await;
+    let linked = create_account(
+        &pool,
+        company_id,
+        user_id,
+        "1020",
+        "Banque",
+        AccountType::Asset,
+    )
+    .await;
+    let target = create_account(
+        &pool,
+        company_id,
+        user_id,
+        "1021",
+        "Banque 2",
+        AccountType::Asset,
+    )
+    .await;
+    let bank_account_id = create_bank_account(&pool, company_id).await;
+
+    let mut tx = pool.begin().await.unwrap();
+    let (after, _) = bank_accounts::update_for_company(
+        &mut tx,
+        company_id,
+        bank_account_id,
+        &bank_payload(company_id),
+        Some(linked),
+        1,
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    set_not_postable(&pool, linked).await;
+    set_not_postable(&pool, target).await;
+
+    // Version périmée : 409 d'abord.
+    let mut tx = pool.begin().await.unwrap();
+    let res = bank_accounts::update_for_company(
+        &mut tx,
+        company_id,
+        bank_account_id,
+        &bank_payload(company_id),
+        Some(target),
+        after.version + 7,
+    )
+    .await;
+    drop(tx);
+    assert!(
+        matches!(res, Err(DbError::OptimisticLockConflict)),
+        "attendu OptimisticLockConflict, obtenu {res:?}"
+    );
+
+    let mut tx = pool.begin().await.unwrap();
+    let res = bank_accounts::update_for_company(
+        &mut tx,
+        company_id,
+        bank_account_id,
+        &bank_payload(company_id),
+        Some(target),
+        after.version,
+    )
+    .await;
+    drop(tx);
+    assert_not_postable(res, target, "1021");
+
+    let mut tx = pool.begin().await.unwrap();
+    bank_accounts::update_for_company(
+        &mut tx,
+        company_id,
+        bank_account_id,
+        &bank_payload(company_id),
+        Some(linked),
+        after.version,
+    )
+    .await
+    .expect("compte inchangé : accepté");
+}

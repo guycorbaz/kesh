@@ -301,6 +301,49 @@ pub async fn find_types_by_ids_in_tx(
     q.fetch_all(&mut **tx).await.map_err(map_db_error)
 }
 
+/// Refuse un compte **actif et non imputable** de la société, désigné par le
+/// client pour recevoir des écritures (Story 15-5b, #427) :
+/// [`DbError::AccountsNotPostable`], HTTP 400 `ACCOUNT_NOT_POSTABLE`.
+///
+/// Contrôle partagé des dépôts qui gardent un compte **dans leur
+/// transaction** — compte de contrepartie d'une règle de rapprochement
+/// (`reconciliation_rules::create_in_tx`, `update_in_tx`) et compte comptable
+/// d'un compte bancaire (`bank_accounts::update_for_company`,
+/// `set_journal_account_id_for_company`).
+///
+/// Un compte inconnu, d'une autre société ou archivé — imputable ou non —
+/// **n'est pas refusé ici** : le pré-vol des handlers l'a déjà rendu en 404
+/// (anti-énumération KF-002), et la variante n'est émise que pour un compte
+/// de la société, actif, comme l'exige la Story 15-5a. Lecture sans verrou
+/// sur la ligne `accounts` : même dette de course LOW que le contrôle
+/// `active`.
+pub async fn ensure_postable_if_active_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    account_id: i64,
+) -> Result<(), DbError> {
+    let row: Option<(String, bool, bool)> = sqlx::query_as(
+        "SELECT number, postable, active FROM accounts WHERE id = ? AND company_id = ?",
+    )
+    .bind(account_id)
+    .bind(company_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    if let Some((number, postable, active)) = row
+        && active
+        && !postable
+    {
+        return Err(DbError::accounts_not_postable([
+            crate::errors::NonPostableAccount {
+                account_id,
+                account_number: number,
+            },
+        ]));
+    }
+    Ok(())
+}
+
 /// `include_archived` : si `false`, seuls les comptes actifs sont retournés.
 /// Pas de pagination — un plan comptable est borné à ~200-400 comptes.
 pub async fn list_by_company(

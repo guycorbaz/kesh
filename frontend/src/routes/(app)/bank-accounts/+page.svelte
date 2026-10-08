@@ -9,6 +9,7 @@
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import { withCurrentAccount } from '$lib/features/accounts/account-options';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { toast } from 'svelte-sonner';
@@ -75,6 +76,11 @@
 	});
 
 	// Filtrer accounts dropdown : classes 1 (Asset) + 2 (Liability) actifs.
+	// Story 15-5b (AC13, #271) : les deux `<select>` passent par
+	// `withCurrentAccount`, pour qu'un compte lié devenu non imputable reste
+	// affiché ; `BankAccountJournalLinkForm` reçoit la liste COMPLÈTE et filtre
+	// lui-même (choix C26) — une liste déjà filtrée l'empêchait de retrouver ce
+	// compte, et le champ s'affichait vide.
 	let linkableAccounts = $derived(
 		accounts.filter(
 			(a) =>
@@ -325,7 +331,7 @@
 							data-testid="form-journal-account"
 						>
 							<option value={null}>{i18nMsg('bank-accounts-labels-not-configured', 'Non configuré')}</option>
-							{#each linkableAccounts as acc}
+							{#each withCurrentAccount(linkableAccounts, formJournalAccountId, accounts) as acc}
 								<option value={acc.id}>{acc.number} — {acc.name}</option>
 							{/each}
 						</select>
@@ -434,7 +440,7 @@
 								<td colspan="5" class="py-3">
 									<BankAccountJournalLinkForm
 										bankAccount={ba}
-										accounts={linkableAccounts}
+										accounts={accounts}
 										onSuccess={handleJournalUpdated}
 										onCancel={closeForm}
 									/>
@@ -476,7 +482,7 @@
 													data-testid="edit-journal-account"
 												>
 													<option value={null}>{i18nMsg('bank-accounts-labels-not-configured', 'Non configuré')}</option>
-													{#each linkableAccounts as acc}
+													{#each withCurrentAccount(linkableAccounts, formJournalAccountId, accounts) as acc}
 														<option value={acc.id}>{acc.number} — {acc.name}</option>
 													{/each}
 												</select>

@@ -370,8 +370,8 @@ impl NonPostableAccounts {
     /// `{ "rejected": [{ "accountId", "accountNumber" }] }`, dans l'ordre de la
     /// liste — la forme du jumeau `ACCOUNT_ARCHIVED`.
     ///
-    /// Le bras HTTP 400 de `kesh-api` l'appelle, et les `failed[].details` des
-    /// endpoints batch l'appelleront (Story 15-5b) ; aucun autre site ne
+    /// Le bras HTTP 400 de `kesh-api` l'appelle, ainsi que les `failed[].details`
+    /// de `POST /reconciliation/accept` (Story 15-5b) ; aucun autre site ne
     /// construit ce JSON, pour qu'un même refus n'ait qu'une forme.
     pub fn details(&self) -> serde_json::Value {
         let rejected: Vec<serde_json::Value> = self

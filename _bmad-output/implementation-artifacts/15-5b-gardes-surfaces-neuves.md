@@ -1,21 +1,22 @@
 # Story 15.5b : Gardes de postabilité côté serveur — rapprochement, règles, réglages de facturation, compte bancaire
 
-Status: ready-for-dev
+Status: done
 
 <!-- Issue de la story 15-5, DÉCOUPÉE le 2026-10-08 après la passe de validation P1 (choix C7 de
      `epic-15-choix-autonomes.md`). Sous-story de « rollout » : elle applique aux surfaces neuves la
      variante `DbError::AccountsNotPostable` posée par la 15-5a. Choix applicables : C3, C4, C5, C6,
      C7, C9, C10, C12 (corrigé par C26), C13 (clé révisée par C16), C14, C15 (découpage en 15-5c), C16,
-     C19, C23, C24, C25, C26, C27 (garde à l'usage des comptes de réglage), C28 (forme de ce refus),
-     C29 (accesseur unique du détail), C30 (création de règle gardée dans le dépôt). C8 et C11 sont
-     passés à la 15-5c. Validations P2 et P3 faites (Change Log) ; P4 complète à suivre (la remédiation
-     P3 touche une règle métier). -->
+     C19, C23, C24, C25 (révisé par C34), C26, C29 (accesseur unique du détail), C30 (création de règle
+     gardée dans le dépôt), C33 (découpage en 15-5d). C8 et C11 sont passés à la 15-5c ; C27, C28 et la
+     garde à l'usage des comptes de réglage (ex-AC20) à la 15-5d. Validations P2, P3 et P4 faites
+     (Change Log). -->
 
-**Issues** : **ferme #427** (P1), **#429** (P1) et **#521** (l'enregistrement des réglages de
-facturation efface le compte créanciers — choix C25). La PR porte
-`closes #427 closes #429 closes #521` (mots-clés **dans la PR**, le dépôt merge en squash).
-#429 n'est fermée que par la garde **à l'usage** des comptes de réglage (AC20, choix C27) : la seule
-garde à la désignation (AC10) laissait un réglage devenu non imputable recevoir des écritures.
+**Issues** : **ferme #427** (P1) et **#521** (l'enregistrement des réglages de facturation efface le
+compte créanciers — choix C25). La PR porte `closes #427 closes #521 refs #429` (mots-clés **dans la
+PR**, le dépôt merge en squash). **#429 n'est PAS fermée ici** : cette story garde les comptes de
+réglage **à la désignation** (AC10) ; la seule désignation laisse un réglage devenu non imputable
+recevoir des écritures, et c'est la garde **à l'usage**, portée par la **15-5d** (choix C27, C33), qui
+la ferme.
 Voisin repris en partie : **#474** — seule la *postabilité* du compte comptable d'un compte bancaire
 est traitée ici ; le reste de #474 appartient à la **15-6** (choix C5). **#492** (libellés des refus
 par lot) et **#519** (manuel des règles d'affectation) sont passés à la **15-5c** (choix C15), avec
@@ -23,7 +24,7 @@ par lot) et **#519** (manuel des règles d'affectation) sont passés à la **15-
 
 **Dépend de la 15-5a** (variante `DbError::AccountsNotPostable`, code `ACCOUNT_NOT_POSTABLE`, clé
 `error-account-not-postable`, `details.rejected[{accountId, accountNumber}]`). Ne pas commencer avant
-son merge. **La 15-5c dépend de cette story.**
+son merge. **La 15-5c et la 15-5d dépendent de cette story.**
 
 ## Story
 
@@ -53,18 +54,18 @@ Elle applique un patron posé ailleurs (15-5a pour la variante ; `resolve_design
 cinq modules : `kesh-db` (dépôts `bank_accounts`, `reconciliation_rules`), quatre modules de routes
 `kesh-api` (`reconciliation`, `reconciliation_rules`, `company_invoice_settings`, `bank_accounts`, plus
 un doc-comment de `products`), deux modules `frontend` (`reconciliation`, `bank-accounts`), deux
-encadrés du manuel et `docs/api-external.md` — et, depuis la validation P3, la garde à l'usage des
-comptes de réglage (AC20 : dépôts `invoices`, `supplier_invoices`, `company_invoice_settings`, une
-variante d'erreur, une clé i18n). C'est la forme que la § *Règle de splitting préventif*
+encadrés du manuel et `docs/api-external.md`. C'est la forme que la § *Règle de splitting préventif*
 prescrit pour la seconde moitié d'un découpage ; elle prévoit que **la sous-story de rollout est revue
 fichier par fichier** — c'est le mode de revue demandé ici (choix C7).
 
 ⚠️ **Elle n'est pas strictement mécanique, et la validation P2 l'a dit** (finding F-3). Ce qui ne
 l'était pas du tout — un module neuf de libellés traduits (#492) et la réécriture du manuel du
-rapprochement (#519, #481) — est passé à la **15-5c** (choix C15). Ce qui reste porte une sémantique
-propre et n'est pas un simple report du patron : le filtre de `get_proposals` (AC5), le refus de la
-réactivation (AC8 b), l'écran du compte bancaire (AC13), le compte créanciers préservé (AC19, #521) et
-la garde à l'usage des comptes de réglage (AC20, C27).
+rapprochement (#519, #481) — est passé à la **15-5c** (choix C15). La garde **à l'usage** des comptes
+de réglage, ajoutée en validation P3, est une règle métier neuve (révision de la limite L2 de D-A0) :
+la validation P4 l'a relevé (finding F4-3) et elle est passée à la **15-5d** (choix C33). Ce qui reste
+porte une sémantique propre et n'est pas un simple report du patron : le filtre de `get_proposals`
+(AC5), le refus de la réactivation (AC8 b), l'écran du compte bancaire (AC13) et le compte créanciers
+préservé (AC19, #521).
 Ces points relèvent des passes de validation et de revue ordinaires, pas de la seule revue fichier par
 fichier.
 
@@ -178,8 +179,10 @@ fichier.
     égalité ne joue pour lui que lorsqu'un client d'API le renvoie. Les contrôles existants (existence,
     société, `active`, type) restent **inconditionnels** sur toute valeur **présente** dans le corps.
     ⚠️ **L'exemption n'est pas une tolérance à l'usage** : elle évite seulement de bloquer
-    l'enregistrement des réglages. Un réglage « inchangé » devenu non imputable est refusé **quand un
-    flux veut y écrire** (AC20) — c'est l'usage qui refuse, pas la désignation (choix C27).
+    l'enregistrement des réglages. Un réglage « inchangé » devenu non imputable sera refusé **quand un
+    flux veut y écrire** — c'est l'usage qui refuse, pas la désignation (choix C27), et cette garde est
+    portée par la **15-5d** (C33). Jusqu'à son merge, un tel réglage reste utilisé par les flux
+    automatiques, comme aujourd'hui.
 
 ### Compte comptable d'un compte bancaire (voisin de #474)
 
@@ -246,17 +249,19 @@ fichier.
 
 15. **AC15 — Non-régression des flux automatiques** : `create_in_tx(…, false)` accepte toujours un compte
     de **configuration** devenu non imputable (`test_create_in_tx_auto_flow_allows_non_postable`,
-    `crates/kesh-db/src/repositories/journal_entries.rs:3687`) — au niveau de `create_in_tx` : les quatre
-    comptes de réglage de l'AC20 sont refusés **en amont**, par leurs flux, pas par ce drapeau ; la contre-passation (`reverse_in_tx_inner`,
+    `crates/kesh-db/src/repositories/journal_entries.rs:3687`) — au niveau de `create_in_tx` : la garde
+    des comptes de réglage à l'usage ne passe **pas** par ce drapeau ; elle est posée **en amont**, par
+    la 15-5d, dans la validation d'une facture et la saisie d'une facture fournisseur — **l'avoir en
+    est exempté** (il relit la créance et la TVA due dans les réglages du moment, défaut suivi par
+    #473, #523 et #525 ; choix C35) ; la contre-passation (`reverse_in_tx_inner`,
     `fn` `:1518`, appel de `create_in_tx_inner` `:1656`) et l'annulation d'un rapprochement restent
     possibles sur un compte devenu non imputable (`reverse_succeeds_when_an_account_became_non_postable`,
     `crates/kesh-api/tests/journal_entry_reversal_e2e.rs:1015`). Un compte bancaire dont le compte
     comptable est **devenu** non imputable continue de servir aux rapprochements (décision D-A0 de la
     14-3b, choix C6) : les contrôles `active` du compte de banque (`reconciliation.rs:1914-1938`, `:3011`,
     `:3454`) ne reçoivent **pas** de clause `postable`.
-16. **AC16 — Tests négatifs « compte non imputable refusé » sur CHAQUE surface** des AC 1 à 12 et de
-    l'AC20, dont le
-    compte de test ne diffère d'un compte accepté **que par `postable`** (même société, actif, bon type)
+16. **AC16 — Tests négatifs « compte non imputable refusé » sur CHAQUE surface** des AC 1 à 12, dont
+    le compte de test ne diffère d'un compte accepté **que par `postable`** (même société, actif, bon type)
     et dont l'assertion porte sur le **code** (`ACCOUNT_NOT_POSTABLE`, ou le message du champ pour les
     réglages) **et** `details.rejected` (`accountId` et `accountNumber`) là où il existe — pas sur le
     seul statut. Chaque surface à exemption porte **aussi** son test positif « inchangé → accepté ».
@@ -268,7 +273,7 @@ fichier.
     - la réserve des deux encadrés **`:380`** (§ *Rôles des comptes*) et **`:390`** (§ *Les comptes de
       clôture*) est **levée pour ce que cette story ferme** : plus de « une intégration … pourrait les
       viser » ; ils disent que le rapprochement (manuel, ventilé, proposé, et ses règles), les réglages de
-      facturation (à la désignation **et** à l'usage, AC20) et le compte comptable d'un compte bancaire
+      facturation (**à la désignation**) et le compte comptable d'un compte bancaire
       refusent un compte non imputable — et ils nomment les trois sortes de comptes non imputables
       (regroupement, **résultat**, clôture, choix C19) ;
     - ils **ne promettent pas une protection absolue** (finding P3 F-2) : ils nomment, en termes
@@ -276,19 +281,24 @@ fichier.
       **déjà lié**, et son **usage** par le rapprochement et les règlements, quand il est devenu non
       imputable après coup (D-A0, C6) ; (ii) une règle **active** dont le compte est devenu non
       imputable reste listée « Active », mais n'est plus proposée (AC9) ; (iii) le compte de produit
-      d'une **fiche article** (D3, C6) et le **compte de produit par défaut** des réglages, exempté à
-      l'usage (D3-bis de la 16-1a) ; (iv) l'**avoir**, qui reprend les comptes de la facture d'origine
-      (D5-bis, C6) ;
+      d'une **fiche article** (D3, C6) ; (iv) un compte **désigné dans les réglages de facturation**
+      devenu non imputable **après** sa désignation, qui reste utilisé par les écritures automatiques
+      (validation d'une facture, avoir, facture fournisseur) — la **15-5d** réécrit cet item quand elle
+      pose la garde à l'usage (elle en excepte alors l'avoir et le compte de produit par défaut). ⚠️
+      Ne **pas** écrire que l'avoir « reprend les comptes de la facture d'origine » : il n'en reprend
+      que les comptes **de produit** ; la créance et la TVA due sont relues dans les réglages du moment
+      (`credit_notes.rs:360-364`, `:507-512` ; findings R4-2/F4-2 de la P4) ;
     - `docs/manual/fr/admin-manual.tex`, § *Configuration des comptes TVA* (`:2016-2025`) : **à
       compléter** (finding P3 F-3) — ses voisins *Compte de différences d'arrondi* (`:2027`) et *Comptes
-      du solde du reste* (`:2029`) disent « actif et **imputable** », lui non ; après l'AC10 et l'AC20,
-      un compte TVA non imputable est refusé à la désignation, et un compte désigné devenu non imputable
-      bloque la validation d'une facture portant de la TVA (ou la saisie d'une facture fournisseur) avec
-      un message qui renvoie aux paramètres. Une phrase le dit, dans le registre de ses voisins. Le
-      reste du manuel d'administration : contrôle sans objet, à refaire et écrire au Dev Agent Record ;
+      du solde du reste* (`:2029`) disent « actif et **imputable** », lui non ; après l'AC10, un compte
+      TVA non imputable est refusé **à la désignation**. Une phrase le dit, dans le registre de ses
+      voisins (la 15-5d la complète pour l'usage). Le reste du manuel d'administration : contrôle sans
+      objet, à refaire et écrire au Dev Agent Record ;
     - les PDF (`user-manual.pdf`, `admin-manual.pdf`) sont régénérés (`latexmk -xelatex` dans
-      `docs/manual/fr/`), commités, et **contrôlés aplatis** (`pdftotext … - | tr '\n' ' ' | tr -s ' '`) :
-      les phrases levées sont absentes, les nouvelles présentes.
+      `docs/manual/fr/`), commités, et **contrôlés aplatis en normalisant les ligatures**
+      (`pdftotext -nopgbrk f.pdf - | tr '\n' ' ' | tr -s ' ' | sed 's/ﬀ/ff/g; s/ﬁ/fi/g; s/ﬂ/fl/g'` — le
+      corps du PDF rend « ff » par la ligature `ﬀ`, finding F-7 de la P2 de la 15-5c) : les phrases
+      levées sont absentes, les nouvelles présentes.
     *(La réécriture du rapprochement lui-même — acceptation par lot, rapprochement manuel, éclatement,
     bouton Modifier, section des règles d'affectation, FAQ — est à la 15-5c, choix C15.)*
 18. **AC18 — Les doc-comments et le CHANGELOG suivent.**
@@ -316,14 +326,14 @@ fichier.
       manuel (`POST /reconciliation/manual`) et ventilé (`POST /reconciliation/split`) refusent un compte
       de contrepartie non imputable en `400 ACCOUNT_NOT_POSTABLE`, après le `404 ACCOUNT_NOT_FOUND` ; la
       ligne `ACCOUNT_NOT_POSTABLE` de la table du § 10 (posée par la 15-5a) gagne ces routes, celles des
-      règles et du compte bancaire, et la **validation d'une facture** / la **saisie d'une facture
-      fournisseur** quand un compte désigné dans les réglages n'est pas imputable (AC20).
+      règles et du compte bancaire (la validation d'une facture et la saisie d'une facture fournisseur y
+      sont ajoutées par la 15-5d).
     - `CHANGELOG.md`, section `## [0.13.0] — Non publié` (créée par la 15-5a ; **la créer en tête si
       absente** — motif exact exigé par `scripts/prepare-release.sh:189`), rubrique **Corrigé** : refus
       serveur des comptes non imputables sur le rapprochement (manuel, ventilé, propositions par règle et
       ventilées), les règles de rapprochement (création, changement de compte, réactivation), les
-      réglages de facturation (à la désignation, et à l'usage : validation d'une facture, saisie d'une
-      facture fournisseur — AC20) et le compte comptable d'un compte bancaire ; une règle dont le compte n'est plus
+      réglages de facturation (à la désignation ; l'usage est à la 15-5d) et le compte comptable d'un
+      compte bancaire ; une règle dont le compte n'est plus
       imputable n'est plus proposée ; enregistrer les réglages de facturation n'efface plus le compte
       créanciers (#521).
 
@@ -344,61 +354,20 @@ fichier.
       (existence, société, `active`, type `Liability`), puis sur `postable` si elle **change** (AC10,
       AC11) ;
     - la valeur résolue est celle que l'`UPDATE` persiste (`:389`).
-    Le champ **n'est pas exposé à l'écran** dans cette story (C25). Les E2E qui le reposaient à la main
-    (`payment-batches.spec.ts:59-61`, `inbox-import.spec.ts:93`) restent valides et ne sont pas retirés.
+    Le champ n'est pas exposé à l'écran **dans cette story** : il l'est par la **15-5d** (choix C34,
+    qui révise C25), qui pose la garde à l'usage dont il devient le seul recours à l'écran. Les E2E qui
+    le reposaient à la main (`payment-batches.spec.ts:57-64`, `inbox-import.spec.ts:91-97`) restent
+    valides ici ; la 15-5d décide de leur retrait (son AC6).
 
-### Les comptes de réglage, contrôlés à l'usage (#429)
+### Les comptes de réglage, contrôlés à l'usage (#429) — passés à la 15-5d
 
-20. **AC20 — Un compte de réglage devenu non imputable est refusé quand un flux veut y écrire**
-    (finding P3 F-1, choix C27 et C28). L'exemption « inchangé » de l'AC11 laisse en place un réglage
-    devenu non imputable (ajout d'un sous-compte, règle 14-3a) ; les flux #8 et #10 de l'inventaire (a)
-    y écrivent avec `enforce_postable = false`. Sur le patron du compte d'arrondi —
-    `rounding_account_for_write` / `usable_designated_account`
-    (`crates/kesh-db/src/repositories/company_invoice_settings.rs:400`, `:484-510`, requête `:499`),
-    relu **au moment d'écrire**, dans la transaction, `FOR UPDATE` — :
-    - un accesseur neuf de `company_invoice_settings` (p. ex.
-      `check_designated_accounts_postable_in_tx(conn, company_id, ids: &[i64])`) lit
-      `id, number, active, postable` des comptes désignés **qui recevront une ligne**, `FOR UPDATE`, et
-      rend une erreur pour ceux qui sont **de la société, actifs et non imputables**. Un compte absent,
-      d'une autre société ou **archivé** n'est **pas** refusé par lui : il suit le chemin d'aujourd'hui
-      (`InactiveOrInvalidAccounts` dans `create_in_tx`), seul cas où la 15-5a interdit de nommer un
-      compte ;
-    - **validation d'une facture** (`crates/kesh-db/src/repositories/invoices.rs`, après la lecture des
-      réglages, étape (2) `:2004-2012`, avant la génération des lignes `:2247-2252`) : la **créance**
-      (`default_receivable_account_id`) toujours ; la **TVA due** (`default_vat_payable_account_id`)
-      **seulement si la facture porte de la TVA** — un compte qui ne recevra aucune ligne ne bloque rien ;
-    - **création d'une facture fournisseur** (`crates/kesh-db/src/repositories/supplier_invoices.rs:357-369`,
-      dans `create_in_tx` — donc aussi la **complétion d'une facture importée**, qui l'appelle) : les
-      **créanciers** (`default_payable_account_id`, valeur résolue par l'AC19) toujours ; la **TVA
-      récupérable** (`default_vat_recoverable_account_id`) **seulement si la TVA totale est positive**
-      (`:129-131`) ;
-    - un seul refus nomme **tous** les comptes en défaut du flux : variante neuve
-      `DbError::DesignatedAccountsNotPostable(NonPostableAccounts)` (`crates/kesh-db/src/errors.rs`),
-      même code **`ACCOUNT_NOT_POSTABLE`**, HTTP 400, `details` = `NonPostableAccounts::details()` (C29) —
-      un seul contrat pour l'intégrateur ; **message propre**, qui dit où agir (l'utilisateur n'a pas
-      choisi ce compte sur la pièce) : clé neuve `error-designated-account-not-postable`, quatre
-      locales, sélecteur `[one]` / `*[other]` inscrit à `SELECTEURS_RESOLUS_COTE_SERVEUR`
-      (`crates/kesh-i18n/src/loader.rs:367`, patron de l'AC2 de la 15-5a), `count` passé comme nombre ;
-      texte FR **exact** :
-      ```ftl
-      error-designated-account-not-postable = { $count ->
-          [one] Le compte { $numbers }, désigné dans Paramètres → Facturation, n’est pas imputable (compte de regroupement, de résultat ou de clôture) : désignez-y un sous-compte imputable.
-         *[other] Les comptes { $numbers }, désignés dans Paramètres → Facturation, ne sont pas imputables (comptes de regroupement, de résultat ou de clôture) : désignez-y des sous-comptes imputables.
-      }
-      ```
-      DE/IT/EN sur le vocabulaire de la 15-5a (« bebuchbar », « registrabile », « postable ») et le
-      libellé du menu tel que chaque locale l'affiche ;
-    - **ce qui ne change pas, et c'est écrit** : `create_in_tx` garde `enforce_postable = false` — la
-      garde est en amont, sur les seuls comptes de réglage, et le **compte bancaire** (compte de
-      configuration lui aussi) reste utilisable devenu non imputable (D-A0, AC15, C6) ; le **compte de
-      produit par défaut** reste exempté (D3-bis de la 16-1a, `invoices.rs:574-579`, angle mort écrit à
-      l'AC17) ; le compte de **décompte TVA** n'est lu par aucun flux d'écriture (seul l'export CSV le
-      lit, `crates/kesh-api/src/exports/csv_tables.rs:932`) ; le **solde du reste** garde son refus
-      `ConfigurationRequired` pour une TVA due inutilisable (`vat_payable_account_for_write`, `:454`) —
-      divergence de code assumée et écrite (C28) ;
-    - **écrans** : l'écran de validation d'une facture et ceux de la facture fournisseur (saisie,
-      complétion d'un import) affichent `err.message` pour ce code — le dev le vérifie à la lecture de
-      chaque `catch` et le consigne ; un écran qui afficherait un repli générique est corrigé ici.
+L'ancien **AC20** (garde à l'usage de la créance, de la TVA due, des créanciers et de la TVA
+récupérable ; variante `DesignatedAccountsNotPostable` ; clé `error-designated-account-not-postable` ;
+choix C27 et C28) est sorti de cette story à la validation P4 (finding F4-3, choix **C33**) : c'est une
+règle métier neuve — la révision de la limite L2 de D-A0 —, non un rollout, et les deux HIGH et un des
+MEDIUM de la passe en sont nés. Il vit dans `15-5d-garde-usage-comptes-reglage.md`, avec l'exposition à
+l'écran du compte créanciers (C34) et l'exemption écrite de l'avoir (C35). Les critères ne sont **pas
+renumérotés** : cette story compte désormais **19 AC (AC1–AC19)**.
 
 ## Inventaire des sites — l'ensemble clos des points où un compte reçoit une écriture
 
@@ -417,7 +386,7 @@ Sur `1920381e`, la commande rend **20 lignes** : **trois homonymes sans rapport*
 à écarter — et **17 lignes** classées ci-dessous : 15 sites, le délégateur `journal_entries.rs:194` et
 l'appel de `mod tests` `journal_entries.rs:3700`.
 
-| # | site | 5ᵉ arg. | d'où vient le compte | avant | après 15-5a + 15-5b |
+| # | site | 5ᵉ arg. | d'où vient le compte | avant | après 15-5a + 15-5b (+ 15-5d) |
 |---|---|---|---|---|---|
 | 1 | `reconciliation.rs:1581` `accept_one_invoice` | `false` | banque (config), créance (écriture de vente), arrondi (réglage gardé) | aucun compte client | **inchangé**, commenté (AC6) |
 | 2 | `reconciliation.rs:2083` `accept_one_split` | `false` | **client** | **NON GARDÉ** (`active` seul, `:1952-1981`) | gardé (AC3) |
@@ -425,11 +394,11 @@ l'appel de `mod tests` `journal_entries.rs:3700`.
 | 4 | `reconciliation.rs:3153` `post_manual` | `false` | **client** | **NON GARDÉ** (`:3028`) | gardé (AC1) |
 | 5 | `reconciliation.rs:3619` `post_split` | `false` | **client** | **NON GARDÉ** (`:3488`) | gardé (AC2) |
 | 6 | `invoice_settlements_write.rs:214` règlement client | `false` | client (compte interne) / banque (config) | gardé 24-5 | nom juste (15-5a) ; banque : AC12 |
-| 7 | `invoice_settlements_write.rs:497` solde du reste | `false` | réglages désignés | gardé (`kesh-db/src/repositories/company_invoice_settings.rs:353`, `:469`, `:499`, `postable = TRUE`) | inchangé |
-| 8 | `supplier_invoices.rs:372` facture fournisseur | `false` | client (charge) + réglages (créanciers, TVA récup.) | charge gardée 24-5 ; réglages **NON GARDÉS** (#429) | 15-5a ; réglages : désignation (AC10) **et usage (AC20)** ; créanciers préservé (AC19) |
+| 7 | `invoice_settlements_write.rs:497` solde du reste | `false` | réglages désignés | gardé (`kesh-db/src/repositories/company_invoice_settings.rs:469` `vat_payable_account_for_write`, `:499` `usable_designated_account`, `postable = TRUE`) | inchangé |
+| 8 | `supplier_invoices.rs:372` facture fournisseur | `false` | client (charge) + réglages (créanciers, TVA récup.) | charge gardée 24-5 ; réglages **NON GARDÉS** (#429) | 15-5a ; réglages : désignation (AC10) ; **usage : 15-5d** ; créanciers préservé (AC19) |
 | 9 | `supplier_invoices.rs:693` règlement fournisseur | `false` | client (compte interne) / banque | gardé 24-5 | 15-5a ; banque : AC12 |
-| 10 | `invoices.rs:2255` validation de facture | `false` | lignes (gardées) + réglages (créance, TVA due, produit par défaut) | **créance et TVA due NON GARDÉES** (#429) ; produit par défaut exempté (D3-bis) | créance, TVA due : désignation (AC10) **et usage (AC20)** ; produit par défaut : exemption D3-bis conservée, écrite (AC17) |
-| 11 | `credit_notes.rs:548` avoir | `false` | snapshot de la facture (D5-bis) | validés à l'émission | inchangé (angle mort assumé, C6) |
+| 10 | `invoices.rs:2255` validation de facture | `false` | lignes (gardées) + réglages (créance, TVA due, produit par défaut) | **créance et TVA due NON GARDÉES** (#429) ; produit par défaut exempté (D3-bis) | créance, TVA due : désignation (AC10) ; **usage : 15-5d** ; produit par défaut : exemption D3-bis conservée, écrite (AC17) |
+| 11 | `credit_notes.rs:548` avoir | `false` | produit : snapshot des lignes de la facture (D5-bis, `:503-505`) ; **créance et TVA due : réglages du moment** (`:360-364`, `:507-512`) | produit : validé à l'émission ; **créance et TVA due NON GARDÉES** | inchangé ici ; à l'usage, **exemption délibérée écrite par la 15-5d** (C35) : créance → 15-6a (#473, #523), TVA due → #525 |
 | 12 | `journal_entries.rs:1656` contre-passation (appel dans `reverse_in_tx_inner`, `fn` `:1518`) | `false` | écriture d'origine | exemption voulue | inchangé (AC15) |
 | 13 | `journal_entries.rs:153` `create` (saisie manuelle) | **`true`** | client | gardé 14-3b | nom juste (15-5a) |
 | 14 | `journal_entries.rs:634` `create_opening_entry` | **`true`** | client | gardé | nom juste (15-5a) |
@@ -448,7 +417,7 @@ lignes sur `1920381e`, dont des champs de réponse — trier).
 | `opening_balances.rs` `accountId` | oui (#14, #15) | gardé ; nom juste (15-5a) |
 | `reconciliation.rs` manual / split / accept | oui (#2–#5) | **AC1–AC5** |
 | `reconciliation_rules.rs` `counterpartyAccountId` (POST, PATCH) + `active` (PATCH) | indirectement (#3) | **AC7–AC9** |
-| `company_invoice_settings.rs` six champs historiques | indirectement (#8, #10) | désignation : **AC10–AC11**, et **AC19** pour `defaultPayableAccountId` (#521) ; **usage : AC20** pour créance, TVA due, créanciers, TVA récupérable — **un réglage inchangé n'est pas « traité » par la seule désignation** (finding P3 F-1) ; produit par défaut : exemption D3-bis ; décompte TVA : lu par aucun flux d'écriture |
+| `company_invoice_settings.rs` six champs historiques | indirectement (#8, #10, #11) | désignation : **AC10–AC11**, et **AC19** pour `defaultPayableAccountId` (#521) ; **usage : 15-5d** pour créance, TVA due, créanciers, TVA récupérable (avoir exempté, C35) — **un réglage inchangé n'est pas « traité » par la seule désignation** (finding P3 F-1) ; produit par défaut : exemption D3-bis ; décompte TVA : lu par aucun flux d'écriture (l'export CSV, `csv_tables.rs:932`, et le rapport TVA, `crates/kesh-report/src/vat_report.rs:174`, le **lisent** sans écrire — finding F4-9) |
 | `company_invoice_settings.rs` arrondi, escompte, frais, pertes | indirectement (#7) | déjà gardés (`resolve_designated_account`, « si changé ») |
 | `bank_accounts.rs` `journalAccountId` (POST, PUT, PATCH) | indirectement (#1, #6, #9, tous les rapprochements) | **AC12–AC13** |
 | `invoices.rs` `lines[].revenueAccountId` | oui (#10) | gardé (16-1a) |
@@ -463,73 +432,66 @@ lignes sur `1920381e`, dont des champs de réponse — trier).
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Refaire les deux inventaires et TOUS les numéros de ligne de la fiche** sur `HEAD`,
+- [x] **T0 — Refaire les deux inventaires et TOUS les numéros de ligne de la fiche** sur `HEAD`,
       **après le merge de la 15-5a** (qui réécrit `journal_entries.rs`, `invoice_settlements_write.rs` et
       `supplier_invoices.rs` et décale les lignes citées par l'inventaire (a), l'AC15 et l'AC18 — choix
       C23) ; signaler au Change Log tout site absent de ces listes. Un site neuf non classé bloque la
       story.
-- [ ] **T1 — Rapprochement** (AC1–AC6)
-  - [ ] `post_manual` : refus après `Some(a) if a.active` ; doc d'ordre `:2932-2939`.
-  - [ ] `post_split` : collecte des non imputables après les manquants ; un seul refus.
-  - [ ] `accept_one_split` étape d : `SELECT id, active, postable, number` ; `FailedProposal` avec
+- [x] **T1 — Rapprochement** (AC1–AC6)
+  - [x] `post_manual` : refus après `Some(a) if a.active` ; doc d'ordre `:2932-2939`.
+  - [x] `post_split` : collecte des non imputables après les manquants ; un seul refus.
+  - [x] `accept_one_split` étape d : `SELECT id, active, postable, number` ; `FailedProposal` avec
         `details.rejected[{accountId, accountNumber}]`, rendu par `NonPostableAccounts::details()` (C29).
-  - [ ] `accept_one_rule` étape 5 : `SELECT active, postable, name, number` ; même `FailedProposal`.
-  - [ ] `get_proposals` : `postable` dans `accounts_info_rows`, filtre de `active_account_ids`,
+  - [x] `accept_one_rule` étape 5 : `SELECT active, postable, name, number` ; même `FailedProposal`.
+  - [x] `get_proposals` : `postable` dans `accounts_info_rows`, filtre de `active_account_ids`,
         commentaire au site d'appel.
-  - [ ] Commentaire de classement à `accept_one_invoice` (AC6).
-- [ ] **T2 — Règles** (AC7–AC9)
-  - [ ] `reconciliation_rules::create_in_tx` (`kesh-db`) : contrôle après la validation du projet,
+  - [x] Commentaire de classement à `accept_one_invoice` (AC6).
+- [x] **T2 — Règles** (AC7–AC9)
+  - [x] `reconciliation_rules::create_in_tx` (`kesh-db`) : contrôle après la validation du projet,
         avant l'`INSERT`, lecture `number, postable, active`, refus si `active && !postable` ; doc-comment
         (« # Erreurs ») et doc d'ordre de `post_create` (C30). `validate_counterparty_account` inchangé.
-  - [ ] `update_in_tx` (`kesh-db`) : contrôle (a)/(b) après la validation du projet, lecture
+  - [x] `update_in_tx` (`kesh-db`) : contrôle (a)/(b) après la validation du projet, lecture
         `number, postable, active`, refus si `active && !postable` ; doc-comment (« # Erreurs ») et doc
         d'ordre de `patch`.
-  - [ ] Doc de module `reconciliation_rules.rs:9-17`.
-- [ ] **T3 — Réglages de facturation** (AC10, AC11, AC19)
-  - [ ] `require_postable = (req.champ != current.champ)` sur les six appels ; doc-comments `:150-158` et
+  - [x] Doc de module `reconciliation_rules.rs:13-17`.
+- [x] **T3 — Réglages de facturation** (AC10, AC11, AC19)
+  - [x] `require_postable = (req.champ != current.champ)` sur les six appels ; doc-comments `:150-158` et
         en-tête ; parenthèse du message de `validate_account_of` corrigée (C19).
-  - [ ] `default_payable_account_id` : `Option<Option<i64>>` + `double_option`, absent → préservé,
+  - [x] `default_payable_account_id` : `Option<Option<i64>>` + `double_option`, absent → préservé,
         `null` → effacé, valeur → validée (AC19) ; doc-comment du champ.
-  - [ ] **Garde à l'usage** (AC20, C27, C28) : l'accesseur de `company_invoice_settings`, ses deux
-        appels (`invoices.rs`, `supplier_invoices.rs`) ; la variante `DesignatedAccountsNotPostable`
-        (`error_code()` → `"ACCOUNT_NOT_POSTABLE"`, `match` exhaustif de `kesh-db/src/errors.rs`) et son
-        bras dans `crates/kesh-api/src/errors.rs` (400, `t_args`, `details()`) ; la clé
-        `error-designated-account-not-postable` dans les quatre `messages.ftl`, inscrite à
-        `SELECTEURS_RESOLUS_COTE_SERVEUR`, test Rust par locale au singulier et au pluriel ; lecture des
-        `catch` des écrans de validation d'une facture et de la facture fournisseur, consignée.
-- [ ] **T4 — Compte bancaire** (AC12, AC13)
-  - [ ] `validate_journal_account_id(…, require_postable)` ; `true` à la création.
-  - [ ] `update_for_company` et `set_journal_account_id_for_company` : contrôle « si changé » sous le
+- [x] **T4 — Compte bancaire** (AC12, AC13)
+  - [x] `validate_journal_account_id(…, require_postable)` ; `true` à la création.
+  - [x] `update_for_company` et `set_journal_account_id_for_company` : contrôle « si changé » sous le
         verrou, lecture `number, postable, active`, refus si `active && !postable` ; doc-comments, ordre
         des erreurs.
-  - [ ] `bank-accounts/+page.svelte` : `withCurrentAccount` sur les deux `<select>` ;
+  - [x] `bank-accounts/+page.svelte` : `withCurrentAccount` sur les deux `<select>` ;
         `accounts={accounts}` (liste complète) passé à `BankAccountJournalLinkForm` (C26) ; tests
         Vitest — fichier **neuf** `frontend/src/routes/(app)/bank-accounts/+page.test.ts` (aucun test de
         cette page n'existe) : un compte lié devenu non imputable reste affiché et sélectionné à
         l'ouverture du formulaire de modification **et** dans le formulaire de lien.
-  - [ ] E2E Playwright dont le montage lie un compte bancaire au premier compte d'actif actif **sans
+  - [x] E2E Playwright dont le montage lie un compte bancaire au premier compte d'actif actif **sans
         regarder `postable`** — sur un état où le plan PME a posé « 1 Actifs » (parent), le lien serait
         refusé en 400 après l'AC12 : `frontend/tests/e2e/payment-batches.spec.ts:53` (`liquid`) et
         `frontend/tests/e2e/supplier-invoices.spec.ts:77` (`internal`, même forme) gagnent `&& a.postable`.
-- [ ] **T5 — Les refus de l'écran des règles** (AC14, choix C14) : les sept `catch` nommés à l'AC14
+- [x] **T5 — Les refus de l'écran des règles** (AC14, choix C14) : les sept `catch` nommés à l'AC14
       passent au patron `isApiError` ; un test Vitest par composant (`RuleFormModal.test.ts`, `RulesList`
       — test neuf —, `ReconciliationProposals.test.ts`, et la page `reconciliation/rules/+page.svelte` —
       test neuf).
-- [ ] **T6 — Tests backend** (AC15, AC16) — helper `set_account_not_postable` sur le patron de
+- [x] **T6 — Tests backend** (AC15, AC16) — helper `set_account_not_postable` sur le patron de
       `crates/kesh-api/tests/products_revenue_account_e2e.rs:254` (UPDATE direct, `version + 1`).
-  - [ ] `reconciliation_manual_e2e.rs` : non imputable → 400 `ACCOUNT_NOT_POSTABLE` +
+  - [x] `reconciliation_manual_e2e.rs` : non imputable → 400 `ACCOUNT_NOT_POSTABLE` +
         `details.rejected`, aucune écriture, transaction toujours `pending`, aucun audit ; archivé
         → 404 (priorité).
-  - [ ] `reconciliation_split_e2e.rs` : une ligne non imputable sur trois → 400, `details.rejected` ; une ligne
+  - [x] `reconciliation_split_e2e.rs` : une ligne non imputable sur trois → 400, `details.rejected` ; une ligne
         manquante **et** une non imputable → 404 (priorité) ; rien d'écrit.
-  - [ ] `reconciliation_e2e.rs` (accept, proposition `split`) : proposition non imputable → 200,
+  - [x] `reconciliation_e2e.rs` (accept, proposition `split`) : proposition non imputable → 200,
         `failed[]` avec le code et `details.rejected` ; proposition valide du même lot → `accepted[]` ;
         priorité : une ligne manquante **et** une non imputable → `failed[]` `ACCOUNT_NOT_FOUND`.
-  - [ ] `reconciliation_rules_e2e.rs` (accept, proposition `rule` — c'est là que vivent les tests
+  - [x] `reconciliation_rules_e2e.rs` (accept, proposition `rule` — c'est là que vivent les tests
         d'acceptation par règle) : règle dont le compte est devenu non imputable → `failed[]`
         `ACCOUNT_NOT_POSTABLE` ; priorité : compte archivé → `failed[]` `ACCOUNT_NOT_FOUND` ;
         `get_proposals` ne propose plus cette règle et propose la suivante qui correspond.
-  - [ ] `reconciliation_rules_e2e.rs` : POST non imputable → 400 `ACCOUNT_NOT_POSTABLE` +
+  - [x] `reconciliation_rules_e2e.rs` : POST non imputable → 400 `ACCOUNT_NOT_POSTABLE` +
         `details.rejected`, aucune règle créée ; POST avec un projet par défaut archivé **et** un compte
         non imputable → refus du projet (ordre de l'AC7) ; PATCH vers un autre compte non
         imputable → 400 ; PATCH renvoyant le **même** compte devenu non imputable (règle active) → 200 ;
@@ -539,60 +501,41 @@ lignes sur `1920381e`, dont des champs de réponse — trier).
         compte non imputable **avec une version périmée** → 400 `ACCOUNT_NOT_POSTABLE` (avant le 409,
         choix C10) ; PATCH `active:true` sur une règle désactivée dont le compte est archivé et non
         imputable → comportement actuel (accepté, *Hors périmètre*).
-  - [ ] Réglages — fichier neuf `crates/kesh-api/tests/company_invoice_settings_postable_e2e.rs`
+  - [x] Réglages — fichier neuf `crates/kesh-api/tests/company_invoice_settings_postable_e2e.rs`
         (montage : `idor_multi_tenant_e2e.rs:~751`, `create_seeded_company`) : pour **chacun** des six
         champs, changement vers un compte non imputable du bon type → 400 et message du champ ; PUT
         renvoyant un compte **déjà en place** devenu non imputable → 200. **#521 (AC19)** : PUT **sans**
         `defaultPayableAccountId` → le compte créanciers en place est conservé (relu après) ; PUT avec
         `null` → effacé ; PUT avec un autre compte valide → remplacé ; mutation (champ remis en
         `Option<i64>`) → le premier test rougit.
-  - [ ] `bank_accounts_e2e.rs` : POST, PUT, PATCH vers non imputable → 400 `ACCOUNT_NOT_POSTABLE` ;
+  - [x] `bank_accounts_e2e.rs` : POST, PUT, PATCH vers non imputable → 400 `ACCOUNT_NOT_POSTABLE` ;
         PUT et PATCH inchangés sur un compte devenu non imputable → 200 ; **ordre** : compte bancaire
         inconnu + compte non imputable → 404 `BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` (code actuel,
         `bank_accounts_e2e.rs:525`) ; version périmée + non imputable → 409 ; PUT `isPrimary:true` refusé
         pour non-imputabilité → l'ancien principal l'est toujours.
-  - [ ] `kesh-db` : `reconciliation_rules_repository.rs` et `bank_accounts_repository.rs` — la variante
+  - [x] `kesh-db` : `reconciliation_rules_repository.rs` et `bank_accounts_repository.rs` — la variante
         rendue par `create_in_tx` (règle), `update_in_tx`, `update_for_company`,
         `set_journal_account_id_for_company`.
-  - [ ] **Garde à l'usage (AC20) — un test par compte**, dans `kesh-db` (fichiers de tests de la
-        validation de facture, p. ex. `crates/kesh-db/tests/invoices_validate_vat.rs`, et
-        `crates/kesh-db/tests/supplier_invoices_repository.rs`) ; le compte de test ne diffère d'un
-        compte accepté **que par `postable`** et est **désigné avant** d'être rendu non imputable (le
-        chemin réel : l'exemption de l'AC11 l'a laissé en place) :
-        - **créance** non imputable → validation refusée, `DesignatedAccountsNotPostable` nommant
-          `(id, n°)`, facture toujours brouillon, aucune écriture ;
-        - **TVA due** non imputable : facture **avec** TVA → refusée ; facture **sans** TVA → validée ;
-        - **créanciers** non imputable → saisie de facture fournisseur refusée, rien d'écrit ; idem pour
-          la **complétion d'une facture importée** (un test) ;
-        - **TVA récupérable** non imputable : facture fournisseur **avec** TVA → refusée ; **sans** TVA
-          → acceptée ;
-        - créance **et** TVA due non imputables → **un** refus nommant les deux ;
-        - compte de réglage **archivé** → `InactiveOrInvalidAccounts`, inchangé (la variante n'est pas
-          émise) ;
-        - `kesh-api` (`company_invoice_settings_postable_e2e.rs`, montage avec `init_error_i18n`) : un
-          cas de bout en bout — 400 `ACCOUNT_NOT_POSTABLE`, `details.rejected`, `message` contenant
-          « Paramètres → Facturation » et le numéro ;
-        - **mutation** : retirer chacun des quatre contrôles une fois → son test rougit.
-  - [ ] AC15 : les tests de non-régression nommés passent toujours (ne pas les réécrire).
-  - [ ] Mutation : retirer chaque garde une fois, constater le rouge, restaurer **et toucher le
+  - [x] AC15 : les tests de non-régression nommés passent toujours (ne pas les réécrire).
+  - [x] Mutation : retirer chaque garde une fois, constater le rouge, restaurer **et toucher le
         fichier**. Consigner la liste.
-- [ ] **T7 — Manuel** (AC17) : les deux encadrés (`:380`, `:390`), avec les cas qui échappent
+- [x] **T7 — Manuel** (AC17) : les deux encadrés (`:380`, `:390`), avec les cas qui échappent
       encore ; `admin-manual.tex` § *Configuration des comptes TVA* complété ; PDF régénérés, commités,
       contrôlés aplatis.
-- [ ] **T8 — Doc-comments, propagation, CHANGELOG** (AC18)
-  - [ ] Les sites de l'AC18, dont `docs/api-external.md`.
-  - [ ] **Grep du symptôme** avant de déclarer fini (règle *Propagation post-patch*) :
+- [x] **T8 — Doc-comments, propagation, CHANGELOG** (AC18)
+  - [x] Les sites de l'AC18, dont `docs/api-external.md`.
+  - [x] **Grep du symptôme** avant de déclarer fini (règle *Propagation post-patch*) :
         `grep -rnE "#427|#429|#521|ne vérifie pas cet indicateur|restent ouverts|ne l'exigent pas|regroupement ou de clôture" crates docs/manual/fr/*.tex docs/api-external.md frontend/src`
         — chaque commentaire ou passage qui annonce ces trous comme ouverts est mis à jour ; chaque
         occurrence de l'ancienne parenthèse (message, test qui l'asserte, manuel) passe à « de
         regroupement, de résultat ou de clôture » (C19). *(Les motifs du manuel du rapprochement —
         `auto-validate`, « atomique », « par facture » — sont greppés par la 15-5c.)*
-- [ ] **T9 — Gates** : gate complet backend (`scripts/test-fast.sh`, base remise à zéro avant) — **même en
+- [x] **T9 — Gates** : gate complet backend (`scripts/test-fast.sh`, base remise à zéro avant) — **même en
       cours de boucle de revue**, la story touchant des repositories `kesh-db` ; gate frontend complet ;
       **E2E Playwright complet au dernier commit de code** (décision D7), jugé fichier par fichier contre
       `docs/testing.md` § « Les échecs attendus ».
 
-*(Décompte : 20 AC, 10 tâches T0–T9.)*
+*(Décompte : 19 AC, 10 tâches T0–T9.)*
 
 ## Dev Notes
 
@@ -655,34 +598,18 @@ lignes sur `1920381e`, dont des champs de réponse — trier).
 - **C19** — « de regroupement, de résultat ou de clôture », y compris dans `validate_account_of`.
 - **C23** — frontière des commentaires avec la 15-5a ; T0 refait après son merge.
 - **C24** — `docs/api-external.md`.
-- **C25** — #521 : compte créanciers absent du corps → préservé ; champ non exposé à l'écran.
+- **C25** — #521 : compte créanciers absent du corps → préservé ; **révisé par C34** : le champ est
+  exposé à l'écran par la 15-5d.
 - **C26** — `BankAccountJournalLinkForm` reçoit la liste complète.
-- **C27** — garde **à l'usage** des comptes de réglage (créance, TVA due, créanciers, TVA
-  récupérable) ; l'exemption « inchangé » ne vaut qu'à la désignation. Compatible avec D-A0 (cf.
-  ci-dessous).
-- **C28** — forme de ce refus : variante `DesignatedAccountsNotPostable`, même code et même `details`,
-  message propre qui dit où agir.
 - **C29** — `NonPostableAccounts::details()` (15-5a), seul constructeur du JSON `rejected`.
 - **C30** — la création de règle est gardée dans le dépôt, comme le PATCH.
+- **C33** — la garde à l'usage des comptes de réglage (C27, C28, ex-AC20) sort vers la **15-5d**.
 
-### La garde à l'usage et la doctrine D-A0 (vérifié en validation P3)
+### La garde à l'usage et la doctrine D-A0
 
-D-A0 (14-3b) exempte les flux automatiques de la garde de `create_in_tx` (`enforce_postable = false`),
-et sa limite **L2** dit en toutes lettres : « un compte de config (créance/produit/dette) devenu
-non-postable après configuration reste posté par les flux automatiques […] Remédiation éventuelle :
-re-vérifier `postable` à la résolution avec message dédié — amélioration future si un besoin se
-manifeste » (`14-3b-consommateurs-roles.md:188`). L'AC20 **est** cette remédiation, pour quatre
-comptes : elle ne touche pas `create_in_tx` ni son drapeau (D-A0 tenu), elle **révise L2** pour la
-créance, la TVA due, les créanciers et la TVA récupérable — le besoin s'est manifesté (#429). Elle ne
-contredit pas l'angle mort « compte bancaire **à l'usage** » (C6) : le compte bancaire n'est pas un
-réglage de facturation, il sert à **tous** les rapprochements et règlements, et le bloquer à l'usage
-changerait D-A0 elle-même — ce qui reste hors de cette story. Les plans livrés désignent d'office
-`1100`, `2200`, `2000` et `1171`, qui sont des **feuilles** dans les trois plans (vérifié sur
-`crates/kesh-core/assets/charts/*.json`) : aucune société fraîchement créée n'est bloquée.
-**Risque d'interblocage** : l'accesseur verrouille des lignes `accounts` `FOR UPDATE`, comme
-`rounding_account_for_write` dans le même flux de validation et comme la garde du compte de charge
-(24-5) dans le flux fournisseur — le dev place la lecture au même point que ces verrous existants et
-le dit dans le doc-comment.
+Section passée à la **15-5d** avec l'ancien AC20 (choix C33) — y compris la prémisse corrigée sur les
+plans livrés (finding R4-4 : seuls `1100` et `2000` sont désignés d'office ; `2200` et `1171` sont
+choisis par l'utilisateur).
 
 ### Hors périmètre, et écrit
 
@@ -692,7 +619,8 @@ le dit dans le doc-comment.
   `ACCOUNT_NOT_POSTABLE` ; même règle pour les lectures des dépôts du compte bancaire (AC12).
 - Le **compte de produit par défaut** à l'usage (exemption D3-bis de la 16-1a, délibérée) et le
   **compte bancaire** à l'usage (D-A0) : angles morts écrits au manuel (AC17).
-- L'exposition de `defaultPayableAccountId` à l'écran des réglages (C25) ; le message français en dur
+- La garde **à l'usage** des comptes de réglage et l'exposition de `defaultPayableAccountId` à l'écran
+  des réglages : **15-5d** (C33, C34). Le message français en dur
   des refus de `PUT /company/invoice-settings` (limite écrite à l'AC10).
 - Le libellé traduit des refus par lot et le manuel du rapprochement : **15-5c** (C15).
 - Le renommage du paramètre `active_account_ids` de `kesh-reconciliation` (crate hors périmètre).
@@ -701,21 +629,18 @@ le dit dans le doc-comment.
 
 `crates/kesh-db/src/repositories/{bank_accounts,reconciliation_rules}.rs`,
 `crates/kesh-api/src/routes/{reconciliation,reconciliation_rules,company_invoice_settings,bank_accounts,products}.rs`,
-`crates/kesh-api/src/errors.rs` (bras `DesignatedAccountsNotPostable` + commentaire),
-`crates/kesh-db/src/errors.rs` (variante), `crates/kesh-db/src/repositories/{invoices,supplier_invoices,company_invoice_settings}.rs`
-(garde à l'usage, AC20), `crates/kesh-i18n/locales/*/messages.ftl` et `crates/kesh-i18n/src/loader.rs`
-(clé et sélecteur de l'AC20), `crates/kesh-db/src/repositories/{invoice_settlements_write,journal_entries}.rs`
+`crates/kesh-api/src/errors.rs` (commentaire), `crates/kesh-db/src/repositories/{invoice_settlements_write,journal_entries}.rs`
 (commentaires), `frontend/src/lib/features/reconciliation/{ReconciliationProposals.svelte,ReconciliationProposals.test.ts}`,
 `frontend/src/lib/features/reconciliation/rules/{RuleFormModal.svelte,RuleFormModal.test.ts,RulesList.svelte,RulesList.test.ts}`,
 `frontend/src/routes/(app)/reconciliation/rules/+page.svelte` (+ test),
 `frontend/src/routes/(app)/bank-accounts/+page.svelte` (+ test neuf `+page.test.ts`),
 `frontend/tests/e2e/{payment-batches,supplier-invoices}.spec.ts`, tests
 (`crates/kesh-api/tests/{reconciliation_manual_e2e,reconciliation_split_e2e,reconciliation_e2e,reconciliation_rules_e2e,bank_accounts_e2e}.rs`,
-nouveau `company_invoice_settings_postable_e2e.rs`, `crates/kesh-db/tests/{reconciliation_rules_repository,bank_accounts_repository,invoices_validate_vat,supplier_invoices_repository}.rs`),
+nouveau `company_invoice_settings_postable_e2e.rs`, `crates/kesh-db/tests/{reconciliation_rules_repository,bank_accounts_repository}.rs`),
 `docs/manual/fr/user-manual.{tex,pdf}` (deux encadrés), `docs/manual/fr/admin-manual.{tex,pdf}` (comptes
 TVA), `docs/api-external.md`, `CHANGELOG.md`.
-**Aucune migration** (P1–P8 sans objet). **Une** clé i18n neuve, `error-designated-account-not-postable`
-(AC20) ; le message de l'AC10 reste en français en dur, celui d'`ACCOUNT_NOT_POSTABLE` à la saisie est
+**Aucune migration** (P1–P8 sans objet). **Aucune** clé i18n neuve (celle de la garde à l'usage est à
+la 15-5d) ; le message de l'AC10 reste en français en dur, celui d'`ACCOUNT_NOT_POSTABLE` à la saisie est
 posé par la 15-5a.
 
 ### Tests — ce qui rendrait un test vert sans rien prouver
@@ -747,11 +672,130 @@ posé par la 15-5a.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`bmad-dev-story`, worktree `kesh-15-5b`, branche `story/15-5b-gardes-surfaces-neuves`).
+
 ### Debug Log References
+
+- **T0 — inventaires refaits sur `33116a29`** (15-5a mergée dans la branche). (a) La commande rend
+  **20 lignes**, les mêmes sites qu'au sol, décalés par la 15-5a : `reconciliation.rs:1581/2083/2432/3153/3619`,
+  `invoice_settlements_write.rs:224/507`, `supplier_invoices.rs:394/724`, `invoices.rs:2255`,
+  `credit_notes.rs:548`, `opening_complement.rs:641`, `journal_entries.rs:163` (create), `:204`
+  (délégateur), `:644` (ouverture), `:1666` (contre-passation), `:3806` (`mod tests`), et les trois
+  homonymes `users.rs:32`, `supplier_invoices.rs:222`, `imported_supplier_invoices.rs:34`. **Aucun site
+  neuf.** (b) `grep -rnE "pub [a-z_]*account_id" crates/kesh-api/src/routes/*.rs` rend **63 lignes**,
+  mêmes fichiers ; seul `companies.rs:322` n'était pas nommé — champ **de réponse**
+  (`BankAccountJson`), sans objet. `onboarding.rs:531` (`upsert_primary`) ne pose aucun compte
+  comptable. **Aucun site non classé.**
+- Premier passage des tests d'acceptation ventilée en `400` : les lignes de proposition exigent une
+  `description` ; ajoutée aux corps de test (pas de changement de code).
+- Gate ciblé intermédiaire (neuf binaires touchés) : 207/207 verts.
 
 ### Completion Notes List
 
+- **Rapprochement (AC1–AC6)** : `post_manual` (étape 3 bis) et `post_split` (étape 5 bis) refusent un
+  compte de contrepartie actif non imputable en `400 ACCOUNT_NOT_POSTABLE`, après le 404 prioritaire ;
+  `accept_one_split` (étape d) et `accept_one_rule` (étape 5) le rendent en `failed[]` par
+  `non_postable_failed_proposal`, qui lit le code par `DbError::error_code` et le détail par
+  `NonPostableAccounts::details()` (C29) ; `get_proposals` ne passe à `first_matching_rule` que les
+  comptes actifs **et** imputables ; `accept_one_invoice` porte son commentaire de classement.
+- **Règles (AC7–AC9)** : garde **dans la transaction** des dépôts `create_in_tx` (C30) et `update_in_tx`
+  (changement de compte ou réactivation, C9 ; exemption « inchangé », C4 ; avant le 409, C10). Doc
+  d'ordre de `post_create` et `patch`, doc de module.
+- **Réglages (AC10, AC11, AC19)** : `validate_account` reçoit la valeur en place et exige `postable` si
+  elle change ; parenthèse du message corrigée (C19) ; `defaultPayableAccountId` en
+  `Option<Option<i64>>` + `double_option` — absent préservé sans contrôle, `null` effacé, valeur validée.
+- **Compte bancaire (AC12, AC13)** : `validate_journal_account_id(…, require_postable)` vrai à la
+  création ; `update_for_company` et `set_journal_account_id_for_company` contrôlent sous le verrou,
+  si la valeur change et n'est pas `NULL`. Écran : `withCurrentAccount` sur les deux `<select>`, liste
+  complète passée à `BankAccountJournalLinkForm` (C26). Deux E2E de montage gagnent `&& a.postable`.
+- **Contrôle partagé** : `accounts::ensure_postable_if_active_in_tx` (C-15-5b-3), refus seulement si
+  `active && !postable`.
+- **AC14** : helper `errorMessageOf` (C-15-5b-1) aux sept `catch`.
+- **AC15** : `test_create_in_tx_auto_flow_allows_non_postable` et
+  `reverse_succeeds_when_an_account_became_non_postable` non modifiés, verts au gate complet.
+- **AC17** : deux encadrés réécrits (`user-manual.tex`, § *Rôles des comptes* et § *Les comptes de
+  clôture*), avec les quatre cas qui échappent encore ; § *Configuration des comptes TVA* complété
+  (`admin-manual.tex`). Le reste du manuel d'administration : aucune autre mention du compte lié d'un
+  compte bancaire ni des six champs — contrôle sans objet. PDF régénérés (`make admin user`) et
+  contrôlés aplatis, ligatures normalisées : les phrases levées (« ne vérifie pas cet indicateur »,
+  « pourrait donc les viser », « Deux chemins font exception », « mais leurs écrans n'offrent pas »)
+  à 0 occurrence ; les nouvelles (« Quatre cas échappent encore », « déjà lié », « ne la propose
+  plus », « au moment où vous le désignez », « Cette protection ne se limite pas à la saisie
+  manuelle ») à 1 ; admin : « pas un compte de regroupement, de résultat ou de clôture » à 1.
+- **AC18** : doc-comments `products.rs` (D3), `invoice_settlements_write.rs`, `journal_entries.rs`
+  (`create_in_tx`), `errors.rs` (`details()` au présent) ; le commentaire D3 d'`errors.rs` ne reprend
+  pas l'argument du jumeau — inchangé. `docs/api-external.md` : § *Accepter des propositions* et ligne
+  `ACCOUNT_NOT_POSTABLE` du § 10. `CHANGELOG.md` : rubrique **Corrigé** de `[0.13.0] — Non publié`.
+  **Grep du symptôme (T8)** sur `crates`, les manuels FR, `api-external.md`, `frontend/src` : plus aucun
+  passage n'annonce #427/#429/#521 ouverts ; aucune occurrence de « regroupement ou de clôture ».
+- **Mutations (AC16) — 20, toutes rouges, chacune restaurée puis le fichier touché** (script
+  `scratchpad/mutate.py`) : M1 `post_manual` ; M2 `post_split` ; M2b ordre 404/400 de `post_split` ;
+  M3 `accept_one_split` ; M3b ordre manquant/non imputable ; M4 `accept_one_rule` ; M4b archivé
+  prioritaire ; M5 filtre de `get_proposals` ; M6 `create_in_tx` (règle, e2e + dépôt) ; M7a changement
+  de compte (dont l'ordre 400 avant 409) ; M7b réactivation ; M7c exemption ; M7d condition `active` ;
+  M8 désignation des réglages ; M8b exemption des réglages ; M9 #521 (`None => None`, C-15-5b-4 — deux
+  tests rougissent) ; M10 création du compte bancaire ; M11a `set_journal_account_id_for_company`
+  (e2e + dépôt) ; M11b `update_for_company` (dont « l'ancien principal le reste ») ; M11c exemption du
+  PUT. Frontend : le helper sans sa branche `ApiError` → les **7** tests AC14 rougissent ; la page
+  bancaire revenue à `linkableAccounts` sur les `<select>` → le test « formulaire de modification »
+  rougit ; `accounts={linkableAccounts}` → le test « formulaire de lien » rougit. Aucun résidu de
+  mutation (diff grepé).
+- **Gates, au dernier commit de code** (périmètre : arbre de travail de la branche avant ce commit) :
+  base de dev remise à zéro (restart tmpfs + migrations + seed) ; `scripts/test-fast.sh` **vert —
+  fmt, clippy `-D warnings`, nextest 2784 exécutés / 2784 passés, 4 ignorés** (2754 au gate de la
+  15-5a : +30, recompté par `grep -c 'sqlx::test'` aux deux bornes `HEAD`/arbre : manuel +2, ventilé
+  +2, `reconciliation_e2e` +2, règles +10, compte bancaire +5, réglages +5 (fichier neuf), dépôt des
+  règles +2, dépôt bancaire +2). Frontend : `npm run check` 0 erreur (27 avertissements, aucun neuf —
+  ceux des fichiers touchés sont les `state_referenced_locally` préexistants de `RuleFormModal`) ;
+  `lint-i18n-ownership` PASS ; `test:unit` **107 fichiers, 979 tests** (969 avant : +10) ; `build` OK.
+- **E2E complet** (montage du `CLAUDE.md` + `KESH_INBOX_DIR`, `KESH_DOCUMENTS_DIR`, `KESH_SMTP_*`,
+  `/health` `smtpConfigured:true` ; `kesh_e2e` recréée et migrée ; run à 13:34 UTC, donc pas de
+  KF-045) : **235 passés, 12 échecs, 19 ignorés**. Jugement fichier par fichier contre
+  `docs/testing.md` § « Les échecs attendus » : 7 KF-029 (`mode-expert:26/:41`,
+  `onboarding-path-b:65/:92`, `onboarding:57/:77/:150`) ; `sidebar-navigation:75` — échoue **rejoué
+  seul** → KF-046 (#424) ; `invoices:715`, `journal-entries:258/:321/:357` — tous en timeout sur
+  `locator('#username')`, signature de la **KF-053** (#478), **verts rejoués seuls**. ⚠️ Quatre
+  pollués, plus que les « 1 à 2 » habituels, tous sur la même signature réseau. **Verdict : aucune
+  régression** ; les specs touchées (`payment-batches`, `supplier-invoices`) et celles du
+  rapprochement passent.
+- Backend E2E arrêté ; base de dev remise à zéro en fin de travail.
+- **Choix consignés** : C-15-5b-1 à C-15-5b-4.
+
 ### File List
+
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/15-5b-gardes-surfaces-neuves.md`
+- `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `crates/kesh-api/src/routes/bank_accounts.rs`
+- `crates/kesh-api/src/routes/company_invoice_settings.rs`
+- `crates/kesh-api/src/routes/products.rs`
+- `crates/kesh-api/src/routes/reconciliation.rs`
+- `crates/kesh-api/src/routes/reconciliation_rules.rs`
+- `crates/kesh-api/tests/bank_accounts_e2e.rs`
+- `crates/kesh-api/tests/company_invoice_settings_postable_e2e.rs` (neuf)
+- `crates/kesh-api/tests/reconciliation_e2e.rs`
+- `crates/kesh-api/tests/reconciliation_manual_e2e.rs`
+- `crates/kesh-api/tests/reconciliation_rules_e2e.rs`
+- `crates/kesh-api/tests/reconciliation_split_e2e.rs`
+- `crates/kesh-db/src/errors.rs`
+- `crates/kesh-db/src/repositories/accounts.rs`
+- `crates/kesh-db/src/repositories/bank_accounts.rs`
+- `crates/kesh-db/src/repositories/invoice_settlements_write.rs`
+- `crates/kesh-db/src/repositories/journal_entries.rs`
+- `crates/kesh-db/src/repositories/reconciliation_rules.rs`
+- `crates/kesh-db/tests/bank_accounts_repository.rs`
+- `crates/kesh-db/tests/reconciliation_rules_repository.rs`
+- `docs/api-external.md`
+- `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/admin-manual.pdf`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte`, `ReconciliationProposals.test.ts`
+- `frontend/src/lib/features/reconciliation/rules/RuleFormModal.svelte`, `RuleFormModal.test.ts`
+- `frontend/src/lib/features/reconciliation/rules/RulesList.svelte`, `RulesList.test.ts` (neuf)
+- `frontend/src/lib/shared/utils/api-client.ts`
+- `frontend/src/routes/(app)/bank-accounts/+page.svelte`, `bank-accounts-page.test.ts` (neuf)
+- `frontend/src/routes/(app)/reconciliation/rules/+page.svelte`, `rules-page.test.ts` (neuf)
+- `frontend/tests/e2e/payment-batches.spec.ts`, `frontend/tests/e2e/supplier-invoices.spec.ts`
 
 ## Change Log
 
@@ -851,3 +895,95 @@ posé par la 15-5a.
   **Propagation post-patch** : `inchangé`, `NON GARDÉ`, `construit depuis`, `validate_counterparty_account`,
   `Aucune clé i18n neuve`, `sans objet`, `19 AC`, `ROUNDING`, `D3-bis`, `L2` grepés sur les fiches 15-5,
   15-5a, 15-5b, 15-5c et le registre ; le décompte passe à **20 AC, 10 tâches T0–T9** (recompté).
+- 2026-10-08 — **Passe de validation P4** (prompt versionné `15-5b-validate-prompt-p4.md` ; deux
+  lentilles **Opus** en contexte frais : **R** chasseur de régressions de la remédiation P3
+  (`007c4eb1`), **F** adversaire de périmètre complet ; rotation D6 : P1 Sonnet ×3 → P2 Opus ×2 → P3
+  Sonnet ×2 → P4 Opus ×2). **0 CRITICAL, 1 HIGH.** Bruts : R 1 HIGH + 1 MEDIUM + 5 LOW, F 1 HIGH +
+  2 MEDIUM + 6 LOW. Doublons inter-lentilles : R4-1 = F4-1, R4-2 = F4-2, R4-3 = F4-4, R4-5 = F4-6 →
+  **1 HIGH, 2 MEDIUM et 9 LOW distincts**. Trend : P1 (15-5 entière) 7 MEDIUM / 8 LOW → P2 6 MEDIUM /
+  8 LOW → P3 2 MEDIUM / 6 LOW → **P4 1 HIGH / 2 MEDIUM / 9 LOW**.
+
+  | finding | sév. | objet | sort | origine (amendement D5) |
+  |---|---|---|---|---|
+  | R4-1 = F4-1 | HIGH | AC20 × C25 : le refus des créanciers à l'usage renvoie à un champ que l'écran n'a pas — saisie fournisseur et complétion d'import bloquées sans recours à l'écran | **15-5d** : `defaultPayableAccountId` exposé dans *Paramètres → Facturation* (C34, révise C25), avec la garde ; ici, AC19 conservé et renvoi à la 15-5d | **né de la remédiation P3** (C27 contre C25) |
+  | R4-2 = F4-2 | MEDIUM | l'avoir écrit sur la créance et la TVA due **des réglages du moment**, sans garde ; inventaire (a) #11 et AC17 (iv) le disaient « snapshot de la facture » / « reprend les comptes de la facture » | inventaire (a) #11 corrigé ; AC15 et AC17 (iv) réécrits sur le vrai ; exemption délibérée posée et écrite par la **15-5d** (C35 : créance → 15-6a, #473, #523 ; TVA due → #525) | **d'origine** (#11 date de la création de la 15-5) ; le texte de l'AC17 (iv) est né de la remédiation P3 |
+  | F4-3 | MEDIUM | AC20 n'est pas du rollout ; la story n'a plus de justification pour son ampleur | **découpage : 15-5d** (C33) — AC20, C27/C28, variante, clé i18n, tests, passages de manuel ; `closes #429` passe à la 15-5d, cette story fait `refs #429` | **né de la remédiation P3** |
+  | R4-3 = F4-4 | LOW | prédicat « porte de la TVA » inconnaissable avant la génération | 15-5d AC1 : `total_vat > 0`, garde entre génération et `create_in_tx` | — |
+  | R4-4 | LOW | « les plans livrés désignent d'office 1100, 2200, 2000 et 1171 » faux pour 2200 et 1171 | 15-5d, Dev Notes | — |
+  | R4-5 = F4-6 | LOW | « désignez-y un sous-compte » ; message servi au Comptable | 15-5d AC2 (C36) | — |
+  | R4-6 | LOW | doc de module de `reconciliation_rules.rs` : `:13-17` (AC18) contre `:9-17` (T2) | T2 aligné sur `:13-17` | — |
+  | R4-7 | LOW | inventaire (a) #7 : `company_invoice_settings.rs:353` n'est pas une garde du solde du reste | `:353` retiré ; `:469` et `:499` nommés par leur fonction | — |
+  | F4-5 | LOW | place de la garde à l'usage dans l'ordre des refus | 15-5d AC1 | — |
+  | F4-7 | LOW | manuel : sections de la validation et de la saisie fournisseur non visées | 15-5d AC8 | — |
+  | F4-8 | LOW | CHANGELOG : ligne d'action pour un changement qui peut bloquer après mise à jour | 15-5d AC9 | — |
+  | F4-9 | LOW | inventaire (b) : `vat_report.rs:174` lit les comptes TVA sans écrire | inventaire (b) : mentionné | — |
+
+  **Signal de la règle de découpage** (sévérité MEDIUM → **HIGH**, P3 → P4) : **constaté, et suivi**.
+  Selon l'amendement D5, le HIGH (R4-1/F4-1) et F4-3 sont **nés de la remédiation P3** — un défaut qui
+  naît du correctif précédent, c'est le recyclage que l'amendement désigne comme déclencheur — et ils
+  se concentrent sur la seule règle métier ajoutée en P3 : **découpage en 15-5d** (C33). F4-2 est
+  d'origine. Ce qui reste ici est le rollout tel que la § *Une story de rollout* le décrit. Déclaré au
+  Project Lead par l'orchestrateur. **Décisions de l'orchestrateur** : C33 à C35 ; C36 ajouté pendant la
+  remédiation (15-5d). Les mentions de l'AC20, de C27 et de C28 dans les entrées P3 ci-dessus sont
+  **historiques** : ces objets sont à la 15-5d.
+  **Propagation post-patch** : `AC20`, `C27`, `C28`, `DesignatedAccountsNotPostable`,
+  `designated-account`, `closes #429`, `n'est pas exposé`, `reprend les comptes`, `snapshot de la
+  facture`, `:353`, `:9-17`, `20 AC`, `invoices_validate_vat` grepés sur les fiches 15-5, 15-5a (lecture
+  seule, aucune occurrence de ces motifs), 15-5b, 15-5c, 15-5d, le registre et `sprint-status.yaml`. Décompte :
+  **19 AC (AC1–AC19), 10 tâches T0–T9** (recompté). **Une passe P5 suit** (un HIGH et des MEDIUM en P4)
+  — sur le périmètre réduit, elle peut être ciblée sur ce commit de remédiation.
+- 2026-10-08 — **Passe de validation P5, ciblée** (prompt versionné `15-5b-validate-prompt-p5-ciblee.md` ;
+  une lentille **Haiku**, contexte frais : chasseur de régressions braqué sur le seul commit de la
+  remédiation P4, `67c31c95` ; passe ciblée de fin de boucle, décision D6). Rapport :
+  `target/gate-logs/15-5b-p5-ciblee.md`. **Rapporté : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW.**
+  - Le MEDIUM (« motif `20 AC` anachronique dans la propagation post-patch de la P4, à changer en
+    `19 AC` ») est **réfuté par l'orchestrateur** : la ligne visée énumère les motifs **grepés** par la
+    propagation post-patch ; `20 AC` y est la **valeur ancienne recherchée** — le décompte périmé que la
+    remédiation P4 devait faire disparaître —, pas un décompte de la fiche. Le remplacer par `19 AC`
+    rendrait la ligne fausse. Le décompte de la fiche, lui, est bien **19 AC, 10 tâches T0–T9**.
+  - **Retenu : 0 au-dessus de LOW.** La remédiation P4 ne touche aucune ligne de code de production
+    (fiche seule, aucun code écrit) : **boucle de validation close.**
+  - Axes déclarés par la lentille : contradictions AC / tâches / Dev Notes / registre, fiches sœurs,
+    numéros de ligne et chemins, décomptes, propagation post-patch, issues fermées et citées, découpage
+    reflété ; aucun axe déclaré non exercé (passe ciblée, une lentille).
+
+  **Trend complet de la fiche** (les deux premières lignes portent sur la 15-5 avant découpage) :
+
+  | passe | modèle(s) | périmètre | bilan retenu |
+  |---|---|---|---|
+  | P1 | Sonnet ×3 | 15-5 entière | 0 C / 0 H / 7 MEDIUM / 8 LOW |
+  | P2 | Opus ×2 | 15-5b | 0 C / 0 H / 6 MEDIUM / 8 LOW |
+  | P3 | Sonnet ×2 | 15-5b | 0 C / 0 H / 2 MEDIUM / 6 LOW |
+  | P4 | Opus ×2 | 15-5b | 0 C / 1 HIGH / 2 MEDIUM / 9 LOW → découpage 15-5d |
+  | P5 ciblée | Haiku ×1 | commit `67c31c95` | 0 C / 0 H / 0 MEDIUM (1 rapporté, réfuté) / 0 LOW |
+
+  Décompte inchangé : **19 AC (AC1–AC19), 10 tâches T0–T9** (recompté). Fiche prête pour le
+  développement, après le merge de la 15-5a.
+- 2026-10-08 — **Développement** (`bmad-dev-story`, Claude Opus 5.5). T0 refait : aucun site neuf. Les
+  19 AC implémentés ; 30 tests backend et 10 tests Vitest neufs ; 20 mutations backend et 3 frontend,
+  toutes rouges. Gate complet backend 2784/2784, frontend 979/979, E2E 235 passés / 12 échecs tous
+  attendus (7 KF-029, KF-046, 4 KF-053 verts rejoués seuls). Choix C-15-5b-1 à C-15-5b-4. Statut
+  `review`.
+- 2026-10-08 — **Revue de code close** (`bmad-code-review`, Claude Sonnet 5.5, trois lentilles en contexte
+  frais : Blind Hunter B, Edge Case Hunter E, Acceptance Auditor A ; diff `33116a29..c0aee2d3` ; prompt
+  `15-5b-review-prompt-p1.md`, rapports `target/gate-logs/15-5b-review-p1-{B,E,A}.md`). Trend : **P1 : 0
+  CRITICAL / 0 HIGH / 0 MEDIUM, 13 LOW** (B 6, E 4, A 3) — critère d'arrêt atteint dès la première passe
+  (« uniquement des LOW »). Sort de chaque LOW :
+  - **A-1 = E1** (`docs/api-external.md`, séparateur manquant avant `POST /supplier-invoices/{id}/pay`) :
+    **corrigé** (virgule rétablie, une seule occurrence).
+  - **B1 / E4** (codes bruts de `failed[]` affichés tels quels, `details.rejected` ignoré) : accepté,
+    attribué à la **15-5c (#492)**.
+  - **B2** (duplication du contrôle ; `errorMessageOf` non repris dans deux modales) : accepté, **dette
+    LOW** — le corriger touche la production.
+  - **B3 / A-3** (motif `e instanceof Error ? e.message : String(e)` encore présent, dont
+    `settings/+page.svelte:236/:260`) : accepté, hors module, écarté par C-15-5b-1 ; suivi **#520**.
+  - **B4 / E3** (contrôles de postabilité lus sans verrou, fenêtre étroite, création de compte bancaire
+    hors transaction) : accepté, **même dette que #522**, consignée au doc-comment du helper.
+  - **B5** (variable `active_account_ids` devenue « actifs et imputables ») et **B6 / C10** (400 avant 409,
+    documenté) : acceptés, nit / comportement voulu.
+  - **E2** (réactivation d'une règle dont le compte est archivé non refusée) : accepté, hors périmètre de
+    l'AC8, comportement antérieur inchangé.
+  - **A-2** (codes de `failed[]` dits en prose, non en liste) : accepté, conforme dans le fond.
+  Axes exercés : chaque AC contre code et noms de tests, recompte des tests (+30 backend, +10 frontend,
+  conformes), PDF aplatis, grep de résidus, inventaire du motif `String(e)`. Non exercés : exécution des
+  tests et des mutations (revue en lecture seule). Choix C-15-5b-5. Statut `done`.

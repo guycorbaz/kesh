@@ -1312,3 +1312,140 @@ async fn post_manual_emits_audit_log_pair(pool: MySqlPool) {
     assert!(details_json["description"].is_string());
     assert!(details_json["value_date"].is_string());
 }
+
+// ============================================================
+// Story 15-5b (AC1, AC16, #427) — compte de contrepartie non imputable
+// ============================================================
+
+/// Rend un compte **non imputable** sans le désactiver — l'état exact d'un
+/// compte scindé en sous-comptes (règle 14-3a). Patron de
+/// `products_revenue_account_e2e.rs::set_account_not_postable` : `UPDATE`
+/// direct, `version + 1`. Le compte ne diffère d'un compte accepté que par
+/// `postable` (même société, actif, même type).
+async fn set_account_not_postable(pool: &MySqlPool, account_id: i64) {
+    sqlx::query("UPDATE accounts SET postable = FALSE, version = version + 1 WHERE id = ?")
+        .bind(account_id)
+        .execute(pool)
+        .await
+        .expect("set account not postable");
+}
+
+/// Story 15-5b (AC1) — un compte de contrepartie actif mais **non imputable**
+/// est refusé en 400 `ACCOUNT_NOT_POSTABLE`, le détail nomme le compte, et
+/// **rien n'est écrit** : aucune écriture, transaction toujours `pending`,
+/// aucun audit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_manual_rejects_non_postable_counterparty(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    set_account_not_postable(&pool, ctx.counterparty_account_id).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("not_postable"),
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            dec!(-50.00),
+            "FEES",
+        )],
+    )
+    .await;
+    let tx_id = tx_ids[0];
+
+    let app = spawn_app(pool.clone()).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/manual"))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankAccountId": ctx.bank_account_id,
+            "bankTransactionId": tx_id,
+            "counterpartyAccountId": ctx.counterparty_account_id,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ACCOUNT_NOT_POSTABLE");
+    assert_eq!(
+        body["error"]["details"]["rejected"],
+        json!([{ "accountId": ctx.counterparty_account_id, "accountNumber": "6810" }])
+    );
+
+    let je_count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM journal_entries WHERE company_id = ?")
+            .bind(ctx.company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(je_count.0, 0, "aucune écriture créée");
+    let status: (String,) = sqlx::query_as("SELECT status FROM bank_transactions WHERE id = ?")
+        .bind(tx_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status.0, "pending", "transaction toujours pending");
+    let audit_count: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM audit_log \
+         WHERE action = 'reconciliation.manual_matched' AND entity_id = ?",
+    )
+    .bind(tx_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(audit_count.0, 0, "aucun audit");
+}
+
+/// Story 15-5b (AC1, priorité) — un compte **archivé ET non imputable** reste
+/// un 404 `ACCOUNT_NOT_FOUND` : l'anti-énumération prime sur le refus de
+/// postabilité.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_manual_archived_non_postable_counterparty_is_404_first(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    set_account_not_postable(&pool, ctx.counterparty_account_id).await;
+    sqlx::query("UPDATE accounts SET active = FALSE, version = version + 1 WHERE id = ?")
+        .bind(ctx.counterparty_account_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("archived_not_postable"),
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            dec!(-50.00),
+            "FEES",
+        )],
+    )
+    .await;
+
+    let app = spawn_app(pool.clone()).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/manual"))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankAccountId": ctx.bank_account_id,
+            "bankTransactionId": tx_ids[0],
+            "counterpartyAccountId": ctx.counterparty_account_id,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ACCOUNT_NOT_FOUND");
+}

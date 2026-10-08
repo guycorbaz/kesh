@@ -1256,3 +1256,263 @@ async fn list_bank_accounts_exposes_the_last_statement(pool: MySqlPool) {
     assert_eq!(a["statementDate"], json!("2026-03-31"));
     assert_eq!(a["ledgerBalanceAtStatement"], json!("500.0000"));
 }
+
+// ============================================================
+// Story 15-5b (AC12, AC16, #427) — compte comptable lié non imputable
+// ============================================================
+
+/// Rend un compte **non imputable** sans le désactiver (patron
+/// `products_revenue_account_e2e.rs::set_account_not_postable`) : le compte
+/// ne diffère d'un compte accepté que par `postable`.
+async fn set_account_not_postable(pool: &MySqlPool, account_id: i64) {
+    sqlx::query("UPDATE accounts SET postable = FALSE, version = version + 1 WHERE id = ?")
+        .bind(account_id)
+        .execute(pool)
+        .await
+        .expect("set account not postable");
+}
+
+async fn link_directly(pool: &MySqlPool, bank_account_id: i64, account_id: i64) {
+    sqlx::query(
+        "UPDATE bank_accounts SET journal_account_id = ?, version = version + 1 WHERE id = ?",
+    )
+    .bind(account_id)
+    .bind(bank_account_id)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn assert_not_postable_15_5b(resp: reqwest::Response, account_id: i64, number: &str) {
+    assert_eq!(resp.status(), 400);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ACCOUNT_NOT_POSTABLE", "{body}");
+    assert_eq!(
+        body["error"]["details"]["rejected"],
+        json!([{ "accountId": account_id, "accountNumber": number }])
+    );
+}
+
+async fn put_bank_account(
+    pool: &MySqlPool,
+    ctx: &Ctx,
+    bank_account_id: i64,
+    body: Value,
+) -> reqwest::Response {
+    let app = spawn_app(pool.clone()).await;
+    app.client
+        .put(app.url(&format!("/api/v1/bank-accounts/{bank_account_id}")))
+        .bearer_auth(&ctx.jwt)
+        .json(&body)
+        .send()
+        .await
+        .unwrap()
+}
+
+/// AC12 — création : un compte lié non imputable est refusé en 400.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_bank_account_rejects_non_postable_journal_account(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    set_account_not_postable(&pool, ctx.asset_account_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/bank-accounts"))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankName": "PostFinance",
+            "iban": "CH3908704016075473007",
+            "isPrimary": false,
+            "journalAccountId": ctx.asset_account_id,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_not_postable_15_5b(resp, ctx.asset_account_id, "1020").await;
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bank_accounts WHERE company_id = ?")
+        .bind(ctx.company_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 1, "aucun compte bancaire créé");
+}
+
+/// AC12 — remplacement (PUT) et lien (PATCH) vers un **nouveau** compte non
+/// imputable : 400.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn put_and_patch_reject_new_non_postable_journal_account(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    set_account_not_postable(&pool, ctx.asset_account_id).await;
+
+    let version = read_bank_account_version(&pool, ctx.bank_account_id).await;
+    let resp = put_bank_account(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        json!({
+            "bankName": "UBS",
+            "iban": "CH4431999123000889012",
+            "isPrimary": true,
+            "journalAccountId": ctx.asset_account_id,
+            "version": version,
+        }),
+    )
+    .await;
+    assert_not_postable_15_5b(resp, ctx.asset_account_id, "1020").await;
+
+    let resp = ctx_patch(
+        &pool,
+        &ctx,
+        json!({ "journalAccountId": ctx.asset_account_id, "version": version }),
+    )
+    .await;
+    assert_not_postable_15_5b(resp, ctx.asset_account_id, "1020").await;
+    let linked: Option<i64> =
+        sqlx::query_scalar("SELECT journal_account_id FROM bank_accounts WHERE id = ?")
+            .bind(ctx.bank_account_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(linked, None, "rien n'est lié");
+}
+
+/// AC12 (exemption) — PUT et PATCH qui renvoient le compte **déjà lié**,
+/// devenu non imputable après coup : 200 (D-A0).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn put_and_patch_accept_unchanged_non_postable_journal_account(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    link_directly(&pool, ctx.bank_account_id, ctx.asset_account_id).await;
+    set_account_not_postable(&pool, ctx.asset_account_id).await;
+
+    let version = read_bank_account_version(&pool, ctx.bank_account_id).await;
+    let resp = put_bank_account(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        json!({
+            "bankName": "UBS renommée",
+            "iban": "CH4431999123000889012",
+            "isPrimary": true,
+            "journalAccountId": ctx.asset_account_id,
+            "version": version,
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+
+    let version = read_bank_account_version(&pool, ctx.bank_account_id).await;
+    let resp = ctx_patch(
+        &pool,
+        &ctx,
+        json!({ "journalAccountId": ctx.asset_account_id, "version": version }),
+    )
+    .await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+}
+
+/// AC12 (ordre) — compte bancaire inconnu + compte non imputable : 404 ;
+/// version périmée + compte non imputable : 409. Sur le PUT et le PATCH.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn bank_account_errors_precede_non_postable_refusal(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    set_account_not_postable(&pool, ctx.asset_account_id).await;
+    let app = spawn_app(pool.clone()).await;
+
+    let resp = put_bank_account(
+        &pool,
+        &ctx,
+        999_999,
+        json!({
+            "bankName": "UBS",
+            "iban": "CH4431999123000889012",
+            "journalAccountId": ctx.asset_account_id,
+            "version": 1,
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), 404);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND");
+
+    let resp = app
+        .client
+        .patch(app.url("/api/v1/bank-accounts/999999"))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "journalAccountId": ctx.asset_account_id, "version": 1 }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 404);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND");
+
+    let resp = put_bank_account(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        json!({
+            "bankName": "UBS",
+            "iban": "CH4431999123000889012",
+            "journalAccountId": ctx.asset_account_id,
+            "version": 99,
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), 409);
+
+    let resp = ctx_patch(
+        &pool,
+        &ctx,
+        json!({ "journalAccountId": ctx.asset_account_id, "version": 99 }),
+    )
+    .await;
+    assert_eq!(resp.status(), 409);
+}
+
+/// AC12 — un PUT qui promeut un compte en principal et échoue sur ce refus
+/// **n'a rien démoté** : la transaction est abandonnée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn put_primary_refused_for_non_postable_does_not_demote_old_primary(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let second = bank_accounts::create(
+        &pool,
+        NewBankAccount {
+            company_id: ctx.company_id,
+            bank_name: "PostFinance".into(),
+            iban: "CH3908704016075473007".into(),
+            qr_iban: None,
+            is_primary: false,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    set_account_not_postable(&pool, ctx.asset_account_id).await;
+    let version = read_bank_account_version(&pool, second).await;
+    let resp = put_bank_account(
+        &pool,
+        &ctx,
+        second,
+        json!({
+            "bankName": "PostFinance",
+            "iban": "CH3908704016075473007",
+            "isPrimary": true,
+            "journalAccountId": ctx.asset_account_id,
+            "version": version,
+        }),
+    )
+    .await;
+    assert_not_postable_15_5b(resp, ctx.asset_account_id, "1020").await;
+    let old_is_primary: bool =
+        sqlx::query_scalar("SELECT is_primary FROM bank_accounts WHERE id = ?")
+            .bind(ctx.bank_account_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(old_is_primary, "l'ancien principal l'est toujours");
+}

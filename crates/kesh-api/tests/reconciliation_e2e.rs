@@ -4957,3 +4957,229 @@ async fn cancelling_a_three_line_reconciliation_reverses_the_rounding_line(pool:
     assert_eq!(due, dec!(10.0050));
     assert_eq!(settlements_and_paid_at(&pool, inv_id).await, (0, None));
 }
+
+// ============================================================
+// Story 15-5b (AC3, AC16, #427) — `POST /accept`, proposition `split`, compte
+// de contrepartie non imputable
+// ============================================================
+
+/// Contexte d'acceptation ventilée : société, Comptable, compte bancaire lié
+/// à 1020, deux contreparties 5000 et 5700 imputables, exercice 2026 ouvert,
+/// deux transactions `pending` de -100.00.
+struct AcceptSplitCtx {
+    company_id: i64,
+    user_id: i64,
+    bank_account_id: i64,
+    cp_a: i64,
+    cp_b: i64,
+    tx_ids: Vec<i64>,
+    jwt: String,
+}
+
+async fn setup_accept_split_ctx(pool: &MySqlPool, label: &str, iban: &str) -> AcceptSplitCtx {
+    let company_id = create_company(pool, label).await;
+    let user_id = create_user(pool, &format!("{label}_user"), Role::Comptable, company_id).await;
+    let bank_account_id = create_bank_account(pool, company_id, iban).await;
+    let mk = |number: &'static str, name: &'static str, account_type: AccountType| NewAccount {
+        company_id,
+        number: number.into(),
+        name: name.into(),
+        account_type,
+        parent_id: None,
+        role: None,
+        postable: true,
+    };
+    let ledger = accounts::create(pool, user_id, mk("1020", "Banque", AccountType::Asset))
+        .await
+        .unwrap()
+        .id;
+    let cp_a = accounts::create(pool, user_id, mk("5000", "Salaires", AccountType::Expense))
+        .await
+        .unwrap()
+        .id;
+    let cp_b = accounts::create(
+        pool,
+        user_id,
+        mk("5700", "Charges sociales", AccountType::Expense),
+    )
+    .await
+    .unwrap()
+    .id;
+    sqlx::query(
+        "UPDATE bank_accounts SET journal_account_id = ?, version = version + 1 WHERE id = ?",
+    )
+    .bind(ledger)
+    .bind(bank_account_id)
+    .execute(pool)
+    .await
+    .unwrap();
+    let _ = insert_fake_fiscal_year(pool, company_id).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 31).unwrap();
+    let tx_ids = seed_bank_transactions(
+        pool,
+        company_id,
+        bank_account_id,
+        user_id,
+        &unique_hash(label),
+        day,
+        day,
+        vec![
+            make_new_tx(
+                company_id,
+                bank_account_id,
+                day,
+                Some(day),
+                dec!(-100.00),
+                "CHF",
+                "BATCH-1",
+                None,
+            ),
+            make_new_tx(
+                company_id,
+                bank_account_id,
+                day,
+                Some(day),
+                dec!(-100.00),
+                "CHF",
+                "BATCH-2",
+                None,
+            ),
+        ],
+    )
+    .await;
+    AcceptSplitCtx {
+        company_id,
+        user_id,
+        bank_account_id,
+        cp_a,
+        cp_b,
+        tx_ids,
+        jwt: forge_jwt(user_id, "Comptable", company_id),
+    }
+}
+
+async fn set_account_not_postable_15_5b(pool: &MySqlPool, account_id: i64) {
+    sqlx::query("UPDATE accounts SET postable = FALSE, version = version + 1 WHERE id = ?")
+        .bind(account_id)
+        .execute(pool)
+        .await
+        .expect("set account not postable");
+}
+
+/// Story 15-5b (AC3) — une proposition ventilée dont une ligne vise un compte
+/// non imputable : HTTP 200, `failed[]` avec `ACCOUNT_NOT_POSTABLE` et
+/// `details.rejected` ; la proposition valide du même lot est acceptée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_split_with_non_postable_counterparty_fails_per_proposal(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = setup_accept_split_ctx(&pool, "accept_split_np", "CH1000000000000099003").await;
+    // Un troisième compte, rendu non imputable : seule la proposition qui le
+    // vise doit échouer.
+    let cp_np = accounts::create(
+        &pool,
+        ctx.user_id,
+        NewAccount {
+            company_id: ctx.company_id,
+            number: "6900".into(),
+            name: "Divers".into(),
+            account_type: AccountType::Expense,
+            parent_id: None,
+            role: None,
+            postable: true,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    set_account_not_postable_15_5b(&pool, cp_np).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/accept"))
+        .header("Authorization", format!("Bearer {}", ctx.jwt))
+        .json(&serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "proposals": [
+                {
+                    "type": "split",
+                    "bankTransactionId": ctx.tx_ids[0],
+                    "splits": [
+                        { "counterpartyAccountId": ctx.cp_a, "amount": "60.00", "description": "Ligne" },
+                        { "counterpartyAccountId": cp_np, "amount": "40.00", "description": "Ligne" },
+                    ],
+                },
+                {
+                    "type": "split",
+                    "bankTransactionId": ctx.tx_ids[1],
+                    "splits": [
+                        { "counterpartyAccountId": ctx.cp_a, "amount": "60.00", "description": "Ligne" },
+                        { "counterpartyAccountId": ctx.cp_b, "amount": "40.00", "description": "Ligne" },
+                    ],
+                }
+            ]
+        }))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status();
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        status, 200,
+        "pattern batch : succès partiel = HTTP 200 — {body}"
+    );
+    let failed = body["failed"].as_array().expect("failed[]");
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(failed[0]["bankTransactionId"].as_i64(), Some(ctx.tx_ids[0]));
+    assert_eq!(failed[0]["errorCode"], "ACCOUNT_NOT_POSTABLE");
+    assert_eq!(
+        failed[0]["details"],
+        serde_json::json!({ "rejected": [{ "accountId": cp_np, "accountNumber": "6900" }] })
+    );
+    let accepted = body["accepted"].as_array().expect("accepted[]");
+    assert_eq!(accepted.len(), 1, "{body}");
+    assert_eq!(
+        accepted[0]["bankTransactionId"].as_i64(),
+        Some(ctx.tx_ids[1])
+    );
+
+    let status: String = sqlx::query_scalar("SELECT status FROM bank_transactions WHERE id = ?")
+        .bind(ctx.tx_ids[0])
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "pending", "la proposition refusée n'a rien écrit");
+}
+
+/// Story 15-5b (AC3, priorité) — une ligne **manquante** et une ligne non
+/// imputable dans la même proposition : `failed[]` `ACCOUNT_NOT_FOUND`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_split_missing_and_non_postable_reports_not_found_first(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = setup_accept_split_ctx(&pool, "accept_split_prio", "CH1000000000000099004").await;
+    set_account_not_postable_15_5b(&pool, ctx.cp_b).await;
+    let unknown = ctx.cp_b + 100_000;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/accept"))
+        .header("Authorization", format!("Bearer {}", ctx.jwt))
+        .json(&serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "proposals": [{
+                "type": "split",
+                "bankTransactionId": ctx.tx_ids[0],
+                "splits": [
+                    { "counterpartyAccountId": unknown, "amount": "60.00", "description": "Ligne" },
+                    { "counterpartyAccountId": ctx.cp_b, "amount": "40.00", "description": "Ligne" },
+                ],
+            }]
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let failed = body["failed"].as_array().expect("failed[]");
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(failed[0]["errorCode"], "ACCOUNT_NOT_FOUND");
+}

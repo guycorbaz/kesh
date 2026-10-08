@@ -528,3 +528,182 @@ l'import (#458–#461).
 - **Écartées** : durcir B-2 en erreur à l'exécution ; ajouter les tests HTTP E-2/E-3/A-3 (routes qui
   propagent sans remappage).
 - **Réversible** : oui (les LOW restent tracés au Change Log de la fiche).
+## C33 — 15-5b/15-5d : la garde à l'usage des comptes de réglage sort de la 15-5b
+
+- **Contexte** : validation P4 de la 15-5b (lentilles Opus R et F). Finding F4-3 (MEDIUM) : l'AC20,
+  ajouté en P3 (C27, C28), est une **règle métier neuve** — révision de la limite L2 de D-A0 —, pas un
+  rollout ; et les deux HIGH de la passe (R4-1 = F4-1) en sont **nés**. Sévérité P3 → P4 : MEDIUM →
+  HIGH, défauts nés du correctif précédent — le recyclage que l'amendement D5 désigne comme déclencheur.
+- **Retenu** (décision de l'orchestrateur) : nouvelle fiche **15-5d-garde-usage-comptes-reglage**, qui
+  reprend l'AC20 et tout ce qui s'y rattache (C27, C28, la révision de L2, la variante
+  `DesignatedAccountsNotPostable`, la clé `error-designated-account-not-postable`, ses tests, ses
+  passages de manuel, sa part de `docs/api-external.md` et du CHANGELOG), plus l'exposition du compte
+  créanciers (C34) et l'exemption de l'avoir (C35). Elle **dépend de 15-5a et 15-5b**, est indépendante
+  de la 15-5c, et porte `closes #429` ; la 15-5b passe à `refs #429` et garde `closes #427 closes
+  #521`. La 15-5b n'est pas renumérotée (19 AC, AC1–AC19).
+- **Écartées** : garder l'AC20 dans la 15-5b et l'y faire revoir en passes complètes (la § *Une story de
+  rollout* ne le justifiait plus) ; retirer la garde à l'usage de l'epic (#429 resterait ouverte en
+  fait).
+- **Réversible** : oui (aucun code écrit).
+
+## C34 — 15-5d : le compte créanciers est exposé à l'écran des réglages (révise C25)
+
+- **Contexte** : findings R4-1 = F4-1 (HIGH) de la P4 de la 15-5b. C25 avait écarté l'exposition de
+  `defaultPayableAccountId` « sans nécessité pour fermer le défaut » ; la garde à l'usage (C27) a créé
+  cette nécessité : son refus renvoie à *Paramètres → Facturation*, où le champ n'existe pas — la
+  saisie de toute facture fournisseur serait bloquée sans recours à l'écran.
+- **Retenu** (décision de l'orchestrateur) : la 15-5d ajoute au formulaire un `<select>` *Compte
+  créanciers (Passif)*, filtré comme la TVA due (`active && postable && Liability`), la valeur courante
+  préservée par `withCurrentAccount` (#271), lue, relue sur conflit et envoyée ; types TypeScript
+  complétés ; clé `settings-invoicing-payable-account`. L'AC19 de la 15-5b (absent du corps = préservé)
+  reste le filet des clients qui n'envoient pas le champ. Les contournements E2E
+  (`payment-batches.spec.ts`, `inbox-import.spec.ts`) sont retirés s'ils deviennent inutiles, sur
+  constat (specs rejouées sans eux sur base fraîche).
+- **Écartées** : sortir les créanciers de la garde à l'usage (angle mort de plus, pour un compte que
+  l'utilisateur ne peut pas régler) ; un message distinct pour les créanciers (n'ouvre pas de recours).
+- **Réversible** : oui.
+
+## C35 — 15-5d : l'avoir est exempté de la garde à l'usage, avec sa vraie raison
+
+- **Contexte** : findings R4-2 = F4-2 (MEDIUM) de la P4 de la 15-5b. L'avoir ne reprend de la facture que
+  ses **comptes de produit** ; la **créance** et la **TVA due** sont relues dans les réglages **du
+  moment** (`credit_notes.rs:360-364`, `:507-512`) et postées sans garde. La fiche disait « snapshot de
+  la facture » (inventaire (a) #11) et l'AC17 (iv) « reprend les comptes de la facture d'origine » :
+  faux.
+- **Retenu** (décision de l'orchestrateur) : exemption **délibérée** et écrite. Ces lectures sont
+  elles-mêmes le défaut à corriger : la créance sera lue **sur l'écriture de vente** par la 15-6a (#473,
+  et #523 pour le compte d'arrondi), la TVA due relève de #525 (report TVA) ; une garde posée sur le
+  compte des réglages serait défaite par ces corrections et bloquerait l'annulation d'une facture sur
+  un compte que l'avoir ne devrait pas lire. Inventaire (a) #11, AC15 et AC17 de la 15-5b corrigés ; un
+  test de la 15-5d fige l'exemption.
+- **Écartée** : garder l'avoir à l'usage comme la validation (cohérent avec C27, mais transitoire et
+  contraire à « une pièce émise reste annulable »).
+- **Réversible** : oui.
+
+## C36 — 15-5d : le message du refus à l'usage — « un compte imputable », « un administrateur doit »
+
+- **Contexte** : findings R4-5 = F4-6 (LOW) de la P4 de la 15-5b. Le texte de C28 disait « désignez-y un
+  sous-compte imputable » : le remède « sous-compte » ne vaut que pour un compte de regroupement, et la
+  phrase s'adressait à un Comptable qui valide une facture sans accès à la page des réglages (Admin).
+- **Retenu** : « … n'est pas imputable (…) : un administrateur doit y désigner à sa place un compte
+  imputable » — vrai pour les deux rôles et pour un client d'API, sans branche d'écran par rôle.
+- **Écartée** : une branche par rôle dans chaque `catch` (patron de `CONFIGURATION_REQUIRED` à la
+  validation d'une facture) — trois écrans à modifier, et un client d'API n'en profiterait pas.
+- **Réversible** : oui avant v0.13.0.
+
+## C37 — 15-5c : une clé `error-*` existante est lue directement quand elle convient
+
+- **Contexte** : findings R-7 et F-13 (LOW) de la P2 de la 15-5c — l'AC1 disait que le libellé de
+  `ROUNDING_ACCOUNT_NOT_CONFIGURED` « reprend » `error-rounding-account-not-configured`, sans dire s'il
+  fallait lire la clé ou en copier le texte ; certains messages serveur portent une variable que le
+  client n'a pas.
+- **Retenu** : une clé `error-*` existante qui convient **mot pour mot et sans variable** est **lue
+  directement** (l'espace `error-` est global pour le lint d'ownership) — c'est le cas de la clé
+  d'arrondi ; sinon, clé neuve `reconciliation-failed-*`, sans la variable. Le Dev Agent Record dit, par
+  code, quelle clé est lue.
+- **Écartée** : dupliquer toutes les traductions sous `reconciliation-failed-*` (quatre locales à tenir
+  en double).
+- **Réversible** : oui.
+
+## C38 — 15-5c : les échecs partiels restent visibles, et désignent la transaction
+
+- **Contexte** : findings F-5 et F-6 (LOW) de la P2 de la 15-5c — le bloc *Échecs partiels* vit dans la
+  branche « liste non vide » et disparaît quand le lot vide la liste (cas de tous les refus de
+  *Rejeter*) ; `TX #<id>` désigne un identifiant que l'écran n'affiche nulle part.
+- **Retenu** : bloc et compteur sortis de la branche ; la ligne de refus affiche la date, le montant et la
+  contrepartie relevés **avant** le rechargement, `TX #<id>` en repli ; un test où le second chargement
+  rend une liste vide.
+- **Écartée** : écrire la limite au manuel (l'AC6 promet déjà les refus de *Rejeter* en clair : il
+  faut qu'ils s'affichent).
+- **Réversible** : oui.
+
+## C39 — 15-5d : le prédicat de la garde à l'usage — les rôles rendus par le générateur
+
+- **Contexte** : findings R1-2 (MEDIUM) et F2 (LOW) de la validation P1 de la 15-5d. L'AC1 demandait de
+  contrôler les comptes de réglage « effectivement présents dans `entry_lines` », sans mécanisme : la
+  TVA totale est une variable locale du générateur (`invoices.rs:1851`, `supplier_invoices.rs:129`), et
+  lire les `account_id` des lignes est ambigu dès qu'un même compte joue deux rôles ou coïncide avec un
+  compte de produit ou de charge (les fixtures réutilisent `2000`).
+- **Retenu** : les générateurs (`generate_invoice_journal_lines`, transmis par `_rounded`, et
+  `generate_purchase_journal_lines`) rendent, avec les lignes, l'ensemble des **rôles** de réglage
+  qu'ils ont effectivement écrits (créance, TVA due, créanciers, TVA récupérable), le rôle TVA étant
+  posé dans la branche même `total_vat > 0` qui écrit sa ligne. La garde ne contrôle que les comptes de
+  ces rôles. L'avoir, autre appelant, ignore les rôles (C35).
+- **Écartées** : (a) inspecter les `account_id` de `entry_lines` — ambigu ; (b) recalculer la TVA
+  totale hors du générateur — duplication (règle DRY) et risque de divergence avec l'arrondi par ligne ;
+  (c) rendre seulement un booléen « TVA écrite » — même changement de signature, moins expressif.
+- **Réversible** : oui (code non écrit).
+
+## C40 — 15-5d : un même compte désigné pour deux rôles est nommé une fois
+
+- **Contexte** : finding F1 (MEDIUM) de la validation P1 de la 15-5d : sans dédoublonnage, un compte
+  qui porte à la fois la créance et la TVA due donnerait « Les comptes 2000, 2000 … ».
+- **Retenu** : le dédoublonnage est celui de `NonPostableAccounts::new`, que la 15-5a définit comme
+  trieur **et dédoublonneur par identifiant** (fiche 15-5a, AC1) ; l'accesseur construit la variante
+  par ce seul constructeur, sans dédoublonnage propre. Un test le fige (« même compte pour deux rôles →
+  nommé une fois, singulier »), et le test « créance et TVA due » utilise deux comptes distincts.
+- **Écartée** : dédoublonner aussi dans l'accesseur — doublon de la garantie de type de la 15-5a.
+- **Réversible** : oui.
+
+## C41 — 15-5d : l'AC4 prouvé par un test de l'écran de validation
+
+- **Contexte** : findings R1-3 (MEDIUM) et F4 (LOW) de la validation P1 de la 15-5d : l'AC4 (« les
+  écrans affichent le refus ») n'avait aucun test ; l'écran de validation d'une facture a une branche
+  propre à `CONFIGURATION_REQUIRED` qu'un futur ajout d'`ACCOUNT_NOT_POSTABLE` détournerait sans bruit.
+- **Retenu** : un test Vitest neuf de l'écran de validation (`invoice-validate-page.test.ts`) — le
+  message serveur affiché tel quel, pour un Comptable comme pour un Admin ; les deux `catch`
+  fournisseurs, sans branche par code sur ce chemin, sont vérifiés à la lecture et consignés.
+- **Écartée** : un test par écran (trois) — les deux `catch` fournisseurs affichent `err.message` sans
+  `switch` sur ce code, un test n'y attraperait rien de plus qu'une lecture.
+- **Réversible** : oui.
+
+## C-15-5b-1 — 15-5b (dev) : un helper `errorMessageOf` plutôt que sept copies du motif
+
+- **Contexte** : l'AC14 fait passer sept `catch` au motif `isApiError(e) ? e.message : (e instanceof
+  Error ? e.message : String(e))`. Sept copies d'une même expression contredisent la règle DRY du
+  `CLAUDE.md`, et une huitième copie divergente est le défaut le plus probable.
+- **Retenu** : `errorMessageOf(err: unknown)` dans `frontend/src/lib/shared/utils/api-client.ts`, à côté
+  d'`isApiError`, appelé par les sept sites ; même comportement que le patron de `ManualMatchModal`.
+  La mutation du helper (branche `ApiError` retirée) fait rougir les sept tests AC14.
+- **Écarté** : recopier l'expression à chaque site (lettre de l'AC14) ; migrer aussi les sites hors
+  module (`reports/+page.svelte`, `settings/+page.svelte`) — signalés hors périmètre par la P1.
+- **Réversible** : oui.
+
+## C-15-5b-2 — 15-5b (dev) : tests de page nommés `*-page.test.ts`, pas `+page.test.ts`
+
+- **Contexte** : T4 et T5 demandent un test neuf `bank-accounts/+page.test.ts` et un test de la page des
+  règles. SvelteKit **réserve** le préfixe `+` dans `src/routes/` ; les tests de page existants s'y
+  nomment `accounts-page.test.ts`, `contacts-page.test.ts`, etc.
+- **Retenu** : `bank-accounts/bank-accounts-page.test.ts` et `reconciliation/rules/rules-page.test.ts`.
+- **Réversible** : oui (renommage).
+
+## C-15-5b-3 — 15-5b (dev) : un seul contrôle partagé dans le dépôt `accounts`
+
+- **Contexte** : l'AC7, l'AC8 et l'AC12 placent la même lecture (`SELECT number, postable, active`,
+  refus si `active && !postable`) dans deux dépôts (`reconciliation_rules`, `bank_accounts`), quatre
+  sites.
+- **Retenu** : `accounts::ensure_postable_if_active_in_tx`, appelé par les quatre sites ; il construit
+  `DbError::accounts_not_postable`. La mutation M7d (condition `active` retirée) fait rougir le test du
+  hors-périmètre « règle réactivée sur un compte archivé et non imputable ».
+- **Écarté** : un helper privé par dépôt (deux copies).
+- **Réversible** : oui.
+
+## C-15-5b-4 — 15-5b (dev) : la mutation de #521 porte sur la résolution, pas sur le type
+
+- **Contexte** : T6 demande, pour l'AC19, la mutation « champ remis en `Option<i64>` ». Remettre le type
+  oblige à réécrire la résolution et la validation : la mutation ne retirerait plus une seule garde.
+- **Retenu** : mutation `None => None` (absent → effacé, comportement d'avant #521) dans la résolution ;
+  `absent_payable_account_is_preserved` rougit. Même pouvoir de détection, un seul point modifié.
+- **Réversible** : oui (un test de mutation).
+
+## C-15-5b-5 — 15-5b (revue) : clôture de la boucle sur 13 LOW acceptés
+
+- **Contexte** : la passe P1 (Sonnet, trois lentilles) rend 0 CRITICAL, 0 HIGH, 0 MEDIUM et 13 LOW.
+- **Retenu** : clore la boucle après P1. Seul A-1 = E1 (virgule de la documentation) est corrigé. B2
+  (duplication, `errorMessageOf` non repris dans deux modales) et B4/E3 (lecture sans verrou des nouveaux
+  contrôles) exigeraient de toucher la production, donc de rouvrir une passe de revue pour des défauts de
+  niveau LOW ; ils sont tracés : B4 avec la dette de #522, B2 comme dette LOW de la fiche, B3/A-3 par #520,
+  B1/E4 par la 15-5c (#492).
+- **Écarté** : corriger B2/B4 dans cette story (la remédiation de production appelle une nouvelle passe,
+  et « la sévérité se déplace vers ce qu'on vient d'écrire »).
+- **Réversible** : oui (une story de dette).

@@ -14,7 +14,12 @@
 //! Pre-flight `accounts::find_by_id_in_company` valide que
 //! `counterpartyAccountId` existe ET `active=true` ET appartient à la
 //! company courante. Distinct du FK MariaDB qui ne peut pas garantir
-//! cross-tenant.
+//! cross-tenant. Le pré-vol ne contrôle **pas** la postabilité : elle est
+//! contrôlée **dans la transaction**, par le dépôt
+//! (`reconciliation_rules::create_in_tx` et `update_in_tx`, Story 15-5b,
+//! #427) — un compte actif non imputable y est refusé en 400
+//! `ACCOUNT_NOT_POSTABLE`, à la création, au changement de compte et à la
+//! réactivation.
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -245,6 +250,12 @@ fn map_create_or_update_db_err(
 // ---------------------------------------------------------------------------
 
 /// POST /api/v1/reconciliation/rules — Comptable+, AC #101.
+///
+/// **Ordre des erreurs** (Story 15-5b, AC7) : validations de forme (400) →
+/// 404 `ACCOUNT_NOT_FOUND` (pré-vol `validate_counterparty_account` :
+/// existence, société, `active`) → refus du projet par défaut (dépôt) →
+/// 400 `ACCOUNT_NOT_POSTABLE` (dépôt, dans la transaction, choix C30) →
+/// 409 `RECONCILIATION_RULE_DUPLICATE` (à l'`INSERT`).
 pub async fn post_create(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -342,6 +353,14 @@ pub async fn detail(
 
 /// PATCH /api/v1/reconciliation/rules/{id} — Comptable+. AC #108 (optimistic lock),
 /// AC #109 (reactivate), AC #109b (reactivation conflict).
+///
+/// **Ordre des erreurs** (Story 15-5b, AC8, choix C10) : validations de forme
+/// (400) → 404 `ACCOUNT_NOT_FOUND` (pré-vol du compte, s'il est fourni) →
+/// 404 `RECONCILIATION_RULE_NOT_FOUND` (handler) → 404 règle (`update_in_tx`)
+/// → refus du projet par défaut → 400 `ACCOUNT_NOT_POSTABLE` (compte cible
+/// actif non imputable, **seulement** si le PATCH change le compte ou réactive
+/// la règle — exemption « inchangé », choix C4 et C9) → 409 conflit de
+/// version (à l'`UPDATE`) / 409 doublon.
 pub async fn patch(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,

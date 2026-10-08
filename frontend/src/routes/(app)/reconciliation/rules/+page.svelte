@@ -2,6 +2,7 @@
   Story 8-5b FR47 — Page /reconciliation/rules : CRUD règles d'affectation.
 -->
 <script lang="ts">
+	import { errorMessageOf } from '$lib/shared/utils/api-client';
 	import { onMount } from 'svelte';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
@@ -29,7 +30,7 @@
 			rules = rulesResp.items;
 			accounts = accountsResp;
 		} catch (e: unknown) {
-			loadError = e instanceof Error ? e.message : String(e);
+			loadError = errorMessageOf(e);
 		} finally {
 			loading = false;
 		}

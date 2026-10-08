@@ -215,6 +215,32 @@ fn period_locked_failed_proposal(
     }
 }
 
+/// Story 15-5b (AC3, AC4, #427) — le refus d'un compte de contrepartie **non
+/// imputable** dans une acceptation par lot, sous la forme du § *Pattern batch*
+/// du `CLAUDE.md` : `failed[]` avec `errorCode = "ACCOUNT_NOT_POSTABLE"` et
+/// `details = { "rejected": [{ "accountId", "accountNumber" }] }`.
+///
+/// Le code et le détail sont ceux du HTTP 400 de la variante
+/// [`DbError::AccountsNotPostable`] : le code est lu par
+/// [`DbError::error_code`], le détail par
+/// [`kesh_db::errors::NonPostableAccounts::details`] — seul constructeur du JSON
+/// `rejected` (choix C29) ; la liste est triée et dédoublonnée.
+///
+/// **Précondition** : `accounts` non vide, et chaque compte est de la société
+/// et actif (le manquant est rendu avant, en `ACCOUNT_NOT_FOUND`).
+fn non_postable_failed_proposal(
+    bank_transaction_id: i64,
+    accounts: Vec<kesh_db::errors::NonPostableAccount>,
+) -> FailedProposal {
+    let list = kesh_db::errors::NonPostableAccounts::new(accounts);
+    let details = list.details();
+    FailedProposal {
+        bank_transaction_id,
+        error_code: DbError::AccountsNotPostable(list).error_code().to_string(),
+        details: Some(details),
+    }
+}
+
 fn project_error_to_failed_proposal(
     bank_transaction_id: i64,
     project_id: Option<i64>,
@@ -542,19 +568,31 @@ pub async fn get_proposals(
     // accounts_info pour appliquer rule fallback dans Pass 4 (closure sync).
     let active_rules =
         reconciliation_rules::find_active_for_company(&state.pool, current_user.company_id).await?;
-    let accounts_info_rows: Vec<(i64, String, String)> = sqlx::query_as(
-        "SELECT id, number, name FROM accounts WHERE company_id = ? AND active = TRUE",
+    let accounts_info_rows: Vec<(i64, String, String, bool)> = sqlx::query_as(
+        "SELECT id, number, name, postable FROM accounts WHERE company_id = ? AND active = TRUE",
     )
     .bind(current_user.company_id)
     .fetch_all(&state.pool)
     .await
     .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
+    // Story 15-5b (AC5, #427) — l'ensemble passé à `first_matching_rule` ne
+    // retient que les comptes **actifs ET imputables** : une règle dont le
+    // compte est devenu non imputable (scindé en sous-comptes, compte de
+    // résultat ou de clôture) n'est plus proposée, et la règle suivante qui
+    // correspond l'est à sa place. Son acceptation serait de toute façon
+    // refusée (`accept_one_rule`, étape 5). `accounts_info`, qui sert à
+    // l'affichage, garde tous les comptes actifs. Le paramètre de
+    // `kesh_reconciliation` s'appelle encore `active_account_ids` (crate hors
+    // périmètre) : ce qu'il reçoit ici est plus étroit que son nom.
+    let active_account_ids: std::collections::HashSet<i64> = accounts_info_rows
+        .iter()
+        .filter(|(_, _, _, postable)| *postable)
+        .map(|(id, _, _, _)| *id)
+        .collect();
     let accounts_info: HashMap<i64, (String, String)> = accounts_info_rows
         .into_iter()
-        .map(|(id, number, name)| (id, (number, name)))
+        .map(|(id, number, name, _)| (id, (number, name)))
         .collect();
-    let active_account_ids: std::collections::HashSet<i64> =
-        accounts_info.keys().copied().collect();
 
     // Pass 4 : score per-tx + rule fallback + build response.
     // AC #114 (Pass 2 Q8) : un invoice candidate avec score ≥ 0.5 prime
@@ -1171,6 +1209,15 @@ async fn accept_one(
 /// pour fermer la fenêtre TOCTOU. `bank_account_id` est nécessaire
 /// pour scope le SELECT (l'invariant batch « tous les tx du même
 /// bank_account_id » a été validé au pré-flight 0ter).
+///
+/// **Postabilité — pas de garde ici, et c'est voulu** (Story 15-5b, AC6) :
+/// aucun compte de cette écriture ne vient du client. Le compte bancaire est
+/// un compte de configuration (D-A0, toléré devenu non imputable) ; la créance
+/// est lue **sur l'écriture de vente** de la facture ; le compte d'arrondi vient
+/// des réglages, déjà gardé `postable = TRUE` par
+/// `company_invoice_settings::rounding_account_for_write`. Les deux autres
+/// flux d'acceptation (`split`, `rule`) et les rapprochements manuel et ventilé
+/// gardent, eux, le compte de contrepartie venu du client.
 #[allow(clippy::too_many_arguments)]
 async fn accept_one_invoice(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
@@ -1950,10 +1997,18 @@ async fn accept_one_split(
     }
 
     // Step d — batch validation des counterparty accounts (itération séquentielle).
+    //
+    // Story 15-5b (AC3, #427) : un compte de contrepartie **non imputable**
+    // (regroupement, résultat, clôture) est refusé en `ACCOUNT_NOT_POSTABLE`.
+    // Les manquants (inconnu, autre société, archivé) restent prioritaires en
+    // `ACCOUNT_NOT_FOUND` (anti-énumération KF-002) : la variante ne nomme
+    // qu'un compte de la société, actif. Pas d'exemption — le compte vient de
+    // la proposition, pas d'un réglage en place.
     let mut missing: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
+    let mut not_postable: Vec<kesh_db::errors::NonPostableAccount> = Vec::new();
     for s in splits {
-        let row: Option<(bool,)> = match sqlx::query_as(
-            "SELECT active FROM accounts WHERE id = ? AND company_id = ? LIMIT 1",
+        let row: Option<(bool, bool, String)> = match sqlx::query_as(
+            "SELECT active, postable, number FROM accounts WHERE id = ? AND company_id = ? LIMIT 1",
         )
         .bind(s.counterparty_account_id)
         .bind(company_id)
@@ -1970,7 +2025,13 @@ async fn accept_one_split(
             }
         };
         match row {
-            Some((true,)) => {}
+            Some((true, true, _)) => {}
+            Some((true, false, number)) => {
+                not_postable.push(kesh_db::errors::NonPostableAccount {
+                    account_id: s.counterparty_account_id,
+                    account_number: number,
+                });
+            }
             _ => {
                 missing.insert(s.counterparty_account_id);
             }
@@ -1983,6 +2044,12 @@ async fn accept_one_split(
             error_code: "ACCOUNT_NOT_FOUND".to_string(),
             details: Some(serde_json::json!({ "missingAccountIds": ids })),
         });
+    }
+    if !not_postable.is_empty() {
+        return Err(non_postable_failed_proposal(
+            bank_transaction_id,
+            not_postable,
+        ));
     }
 
     // Step e — re-fetch tx INSIDE lock (TOCTOU).
@@ -2284,9 +2351,15 @@ async fn accept_one_rule(
         });
     }
 
-    // Step 5 — counterparty account actif (SELECT inline).
-    let counterparty_row: Option<(bool, String)> = match sqlx::query_as(
-        "SELECT active, name FROM accounts WHERE id = ? AND company_id = ? LIMIT 1",
+    // Step 5 — counterparty account actif ET imputable (SELECT inline).
+    //
+    // Story 15-5b (AC4, #427) : un compte **non imputable** est refusé en
+    // `ACCOUNT_NOT_POSTABLE`, **sans exemption** (choix C4) — une règle dont le
+    // compte a été scindé en sous-comptes est périmée ; `get_proposals` ne la
+    // propose déjà plus (AC5), cette garde couvre la proposition rejouée par un
+    // client. Archivé / inconnu → `ACCOUNT_NOT_FOUND`, prioritaire (KF-002).
+    let counterparty_row: Option<(bool, bool, String, String)> = match sqlx::query_as(
+        "SELECT active, postable, name, number FROM accounts WHERE id = ? AND company_id = ? LIMIT 1",
     )
     .bind(counterparty_account_id)
     .bind(company_id)
@@ -2303,7 +2376,16 @@ async fn accept_one_rule(
         }
     };
     let counterparty_name = match counterparty_row {
-        Some((true, name)) => name,
+        Some((true, true, name, _)) => name,
+        Some((true, false, _, number)) => {
+            return Err(non_postable_failed_proposal(
+                bank_transaction_id,
+                vec![kesh_db::errors::NonPostableAccount {
+                    account_id: counterparty_account_id,
+                    account_number: number,
+                }],
+            ));
+        }
         _ => {
             return Err(FailedProposal {
                 bank_transaction_id,
@@ -2935,6 +3017,8 @@ pub struct ManualMatchResponse {
 /// 1. `bankAccountId` ownership multi-tenant → 404 BANK_ACCOUNT_NOT_FOUND.
 /// 2. `bank_account.journal_account_id` configuré → 412 BANK_ACCOUNT_NOT_CONFIGURED.
 /// 3. `counterpartyAccountId` ownership + active → 404 ACCOUNT_NOT_FOUND.
+///    3bis. compte de contrepartie non imputable → 400 ACCOUNT_NOT_POSTABLE
+///    (Story 15-5b, #427) — après le 404, prioritaire (anti-énumération).
 /// 4. `find_strictly_pending_by_id_for_account` → 404 RECONCILIATION_TRANSACTION_NOT_PENDING.
 ///    4bis. `tx.amount != 0` → 400 VALIDATION_ERROR (zero_amount_transaction, F7''' Pass 3).
 /// 5. (inside lock 5-9) : re-fetch tx (TOCTOU) + fiscal_year + create_in_tx
@@ -3033,6 +3117,20 @@ pub async fn post_manual(
             });
         }
     };
+    // Step 3 bis — Story 15-5b (AC1, #427) : un compte de contrepartie **non
+    // imputable** (regroupement, résultat, clôture) est refusé en 400
+    // `ACCOUNT_NOT_POSTABLE`, après le 404 ci-dessus (prioritaire) et avant
+    // toute écriture. Le compte bancaire, compte de configuration, n'est pas
+    // concerné (D-A0) : `create_in_tx` reçoit toujours `enforce_postable =
+    // false`, la garde porte sur le seul compte venu du client.
+    if !counterparty.postable {
+        return Err(AppError::Database(DbError::accounts_not_postable([
+            kesh_db::errors::NonPostableAccount {
+                account_id: counterparty.id,
+                account_number: counterparty.number.clone(),
+            },
+        ])));
+    }
 
     // Step 4 — find_strictly_pending : 404 si introuvable / cross-tenant /
     // cross-account / déjà reconciled (4 cas en un seul code).
@@ -3355,6 +3453,8 @@ pub struct SplitResponse {
 /// step 3 `bankAccountId` ownership multi-tenant → 404 BANK_ACCOUNT_NOT_FOUND ;
 /// step 4 `bank_account.journal_account_id` configuré → 412 BANK_ACCOUNT_NOT_CONFIGURED ;
 /// step 5 batch ownership/active des `counterpartyAccountId` → 404 ACCOUNT_NOT_FOUND ;
+/// step 5bis comptes de contrepartie non imputables → 400 ACCOUNT_NOT_POSTABLE,
+///   tous nommés (Story 15-5b, #427) — après le 404, prioritaire ;
 /// step 6 `find_strictly_pending_by_id_for_account` → 404 RECONCILIATION_TRANSACTION_NOT_PENDING ;
 /// step 6bis `tx.amount != 0` (M2''') → 400 VALIDATION_ERROR ;
 /// step 7 `validate_split_balance` → 400 RECONCILIATION_SPLIT_IMBALANCE ;
@@ -3476,7 +3576,13 @@ pub async fn post_split(
     // Step 5 — batch validation accounts via itération séquentielle (cap 50,
     // cf. §validation-handler-side-split step 5 + L3 Pass 1 source tree).
     // Collecte les IDs manquants triés et distincts pour body 404 batch.
+    //
+    // Story 15-5b (AC2, #427) : les comptes **non imputables** sont collectés
+    // à part et refusés en un seul 400 `ACCOUNT_NOT_POSTABLE` nommant tous
+    // ceux de la requête — **après** les manquants, qui restent prioritaires
+    // en 404 (anti-énumération KF-002).
     let mut missing: std::collections::BTreeSet<i64> = std::collections::BTreeSet::new();
+    let mut not_postable: Vec<kesh_db::errors::NonPostableAccount> = Vec::new();
     for s in &body.splits {
         match accounts_repo::find_by_id_in_company(
             &state.pool,
@@ -3485,7 +3591,13 @@ pub async fn post_split(
         )
         .await?
         {
-            Some(a) if a.active => {}
+            Some(a) if a.active && a.postable => {}
+            Some(a) if a.active => {
+                not_postable.push(kesh_db::errors::NonPostableAccount {
+                    account_id: a.id,
+                    account_number: a.number,
+                });
+            }
             _ => {
                 missing.insert(s.counterparty_account_id);
             }
@@ -3498,6 +3610,11 @@ pub async fn post_split(
             account_id: first,
             missing_account_ids: Some(ids),
         });
+    }
+    if !not_postable.is_empty() {
+        return Err(AppError::Database(DbError::accounts_not_postable(
+            not_postable,
+        )));
     }
 
     // Step 6 — find_strictly_pending.

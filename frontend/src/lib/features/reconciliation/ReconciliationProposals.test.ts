@@ -271,3 +271,52 @@ describe('ReconciliationProposals', () => {
 		expect(ids).toEqual([7]);
 	});
 });
+
+// Story 15-5b (AC14, choix C14) — le client d'API lève un `ApiError` OBJET
+// SIMPLE, pas une instance d'`Error` : les trois `catch` du composant
+// l'affichaient « [object Object] ». `isApiError` n'est pas mocké — l'erreur
+// simulée porte donc `code` ET `status`.
+describe('ReconciliationProposals — refus du serveur lisibles (Story 15-5b, AC14)', () => {
+	const apiError = (message: string) => ({ code: 'INTERNAL_ERROR', status: 500, message });
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("affiche le message d'un ApiError au chargement", async () => {
+		mockApi.getProposals.mockRejectedValueOnce(apiError('Chargement impossible.'));
+		const { findByTestId } = render(ReconciliationProposals, { bankAccountId: 17 });
+		const error = await findByTestId('reconciliation-error');
+		expect(error.textContent).toBe('Chargement impossible.');
+	});
+
+	it("affiche le message d'un ApiError à l'acceptation", async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [makeProposalWithCandidate(1, 101, 1.0)],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+		mockApi.acceptProposals.mockRejectedValueOnce(apiError('Acceptation impossible.'));
+		const { findByTestId, getByTestId } = render(ReconciliationProposals, {
+			bankAccountId: 17,
+		});
+		await fireEvent.click(await findByTestId('tx-checkbox'));
+		await fireEvent.click(getByTestId('reconciliation-accept-btn'));
+		const error = await findByTestId('reconciliation-error');
+		expect(error.textContent).toBe('Acceptation impossible.');
+	});
+
+	it("affiche le message d'un ApiError au rejet", async () => {
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [makeProposalWithCandidate(1, 101, 1.0)],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+		mockApi.rejectProposals.mockRejectedValueOnce(apiError('Rejet impossible.'));
+		const { findByTestId, getByTestId } = render(ReconciliationProposals, {
+			bankAccountId: 17,
+		});
+		await fireEvent.click(await findByTestId('tx-checkbox'));
+		await fireEvent.click(getByTestId('reconciliation-reject-btn'));
+		const error = await findByTestId('reconciliation-error');
+		expect(error.textContent).toBe('Rejet impossible.');
+	});
+});

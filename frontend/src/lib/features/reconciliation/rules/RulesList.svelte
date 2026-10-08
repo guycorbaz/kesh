@@ -4,6 +4,7 @@
   `RuleFormModal` en mode édition.
 -->
 <script lang="ts">
+	import { errorMessageOf } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { deleteRule, updateRule } from './rules.api';
@@ -61,7 +62,7 @@
 			});
 			onRefresh();
 		} catch (e: unknown) {
-			errorMsg = e instanceof Error ? e.message : String(e);
+			errorMsg = errorMessageOf(e);
 		} finally {
 			busyId = null;
 		}
@@ -84,7 +85,7 @@
 			await deleteRule(rule.id);
 			onRefresh();
 		} catch (e: unknown) {
-			errorMsg = e instanceof Error ? e.message : String(e);
+			errorMsg = errorMessageOf(e);
 		} finally {
 			busyId = null;
 		}

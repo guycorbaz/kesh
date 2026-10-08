@@ -174,6 +174,12 @@ where
 ///   filtré par le handler.
 /// - `DbError::ForeignKeyViolation` si `counterparty_account_id`
 ///   référence un account inexistant.
+/// - `DbError::AccountsNotPostable` (Story 15-5b, AC7, #427) si le compte de
+///   contrepartie est **actif et non imputable** (regroupement, résultat,
+///   clôture) — contrôlé dans la transaction, après la validation du projet
+///   par défaut et avant l'`INSERT` (donc avant le doublon). Un compte
+///   inconnu, d'une autre société ou archivé n'est pas refusé ici : le
+///   pré-vol du handler l'a déjà rendu en 404 `ACCOUNT_NOT_FOUND`.
 pub async fn create_in_tx(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,
@@ -186,6 +192,15 @@ pub async fn create_in_tx(
     if let Some(pid) = new_rule.default_project_id {
         super::projects::validate_taggable_in_tx(tx, company_id, &[pid]).await?;
     }
+
+    // Story 15-5b (AC7, choix C30) — le compte de contrepartie doit être
+    // imputable : une règle n'existe que pour produire des écritures sur lui.
+    super::accounts::ensure_postable_if_active_in_tx(
+        tx,
+        company_id,
+        new_rule.counterparty_account_id,
+    )
+    .await?;
 
     let result = sqlx::query(
         "INSERT INTO reconciliation_rules \
@@ -251,6 +266,14 @@ pub async fn create_in_tx(
 ///   conflit UNIQUE de réactivation (cf. AC #109b — R1 soft-deleted +
 ///   R2 active créée entre-temps + PATCH R1 `active=true`). Le caller
 ///   discrimine via [`is_duplicate_rule_constraint`].
+/// - `DbError::AccountsNotPostable` (Story 15-5b, AC8, #427) si le compte
+///   **cible** (`patch.counterparty_account_id`, sinon celui en place) est
+///   actif et non imputable, **et** que le PATCH (a) change le compte ou
+///   (b) réactive la règle (choix C9). Hors (a) et (b), le compte n'est pas
+///   re-contrôlé (exemption « inchangé », choix C4) : on renomme, on
+///   repriorise ou on **désactive** une règle dont le compte est devenu non
+///   imputable. Contrôle fait après la validation du projet et **avant**
+///   l'`UPDATE` : ce refus précède le conflit de version (choix C10).
 pub async fn update_in_tx(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,
@@ -272,6 +295,21 @@ pub async fn update_in_tx(
         && before.default_project_id != Some(pid)
     {
         super::projects::validate_taggable_in_tx(tx, company_id, &[pid]).await?;
+    }
+
+    // Story 15-5b (AC8, choix C9, C10) — postabilité du compte cible, sur le
+    // même patron « seulement si ça change » que le projet ci-dessus, avec un
+    // second déclencheur : la réactivation, même à compte inchangé (réactiver
+    // une règle dont le compte n'est plus imputable la ressusciterait).
+    let target_account_id = patch
+        .counterparty_account_id
+        .unwrap_or(before.counterparty_account_id);
+    let account_changes = patch
+        .counterparty_account_id
+        .is_some_and(|id| id != before.counterparty_account_id);
+    let reactivates = patch.active == Some(true) && !before.active;
+    if account_changes || reactivates {
+        super::accounts::ensure_postable_if_active_in_tx(tx, company_id, target_account_id).await?;
     }
 
     let mut set_clauses: Vec<&'static str> = Vec::new();

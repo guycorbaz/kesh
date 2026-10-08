@@ -27,6 +27,19 @@ export function isApiError(err: unknown): err is ApiError {
 	);
 }
 
+/**
+ * Texte lisible d'une erreur attrapée dans un `catch` (Story 15-5b, AC14).
+ *
+ * Le client lève un `ApiError` **objet simple**, pas une instance d'`Error` :
+ * le motif `e instanceof Error ? e.message : String(e)` l'affichait
+ * « [object Object] ». Patron de `ManualMatchModal.svelte` : `ApiError` → son
+ * `message` ; `Error` → son `message` ; autre → `String(e)`.
+ */
+export function errorMessageOf(err: unknown): string {
+	if (isApiError(err)) return err.message;
+	return err instanceof Error ? err.message : String(err);
+}
+
 /** URLs exclues de l'injection du header Authorization. */
 const AUTH_EXCLUDED_URLS = ['/api/v1/auth/login', '/api/v1/auth/logout', '/api/v1/auth/refresh'];
 

@@ -4,7 +4,7 @@
 // @testing-library/svelte (Svelte 5).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render } from '@testing-library/svelte';
+import { fireEvent, render } from '@testing-library/svelte';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 
 vi.mock('./rules.api', () => ({
@@ -22,6 +22,7 @@ vi.mock('$lib/features/projects/projects.api', () => ({
 }));
 
 import RuleFormModal from './RuleFormModal.svelte';
+import { updateRule } from './rules.api';
 import type { ReconciliationRule } from './rules.types';
 
 function makeAccounts(): AccountResponse[] {
@@ -94,5 +95,46 @@ describe('RuleFormModal — sélecteur projet par défaut (Story 19-5)', () => {
 		});
 		// Le tag existant force l'affichage (option ad-hoc « Projet archivé »).
 		await findByTestId('rule-form-default-project');
+	});
+});
+
+describe('RuleFormModal — refus du serveur lisible (Story 15-5b, AC14)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("affiche le message d'un ApiError rejeté, pas « [object Object] »", async () => {
+		listProjectsMock.mockResolvedValueOnce([]);
+		// Le client d'API lève un ApiError OBJET SIMPLE, pas une instance d'Error.
+		vi.mocked(updateRule).mockRejectedValueOnce({
+			code: 'ACCOUNT_NOT_POSTABLE',
+			status: 400,
+			message: "Le compte 6500 n'est pas imputable.",
+		});
+		const rule: ReconciliationRule = {
+			id: 1,
+			label: 'R1',
+			matchType: 'counterparty_contains',
+			matchValue: 'X',
+			counterpartyAccountId: 10,
+			priority: 100,
+			active: true,
+			defaultProjectId: null,
+			appliedCount: 0,
+			lastAppliedAt: null,
+			version: 1,
+			createdAt: '2026-10-08T00:00:00',
+			updatedAt: '2026-10-08T00:00:00',
+		};
+		const { findByTestId } = render(RuleFormModal, {
+			rule,
+			accounts: makeAccounts(),
+			onSuccess: () => {},
+			onCancel: () => {},
+		});
+		await fireEvent.submit(await findByTestId('rule-form-modal'));
+		const error = await findByTestId('rule-form-error');
+		expect(error.textContent).toBe("Le compte 6500 n'est pas imputable.");
+		expect(error.textContent).not.toContain('[object Object]');
 	});
 });

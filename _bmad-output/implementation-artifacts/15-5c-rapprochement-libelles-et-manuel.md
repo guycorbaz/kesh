@@ -7,12 +7,19 @@ Status: ready-for-dev
      de son ancien AC14 (libellés de `failed[]`, choix C8) et la réécriture du manuel du rapprochement
      (choix C11), étendue aux passages faux relevés par le finding F-2 de la même passe, qui recoupent
      l'issue #481. Choix applicables : C8, C11, C15, C16 (forme du détail `rejected`), C32 (écran réel
-     vérifié au code, `PERIOD_LOCKED` sans détail). Validation P1 faite (Change Log). -->
+     vérifié au code, `PERIOD_LOCKED` sans détail ; corrigé par la P2 sur la candidate affichée et le
+     sort d'une transaction rejetée), C37 (réutilisation des clés `error-*`), C38 (échecs partiels
+     toujours visibles, ligne désignée par sa date et son montant). Validations P1 et P2 faites
+     (Change Log). -->
 
 **Issues** : **ferme #481** (manuel du rapprochement : *Modifier*, lot « atomique », manuel et
 éclatement « par facture »), **#492** (codes bruts des refus par lot, P3) et **#519** (manuel des règles
 d'affectation). La PR porte `closes #481 closes #492 closes #519` (mots-clés **dans la PR**, le dépôt
 merge en squash). Les trois points de #481 sont couverts (AC5, AC6, AC7) : rien n'en reste ouvert.
+Le manuel **cite sans les corriger** trois défauts voisins, ouverts par l'orchestrateur : **#526**
+(une transaction rejetée n'est plus atteignable depuis l'interface), **#527** (une facture de score
+faible masque une règle de score maximal) et **#529** (un paiement client reçu plus de 30 jours après
+la date de facture n'est jamais proposé) — `refs #526 refs #527 refs #529` dans la PR.
 
 **Dépend de la 15-5b** (qui émet `ACCOUNT_NOT_POSTABLE` dans `failed[]`, avec
 `details.rejected[{accountId, accountNumber}]`, et qui fixe le comportement des règles que le manuel
@@ -54,22 +61,54 @@ partie du manuel. Ils ne touchent aucun code serveur et dépendent de ce que la 
    `RECONCILIATION_TRANSACTION_NOT_PENDING`, `ROUNDING_ACCOUNT_NOT_CONFIGURED`, `VALIDATION_ERROR`
    (**26**). Le dev **refait** la commande sur `HEAD` (après le merge de la 15-5b) et ajoute tout code
    apparu entre-temps. Les libellés, dans les **quatre** locales, sont **relevés** sur les messages
-   existants quand il y en a (p. ex. `ROUNDING_ACCOUNT_NOT_CONFIGURED` reprend
-   `error-rounding-account-not-configured`, qui dit où agir) — pas inventés.
+   existants quand il y en a — pas inventés —, selon la règle suivante (choix C37, findings R-7 et
+   F-13) :
+   - quand une clé `error-*` existante convient **mot pour mot** et **sans variable**, le module la
+     **lit directement** (l'espace `error-` est global, `frontend/scripts/lint-i18n-ownership.js`,
+     `GLOBAL_NAMESPACES`) au lieu d'en dupliquer la traduction : c'est le cas de
+     `ROUNDING_ACCOUNT_NOT_CONFIGURED` → `error-rounding-account-not-configured`
+     (`crates/kesh-i18n/locales/fr-CH/messages.ftl:275`, « Ce paiement solde la facture au centime, mais
+     aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Paramètres →
+     Facturation. ») ;
+   - quand le message serveur porte une **variable** que le client n'a pas (p. ex.
+     `error-fiscal-year-closed`, `{ $date }`, `messages.ftl:235`), ou ne convient pas tel quel : clé
+     neuve `reconciliation-failed-*`, texte **sans** la variable (ou avec une valeur lue de `details`,
+     ce que seule l'AC2 fait) ;
+   - chaque site, clé réutilisée ou neuve, compte dans la borne `sitesTotal` (AC4) ; le Dev Agent
+     Record dit, code par code, quelle clé est lue.
+   **Contrôle des formes non littérales** (finding R-8, règle *Inventorier les sites NON RÉSOLUS*) : la
+   commande ne voit que les littéraux ; le dev exécute aussi
+   `grep -nE 'error_code:' crates/kesh-api/src/routes/reconciliation.rs | grep -vE 'error_code: "[A-Z_]+"'`
+   — qui ne doit rendre que la définition du champ dans la structure `FailedProposal` — et relit la
+   conversion `DbError → FailedProposal` de ce fichier ; tout code posé par une constante ou par
+   `DbError::error_code()` (forme de la 15-5a et de la 15-5b pour `ACCOUNT_NOT_POSTABLE`) est ajouté à la
+   liste.
 2. **AC2 — `ACCOUNT_NOT_POSTABLE` nomme les comptes, sans se fier au type.** `FailedProposal.details`
    est typé `unknown | null` (`frontend/src/lib/features/reconciliation/reconciliation.types.ts:94`) :
    le module lit `details.rejected[].accountNumber` derrière une **garde de type** (objet, tableau,
    chaînes) ; un `details` absent ou d'une autre forme rend le libellé **sans** numéros, jamais une
    exception ni « undefined ». La forme `rejected[{accountId, accountNumber}]` est celle que la 15-5a a
    posée (choix C16).
-3. **AC3 — La ligne de refus affiche le libellé.**
-   `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte:362` (aujourd'hui
-   `TX #{f.bankTransactionId} — {f.errorCode}`) affiche `TX #<id> — <libellé>` ; le code brut reste
-   lisible dans un `title` ou entre parenthèses, pour le support. `ReconciliationProposals.test.ts`
-   gagne **deux** tests : une réponse d'**acceptation** portant un `failed[]` → le libellé traduit est
-   affiché (et non le code seul) ; une réponse de **rejet** (`onReject`, `:166-181`, qui alimente le
-   même `failed`) portant un `failed[]` → idem (finding P1 F-5) — aujourd'hui aucun test n'exerce
-   l'affichage de `failed[]`.
+3. **AC3 — La ligne de refus affiche le libellé, désigne la transaction, et reste visible** (choix
+   C38).
+   - `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte:362` (aujourd'hui
+     `TX #{f.bankTransactionId} — {f.errorCode}`) affiche **la date, le montant et la contrepartie** de
+     la transaction, puis le libellé. L'identifiant n'est affiché nulle part dans le tableau (seulement
+     en `data-tx-id`) : `TX #<id>` ne désigne rien que l'utilisateur voie (finding F-6). Ces trois
+     valeurs sont relevées dans `proposals` **avant** le `load()` qui suit le lot (la transaction
+     acceptée ou rejetée n'y sera plus) ; une transaction introuvable dans ce relevé garde `TX #<id>`
+     en repli. Le code brut reste lisible dans un `title` ou entre parenthèses, pour le support.
+   - le bloc *Échecs partiels* et le compteur de succès sortent de la branche `{:else}` de
+     `proposals.length === 0` (`:192-199`, `:354-367`) : ils s'affichent **même quand la liste est
+     vide** après le lot (finding F-5) — c'est le cas de tous les refus de *Rejeter*
+     (`BANK_TRANSACTION_NOT_FOUND`, `RECONCILIATION_ALREADY_RECONCILED`, `reconciliation.rs:2789-2820`),
+     qui portent sur une transaction sortie de la liste.
+   - `ReconciliationProposals.test.ts` gagne **trois** tests : une réponse d'**acceptation** portant un
+     `failed[]` → le libellé traduit et la date/le montant de la transaction sont affichés (et non le
+     code seul) ; une réponse de **rejet** (`onReject`, `:166-181`, qui alimente le même `failed`)
+     portant un `failed[]` → idem (finding P1 F-5) ; un lot dont le **second `getProposals` rend `[]`**
+     → les *Échecs partiels* restent affichés (un `getProposals` mocké à valeur constante ne le verrait
+     pas). Aujourd'hui aucun test n'exerce l'affichage de `failed[]`.
    **`PERIOD_LOCKED` : le libellé n'utilise pas `details`** (`lockedThrough`, `attempted`, posés par
    `crates/kesh-api/src/routes/reconciliation.rs:~200-215`) — limite **assumée** (choix C32) : le libellé
    dit que la période est verrouillée et renvoie à la clôture de période ; seul `ACCOUNT_NOT_POSTABLE`
@@ -81,24 +120,35 @@ partie du manuel. Ils ne touchent aucun code serveur et dépendent de ce que la 
    `crates/kesh-i18n/src/loader.rs`, `SELECTEURS_RESOLUS_COTE_SERVEUR`). `npm run lint-i18n-ownership`
    vert. `frontend/src/lib/shared/i18n-keys.test.ts` porte une **borne exacte** (`sitesTotal: 1868`,
    `:456`) : elle **rougira**, et c'est voulu — la relever à la main, du nombre de sites réellement
-   ajoutés, en **recomptant la ventilation** (`litteraux`, `gabarits`, `nonResolus`) depuis le relevé
-   du test, et l'écrire au Dev Agent Record. Ne pas la remplacer par une borne inférieure.
+   ajoutés, en **recomptant la ventilation** — les champs réels sont `sitesTotal`, `sitesNonResolus`,
+   `relais`, `sitesGabarit`, `litterauxMin` et `clesDepuisTsMin` (`:456-461`, finding F-12) — depuis le
+   relevé du test, et l'écrire au Dev Agent Record. Ne pas la remplacer par une borne inférieure. La
+   15-5d relève aussi cette borne : celle des deux qui merge en second la relève sur l'état rebasé.
 
 ### Le manuel du rapprochement dit ce que fait l'écran (#481, #519)
 
 `docs/manual/fr/user-manual.tex`, section *Réconciliation bancaire* (`:1491-1586`). Lignes relevées sur
-`1920381e`, revérifiées en validation P1 sur `92770300` ; le dev les refait (T0). Le dev décrit **ce
+`1920381e`, revérifiées en validation P1 sur `92770300` et **corrigées en P2 sur `007c4eb1`** (finding
+R-4) ; le dev les refait (T0). Le dev décrit **ce
 qu'il voit** dans le code et à l'écran, pas ce que disent ces critères.
 
 **L'écran réel**, relevé au code en validation P1 (`frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte`,
 choix C32) — c'est lui que les AC5 à AC7 décrivent :
 - *Mensuel* → *Réconciliation* liste les transactions **en attente** du compte bancaire choisi, non
   rejetées (`find_pending_transactions_for_account`, `crates/kesh-db/src/repositories/reconciliation.rs:163-185`),
-  colonnes *Date*, *Montant*, *Contrepartie*, *Candidate*, *Score* (`:226-238`) ;
-- la colonne *Candidate* montre la **meilleure** candidate seulement : soit une **facture** (numéro, reste
-  dû, et « reste dû sur » le total quand ils diffèrent, `:283-292`), soit une **règle** d'affectation,
-  marquée d'un badge *Règle*, « libellé → compte » (`:265-282`) ; sans candidate, « Aucune
-  correspondance » ;
+  **les 100 plus récentes au plus** (`getProposals`, `limit = 100`,
+  `frontend/src/lib/features/reconciliation/reconciliation.api.ts:16-22` ; tri `booking_date DESC, id
+  DESC`, `:166` du dépôt ; `hasMore` est typé mais aucun composant ne le lit — finding F-11), colonnes
+  *Date*, *Montant*, *Contrepartie*, *Candidate*, *Score* (`:226-238`) ;
+- la colonne *Candidate* montre la **première** candidate de la réponse, `candidates[0]` (`:137`,
+  `:265`) — **pas** « la meilleure » (findings R-1/F-2 de la P2) : le serveur range d'abord les
+  **factures**, par score décroissant, et ajoute la **règle** après elles sans retrier
+  (`crates/kesh-api/src/routes/reconciliation.rs:586-626`, `:631-664`). À l'écran, la candidate est donc
+  la **facture de meilleur score** s'il y en a une (de score non nul) ; une **règle** n'apparaît que
+  s'il n'y a **aucune** facture candidate — même quand la règle, de score 1,0, l'emporterait sur une
+  facture faible (#527, non corrigée ici). Une facture s'affiche avec son numéro, son reste dû, et
+  « reste dû sur » le total quand ils diffèrent (`:283-292`) ; une règle, avec un badge *Règle*,
+  « libellé → compte » (`:265-282`) ; sans candidate, « Aucune correspondance » ;
 - une **case à cocher** par ligne, présente seulement s'il y a une candidate (`:243-252`) ;
 - au-dessus de la liste, deux boutons **de lot** qui agissent sur les lignes cochées : **« Accepter
   (N) »** (`:201-209`, N = nombre de lignes cochées) et **« Rejeter »** (`:210-218`) ; il n'y a **pas**
@@ -106,32 +156,47 @@ choix C32) — c'est lui que les AC5 à AC7 décrivent :
 - par ligne, deux boutons : **« Affecter manuellement »** (`:302-312`) et **« Éclater »** (`:313-323`),
   présents sur toutes les lignes, avec ou sans candidate ;
 - après un lot, un message « N opération(s) réussie(s) » et, s'il y a des refus, une liste *Échecs
-  partiels* (`:352-366`).
+  partiels* (`:354-367`) — **aujourd'hui dans la branche `{:else}`** de `proposals.length === 0`
+  (`:192-199`) : si le lot vide la liste, ni le compteur ni les refus ne s'affichent (finding F-5 ;
+  corrigé par l'AC3).
 
-5. **AC5 — *Acceptation des propositions* décrit l'écran réel** (#481, point 1 ; `:1513-1528`). Les
+5. **AC5 — *Acceptation des propositions* décrit l'écran réel** (#481, point 1 ; `:1509-1528`). Les
    sous-sections *Acceptation des propositions* et *Acceptation par lot* (`:1530-1532`) décrivent **une
    seule** interaction et sont **fusionnées** en une sous-section (p. ex. *Accepter ou rejeter les
    propositions*) qui dit, sur l'écran relevé ci-dessus :
-   - ce que la page affiche — **pas** de liste de « factures impayées candidates » (`:1515-1518`) :
-     une ligne par transaction en attente, avec sa meilleure candidate, facture **ou règle** ;
+   - ce que la page affiche — **pas** de liste de « factures impayées candidates » (`:1517-1520`, puce
+     `:1519`) : une ligne par transaction en attente (les 100 plus récentes au plus), avec **une**
+     candidate, la **première** que propose Kesh — la facture la mieux notée s'il y en a une, une règle
+     seulement s'il n'y a aucune facture candidate ; la phrase `:1511` (« La meilleure candidate est
+     affichée ») est **réécrite** en ce sens. Le manuel ne promet pas que la règle l'emporte sur une
+     facture faible (#527) ;
    - qu'on **coche** les transactions puis qu'on clique **« Accepter (N) »** ou **« Rejeter »** ;
      **« Accepter »** accepte, pour chaque ligne cochée, **la candidate affichée** (`candidates[0]`,
      `:128-153`) : une facture → l'écriture de règlement (Débit banque / Crédit débiteurs, et l'écart
      d'arrondi en troisième ligne s'il y a lieu, phrase actuelle conservée) ; une règle → l'écriture
-     entre la banque et le compte de la règle. **« Rejeter »** marque les transactions cochées comme
-     revues (`auto_match_rejected_at`, `crates/kesh-api/src/routes/reconciliation.rs:2600-2612`) : elles
-     **quittent la liste**, qui n'affiche que les transactions non rejetées. ⚠️ Fait vérifié en P1 :
-     aucun écran du frontend n'affiche une transaction rejetée (aucune lecture de
-     `auto_match_rejected_at` dans `frontend/src`) — la phrase actuelle « La transaction reste à
-     rapprocher manuellement » est donc **fausse** à l'écran ; le dev le confirme au navigateur et écrit
-     ce qui est vrai (la transaction disparaît de la liste ; l'annulation d'un rapprochement remet à
-     zéro ce marquage, `reconciliation_cancel.rs:331`) — **sans** promettre un chemin qui n'existe pas ;
+     entre la banque et le compte de la règle. **« Rejeter »** (puce `:1526`) marque les transactions
+     cochées comme revues (`auto_match_rejected_at`, `crates/kesh-api/src/routes/reconciliation.rs:2600-2612`)
+     sans changer leur statut, qui reste `pending`. Ce qui est vrai, et que le manuel écrit (findings
+     R-2/F-1 de la P2, qui corrigent le relevé de la P1) :
+     - la transaction **quitte la liste** de *Réconciliation*, qui n'affiche que les transactions non
+       rejetées (`find_pending_transactions_for_account`, `auto_match_rejected_at IS NULL`) ;
+     - elle **reste visible** dans le **détail de son import** (*Import bancaire* → l'import),
+       `frontend/src/routes/(app)/bank-import/[id]/+page.svelte:110-117`, qui liste **toutes** les
+       transactions de l'import (`bank_transactions::list_by_import`,
+       `crates/kesh-db/src/repositories/bank_transactions.rs:49-58`) — avec le statut brut `pending`,
+       sans marque de rejet et **sans action** ;
+     - **aucun geste de l'interface** ne la rapproche ensuite : ses boutons vivaient dans la liste qui
+       l'exclut ; l'**annulation d'un rapprochement ne s'y applique pas** — elle ne porte que sur une
+       transaction **rapprochée** (`crates/kesh-db/src/repositories/reconciliation_cancel.rs:285`,
+       `:329-333`, `status = 'reconciled'`), or une transaction rejetée ne l'est pas ;
+     - la phrase actuelle « La transaction reste à rapprocher manuellement » est donc **fausse** ; le
+       manuel ne mentionne **aucun** chemin de retour, et le dev ne cite pas l'annulation (#526) ;
    - plus d'item *Modifier* (`:1527`) : pour imputer autrement qu'à la candidate affichée, on utilise
      **« Affecter manuellement »** ou **« Éclater »** (AC7) ;
-   - la puce *Accepter* (`:1524-1525`) ne cite plus le **code brut** `ROUNDING\_ACCOUNT\_NOT\_CONFIGURED` :
+   - la puce *Accepter* (`:1525`) ne cite plus le **code brut** `ROUNDING\_ACCOUNT\_NOT\_CONFIGURED` :
      elle dit que, sans compte de différences d'arrondi, la ligne apparaît dans les *Échecs partiels*
-     avec le **libellé** de l'AC1 (relevé sur `error-rounding-account-not-configured`) et qu'on le
-     désigne dans *Paramètres* → *Facturation* (finding P1 R-2/F-2).
+     avec le **libellé** de l'AC1 (la clé `error-rounding-account-not-configured`, réutilisée — C37) et
+     qu'on le désigne dans *Paramètres* → *Facturation* (finding P1 R-2/F-2).
 6. **AC6 — Le lot : succès partiel, refus en clair** (#481, point 2 ; `:1532`, intégré à la
    sous-section fusionnée de l'AC5). Le texte actuel dit l'opération « atomique : soit toutes … soit
    aucune » et renvoie à « la doc CLAUDE.md projet » et à « failed[] » — **faux et hors de propos pour
@@ -139,7 +204,7 @@ choix C32) — c'est lui que les AC5 à AC7 décrivent :
    *Échecs partiels* avec leur motif en clair (AC1–AC3) ; un refus n'empêche pas les autres ; il en va
    de même pour *Rejeter*.
 7. **AC7 — *Réconciliation manuelle* et *Éclatement* : un compte de contrepartie, une seule écriture**
-   (#481, point 3 ; `:1534-1546` et `:1548-1559`, légendes des deux `\keshscreenshot` comprises).
+   (#481, point 3 ; `:1534-1545` et `:1546-1559`, légendes des deux `\keshscreenshot` comprises).
    - Rapprochement manuel : le bouton s'appelle **« Affecter manuellement »** (`:1541` dit *Rapprocher
      manuellement* — à corriger) ; il passe une écriture entre le compte de la banque et **un compte de
      contrepartie** que l'utilisateur choisit (`ManualMatchModal.svelte:157-160`) — il ne porte ni
@@ -173,6 +238,12 @@ choix C32) — c'est lui que les AC5 à AC7 décrivent :
    - elle produit une **proposition** dans l'écran de rapprochement, que l'utilisateur accepte — aucune
      écriture n'est créée à l'import, il n'existe ni brouillon ni option *auto-validate rules*, ni
      « acceptation par lot d'écritures en brouillon » (sous-section `:1584-1586` supprimée) ;
+   - l'**ordre** des règles : elles sont évaluées par **priorité croissante** — le **plus petit**
+     nombre l'emporte —, puis par ancienneté, et **seule la première** qui correspond est proposée
+     (`ORDER BY priority ASC, id ASC`, `crates/kesh-db/src/repositories/reconciliation_rules.rs:83` ;
+     `crates/kesh-reconciliation/src/rules.rs:76-95`) ; le **type de correspondance** ne se choisit qu'à
+     la **création** et ne se modifie pas ensuite (`RuleFormModal.svelte:138`, `{#if !isEdit}`)
+     (finding F-8) ;
    - désactiver / réactiver ; **archiver une règle la désactive** (`UPDATE … active = FALSE`,
      `crates/kesh-db/src/repositories/reconciliation_rules.rs`, `soft_delete_by_id_for_company`) — la
      liste l'affiche « Archivée » (`RulesList.svelte:146-148`) : le manuel le dit, sans laisser croire à
@@ -182,7 +253,8 @@ choix C32) — c'est lui que les AC5 à AC7 décrivent :
      l'affiche toujours « Active »** (sa colonne d'état ne connaît que *Active* / *Archivée*,
      `RulesList.svelte:146-148`) — le manuel le dit, pour qu'un utilisateur ne cherche pas pourquoi une
      règle « Active » ne propose rien (finding P1 R-4) ;
-   - **l'exemple et les conditions fictifs** (`:1565`, `:1572-1573`) disparaissent : « crée
+   - **l'exemple et les conditions fictifs** (`:1565` « automatiser la création d'écritures »,
+     l'exemple du loyer `:1567`, conditions et action `:1574-1575`) disparaissent : « crée
      automatiquement l'écriture Débit 6000 / Crédit 1020 », « montant entre 2'400 et 2'600 », « compte
      tiers IBAN = … », et l'**action** « créer écriture Débit compte X / Crédit compte Y » n'existent
      pas. Une règle a **une** condition, d'un des quatre types réels (`counterparty_contains`,
@@ -199,20 +271,44 @@ choix C32) — c'est lui que les AC5 à AC7 décrivent :
      - « à 1 CHF près » est **faux** : une facture n'est candidate que si son **reste dû** égale le
        montant de la transaction **à 5 centimes près** (`AMOUNT_TOLERANCE_HUNDREDTHS = 5`,
        `crates/kesh-api/src/routes/reconciliation.rs:58-61`, appliqué `:500-521`), dans une fenêtre de
-       **30 jours** (`WINDOW_DAYS`, `:54-56`) — ce que dit déjà l'algorithme (`:1501`) ; et seulement
-       pour une transaction **créditrice en CHF** (`:503-512`) ;
+       **30 jours de part et d'autre de la date de la facture** — **pas** de son échéance
+       (`WINDOW_DAYS`, `:54-56` ; `i.date BETWEEN DATE_SUB(?, INTERVAL ? DAY) AND DATE_ADD(…)`,
+       `crates/kesh-db/src/repositories/reconciliation.rs:135`, finding F-3) : une facture à 30 jours
+       payée avec retard, ou après un rappel, **n'est pas proposée** (#529) ; et seulement pour une
+       transaction **créditrice en CHF** (`:503-512`) ;
      - « référence QR Bill structurée » est **faux** : le score de référence compare la référence de la
        transaction au **numéro de la facture** (`crates/kesh-reconciliation/src/matching.rs:13-16`) ;
      - « libellé trop vague » : le critère réel est le **nom de la contrepartie** comparé au nom du
        client (10 %, `matching.rs:17-19`) ; et une candidate de score nul n'est pas proposée ;
-     - une **règle** n'est proposée que si aucune facture n'atteint un score de 0,5
-       (`INVOICE_OVERRIDE_THRESHOLD`, `reconciliation.rs:563`, `:588`) — à dire si la FAQ parle des
-       règles.
-   - Le PDF est régénéré (`latexmk -xelatex` dans `docs/manual/fr/`), commité, et **contrôlé aplati**
-     (`pdftotext … - | tr '\n' ' ' | tr -s ' '`) : les phrases retirées sont absentes, les nouvelles
-     présentes.
-   - `docs/manual/fr/admin-manual.tex` : contrôle **sans objet** attendu (aucune description du
-     rapprochement) — le refaire et l'écrire au Dev Agent Record.
+     - si la FAQ parle des règles, elle dit ce qui vaut **à l'écran** : une règle n'est **affichée**
+       que s'il n'y a **aucune** facture candidate (findings R-1/F-2 ; #527). Le seuil de 0,5
+       (`INVOICE_OVERRIDE_THRESHOLD`, `reconciliation.rs:563`, `:588`) ne vaut que pour la réponse de
+       l'API ; il n'a pas sa place au manuel utilisateur ;
+     - **la phrase finale** (`:2105`, « Procédez à un rapprochement manuel, ou créez une règle
+       d'affectation pour les transactions récurrentes »), qu'aucune passe n'avait inventoriée, est
+       **réécrite** (finding F-3) : pour un **paiement de client** non proposé, la facture se règle
+       **depuis sa fiche** (*Enregistrer un règlement*, § `sec:reglement-client`) — **ni** par
+       *Affecter manuellement* ou *Éclater*, qui ne proposent que les classes 5, 6 et 7 (le compte
+       débiteurs y est inatteignable, la facture resterait ouverte), **ni** par une **règle
+       d'affectation**, qui ne vise qu'un compte de charge ou de produit (`RuleFormModal.svelte:43-50`) et
+       porterait le paiement en produit : **produit compté deux fois**, facture toujours due — un faux
+       rattachement muet. Le manuel le dit en ces termes et **ne conseille pas** de règle pour un
+       paiement de client. Ce que devient alors la transaction bancaire (elle reste dans la liste, sans
+       lien avec le règlement saisi) est dit tel quel, sans promettre de lien (#529) ; la règle
+       d'affectation reste conseillée pour les **charges** récurrentes (loyer, abonnements).
+   - Le PDF est régénéré (`latexmk -xelatex` dans `docs/manual/fr/`), commité, et **contrôlé aplati en
+     normalisant les ligatures** (finding F-7) :
+     `pdftotext -nopgbrk docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | sed 's/ﬀ/ff/g; s/ﬁ/fi/g; s/ﬂ/fl/g'`
+     — le corps du PDF rend « ff » par la ligature `ﬀ` (59 occurrences sur `007c4eb1`, « La meilleure
+     candidate est aﬀichée ») : sans normalisation, un contrôle de **présence** de « Affecter
+     manuellement », « différences d'arrondi » ou « affiche » rend un faux négatif. Les phrases retirées
+     sont absentes, les nouvelles présentes.
+   - `docs/manual/fr/admin-manual.tex` : **pas sans objet** (findings R-6/F-9) — `:82` (liste des
+     fonctions, « Réconciliation automatique et manuelle … avec règles d'affectation ») et `:2033` (un
+     paiement « règlement manuel ou rapprochement bancaire » refusé sans compte d'arrondi, « avec un
+     message qui renvoie à *Paramètres* → *Facturation* ») mentionnent le rapprochement. Attendu au Dev
+     Agent Record : `:82` reste vrai ; `:2033` **devient exact par l'AC3** — aujourd'hui, au lot,
+     l'écran affiche le code brut (`ReconciliationProposals.svelte:362`).
    - `CHANGELOG.md`, section `## [0.13.0] — Non publié` (créée par la 15-5a ; **la créer en tête si
      absente** — motif exact exigé par `scripts/prepare-release.sh:189`), rubrique **Corrigé** : les refus d'une
      acceptation par lot s'affichent en clair (#492) ; le manuel du rapprochement décrivait un bouton,
@@ -222,32 +318,47 @@ choix C32) — c'est lui que les AC5 à AC7 décrivent :
      (`:1493`, « rapprocher … avec les écritures comptables ou les factures ») — Kesh ne rapproche pas
      une transaction d'une écriture existante : il **crée** l'écriture, en réglant une facture ou en
      imputant un compte (manuellement, par éclatement ou par règle).
+   - **Autres passages faux relevés en P2**, hors de la section, à réécrire sur le même fond :
+     - § rappels, `:1126` : « le rapprochement bancaire propose la facture pour un paiement de ce
+       montant, même après des règlements partiels » — faux dès que le paiement tombe plus de 30 jours
+       après la **date** de la facture, donc presque toujours après un rappel (finding F-3, #529) : dire
+       que la facture est proposée si le paiement arrive dans les 30 jours de sa date, et sinon qu'on
+       enregistre le règlement depuis la fiche de la facture ;
+     - glossaire, `:2226` (*Réconciliation bancaire* : « Rapprochement … avec les écritures comptables
+       (factures, paiements) ») — même idée fausse que `:1493` (finding F-4) ;
+     - *Bonnes pratiques*, `:2188` (« Liez systématiquement les transactions bancaires aux factures via
+       la référence QR Bill structurée ») — le score de référence compare au **numéro de facture**
+       (`matching.rs:13-16`), comme la FAQ le dira (finding R-5).
 
 ## Tasks / Subtasks
 
 - [ ] **T0 — Refaire les relevés** sur `HEAD`, après le merge de la 15-5b : la liste des codes de
-      l'AC1 (commande citée) et les numéros de ligne du manuel (AC5–AC9). Tout code ou passage neuf est
-      classé au Change Log.
+      l'AC1 (commande citée **et** contrôle des formes non littérales) et les numéros de ligne du
+      manuel (AC5–AC9). Tout code ou passage neuf est classé au Change Log.
 - [ ] **T1 — Le module de libellés** (AC1, AC2) : `failed-proposal-label.ts` et
       `failed-proposal-label.test.ts` — chaque code de la liste, **écrite en dur dans le test**, rend un
-      libellé distinct du repli ; `ACCOUNT_NOT_POSTABLE` nomme les numéros de `details.rejected` ; un
+      libellé distinct du repli ; la clé lue par code (réutilisée `error-*` ou neuve, C37) est écrite
+      au Dev Agent Record ; `ACCOUNT_NOT_POSTABLE` nomme les numéros de `details.rejected` ; un
       `details` absent, `null`, ou d'une autre forme → libellé sans numéros ; un code inconnu → repli
       avec le code.
 - [ ] **T2 — Les clés** (AC4) : quatre `messages.ftl` ; `lint-i18n-ownership` ; borne `sitesTotal`
       relevée délibérément, ventilation recomptée ; `cargo test -p kesh-i18n` (les tests du chargeur
       lisent les `.ftl`).
-- [ ] **T3 — L'affichage** (AC3) : `ReconciliationProposals.svelte:362` ; test de
-      `ReconciliationProposals.test.ts`.
-- [ ] **T4 — Le manuel** (AC5–AC9) : l'introduction (`:1493`), la sous-section fusionnée
+- [ ] **T3 — L'affichage** (AC3) : `ReconciliationProposals.svelte:362` (date, montant, contrepartie,
+      relevés avant le `load()`) ; *Échecs partiels* et compteur hors de la branche vide ; trois tests
+      de `ReconciliationProposals.test.ts`.
+- [ ] **T4 — Le manuel** (AC5–AC9) : l'introduction (`:1493`), `:1511`, la sous-section fusionnée
       *Accepter ou rejeter les propositions* (ex-*Acceptation des propositions* et *Acceptation par
       lot*), le rapprochement manuel, l'éclatement, les règles et la FAQ, **légendes des captures
       comprises** ; **relire au code** le filtre des deux sélecteurs (`ManualMatchModal.svelte:65-69`,
-      `TransactionSplitModal.svelte:71-73`, `AccountAutocomplete.svelte:200-207`) et le sort d'une
-      transaction rejetée (AC5) avant d'écrire ; PDF régénéré, commité, contrôlé aplati ;
-      `admin-manual.tex` contrôlé.
+      `TransactionSplitModal.svelte:71-73`, `AccountAutocomplete.svelte:200-207`), le sort d'une
+      transaction rejetée (AC5, détail d'import compris), l'ordre des candidates et la fenêtre de 30
+      jours avant d'écrire ; la FAQ **et sa phrase finale** `:2105`, `:1126`, `:2188`, `:2226` ; PDF
+      régénéré, commité, contrôlé aplati **ligatures normalisées** ; `admin-manual.tex` `:82` et `:2033`
+      contrôlés.
 - [ ] **T5 — Propagation** (règle *Propagation post-patch*) :
-      `grep -rnE "auto-validate|atomique|CLAUDE\.md|Modifier.*facture|N écritures|par facture|brouillon|Rapprocher manuellement|sélectionnées|candidates|1 CHF près|QR Bill structurée|ROUNDING.ACCOUNT|texttt\{[A-Z]+.?_[A-Z]" docs/manual/fr/*.tex`
-      et le même motif sur le PDF aplati (où le `\_` devient `_`) ; chaque occurrence qui décrit le
+      `grep -rnE "auto-validate|atomique|CLAUDE\.md|Modifier.*facture|N écritures|par facture|brouillon|Rapprocher manuellement|sélectionnées|candidates|meilleure candidate|1 CHF près|QR Bill structurée|ROUNDING.ACCOUNT|propose la facture|rapprochement manuel|écritures comptables|annul.*rapproch|texttt\{[A-Z]+.?_[A-Z]" docs/manual/fr/*.tex`
+      et le même motif sur le PDF aplati, ligatures normalisées (où le `\_` devient `_`) ; chaque occurrence qui décrit le
       rapprochement est réécrite ou justifiée au Dev Agent Record — en particulier tout **code brut**
       d'erreur cité au manuel utilisateur (finding P1 R-2). `CHANGELOG.md` (AC9).
 - [ ] **T6 — Gates** : gate frontend complet (`npm run check`, `lint-i18n-ownership`, `test:unit`,
@@ -272,9 +383,14 @@ choix C32) — c'est lui que les AC5 à AC7 décrivent :
 
 - Le **détail** de `PERIOD_LOCKED` (`lockedThrough`, `attempted`) n'est pas lu par le libellé (C32) :
   le libellé reste générique. Les autres codes non plus, sauf `ACCOUNT_NOT_POSTABLE` (AC2).
-- Le sort d'une transaction **rejetée**, qu'aucun écran ne montre plus (AC5) : la story **écrit** ce
-  fait au manuel ; elle ne crée pas d'écran pour la retrouver (signalé à l'orchestrateur pour une
-  issue).
+- Le sort d'une transaction **rejetée** (AC5) : la story **écrit** ce qui est vrai — elle quitte la
+  liste, reste visible sans action dans le détail de son import, et aucun geste ne la rapproche — ; elle
+  ne crée pas de chemin de retour (**#526**).
+- L'**ordre des candidates** — une facture faible avant une règle de score maximal (**#527**) : la
+  story décrit `candidates[0]` tel quel, sans corriger le serveur.
+- Le **paiement client tardif** — fenêtre de 30 jours centrée sur la date de facture, aucun moyen de
+  rapprocher la transaction de la facture à l'écran (**#529**) : la story écrit la vérité et renvoie au
+  règlement depuis la fiche facture.
 
 ### Décisions consignées (registre `epic-15-choix-autonomes.md`)
 
@@ -283,7 +399,13 @@ choix C32) — c'est lui que les AC5 à AC7 décrivent :
 - **C15** — la création de cette story ; ferme aussi #481.
 - **C16** — la forme `details.rejected[{accountId, accountNumber}]` qu'AC2 lit.
 - **C32** — l'écran réel du rapprochement et le filtre réel des sélecteurs, vérifiés au code en P1 ;
-  `PERIOD_LOCKED` affiché sans son détail.
+  `PERIOD_LOCKED` affiché sans son détail. **Corrigé en P2** sur deux points (la candidate affichée est
+  `candidates[0]`, non « la meilleure » ; la transaction rejetée reste visible dans le détail
+  d'import, et l'annulation ne s'y applique pas).
+- **C37** — une clé `error-*` existante, mot pour mot et sans variable, est lue directement ; sinon clé
+  neuve `reconciliation-failed-*`, sans variable.
+- **C38** — les *Échecs partiels* restent visibles quand la liste se vide ; la ligne de refus désigne
+  la transaction par sa date, son montant et sa contrepartie.
 
 ### Fichiers touchés (prévision)
 
@@ -303,7 +425,7 @@ splitting.
 
 ### References
 
-- Issues : #481, #492, #519 ; #427, #429 (15-5b).
+- Issues : #481, #492, #519 ; #526, #527, #529 (cités, non corrigés) ; #427, #429 (15-5b, 15-5d).
 - Fiches : `15-5-gardes-postabilite-serveur.md` (mère, `split`), `15-5a-refus-non-imputable.md`,
   `15-5b-gardes-surfaces-neuves.md`.
 - `CLAUDE.md` : § *Le prompt d'une passe doit NOMMER le manuel*, § *Pattern batch*.
@@ -357,3 +479,71 @@ splitting.
   `1 CHF`, `ROUNDING`, `actif et imputable`, `Modifier` grepés sur les fiches 15-5, 15-5a, 15-5b, 15-5c
   et le registre. Décompte inchangé : **9 AC, 7 tâches T0–T6** (recompté). **Une passe P2 suit** (des
   MEDIUM en P1).
+- 2026-10-08 — **Passe de validation P2** (prompt versionné `15-5c-validate-prompt-p2.md` ; deux
+  lentilles **Opus** en contexte frais : **R** chasseur de régressions de la remédiation P1
+  (`007c4eb1`), **F** adversaire de périmètre complet ; rotation D6 : P1 Sonnet ×2 → P2 Opus ×2).
+  **0 CRITICAL, 0 HIGH.** Bruts : R 2 MEDIUM + 6 LOW, F 3 MEDIUM + **10** LOW (son bilan en annonce 9 ;
+  il en numérote 10, F-4 à F-13 — recompté). Doublons inter-lentilles : R-1 = F-2, R-2 = F-1, R-3 =
+  F-10, R-6 = F-9 → **3 MEDIUM et 14 LOW distincts**. Trend : P1 3 MEDIUM / 7 LOW → **P2 3 MEDIUM /
+  14 LOW**.
+
+  | finding | sév. | objet | sort | origine (amendement D5) |
+  |---|---|---|---|---|
+  | R-1 = F-2 | MEDIUM | le relevé (C32) et l'AC9 disent la candidate affichée « la meilleure », une règle proposée sous 0,5 — l'écran affiche `candidates[0]` : la facture faible masque la règle | relevé, AC5, AC9 : `candidates[0]`, règle affichée seulement sans facture candidate ; `:1511` à réécrire ; **#527** citée, non corrigée | **né de la remédiation P1** (relevé de C32) |
+  | R-2 = F-1 | MEDIUM | AC5 : « aucun écran n'affiche une transaction rejetée » et « l'annulation remet le marquage à zéro » — faux à l'écran | AC5 : visible dans le détail d'import (`bank-import/[id]/+page.svelte:110-117`, statut `pending`, sans action) ; aucun geste ne la rapproche ; l'annulation ne s'y applique pas ; **#526** citée | **né de la remédiation P1** (parenthèse ajoutée par `007c4eb1`) |
+  | F-3 | MEDIUM | FAQ : la phrase finale `:2105` conseille une règle pour un paiement client (produit compté deux fois) ; fenêtre de 30 jours centrée sur la date de facture ; `:1126` (rappels) promet la proposition | AC9 : phrase finale réécrite (règlement depuis la fiche facture, jamais de règle pour un paiement client), fenêtre écrite, `:1126` réécrit ; **#529** citée ; T5 étendu | **d'origine** (passages antérieurs à la story, jamais inventoriés) |
+  | R-3 = F-10 | LOW | #526 existe, la fiche dit « signalé pour une issue » | *Issues*, *Hors périmètre*, *References* : #526, #527, #529 | — |
+  | R-4 | LOW | numéros de ligne du manuel décalés | AC5, AC7, AC8 corrigés (`:1517-1520`, `:1525`, `:1526`, `:1534-1545`, `:1565`, `:1567`, `:1574-1575`) | — |
+  | R-5 | LOW | `:2188` (*Bonnes pratiques*, « référence QR Bill structurée ») hors des plages | AC9, autres passages faux | — |
+  | R-6 = F-9 | LOW | `admin-manual.tex` « sans objet » inexact : `:82`, `:2033` | AC9 : `:82` reste vrai, `:2033` devient exact par l'AC3 | — |
+  | R-7 | LOW | réutiliser la clé `error-rounding-account-not-configured` ou copier le texte ? | AC1 : réutilisée (C37) | — |
+  | R-8 | LOW | la commande de relevé ne voit que les littéraux | AC1, T0 : contrôle des formes non littérales | — |
+  | F-4 | LOW | glossaire `:2226` | AC9 ; T5 (`écritures comptables`) | — |
+  | F-5 | LOW | *Échecs partiels* masqués quand la liste se vide | AC3 : hors de la branche vide ; test avec un second `getProposals` vide (C38) | — |
+  | F-6 | LOW | `TX #<id>` ne désigne rien de visible | AC3 : date, montant, contrepartie relevés avant le `load()` (C38) | — |
+  | F-7 | LOW | ligatures du PDF aplati (`ﬀ`) : faux négatifs de présence | AC9 : `pdftotext -nopgbrk` + normalisation `ﬀ/ﬁ/ﬂ` ; même recette à la 15-5b et à la 15-5d ; recette du `CLAUDE.md` signalée à l'orchestrateur | — |
+  | F-8 | LOW | AC8 : priorité (le plus petit l'emporte, seule la première règle) ; type non modifiable | AC8 | — |
+  | F-11 | LOW | la liste est bornée à 100 transactions | relevé, AC5 | — |
+  | F-12 | LOW | noms des champs de la ventilation `sitesTotal` | AC4 : champs réels | — |
+  | F-13 | LOW | libellés « relevés » à variable ; doublons de traduction | AC1 : règle C37 | — |
+
+  **Signal de la règle de découpage** (sévérité MEDIUM → MEDIUM, P1 → P2) : **constaté**. Selon
+  l'amendement D5 : deux MEDIUM (R-1/F-2, R-2/F-1) sont **nés de la remédiation P1** — non du recyclage
+  d'un finding de P1, mais d'un relevé d'écran écrit en P1 et faux sur deux points ; un (F-3) est
+  **d'origine**. La story reste à **trois modules** (frontend/reconciliation, kesh-i18n, manuel), sans
+  code serveur : les défauts sont des **faits mal relevés**, que la remédiation a vérifiés au code ligne
+  par ligne, pas une dispersion de périmètre. **Pas de découpage proposé** ; signal déclaré au Project
+  Lead par l'orchestrateur, à qui revient l'arbitrage. **Décisions de l'orchestrateur** : citer #526,
+  #527, #529 sans corriger ; trancher la clé d'arrondi (C37). Ajoutée pendant la remédiation : C38.
+  **Propagation post-patch** : `meilleure`, `reconciliation_cancel`, `annul`, `disparaît`, `aucun écran`,
+  `0,5`, `1515-1518`, `1524-1525`, `1572-1573`, `1534-1546`, `QR Bill structurée`, `écritures
+  comptables`, `propose la facture`, `sans objet`, `litteraux`, `pdftotext` grepés sur les fiches 15-5,
+  15-5a (lecture seule), 15-5b, 15-5c, 15-5d et le registre — les occurrences restantes sont
+  historiques (Change Log) ou nient la formule. Décompte inchangé : **9 AC, 7 tâches T0–T6**
+  (recompté). **Une passe P3 suit** (des MEDIUM en P2) ; elle peut être ciblée sur ce commit.
+- 2026-10-08 — **Passe de validation P3, ciblée** (prompt versionné `15-5c-validate-prompt-p3-ciblee.md` ;
+  une lentille **Haiku**, contexte frais : chasseur de régressions braqué sur le seul commit de la
+  remédiation P2, `67c31c95` ; passe ciblée de fin de boucle, décision D6). Rapport :
+  `target/gate-logs/15-5c-p3-ciblee.md`. **0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW.**
+  - **« 0 » vérifié par l'orchestrateur** (règle « un 0 finding se vérifie comme un finding ») sur
+    l'affirmation centrale de la remédiation : l'écran lit bien `candidates[0]`
+    (`frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte:137`,
+    `const c = p.candidates[0];`, et `:265` pour l'affichage) — conforme au relevé de l'AC5 et de l'AC9.
+  - Axes déclarés exercés : affirmations sur le code (`candidates[0]`, fenêtre de 30 jours sur la date
+    de facture, classes 5/6/7, clé d'arrondi, formes non littérales), références d'issues et de choix,
+    cohérence interne, décomptes. Non exercés, déclarés : numéros de ligne du manuel au-delà d'un
+    sondage (refaits en T0), borne exacte des codes de l'AC1 (dépend du merge de la 15-5b), exécution
+    des tests.
+  - La remédiation P2 ne touche aucune ligne de code de production (fiche seule) : **boucle de
+    validation close.**
+
+  **Trend complet de la fiche** :
+
+  | passe | modèle(s) | périmètre | bilan |
+  |---|---|---|---|
+  | P1 | Sonnet ×2 | fiche entière | 0 C / 0 H / 3 MEDIUM / 7 LOW |
+  | P2 | Opus ×2 | fiche entière | 0 C / 0 H / 3 MEDIUM / 14 LOW |
+  | P3 ciblée | Haiku ×1 | commit `67c31c95` | 0 C / 0 H / 0 MEDIUM / 0 LOW |
+
+  Décompte inchangé : **9 AC, 7 tâches T0–T6** (recompté). Fiche prête pour le développement, après le
+  merge de la 15-5b.

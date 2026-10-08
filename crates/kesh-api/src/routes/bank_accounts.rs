@@ -35,7 +35,7 @@ use axum::response::{IntoResponse, Response};
 use kesh_db::entities::account::AccountType;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::bank_account::{BankAccount, NewBankAccount};
-use kesh_db::errors::DbError;
+use kesh_db::errors::{DbError, NonPostableAccount};
 use kesh_db::repositories::{accounts, audit_log, bank_accounts, onboarding};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -257,10 +257,19 @@ fn validate_bank_input(
 
 /// Validation pré-flight du `journalAccountId` (compte existe + actif +
 /// Asset|Liability) — cohérent pattern PATCH.
+///
+/// `require_postable` (Story 15-5b, AC12, #427) : vrai à la **création**, où
+/// un compte non imputable (regroupement, résultat, clôture) est refusé en 400
+/// `ACCOUNT_NOT_POSTABLE` **après** les contrôles d'existence (404) et de type
+/// (400). Faux au **remplacement** (PUT) et au **lien** (PATCH) : là, la
+/// postabilité est contrôlée dans la transaction du dépôt, sous le verrou de
+/// la ligne et **seulement si la valeur change** (choix C10) — un compte lié
+/// devenu non imputable après coup reste accepté tel quel (D-A0, choix C6).
 async fn validate_journal_account_id(
     pool: &sqlx::MySqlPool,
     company_id: i64,
     journal_account_id: Option<i64>,
+    require_postable: bool,
 ) -> Result<(), AppError> {
     let Some(account_id) = journal_account_id else {
         return Ok(());
@@ -286,12 +295,24 @@ async fn validate_journal_account_id(
     }
 
     match account.account_type {
-        AccountType::Asset | AccountType::Liability => Ok(()),
-        other => Err(AppError::InvalidAccountType {
-            account_id,
-            account_type: other.as_str().to_string(),
-        }),
+        AccountType::Asset | AccountType::Liability => {}
+        other => {
+            return Err(AppError::InvalidAccountType {
+                account_id,
+                account_type: other.as_str().to_string(),
+            });
+        }
     }
+
+    if require_postable && !account.postable {
+        return Err(AppError::Database(DbError::accounts_not_postable([
+            NonPostableAccount {
+                account_id,
+                account_number: account.number,
+            },
+        ])));
+    }
+    Ok(())
 }
 
 /// Émet l'audit log `bank_account.updated` `trigger=primary_transition` sur
@@ -381,6 +402,9 @@ pub async fn list_bank_accounts(
 ///
 /// Transition primary silencieuse symétrique au PUT (FINDING-3 Pass 3 Opus).
 /// Guard onboarding step >= 7 (sauf is_demo).
+///
+/// Story 15-5b (AC12, #427) : un `journalAccountId` non imputable est refusé
+/// en 400 `ACCOUNT_NOT_POSTABLE`, après le 404 et le 400 de type.
 pub async fn create_bank_account(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -394,6 +418,7 @@ pub async fn create_bank_account(
         &state.pool,
         current_user.company_id,
         body.journal_account_id,
+        true,
     )
     .await?;
 
@@ -495,6 +520,13 @@ pub async fn create_bank_account(
 
 /// Handler `PUT /api/v1/bank-accounts/{id}` — édition complète v014-1
 /// (Comptable+).
+///
+/// **Ordre des erreurs** (Story 15-5b, AC12) : forme (400) → 404 / 400 type du
+/// compte lié (`validate_journal_account_id`, hors transaction) → 404 compte
+/// bancaire → 409 version → 400 `ACCOUNT_NOT_POSTABLE` (compte lié **changé**
+/// vers un compte non imputable, contrôlé par le dépôt sous verrou). Un refus
+/// abandonne la transaction : l'ancien principal, s'il avait été démoté, le
+/// reste.
 pub async fn update_bank_account(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -513,6 +545,8 @@ pub async fn update_bank_account(
         &state.pool,
         current_user.company_id,
         body.journal_account_id,
+        // Postabilité contrôlée dans le dépôt, sous verrou, si changée (AC12).
+        false,
     )
     .await?;
 
@@ -714,6 +748,11 @@ pub async fn archive_bank_account(
 ///
 /// Story v014-1 (F7 Pass 3 Opus) — `details_json.trigger = "journal_account_link"`
 /// ajouté pour cohérence audit log avec PUT (`trigger = "full_update"`).
+///
+/// **Ordre des erreurs** (Story 15-5b, AC12) : forme (400) → 404 / 400 type du
+/// compte lié → 404 compte bancaire → 409 version → 400
+/// `ACCOUNT_NOT_POSTABLE` (compte lié **changé** vers un compte non imputable ;
+/// une valeur inchangée court-circuite sans contrôle).
 pub async fn patch_bank_account_journal_link(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -728,6 +767,8 @@ pub async fn patch_bank_account_journal_link(
         &state.pool,
         current_user.company_id,
         body.journal_account_id,
+        // Postabilité contrôlée dans le dépôt, sous verrou, si changée (AC12).
+        false,
     )
     .await?;
 
