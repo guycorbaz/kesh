@@ -1,6 +1,6 @@
 # Story 15.11a : Les compose de production transmettent toute la configuration écrite dans `.env` — et un test qui compare les compose à la liste des variables lues
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Créée le 2026-10-08 par l'agent de découpage, en autonomie (consignes de l'Epic 15), par découpage
      de la Story 15-11 après sa validation P3 (signal D5 levé deux fois, par recyclage — choix C77).

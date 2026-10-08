@@ -334,7 +334,7 @@ async fn main() {
         }
     } else {
         tracing::info!(
-            "SMTP non configuré — recovery break-glass KESH_ADMIN_RESET, envoi de factures par e-mail indisponible."
+            "SMTP non configuré — recovery break-glass KESH_ADMIN_USERNAME/KESH_ADMIN_PASSWORD, envoi de factures par e-mail indisponible."
         );
         Arc::new(mail::NoopMailer)
     };

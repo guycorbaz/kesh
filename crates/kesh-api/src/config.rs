@@ -32,15 +32,19 @@ pub enum ConfigError {
     /// explicitement pour éviter qu'un opérateur ayant tapé `"True"` ou
     /// `"yes"` croie test_mode activé alors que l'endpoint est 404.
     InvalidTestModeValue { got: String },
-    /// `KESH_JWT_SECRET` contient la sous-chaîne `change-me` (placeholder
-    /// du `.env.example`). Story 10-1 : refus fail-fast au lieu du warn
-    /// existant pour empêcher un boot prod sur un secret non-changé.
-    /// **Display ne loggue jamais la valeur** — fuite via `tracing::error!`.
+    /// `KESH_JWT_SECRET` est un placeholder : il contient `change-me` (défaut
+    /// de garde de `docker-compose.yml`), `GENERATE_ME` (placeholder
+    /// `<GENERATE_ME: …>` de `.env.example`), ou est de la forme `<…>`
+    /// (gabarits du manuel) — cf. [`is_template_placeholder`]. Story 10-1,
+    /// étendu par la Story 15-11a (#557) : refus fail-fast pour empêcher un
+    /// boot sur un secret publié. **Display ne loggue jamais la valeur** —
+    /// fuite via `tracing::error!`.
     InsecureJwtSecret,
-    /// `KESH_ADMIN_PASSWORD` égale (case-insensitive après trim) le
-    /// placeholder `"changeme"` du `.env.example`. Story 10-1 : refus
-    /// fail-fast au lieu du warn existant. **Display ne loggue jamais
-    /// la valeur**.
+    /// `KESH_ADMIN_PASSWORD` est un placeholder : il vaut `changeme`
+    /// (case-insensitive après trim), contient `GENERATE_ME` (placeholder de la
+    /// ligne commentée `#KESH_ADMIN_PASSWORD=` de `.env.example`) ou est de la
+    /// forme `<…>` (gabarits du manuel). Story 10-1, étendu par la Story 15-11a
+    /// (#557). **Display ne loggue jamais la valeur**.
     InsecureAdminPassword,
     /// `KESH_ADMIN_PASSWORD` trop court (< 12 caractères après trim).
     /// Story 10-1 : minimum OWASP / NIST SP 800-63B. **Display loggue
@@ -111,15 +115,18 @@ impl std::fmt::Display for ConfigError {
             ConfigError::InsecureJwtSecret => {
                 write!(
                     f,
-                    "KESH_JWT_SECRET contient le placeholder 'change-me'. \
-                     Générer un vrai secret via : openssl rand -hex 32"
+                    "KESH_JWT_SECRET contient un placeholder ('change-me', 'GENERATE_ME', \
+                     ou valeur entre chevrons <…>). Générer un vrai secret via : \
+                     openssl rand -hex 32"
                 )
             }
             ConfigError::InsecureAdminPassword => {
                 write!(
                     f,
-                    "KESH_ADMIN_PASSWORD est la valeur par défaut 'changeme' \
-                     (case-insensitive). Changez-le avant la mise en production."
+                    "KESH_ADMIN_PASSWORD est un placeholder ('changeme', contient \
+                     'GENERATE_ME' — sans égard à la casse —, ou valeur entre chevrons <…>). \
+                     Choisir un vrai mot de passe (≥ 12 caractères), ou retirer la ligne \
+                     de .env pour créer l'administrateur à l'écran /setup."
                 )
             }
             ConfigError::WeakAdminPassword { actual_chars } => {
@@ -155,7 +162,7 @@ impl std::fmt::Display for ConfigError {
                      est incomplète : {}. Renseigner toutes les vars (KESH_SMTP_HOST, \
                      KESH_SMTP_USER, KESH_SMTP_PASSWORD, KESH_SMTP_FROM, KESH_PUBLIC_BASE_URL) \
                      ou désactiver le recovery par email (KESH_FEATURE_FORGOT_PASSWORD=false ; \
-                     le fallback break-glass KESH_ADMIN_RESET reste disponible).",
+                     le break-glass KESH_ADMIN_USERNAME/KESH_ADMIN_PASSWORD reste disponible).",
                     detail
                 )
             }
@@ -181,8 +188,9 @@ pub struct Config {
     /// Story v011-5 : voir `admin_username`. **Optionnel** — var absente ou
     /// vide après trim → `None`. **Invariant garanti par `from_env`** :
     /// `Some(p) ⟹ !p.is_empty()`. Les validations sécu
-    /// (`InsecureAdminPassword` "changeme", `WeakAdminPassword` < 12 chars)
-    /// s'appliquent uniquement si `Some(non-empty)`.
+    /// (`InsecureAdminPassword` — `changeme`, `GENERATE_ME`, forme `<…>` —,
+    /// puis `WeakAdminPassword` < 12 chars) s'appliquent uniquement si
+    /// `Some(non-empty)`.
     pub admin_password: Option<String>,
     pub db_connect_timeout: Duration,
 
@@ -316,7 +324,7 @@ pub struct Config {
     /// `KESH_FEATURE_FORGOT_PASSWORD` — active le recovery self-service par
     /// email (DC7). **Défaut `false`**. Si `true`, la config SMTP complète est
     /// requise au boot (fail-fast [`ConfigError::IncompleteSmtpConfig`]). Si
-    /// `false`, recovery = break-glass `KESH_ADMIN_RESET` (#121).
+    /// `false`, recovery = break-glass `KESH_ADMIN_USERNAME`/`KESH_ADMIN_PASSWORD` (#121).
     pub forgot_password_enabled: bool,
 }
 
@@ -631,9 +639,11 @@ impl Config {
         // Validations sécu UNIQUEMENT si Some(non-empty) (l'invariant
         // « Some ⟹ !is_empty() » est garanti par le branchement ci-dessus).
         if let Some(ref p) = admin_password {
-            // Story 10-1 T1.3 : refus fail-fast case-insensitive de "changeme"
-            // (placeholder `.env.example`) — sécurité fail-fast.
-            if p.eq_ignore_ascii_case("changeme") {
+            // Story 10-1 T1.3 : refus fail-fast case-insensitive de "changeme".
+            // Story 15-11a (#557) : et de tout placeholder du gabarit
+            // (`GENERATE_ME`, forme `<…>`). AVANT le contrôle de longueur : un
+            // placeholder court doit nommer le gabarit, pas « trop court ».
+            if p.eq_ignore_ascii_case("changeme") || is_template_placeholder(p) {
                 return Err(ConfigError::InsecureAdminPassword);
             }
 
@@ -654,20 +664,25 @@ impl Config {
         let jwt_secret = env::var("KESH_JWT_SECRET")
             .map_err(|_| ConfigError::MissingVar("KESH_JWT_SECRET".into()))?;
 
+        // Story 10-1 T1.5 : refus fail-fast si le secret contient le
+        // placeholder `change-me` (défaut de garde de `docker-compose.yml`).
+        // Code review Pass 1 ECH-4 : check **case-insensitive**, cohérent avec
+        // le `eq_ignore_ascii_case("changeme")` du mot de passe admin ci-dessus.
+        // Story 15-11a (#557) : et de tout placeholder du gabarit
+        // (`GENERATE_ME`, forme `<…>`) — le secret `<GENERATE_ME: …>` de
+        // `.env.example`, recopié tel quel, était accepté (35 caractères). Les
+        // deux contrôles forment une seule condition, placée AVANT celui de la
+        // longueur : un placeholder court nomme le gabarit, pas « trop court ».
+        if jwt_secret.to_ascii_lowercase().contains("change-me")
+            || is_template_placeholder(&jwt_secret)
+        {
+            return Err(ConfigError::InsecureJwtSecret);
+        }
+
         if jwt_secret.len() < 32 {
             return Err(ConfigError::WeakJwtSecret {
                 actual_bytes: jwt_secret.len(),
             });
-        }
-
-        // Story 10-1 T1.5 : refus fail-fast si le secret contient le
-        // placeholder `change-me` — au lieu du warn existant.
-        // Code review Pass 1 ECH-4 : check **case-insensitive** pour cohérence
-        // avec l'admin password check (`eq_ignore_ascii_case` ligne 408). Sans
-        // `to_ascii_lowercase()`, un secret `"CHANGE-ME-32bytes-..."` (majuscules)
-        // passe le check alors qu'il signale clairement un placeholder.
-        if jwt_secret.to_ascii_lowercase().contains("change-me") {
-            return Err(ConfigError::InsecureJwtSecret);
         }
 
         // KESH_JWT_EXPIRY_MINUTES : optionnel, défaut 15, borne 1-1440
@@ -1392,6 +1407,31 @@ fn opt_trimmed_env(var: &str) -> Option<String> {
 /// `"true"`/`"1"` → `true` ; `"false"`/`"0"` → `false` ; vide/absente → `default` ;
 /// toute autre valeur → `ConfigError::InvalidBoolValue` (refus fail-fast, évite
 /// qu'un `"True"`/`"yes"` soit silencieusement interprété comme `false`).
+/// Sous-chaînes (en minuscules) qui signalent un placeholder du gabarit
+/// `.env.example` resté tel quel — comparées au texte passé par
+/// `to_ascii_lowercase`. Story 15-11a (#557).
+const TEMPLATE_PLACEHOLDERS: &[&str] = &["generate_me"];
+
+/// Vrai si `value` est un placeholder de gabarit, non une vraie valeur :
+/// elle contient une entrée de [`TEMPLATE_PLACEHOLDERS`] (sans égard à la
+/// casse), **ou**, après trim, elle commence par `<` et finit par `>` — forme
+/// de `<GENERATE_ME: …>` et des gabarits du manuel d'administration
+/// (`<mot de passe fort, …>`, `<nouveau-mdp-12+>`…). Un secret engendré par
+/// `openssl rand -hex`/`-base64` n'a jamais cette forme ; un `<` ou un `>` à
+/// l'intérieur d'une valeur reste admis.
+///
+/// Le trim est local au contrôle : le secret JWT n'est pas trimé à la lecture,
+/// et `" <x> "` doit être refusé quand même. Sert aux contrôles de
+/// `KESH_JWT_SECRET` et de `KESH_ADMIN_PASSWORD` dans [`Config::from_env`].
+fn is_template_placeholder(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    if TEMPLATE_PLACEHOLDERS.iter().any(|p| lower.contains(p)) {
+        return true;
+    }
+    let trimmed = value.trim();
+    trimmed.len() >= 2 && trimmed.starts_with('<') && trimmed.ends_with('>')
+}
+
 fn parse_strict_bool(var: &str, default: bool) -> Result<bool, ConfigError> {
     match env::var(var) {
         // Review 17-4b Pass 1 — trim avant comparaison, cohérent avec
@@ -1797,10 +1837,11 @@ mod tests {
 
     // --- Story 10-1 T1.7 : 4 nouveaux tests fail-fast secrets ---
 
-    /// Story 10-1 AC #17(a) — `KESH_JWT_SECRET` ≥ 32 chars **mais** contenant
-    /// le placeholder `change-me` → `InsecureJwtSecret`. La longueur ≥ 32 est
-    /// critique car sinon `WeakJwtSecret` court-circuite le check (ordre des
-    /// checks `from_env()` : ligne `len() < 32` AVANT ligne `contains("change-me")`).
+    /// Story 10-1 AC #17(a) — `KESH_JWT_SECRET` ≥ 32 chars contenant le
+    /// placeholder `change-me` → `InsecureJwtSecret`. Depuis la Story 15-11a
+    /// (F2-8), le contrôle `change-me` précède celui de la longueur : un secret
+    /// court qui le contient rend aussi `InsecureJwtSecret` (test
+    /// `config_rejects_jwt_secret_generate_me_case_insensitive`, `xchange-mex`).
     #[test]
     fn config_rejects_jwt_secret_containing_change_me() {
         let _guard = env_lock();
@@ -1808,7 +1849,8 @@ mod tests {
         unsafe {
             env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
             env::set_var("KESH_ADMIN_PASSWORD", "valid-test-pw-12chars");
-            // 34 chars, ≥ 32 → passe WeakJwtSecret, contient "change-me" → fail
+            // 34 chars, contient "change-me" → InsecureJwtSecret (contrôlé avant
+            // la longueur depuis la Story 15-11a)
             env::set_var("KESH_JWT_SECRET", "abcdefghij-change-me-abcdefghijabc");
         }
 
@@ -1934,6 +1976,203 @@ mod tests {
                 "expected InsecureJwtSecret for {variant:?}, got {result:?}"
             );
         }
+    }
+
+    // --- Story 15-11a (AC16, #557) : placeholders du gabarit refusés ---
+
+    /// Le gabarit `.env.example`, lu tel qu'il est versionné : les tests
+    /// ci-dessous suivent ses placeholders au lieu d'en garder une copie.
+    /// `include_str!` dans `mod tests` : jamais compilé hors test.
+    const ENV_EXAMPLE: &str = include_str!("../../../.env.example");
+
+    /// Valeur de **la seule** ligne du gabarit qui commence, en colonne 0, par
+    /// `prefixe` (`KESH_JWT_SECRET=` non commentée, `#KESH_ADMIN_PASSWORD=`
+    /// commentée — le `#` n'est retiré que par le test).
+    ///
+    /// Deux assertions de montage, sans lesquelles ces tests passeraient à vide :
+    /// exactement une ligne (un doublon ou une ligne décommentée rougit), et une
+    /// valeur qui contient `GENERATE_ME` (un gabarit sans placeholder rougit).
+    fn valeur_du_gabarit(prefixe: &str) -> String {
+        let lignes: Vec<&str> = ENV_EXAMPLE
+            .lines()
+            .filter(|l| l.starts_with(prefixe))
+            .collect();
+        assert_eq!(
+            lignes.len(),
+            1,
+            "`.env.example` doit porter exactement une ligne commençant par `{prefixe}`, trouvé {lignes:?}"
+        );
+        let valeur = lignes[0][prefixe.len()..].to_string();
+        assert!(
+            valeur.contains("GENERATE_ME"),
+            "la ligne `{prefixe}` du gabarit ne porte plus le placeholder `GENERATE_ME` \
+             (trouvé `{valeur}`) — ce test suit le gabarit : l'adapter au nouveau placeholder"
+        );
+        valeur
+    }
+
+    /// #557 — le secret JWT du gabarit, recopié tel quel, est refusé (il était
+    /// accepté : 35 caractères, sans `change-me`). Le placeholder est contrôlé
+    /// avant la longueur.
+    #[test]
+    fn config_rejects_jwt_secret_left_at_template_placeholder() {
+        let _guard = env_lock();
+        reset_env();
+        let placeholder = valeur_du_gabarit("KESH_JWT_SECRET=");
+        unsafe {
+            env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+            env::set_var("KESH_ADMIN_PASSWORD", "valid-test-pw-12chars");
+            env::set_var("KESH_JWT_SECRET", &placeholder);
+        }
+        let result = Config::from_env();
+        assert!(
+            matches!(result, Err(ConfigError::InsecureJwtSecret)),
+            "expected InsecureJwtSecret for the template placeholder, got {result:?}"
+        );
+    }
+
+    /// #557 — la ligne `#KESH_ADMIN_PASSWORD=` du gabarit, décommentée sans
+    /// remplacer son placeholder, est refusée (elle créait sur une base vide un
+    /// administrateur au mot de passe publié).
+    #[test]
+    fn config_rejects_admin_password_left_at_template_placeholder() {
+        let _guard = env_lock();
+        reset_env();
+        let placeholder = valeur_du_gabarit("#KESH_ADMIN_PASSWORD=");
+        unsafe {
+            env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+            env::set_var("KESH_JWT_SECRET", TEST_JWT_SECRET);
+            env::set_var("KESH_ADMIN_PASSWORD", &placeholder);
+        }
+        let result = Config::from_env();
+        assert!(
+            matches!(result, Err(ConfigError::InsecureAdminPassword)),
+            "expected InsecureAdminPassword for the template placeholder, got {result:?}"
+        );
+    }
+
+    /// `GENERATE_ME` sans égard à la casse ; et l'ordre : un secret court qui
+    /// porte un placeholder (`GENERATE_ME`, `change-me`) rend
+    /// `InsecureJwtSecret`, qui nomme le gabarit, et non `WeakJwtSecret`.
+    #[test]
+    fn config_rejects_jwt_secret_generate_me_case_insensitive() {
+        let _guard = env_lock();
+        for secret in [
+            "abcdefghij-generate_me-abcdefghijabcdefg",
+            "abcdefghij-Generate_Me-abcdefghijabcdefg",
+            "abcdefghij-GENERATE_ME-abcdefghijabcdefg",
+            "GENERATE_ME",
+            "xchange-mex",
+        ] {
+            reset_env();
+            unsafe {
+                env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+                env::set_var("KESH_ADMIN_PASSWORD", "valid-test-pw-12chars");
+                env::set_var("KESH_JWT_SECRET", secret);
+            }
+            let result = Config::from_env();
+            assert!(
+                matches!(result, Err(ConfigError::InsecureJwtSecret)),
+                "expected InsecureJwtSecret for {secret:?}, got {result:?}"
+            );
+        }
+    }
+
+    /// Même règle pour le mot de passe admin ; `generate_me` seul (11
+    /// caractères) rend `InsecureAdminPassword`, non `WeakAdminPassword`.
+    #[test]
+    fn config_rejects_admin_password_generate_me_case_insensitive() {
+        let _guard = env_lock();
+        for password in [
+            "pw-generate_me-12345",
+            "pw-Generate_Me-12345",
+            "pw-GENERATE_ME-12345",
+            "generate_me",
+        ] {
+            reset_env();
+            unsafe {
+                env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+                env::set_var("KESH_JWT_SECRET", TEST_JWT_SECRET);
+                env::set_var("KESH_ADMIN_PASSWORD", password);
+            }
+            let result = Config::from_env();
+            assert!(
+                matches!(result, Err(ConfigError::InsecureAdminPassword)),
+                "expected InsecureAdminPassword for {password:?}, got {result:?}"
+            );
+        }
+    }
+
+    /// Toute valeur de la forme `<…>` (après trim) est un gabarit — les
+    /// exemples du manuel d'administration n'ont pas `GENERATE_ME`. Un `<` ou
+    /// un `>` à l'intérieur d'une valeur reste admis (témoins).
+    #[test]
+    fn config_rejects_jwt_secret_and_admin_password_in_angle_brackets() {
+        let _guard = env_lock();
+        for secret in ["<un-gabarit-de-plus-de-32-caracteres-ici>", "<x>", " <x> "] {
+            reset_env();
+            unsafe {
+                env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+                env::set_var("KESH_ADMIN_PASSWORD", "valid-test-pw-12chars");
+                env::set_var("KESH_JWT_SECRET", secret);
+            }
+            let result = Config::from_env();
+            assert!(
+                matches!(result, Err(ConfigError::InsecureJwtSecret)),
+                "expected InsecureJwtSecret for {secret:?}, got {result:?}"
+            );
+        }
+        for password in [
+            "<mot de passe fort, min. 12 caracteres>",
+            "<mot-de-passe-fort-12-chars>",
+            "<nouveau-mdp-12+>",
+            "<x>",
+            " <x> ",
+        ] {
+            reset_env();
+            unsafe {
+                env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+                env::set_var("KESH_JWT_SECRET", TEST_JWT_SECRET);
+                env::set_var("KESH_ADMIN_PASSWORD", password);
+            }
+            let result = Config::from_env();
+            assert!(
+                matches!(result, Err(ConfigError::InsecureAdminPassword)),
+                "expected InsecureAdminPassword for {password:?}, got {result:?}"
+            );
+        }
+        // Témoins : la règle porte sur la forme, pas sur la présence d'un chevron.
+        reset_env();
+        unsafe {
+            env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+            env::set_var(
+                "KESH_JWT_SECRET",
+                "abc<def>0123456789abcdef0123456789abcdef",
+            );
+            env::set_var("KESH_ADMIN_PASSWORD", "pw<valide>12chars");
+        }
+        let result = Config::from_env();
+        assert!(
+            result.is_ok(),
+            "a value with inner chevrons must be accepted, got {result:?}"
+        );
+    }
+
+    /// Témoin : un secret engendré par `openssl rand -hex 32` (64 caractères
+    /// hexadécimaux) est accepté — la garde ne refuse pas un vrai secret.
+    #[test]
+    fn config_accepts_generated_jwt_secret() {
+        let _guard = env_lock();
+        reset_env();
+        let secret = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+        assert_eq!(secret.len(), 64);
+        unsafe {
+            env::set_var("DATABASE_URL", "mysql://test:test@localhost:3306/test");
+            env::set_var("KESH_ADMIN_PASSWORD", "valid-test-pw-12chars");
+            env::set_var("KESH_JWT_SECRET", secret);
+        }
+        let config = Config::from_env().expect("a generated secret must be accepted");
+        assert_eq!(config.jwt_secret_bytes(), secret.as_bytes());
     }
 
     #[test]

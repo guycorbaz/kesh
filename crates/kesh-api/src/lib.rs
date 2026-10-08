@@ -1038,8 +1038,9 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
     // Story 17-4c (DC9/AC15-16) — recovery self-service. Les 2 endpoints publics
     // (pré-login, hors `require_auth`) ne sont montés QUE si le feature est activé
     // (`KESH_FEATURE_FORGOT_PASSWORD`). Désactivé → routes absentes → `404`
-    // (fallback break-glass `KESH_ADMIN_RESET`). Même pattern conditionnel que le
-    // bloc `test_mode` ci-dessous. Montés AVANT `.merge(protected)`.
+    // (fallback break-glass `KESH_ADMIN_USERNAME`/`KESH_ADMIN_PASSWORD`). Même
+    // pattern conditionnel que le bloc `test_mode` ci-dessous. Montés AVANT
+    // `.merge(protected)`.
     if state.config.forgot_password_enabled {
         main_router = main_router
             .route(
