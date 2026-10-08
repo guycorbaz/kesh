@@ -1632,6 +1632,40 @@ ls`, `docker volume ls` identiques avant/après : aucun conteneur, réseau ni vo
   (`pdftotext | tr | sed` des ligatures) : « ou laisse vide, prend son défaut » 1, « Vide = défaut » 1, « y
   compris quand la variable est vide » 1. `.github/workflows/ci.yml` : toujours non exécuté localement.
 
+**Intégration sur `origin/main` = `9cb5083b` (15-5e2 mergée)** — cible cargo `/home/gcorbaz/devel/kesh-15-11a/target` :
+- Rebase des dix commits de la branche (sauvegarde locale `backup/15-11a-pre-rebase-2` sur `7d0fd45b`).
+  Conflits : registre des choix (deux fois — union ; un bloc C66–C74 recopié à l'identique par le report de
+  planification a été dédoublonné, titres contrôlés : ensemble égal à l'union des deux côtés, aucun doublon,
+  169 titres à l’issue du rebase — les 163 de `main` et C-15-11a-1 à 6 —, 170 avec C-15-11a-7), `sprint-status.yaml` (en-tête `last_updated` des deux côtés gardé, la ligne
+  15-11a renumérotée « (19) » ; aucune clé en double ; `yaml.safe_load` vert), `admin-manual.pdf` (pris
+  provisoirement puis **régénéré** par `make -B admin user`, jamais fusionné). `admin-manual.tex`, `CHANGELOG.md`
+  `[0.13.0]` (entrées #463/#491/#536, #484 et #550 dans *Corrigé*, #557 dans *Sécurité*), `user-manual.tex`,
+  `crates/kesh-api/Cargo.toml` (`syn` **et** `yaml-rust2`) : fusion automatique, relue (texte de la 15-5e2 sur
+  `innodb_deadlock_detect` et la relance présent ; tableaux de `sec:env-vars` inchangés). `config.rs` non touché
+  par `main`. Choix C-15-11a-7.
+- Manuels : `user-manual.pdf` régénéré au texte identique à celui de `main` (`pdftotext` comparé) → restauré,
+  aucune raison de le changer ; brochure non touchée par l'intégration. `admin-manual.pdf` aplati (ligatures
+  normalisées) : « innodb_deadlock_detect » 1, « jusqu'a trois tentatives » (bloc de configuration sans accents) 1, « Passer à la 0.13.0 » 2,
+  `GENERATE_ME` 8. `.log` : **54** `Overfull \hbox` (52 avant intégration + 2 apportés par `main`, qui en compte
+  69 seul), **0** dans `sec:env-vars` (lignes 659–825) ; le seul voisin (`851--855`) est la *Note Synology* de
+  `sec:inbox-import`, antérieure et déjà écrite aux angles morts.
+- **Gate backend complet** sur l'état rebasé (dernier commit de code inchangé depuis la revue — `44e6e941`, ex-
+  `47a1a656`), base `kesh_1511a` remise à zéro (`DROP`/`CREATE`, 75 migrations, seed ; aucun redémarrage du
+  conteneur), après `wait-kesh.sh` : `scripts/test-fast.sh` (`fmt --check`, `clippy --workspace --all-targets
+  -D warnings`, nextest) — **2857 passés, 4 ignorés, 0 échec**.
+- **Frontend** : `npm run check` 0 erreur (27 avertissements préexistants), `lint-i18n-ownership` PASS,
+  `test:unit` **111 fichiers / 1086 tests**, `build` vert.
+- **E2E complet**, base `kesh_e2e_1511a` reconstruite (migrations), backend `target/debug/kesh-api` port **3004**,
+  montage de C-15-11a-5 (secrets générés, `/health` `smtpConfigured: true`) : **241 passés, 13 échoués, 19
+  ignorés (13,5 min)**. Les sept KF-029 (#97) sont là, à la ligne près. Six rouges hors liste —
+  `contact-duplicate-probe.spec.ts:78`, `:113`, `contacts.spec.ts:39`, `onboarding.spec.ts:33`, `:119` (tous en
+  `page.fill('#username')` ou dans la foulée d'un login) et `invoice-frozen-pdf.spec.ts:74` — : signature de la
+  **KF-053 (#478)** (run allongé, échecs au formulaire de login) plus une pollution ; **rejoués seuls, les six
+  passent** (1/1 chacun). Aucune régression. Backend arrêté par son PID.
+- **`docker compose config`** des deux compose copiés dans le scratchpad (aucun conteneur) : sans `.env`,
+  `docker-compose.yml` muet, `docker-compose.prod.yml` un seul avertissement (`KESH_JWT_SECRET`) ; avec un `.env`
+  minimal, `config -q` muet pour les deux, **36** variables `KESH_*` transmises par chacun.
+
 **À signaler (hors fiche, pour l'orchestrateur)** : `CLAUDE.md:180` (recette E2E) écrit
 `KESH_ADMIN_PASSWORD='<12+ caractères>'`, désormais refusé s'il est recopié tel quel (le `CLAUDE.md` n'est pas
 modifié) ; `website/index.html:189` et `docker-compose.dev.yml` (F14, F3-10) restent à verser à leur issue ;
@@ -1915,3 +1949,8 @@ jour de texte demandées par C83/C84.
   (`Ok(val) if val.trim().is_empty()`) est identique à celui du bras `Err(_)` (absente) — 12, 10, 50, 512, 587 ;
   `KESH_LANG` et `KESH_ADMIN_BACKUP_DIR` gardent `fr` et `/tmp`. **Boucle de revue CLOSE** (P1 Sonnet ×3 : 1 MEDIUM,
   10 LOW → P2 ciblée Haiku : 0). Statut `done`.
+- 2026-10-08 — **Intégration sur `origin/main` (`9cb5083b`, 15-5e2)** (agent d'intégration, autonomie ; choix
+  **C-15-11a-7**). Rebase ; conflits du registre (union, dédoublonnage d'un bloc identique), de
+  `sprint-status.yaml` (union de l'en-tête) et du PDF admin (régénéré). Gates sur l'état rebasé : backend
+  2857/2857 (4 ignorés), frontend 1086, E2E 241 / 13 — 7 KF-029 + 6 hors liste passés rejoués seuls (KF-053).
+  PDF admin régénéré, 0 `Overfull` dans `sec:env-vars`.

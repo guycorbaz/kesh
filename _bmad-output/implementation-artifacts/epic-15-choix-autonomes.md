@@ -2284,3 +2284,23 @@ l'import (#458–#461).
 - **Propagation** : le doc-comment d'`is_loopback_host`, détaché de sa fonction et collé au-dessus d'`opt_trimmed_env` **avant** la story (même symptôme que B4), est rattaché à sa fonction dans le même commit.
 - **Frontière avec la 15-11b**, et ce qu'il faut reporter dans sa fiche : voir le Change Log de la 15-11a (revue P1).
 - **Réversible** : oui.
+
+## C-15-11a-7 — 15-11a (intégration sur `9cb5083b`) : union du registre avec dédoublonnage, PDF utilisateur restauré, six rouges E2E jugés au rejeu isolé
+
+- **Contexte** : rebase de la 15-11a sur `origin/main` après le merge de la 15-5e2. Le commit de planification
+  reporté de la branche (`63c73e59`) portait un bloc C66–C74 **déjà présent** sur `main` ; l'union brute des deux
+  côtés l'aurait mis deux fois. `make admin user` régénère aussi `user-manual.pdf`, que la branche ne modifie pas.
+  L'E2E rend 13 échecs, dont six hors de la liste de `docs/testing.md`.
+- **Retenu** : (a) registre — union des deux côtés, puis suppression du second bloc C66–C74 après contrôle
+  qu'il est **identique octet pour octet** au premier (`diff` vide) ; ensemble des titres égal à l'union de
+  `origin/main` et de la branche, aucun doublon ; (b) `sprint-status.yaml` — les deux en-têtes `last_updated`
+  gardés, celui de la 15-11a passé en « (19) » ; (c) `user-manual.pdf` régénéré au texte identique à celui de
+  `main` → version de `main` gardée (aucun octet changé sans raison) ; `admin-manual.pdf` régénéré et commité ;
+  (d) les six rouges hors liste (`contact-duplicate-probe.spec.ts:78`, `:113`, `contacts.spec.ts:39`,
+  `onboarding.spec.ts:33`, `:119`, `invoice-frozen-pdf.spec.ts:74`) rejoués **seuls** sur le même backend :
+  six verts ; signature KF-053 (#478 : `page.fill('#username')`, run allongé à 13,5 min) plus une pollution.
+  Pas de second run complet.
+- **Écartées** : garder les deux blocs C66–C74 (doublon de titres, recherche par numéro ambiguë) ; commiter le
+  PDF utilisateur régénéré (bruit binaire sans changement de texte) ; relancer la suite E2E entière (la règle
+  du dépôt juge un rouge au rejeu isolé, et les six passent).
+- **Réversible** : oui (sauvegarde `backup/15-11a-pre-rebase-2` sur `7d0fd45b`).
