@@ -1194,3 +1194,80 @@ async fn upsert_primary_in_tx_reports_created_updated_unchanged(pool: MySqlPool)
     assert_eq!(still_usable, 1);
     tx.rollback().await.unwrap();
 }
+
+/// Revue P1 (B-3) — `upsert_primary_in_tx` ne commite pas non plus sur
+/// `Updated` : un rollback de l'appelant rend le compte d'avant, version
+/// comprise. (Le test 3 ne le prouvait que pour `Created`.)
+#[sqlx::test(migrations = "./test-schema")]
+async fn upsert_primary_in_tx_updated_is_not_committed(pool: MySqlPool) {
+    use bank_accounts::UpsertPrimaryOutcome;
+
+    let company_id = create_test_company(&pool).await;
+    let payload = |bank: &str| NewBankAccount {
+        company_id,
+        bank_name: bank.into(),
+        iban: "CH9300762011623852957".into(),
+        qr_iban: None,
+        is_primary: true,
+    };
+    let original = bank_accounts::upsert_primary(&pool, payload("UBS"))
+        .await
+        .expect("compte principal initial");
+
+    let mut tx = pool.begin().await.unwrap();
+    let outcome = bank_accounts::upsert_primary_in_tx(&mut tx, payload("PostFinance"))
+        .await
+        .unwrap();
+    assert!(
+        matches!(outcome, UpsertPrimaryOutcome::Updated { .. }),
+        "{outcome:?}"
+    );
+    tx.rollback().await.unwrap();
+
+    let post = bank_accounts::find_primary(&pool, company_id)
+        .await
+        .unwrap()
+        .expect("compte principal toujours présent");
+    assert_eq!(
+        post.bank_name, "UBS",
+        "rollback après Updated : valeurs d'avant"
+    );
+    assert_eq!(post.version, original.version, "rollback : version d'avant");
+}
+
+/// Revue P1 (B-3) — l'enveloppe pool `upsert_primary`, sur erreur, rend
+/// l'erreur d'origine (rollback *best-effort*) et n'écrit rien. L'erreur est
+/// provoquée par une société inexistante (clé étrangère, à l'`INSERT`).
+///
+/// ⚠️ Angle mort assumé (revue P1, A-2) : la branche
+/// `OptimisticLockConflict` de `upsert_primary_in_tx` n'est exercée par aucun
+/// test. Elle suit un `SELECT … FOR UPDATE` dans la même transaction, qui
+/// tient le X-lock sur la ligne : la version ne peut pas changer entre la
+/// lecture et l'`UPDATE`, et la branche n'est pas atteignable depuis un test
+/// sans modifier le code. Son contrat (« sans annuler ») est tenu par lecture.
+#[sqlx::test(migrations = "./test-schema")]
+async fn upsert_primary_returns_original_error_and_writes_nothing(pool: MySqlPool) {
+    let missing_company = i64::MAX - 7;
+    let err = bank_accounts::upsert_primary(
+        &pool,
+        NewBankAccount {
+            company_id: missing_company,
+            bank_name: "UBS".into(),
+            iban: "CH9300762011623852957".into(),
+            qr_iban: None,
+            is_primary: true,
+        },
+    )
+    .await
+    .expect_err("société inexistante : clé étrangère");
+    assert!(
+        matches!(err, DbError::ForeignKeyViolation(_)),
+        "erreur d'origine attendue, obtenu {err:?}"
+    );
+    let n: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bank_accounts WHERE company_id = ?")
+        .bind(missing_company)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(n, 0);
+}

@@ -531,3 +531,35 @@ levé » de l'AC 3 ⇒ test 5 rouge ; remettre `get_company(&state)` dans la tra
   (`seed-demo`) ou la 15-7b2 (`reset`, #528, #279) ; le motif réécrit du registre devient « peuplement
   de démonstration (15-7b1) et remise à zéro (15-7b2) ». Recompte inchangé :
   **14 AC, 8 tâches, 13 tests**.
+- 2026-10-09 — **Reçu de la revue de code de la 15-7a1** (passe P1, trois lentilles Sonnet, 0 au-dessus
+  de LOW ; rapports `target/gate-logs/15-7a1-review-p1-{B,E,A}.md`, non versionnés). Quatre constats
+  portent sur des sites que **cette** fiche câble ; aucun ne change ses AC, ils sont écrits ici pour que
+  le développement ne les manque pas :
+  - **E-1 — trois copies en ligne de `LOCK_SQL`** dans `routes/onboarding.rs` (`:250` `reset`, `:649`
+    `finalize_inner`, `:802` ; relevé à la revue, les `:653`/`:806` de l'AC 8.2 ont dérivé de quatre
+    lignes). Elles sélectionnent en plus `singleton`, que `OnboardingState` ne porte pas : résultat
+    identique, que rien ne garantit. L'AC 8.2 prévoit déjà de passer `:649` et `:802` par
+    `onboarding::lock_state_in_tx` (donc par `onboarding::LOCK_SQL`) ; `:250` reste à la 15-7b2. Le
+    gate du développement greppe `FROM onboarding_state WHERE singleton = TRUE FOR UPDATE` et ne doit
+    plus rendre que `:250`.
+  - **E-3 — la garde « aucun compte » est lue sur le pool, hors verrou** (`routes/onboarding.rs:376-387` :
+    `count_by_company(&state.pool, …)` puis `bulk_create_from_chart` sur le pool). Deux appels
+    concurrents à l'étape 4→5 peuvent lire 0 tous deux ; le second échoue en 1062 et rend un 5xx.
+    L'AC 8.2 (point 4) prescrit déjà la correction — `count_by_company(&mut *tx, …)` **dans** la
+    transaction, **après** `lock_state_at_step`, puis `bulk_create_from_chart_in_tx` ; le constat
+    confirme que c'est un défaut de concurrence réel et non une simple mise en ordre, et le test 13
+    (pool d'une connexion) en est le témoin.
+  - **Booléen « inséré » relu à chaque tentative** : `finalize` est rejouée par
+    `retry_app_on_deadlock` (`routes/onboarding.rs:615`). Le booléen de `insert_with_defaults_in_tx`
+    et le `Vec<VatRate>` de `seed_default_swiss_rates_in_tx` (AC 5) doivent être lus **dans** la
+    fermeture rejouée, de la tentative qui commite — jamais capturés d'une tentative annulée : une
+    première tentative qui insère puis bute sur un interblocage est annulée, et la suivante insère à
+    nouveau ; c'est elle seule qui dit vrai. Les entrées d'audit s'écrivent dans la même fermeture.
+  - **B-2 — code sans appelant de production** jusqu'ici : `companies::clear_stub_in_tx`,
+    `onboarding::lock_state_in_tx`, `UpsertPrimaryOutcome::{Updated, Unchanged}` et le booléen
+    `inserted` (ignoré par `routes/onboarding.rs:717`). Cette fiche (et la 15-7b1 pour
+    `clear_stub_in_tx` côté `seed_demo`) les consomme ; ce qui resterait sans appelant à la fin de
+    l'Epic 15 se retire.
+  Le constat **E-2** (`seed_demo` lève `is_stub` sans borner à `id` ni bumper `version`,
+  `routes/onboarding.rs:211`) relève de la 15-7b1, qui le prévoit déjà (son § 2 : `clear_stub_in_tx`
+  remplace l'`UPDATE`). Aucun AC, tâche ni test ne change : **14 AC, 8 tâches, 13 tests**.

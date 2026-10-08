@@ -407,3 +407,10 @@ sinon le binaire muté) :
   15-7b2) ; la condition y est écrite. Renvoi de doc, pas de conception ; la 15-7b2, qui réécrit le même
   paragraphe après elle, le vérifie (T7). Recompte inchangé : **7 AC**, **7 tâches**, **4 tests**,
   **7 mutations**.
+- 2026-10-09 — **Reçu de la revue de code de la 15-7a1** (P1, constat E-2, LOW) : `seed_demo` lève
+  `is_stub` par `UPDATE companies SET is_stub = FALSE WHERE is_stub = TRUE` (`routes/onboarding.rs:211`),
+  sur le pool, hors transaction, sans borner à `id` ni bumper `version` — contrairement à
+  `companies::clear_stub_in_tx`. C'est déjà le périmètre de cette fiche (§ 2 : `clear_stub_in_tx`
+  remplace l'`UPDATE` dans la transaction de `seed_demo`) ; le constat est noté pour que le grep de
+  fin de développement `grep -rnF "UPDATE companies SET is_stub = FALSE" crates/` ne rende plus que
+  `companies.rs`. Recompte inchangé.

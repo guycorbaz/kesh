@@ -915,7 +915,8 @@ pub async fn insert_with_defaults_in_tx(
     .flatten();
 
     // Story 12.2 : compte créanciers 2000 (contrepartie achat fournisseur).
-    // OPTIONNEL (non fail-fast) — cf. variante pool.
+    // OPTIONNEL (non fail-fast) — présent dans les charts standards mais
+    // l'absence ne doit pas bloquer la finalisation d'onboarding.
     let payable = sqlx::query_scalar::<_, Option<i64>>(
         "SELECT id FROM accounts WHERE company_id = ? AND singleton_role = ? ORDER BY id LIMIT 1 FOR UPDATE"
     )
@@ -964,8 +965,12 @@ pub async fn insert_with_defaults_in_tx(
     let inserted = rows == 1;
 
     // If rows==0, row already existed (DUPLICATE KEY).
-    // P16: validate FK liveness via JOIN on accounts.active = TRUE (cf. pool variant).
-    // CI fix: explicit `cis.` prefix — `accounts` also has a `company_id` column.
+    // P16: validate that the referenced accounts are still alive (not soft-deleted).
+    // Pure NULL re-check on the row would be dead defense — the fail-fast path
+    // above can no longer insert NULLs. Joining on accounts.active=TRUE catches the
+    // case where a previously-good FK now points to a deactivated account.
+    // CI fix: explicit `cis.` prefix on the SELECT list — `accounts` also has a
+    // `company_id` column, so `{COLUMNS}` (unprefixed) yields "Column ambiguous".
     if rows == 0 {
         let existing = sqlx::query_as::<_, CompanyInvoiceSettings>(
             "SELECT cis.company_id, cis.invoice_number_format, cis.default_receivable_account_id, \

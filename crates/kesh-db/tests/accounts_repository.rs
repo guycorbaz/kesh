@@ -120,3 +120,48 @@ async fn count_by_company_sees_uncommitted_rows_through_its_transaction(pool: My
     );
     tx.rollback().await.unwrap();
 }
+
+/// Revue P1 (B-3) — l'enveloppe pool `bulk_create_from_chart`, sur erreur
+/// d'une insertion, annule ce qu'elle a déjà inséré et rend l'erreur d'origine.
+/// Le compte qui entre en collision est le **dernier** de l'ordre topologique
+/// (longueur, puis numéro) : tous les autres sont insérés avant l'échec, et
+/// seul le rollback de l'enveloppe peut les effacer.
+#[sqlx::test(migrations = "./test-schema")]
+async fn bulk_create_from_chart_rolls_back_and_returns_original_error(pool: MySqlPool) {
+    let company_id = create_company(&pool, "Plan en collision").await;
+    let chart = kesh_core::chart_of_accounts::load_chart("pme").expect("load chart");
+    let last = chart
+        .iter()
+        .max_by(|a, b| {
+            a.number
+                .len()
+                .cmp(&b.number.len())
+                .then(a.number.cmp(&b.number))
+        })
+        .expect("plan non vide");
+
+    sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type) \
+         VALUES (?, ?, 'Compte préexistant', 'Asset')",
+    )
+    .bind(company_id)
+    .bind(&last.number)
+    .execute(&pool)
+    .await
+    .expect("compte préexistant");
+
+    let err = accounts::bulk_create_from_chart(&pool, company_id, &chart, "fr")
+        .await
+        .expect_err("collision sur le dernier compte du plan");
+    assert!(
+        matches!(err, kesh_db::errors::DbError::UniqueConstraintViolation(_)),
+        "erreur d'origine attendue, obtenu {err:?}"
+    );
+
+    let after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM accounts WHERE company_id = ?")
+        .bind(company_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(after, 1, "rollback : seul le compte préexistant subsiste");
+}
