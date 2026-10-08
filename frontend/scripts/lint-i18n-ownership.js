@@ -84,9 +84,6 @@ const KNOWN_VIOLATIONS = new Set([
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-unbalanced',
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-cancel',
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-submit',
-  'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-conflict-title',
-  'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-conflict-message',
-  'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-conflict-reload',
   // Story 19-2 — tag analytique par-ligne (Epic 19). Même situation #30
   // (dossier `journal-entries` pluriel ne matche pas le préfixe `journal-entry`).
   'src/lib/features/journal-entries/JournalEntryForm.svelte:journal-entry-form-col-project',

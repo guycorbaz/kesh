@@ -407,7 +407,11 @@
 	{:else if invoice.status === 'cancelled'}
 		<!-- Story 25-3-c : « annulée », et rien d'autre — un règlement éventuel a
 		     été DÉTACHÉ (colonnes vidées), la fiche ne sait plus qu'elle a été
-		     payée. Ne pas le rechercher dans l'audit pour l'afficher. -->
+		     payée. Elle ne le recherche toujours pas dans l'audit pour l'afficher.
+		     ⚠️ Révision nommée de l'arbitrage Q1 (Story 15-8a, C-15-8-20/25) : ce
+		     paiement n'est plus « libre » — la garde de modification des
+		     écritures lit, elle, la trace d'audit pour le geler (il reste
+		     contre-passable). Palliatif, retiré avec #541. -->
 		<p class="mb-6 text-sm text-text-muted" data-testid="supplier-invoice-cancelled-info">
 			{i18nMsg('supplier-invoices-cancelled-info', 'Facture annulée.')}
 		</p>

@@ -130,6 +130,7 @@ pub const ACTIONS: &[&str] = &[
     "journal_entry.created",
     "journal_entry.deleted",
     "journal_entry.reversed",
+    "journal_entry.updated",
     "payment_batch.cancelled",
     "payment_batch.confirmed",
     "payment_batch.generated",
@@ -189,8 +190,9 @@ pub fn message_key(prefix: &str, code: &str) -> String {
 /// afficherait `audit-log-action-foo-bar` à l'écran et dans le CSV.
 ///
 /// Motif du repli sur le code : le journal conserve les codes des versions
-/// antérieures (`journal_entry.updated`, qu'aucun site n'écrit plus), et un code
-/// futur ne doit rien casser.
+/// antérieures, et un code futur ne doit rien casser. *(`journal_entry.updated`,
+/// que la 24-4b avait cessé d'écrire, est de nouveau écrit depuis la Story 15-8a
+/// et figure dans la liste.)*
 fn label(i18n: &I18nBundle, locale: &Locale, prefix: &str, connus: &[&str], code: &str) -> String {
     if connus.contains(&code) {
         i18n.format(locale, &message_key(prefix, code), None)

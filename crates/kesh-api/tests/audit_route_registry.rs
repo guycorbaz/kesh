@@ -79,7 +79,8 @@ const LIB_ROUTES: &[(&str, &str, Status)] = &[
     ("put", "accounts::archive_account", Traced),
     ("put", "accounts::reactivate_account", Traced),
     ("post", "journal_entries::create_journal_entry", Traced),
-    ("put", "journal_entries::update_journal_entry", NoMatter("ne mute rien : le corps n'est pas désérialisé, le handler rend 404 ou 409 ENTRY_IS_POSTED")),
+    // Story 15-8a (#532) : l'audit `journal_entry.updated` vient de `journal_entries::update`.
+    ("put", "journal_entries::update_journal_entry", Traced),
     ("delete", "journal_entries::delete_journal_entry", Traced),
     ("post", "companies::lock_company_books", Traced),
     ("post", "journal_entries::reverse_journal_entry", Traced),
@@ -466,18 +467,22 @@ fn the_registry_partition_is_what_the_story_declares() {
     assert_eq!(LIB_ROUTES.len(), 112, "l'inventaire porte sur 112 routes");
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
     assert_eq!(
-        traced, 94,
+        traced, 95,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
          (25-4-d2a, #384), plus le refigeage du PDF d'une facture (25-6-b, #387), plus le \
-         complément des soldes de départ (25-7, #445)"
+         complément des soldes de départ (25-7, #445), plus la modification d'une écriture \
+         (15-8a, #532 — le `PUT` gelé par la 24-4b ne mutait rien)"
     );
     assert_eq!(
         exempt, 15,
         "11 routes d'onboarding (#434) + 4 d'auth (#435)"
     );
-    assert_eq!(no_matter, 3, "trois routes mutantes qui ne mutent rien");
+    assert_eq!(
+        no_matter, 2,
+        "deux routes mutantes qui ne mutent rien (le `PUT` des écritures en est sorti, 15-8a)"
+    );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
         115,

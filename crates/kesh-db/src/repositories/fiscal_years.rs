@@ -641,17 +641,43 @@ pub async fn find_later_closed_in_tx(
     company_id: i64,
     start_date: NaiveDate,
 ) -> Result<Option<FiscalYear>, DbError> {
-    sqlx::query_as::<_, FiscalYear>(
-        "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
-         FROM fiscal_years \
-         WHERE company_id = ? AND start_date > ? AND status = 'Closed' \
-         ORDER BY start_date ASC LIMIT 1 FOR UPDATE",
-    )
-    .bind(company_id)
-    .bind(start_date)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(map_db_error)
+    sqlx::query_as::<_, FiscalYear>(&format!("{FIND_LATER_CLOSED_SQL} FOR UPDATE"))
+        .bind(company_id)
+        .bind(start_date)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)
+}
+
+/// Le `SELECT` du plus proche exercice postérieur clos, partagé par
+/// [`find_later_closed_in_tx`] (qui y ajoute `FOR UPDATE`) et
+/// [`find_later_closed`] (lecture ordinaire) — un seul texte, jamais deux
+/// requêtes écrites à la main qui finiraient par diverger (Story 15-8a, C-15-8-24).
+///
+/// ⚠️ Les tests de concurrence de la Story 15-8a reconnaissent la requête
+/// verrouillante à son texte (`attendre_une_requete_en_cours`, motif
+/// `start_date > ?`) : le changer, c'est changer leurs motifs.
+const FIND_LATER_CLOSED_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+     FROM fiscal_years \
+     WHERE company_id = ? AND start_date > ? AND status = 'Closed' \
+     ORDER BY start_date ASC LIMIT 1";
+
+/// Variante **non verrouillante** de [`find_later_closed_in_tx`] (Story 15-8a,
+/// D8) : le motif d'écran de `GET /journal-entries/{id}` — « un exercice
+/// postérieur est clos » — se lit sans verrou, sur une connexion qui enchaîne
+/// d'autres lectures (d'où `&mut MySqlConnection` plutôt qu'un `Executor` pris
+/// par valeur). L'écriture, elle, relit sous verrou.
+pub async fn find_later_closed(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    start_date: NaiveDate,
+) -> Result<Option<FiscalYear>, DbError> {
+    sqlx::query_as::<_, FiscalYear>(FIND_LATER_CLOSED_SQL)
+        .bind(company_id)
+        .bind(start_date)
+        .fetch_optional(conn)
+        .await
+        .map_err(map_db_error)
 }
 
 /// Retourne l'exercice qui porte ce nom dans la company, ou `None`.

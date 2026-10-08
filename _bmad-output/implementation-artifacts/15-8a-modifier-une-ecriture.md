@@ -1,6 +1,6 @@
 # Story 15.8a : Modifier une écriture tant que son exercice est ouvert
 
-Status: ready-for-dev
+Status: review
 
 <!-- Issue de la story 15-8, DÉCOUPÉE le 2026-10-08 après la validation P2 (choix C-15-8-17 de
      `epic-15-choix-autonomes.md`). Elle porte la MODIFICATION ; la suppression et l'historique visible
@@ -877,10 +877,10 @@ rebase) ; et deux lignes neuves au même tableau : `LATER_FISCAL_YEAR_CLOSED` (4
 
 ## Tâches
 
-- [ ] **T0 — Rebase et inventaire au sol** (AC 15, 17)
+- [x] **T0 — Rebase et inventaire au sol** (AC 15, 17)
   - [x] rebaser la branche sur `main` après le merge de la 15-5a — **fait** le 2026-10-08 (validation P3), sur
         `b11a074a` (finding R3-8)
-  - [ ] revérifier **tous** les numéros de ligne cités par cette fiche, relevés **avant** le rebase. **Décalages
+  - [x] revérifier **tous** les numéros de ligne cités par cette fiche, relevés **avant** le rebase. **Décalages
         mesurés** au rebase (correspondance ligne à ligne `c98f4017` → `HEAD`, `difflib`, 2026-10-08) — ⚠️ à
         **ajouter** aux numéros de la fiche, sauf mention « après rebase » :
 
@@ -894,28 +894,28 @@ rebase) ; et deux lignes neuves au même tableau : `LATER_FISCAL_YEAR_CLOSED` (4
         | `kesh-i18n/locales/fr-CH/messages.ftl` | **`+4`** (`:355-356` → `:359-360`, `:929` → `:933`, `:962` → `:966`, `:979` → `:983`) |
         | `JournalEntryForm.svelte` | `0` jusqu'à `:176` ; `+2` ensuite (`:179` → `:181`, `:191` → `:193`) |
         | `kesh-api/src/errors.rs`, `kesh-api/src/routes/journal_entries.rs`, `kesh-api/tests/journal_entry_reversal_e2e.rs`, manuels | **inchangés** aux lignes citées |
-  - [ ] exécuter les greps des Dev Notes (« Les sites qui supposent aujourd'hui l'immuabilité ») **et** les deux
+  - [x] exécuter les greps des Dev Notes (« Les sites qui supposent aujourd'hui l'immuabilité ») **et** les deux
         greps des sentinelles de D4 (dont `grep -rn validate_taggable_in_tx crates/*/src`, finding R3-10) **avant** toute
         écriture de code ; relever leur **sortie complète** au Dev Agent Record, triée ligne par ligne (site → tableau
         de la fiche, site conservé avec sa raison, ou site neuf) — pas seulement l'écart aux tableaux. Un site absent
         des tableaux s'y ajoute, il ne s'ignore pas.
-- [ ] **T1 — Erreurs** (AC 6, 15)
-  - [ ] `ModificationGuard` (`code()`), `DbError::EntryNotModifiable(ModificationGuard)` + repli `code()`
+- [x] **T1 — Erreurs** (AC 6, 15)
+  - [x] `ModificationGuard` (`code()`), `DbError::EntryNotModifiable(ModificationGuard)` + repli `code()`
         `"ENTRY_NOT_MODIFIABLE"` ; `ModificationBlocker` (`code()`, `label()`, D8 — dont `LaterFiscalYearClosed`) ;
         `DbError::LaterFiscalYearClosed { fiscal_year_id, fiscal_year_name }`, `code()` `"LATER_FISCAL_YEAR_CLOSED"`
         (D4, C-15-8-22) ; doc de `EntryIsPosted` : un seul émetteur restant (D5)
-  - [ ] `kesh-api/src/errors.rs` : mappage partagé avec `EntryNotReversable` (fonction extraite) ; branche
+  - [x] `kesh-api/src/errors.rs` : mappage partagé avec `EntryNotReversable` (fonction extraite) ; branche
         `DetachedSupplierSettlement` ; branche `LaterFiscalYearClosed` (400, `details.fiscalYearId` /
         `fiscalYearName`, clé `journal-entries-modify-blocked-later-fiscal-year-closed` ×4) ; commentaire de la 24-4b
         au-dessus du verrou de période (`:2986-2996`) réécrit pour le `PUT`
-  - [ ] message d'`ENTRY_IS_POSTED` réécrit (« … ne se supprime pas. Pour la corriger, modifiez-la tant que son
+  - [x] message d'`ENTRY_IS_POSTED` réécrit (« … ne se supprime pas. Pour la corriger, modifiez-la tant que son
         exercice est ouvert, ou contre-passez-la ») : clé `journal-entries-blocked-posted` ×4, repli Rust
         `kesh-api/src/errors.rs:3045-3048`, `#[error]` `kesh-db/src/errors.rs:637` (D5, C-15-8-27, finding F4)
-  - [ ] message d'`ENTRY_IS_REVERSED` élargi (« … ne peut plus être modifiée ni supprimée ») **partout où il
+  - [x] message d'`ENTRY_IS_REVERSED` élargi (« … ne peut plus être modifiée ni supprimée ») **partout où il
         s'écrit** : clé `journal-entries-delete-blocked-reversed` (quatre locales, consommée par `errors.rs:2982`),
         repli Rust `kesh-api/src/errors.rs:2983`, `#[error]` de `DbError::EntryIsReversed` (`kesh-db/src/errors.rs:623`)
         (finding R2-10)
-- [ ] **T2 — `update`** (AC 1–9) : écrite contre le code actuel rebasé, l'ancien corps pour modèle (D4) ; verrou de
+- [x] **T2 — `update`** (AC 1–9) : écrite contre le code actuel rebasé, l'ancien corps pour modèle (D4) ; verrou de
       l'écriture **premier acte**, lecture **ordinaire** des projets existants **après** lui (C-15-8-23), ordre des
       verrous écriture → [sentinelle → projets] → exercice → exercices postérieurs (`find_later_closed_in_tx`,
       C-15-8-22) ; `actor_api_key_id` + `for_actor` ; `modification_guard(conn: &mut MySqlConnection, …)` (dont la
@@ -926,22 +926,22 @@ rebase) ; et deux lignes neuves au même tableau : `LATER_FISCAL_YEAR_CLOSED` (4
       atomicité du détachement, ordre des verrous, **les trois cycles nommés, étendus aux exercices postérieurs**, les
       deux coûts (verrou d'intervalle des exercices postérieurs, sentinelle d'un `PUT` voué au refus) et le coût de la
       lecture d'audit (D1, D2, D4)
-  - [ ] tests unitaires de `mod tests` retirés par la 24-4b (`git show 08e20353 -- crates/kesh-db/src/repositories/
+  - [x] tests unitaires de `mod tests` retirés par la 24-4b (`git show 08e20353 -- crates/kesh-db/src/repositories/
         journal_entries.rs`), traités **un par un** (tableau « Tests unitaires de l'ancien `update` », Dev Notes) ;
         helper `three_accounts` rétabli ; `mk_project`, `line`, `tagged_line` existent encore (`:3439-3469`) —
         **ne pas les dupliquer**
-  - [ ] tests à deux connexions (AC 8 — dont la clôture concurrente d'un exercice postérieur —, AC 9) et leurs mutations
+  - [x] tests à deux connexions (AC 8 — dont la clôture concurrente d'un exercice postérieur —, AC 9) et leurs mutations
         tuées
-- [ ] **T3 — Route et détail** (AC 1, 3, 9, 10, 12, 18) : `UpdateJournalEntryRequest`, `prepare_new_journal_entry`
+- [x] **T3 — Route et détail** (AC 1, 3, 9, 10, 12, 18) : `UpdateJournalEntryRequest`, `prepare_new_journal_entry`
       extraite du `POST` (D4) ; handler `PUT` enveloppé dans `retry_with` ; `api_key_id` passé au `PUT` ; trois champs du
       détail ; tests de clé d'API (AC 3), table de correspondance (AC 12), export (AC 18) ;
       `every_document_owned_entry_is_refused` étendu au solde `write_off` et au paiement détaché (AC 6)
-- [ ] **T4 — Garde-fou d'inventaire** (AC 13, D3) : `crates/kesh-db/tests/journal_entries_modification.rs`, monté sur
+- [x] **T4 — Garde-fou d'inventaire** (AC 13, D3) : `crates/kesh-db/tests/journal_entries_modification.rs`, monté sur
       le squash (pas d'inscription dans `test_schema_guard.rs`) ; contrôles des clés étrangères vers `journal_entries`
       **et** vers `journal_entry_lines`, des colonnes de `journal_entry_lines`, des colonnes à nom d'écriture sans clé
       étrangère ; mutations tuées
-- [ ] **T5 — Audit** (AC 16) : `ACTIONS`, clé i18n ×4, `audit_route_registry.rs:82`
-- [ ] **T6 — Écran** (AC 12, 14) : fiche (« Modifier », motifs, rôle Consultation pour « Modifier » et
+- [x] **T5 — Audit** (AC 16) : `ACTIONS`, clé i18n ×4, `audit_route_registry.rs:82`
+- [x] **T6 — Écran** (AC 12, 14) : fiche (« Modifier », motifs, rôle Consultation pour « Modifier » et
       « Contre-passer ») ; formulaire en mode édition **par inversion du gel**, **modale de conflit écartée**, prop
       `onStale` (D8, tableau des fichiers) ; `form-helpers.test.ts` renaît ; api, types ; clés i18n ×4 (liste fermée de
       D8) ; `KNOWN_VIOLATIONS` : retrait des trois entrées `journal-entry-conflict-*` (`lint-i18n-ownership.js:87-89`) ;
@@ -952,30 +952,30 @@ rebase) ; et deux lignes neuves au même tableau : `LATER_FISCAL_YEAR_CLOSED` (4
       `routes/(app)/supplier-invoices/[id]/+page.svelte:409-411` (« Ne pas le rechercher dans l'audit ») **reformulé** :
       la fiche de la facture ne le recherche toujours pas pour l'afficher, mais la garde d'écriture le lit pour geler
       le paiement (D1, réserve 1, C-15-8-25)
-  - [ ] **Vitest** : exhaustivité du `switch` des motifs de modification (un test par code, onze codes, sur le patron de
+  - [x] **Vitest** : exhaustivité du `switch` des motifs de modification (un test par code, onze codes, sur le patron de
         celui de `blockedLabel`) ; bornes `min`/`max` de date en édition (exercice de l'écriture, borne de verrou) ;
         branches d'erreur du mode édition (`FISCAL_YEAR_CLOSED` sans `notifyMissingFiscalYearOrFallback`, 409 de course
         dont `DETACHED_SUPPLIER_SETTLEMENT`, `OPTIMISTIC_LOCK_CONFLICT` → toast puis `onStale`, **aucune** modale) ;
         `fromJournalEntryResponse` sur une ligne à compte archivé
-- [ ] **T7 — Playwright** (AC 14) — `tests/e2e/journal-entries.spec.ts`, bloc « le gel (Story 24-4b) » renommé ; les
+- [x] **T7 — Playwright** (AC 14) — `tests/e2e/journal-entries.spec.ts`, bloc « le gel (Story 24-4b) » renommé ; les
       specs de liste retirées par la 24-4b qui portaient la **modification** sont **remplacées** (pas rétablies : la
       liste n'offre plus ce geste) par des parcours **depuis la fiche** :
-  - [ ] « édition nominale — modification du libellé » → `modifier depuis la fiche : le libellé change, le numéro reste`
-  - [ ] « conflit 409 affiche la modale de reload » → `conflit de version : toast et fiche rechargée` (version bougée par
+  - [x] « édition nominale — modification du libellé » → `modifier depuis la fiche : le libellé change, le numéro reste`
+  - [x] « conflit 409 affiche la modale de reload » → `conflit de version : toast et fiche rechargée` (version bougée par
         un `PUT` d'API entre l'ouverture du formulaire et l'enregistrement)
-  - [ ] neufs : `écriture de facture : pas de Modifier, le motif est affiché` ; `rôle Consultation : ni Modifier ni
+  - [x] neufs : `écriture de facture : pas de Modifier, le motif est affiché` ; `rôle Consultation : ni Modifier ni
         Contre-passer`
-  - [ ] les deux tests de liste de la 24-4b (`la liste n'offre plus ni modification ni suppression`, `la ligne renvoie
+  - [x] les deux tests de liste de la 24-4b (`la liste n'offre plus ni modification ni suppression`, `la ligne renvoie
         vers la fiche, d'où part la contre-passation`) **restent** ; JSDoc reformulé
-- [ ] **T8 — Tests qui changent de sens** (liste ci-dessous) : réécrits, **pas** supprimés en bloc ; chaque test retiré
+- [x] **T8 — Tests qui changent de sens** (liste ci-dessous) : réécrits, **pas** supprimés en bloc ; chaque test retiré
       nommé au Dev Agent Record avec son remplaçant
-- [ ] **T9 — Documentation** (AC 17) — cf. Dev Notes ; `make fr` dans `docs/manual/`, PDF commités, contrôle de l'AC 17
+- [x] **T9 — Documentation** (AC 17) — cf. Dev Notes ; `make fr` dans `docs/manual/`, PDF commités, contrôle de l'AC 17
       **sur les PDF aplatis** (il fait foi) et sur `fr-CH/messages.ftl`, relecture à la main des trois autres locales,
       table des matières vérifiée ; `README.md` **non touché** (15-8b, C-15-8-26)
-- [ ] **T10 — Gates** (⛔ complets — exception `kesh-db` : ciblage interdit dès qu'un repository est touché)
-  - [ ] base remise à zéro (KF-039), `scripts/test-fast.sh` sous `mem-guard`
-  - [ ] `npm run check` · `lint-i18n-ownership` · `test:unit` · `build`
-  - [ ] suite Playwright **complète au dernier commit de code**, jugée fichier par fichier contre `docs/testing.md`
+- [x] **T10 — Gates** (⛔ complets — exception `kesh-db` : ciblage interdit dès qu'un repository est touché)
+  - [x] base remise à zéro (KF-039), `scripts/test-fast.sh` sous `mem-guard`
+  - [x] `npm run check` · `lint-i18n-ownership` · `test:unit` · `build`
+  - [x] suite Playwright **complète au dernier commit de code**, jugée fichier par fichier contre `docs/testing.md`
         § « Les échecs attendus » (D7 de la rétro Epic 25 : « rejouée au push » interdit)
 
 ## Hors périmètre
@@ -1277,15 +1277,134 @@ files historiques de `_bmad-output/` (`3-3`, `24-4a`, `24-4b`, …) ; `docs/know
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), `bmad-dev-story`, worktree `/home/gcorbaz/devel/kesh-15-8`, 2026-10-08. Choix
+autonomes consignés au registre : **C-15-8a-1 à C-15-8a-8**.
+
 ### Debug Log References
+
+- Bases dédiées `kesh_158` (gate) et `kesh_e2e_158` (E2E), cible Cargo propre au worktree. ⚠️ Les deux bases ont été
+  **effacées en cours de route** par un redémarrage du conteneur (tmpfs) côté autre agent — recréées par script, sans
+  toucher `kesh`/`kesh_e2e` (C-15-8a-1).
+- Mutations exécutées (AC 8), chacune restaurée puis fichier `touch`é, `diff` à l'original vide :
+  1. lecture ordinaire de `books_locked_through` **avant** le `FOR UPDATE` de l'étape 1 →
+     `update_waits_for_a_concurrent_reversal_then_refuses` **rougit** : « attendu EntryIsReversed, obtenu Ok(… version: 2,
+     description: "réécrite" …) » — le `PUT` a réécrit une écriture contre-passée ;
+  2. `find_later_closed` (lecture ordinaire) au lieu de `find_later_closed_in_tx` →
+     `update_waits_for_a_concurrent_close_of_a_later_year_then_refuses` **rougit** à l'attente : le `PUT` ne bloque plus.
+- Mutations du garde-fou d'inventaire (AC 13) : portées **en permanence** par `the_inventory_guard_turns_red_on_each_mutation`
+  (clé vers `journal_entries`, clé vers `journal_entry_lines`, colonne neuve sur les lignes, colonne au nom d'écriture
+  sans clé — quatre rouges, puis vert) — C-15-8a-6.
 
 ### Completion Notes List
 
+**T0 — inventaire au sol** (greps exécutés avant le code, sortie triée) :
+
+- `grep … ENTRY_IS_POSTED|EntryIsPosted|enforce_immutability|blocked-posted` (46 lignes, hors `_bmad-output`) : tous les
+  sites sont aux tableaux de la fiche — `kesh-db` errors/journal_entries (doc-comments `DELETE` laissés à la 15-8b),
+  `kesh-api` errors/route, quatre `messages.ftl`, `audit_route_registry.rs:82`, `admin_full_import_e2e.rs:1388`,
+  `journal_entry_reversal_e2e.rs` (PUT réécrits, DELETE conservés), `optimistic-locking-patterns.md:49`,
+  `invoices.rs:1442,1650` (`enforce_immutability = false` de la dévalidation — **conservés**, 15-8b),
+  frontend `i18n-keys.test.ts:174` (ventilation historique — **conservée**), `journal-entries.api.ts`, `fiscal-years.spec.ts`,
+  `journal-entries.spec.ts` (traités). Aucun site neuf.
+- Grep large `définitiv|imposée|immuab|…|24-4b` (182 lignes) : trié contre les tableaux « Code », « Sites conservés » et
+  « Frontend » ; les deux migrations publiées (`20260729000001`, `20260830000001`) **non touchées** (P8).
+- Grep manuels (28 lignes) : les sites du tableau, traités (ci-dessous).
+- Sentinelles : `acquire_company_sentinel_lock` / SQL littéral (23 lignes) et `validate_taggable_in_tx` (14 lignes) —
+  appelants : `bank_accounts`, `dunning_levels`, `projects`, `vat`, `company_dunning_settings`, `companies.rs:350/:438`
+  (`lock_books`, inverse), `opening_complement.rs:502`, `journal_entries.rs:591` (`create_opening_entry`), et les neuf
+  appelants de `validate_taggable_in_tx` (reconciliation ×2, reconciliation_rules ×2, supplier_invoices, invoices ×2,
+  journal_entries) : **aucun** ne verrouille ensuite une écriture existante. Ordre du doc-comment de `update` confirmé.
+- `grep -rn "NO_FISCAL_YEAR|FISCAL_YEAR_CLOSED" crates/kesh-api/tests` : **aucun** test du `POST` ne cumule un corps
+  déséquilibré et une absence d'exercice (`period_lock_e2e.rs:576-620` poste des corps équilibrés) — l'effet de bord de
+  C-15-8-16 ne fait rien bouger.
+
+**Ce qui a été livré** : `ModificationGuard`, `ModificationBlocker`, `DbError::{EntryNotModifiable, LaterFiscalYearClosed}` ;
+`journal_entries::{update, modification_guard, modification_refusal, modification_blocker, is_no_op_change}` (verrou de
+l'écriture premier acte, projets lus après, exercice puis postérieurs verrouillés, audit `for_actor` avant/après) ;
+`fiscal_years::find_later_closed` + `SELECT` partagé ; mappage `kesh-api` DRY (`reversal_blocker_message`,
+`entry_document_refusal_response`) ; route `PUT` (`UpdateJournalEntryRequest`, `prepare_new_journal_entry` extraite du
+`POST`, `retry_with`) ; détail enrichi (`modifiable`, `modificationBlockedBy`, `modificationBlockedLabel`) ; écran
+(« Modifier » sur la fiche, motifs, rôle Consultation, formulaire en édition par inversion du gel **sans** la modale,
+`onStale`, bornes de date, compte inutilisable signalé) ; i18n ×4 ; manuels FR + PDF ; `api-external.md`, Pattern 5,
+`optimistic-locking-patterns.md`, `CHANGELOG.md [0.13.0]`.
+
+**Inversion du gel (`08e20353`)** : `form-helpers.ts`, `form-helpers.test.ts`, `journal-entries.api.ts`,
+`journal-entries.types.ts` appliqués **proprement** ; `JournalEntryForm.svelte` **avec conflits**, résolus à la main
+(gardés : `booksLockedThrough`/`min` de la 24-4c, `ACCOUNT_NOT_POSTABLE` de la 15-5a ; repris : `initialEntry`,
+`isEdit`, `version`, pré-remplissage, branche `updateJournalEntry`, `{#if !isEdit}` autour de l'assistant TVA ;
+**écartés** : `showConflictDialog`, le `case` qui l'ouvrait, `onConflictReload`, `handleConflictReload`, le bloc de la
+modale et ses clés). `deleteJournalEntry` revenu, gardé sans appelant pour la 15-8b. Liste, `journal-entries.spec.ts` et
+`i18n-keys.test.ts` **non inversés** (réécrits). `e2e-selecteurs-traduits.test.ts` **inchangé** : les nouvelles specs
+n'emploient que des `data-testid`, des `id` et « Valider », déjà inscrit pour ce fichier.
+
+**Tests retirés et leurs remplaçants** (T8) — `journal_entry_reversal_e2e.rs` : `putting_a_posted_entry_is_refused_and_changes_nothing`
+→ `putting_an_entry_rewrites_it_and_traces_before_and_after` ; `putting_with_an_empty_or_broken_body_is_refused_the_same_way`
+→ `bad_forms_are_refused_before_the_base_is_read` ; `the_opening_entry_is_frozen_but_still_correctable` → **inversé** en
+`the_opening_entry_is_modifiable_and_still_reversable` ; `put_and_delete_never_leak…` (corps valide),
+`a_closed_fiscal_year_answers_before_both_conflicts` et `an_entry_of_a_closed_year_stays_correctable` (+ `PUT` → 400)
+**étendus** ; `every_document_owned_entry_is_refused` étendu au solde `write_off` (sept chemins) via `monter_les_pieces`.
+Tests unitaires de l'ancien `update` (`mod tests`) : les sept rétablis, `test_update_grandfathers_non_postable_by_account`
+**inversé** en `test_update_refuses_a_line_on_an_account_made_non_postable`, plus le jumeau
+`update_no_op_with_non_postable_account_returns_not_postable` ; `three_accounts` rétabli.
+
+**Décomptes** (recomptés, périmètre `HEAD`=`ba0965f0` → arbre de travail final) : tests Rust (`#[test]`/`#[tokio::test]`/
+`#[sqlx::test]`) — `journal_entries.rs` 40 → 49 (+9), `journal_entries_modification.rs` 0 → 5 (neuf),
+`journal_entry_reversal_e2e.rs` 28 → 36 (−2 +10), `opening_balances_e2e.rs` 28 → 29, `exports_global_e2e.rs` 24 → 25 ;
+`supplier_invoices_repository.rs` 43 → 43 (un test étendu) ; `audit_route_registry.rs` 6 → 6 (décompte 94 → 95 tracées,
+3 → 2 `NoMatter`). Vitest : `form-helpers.test.ts` (renaît, 15 `it`/`it.each`), `blocker-messages.test.ts` (5),
+`JournalEntryForm.edit.test.ts` (7). Playwright `journal-entries.spec.ts` : 17 → 21 `test(`. i18n : `sitesTotal`
+1868 → 1876 (ventilé dans le test) ; `i18n-libelle-en-dur` 46 → 47 candidates (ventilé, C-15-8a-3).
+
+**AC 15** — `grep -rn "EntryIsPosted" crates/*/src` rend **10** lignes, exactement la liste fermée (variante, bras de
+`code()`, mappage, émetteur `delete_in_tx`, doc-comments `:1538/:1548/:1588`, test `le_gel_parle_avant_le_verrou_de_periode`).
+
+**AC 17** — contrôle **sur les PDF aplatis** (`make fr`, puis `make user` après une tournure à moi qui heurtait le motif) :
+`user-manual.pdf` **11 → 0**, `admin-manual.pdf` **5 → 0**, `fr-CH/messages.ftl` **2 → 0**. Table des matières : « 7.4
+Modifier une écriture ». Aucune référence indéfinie au dernier passage. Les trois autres locales relues à la main :
+`journal-entries-blocked-posted`, `-delete-blocked-reversed`, `opening-balances-locked-already-has-entries`,
+`-complete-confirm`, `error-opening-complement-account-moved` réécrites, sept clés neuves traduites. Conservés : `:1837`
+du manuel administrateur (« une seule voie fait encore disparaître une écriture » — vrai jusqu'à la 15-8b) ;
+`README.md:219` (historique de la v0.12.0) ; `README.md:29` non touché (15-8b, C-15-8-26). La brochure, régénérée par
+`make fr` sans changement de source, a été restaurée.
+
+**Gates, au dernier état du code** (rien n'a changé dans le code après eux) :
+
+- remise à zéro de `kesh_158` (DROP/CREATE, 75 migrations, seed) puis `scripts/test-fast.sh` (fmt + clippy + nextest,
+  sous mem-guard) : **2778 exécutés, 2778 passés, 4 ignorés** ;
+- frontend : `npm run check` **0 erreur** (27 avertissements, aucun dans les fichiers de la story) ;
+  `lint-i18n-ownership` **PASS** ; `test:unit` **107 fichiers, 1026 tests, tous verts** ; `build` **vert** ;
+- **E2E complet** (`kesh_e2e_158` reconstruite, backend sur 3001, montage complet de `docs/testing.md`, run à ~14:30
+  UTC) : **243 passés, 8 échoués, 19 ignorés**. Jugés fichier par fichier : les **7 KF-029 (#97)**
+  (`mode-expert:26/41`, `onboarding-path-b:65/92`, `onboarding:57/77/150`) et `sidebar-navigation:75`, **rejoué seul :
+  échoue encore** → **KF-046 (#424)**, déterministe. KF-045 absente (run après 12:00 UTC). Les **quatre** parcours neufs
+  de la story et les deux de la liste passent. **Verdict : aucune régression.**
+
 ### File List
 
+- `CHANGELOG.md`
+- `crates/kesh-api/src/audit_labels.rs`, `crates/kesh-api/src/errors.rs`, `crates/kesh-api/src/routes/journal_entries.rs`
+- `crates/kesh-api/tests/admin_full_import_e2e.rs`, `audit_route_registry.rs`, `exports_global_e2e.rs`,
+  `journal_entry_reversal_e2e.rs`, `opening_balances_e2e.rs`, `period_lock_e2e.rs`
+- `crates/kesh-db/src/errors.rs`, `crates/kesh-db/src/repositories/{accounts,fiscal_years,journal_entries,journal_entry_number_sequences,reconciliation_cancel}.rs`
+- `crates/kesh-db/tests/journal_entries_modification.rs` (neuf), `crates/kesh-db/tests/supplier_invoices_repository.rs`
+- `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl`
+- `crates/kesh-report/src/balance_sheet.rs`, `crates/kesh-report/src/trial_balance.rs`
+- `docs/MULTI-TENANT-SCOPING-PATTERNS.md`, `docs/api-external.md`, `docs/optimistic-locking-patterns.md`
+- `docs/manual/fr/{admin-manual,user-manual}.{tex,pdf}`
+- `frontend/scripts/lint-i18n-ownership.js`
+- `frontend/src/lib/features/journal-entries/{JournalEntryForm.svelte,form-helpers.ts,form-helpers.test.ts,journal-entries.api.ts,journal-entries.types.ts}`
+- `frontend/src/lib/features/journal-entries/{blocker-messages.ts,blocker-messages.test.ts,JournalEntryForm.edit.test.ts}` (neufs)
+- `frontend/src/lib/shared/{i18n-keys,i18n-libelle-en-dur}.test.ts`
+- `frontend/src/routes/(app)/journal-entries/+page.svelte`, `frontend/src/routes/(app)/journal-entries/[id]/+page.svelte`
+- `frontend/src/routes/(app)/settings/opening-balances/+page.svelte`, `frontend/src/routes/(app)/supplier-invoices/[id]/+page.svelte`
+- `frontend/tests/e2e/{fiscal-years,journal-entries}.spec.ts`
+- `_bmad-output/implementation-artifacts/{15-8a-modifier-une-ecriture.md,epic-15-choix-autonomes.md,sprint-status.yaml}`
+
 ### Change Log
+
 
 | date | ce qui s'est passé |
 |---|---|
 | 2026-10-08 | **Créée par découpage** de la 15-8 après la validation P2 (choix C-15-8-17) ; spec, P1 et P2 au Change Log de l'index `15-8-modifier-une-ecriture.md`. Remédiations de la P2 appliquées ici : dépendance à la 15-5a et deux refus de compte séparés (F1, C-15-8-18) ; rejeu sur interblocage, trois cycles nommés, Pattern 5, projets existants lus en `LOCK IN SHARE MODE` (F2, R2-2, R2-3, C-15-8-19) ; paiement détaché d'une facture fournisseur annulée gelé par la trace d'audit (F3, C-15-8-20) ; modale de conflit écartée de l'inversion, prop `onStale`, clés `journal-entries-*` (R2-1, F4, F8, C-15-8-21) ; inventaire des sites élargi et contrôle de l'AC 17 élargi au `.tex` (R2-4, F5) ; LOW R2-5 à R2-17, F7 à F12 sauf ceux de la suppression (15-8b). **Recompte** (cette fiche) : 18 AC, 11 tâches (T0 à T10), 4 invariants, 10 décisions (D1 à D10), dix codes d'écran. |
 | 2026-10-08 | **Validation P3** (deux lentilles **Sonnet**, contexte frais, lecture seule — rotation D6 : Sonnet P1, Opus P2, Sonnet P3 ; prompt versionné `15-8a-validate-prompt-p3.md` ; rapports `target/gate-logs/15-8a-p3-{R,F}.md`). **R** : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 9 LOW ; **F** : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 7 LOW. Doublons : R3-2 = F1, R3-4 = F3, R3-5 = F5, R3-6 ≈ F6 — soit **3 MEDIUM et 13 LOW distincts** ; s'y ajoute le MEDIUM F1 de la 15-8b, qui vaut pour cette fiche. **Branche rebasée** sur `origin/main` (`b11a074a`, 15-5a) avant la remédiation : conflits du registre et de `sprint-status.yaml` résolus par union ; faits « après 15-5a » revérifiés au code (en-tête, T0 et sa **table des décalages mesurés**). **Tout appliqué**, sur décisions de l'orchestrateur : **exercice postérieur clos** — condition 1-bis du cadre, refus 400 `LATER_FISCAL_YEAR_CLOSED`, étape 2-bis, verrou `find_later_closed_in_tx` après l'exercice, onze codes d'écran, tests de refus, de précédence et de concurrence avec mutation, manuel (15-8b F1 — C-15-8-22) ; **projets existants lus ordinairement après le verrou de l'écriture**, `LOCK IN SHARE MODE` et « coût nul » retirés, la vue s'ouvre à 1-bis, la borne tolérée périmée comme à la création, seconde mutation de l'AC 8 retirée, cycles restants nommés et étendus aux exercices postérieurs (R3-2, F1 — C-15-8-23, révise C-15-8-19) ; **`modification_guard(conn: &mut MySqlConnection, …)`**, `pool.acquire()` à l'écran, `find_later_closed` non verrouillante au `SELECT` partagé (R3-1 — C-15-8-24, qui corrige aussi les renvois de C-15-8-5, 10, 12, 13) ; **dérogation écrite** à la règle de splitting, repli 15-8a-1 / 15-8a-2 (F2 — C-15-8-28) ; **paiement détaché** : trois réserves écrites, #541, requête bornée par société des deux côtés (F7 — C-15-8-25) ; **contrôles de manuel** sur les PDF aplatis, motifs complétés, `.ftl` contrôlé, lignes de base mesurées, tournure prescrite du paiement détaché ; message d'`ENTRY_IS_POSTED` réécrit dès cette story (R3-6, F6, F9, F4 — C-15-8-27). **LOW** appliqués tels que proposés : atomicité du détachement au lieu d'un verrou inexistant, `cancel_settlement_in_tx` (R3-4, F3) ; AC 15 en liste fermée (R3-5, F5) ; numéros de ligne (`lint-i18n-ownership.js:87-89`, e2e `:478`, `kesh-db/…/invoices.rs:2559`, `errors.rs:623`, insertion des lignes copiées par `create_in_tx_inner`, constat de D7 — R3-7) ; T0 rebasé (R3-8) ; trois sites de Pattern 5 (R3-9) ; grep `validate_taggable_in_tx` (R3-10) ; « cinq lectures » (R3-11) ; `README.md:29` laissé à la 15-8b, `README.md:219` historique (F6 — C-15-8-26) ; sentinelle d'un `PUT` voué au refus au doc-comment (F8) ; Dev Agent Record à ne pas déclarer « net » pour le formulaire (F9, déjà conforme). **Signal D5** : sévérité MEDIUM en P2 et P3 (« égale ») ; défauts **distincts** — mais R3-1 et R3-2/F1 **naissent de la remédiation P2** (R2-15, C-15-8-19) : recyclage déclaré ; arbitrage de l'orchestrateur : **pas de découpage**, dérogation écrite, repli prêt (C-15-8-28). **Propagation** : symptômes grepés dans les trois fiches 15-8 et le registre (`dix`, `LOCK IN SHARE MODE`, `coût nul`, `(executor`, `modifiables tant que`, `ReversalBlockerHit`, `fait passer A`, `86-88`, `:493`, « après le dernier verrou ») — résidus seulement aux sites qui citent l'erreur corrigée. **Recompte** (cette fiche, `grep`) : 18 AC, 11 tâches (T0 à T10), 4 invariants, 10 décisions (D1 à D10), **onze** codes d'écran ; registre : C-15-8-1 à 29 (`grep -c '^## C-15-8-'` → 29). **Signalé à l'orchestrateur** : issue pour l'exercice postérieur clos sur la création, la dévalidation et le règlement (C-15-8-22). |
+| 2026-10-08 | **Développement** (`bmad-dev-story`, Opus 5.5) : toutes les tâches T0–T10 faites ; choix C-15-8a-1 à 8. Gate backend sur base remise à zéro 2778/2778 (4 ignorés) ; frontend check/lint/1026 Vitest/build verts ; E2E complet 243 / 8 échecs, tous attendus (7 KF-029 + KF-046 rejouée seule). Statut `review`. |

@@ -14,8 +14,9 @@
 //!
 //! ⛔ **C'est la réattribution que ce module ferme**, parce qu'un compteur ne
 //! redescend jamais. Le trou, lui, subsiste — et c'est assumé : le combler
-//! exigerait de renuméroter des écritures existantes, ce que le gel de l'Epic 24
-//! interdit précisément.
+//! exigerait de renuméroter des écritures existantes, ce que la modification
+//! interdit précisément (Story 15-8a, C-15-8-3 : le numéro d'une écriture ne
+//! change jamais, même quand sa date change).
 //!
 //! # Ce module n'invente rien
 //!

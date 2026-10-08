@@ -730,6 +730,56 @@ async fn cancel_paid_invoice_detaches_its_settlement(pool: MySqlPool) {
             .any(|(b, _, _)| *b == ReversalBlocker::OwnedBySupplierInvoice),
         "le règlement n'appartient plus à la facture : {motifs:?}"
     );
+    // ⛔ Story 15-8a (#532, C-15-8-20) — mais il ne se MODIFIE pas : c'est une
+    // sortie de banque réelle. Plus aucune colonne ne le référence ; la garde
+    // de modification le reconnaît à la trace d'audit de l'annulation (dette
+    // #541). Chemin réel (create → pay → cancel), et non une trace posée à la
+    // main : c'est aussi ce qui vérifie la comparaison `JSON_VALUE(...) = ?`.
+    {
+        use kesh_db::entities::{NewJournalEntry, NewJournalEntryLine};
+        use kesh_db::errors::ModificationGuard;
+        let attendu = ModificationGuard::DetachedSupplierSettlement {
+            supplier_invoice_id: created.invoice.id,
+            supplier_invoice_number: Some("FF-2026-001".into()),
+        };
+        let mut conn = pool.acquire().await.unwrap();
+        let garde = journal_entries::modification_guard(&mut conn, c, settlement)
+            .await
+            .unwrap();
+        drop(conn);
+        assert_eq!(garde, Some(attendu.clone()));
+
+        let current = journal_entries::find_by_id(&pool, c, settlement)
+            .await
+            .unwrap()
+            .unwrap();
+        let corps = NewJournalEntry {
+            company_id: c,
+            entry_date: current.entry.entry_date,
+            journal: current.entry.journal,
+            description: "Tentative de réécriture".into(),
+            project_id: None,
+            lines: current
+                .lines
+                .iter()
+                .map(|l| NewJournalEntryLine {
+                    account_id: l.account_id,
+                    debit: l.debit,
+                    credit: l.credit,
+                    project_id: l.project_id,
+                })
+                .collect(),
+        };
+        let err =
+            journal_entries::update(&pool, c, settlement, current.entry.version, u, None, corps)
+                .await
+                .expect_err("le paiement détaché ne se modifie pas");
+        assert!(
+            matches!(&err, DbError::EntryNotModifiable(g) if *g == attendu),
+            "got {err:?}"
+        );
+    }
+
     journal_entries::reverse(&pool, c, settlement, u)
         .await
         .expect("un paiement sans facture se contre-passe depuis sa fiche");

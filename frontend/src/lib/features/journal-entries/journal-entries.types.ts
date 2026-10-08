@@ -66,7 +66,34 @@ export interface JournalEntryDetailResponse extends JournalEntryResponse {
 	reversalBlockedBy: ReversalBlocker | null;
 	/** Numéro de la pièce, ou du compte archivé. `null` quand il n'y en a pas. */
 	reversalBlockedLabel: string | null;
+	/**
+	 * L'écriture se modifie-t-elle (Story 15-8a, #532) ? Motif d'écran, sur
+	 * l'état présent : le `PUT` reste seul juge du corps, de la date et de la
+	 * version.
+	 */
+	modifiable: boolean;
+	modificationBlockedBy: ModificationBlocker | null;
+	/**
+	 * Numéro de pièce, nom de l'exercice postérieur clos, ou borne du verrou
+	 * (`AAAA-MM-JJ`) ; `null` sinon.
+	 */
+	modificationBlockedLabel: string | null;
 }
+
+/**
+ * Motif pour lequel une écriture ne peut pas être **modifiée** (Story 15-8a,
+ * D8) — les onze codes d'écran, dans l'ordre de précédence du serveur.
+ *
+ * ⚠️ `ALREADY_REVERSED` est le code d'**écran** (vocabulaire de
+ * `ReversalBlocker`) ; le `PUT` rend `ENTRY_IS_REVERSED`. Pas d'`ACCOUNT_ARCHIVED` :
+ * un compte archivé ne gèle pas l'écriture, on le remplace.
+ */
+export type ModificationBlocker =
+	| 'FISCAL_YEAR_CLOSED'
+	| 'LATER_FISCAL_YEAR_CLOSED'
+	| Exclude<ReversalBlocker, 'ACCOUNT_ARCHIVED'>
+	| 'DETACHED_SUPPLIER_SETTLEMENT'
+	| 'PERIOD_LOCKED';
 
 export interface CreateJournalEntryLineRequest {
 	accountId: number;
@@ -82,6 +109,11 @@ export interface CreateJournalEntryRequest {
 	journal: Journal;
 	description: string;
 	lines: CreateJournalEntryLineRequest[];
+}
+
+/** Corps du `PUT` (Story 15-8a) : celui du `POST`, plus la version lue. */
+export interface UpdateJournalEntryRequest extends CreateJournalEntryRequest {
+	version: number;
 }
 
 // ---------------------------------------------------------------------------

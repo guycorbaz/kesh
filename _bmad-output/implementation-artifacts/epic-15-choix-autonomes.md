@@ -1123,3 +1123,90 @@ l'import (#458–#461).
 - **Écartée** : l'appliquer aussi à la dévalidation — change un flux de facturation hors du périmètre de #532, sans
   spécification de son message ni de son écran.
 - **Réversible** : oui.
+
+## C-15-8a-1 — 15-8a (dev) : bases dédiées recréées après un redémarrage du conteneur par l'autre agent
+
+- **Contexte** : développement en parallèle de la 15-5b sur la même machine. Les bases `kesh_158` / `kesh_e2e_158`,
+  créées au début, ont **disparu** en cours de route (`Unknown database 'kesh_158'`, MariaDB à 461 s d'uptime) : le
+  conteneur `kesh-mariadb-dev` (datadir en tmpfs) a été redémarré par la « remise à zéro » de l'autre agent.
+- **Retenu** : un script de remise à zéro propre à ce worktree (scratchpad `reset158.sh` : `DROP/CREATE`, `GRANT`,
+  migrations, seed sur `kesh_158` seulement), rejoué avant chaque gate ; jamais de redémarrage du conteneur, jamais de
+  geste sur `kesh` ni `kesh_e2e`.
+- **Écartée** : redémarrer le conteneur moi-même — interdit, et aurait effacé les bases de l'autre agent.
+- **Réversible** : oui. ⚠️ **À signaler à l'orchestrateur** : la « remise à zéro » du `CLAUDE.md` (redémarrage du
+  conteneur) efface les bases de **tous** les agents ; un gate en cours chez l'un tomberait.
+
+## C-15-8a-2 — 15-8a (dev) : l'identifiant du paiement détaché se compare en CHAÎNE à `JSON_VALUE`
+
+- **Contexte** : D2 laissait ouvert « vérifier au premier test que MariaDB 10.11 compare numériquement, ou lier l'id en
+  chaîne ».
+- **Retenu** : `JSON_VALUE(al.details_json, '$.settlementJournalEntryId') = ?` avec l'id lié en **chaîne** : comparaison
+  exacte, sans conversion implicite en `DOUBLE`. Vérifié par le **chemin réel** create → pay → cancel
+  (`supplier_invoices_repository.rs`, `cancel_paid_invoice_detaches_its_settlement`, étendu), et non par une trace posée
+  à la main.
+- **Écartée** : lier un entier et compter sur la conversion — exacte pour des identifiants, mais implicite.
+- **Réversible** : oui.
+
+## C-15-8a-3 — 15-8a (dev) : les motifs traduits de la fiche extraits dans `blocker-messages.ts`, sous des noms en `…Label`
+
+- **Contexte** : la fiche traduisait les huit motifs de contre-passation (`blockedLabel`) ; la modification en partage
+  sept (D8, « réutiliser les clés »). Vitest exige un test par code (onze).
+- **Retenu** : `lib/features/journal-entries/blocker-messages.ts` — `reversalBlockerLabel` (le `blockedLabel` déplacé) et
+  `modificationBlockerLabel`, qui délègue au premier pour les sept codes communs (une seule source) ; testé code par
+  code. Noms en `…Label` **à dessein** : un nom en `…Message` faisait sortir les deux fonctions du relevé de
+  `i18n-libelle-en-dur.test.ts` (46 → 45, un compteur qui baisse parce que le détecteur ne voit plus).
+- **Écartées** : un second `switch` dans la fiche (DRY, et non testable par Vitest) ; le nom `…Message` (angle mort).
+- **Réversible** : oui.
+
+## C-15-8a-4 — 15-8a (dev) : les refus en mode édition classés par une fonction pure, `editRefusalOutcome`
+
+- **Contexte** : D8 veut une branche nommée par code (pas le `default`) pour les refus qui rechargent la fiche, et des
+  tests Vitest de ces branches.
+- **Retenu** : `form-helpers.ts::editRefusalOutcome(code) → 'stale' | 'stay' | 'other'`, un `case` par code ; le
+  formulaire en déduit toast puis `onStale` (`stale`) ou toast seul (`stay`). Testée seule **et** par un test de
+  composant (`JournalEntryForm.edit.test.ts`) : PUT avec la version, `FISCAL_YEAR_CLOSED` sans
+  `notifyMissingFiscalYearOrFallback`, quatre 409/400 de course, conflit de version sans modale, refus de saisie qui
+  laissent le formulaire ouvert, ligne à compte archivé signalée, bornes de date.
+- **Écartée** : un `switch` monolithique dans `handleSubmit` — même effet, mais seule l'interface le testerait.
+- **Réversible** : oui.
+
+## C-15-8a-5 — 15-8a (dev) : la fiche passe au formulaire la liste COMPLÈTE des comptes
+
+- **Contexte** : D8 — une ligne pré-remplie sur un compte archivé ou non imputable doit s'afficher (numéro et nom) avec
+  un avertissement, sans redevenir sélectionnable.
+- **Retenu** : la fiche, qui charge déjà `fetchAccounts(true)`, passe cette liste au formulaire :
+  `AccountAutocomplete` résout le libellé sur la liste complète et ne **propose** que les comptes actifs et imputables
+  (comportement existant, 16-1b D11) ; l'avertissement `line-account-unusable` suit `isAccountUnusable` (16-1b), la
+  source unique du verdict.
+- **Écartée** : une seconde requête « comptes actifs » au clic sur « Modifier » — le libellé d'un compte archivé ne se
+  résoudrait plus.
+- **Réversible** : oui.
+
+## C-15-8a-6 — 15-8a (dev) : le garde-fou d'inventaire porte ses mutations EN PERMANENCE
+
+- **Contexte** : AC 13 demande que les mutations du garde-fou (colonne ou clé factice vers `journal_entries`, clé
+  factice vers `journal_entry_lines`) soient tuées « une fois, déclarées au Dev Agent Record ».
+- **Retenu** : un test permanent, `the_inventory_guard_turns_red_on_each_mutation`, qui pose chacune des quatre
+  mutations (clé vers `journal_entries`, clé vers `journal_entry_lines`, colonne neuve sur les lignes, colonne au nom
+  d'écriture sans clé), vérifie que le garde-fou rougit, la retire, puis vérifie qu'il redevient vert.
+- **Écartée** : la mutation manuelle unique — sa preuve ne survit pas à la session.
+- **Réversible** : oui.
+
+## C-15-8a-7 — 15-8a (dev) : le montage des pièces devient un helper partagé, avec le solde `write_off`
+
+- **Contexte** : AC 6 / finding R2-11 — réutiliser le montage de `every_document_owned_entry_is_refused` et y ajouter
+  un solde.
+- **Retenu** : `monter_les_pieces` (sept chemins, dont le `write_off`) rend pour chaque pièce l'écriture, le code et
+  l'identifiant de la pièce ; consommé par le test de contre-passation (doc passé à « sept chemins »), par celui de la
+  modification (`details.documentId`, I3), par la précédence et par la table de correspondance (AC 12). Le paiement
+  détaché, propre à la modification, a son montage (`detacher_un_paiement`, trace posée par l'écrivain réel du journal
+  d'audit) ; son chemin réel est tenu côté dépôt (C-15-8a-2).
+- **Réversible** : oui.
+
+## C-15-8a-8 — 15-8a (dev) : le motif de modification n'est affiché que s'il diffère de celui de la contre-passation
+
+- **Contexte** : D8 — « si le motif de contre-passation et celui de modification sont le même code, ne l'afficher
+  qu'une fois ».
+- **Retenu** : la fiche affiche `modification-blocked-reason` sauf quand la contre-passation est elle aussi refusée
+  sous le **même** code (cas des pièces et de la contre-passée) ; testé par Playwright (« écriture de facture »).
+- **Réversible** : oui.
