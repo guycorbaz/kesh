@@ -1,6 +1,6 @@
 # Story 15.5c : Le rapprochement se lit — libellés des refus par lot et manuel du rapprochement
 
-Status: review
+Status: done
 
 <!-- Troisième sous-story de la 15-5, créée le 2026-10-08 à la passe de validation P2 de la 15-5b
      (finding F-3, choix C15 de `epic-15-choix-autonomes.md`). Elle reprend de la 15-5b le premier volet
@@ -454,6 +454,18 @@ Claude Opus 5.5 (`claude-opus-5-5`), agent de développement de l'Epic 15, en au
 - Mutations frontend (restaurées, fichier retouché) : libellé remplacé par `f.errorCode` → 3 rouges ;
   `describeTx` toujours `TX #<id>` → 2 rouges ; bloc *Échecs partiels* remis sous condition
   `proposals.length > 0` → 2 rouges.
+- **Remédiation de la revue de code P1 (`1f481654`) — gates rejoués à ce dernier commit de code** :
+  bases `kesh` et `kesh_e2e` recréées (DROP/CREATE + migrations + seed de `kesh`, conteneur non
+  redémarré) ; `scripts/test-fast.sh` — fmt, clippy, nextest **2804 exécutés, 2804 verts, 4 ignorés**
+  (aucun fichier Rust ni `Cargo.toml` modifié depuis `f289414e` : l'écart avec les 2784 déclarés au
+  développement ne vient pas de la story et n'est pas expliqué ici) ; frontend `check` (0 erreur, 27
+  avertissements, aucun dans un fichier de la story), `lint-i18n-ownership` vert, `test:unit`
+  **108 fichiers, 1029/1029** (+9 depuis `b48a1231` : 6 dans `failed-proposal-label.test.ts`, 3 dans
+  `ReconciliationProposals.test.ts`, recomptés par Vitest), `build` vert. E2E complet (port 3000,
+  `kesh_e2e`, montage complet, `smtpConfigured: true`) : **239 verts, 8 rouges, 19 ignorés** — les sept
+  KF-029 et `sidebar-navigation.spec.ts:75` (KF-046 #424, listée dans `docs/testing.md`, **verte rejouée
+  seule**) ; aucun rouge hors liste. Mutations (restaurées, fichier retouché) : retirer
+  `clearBatchReport()` d'`onManualSuccess`/`onSplitSuccess` et rendre le repli vide → 3 rouges.
 
 ### Completion Notes List
 
@@ -537,6 +549,16 @@ Claude Opus 5.5 (`claude-opus-5-5`), agent de développement de l'Epic 15, en au
   factures et des écritures, *Annuler un rapprochement* (juste : transaction rapprochée), `écritures
   comptables` du journal et de la TVA. Aucun code d'erreur brut ne reste au manuel utilisateur.
 - **T6** : cf. *Debug Log References*.
+- **Revue de code P1** : `RECONCILIATION_INVOICE_NOT_ELIGIBLE` lit désormais `details.reason` pour la
+  seule raison `payment_date_before_invoice_date` (clé neuve `reconciliation-failed-payment-before-invoice`,
+  4 locales + repli ; C-15-5c-3). **Codes à plusieurs causes sous un libellé unique, assumé (C32, C37)** :
+  `PERIOD_LOCKED` (détail non lu), `RECONCILIATION_INVOICE_NOT_ELIGIBLE` (six raisons, dont cinq sur le
+  libellé générique) et `VALIDATION_ERROR` (six raisons sur sept sites, toutes « Erreur de validation ») ;
+  le code brut reste en `title`. Écrit au commentaire de `failed-proposal-label.ts`. **Bornes** :
+  `sitesTotal` 1895 → **1896** (`grep -c "i18nMsg("` sur `failed-proposal-label.ts` : 27 → 28 ; le
+  `.svelte` reste à 18) ; `CANDIDATES_ATTENDUES` **inchangé à 47** (`failureReason` et
+  `clearBatchReport` ne portent pas de suffixe `Label`/`Text`/`Display`). Clés `reconciliation-failed-*` :
+  **21 par locale** (recompté `grep -c`).
 
 ### File List
 
@@ -544,12 +566,13 @@ Claude Opus 5.5 (`claude-opus-5-5`), agent de développement de l'Epic 15, en au
 - `frontend/src/lib/features/reconciliation/failed-proposal-label.test.ts` (neuf)
 - `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte`
 - `frontend/src/lib/features/reconciliation/ReconciliationProposals.test.ts`
+- `frontend/src/lib/features/reconciliation/ModalSuccessStub.test.svelte` (neuf, doublure de test — revue P1)
 - `frontend/src/lib/shared/i18n-keys.test.ts`
 - `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts`
 - `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
 - `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
 - `CHANGELOG.md`
-- `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md` (C-15-5c-1, C-15-5c-2)
+- `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md` (C-15-5c-1, C-15-5c-2, C-15-5c-3)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 - `_bmad-output/implementation-artifacts/15-5c-rapprochement-libelles-et-manuel.md`
 
@@ -666,3 +689,29 @@ Claude Opus 5.5 (`claude-opus-5-5`), agent de développement de l'Epic 15, en au
   `sitesTotal` 1868 → 1895, `CANDIDATES_ATTENDUES` 46 → 47 (garde non prévue par la fiche). Gates :
   backend 2784/2784 (4 ignorés), frontend 1020/1020, `kesh-i18n` 31/31, E2E 240 verts / 7 rouges KF-029
   / 19 ignorés, au commit de code `b48a1231`. Choix C-15-5c-1, C-15-5c-2. Statut : `review`.
+- 2026-10-08 — **Revue de code P1** (prompt versionné `15-5c-review-prompt-p1.md` ; trois lentilles
+  **Sonnet** en contexte frais : **B** Blind Hunter, **E** Edge Case Hunter, **A** Acceptance Auditor ;
+  rapports `target/gate-logs/15-5c-review-p1-{B,E,A}.md`). **0 CRITICAL, 0 HIGH, 1 MEDIUM, 10 LOW**
+  bruts (B 3 LOW, E 1 MEDIUM + 4 LOW, A 4 LOW) ; doublons B1 = E3, B3 = E4, E2 ≈ A-4 → **1 MEDIUM,
+  7 LOW distincts**. Remédiation `1f481654` :
+
+  | finding | sév. | objet | sort |
+  |---|---|---|---|
+  | E1 | MEDIUM | une facture datée jusqu'à 30 jours après le paiement est proposée, puis refusée à l'acceptation (paiement antérieur de plus d'un jour) | **moteur inchangé — alignement : #548** (P3, ouverte par l'orchestrateur) ; manuel : paragraphe « Une facture proposée peut être refusée à l'acceptation » (date de valeur, même borne au règlement depuis la fiche, `invoice_settlements_write.rs:96`) et FAQ ; libellé dédié lu dans `details.reason` (C-15-5c-3) |
+  | B1 = E3 | LOW | bilan du lot périmé après affectation manuelle ou éclatement | `clearBatchReport()` au début de tout nouveau bilan ; tests par doublure de modale (mutation : 2 rouges) |
+  | A-3 | LOW | repli `TX #<id>` non testé | test (mutation : 1 rouge) |
+  | A-1 | LOW | « charges et produits » : le sélecteur filtre sur les classes 5, 6, 7 | manuel : « classes 5, 6 et 7, et eux seuls » ; FAQ « une charge diverse » |
+  | A-2 | LOW | « score de 1 » alors que l'écran affiche « 100 % » | manuel corrigé |
+  | B2 | LOW | commentaire de test inexact (test 1) | reformulé |
+  | B3 = E4 | LOW | italien : impératif au lieu de l'infinitif | « scegliere » (deux clés) |
+  | E2 + A-4 | LOW | codes à plusieurs causes sous un libellé unique | écrit au commentaire du module et au Dev Agent Record (C32, C37) |
+  | E5 | LOW | date et montant bruts, comme le tableau | sans action (la lentille le dit) |
+
+  PDF utilisateur régénéré (`make user`, 77 pages, sans référence indéfinie), contrôlé aplati
+  (ligatures et apostrophes normalisées) : phrases neuves présentes, « score de 1. », « charges et
+  produits », « produit divers » absents ; brochure et manuel admin inchangés. **Propagation** : symptômes
+  grepés sur `docs/`, `website/`, `README.md` (aucun résidu) ; raisons de `details.reason` relevées au
+  code (`race_during_update` ajoutée au décompte). Gates complets au commit de code `1f481654` : cf.
+  *Debug Log References* (backend 2804/2804, frontend 1029/1029, E2E 239 / 8 rouges attendus / 19).
+  La remédiation touche du code de production (composant et module de libellés) : **une passe ciblée
+  sur `1f481654` reste à lancer** selon la règle de clôture. Statut : `done` (gate vert).
