@@ -1210,3 +1210,44 @@ l'import (#458–#461).
 - **Retenu** : la fiche affiche `modification-blocked-reason` sauf quand la contre-passation est elle aussi refusée
   sous le **même** code (cas des pièces et de la contre-passée) ; testé par Playwright (« écriture de facture »).
 - **Réversible** : oui.
+
+## C-15-8a-9 — 15-8a (revue P1) : le rejeu du `PUT` prouvé en forçant le `PUT` à perdre l'interblocage
+
+- **Contexte** : finding B-5 de la revue de code P1 — le test de cycle de `kesh-db` accepte que la victime soit
+  l'autre transaction, si bien que `retry_with` n'était exercé par aucun test.
+- **Retenu** : `the_put_replays_a_deadlock_it_lost` (`journal_entry_reversal_e2e.rs`) monte le cycle projet ↔ exercice
+  **à travers HTTP**, en rendant la transaction concurrente B **plus lourde** (500 lignes d'undo dans `audit_log`, table
+  que le `PUT` ne verrouille pas) : InnoDB sacrifie la plus légère, donc le `PUT`. La preuve que la 1213 a eu lieu est
+  structurelle : B obtient le projet en **exclusif** alors que le `PUT` le tenait et attendait l'exercice que B tient
+  encore — seule l'annulation du `PUT` le permet. Le `PUT` doit ensuite rendre 200 et une seule trace. Mutation
+  « `retry_with` à une seule tentative » → 500 `INTERNAL_ERROR`, rouge ; restauré, `touch`, trois runs verts.
+- **Écartées** : injecter une fausse 1213 (ne prouve pas que l'erreur réelle est reconnue) ; lire le compteur global
+  `Innodb_deadlocks` (pollué par les gates parallèles d'autres agents).
+- **Réversible** : oui. ⚠️ Le test repose sur la règle de choix de la victime d'InnoDB (poids = undo + verrous) ; si une
+  version de MariaDB la changeait, il rougirait à l'`expect` de B, avec un message qui le dit.
+
+## C-15-8a-10 — 15-8a (revue P1) : conflits du rebase sur la 15-5b, résolus par fusion des deux intentions
+
+- **Contexte** : rebase sur `origin/main` (`12e75d23`, 15-5b mergée). Conflits : registre et `sprint-status.yaml`
+  (union) ; `docs/api-external.md` (ligne `ACCOUNT_NOT_POSTABLE`) ; `user-manual.tex` (encadré `keshnote` du
+  *postable*) ; les deux PDF. Le code (`kesh-db/errors.rs`, `accounts.rs`, `journal_entries.rs`) a fusionné sans conflit.
+- **Retenu** : `api-external.md` — la ligne de la 15-5b (liste complète des routes, rapprochement et comptes bancaires
+  compris) **plus** la mention `PUT /journal-entries/{id}` de la 15-8a ; les deux lignes neuves
+  (`LATER_FISCAL_YEAR_CLOSED`, `DETACHED_SUPPLIER_SETTLEMENT`) conservées. `user-manual.tex` — le texte de la 15-5b
+  (quatre cas non contrôlés), dont la dernière phrase « ne se modifie plus du tout » (écrite sous le gel) est remplacée
+  par celle de la 15-8a, au vocabulaire de la 15-5b (« non imputable »). PDF régénérés depuis les `.tex` fusionnés,
+  zéro « ?? ».
+- **Écartée** : prendre un côté entier — perdait soit la couverture de la 15-5b, soit la levée du gel.
+- **Réversible** : oui.
+
+## C-15-8a-11 — 15-8a (revue P1) : huit LOW acceptés sans correction
+
+- **Contexte** : revue de code P1 (Sonnet, trois lentilles) : 0 CRITICAL/HIGH, un MEDIUM (E1) reclassé LOW par
+  l'orchestrateur — suivi par #543 —, 14 LOW. Remédiation bornée à ce qui ne change pas le comportement de production.
+- **Retenu** : corrigés E1 (documentation), E3, B-5, A-1 à A-4. **Acceptés** : B-1 (doublon de l'inventaire au `GET`
+  — optimisation qui touche la production) ; B-2 (`project_id` d'en-tête inatteignable aujourd'hui — l'aligner touche
+  `update_in_tx`) ; B-3 (message générique d'un projet archivé, hérité du `POST`) ; B-4 (perte de saisie sur conflit de
+  version — choix D8 « pas de modale ») ; E2 (`PERIOD_LOCKED` sur l'ancienne date, message et classement — changerait un
+  message et le classement d'écran) ; E4 (borne de verrou en ISO brut, préexistant côté serveur) ; E5 (422 de
+  l'extracteur, commun à toutes les routes) ; E6 (coût du `GET` et faux négatif résiduel, déjà déclarés).
+- **Réversible** : oui — chacun peut faire l'objet d'une issue ; B-2 et E2 sont les deux à reprendre en premier.
