@@ -113,6 +113,10 @@ est retirée. Le rejeu coûte trois lignes, la transaction est rejouée entière
 cycle **futur** pour un coût négligeable. La ligne de Pattern 5 posée par la 15-8a (`docs/MULTI-TENANT-SCOPING-PATTERNS.md`,
 « Deny list ») s'étend au `DELETE` en le disant : ordre, « aucun cycle connu », rejeu par uniformité.
 
+*(Intégration sur la 15-5e1, C-15-8b-9 : `retry_with` prend désormais un nom d'opération en premier argument — le
+`DELETE` appelle `retry_with("journal_entries::delete", DEFAULT_MAX_DEADLOCK_ATTEMPTS, …)`, et le registre des routes le
+classe `Traced, Rejouee`, contrôlé par le volet (c) de `audit_route_registry.rs`.)*
+
 ### D3 — L'écriture d'ouverture supprimée
 
 | geste | effet sur l'écran « Soldes de départ » |
@@ -547,6 +551,25 @@ au commit `8cfb3759`**, cible cargo dédiée `CARGO_TARGET_DIR=/home/gcorbaz/dev
   `journal-entries.spec.ts` sur la fiche passent, dont la spec Consultation étendue (A2).
 - **Non fait** : aucune mutation rejouée pour A2/A3 (les deux cas ajoutés sont lus, pas mutés).
 
+**Intégration sur la 15-5e1** (Opus 5.5, C-15-8b-9). Branche rebasée sur `origin/main` `de1e1c26` ; le `retry_with` du
+`DELETE` reçoit `"journal_entries::delete"` ; au registre des routes, le `DELETE` passe de `ARejouer("15-5e2")` à
+`Traced, Rejouee` — partition de rejeu **10 `Rejouee` / 12 `ARejouer` / 4 `Exemptee` / 89 `SansEcritureAuJournal` =
+115** (recomptée par `the_replay_partition_is_what_the_story_declares`), volet (c) : **10** routes examinées, vert.
+Tous les gates ci-dessous ont tourné sur **l'état rebasé, arbre du commit d'intégration**, cible cargo dédiée
+`CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh/target-158` :
+
+- **Gate complet backend** (`scripts/test-fast.sh`, `DATABASE_URL` → `kesh_158` remise à zéro juste avant — DROP/CREATE,
+  migrations, seed) : fmt, clippy `-D warnings`, nextest — **2834 passés, 0 échec, 4 ignorés** (2825 avant le rebase ;
+  l'écart vient des tests de la 15-5e1, non ventilé ici).
+- **Frontend** : `npm run check` 0 erreur (27 avertissements, inchangés) ; `lint-i18n-ownership` PASS ; `test:unit`
+  **1086 passés / 111 fichiers** ; `build` vert. Aucun fichier frontend, `.ftl`, `.tex` ni PDF touché par la 15-5e1 :
+  `sitesTotal` (1913) et `CANDIDATES_ATTENDUES` (48) inchangés, vérifiés par leurs tests ; PDF non régénérés.
+- **E2E complet** (binaire `target-158` copié, backend sur le port **3008**, base `kesh_e2e_158` remise à zéro sans seed
+  SQL, `KESH_COOKIE_SECURE=false`, `KESH_TEST_MODE=true` des deux côtés, SMTP factice — `/health` →
+  `smtpConfigured:true` —, inbox/documents neufs) : **247 passés, 7 échecs, 19 ignorés**. Les 7 sont les **7 KF-029**
+  de `docs/testing.md` (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) ; aucun
+  hors liste, rien à rejouer.
+
 ### File List
 
 - `CHANGELOG.md`, `README.md`
@@ -581,3 +604,10 @@ au commit `8cfb3759`**, cible cargo dédiée `CARGO_TARGET_DIR=/home/gcorbaz/dev
   `crates/kesh-api/src/errors.rs:3126` (refus générique d'un exercice clos), et sa formulation (« ajoutée, modifiée ou
   supprimée ») est juste pour tout flux qui l'atteint. **Boucle de revue CLOSE** (P1 Sonnet ×3 : 0 au-dessus de LOW,
   14 LOW dont 7 corrigés → P2 ciblée Haiku : 0). Statut `done`.
+- **2026-10-08 — Intégration sur `origin/main` `de1e1c26` (15-5e1)** (Opus 5.5, C-15-8b-9). Rebase des sept commits ;
+  conflits : registre des choix et `sprint-status.yaml` (union, YAML rechargé), Pattern 5 (ligne du `PUT` de la
+  15-5e1 gardée, ligne du `DELETE` alignée sur la signature nommée) ; CHANGELOG fusionné sans conflit. `retry_with` du
+  `DELETE` nommé `"journal_entries::delete"` ; registre des routes : `DELETE` `ARejouer("15-5e2")` → `Rejouee`,
+  partition **10 / 12 / 4 / 89 = 115**, volet (c) 10 routes. Gates sur l'état rebasé : backend **2834/2834** (4
+  ignorés), frontend **1086/1086**, E2E **247 / 7 KF-029**. Les empreintes antérieures citées plus haut (`8cfb3759`)
+  sont d'avant ce rebase (désormais `a6e06547`).

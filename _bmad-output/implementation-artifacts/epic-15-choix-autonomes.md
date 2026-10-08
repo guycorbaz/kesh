@@ -1870,3 +1870,31 @@ l'import (#458–#461).
 - **Écartée** : une clé dédiée au `DELETE` — il faudrait distinguer l'erreur au niveau de `DbError` ou de la route pour
   un gain nul (la phrase étendue reste vraie pour les trois gestes).
 - **Réversible** : oui (texte seul).
+
+## C-15-8b-9 — 15-8b (intégration) : rebasée sur `origin/main` (`de1e1c26`, 15-5e1) ; le `DELETE` nommé et classé `Rejouee`
+
+- **Contexte** : `origin/main` porte la 15-5e1 (`de1e1c26`) : `retry_with` prend un nom d'opération en premier
+  argument (C62), le registre des routes a une colonne de rejeu et un volet (c) qui vérifie par `syn` que chaque route
+  `Rejouee` appelle une enveloppe, et Pattern 5 a été réécrit (signature nommée, ligne du `PUT`). La 15-5e1 avait
+  classé `DELETE /journal-entries/{id}` **`ARejouer("15-5e2")`** — et non `SansEcritureAuJournal`, comme le prompt
+  d'intégration le supposait : le `DELETE` existait déjà (il rendait `ENTRY_IS_POSTED`) et la remontée de l'AC1 de la
+  15-5e1 l'avait compté parmi les routes qui écrivent au journal.
+- **Retenu** : rebase des sept commits de la story ; conflits résolus par union (registre des choix — C66 à
+  C-15-5e1-5 avant les C-15-8b —, en-têtes `last_updated` de `sprint-status.yaml`, ligne 15-11 conservée, une seule
+  ligne 15-8b, YAML rechargé) ; CHANGELOG `[0.13.0]` fusionné sans conflit (les entrées des deux côtés présentes) ;
+  aucun `.ftl`, `.tex`, PDF ni fichier frontend touché par la 15-5e1, donc ni recompte de `sitesTotal` /
+  `CANDIDATES_ATTENDUES` ni régénération de PDF (vérifiés par les tests eux-mêmes). Le `retry_with` du `DELETE` reçoit
+  **`"journal_entries::delete"`** (forme `module::opération`, comme `"journal_entries::update"`), au commit de
+  développement même pour que chaque commit rebasé compile. Pattern 5 : la ligne du `PUT` de la 15-5e1 gardée, celle
+  du `DELETE` alignée sur la signature nommée. Registre des routes : `DELETE` → **`Traced, Rejouee`** ; volet (c) :
+  **10** routes examinées ; partition de rejeu **10 `Rejouee` / 12 `ARejouer` / 4 `Exemptee` / 89
+  `SansEcritureAuJournal` = 115** (et non 10 / 13 / 4 / 88 : le `DELETE` quitte `ARejouer`, pas
+  `SansEcritureAuJournal`) ; limite (iii bis) : le `DELETE` relève de la revue fichier par fichier (pas de test de
+  rejeu propre, C-15-8b-6). Les empreintes citées dans la fiche (`8cfb3759`) sont celles d'avant ce rebase ; le
+  commit correspondant est désormais `a6e06547`.
+- **Écartées** : garder `ARejouer("15-5e2")` (faux : le handler est déjà rejoué, le volet (c) le confirme) ;
+  migrer le `DELETE` vers l'enveloppe `retry_on_deadlock` (c'est le rollout de la 15-5e2, qui migre aussi le `PUT`).
+- **Conséquence pour la 15-5e2** (à reporter dans sa fiche par l'orchestrateur) : une route de moins à rejouer
+  (**12** `ARejouer`), un site `retry_with` de plus à migrer (**sept** : les six de C-15-5e1-5 et le `DELETE`) ; sa
+  cible finale de registre reste **22 `Rejouee` / 4 / 89** si toutes les `ARejouer` y passent.
+- **Réversible** : oui.

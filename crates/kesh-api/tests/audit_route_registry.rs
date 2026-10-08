@@ -68,8 +68,10 @@
 //!   (`reconciliation_e2e.rs`) pour `reconciliation::accept`,
 //!   `the_put_replays_a_deadlock_it_lost` (`journal_entry_reversal_e2e.rs`,
 //!   15-8a) pour `journal_entries::update` ; pour
-//!   `invoices::write_off`, `reconciliation::cancel` et
-//!   `opening_balances::complete`, c'est la revue fichier par fichier.
+//!   `invoices::write_off`, `reconciliation::cancel`,
+//!   `opening_balances::complete` et `journal_entries::delete` (15-8b, rejouée
+//!   par uniformité avec le `PUT`, sans cycle connu — choix C-15-8b-6), c'est la
+//!   revue fichier par fichier.
 //! - **(iv)** — **angle mort assumé** — qu'une route `SansEcritureAuJournal` qui
 //!   prend un verrou ne soit pas la **victime** d'un cycle avec un flux qui écrit
 //!   au journal. P. ex. `accept_batch` tient un verrou partagé sur la ligne
@@ -164,7 +166,9 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     // Story 15-8a (#532) : l'audit `journal_entry.updated` vient de `journal_entries::update`.
     // Rejouée par la 15-8a (`retry_with`, C-15-8-19), nommée à l'intégration de la 15-5e1.
     ("put", "journal_entries::update_journal_entry", Traced, Rejouee),
-    ("delete", "journal_entries::delete_journal_entry", Traced, ARejouer("15-5e2")),
+    // Story 15-8b (#532) : l'audit `journal_entry.deleted` vient de `journal_entries::delete_in_tx`.
+    // Rejouée par la 15-8b (`retry_with`, par uniformité avec le `PUT`), nommée à son intégration.
+    ("delete", "journal_entries::delete_journal_entry", Traced, Rejouee),
     ("post", "companies::lock_company_books", Traced, SansEcritureAuJournal),
     ("post", "journal_entries::reverse_journal_entry", Traced, ARejouer("15-5e2")),
     ("post", "opening_balances::generate_opening_balances", Traced, ARejouer("15-5e2")),
@@ -718,7 +722,7 @@ fn every_replayed_route_calls_an_envelope() {
             ),
         }
     }
-    assert_eq!(examinees, 9, "les neuf routes Rejouee ont été examinées");
+    assert_eq!(examinees, 10, "les dix routes Rejouee ont été examinées");
 }
 
 /// Le visiteur du volet (c), éprouvé sur un **source synthétique** : muter les
@@ -842,12 +846,13 @@ fn the_replay_partition_is_what_the_story_declares() {
         .count();
 
     assert_eq!(
-        rejouees, 9,
+        rejouees, 10,
         "5 rejouées avant la 15-5e1 (write_off, accept, cancel du rapprochement, \
          complément des soldes de départ, modification d'une écriture — 15-8a) + 4 par \
-         elle (validation, règlement, annulation de règlement, saisie fournisseur)"
+         elle (validation, règlement, annulation de règlement, saisie fournisseur) + la \
+         suppression d'une écriture (15-8b)"
     );
-    assert_eq!(a_rejouer, 13, "13 routes rejouées par la 15-5e2");
+    assert_eq!(a_rejouer, 12, "12 routes rejouées par la 15-5e2");
     assert_eq!(
         exemptees, 4,
         "full_import, onboarding::reset, /seed, /reset"
