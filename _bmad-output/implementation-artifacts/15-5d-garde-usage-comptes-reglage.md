@@ -9,7 +9,11 @@ Status: ready-for-dev
      passages de manuel —, plus la remédiation des deux HIGH et du MEDIUM que cette règle a fait naître
      en P4 : le compte créanciers exposé à l'écran (C34, révise C25) et l'avoir exempté avec sa vraie
      raison (C35). Choix applicables : C6, C16, C19, C25 (révisé par C34), C27, C28 (texte révisé par
-     C36), C29, C33, C34, C35, C36. Historique complet au Change Log. -->
+     C36), C29, C33, C34, C35, C36, C39, C40, C41. Historique complet au Change Log.
+     Statut `ready-for-dev` : convention du registre pour une fiche en cours de validation (les 15-5b et
+     15-5c portent le même) — il n'existe pas de statut « en validation » dans `sprint-status.yaml`. Le
+     développement attend la clôture de la boucle de validation ET le merge des 15-5a et 15-5b
+     (finding R1-7 de la P1). -->
 
 **Issues** : **ferme #429** (P1 — les comptes désignés dans les réglages de facturation ne sont
 re-validés nulle part). La PR porte `closes #429` (mot-clé **dans la PR**, le dépôt merge en squash).
@@ -58,35 +62,66 @@ n'en dépend. D'où le découpage (choix C33).
    `rounding_account_for_write` / `usable_designated_account`
    (`crates/kesh-db/src/repositories/company_invoice_settings.rs:400`, `:484-510`, requête `:499`),
    relu **au moment d'écrire**, dans la transaction, `FOR UPDATE` — :
+   - **le mécanisme du prédicat — les rôles rendus par le générateur** (findings R1-2 / F2 de la P1,
+     choix **C39**). Le générateur de lignes **expose l'ensemble des rôles de réglage qu'il a
+     effectivement écrits**, et la garde ne contrôle **que les comptes de ces rôles** : aucun recalcul
+     de la TVA hors du générateur (règle DRY), aucune inspection des `account_id` de `entry_lines`
+     (ambiguë dès qu'un même compte joue deux rôles, ou qu'un compte de réglage coïncide avec un compte
+     de produit ou de charge d'une ligne — les fixtures le font : `test_fixtures.rs:158-169` réutilise
+     `2000` pour la TVA due). Concrètement : un type `DesignatedRole` (`Receivable`, `VatPayable`,
+     `Payable`, `VatRecoverable`) et un ensemble ordonné de rôles (`BTreeSet<DesignatedRole>` ou
+     newtype équivalent) rendus **avec** les lignes —
+     - côté vente, par `generate_invoice_journal_lines` (`invoices.rs:1784`) : `Receivable` toujours,
+       `VatPayable` **dans la branche même** `if total_vat > Decimal::ZERO` (`:1851`) qui écrit les
+       lignes de TVA due ; `generate_invoice_journal_lines_rounded` (`:1879`) le transmet ;
+     - côté achat, par `generate_purchase_journal_lines` (`supplier_invoices.rs:105`, qui rend déjà un
+       tuple `(lignes, total TTC)`) : `Payable` toujours, `VatRecoverable` dans la branche
+       `if total_vat > Decimal::ZERO` (`:129`) ;
+     - l'appelant traduit chaque rôle en l'identifiant qu'il a lui-même passé au générateur (créance,
+       TVA due, créanciers, TVA récupérable des réglages) et appelle l'accesseur sur ces identifiants.
+       Les **autres appelants** — 25 occurrences de
+       `grep -rnE "generate_(invoice_journal_lines(_rounded)?|purchase_journal_lines)\(" crates | grep -v "///"`
+       sur `67c31c95`, définitions et tests compris, dont l'**avoir** (`credit_notes.rs:933`) —
+       ignorent les rôles ; l'avoir les ignore **délibérément** (C35, AC3) ;
    - un accesseur neuf de `company_invoice_settings` (p. ex.
      `check_designated_accounts_postable_in_tx(conn, company_id, ids: &[i64])`) lit
-     `id, number, active, postable` des comptes désignés **qui recevront une ligne**, `FOR UPDATE`, et
-     rend une erreur pour ceux qui sont **de la société, actifs et non imputables**. Un compte absent,
-     d'une autre société ou **archivé** n'est **pas** refusé par lui : il suit le chemin d'aujourd'hui
-     (`InactiveOrInvalidAccounts` dans `create_in_tx`), seul cas où la 15-5a interdit de nommer un
-     compte ;
+     `id, number, active, postable` des comptes reçus, en **une seule requête**
+     `WHERE company_id = ? AND id IN (…) ORDER BY id FOR UPDATE` — l'**ordre de verrouillage par
+     identifiant** est fixé, pour que deux flux concurrents ne prennent jamais les mêmes lignes dans
+     des ordres opposés (finding R1-6) —, et rend une erreur pour ceux qui sont **de la société, actifs
+     et non imputables**. Un compte absent, d'une autre société ou **archivé** n'est **pas** refusé par
+     lui : il suit le chemin d'aujourd'hui (`InactiveOrInvalidAccounts` dans `create_in_tx`), seul cas
+     où la 15-5a interdit de nommer un compte ;
+   - **un même compte désigné pour deux rôles est nommé une fois** (finding F1 de la P1, choix
+     **C40**). Le dédoublonnage n'est **pas** réécrit dans l'accesseur : il est garanti par
+     `NonPostableAccounts::new`, que la 15-5a définit comme trieur **et dédoublonneur par
+     identifiant** (`15-5a-refus-non-imputable.md`, AC1, l. 48-53 : « qui **trie par numéro** […]
+     **puis par identifiant** à numéro égal, et **dédoublonne par identifiant** » ; l. 62-63 : « la
+     variante ne peut être construite qu'avec une liste triée, dédoublonnée et non vide »). L'accesseur
+     construit la variante par ce seul constructeur ; `count` vaut donc le nombre de comptes
+     **distincts**, et le message prend le singulier quand deux rôles pointent sur le même compte.
+     Un test le fige (AC7) ;
    - **validation d'une facture** (`crates/kesh-db/src/repositories/invoices.rs`, `validate_invoice`) :
      la garde se place **entre la génération des lignes** (`generate_invoice_journal_lines_rounded`,
-     `:2247-2253`) **et `create_in_tx`** (`:2255`) — finding R4-3/F4-5 —, sur les identifiants de
-     réglage **effectivement présents** dans `entry_lines` : la **créance**
-     (`default_receivable_account_id`) toujours ; la **TVA due** (`default_vat_payable_account_id`)
-     **seulement si `total_vat > 0`**, le prédicat même de `generate_invoice_journal_lines`
-     (`invoices.rs:1849-1852`, calculé sur les montants **arrondis par ligne**) — **pas** « une ligne à
-     taux > 0 » : une facture à taux positif dont la TVA arrondit à zéro n'écrit rien sur la TVA due et
-     n'est pas bloquée (finding F4-4 ; cas existant `gen_lines_rate_rounds_to_zero`). Conséquence de
-     cette place, **écrite dans le doc-comment « # Erreurs » de `validate_invoice`** : tous les refus
-     antérieurs gardent leur priorité — total nul, montant minimum, compte d'arrondi, comptes de produit
-     des lignes (2 ter, `ACCOUNT_NOT_POSTABLE` de la 15-5a), exercice — et le
+     `:2247-2253`) **et `create_in_tx`** (`:2255`) — finding R4-3/F4-5 —, sur les rôles rendus par le
+     générateur : la **créance** (`default_receivable_account_id`) toujours ; la **TVA due**
+     (`default_vat_payable_account_id`) **seulement si le générateur l'a écrite**, c'est-à-dire si
+     `total_vat > 0` (`invoices.rs:1849-1852`, calculé sur les montants **arrondis par ligne**) — **pas**
+     « une ligne à taux > 0 » : une facture à taux positif dont la TVA arrondit à zéro n'écrit rien sur
+     la TVA due et n'est pas bloquée (finding F4-4 ; cas existant `gen_lines_rate_rounds_to_zero`).
+     Conséquence de cette place, **écrite dans le doc-comment « # Erreurs » de `validate_invoice`** :
+     tous les refus antérieurs gardent leur priorité — total nul, montant minimum, compte d'arrondi,
+     comptes de produit des lignes (2 ter, `ACCOUNT_NOT_POSTABLE` de la 15-5a), exercice — et le
      `ConfigurationRequired("default_vat_payable_account_id")` du générateur (TVA due **absente**) passe
      avant ce refus (TVA due **non imputable**) ;
    - **création d'une facture fournisseur** (`crates/kesh-db/src/repositories/supplier_invoices.rs`,
      `create_in_tx` — donc aussi la **complétion d'une facture importée**, qui l'appelle,
      `routes/imported_supplier_invoices.rs:243`) : même place, **entre** `generate_purchase_journal_lines`
-     (`:365-369`) **et** `journal_entries::create_in_tx` (`:372`) ; les **créanciers**
-     (`default_payable_account_id`, valeur résolue par l'AC19 de la 15-5b) toujours ; la **TVA
-     récupérable** (`default_vat_recoverable_account_id`) **seulement si la TVA totale est positive**
-     (`:129-131`). Le compte de **charge** non imputable est refusé plus tôt, par la 15-5a
-     (`supplier_invoices.rs:337-346`) : son refus passe avant ;
+     (`:365-369`) **et** `journal_entries::create_in_tx` (`:372`), sur les rôles rendus : les
+     **créanciers** (`default_payable_account_id`, valeur résolue par l'AC19 de la 15-5b) toujours ; la
+     **TVA récupérable** (`default_vat_recoverable_account_id`) **seulement si le générateur l'a
+     écrite** (TVA totale positive, `:129-131`). Le compte de **charge** non imputable est refusé plus
+     tôt, par la 15-5a (`supplier_invoices.rs:337-346`) : son refus passe avant ;
    - un seul refus nomme **tous les comptes de réglage** en défaut du flux (pas ceux des lignes, refusés
      plus tôt) : variante neuve `DbError::DesignatedAccountsNotPostable(NonPostableAccounts)`
      (`crates/kesh-db/src/errors.rs`), même code **`ACCOUNT_NOT_POSTABLE`**, HTTP 400, `details` =
@@ -113,9 +148,10 @@ n'en dépend. D'où le découpage (choix C33).
      réglage, et le **compte bancaire** (compte de configuration lui aussi) reste utilisable devenu non
      imputable (D-A0, AC15 de la 15-5b, C6) ;
    - le **compte de produit par défaut** reste exempté (D3-bis de la 16-1a, `invoices.rs:574-579`) ;
-   - le compte de **décompte TVA** n'est lu par aucun flux d'écriture (seul l'export CSV le lit,
-     `crates/kesh-api/src/exports/csv_tables.rs:932` ; le rapport TVA le lit sans écrire,
-     `crates/kesh-report/src/vat_report.rs:174`) ;
+   - le compte de **décompte TVA** n'est lu par aucun flux d'écriture : seul l'export CSV le lit
+     (`crates/kesh-api/src/exports/csv_tables.rs:932`) ; le rapport TVA **ne le lit pas** — il lit la
+     TVA due et la TVA récupérable, sans écrire (`crates/kesh-report/src/vat_report.rs:173-174`)
+     (finding F3 de la P1) ;
    - le **solde du reste** garde son refus `ConfigurationRequired` pour une TVA due inutilisable
      (`vat_payable_account_for_write`, `company_invoice_settings.rs:454`) — divergence de code assumée
      et écrite (C28) ;
@@ -129,14 +165,23 @@ n'en dépend. D'où le découpage (choix C33).
      le compte d'arrondi), et la **TVA due** relève de #525 (report TVA). Garder aujourd'hui le compte
      des réglages bloquerait l'annulation d'une facture sur un compte que l'avoir **ne devrait pas
      lire** — l'argument de l'AC15 de la 15-5b (une pièce émise doit rester annulable) s'y ajoute.
-4. **AC4 — Les écrans affichent le refus.** L'écran de validation d'une facture
-   (`frontend/src/routes/(app)/invoices/[id]/+page.svelte`, `catch` de `confirmValidate`,
-   `:402-415` — `err.message` pour un `ApiError`) et ceux de la facture fournisseur (saisie,
-   `frontend/src/routes/(app)/supplier-invoices/+page.svelte`, `catch` repérés `:103`, `:133`, `:213` ;
-   complétion d'un import, `completeErrorLabel`, qui replie sur `err.message`) affichent `err.message`
-   pour ce code — le dev le vérifie à la **lecture de chaque `catch`** et le consigne au Dev Agent
-   Record ; un écran qui afficherait un repli générique est corrigé ici. Aucune branche par rôle n'est
-   ajoutée : le message de l'AC2 vaut pour les deux.
+4. **AC4 — Les écrans affichent le refus.** Trois `catch`, et trois seulement (findings R1-1 / F3 de
+   la P1) :
+   - **validation d'une facture** : `frontend/src/routes/(app)/invoices/[id]/+page.svelte`, `catch` de
+     `confirmValidate`, `:402-415` — `validateError = err.message` pour un `ApiError`, avec une branche
+     propre à `CONFIGURATION_REQUIRED` (`:409-411`, suffixe « Configurez les comptes par défaut ») que
+     `ACCOUNT_NOT_POSTABLE` **ne doit pas** emprunter : son message dit déjà où agir ;
+   - **saisie d'une facture fournisseur** : `frontend/src/routes/(app)/supplier-invoices/+page.svelte:213`
+     (`if (isApiError(err)) formError = err.message;`). Les `catch` de `:103` (scan du QR,
+     `supplier-invoices-scan-failed`) et de `:133` (chargement de la page) **ne sont pas** concernés :
+     aucun des deux n'atteint `create_in_tx` ;
+   - **complétion d'un import** : `frontend/src/routes/(app)/supplier-invoices/import/+page.svelte:267`
+     (`formError = completeErrorLabel(err)`), dont le `switch` replie sur `err.message` par son
+     `default:` (`:301`) — `ACCOUNT_NOT_POSTABLE` ne doit **pas** y recevoir de branche qui en
+     changerait le texte.
+   Le dev vérifie chacun à la lecture, le consigne au Dev Agent Record, et corrige ici un écran qui
+   afficherait un repli générique. Aucune branche par rôle n'est ajoutée : le message de l'AC2 vaut pour
+   les deux. **Un test d'écran le fige** (AC7, finding R1-3 / F4 de la P1, choix **C41**).
 
 ### Le compte créanciers, à l'écran (finding R4-1/F4-1)
 
@@ -160,7 +205,13 @@ n'en dépend. D'où le découpage (choix C33).
    - les types `InvoiceSettingsResponse` et `UpdateInvoiceSettingsRequest`
      (`frontend/src/lib/features/invoices/invoices.types.ts:119-162`) gagnent
      `defaultPayableAccountId: number | null` — le serveur le rend déjà
-     (`crates/kesh-api/src/routes/company_invoice_settings.rs:43`, `:70`).
+     (`crates/kesh-api/src/routes/company_invoice_settings.rs:43`, `:70`) ;
+   - le **mock** de `frontend/src/routes/(app)/settings/invoicing/settings-invoicing-page.test.ts`
+     (fonction `settings()`, `:60-75`, champs listés à partir de `:63` — `defaultVatPayableAccountId: null`
+     à `:67`) gagne `defaultPayableAccountId: null` : sans lui, le champ devenu obligatoire du type casse
+     `npm run check` (finding R1-5 de la P1).
+   Les numéros de ligne de cet AC (et de l'AC8) sont relevés sur `67c31c95`, **avant** le merge de la
+   15-5b, qui touche ces fichiers : T0 les refait (finding R1-7 de la P1).
    L'AC19 de la 15-5b (absent du corps → préservé) **reste** le filet pour un client qui ne l'envoie
    pas (onglet ouvert avant la mise à jour, intégration) ; choisir « — Sélectionner — » l'efface,
    comme pour les autres champs (`null`).
@@ -168,9 +219,13 @@ n'en dépend. D'où le découpage (choix C33).
    `frontend/tests/e2e/payment-batches.spec.ts:57-64` et `frontend/tests/e2e/inbox-import.spec.ts:91-97`
    reposent le compte créanciers par un `PUT` d'API quand il vaut `null` — contournement de #521. Après
    l'AC19 de la 15-5b, aucun enregistrement ne l'efface plus ; le dev **vérifie** que le seed E2E le
-   désigne (`insert_with_defaults`, rôle `Payable`) en exécutant les deux specs **sans** le
-   contournement sur une base fraîchement seedée : vertes → le contournement est retiré ; rouges → il
-   reste, avec un commentaire qui dit pourquoi. Le résultat est consigné au Dev Agent Record.
+   désigne (`insert_with_defaults`, rôle `Payable`), puis **juge le retrait sur la suite E2E
+   complète** — celle du gate D7 de T7, base fraîchement seedée —, **pas** sur les deux specs isolées
+   (finding R1-4 de la P1) : une autre spec qui enregistre les réglages avant elles pourrait effacer le
+   compte créanciers, et deux specs vertes seules ne le verraient pas. Suite complète sans échec neuf
+   imputable à ces deux fichiers (jugée fichier par fichier contre `docs/testing.md` § « Les échecs
+   attendus ») → le contournement est retiré ; sinon il reste, avec un commentaire qui dit pourquoi. Le
+   résultat est consigné au Dev Agent Record.
 
 ### Ce qui doit être prouvé
 
@@ -186,26 +241,57 @@ n'en dépend. D'où le découpage (choix C33).
        facture **à taux positif dont la TVA arrondit à zéro** → validée (finding R4-3/F4-4) ;
      - **ordre** : facture dont une **ligne** et la **créance** sont non imputables → le refus de la
        15-5a (ligne) ; TVA due **absente** → `ConfigurationRequired` (finding F4-5) ;
-     - **créanciers** non imputable → saisie de facture fournisseur refusée, rien d'écrit ; idem pour
-       la **complétion d'une facture importée** (un test) ;
+     - **créanciers** non imputable → saisie de facture fournisseur refusée, rien d'écrit ;
      - **TVA récupérable** non imputable : facture fournisseur **avec** TVA → refusée ; **sans** TVA
        → acceptée ;
-     - créance **et** TVA due non imputables → **un** refus nommant les deux ;
+     - créance **et** TVA due non imputables, désignées sur **deux comptes distincts** (`1100` et
+       `2000` de `seed_accounting_company`) → **un** refus nommant les deux, `count = 2`, pluriel
+       (finding F1 de la P1) ;
+     - **un même compte désigné pour deux rôles** (créance et TVA due posées sur le même identifiant
+       par un `UPDATE company_invoice_settings` direct dans le montage, comme le fait
+       `test_fixtures.rs:158-169`), rendu non imputable, facture avec TVA → **un** refus qui le nomme
+       **une fois**, `count = 1`, message au **singulier** (choix C40 ; il prouve que le
+       dédoublonnage de `NonPostableAccounts::new` est bien atteint par l'accesseur) ;
      - compte de réglage **archivé** → `InactiveOrInvalidAccounts`, inchangé (la variante n'est pas
        émise) ;
      - **avoir** (`crates/kesh-db/tests/credit_notes_repository.rs`) sur une facture dont la
        créance des réglages est devenue non imputable → émis (C35 :
        l'exemption est voulue et un test la fige) ;
-   - `kesh-api` (`crates/kesh-api/tests/company_invoice_settings_postable_e2e.rs`, fichier créé par la
-     15-5b ; montage avec `init_error_i18n`) : un cas de bout en bout — 400 `ACCOUNT_NOT_POSTABLE`,
-     `details.rejected`, `message` contenant « Paramètres → Facturation », le numéro, et
-     « administrateur » ;
-   - **mutation** : retirer chacun des quatre contrôles une fois → son test rougit ; consigné au Dev
-     Agent Record, en touchant le fichier après restauration ;
+   - `kesh-api`, deux fichiers (finding R1-3 de la P1) :
+     - **validation d'une facture** — `crates/kesh-api/tests/company_invoice_settings_postable_e2e.rs`,
+       fichier **créé par la 15-5b** (absent de `67c31c95`), dont on reprend le montage tel que la
+       15-5b l'écrit (T5 de la 15-5b : `create_seeded_company`, patron `idor_multi_tenant_e2e.rs:~751`),
+       avec `init_error_i18n` ; route `POST /api/v1/invoices/{id}/validate` (`lib.rs:509`), jeton
+       d'un utilisateur **Comptable** (le message doit valoir pour lui, C36) ; une facture brouillon à
+       une ligne avec TVA, créée par `POST /api/v1/invoices`, à une date couverte par un exercice ouvert ;
+       la créance désignée puis rendue non imputable (`UPDATE accounts SET postable = FALSE`) →
+       400 `ACCOUNT_NOT_POSTABLE`, `details.rejected`, `message` contenant « Paramètres → Facturation »,
+       le numéro, et « administrateur » ; facture toujours brouillon ;
+     - **complétion d'une facture importée** — `crates/kesh-api/tests/inbox_import_e2e.rs`
+       (existant), sur le montage de `complete_creates_invoice_and_marks_completed` (`:716` :
+       `setup`, `seed_staging`, `complete_body`) : le compte créanciers des réglages rendu non
+       imputable, `POST /api/v1/imported-supplier-invoices/{id}/complete` → 400
+       `ACCOUNT_NOT_POSTABLE` ; le staging **reste** `to_complete` (`staging_status`) et
+       `supplier_invoice_count` est inchangé (patron de `complete_closed_fiscal_year_keeps_to_complete`,
+       `:792`) ;
+   - **mutation** : retirer chacun des quatre contrôles une fois → son test rougit ; poser le rôle
+     `VatPayable` **hors** de la branche `total_vat > 0` du générateur → le test « TVA arrondie à zéro »
+     rougit ; contourner `NonPostableAccounts::new` (liste construite sans dédoublonnage) → le test
+     « même compte pour deux rôles » rougit ; consigné au Dev Agent Record, en touchant le fichier après
+     restauration ;
    - **frontend** (`frontend/src/routes/(app)/settings/invoicing/settings-invoicing-page.test.ts`,
      existant) : le compte créanciers en place s'affiche, **y compris devenu non imputable** (valeur
      préservée) ; un changement est envoyé dans `updateInvoiceSettings` ; la relecture sur conflit le
-     reprend. C'est la preuve du **chemin de correction** que le message de l'AC2 désigne.
+     reprend. C'est la preuve du **chemin de correction** que le message de l'AC2 désigne ;
+   - **frontend, écran de validation** (AC4, choix C41) — fichier neuf
+     `frontend/src/routes/(app)/invoices/[id]/invoice-validate-page.test.ts`, patron de
+     `invoice-write-off-page.test.ts` (mocks hoistés avant l'import du composant) : la validation
+     rejetée par un `ApiError` 400 `ACCOUNT_NOT_POSTABLE` affiche **`err.message` tel quel**, pour un
+     utilisateur **Comptable** comme pour un **Admin** — ni le suffixe « Configurez les comptes par
+     défaut », ni « Demandez à votre administrateur » de la branche `CONFIGURATION_REQUIRED`
+     (`:409-415`). Mutation attrapée : `ACCOUNT_NOT_POSTABLE` ajouté à cette branche. Les deux `catch`
+     fournisseurs (`supplier-invoices/+page.svelte:213`, `import/+page.svelte:267`) n'ont pas de branche
+     par code sur ce chemin : leur lecture est consignée au Dev Agent Record (AC4), sans test d'écran.
 8. **AC8 — Le manuel dit l'usage, l'avoir, et le champ créanciers.** L'AC17 de la 15-5b a levé les
    réserves des encadrés pour la **désignation** ; cette story les complète pour l'**usage** :
    - `docs/manual/fr/user-manual.tex`, encadrés **`:380`** (§ *Rôles des comptes*) et **`:390`**
@@ -221,6 +307,11 @@ n'en dépend. D'où le découpage (choix C33).
    - § *Saisir une facture fournisseur* (`:1285-1293`) : le compte de dette fournisseur est le **compte
      créanciers** désigné dans *Paramètres* → *Facturation* ; s'il n'est pas imputable (ou la TVA
      récupérable, pour une facture qui en porte), la saisie est refusée avec un message qui y renvoie ;
+   - § *Importer des factures depuis un dossier* (`user-manual.tex:1374-1397`, bouton *Compléter*, « Kesh
+     vérifie que le total TTC correspond […] avant de créer la facture fournisseur définitive ») : une
+     phrase dit que la complétion est refusée de la même façon — la complétion crée une facture
+     fournisseur par le même chemin que la saisie (`imported_supplier_invoices.rs:243`) — et renvoie au
+     paragraphe de la saisie (finding F5 de la P1) ;
    - `docs/manual/fr/admin-manual.tex`, § *Configuration des comptes TVA* (`:2016-2025`) : la phrase
      que la 15-5b y ajoute (refus à la désignation) est complétée — un compte TVA désigné **devenu**
      non imputable bloque la validation d'une facture portant de la TVA (ou la saisie d'une facture
@@ -262,21 +353,31 @@ n'en dépend. D'où le découpage (choix C33).
       des écrans et des manuels ; refaire le grep des lecteurs des quatre comptes
       (`grep -rnE "default_(receivable|payable|vat_payable|vat_recoverable)_account_id" crates/*/src`, hors
       tests et module des réglages) — **un lecteur qui écrit, absent de l'AC1 et de l'AC3, bloque la
-      story**.
-- [ ] **T1 — La garde** (AC1, AC3) : l'accesseur de `company_invoice_settings` ; ses deux appels, à la
-      place fixée ; la variante `DesignatedAccountsNotPostable` (`error_code()` → `"ACCOUNT_NOT_POSTABLE"`,
+      story** ; refaire le grep des appelants des générateurs (AC1, 25 occurrences sur `67c31c95`) ;
+      **relever le texte exact que la 15-5b aura laissé** dans les encadrés `user-manual.tex:380` et
+      `:390` et à `admin-manual.tex:2016-2025` (l'item que l'AC8 réécrit n'existe pas sur `67c31c95`),
+      le copier au Dev Agent Record et, s'il ne contient aucun des motifs du grep de T6, **ajouter à ce
+      grep** le motif qui le retrouve (finding R1-8 de la P1) ; relever le montage que la 15-5b aura
+      écrit dans `company_invoice_settings_postable_e2e.rs` (AC7).
+- [ ] **T1 — La garde** (AC1, AC3) : les rôles rendus par les deux générateurs (`DesignatedRole`,
+      branches de `total_vat > 0`), leurs appelants adaptés ; l'accesseur de `company_invoice_settings`
+      (`ORDER BY id FOR UPDATE`, variante construite par `NonPostableAccounts::new`) ; ses deux appels,
+      à la place fixée ; la variante `DesignatedAccountsNotPostable` (`error_code()` → `"ACCOUNT_NOT_POSTABLE"`,
       `match` exhaustif de `kesh-db/src/errors.rs`) et son bras dans `crates/kesh-api/src/errors.rs` (400,
       `t_args`, `details()`) ; doc-comments.
 - [ ] **T2 — Le message** (AC2) : la clé dans les quatre `messages.ftl`, inscrite à
       `SELECTEURS_RESOLUS_COTE_SERVEUR` ; tests Rust par locale, singulier et pluriel.
-- [ ] **T3 — Les écrans** (AC4, AC5) : lecture des `catch`, consignée ; le `<select>` du compte
-      créanciers, ses types, sa clé i18n (quatre locales) ; borne `sitesTotal` de
+- [ ] **T3 — Les écrans** (AC4, AC5) : lecture des trois `catch` de l'AC4, consignée ; le `<select>`
+      du compte créanciers, ses types, le mock de `settings-invoicing-page.test.ts`, sa clé i18n
+      (quatre locales) ; borne `sitesTotal` de
       `frontend/src/lib/shared/i18n-keys.test.ts` relevée **délibérément**, ventilation recomptée
       (`sitesTotal`, `sitesNonResolus`, `relais`, `sitesGabarit`, `litterauxMin`, `clesDepuisTsMin`) et
       écrite au Dev Agent Record.
-- [ ] **T4 — Les E2E** (AC6) : les deux specs sans contournement, sur base fraîche ; retrait ou
-      commentaire.
-- [ ] **T5 — Les tests** (AC7) : `kesh-db`, `kesh-api`, Vitest ; mutations consignées.
+- [ ] **T4 — Les E2E** (AC6) : contournements retirés, jugés sur la **suite E2E complète** de T7 ;
+      retrait confirmé ou contournement rétabli avec un commentaire.
+- [ ] **T5 — Les tests** (AC7) : `kesh-db` (dont « même compte pour deux rôles » et « deux comptes
+      distincts »), `kesh-api` (`company_invoice_settings_postable_e2e.rs`, `inbox_import_e2e.rs`),
+      Vitest (réglages, écran de validation) ; mutations consignées.
 - [ ] **T6 — Manuel, API, CHANGELOG** (AC8, AC9) ; PDF régénérés et contrôlés aplatis (ligatures
       normalisées) ; **grep du symptôme** (règle *Propagation post-patch*) :
       `grep -rnE "reprend les comptes de la facture|sous-compte imputable|inverse exact|n'est pas exposé|#429" docs/manual/fr/*.tex docs/api-external.md crates frontend/src CHANGELOG.md`
@@ -315,7 +416,8 @@ fraîchement créée n'est bloquée.
 `rounding_account_for_write` dans le même flux de validation (`invoices.rs:2065`) et comme la garde du
 compte de charge (24-5) dans le flux fournisseur — `get_or_create_default_in_tx` verrouille déjà la
 ligne des réglages. Le dev place la lecture **après** ces verrous existants (c'est le cas à la place
-fixée par l'AC1) et le dit dans le doc-comment ; `accounts::create` (qui rend le parent non imputable)
+fixée par l'AC1) et le dit dans le doc-comment ; **entre les comptes d'une même requête**, l'ordre est
+celui des identifiants (`ORDER BY id`, une seule requête, AC1 — finding R1-6 de la P1) ; `accounts::create` (qui rend le parent non imputable)
 ne prend aucun verrou sur les réglages ni sur les factures (vérifié en P4, lentille F).
 
 ### Pourquoi le compte créanciers passe à l'écran ici, et pas dans la 15-5b
@@ -353,6 +455,11 @@ n'envoient pas le champ.
 - **C34** — le compte créanciers exposé à l'écran (révise **C25**).
 - **C35** — l'avoir exempté de la garde à l'usage, avec sa vraie raison.
 - **C36** — le message : « un compte imputable », « un administrateur doit ».
+- **C39** — le prédicat : les générateurs rendent les rôles de réglage effectivement écrits ; la garde
+  ne contrôle que ceux-là.
+- **C40** — le dédoublonnage : confié à `NonPostableAccounts::new` (15-5a), figé par un test.
+- **C41** — l'AC4 prouvé par un test Vitest de l'écran de validation ; les deux `catch` fournisseurs
+  par lecture consignée.
 
 ### Fichiers touchés (prévision)
 
@@ -365,11 +472,20 @@ n'envoient pas le champ.
 (borne), éventuellement `frontend/tests/e2e/{payment-batches,inbox-import}.spec.ts` (AC6) et les
 écrans de facture (AC4, si un `catch` est en défaut), tests
 (`crates/kesh-db/tests/{invoices_validate_vat,supplier_invoices_repository}.rs`, et `crates/kesh-db/tests/credit_notes_repository.rs`
-pour le test de C35 ; `crates/kesh-api/tests/company_invoice_settings_postable_e2e.rs`),
+pour le test de C35 ; `crates/kesh-api/tests/{company_invoice_settings_postable_e2e,inbox_import_e2e}.rs` ;
+`frontend/src/routes/(app)/invoices/[id]/invoice-validate-page.test.ts`, neuf),
 `docs/manual/fr/{user-manual,admin-manual}.{tex,pdf}`, `docs/api-external.md`, `CHANGELOG.md`.
-**Aucune migration** (P1–P8 sans objet). Modules : `kesh-db` (trois dépôts, erreurs), `kesh-api`
-(erreurs), `kesh-i18n`, `frontend` (réglages), manuels — **cinq**, à la limite du seuil de la règle de
-splitting ; la story est entièrement sur une seule règle métier, revue en passes complètes.
+**Aucune migration** (P1–P8 sans objet).
+
+**Décompte des modules** (règle de splitting préventif ; recompté en P1, finding F6) : `kesh-db` (trois
+dépôts, erreurs), `kesh-api` (erreurs, deux fichiers de tests), `kesh-i18n` (quatre locales, chargeur),
+`frontend` (réglages, types, test de l'écran de validation, borne i18n), manuels (deux) — **cinq** en
+comptant les specs Playwright avec le `frontend` et `docs/api-external.md` / `CHANGELOG.md` comme
+compagnons de documentation ; **six ou sept** si l'on compte à part `frontend/tests/e2e` et les
+documents de `docs/`. Le seuil (« plus de 5 modules ») est donc atteint ou franchi selon la convention
+de compte. Le signal est **déclaré** au Change Log (amendement D5) ; il ne déclenche pas de découpage :
+la story porte une **seule règle métier** (la garde à l'usage) et l'écran qui la rend praticable,
+inséparables (C34), et elle est revue en **passes complètes**.
 
 ### Tests — ce qui rendrait un test vert sans rien prouver
 
@@ -379,6 +495,10 @@ splitting ; la story est entièrement sur une seule règle métier, revue en pas
 - Asserter `400` sans le code ni `details.rejected` : un refus pour une autre raison passerait.
 - Le test « TVA arrondie à zéro » doit utiliser un taux **positif** : un taux nul ne distingue pas les
   deux prédicats.
+- Le test « même compte pour deux rôles » doit asserter `count = 1` **et** un seul élément dans
+  `details.rejected` : un `400` seul passerait aussi avec un doublon. Et le test « deux comptes » doit
+  utiliser deux comptes **distincts** : sur un compte commun, il prouverait le dédoublonnage, pas la
+  réunion des deux rôles dans un seul refus.
 - Le test Vitest du compte créanciers doit porter sur un compte **non imputable** : avec un compte
   imputable, l'affichage marcherait sans `withCurrentAccount`.
 
@@ -435,3 +555,39 @@ splitting ; la story est entièrement sur une seule règle métier, revue en pas
   l'orchestrateur).
   Décompte : **9 AC, 8 tâches T0–T7** (recompté). **Validation : à lancer** — une passe complète, la
   story portant une règle métier et un écran neuf.
+- 2026-10-08 — **Passe de validation P1** (prompt versionné `15-5d-validate-prompt-p1.md` ; deux
+  lentilles **Sonnet** en contexte frais : **R** auditeur d'acceptation, **F** adversaire de périmètre
+  complet ; rotation D6 : la P2 sera Opus). **0 CRITICAL, 0 HIGH.** Bruts : R 3 MEDIUM + 5 LOW
+  (R1-1 à R1-8), F 1 MEDIUM + 5 LOW (F1 à F6). Doublons inter-lentilles : F2 = R1-2, F3 ≈ R1-1 (F3
+  ajoute la phrase du rapport TVA de l'AC3, traitée avec), F4 ⊂ R1-3 → **4 MEDIUM et 7 LOW
+  distincts** (recompté : 14 bruts − 3 fusions = 11). Trend : **P1 4 MEDIUM / 7 LOW** (première passe
+  de cette fiche ; la P4 de la 15-5b, d'où elle est née, est à l'entrée précédente).
+
+  | finding | sév. | objet | sort |
+  |---|---|---|---|
+  | R1-1 ≈ F3 | MEDIUM | AC4 : `catch` `:103` (scan QR) et `:133` (chargement) hors sujet ; écran de complétion d'import sans chemin ; AC3 : le rapport TVA ne lit pas le compte de décompte | AC4 : trois `catch` nommés (`invoices/[id]/+page.svelte:402-415`, `supplier-invoices/+page.svelte:213`, `supplier-invoices/import/+page.svelte:267`, `default:` `:301`), `:103` et `:133` écartés ; AC3 : `vat_report.rs:173-174` lit TVA due et récupérable |
+  | R1-2 = F2 | MEDIUM | AC1 : « identifiants effectivement présents dans `entry_lines` » sans mécanisme — `total_vat` local au générateur, ambigu quand un compte joue deux rôles | AC1 : les générateurs (`invoices.rs:1784`/`:1851`, `supplier_invoices.rs:105`/`:129`) **rendent les rôles** effectivement écrits ; la garde ne contrôle que ces comptes ; appelants (25 occurrences) adaptés, l'avoir ignore les rôles (**C39**) |
+  | R1-3 ⊃ F4 | MEDIUM | AC7 : complétion d'import sans fichier ni montage ; cas e2e sans route ni montage ; AC4 sans test | AC7 : `inbox_import_e2e.rs` (montage `:716`, patron `:792`) ; `company_invoice_settings_postable_e2e.rs` (montage de la 15-5b, `POST /api/v1/invoices/{id}/validate`, Comptable) ; Vitest `invoice-validate-page.test.ts` neuf (**C41**) |
+  | F1 | MEDIUM | un même compte pour deux rôles → « Les comptes 2000, 2000 » ? | **C40** : dédoublonnage par `NonPostableAccounts::new` (15-5a, AC1 : « trie […] et **dédoublonne par identifiant** ») ; test « même compte pour deux rôles → nommé une fois, singulier » ; deux comptes **distincts** (`1100`, `2000`) pour le test « créance et TVA due » ; mutation |
+  | R1-4 | LOW | AC6 : retrait jugé sur deux specs isolées | AC6, T4 : jugé sur la suite E2E complète |
+  | R1-5 | LOW | mock `settings-invoicing-page.test.ts:67` sans `defaultPayableAccountId` | AC5, T3 |
+  | R1-6 | LOW | ordre de verrouillage entre comptes non fixé | AC1 : une requête, `ORDER BY id FOR UPDATE` ; Dev Notes |
+  | R1-7 | LOW | statut `ready-for-dev` contre « Validation : à lancer » ; lignes relevées avant la 15-5b | en-tête : convention du registre écrite ; AC5 : lignes relevées sur `67c31c95`, T0 les refait |
+  | R1-8 | LOW | l'item du manuel que l'AC8 réécrit n'existe pas encore | T0 : relevé du texte laissé par la 15-5b, grep de T6 complété au besoin |
+  | F5 | LOW | § *Importer des factures depuis un dossier* (`user-manual.tex:1374-1397`) non visé | AC8 : une phrase, renvoi à la saisie |
+  | F6 | LOW | décompte des modules imprécis | Dev Notes : décompte écrit, signal déclaré (ci-dessous) |
+
+  **Signal de la règle de découpage** : sévérité sans objet (première passe). **Décompte des modules** :
+  cinq selon la convention de la fiche, six ou sept en comptant à part `frontend/tests/e2e` et les
+  documents de `docs/` — le seuil est atteint ou franchi. **Constaté et déclaré** (amendement D5) ; pas
+  de découpage proposé : une seule règle métier, et l'écran qui la rend praticable (C34) ne s'en
+  sépare pas. Déclaré au Project Lead par l'orchestrateur, à qui revient l'arbitrage.
+  **Décisions de l'orchestrateur** : mécanisme des rôles (C39), dédoublonnage par la 15-5a (C40), test
+  d'écran de l'AC4 (C41).
+  **Propagation post-patch** : `:103`, `:133`, `effectivement présents`, `vat_report.rs:174`, `le
+  rapport TVA le lit`, `deux specs`, `sans le contournement`, `total_vat > 0` grepés sur les fiches
+  15-5a (lecture seule), 15-5b, 15-5c, 15-5d, le registre et `sprint-status.yaml` — les occurrences
+  restantes sont historiques (Change Logs de la 15-5b et de cette fiche) ou exactes (le prédicat
+  `total_vat > 0`, désormais porté par la branche du générateur).
+  Décompte inchangé : **9 AC, 8 tâches T0–T7** (recompté). **Une passe P2 suit** (des MEDIUM en P1),
+  complète (Opus) : la remédiation change le mécanisme de la garde.

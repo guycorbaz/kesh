@@ -616,3 +616,43 @@ l'import (#458–#461).
 - **Écartée** : écrire la limite au manuel (l'AC6 promet déjà les refus de *Rejeter* en clair : il
   faut qu'ils s'affichent).
 - **Réversible** : oui.
+
+## C39 — 15-5d : le prédicat de la garde à l'usage — les rôles rendus par le générateur
+
+- **Contexte** : findings R1-2 (MEDIUM) et F2 (LOW) de la validation P1 de la 15-5d. L'AC1 demandait de
+  contrôler les comptes de réglage « effectivement présents dans `entry_lines` », sans mécanisme : la
+  TVA totale est une variable locale du générateur (`invoices.rs:1851`, `supplier_invoices.rs:129`), et
+  lire les `account_id` des lignes est ambigu dès qu'un même compte joue deux rôles ou coïncide avec un
+  compte de produit ou de charge (les fixtures réutilisent `2000`).
+- **Retenu** : les générateurs (`generate_invoice_journal_lines`, transmis par `_rounded`, et
+  `generate_purchase_journal_lines`) rendent, avec les lignes, l'ensemble des **rôles** de réglage
+  qu'ils ont effectivement écrits (créance, TVA due, créanciers, TVA récupérable), le rôle TVA étant
+  posé dans la branche même `total_vat > 0` qui écrit sa ligne. La garde ne contrôle que les comptes de
+  ces rôles. L'avoir, autre appelant, ignore les rôles (C35).
+- **Écartées** : (a) inspecter les `account_id` de `entry_lines` — ambigu ; (b) recalculer la TVA
+  totale hors du générateur — duplication (règle DRY) et risque de divergence avec l'arrondi par ligne ;
+  (c) rendre seulement un booléen « TVA écrite » — même changement de signature, moins expressif.
+- **Réversible** : oui (code non écrit).
+
+## C40 — 15-5d : un même compte désigné pour deux rôles est nommé une fois
+
+- **Contexte** : finding F1 (MEDIUM) de la validation P1 de la 15-5d : sans dédoublonnage, un compte
+  qui porte à la fois la créance et la TVA due donnerait « Les comptes 2000, 2000 … ».
+- **Retenu** : le dédoublonnage est celui de `NonPostableAccounts::new`, que la 15-5a définit comme
+  trieur **et dédoublonneur par identifiant** (fiche 15-5a, AC1) ; l'accesseur construit la variante
+  par ce seul constructeur, sans dédoublonnage propre. Un test le fige (« même compte pour deux rôles →
+  nommé une fois, singulier »), et le test « créance et TVA due » utilise deux comptes distincts.
+- **Écartée** : dédoublonner aussi dans l'accesseur — doublon de la garantie de type de la 15-5a.
+- **Réversible** : oui.
+
+## C41 — 15-5d : l'AC4 prouvé par un test de l'écran de validation
+
+- **Contexte** : findings R1-3 (MEDIUM) et F4 (LOW) de la validation P1 de la 15-5d : l'AC4 (« les
+  écrans affichent le refus ») n'avait aucun test ; l'écran de validation d'une facture a une branche
+  propre à `CONFIGURATION_REQUIRED` qu'un futur ajout d'`ACCOUNT_NOT_POSTABLE` détournerait sans bruit.
+- **Retenu** : un test Vitest neuf de l'écran de validation (`invoice-validate-page.test.ts`) — le
+  message serveur affiché tel quel, pour un Comptable comme pour un Admin ; les deux `catch`
+  fournisseurs, sans branche par code sur ce chemin, sont vérifiés à la lecture et consignés.
+- **Écartée** : un test par écran (trois) — les deux `catch` fournisseurs affichent `err.message` sans
+  `switch` sur ce code, un test n'y attraperait rien de plus qu'une lecture.
+- **Réversible** : oui.

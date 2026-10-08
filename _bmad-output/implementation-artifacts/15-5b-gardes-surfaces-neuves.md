@@ -813,3 +813,30 @@ posé par la 15-5a.
   seule, aucune occurrence de ces motifs), 15-5b, 15-5c, 15-5d, le registre et `sprint-status.yaml`. Décompte :
   **19 AC (AC1–AC19), 10 tâches T0–T9** (recompté). **Une passe P5 suit** (un HIGH et des MEDIUM en P4)
   — sur le périmètre réduit, elle peut être ciblée sur ce commit de remédiation.
+- 2026-10-08 — **Passe de validation P5, ciblée** (prompt versionné `15-5b-validate-prompt-p5-ciblee.md` ;
+  une lentille **Haiku**, contexte frais : chasseur de régressions braqué sur le seul commit de la
+  remédiation P4, `67c31c95` ; passe ciblée de fin de boucle, décision D6). Rapport :
+  `target/gate-logs/15-5b-p5-ciblee.md`. **Rapporté : 0 CRITICAL, 0 HIGH, 1 MEDIUM, 0 LOW.**
+  - Le MEDIUM (« motif `20 AC` anachronique dans la propagation post-patch de la P4, à changer en
+    `19 AC` ») est **réfuté par l'orchestrateur** : la ligne visée énumère les motifs **grepés** par la
+    propagation post-patch ; `20 AC` y est la **valeur ancienne recherchée** — le décompte périmé que la
+    remédiation P4 devait faire disparaître —, pas un décompte de la fiche. Le remplacer par `19 AC`
+    rendrait la ligne fausse. Le décompte de la fiche, lui, est bien **19 AC, 10 tâches T0–T9**.
+  - **Retenu : 0 au-dessus de LOW.** La remédiation P4 ne touche aucune ligne de code de production
+    (fiche seule, aucun code écrit) : **boucle de validation close.**
+  - Axes déclarés par la lentille : contradictions AC / tâches / Dev Notes / registre, fiches sœurs,
+    numéros de ligne et chemins, décomptes, propagation post-patch, issues fermées et citées, découpage
+    reflété ; aucun axe déclaré non exercé (passe ciblée, une lentille).
+
+  **Trend complet de la fiche** (les deux premières lignes portent sur la 15-5 avant découpage) :
+
+  | passe | modèle(s) | périmètre | bilan retenu |
+  |---|---|---|---|
+  | P1 | Sonnet ×3 | 15-5 entière | 0 C / 0 H / 7 MEDIUM / 8 LOW |
+  | P2 | Opus ×2 | 15-5b | 0 C / 0 H / 6 MEDIUM / 8 LOW |
+  | P3 | Sonnet ×2 | 15-5b | 0 C / 0 H / 2 MEDIUM / 6 LOW |
+  | P4 | Opus ×2 | 15-5b | 0 C / 1 HIGH / 2 MEDIUM / 9 LOW → découpage 15-5d |
+  | P5 ciblée | Haiku ×1 | commit `67c31c95` | 0 C / 0 H / 0 MEDIUM (1 rapporté, réfuté) / 0 LOW |
+
+  Décompte inchangé : **19 AC (AC1–AC19), 10 tâches T0–T9** (recompté). Fiche prête pour le
+  développement, après le merge de la 15-5a.

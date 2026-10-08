@@ -521,3 +521,29 @@ splitting.
   15-5a (lecture seule), 15-5b, 15-5c, 15-5d et le registre — les occurrences restantes sont
   historiques (Change Log) ou nient la formule. Décompte inchangé : **9 AC, 7 tâches T0–T6**
   (recompté). **Une passe P3 suit** (des MEDIUM en P2) ; elle peut être ciblée sur ce commit.
+- 2026-10-08 — **Passe de validation P3, ciblée** (prompt versionné `15-5c-validate-prompt-p3-ciblee.md` ;
+  une lentille **Haiku**, contexte frais : chasseur de régressions braqué sur le seul commit de la
+  remédiation P2, `67c31c95` ; passe ciblée de fin de boucle, décision D6). Rapport :
+  `target/gate-logs/15-5c-p3-ciblee.md`. **0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW.**
+  - **« 0 » vérifié par l'orchestrateur** (règle « un 0 finding se vérifie comme un finding ») sur
+    l'affirmation centrale de la remédiation : l'écran lit bien `candidates[0]`
+    (`frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte:137`,
+    `const c = p.candidates[0];`, et `:265` pour l'affichage) — conforme au relevé de l'AC5 et de l'AC9.
+  - Axes déclarés exercés : affirmations sur le code (`candidates[0]`, fenêtre de 30 jours sur la date
+    de facture, classes 5/6/7, clé d'arrondi, formes non littérales), références d'issues et de choix,
+    cohérence interne, décomptes. Non exercés, déclarés : numéros de ligne du manuel au-delà d'un
+    sondage (refaits en T0), borne exacte des codes de l'AC1 (dépend du merge de la 15-5b), exécution
+    des tests.
+  - La remédiation P2 ne touche aucune ligne de code de production (fiche seule) : **boucle de
+    validation close.**
+
+  **Trend complet de la fiche** :
+
+  | passe | modèle(s) | périmètre | bilan |
+  |---|---|---|---|
+  | P1 | Sonnet ×2 | fiche entière | 0 C / 0 H / 3 MEDIUM / 7 LOW |
+  | P2 | Opus ×2 | fiche entière | 0 C / 0 H / 3 MEDIUM / 14 LOW |
+  | P3 ciblée | Haiku ×1 | commit `67c31c95` | 0 C / 0 H / 0 MEDIUM / 0 LOW |
+
+  Décompte inchangé : **9 AC, 7 tâches T0–T6** (recompté). Fiche prête pour le développement, après le
+  merge de la 15-5b.
