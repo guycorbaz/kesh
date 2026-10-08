@@ -53,8 +53,9 @@ donnée n'a à être déplacée.
 variables (`:619`, `:654`) que la 15-11b migre — hunks voisins, à relocaliser par le texte. La 15-11b
 touche aussi la ligne `admin-manual.tex:662` (`KESH_JWT_SECRET`, trim), que la 15-11a modifie (AC16 d)
 et dont elle refait la mise en page (AC12 j) : **zone partagée**, la 15-11b relocalise par le texte. **La 15-11b est attendue avant le tag v0.13.0** (non bloquant pour la
-sûreté ; sans elle, quelques avertissements « invalide » au démarrage et la sauvegarde pré-import dans
-`/app` — § *Le vide avant la 15-11b*).
+sûreté). *(Revue de code P1, C-15-11a-6 : les avertissements « invalide » et la sauvegarde pré-import dans
+`/app` que la 15-11a seule produisait sont corrigés **dans la 15-11a** pour les sept variables concernées
+— § *Le vide avant la 15-11b*, « Mise à jour ».)*
 
 **C'est d'elle que dépend la 15-7b2** (worktree `/home/gcorbaz/devel/kesh-15-7`, choix C-15-7-48,
 C-15-7-51) : sa recette — « poser `KESH_PRODUCTION_RESET`, `docker compose up -d`, réinitialiser,
@@ -139,7 +140,24 @@ Relevé au code le 2026-10-08 (à refaire au T0) — c'est ce qui rend la 15-11a
 | `KESH_LANG` (Y) | `Locale::from("")` → avertissement « Locale '' non reconnue », puis fr-CH (= défaut `fr`) | non |
 | `KESH_ADMIN_BACKUP_DIR` | chaîne vide → la sauvegarde pré-import s'écrit dans le **répertoire courant** du conteneur (`/app`, `WORKDIR` du `Dockerfile`) au lieu de `/tmp` (`routes/admin.rs:471-490` ; `create_dir_all("")` rend `Ok` — **à mesurer au T0**). Les deux sont éphémères ; #552 (15-12) traite la persistance | non |
 
-**Conséquence, écrite** : la 15-11a seule produit jusqu'à six avertissements au démarrage et déplace la
+**Mise à jour — revue de code P1 (C-15-11a-6)** : le tableau ci-dessus décrit le code **avant** la revue.
+Les trois dernières lignes ne valent plus : `KESH_ADMIN_BACKUP_DIR` et `KESH_LANG` sont lues par
+`opt_trimmed_env` (vide ou blanc = absente → `/tmp`, `fr`, valeur non blanche trimée) ; les cinq
+numériques `KESH_PASSWORD_MIN_LENGTH`, `KESH_BANK_IMPORT_MAX_MB`, `KESH_ADMIN_EXPORT_INMEM_MB`,
+`KESH_ADMIN_IMPORT_MAX_MB`, `KESH_SMTP_PORT` traitent une valeur vide ou blanche comme absente (défaut,
+**sans** avertissement) ; une valeur **non vide** invalide garde son comportement (avertissement
+« invalide », puis défaut). Tests : `from_env_empty_or_blank_vars_take_code_default_silently` et son
+témoin `from_env_non_empty_invalid_values_still_warn` (`config.rs`) ; sept mutations, toutes rouges.
+
+**Frontière avec la 15-11b.** La 15-11a règle le vide **des seules variables que ses compose
+transmettent en `${NOM:-}`** (dix-sept noms ; les dix autres l'acceptaient déjà) — c'est-à-dire ce
+qu'elle rend observable. La 15-11b règle le vide (et le trim) **de toutes** les variables lues, par une
+fonction unique : `DATABASE_URL`, `KESH_PORT`, `KESH_DOCUMENTS_DIR`, `KESH_INBOX_DIR`, les variables JWT,
+de session, de limitation et de journal, et un `cargo run` hors Docker ; elle trime aussi les valeurs non
+blanches des cinq numériques (`" 12 "` → 12), ce que la 15-11a ne fait pas. Ce qu'il faut reporter dans
+la fiche 15-11b est listé au Change Log (revue P1).
+
+**Conséquence, écrite (avant la revue P1)** : la 15-11a seule produit jusqu'à six avertissements au démarrage et déplace la
 sauvegarde pré-import de `/tmp` à `/app` ; aucune des variables **ajoutées** ne fait refuser le démarrage
 d'une installation (les seuls refus nouveaux, voulus, sont ceux des placeholders — `GENERATE_ME` ou
 forme `<…>` —, comme secret JWT ou comme mot de passe admin — AC16).
@@ -1284,8 +1302,19 @@ Zones partagées, écrites :
   (`admin-manual.tex:980`) ; non traité.
 - **`TMPDIR`** : `std::env::temp_dir()` (`routes/admin.rs:80`) ; sous Docker, `/tmp` du conteneur.
 - **`KESH_PASSWORD_MIN_LENGTH`** : trois écrans à 12 en dur (AC12 f, F-6) ; frontend non touché.
-- **Fenêtre compose neuf / image ancienne** (F-5) : avertissements « invalide » et sauvegarde pré-import
-  dans `/app` (§ *Le vide avant la 15-11b*) ; dit au CHANGELOG et au manuel (`docker compose pull`).
+- **Fenêtre compose neuf / image ancienne** (F-5) : avec l'image 0.12.1, avertissements « invalide » et
+  sauvegarde pré-import dans `/app` (§ *Le vide avant la 15-11b* ; l'image 0.13.0 ne les a plus, revue
+  P1) ; dit au CHANGELOG et au manuel (`docker compose pull`).
+- **Gabarits non refusés hors des deux secrets de l'AC16** (E-4 = A-L4 de la revue de code P1) : les
+  gabarits `<EDIT: …>` de `.env.example` — `KESH_SMTP_USER`, `KESH_SMTP_PASSWORD`, et les autres
+  `KESH_SMTP_*`, `KESH_PUBLIC_BASE_URL`, `DATABASE_URL` — décommentés tels quels sont **acceptés** par
+  Kesh (`DATABASE_URL` échoue ensuite à la connexion, les `KESH_SMTP_*` à l'envoi). Et pour
+  `KESH_ADMIN_PASSWORD`, parmi les variantes « change-me », seul `changeme` **exact** (sans égard à la
+  casse) est refusé comme placeholder : la garde de l'AC16 ne couvre **pas** `change-me-…` — vérifié au
+  code (`config.rs`, `p.eq_ignore_ascii_case("changeme") || is_template_placeholder(p)` ; la sous-chaîne
+  `change-me` n'est cherchée que dans `KESH_JWT_SECRET`) : `change-me` seul (9 caractères) tombe sur la
+  longueur (`WeakAdminPassword`), `change-me-please` (16) est accepté ; entre chevrons, `<change-me…>`
+  est refusé par la forme `<…>`. Asymétrie antérieure à la story, non traitée.
 - **`docker-compose.yml` porte `image:` et `build:`** : effet développeur écrit (AC5), non empêché.
 - *(Retiré en P2 : `KESH_ADMIN_PASSWORD=<GENERATE_ME: …>` décommenté — traité par l'AC16, C81.)*
 - *(Retirés en P3, C83 : le message `error-invoice-pdf-gone` face à un montage déplacé, et la recette de
@@ -1547,8 +1576,10 @@ ls`, `docker volume ls` identiques avant/après : aucun conteneur, réseau ni vo
 
 
 **T9 — gates réellement exécutés**, cible cargo `/home/gcorbaz/devel/kesh-15-11a/target` :
-- **Gate backend complet** au commit `edd45a6c` (dernier commit de code : `80231b62` ; `edd45a6c` n'ajoute que
-  de la documentation), base `kesh_1511a` remise à zéro juste avant (`DROP`/`CREATE`, migrations, seed ; aucun
+- **Gate backend complet** au commit `edd45a6c` (dernier commit de code Rust : `80231b62` ; `edd45a6c`
+  porte le manuel, le CHANGELOG, `DOCKER_START.md`, les READMEs, la brochure **et l'étape `Validate compose
+  files` de `.github/workflows/ci.yml`** — comportement de CI, **non exécuté localement** : seules ses deux
+  commandes `docker compose config -q` ont été rejouées à la main en T6 ; correction A-L2 de la revue P1), base `kesh_1511a` remise à zéro juste avant (`DROP`/`CREATE`, migrations, seed ; aucun
   redémarrage du conteneur), après `wait-kesh.sh` : `scripts/test-fast.sh` (`fmt --check`, `clippy --workspace
   --all-targets -D warnings`, nextest) — **2827 passés, 4 ignorés, 0 échec**.
 - **Frontend** (non touché par la story, exécuté quand même) : `npm run check` 0 erreur (27 avertissements

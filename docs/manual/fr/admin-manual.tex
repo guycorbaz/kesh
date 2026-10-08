@@ -661,7 +661,7 @@ Ouvrir un navigateur sur \keshcommand{https://kesh.local} : sur une base vide sa
 Toute la configuration Kesh passe par des variables d'environnement, conformément à la philosophie \href{https://12factor.net/config}{Twelve-Factor App}.
 
 \begin{sloppypar}
-\textbf{Comment \keshpath{.env} atteint Kesh.} Docker Compose lit \keshpath{.env} pour remplir les \texttt{\$\{…\}} du fichier compose ; il ne le transmet pas au conteneur. \textbf{Seules les variables listées sous \texttt{environment:} du service \texttt{kesh-api} atteignent Kesh.} Les compose fournis les listent toutes, sauf \texttt{KESH\_STATIC\_DIR} et \texttt{KESH\_LOCALES\_DIR} (fixées par l'image Docker) et \texttt{KESH\_TEST\_MODE} (jamais en production). Une modification de \keshpath{.env} s'applique par \keshcommand{docker compose up -d}, \textbf{pas} par \keshcommand{docker compose restart}, qui redémarre le conteneur avec son environnement d'origine. Une ligne \texttt{KESH\_LOG\_FILE\_PATH=} laissée vide désactive le journal fichier.
+\textbf{Comment \keshpath{.env} atteint Kesh.} Docker Compose lit \keshpath{.env} pour remplir les \texttt{\$\{…\}} du fichier compose ; il ne le transmet pas au conteneur. \textbf{Seules les variables listées sous \texttt{environment:} du service \texttt{kesh-api} atteignent Kesh.} Les compose fournis les listent toutes, sauf \texttt{KESH\_STATIC\_DIR} et \texttt{KESH\_LOCALES\_DIR} (fixées par l'image Docker) et \texttt{KESH\_TEST\_MODE} (jamais en production). Une modification de \keshpath{.env} s'applique par \keshcommand{docker compose up -d}, \textbf{pas} par \keshcommand{docker compose restart}, qui redémarre le conteneur avec son environnement d'origine. Avec les compose fournis, une variable facultative que \keshpath{.env} ne pose pas, ou laisse vide, prend son défaut, sans avertissement ; seule exception, une ligne \texttt{KESH\_LOG\_FILE\_PATH=} laissée vide désactive le journal fichier.
 \end{sloppypar}
 
 \begin{sloppypar}
@@ -754,7 +754,7 @@ font échouer le démarrage si absentes.
     KESH\_BANK\_IMPORT\_MAX\_MB & Taille max fichier bank-import (CAMT.053/CSV), MiB. Borne [1, 100]. & \texttt{10} \\
     KESH\_ADMIN\_EXPORT\_INMEM\_MB & Plafond in-memory de l'export \texttt{.keshbackup} (au-delà : streaming). Borne [1, 2048]. & \texttt{50} \\
     KESH\_ADMIN\_IMPORT\_MAX\_MB & Taille max upload \texttt{.keshbackup} à l'import. Borne [1, 10240]. & \texttt{512} \\
-    KESH\_ADMIN\_BACKUP\_DIR & Répertoire du backup automatique pré-import. & \texttt{/tmp} \\
+    KESH\_ADMIN\_BACKUP\_DIR & Répertoire du backup automatique pré-import. Vide = défaut. & \texttt{/tmp} \\
     \bottomrule
 \end{tabularx}
 
@@ -1696,7 +1696,7 @@ Il n'existe pas de commande qui rejouerait les reprises \textbf{sans} restaurer 
 \begin{itemize}
     \item \keshcommand{KESH\_ADMIN\_IMPORT\_MAX\_MB} — taille maximale d'un fichier \keshcommand{.keshbackup} importé, en Mio (défaut \textbf{512}, bornes [1, 10240]).
     \item \keshcommand{KESH\_ADMIN\_EXPORT\_INMEM\_MB} — plafond d'assemblage en mémoire de l'export ; au-delà, l'export est streamé via un fichier temporaire (défaut \textbf{50}, bornes [1, 2048]).
-    \item \keshcommand{KESH\_ADMIN\_BACKUP\_DIR} — répertoire de la sauvegarde automatique pré-import (défaut \keshpath{/tmp}, créé s'il n'existe pas).
+    \item \keshcommand{KESH\_ADMIN\_BACKUP\_DIR} — répertoire de la sauvegarde automatique pré-import (défaut \keshpath{/tmp}, y compris quand la variable est vide ; créé s'il n'existe pas).
 \end{itemize}
 
 \subsubsection{Quelle méthode de sauvegarde choisir ?}

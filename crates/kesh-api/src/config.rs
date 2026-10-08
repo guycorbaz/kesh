@@ -822,6 +822,9 @@ impl Config {
 
         // --- Story 1.7 : politique de mot de passe ---
         let password_min_length = match env::var("KESH_PASSWORD_MIN_LENGTH") {
+            // Story 15-11a (revue P1, B1) — vide ou blanc = absente : les
+            // compose transmettent `${KESH_PASSWORD_MIN_LENGTH:-}` ; défaut sans avertissement.
+            Ok(val) if val.trim().is_empty() => 12,
             Ok(val) => match val.parse::<u32>() {
                 Ok(n) if (8..=128).contains(&n) => n,
                 Ok(n) => {
@@ -843,7 +846,10 @@ impl Config {
         };
 
         // --- Story 2.1 : internationalisation ---
-        let locale_str = env::var("KESH_LANG").unwrap_or_else(|_| "fr".into());
+        // Story 15-11a (revue P1, B1) — vide ou blanc = absente : les compose
+        // transmettent `${KESH_LANG:-}`, la chaîne vide doit donner le défaut
+        // `fr` sans l'avertissement « Locale '' non reconnue ».
+        let locale_str = opt_trimmed_env("KESH_LANG").unwrap_or_else(|| "fr".into());
         let locale = kesh_i18n::Locale::from(locale_str.as_str());
         tracing::info!("Locale instance : {}", locale);
 
@@ -876,6 +882,9 @@ impl Config {
         // (Story 8-1b T6.10 + O4 validate Pass 3). Interprétation MiB
         // binaire (1 MiB = 1024² bytes), voir M3 validate Pass 2.
         let bank_import_max_mib = match env::var("KESH_BANK_IMPORT_MAX_MB") {
+            // Story 15-11a (revue P1, B1) — vide ou blanc = absente : les
+            // compose transmettent `${KESH_BANK_IMPORT_MAX_MB:-}` ; défaut sans avertissement.
+            Ok(val) if val.trim().is_empty() => 10,
             Ok(val) => match val.parse::<u32>() {
                 Ok(m) if (1..=100).contains(&m) => m,
                 Ok(m) => {
@@ -900,6 +909,9 @@ impl Config {
         // borne [1, 2048]. Au-delà du plafond, l'export `.keshbackup` spille sur
         // fichier temporaire + streaming. Log WARN si > 500 (RAM à surveiller).
         let admin_export_inmem_mib = match env::var("KESH_ADMIN_EXPORT_INMEM_MB") {
+            // Story 15-11a (revue P1, B1) — vide ou blanc = absente : les
+            // compose transmettent `${KESH_ADMIN_EXPORT_INMEM_MB:-}` ; défaut sans avertissement.
+            Ok(val) if val.trim().is_empty() => 50,
             Ok(val) => match val.parse::<u32>() {
                 Ok(m) if (1..=2048).contains(&m) => {
                     if m > 500 {
@@ -932,6 +944,9 @@ impl Config {
         // borne [1, 10240]. Plafond de l'upload `.keshbackup` à l'import
         // (DefaultBodyLimit). Pattern parse+borne+warn identique à bank-import.
         let admin_import_max_mib = match env::var("KESH_ADMIN_IMPORT_MAX_MB") {
+            // Story 15-11a (revue P1, B1) — vide ou blanc = absente : les
+            // compose transmettent `${KESH_ADMIN_IMPORT_MAX_MB:-}` ; défaut sans avertissement.
+            Ok(val) if val.trim().is_empty() => 512,
             Ok(val) => match val.parse::<u32>() {
                 Ok(m) if (1..=10240).contains(&m) => m,
                 Ok(m) => {
@@ -955,8 +970,12 @@ impl Config {
         // Story 17-3c (DC5) — KESH_ADMIN_BACKUP_DIR : répertoire du backup
         // automatique pré-import. Défaut `/tmp`. Créé si absent (au moment de
         // l'import, pas au boot). Pas de borne (chemin arbitraire opérateur).
+        // Story 15-11a (revue P1, B1/E-1) — vide ou blanc = absente : les
+        // compose transmettent `${KESH_ADMIN_BACKUP_DIR:-}`, et un chemin vide
+        // ferait écrire le backup pré-import dans le répertoire courant
+        // (`/app` dans l'image) au lieu de `/tmp`.
         let admin_backup_dir =
-            env::var("KESH_ADMIN_BACKUP_DIR").unwrap_or_else(|_| "/tmp".to_string());
+            opt_trimmed_env("KESH_ADMIN_BACKUP_DIR").unwrap_or_else(|| "/tmp".to_string());
 
         // Story 12-5b (#194) — KESH_DOCUMENTS_DIR : stockage des justificatifs
         // importés. Défaut `/data/documents` (volume persistant Docker, PAS /tmp).
@@ -1083,6 +1102,9 @@ impl Config {
         // opt_trimmed_env) : un espace dans `.env` ne doit pas silencieusement
         // retomber sur le défaut 587.
         let smtp_port: u16 = match env::var("KESH_SMTP_PORT") {
+            // Story 15-11a (revue P1, B1) — vide ou blanc = absente : les
+            // compose transmettent `${KESH_SMTP_PORT:-}` ; défaut sans avertissement.
+            Ok(val) if val.trim().is_empty() => 587,
             Ok(val) => match val.trim().parse::<u16>() {
                 Ok(p) if p >= 1 => p,
                 Ok(_) => {
@@ -1360,22 +1382,6 @@ impl LogConfig {
     }
 }
 
-/// Teste si le host est une adresse loopback stricte.
-///
-/// Accepte :
-///
-/// - `localhost` / `Localhost` / `LOCALHOST` / `localhost.` (case-insensitive + trailing dot FQDN, RFC 1035 hostname matching — code review pass 2 E5 pour compat Windows où `.env` et shell traitent les hostnames case-insensitive).
-/// - Toute adresse qui parse via `IpAddr` et dont `is_loopback()` est vrai (127.0.0.0/8, ::1). Supporte les IPv6 bracketés (`[::1]`) et les zone IDs (`::1%eth0`).
-///
-/// **`0.0.0.0` est explicitement rejeté** car en Docker `-p 80:80`
-/// avec bind interne `0.0.0.0` expose la route au réseau hôte.
-/// `0.0.0.0` ne passe pas `is_loopback()` (c'est `is_unspecified()`).
-///
-/// **Note sur `localhost`** (code review P4) : accepter la chaîne littérale
-/// `localhost` reste pragmatique pour les devs, mais une configuration
-/// DNS / `/etc/hosts` compromise pourrait résoudre `localhost` vers une
-/// IP non-loopback. Le risque est atténué par le fait que `KESH_TEST_MODE`
-/// est gated par env-var (opt-in explicite).
 /// Story 17-4b — lit une var d'env optionnelle, trim, et filtre la chaîne vide
 /// → `None`. Pattern partagé des vars optionnelles (cf. `KESH_ADMIN_USERNAME`).
 /// **Invariant garanti** : `Some(s) ⟹ !s.is_empty()`.
@@ -1403,10 +1409,6 @@ fn opt_trimmed_env(var: &str) -> Option<String> {
     }
 }
 
-/// Story 17-4b — parse une var booléenne **stricte** (pattern `KESH_COOKIE_SECURE`).
-/// `"true"`/`"1"` → `true` ; `"false"`/`"0"` → `false` ; vide/absente → `default` ;
-/// toute autre valeur → `ConfigError::InvalidBoolValue` (refus fail-fast, évite
-/// qu'un `"True"`/`"yes"` soit silencieusement interprété comme `false`).
 /// Sous-chaînes (en minuscules) qui signalent un placeholder du gabarit
 /// `.env.example` resté tel quel — comparées au texte passé par
 /// `to_ascii_lowercase`. Story 15-11a (#557).
@@ -1432,6 +1434,10 @@ fn is_template_placeholder(value: &str) -> bool {
     trimmed.len() >= 2 && trimmed.starts_with('<') && trimmed.ends_with('>')
 }
 
+/// Story 17-4b — parse une var booléenne **stricte** (pattern `KESH_COOKIE_SECURE`).
+/// `"true"`/`"1"` → `true` ; `"false"`/`"0"` → `false` ; vide/absente → `default` ;
+/// toute autre valeur → `ConfigError::InvalidBoolValue` (refus fail-fast, évite
+/// qu'un `"True"`/`"yes"` soit silencieusement interprété comme `false`).
 fn parse_strict_bool(var: &str, default: bool) -> Result<bool, ConfigError> {
     match env::var(var) {
         // Review 17-4b Pass 1 — trim avant comparaison, cohérent avec
@@ -1450,6 +1456,22 @@ fn parse_strict_bool(var: &str, default: bool) -> Result<bool, ConfigError> {
     }
 }
 
+/// Teste si le host est une adresse loopback stricte.
+///
+/// Accepte :
+///
+/// - `localhost` / `Localhost` / `LOCALHOST` / `localhost.` (case-insensitive + trailing dot FQDN, RFC 1035 hostname matching — code review pass 2 E5 pour compat Windows où `.env` et shell traitent les hostnames case-insensitive).
+/// - Toute adresse qui parse via `IpAddr` et dont `is_loopback()` est vrai (127.0.0.0/8, ::1). Supporte les IPv6 bracketés (`[::1]`) et les zone IDs (`::1%eth0`).
+///
+/// **`0.0.0.0` est explicitement rejeté** car en Docker `-p 80:80`
+/// avec bind interne `0.0.0.0` expose la route au réseau hôte.
+/// `0.0.0.0` ne passe pas `is_loopback()` (c'est `is_unspecified()`).
+///
+/// **Note sur `localhost`** (code review P4) : accepter la chaîne littérale
+/// `localhost` reste pragmatique pour les devs, mais une configuration
+/// DNS / `/etc/hosts` compromise pourrait résoudre `localhost` vers une
+/// IP non-loopback. Le risque est atténué par le fait que `KESH_TEST_MODE`
+/// est gated par env-var (opt-in explicite).
 fn is_loopback_host(host: &str) -> bool {
     // RFC 1035 : hostname matching case-insensitive. Trailing dot FQDN accepté.
     let normalized = host.strip_suffix('.').unwrap_or(host);
@@ -1583,7 +1605,139 @@ mod tests {
             env::remove_var("KESH_SMTP_TLS");
             env::remove_var("KESH_PUBLIC_BASE_URL");
             env::remove_var("KESH_FEATURE_FORGOT_PASSWORD");
+            // Story 15-11a (revue P1) — variables du test « vide = défaut ».
+            env::remove_var("KESH_ADMIN_EXPORT_INMEM_MB");
+            env::remove_var("KESH_ADMIN_IMPORT_MAX_MB");
+            env::remove_var("KESH_ADMIN_BACKUP_DIR");
         }
+    }
+
+    /// Story 15-11a (revue P1, B1/E-1) — les sept variables que les compose
+    /// transmettent en `${NOM:-}` et dont la lecture ne traitait pas le vide
+    /// comme une absence (chemin vide, ou avertissement « invalide »).
+    const VIDE_EGALE_DEFAUT: [&str; 7] = [
+        "KESH_ADMIN_BACKUP_DIR",
+        "KESH_LANG",
+        "KESH_PASSWORD_MIN_LENGTH",
+        "KESH_BANK_IMPORT_MAX_MB",
+        "KESH_ADMIN_EXPORT_INMEM_MB",
+        "KESH_ADMIN_IMPORT_MAX_MB",
+        "KESH_SMTP_PORT",
+    ];
+
+    /// Tampon partagé où un subscriber `tracing` local écrit ses lignes.
+    #[derive(Clone, Default)]
+    struct LogCapture(std::sync::Arc<Mutex<Vec<u8>>>);
+
+    impl std::io::Write for LogCapture {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.0
+                .lock()
+                .unwrap_or_else(|p| p.into_inner())
+                .extend_from_slice(buf);
+            Ok(buf.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    /// Appelle `Config::from_env()` sous un subscriber local (jamais le global)
+    /// et rend la config avec le texte de tous les événements émis, du niveau
+    /// TRACE au niveau ERROR. Le caller tient `env_lock()`.
+    fn from_env_with_logs() -> (Result<Config, ConfigError>, String) {
+        let capture = LogCapture::default();
+        let writer = capture.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_writer(move || writer.clone())
+            .with_ansi(false)
+            .with_max_level(tracing::Level::TRACE)
+            .finish();
+        let result = tracing::subscriber::with_default(subscriber, Config::from_env);
+        let logs = String::from_utf8_lossy(&capture.0.lock().unwrap()).into_owned();
+        (result, logs)
+    }
+
+    /// Story 15-11a (revue P1, B1/E-1) — une variable transmise VIDE ou BLANCHE
+    /// par les compose (`${NOM:-}`) prend le défaut du code, **sans**
+    /// avertissement : `/tmp` (et non un chemin vide, qui ferait écrire le
+    /// backup pré-import dans le répertoire courant), `fr`, 12, 10, 50, 512, 587.
+    #[test]
+    fn from_env_empty_or_blank_vars_take_code_default_silently() {
+        for raw in ["", "   "] {
+            let _guard = env_lock();
+            reset_env();
+            set_minimum_required();
+            unsafe {
+                env::set_var("KESH_HOST", "127.0.0.1");
+                for var in VIDE_EGALE_DEFAUT {
+                    env::set_var(var, raw);
+                }
+            }
+            let (result, logs) = from_env_with_logs();
+            let config = result.expect("Config should load");
+            assert_eq!(config.admin_backup_dir, "/tmp", "raw={raw:?}");
+            assert_eq!(config.locale, kesh_i18n::Locale::FrCh, "raw={raw:?}");
+            assert_eq!(config.password_min_length, 12, "raw={raw:?}");
+            assert_eq!(config.bank_import_max_mib, 10, "raw={raw:?}");
+            assert_eq!(config.admin_export_inmem_mib, 50, "raw={raw:?}");
+            assert_eq!(config.admin_import_max_mib, 512, "raw={raw:?}");
+            assert_eq!(config.smtp_port, 587, "raw={raw:?}");
+            // Assertion de montage : la capture n'est pas muette (la ligne
+            // « Locale instance » est toujours émise par `from_env`).
+            assert!(
+                logs.contains("Locale instance"),
+                "capture des logs inopérante, got: {logs:?}"
+            );
+            for var in VIDE_EGALE_DEFAUT {
+                assert!(
+                    !logs.contains(var),
+                    "{var} vide ({raw:?}) ne doit produire aucun message, got: {logs:?}"
+                );
+            }
+            assert!(
+                !logs.contains("non reconnue"),
+                "KESH_LANG vide ne doit pas avertir, got: {logs:?}"
+            );
+            reset_env();
+        }
+    }
+
+    /// Témoin de la précédente : une valeur NON vide invalide garde son
+    /// comportement — défaut ET avertissement « invalide » / « non reconnue ».
+    #[test]
+    fn from_env_non_empty_invalid_values_still_warn() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum_required();
+        unsafe {
+            env::set_var("KESH_HOST", "127.0.0.1");
+            env::set_var("KESH_LANG", "xx");
+            env::set_var("KESH_PASSWORD_MIN_LENGTH", "abc");
+            env::set_var("KESH_BANK_IMPORT_MAX_MB", "abc");
+            env::set_var("KESH_ADMIN_EXPORT_INMEM_MB", "abc");
+            env::set_var("KESH_ADMIN_IMPORT_MAX_MB", "abc");
+            env::set_var("KESH_SMTP_PORT", "abc");
+        }
+        let (result, logs) = from_env_with_logs();
+        let config = result.expect("Config should load");
+        assert_eq!(config.locale, kesh_i18n::Locale::FrCh);
+        assert_eq!(config.password_min_length, 12);
+        assert_eq!(config.smtp_port, 587);
+        for var in [
+            "KESH_PASSWORD_MIN_LENGTH",
+            "KESH_BANK_IMPORT_MAX_MB",
+            "KESH_ADMIN_EXPORT_INMEM_MB",
+            "KESH_ADMIN_IMPORT_MAX_MB",
+            "KESH_SMTP_PORT",
+        ] {
+            assert!(
+                logs.contains(&format!("{var}='abc' invalide")),
+                "{var} invalide doit avertir, got: {logs:?}"
+            );
+        }
+        assert!(logs.contains("Locale 'xx' non reconnue"), "got: {logs:?}");
+        reset_env();
     }
 
     fn set_minimum_required() {

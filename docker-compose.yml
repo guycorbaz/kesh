@@ -95,8 +95,9 @@ services:
       KESH_INBOX_MAX_FILES_PER_RUN: ${KESH_INBOX_MAX_FILES_PER_RUN:-200}
       KESH_INBOX_MAX_PDF_PAGES: ${KESH_INBOX_MAX_PDF_PAGES:-20}
 
-      # Les variables ci-dessous, en `${NOM:-}`, gardent le défaut du code quand
-      # `.env` ne les pose pas (manuel d'administration, § Variables d'environnement).
+      # Les variables ci-dessous, en `${NOM:-}`, arrivent vides quand `.env` ne les
+      # pose pas ou les laisse vides : vide (ou blanc) = défaut du code, sans
+      # avertissement (manuel d'administration, § Variables d'environnement).
 
       # Localisation, politique de mot de passe, import bancaire
       KESH_LANG: ${KESH_LANG:-}
