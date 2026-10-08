@@ -2,8 +2,9 @@
 //!
 //! ⛔ **Pourquoi ce geste existe.** Un rapprochement accepté ne se défaisait
 //! pas : la contre-passation directe refuse une écriture rapprochée
-//! (`ReversalBlocker::MatchedBankTransaction`), le gel de la 24-4b en interdit
-//! la modification, et le règlement client né d'un rapprochement est refusé
+//! (`ReversalBlocker::MatchedBankTransaction`), la même garde en interdit la
+//! modification (Story 15-8a — une écriture rapprochée reste non modifiable,
+//! `MATCHED_BANK_TRANSACTION`), et le règlement client né d'un rapprochement est refusé
 //! par son propre geste d'annulation au rang 3. L'écriture était donc
 //! **définitivement incorrigible**.
 //!

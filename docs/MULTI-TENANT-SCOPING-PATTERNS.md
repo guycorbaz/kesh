@@ -321,19 +321,19 @@ Rationale: this matches the natural dependency direction (state machine → tena
 
 **Issue:** `seed_demo` and `reset` use a **lock-and-release** pattern: they acquire `FOR UPDATE` only for count-validation (seed_demo) or gate-check (reset), then **commit before** the destructive sub-operation runs (`bulk_create_from_chart`, `companies::update`, `reset_demo`). The lock therefore serializes only the precondition check, NOT the side-effect. A concurrent endpoint running between commit and side-effect can leave inconsistent state visible (handled via `DbError::NotFound`/`OptimisticLockConflict` retries today). Additionally, if a future endpoint takes locks in `accounts → company → onboarding_state` order (reverse), it can deadlock against `finalize`.
 
-**Mitigation (v0.1):** all current write endpoints follow the documented order. New endpoints **MUST** follow it or be added to the deny list (see below).
+**Mitigation (v0.1):** write endpoints follow the documented order, **except those listed in the deny list below** (one since Story 15-8a). New endpoints **MUST** follow it or be added to the deny list.
 
 **Resolution status:**
 
 - ✅ **Deadlock-retry helper** (`crates/kesh-db/src/retry.rs`) — catches `ER_LOCK_DEADLOCK` (1213, **not** 1205 `lock_wait_timeout`) and retries with exponential backoff (50 → 100 ms between attempts 1↔2 and 2↔3; max 3 attempts → ≈ 150 ms added latency worst case). Used on `finalize` via `retry_with(...)` wrapper. Closure must be idempotent (re-runs full BEGIN → COMMIT). [Fix issue #43]
 - ⏳ **CI lint** (grep-detect `FOR UPDATE` + verify global order) — deferred to a future sprint (effort vs. value tradeoff: review discipline + Pattern 5 doc covers it for now).
-- ✅ **Deny list of divergent endpoints** — none currently. Any new endpoint that intentionally diverges MUST add a row in the table below with rationale.
+- ✅ **Deny list of divergent endpoints** — one entry (Story 15-8a, `PUT /journal-entries/{id}`). Any new endpoint that intentionally diverges MUST add a row in the table below with rationale.
 
 **Deny list (endpoints with intentionally divergent lock ordering):**
 
 | Endpoint | Reason | Mitigation |
 |---|---|---|
-| *(none)* | — | — |
+| `PUT /api/v1/journal-entries/{id}` (Story 15-8a, #532) — order **journal_entries → [companies → projects] → fiscal_years (the entry's year, then later years by `start_date`) → (accounts, shared, via the FKs of the line `INSERT`)** | The entry's `FOR UPDATE` must be the **first act** of the transaction: under `REPEATABLE READ`, any plain read before it would freeze a read view older than the wait, and the guard would miss a reversal committed meanwhile (`journal_entries::update`, doc-comment « Sérialisation »). Locking the entry before `companies → projects` diverges from creation. Three **inherited** cycles remain, each also valid for every later fiscal year the PUT locks: **fiscal year ↔ account** (customer settlement, opening complement), **fiscal year ↔ companies** (creation / reversal / settlement inserting a header), **project ↔ fiscal year** (reversal of an entry of the same year carrying the project). | Handler wrapped in `retry_with(DEFAULT_MAX_DEADLOCK_ATTEMPTS, is_deadlock_error, …)` — the repository opens and closes its own transaction, the deadlock rolled it back, and the `version` check refuses a second pass. ⚠️ A cycle InnoDB does not detect ends in `innodb_lock_wait_timeout` (1205, **not** retried) → 500. Tested: `update_and_a_reversal_of_the_same_year_can_deadlock` (`kesh-db/tests/journal_entries_modification.rs`). |
 
 **How to use the retry helper for new endpoints:**
 

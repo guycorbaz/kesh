@@ -9,10 +9,21 @@
 	import { notifyMissingFiscalYearOrFallback } from '$lib/shared/utils/notify';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
-	import { createJournalEntry } from './journal-entries.api';
-	import type { CreateJournalEntryRequest, Journal } from './journal-entries.types';
+	import { createJournalEntry, updateJournalEntry } from './journal-entries.api';
+	import type {
+		CreateJournalEntryRequest,
+		Journal,
+		JournalEntryResponse,
+		UpdateJournalEntryRequest
+	} from './journal-entries.types';
 	import { computeBalance, classifyLine, formatSwissAmount, isValidAmount } from './balance';
-	import type { LineDraft } from './form-helpers';
+	import {
+		editRefusalOutcome,
+		entryDateBounds,
+		fromJournalEntryResponse,
+		type LineDraft
+	} from './form-helpers';
+	import { isAccountUnusable } from '$lib/features/accounts/account-validity';
 	import { isDraftLineNonEmpty } from './vat-purchase';
 	import AccountAutocomplete from './AccountAutocomplete.svelte';
 	import VatPurchaseAssistant from './VatPurchaseAssistant.svelte';
@@ -30,10 +41,27 @@
 		 * et il est testé sans passer par l'écran.
 		 */
 		booksLockedThrough?: string | null;
+		/**
+		 * Si fourni → mode **édition** (Story 15-8a, #532), ouvert depuis la fiche
+		 * de l'écriture. Sinon mode création.
+		 */
+		initialEntry?: JournalEntryResponse | null;
+		/**
+		 * Exercice **de l'écriture** en édition — bornes `min`/`max` du champ date
+		 * (confort de saisie ; le serveur tranche). `null` en création.
+		 */
+		entryFiscalYear?: { startDate: string; endDate: string } | null;
 		/** Compte d'impôt préalable pour l'assistant TVA achat (Story 18-1c). Null si non configuré. */
 		recoverableAccountId?: number | null;
 		onSuccess: () => void;
 		onCancel: () => void;
+		/**
+		 * Édition (Story 15-8a) : appelé, **après** le toast, quand le refus du
+		 * serveur dit que l'écriture a changé sous l'utilisateur — exercice clos,
+		 * pièce ou contre-passation apparue, version périmée. La fiche se recharge.
+		 * ⛔ Remplace la modale de conflit de la 3.3, qui ne revient pas.
+		 */
+		onStale?: () => void;
 	}
 
 	let {
@@ -41,10 +69,15 @@
 		accountsLoadError,
 		projects = [],
 		booksLockedThrough = null,
+		initialEntry = null,
+		entryFiscalYear = null,
 		recoverableAccountId = null,
 		onSuccess,
-		onCancel
+		onCancel,
+		onStale
 	}: Props = $props();
+
+	const isEdit = $derived(initialEntry !== null);
 
 	const JOURNALS: Journal[] = ['Achats', 'Ventes', 'Banque', 'Caisse', 'OD'];
 
@@ -57,19 +90,34 @@
 	}
 
 	// --- État formulaire ---
-	// ⛔ Story 24-4b (#380) — le formulaire est en CRÉATION SEULE. Le
-	// pré-remplissage depuis une écriture existante est parti avec le gel :
-	// une écriture comptabilisée ne se réécrit plus, on la corrige par
-	// contre-passation depuis sa fiche.
-	let entryDate = $state(todayISO());
-	let journal = $state<Journal>('Achats');
-	let description = $state('');
-	let lines = $state<LineDraft[]>([
-		{ accountId: null, debit: '', credit: '', projectId: null },
-		{ accountId: null, debit: '', credit: '', projectId: null }
-	]);
+	// Pré-remplissage depuis initialEntry si mode édition. Les warnings
+	// `state_referenced_locally` sont intentionnellement supprimés : on
+	// veut uniquement capturer la valeur initiale au montage du composant.
+	// Si initialEntry change au cours de la vie du composant, le parent
+	// doit démonter/remonter le formulaire (ce qui est le cas : la fiche
+	// remplace sa vue par le formulaire, puis le retire au retour).
+	/* svelte-ignore state_referenced_locally */
+	let entryDate = $state(initialEntry?.entryDate ?? todayISO());
+	/* svelte-ignore state_referenced_locally */
+	let journal = $state<Journal>(initialEntry?.journal ?? 'Achats');
+	/* svelte-ignore state_referenced_locally */
+	let description = $state(initialEntry?.description ?? '');
+	/* svelte-ignore state_referenced_locally */
+	let lines = $state<LineDraft[]>(
+		initialEntry
+			? fromJournalEntryResponse(initialEntry)
+			: [
+					{ accountId: null, debit: '', credit: '', projectId: null },
+					{ accountId: null, debit: '', credit: '', projectId: null }
+				]
+	);
+	/* svelte-ignore state_referenced_locally */
+	let version = $state(initialEntry?.version ?? 0);
 	// Colonne projet affichée si des projets actifs existent — sans projet
-	// défini, le formulaire reste identique à avant (zéro friction).
+	// défini, le formulaire reste identique à avant (zéro friction). En
+	// édition, une ligne peut porter un tag historique alors que tous les
+	// projets sont archivés (liste active vide) : on affiche quand même la
+	// colonne pour que le tag reste visible et détaguable (review Pass 1 BH-L2).
 	const showProjectColumn = $derived(
 		projects.length > 0 || lines.some((l) => l.projectId !== null)
 	);
@@ -77,13 +125,20 @@
 
 	// Premier jour SAISISSABLE : le lendemain de la borne. La borne étant
 	// INCLUSIVE, `min` doit valoir borne + 1 jour — un `min` posé à la borne
-	// elle-même laisserait l'écran proposer une date que le serveur refuse.
-	const minEntryDate = $derived.by(() => {
-		if (!booksLockedThrough) return undefined;
-		const d = new Date(`${booksLockedThrough}T00:00:00Z`);
-		d.setUTCDate(d.getUTCDate() + 1);
-		return d.toISOString().slice(0, 10);
-	});
+	// elle-même laisserait l'écran proposer une date que le serveur refuse. En
+	// édition, l'exercice de l'écriture borne aussi (Story 15-8a).
+	const dateBounds = $derived(entryDateBounds(entryFiscalYear, booksLockedThrough));
+
+	/**
+	 * Story 15-8a — une ligne pré-remplie sur un compte archivé ou non imputable
+	 * n'est pas re-sélectionnable : on l'affiche (le libellé se résout sur la
+	 * liste complète que la fiche fournit) avec un avertissement. Le refus qui
+	 * fait autorité reste le 400 du serveur.
+	 */
+	function lineAccountUnusable(accountId: number | null): boolean {
+		if (accountId === null) return false;
+		return isAccountUnusable(accounts.find((a) => a.id === accountId));
+	}
 
 	let submitting = $state(false);
 
@@ -162,22 +217,51 @@
 		};
 
 		try {
-			await createJournalEntry(payload);
+			if (isEdit && initialEntry) {
+				const updatePayload: UpdateJournalEntryRequest = { ...payload, version };
+				await updateJournalEntry(initialEntry.id, updatePayload);
+			} else {
+				await createJournalEntry(payload);
+			}
 			toast.success(i18nMsg('journal-entry-saved', 'Écriture enregistrée'));
 			onSuccess();
 		} catch (err) {
 			if (isApiError(err)) {
+				const code = err.code ?? '';
+				// Story 15-8a (D8) — en édition, un refus qui dit que l'écriture a
+				// changé sous l'utilisateur : toast, puis la fiche se recharge. ⛔ Pas
+				// de modale, et pas `notifyMissingFiscalYearOrFallback` : son conseil
+				// (« vérifiez la date saisie ») serait faux, c'est l'exercice DE
+				// L'ÉCRITURE qui a été clôturé.
+				if (isEdit && editRefusalOutcome(code) === 'stale') {
+					let message = err.message;
+					if (code === 'FISCAL_YEAR_CLOSED') {
+						message = i18nMsg(
+							'journal-entries-modify-blocked-fiscal-year-closed',
+							'L’exercice de cette écriture est clôturé : elle est figée. Corrigez-la par une contre-passation.'
+						);
+					} else if (code === 'OPTIMISTIC_LOCK_CONFLICT') {
+						message = i18nMsg(
+							'journal-entries-edit-conflict',
+							'Cette écriture a été modifiée entre-temps : la fiche a été rechargée.'
+						);
+					}
+					toast.error(message);
+					onStale?.();
+					return;
+				}
 				// Story 3.7 AC #22 — fallback toast actionnable pour NO_FISCAL_YEAR / FISCAL_YEAR_CLOSED.
 				if (notifyMissingFiscalYearOrFallback(err)) {
 					return;
 				}
-				const code = err.code ?? '';
 				switch (code) {
 					case 'ENTRY_UNBALANCED':
 					case 'DATE_OUTSIDE_FISCAL_YEAR':
 					case 'INACTIVE_OR_INVALID_ACCOUNTS':
 					// Story 15-5a — le message du serveur nomme le ou les comptes.
 					case 'ACCOUNT_NOT_POSTABLE':
+					// Story 15-8a — le message nomme la borne et la date refusée.
+					case 'PERIOD_LOCKED':
 					case 'VALIDATION_ERROR':
 						toast.error(err.message);
 						break;
@@ -230,7 +314,14 @@
 			<label for="entry-date" class="block text-sm font-medium mb-1">
 				{i18nMsg('journal-entry-form-date', 'Date')}
 			</label>
-			<Input id="entry-date" type="date" bind:value={entryDate} min={minEntryDate} required />
+			<Input
+				id="entry-date"
+				type="date"
+				bind:value={entryDate}
+				min={dateBounds.min}
+				max={dateBounds.max}
+				required
+			/>
 		</div>
 		<div>
 			<label for="entry-journal" class="block text-sm font-medium mb-1">
@@ -260,12 +351,14 @@
 		</div>
 	</div>
 
-	<VatPurchaseAssistant
-		{accounts}
-		{accountsLoadError}
-		{recoverableAccountId}
-		onApply={handleAssistantApply}
-	/>
+	{#if !isEdit}
+		<VatPurchaseAssistant
+			{accounts}
+			{accountsLoadError}
+			{recoverableAccountId}
+			onApply={handleAssistantApply}
+		/>
+	{/if}
 
 	<table class="w-full border-collapse">
 		<thead>
@@ -308,6 +401,14 @@
 							loadError={accountsLoadError}
 							onSelect={(id) => (lines[i].accountId = id)}
 						/>
+						{#if lineAccountUnusable(line.accountId)}
+							<p class="mt-1 text-xs text-destructive" data-testid="line-account-unusable">
+								{i18nMsg(
+									'journal-entries-line-account-unusable',
+									'Compte archivé ou non imputable — à remplacer'
+								)}
+							</p>
+						{/if}
 					</td>
 					<td class="py-2 pr-2">
 						<Input
@@ -477,4 +578,3 @@
 		</div>
 	</div>
 {/if}
-

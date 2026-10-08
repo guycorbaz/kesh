@@ -8,10 +8,17 @@
 		getJournalEntry,
 		reverseJournalEntry
 	} from '$lib/features/journal-entries/journal-entries.api';
-	import type {
-		JournalEntryDetailResponse,
-		ReversalBlocker
-	} from '$lib/features/journal-entries/journal-entries.types';
+	import type { JournalEntryDetailResponse } from '$lib/features/journal-entries/journal-entries.types';
+	import {
+		MODIFICATION_LABEL_IN_MESSAGE,
+		modificationBlockerLabel,
+		reversalBlockerLabel
+	} from '$lib/features/journal-entries/blocker-messages';
+	import JournalEntryForm from '$lib/features/journal-entries/JournalEntryForm.svelte';
+	import { listFiscalYears } from '$lib/features/fiscal-years/fiscal-years.api';
+	import { fetchCompanyCurrent } from '$lib/features/settings/settings.api';
+	import { getInvoiceSettings } from '$lib/features/invoices/invoices.api';
+	import { authState } from '$lib/app/stores/auth.svelte';
 	import { i18nMsg } from '$lib/features/onboarding/onboarding.svelte';
 	import { toast } from 'svelte-sonner';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
@@ -25,7 +32,9 @@
 	/** Story 24-4a (#380) — contre-passation. */
 	let showReverseConfirm = $state(false);
 	let reversing = $state(false);
-	let accountsById = $state<Map<number, AccountResponse>>(new Map());
+	let accounts = $state<AccountResponse[]>([]);
+	let accountsLoadError = $state(false);
+	let accountsById = $derived(new Map(accounts.map((a) => [a.id, a])));
 	let projectsById = $state<Map<number, ProjectResponse>>(new Map());
 	let loading = $state(true);
 	let errorMsg = $state('');
@@ -77,7 +86,11 @@
 			}
 			entry = entryResult.value;
 			if (accountsResult.status === 'fulfilled') {
-				accountsById = new Map(accountsResult.value.map((a) => [a.id, a]));
+				accounts = accountsResult.value;
+				accountsLoadError = false;
+			} else {
+				accounts = [];
+				accountsLoadError = true;
 			}
 			if (projectsResult.status === 'fulfilled') {
 				projectsById = new Map(projectsResult.value.map((p) => [p.id, p]));
@@ -120,85 +133,104 @@
 	let totalCredit = $derived(sumLines('credit'));
 
 	/**
-	 * Motif de blocage, traduit — Story 24-4a (#380).
-	 *
-	 * ⚠️ Le serveur rend un **code**, jamais une phrase : c'est ici que la
-	 * traduction se fait. Un `switch` exhaustif plutôt qu'une table indexée, pour
-	 * qu'un code neuf fasse rougir le type-check au lieu d'afficher du vide.
-	 */
-	function blockedLabel(code: ReversalBlocker): string {
-		switch (code) {
-			case 'IS_A_REVERSAL':
-				return i18nMsg(
-					'journal-entries-reverse-blocked-is-a-reversal',
-					'Cette écriture est elle-même une contre-passation.'
-				);
-			case 'ALREADY_REVERSED':
-				return i18nMsg(
-					'journal-entries-reverse-blocked-already-reversed',
-					'Cette écriture a déjà été contre-passée.'
-				);
-			case 'OWNED_BY_INVOICE':
-				return i18nMsg(
-					'journal-entries-reverse-blocked-invoice',
-					'Cette écriture appartient à une facture client : dévalidez la facture, ou corrigez-la par un avoir.'
-				);
-			case 'OWNED_BY_CREDIT_NOTE':
-				return i18nMsg(
-					'journal-entries-reverse-blocked-credit-note',
-					"Cette écriture est celle d'un avoir, qui est déjà une contre-passation."
-				);
-			case 'OWNED_BY_SUPPLIER_INVOICE':
-				return i18nMsg(
-					'journal-entries-reverse-blocked-supplier-invoice',
-					'Cette écriture appartient à une facture fournisseur : elle se corrige depuis la fiche de la facture, qui indique ce qui est possible.'
-				);
-			case 'OWNED_BY_SETTLEMENT':
-				return i18nMsg(
-					'journal-entries-reverse-blocked-settlement',
-					"Cette écriture est un règlement de facture : annulez le règlement depuis la fiche de la facture, qui indique si c'est possible."
-				);
-			case 'MATCHED_BANK_TRANSACTION':
-				return i18nMsg(
-					'journal-entries-reverse-blocked-bank-match',
-					"Cette écriture est rapprochée d'une transaction bancaire : annulez le rapprochement depuis le détail de l'import bancaire."
-				);
-			case 'ACCOUNT_ARCHIVED':
-				return i18nMsg(
-					'journal-entries-reverse-blocked-account-archived',
-					'Un compte de cette écriture a été archivé : réactivez-le pour pouvoir la contre-passer.'
-				);
-			default: {
-				// ⛔ **C'est l'affectation à `never` qui fait rougir**, pas le
-				// `default` : ajouter un neuvième code au type sans l'ajouter ici
-				// casse le type-check. Le paramètre était typé `string`, ce qui
-				// ôtait au `switch` toute exhaustivité — trois doc-comments
-				// affirmaient pourtant le contraire. *(Passe 2 de revue.)*
-				const _exhaustif: never = code;
-				void _exhaustif;
-				// ⚠️ **Et l'on rend une chaîne vide, PAS `_exhaustif`.** À
-				// l'exécution, `never` n'est qu'une fiction de compilation :
-				// `return _exhaustif` rendait littéralement `code`, si bien qu'un
-				// navigateur au bundle périmé face à un serveur plus récent aurait
-				// affiché `NEUVIEME_CODE` en clair à l'utilisateur — une fuite de
-				// jeton interne non traduit. La garde protège le compile-time, la
-				// chaîne vide protège l'exécution ; il faut les deux.
-				// *(Relevé en passe 3 de revue de code.)*
-				return '';
-			}
-		}
-	}
-
-	/**
-	 * Le motif, suffixé de ce qui le porte quand c'est connu — « … (6000) ».
+	 * Le motif de contre-passation, suffixé de ce qui le porte quand c'est connu
+	 * — « … (6000) ». Traduction : `reversalBlockerLabel` (Story 24-4a), extrait
+	 * de cette page par la Story 15-8a pour être partagé avec le motif de
+	 * modification.
 	 *
 	 * ⚠️ Sans ce suffixe, une écriture à dix lignes dont un compte est archivé
 	 * affiche « réactivez-le » sans dire lequel.
 	 */
 	function blockedMessage(entry: JournalEntryDetailResponse): string {
 		if (!entry.reversalBlockedBy) return '';
-		const motif = blockedLabel(entry.reversalBlockedBy);
+		const motif = reversalBlockerLabel(entry.reversalBlockedBy);
 		return entry.reversalBlockedLabel ? `${motif} (${entry.reversalBlockedLabel})` : motif;
+	}
+
+	/**
+	 * Le motif de modification (Story 15-8a, D8). L'étiquette est suffixée comme
+	 * pour la contre-passation, sauf quand le message la porte déjà (nom de
+	 * l'exercice postérieur clos, borne du verrou).
+	 */
+	function modificationMessage(entry: JournalEntryDetailResponse): string {
+		const code = entry.modificationBlockedBy;
+		if (!code) return '';
+		const motif = modificationBlockerLabel(code, entry.modificationBlockedLabel);
+		if (!entry.modificationBlockedLabel || MODIFICATION_LABEL_IN_MESSAGE.has(code)) return motif;
+		return `${motif} (${entry.modificationBlockedLabel})`;
+	}
+
+	/**
+	 * ⛔ Rôle **Consultation** (C-15-8-14) : ni « Modifier » ni « Contre-passer »,
+	 * sans motif affiché. Le 403 du serveur reste le refus qui fait autorité.
+	 */
+	let canWrite = $derived(
+		authState.currentUser?.role === 'Admin' || authState.currentUser?.role === 'Comptable'
+	);
+
+	/**
+	 * Le motif de modification n'est affiché que s'il dit autre chose que celui de
+	 * la contre-passation — deux fois la même phrase n'apprend rien.
+	 */
+	let showModificationReason = $derived(
+		!!entry &&
+			!entry.modifiable &&
+			!!entry.modificationBlockedBy &&
+			!(entry.reversalBlockedBy === entry.modificationBlockedBy && !entry.reversable)
+	);
+
+	// --- Mode édition (Story 15-8a, D8) ---------------------------------
+	let editing = $state(false);
+	let editLoading = $state(false);
+	let editProjects = $state<ProjectResponse[]>([]);
+	let editBooksLockedThrough = $state<string | null>(null);
+	let editRecoverableAccountId = $state<number | null>(null);
+	let editFiscalYear = $state<{ startDate: string; endDate: string } | null>(null);
+
+	/**
+	 * Ouvre le formulaire en mode édition, pré-rempli. Ses props se chargent au
+	 * clic, comme la page liste les charge pour la création ; un échec dégrade
+	 * le confort de saisie (bornes de date, projets), jamais l'enregistrement —
+	 * le serveur tranche.
+	 */
+	async function startEdit() {
+		if (!entry) return;
+		editLoading = true;
+		try {
+			const [projectsR, companyR, settingsR, yearsR] = await Promise.allSettled([
+				listProjects(),
+				fetchCompanyCurrent(),
+				getInvoiceSettings(),
+				listFiscalYears()
+			]);
+			editProjects = projectsR.status === 'fulfilled' ? projectsR.value : [];
+			editBooksLockedThrough =
+				companyR.status === 'fulfilled' ? companyR.value.company.booksLockedThrough : null;
+			editRecoverableAccountId =
+				settingsR.status === 'fulfilled'
+					? (settingsR.value.defaultVatRecoverableAccountId ?? null)
+					: null;
+			const fy =
+				yearsR.status === 'fulfilled'
+					? yearsR.value.find((y) => y.id === entry?.fiscalYearId)
+					: undefined;
+			editFiscalYear = fy ? { startDate: fy.startDate, endDate: fy.endDate } : null;
+			editing = true;
+		} finally {
+			editLoading = false;
+		}
+	}
+
+	/** Enregistrée : retour à la fiche, relue (même `id`, même numéro). */
+	function onEditSaved() {
+		editing = false;
+		void loadEntry(id);
+	}
+
+	/** Le serveur dit que l'écriture a changé : la fiche se relit, sans modale. */
+	function onEditStale() {
+		editing = false;
+		void loadEntry(id);
 	}
 
 	async function confirmReverse() {
@@ -230,21 +262,44 @@
 		<ArrowLeft class="h-4 w-4" aria-hidden="true" />
 		Retour
 	</Button>
-	<!-- ⛔ Le bouton est ABSENT, pas désactivé, quand l'écriture n'est pas
-	     contre-passable : un bouton grisé n'explique rien. Le motif est affiché
-	     à sa place, traduit depuis le code rendu par le serveur. -->
-	{#if entry?.reversable}
-		<Button
-			variant="outline"
-			data-testid="reverse-entry"
-			onclick={() => (showReverseConfirm = true)}
-		>
-			{i18nMsg('journal-entries-reverse-action', 'Contre-passer')}
-		</Button>
-	{:else if entry?.reversalBlockedBy}
-		<p class="text-sm text-text-muted" data-testid="reverse-blocked-reason">
-			{blockedMessage(entry)}
-		</p>
+	<!-- ⛔ Les boutons sont ABSENTS, pas désactivés, quand le geste n'est pas
+	     possible : un bouton grisé n'explique rien. Le motif est affiché à leur
+	     place, traduit depuis le code rendu par le serveur. Rôle Consultation :
+	     ni l'un ni l'autre, sans motif (C-15-8-14). -->
+	{#if entry && canWrite && !editing}
+		<div class="flex flex-col items-end gap-2">
+			<div class="flex gap-2">
+				{#if entry.modifiable}
+					<Button
+						variant="outline"
+						data-testid="edit-entry"
+						disabled={editLoading}
+						onclick={startEdit}
+					>
+						{i18nMsg('journal-entry-edit', 'Modifier')}
+					</Button>
+				{/if}
+				{#if entry.reversable}
+					<Button
+						variant="outline"
+						data-testid="reverse-entry"
+						onclick={() => (showReverseConfirm = true)}
+					>
+						{i18nMsg('journal-entries-reverse-action', 'Contre-passer')}
+					</Button>
+				{/if}
+			</div>
+			{#if showModificationReason}
+				<p class="text-sm text-text-muted" data-testid="modification-blocked-reason">
+					{modificationMessage(entry)}
+				</p>
+			{/if}
+			{#if !entry.reversable && entry.reversalBlockedBy}
+				<p class="text-sm text-text-muted" data-testid="reverse-blocked-reason">
+					{blockedMessage(entry)}
+				</p>
+			{/if}
+		</div>
 	{/if}
 </div>
 
@@ -254,6 +309,20 @@
 	<div class="rounded-md border border-destructive bg-destructive/10 px-3 py-2 text-sm text-destructive">
 		{errorMsg}
 	</div>
+{:else if entry && editing}
+	<h1 class="mb-4 text-2xl font-semibold text-text">Écriture n°{entry.entryNumber}</h1>
+	<JournalEntryForm
+		{accounts}
+		{accountsLoadError}
+		projects={editProjects}
+		booksLockedThrough={editBooksLockedThrough}
+		recoverableAccountId={editRecoverableAccountId}
+		initialEntry={entry}
+		entryFiscalYear={editFiscalYear}
+		onSuccess={onEditSaved}
+		onCancel={() => (editing = false)}
+		onStale={onEditStale}
+	/>
 {:else if entry}
 	<h1 class="mb-4 text-2xl font-semibold text-text">Écriture n°{entry.entryNumber}</h1>
 

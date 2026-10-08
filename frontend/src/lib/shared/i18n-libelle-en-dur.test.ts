@@ -154,8 +154,20 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * `ecartee` ne bouge pas. *Identifiée en cherchant les suffixes `Label`, `Text`,
  * `Display` dans les fichiers de la story — la seule déclaration neuve qui en porte
  * un (`typeLabel`, modifié, existait déjà).*
+ *
+ * ⚠️ **46 → 47, et les trois mouvements sont NOMMÉS** (Story 15-8a, #532) :
+ * `blockedLabel` (`routes/(app)/journal-entries/[id]/+page.svelte`, `ecartee`) a
+ * **disparu** de la fiche — extraite, pour être partagée avec le motif de
+ * modification, dans `lib/features/journal-entries/blocker-messages.ts` sous le nom
+ * `reversalBlockerLabel` (même corps, même `default: return ''` : `ecartee`) ; à côté
+ * naît `modificationBlockerLabel`, les onze codes de modification — quatre branches
+ * propres déléguant à `i18nMsg`, sept qui délèguent à `reversalBlockerLabel`, et le
+ * même `default` exhaustif rendant `''` : `ecartee`. D'où `ecartee` **6 → 7**,
+ * `conforme` inchangé. ⚠️ Les noms gardent le suffixe `Label` **à dessein** : un nom
+ * en `…Message` aurait fait sortir les deux fonctions du relevé — un compteur qui
+ * baisse parce que le détecteur ne voit plus, pas parce que le défaut a disparu.
  */
-const CANDIDATES_ATTENDUES = 46;
+const CANDIDATES_ATTENDUES = 47;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -672,7 +684,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 6, conforme: 40 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 7, conforme: 40 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

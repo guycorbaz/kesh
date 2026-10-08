@@ -209,10 +209,50 @@ Les principales ressources accessibles via l'API (liste non exhaustive — toute
 | Contacts | `GET /contacts`, `GET /contacts/{id}` | `POST /contacts`, … |
 | Produits | `GET /products`, `GET /products/{id}` | `POST /products`, … |
 | Factures | `GET /invoices`, `GET /invoices/{id}` | `POST /invoices`, `PUT /invoices/{id}`, … ² |
-| Écritures comptables | `GET /journal-entries`, `GET /journal-entries/{id}` | `POST /journal-entries`, … |
+| Écritures comptables | `GET /journal-entries`, `GET /journal-entries/{id}` | `POST /journal-entries`, `PUT /journal-entries/{id}` ⁴, … |
 | Taux de TVA | `GET /vat-rates` | — ¹ |
 
 *(Préfixe `…/api/v1` omis dans le tableau. Les corps de requête d'écriture peuvent différer des champs renvoyés en lecture : référez-vous aux formulaires correspondants de l'interface web pour les champs attendus.)*
+
+⁴ Depuis la v0.13.0 — voir « Modifier une écriture » ci-dessous.
+
+### Modifier une écriture — `PUT /api/v1/journal-entries/{id}`
+
+**Ouverte aux clés API** en écriture (`read-write`), comme la saisie (`POST /journal-entries`). *(Depuis la v0.13.0 ; de la v0.12.0 à la v0.12.1, ce `PUT` rendait toujours `409 ENTRY_IS_POSTED`.)*
+
+Une écriture se modifie **tant que son exercice est ouvert**, qu'**aucun exercice postérieur n'est clôturé** (le bilan est cumulatif : il reprend l'écriture), qu'**aucune pièce ne la possède** et que sa date — l'ancienne comme la nouvelle — est **postérieure** à la période verrouillée. En pratique : les écritures saisies à la main, l'écriture d'ouverture et les compléments de soldes de départ. Le numéro, l'exercice et la date de création **ne changent jamais** ; la nouvelle date doit rester dans l'exercice **de l'écriture**.
+
+Corps : celui du `POST`, plus la version lue — `{ "entryDate", "journal", "description", "lines": [{ "accountId", "debit", "credit", "projectId"? }], "version" }`. Réponse : `200` et l'écriture, même forme que le `POST`. Un corps identique à l'état présent rend `200` sans rien écrire.
+
+Chaque modification effective est **tracée** au journal d'audit (`journal_entry.updated`), avec l'état **avant et après**, lignes comprises — et **la clé** qui l'a faite, quand c'est une clé.
+
+`GET /journal-entries/{id}` porte de quoi décider avant d'essayer : `modifiable`, et, quand il vaut `false`, `modificationBlockedBy` (le motif) et `modificationBlockedLabel` (numéro de pièce, nom de l'exercice postérieur clos ou borne du verrou). ⚠️ Ce motif ne voit que l'état **présent** : le corps, la nouvelle date et la version ne sont contrôlés qu'au `PUT`.
+
+Refus, **dans l'ordre où ils parlent** — 15 lignes :
+
+| Refus | Code | Statut |
+|---|---|---|
+| Corps illisible (JSON invalide, champ manquant) | — (rejet de l'extracteur) | `400` / `422` |
+| Écriture déséquilibrée, montant ou libellé invalide | `ENTRY_UNBALANCED`, `VALIDATION_ERROR` | `400` |
+| Écriture inconnue ou d'une autre company | `NOT_FOUND` | `404` |
+| Exercice de l'écriture clôturé | `FISCAL_YEAR_CLOSED` | `400` |
+| Exercice **postérieur** clôturé | `LATER_FISCAL_YEAR_CLOSED` | `400` |
+| Écriture contre-passée | `ENTRY_IS_REVERSED` | `409` |
+| Écriture qui est elle-même une contre-passation | `IS_A_REVERSAL` | `409` |
+| Écriture d'une pièce — facture, avoir, facture fournisseur, règlement ou solde, transaction bancaire rapprochée | `OWNED_BY_INVOICE`, `OWNED_BY_CREDIT_NOTE`, `OWNED_BY_SUPPLIER_INVOICE`, `OWNED_BY_SETTLEMENT`, `MATCHED_BANK_TRANSACTION` | `409` |
+| Paiement d'une facture fournisseur **annulée** (règlement détaché) | `DETACHED_SUPPLIER_SETTLEMENT` | `409` |
+| Version périmée | `OPTIMISTIC_LOCK_CONFLICT` | `409` |
+| Nouvelle date hors de l'exercice de l'écriture | `DATE_OUTSIDE_FISCAL_YEAR` | `400` |
+| Projet inconnu / archivé (un projet **déjà présent** sur l'écriture reste toléré) | `NOT_FOUND` / `ILLEGAL_STATE_TRANSITION` | `404` / `409` |
+| Compte inconnu, archivé ou d'une autre company — **y compris sur une ligne inchangée** | `INACTIVE_OR_INVALID_ACCOUNTS` | `400` |
+| Compte non imputable — **y compris sur une ligne inchangée** | `ACCOUNT_NOT_POSTABLE` | `400` |
+| Ancienne **ou** nouvelle date dans la période verrouillée (seuil inclusif) | `PERIOD_LOCKED` | `400` |
+
+Les refus `409` d'une pièce portent `details.documentId` (l'identifiant de la pièce — pour `DETACHED_SUPPLIER_SETTLEMENT`, celui de la facture fournisseur annulée) et `details.documentNumber` (son numéro, quand elle en a un). `LATER_FISCAL_YEAR_CLOSED` porte `details.fiscalYearId` et `details.fiscalYearName` — le plus proche exercice postérieur clos.
+
+⚠️ **`LATER_FISCAL_YEAR_CLOSED` ne garde aujourd'hui que ce `PUT`.** La saisie (`POST /journal-entries`, clés comprises), la contre-passation, les règlements, la dévalidation et le complément des soldes de départ acceptent encore une écriture dans un exercice ouvert alors qu'un exercice postérieur est clôturé — dont le bilan reporté change alors. Limite connue, suivie par l'issue [#543](https://github.com/guycorbaz/kesh/issues/543).
+
+⚠️ **Une écriture refusée se corrige par contre-passation** (`POST /journal-entries/{id}/reverse`), sauf l'écriture d'une pièce, qui se corrige depuis sa pièce. ⚠️ **Une écriture sur un compte archivé ou devenu non imputable reste modifiable** — à condition de remplacer ce compte : l'enregistrement refuse tant qu'une ligne le vise. ⚠️ Un interblocage avec une écriture concurrente est rejoué par le serveur ; s'il persiste, la réponse est un `500` — réessayez.
 
 ### Dévalider une facture — `POST /api/v1/invoices/{id}/unvalidate`
 
@@ -416,7 +456,9 @@ Les erreurs sont renvoyées en JSON avec ce format :
 | `403` | `API_KEY_ADMIN_FORBIDDEN` | Route d'**administration** atteinte avec une clé API — quel que soit le rôle du créateur de la clé. Voir §4. |
 | `400` | `VALIDATION_ERROR` | Corps de requête invalide (champ manquant, valeur hors limites, …). |
 | `400` | `INACTIVE_OR_INVALID_ACCOUNTS` | Un compte référencé est inconnu, archivé, d'une autre company ou d'un mauvais type (par exemple un compte de charge qui n'est pas de charge) ; anti-énumération : le compte n'est pas nommé. |
-| `400` | `ACCOUNT_NOT_POSTABLE` | Un compte de la company, **actif**, n'est **pas imputable** — compte de regroupement, de résultat ou de clôture. `details.rejected[{accountId, accountNumber}]` nomme chaque compte refusé, triés par numéro. Rendu par `POST /journal-entries`, `POST /opening-balances`, `POST /invoices/{id}/settlements` (compte interne), `POST /supplier-invoices` (compte de charge), `POST /imported-supplier-invoices/{id}/complete` (compte de charge), `POST /supplier-invoices/{id}/pay` (compte interne), `POST /reconciliation/manual` et `POST /reconciliation/split` (compte de contrepartie), `POST /reconciliation/rules` et `PATCH /reconciliation/rules/{id}` (compte de contrepartie — au `PATCH`, seulement si le compte change ou si la règle est réactivée), `POST /bank-accounts`, `PUT /bank-accounts/{id}` et `PATCH /bank-accounts/{id}` (compte comptable lié — au `PUT` et au `PATCH`, seulement s'il change). Dans `failed[]` de `POST /reconciliation/accept`, le même code et le même détail pour une proposition `split` ou `rule`. Un compte à la fois inconnu, archivé ou d'un mauvais type **et** non imputable rend `INACTIVE_OR_INVALID_ACCOUNTS`, et un compte archivé ou invalide sur une autre ligne de la même écriture prime lui aussi sur un compte non imputable. *(Depuis la v0.13.0 ; ces refus rendaient auparavant `INACTIVE_OR_INVALID_ACCOUNTS`.)* |
+| `400` | `ACCOUNT_NOT_POSTABLE` | Un compte de la company, **actif**, n'est **pas imputable** — compte de regroupement, de résultat ou de clôture. `details.rejected[{accountId, accountNumber}]` nomme chaque compte refusé, triés par numéro. Rendu par `POST /journal-entries`, `PUT /journal-entries/{id}` (depuis la v0.13.0 — un compte devenu non imputable est refusé même sur une ligne inchangée), `POST /opening-balances`, `POST /invoices/{id}/settlements` (compte interne), `POST /supplier-invoices` (compte de charge), `POST /imported-supplier-invoices/{id}/complete` (compte de charge), `POST /supplier-invoices/{id}/pay` (compte interne), `POST /reconciliation/manual` et `POST /reconciliation/split` (compte de contrepartie), `POST /reconciliation/rules` et `PATCH /reconciliation/rules/{id}` (compte de contrepartie — au `PATCH`, seulement si le compte change ou si la règle est réactivée), `POST /bank-accounts`, `PUT /bank-accounts/{id}` et `PATCH /bank-accounts/{id}` (compte comptable lié — au `PUT` et au `PATCH`, seulement s'il change). Dans `failed[]` de `POST /reconciliation/accept`, le même code et le même détail pour une proposition `split` ou `rule`. Un compte à la fois inconnu, archivé ou d'un mauvais type **et** non imputable rend `INACTIVE_OR_INVALID_ACCOUNTS`, et un compte archivé ou invalide sur une autre ligne de la même écriture prime lui aussi sur un compte non imputable. *(Depuis la v0.13.0 ; ces refus rendaient auparavant `INACTIVE_OR_INVALID_ACCOUNTS`.)* |
+| `400` | `LATER_FISCAL_YEAR_CLOSED` | `PUT /journal-entries/{id}` : un exercice **postérieur** à celui de l'écriture est clôturé ; son bilan, cumulatif, reprend l'écriture. `details.fiscalYearId` / `details.fiscalYearName` nomment le plus proche. Ne garde pas encore les autres chemins d'écriture (#543). *(Depuis la v0.13.0.)* |
+| `409` | `DETACHED_SUPPLIER_SETTLEMENT` | `PUT /journal-entries/{id}` : l'écriture est le paiement d'une facture fournisseur annulée — une sortie de banque réelle, qui se corrige par contre-passation. `details.documentId` est l'identifiant de la facture. *(Depuis la v0.13.0.)* |
 | `404` | `NOT_FOUND` | Ressource absente ou appartenant à une autre company (anti-énumération). Certaines ressources renvoient un code spécifique (ex. `ACCOUNT_NOT_FOUND`). |
 
 ---

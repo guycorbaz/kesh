@@ -1600,3 +1600,132 @@ async fn status_announces_complement(pool: MySqlPool) {
     assert_eq!(body["canComplete"], false);
     assert_eq!(body["completeReason"], "NO_COMPLETABLE_ACCOUNT");
 }
+
+// ===========================================================================
+// Story 15-8a (#532) — l'écriture d'ouverture et le complément se MODIFIENT
+// ===========================================================================
+
+/// `PUT /journal-entries/{id}` avec un corps JSON, rend (statut, corps).
+async fn put_entry(app: &TestApp, token: &str, id: i64, body: &Value) -> (u16, Value) {
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/journal-entries/{id}")))
+        .header("Authorization", auth(token))
+        .json(body)
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    (status, resp.json().await.unwrap_or(Value::Null))
+}
+
+/// Corps de `PUT` bâti depuis une réponse d'écriture (forme du `POST`).
+fn put_body(entry: &Value, lines: Vec<Value>) -> Value {
+    json!({
+        "entryDate": entry["entryDate"],
+        "journal": entry["journal"],
+        "description": entry["description"],
+        "version": entry["version"],
+        "lines": lines,
+    })
+}
+
+/// AC 2 · AC 11 · D6 — **le cas déclencheur de #532** : l'écriture d'ouverture
+/// générée par `POST /opening-balances` se corrige par `PUT` en INVERSANT débit
+/// et crédit. L'écran reste en mode « compléter » (`ALREADY_HAS_ENTRIES`) ; une
+/// modification qui RETIRE la ligne d'un compte le rend de nouveau complétable ;
+/// le complément se modifie comme l'ouverture.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_opening_entry_is_corrected_by_modification(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let seed = seed_ready(&pool).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/opening-balances"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "lines": [
+            line(seed.asset, "1000.00", "0"),
+            line(seed.liability, "0", "400.00"),
+            line(seed.retained, "0", "600.00"),
+        ]}))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+    let ouverture: Value = resp.json().await.unwrap();
+    let id = ouverture["id"].as_i64().unwrap();
+
+    // (AC 2) Débit et crédit inversés sur les trois lignes.
+    let inverse = put_body(
+        &ouverture,
+        vec![
+            line(seed.asset, "0", "1000.00"),
+            line(seed.liability, "400.00", "0"),
+            line(seed.retained, "600.00", "0"),
+        ],
+    );
+    let (status, body) = put_entry(&app, &token, id, &inverse).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["id"], ouverture["id"]);
+    assert_eq!(body["entryNumber"], ouverture["entryNumber"]);
+    assert_eq!(body["fiscalYearId"], ouverture["fiscalYearId"]);
+    assert_eq!(body["createdAt"], ouverture["createdAt"]);
+    assert_eq!(
+        body["version"].as_i64(),
+        Some(ouverture["version"].as_i64().unwrap() + 1)
+    );
+    assert_eq!(body["lines"][0]["credit"], "1000.0000");
+    assert_eq!(body["lines"][1]["debit"], "400.0000");
+
+    // (AC 11) L'écran reste en mode « compléter ».
+    let status_body = get_status(&app, &token).await;
+    assert_eq!(status_body["reason"], "ALREADY_HAS_ENTRIES");
+
+    // (AC 11) Retirer la ligne du passif 2000 le rend de nouveau complétable.
+    let sans_passif = put_body(
+        &body,
+        vec![
+            line(seed.asset, "600.00", "0"),
+            line(seed.retained, "0", "600.00"),
+        ],
+    );
+    let (status, apres) = put_entry(&app, &token, id, &sans_passif).await;
+    assert_eq!(status, 200, "{apres}");
+    let status_body = get_status(&app, &token).await;
+    let numbers: Vec<&str> = status_body["completableAccounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["number"].as_str().unwrap())
+        .collect();
+    assert!(
+        numbers.contains(&"2000"),
+        "2000 redevient complétable : {numbers:?}"
+    );
+
+    // (AC 11) Le complément se modifie comme l'ouverture.
+    let (s, complement) = post_complete(
+        &app,
+        &token,
+        json!({ "lines": [line(seed.liability, "0", "400.00")] }),
+    )
+    .await;
+    assert_eq!(s, 201, "{complement}");
+    let complement_id = complement["id"].as_i64().unwrap();
+    let lignes: Vec<Value> = complement["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|l| {
+            json!({
+                "accountId": l["accountId"],
+                "debit": if l["debit"] == "0.0000" { "0".to_string() } else { "450.00".to_string() },
+                "credit": if l["credit"] == "0.0000" { "0".to_string() } else { "450.00".to_string() },
+            })
+        })
+        .collect();
+    let (status, body) =
+        put_entry(&app, &token, complement_id, &put_body(&complement, lignes)).await;
+    assert_eq!(status, 200, "{body}");
+}

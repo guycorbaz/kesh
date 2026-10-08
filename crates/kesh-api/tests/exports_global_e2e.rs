@@ -2005,3 +2005,164 @@ async fn export_global_zip_onze_tables_neuves_sortent_et_sont_scopees(pool: MySq
         );
     }
 }
+
+// ============================================================
+// Story 15-8a (#532, AC 18) — une écriture MODIFIÉE sort dans l'export
+// ============================================================
+
+/// AC 18 · D9 — après une modification, l'export ZIP de souveraineté porte
+/// l'état **présent** de l'écriture (`journal_entries.csv` : `version`
+/// incrémentée) **et** sa trace (`audit_log.csv` : `journal_entry.updated`,
+/// avec l'avant et l'après). Aucun changement de format.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn export_global_zip_carries_a_modified_entry_and_its_trace(pool: MySqlPool) {
+    let ctx = seed_company(&pool, "co_158a", Role::Comptable).await;
+    let a = create_acc(
+        &pool,
+        ctx.user_id,
+        ctx.company_id,
+        "1000",
+        "Caisse",
+        AccountType::Asset,
+    )
+    .await;
+    let b = create_acc(
+        &pool,
+        ctx.user_id,
+        ctx.company_id,
+        "3000",
+        "Ventes",
+        AccountType::Revenue,
+    )
+    .await;
+    let ligne = |account_id, debit, credit| NewJournalEntryLine {
+        account_id,
+        debit,
+        credit,
+        project_id: None,
+    };
+    let created = journal_entries::create(
+        &pool,
+        ctx.fy_id,
+        ctx.user_id,
+        NewJournalEntry {
+            company_id: ctx.company_id,
+            entry_date: NaiveDate::from_ymd_opt(2026, 3, 1).unwrap(),
+            journal: Journal::OD,
+            description: "Avant modification".into(),
+            project_id: None,
+            lines: vec![
+                ligne(a, dec!(10), Decimal::ZERO),
+                ligne(b, Decimal::ZERO, dec!(10)),
+            ],
+        },
+    )
+    .await
+    .unwrap();
+    // Création antidatée : `updated_at` (DATETIME(3)) ne peut alors coïncider
+    // avec la date de création par hasard, et l'export doit montrer qu'il a bougé.
+    sqlx::query(
+        "UPDATE journal_entries SET created_at = '2020-01-01 00:00:00.000', \
+         updated_at = '2020-01-01 00:00:00.000' WHERE id = ?",
+    )
+    .bind(created.entry.id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let modified = journal_entries::update(
+        &pool,
+        ctx.company_id,
+        created.entry.id,
+        created.entry.version,
+        ctx.user_id,
+        None,
+        NewJournalEntry {
+            company_id: ctx.company_id,
+            entry_date: NaiveDate::from_ymd_opt(2026, 3, 2).unwrap(),
+            journal: Journal::OD,
+            description: "Apres modification".into(),
+            project_id: None,
+            lines: vec![
+                ligne(a, dec!(12), Decimal::ZERO),
+                ligne(b, Decimal::ZERO, dec!(12)),
+            ],
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(modified.entry.version, 2);
+
+    let app = spawn_app(pool).await;
+    let resp = app
+        .client
+        .get(app.url("/api/v1/exports/global.zip"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body = resp.bytes().await.unwrap();
+    let entries = assert_zip_response(&body);
+
+    let csv = |name: &str| -> (Vec<String>, Vec<Vec<String>>) {
+        let raw = entry_bytes(&entries, name);
+        let text = std::str::from_utf8(&raw[3..]).unwrap(); // BOM
+        let mut lines = text.split("\r\n").filter(|l| !l.is_empty());
+        let header: Vec<String> = lines
+            .next()
+            .unwrap()
+            .split(';')
+            .map(|c| c.trim_matches('"').to_string())
+            .collect();
+        let rows = lines
+            .map(|l| {
+                l.split(';')
+                    .map(|c| c.trim_matches('"').to_string())
+                    .collect()
+            })
+            .collect();
+        (header, rows)
+    };
+
+    let (header, rows) = csv("journal_entries.csv");
+    let col = |n: &str| {
+        header
+            .iter()
+            .position(|c| c == n)
+            .unwrap_or_else(|| panic!("colonne {n}"))
+    };
+    let row = rows
+        .iter()
+        .find(|r| r[col("id")] == created.entry.id.to_string())
+        .expect("l'écriture est exportée");
+    assert_eq!(
+        row[col("version")],
+        "2",
+        "état présent : version incrémentée"
+    );
+    assert_eq!(row[col("description")], "Apres modification");
+    assert!(
+        row[col("created_at")].starts_with("2020-01-01"),
+        "la création garde sa date : {}",
+        row[col("created_at")]
+    );
+    assert!(
+        !row[col("updated_at")].is_empty() && !row[col("updated_at")].starts_with("2020-01-01"),
+        "état présent : `updated_at` porte la modification : {}",
+        row[col("updated_at")]
+    );
+
+    let raw = entry_bytes(&entries, "audit_log.csv");
+    let text = std::str::from_utf8(&raw[3..]).unwrap();
+    let trace = text
+        .split("\r\n")
+        .find(|l| l.contains("journal_entry.updated"))
+        .expect("la trace de la modification est exportée");
+    assert!(
+        trace.contains("before")
+            && trace.contains("after")
+            && trace.contains("Avant modification")
+            && trace.contains("Apres modification"),
+        "la trace porte l'avant et l'après : {trace}"
+    );
+}

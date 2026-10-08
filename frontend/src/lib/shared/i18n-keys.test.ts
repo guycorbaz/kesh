@@ -453,7 +453,22 @@ const ATTENDU = {
 	// Relevé du test, recoupé par `grep -o` sur le fichier aux deux bornes (+34).
 	// Revue de code P3 de la 25-7 : **1864 → 1868** — un nom accessible sur les quatre
 	// champs de montant (`opening-balances-debit-for` / `-credit-for`, 60 → 64).
-	sitesTotal: 1868,
+	// Story 15-8a (#532) : **1868 → 1876** (+8), la modification d'une écriture
+	// depuis sa fiche, ventilée par fichier (recompté par `grep -o` aux deux bornes) :
+	//   - `features/journal-entries/JournalEntryForm.svelte` (28 → 31, +3) : le mode
+	//     édition rétabli par inversion du gel — exercice clos en édition
+	//     (`journal-entries-modify-blocked-fiscal-year-closed`), conflit de version
+	//     (`journal-entries-edit-conflict`), compte inutilisable sur une ligne
+	//     (`journal-entries-line-account-unusable`). ⛔ La modale de conflit de la 3.3
+	//     est ÉCARTÉE de l'inversion : ses trois clés et le troisième site de
+	//     `journal-entry-form-cancel` ne reviennent pas (C-15-8-21) ;
+	//   - `routes/(app)/journal-entries/[id]/+page.svelte` (17 → 10, −7) : les huit
+	//     `journal-entries-reverse-blocked-*` partent dans `blocker-messages.ts` (−8),
+	//     le bouton « Modifier » arrive (`journal-entry-edit`, +1) ;
+	//   - `features/journal-entries/blocker-messages.ts` (0 → 12, +12) : les huit
+	//     motifs de contre-passation déplacés, plus les quatre motifs propres à la
+	//     modification (`journal-entries-modify-blocked-*`).
+	sitesTotal: 1876,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

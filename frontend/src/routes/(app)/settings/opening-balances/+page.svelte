@@ -231,7 +231,7 @@
 		const ok = window.confirm(
 			i18nMsg(
 				'opening-balances-complete-confirm',
-				'Enregistrer cette écriture de complément, datée du { $date } ? Elle ne se modifie plus ensuite.',
+				'Enregistrer cette écriture de complément, datée du { $date } ? Elle reste modifiable depuis sa fiche tant que l’exercice est ouvert.',
 				{ date: formatSwissDate(status?.complementDate ?? '') }
 			)
 		);
@@ -385,7 +385,7 @@
 				{:else if status.reason === 'ALREADY_HAS_ENTRIES'}
 					{i18nMsg(
 						'opening-balances-locked-already-has-entries',
-						'La société contient déjà des écritures : le bilan d’ouverture a été généré et ne se régénère plus. Un compte de bilan oublié se complète ci-dessous ; un montant faux sur un compte déjà saisi se corrige dans le journal, par une contre-passation ou une écriture de correction.'
+						'La société contient déjà des écritures : le bilan d’ouverture a été généré et ne se régénère plus. Un compte de bilan oublié se complète ci-dessous ; un montant faux sur un compte déjà saisi se corrige dans le journal, en modifiant l’écriture d’ouverture tant que l’exercice est ouvert, ou par une contre-passation ou une écriture de correction.'
 					)}
 				{:else}
 					<!-- reason inconnue (skew de version, évolution future) : pas de
@@ -444,7 +444,7 @@
 						{#if status.complementDateKind === 'TODAY'}
 							{i18nMsg(
 								'opening-balances-complete-date-today',
-								'L’écriture sera datée du { $date }, dans l’exercice « { $name } » : une régularisation, le premier jour de l’ouverture n’étant plus modifiable.',
+								'L’écriture sera datée du { $date }, dans l’exercice « { $name } » : une régularisation, le premier jour de l’ouverture n’acceptant plus d’écriture (exercice clôturé ou période verrouillée).',
 								{
 									date: formatSwissDate(status.complementDate ?? ''),
 									name: status.complementFiscalYear?.name ?? ''

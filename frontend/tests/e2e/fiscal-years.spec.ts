@@ -110,12 +110,12 @@ test.describe('Page exercices — création + clôture', () => {
  * Routage critique (vérifié spec validate Pass 1 ground-truth) :
  *   - `validate_invoice` utilise `find_open_covering_date` (`invoices.rs:970`)
  *     → un FY clos retourne `FISCAL_YEAR_INVALID` (PAS `FISCAL_YEAR_CLOSED`).
- *   - `FISCAL_YEAR_CLOSED` n'est levé QUE par `journal_entries::create`
- *     (`journal_entries.rs:109`). ⚠️ `journal_entries::update` le levait aussi
- *     jusqu'à la Story 24-4b (#380), qui l'a supprimée : le `PUT` rend
- *     désormais 409 `ENTRY_IS_POSTED` sans consulter l'exercice. Les tests
- *     ci-dessous passent tous par « Nouvelle écriture », donc par `create` —
- *     ils sont indifférents au gel.
+ *   - `FISCAL_YEAR_CLOSED` est levé par `journal_entries::create` et — de
+ *     nouveau depuis la Story 15-8a (#532) — par `journal_entries::update`
+ *     (400, exercice de l'écriture clôturé), que la 24-4b avait supprimée. Les
+ *     tests ci-dessous passent tous par « Nouvelle écriture », donc par
+ *     `create` ; le refus du `PUT` est couvert par
+ *     `crates/kesh-api/tests/journal_entry_reversal_e2e.rs`.
  *   - Test 3 utilise donc `JournalEntryForm`, pas `validateInvoice`.
  */
 

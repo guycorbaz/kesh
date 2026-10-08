@@ -113,6 +113,118 @@ impl ReversalBlocker {
     }
 }
 
+/// Pourquoi une écriture ne se **modifie** pas (Story 15-8a, #532) — hors
+/// exercices clos (le sien, un postérieur) et verrou de période, qui ont leurs
+/// variantes propres ([`DbError::FiscalYearClosed`],
+/// [`DbError::LaterFiscalYearClosed`], [`DbError::PeriodLocked`]).
+///
+/// C'est la **garde d'écriture** : rendue par
+/// `journal_entries::modification_guard`, convertie en erreur par
+/// `journal_entries::modification_refusal`. La 15-8b l'appliquera aussi à la
+/// suppression.
+///
+/// ⛔ **L'inventaire des propriétaires n'est pas réécrit ici** : `Owned` porte un
+/// motif de `reversal_blockers` — jamais `AccountArchived`, qui n'est pas un gel
+/// (on remplace le compte, et l'enregistrement le refuse tant qu'il reste).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModificationGuard {
+    /// Un motif de `reversal_blockers`, jamais [`ReversalBlocker::AccountArchived`].
+    Owned {
+        blocker: ReversalBlocker,
+        /// Identifiant de la pièce propriétaire (ou de la contre-passation).
+        document_id: Option<i64>,
+        /// Numéro lisible de la pièce, quand elle en a un.
+        document_label: Option<String>,
+    },
+    /// Le paiement d'une facture fournisseur **annulée**, détaché par
+    /// `supplier_invoices::cancel_in_tx` (Story 25-3-c) : plus aucune colonne ne
+    /// le référence, seule la trace d'audit `supplier_invoice.cancelled` le
+    /// relie encore à sa facture (C-15-8-20, dette #541). Il représente une
+    /// sortie de banque réelle : il ne se modifie pas, il se contre-passe.
+    DetachedSupplierSettlement {
+        supplier_invoice_id: i64,
+        /// `supplier_invoices.supplier_invoice_number` est nullable.
+        supplier_invoice_number: Option<String>,
+    },
+}
+
+impl ModificationGuard {
+    /// Code canonique exposé : celui du motif de contre-passation, ou
+    /// `DETACHED_SUPPLIER_SETTLEMENT`.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::Owned { blocker, .. } => blocker.code(),
+            Self::DetachedSupplierSettlement { .. } => "DETACHED_SUPPLIER_SETTLEMENT",
+        }
+    }
+
+    /// Identifiant de la pièce (facture fournisseur annulée pour le paiement détaché).
+    pub fn document_id(&self) -> Option<i64> {
+        match self {
+            Self::Owned { document_id, .. } => *document_id,
+            Self::DetachedSupplierSettlement {
+                supplier_invoice_id,
+                ..
+            } => Some(*supplier_invoice_id),
+        }
+    }
+
+    /// Étiquette lisible de la pièce (numéro de facture, d'avoir…), s'il y en a une.
+    pub fn label(&self) -> Option<String> {
+        match self {
+            Self::Owned { document_label, .. } => document_label.clone(),
+            Self::DetachedSupplierSettlement {
+                supplier_invoice_number,
+                ..
+            } => supplier_invoice_number.clone(),
+        }
+    }
+}
+
+/// Motif d'**écran** : pourquoi la fiche n'offre pas « Modifier » (Story 15-8a,
+/// D8). Rendu par `journal_entries::modification_blocker`, sur l'état
+/// **présent** — la nouvelle date, le corps et la version d'un `PUT` restent
+/// contrôlés à l'écriture seule.
+///
+/// ⚠️ Ordre de précédence = celui des refus du `PUT` qui ne dépendent pas du
+/// corps : exercice clos, exercice postérieur clos, garde d'écriture, verrou de
+/// période (ancienne date).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModificationBlocker {
+    /// L'exercice de l'écriture est clôturé.
+    FiscalYearClosed,
+    /// Un exercice **postérieur** est clôturé : le bilan est cumulatif, il
+    /// reprend cette écriture (C-15-8-22).
+    LaterFiscalYearClosed { fiscal_year_name: String },
+    /// Garde d'écriture (pièce, contre-passation, paiement détaché).
+    Guard(ModificationGuard),
+    /// La date de l'écriture est dans une période verrouillée.
+    PeriodLocked { locked_through: chrono::NaiveDate },
+}
+
+impl ModificationBlocker {
+    /// Code d'écran — l'une des onze valeurs de `modificationBlockedBy`.
+    pub fn code(&self) -> &'static str {
+        match self {
+            Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
+            Self::LaterFiscalYearClosed { .. } => "LATER_FISCAL_YEAR_CLOSED",
+            Self::Guard(guard) => guard.code(),
+            Self::PeriodLocked { .. } => "PERIOD_LOCKED",
+        }
+    }
+
+    /// Étiquette : nom de l'exercice postérieur clos, numéro de pièce, ou borne
+    /// du verrou (`AAAA-MM-JJ`).
+    pub fn label(&self) -> Option<String> {
+        match self {
+            Self::FiscalYearClosed => None,
+            Self::LaterFiscalYearClosed { fiscal_year_name } => Some(fiscal_year_name.clone()),
+            Self::Guard(guard) => guard.label(),
+            Self::PeriodLocked { locked_through } => Some(locked_through.to_string()),
+        }
+    }
+}
+
 /// Ce qui empêche de **dévalider** une facture (Story 25-2-b-1, #440).
 ///
 /// ⛔ **Un code par motif, et jamais le générique.** Les trois gardes que la
@@ -437,6 +549,21 @@ pub enum DbError {
     #[error("Exercice clôturé — modification interdite (CO art. 957-964)")]
     FiscalYearClosed,
 
+    /// Un exercice **postérieur** à celui de l'écriture est clôturé (Story
+    /// 15-8a, #532, C-15-8-22).
+    ///
+    /// Le bilan est **cumulatif** (`kesh-report/src/balance_sheet.rs`) : modifier
+    /// une écriture de N change le bilan de tout exercice postérieur. Or « N
+    /// ouvert, N+1 clos » est atteignable (`fiscal_years::close` ne regarde pas
+    /// les exercices antérieurs). Le refus nomme le **plus proche** postérieur
+    /// clos. Mappé vers HTTP **400** `LATER_FISCAL_YEAR_CLOSED` — l'état d'un
+    /// exercice, comme `FISCAL_YEAR_CLOSED`, pas un conflit sur l'écriture.
+    #[error("Exercice postérieur {fiscal_year_name} clôturé — écriture figée")]
+    LaterFiscalYearClosed {
+        fiscal_year_id: i64,
+        fiscal_year_name: String,
+    },
+
     /// Un ou plusieurs comptes référencés sont archivés ou n'appartiennent
     /// pas à la company courante. Variante dédiée pour exposer un message
     /// UX clair sans leak du détail interne.
@@ -728,18 +855,24 @@ pub enum DbError {
     #[error("Comptes archivés sur l'écriture à contre-passer ({})", .0.len())]
     ReversalAccountsArchived(Vec<ArchivedAccount>),
 
-    /// L'écriture a été contre-passée : on ne la supprime plus (Story 24-4a).
+    /// L'écriture a été contre-passée : on ne la modifie ni ne la supprime
+    /// plus (Story 24-4a ; la modification, Story 15-8a).
     ///
     /// Supprimer une écriture qu'on a corrigée **effacerait la correction** —
     /// exactement ce que l'art. 958f CO interdit. Le refus est donc voulu ; il
     /// est rendu explicite plutôt que laissé remonter comme une violation de
     /// clé étrangère au message opaque. Mappé vers HTTP **409**
     /// `ENTRY_IS_REVERSED`.
-    #[error("Écriture contre-passée : suppression refusée")]
+    #[error("Écriture contre-passée : modification et suppression refusées")]
     EntryIsReversed,
 
-    /// L'écriture est comptabilisée : elle ne se réécrit ni ne se supprime
-    /// (Story 24-4b, #380).
+    /// L'écriture est comptabilisée : elle ne se supprime pas (Story 24-4b,
+    /// #380).
+    ///
+    /// ⚠️ **Un seul émetteur reste** depuis la Story 15-8a (#532), qui a rouvert
+    /// la modification : `journal_entries::delete_in_tx` (étape 3-ter), donc le
+    /// `DELETE` de la route. La Story 15-8b le fait passer sous la garde de
+    /// modification et retire cette variante.
     ///
     /// ⛔ Toute écriture l'est **dès son insertion** — il n'existe pas de statut
     /// brouillon, et la story n'en introduit pas. Le refus est donc
@@ -749,8 +882,19 @@ pub enum DbError {
     /// ⚠️ Ce refus vient **après** [`DbError::EntryIsReversed`] : sur une
     /// écriture déjà contre-passée, conseiller la contre-passation serait un
     /// conseil faux. Mappé vers HTTP **409** `ENTRY_IS_POSTED`.
-    #[error("Écriture comptabilisée : modification et suppression refusées")]
+    #[error("Écriture comptabilisée : suppression refusée")]
     EntryIsPosted,
+
+    /// L'écriture ne se **modifie** pas : une pièce la possède, c'est une
+    /// contre-passation, ou c'est le paiement détaché d'une facture fournisseur
+    /// annulée (Story 15-8a, #532, D2).
+    ///
+    /// ⛔ Jamais construite avec `Owned { blocker: AlreadyReversed }` : une
+    /// écriture contre-passée rend [`DbError::EntryIsReversed`], le code de la
+    /// 24-4a. Mappé vers HTTP **409**, sous le code de la garde
+    /// ([`ModificationGuard::code`]) ; `error_code()` n'en rend que le repli.
+    #[error("Écriture non modifiable ({})", .0.code())]
+    EntryNotModifiable(ModificationGuard),
 
     /// La date de l'écriture tombe dans une période verrouillée
     /// (Story 24-4c, #380).
@@ -863,6 +1007,7 @@ impl DbError {
             Self::CheckConstraintViolation(_) => "CHECK_CONSTRAINT_VIOLATION",
             Self::IllegalStateTransition(_) => "ILLEGAL_STATE_TRANSITION",
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
+            Self::LaterFiscalYearClosed { .. } => "LATER_FISCAL_YEAR_CLOSED",
             Self::InactiveOrInvalidAccounts => "INACTIVE_OR_INVALID_ACCOUNTS",
             Self::AccountsNotPostable(_) => "ACCOUNT_NOT_POSTABLE",
             Self::RoundingAccountNotConfigured { .. } => "ROUNDING_ACCOUNT_NOT_CONFIGURED",
@@ -888,6 +1033,9 @@ impl DbError {
             Self::InvoiceMustBeUnvalidatedFirst => "INVOICE_MUST_BE_UNVALIDATED_FIRST",
             Self::EntryIsReversed => "ENTRY_IS_REVERSED",
             Self::EntryIsPosted => "ENTRY_IS_POSTED",
+            // ⚠️ Repli générique, comme `EntryNotReversable` : le code EXPOSÉ
+            // vient du mappage `kesh-api`, qui rend `guard.code()`.
+            Self::EntryNotModifiable(_) => "ENTRY_NOT_MODIFIABLE",
             Self::PeriodLocked { .. } => "PERIOD_LOCKED",
             Self::FiscalYearInvalid => "FISCAL_YEAR_INVALID",
             Self::OpeningComplementRefused { reason, .. } => reason.code(),

@@ -707,3 +707,547 @@ l'import (#458–#461).
 - **Écarté** : corriger B2/B4 dans cette story (la remédiation de production appelle une nouvelle passe,
   et « la sévérité se déplace vers ce qu'on vient d'écrire »).
 - **Réversible** : oui (une story de dette).
+## C-15-8-1 — La clé 15-8 passe à la modification d'une écriture (#532)
+- **Contexte** : C2 réservait « 15-8 » à l'import automatique du dossier (#459, #458), en
+  précisant que la numérotation pouvait changer. Le 2026-10-08, Guy a demandé en urgence la
+  modification d'une écriture tant que l'exercice est ouvert (#532) ; l'orchestrateur a attribué
+  la clé `15-8-modifier-une-ecriture`.
+- **Retenu** : 15-8 = #532. L'import du dossier et le cycle fournisseurs prendront les numéros
+  suivants à leur spécification (15-9, 15-10).
+- **Réversible** : oui, ce n'est qu'un nom de clé ; aucun fichier de l'import n'existe encore.
+## C-15-8-2 — La suppression est rouverte, dans le même cadre que la modification
+- **Contexte** : #532 laisse la suppression « à trancher ». La 24-4b l'avait fermée avec la
+  modification.
+- **Retenu** : `DELETE /journal-entries/{id}` aboutit sous **exactement** les gardes de la
+  modification (exercice ouvert, période non verrouillée, ni contre-passée ni contre-passation,
+  aucune pièce), avec l'instantané complet au journal d'audit (`journal_entry.deleted`, déjà
+  écrit par `delete_in_tx`). Le numéro n'est jamais réattribué (compteur de la 25-2-c) : le trou
+  est visible et expliqué par l'audit.
+- **Écartées** : (a) suppression toujours refusée — l'écriture d'ouverture saisie par erreur,
+  ou une écriture en double, ne s'effacerait qu'en la contre-passant, trois écritures pour une ;
+  et un cadre à deux règles pour deux gestes de même nature serait plus difficile à expliquer
+  que le même cadre ; (b) suppression sans trace — contraire à #532 point 1.
+- **Réversible** : oui — remettre le refus dans `delete_in_tx` (une garde).
+## C-15-8-3 — Une écriture modifiée ne change ni de numéro ni d'exercice
+- **Contexte** : le numéro est tiré d'un compteur **par exercice** (25-2-c) et l'unicité porte sur
+  `(company_id, fiscal_year_id, entry_number)`. Déplacer une écriture dans un autre exercice
+  obligerait à lui donner un numéro neuf.
+- **Retenu** : la nouvelle date doit tomber dans l'exercice **de l'écriture** — sinon
+  `400 DATE_OUTSIDE_FISCAL_YEAR` (message existant : « La date n'est pas dans l'exercice courant
+  de cette écriture »). Le numéro, l'exercice et l'`id` sont immuables ; changer d'exercice se fait
+  en supprimant puis en ressaisissant.
+- **Écartée** : renuméroter dans l'exercice cible — un numéro changeant sous une écriture
+  existante est ce que la 25-2-c a fermé.
+- **Réversible** : oui, mais coûteux (renumérotation).
+## C-15-8-4 — Les contrôles de saisie s'appliquent strictement, sans « grandfathering » de compte
+- **Contexte** : l'ancien `update` (supprimé par la 24-4b) exemptait de la garde de postabilité
+  les comptes déjà présents sur l'écriture (14-3b, D-A1). #532 exige « les mêmes contrôles qu'à
+  la saisie (comptes actifs et imputables) ».
+- **Retenu** : toutes les lignes, anciennes comme nouvelles, sont contrôlées comme à la création
+  (`active = TRUE`, `postable = TRUE`). Un compte archivé ou devenu non imputable doit être
+  remplacé pour enregistrer. Les **projets** déjà présents sur l'écriture restent tolérés même
+  archivés (grandfathering de l'ancien `update`) : étiqueter n'est pas imputer — asymétrie déjà
+  admise par la 24-4a.
+- **Écartée** : reprendre l'exemption D-A1 — contraire à la lettre de #532, et elle laisserait une
+  écriture modifiée aujourd'hui porter un compte qu'aucune saisie n'accepterait.
+- **Réversible** : oui (paramètre `exempt_ids` déjà présent dans `validate_lines_accounts_in_tx`).
+## C-15-8-5 — Le motif de refus réutilise l'inventaire de la contre-passation
+- **Contexte** : il faut refuser la modification de toute écriture référencée par une pièce. La
+  24-4a tient déjà l'inventaire exact (`reversal_blockers`) : contre-passation, contre-passée,
+  facture, avoir, facture fournisseur (achat et règlement), règlement client (solde compris),
+  transaction bancaire rapprochée, compte archivé.
+- **Retenu** : la modification et la suppression réutilisent `reversal_blockers` **sans** le motif
+  « compte archivé » (il ne gèle pas : on peut remplacer le compte). Codes : `ENTRY_IS_REVERSED`
+  (409, existant, message élargi à « modifiée ni supprimée ») pour une écriture déjà contre-passée ;
+  pour les autres motifs, un nouveau `DbError::EntryNotModifiable { blocker, document_id,
+  document_label }` rendu en 409 **sous le code du motif** (`IS_A_REVERSAL`, `OWNED_BY_INVOICE`,
+  …, `MATCHED_BANK_TRANSACTION`) avec `details.documentId` / `details.documentNumber` — la forme
+  exacte du refus de contre-passation, que l'API externe documente déjà, et le même message (il
+  nomme le chemin de la pièce). `ENTRY_IS_POSTED` et `DbError::EntryIsPosted` sont **retirés**
+  (plus d'émetteur). Un garde-fou d'inventaire (`information_schema`) rougit si une table neuve
+  référence `journal_entries` ou si `journal_entry_lines` gagne une colonne — c'est ce qui forcera
+  le triage du lettrage (15-1a).
+- **Écartée** : une seconde liste de propriétaires écrite à la main — deux inventaires divergent.
+## C-15-8-6 — L'historique se lit au journal d'audit, depuis la fiche
+- **Contexte** : #532 laisse à trancher l'affichage de l'historique des versions sur la fiche.
+- **Retenu** : la fiche indique « Modifiée » quand `version > 1` (seule la modification fait
+  bouger `version`) et porte un lien « Historique » vers `/audit-log?entityType=journal_entry&entityId={id}`
+  (écran existant, réservé Comptable/Admin ; le lien est masqué pour Consultation). L'instantané
+  avant/après, lignes comprises, est dans `details`.
+- **Écartée** : un écran de versions avec différentiel ligne à ligne — hors de l'urgence ; le
+  journal d'audit porte déjà l'information complète.
+- **Réversible** : oui ; un écran de versions peut s'ajouter plus tard sans rien défaire.
+## C-15-8-7 — Modifier et supprimer se font depuis la fiche, pas depuis la liste
+- **Retenu** : la liste garde son seul lien vers la fiche (24-4b). La fiche porte « Modifier »
+  (formulaire de saisie en mode édition, pré-rempli) et « Supprimer » (confirmation), absents —
+  pas grisés — avec le motif quand l'écriture n'est pas modifiable. La fiche est l'endroit où le
+  motif de refus et la contre-passation sont déjà expliqués.
+- **Écartée** : remettre ✎ et 🗑 sur chaque ligne de la liste — il faudrait y calculer
+  l'éditabilité ligne par ligne (cinq jointures), ce que la 24-4a a refusé pour la liste.
+## C-15-8-8 — `PUT` et `DELETE` restent ouverts aux clés API en écriture
+- **Retenu** : comme la création, la contre-passation et la dévalidation, ils sont ouverts aux clés
+  `read-write` ; l'API externe et le manuel administrateur le disent. La trace d'audit porte la clé.
+- **Écartée** : les réserver à l'interface — une intégration qui crée des écritures doit pouvoir
+  corriger les siennes, et le précédent de la dévalidation (#440) va dans ce sens.
+## C-15-8-9 — Pas de découpage : la règle n'est pas déclenchée
+- **Contexte** : cinq zones touchées (`kesh-db`, `kesh-api`, `kesh-i18n`, `frontend`, `docs`) —
+  le seuil est « plus de cinq ». Un seul mécanisme (deux verbes rouverts sous une garde commune),
+  aucune migration.
+- **Retenu** : story unique. **Ligne de découpe pré-déclarée** si la validation montre une
+  non-convergence par recyclage : la suppression (AC 9–11, T3, son bouton et son E2E) part en
+  15-8b ; la modification de l'écriture manuelle et d'ouverture reste en 15-8a.
+- **Réversible** : oui.
+
+## C-15-8-10 — Ordre des verrous du `PUT` : l'écriture seule, puis les projets, puis l'exercice
+
+- **Contexte** : validation P1 (R1/F1, HIGH). Le `FOR UPDATE` de l'écriture doit être le premier acte de la
+  transaction (décision de l'orchestrateur), sans quoi la garde lit une vue `REPEATABLE READ` antérieure à l'attente
+  du verrou. Mais l'ancien `update` validait les projets (sentinelle `companies` puis `FOR UPDATE` des projets)
+  **avant** de verrouiller l'écriture **avec son exercice**.
+- **Retenu** : étape 1 = l'écriture **seule** (`FOR UPDATE` sans jointure) ; 1-bis = projets (sentinelle puis projets,
+  seulement pour les tags nouveaux) ; 1-ter = l'exercice ; 1-quater = borne lue sans verrou. Le **refus** projet est
+  gardé et rendu à l'étape 6, avec les comptes, pour que l'exercice clos et le gel parlent d'abord (AC 7).
+- **Écartées** : verrouiller écriture et exercice ensemble puis les projets — inverse l'ordre de la création
+  (`companies → projects → fiscal_years`) et fait se bloquer en croix deux saisies taguées du même exercice ; garder
+  les projets avant l'écriture en lecture verrouillante — contraire à la décision « verrou de l'écriture d'abord ».
+- **Vérifié** : aucun appelant de la sentinelle ne verrouille ensuite une écriture existante (grep, 2026-10-08) ; à
+  revérifier au développement. Un cycle résiduel serait un 1213 d'InnoDB, pas une attente infinie.
+- **Réversible** : oui (ordre interne d'une fonction).
+
+## C-15-8-11 — Un `PUT` identique sur une écriture à compte archivé rend 400, pas 200
+
+- **Contexte** : R2 — l'AC 3 (« `PUT` identique → 200 ») contredisait l'AC 4 (« compte archivé, y compris sur une ligne
+  inchangée → 400 ») pour ce cas.
+- **Retenu** : 400 `INACTIVE_OR_INVALID_ACCOUNTS`. Le no-op vient après toutes les gardes (héritage KF-004) ; le test
+  `update_no_op_with_inactive_account_returns_inactive_error` de l'ancien `update` est rétabli tel quel.
+- **Écartée** : 200 no-op — un « rien à faire » sur une écriture que l'enregistrement refuserait ferait croire
+  qu'elle est saine.
+- **Réversible** : oui.
+
+## C-15-8-12 — Après suppression de l'ouverture seule, la nouvelle ouverture porte le numéro 2
+
+- **Contexte** : R10 — le compteur de la 25-2-c ne réattribue jamais un numéro.
+- **Retenu** : l'accepter, le dire au manuel (§ soldes de départ) et l'asserter (AC 13). Le trou est expliqué par
+  l'instantané `journal_entry.deleted`.
+- **Écartée** : réinitialiser le compteur quand la société redevient vierge — rouvrirait la réattribution que la
+  25-2-c a fermée, pour un gain cosmétique.
+- **Réversible** : oui.
+
+## C-15-8-13 — Deux fonctions : la garde d'écriture et le motif d'écran
+
+- **Contexte** : R5 — une seule `modification_blocker` devait servir l'écriture (filtre D2 seul) et l'écran (neuf
+  motifs, dont l'exercice clos et la période), avec deux précédences et deux vocabulaires de codes.
+- **Retenu** : `modification_guard` (D2 seule, rend `Option<ReversalBlockerHit>`, `AccountArchived` exclu) partagée
+  par `update` et `delete_in_tx`, convertie en erreur par `modification_refusal` ; `modification_blocker` (écran)
+  l'appelle, entre l'exercice clos et la période, et rend `Option<ModificationBlocker>`. Une table de correspondance
+  écrite en dur (seul écart : `ALREADY_REVERSED` ↔ `ENTRY_IS_REVERSED`) fait l'assertion de l'AC 14.
+- **Écartée** : renommer `ALREADY_REVERSED` à l'écran en `ENTRY_IS_REVERSED` — perdrait la réutilisation des clés
+  `journal-entries-reverse-blocked-*` et créerait un second vocabulaire côté écran.
+- **Réversible** : oui.
+
+## C-15-8-14 — Rôle Consultation : « Modifier », « Supprimer » et « Contre-passer » masqués
+
+- **Contexte** : R10 — « Contre-passer » est aujourd'hui affiché à Consultation et rend 403 au clic ; « Modifier » et
+  « Supprimer » auraient hérité du même défaut.
+- **Retenu** : les trois boutons, et le lien « Historique », absents pour ce rôle (lu dans `authState`) ; le 403 du
+  serveur reste le refus qui fait autorité. « Contre-passer » est aligné dans la même story, puisque le geste est le
+  même et sur la même page.
+- **Écartée** : assumer des boutons qui échouent en 403 — un bouton qui ne peut qu'échouer ne renseigne pas.
+- **Réversible** : oui.
+
+## C-15-8-15 — Le formulaire se rétablit par inversion du commit du gel, sur cinq fichiers seulement
+
+- **Contexte** : F3 — « rétablir depuis `d2910022` » écraserait la prop `booksLockedThrough` et le `min` de date de la
+  24-4c (`54ae4a70`).
+- **Retenu** : `git show 08e20353 -- <fichier> | git apply -R --3way` sur `form-helpers.ts`, `form-helpers.test.ts`,
+  `journal-entries.api.ts`, `journal-entries.types.ts` (nets, vérifié par `--check`) et `JournalEntryForm.svelte`
+  (conflit à résoudre en gardant la 24-4c). **Pas** sur la page de liste (le mode édition y vivait, C-15-8-7 l'écarte),
+  ni sur la spec E2E de liste, ni sur `i18n-keys.test.ts` (cinq fois modifié depuis), ni à l'aveugle sur
+  `e2e-selecteurs-traduits.test.ts`.
+- **Écartée** : copier l'état `d2910022` — perte silencieuse de la protection de saisie 24-4c.
+- **Réversible** : oui.
+
+## C-15-8-16 — La préparation extraite du `POST` passe avant son pré-contrôle d'exercice
+
+- **Contexte** : R11 / D4 — la préparation (trim, longueurs, parse, `accounting::validate`) est extraite dans
+  `prepare_new_journal_entry`, commune au `POST` et au `PUT`. Dans le `POST` actuel, `find_covering_date` s'intercale
+  entre le parse et `validate`.
+- **Retenu** : `prepare_new_journal_entry` d'un bloc, puis `find_covering_date` : un corps à la fois déséquilibré
+  **et** sans exercice rend désormais `ENTRY_UNBALANCED` avant `NO_FISCAL_YEAR`. Cohérent avec « les refus de forme
+  précèdent toute lecture de la base ». Le développeur grepe les tests du `POST` qui cumuleraient les deux causes.
+- **Écartée** : couper la fonction en deux (parse / validate) pour garder l'ordre exact — deux fonctions là où une
+  suffit, pour un cas de double faute.
+- **Réversible** : oui.
+
+## C-15-8-17 — Découpage de la 15-8 en 15-8a (modifier) et 15-8b (supprimer)
+
+- **Contexte** : validation P2, finding F6 (MEDIUM) — comptée à la granularité de la règle de découpage (« modules
+  métier de premier niveau »), la story touche bien plus de cinq modules ; C-15-8-9 n'en comptait que cinq « zones » et
+  omettait `kesh-report`. Ce n'est pas un recyclage, et l'amendement D5 ne couvre pas ce critère : le signal est déclaré.
+  Décision de l'orchestrateur, pour livrer vite ce que Guy attend (corriger son ouverture inversée).
+- **Retenu** : la ligne de découpe pré-déclarée par C-15-8-9. **15-8a** — la modification (`PUT`) de l'écriture manuelle
+  et d'ouverture, sa garde, son audit avant/après, l'écran d'édition, le manuel et la doc de ce geste (`refs #532`).
+  **15-8b** — la suppression (`DELETE`), l'historique visible sur la fiche (« Modifiée », « Historique »), le retrait
+  d'`ENTRY_IS_POSTED`, le reste du manuel (`closes #532`). 15-8b dépend de 15-8a. La fiche 15-8 devient l'index
+  (`split`). Révise C-15-8-9.
+- **Écartées** : garder une story unique (signal levé, règle non dérogeable par l'argument « un seul mécanisme ») ;
+  couper par couche (backend / écran) — livrerait un `PUT` sans écran, inutilisable par Guy.
+- **Conséquence assumée** : entre les deux merges, le `DELETE` garde `409 ENTRY_IS_POSTED` ; le manuel de la 15-8a dit
+  vrai pour cet état intermédiaire.
+- **Réversible** : oui (refusionner deux fiches non développées).
+
+## C-15-8-18 — La 15-8a passe après la 15-5a : deux refus de compte, pas un
+
+- **Contexte** : validation P2, finding F1 (HIGH). La 15-5a (revue close, PR #535), ordonnée avant la 15-8 (C2), a
+  retiré `exempt_ids` de `validate_lines_accounts_in_tx`, introduit `400 ACCOUNT_NOT_POSTABLE` avec
+  `details.rejected[{accountId, accountNumber}]` (compte actif non imputable), laissé `400 INACTIVE_OR_INVALID_ACCOUNTS`
+  au compte inconnu, d'une autre société ou archivé (qui prime), et créé `## [0.13.0] — Non publié`. La fiche 15-8
+  attendait un seul refus et chargeait T2 de retirer `exempt_ids`.
+- **Retenu** : la 15-8a s'écrit contre l'état « 15-5a mergée » et se rebase sur `main` après ce merge (T0). Partout,
+  les deux refus sont séparés : AC 3, AC 4, AC 12 (table de correspondance), D4 étape 6. **C-15-8-11 est révisé** : un
+  `PUT` identique sur une écriture à compte archivé rend `INACTIVE_OR_INVALID_ACCOUNTS`, à compte devenu non imputable
+  `ACCOUNT_NOT_POSTABLE` (test jumeau neuf). `test_update_refuses_a_line_on_an_account_made_non_postable` attend
+  `AccountsNotPostable` nommant le compte. T2 ne retire plus `exempt_ids`. Le formulaire garde le
+  `case 'ACCOUNT_NOT_POSTABLE'` de la 15-5a ; `docs/api-external.md` ajoute le `PUT` à la liste des routes qui le rendent.
+- **Correction d'une entrée antérieure** : la réversibilité écrite à C-15-8-4 (« paramètre `exempt_ids` déjà présent »)
+  est périmée — le paramètre n'existe plus après la 15-5a ; revenir sur C-15-8-4 exigerait de le réintroduire (finding
+  R2-9).
+- **Écartée** : écrire la 15-8a contre `main` d'avant la 15-5a — conflit garanti sur `validate_lines_accounts_in_tx`
+  et sur le formulaire, et un contrat de refus que le serveur ne rendrait plus.
+- **Réversible** : oui.
+
+## C-15-8-19 — Rejeu sur interblocage du `PUT` (et du `DELETE`), cycles nommés, projets lus en verrou partagé
+
+- **Contexte** : validation P2, findings F2, R2-2, R2-3 (MEDIUM). L'ordre écriture → [companies → projets] → exercice
+  n'entre en cycle avec aucune sentinelle, mais il entre dans trois cycles **hérités** : exercice ↔ compte (règlement,
+  complément : compte puis exercice ; le `PUT` : exercice puis verrou partagé de clé étrangère sur le compte) ;
+  exercice ↔ `companies` (le `PUT` tient la sentinelle et attend l'exercice ; une création tient l'exercice et prend le
+  verrou partagé de clé étrangère `company_id`) ; projet ↔ exercice (avec la contre-passation d'une écriture taguée). Le
+  `PUT` n'avait pas de `retry_with`, et la fiche affirmait « jamais une attente infinie », contre la doctrine de
+  `retry.rs:7-10` et de Pattern 5 (50 s puis 500). Par ailleurs la lecture des projets existants, ordinaire, ouvrait la
+  vue `REPEATABLE READ` avant les verrous des projets et de l'exercice.
+- **Retenu** : le handler `PUT` est enveloppé dans `retry_with(DEFAULT_MAX_DEADLOCK_ATTEMPTS, is_deadlock_error, …)` ;
+  les trois cycles sont nommés dans la fiche et le doc-comment ; la phrase fausse est retirée (1213 rejoué, 1205 non
+  rejoué → 500) ; le `PUT` entre à la « Deny list » de Pattern 5 (`docs/MULTI-TENANT-SCOPING-PATTERNS.md`) avec ordre,
+  raison et mitigation ; la lecture des projets existants se fait en `LOCK IN SHARE MODE` — la vue s'ouvre ainsi après
+  le dernier verrou (une seconde mutation la tient, AC 8) ; un test à deux connexions établit que le cycle projet ↔
+  exercice produit bien un interblocage (AC 9). Le `DELETE` de la 15-8b est enveloppé de même : son rejeu coûte trois
+  lignes, sans effet hors de la transaction.
+- **Écartées** : (b) de R2-2 — garder une lecture ordinaire et dire que la vue s'ouvre à 1-bis : plus faible pour un
+  coût nul de la lecture verrouillante (l'écriture est déjà tenue en exclusif) ; réordonner les verrous pour supprimer
+  les cycles — impossible sans contredire la règle « le verrou de l'écriture d'abord » (D2), et le dépôt n'a pas d'ordre
+  unique (`opening_complement.rs:26-35`).
+- **Réversible** : oui.
+
+## C-15-8-20 — Le paiement détaché d'une facture fournisseur annulée reste gelé, par la trace d'audit
+
+- **Contexte** : validation P2, finding F3 (MEDIUM). `supplier_invoices::cancel_in_tx` annule une facture **payée**
+  en contre-passant l'achat, **sans** contre-passer le règlement, puis remet `settlement_journal_entry_id` à `NULL`
+  (arbitrage de Guy du 2026-09-26). Plus aucune colonne ne référence l'écriture de règlement : sous le cadre de la 15-8,
+  elle devenait modifiable et supprimable — une sortie de banque réelle. Consigne de l'orchestrateur : chercher un
+  marqueur structurel de l'origine ; sinon, l'annulation doit laisser une trace qui gèle l'écriture, par la solution la
+  moins invasive.
+- **Constat au sol** : **aucun marqueur structurel d'origine** — `journal_entries` n'a que `journal` (partagé avec la
+  saisie manuelle) et `reverses_entry_id` ; l'audit `journal_entry.created` est écrit pour tous les flux par
+  `create_in_tx_inner`. La seule trace est l'audit du geste : `supplier_invoice.cancelled`,
+  `details_json.settlementJournalEntryId` (`supplier_invoices.rs:931-935`), écrit depuis la 25-3-c.
+- **Retenu** : la garde de modification (`modification_guard`, 15-8a D2) lit cette trace — jointure
+  `supplier_invoices` (même société, `status = 'cancelled'`) × `audit_log` (index `idx_audit_log_entity`), sur
+  `JSON_VALUE(details_json, '$.settlementJournalEntryId')` — et refuse en **409 `DETACHED_SUPPLIER_SETTLEMENT`**, avec
+  l'id et le numéro de la facture. Le motif est **hors** `reversal_blockers` : la contre-passation du paiement reste
+  offerte, comme le manuel le promet. Nouveau code d'écran (dix au lieu de neuf), nouvelle clé
+  `journal-entries-modify-blocked-detached-settlement`, cas de test à l'AC 6 (15-8a) et à l'AC 4 (15-8b), manuel
+  `user-manual.tex:1331-1337` et FAQ `:2140`. Ni migration, ni changement du geste d'annulation.
+- **Écartées** : garder la colonne `settlement_journal_entry_id` à l'annulation — rendrait le paiement
+  `OwnedBySupplierInvoice`, donc **non contre-passable**, et changerait le sens d'une colonne qu'une facture `cancelled`
+  ne porte pas aujourd'hui (revient sur l'arbitrage du 2026-09-26) ; contre-passer aussi le règlement à l'annulation —
+  idem ; une colonne ou une table neuve qui garde le lien — migration, hors du périmètre d'une story urgente ; accepter
+  le paiement comme une écriture manuelle — écarté par la consigne.
+- **Limite assumée, signalée pour une issue** : une référence lue dans un journal d'audit n'est pas une clé étrangère —
+  le garde-fou d'inventaire D3 ne la voit pas, et un futur geste de « rattachement » d'un paiement détaché (le manuel
+  l'annonce) devra la revoir. Une issue doit porter la colonne structurelle qui la remplacera.
+- **Réversible** : oui (une branche de la garde).
+
+## C-15-8-21 — Formulaire : la modale de conflit ne revient pas avec l'inversion du gel
+
+- **Contexte** : validation P2, findings R2-1 et F4 (MEDIUM), F8 (LOW). L'inversion de `08e20353` sur
+  `JournalEntryForm.svelte` (C-15-8-15) restaure la modale de conflit de la Story 3.3 (`showConflictDialog`,
+  `case 'OPTIMISTIC_LOCK_CONFLICT'` qui l'ouvre, prop `onConflictReload`, `handleConflictReload`, balisage, clés
+  `journal-entry-conflict-*`), que D8 remplace par un toast puis un rechargement. Les clés neuves du formulaire
+  étaient nommées `journal-entry-…`, préfixe que `lint-i18n-ownership` refuse dans `features/journal-entries/`.
+- **Retenu** : la modale est **écartée** du bloc inversé, nommément ; une prop neuve `onStale` (appelée après le toast
+  par `FISCAL_YEAR_CLOSED`, les 409 de course et `OPTIMISTIC_LOCK_CONFLICT`) remplace `onConflictReload` ;
+  `{#if !isEdit}` autour de l'assistant TVA est **repris** (l'assistant compose une écriture d'achat neuve, réservé à la
+  création) ; les trois entrées périmées `journal-entry-conflict-*` de `KNOWN_VIOLATIONS` sont retirées ; les clés du
+  formulaire prennent le préfixe `journal-entries-` (`journal-entries-edit-conflict`,
+  `journal-entries-line-account-unusable`) ; `case 'PERIOD_LOCKED'` est nommé.
+- **Écartées** : garder la modale (contraire à D8, et elle rouvre quatre clés retirées) ; inscrire les nouvelles clés à
+  `KNOWN_VIOLATIONS` (agrandit la dette #30) ; offrir l'assistant TVA en édition (il ajoute des lignes d'achat à une
+  écriture existante, cas non spécifié).
+- **Réversible** : oui.
+
+## C-15-8-22 — Modification et suppression refusées dès qu'un exercice postérieur est clos
+
+- **Contexte** : validation P3, finding F1 de la 15-8b (MEDIUM), qui vaut pour la 15-8a. Le bilan est **cumulatif**
+  (`kesh-report/src/balance_sheet.rs:9`, « tous exercices confondus ») et `fiscal_years::close` n'exige pas que
+  l'exercice précédent soit clos (`fiscal_years.rs:739` ; seule `reopen` a une garde LIFO, `find_later_closed_in_tx`).
+  L'état « N ouvert, N+1 clos » est atteignable : modifier ou supprimer une écriture de N réécrivait le bilan d'un N+1
+  tenu pour clos. Décision de l'orchestrateur (consigne 1 de la passe).
+- **Retenu** : nouvelle condition du cadre D1 (15-8a) : aucun exercice **postérieur** à celui de l'écriture n'est clos.
+  Refus **400 `LATER_FISCAL_YEAR_CLOSED`** (`DbError::LaterFiscalYearClosed { fiscal_year_id, fiscal_year_name }`,
+  `details.fiscalYearId` / `fiscalYearName`, clé `journal-entries-modify-blocked-later-fiscal-year-closed` partagée par
+  le serveur et l'écran) ; précédence : juste après `FISCAL_YEAR_CLOSED`, avant tout 409 ; verrou : réutilisation de
+  `find_later_closed_in_tx` (`FOR UPDATE` sur l'intervalle `start_date > ?`), **après** l'exercice de l'écriture —
+  ordre écriture → [companies → projets] → exercice → exercices postérieurs (`PUT`), écriture + exercice → exercices
+  postérieurs (`DELETE`, étape 2-bis, avant la première lecture ordinaire) ; motif d'écran `LATER_FISCAL_YEAR_CLOSED`
+  (onze codes au lieu de dix) lu par une sœur non verrouillante, `find_later_closed`, au `SELECT` partagé ; tests de
+  refus, de précédence et de concurrence (clôture de N+1 non commitée), avec mutation ; manuel (§ clôture).
+- **Écartées** : l'inscrire au registre comme angle mort assumé — le défaut fausse un bilan clos, exactement ce que la
+  clôture protège ; imposer l'ordre des clôtures dans `fiscal_years::close` — ferme la cause pour l'avenir, mais pas les
+  installations où l'état existe déjà, et change un geste hors du périmètre de #532 ; un `400 FISCAL_YEAR_CLOSED`
+  réutilisé — il dirait « l'exercice de cette date est clos », faux ici.
+- **Coûts assumés** : le verrou d'intervalle sérialise brièvement le `PUT`/`DELETE` d'une écriture ancienne avec les
+  créations de tous les exercices postérieurs ; les trois cycles hérités valent aussi pour les exercices postérieurs
+  (rejoués par `retry_with`).
+- **Signalé pour une issue** : le même trou existe pour la création, la dévalidation, le règlement et toute écriture
+  datée dans un exercice antérieur à un exercice clos — défaut préexistant, hors périmètre.
+- **Réversible** : oui (une étape de la garde).
+
+## C-15-8-23 — Projets existants lus par une lecture ordinaire après le verrou de l'écriture (corrige C-15-8-19)
+
+- **Contexte** : validation P3, findings R3-2 (15-8a) et F1 (15-8a), MEDIUM. Le `LOCK IN SHARE MODE` retenu par
+  C-15-8-19 sur `journal_entry_lines` posait, sous `REPEATABLE READ`, un verrou d'intervalle jusqu'à l'enregistrement
+  suivant (jusqu'au *supremum* pour la dernière écriture), **avant** le verrou de l'exercice : quatrième cycle, non
+  hérité, avec une création du même exercice — dont la victime pouvait être la création, non rejouée (500). « Coût
+  nul » était faux.
+- **Retenu** (consigne 2 de l'orchestrateur) : lecture **ordinaire** des projets existants **après** l'étape 1 —
+  l'écriture verrouillée, ses lignes sont stables. La vue `REPEATABLE READ` s'ouvre donc à 1-bis, avant les verrous des
+  projets et des exercices : la garde reste juste (tout ce qui la change passe par la ligne verrouillée de l'écriture ;
+  le paiement détaché est sûr par atomicité du commit) ; l'exercice et les exercices postérieurs sont lus en lecture
+  verrouillante (état courant) ; la borne `books_locked_through` peut être périmée — même tolérance qu'à la création.
+  La seconde mutation de l'AC 8 tombe. Les cycles restants (les trois hérités, étendus aux exercices postérieurs) sont
+  nommés et couverts par `retry_with`.
+- **Écartées** : garder le verrou partagé et nommer le quatrième cycle — il frappe une création non rejouée ;
+  verrouiller tous les projets du corps puis trier « anciens / nouveaux » après la vue — exige une variante de
+  `validate_taggable_in_tx` qui tolère l'archivé, pour un gain limité à la fraîcheur de la borne.
+- **Correction d'une entrée antérieure** : C-15-8-19, point « la lecture des projets existants se fait en `LOCK IN
+  SHARE MODE` » et option écartée « (b) de R2-2 … coût nul » — révisés ici.
+- **Réversible** : oui.
+
+## C-15-8-24 — `modification_guard` prend une connexion ; corrections de renvois de C-15-8-5, C-15-8-10, C-15-8-12, C-15-8-13
+
+- **Contexte** : validation P3, finding R3-1 de la 15-8a (MEDIUM). `modification_guard(executor, …)` générique enchaîne
+  deux lectures (`reversal_blockers`, puis la trace d'audit) ; `reversal_blockers` prend son exécuteur par valeur : un
+  `E: Executor` ne sert qu'une fois. La correction R2-15 avait déplacé le défaut sur `modification_guard` au lieu de le
+  corriger. LOW R3-3 (15-8a) et R3-3/F8 (15-8b) : renvois périmés du registre.
+- **Retenu** (consigne 3) : `modification_guard(conn: &mut sqlx::MySqlConnection, company_id, id)` — `update` et
+  `delete_in_tx` passent `&mut **tx` ; `modification_blocker(pool: &MySqlPool, …)` fait `pool.acquire()` et enchaîne ses
+  cinq lectures sur la connexion.
+- **Corrections d'entrées antérieures** (sans les réécrire) :
+  - **C-15-8-5** : `DbError::EntryNotModifiable { blocker, document_id, document_label }` est devenu
+    `DbError::EntryNotModifiable(ModificationGuard)` (tuple, `ModificationGuard::Owned { … }` ou
+    `::DetachedSupplierSettlement { … }`, C-15-8-20) ; `ENTRY_IS_POSTED` n'est retiré qu'à la 15-8b.
+  - **C-15-8-10** : la phrase « Un cycle résiduel serait un 1213 d'InnoDB, pas une attente infinie » est fausse
+    (C-15-8-19 l'a retirée de la fiche) : un cycle non détecté finit en 1205 après 50 s, non rejoué, donc 500. L'ordre
+    s'est aussi allongé des exercices postérieurs (C-15-8-22).
+  - **C-15-8-12** : « l'asserter (AC 13) » — c'est l'**AC 7** de la 15-8b depuis le découpage.
+  - **C-15-8-13** : `modification_guard` rend `Result<Option<ModificationGuard>, DbError>` (pas
+    `Option<ReversalBlockerHit>`), prend une connexion ; la table de correspondance est l'assertion de l'**AC 12** de
+    la 15-8a (pas l'AC 14) ; `modification_blocker` lit aussi l'exercice postérieur clos.
+- **Écartée** : `modification_guard` sur `&mut Transaction` — l'écran n'a pas de transaction ; en ouvrir une pour lire
+  serait plus lourd qu'un `acquire()`.
+- **Réversible** : oui.
+
+## C-15-8-25 — Paiement détaché lu dans l'audit : trois réserves écrites, dette #541, requête bornée par société
+
+- **Contexte** : validation P3, finding F7 de la 15-8a (LOW, trois réserves non écrites).
+- **Retenu** (consigne 6) : la fiche écrit (1) que la lecture d'audit **révise** le garde-fou de la 25-3-c (« ne pas le
+  rechercher dans l'audit », `supplier-invoices/[id]/+page.svelte:409-411`, arbitrage Q1) — le commentaire se reformule ;
+  (2) le faux positif possible après restauration (fusion d'`audit_log`, `backup.rs:438-455`) — limite assumée, dite au
+  manuel administrateur ; (3) le coût de `JSON_VALUE`, non indexable, à chaque `GET` et `PUT`. Renvoi à **#541** (dette
+  structurelle : la colonne qui garde le lien). Requête bornée par société des deux côtés : `si.company_id = ?` **et**
+  `al.company_id = ?` (filtre strict, patron `audit_log.rs:204`) ; faux négatif résiduel nommé (trace sans société).
+- **Écartée** : `al.company_id = ? OR al.company_id IS NULL` — rouvre le faux positif inter-sociétés que le filtre ferme,
+  pour un cas (utilisateur sans société au moment de l'annulation) que l'écrivain ne produit pas en pratique.
+- **Réversible** : oui (une condition de jointure).
+
+## C-15-8-26 — `README.md:29` édité par la 15-8b seule
+
+- **Contexte** : validation P3, findings R3-4 et F3 de la 15-8b (LOW) : les deux fiches éditaient la même ligne, et la
+  15-8b citait « … et supprimables » comme s'il existait déjà.
+- **Retenu** : la 15-8b seule écrit la forme finale — « écritures validées, modifiables et supprimables tant que
+  l'exercice est ouvert ». La 15-8a n'y touche pas : entre les deux merges, la ligne tait la modification sans rien
+  affirmer de faux. `README.md:219` (ligne de la v0.12.0) est historique et reste.
+- **Écartée** : la 15-8a écrit « modifiables », la 15-8b complète — conflit de merge garanti sur une ligne, pour un
+  état intermédiaire de quelques jours.
+- **Réversible** : oui.
+
+## C-15-8-27 — Contrôles de manuel sur les PDF aplatis, motifs complétés, `.ftl` contrôlé ; message d'`ENTRY_IS_POSTED` réécrit
+
+- **Contexte** : validation P3, findings R3-6, F6, F9 (15-8a), R3-6, F9 (15-8b), F4 (15-8a) — tous LOW. Le balisage TeX
+  (`\textbf{imposée}`) coupe les tournures dans le `.tex` ; des formulations échappaient aux motifs (« seul chemin »,
+  « passent par contre-passation », « ni modifiée ni supprimée ») ; la tournure naturelle du paiement détaché heurtait un
+  motif ; le `.ftl` n'était pas contrôlé, et le message d'`ENTRY_IS_POSTED` (« ne se modifie plus … contre-passez-la »)
+  devenait faux dès la 15-8a pour le `DELETE` d'une écriture modifiable.
+- **Retenu** (consigne 7) : le contrôle **fait foi sur les PDF aplatis** (`grep -oiE`, qui compte les occurrences) ;
+  motifs complétés (`seul chemin`, `passent par (la )?contre-passation`, `seule voie de correction`, `ni modifiée ni
+  supprimée`) ; `fr-CH/messages.ftl` grepé, les trois autres locales relues à la main ; lignes de base mesurées
+  (15-8a : 11 / 5 / 2 ; 15-8b : 5 / 2 / 0) ; tournures **prescrites** pour le paiement détaché et pour la clé de
+  l'exercice postérieur clos, qui ne heurtent aucun motif. La 15-8a réécrit la clé `journal-entries-blocked-posted`
+  (« … ne se supprime pas. Pour la corriger, modifiez-la tant que son exercice est ouvert, ou contre-passez-la »), son
+  repli Rust et le `#[error]` ; la 15-8b les retire.
+- **Écartée** : garder le contrôle sur le `.tex` — passe à tort sur les phrases balisées ; exiger que 15-8a et 15-8b
+  partent dans la même release au lieu de réécrire le message — contrainte de calendrier pour une story urgente.
+- **Réversible** : oui.
+
+## C-15-8-28 — 15-8a : dérogation écrite à la règle de splitting, pas de nouveau découpage
+
+- **Contexte** : validation P3, finding F2 de la 15-8a (MEDIUM). La fiche touche encore plus de cinq modules de premier
+  niveau ; l'exception du `CLAUDE.md` (cycle Cargo, merge non testable) ne s'applique pas — un `PUT` sans écran est
+  testable.
+- **Retenu** (consigne 4) : **pas** de découpage supplémentaire ; section « Dérogation règle de splitting » écrite dans
+  la 15-8a — story URGENTE demandée par le Project Lead, déjà issue d'un découpage (15-8 → 15-8a / 15-8b), et un `PUT`
+  sans écran ne rend aucun service à l'utilisateur qui l'attend ; risque accepté (revue d'un périmètre large), contenu
+  par la passe ciblée de fin de boucle. **Repli écrit** si une passe recycle : 15-8a-1 (API : D1–D7, D9, D10 ; AC 1–13,
+  15, 16, 18) / 15-8a-2 (écran et manuel : D8 ; AC 14, 17).
+- **Écartée** : couper maintenant en 15-8a-1 / 15-8a-2 — retarde la correction que Guy attend, sans défaut de conception
+  qui l'exige (les findings P3 sont distincts et ne recyclent pas).
+- **Réversible** : oui (le repli est écrit).
+
+## C-15-8-29 — 15-8b : l'exercice postérieur clos ne garde le `DELETE` que sur le chemin de la route
+
+- **Contexte** : C-15-8-22 au `DELETE`. `delete_in_tx` a deux appelants : la route (`enforce_ownership = true`) et
+  `invoices::unvalidate` (`false`), dont l'AC 3 de la 15-8b exige le comportement inchangé.
+- **Retenu** : l'étape 2-bis (exercices postérieurs clos) ne s'exécute que si `enforce_ownership` ; la dévalidation garde
+  son comportement, et le même trou y est signalé pour une issue avec la création et le règlement (C-15-8-22).
+- **Écartée** : l'appliquer aussi à la dévalidation — change un flux de facturation hors du périmètre de #532, sans
+  spécification de son message ni de son écran.
+- **Réversible** : oui.
+
+## C-15-8a-1 — 15-8a (dev) : bases dédiées recréées après un redémarrage du conteneur par l'autre agent
+
+- **Contexte** : développement en parallèle de la 15-5b sur la même machine. Les bases `kesh_158` / `kesh_e2e_158`,
+  créées au début, ont **disparu** en cours de route (`Unknown database 'kesh_158'`, MariaDB à 461 s d'uptime) : le
+  conteneur `kesh-mariadb-dev` (datadir en tmpfs) a été redémarré par la « remise à zéro » de l'autre agent.
+- **Retenu** : un script de remise à zéro propre à ce worktree (scratchpad `reset158.sh` : `DROP/CREATE`, `GRANT`,
+  migrations, seed sur `kesh_158` seulement), rejoué avant chaque gate ; jamais de redémarrage du conteneur, jamais de
+  geste sur `kesh` ni `kesh_e2e`.
+- **Écartée** : redémarrer le conteneur moi-même — interdit, et aurait effacé les bases de l'autre agent.
+- **Réversible** : oui. ⚠️ **À signaler à l'orchestrateur** : la « remise à zéro » du `CLAUDE.md` (redémarrage du
+  conteneur) efface les bases de **tous** les agents ; un gate en cours chez l'un tomberait.
+
+## C-15-8a-2 — 15-8a (dev) : l'identifiant du paiement détaché se compare en CHAÎNE à `JSON_VALUE`
+
+- **Contexte** : D2 laissait ouvert « vérifier au premier test que MariaDB 10.11 compare numériquement, ou lier l'id en
+  chaîne ».
+- **Retenu** : `JSON_VALUE(al.details_json, '$.settlementJournalEntryId') = ?` avec l'id lié en **chaîne** : comparaison
+  exacte, sans conversion implicite en `DOUBLE`. Vérifié par le **chemin réel** create → pay → cancel
+  (`supplier_invoices_repository.rs`, `cancel_paid_invoice_detaches_its_settlement`, étendu), et non par une trace posée
+  à la main.
+- **Écartée** : lier un entier et compter sur la conversion — exacte pour des identifiants, mais implicite.
+- **Réversible** : oui.
+
+## C-15-8a-3 — 15-8a (dev) : les motifs traduits de la fiche extraits dans `blocker-messages.ts`, sous des noms en `…Label`
+
+- **Contexte** : la fiche traduisait les huit motifs de contre-passation (`blockedLabel`) ; la modification en partage
+  sept (D8, « réutiliser les clés »). Vitest exige un test par code (onze).
+- **Retenu** : `lib/features/journal-entries/blocker-messages.ts` — `reversalBlockerLabel` (le `blockedLabel` déplacé) et
+  `modificationBlockerLabel`, qui délègue au premier pour les sept codes communs (une seule source) ; testé code par
+  code. Noms en `…Label` **à dessein** : un nom en `…Message` faisait sortir les deux fonctions du relevé de
+  `i18n-libelle-en-dur.test.ts` (46 → 45, un compteur qui baisse parce que le détecteur ne voit plus).
+- **Écartées** : un second `switch` dans la fiche (DRY, et non testable par Vitest) ; le nom `…Message` (angle mort).
+- **Réversible** : oui.
+
+## C-15-8a-4 — 15-8a (dev) : les refus en mode édition classés par une fonction pure, `editRefusalOutcome`
+
+- **Contexte** : D8 veut une branche nommée par code (pas le `default`) pour les refus qui rechargent la fiche, et des
+  tests Vitest de ces branches.
+- **Retenu** : `form-helpers.ts::editRefusalOutcome(code) → 'stale' | 'stay' | 'other'`, un `case` par code ; le
+  formulaire en déduit toast puis `onStale` (`stale`) ou toast seul (`stay`). Testée seule **et** par un test de
+  composant (`JournalEntryForm.edit.test.ts`) : PUT avec la version, `FISCAL_YEAR_CLOSED` sans
+  `notifyMissingFiscalYearOrFallback`, quatre 409/400 de course, conflit de version sans modale, refus de saisie qui
+  laissent le formulaire ouvert, ligne à compte archivé signalée, bornes de date.
+- **Écartée** : un `switch` monolithique dans `handleSubmit` — même effet, mais seule l'interface le testerait.
+- **Réversible** : oui.
+
+## C-15-8a-5 — 15-8a (dev) : la fiche passe au formulaire la liste COMPLÈTE des comptes
+
+- **Contexte** : D8 — une ligne pré-remplie sur un compte archivé ou non imputable doit s'afficher (numéro et nom) avec
+  un avertissement, sans redevenir sélectionnable.
+- **Retenu** : la fiche, qui charge déjà `fetchAccounts(true)`, passe cette liste au formulaire :
+  `AccountAutocomplete` résout le libellé sur la liste complète et ne **propose** que les comptes actifs et imputables
+  (comportement existant, 16-1b D11) ; l'avertissement `line-account-unusable` suit `isAccountUnusable` (16-1b), la
+  source unique du verdict.
+- **Écartée** : une seconde requête « comptes actifs » au clic sur « Modifier » — le libellé d'un compte archivé ne se
+  résoudrait plus.
+- **Réversible** : oui.
+
+## C-15-8a-6 — 15-8a (dev) : le garde-fou d'inventaire porte ses mutations EN PERMANENCE
+
+- **Contexte** : AC 13 demande que les mutations du garde-fou (colonne ou clé factice vers `journal_entries`, clé
+  factice vers `journal_entry_lines`) soient tuées « une fois, déclarées au Dev Agent Record ».
+- **Retenu** : un test permanent, `the_inventory_guard_turns_red_on_each_mutation`, qui pose chacune des quatre
+  mutations (clé vers `journal_entries`, clé vers `journal_entry_lines`, colonne neuve sur les lignes, colonne au nom
+  d'écriture sans clé), vérifie que le garde-fou rougit, la retire, puis vérifie qu'il redevient vert.
+- **Écartée** : la mutation manuelle unique — sa preuve ne survit pas à la session.
+- **Réversible** : oui.
+
+## C-15-8a-7 — 15-8a (dev) : le montage des pièces devient un helper partagé, avec le solde `write_off`
+
+- **Contexte** : AC 6 / finding R2-11 — réutiliser le montage de `every_document_owned_entry_is_refused` et y ajouter
+  un solde.
+- **Retenu** : `monter_les_pieces` (sept chemins, dont le `write_off`) rend pour chaque pièce l'écriture, le code et
+  l'identifiant de la pièce ; consommé par le test de contre-passation (doc passé à « sept chemins »), par celui de la
+  modification (`details.documentId`, I3), par la précédence et par la table de correspondance (AC 12). Le paiement
+  détaché, propre à la modification, a son montage (`detacher_un_paiement`, trace posée par l'écrivain réel du journal
+  d'audit) ; son chemin réel est tenu côté dépôt (C-15-8a-2).
+- **Réversible** : oui.
+
+## C-15-8a-8 — 15-8a (dev) : le motif de modification n'est affiché que s'il diffère de celui de la contre-passation
+
+- **Contexte** : D8 — « si le motif de contre-passation et celui de modification sont le même code, ne l'afficher
+  qu'une fois ».
+- **Retenu** : la fiche affiche `modification-blocked-reason` sauf quand la contre-passation est elle aussi refusée
+  sous le **même** code (cas des pièces et de la contre-passée) ; testé par Playwright (« écriture de facture »).
+- **Réversible** : oui.
+
+## C-15-8a-9 — 15-8a (revue P1) : le rejeu du `PUT` prouvé en forçant le `PUT` à perdre l'interblocage
+
+- **Contexte** : finding B-5 de la revue de code P1 — le test de cycle de `kesh-db` accepte que la victime soit
+  l'autre transaction, si bien que `retry_with` n'était exercé par aucun test.
+- **Retenu** : `the_put_replays_a_deadlock_it_lost` (`journal_entry_reversal_e2e.rs`) monte le cycle projet ↔ exercice
+  **à travers HTTP**, en rendant la transaction concurrente B **plus lourde** (500 lignes d'undo dans `audit_log`, table
+  que le `PUT` ne verrouille pas) : InnoDB sacrifie la plus légère, donc le `PUT`. La preuve que la 1213 a eu lieu est
+  structurelle : B obtient le projet en **exclusif** alors que le `PUT` le tenait et attendait l'exercice que B tient
+  encore — seule l'annulation du `PUT` le permet. Le `PUT` doit ensuite rendre 200 et une seule trace. Mutation
+  « `retry_with` à une seule tentative » → 500 `INTERNAL_ERROR`, rouge ; restauré, `touch`, trois runs verts.
+- **Écartées** : injecter une fausse 1213 (ne prouve pas que l'erreur réelle est reconnue) ; lire le compteur global
+  `Innodb_deadlocks` (pollué par les gates parallèles d'autres agents).
+- **Réversible** : oui. ⚠️ Le test repose sur la règle de choix de la victime d'InnoDB (poids = undo + verrous) ; si une
+  version de MariaDB la changeait, il rougirait à l'`expect` de B, avec un message qui le dit.
+
+## C-15-8a-10 — 15-8a (revue P1) : conflits du rebase sur la 15-5b, résolus par fusion des deux intentions
+
+- **Contexte** : rebase sur `origin/main` (`12e75d23`, 15-5b mergée). Conflits : registre et `sprint-status.yaml`
+  (union) ; `docs/api-external.md` (ligne `ACCOUNT_NOT_POSTABLE`) ; `user-manual.tex` (encadré `keshnote` du
+  *postable*) ; les deux PDF. Le code (`kesh-db/errors.rs`, `accounts.rs`, `journal_entries.rs`) a fusionné sans conflit.
+- **Retenu** : `api-external.md` — la ligne de la 15-5b (liste complète des routes, rapprochement et comptes bancaires
+  compris) **plus** la mention `PUT /journal-entries/{id}` de la 15-8a ; les deux lignes neuves
+  (`LATER_FISCAL_YEAR_CLOSED`, `DETACHED_SUPPLIER_SETTLEMENT`) conservées. `user-manual.tex` — le texte de la 15-5b
+  (quatre cas non contrôlés), dont la dernière phrase « ne se modifie plus du tout » (écrite sous le gel) est remplacée
+  par celle de la 15-8a, au vocabulaire de la 15-5b (« non imputable »). PDF régénérés depuis les `.tex` fusionnés,
+  zéro « ?? ».
+- **Écartée** : prendre un côté entier — perdait soit la couverture de la 15-5b, soit la levée du gel.
+- **Réversible** : oui.
+
+## C-15-8a-11 — 15-8a (revue P1) : huit LOW acceptés sans correction
+
+- **Contexte** : revue de code P1 (Sonnet, trois lentilles) : 0 CRITICAL/HIGH, un MEDIUM (E1) reclassé LOW par
+  l'orchestrateur — suivi par #543 —, 14 LOW. Remédiation bornée à ce qui ne change pas le comportement de production.
+- **Retenu** : corrigés E1 (documentation), E3, B-5, A-1 à A-4. **Acceptés** : B-1 (doublon de l'inventaire au `GET`
+  — optimisation qui touche la production) ; B-2 (`project_id` d'en-tête inatteignable aujourd'hui — l'aligner touche
+  `update_in_tx`) ; B-3 (message générique d'un projet archivé, hérité du `POST`) ; B-4 (perte de saisie sur conflit de
+  version — choix D8 « pas de modale ») ; E2 (`PERIOD_LOCKED` sur l'ancienne date, message et classement — changerait un
+  message et le classement d'écran) ; E4 (borne de verrou en ISO brut, préexistant côté serveur) ; E5 (422 de
+  l'extracteur, commun à toutes les routes) ; E6 (coût du `GET` et faux négatif résiduel, déjà déclarés).
+- **Réversible** : oui — chacun peut faire l'objet d'une issue ; B-2 et E2 sont les deux à reprendre en premier.

@@ -4,7 +4,8 @@
 //!   (authenticated_routes, tout rôle incluant Consultation).
 //! - `POST /api/v1/journal-entries` — création atomique d'une écriture
 //!   (comptable_routes, Admin + Comptable).
-//! - `PUT /api/v1/journal-entries/{id}` — modification avec OL (story 3.3).
+//! - `PUT /api/v1/journal-entries/{id}` — modification avec verrou optimiste
+//!   (story 3.3 ; gelée par la 24-4b, rouverte par la Story 15-8a, #532).
 //! - `DELETE /api/v1/journal-entries/{id}` — suppression avec audit (story 3.3).
 
 use std::str::FromStr;
@@ -84,6 +85,18 @@ pub struct CreateJournalEntryRequest {
     pub lines: Vec<CreateJournalEntryLineRequest>,
 }
 
+/// Corps du `PUT /api/v1/journal-entries/{id}` (Story 15-8a, #532) : celui du
+/// `POST`, plus la `version` lue (verrou optimiste).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateJournalEntryRequest {
+    pub entry_date: NaiveDate,
+    pub journal: CoreJournal,
+    pub description: String,
+    pub lines: Vec<CreateJournalEntryLineRequest>,
+    pub version: i32,
+}
+
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JournalEntryLineResponse {
@@ -144,6 +157,17 @@ pub struct JournalEntryDetailResponse {
     /// inatteignable depuis que le bouton est masqué avant le clic.
     /// *(Relevé en passe 2 de revue de code.)*
     pub reversal_blocked_label: Option<String>,
+    /// L'écriture se modifie-t-elle (Story 15-8a, D8) ? Motif d'écran, sur
+    /// l'état **présent** : le `PUT` reste seul juge (corps, version, date).
+    pub modifiable: bool,
+    /// Code d'écran du motif, `null` si `modifiable` — l'une de onze valeurs :
+    /// `FISCAL_YEAR_CLOSED`, `LATER_FISCAL_YEAR_CLOSED`, `IS_A_REVERSAL`,
+    /// `ALREADY_REVERSED`, `OWNED_BY_*`, `MATCHED_BANK_TRANSACTION`,
+    /// `DETACHED_SUPPLIER_SETTLEMENT`, `PERIOD_LOCKED`.
+    pub modification_blocked_by: Option<String>,
+    /// Numéro de pièce, nom de l'exercice postérieur clos, ou borne du verrou
+    /// (`AAAA-MM-JJ`) ; `null` sinon.
+    pub modification_blocked_label: Option<String>,
 }
 
 impl From<JournalEntryLine> for JournalEntryLineResponse {
@@ -434,6 +458,7 @@ pub async fn get_journal_entry(
 
     let blocker = journal_entries::reversal_blocker(&state.pool, company.id, id).await?;
     let reversed_by_entry_id = journal_entries::reversed_by(&state.pool, company.id, id).await?;
+    let modification = journal_entries::modification_blocker(&state.pool, company.id, id).await?;
 
     Ok(Json(JournalEntryDetailResponse {
         entry: JournalEntryResponse::from(entry),
@@ -441,6 +466,9 @@ pub async fn get_journal_entry(
         reversable: blocker.is_none(),
         reversal_blocked_by: blocker.as_ref().map(|(b, _, _)| b.code().to_string()),
         reversal_blocked_label: blocker.and_then(|(_, _, label)| label),
+        modifiable: modification.is_none(),
+        modification_blocked_by: modification.as_ref().map(|m| m.code().to_string()),
+        modification_blocked_label: modification.and_then(|m| m.label()),
     }))
 }
 
@@ -465,16 +493,25 @@ pub async fn reverse_journal_entry(
     ))
 }
 
-/// POST /api/v1/journal-entries — crée une écriture en partie double.
-pub async fn create_journal_entry(
-    State(state): State<AppState>,
-    Extension(current_user): Extension<CurrentUser>,
-    Json(req): Json<CreateJournalEntryRequest>,
-) -> Result<(StatusCode, Json<JournalEntryResponse>), AppError> {
-    let company = get_company_for(&current_user, &state.pool).await?;
-
+/// Prépare le `NewJournalEntry` d'un `POST` ou d'un `PUT` (Story 15-8a, D4 —
+/// extraite du `POST`, jamais recopiée) : trim et longueur du libellé, borne
+/// de lignes, parse des montants, `accounting::validate`.
+///
+/// ⛔ **Refus de FORME uniquement : ne lit pas la base.** C'est ce qui permet
+/// de la placer avant le 404 sans révéler l'existence d'une ressource d'une
+/// autre société, et hors de la fermeture rejouée sur interblocage.
+///
+/// `company_id` est celui de la société de l'appelant, jamais une donnée du
+/// corps.
+fn prepare_new_journal_entry(
+    company_id: i64,
+    entry_date: NaiveDate,
+    journal: CoreJournal,
+    description: &str,
+    lines: &[CreateJournalEntryLineRequest],
+) -> Result<NewJournalEntry, AppError> {
     // P5 : trim du libellé dès l'entrée — unique source de vérité.
-    let trimmed_description = req.description.trim().to_string();
+    let trimmed_description = description.trim().to_string();
 
     // P6 : validation longueur libellé avant tout appel DB.
     if trimmed_description.chars().count() > MAX_DESCRIPTION_LEN {
@@ -484,15 +521,15 @@ pub async fn create_journal_entry(
     }
 
     // P7 : borne haute sur le nombre de lignes (vecteur DoS).
-    if req.lines.len() > MAX_LINES_PER_ENTRY {
+    if lines.len() > MAX_LINES_PER_ENTRY {
         return Err(AppError::Validation(format!(
             "trop de lignes dans l'écriture (max {MAX_LINES_PER_ENTRY})"
         )));
     }
 
     // Parse des montants (string → Decimal). Rejet 400 si format invalide.
-    let mut line_drafts: Vec<JournalEntryLineDraft> = Vec::with_capacity(req.lines.len());
-    for (idx, line) in req.lines.iter().enumerate() {
+    let mut line_drafts: Vec<JournalEntryLineDraft> = Vec::with_capacity(lines.len());
+    for (idx, line) in lines.iter().enumerate() {
         let debit = Decimal::from_str(&line.debit).map_err(|e| {
             AppError::Validation(format!("ligne {}: débit invalide ({e})", idx + 1))
         })?;
@@ -506,6 +543,61 @@ pub async fn create_journal_entry(
             project_id: line.project_id,
         });
     }
+
+    // Garde-fou #1 : validation métier pure (kesh-core).
+    let draft = JournalEntryDraft {
+        date: entry_date,
+        journal,
+        description: trimmed_description,
+        lines: line_drafts,
+    };
+    // P4 : on récupère le BalancedEntry validé et on l'utilise pour
+    // construire le NewJournalEntry, éliminant la duplication fragile
+    // entre line_drafts et line_decimals (ex-security theater).
+    let balanced = accounting::validate(draft).map_err(map_core_error)?;
+    let validated = balanced.into_draft();
+
+    // Construction du NewJournalEntry pour kesh-db depuis les données
+    // garanties équilibrées par `validate()`.
+    Ok(NewJournalEntry {
+        company_id,
+        entry_date: validated.date,
+        journal: DbJournal::from(validated.journal),
+        description: validated.description,
+        project_id: None,
+        lines: validated
+            .lines
+            .into_iter()
+            .map(|l| NewJournalEntryLine {
+                account_id: l.account_id,
+                debit: l.debit.amount(),
+                credit: l.credit.amount(),
+                // Tag analytique par-ligne (19-2) — a traversé validate()
+                // verbatim depuis la request.
+                project_id: l.project_id,
+            })
+            .collect(),
+    })
+}
+
+/// POST /api/v1/journal-entries — crée une écriture en partie double.
+pub async fn create_journal_entry(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Json(req): Json<CreateJournalEntryRequest>,
+) -> Result<(StatusCode, Json<JournalEntryResponse>), AppError> {
+    let company = get_company_for(&current_user, &state.pool).await?;
+
+    // Refus de FORME d'abord (Story 15-8a, C-15-8-16) : ils ne lisent pas la
+    // base. ⚠️ Effet de bord assumé : un corps déséquilibré ET sans exercice
+    // rend désormais `ENTRY_UNBALANCED` avant `NO_FISCAL_YEAR`.
+    let new = prepare_new_journal_entry(
+        company.id,
+        req.entry_date,
+        req.journal,
+        &req.description,
+        &req.lines,
+    )?;
 
     // Pré-check exercice couvrant la date (distingue NO_FISCAL_YEAR
     // et FISCAL_YEAR_CLOSED pour l'UX).
@@ -523,41 +615,6 @@ pub async fn create_journal_entry(
             });
         }
         Some(fy) => fy,
-    };
-
-    // Garde-fou #1 : validation métier pure (kesh-core).
-    let draft = JournalEntryDraft {
-        date: req.entry_date,
-        journal: req.journal,
-        description: trimmed_description.clone(),
-        lines: line_drafts,
-    };
-    // P4 : on récupère le BalancedEntry validé et on l'utilise pour
-    // construire le NewJournalEntry, éliminant la duplication fragile
-    // entre line_drafts et line_decimals (ex-security theater).
-    let balanced = accounting::validate(draft).map_err(map_core_error)?;
-    let validated = balanced.into_draft();
-
-    // Construction du NewJournalEntry pour kesh-db depuis les données
-    // garanties équilibrées par `validate()`.
-    let new = NewJournalEntry {
-        company_id: company.id,
-        entry_date: validated.date,
-        journal: DbJournal::from(validated.journal),
-        description: validated.description,
-        project_id: None,
-        lines: validated
-            .lines
-            .into_iter()
-            .map(|l| NewJournalEntryLine {
-                account_id: l.account_id,
-                debit: l.debit.amount(),
-                credit: l.credit.amount(),
-                // Tag analytique par-ligne (19-2) — a traversé validate()
-                // verbatim depuis la request.
-                project_id: l.project_id,
-            })
-            .collect(),
     };
 
     // Création atomique (re-lock FY + numérotation + INSERT + balance check).
@@ -579,31 +636,65 @@ pub async fn create_journal_entry(
     ))
 }
 
-/// PUT /api/v1/journal-entries/{id} — **REFUSÉ**. Une écriture comptabilisée ne
-/// se réécrit pas (Story 24-4b, #380).
+/// PUT /api/v1/journal-entries/{id} — modifie une écriture tant que son
+/// exercice est ouvert (Story 15-8a, #532 — révise le gel de la 24-4b).
 ///
-/// ⛔ **La route reste MONTÉE** et rend **409 `ENTRY_IS_POSTED`**. La démonter
-/// rendrait 405 — un statut qui n'apprend rien à un client d'API et ne se
-/// traduit par aucun message utile à l'écran.
+/// Corps : `{ entryDate, journal, description, lines, version }` ; réponse
+/// `200` + l'écriture (forme du `POST`). Le cadre, l'ordre des refus, la
+/// sérialisation et les cycles de verrous sont au doc-comment de
+/// [`journal_entries::update`].
 ///
-/// ⚠️ **Le corps n'est plus désérialisé.** Le refus ne dépend d'aucune donnée
-/// d'entrée ; un extracteur `Json<T>` ferait précéder le 409 d'un 400 sur un
-/// corps malformé, soit deux refus pour une seule cause.
+/// ⚠️ Les refus de **forme** (400 du corps, `accounting::validate`) précèdent
+/// le 404, comme au `POST` : ils ne dépendent d'aucune donnée de la base. Pas de
+/// pré-contrôle `find_covering_date` : l'exercice est celui **de l'écriture**,
+/// connu seulement sous le verrou.
 ///
-/// ⚠️ **Le 404 précède le 409** : un `id` inexistant ou appartenant à une autre
-/// société ne doit jamais révéler l'existence de la ressource (convention IDOR
-/// du dépôt). D'où la lecture scopée `company` avant tout.
+/// ⛔ **Rejoué sur interblocage** (`retry_with`, C-15-8-19) : l'ordre de
+/// verrous du `PUT` referme trois cycles hérités (exception de Pattern 5). La
+/// transaction est rejouée entière — le repository ouvre et ferme la sienne,
+/// l'interblocage l'a annulée sans rien écrire, et le contrôle de `version`
+/// refuserait un second passage. La préparation reste hors de la fermeture.
 pub async fn update_journal_entry(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path(id): Path<i64>,
-) -> Result<StatusCode, AppError> {
-    let company = get_company_for(&current_user, &state.pool).await?;
+    Json(req): Json<UpdateJournalEntryRequest>,
+) -> Result<Json<JournalEntryResponse>, AppError> {
+    use kesh_db::errors::DbError;
+    use kesh_db::retry::{DEFAULT_MAX_DEADLOCK_ATTEMPTS, is_deadlock_error, retry_with};
 
-    match journal_entries::find_by_id(&state.pool, company.id, id).await? {
-        None => Err(AppError::from(kesh_db::errors::DbError::NotFound)),
-        Some(_) => Err(AppError::from(kesh_db::errors::DbError::EntryIsPosted)),
-    }
+    let company = get_company_for(&current_user, &state.pool).await?;
+    let new = prepare_new_journal_entry(
+        company.id,
+        req.entry_date,
+        req.journal,
+        &req.description,
+        &req.lines,
+    )?;
+
+    let updated = retry_with(
+        DEFAULT_MAX_DEADLOCK_ATTEMPTS,
+        |err: &DbError| is_deadlock_error(err),
+        || {
+            let pool = state.pool.clone();
+            let new = new.clone();
+            async move {
+                journal_entries::update(
+                    &pool,
+                    company.id,
+                    id,
+                    req.version,
+                    current_user.user_id,
+                    current_user.api_key_id,
+                    new,
+                )
+                .await
+            }
+        },
+    )
+    .await?;
+
+    Ok(Json(JournalEntryResponse::from(updated)))
 }
 
 /// DELETE /api/v1/journal-entries/{id} — supprime une écriture avec

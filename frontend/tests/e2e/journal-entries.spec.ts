@@ -5,6 +5,10 @@ import {
   authedApiContext,
   disposeContextSafe,
 } from "./helpers/test-state";
+import {
+  createAndValidateInvoiceViaApi,
+  createContactWithAddressViaApi,
+} from "./helpers/api-fixtures";
 
 test.beforeAll(async () => {
   await seedTestState("with-company");
@@ -271,19 +275,22 @@ test.describe("Page écritures — saisie", () => {
   test.skip("refus écriture exercice clos FR24 (12.1)", async () => {});
 });
 
-test.describe("Page écritures — le gel (Story 24-4b, #380)", () => {
+test.describe("Page écritures — la liste mène à la fiche, où l'on corrige (Stories 24-4b, 15-8a)", () => {
   /**
-   * ⛔ **Le bloc « modification (Story 3.3) » a été retiré ici, pas déplacé.**
-   * Ses quatre tests — édition du libellé, suppression avec confirmation,
-   * annulation de la suppression, modale de conflit 409 — exerçaient des
-   * chemins que le gel supprime. Les conserver aurait produit des tests
-   * rouges, ou pire, des tests réécrits pour passer sans plus rien mesurer.
+   * La liste n'offre ni modification ni suppression (24-4b) : son seul geste de
+   * ligne est le lien vers la FICHE. Depuis la Story 15-8a (#532), c'est la
+   * fiche qui porte « Modifier » — tant que l'exercice est ouvert — à côté de
+   * « Contre-passer ». Les parcours de modification de la 3.3, qui vivaient dans
+   * la liste (✎, modale de conflit), sont REMPLACÉS par des parcours depuis la
+   * fiche, pas rétablis.
    *
-   * ⚠️ Ce qui reste à vérifier À L'ÉCRAN, c'est ce qu'aucun test Rust ne voit :
-   * que les deux actions ont bien disparu de la liste, et que le lien qui les
-   * remplace mène à la fiche — donc au bouton « Contre-passer ». Les refus
-   * HTTP eux-mêmes (409 `ENTRY_IS_POSTED`) sont couverts par
-   * `crates/kesh-api/tests/journal_entry_reversal_e2e.rs`.
+   * ⚠️ Ce qui se vérifie ici est ce qu'aucun test Rust ne voit : que la valeur
+   * traverse la frontière HTTP depuis l'écran. Les refus eux-mêmes sont
+   * couverts par `crates/kesh-api/tests/journal_entry_reversal_e2e.rs`.
+   *
+   * ⛔ Les nouveaux parcours n'emploient que des `data-testid` et des `id`, plus
+   * le bouton « Valider » du formulaire, déjà inscrit pour ce fichier à
+   * `e2e-selecteurs-traduits.test.ts` (KF-043) — aucun couple neuf.
    */
   async function createSeedEntry(page: import("@playwright/test").Page) {
     const { debitNumber, creditNumber } = await getSeedAccountNumbers(page);
@@ -335,6 +342,170 @@ test.describe("Page écritures — le gel (Story 24-4b, #380)", () => {
     await expect(
       page.getByTestId("reverse-entry"),
     ).toBeVisible();
+  });
+});
+
+test.describe("Page écritures — modifier depuis la fiche (Story 15-8a, #532)", () => {
+  type Compte = { id: number; number: string; postable: boolean; active: boolean };
+
+  /** Crée une écriture par l'API, rend son id, son numéro et sa version. */
+  async function creerEcriture(
+    page: import("@playwright/test").Page,
+    libelle: string,
+  ): Promise<{ id: number; entryNumber: number; version: number }> {
+    const ctx = await authedApiContext(page);
+    try {
+      const accounts = (await (await ctx.get("/api/v1/accounts")).json()) as Compte[];
+      const postables = accounts.filter((a) => a.postable && a.active);
+      const created = await ctx.post("/api/v1/journal-entries", {
+        data: {
+          entryDate: new Date().toLocaleDateString("sv-SE", { timeZone: "Europe/Zurich" }),
+          journal: "OD",
+          description: libelle,
+          lines: [
+            { accountId: postables[0].id, debit: "80.00", credit: "0.00" },
+            { accountId: postables[1].id, debit: "0.00", credit: "80.00" },
+          ],
+        },
+      });
+      expect(created.status(), await created.text()).toBe(201);
+      return (await created.json()) as { id: number; entryNumber: number; version: number };
+    } finally {
+      await disposeContextSafe(ctx);
+    }
+  }
+
+  async function lireEcriture(page: import("@playwright/test").Page, id: number) {
+    const ctx = await authedApiContext(page);
+    try {
+      const resp = await ctx.get(`/api/v1/journal-entries/${id}`);
+      expect(resp.ok()).toBeTruthy();
+      return (await resp.json()) as {
+        description: string;
+        entryNumber: number;
+        version: number;
+        lines: Array<{ accountId: number; debit: string; credit: string; projectId: number | null }>;
+        entryDate: string;
+        journal: string;
+      };
+    } finally {
+      await disposeContextSafe(ctx);
+    }
+  }
+
+  test("modifier depuis la fiche : le libellé change, le numéro reste", async ({ page }) => {
+    await login(page);
+    const libelle = `Modification E2E ${Date.now()}`;
+    const origine = await creerEcriture(page, libelle);
+
+    await page.goto(`/journal-entries/${origine.id}`);
+    await page.getByTestId("edit-entry").click();
+    await expect(page.locator("#entry-description")).toHaveValue(libelle);
+    await page.fill("#entry-description", `${libelle} corrigé`);
+    await page.getByRole("button", { name: "Valider" }).click();
+
+    // La fiche est revenue (bouton de nouveau visible) et montre le libellé corrigé.
+    await expect(page.getByTestId("edit-entry")).toBeVisible({ timeout: 10000 });
+    await expect(page.locator("dl")).toContainText(`${libelle} corrigé`);
+
+    const apres = await lireEcriture(page, origine.id);
+    expect(apres.description).toBe(`${libelle} corrigé`);
+    expect(apres.entryNumber, "le numéro ne change jamais").toBe(origine.entryNumber);
+    expect(apres.version).toBe(origine.version + 1);
+  });
+
+  test("conflit de version : toast et fiche rechargée, sans modale", async ({ page }) => {
+    await login(page);
+    const libelle = `Conflit E2E ${Date.now()}`;
+    const origine = await creerEcriture(page, libelle);
+
+    await page.goto(`/journal-entries/${origine.id}`);
+    await page.getByTestId("edit-entry").click();
+    await expect(page.locator("#entry-description")).toHaveValue(libelle);
+
+    // Un autre client modifie l'écriture entre l'ouverture du formulaire et
+    // l'enregistrement : la version lue par l'écran est périmée.
+    const courant = await lireEcriture(page, origine.id);
+    const ctx = await authedApiContext(page);
+    try {
+      const put = await ctx.put(`/api/v1/journal-entries/${origine.id}`, {
+        data: {
+          entryDate: courant.entryDate,
+          journal: courant.journal,
+          description: `${libelle} par l'API`,
+          version: courant.version,
+          lines: courant.lines.map((l) => ({
+            accountId: l.accountId,
+            debit: l.debit,
+            credit: l.credit,
+            projectId: l.projectId,
+          })),
+        },
+      });
+      expect(put.status(), await put.text()).toBe(200);
+    } finally {
+      await disposeContextSafe(ctx);
+    }
+
+    await page.fill("#entry-description", `${libelle} par l'écran`);
+    await page.getByRole("button", { name: "Valider" }).click();
+
+    // Pas de modale : la fiche se recharge et montre l'état présent.
+    await expect(page.getByTestId("edit-entry")).toBeVisible({ timeout: 10000 });
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    await expect(page.locator("dl")).toContainText(`${libelle} par l'API`);
+    expect((await lireEcriture(page, origine.id)).description).toBe(`${libelle} par l'API`);
+  });
+
+  test("écriture de facture : pas de Modifier, le motif est affiché", async ({ page }) => {
+    await login(page);
+    const contact = await createContactWithAddressViaApi(page, `Modif facture ${Date.now()}`);
+    const invoiceId = await createAndValidateInvoiceViaApi(page, contact);
+    const ctx = await authedApiContext(page);
+    let entryId: number;
+    try {
+      const inv = await (await ctx.get(`/api/v1/invoices/${invoiceId}`)).json();
+      entryId = inv.journalEntryId as number;
+      expect(entryId).toBeTruthy();
+    } finally {
+      await disposeContextSafe(ctx);
+    }
+
+    await page.goto(`/journal-entries/${entryId}`);
+    // Présence avant absence : la fiche est chargée avant d'affirmer l'absence.
+    await expect(page.getByTestId("reverse-blocked-reason")).toBeVisible();
+    await expect(page.getByTestId("edit-entry")).toHaveCount(0);
+    // Même motif que la contre-passation (OWNED_BY_INVOICE) : affiché une seule fois.
+    await expect(page.getByTestId("modification-blocked-reason")).toHaveCount(0);
+  });
+
+  test("rôle Consultation : ni Modifier ni Contre-passer", async ({ page }) => {
+    await login(page);
+    const libelle = `Consultation E2E ${Date.now()}`;
+    const origine = await creerEcriture(page, libelle);
+    const username = `consult-je-${Date.now()}`;
+    const ctx = await authedApiContext(page);
+    try {
+      const res = await ctx.post("/api/v1/users", {
+        data: { username, password: "MotDePasse12345", role: "Consultation" },
+      });
+      expect(res.ok(), `create user failed: ${res.status()}`).toBeTruthy();
+    } finally {
+      await disposeContextSafe(ctx);
+    }
+    await clearAuthStorage(page);
+    await page.goto("/login");
+    await page.fill("#username", username);
+    await page.fill("#password", "MotDePasse12345");
+    await page.click('button[type="submit"]');
+    await expect(page).toHaveURL("/");
+
+    await page.goto(`/journal-entries/${origine.id}`);
+    // Présence avant absence : la fiche est chargée.
+    await expect(page.locator("dl")).toContainText(libelle);
+    await expect(page.getByTestId("edit-entry")).toHaveCount(0);
+    await expect(page.getByTestId("reverse-entry")).toHaveCount(0);
+    await expect(page.getByTestId("modification-blocked-reason")).toHaveCount(0);
   });
 });
 

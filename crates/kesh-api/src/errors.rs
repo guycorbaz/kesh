@@ -11,7 +11,7 @@ use axum::Json;
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use kesh_db::errors::{
-    DbError, RejectedRevenueAccount, RevenueAccountRejection, ReversalBlocker,
+    DbError, ModificationGuard, RejectedRevenueAccount, RevenueAccountRejection, ReversalBlocker,
     SettlementCancelBlocker, UnvalidationBlocker,
 };
 use kesh_i18n::{FluentArgs, I18nBundle, Locale};
@@ -1088,6 +1088,85 @@ fn build_response(status: StatusCode, code: &'static str, message: &str) -> Resp
         .into_response()
 }
 
+/// Clé i18n et repli d'un motif de contre-passation (Story 24-4a), partagés
+/// par le refus de contre-passation et le refus de modification (Story 15-8a,
+/// D2 — mêmes codes, mêmes messages : ils nomment déjà le chemin de la pièce).
+fn reversal_blocker_message(blocker: ReversalBlocker) -> (&'static str, &'static str) {
+    match blocker {
+        ReversalBlocker::IsAReversal => (
+            "journal-entries-reverse-blocked-is-a-reversal",
+            "Cette écriture est elle-même une contre-passation.",
+        ),
+        ReversalBlocker::AlreadyReversed => (
+            "journal-entries-reverse-blocked-already-reversed",
+            "Cette écriture a déjà été contre-passée.",
+        ),
+        ReversalBlocker::OwnedByInvoice => (
+            "journal-entries-reverse-blocked-invoice",
+            "Cette écriture appartient à une facture client : dévalidez la facture, ou corrigez-la par un avoir.",
+        ),
+        ReversalBlocker::OwnedByCreditNote => (
+            "journal-entries-reverse-blocked-credit-note",
+            "Cette écriture est celle d'un avoir, qui est déjà une contre-passation.",
+        ),
+        ReversalBlocker::OwnedBySupplierInvoice => (
+            "journal-entries-reverse-blocked-supplier-invoice",
+            "Cette écriture appartient à une facture fournisseur : elle se corrige depuis la fiche de la facture, qui indique ce qui est possible.",
+        ),
+        ReversalBlocker::OwnedBySettlement => (
+            "journal-entries-reverse-blocked-settlement",
+            "Cette écriture est un règlement de facture : annulez le règlement depuis la fiche de la facture, qui indique si c'est possible.",
+        ),
+        ReversalBlocker::MatchedBankTransaction => (
+            "journal-entries-reverse-blocked-bank-match",
+            "Cette écriture est rapprochée d'une transaction bancaire : annulez le rapprochement depuis le détail de l'import bancaire.",
+        ),
+        // ⚠️ **Aucun chemin ne construit ce cas aujourd'hui** :
+        // l'écriture l'exclut délibérément pour atteindre
+        // `ReversalAccountsArchived`, un 400 qui NOMME tous les
+        // comptes. La branche existe pour que le `match` reste
+        // exhaustif. *(Le commentaire précédent la disait servie
+        // par la lecture : c'était faux, la lecture ne construit
+        // aucun `DbError`. Passe 2 de revue.)*
+        ReversalBlocker::AccountArchived => (
+            "journal-entries-reverse-blocked-account-archived",
+            "Un compte de cette écriture a été archivé : réactivez-le pour pouvoir la contre-passer.",
+        ),
+    }
+}
+
+/// Réponse **409** d'une écriture qu'une pièce (ou un état) empêche de toucher —
+/// contre-passation (24-4a) ou modification (15-8a) : code du motif, message
+/// traduit suffixé du **numéro** de la pièce quand elle en a un, et
+/// `details.documentId` / `details.documentNumber`.
+///
+/// ⚠️ Le numéro est suffixé au message : l'utilisateur ne connaît pas les
+/// identifiants de la base, il connaît le numéro sur son document.
+fn entry_document_refusal_response(
+    code: &'static str,
+    fallback_key: &'static str,
+    fallback: &'static str,
+    document_id: Option<i64>,
+    document_label: Option<String>,
+) -> Response {
+    let base = t(fallback_key, fallback);
+    let message = match document_label.as_deref() {
+        Some(numero) => format!("{base} ({numero})"),
+        None => base,
+    };
+    let body = serde_json::json!({
+        "error": {
+            "code": code,
+            "message": message,
+            "details": {
+                "documentId": document_id,
+                "documentNumber": document_label,
+            },
+        }
+    });
+    (StatusCode::CONFLICT, Json(body)).into_response()
+}
+
 /// Réponse d'un refus de complément des soldes de départ (Story 25-7, AC 5) :
 /// statut, code et message **par cause**. Les refus qui portent sur un compte le
 /// nomment par son numéro — un identifiant de base ne se comprend pas.
@@ -1143,7 +1222,7 @@ fn opening_complement_refusal_response(
         R::AccountMoved => (
             StatusCode::CONFLICT,
             "error-opening-complement-account-moved",
-            format!("Le compte {account} a déjà des mouvements : corrigez-le dans le journal, par une contre-passation ou une écriture de correction."),
+            format!("Le compte {account} a déjà des mouvements : corrigez-le dans le journal, en modifiant l'écriture, par une contre-passation ou une écriture de correction."),
         ),
     };
     build_response(status, reason.code(), &t_args(key, &fallback, &args))
@@ -2700,68 +2779,68 @@ impl IntoResponse for AppError {
                     document_id,
                     document_label,
                 } => {
-                    let (fallback_key, fallback) = match blocker {
-                        ReversalBlocker::IsAReversal => (
-                            "journal-entries-reverse-blocked-is-a-reversal",
-                            "Cette écriture est elle-même une contre-passation.",
-                        ),
-                        ReversalBlocker::AlreadyReversed => (
-                            "journal-entries-reverse-blocked-already-reversed",
-                            "Cette écriture a déjà été contre-passée.",
-                        ),
-                        ReversalBlocker::OwnedByInvoice => (
-                            "journal-entries-reverse-blocked-invoice",
-                            "Cette écriture appartient à une facture client : dévalidez la facture, ou corrigez-la par un avoir.",
-                        ),
-                        ReversalBlocker::OwnedByCreditNote => (
-                            "journal-entries-reverse-blocked-credit-note",
-                            "Cette écriture est celle d'un avoir, qui est déjà une contre-passation.",
-                        ),
-                        ReversalBlocker::OwnedBySupplierInvoice => (
-                            "journal-entries-reverse-blocked-supplier-invoice",
-                            "Cette écriture appartient à une facture fournisseur : elle se corrige depuis la fiche de la facture, qui indique ce qui est possible.",
-                        ),
-                        ReversalBlocker::OwnedBySettlement => (
-                            "journal-entries-reverse-blocked-settlement",
-                            "Cette écriture est un règlement de facture : annulez le règlement depuis la fiche de la facture, qui indique si c'est possible.",
-                        ),
-                        ReversalBlocker::MatchedBankTransaction => (
-                            "journal-entries-reverse-blocked-bank-match",
-                            "Cette écriture est rapprochée d'une transaction bancaire : annulez le rapprochement depuis le détail de l'import bancaire.",
-                        ),
-                        // ⚠️ **Aucun chemin ne construit ce cas aujourd'hui** :
-                        // l'écriture l'exclut délibérément pour atteindre
-                        // `ReversalAccountsArchived`, un 400 qui NOMME tous les
-                        // comptes. La branche existe pour que le `match` reste
-                        // exhaustif. *(Le commentaire précédent la disait servie
-                        // par la lecture : c'était faux, la lecture ne construit
-                        // aucun `DbError`. Passe 2 de revue.)*
-                        ReversalBlocker::AccountArchived => (
-                            "journal-entries-reverse-blocked-account-archived",
-                            "Un compte de cette écriture a été archivé : réactivez-le pour pouvoir la contre-passer.",
+                    let (fallback_key, fallback) = reversal_blocker_message(blocker);
+                    entry_document_refusal_response(
+                        blocker.code(),
+                        fallback_key,
+                        fallback,
+                        document_id,
+                        document_label,
+                    )
+                }
+                // Story 15-8a (#532, D2) — la modification refusée. ⛔ DRY : pour
+                // un motif de pièce, EXACTEMENT la réponse de la contre-passation
+                // (même code, mêmes clés, mêmes `details`).
+                DbError::EntryNotModifiable(guard) => {
+                    let code = guard.code();
+                    let document_id = guard.document_id();
+                    let document_label = guard.label();
+                    let (fallback_key, fallback) = match guard {
+                        ModificationGuard::Owned { blocker, .. } => {
+                            reversal_blocker_message(blocker)
+                        }
+                        ModificationGuard::DetachedSupplierSettlement { .. } => (
+                            "journal-entries-modify-blocked-detached-settlement",
+                            "Cette écriture est le paiement d'une facture fournisseur annulée : l'argent est sorti, elle ne se modifie pas. Corrigez-la par une contre-passation.",
                         ),
                     };
-                    // ⚠️ Le NUMÉRO de la pièce est suffixé au message quand il
-                    // existe : « … : corrigez-la par un avoir (facture
-                    // F-2026-014) ». Un `documentId` brut dans les détails ne
-                    // suffit pas — l'utilisateur ne connaît pas les identifiants
-                    // de la base, il connaît le numéro sur son document.
-                    let base = t(fallback_key, fallback);
-                    let message = match document_label.as_deref() {
-                        Some(numero) => format!("{base} ({numero})"),
-                        None => base,
-                    };
+                    entry_document_refusal_response(
+                        code,
+                        fallback_key,
+                        fallback,
+                        document_id,
+                        document_label,
+                    )
+                }
+                // Story 15-8a (#532, C-15-8-22) — un exercice POSTÉRIEUR est
+                // clos : son bilan cumulatif reprend l'écriture. 400, comme
+                // `FISCAL_YEAR_CLOSED` : l'état d'un exercice, pas un conflit sur
+                // l'écriture.
+                DbError::LaterFiscalYearClosed {
+                    fiscal_year_id,
+                    fiscal_year_name,
+                } => {
+                    let fallback = format!(
+                        "L'exercice postérieur {fiscal_year_name} est clôturé, et son bilan reprend cette écriture : elle reste figée tant qu'il l'est. Un administrateur peut rouvrir cet exercice ; sinon, corrigez par une contre-passation."
+                    );
+                    let mut args = FluentArgs::new();
+                    args.set("name", fiscal_year_name.clone());
+                    let message = t_args(
+                        "journal-entries-modify-blocked-later-fiscal-year-closed",
+                        &fallback,
+                        &args,
+                    );
                     let body = serde_json::json!({
                         "error": {
-                            "code": blocker.code(),
+                            "code": "LATER_FISCAL_YEAR_CLOSED",
                             "message": message,
                             "details": {
-                                "documentId": document_id,
-                                "documentNumber": document_label,
+                                "fiscalYearId": fiscal_year_id,
+                                "fiscalYearName": fiscal_year_name,
                             },
                         }
                     });
-                    (StatusCode::CONFLICT, Json(body)).into_response()
+                    (StatusCode::BAD_REQUEST, Json(body)).into_response()
                 }
                 // Story 25-2-b-1 (#440) — la dévalidation refusée.
                 //
@@ -2980,13 +3059,15 @@ impl IntoResponse for AppError {
                     "ENTRY_IS_REVERSED",
                     &t(
                         "journal-entries-delete-blocked-reversed",
-                        "Cette écriture a été contre-passée : elle ne peut plus être supprimée.",
+                        "Cette écriture a été contre-passée : elle ne peut plus être modifiée ni supprimée.",
                     ),
                 ),
-                // ⛔ Story 24-4b (#380) — le gel. Toute écriture est comptabilisée
-                // dès son insertion : le PUT et le DELETE sont refusés sans
-                // exception, et le message NOMME le chemin de correction. Un
-                // refus qui ne dit pas quoi faire n'est pas utilisable.
+                // ⛔ Story 24-4b (#380) — le gel. Depuis la Story 15-8a (#532),
+                // le PUT ne passe plus par lui : la modification a ses propres
+                // refus (exercice clos, exercice postérieur clos, garde
+                // d'écriture `EntryNotModifiable`, verrou de période). Seul le
+                // DELETE rend encore `ENTRY_IS_POSTED`, jusqu'à la Story 15-8b ;
+                // le message NOMME les deux chemins de correction.
                 //
                 // ⚠️ 409 et non 400 : c'est un conflit d'ÉTAT de la ressource,
                 // pas une donnée d'entrée invalide (asymétrie posée en 24-4a).
@@ -3044,8 +3125,8 @@ impl IntoResponse for AppError {
                     "ENTRY_IS_POSTED",
                     &t(
                         "journal-entries-blocked-posted",
-                        "Une écriture comptabilisée ne se modifie plus. Pour la corriger, \
-                         contre-passez-la : Kesh crée l'écriture inverse et conserve l'originale.",
+                        "Une écriture comptabilisée ne se supprime pas. Pour la corriger, \
+                         modifiez-la tant que son exercice est ouvert, ou contre-passez-la.",
                     ),
                 ),
                 DbError::IllegalStateTransition(m) => {

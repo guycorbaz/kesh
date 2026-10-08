@@ -28,9 +28,10 @@
 //! création par `journal_entries::create_in_tx` ; `equation_holds` sert de filet
 //! — cf. Dev Notes 14-1).
 //!
-//! ⚠️ L'invariant était aussi tenu par `journal_entries::update`, supprimée par
-//! la Story 24-4b (#380) : une écriture comptabilisée ne se réécrit plus, donc
-//! son `entry_date` ne peut plus sortir de ses bornes après coup.
+//! ⚠️ L'invariant est aussi tenu par `journal_entries::update` (rétablie par la
+//! Story 15-8a, #532) : la nouvelle date d'une écriture modifiée doit rester
+//! dans l'exercice **de l'écriture** (`DateOutsideFiscalYear`), qui ne change
+//! jamais.
 //!
 //! # Présentation par rôle des fonds propres (Story 14-3c)
 //!

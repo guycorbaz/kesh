@@ -41,8 +41,9 @@
 //! - Les mouvements filtrent `fiscal_year_id` **et** la date, l'ouverture la date
 //!   seule : la concordance avec le bilan suppose que toute écriture tombe dans les
 //!   bornes de son exercice — ce que `journal_entries::create_in_tx` impose
-//!   (`DateOutsideFiscalYear`), et qu'aucune mise à jour ne peut plus défaire
-//!   (Story 24-4b).
+//!   (`DateOutsideFiscalYear`), et que la modification tient de même
+//!   (`journal_entries::update`, Story 15-8a : la nouvelle date reste dans
+//!   l'exercice de l'écriture).
 //! - La requête lit **tout l'historique** de la société jusqu'à la fin de la
 //!   période — le prix d'une ouverture cumulée depuis l'origine, comme au bilan.
 //!   Sans mesure à ce jour ; à surveiller si l'historique grossit.

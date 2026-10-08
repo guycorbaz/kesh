@@ -31,9 +31,10 @@
 	} from '$lib/features/journal-entries/query-helpers';
 	import { debounce } from '$lib/features/journal-entries/debounce';
 
-	// ⛔ Story 24-4b (#380) — le gel : plus de mode 'edit'. Une écriture
-	// comptabilisée ne se réécrit pas ; on la corrige par contre-passation,
-	// depuis sa fiche.
+	// Pas de mode 'edit' ici : depuis la Story 15-8a (#532), une écriture se
+	// modifie depuis sa FICHE (« Modifier », tant que son exercice est ouvert),
+	// où se trouve aussi la contre-passation. La liste n'offre que le lien vers
+	// la fiche (gel de la 24-4b : les boutons ✎ et 🗑 de la liste ne reviennent pas).
 	type Mode = 'list' | 'create';
 
 	let mode = $state<Mode>('list');
@@ -264,8 +265,8 @@
 		}
 	}
 
-	// --- Saisie (story 3.3 ; l'édition et la suppression sont parties avec le
-	// gel de la Story 24-4b, #380) ---
+	// --- Saisie (story 3.3) — l'édition vit sur la fiche (Story 15-8a) ; la
+	// suppression reste refusée (Story 15-8b) ---
 	function openCreate() {
 		mode = 'create';
 	}
@@ -556,7 +557,8 @@
 							     consolation : la liste ne renvoyait vers la fiche par AUCUN
 							     href, si bien que le bouton « Contre-passer » livré par la
 							     24-4a vivait sur un écran qu'on n'atteignait pas d'ici. Le
-							     chemin de correction devient continu. -->
+							     chemin de correction devient continu — et depuis la Story
+							     15-8a, la fiche porte aussi « Modifier ». -->
 							<td class="py-2 text-right">
 								<a
 									href="/journal-entries/{entry.id}"
