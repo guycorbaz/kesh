@@ -107,6 +107,21 @@ describe('onboardingState', () => {
 		expect(onboardingState.isDemo).toBe(false);
 	});
 
+	// Story 15-7b2 (AC 4, test 12) : la remise à zéro conserve la société et la
+	// remet à l'état provisoire — la réponse porte `isStub: true`.
+	it('resetDemo reflects the stub company kept in place (isStub true)', async () => {
+		mockApi.resetDemo.mockResolvedValue({
+			stepCompleted: 0,
+			isDemo: false,
+			uiMode: null,
+			isStub: true,
+		});
+
+		await onboardingState.resetDemo();
+
+		expect(onboardingState.isStub).toBe(true);
+	});
+
 	it('loading is true during API calls', async () => {
 		let resolvePromise: (value: unknown) => void;
 		const pendingPromise = new Promise((resolve) => {

@@ -473,6 +473,35 @@ mod tests {
         assert_eq!(user_count, 1, "no duplicate admin");
     }
 
+    /// Story 15-7b2, test 14 (AC 13, #542) — démarrages répétés sans
+    /// utilisateur ni variable d'administrateur : **une** société provisoire,
+    /// jamais une par démarrage. Chaque appel rend `Ok(0)`.
+    #[sqlx::test(migrations = "../kesh-db/test-schema")]
+    async fn bootstrap_no_env_restarts_add_no_second_stub(pool: MySqlPool) {
+        let config = test_config_no_env();
+        let count = |pool: MySqlPool, table: &'static str| async move {
+            sqlx::query_scalar::<_, i64>(&format!("SELECT COUNT(*) FROM {table}"))
+                .fetch_one(&pool)
+                .await
+                .expect("count")
+        };
+        for start in 1..=2 {
+            assert_eq!(ensure_admin_user(&pool, &config).await.unwrap(), 0);
+            assert_eq!(
+                count(pool.clone(), "companies").await,
+                1,
+                "démarrage {start}"
+            );
+            assert_eq!(count(pool.clone(), "users").await, 0, "démarrage {start}");
+        }
+        assert_eq!(ensure_admin_user(&pool, &config).await.unwrap(), 0);
+        assert_eq!(
+            count(pool.clone(), "companies").await,
+            1,
+            "troisième démarrage"
+        );
+    }
+
     /// Cas 2 ter — partial state : une company existe déjà mais aucun user.
     /// Le bootstrap crée l'admin sur la company existante.
     #[sqlx::test(migrations = "../kesh-db/test-schema")]
