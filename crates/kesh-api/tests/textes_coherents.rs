@@ -18,12 +18,17 @@
 //! | G7 | #432 | toute référence d'issue du README est un lien vers la même issue |
 //! | G9 | #569, #547 | les replis Rust égalent la valeur fr-CH de leur clé |
 //! | G12 | #569 | le manuel et le guide d'API disent l'ordre de réouverture |
+//! | G18 | #127 | une installation porte une société (Story 15-14b) |
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
 use regex::Regex;
+
+#[path = "common/manuel.rs"]
+mod manuel;
+use manuel::normaliser;
 
 /// Racine du dépôt.
 fn racine() -> PathBuf {
@@ -719,26 +724,6 @@ fn les_replis_rust_suivent_le_catalogue() {
     }
 }
 
-/// Déplie les commandes de mise en forme LaTeX jusqu'à stabilité (imbrications
-/// comprises), remplace `~` par une espace et réduit les blancs : une phrase coupée
-/// sur deux lignes ou mise en gras en son milieu se lit d'un tenant.
-fn normaliser(texte: &str) -> String {
-    let commande =
-        Regex::new(r"\\(?:textbf|emph|texttt|textit|keshcommand|keshpath)\{([^{}]*)\}").unwrap();
-    let mut courant = texte.to_string();
-    loop {
-        let suivant = commande.replace_all(&courant, "$1").into_owned();
-        if suivant == courant {
-            break;
-        }
-        courant = suivant;
-    }
-    let blancs = Regex::new(r"\s+").unwrap();
-    blancs
-        .replace_all(&courant.replace('~', " "), " ")
-        .into_owned()
-}
-
 /// **G12** (#569) — le manuel utilisateur et le guide d'API disent l'ordre de
 /// réouverture (« en commençant par le plus récent »).
 #[test]
@@ -765,5 +750,156 @@ fn le_manuel_dit_l_ordre_de_reouverture() {
     assert!(
         api.contains(MARQUEUR),
         "api-external.md : marqueur d'ordre absent"
+    );
+}
+
+/// Le domaine de G18 : la documentation utilisateur (manuels français, README,
+/// guide de démarrage) — la première part de l'inventaire de l'AC 3 de la
+/// 15-14b. Les catalogues et le code (noms de table, de route, commentaires)
+/// sont assumés en bloc à la fiche.
+fn documentation_utilisateur() -> Vec<(String, String)> {
+    let mut docs: Vec<(String, String)> = manuels_fr()
+        .into_iter()
+        .map(|(nom, texte)| (nom.to_string(), texte))
+        .collect();
+    docs.push(("README.md".into(), lire("README.md")));
+    for chemin in fichiers_sous("docs/user-guide/fr", &|n: &str| n.ends_with(".md")) {
+        let relatif = chemin
+            .strip_prefix(racine())
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let texte = std::fs::read_to_string(&chemin).unwrap();
+        docs.push((relatif, texte));
+    }
+    assert!(
+        docs.len() >= 5,
+        "documentation utilisateur lue à vide : {}",
+        docs.len()
+    );
+    docs
+}
+
+/// Les formes qui promettent plusieurs sociétés par installation (motif de
+/// l'inventaire de l'AC 3, une alternative par entrée). Le crate `regex` n'a
+/// pas de lookahead : chaque alternative est cherchée **séparément**, ce qui
+/// compte les occurrences qui se recouvrent (`plusieurs companies` et
+/// `companies`) comme la commande `perl` d'inventaire (C-15-14-27).
+/// « compte dédié » n'y entre que dans ses locutions `ou` / `via` : l'expression
+/// nue est d'usage courant (« un compte dédié aux frais »).
+const MULTI_SOCIETE: &[&str] = &[
+    r"(?i)plusieurs (?:sociétés|companies)",
+    r"(?i)\bcompanies\b",
+    r"(?i)(?:ou|via) un compte dédié",
+    r"(?i)nouvelle company",
+    r"(?i)super.?admin",
+    r"(?i)kesh-cli",
+    r"(?i)même instance",
+    r"(?i)sélecteur (?:de société|multi-dossiers|permettant de basculer)",
+];
+
+/// Les occurrences **assumées** de [`MULTI_SOCIETE`] : liste fermée, un
+/// fragment normalisé par site, chacun trouvé une et une seule fois.
+const MULTI_SOCIETE_ASSUME: &[(&str, &str)] = &[
+    // Dit l'absence (deux occurrences : `super-admin`, `sélecteur de société`).
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "il n'existe pas de rôle « super-admin » cross-société ni de sélecteur de société",
+    ),
+    // Dit l'absence.
+    (
+        "docs/manual/fr/user-manual.tex",
+        "Il n'y a pas de sélecteur permettant de basculer entre plusieurs dossiers depuis un même compte",
+    ),
+    // Intention de feuille de route.
+    (
+        "docs/manual/fr/user-manual.tex",
+        "Un sélecteur multi-dossiers est envisagé pour une version ultérieure",
+    ),
+    // Dit l'absence.
+    (
+        "docs/manual/fr/marketing-brochure.tex",
+        "ne propose pas encore de créer ni de basculer entre plusieurs sociétés",
+    ),
+    // Intention de feuille de route, au même titre que la ligne qui précède.
+    (
+        "docs/manual/fr/marketing-brochure.tex",
+        "Un sélecteur permettant de basculer entre dossiers depuis un même compte est prévu pour une version ultérieure",
+    ),
+    // Nom de table.
+    ("README.md", "FK vers `companies.id`"),
+];
+
+/// **G18** (#127) — une installation porte une société : la documentation
+/// utilisateur ne promet pas le contraire. Chaque occurrence de
+/// [`MULTI_SOCIETE`] (texte normalisé, [`normaliser`]) tombe dans un fragment
+/// de [`MULTI_SOCIETE_ASSUME`] ; chaque fragment est encore trouvé (exemption
+/// morte → rouge) ; la phrase positive « une instance par dossier » figure au
+/// manuel d'administration.
+#[test]
+fn une_installation_une_societe() {
+    let motifs: Vec<Regex> = MULTI_SOCIETE
+        .iter()
+        .map(|m| Regex::new(m).unwrap())
+        .collect();
+    let mut erreurs = Vec::new();
+    let mut total = 0;
+    let mut admin = String::new();
+    for (nom, brut) in documentation_utilisateur() {
+        let texte = normaliser(&brut);
+        if nom == "docs/manual/fr/admin-manual.tex" {
+            admin = texte.clone();
+        }
+        let fragments: Vec<&str> = MULTI_SOCIETE_ASSUME
+            .iter()
+            .filter(|(f, _)| *f == nom)
+            .map(|(_, frag)| *frag)
+            .collect();
+        let mut couverts: Vec<(usize, usize)> = Vec::new();
+        for frag in &fragments {
+            let n = texte.matches(frag).count();
+            if n != 1 {
+                erreurs.push(format!(
+                    "{nom} : fragment assumé trouvé {n} fois (1 attendue) : « {frag} »"
+                ));
+            }
+            couverts.extend(texte.match_indices(frag).map(|(i, f)| (i, i + f.len())));
+        }
+        for motif in &motifs {
+            for m in motif.find_iter(&texte) {
+                total += 1;
+                if !couverts
+                    .iter()
+                    .any(|(d, f)| m.start() >= *d && m.end() <= *f)
+                {
+                    let d = texte[..m.start()]
+                        .char_indices()
+                        .rev()
+                        .nth(50)
+                        .map_or(0, |(i, _)| i);
+                    let f = (m.end() + 50).min(texte.len());
+                    let f = (f..=texte.len())
+                        .find(|i| texte.is_char_boundary(*i))
+                        .unwrap();
+                    erreurs.push(format!("{nom} : « {} » — …{}…", m.as_str(), &texte[d..f]));
+                }
+            }
+        }
+    }
+    // Anti-test-muet : les occurrences assumées sont bien vues par les motifs
+    // (7 au 2026-10-09 — deux pour le premier fragment).
+    assert!(
+        total >= MULTI_SOCIETE_ASSUME.len(),
+        "motifs muets : {total} occurrence(s)"
+    );
+    if !admin.contains("une instance par dossier") {
+        erreurs
+            .push("admin-manual.tex : phrase positive « une instance par dossier » absente".into());
+    }
+    assert!(
+        erreurs.is_empty(),
+        "G18 — {} écart(s) :\n  - {}",
+        erreurs.len(),
+        erreurs.join("\n  - ")
     );
 }
