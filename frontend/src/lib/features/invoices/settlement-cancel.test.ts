@@ -19,6 +19,6 @@ describe('invoiceSettlementCancelMessage', () => {
 	});
 
 	it('la tête existante reste la sienne (mutation : cas confondus)', () => {
-		expect(invoiceSettlementCancelMessage('INVOICE_CREDITED', null)).toContain('paiement à lettrer');
+		expect(invoiceSettlementCancelMessage('INVOICE_CREDITED', null)).toContain('reste ouvert au compte débiteurs');
 	});
 });

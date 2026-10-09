@@ -97,7 +97,7 @@ use crate::util::search::escape_boolean_ft;
 const ENTRY_COLUMNS: &str = "id, company_id, fiscal_year_id, entry_number, entry_date, journal, description, \
      version, reverses_entry_id, created_at, updated_at";
 
-const LINE_COLUMNS: &str = "id, entry_id, account_id, line_order, debit, credit, project_id";
+const LINE_COLUMNS: &str = "id, entry_id, account_id, line_order, debit, credit, project_id, lettering_key, lettering_origin";
 
 /// Valide que chaque compte référencé par les lignes d'une écriture existe,
 /// appartient à `company_id`, est actif et — si `enforce_postable` — imputable.
@@ -1875,7 +1875,7 @@ pub async fn list_all_lines_by_company(
 ) -> Result<Vec<JournalEntryLine>, DbError> {
     sqlx::query_as::<_, JournalEntryLine>(
         "SELECT jel.id, jel.entry_id, jel.account_id, jel.line_order, jel.debit, jel.credit, \
-                jel.project_id \
+                jel.project_id, jel.lettering_key, jel.lettering_origin \
          FROM journal_entry_lines jel \
          JOIN journal_entries je ON jel.entry_id = je.id \
          WHERE je.company_id = ? \

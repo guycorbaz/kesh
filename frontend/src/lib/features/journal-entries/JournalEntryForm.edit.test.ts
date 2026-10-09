@@ -63,8 +63,8 @@ const ENTRY: JournalEntryResponse = {
 	version: 1,
 	reversesEntryId: null,
 	lines: [
-		{ id: 1, accountId: 1, lineOrder: 1, debit: '100.0000', credit: '0.0000', projectId: null },
-		{ id: 2, accountId: 2, lineOrder: 2, debit: '0.0000', credit: '100.0000', projectId: null }
+		{ id: 1, accountId: 1, lineOrder: 1, debit: '100.0000', credit: '0.0000', projectId: null, letteringKey: null, letteringCode: null, letteringOrigin: null },
+		{ id: 2, accountId: 2, lineOrder: 2, debit: '0.0000', credit: '100.0000', projectId: null, letteringKey: null, letteringCode: null, letteringOrigin: null }
 	],
 	createdAt: '2026-04-10T10:00:00',
 	updatedAt: '2026-04-10T10:00:00'

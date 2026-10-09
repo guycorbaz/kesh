@@ -35,9 +35,9 @@ async fn apply_migrations_up_to(
     assert!(
         n <= all.len(),
         "apply_migrations_up_to: n={} > total={} — vérifier que le calcul \
-         `total - 41` (fenêtre d'upgrade, FRONTIÈRE figée à 34) reste \
+         `total - 42` (fenêtre d'upgrade, FRONTIÈRE figée à 34) reste \
          cohérent avec l'ajout de migrations futures. Si une migration a été ajoutée à \
-         la branche, l'assertion `total == 75` du test upgrade_path_preserves_data \
+         la branche, l'assertion `total == 76` du test upgrade_path_preserves_data \
          doit également échouer, c'est son rôle : elle signale qu'il faut décider \
          explicitement si la fenêtre s'élargit (bumper `total` seul) ou si la \
          frontière doit rester à 34 (bumper `total` ET la fenêtre). Cf. garde-fou \
@@ -54,8 +54,8 @@ async fn apply_migrations_up_to(
     sub.run(pool).await
 }
 
-/// AC #15a — cas générique upgrade path : `total - 41` migrations appliquées
-/// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **41**
+/// AC #15a — cas générique upgrade path : `total - 42` migrations appliquées
+/// (**34** à ce jour) + seed + `MIGRATOR.run()` final, qui applique les **42**
 /// dernières. Assertion : seed préservé à travers la fenêtre d'upgrade.
 ///
 /// ⚠️ Les nombres ci-dessus se recomptent, ils ne se relisent pas — cf. le
@@ -101,14 +101,15 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // + invoice_minimum_amount (Story 25-4-e, refs #495) = 72,
     // + invoice_settings_write_off_accounts (Story 25-4-d1, refs #384) = 73,
     // + invoice_settlements_write_off (Story 25-4-d2a, refs #384) = 74,
-    // + invoices_frozen_pdf (Story 25-6-b, refs #387) = 75.
+    // + invoices_frozen_pdf (Story 25-6-b, refs #387) = 75,
+    // + journal_entry_lines_lettering (Story 15-1a-i, refs #518) = 76.
     let total = kesh_db::MIGRATOR.migrations.len();
     assert_eq!(
-        total, 75,
-        "75 migrations attendues (dont Story 25-6-b : invoices_frozen_pdf ; dont Story 25-6-b : invoices_frozen_pdf ; dont Story 25-6-b : invoices_frozen_pdf ; 73 précédentes + Story 25-4-d2a : invoice_settlements_write_off)"
+        total, 76,
+        "76 migrations attendues (75 précédentes + Story 15-1a-i : journal_entry_lines_lettering)"
     );
 
-    // Étape 1 : applique toutes les migrations sauf les 41 dernières. La
+    // Étape 1 : applique toutes les migrations sauf les 42 dernières. La
     // fenêtre d'upgrade démarre donc à la 35ᵉ, `20260614000001_vat_accounts_config`
     // (Story 18-1a), et court jusqu'à la dernière du dépôt. Ne pas ré-énumérer
     // ici les migrations de la fenêtre : une liste nominative se périme à chaque
@@ -116,17 +117,17 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // plus bas. Le seul nombre qui fait foi est celui du `total - N` ci-dessous.
     //
     // Note `total - N` : expression relative à la longueur totale, tandis que
-    // l'assertion `total == 75` ci-dessus est INTENTIONNELLEMENT codée en dur
+    // l'assertion `total == 76` ci-dessus est INTENTIONNELLEMENT codée en dur
     // pour fail-loud sur toute évolution non revue. À chaque migration ajoutée,
     // le mainteneur doit (1) bumper ce compte (2) incrémenter `N` du même pas,
     // de sorte que `total - N` — la frontière — reste **constant**.
     //
     // Frontière actuelle : **34**. Le test applique donc les 34 premières
     // migrations (jusqu'à `20260613000001_vat_rates_crud` incluse), seede des
-    // données, puis joue les 41 restantes comme « fenêtre d’upgrade ».
+    // données, puis joue les 42 restantes comme « fenêtre d’upgrade ».
     //
-    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 40
-    // avec `total = 75` porterait la frontière à 35 : le test continuerait de
+    // ⚠️ `N` DOIT être incrémenté en même temps que `total`. Le laisser à 41
+    // avec `total = 76` porterait la frontière à 35 : le test continuerait de
     // passer en testant une fenêtre plus étroite d'une migration.
     // Story 16-1a : 21 → 22, frontière inchangée (56 - 22 = 55 - 21 = 34).
     // Story 16-1a-bis : 22 → 23, frontière inchangée (57 - 23 = 34).
@@ -177,16 +178,17 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     // Story 25-4-d1 : 38 → 39, frontière inchangée (73 - 39 = 34).
     // Story 25-4-d2a : 39 → 40, frontière inchangée (74 - 40 = 34).
     // Story 25-6-b (fusion avec la chaîne 25-4) : → 41, frontière inchangée (75 - 41 = 34).
+    // Story 15-1a-i : 41 → 42, frontière inchangée (76 - 42 = 34).
     //
     // ⚠️ J'ai d'abord porté `total` à 69 SANS toucher à ce soustracteur : le socle
     // est alors passé de 34 à 35 migrations, la fenêtre a glissé d'un cran, et le
     // test a rougi non plus sur son compteur mais sur `COUNT(accounts) : expected
     // 4, got 2` — un échec qui ne ressemble en rien à sa cause. *Les deux nombres
     // se bougent du même pas, et le commentaire ci-dessus le disait.*
-    let n_before_upgrade_window = total - 41;
+    let n_before_upgrade_window = total - 42;
     apply_migrations_up_to(&pool, n_before_upgrade_window)
         .await
-        .expect("apply_migrations_up_to(total - 41) failed");
+        .expect("apply_migrations_up_to(total - 42) failed");
 
     // Étape 2 : seed 1 company + 1 user + 2 accounts + 1 invoice + 1 contact.
     let company_id: i64 = sqlx::query_scalar(
@@ -255,7 +257,7 @@ async fn upgrade_path_preserves_data(pool: MySqlPool) {
     .await
     .expect("INSERT invoice failed");
 
-    // Étape 3 : appliquer les 41 migrations restantes via MIGRATOR.run().
+    // Étape 3 : appliquer les 42 migrations restantes via MIGRATOR.run().
     kesh_db::MIGRATOR
         .run(&pool)
         .await
@@ -507,14 +509,14 @@ async fn downgrade_protection_rejects_old_binary(pool: MySqlPool) {
 /// quand binary == db_min (cas nominal upgrade-then-boot).
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn downgrade_protection_aligned_when_binary_equals_min(pool: MySqlPool) {
-    // min_required = '0.10.0' depuis le bump breaking de la Story 22-1
-    // (contacts_client_number_canonical.sql — 2e bump du repo, le 1er étant
-    // '0.7.0' en 21-3). Binary == db_min → Aligned.
-    let result = check_downgrade_protection(&pool, "0.10.0").await;
+    // min_required = '0.13.0' depuis le bump breaking de la Story 15-1a-i
+    // (journal_entry_lines_lettering.sql — 3e bump du repo, après '0.7.0' en
+    // 21-3 et '0.10.0' en 22-1). Binary == db_min → Aligned.
+    let result = check_downgrade_protection(&pool, "0.13.0").await;
     assert_eq!(
         result.unwrap(),
         DowngradeCheckOutcome::Aligned,
-        "binary 0.10.0 == db_min 0.10.0 → Aligned"
+        "binary 0.13.0 == db_min 0.13.0 → Aligned"
     );
 }
 
@@ -522,13 +524,13 @@ async fn downgrade_protection_aligned_when_binary_equals_min(pool: MySqlPool) {
 /// quand binary > db_min (upgrade legitime).
 #[sqlx::test(migrator = "kesh_db::MIGRATOR")]
 async fn downgrade_protection_binary_ahead_when_binary_greater(pool: MySqlPool) {
-    // min_required = '0.10.0' depuis le bump breaking de la Story 22-1,
-    // binary 0.11.0 > 0.10.0 → BinaryAhead (upgrade légitime).
-    let result = check_downgrade_protection(&pool, "0.11.0").await;
+    // min_required = '0.13.0' depuis le bump breaking de la Story 15-1a-i,
+    // binary 0.14.0 > 0.13.0 → BinaryAhead (upgrade légitime).
+    let result = check_downgrade_protection(&pool, "0.14.0").await;
     match result.unwrap() {
         DowngradeCheckOutcome::BinaryAhead { db_min, binary } => {
-            assert_eq!(db_min.to_string(), "0.10.0");
-            assert_eq!(binary.to_string(), "0.11.0");
+            assert_eq!(db_min.to_string(), "0.13.0");
+            assert_eq!(binary.to_string(), "0.14.0");
         }
         other => panic!("Expected BinaryAhead, got {:?}", other),
     }

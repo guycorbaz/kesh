@@ -20,7 +20,7 @@ describe('reconciliationCancelMessage', () => {
 	it('un texte par motif, qui parle de RAPPROCHEMENT et jamais de « ce règlement » (mutation : famille du règlement réemployée)', () => {
 		const cas: [ReconciliationCancelCode, string][] = [
 			['BANK_TRANSACTION_NOT_RECONCILED', "n'est pas rapprochée"],
-			['INVOICE_CREDITED', 'paiement à lettrer'],
+			['INVOICE_CREDITED', 'reste ouvert au compte débiteurs'],
 			['INVOICE_WRITTEN_OFF', "annulez d'abord le solde"],
 			['FISCAL_YEAR_CLOSED', "rouvrir l'exercice"],
 			['MATCHED_BANK_TRANSACTION', 'autre transaction bancaire'],

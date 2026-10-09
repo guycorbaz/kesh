@@ -584,6 +584,9 @@ Et aucune écriture déjà passée dans la période ne pourra plus en \textbf{di
 être \textbf{modifiée}~: \textbf{verrouiller est le geste qui fige} un trimestre déclaré. La
 \textbf{dévalidation} d'une facture, qui emporte son écriture, est refusée si cette écriture est
 datée d'une période verrouillée.
+Le \textbf{lettrage} des lignes de la période se fige avec elles~: un groupe dont toutes les
+lignes sont dans la période verrouillée (ou dans des exercices clôturés) ne se lettre ni ne se
+délettre.
 
 \begin{keshtip}[title={\faLightbulb\ Deux gestes, deux exigences différentes}]
 \textbf{Verrouiller} est un geste d'hygiène~: un comptable comme un administrateur peut le
@@ -1204,8 +1207,8 @@ d'audit nomme le geste.
 Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~:
 
 \begin{itemize}
-    \item \textbf{la facture a été créditée} par un avoir~: le règlement est alors un paiement
-          \emph{à lettrer} à une autre facture --- il ne s'annule pas. Ce cas ne se présente plus
+    \item \textbf{la facture a été créditée} par un avoir~: le règlement reste ouvert au compte
+          débiteurs --- il ne s'annule pas. Ce cas ne se présente plus
           que sur une facture créditée \emph{avant} la version 0.12.1, ou restaurée d'une sauvegarde
           antérieure~: un avoir est désormais refusé sur une facture réglée (\S\ref{sec:avoirs})~;
     \item \textbf{le reste de la facture a été soldé}~: annulez d'abord le \textbf{solde} --- lui
@@ -1771,8 +1774,8 @@ Le journal d'audit nomme le geste. Quand l'annulation n'est pas possible, Kesh e
 raison~:
 
 \begin{itemize}
-    \item \textbf{la facture a été créditée} par un avoir~: son règlement est un paiement
-          \emph{à lettrer}, il ne s'annule pas --- cas hérité d'une version antérieure à la 0.12.1
+    \item \textbf{la facture a été créditée} par un avoir~: son règlement reste ouvert au
+          compte débiteurs, il ne s'annule pas --- cas hérité d'une version antérieure à la 0.12.1
           ou d'une sauvegarde restaurée~;
     \item \textbf{l'exercice de l'écriture du rapprochement est clôturé}~: un administrateur
           doit d'abord le rouvrir. ⚠️ C'est l'exercice du \textbf{paiement} qui compte, jamais
@@ -2414,7 +2417,12 @@ Le journal d'audit garde toujours la trace de l'action originale ET de l'action 
     \item[IDE] Identifiant Unique des Entreprises (Suisse), format CHE-XXX.XXX.XXX.
     \item[Journal] Enregistrement chronologique de toutes les écritures comptables.
     \item[Journal d'audit (angl. audit log)] Registre des modifications comptables (qui, quand, quelle valeur), exigé par le CO Art. 957a. ⚠️ \emph{La couverture n'est pas totale --- voir la section «~Traçabilité~» pour les deux familles d'opérations qui n'y figurent pas encore.} Il se consulte à l'écran, \emph{Administration} → \emph{Journal d'audit} (\S\ref{sec:tracabilite}). À ne pas confondre avec le \emph{journal} des écritures, ci-dessus. Aucune entrée ne peut y être modifiée, ni supprimée sur une installation en service.
-    \item[Lettrage] Rapprochement d'une facture avec son paiement pour solder la créance ou la dette correspondante.
+    \item[Lettrage] Marque posée sur des lignes d'un même compte d'actif ou de passif dont la
+          somme est nulle, pour dire qu'elles se soldent entre elles (une écriture et sa
+          contre-passation, un acompte et sa reprise\ldots). Dans cette version, le lettrage
+          manuel et le délettrage se font par l'API (\texttt{/api/v1/letterings})~; l'écran viendra.
+          Kesh ne lettre encore rien de lui-même~: ni une facture soldée par ses règlements, ni une
+          écriture et sa contre-passation.
     \item[Liquidités] Avoirs immédiatement disponibles (caisse, comptes bancaires et postaux).
     \item[Partie double] Principe selon lequel toute opération est enregistrée sur au moins deux comptes, débit = crédit.
     \item[Passif] Origine des ressources de l'entreprise (dettes + capitaux propres). Classe 2.

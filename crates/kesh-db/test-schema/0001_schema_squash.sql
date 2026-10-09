@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 75 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 76 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -793,17 +793,23 @@ CREATE TABLE `journal_entry_lines` (
   `debit` decimal(19,4) NOT NULL DEFAULT 0.0000,
   `credit` decimal(19,4) NOT NULL DEFAULT 0.0000,
   `project_id` bigint(20) DEFAULT NULL,
+  `lettering_key` bigint(20) DEFAULT NULL COMMENT 'Clé du groupe de lettrage = plus petit id de ligne du groupe ; NULL = ligne ouverte',
+  `lettering_origin` varchar(10) DEFAULT NULL COMMENT 'Origine du groupe : document, reversal, manual',
   PRIMARY KEY (`id`),
   UNIQUE KEY `uq_jel_entry_order` (`entry_id`,`line_order`),
   KEY `idx_jel_entry` (`entry_id`),
   KEY `idx_jel_account` (`account_id`),
   KEY `idx_jel_project` (`project_id`),
+  KEY `idx_jel_account_lettering` (`account_id`,`lettering_key`),
+  KEY `idx_jel_lettering` (`lettering_key`),
   CONSTRAINT `fk_jel_account` FOREIGN KEY (`account_id`) REFERENCES `accounts` (`id`),
   CONSTRAINT `fk_jel_entry` FOREIGN KEY (`entry_id`) REFERENCES `journal_entries` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_jel_project` FOREIGN KEY (`project_id`) REFERENCES `projects` (`id`),
   CONSTRAINT `chk_jel_debit_credit_exclusive` CHECK (`debit` = 0 and `credit` > 0 or `debit` > 0 and `credit` = 0),
   CONSTRAINT `chk_jel_debit_nonneg` CHECK (`debit` >= 0),
-  CONSTRAINT `chk_jel_credit_nonneg` CHECK (`credit` >= 0)
+  CONSTRAINT `chk_jel_credit_nonneg` CHECK (`credit` >= 0),
+  CONSTRAINT `chk_jel_lettering_origin` CHECK (`lettering_origin` is null or `lettering_origin` in ('document','reversal','manual')),
+  CONSTRAINT `chk_jel_lettering_pair` CHECK (`lettering_key` is null = (`lettering_origin` is null))
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `journal_entry_number_sequences`;
@@ -1153,4 +1159,4 @@ CREATE TABLE `vat_rates` (
 -- Ligne d'installation, RELEVÉE dans la base migrée (jamais codée en dur :
 -- chaque bump P2 de kesh_version_min_required la déplace).
 INSERT INTO `_kesh_version` (`id`, `kesh_version_min_required`, `kesh_version_last_applied`)
-VALUES (1, '0.10.0', '0.1.0');
+VALUES (1, '0.13.0', '0.1.0');

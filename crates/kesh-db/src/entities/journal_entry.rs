@@ -157,6 +157,15 @@ pub struct JournalEntryLine {
     pub credit: Decimal,
     /// Projet analytique de la ligne (Epic 19). `None` = ligne non taguée.
     pub project_id: Option<i64>,
+    /// Clé du groupe de lettrage (Story 15-1a-i, #518) — le plus petit `id` de
+    /// ligne du groupe ; `None` = ligne **ouverte** (non lettrée).
+    ///
+    /// ⛔ Écrite par `letterings::create_group_in_tx` et effacée par
+    /// `letterings::dissolve_group_in_tx`, **et par elles seules** (R3).
+    pub lettering_key: Option<i64>,
+    /// Origine du groupe : `document`, `reversal` ou `manual` ; `None` si et
+    /// seulement si `lettering_key` est `None` (contrainte `chk_jel_lettering_pair`).
+    pub lettering_origin: Option<String>,
 }
 
 /// En-tête + lignes, retourné par le repository pour les lectures.
