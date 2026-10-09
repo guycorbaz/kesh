@@ -948,3 +948,37 @@ code** au sens du `CLAUDE.md` ; tests, configuration, CI, scripts et documentati
   `docker compose exec -T mariadb sh -c`. **Validation close.** Trend (15-13 puis 15-13a) : P1 8 MEDIUM →
   P2 6 → P3 5 (découpage, C-15-13-16) → P4 1 → P5 ciblée 0. Modèles : Opus ×2, Sonnet ×2, Opus ×2,
   Sonnet ×2, Haiku (ciblée). Signal D5 déclaré en P2 et P3 (recyclage), suivi d'un découpage en P3.
+
+- **2026-10-09 — T0 du développement** (agent de développement, Opus 5.5, worktree `kesh-15-13a`, base
+  `200f5e79` + planification `08816686`). Fiche relue contre le code : les numéros de `config.rs`, `main.rs`,
+  `configuration_transmise.rs`, `docker-compose.yml`, `.env.example` et `ci.yml` sont en place ; ceux du
+  manuel sont décalés de **+3** après la 15-7a2 à partir du script de sauvegarde (`exec -T db` `:1463`,
+  `:1514` ; `exec db` `:2219` ; « deux gestes » `:1796` ; référence des ports `:2365`) — relocalisés par le
+  texte. `sprint-status.yaml` : 15-13 (`split`), 15-13a (`in-progress`), 15-13b (`ready-for-dev`) ajoutées
+  (absentes de `main`). Mesures (détail au Dev Agent Record) :
+  - **Message `:?`** (Docker Compose **2.40.3**) : les deux formes c1 (non citée) et c2 (citée) se lisent
+    avec les variables posées (`config -q` → 0) ; sans elles, code 1 et message restitué **avec ses
+    accents**. **Forme retenue : c1** (valeurs non citées, comme les lignes voisines).
+  - **Écart à la fiche — ordre** : la variable nommée **n'est pas stable** : sur 12 lancements,
+    `MARIADB_ROOT_PASSWORD` 5, `MARIADB_PASSWORD` 3, `DATABASE_URL` de `kesh-api` 4 (forme c1). L'AC 11 j
+    (« corriger la première, la seconde apparaît au lancement suivant ») est écrit comme : une variable à
+    la fois, pas toujours la même — poser les deux (C-15-13a-1).
+  - **Écart à la fiche — sous-commandes** : sur un projet jetable en marche, sans les variables,
+    `config`, `pull`, `up -d` refusent (code 1) ; `ps`, `logs`, `exec -T mariadb true`, `stop` **passent**
+    (code 0). L'AC 11 f (« le refus frappe toute sous-commande », « le script de sauvegarde lancé par
+    `cron` échoue ») est donc écrit selon la mesure (C-15-13a-1). Aucune règle ni AC changé sur le fond :
+    le manuel dit vrai, ce que l'AC demandait.
+  - **Graphie de `docker compose config`** : un service avec `ports` donne la forme longue
+    (`ports:` / `- mode: ingress` / `host_ip:` / `target:` / `published: "…"`) ; le service `mariadb`
+    sans `ports` n'en montre aucune (`grep -c ports` sur son bloc → 0).
+  - **`sqlx`, mauvais mot de passe** (MariaDB 10.11.16 jetable) : `connect` rend immédiatement (0 ms)
+    `Database(MySqlDatabaseError { code: Some("28000"), number: 1045, … "(using password: YES)" })` ;
+    l'extraction `as_database_error()?.try_downcast_ref::<MySqlDatabaseError>()?.number()` rend
+    `Some(1045)`. Base absente pour un compte sans droit : **1044**. Pas de repli textuel nécessaire.
+  - **Hôte du test 8** : `kesh-15-13.invalid` échoue en **16 ms** (`Io`, résolution) ; `127.0.0.1:1`
+    attend **10 000 ms** (`PoolTimedOut`). Retenu : `kesh-15-13.invalid`.
+  - **`make admin brochure` d'avant** : référence `target/gate-logs/15-13a-t0/` (`.log` : 55 lignes
+    `Overfull` au manuel d'administration ; aplatis). Contrôles de l'AC 11 l sur l'aplati d'avant :
+    `openssl rand -hex 32 # → mot de passe MariaDB` 0, `MARIADB_ROOT_PASSWORD"'` 0, `--protocol=TCP` 0,
+    `CURRENT_USER()` 0, `compose lisible` 0 ; `deux gestes` 1 ; `exec (-T )?db` 3 ; brochure `MARIADB` 0.
+  - **`.env` local** : absent du worktree (aucune mesure faussée).
