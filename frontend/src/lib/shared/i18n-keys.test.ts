@@ -523,7 +523,14 @@ const ATTENDU = {
 	// Recompté par `grep -o "i18nMsg("` aux deux bornes (`0724904c` et la branche). Les
 	// replis réécrits (dialogue de contre-passation, soldes de départ) n'ajoutent aucun site.
 	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (un littéral).
-	sitesTotal: 1920,
+	// Story 15-1a2-0 (#518) : **1920 → 1923** (+3) — un `i18nMsg(` neuf par famille
+	// d'annulation, le motif du rang 2 bis (`*-cancel-blocked-lettering-closed`) :
+	// `shared/utils/settlement-cancel-blocked.ts` (4 → 5),
+	// `features/reconciliation/reconciliation-cancel.ts` (7 → 8) et
+	// `features/supplier-invoices/invoice-cancel.ts` (6 → 7). Recompté par
+	// `grep -o "i18nMsg("` aux deux bornes (`f9b6b199` et la branche).
+	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (trois littéraux).
+	sitesTotal: 1923,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

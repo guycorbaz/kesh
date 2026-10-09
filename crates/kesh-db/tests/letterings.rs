@@ -1453,3 +1453,112 @@ async fn lettering_locks_fiscal_years_in_date_order_not_id_order(pool: MySqlPool
     t.rollback().await.unwrap();
     assert_eq!(dissolution.await.unwrap().expect("dissolution"), g.key);
 }
+
+// ---------------------------------------------------------------------------
+// Story 15-1a2-0 (#518, AC1) — la règle des périodes hors du mode `Manual`
+// ---------------------------------------------------------------------------
+
+/// AC1 — `OpenPeriodRule` lit la borne **strictement** : le jour de la borne
+/// est clos, le lendemain ouvert ; un exercice clôturé, ou suivi d'un exercice
+/// clôturé, rend ses lignes closes ; sans borne, toute ligne d'un exercice
+/// ouvert sans successeur clos est ouverte. `lines_in_open_period` = « au
+/// moins une ».
+#[sqlx::test(migrations = "./test-schema")]
+async fn open_period_rule_reads_the_bound_strictly(pool: MySqlPool) {
+    let m = monde(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let tous = [m.fy25, m.fy26, m.fy27];
+
+    // Sans borne, aucun exercice clos : tout est ouvert.
+    let regle = letterings::open_period_rule(&mut conn, m.company(), &tous)
+        .await
+        .unwrap();
+    for (fy, date) in [
+        (m.fy25, d(2025, 1, 1)),
+        (m.fy26, d(2026, 6, 30)),
+        (m.fy27, d(2027, 12, 31)),
+    ] {
+        assert!(regle.line_in_open_period(fy, date).unwrap(), "{date}");
+    }
+
+    // Borne au 2026-03-31 : le jour même est clos, le lendemain ouvert.
+    poser_borne(&pool, m.company(), d(2026, 3, 31)).await;
+    let regle = letterings::open_period_rule(&mut conn, m.company(), &tous)
+        .await
+        .unwrap();
+    assert!(!regle.line_in_open_period(m.fy26, d(2026, 3, 31)).unwrap());
+    assert!(regle.line_in_open_period(m.fy26, d(2026, 4, 1)).unwrap());
+    assert!(!regle.line_in_open_period(m.fy25, d(2025, 12, 31)).unwrap());
+    assert!(
+        !letterings::lines_in_open_period(
+            &mut conn,
+            m.company(),
+            &[(m.fy25, d(2025, 6, 1)), (m.fy26, d(2026, 3, 31))]
+        )
+        .await
+        .unwrap(),
+        "toutes sous la borne"
+    );
+    assert!(
+        letterings::lines_in_open_period(
+            &mut conn,
+            m.company(),
+            &[(m.fy26, d(2026, 3, 31)), (m.fy26, d(2026, 4, 1))]
+        )
+        .await
+        .unwrap(),
+        "une ligne au lendemain suffit"
+    );
+    assert!(
+        !letterings::lines_in_open_period(&mut conn, m.company(), &[])
+            .await
+            .unwrap(),
+        "aucune ligne : aucune ouverte"
+    );
+
+    // Exercice clôturé, et exercice suivi d'un exercice clôturé : clos, même
+    // au-delà de la borne.
+    set_status(&pool, m.fy27, "Closed").await;
+    let regle = letterings::open_period_rule(&mut conn, m.company(), &tous)
+        .await
+        .unwrap();
+    assert!(
+        !regle.line_in_open_period(m.fy27, d(2027, 6, 1)).unwrap(),
+        "exercice clôturé"
+    );
+    assert!(
+        !regle.line_in_open_period(m.fy26, d(2026, 6, 1)).unwrap(),
+        "exercice suivi d'un exercice clôturé"
+    );
+}
+
+/// AC1 — un exercice NON nommé à `open_period_rule` (ou d'une autre société)
+/// est un défaut de l'appelant : `Invariant`, jamais un `false` muet
+/// (C-15-1a2-25).
+#[sqlx::test(migrations = "./test-schema")]
+async fn open_period_rule_refuses_an_unnamed_fiscal_year(pool: MySqlPool) {
+    let m = monde(&pool).await;
+    let mut conn = pool.acquire().await.unwrap();
+    let regle = letterings::open_period_rule(&mut conn, m.company(), &[m.fy26])
+        .await
+        .unwrap();
+    assert!(regle.line_in_open_period(m.fy26, d(2026, 6, 1)).unwrap());
+    assert!(matches!(
+        regle.line_in_open_period(m.fy27, d(2027, 6, 1)),
+        Err(DbError::Invariant(_))
+    ));
+    // Un exercice d'une autre société, nommé : inconnu de la règle aussi.
+    autre_societe(&pool, &m).await;
+    let autre_fy: i64 = sqlx::query_scalar("SELECT id FROM fiscal_years WHERE company_id <> ?")
+        .bind(m.company())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let regle = letterings::open_period_rule(&mut conn, m.company(), &[m.fy26, autre_fy])
+        .await
+        .unwrap();
+    assert!(matches!(
+        regle.line_in_open_period(autre_fy, d(2026, 6, 1)),
+        Err(DbError::Invariant(_))
+    ));
+}

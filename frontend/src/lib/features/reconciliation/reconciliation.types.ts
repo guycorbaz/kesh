@@ -123,13 +123,15 @@ export interface SplitResponse {
 
 // Story 25-3-b (#418) — annuler un rapprochement.
 
-/** Les sept motifs qui refusent l'annulation, dans l'ordre de précédence du serveur. */
+/** Les huit motifs qui refusent l'annulation, dans l'ordre de précédence du serveur. */
 export type ReconciliationCancelCode =
 	| 'BANK_TRANSACTION_NOT_RECONCILED'
 	| 'INVOICE_CREDITED'
 	// Story 25-4-d2a (#384) : un solde existe sur la facture.
 	| 'INVOICE_WRITTEN_OFF'
 	| 'FISCAL_YEAR_CLOSED'
+	// Story 15-1a2-0 (#518) : rang 2 bis, le lettrage de pièce figé par la période.
+	| 'LETTERING_ALL_LINES_IN_CLOSED_PERIODS'
 	| 'MATCHED_BANK_TRANSACTION'
 	| 'ACCOUNT_ARCHIVED'
 	| 'FISCAL_YEAR_INVALID';

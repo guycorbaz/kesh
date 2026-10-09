@@ -23,6 +23,9 @@ use rust_decimal_macros::dec;
 use serde_json::json;
 use sqlx::MySqlPool;
 
+#[path = "../../kesh-db/tests/support/document_group.rs"]
+mod document_group;
+
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
 /// Password du user `admin` seedé par `seed_accounting_company`
 /// (cf. `kesh_db::test_fixtures::ADMIN_PASSWORD_HASH`).
@@ -1944,4 +1947,89 @@ async fn write_off_on_a_nature_account_that_is_the_receivable_is_a_400(pool: MyS
     );
     assert!(!msg.contains("banque, caisse"), "{msg}");
     assert!(!paid(&pool, id).await);
+}
+
+// --- Story 15-1a2-0 (#518) — le lettrage figé par la période -------------------
+
+/// Valeur fr-CH d'une clé du catalogue (le texte que la route doit rendre).
+fn catalogue_fr(cle: &str) -> String {
+    let catalogue = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../kesh-i18n/locales/fr-CH/messages.ftl"
+    ))
+    .expect("catalogue fr-CH");
+    catalogue
+        .lines()
+        .find_map(|l| l.strip_prefix(&format!("{cle} = ")))
+        .unwrap_or_else(|| panic!("clé {cle} absente"))
+        .to_string()
+}
+
+/// AC3 par l'API — groupe `document` posé à la main sur la vente et le règlement
+/// (D4), verrou ENSUITE à la date du règlement : la liste annonce
+/// `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` avant le clic, le clic rend 409 avec
+/// ce code et le texte de `settlement-cancel-blocked-lettering-closed` ; rien
+/// n'est écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn settlement_cancel_blocked_by_closed_lettering(pool: MySqlPool) {
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let (id, sid) = settled_invoice(&pool, &app, &token).await;
+    let (vente, reglement): (i64, i64) = sqlx::query_as(
+        "SELECT i.journal_entry_id, s.journal_entry_id FROM invoices i \
+         JOIN invoice_settlements s ON s.invoice_id = i.id WHERE s.id = ?",
+    )
+    .bind(sid)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let creance: i64 =
+        sqlx::query_scalar("SELECT id FROM accounts WHERE company_id = ? AND number = '1100'")
+            .bind(company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let cle = document_group::poser_groupe_document(&pool, creance, &[vente, reglement]).await;
+    kesh_db::repositories::companies::lock_books(
+        &pool,
+        admin_id,
+        company_id,
+        NaiveDate::from_ymd_opt(2026, 4, 15).unwrap(),
+    )
+    .await
+    .expect("verrou");
+
+    let list: serde_json::Value = get_settlements(&app, &token, id)
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(list[0]["cancellable"], false, "got {list:?}");
+    assert_eq!(
+        list[0]["cancelBlockedBy"],
+        "LETTERING_ALL_LINES_IN_CLOSED_PERIODS"
+    );
+
+    let ecritures: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let resp = post_cancel(&app, &token, id, sid).await;
+    assert_eq!(resp.status(), 409);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"]["code"], "LETTERING_ALL_LINES_IN_CLOSED_PERIODS",
+        "got {body:?}"
+    );
+    assert_eq!(
+        body["error"]["message"],
+        catalogue_fr("settlement-cancel-blocked-lettering-closed")
+    );
+    let apres: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(apres, ecritures, "aucune contre-passation");
+    assert_eq!(document_group::lignes_du_groupe(&pool, cle).await, 2);
 }

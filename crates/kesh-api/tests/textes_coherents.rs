@@ -676,6 +676,12 @@ fn les_replis_rust_suivent_le_catalogue() {
                     &[],
                 ),
                 ("error-invoice-pdf-header-overflow", 1, &[]),
+                // Story 15-1a2-0 (#518) — le rang 2 bis, un bras par famille, et
+                // le message neutre de `LETTERING_IS_DOCUMENT` (validation P1, R-2).
+                ("settlement-cancel-blocked-lettering-closed", 1, &[]),
+                ("reconciliation-cancel-blocked-lettering-closed", 1, &[]),
+                ("supplier-invoices-cancel-blocked-lettering-closed", 1, &[]),
+                ("error-lettering-is-document", 1, &[]),
                 ("error-fiscal-year-create-later-closed", 1, NOM),
                 ("error-later-fiscal-year-closed", 1, NOM),
             ],

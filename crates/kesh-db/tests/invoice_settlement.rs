@@ -23,6 +23,10 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::MySqlPool;
 
+#[path = "support/document_group.rs"]
+mod document_group;
+use document_group::{lignes_du_groupe, poser_groupe_document};
+
 fn ymd(y: i32, m: u32, d: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, d).expect("date valide")
 }
@@ -428,7 +432,7 @@ async fn un_reglement_ne_precede_pas_sa_facture(pool: MySqlPool) {
 use kesh_db::errors::{DbError, ReversalBlocker, SettlementCancelBlocker};
 use kesh_db::repositories::journal_entries::{self, ReversalAuthority};
 use kesh_db::repositories::settlement_cancellation::settlement_entry_cancel_blocker;
-use kesh_db::repositories::{accounts, credit_notes, fiscal_years};
+use kesh_db::repositories::{accounts, companies, credit_notes, fiscal_years};
 
 /// Règle `amount` en espèces et rend `(settlement_id, journal_entry_id)`.
 async fn settle_cash(
@@ -922,10 +926,12 @@ async fn une_autre_societe_ne_peut_pas_annuler(pool: MySqlPool) {
 // La précédence : chaque rang seul, et chaque paire — lecture ET écriture.
 // ---------------------------------------------------------------------------
 
-/// Les cinq rangs de [`SettlementCancelBlocker`], dans l'ordre.
-const RANGS: [SettlementCancelBlocker; 5] = [
+/// Les six rangs de [`SettlementCancelBlocker`], dans l'ordre — dont le 2 bis,
+/// le lettrage de pièce figé par la période (Story 15-1a2-0, AC2 c).
+const RANGS: [SettlementCancelBlocker; 6] = [
     SettlementCancelBlocker::InvoiceCredited,
     SettlementCancelBlocker::FiscalYearClosed,
+    SettlementCancelBlocker::DocumentLetteringInClosedPeriods,
     SettlementCancelBlocker::MatchedBankTransaction,
     SettlementCancelBlocker::AccountArchived,
     SettlementCancelBlocker::NoOpenFiscalYearToday,
@@ -941,9 +947,16 @@ const RANGS: [SettlementCancelBlocker; 5] = [
 /// ouvert (le cas de janvier). ⚠️ Le montage « régler aujourd'hui puis clore »
 /// produirait le rang **2**, pas le 5.
 ///
-/// Ordre des gestes : régler, créditer, rapprocher, archiver, clore — la
-/// clôture en dernier, pour que les gestes précédents trouvent leur exercice
-/// ouvert.
+/// Ordre des gestes : régler, (2 bis) solder et figer, créditer, rapprocher,
+/// archiver, clore — la clôture en dernier, pour que les gestes précédents
+/// trouvent leur exercice ouvert.
+///
+/// **Rang 2 bis** (Story 15-1a2-0 ; choix écrit au Dev Agent Record) : la
+/// facture est **soldée** par un second règlement du reste (60.00, même date
+/// `D − 10`) — le groupe doit être à somme nulle ; le règlement examiné reste
+/// le premier. Le groupe `document` est posé en SQL brut sur les trois lignes
+/// de créance (vente, deux règlements), puis le verrou par `lock_books` à
+/// `D − 10`, la date la plus récente du groupe (D4).
 async fn monter(pool: &MySqlPool, motifs: &[SettlementCancelBlocker]) -> (SeededCompany, i64, i64) {
     kesh_db::test_fixtures::truncate_all(pool)
         .await
@@ -982,6 +995,31 @@ async fn monter(pool: &MySqlPool, motifs: &[SettlementCancelBlocker]) -> (Seeded
         d - chrono::Duration::days(10),
     )
     .await;
+
+    if motifs.contains(&SettlementCancelBlocker::DocumentLetteringInClosedPeriods) {
+        let (_, reste) = settle_cash(
+            pool,
+            &seeded,
+            inv_id,
+            dec!(60.00),
+            d - chrono::Duration::days(10),
+        )
+        .await;
+        let vente: i64 = sqlx::query_scalar("SELECT journal_entry_id FROM invoices WHERE id = ?")
+            .bind(inv_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        poser_groupe_document(pool, seeded.accounts["1100"], &[vente, entry_id, reste]).await;
+        companies::lock_books(
+            pool,
+            seeded.admin_user_id,
+            seeded.company_id,
+            d - chrono::Duration::days(10),
+        )
+        .await
+        .expect("verrou de période");
+    }
 
     if motifs.contains(&SettlementCancelBlocker::InvoiceCredited) {
         // ⚠️ **État HÉRITÉ, plus atteignable par l'application** depuis la
@@ -1061,7 +1099,8 @@ fn ecriture_attendue(motif: SettlementCancelBlocker, err: &DbError) -> bool {
         SettlementCancelBlocker::InvoiceCredited
         | SettlementCancelBlocker::WriteOffExists
         | SettlementCancelBlocker::SupplierInvoiceNotPaid
-        | SettlementCancelBlocker::FiscalYearClosed => {
+        | SettlementCancelBlocker::FiscalYearClosed
+        | SettlementCancelBlocker::DocumentLetteringInClosedPeriods => {
             matches!(err, DbError::SettlementNotCancellable { blocker } if *blocker == motif)
         }
         SettlementCancelBlocker::MatchedBankTransaction => matches!(
@@ -1095,10 +1134,23 @@ async fn la_precedence_de_l_annulation_lecture_et_ecriture(pool: MySqlPool) {
     let mut cas: Vec<Vec<SettlementCancelBlocker>> = RANGS.iter().map(|r| vec![*r]).collect();
     for (i, fort) in RANGS.iter().enumerate() {
         for faible in &RANGS[i + 1..] {
+            // ⛔ Paire EXCLUE, et nommée : `InvoiceCredited` × 2 bis n'existe
+            // dans aucune donnée. Une facture créditée ET réglée a `Σ ≠ 0` sur
+            // sa créance : aucun chemin n'y pose de groupe `document`
+            // (C-15-1a2-7). La monter forcerait un groupe déséquilibré.
+            if *fort == SettlementCancelBlocker::InvoiceCredited
+                && *faible == SettlementCancelBlocker::DocumentLetteringInClosedPeriods
+            {
+                continue;
+            }
             cas.push(vec![*fort, *faible]);
         }
     }
-    assert_eq!(cas.len(), 15, "cinq seuls, dix paires");
+    assert_eq!(
+        cas.len(),
+        20,
+        "six seuls, quatorze paires (la quinzième exclue)"
+    );
 
     for motifs in cas {
         let (seeded, inv_id, sid) = monter(&pool, &motifs).await;
@@ -1587,4 +1639,321 @@ mod contrepartie_distincte_de_la_creance {
         );
         assert_nothing_written(&pool, inv_id, n).await;
     }
+}
+
+// ===========================================================================
+// Story 15-1a2-0 (#518) — le lettrage se fige avec la période (rang 2 bis)
+// ===========================================================================
+
+use kesh_db::repositories::reconciliation_cancel;
+
+/// Une facture de 100.00 datée `D − 20`, soldée par un règlement en espèces
+/// daté `D − 10` (`D = aujourd'hui − 60 j` : toutes les lignes STRICTEMENT avant
+/// aujourd'hui, sans quoi `lock_books` et `unlock_books` refuseraient la
+/// borne), et le groupe `document` posé à la main sur ses deux lignes de
+/// créance (D4). **Aucun verrou** : chaque test pose le sien, ensuite.
+///
+/// Rend `(seeded, facture, règlement, écriture de règlement, clé, D − 10)`.
+async fn facture_lettree(pool: &MySqlPool) -> (SeededCompany, i64, i64, i64, i64, NaiveDate) {
+    let seeded = seed_accounting_company(pool).await.expect("seed");
+    let d = chrono::Utc::now().date_naive() - chrono::Duration::days(60);
+    let inv_id =
+        validated_invoice(pool, &seeded, dec!(100.00), d - chrono::Duration::days(20)).await;
+    let le_plus_recent = d - chrono::Duration::days(10);
+    let (sid, entry_id) = settle_cash(pool, &seeded, inv_id, dec!(100.00), le_plus_recent).await;
+    let vente: i64 = sqlx::query_scalar("SELECT journal_entry_id FROM invoices WHERE id = ?")
+        .bind(inv_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let cle = poser_groupe_document(pool, seeded.accounts["1100"], &[vente, entry_id]).await;
+    (seeded, inv_id, sid, entry_id, cle, le_plus_recent)
+}
+
+/// AC2 (a, b) — le rang 2 bis dans la file commune, lu sur l'écriture.
+#[sqlx::test(migrations = "./test-schema")]
+async fn rank_2_bis_sees_a_frozen_document_group(pool: MySqlPool) {
+    let (seeded, _, _, entry_id, _, le_plus_recent) = facture_lettree(&pool).await;
+    let company_id = seeded.company_id;
+    let lire = |entry_id: i64| {
+        let pool = pool.clone();
+        async move {
+            let mut conn = pool.acquire().await.unwrap();
+            settlement_entry_cancel_blocker(&mut conn, company_id, entry_id, None)
+                .await
+                .expect("lecture")
+                .map(|h| h.0)
+        }
+    };
+
+    // (b) Une ligne APRÈS la borne (le règlement, `D − 10`) : le groupe n'est
+    // pas figé — la borne `D − 11` laisse le règlement ouvert.
+    companies::lock_books(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        le_plus_recent - chrono::Duration::days(1),
+    )
+    .await
+    .expect("verrou partiel");
+    assert_eq!(
+        lire(entry_id).await,
+        None,
+        "une ligne ouverte : pas ce rang"
+    );
+
+    // (a) Verrou posé ENSUITE, à la date du règlement : tout le groupe est clos.
+    companies::lock_books(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        le_plus_recent,
+    )
+    .await
+    .expect("verrou");
+    assert_eq!(
+        lire(entry_id).await,
+        Some(SettlementCancelBlocker::DocumentLetteringInClosedPeriods)
+    );
+
+    // L'écriture de VENTE porte aussi une ligne du groupe : même rang.
+    let vente: i64 = sqlx::query_scalar(
+        "SELECT entry_id FROM journal_entry_lines WHERE lettering_origin = 'document' \
+         AND entry_id <> ? LIMIT 1",
+    )
+    .bind(entry_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        lire(vente).await,
+        Some(SettlementCancelBlocker::DocumentLetteringInClosedPeriods)
+    );
+
+    // (b) Même montage SANS groupe (marques retirées) : pas ce rang.
+    sqlx::query(
+        "UPDATE journal_entry_lines SET lettering_key = NULL, lettering_origin = NULL \
+         WHERE entry_id IN (SELECT id FROM journal_entries WHERE company_id = ?)",
+    )
+    .bind(seeded.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(lire(entry_id).await, None, "sans groupe : pas ce rang");
+}
+
+/// Ce qu'une annulation refusée ne doit pas avoir écrit : écritures, lignes de
+/// règlement, audit — comptés avant, recomptés après.
+async fn traces(pool: &MySqlPool) -> [i64; 3] {
+    [
+        count(pool, "SELECT COUNT(*) FROM journal_entries").await,
+        count(pool, "SELECT COUNT(*) FROM invoice_settlements").await,
+        count(pool, "SELECT COUNT(*) FROM audit_log").await,
+    ]
+}
+
+/// AC3 (a) — l'annulation d'un règlement dont le lettrage est figé est refusée,
+/// sans rien écrire ; la lecture de la vue le dit ; un déverrouillage qui
+/// laisse la borne à la date la plus récente ne lève rien, un recul AVANT elle
+/// lève le rang.
+#[sqlx::test(migrations = "./test-schema")]
+async fn settlement_cancel_is_refused_under_a_frozen_lettering(pool: MySqlPool) {
+    let (seeded, inv_id, sid, _, cle, le_plus_recent) = facture_lettree(&pool).await;
+    companies::lock_books(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        le_plus_recent,
+    )
+    .await
+    .expect("verrou");
+    let lire = || {
+        let pool = pool.clone();
+        let company_id = seeded.company_id;
+        async move {
+            let mut conn = pool.acquire().await.unwrap();
+            invoice_settlements_write::settlement_cancel_blocker(&mut conn, company_id, sid)
+                .await
+                .expect("lecture")
+                .map(|h| h.0)
+        }
+    };
+    assert_eq!(
+        lire().await,
+        Some(SettlementCancelBlocker::DocumentLetteringInClosedPeriods),
+        "la vue l'annonce"
+    );
+
+    let avant = traces(&pool).await;
+    let err = invoice_settlements_write::cancel_settlement(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        inv_id,
+        sid,
+    )
+    .await
+    .expect_err("refusée");
+    assert!(
+        matches!(
+            err,
+            DbError::SettlementNotCancellable {
+                blocker: SettlementCancelBlocker::DocumentLetteringInClosedPeriods
+            }
+        ),
+        "{err:?}"
+    );
+    assert_eq!(
+        traces(&pool).await,
+        avant,
+        "rien d'écrit (écriture, ligne, audit)"
+    );
+    assert_eq!(
+        lignes_du_groupe(&pool, cle).await,
+        2,
+        "les marques sont intactes"
+    );
+
+    // Déverrouillage INSUFFISANT : la borne reste à la date la plus récente.
+    companies::unlock_books(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        Some(le_plus_recent),
+        "recul insuffisant".into(),
+    )
+    .await
+    .expect("déverrouillage à la date la plus récente");
+    assert_eq!(
+        lire().await,
+        Some(SettlementCancelBlocker::DocumentLetteringInClosedPeriods),
+        "la borne n'est pas AVANT la date la plus récente : le motif demeure"
+    );
+
+    // Recul AVANT elle : le rang est levé.
+    companies::unlock_books(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        Some(le_plus_recent - chrono::Duration::days(1)),
+        "recul suffisant".into(),
+    )
+    .await
+    .expect("déverrouillage avant la date la plus récente");
+    assert_eq!(lire().await, None, "une ligne repasse en période ouverte");
+}
+
+/// AC4 (dépôt) — le dé-rapprochement d'un règlement dont le lettrage est figé
+/// est refusé dans SA famille (`ReconciliationNotCancellable`), AVANT que le
+/// lien soit défait : `matched_entry_id` est intact.
+#[sqlx::test(migrations = "./test-schema")]
+async fn unreconcile_refuses_in_its_family_before_unlinking(pool: MySqlPool) {
+    let (seeded, _, _, entry_id, cle, le_plus_recent) = facture_lettree(&pool).await;
+    let bt = match_to_bank(&pool, seeded.company_id, entry_id, le_plus_recent).await;
+    sqlx::query("UPDATE bank_transactions SET status = 'reconciled' WHERE id = ?")
+        .bind(bt)
+        .execute(&pool)
+        .await
+        .expect("transaction rapprochée (montage)");
+    companies::lock_books(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        le_plus_recent,
+    )
+    .await
+    .expect("verrou");
+
+    let avant = traces(&pool).await;
+    let err = reconciliation_cancel::cancel(&pool, seeded.company_id, bt, seeded.admin_user_id)
+        .await
+        .expect_err("refusé");
+    assert!(
+        matches!(
+            err,
+            DbError::ReconciliationNotCancellable {
+                blocker: SettlementCancelBlocker::DocumentLetteringInClosedPeriods
+            }
+        ),
+        "{err:?}"
+    );
+    let (lien, statut): (Option<i64>, String) =
+        sqlx::query_as("SELECT matched_entry_id, status FROM bank_transactions WHERE id = ?")
+            .bind(bt)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(lien, Some(entry_id), "le lien est intact");
+    assert_eq!(statut, "reconciled");
+    assert_eq!(traces(&pool).await, avant, "rien d'écrit");
+    assert_eq!(
+        lignes_du_groupe(&pool, cle).await,
+        2,
+        "les marques sont intactes"
+    );
+}
+
+/// AC6 — état hérité « exercice du groupe ouvert, suivi d'un exercice clos »
+/// (fabriqué en SQL brut, comme les tests de la 15-12b), SANS verrou de
+/// période : la seconde cause seule fige le lettrage.
+#[sqlx::test(migrations = "./test-schema")]
+async fn later_closed_year_group_is_refused(pool: MySqlPool) {
+    let (seeded, inv_id, sid, _, cle, _) = facture_lettree(&pool).await;
+    // L'exercice seedé est raccourci à `D`, suivi d'un exercice CLOS — l'état
+    // hérité que la clôture dans l'ordre (15-12a) ne produit plus.
+    let d = chrono::Utc::now().date_naive() - chrono::Duration::days(60);
+    sqlx::query("UPDATE fiscal_years SET end_date = ? WHERE id = ?")
+        .bind(d)
+        .bind(seeded.fiscal_year_id)
+        .execute(&pool)
+        .await
+        .expect("raccourcir l'exercice");
+    sqlx::query(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+         VALUES (?, 'Postérieur clos', ?, '2030-12-31', 'Closed')",
+    )
+    .bind(seeded.company_id)
+    .bind(d + chrono::Duration::days(1))
+    .execute(&pool)
+    .await
+    .expect("exercice postérieur clos (état hérité)");
+    let borne: Option<NaiveDate> =
+        sqlx::query_scalar("SELECT books_locked_through FROM companies WHERE id = ?")
+            .bind(seeded.company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(borne, None, "montage : aucun verrou de période");
+
+    let mut conn = pool.acquire().await.unwrap();
+    let lu =
+        invoice_settlements_write::settlement_cancel_blocker(&mut conn, seeded.company_id, sid)
+            .await
+            .expect("lecture");
+    drop(conn);
+    assert_eq!(
+        lu.map(|h| h.0),
+        Some(SettlementCancelBlocker::DocumentLetteringInClosedPeriods)
+    );
+    let avant = traces(&pool).await;
+    let err = invoice_settlements_write::cancel_settlement(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        inv_id,
+        sid,
+    )
+    .await
+    .expect_err("refusée");
+    assert!(
+        matches!(
+            err,
+            DbError::SettlementNotCancellable {
+                blocker: SettlementCancelBlocker::DocumentLetteringInClosedPeriods
+            }
+        ),
+        "{err:?}"
+    );
+    assert_eq!(traces(&pool).await, avant, "rien d'écrit");
+    assert_eq!(lignes_du_groupe(&pool, cle).await, 2);
 }

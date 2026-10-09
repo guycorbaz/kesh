@@ -685,7 +685,7 @@ pub async fn write_off_invoice(
 
 /// Ce qui empêche d'annuler le règlement `settlement_id` — la **tête** client
 /// (rang 1, puis rang 1 bis : un solde existe — Story 25-4-d2a), puis la queue
-/// commune sur son écriture (rangs 2 à 5).
+/// commune sur son écriture (rangs 2 à 5, dont le 2 bis — Story 15-1a2-0).
 ///
 /// ⛔ **Une seule fonction pour lire et pour écrire** : `GET …/settlements`
 /// l'appelle pour masquer le bouton avant le clic, [`cancel_settlement_in_tx`]
@@ -769,7 +769,8 @@ pub struct SettlementCancellation {
 /// l'appelle après avoir défait le lien bancaire dans la même transaction — ce
 /// qui lève le rang 3 sans aucune exemption.
 ///
-/// ⛔ **Qui refuse** : ce geste ne refuse lui-même que les rangs 1 et 2
+/// ⛔ **Qui refuse** : ce geste ne refuse lui-même que les rangs 1, 1 bis, 2 et
+/// 2 bis — le lettrage de pièce figé par la période, Story 15-1a2-0
 /// ([`DbError::SettlementNotCancellable`]) ; les rangs 3 à 5 sont refusés par
 /// la contre-passation, avec son erreur canonique (409 `EntryNotReversable`,
 /// 400 qui nomme les comptes, 400 `FiscalYearInvalid`). Une seule garde par
@@ -835,12 +836,15 @@ pub async fn cancel_settlement_in_tx(
     .map_err(map_db_error)?
     .ok_or(DbError::NotFound)?;
 
-    // (3) Les motifs du geste. Rangs 1-2 : refusés ici. Rangs 3-5 : laissés au
-    //     socle, qui les refuse avec son erreur canonique.
+    // (3) Les motifs du geste. Rangs 1, 1 bis, 2 et 2 bis : refusés ici.
+    //     Rangs 3-5 : laissés au socle, qui les refuse avec son erreur
+    //     canonique. ⛔ Le 2 bis (Story 15-1a2-0) est refusé ICI : le socle ne
+    //     le connaît pas, et la contre-passation dissoudrait un lettrage figé.
     if let Some((
         blocker @ (SettlementCancelBlocker::InvoiceCredited
         | SettlementCancelBlocker::WriteOffExists
-        | SettlementCancelBlocker::FiscalYearClosed),
+        | SettlementCancelBlocker::FiscalYearClosed
+        | SettlementCancelBlocker::DocumentLetteringInClosedPeriods),
         _,
         _,
     )) = settlement_cancel_blocker(tx, company_id, settlement_id).await?

@@ -226,6 +226,25 @@ const FISCAL_YEARS_OF_GROUP_SQL: &str = "SELECT id, start_date, name FROM fiscal
 const LOCK_LETTERING_FISCAL_YEAR_SQL: &str =
     "SELECT id, start_date, status FROM fiscal_years WHERE id = ? AND company_id = ? FOR UPDATE";
 
+/// [`open_period_rule`] — statut, date de début et nom des exercices nommés,
+/// **sans verrou**. `{ids}` : autant de `?` que d'exercices distincts.
+const OPEN_PERIOD_RULE_FISCAL_YEARS_SQL: &str = "SELECT id, start_date, status, name \
+     FROM fiscal_years WHERE id IN ({ids}) AND company_id = ?";
+
+/// [`document_group_frozen_by_periods`] — les clés des groupes d'origine
+/// `document` qui contiennent une ligne de l'écriture, **sans verrou**, par
+/// ordre croissant.
+const DOCUMENT_KEYS_OF_ENTRY_SQL: &str = "SELECT DISTINCT jel.lettering_key \
+     FROM journal_entry_lines jel JOIN journal_entries je ON je.id = jel.entry_id \
+     WHERE jel.entry_id = ? AND je.company_id = ? AND jel.lettering_origin = 'document' \
+     AND jel.lettering_key IS NOT NULL ORDER BY jel.lettering_key";
+
+/// [`document_group_frozen_by_periods`] — `(fiscal_year_id, entry_date)` de
+/// chaque ligne d'un groupe, **sans verrou**.
+const GROUP_LINE_PERIODS_SQL: &str = "SELECT je.fiscal_year_id, je.entry_date \
+     FROM journal_entry_lines jel JOIN journal_entries je ON je.id = jel.entry_id \
+     WHERE jel.lettering_key = ? AND je.company_id = ?";
+
 /// R7 point 3 — le **nom** des exercices du groupe en mode `System`, par une
 /// lecture **ordinaire, non verrouillante** (C128). Ne juge rien.
 const LETTERING_FISCAL_YEAR_NAMES_SQL: &str =
@@ -346,6 +365,7 @@ async fn require_letterable(
 }
 
 /// Exercice d'une ligne, tel que la règle des périodes le juge.
+#[derive(Debug, Clone)]
 struct FiscalYearState {
     name: String,
     open: bool,
@@ -480,17 +500,39 @@ async fn group_account_number(
 
 /// La borne du verrou de période, lue ordinairement.
 async fn books_locked_through(
-    tx: &mut Transaction<'_, MySql>,
+    conn: &mut MySqlConnection,
     company_id: i64,
 ) -> Result<Option<NaiveDate>, DbError> {
     sqlx::query_scalar("SELECT books_locked_through FROM companies WHERE id = ?")
         .bind(company_id)
-        .fetch_one(&mut **tx)
+        .fetch_one(conn)
         .await
         .map_err(map_db_error)
 }
 
+/// Le prédicat **par ligne** de la règle des périodes, sur l'état **trouvé**
+/// de son exercice — le seul texte de la règle, partagé par le mode `Manual`
+/// ([`any_line_in_open_period`]) et par [`OpenPeriodRule::line_in_open_period`]
+/// (Story 15-1a2-0, D1 ; C-15-1a2-18) : jamais recopié.
+///
+/// ⚠️ **Borne stricte** : `books_locked_through` est le **dernier jour clos**
+/// (seuil inclusif) — une ligne datée du jour de la borne est close, celle du
+/// lendemain ouverte.
+fn line_open_in_period(
+    exercice: &FiscalYearState,
+    locked_through: Option<NaiveDate>,
+    entry_date: NaiveDate,
+) -> bool {
+    exercice.open && !exercice.later_closed && locked_through.is_none_or(|borne| entry_date > borne)
+}
+
 /// Règle des périodes (R7) : au moins une ligne « en période ouverte ».
+///
+/// ⚠️ Un exercice absent de `exercices` rend la ligne close (`is_some_and`) :
+/// le cas ne se produit pas ici, `exercices` étant lu sous verrou sur les
+/// exercices des lignes mêmes ([`lock_fiscal_years_of_group`], qui rend
+/// [`DbError::Invariant`] s'il en manque un). [`OpenPeriodRule`] le traite, lui,
+/// en `Invariant` (C-15-1a2-25).
 fn any_line_in_open_period(
     lines: &[LineRow],
     exercices: &BTreeMap<i64, FiscalYearState>,
@@ -499,9 +541,162 @@ fn any_line_in_open_period(
     lines.iter().any(|l| {
         exercices
             .get(&l.fiscal_year_id)
-            .is_some_and(|e| e.open && !e.later_closed)
-            && locked_through.is_none_or(|borne| l.entry_date > borne)
+            .is_some_and(|e| line_open_in_period(e, locked_through, l.entry_date))
     })
+}
+
+/// La règle des périodes **hors du mode `Manual`** : l'état des exercices
+/// NOMMÉS et la borne du verrou de période, lus **SANS verrou** (Story 15-1a2-0,
+/// D1 ; C-15-1a2-18). Employée par le rang 2 bis de la file des annulations
+/// ([`document_group_frozen_by_periods`]), et — telle quelle — par la
+/// synchronisation des pièces (15-1a2-i) et la vue des postes ouverts (15-1b).
+///
+/// Une ligne est **« en période ouverte »** si son exercice est `Open`, si aucun
+/// exercice postérieur n'est `Closed` (`fiscal_years::find_later_closed`, lu
+/// sur la **date de début** de l'exercice), et si sa date est **strictement**
+/// postérieure à `companies.books_locked_through` — le prédicat par ligne est
+/// celui du mode `Manual`, partagé ([`line_open_in_period`]).
+///
+/// ⚠️ **Lecture sans verrou — tolérance nommée** : une pose de borne, ou la
+/// clôture d'un exercice, validée entre cette lecture et le `COMMIT` de
+/// l'appelant n'est pas vue (la tolérance qu'a déjà une écriture créée pendant
+/// la pose du verrou ; D4 de la Story 15-1a2-0). Aucun verrou n'est pris ici.
+#[derive(Debug, Clone)]
+pub struct OpenPeriodRule {
+    exercices: BTreeMap<i64, FiscalYearState>,
+    locked_through: Option<NaiveDate>,
+}
+
+/// Lit, **sans verrou**, le statut et la date de début des exercices NOMMÉS
+/// (pour `fiscal_years::find_later_closed`, appelé sur chaque exercice
+/// ouvert), puis la borne du verrou de période. Un identifiant d'exercice
+/// introuvable dans la société n'est pas une erreur ici : il reste **inconnu**
+/// de la règle, et [`OpenPeriodRule::line_in_open_period`] le refuse.
+pub async fn open_period_rule(
+    conn: &mut MySqlConnection,
+    company_id: i64,
+    fiscal_year_ids: &[i64],
+) -> Result<OpenPeriodRule, DbError> {
+    let ids: BTreeSet<i64> = fiscal_year_ids.iter().copied().collect();
+    let mut exercices = BTreeMap::new();
+    if !ids.is_empty() {
+        let sql = with_placeholders(OPEN_PERIOD_RULE_FISCAL_YEARS_SQL, ids.len());
+        let mut q = sqlx::query_as::<_, (i64, NaiveDate, String, String)>(&sql);
+        for id in &ids {
+            q = q.bind(*id);
+        }
+        let lus = q
+            .bind(company_id)
+            .fetch_all(&mut *conn)
+            .await
+            .map_err(map_db_error)?;
+        for (id, start_date, status, name) in lus {
+            let open = status == "Open";
+            let later_closed = open
+                && fiscal_years::find_later_closed(&mut *conn, company_id, start_date)
+                    .await?
+                    .is_some();
+            exercices.insert(
+                id,
+                FiscalYearState {
+                    name,
+                    open,
+                    later_closed,
+                },
+            );
+        }
+    }
+    let locked_through = books_locked_through(conn, company_id).await?;
+    Ok(OpenPeriodRule {
+        exercices,
+        locked_through,
+    })
+}
+
+impl OpenPeriodRule {
+    /// La ligne `(fiscal_year_id, entry_date)` est-elle « en période ouverte » ?
+    ///
+    /// Exercice inconnu de la règle (non nommé à [`open_period_rule`], ou d'une
+    /// autre société) → [`DbError::Invariant`] : l'appelant nomme les exercices
+    /// des lignes qu'il interroge ; un exercice absent est un défaut de
+    /// l'appelant, **jamais une réponse** (C-15-1a2-25). Un `false` serait muet
+    /// pour la vue des postes ouverts, qui filtrerait la ligne sans le dire.
+    pub fn line_in_open_period(
+        &self,
+        fiscal_year_id: i64,
+        entry_date: NaiveDate,
+    ) -> Result<bool, DbError> {
+        let exercice = self.exercices.get(&fiscal_year_id).ok_or_else(|| {
+            DbError::Invariant(format!(
+                "règle des périodes : l'exercice {fiscal_year_id} n'a pas été nommé à \
+                 open_period_rule"
+            ))
+        })?;
+        Ok(line_open_in_period(
+            exercice,
+            self.locked_through,
+            entry_date,
+        ))
+    }
+}
+
+/// [`open_period_rule`] sur les exercices des lignes, puis « au moins une ligne
+/// en période ouverte ». `lines` : couples `(fiscal_year_id, entry_date)` —
+/// l'identifiant d'**exercice**, pas d'écriture. Aucune ligne → `false`.
+pub async fn lines_in_open_period(
+    conn: &mut MySqlConnection,
+    company_id: i64,
+    lines: &[(i64, NaiveDate)],
+) -> Result<bool, DbError> {
+    let ids: Vec<i64> = lines.iter().map(|(fy, _)| *fy).collect();
+    let regle = open_period_rule(conn, company_id, &ids).await?;
+    for (fiscal_year_id, entry_date) in lines {
+        if regle.line_in_open_period(*fiscal_year_id, *entry_date)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Le rang **2 bis** de la file commune des annulations (Story 15-1a2-0, D2) :
+/// la clé du premier (plus petite clé) groupe d'origine `document` qui contient
+/// une ligne de l'écriture `entry_id` et dont **AUCUNE** ligne n'est en période
+/// ouverte ([`OpenPeriodRule`]) ; `None` sinon.
+///
+/// Un tel groupe est **figé** : l'annulation qui le dissoudrait est refusée
+/// ([`crate::errors::SettlementCancelBlocker::DocumentLetteringInClosedPeriods`]).
+/// Il redevient dissoluble dès qu'**une** de ses lignes repasse en période
+/// ouverte — la plus récente se libère la première.
+///
+/// Lecture **sans verrou** des lignes du groupe, des exercices et de la borne
+/// (tolérance de [`OpenPeriodRule`]). Les lignes sont lues par
+/// `idx_jel_lettering` ; le filtre de société porte sur l'en-tête.
+///
+/// ⚠️ **Dormant avant la 15-1a2-i** : aucun chemin de production ne pose
+/// encore d'origine `document` — seuls les tests en posent, en SQL brut.
+pub async fn document_group_frozen_by_periods(
+    conn: &mut MySqlConnection,
+    company_id: i64,
+    entry_id: i64,
+) -> Result<Option<i64>, DbError> {
+    let cles: Vec<i64> = sqlx::query_scalar(DOCUMENT_KEYS_OF_ENTRY_SQL)
+        .bind(entry_id)
+        .bind(company_id)
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(map_db_error)?;
+    for key in cles {
+        let lignes: Vec<(i64, NaiveDate)> = sqlx::query_as(GROUP_LINE_PERIODS_SQL)
+            .bind(key)
+            .bind(company_id)
+            .fetch_all(&mut *conn)
+            .await
+            .map_err(map_db_error)?;
+        if !lines_in_open_period(&mut *conn, company_id, &lignes).await? {
+            return Ok(Some(key));
+        }
+    }
+    Ok(None)
 }
 
 /// R5 — la première ligne dont l'écriture appartient à une **pièce** (motifs
