@@ -29,10 +29,11 @@ use crate::config::Config;
 use crate::errors::AppError;
 
 /// Valeurs placeholder d'une company stub. Partagées entre le bootstrap
-/// (DB vide, Story v011-2) et le wizard onboarding (`ensure_company_with_language`
-/// quand aucune company n'existe) pour éviter une divergence (DRY). Le wizard
-/// repasse `is_stub = FALSE` quand l'utilisateur renseigne ses vraies
-/// coordonnées (`set_coordinates`).
+/// (DB vide, Story v011-2) et le wizard onboarding
+/// (`ensure_company_with_language_in_tx` quand aucune company n'existe) pour
+/// éviter une divergence (DRY). Le wizard repasse `is_stub = FALSE` quand
+/// l'utilisateur renseigne ses vraies coordonnées (`set_coordinates`, par
+/// `companies::clear_stub_in_tx`).
 pub(crate) const STUB_COMPANY_NAME: &str = "(en cours de configuration)";
 pub(crate) const STUB_COMPANY_ADDRESS: &str = "-";
 

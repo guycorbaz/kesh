@@ -148,7 +148,9 @@ fn is_no_op_change(before: &Company, changes: &CompanyUpdate) -> bool {
 /// AND is_stub = TRUE` : rend `true` si le drapeau était levé (et `version` a
 /// pris +1), `false` sinon (société non provisoire ou absente — rien n'est
 /// écrit, `version` est inchangée). Bornée à `id = ?` et bumpant `version`,
-/// comme `update_company_coordinates`. **Ne commite jamais.**
+/// comme la mise à jour des coordonnées de l'onboarding
+/// (`update_company_coordinates_in_tx`, son appelant depuis la Story 15-7a2).
+/// **Ne commite jamais.**
 pub async fn clear_stub_in_tx(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,

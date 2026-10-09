@@ -343,10 +343,12 @@ pub async fn create(
 
 /// Variante de `create` pour le seed démo : pas d'audit log, pas de `user_id`.
 ///
-/// Story 3.7 T1.8 — cohérent avec la décision story 3.5 sur
-/// `bulk_create_from_chart` : le contexte système (seed) ne génère pas
-/// d'entrée d'audit. La tx interne fait toujours les pré-checks d'overlap
-/// et de nom pour respecter les UNIQUE constraints même en seed.
+/// Story 3.7 T1.8 — le contexte système (seed de démonstration) ne génère pas
+/// d'entrée d'audit. *(La comparaison d'origine avec `bulk_create_from_chart`
+/// ne tient plus : l'onboarding de production trace le chargement du plan,
+/// Story 15-7a2 ; la règle reste vraie pour le seed.)* La tx interne fait
+/// toujours les pré-checks d'overlap et de nom pour respecter les UNIQUE
+/// constraints même en seed.
 ///
 /// **Sans la garde de l'invariant I** (Story 15-12a) : le seed crée un seul
 /// exercice dans une société neuve (`kesh-seed`), il ne peut pas produire un

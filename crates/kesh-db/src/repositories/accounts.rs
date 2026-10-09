@@ -4,8 +4,10 @@
 //! enregistrent une entrée d'audit dans la même transaction. La signature
 //! accepte un `user_id` pour identifier l'auteur de l'action.
 //!
-//! **Exception** : `bulk_create_from_chart` (utilisée par le seed) ne
-//! génère PAS d'entrée d'audit — contexte système, pas action utilisateur.
+//! **Exception** : `bulk_create_from_chart` et sa variante `_in_tx` n'écrivent
+//! pas elles-mêmes d'entrée d'audit. Le seed de démonstration n'en écrit pas
+//! (contexte système) ; l'onboarding de production, appelant de la variante
+//! `_in_tx`, écrit une entrée agrégée `account.chart_loaded` (Story 15-7a2).
 
 use sqlx::mysql::MySqlPool;
 
@@ -982,9 +984,11 @@ pub async fn bulk_create(
 /// `commit`. Sur erreur, rollback *best-effort* puis l'erreur d'origine
 /// (Story 15-7a1). Une liste vide court-circuite **avant** `begin`.
 ///
-/// **Cette fonction ne génère PAS d'entrées d'audit log** (contexte seed
-/// système, pas action utilisateur). Elle n'emprunte pas le chemin
-/// `create` audité — c'est volontaire et conforme à FR88 (Story 3.5).
+/// **Cette fonction n'écrit pas elle-même d'entrée d'audit** : elle
+/// n'emprunte pas le chemin `create` audité (FR88, Story 3.5). C'est à
+/// l'appelant de tracer — l'onboarding de production écrit
+/// `account.chart_loaded` autour de la variante `_in_tx` (Story 15-7a2) ; le
+/// seed de démonstration n'écrit rien (contexte système).
 pub async fn bulk_create_from_chart(
     pool: &MySqlPool,
     company_id: i64,
@@ -1020,8 +1024,9 @@ pub async fn bulk_create_from_chart(
 /// rend `Ok(vec![])` sans requête. **Ne commite ni n'annule jamais** : sur
 /// erreur, la variante rend l'erreur et c'est l'appelant qui annule.
 ///
-/// **Cette fonction ne génère PAS d'entrées d'audit log** (contexte seed
-/// système, pas action utilisateur).
+/// **Cette fonction n'écrit pas elle-même d'entrée d'audit** : l'appelant
+/// onboarding (`accounting-language`) écrit `account.chart_loaded` dans la
+/// même transaction, à partir du `Vec` rendu (Story 15-7a2).
 pub async fn bulk_create_from_chart_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,

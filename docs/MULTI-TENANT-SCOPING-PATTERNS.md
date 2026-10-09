@@ -299,7 +299,8 @@ When a transaction holds multiple row-level locks (`SELECT ... FOR UPDATE`), two
 2. companies         (target company row — sentinel `SELECT id FROM companies WHERE id=? FOR UPDATE`)
 3. projects          (analytical project rows for the target company — Epic 19, Story 19-3)
 4. accounts          (account rows for the target company)
-5. company_invoice_settings  (settings row for the target company)
+5. bank_accounts     (bank account rows for the target company — Story 15-7a2)
+6. company_invoice_settings  (settings row for the target company)
 ```
 
 Rationale: this matches the natural dependency direction (state machine → tenant → tenant data → tenant settings), and following it **reduces the frequency** of deadlocks. It **cannot exclude** them (Story 15-5e1, choice C54), for three reasons:
@@ -315,7 +316,11 @@ Rationale: this matches the natural dependency direction (state machine → tena
 | Endpoint | Lock sequence | File |
 |----------|---------------|------|
 | `POST /onboarding/finalize` | onboarding_state → company → accounts → settings → fiscal_years (auto-create via `create_if_absent_in_tx`) | `routes/onboarding.rs` finalize |
-| `POST /onboarding/coordinates`, `/org-type`, `/accounting-language` | company only (single lock, safe) | same |
+| `POST /onboarding/language` | onboarding_state → company (one transaction, Story 15-7a2) | `routes/onboarding.rs` |
+| `POST /onboarding/mode`, `/start-production`, `/skip-bank` | onboarding_state only (one transaction, Story 15-7a2) | same |
+| `POST /onboarding/org-type`, `/coordinates` | onboarding_state → company (one transaction, Story 15-7a2) | same |
+| `POST /onboarding/accounting-language` | onboarding_state → company → accounts (the "no account" guard is read inside the transaction, after the state lock — Story 15-7a2) | same |
+| `POST /onboarding/bank-account` | onboarding_state → company → bank_accounts (one transaction, Story 15-7a2) | same |
 | `POST /onboarding/reset` | onboarding_state (gate-check only — released before reset_demo) | `routes/onboarding.rs` reset |
 | `kesh_seed::seed_demo` | companies (count-validation only — released before destructive ops) | `kesh-seed/src/lib.rs` |
 | `POST /supplier-invoices` (create) | see the canonical doc-comment of `supplier_invoices::create_in_tx` (« Ordre des verrous ») — the order is written there only | `repositories/supplier_invoices.rs::create_in_tx` (Story 19-3, 15-5e1) |

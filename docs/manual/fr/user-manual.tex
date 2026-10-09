@@ -2124,14 +2124,14 @@ ultérieure.
 
 Kesh tient un \textbf{journal d'audit} (\texttt{audit\_log}) des actions
 comptables significatives — création, modification et annulation d'entités,
-imports, réconciliations, exports, gestion des utilisateurs et modification de
-la société — avec l'auteur, l'horodatage et le contexte.
+imports, réconciliations, exports, gestion des utilisateurs, modification de
+la société et la configuration initiale de l'installation — avec l'auteur,
+l'horodatage et le contexte.
 
-⚠️ \textbf{Deux familles d'opérations n'y figurent pas encore} : la séquence
-d'\emph{installation} — création du plan comptable, du compte bancaire,
-peuplement de démonstration — et les \emph{gestes de session} : connexion,
-déconnexion, changement de votre propre mot de passe. Ce sont des manques
-connus et suivis, pas des oublis.
+⚠️ \textbf{Deux familles d'opérations n'y figurent pas encore} : le
+\emph{peuplement de démonstration} et sa réinitialisation, et les \emph{gestes de
+session} : connexion, déconnexion, changement de votre propre mot de passe. Ce
+sont des manques connus et suivis, pas des oublis.
 
 \begin{keshnote}
 Ce journal d'audit est \textbf{insert-only} : aucune entrée ne peut être modifiée,
@@ -2178,6 +2178,22 @@ transactions à rapprocher) est prévu mais pas encore disponible.
 \end{itemize}
 
 \emph{Ni la consultation ni l'export ne s'inscrivent eux-mêmes au journal.}
+
+\paragraph{Les entrées de la configuration initiale.} L'assistant de
+configuration inscrit \textbf{une entrée par étape franchie} (action
+\emph{Étape d'installation franchie}, type \emph{Installation}). Les deux
+premières --- la langue et le mode d'utilisation --- sont \textbf{communes aux deux
+chemins}, production et démonstration~; les suivantes appartiennent à la
+configuration de production. Chaque étape est précédée de ce qu'elle a changé~:
+la société modifiée (langue, type d'organisation, langue comptable,
+coordonnées), le compte bancaire créé ou modifié --- sans jamais l'IBAN en clair
+---, puis, à la finalisation, les réglages de facturation, les taux de TVA et le
+premier exercice. Le \textbf{plan comptable chargé s'inscrit en une seule entrée}
+(\emph{Plan comptable chargé}, type \emph{Compte}), qui liste les comptes
+créés~: filtrer sur le type \emph{Compte} et un numéro d'entité ne retrouve
+\textbf{pas} la création d'un compte du plan livré --- ouvrez le détail de cette
+entrée. Enfin, la société de départ créée par le \textbf{premier démarrage}
+n'est pas inscrite~: seule la configuration qui suit l'est.
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{FAQ et dépannage utilisateur}
