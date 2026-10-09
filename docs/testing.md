@@ -485,8 +485,9 @@ la même table rechargée) et une ligne `Compte é € 😀` octet par octet :
   sauvegarde ; base avec tables mais illisible (vue invalide) → dump de sécurité impossible, base intacte ;
 - **rechargement** par un chemin relatif (c'est le dump donné qui est rechargé, non le dump vivant), un dump nocturne
   lancé pendant ce temps étant refusé par le verrou ; interruption réelle (`SIGTERM`) → verrou libéré ; reprise
-  « terminer » (même dossier) et « revenir » (dump de sécurité) ; base absente ; base présente **vide** (rien à
-  protéger) ; base illisible traitée par la commande `DROP DATABASE <base>` du manuel puis rechargée.
+  « terminer » (même dossier) et « revenir » (dump de sécurité) ; deux passages qui échouent au rechargement (dump
+  intègre qui casse au milieu) → le message du second liste le dossier de sécurité du **premier** avant le sien, et
+  « revenir » ne désigne pas celui du passage en cours ; base absente ; base présente **vide** (rien à protéger) ; base illisible traitée par la commande `DROP DATABASE <base>` du manuel puis rechargée.
 
 Elle ne rejoue pas DSM (Planificateur, Hyper Backup, Snapshot Replication, paquet MariaDB 10) ni root ; la fenêtre
 entre la lecture du dump et la prise du verrou, que le script ferme en prenant le verrou d'abord, n'est pas

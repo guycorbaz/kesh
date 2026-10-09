@@ -1746,17 +1746,17 @@ docker compose start kesh-api
     \item il vérifie l'empreinte et l'intégrité du dump, puis lit dans le dump le nom de la base qu'il recrée, et refuse s'il diffère de \texttt{SAUVEGARDE\_BASE} ;
     \item il demande au serveur si la base existe et combien de tables elle porte ; si la sonde échoue (serveur injoignable, compte refusé), il s'arrête ;
     \item si la base porte des tables, il en prend un \textbf{dump de sécurité} dans \keshpath{avant-restauration/<horodatage>/} --- par \keshpath{kesh-dump.sh} lui-même : mêmes contrôles, mêmes fichiers --- et en affiche le chemin. \textbf{Si ce dump échoue} (disque plein, base illisible), il s'arrête \textbf{sans rien recharger} : la base est intacte. Si la base n'existe pas, ou existe sans aucune table (serveur neuf préparé par l'\emph{Initialisation manuelle de la base}, ou rechargement interrompu juste après la création de la base), il n'y a rien à protéger : il le dit et passe au rechargement ;
-    \item il recharge le dump, qui recrée la base ; s'il échoue, il affiche les deux gestes de reprise ci-dessous.
+    \item il recharge le dump, qui recrée la base ; s'il échoue, il affiche les deux gestes de reprise ci-dessous et la liste des dossiers d'\keshpath{avant-restauration/}, du plus ancien au plus récent.
 \end{enumerate}
 
 \textbf{Reprise après un échec ou une interruption de l'étape 6} (session SSH coupée, erreur du serveur) : Kesh est toujours arrêté et la base peut être à moitié rechargée. Deux gestes distincts :
 \begin{itemize}
     \item \textbf{terminer la restauration} : relancer le script sur le \textbf{même} dossier ;
-    \item \textbf{revenir à l'état d'avant} : relancer le script sur le dossier de sécurité du \textbf{premier} passage, c'est-à-dire le plus \textbf{ancien} horodatage d'\keshpath{avant-restauration/} pris pour cette restauration (chaque passage en prend un nouveau, de la base à moitié rechargée). Si le premier passage n'en a pas pris (base absente ou vide), il n'y a pas d'état d'avant à retrouver.
+    \item \textbf{revenir à l'état d'avant} : relancer le script sur le \textbf{plus ancien} dossier d'\keshpath{avant-restauration/} pris \textbf{depuis le début de cette restauration}, c'est-à-dire au \textbf{premier} passage. Le script ne le devine pas : il liste les dossiers, et c'est à vous de choisir. Chaque passage suivant en prend un nouveau, de la base à moitié rechargée ; les dossiers plus anciens viennent de restaurations antérieures. Le dossier du passage en cours n'est rappelé qu'à titre d'information. Si le premier passage n'en a pas pris (base absente ou vide), il n'y a pas d'état d'avant à retrouver.
 \end{itemize}
 
 \begin{lstlisting}[language=bash]
-ls /volume1/docker/kesh/avant-restauration/     # le plus ancien de cette restauration
+ls -d /volume1/docker/kesh/avant-restauration/*/   # plus ancien en tête
 bash /volume1/docker/kesh/kesh-restore.sh \
     /volume1/docker/kesh/avant-restauration/<horodatage>
 \end{lstlisting}
