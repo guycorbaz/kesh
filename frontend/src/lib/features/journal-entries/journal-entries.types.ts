@@ -83,15 +83,17 @@ export interface JournalEntryDetailResponse extends JournalEntryResponse {
 	modifiable: boolean;
 	modificationBlockedBy: ModificationBlocker | null;
 	/**
-	 * Numéro de pièce, nom de l'exercice postérieur clos, ou borne du verrou
-	 * (`AAAA-MM-JJ`) ; `null` sinon.
+	 * Numéro de pièce, nom de l'exercice postérieur clos, borne du verrou
+	 * (`AAAA-MM-JJ`), ou code de lettrage ; `null` sinon.
 	 */
 	modificationBlockedLabel: string | null;
 }
 
 /**
  * Motif pour lequel une écriture ne peut pas être **modifiée** (Story 15-8a,
- * D8) — les onze codes d'écran, dans l'ordre de précédence du serveur.
+ * D8) — les douze codes d'écran, dans l'ordre de précédence du serveur
+ * (`ENTRY_LETTERED`, Story 15-1a-ii, en dernier : il parle après le verrou de
+ * période).
  *
  * ⚠️ `ALREADY_REVERSED` est le code d'**écran** (vocabulaire de
  * `ReversalBlocker`) ; le `PUT` rend `ENTRY_IS_REVERSED`. Pas d'`ACCOUNT_ARCHIVED` :
@@ -102,7 +104,8 @@ export type ModificationBlocker =
 	| 'LATER_FISCAL_YEAR_CLOSED'
 	| Exclude<ReversalBlocker, 'ACCOUNT_ARCHIVED'>
 	| 'DETACHED_SUPPLIER_SETTLEMENT'
-	| 'PERIOD_LOCKED';
+	| 'PERIOD_LOCKED'
+	| 'ENTRY_LETTERED';
 
 export interface CreateJournalEntryLineRequest {
 	accountId: number;

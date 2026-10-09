@@ -167,13 +167,14 @@ pub struct JournalEntryDetailResponse {
     /// L'écriture se modifie-t-elle (Story 15-8a, D8) ? Motif d'écran, sur
     /// l'état **présent** : le `PUT` reste seul juge (corps, version, date).
     pub modifiable: bool,
-    /// Code d'écran du motif, `null` si `modifiable` — l'une de onze valeurs :
+    /// Code d'écran du motif, `null` si `modifiable` — l'une de douze valeurs :
     /// `FISCAL_YEAR_CLOSED`, `LATER_FISCAL_YEAR_CLOSED`, `IS_A_REVERSAL`,
     /// `ALREADY_REVERSED`, `OWNED_BY_*`, `MATCHED_BANK_TRANSACTION`,
-    /// `DETACHED_SUPPLIER_SETTLEMENT`, `PERIOD_LOCKED`.
+    /// `DETACHED_SUPPLIER_SETTLEMENT`, `PERIOD_LOCKED`, `ENTRY_LETTERED`
+    /// (Story 15-1a-ii, en dernier).
     pub modification_blocked_by: Option<String>,
-    /// Numéro de pièce, nom de l'exercice postérieur clos, ou borne du verrou
-    /// (`AAAA-MM-JJ`) ; `null` sinon.
+    /// Numéro de pièce, nom de l'exercice postérieur clos, borne du verrou
+    /// (`AAAA-MM-JJ`), ou code de lettrage ; `null` sinon.
     pub modification_blocked_label: Option<String>,
 }
 
@@ -486,9 +487,12 @@ pub async fn get_journal_entry(
 
 /// POST /api/v1/journal-entries/{id}/reverse — contre-passe une écriture.
 ///
-/// ⛔ **Crée une écriture, n'en modifie aucune.** L'origine reste intacte : c'est
+/// ⛔ **Crée une écriture ; de l'origine, ne touche qu'à la marque de lettrage.**
+/// L'origine reste intacte dans ses montants, comptes, dates et libellés : c'est
 /// l'exigence de l'art. 958f CO — la correction doit être apparente, non
-/// substituée à ce qu'elle corrige.
+/// substituée à ce qu'elle corrige. Seules ses lignes lettrables encore
+/// ouvertes reçoivent la marque `reversal` qui les apparie à leur miroir (R6,
+/// Story 15-1a-ii) ; la réponse `201` porte ces lignes lettrées.
 ///
 /// ⚠️ **Rejouée sur interblocage** (Story 15-5e2) par l'enveloppe `DbError`
 /// [`kesh_db::retry::retry_on_deadlock`].
@@ -679,8 +683,9 @@ pub async fn create_journal_entry(
 ///
 /// ⛔ **Rejoué sur interblocage** par l'enveloppe `DbError`
 /// [`kesh_db::retry::retry_on_deadlock`] (C-15-8-19, Story 15-5e2) : l'ordre de
-/// verrous du `PUT` referme trois cycles hérités (ligne du `PUT` dans « Where
-/// This Applies » du Pattern 5). La transaction est rejouée entière — le
+/// verrous du `PUT` referme quatre cycles — trois hérités, et depuis la
+/// Story 15-1a-ii le cycle lignes ↔ écriture avec l'acte 1 du lettrage (ligne
+/// du `PUT` dans « Where This Applies » du Pattern 5). La transaction est rejouée entière — le
 /// repository ouvre et ferme la sienne, l'interblocage l'a annulée sans rien
 /// écrire, et le contrôle de `version` refuserait un second passage. La
 /// préparation reste hors de la fermeture.
@@ -723,7 +728,8 @@ pub async fn update_journal_entry(
 /// DELETE /api/v1/journal-entries/{id} — supprime une écriture **dans le cadre
 /// de la modification** (Story 15-8b, #532) : exercice ouvert, aucun exercice
 /// postérieur clos, ni contre-passée ni contre-passation, aucune pièce, pas un
-/// paiement détaché, date postérieure à la borne du verrou de période. Réponse
+/// paiement détaché, date postérieure à la borne du verrou de période, aucune
+/// ligne lettrée (Story 15-1a-ii, `409 ENTRY_LETTERED`, en dernier). Réponse
 /// `204`. Les refus et leur ordre sont au doc-comment de
 /// [`journal_entries::delete_in_tx`] ; le mappage HTTP est le même qu'au `PUT`
 /// (même garde, mêmes codes).
@@ -734,10 +740,13 @@ pub async fn update_journal_entry(
 ///
 /// ⛔ **Rejoué sur interblocage** par l'enveloppe `DbError`
 /// [`kesh_db::retry::retry_on_deadlock`] (C-15-8-19, Story 15-5e2) — par uniformité
-/// avec le `PUT`, pas pour un cycle connu : l'ordre de verrous est écriture et
-/// exercice (jointure) → exercices postérieurs → contrôles des clés étrangères
-/// au `DELETE`, sans autre `INSERT` que l'audit. La transaction est rejouée
-/// entière ; l'interblocage l'a annulée sans rien écrire.
+/// avec le `PUT` à l'origine, et contre un cycle connu depuis la Story 15-1a-ii :
+/// l'acte 1 du lettrage prend une ligne puis son écriture, le `DELETE`
+/// l'écriture puis ses lignes. L'ordre de verrous est écriture et exercice
+/// (jointure) → exercices postérieurs → lignes de l'écriture (`FOR UPDATE`,
+/// étape 3-quinquies) → contrôles des clés étrangères au `DELETE`, sans autre
+/// `INSERT` que l'audit. La transaction est rejouée entière ; l'interblocage
+/// l'a annulée sans rien écrire.
 pub async fn delete_journal_entry(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,

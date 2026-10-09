@@ -129,7 +129,13 @@ describe('JournalEntryForm — mode édition', () => {
 		expect(notifyMock).not.toHaveBeenCalled();
 	});
 
-	it.each(['LATER_FISCAL_YEAR_CLOSED', 'ENTRY_IS_REVERSED', 'OWNED_BY_INVOICE', 'DETACHED_SUPPLIER_SETTLEMENT'])(
+	it.each([
+		'LATER_FISCAL_YEAR_CLOSED',
+		'ENTRY_IS_REVERSED',
+		'OWNED_BY_INVOICE',
+		'DETACHED_SUPPLIER_SETTLEMENT',
+		'ENTRY_LETTERED'
+	])(
 		'%s : toast du message serveur, puis rechargement',
 		async (code) => {
 			const { onStale } = await submitWith(apiError(code));

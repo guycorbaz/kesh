@@ -1472,11 +1472,16 @@ pub async fn delete(
 /// Cinq motifs sont contrôlés ici, **avant** l'appel à
 /// [`journal_entries::delete_in_tx`] ; quatre autres y vivent déjà (exercice
 /// clos, exercice postérieur clos, écriture contre-passée, période verrouillée)
-/// et parlent après. La précédence complète, par code d'erreur :
+/// et parlent après — plus la marque de lettrage
+/// (`ModificationGuard::Lettered`, Story 15-1a-ii), tenue au même point de
+/// passage mais inatteignable par la dévalidation (une facture lettrée a un
+/// règlement ou un avoir, refusés avant), qui parle en dernier. La précédence
+/// complète, par code d'erreur :
 ///
 /// `INVOICE_HAS_SETTLEMENTS → INVOICE_CREDITED → INVOICE_HAS_REMINDERS →
 /// INVOICE_EMAILED → MATCHED_BANK_TRANSACTION → FISCAL_YEAR_CLOSED →
-/// LATER_FISCAL_YEAR_CLOSED → ENTRY_IS_REVERSED → PERIOD_LOCKED`.
+/// LATER_FISCAL_YEAR_CLOSED → ENTRY_IS_REVERSED → PERIOD_LOCKED →
+/// ENTRY_LETTERED`.
 ///
 /// `LATER_FISCAL_YEAR_CLOSED` (Story 15-12b, #543) : un exercice postérieur à
 /// celui de l'écriture est clos, et son bilan cumulatif la reprend — la
@@ -1663,7 +1668,8 @@ pub async fn unvalidate(
         // propres gardes. Celles de `delete_in_tx` qui ne dépendent pas du
         // drapeau — exercice clos, exercice postérieur clos (Story 15-12b,
         // #543 ; ancien C-15-8-29), contre-passation, période verrouillée
-        // (#443) — tiennent. Pas de clé d'API ici (`None`) : `unvalidate` n'en
+        // (#443) — tiennent, et la marque de lettrage (Story 15-1a-ii),
+        // inatteignable ici, aussi. Pas de clé d'API ici (`None`) : `unvalidate` n'en
         // reçoit pas (hors périmètre).
         if let Some(je_id) = current.journal_entry_id {
             journal_entries::delete_in_tx(&mut tx, company_id, je_id, user_id, None, false).await?;

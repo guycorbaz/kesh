@@ -21,7 +21,7 @@ import {
 } from './blocker-messages';
 import type { ModificationBlocker } from './journal-entries.types';
 
-/** Les onze codes d'écran, et un fragment propre à chacun. */
+/** Les douze codes d'écran, et un fragment propre à chacun. */
 const ATTENDU: ReadonlyArray<[ModificationBlocker, string]> = [
 	['FISCAL_YEAR_CLOSED', 'exercice de cette écriture est clôturé'],
 	['LATER_FISCAL_YEAR_CLOSED', 'exercice postérieur Exercice 2027 est clôturé'],
@@ -33,7 +33,8 @@ const ATTENDU: ReadonlyArray<[ModificationBlocker, string]> = [
 	['OWNED_BY_SETTLEMENT', 'règlement de facture'],
 	['MATCHED_BANK_TRANSACTION', 'transaction bancaire'],
 	['DETACHED_SUPPLIER_SETTLEMENT', 'facture fournisseur annulée'],
-	['PERIOD_LOCKED', 'verrouillée jusqu’au 2026-03-31']
+	['PERIOD_LOCKED', 'verrouillée jusqu’au 2026-03-31'],
+	['ENTRY_LETTERED', 'est lettrée : délettrez-la d’abord']
 ];
 
 describe('modificationBlockerLabel — un message par code', () => {
@@ -47,10 +48,10 @@ describe('modificationBlockerLabel — un message par code', () => {
 		expect(modificationBlockerLabel(code, label)).toContain(fragment);
 	});
 
-	it('couvre exactement onze codes, tous distincts', () => {
+	it('couvre exactement douze codes, tous distincts', () => {
 		const messages = ATTENDU.map(([c]) => modificationBlockerLabel(c, 'X'));
-		expect(ATTENDU).toHaveLength(11);
-		expect(new Set(messages).size).toBe(11);
+		expect(ATTENDU).toHaveLength(12);
+		expect(new Set(messages).size).toBe(12);
 	});
 
 	it('les codes communs rendent le message de la contre-passation (une seule source)', () => {

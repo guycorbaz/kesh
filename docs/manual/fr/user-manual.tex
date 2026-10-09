@@ -386,7 +386,7 @@ Dans cette version, l'indicateur \emph{postable} \textbf{bloque la saisie manuel
 
 Trois cas échappent encore à ce contrôle, parce qu'un compte peut devenir non imputable \emph{après} avoir été choisi — typiquement quand vous lui créez des sous-comptes~: (1)~le compte comptable d'un compte bancaire \textbf{déjà lié} reste accepté, et continue de servir au rapprochement et aux règlements~; (2)~une règle d'affectation active dont le compte est devenu non imputable reste affichée «~Active~», mais Kesh ne la propose plus~; (3)~le compte de produit d'une \textbf{fiche article} n'est pas contrôlé sur la fiche — il l'est sur la ligne de facture, sauf s'il s'agit du compte de produit par défaut.
 
-Une écriture déjà enregistrée \textbf{se modifie} tant que son exercice est ouvert (voir «~Modifier une écriture~») --- et la modification applique la \textbf{même} garde, \textbf{à toutes ses lignes, y compris celles que vous ne touchez pas}~: si un compte est devenu non imputable depuis la saisie, l'enregistrement est refusé avec un message qui \textbf{nomme} ce compte, et il faut le remplacer.
+Une écriture déjà enregistrée \textbf{se modifie} tant que son exercice est ouvert, sauf si l'une de ses lignes est \textbf{lettrée}~: délettrez-la d'abord (voir «~Modifier une écriture~») --- et la modification applique la \textbf{même} garde, \textbf{à toutes ses lignes, y compris celles que vous ne touchez pas}~: si un compte est devenu non imputable depuis la saisie, l'enregistrement est refusé avec un message qui \textbf{nomme} ce compte, et il faut le remplacer.
 \end{keshnote}
 
 \subsection{Les comptes de clôture 9000, 9100 et 9200}
@@ -468,7 +468,8 @@ Total débit = Total crédit = CHF 1'081.00. L'écriture peut être validée.
 Une écriture enregistrée est \textbf{immédiatement comptabilisée}. Kesh ne connaît pas
 d'état « brouillon » : il n'y a rien à valider, et une écriture apparaît dans les rapports
 dès son enregistrement. Elle reste \textbf{modifiable} --- et \textbf{supprimable} ---
-tant que son exercice est ouvert, dans le cadre décrit ci-dessous.
+tant que son exercice est ouvert, dans le cadre décrit ci-dessous --- sauf si l'une de ses
+lignes est \textbf{lettrée}~: délettrez-la d'abord.
 
 \subsection{Modifier ou supprimer une écriture}
 
@@ -492,14 +493,17 @@ Le bouton n'est offert que si \textbf{toutes} ces conditions tiennent~:
     \item \textbf{aucune pièce} ne la possède~: l'écriture d'une facture, d'un avoir, d'une
           facture fournisseur, d'un règlement ou d'un solde, d'un rapprochement bancaire se
           corrige par le chemin de sa pièce~;
-    \item elle n'est \textbf{ni contre-passée, ni elle-même une contre-passation}.
+    \item elle n'est \textbf{ni contre-passée, ni elle-même une contre-passation}~;
+    \item \textbf{aucune de ses lignes n'est lettrée} --- sinon, délettrez-la d'abord (le
+          délettrage se fait par l'API dans cette version), puis modifiez~; quand c'est le
+          seul motif, le délettrage aboutit, sauf geste concurrent sur les mêmes lignes.
 \end{itemize}
 
 En pratique, ce sont les écritures \textbf{saisies à la main}, l'\textbf{écriture
 d'ouverture} et les \textbf{compléments de soldes de départ}
 (\S\ref{sec:soldes-depart}). Sinon, la fiche affiche le motif à la place du bouton, et la
 correction passe par une contre-passation (ci-dessous) --- ou, pour une pièce, par le chemin
-de la pièce.
+de la pièce~; ou, pour une écriture lettrée, par le délettrage.
 
 Ce qui ne change pas en modifiant~:
 
@@ -548,7 +552,8 @@ route~: le message dit pourquoi, et la fiche se recharge.
 
 \begin{keshtip}[title=\faLightbulb\ Pourquoi il n'y a pas de «~brouillon~»]
 Kesh ne connaît pas d'état intermédiaire~: ce que vous validez part directement aux livres
---- et reste corrigeable tant que l'exercice est ouvert. La contrepartie est qu'il faut se
+--- et reste corrigeable tant que l'exercice est ouvert (une écriture lettrée se délettre
+d'abord). La contrepartie est qu'il faut se
 relire avant de clôturer --- et que l'écran de saisie vous y aide en refusant toute
 écriture déséquilibrée.
 \end{keshtip}
@@ -597,8 +602,12 @@ second une borne mobile à l'intérieur d'un exercice ouvert.
 
 Sur la fiche d'une écriture, le bouton \textbf{Contre-passer} crée l'\textbf{écriture
 inverse} --- mêmes comptes, débit et crédit échangés --- à la date du jour, dans l'exercice
-ouvert. \textbf{L'écriture d'origine n'est pas touchée} : les deux restent visibles au grand
-livre, et chacune renvoie à l'autre depuis sa fiche. C'est ce que l'art.~958f CO et l'Olico
+ouvert. \textbf{L'écriture d'origine n'est pas modifiée} --- ni ses montants, ni ses comptes,
+ni sa date, ni son libellé~: les deux restent visibles au grand livre, et chacune renvoie à
+l'autre depuis sa fiche. Seule marque posée sur l'origine~: ses lignes sur un compte
+lettrable encore ouvertes sont \textbf{lettrées} avec leur miroir dans l'écriture inverse
+(groupe «~contre-passation~») --- la ligne et sa correction se soldent l'une l'autre~; une
+ligne déjà lettrée garde son groupe, et son miroir reste ouvert. C'est ce que l'art.~958f CO et l'Olico
 exigent --- non pas qu'on ne se trompe jamais, mais que \textbf{la correction soit
 apparente}.
 
@@ -618,6 +627,7 @@ compte --- son numéro vous est indiqué.
 La contre-passation est \textbf{le} chemin de correction d'une écriture désormais
 figée~: écriture d'un exercice clôturé ou suivi d'un exercice clôturé, d'une période
 verrouillée, ou d'une pièce. Tant que l'exercice est ouvert, une écriture saisie à la main
+--- délettrée d'abord si l'une de ses lignes est lettrée ---
 se corrige plus simplement par \textbf{modification}, ou disparaît par \textbf{suppression}
 (ci-dessus) --- dans le même cadre. Une écriture disparaît donc par deux voies, toutes deux
 tracées~: sa \textbf{suppression} depuis sa fiche, inscrite au journal d'audit avec son contenu
@@ -701,7 +711,7 @@ Les exercices se clôturent \textbf{dans l'ordre} (depuis la v0.13.0)~: un exerc
 La clôture est un simple \textbf{verrou} : elle ne génère aucune écriture. Le report des soldes de bilan d'un exercice à l'autre est \textbf{calculé en temps réel} depuis l'origine (report à-nouveau automatique), sans écriture de clôture ni de report à passer. La clôture :
 
 \begin{itemize}
-    \item Verrouille l'exercice : plus aucune écriture ne peut y être \textbf{saisie} tant qu'il reste clôturé (immutabilité, CO art. 957-964). C'est aussi la clôture qui \textbf{ferme la modification}~: une écriture se modifie tant que son exercice est ouvert. Un exercice ne se clôturant qu'après tous ceux qui le précèdent, aucun exercice postérieur n'est clôturé tant que le sien est ouvert. Si des données antérieures à la v0.13.0 (installation mise à jour, sauvegarde restaurée) portent déjà un exercice clôturé après un exercice ouvert, \textbf{rien} ne s'enregistre plus dans cet exercice ouvert --- ni saisie, ni règlement, ni modification, ni suppression~: le bilan étant cumulatif, toute écriture y changerait le bilan clos. L'écran des exercices le signale et indique comment rétablir l'ordre (\S\ref{sec:exercices-desordre}). La clôture ferme de même la \textbf{suppression} d'une écriture --- celle de l'exercice clôturé, et celle de tout exercice antérieur.
+    \item Verrouille l'exercice : plus aucune écriture ne peut y être \textbf{saisie} tant qu'il reste clôturé (immutabilité, CO art. 957-964). C'est aussi la clôture qui \textbf{ferme la modification}~: une écriture se modifie tant que son exercice est ouvert (sauf si l'une de ses lignes est lettrée~: elle se délettre d'abord). Un exercice ne se clôturant qu'après tous ceux qui le précèdent, aucun exercice postérieur n'est clôturé tant que le sien est ouvert. Si des données antérieures à la v0.13.0 (installation mise à jour, sauvegarde restaurée) portent déjà un exercice clôturé après un exercice ouvert, \textbf{rien} ne s'enregistre plus dans cet exercice ouvert --- ni saisie, ni règlement, ni modification, ni suppression~: le bilan étant cumulatif, toute écriture y changerait le bilan clos. L'écran des exercices le signale et indique comment rétablir l'ordre (\S\ref{sec:exercices-desordre}). La clôture ferme de même la \textbf{suppression} d'une écriture --- celle de l'exercice clôturé, et celle de tout exercice antérieur.
     \item Inscrit l'opération dans le journal d'audit (\texttt{audit\_log}).
     \item N'affecte pas le report à-nouveau, qui reste calculé automatiquement — les rapports finaux (bilan, compte de résultat, balance) demeurent consultables et exportables (CSV/PDF).
 \end{itemize}
@@ -712,7 +722,7 @@ La clôture d'un exercice est une opération critique. Effectuez d'abord une sau
 
 \subsection{Réouverture d'un exercice clôturé}\label{sec:reouverture-exercice}
 
-En cas d'erreur découverte après clôture, un \textbf{administrateur} peut rouvrir l'exercice directement depuis l'interface : \emph{Paramètres} → \emph{Exercices comptables} → bouton \emph{Réouvrir} (visible uniquement pour les administrateurs sur un exercice clôturé). Un \textbf{motif est obligatoire} ; il est conservé, avec l'auteur et l'horodatage, dans le journal d'audit (\texttt{audit\_log}, conservation 10 ans). L'exercice rouvert redevient modifiable --- ses écritures saisies à la main se modifient de nouveau, si aucun exercice postérieur n'est clôturé ---, puis pourra être re-clôturé.
+En cas d'erreur découverte après clôture, un \textbf{administrateur} peut rouvrir l'exercice directement depuis l'interface : \emph{Paramètres} → \emph{Exercices comptables} → bouton \emph{Réouvrir} (visible uniquement pour les administrateurs sur un exercice clôturé). Un \textbf{motif est obligatoire} ; il est conservé, avec l'auteur et l'horodatage, dans le journal d'audit (\texttt{audit\_log}, conservation 10 ans). L'exercice rouvert redevient modifiable --- ses écritures saisies à la main se modifient de nouveau, si aucun exercice postérieur n'est clôturé et après délettrage pour celles dont une ligne est lettrée ---, puis pourra être re-clôturé.
 
 \begin{keshtip}
 On rouvre les exercices \textbf{du plus récent vers l'ancien} : si un exercice postérieur est encore clôturé, Kesh refuse la réouverture et indique lequel rouvrir d'abord. C'est l'ordre inverse de la clôture, qui va du plus ancien vers le plus récent~: ensemble, ils garantissent qu'aucun exercice ouvert ne précède un exercice clôturé. Effectuer cette opération avec parcimonie pour préserver l'intégrité légale.
@@ -752,7 +762,7 @@ Sous la grille, Kesh affiche aussi le total des \textbf{Actifs}, celui des \text
 \end{keshwarning}
 
 \begin{keshnote}
-La génération n'est disponible que tant que la société ne contient \textbf{aucune écriture} (dans aucun exercice). Ensuite, l'écriture d'ouverture se \textbf{modifie} comme toute écriture saisie à la main~: si vous avez inversé débit et crédit, ouvrez sa fiche (\emph{Écritures}, première écriture du premier exercice), \emph{Modifier}, corrigez et validez --- tant que l'exercice est ouvert et hors période verrouillée. L'écran reste en mode \emph{compléter}. Elle se \textbf{supprime} aussi, dans le même cadre~: si elle est la \textbf{seule} écriture de la société, la société redevient vierge et la \textbf{génération est de nouveau proposée} --- la nouvelle écriture d'ouverture reçoit alors le numéro~2, pas le~1, car un numéro n'est jamais réattribué (le trou s'explique par la trace de la suppression au journal d'audit). Si d'autres écritures existent, la génération reste refusée~: les comptes de l'ouverture \textbf{sans autre mouvement} redeviennent complétables, mais un compte \textbf{déjà mouvementé ailleurs} --- typiquement la banque --- ne l'est pas~; son solde de départ se ressaisit à la main, par une écriture d'OD. Un complément se supprime comme l'ouverture. \emph{Limite~: rien ne la distingue plus d'une autre écriture~; rien n'empêche donc d'y ajouter une ligne de résultat, ce que la génération refuse.}
+La génération n'est disponible que tant que la société ne contient \textbf{aucune écriture} (dans aucun exercice). Ensuite, l'écriture d'ouverture se \textbf{modifie} comme toute écriture saisie à la main~: si vous avez inversé débit et crédit, ouvrez sa fiche (\emph{Écritures}, première écriture du premier exercice), \emph{Modifier}, corrigez et validez --- tant que l'exercice est ouvert et hors période verrouillée, et après l'avoir délettrée si l'une de ses lignes est lettrée (ses lignes de bilan sont lettrables~: par exemple le solde d'ouverture d'un compte de passif avec l'écriture, saisie à la main, qui le règle~; les encaissements des factures ne se lettrent pas encore, une ligne de pièce ne se lettrant pas à la main). L'écran reste en mode \emph{compléter}. Elle se \textbf{supprime} aussi, dans le même cadre~: si elle est la \textbf{seule} écriture de la société, la société redevient vierge et la \textbf{génération est de nouveau proposée} --- la nouvelle écriture d'ouverture reçoit alors le numéro~2, pas le~1, car un numéro n'est jamais réattribué (le trou s'explique par la trace de la suppression au journal d'audit). Si d'autres écritures existent, la génération reste refusée~: les comptes de l'ouverture \textbf{sans autre mouvement} redeviennent complétables, mais un compte \textbf{déjà mouvementé ailleurs} --- typiquement la banque --- ne l'est pas~; son solde de départ se ressaisit à la main, par une écriture d'OD. Un complément se supprime comme l'ouverture. \emph{Limite~: rien ne la distingue plus d'une autre écriture~; rien n'empêche donc d'y ajouter une ligne de résultat, ce que la génération refuse.}
 \end{keshnote}
 
 \subsubsection{Compléter un compte oublié}
@@ -766,7 +776,7 @@ Une fois l'ouverture générée, l'écran passe en mode \emph{compléter}~: sous
 \end{itemize}
 
 \begin{keshnote}
-\textbf{Un montant faux sur un compte déjà saisi ne se complète pas}~: le compte est mouvementé. On le corrige dans le journal --- d'abord en \textbf{modifiant} l'écriture fautive depuis sa fiche, tant que l'exercice est ouvert~; sinon en la \textbf{contre-passant}, ou par une écriture de correction. Une modification qui \textbf{retire} la ligne d'un compte le rend de nouveau complétable. Une écriture contre-passée garde ses lignes~: ses comptes restent mouvementés. En particulier, \textbf{après la contre-passation de toute l'écriture d'ouverture, plus aucun de ses comptes n'est complétable}~; les soldes justes se saisissent alors par une écriture manuelle. À l'inverse, la \textbf{dévalidation d'une facture} supprime son écriture~: un compte dont c'était le seul mouvement redevient complétable.
+\textbf{Un montant faux sur un compte déjà saisi ne se complète pas}~: le compte est mouvementé. On le corrige dans le journal --- d'abord en \textbf{modifiant} l'écriture fautive depuis sa fiche, tant que l'exercice est ouvert (après l'avoir délettrée si l'une de ses lignes est lettrée)~; sinon en la \textbf{contre-passant}, ou par une écriture de correction. Une modification qui \textbf{retire} la ligne d'un compte le rend de nouveau complétable. Une écriture contre-passée garde ses lignes~: ses comptes restent mouvementés. En particulier, \textbf{après la contre-passation de toute l'écriture d'ouverture, plus aucun de ses comptes n'est complétable}~; les soldes justes se saisissent alors par une écriture manuelle. À l'inverse, la \textbf{dévalidation d'une facture} supprime son écriture~: un compte dont c'était le seul mouvement redevient complétable.
 \end{keshnote}
 
 \begin{keshtip}
@@ -2307,7 +2317,8 @@ Selon l'action :
 
 \begin{itemize}
     \item Écriture saisie à la main, d'un exercice ouvert~: le bouton «~Modifier~» de sa
-          fiche --- chaque modification est tracée, avant et après. Sinon, le bouton
+          fiche --- chaque modification est tracée, avant et après~; une écriture dont une
+          ligne est lettrée se délettre d'abord. Sinon, le bouton
           «~Contre-passer~»~: Kesh crée l'écriture inverse, garde l'origine, et lie les deux
           --- la correction reste visible. Une écriture saisie par erreur se
           \textbf{supprime} depuis la même fiche, dans le même cadre que la modification~:
@@ -2410,8 +2421,9 @@ Le journal d'audit garde toujours la trace de l'action originale ET de l'action 
           somme est nulle, pour dire qu'elles se soldent entre elles (une écriture et sa
           contre-passation, un acompte et sa reprise\ldots). Dans cette version, le lettrage
           manuel et le délettrage se font par l'API (\texttt{/api/v1/letterings})~; l'écran viendra.
-          Kesh ne lettre encore rien de lui-même~: ni une facture soldée par ses règlements, ni une
-          écriture et sa contre-passation.
+          La contre-passation lettre d'elle-même une ligne et sa correction~; Kesh ne lettre
+          pas encore de lui-même une facture soldée par ses règlements. Une écriture dont une
+          ligne est lettrée ne se modifie ni ne se supprime~: elle se délettre d'abord.
     \item[Liquidités] Avoirs immédiatement disponibles (caisse, comptes bancaires et postaux).
     \item[Partie double] Principe selon lequel toute opération est enregistrée sur au moins deux comptes, débit = crédit.
     \item[Passif] Origine des ressources de l'entreprise (dettes + capitaux propres). Classe 2.

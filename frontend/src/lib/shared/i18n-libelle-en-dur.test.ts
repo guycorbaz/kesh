@@ -160,7 +160,8 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * **disparu** de la fiche — extraite, pour être partagée avec le motif de
  * modification, dans `lib/features/journal-entries/blocker-messages.ts` sous le nom
  * `reversalBlockerLabel` (même corps, même `default: return ''` : `ecartee`) ; à côté
- * naît `modificationBlockerLabel`, les onze codes de modification — quatre branches
+ * naît `modificationBlockerLabel`, les douze codes de modification (le douzième,
+ * `ENTRY_LETTERED`, Story 15-1a-ii) — cinq branches
  * propres déléguant à `i18nMsg`, sept qui délèguent à `reversalBlockerLabel`, et le
  * même `default` exhaustif rendant `''` : `ecartee`. D'où `ecartee` **6 → 7**,
  * `conforme` inchangé. ⚠️ Les noms gardent le suffixe `Label` **à dessein** : un nom

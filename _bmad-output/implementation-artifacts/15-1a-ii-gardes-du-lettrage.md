@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev *(créée le 2026-10-09 au découpage de la 15-1a en validation P3 — C124 ; corps repris de
+done *(revue de code close le 2026-10-09, P2 ciblée à 0 MEDIUM ; développée le 2026-10-09 sur `0724904c` ; créée le 2026-10-09 au découpage de la 15-1a en validation P3 — C124 ; corps repris de
 `15-1a-socle-lettrage.md` (validations P1 et P2 remédiées, P3 remédiée ici) ; validations P4 et **P5
 remédiées le 2026-10-09 — passe P6 à lancer** avant tout développement ; prérequis : **15-1a-i mergée**, et, comme elle, la 15-12a ; la 15-12b de
 préférence avant)*
@@ -39,6 +39,47 @@ verrou le nom des exercices pour l'audit (R3, R7 point 3, C128) ; `letterings::i
 `lettering_invariants` (AC13), qu'elle étend. **Entre les deux merges, la fenêtre** : une écriture
 manuelle lettrée par l'API est modifiable et supprimable — d'où la règle de publication de C124 : la
 v0.13.0 ne se tague pas avant que cette fiche soit mergée.
+
+## Reçu de la 15-1a-i — revue de code P2 (2026-10-09) : textes provisoires à retirer
+
+*Section ajoutée par la remédiation de la revue de code P2 de la 15-1a-i (finding A2-1, registre
+C-15-1a-i-7 et C-15-1a-i-11). Elle ne réécrit pas cette fiche : elle transmet ce que la 15-1a-i a écrit
+au présent de son code livré, et que **cette** story rend faux.*
+
+La revue de code P1 de la 15-1a-i a ramené les textes publics à ce que fait son code : seul le lettrage
+`manual` existe, les origines `reversal` et `document` sont « réservées ». Les numéros de ligne sont ceux de la branche `story/15-1a-i-marque-du-lettrage` au commit de sa revue de
+code P2 ; ils bougeront au merge — **re-greper par la valeur**. Relevé de C-15-1a-i-7, tel qu'écrit au
+registre : `git grep -nE "Seul le lettrage manuel|ne lettre (pas encore|rien|encore rien)|réservé|n'existe encore" -- CHANGELOG.md docs` (62 lignes, dont 56 hors sujet — « réservé à l'administrateur » pour la plupart —, à
+trier). Forme resserrée, qui rend **exactement les six sites** ci-dessous sur la branche de la 15-1a-i :
+`git grep -nE "Seul le lettrage manuel|ne lettre (pas encore|rien|encore rien)|sont réservés aux lettrages|n'existe encore" -- CHANGELOG.md docs website README.md` ; et le PDF aplati : `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o "Kesh ne lettre encore rien[^.]*\."`.
+
+| site | texte provisoire |
+|---|---|
+| `CHANGELOG.md:15` | « **Seul le lettrage manuel existe à ce stade** : Kesh ne lettre pas encore de lui-même une facture soldée par ses règlements, ni une écriture et sa contre-passation. » |
+| `docs/api-external.md:222` | `letteringOrigin` (« `manual` ; `document` et `reversal` sont réservés aux lettrages que Kesh posera de lui-même ») |
+| `docs/api-external.md:288` | « L'origine d'un groupe est `manual` … ⚠️ **À ce stade, Kesh ne lettre rien de lui-même** : les origines `reversal` … et `document` … sont réservées … ; aucune route ne les rend encore. » |
+| `docs/api-external.md:321` | refus `LETTERING_IS_DOCUMENT` du `DELETE`, annoté « *(aucun groupe `document` n'existe encore)* » |
+| `docs/api-external.md:322` | refus `LETTERING_LINE_OWNED_BY_DOCUMENT` du `DELETE`, annoté « *(aucun groupe `reversal` n'existe encore)* » |
+| `docs/manual/fr/user-manual.tex:2405-2406` + PDF | glossaire, entrée *Lettrage* : « Kesh ne lettre encore rien de lui-même~: ni une facture soldée par ses règlements, ni une écriture et sa contre-passation. » |
+
+⛔ **Règle de relais** : chaque story réécrit ces textes **dans le même commit** que le comportement qui
+les rend faux — non dans un commit de documentation ultérieur. Aucun test ne lit ces fichiers : rien ne
+rougira si l'un d'eux est oublié, et C124 interdit tout tag entre les merges, si bien qu'un texte oublié
+part dans la v0.13.0.
+
+**Ce qui revient à cette story** (la contre-passation qui lettre, R6) : CHANGELOG `:15` — retirer « ni une
+écriture et sa contre-passation » et réécrire « Seul le lettrage manuel existe à ce stade » (la
+contre-passation lettre désormais d'elle-même) ; `api-external.md:222` et `:288` — sortir `reversal` de la
+réserve, et dire que la contre-passation rend des groupes `reversal` ; `:322` — retirer l'annotation
+« (aucun groupe `reversal` n'existe encore) » ; glossaire `.tex` `:2405-2406` et PDF régénéré — retirer le
+second « ni ». Les sites de `document` (`:222`, `:288`, `:321`, le premier « ni ») restent à la 15-1a2.
+
+⚠️ **Contradiction avec AC15 (ii) si ces sites sont omis.** AC15 (ii) prescrit d'ajouter au site qui
+nomme `POST /journal-entries/{id}/reverse` (`:255` au `5e4bec50` de son tableau, `:260` sur la branche
+de la 15-1a-i) : « La contre-passation **lettre** ce qui est libre … forme avec son miroir un groupe
+`reversal` ». Cette phrase contredit directement `:288` (« Kesh ne lettre rien de lui-même »), `:322`, le
+CHANGELOG `:15` et le glossaire — aucun des six sites ne figure au tableau d'AC15 (ii) ni à T11 (part ii).
+Ils s'y ajoutent, au même commit que R6.
 
 ## Décisions
 
@@ -560,13 +601,13 @@ chaque occurrence porte la réserve « lettrée » ou est triée ci-dessus.
 
 ## Tasks
 
-- [ ] **T0 (part ii)** (AC8) — Relevés au sol sur le `main` du moment, la 15-1a-i mergée : `EXPLAIN`
+- [x] **T0 (part ii)** (AC8) — Relevés au sol sur le `main` du moment, la 15-1a-i mergée : `EXPLAIN`
       de la requête de `lettering_guard` (attendu : `ref` sur `idx_jel_entry` ou `uq_jel_entry_order`) ;
       constater si la 15-12b est mergée (précédence de `delete_in_tx`, AC8, C117 :
       `grep -n "enforce_ownership" crates/kesh-db/src/repositories/journal_entries.rs` autour de
       l'étape 2-bis) ; relire au code l'ordre réel des étapes de `delete_in_tx`, `update_in_tx` et
       `modification_blocker` (les numéros d'AC8 datent de `5e4bec50`). Résultats au Dev Agent Record.
-- [ ] **T4** (AC8) — `ModificationGuard::Lettered { code }` (`code`, `document_id`, `label`) ;
+- [x] **T4** (AC8) — `ModificationGuard::Lettered { code }` (`code`, `document_id`, `label`) ;
       fonction `lettering_guard(conn, company_id, id, Lecture)` ; appels **inconditionnels** dans
       `delete_in_tx` (étape **3-quinquies**, après le verrou de période, hors `enforce_ownership`) et
       `update_in_tx` (étape **7-bis**, après le verrou de période, avant l'étape 8), `Lecture::Conseil`
@@ -590,7 +631,7 @@ chaque occurrence porte la réserve « lettrée » ou est triée ci-dessus.
       (`:2266`) ; relevé par la valeur du tableau d'AC8 rejoué ; test `each_screen_code_maps_to_its_put_and_delete_refusal`
       étendu à douze codes (F-1) ; si la 15-12b
       est mergée : précédence 2-bis → 3-quinquies écrite et testée par la paire d'AC8 (C117).
-- [ ] **T4-bis** (AC8, écran) — `frontend/src/lib/features/journal-entries` :
+- [x] **T4-bis** (AC8, écran) — `frontend/src/lib/features/journal-entries` :
       `ModificationBlocker` (`journal-entries.types.ts:91`, `| 'ENTRY_LETTERED'` **en dernier**, après
       `'PERIOD_LOCKED'` `:96` — le doc `:85` dit « dans l'ordre de précédence du serveur », et la marque
       parle en dernier, F6-3 ; doc `:85` « onze » → « douze » ; doc de `modificationBlockedLabel`
@@ -603,7 +644,7 @@ chaque occurrence porte la réserve « lettrée » ou est triée ci-dessus.
       `form-helpers.test.ts`,
       `JournalEntryForm.edit.test.ts:132`), commentaire `i18n-libelle-en-dur.test.ts:160-165`
       (douze codes, **cinq** branches propres).
-- [ ] **T5** (AC9, R6) — Lettrage `reversal` en fin de `reverse_in_tx_inner` : lecture des lignes
+- [x] **T5** (AC9, R6) — Lettrage `reversal` en fin de `reverse_in_tx_inner` : lecture des lignes
       d'origine étendue (`id`, `lettering_key`, `FOR UPDATE`, R6), appariement par **position**,
       test « déjà lettrée » et lettrabilité (`letterings::is_letterable_account` — F-9) **avant** l'appel,
       puis `create_group_in_tx`
@@ -615,7 +656,7 @@ chaque occurrence porte la réserve « lettrée » ou est triée ci-dessus.
       à R6 — R6-2), **et `user-manual.tex:608`** (texte arrêté à R6 : l'origine « n'est pas
       modifiée » dans ses montants, comptes, date et libellé, et la contre-passation **lettre** —
       validation P5, F5-1).
-- [ ] **T10 (part ii)** (AC8) — i18n, **une** clé dans les **quatre** locales, avec son repli FR
+- [x] **T10 (part ii)** (AC8) — i18n, **une** clé dans les **quatre** locales, avec son repli FR
       identique au catalogue :
 
       | code | clé | texte FR |
@@ -634,7 +675,7 @@ chaque occurrence porte la réserve « lettrée » ou est triée ci-dessus.
       `opening-balances-locked-already-has-entries`, quatre locales et replis
       `settings/opening-balances/+page.svelte:233-234`, `:386-388`, textes arrêtés à AC15 (ii) — aucun
       compte figé n'en bouge.
-- [ ] **T11 (part ii)** (AC15 part ii) — `api-external.md` (sites du tableau d'AC15 part ii : `:223`,
+- [x] **T11 (part ii)** (AC15 part ii) — `api-external.md` (sites du tableau d'AC15 part ii : `:223`,
       `:229` et sa parenthèse du label, `:231`/`:265` et leurs intitulés recomptés, `:255` et la phrase
       de la contre-passation, `:261`, `:279`, `:485`), CHANGELOG (entrées #532 réécrites ; *Modifié* :
       contre-passation qui lettre, origine marquée), sites du manuel utilisateur d'AC15 part ii — dont le
@@ -644,7 +685,7 @@ chaque occurrence porte la réserve « lettrée » ou est triée ci-dessus.
       `api-external.md:251` (L-6), `user-manual.tex:608` (F5-1, avec T5), et les **deux** PDF régénérés
       puis contrôlés aplatis (`user-manual.pdf`, `admin-manual.pdf`) ; enfin le **contrôle final étendu
       aux catalogues i18n et aux replis** (R5-1, commande à AC15 ii).
-- [ ] **T12 (part ii)** — Tests :
+- [x] **T12 (part ii)** — Tests :
       - **précédence, par paire, sur chaque chemin** *(C126 — mutation tuée sur chacun : « la marque
         avant le verrou de période »)* ; montage : une écriture **manuelle** lettrée avec une ligne
         d'une autre écriture **en période ouverte** (groupe légal), puis la borne
@@ -758,11 +799,212 @@ chaque occurrence porte la réserve « lettrée » ou est triée ci-dessus.
 
 ### Agent Model Used
 
+Opus 5.5 (Claude Code, sous-agent de développement de l'Epic 15), le 2026-10-09 — worktree
+`/home/gcorbaz/devel/kesh-15-1a-ii`, branche `story/15-1a-ii-gardes-du-lettrage`, partie de
+`origin/main` `0724904c` (15-1a-i mergée).
+
+### Debug Log References
+
+- T0, `EXPLAIN SELECT id, lettering_key FROM journal_entry_lines WHERE entry_id = 1 FOR UPDATE`
+  sur `kesh_151aii` : `type = ref`, `key = uq_jel_entry_order` (possibles :
+  `uq_jel_entry_order, idx_jel_entry`) — l'attendu de la fiche.
+- Gates et mutations : `/home/gcorbaz/devel/kesh-gate-logs/15-1a-ii-gate-dev.log`,
+  `15-1a-ii-e2e.log`, `15-1a-ii-mutations.md`, `15-1a-ii-make-fr.log`.
+
+### T0 — la fiche relue contre le code de `0724904c` : écarts
+
+1. **Numéros de ligne** : tous décalés (15-12a, 15-12b, 15-1a-i mergées depuis `5e4bec50`). Au
+   code de `0724904c` : `modification_blocker` `journal_entries.rs:1126` ; `update_in_tx` `:1343`,
+   étape 7 `:1468-1480`, étape 8 `:1482` ; doc « Ordre des verrous » d'`update` `:1254-1289`,
+   « Ordre des refus » `:1297-1307` ; `delete_in_tx` `:1697`, étape 3-quater `:1771-1792`, doc
+   « Ordre des refus » `:1642-1667`, « Sérialisation » `:1669-1681`, « qui passe quoi »
+   `:1683-1692` ; `reverse_in_tx_inner` `:2237`, lecture des lignes de l'origine `:2327` ;
+   mapping 409 `kesh-api/src/errors.rs:2912` ; `kesh-db/src/errors.rs` : `ModificationGuard`
+   `:116-180`, `UnvalidationBlocker` `:228-246`. Chaque site a été retrouvé par la valeur.
+2. **La 15-12b est mergée** : l'étape 2-bis de `delete_in_tx` est inconditionnelle → la paire de
+   précédence C117 revient à **cette** story (T4) — faite :
+   `delete_of_a_lettered_entry_under_a_later_closed_year_says_later_closed`.
+3. **Totaux de la dévalidation** (réserve R6-3) : sur `0724904c`, la 15-12b a écrit « quatre
+   autres » à la doc d'`unvalidate` (`invoices.rs:1471-1473`) et « neuf » aux totaux
+   (`invoices.rs:1376`, `invoices/[id]/+page.svelte:355`, `admin-manual.tex`). Ces totaux
+   restent tels quels (C132) ; la doc d'`unvalidate` garde « quatre » et **nomme** la marque. ⚠️
+   **Écart** : `kesh-db/src/errors.rs` (doc d'`UnvalidationBlocker`) disait encore « trois autres
+   empêchements », la 15-12b ne l'ayant pas mis à jour ; corrigé en « quatre » (exercice
+   postérieur clos ajouté) avec la marque nommée et non comptée — C-15-1a-ii-1.
+4. **Les six textes provisoires de la 15-1a-i** (section « Reçu de la 15-1a-i ») retrouvés par la
+   forme resserrée : `CHANGELOG.md:15`, `docs/api-external.md:223`, `:289`, `:322`, `:323`,
+   `user-manual.tex:2424-2425` (et le PDF). Ceux du `reversal` sont réécrits au commit du
+   comportement (R6) — la contradiction avec AC15 (ii) est levée ; ceux du `document`
+   (`api-external.md` : « `document` est réservé » à `:223` et `:289`, l'annotation de
+   `LETTERING_IS_DOCUMENT` à `:322` ; le « une facture soldée par ses règlements » du CHANGELOG et
+   du glossaire) restent à la 15-1a2.
+5. **Qui ferme #518** : la tâche annonçait que cette story « clôt » #518 ; la fiche, elle, dit
+   `refs #518`, et la 15-1c se déclare « closes #518 (dernière des quatre) » — l'issue est la
+   fonctionnalité entière (« savoir ce qui reste ouvert sur un compte »), dont l'écran viendra à
+   la 15-1c. **La PR de cette story porte `refs #518`, non `closes`** ; le commentaire « la
+   15-1a-ii fermera l'issue » de la clé 15-1a-i du sprint-status est rectifié — C-15-1a-ii-3.
+
 ### Completion Notes List
+
+- **AC8 — le gel.** `ModificationGuard::Lettered { code }` (`code()` = `ENTRY_LETTERED`,
+  `document_id()` = `None`, `label()` = le code) ; `journal_entries::lettering_guard(conn,
+  company_id, id, Lecture)` — une requête (`SELECT id, lettering_key … WHERE entry_id = ?`, sans
+  `ORDER BY`, `LIMIT` ni filtre ; `FOR UPDATE` en `Lecture::Verrouillante`), premier groupe
+  choisi en Rust par `id`. Appels : `delete_in_tx` étape **3-quinquies** (après 3-quater, hors
+  `enforce_ownership`), `update_in_tx` étape **7-bis** (après le verrou de période, avant
+  l'instantané et le no-op), `modification_blocker` en dernier (`Lecture::Conseil`). Bras
+  `ENTRY_LETTERED` du mapping 409 (forme commune, `documentId` nul, `documentNumber` = code).
+  Doc-comments réécrits partout où la fiche les nomme (douze codes, six lectures, 3-quinquies,
+  ordre des verrous et cycle lignes ↔ écriture, chaîne `… → PERIOD_LOCKED → ENTRY_LETTERED`).
+- **AC8 — l'écran.** Union `ModificationBlocker` + `'ENTRY_LETTERED'` en dernier ; branche de
+  `modificationBlockerLabel` (repli FR = catalogue) ; `editRefusalOutcome` → `'stale'` ;
+  commentaires des onze → douze codes ; compte figé `sitesTotal` 1919 → 1920 (`blocker-messages.ts`
+  12 → 13 `i18nMsg(`, recompté aux deux bornes).
+- **AC9 — R6.** Lecture des lignes de l'origine étendue (`id`, `lettering_key`, `FOR UPDATE`) ;
+  boucle par **position** (zip des lignes de l'origine et de la contre-passation, toutes deux par
+  `line_order`) ; ligne déjà lettrée → `continue` ; `letterings::is_letterable_account` avant
+  l'appel ; `create_group_in_tx(… Origin::Reversal, Mode::System { held_open_fiscal_year_id:
+  fy.id }, Actor { api_key_id: None })` ; **relecture** des lignes de l'écriture inverse si un
+  groupe a été posé (C116). Les textes « n'en modifie aucune » réécrits aux cinq endroits (doc de
+  la route, clé du dialogue en quatre locales et son repli, doc de `reverseJournalEntry`, manuel
+  `:615`).
+- **AC10, AC13.** Audit `lettering.created` par la primitive, acteur = auteur, sans clé (test
+  `reversal_lettering_is_audited_by_the_reverser`) ; `lettering_invariants` gagne trois groupes
+  `reversal` et un manuel (dont une écriture à ligne déjà lettrée : groupe intact, miroir
+  ouvert), 5 → 9 groupes, invariant tenu ; commentaire de `COLONNES_DES_LIGNES` renvoie à
+  `lettering_guard`.
+- **AC15 (ii).** `api-external.md` (cadre, label, tableaux `PUT` 15 → **16** lignes et `DELETE`
+  9 → **10** — recomptés depuis les tableaux —, `details` d'`ENTRY_LETTERED`, contre-passation
+  qui lettre, origines, annotation `reversal` retirée, catalogue des codes) ; CHANGELOG (entrée du
+  lettrage : la contre-passation lettre, l'écriture lettrée est figée ; entrées #532 réécrites ;
+  *Modifié* : la contre-passation lettre, origine marquée) ; manuel utilisateur (sixième `\item`,
+  cinquième passé à `~;`, phrase du chemin de correction, sites (numéros de `0724904c`) `:389`, `:486`, `:566`, `:615`,
+  `:635`, `:719`, `:770`, `:784`, FAQ, glossaire, et — trouvé au contrôle du PDF aplati, hors
+  relevé de la fiche — la phrase de la réouverture `:740`, C-15-1a-ii-6) ; manuel
+  d'administration (`:2061`, `:2100` deux phrases, `:2238`, `:2273`) ; `README.md:29` ; Pattern 5
+  (lignes `PUT`/`DELETE` et leurs notes de cycle) ; deux clés d'écran des soldes de départ (quatre
+  locales, deux replis). PDF utilisateur et administration régénérés (`make fr`), brochure
+  rendue à sa version (octets d'horodatage seuls).
+- **Contrôles par la valeur** (après le dernier patch) : `pas touchée` ×0 dans la section de la
+  contre-passation du PDF (la seule occurrence restante parle des règles d'affectation) ;
+  `Kesh ne lettre encore rien` ×0 ; « toutes ces conditions tiennent » suivi de **six** points ;
+  `se modifie|mêmes gardes|modifiables et supprimables|exercice (est|reste) ouvert` sur les deux
+  PDF aplatis : chaque occurrence porte la réserve « lettrée » ou est étrangère (compte, règle
+  d'affectation, dévalidation de facture) ; contrôle final des catalogues i18n et replis (commande
+  d'AC15 ii) : seuls `error-opening-complement-account-moved` et son repli Rust restent sans
+  réserve, triés par la fiche ; relevé des cycles (`sans cycle|cycle connu|…`) : chaque site
+  inscrit est réécrit, `bank_accounts.rs:717` et `opening_complement.rs:26` étrangers ;
+  `DETACHED_SUPPLIER_SETTLEMENT|journal-entries-modify-blocked` : chaque fichier de code porte
+  `ENTRY_LETTERED`, sauf `JournalEntryForm.svelte` (repli du seul `FISCAL_YEAR_CLOSED`) et
+  `i18n-keys.test.ts` (historique), triés.
+- **Mutations** (`/home/gcorbaz/devel/kesh-gate-logs/15-1a-ii-mutations.md`) : **16 rejouées,
+  15 tuées**. Backend 13/13 tuées — la paire C117 (marque avant 2-bis), la marque avant le verrou
+  de période sur les trois chemins (+ le chemin `false`), `lettering_guard` retiré de
+  `modification_blocker`, la marque sous `enforce_ownership`, la marque avant la version, R6 qui
+  ne lettre rien, R6 qui réécrit un montant, R6 qui évalue la règle des périodes sur l'origine,
+  pas de relecture (C116), seconde branche ignorée. Frontend : F1 et F3 tuées ; **F2 survit**
+  (clé `i18nMsg` remplacée, repli FR intact : `i18nMsg` est simulé par son repli dans
+  `blocker-messages.test.ts`) — angle mort préexistant, commun aux onze autres branches, non
+  propre à cette story. La mutation « R6 ne lettre que le miroir » est inatteignable par la
+  primitive (un groupe exige deux lignes du même compte).
+- **Gates, au commit de code** (base `kesh_151aii` remise à zéro par `DROP/CREATE` + migrations +
+  seed avant le gate ; tmpfs MariaDB 1,3 Go / 8 Go avant) : `scripts/test-fast.sh` (fmt, clippy
+  `-D warnings`, nextest profil défaut à huit threads) **3152/3152**, 4 ignorés (référence
+  `0724904c` : 3135 ; **+17 tests** recomptés aux deux bornes : `journal_entry_reversal_e2e.rs`
+  41 → 53, `journal_entries.rs` (module) 57 → 60, `supplier_invoices_repository.rs` 50 → 51,
+  `reconciliation_cancel.rs` 1 → 2, `letterings.rs` 31 → 31 — test étendu) ; Vitest **1152/1152**
+  (référence 1149, +3 cas `it.each`) ; `npm run check` 0 erreur (27 avertissements, ceux de
+  `main`) ; `lint-i18n-ownership` vert ; **E2E complet** (base `kesh_e2e_151aii` reconstruite, backend sur le port 3017, binaire et frontend buildés au commit de code `81d3e80f`) : **246 passés, 8 échecs, 19 ignorés** — les 7 KF-029 (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) et `sidebar-navigation.spec.ts:75` (pollution d'état connue), **vert rejoué seul** (1 passed). Aucun KF-045 (run de l'après-midi). tmpfs MariaDB après les gates : 1,4 Go / 8 Go.
+- **Tests existants qui changent de forme** (T12, quatre groupes) : tous verts au gate complet —
+  `update_waits_for_a_concurrent_reversal_then_refuses`,
+  `delete_waits_for_a_concurrent_reversal_then_refuses`,
+  `update_and_a_reversal_of_the_same_year_can_deadlock`,
+  `settlement_cancellation_is_replayed_when_it_is_the_deadlock_victim`, les quatre « clôture
+  attend une annulation », `supprimer_avec` et ses tests,
+  `reverse_in_tx_disparait_avec_le_rollback_de_l_appelant`.
+- **Choix consignés** au registre : C-15-1a-ii-1 à C-15-1a-ii-6.
 
 ### File List
 
+- `CHANGELOG.md`, `README.md`
+- `crates/kesh-api/src/errors.rs`, `crates/kesh-api/src/routes/journal_entries.rs`
+- `crates/kesh-api/tests/audit_route_registry.rs`, `crates/kesh-api/tests/journal_entry_reversal_e2e.rs`
+- `crates/kesh-db/src/errors.rs`, `crates/kesh-db/src/repositories/invoices.rs`,
+  `crates/kesh-db/src/repositories/journal_entries.rs`
+- `crates/kesh-db/tests/journal_entries_modification.rs`, `crates/kesh-db/tests/letterings.rs`,
+  `crates/kesh-db/tests/reconciliation_cancel.rs`, `crates/kesh-db/tests/supplier_invoices_repository.rs`
+- `crates/kesh-i18n/locales/{fr,de,en,it}-CH/messages.ftl`
+- `docs/MULTI-TENANT-SCOPING-PATTERNS.md`, `docs/api-external.md`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`,
+  `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/admin-manual.pdf`
+- `frontend/src/lib/features/journal-entries/{journal-entries.types.ts, journal-entries.api.ts,
+  blocker-messages.ts, blocker-messages.test.ts, form-helpers.ts, form-helpers.test.ts,
+  JournalEntryForm.edit.test.ts}`
+- `frontend/src/lib/shared/{i18n-keys.test.ts, i18n-libelle-en-dur.test.ts}`
+- `frontend/src/routes/(app)/journal-entries/[id]/+page.svelte`,
+  `frontend/src/routes/(app)/settings/opening-balances/+page.svelte`
+- `_bmad-output/implementation-artifacts/{15-1a-ii-gardes-du-lettrage.md, sprint-status.yaml,
+  epic-15-choix-autonomes.md}`
+
 ## Change Log
+
+### Intégration sur `181efa3c` (15-14a, tmpfs 8 Go) — 2026-10-09 (Opus 5.5)
+
+- **Rebase** sur `181efa3c` (15-14a, #591, après `50d3e509`, #588) ; sauvegarde `backup/15-1a-ii-avant-rebase-181efa3c` (C-15-1a-ii-12). Catalogues des quatre locales : `opening-balances-locked-first-year-closed` pris de la 15-14a, `opening-balances-locked-already-has-entries` de la 15-1a-ii (seule différence : la réserve du délettrage) ; PDF des manuels **régénérés** (`make -B`), jamais fusionnés ; registre et sprint-status par union (entrées de la 15-1a-ii renumérotées (59) et (60)).
+- **Gardes de texte de la 15-14a sur les textes de la 15-1a-ii** : `textes_coherents` (G1–G13, G4-bis, G4-ter, G8-bis) **10/10** et `kesh-i18n` (loader) 38/38 au premier passage, Vitest (G13) vert — aucun faux rouge, aucun texte à corriger.
+- **Gates sur l'état rebasé** (bases `kesh_151aii` et `kesh_e2e_151aii` recréées — 76 migrations, seed ; tmpfs MariaDB 1,3 Go / 8 Go avant et après) : `scripts/test-fast.sh` **3178/3178**, 4 ignorés (3144 de `1ae3963e` + 17 de la 15-14a + 17 de la 15-1a-ii) ; Vitest **1161/1161** (1158 + 3) ; `npm run check` 0 erreur, 27 avertissements ; `lint-i18n-ownership` vert ; build ; **E2E complet** (port 3017) : **247 passés, 7 échecs, 19 ignorés** — exactement les sept KF-029. Journaux : `15-1a-ii-gate-rebase-181efa3c.log`, `15-1a-ii-fe-rebase-181efa3c.log`, `15-1a-ii-e2e-rebase-181efa3c.log`.
+
+### Revue de code P2 ciblée — 2026-10-09 (Opus ; boucle close)
+
+- **Passe ciblée** sur `581040aa` (prompt `f6e9f99e`, rapport `/home/gcorbaz/devel/kesh-gate-logs/15-1a-ii-review-p2-ciblee.md`) :
+  **0 CRITICAL, 0 HIGH, 0 MEDIUM, 4 LOW**. Les cinq axes exercés : les autres 409 passés par `refusal_409` gardent leur
+  forme ; aucun client ne lit `documentNumber` sur `ENTRY_LETTERED` ; la garde de longueur est levée avant toute pose de
+  marque ; `lettering_guard` n'a aucun appelant hors de son module, et ses trois appelants vérifient la société ; le test
+  de rollback prouve la marque et l'audit dans la transaction puis leur absence après.
+- **LOW laissés en dette écrite** (aucun ne toucherait le code de production) : L1 — les deux assertions d'après le
+  rollback ne sont mordues par aucune des trois mutations (la preuve positive dans la transaction suffit ; redondance à
+  signaler au commentaire) ; L2 — garde de longueur sans test, branche inatteignable par construction ; L3 — le
+  doc-comment du cycle lignes ↔ écriture (`journal_entries.rs:2362`) et la note du Pattern 5 ne nomment que l'acte 1 de
+  la création, la dissolution fait le même croisement (même défense : le rejeu) ; L4 — le commentaire de
+  `journal_entry_reversal_e2e.rs:269` renvoie à un journal de mutations hors du dépôt.
+- **Boucle de revue close** : la passe ciblée de fin de boucle ne demande aucun correctif de production (CLAUDE.md §
+  « La passe ciblée »). Trend : P1 (Sonnet ×3) 1 MEDIUM → P2 ciblée (Opus) 0. Dernier commit de code : `581040aa` ; ses
+  gates (backend 3161/3161, Vitest 1159/1159, E2E 247 / 7 KF-029) tiennent jusqu'au prochain rebase.
+
+### Revue de code P1 — 2026-10-09 (Sonnet ×3 ; remédiation Opus 5.5)
+
+- **Passe P1** (Sonnet, trois lentilles, diff `0724904c..5a54ec01`) : B 0 MEDIUM / 5 LOW, E 0 MEDIUM / 6 LOW, A 1 MEDIUM / 4 LOW — **1 MEDIUM, 15 LOW** (B-1 = E-2 et B-3 = E-1 convergents : 13 distincts). Rapports : `kesh-gate-logs/15-1a-ii-review-p1-{B,E,A}.md`.
+- **Rebase** sur `1ae3963e` (15-6d, #590) avant la remédiation : C-15-1a-ii-11.
+- **Remédiation, commit `581040aa`** — **touche du code de production** (`kesh-db` `journal_entries.rs`, `kesh-api` `errors.rs`) :
+  - **A1 (MEDIUM)** — `reverse_in_tx_disparait_avec_le_rollback_de_l_appelant` lit, dans la transaction, les marques `reversal` des quatre lignes (deux clés) et les deux audits `lettering.created`, puis, après le rollback, des marques nulles sur l'origine et zéro audit. Mutations M-A1-1 (audit commité sur une autre connexion), M-A1-2 (R6 ne lettre rien), M-A1-3 (`COMMIT` pour l'appelant) **tuées** ; la marque écrite hors de la transaction est **non jouable** (verrou de l'origine, miroir invisible) — C-15-1a-ii-9, journal `15-1a-ii-review-p1-mutations.log`.
+  - **B-1 = E-2** — garde de longueur avant le `zip` origine/miroir → `DbError::Invariant` (production).
+  - **B-3 = E-1** — `lettering_guard` et `Lecture` privées au module, `_company_id` retiré (production) ; jointure écartée — C-15-1a-ii-8.
+  - **B-5** — le 409 `ENTRY_LETTERED` porte `details.letteringCode` (plus `documentId`/`documentNumber`), `refusal_409` commun (production) ; `api-external.md` (trois sites), CHANGELOG, test AC8 au `PUT` et au `DELETE` — C-15-1a-ii-7.
+  - **A2** — docstring du test AC9 (f) : ne déclare tuées que M8 et M9, la variante « miroir seul » dite non jouée.
+  - **A3** — doc de `update_journal_entry` : quatre cycles (trois hérités + lignes ↔ écriture). Valeur grepée (`(trois|3) cycles`, `cycles? hérités?`) : plus aucun site.
+  - **E-3** — `user-manual.tex` (ouverture) : l'exemple de lettrage ne promet plus les encaissements de facture ; PDF régénéré (`make -B user`), phrase vérifiée dans le PDF aplati. Symptôme grepé (`lettre typiquement|encaissements qui suivent|lettrer … encaissement`) : aucun autre site.
+  - **E-4** — `api-external.md` : l'écriture lettrée se contre-passe aussi ; le délettrage n'est requis que pour la modifier.
+  - **E-5** — cycle lignes ↔ écriture à l'en-tête de `reverse_in_tx_inner` ; ligne `/reverse` (et les quatre annulations) au tableau et aux notes du Pattern 5.
+  - **E-6** — commentaire de `letterings.rs` mis au présent.
+  - **B-4** — rien à faire : déjà tranché à C131 (7). **B-2, A4, A5** — gardés en dette, motifs à C-15-1a-ii-10 (A4 : issue P3 à ouvrir).
+- **Tests** : aucun test neuf (recompté aux deux bornes `7c9a478e` → `581040aa` : `journal_entries.rs` module 60 → 60, `journal_entry_reversal_e2e.rs` 53 → 53) ; deux tests étendus.
+- **Gates, au commit de code `581040aa`** (bases `kesh_151aii` et `kesh_e2e_151aii` reconstruites — `DROP/CREATE`, 76 migrations, seed ; tmpfs MariaDB 1,3 Go / 8 Go avant et après) : `scripts/test-fast.sh` **3161/3161**, 4 ignorés (3152 de la story + 9 de la 15-6d) ; Vitest **1159/1159** (1152 + 7 de la 15-6d) ; `npm run check` 0 erreur, 27 avertissements ; `lint-i18n-ownership` vert ; build ; **E2E complet** (port 3017) : **247 passés, 7 échecs, 19 ignorés** — exactement les sept KF-029 (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`). Journaux : `15-1a-ii-gate-review-p1.log`, `15-1a-ii-fe-review-p1.log`, `15-1a-ii-e2e-review-p1.log`.
+- **Suite** : la remédiation touche la production → la boucle n'est pas close ; passe P2 complète (Opus) à lancer.
+
+### Développement — 2026-10-09 (Opus 5.5, bmad-dev-story)
+
+Story développée sur `0724904c` : gel `ENTRY_LETTERED` sur les trois chemins et l'écran (AC8),
+contre-passation qui lettre (R6, AC9), audit et invariant (AC10, AC13 part ii), documentation et
+textes d'écran (AC15 part ii), les six textes provisoires de la 15-1a-i qui concernent le
+`reversal` réécrits au même commit. +17 tests Rust, +3 cas Vitest ; 16 mutations, 15 tuées.
+Statut → `review`. Revue de code à lancer (non lancée ici). Choix C-15-1a-ii-1 à 6.
+
+### Reçu de la 15-1a-i — 2026-10-09 (Opus 5.5, remédiation de la revue de code P2 de la 15-1a-i)
+
+Section « Reçu de la 15-1a-i — revue de code P2 » ajoutée (finding A2-1, registre C-15-1a-i-7 et
+C-15-1a-i-11) : six textes provisoires écrits par la 15-1a-i (« Kesh ne lettre rien de lui-même »,
+origines « réservées »), dont quatre à réécrire ici au même commit que R6 — contradiction avec la phrase
+prescrite par AC15 (ii) sinon. Corps de cette fiche non réécrit. Édition hors passe.
 
 ### Remédiation de la validation P6 — 2026-10-09 (Opus 5.5)
 

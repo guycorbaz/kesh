@@ -24,7 +24,8 @@
 //! Pour un contrôleur, une séquence ni continue ni univoque est un signal
 //! d'alarme. C'est pourquoi une erreur se corrige de préférence par
 //! contre-passation — ou, tant que l'exercice est ouvert, par modification
-//! tracée ([`update`], Story 15-8a), qui garde le numéro. La suppression
+//! tracée ([`update`], Story 15-8a), qui garde le numéro, si aucune de ses
+//! lignes n'est lettrée (Story 15-1a-ii : délettrer d'abord). La suppression
 //! ([`delete_by_id`], Story 15-8b) reste possible dans le même cadre que la
 //! modification : elle creuse un trou, que son instantané d'audit
 //! `journal_entry.deleted` explique. Suivi : issues du jalon « Vague 1 »
@@ -42,8 +43,9 @@
 //! # Modification (Story 15-8a, #532)
 //!
 //! Une écriture se modifie ([`update`]) tant que son exercice est ouvert,
-//! qu'aucun exercice postérieur n'est clos, qu'aucune pièce ne la possède et
-//! que sa période n'est pas verrouillée ; chaque modification est tracée avant
+//! qu'aucun exercice postérieur n'est clos, qu'aucune pièce ne la possède, que
+//! sa période n'est pas verrouillée et qu'aucune de ses lignes n'est lettrée
+//! (`lettering_guard`, Story 15-1a-ii) ; chaque modification est tracée avant
 //! et après. La suppression ([`delete_by_id`], Story 15-8b) suit le même
 //! cadre et la même garde, tracée par un instantané complet.
 //!
@@ -1114,12 +1116,87 @@ pub fn modification_refusal(guard: ModificationGuard) -> DbError {
     }
 }
 
+/// Mode de lecture de `lettering_guard` — **une** requête, un paramètre :
+/// pas deux fonctions qui divergeraient.
+///
+/// Privé au module (revue de code P1, B-3/E-1) : ses trois appelants sont ici.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Lecture {
+    /// `FOR UPDATE` — dans les transactions du `PUT` et du `DELETE`, sous le
+    /// verrou de l'en-tête (défense en profondeur : une lecture courante ne
+    /// dépend d'aucune vue).
+    Verrouillante,
+    /// Sans verrou — [`modification_blocker`], sur une connexion du pool, hors
+    /// transaction : l'écran conseille, le `PUT` tranche. Une lecture
+    /// verrouillante y attendrait derrière tout lettrage en cours.
+    Conseil,
+}
+
+/// Les lignes d'une écriture (identifiant, marque), par `uq_jel_entry_order` /
+/// `idx_jel_entry`. ⛔ Ni `ORDER BY id`, ni `LIMIT`, ni filtre sur
+/// `lettering_key` : sous `FOR UPDATE` en `REPEATABLE READ`, un plan qui
+/// parcourrait la clé primaire verrouillerait chaque ligne parcourue — la
+/// table entière à chaque `PUT`. Le premier groupe se choisit en Rust.
+const LETTERING_GUARD_SQL: &str =
+    "SELECT id, lettering_key FROM journal_entry_lines WHERE entry_id = ?";
+
+/// **Marque de lettrage** (Story 15-1a-ii, AC8) : une écriture dont **une**
+/// ligne est lettrée ne se modifie ni ne se supprime — elle se délettre
+/// d'abord. Rend [`ModificationGuard::Lettered`] avec le code du **premier**
+/// groupe (ordre `id` des lignes), `None` si aucune ligne n'est lettrée.
+///
+/// ⛔ **Fonction DISTINCTE de [`modification_guard`]** : `delete_in_tx` n'évalue
+/// celle-ci que sous `enforce_ownership`, alors que la marque est une étape
+/// **propre et inconditionnelle** — elle tient aussi sous la dévalidation
+/// d'une facture (`enforce_ownership = false`), où elle est inatteignable
+/// aujourd'hui (une facture lettrée a un règlement ou un avoir, refusés avant).
+///
+/// ⛔ **Rang : après tout refus que le délettrage ne peut lever** (C126) —
+/// après le verrou de période sur les trois chemins (`delete_in_tx` étape
+/// 3-quinquies, `update_in_tx` étape 7-bis, [`modification_blocker`] dernier).
+/// Quand elle parle, l'écriture est en période ouverte et n'appartient à
+/// aucune pièce : son groupe est `manual`, et le délettrage que le message
+/// prescrit aboutit (hors geste concurrent).
+///
+/// ⛔ **Non scopée par société, donc PRIVÉE au module** (revue de code P1,
+/// B-3/E-1) : la requête ne lit que `journal_entry_lines` par `entry_id`, et
+/// c'est l'appelant qui a déjà établi que l'écriture `id` appartient à la
+/// société (verrou joint ou lecture de l'en-tête). Une jointure sur
+/// `journal_entries.company_id` aurait fermé le trou pour un appelant futur,
+/// mais sous `FOR UPDATE` son plan peut partir de l'index de société et
+/// verrouiller les en-têtes qu'il parcourt — d'où la visibilité restreinte
+/// plutôt qu'un verrou de plus. Un appelant hors de ce module passe par
+/// [`update`], [`delete_by_id`] ou [`modification_blocker`], qui scopent.
+async fn lettering_guard(
+    conn: &mut sqlx::MySqlConnection,
+    id: i64,
+    lecture: Lecture,
+) -> Result<Option<ModificationGuard>, DbError> {
+    let sql = match lecture {
+        Lecture::Verrouillante => format!("{LETTERING_GUARD_SQL} FOR UPDATE"),
+        Lecture::Conseil => LETTERING_GUARD_SQL.to_string(),
+    };
+    let lignes: Vec<(i64, Option<i64>)> = sqlx::query_as(&sql)
+        .bind(id)
+        .fetch_all(&mut *conn)
+        .await
+        .map_err(map_db_error)?;
+    Ok(lignes
+        .into_iter()
+        .filter_map(|(line_id, key)| key.map(|k| (line_id, k)))
+        .min_by_key(|(line_id, _)| *line_id)
+        .map(|(_, key)| ModificationGuard::Lettered {
+            code: super::letterings::code_of(key),
+        }))
+}
+
 /// **Motif d'écran** (Story 15-8a, D8) : pourquoi la fiche n'offre pas
 /// « Modifier ». Ordre = celui des refus du `PUT` qui ne dépendent pas du
 /// corps : exercice clos, exercice postérieur clos, garde d'écriture
-/// ([`modification_guard`]), verrou de période sur la date **présente**.
+/// ([`modification_guard`]), verrou de période sur la date **présente**, puis
+/// la marque de lettrage (`lettering_guard`, Story 15-1a-ii), en dernier.
 ///
-/// Lecture **sans verrou**, sur une connexion acquise du pool (cinq lectures
+/// Lecture **sans verrou**, sur une connexion acquise du pool (six lectures
 /// enchaînées) : l'écran conseille, le `PUT` tranche — sous verrou.
 ///
 /// Écriture introuvable (ou d'une autre société) → [`DbError::NotFound`].
@@ -1168,6 +1245,10 @@ pub async fn modification_blocker(
     {
         return Ok(Some(ModificationBlocker::PeriodLocked { locked_through }));
     }
+    // Story 15-1a-ii (AC8) — la marque de lettrage, DERNIER motif (C126).
+    if let Some(guard) = lettering_guard(&mut conn, id, Lecture::Conseil).await? {
+        return Ok(Some(ModificationBlocker::Guard(guard)));
+    }
     Ok(None)
 }
 
@@ -1209,8 +1290,9 @@ enum UpdateOutcome {
 
 /// Modifie une écriture (Story 15-8a, #532) — date, journal, libellé et lignes —
 /// tant que son exercice est ouvert, qu'aucun exercice postérieur n'est clos,
-/// qu'aucune pièce ne la possède et que sa date (ancienne et nouvelle) est
-/// hors de la période verrouillée.
+/// qu'aucune pièce ne la possède, que sa date (ancienne et nouvelle) est
+/// hors de la période verrouillée et qu'aucune de ses lignes n'est lettrée
+/// (Story 15-1a-ii).
 ///
 /// ⛔ **Ni `entry_number`, ni `fiscal_year_id`, ni `id`, ni `created_at`, ni
 /// `reverses_entry_id` ne sont écrits.** La date peut changer, dans l'exercice :
@@ -1254,7 +1336,8 @@ enum UpdateOutcome {
 /// # Ordre des verrous
 ///
 /// **écriture → [sentinelle `companies` → projets nouveaux] → exercice →
-/// exercices postérieurs (par `start_date` croissant) → (comptes, en partagé, par
+/// exercices postérieurs (par `start_date` croissant) → lignes de l'écriture
+/// (étape 7-bis, `FOR UPDATE`, Story 15-1a-ii) → (comptes, en partagé, par
 /// les clés étrangères de l'`INSERT` ; intervalle des lignes, au `DELETE`)**.
 /// L'écriture se verrouille **seule** : la verrouiller avec son exercice puis
 /// prendre les projets inverserait l'ordre de la création
@@ -1267,7 +1350,8 @@ enum UpdateOutcome {
 /// ⛔ **Cet ordre n'est pas sans cycle** — le dépôt n'a pas d'ordre de
 /// verrouillage unique. Trois cycles **hérités** (ils existent déjà entre la
 /// création et ces chemins), chacun valant pour l'exercice de l'écriture **et**
-/// pour chaque exercice postérieur que l'étape 1-ter verrouille :
+/// pour chaque exercice postérieur que l'étape 1-ter verrouille, et un
+/// quatrième, **non hérité** (Story 15-1a-ii) :
 ///
 /// - **exercice ↔ compte** : le `PUT` tient l'exercice puis demande le verrou
 ///   partagé de clé étrangère d'un compte à l'`INSERT` des lignes ; le règlement
@@ -1280,7 +1364,10 @@ enum UpdateOutcome {
 /// - **projet ↔ exercice** : le `PUT` tient un projet nouveau puis demande
 ///   l'exercice ; une contre-passation d'une écriture du même exercice portant
 ///   ce projet tient l'origine et son exercice, puis le verrou partagé de clé
-///   étrangère du projet à l'insertion des lignes copiées.
+///   étrangère du projet à l'insertion des lignes copiées ;
+/// - **lignes ↔ écriture** (Story 15-1a-ii) : l'acte 1 du lettrage verrouille
+///   une ligne **puis** son écriture ; le `PUT` tient l'écriture, puis
+///   verrouille ses lignes à l'étape 7-bis — rejoué comme les autres.
 ///
 /// InnoDB casse un tel cycle par l'erreur **1213**, que le handler **rejoue**
 /// (enveloppe `DbError` [`crate::retry::retry_on_deadlock`]). Un cycle non
@@ -1302,7 +1389,9 @@ enum UpdateOutcome {
 /// **de l'écriture** (400) → projet (404/409) → comptes (400
 /// `INACTIVE_OR_INVALID_ACCOUNTS`, puis `ACCOUNT_NOT_POSTABLE`, **sans
 /// exemption** : une ligne inchangée sur un compte devenu non imputable est
-/// refusée, C-15-8-4) → verrou de période, ancienne puis nouvelle date (400).
+/// refusée, C-15-8-4) → verrou de période, ancienne puis nouvelle date (400)
+/// → marque de lettrage (409 `ENTRY_LETTERED`, étape 7-bis, Story 15-1a-ii :
+/// elle parle après tout refus que le délettrage ne lèverait pas, C126).
 /// Le court-circuit **no-op** vient après toutes les gardes (KF-004) : un `PUT`
 /// identique sur une écriture gelée rend le refus, pas un 200 trompeur.
 #[allow(clippy::too_many_arguments)]
@@ -1479,6 +1568,15 @@ async fn update_in_tx(
         }
     }
 
+    // Étape 7-bis (Story 15-1a-ii, AC8) — la marque de lettrage, APRÈS le
+    // verrou de période (C126) et avant le court-circuit no-op : un `PUT`
+    // identique sur une écriture lettrée rend le refus. Lecture VERROUILLANTE
+    // des lignes — ordre écriture → lignes, opposé à l'acte 1 du lettrage :
+    // cycle connu, rejoué (cf. « Ordre des verrous »).
+    if let Some(guard) = lettering_guard(tx, id, Lecture::Verrouillante).await? {
+        return Err(modification_refusal(guard));
+    }
+
     // Étape 8 — instantané « avant » ; court-circuit no-op APRÈS toutes les
     // gardes (KF-004).
     let before_entry: JournalEntry = sqlx::query_as::<_, JournalEntry>(&format!(
@@ -1601,7 +1699,8 @@ async fn update_in_tx(
 /// `enforce_ownership = true` : la suppression suit **le cadre de la
 /// modification** ([`update`], Story 15-8a) — exercice ouvert, aucun exercice
 /// postérieur clos, ni contre-passée ni contre-passation, aucune pièce, pas un
-/// paiement détaché, date postérieure à la borne du verrou de période. Les
+/// paiement détaché, date postérieure à la borne du verrou de période, aucune
+/// ligne lettrée (Story 15-1a-ii). Les
 /// refus, leur ordre et la sérialisation sont au doc-comment de
 /// [`delete_in_tx`] — c'est cette fonction-ci qu'on ouvre en premier quand on
 /// cherche pourquoi un `DELETE` échoue, d'où ce renvoi explicite (un
@@ -1656,8 +1755,14 @@ pub async fn delete_by_id(
 ///   pièce, rapprochement bancaire, paiement détaché →
 ///   [`DbError::EntryNotModifiable`] ;
 /// - **3-quater** — date ≤ `books_locked_through` (seuil inclusif) →
-///   [`DbError::PeriodLocked`] : le verrou de période parle en dernier, comme à
-///   la création et au `PUT`.
+///   [`DbError::PeriodLocked`] : le verrou de période parle avant-dernier — la
+///   marque de lettrage parle après lui ;
+/// - **3-quinquies** (Story 15-1a-ii, AC8 ; **quel que soit**
+///   `enforce_ownership`) — une ligne lettrée (`lettering_guard`) →
+///   [`DbError::EntryNotModifiable`] (`ENTRY_LETTERED`) : après tout refus que
+///   le délettrage ne lèverait pas (C126), donc après 2-bis par construction
+///   (C117). Inatteignable par la dévalidation aujourd'hui (une facture lettrée
+///   a un règlement ou un avoir) ; la garde vit quand même au point de passage.
 ///
 /// ⛔ **La garde est la seule barrière pour trois refus** : la contre-passation
 /// elle-même (la clé `RESTRICT` ne protège que l'origine), le paiement détaché
@@ -1680,6 +1785,11 @@ pub async fn delete_by_id(
 /// la requête de l'étape 2 à son texte (`je.fiscal_year_id`, `FOR UPDATE`) : la
 /// changer, c'est changer leurs motifs.
 ///
+/// La garde de lettrage (étape 3-quinquies, Story 15-1a-ii) verrouille ensuite
+/// les **lignes** de l'écriture : ordre écriture → lignes, opposé à l'acte 1 du
+/// lettrage (ligne → écriture) — cycle connu, défendu par le rejeu de la route
+/// (`retry_on_deadlock`, `"journal_entries::delete"`).
+///
 /// # `enforce_ownership` — qui passe quoi
 ///
 /// - **`true`** : [`delete_by_id`], donc la route. L'étape 3-ter s'applique.
@@ -1687,7 +1797,7 @@ pub async fn delete_by_id(
 ///   supprime **sa** propre écriture, sous ses propres gardes (non réglée, même
 ///   partiellement, non créditée, sans rappel, non envoyée, non rapprochée) : la
 ///   garde « possédée par une facture » n'y aurait pas de sens. Les étapes 2-bis,
-///   3, 3-bis et 3-quater tiennent quand même — l'étape 2-bis depuis la
+///   3, 3-bis, 3-quater et 3-quinquies tiennent quand même — l'étape 2-bis depuis la
 ///   Story 15-12b (#543) : avant elle, l'exercice postérieur clos n'était pas
 ///   contrôlé sur ce chemin (C-15-8-29).
 ///
@@ -1771,7 +1881,8 @@ pub(crate) async fn delete_in_tx(
     // Étape 3-quater (Story 25-2-b-zero, #443) : le VERROU DE PÉRIODE. Une
     // écriture datée d'une période verrouillée ne disparaît pas — sans quoi les
     // totaux d'un trimestre déjà déclaré changeraient en silence, le rapport TVA
-    // se recalculant à la volée. Il parle en dernier, comme à la création.
+    // se recalculant à la volée. Il parle avant-dernier : la marque de lettrage
+    // (3-quinquies) parle après lui.
     //
     // ⚠️ Lecture NON verrouillante, pour la raison écrite à l'étape 0-bis de
     // `create_in_tx_inner`. Seuil INCLUSIF, le même qu'à la création.
@@ -1789,6 +1900,15 @@ pub(crate) async fn delete_in_tx(
             locked_through,
             attempted: entry_date,
         });
+    }
+
+    // Étape 3-quinquies (Story 15-1a-ii, AC8) : la MARQUE DE LETTRAGE, hors du
+    // drapeau `enforce_ownership`, APRÈS le verrou de période (C126) — quand
+    // elle parle, le délettrage qu'elle prescrit aboutit. Lecture VERROUILLANTE
+    // des lignes : ordre écriture → lignes, cycle connu avec l'acte 1 du
+    // lettrage, défendu par le rejeu (cf. « Sérialisation »).
+    if let Some(guard) = lettering_guard(tx, id, Lecture::Verrouillante).await? {
+        return Err(modification_refusal(guard));
     }
 
     // Étape 4 : snapshot avant suppression.
@@ -2219,6 +2339,10 @@ pub async fn reverse_owned_in_tx(
     reverse_in_tx_inner(tx, company_id, id, user_id, Some(authority)).await
 }
 
+/// Une ligne de l'origine lue par la contre-passation : `(id, account_id,
+/// debit, credit, project_id, lettering_key)` — Story 15-1a-ii (R6).
+type OriginLine = (i64, i64, Decimal, Decimal, Option<i64>, Option<i64>);
+
 /// La contre-passation, **écrite une seule fois** (25-3-zero, 25-3-a-1).
 ///
 /// ⚠️ **Ordre des verrous et cycles** (Story 15-12a, #543) : l'étape (1)
@@ -2234,6 +2358,14 @@ pub async fn reverse_owned_in_tx(
 /// côtés : les routes de la contre-passation et des quatre annulations qui
 /// passent par ici sont `Rejouee`, la clôture et la création d'un exercice le
 /// sont aussi (Story 15-12a, AC 6 ; test 13 d de `fiscal_years_repository.rs`).
+///
+/// ⚠️ **Cycle lignes ↔ écriture** (Story 15-1a-ii, R6) : l'étape (2) lit les
+/// lignes de l'origine `FOR UPDATE` **après** son en-tête (étape 1) ; l'acte 1
+/// du lettrage (`letterings::create_group_in_tx`) prend les lignes **puis**
+/// l'en-tête. Une contre-passation et un lettrage concurrents de la même
+/// écriture peuvent donc s'interbloquer : même défense, le rejeu des routes
+/// de la contre-passation et des quatre annulations (toutes `Rejouee`), et
+/// celui du lettrage.
 async fn reverse_in_tx_inner(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
@@ -2324,9 +2456,16 @@ async fn reverse_in_tx_inner(
     // `line_order` la position, et le `project_id` se reprend POSITIONNELLEMENT
     // — une écriture manuelle porte un tag par ligne (Story 19-2), là où le
     // gabarit `cancel` n'a qu'un projet document-level à propager.
-    let origin_lines: Vec<(i64, Decimal, Decimal, Option<i64>)> = sqlx::query_as(
-        "SELECT account_id, debit, credit, project_id FROM journal_entry_lines \
-         WHERE entry_id = ? ORDER BY line_order",
+    //
+    // Story 15-1a-ii (R6) — lecture ÉTENDUE (`id`, `lettering_key`) et
+    // VERROUILLANTE : la contre-passation lettre chaque ligne libre avec son
+    // miroir, et juge « déjà lettrée » sur cette lecture courante. Ordre :
+    // en-tête de l'origine (étape 1) → ses lignes, opposé à l'acte 1 du
+    // lettrage (ligne → en-tête) — cycle connu, défendu par le rejeu de la
+    // contre-passation et des annulations qui l'appellent (toutes `Rejouee`).
+    let origin_lines: Vec<OriginLine> = sqlx::query_as(
+        "SELECT id, account_id, debit, credit, project_id, lettering_key \
+         FROM journal_entry_lines WHERE entry_id = ? ORDER BY line_order FOR UPDATE",
     )
     .bind(id)
     .fetch_all(&mut **tx)
@@ -2339,7 +2478,7 @@ async fn reverse_in_tx_inner(
     }
 
     // (3) Comptes archivés depuis — refus qui NOMME, cf. `ReversalAccountsArchived`.
-    let account_ids: Vec<i64> = origin_lines.iter().map(|(a, _, _, _)| *a).collect();
+    let account_ids: Vec<i64> = origin_lines.iter().map(|(_, a, _, _, _, _)| *a).collect();
     let archived = archived_accounts_in_tx(tx, company_id, &account_ids).await?;
     if !archived.is_empty() {
         return Err(DbError::ReversalAccountsArchived(archived));
@@ -2348,7 +2487,7 @@ async fn reverse_in_tx_inner(
     let reversal_lines: Vec<NewJournalEntryLine> = origin_lines
         .iter()
         .map(
-            |(account_id, debit, credit, project_id)| NewJournalEntryLine {
+            |(_, account_id, debit, credit, project_id, _)| NewJournalEntryLine {
                 account_id: *account_id,
                 debit: *credit,
                 credit: *debit,
@@ -2374,7 +2513,7 @@ async fn reverse_in_tx_inner(
         format!("Contre-passation écriture n° {entry_number} ({origin_fy_name})")
     };
 
-    let created = create_in_tx_inner(
+    let mut created = create_in_tx_inner(
         tx,
         fy.id,
         user_id,
@@ -2409,6 +2548,67 @@ async fn reverse_in_tx_inner(
         ),
     )
     .await?;
+
+    // (5) Story 15-1a-ii (R6, C97) — la contre-passation LETTRE ce qui est
+    // libre : chaque ligne de l'origine sur un compte lettrable, non lettrée,
+    // forme avec son miroir (même POSITION — `create_in_tx_inner` renumérote
+    // `idx + 1`) un groupe `reversal`. Une ligne déjà lettrée garde son groupe,
+    // et son miroir reste ouvert : c'est la créance (ou la dette) que la
+    // contre-passation fait renaître. Mode `System` : l'exercice du jour, tenu
+    // `FOR UPDATE` à l'étape (4), couvre le miroir — aucune règle des périodes
+    // sur l'origine, qui peut être close (la contre-passation l'accepte).
+    //
+    // ⛔ L'appariement est POSITIONNEL : `zip` s'arrêterait en silence au plus
+    // court, laissant des lignes non lettrées sans aucun signal si les deux
+    // longueurs divergeaient un jour (revue de code P1, B-1/E-2). Défaut
+    // structurel, donc `Invariant`, pas un refus métier.
+    if origin_lines.len() != created.lines.len() {
+        return Err(DbError::Invariant(format!(
+            "contre-passation : {} ligne(s) d'origine pour {} ligne(s) miroir",
+            origin_lines.len(),
+            created.lines.len()
+        )));
+    }
+    let mut lettered_any = false;
+    for (origin_line, mirror) in origin_lines.iter().zip(created.lines.iter()) {
+        let (origin_line_id, account_id, _, _, _, lettering_key) = *origin_line;
+        if lettering_key.is_some() {
+            continue;
+        }
+        if !super::letterings::is_letterable_account(tx, company_id, account_id).await? {
+            continue;
+        }
+        super::letterings::create_group_in_tx(
+            tx,
+            company_id,
+            &[origin_line_id, mirror.id],
+            super::letterings::Origin::Reversal,
+            super::letterings::Mode::System {
+                held_open_fiscal_year_id: fy.id,
+            },
+            // La contre-passation ne porte que l'utilisateur : écart nommé (R3).
+            super::letterings::Actor {
+                user_id,
+                api_key_id: None,
+            },
+        )
+        .await?;
+        lettered_any = true;
+    }
+
+    // ⛔ (6) La valeur rendue est RELUE après le lettrage (C116) : sans quoi le
+    // `201` dirait `letteringCode: null` sur une ligne que la base porte
+    // lettrée. Ici et non dans la route : tous les appelants de
+    // `reverse_in_tx` (annulations, dé-rapprochement) reçoivent une valeur exacte.
+    if lettered_any {
+        created.lines = sqlx::query_as::<_, JournalEntryLine>(&format!(
+            "SELECT {LINE_COLUMNS} FROM journal_entry_lines WHERE entry_id = ? ORDER BY line_order"
+        ))
+        .bind(created.entry.id)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    }
 
     Ok(created)
 }
@@ -3539,6 +3739,158 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(restante, 1, "l'écriture refusée n'est pas supprimée");
+    }
+
+    /// Story 15-1a-ii (AC8) — monte, **dans `tx`**, une écriture manuelle datée
+    /// du jour lettrée avec la ligne d'une autre (compte `Asset` créé dans la
+    /// transaction, lettrable), par la primitive en mode `Manual`. Rend
+    /// `(écriture lettrée, code du groupe)`. Tout s'efface au rollback de
+    /// l'appelant : la base est partagée (KF-039).
+    async fn lettrer_dans(
+        tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+        company_id: i64,
+        fy_id: i64,
+        admin: i64,
+        contrepartie: i64,
+    ) -> (i64, String) {
+        let lettrable = sqlx::query(
+            "INSERT INTO accounts (company_id, number, name, account_type, postable) \
+             VALUES (?, 'LT151A2', 'Lettrable 15-1a-ii', 'Asset', TRUE)",
+        )
+        .bind(company_id)
+        .execute(&mut **tx)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        let jour = chrono::Utc::now().naive_utc().date();
+        let cible = create_in_tx(
+            tx,
+            fy_id,
+            admin,
+            mk_entry(company_id, jour, paire(lettrable, contrepartie)),
+            false,
+        )
+        .await
+        .unwrap();
+        let partenaire = create_in_tx(
+            tx,
+            fy_id,
+            admin,
+            mk_entry(company_id, jour, paire(contrepartie, lettrable)),
+            false,
+        )
+        .await
+        .unwrap();
+        let ligne = |e: &JournalEntryWithLines| {
+            e.lines
+                .iter()
+                .find(|l| l.account_id == lettrable)
+                .unwrap()
+                .id
+        };
+        let groupe = super::super::letterings::create_group_in_tx(
+            tx,
+            company_id,
+            &[ligne(&cible), ligne(&partenaire)],
+            super::super::letterings::Origin::Manual,
+            super::super::letterings::Mode::Manual,
+            super::super::letterings::Actor {
+                user_id: admin,
+                api_key_id: None,
+            },
+        )
+        .await
+        .expect("lettrage du montage");
+        (cible.entry.id, groupe.code)
+    }
+
+    /// Story 15-1a-ii (AC8) — la garde de lettrage tient **hors du drapeau** :
+    /// `delete_in_tx(…, enforce_ownership = false)` (le chemin de la
+    /// dévalidation) sur une écriture lettrée → `Lettered`, comme `true`.
+    /// ⛔ Mutation tuée : placer l'étape 3-quinquies sous `enforce_ownership`.
+    #[tokio::test]
+    async fn la_marque_de_lettrage_tient_hors_du_drapeau() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (_, a2) = two_accounts(&pool, company_id).await;
+        for enforce_ownership in [false, true] {
+            let mut tx = pool.begin().await.unwrap();
+            let (cible, code) = lettrer_dans(&mut tx, company_id, fy_id, admin, a2).await;
+            let r = delete_in_tx(&mut tx, company_id, cible, admin, None, enforce_ownership).await;
+            tx.rollback().await.unwrap();
+            assert!(
+                matches!(
+                    r,
+                    Err(DbError::EntryNotModifiable(ModificationGuard::Lettered { code: ref c }))
+                        if *c == code
+                ),
+                "enforce_ownership = {enforce_ownership} : obtenu {r:?}"
+            );
+        }
+    }
+
+    /// Story 15-1a-ii (AC8, C117) — précédence avec la 15-12b : une écriture
+    /// lettrée dans N, N+1 clos (posé par SQL direct) → `LaterFiscalYearClosed`
+    /// sur les deux chemins (`false` et `true`). ⛔ Mutation tuée : placer la
+    /// marque avant l'étape 2-bis.
+    #[tokio::test]
+    async fn delete_of_a_lettered_entry_under_a_later_closed_year_says_later_closed() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (_, a2) = two_accounts(&pool, company_id).await;
+        for enforce_ownership in [false, true] {
+            let mut tx = pool.begin().await.unwrap();
+            let (cible, _) = lettrer_dans(&mut tx, company_id, fy_id, admin, a2).await;
+            let fin: NaiveDate =
+                sqlx::query_scalar("SELECT end_date FROM fiscal_years WHERE id = ?")
+                    .bind(fy_id)
+                    .fetch_one(&mut *tx)
+                    .await
+                    .unwrap();
+            let debut = fin + chrono::Duration::days(1);
+            sqlx::query(
+                "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+                 VALUES (?, 'Exercice postérieur 15-1a-ii', ?, ?, 'Closed') \
+                 ON DUPLICATE KEY UPDATE status = 'Closed'",
+            )
+            .bind(company_id)
+            .bind(debut)
+            .bind(debut + chrono::Duration::days(364))
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+            let r = delete_in_tx(&mut tx, company_id, cible, admin, None, enforce_ownership).await;
+            tx.rollback().await.unwrap();
+            assert!(
+                matches!(r, Err(DbError::LaterFiscalYearClosed { .. })),
+                "enforce_ownership = {enforce_ownership} : obtenu {r:?}"
+            );
+        }
+    }
+
+    /// Story 15-1a-ii (AC8, C126) — sur le chemin de la dévalidation
+    /// (`false`) aussi, le verrou de période parle avant la marque : écriture
+    /// lettrée datée du jour de la borne (posée après le lettrage) →
+    /// `PeriodLocked`. ⛔ Mutation tuée : la marque avant l'étape 3-quater.
+    #[tokio::test]
+    async fn delete_in_tx_of_a_lettered_entry_in_a_locked_period_says_period_locked() {
+        let pool = test_pool().await;
+        let (company_id, fy_id, admin) = setup(&pool).await;
+        let (_, a2) = two_accounts(&pool, company_id).await;
+        let mut tx = pool.begin().await.unwrap();
+        let (cible, _) = lettrer_dans(&mut tx, company_id, fy_id, admin, a2).await;
+        sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
+            .bind(chrono::Utc::now().naive_utc().date())
+            .bind(company_id)
+            .execute(&mut *tx)
+            .await
+            .unwrap();
+        let r = delete_in_tx(&mut tx, company_id, cible, admin, None, false).await;
+        tx.rollback().await.unwrap();
+        assert!(
+            matches!(r, Err(DbError::PeriodLocked { .. })),
+            "obtenu {r:?}"
+        );
     }
 
     #[tokio::test]
@@ -4963,6 +5315,8 @@ mod tests {
         .await
         .expect("création de l'écriture d'origine");
 
+        // Clés des groupes `reversal` posés dans la transaction (R6), relues après.
+        let mut cles_du_lettrage: Vec<i64>;
         // L'appelant ouvre SA transaction, contre-passe, puis échoue.
         {
             let mut tx = pool.begin().await.unwrap();
@@ -4994,6 +5348,57 @@ mod tests {
                  avant tout rollback"
             );
 
+            // Story 15-1a-ii (R6, AC10 ; revue de code P1, A1) — la
+            // contre-passation LETTRE chaque ligne libre avec son miroir et
+            // audite chaque groupe. Même exigence que ci-dessus : prouver
+            // l'écriture DANS la transaction, sans quoi les assertions négatives
+            // d'après le rollback passeraient aussi pour un R6 qui ne fait rien.
+            let lignes_dans_la_tx: Vec<(i64, Option<i64>, Option<String>)> = sqlx::query_as(
+                "SELECT entry_id, lettering_key, lettering_origin FROM journal_entry_lines \
+                 WHERE entry_id IN (?, ?) ORDER BY entry_id, line_order",
+            )
+            .bind(origine.entry.id)
+            .bind(inverse.entry.id)
+            .fetch_all(&mut *tx)
+            .await
+            .unwrap();
+            assert_eq!(
+                lignes_dans_la_tx.len(),
+                4,
+                "deux lignes d'origine, deux miroirs"
+            );
+            for (entry_id, key, origin) in &lignes_dans_la_tx {
+                assert!(
+                    key.is_some() && origin.as_deref() == Some("reversal"),
+                    "ligne de l'écriture {entry_id} : groupe `reversal` attendu dans la \
+                     transaction (comptes du montage lettrables), lu {key:?} / {origin:?}"
+                );
+            }
+            cles_du_lettrage = lignes_dans_la_tx
+                .iter()
+                .filter_map(|(_, k, _)| *k)
+                .collect();
+            cles_du_lettrage.sort_unstable();
+            cles_du_lettrage.dedup();
+            assert_eq!(
+                cles_du_lettrage.len(),
+                2,
+                "un groupe par paire origine/miroir"
+            );
+            let audits_dans_la_tx: i64 = sqlx::query_scalar(
+                "SELECT COUNT(*) FROM audit_log WHERE action = 'lettering.created' \
+                 AND entity_type = 'lettering' AND entity_id IN (?, ?)",
+            )
+            .bind(cles_du_lettrage[0])
+            .bind(cles_du_lettrage[1])
+            .fetch_one(&mut *tx)
+            .await
+            .unwrap();
+            assert_eq!(
+                audits_dans_la_tx, 2,
+                "un audit `lettering.created` par groupe, VISIBLE dans la transaction"
+            );
+
             // ⚠️ Le rollback est IMPLICITE : `tx` est droppée sans `commit`,
             // exactement comme si l'étape suivante de l'appelant avait échoué.
         }
@@ -5022,6 +5427,37 @@ mod tests {
         assert!(
             apres.is_none(),
             "l'origine ne doit porter aucune contre-passation après le rollback"
+        );
+
+        // ⛔ Story 15-1a-ii (A1) — ni la marque des lignes d'origine, ni l'audit
+        // des groupes ne survivent : le lettrage de la contre-passation vit dans
+        // la transaction de l'APPELANT, pas dans une transaction à lui.
+        let marques_apres: Vec<(Option<i64>, Option<String>)> = sqlx::query_as(
+            "SELECT lettering_key, lettering_origin FROM journal_entry_lines WHERE entry_id = ?",
+        )
+        .bind(origine.entry.id)
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(marques_apres.len(), 2, "les lignes de l'origine subsistent");
+        assert!(
+            marques_apres
+                .iter()
+                .all(|(k, o)| k.is_none() && o.is_none()),
+            "⛔ une marque `reversal` a SURVÉCU au rollback de l'appelant : {marques_apres:?}"
+        );
+        let audits_apres: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM audit_log WHERE action = 'lettering.created' \
+             AND entity_type = 'lettering' AND entity_id IN (?, ?)",
+        )
+        .bind(cles_du_lettrage[0])
+        .bind(cles_du_lettrage[1])
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(
+            audits_apres, 0,
+            "⛔ un audit `lettering.created` a SURVÉCU au rollback de l'appelant"
         );
 
         // Nettoyage : la base est partagée.

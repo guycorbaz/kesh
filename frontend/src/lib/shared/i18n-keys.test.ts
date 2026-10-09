@@ -518,7 +518,12 @@ const ATTENDU = {
 	// portait 6 `i18nMsg(` — recompté par `git show f8b2accd:<fichier> | grep -o "i18nMsg("`.
 	// Les écrans touchés par la story n'en ajoutent aucun (filtres seuls). `sitesNonResolus`,
 	// `relais`, `sitesGabarit` inchangés (six littéraux).
-	sitesTotal: 1919,
+	// Story 15-1a-ii (#518) : **1919 → 1920** (+1) — `features/journal-entries/blocker-messages.ts`
+	// (12 → 13) : le motif `ENTRY_LETTERED` (`journal-entries-modify-blocked-lettered`).
+	// Recompté par `grep -o "i18nMsg("` aux deux bornes (`0724904c` et la branche). Les
+	// replis réécrits (dialogue de contre-passation, soldes de départ) n'ajoutent aucun site.
+	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (un littéral).
+	sitesTotal: 1920,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

@@ -176,6 +176,7 @@ describe('editRefusalOutcome', () => {
 		'OWNED_BY_SETTLEMENT',
 		'MATCHED_BANK_TRANSACTION',
 		'DETACHED_SUPPLIER_SETTLEMENT',
+		'ENTRY_LETTERED',
 		'OPTIMISTIC_LOCK_CONFLICT'
 	])("%s : l'écriture a changé — la fiche se recharge", (code) => {
 		expect(editRefusalOutcome(code)).toBe('stale');

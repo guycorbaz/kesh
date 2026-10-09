@@ -121,7 +121,11 @@ impl ReversalBlocker {
 /// C'est la **garde d'écriture** : rendue par
 /// `journal_entries::modification_guard`, convertie en erreur par
 /// `journal_entries::modification_refusal`. La Story 15-8b l'applique aussi à
-/// la suppression (`journal_entries::delete_in_tx`, étape 3-ter).
+/// la suppression (`journal_entries::delete_in_tx`, étape 3-ter). La variante
+/// [`ModificationGuard::Lettered`] (Story 15-1a-ii) est rendue par une fonction
+/// **distincte**, `journal_entries::lettering_guard`, inconditionnelle et
+/// évaluée **après** le verrou de période (étapes 3-quinquies du `DELETE`,
+/// 7-bis du `PUT`).
 ///
 /// ⛔ **L'inventaire des propriétaires n'est pas réécrit ici** : `Owned` porte un
 /// motif de `reversal_blockers` — jamais `AccountArchived`, qui n'est pas un gel
@@ -146,19 +150,26 @@ pub enum ModificationGuard {
         /// `supplier_invoices.supplier_invoice_number` est nullable.
         supplier_invoice_number: Option<String>,
     },
+    /// Une ligne de l'écriture porte une **marque de lettrage** (Story
+    /// 15-1a-ii, AC8) : elle se délettre d'abord (`DELETE
+    /// /api/v1/letterings/{key}`), puis se modifie. `code` est le code affiché
+    /// du **premier** groupe de l'écriture (ordre `id` des lignes).
+    Lettered { code: String },
 }
 
 impl ModificationGuard {
-    /// Code canonique exposé : celui du motif de contre-passation, ou
-    /// `DETACHED_SUPPLIER_SETTLEMENT`.
+    /// Code canonique exposé : celui du motif de contre-passation,
+    /// `DETACHED_SUPPLIER_SETTLEMENT`, ou `ENTRY_LETTERED`.
     pub fn code(&self) -> &'static str {
         match self {
             Self::Owned { blocker, .. } => blocker.code(),
             Self::DetachedSupplierSettlement { .. } => "DETACHED_SUPPLIER_SETTLEMENT",
+            Self::Lettered { .. } => "ENTRY_LETTERED",
         }
     }
 
-    /// Identifiant de la pièce (facture fournisseur annulée pour le paiement détaché).
+    /// Identifiant de la pièce (facture fournisseur annulée pour le paiement
+    /// détaché), `None` pour la marque de lettrage.
     pub fn document_id(&self) -> Option<i64> {
         match self {
             Self::Owned { document_id, .. } => *document_id,
@@ -166,10 +177,12 @@ impl ModificationGuard {
                 supplier_invoice_id,
                 ..
             } => Some(*supplier_invoice_id),
+            Self::Lettered { .. } => None,
         }
     }
 
-    /// Étiquette lisible de la pièce (numéro de facture, d'avoir…), s'il y en a une.
+    /// Étiquette lisible de la pièce (numéro de facture, d'avoir…) ou code de
+    /// lettrage, s'il y en a une.
     pub fn label(&self) -> Option<String> {
         match self {
             Self::Owned { document_label, .. } => document_label.clone(),
@@ -177,6 +190,7 @@ impl ModificationGuard {
                 supplier_invoice_number,
                 ..
             } => supplier_invoice_number.clone(),
+            Self::Lettered { code } => Some(code.clone()),
         }
     }
 }
@@ -188,7 +202,9 @@ impl ModificationGuard {
 ///
 /// ⚠️ Ordre de précédence = celui des refus du `PUT` qui ne dépendent pas du
 /// corps : exercice clos, exercice postérieur clos, garde d'écriture, verrou de
-/// période (ancienne date).
+/// période (ancienne date), puis la marque de lettrage — rendue en
+/// `Guard(ModificationGuard::Lettered)`, elle parle **après** le verrou de
+/// période (Story 15-1a-ii, C126).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ModificationBlocker {
     /// L'exercice de l'écriture est clôturé.
@@ -196,14 +212,15 @@ pub enum ModificationBlocker {
     /// Un exercice **postérieur** est clôturé : le bilan est cumulatif, il
     /// reprend cette écriture (C-15-8-22).
     LaterFiscalYearClosed { fiscal_year_name: String },
-    /// Garde d'écriture (pièce, contre-passation, paiement détaché).
+    /// Garde d'écriture (pièce, contre-passation, paiement détaché) ou marque
+    /// de lettrage, qui parle en dernier.
     Guard(ModificationGuard),
     /// La date de l'écriture est dans une période verrouillée.
     PeriodLocked { locked_through: chrono::NaiveDate },
 }
 
 impl ModificationBlocker {
-    /// Code d'écran — l'une des onze valeurs de `modificationBlockedBy`.
+    /// Code d'écran — l'une des douze valeurs de `modificationBlockedBy`.
     pub fn code(&self) -> &'static str {
         match self {
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
@@ -213,8 +230,8 @@ impl ModificationBlocker {
         }
     }
 
-    /// Étiquette : nom de l'exercice postérieur clos, numéro de pièce, ou borne
-    /// du verrou (`AAAA-MM-JJ`).
+    /// Étiquette : nom de l'exercice postérieur clos, numéro de pièce, borne
+    /// du verrou (`AAAA-MM-JJ`), ou code de lettrage.
     pub fn label(&self) -> Option<String> {
         match self {
             Self::FiscalYearClosed => None,
@@ -238,10 +255,15 @@ impl ModificationBlocker {
 /// des variantes ci-dessous, et c'est celle qu'un test vérifie ; sans quoi le
 /// motif rendu dépendrait de l'ordre des requêtes.
 ///
-/// ⚠️ **Les trois autres empêchements (exercice clos, contre-passée, période
-/// verrouillée) ne sont PAS ici** : ils vivent dans
+/// ⚠️ **Les quatre autres empêchements (exercice clos, exercice postérieur clos,
+/// contre-passée, période verrouillée) ne sont PAS ici** : ils vivent dans
 /// [`super::repositories::journal_entries::delete_in_tx`] et gardent leurs
-/// variantes propres — `FiscalYearClosed`, `EntryIsReversed`, `PeriodLocked`.
+/// variantes propres — `FiscalYearClosed`, `LaterFiscalYearClosed` (Story
+/// 15-12b), `EntryIsReversed`, `PeriodLocked`. La marque de lettrage
+/// (`ModificationGuard::Lettered`, Story 15-1a-ii) est tenue au même point de
+/// passage, mais elle est inatteignable par la dévalidation (une facture
+/// lettrée a un règlement ou un avoir, refusés avant) : elle parle en dernier
+/// et n'est pas comptée parmi les refus de la dévalidation (C132).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UnvalidationBlocker {
     /// Un règlement, même **partiel**, pointe la facture.

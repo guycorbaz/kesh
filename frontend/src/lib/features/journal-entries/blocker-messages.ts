@@ -76,7 +76,8 @@ export function reversalBlockerLabel(code: ReversalBlocker): string {
 /**
  * Motif de modification, traduit (Story 15-8a, D8) — `label` est l'étiquette
  * que le serveur rend avec le motif : le nom de l'exercice postérieur clos, la
- * borne du verrou, ou le numéro de la pièce (suffixé par la fiche).
+ * borne du verrou, le numéro de la pièce ou le code de lettrage (suffixés par
+ * la fiche).
  */
 export function modificationBlockerLabel(
 	code: ModificationBlocker,
@@ -104,6 +105,13 @@ export function modificationBlockerLabel(
 			return i18nMsg(
 				'journal-entries-modify-blocked-detached-settlement',
 				'Ce paiement appartient à une facture fournisseur annulée : l’argent est sorti, il reste figé. Corrigez-le par une contre-passation.'
+			);
+		case 'ENTRY_LETTERED':
+			// Story 15-1a-ii (AC8) — le code du groupe est suffixé par la fiche,
+			// comme un numéro de pièce.
+			return i18nMsg(
+				'journal-entries-modify-blocked-lettered',
+				'Cette écriture est lettrée : délettrez-la d’abord.'
 			);
 		case 'IS_A_REVERSAL':
 		case 'ALREADY_REVERSED':
