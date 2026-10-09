@@ -11,7 +11,7 @@
 // `+` dans `src/routes/` (patron des autres tests de page, `accounts-page.test.ts`).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, fireEvent } from '@testing-library/svelte';
+import { render, fireEvent, waitFor } from '@testing-library/svelte';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
 
@@ -37,6 +37,14 @@ vi.mock('$lib/features/bank-accounts/bank-accounts.api', () => ({
 	updateBankAccount: vi.fn(),
 	archiveBankAccount: vi.fn(),
 	updateBankAccountJournalLink: vi.fn(),
+}));
+
+// Story 15-6c (AC7) : la page lit les réglages pour écarter les comptes de
+// créance désignés. Par défaut, aucun compte désigné : les tests de la 15-5b
+// gardent leur sens.
+const getInvoiceSettingsMock = vi.fn<() => Promise<Record<string, unknown>>>();
+vi.mock('$lib/features/invoices/invoices.api', () => ({
+	getInvoiceSettings: () => getInvoiceSettingsMock(),
 }));
 
 import Page from './+page.svelte';
@@ -87,6 +95,10 @@ describe('page des comptes bancaires — compte lié devenu non imputable (Story
 		vi.clearAllMocks();
 		fetchAccountsMock.mockResolvedValue(accounts);
 		listBankAccountsMock.mockResolvedValue([bankAccount]);
+		getInvoiceSettingsMock.mockResolvedValue({
+			defaultReceivableAccountId: null,
+			defaultPayableAccountId: null,
+		});
 	});
 
 	it('reste affiché et sélectionné dans le formulaire de modification', async () => {
@@ -114,5 +126,62 @@ describe('page des comptes bancaires — compte lié devenu non imputable (Story
 		const labels = Array.from(select.options).map((o) => o.textContent ?? '');
 		expect(labels.some((l) => l.includes('1020'))).toBe(false);
 		expect(labels.some((l) => l.includes('1021'))).toBe(true);
+	});
+});
+
+describe('page des comptes bancaires — comptes de créance désignés (Story 15-6c, AC7)', () => {
+	const RECEIVABLE = account({ id: 30, number: '1100', name: 'Débiteurs' });
+	const PAYABLE = account({ id: 31, number: '2000', name: 'Créanciers', accountType: 'Liability' });
+	const BANK = account({ id: 32, number: '1020', name: 'Banque' });
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		fetchAccountsMock.mockResolvedValue([BANK, RECEIVABLE, PAYABLE]);
+		listBankAccountsMock.mockResolvedValue([{ ...bankAccount, journalAccountId: null }]);
+		getInvoiceSettingsMock.mockResolvedValue({
+			defaultReceivableAccountId: RECEIVABLE.id,
+			defaultPayableAccountId: PAYABLE.id,
+		});
+	});
+
+	/** Ouvre le formulaire `button` et rend son `<select>` (un rendu par formulaire : les modes s'excluent). */
+	async function openSelect(button: string, select: string): Promise<HTMLSelectElement> {
+		const { findByTestId } = render(Page);
+		await fireEvent.click(await findByTestId(button));
+		return (await findByTestId(select)) as HTMLSelectElement;
+	}
+
+	function labelsOf(select: HTMLSelectElement): string[] {
+		return Array.from(select.options).map((o) => o.textContent ?? '');
+	}
+
+	// Création : revue de code P1 (A3) — le select du formulaire de création de la
+	// page, ajouté aux deux autres (modification ; lien, dans BankAccountJournalLinkForm).
+	it.each([
+		['création', 'create-bank-account-button', 'form-journal-account'],
+		['modification', 'edit-button-5', 'edit-journal-account'],
+		['lien', 'link-button-5', 'journal-account-select'],
+	])("le <select> du formulaire de %s n'offre ni le compte débiteurs ni le compte créanciers", async (_cas, button, select) => {
+		const labels = labelsOf(await openSelect(button, select));
+		expect(labels.some((l) => l.includes('1020'))).toBe(true);
+		expect(labels.some((l) => l.includes('1100'))).toBe(false);
+		expect(labels.some((l) => l.includes('2000'))).toBe(false);
+	});
+
+	it.each([
+		['modification', 'edit-button-5', 'edit-journal-account'],
+		['lien', 'link-button-5', 'journal-account-select'],
+	])('un lien existant vers le compte débiteurs reste affiché (formulaire de %s)', async (_cas, button, select) => {
+		listBankAccountsMock.mockResolvedValue([{ ...bankAccount, journalAccountId: RECEIVABLE.id }]);
+		const el = await openSelect(button, select);
+		await waitFor(() => expect(el.selectedIndex).toBeGreaterThan(-1));
+		expect(el.selectedOptions[0].textContent).toContain('1100');
+	});
+
+	it('réglages illisibles : menus non filtrés, page affichée', async () => {
+		getInvoiceSettingsMock.mockRejectedValue(new Error('403'));
+		const labels = labelsOf(await openSelect('edit-button-5', 'edit-journal-account'));
+		expect(labels.some((l) => l.includes('1100'))).toBe(true);
+		expect(labels.some((l) => l.includes('2000'))).toBe(true);
 	});
 });

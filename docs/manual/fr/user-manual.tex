@@ -239,8 +239,12 @@ une comptabilité qui en contient.
 
 Le chiffre affiché sous chaque compte bancaire est le \textbf{solde comptable} : il vient
 du compte du grand livre lié au compte bancaire (\emph{Administration} → \emph{Comptes
-bancaires}), \textbf{pas de la banque}. Il ne reflète un encaissement qu'une fois celui-ci
-comptabilisé, par un rapprochement ou un règlement. Le total ne compte qu'une fois un
+bancaires}), \textbf{pas de la banque}. Ce compte lié ne peut être ni le \textbf{compte
+débiteurs} ni le \textbf{compte créanciers} désignés dans \emph{Paramètres} →
+\emph{Facturation}~: chaque encaissement écrirait sinon une écriture nulle. Kesh ne les
+propose pas et refuse ce lien~; reliez le compte bancaire à son propre compte de banque.
+Ce solde ne reflète un encaissement qu'une fois celui-ci comptabilisé, par un rapprochement
+ou un règlement. Le total ne compte qu'une fois un
 compte du grand livre partagé par plusieurs comptes bancaires.
 
 Quand un relevé a été importé, la tuile affiche aussi \emph{Relevé du \dots} : le solde de

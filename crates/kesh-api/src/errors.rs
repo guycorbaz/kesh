@@ -3091,6 +3091,28 @@ impl IntoResponse for AppError {
                     role,
                     batch.as_ref(),
                 ),
+                // Story 15-6c (#474) — la configuration qui préparerait
+                // l'écriture nulle : un compte bancaire lié au compte de
+                // créance, ou un compte de créance lié à un compte bancaire.
+                DbError::BankAccountLedgerIsClaimAccount {
+                    account_id,
+                    account_number,
+                    claim,
+                } => {
+                    claim_configuration_response(account_id, account_number.as_deref(), claim, None)
+                }
+                DbError::ClaimAccountLinkedToBankAccount {
+                    account_id,
+                    account_number,
+                    claim,
+                    bank_account_id,
+                    bank_name,
+                } => claim_configuration_response(
+                    account_id,
+                    account_number.as_deref(),
+                    claim,
+                    Some((bank_account_id, &bank_name)),
+                ),
                 // Story 25-3-a-1 (#414) — l'annulation d'un règlement refusée.
                 //
                 // ⚠️ Seuls les rangs que le GESTE refuse lui-même arrivent ici
@@ -3764,6 +3786,85 @@ fn settlement_counterparty_message(
     t_args(key, &fallback, &args)
 }
 
+/// Réponse **400** des deux refus de configuration de la Story 15-6c (#474 ;
+/// AC1) — une seule construction, pour que leurs `details` ne divergent pas :
+///
+/// - `bank = None` → `BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT` (lien d'un compte
+///   bancaire au compte de créance désigné) ;
+/// - `bank = Some((id, nom))` → `CLAIM_ACCOUNT_LINKED_TO_BANK_ACCOUNT`
+///   (désignation d'un compte lié à ce compte bancaire), `details` enrichis de
+///   `bankAccountId` et `bankName`.
+///
+/// Une clé de message par refus **et** par `claim` (quatre), chacune nommant le
+/// bon compte ; `$account` = le numéro, repli `#<id>` (patron de la 15-6b).
+fn claim_configuration_response(
+    account_id: i64,
+    account_number: Option<&str>,
+    claim: kesh_db::errors::ClaimSide,
+    bank: Option<(i64, &str)>,
+) -> Response {
+    use kesh_db::errors::ClaimSide;
+    let account = account_number
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("#{account_id}"));
+    let mut args = FluentArgs::new();
+    args.set("account", account.clone());
+    let (code, key, fallback) = match (bank, claim) {
+        (None, ClaimSide::Receivable) => (
+            "BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT",
+            "error-bank-account-ledger-is-receivable",
+            format!(
+                "Le compte {account} est le compte débiteurs désigné dans Paramètres → Facturation : un compte bancaire doit être lié à son propre compte de banque."
+            ),
+        ),
+        (None, ClaimSide::Payable) => (
+            "BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT",
+            "error-bank-account-ledger-is-payable",
+            format!(
+                "Le compte {account} est le compte créanciers désigné dans Paramètres → Facturation : un compte bancaire doit être lié à son propre compte de banque."
+            ),
+        ),
+        (Some((_, bank_name)), ClaimSide::Receivable) => {
+            args.set("bank", bank_name.to_string());
+            (
+                "CLAIM_ACCOUNT_LINKED_TO_BANK_ACCOUNT",
+                "error-claim-account-linked-to-bank-account-receivable",
+                format!(
+                    "Le compte {account} est lié au compte bancaire {bank_name} : il ne peut pas servir de compte débiteurs."
+                ),
+            )
+        }
+        (Some((_, bank_name)), ClaimSide::Payable) => {
+            args.set("bank", bank_name.to_string());
+            (
+                "CLAIM_ACCOUNT_LINKED_TO_BANK_ACCOUNT",
+                "error-claim-account-linked-to-bank-account-payable",
+                format!(
+                    "Le compte {account} est lié au compte bancaire {bank_name} : il ne peut pas servir de compte créanciers."
+                ),
+            )
+        }
+    };
+    let message = t_args(key, &fallback, &args);
+    let mut details = serde_json::json!({
+        "accountId": account_id,
+        "accountNumber": account_number,
+        "claim": claim.as_str(),
+    });
+    if let Some((bank_account_id, bank_name)) = bank {
+        details["bankAccountId"] = serde_json::json!(bank_account_id);
+        details["bankName"] = serde_json::json!(bank_name);
+    }
+    let body = serde_json::json!({
+        "error": {
+            "code": code,
+            "message": message,
+            "details": details,
+        }
+    });
+    (StatusCode::BAD_REQUEST, Json(body)).into_response()
+}
+
 /// Réponse **400** `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` (Story 15-6b,
 /// AC2). `details` vient de `claim_account_refusal_details` — la forme que
 /// partagent le rapprochement et la création d'un lot ; les clés **de lot**
@@ -4325,6 +4426,63 @@ mod tests {
         let msg = body["error"]["message"].as_str().unwrap();
         assert!(msg.contains("1100") && msg.contains("débiteurs"), "{msg}");
         assert!(!msg.contains('$'), "gabarit non résolu : {msg}");
+    }
+
+    /// Story 15-6c (#474, AC1) — les deux refus de configuration : 400, leur
+    /// code, des `details` en camelCase, et un repli français qui nomme le
+    /// compte (repli `#<id>` sans numéro) et, au second, le compte bancaire.
+    #[tokio::test]
+    async fn claim_configuration_refusals_are_400_with_details() {
+        use kesh_db::errors::ClaimSide;
+        let resp = AppError::from(DbError::BankAccountLedgerIsClaimAccount {
+            account_id: 17,
+            account_number: Some("1100".into()),
+            claim: ClaimSide::Receivable,
+        })
+        .into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            body["error"]["code"],
+            "BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT"
+        );
+        assert_eq!(
+            body["error"]["details"],
+            serde_json::json!({ "accountId": 17, "accountNumber": "1100", "claim": "receivable" })
+        );
+        let msg = body["error"]["message"].as_str().unwrap();
+        assert!(msg.contains("1100") && msg.contains("débiteurs"), "{msg}");
+
+        let resp = AppError::from(DbError::ClaimAccountLinkedToBankAccount {
+            account_id: 18,
+            account_number: None,
+            claim: ClaimSide::Payable,
+            bank_account_id: 4,
+            bank_name: "UBS".into(),
+        })
+        .into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            body["error"]["code"],
+            "CLAIM_ACCOUNT_LINKED_TO_BANK_ACCOUNT"
+        );
+        assert_eq!(
+            body["error"]["details"],
+            serde_json::json!({
+                "accountId": 18,
+                "accountNumber": null,
+                "claim": "payable",
+                "bankAccountId": 4,
+                "bankName": "UBS",
+            })
+        );
+        let msg = body["error"]["message"].as_str().unwrap();
+        assert!(
+            msg.contains("#18") && msg.contains("UBS") && msg.contains("créanciers"),
+            "{msg}"
+        );
+        assert!(!msg.contains("{ $"), "gabarit non formaté : {msg}");
     }
 
     /// Story 15-6b (AC2) — la clé suit le RÔLE : un compte désigné renvoie à

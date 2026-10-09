@@ -175,8 +175,15 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * cherchant les suffixes `Label`, `Text`, `Display` dans les fichiers de la story — la
  * seule déclaration neuve qui en porte un (`describeTx`, `snapshotSelected`,
  * `rejectedAccountNumbers` n'en portent pas).*
+ *
+ * ⚠️ **48 → 47, et la déclaration est NOMMÉE** : `accountLabel` de
+ * `lib/features/bank-accounts/BankAccountList.svelte`, composant **supprimé** par la Story
+ * 15-6c (#474, choix C-15-6-22) — code mort, importé nulle part. Sa seule branche littérale
+ * déléguait à `i18nMsg` (les deux autres rendent un numéro de compte) : `conforme`
+ * **41 → 40** ; `ecartee` ne bouge pas. La même fonction vit encore, inchangée, dans
+ * `routes/(app)/bank-accounts/+page.svelte`, toujours relevée.
  */
-const CANDIDATES_ATTENDUES = 48;
+const CANDIDATES_ATTENDUES = 47;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -693,7 +700,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 7, conforme: 41 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 7, conforme: 40 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

@@ -1425,3 +1425,202 @@ async fn insert_with_defaults_in_tx_reports_whether_it_inserted(pool: MySqlPool)
         "obtenu {result:?}"
     );
 }
+
+// ─── Story 15-6c (#474) : un compte de créance ne se désigne pas lié à un compte bancaire ───
+
+/// Le corps d'un `update` qui renvoie les réglages tels qu'ils sont, sauf le
+/// compte débiteurs.
+fn update_with_receivable(
+    s: &kesh_db::entities::CompanyInvoiceSettings,
+    receivable: Option<i64>,
+) -> CompanyInvoiceSettingsUpdate {
+    CompanyInvoiceSettingsUpdate {
+        invoice_number_format: s.invoice_number_format.clone(),
+        default_receivable_account_id: receivable,
+        default_revenue_account_id: s.default_revenue_account_id,
+        default_vat_payable_account_id: s.default_vat_payable_account_id,
+        default_vat_recoverable_account_id: s.default_vat_recoverable_account_id,
+        default_vat_decompte_account_id: s.default_vat_decompte_account_id,
+        default_sales_journal: s.default_sales_journal,
+        journal_entry_description_template: s.journal_entry_description_template.clone(),
+        credit_note_number_format: s.credit_note_number_format.clone(),
+        default_payable_account_id: s.default_payable_account_id,
+        default_rounding_account_id: s.default_rounding_account_id,
+        round_to_5_centimes: s.round_to_5_centimes,
+        minimum_invoice_amount: s.minimum_invoice_amount,
+        default_discount_account_id: s.default_discount_account_id,
+        default_bank_fees_account_id: s.default_bank_fees_account_id,
+        default_bad_debt_account_id: s.default_bad_debt_account_id,
+    }
+}
+
+/// Société PME, ses réglages par défaut, un Admin, le compte `1020` (actif, non
+/// désigné) et un compte bancaire **non lié**.
+async fn claim_setup(
+    pool: &MySqlPool,
+) -> (
+    i64,
+    i64,
+    i64,
+    i64,
+    kesh_db::entities::CompanyInvoiceSettings,
+) {
+    let company_id = company_with_pme_chart(pool, "Créance SA").await;
+    let user_id = create_admin_user(pool, company_id).await;
+    let settings = company_invoice_settings::insert_with_defaults(pool, company_id)
+        .await
+        .unwrap();
+    let x = account_id_by_number(pool, company_id, "1020").await;
+    assert_ne!(settings.default_receivable_account_id, Some(x));
+    let bank_account_id = kesh_db::repositories::bank_accounts::create(
+        pool,
+        kesh_db::entities::NewBankAccount {
+            company_id,
+            bank_name: "Banque X".into(),
+            iban: "CH9300762011623852957".into(),
+            qr_iban: None,
+            is_primary: true,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    (company_id, user_id, x, bank_account_id, settings)
+}
+
+fn assert_linked_refusal(
+    res: &Result<kesh_db::entities::CompanyInvoiceSettings, kesh_db::errors::DbError>,
+    x: i64,
+    bank_account_id: i64,
+) {
+    match res {
+        Err(kesh_db::errors::DbError::ClaimAccountLinkedToBankAccount {
+            account_id,
+            account_number,
+            claim,
+            bank_account_id: b,
+            bank_name,
+        }) => {
+            assert_eq!(*account_id, x);
+            assert_eq!(account_number.as_deref(), Some("1020"));
+            assert_eq!(*claim, kesh_db::errors::ClaimSide::Receivable);
+            assert_eq!(*b, bank_account_id);
+            assert_eq!(bank_name, "Banque X");
+        }
+        other => panic!(
+            "attendu ClaimAccountLinkedToBankAccount, obtenu {:?}",
+            other.as_ref().map(|s| s.version)
+        ),
+    }
+}
+
+/// Test 12 (AC2, AC5) — **sérialisation, côté réglages, conflit de ligne** :
+/// une transaction tenue à la main relie le compte bancaire au compte X sans
+/// valider ; `update` désignant X comme compte débiteurs attend sur la lecture
+/// verrouillante de `bank_accounts`, puis, le lien validé, refuse.
+///
+/// ⚠️ Ce test **n'épingle pas** le `FOR UPDATE` de `before` : il passe aussi
+/// avec une lecture simple (le PUT attend ici sur la ligne bancaire, pas sur
+/// les réglages). C'est le test suivant (12 bis) qui l'épingle. Motif d'attente
+/// couplé à la forme du verrou de `first_active_bank_account_linked_to`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn settings_update_waits_for_a_concurrent_bank_link(pool: MySqlPool) {
+    let (company_id, user_id, x, bank_account_id, settings) = claim_setup(&pool).await;
+
+    // (1) Le lien concurrent, non validé.
+    let mut concurrent = pool.begin().await.unwrap();
+    sqlx::query(
+        "UPDATE bank_accounts SET journal_account_id = ?, version = version + 1 WHERE id = ?",
+    )
+    .bind(x)
+    .bind(bank_account_id)
+    .execute(&mut *concurrent)
+    .await
+    .unwrap();
+
+    // (2) La désignation démarre et attend.
+    let p = pool.clone();
+    let changes = update_with_receivable(&settings, Some(x));
+    let version = settings.version;
+    let tache = tokio::spawn(async move {
+        company_invoice_settings::update(&p, company_id, version, user_id, changes).await
+    });
+    let vue = kesh_db::test_fixtures::attendre_une_requete_en_cours(
+        &pool,
+        &["FROM bank_accounts", "LOCK IN SHARE MODE"],
+        || tache.is_finished(),
+    )
+    .await;
+    if !vue {
+        panic!(
+            "la désignation a fini sans attendre le lien : {:?}",
+            tache.await.map(|r| r.map(|s| s.version))
+        );
+    }
+
+    // (3) Le lien est validé.
+    concurrent.commit().await.unwrap();
+
+    let result = tache.await.expect("tâche de la désignation");
+    assert_linked_refusal(&result, x, bank_account_id);
+}
+
+/// Test 12 bis (AC2) — **sérialisation, côté réglages, sur le `FOR UPDATE` de
+/// `before`** (finding F1 de la validation P3, choix C-15-6-27). Une
+/// transaction tenue à la main prend le verrou **S** des réglages
+/// (`claim_accounts_in_share_mode`), sans encore lier ; `update` désignant X
+/// doit **attendre au `FOR UPDATE`** de `before`. L'attente vue, la transaction
+/// tenue lie le compte bancaire à X — rien de ce que tient la désignation (un S
+/// posé par l'`INSERT IGNORE`) ne la bloque — et valide ; la désignation lit
+/// alors le lien et refuse.
+///
+/// C'est le seul test qui ferme la course que ce verrou ferme : sans le
+/// `FOR UPDATE`, la désignation ne s'arrête pas à `before` (le motif n'est pas
+/// vu) mais à son `UPDATE`, ou l'échange finit en interblocage 1213 — jamais
+/// sur le refus attendu.
+#[sqlx::test(migrations = "./test-schema")]
+async fn settings_update_waits_at_before_for_a_bank_gesture_holding_the_settings(pool: MySqlPool) {
+    let (company_id, user_id, x, bank_account_id, settings) = claim_setup(&pool).await;
+
+    // (1) Le geste bancaire tient la ligne des réglages en S.
+    let mut concurrent = pool.begin().await.unwrap();
+    let claims =
+        company_invoice_settings::claim_accounts_in_share_mode(&mut concurrent, company_id)
+            .await
+            .unwrap();
+    assert_eq!(claims.receivable, settings.default_receivable_account_id);
+
+    // (2) La désignation démarre et attend au `FOR UPDATE` de `before`.
+    let p = pool.clone();
+    let changes = update_with_receivable(&settings, Some(x));
+    let version = settings.version;
+    let tache = tokio::spawn(async move {
+        company_invoice_settings::update(&p, company_id, version, user_id, changes).await
+    });
+    let vue = kesh_db::test_fixtures::attendre_une_requete_en_cours(
+        &pool,
+        &["FROM company_invoice_settings", "FOR UPDATE"],
+        || tache.is_finished(),
+    )
+    .await;
+    if !vue {
+        panic!(
+            "la désignation a fini sans attendre les réglages : {:?}",
+            tache.await.map(|r| r.map(|s| s.version))
+        );
+    }
+
+    // (3) Le geste bancaire lie le compte à X et valide.
+    sqlx::query(
+        "UPDATE bank_accounts SET journal_account_id = ?, version = version + 1 WHERE id = ?",
+    )
+    .bind(x)
+    .bind(bank_account_id)
+    .execute(&mut *concurrent)
+    .await
+    .unwrap();
+    concurrent.commit().await.unwrap();
+
+    let result = tache.await.expect("tâche de la désignation");
+    assert_linked_refusal(&result, x, bank_account_id);
+}

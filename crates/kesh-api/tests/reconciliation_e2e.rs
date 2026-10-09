@@ -19,6 +19,7 @@
 //! (`KESH_TEST_MODE=true`). Les tests utilisent `#[sqlx::test(migrator)]`
 //! qui crée une DB éphémère par test avec migrations auto-appliquées.
 
+use kesh_db::repositories::company_invoice_settings::ClaimAccounts;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
@@ -2648,6 +2649,7 @@ async fn accept_with_explicit_split_type_runs_split_flow(pool: MySqlPool) {
         bank_account_id,
         Some(bank_ledger_account_id),
         ba.version,
+        &ClaimAccounts::default(),
     )
     .await
     .unwrap();

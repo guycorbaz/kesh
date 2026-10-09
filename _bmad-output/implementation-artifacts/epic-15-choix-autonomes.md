@@ -5656,3 +5656,89 @@ l'import (#458–#461).
 - **Retenu** : rebase (branche de sauvegarde `backup/15-13b-avant-rebase-bcded0c8`). Fiches : version de la branche (celle de `main` était l'état d'avant la validation P5, sans ligne propre). Registre et `sprint-status.yaml` par union. CHANGELOG : paragraphe de `main`, la phrase « la sauvegarde pré-import reste dans `/tmp` » remplacée par celle de la 15-13b ; l'entrée Sécurité « dossiers montés » placée avant #557 et #551. Manuel : les deux paragraphes conservés ; « Cinq gestes pour `docker-compose.yml`, trois pour `docker-compose.prod.yml` », montage `./backup` en dernier ; une seule phrase « Puis `docker compose config -q` » qui réunit les deux contrôles (aucun `ports` sous `mariadb`, `target: /data/backup` compté à 1). PDF régénéré, contrôlé aplati. Gates complets et E2E rejoués sur l'état rebasé, compilation à froid.
 - **Écartées** : merge de `main` dans la branche (historique moins lisible) ; garder l'un des deux PDF (il aurait omis l'apport de l'autre) ; deux phrases « Puis … » successives (deux `config -q` à lancer, l'un sans l'autre).
 - **Réversible** : oui (rebase ; branche non poussée, sauvegarde gardée).
+
+## C-15-6c-1 — 15-6c : le numéro du compte refusé se lit par un lecteur partagé avec la 15-6b
+
+- **Contexte** : les deux refus neufs nomment le compte par son numéro, lu « une fois le refus
+  décidé, sans verrou » (AC1). La 15-6b lit déjà ce numéro par la même requête, écrite en ligne dans
+  `invoice_settlements::claim_account_refusal`. La recopier deux fois de plus contredirait la règle
+  DRY du dépôt.
+- **Retenu** : `accounts::number_in_company(conn, company_id, account_id) -> Option<String>`, seule
+  occurrence de la requête ; `claim_account_refusal` (15-6b) l'emprunte, sans changement de
+  comportement (son doc-comment est ajusté). Côté comptes bancaires, une garde unique
+  `bank_accounts::refuse_if_ledger_is_claim_account` sert la création (route) et les deux fonctions
+  du dépôt ; `ClaimAccounts::side_of` dit le réglage occupé, compte débiteurs d'abord.
+- **Écarté** : trois copies de la requête ; une comparaison écrite dans chaque route.
+- **Réversibilité** : totale (extraction de fonctions).
+
+## C-15-6c-2 — 15-6c : la spec E2E du lien vérifie aussi l'absence du compte débiteurs
+
+- **Contexte** : C-15-6-15 fait lier la spec `bank-account-journal-link.spec.ts` au `1000` au lieu
+  du `1100`. Ce faisant, la spec ne dit plus rien du filtre — or l'E2E est le seul test qui voie la
+  désignation traverser la frontière HTTP (`GET /company/invoice-settings` → menu).
+- **Retenu** : la spec affirme en plus que le `1100`, compte débiteurs désigné par le seed, est
+  **absent** du menu. Aucune fixture partagée n'est touchée.
+- **Écarté** : un scénario E2E neuf (refus serveur à l'écran) — couvert par les tests Vitest et
+  HTTP, coût d'une spec de plus sans valeur de frontière supplémentaire.
+- **Réversibilité** : totale (une assertion).
+
+## C-15-6c-3 — 15-6c : le manuel d'administration et le CHANGELOG nomment aussi le rapprochement
+
+- **Contexte** : l'AC9 demande la règle dans les deux sens ; l'angle mort « données antérieures »
+  (un lien fautif existant n'est pas défait) n'était pas dit au lecteur.
+- **Retenu** : le paragraphe *Comptes débiteurs et créanciers.* dit qu'un lien antérieur à la
+  v0.13.0 n'est pas défait, ne bloque pas les autres réglages, mais fait refuser **chaque règlement
+  et chaque rapprochement** de facture par ce compte bancaire (garde de la 15-6b) — avec le remède.
+  Le CHANGELOG **complète** l'entrée #474 de la 15-6b (AC11 : une entrée par issue et par release).
+- **Écarté** : une entrée CHANGELOG séparée ; taire l'angle mort au manuel.
+- **Réversibilité** : totale (texte).
+
+## C-15-6c-4 — 15-6c : le test de rejeu du PUT des réglages attend au `FOR UPDATE` de `before`
+
+- **Contexte** : le gate complet rougit sur `rejeu_interblocage_e2e`
+  `invoice_settings_update_is_replayed_when_it_is_the_deadlock_victim` (Story 15-5e1) : il prouve
+  l'attente de la route sur le motif `UPDATE company_invoice_settings`. L'AC2 de la 15-6c fait lire
+  `before` en `FOR UPDATE` : la route attend désormais le `S` du test **à cette lecture** (promotion
+  S → X après son `INSERT IGNORE`), non plus à l'`UPDATE`. Le cycle est le même — c'est
+  exactement l'interblocage préexistant que la note KF-004 réécrite décrit — ; seul le point
+  d'attente a bougé. L'inventaire de la fiche (§ *Tests existants qui changent de sens*) ne
+  l'avait pas vu : il cherchait les liens bancaires et les appels directs au dépôt, pas les motifs
+  d'attente couplés à la forme du verrou des réglages.
+- **Retenu** : le motif devient `["FROM company_invoice_settings", "FOR UPDATE"]`, commentaire et
+  doc-comment du test ajustés ; le test reste ce qu'il était (rejeu d'un 1213 vrai, une version,
+  une entrée d'audit). Grep des autres motifs couplés aux réglages : aucun autre site.
+- **Écarté** : garder la lecture simple de `before` (rouvrirait la course que l'AC2 ferme, et le
+  test 12 bis rougirait).
+- **Réversibilité** : totale (un motif de test).
+
+## C-15-6c-5 — 15-6c : pas de test neuf du filet de la 15-6b pour la sauvegarde et l'onboarding
+
+- **Contexte** : revue de code P1, F3 (LOW) — l'import d'une sauvegarde et la création des
+  réglages à l'onboarding peuvent produire le couple fautif ; la fiche les écrit comme angles morts,
+  avec pour filet la garde à l'usage de la 15-6b. La consigne : un test du filet dans l'un des deux
+  scénarios « si le montage est simple ».
+- **Retenu** : pas de test neuf. L'état que produisent ces deux chemins — un compte bancaire lié au
+  compte débiteurs désigné, écrit **sans** passer par les routes — est exactement celui que posent
+  déjà les tests de la 15-6b, par `UPDATE bank_accounts SET journal_account_id = …` en SQL brut
+  (`reconciliation_e2e.rs`, « sans passer par la 15-6c », tests 7 et 8 de la 15-6b) : le filet y est
+  prouvé sur l'état, quel que soit le chemin qui l'a écrit. Monter un `.keshbackup` complet (inventaire
+  de tables identique, manifeste, rejeu) pour reproduire le même état n'est pas un montage simple.
+- **Écarté** : un test d'import de sauvegarde portant le couple fautif (montage lourd, ne prouverait
+  rien de plus sur la garde) ; un test d'onboarding (même état final).
+- **Réversibilité** : totale (un test pourra s'ajouter quand le produit tiendra une comptabilité réelle).
+
+## C-15-6c-6 — 15-6c : la duplication création / `claims_for_target` est écrite comme dette, non refactorée
+
+- **Contexte** : revue de code P1, B3 = A4 (LOW) — `create_bank_account` lit les comptes de créance
+  par `claim_accounts_in_share_mode` puis appelle `refuse_if_ledger_is_claim_account` en ligne, dans un
+  `if let Some(account_id)`, alors que le remplacement et le lien passent par `claims_for_target`.
+  Deux sites de la même règle d'acquisition (« pas de lecture ni de verrou S sans cible ») : l'un peut
+  dériver de l'autre.
+- **Retenu** : **dette écrite**, pas de refactorisation à la clôture — la remédiation de la revue P1
+  ne touche aucune ligne de code exécutable (consigne de l'orchestrateur), et un changement de code de
+  production rouvrirait la boucle de revue. **Propriétaire** : l'orchestrateur de l'Epic 15 ; remède
+  attendu : remplacer le bloc en ligne de la création par `claims_for_target` (une ligne), à la
+  prochaine story qui touche `routes/bank_accounts.rs`. Le comportement est aujourd'hui identique sur
+  les trois sites (test 1, tests 2 à 4).
+- **Écarté** : refactorer maintenant (code de production après une revue close) ; taire la duplication.
+- **Réversibilité** : totale.

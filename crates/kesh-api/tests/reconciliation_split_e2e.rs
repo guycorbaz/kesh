@@ -11,6 +11,7 @@
 //!
 //! Pré-requis : MariaDB démarré localement (`KESH_TEST_MODE=true`).
 
+use kesh_db::repositories::company_invoice_settings::ClaimAccounts;
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
@@ -228,6 +229,7 @@ async fn link_bank_account_to_journal(
         bank_account_id,
         Some(journal_account_id),
         bank_account.version,
+        &ClaimAccounts::default(),
     )
     .await
     .unwrap();

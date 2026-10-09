@@ -967,6 +967,55 @@ pub enum DbError {
         batch: Option<SettlementBatchContext>,
     },
 
+    /// Un compte bancaire serait lié au **compte débiteurs** ou au **compte
+    /// créanciers** désigné dans les réglages de facturation (Story 15-6c,
+    /// #474 ; choix C-15-6-5, C-15-6-13).
+    ///
+    /// ⛔ **Le motif** : chaque encaissement par ce compte bancaire écrirait
+    /// `D 1100 / C 1100` — une écriture nulle, que la garde à l'usage de la
+    /// 15-6b ([`DbError::SettlementCounterpartyIsClaimAccount`]) refuse à chaque
+    /// règlement. Ce refus l'arrête **à la configuration**, une fois.
+    ///
+    /// Levé par la création, le remplacement et le lien d'un compte bancaire,
+    /// **seulement si le compte lié change** (exemption « inchangé », patron
+    /// C10 de la 15-5b). Mappé vers HTTP **400**
+    /// `BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT` — routes ouvertes aux clés d'API.
+    #[error(
+        "Le compte {account_id} est le compte de créance désigné : un compte bancaire ne peut pas y être lié"
+    )]
+    BankAccountLedgerIsClaimAccount {
+        /// Le compte du grand livre visé par le lien.
+        account_id: i64,
+        /// Son numéro, lu au refus ; `None` s'il n'a pas pu être résolu.
+        account_number: Option<String>,
+        /// Le réglage qu'il occupe : compte débiteurs ou compte créanciers.
+        claim: ClaimSide,
+    },
+
+    /// Le compte qu'on désigne comme **compte débiteurs** ou **compte
+    /// créanciers** est lié à un compte bancaire **non archivé** (Story 15-6c,
+    /// #474) — le symétrique de [`DbError::BankAccountLedgerIsClaimAccount`].
+    ///
+    /// Levé par `company_invoice_settings::update`, sous verrou, **seulement si
+    /// la valeur change**. Nomme le **premier** compte bancaire lié par `id`.
+    /// Mappé vers HTTP **400** `CLAIM_ACCOUNT_LINKED_TO_BANK_ACCOUNT` — émis par
+    /// une route d'administration fermée aux clés d'API : il ne sert que l'écran.
+    #[error(
+        "Le compte {account_id} est lié au compte bancaire {bank_account_id} : il ne peut pas être désigné comme compte de créance"
+    )]
+    ClaimAccountLinkedToBankAccount {
+        /// Le compte qu'on voudrait désigner.
+        account_id: i64,
+        /// Son numéro, lu au refus ; `None` s'il n'a pas pu être résolu.
+        account_number: Option<String>,
+        /// Le réglage visé : compte débiteurs ou compte créanciers.
+        claim: ClaimSide,
+        /// Le premier compte bancaire non archivé lié à ce compte, par `id`.
+        bank_account_id: i64,
+        /// Son nom, tel que le rend `bank_accounts::first_active_bank_account_linked_to`.
+        bank_name: String,
+    },
+
     /// L'écriture a été contre-passée : on ne la modifie ni ne la supprime
     /// plus (Story 24-4a ; la modification, Story 15-8a).
     ///
@@ -1198,6 +1247,8 @@ impl DbError {
             Self::SettlementCounterpartyIsClaimAccount { .. } => {
                 "SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT"
             }
+            Self::BankAccountLedgerIsClaimAccount { .. } => "BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT",
+            Self::ClaimAccountLinkedToBankAccount { .. } => "CLAIM_ACCOUNT_LINKED_TO_BANK_ACCOUNT",
             Self::InvoiceNotUnvalidatable { blocker, .. } => blocker.code(),
             Self::SettlementNotCancellable { blocker } => blocker.code(),
             Self::ReconciliationNotCancellable { blocker } => blocker.code(),
@@ -1353,6 +1404,25 @@ mod tests {
             };
             assert_eq!(err.error_code(), "SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT");
         }
+    }
+
+    /// Story 15-6c (#474) — les deux refus de configuration, un code chacun.
+    #[test]
+    fn configuration_claim_refusals_error_codes() {
+        let ledger = DbError::BankAccountLedgerIsClaimAccount {
+            account_id: 1,
+            account_number: Some("1100".into()),
+            claim: ClaimSide::Receivable,
+        };
+        assert_eq!(ledger.error_code(), "BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT");
+        let linked = DbError::ClaimAccountLinkedToBankAccount {
+            account_id: 1,
+            account_number: None,
+            claim: ClaimSide::Payable,
+            bank_account_id: 7,
+            bank_name: "UBS".into(),
+        };
+        assert_eq!(linked.error_code(), "CLAIM_ACCOUNT_LINKED_TO_BANK_ACCOUNT");
     }
 
     /// Story 15-6b — les discriminants machine de `details.claim` et `details.role`.

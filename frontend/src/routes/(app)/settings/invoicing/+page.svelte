@@ -5,7 +5,8 @@
 	import { notifyError, notifySuccess } from '$lib/shared/utils/notify';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { authState } from '$lib/app/stores/auth.svelte';
-	import { withCurrentAccount } from '$lib/features/accounts/account-options';
+	import { withCurrentAccount, withoutAccountIds } from '$lib/features/accounts/account-options';
+	import { listBankAccounts } from '$lib/features/bank-accounts/bank-accounts.api';
 	import {
 		getInvoiceSettings,
 		updateInvoiceSettings,
@@ -34,6 +35,11 @@
 
 	let settings = $state<InvoiceSettingsResponse | null>(null);
 	let accounts = $state<AccountResponse[]>([]);
+	// Story 15-6c (#474, AC8) : les comptes du grand livre liés à un compte
+	// bancaire non archivé (`listBankAccounts()` exclut les archivés). Ensemble
+	// vide si la liste n'a pas pu être lue : pas de filtre, le refus serveur
+	// reste le filet.
+	let bankLinkedAccountIds = $state<Set<number>>(new Set());
 	let loading = $state(true);
 	let submitting = $state(false);
 	let loadError = $state('');
@@ -86,12 +92,20 @@
 	// courante — deux champs partageant `assetAccounts` ne réintroduisent pas le
 	// même compte. Sans cela, un compte devenu non-postable après configuration
 	// disparaît de ses options, s'affiche vide, et s'efface au premier `change`.
-	let receivableOptions = $derived(withCurrentAccount(assetAccounts, receivableId, accounts));
+	// Story 15-6c (AC8) : le compte débiteurs et le compte créanciers ne
+	// proposent pas un compte lié à un compte bancaire — filtre posé AVANT
+	// `withCurrentAccount` (la valeur en place reste affichée), et sur ces deux
+	// menus SEULEMENT : `assetAccounts` et `liabilityAccounts` servent aussi la TVA.
+	let receivableOptions = $derived(
+		withCurrentAccount(withoutAccountIds(assetAccounts, bankLinkedAccountIds), receivableId, accounts),
+	);
 	let revenueOptions = $derived(withCurrentAccount(revenueAccounts, revenueId, accounts));
 	let vatPayableOptions = $derived(withCurrentAccount(liabilityAccounts, vatPayableId, accounts));
 	// Même filtre que la TVA due (le serveur exige un passif) ; la valeur
 	// courante reste proposée même devenue non imputable (#271).
-	let payableOptions = $derived(withCurrentAccount(liabilityAccounts, payableId, accounts));
+	let payableOptions = $derived(
+		withCurrentAccount(withoutAccountIds(liabilityAccounts, bankLinkedAccountIds), payableId, accounts),
+	);
 	let vatRecoverableOptions = $derived(
 		withCurrentAccount(assetAccounts, vatRecoverableId, accounts),
 	);
@@ -129,7 +143,15 @@
 
 	onMount(async () => {
 		try {
+			// Story 15-6c (AC8) : lancée avec les deux autres, mais son échec n'est
+			// pas une erreur de chargement — il laisse simplement les menus non filtrés.
+			const banks = listBankAccounts().catch(() => []);
 			const [s, a] = await Promise.all([getInvoiceSettings(), fetchAccounts(false)]);
+			bankLinkedAccountIds = new Set(
+				(await banks)
+					.map((b) => b.journalAccountId)
+					.filter((id): id is number => id !== null),
+			);
 			settings = s;
 			accounts = a;
 			format = s.invoiceNumberFormat;

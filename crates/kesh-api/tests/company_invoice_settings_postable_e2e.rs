@@ -585,3 +585,242 @@ async fn validation_refuses_a_designated_receivable_made_non_postable(pool: MySq
         .unwrap();
     assert_eq!(status, "draft", "la facture doit rester brouillon");
 }
+
+// ---------------------------------------------------------------------------
+// Story 15-6c (#474) — un compte lié à un compte bancaire non archivé ne se
+// désigne ni comme compte débiteurs ni comme compte créanciers :
+// 400 `CLAIM_ACCOUNT_LINKED_TO_BANK_ACCOUNT`, contrôlé dans la transaction du
+// dépôt, après le 409, seulement si la valeur change.
+// ---------------------------------------------------------------------------
+
+/// Un compte bancaire lié en SQL au compte `account_id` (contourne la garde du
+/// lien : c'est l'état qu'un lien antérieur ou concurrent laisse en base).
+async fn bank_linked_to(
+    pool: &MySqlPool,
+    company_id: i64,
+    name: &str,
+    iban: &str,
+    account_id: i64,
+    archived: bool,
+) -> i64 {
+    sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary, journal_account_id, archived) \
+         VALUES (?, ?, ?, FALSE, ?, ?)",
+    )
+    .bind(company_id)
+    .bind(name)
+    .bind(iban)
+    .bind(account_id)
+    .bind(archived)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+async fn assert_linked_refusal(
+    resp: reqwest::Response,
+    account_id: i64,
+    number: &str,
+    claim: &str,
+    bank_account_id: i64,
+    bank_name: &str,
+) -> Value {
+    let status = resp.status();
+    let err: Value = resp.json().await.unwrap();
+    assert_eq!(status, 400, "{err}");
+    assert_eq!(
+        err["error"]["code"], "CLAIM_ACCOUNT_LINKED_TO_BANK_ACCOUNT",
+        "{err}"
+    );
+    assert_eq!(
+        err["error"]["details"],
+        json!({
+            "accountId": account_id,
+            "accountNumber": number,
+            "claim": claim,
+            "bankAccountId": bank_account_id,
+            "bankName": bank_name,
+        })
+    );
+    err
+}
+
+/// Test 6 (AC5) — compte débiteurs déplacé vers un compte lié à un compte
+/// bancaire → 400 nommant ce compte bancaire ; le même compte lié à un compte
+/// bancaire **archivé** → accepté ; valeur **inchangée** alors qu'un lien
+/// fautif existe → accepté (patron C4 de la 15-5b).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn receivable_linked_to_a_bank_account_is_refused_when_it_changes(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = setup(&pool, &app).await;
+    let target = ctx.accounts[0].1;
+    let bank = bank_linked_to(
+        &pool,
+        ctx.company_id,
+        "UBS courant",
+        "CH9300762011623852957",
+        target,
+        false,
+    )
+    .await;
+
+    let mut body = current_body(&app, &ctx).await;
+    body["defaultReceivableAccountId"] = json!(target);
+    let resp = put(&app, &ctx, &body).await;
+    assert_linked_refusal(resp, target, "1101", "receivable", bank, "UBS courant").await;
+
+    // Archivé : le serveur ne refuse que le lien à un compte bancaire actif.
+    sqlx::query("UPDATE bank_accounts SET archived = TRUE WHERE id = ?")
+        .bind(bank)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let resp = put(&app, &ctx, &body).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+
+    // Inchangé : un lien fautif (antérieur) sur la valeur en place ne bloque
+    // pas l'enregistrement des autres réglages.
+    bank_linked_to(
+        &pool,
+        ctx.company_id,
+        "PostFinance",
+        "CH3908704016075473007",
+        target,
+        false,
+    )
+    .await;
+    let mut body = current_body(&app, &ctx).await;
+    assert_eq!(body["defaultReceivableAccountId"], json!(target));
+    body["journalEntryDescriptionTemplate"] = json!("{YEAR}-{INVOICE_NUMBER}");
+    let resp = put(&app, &ctx, &body).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+}
+
+/// Test 7 (AC2) — **deux** comptes bancaires non archivés liés au même compte :
+/// le refus nomme le **premier par `id`**.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn claim_refusal_names_the_first_linked_bank_account_by_id(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = setup(&pool, &app).await;
+    let target = ctx.accounts[0].1;
+    let first = bank_linked_to(
+        &pool,
+        ctx.company_id,
+        "Premier",
+        "CH9300762011623852957",
+        target,
+        false,
+    )
+    .await;
+    let second = bank_linked_to(
+        &pool,
+        ctx.company_id,
+        "Second",
+        "CH3908704016075473007",
+        target,
+        false,
+    )
+    .await;
+    assert!(first < second);
+
+    let mut body = current_body(&app, &ctx).await;
+    body["defaultReceivableAccountId"] = json!(target);
+    let resp = put(&app, &ctx, &body).await;
+    assert_linked_refusal(resp, target, "1101", "receivable", first, "Premier").await;
+}
+
+/// Test 8 (AC5) — `defaultPayableAccountId` **présent** vers un compte de
+/// passif lié → `claim: "payable"` ; **absent** du corps → valeur en place
+/// préservée, aucun contrôle, même liée (AC19 de la 15-5b).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn payable_linked_to_a_bank_account_is_refused_only_when_sent_and_changed(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = setup(&pool, &app).await;
+    let (current, target) = ctx.accounts[5];
+    let bank = bank_linked_to(
+        &pool,
+        ctx.company_id,
+        "Crédit",
+        "CH9300762011623852957",
+        target,
+        false,
+    )
+    .await;
+
+    let mut body = current_body(&app, &ctx).await;
+    body["defaultPayableAccountId"] = json!(target);
+    let resp = put(&app, &ctx, &body).await;
+    assert_linked_refusal(resp, target, "2001", "payable", bank, "Crédit").await;
+
+    bank_linked_to(
+        &pool,
+        ctx.company_id,
+        "Débit",
+        "CH3908704016075473007",
+        current,
+        false,
+    )
+    .await;
+    let mut body = current_body(&app, &ctx).await;
+    body.as_object_mut()
+        .unwrap()
+        .remove("defaultPayableAccountId");
+    body["journalEntryDescriptionTemplate"] = json!("{YEAR}-{INVOICE_NUMBER}");
+    let resp = put(&app, &ctx, &body).await;
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+    assert_eq!(stored_payable(&pool, ctx.company_id).await, Some(current));
+}
+
+/// Test 9 (AC6, ordre) — `version` périmée **et** compte débiteurs lié : **409**
+/// (le contrôle de version précède le refus).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn stale_version_precedes_the_linked_claim_refusal(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = setup(&pool, &app).await;
+    let target = ctx.accounts[0].1;
+    bank_linked_to(
+        &pool,
+        ctx.company_id,
+        "UBS",
+        "CH9300762011623852957",
+        target,
+        false,
+    )
+    .await;
+
+    let mut body = current_body(&app, &ctx).await;
+    body["defaultReceivableAccountId"] = json!(target);
+    body["version"] = json!(body["version"].as_i64().unwrap() - 1);
+    let resp = put(&app, &ctx, &body).await;
+    assert_eq!(resp.status(), 409, "{}", resp.text().await.unwrap());
+}
+
+/// Test 10 (AC1) — le message **français** du refus nomme le compte et le
+/// compte bancaire (langue globale au processus, `init_error_i18n` du
+/// montage ; la parité des clés dans les autres locales est contrôlée par le
+/// test de `kesh-i18n`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn linked_claim_refusal_message_is_french(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = setup(&pool, &app).await;
+    let target = ctx.accounts[0].1;
+    let bank = bank_linked_to(
+        &pool,
+        ctx.company_id,
+        "UBS",
+        "CH9300762011623852957",
+        target,
+        false,
+    )
+    .await;
+
+    let mut body = current_body(&app, &ctx).await;
+    body["defaultReceivableAccountId"] = json!(target);
+    let resp = put(&app, &ctx, &body).await;
+    let err = assert_linked_refusal(resp, target, "1101", "receivable", bank, "UBS").await;
+    assert_eq!(
+        err["error"]["message"],
+        "Le compte 1101 est lié au compte bancaire UBS : il ne peut pas servir de compte débiteurs."
+    );
+}

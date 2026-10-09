@@ -36,6 +36,7 @@ use kesh_db::entities::account::AccountType;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::bank_account::{BankAccount, NewBankAccount};
 use kesh_db::errors::{DbError, NonPostableAccount};
+use kesh_db::repositories::company_invoice_settings::{self, ClaimAccounts};
 use kesh_db::repositories::{accounts, audit_log, bank_accounts, onboarding};
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -315,6 +316,27 @@ async fn validate_journal_account_id(
     Ok(())
 }
 
+/// Les comptes de créance des réglages, lus **sous verrou partagé** si la cible
+/// du lien est un compte — sinon `ClaimAccounts::default()`, sans lecture ni
+/// verrou (Story 15-6c, AC2 ; choix C-15-6-27) : une dé-liaison, une création
+/// ou un remplacement sans compte lié n'attendent rien.
+///
+/// ⛔ **À appeler avant tout `FOR UPDATE` sur `bank_accounts`** (ordre global
+/// `companies` → réglages → `bank_accounts`) : juste après la sentinelle à la
+/// création et au remplacement, en première instruction au lien.
+async fn claims_for_target(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    journal_account_id: Option<i64>,
+) -> Result<ClaimAccounts, AppError> {
+    match journal_account_id {
+        Some(_) => {
+            Ok(company_invoice_settings::claim_accounts_in_share_mode(tx, company_id).await?)
+        }
+        None => Ok(ClaimAccounts::default()),
+    }
+}
+
 /// Émet l'audit log `bank_account.updated` `trigger=primary_transition` sur
 /// l'ancien primary démoté (helper FINDING-3 Pass 3 Opus).
 ///
@@ -405,6 +427,13 @@ pub async fn list_bank_accounts(
 ///
 /// Story 15-5b (AC12, #427) : un `journalAccountId` non imputable est refusé
 /// en 400 `ACCOUNT_NOT_POSTABLE`, après le 404 et le 400 de type.
+///
+/// **Ordre des erreurs** (Story 15-6c, AC6) : forme (400) → 404 / 400 type /
+/// 400 `ACCOUNT_NOT_POSTABLE` du compte lié (`validate_journal_account_id`,
+/// hors transaction) → 400 `BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT` (compte lié =
+/// compte débiteurs ou créanciers désigné, contrôlé dans la transaction,
+/// sous le verrou partagé des réglages). Un refus ne crée rien et ne démote
+/// aucun principal.
 pub async fn create_bank_account(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -430,6 +459,24 @@ pub async fn create_bank_account(
 
     // Advisory lock sentinel (L5 mitigation — FINDING-9 Pass 3 Opus).
     bank_accounts::acquire_company_sentinel_lock(&mut tx, current_user.company_id).await?;
+
+    // Story 15-6c (AC3) — un compte bancaire ne se lie pas au compte de
+    // créance désigné. Premier verrou après la sentinelle, avant la démotion
+    // de l'ancien principal : un refus ne crée rien et ne démote rien.
+    if let Some(account_id) = body.journal_account_id {
+        let claims = company_invoice_settings::claim_accounts_in_share_mode(
+            &mut tx,
+            current_user.company_id,
+        )
+        .await?;
+        bank_accounts::refuse_if_ledger_is_claim_account(
+            &mut tx,
+            current_user.company_id,
+            account_id,
+            &claims,
+        )
+        .await?;
+    }
 
     // Si is_primary=true et un autre primary existe → flip silencieux atomique.
     // L'INSERT n'a pas encore d'id, on passe -1 comme excluded_id sentinel
@@ -521,12 +568,14 @@ pub async fn create_bank_account(
 /// Handler `PUT /api/v1/bank-accounts/{id}` — édition complète v014-1
 /// (Comptable+).
 ///
-/// **Ordre des erreurs** (Story 15-5b, AC12) : forme (400) → 404 / 400 type du
-/// compte lié (`validate_journal_account_id`, hors transaction) → 404 compte
-/// bancaire → 409 version → 400 `ACCOUNT_NOT_POSTABLE` (compte lié **changé**
-/// vers un compte non imputable, contrôlé par le dépôt sous verrou). Un refus
-/// abandonne la transaction : l'ancien principal, s'il avait été démoté, le
-/// reste.
+/// **Ordre des erreurs** (Story 15-5b, AC12 ; Story 15-6c, AC6) : forme (400)
+/// → 404 / 400 type du compte lié (`validate_journal_account_id`, hors
+/// transaction) → 404 compte bancaire → 409 version → 400
+/// `ACCOUNT_NOT_POSTABLE` (compte lié **changé** vers un compte non imputable,
+/// contrôlé par le dépôt sous verrou) → 400 `BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT`
+/// (compte lié **changé** vers le compte débiteurs ou créanciers désigné). Un
+/// refus abandonne la transaction : l'ancien principal, s'il avait été démoté,
+/// le reste.
 pub async fn update_bank_account(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -558,6 +607,12 @@ pub async fn update_bank_account(
 
     bank_accounts::acquire_company_sentinel_lock(&mut tx, current_user.company_id).await?;
 
+    // Story 15-6c (AC2, AC4) — les comptes de créance, premier verrou après la
+    // sentinelle ; la comparaison se fait dans le dépôt, sous le verrou de la
+    // ligne, seulement si le compte lié change.
+    let claims =
+        claims_for_target(&mut tx, current_user.company_id, body.journal_account_id).await?;
+
     // Si l'utilisateur veut promouvoir ce compte primary, flip l'éventuel
     // ancien (avant l'UPDATE de notre row, dans la même tx).
     let demoted_primary = if body.is_primary {
@@ -583,6 +638,7 @@ pub async fn update_bank_account(
         &new,
         body.journal_account_id,
         body.version,
+        &claims,
     )
     .await
     {
@@ -749,10 +805,12 @@ pub async fn archive_bank_account(
 /// Story v014-1 (F7 Pass 3 Opus) — `details_json.trigger = "journal_account_link"`
 /// ajouté pour cohérence audit log avec PUT (`trigger = "full_update"`).
 ///
-/// **Ordre des erreurs** (Story 15-5b, AC12) : forme (400) → 404 / 400 type du
-/// compte lié → 404 compte bancaire → 409 version → 400
+/// **Ordre des erreurs** (Story 15-5b, AC12 ; Story 15-6c, AC6) : forme (400)
+/// → 404 / 400 type du compte lié → 404 compte bancaire → 409 version → 400
 /// `ACCOUNT_NOT_POSTABLE` (compte lié **changé** vers un compte non imputable ;
-/// une valeur inchangée court-circuite sans contrôle).
+/// une valeur inchangée court-circuite sans contrôle) → 400
+/// `BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT` (compte lié **changé** vers le compte
+/// débiteurs ou créanciers désigné).
 pub async fn patch_bank_account_journal_link(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -778,12 +836,18 @@ pub async fn patch_bank_account_journal_link(
         .await
         .map_err(|e| AppError::Internal(format!("begin tx: {e}")))?;
 
+    // Story 15-6c (AC2, AC4) — première instruction de la transaction (le lien
+    // ne prend pas la sentinelle), avant le `FOR UPDATE` de la ligne.
+    let claims =
+        claims_for_target(&mut tx, current_user.company_id, body.journal_account_id).await?;
+
     let (updated, before) = match bank_accounts::set_journal_account_id_for_company(
         &mut tx,
         current_user.company_id,
         id,
         body.journal_account_id,
         body.version,
+        &claims,
     )
     .await
     {
