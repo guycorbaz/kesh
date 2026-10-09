@@ -42,7 +42,7 @@ use crate::middleware::auth::CurrentUser;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateLetteringRequest {
-    /// Identifiants des lignes d'écriture à lettrer ensemble (2 à 200).
+    /// Identifiants des lignes d'écriture que le lettrage réunit (2 à 200).
     pub line_ids: Vec<i64>,
 }
 
