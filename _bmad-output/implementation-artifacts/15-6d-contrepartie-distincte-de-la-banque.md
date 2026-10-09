@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+in-progress
 
 <!-- Créée le 2026-10-08 à la validation P1 de la 15-6b (finding F1 = R3, #524 ; finding F4 :
      découpage, plus de cinq modules), en autonomie. Choix propres : C-15-6-9 (qui révise C-15-6-6),
@@ -382,7 +382,65 @@ Soit **12 tests nommés** (9 backend dont 2 témoins, 3 fichiers Vitest).
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), en autonomie (consignes de l'Epic 15).
+
 ### Debug Log References
+
+**T0 — relevés au sol, 2026-10-09, sur `f2c5e419` (`origin/main`), avant tout code.**
+
+- **Prérequis** : 15-5b, 15-5c et 15-6b mergées (sprint-status `done`) ; la **15-6c** (PR #586)
+  ne l'est pas au relevé (`git fetch` : `origin/main` = `f2c5e419`) — rebase à refaire si elle
+  arrive pendant le travail. Aucun rebase nécessaire au départ : la branche part de `origin/main`.
+- **Numéros de ligne** (`crates/kesh-api/src/routes/reconciliation.rs`, 4357 lignes ; la fiche
+  citait l'état d'avant la 15-5b) : `get_proposals` `:527` (`ba_check` `:547-556`, qui porte
+  `journal_account_id` ; `active_account_ids` `:639-643`, réduit par la 15-5b aux comptes actifs
+  **et** imputables, commentaire de site `:629-638` ; `first_matching_rule` `:724-728`) ;
+  `accept_one_split` `:1997` (« Step c » `:2079-2105`, garde d'égalité `:2108-2118`, puis
+  « Step d » `ACCOUNT_NOT_POSTABLE`) ; `accept_one_rule` `:2400` (étape 1 `:2411-2445`, étape 2
+  `:2447`, étape 4 `:2466`, étape 5 `:2478-2525` avec `ACCOUNT_NOT_POSTABLE` de la 15-5b) ;
+  `post_manual` `:3178` (étape 2 `:3225`, 2 bis `:3233-3249`, étape 3 `:3251-3265`, 3 bis
+  `ACCOUNT_NOT_POSTABLE` `:3266-3280`, étape 4 `:3282`) ; `post_split` `:3577` (« Step 4bis »
+  `:3662-3674`, garde `:3676-3690`, texte `:3686`).
+- **Helper de la 15-6b** : `kesh_db::repositories::invoice_settlements::ensure_not_claim_account(account_id: i64, claim_account_id: i64) -> Result<(), ClaimAccountClash>`
+  (`invoice_settlements.rs:694`), pure, sans `async` — nom et signature conformes à la fiche ;
+  son doc-comment annonce déjà l'emprunt par la 15-6d.
+- **`set_account_not_postable`** : la 15-5b l'a **dupliqué** dans chaque binaire de test — il
+  existe déjà dans les quatre fichiers visés : `reconciliation_manual_e2e.rs:1325`,
+  `reconciliation_rules_e2e.rs:2058`, `reconciliation_split_e2e.rs:1006`,
+  `reconciliation_e2e.rs:5145` (nommé `set_account_not_postable_15_5b`). Réutilisé tel quel.
+- **Code rendu aujourd'hui** pour une règle ordinaire sur un compte de banque archivé (AC2) : par
+  lecture, l'acceptation passe les étapes 1 à 11 et `journal_entries::create_in_tx` rend
+  `DbError::InactiveOrInvalidAccounts` (`journal_entries.rs:162-163`), que le repli générique
+  d'`accept_one_rule` mappe en **`DATABASE_ERROR`** (`details.message`). **Mesuré** au rouge du
+  test 7 (ci-dessous, T3) avant d'être écrit au CHANGELOG.
+- **`docs/api-external.md`** : `grep -n "reconciliation/manual\|reconciliation/split"` rend la
+  phrase de la 15-5b à `:399` — l'AC7 la complète. § *Accepter des propositions* `:385-397`.
+- **CHANGELOG** : `## [0.13.0] — Non publié` présent (`:11`), avec `### Modifié` (`:17`) et
+  `### Corrigé` (`:37`).
+- **Libellé de la 15-5c (AC6)** : `VALIDATION_ERROR` → clé `error-validation`, « Erreur de
+  validation » (`failed-proposal-label.ts:259-260`, fr-CH `messages.ftl:42`). Son doc-comment
+  (`:44-47`) compte « six raisons sur sept sites » : la garde de la règle ajoute un **huitième**
+  site — à mettre à jour (propagation).
+- **Manuel** : sections réécrites par la 15-5c — *Réconciliation manuelle* `:1687`, *Éclatement*
+  `:1701`, *Règles d'affectation* `:1715` (`user-manual.tex`).
+- **Occupation du tmpfs MariaDB** (lecture seule, `df -h /var/lib/mysql` dans
+  `kesh-mariadb-dev`) avant tout gate : **1,3 Go / 4,0 Go (31 %)**.
+
+**Écarts avec la fiche, ventilés :**
+
+1. **Test 11 — la modale est une doublure.** Depuis la revue P1 de la 15-5c,
+   `ReconciliationProposals.test.ts` remplace `ManualMatchModal` par `ModalSuccessStub.test.svelte`
+   (`:36-41`) : « la modale ouverte ne propose pas le `journalAccountId` » n'y est pas observable.
+   Le test 11 asserte donc la **valeur de la prop** `bankLedgerAccountId` reçue par la doublure
+   (étendue pour l'exposer), et le test 10 asserte le filtre dans la vraie modale ; les deux
+   ensemble couvrent le câblage. Choix C-15-6d-1.
+2. **Numéros de ligne** : tous décalés par les 15-5b/c, 15-6b, 15-5e2 (ci-dessus) ; aucun
+   changement de fond — l'ordre décrit par l'AC1 et l'AC2 est celui du code.
+3. **`set_account_not_postable`** : la fiche hésitait (réutiliser ou dupliquer) ; il est déjà
+   dans chaque binaire — rien à ajouter.
+4. **AC6** : la 15-5c est mergée ; rien à ajouter au mécanisme, seul le doc-comment de décompte
+   (écart de propagation) change.
+5. **AC7** : la phrase de la 15-5b existe (`:399`) — complétée, pas créée.
 
 ### Completion Notes List
 
