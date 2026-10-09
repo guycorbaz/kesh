@@ -9,7 +9,8 @@
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
-	import { withCurrentAccount } from '$lib/features/accounts/account-options';
+	import { withCurrentAccount, withoutAccountIds } from '$lib/features/accounts/account-options';
+	import { getInvoiceSettings } from '$lib/features/invoices/invoices.api';
 	import { Button } from '$lib/components/ui/button';
 	import { Input } from '$lib/components/ui/input';
 	import { toast } from 'svelte-sonner';
@@ -27,6 +28,11 @@
 
 	let bankAccounts = $state<BankAccountSummary[]>([]);
 	let accounts = $state<AccountResponse[]>([]);
+	// Story 15-6c (#474, AC7) : le compte débiteurs et le compte créanciers
+	// DÉSIGNÉS dans les réglages — pas les comptes de rôle. Ensemble vide si les
+	// réglages n'ont pas pu être lus : pas de filtre, le refus serveur reste le
+	// filet.
+	let claimAccountIds = $state<Set<number>>(new Set());
 	let loading = $state(true);
 	let loadError = $state<string | null>(null);
 	let includeArchived = $state(false);
@@ -51,9 +57,10 @@
 	let formError = $state<string | null>(null);
 
 	async function reload() {
-		const [baResult, accResult] = await Promise.allSettled([
+		const [baResult, accResult, settingsResult] = await Promise.allSettled([
 			listBankAccounts(includeArchived),
 			fetchAccounts(false),
+			getInvoiceSettings(),
 		]);
 		if (baResult.status === 'fulfilled') {
 			bankAccounts = baResult.value;
@@ -68,6 +75,16 @@
 		} else {
 			accounts = [];
 		}
+		// Échec des réglages : aucune erreur affichée pour ce seul appel.
+		claimAccountIds =
+			settingsResult.status === 'fulfilled'
+				? new Set(
+						[
+							settingsResult.value.defaultReceivableAccountId,
+							settingsResult.value.defaultPayableAccountId,
+						].filter((id): id is number => id !== null && id !== undefined),
+					)
+				: new Set();
 	}
 
 	onMount(async () => {
@@ -81,12 +98,19 @@
 	// affiché ; `BankAccountJournalLinkForm` reçoit la liste COMPLÈTE et filtre
 	// lui-même (choix C26) — une liste déjà filtrée l'empêchait de retrouver ce
 	// compte, et le champ s'affichait vide.
+	//
+	// Story 15-6c (#474, AC7) : le compte débiteurs et le compte créanciers
+	// désignés sont écartés AVANT `withCurrentAccount` — un lien existant vers
+	// l'un d'eux (donnée antérieure) reste affiché, mais n'est plus proposé.
 	let linkableAccounts = $derived(
-		accounts.filter(
-			(a) =>
-				a.active &&
-				a.postable && // 14-3b : compte lié posté à la réconciliation
-				(a.accountType === 'Asset' || a.accountType === 'Liability'),
+		withoutAccountIds(
+			accounts.filter(
+				(a) =>
+					a.active &&
+					a.postable && // 14-3b : compte lié posté à la réconciliation
+					(a.accountType === 'Asset' || a.accountType === 'Liability'),
+			),
+			claimAccountIds,
 		),
 	);
 
@@ -441,6 +465,7 @@
 									<BankAccountJournalLinkForm
 										bankAccount={ba}
 										accounts={accounts}
+										{claimAccountIds}
 										onSuccess={handleJournalUpdated}
 										onCancel={closeForm}
 									/>

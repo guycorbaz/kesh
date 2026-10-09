@@ -33,6 +33,14 @@ vi.mock('$lib/features/accounts/accounts.api', () => ({
 	fetchAccounts: () => fetchAccountsMock(),
 }));
 
+// Story 15-6c (#474, AC8) : la page lit les comptes bancaires pour écarter des
+// menus débiteurs et créanciers les comptes qui y sont liés. Par défaut, aucun
+// compte bancaire : les tests existants gardent leur sens.
+const listBankAccountsMock = vi.fn<() => Promise<Array<{ journalAccountId: number | null }>>>();
+vi.mock('$lib/features/bank-accounts/bank-accounts.api', () => ({
+	listBankAccounts: () => listBankAccountsMock(),
+}));
+
 import Page from './+page.svelte';
 
 function account(
@@ -97,6 +105,7 @@ function optionValues(select: HTMLSelectElement): string[] {
 beforeEach(() => {
 	authState.login({ userId: '1', username: 'admin', role: 'Admin', expiresIn: 3600 });
 	fetchAccountsMock.mockResolvedValue(ACCOUNTS);
+	listBankAccountsMock.mockResolvedValue([]);
 	updateInvoiceSettingsMock.mockReset();
 });
 
@@ -284,5 +293,57 @@ describe('Paramètres → Facturation — compte créanciers', () => {
 		await fireEvent.submit(container.querySelector('form')!);
 		await waitFor(() => expect(getInvoiceSettingsMock).toHaveBeenCalledTimes(2));
 		await waitFor(() => expect(select.value).toBe('7'));
+	});
+});
+
+describe('Paramètres → Facturation — comptes liés à un compte bancaire (Story 15-6c, AC8)', () => {
+	// 1020 (id 1) et 2100 sont liés chacun à un compte bancaire ; 1100 (débiteurs
+	// en place) aussi — donnée antérieure, qui doit rester affichée.
+	const LINKED_ASSET = account(10, '1100', 'Asset');
+	const LINKED_LIABILITY = account(11, '2100', 'Liability');
+	const FREE_ASSET = account(12, '1170', 'Asset');
+
+	beforeEach(() => {
+		fetchAccountsMock.mockResolvedValue([...ACCOUNTS, LINKED_ASSET, LINKED_LIABILITY, FREE_ASSET]);
+		listBankAccountsMock.mockResolvedValue([
+			{ journalAccountId: 1 },
+			{ journalAccountId: 11 },
+			{ journalAccountId: 10 },
+			{ journalAccountId: null },
+		]);
+		getInvoiceSettingsMock.mockResolvedValue(settings({ defaultReceivableAccountId: 10 }));
+	});
+
+	it("débiteurs et créanciers n'offrent pas un compte lié, gardent la valeur en place, et la TVA est intacte (mutation : filtre absent)", async () => {
+		const { findByTestId, container } = render(Page);
+		const payable = (await findByTestId('settings-payable-account')) as HTMLSelectElement;
+		const receivable = container.querySelector('#receivable') as HTMLSelectElement;
+		await waitFor(() => expect(receivable.value).toBe('10'));
+		await waitFor(() => expect(optionValues(payable)).not.toContain('11'));
+
+		const r = optionValues(receivable);
+		expect(r).toContain('10'); // en place, lié : reste affiché
+		expect(r).toContain('12'); // actif libre
+		expect(r).not.toContain('1'); // 1020, lié à un compte bancaire
+
+		const p = optionValues(payable);
+		expect(p).toContain('2'); // passif libre
+		expect(p).not.toContain('11'); // 2100, lié
+
+		// Les menus de TVA partagent `assetAccounts` / `liabilityAccounts` : intacts.
+		const vatRecoverable = container.querySelector('[id$="-vat-recoverable"]') as HTMLSelectElement;
+		const vatPayable = container.querySelector('[id$="-vat-payable"]') as HTMLSelectElement;
+		expect(optionValues(vatRecoverable)).toContain('1');
+		expect(optionValues(vatPayable)).toContain('11');
+	});
+
+	it('comptes bancaires illisibles : pas de filtre, page affichée', async () => {
+		listBankAccountsMock.mockRejectedValue(new Error('réseau'));
+		const { findByTestId, container } = render(Page);
+		const payable = (await findByTestId('settings-payable-account')) as HTMLSelectElement;
+		const receivable = container.querySelector('#receivable') as HTMLSelectElement;
+		await waitFor(() => expect(receivable.value).toBe('10'));
+		expect(optionValues(receivable)).toContain('1');
+		expect(optionValues(payable)).toContain('11');
 	});
 });

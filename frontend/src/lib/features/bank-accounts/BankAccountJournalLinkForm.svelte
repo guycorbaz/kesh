@@ -11,7 +11,7 @@
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { notifySuccess } from '$lib/shared/utils/notify';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
-	import { withCurrentAccount } from '$lib/features/accounts/account-options';
+	import { withCurrentAccount, withoutAccountIds } from '$lib/features/accounts/account-options';
 	import {
 		updateBankAccountJournalLink,
 		type BankAccountSummary,
@@ -20,11 +20,18 @@
 	interface Props {
 		bankAccount: BankAccountSummary;
 		accounts: AccountResponse[];
+		/**
+		 * Story 15-6c (#474, AC7) : le compte débiteurs et le compte créanciers
+		 * désignés dans les réglages, écartés des options AVANT
+		 * `withCurrentAccount`. Obligatoire : un appelant qui l'oublierait
+		 * proposerait le lien que le serveur refuse. Ensemble vide = pas de filtre.
+		 */
+		claimAccountIds: Set<number>;
 		onSuccess: (updated: BankAccountSummary) => void;
 		onCancel: () => void;
 	}
 
-	let { bankAccount, accounts, onSuccess, onCancel }: Props = $props();
+	let { bankAccount, accounts, claimAccountIds, onSuccess, onCancel }: Props = $props();
 
 	// P-L1 Pass 1 code review Sonnet 4.6 : `selectedAccountId` synchronisé
 	// avec la prop `bankAccount.journalAccountId` via `$effect` — dissipe le
@@ -42,16 +49,18 @@
 
 	// Filtre client-side : Asset|Liability ET (number startsWith '1' ou '2')
 	// — pattern §validation-account-type + §frontend-flow Pass 3 Opus L1'''.
+	// Story 15-6c (AC7) : puis sans les comptes de créance désignés.
 	const eligibleAccounts = $derived(
-		accounts
-			.filter(
+		withoutAccountIds(
+			accounts.filter(
 				(a) =>
 					a.active &&
 					a.postable && // 14-3b : compte lié posté à la réconciliation
 					(a.accountType === 'Asset' || a.accountType === 'Liability') &&
 					(a.number.startsWith('1') || a.number.startsWith('2')),
-			)
-			.sort((a, b) => a.number.localeCompare(b.number)),
+			),
+			claimAccountIds,
+		).sort((a, b) => a.number.localeCompare(b.number)),
 	);
 
 	// Issue #271 : un compte lié AVANT de devenir non-postable — ou d'être

@@ -5,7 +5,7 @@
 // - Submit désactivé sur no-op (selection identique à valeur initiale).
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render } from '@testing-library/svelte';
+import { render, waitFor } from '@testing-library/svelte';
 import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 import type { BankAccountSummary } from './bank-accounts.api';
 
@@ -85,6 +85,7 @@ describe('BankAccountJournalLinkForm', () => {
 			props: {
 				bankAccount: makeBankAccount(null),
 				accounts,
+				claimAccountIds: new Set<number>(),
 				onSuccess: vi.fn(),
 				onCancel: vi.fn(),
 			},
@@ -117,6 +118,7 @@ describe('BankAccountJournalLinkForm', () => {
 			props: {
 				bankAccount: makeBankAccount(1),
 				accounts,
+				claimAccountIds: new Set<number>(),
 				onSuccess: vi.fn(),
 				onCancel: vi.fn(),
 			},
@@ -139,6 +141,7 @@ describe('BankAccountJournalLinkForm', () => {
 			props: {
 				bankAccount: makeBankAccount(null),
 				accounts,
+				claimAccountIds: new Set<number>(),
 				onSuccess: vi.fn(),
 				onCancel: vi.fn(),
 			},
@@ -150,10 +153,59 @@ describe('BankAccountJournalLinkForm', () => {
 			props: {
 				bankAccount: makeBankAccount(1),
 				accounts,
+				claimAccountIds: new Set<number>(),
 				onSuccess: vi.fn(),
 				onCancel: vi.fn(),
 			},
 		});
 		expect(c2.querySelector('[data-testid="unlink-button"]')).not.toBeNull();
+	});
+
+	// Story 15-6c (#474, AC7) — le compte débiteurs et le compte créanciers
+	// désignés ne sont plus proposés ; un lien existant vers l'un d'eux (donnée
+	// antérieure) reste affiché, le filtre étant posé AVANT `withCurrentAccount`.
+	it("n'offre ni le compte débiteurs ni le compte créanciers désignés (Story 15-6c)", () => {
+		const accounts: AccountResponse[] = [
+			makeAccount(1, '1020', 'Banque', 'Asset'),
+			makeAccount(2, '1100', 'Débiteurs', 'Asset'),
+			makeAccount(3, '2000', 'Créanciers', 'Liability'),
+		];
+		const { container } = render(BankAccountJournalLinkForm, {
+			props: {
+				bankAccount: makeBankAccount(null),
+				accounts,
+				claimAccountIds: new Set([2, 3]),
+				onSuccess: vi.fn(),
+				onCancel: vi.fn(),
+			},
+		});
+		const select = container.querySelector(
+			'[data-testid="journal-account-select"]',
+		) as HTMLSelectElement;
+		const optionTexts = Array.from(select.options).map((o) => o.textContent ?? '');
+		expect(optionTexts.some((t) => t.includes('1020'))).toBe(true);
+		expect(optionTexts.some((t) => t.includes('1100'))).toBe(false);
+		expect(optionTexts.some((t) => t.includes('2000'))).toBe(false);
+	});
+
+	it('garde affiché un lien existant vers le compte débiteurs (Story 15-6c)', async () => {
+		const accounts: AccountResponse[] = [
+			makeAccount(1, '1020', 'Banque', 'Asset'),
+			makeAccount(2, '1100', 'Débiteurs', 'Asset'),
+		];
+		const { container } = render(BankAccountJournalLinkForm, {
+			props: {
+				bankAccount: makeBankAccount(2),
+				accounts,
+				claimAccountIds: new Set([2]),
+				onSuccess: vi.fn(),
+				onCancel: vi.fn(),
+			},
+		});
+		const select = container.querySelector(
+			'[data-testid="journal-account-select"]',
+		) as HTMLSelectElement;
+		await waitFor(() => expect(select.selectedIndex).toBeGreaterThan(-1));
+		expect(select.selectedOptions[0].textContent).toContain('1100');
 	});
 });
