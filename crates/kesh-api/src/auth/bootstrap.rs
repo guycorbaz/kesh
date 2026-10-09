@@ -5,8 +5,11 @@
 //! et tolérant aux race conditions (démarrage concurrent de plusieurs
 //! instances contre la même DB) : la réparation qui précède les cas
 //! (Story 15-7b3) verrouille `companies … FOR UPDATE` en premier, si bien
-//! que deux instances se **sérialisent** sur elle — la seconde attend le
-//! `commit` de la première, puis ne trouve plus rien à réparer.
+//! que deux instances se **sérialisent** sur elle **dès que la base porte au
+//! moins une société** — la seconde attend le `commit` de la première, puis
+//! ne trouve plus rien à réparer. Sur une base sans société, ce verrou ne
+//! tient aucune ligne : elles se sérialisent alors sur les lignes `users` et
+//! `api_keys` que verrouille la règle des principaux (raisonné, non testé).
 //!
 //! **Avant la matrice, à chaque démarrage** (Story 15-7b3, #528, #542) :
 //! réparation de l'installation (`companies::repair_installation_in_tx`) —
@@ -37,6 +40,12 @@ use sqlx::MySqlPool;
 use crate::auth::password::{hash_password_async, verify_password_async};
 use crate::config::Config;
 use crate::errors::AppError;
+
+/// Aides de montage réservées aux tests (Story 15-7b3, C-15-7b3-4) : hors
+/// de `kesh-db/src`, incluses ici pour le seul binaire de tests unitaires.
+#[cfg(test)]
+#[path = "../../../kesh-db/tests/support/installations_atteintes.rs"]
+mod installations_atteintes;
 
 // Les valeurs d'une société provisoire (`STUB_COMPANY_NAME`,
 // `STUB_COMPANY_ADDRESS`) et son insertion (`companies::insert_stub`) vivent
@@ -450,6 +459,7 @@ async fn refresh_user_count(pool: &MySqlPool) -> Result<i64, AppError> {
 
 #[cfg(test)]
 mod tests {
+    use super::installations_atteintes;
     use super::*;
     use crate::auth::password::hash_password_async;
     use crate::config::test_helpers::make_test_config;
@@ -1156,7 +1166,7 @@ mod tests {
         let active_key = create_key(pool, company, a1, "intégration").await;
         let (revoked_key, _) = create_key(pool, company, a1, "ancienne").await;
         revoke_key(pool, company, revoked_key).await;
-        kesh_db::test_fixtures::rendre_principaux_orphelins(pool, DEAD).await;
+        installations_atteintes::rendre_principaux_orphelins(pool, DEAD).await;
         Montage1 {
             company,
             users: [u, a0, a1],
@@ -1448,7 +1458,7 @@ mod tests {
             );
         }
         insert_user(&pool, "seul", "Admin", true, stubs[0]).await;
-        kesh_db::test_fixtures::rendre_principaux_orphelins(&pool, DEAD).await;
+        installations_atteintes::rendre_principaux_orphelins(&pool, DEAD).await;
 
         assert_eq!(
             ensure_admin_user(&pool, &test_config_no_env())
@@ -1474,7 +1484,7 @@ mod tests {
     #[sqlx::test(migrations = "../kesh-db/test-schema")]
     async fn startup_repair_failure_does_not_block_startup(pool: MySqlPool) {
         let m = montage_1(&pool, true).await;
-        kesh_db::test_fixtures::poser_declencheur_en_echec(
+        installations_atteintes::poser_declencheur_en_echec(
             &pool,
             "t_15_7b3_audit",
             "BEFORE INSERT ON audit_log",

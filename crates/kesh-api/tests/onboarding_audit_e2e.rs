@@ -25,6 +25,9 @@ use kesh_api::config::Config;
 use kesh_api::{AppState, build_router};
 use serde_json::{Value, json};
 use sqlx::MySqlPool;
+
+#[path = "../../kesh-db/tests/support/installations_atteintes.rs"]
+mod installations_atteintes;
 use sqlx::mysql::MySqlPoolOptions;
 
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
@@ -2631,7 +2634,7 @@ async fn reset_failure_erases_nothing_and_never_returns_its_connection(pool: MyS
         .await
         .unwrap();
     // Pré-requis `@@log_bin = 0` asserté par le helper (Story 15-7b3, C-15-7b3-1).
-    kesh_db::test_fixtures::poser_declencheur_en_echec(
+    installations_atteintes::poser_declencheur_en_echec(
         &pool,
         "t_15_7b2_fail",
         "BEFORE INSERT ON audit_log",

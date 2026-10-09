@@ -437,10 +437,16 @@ const REPAIR_SAVEPOINT: &str = "repair_stub";
 /// `ON DELETE CASCADE` (`users`, `bank_profiles`, `contact_persons`,
 /// `email_templates`) et toute table future. `audit_log.company_id`, pointeur
 /// logique **sans** clé étrangère, n'y figure pas.
+///
+/// **Une liste vide est refusée** (`DbError::Invariant`) : `companies` est
+/// toujours désignée (au moins par `users`) ; un résultat vide ne peut venir
+/// que d'un schéma ou de droits inattendus, et le lire comme « rien ne
+/// désigne aucune société » ferait supprimer des sociétés dont les lignes
+/// filles en `ON DELETE CASCADE` partiraient en silence (revue P1, E1).
 pub async fn company_referencing_columns(
     conn: &mut sqlx::MySqlConnection,
 ) -> Result<Vec<(String, String)>, DbError> {
-    sqlx::query_as(
+    let columns: Vec<(String, String)> = sqlx::query_as(
         "SELECT CAST(TABLE_NAME AS CHAR), CAST(COLUMN_NAME AS CHAR) \
          FROM information_schema.KEY_COLUMN_USAGE \
          WHERE TABLE_SCHEMA = DATABASE() \
@@ -451,7 +457,13 @@ pub async fn company_referencing_columns(
     )
     .fetch_all(conn)
     .await
-    .map_err(map_db_error)
+    .map_err(map_db_error)?;
+    if columns.is_empty() {
+        return Err(DbError::Invariant(
+            "aucune clé étrangère vers companies lue dans information_schema".into(),
+        ));
+    }
+    Ok(columns)
 }
 
 /// `true` si **une** ligne d'**une** des colonnes `refs` désigne la société
@@ -546,7 +558,12 @@ async fn delete_stubs_under_savepoints(
 /// 1. `SELECT id, is_stub FROM companies ORDER BY id FOR UPDATE` (Pattern 5 :
 ///    `companies` d'abord ; c'est aussi la pré-condition de
 ///    [`reattach_orphan_principals_in_tx`], et ce qui sérialise deux instances
-///    démarrant sur la même base) ;
+///    démarrant sur la même base **dès qu'elle porte au moins une société** —
+///    sur une table vide, ce verrou ne tient aucune ligne ; la sérialisation
+///    passe alors par les lectures verrouillantes de `users` puis `api_keys`
+///    de la règle des principaux, et la seconde, relisant après le `commit`
+///    de la première, ne trouve plus de clé active orpheline — raisonné, non
+///    testé (revue P1, B-3)) ;
 /// 2. **démarrage seulement**, s'il y a plus d'une société : supprime les
 ///    sociétés provisoires (`is_stub = TRUE`) qu'**aucune ligne d'aucune
 ///    table** ne désigne ([`company_referencing_columns`]) — si toutes le

@@ -36,6 +36,9 @@ use reqwest::multipart;
 use serde_json::Value;
 use sha2::{Digest, Sha256};
 use sqlx::MySqlPool;
+
+#[path = "../../kesh-db/tests/support/installations_atteintes.rs"]
+mod installations_atteintes;
 use zip::write::SimpleFileOptions;
 use zip::{CompressionMethod, ZipWriter};
 
@@ -2891,16 +2894,11 @@ async fn full_import_round_trip_keeps_lettering_marks(pool: MySqlPool) {
 /// v0.12.x.
 const DEAD_COMPANY_15_7B3: i64 = 999_999;
 
-/// Test 2 (15-7b3, AC 3, 4) — l'import d'une archive prise sur une installation
-/// atteinte par #528 la répare **dans sa transaction** : A et B rattachés à la
-/// société restante ; la clé d'API — acceptée avant l'import, mais en 500 sur
-/// la société effacée — est révoquée puis repointée, et répond 401 ; l'entrée
-/// `installation.repaired` est signée par A, l'acteur d'`admin.full_import`
-/// (plus petit administrateur du jeu restauré), **non** par B qui a lancé
-/// l'import ; l'entrée `admin.full_import` désigne la société vivante.
-#[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn full_import_repairs_an_installation_hit_by_528(pool: MySqlPool) {
-    let app = spawn_app(pool.clone()).await;
+/// Montage de #528 (tests 2 et 2 bis) : A (`seed_admin`) puis B, administrateur
+/// d'id supérieur, sur la même société ; une clé d'API active créée par A ;
+/// puis l'état orphelin. Rend `(A, B, société, jeton de la clé, id de la clé)`.
+async fn monter_528(pool: &MySqlPool) -> (Ctx, i64, i64, String, i64) {
+    let pool = pool.clone();
     let a = seed_admin(&pool, "A").await;
     let company = a.company_id;
     let b = users::create(
@@ -2935,7 +2933,21 @@ async fn full_import_repairs_an_installation_hit_by_528(pool: MySqlPool) {
     .unwrap()
     .id;
     tx.commit().await.unwrap();
-    kesh_db::test_fixtures::rendre_principaux_orphelins(&pool, DEAD_COMPANY_15_7B3).await;
+    installations_atteintes::rendre_principaux_orphelins(&pool, DEAD_COMPANY_15_7B3).await;
+    (a, b, company, token, key)
+}
+
+/// Test 2 (15-7b3, AC 3, 4) — l'import d'une archive prise sur une installation
+/// atteinte par #528 la répare **dans sa transaction** : A et B rattachés à la
+/// société restante ; la clé d'API — acceptée avant l'import, mais en 500 sur
+/// la société effacée — est révoquée puis repointée, et répond 401 ; l'entrée
+/// `installation.repaired` est signée par A, l'acteur d'`admin.full_import`
+/// (plus petit administrateur du jeu restauré), **non** par B qui a lancé
+/// l'import ; l'entrée `admin.full_import` désigne la société vivante.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_repairs_an_installation_hit_by_528(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (a, b, company, token, key) = monter_528(&pool).await;
 
     let current_by_key = || {
         app.client
@@ -2992,4 +3004,78 @@ async fn full_import_repairs_an_installation_hit_by_528(pool: MySqlPool) {
         (a.user_id, Some(company)),
         "admin.full_import : même acteur, société vivante"
     );
+}
+
+/// Test 2 bis (15-7b3, AC 3 ; revue P1, A1) — une erreur de la réparation
+/// **annule l'import entier** : le déclencheur fait échouer l'entrée
+/// `installation.repaired` ⇒ 500 `ADMIN_FULL_IMPORT_FAILED`, et l'installation
+/// est celle d'avant l'import — la société témoin, posée après l'export, est
+/// toujours là ; les principaux restent orphelins, la clé active ; aucune
+/// entrée `installation.repaired` ni `admin.full_import`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_is_undone_when_the_repair_fails(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let (_a, b, company, _token, key) = monter_528(&pool).await;
+    let jwt_b = forge_jwt(b, "Admin", company);
+    let backup = export_backup(&app, &jwt_b).await;
+    let temoin = companies::create(
+        &pool,
+        NewCompany {
+            name: "Témoin SA".into(),
+            first_name: None,
+            last_name: None,
+            address_structured: StructuredAddress {
+                street: "Rue Test".into(),
+                building: "1".into(),
+                postal_code: "1000".into(),
+                city: "Lausanne".into(),
+                country: "CH".into(),
+            },
+            ide_number: None,
+            org_type: OrgType::Independant,
+            accounting_language: Language::Fr,
+            instance_language: Language::Fr,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    installations_atteintes::poser_declencheur_en_echec(
+        &pool,
+        "t_15_7b3_repair",
+        "BEFORE INSERT ON audit_log",
+        Some("NEW.action = 'installation.repaired'"),
+    )
+    .await;
+
+    let resp = post_import(&app, &jwt_b, backup).await;
+    assert_eq!(resp.status(), 500);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ADMIN_FULL_IMPORT_FAILED");
+
+    let ids: Vec<i64> = sqlx::query_scalar("SELECT id FROM companies ORDER BY id")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(ids, vec![company, temoin], "installation d'avant l'import");
+    let user_companies: Vec<i64> = sqlx::query_scalar("SELECT company_id FROM users ORDER BY id")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(user_companies, vec![DEAD_COMPANY_15_7B3; 2]);
+    let (key_company, revoked): (i64, bool) =
+        sqlx::query_as("SELECT company_id, revoked_at IS NOT NULL FROM api_keys WHERE id = ?")
+            .bind(key)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((key_company, revoked), (DEAD_COMPANY_15_7B3, false));
+    let entries: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log \
+         WHERE action IN ('installation.repaired', 'admin.full_import')",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(entries, 0);
 }
