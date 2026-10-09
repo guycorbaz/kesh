@@ -1055,6 +1055,37 @@ avant l'E2E :
   **code 0**, refus de Compose affiché pour `MARIADB_ROOT_PASSWORD`, aucun `refus.txt` à la racine ;
   `docker-compose.prod.yml` lisible.
 
+**Intégration sur `dc4bc58b`** (agent de clôture, Opus 5.5). La PR #582 était en conflit après le
+merge de la 15-6b (#580) et de la 15-12b (#581). Rebase sur `origin/main` `dc4bc58b`, conflits résolus
+en union :
+- `epic-15-choix-autonomes.md` : entrées de main (C-15-6b-1 à 3, C124 à C132, C-15-12b-1 à 4) puis les
+  miennes (C-15-13-1 à 26) ; aucun doublon (`uniq -d` sur les titres → vide) ;
+- `sprint-status.yaml` (deux commits) : lignes 15-12b de main (`done`) gardées, les lignes 15-13, 15-13a
+  et 15-13b ajoutées ; ma ligne `last_updated` renumérotée **(39)**, après les (36) à (38) de main ;
+- `admin-manual.pdf` : conflit binaire, le `.tex` ayant fusionné sans conflit (main y ajoute l'ordre
+  de clôture des exercices) → PDF **régénéré** (`make admin`) : `Overfull \hbox` 55 (comme avant),
+  aucun renvoi indéfini ; aplati (`pdftotext | tr`) : les contrôles de la story inchangés
+  (`openssl rand -hex 32 # → mot de passe MariaDB` 1, `MARIADB_ROOT_PASSWORD"'` 3, `--protocol=TCP` 5,
+  `CURRENT_USER()` 6, `compose lisible` 2, « ne remplacez pas ces deux valeurs » 1, « CHANGÉS DANS LA
+  BASE » 3, `exec (-T )?db` 0) et les ajouts de main présents (« Exercices clôturés dans le
+  désordre » 2, « du plus ancien vers le plus récent » 1). Brochure non touchée par main ;
+- `CHANGELOG.md` fusionné sans conflit : `[0.13.0]` garde une rubrique de chaque titre (Ajouté,
+  Modifié, Retiré, Corrigé, Sécurité). Aucun conflit de code.
+
+Gate **complet** sur l'état rebasé, bases `kesh_1513a` / `kesh_e2e_1513a` remises à zéro avant le
+backend et avant l'E2E :
+- `scripts/test-fast.sh` : **3033 / 3033**, 4 ignorés ;
+- frontend : `npm run check` 0 erreur (27 avertissements préexistants), `lint-i18n-ownership` vert,
+  Vitest **1139 / 1139** (114 fichiers), `npm run build` vert ;
+- E2E complet (même montage que la clôture, port 3017, secrets tirés par `openssl rand`,
+  `KESH_TEST_MODE=true` des deux côtés, `/health` → `smtpConfigured:true` ; de 08:11 à 08:23 UTC) :
+  **244 passés, 10 échoués**, 19 ignorés — KF-029 ×7, KF-045 ×2 (`invoices:415`, `:439`, avant midi
+  UTC) et `sidebar-navigation:75` (KF-052, #424, ouverte, dans la liste de `docs/testing.md`),
+  **rejoué seul : vert** ; aucun hors liste, aucun `Permission denied` au journal ; backend arrêté par
+  son PID ;
+- étape CI « Validate compose files » rejouée localement (`bash -eo pipefail`, `RUNNER_TEMP`, sans
+  `.env`) : code 0, refus affiché, aucun `refus.txt` à la racine.
+
 ### File List
 
 - `docker-compose.yml` — port de `mariadb` retiré (commentaire, forme loopback), trois `:?`.
