@@ -563,3 +563,25 @@ levé » de l'AC 3 ⇒ test 5 rouge ; remettre `get_company(&state)` dans la tra
   Le constat **E-2** (`seed_demo` lève `is_stub` sans borner à `id` ni bumper `version`,
   `routes/onboarding.rs:211`) relève de la 15-7b1, qui le prévoit déjà (son § 2 : `clear_stub_in_tx`
   remplace l'`UPDATE`). Aucun AC, tâche ni test ne change : **14 AC, 8 tâches, 13 tests**.
+- 2026-10-09 — **T0 du développement — relecture de la fiche contre `ec745d0c`** (`origin/main`, 15-7a1,
+  15-5d et 15-11a mergées). Aucun écart ne change une règle ni un AC sur le fond ; écarts de **fait**,
+  relocalisés par le texte :
+  - **Registre des routes, recompté depuis la source** (`the_registry_partition_is_what_the_story_declares`
+    et `LIB_ROUTES`) : la base porte `traced` **95** (et non 94 : la 15-8a a ajouté le `PUT` des
+    écritures), `exempt` 15, `no_matter` **2** (et non 3), total 112. Après la story :
+    `traced` **104**, `exempt` **6**, `no_matter` **2**, total 112. Le manuel (AC 13) dira donc
+    « 104 des 112 routes » et « deux routes sans matière » — 104 + 6 + 2 = 112.
+  - **Lignes dérivées** : `routes/onboarding.rs` compte 1030 lignes ; les trois copies du verrou d'état
+    sont à `:249-250` (`reset`), `:648-649` (`finalize_inner`), `:801-802` (relecture) ; le retour
+    idempotent de `finalize` à `:672-675` ; le `TODO(L65 …)` à `:523-527` ; le commentaire
+    « `is_stub = FALSE` inconditionnel » à `:995-998`. `admin-manual.tex` : `:1945` (décompte) et
+    `:2128` (réserve), au lieu de `:1821` et `:2004`. Pattern 5 : liste `:298-302` inchangée, table
+    `:318` (« company only »).
+  - **Variantes de la 15-7a1 vérifiées présentes** : `lock_state_in_tx` et `LOCK_SQL` publique,
+    `clear_stub_in_tx` (rend `bool`), `upsert_primary_in_tx` (`UpsertPrimaryOutcome`),
+    `bulk_create_from_chart_in_tx` (`Vec<Account>`), `count_by_company` générique sur l'exécuteur,
+    `insert_with_defaults_in_tx` (`(réglages, inséré)`), `seed_default_swiss_rates_in_tx`
+    (`Vec<VatRate>`, ordre du seed).
+  - **« Journal » de la colonne `Rejeu` du registre** = journal **comptable** : les neuf routes restent
+    `SansEcritureAuJournal` (elles n'écrivent aucune écriture comptable) — la story ne touche que la
+    colonne d'audit.

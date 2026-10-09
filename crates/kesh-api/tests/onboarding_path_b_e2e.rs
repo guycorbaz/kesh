@@ -310,14 +310,38 @@ async fn full_path_b_flow(pool: MySqlPool) {
             .await
             .unwrap();
     assert_eq!(settings_rows, 1, "une ligne de réglages de facturation");
-    // `user.created` : bootstrap (`ensure_admin_user`) ; `fiscal_year.created` :
-    // `fiscal_years::create_if_absent_in_tx` dans `finalize`. Aucune autre trace
-    // (#434 : l'onboarding n'en écrit pas encore — c'est la 15-7a2).
-    let actions: Vec<String> = sqlx::query_scalar("SELECT action FROM audit_log ORDER BY id")
-        .fetch_all(&pool)
-        .await
-        .unwrap();
-    assert_eq!(actions, ["user.created", "fiscal_year.created"]);
+    // `user.created` : bootstrap (`ensure_admin_user`), avant toute route ; puis
+    // la séquence de l'onboarding (Story 15-7a2, AC 2). Société de
+    // `create_test_company` (non provisoire, `Independant`, FR/FR) : la langue
+    // FR et le type `Independant` ne changent rien, d'où l'absence de
+    // `company.updated` pour `language` et `org-type` ; les coordonnées ne
+    // portent pas la levée du drapeau provisoire.
+    let actions = common::audit_sequence(&pool).await;
+    assert_eq!(
+        actions,
+        [
+            "user.created",
+            "installation.step_completed",
+            "installation.ui_mode_changed",
+            "installation.step_completed",
+            "installation.step_completed",
+            "installation.step_completed",
+            "company.updated",
+            "account.chart_loaded",
+            "installation.step_completed",
+            "company.updated",
+            "installation.step_completed",
+            "bank_account.created",
+            "installation.step_completed",
+            "company_invoice_settings.created",
+            "vat_rate.created",
+            "vat_rate.created",
+            "vat_rate.created",
+            "vat_rate.created",
+            "fiscal_year.created",
+            "installation.step_completed",
+        ]
+    );
 }
 
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

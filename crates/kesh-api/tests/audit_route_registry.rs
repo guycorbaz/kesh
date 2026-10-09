@@ -204,7 +204,7 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("put", "companies::update_company_contact_details", Traced, SansEcritureAuJournal),
     ("post", "fiscal_years::reopen_fiscal_year", Traced, SansEcritureAuJournal),
     ("post", "companies::unlock_company_books", Traced, SansEcritureAuJournal),
-    ("post", "onboarding::reset", Exempt("issue #434 — toute la séquence d'installation est non tracée"), Exemptee("effacement de la démo : geste d'administration exclusif, hors exploitation — un 1213 annule sa transaction unique et la relance manuelle est sûre")),
+    ("post", "onboarding::reset", Exempt("issue #434 — peuplement de démonstration (15-7b1) et remise à zéro (15-7b2)"), Exemptee("effacement de la démo : geste d'administration exclusif, hors exploitation — un 1213 annule sa transaction unique et la relance manuelle est sûre")),
     ("post", "accounts::create_account", Traced, SansEcritureAuJournal),
     ("put", "accounts::update_account", Traced, SansEcritureAuJournal),
     ("put", "accounts::archive_account", Traced, SansEcritureAuJournal),
@@ -296,16 +296,16 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("post", "projects::unarchive_project", Traced, SansEcritureAuJournal),
     ("put", "auth::change_password", Exempt("issue #435 — change_password, login, logout, refresh"), SansEcritureAuJournal),
     ("put", "profile::set_mode", Traced, SansEcritureAuJournal),
-    ("post", "onboarding::set_language", Exempt("issue #434 — toute la séquence d'installation est non tracée"), SansEcritureAuJournal),
-    ("post", "onboarding::set_mode", Exempt("issue #434 — toute la séquence d'installation est non tracée"), SansEcritureAuJournal),
-    ("post", "onboarding::seed_demo", Exempt("issue #434 — toute la séquence d'installation est non tracée"), SansEcritureAuJournal),
-    ("post", "onboarding::start_production", Exempt("issue #434 — toute la séquence d'installation est non tracée"), SansEcritureAuJournal),
-    ("post", "onboarding::set_org_type", Exempt("issue #434 — toute la séquence d'installation est non tracée"), SansEcritureAuJournal),
-    ("post", "onboarding::set_accounting_language", Exempt("issue #434 — toute la séquence d'installation est non tracée"), SansEcritureAuJournal),
-    ("post", "onboarding::set_coordinates", Exempt("issue #434 — toute la séquence d'installation est non tracée"), SansEcritureAuJournal),
-    ("post", "onboarding::set_bank_account", Exempt("issue #434 — toute la séquence d'installation est non tracée"), SansEcritureAuJournal),
-    ("post", "onboarding::skip_bank", Exempt("issue #434 — toute la séquence d'installation est non tracée"), SansEcritureAuJournal),
-    ("post", "onboarding::finalize", Exempt("issue #434 — toute la séquence d'installation est non tracée"), SansEcritureAuJournal),
+    ("post", "onboarding::set_language", Traced, SansEcritureAuJournal),
+    ("post", "onboarding::set_mode", Traced, SansEcritureAuJournal),
+    ("post", "onboarding::seed_demo", Exempt("issue #434 — peuplement de démonstration (15-7b1) et remise à zéro (15-7b2)"), SansEcritureAuJournal),
+    ("post", "onboarding::start_production", Traced, SansEcritureAuJournal),
+    ("post", "onboarding::set_org_type", Traced, SansEcritureAuJournal),
+    ("post", "onboarding::set_accounting_language", Traced, SansEcritureAuJournal),
+    ("post", "onboarding::set_coordinates", Traced, SansEcritureAuJournal),
+    ("post", "onboarding::set_bank_account", Traced, SansEcritureAuJournal),
+    ("post", "onboarding::skip_bank", Traced, SansEcritureAuJournal),
+    ("post", "onboarding::finalize", Traced, SansEcritureAuJournal),
     ("post", "auth::login", Exempt("issue #435 — change_password, login, logout, refresh"), SansEcritureAuJournal),
     ("post", "auth::logout", Exempt("issue #435 — change_password, login, logout, refresh"), SansEcritureAuJournal),
     ("post", "auth::refresh", Exempt("issue #435 — change_password, login, logout, refresh"), SansEcritureAuJournal),
@@ -606,17 +606,18 @@ fn the_registry_partition_is_what_the_story_declares() {
     assert_eq!(LIB_ROUTES.len(), 112, "l'inventaire porte sur 112 routes");
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
     assert_eq!(
-        traced, 95,
+        traced, 104,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
          (25-4-d2a, #384), plus le refigeage du PDF d'une facture (25-6-b, #387), plus le \
          complément des soldes de départ (25-7, #445), plus la modification d'une écriture \
-         (15-8a, #532 — le `PUT` gelé par la 24-4b ne mutait rien)"
+         (15-8a, #532 — le `PUT` gelé par la 24-4b ne mutait rien), plus les neuf routes \
+         de configuration de l'installation (15-7a2, #434)"
     );
     assert_eq!(
-        exempt, 15,
-        "11 routes d'onboarding (#434) + 4 d'auth (#435)"
+        exempt, 6,
+        "2 routes d'onboarding (#434, 15-7b1, 15-7b2) + 4 d'auth (#435)"
     );
     assert_eq!(
         no_matter, 2,
