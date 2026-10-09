@@ -6721,4 +6721,38 @@ l'import (#458–#461).
     fermée, non inventaire des non-résolus).
   - **Sans suite** : B3-4 (guide et écran proposent des exemples différents, tous deux vrais) ; LOW-4 (deux
     chemins vers l'écran des exercices) — territoire de #585.
+## C-15-1a-ii-1 — 15-1a-ii (T0) : la doc d'`UnvalidationBlocker` disait encore « trois autres empêchements »
+- **Contexte** : C132 et la réserve R6-3 prescrivent de nommer la marque de lettrage sans la compter parmi les refus de la dévalidation, en relisant les totaux sur le `main` du moment. Sur `0724904c`, la 15-12b avait porté la doc d'`unvalidate` à « quatre autres » et les totaux à « neuf », mais la doc d'`UnvalidationBlocker` (`kesh-db/src/errors.rs`) disait toujours « trois autres (exercice clos, contre-passée, période verrouillée) » — l'exercice postérieur clos, rendu inconditionnel par la 15-12b, y manquait.
+- **Retenu** : « quatre autres », `LaterFiscalYearClosed` nommé, et la marque nommée comme inatteignable, non comptée. Totaux « neuf » laissés tels quels.
+- **Écartées** : garder « trois » (la fiche le prescrivait sur la foi de `ec745d0c` ; la réserve R6-3 interdit précisément de remettre un chiffre périmé) ; compter la marque (« cinq »), contraire à C132.
+- **Réversible** : oui (doc-comment seul).
+
+## C-15-1a-ii-2 — 15-1a-ii (T10) : terminologie du lettrage en allemand et en italien
+- **Contexte** : les textes allemands et italiens arrêtés par la fiche pour la clé neuve et les deux clés des soldes de départ sont à « aligner sur les traductions que la 15-1a-i aura retenues ». La 15-1a-i a retenu *Ausgleich / ausgleichen / Ausgleich aufheben*, *match / unmatch*, *abbinamento / abbinare / disabbinare* (vouvoiement pluriel en italien : « annullate », « riprovate »).
+- **Retenu** : `journal-entries-modify-blocked-lettered` = « Diese Buchung ist ausgeglichen: Heben Sie den Ausgleich zuerst auf. » / « This entry is matched: unmatch it first. » / « Questa scrittura è abbinata: disabbinatela prima. » ; pour les deux clés des soldes de départ, le verbe italien de la 15-1a-i (« disabbinatela prima », « dopo averla disabbinata ») au lieu de « annulla prima l'abbinamento » de la fiche (tutoiement et périphrase) ; allemand et anglais repris de la fiche tels quels.
+- **Écartées** : reprendre l'italien de la fiche mot pour mot (deux désignations et deux registres pour le même geste).
+- **Réversible** : oui (catalogues).
+
+## C-15-1a-ii-3 — 15-1a-ii : la PR référence #518, elle ne la ferme pas
+- **Contexte** : la consigne de développement annonçait que la 15-1a-ii « clôt le socle » du lettrage, et la clé 15-1a-i du sprint-status disait « la 15-1a-ii fermera l'issue ». Or #518 est la fonctionnalité entière (« savoir ce qui reste ouvert sur un compte »), la fiche porte `refs #518`, et la 15-1c se déclare « closes #518 (dernière des quatre) ».
+- **Retenu** : commits et PR en `refs #518` ; la PR de la 15-1c portera `closes #518`. Le commentaire de la clé 15-1a-i est rectifié dans le sprint-status.
+- **Écartées** : `closes #518` ici (fermerait l'issue avant l'écran, la vue des postes ouverts et le lettrage des pièces).
+- **Réversible** : oui (mot-clé de PR).
+
+## C-15-1a-ii-4 — 15-1a-ii (T12) : où vivent les tests
+- **Contexte** : les tests de la fiche visent la route, `delete_in_tx(…, false)` (fonction `pub(crate)`), et deux annulations dont le montage existe au dépôt.
+- **Retenu** : les tests de route (AC8, AC9 (a)(b)(c)(e)(f), AC10, entrelacement) dans `crates/kesh-api/tests/journal_entry_reversal_e2e.rs`, qui porte déjà les auxiliaires `PUT`/`DELETE`/détail et la table de correspondance ; les tests de `delete_in_tx(…, false)` (marque hors drapeau, paire C117, verrou de période sur le chemin `false`) en module de `journal_entries.rs`, dans une transaction annulée (base partagée, KF-039) ; (d) et le dé-rapprochement au dépôt (`supplier_invoices_repository.rs`, `reconciliation_cancel.rs`), le refus de délettrage éprouvé par `dissolve_group_in_tx` en mode `Manual` — la fonction qu'appelle la route, dont le mappage HTTP est testé par la 15-1a-i.
+- **Écartées** : un fichier de test neuf (aurait recopié cent lignes de montage) ; rendre `delete_in_tx` public pour un test.
+- **Réversible** : oui.
+
+## C-15-1a-ii-5 — 15-1a-ii (T12) : le lettrage concurrent d'un `PUT`, entrelacé dans les deux ordres
+- **Contexte** : la fiche demande un `POST /letterings` concurrent d'un `PUT` (« l'un réussit, l'autre rend un refus métier, jamais un 500 »), avec les motifs de `attendre_une_requete_en_cours`.
+- **Retenu** : un test déterministe, `lettering_and_put_interleaved_never_answer_500` : le test tient l'en-tête de l'écriture, lance les deux requêtes l'une après l'autre en attendant de voir chacune bloquée (motifs `["jel.id IN", "FOR UPDATE"]` et `["je.version", "FOR UPDATE"]`), puis relâche. Lettrage d'abord → `201` puis `409 ENTRY_LETTERED` ; `PUT` d'abord → le cycle lignes ↔ écriture, résolu par le rejeu : `(201, 409 ENTRY_LETTERED)` ou `(404, 200)`. Jamais un 500.
+- **Écartées** : une course libre répétée (prouve l'absence de 500 sans prouver que le cycle a été exercé).
+- **Réversible** : oui.
+
+## C-15-1a-ii-6 — 15-1a-ii (AC15 ii) : la phrase de la réouverture d'un exercice, hors du relevé de la fiche
+- **Contexte** : le contrôle du PDF utilisateur aplati par la valeur (`se modifie`) a rendu une promesse sans réserve absente du relevé d'AC15 (ii) : « L'exercice rouvert redevient modifiable — ses écritures saisies à la main se modifient de nouveau, si aucun exercice postérieur n'est clôturé » (`user-manual.tex`, section de la clôture).
+- **Retenu** : la réserve « et après délettrage pour celles dont une ligne est lettrée », PDF régénéré.
+- **Signalé, non traité** : le § « Passer à la 0.13.0 » du manuel d'administration (relevé par C-15-1a-i-14) n'est pas touché — hors du périmètre de cette fiche, à la préparation de la release.
 - **Réversible** : oui.
