@@ -31,8 +31,8 @@ touche le lettrage (#518), et #577 (texte du `CLAUDE.md`, affaire de Guy).
 
 | Sous-story | Fiche | Issues fermées | Dépendance |
 |---|---|---|---|
-| **15-14a** — manuels et libellés | `15-14a-manuels-et-libelles.md` | #539, #547, #488, #291, #458, #449, #432, #569, #321, #323 (refs #459) | aucune dépendance de code ; développable sur `main`. **Conflits de rebase attendus** avec la 15-7b1 (`user-manual.tex:182`, `admin-manual.pdf`, `user-manual.pdf`) et la 15-13b (manuel d'administration) : le dernier mergé rebase et **régénère** les PDF |
-| **15-14b** — exploitation et multi-société | `15-14b-exploitation-et-multi-societe.md` | #575, #554, #127 | **après** le merge de 15-13b et 15-14a (15-13a : mergée, `bcded0c8`) |
+| **15-14a** — manuels et libellés | `15-14a-manuels-et-libelles.md` | #539, #547, #488, #291, #458, #449, #432, #569, #321, #323 (refs #459) | **après le merge de la 15-7b1** (PR #583, en cours — elle corrige `user-manual.tex:182` ; C-15-14-19). **Conflits de rebase attendus** avec la 15-7b1 (`user-manual.tex:173-189`, `admin-manual.pdf`, `user-manual.pdf`, et `crates/kesh-db/src/repositories/vat_rates.rs` — doc-comment `:351-353` contre le `mod tests` neuf : zones disjointes, mais un repository, donc gate complet après rebase ; validation P2, L-8) et la 15-13b (manuel d'administration) : le dernier mergé rebase et **régénère** les PDF |
+| **15-14b** — exploitation et multi-société | `15-14b-exploitation-et-multi-societe.md` | #575, #554, #127 | **après** le merge de 15-13b (PR #584), 15-7b1 (PR #583) et 15-14a (15-13a : mergée, `bcded0c8`) ; textes cibles écrits pour l'état après la 15-13b (C-15-14-21) |
 
 Motif : une **dépendance**, non le nombre de modules. La 15-14b réécrit le manuel d'administration et le
 compose de développement, que la 15-13a (+187 lignes au manuel) et la 15-13b réécrivent aussi, et le
@@ -48,7 +48,7 @@ une coupe « doc / libellés » ferait se disputer le manuel utilisateur aux deu
 | Issue | Prio. | Raison |
 |---|---|---|
 | #579 | P4 | B-2 exige un champ neuf dans `DbError::SettlementCounterpartyIsClaimAccount` (kesh-db) et B-6 une refonte ; dette confiée à la 15-6c (C-15-6b-3), en développement |
-| #324 | P3 | prémisse fausse au code : une écriture saisie reste modifiable (« rien à valider », manuel `:476-481`) — c'est le français « Valider » qui trompe, arbitrage de vocabulaire de Guy, ~15 sélecteurs E2E/Vitest ; **à commenter sur l'issue** |
+| #324 | P3 | prémisse fausse au code : une écriture saisie reste modifiable (« rien à valider », manuel `:476-481`) — c'est le français « Valider » qui trompe, arbitrage de vocabulaire de Guy, ~15 sélecteurs E2E/Vitest ; **commentée** sur l'issue le 2026-10-09 (08:24 UTC — validation P2, R-11) |
 | #469 | P4 | demande un mécanisme `AppError` résolu par clé, non un libellé |
 | #339 | P4 | 48 sites de markup en dur : un rollout i18n |
 | #504 | P4 | règle métier (langue du contact) |
@@ -59,8 +59,9 @@ une coupe « doc / libellés » ferait se disputer le manuel utilisateur aux deu
 ## Pour l'orchestrateur
 
 - **Validation** : chaque sous-fiche a sa section « Ce que la validation P1 doit regarder ».
-- **Issues** : commenter #324 (prémisse réfutée, question de vocabulaire posée à Guy) ; aucune issue à créer.
-- **Ordre** : 15-14a quand un agent est libre ; 15-14b après les merges de 15-13b et 15-14a (15-13a faite).
+- **Issues** : #324 déjà commentée (le 2026-10-09, 08:24 UTC) — **ne pas reposter** ; aucune issue à créer.
+- **Ordre** : 15-14a après le merge de la 15-7b1 ; 15-14b après les merges de 15-13b, 15-7b1 et 15-14a
+  (15-13a faite).
 
 ## Change Log
 
@@ -74,3 +75,17 @@ une coupe « doc / libellés » ferait se disputer le manuel utilisateur aux deu
   Tous des **sites d'inventaire manqués** ou des **tests sous-spécifiés** ; aucun fait de fond réfuté.
   Remédiation dans les deux sous-fiches (leur Change Log détaille), branche rebasée sur `bcded0c8` (15-13a
   mergée) et numéros réalignés. Choix C-15-14-11 à C-15-14-16. Signal D5 : non levé (passe 1).
+- 2026-10-09 — **Validation P2** (Opus ×2, lentilles R et F ; rapports `kesh-gate-logs/15-14-validate-p2-{R,F}.md`) :
+  0 CRITICAL, 0 HIGH ; **12 MEDIUM bruts** (R 3, F 9), trois recoupements (R-1 = F-5, R-2 = F-6, R-3 = F-2),
+  soit **9 MEDIUM distincts** ; **20 LOW bruts** (R 11, F 9), quatre recoupements (R-5 = L-1, R-9 = L-2,
+  R-8 = L-4, R-13 = L-6) et un LOW absorbé par un MEDIUM (R-6 ≈ F-9), soit **15 LOW distincts**. Ventilation :
+  15-14a 5 MEDIUM (F-1 partagé, F-4, F-5, F-6, F-9) et 8 LOW (R-14 partagé) ; 15-14b 5 MEDIUM (F-1 partagé,
+  F-2, F-3, F-7, F-8) et 7 LOW (R-14 partagé) ; index 1 LOW (R-11). Tous corrigés, **aucun réfuté** ; R-10
+  corrigé comme renvoi ambigu (le `fiscal_years.rs:228` visait le repository, non la route).
+  **Trend** : P1 8 MEDIUM / 10 LOW (Sonnet ×2) → P2 9 MEDIUM / 15 LOW (Opus ×2). **Trois MEDIUM nés de la
+  remédiation P1** (F-5, F-6, F-8), tous des inventaires ou listes déclarés complets ; F-1 (contrôle PDF à
+  vide) et F-2 (Snapshot Replication) préexistaient. **Signal D5 levé et déclaré** (MEDIUM → MEDIUM, trois
+  recyclés) : **pas de nouveau découpage**, décision de l'orchestrateur (C-15-14-23) — la story est déjà
+  coupée, et le recyclage porte sur la complétude des inventaires, traitée à la racine par C-15-14-17 :
+  chaque inventaire s'écrit désormais comme une commande exécutée, comptée sur `bcded0c8`, partitionnée.
+  Choix C-15-14-17 à C-15-14-24. Détail dans le Change Log de chaque sous-fiche.

@@ -6022,11 +6022,12 @@ l'import (#458–#461).
 ## C-15-14-11 — 15-14a (validation P1) : « réglages » en minuscule est un nom commun, sauf deux renvois à l'écran
 
 - **Contexte** : R3 ≈ F-11. L'inventaire de #547 était relevé par un grep sensible à la casse. Le minuscule
-  « réglages » apparaît 22 fois hors commentaires de code (catalogue fr-CH, replis Rust, deux manuels), et deux
+  « réglages » apparaît 22 fois hors commentaires de code *(faux : 28 lignes, 26 assumées — rectifié par
+  C-15-14-17)* (catalogue fr-CH, replis Rust, deux manuels), et deux
   renvois à l'écran avaient échappé : fr-CH `error-invoice-pdf-header-overflow` (« Supprimez une coordonnée …
   dans les réglages », où de-CH, it-CH et en-CH nomment le menu) avec son repli `errors.rs:1807`, et
   `.env.example:305` (« (Réglages) », fichier hors du périmètre du grep).
-- **Retenu** : ces deux renvois deviennent « Paramètres » ; les 22 autres sont le **nom commun** — les valeurs
+- **Retenu** : ces deux renvois deviennent « Paramètres » ; les 22 *(26 : C-15-14-17)* autres sont le **nom commun** — les valeurs
   configurées (« le compte de TVA due désigné dans les réglages », « les trois réglages sont vides ») — et entrent
   à l'inventaire des non résolus de l'AC 2, avec les notes de versions publiées du CHANGELOG (`:347`, `:433`,
   `:451`). T2, T3 et T9 gardent les deux renvois corrigés.
@@ -6114,4 +6115,117 @@ l'import (#458–#461).
   (`:1369` sur `dc4bc58b`).
 - **`user-manual.tex:182`** (R12) : corrigé par la 15-14a sans condition, texte identique à celui de la 15-7b1
   (non mergée), pour que le conflit de rebase se résolve en gardant l'un ou l'autre.
+- **Réversible** : oui.
+
+## C-15-14-17 — 15-14 (validation P2) : un inventaire s'écrit comme une commande comptée et partitionnée, PDF normalisé, `docs/user-guide/` compris
+
+- **Contexte** : trois MEDIUM de la validation P2 sont nés de la remédiation P1, tous des inventaires déclarés
+  complets qui ne l'étaient pas (R-1 = F-5 « le seul autre site de-CH » ; R-2 = F-6 « 22 » réglages, 26 en
+  réalité ; F-8, la liste de formes de G5 étendue par la P1, qui laisse passer les affirmations réécrites) ;
+  un quatrième, manqué depuis la spécification, est de même nature (R-3 = F-2, Snapshot Replication hors
+  inventaire de #575). F-1 : le contrôle aplati des PDF prescrit
+  (`pdftotext | tr | grep -F`) passe à vide sur toute apostrophe (`'` y devient `’`) et sur les traits d'union
+  coupés — vert avant correction. F-4 : `docs/user-guide/fr/getting-started.md:29`, lié depuis le README,
+  promettait KMU, Verein et un import de plan, hors de tout périmètre de grep.
+- **Retenu** : chaque AC qui corrige une famille de textes écrit la **commande** d'inventaire, son **compte** sur
+  `bcded0c8` et la **partition** corrigé / assumé-avec-raison, recalculable ; le T0 relance chaque commande et
+  ventile tout écart avant d'écrire. Le contrôle des PDF passe par une fonction `occ` qui normalise PDF **et**
+  motif (apostrophes, ligatures, espaces insécables, espaces et traits d'union retirés), et chaque contrôle
+  d'absence est précédé du même contrôle de présence sur le PDF d'avant (≥ 1). `docs/user-guide/` entre dans le
+  périmètre commun ; la ligne 29 du guide est corrigée (15-14a, AC 3) et gardée par G4. Rectificatif de
+  C-15-14-11 : **26** lignes « réglages » minuscules assumées (28 − 2), non 22 — `user-manual.tex:364`, `:380`,
+  `:394` manquaient ; `:965` (« reste intacte dans vos réglages ») est assumé, il ne prescrit aucun geste. Les
+  tests sont renommés **G1-G12** (15-14a) et **G1-G5** (15-14b) pour ne plus se confondre avec les tâches
+  T0-T8 (R-14).
+- **Écartées** : recopier des listes de sites (c'est ce qui a produit les trois MEDIUM) ; contrôler les PDF sur
+  `pdftotext` brut ; laisser `docs/user-guide/` hors périmètre (document vivant, lié depuis le README).
+- **Réversible** : oui (fiches).
+
+## C-15-14-18 — 15-14a (validation P2) : en de-CH, l'état d'un exercice clôturé se dit « abgeschlossen », comme son action
+
+- **Contexte** : R-1 = F-5. L'AC 10 corrigeait le verbe du bouton et réécrivait déjà deux participes
+  (« geschlossen bleibt », « ist geschlossen ») ; six autres valeurs de-CH gardaient « geschlossen » /
+  « Schliessung » pour un exercice clôturé, dont le toast qui suit immédiatement le clic sur « Abschliessen ».
+  Inventaire `\b([Gg]eschlossen|[Ss]chliessen|[Ss]chliessung)\b` : 20 lignes.
+- **Retenu** : corriger les six (`:861`, `:869`, `:873`, `:877`, `:890`, `:893` → « abgeschlossen », « erneuten
+  Abschluss ») — même critère que les deux participes déjà réécrits, glossaire « clôture = Abschluss », forme
+  déjà employée au catalogue (`:241`, `:288`, `:2224`). Partition 5 + 1 + 6 + 4 + 4 = 20 ; restent 8 lignes,
+  verbe séparable « Schliessen Sie … ab » (4) et fermeture de panneau (4). G11 garde la partition.
+- **Écartée** : n'inventorier les six qu'en « assumés » (le participe d'état est défendable, mais la story
+  corrige déjà ce même participe ailleurs : deux traitements pour un même cas). Aucun test ni repli ne les fige.
+- **Réversible** : oui (catalogue).
+
+## C-15-14-19 — 15-14 (validation P2) : dépendance déclarée envers la 15-7b1, qui corrige les mêmes lignes
+
+- **Contexte** : F-7, L-8. La 15-7b1 (PR #583, en cours de merge) réécrit `user-manual.tex:173`-`:189` — dont
+  `:182` (« Sterchi PME », AC 3 de la 15-14a) et les deux « nouvelle company » (`:173`, `:189`) que F-7 trouve
+  hors de l'AC 3 de la 15-14b — et modifie un doc-comment de `vat_rates.rs`, où la 15-14a ajoute un `mod tests`.
+- **Retenu** (consigne de l'orchestrateur) : ne pas doubler son travail. La 15-14a et la 15-14b se développent
+  **après** son merge ; le T0 constate les sites corrigés. Repli de la 15-14a si elle n'était pas mergée : texte
+  identique au sien à `:182` (G4 interdit `Sterchi`). Rebase sur `vat_rates.rs` : gate complet (exception
+  `kesh-db`). Ses deux « réglages de facturation » ajoutés portent l'inventaire (B) de l'AC 2 à 30.
+- **Écartée** : réécrire `:173`/`:189` dans la 15-14b (conflit certain, travail fait deux fois).
+- **Réversible** : oui.
+
+## C-15-14-20 — 15-14a (validation P2) : deux verbes de réouverture coexistent en de-CH
+
+- **Contexte** : L-3. Les quatre clés qui portent déjà le marqueur d'ordre écrivent « eröffnet eine
+  Administratorin oder ein Administrator … wieder » ; les six de l'AC 8 écriront « muss ein Administrator …
+  wieder öffnen » (validation P1, F-2 : le verbe du bouton `Wieder öffnen`).
+- **Retenu** : laisser coexister, chaque clé gardant sa forme ; le marqueur « beginnend mit dem neuesten », seul
+  contrôlé par G8, est identique.
+- **Écartée** : harmoniser les quatre autres clés (hors #569, et réécriture de style sans défaut).
+- **Réversible** : oui.
+
+## C-15-14-21 — 15-14b (validation P2) : l'AC 1 est écrit pour l'état après la 15-13b, et la base se restaure par son dump
+
+- **Contexte** : F-3 — la 15-13b (*done*, PR #584) monte `./backup` (secrets) dans les deux compose : « trois
+  montages » et la liste Hyper Backup de l'AC 1 seraient faux à son merge. R-3 = F-2 — la sous-section Snapshot
+  Replication et la copie 1 du 3-2-1 promettent de restaurer des écritures que le snapshot du dossier du compose
+  ne contient pas, et la procédure de recovery ne recharge aucun dump.
+- **Retenu** (consigne de l'orchestrateur pour F-3) : texte cible pour l'état **après** la 15-13b — quatre
+  montages, `backup/` coché avec sa mise en garde « secrets » ; numéros de `bcded0c8`, réalignés au T0 (la 15-13b
+  décale de +4, même contenu vérifié sur sa branche). Snapshot Replication, copie 1, introduction (« remplacent »)
+  et « cohérence transactionnelle » réécrits : le dossier du compose ne contient pas la base ; elle se restaure
+  par le dump du pré-script, rechargé par le même conteneur jetable ; la recette rejoue la recovery ; G3 exige
+  que la sous-section Snapshot cite le fichier de dump. Inventaire borné aux deux sections : 34 lignes, 13 + 21.
+- **Écartées** : écrire contre l'état de `bcded0c8` (faux au merge de la dépendance) ; formuler la liste par
+  la seule commande `grep` sur le compose (moins lisible pour l'exploitant) ; laisser Snapshot Replication en
+  angle mort (c'est le symptôme même de #575).
+- **Réversible** : oui (texte).
+
+## C-15-14-22 — 15-14b (validation P2) : un commentaire de `docker-compose.prod.yml` se corrige
+
+- **Contexte** : R-4. `docker-compose.prod.yml:112-113` dit le dossier `./log` « co-localisé avec .env + DB pour
+  le scope unique Hyper Backup » — même faux que `admin-manual.tex:1575` ; la fiche s'interdisait ce fichier.
+- **Retenu** : autoriser cette seule ligne de commentaire (aucune clé, aucun montage) ; `configuration_transmise`
+  et l'étape CI « Validate compose files » rejouées au T7.
+- **Écartée** : l'inventorier comme assumé — c'est le fichier que l'exploitant télécharge et lit.
+- **Réversible** : oui.
+
+## C-15-14-23 — 15-14 (validation P2) : signal D5 levé, pas de nouveau découpage
+
+- **Contexte** : la validation P2 rend **9 MEDIUM distincts** (12 bruts, recoupements R-1 = F-5, R-2 = F-6,
+  R-3 = F-2) contre 8 en P1 : sévérité égale (MEDIUM → MEDIUM), et **trois** sont nés de la remédiation P1
+  (F-5, F-6, F-8 — inventaires ou listes déclarés complets) — recyclage au sens de l'amendement D5 de la
+  § *Règle de splitting préventif*.
+- **Retenu** (décision de l'orchestrateur) : **pas** de nouveau découpage. La story est déjà coupée en 15-14a /
+  15-14b, et le recyclage porte sur la **complétude des inventaires**, que C-15-14-17 traite à la racine
+  (commandes comptées et partitionnées, recalculables). Signal déclaré au Change Log.
+- **Écartée** : découper encore (par manuel, ou par issue) : la cause — des listes recopiées au lieu de
+  commandes — se reproduirait dans chaque morceau.
+- **Réversible** : oui (une passe P3 qui verrait recycler un inventaire écrit selon C-15-14-17 rouvrirait la
+  question).
+
+## C-15-14-24 — 15-14b (validation P2) : le test du multi-société porte sur un domaine fermé, non sur des formes
+
+- **Contexte** : F-8. G5 interdisait six formes ; les affirmations réécrites par l'AC 3 en ont d'autres
+  (« plusieurs sociétés (companies) sur une même instance », « plusieurs sociétés\n peuvent coexister sur une
+  même instance ») — remises en place, aucune ne le faisait rougir. Et `compte dédié`, interdit partout,
+  aurait rougi sur un emploi légitime (« un compte MariaDB dédié » de l'AC 1).
+- **Retenu** : domaine calculé sur le texte normalisé (motif de l'AC 3, 26 occurrences sur `bcded0c8`) ; toute
+  occurrence doit tomber dans une liste fermée de 7 fragments assumés, chacun encore présent ; `compte dédié`
+  n'entre au domaine que dans `ou un compte dédié` / `via un compte dédié`, et une contre-mutation (« un compte
+  dédié aux frais bancaires ») doit rester verte.
+- **Écartée** : allonger la liste de formes interdites (ouverte par nature).
 - **Réversible** : oui.
