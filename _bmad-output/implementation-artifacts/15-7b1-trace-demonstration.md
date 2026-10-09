@@ -415,36 +415,40 @@ Journaux non versionnés : `target/gate-logs/15-7b1-gate.log` (backend), `15-7b1
 - **AC 12** : entrée `### Corrigé` sous `## [0.13.0]`, relue ; la phrase de l'entrée 15-7a2 « le
   peuplement de démonstration et la remise à zéro restent à tracer » corrigée en conséquence.
 
-- **Clôture (2026-10-09)** — `origin/main` a avancé **deux fois** pendant les gates de clôture ; chaque
+- **Clôture (2026-10-09)** — `origin/main` a avancé **trois fois** pendant les gates de clôture ; chaque
   état a été rebasé puis entièrement regaté, seul le dernier compte :
   1. sur `200f5e79` (rebase sans objet) : backend 2984/2984, Vitest 1095/1095, E2E 244 / 10 attendus ;
   2. sur `f8b2accd` (15-6b, #580) : backend 3017/3017, Vitest 1118/1118, E2E 244 / 10 attendus ;
-  3. **sur `dc4bc58b` (15-12b, #581), état final.**
-  Conflits, aux deux rebases, résolus en union : registre des choix (C-15-6b-1 à 3, puis les entrées de
-  la 15-12b, puis C-15-7b1-1 à 3 ; aucun doublon), `sprint-status.yaml` (ligne de la 15-7b1 renumérotée
-  **(39)** au-dessus des (36) à (38) de la 15-6b et de la 15-12b, restaurées depuis `origin/main` et
-  vérifiées par diff), PDF des deux manuels (binaires : **régénérés** depuis les `.tex` fusionnés par
-  `make fr` à recompilation forcée — `latexmk` jugeait le PDF à jour après le rebase). CHANGELOG, `.tex`,
-  `MULTI-TENANT-SCOPING-PATTERNS.md`, `fiscal_years.rs`, `audit_route_registry.rs` et `messages.ftl`
-  fusionnés sans conflit (une rubrique de chaque sous `[0.13.0]` ; 2137 clés par locale, aucun doublon).
-  La 15-12b ne change qu'un libellé de la colonne `Rejeu` du registre (`admin::full_import`). Partition
+  3. sur `dc4bc58b` (15-12b, #581) : backend 3037/3037, Vitest 1139/1139, E2E 244 / 10 attendus ;
+  4. **sur `bcded0c8` (15-13a, #582), état final.**
+  Branche de sauvegarde locale avant le dernier rebase : `backup/15-7b1-avant-rebase-bcded0c8`.
+  Conflits résolus en union : registre des choix (C-15-6b-1 à 3, puis les entrées de la 15-12b et de la
+  15-13a, puis C-15-7b1-1 à 3 ; aucun doublon, aucune ligne de `origin/main` supprimée — contrôlé par
+  diff), `sprint-status.yaml` (ligne de la 15-7b1 renumérotée **(41)** au-dessus des (39) et (40) de la
+  15-13a, restaurées depuis `origin/main`), PDF du manuel d'administration (binaire, touché des deux
+  côtés : celui de `origin/main` pris pendant le rebase, puis **régénéré** depuis le `.tex` fusionné par
+  `make admin user` à recompilation forcée — `make` jugeait les PDF à jour). CHANGELOG, `Cargo.lock`,
+  `admin-manual.tex` (port 3306 non publié de la 15-13a, 105 + 5 + 2 = 112 de la 15-7b1, sans
+  recouvrement) fusionnés sans conflit ; 2137 clés par locale. Aucun site résiduel de l'ancienne
+  partition (`grep -rnE '\b104\b|six routes exempt'` sur les manuels, le CHANGELOG et `docs/` : zéro).
+  PDF contrôlés aplatis : « 105 + 5 + 2 = 112 », « #538 », « remise à zéro des données de démonstration
+  (issue #434) » et « Le port 3306 n'est pas publié par docker-compose.yml » présents. Partition
   **recomptée depuis `LIB_ROUTES`** sur l'état final : 112 entrées, **105** `Traced`, **5** `Exempt`,
   **2** `NoMatter` ; 115 avec les 3 routes de test.
   **Gates complets sur l'état final** (dernier commit de code : la remédiation P1 rebasée ; la suite ne
-  porte que le prompt, les PDF et cette fiche), bases `kesh_157b1` / `kesh_e2e_157b1` remises à zéro avant
-  (DROP/CREATE, migrations, seed), après `wait-kesh.sh` :
-  - backend `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) : **3037/3037**, 4 ignorés
-    (`target/gate-logs/15-7b1-close3-gate.log`) ;
-  - frontend : `npm run check` 0 erreur, `lint-i18n-ownership` PASS, Vitest **1139/1139** (114 fichiers),
-    `npm run build` vert (`15-7b1-close3-front.log`) ;
-  - E2E complet (port 3016, secrets aléatoires neufs, `KESH_TEST_MODE=true` des deux côtés,
+  porte que le prompt, les PDF et cette fiche), cible cargo du worktree **compilée à froid**, bases
+  `kesh_157b1` / `kesh_e2e_157b1` recréées (DROP/CREATE, migrations, seed `scripts/seed-dev-db.sql`) :
+  - backend `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) : **3044/3044**, 4 ignorés
+    (`/home/gcorbaz/devel/kesh-gate-logs/15-7b1-close4-gate.log`) ;
+  - frontend : `npm run check` 0 erreur (27 avertissements), `lint-i18n-ownership` PASS, Vitest
+    **1139/1139** (114 fichiers), `npm run build` vert (`15-7b1-close4-front.log`) ;
+  - E2E complet (port 3014, secrets aléatoires neufs, `KESH_TEST_MODE=true` des deux côtés,
     `KESH_COOKIE_SECURE=false`, SMTP factices, `/health` → `smtpConfigured:true`, inbox et documents
-    neufs du scratchpad) : **244 passés, 10 échecs, 19 ignorés**, run achevé à 08:34 UTC
-    (`15-7b1-close3-e2e.log`). Jugés fichier par fichier contre `docs/testing.md` : les 7 KF-029
+    neufs du scratchpad) : **246 passés, 10 échecs, 17 ignorés**, run achevé à 09:32 UTC
+    (`15-7b1-close4-e2e.log`). Jugés fichier par fichier contre `docs/testing.md` : les 7 KF-029
     (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`), les 2
-    KF-045 avant midi UTC (`invoices:415`, `:439`) et `sidebar-navigation:75`, **rouge rejoué seul** :
-    la KF-046, devenue KF-052 (#424), déterministe selon l'état de la base — au premier run, sur
-    `200f5e79`, il passait seul (pollution). 7 + 2 + 1 = 10, dans la fourchette 8 à 12 de
+    KF-045 avant midi UTC (`invoices:415`, `:439`) et `sidebar-navigation:75`, **rouge rejoué seul**
+    (comme sur `dc4bc58b`) : la KF-046, devenue KF-052 (#424). 7 + 2 + 1 = 10, dans la fourchette de
     `docs/testing.md`. Backend arrêté par son PID.
   - **Axe manuel repris par l'orchestration de clôture** : la P2 ciblée ne le déclare ni exercé ni non
     exercé alors que `4303ac01` touche les deux `.tex` et leurs PDF ; PDF aplatis contrôlés — les deux
@@ -626,8 +630,8 @@ Journaux non versionnés : `target/gate-logs/15-7b1-gate.log` (backend), `15-7b1
   conformes (Dev Agent Record). L'orchestrateur a vérifié que les tests à déclencheur sont des
   `#[sqlx::test]` (base éphémère). La remédiation relue ne touche aucune ligne de code de production :
   **revue CLOSE**. Trend : P1 **1 MEDIUM distinct** (Sonnet ×3 ; E-1 = A-1) → P2 ciblée **0** (Haiku).
-- 2026-10-09 — **Clôture** : rebasée sur `dc4bc58b` (15-12b), après un premier rebase sur `f8b2accd`
-  (15-6b) — `origin/main` a avancé deux fois pendant les gates ; conflits en union (registre des choix,
-  sprint-status), PDF régénérés et contrôlés aplatis ; partition 105 / 5 / 2 = 112 recomptée depuis la
-  source ; gates complets sur l'état final : backend 3037/3037, Vitest 1139/1139, E2E 244 / 10 échecs
-  tous attendus (7 KF-029, 2 KF-045, KF-052 #424). Statut `done`.
+- 2026-10-09 — **Clôture** : rebasée sur `bcded0c8` (15-13a), après des rebases sur `f8b2accd` (15-6b)
+  puis `dc4bc58b` (15-12b) — `origin/main` a avancé trois fois pendant les gates ; conflits en union
+  (registre des choix, sprint-status), PDF régénérés et contrôlés aplatis ; partition 105 / 5 / 2 = 112
+  recomptée depuis la source ; gates complets sur l'état final, compilation à froid : backend 3044/3044,
+  Vitest 1139/1139, E2E 246 / 10 échecs tous attendus (7 KF-029, 2 KF-045, KF-052 #424). Statut `done`.
