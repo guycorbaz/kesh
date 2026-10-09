@@ -532,7 +532,9 @@ voir Status.)*
    pas ;
 4. AC1 — pagination : `total`, `offset`, `limit` renvoyés ; `balance`/`openTotal` identiques sur
    deux pages ; tri du Grand livre (date, exercice, numéro, `line_order`, `lineId`), dont deux lignes d'une
-   même écriture sur le compte ;
+   même écriture sur le compte **dont l'ordre d'`id` contredit l'ordre de `line_order`** (la ligne `line_order = 2`
+   insérée en SQL **avant** la ligne `line_order = 1`) — sans cette divergence, un tri par `lineId` seul passerait
+   le test (validation P4 ciblée, M-1) ;
 5. AC1, AC7 — entrées : `asOf` absent = aujourd'hui, `asOf=2026-13-01` → 400 `VALIDATION_ERROR`,
    `limit=999999` → `limit` écrêté à **500** dans la réponse (validation P2, R L-3 : aucun statut HTTP en
    cause), `limit=0` → 1, `offset=-3` → 0 ; ordre des refus : `asOf` mal formé sur un compte d'une autre
@@ -563,11 +565,16 @@ voir Status.)*
     ligne d'une facture héritée `paidWithoutSettlementEntry` a `amountDue` = TTC (F L-5) ; une ligne d'avoir →
     `documentState` nul (validation P2, R-2 = F-3, F L-1, L-4) ;
 11. AC5 — **moteur pur** (`kesh-core`, test unitaire ; validation P3, L-7) : classement stable, une ligne
-    par paire, paire contre-passation en tête ;
+    par paire, paire contre-passation en tête ; **et le filtre R7 appliqué AVANT le glouton**, sur trois lignes
+    de même montant et de même date — `A` débit en période close, `B` crédit en période close, `C` crédit en
+    période ouverte — : le moteur rend la seule paire `A–C` ; un moteur qui filtrerait APRÈS le glouton
+    aurait apparié `A–B` (première rencontrée, écart de dates nul), puis l'aurait écartée, et ne rendrait rien
+    (validation P4 ciblée, M-2) ;
 12. AC5 — chargement `kesh-db` : exclusions : ligne de pièce, ligne lettrée, paire tout entière en exercice
     clos ; inclusion d'une paire dont une seule ligne est en période ouverte ; **trois lignes** de même
-    montant — A, B en période close, C ouverte : la paire A–B, inacceptable, est écartée **avant** le glouton
-    et A est proposée avec C (F L-4) ;
+    montant et de même date — `A` débit et `B` crédit en période close, `C` crédit en période ouverte (sens et
+    dates fixés : validation P4 ciblée, M-2) — : la réponse porte la paire `A–C` et elle seule (F L-4 ; la
+    preuve de l'ordre « filtre avant glouton » est au test 11, dans le moteur pur) ;
 13. AC5 — chargement `kesh-db` : plafond : 2 001 candidates → 422 ; 3 000 lignes de factures et 10
     candidates → 200 ; `limit=999999` écrêté ;
 14. AC5 — **moteur pur** (`kesh-core`) : volume : 1 000 débits et 1 000 crédits d'un même montant, sous le
@@ -1051,3 +1058,13 @@ d'entre elles le produisent **en silence**.
 ## Dérogation règle de splitting
 
 Au grain fin, la fiche dépasse cinq modules ; au grain des crates et paquets — celui que la règle a toujours appliqué dans cet epic —, elle est sous le seuil. Le dépassement ne vient que de la propagation mécanique de textes (catalogues ×4, manuels et PDF, `api-external.md`, CHANGELOG, libellés), qui ne porte aucune règle. Décision de l'orchestrateur : pas de découpage (registre **C-15-1a2-23**, alternatives et réversibilité). Accepted risk : une passe de revue doit relire la propagation des textes comme un axe à part entière.
+
+- 2026-10-09 — **Validation P4 ciblée** (Haiku, prompt `f6526945` ; rapport `/home/gcorbaz/devel/kesh-gate-logs/15-1b-validate-p4-ciblee.md`) :
+  2 MEDIUM, 1 LOW, sur ce que `76e7893a` a écrit. M-1 : le test 4 ne distinguait pas le tri `line_order` du tri
+  `lineId` (le Grand livre trie par `line_order`, `kesh-report/src/general_ledger.rs:376`) → fixture où les deux
+  divergent. M-2 : le test 12 ne fixait ni le sens ni les dates des trois lignes, et ne pouvait pas distinguer
+  « filtre R7 avant le glouton » de « après » → sens et dates fixés, la preuve de l'ordre portée au test 11 (moteur
+  pur). L-1 : la phrase sur `documentType` bornée aux deux valeurs de `DocumentRef`. Remédiation faite par
+  l'orchestrateur, **fiche seule, aucun code**, vérifiée au code. **Validation close** (la passe ciblée de fin de
+  boucle ne laisse aucun correctif de production). Trend : P1 11 MEDIUM → P2 1 HIGH / 5 MEDIUM → P3 0 → P4 ciblée
+  2 MEDIUM (tests de la fiche), corrigés.
