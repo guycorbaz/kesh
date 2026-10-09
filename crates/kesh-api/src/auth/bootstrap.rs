@@ -9,7 +9,7 @@
 //!
 //! | # | users | has_admin_env | comportement                                                  |
 //! |---|-------|---------------|---------------------------------------------------------------|
-//! | 1 | 0     | false         | INSERT stub company seule ; admin créé via `/setup` web        |
+//! | 1 | 0     | false         | INSERT stub company si aucune société (#542) ; admin via `/setup` |
 //! | 2 | 0     | true          | INSERT stub + admin (bootstrap déclaratif, ≡ v011-2)           |
 //! | 3 | > 0   | false         | no-op (régime nominal post-bootstrap)                          |
 //! | 4 | > 0   | true, match user, hash identique | no-op silencieux + warn « retirer les vars » |
@@ -19,7 +19,7 @@
 //! Retourne le `user_count` post-bootstrap (utilisé par `main.rs` pour
 //! initialiser `AppState::users_exist`).
 
-use kesh_db::entities::{Language, NewAuditLogEntry, NewUser, OrgType, Role};
+use kesh_db::entities::{Language, NewAuditLogEntry, NewUser, Role};
 use kesh_db::errors::{DbError, map_db_error};
 use kesh_db::repositories::{audit_log, refresh_tokens, users};
 use sqlx::MySqlPool;
@@ -28,14 +28,11 @@ use crate::auth::password::{hash_password_async, verify_password_async};
 use crate::config::Config;
 use crate::errors::AppError;
 
-/// Valeurs placeholder d'une company stub. Partagées entre le bootstrap
-/// (DB vide, Story v011-2) et le wizard onboarding
-/// (`ensure_company_with_language_in_tx` quand aucune company n'existe) pour
-/// éviter une divergence (DRY). Le wizard repasse `is_stub = FALSE` quand
-/// l'utilisateur renseigne ses vraies coordonnées (`set_coordinates`, par
-/// `companies::clear_stub_in_tx`).
-pub(crate) const STUB_COMPANY_NAME: &str = "(en cours de configuration)";
-pub(crate) const STUB_COMPANY_ADDRESS: &str = "-";
+// Les valeurs d'une société provisoire (`STUB_COMPANY_NAME`,
+// `STUB_COMPANY_ADDRESS`) et son insertion (`companies::insert_stub`) vivent
+// dans `kesh_db::repositories::companies` depuis la Story 15-7b2 : partagées par
+// le bootstrap, le choix de la langue et la remise à zéro (`kesh-seed`, qui ne
+// dépend pas de `kesh-api`).
 
 /// Matrice 6 cas du bootstrap admin v011-5.
 ///
@@ -48,7 +45,10 @@ pub(crate) const STUB_COMPANY_ADDRESS: &str = "-";
 ///
 /// **Lecture unique** des compteurs `company_count` et `user_count` au
 /// début, partagée par toutes les branches (cleanup orphan stub race cas 2
-/// inclus).
+/// inclus). La société provisoire n'est insérée (cas 1 et 2) que sur une base
+/// **sans société** (Story 15-7b2, #542) : un démarrage n'en ajoute jamais une
+/// seconde. La réparation des installations déjà touchées (#528, #542) relève
+/// de la Story 15-7b3.
 pub async fn ensure_admin_user(pool: &MySqlPool, config: &Config) -> Result<i64, AppError> {
     let company_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM companies")
         .fetch_one(pool)
@@ -70,10 +70,20 @@ pub async fn ensure_admin_user(pool: &MySqlPool, config: &Config) -> Result<i64,
             .is_some_and(|p| !p.is_empty());
 
     match (user_count, has_admin_env) {
-        // Cas 1 — DB vide + pas d'env : créer la stub company seule.
-        // L'admin sera créé via `POST /api/v1/setup/admin` (flow web).
+        // Cas 1 — aucun utilisateur + pas d'env : créer la société provisoire
+        // **si aucune société n'existe** (Story 15-7b2, AC 13, #542 — sans
+        // cette garde, chaque redémarrage avant `/setup` en ajoutait une, et
+        // `seed_demo` comme la remise à zéro rendaient 500). Même garde que le
+        // cas 2. L'admin sera créé via `POST /api/v1/setup/admin` (flow web).
         (0, false) => {
-            insert_stub_company(pool).await?;
+            if company_count == 0 {
+                insert_stub_company(pool).await?;
+            } else {
+                tracing::info!(
+                    company_count,
+                    "bootstrap: société déjà présente, aucune société provisoire ajoutée"
+                );
+            }
             tracing::info!(
                 "bootstrap: setup-required — créer l'admin via POST /api/v1/setup/admin"
             );
@@ -346,23 +356,9 @@ pub async fn ensure_admin_user(pool: &MySqlPool, config: &Config) -> Result<i64,
 /// INSERT d'une company stub (`is_stub = TRUE`). Helper partagé entre cas
 /// 1 et cas 2. Renvoie l'ID de la company stub créée.
 async fn insert_stub_company(pool: &MySqlPool) -> Result<i64, AppError> {
-    let result = sqlx::query(
-        "INSERT INTO companies \
-         (name, address, org_type, accounting_language, instance_language, is_stub) \
-         VALUES (?, ?, ?, ?, ?, TRUE)",
-    )
-    .bind(STUB_COMPANY_NAME)
-    .bind(STUB_COMPANY_ADDRESS)
-    .bind(OrgType::Independant)
-    .bind(Language::Fr)
-    .bind(Language::Fr)
-    .execute(pool)
-    .await
-    .map_err(|e| AppError::Internal(format!("bootstrap create stub company: {e}")))?;
-
-    i64::try_from(result.last_insert_id()).map_err(|_| {
-        AppError::Internal("bootstrap stub company last_insert_id dépasse i64::MAX".into())
-    })
+    kesh_db::repositories::companies::insert_stub(pool, Language::Fr)
+        .await
+        .map_err(|e| AppError::Internal(format!("bootstrap create stub company: {e}")))
 }
 
 /// Re-SELECT du user_count post-INSERT pour le cas 2 race.

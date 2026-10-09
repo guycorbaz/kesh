@@ -67,7 +67,8 @@ pub struct OnboardingResponse {
     pub is_demo: bool,
     pub ui_mode: Option<UiMode>,
     /// `true` si la company courante est un placeholder (créée par le bootstrap
-    /// sur DB vide, ou par le wizard avant complétion). Le frontend l'utilise
+    /// sur DB vide, par le wizard avant complétion, ou remise à l'état
+    /// provisoire par la remise à zéro — Story 15-7b2). Le frontend l'utilise
     /// pour un nudge de renommage non-bloquant. Renseigné par `response_with_stub`
     /// (le `From<OnboardingState>` met `false` par défaut car il n'a pas accès
     /// à la company — toujours passer par `response_with_stub` pour le valuer).
@@ -248,77 +249,51 @@ pub async fn seed_demo(
     Ok(Json(response_with_stub(&state.pool, updated).await?))
 }
 
-/// POST /api/v1/onboarding/reset — Step gating: allow demo, block post-production (E2-002 fix)
+/// POST /api/v1/onboarding/reset — remet l'installation à zéro et **inscrit son
+/// geste** au journal d'audit (Story 15-7b2, #434, #279, #528).
 ///
-/// Step gating rules:
-/// - SECURITY: step >= 7 is finalization (irreversible) — NEVER allow reset regardless of is_demo
-/// - SECURITY (P4): production users (is_demo=false) can only reset up to step 2.
-///   The is_demo flag alone is not a sufficient gate because corruption / manual DB edit
-///   could flip it to true, allowing reset on a partially-configured production tenant
-///   at steps 3-6. The KESH_PRODUCTION_RESET env var (default false) is the second factor:
-///   in production deployments it must remain unset; only demo deployments set it.
-/// - Demo users (is_demo=true) can reset at steps 0..=6
+/// Toute l'opération est dans `kesh_seed::reset_demo` : **une** transaction
+/// par essai, rejouée sur interblocage, qui verrouille `onboarding_state`,
+/// évalue **sous ce verrou** les trois gardes — étape ≥ 7 (finalisation,
+/// irréversible) ⇒ `400 ONBOARDING_STEP_ALREADY_COMPLETED` ; installation de
+/// production au-delà de l'étape 2 ⇒ `403 ONBOARDING_RESET_FORBIDDEN`, même
+/// avec le drapeau ; au-delà de l'étape 2 sans `KESH_PRODUCTION_RESET` ⇒ `403`
+/// —, vide toutes les données de la société, la remet à l'état provisoire en
+/// place, rattache les principaux orphelins, remet l'état à zéro et écrit
+/// `installation.reset`. Le handler ne porte plus ni transaction ni garde : la
+/// seule copie des gardes est celle de la transaction qui efface.
 ///
-/// LOCK ORDERING (P3 — partial protection only):
-/// We acquire SELECT FOR UPDATE on onboarding_state to serialize the gate-check
-/// against concurrent finalize() / seed_demo() / step-progression endpoints.
-/// The lock is **released (commit) before reset_demo runs**, so a concurrent
-/// finalize() could still flip the state to 8 between commit and reset_demo's
-/// DELETE. Under v0.1 single-tenant single-user this race is essentially
-/// unreachable; full serialization (single-tx covering reset_demo) is tracked
-/// under KF-002-H-002 (issue #43).
-pub async fn reset(State(state): State<AppState>) -> Result<Json<OnboardingResponse>, AppError> {
-    // Ensure the onboarding_state row exists before locking (idempotent init).
+/// `KESH_PRODUCTION_RESET` : une démonstration est toujours à l'étape 3, si
+/// bien que **toute sortie d'une démonstration** exige ce drapeau — posé par
+/// l'exploitant le temps de la réinitialisation, puis retiré. Une installation
+/// de production n'est jamais remise à zéro au-delà de l'étape 2.
+///
+/// `get_or_init_state` garantit la ligne d'état avant l'appel (sans elle, le
+/// verrou rendrait `None`, que `reset_demo` refuse en `Invariant`) ; la réponse
+/// relit l'état et la société (`isStub` vaut `true` après une remise à zéro).
+/// Route d'administration, inaccessible aux jetons d'API (`require_not_pat`).
+pub async fn reset(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+) -> Result<Json<OnboardingResponse>, AppError> {
     let _ = get_or_init_state(&state).await?;
+    let production_reset_allowed = env_flag_enabled("KESH_PRODUCTION_RESET");
 
-    // P3 fix: lock-and-check inside a transaction to close the read/action TOCTOU window.
-    let mut tx = state.pool.begin().await.map_err(map_db_error)?;
-    let current = sqlx::query_as::<_, kesh_db::entities::OnboardingState>(
-        "SELECT id, singleton, step_completed, is_demo, ui_mode, version, created_at, updated_at \
-         FROM onboarding_state WHERE singleton = TRUE FOR UPDATE",
+    kesh_seed::reset_demo(
+        &state.pool,
+        (current_user.user_id, current_user.api_key_id),
+        production_reset_allowed,
     )
-    .fetch_one(&mut *tx)
     .await
-    .map_err(map_db_error)?;
+    .map_err(|e| match e {
+        kesh_seed::SeedError::StepAlreadyCompleted => AppError::OnboardingStepAlreadyCompleted,
+        kesh_seed::SeedError::ResetForbidden => AppError::OnboardingResetForbidden,
+        kesh_seed::SeedError::Db(d) => AppError::Database(d),
+        // Inatteignable par `reset_demo` (toute erreur sqlx y passe par
+        // `map_db_error`) : 500 générique.
+        kesh_seed::SeedError::Sqlx(e) => AppError::Internal(format!("Reset demo failed: {e}")),
+    })?;
 
-    // P1-H4: step >= 7 is irreversible finalization — never reset
-    if current.step_completed >= 7 {
-        best_effort_rollback(tx).await;
-        return Err(AppError::OnboardingStepAlreadyCompleted);
-    }
-
-    // P4: production-mode safety net — refuse reset for is_demo=false past step 2
-    // even if KESH_PRODUCTION_RESET is set, to avoid accidental wipes.
-    // P6-L8: distinct ResetForbidden error so the client can show "reset not
-    // permitted in production" rather than the misleading "step already completed".
-    if !current.is_demo && current.step_completed > 2 {
-        best_effort_rollback(tx).await;
-        return Err(AppError::OnboardingResetForbidden);
-    }
-
-    // P4 hardening: even for is_demo=true at steps 3..=6, require explicit demo
-    // deployment confirmation. This blocks the "corrupted is_demo flag" attack
-    // path between steps 3 and 6 that the old gate ignored.
-    // P6-M1: accept "1" | "true" | "yes" | "on" (case-insensitive) so an operator
-    // setting `KESH_PRODUCTION_RESET=true` in docker-compose isn't silently denied.
-    if current.step_completed > 2 && !env_flag_enabled("KESH_PRODUCTION_RESET") {
-        best_effort_rollback(tx).await;
-        return Err(AppError::OnboardingResetForbidden);
-    }
-
-    // Release the lock before invoking reset_demo: reset_demo internally acquires
-    // its own connection and DELETEs onboarding_state, which would deadlock if we
-    // kept the FOR UPDATE lock held here.
-    // The lock therefore covers ONLY the gate-check above, NOT the destructive
-    // reset_demo work. Under v0.1 single-tenant single-user the residual window
-    // is unreachable in practice; full serialization is tracked under KF-002-H-002.
-    tx.commit().await.map_err(map_db_error)?;
-
-    kesh_seed::reset_demo(&state.pool)
-        .await
-        .map_err(|e| AppError::Internal(format!("Reset demo failed: {e}")))?;
-
-    // reset_demo recrée onboarding_state à step=0
     let updated = get_or_init_state(&state).await?;
     Ok(Json(response_with_stub(&state.pool, updated).await?))
 }
@@ -1229,8 +1204,9 @@ async fn update_company_in_tx(
 /// transaction de `language` (après le verrou d'état).
 ///
 /// `SELECT … FOR UPDATE` contre la race TOCTOU (deux requêtes créant chacune
-/// une company). Aucune société ⇒ insertion d'une société provisoire et
-/// `company.created` ; sinon `company.updated {instance_language}` si la langue
+/// une company). Aucune société ⇒ insertion d'une société provisoire,
+/// rattachement des principaux orphelins (Story 15-7b2) et `company.created` ;
+/// sinon `company.updated {instance_language}` si la langue
 /// change, rien sinon.
 async fn ensure_company_with_language_in_tx(
     tx: &mut Tx<'_>,
@@ -1244,29 +1220,17 @@ async fn ensure_company_with_language_in_tx(
 
     match existing {
         None => {
-            // Story v011-2 : placeholder marqué `is_stub = TRUE` (cohérent avec
-            // le stub du bootstrap, mêmes constantes partagées). `set_coordinates`
-            // lèvera le drapeau (`clear_stub_in_tx`). Ce chemin ne se déclenche que si aucune
-            // company n'existe (rare hors bootstrap, ex. après une remise à zéro).
-            let result = sqlx::query(
-                "INSERT INTO companies \
-                 (name, address, org_type, accounting_language, instance_language, is_stub) \
-                 VALUES (?, ?, ?, ?, ?, TRUE)",
-            )
-            .bind(crate::auth::bootstrap::STUB_COMPANY_NAME)
-            .bind(crate::auth::bootstrap::STUB_COMPANY_ADDRESS)
-            .bind(OrgType::Independant)
-            .bind(Language::Fr)
-            .bind(lang)
-            .execute(&mut **tx)
-            .await
-            .map_err(map_db_error)?;
-            let id = i64::try_from(result.last_insert_id())
-                .ok()
-                .filter(|id| *id > 0)
-                .ok_or_else(|| {
-                    AppError::Internal("last_insert_id invalide après INSERT companies".into())
-                })?;
+            // Base SANS société : une installation déjà atteinte par #528 (une
+            // remise à zéro antérieure à la 0.13.0 effaçait `companies`), ou
+            // une base dont le premier démarrage n'a pas posé le stub. Société
+            // provisoire insérée (`companies::insert_stub`, mêmes valeurs que
+            // le bootstrap et la remise à zéro), puis **rattachement** des
+            // principaux orphelins (Story 15-7b2, AC 4) : les utilisateurs
+            // rejoignent la société créée, les clés d'API actives orphelines
+            // sont révoquées puis rattachées — jamais réveillées.
+            // `set_coordinates` lèvera le drapeau (`clear_stub_in_tx`).
+            let id = companies::insert_stub(&mut **tx, lang).await?;
+            let principals = companies::reattach_orphan_principals_in_tx(tx, Some(id)).await?;
             audit_log::insert_in_tx(
                 tx,
                 NewAuditLogEntry::from_current_user(
@@ -1274,7 +1238,13 @@ async fn ensure_company_with_language_in_tx(
                     "company.created",
                     "company",
                     id,
-                    Some(json!({ "instance_language": lang, "is_stub": true })),
+                    Some(json!({
+                        "instance_language": lang,
+                        "is_stub": true,
+                        "users_repointed": principals.user_ids.len(),
+                        "api_keys_revoked": principals.api_keys_revoked,
+                        "api_keys_repointed": principals.api_keys_repointed,
+                    })),
                 ),
             )
             .await?;
