@@ -115,9 +115,10 @@ pub async fn update_step(
 ///
 /// ⛔ **Cette fonction n'écrit AUCUNE trace d'audit, et l'enveloppe ci-dessus
 /// non plus.** Ses appelants tracent eux-mêmes : neuf appelants tracés (huit
-/// routes d'onboarding et `PUT /api/v1/profile/mode`, Story 15-7a2) ; reste le
-/// seed de démonstration (15-7b1). Y placer l'audit ferait écrire « changement
-/// de mode d'affichage » à chaque étape de l'installation : *une trace au
+/// routes d'onboarding et `PUT /api/v1/profile/mode`, Story 15-7a2), et le
+/// seed de démonstration, qui écrit `installation.demo_seeded` (Story
+/// 15-7b1). Y placer l'audit ferait écrire « changement de mode d'affichage » à
+/// chaque étape de l'installation : *une trace au
 /// mauvais étage ne manque pas, elle ment.*
 ///
 /// L'étape franchie s'inscrit par [`record_step_completed_in_tx`], appelé

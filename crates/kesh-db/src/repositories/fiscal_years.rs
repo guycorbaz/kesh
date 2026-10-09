@@ -383,7 +383,9 @@ pub async fn create(
 /// ne tient plus : l'onboarding de production trace le chargement du plan,
 /// Story 15-7a2 ; la règle reste vraie pour le seed.)* La tx interne fait
 /// toujours les pré-checks d'overlap et de nom pour respecter les UNIQUE
-/// constraints même en seed.
+/// constraints même en seed. **La démonstration est tracée par sa synthèse**
+/// (`installation.demo_seeded`, Story 15-7b1, qui porte `fiscal_year_id`), pas
+/// par fait de domaine.
 ///
 /// **Sans la garde de l'invariant I** (Story 15-12a) : le seed crée un seul
 /// exercice dans une société neuve (`kesh-seed`), il ne peut pas produire un
