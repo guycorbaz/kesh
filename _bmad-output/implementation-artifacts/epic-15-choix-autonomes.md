@@ -7214,3 +7214,78 @@ l'import (#458–#461).
 - **Retenu** : le spec crée un compte `Asset` à numéro unique par l'API des comptes, des écritures à montants uniques, lit ses lignes par `lineId` (`data-testid`), délettre en fin de parcours ; rôle Consultation par un utilisateur créé par l'API (patron `journal-entries.spec.ts`).
 - **Écartées** : un compte du seed (1100 est ou devient un compte de journal bancaire, non lettrable ; 1000/2000 partagés) ; ajouter un « compte de passage » au seed (changerait tous les presets pour un spec).
 - **Réversible** : oui.
+
+## C-15-1c-14 — 15-1c (validation P2, F2-3 ; signal D5 levé) : la partie serveur de la 15-1c-i extraite en 15-1c-0
+- **Contexte** : les onze MEDIUM bruts de la P2 (7 distincts) sont tous nés de la remédiation P1 — recyclage, critère D5 de découpage ; la dérogation C-15-1c-11 écartait la coupe « serveur d'abord » par un motif faux (« une route enrichie sans écran n'est pas livrable seule » : la 15-1b est une story serveur sans écran) ; la refonte de `dissolve_group_in_tx`, axe de sécurité, aurait été relue mêlée à un écran entier, sous un gate `kesh-db` complet à chaque passe d'une story aux quatre cinquièmes frontend. Décision de l'orchestrateur.
+- **Retenu** : **15-1c-0** (`15-1c-0-groupe-de-lettrage-enrichi.md`) — AC15, AC16 et les tests serveur 1 à 8 de la 15-1c-i, plus AC18 (CHANGELOG *Modifié*, README) et un test documentaire ; ordre **… → 15-1b → 15-1c-0 → 15-1c-i → 15-1c-ii** ; `refs #518`. La 15-1c-i devient frontend + i18n (8 modules au grain fin, trois de logique ; motif de sa dérogation réécrit sur le compte). Révise C-15-1c-1 (« Écartées ») et C-15-1c-11 (motif de l'alternative). Pas de tag interdit entre la 15-1c-0 et la 15-1c-i : après la 15-1c-0 seule, la documentation reste vraie (« l'écran viendra »).
+- **Écartées** : garder la dérogation avec un motif réécrit (la refonte de la primitive resterait mêlée à l'écran) ; découper aussi la 15-1c-ii (sa couture est saine, aucun MEDIUM ne la met en cause).
+- **Réversible** : oui avant développement.
+
+## C-15-1c-15 — 15-1c-0 (validation P2, R M-1 = F2-1) : l'ordre des refus du délettrage vit dans une fonction à étapes, la dissolution garde ses lectures paresseuses et ses détails
+- **Contexte** : la signature `manual_dissolution_blocker(origin, any_owned, any_in_open_period) -> Option<DbError>` (C-15-1c-2) ne peut construire `LetteringLineOwnedByDocument { blocker, document_id, document_label }`, que deux tests livrés figent et que le `DELETE` rend en `details` et en suffixe du message ; et elle impose une évaluation avide (propriété lue pour tout groupe, borne lue avant le refus 1) dans la transaction verrouillante.
+- **Retenu** : `ManualDissolutionBlocker { IsDocument, LineOwnedByDocument, AllLinesInClosedPeriods }` (`code()` = `DbError::error_code()`), `DissolutionStep { Refuse(_), NeedOwnership, NeedPeriod, Allowed }`, `manual_dissolution_step(origin, any_owned: Option<bool>, any_in_open_period: Option<bool>)` ; la dissolution lit la propriété seulement sur `NeedOwnership` et la borne seulement sur `NeedPeriod`, et rend l'erreur construite par `first_document_owner`, inchangée ; la lecture du groupe calcule les deux faits sans verrou et appelle l'étape avec `Some`/`Some` (un `Need*` y serait un `Invariant`). Tests : douze combinaisons, étapes `Need*`, mêmes `details` au `DELETE`.
+- **Écartées** : une fonction rendant `Option<DbError>` avec un `OwnerHit` (la lecture du groupe devrait construire des détails qu'elle ne sert pas) ; garder la fonction à booléens et laisser le refus 2 hors d'elle (l'ordre vivrait deux fois) ; évaluation avide (lectures neuves sous verrou, non dites).
+- **Réversible** : oui avant développement.
+
+## C-15-1c-16 — 15-1c-i / 15-1c-ii (validation P2, R M-2 = F2-2) : le pied des postes ouverts dit le sens, débiteur ou créditeur
+- **Contexte** : `openTotal` et `balance` sont en sens débit ; la Balance et le Grand livre montrent le solde du côté naturel du compte (`opening::signed`). Sur le compte fournisseurs, « -500.00 … celui que la Balance montre » sous un `500.00` de la Balance.
+- **Retenu** : montant en valeur absolue suivi de « débiteur » (> 0) ou « créditeur » (< 0), rien à zéro, par une fonction pure qui ne lit que le signe ; la phrase dit « du côté naturel du compte » ; le lien du Grand livre et le manuel disent « au signe près » ; colonnes et somme de sélection brutes ; test Vitest sur un passif.
+- **Écartées** : re-signer par le type du compte (`Liability` → `crédit − débit`) — une règle de signe recopiée en TypeScript, fausse pour un actif créditeur ; afficher le brut avec « au signe près » seulement (le lecteur doit faire la conversion).
+- **Réversible** : oui.
+
+## C-15-1c-17 — 15-1c-i (validation P2, R M-3 = F2-4) : tout refus 404 ou 409 dit que la liste est périmée
+- **Contexte** : depuis #532, une écriture ouverte se modifie (lignes supprimées puis réinsérées) et se supprime ; la liste fermée des refus « périmés » (trois codes) laissait la sélection garder une ligne disparue (404), d'un autre compte, d'un autre montant, ou passée sous un verrou — impasse sans explication.
+- **Retenu** : après l'affichage du message, **tout** 404 ou 409 du `POST` ou du `DELETE` recharge la liste et les propositions et vide la sélection ; seuls les 400 de forme (`LETTERING_TOO_FEW_LINES`, `LETTERING_TOO_MANY_LINES`) la gardent ; le 404 a un texte d'écran (« une ligne sélectionnée n'existe plus : son écriture a été modifiée ou supprimée »).
+- **Écartées** : allonger la liste des codes (une forme imprévue la contournerait — § « Inventorier les sites NON RÉSOLUS ») ; retirer de la sélection la seule ligne en cause (le refus ne la nomme pas toujours).
+- **Réversible** : oui.
+
+## C-15-1c-18 — 15-1c-i / 15-1c-ii (validation P2, R M-4, F2-L5) : un groupe `document` est « le lettrage de la pièce », et il « suit la pièce et ses règlements »
+- **Contexte** : la 15-1c-i citait « annulez le règlement plutôt que de délettrer » et nommait l'origine « règlement de la pièce » ; la 15-1c-ii prescrivait au manuel « annuler le règlement ». La 15-1a2-0 (D5) retire ce texte comme faux pour un groupe facture + avoir, et un groupe `document` naît aussi d'un avoir.
+- **Retenu** : origine `document` → « lettrage de la pièce » + numéro ; la 15-1c-i lit la clé `error-lettering-is-document` sans en citer le texte (relevé au T0) ; le manuel dit « il suit la pièce et ses règlements », avec renvoi aux sections du règlement, de l'avoir et de la facture fournisseur.
+- **Écartées** : « pièce soldée » comme libellé d'origine (décrit l'état de la pièce, pas le groupe).
+- **Réversible** : oui.
+
+## C-15-1c-19 — 15-1c-ii (validation P2, R M-5 = F2-5) : la brochure entre dans l'inventaire et dans les autres supports
+- **Contexte** : `marketing-brochure.tex:420` range « Justificatifs, lettrage, journaux personnalisables » au « Backlog (Epic 13 à 15) » ; l'inventaire d'AC12 ne grepait que deux des trois sources, et AC17 ne la nommait pas — site entre deux chaises.
+- **Retenu** : inventaire sur `docs/manual/fr/*.tex` ; AC17 sort le lettrage du backlog de la brochure sans promettre justificatifs ni journaux ; PDF régénéré et relu.
+- **Écartées** : laisser la brochure à la release (aucune fiche ne la possède alors).
+- **Réversible** : oui.
+
+## C-15-1c-20 — 15-1c-ii (validation P2, F2-6) : la colonne « Lettrage » en dernier, les `colspan` gardés par somme
+- **Contexte** : le test prescrit comparait chaque `colspan` au nombre de colonnes — faux sur le code juste (7 + 1 ≠ 8) — et omettait la ligne du total, seule dont le `colspan` (5) place débit et crédit sous leurs en-têtes ; la position de la colonne n'était pas fixée.
+- **Retenu** : colonne en dernier (Grand livre, après « Solde progressif » ; fiche d'écriture, en dernier) ; test : pour chaque `<tr>` du corps et du pied, Σ `colspan` = nombre d'en-têtes, et débit/crédit du total à l'index de leurs en-têtes.
+- **Écartées** : la colonne avant « Débit » (déplace les totaux, conséquence sur le pied).
+- **Réversible** : oui.
+
+## C-15-1c-21 — 15-1c-0 / 15-1c-i / 15-1c-ii (validation P2, F2-L8, R L-6) : chaque story tient son README, le changement de contrat du `GET` va au CHANGELOG avec son code
+- **Contexte** : C-15-1c-10 reportait à la 15-1c-ii l'entrée *Modifié* du `GET` enrichi, la sûreté reposant sur « pas de tag entre i et ii », qu'aucun outillage ne garde ; la 15-1c-i livrait l'écran sans toucher la ligne du README.
+- **Retenu** : la 15-1c-0 écrit l'entrée *Modifié* du `GET` enrichi et passe sa ligne du README à « Livré » (AC18) ; la 15-1c-i passe la sienne (AC19) ; la 15-1c-ii fond les entrées *Ajouté* et relit les *Modifié* sans les réécrire. Révise C-15-1c-10.
+- **Écartées** : tout à la 15-1c-ii (un contrat changé sans sa ligne de CHANGELOG dans la même PR ; un README qui ment entre deux merges).
+- **Réversible** : oui.
+
+## C-15-1c-22 — 15-1c-i (validation P2, F2-L10) : le composant de lien de code est créé par l'écran, sans clé i18n
+- **Retenu** : la 15-1c-i crée le composant dans `features/open-items/`, quel que soit le nombre de ses consommateurs à ce stade ; la 15-1c-ii l'emploie sur la fiche d'écriture et au Grand livre.
+- **Écartées** : « s'il est partagé » (décision laissée à la story qui n'a pas de second consommateur).
+- **Réversible** : oui.
+
+## C-15-1c-23 — 15-1c-ii (validation P2, R L-5, F2-L7) : la preuve négative du manuel se fait sur les sources
+- **Contexte** : `pdftotext` coupe à la césure (« d’ellemême » sur le PDF actuel) et rend l'apostrophe typographique : un contrôle négatif sur le PDF aplati peut rendre « absent » ce qui est présent.
+- **Retenu** : `grep -n -i "l.écran viendra\|par l.API dans cette version" docs/manual/fr/*.tex` vide ; le PDF aplati prouve la régénération et la présence du titre neuf.
+- **Écartées** : deux `grep` sur le PDF aux deux apostrophes (toujours aveugles à la césure).
+- **Réversible** : oui.
+
+## C-15-1c-24 — 15-1c-i (validation P3, F-3) : `LETTERING_CONCURRENT_CHANGE` vide aussi la sélection
+- **Contexte** : le serveur dit « réessayez » ; la règle « tout 404/409 vide la sélection » (C-15-1c-17) oblige l'utilisateur à la refaire.
+- **Retenu** : la sélection est effacée aussi pour ce code — **pas d'exception** à C-15-1c-17, écrit et motivé (validation P4 ciblée, F-4 : « exception assumée » se lisait à contresens) — le refus dit que des lignes ont changé sans dire lesquelles ; réessayer sur des montants retenus avant le changement pourrait lettrer un état que l'écran n'a pas montré.
+- **Écartées** : garder la sélection pour ce seul code (rouvre la liste de codes que C-15-1c-17 a fermée).
+- **Réversible** : oui.
+
+## C-15-1c-25 — 15-1c-i (validation P3, F-4) : le numéro affiché pour « lettrage de la pièce »
+- **Retenu** : le `number` de la première ligne (ordre du `GET`) dont `document.type` est `invoice` ou `supplierInvoice` ; sinon l'`invoiceNumber` de la première ligne `settlement` ; sinon « lettrage d'une pièce ». Un groupe facture + avoir montre la facture. Testé.
+- **Écartées** : la première ligne quelle qu'elle soit (un avoir pourrait nommer le groupe d'une facture).
+- **Réversible** : oui.
+
+## C-15-1c-26 — 15-1c-0 (validation P3, F-2, R L-2, R L-3) : la lecture détaillée d'un groupe est une lecture à part, dans une transaction
+- **Retenu** : sa propre constante SQL et son propre `struct` de ligne (`journal`, `description`), une requête propre pour le numéro et le nom du compte, une transaction de lecture ouverte par elle (`begin`, lectures, `rollback`) comme `open_items` ; `LineRow`, la requête verrouillante, `find_group`, `letterable_account` et `group_account_number` inchangés.
+- **Écartées** : étendre `LineRow` (casse la requête verrouillante qui l'alimente) ; changer la signature de `letterable_account` (fonction publique partagée) ; lectures en autocommit (prévision incohérente en elle-même).
+- **Réversible** : oui avant développement.
