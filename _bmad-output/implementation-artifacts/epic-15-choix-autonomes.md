@@ -5083,3 +5083,208 @@ l'import (#458–#461).
   seul (divergence repli/catalogue).
 - **Réversibilité** : totale ; la dette se solde dans une story de rattrapage i18n ou dans la
   15-6c, qui retouche les écrans de liaison bancaire.
+
+## C124 — 15-1a découpée en 15-1a-i (la marque) et 15-1a-ii (les gardes) à la validation P3, selon la couture écrite à C118
+- **Contexte** : validation P3 de la 15-1a (Opus ×2 ; `target/gate-logs/15-1a-p3-{R,F}.md`). R3-1 (= F3-1),
+  R3-2 et R3-3 naissent de correctifs de P2 sur des règles métier (C113, C114, et le test que C114 a
+  ajouté) : le déclencheur écrit à C118 (« défaut né d'un correctif de P2 sur une règle métier — R7, AC4,
+  AC5, AC8 —, découper avant toute P4 ») est atteint au sens littéral ; c'est le signal D5 de **recyclage**
+  (le défaut naît du correctif), non la découverte de défauts d'origine neufs. **Décision de
+  l'orchestrateur** : découper selon la couture de C118, avant toute P4.
+- **Retenu** : **15-1a-i — la marque** (schéma et bump, code, primitive et règle des périodes, routes,
+  audit, exposition et export, i18n des refus du lettrage, documentation de l'API et du manuel propre au
+  lettrage) ; **15-1a-ii — les gardes** (gel des écritures lettrées `ENTRY_LETTERED` sur les trois chemins,
+  écran de la fiche d'écriture, lettrage `reversal` de la contre-passation, réserves du manuel et de
+  l'API sur la modification, entrées #532 du CHANGELOG). `15-1a-socle-lettrage.md` devient l'index
+  (statut `split`, corps vidé, table de correspondance, historique). **Numérotation conservée** : R1–R7,
+  AC1–AC15 et T0–T12 gardent leur numéro dans la sous-fiche qui les porte — les fiches sœurs (« 15-1a R5 »,
+  « 15-1a AC5 ») restent justes sans réécriture ; un AC partagé est écrit « AC15 (part i) / (part ii) ».
+  **Dépendance résiduelle, écrite** : la 15-1a-ii suppose la 15-1a-i mergée (colonnes, primitive, mode
+  `System`, `JournalEntryLineResponse`) ; entre les deux merges, une écriture lettrée par l'API reste
+  modifiable et supprimable (le gel est dans la seconde) — d'où : la 15-1a-ii suit la 15-1a-i
+  **immédiatement**, et **la v0.13.0 ne se tague pas entre les deux** (même règle de publication que la
+  15-12a pour la 15-12b). Ordre : 15-12a → 15-12b → **15-1a-i → 15-1a-ii** → 15-1a2 → 15-1b → 15-1c.
+- **Écartées** : ne pas découper et écrire pourquoi (le déclencheur était écrit d'avance ; le contourner
+  aurait fait de C118 une règle contournée dès sa première occasion) ; placer les gardes backend d'AC8 dans
+  la 15-1a-i pour supprimer la fenêtre (ce n'est plus la couture de C118, et la 15-1a-i franchirait de
+  nouveau le premier critère) ; renuméroter les AC par sous-fiche (casse les renvois des fiches sœurs et du
+  registre) ; nommer les sous-fiches `15-1a1`/`15-1a3` (collision de lecture avec la 15-1a2, qui est une
+  autre story).
+- **Réversible** : oui (fiches seulement) — refusionner revient à concaténer les deux corps, la table de
+  correspondance de l'index disant où chaque élément est allé.
+
+## C125 — 15-1a-i : exercices verrouillés un par un par clé primaire, bornés à ceux du groupe ; « postérieur clos » lu sans verrou (révise C114 ; aligne sur C119)
+- **Contexte** : R3-2 (MEDIUM) — le parcours `start_date >= ? ORDER BY start_date ASC FOR UPDATE` de C114
+  verrouillait **tous** les exercices postérieurs au plus ancien du groupe, dont celui du jour : il ne
+  gardait aucune transition (sous la 15-12a, aucun postérieur ne se clôt tant qu'un antérieur est ouvert)
+  et coûtait une sérialisation avec toute écriture de l'exercice du jour, un cycle neuf avec la
+  contre-passation d'écritures sans rapport, et un verrou de fin d'intervalle sur la société suivante (R L10).
+  Et C119 (15-12a) a établi qu'un parcours d'intervalle ne fixe pas l'ordre d'acquisition (il dépend du
+  plan ; `opening_complement.rs:278-281` l'a mesuré). **Décision de l'orchestrateur** : la forme de C119
+  devient la forme principale (le « repli » de C114), parcours et `EXPLAIN` abandonnés ; verrous bornés
+  aux exercices du groupe ; « postérieur clos » par `find_later_closed`, non verrouillant, à vérifier.
+- **Retenu** : (a) `SELECT id, start_date, name FROM fiscal_years WHERE id IN (<exercices des lignes>) AND
+  company_id = ? ORDER BY start_date ASC`, sans verrou (`start_date` immuable) ; (b) verrou de **chacun**,
+  un par un, dans cet ordre, par une boucle Rust — constante `LOCK_LETTERING_FISCAL_YEAR_SQL` : `SELECT
+  id, start_date, status FROM fiscal_years WHERE id = ? AND company_id = ? FOR UPDATE`, `status` lu sous
+  verrou ; absent → `Invariant` (clé étrangère `fk_journal_entries_fiscal_year` sans cascade, écritures
+  tenues) ; (c) le (ii) de la règle des périodes par `fiscal_years::find_later_closed` (`:678`), sur
+  `&mut **tx`, pour chaque exercice ouvert du groupe. **« Ceux du groupe »** = les exercices qui portent
+  une ligne du groupe (tous compris entre le plus ancien et le plus récent) ; un exercice intermédiaire
+  sans ligne du groupe n'est **pas** verrouillé : aucune de ses lignes ne change, et il n'entre pas dans le
+  verdict. **Pourquoi la lecture sans verrou du (ii) suffit** (même preuve que la 15-12b, AC 8 (α)/(β)) :
+  (α) sous la 15-12a, aucune transition ne crée « X ouvert, postérieur clos » — la clôture d'un postérieur
+  verrouille ses antérieurs (b') et relit sous verrou (d), donc refuse tant qu'un antérieur est ouvert ;
+  (β) le lettrage tient X jusqu'à son `COMMIT`, si bien que cette clôture attend X puis le trouve ouvert.
+  Une lecture périmée ne peut donc manquer aucune clôture postérieure ; elle ne peut que voir encore clos un
+  postérieur rouvert entre-temps (état hérité) : refus à tort, sans dommage. Un exercice créé entre-temps
+  naît `Open`. Aucun fantôme ne change le verdict : pas de relecture verrouillante. Remarque écrite : le
+  verdict du groupe ne dépend que de son exercice le plus récent (une ligne plus ancienne en période
+  ouverte implique qu'une ligne du plus récent l'est). Tests : celui de l'ordre (R3-3, sonde `NOWAIT`) et
+  un test du (ii) par lecture non verrouillante (état hérité posé par SQL).
+- **Écartées** : garder le parcours de C114 (ordre dépendant du plan, verrous inutiles, fin d'intervalle) ;
+  le parcours borné `start_date BETWEEN ? AND ? … FOR UPDATE` proposé par R3-2 (toujours un parcours :
+  l'ordre reste au plan — C119) ; verrouiller aussi les exercices intermédiaires (aucune ligne ne change,
+  aucun verdict n'en dépend) ; `find_later_closed_in_tx` (verrouillant : réintroduit le verrou d'intervalle
+  sur les postérieurs que R3-2 retire) ; ne verrouiller que le plus récent (suffit au verdict, mais
+  laisserait le lettrage modifier des lignes d'un exercice ouvert non tenu, contre la règle commune à tous
+  les écrivains de lignes et le P8-1 d'août).
+- **Réversible** : oui (fiches seulement).
+
+## C126 — 15-1a-ii : `ENTRY_LETTERED` parle en dernier sur les trois chemins (révise le rang de C102 et de C117)
+- **Contexte** : R3-1 = F3-1 (MEDIUM) — la garde de lettrage était placée avant le verrou de période
+  (`delete_in_tx` 3-ter-bis, `update_in_tx` juste après `modification_guard`, `modification_blocker` avant
+  `PeriodLocked`). Depuis C113, délettrer est refusé quand toutes les lignes du groupe sont sous le verrou :
+  « délettrez-la d'abord » envoyait alors vers un geste refusé (boucle de refus), ou vers un délettrage qui
+  réussit puis un `PERIOD_LOCKED` de toute façon (un lettrage juste détruit pour rien). C117 avait écarté
+  pour la même raison « 3-ter-bis avant 2-bis » sans l'appliquer au verrou de période.
+- **Retenu** : la marque parle **après tout refus que le délettrage ne peut lever** : `delete_in_tx`
+  étape **3-quinquies**, après le verrou de période (3-quater), toujours hors du drapeau ;
+  `update_in_tx` étape **7-bis**, après le verrou de période sur l'ancienne et la nouvelle date, avant
+  l'instantané de l'étape 8 (les refus du corps et `OPTIMISTIC_LOCK_CONFLICT` parlent donc avant elle) ;
+  `modification_blocker` : après `PeriodLocked`, dernier motif. **Conséquence écrite** : quand
+  `ENTRY_LETTERED` parle sur la route, l'écriture est en période ouverte (exercice ouvert, aucun
+  postérieur clos, date après la borne) et n'appartient à aucune pièce — son groupe est `manual` (R5) et
+  sa propre ligne satisfait la règle des périodes : le délettrage qu'il prescrit **aboutit**. Les doc-
+  comments « le verrou de période parle en dernier » de `delete_in_tx` et du `PUT` sont réécrits ; la
+  précédence de C117 (2-bis avant la marque) tient, l'étape s'appelant désormais 3-quinquies ; la chaîne
+  de `unvalidate` (15-12b AC 10) finit par `… → PERIOD_LOCKED → ENTRY_LETTERED`. Tests par paire sur
+  chaque chemin (écriture lettrée datée ≤ borne → `PERIOD_LOCKED` ; datée après → `ENTRY_LETTERED`),
+  mutation « permuter » nommée.
+- **Écartées** : garder le rang et conditionner la marque à « date > borne » (deux lectures de la borne,
+  et la règle « tout refus non levable d'abord » ne serait tenue que pour un refus) ; placer la marque
+  avant `OPTIMISTIC_LOCK_CONFLICT` (un conflit de version ne se lève pas en délettrant) ; écrire pourquoi la
+  marque devrait parler d'abord (aucun motif : elle n'indique pas où corriger, contrairement à une pièce,
+  `api-external.md:279`).
+- **Réversible** : oui (fiches seulement).
+
+## C127 — 15-1a-i / 15-1a-ii : trois tranchages de forme de la validation P3 (compte bancaire archivé, exercice des lignes, rubriques du CHANGELOG)
+- **Contexte** : F3-7 (LOW) — R4 ne disait pas si un compte bancaire archivé laisse son compte non
+  lettrable ; F3-8 (LOW) — `entryNumber` repart à 1 à chaque exercice, ambigu dans un groupe à cheval
+  (réponse et audit) ; F3-2 (MEDIUM) — le CHANGELOG `[0.13.0]` énumère déjà les refus du `PUT`/`DELETE`
+  (#532) et ne disait rien des changements de contrat du lettrage.
+- **Retenu** : (1) **tout** `bank_accounts` qui désigne le compte, archivé compris, le rend non lettrable
+  (il a été un compte bancaire ; ses lignes relèvent de la réconciliation) — même fonction pour la 15-1b ;
+  test ; (2) chaque ligne de la réponse des routes de lettrage et des `details` d'audit porte
+  `fiscalYearId` et `fiscalYearName` ; (3) CHANGELOG, patron C123 : la section *Ajouté* existante est
+  **complétée** (créée seulement si absente) ; sous *Modifié*, les changements de contrat — champs neufs
+  des lignes et deux colonnes CSV (15-1a-i), `ENTRY_LETTERED` au `PUT`/`DELETE` et `201` de la
+  contre-passation portant des lignes lettrées (15-1a-ii) — ; les deux entrées #532 réécrites par la
+  15-1a-ii (refus énuméré à son rang, dernier ; « écriture lettrée » parmi ce qui ne se modifie pas tel
+  quel).
+- **Écartées** : (1) seuls les comptes bancaires non archivés (un compte redeviendrait lettrable à
+  l'archivage, ses lignes de banque mêlées au lettrage) ; (2) le seul `entryId` (l'audit se lit sans
+  recouper) ou le nom seul (renommable) ; (3) tout sous *Ajouté* (une intégration cherche sous *Modifié*).
+- **Réversible** : oui.
+
+## C128 — 15-1a-i / 15-1a-ii : en mode `System`, le nom des exercices se lit sans verrou (validation P4)
+- **Contexte** : R4-2 (15-1a-i) = R4-1 (15-1a-ii), MEDIUM. C127 exige `fiscalYearId` **et**
+  `fiscalYearName` par ligne dans la réponse et l'audit, toutes origines ; mais R7 réservait la lecture
+  des exercices (point 2 (a), qui porte `name`) au mode `Manual`, et disait la primitive en mode
+  `System` « sans requête ». Le lettrage `reversal` (15-1a-ii) et les groupes `document` (15-1a2)
+  n'avaient donc aucune source pour le nom.
+- **Retenu** (décision de l'orchestrateur) : en mode `System`, après l'acte 1, une lecture **ordinaire,
+  non verrouillante** — `LETTERING_FISCAL_YEAR_NAMES_SQL` : `SELECT id, name FROM fiscal_years WHERE
+  company_id = ? AND id IN (…)` — pour le seul affichage. Le « sans requête » ne vaut plus que pour le
+  contrôle de l'exercice tenu. Écrit en R7 point 3, AC6, AC10, T3 (15-1a-i), au « Coût » de R6 et à
+  AC10 part ii (15-1a-ii), reporté à la 15-1a2 (Reçu, point 18).
+- **Écartées** : une jointure de `fiscal_years` dans l'acte 1 (sous `FOR UPDATE`, elle verrouillerait les
+  exercices hors de l'ordre de la clôture ; MariaDB n'a pas de `FOR UPDATE OF`) ; un nom absent en mode
+  `System` (le test `reversal_lettering_is_audited_by_the_reverser` l'attend, et l'audit doit se lire
+  sans recouper) ; une lecture verrouillante (inverserait l'ordre `start_date` derrière l'exercice du
+  jour).
+- **Réversible** : oui (une requête de lecture).
+
+## C129 — 15-1a-ii : la contre-passation marque l'origine ; « intacte » veut dire montants, comptes, dates et libellés (validation P4)
+- **Contexte** : F-3 (MEDIUM, 15-1a-ii). R6 écrit `lettering_key`/`lettering_origin` sur les lignes de
+  l'**origine** ; la doctrine « crée une écriture, n'en modifie aucune — l'origine reste intacte » est
+  écrite au doc-comment de la route (`routes/journal_entries.rs:477`), au texte du dialogue de
+  confirmation (quatre locales, repli Svelte), et un test (`…_leaves_the_origin_intact`) resterait vert
+  en le disant, sur un compte lettrable.
+- **Retenu** (décision de l'orchestrateur) : l'origine reste **intacte dans ses montants, comptes, dates
+  et libellés** ; seules ses lignes reçoivent la marque de lettrage qui les apparie à la
+  contre-passation (sans bump de `version`). Doc-comment, clé `journal-entries-reverse-dialog-body`
+  (quatre locales, texte arrêté à R6) et repli réécrits ; test renommé
+  `reverse_creates_the_opposite_entry_and_marks_the_origin_without_altering_it`, qui asserte montants,
+  comptes et `version` inchangés **et** la marque posée ; mutations nommées. Publié (`CHANGELOG.md:192`,
+  `[0.12.0]`) : non réécrit. Avoirs (`user-manual.tex:1230/1235`) : portés à la 15-1a2 (point 20).
+- **Écartées** : ne pas marquer l'origine (le groupe `{L, L'}` exige ses deux lignes) ; bumper la
+  `version` de l'origine (ferait échouer un `PUT` concurrent sans motif, et l'origine n'est de toute façon
+  plus modifiable — `ENTRY_IS_REVERSED`) ; laisser le texte tel quel (vrai au sens comptable, faux à la
+  lettre, et lu à chaque contre-passation).
+- **Réversible** : oui (textes et test).
+
+## C130 — 15-1a-i : la promesse « paiement à lettrer » quitte l'écran aussi, dans cette story (validation P4)
+- **Contexte** : R4-1 (MEDIUM, 15-1a-i). C106 retirait la promesse d'un lettrage manuel du règlement
+  d'une facture créditée (que R5 interdit), mais n'inventoriait que le manuel et `api-external.md`. Le
+  même texte est affiché à l'écran : deux clés i18n × quatre locales, replis Rust (`errors.rs:2966`,
+  `:3495`) et frontend, quatre tests qui l'assertent, un doc-comment (`kesh-db/src/errors.rs:327`).
+- **Retenu** (décision de l'orchestrateur, emplacement tranché ici) : **dans la 15-1a-i**, là où vit
+  R5 — sinon l'écran dirait de lettrer ce que l'API refuse dès son merge. Texte : « … ce règlement **reste
+  ouvert au compte débiteurs**, il ne s'annule pas » (un constat, sans geste promis), arrêté en
+  FR/DE/EN/IT à AC15 part i ; contrôle final par `git grep` par la valeur dans les quatre langues.
+  `CHANGELOG.md:74` est sous `[0.12.1]` **publié** : non réécrit (des notes de version publiées ne se
+  corrigent pas après coup), le changement est annoncé sous *Modifié* de `[0.13.0]`.
+  `supplier-invoices-cancel-confirm-paid` (« to be matched », DE/EN/IT) parle du paiement fournisseur
+  **détaché**, qui reste lettrable à la main : promesse vraie, non touchée.
+- **Écartées** : renvoyer à la 15-1a2 (l'écran mentirait entre les deux merges) ; « il se traite
+  ailleurs » ou une promesse de traitement futur (la 15-1a2 n'a pas tranché le cas) ; réécrire
+  `CHANGELOG.md:74` (l'orchestrateur le listait ; écarté pour la raison dite, à son arbitrage).
+- **Réversible** : oui (textes).
+
+## C131 — 15-1a-i / 15-1a-ii : tranchages de forme de la validation P4
+- **Contexte** : LOW des deux lentilles, sur des points que la fiche laissait au développeur.
+- **Retenu** : (1) `key_from_code` : `to_ascii_uppercase` **puis** validation `A-Z` (F4-2 : `to_uppercase`
+  ferait de `ß` un `SS`) ; (2) champs de lettrage du type frontend **requis et nullables**, fixtures
+  typées nommées (R4-3 = F4-3) ; (3) **`LETTERING_CONCURRENT_CHANGE` testé par une fonction pure**
+  `check_rows_affected` et par le mapping 409, le chemin de bout en bout étant un angle mort assumé
+  (F4-4). ⚠️ **Écart à la consigne de l'orchestrateur** (« déclencheur SQL posé par le test ») :
+  `sqlx-mysql` 0.8.6 pose `CLIENT_FOUND_ROWS` (`connection/stream.rs:46`), si bien que
+  `rows_affected()` compte les lignes **trouvées** ; un déclencheur `BEFORE UPDATE` ne change pas ce
+  nombre (il ne peut ni écarter une ligne trouvée ni écrire dans sa propre table — erreur 1442), donc
+  ne provoque pas le refus. (4) Test d'ordre : `test_fixtures::sonde_verrou_nowait` réutilisé, `1205`
+  déjà mesuré (F4-5), requête bloquée observée deux fois à 100 ms (R4-5). (5) AC9 de la 15-1a-ii : noms
+  `snake_case` fixés (R4-8). (6) Contre-passation dans `api-external.md` : une phrase à `:255`, pas de
+  section (F-7). (7) Message `ENTRY_LETTERED` inchangé malgré l'absence d'écran de délettrage avant la
+  15-1c : fenêtre jamais publiée, l'epic sortant en une release (R4-9 = F-8).
+- **Écartées** : (2) champs optionnels (mentirait sur le contrat) ; (3) un crochet de test en code de
+  production ; (6) une section complète de la route (hors périmètre) ; (7) un message qui renvoie à
+  l'API (devient faux à la 15-1c).
+- **Réversible** : oui.
+
+## C132 — 15-1a-ii : la marque de lettrage est nommée, non comptée, parmi les refus de la dévalidation (validation P5)
+- **Contexte** : R5-7 = L-7 (LOW). La remédiation de P4 (R4-2, F-7) faisait passer de « trois » à
+  « quatre » les doc-comments qui comptent les gardes de `delete_in_tx` tenues hors du drapeau
+  (`invoices.rs:1471-1473`, `kesh-db/src/errors.rs:241-244`), alors que les totaux écrits ailleurs —
+  « huit » à `invoices.rs:1376`, `invoices/[id]/+page.svelte:355`, `admin-manual.tex:1919` et `:1961`,
+  et le tableau d'`api-external.md:288-299` — restaient à huit : neuf d'un côté, huit de l'autre. Le
+  motif est **inatteignable** par la dévalidation (une facture lettrée a un règlement ou un avoir, que
+  `unvalidate` refuse avant).
+- **Retenu** : les totaux comptent les refus que la dévalidation **peut rendre** et restent « huit » ;
+  les deux doc-comments gardent « trois » et **nomment** la marque (« plus la marque de lettrage, tenue
+  au même point de passage mais inatteignable par la dévalidation, qui parle en dernier »). Aucune règle
+  ne change : la garde reste inconditionnelle dans `delete_in_tx` (AC8).
+- **Écartées** : compter partout (« neuf », en le disant inatteignable) — six sites à réécrire, dont deux
+  du manuel d'administration et un tableau d'API, pour annoncer à l'utilisateur un refus qu'il ne peut
+  pas rencontrer ; laisser « quatre » d'un côté et « huit » de l'autre (incohérent, le défaut signalé).
+- **Réversible** : oui (texte de doc-comments).

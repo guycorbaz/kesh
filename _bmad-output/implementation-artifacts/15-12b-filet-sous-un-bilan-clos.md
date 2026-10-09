@@ -72,23 +72,24 @@ message neutre de `LATER_FISCAL_YEAR_CLOSED` (AC 9 : clé `error-later-fiscal-ye
 sans le filet (module `fiscal_years.rs`, `DbError::LaterFiscalYearClosed`, `find_later_closed`) et la
 documentation (AC 23, part B). La dépendance est à sens unique : B → A.
 
-### Frontière avec la 15-1a (C112)
+### Frontière avec la 15-1a (C112) — découpée en 15-1a-i et 15-1a-ii (C124)
 
 - La 15-1a **n'exige pas** cette fiche : son prérequis réel est la 15-12a. Le filet couvre la création et
   la suppression d'écritures, **pas** le lettrage : dans l'état hérité, un lettrage d'un groupe tout en N
   sous un N+1 clos n'est refusé par rien d'ici (à la 15-1a de le tolérer, de le garder ou de l'écrire).
-- Ordre écrit : **15-12a → 15-12b → 15-1a**. Motif : les deux fiches touchent `delete_in_tx` — cette fiche
-  y lève la condition `enforce_ownership` de la lecture des postérieurs clos (AC 10, étape 2-bis), la
-  15-1a y pose `ENTRY_LETTERED` (étape 3-ter-bis) hors de ce drapeau.
+- Ordre écrit : **15-12a → 15-12b → 15-1a-i → 15-1a-ii**. Motif : les deux fiches touchent `delete_in_tx` —
+  cette fiche y lève la condition `enforce_ownership` de la lecture des postérieurs clos (AC 10, étape
+  2-bis), la 15-1a-ii y pose `ENTRY_LETTERED` (étape **3-quinquies**, après le verrou de période — C126)
+  hors de ce drapeau.
 - **Précédence des deux refus, tranchée (C117)** : **« exercice postérieur clos » (2-bis) avant
-  `ENTRY_LETTERED` (3-ter-bis)** — l'état des exercices parle avant la marque, comme `FISCAL_YEAR_CLOSED`
+  `ENTRY_LETTERED` (3-quinquies)** — l'état des exercices parle avant la marque, comme `FISCAL_YEAR_CLOSED`
   avant `LATER_FISCAL_YEAR_CLOSED` ; l'inverse dirait « délettrez d'abord » à qui ne pourrait de toute
   façon rien supprimer. **La seconde des deux stories mergée** l'écrit au doc-comment « Ordre des refus »
   de `delete_in_tx` (et à la liste de précédence de `unvalidate`, AC 10) et la teste par une **paire** :
   écriture lettrée dans N, N+1 clos, `enforce_ownership` à `false` **et** à `true` →
   `LaterFiscalYearClosed` ; mutation « permuter les étapes » observée rouge. **Dans l'ordre préféré
-  (15-12a → 15-12b → 15-1a), c'est la 15-1a qui le fait** ; cette fiche n'a alors rien à écrire sur
-  `ENTRY_LETTERED`. ⚠️ **Si la 15-1a est mergée avant cette fiche**, la paire, la mutation et le
+  (15-12a → 15-12b → 15-1a-i → 15-1a-ii), c'est la 15-1a-ii qui le fait** ; cette fiche n'a alors rien à écrire sur
+  `ENTRY_LETTERED`. ⚠️ **Si la 15-1a-ii est mergée avant cette fiche**, la paire, la mutation et le
   doc-comment reviennent ici : T0 le constate (`grep -n "ENTRY_LETTERED\|EntryLettered"
   crates/kesh-db/src/repositories/journal_entries.rs`), et T1 les prend.
 
@@ -123,7 +124,8 @@ documentation (AC 23, part B). La dépendance est à sens unique : B → A.
     gardes suivent — `INVOICE_HAS_SETTLEMENTS → INVOICE_CREDITED → INVOICE_HAS_REMINDERS →
     INVOICE_EMAILED → MATCHED_BANK_TRANSACTION → FISCAL_YEAR_CLOSED → LATER_FISCAL_YEAR_CLOSED →
     ENTRY_IS_REVERSED → PERIOD_LOCKED` (à relire au code en T0 et à écrire telle quelle au
-    doc-comment de `unvalidate` — avec `ENTRY_LETTERED` à son rang si la 15-1a est mergée avant) ; test
+    doc-comment de `unvalidate` — avec `ENTRY_LETTERED` à son rang, **après** `PERIOD_LOCKED` (C126 : la chaîne finit par
+    `PERIOD_LOCKED → ENTRY_LETTERED`), si la 15-1a-ii est mergée avant) ; test
     de paire : facture **envoyée** sous un postérieur clos → `INVOICE_EMAILED`. **Le test qui fixait le
     comportement actuel** (`journal_entries.rs:3427`, choix C-15-8-29 — « pour qu'il rougisse quand #543
     sera corrigée ») **est inversé**, et les commentaires `C-15-8-29` (`invoices.rs:1656`,
@@ -703,3 +705,21 @@ de la base partagée, AC 21), `CHANGELOG.md`. **Aucune migration** (P1-P8 sans o
   Trend : P1 (15-12 entière) 1 HIGH / 4 MEDIUM → P2 0 HIGH / 4 MEDIUM → P3 0 HIGH / 3 MEDIUM → P4 ciblée 0.
   Modèles : Opus, Sonnet ×2, Opus ×2, Haiku (ciblée).
 
+- **2026-10-09 — reçu du découpage de la 15-1a (`2d3c4b41`, C124-C126)** : la 15-1a devient 15-1a-i (marque
+  du lettrage) et 15-1a-ii (gardes). Frontière réalignée : `ENTRY_LETTERED` est posé par la 15-1a-ii à
+  l'étape **3-quinquies** de `delete_in_tx` (après le verrou de période, C126) et non plus 3-ter-bis ; la
+  précédence de `unvalidate` finit par `PERIOD_LOCKED → ENTRY_LETTERED` ; ordre 15-12a → 15-12b → 15-1a-i →
+  15-1a-ii. Aucune règle du filet ne change (édition de l'orchestrateur, pas de passe).
+
+
+- **2026-10-09 — reçu de la revue de code P1 de la 15-12a (`37784da4`, C-15-12a-3)** : le texte de
+  `error-later-fiscal-year-closed` (4 locales + repli Rust `errors.rs`) a été **borné** par la 15-12a à ce
+  qu'elle garde réellement : « aucune écriture datée avant sa date de début ne peut être **modifiée ni
+  supprimée** » (le mot « enregistrée » a été retiré : la 15-12a ne garde pas la saisie, et le manuel
+  `user-manual.tex:712` dit que les autres écritures restent possibles). Une assertion de
+  `journal_entry_reversal_e2e.rs` refuse désormais « enregistr ». **Conséquence pour cette fiche** : le filet
+  de l'AC 8 refuse la **création** d'écritures sous un postérieur clos — le message cité « inchangé ici »
+  (`:70`, `:550`) devient alors trop étroit. T0 : **élargir** le texte (4 locales, repli Rust) à la saisie
+  (« enregistrée, modifiée ni supprimée »), retirer ou inverser l'assertion « enregistr » de
+  `journal_entry_reversal_e2e.rs`, et regrep par la valeur (« enregistr », « recorded », « erfasst »,
+  « registrat ») sur catalogues, replis, manuels et docs. Édition de l'orchestrateur, pas de passe.
