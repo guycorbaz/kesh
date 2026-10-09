@@ -15,7 +15,7 @@ La Story 6.4 a unifié deux patterns disparates (bypass SQL ad-hoc en Rust, abse
 
 ## Base de dev jetable — MariaDB en RAM
 
-Depuis la Story 22-5 (issue #251), `docker-compose.dev.yml` monte `/var/lib/mysql` en **tmpfs de 4 Go** et relâche la durabilité (`--innodb_flush_log_at_trx_commit=0 --sync_binlog=0 --innodb-doublewrite=0`). Les bases éphémères de `#[sqlx::test]` ne touchent donc plus le disque.
+Depuis la Story 22-5 (issue #251), `docker-compose.dev.yml` monte `/var/lib/mysql` en **tmpfs de 8 Go** (4 Go jusqu'au 2026-10-09 : `ibdata1`, qui porte l'historique d'annulation d'InnoDB, grossit d'un gate à l'autre et ne rétrécit qu'au restart — cf. le commentaire du compose) et relâche la durabilité (`--innodb_flush_log_at_trx_commit=0 --sync_binlog=0 --innodb-doublewrite=0`). Les bases éphémères de `#[sqlx::test]` ne touchent donc plus le disque.
 
 ⚠️ **Rien ne survit au redémarrage du conteneur** — ni la base `kesh`, ni `kesh_e2e`, ni les tables système. C'est délibéré, et cela a trois conséquences qu'il vaut mieux connaître avant de les découvrir :
 
