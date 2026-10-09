@@ -5622,6 +5622,20 @@ l'import (#458–#461).
 - **Écarté** : changer le texte maintenant (code de production en remédiation de fin de boucle, qui rouvrirait la boucle de revue pour un LOW).
 - **Réversible** : oui (une chaîne).
 
+## C-15-7b2-1 — 15-7b2 (T0) : `onboarding::reset` passe à `Traced` / `SansEcritureAuJournal` ; partitions recomptées
+
+- **Contexte** : au T0 de la 15-7b2, le registre des routes compte 114 routes (107 / 5 / 2), non 112 (105 / 5 / 2) comme le dit la fiche ; et sa colonne `Rejeu` porte la remise à zéro en `Exemptee` (« un 1213 annule sa transaction unique et la relance manuelle est sûre »), alors que l'AC 2 l'enveloppe désormais dans `retry_with` — dans `kesh-seed`, hors de `src/routes/`.
+- **Retenu** : `Traced`, et `SansEcritureAuJournal` comme `seed_demo` (C-15-7b1-1 : la colonne grave l'inventaire de l'AC1 de la 15-5e1, au sens du journal comptable ; le volet (c) exige une enveloppe dans le corps du handler). Le point (vi) du doc-comment nomme la remise à zéro parmi les routes rejouées quand même. Partition d'audit 108 / 4 / 2 = 114 ; partition de rejeu 24 / 3 / 90 = 117. Le manuel dit « 108 des 114 ».
+- **Écarté** : `Rejouee` (déplacer le rejeu dans le handler contredirait l'AC 2) ; garder `Exemptee` (la raison écrite serait fausse).
+- **Réversible** : oui (une ligne du registre, quatre nombres).
+
+## C-15-7b2-2 — 15-7b2 (T0) : le rejeu de `reset_demo` prouvé de bout en bout, et le prédicat sur un vrai cycle
+
+- **Contexte** : la fiche déclare angle mort l'interblocage de `reset_demo` lui-même (« non reproductible de façon déterministe ») et demande, au test 13, un vrai cycle de verrous pour le prédicat. La 15-7b1 a depuis montré (C-15-7b1-2) qu'une 1213 levée **une fois** par un déclencheur — compteur en table MyISAM, que l'annulation n'efface pas — prouve un rejeu de bout en bout.
+- **Retenu** : (1) test 13 tel qu'écrit (deux connexions hors du pool, `reset_retry_probe`, cycle réel, 1213 ⇒ vrai ; 1205 ⇒ faux ; variantes ⇒ faux, `ResetForbidden` compris) ; (2) **en plus**, un test 13b : déclencheur `BEFORE INSERT ON audit_log` qui lève une 1213 à la première écriture d'`installation.reset` ; la remise à zéro aboutit au second essai, une seule entrée, tables vidées. L'angle mort se réduit à l'interblocage **naturel** (non provoqué), écrit au Dev Agent Record.
+- **Écarté** : laisser l'angle mort entier (testable à faible coût) ; remplacer le vrai cycle par `SIGNAL` (la fiche le demande, et il prouve la conversion par `map_db_error` d'une erreur réellement émise par InnoDB).
+- **Réversible** : oui (tests seuls).
+
 ## C-15-13b-1 — 15-13b (T0) : le rapatriement n'est pas rejoué au T0, le démon Docker étant bloqué
 
 - **Contexte** : le T0 prescrit de rejouer, sur un conteneur jetable, l'écriture d'un fichier `0600` par un conteneur root dans un dossier monté, puis le rapatriement `sudo cp` + `sudo chown`. Le 2026-10-09 vers 07:10, toute création de conteneur expire (`docker run` → 124 après 60 s) : le noyau signale des tâches `dockerd` en état D, bloquées sur un rw-semaphore (`journalctl`, « blocked for more than 122 seconds »). Le démon sert encore `ps`/`info`. Les créations interrompues laissent des noms réservés sans conteneur. `sudo` n'est pas utilisable sans mot de passe depuis l'agent.

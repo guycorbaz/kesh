@@ -1,6 +1,6 @@
 # Story 15.7b2 : La remise à zéro laisse sa trace, vide tout, et garde la société
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Née le 2026-10-08 du découpage de la 15-7b (choix C-15-7-31), à la passe de validation P4 :
      coupe Volet A / Volet B que la section « Dérogation règle de splitting » de la 15-7b prévoyait
@@ -799,6 +799,23 @@ le test 8 prouve l'appel sur le chemin d'erreur — à écrire au Dev Agent Reco
 ## Dev Agent Record
 
 ### Agent Model Used
+
+Claude Opus 5.5 (développement, worktree `kesh-15-7b2`, branche `story/15-7b2-remise-a-zero`, base `origin/main` `181efa3c`).
+
+### T0 — la fiche relue contre `181efa3c` (avant tout code)
+
+La fiche date d'avant les 15-13a/b, 15-6c/d, 15-1a-i et 15-14a. Écarts constatés, relevés depuis la source :
+
+1. **Registre des routes** (`crates/kesh-api/tests/audit_route_registry.rs`) : **114** routes, `traced` **107**, `exempt` **5**, `no_matter` **2** (la fiche, recomptée au T0 de la 15-7b1, disait 105 / 5 / 2 sur 112 — la 15-1a-i a ajouté le lettrage et le délettrage manuels). Après cette story : **108 / 4 / 2 = 114**. La seconde colonne, `Rejeu`, porte `onboarding::reset` en `Exemptee(…)` ; le rejeu que pose l'AC 2 vit dans `kesh-seed`, comme celui de `seed_demo` : la route passe à `SansEcritureAuJournal` (patron C-15-7b1-1), point (vi) du doc-comment du registre de « cinq » à « six » routes rejouées quand même ; partition de rejeu `exemptees` 4 → **3**, `sans_ecriture` 89 → **90**, `rejouees` 24 inchangé (C-15-7b2-1).
+2. **Manuel d'administration** : « 105 des 112 routes … 105 + 5 + 2 = 112 » (`admin-manual.tex`, § *Journal d'audit*) est **déjà périmé** à `181efa3c` (107 / 114 depuis la 15-1a-i). La cible de l'AC 11 devient « **108 des 114** … 108 + 4 + 2 = 114 ».
+3. **Tables** : `TABLES_TO_TRUNCATE` compte toujours **39** tables ; `reset_cleared_tables()` en rendra **33**. Le **lettrage** (15-1a-i) n'a pas de table : deux colonnes de `journal_entry_lines` (`lettering_key`, `lettering_origin`, migration `20261009000001`), vidées avec les lignes ; `letterings.rs` et `letterings_lexical.rs` citent déjà `reset_demo` comme suppression en bloc par `DELETE` — vrai encore (aucun littéral de la remise à zéro ne nomme ces colonnes). La **sauvegarde persistante** (15-13b, `KESH_ADMIN_BACKUP_DIR`, défaut `/data/backup`) est un dossier de fichiers, hors base : la remise à zéro n'y touche pas, comme aux fichiers de `KESH_DOCUMENTS_DIR` (inventaire § 5) — dit au manuel avec eux.
+4. **`companies`** : 23 colonnes au squash, soit `id`, `version`, `created_at`, `updated_at` et les **19** de `PERTURBED` — conforme au test 5.
+5. **Déclencheurs** : le test 8 ne pose **pas** le premier déclencheur du dépôt — les 15-7a2 (`t_15_7a_fail`) et 15-7b1 (`t_15_7b1_*`) en posent déjà. Sans effet sur le test.
+6. **`docs/api-external.md`** (§ *Interblocages*) dit que « l'effacement des données de démonstration, réservé à l'interface d'administration, ne rejoue pas » : faux une fois l'AC 2 livrée — à corriger (site absent de l'AC 10).
+7. **Test 13** : la 15-7b1 a déjà posé `is_seed_retryable_accepts_1213_and_only_it` sur une 1213 levée par `SIGNAL`. La fiche demande un **vrai** cycle de verrous : il est écrit en plus, avec `ResetForbidden` ; et le rejeu **de `reset_demo` lui-même** est prouvé de bout en bout par un déclencheur qui lève une 1213 une fois (patron C-15-7b1-2), ce que la fiche déclarait angle mort (C-15-7b2-2).
+8. **Compose (T8)**, contrôle fait dès le T0 : `grep -n "PRODUCTION_RESET" docker-compose.yml docker-compose.prod.yml` rend `docker-compose.prod.yml:148` et `docker-compose.yml:128` — une ligne par fichier, la 15-11a est mergée.
+9. **Sites relocalisés par le texte** : `admin-manual.tex` `:730` (cellule `KESH\_PRODUCTION\_RESET`), `:1021` (« company provisoire »), `:1308` (matrice), `:1368` (`\item \textbf{Parcours}`), `:2088` (105 / 112), `:2121` (« efface encore »), `:2275` (réserve OLICo, \#434) ; `user-manual.tex` `:190` (§ Chemin A, renvoi au bouton avec sa condition — déjà écrit par la 15-7b1), `:2172` (« Deux familles »), `:2408` (glossaire). `docs/MULTI-TENANT-SCOPING-PATTERNS.md` : ligne `reset` `:324`, *Known Risk — KF-002-H-002* `:343-345`.
+10. **Test 7 de la 15-7a2** : `language_without_company_traces_company_created` (`onboarding_audit_e2e.rs`) asserte encore l'id mort — remplacé par le test 6c.
 
 ### Debug Log References
 
