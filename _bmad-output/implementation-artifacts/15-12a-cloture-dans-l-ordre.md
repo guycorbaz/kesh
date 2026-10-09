@@ -1,6 +1,6 @@
 # Story 15.12a : Clôturer les exercices dans l'ordre — l'invariant, ses trois transitions, son écran
 
-Status: review
+Status: done
 
 <!-- Créée le 2026-10-09 par DÉCOUPAGE de la Story 15-12 à la remédiation de sa validation P2 (décision de
      l'orchestrateur, choix C107 de `epic-15-choix-autonomes.md`). Version complète de la 15-12 avant
@@ -1174,6 +1174,39 @@ Vitest `fiscal-years-page.test.ts` 9 → 10 (+1). Backend +4 (2897 → 2901), fr
   avant 12:00 UTC). Aucun hors liste ; `fiscal-years.spec.ts:59` vert. Backend arrêté par son PID.
 - Manuels non touchés (le texte promettait déjà l'infobulle, désormais tenue) : PDF non régénérés.
 
+### Clôture — rebase sur `origin/main` et gates finaux (2026-10-09)
+
+**Rebase** de la branche (11 commits) de `5e4bec50` sur `de285ea8` (porte 15-7a1 et 15-11b ; la
+15-6a n'était pas encore sur `main`). Conflits, tous de registre ou de document :
+`epic-15-choix-autonomes.md` (union, 276 entrées `## C…`, aucun identifiant en double — vérifié par
+`grep -E '^## C' | sort | uniq -d`), `sprint-status.yaml` deux fois (lignes `last_updated` de la
+branche renumérotées (27) et (28) derrière les (24)-(26) de `main` ; ligne 15-11b de `main` gardée,
+lignes 15-12 / 15-12a / 15-12b de la branche gardées), `admin-manual.pdf` (binaire : `.tex` fusionné
+sans conflit, PDF régénéré après rebase, contrôlé aplati — « Comment .env atteint Kesh » de la 15-11b
+et « du plus ancien vers le plus récent » de cette story y figurent). `CHANGELOG.md`, `messages.ftl`
+et `audit_route_registry.rs` fusionnés sans conflit (`main` n'a pas touché `audit_route_registry.rs`
+depuis la base : partition inchangée). Aucun code de la branche ne lit l'environnement
+(`git diff origin/main -- '*.rs' | grep 'env::var'` vide) : la règle `config::env_nonempty` de la
+15-11b n'est pas en jeu.
+
+**Gates complets sur l'état rebasé** (dernier commit de code : `160ff2f0`, la remédiation P1 rebasée ;
+aucun code ne change après) :
+- frontend : `check` 0 erreur (27 avertissements préexistants), `lint-i18n-ownership` PASS,
+  `test:unit` **1095 / 1095** (112 fichiers), `build` OK (`target/gate-logs/15-12a-gate-frontend-final.log`) ;
+- bases `kesh_1512a` / `kesh_e2e_1512a` remises à zéro (DROP/CREATE, migrations, seed), attente des
+  gates des autres agents (`wait-kesh.sh`) ; `scripts/test-fast.sh` (fmt + clippy + nextest) :
+  **2934 / 2934, 4 ignorés** (`…/15-12a-gate-backend-final.log`) ;
+- E2E complet (backend `:3012` sur `kesh_e2e_1512a`, secrets `openssl rand`, SMTP factice,
+  `KESH_INBOX_DIR`/`KESH_DOCUMENTS_DIR` sous `target/e2e-dirs` du worktree, `smtpConfigured:true`),
+  02:27-02:37 UTC : **244 passés, 10 échecs, 19 ignorés** (10,2 min, `…/15-12a-e2e-final.log`). Fichier
+  par fichier contre `docs/testing.md` : sept KF-029 (`mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`), deux KF-045
+  (`invoices.spec.ts:415`, `:439`, run avant 12:00 UTC) et **`xss-token-protection.spec.ts:82`, faute
+  de montage** : `KESH_TEST_MODE=true` manquait **côté runner** (`docs/testing.md` § prérequis — la spec
+  lit la variable dans Playwright). Rejouée avec la variable contre le même backend : **3 / 3 passés**
+  (`…/15-12a-e2e-final-xss.log`). Aucun échec hors liste ; les 6 tests de `fiscal-years.spec.ts` verts.
+  Backend arrêté par son PID.
+
 ### File List
 
 - `crates/kesh-db/src/errors.rs`, `crates/kesh-db/src/repositories/fiscal_years.rs`,
@@ -1194,6 +1227,17 @@ Vitest `fiscal-years-page.test.ts` 9 → 10 (+1). Backend +4 (2897 → 2901), fr
   sprint-status.yaml, epic-15-choix-autonomes.md}`
 
 ## Change Log
+
+- 2026-10-09 — **Clôture** : boucle de revue de code close. Trend : **P1** (Sonnet ×3, lentilles B, E, A)
+  0 C / 0 H / **2 MEDIUM** distincts d'origine + LOW → remédiation `37784da4` (rebasée `160ff2f0`) →
+  **P2 ciblée** (Haiku, une lentille sur la seule remédiation, prompt `15-12a-review-prompt-p2-ciblee.md`,
+  rapport `target/gate-logs/15-12a-review-p2-ciblee.md`) : **0** ; l'orchestrateur a vérifié lui-même le
+  test 13 b3 (garde réelle `find_later_closed_in_tx`, attente observée à (c) par
+  `attendre_une_requete_en_cours`, verdict `EarlierFiscalYearOpen` nommant X). La passe ciblée n'ayant
+  produit aucune remédiation, aucune ligne de production ne bouge après elle : boucle close. Rebase sur
+  `de285ea8` (15-7a1, 15-11b), gates complets sur l'état rebasé : backend 2934/2934, Vitest 1095/1095,
+  E2E 244 / 10 échecs dont 9 attendus et 1 de montage rejoué vert (Dev Agent Record, § « Clôture »).
+  Statut `done`. L'issue #543 reste ouverte : la 15-12b la fermera.
 
 - 2026-10-09 — **Revue de code P1** (Sonnet ×3, contexte frais, lentilles B, E, A ; prompt
   `15-12a-review-prompt-p1.md`). Bruts : B 0 / 0 / 1 MEDIUM / 6 LOW, E 0 / 0 / 0 / 5 LOW, A 0 / 0 / 1
