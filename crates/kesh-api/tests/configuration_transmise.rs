@@ -3204,7 +3204,8 @@ fn synology_sauvegarde_la_base_par_le_dump() {
     // passage, c'est celui d'une base à moitié rechargée (revue P6, MEDIUM-1).
     if premier(&restore, r"revenir[^\n]*\$\{?SECURITE\b").is_some() {
         erreurs.push(
-            "(c) le geste « revenir » désigne $SECURITE, le dump de sécurité du passage en cours".into(),
+            "(c) le geste « revenir » désigne $SECURITE, le dump de sécurité du passage en cours"
+                .into(),
         );
     }
     // Sonde : affectation nue, sans `||` ni `&&` qui masquerait son échec (B4-L5).
