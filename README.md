@@ -132,7 +132,7 @@ kesh/
 
 ### Multi-tenant (Story 6.2)
 
-Kesh supporte plusieurs sociétés par instance via un modèle multi-tenant :
+Le modèle isole chaque société par `company_id` ; une installation en porte une :
 
 - **JWT claims** : chaque token contient `user_id`, `role`, et **`company_id`**
 - **Scoping** : toutes les requêtes filtrent par `company_id` du JWT (défense en profondeur contre IDOR)

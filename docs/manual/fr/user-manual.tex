@@ -76,11 +76,11 @@ L'accès à Kesh nécessite un compte utilisateur. Deux scénarios sont possible
 
 \subsubsection{Création par un administrateur (cas courant)}
 
-Si votre fiduciaire ou administrateur système a installé Kesh, il vous enverra une \textbf{invitation par email} contenant un lien de création de compte. Cliquez sur ce lien, choisissez un mot de passe fort (au moins 12 caractères, mélange de majuscules, minuscules, chiffres et caractères spéciaux), et confirmez.
+L'administrateur de l'installation crée votre compte : il choisit votre \textbf{nom d'utilisateur} et un \textbf{mot de passe initial} (12 caractères au moins par défaut), qu'il vous transmet. Pour le changer, passez par la procédure \emph{Mot de passe oublié} (ci-dessous) ou demandez-le à l'administrateur : aucun écran de changement de mot de passe en session n'existe encore (cf. section \emph{Gestion de votre compte}).
 
 \subsubsection{Onboarding initial (premier utilisateur d'une instance)}
 
-Si vous êtes le tout premier utilisateur d'une instance Kesh fraîchement installée, vous serez accueilli par un écran d'onboarding initial vous demandant de créer le compte super-administrateur. Voir le \emph{Manuel administrateur} pour les détails.
+Si vous êtes le tout premier utilisateur d'une instance Kesh fraîchement installée, vous serez accueilli par un écran d'onboarding initial vous demandant de créer le compte administrateur. Voir le \emph{Manuel administrateur} pour les détails.
 
 \subsection{Connexion}
 
@@ -88,7 +88,7 @@ Pour vous connecter :
 
 \begin{enumerate}
     \item Ouvrir l'URL de votre instance Kesh dans un navigateur (par exemple \keshpath{https://compta.exemple.ch}).
-    \item Saisir votre email et votre mot de passe.
+    \item Saisir votre identifiant (nom d'utilisateur) et votre mot de passe.
     \item Cliquer sur \emph{Se connecter}.
 \end{enumerate}
 
@@ -111,7 +111,7 @@ Si vous ne recevez pas l'email dans les 5 minutes, vérifiez votre dossier spam/
 \end{keshwarning}
 
 \begin{keshtip}
-Un lien expiré ou déjà utilisé affiche « lien invalide ou expiré » : cliquez sur \emph{Refaire une demande} pour recevoir un nouveau lien. Après 5 demandes en 15 minutes, patientez 30 minutes avant de réessayer. Pour changer votre mot de passe \textbf{sans} l'avoir oublié, passez par votre compte une fois connecté (cf. section \emph{Gestion de votre compte}).
+Un lien expiré ou déjà utilisé affiche « lien invalide ou expiré » : cliquez sur \emph{Refaire une demande} pour recevoir un nouveau lien. Après 5 demandes en 15 minutes, patientez 30 minutes avant de réessayer. Pour changer votre mot de passe \textbf{sans} l'avoir oublié, refaites cette procédure, ou demandez à votre administrateur de le réinitialiser : aucun écran de changement en session n'existe encore.
 \end{keshtip}
 
 \subsection{Déconnexion}
@@ -2154,10 +2154,10 @@ Pour la conservation légale 10 ans (CO Art. 958f al. 1) :
 \end{enumerate}
 
 %%─────────────────────────────────────────────────────────────────────────────
-\section{Multi-sociétés et isolation des données}
+\section{Isolation des données par société}
 
-Kesh repose sur une architecture \textbf{multi-tenant} : plusieurs sociétés
-peuvent coexister sur une même instance, chacune parfaitement isolée. L'isolation
+Kesh repose sur une architecture \textbf{multi-tenant} : le modèle de données
+isole chaque société, et une installation en porte une. L'isolation
 est appliquée au niveau de \textbf{chaque requête API} (portée par le
 \texttt{company\_id}), garantissant qu'aucune donnée ne fuit d'une société à
 l'autre.
@@ -2166,8 +2166,8 @@ l'autre.
 Dans la version actuelle, \textbf{chaque utilisateur appartient à une seule
 société} (son \texttt{company\_id} est porté par le jeton de connexion). Il n'y a
 pas de sélecteur permettant de basculer entre plusieurs dossiers depuis un même
-compte : un cabinet fiduciaire gère aujourd'hui chaque dossier client via un
-compte dédié. Un sélecteur multi-dossiers est envisagé pour une version
+compte : un cabinet fiduciaire gère aujourd'hui chaque dossier client via une
+instance dédiée --- un compte de la même installation appartient à la même société. Un sélecteur multi-dossiers est envisagé pour une version
 ultérieure.
 \end{keshnote}
 
