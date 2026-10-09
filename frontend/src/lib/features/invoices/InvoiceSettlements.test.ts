@@ -75,7 +75,7 @@ describe('InvoiceSettlements', () => {
 
 	it('non annulable ⇒ le MOTIF à la place du bouton, pour chaque code (mutation : bouton affiché qui échouerait)', () => {
 		const cas: [InvoiceSettlementResponse['cancelBlockedBy'], string][] = [
-			['INVOICE_CREDITED', 'paiement à lettrer'],
+			['INVOICE_CREDITED', 'reste ouvert au compte débiteurs'],
 			['FISCAL_YEAR_CLOSED', "rouvrir l'exercice"],
 			['MATCHED_BANK_TRANSACTION', 'annulez d\'abord le rapprochement'],
 			['ACCOUNT_ARCHIVED', '(1000)'],

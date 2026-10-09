@@ -2713,3 +2713,174 @@ async fn full_import_without_write_off_columns_keeps_the_settlements(pool: MySql
         "le règlement est restauré, sans nature ni ventilation"
     );
 }
+
+// ============================================================
+// Story 15-1a-i (#518) — la marque du lettrage traverse la sauvegarde
+// ============================================================
+
+/// Pose une écriture `montant` (> 0 : débit ; < 0 : crédit) sur `compte`, avec
+/// sa contrepartie sur `contre`, dans l'exercice `fy` ; rend l'id de la ligne
+/// sur `compte`.
+async fn ligne_lettrable(
+    pool: &MySqlPool,
+    company_id: i64,
+    fy: i64,
+    numero: i64,
+    (compte, contre): (i64, i64),
+    montant: rust_decimal::Decimal,
+) -> i64 {
+    let (debit, credit) = if montant > rust_decimal::Decimal::ZERO {
+        (montant, rust_decimal::Decimal::ZERO)
+    } else {
+        (rust_decimal::Decimal::ZERO, -montant)
+    };
+    let entry = sqlx::query(
+        "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, entry_date, \
+         journal, description) VALUES (?, ?, ?, '2026-03-01', 'OD', 'lettrage 15-1a-i')",
+    )
+    .bind(company_id)
+    .bind(fy)
+    .bind(numero)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let mut ids = Vec::new();
+    for (n, (account, d, c)) in [(compte, debit, credit), (contre, credit, debit)]
+        .into_iter()
+        .enumerate()
+    {
+        ids.push(
+            sqlx::query(
+                "INSERT INTO journal_entry_lines (entry_id, account_id, line_order, debit, credit) \
+                 VALUES (?, ?, ?, ?, ?)",
+            )
+            .bind(entry)
+            .bind(account)
+            .bind(n as i32 + 1)
+            .bind(d)
+            .bind(c)
+            .execute(pool)
+            .await
+            .unwrap()
+            .last_insert_id() as i64,
+        );
+    }
+    ids[0]
+}
+
+/// La marque `(lettering_key, lettering_origin)` des lignes `ids`, dans l'ordre.
+async fn marques(pool: &MySqlPool, ids: &[i64]) -> Vec<(Option<i64>, Option<String>)> {
+    let mut out = Vec::new();
+    for id in ids {
+        out.push(
+            sqlx::query_as(
+                "SELECT lettering_key, lettering_origin FROM journal_entry_lines WHERE id = ?",
+            )
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .unwrap(),
+        );
+    }
+    out
+}
+
+/// Story 15-1a-i (#518), revue P1 (E-1 = A-L4) — **une ligne lettrée
+/// traverse l'export puis l'import d'installation avec sa marque**.
+///
+/// La garde lexicale de R3 exempte `backup.rs` au motif qu'il « rétablit les
+/// marques telles qu'exportées » ; ce test en est la preuve, au lieu de la
+/// lecture des colonnes dynamiques. Trois temps :
+///
+/// 1. l'**export** porte `lettering_key` et `lettering_origin` (manifeste et
+///    NDJSON) ;
+/// 2. la base est rendue **divergente** (le groupe est délettré), puis
+///    l'**import** rétablit la marque, clé et origine, sur les deux lignes ;
+/// 3. une sauvegarde **antérieure** à la marque (colonnes retirées du
+///    manifeste, comme `strip_column` le fait pour les autres migrations)
+///    s'importe, et ses lignes reviennent **ouvertes** (`NULL`) — ce que la
+///    migration `20261009000001` promet.
+///
+/// Mutation rejouée au Dev Agent Record : exclure les deux colonnes de
+/// l'export (`non_generated_columns`) → temps 1 et 2 rouges.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_round_trip_keeps_lettering_marks(pool: MySqlPool) {
+    use kesh_db::repositories::letterings::{self, Actor, Mode, Origin};
+
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "Lettrage").await;
+    let company_id = biz.ctx.company_id;
+    let fy: i64 = sqlx::query_scalar("SELECT id FROM fiscal_years WHERE company_id = ?")
+        .bind(company_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let comptes = (biz.accounts["1100"], biz.accounts["3000"]);
+    let a = ligne_lettrable(&pool, company_id, fy, 1, comptes, dec!(250)).await;
+    let b = ligne_lettrable(&pool, company_id, fy, 2, comptes, dec!(-250)).await;
+    let acteur = Actor {
+        user_id: biz.ctx.user_id,
+        api_key_id: None,
+    };
+    let mut tx = pool.begin().await.unwrap();
+    let groupe = letterings::create_group_in_tx(
+        &mut tx,
+        company_id,
+        &[a, b],
+        Origin::Manual,
+        Mode::Manual,
+        acteur,
+    )
+    .await
+    .expect("lettrage de la source");
+    tx.commit().await.unwrap();
+    let marque = (Some(groupe.key), Some("manual".to_string()));
+    assert_eq!(marques(&pool, &[a, b]).await, vec![marque.clone(); 2]);
+
+    // (1) L'export porte la marque.
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+    let (manifest, data) = unzip(&backup);
+    let colonnes = manifest["tables"]["journal_entry_lines"]["columnNames"]
+        .as_array()
+        .expect("columnNames de journal_entry_lines");
+    for c in ["lettering_key", "lettering_origin"] {
+        assert!(colonnes.iter().any(|x| x == c), "{c} absent du manifeste");
+    }
+    let lignes: Vec<Value> = std::str::from_utf8(&data["journal_entry_lines"])
+        .unwrap()
+        .lines()
+        .map(|l| serde_json::from_str(l).unwrap())
+        .collect();
+    for id in [a, b] {
+        let l = lignes
+            .iter()
+            .find(|l| l["id"] == id)
+            .unwrap_or_else(|| panic!("ligne {id} absente de l'export"));
+        assert_eq!(l["lettering_key"], groupe.key, "ligne {id}");
+        assert_eq!(l["lettering_origin"], "manual", "ligne {id}");
+    }
+
+    // (2) Base divergente — le groupe est délettré —, puis import : la marque
+    // revient, clé et origine, sur les deux lignes.
+    let mut tx = pool.begin().await.unwrap();
+    letterings::dissolve_group_in_tx(&mut tx, company_id, groupe.key, Mode::Manual, acteur)
+        .await
+        .expect("délettrage de la destination");
+    tx.commit().await.unwrap();
+    assert_eq!(marques(&pool, &[a, b]).await, vec![(None, None); 2]);
+    import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
+    assert_eq!(
+        marques(&pool, &[a, b]).await,
+        vec![marque; 2],
+        "l'import doit rétablir la marque telle qu'exportée"
+    );
+
+    // (3) Une sauvegarde antérieure à la marque s'importe ; ses lignes
+    // reviennent ouvertes.
+    let mut ancien = manifest.clone();
+    strip_column(&mut ancien, "journal_entry_lines", "lettering_key");
+    strip_column(&mut ancien, "journal_entry_lines", "lettering_origin");
+    import_ok(&app, &biz.ctx.jwt, &ancien, &data).await;
+    assert_eq!(marques(&pool, &[a, b]).await, vec![(None, None); 2]);
+}

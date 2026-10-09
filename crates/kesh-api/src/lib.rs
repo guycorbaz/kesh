@@ -381,6 +381,17 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/journal-entries/{id}/reverse",
             post(routes::journal_entries::reverse_journal_entry),
         )
+        // Story 15-1a-i (#518) — lettrage manuel : poser et retirer la marque.
+        // ⛔ Sous `comptable_routes`, AVANT son `route_layer` : Consultation ne
+        // lettre ni ne délettre (403). La lecture est en `authenticated_routes`.
+        .route(
+            "/api/v1/letterings",
+            post(routes::letterings::create_lettering),
+        )
+        .route(
+            "/api/v1/letterings/{key}",
+            delete(routes::letterings::delete_lettering),
+        )
         // Story 14-4 : bilan d'ouverture (soldes de départ) — Comptable+.
         // Le GET /status est ici aussi (PAS authenticated_routes qui
         // laisserait passer Consultation, P1-M2-ECH).
@@ -736,6 +747,11 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         .route(
             "/api/v1/journal-entries/{id}",
             get(routes::journal_entries::get_journal_entry),
+        )
+        // Story 15-1a-i (#518) — lecture d'un groupe de lettrage (tout rôle).
+        .route(
+            "/api/v1/letterings/{key}",
+            get(routes::letterings::get_lettering),
         )
         // Story 4.1 : lecture carnet d'adresses (tout rôle authentifié)
         .route("/api/v1/contacts", get(routes::contacts::list_contacts))

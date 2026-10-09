@@ -83,6 +83,14 @@ const COLONNES_DES_LIGNES: &[&str] = &[
     "debit",
     "credit",
     "project_id",
+    // Story 15-1a-i (#518) — la marque du lettrage. Une ligne lettrée ne doit
+    // pas être réécrite en silence : la modification et la suppression d'une
+    // écriture qui porte une ligne lettrée sont gelées par le motif `Lettered`
+    // (AC8 de la Story 15-1a-ii, qui suit — tant qu'elle n'est pas mergée, une
+    // écriture manuelle lettrée reste modifiable par l'API : dépendance
+    // résiduelle écrite à la fiche de la 15-1a-i).
+    "lettering_key",
+    "lettering_origin",
 ];
 
 /// Colonnes dont le nom évoque une écriture, sans clé étrangère, déclarées avec
@@ -177,9 +185,10 @@ async fn assert_inventaire_clos(pool: &MySqlPool) {
 
 /// AC 13 · D3 — l'inventaire des références est CLOS.
 ///
-/// ⚠️ **Il rougira avec la 15-1a (lettrage)**, qui ajoute
-/// `journal_entry_lines.lettering_id` : c'est voulu — une ligne lettrée ne doit
-/// pas être réécrite en silence.
+/// ⚠️ **Il a rougi avec la 15-1a-i (lettrage)**, qui ajoute
+/// `journal_entry_lines.lettering_key` et `lettering_origin` : c'est voulu — une
+/// ligne lettrée ne doit pas être réécrite en silence. Les deux colonnes sont
+/// déclarées à `COLONNES_DES_LIGNES`, avec le gel qui les protège.
 ///
 /// ⚠️ **Angle mort assumé** : la trace du paiement détaché vit dans
 /// `audit_log.details_json`, pas dans une colonne ; elle est tenue par son

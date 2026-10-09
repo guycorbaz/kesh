@@ -47,7 +47,7 @@ export function reconciliationCancelMessage(
 		case 'INVOICE_CREDITED':
 			return i18nMsg(
 				'reconciliation-cancel-blocked-credited',
-				"La facture de ce rapprochement a été créditée par un avoir : son règlement est un paiement à lettrer, il ne s'annule pas.",
+				"La facture de ce rapprochement a été créditée par un avoir : son règlement reste ouvert au compte débiteurs, il ne s'annule pas.",
 			);
 		case 'INVOICE_WRITTEN_OFF':
 			return i18nMsg(

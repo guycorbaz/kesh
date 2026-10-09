@@ -42,6 +42,18 @@ error-invoice-unvalidate-blocked-matched = L'écriture de cette facture est rapp
 error-invoice-number-fiscal-year-mismatch = Cette facture porte déjà un numéro : sa date ne peut pas sortir de l'exercice qui l'a émis.
 error-invoice-must-be-unvalidated-first = Cette facture est validée : dévalidez-la d'abord, puis supprimez le brouillon.
 
+# Lettrage (Story 15-1a-i, #518)
+error-lettering-too-few-lines = Un lettrage réunit au moins deux lignes distinctes.
+error-lettering-too-many-lines = Un lettrage réunit au plus { $max } lignes.
+error-lettering-accounts-differ = Les lignes d'un lettrage doivent toutes porter sur le même compte.
+error-lettering-account-not-letterable = Ce compte ne se lettre pas : seuls les comptes d'actif et de passif qui ne sont pas des comptes bancaires se lettrent.
+error-lettering-line-owned-by-document = Une de ces lignes appartient à une pièce : elle ne se lettre ni ne se délettre à la main.
+error-lettering-line-already-lettered = Une de ces lignes est déjà lettrée (code { $code }).
+error-lettering-unbalanced = Ces lignes ne se soldent pas : écart de { $difference }.
+error-lettering-all-lines-in-closed-periods = Toutes ces lignes sont dans une période close — exercice clôturé, exercice suivi d'un exercice clôturé, ou période verrouillée : le lettrage n'y change plus.
+error-lettering-is-document = Ce lettrage est celui d'une pièce : annulez le règlement plutôt que de délettrer.
+error-lettering-concurrent-change = Le lettrage a changé entre-temps ; réessayez.
+
 # Erreurs de validation
 error-validation = Erreur de validation
 error-email-invalid = Format d'email invalide
@@ -793,7 +805,7 @@ invoices-settlement-cancel-button = Annuler le règlement
 invoices-settlement-cancel-reconciliation = Annuler le rapprochement
 invoices-settlement-cancel-confirm = Annuler ce règlement ? Une écriture inverse datée d'aujourd'hui sera passée au grand livre, et le montant redeviendra dû.
 invoices-settlement-cancelled = Règlement annulé : l'écriture inverse a été passée.
-invoices-settlement-cancel-blocked-credited = Cette facture a été créditée par un avoir : ce règlement est un paiement à lettrer, il ne s'annule pas.
+invoices-settlement-cancel-blocked-credited = Cette facture a été créditée par un avoir : ce règlement reste ouvert au compte débiteurs, il ne s'annule pas.
 invoices-settlement-cancel-blocked-written-off = Le reste de cette facture a été soldé : annulez d'abord le solde.
 invoices-amount-written-off = Soldé
 invoices-settlements-type-write-off = Solde — { $nature }
@@ -828,7 +840,7 @@ settlement-cancel-blocked-account-archived = Un compte de ce règlement a été 
 settlement-cancel-blocked-no-fiscal-year = Aucun exercice ouvert ne couvre la date du jour : créez-le pour pouvoir annuler ce règlement.
 # Story 25-3-b (#418) — annuler un rapprochement : ses motifs et son dialogue.
 reconciliation-cancel-blocked-not-reconciled = Cette transaction bancaire n'est pas rapprochée : il n'y a pas de rapprochement à annuler.
-reconciliation-cancel-blocked-credited = La facture de ce rapprochement a été créditée par un avoir : son règlement est un paiement à lettrer, il ne s'annule pas.
+reconciliation-cancel-blocked-credited = La facture de ce rapprochement a été créditée par un avoir : son règlement reste ouvert au compte débiteurs, il ne s'annule pas.
 reconciliation-cancel-blocked-written-off = Le reste de la facture de ce rapprochement a été soldé : annulez d'abord le solde.
 reconciliation-cancel-blocked-fiscal-year-closed = Ce rapprochement appartient à un exercice clôturé : un administrateur doit rouvrir l'exercice pour pouvoir l'annuler.
 reconciliation-cancel-blocked-bank-match = L'écriture de ce rapprochement est aussi rapprochée d'une autre transaction bancaire : annulez d'abord cet autre rapprochement.
@@ -2259,6 +2271,7 @@ audit-log-entity-imported-supplier-invoice = Facture importée
 audit-log-entity-installation = Installation
 audit-log-entity-invoice = Facture
 audit-log-entity-journal-entry = Écriture
+audit-log-entity-lettering = Lettrage
 audit-log-entity-payment-batch = Lot de paiement
 audit-log-entity-product = Produit
 audit-log-entity-project = Projet
@@ -2272,6 +2285,8 @@ audit-log-action-journal-entry-created = Écriture créée
 audit-log-action-journal-entry-updated = Écriture modifiée
 audit-log-action-journal-entry-reversed = Écriture contre-passée
 audit-log-action-journal-entry-deleted = Écriture supprimée
+audit-log-action-lettering-created = Lettrage posé
+audit-log-action-lettering-removed = Lettrage retiré
 audit-log-action-account-chart-loaded = Plan comptable chargé
 audit-log-action-account-created = Compte créé
 audit-log-action-account-updated = Compte modifié

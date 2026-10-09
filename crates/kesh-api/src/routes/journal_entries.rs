@@ -109,6 +109,13 @@ pub struct JournalEntryLineResponse {
     pub credit: String,
     /// Projet analytique de la ligne (Epic 19). `null` = non taguée.
     pub project_id: Option<i64>,
+    /// Clé du groupe de lettrage (Story 15-1a-i, #518) ; `null` si la ligne
+    /// est ouverte. ⚠️ Toujours présents, nuls ou non : un champ du contrat.
+    pub lettering_key: Option<i64>,
+    /// Code affiché du groupe (`code_from_key` de la clé), `null` si ouverte.
+    pub lettering_code: Option<String>,
+    /// Origine du groupe (`document`, `reversal`, `manual`), `null` si ouverte.
+    pub lettering_origin: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -179,6 +186,11 @@ impl From<JournalEntryLine> for JournalEntryLineResponse {
             debit: l.debit.to_string(),
             credit: l.credit.to_string(),
             project_id: l.project_id,
+            lettering_key: l.lettering_key,
+            lettering_code: l
+                .lettering_key
+                .map(kesh_db::repositories::letterings::code_of),
+            lettering_origin: l.lettering_origin,
         }
     }
 }
@@ -839,9 +851,49 @@ mod tests {
             debit: rust_decimal_macros::dec!(10),
             credit: rust_decimal_macros::dec!(0),
             project_id: Some(7),
+            lettering_key: None,
+            lettering_origin: None,
         });
         let json = serde_json::to_value(&resp).unwrap();
         assert_eq!(json["projectId"], 7);
+    }
+
+    /// Story 15-1a-i (AC14) — la ligne expose les trois champs du lettrage :
+    /// présents et nuls sur une ligne ouverte, la clé, son code
+    /// (`code_from_key`) et l'origine sur une ligne lettrée.
+    #[test]
+    fn journal_entry_line_response_exposes_lettering() {
+        let ligne = |lettering_key: Option<i64>, lettering_origin: Option<&str>| JournalEntryLine {
+            id: 27,
+            entry_id: 2,
+            account_id: 3,
+            line_order: 1,
+            debit: rust_decimal_macros::dec!(10),
+            credit: rust_decimal_macros::dec!(0),
+            project_id: None,
+            lettering_key,
+            lettering_origin: lettering_origin.map(str::to_string),
+        };
+        let ouverte =
+            serde_json::to_value(JournalEntryLineResponse::from(ligne(None, None))).unwrap();
+        for champ in ["letteringKey", "letteringCode", "letteringOrigin"] {
+            assert!(
+                ouverte.get(champ).is_some_and(serde_json::Value::is_null),
+                "{champ} doit être présent et nul sur une ligne ouverte : {ouverte}"
+            );
+        }
+        let lettree = serde_json::to_value(JournalEntryLineResponse::from(ligne(
+            Some(27),
+            Some("manual"),
+        )))
+        .unwrap();
+        assert_eq!(lettree["letteringKey"], 27);
+        assert_eq!(
+            lettree["letteringCode"],
+            kesh_core::lettering::code_from_key(27)
+        );
+        assert_eq!(lettree["letteringCode"], "AA");
+        assert_eq!(lettree["letteringOrigin"], "manual");
     }
 
     /// Projet inconnu/cross-company → 404 ; projet archivé → 409 (mapping

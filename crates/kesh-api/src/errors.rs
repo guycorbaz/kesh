@@ -2930,6 +2930,112 @@ impl IntoResponse for AppError {
                         document_label,
                     )
                 }
+                // Story 15-1a-i (#518) — les refus du lettrage. Un code par
+                // cause, dans l'ordre des rangs de la primitive (AC3) ; le 404
+                // (rang 2) est le `NotFound` générique, sans message dédié (AC11).
+                DbError::LetteringTooFewLines => build_response(
+                    StatusCode::BAD_REQUEST,
+                    "LETTERING_TOO_FEW_LINES",
+                    &t(
+                        "error-lettering-too-few-lines",
+                        "Un lettrage réunit au moins deux lignes distinctes.",
+                    ),
+                ),
+                DbError::LetteringTooManyLines { max } => {
+                    // Le plafond voyage dans la variante : le message le lit,
+                    // au lieu d'écrire « 200 » en dur (revue P1, E-4).
+                    let fallback = format!("Un lettrage réunit au plus {max} lignes.");
+                    let mut args = FluentArgs::new();
+                    args.set("max", max as i64);
+                    build_response(
+                        StatusCode::BAD_REQUEST,
+                        "LETTERING_TOO_MANY_LINES",
+                        &t_args("error-lettering-too-many-lines", &fallback, &args),
+                    )
+                }
+                DbError::LetteringAccountsDiffer => build_response(
+                    StatusCode::CONFLICT,
+                    "LETTERING_ACCOUNTS_DIFFER",
+                    &t(
+                        "error-lettering-accounts-differ",
+                        "Les lignes d'un lettrage doivent toutes porter sur le même compte.",
+                    ),
+                ),
+                DbError::LetteringAccountNotLetterable => build_response(
+                    StatusCode::CONFLICT,
+                    "LETTERING_ACCOUNT_NOT_LETTERABLE",
+                    &t(
+                        "error-lettering-account-not-letterable",
+                        "Ce compte ne se lettre pas : seuls les comptes d'actif et de passif qui ne sont pas des comptes bancaires se lettrent.",
+                    ),
+                ),
+                DbError::LetteringAllLinesInClosedPeriods => build_response(
+                    StatusCode::CONFLICT,
+                    "LETTERING_ALL_LINES_IN_CLOSED_PERIODS",
+                    &t(
+                        "error-lettering-all-lines-in-closed-periods",
+                        "Toutes ces lignes sont dans une période close — exercice clôturé, exercice suivi d'un exercice clôturé, ou période verrouillée : le lettrage n'y change plus.",
+                    ),
+                ),
+                // ⚠️ Texte NEUTRE (« ne se lettre ni ne se délettre ») : la même
+                // clé sert le refus 5 du lettrage et le refus 2 du délettrage
+                // (AC5). Mêmes `details` que la contre-passation refusée.
+                DbError::LetteringLineOwnedByDocument {
+                    document_id,
+                    document_label,
+                    ..
+                } => entry_document_refusal_response(
+                    "LETTERING_LINE_OWNED_BY_DOCUMENT",
+                    "error-lettering-line-owned-by-document",
+                    "Une de ces lignes appartient à une pièce : elle ne se lettre ni ne se délettre à la main.",
+                    document_id,
+                    document_label,
+                ),
+                DbError::LetteringLineAlreadyLettered { code } => {
+                    let fallback = format!("Une de ces lignes est déjà lettrée (code {code}).");
+                    let mut args = FluentArgs::new();
+                    args.set("code", code.clone());
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "LETTERING_LINE_ALREADY_LETTERED",
+                            "message": t_args("error-lettering-line-already-lettered", &fallback, &args),
+                            "details": { "code": code },
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
+                DbError::LetteringUnbalanced { difference } => {
+                    // Décimal en chaîne, sans zéros de remplissage (`0.0100` → `0.01`).
+                    let difference = difference.normalize().to_string();
+                    let fallback = format!("Ces lignes ne se soldent pas : écart de {difference}.");
+                    let mut args = FluentArgs::new();
+                    args.set("difference", difference.clone());
+                    let body = serde_json::json!({
+                        "error": {
+                            "code": "LETTERING_UNBALANCED",
+                            "message": t_args("error-lettering-unbalanced", &fallback, &args),
+                            "details": { "difference": difference },
+                        }
+                    });
+                    (StatusCode::CONFLICT, Json(body)).into_response()
+                }
+                DbError::LetteringIsDocument => build_response(
+                    StatusCode::CONFLICT,
+                    "LETTERING_IS_DOCUMENT",
+                    &t(
+                        "error-lettering-is-document",
+                        "Ce lettrage est celui d'une pièce : annulez le règlement plutôt que de délettrer.",
+                    ),
+                ),
+                // R7 point 4 — un refus MÉTIER (« réessayez »), jamais un 500.
+                DbError::LetteringConcurrentChange => build_response(
+                    StatusCode::CONFLICT,
+                    "LETTERING_CONCURRENT_CHANGE",
+                    &t(
+                        "error-lettering-concurrent-change",
+                        "Le lettrage a changé entre-temps ; réessayez.",
+                    ),
+                ),
                 // Story 15-8a (#532, C-15-8-22) — un exercice POSTÉRIEUR est
                 // clos : son bilan cumulatif reprend ce qui le précède. 400, comme
                 // `FISCAL_YEAR_CLOSED` : l'état d'un exercice, pas un conflit sur
@@ -3124,7 +3230,7 @@ impl IntoResponse for AppError {
                     let (key, fallback) = match blocker {
                         SettlementCancelBlocker::InvoiceCredited => (
                             "invoices-settlement-cancel-blocked-credited",
-                            "Cette facture a été créditée par un avoir : ce règlement est un paiement à lettrer, il ne s'annule pas.",
+                            "Cette facture a été créditée par un avoir : ce règlement reste ouvert au compte débiteurs, il ne s'annule pas.",
                         ),
                         SettlementCancelBlocker::WriteOffExists => (
                             "invoices-settlement-cancel-blocked-written-off",
@@ -3634,7 +3740,7 @@ fn reconciliation_cancel_blocked_text(
         ),
         SettlementCancelBlocker::InvoiceCredited => (
             "reconciliation-cancel-blocked-credited",
-            "La facture de ce rapprochement a été créditée par un avoir : son règlement est un paiement à lettrer, il ne s'annule pas.",
+            "La facture de ce rapprochement a été créditée par un avoir : son règlement reste ouvert au compte débiteurs, il ne s'annule pas.",
         ),
         SettlementCancelBlocker::WriteOffExists => (
             "reconciliation-cancel-blocked-written-off",
@@ -4060,6 +4166,149 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Story 15-1a-i (#518) — chaque refus du lettrage a son statut, son code
+    /// et son message, et le repli français est **identique au catalogue**
+    /// `fr-CH` (variables substituées). `LETTERING_CONCURRENT_CHANGE` n'est
+    /// atteignable que par un défaut : ce test est sa seule preuve côté HTTP
+    /// (R7 point 4).
+    #[tokio::test]
+    async fn lettering_refusals_map_to_their_status_code_and_catalog_text() {
+        let catalogue = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../kesh-i18n/locales/fr-CH/messages.ftl"
+        ))
+        .expect("catalogue fr-CH");
+        let texte = |cle: &str| -> String {
+            catalogue
+                .lines()
+                .find_map(|l| l.strip_prefix(&format!("{cle} = ")))
+                .unwrap_or_else(|| panic!("clé {cle} absente du catalogue"))
+                .to_string()
+        };
+        let sans = String::new;
+        let cas: Vec<(DbError, StatusCode, &str, &str, String)> = vec![
+            (
+                DbError::LetteringTooFewLines,
+                StatusCode::BAD_REQUEST,
+                "LETTERING_TOO_FEW_LINES",
+                "error-lettering-too-few-lines",
+                sans(),
+            ),
+            (
+                // Un plafond autre que 200 : le message doit le lire (E-4).
+                DbError::LetteringTooManyLines { max: 7 },
+                StatusCode::BAD_REQUEST,
+                "LETTERING_TOO_MANY_LINES",
+                "error-lettering-too-many-lines",
+                "7".into(),
+            ),
+            (
+                DbError::LetteringAccountsDiffer,
+                StatusCode::CONFLICT,
+                "LETTERING_ACCOUNTS_DIFFER",
+                "error-lettering-accounts-differ",
+                sans(),
+            ),
+            (
+                DbError::LetteringAccountNotLetterable,
+                StatusCode::CONFLICT,
+                "LETTERING_ACCOUNT_NOT_LETTERABLE",
+                "error-lettering-account-not-letterable",
+                sans(),
+            ),
+            (
+                DbError::LetteringAllLinesInClosedPeriods,
+                StatusCode::CONFLICT,
+                "LETTERING_ALL_LINES_IN_CLOSED_PERIODS",
+                "error-lettering-all-lines-in-closed-periods",
+                sans(),
+            ),
+            (
+                DbError::LetteringLineOwnedByDocument {
+                    blocker: ReversalBlocker::OwnedByInvoice,
+                    document_id: Some(47),
+                    document_label: None,
+                },
+                StatusCode::CONFLICT,
+                "LETTERING_LINE_OWNED_BY_DOCUMENT",
+                "error-lettering-line-owned-by-document",
+                sans(),
+            ),
+            (
+                DbError::LetteringLineAlreadyLettered { code: "AA".into() },
+                StatusCode::CONFLICT,
+                "LETTERING_LINE_ALREADY_LETTERED",
+                "error-lettering-line-already-lettered",
+                "AA".into(),
+            ),
+            (
+                DbError::LetteringUnbalanced {
+                    difference: rust_decimal::Decimal::new(100, 4),
+                },
+                StatusCode::CONFLICT,
+                "LETTERING_UNBALANCED",
+                "error-lettering-unbalanced",
+                "0.01".into(),
+            ),
+            (
+                DbError::LetteringIsDocument,
+                StatusCode::CONFLICT,
+                "LETTERING_IS_DOCUMENT",
+                "error-lettering-is-document",
+                sans(),
+            ),
+            (
+                DbError::LetteringConcurrentChange,
+                StatusCode::CONFLICT,
+                "LETTERING_CONCURRENT_CHANGE",
+                "error-lettering-concurrent-change",
+                sans(),
+            ),
+        ];
+        assert_eq!(cas.len(), 10, "les dix codes du lettrage (T10)");
+        for (err, statut, code, cle, valeur) in cas {
+            assert_eq!(err.error_code(), code, "repli de error_code()");
+            let (status, body) = response_body(AppError::Database(err).into_response()).await;
+            assert_eq!(status, statut, "{code}");
+            assert_eq!(body["error"]["code"], code);
+            let attendu = texte(cle)
+                .replace("{ $code }", &valeur)
+                .replace("{ $difference }", &valeur)
+                .replace("{ $max }", &valeur);
+            assert_eq!(body["error"]["message"], attendu, "{code}");
+        }
+    }
+
+    /// Les `details` des refus qui en portent (AC3).
+    #[tokio::test]
+    async fn lettering_refusals_carry_their_details() {
+        let (_, body) = response_body(
+            AppError::Database(DbError::LetteringLineOwnedByDocument {
+                blocker: ReversalBlocker::OwnedByInvoice,
+                document_id: Some(47),
+                document_label: Some("F-2026-014".into()),
+            })
+            .into_response(),
+        )
+        .await;
+        assert_eq!(body["error"]["details"]["documentId"], 47);
+        assert_eq!(body["error"]["details"]["documentNumber"], "F-2026-014");
+        let (_, body) = response_body(
+            AppError::Database(DbError::LetteringLineAlreadyLettered { code: "AB".into() })
+                .into_response(),
+        )
+        .await;
+        assert_eq!(body["error"]["details"]["code"], "AB");
+        let (_, body) = response_body(
+            AppError::Database(DbError::LetteringUnbalanced {
+                difference: rust_decimal::Decimal::new(-55000, 4),
+            })
+            .into_response(),
+        )
+        .await;
+        assert_eq!(body["error"]["details"]["difference"], "-5.5");
     }
 
     #[tokio::test]

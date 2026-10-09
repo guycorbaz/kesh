@@ -1,429 +1,241 @@
-# Story 15.1b : La vue « ce qui reste ouvert » — et ce qu'elle prétend égaler
+# Story 15.1b : Les postes ouverts d'un compte, à une date — et les rapprochements que Kesh propose
 
 ## Status
 
-draft
+ready-for-dev *(réécrite le 2026-10-08, à valider — `bmad-create-story validate` avant tout développement)*
 
 ## Story
 
-**As a** indépendant ou fiduciaire qui tient ses comptes dans Kesh,
-**I want** voir d'un coup d'œil ce qui reste ouvert sur un compte client ou fournisseur,
-**so that** je puisse relancer les bons débiteurs, justifier le solde d'un compte, et clore
-un exercice en sachant ce qu'il porte.
+**As a** indépendant, PME ou fiduciaire,
+**I want** obtenir, pour un compte de créances, de dettes ou de passage, la liste de ce qui y
+reste ouvert — aujourd'hui ou à la date de clôture d'un exercice —, et que Kesh me propose les
+rapprochements évidents entre ces lignes,
+**so that** je justifie le solde du compte ligne à ligne, et que je solde ce qui doit l'être sans
+chercher.
 
-Deuxième des trois sous-stories issues du **split de la 15-1**. ⚠️ **Suppose la 15-1a
-livrée** — elle lit la marque que celle-ci pose.
+Troisième des quatre sous-stories du lettrage (#518). **Suppose 15-1a et 15-1a2 livrées** — la 15-1a
+étant découpée (C124) en **15-1a-i** (la marque) et **15-1a-ii** (les gardes), les deux ; les renvois
+« 15-1a Rn / ACn » gardent leur numéro (table de `15-1a-socle-lettrage.md`).
+Story **backend** (dépôt, routes, rapport) ; l'écran est la 15-1c.
 
-## Ce que cette story doit résoudre, et qui n'est pas ce qu'on croit
+## Reprise du 2026-10-08 — ce qui change
 
-La 15-1 d'origine tenait « ouvert » pour une définition à écrire. La passe 3 a montré que
-c'est une **question de fond non tranchée**, et qu'une implémentation fidèle à la spec
-produisait un résultat faux **par trois chemins différents**.
+La fiche d'août portait la vue seule, et se battait avec quatre décisions ouvertes nées d'un monde
+où l'encaissement client **n'écrivait rien** : lecteurs de `paid_at` à réconcilier avec la marque
+(Décision 1), `paid_at` sans contrepartie comptable (Décision 2), canal `paid_at` sans garde
+d'exercice (Décision 3), double écriture fournisseur (Décision 4). **La 24-2 et la 15-1a2 les
+dissolvent toutes** :
 
-### ⛔ Décision 1 — Lettrer ne calme aujourd'hui NI la balance âgée NI les relances
-
-Le *so that* de cette story dit « relancer les bons débiteurs ». Or les deux dispositifs qui
-relancent ne connaissent que `invoices.paid_at` :
-
-```
-crates/kesh-report/src/aged_receivables.rs:127      … AND i.paid_at IS NULL
-crates/kesh-db/src/repositories/dunning_eligibility.rs:87   AND i.paid_at IS NULL
-```
-
-et `grep -rn "lettering" crates/ frontend/` rend **zéro occurrence** : rien ne les fera
-changer d'avis.
-
-⚠️ **Le scénario n'est pas théorique.** Facture réglée en espèces, lettrée. L'écran de
-lettrage affiche « rien d'ouvert ». La **balance âgée** continue de la porter en 61-90 jours,
-et le **moteur de relance envoie un rappel** — puis un deuxième. **Ce défaut-là n'est pas
-muet : il est adressé au client.**
-
-C'est le miroir exact de D4 : la 15-1 imposait à la vue de lettrage de lire `paid_at`, et
-**rien n'imposait aux autres vues de lire la marque**. Un seul sens de la relation avait été
-vu.
-
-**Deux conduites, à arbitrer — c'est une décision de fond, pas d'implémentation :**
-
-**(A)** Lettrer la ligne de créance d'une facture **pose `invoices.paid_at`** — source
-unique, les trois vues s'accordent sans rien changer chez elles. ⚠️ **Mais `mark_as_paid`
-n'a AUCUNE garde d'exercice** (cf. Décision 3), et ce chemin en hériterait.
-
-**(B)** Le hors-périmètre est **assumé et énoncé**, au même titre que la borne du règlement
-groupé : un critère dédié, un test, et une phrase à l'écran. Aujourd'hui, un développeur
-fidèle à la spec n'implémentera **ni l'un ni l'autre**.
-
-**(C)** ⚠️ **Faire lire la marque DIRECTEMENT aux deux requêtes**, sans passer par `paid_at`
-*(conduite ajoutée en passe 1 — elle manquait, et c'est la seule des trois qui ne porte aucun
-des deux risques ci-dessus)*. La ligne de créance d'une facture de vente est identifiable sans
-ambiguïté : c'est **la seule ligne à `debit > 0`** de l'écriture de vente, au compte
-`default_receivable_account_id` de la société.
-
-⛔ **La forme SQL écrite en passe 1 était FAUSSE, et elle aurait été appliquée sans effet.**
-*(P3-5, passe 3.)* Un `LEFT JOIN … AND lettering_id IS NULL` **n'exclut aucune ligne** — un
-`LEFT JOIN` ne filtre pas. Il faut un `INNER JOIN … AND jel.lettering_id IS NULL`, ou une
-anti-jointure (`LEFT JOIN … AND jel.lettering_id IS NOT NULL … WHERE jel.id IS NULL`). Tel
-qu'écrit, un développeur appliquait (C), **rien ne changeait**, et le gate restait vert.
-
-⛔ **Et la jointure DOIT porter ses deux discriminants** — `AND jel.debit > 0 AND
-jel.account_id = <compte de créances>` — faute de quoi elle rend **N+1 lignes par facture**
-(la créance **plus** toutes les lignes de produit et de TVA). ⚠️ `aged_receivables` est une
-requête d'**agrégat** (`SUM()` par contact) : chaque tranche de la balance âgée serait
-**multipliée par N+1**. Muet, et faux en argent. Le même oubli sur `dunning_eligibility`
-produit des **rappels en double**.
-
-**Le test qui garde la forme** : une facture à trois lignes de produit et deux taux de TVA,
-non lettrée, doit apparaître **une seule fois** et pour son TTC.
-
-⛔ **Et l'inventaire des LECTEURS était incomplet — il y en a CINQ, la conduite n'en nommait
-DEUX.** *(P3-3, passe 3, recompté au sol.)*
-
-| lecteur de `paid_at IS NULL` | conséquence si le lettrage ne l'atteint pas |
+| décision d'août | état |
 |---|---|
-| `kesh-report/src/aged_receivables.rs` | balance âgée fausse — *cosmétique* |
-| `kesh-db/src/repositories/dunning_eligibility.rs` | rappel envoyé à tort — *visible du client* |
-| ⛔ `kesh-db/src/repositories/reconciliation.rs` | **la facture est proposée à un second règlement** — *écriture fausse* |
-| `kesh-db/src/repositories/invoices.rs` (filtres « impayées »/« en retard », `due_dates_summary`) | listes et KPI faux |
-| `kesh-api/src/routes/invoices.rs` (champ dérivé `isOverdue`) | affichage faux |
+| D1 — la balance âgée, les relances et le rapprochement lisent `paid_at`, pas la marque | **sans objet** : ils lisent le reste dû ou `paid_at`, et la 15-1a2 garantit *lettrée `document`* ⇔ *reste dû nul* (AC5 de la 15-1a2). Ils n'ont pas à lire la marque |
+| D2 — `paid_at` client sans écriture | **close** : l'encaissement écrit (24-2) ; reste l'héritage `paid_at` sans règlement, montré **ouvert** avec son motif (AC4) |
+| D3 — `paid_at` sans garde d'exercice | **sans objet pour la vue**, qui ne lit pas `paid_at` ; l'immuabilité du lettrage sur exercice clos est tenue par la 15-1a (AC5) |
+| D4 — deux écritures par facture fournisseur | **close** : lettrées ensemble (15-1a2 P2) |
 
-⛔ **Le troisième est d'une autre nature que les autres, et il se traite EN PRIORITÉ** : une
-facture réglée en espèces et lettrée, mais laissée `paid_at IS NULL` — c'est-à-dire exactement
-ce que (B) et (C) produisent — reste **candidate à la réconciliation**. Un virement du même
-montant arrive un mois plus tard, l'utilisateur accepte : **la facture est soldée deux fois**,
-une fois en caisse et une fois en banque. Ce n'est plus un rappel de trop, c'est une écriture
-fausse.
+Et l'arbitrage du 2026-08-26 — **« ouvert » = « non lettré », un point c'est tout** — est
+**conservé** : il est ce qui donne l'invariant. La reprise y ajoute la **date** (C94) et fait
+entrer ici le **moteur de proposition** de l'ancienne 15-1c (backend), l'écran restant seul en
+15-1c (découpage, C99).
 
-⚠️ **Toute conduite retenue nomme lequel des cinq elle laisse dehors.** Corriger les deux
-premiers en croyant l'écart fermé, c'est reproduire sur les **lecteurs** le défaut que la
-passe 1 avait relevé sur les **écrivains** — par son propre correctif.
+## Définitions
 
-✅ **Sa prémisse est VÉRIFIÉE au sol** *(contrôle de passe 2)* :
-`generate_invoice_journal_lines` (`kesh-db/src/repositories/invoices.rs:1368` et suivantes)
-pousse **une seule ligne au débit** — la créance, `total_ht + total_vat` — puis **toutes** les
-autres en crédit (produits, TVA). « La seule ligne à `debit > 0` » n'est donc pas une
-approximation : c'est la structure engendrée par le code, quel que soit le nombre de lignes de
-produit ou de taux de TVA.
+**Ligne ouverte à la date `X`** (`asOf`, défaut : aujourd'hui) — une ligne du compte, d'une
+écriture datée **≤ X**, telle que :
 
-⚠️ **Et l'avoir n'est pas un contre-exemple** : il inverse bien les sens, mais il porte **sa
-propre écriture** — la jointure passant par `invoices.journal_entry_id` ne l'atteint pas.
+- elle n'est pas lettrée, **ou**
+- son groupe contient une ligne d'une écriture datée **> X** (le lettrage n'était pas acquis à
+  `X`).
 
-⚠️ **Son coût** : une jointure de plus dans deux requêtes existantes. **Sa réserve** : elle ne
-couvre que le lettrage, pas `paid_at` — elle est donc **orthogonale** aux deux autres, pas
-concurrente. Rien n'interdit de retenir (C) *et* de documenter l'écart résiduel.
+**Invariant** (AC2) : *la somme `Σ(débit − crédit)` des lignes ouvertes à `X` égale le solde
+cumulatif du compte à `X`* — `SUM(debit − credit)` de toutes ses lignes datées ≤ X, **tous
+exercices confondus** (convention du bilan, `kesh-report/src/balance_sheet.rs`). Preuve : un
+groupe entièrement daté ≤ X se nette à zéro (15-1a R3) et n'est pas compté ; tout autre groupe a
+ses lignes ≤ X comptées.
 
-⛔ **(C) porte sur `aged_receivables` et `dunning_eligibility`, PAS sur la requête de cette
-vue** *(P2-4, passe 2)*. La vue de 15-1b lit la marque de toute façon — c'est sa définition
-même. Ce que la Décision 1 arbitre, c'est si les **deux autres dispositifs** la lisent aussi.
-Un développeur qui confondrait les deux implémenterait la jointure au mauvais endroit.
+⚠️ **Ce n'est pas le solde de la Balance d'un exercice** (bornée par `fiscal_year_id`,
+`trial_balance.rs:82` : elle ne lit que les écritures de l'exercice). Les deux chiffres peuvent
+différer — et différeront pour tout compte mouvementé avant l'exercice. La 15-1c le dit à l'écran
+(AC3-bis d'août, conservé) ; le développeur **constate** au sol comment l'ouverture d'exercice est
+écrite et ajuste la phrase de l'écran, sans changer la définition.
 
-### ⛔ Décision 2 — Côté client, `paid_at` n'a aucune contrepartie comptable
+**Comptes admis** : les comptes **lettrables** (15-1a R4). Un autre compte de la société → 400
+`ACCOUNT_NOT_LETTERABLE` ; un compte d'une autre société → 404.
 
-`accept_one_invoice` **ne crée aucune écriture** — il met à jour deux tables. Le repository
-l'écrit noir sur blanc :
+## Reçu de la 15-1a — validation P2 du socle (2026-10-09)
 
-```
-crates/kesh-db/src/repositories/invoices.rs:1923
-    /// **Ne crée AUCUNE écriture comptable** en v0.1. […] Ici `paid_at`
-    /// est un simple marqueur opérationnel.
-```
+*Section ajoutée par la remédiation de la validation P2 de la 15-1a (registre C113, C114). Elle ne
+réécrit pas cette fiche : elle liste ce que le socle a changé et que **cette** story doit intégrer
+à sa propre validation.*
 
-Or la validation de facture **débite la créance** (`invoices.rs:1368`).
+1. **Prérequis : la 15-12a** (clôture dans l'ordre), non plus « la 15-12 » ; ordre **15-12a → 15-12b →
+   15-1a → 15-1a2 → 15-1b → 15-1c** (C112).
+2. **La vue « au X » est protégée des gestes manuels sur une période close** (C113) : lettrer et
+   délettrer exigent au moins une ligne « en période ouverte » — exercice ouvert, aucun exercice
+   postérieur clos, date postérieure à `books_locked_through`. Pour X dans un exercice clos ou ≤ la
+   borne du verrou, la liste des postes ouverts « au X » ne change donc plus par un lettrage
+   **manuel**. Elle peut encore changer par une dissolution **système** (annulation d'un règlement,
+   15-1a2, point 9 de son « Reçu ») : à dire dans la définition, ou à constater.
+3. **Vocabulaire** : la 15-1a nomme « en période ouverte » une ligne sur laquelle le lettrage peut
+   encore changer — à ne pas confondre avec la « ligne ouverte à X » de cette fiche (non lettrée, ou
+   lettrée après X).
+4. **État hérité** (« N ouvert, N+1 clos », sauvegarde v0.12.x) : le socle le garde pour le lettrage ;
+   la vue, elle, le lit tel qu'il est.
 
-⚠️ **Conséquence, et elle touche le *so that* de la story** : dix factures réglées par
-virement importé laissent le compte 1100 avec **dix débits jamais crédités** — son solde est
-de dix factures. Une vue qui applique « ouvert = ni lettré ni marqué payé » affiche **zéro
-ligne ouverte**. « Justifier le solde d'un compte » n'est alors pas atteignable, et c'est le
-chemin que la 15-1 qualifiait elle-même de **plus fréquent**.
+*Ajouts de la remédiation de la validation P3 du socle (2026-10-09, registre C124, C127) :*
 
-**Deux conduites** : afficher côte à côte le solde du compte et le total des lignes ouvertes,
-en **assumant l'écart et en le nommant** ; ou restreindre la vue aux comptes qui **ont** une
-contrepartie comptable — les fournisseurs, cf. Décision 4 — et déclarer le cas client comme
-angle mort. ⛔ **Ce qui n'est pas tenable, c'est de laisser croire au développeur que la vue
-justifie le solde.**
-
-### ⛔ Décision 3 — Le canal `paid_at` n'a aucune garde d'exercice
-
-⛔ **`paid_at` a TROIS écrivains en production, pas un — et la rédaction précédente n'en
-nommait qu'un** *(relevé en passe 1, recompté par l'orchestrateur qui en a trouvé un de plus
-que la passe)* :
-
-| site | fonction | garde d'exercice ? |
-|---|---|---|
-| `kesh-db/src/repositories/invoices.rs:1989` | `mark_as_paid` (et le **dé-marquage**) | **non** |
-| `kesh-api/src/routes/reconciliation.rs:1231` | `accept_one_invoice` — **le chemin le plus fréquent** selon AC2 | **non** |
-| `kesh-db/src/repositories/supplier_invoices.rs:674` | `pay_in_tx` — côté fournisseur | **non** |
-
-`mark_as_paid` vérifie `status = 'validated'` et la version optimiste. **Rien d'autre** — pas
-de `fiscal_years`, pas de `FiscalYearClosed`. Il sert aussi au **dé-marquage**, exposé par
-`POST /api/v1/invoices/:id/mark-paid` (`kesh-api/src/routes/invoices.rs:1033`). Les deux
-autres écrivent la colonne **par SQL brut**, en court-circuitant complètement `mark_as_paid`.
-
-⛔ **Pourquoi ce recomptage change la décision** : un développeur fidèle à l'ancienne
-rédaction ouvre `mark_as_paid`, y pose la garde, et **croit le trou fermé**. Les deux autres
-canaux continuent d'écrire sans garde — dont celui de la réconciliation, que AC2 désigne comme
-le plus fréquent. **Toute conduite retenue doit couvrir les TROIS**, ou nommer explicitement
-lequel elle laisse dehors.
-
-⚠️ Exercice 2025 clos : le refus de délettrage de la 15-1a interdit de rouvrir une ligne.
-Mais un **dé-marquage** rend cette même ligne « ouverte » au sens de la définition — le
-résultat que le refus existe pour empêcher, obtenu par l'autre canal.
-
-**Soit la garde d'exercice est étendue au marquage/dé-marquage** — changement hors périmètre,
-à ouvrir en CR —, **soit la story écrit que sa garantie d'immuabilité est partielle**. La
-laisser implicite fait croire à une protection qui n'existe pas.
-
-### ✅ Décision 4 — CLOSE par l'arbitrage du 2026-08-26 *(conservée pour sa généalogie)*
-
-⚠️ **Sans objet pour la vue** : elle argumentait pour une jointure sur
-`purchase_journal_entry_id` / `settlement_journal_entry_id` que la vue **n'utilise plus du
-tout**. Son relevé reste juste et utile à 15-1c ; ce qu'elle prescrivait ici ne l'est plus.
-*(P4-6 : rien ne le signalait, contrairement à la Décision 2, close explicitement par AC6.)*
-
-**Le fournisseur n'est pas le symétrique du client, il est en avance**
-
-La 15-1 affirmait que « les comptes fournisseurs n'ont aucun équivalent de ce mécanisme ».
-**C'est faux**, vérifié en passe 3 :
-
-```
-crates/kesh-db/src/repositories/supplier_invoices.rs:495   pub async fn pay(
-crates/kesh-db/migrations/20260628000001_supplier_invoices.sql:44,47,67-68
-    settlement_type VARCHAR(20) NULL,
-    settlement_journal_entry_id BIGINT NULL,
-    CHECK (settlement_type IS NULL OR settlement_type IN ('bank_transfer', 'internal_account'))
-```
-
-Le fournisseur a **davantage** que le client : un règlement **hors import bancaire compris**
-(`internal_account`), qui pose `paid_at`, `status='paid'`, **et une vraie écriture de
-règlement** référencée par une colonne dédiée.
-
-Deux conséquences :
-
-1. Sur le compte fournisseur, **les deux lignes à lettrer existent déjà** — `C 2000` à
-   l'achat, `D 2000` au règlement, même compte, sens opposés, même TTC. Il n'y a rien à
-   construire, seulement à afficher.
-2. ⛔ **Une facture fournisseur payée est rattachée à DEUX écritures.** Une vue qui joint sur
-   `purchase_journal_entry_id` seul masque la ligne d'achat et **laisse la ligne de règlement
-   ouverte à jamais** : le compte 2000 afficherait un débit fantôme **par facture payée**,
-   alors que son solde est zéro.
+5. **Le socle est découpé** (C124) : R4 (comptes lettrables), la primitive et les routes sont dans la
+   **15-1a-i** ; ordre **15-12a → 15-12b → 15-1a-i → 15-1a-ii → 15-1a2 → 15-1b → 15-1c**.
+6. **Un compte bancaire archivé laisse son compte non lettrable** (C127, R4 de la 15-1a-i) : la
+   condition « aucun `bank_accounts.journal_account_id` ne le désigne » porte sur **tous** les comptes
+   bancaires, archivés compris. Le booléen `letterable` de cette fiche, calculé par la même fonction
+   (`is_letterable_account`), en hérite — un compte rattaché un jour à un compte bancaire reste hors
+   de la vue.
 
 ## Critères d'acceptation
 
-⚠️ **Les critères ci-dessous sont écrits pour rester vrais quel que soit l'arbitrage des
-quatre décisions**, sauf là où c'est indiqué. Ils ne peuvent pas tous être figés avant.
+**AC1 — Route des postes ouverts.**
+`GET /api/v1/accounts/{id}/open-items?asOf=AAAA-MM-JJ&limit=&offset=` →
 
-**AC1** — Depuis l'écran, l'utilisateur choisit un compte et voit ses lignes **ouvertes**,
-avec le total.
+```json
+{
+  "accountId": 7, "accountNumber": "1100", "asOf": "2026-12-31",
+  "balance": "1234.5000", "openTotal": "1234.5000", "count": 42,
+  "items": [ {
+    "lineId": 1, "entryId": 3, "entryNumber": 12, "fiscalYearName": "2026",
+    "date": "2026-03-01", "journal": "Ventes", "description": "…",
+    "debit": "100.0000", "credit": "0.0000",
+    "document": { "type": "invoice", "id": 9, "number": "F-2026-0009" } | null,
+    "letteringCode": null | "AB", "letteringAfterAsOf": false | true,
+    "reason": "unlettered" | "partiallySettled" | "paidWithoutSettlementEntry" | "letteredAfterAsOf"
+  } ]
+}
+```
 
-⛔ **La vue est BORNÉE aux comptes de créances et de dettes** — `role IN ('Receivable',
-'Payable')` — et le mécanisme **existe déjà, il n'est pas à construire** *(relevé en passe 1 :
-rien ne bornait la vue)*. `AccountRole::Receivable` / `::Payable`
-(`kesh-db/src/entities/account.rs:92,96`) est déjà consommé par le bilan.
+`balance` et `openTotal` portent sur **tout** l'ensemble, pas sur la page. Pagination sur le
+patron du dépôt (`MAX_LIMIT = 500`, `journal_entries.rs:541,673`) ; `limit` hors bornes écrêté.
+Tri : date, puis numéro d'écriture, puis `lineId`. Rôle : Consultation et plus.
 
-⚠️ **Trois rectifications, toutes vérifiées au sol** *(P3-6, passe 3)* : le singleton n'est
-**pas** tenu par `chk_accounts_role` — qui ne contrôle que le **domaine de valeurs** — mais par
-`uq_accounts_company_singleton_role`. Il ne vaut que **parmi les comptes ACTIFS**, la colonne
-générée valant `NULL` dès qu'un compte est archivé : un compte de créances archivé **conserve**
-`role = 'Receivable'` et passerait une borne écrite `role IN (…)`. Et le dépôt interroge
-**toujours `singleton_role`**, jamais `role` — avec sa raison écrite : *« `role = ?` scannait
-l'index, `singleton_role = ?` restaure l'accès `const` »* (revue de la Story 14-3b). Écrire
-`role IN (…)` réintroduirait le défaut qu'une passe avait fermé.
+**AC2 — L'invariant est testé, et il garde toute la définition.** Base mêlée — factures client
+(soldée, partielle, héritée `paid_at`, créditée), fournisseur (payée, annulée payée), écritures
+manuelles lettrées et non lettrées, contre-passations, un groupe **à cheval** sur deux exercices,
+un exercice **clos** — et pour **trois** dates (`asOf` avant le groupe à cheval, entre ses deux
+lignes, après) : `openTotal == balance`. ⛔ **Aucun `paid_at` ni statut de facture dans la
+requête** : si quelqu'un réintroduisait un filtre sur une pièce, ce test rougirait.
 
-⛔ **Et une question de fond reste ouverte** : `accounts.role` n'est **pas** la source de vérité
-des écritures. Celles-ci visent `company_invoice_settings.default_receivable_account_id`, et
-`accounts::update` change `role` **sans jamais toucher ces réglages**. Déplacer le rôle de 1100
-vers 1101 laisserait les factures s'imputer sur 1100 tandis que la vue n'accepterait plus que
-1101, **vide** : « rien d'ouvert » sur le compte qui porte tout le solde.
+**AC3 — Le document.** `document` nomme la pièce qui possède l'écriture — facture, avoir,
+règlement (sa facture), facture fournisseur (achat ou règlement), transaction bancaire —, par
+**la même source** que `reversal_blockers` (`journal_entries.rs:1922`) : une **seule** requête de
+propriété, factorisée ou réutilisée, pas une seconde liste (C-15-8-5).
 
-⚠️ **`account_type` ne suffit PAS** : un compte débiteur et un compte de caisse sont tous deux
-`Asset`. Sans cette borne, ouvrir la vue sur un compte de produit ou sur le compte bancaire
-ledger exclurait des lignes *« parce que la facture derrière est payée »* — un critère qui
-**n'a aucun sens comptable** sur ces comptes-là. Et côté compte bancaire, cela chevaucherait
-en silence ce que la réconciliation gère par un tout autre mécanisme
-(`bank_transactions.status`) : exactement la confusion que 15-1c s'efforce de nommer **à
-l'écran**, et qu'il faut d'abord fermer **dans la requête**.
+**AC4 — Le motif d'une ligne ouverte** (`reason`) — ce que l'écran affichera, pour qu'une ligne
+juste ne paraisse jamais fausse :
 
-**AC1-bis** — ⚠️ **La vue est un instantané « aujourd'hui », et elle le dit** *(relevé en
-passe 1)*. Elle ne répond **pas** à « qu'est-ce qui était ouvert au 31.12 ». Le rapport voisin
-le plus proche, `aged_receivables`, porte un paramètre `as_of` **bindé et non `UTC_DATE()` en
-dur, pour la testabilité** — la vue de lettrage n'en a pas.
-
-⚠️ **Le *so that* de cette story invoque pourtant la clôture** (« clore un exercice en sachant
-ce qu'il porte ») : une facture de 2024 réglée en janvier 2026 porte `paid_at` **avant** la
-consultation, et n'apparaîtra donc **jamais** comme ouverte au 31.12.2024 — alors qu'elle
-l'était. **Soit un `as_of` est ajouté, soit la limite est écrite** ; la laisser implicite fait
-promettre à la vue ce qu'elle ne tient pas.
-
-**AC2** — ⛔ **« OUVERT » SIGNIFIE « NON LETTRÉ ». Un point c'est tout.** *(Arbitrage du
-Project Lead, 2026-08-26 — c'était la **cinquième décision**, celle que ni 15-1b ni 15-1c ne
-portait, et dont la passe 3 a montré qu'elle décidait de la forme de la requête que les deux
-stories allaient écrire.)*
-
-⚠️ **La vue ne regarde ni `invoices.paid_at`, ni `supplier_invoices.paid_at`, ni aucun statut
-de facture.** Elle ne joint **aucune** table de factures.
-
-✅ **Ce que cet arbitrage achète, et c'est un INVARIANT, pas une commodité** : 15-1a AC4 refuse
-le lettrage hors même compte et sens opposés, AC12 le refuse hors montants égaux — donc **toute
-paire lettrée se nette exactement à zéro sur son compte**. Il en découle, sans exception :
-
-> **La somme algébrique des lignes ouvertes d'un compte ÉGALE son solde.**
-
-C'est **testable en une assertion**, et c'est ce qui rend enfin vraie la promesse du *so that* :
-*« justifier le solde d'un compte »*. Aucune des deux définitions concurrentes ne le permettait.
-
-⛔ **Le prix, et il doit être assumé à l'écran** : une facture réglée par **virement importé**
-— le chemin le plus fréquent — réapparaît **ouverte** tant qu'elle n'est pas lettrée. C'est
-**comptablement vrai** : le compte 1100 porte toujours son débit, la réconciliation n'ayant
-créé **aucune écriture** (`invoices.rs:1923`). Mais c'est **contre-intuitif**, et AC4 devient
-de ce fait le critère le plus important de la fiche.
-
-**AC3** — ⛔ **Ce que cet arbitrage SUPPRIME**, et il faut le dire pour que personne ne le
-réintroduise :
-
-| ancienne exigence | pourquoi elle disparaît |
+| motif | quand |
 |---|---|
-| « la règle vaut pour les DEUX tables de factures » | la vue **ne joint aucune facture** |
-| la déclinaison en trois puis quatre cas (client, fournisseur, aucune facture, avoir) | il n'y a plus qu'**un** cas |
-| « les DEUX écritures d'une facture fournisseur payée » | plus de jointure, plus de piège |
-| le piège du `status = 'validated'` tronqué dans les SQL voisins | **sans objet POUR LA VUE seulement** ⚠️ *(P4-4)* — il reste **entier** pour la Décision 1, non résolue : les deux SQL qu'elle cite omettent toujours `AND i.status = 'validated'` |
+| `letteredAfterAsOf` | lettrée, mais par une ligne postérieure à `X` |
+| `partiallySettled` | ligne d'une facture client (créance, règlement, solde) dont le reste dû est **non nul** et **différent du TTC** — partiellement réglée |
+| `paidWithoutSettlementEntry` | créance d'une facture `paid_at` **sans** ligne de règlement — héritage d'avant la v0.12.0 ; le grand livre porte réellement la créance |
+| `unlettered` | tout le reste |
 
-⚠️ **Plusieurs findings HIGH et MEDIUM des passes 1 à 3 tombent avec eux** — dont **P3-1**
-(le quatrième cas), **P3-2** (les deux définitions), **P3-4** de la story mère (les deux
-écritures fournisseur) et la moitié de **P3-3** (les lecteurs de `paid_at`).
+⚠️ Le motif est **descriptif** : il ne filtre rien, il n'entre pas dans `openTotal`.
 
-⚠️ *(P4-5 : la rédaction précédente citait « P3-1, P3-2, P3-10, P3-11 » — **quatre
-identifiants qui désignent des findings du SOCLE**, pas de cette fiche — et annonçait un total
-que sa propre énumération ne portait pas. L'étiquette `P3-3` désigne par ailleurs **deux**
-findings distincts dans ce document, celui hérité de la mère et celui de la passe 3 d'ici.)* **Ce n'est pas une simplification cosmétique : c'est la disparition de la
-classe entière de défauts que ces passes trouvaient**, tous nés de ce que la vue tentait de
-concilier deux mécanismes que rien n'oblige à concilier.
+**AC5 — Propositions.** `GET /api/v1/accounts/{id}/lettering-proposals?limit=` → paires de
+lignes **ouvertes aujourd'hui**, **lettrables à la main** (15-1a R5 : aucune ligne de pièce),
+même compte, **sens opposés**, **montants égaux**. ⛔ Kesh **n'écrit rien** : accepter une
+proposition, c'est `POST /api/v1/letterings` (15-1a), un par un.
 
-**AC3-bis** — ⚠️ **L'invariant est TESTÉ, et le solde de comparaison est NOMMÉ** *(P4-1,
-passe 4 : « le solde du compte » ne suffisait pas — **le dépôt en calcule DEUX**)*.
+- **Classement** : écart de dates croissant, puis `lineId` du débit, puis `lineId` du crédit —
+  départage **stable**. Une paire contre-passation/origine non lettrée (rare : la 15-1a la lettre
+  d'office) est rangée en tête.
+- **Chaque ligne n'apparaît que dans sa meilleure paire** (appariement glouton dans l'ordre du
+  classement) : l'écran ne propose jamais deux paires qui se disputent une ligne.
+- **Bornes** (AC7 d'août, conservé) : au plus **2 000** lignes candidates chargées ; au-delà, 422
+  `LETTERING_PROPOSALS_TOO_MANY_LINES` (« trop de lignes ouvertes sur ce compte » — **jamais** une
+  troncature muette) ; sortie ≤ `MAX_LIMIT` (500), `?limit=` écrêté. L'égalité stricte rend
+  l'appariement **groupable par montant** — en mémoire, linéaire, pas d'auto-jointure.
+- **Pas de tolérance de montant** (Réserve 1 d'août, tranchée) : un règlement amputé de frais
+  bancaires n'est pas une paire ; pour une facture client, le **solde du reste** (`write_off`,
+  nature `bank_fees`) existe pour cela ; pour une ligne manuelle, une écriture d'ajustement puis
+  un lettrage à trois lignes.
+- **Pas de fenêtre de dates en filtre** (Réserve 2 d'août, tranchée) : elle sert au classement.
+- **Pas de proposition à plus de deux lignes** dans cette story (règlement groupé manuel) : le
+  lettrage manuel à N lignes reste possible à l'écran (15-1c), sans proposition. Consigné C99.
 
-Le solde de référence est le **cumulatif** :
-`SELECT SUM(debit - credit) FROM journal_entry_lines … WHERE company_id = ? AND account_id = ?`,
-**sans borne d'exercice** — c'est la convention des tests de dépôt existants, et celle du
-**bilan**, *« cumulatifs depuis l'origine, tous exercices confondus »*
-(`kesh-report/src/balance_sheet.rs`).
+**AC6 — Le code de lettrage dans le Grand livre.** `LedgerLine`
+(`kesh-report/src/general_ledger.rs:139-158`) gagne `lettering_code` (nul si ouverte) ; la requête
+du grand livre lit `lettering_key`. Rien d'autre ne change au rapport.
 
-⛔ **Ce n'est PAS le solde de la Balance des comptes ni du Grand Livre**, tous deux bornés par
-`je.fiscal_year_id = ?` (`trial_balance.rs:82`, `journal_report.rs`).
+**AC7 — Anti-IDOR et rôle.** Compte d'une autre société → 404 sur les deux routes ; même
+indiscernabilité qu'un compte inexistant (`routes/products.rs:343-345`). Requête scopée par
+`journal_entries.company_id` (les lignes n'ont pas de `company_id`).
 
-⚠️ **Et cet écart n'est pas théorique : il est le prix d'un choix déjà assumé.** 15-1a AC5
-autorise **explicitement** le lettrage à cheval sur deux exercices. Une créance de 2024 lettrée
-avec un règlement de 2025 se nette dans le cumul — mais **pas** dans la balance de 2025 prise
-seule. **L'utilisateur qui clôt un exercice consulte justement celle-là.**
+**AC8 — Performances.** La requête des postes ouverts s'appuie sur
+`idx_jel_account_lettering (account_id, lettering_key)` (15-1a) ; la condition « groupe ayant une
+ligne > X » se calcule par **une** agrégation `GROUP BY lettering_key` (date max du groupe), pas
+par sous-requête corrélée ligne à ligne. `EXPLAIN` vérifié et noté au Dev Agent Record.
 
-⛔ **À dire à l'écran** *(AC4)* : cette vue et la Balance des comptes d'un exercice **ne
-coïncideront pas** en présence d'un lettrage à cheval. Le découvrir en production, ce serait
-voir deux écrans se contredire sans explication.
+**AC9 — Routes de lecture** : inscrites au registre (`audit_route_registry.rs`) si le registre
+couvre les `GET` (il ne couvre que les routes **mutantes** — vérifier) ; aucune enveloppe de rejeu.
 
-C'est le test qui garde l'arbitrage : si quelqu'un réintroduisait un filtre sur `paid_at`,
-**il rougirait**.
+**AC10 — Documentation.** `api-external.md` : les deux routes, leurs paramètres, leurs refus
+(`ACCOUNT_NOT_LETTERABLE` 400, `LETTERING_PROPOSALS_TOO_MANY_LINES` 422, 404), la définition de
+« ouvert à une date » et l'invariant. Messages des deux refus dans les **quatre** locales.
 
-**AC4** — ⛔ **L'écran dit POURQUOI une facture réglée apparaît ouverte, et c'est désormais
-le critère le plus important de la fiche.** *(Élevé par l'arbitrage du 2026-08-26.)*
-
-Trois raisons, à distinguer pour l'utilisateur :
-
-1. **elle est réglée mais pas encore lettrée** — cas le plus fréquent, celui du virement
-   importé : le règlement est enregistré, le rapprochement ligne à ligne reste à faire ;
-2. **paiement partiel** — hors périmètre (D2) ;
-3. **règlement groupé** couvrant plusieurs factures — hors périmètre (D2).
-
-⚠️ **Sans le premier, la vue paraîtra fausse là où elle est exacte** — et c'est l'écran, pas
-la requête, qui porte cette pédagogie. L'invariant d'AC2 est ce qui la rend défendable :
-*« ce compte porte encore ces montants, parce que rien ne les a soldés ligne à ligne »*.
-
-⚠️ **Un chemin d'action depuis la vue vers le lettrage** est ce qui referme la boucle : voir
-une facture réglée mais non lettrée doit permettre de la lettrer, pas seulement de s'en
-étonner.
-
-**AC5** — *(dépend de la Décision 1, qui reste ouverte)* La relation entre la marque, la
-**balance âgée** et le **moteur de relance** est **explicite**.
-
-⛔ **L'arbitrage d'AC2 ne tranche PAS cette décision — il en déplace l'enjeu.** La vue ne lit
-plus `paid_at` ; les cinq **lecteurs** recensés, eux, continuent de le lire. Le plus grave
-reste entier et il est **comptable, pas cosmétique** : `reconciliation.rs` proposera une
-facture lettrée mais non marquée payée à un **second règlement** — **soldée deux fois**, une
-fois en caisse et une fois en banque.
-
-⚠️ **Toute conduite retenue nomme lequel des cinq lecteurs elle laisse dehors**, et traite
-`reconciliation.rs` **en premier**.
-
-**AC6** — ✅ **Tranché par AC2 : la vue justifie le solde du compte, exactement.** *(La
-Décision 2 est close — elle demandait « ce que la vue prétend égaler », et l'invariant y
-répond.)* L'écart que la Décision 2 s'apprêtait à faire assumer **n'existe plus** : il naissait
-du filtre sur `paid_at`, que l'arbitrage retire.
-
-**AC7** — *(dépend de la Décision 3, qui reste ouverte)* La portée de la garantie
-d'immuabilité sur exercice clos est **énoncée** : ce que le refus de délettrage protège, et ce
-que les **trois** canaux d'écriture de `paid_at` laissent passer.
-
-⚠️ **L'arbitrage d'AC2 réduit l'enjeu sans le supprimer** : la vue ne dépendant plus de
-`paid_at`, un dé-marquage sur exercice clos ne la fausse plus. Mais il fausse toujours les
-cinq lecteurs, et la question de la garde reste posée pour eux.
+**AC11 — Le caractère lettrable est exposé.** La liste des comptes (`GET /api/v1/accounts`) porte
+un booléen `letterable`, calculé par **la même fonction** que la garde de la 15-1a
+(`letterings::is_letterable_account`, R4) — l'écran (15-1c) n'en recopie pas la règle.
 
 ## Tasks
 
-- [ ] **T1** — Repository : lister les lignes ouvertes d'un compte. ⛔ **La requête ne joint
-      AUCUNE table de factures** (AC2) : `lettering_id IS NULL` sur le compte, et rien d'autre.
-      ⚠️ *La rédaction précédente prescrivait des jointures sur les deux tables de factures et
-      les deux écritures fournisseur — l'arbitrage du 2026-08-26 les supprime toutes.*
-      ⚠️ **Le test de l'invariant** (AC3-bis) est le plus important : somme algébrique des
-      lignes rendues **=** solde du compte.
-      ⛔ **La borne de rôle d'AC1 s'applique DANS LA REQUÊTE, pas seulement à l'écran**
-      *(P2-2, passe 2 : AC1 disait « la vue est bornée » sans dire où)*. Un compte hors
-      `role IN ('Receivable','Payable')` ne rend **aucune ligne**. Une borne posée seulement au
-      frontend laisserait la route la contourner — et le développeur qui lit T1 seul ne
-      l'implémenterait jamais.
-      ⚠️ **La requête est un instantané « aujourd'hui »** (AC1-bis) : elle lit `paid_at` tel
-      qu'il est **au moment de l'appel**, sans date de référence. C'est la limite énoncée par
-      AC1-bis, pas un oubli — mais elle se code explicitement, pas par omission.
-- [ ] **T2** — Route `GET` lignes ouvertes d'un compte. ⛔ **Paginée**, sur le patron
-      systématique du dépôt — `const MAX_LIMIT: i64 = 500` et `list_by_company_paginated`
-      (`kesh-db/src/repositories/journal_entries.rs:541,673`), repris à l'identique par
-      `credit_notes`, `payment_batches`, `supplier_invoices` et `users` *(relevé en passe 1 :
-      aucune pagination n'était prévue)*. Un compte de créances actif depuis plusieurs
-      exercices accumule des centaines de lignes ouvertes — d'autant plus tant que la
-      Décision 1 n'est pas tranchée.
-- [ ] **T3** — Écran de consultation, **portant AC4 nommément** *(P4-3, passe 4 : AC4 était
-      déclaré « le critère le plus important de la fiche » et **aucune tâche ne le portait** —
-      la fiche sœur, elle, écrit « Écran dédié, avec la frontière énoncée (AC5) »)* : les
-      **trois raisons** distinguées, et l'écart avec la Balance des comptes énoncé (AC3-bis).
-      ⛔ **Le « chemin vers le lettrage » d'AC4 suppose 15-1c** — le lettrage manuel est son
-      AC1, aucune tâche de 15-1a n'expose d'écran, et T3 est ici un écran de **consultation**.
-      **Trancher** : soit un lien vers l'écran de 15-1c, soit un renvoi assumé « disponible
-      dès 15-1c ». ⚠️ **Ne pas dupliquer ici l'UI de lettrage** — ce serait reprendre le rôle
-      de la fiche sœur.
-- [ ] **T4** — Tests. ⛔ **Cette tâche a été RÉÉCRITE en passe 4 : elle prescrivait encore
-      l'ANCIENNE définition** — « les deux tables », « les deux écritures », une fixture « une
-      payée et une NON payée », et un critère `AC2-bis` **qui n'existe plus**. Un développeur
-      la suivant à la lettre aurait écrit des tests validant **exactement ce qu'AC2
-      interdit**. *(L'arbitrage avait réécrit les critères et T1, et laissé T4 : le geste que
-      la § Propagation post-patch décrit, commis une fois de plus.)*
-
-      **En priorité — le test de l'INVARIANT (AC3-bis)**, qui garde l'arbitrage tout entier :
-      un compte portant des lignes lettrées **et** non lettrées, de **provenances mêlées** —
-      facture client, facture fournisseur, écriture manuelle, avoir —, et l'assertion que la
-      somme algébrique des lignes rendues **égale** le solde **cumulatif** du compte.
-      ⚠️ **Aucun `paid_at` dans ce test**, ni dans aucun autre : le mentionner serait
-      réintroduire ce que l'arbitrage retire.
-
-      Puis **AC1** (un compte hors `Receivable`/`Payable` ne rend aucune ligne), **AC4** (les
-      trois raisons sont affichées, et le chemin vers le lettrage existe), et le test qui
-      matérialisera l'arbitrage de la Décision 1 quand elle sera tranchée.
-- [ ] **T5** — i18n : quatre locales, allowlist vide.
-- [ ] **T6** — Manuel utilisateur : ce que la vue montre, et **ce qu'elle ne montre pas
-      encore**.
+- [ ] **T1** (AC1–AC4, AC8) — `kesh-db` : `letterings::open_items(company, account, as_of, page)`
+      et `open_items_totals` ; motif et document. Ou `kesh-report` si le rapport y a sa place — **un
+      seul** endroit.
+- [ ] **T2** (AC5) — Moteur de proposition : fonction **pure** en `kesh-core` (entrée : lignes
+      ouvertes ; sortie : paires classées) + chargement borné en `kesh-db`.
+- [ ] **T3** (AC1, AC5, AC7, AC9) — Routes dans `kesh-api` (`routes/letterings.rs` de la 15-1a).
+- [ ] **T4** (AC6, AC11) — `LedgerLine.lettering_code` ; champ `letterable` des comptes.
+- [ ] **T5** — Tests : AC2 en premier (l'invariant aux trois dates), AC4 (un test par motif), AC5
+      (classement stable, une ligne par paire, ligne de pièce jamais proposée, ligne lettrée jamais
+      proposée, plafond 2 000 → 422, `?limit=999999` écrêté), AC7.
+- [ ] **T6** (AC10) — `api-external.md`, i18n (2 clés `error-*`, quatre locales).
 
 ## Dev Notes
 
-⚠️ **Le sélecteur E2E ne se fige jamais sur un libellé traduit** — `data-testid` sans
-exception (garde #326, son allowlist ne doit pas s'allonger).
+- `asOf` est **bindé**, jamais `UTC_DATE()` en dur (patron `aged_receivables`, testabilité).
+- Le moteur de proposition **ne reprend pas** `kesh-reconciliation/src/matching.rs` (score
+  montant/référence/contact, sans compte ni sens) : « même compte », « sens opposés », « non
+  lettrée » n'y existent pas (relevé d'août, P1-1 de la 15-1c, conservé).
+- Modules : `kesh-core`, `kesh-db`, `kesh-api`, `kesh-report`, `kesh-i18n` — cinq, au seuil.
 
-⚠️ **La base de gate se remet à zéro AVANT le gate**, inconditionnellement (KF-039, #310).
+## Dev Agent Record
+
+### Agent Model Used
+
+### Completion Notes List
+
+### File List
 
 ## Change Log
+
+### Reçu de la validation P3 du socle — 2026-10-09 (Opus 5.5, remédiation de la 15-1a)
+
+Section « Reçu de la 15-1a » complétée des points 5 et 6 (registre C124, C127) : découpage de la 15-1a
+en 15-1a-i et 15-1a-ii ; un compte bancaire archivé laisse son compte non lettrable (même fonction pour
+`letterable`). Dépendance de tête mise à jour. Corps non réécrit.
+
+### Reprise du 2026-10-08 — réécriture contre le modèle réel (Opus 5.5, en autonomie)
+
+Corps réécrit (registre C94, C99). Les Décisions 1 à 4 d'août deviennent **sans objet ou closes**
+(tableau de tête) ; l'arbitrage « ouvert = non lettré » est **conservé** et gagne une **date**
+(`asOf`), ce qui rend vraie la promesse de clôture du *so that* (AC1-bis d'août). Le moteur de
+proposition de l'ancienne 15-1c entre ici, avec ses réserves **tranchées** (pas de tolérance, la
+date classe, plafond d'entrée explicite) ; la borne par **rôle** de compte (`singleton_role`) est
+remplacée par la notion de compte **lettrable** (15-1a R4). **11 critères** (AC1–AC11), **6
+tâches** (T1–T6), recomptés depuis ce fichier.
+
+*Entrées antérieures à la reprise — le corps qu'elles décrivent a été remplacé :*
+
 
 ### Passe 4 de `validate` — 2026-08-26 (Sonnet, contexte frais)
 

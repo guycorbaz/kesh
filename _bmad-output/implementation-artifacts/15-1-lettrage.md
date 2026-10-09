@@ -5,20 +5,34 @@
 split
 
 ⛔ **CORPS VIDÉ — cette fiche ne contient plus ni décisions, ni critères, ni tâches.** Elle
-ne garde que les pointeurs vers ses trois moitiés et l'historique des passes qui ont conduit
+ne garde que les pointeurs vers ses sous-stories (trois au split, quatre depuis la reprise du 2026-10-08) et l'historique des passes qui ont conduit
 au découpage. *(La définition du statut `split` l'impose, et le précédent de la Story 17-2 —
 démêlé quatre passes durant — dit ce que coûte un corps complet laissé derrière un split.)*
 
-## Les trois sous-stories
+## Les quatre sous-stories — depuis la reprise du 2026-10-08
 
-| | fiche | ce qu'elle porte |
+| ordre | fiche | ce qu'elle porte |
 |---|---|---|
-| **15-1a** | `15-1a-socle-lettrage.md` | **Socle** : la marque, sa portée société, son unicité sous concurrence, et son **cycle de vie face aux chemins d'écriture existants** — c'est là que tombent les deux HIGH de la passe 3 |
-| **15-1b** | `15-1b-vue-lignes-ouvertes.md` | **La vue « ce qui reste ouvert »** et sa relation aux dispositifs qui lisent déjà `paid_at` — balance âgée, relances, et les deux écritures d'une facture fournisseur |
-| **15-1c** | `15-1c-proposition-ecran.md` | **Le moteur de proposition et l'écran**, avec la frontière énoncée pour l'utilisateur |
+| 1 | `15-1a-socle-lettrage.md` — **index, `split` le 2026-10-09 (C124)** : `15-1a-i-marque-du-lettrage.md` puis `15-1a-ii-gardes-du-lettrage.md` | **Socle** : (i) deux colonnes sur `journal_entry_lines` (clé = plus petit id de ligne du groupe, origine), la primitive unique de lettrage, les routes manuelles ; (ii) le gel des écritures lettrées, la contre-passation qui lettre ce qui est libre |
+| 2 | `15-1a2-lettrage-des-pieces.md` | **Lettrage des pièces** (neuve) : une facture client ou fournisseur soldée est lettrée d'office, l'annulation d'un règlement délettre ; rattrapage des données existantes par migration |
+| 3 | `15-1b-vue-lignes-ouvertes.md` | **Les postes ouverts d'un compte à une date**, l'invariant « somme des ouverts = solde », et le moteur de proposition (backend) |
+| 4 | `15-1c-proposition-ecran.md` | **L'écran « Postes ouverts »**, le manuel, l'E2E |
 
-⚠️ **L'ordre n'est pas indifférent** : 15-1a est un **socle** que les deux autres supposent.
-15-1b lit la marque que 15-1a pose ; 15-1c la pose depuis un écran.
+⛔ **Prérequis : la Story 15-12a** (`15-12a-cloture-dans-l-ordre.md`, clôture dans l'ordre, C89) se
+développe **avant** la 15-1a — la règle des exercices du lettrage et la vue « au » d'une date
+reposent sur « les clos forment un préfixe », invariant que la 15-12a tient. La 15-12 a été découpée le
+2026-10-09 (C107) en **15-12a** (l'ordre, prérequis réel) et **15-12b** (le filet des données héritées,
+qui touche aussi `journal_entries::delete_in_tx` : elle passe avant de préférence, sans être requise).
+Ordre complet : **15-12a → 15-12b → 15-1a-i → 15-1a-ii → 15-1a2 → 15-1b → 15-1c** *(validation P1 de la
+15-1a, 2026-10-08 — C105 ; précisé le 2026-10-09 — C112 ; la 15-1a découpée à sa validation P3 —
+C124 : la v0.13.0 ne se tague pas entre la 15-1a-i et la 15-1a-ii)*. ⚠️ L'invariant ne vaut que pour les états atteints
+depuis un état sain : dans l'état hérité (sauvegarde v0.12.x), ni la 15-12a ni la 15-12b ne gardent le
+lettrage (C112) — **la 15-1a le garde elle-même** : une ligne n'est « en période ouverte » que si aucun
+exercice postérieur n'est clos, ni sa date sous le verrou de période (C113, validation P2).
+
+Les quatre questions du dégel du 2026-08-28 sont tranchées en tête de la 15-1a ; choix
+consignés au registre `epic-15-choix-autonomes.md`, **C90 à C99**, révisés par **C101 à C106** (validation P1 de la 15-1a), **C113 à C118** (validation P2) et
+**C124 à C127** (validation P3 : découpage, verrous d'exercice, rang d'`ENTRY_LETTERED`).
 
 ## Pourquoi le découpage
 
@@ -55,6 +69,24 @@ Elles sont reportées **dans la sous-story qui les porte**, avec leurs conduites
 | La **fenêtre de dates**, qui écarte aujourd'hui la contre-passation | 15-1c |
 
 ## Change Log
+
+### Découpage de la 15-1a — 2026-10-09 (validation P3 du socle, C124)
+
+La 15-1a devient un index (`split`) et deux sous-fiches : **15-1a-i** (la marque) et **15-1a-ii** (les
+gardes), selon la couture écrite à C118 — le déclencheur (défauts nés de correctifs de P2 sur des
+règles métier) a été atteint en P3. Numérotation R/AC/T conservée dans les sous-fiches. Les fiches
+de ce lettrage passent ainsi de quatre à cinq ; statut de cette fiche : **inchangé** (`split`).
+
+### Reprise du 2026-10-08 — relecture contre `invoice_settlements` (Opus 5.5, en autonomie)
+
+Les trois fiches avaient été écrites, en onze passes de revue, sous l'hypothèse « une facture payée
+n'a qu'une ligne ». Relues contre `origin/main` (`9cb5083b`) : la 15-1a et la 15-1b sont
+**réécrites**, la 15-1c réduite à l'écran, une **15-1a2** créée (lettrage des pièces). Le porteur
+change (colonnes au lieu de la table `letterings`, pour ne pas rendre inimportables les sauvegardes
+antérieures), la paire devient un groupe à somme nulle, D3 est révisée étroitement. Les décisions
+restées ouvertes au moment du split (tableau ci-dessus, conservé pour l'histoire) sont toutes
+tranchées ou sans objet. Registre C90–C99. Statut de cette fiche : **inchangé** (`split`).
+
 
 ### Passe 3 de `validate` — 2026-08-25 (Opus, contexte frais)
 

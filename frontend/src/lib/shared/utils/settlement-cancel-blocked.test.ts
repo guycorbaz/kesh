@@ -44,9 +44,9 @@ describe("motifs d’annulation d’un règlement", () => {
     );
   });
 
-  it("la tête client : facture créditée ⇒ paiement à lettrer (mutation : renvoi à la queue)", () => {
+  it("la tête client : facture créditée ⇒ règlement resté ouvert (mutation : renvoi à la queue)", () => {
     expect(invoiceSettlementCancelMessage("INVOICE_CREDITED", null)).toBe(
-      "Cette facture a été créditée par un avoir : ce règlement est un paiement à lettrer, il ne s'annule pas.",
+      "Cette facture a été créditée par un avoir : ce règlement reste ouvert au compte débiteurs, il ne s'annule pas.",
     );
   });
 

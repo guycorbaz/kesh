@@ -5742,3 +5742,118 @@ l'import (#458–#461).
   les trois sites (test 1, tests 2 à 4).
 - **Écarté** : refactorer maintenant (code de production après une revue close) ; taire la duplication.
 - **Réversibilité** : totale.
+
+## C-15-1a-i-1 — 15-1a-i (T0) : le verrou d'intervalle « plus grande clé » est démenti par la mesure, le texte de R7 suit
+- **Contexte** : R7 (F4-1 de P4, « raisonné sur le moteur, non exécuté ») annonçait qu'une dissolution du
+  groupe de plus grande clé tenait le trou `(Kmax, +∞)` d'`idx_jel_lettering` et faisait attendre
+  l'`UPDATE` d'une création concurrente — cas d'interblocage résiduel « courant ». Mesure T0 sur
+  `kesh_151ai` (MariaDB 10.11.16, 6000 lignes, 500 groupes) : l'`UPDATE … SET lettering_key = 4000 …`
+  d'une création **n'attend pas** pendant la dissolution de la plus grande clé (ni pendant celle d'une clé
+  dont le trou suivant contient la nouvelle valeur) ; un `INSERT` direct d'une ligne portant la clé 4000,
+  lui, attend (1205) — le trou est tenu, mais la mise à jour d'un index secondaire ne s'y heurte pas.
+  Le cas F3-5 (insertion d'une ligne **ouverte** pendant la dissolution de la plus petite clé) est, lui,
+  **confirmé** (1205 au bout de 3 s, sur une écriture sans rapport).
+- **Retenu** : R7 de la fiche corrigé (puce F4-1 et paragraphe des verrous d'intervalle) — le cas
+  « création contre dissolution de la plus grande clé » n'est plus un cycle résiduel ; le reste de R7
+  inchangé. Les routes restent rejouées (aucune règle ni critère ne bouge).
+- **Écartées** : garder le texte raisonné « par prudence » — il décrivait un cycle que la mesure n'observe pas.
+- **Réversible** : oui (texte de fiche).
+
+## C-15-1a-i-2 — 15-1a-i (T3) : le plafond de 200 lignes est un refus de forme de la route, pas de la primitive
+- **Contexte** : AC6 fixe 200 lignes (400 `LETTERING_TOO_MANY_LINES`) ; AC3 ne le range dans aucun rang.
+- **Retenu** : variante `DbError::LetteringTooManyLines { max }` (pour réutiliser la correspondance d'erreurs
+  du dépôt), contrôlée par `letterings::check_manual_line_count` **dans le handler**, avant toute lecture
+  (et avant `LETTERING_TOO_FEW_LINES`). La primitive ne la contrôle pas : les appelants `System` (15-1a-ii,
+  15-1a2) ne doivent pas buter sur un plafond d'écran pour une pièce réglée en beaucoup de fois.
+- **Écartées** : un `AppError` dédié (une seconde famille de codes pour un seul refus) ; le contrôle dans
+  `check_line_ids` (il aurait borné le mode `System`).
+- **Réversible** : oui.
+
+## C-15-1a-i-3 — 15-1a-i (T3) : l'acte 1 lit aussi `je.entry_number` ; le rang 4 se lit après les verrous d'exercice
+- **Contexte** : R7 point 1 liste les colonnes de l'acte 1 sans `entry_number`, que la réponse et l'audit
+  exigent (AC6, AC10). Et l'ordre des **refus** (AC3) intercale des lectures en base (rangs 4, 4 bis, 5)
+  entre des contrôles purs, sans fixer l'ordre des **lectures**.
+- **Retenu** : `je.entry_number` ajouté à la lecture verrouillante (l'en-tête est déjà tenu, aucun verrou de
+  plus) ; séquence : acte 1 → rang 3 (pur) → en `Manual`, R7 point 2 (a)(b)(c) → rang 4 (lettrabilité,
+  lecture ordinaire) → borne et rang 4 bis → rang 5 → rangs 6 et 7 (purs). L'ordre des refus est celui
+  d'AC3 ; la lettrabilité est une des lectures ordinaires que R7 tolère après (a).
+- **Écartées** : une seconde lecture des en-têtes pour le numéro ; lire la lettrabilité avant (a) (elle
+  ouvrirait la vue `REPEATABLE READ` plus tôt, sans rien garantir de plus).
+- **Réversible** : oui.
+
+## C-15-1a-i-4 — 15-1a-i (T10) : le vocabulaire du lettrage en allemand, anglais et italien
+- **Contexte** : la fiche arrête les dix textes français ; les trois autres locales sont à écrire. Les
+  catalogues emploient déjà « Abgleich » / « match » / « riconciliazione » pour le **rapprochement
+  bancaire**, que le lettrage ne doit pas paraître désigner.
+- **Retenu** : de-CH **Ausgleich** (ausgleichen, Ausgleich aufheben — le « OP-Ausgleich » des comptables
+  suisses), en-CH **matching** (« matching group », match / unmatch), it-CH **abbinamento** (abbinare,
+  disabbinare — le terme que le catalogue italien employait déjà pour « à lettrer »). Libellés d'audit :
+  « Lettrage posé / retiré », « Ausgleich gesetzt / aufgehoben », « Matching set / removed »,
+  « Abbinamento posto / rimosso ».
+- **Écartées** : « Abgleich » et « reconciliation » (réservés au rapprochement bancaire) ; « lettering » en
+  anglais (calque du français, inconnu d'un lecteur anglophone).
+- **Réversible** : oui (textes de catalogue ; la 15-1c, qui fait l'écran, pourra les reprendre).
+
+## C-15-1a-i-5 — 15-1a-i (T0) : clés 15-13* ajoutées au registre de sprint de cette branche, statut relevé sur leurs branches
+- **Contexte** : consigne de l'orchestrateur — ajouter les clés 15-1*, 15-12*, 15-13* manquantes à
+  `sprint-status.yaml`. Les 15-12* y sont déjà ; manquent `15-1a-i`, `15-1a-ii`, `15-1a2`, et les trois
+  clés 15-13* (aucune fiche 15-13 sur `main` : elles vivent sur les branches `story/15-13*`).
+- **Retenu** : les six clés ajoutées ; les statuts 15-13* recopiés de leurs propres branches au
+  2026-10-09 (15-13 `split`, 15-13a `done`, 15-13b `review`), avec un commentaire disant que **leur
+  statut fait foi sur leur branche** — l'union au merge garde la valeur la plus récente.
+- **Écartées** : ne pas les ajouter (contraire à la consigne) ; inventer un statut propre.
+- **Réversible** : oui.
+
+## C-15-1a-i-6 — 15-1a-i (revue de code P1) : B1 reclassé LOW — la destruction de la marque par la modification et la suppression relève de la 15-1a-ii
+- **Contexte** : la lentille B (B1, MEDIUM conditionnel) relève qu'`update_in_tx` (`DELETE` puis `INSERT` des lignes, nouveaux `id`, sans `lettering_*`) et `delete_in_tx` (cascade `fk_jel_entry`) détruisent en silence la marque d'une écriture lettrée.
+- **Retenu** (décision de l'orchestrateur) : **LOW**. C'est le périmètre de la 15-1a-ii (AC8), et C124 interdit tout tag entre les merges de la 15-1a-i et de la 15-1a-ii. Vérifié sur la fiche 15-1a-ii (`main`, lecture seule) : AC8 pose `ModificationGuard::Lettered` / `409 ENTRY_LETTERED` par une fonction propre, `lettering_guard`, **inconditionnelle**, à l'étape **3-quinquies** de `delete_in_tx` (après le verrou de période, hors `enforce_ownership`, donc aussi pour la dévalidation) et à l'étape **7-bis** d'`update_in_tx` (après le verrou de période, **avant** l'instantané, le court-circuit no-op et le `DELETE`+`INSERT` de l'étape 8) ; T4 et T12 les testent (`PUT`, `DELETE`, en-tête seul, `PUT` identique, `delete_in_tx(…, false)`). Les deux sites de B1 sont donc couverts.
+- **Écartées** : un refus minimal dans `update_in_tx`/`delete_in_tx` dès la 15-1a-i (doublon de la garde que la 15-1a-ii pose avec son rang, son message et son écran).
+- **Réversible** : oui — tant qu'aucun tag ne sépare les deux merges (C124).
+
+## C-15-1a-i-7 — 15-1a-i (revue de code P1) : les textes publics disent ce que fait le code livré — seul le lettrage manuel existe
+- **Contexte** : B2 = A-L3 (MEDIUM) — le CHANGELOG, `docs/api-external.md` et le glossaire du manuel décrivaient au présent des groupes `reversal` et `document` posés par Kesh, qu'aucun appelant de production ne pose (`Mode::System` sans appelant) ; A-L2 — « le code du groupe est visible sur chaque ligne » alors qu'aucun composant n'affiche `letteringCode`.
+- **Retenu** : CHANGELOG — « Le lettrage manuel, par l'API », exemples réduits à ceux qu'un lettrage manuel peut poser (un acompte et sa reprise, une écriture et sa contre-passation — ni l'une ni l'autre n'est une pièce), phrase « Seul le lettrage manuel existe à ce stade : Kesh ne lettre pas encore de lui-même une facture soldée… », « exposé … dans les réponses de l'API » ; le motif du bump cite « modifier, supprimer ou annuler une écriture lettrée ». `api-external.md` — `letteringOrigin` vaut `manual`, `document`/`reversal` réservés ; « À ce stade, Kesh ne lettre rien de lui-même » ; les deux refus du `DELETE` propres à ces origines portent « (aucun groupe … n'existe encore) ». Glossaire (`.tex` et PDF régénéré) — exemples manuels, et « Kesh ne lettre encore rien de lui-même ». ⚠️ **À reprendre par la 15-1a-ii** (contre-passation qui lettre : retirer « ni une écriture et sa contre-passation », la réserve sur `reversal` et l'annotation du refus `LETTERING_LINE_OWNED_BY_DOCUMENT`) **et par la 15-1a2** (pièces : réintroduire « une facture et ses règlements », la réserve sur `document`, l'annotation de `LETTERING_IS_DOCUMENT`) — relevé par la valeur : `git grep -nE "Seul le lettrage manuel|ne lettre (pas encore|rien|encore rien)|réservé|n'existe encore" -- CHANGELOG.md docs`.
+- **Écartées** : laisser les textes en l'état au motif que la v0.13.0 sort en une release (C124) — un texte faux entre deux merges est un texte faux, et rien ne garantit qu'on se souviendra de le vérifier ; retirer les origines du contrat (`letteringOrigin` les déclare, la contrainte SQL aussi).
+- **Réversible** : oui (textes).
+
+## C-15-1a-i-8 — 15-1a-i (revue de code P1) : la preuve de la sauvegarde lettrée est un aller-retour HTTP en trois temps
+- **Contexte** : E-1 = A-L4 (MEDIUM) — l'exemption (ii) de R3 (« `backup.rs` rétablit les marques telles qu'exportées ») ne reposait que sur la lecture dynamique des colonnes ; AC14 demandait aussi de vérifier `is_no_op_change` et `entry_snapshot_json`.
+- **Retenu** : `full_import_round_trip_keeps_lettering_marks` dans `admin_full_import_e2e.rs` — (1) l'export porte les deux colonnes (manifeste et NDJSON), (2) base rendue divergente par délettrage puis import : clé et origine rétablies, (3) sauvegarde antérieure simulée par `strip_column` : lignes ouvertes. Mutations rejouées : colonnes exclues de l'export (`non_generated_columns`) → rouge au temps 1 ; colonnes écartées de l'`INSERT` de restauration → rouge au temps 2. `is_no_op_change` et `entry_snapshot_json` relus : tous deux construits champ par champ, sans la marque — non faussés ; ils ne la voient pas, ce qui ne compte qu'à partir de la 15-1a-ii, où une écriture lettrée n'atteint plus l'étape 8.
+- **Écartées** : un test de `backup.rs` seul sur `column_names` (prouve l'export, pas la restauration).
+- **Réversible** : oui.
+
+## C-15-1a-i-9 — 15-1a-i (revue de code P1) : LOW appliqués, LOW écartés
+- **Appliqués** : E-2 (`fiscal_year_names` et `group_account_number` rendent `Invariant` au lieu d'un nom ou d'un numéro vide, comme le mode `Manual` ; `find_group` partage la lecture — DRY) ; E-4 (`{ $max }` dans les quatre catalogues, `t_args` au site ; le test de mapping passe `max: 7`, et l'E2E asserte le message rendu par le catalogue chargé) ; B6 (détecteur classé sur le **mot** `UPDATE`/`INSERT`/`REPLACE`, quel que soit le blanc, hors `FOR UPDATE` et `ON UPDATE` — la première version, « tout mot », comptait les lectures `FOR UPDATE` de la primitive : 4 au lieu de 2) ; E-6 = A-L6 (`lettering_invariants` pose un groupe `reversal` en mode `System` et un groupe dans une seconde société, plus deux contrôles négatifs isolés, origines et sociétés) ; E-7 (portée du test de concurrence écrite : il prouve l'absence de 500, pas une attente de verrou — aucun test ne l'observe, angle mort assumé) ; E-8 (`a_read_only_key_reads_but_cannot_letter`) ; A-L1 (décompte des tests recompté : 60) ; A-L5 (titre du tableau de gates).
+- **Écartés, et pourquoi** : B3 (code `System` sans appelant de production — voulu, ses appelants sont la 15-1a-ii et la 15-1a2 ; il est testé au dépôt) ; B4 (`find_group` en trois lectures sans instantané commun — sans effet comptable, et depuis E-2 aucune course ne peut produire un `Invariant` : exercices et comptes ne disparaissent pas sous des lignes, FK sans cascade) ; B5 (verrous d'exercice pris avant le refus `document` — inatteignable tant qu'aucun groupe `document` n'existe ; à reconsidérer par la 15-1a2) ; B7 (présence lexicale de `check_rows_affected` — limite déjà écrite au doc-comment du test, seule garde possible sans crochet de production) ; B8 = E-5 (zéros de tête acceptés et réutilisation d'une clé après dissolution — sans conséquence de sécurité ; l'audit distingue les deux vies par l'horodatage ; trancher la forme canonique relève de l'écran, 15-1c) ; E-3 (plan des lectures verrouillantes non épinglé — écart déjà écrit au T0 pour les tables vides, sans effet sur l'exactitude, routes rejouées) ; A-L6 seconde moitié (rangs 5 `OwnedByCreditNote`/`OwnedBySupplierInvoice`/`OwnedBySettlement` non exercés par la primitive : la détection réutilise `reversal_blockers`, dont `OwnedBySettlement` et `OwnedBySupplierInvoice` sont exercés par leurs suites (`invoice_settlement.rs:761`, `supplier_invoices_repository.rs:1374`) et dont les quatre motifs de pièce sont inventoriés par `journal_entries_modification.rs:54-69` ; `OwnedByCreditNote` n'y est qu'inventorié — angle mort assumé, risque faible : un seul chemin de détection).
+- **Réversible** : oui.
+
+## C-15-1a-i-10 — 15-1a-i (revue de code P1) : tmpfs de MariaDB plein — nouvelles tables basculées dans `ibdata1`
+- **Contexte** : au gate complet de la remédiation, le tmpfs de `kesh-mariadb-dev` (4 Go) est plein : `ibdata1` pèse 3,5 Go (espace d'annulation des gates de la journée, purgé mais jamais rendu au système de fichiers) ; toute création de table échoue en `1114 table is full` (1523 puis 330 échecs, aucun du code). Redémarrer le conteneur est interdit (bases des autres agents).
+- **Retenu** : `SET GLOBAL innodb_file_per_table = OFF` — les nouvelles tables vont dans l'espace libre **interne** d'`ibdata1` (sondé : 50 Mo insérés sans croissance du fichier) ; mes bases de test résiduelles supprimées (1200 + 259 enregistrées dans `kesh_151ai._sqlx_test_databases`, quatre `_sqlx_test_guard_tracking_*` de mes deux runs) ; gate complet rejoué à `--test-threads=2` (profil `ci`) pour tenir dans l'espace. Réglage volatil : un redémarrage le remet à `ON`. ⚠️ **À l'orchestrateur** : planifier un redémarrage du conteneur à un moment creux (il rend les 3,5 Go), et prévenir les agents dont les gates tournent.
+- **Écartées** : redémarrer (interdit) ; attendre (l'espace ne revient pas) ; s'arrêter sans gate (la remédiation touche `kesh-db`, gate complet obligatoire).
+- **Réversible** : oui (`SET GLOBAL innodb_file_per_table = ON`, ou redémarrage).
+
+## C-15-1a-i-11 — 15-1a-i (revue de code P2) : les deux MEDIUM nés de la remédiation P1
+- **Contexte** : B2-1 = E2-1 — le détecteur lexical de R3, réécrit en P1 (B6) pour classer sur le **mot**, découpe le texte **brut** du littéral : `"…;\nUPDATE …"` rend `nUPDATE`, aucun verbe (idem `\t`, `\r`, `\0`) ; l'ancien `contains("UPDATE ")` voyait ce cas. A2-1 — le relais des six textes provisoires de C-15-1a-i-7 (« Kesh ne lettre rien de lui-même », origines « réservées ») n'existait qu'au registre ; la phrase prescrite par AC15 (ii) de la 15-1a-ii (« La contre-passation lettre… ») les contredirait.
+- **Retenu** : (1) `neutraliser_echappements` — la barre oblique inverse **et** le caractère qui la suit deviennent deux espaces avant le découpage, appliqué aussi aux chaînes brutes (élargit, ne rétrécit jamais — P7) ; cinq littéraux à l'auto-test (`N` à `R`), 9 → 14 écritures ; mutation « neutralisation retirée » → rouge (10 ≠ 14). (2) Section « Reçu de la 15-1a-i — revue de code P2 » dans `15-1a-ii-gardes-du-lettrage.md` et `15-1a2-lettrage-des-pieces.md` (branche de planification, `fecf18ae`) : sites, relevé par la valeur — le `git grep` de C-15-1a-i-7 (62 lignes dont 56 hors sujet) et sa forme resserrée (`sont réservés aux lettrages`, exactement les six sites) plus le PDF aplati —, part de chaque story, contradiction avec AC15 (ii) ; règle : chaque story réécrit ces textes **dans le même commit** que le comportement qui les rend faux.
+- **Écartées** : (1) remplacer seulement `\n`, `\t`, `\r`, `\0` par une liste de `replace` — une forme oubliée (`\x0A`, `\u{a}`) referait un garde-fou muet, la paire entière les couvre toutes ; décoder réellement les échappements — plus de code pour le même résultat sur le découpage. (2) Réécrire AC15 (ii) et T11 de la 15-1a-ii — hors du mandat du remédiateur, le patron « Reçu de » transmet sans réécrire.
+- **Réversible** : oui.
+
+## C-15-1a-i-12 — 15-1a-i (revue de code P2) : LOW appliqués, LOW écartés
+- **Appliqués** : B2-2 (`build_group` rend `Result` et refuse en `Invariant` un exercice absent des noms — **code de production** ; un `expect` aurait fait paniquer la tâche, ce que la doctrine du dépôt proscrit au profit d'une erreur remontée) ; B2-5 = A2-5 (doc-comments `routes/letterings.rs:12`, `:45`, `errors.rs` `LetteringTooManyLines` renvoient à `MAX_LINES_PER_GROUP` ; T10 de la fiche en `{ $max }`) ; A2-3 (au contrôle négatif (2) de `lettering_invariants`, `find_group` par la seconde société atteint l'`Invariant` du compte puis, l'écriture intruse passée sur un exercice de la première société, celui de l'exercice — deux messages distincts, assertés par leur mot ; bon marché : la donnée corrompue y est déjà construite) ; A2-4 (sept littéraux) ; A2-2 (gate P1 qualifié au Status, au Change Log et au Dev Agent Record ; journaux non conservés écrits comme tels ; effet global du réglage sur les autres agents écrit).
+- **Écartés, et pourquoi** : B2-3 = E2-3 (le temps (3) de l'aller-retour garde les clés NDJSON hors manifeste — patron des seize autres appels de `strip_column` du fichier (`grep -c "strip_column("` → 19, moins la définition et les deux appels de ce temps), et l'importeur lit par `columnNames` ; retirer les clés n'éprouverait rien de plus aujourd'hui, et le test rougirait bruyamment, non en silence, si l'importeur changeait de lecture) ; B2-4 (contrôles négatifs des quatre autres clauses de `lettering_invariants` — `COUNT(*) < 2`, compte unique, somme nulle, `MIN(id)` — : ces clauses sont vraies en positif sur le scénario mêlé du test, mais aucune mutation de clause n’a été rejouée pour elles — dette de test mineure, écrite comme telle, pour partie antérieure à P1, sans effet sur le code livré) ; E2-2 (`code_of` et l'absence de `CHECK (lettering_key >= 1)` — une clé ≤ 0 ne naît que d'une écriture directe : la primitive pose `MIN(id)` d'une ligne, ≥ 1 par construction, et la restauration rétablit ce qui fut exporté ; P8 interdit de toucher la migration appliquée, une migration neuve pour une donnée inatteignable n'est pas proportionnée) ; E2-4 (`find_group` rend 500 sur une ligne dont le compte est d'une autre société — doctrine voulue par E-2, aucun chemin applicatif ne produit cette donnée ; désormais **testé**, A2-3).
+- **Réversible** : oui.
+
+## C-15-1a-i-13 — 15-1a-i (revue de code P2) : gate ciblé, gate complet reporté au redémarrage de MariaDB
+- **Contexte** : la remédiation P2 touche `kesh-db/src/repositories/letterings.rs` (B2-2) — l'exception `kesh-db` du `CLAUDE.md` exige alors le gate complet même en cours de boucle ; mais le tmpfs de `kesh-mariadb-dev` est plein (C-15-1a-i-10) et l'orchestrateur interdit le gate complet.
+- **Retenu** : gate ciblé — `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets -- -D warnings`, `nextest` sur `binary(letterings_lexical)` et les tests unitaires de `repositories::letterings` (6/6) ; le test A2-3 est compilé, non exécuté. Écrit tel quel au Dev Agent Record. Le gate complet de référence (huit threads) et l'E2E complet reviennent à l'orchestrateur après redémarrage du conteneur, sur le dernier commit de code de cette remédiation.
+- **Écartées** : gate complet à deux threads comme en P1 — interdit par l'orchestrateur, et ce ne serait toujours pas le gate de référence.
+- **Réversible** : sans objet (report de gate, non une décision de code).
+
+
+## C-15-1a-i-14 — 15-1a-i (intégration) : rebasée sur `origin/main` `803f3e15` ; union partout, partition d'audit recomptée, statuts 15-13* de `main`
+- **Contexte** : depuis `dc4bc58b`, `main` a reçu la 15-13a, la 15-7b1, la 15-13b et la 15-6c. Conflits sur le registre des choix, le sprint-status, le module `tests` d'`errors.rs`, la partition de `audit_route_registry.rs` et le PDF du manuel utilisateur. Aucune migration mergée entre-temps ; version Cargo de `main` restée `0.12.1`.
+- **Retenu** : union pour le registre, le sprint-status et les tests d'`errors.rs` ; les clés 15-13* prennent le statut de `main` — **C-15-1a-i-5 est dépassé** (les statuts relevés au T0 sur les branches, dont « 15-13b review », étaient périmés) ; partition des routes recomptée, 114 = 107 tracées (105 + lettrage + délettrage) + 5 exemptées + 2 sans objet ; PDF utilisateur régénéré par `make -B fr`, les deux autres PDF rendus à leur version de `main` (`.tex` inchangés, octets d'horodatage seulement). Gate de référence à huit threads et E2E complet rejoués sur l'état rebasé.
+- **Signalé, non traité** : le § « Passer à la 0.13.0 » du manuel d'administration (`admin-manual.tex`, `sec:maj-0-13`, écrit par la 15-13a sans connaître la migration du lettrage) ne dit pas que la 0.13.0 relève `kesh_version_min_required` et interdit le retour à un binaire antérieur ; seul l'avertissement général « toujours sauvegarder avant la mise à jour » le couvre. Le CHANGELOG, lui, le dit. À trancher par l'orchestrateur — candidat naturel : la 15-1a-ii, ou la préparation de la release v0.13.0.
+- **Écartées** : réécrire le manuel d'administration à l'intégration (texte neuf hors de toute passe de revue, sur une story dont la boucle est close) ; reprendre les statuts 15-13* de la branche.
+- **Réversible** : oui (branche de sauvegarde `backup/15-1a-i-avant-rebase-803f3e15`).

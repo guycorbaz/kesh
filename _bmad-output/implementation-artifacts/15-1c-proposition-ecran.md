@@ -1,334 +1,211 @@
-# Story 15.1c : Proposer un rapprochement, et l'écran qui le porte
+# Story 15.1c : L'écran « Postes ouverts » — consulter, lettrer, délettrer
 
 ## Status
 
-draft
+ready-for-dev *(réécrite le 2026-10-08, à valider — `bmad-create-story validate` avant tout développement)*
 
 ## Story
 
-**As a** indépendant ou fiduciaire qui tient ses comptes dans Kesh,
-**I want** que Kesh me propose les rapprochements évidents et me laisse lettrer à la main les
-autres, depuis un écran dédié,
-**so that** je solde mes comptes sans ressaisir ce que le logiciel voit déjà.
+**As a** indépendant, PME ou fiduciaire,
+**I want** un écran où je choisis un compte et une date, vois ce qui y reste ouvert et pourquoi,
+lettre à la main ce que Kesh ne lettre pas seul — en m'appuyant sur ses propositions —, et
+délettre une erreur,
+**so that** je tienne mes comptes de tiers et de passage soldés sans quitter Kesh, et sache, à
+la clôture, ce que porte chacun d'eux.
 
-Troisième des trois sous-stories issues du **split de la 15-1**. ⚠️ **Suppose 15-1a livrée**
-(elle pose la marque) **et 15-1b spécifiée** (la vue et sa définition d'« ouvert »).
+Dernière des quatre sous-stories du lettrage (#518). **Suppose 15-1a, 15-1a2 et 15-1b livrées** — la
+15-1a étant découpée (C124) en **15-1a-i** (la marque, les routes) et **15-1a-ii** (les gardes), les
+deux ; les renvois « 15-1a Rn / ACn » gardent leur numéro (table de `15-1a-socle-lettrage.md`).
+Story **frontend + manuel + E2E** ; aucune route neuve.
 
-## Décisions héritées, et la correction majeure de la passe 1
+## Reprise du 2026-10-08 — ce qui change
 
-### D5 — Kesh propose, l'utilisateur valide
+La fiche d'août portait le **moteur** de proposition et l'écran. Le moteur est passé en 15-1b
+(backend), avec ses deux réserves tranchées ; ses décisions ouvertes au terme de la passe 3
+sont closes : (3) **pas d'acceptation par lot** — chaque proposition s'accepte par un
+`POST /api/v1/letterings` (15-1a), et une proposition périmée rend son refus nommé
+(`LETTERING_LINE_ALREADY_LETTERED`, `LETTERING_UNBALANCED`…), si bien que le pattern
+`FailedProposal` ne s'applique pas ; (4) **l'exposition du code** est faite par la 15-1a
+(`JournalEntryLineResponse.letteringCode`) et la 15-1b (`LedgerLine.lettering_code`).
 
-Conforme à la règle du dépôt *« un appariement automatique propose, il ne crée jamais »*.
-Aucun lettrage ne s'écrit sans validation humaine.
+**Q4 du dégel — depuis quel écran ?** (C95) Un **écran dédié** `/open-items`, entrée de menu
+**« Postes ouverts »** dans le groupe **Mensuel** (`+layout.svelte:107-111`, entre
+« Réconciliation » et « Rapports ») ; atteint aussi depuis le **Grand livre** d'un compte
+lettrable (lien « Postes ouverts de ce compte ») et depuis la **fiche d'écriture** (le code d'une
+ligne lettrée ouvre le groupe). Écartés : un onglet du Grand livre (un rapport en lecture seule
+n'est pas le lieu d'une action d'écriture) ; un écran « compte » (il n'en existe pas, `/accounts`
+est le plan comptable).
 
-**Les critères se reprennent de la réconciliation plutôt que de s'inventer** — ils y sont
-éprouvés depuis l'Epic 8. ⚠️ **Mais ils ne se transposent PAS tous, et les reprendre en bloc
-casserait trois des quatre cas que le lettrage existe pour couvrir** *(relevé en passe 1,
-vérifié au sol)*.
+## Reçu de la 15-1a — validation P2 du socle (2026-10-09)
 
-**Les critères STRUCTURELS d'éligibilité — dont TROIS sont NEUFS** *(P3-10 : le titre disait « ce qui se reprend », ce que sa propre colonne contredit)* :
+*Section ajoutée par la remédiation de la validation P2 de la 15-1a (registre C113). Elle ne
+réécrit pas cette fiche : elle liste ce que le socle a changé et que **cette** story doit intégrer
+à sa propre validation.*
 
-| critère | valeur | provenance |
-|---|---|---|
-| même compte | identité stricte | ⚠️ **NEUF** |
-| sens opposés | débit ↔ crédit | ⚠️ **NEUF** |
-| **ni l'une ni l'autre déjà lettrée** | `lettering_id IS NULL` **des deux côtés** | ⚠️ **NEUF** |
-| ~~fenêtre de dates~~ | ⛔ **retirée de l'éligibilité** — elle sert au **CLASSEMENT** (AC4-bis) | *(cf. Réserve 2)* |
-| montant | **égalité STRICTE** — ⚠️ voir la Réserve 1 | adapté (la logique existe, le seuil change) |
+1. **Le refus des périodes change de code** : `LETTERING_FISCAL_YEARS_CLOSED` (cité à l'AC6 de cette
+   fiche) est remplacé par **`LETTERING_ALL_LINES_IN_CLOSED_PERIODS`** — « Toutes ces lignes sont dans
+   une période close — exercice clôturé, exercice suivi d'un exercice clôturé, ou période verrouillée :
+   le lettrage n'y change plus. » Il vaut au lettrage comme au délettrage.
+2. **La section du manuel sur le lettrage** énonce la règle entière : au moins une ligne « en période
+   ouverte » (exercice ouvert, aucun exercice postérieur clos, date après le verrou de période). La
+   15-1a écrit déjà la phrase symétrique au § du verrou de période (`user-manual.tex:578-583`).
+3. **Le glossaire** (`user-manual.tex:2308`) est réécrit par la 15-1a avec une dernière phrase
+   provisoire — « Dans cette version, le lettrage manuel et le délettrage se font par l'API
+   (`/api/v1/letterings`) ; l'écran viendra. » — que **cette** story retire en livrant l'écran.
+4. **`LETTERING_LINE_OWNED_BY_DOCUMENT`** porte un texte neutre (« Une de ces lignes appartient à une
+   pièce : elle ne se lettre ni ne se délettre à la main. ») : il sert aussi au refus de dissoudre un
+   groupe `reversal` qui contient une ligne de pièce.
+5. **Prérequis** : la 15-12a ; ordre **15-12a → 15-12b → 15-1a → 15-1a2 → 15-1b → 15-1c** (C112).
 
-⚠️ **La colonne « provenance » n'est pas décorative : trois critères sur cinq sont NEUFS, et
-la rédaction précédente laissait croire le contraire** *(relevé en passe 1)*. Le moteur de
-l'Epic 8 apparie une **transaction bancaire** à une **facture** — la première n'a pas de
-compte du plan comptable, la seconde n'a pas de sens débit/crédit. Son scoring est
-`0,50 × montant + 0,40 × référence + 0,10 × contact` (`kesh-reconciliation/src/matching.rs`) :
-**aucun terme de compte ni de sens**. Et `rules.rs` (Story 8-5b) a **délibérément retiré** le
-seul filtre de sens qui ait existé — *« Sign-agnostic : NE PAS hériter du sign filter 8-4 »*.
+*Ajouts de la remédiation de la validation P3 du socle (2026-10-09, registre C124, C126, C127) :*
 
-⛔ **Conséquence pour T1** : « ne pas dupliquer, extraire si nécessaire » ne vaut que pour la
-fenêtre et le montant. **Il n'y a rien à extraire pour « même compte » et « sens opposés »** —
-un développeur qui les chercherait perdrait son temps devant du code qui n'existe pas.
-
-⛔ **Et le critère `lettering_id IS NULL` manquait** *(relevé en passe 1)*. AC10 de **15-1a**
-refuse de lettrer une ligne déjà marquée — la route est donc protégée —, mais **rien
-n'empêchait le MOTEUR de re-proposer** la paire. L'écran aurait présenté en boucle des
-« rapprochements évidents » que la validation rejette, ruinant la promesse du *so that* :
-*« sans ressaisir ce que le logiciel voit déjà »*.
-
-**Ce qui NE se reprend PAS — les filtres propres à la facture client :**
-
-⚠️ `status = 'validated'` et `paid_at IS NULL` interrogent la table `invoices`. Or **trois
-des quatre cas visés n'ont aucune facture `validated` derrière la ligne à apparier** : les
-comptes **fournisseurs** (`supplier_invoices`), deux **écritures manuelles** qui se soldent,
-et une facture **annulée par un avoir** — qui passe à `status = 'cancelled'`
-(`credit_notes.rs:563`, `supplier_invoices.rs:811`), alors que la paire
-facture/contre-passation est le cas de lettrage **le plus propre qui soit**.
-
-Et le lien manque : **`journal_entry_lines` ne porte ni `invoice_id` ni
-`supplier_invoice_id`** — le seul lien va de `invoices.journal_entry_id` vers l'**entête**
-d'écriture. Un moteur ligne-à-ligne ne peut pas s'appuyer sur le statut de facture sans une
-jointure que le schéma ne permet pas.
-
-**Ces filtres restent légitimes pour TRIER les suggestions du cas facture client impayée ;
-ils ne doivent pas conditionner l'ÉLIGIBILITÉ d'une paire de lignes.**
-
-### D6 — Écran dédié, et sa frontière avec la réconciliation doit être lisible
-
-L'écran ressemblera à celui de la réconciliation. Leur frontière doit être lisible **pour
-l'utilisateur**, pas seulement dans le code : deux écrans voisins qui font des choses
-différentes se confondent.
-
-## Deux réserves ouvertes, à arbitrer avant le développement
-
-### ⛔ Réserve 1 — La tolérance de montant, et les frais bancaires
-
-La réconciliation tolère **5 centimes** (`AMOUNT_TOLERANCE_HUNDREDTHS = 5`,
-`kesh-api/src/routes/reconciliation.rs:60`), précisément pour absorber les frais bancaires.
-Mais la borne « un lettrage = une facture = un règlement » impose l'**égalité stricte** :
-lettrer 1000 avec 300 prétendrait qu'une créance est soldée.
-
-Reprendre la tolérance produirait un système qui **propose ce qu'il refuse ensuite**. La spec
-tranche donc pour l'**égalité stricte des deux côtés**.
-
-⚠️ **Sa conséquence doit être vue avant le développement** : un règlement amputé de frais
-bancaires ne sera **jamais lettrable**, et la facture restera affichée ouverte. Conduite
-alternative, si l'arbitrage change : garder la tolérance au **classement** des suggestions,
-**jamais** au filtre d'éligibilité.
-
-### ⛔ Réserve 2 — La fenêtre de 30 jours tue le cas que AC2 exige nommément
-
-`WINDOW_DAYS = 30` (`reconciliation.rs:55`) a un sens d'origine **borné** : le code note
-lui-même que les *« paiements tardifs > 30 j sont reportés Story 8-5 manual »* (l. 1125).
-
-⚠️ Transposée au lettrage, elle **écarte la contre-passation** — le cas que D5 appelle « le
-plus propre qui soit ». L'écriture d'annulation fournisseur est **datée du jour**
-(`supplier_invoices.rs:786-795`), pas de la facture. Une facture de mars annulée en novembre
-forme une paire parfaite qui ne serait **jamais proposée**.
-
-⚠️ **Et le test d'AC2 passerait quand même** — vert, si son auteur date les deux pièces à
-moins de 30 jours. Un test qui ne dit rien du cas réel. Même effet sur un règlement client à
-45 jours, c'est-à-dire sur le débiteur qu'on veut relancer.
-
-**TRANCHÉ PAR DÉFAUT — la fenêtre s'applique au CLASSEMENT, pas au FILTRE.** *(Explicité en
-passe 2 : « tranchée par défaut » ne disait pas laquelle des deux conduites était le défaut, et
-**AC2 en dépend**.)*
-
-⛔ **C'est la seule lecture cohérente avec AC2**, qui exige un test datant les deux pièces à
-**plus de 30 jours d'écart**. Si la fenêtre filtrait, ce test **échouerait par construction** —
-et deux développeurs auraient raison en même temps : celui qui écrit le moteur avec un filtre à
-30 jours, et celui qui écrit le test tel qu'AC2 le prescrit. C'est exactement la contradiction
-« proposer ce qu'on refuse » de la Réserve 1, transposée à la date.
-
-**La conduite alternative**, si l'arbitrage change : une fenêtre **distincte et justifiée** —
-l'exercice comptable est le candidat naturel —, appliquée cette fois en filtre. ⚠️ Elle
-**oblige alors à réécrire AC2**, dont l'écart de dates devrait rentrer dans la nouvelle
-fenêtre.
+6. **Ordre** : la 15-1a est découpée (C124) — **15-12a → 15-12b → 15-1a-i → 15-1a-ii → 15-1a2 → 15-1b →
+   15-1c**.
+7. **Le manuel de la modification est déjà touché** par la 15-1a-ii : un **sixième** point dans la
+   liste des conditions de *Modifier* (`user-manual.tex:490-508` au 2026-10-09 — « aucune de ses lignes
+   n'est lettrée »), et la réserve « lettrée » aux sites qui promettent « modifiable tant que l'exercice
+   est ouvert ». L'AC12 de cette fiche (« `ENTRY_LETTERED` — si la 15-1a ne l'a pas déjà fait ») n'a
+   donc qu'à **renvoyer** de ce point à la section du lettrage qu'elle écrit, et à retirer « le
+   délettrage se fait par l'API dans cette version ».
+8. **`ENTRY_LETTERED` parle en dernier** (C126) : quand l'écran l'affiche, l'écriture est en période
+   ouverte et le délettrage qu'il prescrit aboutit — la section du manuel peut le dire sans réserve.
+9. **Le glossaire** est désormais à `user-manual.tex:2323` (au 2026-10-09 ; `:2308` au point 3).
+10. **CHANGELOG** : la 15-1a-i complète la section *Ajouté* existante et annonce sous *Modifié* les champs
+    et colonnes neufs ; la 15-1a-ii réécrit les entrées #532 et annonce la contre-passation qui lettre.
+    L'entrée « lettrage » que l'AC14 complète est celle de la 15-1a-i.
+11. **Les lignes des routes de lettrage** portent `fiscalYearId` et `fiscalYearName` (C127) : un groupe à
+    cheval peut montrer deux « écriture n° 12 » — l'écran affiche l'exercice avec le numéro.
 
 ## Critères d'acceptation
 
-**AC1** — L'utilisateur peut lettrer deux lignes **manuellement**, sans proposition.
+**AC1 — Choisir un compte et une date.** Sélecteur des comptes **lettrables** (15-1a R4 — même
+règle que le serveur ; la liste vient du serveur, pas d'une règle recopiée en TypeScript), date
+`asOf` (défaut : aujourd'hui), état dans l'URL (`/open-items?accountId=…&asOf=…`), pour que le
+lien du Grand livre et un rechargement retombent sur la même vue.
 
-**AC2** (porte **D5**) — Kesh **propose** des rapprochements selon les critères
-**structurels** de D5. Aucun lettrage n'est écrit sans validation explicite.
+**AC2 — La liste.** Colonnes : date, n° d'écriture (lien vers la fiche), journal, libellé, pièce
+(lien vers la facture / l'avoir / la facture fournisseur / la transaction), débit, crédit, motif.
+En pied : **total des postes ouverts** et **solde du compte à la date**, égaux (15-1b AC2) — et
+une phrase qui le dit. Pagination du serveur.
 
-⚠️ **La proposition ne filtre PAS sur le statut de la facture.** **Un test nommé par cas** :
-une paire **facture/avoir** (`status = 'cancelled'`), une paire sur un **compte
-fournisseur**, et une paire d'**écritures manuelles** sans facture doivent chacune être
-proposées. ⚠️ **Le test de la contre-passation date les deux pièces à plus de 30 jours
-d'écart** — sinon il passe sans rien prouver (cf. Réserve 2).
+**AC3 — Les motifs, en clair** (15-1b AC4), un libellé et une aide par motif :
+`partiallySettled` (« facture partiellement réglée — reste dû : X »), `paidWithoutSettlementEntry`
+(« marquée payée avant la v0.12.0, sans écriture d'encaissement : le compte porte encore cette
+créance »), `letteredAfterAsOf` (« lettrée après cette date, par … »), `unlettered`.
 
-**AC3** — Le lettrage est **refusé si les deux montants ne sont pas égaux**, et **le message
-de refus nomme la cause** — *« les montants diffèrent ; le lettrage partiel n'est pas encore
-géré »* —, sinon l'utilisateur conclut à un défaut.
+**AC4 — Lettrer à la main.** Cases à cocher sur les lignes **lettrables à la main** (une ligne de
+pièce n'a pas de case, et une infobulle dit pourquoi : « son lettrage suit ses règlements ») ;
+**somme de la sélection** affichée en continu ; bouton **« Lettrer »** actif si ≥ 2 lignes et
+somme **nulle** ; sinon le bouton dit ce qui manque (« la sélection ne s'équilibre pas : écart
+X »). Un refus du serveur s'affiche **par son message** (codes de la 15-1a AC3), jamais en erreur
+générique. Après succès : la liste se recharge, le code du groupe est annoncé.
 
-**AC4** — La marque est **visible** sur la ligne, dans le détail d'écriture et dans l'écran
-dédié ; les lignes partageant une marque sont identifiables entre elles.
+⚠️ **Le lettrage à N lignes est permis** (règlement groupé manuel, acompte imputé sur plusieurs
+factures… hors pièces) ; seules les **propositions** sont limitées aux paires (15-1b AC5).
 
-**AC4-bis** — ⛔ **L'ordre des propositions est DÉFINI, et le plafond s'y adosse.**
-*(P3-3, passe 3 : « la fenêtre s'applique au classement » — mais aucun critère, aucune tâche,
-aucun test ne disait ce qu'était ce classement.)* Les propositions sont rendues par
-**proximité de date décroissante**, avec un départage stable.
+**AC5 — Les propositions.** Panneau **« Rapprochements proposés »** (15-1b AC5), chaque paire avec
+ses deux lignes et un bouton **« Lettrer »** ; **aucun** lettrage sans clic (règle du `CLAUDE.md` —
+« propose, ne crée jamais »). Le refus 422 « trop de lignes » s'affiche tel quel, l'écran reste
+utilisable pour le lettrage manuel.
 
-⚠️ **Sans cet ordre, le plafond tronque un ensemble non ordonné — et retourne AC2 contre
-elle-même** : la contre-passation, **datée du jour**, est celle que la proximité de date place
-**en dernier**, donc la première évincée. Le test d'AC2 passerait quand même sur une fixture à
-trois paires : c'est mot pour mot le « test qui ne dit rien du cas réel » que la Réserve 2
-existe pour empêcher. **Le test vérifie que la paire hors fenêtre est présente ET rangée.**
+**AC6 — Voir et défaire un groupe.** Un groupe s'ouvre par son code (lien depuis la fiche
+d'écriture, le Grand livre, ou un champ « Code ») : ses lignes, son origine en clair
+(« règlement de la facture F-… », « contre-passation », « manuel »), et **« Délettrer »** pour les
+origines `manual` et `reversal`, si l'utilisateur est Comptable ou Admin. Groupe `document` : pas
+de bouton, la phrase « ce lettrage suit les règlements de la pièce — annulez le règlement depuis
+la facture ». Refus `LETTERING_FISCAL_YEARS_CLOSED` affiché par son message.
 
-**AC8** — ⛔ **Le moteur ne travaille QUE sur les comptes que la vue ouvre** — mêmes rôles,
-même borne, **dans la requête**. *(Tranché en passe 4 : c'était le dernier écart structurel
-entre les deux fiches, et il faisait mentir l'arbitrage qui les déclarait alignées.)*
+**AC7 — La frontière avec la réconciliation, pour l'UTILISATEUR** (D6 d'août, conservée) : un
+bandeau visible dit que cet écran **solde des lignes de comptes de tiers et de passage entre
+elles**, et que **le rapprochement des relevés bancaires** se fait dans *Mensuel →
+Réconciliation* ; les comptes bancaires n'apparaissent pas au sélecteur (15-1a R4). Le test E2E
+l'atteint par un `data-testid`, jamais par son libellé.
 
-⚠️ **La borne s'écrit sur `singleton_role`, jamais sur `role`** — leçon payée par 15-1b : la
-colonne générée vaut `NULL` dès qu'un compte est archivé, et le dépôt a déjà corrigé une fois
-un `role = ?` qui scannait l'index là où `singleton_role = ?` rend un accès `const`.
+**AC8 — Écart avec la Balance**, dit à l'écran (15-1b, définitions) : « ce total est cumulatif ;
+la Balance d'un exercice ne lit que ses écritures ».
 
-⛔ **Sans elle, on peut pointer le moteur sur le COMPTE BANCAIRE LEDGER** — que la vue
-n'ouvrira jamais — et y apparier des lignes que la réconciliation gère **par un tout autre
-mécanisme**. 15-1c répondait à ce risque par **un bandeau** (AC5) ; la fiche sœur ferme la
-porte dans le SQL. Un bandeau ne protège pas l'API.
+**AC9 — Le code visible ailleurs.** Fiche d'écriture `/journal-entries/[id]` : colonne « Lettrage »
+(code en lien vers le groupe) ; Grand livre (`GeneralLedgerView.svelte`) : même colonne, et le lien
+« Postes ouverts de ce compte » si le compte est lettrable. Refus `ENTRY_LETTERED` sur
+**Modifier/Supprimer** une écriture : message affiché, avec lien vers le groupe.
 
-**AC5** (porte **D6**) — ⚠️ **L'écran énonce sa frontière avec la réconciliation bancaire,
-pour l'UTILISATEUR.** Deux exigences **distinctes** : **(1)** un texte **visible** — bandeau
-ou aide contextuelle — dit ce que cet écran fait et ce qu'il ne fait pas ; **(2)** le test
-E2E l'atteint par un `data-testid` stable et **jamais** par son libellé traduit. Un
-`data-testid` ne satisfait pas (1) : il est invisible.
+**AC10 — Rôles.** Consultation : voit tout, n'a ni cases, ni « Lettrer », ni « Délettrer ».
 
-**AC6** — ⛔ **Le moteur ne voit QUE les lignes de la société de l'appelant, et c'est
-vérifié par jointure.** *(Relevé en passe 1 : 15-1c n'avait **aucune** mention de scoping —
-zéro occurrence de `company_id`, « multi-tenant » ou « IDOR ».)*
+**AC11 — i18n.** Clés `open-items-*` (dossier `features/open-items/` — propriété vérifiée par
+`lint-i18n-ownership`) et les quelques clés `journal-entries-*` / `reports-*` d'AC9, dans les
+**quatre** locales ; `nav-open-items`. Les bornes **exactes** de
+`frontend/src/lib/shared/i18n-keys.test.ts` (`sitesTotal`, etc., `:491-494`) sont relevées et
+justifiées en commentaire.
 
-⚠️ **15-1c ouvre une surface d'API NEUVE** — le moteur et ses routes de proposition — par un
-chemin **distinct** des routes de lettrage que 15-1a a pris soin de scoper (son AC11). La
-discipline ne s'hérite pas : elle se réécrit ici. `journal_entry_lines` n'ayant **aucun**
-`company_id`, la vérification passe par jointure sur `journal_entries.company_id`.
+**AC12 — Manuel utilisateur** (`docs/manual/fr/user-manual.tex`) : une section **« Lettrage et
+postes ouverts »** — ce qu'est un lettrage (groupe à somme nulle, sur un compte), les trois
+origines, qui lettre quoi (les pièces d'office, la contre-passation d'office, le reste à la main),
+la date et l'invariant, les propositions, le délettrage et sa borne d'exercice (C94), **ce que le
+lettrage ne fait pas** (pas de lettrage partiel, pas de tolérance de montant : le solde du reste
+pour une facture, une écriture d'ajustement sinon ; une facture payée par écriture manuelle se
+règle sur la facture), la frontière avec la réconciliation. Et la **propagation** dans les
+sections existantes, **toutes greppées** : Modifier/supprimer une écriture (`:483`,
+`ENTRY_LETTERED` — si la 15-1a ne l'a pas déjà fait), contre-passation (`:604`), règlements
+(`:1122`), avoirs (`:1225`), factures fournisseurs (`:1354-1372`), Grand livre (`:1790`).
+PDF régénéré (`make fr`), contrôlé **aplati** (`pdftotext … | tr '\n' ' '`).
 
-⚠️ **Si une route accepte un identifiant externe** — un compte, une ligne —, le refus est un
-**404 indiscernable** de « inconnu », jamais un message qui nomme la cause : c'est la
-convention anti-IDOR du dépôt (`kesh-api/src/routes/products.rs:343`), et **le dépôt a déjà
-payé un défaut de cette classe (KF-002)**.
+**AC13 — E2E** (`frontend/tests/e2e/open-items.spec.ts`), sélecteurs `data-testid` seuls (garde
+#326) : (1) une facture soldée par un règlement n'apparaît pas ouverte, sa créance porte un code ;
+(2) deux écritures manuelles opposées sur un compte de passage → proposées → « Lettrer » → plus
+ouvertes, code visible sur la fiche d'écriture ; (3) délettrer → de nouveau ouvertes ; (4) la
+sélection déséquilibrée garde « Lettrer » inactif ; (5) le bandeau de frontière est présent.
+**Lancée au dernier commit de code** (D7, rétrospective de l'Epic 25), jugée fichier par fichier
+contre `docs/testing.md` § « Les échecs attendus ».
 
-⛔ **RECTIFIÉ — l'inscription au Pattern 5 ne s'applique PAS ici, et l'affirmation qui la
-motivait était fausse** *(P3-6, passe 3)*. `MULTI-TENANT-SCOPING-PATTERNS.md` n'exige rien de
-« tout nouvel endpoint » : il impose un **ordre de verrous** à ceux qui en prennent **plus
-d'un**, et une inscription **seulement en cas de divergence délibérée** (« deny list »). Or
-**les routes de 15-1c sont des routes de LECTURE** — aucun `FOR UPDATE`, donc **aucune
-séquence de verrous à inscrire**. L'exigence avait été recopiée de 15-1a T4, où elle est
-légitime (le lettrage prend le sentinel `companies` **et** `fiscal_years FOR UPDATE`).
-
-⚠️ Et le raffinement de la passe 2 se contredisait lui-même : le tableau « Where This Applies »
-a trois colonnes — `Endpoint | Lock sequence | File` — et **pas de colonne de scoping**.
-
-**Ce qui s'applique réellement à une route de lecture**, et qui est déjà écrit plus haut : la
-**jointure de scoping** sur `journal_entries.company_id` et le **404 indiscernable**.
-
-**AC7** — ⛔ **Le moteur est BORNÉ, en portée et en volume.** *(Relevé en passe 1 : T1 et T2
-tenaient en une phrase, sans limite ni portée.)*
-
-- **Portée** : le moteur travaille sur **un compte choisi**, jamais sur la société entière.
-- ⛔ **Jeu candidat borné — c'est LA borne, et elle agit AVANT le calcul** *(P3-2, passe 3 :
-  les deux bornes précédentes agissaient **après**, l'appariement ayant déjà eu lieu)* : le
-  nombre de lignes ouvertes **chargées** pour un compte est plafonné. Au-delà, **refus
-  explicite** — *« trop de lignes ouvertes sur ce compte, affinez »* — et **jamais** une
-  troncature silencieuse.
-- **Volume de sortie** : plafonné à **500** (`MAX_LIMIT`, patron du dépôt —
-  `journal_entries.rs:541`, repris par `credit_notes`, `payment_batches`, `supplier_invoices`,
-  `users`, et déjà cité par 15-1b T2), un `?limit=` reçu étant **écrêté**. *(Le chiffre
-  manquait : « le plafond tient » n'est pas un test tant qu'aucune valeur n'est nommée.)*
-
-⚠️ **Pourquoi la borne de sortie ne suffisait pas, et pourquoi l'analogie était fausse.** Le
-`LIMIT 50` de la réconciliation borne le **jeu candidat**, dans un `WHERE` que la fenêtre de
-dates **et** la tolérance de montant réduisent déjà. Ici, la Réserve 2 a retiré la fenêtre du
-filtre et AC2 interdit `status`/`paid_at` : **il ne reste aucun prédicat réducteur**. Et la
-réconciliation est un problème **1 → N** — une transaction, ses factures voisines — quand le
-lettrage est **N → N** : toutes les lignes ouvertes d'un compte appariées entre elles. Le
-premier se borne par un `LIMIT`, le second non.
-
-✅ **Ce que la Réserve 1 offre gratuitement, et que la fiche ne relevait pas** : l'égalité
-**stricte** des montants rend l'appariement **groupable par montant** — un regroupement en
-mémoire, **linéaire**, plutôt qu'une auto-jointure quadratique.
-
-⚠️ **La réconciliation, dont cette story dit reprendre les critères, porte TROIS garde-fous
-pour le même genre de calcul** : `LIMIT 50` dans le SQL candidat, `MAX_PROPOSALS_LIMIT = 500`
-côté route — dont le commentaire dit en toutes lettres *« défense anti-DoS contre
-`?limit=999999` »* — et un **index dédié** créé pour l'occasion.
-
-⛔ **Deux facteurs aggravent le cas ici, et ils sont propres à cette story** : la **Réserve 2**
-envisage de retirer la fenêtre de dates du filtre — ce qui ferait comparer **toutes** les
-lignes ouvertes d'un compte entre elles, sans borne temporelle ; et **AC2 interdit de filtrer
-sur le statut de facture**, donc l'ensemble candidat ne peut plus être réduit comme le fait la
-réconciliation. Sur un compte fournisseur actif depuis plusieurs exercices — que **D3 autorise
-explicitement** à lettrer à cheval —, un appariement **quadratique non plafonné** est un
-calcul lourd et bloquant.
-
-⚠️ **L'index nécessaire est créé par 15-1a, pas ici** *(tranché en passe 2 : AC7 exigeait un
-composite que **personne** ne créait — 15-1a ne posait qu'un `idx_jel_lettering` simple)*. La
-migration vit dans le socle, donc **`idx_jel_account_lettering (account_id, lettering_id)` y a
-été ajouté** ; 15-1c le **consomme**, elle ne le crée pas.
-
-⚠️ **À vérifier au démarrage de 15-1c** : que le socle l'a bien livré. Sans lui, la requête
-`WHERE account_id = ? AND lettering_id IS NULL` balaie le compte entier — les deux index
-simples préexistants — `idx_jel_entry`, `idx_jel_account` **et `idx_jel_project`**
-*(P3-9 : le décompte disait deux, il y en a **trois**)* — ne la servent pas.
-
-## ⛔ Décisions ouvertes au terme de la passe 3
-
-**Elles ne se tranchent ni par l'orchestrateur ni par le développeur** — quatre sur cinq sont
-des **coutures entre les trois fiches**, pas des défauts internes à celle-ci.
-
-✅ **(1) RÉSOLUE — l'arbitrage du 2026-08-26 a supprimé la contradiction.** *(Était le HIGH
-P3-1 : 15-1c exigeait qu'une paire fournisseur payée soit **proposée**, 15-1b qu'elle soit
-**invisible** — le même écran aurait dit « 0 ligne ouverte » et « 1 rapprochement proposé » sur
-les mêmes deux lignes.)*
-
-**« Ouvert » signifie désormais « non lettré », un point c'est tout** : la vue de 15-1b ne
-joint plus aucune table de factures et ne regarde plus `paid_at`. La règle de D5 (« ne jamais
-filtrer sur la facture ») devient la règle **commune**, non plus une divergence à arbitrer.
-
-⚠️ **Mais « le même ensemble » ne devient vrai qu'avec AC8 ci-dessous** *(P4-1, passe 4 : la
-première rédaction de cet arbitrage l'affirmait sans réserve, alors que la décision ouverte
-(2) du même document disait le contraire trois paragraphes plus loin)*. Il restait **un** écart
-structurel : la borne de rôle de compte, que 15-1b porte dans sa requête et que le moteur
-n'avait pas.
-
-⚠️ **Ce que 15-1c y gagne au passage** : sa règle n'a plus à être justifiée contre sa sœur, et
-le test de la paire fournisseur d'AC2 n'a plus de test miroir contradictoire à honorer.
-
-**(3) MEDIUM — l'acceptation d'une proposition n'a ni contrat, ni convention de lot, ni
-traitement de la proposition périmée** *(P3-8)*. ⚠️ Si l'écran permet d'accepter **plusieurs**
-propositions — ce que « l'écran ressemblera à celui de la réconciliation » laisse attendre —,
-le **pattern `FailedProposal` du `CLAUDE.md` s'applique** et rien ne le nomme : identifiant
-métier, `error_code` canonique, HTTP 200 sur succès partiel. Et entre l'affichage et
-l'acceptation, la paire peut avoir été lettrée ou son écriture modifiée.
-
-**(4) MEDIUM — AC4 n'a ni tâche ni test** *(P3-5)*, et il exige une exposition d'API que
-personne ne porte : `JournalEntryLineResponse` (`kesh-api/src/routes/journal_entries.rs:101`)
-n'a **aucun champ de lettrage**, et la passe 8 de 15-1a cite ce DTO comme **preuve d'absence
-d'effet de bord** — donc comme raison de **ne pas** le toucher. ⚠️ **Et AC4 a besoin du CODE,
-pas de l'identifiant** : `lettering_id` est un entier opaque, le code `A`, `B` vit dans
-`letterings.code`. C'est le défaut que 15-1a T5-bis nomme pour l'export, transposé à l'API.
+**AC14 — CHANGELOG** : l'entrée « lettrage » de `[0.13.0]` (15-1a, 15-1a2) est complétée par
+l'écran — **une** entrée cohérente, pas trois fragments.
 
 ## Tasks
 
-- [ ] **T1** — Moteur de proposition (D5). ⚠️ **Ce qui s'extrait, ce sont la fenêtre et le
-      montant** — « même compte », « sens opposés » et `lettering_id IS NULL` sont **neufs**,
-      sans précédent dans `kesh-reconciliation`. Et **ne pas reprendre** les filtres de
-      facture (`status`, `paid_at`), propres à `invoices`.
-      ⛔ **Borne de volume et index (AC7)** avant d'écrire la requête : portée par compte,
-      plafond serveur, composite `(account_id, lettering_id)`.
-      ⛔ **Tri par proximité de date décroissante, départage stable (AC4-bis)** *(P4-4 : le
-      critère existait depuis la passe 3 et n'avait ni tâche ni test)*. **Sans lui, le plafond
-      tronque un ensemble non ordonné** — et évince en premier la contre-passation que la
-      Réserve 2 protège.
-      ⛔ **Borne de rôle (AC8)**, sur `singleton_role`.
-- [ ] **T2** — Routes de proposition. ⛔ **Scoping par jointure (AC6)**, écrêtage du `?limit=`
-      reçu (AC7), et **borne de rôle sur `singleton_role`** (AC8).
-      ⚠️ *Ne PAS inscrire ces routes au tableau du Pattern 5 — AC6 l'a rectifié en passe 3 :
-      ce sont des routes de **lecture**, sans séquence de verrous. La mention traînait ici
-      (P4-2), corriger le critère sans greper la tâche étant le geste même que la
-      § Propagation post-patch décrit.*
-- [ ] **T3** — Écran dédié, avec la frontière énoncée (AC5).
-- [ ] **T4** — Tests : **AC2 en priorité**, ses trois cas nommés, avec l'écart de dates
-      réaliste sur la contre-passation. Puis AC3 et AC5.
-      ⛔ Plus **AC4-bis** (la paire hors fenêtre est **présente ET rangée** — pas seulement
-      présente : c'est la différence entre un test qui prouve et un test qui passe),
-      **AC8** (un compte hors `Receivable`/`Payable` ne rend **aucune** proposition),
-      **AC6** (une ligne d'une autre société n'est **jamais** candidate — test d'IDOR),
-      **AC7** (le plafond tient, et un `?limit=` démesuré est écrêté), et le cas de **la ligne
-      déjà lettrée** : elle ne doit **jamais** apparaître en proposition. Ce dernier manquait
-      à la fois du tableau des critères **et** de la liste des tests.
-- [ ] **T5** — i18n : quatre locales dès l'écriture, allowlist vide.
-- [ ] **T6** — Manuel utilisateur : ce que le lettrage fait, et **ce qu'il ne fait pas
-      encore** — le partiel et le groupé.
+- [ ] **T1** (AC1–AC6, AC8, AC10) — `frontend/src/lib/features/open-items/` (API, types, composants)
+      et la route `frontend/src/routes/(app)/open-items/+page.svelte` ; entrée de menu.
+- [ ] **T2** (AC7) — Bandeau de frontière.
+- [ ] **T3** (AC9) — Fiche d'écriture, Grand livre, refus `ENTRY_LETTERED`.
+- [ ] **T4** (AC11) — i18n quatre locales, bornes du test des clés.
+- [ ] **T5** (AC12) — Manuel FR + PDF ; DE/IT/EN : noter « à traduire » si le manuel y est vide.
+- [ ] **T6** (AC13) — Spec E2E ; tests Vitest des composants (somme de sélection, état du bouton,
+      cases absentes sur une ligne de pièce, rôle Consultation).
+- [ ] **T7** (AC14) — CHANGELOG ; `README.md` « Feuille de route » (le lettrage livré) ;
+      `website/` si une page le promet ou le tait.
 
 ## Dev Notes
 
-⚠️ **Le sélecteur E2E ne se fige jamais sur un libellé traduit** — `data-testid` sans
-exception (garde #326).
+- Modules : `features/open-items`, `features/journal-entries`, `features/reports`, `kesh-i18n`,
+  `docs/manual` — cinq, au seuil du découpage préventif.
+- Le sélecteur E2E ne se fige jamais sur un libellé traduit (garde #326, allowlist décroissante).
+- Le montage E2E local : `KESH_COOKIE_SECURE=false`, `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE` (CLAUDE.md).
 
-⚠️ **Un E2E n'est pas un test comme un autre** : c'est le seul qui vérifie qu'une valeur
-traverse réellement la frontière HTTP.
+## Dev Agent Record
+
+### Agent Model Used
+
+### Completion Notes List
+
+### File List
 
 ## Change Log
+
+### Reçu de la validation P3 du socle — 2026-10-09 (Opus 5.5, remédiation de la 15-1a)
+
+Section « Reçu de la 15-1a » complétée des points 6 à 11 (registre C124, C126, C127) : ordre avec la
+15-1a découpée ; le manuel de la modification (sixième condition, réserves) déjà touché par la
+15-1a-ii ; `ENTRY_LETTERED` en dernier ; glossaire à `:2323` ; rubriques du CHANGELOG ; exercice par
+ligne dans les routes. Dépendance de tête mise à jour. Corps non réécrit.
+
+### Reprise du 2026-10-08 — réécriture contre le modèle réel (Opus 5.5, en autonomie)
+
+Corps réécrit (registre C95, C99). Le moteur de proposition passe en 15-1b ; la fiche devient
+l'écran seul, avec l'emplacement tranché (Q4 du dégel). Les décisions ouvertes (3) et (4) de la
+passe 3 d'août sont closes (tête de fiche). **14 critères** (AC1–AC14), **7 tâches** (T1–T7),
+recomptés depuis ce fichier.
+
+*Entrées antérieures à la reprise — le corps qu'elles décrivent a été remplacé :*
+
 
 ### Passe 4 de `validate` — 2026-08-26 (Sonnet, contexte frais)
 

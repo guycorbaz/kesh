@@ -26,7 +26,14 @@ function mockEntry(
 		reversesEntryId: null,
 		description: 'Test',
 		version: 1,
-		lines: lines.map((l) => ({ id: l.lineOrder, projectId: null, ...l })),
+		lines: lines.map((l) => ({
+			id: l.lineOrder,
+			projectId: null,
+			letteringKey: null,
+			letteringCode: null,
+			letteringOrigin: null,
+			...l
+		})),
 		createdAt: '2026-04-10T10:00:00',
 		updatedAt: '2026-04-10T10:00:00'
 	};
@@ -40,7 +47,10 @@ describe('lineResponseToDraft', () => {
 			lineOrder: 1,
 			debit: '100.00',
 			credit: '0.0000',
-			projectId: null
+			projectId: null,
+			letteringKey: null,
+			letteringCode: null,
+			letteringOrigin: null
 		});
 		expect(draft).toEqual({ accountId: 42, debit: '100.00', credit: '', projectId: null });
 	});
@@ -52,7 +62,10 @@ describe('lineResponseToDraft', () => {
 			lineOrder: 2,
 			debit: '0.0000',
 			credit: '100.00',
-			projectId: null
+			projectId: null,
+			letteringKey: null,
+			letteringCode: null,
+			letteringOrigin: null
 		});
 		expect(draft).toEqual({ accountId: 43, debit: '', credit: '100.00', projectId: null });
 	});
@@ -64,7 +77,10 @@ describe('lineResponseToDraft', () => {
 			lineOrder: 1,
 			debit: '10.1234',
 			credit: '0',
-			projectId: null
+			projectId: null,
+			letteringKey: null,
+			letteringCode: null,
+			letteringOrigin: null
 		});
 		expect(draft.debit).toBe('10.1234');
 		expect(draft.credit).toBe('');
@@ -77,7 +93,10 @@ describe('lineResponseToDraft', () => {
 			lineOrder: 1,
 			debit: '100.00',
 			credit: '0',
-			projectId: 7
+			projectId: 7,
+			letteringKey: null,
+			letteringCode: null,
+			letteringOrigin: null
 		});
 		expect(draft.projectId).toBe(7);
 	});

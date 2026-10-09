@@ -1,644 +1,265 @@
-# Story 15.1a : Le socle du lettrage — la marque, sa portée, son cycle de vie
+# Story 15.1a : Le socle du lettrage — index (découpée)
 
 ## Status
 
-draft
+split
 
-## Story
+⛔ **CORPS VIDÉ — cette fiche ne contient plus ni décisions, ni critères, ni tâches** *(découpée le
+2026-10-09 à la validation P3, C124)*. Elle ne garde que les pointeurs vers ses deux sous-fiches, la
+table qui dit où chaque élément est allé, le recompte aux deux bornes, et l'historique des passes
+(Change Log). *(Précédents : la 15-1 et la 15-12 ; la définition du statut `split` l'impose.)* Les
+fiches sœurs et le registre qui citent « 15-1a R5 », « 15-1a AC5 »… restent justes : **la
+numérotation est conservée** dans les sous-fiches (C124).
 
-**As a** indépendant ou fiduciaire qui tient ses comptes dans Kesh,
-**I want** qu'une créance et son règlement puissent être marqués comme se soldant l'un
-l'autre, et que cette marque survive à tout ce que l'application fait par ailleurs à une
-écriture,
-**so that** ce que le logiciel affirme sur un solde reste vrai le lendemain.
+## Les deux sous-fiches
 
-Première des trois sous-stories issues du **split de la 15-1** (passe 3 de `validate`,
-2026-08-25). Couvre la part **FR85/FR86** qui touche la persistance et les gardes.
-
-⚠️ **Socle : les deux autres sous-stories la supposent faite.** 15-1b lit la marque pour
-bâtir la vue ; 15-1c la pose depuis un écran. Aucune des deux n'est spécifiable tant que le
-porteur de la marque et son cycle de vie ne sont pas tranchés.
-
-## Pourquoi cette story existe séparément
-
-La 15-1 d'origine a subi trois passes de `validate` sans converger : `HIGH → MEDIUM → HIGH`.
-Les quatre HIGH de la passe 3 avaient tous la même origine — **aucune passe n'avait suivi les
-chemins de code qui écrivent, effacent ou soldent les lignes que le lettrage prétend
-porter**. Deux d'entre eux tombent dans cette story, et ils suffisent à la justifier :
-
-| | ce que le code fait aujourd'hui | preuve |
+| ordre | fiche | ce qu'elle porte |
 |---|---|---|
-| **modifier** une écriture | `update` **supprime toutes ses lignes** puis les réinsère avec de nouveaux `id` | `journal_entries.rs:981`, dans `update` (l. 805) |
-| **supprimer** une écriture | deux chemins y mènent, pas un : la route, **et** `invoices::delete` via `delete_in_tx` | `invoices.rs:1338` |
-
-Une marque posée sur une ligne sans traiter ces deux chemins est **perdue au premier
-enregistrement**, en laissant sa contrepartie marquée — donc réputée soldée. La facture
-quitte la vue des ouverts **en restant impayée** : le défaut est muet, et il fausse le solde
-sans rien signaler.
-
-## Décisions tranchées par le Project Lead — 2026-08-25
-
-Les deux décisions que les passes 1 et 3 avaient laissées ouvertes sont **arbitrées**. Elles
-se figent l'une et l'autre dans la migration (P8 interdit de revenir sur un fichier appliqué),
-et elles conditionnent le DDL de T1.
-
-### Le porteur — une table `letterings`
-
-```sql
-CREATE TABLE letterings (
-    id          BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
-    company_id  BIGINT NOT NULL,
-    seq         BIGINT NOT NULL
-                COMMENT 'Rang du lettrage dans la société — SEUL support du compteur ; `code` en est la projection',
-    code        VARCHAR(16) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL
-                COMMENT 'Projection base 26 bijective de seq (A, B, … Z, AA) — engendré, jamais saisi',
-    created_at  DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
-    created_by  BIGINT NOT NULL,
-    CONSTRAINT fk_letterings_company FOREIGN KEY (company_id)
-        REFERENCES companies(id) ON DELETE RESTRICT,
-    CONSTRAINT fk_letterings_user FOREIGN KEY (created_by)
-        REFERENCES users(id) ON DELETE RESTRICT,
-    CONSTRAINT uq_letterings_company_seq  UNIQUE (company_id, seq),
-    CONSTRAINT uq_letterings_company_code UNIQUE (company_id, code),
-    CONSTRAINT chk_letterings_seq_positive CHECK (seq > 0),
-    CONSTRAINT chk_letterings_code_nonempty CHECK (CHAR_LENGTH(code) > 0)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-ALTER TABLE journal_entry_lines
-    ADD COLUMN lettering_id BIGINT NULL
-        COMMENT 'Marque de lettrage — deux lignes soldées partagent la même valeur',
-    ADD CONSTRAINT fk_jel_lettering FOREIGN KEY (lettering_id)
-        REFERENCES letterings(id) ON DELETE RESTRICT;
-
-CREATE INDEX idx_jel_lettering ON journal_entry_lines (lettering_id);
-CREATE INDEX idx_jel_account_lettering ON journal_entry_lines (account_id, lettering_id);
-```
-
-⛔ **Les DEUX index, et ce n'est pas une redondance** *(relevé en passe 2 de **15-1c**, qui
-exigeait un composite que personne ne créait — la migration vit ici)* : ils servent deux
-requêtes que le préfixe gauche ne permet pas de confondre.
-
-| requête | index qui la sert |
-|---|---|
-| « les lignes portant la marque X » — retrouver la contrepartie | `idx_jel_lettering (lettering_id)` |
-| « les lignes **ouvertes** du compte A » — le moteur de 15-1c et la vue de 15-1b | `idx_jel_account_lettering (account_id, lettering_id)` |
-
-⚠️ Le composite rend `idx_jel_account (account_id)` **redondant** — il en est le préfixe
-gauche. On ne le supprime pas pour autant : il vit dans une migration **déjà appliquée**, et
-P8 interdit d'y revenir. Le laisser coûte un index de plus en écriture ; le retirer se ferait
-dans une migration ultérieure, hors périmètre.
-
-⚠️ **L'index se déclare à part, et ce n'est pas une coquetterie** *(P6-8)* : le seul précédent
-d'`ALTER TABLE journal_entry_lines` du dépôt
-(`20260702000001_projects_analytics.sql:38-42`) fait `ADD COLUMN` + `ADD CONSTRAINT`, **puis**
-un `CREATE INDEX` séparé. Les deux formes sont valides en MariaDB — mais P8 rendra ce fichier
-intouchable, et diverger d'un précédent qu'on ne pourra plus aligner coûte pour rien.
-
-⚠️ **Les deux `CHECK` ne sont pas décoratifs** : `seq` est le **porteur unique de la justesse
-du compteur**, et les tables voisines en portent toutes (`chk_journal_entries_entry_number_positive`,
-`contact_persons`, `invoice_reminders`, `api_keys`).
-
-⚠️ **`utf8mb4_bin` sur `code` est le bon choix** — le code est **engendré**, l'unicité doit
-être octet-exacte. Le commentaire ne dit donc pas « saisie » : une recherche `WHERE code = ?`
-sur une entrée en minuscules ne rendrait rien, et c'est à 15-1c d'imposer la mise en
-majuscules si elle ouvre un champ de recherche.
-
-⛔ **La colonne `seq` n'est pas un confort : sans elle, le compteur est FAUX.** *(P5-1,
-CRITICAL, relevé en passe 5.)* Le gap lock d'`entry_number` porte sur un **entier** ; sur du
-texte, `MAX()` trie **lexicographiquement**, et la séquence bijective n'est pas ordonnée
-ainsi — `MAX('Z', 'AA', … , 'AZ')` rend **`Z`**, quand la suite attend `BA`. **Le compteur
-repartirait en boucle après la vingt-sixième lettre**, et `uq_letterings_company_code` ferait
-alors échouer le lettrage — bruyamment, mais à chaque tentative.
-
-**Le mécanisme, en trois temps** : le gap lock s'applique à `seq`
-(`SELECT COALESCE(MAX(seq), 0) + 1 … WHERE company_id = ? FOR UPDATE`) — **transposition
-exacte** du pattern d'`entry_number` ; `code` est **calculé en Rust** depuis `seq` (base 26
-bijective) ; les deux contraintes d'unicité tiennent le filet. ⚠️ **La conversion est une
-fonction pure : elle se teste en `kesh-core`, sans base** — et ses cas limites sont `26 → Z`,
-`27 → AA`, `52 → AZ`, `53 → BA`, `702 → ZZ`, `703 → AAA`.
-
-**Les comportements de FK sont tranchés** *(P5-3)*, conformes aux conventions du dépôt
-(`companies(id) ON DELETE RESTRICT` partout ; `users(id) ON DELETE RESTRICT` pour un auteur
-d'action, cf. `bank_imports.imported_by_user_id`) :
-
-- `journal_entry_lines.lettering_id` → `letterings(id)` **`ON DELETE RESTRICT`** : on ne
-  supprime pas une entrée encore référencée. ⚠️ `SET NULL` ferait disparaître une marque des
-  deux côtés **sans trace**, exactement le défaut muet qu'AC8 ferme ailleurs.
-
-⛔ **`letterings` est APPEND-ONLY : délettrer ne supprime PAS la ligne d'entrée**, il met les
-deux `lettering_id` à `NULL` et laisse l'entrée en place. *(P6-5.)* Sans cette règle, le
-compteur **recule** — `MAX(seq)` retombe d'un cran — et **le code est RÉÉMIS** : l'utilisateur
-qui a imprimé ou dicté un `F` le retrouverait plus tard sur une paire sans rapport. L'audit
-d'AC13 enregistrerait alors `created F` / `removed F` / `created F` sans que rien ne
-distingue **deux lettrages différents portant la même désignation** — précisément ce contre
-quoi AC13 existe.
-
-⚠️ **Conséquence du choix append-only : le `RESTRICT` n'est jamais dans le chemin nominal.**
-Il reste comme garde-fou contre une suppression qu'aucun code ne doit tenter.
-- `letterings.company_id` → `companies(id)` **`RESTRICT`**, `letterings.created_by` →
-  `users(id)` **`RESTRICT`** : l'auteur d'un lettrage reste identifiable, ce dont AC13 dépend.
-
-**Pourquoi, et ce n'est pas un choix d'élégance** — l'alternative écartée était une colonne
-`lettering_code` nullable sur `journal_entry_lines` :
-
-- ⚠️ **`journal_entry_lines` ne porte aucun `company_id`** (zéro occurrence dans les
-  migrations ; le scoping y passe par jointure, `journal_entries.rs:1226` le documente). Le
-  seul pattern de génération scopée sous concurrence éprouvé dans le dépôt — le gap lock
-  d'`entry_number`, `SELECT COALESCE(MAX(…))+1 … WHERE company_id = ? … FOR UPDATE`
-  (`journal_entries.rs:232`) — verrouille **directement** une `company_id` de la table cible.
-  `letterings` ayant la sienne, **il se transpose à l'identique**.
-- ⚠️ **Et il garde un filet au niveau du schéma** : si le verrouillage faiblit,
-  `UNIQUE (company_id, code)` rattrape la violation. Sur une colonne de
-  `journal_entry_lines`, **aucune contrainte n'était possible** — une contrainte d'unicité y
-  aurait d'ailleurs **interdit AC1**, puisque deux lignes lettrées ensemble portent le *même*
-  code. Une erreur de verrouillage n'y aurait été détectée par **rien**.
-- **`created_at` et `created_by` viennent gratuitement**, et AC13 en a besoin. La colonne
-  n'avait nulle part où les mettre.
-
-⚠️ **Conséquence à ne pas oublier** : `reset_demo` a une liste de `DELETE` **explicite** —
-`letterings` doit y être ajoutée (cf. T2).
-
-### Le format — une séquence alphabétique par société
-
-**`A`, `B`, … `Z`, `AA`, `AB`, …** — base 26 bijective, engendrée par le serveur, **portée
-société** (chaque société repart de `A`).
-
-C'est le format des logiciels comptables suisses, Bexio compris — dont **D6 fait déjà le
-modèle de l'écran**. Il est court, se lit à l'œil sur une ligne d'écriture et **se dicte au
-téléphone**, ce qui compte pour une fiduciaire qui appelle son client à propos d'une facture.
-
-⚠️ **Écarté : un identifiant sans compteur** (ULID, UUID). Il supprimerait toute contention,
-mais 15-1c exige que la marque soit **visible sur la ligne** — une chaîne de 26 caractères y
-est inutilisable, et indictable.
-
-⚠️ **`VARCHAR(16)` laisse très large** : la séquence n'atteint `AAA` qu'après 702 lettrages
-dans une même société, et seize caractères en admettent bien davantage. Le choix d'un
-`VARCHAR` plutôt que d'un entier est ce qui rend la séquence alphabétique possible **sans
-conversion à l'affichage**.
-
-## Décisions héritées de la 15-1
-
-### D1 — La marque porte sur la LIGNE, pas sur l'écriture
-
-⚠️ **Pour une raison de fond : le lettrage porte sur un COMPTE.** Une écriture de vente
-touche le compte client, un compte de produit et un compte de TVA. « Cette écriture est
-lettrée » n'a aucun sens comptable — ce qui est soldé, c'est la **ligne au compte client**.
-Une marque posée sur l'écriture rendrait la vue « ce qui reste ouvert **sur le compte
-1100** » incalculable sans retrouver la ligne concernée.
-
-### D2 — Un lettrage, une facture, un règlement
-
-Décision de kickoff de l'Epic 15, déclarée **normative pour la 15-1** : ni paiement
-**partiel**, ni règlement **groupé**. *(Reportée ici en passe 6 — **D2 n'était nommée par
-aucune des trois fiches issues du split**, et c'est la septième récidive du geste « une
-décision que ne porte aucun critère ».)*
-
-⚠️ **C'est elle qui fonde AC12** : l'égalité des montants n'est pas une restriction technique
-mais la conséquence directe de la borne — tant que le partiel est hors périmètre, lettrer
-1000 avec 300 prétendrait qu'une créance est soldée.
-
-⚠️ **Et c'est elle qui justifie la forme « PAIRE » de toute la story** — deux lignes, jamais
-plus. *(`epics.md` écrit « deux **ou plusieurs** écritures » : la restriction à deux est
-correcte au regard de D2, mais rien ne l'y reliait.)*
-
-### D3 — Lettrer sur un exercice clôturé : OUI. Délettrer : NON
-
-L'asymétrie est délibérée et elle est **la** décision comptable de cette story : lettrer ne
-modifie aucun montant, donc n'altère pas un exercice clos ; délettrer rouvrirait une créance
-que le bilan porte déjà.
-
-⚠️ **C'est D3, et non « clore quand il n'y a plus d'écritures », qui rend le lettrage à
-cheval possible** — une créance ouverte au 31.12 est **normale**, elle figure au bilan.
-Attendre que tout soit réglé reviendrait à ne jamais clôturer.
-
-*Note vérifiée en passe 3 : `fiscal_years::reopen` existe (Story 14-2 — Admin, motif
-obligatoire, tracé à l'audit). Il ne contredit pas D3, il en est la **soupape** : ce que le
-refus de délettrage rend impossible reste atteignable par une réouverture explicite et
-tracée.*
-
-## Critères d'acceptation
-
-**AC1** (porte **D1**) — La marque de lettrage se pose sur une **ligne d'écriture**, jamais
-sur l'écriture entière. Deux lignes portant la même marque sont lettrées ensemble.
-
-**AC2** — **La portée de la marque est la société, et elle est engendrée par le serveur.**
-Deux sociétés doivent pouvoir porter la même valeur sans se voir ni se percuter. ⚠️ **Un
-compteur non scopé serait un défaut de multi-tenant** — le dépôt en a déjà payé un (KF-002),
-et c'est exactement la classe d'erreur qu'une spécification muette invite à commettre.
-
-**AC3** — **L'unicité tient sous concurrence.** Deux lettrages simultanés dans la même
-société ne reçoivent jamais le même code. Un compteur lu puis incrémenté hors transaction ne
-le garantit pas. **Le mécanisme est en DEUX temps, et le premier est celui qu'on oublie :**
-
-> **(1)** un **sentinel** `SELECT id FROM companies WHERE id = ? FOR UPDATE` en tête de la
-> transaction — **Pattern 5, idiome du dépôt** (`journal_entries.rs:396` le nomme ainsi ;
-> `bank_accounts`, `projects`, `invoices` l'emploient) ;
-> **(2)** puis `SELECT COALESCE(MAX(seq), 0) + 1 FROM letterings WHERE company_id = ?
-> **FOR UPDATE**`.
-
-⛔ **Le `FOR UPDATE` de (2) n'est pas optionnel, et le sentinel doit être le PREMIER énoncé de
-la transaction** *(P8-3 — une rédaction de la spec l'avait perdu)*. En `REPEATABLE READ`,
-l'instantané se fige à la **première lecture nue** : si le chargement des lignes (T4) précède
-le sentinel, deux transactions calculent le même `seq` depuis le même instantané et la seconde
-échoue en 1062 — précisément ce que le test d'AC3 interdit. Le `FOR UPDATE` rend le résultat
-**indépendant de l'ordre** ; l'exigence de T4 porte sur l'ordre des **gardes**, pas sur le
-sentinel.
-
-⛔ **Sans (1), rien ne sérialise, et le dépôt porte déjà le diagnostic écrit.** *(P6-1.)*
-`email_templates.rs:16-23` l'énonce mot pour mot : *« un `SELECT ... FOR UPDATE` sur une ligne
-absente prend un gap lock InnoDB ; or un gap lock **n'empêche PAS** une autre transaction de
-tenir aussi son propre gap lock compatible sur la même lacune […] risquent donc de
-deadlocker »*.
-
-⚠️ **Le pattern d'`entry_number` n'a JAMAIS reposé sur son `MAX(…) FOR UPDATE`** : ce qui le
-sérialise est le **verrou de ligne pris en amont** — `SELECT fiscal_years … FOR UPDATE`
-(`journal_entries.rs:191`). En reprendre la formule sans son amont, c'est copier ce qui se
-voit et laisser ce qui fait fonctionner. **`letterings` n'a aucune ligne préexistante à
-verrouiller** pour une société encore vierge de lettrage — et c'est justement la fixture
-naturelle du test.
-
-⛔ **Et le filet d'unicité ne rattrape PAS ce mode d'échec** : un deadlock est un **1213**,
-pas un **1062**. Aucune contrainte ne le voit. Le dépôt a un `retry_on_deadlock`
-(`crates/kesh-db/src/retry.rs`) — mais il n'a **aucun site d'appel** : la parade existe et
-n'est branchée nulle part.
-
-⚠️ **Respecter l'ordre de verrou global du dépôt** — `companies → projects → fiscal_years`
-(`journal_entries.rs:391`). La route de lettrage verrouillant aussi des écritures, une
-inversion ABBA est un risque réel.
-
-⛔ **Le gap lock ne doit JAMAIS porter sur `code`** *(P5-1)* : `MAX()` sur du texte trie
-**lexicographiquement**, et `MAX('Z','AA')` rend **`Z`** — la collision survient à la
-**vingt-huitième** lettre *(P6-7 : après `{A…Z}` le successeur `AA` est juste ; c'est après
-`{A…Z, AA}` que `MAX` rend encore `Z`, donc `AA` une seconde fois)*.
-
-⚠️ **Un test de concurrence est exigé, et la spec dit ce qu'il doit CONSTATER** — sans quoi
-son auteur, voyant un deadlock intermittent, affaiblirait l'assertion pour le faire passer
-*(le dépôt a déjà une KF de ce genre, KF-038)* : **sur une société VIERGE de lettrage**, deux
-lettrages simultanés doivent produire **deux `seq` et deux `code` distincts**, tous deux en
-succès. Ni un deadlock, ni un échec de contrainte.
-
-⛔ **Moyen EXCLU, et il faut savoir pourquoi il l'est** : porter la contrainte d'unicité sur
-`journal_entry_lines` — la colonne `company_id` n'y existe pas, et une contrainte d'unicité
-sur le code y **interdirait AC1**, deux lignes lettrées ensemble portant le *même* code.
-C'est l'une des raisons du choix de la table.
-
-**AC4** — Le lettrage est **refusé** si les deux lignes ne portent pas sur le **même
-compte**, ou si leurs sens (débit/crédit) ne s'opposent pas.
-
-**AC5** (porte **D3**) — Le lettrage est **autorisé** même si l'un des exercices concernés
-est clôturé, y compris à cheval sur deux exercices.
-
-**AC6** (porte **D3**) — Le délettrage est possible tant que **les deux** exercices sont
-ouverts, et **refusé** dès que l'un est clôturé.
-
-⛔ **Le délettrage prend le MÊME sentinel `companies FOR UPDATE` que le lettrage** *(P7-1)*,
-et pour une raison que cette story est la première du dépôt à rencontrer : **elle doit
-vérifier DEUX exercices dans une seule transaction.** Tout le code existant n'en verrouille
-qu'un — une écriture n'appartient qu'à un exercice — et le lettrage à cheval qu'AC5 organise
-brise cette hypothèse.
-
-Les deux issues qu'un développeur prendrait sans cette clause sont **toutes deux mauvaises** :
-
-- **verrouiller les deux `fiscal_years` dans l'ordre où les lignes arrivent** → deux
-  délettrages croisés (L1 sur 2024+2025, L2 sur 2025+2024) se bloquent en **ABBA**. Et le
-  `retry_on_deadlock` du dépôt n'ayant **aucun site d'appel**, le 1213 remonte tel quel à
-  l'utilisateur ;
-- **ne pas verrouiller du tout**, pour éviter ce risque → le contrôle « les deux exercices
-  sont ouverts » n'est plus sérialisé avec `fiscal_years::close`. Une clôture concurrente
-  commit pendant la fenêtre, le délettrage commit après en croyant l'exercice ouvert, et
-  **D3 est violée** — la décision comptable centrale de cette story.
-
-⛔ **Le sentinel n'en ferme qu'UNE, et croire le contraire laisserait D3 violable.**
-*(P8-1 — la rédaction précédente affirmait « le sentinel les ferme toutes les deux » ; c'est
-faux.)* Il ferme l'**ABBA entre deux délettrages**, qui le prennent tous deux. Il ne ferme
-**rien** du côté de la clôture concurrente : **`fiscal_years::close` ne prend AUCUN verrou sur
-`companies`** — sa première instruction est l'`UPDATE` lui-même
-(`kesh-db/src/repositories/fiscal_years.rs`), et
-`docs/MULTI-TENANT-SCOPING-PATTERNS.md` le confirme (*« fiscal_years only, single table,
-internal tx — pas de chaîne cross-table »*). Deux transactions ne se sérialisent que si elles
-se disputent **la même ressource** ; la seule commune ici est **la ligne `fiscal_years`**.
-
-> **Donc, après le sentinel, les deux lignes `fiscal_years` se lisent en
-> `SELECT … FOR UPDATE`.** C'est **ce verrou-là, et lui seul**, qui sérialise avec
-> `fiscal_years::close`. Le sentinel ne fait qu'**ordonner** ces deux verrous entre eux — il
-> n'en remplace aucun.
-
-⚠️ **Le défaut qu'il ferme est muet** : sans ce `FOR UPDATE`, une lecture nue rend `Open, Open`,
-une clôture concurrente commit, le délettrage commit après — **une créance rouverte sur un
-exercice clos, sans erreur ni trace**.
-
-L'ordonnancement par sentinel reste l'idiome du dépôt : `docs/MULTI-TENANT-SCOPING-PATTERNS.md`
-**Pattern 5**, cité par `kesh-db/src/repositories/projects.rs:77-79` — *« verrou sentinelle
-`companies` une seule fois, PUIS `FOR UPDATE` sur les lignes — évite l'inversion ABBA »*
-*(P8-8 : la citation visait `:75-78` d'un autre `projects.rs`, celui des routes, où ces lignes
-sont les champs d'un DTO)*.
-
-**AC7** — ⚠️ **La marque survit à la MODIFICATION d'une écriture, ou la modification est
-refusée.** *(Relevé en passe 3, P3-1.)* `update` fait aujourd'hui `DELETE FROM
-journal_entry_lines` puis réinsère : une implémentation naïve **perd la marque en silence** et
-laisse la contrepartie marquée seule, donc réputée soldée.
-
-**TRANCHÉ**, et **re-tranché en passe 3** *(la conduite retenue en passe 2 rouvrait le trou
-que cette story existe pour fermer — voir le Change Log)* :
-
-> **(i)** La modification qui **change les lignes** d'une écriture dont une ligne est lettrée
-> est **REFUSÉE**, avec un message qui nomme la cause.
-> **(ii)** La modification du seul **en-tête** — date, journal, libellé — est **autorisée**,
-> **et `update` NE TOUCHE ALORS PAS AUX LIGNES.**
-
-⛔ **La clause (ii) n'est pas un confort : sans elle, (i) ne protège rien.** *(P3-1,
-CRITICAL.)* Le `DELETE FROM journal_entry_lines` de `update` (`journal_entries.rs:981`) n'est
-gardé que par le court-circuit **no-op complet** — en-tête **et** lignes identiques
-(`is_no_op_change`, l. 972). Une modification d'en-tête seul le franchit **systématiquement** :
-les lignes sont effacées et réinsérées sans marque, tandis que la contrepartie garde la
-sienne. **C'est mot pour mot le mode d'échec décrit au § *Pourquoi cette story existe
-séparément*** — réintroduit par le critère censé le fermer.
-
-⚠️ **La condition de la garde est exactement ce qui rend le `DELETE`/`INSERT` inutile** :
-quand le comparateur dit les lignes inchangées, il n'y a rien à réécrire. Créer le chemin
-« en-tête seul » dans `update` ferme donc P3-1 **et** rend sans objet l'objection de
-préservation par position.
-
-**Ce qui coûterait un refus global, et il faut le dire juste** *(P3-2 — la passe 2 s'appuyait
-ici sur un fait FAUX)* : une écriture sur exercice **clos** est **déjà** immuable
-aujourd'hui, lettrage ou non — `update` la refuse à l'Étape 2 (`journal_entries.rs:892-894`,
-`DbError::FiscalYearClosed`). Le cas réel est plus étroit : une écriture sur exercice
-**ouvert**, lettrée avec une contrepartie sur exercice **clos** (AC5 le permet — c'est le
-lettrage à cheval). Là seulement, AC6 refusant le délettrage, un refus global figerait le
-libellé. Quand les deux exercices sont ouverts, il ne coûte qu'un aller-retour.
-
-⚠️ **Le comparateur de lignes existe déjà** : `is_no_op_change` (`journal_entries.rs:782`)
-compare l'en-tête **puis** les lignes. C'est sa **seconde moitié seulement** qu'il faut
-extraire — la fonction entière retourne `false` dès que l'en-tête diffère, **sans regarder les
-lignes**, ce qui donnerait l'exact contraire de la conduite ci-dessus. *(P3-9.)*
-
-⚠️ **Une réserve à porter avec l'extraction** *(P3-9)* : le comparateur teste
-`b.project_id == c.project_id` alors que l'`INSERT` écrit `line.project_id.or(updated.project_id)`.
-Il n'est exact aujourd'hui que parce que les deux sites de la route passent
-`project_id: None` au niveau écriture. Un futur appelant fournissant un projet au niveau
-document ferait rapporter un faux changement de lignes — donc **refuser une modification qui
-n'en est pas une**.
-
-⚠️ **Corollaire, qui règle la renumérotation sans clause dédiée** : réordonner les lignes
-**est** un changement de lignes pour un comparateur positionnel. Une renumérotation
-d'écriture lettrée tombe donc sous (i).
-
-⛔ **DÉCISION OUVERTE — où se pose le verrou entre le lettrage et `update`/`delete_in_tx`.**
-*(P8-2, HIGH, passe 8 — budget de passes épuisé, l'arbitrage revient au Project Lead.)*
-
-**Le défaut.** Aujourd'hui, **toute** mutation d'une ligne se fait sous le
-`SELECT … FOR UPDATE` de son en-tête. Le lettrage sera **le premier écrivain de
-`journal_entry_lines` à ne pas prendre ce verrou** — et symétriquement, `update` et
-`delete_in_tx` ne prennent pas le sentinel `companies`. **Les deux chemins ne partagent donc
-aucune ressource.**
-
-⚠️ Pire : `update` fige son instantané `REPEATABLE READ` sur une **lecture nue** faite *avant*
-le verrou d'en-tête (`journal_entries.rs:834`), puis relit ses lignes en lecture nue
-(`:952`). Un lettrage qui commit entre les deux est **invisible** : la garde d'AC7 lit
-`lettering_id = NULL`, laisse passer, et le `DELETE` de la l. 981 emporte la marque. **La
-contrepartie reste seule, marquée** — le mode d'échec exact que cette story existe pour
-fermer, traversant la garde censée le fermer. Aucune FK ne s'y oppose : le `RESTRICT` est posé
-côté **parent** (`letterings(id)`) et ne voit jamais la suppression d'une ligne enfant.
-
-**Deux conduites, toutes deux praticables :**
-
-**(a) Côté garde** — AC7 et AC8 relisent leurs lignes en **lecture verrouillante**
-(`SELECT … FROM journal_entry_lines WHERE entry_id = ? FOR UPDATE`), **après** le verrou
-d'en-tête. Modification locale à `update` et `delete_in_tx`.
-
-**(b) Côté lettrage** — la transaction de lettrage verrouille les **deux écritures parentes**
-(`SELECT … FROM journal_entries … FOR UPDATE`), rétablissant l'invariant « on ne touche une
-ligne qu'en tenant son en-tête ». L'ordre `companies → journal_entries` n'introduit pas d'ABBA.
-
-⚠️ **Le choix engage l'ordre de verrou global du dépôt**, d'où l'arbitrage. **Aucune des deux
-n'est optionnelle** : sans l'une ou l'autre, le défaut est **muet**.
-
-**AC8** — ⚠️ **Une écriture dont une ligne est lettrée ne se supprime pas en laissant une
-marque orpheline**, et **la garde se pose au point de passage des DEUX chemins**. *(Relevé
-en passe 3, P3-2.)* La suppression est **refusée**, avec un message qui nomme la cause —
-*« cette écriture est lettrée ; délettrez-la d'abord »*.
-
-⛔ **Le site de la garde n'est pas la route.** `invoices::delete` supprime une facture
-`validated` **avec son écriture**, par `journal_entries::delete_in_tx` (`kesh-db/src/repositories/invoices.rs:1338`),
-et **aucune de ses trois gardes** (payée, créditée par un avoir, historique de rappels) ne
-regarde le lettrage. Poser la garde dans le handler HTTP la laisse contournable par le
-chemin le plus courant. Le point de passage unique est **`delete_in_tx`**, où la garde
-d'exercice clos est **déjà** posée (`invoices.rs:1235` le documente).
-
-⚠️ **Une facture réglée en espèces et lettrée passe la première garde** : elle n'est pas
-`paid_at`, puisque c'est précisément le cas que le lettrage existe pour couvrir.
-
-**AC9** — Le délettrage automatique en cascade est **écarté** : il contournerait AC6 par un
-chemin détourné — on obtiendrait sur un exercice clos, en supprimant ou modifiant une
-écriture, ce que le délettrage direct interdit. Il reste ouvert comme évolution, **à
-condition** d'être borné aux exercices ouverts.
-
-**AC10** — ⚠️ **Le lettrage est REFUSÉ si l'une des deux lignes porte déjà une marque.**
-*(Relevé en passe 1 : aucun critère ne l'interdisait.)* Sans cette garde, ré-apparier une
-ligne déjà lettrée **écrase sa marque** et laisse son ancien partenaire **seul avec
-l'ancienne** — réputé soldé à vie, sans contrepartie, et **personne n'est prévenu**.
-
-C'est la même classe de défaut muet qu'AC7 et AC8 ferment sur les chemins d'écriture, par une
-porte que le lettrage ouvre lui-même : AC4 laisserait passer le cas, puisque le compte et les
-sens sont bien ceux qu'il exige. **Délettrer d'abord est le geste attendu**, et le message de
-refus le dit.
-
-**AC12** (porte **D2**) — ⚠️ **Le lettrage est REFUSÉ si les deux montants ne sont pas
-égaux**, et le
-message nomme la cause — *« les montants diffèrent ; le lettrage partiel n'est pas encore
-géré »*. *(Rapatrié en passe 3 : la garde vivait dans **15-1c**, la story de l'écran, alors
-que **la route d'écriture est ici** — T4.)*
-
-⛔ **Le trou que ce rapatriement ferme est réel et daté.** 15-1a et 15-1b mergées, 15-1c
-pas encore : un appel direct à la route apparierait une ligne de 1000 et une ligne de 300 —
-même compte, sens opposés, aucune déjà lettrée, donc accepté — et la vue de 15-1b retirerait
-la créance alors que **700 restent dus**. C'est le finding **F2** de la story mère, coté
-**HIGH** deux fois, qui aurait survécu au découpage.
-
-⚠️ Une garde écrite dans le moteur de proposition ne protège **jamais** l'API — même
-raisonnement qu'AC11 contre l'IDOR. **Ce qui reste à 15-1c est l'arbitrage de la TOLÉRANCE**
-(zéro ou cinq centimes), pas l'existence du contrôle.
-
-**AC13** — ⚠️ **La pose et le retrait de la marque sont tracés à l'audit**
-(`lettering.created`, `lettering.removed`). *(Relevé en passe 3.)* Toutes les mutations
-voisines le sont — `journal_entry.created` / `.updated` / `.deleted`, `fiscal_year.closed` /
-`.reopened` : la convention est uniforme dans le dépôt.
-
-⚠️ **Et AC5 en fait une nécessité, pas une convention** : écrire une marque sur une ligne
-d'un exercice **clôturé** est le seul endroit où l'absence de trace est grave — plus rien ne
-pourra la défaire (AC6 refuse le délettrage), et rien ne dirait qui l'a posée ni quand. La
-note de D3 s'appuie elle-même sur le fait que `fiscal_years::reopen` est *explicite et
-tracée* pour justifier l'asymétrie ; le même argument commande de tracer le lettrage.
-
-**AC11** — ⚠️ **Les deux lignes appartiennent à la société de l'appelant, et c'est
-vérifié.** *(Relevé en passe 1.)* « Même compte » (AC4) garantit que les deux lignes sont de
-la même société **entre elles** — `accounts.company_id` est `NOT NULL` — mais **rien ne les
-rattache à l'appelant**. Un utilisateur de la société A envoyant deux identifiants de lignes
-de la société B poserait la marque chez B.
-
-⚠️ `journal_entry_lines` n'ayant pas de `company_id`, la vérification passe **par jointure**
-sur `journal_entries.company_id`, comme le documente la convention du repository
-(`kesh-db/src/repositories/journal_entries.rs:1226`). **C'est un IDOR**, et le dépôt en a déjà payé un (KF-002) — le
-même précédent qu'AC2 invoque pour la portée du compteur.
-
-⛔ **Le refus est INDISCERNABLE de « ligne inconnue » — un 404, et AUCUN message dédié.**
-*(P6-4 : la rédaction précédente prévoyait une clé i18n « lignes d'une autre société ».)*
-Nommer cette cause **révélerait l'existence** de lignes appartenant à un autre tenant : un
-attaquant itérant des identifiants obtiendrait un **oracle d'existence**, et l'IDOR serait
-partiellement rouvert **par le critère censé le fermer**.
-
-C'est la convention du dépôt, écrite dans le code : *« un compte d'une autre société doit
-rester **indiscernable** d'un compte inexistant (garde anti-IDOR) »*
-(`kesh-api/src/routes/products.rs:343-345`), et *« inconnu/cross-company → **404** »*
-(`kesh-api/src/routes/journal_entries.rs:73`).
-
-## Tasks
-
-- [ ] **T1** — Migration : `CREATE TABLE letterings` **et** la FK nullable sur
-      `journal_entry_lines` — le DDL entier est au § *Décisions tranchées*, à reprendre tel
-      quel (FK, contraintes d'unicité, `CHARACTER SET`/`COLLATE`, `COMMENT`, `ENGINE`).
-      ⛔ **Régénérer le squash de schéma de test** — `scripts/regen-test-schema.sh` — juste
-      après avoir écrit la migration *(P6-3)*. Il est monté par **~1100 tests**
-      `#[sqlx::test]` : sans régénération, `letterings` n'existe dans **aucune** de leurs
-      bases, `test_schema_guard.rs` rougit, et **tout test de lettrage échoue sur table
-      inconnue**. Il **se régénère, il ne s'édite jamais**.
-      ⚠️ **La conversion `seq` → `code` (base 26 bijective) est une fonction PURE** : elle va
-      dans `kesh-core` et **se teste sans base**. Cas limites à couvrir nommément :
-      `26 → Z`, `27 → AA`, `52 → AZ`, `53 → BA`, `702 → ZZ`, `703 → AAA`.
-      ⚠️ La migration **n'écrit aucune donnée** — `CREATE TABLE` + `ADD COLUMN` nullable —
-      donc **non-breaking** : pas de bump `min_required` (P1). Ligne d'audit d'idempotence
-      **obligatoire** (P5, `docs/migrations-idempotence-audit.md`), et les **deux** sites du
-      total plus les trois compteurs de partition se **recomptent depuis le tableau**.
-      ⛔ **Ne PAS l'inscrire à `EXEMPT_MIGRATIONS` (P7)** : *(relevé en passe 3, P3-10)* le
-      détecteur ne trie **que** les migrations qui écrivent des données
-      (`post_restore.rs:711`) — ni un `CREATE TABLE` ni un `ADD COLUMN` n'y entre. L'y inscrire ajouterait
-      du bruit à une liste dont toute la valeur tient à sa lisibilité.
-      ⚠️ **P6 — le couplage positionnel** : lancer
-      `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` et inspecter chaque
-      site. Le filet est *fail-loud* — `migrations_upgrade_path.rs` porte un
-      `assert_eq!(total, …)` codé en dur dont le message renvoie au garde-fou P6 — mais
-      **l'anticiper coûte une minute, le découvrir au bout du gate en coûte soixante**.
-      *(P5-5 : le compteur de ce test bougera, la migration étant un fichier de plus ; en
-      revanche **aucun backfill à fenêtre n'est en jeu**, cette migration n'écrivant pas de
-      données.)*
-- [ ] **T2** — Repository : poser la marque, la retirer, la lire. Gardes d'exercice
-      asymétriques (AC5/AC6). **Trace d'audit** (AC13).
-      ⛔ **Ajouter `letterings` à `reset_demo`** *(P3-6 — la conduite retenue le rend
-      obligatoire)* : sa liste de `DELETE` est **explicite** (`kesh-seed/src/lib.rs`) et une
-      table neuve n'y figure pas. Le bloc s'exécute sous `SET FOREIGN_KEY_CHECKS=0`, si bien que le
-      `DELETE FROM companies` passerait **malgré la FK** et laisserait des lignes orphelines ;
-      et le jour où ce drapeau serait retiré — le fichier dit que les `DELETE` explicites
-      existent pour cela — `reset_demo` échouerait. *(La réfutation de passe 1, « le wipe
-      efface tout ensemble », ne valait que pour la conduite écartée.)*
-- [ ] **T3** — ⚠️ **Gardes sur les chemins d'écriture existants** (AC7, AC8) — c'est le cœur
-      de cette story. Recenser les appelants avant d'écrire :
-      `grep -rn "delete_in_tx\|DELETE FROM journal_entry_lines" crates/`.
-      ⚠️ **Pour AC7, extraire la moitié « lignes » de `is_no_op_change`
-      (`journal_entries.rs:782`) plutôt que d'écrire un second comparateur** — deux
-      comparateurs divergents donneraient deux réponses à la question « les lignes ont-elles
-      changé ? ». La garde de AC8 se pose dans `delete_in_tx`, **pas** dans le handler.
-- [ ] **T4** — Routes : `POST` lettrage, `DELETE` délettrage.
-      ⛔ **L'ordre d'évaluation des gardes fait partie de la garantie d'AC11** *(P7-2)* : les
-      deux lignes se chargent par **une requête unique scopée `company_id = ?`** ; **moins de
-      deux lignes trouvées → 404**, **avant toute** évaluation d'AC4, AC10 ou AC12.
-      ⚠️ Sinon l'oracle qu'AC11 ferme **rouvre par un autre canal** : un 409 « comptes
-      différents » ou « déjà lettrée » révélerait l'existence de la ligne **et un de ses
-      attributs**. Le précédent du dépôt écrit cette séquence — *« Critère 1 — exister ET
-      appartenir à la société »*, **puis** « Critère 2 » (`kesh-api/src/routes/products.rs:343`).
-      Les fonctions voisines documentent d'ailleurs leurs étapes une par une ; celle-ci le
-      doit aussi.
-      ⛔ **Nommer le contrat des DEUX routes** *(P8-5)* — méthode, chemin, corps. La règle de
-      scoping ci-dessus n'était écrite que pour le lettrage : **le délettrage n'a aucun
-      contrat d'entrée**, et son chemin de scoping en dépend entièrement (par
-      `letterings.company_id` si la route reçoit la référence de lettrage ; par double
-      jointure sur `journal_entries.company_id` si elle reçoit une ligne). **AC11 ne se teste
-      pas sans cela**, et c'est une garde anti-IDOR — le 404 indiscernable vaut pour les deux
-      routes.
-      ⛔ **Inscrire la séquence de verrous des deux routes au tableau du Pattern 5**
-      (`docs/MULTI-TENANT-SCOPING-PATTERNS.md`) *(P8-6)* : ce document **exige** que tout
-      nouvel endpoint y figure, et son ordre global ne connaît aujourd'hui ni `letterings`, ni
-      `journal_entries`, ni `fiscal_years`. « Respecter l'ordre global » n'est pas exécutable
-      tant que les cibles de cette story n'y sont pas placées.
-- [ ] **T5** — ⚠️ **Export CSV** *(relevé en passe 3 de la story MÈRE)* : le header de
-      `journal_entry_lines` est **figé en dur**
-      (`crates/kesh-api/src/exports/csv_tables.rs:286`) et il n'a **aucune garde
-      d'exhaustivité**, contrairement à `invoices` (même fichier, l. 1031, garde #262). S'y ajoutent **deux** listes de colonnes en dur côté repository
-      (`LINE_COLUMNS` l. 44 et le `SELECT` l. 1235) : en oublier une fait échouer l'export au
-      runtime. Étendre la garde vaut mieux que se souvenir.
-      ⛔ **TRANCHÉ : `lettering_id` entre dans la struct `JournalEntryLine`, dans
-      `LINE_COLUMNS` et dans l'export CSV dès cette story** — parce que **l'export existe pour
-      que l'utilisateur puisse vérifier ce que Kesh affirme**, ce qui est l'objet même de la
-      story. Le reporter à 15-1b livrerait un socle dont la marque est invisible à l'export.
-      ⚠️ **Le motif écrit en passe 7 était FAUX** *(P8-4)* : la garde-modèle des `invoices`
-      n'est **pas** structurelle — elle compare le header à une **chaîne littérale**
-      (`csv_tables.rs:1036`), Rust ne sachant pas énumérer les champs d'une struct sans macro.
-      **Elle ne rougit donc PAS** quand un champ est ajouté à la struct : elle ne détecte que
-      la dérive du header vis-à-vis de lui-même.
-      ⛔ **Conséquence à ne pas se cacher** : la garde ajoutée ici **ne protégera pas** contre
-      l'oubli d'exporter un futur champ. Ce qui protège, c'est que le header littéral et la
-      struct **changent dans le même commit** — et c'est cela que la tâche exige.
-      ⛔ **Et le `.keshbackup` EST concerné** *(P6-2 — l'affirmation précédente, « pas
-      concerné », n'était vraie que pour les COLONNES)* : l'**inventaire des tables** est
-      **codé en dur**, `TABLES_TO_TRUNCATE` (`kesh-db/src/backup.rs:34`), ordonné enfants →
-      parents et réutilisé par `restore_body` et `test_fixtures::truncate_all`. Y inscrire
-      `letterings` **après `journal_entry_lines`, avant `users`/`companies`**.
-      ⚠️ Le test `backup_inventory_matches_schema` compare des listes **triées** : il ne
-      contrôle **pas** la position dans l'ordre FK, et un ajout en queue passerait au vert.
-      ⚠️ **À dire dans le manuel** : tout `.keshbackup` produit **avant** cette migration
-      devient non importable — `admin_backup/import.rs` compare l'inventaire **dans les deux
-      sens**. C'est inhérent à toute table neuve, mais cela s'annonce.
-- [ ] **T6** — Tests : **AC7, AC8 et AC10 en priorité** — ce sont les trois endroits où une
-      implémentation plausible produit un défaut **muet**. Un test par chemin : modification
-      d'écriture lettrée, suppression par la route, **et suppression par `invoices::delete`**.
-      Plus **AC10** (ré-apparier une ligne déjà lettrée est refusé, et l'ancien partenaire
-      reste apparié), **AC11** (deux lignes d'une autre société sont refusées — test d'IDOR,
-      pas de confort) et **AC12** (montants inégaux refusés **à la route**, pas seulement à
-      l'écran).
-      ⛔ **Le test qui manquait, et qui aurait attrapé le défaut de la passe 2** : modifier
-      **le seul libellé** d'une écriture lettrée, puis vérifier que **la marque est toujours
-      là, des deux côtés**. Sans lui, la clause (ii) d'AC7 n'est pas couverte — et c'est
-      exactement le chemin par lequel la marque se perdait.
-- [ ] **T5-bis** — ⛔ **DÉCISION OUVERTE : `letterings` entre-t-elle dans l'export de
-      souveraineté ?** *(P8-7 — question de produit.)* T5 fait entrer la **colonne**
-      `lettering_id` dans l'export des lignes ; la **table** `letterings`, elle, n'y est pas.
-      L'export global est une liste de 18 tables **tenue à la main**
-      (`kesh-api/src/exports/global.rs`), sans garde d'exhaustivité. En l'état, l'utilisateur
-      obtiendrait des **entiers opaques appariés** — vérifiables entre eux, mais **sans le
-      code `A`, `B` qu'il a sous les yeux à l'écran**.
-
-- [ ] **T7** — i18n : les clés des messages de refus dans les **quatre** locales dès
-      l'écriture. **Un message par refus, énuméré par critère** — et non un total, qui se
-      périme au premier critère ajouté *(P3-4 : la rédaction précédente en annonçait trois,
-      il en manquait quatre)* : compte différent **et** sens non opposés (AC4 — deux causes
-      distinctes), délettrage sur exercice clos (AC6), lignes modifiées sur écriture lettrée
-      (AC7), suppression d'écriture lettrée (AC8), ligne déjà lettrée (AC10) et montants
-      inégaux (AC12) — *(P8-9 : le fragment « lignes d'une » traînait ici, résidu de la
-      suppression du message d'AC11)*. **SEPT messages**, et la ventilation se recompte : AC4 en
-      porte **deux** — *« pas le même compte »* et *« les deux lignes vont dans le même
-      sens »* sont des causes distinctes *(P5-4)* —, plus AC6, AC7, AC8, AC10, AC12.
-      ⛔ **AC11 n'a PAS de message** *(P6-4)* : son refus est un 404 indiscernable de « ligne
-      inconnue », et lui donner une clé rouvrirait l'oracle d'existence. *(Le total annoncé
-      était huit ; il se recompte depuis sa ventilation, § *Recompter ses propres comptes
-      rendus*.)*
-      ⛔ **La garde i18n ne rattrapera pas l'oubli.** Son allowlist est bien vide
-      (`frontend/src/lib/shared/i18n-keys.test.ts:432`), mais elle vérifie qu'une clé
-      **existante** figure dans les quatre catalogues — **pas qu'une clé jamais écrite
-      manque**. Un refus sans clé remonte en erreur générique, et l'utilisateur ne peut pas en
-      déduire la cause : le défaut même qu'AC8 et AC10 prennent soin de nommer.
-
-## Dev Notes
-
-⚠️ **Gate `kesh-db` : complet, jamais ciblé.** Cette story touche une migration et un
-repository — les garde-fous P6 et P7 l'imposent, et le précédent de la Story 16-1a (un test
-devenu **muet**, passant à vide) dit pourquoi.
-
-⚠️ **La base de gate se remet à zéro AVANT le gate**, inconditionnellement — sans se demander
-comment le run précédent s'est terminé (KF-039, #310).
-
-⚠️ **Une migration appliquée ne se modifie plus, pas même un commentaire** (P8) : le
-checksum est enregistré, et le binaire ne boote plus.
+| 1 | `15-1a-i-marque-du-lettrage.md` | **La marque** : deux colonnes sur `journal_entry_lines` et le bump `min_required` 0.13.0, le code en lettres, la primitive unique (création, dissolution, modes `Manual`/`System`) et sa règle des périodes, les verrous d'exercice, les routes `/letterings`, l'audit, l'exposition et l'export, les dix clés des refus du lettrage, la documentation de l'API et du manuel propre au lettrage |
+| 2 | `15-1a-ii-gardes-du-lettrage.md` | **Les gardes** : le gel des écritures lettrées (`ENTRY_LETTERED`, dernier refus du `PUT`, du `DELETE`, de la dévalidation et du motif d'écran), l'écran de la fiche d'écriture, le lettrage `reversal` de la contre-passation (R6), les réserves du manuel et de l'API sur la modification, les entrées #532 du CHANGELOG |
+
+Ordre : **15-12a → 15-12b → 15-1a-i → 15-1a-ii → 15-1a2 → 15-1b → 15-1c**. ⛔ **Dépendance
+résiduelle** : la 15-1a-ii suppose la 15-1a-i mergée ; entre les deux merges, une écriture manuelle
+lettrée par l'API reste modifiable et supprimable — **la v0.13.0 ne se tague pas entre les deux**
+(C124).
+
+## Pourquoi le découpage
+
+Le déclencheur écrit à **C118** (validation P2 : « si la P3 trouve un défaut né d'un correctif de P2 sur
+une règle métier — R7, AC4, AC5, AC8 —, découper selon cette couture avant toute P4 ») est **atteint** :
+R3-1 (= F3-1) naît de C113 croisé avec le rang d'AC8, R3-2 de C114, R3-3 du test que C114 a ajouté.
+C'est le signal D5 de **recyclage** — le défaut naît du correctif —, non la découverte de défauts
+d'origine neufs. Décision de l'orchestrateur, consignée **C124** ; couture de C118 : (i) schéma,
+primitive, routes, audit, exports ; (ii) gardes d'AC8, contre-passation R6, frontend de la fiche
+d'écriture, manuel de la modification.
+
+## Table de correspondance — où chaque élément est allé (C124)
+
+| élément de la 15-1a | 15-1a-i | 15-1a-ii |
+|---|---|---|
+| Reprise du 2026-10-08, quatre questions du dégel | ✓ (section commune) | renvoi |
+| R1 (schéma, bump), R2 (code), R3 (groupe, primitive), R4 (comptes lettrables), R5 (lignes de pièce) | ✓ | renvois |
+| R6 (contre-passation) | renvoi | ✓ |
+| R7 (verrous, règle des périodes, interblocages) | ✓ (point 2 réécrit, C125) | renvois |
+| AC1–AC7 | ✓ | — |
+| AC8 (gel `ENTRY_LETTERED`, écran) | — | ✓ (rang révisé, C126) |
+| AC9 (contre-passation) | — | ✓ |
+| AC10 (audit) | part i (`created`/`removed` des routes) | part ii (lettrage `reversal`) |
+| AC11, AC12, AC14 | ✓ | — |
+| AC13 (inventaire, invariant) | part i (colonnes, invariant sur groupes `manual`) | part ii (groupes `reversal`, commentaire vers la garde) |
+| AC15 (documentation) | part i (routes, refus du lettrage, champs et colonnes, verrou de période, glossaire, « à lettrer », CHANGELOG *Ajouté* et *Modifié*) | part ii (réserves « lettrée », tableaux du `PUT`/`DELETE`, `:279`, contre-passation, sixième condition du manuel, entrées #532) |
+| T0 (relevés au sol) | part i (`EXPLAIN` de l'acte 1, 15-12a mergée) | part ii (`EXPLAIN` de `lettering_guard`, 15-12b, ordre réel des étapes) |
+| T1, T2, T3, T6, T7, T8, T9 | ✓ | — |
+| T4, T4-bis, T5 | — | ✓ |
+| T10 (i18n) | part i (dix clés + lot d'audit) | part ii (`ENTRY_LETTERED`) |
+| T11 (documentation), T12 (tests) | part i | part ii |
+| Dev Notes : gate, P8, dépendances, règle de découpage, FR86, références | ✓ (P8 ici seulement : la migration y est) | ✓ (sans P8) |
+
+## Recompte aux deux bornes
+
+*(Borne basse : la fiche 15-1a au commit `c9cf51f8`, corps avant `## Change Log`. Borne haute : les deux
+sous-fiches au commit de ce découpage, corps avant `## Change Log`. Commandes : `grep -oE '^\*\*AC[0-9]+'`,
+`grep -cE '^- \[ \] \*\*T'`, lignes du tableau de T10, et `grep -oE` des noms de tests en
+`snake_case`, triés à la main entre tests **neufs** et tests existants cités.)*
+
+| décompte | 15-1a (avant) | 15-1a-i | 15-1a-ii | après | écart, et pourquoi |
+|---|---|---|---|---|---|
+| critères (numéros AC distincts) | 15 | 13 entrées (AC1–AC7, AC10–AC15) | 5 entrées (AC8, AC9, AC10, AC13, AC15) | **15 numéros**, 18 entrées | 3 critères partagés (AC10, AC13, AC15), écrits « part i / part ii » ; aucun perdu |
+| tâches (identifiants distincts) | 14 (T0–T12, T4-bis) | 11 entrées | 7 entrées | **14 identifiants**, 18 entrées | 4 tâches partagées (T0, T10, T11, T12) ; aucune perdue |
+| clés i18n (tableau de T10) | 11 | 10 | 1 | **11** | — ; le lot d'audit (1 entité, 2 actions) reste à la 15-1a-i |
+| tests **neufs** nommés | 15 | 14 repris + 2 neufs = 16 | 1 repris + 5 neufs = 6 | **22** | +7 de la remédiation P3 : `archived_bank_account_keeps_its_account_unletterable` (F3-7), `lettering_locks_fiscal_years_in_date_order_not_id_order` (R3-3), et dans la 15-1a-ii `delete_of_…`, `update_of_…_in_a_locked_period_…`, `blocker_of_…` (R3-1), `update_of_a_lettered_entry_with_a_stale_version_says_conflict`, `entry_lettered_refusal_leads_to_a_dissolution_that_succeeds` (C126) |
+| mutations nommées | 2 (paire C117 « permuter » ; `:197` du garde-fou d'inventaire) | 2 (`:197` ; « trier par `id` ») | 4 (« la marque avant le verrou de période » × 3 chemins ; paire C117) | **6** | +4 : une par chemin de précédence (R3-1) et celle du test d'ordre (R3-3) |
+| puces des Dev Notes | 6 | 6 | 5 | — | P8 seulement dans la 15-1a-i (la migration y est) ; les autres puces sont réécrites pour chaque moitié |
+
+⚠️ Les quinze tests neufs de la borne basse sont : six d'AC4, trois du point 3 d'AC5, trois d'AC10,
+`lettering_invariants` (AC13), deux d'AC14. Les tests **existants** que la story met à jour ou cite
+(`downgrade_protection_*`, `every_data_backfill_migration_is_triaged`,
+`the_inventory_guard_turns_red_on_each_mutation`, les partitions du registre…) ne sont pas comptés.
 
 ## Change Log
+
+### Validation P6 — 2026-10-09 (15-1a-ii : Sonnet ×2 ; remédiation Opus 5.5)
+
+**15-1a-ii** : deux rapports (`target/gate-logs/15-1a-ii-p6-{R,F}.md`, prompt `3acf1860`) — 0 HIGH,
+**1 MEDIUM**, 7 LOW distincts, **sans changement de règle** : deux sites d'`audit_route_registry.rs`
+(`:82`, `:201`) qui nient encore le cycle lettrage ↔ `DELETE`, résidu de la propagation de F5-2 faite
+par la formulation — relevé désormais écrit **par la valeur** et rejoué (8 lignes, 6 inscrites, 2
+étrangères triées) ; LOW : doc frontend de `reverseJournalEntry`, réserve « chiffres relus après la
+15-12b » sur C132, tests en module de `reverse_in_tx`, origine sous période verrouillée au test (c),
+ponctuation du manuel, ordre de l'union `ModificationBlocker`. **Trend du socle** : P1 2 HIGH / 15
+MEDIUM → P2 0 / 5 → P3 0 / 4 → P4 0 / 5 → P5 0 / 3 → P6 0 / 1. Aucun choix neuf au registre ; détail
+au Change Log de la 15-1a-ii.
+
+### Validation P5 — 2026-10-09 (15-1a-i : ciblée Haiku ; 15-1a-ii : Opus 5.5 ×2 ; remédiation Opus 5.5)
+
+**15-1a-i** : passe ciblée close à 0 (voir sa fiche, `a8dd72d1`). **15-1a-ii** : deux rapports
+(`target/gate-logs/15-1a-ii-p5-{R,F}.md`, prompts `c6a88f03`) — 0 HIGH, **3 MEDIUM**, 10 LOW distincts,
+tous d'**inventaire ou de propagation**, **sans changement de règle** : textes d'écran du bilan
+d'ouverture qui promettent la modification sans réserve (R5-1, et le contrôle final étendu aux
+catalogues i18n et aux replis), phrase du manuel utilisateur « l'écriture d'origine n'est pas touchée »
+(F5-1, doctrine C129), textes qui nient le cycle lettrage ↔ `PUT`/`DELETE` ou décrivent un ordre de
+verrous incomplet (F5-2, Pattern 5 et trois doc-comments). **Trend du socle** : P1 2 HIGH / 15 MEDIUM →
+P2 0 / 5 → P3 0 / 4 → P4 0 / 5 → P5 0 / 3. Décision **C132** (décompte des refus de la dévalidation) ;
+détail au Change Log de la 15-1a-ii.
+
+**Recompte après P5** (corps des sous-fiches, avant `## Change Log`) : critères et tâches **inchangés** ;
+clés i18n neuves **11** (10 + 1), plus **5 clés existantes réécrites** (2 dans la 15-1a-i, C130 ; 3 dans
+la 15-1a-ii, C129 et R5-1) ; tests neufs nommés **29** (16 + 13, inchangé) ; mutations nommées **11**
+(3 + 8 — la 15-1a-ii en comptait 7 en P4 par erreur, recompté).
+
+### Validation P4 des deux sous-fiches — 2026-10-09 (Sonnet 5.5 ×2 par fiche ; remédiation Opus 5.5)
+
+Quatre rapports (`target/gate-logs/15-1a-i-p4-{R,F}.md`, `15-1a-ii-p4-{R,F}.md`, prompts versionnés
+`b53f7278`). **15-1a-i** : 0 HIGH, **2 MEDIUM**, 11 LOW distincts. **15-1a-ii** : 0 HIGH, **4 MEDIUM**, 12
+LOW distincts. Une MEDIUM est commune aux deux (nom des exercices en mode `System` — C128) : **5 MEDIUM
+distinctes** pour le socle. **Trend du socle** : P1 2 HIGH / 15 MEDIUM → P2 0 / 5 → P3 0 / 4 → P4 0 / 5.
+⚠️ **Signal D5, déclaré au Project Lead** : la sévérité ne décroît pas (4 → 5 MEDIUM), mais une seule
+MEDIUM naît d'un correctif (C127 × C125) ; les quatre autres sont des défauts d'origine (inventaire de la
+promesse « à lettrer », test de correspondance muet, manuel d'administration, origine « intacte » que R6
+marque). Pas de nouveau découpage proposé. Décisions **C128 à C131** ; détail au Change Log de chaque
+sous-fiche ; report à la 15-1a2 (« Reçu », points 18 à 20).
+
+**Recompte après P4** (corps des sous-fiches, avant `## Change Log`) : critères et tâches **inchangés**
+(15 numéros / 18 entrées ; 14 identifiants / 18 entrées) ; clés i18n neuves **11** (10 + 1), plus **3 clés
+existantes réécrites** (2 dans la 15-1a-i, C130 ; 1 dans la 15-1a-ii, C129) ; tests neufs nommés **29**
+(16 + 13 — les sept noms ajoutés en P4 désignent des tests d'AC9 et la paire C117, déjà décrits) ;
+mutations nommées **10** (3 + 7).
+
+### Validation P3 et découpage — 2026-10-09 (Opus 5.5 ×2 ; remédiation Opus 5.5)
+
+**Deux lentilles, Opus toutes deux** (prompt versionné `15-1a-validate-prompt-p3.md`) : R (chasseur de
+régressions) **0 HIGH, 3 MEDIUM, 10 LOW** ; F (adversaire plein périmètre) **0 HIGH, 2 MEDIUM, 6 LOW**
+(`target/gate-logs/15-1a-p3-{R,F}.md`). Recoupement : R3-1 = F3-1. **Distincts : 0 HIGH, 4 MEDIUM**
+(R3-1/F3-1, R3-2, R3-3, F3-2) **et 16 LOW** (R L1–L10, F3-3 à F3-8). **Trend** : P1 **2 HIGH / 15
+MEDIUM** → P2 **0 HIGH / 5 MEDIUM / 16 LOW** → P3 **0 HIGH / 4 MEDIUM / 16 LOW** (distincts). Modèles :
+P1 Opus ×2, P2 Sonnet ×2, P3 Opus ×2 (rotation D6).
+
+⛔ **Signal D5 — recyclage** : trois des quatre MEDIUM naissent de correctifs de P2 sur des règles métier
+(C113 croisé avec AC8 ; C114 ; le test de C114). Le déclencheur de C118 est atteint ; **découpage**
+décidé par l'orchestrateur (C124), avant toute P4. Remédiation appliquée **dans les sous-fiches** :
+C125 (verrous d'exercice un par un, bornés au groupe, postérieur clos sans verrou — R3-2, aligné sur
+C119), C126 (`ENTRY_LETTERED` en dernier — R3-1), C127 (compte bancaire archivé, exercice des lignes,
+rubriques du CHANGELOG — F3-7, F3-8, F3-2) ; R3-3 par un test d'ordre discriminant (15-1a-i, T12) ;
+tous les LOW (détail au Change Log de chaque sous-fiche). Propagation : `epics.md` (règle de C113 et
+découpage, L4), `sprint-status.yaml`, index `15-1-lettrage.md`, fiche d'epic, renvois des 15-1a2, 15-1b,
+15-1c ; les fiches 15-12* ne sont **pas** modifiées (L5 et l'étape « 3-ter-bis » de la 15-12b, portés à
+l'orchestrateur).
+
+### Validation P2 — 2026-10-09 (Sonnet 5.5 ×2, contexte frais) — remédiation (Opus 5.5)
+
+**Deux lentilles, Sonnet toutes deux** (prompt versionné `15-1a-validate-prompt-p2.md`) : R
+(chasseur de régressions) **0 HIGH, 2 MEDIUM, 7 LOW** ; F (adversaire plein périmètre) **0 HIGH,
+4 MEDIUM, 11 LOW** (`target/gate-logs/15-1a-p2-R.md`, `…-F.md`). Recoupements : R2-1 = F-2 ;
+R2-2 = F-5 (MEDIUM chez R, LOW chez F ; F-5 porte aussi la clôture « non rejouée » et le cycle avec la
+contre-passation, qui recoupe R2-7) ; R2-6 ≈ F-7. **Distincts après fusion : 0 HIGH, 5 MEDIUM**
+(R2-1/F-2, R2-2/F-5, F-1, F-3, F-4) **et 16 LOW** (les sept de R, R2-3 à R2-9, plus F-6, F-8 à
+F-15). **Trend** : P1 **2 HIGH / 15 MEDIUM** distincts → P2 **0 HIGH / 5 MEDIUM / 16 LOW**.
+Décisions consignées **C113 à C118** (les deux premières fixées par l'orchestrateur : verrou de
+période = exercice clos pour le lettrage ; ordre des verrous d'exercice garanti par le parcours).
+
+| finding | décision | où |
+|---|---|---|
+| F-1 | Motif du bump réécrit : tout binaire publié depuis la v0.10.0, et pas « la v0.12.1 seule » ; en-tête de migration **arrêté** dans la fiche (P8) ; constat écrit que `sqlx` (`VersionMissing`) et l'import (`unknownColumns`) refusent déjà — le bump rend le refus explicite | R1, AC1, T1, C115 |
+| R2-1 = F-2 | Les deux tests qui rougissent au bump nommés (`migrations_upgrade_path.rs:509`, `:524`) ; `rejects_old_binary` ramené à une non-régression | AC1, T1, T12 |
+| R2-2 = F-5 | Exercices verrouillés par **parcours ascendant** de `(company_id, start_date)` à partir du plus ancien du groupe ; `EXPLAIN` en T0, repli « un par un » écrit ; test aux `id` inversés ; clôture « non rejouée » corrigée (15-12a AC 6) ; contre-passation nommée dans les cycles | R7, AC5, T0, T3, T12, C114 |
+| F-3 + état hérité (reçu de la 15-12) | Règle des **périodes** : une ligne est « en période ouverte » si exercice ouvert, aucun postérieur clos, date après le verrou ; refus `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` (remplace `LETTERING_FISCAL_YEARS_CLOSED`) ; manuel `:578-583` ; six + trois tests nommés | R7, AC3, AC4, AC5, AC15, T10, C113 |
+| F-4 | `reverse_in_tx_inner` relit les lignes après lettrage ; AC9 (a) lit le corps du `201` | R6, AC9, T5, C116 |
+| Reçu de la 15-12 (`9b403aaf`) | Prérequis **15-12a** ; ordre 15-12a → 15-12b → 15-1a ; précédence 2-bis → 3-ter-bis dans `delete_in_tx` écrite et testée par la seconde à merger | Status, Story, Dev Notes, AC8, C117 |
+
+**LOW appliqués** : R2-3 (une fonction pure par cause, appelée à son rang), R2-4 (`errors.rs:206`,
+chemins préfixés, six fichiers `0.12.1`), R2-5 (six `query_as`, `:1824/:1828`), R2-6 = F-7 (sites
+d'`api-external.md` en tableau, `routes/journal_entries.rs:166`, `JournalEntryForm.edit.test.ts:132`,
+grep par le motif voisin), R2-7 (cycle avec la contre-passation, décompte des routes rejouées), R2-8
+(lot des libellés d'audit dans les recomptes i18n), R2-9 (texte neutre de
+`LETTERING_LINE_OWNED_BY_DOCUMENT`), F-6 (requête de `lettering_guard` sans `ORDER BY … LIMIT`,
+`EXPLAIN`), F-8 (arithmétique vérifiée, borne `i64::MAX`, tests), F-9 (exceptions de R3 nommées, T9
+étendu à `INSERT`, périmètre `src/` hors `#[cfg(test)]`), F-10 (fixture sans rôle), F-11 (limite de
+durée nommée, R7 et AC11), F-12 (coût de R6 écrit), F-13 (règle de découpage relue : pas de découpage,
+couture et déclencheur écrits — C118), F-14 (section *Ajouté* à créer en tête), F-15 (glossaire
+réécrit, parenthèse du message assumée). Axe que F déclarait non exercé, repris : montage des routes
+au-dessus du `route_layer` (T6).
+
+**Reporté aux fiches sœurs** (sections « Reçu de la 15-1a », sans réécriture) : 15-1a2 (points 9 à
+13), 15-1b et 15-1c (sections neuves) ; index `15-1-lettrage.md` (état hérité gardé ici, C113-C118).
+**Décomptes recomptés depuis ce fichier** (`grep` sur le corps, avant `## Change Log`) : **15
+critères** (AC1–AC15), **14 tâches** (T0–T12 et T4-bis ; T0 est neuve), **11 clés i18n** au tableau
+de T10 (plus le lot d'audit, hors tableau).
+
+⚠️ **À l'orchestrateur** : (1) **fiche 15-12b** (non modifiée ici, en validation) : si la 15-1a est
+mergée avant elle, la paire de précédence de `delete_in_tx` lui revient (C117) ; (2) le constat de
+C115 sur `sqlx` (`ignore_missing = false`) touche la prémisse de la § « Migration breaking policy »
+du `CLAUDE.md` — à porter à Guy, hors story ; (3) la révision de D3, désormais étendue au verrou de
+période, reste à présenter à Guy ; (4) **passe P3 : protocole complet**, Opus (rotation D6) — la
+remédiation change une règle métier (R7, AC4, AC5) et la séquence des verrous ; déclencheur de
+découpage écrit à C118.
+
+### Validation P1 après reprise — 2026-10-08 (Opus 5.5 ×2, contexte frais) — remédiation
+
+**Deux lentilles, Opus toutes deux** : R (auditeur d'acceptation) **2 HIGH, 10 MEDIUM, 9 LOW** ;
+F (adversaire plein périmètre) **1 HIGH, 9 MEDIUM, 7 LOW** (`target/gate-logs/15-1a-p1-R.md`,
+`…-F.md`). Recoupements : R-1 = F1, R-3 = F2, R-2 = F3, R-5 = F4, R-7 = F5, R-6 = F7 ; R-11 ≈ F-L1,
+R-12 = F-L1, R-13 = corollaire de F4, R-4 = F-L2, R-14 ≈ F-L3, R-16 = F-L6. ⚠️ Le bilan de F
+annonce 9 MEDIUM mais en **liste dix** (F2 à F11) ; le décompte ci-dessous part des listes.
+**Distincts après fusion** : **2 HIGH** (R-1/F1 ; R-2, HIGH chez R, = F3, MEDIUM chez F) et
+**15 MEDIUM** — les dix de R (R-3 à R-12) plus les cinq de F sans jumeau chez R (F6, F8, F9, F10,
+F11 ; F2, F4, F5, F7 sont R-3, R-5, R-7, R-6). Trend : relecture
+de reprise → **P1 : 2 HIGH / 15 MEDIUM distincts**. Décisions de l'orchestrateur, en autonomie,
+consignées **C101 à C106** (révisent C90, C94, C96, C97) :
+
+| finding | décision | où |
+|---|---|---|
+| R-1 = F1 (HIGH) | Bump `min_required = '0.13.0'` dans **cette** migration, motif réécrit au plus juste (la v0.12.1 ne modifie aucune écriture manuelle ; elle annulerait un règlement sans dissoudre le groupe de la pièce) ; P2-bis (dix crates à 0.13.0, même commit) ; P7 (`EXEMPT_MIGRATIONS`, `Durable`) ; gate runtime ; effet sur `prepare-release.sh` écrit (refus « version identique » avant le pré-vol) | R1, AC1, T1, C101 |
+| R-2 = F3 (HIGH) | `ModificationGuard::Lettered`, lu sans verrou dans `modification_blocker` ; code d'écran `ENTRY_LETTERED`, frontend (union, libellé, issue du refus, tests), « onze » → « douze », `api-external.md:229/:261` ; module frontend compté | AC8, T4, T4-bis, C102 |
+| R-3 = F2 | La garde de lettrage est une étape **inconditionnelle** de `delete_in_tx` (hors `enforce_ownership`) : la dévalidation est couverte ; test `delete_in_tx(…, false)` | AC8, T4, T12, C102 |
+| R-5 = F4 (+ R-13) | Premier acte **verrouillant** joint (lignes et en-têtes), aucune lecture ordinaire avant ; compte d'`UPDATE` inattendu → 409 `LETTERING_CONCURRENT_CHANGE`, jamais `Invariant` ; motif de la lecture verrouillante d'AC8 réécrit | R7, AC3, AC6, AC8, C103 |
+| R-6 = F7 (+ R-4) | Exercices `FOR UPDATE ORDER BY start_date, id` en mode `Manual` ; **aucun** verrou d'exercice en mode `System` (l'appelant tient l'exercice ouvert et le passe) — affinement de la décision 7 : reprendre les exercices de l'origine après celui du jour inverserait l'ordre contre la clôture de la 15-12, non rejouée | R7, AC5, C103 |
+| R-7 = F5 | La 15-12 passe **avant** la 15-1a ; ordre écrit ici, dans l'index `15-1-lettrage.md`, dans `epics.md` et au `sprint-status.yaml` | Dev Notes, C105 |
+| F6 | Règle **symétrique** : lettrer comme délettrer exige ≥ 1 ligne sur exercice ouvert ; révise D3 (arbitrage de Guy d'août — signalé pour sa revue) | R7, AC4, C105 |
+| F8 | Lettrabilité exigée à la création seule ; groupes intacts et dissolubles après retypage ou rattachement bancaire ; test | R3, AC5, AC9 (e), AC13, C104 |
+| F9 | Groupe `reversal` contenant une ligne de pièce : non dissoluble à la main (`LETTERING_LINE_OWNED_BY_DOCUMENT`) | R6, AC5, AC9 (d), C106 |
+| F10 | Manuel `:1169/:1696` et `api-external.md:325/:386` ne promettent plus « à lettrer » ; cas renvoyé à la 15-1a2 (section « Reçu de la 15-1a ») | R5, AC15, C106 |
+| F11 (+ R-18) | AC15 nomme tous les sites (`.tex` : 384, 481/483, 562, 628, 708, 744, 758, 2209 ; API : 223, 229, 255, 261), PDF régénéré et contrôlé aplati | AC15, T11 |
+| R-8 | `epics.md:1363/1366/1368` alignés sur la reprise | `epics.md` |
+| R-9 | Tests ajoutés pour AC6, AC10, AC14 ; geste d'AC13 rattaché à T8 | T8, T12 |
+| R-10 | Onze clés nommées, ventilées, avec texte FR | T10 |
+| R-11, R-12 (= F-L1) | `kesh-report` retiré (agrégats) ; inventaire réel des sites `JournalEntryLine` ; décompte de découpage : **5** crates/packages, signal déclaré | AC14, Dev Notes |
+
+**LOW appliqués** : R-14/F-L3 (acteur `for_actor`, clé d'API ; écart de la contre-passation nommé),
+R-15 (appariement par position), R-16/F-L6 (citations `reconciliation_cancel.rs:370`, `:2357`
+retirée), R-17 (FR86 interprété, Dev Notes), R-19 (restauration d'une sauvegarde antérieure, R1),
+R-20 (export global, AC14), R-21 (sort des groupes — C104 ; noms des handlers, AC6/AC12), F-L4
+(doc-comment `:181`), F-L5 (verrou de période : permis, R7), F-L7 (lecture des lignes de l'origine
+pour R6). **Décomptes recomptés depuis ce fichier** (`grep -c` sur le corps, avant `## Change Log`) :
+**15 critères** (AC1–AC15), **13 tâches** (T1–T12 et T4-bis), **11 clés i18n** au tableau de T10.
+
+⚠️ **À l'orchestrateur** : (1) `scripts/prepare-release.sh` refusera `0.13.0` (versions déjà
+bumpées) **avant** son pré-vol — la release v0.13.0 devra dater le CHANGELOG et lancer le contrôle
+des exemptions périssables à la main, ou le script apprendre ce cas (C101) ; (2) la révision de D3
+est à présenter à Guy ; (3) **passe P2** : protocole complet (la remédiation touche R1, R7, AC3–AC6,
+AC8 — plusieurs règles métier), Sonnet ×2 (rotation D6).
+
+### Reprise du 2026-10-08 — réécriture contre le modèle réel (Opus 5.5, en autonomie)
+
+Corps **entièrement réécrit** ; les entrées ci-dessous en gardent l'historique. Ce que la reprise
+change, et pourquoi (registre C90–C99) :
+
+- **Porteur** : la table `letterings` (arbitrage du 2026-08-25) est **abandonnée** au profit de
+  deux colonnes sur `journal_entry_lines` — une table neuve rendrait inimportables toutes les
+  sauvegardes antérieures, contrainte apparue avec l'import d'installation (#386) et déjà
+  appliquée par la 25-4-d2a. **La clé du groupe est le plus petit id de ligne** : le compteur, son
+  verrou et ses trois passes de défauts (P5-1, P6-1, P8-3) disparaissent avec lui.
+- **Forme** : la **paire** devient un **groupe** à somme nulle — imposé par `invoice_settlements`
+  (règlements multiples, solde du reste).
+- **D3** révisée étroitement (C94) ; **AC7 (ii)** d'août abandonnée (C97) ; la décision ouverte
+  **P8-2** est tranchée (conduite (b) **et** lecture verrouillante de la garde) ; **T5-bis** sans
+  objet (plus de table à exporter).
+- **Nouveau** : la contre-passation lettre ce qui est libre (R6) ; les lignes de pièce sont
+  exclues du lettrage manuel (R5) ; comptes lettrables définis par type (R4) ; la sous-story
+  **15-1a2** (lettrage des pièces) est créée.
+- Décomptes : **15 critères** (AC1–AC15), **12 tâches** (T1–T12), recomptés depuis ce fichier.
+
+*Entrées antérieures à la reprise — le corps qu'elles décrivent a été remplacé :*
+
 
 ### Passe 8 de `validate` — 2026-08-25 (Opus, contexte frais) — **DERNIÈRE PASSE**
 

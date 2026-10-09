@@ -42,6 +42,18 @@ error-invoice-unvalidate-blocked-matched = Die Buchung dieser Rechnung ist mit e
 error-invoice-number-fiscal-year-mismatch = Diese Rechnung trägt bereits eine Nummer: ihr Datum darf das ausstellende Geschäftsjahr nicht verlassen.
 error-invoice-must-be-unvalidated-first = Diese Rechnung ist validiert: entvalidieren Sie sie zuerst und löschen Sie dann den Entwurf.
 
+# Lettrage (Story 15-1a-i, #518)
+error-lettering-too-few-lines = Ein Ausgleich umfasst mindestens zwei verschiedene Zeilen.
+error-lettering-too-many-lines = Ein Ausgleich umfasst höchstens { $max } Zeilen.
+error-lettering-accounts-differ = Die Zeilen eines Ausgleichs müssen alle dasselbe Konto betreffen.
+error-lettering-account-not-letterable = Dieses Konto lässt sich nicht ausgleichen: Nur Aktiv- und Passivkonten, die keine Bankkonten sind, werden ausgeglichen.
+error-lettering-line-owned-by-document = Eine dieser Zeilen gehört zu einem Beleg: Sie wird nicht von Hand ausgeglichen und ihr Ausgleich nicht von Hand aufgehoben.
+error-lettering-line-already-lettered = Eine dieser Zeilen ist bereits ausgeglichen (Code { $code }).
+error-lettering-unbalanced = Diese Zeilen gleichen sich nicht aus: Differenz von { $difference }.
+error-lettering-all-lines-in-closed-periods = Alle diese Zeilen liegen in einer abgeschlossenen Periode — abgeschlossenes Geschäftsjahr, Geschäftsjahr mit einem abgeschlossenen Folgejahr oder gesperrte Periode: Der Ausgleich ändert sich dort nicht mehr.
+error-lettering-is-document = Dieser Ausgleich ist der eines Belegs: Stornieren Sie die Zahlung, statt den Ausgleich aufzuheben.
+error-lettering-concurrent-change = Der Ausgleich wurde inzwischen geändert; versuchen Sie es erneut.
+
 # Validierungsfehler
 error-validation = Validierungsfehler
 error-email-invalid = Ungültiges E-Mail-Format
@@ -745,7 +757,7 @@ invoices-settlement-cancel-button = Zahlung stornieren
 invoices-settlement-cancel-reconciliation = Abgleich aufheben
 invoices-settlement-cancel-confirm = Diese Zahlung stornieren? Eine Gegenbuchung mit dem heutigen Datum wird im Hauptbuch erfasst, und der Betrag wird wieder fällig.
 invoices-settlement-cancelled = Zahlung storniert: Die Gegenbuchung wurde erfasst.
-invoices-settlement-cancel-blocked-credited = Diese Rechnung wurde durch eine Gutschrift ausgeglichen: Diese Zahlung ist noch zuzuordnen, sie kann nicht storniert werden.
+invoices-settlement-cancel-blocked-credited = Diese Rechnung wurde durch eine Gutschrift ausgeglichen: Diese Zahlung bleibt auf dem Debitorenkonto offen, sie kann nicht storniert werden.
 invoices-settlement-cancel-blocked-written-off = Der Restbetrag dieser Rechnung wurde ausgebucht: Stornieren Sie zuerst die Ausbuchung.
 invoices-amount-written-off = Ausgebucht
 invoices-settlements-type-write-off = Ausbuchung — { $nature }
@@ -780,7 +792,7 @@ settlement-cancel-blocked-account-archived = Ein Konto dieser Zahlung wurde arch
 settlement-cancel-blocked-no-fiscal-year = Kein offenes Geschäftsjahr umfasst das heutige Datum: Legen Sie es an, um diese Zahlung stornieren zu können.
 # Story 25-3-b (#418) — annuler un rapprochement : ses motifs et son dialogue.
 reconciliation-cancel-blocked-not-reconciled = Diese Banktransaktion ist nicht abgeglichen: Es gibt keinen Abgleich aufzuheben.
-reconciliation-cancel-blocked-credited = Die Rechnung dieses Abgleichs wurde durch eine Gutschrift storniert: Ihre Zahlung ist eine zuzuordnende Zahlung und wird nicht storniert.
+reconciliation-cancel-blocked-credited = Die Rechnung dieses Abgleichs wurde durch eine Gutschrift storniert: Ihre Zahlung bleibt auf dem Debitorenkonto offen und wird nicht storniert.
 reconciliation-cancel-blocked-written-off = Der Restbetrag der Rechnung dieses Abgleichs wurde ausgebucht: Stornieren Sie zuerst die Ausbuchung.
 reconciliation-cancel-blocked-fiscal-year-closed = Dieser Abgleich gehört zu einem abgeschlossenen Geschäftsjahr: Ein Administrator muss das Geschäftsjahr wieder öffnen, damit er aufgehoben werden kann.
 reconciliation-cancel-blocked-bank-match = Die Buchung dieses Abgleichs ist auch mit einer anderen Banktransaktion abgeglichen: Heben Sie zuerst diesen anderen Abgleich auf.
@@ -2205,6 +2217,7 @@ audit-log-entity-imported-supplier-invoice = Importierte Rechnung
 audit-log-entity-installation = Installation
 audit-log-entity-invoice = Rechnung
 audit-log-entity-journal-entry = Buchung
+audit-log-entity-lettering = Ausgleich
 audit-log-entity-payment-batch = Zahlungsstapel
 audit-log-entity-product = Produkt
 audit-log-entity-project = Projekt
@@ -2218,6 +2231,8 @@ audit-log-action-journal-entry-created = Buchung erstellt
 audit-log-action-journal-entry-updated = Buchung geändert
 audit-log-action-journal-entry-reversed = Buchung storniert
 audit-log-action-journal-entry-deleted = Buchung gelöscht
+audit-log-action-lettering-created = Ausgleich gesetzt
+audit-log-action-lettering-removed = Ausgleich aufgehoben
 audit-log-action-account-chart-loaded = Kontenplan geladen
 audit-log-action-account-created = Konto erstellt
 audit-log-action-account-updated = Konto aktualisiert

@@ -17,6 +17,15 @@ export interface JournalEntryLineResponse {
 	credit: string;
 	/** Projet analytique de la ligne (Epic 19). `null` = non taguée. */
 	projectId: number | null;
+	/**
+	 * Lettrage (Story 15-1a-i, #518) — clé du groupe, son code affiché et son
+	 * origine (`document`, `reversal`, `manual`). Toujours présents, `null` si la
+	 * ligne est ouverte : l'API les rend toujours, les déclarer optionnels
+	 * mentirait sur le contrat.
+	 */
+	letteringKey: number | null;
+	letteringCode: string | null;
+	letteringOrigin: 'document' | 'reversal' | 'manual' | null;
 }
 
 export interface JournalEntryResponse {
