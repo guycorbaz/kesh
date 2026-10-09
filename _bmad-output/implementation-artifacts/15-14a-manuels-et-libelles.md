@@ -1221,3 +1221,19 @@ compilation à froid** (`CARGO_TARGET_DIR` du worktree vide au départ) :
     § « Les échecs attendus ») ; la branche ne touche ni la barre latérale ni sa spec. tmpfs : **403 M / 8,0 G
     (5 %)** avant, **1,3 G (16 %)** après.
   - **Statut : done.**
+- 2026-10-09 — **Mise à jour sur `1ae3963e`** (15-6d, PR #590), branche déjà poussée (`986ab92d`, PR #591).
+  Sauvegarde `backup/15-14a-avant-rebase-1ae3963e` ; registre par union (**456** entrées = union exacte
+  de main et de la branche, vérifié par identifiants, aucun doublon) ; sprint-status par union, lignes
+  d'historique dédoublonnées et renumérotées au-dessus de celles de main ; aucun conflit de code ; PDF
+  régénérés (`make -B` ×2, 0 « Label(s) may have changed ») et contrôlés aplatis (paragraphe de la 15-6d
+  « La contrepartie n'est jamais le compte de la banque » présent, textes de la story présents). T0 rejoué :
+  **identique** à l'état précédent (AC 1 4, AC 2 (A) 13 / (B) 154, AC 3 2, AC 5 20, AC 6 5, AC 7 54/54,
+  AC 8 162, AC 9 2, AC 10 8 / 11). Les textes neufs de la 15-6d hors tests ne portent ni numéro de compte,
+  ni « Réglages », ni prescription de réouverture ; ses numéros (`1020 — Banque`, `5999`…) sont dans des
+  `*.test.ts`, hors de G4-ter. Gates sur l'état rebasé (dernier commit de code : `29944a30`, contenu
+  inchangé), bases `kesh_1514a` (migrée 76, semée) et `kesh_e2e_1514a` (migrée 76) recréées :
+  `scripts/test-fast.sh` **3161 / 3161**, 4 ignorés (17 tests de garde de texte verts) ; `npm run check`
+  0 erreur, 27 avertissements ; `lint-i18n-ownership` PASS ; `test:unit` **1158 / 1158** (114 fichiers) ;
+  `build` vert ; **E2E complet** sur 3015 (version 0.13.0, `smtpConfigured: true`), lancé à 15:09 UTC :
+  **247 réussis, 7 échecs, 19 ignorés** — les 7 KF-029 nommément, aucun hors liste. tmpfs : **1,3 G /
+  8,0 G (16 %)** avant et après.
