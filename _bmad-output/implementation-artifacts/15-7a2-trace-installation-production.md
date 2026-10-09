@@ -1,6 +1,6 @@
 # Story 15.7a2 : La piste de contrôle de l'installation de production
 
-Status: review
+Status: done
 
 <!-- Née le 2026-10-08 du découpage de la 15-7a (choix C-15-7-19), à la passe de validation P2 ; la
      15-7a était elle-même née du découpage de la 15-7 à la P1 (C-15-7-8). Elle garde les routes,
@@ -463,6 +463,18 @@ Claude Opus 5.5 (`claude-opus-5-5`), agent de développement en autonomie (consi
   l'écran) et deux KF-045 (#421 — `invoices.spec.ts:415`, `:439`, avant 12:00 UTC) ; pas de huitième
   variable sur ce run. Le log backend ne porte aucune erreur interne (que des `unauth` attendus).
   Backend arrêté par son PID.
+- **Clôture — gates complets sur l'état rebasé** (`origin/main` = `de285ea8`, 15-11b ; tête de code
+  `004341d0`, dernier commit de code de la story), base `kesh_157a2` remise à zéro (DROP/CREATE,
+  migrations, seed) : `scripts/test-fast.sh` — fmt, clippy `-D warnings`, nextest **2934 exécutés,
+  2934 passés, 4 ignorés** (`target/gate-15-7a2-backend-cloture.log`). Frontend : `npm run check`
+  0 erreur (27 avertissements préexistants), `lint-i18n-ownership` PASS, `test:unit` **112 fichiers,
+  1091 tests**, `build` vert. E2E complet (backend `:3013`, base `kesh_e2e_157a2` reconstruite,
+  secrets `openssl rand`, `KESH_COOKIE_SECURE=false`, SMTP factices, inbox/documents du worktree,
+  `/health` → `smtpConfigured: true`) : **247 passés, 9 échoués, 17 sautés** (02:37–02:47 UTC). Les
+  neuf échecs, fichier par fichier contre `docs/testing.md` : sept KF-029 (`mode-expert.spec.ts:26`,
+  `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) et deux
+  KF-045 (#421, `invoices.spec.ts:415`, `:439`, avant 12:00 UTC). Log backend sans erreur interne
+  ni `Permission denied`. Backend arrêté par son PID.
 - Gates ciblés pendant le développement : `binary(onboarding_audit_e2e)` 19/19 ;
   `onboarding_e2e`, `onboarding_path_b_e2e`, `audit_route_registry`, `audit_label_registry`,
   `fiscal_years_e2e`, `profile_e2e` 88/88.
@@ -721,3 +733,22 @@ Claude Opus 5.5 (`claude-opus-5-5`), agent de développement en autonomie (consi
   | A-6 | LOW | E2E : les specs Path B échouent (KF-029) avant `coordinates` : le navigateur n'exerce pas `coordinates`, `bank-account`, `finalize` | limite de preuve, non défaut ; ces routes sont tenues par `onboarding_audit_e2e` et `onboarding_path_b_e2e` |
 
   Gate **ciblé** (cf. Dev Agent Record) ; gate complet et E2E à la clôture.
+
+- 2026-10-09 — **Revue de code P2 ciblée — boucle CLOSE** (Haiku, une lentille braquée sur le seul commit
+  de remédiation `23b3e46e` — `004341d0` après rebase ; prompt versionné `15-7a2-review-prompt-p2-ciblee.md` ;
+  rapport `target/gate-logs/15-7a2-review-p2-ciblee.md`, non versionné). **0 CRITICAL, 0 HIGH, 0 MEDIUM,
+  0 LOW** ; axes exercés, déclarés par la passe : les cinq demandés (test 14 aux étapes exactes avec
+  contrôle par différence, 9 (c) et 9 (d), test 13 sur neuf routes, `details` complets du test 1,
+  aucune ligne de production touchée) ; axe non exercé : aucun déclaré. Le cinquième est vérifié par
+  l'orchestrateur de clôture (`git show --stat` : tests, fiche, registres, CHANGELOG seulement) : la
+  remédiation ne touche **aucune ligne de code de production**, ce qui permet de clore après une passe
+  ciblée (§ « La passe ciblée »). **Trend de la revue de code** : P1 (Sonnet ×3) **2 MEDIUM, 10 LOW**
+  distincts → P2 ciblée (Haiku) **0**. Modèles : Sonnet pour la passe complète, Haiku pour la passe
+  ciblée (D6). Reclassements : aucun ; B-4 = E-4 assumé (C-15-7a2-4).
+- 2026-10-09 — **Clôture** : rebasée sur `origin/main` (`de285ea8`, 15-11b). Conflits : `admin-manual.pdf`
+  (régénéré sur le `.tex` fusionné, contrôlé aplati) et le registre des choix (union). Aucun conflit de
+  code ; `routes/onboarding.rs` lit déjà l'environnement par `config::env_nonempty`. Partition du
+  registre **recomptée depuis `LIB_ROUTES`** : 104 + 6 + 2 = 112 (rejeu : 22 + 4 + 89 = 115), inchangée,
+  manuel juste. Gates complets sur l'état rebasé : backend 2934/2934, frontend vert (1091 tests), E2E
+  247 passés / 9 échecs attendus (7 KF-029, 2 KF-045). Statut **done**. Choix C-15-7a2-5. `refs #434` :
+  c'est la 15-7b2 qui la fermera — **même release que la 15-7b1 et la 15-7b2**.
