@@ -1,6 +1,6 @@
 # Story 15.7b1 : Le chargement de la démonstration laisse sa trace
 
-Status: review
+Status: done
 
 <!-- Née le 2026-10-08 du découpage de la 15-7b (choix C-15-7-31), à la passe de validation P4 :
      coupe Volet A / Volet B que la section « Dérogation règle de splitting » de la 15-7b prévoyait
@@ -415,6 +415,28 @@ Journaux non versionnés : `target/gate-logs/15-7b1-gate.log` (backend), `15-7b1
 - **AC 12** : entrée `### Corrigé` sous `## [0.13.0]`, relue ; la phrase de l'entrée 15-7a2 « le
   peuplement de démonstration et la remise à zéro restent à tracer » corrigée en conséquence.
 
+- **Clôture (2026-10-09)** — branche déjà posée sur `200f5e79`, tête d'`origin/main` après `git fetch` :
+  **rebase sans objet, aucun conflit**. Partition du registre **recomptée depuis `LIB_ROUTES`** :
+  112 entrées, **105** `Traced`, **5** `Exempt`, **2** `NoMatter` ; 115 avec les 3 routes de test.
+  **Gates complets sur la tête `0d711e70`** (dernier commit de code : `4303ac01`, la suite ne porte que
+  le prompt versionné et cette fiche), bases `kesh_157b1` / `kesh_e2e_157b1` remises à zéro avant
+  (DROP/CREATE, migrations, seed), après `wait-kesh.sh` :
+  - backend `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) : **2984/2984**, 4 ignorés
+    (`target/gate-logs/15-7b1-close-gate.log`) ;
+  - frontend : `npm run check` 0 erreur, `lint-i18n-ownership` PASS, Vitest **1095/1095** (112 fichiers),
+    `npm run build` vert (`15-7b1-close-front.log`) ;
+  - E2E complet (port 3016, secrets aléatoires neufs, `KESH_TEST_MODE=true` des deux côtés,
+    `KESH_COOKIE_SECURE=false`, SMTP factices, `/health` → `smtpConfigured:true`, inbox et documents
+    neufs du scratchpad) : **244 passés, 10 échecs, 19 ignorés**, run achevé à 07:29 UTC
+    (`15-7b1-close-e2e.log`). Jugés fichier par fichier contre `docs/testing.md` : les 7 KF-029
+    (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`), les 2
+    KF-045 avant midi UTC (`invoices:415`, `:439`) et `sidebar-navigation:75`, **vert rejoué seul**
+    (1 passed) : c'est le huitième variable (pollution), non la KF-046. Backend arrêté par son PID.
+  - **Axe manuel repris par l'orchestration de clôture** : la P2 ciblée ne le déclare ni exercé ni non
+    exercé alors que `4303ac01` touche les deux `.tex` et leurs PDF ; PDF aplatis contrôlés — les deux
+    phrases ajoutées (course avec la configuration de production, renvoi à #538) y figurent, « 105 + 5 +
+    2 = 112 » et « 105 des 112 » aussi, et elles concordent avec les tests 12 et 13.
+
 ### File List
 
 - `crates/kesh-seed/Cargo.toml`, `crates/kesh-seed/src/lib.rs`, `Cargo.lock`
@@ -580,3 +602,17 @@ Journaux non versionnés : `target/gate-logs/15-7b1-gate.log` (backend), `15-7b1
   `15-7b1\)`, `pas provoqué` — le doc-comment (vi) de `audit_route_registry.rs` renvoie désormais aux
   tests 14 et 15. Gate ciblé : fmt, clippy, `onboarding_audit_e2e` 33/33, `kesh-seed` 2/2, `audit_route_registry`
   11/11 ; gate complet et E2E au push. Choix C-15-7b1-2, C-15-7b1-3.
+- 2026-10-09 — **Revue de code P2, ciblée** (prompt versionné `15-7b1-review-prompt-p2-ciblee.md` ;
+  une lentille Haiku en contexte frais, braquée sur le seul commit de remédiation `4303ac01` ; rapport
+  `target/gate-logs/15-7b1-review-p2-ciblee.md`, non versionné). **0 CRITICAL, 0 HIGH, 0 MEDIUM, 0 LOW.**
+  Axes exercés : revérification de l'étape sous verrou (tests 12), course HTTP et son 400 (test 13),
+  prédicat `is_seed_retryable` (test 14), rejeu de la dernière transaction (test 15), normalisation de la
+  garde 11 (b), absence de ligne de production exécutable. Non exercés : exécution (interdite),
+  interblocage physique réel (simulé par déclencheur), manuel — **repris à la clôture**, PDF aplatis
+  conformes (Dev Agent Record). L'orchestrateur a vérifié que les tests à déclencheur sont des
+  `#[sqlx::test]` (base éphémère). La remédiation relue ne touche aucune ligne de code de production :
+  **revue CLOSE**. Trend : P1 **1 MEDIUM distinct** (Sonnet ×3 ; E-1 = A-1) → P2 ciblée **0** (Haiku).
+- 2026-10-09 — **Clôture** : rebase sur `origin/main` sans objet (déjà sur `200f5e79`), partition
+  105 / 5 / 2 = 112 recomptée depuis la source ; gates complets sur la tête : backend 2984/2984, Vitest
+  1095/1095, E2E 244 / 10 échecs tous attendus (7 KF-029, 2 KF-045, 1 pollution rejouée verte). Statut
+  `done`.
