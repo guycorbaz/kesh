@@ -6756,3 +6756,33 @@ l'import (#458–#461).
 - **Retenu** : la réserve « et après délettrage pour celles dont une ligne est lettrée », PDF régénéré.
 - **Signalé, non traité** : le § « Passer à la 0.13.0 » du manuel d'administration (relevé par C-15-1a-i-14) n'est pas touché — hors du périmètre de cette fiche, à la préparation de la release.
 - **Réversible** : oui.
+
+## C-15-1a-ii-7 — 15-1a-ii (revue de code P1, B-5) : le 409 `ENTRY_LETTERED` porte `details.letteringCode`
+- **Contexte** : le 409 réemployait `details.documentNumber` pour le code du premier groupe (et `documentId: null`) ; ce champ porte un numéro de pièce dans tous les autres refus, et un client générique afficherait « pièce n° AB ». Aucun client ne le lit : `grep -rn "documentNumber" frontend/src` hors tests → aucune occurrence ; la v0.13.0, qui introduit le code, n'est pas publiée.
+- **Retenu** : `details: { letteringCode }`, sans `documentId` ni `documentNumber` ; message toujours suffixé du code. Fonction commune `refusal_409` (message + `details` fourni) sous `entry_document_refusal_response`, pour ne pas dupliquer la construction du message. `api-external.md` (trois sites) et CHANGELOG suivent ; test AC8 asserte le `details` entier au `PUT` (trois cas) et au `DELETE`. Écart à la lettre d'AC8 (« `details` de la forme commune ») assumé.
+- **Écartées** : garder `documentNumber` (ambiguïté de contrat, plus coûteuse à lever après publication) ; `details.code` (la forme des refus du lettrage, mais homonyme de `error.code` dans un refus d'écriture ; `letteringCode` est le nom du champ des lignes).
+- **Réversible** : oui jusqu'au tag v0.13.0 ; ensuite changement de contrat.
+
+## C-15-1a-ii-8 — 15-1a-ii (revue de code P1, B-3/E-1) : `lettering_guard` privée plutôt que scopée par jointure
+- **Contexte** : la garde ne lit que `journal_entry_lines WHERE entry_id = ?` et ignorait son `_company_id`, alors qu'elle était `pub`.
+- **Retenu** : `lettering_guard` et `Lecture` **privées au module** (leurs trois appelants y sont), paramètre `_company_id` retiré, liens rustdoc vers l'item privé ramenés à du texte. La doc dit pourquoi.
+- **Écartées** : la jointure `journal_entries je ON … AND je.company_id = ?` — sous `FOR UPDATE`, un plan partant de l'index de société verrouillerait les en-têtes parcourus, ce qui change l'ensemble des verrous de la garde ; non mesuré, donc non retenu.
+- **Réversible** : oui.
+
+## C-15-1a-ii-9 — 15-1a-ii (revue de code P1, A1) : quelles mutations prouvent le rollback du lettrage
+- **Contexte** : A1 demande de prouver que le groupe `reversal` et l'audit `lettering.created` partent avec la transaction de l'appelant, et de jouer une mutation qui « écrit la marque ou l'audit hors de la transaction ».
+- **Retenu** : le test lit, dans la transaction, les marques des quatre lignes (origine et miroir, origine `reversal`), deux clés distinctes et deux audits ; après le rollback, les marques des lignes d'origine nulles et zéro audit pour ces clés. Mutations (journal `15-1a-ii-review-p1-mutations.log`) : M-A1-1 audit écrit et commité sur une connexion distincte → **tuée** (la vue `REPEATABLE READ` de la transaction ne le voit pas : assertion « visible dans la transaction ») ; M-A1-2 R6 ne lettre rien → **tuée** (assertion de marque dans la transaction) ; M-A1-3 `COMMIT` pour le compte de l'appelant après R6 → **tuée** (par l'assertion préexistante sur l'écriture inverse, la première à parler).
+- **Non jouable, et pourquoi** : écrire la **marque** hors de la transaction de l'appelant. Le groupe apparie une ligne d'origine, tenue `FOR UPDATE` par cette transaction (étape 2), et un miroir non commité, invisible ailleurs : toute autre connexion attendrait le verrou (1205) ou ne trouverait pas le miroir. Les assertions négatives d'après le rollback sur les marques et l'audit ne sont donc tuées seules par aucune mutation réaliste ; elles gardent la propriété contre un futur chemin qui commiterait le lettrage à part.
+- **Réversible** : oui (test).
+
+## C-15-1a-ii-10 — 15-1a-ii (revue de code P1) : ce qui reste en dette, et B-4
+- **B-2** (rafale de requêtes de R6 dans la transaction) : gardé en dette. Correction sans effet sur l'exactitude (les lectures sont dans la même vue) ; la mémoïsation de `is_letterable_account` par compte ne retirerait qu'une requête sur six à huit par ligne, `create_group_in_tx` restant par paire. Mesure à faire sur une écriture de 60 lignes (déjà relevée F-12) avant de toucher la primitive ; à reprendre si un rejeu de contre-passation est observé.
+- **A4** (F2 survivante : l'identité de la clé i18n d'un motif d'écran n'est gardée par aucun test) : angle mort préexistant, commun aux douze branches de `modificationBlockerLabel` ; le fermer pour une seule branche serait trompeur. À ouvrir en issue P3 par l'orchestrateur (test qui résout chaque clé dans les quatre catalogues et compare au repli).
+- **A5** (AC9 (d) éprouvé au dépôt, non à la route) : écart déjà motivé à C-15-1a-ii-4 ; la route `DELETE /letterings/{key}` n'ajoute que le mappage HTTP, testé par la 15-1a-i. Rien à faire.
+- **B-4** (le message prescrit un délettrage sans écran) : **déjà tranché** à C131 (7) — message inchangé, la fenêtre sans écran de délettrage n'est jamais publiée (l'epic sort en une release, la 15-1c apporte l'écran). Rien à faire ici.
+- **Réversible** : oui.
+
+## C-15-1a-ii-11 — 15-1a-ii (revue de code P1) : rebase sur `1ae3963e` (15-6d)
+- **Contexte** : `origin/main` avait avancé de la 15-6d (#590) depuis `0724904c`.
+- **Retenu** : sauvegarde `backup/15-1a-ii-avant-rebase-p1`, rebase ; CHANGELOG, `api-external.md` et `user-manual.tex` fusionnés sans conflit ; `user-manual.pdf` régénéré (`make -B user`) ; registre et sprint-status **par union** (entrée de la 15-1a-ii renumérotée (49)).
+- **Réversible** : oui (branche de sauvegarde).

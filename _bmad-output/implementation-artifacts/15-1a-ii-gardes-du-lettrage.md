@@ -948,6 +948,26 @@ Opus 5.5 (Claude Code, sous-agent de développement de l'Epic 15), le 2026-10-09
 
 ## Change Log
 
+### Revue de code P1 — 2026-10-09 (Sonnet ×3 ; remédiation Opus 5.5)
+
+- **Passe P1** (Sonnet, trois lentilles, diff `0724904c..5a54ec01`) : B 0 MEDIUM / 5 LOW, E 0 MEDIUM / 6 LOW, A 1 MEDIUM / 4 LOW — **1 MEDIUM, 15 LOW** (B-1 = E-2 et B-3 = E-1 convergents : 13 distincts). Rapports : `kesh-gate-logs/15-1a-ii-review-p1-{B,E,A}.md`.
+- **Rebase** sur `1ae3963e` (15-6d, #590) avant la remédiation : C-15-1a-ii-11.
+- **Remédiation, commit `581040aa`** — **touche du code de production** (`kesh-db` `journal_entries.rs`, `kesh-api` `errors.rs`) :
+  - **A1 (MEDIUM)** — `reverse_in_tx_disparait_avec_le_rollback_de_l_appelant` lit, dans la transaction, les marques `reversal` des quatre lignes (deux clés) et les deux audits `lettering.created`, puis, après le rollback, des marques nulles sur l'origine et zéro audit. Mutations M-A1-1 (audit commité sur une autre connexion), M-A1-2 (R6 ne lettre rien), M-A1-3 (`COMMIT` pour l'appelant) **tuées** ; la marque écrite hors de la transaction est **non jouable** (verrou de l'origine, miroir invisible) — C-15-1a-ii-9, journal `15-1a-ii-review-p1-mutations.log`.
+  - **B-1 = E-2** — garde de longueur avant le `zip` origine/miroir → `DbError::Invariant` (production).
+  - **B-3 = E-1** — `lettering_guard` et `Lecture` privées au module, `_company_id` retiré (production) ; jointure écartée — C-15-1a-ii-8.
+  - **B-5** — le 409 `ENTRY_LETTERED` porte `details.letteringCode` (plus `documentId`/`documentNumber`), `refusal_409` commun (production) ; `api-external.md` (trois sites), CHANGELOG, test AC8 au `PUT` et au `DELETE` — C-15-1a-ii-7.
+  - **A2** — docstring du test AC9 (f) : ne déclare tuées que M8 et M9, la variante « miroir seul » dite non jouée.
+  - **A3** — doc de `update_journal_entry` : quatre cycles (trois hérités + lignes ↔ écriture). Valeur grepée (`(trois|3) cycles`, `cycles? hérités?`) : plus aucun site.
+  - **E-3** — `user-manual.tex` (ouverture) : l'exemple de lettrage ne promet plus les encaissements de facture ; PDF régénéré (`make -B user`), phrase vérifiée dans le PDF aplati. Symptôme grepé (`lettre typiquement|encaissements qui suivent|lettrer … encaissement`) : aucun autre site.
+  - **E-4** — `api-external.md` : l'écriture lettrée se contre-passe aussi ; le délettrage n'est requis que pour la modifier.
+  - **E-5** — cycle lignes ↔ écriture à l'en-tête de `reverse_in_tx_inner` ; ligne `/reverse` (et les quatre annulations) au tableau et aux notes du Pattern 5.
+  - **E-6** — commentaire de `letterings.rs` mis au présent.
+  - **B-4** — rien à faire : déjà tranché à C131 (7). **B-2, A4, A5** — gardés en dette, motifs à C-15-1a-ii-10 (A4 : issue P3 à ouvrir).
+- **Tests** : aucun test neuf (recompté aux deux bornes `7c9a478e` → `581040aa` : `journal_entries.rs` module 60 → 60, `journal_entry_reversal_e2e.rs` 53 → 53) ; deux tests étendus.
+- **Gates, au commit de code `581040aa`** (bases `kesh_151aii` et `kesh_e2e_151aii` reconstruites — `DROP/CREATE`, 76 migrations, seed ; tmpfs MariaDB 1,3 Go / 8 Go avant et après) : `scripts/test-fast.sh` **3161/3161**, 4 ignorés (3152 de la story + 9 de la 15-6d) ; Vitest **1159/1159** (1152 + 7 de la 15-6d) ; `npm run check` 0 erreur, 27 avertissements ; `lint-i18n-ownership` vert ; build ; **E2E complet** (port 3017) : **247 passés, 7 échecs, 19 ignorés** — exactement les sept KF-029 (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`). Journaux : `15-1a-ii-gate-review-p1.log`, `15-1a-ii-fe-review-p1.log`, `15-1a-ii-e2e-review-p1.log`.
+- **Suite** : la remédiation touche la production → la boucle n'est pas close ; passe P2 complète (Opus) à lancer.
+
 ### Développement — 2026-10-09 (Opus 5.5, bmad-dev-story)
 
 Story développée sur `0724904c` : gel `ENTRY_LETTERED` sur les trois chemins et l'écran (AC8),
