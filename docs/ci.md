@@ -6,10 +6,12 @@ Documentation de la pipeline GitHub Actions définie dans `.github/workflows/ci.
 
 La pipeline `ci.yml` se déclenche sur :
 
-- **Pull request** vers `main` → 4 jobs (`backend`, `frontend`, `e2e`, `docker-build`)
-- **Push** sur `main` (= merge de PR) → mêmes 4 jobs
+- **Pull request** vers `main` → 3 jobs (`backend`, `frontend`, `docker-build`)
+- **Push** sur `main` (= merge de PR) → mêmes 3 jobs
 
-Aucune image Docker n'est publiée sur push `main` — la publication n'a lieu **que** sur push de tag `v*.*.*` (via `release.yml`). Le job `docker-build` du `ci.yml` valide les deux compose distribués (`docker compose config -q` sur `docker-compose.yml` et `docker-compose.prod.yml` — clé inconnue ou en double, interpolation mal formée) puis build l'image en mode sanity (sans push) pour valider que le `Dockerfile` compile.
+⚠️ Les sections de ce document qui décrivent un job `e2e` (schéma, tableau des jobs, timeouts, migrations, mode test) ne correspondent à **aucun** job de `ci.yml` : il n'en a que trois. Défaut antérieur, suivi par l'issue #577 (qui vise aussi le smoke E2E annoncé par le `CLAUDE.md`).
+
+Aucune image Docker n'est publiée sur push `main` — la publication n'a lieu **que** sur push de tag `v*.*.*` (via `release.yml`). Le job `docker-build` du `ci.yml` valide les deux compose distribués (`docker compose config -q` sur `docker-compose.yml` et `docker-compose.prod.yml` — clé inconnue ou en double, interpolation mal formée) — `docker-compose.yml` dans les **deux sens** : il doit se lire avec des mots de passe MariaDB factices, et **refuser** sans eux en nommant `MARIADB_ROOT_PASSWORD` ou `MARIADB_PASSWORD` (Story 15-13a, #551) — puis build l'image en mode sanity (sans push) pour valider que le `Dockerfile` compile.
 
 La pipeline `release.yml` se déclenche **uniquement** sur push de tag `v*.*.*` et publie une image Docker Hub SemVer + une GitHub Release.
 
@@ -114,7 +116,7 @@ La publication d'images Docker se fait **uniquement** sur push de tag SemVer `v*
 | `:{version}` (ex `:0.1.0`) | push tag `v*.*.*` | `release.yml/docker` | Immuable — release SemVer |
 | `:latest` | push tag `v*.*.*` | `release.yml/docker` | Mutable — toujours la dernière release SemVer |
 
-Le job `docker-build` du `ci.yml` valide d'abord les deux compose distribués (`docker compose config -q`), puis build l'image en mode sanity (sans push) sur chaque PR/push afin de détecter au plus tôt toute régression du `Dockerfile`. L'image est jetée à la fin du runner. La **liste** des variables transmises par les compose est gardée par le test Rust `configuration_transmise` (job `backend`, Story 15-11a).
+Le job `docker-build` du `ci.yml` valide d'abord les deux compose distribués (`docker compose config -q` ; pour `docker-compose.yml`, avec des mots de passe MariaDB factices, puis l'échec **exigé** sans eux), puis build l'image en mode sanity (sans push) sur chaque PR/push afin de détecter au plus tôt toute régression du `Dockerfile`. L'image est jetée à la fin du runner. La **liste** des variables transmises par les compose est gardée par le test Rust `configuration_transmise` (job `backend`, Story 15-11a).
 
 ### Rotation des secrets Docker Hub
 

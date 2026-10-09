@@ -237,11 +237,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       # Story 15-11a (#550) — validation des deux compose distribués par Compose
-      # lui-même (clé inconnue ou en double, interpolation mal formée). Sans
-      # `.env` : les variables obligatoires non posées ne font qu'avertir.
+      # lui-même (clé inconnue ou en double, interpolation mal formée).
+      # Story 15-13a (#551) — `docker-compose.yml` exige ses deux mots de passe
+      # MariaDB (`${…:?…}`) : validé AVEC des valeurs factices, puis le refus
+      # SANS elles est exigé (sortie en échec, variable nommée). Chaque
+      # variable est aussi retirée SEULE, l'autre posée : le retour d'un défaut
+      # publié sur une seule des deux ferait rougir cette étape (sinon le refus
+      # sur l'autre le masquerait). `docker-compose.prod.yml` n'a pas de
+      # variable obligatoire de cette forme : validé sans `.env`.
       - name: Validate compose files
         run: |
-          docker compose -f docker-compose.yml config -q
+          MARIADB_ROOT_PASSWORD=ci MARIADB_PASSWORD=ci \
+            docker compose -f docker-compose.yml config -q
+          if env -u MARIADB_ROOT_PASSWORD -u MARIADB_PASSWORD \
+               docker compose -f docker-compose.yml config -q 2> refus.txt; then
+            echo "docker-compose.yml doit refuser l'absence des mots de passe MariaDB"
+            exit 1
+          fi
+          cat refus.txt
+          grep -qE 'MARIADB_(ROOT_)?PASSWORD' refus.txt
+          for paire in MARIADB_ROOT_PASSWORD:MARIADB_PASSWORD \
+                       MARIADB_PASSWORD:MARIADB_ROOT_PASSWORD; do
+            absente="${paire%%:*}"; posee="${paire#*:}"
+            if env -u MARIADB_ROOT_PASSWORD -u MARIADB_PASSWORD "$posee=ci" \
+                 docker compose -f docker-compose.yml config -q 2> refus.txt; then
+              echo "docker-compose.yml doit refuser l'absence de $absente"
+              exit 1
+            fi
+            grep -q "required variable $absente is missing" refus.txt
+          done
           docker compose -f docker-compose.prod.yml config -q
       - uses: docker/setup-buildx-action@v3
       - name: Build image (no push)

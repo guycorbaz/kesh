@@ -5556,3 +5556,10 @@ l'import (#458–#461).
 - **Retenu** : le manuel, le CHANGELOG et `DOCKER_START.md` disent la mesure — refus de `config`, `pull`, `up` ; `ps`, `logs`, `exec`, `stop` encore utilisables avec la version mesurée (diagnostic et arrêt possibles ; le script de sauvegarde, qui passe par `exec`, ne dépend pas de `.env`, il lit le mot de passe dans le conteneur) ; Compose nomme **une** variable à la fois, **pas toujours la même** : poser les deux avant de relancer. La version mesurée est nommée, faute de pouvoir garantir les autres.
 - **Écartées** : écrire l'affirmation de la fiche (fausse sur la version mesurée) ; ne rien dire des sous-commandes (l'exploitant face au refus doit savoir s'il peut encore diagnostiquer).
 - **Réversible** : oui (texte). La règle (refus par Compose, avertissement par Kesh) n'est pas touchée : seul le constat documentaire change.
+
+## C-15-13a-2 — 15-13a (T4/T8) : l'étape CI retire aussi chaque mot de passe MariaDB SEUL, l'autre posé
+
+- **Contexte** : l'AC 4 b exige que `docker compose config -q` **sans les deux** variables échoue en nommant l'une d'elles. Jouée localement, la mutation **M27** de la fiche (« remettre `:-kesh_dev_root` ») **survit** à cette forme : `MARIADB_PASSWORD` reste obligatoire, Compose refuse en la nommant, et l'étape passe — le retour du défaut publié de root ne se voit pas en CI.
+- **Retenu** : l'étape garde la vérification de l'AC 4 b et ajoute une boucle : pour chaque variable, retirer les deux puis poser **l'autre** ; Compose doit refuser **en nommant celle qui manque** (`required variable <nom> is missing`). M27 rougit (rejouée sous `bash -eo pipefail` sur une copie). Reste vert, à dessein, le retour d'un défaut sur le seul `MARIADB_PASSWORD` du service `mariadb` : la `DATABASE_URL` de `kesh-api` exige encore la variable, Compose refuse toujours son absence — aucun changement de comportement ; le test Rust `mariadb` le voit.
+- **Écartées** : s'en tenir à l'esquisse de la fiche (M27 survit) ; ne compter que sur le test Rust (l'AC 4 veut le refus exercé par Compose lui-même).
+- **Réversible** : oui.
