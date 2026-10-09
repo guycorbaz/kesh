@@ -1,6 +1,6 @@
 # Story 15.12b : Ne plus écrire sous un bilan clos — le filet des données héritées, son écran, sa réparation
 
-Status: review
+Status: done
 
 <!-- Créée le 2026-10-09 par DÉCOUPAGE de la Story 15-12 à la remédiation de sa validation P2 (décision de
      l'orchestrateur, choix C107 de `epic-15-choix-autonomes.md`). Version complète de la 15-12 avant
@@ -839,6 +839,26 @@ montage E2E n'a pas de SQL direct ; le bandeau est couvert par Vitest (texte, tr
   KF-045 #421 (`invoices.spec.ts:415`, `:439` — « historique des rappels », run avant midi UTC). Aucun
   échec hors liste. Backend arrêté par son PID.
 
+**Gates sur l'état rebasé** (`origin/main` `200f5e79`, 15-7a2 ; tête de code `6115387b`, remédiation de la
+revue P1 comprise ; décision D7) :
+- **backend complet** (`scripts/test-fast.sh` : fmt, clippy `-D warnings`, nextest), bases `kesh_1512b`
+  remises à zéro juste avant (DROP/CREATE, migrations, seed) : **2993 / 2993 verts**, 4 ignorés
+  (`target/gate-1512b-2.log`) — 2973 de `main` + 19 de la story + 1 de la revue (A-2) ;
+- **frontend complet** (`check` 0 erreur, `lint-i18n-ownership`, `test:unit`, `build`) : **1116 / 1116**
+  (114 fichiers) — 1115 + 1 de la revue (E-3) ; compteur des sites i18n inchangé par le rebase ;
+- **E2E complet** (base `kesh_e2e_1512b` reconstruite, backend `:3015`, secrets aléatoires,
+  `KESH_TEST_MODE=true` des deux côtés, `KESH_COOKIE_SECURE=false`, SMTP et répertoires du worktree,
+  `/health` : `smtpConfigured:true`), lancé à 06:09 UTC : **246 passés, 10 échecs, 17 ignorés** — jugés
+  fichier par fichier contre `docs/testing.md` § « Les échecs attendus » : 7 KF-029 (`mode-expert:26`,
+  `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`), 2 KF-045 #421
+  (`invoices.spec.ts:415`, `:439`, avant 12:00 UTC, `manual reminder failed: 422`) et **le huitième
+  variable** (pollution entre specs) : `invoices.spec.ts:382` (« suspension : une erreur transitoire… »,
+  `dunning-pause-button` introuvable), **rejoué seul, vert** (`target/e2e/playwright-rejeu-382.log`).
+  Aucun échec hors liste. Backend arrêté par son PID.
+- **PDF** des deux manuels régénérés après le rebase (conflit binaire), contrôlés aplatis : 0 « ?? »,
+  phrases des deux côtés présentes (« 104 des 112 routes » de la 15-7a2 ; « Exercices dans le désordre »,
+  « Des boutons offerts, puis refusés au clic », « neuf refus »).
+
 ### File List
 
 `crates/kesh-db/src/repositories/{journal_entries,invoices,fiscal_years,opening_complement,settlement_cancellation}.rs`,
@@ -1015,3 +1035,12 @@ montage E2E n'a pas de SQL direct ; le bandeau est couvert par Vitest (texte, tr
     écrits, non traités (repli et catalogues hors consigne).
   Trend : revue P1 0 au-dessus de LOW — **revue close** (16 LOW, aucun MEDIUM+ : critère d'arrêt de la
   § *Review Iteration Rule*).
+
+- **2026-10-09 — Clôture** : rebasée sur `origin/main` `200f5e79` (15-7a2). Conflits : registre des choix
+  (union), `sprint-status.yaml` (union, ligne `last_updated` renumérotée (36) après les (34)-(35) de
+  `main`), PDF des manuels (binaires, régénérés) ; `CHANGELOG.md`, catalogues, `fiscal_years.rs`,
+  `audit_route_registry.rs` et `.tex` fusionnés sans conflit — registre recompté : 22 `Rejouee`, 2
+  `Exemptee`, 104 `Traced` dans `LIB_ROUTES` ; commande de l'AC 21 sur `origin/main` : 78 lignes, aucune
+  ligne neuve venue de la 15-7a2. Gates sur l'état rebasé : backend **2993/2993**, Vitest **1116/1116**, E2E
+  **246 passés / 10 attendus** (7 KF-029, 2 KF-045, 1 pollution rejouée verte). **Revue de code close**
+  (P1 Sonnet ×3 : 0 au-dessus de LOW, 16 LOW). Statut **done**.
