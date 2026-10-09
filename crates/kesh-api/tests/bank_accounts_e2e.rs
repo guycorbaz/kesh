@@ -1516,3 +1516,259 @@ async fn put_primary_refused_for_non_postable_does_not_demote_old_primary(pool: 
             .unwrap();
     assert!(old_is_primary, "l'ancien principal l'est toujours");
 }
+
+// ===========================================================================
+// Story 15-6c (#474) — un compte bancaire ne se lie pas au compte débiteurs ni
+// au compte créanciers désignés : 400 `BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT`.
+// ===========================================================================
+
+/// Montage 15-6c : `setup_full` (compte bancaire principal, `1020`) + les
+/// comptes `1100` (actif) et `2000` (passif), désignés en SQL comme compte
+/// débiteurs et compte créanciers. Rend `(ctx, receivable, payable)`.
+async fn setup_claims(pool: &MySqlPool) -> (Ctx, i64, i64) {
+    complete_onboarding(pool).await;
+    let ctx = setup_full(pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let receivable = create_account(
+        pool,
+        ctx.company_id,
+        ctx.user_id,
+        "1100",
+        "Débiteurs",
+        AccountType::Asset,
+    )
+    .await;
+    let payable = create_account(
+        pool,
+        ctx.company_id,
+        ctx.user_id,
+        "2000",
+        "Créanciers",
+        AccountType::Liability,
+    )
+    .await;
+    designate_claims(pool, ctx.company_id, Some(receivable), Some(payable)).await;
+    (ctx, receivable, payable)
+}
+
+async fn designate_claims(
+    pool: &MySqlPool,
+    company_id: i64,
+    receivable: Option<i64>,
+    payable: Option<i64>,
+) {
+    sqlx::query(
+        "INSERT INTO company_invoice_settings (company_id, default_receivable_account_id, default_payable_account_id) \
+         VALUES (?, ?, ?) \
+         ON DUPLICATE KEY UPDATE default_receivable_account_id = VALUES(default_receivable_account_id), \
+             default_payable_account_id = VALUES(default_payable_account_id)",
+    )
+    .bind(company_id)
+    .bind(receivable)
+    .bind(payable)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+async fn assert_ledger_refusal(
+    resp: reqwest::Response,
+    account_id: i64,
+    number: &str,
+    claim: &str,
+) {
+    let status = resp.status();
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(
+        body["error"]["code"], "BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT",
+        "{body}"
+    );
+    assert_eq!(
+        body["error"]["details"],
+        json!({ "accountId": account_id, "accountNumber": number, "claim": claim }),
+    );
+}
+
+async fn bank_count(pool: &MySqlPool, company_id: i64) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM bank_accounts WHERE company_id = ?")
+        .bind(company_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+async fn is_primary(pool: &MySqlPool, id: i64) -> bool {
+    sqlx::query_scalar("SELECT is_primary FROM bank_accounts WHERE id = ?")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Test 1 (AC3) — POST vers le compte débiteurs, puis vers le compte
+/// créanciers : 400, `details.claim` juste, rien n'est créé et l'ancien
+/// principal n'est pas démoté (la création demandait `isPrimary: true`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_bank_account_refuses_a_claim_account_ledger(pool: MySqlPool) {
+    let (ctx, receivable, payable) = setup_claims(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    for (target, number, claim) in [
+        (receivable, "1100", "receivable"),
+        (payable, "2000", "payable"),
+    ] {
+        let resp = app
+            .client
+            .post(app.url("/api/v1/bank-accounts"))
+            .bearer_auth(&ctx.jwt)
+            .json(&json!({
+                "bankName": "PostFinance",
+                "iban": "CH3908704016075473007",
+                "isPrimary": true,
+                "journalAccountId": target,
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_ledger_refusal(resp, target, number, claim).await;
+        assert_eq!(
+            bank_count(&pool, ctx.company_id).await,
+            1,
+            "rien n'est créé"
+        );
+        assert!(
+            is_primary(&pool, ctx.bank_account_id).await,
+            "rien n'est démoté"
+        );
+    }
+}
+
+/// Test 2 (AC4) — PUT et PATCH vers chacun des deux comptes de créance : 400,
+/// `version` inchangée, lien inchangé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn put_and_patch_refuse_a_claim_account_ledger(pool: MySqlPool) {
+    let (ctx, receivable, payable) = setup_claims(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let version = read_bank_account_version(&pool, ctx.bank_account_id).await;
+    for (target, number, claim) in [
+        (receivable, "1100", "receivable"),
+        (payable, "2000", "payable"),
+    ] {
+        let resp = app
+            .client
+            .put(app.url(&format!("/api/v1/bank-accounts/{}", ctx.bank_account_id)))
+            .bearer_auth(&ctx.jwt)
+            .json(&json!({
+                "bankName": "UBS",
+                "iban": "CH4431999123000889012",
+                "isPrimary": true,
+                "journalAccountId": target,
+                "version": version,
+            }))
+            .send()
+            .await
+            .unwrap();
+        assert_ledger_refusal(resp, target, number, claim).await;
+
+        let resp = app
+            .client
+            .patch(app.url(&format!("/api/v1/bank-accounts/{}", ctx.bank_account_id)))
+            .bearer_auth(&ctx.jwt)
+            .json(&json!({ "journalAccountId": target, "version": version }))
+            .send()
+            .await
+            .unwrap();
+        assert_ledger_refusal(resp, target, number, claim).await;
+
+        assert_eq!(
+            read_bank_account_version(&pool, ctx.bank_account_id).await,
+            version
+        );
+    }
+    let linked: Option<i64> =
+        sqlx::query_scalar("SELECT journal_account_id FROM bank_accounts WHERE id = ?")
+            .bind(ctx.bank_account_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(linked, None);
+}
+
+/// Test 3 (AC4, exemption) — un compte bancaire **déjà** lié au compte
+/// débiteurs (donnée antérieure, posée en SQL) accepte un PUT qui ne change
+/// que son nom, et refuse un PUT qui le relie au compte créanciers.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn already_linked_claim_account_stays_editable(pool: MySqlPool) {
+    let (ctx, receivable, payable) = setup_claims(&pool).await;
+    link(&pool, ctx.bank_account_id, receivable).await;
+    let app = spawn_app(pool.clone()).await;
+    let version = read_bank_account_version(&pool, ctx.bank_account_id).await;
+
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/bank-accounts/{}", ctx.bank_account_id)))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankName": "UBS renommée",
+            "iban": "CH4431999123000889012",
+            "isPrimary": true,
+            "journalAccountId": receivable,
+            "version": version,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/bank-accounts/{}", ctx.bank_account_id)))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankName": "UBS renommée",
+            "iban": "CH4431999123000889012",
+            "isPrimary": true,
+            "journalAccountId": payable,
+            "version": version + 1,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_ledger_refusal(resp, payable, "2000", "payable").await;
+}
+
+/// Test 4 (AC6, ordre) — PUT avec une `version` périmée vers le compte
+/// débiteurs : **409** (la version précède le refus). Réglage débiteurs
+/// `NULL` : le lien vers l'ancien compte débiteurs est accepté.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn stale_version_precedes_claim_refusal_and_null_setting_allows_link(pool: MySqlPool) {
+    let (ctx, receivable, payable) = setup_claims(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let version = read_bank_account_version(&pool, ctx.bank_account_id).await;
+
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/bank-accounts/{}", ctx.bank_account_id)))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankName": "UBS",
+            "iban": "CH4431999123000889012",
+            "isPrimary": true,
+            "journalAccountId": receivable,
+            "version": version + 5,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 409, "{}", resp.text().await.unwrap());
+
+    designate_claims(&pool, ctx.company_id, None, Some(payable)).await;
+    let resp = app
+        .client
+        .patch(app.url(&format!("/api/v1/bank-accounts/{}", ctx.bank_account_id)))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "journalAccountId": receivable, "version": version }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
+}
