@@ -1,6 +1,6 @@
 # Story 15.13b : la sauvegarde prise avant un import survit au redémarrage, et son échec est annoncé tel quel
 
-Status: review
+Status: done
 
 <!-- Née le 2026-10-09 du découpage de la 15-13 (`15-13-mariadb-et-sauvegarde.md`, désormais fiche index)
      après la validation P3, décision de l'orchestrateur (signal D5 de recyclage levé deux passes de suite) —
@@ -927,6 +927,11 @@ rapatriement, PDF d'avant aplati, `.log` d'avant), `15-13b-mutations.txt` (banc)
 - **Conflits certains** avec la 15-13a au merge : `CHANGELOG.md` (paragraphe « Action requise ») et
   `admin-manual.tex` (« Pour qui garde son fichier compose ») — § *Dépendances* ; le manuel compte ici
   « Trois gestes pour chacun des deux compose » (15-13b seule) : à recompter si la 15-13a passe avant.
+- **Clôture (rebase sur la 15-13a, `bcded0c8`)** : conflits résolus comme annoncés, le décompte du manuel
+  **recompté** — « Cinq gestes pour `docker-compose.yml`, trois pour `docker-compose.prod.yml` » (deux lignes
+  d'`environment:` dans les deux fichiers, le port et les mots de passe MariaDB pour le premier seul, le
+  montage `./backup` dans les deux) ; le CHANGELOG garde « les gestes, fichier par fichier » de la 15-13a,
+  sans nombre. Gates rejoués sur l'état rebasé : voir le Change Log.
 
 ### File List
 
@@ -1128,3 +1133,48 @@ rapatriement, PDF d'avant aplati, `.log` d'avant), `15-13b-mutations.txt` (banc)
   des tests au record (A-5). **A-2** laissé en l'état : écart assumé et consigné (C-15-13b-2). Gate ciblé
   vert (fmt, clippy, 90/90 sur les binaires d'admin et `configuration_transmise`) ; gate complet et E2E au
   dernier commit de code.
+- **2026-10-09 — Revue de code P2 ciblée** (Haiku, une lentille, prompt versionné
+  `15-13b-review-prompt-p2-ciblee.md`, commit du prompt `a534db0a` avant rebase, `21741f70` après) : selon le
+  journal de l'orchestrateur, **0 finding au-dessus de LOW**. ⚠️ **Le rapport lui-même est perdu** : il était
+  écrit sous `target/gate-logs/15-13b-review-p2-ciblee.md`, effacé par un `cargo clean` après un crash ; ni
+  le détail des LOW éventuels ni la liste des axes exercés et non exercés ne peuvent être relus. Ce bilan
+  n'est donc adossé qu'au journal de l'orchestrateur, non au rapport. Aucun patch n'a suivi.
+  **Revue de code close.** Trend : P1 (Sonnet ×3, lentilles B, E, A) 0 CRITICAL / 0 HIGH / 0 MEDIUM / 15 LOW
+  → remédiation `7b1db902` (une ligne de production, le texte d'un `warn!` ; trois tests) → P2 ciblée (Haiku)
+  0 au-dessus de LOW. Aucun reclassement.
+- **2026-10-09 — Clôture et intégration** (Opus 5.5, en autonomie). Branche de sauvegarde
+  `backup/15-13b-avant-rebase-bcded0c8` (tête d'avant : `a534db0a`), puis **rebase sur `origin/main` =
+  `bcded0c8`** (15-6b, 15-12b, 15-13a mergées depuis la base `200f5e79`).
+  - **Conflits** : fiches 15-13 et 15-13b (ajout/ajout — `main` portait la version d'avant la validation P5,
+    reçue de la branche de la 15-13a ; version de la branche retenue, aucune ligne propre à `main` perdue,
+    vérifié au diff) ; registre des choix et `sprint-status.yaml` **par union** (C-15-13-27 à -29 et
+    C-15-13b-1 à -4 à côté des C-15-13a-1 à -4 ; entrées 15-12b, 15-13, 15-13a de `main`, entrée 15-13b de la
+    branche) ; `CHANGELOG.md` (paragraphe « Action requise » de `main` — refus de Compose, mots de passe
+    MariaDB — avec la phrase de la sauvegarde pré-import de la 15-13b à la place de « reste dans `/tmp` » ;
+    rubrique Sécurité : l'entrée « dossiers montés » de la 15-13b suivie des entrées #557 et #551 de `main`) ;
+    `DOCKER_START.md` (volume `kesh-mariadb-data` de `main` et ligne `./backup`) ; `admin-manual.tex` (les
+    deux paragraphes « La sauvegarde de sécurité pré-import » et « Exercices clôturés dans le désordre » ;
+    **décompte recompté** : cinq gestes pour `docker-compose.yml`, trois pour `docker-compose.prod.yml` ; le
+    montage `./backup` en dernier geste, après le port et les mots de passe MariaDB ; la phrase « Puis
+    `docker compose config -q` » réunit le contrôle `ports` de la 15-13a et le compte de `target:
+    /data/backup` de la 15-13b, son `lstlisting` placé avant le « Contrôle de fin de mise à jour »).
+    Fusionnés sans conflit et relus : les deux compose (port MariaDB fermé, mots de passe `:?`, **et**
+    `./backup:/data/backup`), `.env.example`, `CLAUDE.md`, `README.md`, `docs/testing.md`. Choix C-15-13b-5.
+  - **PDF** : `admin-manual.pdf` régénéré (`make -B admin`) sur le `.tex` fusionné ; 55 `Overfull`, aucun
+    dans les deux zones fusionnées ; contrôles aplatis : `/data/backup` ×8, `sudo cp backup/` ×1,
+    `kesh-pre-import` ×3, `keshbackup.partial` ×1, `target: /data/backup` ×1, ligne `sudo chown` entière ×1,
+    `Cinq gestes` ×1, `Exercices clôturés dans le désordre` ×2, `Changer un mot de passe MariaDB` ×2 ;
+    négatifs `défaut /tmp`, `deux gestes`, `Trois gestes`, `Quatre gestes` : 0. Manuel utilisateur et
+    brochure non touchés par la story : PDF de `main` conservés.
+  - **Gates sur l'état rebasé** (cibles cargo nettoyées, compilation **à froid**,
+    `CARGO_TARGET_DIR=kesh-15-13b/target` ; bases `kesh_1513b` et `kesh_e2e_1513b` recréées, 75 migrations,
+    seed sur `kesh_1513b`) : `scripts/test-fast.sh` — fmt vert, clippy `-D warnings` vert, nextest **3046
+    exécutés, 3046 passés, 4 ignorés** ; frontend — `check` 0 erreur (27 avertissements préexistants),
+    `lint-i18n-ownership` PASS, `test:unit` **1139/1139** (114 fichiers), `build` vert ; **E2E complet**
+    (port 3013, recette de `docs/testing.md` avec `KESH_ADMIN_BACKUP_DIR`, `smtpConfigured:true`, lancé vers
+    09:24 UTC) : **245 passés, 9 échecs, 19 ignorés** — les 9 jugés fichier par fichier contre
+    `docs/testing.md` § *Les échecs attendus* : 7 KF-029 (#97 : `mode-expert:26`, `:41`,
+    `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) et 2 KF-045 (#421 : `invoices.spec.ts:415`,
+    `:439`, run avant 12:00 UTC) ; aucun hors liste. Import réel par l'API sur ce backend après la suite :
+    200, `backupCreated:true`, sauvegarde `kesh-pre-import-…keshbackup` en `0600`. Journaux sous
+    `/home/gcorbaz/devel/kesh-gate-logs/15-13b-cloture-*`. Statut **done**.
