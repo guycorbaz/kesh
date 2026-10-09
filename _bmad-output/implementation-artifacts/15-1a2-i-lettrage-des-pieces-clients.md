@@ -350,7 +350,7 @@ mais **pas de la même façon** :
 `open_period_rule(conn, company_id, &fiscal_year_ids) -> Result<OpenPeriodRule, DbError>`,
 `OpenPeriodRule::line_in_open_period(fiscal_year_id, entry_date)`, `lines_in_open_period(conn, company_id,
 &[(fiscal_year_id, entry_date)]) -> Result<bool, DbError>`, le même prédicat par ligne que le mode `Manual`.
-Cette fiche l'**emploie** (étapes 3, 5 et 6 de P3) ; elle n'en écrit pas de seconde.
+Cette fiche l'**emploie** (étapes 5 et 6 de P3 ; validation P5 ciblée, P5-3) ; elle n'en écrit pas de seconde.
 
 **Ce que la règle atteint réellement**, et ce que voit l'utilisateur :
 
@@ -599,7 +599,8 @@ par la 15-1a2-0 (code, textes, écran) ; il ne devient **atteignable** qu'ici. P
 - `docs/manual/fr/user-manual.tex` — (a) les **deux listes exhaustives** de motifs : `:1198-1215`
   (§ `sec:reglement-client`, « le bouton est remplacé par la raison ») — un item « **le lettrage de la facture
   est figé par une période close** » **entre** « l'exercice du règlement est clôturé » et « le règlement est
-  rapproché », avec le remède ; `:1770-1783` (§ `sec:annuler-rapprochement`) — même item **après**
+  rapproché », avec le remède — **le texte de la clé fr-CH de la famille** (D2 de la 15-1a2-0), qui nomme
+  les deux causes, verrou et exercice clôturé ou suivi d'un exercice clôturé (validation P5 ciblée, P5-1, P5-2) ; `:1770-1783` (§ `sec:annuler-rapprochement`) — même item **après**
   « l'exercice de l'écriture du rapprochement est clôturé » ; (b) les deux phrases-listes fournisseurs
   (`:1455-1459`, annulation du paiement ; `:1478-1484`, annulation de la facture) — le même motif, après
   l'exercice clôturé ; (c) la liste des exceptions de la contre-passation (`:2337-2342`, « ne s'annulent pas »)
@@ -607,7 +608,9 @@ par la 15-1a2-0 (code, textes, écran) ; il ne devient **atteignable** qu'ici. P
   phrase après `:577-579` : « l'annulation d'un règlement, d'un solde, d'un rapprochement, d'un paiement ou
   d'une facture fournisseur dont le lettrage s'est figé avec la période est refusée ; un administrateur fait
   reculer le verrou avant la date la plus récente du lettrage — en général celle du dernier règlement — pour la
-  permettre, et rouvre aussi les exercices clôturés si l'exercice de cette date l'est » ; (e) **l'encadré
+  permettre, et rouvre aussi les exercices clôturés si l'exercice de cette date l'est **ou s'il est suivi d'un exercice
+  clôturé** — jusqu'à celui-ci, en commençant par le plus récent » (validation P5 ciblée, P5-1 : sans la seconde cause,
+  couverte par la D2 de la 15-1a2-0 et ses douze textes, un lecteur qui recule le verrou resterait refusé) ; (e) **l'encadré
   `:588-594`** (« Ce que le verrou n'empêche pas, et c'est voulu » — « Une écriture d'une période verrouillée
   reste corrigeable par contre-passation ») et **la note `:626-631`** (« La contre-passation est *le* chemin de
   correction d'une écriture désormais figée ») : chacun reçoit l'exception — l'annulation d'un règlement (ou
@@ -616,7 +619,8 @@ par la 15-1a2-0 (code, textes, écran) ; il ne devient **atteignable** qu'ici. P
   (f) glossaire : AC12.
 - `docs/manual/fr/admin-manual.tex:2101` (le verrou de période, OLICo Art. 9) — une phrase : le déverrouillage
   est aussi le remède du refus d'annuler un règlement dont le lettrage est figé, et la borne doit passer avant
-  la date la plus récente du lettrage (finding F-4 point 3 de la P3).
+  la date la plus récente du lettrage ; si l'exercice de cette date est clôturé ou suivi d'un exercice clôturé,
+  l'administrateur les rouvre aussi, du plus récent jusqu'à celui-ci (finding F-4 point 3 de la P3 ; P5-1).
 - `CHANGELOG.md` (`[0.13.0]`) : « l'annulation d'un règlement, d'un solde, d'un rapprochement, d'un paiement
   ou d'une facture fournisseur dont le lettrage est figé par une période close est refusée (`409
   LETTERING_ALL_LINES_IN_CLOSED_PERIODS`) ; un administrateur fait reculer le verrou avant la date la plus
@@ -993,3 +997,15 @@ P3), R14 (verrous — Dev Notes), F-3 (cycle d'`accept_one_invoice`, mappage —
 consignés : C-15-1a2-1 à C-15-1a2-9 (registre). **12 critères** (AC1–AC5, AC8–AC10, AC12–AC15), **7
 tâches** (T0–T6), **22 tests neufs + 1 étendu** — recomptés depuis ce fichier. Prochaine passe : P2,
 Opus, complète.
+
+- 2026-10-09 — **Validation P5 ciblée** (Sonnet, prompt `56394f14` ; rapport `/home/gcorbaz/devel/kesh-gate-logs/15-1a2-i-validate-p5-ciblee.md`) :
+  1 MEDIUM, 5 LOW ; AC18 exact sur lignes, rangs et codes ; fixture constructible ; étape 3 terminale ; recomptes
+  justes. **P5-1** (MEDIUM) : le texte prescrit pour le § du verrou (AC18 d) et `admin-manual.tex:2101` n'énonçait
+  pas la seconde cause du refus (période suivie d'un exercice clôturé) → ajoutée, avec l'ordre de réouverture ; les
+  deux listes de motifs (a) renvoient au texte de la famille D2 de la 15-1a2-0, qui nomme les deux causes (P5-2).
+  P5-3 corrigé (étapes 5 et 6). LOW laissés au T0 : P5-4 (l'étape 2 peut rendre `Invariant` avant l'étape 3 — « quel
+  que soit `E` » s'entend après l'étape 2), P5-5 (précédence sur `AbstainedClosedPeriods` d'un survivant entièrement
+  sous la borne : à monter au test), P5-6 (référence historique dans la 15-1a2-ii, ligne de Change Log). Remédiation
+  faite par l'orchestrateur, fiche seule. **Validation close** (passe ciblée de fin de boucle, aucun correctif de
+  production). Trend : P1 (15-1a2) 3 HIGH / 7 MEDIUM → P2 4 MEDIUM → P3 4 MEDIUM (découpage 15-1a2-0) → P4 2+2 MEDIUM
+  recyclés (D5 déclaré, non découpé) → P5 ciblée 1 MEDIUM de texte, corrigé.
