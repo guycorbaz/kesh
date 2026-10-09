@@ -1206,19 +1206,34 @@ fn entry_document_refusal_response(
     document_id: Option<i64>,
     document_label: Option<String>,
 ) -> Response {
+    let details = serde_json::json!({
+        "documentId": document_id,
+        "documentNumber": document_label,
+    });
+    refusal_409(code, fallback_key, fallback, document_label, details)
+}
+
+/// Le **409** commun : message traduit, suffixé de l'étiquette entre
+/// parenthèses quand il y en a une, et `details` fourni par l'appelant —
+/// [`entry_document_refusal_response`] (numéro de pièce) ou la marque de
+/// lettrage (`letteringCode`, Story 15-1a-ii).
+fn refusal_409(
+    code: &'static str,
+    fallback_key: &'static str,
+    fallback: &'static str,
+    label: Option<String>,
+    details: serde_json::Value,
+) -> Response {
     let base = t(fallback_key, fallback);
-    let message = match document_label.as_deref() {
-        Some(numero) => format!("{base} ({numero})"),
+    let message = match label.as_deref() {
+        Some(etiquette) => format!("{base} ({etiquette})"),
         None => base,
     };
     let body = serde_json::json!({
         "error": {
             "code": code,
             "message": message,
-            "details": {
-                "documentId": document_id,
-                "documentNumber": document_label,
-            },
+            "details": details,
         }
     });
     (StatusCode::CONFLICT, Json(body)).into_response()
@@ -2921,20 +2936,30 @@ impl IntoResponse for AppError {
                             "journal-entries-modify-blocked-detached-settlement",
                             "Ce paiement appartient à une facture fournisseur annulée : l'argent est sorti, il reste figé. Corrigez-le par une contre-passation.",
                         ),
-                        // Story 15-1a-ii (AC8) — la marque de lettrage : `details.documentId`
-                        // nul, `details.documentNumber` = le code du premier groupe.
+                        // Story 15-1a-ii (AC8) — la marque de lettrage.
                         ModificationGuard::Lettered { .. } => (
                             "journal-entries-modify-blocked-lettered",
                             "Cette écriture est lettrée : délettrez-la d'abord.",
                         ),
                     };
-                    entry_document_refusal_response(
-                        code,
-                        fallback_key,
-                        fallback,
-                        document_id,
-                        document_label,
-                    )
+                    // ⛔ Revue de code P1 (B-5) : la marque ne réemploie PAS
+                    // `details.documentNumber`, qui porte un numéro de pièce dans
+                    // tous les autres refus — un client qui l'afficherait comme
+                    // tel montrerait « AB ». Le code du premier groupe va dans
+                    // `details.letteringCode`, sans `documentId` (aucune pièce
+                    // n'est en cause). Le message reste suffixé du code.
+                    if matches!(guard, ModificationGuard::Lettered { .. }) {
+                        let details = serde_json::json!({ "letteringCode": document_label });
+                        refusal_409(code, fallback_key, fallback, document_label, details)
+                    } else {
+                        entry_document_refusal_response(
+                            code,
+                            fallback_key,
+                            fallback,
+                            document_id,
+                            document_label,
+                        )
+                    }
                 }
                 // Story 15-1a-i (#518) — les refus du lettrage. Un code par
                 // cause, dans l'ordre des rangs de la primitive (AC3) ; le 404

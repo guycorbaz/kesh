@@ -266,9 +266,12 @@ async fn post_reverse(app: &TestApp, token: &str, id: i64) -> (reqwest::StatusCo
 /// lettrage est posée sur sa ligne lettrable (Story 15-1a-ii, R6, C129) ; I1 : la
 /// somme des deux est nulle **compte par compte**.
 ///
-/// ⛔ Mutations tuées (AC9 (f)) : R6 qui ne lettre que le miroir, ou qui ne
-/// lettre rien (la marque de l'origine manque) ; R6 qui réécrirait un montant
-/// ou un compte de l'origine (le tuple `account_id, debit, credit` diffère).
+/// ⛔ Mutations tuées (AC9 (f), journal `15-1a-ii-mutations.md`) : R6 qui ne
+/// lettre rien (M8 — la marque de l'origine manque) ; R6 qui réécrit un
+/// montant de l'origine (M9 — le tuple `account_id, debit, credit` diffère).
+/// La variante « R6 ne lettre que le miroir », prescrite par la fiche, n'a
+/// pas été jouée : elle est inatteignable (un groupe exige deux lignes du même
+/// compte, un miroir seul ne se lettre pas).
 ///
 /// ⚠️ L'invariant se vérifie par compte et non globalement : un total nul se
 /// laisserait tromper par une compensation entre deux comptes différents.
@@ -3121,8 +3124,9 @@ fn dates_n1() -> (NaiveDate, NaiveDate, NaiveDate) {
 }
 
 /// AC8 — une écriture lettrée : `PUT` (lignes changées), `PUT` d'en-tête seul,
-/// `PUT` identique (no-op) et `DELETE` → `409 ENTRY_LETTERED`, `details` de la
-/// forme commune (`documentId` nul, `documentNumber` = code) ; le `GET` rend le
+/// `PUT` identique (no-op) et `DELETE` → `409 ENTRY_LETTERED`, `details`
+/// propre (`letteringCode` = code, ni `documentId` ni `documentNumber` — revue
+/// de code P1, B-5) ; le `GET` rend le
 /// motif et le code. L'écriture reste en base, inchangée.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn a_lettered_entry_is_frozen_on_every_path(pool: MySqlPool) {
@@ -3150,8 +3154,11 @@ async fn a_lettered_entry_is_frozen_on_every_path(pool: MySqlPool) {
         let (status, body) = put_json(&m.app, &m.token, e, corps).await;
         assert_eq!(status, 409, "{cas} : {body}");
         assert_eq!(body["error"]["code"], "ENTRY_LETTERED", "{cas}");
-        assert!(body["error"]["details"]["documentId"].is_null(), "{cas}");
-        assert_eq!(body["error"]["details"]["documentNumber"], code, "{cas}");
+        assert_eq!(
+            body["error"]["details"],
+            json!({ "letteringCode": code }),
+            "{cas} : `details` propre à la marque, sans champ de pièce"
+        );
         assert_eq!(
             body["error"]["message"],
             format!("Cette écriture est lettrée : délettrez-la d’abord. ({code})"),
@@ -3161,6 +3168,7 @@ async fn a_lettered_entry_is_frozen_on_every_path(pool: MySqlPool) {
     let (status, body) = delete_entry(&m.app, &m.token, e).await;
     assert_eq!(status, 409, "{body}");
     assert_eq!(body["error"]["code"], "ENTRY_LETTERED");
+    assert_eq!(body["error"]["details"], json!({ "letteringCode": code }));
     assert_eq!(
         (lines_of(&pool, e).await, header_of(&pool, e).await),
         avant,

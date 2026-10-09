@@ -683,8 +683,9 @@ pub async fn create_journal_entry(
 ///
 /// ⛔ **Rejoué sur interblocage** par l'enveloppe `DbError`
 /// [`kesh_db::retry::retry_on_deadlock`] (C-15-8-19, Story 15-5e2) : l'ordre de
-/// verrous du `PUT` referme trois cycles hérités (ligne du `PUT` dans « Where
-/// This Applies » du Pattern 5). La transaction est rejouée entière — le
+/// verrous du `PUT` referme quatre cycles — trois hérités, et depuis la
+/// Story 15-1a-ii le cycle lignes ↔ écriture avec l'acte 1 du lettrage (ligne
+/// du `PUT` dans « Where This Applies » du Pattern 5). La transaction est rejouée entière — le
 /// repository ouvre et ferme la sienne, l'interblocage l'a annulée sans rien
 /// écrire, et le contrôle de `version` refuserait un second passage. La
 /// préparation reste hors de la fermeture.

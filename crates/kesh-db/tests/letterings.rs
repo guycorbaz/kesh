@@ -1123,7 +1123,7 @@ async fn lettering_invariants(pool: MySqlPool) {
     let (_, i) = ligne(&pool, &m, passif, m.fy26, d(2026, 3, 2), dec!(50)).await;
     lettrer(&pool, &m, &[h, i]).await.unwrap();
     paire(&pool, &m, (m.fy26, d(2026, 4, 1)), (m.fy26, d(2026, 4, 2))).await;
-    // Un groupe d'une autre origine (mode System, comme la 15-1a-ii le posera)
+    // Un groupe d'une autre origine (mode System, comme la contre-passation le pose)
     // et un groupe dans une seconde société : sans eux, les clauses « une
     // seule origine » et « une seule société » portaient sur une seule valeur
     // possible (revue P1, E-6 / A-L6).
