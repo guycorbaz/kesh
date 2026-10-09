@@ -464,19 +464,19 @@ Playwright : la garde G16 (`crates/kesh-api/tests/configuration_transmise.rs`) l
 recette les exécute** :
 
 ```sh
-bash scripts/synology/recette.sh        # depuis la racine du dépôt ; ≈ 1 min ; code 0 = « RECETTE VERTE »
+bash scripts/synology/recette.sh        # depuis la racine du dépôt ; ≈ 2 min ; code 0 = « RECETTE VERTE »
 ```
 
-Prérequis : `docker`, `sqlx` (migrations du dépôt), `python3`. Elle monte un réseau, une MariaDB 10.11 et un projet
+Prérequis : `docker` avec le plugin `docker compose` v2, `sqlx` (migrations du dépôt), `python3`, `openssl`, les outils GNU usuels (`sha256sum`, `gzip`, `stat -c`, `od`) et l'image `mariadb:10.11` (tirée au besoin : réseau). Les comptes de départ viennent de `scripts/seed-dev-db.sql` : la recette compare des empreintes, non un nombre fixe. Elle monte un réseau, une MariaDB 10.11 et un projet
 compose factice (`kesh-api` qui dort), tous nommés `kesh-recette-synology*`, et les **détruit** à la fin comme à
 l'interruption — elle ne touche à aucun autre conteneur, jamais à `kesh-mariadb-dev`. Les comptes et le fichier
 d'options sont ceux que le manuel écrit (extraits de ses listings), avec un mot de passe à `@ # ; " \ /` et espace.
 
-Elle prouve : dump (empreinte, droits 700/600, aucun `.tmp`) ; `--defaults-extra-file` refusé hors de la première
+Elle prouve, en comparant l'empreinte de **toutes** les tables du schéma (`CHECKSUM TABLE`) et une ligne `Compte é € 😀` octet par octet : dump (empreinte, droits 700/600, aucun `.tmp`, toutes les tables) ; dump refusé s'il est vide, verrou contre deux dumps ; `--defaults-extra-file` refusé hors de la première
 place ; dump raté (réseau, mot de passe) sans perte du dump de la veille ni fichier vide ; empreinte fausse et archive
 tronquée arrêtées **avant** d'arrêter Kesh ou d'écrire ; refus `ERROR 1044` du compte de sauvegarde au rechargement ;
 rechargement par un **chemin relatif** (c'est le dump donné qui est rechargé, non le dump vivant) ; secours depuis
-`avant-restauration/<horodatage>/` ; rechargement d'une **base absente**. Elle ne rejoue pas DSM (Planificateur,
+`avant-restauration/<horodatage>/` ; rechargement d'une **base absente** ; et, base présente, **aucun rechargement** si le dump de sécurité est impossible (dossier non inscriptible), comme si le serveur est injoignable ou le dossier inexistant. Elle ne rejoue pas DSM (Planificateur,
 Hyper Backup, Snapshot Replication, paquet MariaDB 10) ni root.
 
 **Quand la lancer** : à toute modification d'un des deux scripts, de la section Synology du manuel ou de l'image

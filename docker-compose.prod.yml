@@ -163,8 +163,9 @@ services:
       # du compose. Créé au 1er boot, owned root:root (le container tourne en
       # root) — cf. warning permissions dans .env.example.
       - ./log:/var/log/kesh
-      # Import de factures (Story 12-5, #194) — bind mounts host co-localisés
-      # (scope Hyper Backup unique). Déposez vos factures dans ./inbox ; les
+      # Import de factures (Story 12-5, #194) — bind mounts dans le dossier du
+      # compose, que copie Hyper Backup (la base, elle, se sauvegarde par le dump
+      # du manuel). Déposez vos factures dans ./inbox ; les
       # justificatifs archivés vivent dans ./documents.
       - ./inbox:/data/inbox
       - ./documents:/data/documents

@@ -509,6 +509,7 @@ Pour les organisations soumises à audit conformité (RGPD, LPD Suisse, exigence
 \end{itemize}
 
 \subsection{Alternative : déploiement sur Synology DSM}\label{sec:synology}
+\sloppy % chemins et commandes en police fixe : étirer les espaces plutôt que déborder
 
 Synology DSM (DiskStation Manager) 7.2+ inclut le paquet \emph{Container Manager} (anciennement \emph{Docker}) qui permet de déployer Kesh sans utiliser le CLI Docker. Cette section couvre le scénario standard d'un déploiement Kesh sur un NAS Synology personnel ou de PME (DS220+, DS920+, DS1522+, DS1821+, ou modèles supérieurs avec ≥ 2 GiB RAM).
 
@@ -545,8 +546,9 @@ Télécharger le \keshpath{docker-compose.yml} canonique depuis le dépôt Kesh 
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/main/docker-compose.prod.yml -o docker-compose.yml
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/main/.env.example -o .env
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/main
+curl -fsSL "$DEPOT/docker-compose.prod.yml" -o docker-compose.yml
+curl -fsSL "$DEPOT/.env.example" -o .env
 
 # Secrets obligatoires : KESH_JWT_SECRET, DATABASE_URL (et les mots de
 # passe de votre MariaDB) -- ils DOIVENT remplacer les placeholders de .env
@@ -561,7 +563,13 @@ openssl rand -base64 24 # → KESH_ADMIN_PASSWORD
 sudo nano .env
 \end{lstlisting}
 
-\keshpath{docker-compose.prod.yml} rattache \keshcommand{kesh-api} à un réseau Docker \textbf{externe}, \keshcommand{frontend}, qu'il ne crée pas : créez-le une fois, avant le premier démarrage (\keshcommand{sudo docker network create frontend}). C'est aussi par lui que les conteneurs de sauvegarde atteignent la base (\S\ref{sec:backup-dsm}).
+\keshpath{docker-compose.prod.yml} rattache \keshcommand{kesh-api} à un réseau Docker \textbf{externe}, \keshcommand{frontend}, qu'il ne crée pas : créez-le une fois, avant le premier démarrage :
+
+\begin{lstlisting}[language=bash]
+sudo docker network create frontend
+\end{lstlisting}
+
+C'est aussi par lui que les conteneurs de sauvegarde atteignent la base (\S\ref{sec:backup-dsm}).
 
 \begin{keshwarning}
 \textbf{Sécurité} : ne jamais laisser les valeurs par défaut \keshcommand{changeme} ou \keshcommand{change-me-32-bytes-...}, le placeholder \keshcommand{<GENERATE\_ME: ...>} du gabarit, ni aucune valeur entre chevrons \texttt{<…>} dans \keshpath{.env} pour \texttt{KESH\_JWT\_SECRET} et \texttt{KESH\_ADMIN\_PASSWORD}. Kesh fait fail-fast au boot si ces placeholders restent — c'est intentionnel pour protéger les utilisateurs débutants qui oublient cette étape.
@@ -664,6 +672,7 @@ Ouvrir un navigateur sur \keshcommand{https://kesh.local} : sur une base vide sa
     \item \textbf{Backup et restore} : voir section dédiée \ref{sec:backup-dsm} pour les méthodes natives DSM (Hyper Backup, Snapshot Replication).
 \end{itemize}
 
+\fussy
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Configuration}\label{sec:configuration}
 
@@ -1566,6 +1575,7 @@ Automatisez ce test annuel via un workflow CI/CD : provisioning Docker éphémè
 \end{keshtip}
 
 \subsection{Backup natif sur Synology DSM (Hyper Backup + Snapshot Replication)}\label{sec:backup-dsm}
+\sloppy
 
 Pour les installations sur Synology DSM (cf. section \ref{sec:synology}), DSM intègre nativement deux outils de backup éprouvés : \textbf{Hyper Backup} (backup incrémental versionné, idéal cloud + LAN) et \textbf{Snapshot Replication} (snapshot Btrfs point-in-time, idéal recovery instantané). Ces outils \textbf{complètent} le dump \keshcommand{mariadb-dump}, ils ne le remplacent pas : ils copient le dossier du compose, \keshpath{/volume1/docker/kesh}, et le dump qu'y dépose chaque nuit une \textbf{tâche planifiée} de DSM (ci-dessous) ; ils ne voient pas la base elle-même. Avec \keshpath{docker-compose.prod.yml}, la base est celle que désigne \texttt{DATABASE\_URL} --- le paquet MariaDB~10 de DSM, un conteneur séparé ou une base gérée ---, et elle n'est \textbf{pas} dans ce dossier : elle ne se sauvegarde, et ne se restaure, que par ce dump (ou là où vous l'hébergez).
 
@@ -1584,9 +1594,9 @@ Hyper Backup est l'outil principal Synology pour les backups versionnés vers st
     \item Lancer Hyper Backup → \textbf{+ Tâche de sauvegarde de données} → choisir la destination (ex. \emph{Synology C2 Backup} pour offsite managé, \emph{S3 Storage} pour AWS/Wasabi/Backblaze, \emph{Dossier local} pour HDD USB attaché au NAS).
     \item Cocher les dossiers à backup :
         \begin{itemize}
-            \item \textbf{Obligatoire} : \keshpath{/volume1/docker/kesh/} --- le compose, \keshpath{.env}, \keshpath{log/}, \keshpath{inbox/}, \keshpath{documents/}, \keshpath{backup/}, les deux fichiers d'identifiants (\keshpath{kesh-dump.cnf}, \keshpath{kesh-restore.cnf}), les deux scripts et le dossier \keshpath{dump/}, où la tâche planifiée dépose le \textbf{dump de la base} (\keshpath{kesh\_pre\_backup.sql.gz}). La base elle-même n'est pas dans ce dossier : seul ce dump l'y fait entrer. \keshpath{documents/} porte les PDF des factures émises (\S\ref{sec:pdf-factures-sauvegarde}) ; avec \keshpath{docker-compose.yml}, c'est le dossier de \texttt{KESH\_DOCUMENTS\_HOST\_DIR} s'il est posé --- à ajouter alors à la tâche de sauvegarde. \keshpath{backup/} (sauvegarde de sécurité prise avant chaque import d'installation) et \keshpath{dump/} contiennent des \textbf{secrets} --- condensés des mots de passe, jetons de session --- : d'où leurs droits réservés à root et le chiffrement client-side ci-dessous (\S\ref{sec:backup-ui-keshbackup}). À restaurer avec la base.
+            \item \textbf{Obligatoire} : \keshpath{/volume1/docker/kesh/} --- le compose, \keshpath{.env}, \keshpath{log/}, \keshpath{inbox/}, \keshpath{documents/}, \keshpath{backup/}, les deux fichiers d'identifiants (\keshpath{kesh-dump.cnf}, \keshpath{kesh-restore.cnf}), les deux scripts et le dossier \keshpath{dump/}, où la tâche planifiée dépose le \textbf{dump de la base} (\keshpath{kesh\_pre\_backup.sql.gz}). La base elle-même n'est pas dans ce dossier : seul ce dump l'y fait entrer. \keshpath{documents/} porte les PDF des factures émises (\S\ref{sec:pdf-factures-sauvegarde}) ; avec \keshpath{docker-compose.yml}, c'est le dossier de \texttt{KESH\_DOCUMENTS\_HOST\_DIR} s'il est posé --- à ajouter alors à la tâche de sauvegarde. \keshpath{backup/} (sauvegarde de sécurité prise avant chaque import d'installation), \keshpath{dump/} et \keshpath{avant-restauration/} (dumps de sécurité de \keshpath{kesh-restore.sh}) contiennent des \textbf{secrets} --- condensés des mots de passe, jetons de session --- : d'où leurs droits réservés à root et le chiffrement client-side ci-dessous (\S\ref{sec:backup-ui-keshbackup}). À restaurer avec la base.
         \end{itemize}
-    \item Cocher l'application \textbf{Container Manager} dans \emph{Applications} pour backup automatique de la configuration des projets.
+    \item \emph{Facultatif} : cocher l'application \textbf{Container Manager} dans \emph{Applications} pour sauvegarder la configuration des projets --- \textbf{à vérifier d'abord} sur votre NAS : voir la note sur l'arrêt possible des applications sauvegardées, plus bas. La sauvegarde de Kesh n'en dépend pas : le compose et \keshpath{.env} sont dans le dossier coché ci-dessus.
     \item Activer le \textbf{chiffrement client-side} (mot de passe différent du KESH\_JWT\_SECRET, stocké séparément offline — la perte de ce mot de passe rend les backups illisibles).
     \item Configurer la rotation \textbf{Smart Recycle} : recommandé \emph{Conservez toutes les versions des derniers 30 jours + 1 par semaine pour 12 semaines + 1 par mois pour 12 mois}. Convertit OLICo 10 ans en pratique via archivage annuel séparé (cf. \emph{Stockage offsite} ci-dessus).
     \item Planifier la fréquence : \textbf{quotidienne à 2h du matin}, soit \textbf{après} la tâche planifiée de dump (1h30, ci-dessous). L'ordre compte : Hyper Backup copie le dump présent au moment où il passe.
@@ -1606,7 +1616,7 @@ Les identifiants de la base ne sont pas lus dans \keshpath{.env} : ils sont dans
     \item \textbf{Restauration} --- le \textbf{compte Kesh}, celui de \texttt{DATABASE\_URL}. Le dump recrée la base (\texttt{DROP DATABASE}, \texttt{CREATE DATABASE}, puis tables et lignes) : il faut \texttt{ALL PRIVILEGES} sur la base, que porte le compte Kesh créé par le compose ou par l'\emph{Initialisation manuelle de la base} (\S\ref{sec:init-db-manuelle}). Ses identifiants vont dans \keshpath{/volume1/docker/kesh/kesh-restore.cnf}, lu par le seul script de rechargement (\S\ref{sec:backup-dsm-recovery}, \emph{Recovery depuis Snapshot}). Le compte de sauvegarde, lui, ne peut pas recharger : sa tentative est refusée (\texttt{ERROR 1044}) et la base reste intacte.
 \end{itemize}
 
-Créer le compte de sauvegarde, sur votre MariaDB, avec un compte d'administration du serveur. Remplacez \texttt{kesh} par la base de \texttt{DATABASE\_URL} si elle porte un autre nom (ici et dans les deux scripts, variable \texttt{BASE}), et le texte entre chevrons par un mot de passe neuf --- les chevrons ne se recopient pas :
+Créer le compte de sauvegarde, sur votre MariaDB, avec un compte d'administration du serveur. Remplacez \texttt{kesh} par la base de \texttt{DATABASE\_URL} si elle porte un autre nom (ici, et pour les deux scripts par le réglage \texttt{SAUVEGARDE\_BASE}, ci-dessous), et le texte entre chevrons par un mot de passe neuf --- les chevrons ne se recopient pas :
 
 \begin{lstlisting}[language=SQL]
 CREATE USER 'kesh_backup'@'%' IDENTIFIED BY '<sortie de openssl rand -hex 32>';
@@ -1650,14 +1660,26 @@ Les deux scripts sont des fichiers du dépôt Kesh, \keshpath{scripts/synology/k
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-curl -fsSLO https://raw.githubusercontent.com/guycorbaz/kesh/main/scripts/synology/kesh-dump.sh
-curl -fsSLO https://raw.githubusercontent.com/guycorbaz/kesh/main/scripts/synology/kesh-restore.sh
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/main
+curl -fsSLO "$DEPOT/scripts/synology/kesh-dump.sh"
+curl -fsSLO "$DEPOT/scripts/synology/kesh-restore.sh"
 chmod 700 kesh-dump.sh kesh-restore.sh
 \end{lstlisting}
 
-\keshpath{kesh-dump.sh} écrit dans \keshpath{dump/} (créé en 700) \keshpath{kesh\_pre\_backup.sql.gz} et son empreinte \keshpath{kesh\_pre\_backup.sql.gz.sha256}, lisibles de root seul. Il s'arrête à la première erreur ; le dump s'écrit d'abord dans un fichier \keshpath{.tmp}, vérifié, puis renommé : un dump raté ne remplace pas celui de la veille et ne laisse aucun fichier. Ses réglages, par variables d'environnement, ont pour défauts ceux de ce manuel : \texttt{SAUVEGARDE\_DOSSIER} (\keshpath{/volume1/docker/kesh}), \texttt{SAUVEGARDE\_BASE} (\texttt{kesh}, la base de \texttt{DATABASE\_URL}), \texttt{SAUVEGARDE\_RESEAU} (\keshcommand{frontend}), \texttt{SAUVEGARDE\_IMAGE} (\keshcommand{mariadb:10.11}) ; si votre base porte un autre nom, la commande de la tâche devient \keshcommand{SAUVEGARDE\_BASE=<nom> bash /volume1/docker/kesh/kesh-dump.sh}.
+\keshpath{main} désigne la version courante du dépôt, comme pour le compose (étape 2) ; pour figer les scripts sur votre version de Kesh, remplacez \keshpath{main} par son étiquette, \texttt{v} suivi du numéro de version (par exemple \keshpath{v0.13.0}), une fois cette version publiée.
 
-Puis créez la tâche : \emph{Panneau de configuration → Planificateur de tâches → Créer → Tâche planifiée → Script défini par l'utilisateur} ; onglet \emph{Général} : utilisateur \textbf{root} ; onglet \emph{Programmer} : tous les jours à \textbf{1h30}, avant la tâche Hyper Backup (2h) --- le dump prend quelques secondes à quelques minutes, laissez la marge ; onglet \emph{Paramètres de tâche} : commande \keshcommand{bash /volume1/docker/kesh/kesh-dump.sh}, et cochez l'envoi des détails d'exécution par e-mail \emph{uniquement en cas d'arrêt anormal} : c'est le seul signal d'un dump raté. Lancez-la une première fois à la main (\emph{Exécuter}) et lisez son résultat (\emph{Action → Afficher le résultat}).
+\keshpath{kesh-dump.sh} écrit dans \keshpath{dump/} (forcé en 700) le dump et son empreinte (\keshpath{.sha256}), lisibles de root seul. Il s'arrête à la première erreur ; le dump s'écrit d'abord dans un fichier \keshpath{.tmp}, vérifié (archive intègre, au moins une table, dump complet), puis renommé : un dump raté ou vide ne remplace pas celui de la veille et ne laisse aucun fichier. Un verrou (\keshpath{dump/.verrou}) empêche deux dumps simultanés ; laissé par un arrêt brutal, il se supprime à la main (\keshcommand{rmdir}). Ses réglages, par variables d'environnement, ont pour défauts ceux de ce manuel : \texttt{SAUVEGARDE\_DOSSIER} (\keshpath{/volume1/docker/kesh}), \texttt{SAUVEGARDE\_BASE} (\texttt{kesh}, la base de \texttt{DATABASE\_URL}), \texttt{SAUVEGARDE\_RESEAU} (\keshcommand{frontend}), \texttt{SAUVEGARDE\_IMAGE} (\keshcommand{mariadb:10.11}) ; si votre base porte un autre nom, la commande de la tâche devient :
+
+\begin{lstlisting}[language=bash]
+SAUVEGARDE_BASE=<nom> bash /volume1/docker/kesh/kesh-dump.sh
+\end{lstlisting}
+
+
+Puis créez la tâche : \emph{Panneau de configuration → Planificateur de tâches → Créer → Tâche planifiée → Script défini par l'utilisateur} ; onglet \emph{Général} : utilisateur \textbf{root} ; onglet \emph{Programmer} : tous les jours à \textbf{1h30}, avant la tâche Hyper Backup (2h) --- le dump prend quelques secondes à quelques minutes, laissez la marge ; onglet \emph{Paramètres de tâche} : la commande ci-dessous, et cochez l'envoi des détails d'exécution par e-mail \emph{uniquement en cas d'arrêt anormal} : c'est le seul signal d'un dump raté. Lancez-la une première fois à la main (\emph{Exécuter}) et lisez son résultat (\emph{Action → Afficher le résultat}).
+
+\begin{lstlisting}[language=bash]
+bash /volume1/docker/kesh/kesh-dump.sh
+\end{lstlisting}
 
 \textbf{Vérifier que le dump du jour a été pris.} Dans le Planificateur, le dernier résultat de la tâche doit être normal. Dans Hyper Backup, l'\emph{Explorateur de sauvegardes} de la version de la nuit doit montrer \keshpath{dump/kesh\_pre\_backup.sql.gz} daté du jour à 1h30 environ --- un fichier daté de la veille signale un dump raté. Depuis une session root : \keshcommand{ls -l /volume1/docker/kesh/dump}. Lancer Hyper Backup à la fin du script par une commande de DSM n'est pas documenté par Synology : ce manuel ne le prescrit pas.
 
@@ -1687,7 +1709,7 @@ Avec \keshpath{docker-compose.prod.yml}, la base n'est \textbf{pas} sous \keshpa
     \item \textbf{Paramètres} → onglet \textbf{Snapshot} → activer \emph{Programmer la création de snapshots automatiques}.
     \item Fréquence recommandée : \textbf{toutes les heures, du lundi au vendredi 6h-22h} (couvre les périodes de saisie active fiduciaire).
     \item Rotation : conserver \textbf{72 snapshots horaires} (3 jours d'historique) + \textbf{14 snapshots quotidiens} + \textbf{12 snapshots hebdomadaires}.
-    \item Laissez \emph{Visible aux utilisateurs} \textbf{désactivé} : le dossier \keshcommand{docker} contient le dump, \keshpath{backup/} et les fichiers d'identifiants, c'est-à-dire des secrets ; la restauration passe par l'administrateur.
+    \item Laissez \emph{Visible aux utilisateurs} \textbf{désactivé} : le dossier \keshcommand{docker} contient \keshpath{dump/}, \keshpath{avant-restauration/}, \keshpath{backup/} et les fichiers d'identifiants, c'est-à-dire des secrets ; la restauration passe par l'administrateur.
 \end{enumerate}
 
 \paragraph{Recovery depuis Snapshot}\label{sec:backup-dsm-recovery}
@@ -1699,7 +1721,10 @@ Le snapshot rend le dossier du compose, dump de la base compris ; il ne rend pas
     \item Choisir le snapshot avec le timestamp pre-incident.
     \item \textbf{Actions} → \textbf{Restaurer} → \emph{Restaurer dans un nouveau dossier} (recommandé : l'état actuel, dump compris, reste intact pour comparaison) OU \emph{Écraser le dossier original} (si certain). Ne copiez pas le dump restauré sur celui de \keshpath{dump/} : le script ci-dessous le lit là où il est.
     \item Suspendre la tâche planifiée de dump (Planificateur de tâches → désactiver) : une exécution pendant le rechargement prendrait un dump de la base à moitié rechargée, que le snapshot suivant capturerait.
-    \item Recharger le dump par \keshpath{kesh-restore.sh}, en session root (\keshcommand{sudo -i}), en lui donnant le dossier \keshpath{dump/} restauré --- chemin absolu ou relatif : \keshcommand{bash /volume1/docker/kesh/kesh-restore.sh <dossier dump restauré>}.
+    \item Recharger le dump par \keshpath{kesh-restore.sh}, en session root (\keshcommand{sudo -i}), en lui donnant le dossier \keshpath{dump/} restauré --- chemin absolu ou relatif. Lancez-le dans une session qui survit à une déconnexion si vous en disposez ; interrompu, il se relance sur le même dossier :
+\begin{lstlisting}[language=bash]
+bash /volume1/docker/kesh/kesh-restore.sh <dossier dump restauré>
+\end{lstlisting}
     \item Si vous avez restauré dans un nouveau dossier, recopiez aussi \keshpath{documents/} du dossier restauré vers \keshpath{/volume1/docker/kesh} : la base rechargée référence les PDF des factures émises de ce moment-là (\S\ref{sec:pdf-factures-sauvegarde}).
     \item Réactiver la tâche de dump.
 \end{enumerate}
@@ -1707,16 +1732,23 @@ Le snapshot rend le dossier du compose, dump de la base compris ; il ne rend pas
 \keshpath{kesh-restore.sh} recharge par le compte Kesh (\keshpath{kesh-restore.cnf}) --- non par \keshpath{kesh-dump.cnf}, dont le compte ne peut que lire. Il s'arrête à la première erreur, dans cet ordre :
 
 \begin{enumerate}
-    \item il vérifie l'empreinte et l'intégrité du dump : si l'une est fausse, il s'arrête \textbf{sans} arrêter Kesh ni rien écrire ;
-    \item il arrête \keshcommand{kesh-api} (\keshcommand{docker compose stop}, dans le dossier du compose) ;
-    \item il prend un \textbf{dump de sécurité} de la base courante dans \keshpath{avant-restauration/<horodatage>/}, avec son empreinte, et en affiche le chemin. Si la base est absente ou illisible --- le cas même où l'on recharge ---, ce dump échoue : le script le dit, marque le dossier \keshpath{-echec}, et \textbf{continue} ;
+    \item il vérifie l'empreinte et l'intégrité du dump, puis demande au serveur si la base existe : si l'une de ces étapes échoue (empreinte fausse, archive tronquée, serveur injoignable, compte refusé), il s'arrête \textbf{sans} arrêter Kesh ni rien écrire ;
+    \item il arrête \keshcommand{kesh-api} (\keshcommand{docker compose -p kesh stop}, réglage \texttt{SAUVEGARDE\_PROJET}) et vérifie qu'il est arrêté ;
+    \item si la base existe, il en prend un \textbf{dump de sécurité} dans \keshpath{avant-restauration/<horodatage>/}, avec son empreinte, et en affiche le chemin. \textbf{Si ce dump échoue} (disque plein, dossier non inscriptible…), il redémarre Kesh et s'arrête \textbf{sans rien recharger} : la base est intacte. Si la base n'existe pas --- le cas même où l'on recharge après sa perte ---, il le dit et passe au rechargement ;
     \item il recharge le dump (qui recrée la base) ;
     \item il redémarre Kesh.
 \end{enumerate}
 
-\textbf{Si le rechargement échoue} (étape 4), Kesh reste arrêté. Relancez le script sur le dossier du dump de sécurité qu'il a affiché, celui du \textbf{premier} passage (un second passage en prend un nouveau, de la base à moitié rechargée) : \keshcommand{bash /volume1/docker/kesh/kesh-restore.sh /volume1/docker/kesh/avant-restauration/<horodatage>}. Les dossiers d'\keshpath{avant-restauration/} contiennent des secrets et ne sont pas purgés : supprimez-les vous-même une fois la restauration vérifiée.
+\textbf{Si le rechargement échoue ou s'interrompt} (étape 4), Kesh reste arrêté. Relancez le script sur le dossier du dump de sécurité qu'il a affiché, celui du \textbf{premier} passage (un second passage en prend un nouveau, de la base à moitié rechargée) :
 
-\emph{Écraser le dossier original} restaure le dossier partagé \keshcommand{docker} \textbf{entier} : les autres projets Docker du NAS reviennent aussi à l'état du snapshot, et \keshpath{kesh-dump.cnf}, \keshpath{kesh-restore.cnf} à leur contenu d'alors (un mot de passe changé depuis donnerait \texttt{ERROR 1045}). D'où la recommandation de restaurer dans un nouveau dossier.
+\begin{lstlisting}[language=bash]
+bash /volume1/docker/kesh/kesh-restore.sh \
+    /volume1/docker/kesh/avant-restauration/<horodatage>
+\end{lstlisting}
+
+ Les dossiers d'\keshpath{avant-restauration/} contiennent des secrets et ne sont pas purgés : supprimez-les vous-même une fois la restauration vérifiée.
+
+\emph{Écraser le dossier original} restaure le dossier partagé \keshcommand{docker} \textbf{entier} : les autres projets Docker du NAS reviennent aussi à l'état du snapshot, et \keshpath{kesh-dump.cnf}, \keshpath{kesh-restore.cnf} à leur contenu d'alors (un mot de passe changé depuis donnerait \texttt{ERROR 1045}). D'où la recommandation de restaurer dans un nouveau dossier. Rechargez un dump pris par la même version de Kesh ou par une plus ancienne : la version suivante applique ses migrations au démarrage, mais un dump d'une version \textbf{plus récente} porte des migrations que le binaire ne connaît pas, et le démarrage est refusé (protection contre le retour arrière, \S\ref{sec:mise-a-jour}).
 
 \subsubsection{Stratégie 3-2-1 sur DSM}
 
@@ -1735,6 +1767,7 @@ Les copies 2 et 3 ont le périmètre de la copie 1. Après restauration du dossi
 \textbf{Test de restauration annuel obligatoire} (cf. sous-section précédente OLICo Art. 10 al. 1) : applicable aux backups DSM aussi. Inclure dans le procès-verbal annuel la mention explicite de la méthode utilisée (Hyper Backup, Snapshot Replication) et le temps de recovery mesuré (RTO).
 \end{keshwarning}
 
+\fussy
 \subsection{Export/import d'installation via l'interface Kesh}\label{sec:backup-ui-keshbackup}
 
 Depuis la version v0.2, Kesh permet d'\textbf{exporter et de réimporter l'intégralité d'une installation} directement depuis l'interface web d'administration, sans accès SSH ni ligne de commande. L'export produit un fichier unique \keshcommand{.keshbackup} (conteneur compressé) contenant \textbf{toutes les données d'installation} : la société de l'installation, ses utilisateurs, et les données système --- \textbf{à l'exception des fichiers} du répertoire des documents (justificatifs importés, PDF des factures émises), qui se sauvegardent à part (\S\ref{sec:pdf-factures-sauvegarde}, issue \#503). Cette fonction est \textbf{réservée au rôle Administrateur} et \textbf{inaccessible via une clé API (PAT)} — les opérations d'infrastructure ne transitent jamais par une intégration externe. La \textbf{sauvegarde de sécurité pré-import} fait exception à l'absence de SSH : la rapatrier pour la restaurer demande un accès SSH (voir plus bas).
