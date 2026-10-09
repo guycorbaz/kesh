@@ -323,11 +323,16 @@ après** l'appel **sur la même connexion** — compteur de session (les autres 
 **une** unité par exécution d'instruction préparée, quel que soit le nombre de préparations : `document_owners`
 passe par `sqlx::query(…)` avec arguments, donc par `COM_STMT_PREPARE` + `COM_STMT_EXECUTE`
 (`sqlx-mysql-0.8.6/src/connection/executor.rs:120-154`), et les trois tranches font **deux** textes SQL (500
-marqueurs, puis 200) — un compteur de préparations ou `Com_select` mêleraient les deux. `SHOW STATUS` passe par
-le protocole texte : il n'incrémente pas `Com_stmt_execute`. **Étalonnage** au T0, sur la même connexion : le
-delta d'un `sqlx::query("SELECT ?").bind(1)` à sa **première** exécution doit valoir **1** ; s'il vaut `k ≠ 1`,
-la valeur attendue devient `3 × k`, écrite au Dev Agent Record avec la mesure — jamais une constante devinée ;
-un delta non entier ou instable d'un run à l'autre est un **finding** (le test ne serait pas une preuve).
+marqueurs, puis 200) — un compteur de préparations ou `Com_select` mêleraient les deux. ⚠️ La **lecture** du
+compteur doit passer par le protocole TEXTE — `sqlx::raw_sql("SHOW SESSION STATUS LIKE 'Com_stmt_execute'")` —,
+**jamais** par `sqlx::query(…)`, qui passe en protocole préparé (`sqlx-core/src/query.rs:661`,
+`sqlx-mysql/src/connection/executor.rs:119-121`) et incrémenterait le compteur qu'il lit (validation P3 ciblée,
+P3C-1). **Étalonnage** au T0, sur la même connexion, en deux mesures : (i) deux lectures successives sans rien
+entre elles → delta **0** (la lecture ne se compte pas elle-même) ; (ii) un `sqlx::query("SELECT ?").bind(1)`
+entre deux lectures → delta **1**. Si (i) ne vaut pas 0, son delta `c` est un **surcoût additif** de la lecture :
+l'attendu devient `3 + c`, jamais un multiple ; si (ii) ne vaut pas 1, le compteur ne mesure pas des exécutions
+et le test n'est pas une preuve — **finding**, pas d'ajustement. Les deux mesures sont écrites au Dev Agent Record ;
+un delta instable d'un run à l'autre est un **finding**.
 Une liste **vide** donne un delta de **0** ; une liste **avec doublons** donne le même résultat et le même
 delta que sans eux (validation P2, R2-7) ; une écriture d'une autre société n'a aucun propriétaire ; une écriture
 sans propriétaire est **absente** de la table (asserté dans `owners_match_handwritten_expectations`).
@@ -384,7 +389,7 @@ est un `DocumentKind`, sérialisé par `as_str()` dans `audit_details` ; plus au
       Re-greper les appelants de `first_document_owner` (`grep -n "first_document_owner" crates/kesh-db/src` ;
       deux sur `056997b0`, `:711` et `:818` ; la 15-1a2-i retouche la dissolution, `dissolve_group_inner`) et
       les littéraux de `DocumentRef` (`git grep -nE '"(invoice|supplierInvoice)"' -- crates/kesh-db/src`, D1
-      bis). Étalonner `Com_stmt_execute` (AC1).
+      bis). Étalonner `Com_stmt_execute` (AC1), lecture par `sqlx::raw_sql` — deux mesures, surcoût additif.
 - [ ] **T1** (D1, AC1) — `DocumentKind` et ses trois méthodes, `DocumentOwner`, `document_owners` (forme de
       D1), doc-comments.
 - [ ] **T2** (D1 bis, D2, D3, AC2, AC3, AC7) — `reversal_blockers` / `reversal_blocker` réécrits ;
@@ -550,3 +555,16 @@ a trouvé — signature inapplicable et appelants non inventoriés (R-4 = F-5, M
 par construction (F-4, MEDIUM). **6 critères** (AC1–AC6), **5 tâches** (T0–T4), **4 tests neufs** —
 recomptés depuis ce fichier. Choix consignés : C-15-1b-9, C-15-1b-10 (registre). Prochaine passe :
 validation **P1** (Sonnet, contexte frais, complète).
+
+- 2026-10-09 — **Validation P3 ciblée** (Sonnet, prompt `56394f14` ; rapport `/home/gcorbaz/devel/kesh-gate-logs/15-1b-0-validate-p3-ciblee.md`) :
+  1 MEDIUM, 4 LOW. **P3C-1** (MEDIUM, né de la P2) : lue par `sqlx::query`, la lecture de `Com_stmt_execute` passe en
+  protocole préparé et s'incrémente elle-même (delta 4 au lieu de 3), et le repli `3 × k` était faux (surcoût
+  ADDITIF) → lecture par `sqlx::raw_sql` (protocole texte), étalonnage en deux mesures (lecture seule → 0 ;
+  `SELECT ?` → 1), repli additif `3 + c`, et une étalonnage (ii) ≠ 1 est un finding. Remédiation faite par
+  l'orchestrateur, fiche seule. LOW laissés au T0 du développement, écrits ici : P3C-2 (D2 dit la signature de
+  `reversal_blocker` gardée alors qu'AC2 la fait passer à `&mut MySqlConnection` : AC2 fait foi), P3C-3 (garde
+  lexicale de la route : délimitation du corps, commentaires et `== 1` à écrire sur le patron de `admin.rs:911`),
+  P3C-4 (la branche « jointure sur l'écriture » de la mutation (e) peut rester verte sur la fixture : seule la
+  branche `CASE` est exigée rouge), P3C-5 (relevé T0 des littéraux : partir de `git grep DocumentRef crates`, le
+  compilateur fermant l'inventaire). **Validation close** : la passe ciblée de fin de boucle ne laisse aucun
+  correctif de production. Trend : P1 4 MEDIUM → P2 2 MEDIUM (D5 déclaré, non découpé) → P3 ciblée 1 MEDIUM corrigé.
