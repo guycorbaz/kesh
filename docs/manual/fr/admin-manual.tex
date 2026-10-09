@@ -727,7 +727,7 @@ hexadécimal).
     \midrule
     KESH\_ADMIN\_USERNAME & Admin bootstrap (base vide) \emph{ou} recovery break-glass. Vide $\to$ onboarding \texttt{/setup}. & \emph{vide} \\
     KESH\_ADMIN\_PASSWORD & Mot de passe admin. Si renseigné : $\geq$ 12 caractères, refusé s'il vaut \texttt{changeme}, contient \texttt{GENERATE\_ME} ou est un gabarit entre chevrons \texttt{<…>}. & \emph{vide} \\
-    KESH\_PRODUCTION\_RESET & Autorise le reset d'onboarding au-delà de l'étape 2 (\texttt{true}/\texttt{1}). & \texttt{false} \\
+    KESH\_PRODUCTION\_RESET & Autorise la réinitialisation d'une \textbf{démonstration} au-delà de l'étape 2 --- donc \textbf{toute} sortie de la démonstration, qui est à l'étape 3 (une installation de production ne l'est jamais). À poser le temps de la réinitialisation, puis à retirer, chaque fois suivi de \keshcommand{docker compose up -d} (\keshcommand{restart} ne relit pas \keshpath{.env}) ; la réinitialisation vide alors \textbf{toutes} les données de la société. Valeurs \texttt{1}, \texttt{true}, \texttt{yes}, \texttt{on}, sans casse. & \texttt{false} \\
     \bottomrule
 \end{tabularx}
 
@@ -1018,7 +1018,7 @@ La création d'une company se fait via l'interface utilisateur après connexion 
 
 Depuis la version \textbf{v0.1.2}, Kesh adopte l'approche \emph{self-service} commune aux applications self-hosted modernes (Jellyfin, Bitwarden, Vaultwarden) : au tout premier démarrage sur une base de données vide, un écran web \keshpath{/setup} accueille l'administrateur pour créer son compte via un formulaire — sans édition préalable du fichier \keshpath{.env}.
 
-Le \emph{bootstrap} crée seulement une \textbf{company provisoire} (placeholder) au boot. L'administrateur est ensuite créé via le formulaire \keshpath{POST /api/v1/setup/admin} (route publique gated par \keshcommand{user\_count == 0} → désactivée automatiquement en 410 Gone dès le 1\textsuperscript{er} admin créé).
+Le \emph{bootstrap} crée seulement une \textbf{company provisoire} (placeholder), au premier démarrage, sur une base \textbf{sans société} --- un redémarrage avant la création de l'administrateur n'en ajoute plus (depuis la 0.13.0, \#542). L'administrateur est ensuite créé via le formulaire \keshpath{POST /api/v1/setup/admin} (route publique gated par \keshcommand{user\_count == 0} → désactivée automatiquement en 410 Gone dès le 1\textsuperscript{er} admin créé).
 
 \subsubsection{Procédure (nouveau flow recommandé v0.1.2+)}
 
@@ -1305,8 +1305,8 @@ Selon l'état de la base de données et la présence des variables \keshpath{KES
     \toprule
     \keshtableheader{users} & \keshtableheader{env set ?} & \keshtableheader{match ?} & \keshtableheader{Comportement} \\
     \midrule
-    vide & non & --- & Crée la company stub seule, écran \keshpath{/setup} actif \\
-    vide & oui & --- & Crée stub + admin déclaratif (équivalent v011-2) \\
+    vide & non & --- & Crée la company stub \textbf{si aucune société n'existe} (un redémarrage avant \keshpath{/setup} n'en ajoute plus, \#542), écran \keshpath{/setup} actif \\
+    vide & oui & --- & Crée stub + admin déclaratif (équivalent v011-2), ou rattache l'admin à la société existante \\
     existant & non & --- & No-op (régime nominal post-bootstrap) \\
     existant & oui & match + hash identique & No-op silencieux, warning « retirer les vars » \\
     existant & oui & match + hash différent & \textbf{RECOVERY} : reset password + révocation tokens + audit\_log \\
@@ -1366,6 +1366,12 @@ Une fois connecté, l'\textbf{assistant d'onboarding} (wizard) configure la comp
 \begin{enumerate}
     \item \textbf{Langue} de l'interface, puis \textbf{mode} (guidé ou expert).
     \item \textbf{Parcours} : données de démonstration (exploration) ou configuration de production.
+
+    \textbf{Sortir de la démonstration} : la seule voie est la réinitialisation (bouton \emph{Réinitialiser pour la production} de la bannière de démonstration), et elle n'est permise que si l'exploitant l'a autorisée. Posez \texttt{KESH\_PRODUCTION\_RESET=true} (\texttt{1}, \texttt{yes}, \texttt{on} aussi) dans le fichier \keshpath{.env}, puis \keshcommand{docker compose up -d} --- et non « redémarrer », ni \keshcommand{docker compose restart}, qui ne relit pas \keshpath{.env} : la variable n'atteindrait pas le conteneur et le bouton resterait refusé. Réinitialisez, puis \textbf{retirez} la variable et refaites \keshcommand{docker compose up -d}. Sans elle, le bouton est \textbf{refusé (403), même à l'administrateur}, avec un message qui accuse à tort le rôle (\#534). Il n'existe pas d'autre passage de la démonstration à la production sur la même installation : c'est un choix de sécurité --- une installation ne se vide pas sans un geste de l'exploitant.
+
+    La réinitialisation vide \textbf{toutes} les données comptables et commerciales (écritures, factures, avoirs, contacts, articles, taux, réglages, journal d'audit…) et ramène la société à son état initial, sous la même identité : la session reste ouverte. Elle s'inscrit au journal d'audit (\S\ref{sec:conformite-audit}). Les \textbf{fichiers} déjà produits --- PDF figés, pièces importées, sauvegardes prises avant un import --- restent sur le disque. Elle \textbf{conserve} les utilisateurs et les clés d'API : ceux créés pendant la démonstration passent en production, \textbf{revoyez-les} --- une clé d'API saine garde son droit d'écriture si elle l'avait.
+
+    \textbf{Installation touchée par le défaut \#528} (société effacée par une réinitialisation d'une version antérieure), quel que soit son nombre de sociétés : la réinitialisation rattache à la société les utilisateurs qui désignaient la société effacée, et \textbf{révoque} les clés d'API qui la désignaient avant de les rattacher --- elles paraissent, révoquées, sur la page des clés : recréez celles qui servent. Sur une installation touchée restée \textbf{sans société}, le choix de la langue fait la même réparation. La session en cours doit alors être \textbf{rouverte} --- reconnexion, ou attendre le renouvellement de la session, au plus sa durée plus une minute ; d'ici là, certains écrans de la société répondent par une erreur, d'autres s'affichent vides. Une installation qui porte \textbf{plusieurs sociétés provisoires} (défaut \#542 : un redémarrage avant la création de l'administrateur en ajoutait une) n'est pas réinitialisable par ce bouton ; sa réparation au démarrage relève d'une version ultérieure.
     \item \textbf{Type d'organisation} (indépendant, association, PME) et \textbf{langue comptable}.
     \item \textbf{Coordonnées} de l'organisation (raison sociale, adresse, numéro IDE) — ceci renomme la company provisoire et lève la bannière « nom provisoire ».
     \item \textbf{Compte bancaire} principal (optionnel, configurable plus tard).
@@ -2084,8 +2090,9 @@ Le guide d'intégration complet (exemples \texttt{curl}, Python, JavaScript, MCP
 Le contrôle d'accès basé sur les rôles est appliqué \textbf{au niveau de chaque endpoint API} via un middleware Tower (Axum). Les trois rôles standards (cf. section Premier démarrage) sont définis dans le code (pas de rôles custom dynamiques v0.1).
 
 \subsection{Journal d'audit (audit\_log)}
+\label{sec:conformite-audit}
 
-La quasi-totalité des actions métier mutantes est enregistrée dans la table \texttt{audit\_log} --- 105 des 112 routes à verbe mutant au moment de la rédaction, dont, depuis la v0.13.0, la configuration d'une installation de production (une entrée par étape franchie) et le chargement des données de démonstration (une entrée de synthèse). ⚠️ \emph{Les exceptions sont connues, comptées et suivies~: cinq routes exemptées --- la remise à zéro des données de démonstration (issue \#434), et quatre gestes de session, la connexion, la déconnexion, le renouvellement de session et le changement de son propre mot de passe (issue \#435) ---, et deux autres routes qui n'écrivent rien parce qu'elles ne modifient rien~: 105 + 5 + 2 = 112.} ⚠️ \emph{Limite connue, suivie par l'issue \#538~: l'entrée du chargement des données de démonstration n'est écrite que lorsqu'il aboutit. Un chargement interrompu --- ou refusé parce que la configuration de production a franchi l'étape entre-temps --- laisse la société renommée, le plan comptable et l'exercice \textbf{sans entrée au journal}.} La liste complète, route par route, est tenue dans le dépôt et contrôlée par un test~:
+La quasi-totalité des actions métier mutantes est enregistrée dans la table \texttt{audit\_log} --- 108 des 114 routes à verbe mutant au moment de la rédaction, dont, depuis la v0.13.0, la configuration d'une installation de production (une entrée par étape franchie), le chargement des données de démonstration (une entrée de synthèse) et leur réinitialisation (\texttt{installation.reset}, qui dit le nombre et la plage d'identifiants des entrées effacées). ⚠️ \emph{Les exceptions sont connues, comptées et suivies~: quatre routes exemptées --- les gestes de session, la connexion, la déconnexion, le renouvellement de session et le changement de son propre mot de passe (issue \#435) ---, et deux autres routes qui n'écrivent rien parce qu'elles ne modifient rien~: 108 + 4 + 2 = 114.} ⚠️ \emph{Limite connue, suivie par l'issue \#538~: l'entrée du chargement des données de démonstration n'est écrite que lorsqu'il aboutit. Un chargement interrompu --- ou refusé parce que la configuration de production a franchi l'étape entre-temps --- laisse la société renommée, le plan comptable et l'exercice \textbf{sans entrée au journal}.} La liste complète, route par route, est tenue dans le dépôt et contrôlée par un test~:
 
 \begin{itemize}
     \item Contrainte \textbf{insert-only} : aucune route API ne permet de modifier ou supprimer une entrée \texttt{audit\_log}, et \textbf{aucune ne permet d'effacer la table} sur une installation finalisée. \emph{La formulation antérieure ne parlait que d'«~une entrée~»~: elle était exacte au mot près et trompeuse en substance, une route effaçant alors la table entière.}
@@ -2118,9 +2125,10 @@ soit celle de votre propre installation.} Importer celle d'une \emph{autre} inst
 possible, et les entrées du journal d'audit \textbf{déjà présentes chez vous} se retrouveraient alors
 rattachées à la société importée~: le journal d'audit mêlerait deux comptabilités sans
 qu'aucun message ne le signale. N'importez que vos propres sauvegardes. \emph{Une conséquence, rare, de cette fusion~: la garde qui fige le paiement d'une facture fournisseur annulée lit le journal d'audit~; la fusion d'une archive d'une \textbf{autre histoire} peut, par coïncidence d'identifiants, figer une écriture saisie à la main sans rapport --- elle reste contre-passable (limite assumée, issue \#541).} La
-\textbf{réinitialisation des données de démonstration} efface encore
-la table, mais elle exige le rôle d'administrateur \emph{et} est refusée dès que
-l'installation est finalisée. \emph{Aucun verrou de base de données ne s'y oppose~: la
+\textbf{réinitialisation des données de démonstration} efface la table \textbf{et y
+inscrit son geste} (\texttt{installation.reset} : nombre et plage d'identifiants des
+entrées effacées), première entrée du journal neuf~; elle reste réservée à
+l'administrateur \emph{et} refusée dès que l'installation est finalisée. \emph{Aucun verrou de base de données ne s'y oppose~: la
 garantie est portée par l'application, non par le SGBD.} Reste, en mode test uniquement
 (\texttt{KESH\_TEST\_MODE}, jamais actif en déploiement réel), les points d'entrée de
 réinitialisation de la suite de tests automatisés.
@@ -2272,7 +2280,7 @@ Pour annuler une facture déjà relancée, la voie reste l'\textbf{avoir}~: l'hi
 
 \begin{itemize}
     \item Art. 1 : journal chronologique → implémenté (rapport \emph{Journaux}). ⚠️ \textbf{Le grand livre --- l'extrait d'un compte donné --- n'existe pas encore} : aucun rapport ne le produit, et la liste des écritures ne se filtre pas par compte. C'est la première pièce que demande une révision ; elle doit aujourd'hui être reconstituée depuis l'export CSV.
-    \item Art. 3 : intégrité (modification apparente) → les corrections se font par \textbf{contre-passation}, qui laisse l'écriture d'origine en place, ou --- tant que l'exercice est ouvert, et après délettrage si l'une de ses lignes est lettrée --- par \textbf{modification tracée}, le journal d'audit conservant l'écriture avant et après. ⚠️ \emph{La couverture du journal n'est pas encore complète, mais la réserve a changé d'objet~: la gestion des utilisateurs, la modification de la société et les pièces importées y sont désormais inscrites. Ce qui manque est la remise à zéro des données de démonstration (issue \#434) et les gestes de session (issue \#435).}
+    \item Art. 3 : intégrité (modification apparente) → les corrections se font par \textbf{contre-passation}, qui laisse l'écriture d'origine en place, ou --- tant que l'exercice est ouvert, et après délettrage si l'une de ses lignes est lettrée --- par \textbf{modification tracée}, le journal d'audit conservant l'écriture avant et après. ⚠️ \emph{La couverture du journal n'est pas encore complète, mais la réserve a changé d'objet~: la gestion des utilisateurs, la modification de la société et les pièces importées y sont désormais inscrites. Ce qui manque, ce sont les gestes de session (issue \#435)~; la réinitialisation des données de démonstration s'y inscrit depuis la v0.13.0.}
     \item Art. 9 al. 1.b : supports modifiables (disque dur, SSD) → conditions 1-4 satisfaites (cf. section sécurité plus haut).
     \item Art. 10 : contrôle et migration → test de restauration annuel obligatoire (cf. section Sauvegarde).
 \end{itemize}

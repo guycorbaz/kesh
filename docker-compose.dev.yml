@@ -24,9 +24,11 @@ services:
       KESH_ADMIN_USERNAME: ${KESH_ADMIN_USERNAME:-admin}
       KESH_ADMIN_PASSWORD: ${KESH_ADMIN_PASSWORD:-admin}
       KESH_JWT_SECRET: ${KESH_JWT_SECRET:-dev-secret-at-least-32-bytes-long-for-testing}
-      # Onboarding reset gate (Story 7-1, KF-002).
-      # Set to "1" / "true" / "yes" to allow /onboarding/reset past step 2 in demo mode.
-      # NEVER enable in production — see docs/MULTI-TENANT-SCOPING-PATTERNS.md.
+      # Onboarding reset gate (Story 7-1, KF-002 ; Story 15-7b2).
+      # Set to "1" / "true" / "yes" / "on" to allow /onboarding/reset past step 2 on a
+      # DEMO install — i.e. to leave a demo at all (a demo sits at step 3). The reset
+      # empties ALL company data and keeps users and API keys. Set it for the reset,
+      # then remove it; a production install is never reset past step 2.
       KESH_PRODUCTION_RESET: ${KESH_PRODUCTION_RESET:-}
       RUST_LOG: ${RUST_LOG:-info}
       # Logs fichier (Story v011-1, Issue #119) — DÉSACTIVÉS par défaut en dev
