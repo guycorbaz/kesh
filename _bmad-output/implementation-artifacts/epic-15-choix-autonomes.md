@@ -5636,6 +5636,20 @@ l'import (#458–#461).
 - **Écarté** : laisser l'angle mort entier (testable à faible coût) ; remplacer le vrai cycle par `SIGNAL` (la fiche le demande, et il prouve la conversion par `map_db_error` d'une erreur réellement émise par InnoDB).
 - **Réversible** : oui (tests seuls).
 
+## C-15-7b2-3 — 15-7b2 (développement) : l'exception au Pattern 5 écrite en note, la liste « Deny list » n'existant plus
+
+- **Contexte** : l'AC 10 prescrit d'inscrire `kesh_seed::reset_demo` à la « liste d'exceptions » du Pattern 5 (« Deny list », `*(none)*`, `docs/MULTI-TENANT-SCOPING-PATTERNS.md:330-336`). À `181efa3c`, cette liste n'existe plus : le document porte une table *Where This Applies* et des **notes** par route (journal_entries, letterings).
+- **Retenu** : la ligne `reset` de la table dit l'ordre complet et renvoie à une **note** « exception to the Global Lock Order », écrite sur le patron des notes voisines (motif, atténuation, tests, ce qui n'est pas provoqué) ; le paragraphe *Known Risk — KF-002-H-002* ne cite plus `reset` parmi les lock-and-release.
+- **Écarté** : recréer une section « Deny list » pour une seule entrée (structure abandonnée par le document).
+- **Réversible** : oui (texte).
+
+## C-15-7b2-4 — 15-7b2 (développement) : montage du test 4 par une facture sans TVA ; `credit_note_number_sequences` peuplée
+
+- **Contexte** : le test 4 exige une facture **validée** et un avoir sur une démonstration. La démonstration ne désigne pas de compte de TVA due : la validation d'une ligne à 8,1 % rend `400 CONFIGURATION_REQUIRED`.
+- **Retenu** : la ligne de facture est à `0.00` % — la facture se valide, l'avoir se crée, et l'écriture existe ; le relevé réel a montré `credit_note_number_sequences` peuplée par l'avoir : elle sort de la liste fermée des tables vides (17 tables, assertée égale à l'ensemble relevé).
+- **Écarté** : désigner un compte de TVA due au montage (geste de plus, sans rapport avec la remise à zéro) ; laisser `vat_rates` seule témoin de la TVA (elle est peuplée par le seed).
+- **Réversible** : oui (montage de test).
+
 ## C-15-13b-1 — 15-13b (T0) : le rapatriement n'est pas rejoué au T0, le démon Docker étant bloqué
 
 - **Contexte** : le T0 prescrit de rejouer, sur un conteneur jetable, l'écriture d'un fichier `0600` par un conteneur root dans un dossier monté, puis le rapatriement `sudo cp` + `sudo chown`. Le 2026-10-09 vers 07:10, toute création de conteneur expire (`docker run` → 124 après 60 s) : le noyau signale des tâches `dockerd` en état D, bloquées sur un rw-semaphore (`journalctl`, « blocked for more than 122 seconds »). Le démon sert encore `ps`/`info`. Les créations interrompues laissent des noms réservés sans conteneur. `sudo` n'est pas utilisable sans mot de passe depuis l'agent.
