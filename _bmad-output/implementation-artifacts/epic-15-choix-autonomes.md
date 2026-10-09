@@ -7146,3 +7146,71 @@ l'import (#458–#461).
 - **Retenu** : les douze textes inversent l'ordre des causes — fr « suivi d'un exercice clôturé, ou clôturé lui-même … jusqu'à celui-ci », de « folgt seinem Geschäftsjahr ein abgeschlossenes oder ist es selbst abgeschlossen », it « è seguito da un esercizio chiuso, o è chiuso esso stesso », en « is followed by a closed fiscal year, or is closed itself » —, de sorte que le dernier terme de la condition est « son exercice » ; la borne littérale de G8-bis et le marqueur d'ordre de G8 sont gardés (relu contre `loader.rs` `MARQUEURS` et `JUSQU_A`, G9 `textes_coherents.rs`). Les trois clés neuves entrent dans une **constante sœur** `CLES_2_BIS: [&str; 3]`, chaînée à la boucle anti-muet (`EXEMPTEES.iter().chain(CLES_569.iter()).chain(CLES_2_BIS.iter())`) ; `CLES_569` reste `[&str; 6]` et ses commentaires restent vrais.
 - **Écartées** : « jusqu'à celui de cette date » (ne passe plus G8-bis : borne absente) ; garder l'ordre et accepter un LOW (le texte est ce que lit l'administrateur qui doit agir) ; élargir `CLES_569` à neuf clés (commentaire « six clés de #569 » faux, plancher recompté sur un mélange).
 - **Réversible** : oui avant développement (la forme de/it/en reste retouchable au développement, marqueur, borne et antécédent gardés).
+
+## C-15-1c-1 — 15-1c (validation P1, R-10 = F-10) : découpage en 15-1c-i (l'écran) et 15-1c-ii (le lettrage dans le reste de Kesh)
+- **Contexte** : la fiche se disait « cinq modules, au seuil » ; au recompte, huit à onze au grain fin, et les findings R-2 = F-2 lui ajoutaient un enrichissement serveur. Décision de l'orchestrateur.
+- **Retenu** : **15-1c-i** — tout ce qui vit à `/open-items` (compte et date, liste, motifs, sélection et lettrage, propositions, groupe et délettrage, bandeau, rôles, menu, i18n, E2E lettrer → délettrer) **et** l'enrichissement de `GET /letterings/{key}` qu'exige le groupe ; **15-1c-ii** — la fiche d'écriture, le Grand livre (colonne, lien, exports), le lien du motif `ENTRY_LETTERED`, le manuel, le CHANGELOG, `api-external.md` (« l'écran viendra »), README, site. Ordre **… → 15-1b → 15-1c-i → 15-1c-ii** ; **pas de tag v0.13.0 entre les deux** (C124 étendue : entre elles, le manuel dit le délettrage « par l'API ») ; la **15-1c-ii porte `closes #518`** (C-15-1a-ii-3 reporté), la 15-1c-i `refs #518`. La 15-1c devient un index `split` ; numérotation des critères conservée, numéros neufs à partir d'AC15 ; nom de fichier gardé (C99).
+- **Écartées** : une 15-1c-0 « serveur » pour l'enrichissement (route enrichie sans écran qui la lise, écran sans groupe : non livrables seuls) ; couper l'écran entre lettrer et délettrer (l'E2E du parcours lettrer → délettrer, demandé, serait à cheval) ; mettre la fiche d'écriture dans la 15-1c-i (elle n'est pas `/open-items` ; ses liens ne servent qu'une fois l'état d'URL du groupe livré).
+- **Réversible** : oui avant développement.
+
+## C-15-1c-2 — 15-1c-i (validation P1, R-2 = F-2) : `GET /letterings/{key}` enrichi, la prévision du délettrage par l'ordre même de la dissolution
+- **Contexte** : la réponse livrée (15-1a-i) ne porte ni pièce, ni journal, ni libellé, ni période, ni possession ; « règlement de la facture F-… » est impossible à écrire, et « Délettrer » serait offert puis refusé.
+- **Retenu** : pour le seul `GET`, chaque ligne gagne `journal`, `description`, `document`, `ownedByDocument`, `inOpenPeriod` — produits par **l'enrichissement de la requête B de la 15-1b**, factorisé et réemployé, jamais réécrit ; le groupe gagne `accountNumber`, `accountName` et `manualDissolutionBlockedBy`, calculé par une fonction **pure** `manual_dissolution_blocker(origin, any_owned, any_in_open_period)` que `dissolve_group_in_tx` appelle désormais pour ses refus 1 à 3 — l'ordre vit une fois ; prévision indicative, lue sans verrou, le `DELETE` fait autorité ; la lettrabilité n'y entre pas (C104). Inchangés : `LetteringGroup`, la réponse 201 du `POST`, les `details` d'audit, le 404 indiscernable. Test de table : la prévision égale le refus réel pour chaque cas ; test d'égalité vue / groupe sur une ligne lettrée après `X`.
+- **Écartées** : réduire l'écran du groupe à ce que la route donne (pas de pièce, bouton offert puis refusé) ; recopier R5/R7 en TypeScript (seconde règle) ; N+1 `GET /journal-entries/{id}` par ligne ; enrichir aussi le `POST` (coût sur chaque lettrage pour un usage d'écran nul : l'écran recharge la liste).
+- **Réversible** : oui jusqu'au tag v0.13.0 (champs additifs).
+
+## C-15-1c-3 — 15-1c-i (validation P1, F-3, R-5 d) : l'état d'URL d'un groupe est `/open-items?group=<code>`, indépendant de la liste
+- **Retenu** : paramètre `group` sur la même page, avec ou sans `accountId`/`asOf` ; le panneau du groupe s'affiche sans la liste ; un compte devenu non lettrable rend 409 sur la liste, le groupe reste affiché et délettrable (C104) ; code inconnu → « aucun groupe ne porte ce code ».
+- **Écartées** : une route `/open-items/groups/[code]` (perd le contexte de la liste au retour) ; exiger `accountId` (le lien de la fiche d'écriture ne connaît que le code).
+- **Réversible** : oui.
+
+## C-15-1c-4 — 15-1c-i (validation P1, F-7, R-4) : sélection conservée d'une page à l'autre, somme en décimal, bouton inactif sur une sélection toute en période close
+- **Retenu** : sélection gardée entre pages (identifiant, montants, `inOpenPeriod`), effacée au changement de compte ou de date et après un lettrage ; somme `big.js` ; « Lettrer » inactif sous 2 lignes, au-delà de 200, sur un écart, ou si aucune ligne n'est `inOpenPeriod` — le bouton dit ce qui manque.
+- **Écartées** : sélection limitée à la page (interdit le règlement groupé à cheval sur deux pages, cas normal) ; avertir sans désactiver sur la période close (un clic voué au refus) ; flottants.
+- **Réversible** : oui.
+
+## C-15-1c-5 — 15-1c-i (validation P1, R-14 = F-15) : `asOf` toujours explicite, date locale, écrite dans l'URL
+- **Retenu** : l'écran envoie toujours `asOf` (date locale du navigateur par défaut) et l'écrit dans l'URL au premier chargement (remplacement d'historique).
+- **Écartées** : omettre `asOf` (date UTC du serveur, décalée la nuit — 15-1b AC1) ; corriger le défaut du serveur (hors de cette story, écart hérité nommé par la 15-1b).
+- **Réversible** : oui.
+
+## C-15-1c-6 — 15-1c-i (validation P1, F-5 = R-11) : les liens de pièce, et aucun lien vers une transaction bancaire
+- **Retenu** : `invoice` → `/invoices/{id}`, `creditNote` → `/credit-notes/{id}`, `supplierInvoice` → `/supplier-invoices/{id}`, `settlement` → `/invoices/{invoiceId}` (aucun lien si nul), `bankTransaction` → texte seul.
+- **Écartées** : `bank-import/[id]` (prend un identifiant d'import) ; élargir le contrat validé de la 15-1b d'un `importId` (fiche close, gain marginal).
+- **Réversible** : oui (un lien s'ajoute si une route de transaction naît).
+
+## C-15-1c-7 — 15-1c-i (validation P1, F-8, R-4 d) : les propositions se chargent à part, ne suivent pas `asOf`, se rechargent après chaque acceptation
+- **Retenu** : panneau à état et échec propres ; calculé aujourd'hui, non rechargé au seul changement de date, et dit « lignes ouvertes aujourd'hui » ; chaque paire montre ses deux lignes en entier ; après une acceptation ou un refus périmé, liste et propositions rechargées ; « N autres » quand `total` dépasse l'affiché.
+- **Écartées** : retirer localement la paire acceptée sans recharger (le glouton peut réaffecter une ligne à une autre paire : l'affichage local mentirait) ; recharger les propositions à chaque changement de date (coût du moteur pour un résultat identique).
+- **Réversible** : oui.
+
+## C-15-1c-8 — 15-1c-ii (validation P1, R-7 a = F-6) : le lien du Grand livre lit `letterable` dans `GET /accounts`, à la fin de la période ; les exports restent sans code
+- **Retenu** : la page des rapports charge déjà les comptes archivés compris (`fetchAccounts(true)`) ; le lien « Postes ouverts de ce compte » s'affiche si le compte y est `letterable`, cible `asOf` = fin de la période affichée ; `colspan` calculés ; CSV et PDF du Grand livre sans code (C-15-1b-6 maintenu), dit au manuel.
+- **Écartées** : `letterable` sur `LedgerSection` (`kesh-report` ne voit pas la lettrabilité, C-15-1b-8) ; `asOf` = aujourd'hui (le total ne correspondrait pas à la clôture affichée) ; ajouter le code aux exports (format d'export changé pour un affichage).
+- **Réversible** : oui.
+
+## C-15-1c-9 — 15-1c-ii (validation P1, R-7 b = F-14) : le lien du refus `ENTRY_LETTERED` vit dans le motif d'écran de la fiche, pas dans le toast
+- **Retenu** : le code du motif `modificationBlockedBy = ENTRY_LETTERED` devient un lien vers `/open-items?group=` ; un refus en course (`PUT`, `DELETE`) reste un toast texte, puis la fiche se relit (existant) et son motif porte le lien.
+- **Écartées** : un toast à lien (le composant de toast n'en porte pas ; un geste de plus pour un cas de course) ; lire `details.letteringCode` (redondant avec le motif relu).
+- **Réversible** : oui.
+
+## C-15-1c-10 — 15-1c-i / 15-1c-ii (validation P1) : la documentation du `GET` enrichi va avec son code, l'entrée du CHANGELOG avec la dernière story
+- **Retenu** : la 15-1c-i écrit le paragraphe d'`api-external.md` du `GET /letterings/{key}` enrichi (même PR que le changement de contrat) ; la 15-1c-ii écrit l'entrée **unique** du lettrage au CHANGELOG et le changement de contrat additif sous *Modifié* (exception « plusieurs stories y contribuent » de la règle d'inclusion), et retire « l'écran viendra » d'`api-external.md`. Pas de tag entre les deux (C-15-1c-1).
+- **Écartées** : toute la documentation à la 15-1c-ii (un contrat d'API changé sans sa documentation dans la même PR) ; deux entrées CHANGELOG (fragments).
+- **Réversible** : oui.
+
+## C-15-1c-11 — 15-1c-i, 15-1c-ii (validation P1) : dérogations au découpage au grain fin, sur le patron de C-15-1a2-23
+- **Contexte** : 15-1c-i — 4 crates/paquets, 9 au grain fin (5 de logique : `kesh-db/letterings`, `kesh-api/routes/letterings`, `features/open-items`, sa route, l'E2E ; 4 mécaniques : catalogues, un champ de type, une entrée de menu, bornes de test ; plus un paragraphe d'`api-external.md`). 15-1c-ii — 2 crates/paquets, 11 au grain fin (3 de logique et l'E2E, 7 supports de texte).
+- **Retenu** : pas de découpage supplémentaire. Pour la 15-1c-ii, exactement le motif de C-15-1a2-23 (propagation de textes). Pour la 15-1c-i, ce motif **élargi** aux éditions mécaniques d'une ligne (un champ, une entrée de menu, des bornes) — écrit comme tel, signal D5 déclaré. Accepted risk : la propagation mécanique, le PDF et le changement de forme de `dissolve_group_in_tx` sont des axes à part entière des passes de revue.
+- **Écartées** : extraire l'enrichissement serveur (deux moitiés non livrables, C-15-1c-1) ; une story de documentation seule (sépare le manuel de son code).
+- **Réversible** : totale avant développement.
+
+## C-15-1c-12 — 15-1c-i / 15-1c-ii (validation P1, R-1 = F-1, point 8) : à l'écran la Balance, au manuel la stabilité « au X »
+- **Retenu** : le pied de liste dit l'égalité « total des postes ouverts au X = solde du compte au X, celui que la Balance montre pour ce compte » ; la phrase réfutée (« la Balance d'un exercice ne lit que ses écritures ») est retirée ; la stabilité de la liste « au X » (période close, tant qu'aucun administrateur ne déverrouille, ne rouvre ni ne restaure) est dite au **manuel** (15-1b « Pour la 15-1c » point 8 : « à l'écran ou au manuel »).
+- **Écartées** : les deux phrases à l'écran (pied chargé d'une nuance qui ne sert qu'à la justification de clôture, lue au manuel).
+- **Réversible** : oui.
+
+## C-15-1c-13 — 15-1c-i (validation P1, R-9 ≈ F-11) : l'E2E crée son compte lettrable et ses montants
+- **Retenu** : le spec crée un compte `Asset` à numéro unique par l'API des comptes, des écritures à montants uniques, lit ses lignes par `lineId` (`data-testid`), délettre en fin de parcours ; rôle Consultation par un utilisateur créé par l'API (patron `journal-entries.spec.ts`).
+- **Écartées** : un compte du seed (1100 est ou devient un compte de journal bancaire, non lettrable ; 1000/2000 partagés) ; ajouter un « compte de passage » au seed (changerait tous les presets pour un spec).
+- **Réversible** : oui.
