@@ -1207,6 +1207,40 @@ aucun code ne change après) :
   (`…/15-12a-e2e-final-xss.log`). Aucun échec hors liste ; les 6 tests de `fiscal-years.spec.ts` verts.
   Backend arrêté par son PID.
 
+### Intégration sur `39b52628` (2026-10-09)
+
+`main` a avancé à `39b52628` (15-6a mergée, #572) après la poussée de la clôture : nouveau rebase des
+12 commits de la branche. Conflits :
+- `epic-15-choix-autonomes.md` : union (316 entrées `## C…`, aucun identifiant en double, vérifié par
+  `sort | uniq -d`) ;
+- `sprint-status.yaml`, trois fois : lignes `last_updated` de la branche renumérotées (30), (31), (32)
+  derrière les (27)-(29) de la 15-6a, sans doublon ; lignes 15-6a de `main` et 15-12 / 15-12a / 15-12b
+  de la branche gardées ;
+- **code** — `crates/kesh-api/tests/rejeu_interblocage_e2e.rs` : les deux branches ajoutaient leurs
+  tests en fin de fichier (15-6a : test 15, l'avoir victime ; 15-12a : tests 9 et 10, clôture et
+  création victimes, et l'aide `exercice_sql`). Les deux intentions gardées : en-tête de module de la
+  15-12a, puis le bloc de la 15-6a, puis celui de la 15-12a (fusion vérifiée contre la base commune :
+  seuls l'en-tête et les deux ajouts diffèrent) ;
+- `admin-manual.pdf`, `user-manual.pdf` : `.tex` fusionnés sans conflit, les deux PDF régénérés après
+  rebase et contrôlés aplatis — témoins de la 15-6a (« Compte de différences d'arrondi », « Avant
+  d'archiver un compte de produit, pensez aux avoirs », « Avoir refusé : compte débiteurs »), de la
+  15-11b (« Comment .env atteint Kesh ») et de cette story (« du plus ancien vers le plus récent »)
+  présents.
+`CHANGELOG.md` (une rubrique `[0.13.0]` par section), `messages.ftl` (aucune clé en double dans les
+quatre locales), `errors.rs` (Rust et dépôt) fusionnés sans conflit.
+
+**Gates complets sur l'état rebasé** :
+- frontend : `check` 0 erreur (27 avertissements préexistants), `lint-i18n-ownership` PASS,
+  `test:unit` **1095 / 1095**, `build` OK (`target/gate-logs/15-12a-gate-frontend-39b5.log`) ;
+- `wait-kesh.sh`, bases `kesh_1512a` / `kesh_e2e_1512a` remises à zéro ; `scripts/test-fast.sh` :
+  **2951 / 2951, 4 ignorés** (`…/15-12a-gate-backend-39b5.log`) ;
+- E2E complet (backend `:3012`, `kesh_e2e_1512a`, secrets `openssl rand`, SMTP factice, répertoires
+  sous `target/e2e-dirs`, `KESH_TEST_MODE=true` **côté runner** cette fois), 02:57-03:07 UTC : **245
+  passés, 9 échecs, 19 ignorés** — sept KF-029 (`mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) et deux KF-045
+  (`invoices.spec.ts:415`, `:439`, avant 12:00 UTC). Aucun hors liste ; les 6 tests de
+  `fiscal-years.spec.ts` verts. Backend arrêté par son PID.
+
 ### File List
 
 - `crates/kesh-db/src/errors.rs`, `crates/kesh-db/src/repositories/fiscal_years.rs`,
@@ -1227,6 +1261,10 @@ aucun code ne change après) :
   sprint-status.yaml, epic-15-choix-autonomes.md}`
 
 ## Change Log
+
+- 2026-10-09 — **Intégration sur `39b52628`** (15-6a) : rebase, conflit de code dans
+  `rejeu_interblocage_e2e.rs` résolu en gardant les deux ajouts, PDF régénérés ; gates complets :
+  backend 2951/2951, Vitest 1095/1095, E2E 245 / 9 attendus (Dev Agent Record).
 
 - 2026-10-09 — **Clôture** : boucle de revue de code close. Trend : **P1** (Sonnet ×3, lentilles B, E, A)
   0 C / 0 H / **2 MEDIUM** distincts d'origine + LOW → remédiation `37784da4` (rebasée `160ff2f0`) →

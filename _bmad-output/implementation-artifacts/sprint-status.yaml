@@ -1,3 +1,4 @@
+# last_updated: 2026-10-09 (33) (15-12a intégrée sur 39b52628 (15-6a) — conflit de code rejeu_interblocage_e2e.rs : deux ajouts gardés ; gates sur l'état rebasé : backend 2951/2951, Vitest 1095/1095, E2E 245 / 7 KF-029 + 2 KF-045)
 # last_updated: 2026-10-09 (32) (15-12a done — revue close P1 Sonnet ×3 2 MEDIUM → P2 ciblée Haiku 0 ; rebasée sur de285ea8 ; gates 2934/2934, Vitest 1095/1095, E2E 244 / 9 attendus + 1 de montage rejoué vert)
 # last_updated: 2026-10-09 (31) (15-12a développée, en review — gates backend 2897/2897, Vitest 1094/1094, E2E 245 / 9 attendus ; choix C-15-12a-1)
 # last_updated: 2026-10-09 (30) (15-12a en développement — entrées 15-12 / 15-12a / 15-12b reportées sur la branche de la story ; T0 : LOW de P4 appliqués, mesures au Dev Agent Record ; choix C-15-12a-1)
