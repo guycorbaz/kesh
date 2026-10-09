@@ -2,7 +2,7 @@
 
 ## Status
 
-review
+done
 
 <!-- Spécifiée le 2026-10-08 en autonomie (bmad-create-story), fille de la 15-6 découpée d'emblée
      (choix C-15-6-1). Choix propres : C-15-6-3, C-15-6-4 (précisé par C-15-6-14), C-15-6-10,
@@ -1078,6 +1078,30 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie (consignes de l'Epic 15), worktree
   `invoice-write-off`, `invoices-settlement-cancel`, `reconciliation-*`, `payment-batches`,
   `supplier-invoices`, `bank-account-journal-link`). Backend arrêté par son PID.
 
+### Gates sur l'état rebasé (`origin/main` `012fc430`, 15-12a), au commit de remédiation de la revue P1 `829537fb`
+
+- Rebase sur `012fc430` : conflits résolus en union — registre (les entrées de main d'abord,
+  puis C-15-6b-1 à C-15-6b-3), borne `sitesTotal` (15-12a 1915 → 1916, puis 15-6b +6 → **1922**),
+  CHANGELOG `[0.13.0]` / `### Corrigé` (une rubrique de chaque), PDF `user-manual` et
+  `admin-manual` régénérés (`make fr`, sources `.tex` fusionnées sans conflit) et contrôlés
+  aplatis (phrases de la 15-12a — « Clôture dans l'ordre (depuis la v0.13.0) », « ne se crée pas
+  avant un exercice clôturé » — et de la 15-6b présentes). `CLES_RELEVEES` inchangée par main :
+  **213** (test vert). Aucun conflit de code.
+- Backend complet (`scripts/test-fast.sh`, base `kesh_156b` remise à zéro par `DROP`/`CREATE`,
+  migrations, seed) : `cargo fmt --check` vert, `clippy -D warnings` vert, nextest **2984 passés,
+  4 ignorés** (2951 de la 15-12a + 29 de la 15-6b + 4 de la remédiation P1).
+- Frontend : `npm run check` 0 erreur (27 avertissements, fichiers non touchés),
+  `lint-i18n-ownership` PASS, `test:unit` **1118 / 1118** (112 fichiers), `build` vert.
+- E2E complet (backend `./target/debug/kesh-api` sur le port 3014, base `kesh_e2e_156b`
+  reconstruite, secrets tirés par `openssl rand`, `KESH_TEST_MODE=true` des deux côtés,
+  `KESH_COOKIE_SECURE=false`, quatre `KESH_SMTP_*`, répertoires inbox/documents/sauvegarde du
+  worktree ; `/health` : `smtpConfigured: true`) — run de 04:36 à 04:48 UTC : **247 passés,
+  9 échoués, 17 ignorés**. Les 9, fichier par fichier, sont tous à `docs/testing.md` § « Les
+  échecs attendus » : les sept KF-029 (`mode-expert.spec.ts:26`, `:41` ;
+  `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`, `:77`, `:150`) et les deux
+  KF-045 d'avant 12:00 UTC (`invoices.spec.ts:415`, `:439`). Aucun échec hors liste. Backend
+  arrêté par son PID (identifié par le port 3014 et son répertoire courant).
+
 ### File List
 
 - `crates/kesh-db/src/errors.rs`
@@ -1405,7 +1429,7 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie (consignes de l'Epic 15), worktree
   - **Fiche** : tâches T0 à T9 cochées (L1) ; ligne du `sprint-status` réécrite (L2) ; AC1 et
     décompte amendés — `GapAccountRole`, et non `DesignatedRole` (L3, C-15-6b-2) ; angles morts du
     plan comptable non chargé (E4) et des deux branches d'erreur infra non exercées (B-5).
-  - **Tests ajoutés** (de `67775634` à ce commit, recomptés aux deux bornes) : backend **4** —
+  - **Tests ajoutés** (de `67775634` — `1fd9351c` après rebase — au commit de remédiation, recomptés aux deux bornes) : backend **4** —
     `payment_batches_repository` 13 → 14 (`confirm_batch_rolls_back_the_invoices_settled_before_the_refused_one`,
     L4 = E3 ; mutation `tx.rollback()` → `tx.commit()` dans la branche d'échec de `confirm_batch`
     **constatée rouge**, le test 15 à une facture restant vert sous la même mutation),
@@ -1437,4 +1461,10 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie (consignes de l'Epic 15), worktree
   - Grep du symptôme : « ne le propose pas » (deux sites, les deux traités), « Collega » dans les
     clés neuves (un site), `DesignatedRole` dans la fiche (amendements aux deux sites de
     définition ; les mentions historiques du Change Log restent).
-
+- 2026-10-09 — **Revue de code P1 close** (Sonnet ×3, lentilles B, E et A) : **0 au-dessus de
+  LOW, 20 LOW** ; remédiation sans code exécutable (commit `829537fb` après rebase), quatre LOW
+  écrits en dette (C-15-6b-3). Trend : P1 0 C / 0 H / 0 M → boucle close, la remédiation ne
+  touchant aucune ligne de production (`git diff -U0` sur `crates/*/src` : commentaires seuls ;
+  frontend : fichiers `.test.*` seuls). Rebasée sur `origin/main` `012fc430` (15-12a) ; gates
+  complets sur l'état rebasé : backend 2984/2984, Vitest 1118/1118 + build, E2E 247 passés /
+  9 attendus. Statut : **`done`**.
