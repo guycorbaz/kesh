@@ -40,6 +40,47 @@ verrou le nom des exercices pour l'audit (R3, R7 point 3, C128) ; `letterings::i
 manuelle lettrée par l'API est modifiable et supprimable — d'où la règle de publication de C124 : la
 v0.13.0 ne se tague pas avant que cette fiche soit mergée.
 
+## Reçu de la 15-1a-i — revue de code P2 (2026-10-09) : textes provisoires à retirer
+
+*Section ajoutée par la remédiation de la revue de code P2 de la 15-1a-i (finding A2-1, registre
+C-15-1a-i-7 et C-15-1a-i-11). Elle ne réécrit pas cette fiche : elle transmet ce que la 15-1a-i a écrit
+au présent de son code livré, et que **cette** story rend faux.*
+
+La revue de code P1 de la 15-1a-i a ramené les textes publics à ce que fait son code : seul le lettrage
+`manual` existe, les origines `reversal` et `document` sont « réservées ». Les numéros de ligne sont ceux de la branche `story/15-1a-i-marque-du-lettrage` au commit de sa revue de
+code P2 ; ils bougeront au merge — **re-greper par la valeur**. Relevé de C-15-1a-i-7, tel qu'écrit au
+registre : `git grep -nE "Seul le lettrage manuel|ne lettre (pas encore|rien|encore rien)|réservé|n'existe encore" -- CHANGELOG.md docs` (62 lignes, dont 56 hors sujet — « réservé à l'administrateur » pour la plupart —, à
+trier). Forme resserrée, qui rend **exactement les six sites** ci-dessous sur la branche de la 15-1a-i :
+`git grep -nE "Seul le lettrage manuel|ne lettre (pas encore|rien|encore rien)|sont réservés aux lettrages|n'existe encore" -- CHANGELOG.md docs website README.md` ; et le PDF aplati : `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o "Kesh ne lettre encore rien[^.]*\."`.
+
+| site | texte provisoire |
+|---|---|
+| `CHANGELOG.md:15` | « **Seul le lettrage manuel existe à ce stade** : Kesh ne lettre pas encore de lui-même une facture soldée par ses règlements, ni une écriture et sa contre-passation. » |
+| `docs/api-external.md:222` | `letteringOrigin` (« `manual` ; `document` et `reversal` sont réservés aux lettrages que Kesh posera de lui-même ») |
+| `docs/api-external.md:288` | « L'origine d'un groupe est `manual` … ⚠️ **À ce stade, Kesh ne lettre rien de lui-même** : les origines `reversal` … et `document` … sont réservées … ; aucune route ne les rend encore. » |
+| `docs/api-external.md:321` | refus `LETTERING_IS_DOCUMENT` du `DELETE`, annoté « *(aucun groupe `document` n'existe encore)* » |
+| `docs/api-external.md:322` | refus `LETTERING_LINE_OWNED_BY_DOCUMENT` du `DELETE`, annoté « *(aucun groupe `reversal` n'existe encore)* » |
+| `docs/manual/fr/user-manual.tex:2405-2406` + PDF | glossaire, entrée *Lettrage* : « Kesh ne lettre encore rien de lui-même~: ni une facture soldée par ses règlements, ni une écriture et sa contre-passation. » |
+
+⛔ **Règle de relais** : chaque story réécrit ces textes **dans le même commit** que le comportement qui
+les rend faux — non dans un commit de documentation ultérieur. Aucun test ne lit ces fichiers : rien ne
+rougira si l'un d'eux est oublié, et C124 interdit tout tag entre les merges, si bien qu'un texte oublié
+part dans la v0.13.0.
+
+**Ce qui revient à cette story** (la contre-passation qui lettre, R6) : CHANGELOG `:15` — retirer « ni une
+écriture et sa contre-passation » et réécrire « Seul le lettrage manuel existe à ce stade » (la
+contre-passation lettre désormais d'elle-même) ; `api-external.md:222` et `:288` — sortir `reversal` de la
+réserve, et dire que la contre-passation rend des groupes `reversal` ; `:322` — retirer l'annotation
+« (aucun groupe `reversal` n'existe encore) » ; glossaire `.tex` `:2405-2406` et PDF régénéré — retirer le
+second « ni ». Les sites de `document` (`:222`, `:288`, `:321`, le premier « ni ») restent à la 15-1a2.
+
+⚠️ **Contradiction avec AC15 (ii) si ces sites sont omis.** AC15 (ii) prescrit d'ajouter au site qui
+nomme `POST /journal-entries/{id}/reverse` (`:255` au `5e4bec50` de son tableau, `:260` sur la branche
+de la 15-1a-i) : « La contre-passation **lettre** ce qui est libre … forme avec son miroir un groupe
+`reversal` ». Cette phrase contredit directement `:288` (« Kesh ne lettre rien de lui-même »), `:322`, le
+CHANGELOG `:15` et le glossaire — aucun des six sites ne figure au tableau d'AC15 (ii) ni à T11 (part ii).
+Ils s'y ajoutent, au même commit que R6.
+
 ## Décisions
 
 ### R6 — La contre-passation ne défait jamais un groupe ; elle lettre ce qui est libre (C97)
@@ -763,6 +804,13 @@ chaque occurrence porte la réserve « lettrée » ou est triée ci-dessus.
 ### File List
 
 ## Change Log
+
+### Reçu de la 15-1a-i — 2026-10-09 (Opus 5.5, remédiation de la revue de code P2 de la 15-1a-i)
+
+Section « Reçu de la 15-1a-i — revue de code P2 » ajoutée (finding A2-1, registre C-15-1a-i-7 et
+C-15-1a-i-11) : six textes provisoires écrits par la 15-1a-i (« Kesh ne lettre rien de lui-même »,
+origines « réservées »), dont quatre à réécrire ici au même commit que R6 — contradiction avec la phrase
+prescrite par AC15 (ii) sinon. Corps de cette fiche non réécrit. Édition hors passe.
 
 ### Remédiation de la validation P6 — 2026-10-09 (Opus 5.5)
 

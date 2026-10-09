@@ -281,6 +281,41 @@ intégrer à sa propre validation.*
     facture et d'un avoir : `user-manual.tex:1230` et `:1235` (« l'écriture d'origine reste intacte »,
     « sa propre écriture reste intacte », § des avoirs) sont à relire dans ce sens ici.
 
+## Reçu de la 15-1a-i — revue de code P2 (2026-10-09) : textes provisoires à retirer
+
+*Section ajoutée par la remédiation de la revue de code P2 de la 15-1a-i (finding A2-1, registre
+C-15-1a-i-7 et C-15-1a-i-11). Elle ne réécrit pas cette fiche : elle transmet ce que la 15-1a-i a écrit
+au présent de son code livré, et que **cette** story rend faux.*
+
+La revue de code P1 de la 15-1a-i a ramené les textes publics à ce que fait son code : seul le lettrage
+`manual` existe, les origines `reversal` et `document` sont « réservées ». Les numéros de ligne sont ceux de la branche `story/15-1a-i-marque-du-lettrage` au commit de sa revue de
+code P2 ; ils bougeront au merge — **re-greper par la valeur**. Relevé de C-15-1a-i-7, tel qu'écrit au
+registre : `git grep -nE "Seul le lettrage manuel|ne lettre (pas encore|rien|encore rien)|réservé|n'existe encore" -- CHANGELOG.md docs` (62 lignes, dont 56 hors sujet — « réservé à l'administrateur » pour la plupart —, à
+trier). Forme resserrée, qui rend **exactement les six sites** ci-dessous sur la branche de la 15-1a-i :
+`git grep -nE "Seul le lettrage manuel|ne lettre (pas encore|rien|encore rien)|sont réservés aux lettrages|n'existe encore" -- CHANGELOG.md docs website README.md` ; et le PDF aplati : `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o "Kesh ne lettre encore rien[^.]*\."`.
+
+| site | texte provisoire |
+|---|---|
+| `CHANGELOG.md:15` | « **Seul le lettrage manuel existe à ce stade** : Kesh ne lettre pas encore de lui-même une facture soldée par ses règlements, ni une écriture et sa contre-passation. » |
+| `docs/api-external.md:222` | `letteringOrigin` (« `manual` ; `document` et `reversal` sont réservés aux lettrages que Kesh posera de lui-même ») |
+| `docs/api-external.md:288` | « L'origine d'un groupe est `manual` … ⚠️ **À ce stade, Kesh ne lettre rien de lui-même** : les origines `reversal` … et `document` … sont réservées … ; aucune route ne les rend encore. » |
+| `docs/api-external.md:321` | refus `LETTERING_IS_DOCUMENT` du `DELETE`, annoté « *(aucun groupe `document` n'existe encore)* » |
+| `docs/api-external.md:322` | refus `LETTERING_LINE_OWNED_BY_DOCUMENT` du `DELETE`, annoté « *(aucun groupe `reversal` n'existe encore)* » |
+| `docs/manual/fr/user-manual.tex:2405-2406` + PDF | glossaire, entrée *Lettrage* : « Kesh ne lettre encore rien de lui-même~: ni une facture soldée par ses règlements, ni une écriture et sa contre-passation. » |
+
+⛔ **Règle de relais** : chaque story réécrit ces textes **dans le même commit** que le comportement qui
+les rend faux — non dans un commit de documentation ultérieur. Aucun test ne lit ces fichiers : rien ne
+rougira si l'un d'eux est oublié, et C124 interdit tout tag entre les merges, si bien qu'un texte oublié
+part dans la v0.13.0.
+
+**Ce qui revient à cette story** (le groupe `document`) : CHANGELOG `:15` — retirer « une facture soldée
+par ses règlements » de ce que Kesh « ne lettre pas encore », et réintroduire l'exemple « une facture et ses
+règlements » ; `api-external.md:222` et `:288` — sortir `document` de la réserve ; `:321` — retirer
+l'annotation « (aucun groupe `document` n'existe encore) » ; glossaire `.tex` `:2405-2406` et PDF régénéré —
+retirer le premier « ni ». Les sites de `reversal` (`:222`, `:288`, `:322`, le second « ni ») reviennent à
+la 15-1a-ii, qui se merge avant : au développement de cette story, relire ce qu'elle en a laissé — si les
+deux sont faites, la phrase « Kesh ne lettre … de lui-même » disparaît entière.
+
 ## Critères d'acceptation
 
 **AC1** — Une facture client entièrement réglée (un, puis **trois** règlements partiels, dont un
@@ -384,6 +419,13 @@ paiements fournisseurs sont lettrés d'office ; l'annulation d'un règlement dé
 ### File List
 
 ## Change Log
+
+### Reçu de la 15-1a-i — 2026-10-09 (Opus 5.5, remédiation de la revue de code P2 de la 15-1a-i)
+
+Section « Reçu de la 15-1a-i — revue de code P2 » ajoutée (finding A2-1, registre C-15-1a-i-7 et
+C-15-1a-i-11) : six textes provisoires écrits par la 15-1a-i (« Kesh ne lettre rien de lui-même »,
+origines « réservées »), dont quatre à réécrire ici au même commit que le groupe `document`. Corps de
+cette fiche non réécrit. Édition hors passe.
 
 ### Reçu de la validation P4 du socle — 2026-10-09 (Opus 5.5, remédiation de la 15-1a-i et de la 15-1a-ii)
 
