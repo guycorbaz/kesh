@@ -141,6 +141,30 @@ fn is_no_op_change(before: &Company, changes: &CompanyUpdate) -> bool {
         && before.website == changes.website
 }
 
+/// Lève le drapeau « société provisoire » (`is_stub`) d'une société, **dans la
+/// transaction de l'appelant** (Story 15-7a1, choix C-15-7-21).
+///
+/// `UPDATE companies SET is_stub = FALSE, version = version + 1 WHERE id = ?
+/// AND is_stub = TRUE` : rend `true` si le drapeau était levé (et `version` a
+/// pris +1), `false` sinon (société non provisoire ou absente — rien n'est
+/// écrit, `version` est inchangée). Bornée à `id = ?` et bumpant `version`,
+/// comme `update_company_coordinates`. **Ne commite jamais.**
+pub async fn clear_stub_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+) -> Result<bool, DbError> {
+    let rows = sqlx::query(
+        "UPDATE companies SET is_stub = FALSE, version = version + 1 \
+         WHERE id = ? AND is_stub = TRUE",
+    )
+    .bind(company_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
+    Ok(rows == 1)
+}
+
 /// Met à jour une company avec verrouillage optimiste.
 ///
 /// SELECT before → version check applicatif → court-circuit no-op (KF-004) →

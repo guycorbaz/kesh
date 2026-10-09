@@ -2496,3 +2496,916 @@ l'import (#458–#461).
   branche dans `sprint-status.yaml` (doublons avec ceux de la 15-11a).
 - **Réversible** : oui (rebase ; poussé par `--force-with-lease` après les gates).
 
+## C-15-7-1 — 15-7 : pas de découpage préventif
+
+- **Contexte** : la règle de splitting préventif du `CLAUDE.md` découpe au-delà de cinq modules
+  de premier niveau. La 15-7 touche `kesh-api` (routes d'onboarding), `kesh-api` (libellés
+  d'audit et registre des routes), `kesh-db` (variantes `_in_tx` de cinq repositories),
+  `kesh-seed` (peuplement et remise à zéro) et `kesh-i18n` (quatre catalogues) — **cinq**,
+  comptés comme la 15-5a les a comptés (un crate de persistance = un module, quel que soit le
+  nombre de ses repositories). Manuel et CHANGELOG ne sont pas des modules.
+- **Retenu** : une story unique. Les onze routes forment **une seule famille** (un fichier,
+  un parcours) ; c'est précisément le nombre de familles qui avait fait écarter #434 de la 25-1b.
+- **Écarté** : découper en « parcours production » / « démonstration et remise à zéro ». Le
+  seuil n'est pas franchi, et la remise à zéro partage avec les autres routes le patron qu'elle
+  devrait autrement réinventer.
+- **Réversible** : oui — si la validation P1 compte six modules, le découpage naturel est
+  celui qui vient d'être écarté (la 15-7b prendrait `kesh-seed`).
+
+## C-15-7-2 — 15-7 : chaque étape franchie s'inscrit (`installation.step_completed`)
+
+- **Contexte** : trois routes ne touchent que `onboarding_state` (`start-production`,
+  `skip-bank`, et `language`/`org-type` quand la valeur ne change pas). Le registre n'offre que
+  `Traced`, `Exempt("issue #…")` et `NoMatter` — défini comme « ne mute rien », ce qui serait
+  faux pour une route qui fait avancer l'assistant.
+- **Retenu** : toute route d'onboarding qui réussit écrit **au moins** une entrée,
+  `installation.step_completed` (`entity_type = "installation"`, `entity_id = 0`,
+  `details = {from, to, step}`), dans la transaction qui fait avancer l'étape ; les faits de
+  domaine (société, plan comptable, compte bancaire, réglages, taux) ont **en plus** leur
+  propre entrée. Les onze routes deviennent `Traced` sans changer la sémantique du registre.
+- **Écarté** : (a) `NoMatter` pour `skip-bank` et `start-production` — il aurait fallu
+  redéfinir `NoMatter`, et « passer en production » est justement le geste qui rend
+  l'installation non réinitialisable ; (b) une action par étape (`installation.production_started`,
+  `installation.bank_skipped`…) — huit libellés ×4 locales pour une information que
+  `details.step` porte déjà.
+- **Réversible** : oui, à bas coût (une action, quatre libellés).
+
+## C-15-7-3 — 15-7 : le plan comptable s'inscrit en UNE entrée agrégée
+
+- **Contexte** : `bulk_create_from_chart` crée 83 à 86 comptes selon le plan livré.
+- **Retenu** : une entrée `account.chart_loaded` (`entity_type = "account"`, `entity_id = 0`),
+  `details` = plan (`org_type`), langue, nombre, et la liste `[{id, number}]` des comptes créés.
+- **Écarté** : ~85 entrées `account.created` — exactes entité par entité, mais elles noient le
+  début du journal et la création d'un compte par l'utilisateur ne se distingue plus de celle
+  du plan livré.
+- **Coût du retour** : le filtre « numéro d'entité » de l'écran ne retrouve pas la création d'un
+  compte du plan livré ; il faut chercher l'entrée agrégée. Assumé, écrit dans le manuel.
+
+## C-15-7-4 — 15-7 : la démonstration s'inscrit par une entrée de synthèse
+
+- **Contexte** : `kesh_seed::seed_demo` enchaîne cinq transactions (société, plan, exercice,
+  taux, réglages) puis l'étape ; le rendre atomique est KF-002-H-002 (#43), hors périmètre.
+- **Retenu** : `installation.demo_seeded` (+ `installation.step_completed` 2→3), écrites dans
+  la **dernière** transaction, celle de l'étape, avec les identifiants et décomptes de ce qui a
+  été créé. Un peuplement interrompu ne laisse pas de trace — il laisse les orphelins que le
+  code documente déjà, et que la remise à zéro efface.
+- **Écarté** : une entrée par fait de domaine (`company.updated`, `account.chart_loaded`,
+  `fiscal_year.created`, `vat_rate.created`…) pour des données de démonstration, qui
+  n'appartiennent à aucune comptabilité réelle.
+- **Réversible** : oui.
+
+## C-15-7-5 — 15-7 : la remise à zéro efface la piste ET y inscrit son propre geste
+
+- **Contexte** : `reset_demo` exécute `DELETE FROM audit_log` (#279) sur une installation non
+  finalisée, en `autocommit`, sans aucune trace.
+- **Retenu** : les `DELETE` et la réinitialisation d'`onboarding_state` passent dans **une**
+  transaction, qui écrit en dernier `installation.reset` — première entrée du journal neuf —,
+  avec le nombre d'entrées effacées et la plage d'identifiants `[min, max]` qu'elles occupaient
+  (l'auto-incrément n'étant pas remis à zéro, le trou dans la numérotation s'explique par
+  l'entrée qui le suit). La transaction relit `onboarding_state` `FOR UPDATE` pour les détails
+  et **refuse** si `step_completed >= 7` — ce qui ferme au passage la fenêtre résiduelle notée
+  KF-002-H-002 sur ce chemin.
+- **Écarté** : (a) l'exemption, « c'est de la démo » — effacer la piste sans le dire est
+  exactement ce que la piste existe pour empêcher ; (b) conserver les entrées antérieures — la
+  remise à zéro sert à repartir de rien, et l'installation n'est pas finalisée.
+- **Réversible** : oui.
+
+## C-15-7-6 — 15-7 : une transaction par route, extraite en variantes `_in_tx`
+
+- **Retenu** : chaque route mène UNE transaction — mutation de domaine, avancée d'étape
+  (`update_step_in_tx`) et entrées d'audit —, sur le patron de la 25-1b (AC 9) : extraire un
+  `_in_tx` là où le repository commite seul, garder l'enveloppe pool pour ses autres appelants.
+  Effet de bord voulu : une société modifiée dont l'étape n'avance pas (conflit de version) n'est
+  plus commitée à moitié.
+- **Écarté** : une transaction d'audit séparée après la mutation (trace non atomique).
+- **Réversible** : non sans perdre l'atomicité ; c'est la contrainte de la piste.
+
+## C-15-7-7 — 15-7 : finalisation — réglages et taux nommés par ce qui a réellement été inséré
+
+- **Retenu** : une action neuve `company_invoice_settings.created` si la ligne a été insérée
+  (pas si elle préexistait — `INSERT IGNORE`) ; une entrée `vat_rate.created` **par taux
+  réellement inséré**, au format de `routes/vat.rs`. `insert_with_defaults_in_tx` et
+  `seed_default_swiss_rates_in_tx` rendent désormais ce qu'ils ont inséré.
+- **Laissé tel quel** : `fiscal_year.created`, déjà écrit par `create_if_absent_in_tx` avec
+  `NewAuditLogEntry::user` — l'attribution par clé d'API y est la dette #431, hors périmètre.
+- **Réversible** : oui.
+
+## C-15-7-8 — 15-7 : découpage en 15-7a / 15-7b (renverse C-15-7-1)
+
+- **Contexte** : passe de validation P1, findings R7 et F-5 — le décompte « cinq modules » de
+  C-15-7-1 comptait `kesh-api` deux fois et `kesh-db` une fois pour cinq repositories ; il donne
+  quatre par crate, neuf à la granularité des exemples de la règle (`kesh-api/routes/invoices`).
+- **Retenu** (décision de l'orchestrateur) : granularité des exemples, donc seuil franchi, donc
+  découpage — **15-7a-trace-installation-production** (les neuf routes de production, registre,
+  libellés, manuel ; `refs #434`) puis **15-7b-trace-demo-et-remise-a-zero** (`seed-demo`, `reset`,
+  `kesh-seed` ; `closes #434`, la dernière). La 15-7 devient l'index (`split`).
+- **Écarté** : maintenir la story unique en écrivant une convention de comptage à la mesure du
+  résultat voulu — c'est le défaut que la passe a relevé.
+- **Réversible** : oui avant tout développement.
+
+## C-15-7-9 — 15-7b : #528 — la remise à zéro préserve l'identité de la société
+
+- **Contexte** : #528 (ouverte par l'orchestrateur après la P1) — `reset_demo` efface `companies`
+  sous `FOREIGN_KEY_CHECKS=0`, rien ne repointe `users.company_id`, le JWT désigne une société morte
+  et toute route scopée répond 500. Attendu de l'issue : rattacher l'utilisateur à la société
+  recréée, **ou** préserver l'identité de la société.
+- **Retenu** : préserver l'identité. La société (exactement une, verrouillée) est remise **en place**
+  à l'état stub du premier démarrage (`companies::reset_to_stub_in_tx`, mêmes valeurs que
+  `insert_stub_company`, constantes descendues dans `kesh-db`) ; `users` et `api_keys` dont le
+  `company_id` diffère y sont rattachés (ce qui répare aussi une installation déjà atteinte).
+  Le JWT en cours reste valide sans reconnexion.
+- **Écarté** : rattacher les utilisateurs à la société recréée par `set_language` — le JWT en vol
+  garde l'ancien id jusqu'au rafraîchissement (500 entre-temps), et il faudrait un rattachement dans
+  `set_language`, hors du geste qui casse.
+- **Conséquence nécessaire** : C-15-7-10.
+- **Réversible** : oui.
+
+## C-15-7-10 — 15-7b : #279 fermée — vidage dérivé de la liste canonique
+
+- **Contexte** : préserver l'id de la société (C-15-7-9) **sans** vider toutes ses tables rattacherait
+  à la société remise à zéro les factures, contacts, taux et réglages de la démonstration, et
+  `finalize` trouverait des réglages de facturation pointant des comptes effacés. #279 demandait
+  justement l'exhaustivité, en recommandant la liste canonique.
+- **Retenu** : `RESET_PRESERVED_TABLES` (`api_keys`, `companies`, `onboarding_state`,
+  `password_reset_tokens`, `refresh_tokens`, `users`) ; toutes les autres tables de
+  `kesh_db::backup::TABLES_TO_TRUNCATE` sont vidées dans l'ordre de la liste. Un test de partition
+  garde la dérivation. `closes #279` sur la PR de la 15-7b.
+- **Écarté** : compléter la liste en dur (option 2 de #279) — elle dériverait comme celle d'aujourd'hui.
+- **Réversible** : oui.
+
+## C-15-7-11 — 15-7b : les trois gardes de la remise à zéro vivent sous le verrou de l'effacement
+
+- **Contexte** : F-1 — le handler applique trois gardes (`step >= 7`, `!is_demo && step > 2`,
+  `KESH_PRODUCTION_RESET`) puis relâche son verrou avant `reset_demo`.
+- **Retenu** : une seule copie des gardes, dans `reset_demo`, évaluées sur `onboarding_state`
+  verrouillé **par la transaction qui efface** ; le handler lit le drapeau d'environnement une fois et
+  le passe, n'ouvre plus de transaction, mappe les erreurs (400 et 403 d'aujourd'hui).
+- **Écarté** : garder les gardes au handler **et** les rejouer dans `reset_demo` — deux copies qui
+  peuvent diverger, pour aucun gain : la seconde est la seule qui compte.
+- **Réversible** : oui.
+
+## C-15-7-12 — 15-7 : ordre des verrous Pattern 5 et étape revérifiée sous verrou
+
+- **Contexte** : R3/F-3 — fusionner mutation et étape dans une transaction verrouillerait
+  `companies` avant `onboarding_state`, à l'inverse de `finalize` ; l'étape est lue hors verrou ;
+  `count_by_company` (garde du plan comptable) est lu hors transaction.
+- **Retenu** : chaque transaction d'onboarding ouvre par `onboarding_state FOR UPDATE` et y revérifie
+  l'étape (helper `lock_state_at_step`), puis `companies`, puis `accounts` / `bank_accounts` ; le
+  comptage des comptes se fait dans la transaction. Même ordre pour la dernière transaction de
+  `seed_demo` et pour `reset_demo`. La table du Pattern 5 est mise à jour.
+- **Réversible** : non sans rouvrir les cycles de verrous.
+
+## C-15-7-13 — 15-7 : l'atomicité se prouve par un déclencheur SQL de test
+
+- **Contexte** : R1/F-2 — un conflit de version « posé avant l'appel » est relu par la route et ne
+  produit aucun échec.
+- **Retenu** : le test pose `CREATE TRIGGER … BEFORE INSERT ON audit_log … SIGNAL SQLSTATE '45000'`
+  (l'insertion d'audit vient **après** les mutations de domaine), asserte que rien n'est commité, puis
+  `DROP TRIGGER` et rejoue avec succès. Absence du privilège `TRIGGER` ⇒ le test échoue, il ne se
+  saute pas.
+- **Écarté** : deux requêtes concurrentes (non déterministe) ; un crochet d'injection dans le code de
+  production.
+- **Réversible** : oui.
+
+## C-15-7-14 — 15-7b : la dernière transaction de `seed_demo`, et la boucle de retry
+
+- **Contexte** : R2/F-4 — `demo_seeded` doit compter les taux et réglages insérés, que les enveloppes
+  pool ne rendent pas ; la boucle de retry existe pour une visibilité entre transactions.
+- **Retenu** : la dernière transaction appelle `seed_default_swiss_rates_in_tx` et
+  `insert_with_defaults_in_tx` (posées par la 15-7a), y reçoit aussi l'effacement d'`is_stub`
+  (retiré du handler), l'étape et les deux entrées ; la boucle (trois essais, 50 ms, sur
+  `InactiveOrInvalidAccounts`) est **conservée** et enveloppe toute cette transaction, rollback
+  explicite entre deux essais. `seed_demo` reçoit l'acteur et ne reçoit plus `onboarding_version`.
+- **Écarté** : supprimer la boucle au motif qu'une transaction ouverte après le commit du plan voit
+  les comptes — vraisemblable, non mesuré ; la garder coûte une enveloppe.
+- **Réversible** : oui.
+
+## C-15-7-15 — 15-7a : helpers société sur `companies::update_in_tx`, helper d'étape dans `kesh-db`
+
+- **Contexte** : F-12 — trois `UPDATE` bruts à doter d'une comparaison, alors que
+  `companies::update_in_tx` court-circuite déjà le no-op (KF-004) ; l'entrée d'étape s'écrirait à onze
+  sites, dont un dans `kesh-seed`, qui ne peut pas employer un helper de `kesh-api`.
+- **Retenu** : `CompanyUpdate` reconstruit depuis la ligne verrouillée, `update_in_tx`, trace si la
+  version change ; `is_stub` par `companies::clear_stub_in_tx` (servira aussi `seed_demo`) ;
+  `onboarding::record_step_completed_in_tx` dans `kesh-db`, action en littéral (forme `for_actor`
+  reconnue par la garde des libellés). `insert_with_defaults` (pool) appelle sa variante `_in_tx`.
+- **Réversible** : oui.
+
+## C-15-7-16 — 15-7b : `onboarding_state` remis à zéro en place
+
+- **Retenu** : `onboarding::reset_state_in_tx` — `UPDATE` de la ligne déjà verrouillée (étape 0,
+  `is_demo` faux, `ui_mode` nul, `version + 1`), plutôt que `DELETE` + `INSERT` dans la transaction.
+- **Écarté** : variantes `_in_tx` de `delete_state` / `init_state` — un `DELETE` de la ligne qu'on
+  tient, suivi d'un `INSERT` qui change son id, pour le même état final.
+- **Réversible** : oui.
+
+## C-15-7-17 — 15-7a : taux TVA insérés ligne à ligne
+
+- **Contexte** : F-13 — l'`INSERT IGNORE` multi-lignes ne dit pas quels taux il a insérés ;
+  `vat_rate.created` porte l'id du taux.
+- **Retenu** : quatre `INSERT IGNORE` d'une ligne ; inséré ssi `rows_affected == 1`, id par
+  `last_insert_id`. L'assertion `count >= 4` reste.
+- **Écarté** : pré-lire les taux existants sous verrou puis insérer — deux requêtes pour une.
+- **Réversible** : oui.
+
+## C-15-7-18 — 15-7 : ordre des entrées au sein d'une route
+
+- **Contexte** : R6 — les tests assertent la séquence exacte ; l'ordre n'était pas fixé.
+- **Retenu** : entrées de domaine dans l'ordre d'exécution des mutations, `installation.step_completed`
+  en dernier ; pour `finalize` : réglages, taux (ordre du seed), exercice, étape. `company.created`
+  porte `entity_id` = id inséré, `details = {instance_language, is_stub: true}`.
+- **Réversible** : oui (tests à réordonner).
+
+## C-15-7-19 — 15-7a : découpage en 15-7a1 (socle) / 15-7a2 (routes et audit)
+
+- **Contexte** : validation P2 de la 15-7a, findings R2-3 et F-1 — à la granularité que C-15-7-8 a
+  retenue, la 15-7a touchait encore neuf modules (six repositories `kesh-db`, routes d'onboarding,
+  libellés d'audit, `kesh-i18n`) sans section de dérogation ; la seule dérogation codifiée est le cycle
+  de dépendance Cargo, absent.
+- **Retenu** (décision de l'orchestrateur) : patron « story-zéro + rollout » du `CLAUDE.md` —
+  **15-7a1-socle-transactions-onboarding** (variantes `_in_tx`, `clear_stub_in_tx`, `lock_state_in_tx`,
+  sans changement de comportement ni d'audit, tests de non-régression) puis
+  **15-7a2-trace-installation-production** (routes, audit, registre, libellés, manuel). 15-7a2 dépend
+  de 15-7a1 ; 15-7b de 15-7a2. La 15-7a devient une fiche `split` à corps vidé.
+- **Décomptes déclarés** (signal D5) : 15-7a1 sept modules — rollout mécanique, revu fichier par
+  fichier ; 15-7a2 quatre ; 15-7b huit, non découpée.
+- **Écarté** : écrire une dérogation pour garder la 15-7a entière — aucun motif codifié ne la porte.
+- **Réversible** : oui avant tout développement.
+
+## C-15-7-20 — 15-7a1/15-7a2 : où vivent `lock_state_*` et `record_step_completed_in_tx`
+
+- **Contexte** : la décision de découpage plaçait `record_step_completed_in_tx` et `lock_state_at_step`
+  dans le socle. Deux contraintes mécaniques l'interdisent : (1) la garde bilatérale
+  `audit_label_registry.rs` exige qu'une action écrite par un site de production soit déclarée dans
+  `ACTIONS` et libellée dans les quatre `.ftl` — le helper d'étape tirerait donc le travail d'audit
+  dans la 15-7a1, qui doit en être exempte ; (2) `lock_state_at_step` est une fonction privée de
+  `kesh-api` : sans appelant, `clippy -D warnings` échoue sur `dead_code`.
+- **Retenu** : la primitive `onboarding::lock_state_in_tx` (verrou seul, rend `Option`) dans `kesh-db`
+  à la 15-7a1 — publique, servira aussi `kesh-seed` (finding L-4 de la 15-7b) ; `lock_state_at_step`
+  (comparaison d'étape, l'appelant annule) et `record_step_completed_in_tx` à la 15-7a2.
+- **Écarté** : libeller `installation.step_completed` dès la 15-7a1 (audit dans le socle) ;
+  `#[allow(dead_code)]` provisoire (une exemption qui survit à son motif).
+- **Réversible** : oui.
+
+## C-15-7-21 — 15-7a1/15-7a2 : `is_stub` dans la trace de `coordinates`
+
+- **Contexte** : R2-2 / F-5 — l'AC 3 disait « `company.updated` ssi la version change » puis « le
+  changement d'`is_stub` seul suffit » ; `companies::update_in_tx` n'écrit pas `is_stub`, et l'effet de
+  `clear_stub_in_tx` sur `version` n'était pas fixé.
+- **Retenu** : `clear_stub_in_tx` = `UPDATE companies SET is_stub = FALSE, version = version + 1 WHERE
+  id = ? AND is_stub = TRUE`, rend `rows_affected == 1` ; `company.updated` ssi (version rendue par
+  `update_in_tx` ≠ version verrouillée) **ou** stub levé ; `after` lu par relecture après les deux
+  écritures. Coordonnées changées sur stub ⇒ `version + 2` ; identiques sur stub ⇒ `+1`, une entrée.
+- **Écarté** : faire écrire `is_stub` par `update_in_tx` (modifie le contrat KF-004 de toutes les
+  routes société pour un seul appelant).
+- **Réversible** : oui.
+
+## C-15-7-22 — 15-7b : ordre des verrous de la remise à zéro (amende C-15-7-12)
+
+- **Contexte** : R-2 / F-3 — C-15-7-12 annonçait « même ordre » pour `reset_demo`. Or le vidage suit
+  `TABLES_TO_TRUNCATE` (enfants → parents), qui inverse le Pattern 5 après les deux premiers verrous ;
+  un interblocage est possible avec une transaction qui ne prend pas `companies`
+  (`invoices::validate_invoice`).
+- **Retenu** : « même ordre » ne vaut que pour `onboarding_state` puis `companies`. `reset_demo` est
+  inscrite à la liste d'exceptions du Pattern 5 (`docs/MULTI-TENANT-SCOPING-PATTERNS.md`, « Deny
+  list ») avec sa justification ; **et elle est rejouée sur interblocage** par
+  `kesh_db::retry::retry_with` (1213, trois essais) — chaque essai acquiert sa connexion, ouvre et ferme
+  sa transaction. Motif du rejeu : le corps est rejouable de bout en bout (gardes réévaluées), la
+  victime est annulée en entier, et le précédent `finalize` / `opening_balances` / `reconciliation`
+  coûte une enveloppe ; sans lui, une collision rend 500 à l'administrateur.
+- **Limite** : le rejeu n'est pas exercé par un test (interblocage non déterministe).
+- **Écarté** : vider dans l'ordre du Pattern 5 — il faudrait une seconde liste ordonnée à maintenir à
+  côté de la canonique, ce que C-15-7-10 écarte ; laisser la victime rendre 500 sans rejeu.
+- **Réversible** : oui.
+
+## C-15-7-23 — 15-7b : #528 sur une installation déjà sans société
+
+- **Contexte** : F-1 (+ R-8) — une installation atteinte sous v0.12.x se trouve **sans société** après
+  la remise à zéro ; une nouvelle remise à zéro rendait 500 (« exactement une »), et `language` recrée
+  une société par la branche « aucune société » sans rattacher personne.
+- **Retenu** : un helper unique `companies::attach_all_principals_in_tx` (utilisateurs et clés d'API
+  rattachés à la société courante, rend les deux comptes), appelé par `reset_demo` **et** par la branche
+  « aucune société » d'`ensure_company_with_language` ; un seul site d'insertion du stub,
+  `companies::insert_stub` (générique sur l'exécuteur), employé par le bootstrap, cette branche et
+  `reset_demo` — qui **insère** le stub quand il n'y a aucune société (`Invariant` seulement au-delà
+  d'une). `company.created` et `installation.reset` portent les comptes de rattachement.
+- **Écarté** : rattacher seulement dans `reset_demo` (laisse la branche reproduire le défaut).
+- **Réversible** : oui.
+
+## C-15-7-24 — 15-7b : la partition des tables se garde sur le schéma
+
+- **Contexte** : F-2 — `RESET_CLEARED_TABLES` étant dérivé, le test de partition est vert par
+  construction ; une future table enfant de `users` seulement serait vidée en silence.
+- **Retenu** : test `#[sqlx::test]` sur `information_schema.KEY_COLUMN_USAGE` — toute table vidée atteint
+  `companies` par clés, sauf une liste **fermée** d'exceptions (`audit_log`, sans FK sur `company_id`)
+  dont chaque membre est vérifié ne pas l'atteindre ; toute table qui référence `users` sans atteindre
+  `companies` est préservée. Recompté sur le squash : 32 des 33 tables vidées atteignent `companies`.
+  `RESET_*` vivent dans `kesh_db::backup` (R-10).
+- **Écarté** : admettre « porte une colonne `company_id` » comme critère (une colonne n'est pas une
+  clé : rien ne la garde).
+- **Réversible** : oui.
+
+## C-15-7-25 — 15-7b : contrôles FK rétablis avant le commit ; 15-7a2 et 15-7b dans la même release
+
+- **Contexte** : R-6 — le cas « transaction validée puis `SET FOREIGN_KEY_CHECKS=1` en échec » était
+  indécis ; F-11 (15-7a) — entre la 15-7a2 et la 15-7b, une remise à zéro à l'étape ≤ 2 efface les
+  entrées neuves sans trace.
+- **Retenu** : sur le patron de `restore_tables_in_tx`, `SET FOREIGN_KEY_CHECKS=1` **avant** le
+  `COMMIT` ; un échec du `SET` fait annuler et rend l'erreur — le cas indécis n'existe plus ; la
+  connexion est détachée si le rétablissement échoue sur le chemin d'erreur. La 15-7a2 et la 15-7b
+  partent dans la **même** release (0.13.0).
+- **Écarté** : rendre `Ok` après un commit suivi d'un `SET` en échec (un succès qui laisse une
+  connexion douteuse) ; documenter au manuel la fenêtre entre les deux stories.
+- **Réversible** : oui.
+
+## C-15-7-26 — 15-7a1 : le test 8 asserte l'état du parcours de production, et la séquence d'audit vaut `["fiscal_year.created"]`, non zéro
+
+- **Contexte** : R1/F-1 de la P1 — le test 8 (« séquence d'audit relevée avant modification »)
+  affirmait `[] == []` dans un fichier (`onboarding_e2e.rs`) qui n'emprunte pas le code touché. La
+  consigne de l'orchestrateur demandait « `audit_log` à zéro déclaré » ; or `finalize` écrit déjà
+  `fiscal_year.created` par `fiscal_years::create_if_absent_in_tx` (`fiscal_years.rs:316`), vérifié au
+  code et conforme à l'issue #434 (« seul `fiscal_year.created` apparaît »). Un « zéro » serait rouge
+  dès avant la story.
+- **Retenu** : assertions **ajoutées** à `onboarding_path_b_e2e.rs::full_path_b_flow` — quatre taux,
+  une ligne de réglages, séquence d'audit **exactement** `["fiscal_year.created"]`, c'est-à-dire zéro
+  entrée de toute autre action — ; mutation : retirer `insert_with_defaults_in_tx` de `finalize`. Les
+  enveloppes pool sont fixées branche par branche, et le rollback best-effort sur sortie d'erreur est
+  écrit comme **exception assumée** au « sans changement de comportement ».
+- **Écarté** : `COUNT(*) = 0` (faux sur le code actuel) ; retirer le test 8 sans remplacement (laisse
+  l'AC 1 sans preuve sur le chemin de production).
+- **Réversible** : oui (texte de fiche).
+
+## C-15-7-27 — 15-7b : le prédicat de rejeu de la remise à zéro est gardé par le type, et testé sur un vrai 1213
+
+- **Contexte** : R-2/F-1 de la P3 — `is_deadlock_error` ne voit que `DbError::Sqlx` ; `SeedError` a un
+  `From<sqlx::Error>`, si bien qu'un `?` brut rend `SeedError::Sqlx` et que le rejeu de C-15-7-22
+  serait du code mort, sans test pour le révéler.
+- **Retenu** : le corps d'un essai rend `ResetAttemptError { Db(DbError), AlreadyFinalized,
+  ResetForbidden }`, **sans** `From<sqlx::Error>` — toute erreur sqlx (begin et commit compris) passe
+  par `map_db_error` ou ne compile pas ; prédicat `is_reset_retryable` (`#[doc(hidden)] pub`) ; test 13
+  qui provoque un vrai 1213 entre deux connexions dédiées (ordre de verrouillage croisé, victime
+  désignée par InnoDB) et un 1205, avec mutations qui mordent dans les deux sens.
+- **Écarté** : prédicat sur les deux variantes de `SeedError` (exige de rendre `is_deadlock_sqlx`
+  publique et ne garde pas la conversion) ; retirer `SeedError::Sqlx` (touche tout `kesh-seed`) ;
+  test de source interdisant `?` (fragile, contournable).
+- **Réversible** : oui.
+
+## C-15-7-28 — 15-7b : « rejoindre `companies` » sans traverser une table préservée ; valeurs du stub ; pas de découpage
+
+- **Contexte** : R-3/F-3 de la P3 — par fermeture transitive ordinaire, `refresh_tokens → users →
+  companies` « atteint » `companies` : la règle 2 de C-15-7-24 était vide et sa mutation ne rougissait
+  pas. R-1/F-2 — `reset_to_stub_in_tx` écrivait `NULL` dans quatre colonnes `NOT NULL DEFAULT ''`.
+  F-6 — huit modules sans section de dérogation.
+- **Retenu** : (a) la chaîne ne traverse aucune table de `RESET_PRESERVED_TABLES` autre que
+  `companies` ; recalculé sur le squash : 32/33 tables vidées la rejoignent, `audit_log` seule
+  exception (aucune FK depuis `20260910000001`), règle 2 = `password_reset_tokens`, `refresh_tokens` ;
+  la mutation `refresh_tokens` déplacée rougit réellement (amende C-15-7-24). (b) Le stub remis à zéro
+  porte les défauts du schéma : `NULL` pour les sept nullables, `''` pour quatre `address_*`, `'CH'`
+  pour `address_country` et `country` ; `insert_stub` reçoit `Language::Fr` dans `reset_demo`. (c) Pas
+  de découpage : section « Dérogation règle de splitting » écrite (défauts de la P3 distincts de ceux de
+  la P2 et d'origine, amendement D5) ; coupe Volet A / Volet B automatique si un défaut né d'une
+  remédiation revient à sévérité égale.
+- **Écarté** : exclure seulement `users` de la traversée (une future table préservée rouvrirait le
+  trou) ; découper dès maintenant.
+- **Réversible** : oui.
+
+## C-15-7-29 — 15-7a2 : test 10 conservé avec sa mutation ; test à pool d'une connexion ; `bank_accounts` avant les réglages au Pattern 5
+
+- **Contexte** : P3 de la 15-7a2, convergée (19 LOW bruts). F3-3 — test 10 vert avant et après ;
+  F3-9 — aucun test ne révèle une lecture du pool laissée dans la transaction ; F3-10 — position de
+  `bank_accounts` par rapport à `company_invoice_settings` non dite.
+- **Retenu** : test 10 **conservé**, car il mord dès que la lecture non verrouillée disparaît (sans la
+  comparaison de `lock_state_at_step`, la route rend 200) — mutation partagée avec le test 11 ;
+  test 13 sur pool `max_connections(1)` ; `bank_accounts` inséré au Pattern 5 après `accounts` et avant
+  `company_invoice_settings` (donnée avant réglages ; aucune route ne prend les deux).
+- **Écarté** : retirer le test 10 ; laisser le test 13 optionnel.
+- **Réversible** : oui.
+
+## C-15-7-30 — 15-7a1 : le test 8 appelle `finalize`, la séquence d'audit commence par `user.created`, le verrou d'état a un SQL littéral
+
+- **Contexte** : P2 de la 15-7a1. R-1 = F-1 (HIGH) : le test 8 que C-15-7-26 avait fixé visait
+  `onboarding_path_b_e2e.rs::full_path_b_flow`, qui s'arrête à l'étape 7 et **n'appelle jamais
+  `finalize`** — assertions rouges sur le code inchangé, mutation 8 sans prise. C'est un **recyclage**
+  du défaut que C-15-7-26 corrigeait. R-2 = F-2 : la séquence « `["fiscal_year.created"]` exactement »
+  est fausse — le montage passe par `ensure_admin_user` (cas `(0, true)`), qui écrit `user.created`
+  (`auth/bootstrap.rs:148`). R-3 = F-3 : « `SELECT_SQL` suivie de `FOR UPDATE` » n'est pas la requête
+  `WHERE singleton = TRUE FOR UPDATE` des trois copies. R-6/F-11 : aucun des deux appels de `finalize`
+  n'a à être adapté.
+- **Retenu** : **corrige C-15-7-26** (non réécrit). Le test 8 **ajoute** `POST /onboarding/finalize`
+  (200, étape 8) à la fin de `full_path_b_flow` — seul test qui traverse alors les quatre fonctions
+  touchées (`bulk_create_from_chart`, que `fiscal_years_e2e` ne traverse pas, `upsert_primary`,
+  `insert_with_defaults_in_tx`, `seed_default_swiss_rates_in_tx`) ; mutation 8 prouvée à la lecture
+  (aucun autre écrivain de `company_invoice_settings` sur ce parcours). Séquence exacte
+  `["user.created", "fiscal_year.created"]`, chaque entrée nommée par son écrivain. Correction **de
+  fait** à la 15-7a2 (consigne héritée et test 1 : `user.created` en tête ; montage du test 1 écrit),
+  sans rouvrir sa validation. AC 7 : constante neuve `LOCK_SQL`, SQL littéral, `SELECT_SQL` non
+  réutilisée. `routes/onboarding` non touché ⇒ **six** modules. Pas de découpage : le défaut recyclé
+  tient dans le texte d'un test, et la fiche est déjà la story-zéro d'un découpage (C-15-7-19).
+- **Écarté** : un test dédié qui traverserait les quatre fonctions (doublon de montage de
+  `full_path_b_flow`) ; une séquence filtrée sur les actions d'onboarding (plus faible qu'une séquence
+  exacte globale) ; découper la 15-7a1.
+- **Réversible** : oui (texte de fiche).
+
+## C-15-7-31 — Découpage de la 15-7b en 15-7b1 (Volet A, démonstration) et 15-7b2 (Volet B, remise à zéro)
+
+- **Contexte** : P4 de la 15-7b. R4-2 : la dérogation au découpage écrite à la P3 (C-15-7-28, point c)
+  affirmait que les MEDIUM de la P3 n'étaient nés d'aucun correctif de la P2 ; c'est faux pour trois sur
+  quatre (vérifié par versions de la fiche aux commits `3846b206` et `3c82e58f`). R4-1 = F-1 : un MEDIUM
+  né de la remédiation P3. La fiche prévoyait la coupe Volet A / Volet B « sans nouvel arbitrage » dans
+  ce cas.
+- **Retenu** : **corrige le point (c) de C-15-7-28** (non réécrit). 15-7b1 = AC 1 et la part
+  « démonstration » des AC 7 à 12, tests 1, 2, 3, 11, `refs #434` ; 15-7b2 = AC 2 à 6 et le reste,
+  tests 4 à 10b, 12, 13, `closes #434`, `closes #528`, `closes #279`. Numérotation des AC et des tests
+  conservée (traçabilité des passes). Ordre 15-7b1 → 15-7b2 ; la release commune de C-15-7-25 couvre
+  désormais 15-7a2, 15-7b1 et 15-7b2. La 15-7b2 garde huit modules : nouvelle dérogation (une seule
+  transaction, #528 et #279 inséparables) avec **coupe prédéclarée** — story-zéro `kesh-db` sans
+  appelant, puis `reset_demo`, handlers, bootstrap et audit — si un défaut recyclé revient, le constat
+  étant vérifié par versions de la fiche. Fiche 15-7b vidée (`split`). Pour R4-8 : C-15-7-24 est amendé
+  par C-15-7-28, ce que disent les fiches et l'index (le registre ne se réécrit pas).
+- **Écarté** : garder la 15-7b entière avec une dérogation rectifiée (la clause de la fiche s'appliquait
+  sans arbitrage) ; couper la 15-7b2 dès maintenant en story-zéro + rollout (aucun défaut ne le motive
+  encore).
+- **Réversible** : oui (deux fiches à refondre).
+
+## C-15-7-32 — 15-7b2 : connexion fermée à la libération, règle 3 de la partition, colonnes du stub gardées par le schéma
+
+- **Contexte** : P4 de la 15-7b. F-2 : une future abandonnée (déconnexion, arrêt, délai) rend la
+  connexion au pool avec `FOREIGN_KEY_CHECKS=0`. F-3 : aucune garde contre une clé d'une table préservée
+  vers une table vidée. F-4/R4-1 : le test 5 comparait la même énumération ouverte que
+  `reset_to_stub_in_tx`, et sa ligne de référence insérée au montage faisait deux sociétés (500).
+- **Retenu** : `conn.close_on_drop()` juste après chaque `acquire` de `reset_demo` (sqlx-core 0.8.6) :
+  la connexion n'est jamais rendue, sur succès, erreur ou abandon ; le `SET` de rétablissement du chemin
+  d'erreur et la branche `detach()` de C-15-7-25 sont **retirés** (sans objet ; `detach()` laissait
+  dépasser `max_connections`) — le `SET FOREIGN_KEY_CHECKS=1` avant le `COMMIT` reste ; test 8 :
+  `CONNECTION_ID()` différent après l'échec. La même faille de `restore_tables_in_tx` reste à **#540**.
+  Règle 3 du test 10b (ensemble vide), mutation `invoices` préservée. Test 5 : inventaire
+  `information_schema.COLUMNS` = colonnes perturbées au montage ∪ {`id`, `version`, `created_at`,
+  `updated_at`}, comparaison de toutes les colonnes sauf ces quatre à une référence construite **après**
+  la remise à zéro dans une transaction annulée.
+- **Écarté** : `tokio::spawn` de l'appel dans le handler pour le rendre non annulable (ne couvre pas
+  l'arrêt du serveur) ; garder `detach()` ; comparer aux seules valeurs de l'AC 4 (énumération ouverte).
+- **Réversible** : oui.
+
+## C-15-7-33 — 15-7a1 (P3) : `LOCK_SQL` publique, fichier de test neuf pour `accounts`, ordre d'appel du verrou d'état
+
+- **Contexte** : P3 de la 15-7a1 (R3-1/F-1, R3-2, R3-3/F-4, F-2). Le test 7, binaire d'intégration
+  externe, exécute `LOCK_SQL` ; les tests 1-2 n'avaient pas de fichier ; la garde `existing == 0` de la
+  15-7a2 dépend de l'ordre des lectures sous REPEATABLE READ.
+- **Retenu** : `pub const LOCK_SQL` (doc : partagée avec le test 7, pas une API à étendre) et une
+  mutation 7b (« `lock_state_in_tx` lit `SELECT_SQL` ») qui distingue la fonction de la constante ;
+  fichier neuf `crates/kesh-db/tests/accounts_repository.rs` en squash `"./test-schema"` ; doc-comments
+  de `lock_state_in_tx` et `count_by_company` : verrou d'état **en premier** dans la transaction.
+- **Écarté** : littéral recopié dans le test (dérive) ; tests 1-2 dans `mod tests` d'`accounts.rs`
+  (`#[tokio::test]` sur la base de dev partagée, pollution type KF-039).
+- **Réversible** : oui (visibilité réductible si un autre moyen de partage apparaît).
+
+## C-15-7-34 — 15-7b2 ferme #542 : garde du bootstrap, et réparation des installations déjà touchées par la remise à zéro
+
+- **Contexte** : P1 de la 15-7b2, R1 (HIGH) = F-1 : #542 (un stub inséré à chaque démarrage sans
+  utilisateur ni variable d'administrateur) désigne la 15-7b2, qui la renvoyait hors périmètre (L-7 de la
+  P4 de la 15-7b). F-3 : la garde n'agit que pour l'avenir ; les installations déjà atteintes ont
+  plusieurs sociétés et la remise à zéro y rend 500. Décision de l'orchestrateur : la 15-7b2 ferme #542 et
+  répare.
+- **Retenu** : AC 13 — branche `(0, false)` d'`ensure_admin_user` gardée par `company_count == 0`
+  (compteur déjà lu en tête) ; test 14 « deux démarrages sans utilisateur → une société ». Étape 2 de
+  `reset_demo` : s'il y a plus d'une société, suppression des sociétés `is_stub = TRUE` sans utilisateur
+  ni clé d'API rattachés ; si toutes le sont, `MIN(id)` est conservée (celle que `routes/setup.rs:130`
+  rattache) ; ensuite, plus d'une société restante ⇒ `Invariant`. Nombre rendu
+  (`stub_companies_removed`, `ResetOutcome` et `details`). Tests 6d (i)/(ii) et 6e. `closes #542` dans
+  les fiches index.
+- **Écarté** : (i) assumer et écrire « corriger à la main » (laisse des installations bloquées) ;
+  supprimer **toute** société provisoire superflue même rattachée (perte de rattachement d'un
+  utilisateur) ; conserver la plus grande (`MAX(id)`), incohérent avec `setup.rs`.
+- **Réversible** : oui (le code de suppression est local à l'étape 2).
+
+## C-15-7-35 — 15-7b1 (P1) : `ui_mode` relu sous verrou, déclencheur sélectif, rejeu impossible écrit et testé
+
+- **Contexte** : P1 de la 15-7b1 (R-1/F-2, R-2, F-1, F-3/R-4, R-5, F-4/R-7, F-5/R-6).
+- **Retenu** : `seed_demo(pool, locale, actor)` — `ui_mode` et version lus sur l'état verrouillé ;
+  montage des tests 1-3 par `ensure_admin_user` (stub) avec `is_stub = TRUE` asserté avant ; test 2 par
+  déclencheur **sélectif** sur `installation.step_completed` (variante sur `installation.demo_seeded`),
+  posé après la montée à l'étape 2 ; résidu (comptes, exercice, société renommée) et rejeu en 500
+  assertés, écrits dans la doc de `seed_demo`, renvoyés à #538 ; mutation `clear_stub_in_tx` sortie de
+  la dernière transaction et garde de source (test 11 b) contre le retour de l'`UPDATE is_stub` du
+  handler ; jeton `read-write` créé par JWT d'administrateur, helper remonté dans `tests/common/mod.rs`,
+  `api_key.created` dans la séquence ; boucle de retry conservée, **non testée** (angle mort déclaré :
+  sa suppression défait C-15-7-14, réservée à Guy).
+- **Écarté** : déclencheur global (ne distingue pas l'écriture hors transaction) ; rejeu réussi après
+  `DROP TRIGGER` (C-15-7-13 dans sa forme d'origine : impossible, inventaire § 2) ; supprimer la boucle.
+- **Réversible** : oui.
+
+## C-15-7-36 — 15-7b2 (P1) : `reset_cleared_tables()` en fonction, correspondance d'erreurs, gardes prouvées sous verrou
+
+- **Contexte** : P1 de la 15-7b2 (R2, R3, R5, R6, R7, F-2).
+- **Retenu** : `pub fn reset_cleared_tables() -> Vec<&'static str>` (une `const` ne filtre pas une
+  `const`) ; `SeedError::Db(d)` ⇒ `AppError::Database(d)`, `Sqlx` ⇒ `Internal`, 400/403 inchangés ;
+  erreur de rollback journalisée, jamais substituée (sinon un 1213 masqué n'est plus rejoué) ; test 7b
+  déterministe (connexion A tient `LOCK_SQL`, attente bornée sur `INNODB_TRX`, A pose l'étape 7 ⇒
+  `AlreadyFinalized`, tables intactes) ; test 7c (`None` ⇒ `Invariant`) ; garde `rows_affected` de
+  l'étape 4 non testée (non provocable, angle mort déclaré) ; test 4 avec relevé avant et liste fermée
+  des tables non amorcées.
+- **Écarté** : `LazyLock` (sans gain pour un geste rare) ; `sleep` nu dans le test 7b.
+- **Réversible** : oui.
+
+## C-15-7-37 — 15-7b1 (P2) : la démonstration rejoue sur interblocage, son manuel dit ce qu'elle crée (#544)
+
+- **Contexte** : P2 de la 15-7b1 (F2-1, F2-2, F2-3, F2-6, R2-3). Le manuel promettait une entrée
+  d'audit absente après un échec, et décrivait une démonstration (contacts, produits, écritures) que
+  `seed_demo` ne crée pas ; la dernière transaction ne rejouait pas sur 1213 alors que ses voisines
+  (`finalize`, la remise à zéro) le font.
+- **Retenu** : la 15-7b1 **ferme #544** (ligne `user-manual.tex:179-189` à l'AC 11, `closes #544` sur la
+  PR) ; paragraphe du journal borné à « lorsqu'il aboutit ». La dernière transaction est enveloppée dans
+  `retry_with` (décision C54 de l'epic : tout flux d'écriture rejoue) ; le corps d'un essai rend
+  `SeedAttemptError { Db, StepAlreadyCompleted }` sans `From<sqlx::Error>` (patron C-15-7-27), prédicat
+  `is_seed_retryable`, que la 15-7b2 étend et dont son test 13 fait la preuve. La boucle
+  `InactiveOrInvalidAccounts` (C-15-7-14, arbitrage réservé à Guy) **n'est pas touchée** : elle reste
+  autour du rejeu ; elle compte trois rejeux, soit quatre essais (C-15-7-14 disait « trois essais » :
+  corrigé ici, le registre ne se réécrit pas). Ordre de la transaction aligné sur `finalize` (réglages
+  puis taux). Le handler garde le repli `AppError::Internal` (500) pour toute erreur autre que
+  `StepAlreadyCompleted`.
+- **Écarté** : réaffecter la boucle `InactiveOrInvalidAccounts` au 1213 (défait C-15-7-14) ; renvoyer
+  #544 à une issue de suite (la story est celle qui inscrit l'inventaire exact de la démonstration) ;
+  reprendre la correspondance `Db ⇒ AppError::Database` de la 15-7b2 (rejeu du test 2 en 409).
+- **Réversible** : oui.
+
+## C-15-7-38 — 15-7b2 (P2) : #528 réparée au démarrage ; un type d'essai et un prédicat pour les deux flux
+
+- **Contexte** : F-1 de la P2 — le parcours démo → remise à zéro (v0.12.x) → `language` → production
+  → `finalize` passe et laisse une installation finalisée à une société, `users.company_id` mort, que
+  ni la remise à zéro (refusée à l'étape ≥ 7) ni `language` ne réparent. R2-6 : `AlreadyFinalized`
+  doublait `StepAlreadyCompleted` (même 400), et la correspondance « complète » l'omettait.
+- **Retenu** : `repair_orphan_principals` dans `ensure_admin_user`, avant la répartition par cas, en
+  une transaction (`companies FOR UPDATE`, puis, si **exactement une** société et des utilisateurs ou
+  clés désignant une société inexistante, `attach_all_principals_in_tx` — le helper unique de
+  C-15-7-23 — et une entrée `installation.principals_reattached`, acteur = l'administrateur actif de
+  plus petit id) ; rien d'écrit sinon ; test 15 (orphelins + une société, variante saine, variante deux
+  sociétés) et trois mutations ; `closes #528` maintenu. « Plusieurs sociétés » laissé à la remise à
+  zéro, écrit en limite (atteint par aucun chemin connu). `AlreadyFinalized` retirée ;
+  `ResetAttemptError`/`is_reset_retryable` deviennent l'extension (`ResetForbidden`) de
+  `SeedAttemptError`/`is_seed_retryable` posés par la 15-7b1 (C-15-7-37) — amende C-15-7-27 et
+  C-15-7-36 sur les noms, sans en changer le principe. Test 7b sur
+  `kesh_db::test_fixtures::attendre_une_requete_en_cours` au lieu d'`INNODB_TRX` (privilège `PROCESS`
+  absent du gate local, table non filtrable par base) — amende C-15-7-36.
+- **Écarté** : écrire la limite et passer `closes #528` en `refs` (option (b) de F-1 : la réparation
+  coûte une fonction et un test, et toute installation touchée redémarre pour passer à la version) ;
+  réparation par une migration (une migration ne voit pas « une seule société » comme une condition
+  métier, et P7 l'obligerait au registre de rejeu) ; deux types d'essai et deux prédicats (DRY).
+- **Réversible** : oui (la réparation n'écrit rien sur une installation saine).
+
+## C-15-7-39 — 15-7b2 : la clause de coupe vise la sévérité maximale de la passe précédente
+
+- **Contexte** : P2 de la 15-7b2 — trois MEDIUM nés de la remédiation P1 (test 7b, cellule `:1314` du
+  manuel, AC 13 sans ligne au manuel), après une P1 à HIGH. La clause de coupe prédéclarée disait
+  « à sévérité égale ou supérieure » sans dire à quoi : la sévérité de la passe précédente (HIGH), ou
+  celle du défaut remédié (F-2 de la P1, MEDIUM) — F-2 de la P2 l'a relevé.
+- **Retenu** : la clause vise la **sévérité maximale de la passe précédente** ; elle n'est **pas**
+  déclenchée à la P2. Motif de fond : les MEDIUM nés de la remédiation sont des défauts de **test** et de
+  **manuel**, qu'une story-zéro `kesh-db` (la coupe prévue) ne fermerait pas — couper ne traiterait pas
+  la cause. Formulation précisée dans la Dérogation de la fiche. Signal déclaré au Project Lead.
+- **Écarté** : la lecture « sévérité du défaut remédié », qui aurait coupé une fiche dont les défauts
+  recyclés ne relèvent pas de l'axe de coupe.
+- **Réversible** : oui — une P3 qui ramènerait un recyclage de sévérité ≥ MEDIUM après cette P2 à
+  MEDIUM déclencherait la coupe.
+
+
+## C-15-7-40 — 15-7b2 (P3) : coupe déclenchée, faite selon la cause — la réparation sort en 15-7b3
+
+- **Contexte** : P3 de la 15-7b2 — F3-1 (la réparation au démarrage repointe des clés d'API inertes) et
+  F3-2 (la restauration d'une sauvegarde rouvre #528), MEDIUM, nés de la remédiation P2 (vérifié par
+  versions de la fiche : `repair_orphan_principals|principals_reattached` → 0 à `327ea9df`, 9 à
+  `ffcdcf8d`), après une P2 à MEDIUM. La clause de coupe (C-15-7-39) est déclenchée ; décision de
+  l'orchestrateur (amendement D5).
+- **Retenu** : coupe **selon la cause**, non selon l'axe prédéclaré (story-zéro `kesh-db`) : les deux
+  MEDIUM portent sur la réparation des installations déjà atteintes. **15-7b2** garde la prévention
+  (remise à zéro et `language` ne laissent plus d'orphelin, #542, tests 6a-6c) et passe à `refs #528` ;
+  **15-7b3** (`15-7b3-reparation-des-installations-atteintes.md`) reprend l'ex-AC 14, le test 15, ses
+  trois mutations, l'action `installation.principals_reattached`, les lignes de manuel et de CHANGELOG,
+  y ajoute la réparation dans la transaction de restauration (F3-2) et porte `closes #528`. AC 14 de
+  la 15-7b2 réduit à un renvoi (numéro conservé). La clause de la 15-7b2 reste valable pour les passes
+  suivantes, par rapport à la P3 (MEDIUM).
+- **Écarté** : la story-zéro `kesh-db` prédéclarée (n'aurait fermé ni F3-1 ni F3-2 — motif de
+  C-15-7-39) ; garder la réparation et remédier sur place (la clause l'interdit).
+- **Réversible** : oui (deux fiches de spec, aucun code écrit).
+
+## C-15-7-41 — 15-7b3 : une clé d'API orpheline est révoquée, jamais repointée
+
+- **Contexte** : F3-1 de la P3 de la 15-7b2. Une clé dont la société est effacée est inerte
+  (`get_company_for` répond 500) ; la repointer au démarrage la réactiverait sans geste de l'exploitant,
+  alors qu'elle a pu naître en démonstration. Décision de l'orchestrateur.
+- **Retenu** : au démarrage et à la restauration, les clés **actives** orphelines sont **révoquées** par
+  le mécanisme existant `api_keys::revoke_in_tx(tx, key.company_id, key.id, key.version)` (`revoked_at =
+  NOW(3)`, `version + 1`), avec le `company_id` mort de la clé — non repointées ; une clé déjà révoquée
+  n'est pas touchée. Leurs ids vont dans `details.api_key_ids_revoked` de
+  `installation.principals_reattached` ; le manuel dit qu'elles sont à recréer et que la page des clés
+  ne les affiche pas. Seuls les utilisateurs sont rattachés (`attach_users_in_tx`). **Nom d'action
+  conservé** ; libellés changés pour dire le sort des clés (« Utilisateurs rattachés à la société, clés
+  orphelines révoquées », et trois traductions).
+- **Écarté** : repointer et signaler (option (a)/(b) de F3-1 : la clé devient vivante avant que
+  quiconque lise le journal) ; laisser les clés inertes sans les révoquer (option (c) : une remise à
+  zéro ultérieure les repointerait et les réveillerait) ; révoquer **et** repointer, pour qu'elles
+  paraissent dans l'historique de la page des clés (contraire à la décision, qui exclut tout repointage ;
+  écart signalé à l'orchestrateur) ; une entrée `api_key.revoked` par clé (une entrée agrégée suffit, sur
+  le patron d'`account.chart_loaded`) ; renommer l'action.
+- **Réversible** : oui avant livraison ; après, une clé révoquée ne se réactive pas (par conception).
+
+## C-15-7-42 — LOW de la P3 de la 15-7b2 ; la réparation ne rejoue pas ; acteur du démarrage
+
+- **Contexte** : P3 de la 15-7b2, R3-1 à R3-8 et F3-3 à F3-7 (13 LOW).
+- **Retenu** : tous appliqués, à la fiche où ils tombent après la coupe — 15-7b2 : R3-1, R3-2, R3-3,
+  R3-5, R3-6, F3-4, F3-5, F3-6, F3-7 ; index : R3-4, R3-5 ; 15-7b1 : R3-5 ; 15-7b3 : F3-3, F3-4 (texte du
+  manuel), R3-7, R3-8. **R3-8** : au démarrage, **pas de `retry_with`** — angle mort assumé, la
+  réparation précède `TcpListener::bind` (`main.rs:181` puis `:369`), un 1205/1213 n'y viendrait que
+  d'une seconde instance ou d'un client SQL externe, et un redémarrage le lève ; à la restauration, la
+  réparation s'exécute dans la transaction de `run_backup_and_restore`, qui **n'est pas** sous
+  `retry_with` (`pool.begin()`, `routes/admin.rs:232-236`) et cette fiche ne l'y met pas : un interblocage
+  annule l'import entier, relancé par l'administrateur ; la réparation n'y ajoute aucun verrou neuf (les
+  lignes de `companies`, `users`, `api_keys` sont déjà tenues en exclusif après `restore_tables_in_tx`).
+  **F3-3** : l'entrée du démarrage reste signée par l'administrateur actif de plus petit id, choix écrit
+  (doc-comment, manuel « signée … bien que personne ne l'ait faite », `details.trigger = "startup"`),
+  patron de `books.restored` ; à la restauration, par l'acteur d'`admin.full_import`.
+- **Écarté** : envelopper le démarrage dans `retry_with` (code pour un cas sans trafic) ; mettre la route
+  de restauration sous `retry_with` (hors périmètre : le rejeu d'un import entier, sauvegarde pré-import
+  comprise, est une décision à part) ; un acteur « système » (n'existe pas dans `ActorType`).
+- **Réversible** : oui.
+
+## C-15-7-43 — 15-7b1 : validation close à la P3 ciblée
+
+- **Contexte** : P3 ciblée (Haiku) de la 15-7b1 sur la remédiation P2 (`ffcdcf8d`) : 0 finding ; seul axe
+  non exercé, le PDF, sans objet (`ffcdcf8d` ne touche pas `docs/manual/`).
+- **Retenu** : validation **close** ; statut `ready-for-dev` (déjà porté, convention de l'epic), Change
+  Log P3 avec le trend P1 4 MEDIUM → P2 2 MEDIUM → P3 0. Le résidu R3-5 de la 15-7b2 (`:314`) y est
+  reporté sans rouvrir la validation (renvoi de ligne d'une doc, pas de conception).
+- **Écarté** : une passe complète de plus (la remédiation P2 relue ne touche aucun code de production).
+- **Réversible** : oui.
+
+## C-15-7-44 — 15-7b3 : une fonction `kesh-db` partagée par le démarrage et la restauration
+
+- **Contexte** : la réparation doit être la même aux deux endroits (`auth/bootstrap`, `routes/admin`),
+  dont l'un ouvre sa transaction et l'autre s'exécute dans celle de l'import.
+- **Retenu** : `companies::repair_orphan_principals_in_tx(tx, RepairTrigger) -> Option<OrphanRepair>`
+  dans `kesh-db`, sans `begin` ni `commit` ; `RepairTrigger::{Startup, Restore { actor_user_id,
+  triggered_by_user }}` porte l'acteur ; `attach_users_in_tx` extrait d'`attach_all_principals_in_tx`
+  (15-7b2), qui le compose (DRY) ; entrée d'audit écrite dans la fonction (précédent
+  `record_step_completed_in_tx`). Cinq modules : sous le seuil. **Statut `backlog`** jusqu'à la
+  convergence de sa validation (consigne de l'orchestrateur ; les fiches sœurs gardent `ready-for-dev`
+  pendant leurs passes, convention antérieure). **Même release visée** (v0.13.0) que la 15-7b2, sans
+  contrainte de sûreté (entre les deux, l'état d'aujourd'hui, sans trou de piste).
+- **Écarté** : deux implémentations dans `kesh-api` (règle dupliquée) ; une migration (une société
+  unique n'est pas une condition qu'une migration sait poser, et P7 l'obligerait au registre de rejeu) ;
+  placer la réparation dans `replay_post_restore_backfills` (registre des migrations de données, pas du
+  code de démarrage).
+- **Réversible** : oui.
+
+## C-15-7-45 — Une règle et une fonction pour les principaux orphelins : révoquer, puis repointer
+
+- **Contexte** : P4 de la 15-7b2 (R4-1 = F4-1, MEDIUM) et P1 de la 15-7b3 (F1 = R1-2, HIGH ; F2,
+  MEDIUM). C-15-7-41 (« une clé orpheline est révoquée, jamais repointée ») n'avait été appliquée qu'au
+  démarrage : `attach_all_principals_in_tx` (15-7b2) repointait toujours les clés dans `reset_demo` et la
+  branche « aucune société » de `language` — une installation v0.12.x restée sans société voyait ses clés
+  de démonstration **réveillées** au premier choix de langue. Et une clé révoquée sans repointage restait
+  une clé étrangère pendante, invisible sur la page des clés (F2). Décision de l'orchestrateur.
+- **Retenu** : la 15-7b2 pose dans `kesh-db` **la** fonction des principaux orphelins,
+  `companies::reattach_orphan_principals_in_tx(tx, target: Option<i64>) -> OrphanPrincipals` — clés
+  d'API **actives** orphelines **révoquées d'abord** (`api_keys::revoke_in_tx`, `company_id` mort de la
+  clé), quel que soit `target` ; puis, si `target` est donné, utilisateurs orphelins rattachés et
+  **toutes** les clés orphelines (révoquées) repointées vers la société. Elle remplace
+  `attach_all_principals_in_tx` ; appelée par `reset_demo`, la branche « aucune société » de `language`
+  et, dans la 15-7b3, au démarrage et à la restauration (quel que soit le nombre de sociétés pour la
+  révocation). Aucune clé orpheline ne redevient active par aucun chemin ; repointée, elle paraît
+  révoquée, sous son nom, sur la page des clés. **Révise C-15-7-41** (révoquer **et** repointer — option
+  écartée alors comme « contraire à la décision » : F2 a montré que le rejet était circulaire) et
+  **C-15-7-44** (plus d'extraction d'`attach_users_in_tx` : la 15-7b3 appelle la fonction de la 15-7b2 ;
+  la 15-7b3 **dépend** d'elle pour cette fonction). Prédicat d'orphelin `NOT EXISTS (… companies …)` au
+  lieu de `NOT (company_id <=> ?)` (identiques à une société ; la 15-7b3 l'appelle à zéro ou plusieurs).
+- **Clause de coupe de la 15-7b2** : formellement atteinte (MEDIUM après une P3 à MEDIUM, avec R4-2/F4-2
+  né de la remédiation P3) ; **non appliquée** — R4-1/F4-1 est un **résidu de propagation** d'une décision,
+  non un défaut de conception, et l'axe prédéclaré (story-zéro `kesh-db`) ne fermerait ni lui ni une
+  ligne de manuel (motif de C-15-7-39, C-15-7-40). **Signal D5 déclaré au Project Lead** au Change Log P4
+  de la 15-7b2.
+- **Écarté** : écrire l'asymétrie comme choix (option (b) de R4-1 : une clé de démonstration réveillée
+  par un choix de langue est précisément ce que C-15-7-41 refusait) ; une révocation propre à la 15-7b3
+  « quel que soit le nombre de sociétés » sans toucher la 15-7b2 (option F1 (a) seule : `language`
+  repointerait encore une clé active née après le démarrage) ; un seul `UPDATE … SET revoked_at, company_id`
+  (le mécanisme existant `revoke_in_tx` est réemployé, DRY).
+- **Réversible** : oui avant livraison (spec) ; après, une clé révoquée ne se réactive pas.
+
+## C-15-7-46 — #542 : la réparation des installations déjà touchées passe à la 15-7b3, au démarrage
+
+- **Contexte** : F4-3 de la P4 de la 15-7b2 (MEDIUM, d'origine — C-15-7-34). Plusieurs sociétés
+  provisoires, étape ≤ 2, hors démonstration : `seed_demo` y rend 500, le bouton de remise à zéro ne
+  vit que dans le bandeau de démonstration, la route est fermée aux clés d'API — la réparation « par la
+  réinitialisation » n'était atteignable que par un appel HTTP forgé.
+- **Retenu** (décision de l'orchestrateur) : la **15-7b3** supprime au **démarrage** les sociétés
+  provisoires superflues (`is_stub`, sans utilisateur ni clé, `MIN(id)` conservée si toutes le sont),
+  dans `repair_installation_in_tx`, avant le traitement des principaux (un cumul #542 + #528 se répare en
+  un démarrage) ; à la **restauration**, non (une archive est l'état choisi, un 1451 y annulerait
+  l'import ; le démarrage suivant le fait). Sur une base **sans utilisateur** : suppression sans entrée
+  d'audit (personne pour la signer), `info!`. La 15-7b2 garde la prévention (garde `company_count == 0`,
+  AC 13), passe à **`refs #542`** ; sa remise à zéro rend `Invariant` sur plus d'une société (test 6d (ii)) ;
+  l'ex-test 6e devient le test 4 de la 15-7b3, qui porte **`closes #528`, `closes #542`**. Manuel et
+  CHANGELOG des deux fiches corrigés. **Révise C-15-7-34.**
+- **Écarté** : garder la réparation dans la remise à zéro et écrire l'appel par l'API (option (b) de
+  F4-3 : un manuel qui prescrit un `curl` à un utilisateur bloqué) ; l'écrire en angle mort (c) ; la faire
+  aussi à la restauration.
+- **Réversible** : oui (spec).
+
+## C-15-7-47 — 15-7b3 : réparation au démarrage non bloquante ; fonction et action renommées
+
+- **Contexte** : F6 de la P1 de la 15-7b3 (MEDIUM : une erreur persistante de la réparation rendait
+  l'instance non démarrable, sans recours écrit) ; R1-4 (LOW : `Invariant` « aucun utilisateur ») ; R1-9
+  (LOW : libellé affirmant un rattachement qui n'a pas toujours lieu) ; la réparation porte désormais aussi
+  les sociétés superflues (C-15-7-46).
+- **Retenu** : au démarrage, une erreur de la réparation **ne refuse pas le boot** — `rollback`
+  *best-effort*, `tracing::error!` avec le détail, `ensure_admin_user` poursuit comme aujourd'hui
+  (mode dégradé : connexion et export disponibles) ; test 5 (déclencheur sur `audit_log`), mutation
+  « propager l'erreur » ; manuel admin : quoi faire (exporter, redémarrer une fois, ticket, retour à la
+  version précédente possible). À la restauration, inchangé : l'erreur annule l'import. Base sans
+  utilisateur : `Ok(None)` (sauf sociétés superflues), plus d'`Invariant`. Fonction
+  `repair_orphan_principals_in_tx` → **`repair_installation_in_tx`**, `OrphanRepair` →
+  `InstallationRepair` ; action `installation.principals_reattached` → **`installation.repaired`**,
+  libellé neutre « Réparation de l'installation » (de « Reparatur der Installation », it « Riparazione
+  dell'installazione », en « Installation repaired »). **Révise** le « nom conservé » de C-15-7-41 et le
+  nom de C-15-7-44.
+- **Écarté** : garder le refus et écrire le recours (option (b) de F6 : rendre l'installation moins
+  utilisable qu'avant la mise à jour) ; un `warn!` au lieu d'`error!` (l'exploitant doit le voir) ;
+  garder l'ancien nom d'action (il décrirait une entrée qui peut ne porter que des sociétés supprimées).
+- **Réversible** : oui (spec).
+
+## C-15-7-48 — Sortir de la démonstration exige `KESH_PRODUCTION_RESET` : le manuel le dit
+
+- **Contexte** : R4-2 = F4-2 de la P4 de la 15-7b2 (MEDIUM, né de la remédiation P3, F3-7). Une
+  démonstration est à l'étape 3 ; la garde `step > 2 && !KESH_PRODUCTION_RESET` refuse toute
+  réinitialisation sur une installation par défaut, avec un message qui accuse le rôle (#534), et
+  aucune autre route ne sort de la démonstration. Le manuel offrait le bouton comme disponible.
+- **Retenu** : les manuels (`user-manual.tex:177-189`, `admin-manual.tex:1314` et `:691`) et le renvoi
+  de la 15-7b1 (`user-manual.tex:179-189`) disent la vraie marche — l'exploitant pose
+  `KESH_PRODUCTION_RESET` (`1`, `true`, `yes`, `on`, sans casse — `routes/onboarding.rs:45-53`), redémarre,
+  la réinitialisation fonctionne, puis il retire la variable ; sans elle, refus (403) même à
+  l'administrateur. L'impasse (aucune sortie sans geste d'exploitation) est un **choix de sécurité
+  existant**, conservé et écrit ; l'orchestrateur commente #534. La 15-7b1 reçoit le report sans rouvrir
+  sa validation (renvoi de doc, patron C-15-7-43). L4-2 : « CR à ouvrir » → `refs #534`.
+- **Écarté** : changer la garde (décision produit, hors du périmètre d'une story de trace) ; ne corriger
+  que la 15-7b2 en laissant le renvoi de la 15-7b1 muet.
+- **Réversible** : oui.
+
+## C-15-7-49 — 15-7b3 : détail des clés révoquées, lignes orphelines de #279, sessions ; LOW
+
+- **Contexte** : P1 de la 15-7b3, F3, F4, F5 (MEDIUM) et LOW ; P4 de la 15-7b2, LOW.
+- **Retenu** : **F3** — les détails d'audit (`installation.repaired`, et de même `installation.reset`
+  et `company.created` de la 15-7b2) portent pour chaque clé révoquée `{id, name, created_by_user_id,
+  created_at, last_used_at}` ; **pas de préfixe** : vérifié au schéma
+  (`20260605000001_api_keys.sql:18-38`), `api_keys` ne garde que l'empreinte `key_hash` (jamais
+  journalisée) et le libellé `name`. **F4** — les autres lignes orphelines d'une remise à zéro v0.12.x
+  (`vat_rates`, `company_invoice_settings`, contacts, produits, factures, avoirs) ne sont **pas**
+  nettoyées : limite écrite (inventaire, « ne fait pas », manuel, CHANGELOG), renvoi à **#546** (ouverte
+  par l'orchestrateur). **F5** — « l'import déconnecte déjà tout le monde » était faux : seul l'importateur
+  est redirigé (par son client), les autres sessions gardent l'ancien `company_id` jusqu'à expiration
+  (JWT sans état), voient erreurs ou listes vides, et doivent se reconnecter — fiche et manuel corrigés.
+  **R1-1** — test 2 : un second administrateur B émet l'import, acteur A ≠ `triggered_by_user` B ;
+  test 3 (c) à deux ids distincts. **LOW** : tous appliqués, à la fiche où ils tombent (Change Logs P4 de
+  la 15-7b2 et P1 de la 15-7b3). **R4-4** (P4 de la 15-7b2) : le « 9 » de C-15-7-40 compte des **lignes**
+  (10 occurrences) — corrigé dans la fiche, pas ici (le registre ne se réécrit pas). **R1-8 / F12, en
+  partie faux** : le renvoi `routes/admin.rs:346-353` du commentaire d'`audit_uid` était **juste** (relu
+  par `grep -n` : commentaire `:346-353`, requête `:354-358`) ; les deux lentilles le décalaient chacune
+  dans un sens — précisé en trois plages.
+- **Écarté** : purger les lignes orphelines dans la réparation (effacement de données, à arbitrer
+  séparément — #546) ; un préfixe calculé (le secret n'est pas stocké).
+- **Réversible** : oui.
+
+## C-15-7-50 — 15-7b3, P2 : sociétés provisoires supprimées seulement sans aucune référence ; note d'exploitation à la mise à jour ; LOW
+
+- **Contexte** : validation P2 de la 15-7b3 (Sonnet ×2), F-2, F-1, R2-1, R2-2 (MEDIUM) et 11 LOW
+  distincts ; décisions de l'orchestrateur.
+- **Retenu** : **F-2** — une société provisoire n'est supprimée au démarrage que si **aucune ligne
+  d'aucune table** ne la désigne ; la liste des colonnes qui désignent `companies(id)` est **lue à
+  l'exécution** dans `information_schema.KEY_COLUMN_USAGE` (schéma courant,
+  `REFERENCED_TABLE_NAME = 'companies'`), par `companies::company_referencing_columns` — elle couvre les
+  quatre tables en `ON DELETE CASCADE` (`users`, `bank_profiles`, `contact_persons`, `email_templates`)
+  et les tables futures ; test de schéma par **inclusion** d'une liste écrite (non par égalité avec une
+  seconde lecture, verte par construction) et test de comportement (une seule référence suffit,
+  variante CASCADE obligatoire). Chaque suppression sous `SAVEPOINT` : une erreur laisse la société en
+  place (`warn!`) sans annuler le reste de la réparation ; un `ROLLBACK TO SAVEPOINT` en échec
+  (interblocage) rend l'erreur, qui suit la règle non bloquante du démarrage. **F-1** — la note
+  d'exploitation va au § *Procédure de mise à jour standard* (`admin-manual.tex:1704-1717`) et au
+  § *Dépannage* (`:2054`, sous-section neuve) ; `:1314` ne garde qu'un renvoi. **R2-1** — le manuel dit la
+  suppression aussi sans utilisateur (seule l'entrée d'audit exige un utilisateur). **R2-2** — test 2 :
+  assertion du `company_id` limitée à `admin.full_import` ; **aucune** variante de recul du verrou pour
+  `books.restored` (même sous-SELECT, rien de plus à apprendre). **R2-3 = F-3** — réparation **avant la
+  lecture des compteurs** d'`ensure_admin_user`, invariant écrit (ni insertion ni suppression dans
+  `users`, jamais zéro société) ; deux instances simultanées sur base vide : angle mort assumé (Kesh
+  tourne en une instance). **F-4** — `user-manual.tex:297`. **F-5** — l'entrée CHANGELOG s'ajoute à la
+  section `## [0.13.0]` de `main` après rebase. **LOW R2-4 à R2-11** : tous appliqués (Change Log P2 de
+  la fiche). Fiche 15-7b2 **non modifiée**.
+- **Écarté** : élargir le `NOT EXISTS` à une liste recopiée des 29 tables (dérive silencieuse à la
+  prochaine table) ; garder le 1451 comme seul garde-fou (ne voit pas les cascades) ; une variante de
+  test faisant reculer le verrou de période ; poser la réparation après les compteurs avec relecture.
+- **Réversible** : oui (spec seulement).
+
+## C-15-7-51 — 15-7b2, P5 : la recette de sortie de la démonstration dépend de la 15-11 (révise C-15-7-48)
+
+- **Contexte** : F5-1 de la P5 de la 15-7b2 (MEDIUM). `docker-compose.yml` (celui que le manuel fait
+  télécharger) et `docker-compose.prod.yml` portent une liste `environment:` explicite, sans `env_file`,
+  et ne transmettent pas `KESH_PRODUCTION_RESET` : la recette écrite par C-15-7-48 (« poser la variable
+  dans `.env`, redémarrer, réinitialiser, la retirer ») n'atteint pas le processus. Le défaut est plus
+  large (SMTP et une vingtaine de variables) : l'orchestrateur a ouvert **#550** et la story
+  **15-11-configuration-transmise**.
+- **Retenu** : **ordre de merge imposé — la 15-11 avant la 15-7b2**. La 15-7b2 ne modifie pas les
+  compose ; elle déclare la dépendance (en-tête, Dev Notes, « ne fait pas »), porte `refs #550`, étend le
+  grep de l'AC 10 à `docker-compose.yml` et `docker-compose.prod.yml`, et son T8 bloque le merge tant que
+  `grep -n PRODUCTION_RESET` ne rend pas une ligne dans chacun et que `docker compose config` ne montre pas
+  la variable transmise. Le manuel garde la recette par `.env`, vraie une fois la 15-11 mergée.
+- **Écarté** : corriger les compose dans la 15-7b2 (doublon partiel de la 15-11, conflit au merge) ; une
+  formulation vraie dans les deux ordres (« ajouter la variable à la section `environment:` du compose »)
+  — elle fait éditer un fichier que l'exploitant retélécharge à chaque mise à jour, et deviendrait une
+  recette concurrente du `.env` une fois la 15-11 livrée ; laisser le manuel promettre une recette
+  inexécutable.
+- **Réversible** : oui (spec seulement). Si la 15-11 devait glisser hors de la release de la 15-7b2, la
+  formulation écartée redevient le repli, à décider alors.
+
+## C-15-7-52 — 15-7b2, P5 : LOW appliqués ; tableaux du manuel corrigés dans leur section ; `user_ids` non ajouté
+
+- **Contexte** : R5-1 à R5-5, F5-2 à F5-4 de la P5 de la 15-7b2 (tous LOW).
+- **Retenu** : R5-3 — T7 corrige les **dix** tableaux de `sec:env-vars` du manuel d'administration
+  (huit rognés, deux décalés : recensés au `.log`, `Overfull \hbox` de 96 à 263 pt, et au PDF aplati ;
+  aucun autre tableau du manuel ne déborde), par un même geste **local à la section** (titre hors
+  ligne), sans changer `\titleformat{\paragraph}` partagé par les trois manuels. R5-4 — la phrase est
+  restreinte aux champs `api_keys_*` ; `user_ids` **n'est pas** ajouté à `installation.reset` (aucun
+  besoin de lecture établi, la fiche reste stable). R5-5 — `assert_eq!(log_bin, 0, …)`. F5-4 —
+  `CONNECTION_ID()` est la preuve, `foreign_key_checks` une ceinture. R5-1, R5-2, F5-2, F5-3 appliqués
+  tels que proposés.
+- **Écarté** : corriger le seul tableau `:683-693` (laisse sept tableaux rognés dans le même PDF) ;
+  changer le style global des `\paragraph` (effet sur 38 titres du seul manuel d'administration, hors
+  périmètre) ; ajouter `user_ids` aux trois sites.
+- **Réversible** : oui (spec seulement).
+
+## C-15-7-53 — 15-7b3, P3 : mutation d'exclusion sur une table en CASCADE ; service `kesh-api` au manuel ; archive sans société en limite ; LOW
+
+- **Contexte** : validation P3 de la 15-7b3 (Opus ×2) — R3-1 = F3-1 et R3-2 = F3-3 (MEDIUM), 13 LOW
+  distincts ; décisions de l'orchestrateur.
+- **Retenu** : **R3-1 = F3-1** — la troisième variante de la mutation 9 (« exclure une table de la liste
+  des références ») porte sur **`bank_profiles`** (`ON DELETE CASCADE`) et rougit le test 6 (b) ; la
+  variante `api_keys` (RESTRICT) était devenue muette, le 1451 étant absorbé par le `SAVEPOINT` de la P2.
+  `bank_profiles` plutôt que `users` : le test 6 (b) la monte déjà (aucun montage neuf), alors qu'une
+  variante `users` exigeait un stub désigné par un seul utilisateur non administrateur. Les Dev Notes
+  écrivent que, pour les 25 tables en RESTRICT, la garde `EXISTS` et le `SAVEPOINT` se recouvrent, que
+  seules les quatre CASCADE rendent la garde observable, et que c'est voulu (défense en profondeur) ; le
+  test 4 (ii) prouve le comportement, non la garde. **Signal D5** déclaré au Change Log P3 : recyclage
+  d'une remédiation, traité localement, pas de découpage. **R3-2 = F3-3** — `docker compose logs
+  kesh-api` dans la sous-section neuve du Dépannage ; l'AC 6 corrige **au passage** les lignes fausses
+  préexistantes du manuel d'administration : `:2063` (`logs kesh | tail -50`), `:2058` (« container
+  `kesh` », deux occurrences) et **`:1905`, `:1906`** (`--tail=100 kesh`, `--since=1h kesh`). ⚠️ Écart
+  avec la consigne : l'orchestrateur tenait `:1905-1906` pour justes « si le grep le confirme » ; le
+  `grep -n "compose logs" docs/manual/fr/admin-manual.tex` à `cf40085f` les montre fausses (service
+  `kesh`, qui n'existe que dans `docker-compose.dev.yml`) — elles rejoignent la correction, même fichier,
+  même geste. `:560` (« Nom du projet : `kesh` », projet Synology) est juste et reste. **F3-2** — archive
+  sans société restaurée sur une installation onboardée : **limite assumée**, sans mécanisme neuf
+  (inventaire § 1, AC 2 « Cas laissés » borné, « ne fait pas », phrase au § *Reprises* du manuel).
+  **F3-6** — l'erreur d'origine du `DELETE` est rendue, jamais le 1305 du `ROLLBACK TO` ; forme
+  d'émission du précédent `reconciliation.rs:1026-1072` ou `sqlx::raw_sql` ; `is_savepoint_lost`
+  (R3-4) inutile ici, rien à descendre dans `kesh-db`. **F3-7** — mutation 14 (`MIN(id)`). **F3-4** —
+  ligne neuve pour le § *Rollback en cas d'échec* (`:1734-1749`). **F3-8** — `### Corrigé` à créer s'il
+  est absent après rebase (présent à `origin/main` le 2026-10-08). **R3-8** — dépendance à la 15-11 ;
+  pré-requis `log_bin` alignés sur la 15-7b2 (`assert_eq!`). Autres LOW (R3-3 à R3-7, R3-9, F3-5)
+  appliqués tels que proposés. Fiche 15-7b2 **non modifiée**.
+- **Écarté** : variante `users` (montage neuf pour le même signal) ; capturer le `warn!` au test 4 (ii)
+  (capture `tracing` coûteuse pour une redondance voulue) ; refuser à l'import une archive à utilisateurs
+  et sans société (mécanisme neuf, cas étroit) ; laisser `:1905-1906` faux faute de confirmation par la
+  consigne ; ouvrir une issue séparée pour les lignes préexistantes (même section, même geste).
+- **Réversible** : oui (spec seulement).
+
+## C-15-7-54 — 15-7b2 : la mise en page des tableaux de `sec:env-vars` passe à la 15-11a (révise C-15-7-52)
+
+- **Contexte** : C-15-7-52 chargeait la 15-7b2 (AC 11, T7) de corriger les dix tableaux rognés ou décalés de `sec:env-vars`. La remédiation P2 de la 15-11a (choix C81, F2-3) en reprend la charge (AC12 (j)), parce que ses propres contrôles du PDF (AC12 b) en dépendent et qu'elle merge avant la 15-7b2.
+- **Retenu** : AC 11 et T7 de la 15-7b2 renvoient à la 15-11a (AC12 (j)) et ne gardent que le contrôle, après rebase, que la cellule `KESH\_PRODUCTION\_RESET` (`:691`, réécrite par la 15-7b2) se lit entière dans le PDF aplati. Le motif de contrôle `KESH.{1,2}PRODUCTION.{1,2}RESET` et le T8 énumèrent les mentions nouvelles du manuel et du CHANGELOG (AC12 f, AC13 de la 15-11a) pour ne pas rougir à tort, et notent que la 15-11a interdit de nommer la variable dans un commentaire des compose (une ligne par compose). Le geste de mise en page (titre hors ligne, dans la section seule, sans toucher `\titleformat{\paragraph}`) reste celui de C-15-7-52, exécuté par l'autre story. Les autres volets de C-15-7-52 (R5-4 `user_ids`, R5-5, F5-4) sont inchangés.
+- **Écarté** : garder la mise en page dans les deux fiches (double édition des mêmes hunks, conflit au rebase) ; faire merger la 15-7b2 d'abord (inverse l'ordre imposé par C-15-7-51).
+- **Réversible** : oui (spec seulement).
+
+## C-15-7-55 — 15-7b2 et 15-7b3 : recettes de redémarrage en `docker compose up -d`, zone `:1704-1717` partagée avec la 15-11a
+
+- **Contexte** : la 15-11a (AC12 f, C83, C84), validée et close, établit que `docker compose restart` ne relit pas `.env`. La recette de sortie de la démonstration de la 15-7b2 disait « redémarrer » ; la 15-7b3 et la 15-11a écrivent toutes deux dans `admin-manual.tex:1704-1717`.
+- **Retenu** : 15-7b2 (`:1314`, `:691`, T7) prescrit `docker compose up -d` après chaque changement de `KESH_PRODUCTION_RESET`, avec la raison ; `user-manual.tex:177-189` inchangé (aucune consigne d'exploitant). 15-7b3 : recette du *Dépannage* en `docker compose up -d` ; coordination écrite pour `:1704-1717` (15-11a d'abord, relocalisation par le texte, texte placé après l'énumération et l'encadré de la 15-11a sans les réécrire, `:1734-1749` décalé, PDF régénéré par la seconde à merger).
+- **Écarté** : laisser « redémarrer » en prose (ambigu, mène à `restart`) ; faire réécrire le point 3 par la 15-7b3 (double édition des mêmes hunks).
+- **Réversible** : oui (spec seulement).
+
+## C-15-7a1-1 — 15-7a1, T0 : alignement sur le livré — dérives de lignes seulement, aucun AC changé ; le dev enchaîne
+
+- **Contexte** : la fiche 15-7a1 a été écrite avant les fusions 15-5e1/15-5e2 et 15-8b. Chaque référence a été relocalisée par le texte sur `HEAD` (`0f6dfabb`, sur `origin/main` `9cb5083b`).
+- **Constat** : (a) **dérives de lignes** — `accounts.rs` : `bulk_create_from_chart` en-tête `:967-976` (fiche `:925-934`), court-circuit `:983-985` (`:941-943`), rollback sur `last_insert_id == 0` `:1033` (`:991`) ; `routes/onboarding.rs` : verrous `:250`, `:649`, `:802` (fiche `:250`, `:653`, `:806`), appel `insert_with_defaults_in_tx` `:717` et bloc `:716-734` (`:721`, `:720-738`), appel des taux `:741` (`:745`), commentaire `:678` (`:682`) ; `fiscal_years.rs` : `fiscal_year.created` de `create_if_absent_in_tx` `:320` (`:314`) ; `journal_entries::count_by_company` `:527` (`:495`) ; ordre des verrous `docs/MULTI-TENANT-SCOPING-PATTERNS.md:298` et `:317` (`:322`). Toutes les autres références (`bank_accounts.rs`, `company_invoice_settings.rs`, `vat_rates.rs`, tests `:953`/`:1084`/`:1174`, `bootstrap.rs:83/:148/:347`, `test_schema_guard.rs:62`, squash `:841`, `onboarding_path_b_e2e.rs:216/:219`) sont exactes. (b) **`finalize` est désormais enveloppé** par `crate::retry::retry_app_on_deadlock("onboarding::finalize", …)` (15-5e2) : la fiche ne touche pas la route ; la variante `insert_with_defaults_in_tx` reste appelée dans la fermeture rejouée, à l'identique — **aucun effet sur la 15-7a1** (le booléen « inséré » d'une tentative annulée n'est consommé qu'à partir de la 15-7a2, qui devra le lire tentative par tentative). (c) Les copies du verrou d'état de la route lisent `id, singleton, …` ; `LOCK_SQL` (AC 7) omet `singleton`, que l'entité `OnboardingState` ne porte pas — conforme à la fiche.
+- **Retenu** : aucun écart ne change une règle ni un AC ⇒ le développement enchaîne sans arrêt. Les références de la fiche ne sont pas réécrites (texte validé) ; la table de correspondance est au Change Log de la fiche (« Alignement sur le livré »).
+- **Écarté** : réécrire chaque numéro de ligne dans le corps de la fiche (bruit dans un texte validé ; les numéros dériveront encore au rebase).
+- **Réversible** : oui (aucun code).
+
+## C-15-7a1-2 — 15-7a1, développement : choix d'exécution non fixés par la fiche
+
+- **Contexte** : quelques détails de forme n'étaient pas fixés par la fiche validée.
+- **Retenu** : (a) `UpsertPrimaryOutcome::into_account()` porte la projection sur `BankAccount` de l'enveloppe pool (une seule écriture de la règle « `Created`, `after` ou `Unchanged` ») ; (b) les quatre taux du seed vivent dans une constante `DEFAULT_SWISS_RATES` du module, liés en `Decimal::new(mantisse, 2)` (pas de littéral SQL, pas de `CAST`) ; (c) `insert_with_defaults_in_tx` calcule `let inserted = rows == 1` et le rend sur **les deux** sorties de succès — la mutation 4 (« `true` en dur ») porte ainsi sur une seule ligne ; (d) test 6 : la seconde société du montage a `ide_number = None`, le numéro IDE de `sample_new_company` étant unique (`uq_companies_ide_number`) ; (e) test 4 : l'erreur `InactiveOrInvalidAccounts` est vérifiée à travers l'enveloppe pool sur une société sans plan.
+- **Écarté** : un `match` dupliqué dans l'enveloppe pool pour projeter l'issue ; garder l'`INSERT` multi-lignes et rendre les taux par relecture (ne distingue pas inséré/préexistant).
+- **Réversible** : oui (local au code de la story).
+
+## C-15-7a1-3 — 15-7a1, revue de code P1 : sort des neuf LOW
+
+- **Contexte** : la revue P1 (Sonnet ×3, B/E/A) rend 0 au-dessus de LOW et neuf LOW (B 3, E 4, A 2 ; B-1 = A-1).
+- **Retenu** : (a) **corrigés** — B-1/A-1 (les deux renvois « cf. variante pool » / « cf. pool variant » de `company_invoice_settings.rs` remplacés par la justification d'origine, portée dans la variante `_in_tx`, seule à avoir un corps) ; B-3 par deux tests neufs dans `bank_accounts_repository.rs` (`Updated` non commité ; erreur d'origine de l'enveloppe `upsert_primary`, provoquée par une clé étrangère) et un dans `accounts_repository.rs` (rollback de l'enveloppe `bulk_create_from_chart` sur collision du **dernier** compte de l'ordre topologique — mutation « `commit` au lieu de `rollback` » exécutée : rouge, `left: 86`). (b) **A-2 en angle mort assumé, écrit dans le test** : la branche `OptimisticLockConflict` de `upsert_primary_in_tx` suit un `SELECT … FOR UPDATE` dans la même transaction et n'est pas atteignable depuis un test sans modifier le code. (c) **B-2 et E-4 acceptés** (code sans appelant jusqu'à la 15-7a2 ; contrat « l'appelant annule » documenté). (d) **E-1, E-3 et le booléen relu par tentative** reportés au Change Log de la 15-7a2, qui les prévoit déjà dans son AC 8.2/AC 5 ; **E-2** au Change Log de la 15-7b1, dont c'est le périmètre (§ 2).
+- **Écarté** : provoquer `OptimisticLockConflict` par un déclencheur SQL de test (modifie le schéma de test pour une branche inatteignable en production) ; câbler E-1/E-3 dès la 15-7a1 (la fiche exclut `routes/onboarding.rs`, la 15-7a2 les câble avec l'audit).
+- **Clôture** : la remédiation ne touche que des commentaires et des tests — aucune ligne de production exécutable ⇒ pas de passe ciblée (§ « Ce qui permet de CLORE la boucle »).
+- **Réversible** : oui.

@@ -518,3 +518,69 @@ async fn extensible_category_accepted(pool: MySqlPool) {
         .unwrap();
     assert_eq!(found.rate, dec!(12.00));
 }
+
+/// Test 5 (Story 15-7a1, AC 5) — `seed_default_swiss_rates_in_tx` rend les taux
+/// **réellement** insérés, dans l'ordre du seed, avec les ids de la base.
+#[sqlx::test(migrations = "./test-schema")]
+async fn seed_in_tx_returns_actually_inserted_rates_in_seed_order(pool: MySqlPool) {
+    // Société vide ⇒ quatre taux, dans l'ordre du seed.
+    let empty = companies::create(&pool, sample_company("Seed vide"))
+        .await
+        .unwrap()
+        .id;
+    let mut tx = pool.begin().await.unwrap();
+    let rates = vat_rates::seed_default_swiss_rates_in_tx(&mut tx, empty)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let categories: Vec<&str> = rates.iter().map(|r| r.category.as_str()).collect();
+    assert_eq!(categories, ["normal", "special", "reduced", "exempt"]);
+    let rates_values: Vec<_> = rates.iter().map(|r| r.rate).collect();
+    assert_eq!(
+        rates_values,
+        [dec!(8.10), dec!(3.80), dec!(2.60), dec!(0.00)]
+    );
+    for r in &rates {
+        let (category, rate): (String, rust_decimal::Decimal) =
+            sqlx::query_as("SELECT category, rate FROM vat_rates WHERE id = ? AND company_id = ?")
+                .bind(r.id)
+                .bind(empty)
+                .fetch_one(&pool)
+                .await
+                .expect("id rendu = id de la base");
+        assert_eq!((category.as_str(), rate), (r.category.as_str(), r.rate));
+    }
+
+    // Second appel ⇒ Vec vide.
+    let mut tx = pool.begin().await.unwrap();
+    let again = vat_rates::seed_default_swiss_rates_in_tx(&mut tx, empty)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    assert!(again.is_empty(), "second appel : rien d'inséré, {again:?}");
+
+    // Société dotée de deux taux qui heurtent la clé unique des défauts
+    // (8.10 et 2.60 au 2024-01-01) ⇒ seuls `special` et `exempt` sont rendus.
+    let partial = companies::create(&pool, sample_company("Seed partiel"))
+        .await
+        .unwrap()
+        .id;
+    for rate in ["8.10", "2.60"] {
+        sqlx::query(
+            "INSERT INTO vat_rates (company_id, category, label, rate, valid_from, valid_to) \
+             VALUES (?, 'custom', 'pré-existant', ?, '2024-01-01', NULL)",
+        )
+        .bind(partial)
+        .bind(rate)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let mut tx = pool.begin().await.unwrap();
+    let rates = vat_rates::seed_default_swiss_rates_in_tx(&mut tx, partial)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    let categories: Vec<&str> = rates.iter().map(|r| r.category.as_str()).collect();
+    assert_eq!(categories, ["special", "exempt"]);
+}

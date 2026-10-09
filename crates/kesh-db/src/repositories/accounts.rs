@@ -255,13 +255,25 @@ pub async fn find_by_id_in_company(
     .map_err(map_db_error)
 }
 
-/// Liste les comptes d'une company, triés par numéro.
-///
 /// Retourne le nombre de comptes d'une company.
-pub async fn count_by_company(pool: &MySqlPool, company_id: i64) -> Result<i64, DbError> {
+///
+/// **Générique sur l'exécuteur** (Story 15-7a1, patron de
+/// [`crate::repositories::journal_entries::count_by_company`]) : appelée avec
+/// `&pool`, elle lit l'état commité ; appelée avec `&mut *tx`, elle voit en plus
+/// les insertions **non commitées** de cette transaction. Ne commite jamais.
+///
+/// ⚠️ **Garde « aucun compte » sous verrou** : sous REPEATABLE READ, la première
+/// lecture cohérente d'une transaction fige son instantané. Une garde
+/// `count_by_company(&mut *tx, …) == 0` n'est exacte que si elle est lue
+/// **après** le verrou d'état ([`crate::repositories::onboarding::lock_state_in_tx`]),
+/// jamais avant.
+pub async fn count_by_company<'e, E>(executor: E, company_id: i64) -> Result<i64, DbError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::MySql>,
+{
     let row: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM accounts WHERE company_id = ?")
         .bind(company_id)
-        .fetch_one(pool)
+        .fetch_one(executor)
         .await
         .map_err(map_db_error)?;
     Ok(row.0)
@@ -966,16 +978,52 @@ pub async fn bulk_create(
 
 /// Crée les comptes d'un plan comptable dans une transaction unique.
 ///
-/// Prend les ChartEntry bruts et résout la hiérarchie parent_number → parent_id
-/// en insérant en ordre topologique (tri par longueur de numéro, puis numéro).
-///
-/// `lang` : code langue lowercase (ex: "fr") pour extraire le nom du compte.
+/// Enveloppe pool de [`bulk_create_from_chart_in_tx`] : `begin`, variante,
+/// `commit`. Sur erreur, rollback *best-effort* puis l'erreur d'origine
+/// (Story 15-7a1). Une liste vide court-circuite **avant** `begin`.
 ///
 /// **Cette fonction ne génère PAS d'entrées d'audit log** (contexte seed
 /// système, pas action utilisateur). Elle n'emprunte pas le chemin
 /// `create` audité — c'est volontaire et conforme à FR88 (Story 3.5).
 pub async fn bulk_create_from_chart(
     pool: &MySqlPool,
+    company_id: i64,
+    entries: &[kesh_core::chart_of_accounts::ChartEntry],
+    lang: &str,
+) -> Result<Vec<Account>, DbError> {
+    if entries.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let mut tx = pool.begin().await.map_err(map_db_error)?;
+    match bulk_create_from_chart_in_tx(&mut tx, company_id, entries, lang).await {
+        Ok(accounts) => {
+            tx.commit().await.map_err(map_db_error)?;
+            Ok(accounts)
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
+}
+
+/// Variante transactionnelle de [`bulk_create_from_chart`] (Story 15-7a1) :
+/// crée les comptes du plan **dans la transaction de l'appelant**.
+///
+/// Prend les ChartEntry bruts et résout la hiérarchie parent_number → parent_id
+/// en insérant en ordre topologique (tri par longueur de numéro, puis numéro).
+///
+/// `lang` : code langue lowercase (ex: "fr") pour extraire le nom du compte.
+///
+/// Rend les comptes **réellement insérés**, triés par numéro ; une liste vide
+/// rend `Ok(vec![])` sans requête. **Ne commite ni n'annule jamais** : sur
+/// erreur, la variante rend l'erreur et c'est l'appelant qui annule.
+///
+/// **Cette fonction ne génère PAS d'entrées d'audit log** (contexte seed
+/// système, pas action utilisateur).
+pub async fn bulk_create_from_chart_in_tx(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     entries: &[kesh_core::chart_of_accounts::ChartEntry],
     lang: &str,
@@ -996,7 +1044,6 @@ pub async fn bulk_create_from_chart(
     // Numéros qui sont parents d'au moins une entrée → comptes titres, non-postables.
     let parent_numbers = kesh_core::chart_of_accounts::parent_numbers(entries);
 
-    let mut tx = pool.begin().await.map_err(map_db_error)?;
     let mut number_to_id: std::collections::HashMap<&str, i64> = std::collections::HashMap::new();
     let mut created_ids: Vec<i64> = Vec::with_capacity(entries.len());
 
@@ -1024,13 +1071,12 @@ pub async fn bulk_create_from_chart(
         .bind(parent_id)
         .bind(role)
         .bind(postable)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await
         .map_err(map_db_error)?;
 
         let last_id = result.last_insert_id();
         if last_id == 0 {
-            tx.rollback().await.map_err(map_db_error)?;
             return Err(DbError::Invariant(
                 "last_insert_id == 0 après INSERT accounts (bulk_chart)".into(),
             ));
@@ -1054,10 +1100,7 @@ pub async fn bulk_create_from_chart(
     for id in &created_ids {
         query = query.bind(id);
     }
-    let result = query.fetch_all(&mut *tx).await.map_err(map_db_error)?;
-
-    tx.commit().await.map_err(map_db_error)?;
-    Ok(result)
+    query.fetch_all(&mut **tx).await.map_err(map_db_error)
 }
 
 /// Supprime tous les comptes d'une company (utilisé par reset_demo et tests).

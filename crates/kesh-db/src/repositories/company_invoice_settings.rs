@@ -821,9 +821,12 @@ impl DesignatedAccountsSnapshot {
 /// Used by finalize() (Path B), which holds locks on company and onboarding_state.
 /// Caller must pass open transaction to keep locks alive during account lookup and INSERT.
 ///
-/// **Duplication note**: Code is intentionally duplicated between these variants rather than
-/// using a generic executor macro due to SQLx 0.8 HRTB fragility (see repository docstring P13).
-/// The 5-line body at lines marked MIRROR must stay synchronized.
+/// **Délégation (Story 15-7a1)** : la variante pool n'a plus de corps propre —
+/// elle **appelle** [`insert_with_defaults_in_tx`] (`begin`, variante, `commit`) ;
+/// sur erreur, rollback *best-effort* puis l'**erreur d'origine rendue telle
+/// quelle** (P6-M2 : la boucle de retry de `seed_demo` reconnaît exactement
+/// `DbError::InactiveOrInvalidAccounts`). La duplication et ses marqueurs
+/// `MIRROR` ont disparu.
 ///
 /// Résolution des comptes par défaut **par rôle** (Story 14-3b, chantier C) et
 /// non plus par numéro codé en dur — le plan comptable reste celui de
@@ -857,134 +860,29 @@ pub async fn insert_with_defaults(
 ) -> Result<CompanyInvoiceSettings, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
-    // MIRROR: Keep synchronized with insert_with_defaults_in_tx
-    // F1 CRITICAL FIX: Lock accounts rows during lookup to prevent concurrent deletes.
-    // SELECT FOR UPDATE prevents other transactions from modifying these rows until commit.
-    // ORDER BY id LIMIT 1 ensures deterministic single-row lock (schema uniqueness guarantee).
-    let receivable = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT id FROM accounts WHERE company_id = ? AND singleton_role = ? ORDER BY id LIMIT 1 FOR UPDATE"
-    )
-    .bind(company_id)
-    .bind(AccountRole::Receivable)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(map_db_error)?
-    .flatten();
-
-    let revenue = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT id FROM accounts WHERE company_id = ? AND singleton_role = ? ORDER BY id LIMIT 1 FOR UPDATE"
-    )
-    .bind(company_id)
-    .bind(AccountRole::DefaultRevenue)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(map_db_error)?
-    .flatten();
-
-    // Story 12.2 : compte créanciers 2000 (contrepartie achat fournisseur).
-    // OPTIONNEL (non fail-fast) — présent dans les charts standards mais
-    // l'absence ne doit pas bloquer la finalisation d'onboarding.
-    let payable = sqlx::query_scalar::<_, Option<i64>>(
-        "SELECT id FROM accounts WHERE company_id = ? AND singleton_role = ? ORDER BY id LIMIT 1 FOR UPDATE"
-    )
-    .bind(company_id)
-    .bind(AccountRole::Payable)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(map_db_error)?
-    .flatten();
-
-    // P1-004 + P1-007: Early NULL validation before INSERT (fail-fast pattern).
-    // P6-M2: rollback is best-effort. The previous `.map_err(map_db_error)?` would
-    // hide InactiveOrInvalidAccounts behind a transient rollback error and break
-    // the retry-loop matching in seed_demo (which keys on this exact variant).
-    if receivable.is_none() || revenue.is_none() {
-        let _ = tx.rollback().await;
-        return Err(DbError::InactiveOrInvalidAccounts);
-    }
-
-    // Story 25-4-c3-a2 / 25-4-d1 : les comptes désignés par le plan — facultatifs.
-    let designated = chart_designated_accounts(&mut tx, company_id).await?;
-
-    // P1-C1: Check rows_affected to distinguish newly inserted vs pre-existing rows
-    // INSERT IGNORE suppresses errors but returns rows_affected=0 if DUPLICATE KEY
-    let rows = sqlx::query(
-        "INSERT IGNORE INTO company_invoice_settings \
-         (company_id, invoice_number_format, default_receivable_account_id, \
-          default_revenue_account_id, default_payable_account_id, \
-          default_rounding_account_id, default_discount_account_id, \
-          default_bank_fees_account_id, default_bad_debt_account_id, \
-          default_sales_journal, journal_entry_description_template) \
-         VALUES (?, 'F-{YEAR}-{SEQ:04}', ?, ?, ?, ?, ?, ?, ?, 'Ventes', '{YEAR}-{INVOICE_NUMBER}')",
-    )
-    .bind(company_id)
-    .bind(receivable)
-    .bind(revenue)
-    .bind(payable)
-    .bind(designated.rounding)
-    .bind(designated.discount)
-    .bind(designated.bank_fees)
-    .bind(designated.bad_debt)
-    .execute(&mut *tx)
-    .await
-    .map_err(map_db_error)?
-    .rows_affected();
-
-    // If rows==0, row already existed (DUPLICATE KEY).
-    // P16: validate that the referenced accounts are still alive (not soft-deleted).
-    // Pure NULL re-check on the row would be dead defense — the new fail-fast path
-    // can no longer insert NULLs. Joining on accounts.active=TRUE catches the case
-    // where a previously-good FK now points to a deactivated account.
-    // CI fix: explicit `cis.` prefix on the SELECT list — `accounts` also has a
-    // `company_id` column, so `{COLUMNS}` (unprefixed) yields "Column ambiguous".
-    if rows == 0 {
-        let existing = sqlx::query_as::<_, CompanyInvoiceSettings>(
-            "SELECT cis.company_id, cis.invoice_number_format, cis.default_receivable_account_id, \
-                    cis.default_revenue_account_id, cis.default_vat_payable_account_id, \
-                    cis.default_vat_recoverable_account_id, cis.default_vat_decompte_account_id, \
-                    cis.default_sales_journal, \
-                    cis.journal_entry_description_template, cis.credit_note_number_format, \
-                    cis.default_payable_account_id, cis.default_rounding_account_id, \
-                    cis.round_to_5_centimes, cis.minimum_invoice_amount, \
-                    cis.default_discount_account_id, cis.default_bank_fees_account_id, \
-                    cis.default_bad_debt_account_id, \
-                    cis.version, cis.created_at, cis.updated_at \
-             FROM company_invoice_settings cis \
-             JOIN accounts ar ON ar.id = cis.default_receivable_account_id AND ar.active = TRUE \
-             JOIN accounts av ON av.id = cis.default_revenue_account_id AND av.active = TRUE \
-             WHERE cis.company_id = ?",
-        )
-        .bind(company_id)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(map_db_error)?;
-
-        match existing {
-            Some(row) => {
-                tx.commit().await.map_err(map_db_error)?;
-                return Ok(row);
-            }
-            None => {
-                tx.rollback().await.map_err(map_db_error)?;
-                return Err(DbError::InactiveOrInvalidAccounts);
-            }
+    match insert_with_defaults_in_tx(&mut tx, company_id).await {
+        Ok((settings, _inserted)) => {
+            tx.commit().await.map_err(map_db_error)?;
+            Ok(settings)
+        }
+        Err(e) => {
+            // P6-M2: rollback is best-effort. Propagating a rollback error here
+            // would hide InactiveOrInvalidAccounts behind a transient error and
+            // break the retry-loop matching in seed_demo (which keys on this
+            // exact variant).
+            let _ = tx.rollback().await;
+            Err(e)
         }
     }
-
-    let settings = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
-        "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ?"
-    ))
-    .bind(company_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(map_db_error)?;
-
-    tx.commit().await.map_err(map_db_error)?;
-    Ok(settings)
 }
 
 /// Transaction-aware variant of insert_with_defaults for finalize() to use.
 /// Keeps account locks within the caller's transaction scope.
+///
+/// Rend `(réglages, inséré)` (Story 15-7a1) : le booléen vaut `true` si
+/// l'`INSERT IGNORE` a réellement inséré la ligne (`rows_affected == 1`),
+/// `false` si elle existait déjà (réglages relus, comptes vivants vérifiés).
+/// **Ne commite ni n'annule jamais** : sur erreur, l'appelant annule.
 ///
 /// F2/F3/F4 CRITICAL: Caller must hold SELECT FOR UPDATE lock on onboarding_state
 /// and company to prevent deletion races. This function's SELECT FOR UPDATE on accounts
@@ -992,8 +890,7 @@ pub async fn insert_with_defaults(
 pub async fn insert_with_defaults_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
-) -> Result<CompanyInvoiceSettings, DbError> {
-    // MIRROR: Keep synchronized with insert_with_defaults
+) -> Result<(CompanyInvoiceSettings, bool), DbError> {
     // F1 CRITICAL FIX: Lock accounts rows during lookup to prevent concurrent deletes.
     // SELECT FOR UPDATE prevents other transactions from modifying these rows until commit.
     // ORDER BY id LIMIT 1 ensures deterministic single-row lock (schema uniqueness guarantee).
@@ -1018,7 +915,8 @@ pub async fn insert_with_defaults_in_tx(
     .flatten();
 
     // Story 12.2 : compte créanciers 2000 (contrepartie achat fournisseur).
-    // OPTIONNEL (non fail-fast) — cf. variante pool.
+    // OPTIONNEL (non fail-fast) — présent dans les charts standards mais
+    // l'absence ne doit pas bloquer la finalisation d'onboarding.
     let payable = sqlx::query_scalar::<_, Option<i64>>(
         "SELECT id FROM accounts WHERE company_id = ? AND singleton_role = ? ORDER BY id LIMIT 1 FOR UPDATE"
     )
@@ -1063,10 +961,16 @@ pub async fn insert_with_defaults_in_tx(
     .await
     .map_err(map_db_error)?
     .rows_affected();
+    // Story 15-7a1 : « inséré » = l'INSERT IGNORE a réellement écrit la ligne.
+    let inserted = rows == 1;
 
     // If rows==0, row already existed (DUPLICATE KEY).
-    // P16: validate FK liveness via JOIN on accounts.active = TRUE (cf. pool variant).
-    // CI fix: explicit `cis.` prefix — `accounts` also has a `company_id` column.
+    // P16: validate that the referenced accounts are still alive (not soft-deleted).
+    // Pure NULL re-check on the row would be dead defense — the fail-fast path
+    // above can no longer insert NULLs. Joining on accounts.active=TRUE catches the
+    // case where a previously-good FK now points to a deactivated account.
+    // CI fix: explicit `cis.` prefix on the SELECT list — `accounts` also has a
+    // `company_id` column, so `{COLUMNS}` (unprefixed) yields "Column ambiguous".
     if rows == 0 {
         let existing = sqlx::query_as::<_, CompanyInvoiceSettings>(
             "SELECT cis.company_id, cis.invoice_number_format, cis.default_receivable_account_id, \
@@ -1090,7 +994,7 @@ pub async fn insert_with_defaults_in_tx(
         .map_err(map_db_error)?;
 
         return match existing {
-            Some(row) => Ok(row),
+            Some(row) => Ok((row, inserted)),
             None => Err(DbError::InactiveOrInvalidAccounts),
         };
     }
@@ -1103,7 +1007,7 @@ pub async fn insert_with_defaults_in_tx(
     .await
     .map_err(map_db_error)?;
 
-    Ok(settings)
+    Ok((settings, inserted))
 }
 
 // Reference to avoid unused import warning if Journal is not referenced

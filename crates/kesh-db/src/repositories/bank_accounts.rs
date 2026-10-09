@@ -149,32 +149,94 @@ fn is_no_op_change(existing: &BankAccount, new: &NewBankAccount) -> bool {
         && existing.qr_iban == new.qr_iban
 }
 
+/// Issue de [`upsert_primary_in_tx`] : ce que l'upsert a **réellement** fait
+/// (Story 15-7a1). Permet à l'appelant de tracer la création, la modification
+/// (avec l'état d'avant) ou rien du tout.
+#[derive(Debug, Clone)]
+pub enum UpsertPrimaryOutcome {
+    /// Aucun compte principal actif : un compte a été inséré.
+    Created(BankAccount),
+    /// Le compte principal existant a été modifié ; `after.version = before.version + 1`.
+    Updated {
+        /// L'état lu sous verrou, avant l'`UPDATE`.
+        before: BankAccount,
+        /// L'état relu après l'`UPDATE`.
+        after: BankAccount,
+    },
+    /// Le payload est identique au compte existant (court-circuit no-op
+    /// KF-004) : rien n'a été écrit, `version` est inchangée.
+    Unchanged(BankAccount),
+}
+
+impl UpsertPrimaryOutcome {
+    /// Le compte tel qu'il est après l'upsert (`Created`, `after` ou `Unchanged`).
+    pub fn into_account(self) -> BankAccount {
+        match self {
+            UpsertPrimaryOutcome::Created(a) | UpsertPrimaryOutcome::Unchanged(a) => a,
+            UpsertPrimaryOutcome::Updated { after, .. } => after,
+        }
+    }
+}
+
 /// Upsert du compte bancaire principal (idempotent pour retries).
 ///
-/// Utilise SELECT FOR UPDATE dans une transaction unique pour éviter le
-/// TOCTOU entre la lecture et l'écriture.
+/// Enveloppe pool de [`upsert_primary_in_tx`] (Story 15-7a1), projetée sur
+/// `BankAccount` (le compte de `Created`, `after` ou `Unchanged`) :
+/// - `Created` / `Updated` → `commit` ;
+/// - `Unchanged` → `rollback` (« rien n'a été modifié » ; le `SELECT … FOR
+///   UPDATE` tient un X-lock que `rollback` libère comme `commit`) ;
+/// - erreur (dont `OptimisticLockConflict`) → rollback *best-effort*, puis
+///   l'erreur d'origine.
 pub async fn upsert_primary(pool: &MySqlPool, new: NewBankAccount) -> Result<BankAccount, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
+    match upsert_primary_in_tx(&mut tx, new).await {
+        Ok(UpsertPrimaryOutcome::Unchanged(account)) => {
+            tx.rollback().await.map_err(map_db_error)?;
+            Ok(account)
+        }
+        Ok(outcome) => {
+            tx.commit().await.map_err(map_db_error)?;
+            Ok(outcome.into_account())
+        }
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
+}
+
+/// Variante transactionnelle de [`upsert_primary`] (Story 15-7a1) : upsert du
+/// compte bancaire principal **dans la transaction de l'appelant**.
+///
+/// `SELECT … FOR UPDATE` sur le compte principal actif, puis :
+/// - absent → `INSERT`, rend [`UpsertPrimaryOutcome::Created`] ;
+/// - présent et payload identique (KF-004) → rend
+///   [`UpsertPrimaryOutcome::Unchanged`] **sans annuler** : « inchangé »
+///   n'annule rien, l'appelant doit pouvoir poursuivre sa transaction ;
+/// - présent et différent → `UPDATE` sous verrou optimiste, rend
+///   [`UpsertPrimaryOutcome::Updated`] ; 0 ligne touchée →
+///   `Err(OptimisticLockConflict)`, **sans annuler**.
+///
+/// **Ne commite ni n'annule jamais** : c'est l'appelant qui décide.
+pub async fn upsert_primary_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    new: NewBankAccount,
+) -> Result<UpsertPrimaryOutcome, DbError> {
     let existing = sqlx::query_as::<_, BankAccount>(
         "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, version, archived, created_at, updated_at \
          FROM bank_accounts WHERE company_id = ? AND is_primary = TRUE AND archived = FALSE LIMIT 1 FOR UPDATE",
     )
     .bind(new.company_id)
-    .fetch_optional(&mut *tx)
+    .fetch_optional(&mut **tx)
     .await
     .map_err(map_db_error)?;
 
     match existing {
         Some(account) => {
             // KF-004 : court-circuit no-op AVANT toute mutation.
-            // Note technique : le SELECT FOR UPDATE ci-dessus tient déjà un X-lock
-            // sur la row ; tx.rollback() libère ce lock identiquement à tx.commit()
-            // côté InnoDB (pas de différence sémantique pour les verrous). Choix
-            // rollback() pour cohérence inter-repos + clarté « rien n'a été modifié ».
             if is_no_op_change(&account, &new) {
-                tx.rollback().await.map_err(map_db_error)?;
-                return Ok(account);
+                return Ok(UpsertPrimaryOutcome::Unchanged(account));
             }
 
             let rows = sqlx::query(
@@ -186,24 +248,25 @@ pub async fn upsert_primary(pool: &MySqlPool, new: NewBankAccount) -> Result<Ban
             .bind(&new.qr_iban)
             .bind(account.id)
             .bind(account.version)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
             .map_err(map_db_error)?
             .rows_affected();
 
             if rows == 0 {
-                tx.rollback().await.map_err(map_db_error)?;
                 return Err(DbError::OptimisticLockConflict);
             }
 
             let updated = sqlx::query_as::<_, BankAccount>(FIND_BY_ID_SQL)
                 .bind(account.id)
-                .fetch_one(&mut *tx)
+                .fetch_one(&mut **tx)
                 .await
                 .map_err(map_db_error)?;
 
-            tx.commit().await.map_err(map_db_error)?;
-            Ok(updated)
+            Ok(UpsertPrimaryOutcome::Updated {
+                before: account,
+                after: updated,
+            })
         }
         None => {
             let result = sqlx::query(
@@ -215,7 +278,7 @@ pub async fn upsert_primary(pool: &MySqlPool, new: NewBankAccount) -> Result<Ban
             .bind(&new.iban)
             .bind(&new.qr_iban)
             .bind(new.is_primary)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
             .map_err(map_db_error)?;
 
@@ -224,12 +287,11 @@ pub async fn upsert_primary(pool: &MySqlPool, new: NewBankAccount) -> Result<Ban
 
             let account = sqlx::query_as::<_, BankAccount>(FIND_BY_ID_SQL)
                 .bind(id)
-                .fetch_one(&mut *tx)
+                .fetch_one(&mut **tx)
                 .await
                 .map_err(map_db_error)?;
 
-            tx.commit().await.map_err(map_db_error)?;
-            Ok(account)
+            Ok(UpsertPrimaryOutcome::Created(account))
         }
     }
 }
