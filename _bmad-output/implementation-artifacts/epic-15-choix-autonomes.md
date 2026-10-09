@@ -6333,3 +6333,86 @@ l'import (#458–#461).
   G18), correspondance écrite en tête de ses tâches ; les Change Logs antérieurs gardent leurs numéros.
 - **Écartée** : préfixer (`15-14b-G5`) — plus long à chaque citation, pour le même effet.
 - **Réversible** : oui.
+
+## C-15-14-32 — 15-14a (validation P4) : validation close
+
+- **Contexte** : la P4 (Opus ×2) ne rend **aucun MEDIUM** sur la 15-14a ; ses LOW (R L-2, L-5, L-7, L-8, F
+  L-2) sont justes et mineurs. Trend du lot 8 → 9 → 4 → 3 MEDIUM, les trois de la P4 sur la 15-14b.
+- **Retenu** (décision de l'orchestrateur) : critère d'arrêt du `CLAUDE.md` atteint — validation de la
+  15-14a **close**, LOW appliqués dans la même remédiation, statut `ready-for-dev` (déjà posé). R L-2
+  (« Paramètres → Facturation », titre d'écran) hors périmètre : #585 (P4) ouverte par l'orchestrateur ;
+  R L-5 : #459 commentée par l'orchestrateur.
+- **Écartée** : une passe P5 sur la 15-14a — aucun MEDIUM à vérifier, et ses LOW ne touchent que la fiche.
+- **Réversible** : oui (une revue ultérieure peut rouvrir la validation).
+
+## C-15-14-33 — 15-14b (validation P4) : « Hyper Backup » hors des sections Synology, par une liste fermée de fragments
+
+- **Contexte** : R-2 = F-1 (MEDIUM). La clause de G16 posée en P3 — chaque « Hyper Backup » hors des sections
+  suivi d'un `\ref{sec:backup-dsm}` à moins de 300 caractères — rougissait sur le texte cible de la fiche
+  même : `:912` (logs de `root`, assumée, sans renvoi), seconde occurrence dans la cible de `:2476`, renvoi
+  de la cellule `:1741` non dit conservé.
+- **Retenu** : G16 (e), **liste fermée** de quatre fragments normalisés — trois à renvoi (`:1741`, `:1748`,
+  `:2476`, chaque fragment contenant le `\ref{sec:backup-dsm}` qui suit l'occurrence), un exempté (`:912`) ;
+  toute autre occurrence rouge, toute exemption morte rouge. Cible de `:2476` réécrite à une seule
+  occurrence ; renvoi de `:1741` conservé. Bornes de section prises sur le source brut au `\subsection{`
+  qui porte le label (le titre de `sec:backup-dsm` nomme Hyper Backup avant le label — relevé en appliquant
+  la garde au texte cible).
+- **Écartée** : garder une règle de distance en l'assortissant d'exemptions (deux mécanismes pour un même
+  contrôle, et une distance arbitraire) ; ajouter un renvoi à `:912` (le texte y est juste et ne parle pas de
+  la base : un renvoi y serait du bruit).
+- **Réversible** : oui.
+
+## C-15-14-34 — 15-14b (validation P4) : le post-script ne supprime plus le dump
+
+- **Contexte** : R-1 = F-3 (MEDIUM). `admin-manual.tex:1608` propose un post-script qui supprime le dump ;
+  avec des snapshots horaires et un dump qui n'existe que le temps de la tâche, presque aucun snapshot ne
+  contiendrait la base, et la recovery n'aurait rien à recharger. La P3 l'avait classée « assumée ».
+- **Retenu** : `:1608` passe dans les corrigées (14 + 29 = 43, contrôlé par `comm`) ; texte cible « Laissez
+  le post-script vide : le dump doit rester … » ; G16 (d) : aucun `rm` sur la cible du dump dans les sections
+  Synology (un `rm` du `.tmp` permis), aucun « supprimer le dump », phrase positive présente ; angle mort
+  écrit (une autre tournure en prose).
+- **Écartée** : garder l'option en ajoutant une réserve (« … au prix de ne plus pouvoir restaurer la base
+  depuis un snapshot ») — une option qui défait la copie 1 du 3-2-1 n'a pas sa place dans une recette.
+- **Réversible** : oui.
+
+## C-15-14-35 — 15-14b (validation P4) : deux comptes, deux fichiers, deux recettes ; la restauration par le compte Kesh
+
+- **Contexte** : F-2 (MEDIUM). Le compte de sauvegarde à `SELECT` + `LOCK TABLES` (C-15-14-28) et la
+  recovery « par le même fichier d'identifiants que le pré-script » s'excluaient : un dump
+  `--add-drop-database --databases` exige `DROP`/`CREATE DATABASE`, `CREATE TABLE`, `INSERT`. Faite telle
+  qu'écrite, la recette échouait au rechargement — le jour du sinistre.
+- **Retenu** : sauvegarde par un compte `kesh_backup` (`GRANT SELECT, LOCK TABLES ON kesh.*`) dans
+  `kesh-dump.cnf`, lu par le seul pré-script ; restauration par le **compte Kesh** de `DATABASE_URL`, que
+  le manuel crée déjà avec `GRANT ALL PRIVILEGES ON kesh.*` (`admin-manual.tex:974`), dans
+  `kesh-restore.cnf`, lu par la seule commande de rechargement. Deux recettes plus un contrôle négatif
+  (rechargement avec `kesh-dump.cnf` → refusé), listings rejoués à l'identique, substitutions listées.
+  G16 (c) exige un fichier de recovery différent de celui du pré-script.
+- **Écartées** : le `root` du SGBD pour la restauration (mot de passe d'administration sur disque pour une
+  opération que le compte Kesh sait faire ; un texte qui nommerait `MARIADB_ROOT_PASSWORD` dans les sections
+  Synology rougirait G16 (a)) ; un seul compte Kesh pour les deux usages (perd le moindre privilège d'une
+  tâche planifiée nocturne).
+- **Réversible** : oui — si la recette montre que le compte Kesh ne peut pas `CREATE DATABASE`, le
+  consigner et rouvrir.
+
+## C-15-14-36 — 15-14b (validation P4) : signal D5 levé de nouveau, pas de découpage
+
+- **Contexte** : les trois MEDIUM de la P4 sont nés de la remédiation P3 (`b02e9af7`), tous dans la
+  recette de sauvegarde et ses gardes — le recyclage que vise la décision D5.
+- **Retenu** (décision de l'orchestrateur) : pas de découpage. Quatre AC ; un seul fichier de test pour
+  les gardes de l'AC 1 ; la story attend de toute façon le merge de la 15-13b (PR #584). La remédiation
+  ajoute un contrôle de cohérence garde par garde contre le texte cible, et la P5 sera une passe ciblée sur
+  la seule 15-14b, braquée sur cette remédiation.
+- **Écartée** : sortir l'AC 1 dans une 15-14c — elle partagerait le manuel d'administration et
+  `configuration_transmise.rs` avec le reste de la 15-14b, pour une séquence de merges plus longue.
+- **Réversible** : oui (découpage possible à la P5 si la recette recycle encore).
+
+## C-15-14-37 — 15-14b (validation P4) : l'invitation et la connexion par e-mail du manuel utilisateur entrent dans l'AC 3
+
+- **Contexte** : L-1 de la lentille F (LOW). `user-manual.tex:79` décrit une invitation par e-mail et
+  `:91` une connexion par e-mail ; aucune route d'invitation n'existe, la connexion prend un `username`
+  (`LoginRequest`), l'écran affiche « Identifiant ». Ce sont les voisines de `:83`, que l'AC 3 corrige déjà.
+- **Retenu** (décision de l'orchestrateur) : intégrées à l'AC 3, vérifiées au code, avec contrôle `occ`
+  « présent avant » relevé (1 et 1) ; hors du motif de G18, sites ajoutés hors décompte ; une phrase au
+  CHANGELOG de l'AC 4.
+- **Écartée** : ouvrir une issue P3 à part (deux lignes dans une sous-section que la story réécrit déjà).
+- **Réversible** : oui.

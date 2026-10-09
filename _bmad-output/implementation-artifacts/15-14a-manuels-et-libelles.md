@@ -8,7 +8,8 @@ Status: ready-for-dev
      choix C-15-14-11 à 16. Validation P2 : inventaires réécrits en commandes comptées (C-15-14-17),
      choix C-15-14-17 à 20, 23 ; dépendance envers la 15-7b1 (PR #583).
      Validation P3 : branche rebasée sur origin/main = 245b91ee (15-7b1 mergée, dépendance satisfaite) ;
-     inventaires sur tout le dépôt suivi, exclusions justifiées ; G13 ; choix C-15-14-25 à 27, 31. -->
+     inventaires sur tout le dépôt suivi, exclusions justifiées ; G13 ; choix C-15-14-25 à 27, 31.
+     Validation P4 : 0 MEDIUM sur cette fiche — validation CLOSE (C-15-14-32) ; LOW appliqués. -->
 
 ## Story
 
@@ -46,7 +47,7 @@ adressent une issue* du `CLAUDE.md`) :
 > brochure hors `:542` et les catalogues n'ont pas bougé depuis `dc4bc58b`, le manuel d'administration et
 > `.env.example` si) — les numéros de ligne **se périment** ; le développeur
 > retrouve chaque site **par la valeur** (commande donnée), jamais par le numéro. Pour chaque
-> manuel modifié : **régénérer le PDF** (`scripts/mem-guard.sh make -C docs/manual fr`) et le
+> manuel modifié : **régénérer le PDF** (`scripts/mem-guard.sh make -B -C docs/manual fr`) et le
 > **contrôler aplati et normalisé** (validation P2, F-1). Le PDF aplati n'a **plus d'apostrophe
 > droite** (`'` y devient `’`), **perd les traits d'union** coupés en fin de ligne
 > (`super-administrateur` → `superadministrateur`, `QR-facture` → `QRfacture`) et porte des ligatures
@@ -163,6 +164,12 @@ Le menu affiche `nav-settings = Paramètres` ; l'écran de facturation s'intitul
   - Les trois locales autres que fr-CH disent **déjà** le menu (« Einstellungen », « Impostazioni »,
     « Settings ») : leur réécriture en « → Fakturierung » etc. est une **extension de périmètre** voulue,
     que G3 impose pour que les quatre valeurs nomment le même écran (validation P3, L-7).
+  - **Hors périmètre, tracé** (validation P4, L-2 de la lentille R) : « Paramètres → Facturation » est le
+    **titre** de l'écran (`settings-invoicing-title`), non un chemin de menu — l'entrée « Facturation » est
+    une **sœur** de « Paramètres » dans le groupe *Administration* (`frontend/src/routes/(app)/+layout.svelte:143`),
+    et la page `/settings` n'a aucun lien vers `/settings/invoicing`. La convention est déjà écrite une
+    douzaine de fois au manuel ; cette story ne la change pas. Issue **#585** (P4), ouverte par
+    l'orchestrateur le 2026-10-09 ; ni `closes` ni `refs` ici.
 - **Second message** (validation P1, R3 = F-11 ; C-15-14-11) : fr-CH `error-invoice-pdf-header-overflow`
   (`fr-CH:1887`) dit « Supprimez une coordonnée … **dans les réglages** : … » — un renvoi à l'écran où l'on
   agit, que les trois autres locales nomment déjà par le menu (« in den Einstellungen », « nelle
@@ -295,7 +302,9 @@ Aucun processus ne surveille `KESH_INBOX_DIR` (vérifié : aucune tâche de fond
 
 - `user-manual.tex:1524` : « … déposées dans le dossier d'import (voir le manuel administrateur pour sa
   configuration). L'import ne se déclenche pas tout seul : vous le lancez depuis l'écran décrit
-  ci-dessous. » (le paragraphe suivant, `:1527-1528`, nomme déjà \emph{Quotidien} → \emph{Importer des
+  ci-dessous. » ⚠️ Cette phrase deviendra fausse **sans signal** le jour où #459 automatisera l'import
+  (G5 rougira, lui, mais pas sur cette phrase) : l'orchestrateur a commenté #459 (validation P4, L-5 de
+  la lentille R) pour nommer G5 et la phrase à inverser. (le paragraphe suivant, `:1527-1528`, nomme déjà \emph{Quotidien} → \emph{Importer des
   factures} — validation P1, R7 : pas de redite.)
 - `marketing-brochure.tex:396` : « Import de factures fournisseurs déposées dans un dossier, avec décodage
   du QR-facture côté serveur. »
@@ -659,24 +668,30 @@ ligne `api-external.md:330` → rouge.
         disjointes, mais c'est un repository — **gate complet** (exception `kesh-db`, validation P2, L-8).
   - [ ] **PDF** (validation P1, F-8 ; R13) : la 15-7b1 modifie `admin-manual.pdf` et `user-manual.pdf`, la
         15-13b le manuel d'administration — un conflit sur un PDF ne se résout **jamais** à la main : prendre
-        les `.tex` résolus, puis **régénérer** les trois PDF (`make fr`). Le `.tex` d'un manuel ne se fusionne
+        les `.tex` résolus, puis **régénérer** les trois PDF (`make -B fr`). Le `.tex` d'un manuel ne se fusionne
         pas non plus de confiance : relire chaque hunk en conflit contre les deux fiches.
   - [ ] **Relancer chaque commande d'inventaire** des AC — sur tout le dépôt suivi moins `E`, `LC_ALL=C.UTF-8`
         — et comparer au compte écrit, relevé sur `245b91ee` (AC 1 : 4 ; AC 2 : 21 et 132 ; AC 3 : 16 ;
         AC 5 : 25 ; AC 6 : 5 ; AC 7 : 54 ; AC 8 : 20 clés fr-CH, 153 lignes sur le dépôt, 8 lignes Vitest ;
         AC 9 : 6 ; AC 10 : 20 en de-CH, 21 sur le dépôt) ; tout écart se ventile (corrigé ou assumé, avec sa
         raison) **avant** d'écrire.
-  - [ ] **Contrôle « présent avant »** : régénérer d'abord les PDF de l'état de départ (`make fr` — celui de
-        `bcded0c8` était en retard sur son `.tex`), puis la fonction `occ` de la convention pour chaque
+  - [ ] **Contrôle « présent avant »** : régénérer d'abord les PDF de l'état de départ (`make -B fr` — celui de
+        `bcded0c8` était en retard sur son `.tex` ; `-B` parce que la règle `%.pdf: %.tex` ne rebâtit qu'un
+        PDF plus ancien que son `.tex`, et qu'après un `checkout` ou un `rebase` les deux portent la date
+        de l'écriture par git — constaté en P4 sur la brochure ; validation P4, L-2 de la lentille F), puis la fonction `occ` de la convention pour chaque
         ancien texte dont T1 contrôlera l'absence ; un motif qui rend 0 ici est à réécrire.
 - [ ] **T1 — Manuel utilisateur, brochure, manuel d'administration, guide** (AC 1-6, 8)
   - [ ] AC 1 (2 sites), AC 2 (4 sites), AC 3 (user 204/308/314/409-422/426/437 — 182 fait par la 15-7b1 —,
         admin 79/1375-1386, brochure 260/385, guide `getting-started.md:26-32`), AC 4 (857-859), AC 5 (user
         1524, brochure 396), AC 6 (admin 2035/2051), AC 8 (user 1208-1209/1456/1478/1773/2316-2317) —
         numéros de `bcded0c8`.
-  - [ ] `scripts/mem-guard.sh make -C docs/manual fr` ; contrôle `occ` de chaque texte neuf (présent, ≥ 1)
+  - [ ] `scripts/mem-guard.sh make -B -C docs/manual fr` ; contrôle `occ` de chaque texte neuf (présent, ≥ 1)
         et ancien (absent, 0) dans les trois PDF.
 - [ ] **T2 — `api-external.md`, README (dont `:34`, AC 2), `.env.example`, glossaire** (AC 2, 5, 6, 7, 8, 10)
+  - [ ] **Contrôle par la valeur du glossaire** (validation P4, L-8 de la lentille R : aucune garde ne lit
+        `docs/i18n-glossaire.md`, G11 lit les catalogues) : `grep -nF 'porte encore la confusion'
+        docs/i18n-glossaire.md` → 0 ; `grep -nF '#323' docs/i18n-glossaire.md` → au moins la ligne réécrite ;
+        sortie consignée au Dev Agent Record.
 - [ ] **T3 — Catalogues** (AC 2, 8, 9, 10 — dont les six participes de-CH de l'AC 10) — 4 locales
       ensemble, parité verte.
 - [ ] **T4 — Replis** (AC 2, 8) — Rust (7 sites, 6 clés : table de G9) et frontend (5) égaux au fr-CH,
@@ -746,11 +761,14 @@ ailleurs, sur une dépendance (C-15-14-1).
   message côté API. ⚠️ **Divergence déjà présente** (validation P2, L-9) : le repli
   `routes/fiscal_years.rs:188` écrit `d'abord` (droite) quand fr-CH `:933` écrit `d’abord`
   (typographique) — garder « le style du repli » rendrait G9 rouge ; c'est le **catalogue** qui fait
-  foi. Même règle pour `jusqu’à` des deux clés de soldes de départ (typographique au catalogue) dans
-  `opening_balances.rs:205`, `:406` et `+page.svelte:382`.
+  foi. Même règle pour le `jusqu’à` que l'AC 8 **ajoute** aux deux clés de soldes de départ : leurs valeurs
+  actuelles ne portent **aucune** apostrophe (fr-CH `:964`, `:972`) ; le style typographique vient du
+  tableau de l'AC 8, qui devient le catalogue, et les replis `opening_balances.rs:205`, `:406` et
+  `+page.svelte:382` le recopient octet pour octet (validation P4, L-7 de la lentille R : « typographique
+  au catalogue » était invérifiable tel qu'écrit).
 - **Placeholders Fluent** : `{ $name }` dans `opening-balances-locked-first-year-closed` ; le repli Svelte
   `:382` porte la même forme.
-- **PDF** : régénérer **les trois** (`make fr`), sous `mem-guard` (un `lualatex`/`xelatex` emballé a déjà
+- **PDF** : régénérer **les trois** (`make -B fr`), sous `mem-guard` (un `lualatex`/`xelatex` emballé a déjà
   emporté une session, § *Plafonds mémoire*). Vérifier que `\keshVersion` n'est pas touché (pas de release).
 - **Garde LIFO, rappel** : la réouverture va du plus récent vers l'ancien — garde dans
   `crates/kesh-db/src/repositories/fiscal_years.rs` (`reopen`, `:1191` ; refus `:1232`, clé
@@ -892,3 +910,18 @@ ailleurs, sur une dépendance (C-15-14-1).
     `245b91ee`. Recomptes : AC 1-11 : 11 ; tâches T0-T8 : 9 ; tests G1-G13 : 13 + Vitest ; issues : 10
     fermées + refs #459.
   - **Signal D5** : levé et déclaré à l'index.
+- 2026-10-09 — **Validation P4** (Opus ×2 : lentilles R et F ; rapports `kesh-gate-logs/15-14-validate-p4-{R,F}.md`).
+  Pour cette fiche : 0 CRITICAL, 0 HIGH, **0 MEDIUM** ; LOW : R L-2, L-5, L-7, L-8 et F L-2. Tous les comptes
+  de `b02e9af7` se recomptent à l'identique (AC 1 à AC 10, rejoués par les deux lentilles). **Validation
+  close** (C-15-14-32) : critère d'arrêt du `CLAUDE.md` atteint pour la 15-14a ; trend du lot 8 → 9 → 4 → 3
+  MEDIUM, les trois de la P4 tous sur la 15-14b. Statut `ready-for-dev` (inchangé).
+  - **LOW** : R L-7 (« `jusqu’à` … typographique au catalogue », invérifiable : les valeurs actuelles n'ont
+    pas d'apostrophe — `fr-CH:964`, `:972`) corrigé aux Pièges ; R L-8 (glossaire sans contrôle) corrigé —
+    `grep -nF` par la valeur au T2 ; F L-2 (`make fr` ne rebâtit pas un PDF de même date que son `.tex`)
+    corrigé — `make -B fr` au T0, au T1, aux Pièges et dans la convention ; R L-2 (« Paramètres →
+    Facturation » est un titre d'écran, non un chemin de menu) **hors périmètre**, écrit à l'AC 2 : issue
+    #585 (P4) ouverte par l'orchestrateur ; R L-5 (#459 non prévenue) : écrit à l'AC 5, #459 commentée par
+    l'orchestrateur. R L-3 (`about.html:96`) porte sur l'AC 3 de la 15-14b, corrigé là.
+  - **Propagation** : `make fr`, `make -C docs/manual fr`, `typographique au catalogue` grepés dans les
+    deux fiches : ne restent que les Change Logs antérieurs. Recomptes : AC 1-11 : 11 ; tâches T0-T8 : 9 ;
+    gardes G1-G13 : 13 ; issues : 10 fermées + refs #459.

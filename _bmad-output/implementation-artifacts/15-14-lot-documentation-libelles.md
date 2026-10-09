@@ -60,7 +60,12 @@ une coupe « doc / libellés » ferait se disputer le manuel utilisateur aux deu
 ## Pour l'orchestrateur
 
 - **Validation** : chaque sous-fiche a sa section « Ce que la validation P1 doit regarder ».
-- **Issues** : #324 déjà commentée (le 2026-10-09, 08:24 UTC) — **ne pas reposter** ; aucune issue à créer.
+- **Issues** : #324 déjà commentée (le 2026-10-09, 08:24 UTC) — **ne pas reposter**. Depuis la validation
+  P4 : #585 (P4, « Paramètres → Facturation » est un titre d'écran, non un chemin de menu) **ouverte** par
+  l'orchestrateur, hors périmètre ; #459 **commentée** par l'orchestrateur (G5 et la phrase de
+  `user-manual.tex:1524` à inverser le jour où l'import s'automatise). Aucune autre issue à créer.
+- **État de validation** (P4) : **15-14a close** (0 MEDIUM, C-15-14-32) ; **15-14b** : P5 en passe ciblée
+  sur la remédiation P4 (recette de sauvegarde et ses gardes).
 - **Ordre** : 15-14a développable dès maintenant (15-7b1 mergée, `245b91ee`) ; 15-14b après les merges de
   15-13b et 15-14a (15-13a et 15-7b1 faites).
 
@@ -115,3 +120,21 @@ une coupe « doc / libellés » ferait se disputer le manuel utilisateur aux deu
   **recyclent** la famille des P1/P2 (inventaires incomplets), cette fois par le périmètre. Pas de nouveau
   découpage proposé : la story est déjà coupée, et le recyclage est traité à la racine — plus aucune commande
   ne choisit d'avance où regarder. **Arbitrage laissé à l'orchestrateur et au Project Lead.**
+- 2026-10-09 — **Validation P4** (Opus ×2, lentilles R et F ; rapports `kesh-gate-logs/15-14-validate-p4-{R,F}.md`) :
+  0 CRITICAL, 0 HIGH ; **5 MEDIUM bruts** (R 2, F 3), deux recoupements (R-1 = F-3, R-2 = F-1), soit **3 MEDIUM
+  distincts**, tous sur la **15-14b** et tous nés de la remédiation P3 (`b02e9af7`), dans la recette de
+  sauvegarde et ses gardes : post-script `:1608` classé assumé (R-1 = F-3), clause « 300 caractères » de
+  G16 rouge sur le texte cible (R-2 = F-1), compte de sauvegarde incapable de recharger (F-2) ; **13 LOW**
+  (R 8, F 5 ; R L-4 et F L-3 portent sur la même liste « hors motif », par des sites différents — comptés
+  deux fois) : 15-14a R L-2, L-5, L-7, F L-2 et R L-8 ; 15-14b R L-1, L-3, L-4, L-6, F L-1 à L-5, et R L-8,
+  F L-2 partagés. **Les deux lentilles recomptent à l'identique tous les comptes de `b02e9af7`.** Aucun
+  finding réfuté.
+  **Trend** : P1 8 → P2 9 → P3 4 → **P4 3 MEDIUM** (Sonnet ×2, Opus ×2, Sonnet ×2, Opus ×2).
+  **15-14a : validation close** (0 MEDIUM ; C-15-14-32), LOW appliqués, `ready-for-dev`. **15-14b** : les
+  trois MEDIUM corrigés de façon que texte cible, partition et gardes se tiennent — liste fermée de
+  fragments pour G16 (e) (C-15-14-33), `:1608` corrigée (C-15-14-34), deux comptes et deux recettes
+  (C-15-14-35), L-1 de F intégré à l'AC 3 (C-15-14-37) — et un **contrôle de cohérence** écrit dans la
+  fiche, chaque garde appliquée au texte cible site par site ; il a relevé un défaut de plus, corrigé
+  (le titre de `sec:backup-dsm` nomme Hyper Backup avant son label : bornes prises au `\subsection{`).
+  **Signal D5 levé de nouveau** (trois MEDIUM nés de la remédiation) : **pas de découpage** (C-15-14-36).
+  Choix C-15-14-32 à C-15-14-37.
