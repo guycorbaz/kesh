@@ -7374,3 +7374,65 @@ l'import (#458–#461).
   l'image MariaDB ; un passage a tout raté (`ERROR 2002`). Les passages antérieurs l'avaient évité par chance.
   Attente corrigée : second « ready for connections », puis `SELECT 1`.
 - **Réversible** : oui.
+
+## C-15-14-68 — 15-14b (revue de code P2) : les scripts Synology deviennent des fichiers versionnés, que le manuel cite
+
+- **Contexte** : P2 (Opus ×3) — 1 HIGH, 3 MEDIUM distincts, **tous** dans les scripts que la remédiation P1 avait
+  écrits en listing au manuel ; signal D5 levé (défauts recyclés dans la recette). Décision de l'orchestrateur.
+- **Retenu** : `scripts/synology/kesh-dump.sh` et `scripts/synology/kesh-restore.sh` (exécutables, `set -euo
+  pipefail`, `umask 077`), réglages par variables `SAUVEGARDE_DOSSIER`, `SAUVEGARDE_BASE`, `SAUVEGARDE_RESEAU`,
+  `SAUVEGARDE_IMAGE` (défauts du manuel) ; le manuel les fait télécharger (`curl` depuis `main`, comme le compose)
+  et décrit ce qu'ils font, sans les recopier ; G16 lit leur **code** (commentaires retirés) et refuse qu'un listing
+  du manuel les recopie. **Jugée proportionnée** : un script n'est éprouvé que tel qu'il est livré ; recopié dans un
+  `lstlisting`, il ne peut être ni exécuté ni gardé autrement que par motif, et les quatre défauts de la P2 en
+  sont nés.
+- **Écart de nommage** : les réglages ne portent pas le préfixe `KESH_` — la garde (F) « fantômes » exige que tout
+  `KESH_…` cité par le manuel soit une variable lue par le binaire (constaté : rouge sur `KESH_DIR` & co.).
+- **Réversible** : oui.
+
+## C-15-14-69 — 15-14b (revue de code P2) : recette versionnée, hors gate
+
+- **Retenu** : `scripts/synology/recette.sh`, documentée dans `docs/testing.md` § *Recette des scripts de
+  sauvegarde Synology* : réseau, MariaDB 10.11 et projet compose factice (`kesh-api` qui dort) nommés
+  `kesh-recette-synology*`, détruits à la fin et à l'interruption (`trap`) — jamais `kesh-mariadb-dev`. Comptes et
+  `.cnf` extraits des listings du manuel. **Hors gate** : elle exige Docker et dure ≈ 1 min ; elle ne dépend que des
+  scripts, de la section Synology et de l'image ; sa sortie est citée au Dev Agent Record. Mutations de recette : les
+  trois défauts de la P2 réintroduits dans les scripts la font rougir.
+- **Réversible** : oui.
+
+## C-15-14-70 — 15-14b (revue de code P2, A2-5 = E2-5) : l'écran « toutes les sociétés » assumé en liste fermée
+
+- **Retenu** : `admin-backup-page-description` (« toutes les sociétés, les utilisateurs et les données système »),
+  son repli `AdminBackupPanel.svelte` et un commentaire du composant sont **vrais** — la sauvegarde d'une
+  installation contient toutes ses sociétés, une — : assumés dans une liste fermée vérifiée par **G18-ter**
+  (exemption morte ou promesse neuve → rouge). Le README et le manuel restent réécrits (formulation plus claire, sans
+  coût) ; les catalogues ne le sont pas : ce serait du code de production (4 locales + repli) pour une nuance P4.
+  de-CH, it-CH, en-CH : même clé, non lues (motif français), déclarées au doc-comment.
+- **Réversible** : oui.
+
+## C-15-14-71 — 15-14b (revue de code P2) : comportement du rechargement
+
+- **Retenu** : `SOURCE=$(cd "$1" && pwd -P)` avant tout (E2-1 : avec un chemin relatif, l'empreinte vérifiée et le
+  dump rechargé étaient deux fichiers — la recette le prouve, 3 lignes rechargées au lieu de 5 sur la version P1) ;
+  empreinte et `gzip -t` **avant** d'arrêter Kesh ; arrêt **puis** dump de sécurité (B2-6) ; dump de sécurité
+  **non bloquant** (E2-3), dans `avant-restauration/<horodatage>/` avec son empreinte, dossier renommé `-echec` s'il
+  échoue ; secours = le même script sur ce dossier (E2-4 = B2-2 = A2-2), rejoué. Script de dump : `gzip -t` et
+  empreinte sur le `.tmp` avant renommage (B2-7) ; `trap` ne supprime que des `.tmp`, et G16 voit les `rm` dans un
+  `trap`, entre guillemets, après `/` (E2-2 = B2-3).
+- **Réversible** : oui.
+
+## C-15-14-72 — 15-14b (revue de code P2) : LOW traités et écartés
+
+- **Appliqués** : A2-3 (encart d'amendement en tête de l'AC 1), A2-7 (recopier `documents/`), A2-8 = B2-8
+  (CHANGELOG : bloc « Action requise » refermé), A2-9 (bloc T7 marqué antérieur), `.env.example` (paquet DSM : IP
+  LAN, port 3307), E2-6 (formes équivalentes dans G18 / G18-bis), E2-7 et B2-5 (couplages déclarés), E2-8 (copie à
+  chaud ; arrêt possible du paquet MariaDB 10 ou des conteneurs par Hyper Backup, **écrit comme à vérifier**),
+  E2-9 (suspendre la tâche pendant une restauration ; « Écraser le dossier original » restaure tout le dossier
+  `docker`), E2-10 (angles morts de `sans_commentaires`), A2-4 (`gzip -t`, réseau, `umask` du rechargement gardés),
+  A2-6 (snapshot : « pas la base, sauf données sous le dossier partagé »), B2-4 (réseau des deux scripts gardé),
+  B2-9 (« pour chaque company » réécrit ; mise à jour standard renvoie au dump sur Synology), B2-7 (purge
+  d'`avant-restauration/` dite).
+- **Écarté** : B2-9, partie garde — le singulier « company » reste hors du motif de G18 (angle mort : `company`
+  désigne aussi la table et l'entité du modèle partout dans le code et la doc de développement) ; mutation
+  journalisée verte.
+- **Réversible** : oui.
