@@ -2,7 +2,7 @@
 
 **Périmètre : la seule remédiation de la P6**, `git diff 17883fa4^..92fdf518` (message « revenir » qui liste les dossiers de `avant-restauration/` au lieu de nommer `$SECURITE` ; G16 (c) lu sur plusieurs lignes ; recette 7-quater ; manuel, CHANGELOG, testing.md). Ne relis pas le reste de la story.
 
-Lis d'abord `/home/gcorbaz/.claude/projects/-home-gcorbaz-devel-kesh/memory/consignes-agents-epic15.md` (consignes 4 et 5) et les rapports P5 `/home/gcorbaz/devel/kesh-gate-logs/15-14b-review-p7-C.md`.
+Lis d'abord `/home/gcorbaz/.claude/projects/-home-gcorbaz-devel-kesh/memory/consignes-agents-epic15.md` (consignes 4 et 5) et le rapport P6 `/home/gcorbaz/devel/kesh-gate-logs/15-14b-review-p6-C.md`.
 
 Lentille unique — **chasseur de régressions** : ce que le patch P6 a pu casser ou laisser incohérent. Axe 0 prioritaire : le message d'échec de l'étape 6 dit-il désormais juste dans tous les cas (premier passage, passages suivants, base vide sans dump de sécurité à ce passage, dossier avant-restauration/ absent ou vide, noms avec espaces) ? La commande qui liste les dossiers peut-elle elle-même échouer et, sous `set -e`, masquer le message ?
 1. Refus « Kesh en marche » : tout état autre que `exited`/`created`/`dead` refuse-t-il réellement (`restarting`, `paused`, `running`, `removing`) ? Le filtre est-il cohérent avec ce que G16 (c) impose, et G16 rougirait-il si on revenait à `status=running` ?
