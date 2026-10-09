@@ -2894,7 +2894,11 @@ fn defaut_script(texte: &str, var: &str) -> Option<String> {
 ///   `if [ "$PRESENTE" = 1 ] && [ "$NB_TABLES" -gt 0 ]` — base absente ou vide :
 ///   rien à protéger —, dont l'échec sort (`|| { … exit 1; }`) sans rien
 ///   recharger ; `gunzip -c "$SOURCE/…" | client mariadb`, `client` portant
-///   `docker run -i`. Le dossier donné est résolu en absolu (`pwd -P`), sans
+///   `docker run -i` ; à son échec, la liste des dossiers d'`avant-restauration/`
+///   (`for D in "$SAUVEGARDE_DOSSIER"/avant-restauration/*/`), « revenir » ne
+///   désignant jamais `$SECURITE`, le dossier du passage en cours (revue P6). Le
+///   refus « Kesh actif » est lu sur une ou plusieurs lignes (`case … esac`).
+///   Le dossier donné est résolu en absolu (`pwd -P`), sans
 ///   `cd "$SOURCE"` nu. Aucune commande `docker compose` (ni stop, ni up).
 ///   Fichiers d'identifiants et fichiers d'hôte montés distincts de ceux du dump
 ///   nocturne ;
@@ -3155,7 +3159,13 @@ fn synology_sauvegarde_la_base_par_le_dump() {
     for (quoi, re) in [
         (
             "un état actif de kesh-api ne fait pas sortir (seuls exited, created, dead admis)",
-            r#"case "\$ETAT" in exited\|created\|dead\) ;; \*\)[^\n]*exit 1;;"#,
+            // Sur une ou plusieurs lignes (revue P6, LOW-4) : la branche `*)` doit sortir
+            // en 1 avant le `;;` qui la ferme et le `esac`.
+            r#"(?s)case "\$ETAT" in\s+exited\|created\|dead\)\s*;;\s*\*\)[^`]*?\bexit 1\s*;;\s*esac\b"#,
+        ),
+        (
+            "l'échec du rechargement ne liste pas les dossiers de avant-restauration/ (revue P6)",
+            r#"for D in "\$SAUVEGARDE_DOSSIER"/avant-restauration/\*/; do"#,
         ),
         (
             "le verrou du rechargement n'est pas libéré par une trap EXIT",
@@ -3189,6 +3199,13 @@ fn synology_sauvegarde_la_base_par_le_dump() {
         if premier(&restore, re).is_none() {
             erreurs.push(format!("(c) {quoi}"));
         }
+    }
+    // « revenir » ne désigne pas le dump de sécurité du passage en cours : au second
+    // passage, c'est celui d'une base à moitié rechargée (revue P6, MEDIUM-1).
+    if premier(&restore, r"revenir[^\n]*\$\{?SECURITE\b").is_some() {
+        erreurs.push(
+            "(c) le geste « revenir » désigne $SECURITE, le dump de sécurité du passage en cours".into(),
+        );
     }
     // Sonde : affectation nue, sans `||` ni `&&` qui masquerait son échec (B4-L5).
     let nue = restore.find("SONDE=$(client mariadb").and_then(|i| {

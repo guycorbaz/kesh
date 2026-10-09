@@ -234,6 +234,31 @@ verifier "verrou libéré après le signal" "$(ls -A "$W/kesh/dump" | grep -c '^
 lancer "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" >/dev/null 2>&1; verifier "« terminer » après le signal : code" "$?" 0
 verifier "« terminer » après le signal : base = A" "$(empreinte)" "$A"
 
+echo "== 7-quater. Deux passages qui échouent à l'étape 6 : « revenir » cite le dossier du PREMIER passage"
+# Dump intègre (empreinte, gzip, une seule base) qui échoue au milieu du rechargement.
+mkdir -p "$W/casse"
+gzip -dc "$W/restaure/dump/kesh_pre_backup.sql.gz" \
+    | awk '/^CREATE TABLE/ { n++; if (n == 20) print "SELECT * FROM table_absente_recette;" } { print }' \
+    | gzip > "$W/casse/kesh_pre_backup.sql.gz"
+( cd "$W/casse" && sha256sum kesh_pre_backup.sql.gz > kesh_pre_backup.sql.gz.sha256 )
+lancer "$SCRIPTS/kesh-restore.sh" "$W/casse" > "$W/casse-1.log" 2>&1 && ko "1er passage sorti en 0" || ok "1er passage : échec du rechargement"
+X1=$(sed -n 's/.*dump de sécurité de la base courante : //p' "$W/casse-1.log")
+[ -n "$X1" ] && ok "1er passage : dump de sécurité ${X1#$W/}" || ko "1er passage : dump de sécurité non annoncé"
+sleep 1   # horodatage à la seconde : deux passages distincts
+echo "  base à moitié rechargée : $(tables) tables"
+lancer "$SCRIPTS/kesh-restore.sh" "$W/casse" > "$W/casse-2.log" 2>&1 && ko "2e passage sorti en 0" || ok "2e passage : échec du rechargement"
+X2=$(sed -n 's/.*dump de sécurité de la base courante : //p' "$W/casse-2.log")
+[ -n "$X2" ] && [ "$X2" != "$X1" ] && ok "2e passage : nouveau dump de sécurité ${X2#$W/}" || ko "2e passage : dump de sécurité attendu, distinct du premier"
+sed -n '/ÉCHEC du rechargement/,$p' "$W/casse-2.log" | sed 's/^/  | /'
+L1=$(grep -nxF "      $X1" "$W/casse-2.log" | cut -d: -f1); L2=$(grep -nxF "      $X2" "$W/casse-2.log" | cut -d: -f1)
+[ -n "$L1" ] && [ -n "$L2" ] && [ "$L1" -lt "$L2" ] && ok "message du 2e passage : dossier du 1er listé, avant celui du 2e" || ko "message du 2e passage : dossiers ${X1#$W/} puis ${X2#$W/} attendus dans la liste ($L1, $L2)"
+grep -q "revenir  : relancez-le sur le PLUS ANCIEN dossier de avant-restauration/ pris depuis le début de cette restauration" "$W/casse-2.log" && ok "« revenir » : le plus ancien depuis le début de la restauration" || ko "« revenir » : consigne attendue"
+grep "revenir" "$W/casse-2.log" | grep -qF "$X2" && ko "« revenir » désigne le dossier du 2e passage" || ok "« revenir » ne désigne pas le dossier du 2e passage"
+grep -qF "ce passage : $X2" "$W/casse-2.log" && ok "dossier du 2e passage rappelé pour information" || ko "dossier du passage en cours non rappelé"
+verifier "verrou libéré" "$(ls -A "$W/kesh/dump" | grep -c '^\.verrou$')" 0
+lancer "$SCRIPTS/kesh-restore.sh" "$X1" >/dev/null 2>&1; verifier "« revenir » sur le dossier du 1er passage : code" "$?" 0
+verifier "« revenir » : base = A, l'état d'avant les deux passages" "$(empreinte)" "$A"
+
 echo "== 7-ter. Base présente mais VIDE (aucune table) : rien à protéger, rechargement"
 sql -e "DROP DATABASE kesh; CREATE DATABASE kesh CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
 SORTIE=$(lancer "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" 2>&1); RC=$?

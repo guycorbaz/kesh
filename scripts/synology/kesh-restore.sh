@@ -35,13 +35,16 @@
 #      (DROP DATABASE, CREATE DATABASE).
 #
 # Reprise après une interruption ou un échec de l'étape 6 (la base peut être à
-# moitié rechargée ; Kesh est toujours arrêté ; le script affiche les deux gestes) :
+# moitié rechargée ; Kesh est toujours arrêté). En cas d'échec, le script affiche
+# les deux gestes et la liste des dossiers de avant-restauration/, du plus ancien
+# au plus récent — il ne devine pas lequel est le bon :
 #   - TERMINER la restauration : relancer ce script sur le MÊME dossier ;
-#   - REVENIR à l'état d'avant : relancer ce script sur le dossier de sécurité du
-#     PREMIER passage — le plus ANCIEN horodatage de avant-restauration/ pris pour
-#     cette restauration (chaque passage en crée un nouveau, de la base à moitié
-#     rechargée). Si le premier passage n'en a pas pris (base absente ou vide), il
-#     n'y a pas d'état d'avant à retrouver.
+#   - REVENIR à l'état d'avant : relancer ce script sur le PLUS ANCIEN dossier de
+#     avant-restauration/ pris depuis le DÉBUT de cette restauration, c'est-à-dire
+#     au premier passage (chaque passage suivant en prend un nouveau, de la base à
+#     moitié rechargée ; les dossiers plus anciens viennent de restaurations
+#     antérieures). Si le premier passage n'en a pas pris (base absente ou vide),
+#     il n'y a pas d'état d'avant à retrouver.
 #
 # Réglages : SAUVEGARDE_DOSSIER, SAUVEGARDE_BASE, SAUVEGARDE_RESEAU,
 # SAUVEGARDE_IMAGE, comme kesh-dump.sh (qui doit être dans le même dossier que ce
@@ -114,7 +117,11 @@ if ! gunzip -c "$SOURCE/kesh_pre_backup.sql.gz" \
     | client mariadb --defaults-extra-file=/etc/kesh-restore.cnf --default-character-set=utf8mb4; then
     echo "kesh-restore : ÉCHEC du rechargement — Kesh reste arrêté, la base peut être à moitié rechargée." >&2
     echo "  terminer : relancez ce script sur $SOURCE" >&2
-    echo "  revenir  : relancez-le sur ${SECURITE:-<aucun dump de sécurité : la base était absente ou vide>} (le plus ancien dossier de avant-restauration/ de cette restauration)" >&2
+    echo "  revenir  : relancez-le sur le PLUS ANCIEN dossier de avant-restauration/ pris depuis le début de cette restauration (au premier passage) ; ce script ne peut pas le deviner. Dossiers présents, du plus ancien au plus récent :" >&2
+    for D in "$SAUVEGARDE_DOSSIER"/avant-restauration/*/; do
+        if [ -d "$D" ]; then echo "      ${D%/}" >&2; fi
+    done
+    echo "    pour information, ce passage : ${SECURITE:-aucun dump de sécurité (base absente ou vide)} ; si le premier passage n'en a pas pris, il n'y a pas d'état d'avant à retrouver" >&2
     exit 1
 fi
 echo "kesh-restore : base $SAUVEGARDE_BASE rechargée depuis $SOURCE — redémarrez Kesh (docker compose start kesh-api)"
