@@ -615,7 +615,7 @@ code et de documentation = `d7f4c1f3`, sur lequel tous les gates ci-dessous ont 
   catalogues (libellés de l'AC 5).
 - **T5** — **18 tests neufs** (périmètre `e892dcfa..d7f4c1f3`, recomptés par `grep -c '#\[sqlx::test'`
   aux deux bornes) : `auth/bootstrap.rs` 10 → 20 (test 1 et ses quatre variantes, test 4 (i) à (iv),
-  test 5), `companies_repository.rs` 21 → 28 (tests 3 (a), (b), (b'), (c), 6 (a), (b), (c)),
+  test 5), `companies_repository.rs` 22 → 29 attributs `#[sqlx::test]` (tests 3 (a), (b), (b'), (c), 6 (a), (b), (c) ; borne rectifiée à la revue P1, A4 : « 21 → 28 » comptait les tests exécutés, non les attributs),
   `admin_full_import_e2e.rs` 35 → 36 (test 2). Helpers partagés dans `test_fixtures`
   (C-15-7b3-1) ; le test 8 de la 15-7b2 y est raccordé. **Mutations : 16 jouées, 16 rouges** — les
   quatorze numérotées de la fiche sauf la 11 (sans test, choix écrit), avec les variantes 7a/7b et
@@ -638,7 +638,7 @@ code et de documentation = `d7f4c1f3`, sur lequel tous les gates ci-dessous ont 
     **239 passés, 15 échecs, 19 ignorés** — 7 **KF-029** attendus (`mode-expert:26`, `:41`,
     `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) + 8 hors liste
     (`invoice-frozen-pdf:74`, `invoices:715`, `supplier-invoice-scan:39`, `bank-accounts-crud:143`,
-    `bank-import:186`, `contacts:69`, `:113`, `:149`), tous en `waiting for locator('#username')`,
+    `bank-import:186`, `contacts:69`, `:113`, `:149`) — six en `waiting for locator('#username')`, deux (`invoice-frozen-pdf:74`, `invoices:715`) sur un élément absent, et ce sont les deux dont la trace porte `ERR_NETWORK_CHANGED` (rectifié à la revue P1, A3 : « tous » était faux),
     **8/8 verts rejoués seuls** ; les deux traces conservées portent `ERR_NETWORK_CHANGED` (12 et 44
     occurrences) : **KF-053 (#478)**. Run après 12:00 UTC (KF-045 hors jeu). Journaux
     `157b3-e2e.log`, `157b3-e2e-rejeu.log`, `test-results` copiés dans
@@ -658,7 +658,8 @@ deux bases de la story.
 ### File List
 
 - `crates/kesh-db/src/repositories/companies.rs` — `RepairTrigger`, `InstallationRepair`, `company_referencing_columns`, `repair_installation_in_tx`
-- `crates/kesh-db/src/test_fixtures.rs` — `rendre_principaux_orphelins`, `poser_declencheur_en_echec`
+- `crates/kesh-db/tests/support/installations_atteintes.rs` — `rendre_principaux_orphelins`, `poser_declencheur_en_echec` (d'abord dans `crates/kesh-db/src/test_fixtures.rs`, revenu à sa version de `e892dcfa` à la revue P1)
+- `docs/MULTI-TENANT-SCOPING-PATTERNS.md` — ligne de la réparation (revue P1)
 - `crates/kesh-db/tests/companies_repository.rs` — tests 3 et 6
 - `crates/kesh-api/src/auth/bootstrap.rs` — appel au démarrage, doc-comments, tests 1, 4, 5
 - `crates/kesh-api/src/main.rs` — doc de tête
@@ -667,7 +668,7 @@ deux bases de la story.
 - `crates/kesh-api/tests/admin_full_import_e2e.rs` — test 2
 - `crates/kesh-api/tests/onboarding_audit_e2e.rs` — test 8 de la 15-7b2 raccordé au helper
 - `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` — libellé
-- `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/user-manual.tex` et leurs PDF ; `docs/manual/fr/marketing-brochure.pdf` (régénérée par `make -B fr`, source inchangée)
+- `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/user-manual.tex` et leurs PDF (la brochure, régénérée par `make -B fr`, est revenue à sa version d'`origin/main` à la revue P1)
 - `docs/api-external.md`, `CHANGELOG.md`
 - `_bmad-output/implementation-artifacts/15-7b3-reparation-des-installations-atteintes.md`, `sprint-status.yaml`, `epic-15-choix-autonomes.md`
 
@@ -831,3 +832,40 @@ deux bases de la story.
   1164/1164, E2E 239 passés / 15 échecs = 7 KF-029 + 8 KF-053 (#478, verts rejoués seuls). 16/16
   mutations rouges. 18 tests neufs. Choix C-15-7b3-1 à 3. `origin/main` n'avait pas avancé au gate
   final (`git log HEAD..origin/main` vide). Revue de code non lancée.
+
+- **2026-10-09 — Revue de code P1** (Sonnet ×3, prompt `38b830bf` ; rapports
+  `kesh-gate-logs/15-7b3-review-p1-{B,E,A}.md`). Bruts : B 2 MEDIUM / 5 LOW, E 0 MEDIUM / 5 LOW, A 1 MEDIUM /
+  6 LOW ; distincts : **3 MEDIUM** (B-1, B-2, A1), **14 LOW** (B-4 = E3 = A6 fusionnés). Remédiation
+  `d38aeb45`, sur décisions de l'orchestrateur (C-15-7b3-4, C-15-7b3-5). **Elle touche du code de
+  production** : la garde E1 (`company_referencing_columns` refuse une liste vide) et le retrait des deux
+  aides de `kesh_db::test_fixtures` (compilé avec la production) ; le reste est tests et textes.
+
+  | finding | sévérité | sort |
+  |---|---|---|
+  | B-1 | MEDIUM | test `repair_on_restore_keeps_superfluous_stubs` ; mutation 15 rouge |
+  | A1 | MEDIUM | test 2 bis `full_import_is_undone_when_the_repair_fails` (import en 500, installation d'avant intacte) ; mutation 16 rouge ; le manuel garde « tout ou rien » |
+  | B-2 | MEDIUM | Dépannage : `docker compose restart kesh-api` (chaque démarrage rejoue la réparation ; `up -d` ne redémarre pas un conteneur inchangé) ; les recettes `up -d` des 15-7b2/15-11a (recharger `.env`) intactes |
+  | B-4 = E3 = A6 | LOW | aides de montage dans `crates/kesh-db/tests/support/installations_atteintes.rs`, incluses par `#[path]` ; `test_fixtures.rs` revenu à sa version de `e892dcfa` (C-15-7b3-4) |
+  | E1 | LOW | garde de liste vide dans `company_referencing_columns` ⇒ `Invariant` ; test `company_referencing_columns_refuses_an_empty_answer` ; mutation 17 rouge |
+  | B-3 | LOW | doc-comments exacts : sur base sans société, la sérialisation passe par `users` et `api_keys` (raisonné, non testé) |
+  | B-5 | LOW | journal : chaque mutation nomme désormais ses tests rouges ; verdict « ROUGE » = présence de `FAIL [`, distinct de « NE COMPILE PAS » ; la 11 est écrite au journal comme non jouée (sans test, choix de la fiche), la 15 en est l'équivalent testé |
+  | B-6 | LOW | accepté tel quel : `startup_keeps_a_stub_referenced_by_an_api_key` prouve le comportement, non la garde (son doc-comment le dit) ; la garde est prouvée par `repair_keeps_every_referenced_stub` (CASCADE) |
+  | B-7 | LOW | manuel et CHANGELOG : « le journal d'audit excepté, qui n'en retient que le numéro » |
+  | A2 | LOW | **chemin non testé, écrit** : l'échec du `ROLLBACK TO SAVEPOINT` (1213/1205 ayant déjà annulé la transaction) et les erreurs de `SAVEPOINT`/`RELEASE` ne sont exercés par aucun test ni aucune mutation — provoquer un interblocage réel au milieu de la boucle n'a pas de montage simple |
+  | A3, A4 | LOW | Completion Notes rectifiées (formulation des huit échecs KF-053 ; bornes 22 → 29) |
+  | A5 | LOW | écart de montage écrit : la variante « sans administrateur actif » garde A1, **inactif**, au lieu de ne monter que U et A0 ; l'acteur attendu (U) est le même, et la mutation 7a rougit par le test principal |
+  | A7 | LOW | ligne de la réparation à la table des verrous de `MULTI-TENANT-SCOPING-PATTERNS.md` ; brochure PDF remise à sa version d'`origin/main` ; la réparation sort des « routes à verbe mutant » au § *Journal d'audit* |
+  | E2 | LOW | **angle mort écrit** : le démarrage ne prend pas `_kesh_version FOR UPDATE` ; un démarrage concurrent d'un import peut interbloquer (victime possiblement l'import, qui s'annule et se relance). Écrit aussi à la table des verrous |
+  | E4 | LOW | **angle mort écrit** : 29 `EXISTS` par société provisoire sous verrou ; une installation à des centaines de stubs (#542) allonge un seul démarrage, puis converge |
+  | E5 | LOW | couvert en partie (échec à la restauration : test 2 bis ; archive à plusieurs sociétés : test B-1) ; restent **écrits** : stub désigné par une table CASCADE au niveau du démarrage (prouvé au niveau dépôt), et le chemin `ROLLBACK TO` en échec (A2) |
+
+  **Gates sur `d38aeb45`** (bases reconstruites avant) : backend `scripts/test-fast.sh` **3218/3218**, 4
+  ignorés (3215 + 3 tests neufs) ; frontend check 0 erreur, lint-i18n PASS, Vitest **1164/1164**, build vert ;
+  **E2E complet 245 passés, 9 échecs, 19 ignorés** = 7 KF-029 + `reminders:49` et `vat-rates:55`, tous deux en
+  `waiting for #username`, traces à `ERR_NETWORK_CHANGED` (26 et 12), **verts rejoués seuls** (2/2) : KF-053
+  (#478). **Mutations : 19 jouées, 19 rouges** (les 16 d'origine + 15, 16, 17), chacune avec son test rouge nommé
+  (`kesh-gate-logs/157b3-mutations.log`, `157b3-mutations-p1.out`) ; la 12 a dû être rejouée seule, son motif
+  ayant changé avec la garde E1. PDF d'administration régénéré, contrôlé aplati (cinq phrases-témoins) ; 54
+  `Overfull`, inchangé. Propagation : grep de `up -d`, `restart`, `aucune donnée ne désigne`,
+  `test_fixtures::rendre`, `test_fixtures::poser`, `verbe mutant` sur le dépôt ; occurrences restantes justes.
+  `origin/main` n'a pas avancé (pas de rebase).
