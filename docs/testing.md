@@ -455,6 +455,34 @@ décomptes de story.
 lançait la suite, nulle part ailleurs. La KF-029 est ouverte depuis avril ; la traiter reste
 une décision distincte, à prendre en rétrospective.)*
 
+
+## Recette des scripts de sauvegarde Synology
+
+`scripts/synology/kesh-dump.sh` et `scripts/synology/kesh-restore.sh` sont les scripts que le manuel d'administration
+fait télécharger sur un NAS Synology (§ *Backup natif sur Synology DSM*). Ils ne tournent dans aucun test Rust ni
+Playwright : la garde G16 (`crates/kesh-api/tests/configuration_transmise.rs`) lit leurs invariants, et **seule la
+recette les exécute** :
+
+```sh
+bash scripts/synology/recette.sh        # depuis la racine du dépôt ; ≈ 1 min ; code 0 = « RECETTE VERTE »
+```
+
+Prérequis : `docker`, `sqlx` (migrations du dépôt), `python3`. Elle monte un réseau, une MariaDB 10.11 et un projet
+compose factice (`kesh-api` qui dort), tous nommés `kesh-recette-synology*`, et les **détruit** à la fin comme à
+l'interruption — elle ne touche à aucun autre conteneur, jamais à `kesh-mariadb-dev`. Les comptes et le fichier
+d'options sont ceux que le manuel écrit (extraits de ses listings), avec un mot de passe à `@ # ; " \ /` et espace.
+
+Elle prouve : dump (empreinte, droits 700/600, aucun `.tmp`) ; `--defaults-extra-file` refusé hors de la première
+place ; dump raté (réseau, mot de passe) sans perte du dump de la veille ni fichier vide ; empreinte fausse et archive
+tronquée arrêtées **avant** d'arrêter Kesh ou d'écrire ; refus `ERROR 1044` du compte de sauvegarde au rechargement ;
+rechargement par un **chemin relatif** (c'est le dump donné qui est rechargé, non le dump vivant) ; secours depuis
+`avant-restauration/<horodatage>/` ; rechargement d'une **base absente**. Elle ne rejoue pas DSM (Planificateur,
+Hyper Backup, Snapshot Replication, paquet MariaDB 10) ni root.
+
+**Quand la lancer** : à toute modification d'un des deux scripts, de la section Synology du manuel ou de l'image
+`mariadb:10.11` qu'ils emploient — et citer sa sortie au Dev Agent Record. Elle n'est pas dans le gate : elle
+exige Docker et des conteneurs, et elle ne dépend que de ces fichiers.
+
 ## Cleanup entre tests (dette technique acceptée)
 
 - **Pas de reset entre tests individuels d'une même spec** (dette `D-6-4-A`). Si un test pollue (création + archivage incomplet), le test suivant peut être affecté. Mitigation : convention de cleanup explicite dans chaque test, ou adoption progressive de `test.beforeEach(seedTestState(...))` si symptômes apparaissent.
