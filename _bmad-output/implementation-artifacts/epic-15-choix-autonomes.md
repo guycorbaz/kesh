@@ -7213,4 +7213,91 @@ l'import (#458–#461).
 ## C-15-1c-13 — 15-1c-i (validation P1, R-9 ≈ F-11) : l'E2E crée son compte lettrable et ses montants
 - **Retenu** : le spec crée un compte `Asset` à numéro unique par l'API des comptes, des écritures à montants uniques, lit ses lignes par `lineId` (`data-testid`), délettre en fin de parcours ; rôle Consultation par un utilisateur créé par l'API (patron `journal-entries.spec.ts`).
 - **Écartées** : un compte du seed (1100 est ou devient un compte de journal bancaire, non lettrable ; 1000/2000 partagés) ; ajouter un « compte de passage » au seed (changerait tous les presets pour un spec).
+
+## C-15-14-54 — 15-14b (développement) : listings Synology rejouables sans `sudo` — « en session root »
+
+- **Contexte** : l'AC 1 exige que la recette rejoue les listings du manuel **à l'identique**, substitutions
+  listées seulement ; l'ancien pré-script écrivait `sudo docker compose exec …`. La station de recette n'a
+  pas de `sudo` non interactif (l'utilisateur est dans le groupe `docker`), et `sudo` n'est pas dans la liste
+  des substitutions permises.
+- **Retenu** : le pré-script s'écrit **sans** `sudo` (Hyper Backup l'exécute en root — fait déjà écrit dans
+  `.env.example`) ; la mise en place des fichiers d'identifiants et la recovery s'écrivent « en session root
+  (`sudo -i`) », sans `sudo` par ligne. Les listings se rejouent alors tels quels.
+- **Alternatives** : garder `sudo` et le neutraliser dans la recette (substitution de plus, non listée) ;
+  exiger une station avec `sudo`.
+- **Réversible** : oui (texte du manuel).
+
+## C-15-14-55 — 15-14b (développement) : recette de sauvegarde — commandes root par un conteneur, deux étapes ajoutées
+
+- **Contexte** : `chown root:root` et `chmod 600` d'un fichier devenu root échouent hors root (premier
+  passage : `chmod` refusé, fichiers restés en 664 — constaté, corrigé, rejoué).
+- **Retenu** : substitution déclarée — `chown root:root` et `chmod 600` exécutés dans un conteneur
+  `mariadb:10.11` (root) sur le dossier de test. Deux étapes **ajoutées** à la recette de la fiche, parce
+  que le manuel affirme deux faits de plus : 1-bis (`--defaults-extra-file` non première → refusée,
+  `mariadb-dump: unknown variable`, exit 7) et 1-ter (pré-script raté, réseau absent → exit 125, dump de la
+  veille intact, empreinte vérifiée). Mot de passe du compte Kesh à caractères spéciaux (`@ # ; / %`, espace)
+  pour éprouver les guillemets du fichier d'options. `docker pull mariadb:10.11` exécuté réellement (étape
+  du listing) : il a mis à jour le tag local `mariadb:10.11` de la station — aucun conteneur en cours n'en
+  dépend (`kesh-mariadb-dev` intact). Pilote et extracteur versionnés hors dépôt :
+  `kesh-gate-logs/15-14b-recette.sh`, `15-14b-recette-listings.py`.
+- **Réversible** : oui.
+
+## C-15-14-56 — 15-14b (développement) : G17 lance le vrai binaire au lieu de recopier la règle
+
+- **Contexte** : la fiche autorise à recopier les règles de `config.rs` (avec renvoi) si elles ne sont pas
+  exposées ; `is_template_placeholder` est privée et `Config` n'expose que `from_env`.
+- **Retenu** : G17 lance `kesh-api` (`tests/common/binaire.rs`, environnement vidé) avec les défauts du
+  compose de dev et une base injoignable (`.invalid`) : configuration acceptée ⇔ « Base de données
+  indisponible » sans « Erreur de configuration ». La règle est **appelée** — aucune copie à faire diverger
+  (mémoire *Tests qui prouvent moins*). Mutations `:-admin` et secret court : rouges.
+- **Alternatives** : recopier la règle (fiche) ; rendre `is_template_placeholder` publique (code de
+  production touché pour un test).
+- **Réversible** : oui.
+
+## C-15-14-57 — 15-14b (développement) : normalisation `N` et bornes Synology factorisées (`tests/common/manuel.rs`)
+
+- **Contexte** : G16 (`configuration_transmise.rs`) et G18 (`textes_coherents.rs`) appliquent la même
+  normalisation ; `textes_coherents.rs` portait déjà une `normaliser` partielle (sans accents ni `\_`).
+- **Retenu** : un module `tests/common/manuel.rs` (inclus par `#[path]`, comme `binaire.rs`) porte `N`
+  complète, `desechapper`, `section`/`sections_synology`, `hors_sections`, `listings` ; `textes_coherents.rs`
+  y prend sa `normaliser` (G12 inchangée : ses marqueurs n'ont ni accent en macro ni `\_`, verte).
+- **Réversible** : oui.
+
+## C-15-14-58 — 15-14b (développement) : G16 resserrée au-delà de la fiche
+
+- **Retenu** : (b) l'empreinte doit se calculer sur `<cible>` **après** le `mv` (contrôle de cohérence de la
+  fiche, rendu exécutable) ; (c) le fichier d'**hôte** monté sur le `--defaults-extra-file` de la recovery
+  doit aussi différer de celui du pré-script (sinon un `-v kesh-dump.cnf:/etc/kesh-restore.cnf` passerait) ;
+  (d) motif `rm` élargi (F-2 de la validation P5) — `rm` reconnu en tête de ligne ou après blanc, `;`, `&`,
+  `|`, `(`, accolade (`\keshcommand{rm …}`) ou accent grave, **pas** après `-` (`docker run --rm`) ; cible
+  par son nom de base, sous tout chemin ; terminateur = tout caractère hors nom de fichier (`;`, `'`, `"`,
+  `}`, blanc, fin de ligne) ; (e) et G18 : chaque fragment assumé trouvé **exactement une fois** (une
+  exemption ambiguë rougit comme une morte).
+- **Constat** : au premier jet, la classe des préfixes omettait l'accolade et la mutation n° 9 de la fiche
+  (`\keshcommand{rm -f …}` au post-script) passait **vert** — trouvé par la mutation, corrigé.
+- **Réversible** : oui.
+
+## C-15-14-59 — 15-14b (développement) : contrôle « par la valeur » du T2 mal formé
+
+- **Contexte** : le T2 prescrit `grep -c ':-admin}' docker-compose.dev.yml` → 0. Il rend **1** :
+  `KESH_ADMIN_USERNAME: ${KESH_ADMIN_USERNAME:-admin}`, que l'AC 2 garde **voulu**.
+- **Retenu** : contrôle resserré sur le mot de passe, `grep -c 'PASSWORD:-admin}'` → 0 ; le compose n'est pas
+  en cause. G17 tient la valeur de toute façon.
+- **Réversible** : oui.
+
+## C-15-14-60 — 15-14b (développement) : sondes `occ` corrigées au T4
+
+- **Retenu** : « volume Btrfs DSM avec Snapshot Replication actif » est **conservé** (l'AC 1 dit « préciser »
+  la copie 1, non la réécrire) : la sonde d'absence vise la parenthèse d'avant, « Snapshot Replication actif
+  (recovery rapide » — présente 1 fois sur le PDF de `181efa3c` (régénéré par la 15-14a), 0 après. Deux
+  sondes de présence corrigées (majuscule ; cellule de tableau coupée en colonnes par `pdftotext`). Résultat
+  final : 31 anciens textes à 0, 39 neufs ≥ 1 (`kesh-gate-logs/15-14b-occ-apres.txt`).
+- **Réversible** : oui.
+
+## C-15-14-61 — 15-14b (développement) : label `sec:init-db-manuelle`
+
+- **Contexte** : la validation P5 (F-4) demande que la restauration renvoie à l'« Initialisation manuelle de
+  la base » (`admin-manual.tex:966` sur `bcded0c8`), qui n'avait pas de label.
+- **Retenu** : `\label{sec:init-db-manuelle}` ajouté à ce `\subsubsection`, renvoi `\S\ref{…}` depuis la
+  section Synology. Aucun autre effet.
 - **Réversible** : oui.
