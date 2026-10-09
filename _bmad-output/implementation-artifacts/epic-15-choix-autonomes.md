@@ -5692,3 +5692,21 @@ l'import (#458–#461).
   Le CHANGELOG **complète** l'entrée #474 de la 15-6b (AC11 : une entrée par issue et par release).
 - **Écarté** : une entrée CHANGELOG séparée ; taire l'angle mort au manuel.
 - **Réversibilité** : totale (texte).
+
+## C-15-6c-4 — 15-6c : le test de rejeu du PUT des réglages attend au `FOR UPDATE` de `before`
+
+- **Contexte** : le gate complet rougit sur `rejeu_interblocage_e2e`
+  `invoice_settings_update_is_replayed_when_it_is_the_deadlock_victim` (Story 15-5e1) : il prouve
+  l'attente de la route sur le motif `UPDATE company_invoice_settings`. L'AC2 de la 15-6c fait lire
+  `before` en `FOR UPDATE` : la route attend désormais le `S` du test **à cette lecture** (promotion
+  S → X après son `INSERT IGNORE`), non plus à l'`UPDATE`. Le cycle est le même — c'est
+  exactement l'interblocage préexistant que la note KF-004 réécrite décrit — ; seul le point
+  d'attente a bougé. L'inventaire de la fiche (§ *Tests existants qui changent de sens*) ne
+  l'avait pas vu : il cherchait les liens bancaires et les appels directs au dépôt, pas les motifs
+  d'attente couplés à la forme du verrou des réglages.
+- **Retenu** : le motif devient `["FROM company_invoice_settings", "FOR UPDATE"]`, commentaire et
+  doc-comment du test ajustés ; le test reste ce qu'il était (rejeu d'un 1213 vrai, une version,
+  une entrée d'audit). Grep des autres motifs couplés aux réglages : aucun autre site.
+- **Écarté** : garder la lecture simple de `before` (rouvrirait la course que l'AC2 ferme, et le
+  test 12 bis rougirait).
+- **Réversibilité** : totale (un motif de test).

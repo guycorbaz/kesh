@@ -870,8 +870,9 @@ async fn supplier_invoice_is_replayed_when_it_is_the_deadlock_victim(pool: MySql
 // ============================================================
 
 /// ⚠️ **Le cycle de ce montage est celui de MariaDB 10.11, la version
-/// épinglée** : un `S` tenu par le test, l'`X` de l'`UPDATE` de la route en
-/// attente, le test qui demande l'`X`. Sur MySQL ≥ 8.0.18 et MariaDB ≥ 11.4.5
+/// épinglée** : un `S` tenu par le test, l'`X` de la route en attente — depuis
+/// la Story 15-6c, celui du `SELECT … FOR UPDATE` de `before`, et non plus de
+/// l'`UPDATE` —, le test qui demande l'`X`. Sur MySQL ≥ 8.0.18 et MariaDB ≥ 11.4.5
 /// (MDEV-34877), le détenteur du `S` reçoit l'`X` sans attendre ; le cycle ne
 /// s'y forme que par le verrou partagé que l'`INSERT IGNORE` de la route pose
 /// sur la ligne existante (R3-7, mesurée vraie sur 10.11.16 — Story 15-5e1,
@@ -921,7 +922,11 @@ async fn invoice_settings_update_is_replayed_when_it_is_the_deadlock_victim(pool
         &pool,
         lourde,
         route,
-        &["UPDATE company_invoice_settings"],
+        // Story 15-6c (AC2) : `before` est lu en `FOR UPDATE` — c'est là, et non
+        // plus à l'`UPDATE`, que la route attend le `S` du test (promotion S → X
+        // après son `INSERT IGNORE`). Même cycle, autre point d'attente : le motif
+        // suit la forme du verrou.
+        &["FROM company_invoice_settings", "FOR UPDATE"],
         "SELECT company_id FROM company_invoice_settings WHERE company_id = ? FOR UPDATE",
         ctx.company_id(),
     )
