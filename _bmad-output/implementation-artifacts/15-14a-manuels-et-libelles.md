@@ -1127,3 +1127,59 @@ compilation à froid** (`CARGO_TARGET_DIR` du worktree vide au départ) :
     réussis, 7 échecs, 19 ignorés** — les 7 KF-029 nommément (`mode-expert:26`, `:41`,
     `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`), aucun hors liste ; KF-045 absente
     (run après midi UTC). tmpfs MariaDB : **1,3 G / 4,0 G (32 %)** avant, **1,3 G (31 %)** après.
+- 2026-10-09 — **Revue de code P2** (Opus 5.5 ×3 : lentilles B, E, A ; rapports
+  `kesh-gate-logs/15-14a-review-p2-{B,E,A}.md`, prompt versionné `15-14a-review-prompt-p2.md`). Bruts :
+  B 0 MEDIUM / 6 LOW, E 2 MEDIUM / 5 LOW, A 1 MEDIUM / 5 LOW ; **distincts : 2 MEDIUM, 9 LOW**, tous deux
+  **nés de la remédiation P1** (propagation non faite de B-6 et d'E-1). Trend : P1 **3 MEDIUM** → P2
+  **2 MEDIUM distincts**, sans recyclage d'un défaut de P1 sous une autre forme mais résidus de ses patches —
+  le motif « la remédiation fait le défaut suivant ». Chaque finding vérifié au code avant correction :
+  - **MEDIUM A-1 = E2-2 = B2-1** (B le classait LOW) : la formule « un administrateur rouvre [d'abord] les
+    exercices clôturés » restait dans quatre clés de la famille `LATER_FISCAL_YEAR_CLOSED` (16 valeurs de
+    catalogue), quatre replis et `user-manual.tex:684`, et le renvoi de C-15-14-47 à la 15-12b était caduc
+    (mergée). Vérifié : `FIND_LATER_CLOSED_SQL` ne bloque que sur un exercice clôturé postérieur. **Corrigé**
+    — « postérieurs » dans les quatre langues, replis réécrits depuis le catalogue (apostrophes typographiques,
+    E2-7), manuel, CHANGELOG ; C-15-14-47 rectifié en place, C-15-14-49. Gardes : **G8-bis**
+    (`les_prescriptions_de_reouverture_sont_bornees` : inventaire des prescriptions non bornées sur le domaine
+    de G8, plus « postérieurs » par clé et par locale — couvre A-2), **G9** étendu aux replis paramétrés
+    (`{ $name }` → `{fiscal_year_name}`), **G13** +2 clés.
+  - **MEDIUM E2-1** : l'écran *Comptes bancaires* disait « 1020 Caisse, 1030 Banque » (quatre locales, deux
+    replis Svelte, deux doc-comments). **Corrigé** en « 1010 Poste, 1020 Banque », sous-compte `1020.001`
+    (it/en : « BCV + UBS ») ; migration `20260507200001` intouchée (P8) ; C-15-14-50. Gardes : **G4-bis** lit
+    les quatre catalogues ; **G4-ter** (`la_forme_libre_nnnn_nom_est_juste_partout`) contrôle « NNNN Nom »
+    dans le manuel d'administration, la brochure, le README, `api-external.md` et le code ; **G13** +2 clés.
+    Grep de « 1030 » et « 1020 Caisse » sur tout le dépôt : restent des données de test, la migration et
+    l'entrée publiée `CHANGELOG.md:627`.
+  - **LOW** : B2-2/B2-3/E2-3 bornes de G4-bis relevées sans consommation, accolades lues, montants, NPA et
+    années écartés, `NNNN (Nom)` lu, angles morts écrits (C-15-14-50) ; B2-4/E2-4/A-4 analyseurs **alignés**
+    (non le seul doc-comment), un anti-test-muet chacun sur les trois cas réels (C-15-14-51) ; B2-5/E2-6
+    CCP/PostFinance ; B2-6/E2-5 IDE facultatif (vérifié : `set_coordinates`, écran « optionnel ») ; A-3 AC 1,
+    AC 8 et G13 de la fiche annotés, table des tests complétée ; A-6 chemin des exercices au guide ; A-5
+    absence de journal des 30 mutations du développement écrite telle quelle (C-15-14-52). Écarté : aucun.
+  - **Code de production touché** : oui — catalogues des quatre locales (quatre clés de la famille
+    `LATER_FISCAL_YEAR_CLOSED`, deux clés de l'écran *Comptes bancaires*), replis Rust `errors.rs` ×2, replis
+    frontend `blocker-messages.ts`, `settings/fiscal-years/+page.svelte`, `bank-accounts/+page.svelte` ×2,
+    doc-comments `errors.rs`, `bank_account.rs`. Aucune logique.
+  - **Mutations** : **16/16 rouges** et 1 contrôle de non-rouge vert (NPA, montants, année), journal
+    `15-14a-review-p2-mutations.log` — G8-bis ×3 (dont l'inventaire seul, M16), G9 ×2, G13 ×2, G4-bis ×4
+    (catalogue, accolade, forme libre en-CH, non-consommation), G4-ter ×2, anti-tests-muets ×3.
+    Restauration par copie puis `touch`, arbre contrôlé par empreintes.
+  - **Rebase** sur `803f3e15` (15-6c, PR #586) ; sauvegarde `backup/15-14a-avant-rebase-p2` ; registre par
+    union (440 entrées = union exacte de main et de la branche, vérifié par identifiants), sprint-status par
+    union (lignes d'historique renumérotées) ; PDF régénérés (`make -B` ×2, 0 « Label(s) may have changed »)
+    et contrôlés aplatis (textes P2 présents, 15-6c présente, anciens textes à 0). T0 rejoué sur l'état
+    rebasé : AC 1 4, AC 2 (A) 13 / (B) **154** (+23, toutes apportées par la 15-6c : « réglages » nom commun
+    ou commentaires, hors du périmètre), AC 3 2, AC 5 20, AC 6 4, AC 7 54/54, AC 8 **162** (+7, toutes les
+    doc-comments de G8-bis dans `loader.rs`, `mod tests`), AC 9 2, AC 10 8 / 11.
+  - **Gates au dernier commit de code** (`21945b9a`, correctif clippy `manual_contains` de G4-bis apparu au
+    premier gate, `exit 101`), bases `kesh_1514a` (migrée 75, semée) et `kesh_e2e_1514a` (migrée 75)
+    reconstruites avant chaque gate : `scripts/test-fast.sh` (fmt, clippy `-D warnings`, nextest) **3090 /
+    3090**, 4 ignorés ; frontend (arbre identique depuis `70c13ec9`) : `npm run check` 0 erreur,
+    27 avertissements ; `lint-i18n-ownership` PASS ; `test:unit` **1151 / 1151** (114 fichiers ; +2 `it` de
+    la branche sur main) ; `build` vert ; **E2E complet** sur 3015 (`smtpConfigured: true`) : **247
+    réussis, 7 échecs, 19 ignorés** — les 7 KF-029 nommément (`mode-expert:26`, `:41`,
+    `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`), aucun hors liste. Tests Rust de la P2 :
+    +3 (`la_forme_libre_nnnn_nom_est_juste_partout`, `valeurs_brutes_suit_la_regle_commune_des_trois_analyseurs`,
+    `les_prescriptions_de_reouverture_sont_bornees`). tmpfs MariaDB : **2,0 G / 4,0 G (50 %)** avant,
+    **2,0 G (49 %)** après.
+  - **Suite** : la remédiation touche du code de production (textes) dans plusieurs modules : passe P3
+    complète (Sonnet), non ciblée.
