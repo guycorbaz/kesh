@@ -2335,6 +2335,7 @@ audit-log-action-company-updated = Company updated
 audit-log-action-email-template-updated = E-mail template updated
 audit-log-action-email-template-restored-default = E-mail template reset to default
 audit-log-action-installation-demo-seeded = Demo data loaded
+audit-log-action-installation-reset = Installation reset
 audit-log-action-installation-step-completed = Installation step completed
 audit-log-action-installation-ui-mode-changed = Usage mode changed
 audit-log-action-admin-full-export = Full backup exported

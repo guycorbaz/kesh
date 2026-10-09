@@ -14,9 +14,11 @@
 	<!-- Contenu wizard -->
 	<div class="w-full max-w-lg">
 		{#if onboardingState.isStub}
-			<!-- Nudge non-bloquant (Story v011-2, Issue #120) : la company a été créée
-			     en placeholder par le bootstrap (DB vide). Disparaît dès que l'utilisateur
-			     renseigne ses coordonnées (set_coordinates repasse is_stub=FALSE). -->
+			<!-- Nudge non-bloquant (Story v011-2, Issue #120) : la company est provisoire —
+			     créée par le bootstrap sur une base sans société, ou remise à l'état
+			     provisoire par la remise à zéro, en place ou insérée (Story 15-7b2). Disparaît
+			     dès que l'utilisateur renseigne ses coordonnées (set_coordinates repasse
+			     is_stub=FALSE). -->
 			<div
 				role="status"
 				data-testid="onboarding-stub-notice"

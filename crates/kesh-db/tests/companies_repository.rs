@@ -497,3 +497,215 @@ async fn clear_stub_in_tx_clears_only_a_stub_and_bumps_version(pool: MySqlPool) 
     tx.commit().await.unwrap();
     assert_eq!(stub_flag_and_version(&pool, regular).await, before);
 }
+
+// ===========================================================================
+// Story 15-7b2 — la règle des principaux orphelins (AC 4, test 6f)
+// ===========================================================================
+
+/// Société inexistante que désignent les principaux orphelins du montage.
+const DEAD_COMPANY: i64 = 987_654;
+
+/// Les ids du montage : société vivante, utilisateur sain, utilisateur
+/// orphelin, clé active orpheline, clé déjà révoquée orpheline, clé saine.
+struct Orphans {
+    company: i64,
+    orphan_user: i64,
+    active_orphan_key: i64,
+    revoked_orphan_key: i64,
+    sane_key: i64,
+}
+
+/// Montage sur une connexion **détachée du pool** (`FOREIGN_KEY_CHECKS=0`
+/// n'y retourne jamais) : un utilisateur et deux clés désignent
+/// `DEAD_COMPANY` — l'état qu'a laissé la remise à zéro v0.12.x (#528).
+async fn mount_orphans(pool: &MySqlPool) -> Orphans {
+    use sqlx::Connection;
+    let company = companies::create(pool, sample_new_company())
+        .await
+        .unwrap()
+        .id;
+    let mut conn = pool.acquire().await.unwrap().detach();
+    sqlx::query("SET FOREIGN_KEY_CHECKS = 0")
+        .execute(&mut conn)
+        .await
+        .unwrap();
+    let insert_user = |name: &'static str, company_id: i64| {
+        sqlx::query(
+            "INSERT INTO users (username, password_hash, role, active, company_id) \
+             VALUES (?, 'argon2id-hash-placeholder-long-enough', 'Admin', TRUE, ?)",
+        )
+        .bind(name)
+        .bind(company_id)
+    };
+    let sane_user = insert_user("sain", company)
+        .execute(&mut conn)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+    let orphan_user = insert_user("orphelin", DEAD_COMPANY)
+        .execute(&mut conn)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+    let mut insert_key = async |name: &str, company_id: i64, revoked: bool| -> i64 {
+        sqlx::query(
+            "INSERT INTO api_keys (company_id, created_by_user_id, name, key_hash, scope, \
+                                   last_used_at, revoked_at, version) \
+             VALUES (?, ?, ?, SHA2(?, 256), 'read-write', '2026-01-02 03:04:05.678', \
+                     IF(?, NOW(3), NULL), IF(?, 2, 1))",
+        )
+        .bind(company_id)
+        .bind(sane_user)
+        .bind(name)
+        .bind(name)
+        .bind(revoked)
+        .bind(revoked)
+        .execute(&mut conn)
+        .await
+        .unwrap()
+        .last_insert_id() as i64
+    };
+    let active_orphan_key = insert_key("active orpheline", DEAD_COMPANY, false).await;
+    let revoked_orphan_key = insert_key("révoquée orpheline", DEAD_COMPANY, true).await;
+    let sane_key = insert_key("saine", company, false).await;
+    conn.close().await.unwrap();
+    Orphans {
+        company,
+        orphan_user,
+        active_orphan_key,
+        revoked_orphan_key,
+        sane_key,
+    }
+}
+
+/// `(company_id, revoked_at IS NOT NULL, version)` d'une clé.
+async fn key_row(pool: &MySqlPool, id: i64) -> (i64, bool, i32) {
+    sqlx::query_as("SELECT company_id, revoked_at IS NOT NULL, version FROM api_keys WHERE id = ?")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+async fn user_company(pool: &MySqlPool, id: i64) -> i64 {
+    sqlx::query_scalar("SELECT company_id FROM users WHERE id = ?")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Appelle la règle dans une transaction qui tient `companies` (pré-condition),
+/// puis commite.
+async fn reattach(pool: &MySqlPool, target: Option<i64>) -> companies::OrphanPrincipals {
+    let mut tx = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM companies ORDER BY id FOR UPDATE")
+        .fetch_all(&mut *tx)
+        .await
+        .unwrap();
+    let out = companies::reattach_orphan_principals_in_tx(&mut tx, target)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    out
+}
+
+/// Test 6f (i) — avec une cible : l'utilisateur orphelin est rattaché ; la clé
+/// active orpheline est **révoquée** (`version` + 1) **puis** repointée ; la
+/// clé déjà révoquée est repointée, `revoked_at` et `version` inchangés ; la
+/// clé saine est intacte. `api_keys_revoked` dit la seule clé active
+/// orpheline, nom et dates exacts.
+#[sqlx::test(migrations = "./test-schema")]
+async fn reattach_orphans_with_a_target_revokes_then_repoints(pool: MySqlPool) {
+    let m = mount_orphans(&pool).await;
+    let sane_before = key_row(&pool, m.sane_key).await;
+    let revoked_before = key_row(&pool, m.revoked_orphan_key).await;
+    assert_eq!(revoked_before, (DEAD_COMPANY, true, 2), "montage");
+    let (created_at, last_used_at): (chrono::NaiveDateTime, Option<chrono::NaiveDateTime>) =
+        sqlx::query_as("SELECT created_at, last_used_at FROM api_keys WHERE id = ?")
+            .bind(m.active_orphan_key)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    let created_by: i64 =
+        sqlx::query_scalar("SELECT created_by_user_id FROM api_keys WHERE id = ?")
+            .bind(m.active_orphan_key)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    let out = reattach(&pool, Some(m.company)).await;
+
+    assert_eq!(out.user_ids, vec![m.orphan_user]);
+    assert_eq!(user_company(&pool, m.orphan_user).await, m.company);
+    assert_eq!(
+        out.api_keys_revoked,
+        vec![companies::RevokedApiKey {
+            id: m.active_orphan_key,
+            name: "active orpheline".into(),
+            created_by_user_id: created_by,
+            created_at,
+            last_used_at,
+        }]
+    );
+    assert!(last_used_at.is_some(), "montage : date d'usage posée");
+    assert_eq!(out.api_keys_repointed, 2);
+    assert_eq!(
+        key_row(&pool, m.active_orphan_key).await,
+        (m.company, true, 2),
+        "clé active orpheline : révoquée, version + 1, repointée"
+    );
+    assert_eq!(
+        key_row(&pool, m.revoked_orphan_key).await,
+        (m.company, true, 2),
+        "clé déjà révoquée : repointée, version inchangée"
+    );
+    assert_eq!(
+        key_row(&pool, m.sane_key).await,
+        sane_before,
+        "clé saine intacte"
+    );
+}
+
+/// Test 6f (ii) — sans cible : la clé active orpheline est révoquée et **non**
+/// repointée ; l'utilisateur n'est pas rattaché.
+#[sqlx::test(migrations = "./test-schema")]
+async fn reattach_orphans_without_target_only_revokes(pool: MySqlPool) {
+    let m = mount_orphans(&pool).await;
+    let out = reattach(&pool, None).await;
+    assert!(out.user_ids.is_empty());
+    assert_eq!(out.api_keys_repointed, 0);
+    assert_eq!(
+        out.api_keys_revoked
+            .iter()
+            .map(|k| k.id)
+            .collect::<Vec<_>>(),
+        vec![m.active_orphan_key]
+    );
+    assert_eq!(
+        key_row(&pool, m.active_orphan_key).await,
+        (DEAD_COMPANY, true, 2)
+    );
+    assert_eq!(user_company(&pool, m.orphan_user).await, DEAD_COMPANY);
+}
+
+/// Test 6f (iii) — aucun orphelin : `is_empty()`, et rien n'est écrit.
+#[sqlx::test(migrations = "./test-schema")]
+async fn reattach_without_orphans_writes_nothing(pool: MySqlPool) {
+    let m = mount_orphans(&pool).await;
+    // On rattache d'abord, puis on rejoue : plus aucun orphelin.
+    reattach(&pool, Some(m.company)).await;
+    let snapshot = |pool: MySqlPool| async move {
+        sqlx::query_as::<_, (i64, i64, i32, Option<chrono::NaiveDateTime>)>(
+            "SELECT id, company_id, version, revoked_at FROM api_keys ORDER BY id",
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap()
+    };
+    let before = snapshot(pool.clone()).await;
+    let out = reattach(&pool, Some(m.company)).await;
+    assert!(out.is_empty(), "{out:?}");
+    assert_eq!(snapshot(pool.clone()).await, before);
+    assert_eq!(user_company(&pool, m.orphan_user).await, m.company);
+}

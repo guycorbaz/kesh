@@ -85,6 +85,45 @@ pub const TABLES_TO_TRUNCATE: &[&str] = &[
     "companies",
 ];
 
+/// Les tables que la **remise à zéro** d'une installation (`kesh_seed::reset_demo`)
+/// **conserve** — Story 15-7b2 (AC 3, choix C-15-7-10, #279).
+///
+/// La société (remise à l'état provisoire **en place**, #528), l'état
+/// d'onboarding (remis à zéro **en place**), les utilisateurs et ce qui ne
+/// dépend que d'eux (sessions, jetons de réinitialisation de mot de passe), et
+/// les clés d'API — un principal n'est pas une donnée de la société. Tout le
+/// reste de [`TABLES_TO_TRUNCATE`] est vidé : [`reset_cleared_tables`].
+///
+/// ⚠️ **La partition est gardée sur le schéma**, et non sur cette liste : le test
+/// `reset_partition_is_guarded_by_the_schema` lit les clés étrangères
+/// (`information_schema.KEY_COLUMN_USAGE`) et fait rougir toute table neuve
+/// enfant de `users` seulement — elle serait sinon vidée en silence.
+pub const RESET_PRESERVED_TABLES: &[&str] = &[
+    "api_keys",
+    "companies",
+    "onboarding_state",
+    "password_reset_tokens",
+    "refresh_tokens",
+    "users",
+];
+
+/// Les tables que la remise à zéro **vide** — Story 15-7b2 (AC 3, #279) :
+/// [`TABLES_TO_TRUNCATE`] privé de [`RESET_PRESERVED_TABLES`], **dans l'ordre**
+/// de [`TABLES_TO_TRUNCATE`] (enfants → parents), `audit_log` compris (la remise
+/// à zéro l'efface puis y inscrit son propre geste, `installation.reset`).
+///
+/// **Dérivée**, jamais écrite en dur : une table ajoutée à la liste canonique
+/// est vidée sans autre geste. Une fonction et non une `const` : une `const` ne
+/// filtre pas une autre `const` en tranche de longueur inconnue ; le coût d'un
+/// filtre de quelques dizaines de noms est nul pour un geste rare.
+pub fn reset_cleared_tables() -> Vec<&'static str> {
+    TABLES_TO_TRUNCATE
+        .iter()
+        .copied()
+        .filter(|t| !RESET_PRESERVED_TABLES.contains(t))
+        .collect()
+}
+
 /// Résultat de la sérialisation NDJSON d'une table.
 #[derive(Debug, Clone)]
 pub struct TableExport {
@@ -646,6 +685,196 @@ mod tests {
              - tables DB : {from_db:?}\n\
              - hardcoded : {hardcoded_str:?}\n\
              → mettre à jour `TABLES_TO_TRUNCATE` dans `crates/kesh-db/src/backup.rs`"
+        );
+    }
+
+    /// Story 15-7b2, test 10 — la partition de la remise à zéro : les six tables
+    /// conservées sont des tables canoniques, et conservées ∪ vidées redonne
+    /// [`TABLES_TO_TRUNCATE`] **dans son ordre**.
+    ///
+    /// ⚠️ Vrai en partie **par construction** ([`reset_cleared_tables`] est
+    /// dérivée) : seule l'appartenance des six noms mord (renommage d'une table).
+    /// La garde de la partition est le test suivant, qui lit le schéma.
+    #[test]
+    fn reset_partition_covers_the_canonical_list_in_order() {
+        for t in RESET_PRESERVED_TABLES {
+            assert!(
+                TABLES_TO_TRUNCATE.contains(t),
+                "table conservée inconnue de la liste canonique : {t}"
+            );
+        }
+        let cleared = reset_cleared_tables();
+        assert_eq!(
+            cleared.len() + RESET_PRESERVED_TABLES.len(),
+            TABLES_TO_TRUNCATE.len()
+        );
+        let mut it = cleared.iter();
+        let mut next = it.next();
+        for t in TABLES_TO_TRUNCATE {
+            if Some(t) == next {
+                next = it.next();
+            } else {
+                assert!(
+                    RESET_PRESERVED_TABLES.contains(t),
+                    "{t} ni vidée ni conservée"
+                );
+            }
+        }
+        assert!(
+            next.is_none(),
+            "ordre des tables vidées différent de la liste canonique"
+        );
+        assert!(
+            cleared.contains(&"audit_log"),
+            "la piste est vidée puis réinscrite"
+        );
+    }
+
+    /// Story 15-7b2, test 10b — **la partition de la remise à zéro est gardée sur
+    /// le schéma** (AC 3, choix C-15-7-24, C-15-7-28).
+    ///
+    /// Relation : une table *rejoint* `companies` s'il existe une chaîne de clés
+    /// étrangères qui y mène **sans traverser** une table de
+    /// [`RESET_PRESERVED_TABLES`] autre que `companies` — en particulier sans
+    /// passer par `users`. Une fermeture transitive ordinaire ne garderait rien :
+    /// `refresh_tokens → users → companies` y « atteindrait » `companies`.
+    ///
+    /// - **Règle 1** : toute table vidée rejoint `companies`, sauf les exceptions
+    ///   d'une liste fermée (`audit_log`, sans aucune clé étrangère), dont chacune
+    ///   doit effectivement **ne pas** la rejoindre.
+    /// - **Règle 2** : toute table canonique portant une clé vers une table
+    ///   conservée autre que `companies`, et qui ne rejoint pas `companies`, est
+    ///   conservée — aujourd'hui exactement `password_reset_tokens` et
+    ///   `refresh_tokens`. Une future table enfant de `users` seulement rougit.
+    /// - **Règle 3** : aucune clé d'une table conservée ne référence une table
+    ///   vidée (le vidage se fait sous `FOREIGN_KEY_CHECKS=0` : une telle clé
+    ///   laisserait une référence pendante).
+    /// - **Règle 4** : les tables conservées qui portent une clé vers
+    ///   `companies` sont exactement `users` et `api_keys` — le fait sur lequel
+    ///   repose la règle des principaux orphelins
+    ///   (`companies::reattach_orphan_principals_in_tx`).
+    ///
+    /// Angle mort assumé : une future table enfant de `users` **et** de
+    /// `companies` rejoint `companies` directement et serait vidée — voulu pour
+    /// des données de société ; le choix se fait à sa création sinon.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn reset_partition_is_guarded_by_the_schema(pool: MySqlPool) {
+        use std::collections::{BTreeMap, BTreeSet};
+
+        let edges: Vec<(String, String)> = sqlx::query_as(
+            "SELECT DISTINCT TABLE_NAME, REFERENCED_TABLE_NAME \
+             FROM information_schema.KEY_COLUMN_USAGE \
+             WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("clés étrangères du schéma");
+        assert!(
+            edges.len() > 30,
+            "lecture des clés étrangères à vide ({} arêtes)",
+            edges.len()
+        );
+        let mut graph: BTreeMap<&str, BTreeSet<&str>> = BTreeMap::new();
+        for (from, to) in &edges {
+            graph.entry(from.as_str()).or_default().insert(to.as_str());
+        }
+        let preserved_other = |t: &str| t != "companies" && RESET_PRESERVED_TABLES.contains(&t);
+        let joins = |start: &str| -> bool {
+            let mut seen: BTreeSet<&str> = BTreeSet::new();
+            let mut stack = vec![start];
+            while let Some(t) = stack.pop() {
+                if !seen.insert(t) {
+                    continue;
+                }
+                for &n in graph.get(t).into_iter().flatten() {
+                    if n == "companies" {
+                        return true;
+                    }
+                    if !preserved_other(n) {
+                        stack.push(n);
+                    }
+                }
+            }
+            false
+        };
+
+        // Règle 1.
+        const EXCEPTIONS: &[&str] = &["audit_log"];
+        let cleared = reset_cleared_tables();
+        for t in &cleared {
+            if EXCEPTIONS.contains(t) {
+                assert!(
+                    !joins(t),
+                    "exception devenue inutile : {t} rejoint companies"
+                );
+            } else {
+                assert!(
+                    joins(t),
+                    "règle 1 : la table vidée {t} ne rejoint pas companies sans \
+                     traverser une table conservée — à classer"
+                );
+            }
+        }
+        for e in EXCEPTIONS {
+            assert!(
+                cleared.contains(e),
+                "exception hors des tables vidées : {e}"
+            );
+        }
+
+        // Règle 2.
+        let rule2: BTreeSet<&str> = TABLES_TO_TRUNCATE
+            .iter()
+            .copied()
+            .filter(|t| *t != "companies")
+            .filter(|t| {
+                graph
+                    .get(t)
+                    .into_iter()
+                    .flatten()
+                    .any(|n| preserved_other(n))
+            })
+            .filter(|t| !joins(t))
+            .collect();
+        assert_eq!(
+            rule2,
+            BTreeSet::from(["password_reset_tokens", "refresh_tokens"]),
+            "règle 2 : tables enfants de principaux seulement"
+        );
+        for t in &rule2 {
+            assert!(
+                RESET_PRESERVED_TABLES.contains(t),
+                "règle 2 : {t} doit être conservée"
+            );
+        }
+
+        // Règle 3.
+        let dangling: Vec<(&str, &str)> = RESET_PRESERVED_TABLES
+            .iter()
+            .flat_map(|p| {
+                graph
+                    .get(p)
+                    .into_iter()
+                    .flatten()
+                    .filter(|n| cleared.contains(n))
+                    .map(move |n| (*p, *n))
+            })
+            .collect();
+        assert!(
+            dangling.is_empty(),
+            "règle 3 : une table conservée référence une table vidée : {dangling:?}"
+        );
+
+        // Règle 4.
+        let to_companies: BTreeSet<&str> = RESET_PRESERVED_TABLES
+            .iter()
+            .copied()
+            .filter(|p| graph.get(p).is_some_and(|ns| ns.contains("companies")))
+            .collect();
+        assert_eq!(
+            to_companies,
+            BTreeSet::from(["api_keys", "users"]),
+            "règle 4 : principaux portant une clé vers companies"
         );
     }
 

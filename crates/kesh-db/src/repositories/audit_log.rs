@@ -16,10 +16,13 @@
 //! 2. **`reset_demo`** — `DELETE FROM audit_log` non scopé, sur une route montée
 //!    « tout rôle authentifié ». ✅ **Fermé** : la route exige `require_admin_role`
 //!    et vit dans le bloc admin. ⚠️ **Elle efface toujours la piste**, mais
-//!    seulement sur une instance **non finalisée** : le handler refuse dès
-//!    `step_completed >= 7`, inconditionnellement — *« even if
-//!    KESH_PRODUCTION_RESET is set »*. Sur une installation en service, la piste
-//!    est donc hors d'atteinte.
+//!    seulement sur une instance **non finalisée** — `step_completed >= 7` est
+//!    refusé inconditionnellement, drapeau `KESH_PRODUCTION_RESET` posé ou non —,
+//!    et, depuis la Story 15-7b2 (#434), **elle y inscrit son geste** :
+//!    `installation.reset` (nombre et plage d'identifiants effacés), écrite dans
+//!    la transaction même qui efface et qui évalue les gardes sous son verrou.
+//!    Sur une installation en service, la piste est donc hors d'atteinte, et
+//!    son effacement n'est jamais muet.
 //! 3. ⚠️ **`/api/v1/_test/seed` et `/api/v1/_test/reset`** — ils appellent
 //!    `truncate_all`, qui réutilise la même constante. **Ce chemin RESTE OUVERT,
 //!    et c'est délibéré** : tout le montage de la suite E2E en dépend. Il est

@@ -8,15 +8,16 @@
 //! Utilise les variantes non-macro `sqlx::query_as::<_, T>("...")` pour
 //! éviter la dépendance à une DB live au moment du build.
 
-use chrono::{NaiveDate, Utc};
+use chrono::{NaiveDate, NaiveDateTime, Utc};
+use serde::Serialize;
 use serde_json::json;
 use sqlx::mysql::MySqlPool;
 use sqlx::{MySql, Transaction};
 
-use crate::entities::{Company, CompanyUpdate, NewAuditLogEntry, NewCompany};
+use crate::entities::{Company, CompanyUpdate, Language, NewAuditLogEntry, NewCompany, OrgType};
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::MAX_LIST_LIMIT;
-use crate::repositories::audit_log;
+use crate::repositories::{api_keys, audit_log};
 
 const FIND_BY_ID_SQL: &str = "SELECT id, name, first_name, last_name, address, address_street, address_building, \
             address_postal_code, address_city, address_country, ide_number, org_type, \
@@ -139,6 +140,246 @@ fn is_no_op_change(before: &Company, changes: &CompanyUpdate) -> bool {
         // base et `version` ne bougerait pas, en rendant 200.
         && before.phone == changes.phone
         && before.website == changes.website
+}
+
+/// Raison sociale d'une **société provisoire** (`is_stub = TRUE`).
+///
+/// Partagée par les trois sites qui posent le stub — le premier démarrage sur
+/// une base sans société (`kesh-api`, `auth::bootstrap`), la branche « aucune
+/// société » du choix de la langue (`routes::onboarding`), et la remise à zéro
+/// (`kesh_seed::reset_demo`, Story 15-7b2), qui le recrée **en place** ou
+/// l'insère sur une base sans société — pour qu'ils ne divergent pas (DRY).
+/// Descendue de `auth/bootstrap.rs` dans `kesh-db` par la Story 15-7b2 :
+/// `kesh-seed` ne dépend pas de `kesh-api`. Le wizard lève le drapeau quand
+/// l'utilisateur renseigne ses vraies coordonnées ([`clear_stub_in_tx`]).
+pub const STUB_COMPANY_NAME: &str = "(en cours de configuration)";
+
+/// Adresse combinée d'une société provisoire — cf. [`STUB_COMPANY_NAME`].
+pub const STUB_COMPANY_ADDRESS: &str = "-";
+
+/// Insère une **société provisoire** et rend son `id` — Story 15-7b2 (AC 4).
+///
+/// **Seul site d'insertion du stub** : `org_type = Independant`,
+/// `accounting_language = FR`, `instance_language` passée par l'appelant,
+/// `is_stub = TRUE` ; toute autre colonne prend son défaut du schéma. Les
+/// valeurs que [`reset_to_stub_in_tx`] écrit en place sont celles-ci, de sorte
+/// qu'une société recréée et une société remise à zéro soient identiques
+/// (`FR` pour la remise à zéro et le premier démarrage, la langue demandée
+/// pour la branche « aucune société » du choix de la langue).
+///
+/// Générique sur l'exécuteur : le premier démarrage l'appelle sur le pool, la
+/// remise à zéro et le choix de la langue dans leur transaction. **Ne commite
+/// jamais.**
+pub async fn insert_stub<'e, E>(executor: E, instance_language: Language) -> Result<i64, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    let result = sqlx::query(
+        "INSERT INTO companies \
+         (name, address, org_type, accounting_language, instance_language, is_stub) \
+         VALUES (?, ?, ?, ?, ?, TRUE)",
+    )
+    .bind(STUB_COMPANY_NAME)
+    .bind(STUB_COMPANY_ADDRESS)
+    .bind(OrgType::Independant)
+    .bind(Language::Fr)
+    .bind(instance_language)
+    .execute(executor)
+    .await
+    .map_err(map_db_error)?;
+    i64::try_from(result.last_insert_id())
+        .ok()
+        .filter(|id| *id > 0)
+        .ok_or_else(|| DbError::Invariant("last_insert_id invalide après INSERT companies".into()))
+}
+
+/// Ramène une société existante à l'état d'une **société provisoire**,
+/// **en place** (même `id`), dans la transaction de l'appelant — Story 15-7b2
+/// (AC 4, choix C-15-7-9).
+///
+/// Écrit les valeurs de [`insert_stub`] (`Language::Fr` pour les deux
+/// langues), `is_stub = TRUE`, `version = version + 1`, et ramène **chaque
+/// autre colonne** à la valeur qu'elle prend à l'insertion du stub, c'est-à-dire
+/// à son défaut du schéma : `NULL` pour les sept colonnes nullables, `''` pour
+/// les quatre `address_*` textuelles (`NOT NULL DEFAULT ''`), `'CH'` pour
+/// `address_country` et `country`. Cette énumération est **ouverte** par
+/// nature : ce qui la ferme est le test 5 de la story
+/// (`reset_restores_the_stub_columns_in_place`, `onboarding_audit_e2e.rs`), qui
+/// compare **toutes** les colonnes lues dans `information_schema.COLUMNS` à un
+/// stub fraîchement inséré — une colonne neuve le fait rougir.
+///
+/// `DbError::NotFound` si la société n'existe pas. **Ne commite jamais.**
+pub async fn reset_to_stub_in_tx(tx: &mut Transaction<'_, MySql>, id: i64) -> Result<(), DbError> {
+    let rows = sqlx::query(
+        "UPDATE companies SET \
+            name = ?, address = ?, org_type = ?, accounting_language = ?, \
+            instance_language = ?, is_stub = TRUE, \
+            first_name = NULL, last_name = NULL, ide_number = NULL, email = NULL, \
+            phone = NULL, website = NULL, books_locked_through = NULL, \
+            address_street = '', address_building = '', address_postal_code = '', \
+            address_city = '', address_country = 'CH', country = 'CH', \
+            version = version + 1 \
+         WHERE id = ?",
+    )
+    .bind(STUB_COMPANY_NAME)
+    .bind(STUB_COMPANY_ADDRESS)
+    .bind(OrgType::Independant)
+    .bind(Language::Fr)
+    .bind(Language::Fr)
+    .bind(id)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
+    if rows != 1 {
+        return Err(DbError::NotFound);
+    }
+    Ok(())
+}
+
+/// Une clé d'API **active** et **orpheline** révoquée par
+/// [`reattach_orphan_principals_in_tx`] — ce que l'entrée d'audit en dit.
+///
+/// **Aucune empreinte** : `api_keys` ne porte que `key_hash`, jamais rendu.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RevokedApiKey {
+    pub id: i64,
+    pub name: String,
+    pub created_by_user_id: i64,
+    pub created_at: NaiveDateTime,
+    pub last_used_at: Option<NaiveDateTime>,
+}
+
+/// Ce que [`reattach_orphan_principals_in_tx`] a fait.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct OrphanPrincipals {
+    /// Les utilisateurs orphelins **rattachés** à la cible (vide sans cible).
+    pub user_ids: Vec<i64>,
+    /// Les clés actives orphelines **révoquées**, cible ou non.
+    pub api_keys_revoked: Vec<RevokedApiKey>,
+    /// Le nombre de clés orphelines — révoquées ici ou avant — **repointées**
+    /// vers la cible (0 sans cible).
+    pub api_keys_repointed: u64,
+}
+
+impl OrphanPrincipals {
+    /// `true` si rien n'a été rattaché, révoqué ni repointé.
+    pub fn is_empty(&self) -> bool {
+        self.user_ids.is_empty() && self.api_keys_revoked.is_empty() && self.api_keys_repointed == 0
+    }
+}
+
+/// Prédicat d'**orphelin** : le `company_id` de la ligne `t` ne désigne aucune
+/// société. Partagé par les sélections et les `UPDATE` ci-dessous.
+const ORPHAN: &str = "NOT EXISTS (SELECT 1 FROM companies c WHERE c.id = t.company_id)";
+
+/// La règle **unique** des principaux orphelins — Story 15-7b2 (AC 4, choix
+/// C-15-7-23, C-15-7-45 ; #528).
+///
+/// Un principal est **orphelin** quand son `company_id` ne désigne aucune
+/// société (une version antérieure de la remise à zéro effaçait `companies`
+/// sous `FOREIGN_KEY_CHECKS=0`, sans cascade ni repointage — #528). La règle :
+///
+/// 1. les **utilisateurs** orphelins sont verrouillés (`FOR UPDATE`, par `id`) ;
+/// 2. les **clés d'API actives** orphelines sont verrouillées, puis
+///    **révoquées** (`api_keys::revoke_in_tx`, `version + 1`) — **quelle que
+///    soit la cible** : une clé a pu naître pendant une démonstration, et la
+///    repointer active la **réveillerait** sur la société vivante ;
+/// 3. si `target = Some(c)` : les utilisateurs orphelins sont rattachés à `c`
+///    (`rows_affected` égal au nombre verrouillé, sinon `DbError::Invariant`),
+///    et **toutes** les clés orphelines — révoquées à l'instant ou avant — sont
+///    repointées vers `c` sans toucher `version` ni `revoked_at` : elles
+///    paraissent, révoquées, sur la page des clés de la société ;
+///    `target = None` : ni rattachement ni repointage, les clés restent
+///    révoquées sur leur `company_id` mort, repointées plus tard par le même
+///    appel.
+///
+/// Ainsi **aucune clé orpheline ne redevient active par aucun chemin**.
+///
+/// Appelants : `kesh_seed::reset_demo` (`Some`), la branche « aucune société »
+/// du choix de la langue (`routes::onboarding`, `Some` de la société créée), et
+/// — Story 15-7b3 — la réparation au démarrage et à la restauration.
+///
+/// **Pré-condition** : l'appelant tient `companies` (`FOR UPDATE`, Pattern 5)
+/// et `target`, s'il est donné, existe. Ordre des verrous : `users` puis
+/// `api_keys`. **Ne commite jamais.**
+pub async fn reattach_orphan_principals_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    target: Option<i64>,
+) -> Result<OrphanPrincipals, DbError> {
+    let user_ids: Vec<i64> = sqlx::query_scalar(&format!(
+        "SELECT t.id FROM users t WHERE {ORPHAN} ORDER BY t.id FOR UPDATE"
+    ))
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+
+    #[allow(clippy::type_complexity)]
+    let keys: Vec<(
+        i64,
+        i64,
+        i32,
+        String,
+        i64,
+        NaiveDateTime,
+        Option<NaiveDateTime>,
+    )> = sqlx::query_as(&format!(
+        "SELECT t.id, t.company_id, t.version, t.name, t.created_by_user_id, \
+                    t.created_at, t.last_used_at \
+             FROM api_keys t WHERE t.revoked_at IS NULL AND {ORPHAN} ORDER BY t.id FOR UPDATE"
+    ))
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+
+    let mut api_keys_revoked = Vec::with_capacity(keys.len());
+    for (id, company_id, version, name, created_by_user_id, created_at, last_used_at) in keys {
+        api_keys::revoke_in_tx(tx, company_id, id, version).await?;
+        api_keys_revoked.push(RevokedApiKey {
+            id,
+            name,
+            created_by_user_id,
+            created_at,
+            last_used_at,
+        });
+    }
+
+    let Some(target) = target else {
+        return Ok(OrphanPrincipals {
+            user_ids: Vec::new(),
+            api_keys_revoked,
+            api_keys_repointed: 0,
+        });
+    };
+
+    let attached = sqlx::query(&format!(
+        "UPDATE users t SET t.company_id = ? WHERE {ORPHAN}"
+    ))
+    .bind(target)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
+    if attached != user_ids.len() as u64 {
+        return Err(DbError::Invariant(format!(
+            "rattachement des utilisateurs orphelins : {attached} ligne(s) écrite(s), {} verrouillée(s)",
+            user_ids.len()
+        )));
+    }
+    let api_keys_repointed = sqlx::query(&format!(
+        "UPDATE api_keys t SET t.company_id = ? WHERE {ORPHAN}"
+    ))
+    .bind(target)
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
+
+    Ok(OrphanPrincipals {
+        user_ids,
+        api_keys_revoked,
+        api_keys_repointed,
+    })
 }
 
 /// Lève le drapeau « société provisoire » (`is_stub`) d'une société, **dans la

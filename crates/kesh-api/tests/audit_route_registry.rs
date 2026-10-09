@@ -123,7 +123,7 @@
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **cinq routes `SansEcritureAuJournal` sont rejouées quand
+//! - **(vi)** **six routes `SansEcritureAuJournal` sont rejouées quand
 //!   même** : `onboarding::finalize` (enveloppe `AppError`, Story 15-5e2 — la
 //!   seule des neuf routes d'étape à l'être, cf. (iv)),
 //!   `company_invoice_settings::update_invoice_settings` (enveloppe `DbError`,
@@ -145,7 +145,11 @@
 //!   et `is_seed_retryable_accepts_1213_and_only_it` (`onboarding_audit_e2e.rs`,
 //!   une 1213 levée par déclencheur — revue P1 de la 15-7b1) — et le volet
 //!   (c bis) interdit qu'elle revienne à un `retry_with` à prédicat écrit en
-//!   ligne.
+//!   ligne. Et — Story 15-7b2, #434 — `onboarding::reset`, dont chaque essai
+//!   est une transaction unique rejouée **dans `kesh-seed`** (`reset_demo`,
+//!   `retry_with`, même prédicat), tenue par `reset_replays_a_deadlocked_attempt`
+//!   et `is_seed_retryable_on_a_real_deadlock` (`onboarding_audit_e2e.rs`) —
+//!   choix C-15-7b2-1.
 //! - **(vii)** — **angles morts assumés du volet (c bis)** (revue P1 de la
 //!   15-5e2, L-3 = B-4 = A5). Le volet reconnaît un appel au **dernier
 //!   segment** du chemin appelé (`retry_with`) dans un arbre `syn` ; il ne voit
@@ -224,7 +228,7 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("put", "companies::update_company_contact_details", Traced, SansEcritureAuJournal),
     ("post", "fiscal_years::reopen_fiscal_year", Traced, SansEcritureAuJournal),
     ("post", "companies::unlock_company_books", Traced, SansEcritureAuJournal),
-    ("post", "onboarding::reset", Exempt("issue #434 — remise à zéro (15-7b2)"), Exemptee("effacement de la démo : geste d'administration exclusif, hors exploitation — un 1213 annule sa transaction unique et la relance manuelle est sûre")),
+    ("post", "onboarding::reset", Traced, SansEcritureAuJournal),
     ("post", "accounts::create_account", Traced, SansEcritureAuJournal),
     ("put", "accounts::update_account", Traced, SansEcritureAuJournal),
     ("put", "accounts::archive_account", Traced, SansEcritureAuJournal),
@@ -632,7 +636,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     assert_eq!(LIB_ROUTES.len(), 114, "l'inventaire porte sur 114 routes");
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
     assert_eq!(
-        traced, 107,
+        traced, 108,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -641,12 +645,9 @@ fn the_registry_partition_is_what_the_story_declares() {
          (15-8a, #532 — le `PUT` gelé par la 24-4b ne mutait rien), plus les neuf routes \
          de configuration de l'installation (15-7a2, #434), plus le peuplement de \
          démonstration (15-7b1, #434), plus le lettrage et le délettrage manuels \
-         (15-1a-i, #518)"
+         (15-1a-i, #518), plus la remise à zéro (15-7b2, #434)"
     );
-    assert_eq!(
-        exempt, 5,
-        "1 route d'onboarding (#434, 15-7b2) + 4 d'auth (#435)"
-    );
+    assert_eq!(exempt, 4, "4 routes d'auth (#435)");
     assert_eq!(
         no_matter, 2,
         "deux routes mutantes qui ne mutent rien (le `PUT` des écritures en est sorti, 15-8a)"
@@ -975,13 +976,11 @@ fn the_replay_partition_is_what_the_story_declares() {
          complétion d'import, rapprochement manuel et ventilé) + le lettrage et le \
          délettrage manuels (15-1a-i)"
     );
+    assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        exemptees, 4,
-        "full_import, onboarding::reset, /seed, /reset"
-    );
-    assert_eq!(
-        sans_ecriture, 89,
-        "88 routes de lib.rs, plus /password-reset-token de test_endpoints.rs"
+        sans_ecriture, 90,
+        "89 routes de lib.rs (la remise à zéro y est entrée, 15-7b2), plus \
+         /password-reset-token de test_endpoints.rs"
     );
     assert_eq!(rejouees + exemptees + sans_ecriture, tout.len());
     assert_eq!(tout.len(), 117);

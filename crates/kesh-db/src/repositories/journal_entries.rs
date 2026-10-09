@@ -72,8 +72,8 @@
 //! zéro de **toutes** les écritures d'une société, hors exploitation — il ne
 //! reste ensuite aucune écriture dont un bilan clos dépende.
 //! [`delete_all_by_company`] (teardown des tests, sans appelant de production)
-//! et `reset_demo` de `kesh-seed` (données de démonstration, qui efface aussi
-//! les exercices).
+//! et `reset_demo` de `kesh-seed` (remise à zéro de l'installation, qui vide
+//! toutes les données de la société, exercices compris — Story 15-7b2).
 
 use std::str::FromStr;
 

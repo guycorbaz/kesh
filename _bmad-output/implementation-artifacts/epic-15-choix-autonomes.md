@@ -5622,6 +5622,48 @@ l'import (#458–#461).
 - **Écarté** : changer le texte maintenant (code de production en remédiation de fin de boucle, qui rouvrirait la boucle de revue pour un LOW).
 - **Réversible** : oui (une chaîne).
 
+## C-15-7b2-1 — 15-7b2 (T0) : `onboarding::reset` passe à `Traced` / `SansEcritureAuJournal` ; partitions recomptées
+
+- **Contexte** : au T0 de la 15-7b2, le registre des routes compte 114 routes (107 / 5 / 2), non 112 (105 / 5 / 2) comme le dit la fiche ; et sa colonne `Rejeu` porte la remise à zéro en `Exemptee` (« un 1213 annule sa transaction unique et la relance manuelle est sûre »), alors que l'AC 2 l'enveloppe désormais dans `retry_with` — dans `kesh-seed`, hors de `src/routes/`.
+- **Retenu** : `Traced`, et `SansEcritureAuJournal` comme `seed_demo` (C-15-7b1-1 : la colonne grave l'inventaire de l'AC1 de la 15-5e1, au sens du journal comptable ; le volet (c) exige une enveloppe dans le corps du handler). Le point (vi) du doc-comment nomme la remise à zéro parmi les routes rejouées quand même. Partition d'audit 108 / 4 / 2 = 114 ; partition de rejeu 24 / 3 / 90 = 117. Le manuel dit « 108 des 114 ».
+- **Écarté** : `Rejouee` (déplacer le rejeu dans le handler contredirait l'AC 2) ; garder `Exemptee` (la raison écrite serait fausse).
+- **Réversible** : oui (une ligne du registre, quatre nombres).
+
+## C-15-7b2-2 — 15-7b2 (T0) : le rejeu de `reset_demo` prouvé de bout en bout, et le prédicat sur un vrai cycle
+
+- **Contexte** : la fiche déclare angle mort l'interblocage de `reset_demo` lui-même (« non reproductible de façon déterministe ») et demande, au test 13, un vrai cycle de verrous pour le prédicat. La 15-7b1 a depuis montré (C-15-7b1-2) qu'une 1213 levée **une fois** par un déclencheur — compteur en table MyISAM, que l'annulation n'efface pas — prouve un rejeu de bout en bout.
+- **Retenu** : (1) test 13 tel qu'écrit (deux connexions hors du pool, `reset_retry_probe`, cycle réel, 1213 ⇒ vrai ; 1205 ⇒ faux ; variantes ⇒ faux, `ResetForbidden` compris) ; (2) **en plus**, un test 13b : déclencheur `BEFORE INSERT ON audit_log` qui lève une 1213 à la première écriture d'`installation.reset` ; la remise à zéro aboutit au second essai, une seule entrée, tables vidées. L'angle mort se réduit à l'interblocage **naturel** (non provoqué), écrit au Dev Agent Record.
+- **Écarté** : laisser l'angle mort entier (testable à faible coût) ; remplacer le vrai cycle par `SIGNAL` (la fiche le demande, et il prouve la conversion par `map_db_error` d'une erreur réellement émise par InnoDB).
+- **Réversible** : oui (tests seuls).
+
+## C-15-7b2-3 — 15-7b2 (développement) : l'exception au Pattern 5 écrite en note, la liste « Deny list » n'existant plus
+
+- **Contexte** : l'AC 10 prescrit d'inscrire `kesh_seed::reset_demo` à la « liste d'exceptions » du Pattern 5 (« Deny list », `*(none)*`, `docs/MULTI-TENANT-SCOPING-PATTERNS.md:330-336`). À `181efa3c`, cette liste n'existe plus : le document porte une table *Where This Applies* et des **notes** par route (journal_entries, letterings).
+- **Retenu** : la ligne `reset` de la table dit l'ordre complet et renvoie à une **note** « exception to the Global Lock Order », écrite sur le patron des notes voisines (motif, atténuation, tests, ce qui n'est pas provoqué) ; le paragraphe *Known Risk — KF-002-H-002* ne cite plus `reset` parmi les lock-and-release.
+- **Écarté** : recréer une section « Deny list » pour une seule entrée (structure abandonnée par le document).
+- **Réversible** : oui (texte).
+
+## C-15-7b2-4 — 15-7b2 (développement) : montage du test 4 par une facture sans TVA ; `credit_note_number_sequences` peuplée
+
+- **Contexte** : le test 4 exige une facture **validée** et un avoir sur une démonstration. La démonstration ne désigne pas de compte de TVA due : la validation d'une ligne à 8,1 % rend `400 CONFIGURATION_REQUIRED`.
+- **Retenu** : la ligne de facture est à `0.00` % — la facture se valide, l'avoir se crée, et l'écriture existe ; le relevé réel a montré `credit_note_number_sequences` peuplée par l'avoir : elle sort de la liste fermée des tables vides (17 tables, assertée égale à l'ensemble relevé).
+- **Écarté** : désigner un compte de TVA due au montage (geste de plus, sans rapport avec la remise à zéro) ; laisser `vat_rates` seule témoin de la TVA (elle est peuplée par le seed).
+- **Réversible** : oui (montage de test).
+
+## C-15-7b2-5 — 15-7b2 (revue de code P1, A-1 = E-3) : le manuel borne la réparation de #528 à zéro ou une société
+
+- **Contexte** : revue de code P1 (Sonnet ×3, prompt `e3368ba7`) — A-1 (MEDIUM) = E-3 (LOW). Le manuel d'administration disait que la réinitialisation répare une installation touchée par #528 « quel que soit son nombre de sociétés » ; le code (`reset_body`, AC 2.2) rend `Invariant` (500, rien d'effacé) dès deux sociétés. La formule venait de la ligne de l'AC 11 (R4-5 de la P4), vraie de `reattach_orphan_principals_in_tx`, pas de la remise à zéro.
+- **Retenu** (décision de l'orchestrateur) : `admin-manual.tex` dit « si elle compte aucune ou une société », et qu'à deux sociétés ou plus — réelles ou provisoires — le bouton répond par une erreur interne sans rien effacer, la réparation relevant de la 15-7b3 ; PDF régénéré (`make -B fr`), contrôlé aplati ; même bornage au CHANGELOG `[0.13.0]` ; ligne de l'AC 11 de la fiche corrigée. Aucune ligne de code touchée.
+- **Écarté** : faire réparer la remise à zéro sur N ≥ 2 (périmètre de la 15-7b3, C-15-7-46).
+- **Réversible** : oui (texte).
+
+## C-15-7b2-6 — 15-7b2 (revue de code P1) : LOW documentaires appliqués, LOW de code écrits en dette
+
+- **Contexte** : P1 : B 6 LOW, E 7 LOW (dont E-3, absorbé par C-15-7b2-5), A 3 LOW. Consigne de l'orchestrateur : ne toucher aucun fichier de code ni de test, pour que le dernier commit de code (`5fe1f918`) et ses gates restent valables.
+- **Retenu** : appliqués — A-2 (`docker compose config` exécuté en lecture, sortie au Dev Agent Record), A-3 (grep de l'AC 10 rejoué sur l'état rebasé, sortie collée, intégrale au journal des gates), A-4 (Overfull comptés par passe). E-5 (champ d'audit) et E-7 (catalogues i18n) ne sont pas du texte de manuel : dette. En dette, avec leur motif, à la fiche : B-1 à B-6, E-1 (rattachée à #534), E-2, E-4 (comportement hérité, conservé), E-5, E-6, E-7.
+- **Écarté** : corriger maintenant les LOW de code (rouvrirait la boucle de revue et les gates pour des LOW).
+- **Réversible** : oui.
+
 ## C-15-13b-1 — 15-13b (T0) : le rapatriement n'est pas rejoué au T0, le démon Docker étant bloqué
 
 - **Contexte** : le T0 prescrit de rejouer, sur un conteneur jetable, l'écriture d'un fichier `0600` par un conteneur root dans un dossier monté, puis le rapatriement `sudo cp` + `sudo chown`. Le 2026-10-09 vers 07:10, toute création de conteneur expire (`docker run` → 124 après 60 s) : le noyau signale des tâches `dockerd` en état D, bloquées sur un rw-semaphore (`journalctl`, « blocked for more than 122 seconds »). Le démon sert encore `ps`/`info`. Les créations interrompues laissent des noms réservés sans conteneur. `sudo` n'est pas utilisable sans mot de passe depuis l'agent.

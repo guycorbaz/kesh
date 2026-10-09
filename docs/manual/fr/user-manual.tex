@@ -187,7 +187,7 @@ Si vous souhaitez \textbf{tester Kesh sans données réelles}, choisissez le mod
 
 \textbf{Rien d'autre} : aucun contact, aucun produit, aucune écriture. Les listes sont vides~; c'est à vous de saisir les données sur lesquelles vous voulez essayer Kesh.
 
-Vous pouvez librement créer, modifier, supprimer des données dans ce mode. L'installation ne porte qu'une société~: pour passer en mode production, réinitialisez-la par le bouton \emph{Réinitialiser pour la production} de la bannière de démonstration, qui efface les données de démonstration et ramène l'assistant au début. ⚠️ \emph{Ce bouton n'agit que si l'administrateur de l'installation l'a autorisé} (variable \texttt{KESH\_PRODUCTION\_RESET}, voir le manuel d'administration)~: sinon la réinitialisation est refusée, même à un administrateur.
+Vous pouvez librement créer, modifier, supprimer des données dans ce mode. L'installation ne porte qu'une société~: pour passer en mode production, réinitialisez-la par le bouton \emph{Réinitialiser pour la production} de la bannière de démonstration, qui ramène l'assistant au début. ⚠️ \emph{Ce bouton n'agit que si l'administrateur de l'installation l'a autorisé au préalable} (variable \texttt{KESH\_PRODUCTION\_RESET}, voir le manuel d'administration)~: sans cette autorisation, la réinitialisation est refusée, \textbf{même à un administrateur}. Elle vide \textbf{toutes} les données de la société --- y compris ce que vous avez saisi pendant l'exploration --- et \textbf{conserve} les utilisateurs et les clés d'API.
 
 \subsection{Chemin B — Mode production}
 
@@ -2179,10 +2179,9 @@ imports, réconciliations, exports, gestion des utilisateurs, modification de
 la société et la configuration initiale de l'installation — avec l'auteur,
 l'horodatage et le contexte.
 
-⚠️ \textbf{Deux familles d'opérations n'y figurent pas encore} : la
-\emph{réinitialisation} des données de démonstration, et les \emph{gestes de
-session} : connexion, déconnexion, changement de votre propre mot de passe. Ce
-sont des manques connus et suivis, pas des oublis.
+⚠️ \textbf{Une famille d'opérations n'y figure pas encore} : les \emph{gestes de
+session} --- connexion, déconnexion, changement de votre propre mot de passe. C'est
+un manque connu et suivi, pas un oubli.
 
 \begin{keshnote}
 Ce journal d'audit est \textbf{insert-only} : aucune entrée ne peut être modifiée,
@@ -2191,7 +2190,8 @@ précisions, parce qu'une garantie vague ne vaut rien~: l'\textbf{import d'une
 sauvegarde ne le remplace plus} --- les entrées de l'archive s'y ajoutent, les vôtres
 restent ---, et la \textbf{réinitialisation des données de démonstration} reste
 possible, mais elle est réservée à un administrateur \emph{et} refusée dès que
-l'installation est finalisée. Il \textbf{contribue} à la traçabilité attendue par
+l'installation est finalisée~; elle efface le journal et y laisse \textbf{sa propre
+entrée}, la \textbf{première} du journal neuf. Il \textbf{contribue} à la traçabilité attendue par
 l'OLICo Art.~9 al.~1.b ch.~4 --- sans que cela vaille attestation de conformité~:
 celle-ci se juge sur l'installation entière et son exploitation, non sur une table.
 Il est \textbf{enregistré en base} à des fins de conformité et d'expertise, et se
@@ -2259,6 +2259,17 @@ alors jusqu'à une réinitialisation~: c'est une limite connue, suivie par
 l'issue \#538. Il en va de même si la configuration de production franchit
 l'étape pendant le chargement~: celui-ci est refusé, mais ces données restent sur
 l'installation de production.
+
+\paragraph{La réinitialisation.} Réinitialiser une installation (bouton
+\emph{Réinitialiser pour la production} de la bannière de démonstration, qui n'agit
+que si l'administrateur de l'installation l'a autorisée, voir «~Chemin A~») efface le
+journal d'audit avec les données de la société, puis y inscrit \textbf{son propre
+geste} --- une entrée \emph{Installation réinitialisée}, type \emph{Installation},
+la seule du journal neuf. Son détail dit l'étape et le mode d'avant, le
+\textbf{nombre d'entrées effacées} et la \textbf{plage de leurs numéros}, la liste des
+tables vidées, et les utilisateurs ou clés d'API rattachés à la société. Les numéros
+des entrées ne repartent pas de 1~: \textbf{le trou qui précède cette entrée
+s'explique par elle}.
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{FAQ et dépannage utilisateur}
@@ -2416,7 +2427,7 @@ Le journal d'audit garde toujours la trace de l'action originale ET de l'action 
     \item[Grand-livre] Ensemble des comptes individuels reprenant toutes les écritures qui les concernent.
     \item[IDE] Identifiant Unique des Entreprises (Suisse), format CHE-XXX.XXX.XXX.
     \item[Journal] Enregistrement chronologique de toutes les écritures comptables.
-    \item[Journal d'audit (angl. audit log)] Registre des modifications comptables (qui, quand, quelle valeur), exigé par le CO Art. 957a. ⚠️ \emph{La couverture n'est pas totale --- voir la section «~Traçabilité~» pour les deux familles d'opérations qui n'y figurent pas encore.} Il se consulte à l'écran, \emph{Administration} → \emph{Journal d'audit} (\S\ref{sec:tracabilite}). À ne pas confondre avec le \emph{journal} des écritures, ci-dessus. Aucune entrée ne peut y être modifiée, ni supprimée sur une installation en service.
+    \item[Journal d'audit (angl. audit log)] Registre des modifications comptables (qui, quand, quelle valeur), exigé par le CO Art. 957a. ⚠️ \emph{La couverture n'est pas totale --- voir la section «~Traçabilité~» pour la famille d'opérations qui n'y figure pas encore (les gestes de session).} Il se consulte à l'écran, \emph{Administration} → \emph{Journal d'audit} (\S\ref{sec:tracabilite}). À ne pas confondre avec le \emph{journal} des écritures, ci-dessus. Aucune entrée ne peut y être modifiée, ni supprimée sur une installation en service.
     \item[Lettrage] Marque posée sur des lignes d'un même compte d'actif ou de passif dont la
           somme est nulle, pour dire qu'elles se soldent entre elles (une écriture et sa
           contre-passation, un acompte et sa reprise\ldots). Dans cette version, le lettrage

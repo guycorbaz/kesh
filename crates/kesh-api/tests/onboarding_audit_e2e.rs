@@ -1,5 +1,6 @@
 //! La piste de contrôle de l'installation — Story 15-7a2 (#434) pour la
-//! production, Story 15-7b1 (#434) pour le chargement de la démonstration.
+//! production, Story 15-7b1 (#434) pour le chargement de la démonstration,
+//! Story 15-7b2 (#434, #279, #528) pour la remise à zéro.
 //!
 //! Les neuf routes de configuration (`language`, `mode`, `start-production`,
 //! `org-type`, `accounting-language`, `coordinates`, `bank-account`,
@@ -804,60 +805,10 @@ async fn bank_account_created_updated_unchanged(pool: MySqlPool) {
 
 // --- Test 7 -----------------------------------------------------------------
 
-/// Test 7 — `language` sans société en base : `company.created`, dont le
-/// `company_id` d'audit est celui de `users.company_id` — l'id MORT du montage
-/// (#528, fermé par la 15-7b2) (AC 1).
-#[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn language_without_company_traces_company_created(pool: MySqlPool) {
-    let (app, token, dead_company_id) = bootstrap(&pool).await;
-    let mut conn = pool.acquire().await.unwrap();
-    sqlx::query("SET FOREIGN_KEY_CHECKS = 0")
-        .execute(&mut *conn)
-        .await
-        .unwrap();
-    sqlx::query("DELETE FROM companies")
-        .execute(&mut *conn)
-        .await
-        .unwrap();
-    sqlx::query("SET FOREIGN_KEY_CHECKS = 1")
-        .execute(&mut *conn)
-        .await
-        .unwrap();
-    drop(conn);
-    let marker = max_audit_id(&pool).await;
-
-    let (status, body) = post(&app, &token, "language", Some(json!({ "language": "IT" }))).await;
-    assert_eq!(status, 200, "{body}");
-    assert_eq!(
-        actions_after(&pool, marker).await,
-        ["company.created", "installation.step_completed"]
-    );
-    let new_id: i64 = sqlx::query_scalar("SELECT id FROM companies")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    let (entity_type, entity_id, audit_company_id, raw): (String, i64, Option<i64>, Vec<u8>) =
-        sqlx::query_as(
-            "SELECT entity_type, entity_id, company_id, details_json FROM audit_log \
-             WHERE action = 'company.created'",
-        )
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(entity_type, "company");
-    assert_eq!(entity_id, new_id);
-    assert_ne!(new_id, dead_company_id);
-    assert_eq!(
-        audit_company_id,
-        Some(dead_company_id),
-        "#528 : company_id d'audit = users.company_id, l'id mort"
-    );
-    let details: Value = serde_json::from_slice(&raw).unwrap();
-    assert_eq!(
-        details,
-        json!({ "instance_language": "IT", "is_stub": true })
-    );
-}
+// Le test 7 de la 15-7a2 (`language` sans société, `company_id` d'audit = l'id
+// MORT) est remplacé par le test 6c de la 15-7b2,
+// `language_without_company_reattaches_and_revokes` (#528 : la branche
+// « aucune société » rattache désormais les principaux orphelins).
 
 // --- Test 8 -----------------------------------------------------------------
 
@@ -1807,4 +1758,1045 @@ async fn seed_demo_last_transaction_is_replayed_on_deadlock(pool: MySqlPool) {
     assert_eq!(state_row(&pool).await.0, 3);
     assert!(!is_stub(&pool, company_id).await);
     assert_eq!(count_for_company(&pool, "vat_rates", company_id).await, 4);
+}
+
+// ===========================================================================
+// Story 15-7b2 (#434, #279, #528) — la remise à zéro laisse sa trace, vide
+// tout, et garde la société
+// ===========================================================================
+
+use kesh_db::backup::{TABLES_TO_TRUNCATE, reset_cleared_tables};
+
+/// `id` d'une société qu'aucune ligne ne porte : les principaux orphelins du
+/// montage la désignent (#528).
+const DEAD_COMPANY_ID: i64 = 987_654;
+
+/// `POST /api/v1/onboarding/reset` avec `KESH_PRODUCTION_RESET` posé le temps
+/// de la requête (nextest : un processus par test ; `cargo test` de la CI :
+/// un fil). Restauré avant toute assertion.
+async fn reset_with_flag(app: &TestApp, token: &str) -> (u16, Value) {
+    let prev = std::env::var("KESH_PRODUCTION_RESET").ok();
+    // SAFETY (Rust 2024) : mutation d'environnement du processus de test,
+    // restaurée aussitôt — patron de `onboarding_e2e.rs`.
+    unsafe { std::env::set_var("KESH_PRODUCTION_RESET", "true") };
+    let out = post(app, token, "reset", None).await;
+    unsafe {
+        match prev {
+            Some(v) => std::env::set_var("KESH_PRODUCTION_RESET", v),
+            None => std::env::remove_var("KESH_PRODUCTION_RESET"),
+        }
+    }
+    out
+}
+
+/// `POST /api/v1/onboarding/reset` **sans** le drapeau.
+async fn reset_without_flag(app: &TestApp, token: &str) -> (u16, Value) {
+    // SAFETY : cf. `reset_with_flag`.
+    unsafe { std::env::remove_var("KESH_PRODUCTION_RESET") };
+    post(app, token, "reset", None).await
+}
+
+/// `COUNT(*)` de chaque table de la liste canonique.
+async fn table_counts(pool: &MySqlPool) -> std::collections::BTreeMap<&'static str, i64> {
+    let mut out = std::collections::BTreeMap::new();
+    for t in TABLES_TO_TRUNCATE {
+        let n: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM `{t}`"))
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        out.insert(*t, n);
+    }
+    out
+}
+
+/// Les lignes d'une table, chaque ligne réduite au texte de ses colonnes, triées
+/// par `id` — instantané comparable sans dépendre des types SQL.
+async fn snapshot(pool: &MySqlPool, table: &str) -> Vec<String> {
+    let cols: Vec<String> = sqlx::query_scalar(
+        "SELECT COLUMN_NAME FROM information_schema.COLUMNS \
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
+    )
+    .bind(table)
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    assert!(!cols.is_empty(), "table {table} sans colonnes");
+    let concat = cols
+        .iter()
+        .map(|c| format!("COALESCE(CAST(`{c}` AS CHAR), '∅')"))
+        .collect::<Vec<_>>()
+        .join(", '|', ");
+    sqlx::query_scalar(&format!(
+        "SELECT CONCAT({concat}) FROM `{table}` ORDER BY 1"
+    ))
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// Une ligne d'audit lue : `(action, entity_type, entity_id, company_id, id,
+/// détails)` — détails bruts.
+type AuditRow = (String, String, i64, Option<i64>, i64, Vec<u8>);
+
+/// [`AuditRow`], détails décodés.
+type AuditEntry = (String, String, i64, Option<i64>, i64, Value);
+
+/// L'unique entrée d'audit après une remise à zéro.
+async fn sole_entry(pool: &MySqlPool) -> AuditEntry {
+    let rows: Vec<AuditRow> = sqlx::query_as(
+        "SELECT action, entity_type, entity_id, company_id, id, details_json FROM audit_log",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        rows.len(),
+        1,
+        "exactement une entrée après la remise à zéro"
+    );
+    let (a, t, e, c, id, raw) = rows.into_iter().next().unwrap();
+    (a, t, e, c, id, serde_json::from_slice(&raw).unwrap())
+}
+
+/// `(MIN(id), MAX(id), COUNT(*))` d'`audit_log`.
+async fn audit_range(pool: &MySqlPool) -> (Option<i64>, Option<i64>, i64) {
+    sqlx::query_as("SELECT MIN(id), MAX(id), COUNT(*) FROM audit_log")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// `seed-demo` sur le montage commun : la démonstration est à l'étape 3.
+async fn seeded_demo(pool: &MySqlPool) -> (TestApp, String, i64) {
+    let (app, token, company_id) = bootstrap(pool).await;
+    to_demo_step(&app, &token).await;
+    let (status, body) = post(&app, &token, "seed-demo", None).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(state_row(pool).await.0, 3);
+    (app, token, company_id)
+}
+
+/// Requête authentifiée quelconque (hors `/onboarding`).
+async fn call(
+    app: &TestApp,
+    token: &str,
+    method: reqwest::Method,
+    path: &str,
+    body: Option<Value>,
+) -> (u16, Value) {
+    let mut req = app
+        .client
+        .request(method, app.url(path))
+        .header("Authorization", format!("Bearer {token}"));
+    if let Some(b) = body {
+        req = req.json(&b);
+    }
+    let resp = req.send().await.unwrap();
+    let status = resp.status().as_u16();
+    (status, resp.json().await.unwrap_or(Value::Null))
+}
+
+/// Peuple la société d'une démonstration au-delà du seed : un contact, un
+/// article, une facture **validée** (écriture), un avoir, une clé d'API saine
+/// et un jeton de réinitialisation de mot de passe — L4-3 de la P4 : sans eux,
+/// « inchangés » serait vrai à vide.
+async fn populate(pool: &MySqlPool, app: &TestApp, token: &str, company_id: i64) -> i64 {
+    let (contact_id, _product_id) =
+        kesh_db::test_fixtures::seed_contact_and_product(pool, company_id)
+            .await
+            .unwrap();
+    let today = chrono::Local::now().date_naive().to_string();
+    let (status, body) = call(
+        app,
+        token,
+        reqwest::Method::POST,
+        "/api/v1/invoices",
+        Some(json!({
+            "contactId": contact_id,
+            "date": today,
+            // Sans TVA : le plan de démonstration ne désigne pas de compte de
+            // TVA due, que la validation exigerait d'une ligne taxée.
+            "lines": [{"description": "Conseil", "quantity": "1",
+                       "unitPrice": "100.00", "vatRate": "0.00"}]
+        })),
+    )
+    .await;
+    assert_eq!(status, 201, "facture : {body}");
+    let invoice_id = body["id"].as_i64().unwrap();
+    let (status, body) = call(
+        app,
+        token,
+        reqwest::Method::POST,
+        &format!("/api/v1/invoices/{invoice_id}/validate"),
+        None,
+    )
+    .await;
+    assert_eq!(status, 200, "validation : {body}");
+    let (status, body) = call(
+        app,
+        token,
+        reqwest::Method::POST,
+        "/api/v1/credit-notes",
+        Some(json!({ "invoiceId": invoice_id, "date": today })),
+    )
+    .await;
+    assert_eq!(status, 201, "avoir : {body}");
+    let (key_id, _key) =
+        create_key_via_http(&app.client, &app.base_url, token, "saine", "read-write").await;
+    sqlx::query(
+        "INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) \
+         VALUES (?, SHA2('jeton', 256), NOW(3) + INTERVAL 1 HOUR)",
+    )
+    .bind(admin_user_id(pool).await)
+    .execute(pool)
+    .await
+    .unwrap();
+    key_id
+}
+
+// --- Test 4 (15-7b2) --------------------------------------------------------
+
+/// Les tables vides **avant** la remise à zéro du test 4, malgré un montage
+/// peuplé : ce que ni le seed ni le montage n'amorcent, dit et non ignoré
+/// (R3 de la P1). Liste fermée, assertée égale à l'ensemble relevé.
+const EMPTY_BEFORE_RESET: &[&str] = &[
+    "bank_accounts",
+    "bank_imports",
+    "bank_profiles",
+    "bank_transactions",
+    "company_dunning_settings",
+    "contact_persons",
+    "dunning_levels",
+    "email_templates",
+    "imported_supplier_invoices",
+    "invoice_reminders",
+    "invoice_settlements",
+    "payment_batch_items",
+    "payment_batches",
+    "projects",
+    "reconciliation_rules",
+    "supplier_invoice_lines",
+    "supplier_invoices",
+];
+
+/// Test 4 (15-7b2, AC 2, 3, 5) — remise à zéro réussie d'une démonstration
+/// peuplée : **chaque** table vidée l'est (#279, la classe entière), la piste
+/// porte exactement `installation.reset` et ce qu'elle dit est exact, les
+/// tables conservées sont inchangées.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reset_clears_every_company_table_and_traces_itself(pool: MySqlPool) {
+    let (app, token, company_id) = seeded_demo(&pool).await;
+    let sane_key = populate(&pool, &app, &token, company_id).await;
+
+    let before = table_counts(&pool).await;
+    for t in [
+        "accounts",
+        "fiscal_years",
+        "vat_rates",
+        "company_invoice_settings",
+        "contacts",
+        "products",
+        "invoices",
+        "invoice_lines",
+        "credit_notes",
+        "credit_note_lines",
+        "journal_entries",
+        "journal_entry_lines",
+        "audit_log",
+    ] {
+        assert!(before[t] > 0, "montage : {t} doit être peuplée");
+    }
+    let cleared = reset_cleared_tables();
+    let empty: std::collections::BTreeSet<&str> =
+        cleared.iter().copied().filter(|t| before[t] == 0).collect();
+    assert_eq!(
+        empty,
+        EMPTY_BEFORE_RESET.iter().copied().collect(),
+        "liste fermée des tables vides avant la remise à zéro"
+    );
+    let (min_id, max_id, count) = audit_range(&pool).await;
+    let preserved_before: Vec<Vec<String>> = {
+        let mut v = Vec::new();
+        for t in [
+            "users",
+            "api_keys",
+            "refresh_tokens",
+            "password_reset_tokens",
+        ] {
+            v.push(snapshot(&pool, t).await);
+        }
+        v
+    };
+    assert!(!preserved_before[3].is_empty(), "montage : jeton posé");
+    let key_before: (Option<chrono::NaiveDateTime>, i32) =
+        sqlx::query_as("SELECT revoked_at, version FROM api_keys WHERE id = ?")
+            .bind(sane_key)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+
+    let (status, body) = reset_with_flag(&app, &token).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["stepCompleted"], 0);
+    assert_eq!(body["isDemo"], false);
+
+    let (action, entity_type, entity_id, audit_company, id, details) = sole_entry(&pool).await;
+    assert_eq!(action, "installation.reset");
+    assert_eq!(entity_type, "installation");
+    assert_eq!(
+        entity_id,
+        kesh_db::entities::audit_log::AUDIT_ENTITY_ID_NONE
+    );
+    assert_eq!(audit_company, Some(company_id));
+    assert!(id > max_id.unwrap(), "l'id suit la plage effacée");
+    assert_eq!(
+        details,
+        json!({
+            "step_before": 3,
+            "is_demo_before": true,
+            "company_id": company_id,
+            "company_recreated": false,
+            "audit_entries_erased": count,
+            "erased_id_min": min_id,
+            "erased_id_max": max_id,
+            "tables_cleared": cleared,
+            "users_repointed": 0,
+            "api_keys_revoked": [],
+            "api_keys_repointed": 0,
+        })
+    );
+    let after = table_counts(&pool).await;
+    for t in &cleared {
+        if *t != "audit_log" {
+            assert_eq!(after[t], 0, "#279 : {t} doit être vidée");
+        }
+    }
+    let mut preserved_after = Vec::new();
+    for t in [
+        "users",
+        "api_keys",
+        "refresh_tokens",
+        "password_reset_tokens",
+    ] {
+        preserved_after.push(snapshot(&pool, t).await);
+    }
+    assert_eq!(
+        preserved_after, preserved_before,
+        "tables conservées inchangées"
+    );
+    let key_after: (Option<chrono::NaiveDateTime>, i32) =
+        sqlx::query_as("SELECT revoked_at, version FROM api_keys WHERE id = ?")
+            .bind(sane_key)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(key_after, key_before, "la clé saine n'est pas révoquée");
+    assert!(key_after.0.is_none());
+    assert_eq!(after["companies"], 1);
+    assert_eq!(after["onboarding_state"], 1);
+}
+
+// --- Test 5 (15-7b2) --------------------------------------------------------
+
+/// Les 19 colonnes de `companies` que le montage du test 5 perturbe — liste
+/// FERMÉE : l'inventaire du schéma doit l'égaler, aux quatre exclusions près.
+const PERTURBED: &[&str] = &[
+    "name",
+    "address",
+    "ide_number",
+    "org_type",
+    "accounting_language",
+    "instance_language",
+    "country",
+    "is_stub",
+    "address_street",
+    "address_building",
+    "address_postal_code",
+    "address_city",
+    "address_country",
+    "first_name",
+    "last_name",
+    "email",
+    "phone",
+    "website",
+    "books_locked_through",
+];
+
+/// Colonnes de `companies` exclues de la comparaison au stub de référence.
+const NOT_COMPARED: &[&str] = &["id", "version", "created_at", "updated_at"];
+
+/// Test 5 (15-7b2, AC 4) — #528 et les colonnes du stub : la société survit à
+/// la remise à zéro (même id, même jeton, `GET /companies/current` → 200) et
+/// **chaque** colonne revient à la valeur d'un stub fraîchement inséré.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reset_restores_the_stub_columns_in_place(pool: MySqlPool) {
+    let (app, token, company_id) = seeded_demo(&pool).await;
+    sqlx::query(
+        "UPDATE companies SET name = 'Démo perturbée', address = 'x', \
+            ide_number = 'CHE109322551', org_type = 'Pme', accounting_language = 'DE', \
+            instance_language = 'DE', country = 'FR', is_stub = FALSE, \
+            address_street = 'x', address_building = 'x', address_postal_code = 'x', \
+            address_city = 'x', address_country = 'FR', first_name = 'x', last_name = 'x', \
+            email = 'x@example.ch', phone = 'x', website = 'x', \
+            books_locked_through = '2024-12-31' \
+         WHERE id = ?",
+    )
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Inventaire : une colonne neuve rougit tant qu'elle n'est pas classée.
+    let columns: std::collections::BTreeSet<String> = sqlx::query_scalar(
+        "SELECT COLUMN_NAME FROM information_schema.COLUMNS \
+         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'companies'",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap()
+    .into_iter()
+    .collect();
+    let expected: std::collections::BTreeSet<String> = PERTURBED
+        .iter()
+        .chain(NOT_COMPARED)
+        .map(|c| c.to_string())
+        .collect();
+    assert_eq!(columns, expected, "colonnes de companies à classer");
+
+    let (status, current) = call(
+        &app,
+        &token,
+        reqwest::Method::GET,
+        "/api/v1/companies/current",
+        None,
+    )
+    .await;
+    assert_eq!(status, 200);
+    assert_eq!(current["company"]["id"], company_id);
+
+    let (status, body) = reset_with_flag(&app, &token).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["isStub"], true, "la réponse dit la société provisoire");
+
+    let (status, current) = call(
+        &app,
+        &token,
+        reqwest::Method::GET,
+        "/api/v1/companies/current",
+        None,
+    )
+    .await;
+    assert_eq!(status, 200, "même jeton, même société : {current}");
+    assert_eq!(current["company"]["id"], company_id);
+    let user_company: i64 = sqlx::query_scalar("SELECT company_id FROM users")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(user_company, company_id);
+
+    // Référence : un stub inséré dans une transaction ANNULÉE — la base ne
+    // compte jamais deux sociétés au moment d'une remise à zéro.
+    let compared: Vec<&str> = PERTURBED.to_vec();
+    let mismatch = compared
+        .iter()
+        .map(|c| format!("IF(a.`{c}` <=> b.`{c}`, NULL, '{c}')"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut tx = pool.begin().await.unwrap();
+    let reference =
+        kesh_db::repositories::companies::insert_stub(&mut *tx, kesh_db::entities::Language::Fr)
+            .await
+            .unwrap();
+    let differing: Option<String> = sqlx::query_scalar(&format!(
+        "SELECT CONCAT_WS(',', {mismatch}) FROM companies a, companies b \
+         WHERE a.id = ? AND b.id = ?"
+    ))
+    .bind(company_id)
+    .bind(reference)
+    .fetch_one(&mut *tx)
+    .await
+    .unwrap();
+    tx.rollback().await.unwrap();
+    assert_eq!(
+        differing.as_deref().unwrap_or(""),
+        "",
+        "colonnes qui diffèrent d'un stub neuf"
+    );
+
+    // `language` n'emprunte plus le chemin « aucune société ».
+    let marker = max_audit_id(&pool).await;
+    let (status, body) = post(&app, &token, "language", Some(json!({ "language": "DE" }))).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        actions_after(&pool, marker).await,
+        ["company.updated", "installation.step_completed"]
+    );
+}
+
+// --- Tests 6a à 6d (15-7b2) -------------------------------------------------
+
+/// Rend la clé et l'utilisateur ORPHELINS — l'état laissé par une remise à
+/// zéro v0.12.x (#528) — par une connexion **détachée du pool**
+/// (`FOREIGN_KEY_CHECKS=0` n'y retourne jamais). `drop_companies` : la société
+/// est aussi effacée (installation sans société).
+async fn make_orphans(pool: &MySqlPool, drop_companies: bool) {
+    use sqlx::Connection;
+    let mut conn = pool.acquire().await.unwrap().detach();
+    sqlx::raw_sql("SET FOREIGN_KEY_CHECKS = 0")
+        .execute(&mut conn)
+        .await
+        .unwrap();
+    if drop_companies {
+        sqlx::raw_sql("DELETE FROM companies")
+            .execute(&mut conn)
+            .await
+            .unwrap();
+    }
+    sqlx::query("UPDATE users SET company_id = ?")
+        .bind(DEAD_COMPANY_ID)
+        .execute(&mut conn)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE api_keys SET company_id = ?")
+        .bind(DEAD_COMPANY_ID)
+        .execute(&mut conn)
+        .await
+        .unwrap();
+    conn.close().await.unwrap();
+}
+
+/// Ce que l'entrée d'audit doit dire de la clé révoquée, relu de la base.
+async fn revoked_key_json(pool: &MySqlPool, key_id: i64) -> Value {
+    let (name, created_by, created_at, last_used_at): (
+        String,
+        i64,
+        chrono::NaiveDateTime,
+        Option<chrono::NaiveDateTime>,
+    ) = sqlx::query_as(
+        "SELECT name, created_by_user_id, created_at, last_used_at FROM api_keys WHERE id = ?",
+    )
+    .bind(key_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    json!([{
+        "id": key_id,
+        "name": name,
+        "created_by_user_id": created_by,
+        "created_at": created_at,
+        "last_used_at": last_used_at,
+    }])
+}
+
+/// La clé est révoquée, désigne `company_id`, et son jeton n'authentifie plus.
+async fn assert_key_revoked_on(pool: &MySqlPool, key_id: i64, key: &str, company_id: i64) {
+    let (company, revoked): (i64, bool) =
+        sqlx::query_as("SELECT company_id, revoked_at IS NOT NULL FROM api_keys WHERE id = ?")
+            .bind(key_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(company, company_id, "clé rattachée à la société");
+    assert!(revoked, "clé orpheline révoquée");
+    let auth = kesh_db::repositories::api_keys::find_active_auth_by_key_hash(
+        pool,
+        &kesh_api::auth::api_key::sha256_hex(key),
+    )
+    .await
+    .unwrap();
+    assert!(auth.is_none(), "le jeton n'authentifie plus");
+}
+
+/// Après reconnexion, `GET /companies/current` → 200 avec `company_id`.
+async fn assert_current_after_login(app: &TestApp, company_id: i64) {
+    let fresh = login(app).await;
+    let (status, body) = call(
+        app,
+        &fresh,
+        reqwest::Method::GET,
+        "/api/v1/companies/current",
+        None,
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["company"]["id"], company_id);
+}
+
+/// Test 6a (15-7b2, AC 4, 5) — installation atteinte par #528 **avec**
+/// société : l'utilisateur est rattaché à la société conservée, la clé active
+/// orpheline est révoquée puis rattachée, et l'entrée le dit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reset_reattaches_the_orphans_of_a_528_installation(pool: MySqlPool) {
+    let (app, token, company_id) = bootstrap(&pool).await;
+    let (key_id, key) = create_key_via_http(
+        &app.client,
+        &app.base_url,
+        &token,
+        "née en démo",
+        "read-write",
+    )
+    .await;
+    make_orphans(&pool, false).await;
+
+    let (status, body) = reset_without_flag(&app, &token).await;
+    assert_eq!(status, 200, "{body}");
+
+    let user_company: i64 = sqlx::query_scalar("SELECT company_id FROM users")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(user_company, company_id);
+    assert_key_revoked_on(&pool, key_id, &key, company_id).await;
+    let (_, _, _, audit_company, _, details) = sole_entry(&pool).await;
+    assert_eq!(
+        audit_company,
+        Some(company_id),
+        "écrite après le rattachement"
+    );
+    assert_eq!(details["users_repointed"], 1);
+    assert_eq!(details["company_recreated"], false);
+    assert_eq!(
+        details["api_keys_revoked"],
+        revoked_key_json(&pool, key_id).await
+    );
+    assert_eq!(details["api_keys_repointed"], 1);
+}
+
+/// Test 6b (15-7b2, AC 2, 4, 5) — installation atteinte par #528 **sans**
+/// société : la remise à zéro répond 200 (et non 500), recrée la société
+/// provisoire et y rattache utilisateur et clé (révoquée). Après reconnexion,
+/// la société courante est la recréée — l'ancien jeton n'est pas asserté
+/// (limite de l'AC 4).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reset_recreates_the_company_of_a_528_installation(pool: MySqlPool) {
+    let (app, token, _) = bootstrap(&pool).await;
+    let (key_id, key) = create_key_via_http(
+        &app.client,
+        &app.base_url,
+        &token,
+        "née en démo",
+        "read-write",
+    )
+    .await;
+    make_orphans(&pool, true).await;
+
+    let (status, body) = reset_without_flag(&app, &token).await;
+    assert_eq!(status, 200, "{body}");
+
+    let ids: Vec<(i64, bool)> = sqlx::query_as("SELECT id, is_stub FROM companies")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(ids.len(), 1, "une société stub recréée");
+    let (new_id, is_stub) = ids[0];
+    assert!(is_stub);
+    let user_company: i64 = sqlx::query_scalar("SELECT company_id FROM users")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(user_company, new_id);
+    assert_key_revoked_on(&pool, key_id, &key, new_id).await;
+    let (_, _, _, audit_company, _, details) = sole_entry(&pool).await;
+    assert_eq!(audit_company, Some(new_id));
+    assert_eq!(details["company_recreated"], true);
+    assert_eq!(details["company_id"], new_id);
+    assert_eq!(details["users_repointed"], 1);
+    assert_eq!(details["api_keys_repointed"], 1);
+    assert_current_after_login(&app, new_id).await;
+}
+
+/// Test 6c (15-7b2, AC 4 ; remplace le test 7 de la 15-7a2) — `language` sur
+/// une installation sans société : la société créée **rattache** l'utilisateur
+/// et ne **réveille** aucune clé (F4-1/R4-1 de la P4) ; `company.created` le
+/// dit, et son `company_id` d'audit est la société créée, non plus l'id mort.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn language_without_company_reattaches_and_revokes(pool: MySqlPool) {
+    let (app, token, dead_company_id) = bootstrap(&pool).await;
+    let (key_id, key) = create_key_via_http(
+        &app.client,
+        &app.base_url,
+        &token,
+        "née en démo",
+        "read-write",
+    )
+    .await;
+    make_orphans(&pool, true).await;
+    let marker = max_audit_id(&pool).await;
+
+    let (status, body) = post(&app, &token, "language", Some(json!({ "language": "IT" }))).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        actions_after(&pool, marker).await,
+        ["company.created", "installation.step_completed"]
+    );
+    let new_id: i64 = sqlx::query_scalar("SELECT id FROM companies")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_ne!(new_id, dead_company_id);
+    let user_company: i64 = sqlx::query_scalar("SELECT company_id FROM users")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(user_company, new_id, "utilisateur rattaché");
+    assert_key_revoked_on(&pool, key_id, &key, new_id).await;
+    let (entity_type, entity_id, audit_company_id, raw): (String, i64, Option<i64>, Vec<u8>) =
+        sqlx::query_as(
+            "SELECT entity_type, entity_id, company_id, details_json FROM audit_log \
+             WHERE action = 'company.created'",
+        )
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(entity_type, "company");
+    assert_eq!(entity_id, new_id);
+    assert_eq!(
+        audit_company_id,
+        Some(new_id),
+        "#528 fermé : plus d'id mort"
+    );
+    let details: Value = serde_json::from_slice(&raw).unwrap();
+    assert_eq!(
+        details,
+        json!({
+            "instance_language": "IT",
+            "is_stub": true,
+            "users_repointed": 1,
+            "api_keys_revoked": revoked_key_json(&pool, key_id).await,
+            "api_keys_repointed": 1,
+        })
+    );
+    assert_current_after_login(&app, new_id).await;
+}
+
+/// Test 6d (15-7b2, AC 2) — deux sociétés : la remise à zéro rend 500
+/// (`Invariant`), et tables, sociétés et piste sont intactes.
+async fn reset_refuses_two_companies(pool: MySqlPool, second_is_stub: bool) {
+    let (app, token, _) = bootstrap(&pool).await;
+    if second_is_stub {
+        // #542 : une seconde société provisoire, sans utilisateur ni clé.
+        kesh_db::repositories::companies::insert_stub(&pool, kesh_db::entities::Language::Fr)
+            .await
+            .unwrap();
+    } else {
+        common::create_test_company(&pool).await;
+    }
+    let before = table_counts(&pool).await;
+    let companies_before = snapshot(&pool, "companies").await;
+    let audit_before = audit_sequence(&pool).await;
+
+    let (status, body) = reset_without_flag(&app, &token).await;
+    assert_eq!(status, 500, "{body}");
+    assert_eq!(table_counts(&pool).await, before);
+    assert_eq!(snapshot(&pool, "companies").await, companies_before);
+    assert_eq!(audit_sequence(&pool).await, audit_before);
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reset_refuses_a_second_real_company(pool: MySqlPool) {
+    reset_refuses_two_companies(pool, false).await;
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reset_refuses_a_second_stub_company(pool: MySqlPool) {
+    reset_refuses_two_companies(pool, true).await;
+}
+
+// --- Tests 7, 7b, 7c (15-7b2) -----------------------------------------------
+
+/// Test 7 (15-7b2, AC 2) — les trois gardes, par HTTP : étape 7 ⇒ 400 ;
+/// production à l'étape 3 ⇒ 403 ; démonstration à l'étape 3 sans drapeau ⇒
+/// 403. Chaque fois, tables et piste intactes. Séquentiel : il prouve les
+/// gardes, pas qu'elles sont évaluées sous le verrou (test 7b).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reset_guards_refuse_and_erase_nothing(pool: MySqlPool) {
+    let (app, token, _) = seeded_demo(&pool).await;
+    for (step, is_demo, flag, expected, code) in [
+        (7, true, true, 400, "ONBOARDING_STEP_ALREADY_COMPLETED"),
+        (3, false, true, 403, "ONBOARDING_RESET_FORBIDDEN"),
+        (3, true, false, 403, "ONBOARDING_RESET_FORBIDDEN"),
+    ] {
+        set_step(&pool, step).await;
+        set_demo(&pool, is_demo).await;
+        let before = table_counts(&pool).await;
+        let audit = audit_sequence(&pool).await;
+        let (status, body) = if flag {
+            reset_with_flag(&app, &token).await
+        } else {
+            reset_without_flag(&app, &token).await
+        };
+        assert_eq!(status, expected, "étape {step}, démo {is_demo} : {body}");
+        assert_eq!(body["error"]["code"], code);
+        assert_eq!(table_counts(&pool).await, before, "étape {step}");
+        assert_eq!(audit_sequence(&pool).await, audit, "étape {step}");
+    }
+}
+
+/// Test 7b (15-7b2, AC 2 ; F-2 de la P1) — **les gardes sont évaluées sous le
+/// verrou de la transaction qui efface**, de façon déterministe : une connexion
+/// A tient `onboarding_state` ; `reset_demo` est vu bloqué sur son `FOR
+/// UPDATE` ; A passe l'étape 7 et commite ⇒ `StepAlreadyCompleted`, rien
+/// d'effacé. Montage peuplé (F3-5 de la P3).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reset_guards_are_evaluated_under_the_erasing_lock(pool: MySqlPool) {
+    use sqlx::Connection;
+    let (app, token, company_id) = seeded_demo(&pool).await;
+    let _ = populate(&pool, &app, &token, company_id).await;
+    let before = table_counts(&pool).await;
+    for t in [
+        "accounts",
+        "fiscal_years",
+        "journal_entries",
+        "journal_entry_lines",
+        "audit_log",
+    ] {
+        assert!(before[t] > 0, "montage : {t}");
+    }
+    let actor = (admin_user_id(&pool).await, None);
+
+    let mut a = sqlx::MySqlConnection::connect_with(&pool.connect_options())
+        .await
+        .unwrap();
+    let mut tx_a = a.begin().await.unwrap();
+    sqlx::query(kesh_db::repositories::onboarding::LOCK_SQL)
+        .fetch_one(&mut *tx_a)
+        .await
+        .unwrap();
+
+    let p = pool.clone();
+    let handle = tokio::spawn(async move { kesh_seed::reset_demo(&p, actor, true).await });
+    assert!(
+        kesh_db::test_fixtures::attendre_une_requete_en_cours(
+            &pool,
+            &["onboarding_state", "FOR UPDATE"],
+            || handle.is_finished(),
+        )
+        .await,
+        "reset_demo doit attendre le verrou d'état"
+    );
+    sqlx::query("UPDATE onboarding_state SET step_completed = 7")
+        .execute(&mut *tx_a)
+        .await
+        .unwrap();
+    tx_a.commit().await.unwrap();
+
+    let result = handle.await.unwrap();
+    assert!(
+        matches!(result, Err(kesh_seed::SeedError::StepAlreadyCompleted)),
+        "{result:?}"
+    );
+    assert_eq!(table_counts(&pool).await, before, "rien d'effacé");
+}
+
+/// Test 7c (15-7b2, AC 2 ; R6 de la P1) — ligne d'état absente, `reset_demo`
+/// appelé directement (le handler la recréerait) ⇒ `Invariant`, rien d'effacé.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reset_without_state_row_is_an_invariant(pool: MySqlPool) {
+    let (_app, _token, _) = seeded_demo(&pool).await;
+    kesh_db::repositories::onboarding::delete_state(&pool)
+        .await
+        .unwrap();
+    let before = table_counts(&pool).await;
+    let result = kesh_seed::reset_demo(&pool, (admin_user_id(&pool).await, None), true).await;
+    assert!(
+        matches!(
+            result,
+            Err(kesh_seed::SeedError::Db(
+                kesh_db::errors::DbError::Invariant(_)
+            ))
+        ),
+        "{result:?}"
+    );
+    assert_eq!(table_counts(&pool).await, before);
+}
+
+// --- Test 8 (15-7b2) --------------------------------------------------------
+
+/// Test 8 (15-7b2, AC 2, 6 ; F-2 de la P4) — un échec injecté à la dernière
+/// écriture ne laisse **rien** effacé, et la connexion de l'essai — qui portait
+/// `FOREIGN_KEY_CHECKS=0` — n'est **jamais rendue** au pool : sur un pool à une
+/// connexion, l'identifiant de connexion change (c'est la preuve). Puis, le
+/// déclencheur retiré, la même remise à zéro réussit et rend un
+/// `ResetOutcome` exact.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reset_failure_erases_nothing_and_never_returns_its_connection(pool: MySqlPool) {
+    let (_app, _token, company_id) = seeded_demo(&pool).await;
+    let log_bin: i64 = sqlx::query_scalar("SELECT CAST(@@log_bin AS SIGNED)")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        log_bin, 0,
+        "pré-requis du montage : journal binaire inactif (sinon CREATE TRIGGER exige \
+         SUPER ou log_bin_trust_function_creators)"
+    );
+    let pool1 = sqlx::mysql::MySqlPoolOptions::new()
+        .max_connections(1)
+        .connect_with((*pool.connect_options()).clone())
+        .await
+        .unwrap();
+    let conn_id: i64 = sqlx::query_scalar("SELECT CAST(CONNECTION_ID() AS SIGNED)")
+        .fetch_one(&pool1)
+        .await
+        .unwrap();
+    sqlx::raw_sql(
+        "CREATE TRIGGER t_15_7b2_fail BEFORE INSERT ON audit_log FOR EACH ROW \
+         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '15-7b2 atomicity'",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let before = table_counts(&pool).await;
+    let company_before = snapshot(&pool, "companies").await;
+    let state_before = snapshot(&pool, "onboarding_state").await;
+    let actor = (admin_user_id(&pool).await, None);
+
+    let result = kesh_seed::reset_demo(&pool1, actor, true).await;
+    assert!(result.is_err(), "{result:?}");
+    assert_eq!(table_counts(&pool).await, before, "rien d'effacé");
+    assert_eq!(snapshot(&pool, "companies").await, company_before);
+    assert_eq!(snapshot(&pool, "onboarding_state").await, state_before);
+
+    let (new_id, fk): (i64, i64) = sqlx::query_as(
+        "SELECT CAST(CONNECTION_ID() AS SIGNED), CAST(@@SESSION.foreign_key_checks AS SIGNED)",
+    )
+    .fetch_one(&pool1)
+    .await
+    .unwrap();
+    assert_ne!(
+        new_id, conn_id,
+        "la connexion de l'essai a été fermée, non rendue"
+    );
+    assert_eq!(fk, 1);
+
+    sqlx::raw_sql("DROP TRIGGER t_15_7b2_fail")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let erased = audit_range(&pool).await.2;
+    let outcome = kesh_seed::reset_demo(&pool1, actor, true).await.unwrap();
+    assert_eq!(outcome.company_id, company_id);
+    assert!(!outcome.company_recreated);
+    assert_eq!(outcome.audit_entries_erased, erased as u64);
+    assert!(outcome.principals.is_empty());
+}
+
+// --- Test 9 (15-7b2) --------------------------------------------------------
+
+/// Test 9 (15-7b2, AC 5) — piste vide avant la remise à zéro : rien d'effacé,
+/// plage à `null`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reset_of_an_empty_trail(pool: MySqlPool) {
+    let (app, token, _) = bootstrap(&pool).await;
+    sqlx::raw_sql("DELETE FROM audit_log")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (status, body) = reset_without_flag(&app, &token).await;
+    assert_eq!(status, 200, "{body}");
+    let (_, _, _, _, _, details) = sole_entry(&pool).await;
+    assert_eq!(details["audit_entries_erased"], 0);
+    assert!(details["erased_id_min"].is_null());
+    assert!(details["erased_id_max"].is_null());
+    assert_eq!(details["step_before"], 0);
+}
+
+// --- Tests 13 et 13b (15-7b2) -----------------------------------------------
+
+/// Test 13 (15-7b2, AC 2 ; R3-1 de la P3) — le prédicat de rejeu sur une
+/// **vraie** 1213, née d'un cycle de verrous InnoDB entre deux connexions hors
+/// du pool, et passée par `map_db_error` ⇒ vrai ; une attente expirée (1205)
+/// ⇒ faux ; `StepAlreadyCompleted`, `ResetForbidden`, `Db(NotFound)` ⇒ faux.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn is_seed_retryable_on_a_real_deadlock(pool: MySqlPool) {
+    use kesh_seed::{SeedAttemptError, is_seed_retryable};
+    use sqlx::Connection;
+    sqlx::raw_sql(
+        "CREATE TABLE reset_retry_probe (id INT PRIMARY KEY) ENGINE=InnoDB; \
+         INSERT INTO reset_retry_probe VALUES (1), (2);",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+    let opts = pool.connect_options();
+    let mut a = sqlx::MySqlConnection::connect_with(&opts).await.unwrap();
+    let mut b = sqlx::MySqlConnection::connect_with(&opts).await.unwrap();
+    let lock = "SELECT id FROM reset_retry_probe WHERE id = ? FOR UPDATE";
+    let mut ta = a.begin().await.unwrap();
+    let mut tb = b.begin().await.unwrap();
+    sqlx::query(lock).bind(1).fetch_one(&mut *ta).await.unwrap();
+    sqlx::query(lock).bind(2).fetch_one(&mut *tb).await.unwrap();
+    let (ra, rb) = tokio::join!(
+        sqlx::query(lock).bind(2).fetch_one(&mut *ta),
+        sqlx::query(lock).bind(1).fetch_one(&mut *tb),
+    );
+    let victim = match (ra, rb) {
+        (Err(e), Ok(_)) | (Ok(_), Err(e)) => e,
+        other => panic!("un cycle doit désigner exactement une victime : {other:?}"),
+    };
+    let deadlock = SeedAttemptError::Db(kesh_db::errors::map_db_error(victim));
+    assert!(is_seed_retryable(&deadlock), "1213 réelle : {deadlock:?}");
+    // Annulations explicites : une `Transaction` lâchée ne fait que mettre son
+    // ROLLBACK en file, et le verrou survivrait jusqu'au prochain usage de la
+    // connexion. Celle de la victime est déjà annulée par InnoDB.
+    let _ = ta.rollback().await;
+    let _ = tb.rollback().await;
+
+    let mut c = sqlx::MySqlConnection::connect_with(&opts).await.unwrap();
+    let mut tc = c.begin().await.unwrap();
+    sqlx::query(lock).bind(1).fetch_one(&mut *tc).await.unwrap();
+    let mut d = sqlx::MySqlConnection::connect_with(&opts).await.unwrap();
+    sqlx::query("SET SESSION innodb_lock_wait_timeout = 1")
+        .execute(&mut d)
+        .await
+        .unwrap();
+    let mut td = d.begin().await.unwrap();
+    let timeout = sqlx::query(lock)
+        .bind(1)
+        .fetch_one(&mut *td)
+        .await
+        .unwrap_err();
+    assert!(!is_seed_retryable(&SeedAttemptError::Db(
+        kesh_db::errors::map_db_error(timeout)
+    )));
+    assert!(!is_seed_retryable(&SeedAttemptError::StepAlreadyCompleted));
+    assert!(!is_seed_retryable(&SeedAttemptError::ResetForbidden));
+    assert!(!is_seed_retryable(&SeedAttemptError::Db(
+        kesh_db::errors::DbError::NotFound
+    )));
+}
+
+/// Test 13b (15-7b2, C-15-7b2-2) — le rejeu de `reset_demo` **lui-même**, de
+/// bout en bout : un déclencheur lève une 1213 à la première écriture
+/// d'`installation.reset`, et à elle seule (compteur en table MyISAM, que
+/// l'annulation n'efface pas). Le second essai aboutit : 200, une entrée, les
+/// tables vidées. Sans rejeu, la route rendrait 500.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reset_replays_a_deadlocked_attempt(pool: MySqlPool) {
+    let (app, token, _) = seeded_demo(&pool).await;
+    sqlx::raw_sql(
+        "CREATE TABLE t_15_7b2_once (n INT NOT NULL) ENGINE = MyISAM; \
+         INSERT INTO t_15_7b2_once VALUES (0); \
+         CREATE TRIGGER t_15_7b2_deadlock BEFORE INSERT ON audit_log FOR EACH ROW \
+         BEGIN IF NEW.action = 'installation.reset' \
+                   AND (SELECT n FROM t_15_7b2_once) = 0 THEN \
+           UPDATE t_15_7b2_once SET n = n + 1; \
+           SIGNAL SQLSTATE '40001' SET MYSQL_ERRNO = 1213, MESSAGE_TEXT = '15-7b2 deadlock'; \
+         END IF; END",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (status, body) = reset_with_flag(&app, &token).await;
+    assert_eq!(status, 200, "{body}");
+    let fired: i32 = sqlx::query_scalar("SELECT n FROM t_15_7b2_once")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(fired, 1, "le déclencheur a levé une 1213, une fois");
+    let (action, ..) = sole_entry(&pool).await;
+    assert_eq!(action, "installation.reset");
+    assert_eq!(table_counts(&pool).await["accounts"], 0);
+    assert_eq!(state_row(&pool).await.0, 0);
 }
