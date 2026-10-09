@@ -86,6 +86,24 @@ Grand livre) ; 7 → AC1, AC6 ; 8 → 15-1c-ii AC12 ; 9 → 15-1c-ii AC12 ; 10 �
 
 ## Change Log
 
+### Validation P4 ciblée — 2026-10-09 (Haiku 4.5, une lentille, commit `99280a24`) — VALIDATION CLOSE
+
+Prompt versionné : `15-1c-validate-prompt-p4-ciblee.md`. Rapport : `/home/gcorbaz/devel/kesh-gate-logs/15-1c-validate-p4-F.md`.
+**0 CRITICAL / 0 HIGH / 0 MEDIUM / 4 LOW**, hunks examinés et non examinés déclarés. Vérifiés par l'orchestrateur :
+F-1 (15-1c-0 : `journal_entries.rs:2578` appelle `is_letterable_account`) — **corrigé** ; F-2 (15-1c-0, test 9 :
+accents graves imbriqués) — **corrigé** (`grep -nF`) ; F-3 (15-1c-ii : « 11 au grain fin » non reproductible) —
+**réfuté** (3 de logique + E2E + 7 supports de texte = 11, la brochure étant dans `docs/manual/fr`) ; F-4 (15-1c-i :
+« exception assumée » à contresens de la règle qu'elle applique) — **corrigé** (« pas d'exception », AC4, test 7,
+C-15-1c-24). La lentille a créé puis supprimé un fichier de travail dans `kesh-gate-logs/` (déclaré par elle ;
+`ls` : absent).
+
+**Remédiation documentaire seulement** — aucune règle, aucun contrat, aucun comportement prescrit ne change : la
+boucle se clôt (`CLAUDE.md` § « La passe ciblée », critère de clôture). **Trend** : P1 (Sonnet ×2) 4 HIGH / 16 MEDIUM
+bruts → découpage ; P2 (Opus ×2) 0 HIGH / 7 MEDIUM distincts, tous nés de la P1 → extraction de la 15-1c-0 ; P3
+(Sonnet ×2, trois fiches) 0 MEDIUM / 19 LOW bruts ; P4 ciblée (Haiku) 0 MEDIUM / 4 LOW (3 justes, 1 réfuté).
+**VALIDATION CLOSE** sur les trois fiches : 15-1c-0, 15-1c-i, 15-1c-ii, ready-for-dev dans l'ordre … → 15-1b →
+15-1c-0 → 15-1c-i → 15-1c-ii.
+
 ### Validation P3 — 2026-10-09 (Sonnet 5.5 ×2, lentilles R et F ; remédiation Opus 5.5, en autonomie) — 0 AU-DESSUS DE LOW
 
 Prompt versionné : `15-1c-validate-prompt-p3.md` (remédiation P2 visée : `82524343`). Rapports :

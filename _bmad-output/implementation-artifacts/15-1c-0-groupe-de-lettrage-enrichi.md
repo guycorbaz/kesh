@@ -5,7 +5,8 @@
 ready-for-dev **après la livraison de la 15-1b** *(et donc de la 15-1b-0, des 15-1a2-0, -i, -ii)* — créée le
 2026-10-09 par extraction de la partie serveur de la 15-1c-i, à la remédiation de la validation P2 de la 15-1c
 (registre **C-15-1c-14**) ; sa **première** passe de validation a été tenue en **P3 de l'ensemble 15-1c** (avec la
-15-1c-i et la 15-1c-ii : 0 au-dessus de LOW, LOW appliqués) ; **passe ciblée de fin de boucle due**.
+15-1c-i et la 15-1c-ii : 0 au-dessus de LOW, LOW appliqués), puis la P4 ciblée (Haiku : 0 au-dessus de
+LOW, LOW appliqués) — **VALIDATION CLOSE**.
 
 ⛔ **Ordre** : **15-12a → 15-12b → 15-1a-i → 15-1a-ii → 15-1a2-0 → 15-1a2-i → 15-1a2-ii → 15-1b-0 → 15-1b →
 15-1c-0 → 15-1c-i → 15-1c-ii**. Sur la base `f9b6b199`, seules la 15-1a-i et la 15-1a-ii sont livrées : **rien de
@@ -94,7 +95,7 @@ de savoir si « Délettrer » aboutira. Elle gagne, **pour le seul `GET`**, par 
   `first_document_owner` (15-1b-0 D3), lu sur le même lot.
 - `accountNumber`, `accountName` : le compte du groupe, lus **ensemble** par une requête propre à la lecture
   détaillée (`SELECT number, name FROM accounts WHERE id = ? AND company_id = ?`) — validation P3, R L-2 = F-5 :
-  `letterable_account` (publique, appelée aussi par `is_letterable_account` et `journal_entries.rs`) et
+  `letterable_account` (publique, appelée aussi par `is_letterable_account`, que `journal_entries.rs` appelle) et
   `group_account_number` ne lisent pas le nom et restent **inchangées**.
 - **Une transaction de lecture** (validation P3, F-2) : la lecture détaillée ouvre elle-même une transaction
   (`conn.begin()`, lectures, `rollback`) où se lisent les lignes, le compte, les noms d'exercice, `document_owners`
@@ -219,8 +220,8 @@ dépôt ; `kesh-api`, binaire des routes du lettrage — noms relevés au T0)* :
    inexistant, indiscernables ; clé d'API en lecture et rôle Consultation admis.
 9. AC16, AC18 — contrôles documentaires exécutés, sortie au Dev Agent Record :
    `grep -n "manualDissolutionBlockedBy" docs/api-external.md CHANGELOG.md` (présent aux deux),
-   le paragraphe du `GET` relu en entier — `grep -n '^\*\*`GET /api/v1/letterings/{key}`' docs/api-external.md`
-   puis `sed -n` de ce paragraphe — et il ne dit plus « même forme » (validation P3, R L-10 : le motif a trois
+   le paragraphe du `GET` relu en entier — repéré par `grep -nF 'GET /api/v1/letterings/{key}' docs/api-external.md`
+   (chaîne fixe ; retenir la ligne qui ouvre le paragraphe) puis `sed -n` de ce paragraphe — et il ne dit plus « même forme » (validation P3, R L-10 : le motif a trois
    occurrences dans le fichier, une seule visée) ; ligne v0.13.0 du README relue.
 
 *Tests existants à relire* : l'inventaire du T0 (tout test de la dissolution, de la 15-1a-i, de la 15-1a-ii, des
@@ -274,3 +275,11 @@ Prompt `15-1c-validate-prompt-p3.md` ; rapports `/home/gcorbaz/devel/kesh-gate-l
 **R : 0 MEDIUM / 10 LOW ; F : 0 MEDIUM / 9 LOW** — aucun MEDIUM+ ; les « 0 » vérifiés par l'orchestrateur (axes
 déclarés exercés par les deux lentilles, recoupés au code : séquence de `dissolve_group_in_tx`, statuts des refus,
 `colspan`, sites du manuel). LOW appliqués ici : R L-1 (deux pièces partagées nommées, une par crate ; unicité du code prouvée par grep), R L-2 = F-5 (nom du compte par une requête propre), R L-3 (constante SQL et `struct` de ligne propres ; `find_group` inchangée), F-2 (transaction de lecture — C-15-1c-26), F-6 (composition, pas de `flatten`), R L-10 (contrôle documentaire restreint au paragraphe du `GET`), F-8 (Status : première passe tenue en P3 de l'ensemble). Bilan complet : Change Log de l'index. Recompté : **3** critères, **5** tâches, **9** tests.
+
+### Validation P4 ciblée — 2026-10-09 (Haiku 4.5, une lentille, commit `99280a24`) — VALIDATION CLOSE
+
+Prompt `15-1c-validate-prompt-p4-ciblee.md` ; rapport `/home/gcorbaz/devel/kesh-gate-logs/15-1c-validate-p4-F.md`.
+**0 MEDIUM / 4 LOW**, vérifiés par l'orchestrateur. Appliqués ici : F-1 (`journal_entries.rs` appelle
+`is_letterable_account`, non `letterable_account` — `grep -n` → `journal_entries.rs:2578`), F-2 (commande du test 9
+réécrite en `grep -nF`, sans accents graves imbriqués). Remédiation documentaire, aucune règle ni contrat changé : la
+boucle se clôt (`CLAUDE.md` § « La passe ciblée »).

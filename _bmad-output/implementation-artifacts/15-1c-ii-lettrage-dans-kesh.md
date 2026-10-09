@@ -3,8 +3,8 @@
 ## Status
 
 ready-for-dev **après la livraison de la 15-1c-i** — créée le 2026-10-09 par le découpage de la 15-1c à la
-remédiation de sa validation P1 (registre **C-15-1c-1**) ; validation P2 remédiée le 2026-10-09 ; **validation P3
-due** (passe complète, avec la 15-1c-0 et la 15-1c-i).
+remédiation de sa validation P1 (registre **C-15-1c-1**) ; validation P2 remédiée le 2026-10-09 ;
+**VALIDATION CLOSE** (P3 Sonnet ×2 : 0 au-dessus de LOW ; P4 ciblée Haiku : 0 au-dessus de LOW, LOW appliqués).
 
 ⛔ **Ordre** : **… → 15-1b-0 → 15-1b → 15-1c-0 → 15-1c-i → 15-1c-ii**. Cette story suppose la 15-1c-i mergée : l'écran
 `/open-items`, l'état d'URL `?group=` (cible de tous les liens ci-dessous), le champ `letterable` du type
@@ -292,3 +292,10 @@ Prompt `15-1c-validate-prompt-p3.md` ; rapports `/home/gcorbaz/devel/kesh-gate-l
 **R : 0 MEDIUM / 10 LOW ; F : 0 MEDIUM / 9 LOW** — aucun MEDIUM+ ; les « 0 » vérifiés par l'orchestrateur (axes
 déclarés exercés par les deux lentilles, recoupés au code : séquence de `dissolve_group_in_tx`, statuts des refus,
 `colspan`, sites du manuel). LOW appliqués ici : R L-5 = F-1 (pied *Total* de la fiche d'écriture), R L-4 (scénarios 7 à 9 indépendants), R L-6 = F-9 (30 sites, dont 5 du manuel d'administration ; « trois de logique et l'E2E »), R L-7 (preuve négative élargie), F-7 (garde `i18n-entrees-a-variables`). Bilan complet : Change Log de l'index. Recompté : **6** critères, **7** tâches, **6** tests.
+
+### Validation P4 ciblée — 2026-10-09 (Haiku 4.5, une lentille, commit `99280a24`) — VALIDATION CLOSE
+
+Rapport `/home/gcorbaz/devel/kesh-gate-logs/15-1c-validate-p4-F.md`. **0 MEDIUM / 4 LOW**, dont un sur cette fiche,
+**réfuté** : F-3 (« sept : 11 au grain fin » non reproductible) — l'énumération des Dev Notes compte trois modules de
+logique, l'E2E et sept supports de texte (`kesh-i18n`, `docs/manual/fr` — brochure comprise —, `api-external.md`,
+`CHANGELOG.md`, `README.md`, `website/`, `i18n-keys.test.ts`) : 3 + 1 + 7 = 11. Aucun changement.

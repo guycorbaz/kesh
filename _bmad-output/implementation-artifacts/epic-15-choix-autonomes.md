@@ -7276,7 +7276,7 @@ l'import (#458–#461).
 
 ## C-15-1c-24 — 15-1c-i (validation P3, F-3) : `LETTERING_CONCURRENT_CHANGE` vide aussi la sélection
 - **Contexte** : le serveur dit « réessayez » ; la règle « tout 404/409 vide la sélection » (C-15-1c-17) oblige l'utilisateur à la refaire.
-- **Retenu** : la sélection est effacée aussi pour ce code, exception écrite et motivée — le refus dit que des lignes ont changé sans dire lesquelles ; réessayer sur des montants retenus avant le changement pourrait lettrer un état que l'écran n'a pas montré.
+- **Retenu** : la sélection est effacée aussi pour ce code — **pas d'exception** à C-15-1c-17, écrit et motivé (validation P4 ciblée, F-4 : « exception assumée » se lisait à contresens) — le refus dit que des lignes ont changé sans dire lesquelles ; réessayer sur des montants retenus avant le changement pourrait lettrer un état que l'écran n'a pas montré.
 - **Écartées** : garder la sélection pour ce seul code (rouvre la liste de codes que C-15-1c-17 a fermée).
 - **Réversible** : oui.
 

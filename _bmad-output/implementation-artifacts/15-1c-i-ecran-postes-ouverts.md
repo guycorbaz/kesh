@@ -5,7 +5,7 @@
 ready-for-dev **après la livraison de la 15-1c-0** *(et donc de la 15-1b, de la 15-1b-0, des 15-1a2-0, -i, -ii)*
 — créée le 2026-10-09 par le découpage de la 15-1c à la remédiation de sa validation P1 (registre **C-15-1c-1**) ;
 sa partie serveur (AC15, AC16 et leurs tests) extraite en **15-1c-0** à la remédiation de la validation P2
-(**C-15-1c-14**) ; **validation P3 due** (passe complète, avec la 15-1c-0 et la 15-1c-ii).
+(**C-15-1c-14**) ; **VALIDATION CLOSE** (P3 Sonnet ×2 : 0 au-dessus de LOW ; P4 ciblée Haiku : 0 au-dessus de LOW, LOW appliqués).
 
 ⛔ **Ordre** : **15-12a → 15-12b → 15-1a-i → 15-1a-ii → 15-1a2-0 → 15-1a2-i → 15-1a2-ii → 15-1b-0 → 15-1b →
 15-1c-0 → 15-1c-i → 15-1c-ii**. Sur la base `f9b6b199`, seules la 15-1a-i et la 15-1a-ii sont livrées : **rien de
@@ -142,11 +142,11 @@ d'aujourd'hui**, le motif à la date étant `reason` (point 2).
   la somme affichée, faite sur les montants **retenus**, est nulle), ou être passée sous un verrou posé entre-temps.
   Donc, après l'affichage du message : la liste **et** les propositions se **rechargent**, et la sélection est
   **effacée** — pour **tout** 404 ou 409, sans liste de codes à tenir ; seuls les 400 de forme gardent la
-  sélection. ⚠️ **Exception assumée** pour `LETTERING_CONCURRENT_CHANGE` (« réessayez » ; validation P3, F-3) : la
-  sélection est effacée **aussi** — le refus dit que les lignes ont changé entre la lecture et l'écriture, sans dire
+  sélection. ⚠️ **Pas d'exception** pour `LETTERING_CONCURRENT_CHANGE`, bien que son message dise « réessayez »
+  (validation P3, F-3 ; validation P4, F-4) : la sélection est effacée comme pour tout 409 — le refus dit que les lignes ont changé entre la lecture et l'écriture, sans dire
   lesquelles ; « réessayer » sur des montants retenus avant le changement pourrait lettrer un état que l'écran n'a
-  pas montré. L'utilisateur reconstruit sa sélection sur la liste rechargée. Le 404 ne porte pas de message utile : l'écran affiche le sien (clé `open-items-*`) — « une ligne
-  sélectionnée n'existe plus : son écriture a été modifiée ou supprimée ».
+  pas montré. L'utilisateur reconstruit sa sélection sur la liste rechargée. Le 404 ne porte pas de message
+  utile : l'écran affiche le sien (clé `open-items-*`) — « une ligne sélectionnée n'existe plus : son écriture a été modifiée ou supprimée ».
 - **Après succès** (201) : la liste et les propositions se rechargent ; un message annonce le **code** du groupe,
   en lien vers lui (AC6).
 
@@ -335,7 +335,7 @@ serveur de l'ancienne numérotation 1 à 8 sont à la 15-1c-0)* :
    hors de la page (validation P3, R L-8).
 7. AC4 — refus : chaque code affiché par son message ; **un 409 de chaque code** et **un 404** → rechargement de la
    liste et des propositions, sélection vidée — dont `LETTERING_UNBALANCED` sur une sélection dont la somme
-   affichée est nulle, `LETTERING_CONCURRENT_CHANGE` (sélection effacée, exception assumée), et le 404 par le texte
+   affichée est nulle, `LETTERING_CONCURRENT_CHANGE` (sélection effacée, sans exception), et le 404 par le texte
    d'écran ; un 400 (`LETTERING_TOO_FEW_LINES`) → sélection gardée ;
    succès → rechargement et code annoncé en lien.
 8. AC5 — panneau : **aucun `POST` au montage ni au rendu** ; échec des propositions (422, autre) sans effet sur la
@@ -430,3 +430,9 @@ Prompt `15-1c-validate-prompt-p3.md` ; rapports `/home/gcorbaz/devel/kesh-gate-l
 **R : 0 MEDIUM / 10 LOW ; F : 0 MEDIUM / 9 LOW** — aucun MEDIUM+ ; les « 0 » vérifiés par l'orchestrateur (axes
 déclarés exercés par les deux lentilles, recoupés au code : séquence de `dissolve_group_in_tx`, statuts des refus,
 `colspan`, sites du manuel). LOW appliqués ici : F-3 (`LETTERING_CONCURRENT_CHANGE` vide aussi la sélection, exception assumée — C-15-1c-24), F-4 (numéro de la pièce d'un groupe `document` — C-15-1c-25), F-7 (garde `i18n-entrees-a-variables`), R L-8 (compteur, champ « Code », ordre du serveur testés ; `letteringOrigin` non lu), observation F (numéro de compte E2E ≤ 10 caractères). Bilan complet : Change Log de l'index. Recompté : **12** critères, **9** tâches, **12** tests.
+
+### Validation P4 ciblée — 2026-10-09 (Haiku 4.5, une lentille, commit `99280a24`) — VALIDATION CLOSE
+
+Rapport `/home/gcorbaz/devel/kesh-gate-logs/15-1c-validate-p4-F.md`. **0 MEDIUM / 4 LOW.** Appliqué ici : F-4 (« exception
+assumée » se lisait à contresens : `LETTERING_CONCURRENT_CHANGE` n'est **pas** une exception à « tout 409 vide la
+sélection » — reformulé à AC4, au test 7 et au registre C-15-1c-24). Le comportement prescrit ne change pas.
