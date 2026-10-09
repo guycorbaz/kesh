@@ -181,3 +181,9 @@ les tableaux).
   fille : 15-13a **1 MEDIUM** distinct (R4-1 = F1), 15-13b **4 MEDIUM** distincts (R4-2 = F-P4-1) ; 0
   CRITICAL/HIGH. Remédiation dans chaque fille (Change Log) ; choix C-15-13-21 à C-15-13-26. Ici : ligne
   « Inventaire » du recompte réduite aux totaux (R4-7).
+- 2026-10-09 — **Validation P5 de la 15-13b** (agent remédiateur, Opus 5.5). Deux lentilles **Opus 5.5** :
+  **2 MEDIUM** distincts (R5-1, né de la remédiation P4 ; F-P5-1, d'origine P1), 13 LOW (12 distincts : R5-3 = F-P5-8) ; 0 CRITICAL/HIGH.
+  Trend de la 15-13b : P4 4 → P5 2. Remédiation dans la fiche fille (Change Log) ; choix C-15-13-27 à
+  C-15-13-29. Ici : union des mutations des deux filles portée à **51** (M1 à M51 : la 15-13b ajoute M47 à
+  M51) ; la phrase « deux gestes » de `CHANGELOG.md:46` est **partagée** entre les deux filles (R5-5,
+  ventilation écrite dans la 15-13b seule).
