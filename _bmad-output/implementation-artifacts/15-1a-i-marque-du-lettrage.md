@@ -2,9 +2,8 @@
 
 ## Status
 
-ready-for-dev *(créée le 2026-10-09 au découpage de la 15-1a en validation P3 — C124 ; corps repris de
-`15-1a-socle-lettrage.md` (validations P1 et P2 remédiées, P3 remédiée ici) ; **validation P4 remédiée le
-2026-10-09 — passe P5 à lancer** avant tout développement ; prérequis : **15-12a**, puis de préférence 15-12b)*
+in-progress *(créée le 2026-10-09 au découpage de la 15-1a en validation P3 — C124 ; validation close en P5 ;
+développement ouvert le 2026-10-09 sur `dc4bc58b`, qui porte la 15-12a et la 15-12b)*
 
 ## Story
 
@@ -347,6 +346,14 @@ cause 5 d'AC3 non appliquée en mode `System`.
    ce même index : il attend si `k` tombe dans un trou tenu. Les deux gestes se gênent donc sur
    l'index, et non seulement sur les lignes — cf. « Interblocages résiduels », troisième puce.
 
+   ✅ **Constat T0 (2026-10-09, MariaDB 10.11.16 — C-15-1a-i-1) : la moitié « création » est DÉMENTIE.**
+   Pendant une dissolution tenue ouverte, l'`UPDATE … SET lettering_key = k` d'une création **n'attend
+   pas**, que `k` tombe après la plus grande clé ou dans le trou suivant la clé dissoute ; un `INSERT`
+   direct d'une ligne portant `k`, lui, attend (1205) — le trou est bien tenu, mais la mise à jour d'un
+   index secondaire ne s'y heurte pas. L'autre moitié (F3-5, insertion d'une ligne **ouverte** pendant la
+   dissolution de la plus petite clé) est **confirmée** : 1205 au bout de 3 s, sur une écriture sans
+   rapport.
+
    ⚠️ Plan à vérifier par `EXPLAIN` au développement : le parcours doit partir de la clé primaire
    des lignes (création) ou d'`idx_jel_lettering` (dissolution), faute de quoi le verrou d'une
    lecture jointe couvrirait les en-têtes de toute la société.
@@ -568,7 +575,9 @@ C125, L2, F3-5)* :
   vieux groupe), absorbée par le rejeu des deux côtés (toutes ces routes sont `Rejouee`) : écrite, non
   corrigée — et elle contredit le « local à une installation mono-société » de la limite F-11 du point 1,
   qui le dit désormais ;
-- avec **toute création de groupe**, le temps de la dissolution du groupe de **plus grande clé**
+- ~~avec **toute création de groupe**, le temps de la dissolution du groupe de **plus grande clé**~~
+  — ⛔ **démenti au T0** (C-15-1a-i-1) : l'`UPDATE` d'une création ne se heurte pas au trou tenu par la
+  dissolution ; le texte raisonné ci-dessous est gardé pour l'historique —
   *(validation P4 — F4-1 ; raisonné sur le moteur, non exécuté)* — et ce cas-là est **courant**, non
   rare : c'est le geste « j'annule le lettrage que je viens de poser ». La dissolution tient aussi le
   trou **qui suit** la dernière entrée de sa clé, ici `(Kmax, +∞)` jusqu'au supremum ; or une clé neuve
@@ -1146,6 +1155,48 @@ des gardes i18n ne bouge pour elles.
 ### File List
 
 ## Change Log
+
+### T0 — relevés au sol sur `dc4bc58b` — 2026-10-09 (Opus 5.5, agent de développement)
+
+**Prérequis constatés** : la **15-12a** est mergée (`LOCK_EARLIER_BY_ID_SQL`, `fiscal_years.rs:178` ;
+`DbError::EarlierFiscalYearOpen`, `:22`) ; la **15-12b** aussi (`find_later_closed`, `fiscal_years.rs:887`,
+lu sans verrou par le filet de `create_in_tx_inner`). Les deux autres stories citées (15-6b, 15-7a2,
+15-11b) ont déplacé des numéros, aucune règle.
+
+**Numéros relocalisés par le texte** (la fiche citait `5e4bec50`) : `LINE_COLUMNS` `journal_entries.rs:80 →
+:100` ; `list_all_lines_by_company` `:1824/:1828 → :1872/:1876` ; `reversal_blockers` `:1922 → :1970` ;
+`find_later_closed` `:678 → :887`, `FIND_LATER_CLOSED_SQL` `:668-671 → :869-872` ; `LIB_ROUTES`
+`audit_route_registry.rs:168 → :196` ; replis « facture créditée » `kesh-api/src/errors.rs:2966/:3495 →
+:3172/:3682` ; catalogue `fr-CH:783/:818 → :792/:827` ; `api-external.md:325/:386 → :328/:410`, catalogue des
+codes `:485 → §10 (:490-512)`, routes rejouées `:488 → :514` ; manuel : verrou de période `:578-583 →
+:566-584`, glossaire `:2323 → :2398`, « à lettrer » `:1171/:1711 → :1203/:1770` ; `CHANGELOG.md:74 → :88`
+(sous `[0.12.1]`, trié). Inchangés : `post_restore.rs:512-525`, `journal_entries_modification.rs:78/181/197/220`,
+`migrations_upgrade_path.rs:484/509/524`, `migrations_fresh_install.rs:230/244`, `csv_tables.rs:350/1687`.
+Recomptés : **six** fichiers citent `0.12.1` hors `Cargo.toml` (les six de la fiche, mentions historiques
+non réécrites) ; `0.10.0` dans `crates/*/tests` : les huit sites de la fiche ; migrations **75**,
+`tracked-by-sqlx` **67** (avant cette story) ; inventaire « à lettrer » : les sites de la fiche plus le
+`CHANGELOG.md:88` trié.
+
+**Mesures sur `kesh_151ai`** (migration de T1 appliquée ; 3000 écritures, 6000 lignes, 500 groupes ;
+`ANALYZE`) :
+- `EXPLAIN` de l'acte 1 de la **création** (`jel.id IN (3 ids)`) : `jel` par `PRIMARY` (`range`), `je` par
+  `PRIMARY` (`eq_ref`) — le parcours part de la clé primaire des lignes, comme R7 le demande ; idem avec 40
+  identifiants. De la **dissolution** (`jel.lettering_key = ?`) : `jel` par `idx_jel_lettering` (`ref`), `je`
+  par `PRIMARY` (`eq_ref`). ⚠️ **Sur tables vides** (avant le peuplement), le plan à 40 identifiants prenait
+  `je` par `idx_journal_entries_company_date` (`ref const`), qui verrouillerait tous les en-têtes de la
+  société : sur-verrouillage des seules bases minuscules (bases de test), sans effet sur l'exactitude — les
+  routes sont rejouées. Écrit, non corrigé.
+- **Verrous d'intervalle** (F4-1) : la moitié « création » est **démentie** (R7 corrigé, C-15-1a-i-1) ; F3-5
+  **confirmé**.
+- `1205` de la sonde `NOWAIT` : non relevé à la main, par consigne (mesuré par la 15-5d) ; le test d'ordre
+  d'acquisition l'exerce à travers `sonde_verrou_nowait` (la mutation « tri par `id` » le fait rendre `false`).
+
+**Écart de fond** : aucun — aucune règle, aucun critère ne change ; seul un cas d'interblocage résiduel,
+écrit et non corrigé, disparaît.
+
+**Registre de sprint** : clés `15-1a-i`, `15-1a-ii`, `15-1a2` et les trois `15-13*` ajoutées,
+`15-1a-socle-lettrage` passée à `split` (C-15-1a-i-5).
+
 
 ### Remédiation de la validation P4 — 2026-10-09 (Opus 5.5)
 

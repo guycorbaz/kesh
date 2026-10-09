@@ -5742,3 +5742,64 @@ l'import (#458–#461).
   les trois sites (test 1, tests 2 à 4).
 - **Écarté** : refactorer maintenant (code de production après une revue close) ; taire la duplication.
 - **Réversibilité** : totale.
+
+## C-15-1a-i-1 — 15-1a-i (T0) : le verrou d'intervalle « plus grande clé » est démenti par la mesure, le texte de R7 suit
+- **Contexte** : R7 (F4-1 de P4, « raisonné sur le moteur, non exécuté ») annonçait qu'une dissolution du
+  groupe de plus grande clé tenait le trou `(Kmax, +∞)` d'`idx_jel_lettering` et faisait attendre
+  l'`UPDATE` d'une création concurrente — cas d'interblocage résiduel « courant ». Mesure T0 sur
+  `kesh_151ai` (MariaDB 10.11.16, 6000 lignes, 500 groupes) : l'`UPDATE … SET lettering_key = 4000 …`
+  d'une création **n'attend pas** pendant la dissolution de la plus grande clé (ni pendant celle d'une clé
+  dont le trou suivant contient la nouvelle valeur) ; un `INSERT` direct d'une ligne portant la clé 4000,
+  lui, attend (1205) — le trou est tenu, mais la mise à jour d'un index secondaire ne s'y heurte pas.
+  Le cas F3-5 (insertion d'une ligne **ouverte** pendant la dissolution de la plus petite clé) est, lui,
+  **confirmé** (1205 au bout de 3 s, sur une écriture sans rapport).
+- **Retenu** : R7 de la fiche corrigé (puce F4-1 et paragraphe des verrous d'intervalle) — le cas
+  « création contre dissolution de la plus grande clé » n'est plus un cycle résiduel ; le reste de R7
+  inchangé. Les routes restent rejouées (aucune règle ni critère ne bouge).
+- **Écartées** : garder le texte raisonné « par prudence » — il décrivait un cycle que la mesure n'observe pas.
+- **Réversible** : oui (texte de fiche).
+
+## C-15-1a-i-2 — 15-1a-i (T3) : le plafond de 200 lignes est un refus de forme de la route, pas de la primitive
+- **Contexte** : AC6 fixe 200 lignes (400 `LETTERING_TOO_MANY_LINES`) ; AC3 ne le range dans aucun rang.
+- **Retenu** : variante `DbError::LetteringTooManyLines { max }` (pour réutiliser la correspondance d'erreurs
+  du dépôt), contrôlée par `letterings::check_manual_line_count` **dans le handler**, avant toute lecture
+  (et avant `LETTERING_TOO_FEW_LINES`). La primitive ne la contrôle pas : les appelants `System` (15-1a-ii,
+  15-1a2) ne doivent pas buter sur un plafond d'écran pour une pièce réglée en beaucoup de fois.
+- **Écartées** : un `AppError` dédié (une seconde famille de codes pour un seul refus) ; le contrôle dans
+  `check_line_ids` (il aurait borné le mode `System`).
+- **Réversible** : oui.
+
+## C-15-1a-i-3 — 15-1a-i (T3) : l'acte 1 lit aussi `je.entry_number` ; le rang 4 se lit après les verrous d'exercice
+- **Contexte** : R7 point 1 liste les colonnes de l'acte 1 sans `entry_number`, que la réponse et l'audit
+  exigent (AC6, AC10). Et l'ordre des **refus** (AC3) intercale des lectures en base (rangs 4, 4 bis, 5)
+  entre des contrôles purs, sans fixer l'ordre des **lectures**.
+- **Retenu** : `je.entry_number` ajouté à la lecture verrouillante (l'en-tête est déjà tenu, aucun verrou de
+  plus) ; séquence : acte 1 → rang 3 (pur) → en `Manual`, R7 point 2 (a)(b)(c) → rang 4 (lettrabilité,
+  lecture ordinaire) → borne et rang 4 bis → rang 5 → rangs 6 et 7 (purs). L'ordre des refus est celui
+  d'AC3 ; la lettrabilité est une des lectures ordinaires que R7 tolère après (a).
+- **Écartées** : une seconde lecture des en-têtes pour le numéro ; lire la lettrabilité avant (a) (elle
+  ouvrirait la vue `REPEATABLE READ` plus tôt, sans rien garantir de plus).
+- **Réversible** : oui.
+
+## C-15-1a-i-4 — 15-1a-i (T10) : le vocabulaire du lettrage en allemand, anglais et italien
+- **Contexte** : la fiche arrête les dix textes français ; les trois autres locales sont à écrire. Les
+  catalogues emploient déjà « Abgleich » / « match » / « riconciliazione » pour le **rapprochement
+  bancaire**, que le lettrage ne doit pas paraître désigner.
+- **Retenu** : de-CH **Ausgleich** (ausgleichen, Ausgleich aufheben — le « OP-Ausgleich » des comptables
+  suisses), en-CH **matching** (« matching group », match / unmatch), it-CH **abbinamento** (abbinare,
+  disabbinare — le terme que le catalogue italien employait déjà pour « à lettrer »). Libellés d'audit :
+  « Lettrage posé / retiré », « Ausgleich gesetzt / aufgehoben », « Matching set / removed »,
+  « Abbinamento posto / rimosso ».
+- **Écartées** : « Abgleich » et « reconciliation » (réservés au rapprochement bancaire) ; « lettering » en
+  anglais (calque du français, inconnu d'un lecteur anglophone).
+- **Réversible** : oui (textes de catalogue ; la 15-1c, qui fait l'écran, pourra les reprendre).
+
+## C-15-1a-i-5 — 15-1a-i (T0) : clés 15-13* ajoutées au registre de sprint de cette branche, statut relevé sur leurs branches
+- **Contexte** : consigne de l'orchestrateur — ajouter les clés 15-1*, 15-12*, 15-13* manquantes à
+  `sprint-status.yaml`. Les 15-12* y sont déjà ; manquent `15-1a-i`, `15-1a-ii`, `15-1a2`, et les trois
+  clés 15-13* (aucune fiche 15-13 sur `main` : elles vivent sur les branches `story/15-13*`).
+- **Retenu** : les six clés ajoutées ; les statuts 15-13* recopiés de leurs propres branches au
+  2026-10-09 (15-13 `split`, 15-13a `done`, 15-13b `review`), avec un commentaire disant que **leur
+  statut fait foi sur leur branche** — l'union au merge garde la valeur la plus récente.
+- **Écartées** : ne pas les ajouter (contraire à la consigne) ; inventer un statut propre.
+- **Réversible** : oui.
