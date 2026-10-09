@@ -6866,4 +6866,47 @@ l'import (#458–#461).
 - **B-7** : manuel et CHANGELOG : « le journal d'audit excepté, qui n'en retient que le numéro ».
 - **A7** : ligne de `repair_installation_in_tx` à la table des verrous de `MULTI-TENANT-SCOPING-PATTERNS.md` ; brochure PDF remise à sa version d'`origin/main` ; la réparation sort de la phrase des « routes à verbe mutant ».
 - **B-5, A2, A3, A4, A5, B-6, E2, E4, E5** : écrits au Dev Agent Record (journal des mutations, chemins non testés, décomptes, angles morts).
+## C-15-1b-1 — 15-1b (validation P1, R1/F-2, L5) : le refus d'un compte non lettrable est celui de la 15-1a-i, et vaut pour un compte devenu non lettrable
+- **Contexte** : la fiche écrivait `400 ACCOUNT_NOT_LETTERABLE` et « deux clés i18n » ; le socle livré porte déjà `DbError::LetteringAccountNotLetterable` → 409 `LETTERING_ACCOUNT_NOT_LETTERABLE`, clé présente dans les quatre locales. C104 laissait à la 15-1b ce qu'elle montre d'un compte retypé ou rattaché à un compte bancaire.
+- **Retenu** : réutiliser le 409 sur les deux routes de lecture ; une seule clé neuve (`error-lettering-proposals-too-many-lines`). Un compte **devenu** non lettrable rend le même 409 : ses groupes restent consultables par `GET /letterings/{key}` et dissolubles (C104), la vue ne sert que les comptes où l'on peut lettrer.
+- **Écartées** : un 400 propre à la lecture (second code pour le même refus) ; servir la vue d'un compte devenu non lettrable en lecture seule (une exception de plus à R4, sans usage nommé).
+- **Réversible** : oui jusqu'au tag v0.13.0.
+
+## C-15-1b-2 — 15-1b (validation P1, R4/F-4) : la propriété d'une écriture se lit par lot, d'une seule source
+- **Contexte** : `reversal_blockers` lit une écriture à la fois ; la vue (page de 500) et le filtre R5 des propositions (jusqu'à 2 000 lignes) en feraient un N+1 ou une seconde liste.
+- **Retenu** : `journal_entries::document_owners(executor, company_id, &[entry_id])`, une requête ensembliste découpée par 500, source unique des motifs de propriété (rangs 3 à 7) ; `reversal_blockers` et `first_document_owner` réécrits dessus ; la facture d'un règlement y est jointe. Test de parité avec l'ancien comportement. Gate complet à chaque passe (repository du socle).
+- **Écartées** : boucler sur `reversal_blockers` (N+1) ; une seconde requête de propriété propre à la vue (deux listes qui divergent — C-15-8-5).
+- **Réversible** : oui.
+
+## C-15-1b-3 — 15-1b (validation P1, R2/R6/F-3) : le motif d'une ligne ouverte est à X, l'état de sa pièce est d'aujourd'hui
+- **Contexte** : `partiallySettled` et `paidWithoutSettlementEntry` se calculaient sur l'état présent de la facture, présentés comme motif « à X » ; précédence implicite ; `letteringAfterAsOf` redondant.
+- **Retenu** : deux champs — `reason` (`unlettered` | `letteredAfterAsOf`, à X, depuis le seul grand livre) et `documentState` (`paidWithoutSettlementEntry` > `nothingDue` > `partiallySettled` > `unpaid`, aujourd'hui, factures client seules) avec `amountDue` par les constantes du reste dû ; `letteredOn` remplace `letteringAfterAsOf`. Sélection (requête A) sans pièce, enrichissement (requête B) sur la page.
+- **Écartées** : calculer le reste dû « à X » (forker `INVOICE_AMOUNT_DUE_DERIVED_SQL`, interdit depuis #416) ; réserver les motifs de pièce à `asOf` = aujourd'hui (l'écran de clôture perdrait l'information).
+- **Réversible** : oui jusqu'au tag v0.13.0.
+
+## C-15-1b-4 — 15-1b (validation P1, R3/R5/F-5/F-6) : les propositions — R7 filtrée, plafond après R5, contrat écrit
+- **Contexte** : le moteur proposait des paires que `POST /letterings` refuserait (`LETTERING_ALL_LINES_IN_CLOSED_PERIODS`) ; le plafond ne disait pas ce qu'il comptait ; aucun JSON.
+- **Retenu** : une paire tout entière hors période ouverte n'est pas proposée (prédicat pur partagé avec `any_line_in_open_period`, lu sans verrou) ; plafond de 2 000 sur les candidates **après** les filtres « ouverte » et R5 ; `limit` défaut 100, plafond 500 ; réponse `{accountId, candidateCount, total, limit, items[{amount, daysApart, reversalPair, debit, credit}]}` ; paires contre-passation/origine en tête.
+- **Écartées** : proposer et marquer `acceptable: false` (l'écran montrerait des paires inutilisables) ; plafond avant R5 (422 sur un compte sans candidate).
+- **Réversible** : oui jusqu'au tag v0.13.0.
+
+## C-15-1b-5 — 15-1b (validation P1, L6/F-13) : entrées de la route des postes ouverts
+- **Retenu** : `asOf` parsé comme `dateFrom` des écritures (400 `VALIDATION_ERROR`) ; défaut `Utc::now().naive_utc().date()`, convention de la balance âgée (l'écart UTC la nuit est hérité, non corrigé ici) ; aucune borne de date ; `limit` 50 par défaut, `clamp(1, 500)`, `offset.max(0)`, renvoyés dans la réponse comme `ListResponse`.
+- **Écartées** : date suisse (`chrono-tz` absent du dépôt — un changement transversal, pas propre à cette route) ; refuser un `asOf` futur (des écritures peuvent être datées dans le futur).
+- **Réversible** : oui.
+
+## C-15-1b-6 — 15-1b (validation P1, L8/F-11/F-12) : le code de lettrage au Grand livre, en JSON seulement
+- **Retenu** : `LedgerLine.lettering_code` sérialisé `letteringCode` ; CSV (colonnes écrites une à une) et PDF inchangés ; changement de contrat additif inscrit au CHANGELOG ; type TypeScript laissé à la 15-1c.
+- **Écartées** : colonne CSV/PDF (élargit le rapport sans demande nommée ; reprenable à la 15-1c).
+- **Réversible** : oui.
+
+## C-15-1b-7 — 15-1b (validation P1, R7/F-7) : `letterable` par une règle pure, en lot pour la liste
+- **Contexte** : `AccountResponse` se construit par `From<Account>` dans cinq handlers ; `is_letterable_account` fait une requête par compte.
+- **Retenu** : prédicat pur `is_letterable(account_type, bank_linked)` ; `letterable_account` et un lot `letterable_account_ids(conn, company_id)` l'appellent, avec la même expression SQL en constante ; `letterable: bool` dans les cinq réponses (lot pour la liste, requête unitaire ailleurs) ; `AccountResponse::new(account, letterable)`.
+- **Écartées** : appel unitaire par compte dans la liste (N+1) ; seconde implémentation SQL de R4 ; champ présent sur la liste seule (contrat variable selon la route).
+- **Réversible** : oui jusqu'au tag v0.13.0.
+
+## C-15-1b-8 — 15-1b (validation P1, L7/F-10) : les postes ouverts vivent dans `kesh-db`
+- **Retenu** : `letterings::open_items` en `kesh-db` — la lettrabilité et la propriété y vivent ; `kesh-report` n'est touché que pour `LedgerLine`.
+- **Écartées** : `kesh-report` (il devrait importer les deux règles de `kesh-db`, pour un « rapport » qui est une liste paginée).
 - **Réversible** : oui.
