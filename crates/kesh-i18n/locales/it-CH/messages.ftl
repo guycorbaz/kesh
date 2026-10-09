@@ -2308,6 +2308,7 @@ audit-log-action-company-created = Società creata
 audit-log-action-company-updated = Società aggiornata
 audit-log-action-email-template-updated = Modello di e-mail aggiornato
 audit-log-action-email-template-restored-default = Modello di e-mail ripristinato al predefinito
+audit-log-action-installation-demo-seeded = Dati dimostrativi caricati
 audit-log-action-installation-step-completed = Passo d'installazione completato
 audit-log-action-installation-ui-mode-changed = Modalità d'uso modificata
 audit-log-action-admin-full-export = Backup completo esportato

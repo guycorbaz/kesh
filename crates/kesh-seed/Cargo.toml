@@ -12,6 +12,8 @@ sqlx = { version = "0.8", features = ["runtime-tokio-rustls", "mysql"] }
 chrono = { version = "0.4" }
 tracing = "0.1"
 thiserror = "2"
+# Story 15-7b1 : détails de l'entrée d'audit `installation.demo_seeded`.
+serde_json = "1"
 # P7: needed for tokio::time::sleep in seed_demo retry loop. The "time" feature
 # keeps this minimal — runtime is provided by sqlx (runtime-tokio-rustls).
 tokio = { version = "1", default-features = false, features = ["time"] }

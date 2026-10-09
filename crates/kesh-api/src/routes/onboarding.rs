@@ -201,44 +201,49 @@ async fn mode_in_tx(
 }
 
 /// POST /api/v1/onboarding/seed-demo — step 2→3
+///
+/// Story 15-7b1 : la dernière transaction de `kesh_seed::seed_demo` lève le
+/// drapeau provisoire de la société (`clear_stub_in_tx`), franchit l'étape et
+/// écrit `installation.demo_seeded` puis `installation.step_completed`,
+/// attribuées à l'acteur (jeton d'API compris). La version et le mode
+/// d'affichage y sont relus **sous verrou**.
+///
+/// La pré-vérification **non verrouillée** de l'étape est conservée — à
+/// l'inverse des routes de la 15-7a2 : sans elle, le renommage de la société,
+/// le plan et l'exercice s'exécuteraient avant que la garde sous verrou ne
+/// refuse. Correspondance d'erreurs : `StepAlreadyCompleted` (étape franchie
+/// sous verrou, par `start-production`) ⇒ 400 ; comptes de rôle introuvables
+/// ⇒ 422 ; toute autre erreur ⇒ 500 (un 1213 épuisé compris).
 pub async fn seed_demo(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<OnboardingResponse>, AppError> {
     let current = get_or_init_state(&state).await?;
     if current.step_completed != 2 {
         return Err(AppError::OnboardingStepAlreadyCompleted);
     }
 
-    let ui_mode = current.ui_mode.unwrap_or(UiMode::Guided);
-
     // P11: surface actionable validation errors (chart de comptes mal configuré)
     // as 422 instead of 500 so the client can show a concrete remediation message.
-    kesh_seed::seed_demo(&state.pool, &state.config.locale, ui_mode, current.version)
-        .await
-        .map_err(|e| match e {
-            kesh_seed::SeedError::Db(kesh_db::errors::DbError::InactiveOrInvalidAccounts) => {
-                AppError::Validation(
-                    "Comptes par défaut introuvables (1100, 3000). \
-                     Vérifiez que le plan comptable a bien été chargé avant de relancer la démo."
-                        .into(),
-                )
-            }
-            other => AppError::Internal(format!("Seed demo failed: {other}")),
-        })?;
+    kesh_seed::seed_demo(
+        &state.pool,
+        &state.config.locale,
+        (current_user.user_id, current_user.api_key_id),
+    )
+    .await
+    .map_err(|e| match e {
+        kesh_seed::SeedError::StepAlreadyCompleted => AppError::OnboardingStepAlreadyCompleted,
+        kesh_seed::SeedError::Db(kesh_db::errors::DbError::InactiveOrInvalidAccounts) => {
+            AppError::Validation(
+                "Comptes par défaut introuvables (1100, 3000). \
+                 Vérifiez que le plan comptable a bien été chargé avant de relancer la démo."
+                    .into(),
+            )
+        }
+        other => AppError::Internal(format!("Seed demo failed: {other}")),
+    })?;
 
-    // seed_demo already calls insert_with_defaults internally (Story 2.6)
-    // to pre-fill invoice accounts with 1100 (receivable) and 3000 (revenue).
-
-    // Story v011-2 : le path demo n'atteint jamais `set_coordinates` (terminé
-    // à step 3), donc une company stub créée par le bootstrap resterait
-    // `is_stub = TRUE` indéfiniment. On la considère configurée pour la demo →
-    // clear `is_stub`. No-op si aucune company stub (mono-tenant).
-    sqlx::query("UPDATE companies SET is_stub = FALSE WHERE is_stub = TRUE")
-        .execute(&state.pool)
-        .await
-        .map_err(|e| AppError::Internal(format!("seed_demo clear is_stub: {e}")))?;
-
-    // seed_demo updates onboarding_state to step=3 via update_step — relire l'état
+    // seed_demo a franchi l'étape 3 dans sa dernière transaction — relire l'état.
     let updated = get_or_init_state(&state).await?;
     Ok(Json(response_with_stub(&state.pool, updated).await?))
 }
