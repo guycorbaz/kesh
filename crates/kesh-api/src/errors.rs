@@ -458,13 +458,25 @@ pub enum AppError {
     #[error("Échec génération export installation : {0}")]
     AdminFullExportFailed(String),
 
-    /// Story 17-3c — échec de l'**import** complet d'installation (panne DB
-    /// pendant le restore transactionnel, backup pré-import impossible, dataset
-    /// source sans aucun compte Admin). HTTP 500 ; sur échec transactionnel,
-    /// la destination reste intacte (rollback) + backup pré-import disponible.
+    /// Story 17-3c — échec de l'**import** complet d'installation **après**
+    /// l'écriture réussie de la sauvegarde pré-import (panne DB pendant le
+    /// restore transactionnel, rejeu des backfills, dataset source sans aucun
+    /// compte Admin, commit). HTTP 500 ; la destination reste intacte
+    /// (rollback) et la sauvegarde pré-import existe. Story 15-13b (#576) : un
+    /// échec **antérieur** à la sauvegarde rend `AdminPreImportBackupFailed`.
     /// Détail loggé, jamais exposé en HTTP body.
     #[error("Échec import installation : {0}")]
     AdminFullImportFailed(String),
+
+    /// Story 15-13b (#576) — échec de l'import d'installation **avant** que la
+    /// sauvegarde de sécurité soit sur disque : transaction, verrou, lecture du
+    /// schéma ou des données, création du dossier, écriture du fichier. Rien
+    /// n'a été supprimé et **aucune sauvegarde n'existe** : le message ne la
+    /// promet pas, et nomme les deux pistes (dossier de sauvegarde, base de
+    /// données). HTTP 500, code `ADMIN_PRE_IMPORT_BACKUP_FAILED`, clé
+    /// `error-admin-pre-import-backup-failed`. Détail loggé, jamais exposé.
+    #[error("Échec sauvegarde pré-import : {0}")]
+    AdminPreImportBackupFailed(String),
 
     /// Story 17-4b — échec d'envoi d'un email transactionnel via SMTP
     /// (connexion SMTP, auth, build du message, panne réseau). HTTP 500, i18n
@@ -1878,7 +1890,25 @@ impl IntoResponse for AppError {
                     "ADMIN_FULL_IMPORT_FAILED",
                     &t(
                         "error-admin-full-import-failed",
-                        "Échec de l'import de l'installation. L'état précédent a été préservé.",
+                        "Échec de l'import de l'installation. L'état précédent a été préservé ; \
+                         une sauvegarde de sécurité a été écrite avant l'opération.",
+                    ),
+                )
+            }
+
+            // Story 15-13b (#576) — échec antérieur à la sauvegarde pré-import.
+            AppError::AdminPreImportBackupFailed(detail) => {
+                tracing::error!("admin pre-import backup failed: {detail}");
+                build_response(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "ADMIN_PRE_IMPORT_BACKUP_FAILED",
+                    &t(
+                        "error-admin-pre-import-backup-failed",
+                        "L'import de l'installation a échoué avant ou pendant l'écriture de la \
+                         sauvegarde de sécurité : aucune sauvegarde n'a été créée et rien n'a été \
+                         supprimé. Vérifiez que le dossier de sauvegarde est inscriptible et que la \
+                         base de données est joignable (les journaux du serveur indiquent la cause), \
+                         puis réessayez.",
                     ),
                 )
             }
@@ -3822,6 +3852,108 @@ mod tests {
         let bytes = body.collect().await.expect("body collect").to_bytes();
         let json: serde_json::Value = serde_json::from_slice(&bytes).expect("body should be JSON");
         (parts.status, json)
+    }
+
+    /// Story 15-13b (#576, test 15) — l'échec antérieur à la sauvegarde rend
+    /// un 500 `ADMIN_PRE_IMPORT_BACKUP_FAILED` dont le repli (aucun catalogue
+    /// n'est chargé dans ces tests) ne promet aucune sauvegarde, dit qu'aucune
+    /// n'a été créée et nomme les deux pistes. Témoin : `AdminFullImportFailed`
+    /// garde son code et un repli différent.
+    #[tokio::test]
+    async fn pre_import_backup_failed_maps_to_500_without_promise() {
+        let resp =
+            AppError::AdminPreImportBackupFailed("détail-interne-xyz".into()).into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["error"]["code"], "ADMIN_PRE_IMPORT_BACKUP_FAILED");
+        let message = body["error"]["message"].as_str().unwrap().to_string();
+        assert!(
+            !message.contains("détail-interne-xyz"),
+            "détail exposé : {message}"
+        );
+        assert!(!message.contains("a été préservé"), "promesse : {message}");
+        for jeton in [
+            "aucune sauvegarde n'a été créée",
+            "dossier de sauvegarde",
+            "base de données",
+        ] {
+            assert!(message.contains(jeton), "« {jeton} » absent : {message}");
+        }
+        let resp = AppError::AdminFullImportFailed("d".into()).into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(body["error"]["code"], "ADMIN_FULL_IMPORT_FAILED");
+        assert_ne!(body["error"]["message"].as_str().unwrap(), message);
+    }
+
+    /// Story 15-13b (#576, test 16) — les quatre catalogues distinguent l'échec
+    /// antérieur à la sauvegarde. Chargés par `I18nBundle::load` sur un chemin
+    /// indépendant du répertoire courant, sans toucher au catalogue global.
+    #[test]
+    fn catalogues_distinguent_l_echec_de_sauvegarde() {
+        let dir =
+            std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../kesh-i18n/locales"));
+        let bundle = I18nBundle::load(dir).expect("catalogues");
+        // (locale, promesse interdite, négation exigée, pistes exigées)
+        let attendus = [
+            (
+                Locale::FrCh,
+                "un backup automatique a été créé avant l'opération",
+                "aucune sauvegarde n'a été créée",
+                ["dossier de sauvegarde", "base de données"],
+            ),
+            (
+                Locale::DeCh,
+                "vor dem Vorgang wurde automatisch ein Backup erstellt",
+                "Es wurde keine Sicherung erstellt",
+                ["Sicherungsordner", "Datenbank"],
+            ),
+            (
+                Locale::EnCh,
+                "an automatic backup was created before the operation",
+                "No backup was created",
+                ["backup folder", "database"],
+            ),
+            (
+                Locale::ItCh,
+                "prima dell'operazione è stato creato un backup automatico",
+                "Non è stato creato alcun backup",
+                ["cartella di backup", "database"],
+            ),
+        ];
+        let neuf_fr = bundle.format(&Locale::FrCh, "error-admin-pre-import-backup-failed", None);
+        for (locale, interdit, negation, pistes) in attendus {
+            let neuf = bundle.format(&locale, "error-admin-pre-import-backup-failed", None);
+            let ancien = bundle.format(&locale, "error-admin-full-import-failed", None);
+            // Assertion de montage : l'interdit est bien la promesse de l'ancien
+            // texte de SA locale — sinon il serait une coquille et le test
+            // passerait à vide.
+            assert!(
+                ancien.contains(interdit),
+                "{locale:?} : interdit absent de l'ancien texte"
+            );
+            assert_ne!(
+                neuf, ancien,
+                "{locale:?} : texte neuf = texte d'après sauvegarde"
+            );
+            if locale != Locale::FrCh {
+                assert_ne!(neuf, neuf_fr, "{locale:?} : retombé sur le français");
+            }
+            assert!(
+                !neuf.contains(interdit),
+                "{locale:?} : promesse reprise : {neuf}"
+            );
+            assert!(
+                neuf.contains(negation),
+                "{locale:?} : négation absente : {neuf}"
+            );
+            for piste in pistes {
+                assert!(
+                    neuf.contains(piste),
+                    "{locale:?} : piste « {piste} » absente : {neuf}"
+                );
+            }
+        }
     }
 
     #[tokio::test]
