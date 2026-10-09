@@ -1385,8 +1385,9 @@ retirer la lecture brute (`|| ecrit_dans(&l.texte)`) → `the_detector_sees_writ
 
 **Gate ciblé** (fichier de test seul, aucun code de production) : `cargo fmt --all -- --check` vert ;
 `cargo clippy --workspace --all-targets -- -D warnings` vert ; `cargo nextest run -p kesh-db --test
-letterings_lexical` 3/3. **Le dernier commit de code de production reste `8cda7041`** : gate complet de référence
-(8 threads) et E2E complet à y rejouer après le redémarrage de MariaDB (tmpfs saturé), avant la PR.
+letterings_lexical` 3/3. **Le dernier commit de code est désormais `acd19bd8`** (un fichier de test est du code, décision D7) : le
+gate complet de référence (8 threads) et l'E2E complet se rejouent sur lui, après le redémarrage de MariaDB
+(tmpfs saturé), avant la PR.
 
 **Boucle de revue close** : la remédiation de cette passe ciblée ne touche aucune ligne de code de production
 (CLAUDE.md § « La passe ciblée »). Trend : P1 (Sonnet ×3) 3 MEDIUM → P2 (Opus ×3) 2 MEDIUM, nés de P1 → P3 ciblée
