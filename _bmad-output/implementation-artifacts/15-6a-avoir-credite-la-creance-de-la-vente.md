@@ -2,7 +2,7 @@
 
 ## Status
 
-in-progress
+review
 
 <!-- Spécifiée le 2026-10-08 en autonomie (bmad-create-story), fille de la 15-6 découpée d'emblée
      (choix C-15-6-1). Choix propres : C-15-6-2 (révisé par C-15-6-7 et C-15-6-8). Validation P1
@@ -534,9 +534,9 @@ créance ni de l'arrondi.
   sous C54 l'ordre est une convention de fréquence, non une règle à laquelle l'AC6 se conformerait
   (finding R6-3 de la P6) ; recompter l'inventaire (§ *Inventaire*) par ses commandes — tout site
   neuf est résolu ici ou ajouté aux angles morts avec sa raison.
-- [ ] **T1 — Lecteurs** (AC1, AC4) dans `invoice_settlements.rs`, doc-comments compris.
-- [ ] **T2 — Remplacer les trois copies** (AC2) ; vérifier par le `grep --include='*.rs'` de l'AC2.
-- [ ] **T3 — Avoir** (AC3, AC4, AC5, AC6, AC7) dans `credit_notes.rs` : verrou en une instruction
+- [x] **T1 — Lecteurs** (AC1, AC4) dans `invoice_settlements.rs`, doc-comments compris.
+- [x] **T2 — Remplacer les trois copies** (AC2) ; vérifier par le `grep --include='*.rs'` de l'AC2.
+- [x] **T3 — Avoir** (AC3, AC4, AC5, AC6, AC7) dans `credit_notes.rs` : verrou en une instruction
   `ORDER BY id`, par le helper de verrou de liste partagé avec la 15-5d en mode
   `Share` (AC6 : tous les comptes écrits, 6 ter lue dans son résultat, ligne absente → `Invariant` ;
   `EXPLAIN` relevé) ; agrégation de la TVA extraite en fonction pure partagée par le générateur et le
@@ -546,14 +546,14 @@ créance ni de l'arrondi.
   `crates/kesh-api/src/errors.rs` et la clé `credit-note-account-archived` dans les **quatre**
   `messages.ftl` (AC6) ; doc-comments de `RoundingContext::Issuance`, de
   `generate_invoice_journal_lines_rounded` et de `create_credit_note` (ordre des locks).
-- [ ] **T4 — Tests** (§ *Tests*) — chaque test neuf **rougit d'abord** sur le code non corrigé, sauf
+- [x] **T4 — Tests** (§ *Tests*) — chaque test neuf **rougit d'abord** sur le code non corrigé, sauf
   ceux des lecteurs (4, 5, 8 : fonctions neuves), le témoin 10, écrit en premier, et les tests 17
   (identifiant étranger : une mesure, dont l'issue attendue est le rouge puis `owned_account_ids`,
   sauf si la 15-5d l'a déjà adopté — § *Tests*, 17) et 18 (bras d'une variante neuve). Aucun test de
   « non-interblocage » (C54, 15-5e AC4).
-- [ ] **T5 — Manuel + PDF** (AC8), **CHANGELOG** (AC9) ; `docs/api-external.md` vérifié sans objet
+- [x] **T5 — Manuel + PDF** (AC8), **CHANGELOG** (AC9) ; `docs/api-external.md` vérifié sans objet
   (AC9) ; ligne de l'avoir au Pattern 5 de `docs/MULTI-TENANT-SCOPING-PATTERNS.md` (AC9).
-- [ ] **T6 — Gates** : gate complet backend (règle `kesh-db` : un dépôt est touché, le ciblage est
+- [x] **T6 — Gates** : gate complet backend (règle `kesh-db` : un dépôt est touché, le ciblage est
   interdit **même en boucle de revue**), base remise à zéro avant ; frontend non touché ; E2E complet
   au dernier commit de code (décision D7 — la spec `frontend/tests/e2e/credit-notes.spec.ts` passe par
   cet avoir).
@@ -907,6 +907,8 @@ ligne et sa place (finding F6-5 de la P6) : `credit_note_uses_materialized_accou
 
 ### Agent Model Used
 
+Claude Opus 5.5 (développement en autonomie, 2026-10-09, worktree `kesh-15-6a`).
+
 ### Debug Log References
 
 ### Completion Notes List
@@ -970,7 +972,107 @@ ligne et sa place (finding F6-5 de la P6) : `credit_note_uses_materialized_accou
   s'ajoutent aux partenaires possibles du cycle (iv) (ils tiennent l'exercice sans la ligne des réglages) — liste
   déjà déclarée non exhaustive. Aucun autre site neuf ne relit créance, dette ou arrondi.
 
+**Développement (2026-10-09, sur `origin/main` `5e4bec50` ; commits `cc640ffb` T0 repris, `55143ec0` code et tests,
+`ef1e7b47` documentation).**
+
+- **T1** — `crates/kesh-db/src/repositories/invoice_settlements.rs` : `sale_receivable_account` (la requête exacte
+  des trois copies, `Option<i64>`) et `sale_rounding_account` (dernière ligne `ORDER BY jel.id DESC LIMIT 1`,
+  recoupée avec l'arrondi figé — toute autre forme → `Invariant`), doc-comments portant la règle, l'ordre des lignes,
+  la raison du recoupement et celle du refus de `usable_designated_account`.
+- **T2** — les trois copies remplacées (`settle_invoice`, `write_off_invoice`, `accept_one_invoice` — erreur SQL du
+  lecteur toujours en `DATABASE_ERROR`, `details.message` désormais dérivé d'un `DbError`). Critère de l'AC2 :
+  `grep -rn --include='*.rs' "jel.debit > 0" crates/` rend **deux** lignes, le lecteur
+  (`invoice_settlements.rs:548`) et la doc de `generate_invoice_journal_lines_rounded` (`invoices.rs:1892`).
+  Doc-comment de classement d'`accept_one_invoice` (15-5b) conservé, complété du nom du lecteur.
+- **T3** — `create_credit_note` : (3) ne lit plus `default_receivable_account_id` ; (3 bis) créance et arrondi lus
+  sur l'écriture de vente (`Invariant` sur `journal_entry_id` absent ou sans ligne de débit) ; (3 ter) **un** appel au
+  helper de la 15-5d (`lock_designated_accounts_in_tx`, partagé, `ORDER BY id`) sur créance, arrondi si ≠ 0, TVA due
+  si l'avoir en émet **et** si le réglage est posé, produits effectifs ; nombre de lignes ≠ ids dédoublonnés →
+  `Invariant` (« compte de l'avoir introuvable dans la société ») ; créance / arrondi / TVA due archivés →
+  `DbError::CreditNoteAccountsArchived` (ordre des ids) ; la 6 ter lit `active` et le numéro dans le résultat du
+  verrou (sa lecture simple et sa seconde requête de numéros supprimées ; code, message par ligne et place
+  inchangés) ; (7 bis) emploie l'id lu en (3 bis). Agrégation de TVA extraite (`credit_note_vat_by_rate`,
+  `credit_note_emits_vat`), employée par le générateur et par le calcul des ids — refus
+  `ConfigurationRequired("default_vat_payable_account_id")` resté au générateur. Variante, `error_code()`
+  (`ACCOUNT_ARCHIVED`), bras HTTP (factorisé avec `ReversalAccountsArchived` dans `archived_accounts_response`,
+  C-15-6a-3), clé `credit-note-account-archived` dans les quatre `messages.ftl`. Doc-comments : `create_credit_note`
+  (comptes de l'avoir, « Ordre des locks » renvoyant au doc-comment canonique de `validate_invoice` et au rejeu de la
+  route), `RoundingContext::Issuance` (ne cite plus l'avoir), `generate_invoice_journal_lines_rounded` (l'arrondi
+  reste la DERNIÈRE ligne), commentaire D5 « inverse exact », helper de la 15-5d (rendu `pub` avec
+  `LockedDesignatedAccount`, `DesignatedAccountsSnapshot` et l'accesseur `accounts()` — C-15-6a-2 —, l'avoir retiré
+  de « ce qui n'est pas contrôlé ici » au profit de ce qu'il contrôle). **Textes de la 15-5e** (doc-comment canonique,
+  « 5 bis », Pattern 5) : **rien** n'y décrivait l'ancien ordre de l'avoir ; Pattern 5 gagne une ligne pour
+  `POST /credit-notes`, par renvoi (C-15-6a-1).
+- **`EXPLAIN`** (base `kesh_156a`, MariaDB 10.11) de `SELECT id, number, active, postable FROM accounts FORCE INDEX
+  (PRIMARY) WHERE company_id = 1 AND id IN (2, 4, 5) ORDER BY id LOCK IN SHARE MODE` : `range` sur `PRIMARY`,
+  *Using where*, 3 lignes, **aucun `filesort`**. Identifiant étranger : test 17 **vert d'emblée** (patron
+  `owned_account_ids` déjà adopté par la 15-5d, C88).
+- **Critère DRY** (`grep -rnE "LOCK IN SHARE MODE|FOR UPDATE" crates/kesh-db/src`, lu sur les requêtes qui visent
+  `accounts`) : seule autre requête verrouillant une **liste** d'ids de comptes, l'exception écrite
+  `opening_complement.rs` (`create_opening_complement`) ; les autres verrouillent un compte unique
+  (`usable_designated_account`, contreparties de règlement, comptes bancaires) ou d'autres tables.
+- **T4 — tests** (périmètre : `5e4bec50` → `55143ec0`, recompté par `grep -c '#\[sqlx::test'` /
+  `#\[tokio::test\]` aux deux bornes) : **16 neufs** — `credit_notes_repository.rs` 9 → 17 (tests 1, 2, 3, 4, 11, 14,
+  16, 17), `invoices_validate_vat.rs` 41 → 45 (5, 6, 7, 8), `reconciliation_e2e.rs` 54 → 55 (10),
+  `invoice_echeancier_e2e.rs` 30 → 31 (12), `rejeu_interblocage_e2e.rs` 7 → 8 (15, placé là — C-15-6a-3),
+  `kesh-api/src/errors.rs` 22 → 23 (18) — et **2 modifiés** : 9 (`a_credit_note_is_refused_when_the_rounding_account_was_archived`,
+  assertion `CreditNoteAccountsArchived` nommant 6940, doc-comment réécrit sur le compteur) et 13
+  (`credit_note_is_exempt_from_the_guard` → `credit_note_credits_a_non_postable_sale_receivable`, change de sens).
+  - **Témoin 10 écrit et vert AVANT le remplacement** de la copie d'`accept_one_invoice`, vert après.
+  - **Rouges d'abord, constatés** sur l'avoir d'avant (le seul `credit_notes.rs` du dépôt restauré depuis `cc640ffb`,
+    le reste du correctif en place) : **11 rouges** — 1, 2, 3, 6, 7, 9, 11 (au délai de dix secondes
+    d'`attendre_une_requete_en_cours`, comme annoncé par R5-3), 12, 14, 15, 16. Verts sur les deux : 13 (ré-ancré,
+    non rouge-d'abord par construction) ; non concernés : 4, 5, 8 (lecteurs neufs), 10 (témoin), 17 (mesure, vert
+    d'emblée), 18 (bras neuf). Correctif restauré, fichier `touch`é.
+  - **Mutations jouées, constatées rouges, restaurées (`touch`)** : M1 enveloppe de rejeu retirée de la route →
+    test 15 rouge en **500 `INTERNAL_ERROR`** (au lieu de 201) ; M2 la TVA due retirée du refus nommé → test 16
+    rouge ; M4 lecteur d'arrondi sans recoupement → test 8 rouge ; M5 lecteur de créance en `ORDER BY jel.id DESC`
+    → tests 5 et `a_credit_note_mirrors_the_rounding` rouges. Non jouée : la suppression du contrôle « ligne absente »
+    (inatteignable par l'application, aucun test par décision de la fiche, F5-7).
+- **T5** — `user-manual.tex` : `:380` (l'avoir crédite la créance lue sur l'écriture ; seule la TVA due relue dans
+  les réglages), puce de `sec:avoirs` (pourquoi le solde revient à zéro ; limite connue de la TVA), `keshwarning`
+  neuf « Avoir refusé : compte débiteurs, d'arrondi ou de TVA archivé » (trois comptes, message cité, même
+  procédure, rôle *Créances clients* à retirer avant la réactivation, autre issue pour la TVA due, distinct du refus
+  par ligne et contrôlé d'abord), avertissement d'archivage `:364` étendu ; `admin-manual.tex` (*Compte de
+  différences d'arrondi*) : changer de compte ne déplace pas les factures émises. `:928`, `:847`/`:924` (« un avoir
+  le reprend et l'annule ») et la balance âgée relus, vrais, non réécrits (C-15-6a-3). PDF `admin` et `user`
+  régénérés (`make admin user`), contrôlés **aplatis** sur six fragments neufs du manuel utilisateur et un de
+  l'administrateur — tous trouvés ; « relit la créance » : 0 occurrence. CHANGELOG `[0.13.0]` : *Corrigé* (#473,
+  #523) et *Modifié* (contrat `ACCOUNT_ARCHIVED`) ; l'entrée de la 15-5d sur l'exemption de l'avoir réécrite.
+  `docs/api-external.md` : **vérifié sans objet** (`grep -n "ROUNDING_ACCOUNT\|credit-notes"` ne rend que la liste
+  des routes rejouées, `:488`, inchangée et vraie). Frontend : `grep -rn
+  "ROUNDING_ACCOUNT_NOT_CONFIGURED\|INACTIVE_OR_INVALID_ACCOUNTS\|ACCOUNT_ARCHIVED" frontend/src` — aucun site sur
+  le chemin de création d'avoir, comme relevé par la fiche.
+- **Propagation** : `default_receivable_account_id`, `rounding_account_for_write`, `Issuance`, `C35` et « avoir »
+  grepés sur `crates/` et `docs/*.md` : seuls résidus, légitimes — la validation (`invoices.rs:2153`, `Issuance`),
+  `vat_payable_account_for_write` (« le même refus que l'avoir pour un réglage absent », vrai de la TVA due).
+- **T6 — gates au dernier commit de code** (`55143ec0` ; `ef1e7b47` ne porte que documentation et PDF), bases
+  `kesh_156a` / `kesh_e2e_156a` remises à zéro (DROP/CREATE, migrations, seed) avant, après `wait-kesh.sh` :
+  - backend `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) : **2895 / 2895**, 4 ignorés (`main` :
+    2879 ; +16) ;
+  - frontend : `check` vert, `lint-i18n-ownership` PASS, `test:unit` **1091 / 1091** (112 fichiers), `build` vert —
+    frontend non touché ;
+  - E2E complet (backend `:3011`, secrets `openssl rand`, `smtpConfigured: true`, inbox/documents dans le
+    scratchpad) : **247 passés, 7 échoués, 19 ignorés** (10,1 min) ; les 7, fichier par fichier, sont les KF-029 de
+    `docs/testing.md` (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
+    `:77`, `:150`) ; `credit-notes.spec.ts` vert. Backend arrêté par son PID.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/invoice_settlements.rs` — lecteurs `sale_receivable_account`, `sale_rounding_account`
+- `crates/kesh-db/src/repositories/invoice_settlements_write.rs` — deux copies remplacées
+- `crates/kesh-api/src/routes/reconciliation.rs` — copie remplacée, doc-comment
+- `crates/kesh-db/src/repositories/credit_notes.rs` — avoir (3), (3 bis), (3 ter), 6 ter, (7 bis), agrégation de TVA
+- `crates/kesh-db/src/repositories/company_invoice_settings.rs` — helper de verrou public, accesseur
+- `crates/kesh-db/src/repositories/invoices.rs` — doc de `generate_invoice_journal_lines_rounded`
+- `crates/kesh-db/src/errors.rs` — `CreditNoteAccountsArchived`, `Issuance`
+- `crates/kesh-api/src/errors.rs` — bras HTTP factorisé, test 18
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` — `credit-note-account-archived`
+- `crates/kesh-db/tests/credit_notes_repository.rs`, `crates/kesh-db/tests/invoices_validate_vat.rs`,
+  `crates/kesh-api/tests/reconciliation_e2e.rs`, `crates/kesh-api/tests/invoice_echeancier_e2e.rs`,
+  `crates/kesh-api/tests/rejeu_interblocage_e2e.rs` — tests
+- `docs/manual/fr/user-manual.tex` / `.pdf`, `docs/manual/fr/admin-manual.tex` / `.pdf`, `CHANGELOG.md`,
+  `docs/MULTI-TENANT-SCOPING-PATTERNS.md`
 
 ## Change Log
 
@@ -1307,3 +1409,12 @@ ligne et sa place (finding F6-5 de la P6) : `credit_note_uses_materialized_accou
     `reconciliation.rs:1475-1501` ; doc `invoices.rs:1892`. La route de l'avoir et le Pattern 5 : inchangés
     depuis le 2026-10-08.
   **Aucun écart ne change une règle ou un AC sur le fond.** Statut `in-progress`.
+
+- 2026-10-09 — **Développement** (bmad-dev-story, en autonomie ; Dev Agent Record). T1–T6 faits. **Changements
+  délibérés d'assertion** : test 9 (`a_credit_note_is_refused_when_the_rounding_account_was_archived` :
+  `RoundingAccountNotConfigured { Issuance }` → `CreditNoteAccountsArchived` nommant 6940 ; le refus précède la
+  séquence, l'assertion du premier numéro fige l'ordre) ; test 13 (`credit_note_is_exempt_from_the_guard` →
+  `credit_note_credits_a_non_postable_sale_receivable`, **change de sens** : il fige que l'avoir crédite la créance de
+  la vente devenue non imputable, non plus l'exemption C35). 16 tests neufs, 2 modifiés ; 11 rouges d'abord constatés,
+  4 mutations rouges. Gates au commit de code `55143ec0` : backend 2895/2895, Vitest 1091/1091, E2E 247 / 7 KF-029.
+  Choix C-15-6a-2, C-15-6a-3. Statut `review`.

@@ -4402,3 +4402,26 @@ l'import (#458–#461).
 - **Écartées** : rendre le champ du newtype `pub` (permettrait de construire un faux instantané hors du verrou) ;
   un second type pour l'avoir (C-15-6-36) ; ajouter un mode à une seule valeur.
 - **Réversible** : oui (visibilité seule).
+
+## C-15-6a-3 — 15-6a (dev) : placement des tests, bras HTTP factorisé, passages du manuel laissés tels quels
+
+- **Contexte** : développement de la 15-6a (T1–T5). Plusieurs points laissés « au choix » ou non tranchés par la fiche.
+- **Retenu** : (1) **test 15** dans `crates/kesh-api/tests/rejeu_interblocage_e2e.rs` (la fiche laissait le choix avec
+  `invoice_echeancier_e2e.rs`) : le fichier porte déjà le harnais du patron (`transaction_lourde`, `victime`,
+  `CaptureRejeu`), ce qui évite une troisième copie et ajoute le témoin `exiger_un_rejeu("credit_notes::create")` ;
+  « premier numéro » vérifié par la séquence (un seul numéro tiré), non par la forme du numéro. (2) **Tests 4 et 17** :
+  seconde société par `INSERT INTO companies` direct (patron du test `foreign_account_is_never_locked_and_is_refused`
+  de la 15-5d), non par `companies::create` — le lecteur et le helper n'en lisent que l'identifiant. (3) **Test 10** :
+  montage léger prévu par la fiche (en-tête d'écriture sans ligne, même société), nom de la fiche gardé. (4) **Test 13**
+  renommé `credit_note_credits_a_non_postable_sale_receivable` et doté d'une assertion sur le compte crédité (sans
+  elle, il ne figeait rien de la 15-6a). (5) **Bras HTTP** : `ReversalAccountsArchived` et `CreditNoteAccountsArchived`
+  partagent `archived_accounts_response(archived, clé, amorce du repli)` (DRY) — corps et statut inchangés pour la
+  contre-passation. (6) **Manuel** : `user-manual.tex:928` (« L'avoir n'est pas soumis à ce contrôle … même si sa
+  créance ou sa TVA due est devenue non imputable ») **reste vrai** — la créance de la vente non imputable est toujours
+  créditée — et n'est pas réécrit ; seule `:380` (« relit la créance … dans les réglages ») l'est. La balance âgée
+  (`:1846-1851`) et « un avoir le reprend et l'annule » restent vrais. (7) **CHANGELOG** : l'entrée de la 15-5d qui
+  annonçait « ce que corrigeront #473 et #525 » est réécrite dans la même version non publiée (0.13.0), pour ne pas
+  contredire l'entrée neuve.
+- **Écartées** : un fichier de test neuf pour le rejeu de l'avoir ; une `companies::create` complète pour un identifiant ;
+  dupliquer le bras HTTP ; réécrire `:928`.
+- **Réversible** : oui.
