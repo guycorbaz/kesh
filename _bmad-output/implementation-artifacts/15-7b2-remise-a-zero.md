@@ -455,8 +455,10 @@ api_key_id, …)` (posé par la 15-7b1), acteur threadé depuis `Extension(curre
 `reset`. La garde de source de la 15-7b1 (test 11) couvre `kesh-seed/src/lib.rs` entier.
 
 **8. Le registre des routes passe `reset` à `Traced`** (`audit_route_registry.rs:76`) ; partition
-**recomptée depuis la source** : sur la base de la 15-7b1 mergée, `traced` 104 → **105**, `exempt` 5 →
-**4** (les quatre de #435), `no_matter` **3**, total **112**. Le message « 1 route d'onboarding (#434,
+**recomptée depuis la source** : sur la base de la 15-7b1 mergée, `traced` 105 → **106**, `exempt` 5 →
+**4** (les quatre de #435), `no_matter` **2**, total **112** *(corrigé au T0 de la 15-7b1 : la 15-7a2 a
+livré 104 / 6 / 2 et non 103 / 6 / 3, la 15-7b1 laisse 105 / 5 / 2 — à recompter encore au T0 de cette
+fiche)*. Le message « 1 route d'onboarding (#434,
 15-7b2) » disparaît ; le message de l'assertion **`traced`** (`:469-475`) reçoit « plus la remise à zéro
 (15-7b2, #434) » (propagation de R2-6 de la P2 de la 15-7b1). ⚠️ *Recompter au merge.*
 
@@ -534,7 +536,7 @@ aplatis :
 
 | Site | Après la 15-7b1 | Après la 15-7b2 |
 |---|---|---|
-| `admin-manual.tex:1821` | « 104 des 112 routes » ; exceptions \#434 (la remise à zéro) et \#435 | « 105 des 112 routes » ; seule exception : les gestes de session (\#435), plus les trois routes « sans matière » (105 + 4 + 3 = 112) |
+| `admin-manual.tex:1948` (`:1821` avant la 15-7a2) | « 105 des 112 routes » ; exceptions \#434 (la remise à zéro) et \#435 | « 106 des 112 routes » ; seule exception : les gestes de session (\#435), plus les deux routes « sans matière » (106 + 4 + 2 = 112) — *recompte du T0 de la 15-7b1* |
 | `admin-manual.tex:1845-1860` (réserve OLICo) | « La réinitialisation des données de démonstration efface encore la table » | elle l'efface **et y inscrit son geste** (`installation.reset` : nombre et plage d'identifiants effacés) ; toujours réservée à l'administrateur et refusée après finalisation |
 | `admin-manual.tex:2004` | la remise à zéro (\#434) et les gestes de session (\#435) | seuls les gestes de session (\#435) |
 | `admin-manual.tex:691` (`KESH_PRODUCTION_RESET`, L-3 de la P4) | « Autorise le reset d'onboarding au-delà de l'étape 2 » | « Autorise la réinitialisation d'une **démonstration** au-delà de l'étape 2 — donc **toute** sortie de la démonstration, qui est à l'étape 3 (une installation de production ne l'est jamais) ; à poser le temps de la réinitialisation, puis à retirer, chaque fois suivie de `docker compose up -d` (`restart` ne relit pas `.env`) ; la réinitialisation vide alors **toutes** les données de la société » (valeurs `1`, `true`, `yes`, `on`, sans casse — `routes/onboarding.rs:45-53`). ⛔ **La mise en page des dix tableaux de `sec:env-vars` n'est plus à faire ici** : elle est **faite par la 15-11a, AC12 (j)** (C-15-7-54, qui révise C-15-7-52) ; la 15-11a merge avant cette story et ne touche ni le texte des titres `\paragraph{…}`, ni cette ligne. **Vérifier après rebase** que la cellule `KESH\_PRODUCTION\_RESET` se lit **entière** dans le PDF aplati (`pdftotext -layout` : la phrase réécrite ci-dessus, de « Autorise » à « données de la société », sans rognage), la ligne se relocalisant par le texte. La recette « poser la variable » suppose la **15-11a mergée** (C-15-7-51) |

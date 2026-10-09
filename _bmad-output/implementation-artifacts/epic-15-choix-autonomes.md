@@ -5577,3 +5577,10 @@ l'import (#458–#461).
 - **Retenu** : laissé à **#575**, dont le constat cite précisément ces deux sites ; la story 15-13a ne les touche pas. Le reste de B-L4 (`cd /opt/kesh` de la restauration) est traité : renvoi à `COMPOSE_DIR` du script de sauvegarde.
 - **Écartée** : corriger ici (double traitement d'une issue ouverte, et la section Synology de #575 demande une refonte plus large).
 - **Réversible** : oui.
+
+## C-15-7b1-1 — 15-7b1 (T0) : colonne `Rejeu` de `seed_demo` inchangée, bras `422` du handler conservé
+
+- **Contexte** : au T0 de la 15-7b1, deux points que la fiche ne tranche pas. (1) Le registre des routes porte une seconde colonne, `Rejeu` ; `seed_demo` y est `SansEcritureAuJournal`, et va désormais écrire au journal d'audit et rejouer sa dernière transaction sur 1213 — dans `kesh-seed`, pas dans le handler. (2) Le handler rend `422` sur `InactiveOrInvalidAccounts` ; la fiche dit « `StepAlreadyCompleted` ⇒ 400, toute autre erreur ⇒ 500 ».
+- **Retenu** : (1) `SansEcritureAuJournal` conservé, comme les neuf routes d'onboarding tracées par la 15-7a2 (C-15-7a2-4 : la colonne grave l'inventaire de l'AC1 de la 15-5e1, au sens du journal comptable) ; compteurs de la colonne inchangés ; le point (vi) du doc-comment du registre nomme `seed_demo` parmi les routes rejouées quand même, rejeu **dans `kesh-seed`**, que ni le volet (c) ni le (c bis) ne voient. (2) Le bras `422` est conservé tel quel ; seul s'ajoute `StepAlreadyCompleted ⇒ 400`, le repli `500` reste.
+- **Écarté** : classer `seed_demo` `Rejouee` (le volet (c) exige l'appel d'une enveloppe dans le corps du handler ; déplacer le rejeu dans le handler contredirait l'AC 1, qui le place autour de la dernière transaction de `kesh-seed`) ; retirer le bras `422` (changement de code de réponse non demandé).
+- **Réversible** : oui (une ligne du registre, un bras de `match`).

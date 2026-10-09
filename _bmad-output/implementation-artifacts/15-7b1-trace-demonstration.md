@@ -142,8 +142,10 @@ démonstration n'écrivent **pas** d'entrée par fait de domaine (C-15-7-4).
 le même acteur à `reset_demo`.
 
 **8. Le registre des routes passe `seed_demo` à `Traced`** (`audit_route_registry.rs:164`) ;
-partition **recomptée depuis la source** : sur la base de la 15-7a2 mergée, `traced` 103 → **104**,
-`exempt` 6 → **5** (`reset` et les quatre de #435), `no_matter` **3**, total **112**. Le message
+partition **recomptée depuis la source** : sur la base de la 15-7a2 mergée (`200f5e79`), `traced`
+104 → **105**, `exempt` 6 → **5** (`reset` et les quatre de #435), `no_matter` **2**, total **112**
+(T0 du développement : la fiche écrivait 103 → 104 et 3 « sans matière » ; la 15-7a2 a livré 104 / 6 / 2,
+recompté depuis `LIB_ROUTES`). Le message
 « 2 routes d'onboarding (#434, 15-7b1, 15-7b2) » (chaîne exacte écrite par la 15-7a2, AC 10 ; `:478`
 après elle) devient « 1 route d'onboarding (#434, 15-7b2) ». Le message de l'assertion **`traced`**
 (`:469-475`, qui énumère les contributions au total depuis la 15-7a2) reçoit « plus le peuplement de
@@ -196,7 +198,7 @@ aplatis :
 
 | Site | Après la 15-7a2 | Après la 15-7b1 |
 |---|---|---|
-| `admin-manual.tex:1821` | « 103 des 112 routes » ; exceptions \#434 (2) et \#435 (4), plus trois « sans matière » | « **104** des 112 routes » ; exceptions : la remise à zéro des données de démonstration (\#434) et les quatre gestes de session (\#435), plus les trois routes « sans matière » (104 + 5 + 3 = 112) |
+| `admin-manual.tex:1948` (T0 : était `:1821`) | « 104 des 112 routes » ; exceptions \#434 (2) et \#435 (4), plus deux « sans matière » (104 + 6 + 2) | « **105** des 112 routes » ; exceptions : la remise à zéro des données de démonstration (\#434) et les quatre gestes de session (\#435), plus les deux routes « sans matière » (105 + 5 + 2 = 112) |
 | `admin-manual.tex:2004` | « le peuplement de démonstration et la remise à zéro (\#434), et les gestes de session (\#435) » | « la remise à zéro des données de démonstration (\#434) et les gestes de session (\#435) » |
 | `user-manual.tex:2019-2023` | « Deux familles … le peuplement de démonstration et sa réinitialisation, et les gestes de session » | « Deux familles … la **réinitialisation** des données de démonstration, et les gestes de session » |
 | `user-manual.tex:2216` (glossaire) | « les deux familles d'opérations » | inchangé (toujours deux familles) — **relire** |
@@ -242,6 +244,8 @@ s'inscrit au journal d'audit, en une entrée de synthèse (#434).
 - **Dépendances vérifiées par défaut seulement** (F-6 de la P1) : `## [0.13.0]` (AC 12) et la cellule
   « 103 des 112 » de l'`admin-manual.tex:1821` (AC 11) n'existent qu'après la 15-7a2 ; la base actuelle
   porte encore « 87 des 105 ». **À re-contrôler au développement**, sur la base de la 15-7a2 mergée.
+  *(Re-contrôlé au T0 du développement, sur `200f5e79` : `## [0.13.0] — Non publié` existe ; le manuel
+  porte « 104 des 112 », `:1948` — cf. AC 8 et 11, corrigés.)*
 - **Tests existants qui changent de sens** : `onboarding_e2e.rs` (chemin `seed-demo`), tout test qui
   passe `onboarding_version` à `seed_demo` (`grep -rn "seed_demo(" crates`), `kesh-seed` lui-même ;
   `crates/kesh-api/tests/fiscal_years_e2e.rs` si un `COUNT(*)` global d'`audit_log` suit un
@@ -414,3 +418,33 @@ sinon le binaire muté) :
   remplace l'`UPDATE` dans la transaction de `seed_demo`) ; le constat est noté pour que le grep de
   fin de développement `grep -rnF "UPDATE companies SET is_stub = FALSE" crates/` ne rende plus que
   `companies.rs`. Recompte inchangé.
+- 2026-10-09 — **T0 du développement** : fiche relue contre le code de `200f5e79` (15-7a1 et 15-7a2
+  mergées). Écarts, **aucun ne change une règle ni un AC sur le fond** :
+  (a) **partition du registre recomptée depuis `LIB_ROUTES`** : la 15-7a2 a livré **104** `Traced` /
+  **6** `Exempt` / **2** `NoMatter` (= 112), et non 103 / 6 / 3 ; après cette story, **105 / 5 / 2**.
+  Corrigé à l'AC 8, à l'AC 11 (cellule du manuel d'administration : « 105 + 5 + 2 = 112 », « deux »
+  routes sans matière), aux Points de vigilance, dans `sprint-status.yaml` (15-7b1 et 15-7b2), dans
+  l'index `15-7-trace-onboarding.md` et dans la fiche sœur 15-7b2 (AC 8 : 105 → 106, `no_matter` 2 ;
+  cellule du manuel : 106 + 4 + 2) — symptôme grepé (`\b10[3456]\b`, `\b112\b`) ;
+  (b) **colonne `Rejeu` du registre, que la fiche ne nomme pas** : `seed_demo` reste
+  `SansEcritureAuJournal`, comme les neuf routes d'onboarding tracées par la 15-7a2 (la colonne grave
+  l'inventaire de l'AC1 de la 15-5e1, « journal » s'entendant du journal comptable — C-15-7a2-4) ; ses
+  compteurs (22 / 4 / 89) sont inchangés. Le point (vi) du doc-comment du registre, qui énumère les routes
+  `SansEcritureAuJournal` rejouées quand même, reçoit `seed_demo` (rejouée **dans `kesh-seed`**, hors de
+  `src/routes/` : ni le volet (c) ni le (c bis) ne la voient) — C-15-7b1-1 ;
+  (c) **le handler a un bras `422`** (`InactiveOrInvalidAccounts` ⇒ `AppError::Validation`) que l'AC 1
+  et T2 ne nomment pas (« toute autre erreur ⇒ 500 ») : **conservé** — la fiche n'en demande pas le
+  retrait, et le retirer changerait un code de réponse hors périmètre — C-15-7b1-1 ;
+  (d) renvois de ligne relocalisés par le texte : `seed_demo` du handler `routes/onboarding.rs:203-245`
+  (`UPDATE … is_stub` à `:236`) ; `finalize_inner` (réglages puis taux) ; `admin-manual.tex:1948`
+  (« 104 des 112 »), `:2131` (réserve OLICo), `:2376` (glossaire) ; `user-manual.tex:177-189`
+  (§ Chemin A), `:2131-2134` (« Deux familles »), `:2182-2196` (§ entrées de la configuration
+  initiale), `:2352` (glossaire) ; `MULTI-TENANT-SCOPING-PATTERNS.md:325` (ligne `seed_demo`), `:340-348`
+  (« Known Risk ») ; `vat_rates.rs:351-352` et `company_invoice_settings.rs` (`insert_with_defaults`,
+  `:879`) ; `fiscal_years.rs` `create_for_seed` (`:356`) ;
+  (e) **reçu E-2 de la revue de la 15-7a1** (Change Log précédent) : déjà au périmètre (AC 1 étape 2),
+  rien à ajouter ;
+  (f) primitives de la 15-7a2 vérifiées : `lock_state_at_step`, `complete_step`, `conclude_step` et
+  `company_select!` sont **privés au handler** (`AppError`) — `kesh-seed` emploie les primitives de
+  `kesh-db` que nomme la fiche (`onboarding::lock_state_in_tx`, `update_step_in_tx`,
+  `record_step_completed_in_tx`), non les helpers du handler.
