@@ -792,6 +792,24 @@ dernier commit de code `9aa1974d`, la remédiation P1 rebasée — D7) :
   aplati : « Compte créanciers », « Les avoirs ne sont pas soumis », « ne font pas partie du secret »,
   « une ligne laissée vide vaut une ligne absente » présents.
 
+**Intégration sur `ec745d0c`** (15-7a1, #567, mergée pendant la PR #570) — rebase sur `origin/main`
+`ec745d0c` : un seul conflit, au registre (entrées C-15-7-* et C-15-7a1-* de `main`, entrées C89–C99
+reportées par la branche), résolu par union, **aucun identifiant en double** (`uniq -d` vide) ;
+`sprint-status.yaml` et CHANGELOG fusionnés sans conflit (pas de collision de `last_updated` : `main`
+s'arrête au (23)) ; aucun conflit de code ; manuel non touché par `main`, PDF inchangé. Gates
+réellement exécutés sur l'état rebasé :
+- bases `kesh_1511b` et `kesh_e2e_1511b` remises à zéro (`DROP`/`CREATE`, 75 migrations, seed sur la
+  première ; aucun redémarrage du conteneur), puis **`scripts/test-fast.sh`** : **2912/2912, 4 ignorés**
+  (`target/gate-logs/15-11b-integ-ec745d0c-backend.log`) ; test lexical (L) vert.
+- **Frontend complet** : `check` 0 erreur (27 avertissements), `lint-i18n-ownership` PASS, `test:unit`
+  **1091/1091**, `build` vert.
+- **E2E complet** (même montage que la clôture : port 3004, secrets `openssl rand`, SMTP et répertoires
+  du worktree, `smtpConfigured: true`) : **245 passés, 9 échoués, 19 ignorés**, comparés fichier par
+  fichier à `docs/testing.md` : les 7 de la KF-029 (#97) et les 2 de la **KF-045 (#421)**
+  (`invoices.spec.ts:415` « historique des rappels affiché », `:439` « axe-core sans violations sur la
+  fiche » — `manual reminder failed: 422`), attendus **avant 12:00 UTC** : le run a tourné vers 01:00 UTC.
+  Zéro régression. Backend arrêté par son PID.
+
 ### File List
 
 - `crates/kesh-api/src/config.rs`
@@ -1011,3 +1029,6 @@ dernier commit de code `9aa1974d`, la remédiation P1 rebasée — D7) :
   conflit de code. Gates complets sur l'état rebasé (Dev Agent Record) : backend **2902/2902** (4 ignorés),
   Vitest **1091/1091**, E2E **247 / 7 KF-029**. Statut **done**. L'issue #550 est déjà fermée (par la
   15-11a) : la PR la référence (`refs #550`) sans la fermer.
+- 2026-10-09 — **Intégration sur `ec745d0c`** (15-7a1) : rebase, registre par union sans doublon, gates
+  complets rejoués — backend **2912/2912**, Vitest **1091/1091**, E2E **245 / 7 KF-029 + 2 KF-045** (run
+  avant 12:00 UTC). Détail au Dev Agent Record.

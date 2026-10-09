@@ -1,3 +1,4 @@
+# last_updated: 2026-10-09 (26) (15-11b intégrée sur ec745d0c (15-7a1) — registre par union ; gates sur l'état rebasé : backend 2912/2912, Vitest 1091/1091, E2E 245 / 7 KF-029 + 2 KF-045 avant 12:00 UTC)
 # last_updated: 2026-10-09 (25) (15-11b done — rebasée sur 5e4bec50 (15-5d) ; revue de code close : P1 Sonnet ×3 1 MEDIUM / 14 LOW → P2 ciblée Haiku 0 ; gates sur l'état rebasé : backend 2902/2902, Vitest 1091/1091, E2E 247 / 7 KF-029 ; choix C-15-11b-4)
 # last_updated: 2026-10-09 (24) (15-11b développée → review — env_nonempty seule lecture, test (L) lexical ; gates 2877/2877, E2E 247 / 7 KF-029 ; C-15-11b-1, C-15-11b-2)
 # last_updated: 2026-10-09 (23) (15-5d intégrée sur la 15-11a — rebase sur 8f9811d8, registre et last_updated par union, PDF régénérés ; gates sur l'état rebasé : backend 2879/2879, Vitest 1091/1091, E2E 247 / 7 KF-029 ; choix C-15-5d-8)
