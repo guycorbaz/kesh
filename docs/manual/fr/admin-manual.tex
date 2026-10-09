@@ -661,7 +661,7 @@ Ouvrir un navigateur sur \keshcommand{https://kesh.local} : sur une base vide sa
 Toute la configuration Kesh passe par des variables d'environnement, conformément à la philosophie \href{https://12factor.net/config}{Twelve-Factor App}.
 
 \begin{sloppypar}
-\textbf{Comment \keshpath{.env} atteint Kesh.} Docker Compose lit \keshpath{.env} pour remplir les \texttt{\$\{…\}} du fichier compose ; il ne le transmet pas au conteneur. \textbf{Seules les variables listées sous \texttt{environment:} du service \texttt{kesh-api} atteignent Kesh.} Les compose fournis les listent toutes, sauf \texttt{KESH\_STATIC\_DIR} et \texttt{KESH\_LOCALES\_DIR} (fixées par l'image Docker) et \texttt{KESH\_TEST\_MODE} (jamais en production). Une modification de \keshpath{.env} s'applique par \keshcommand{docker compose up -d}, \textbf{pas} par \keshcommand{docker compose restart}, qui redémarre le conteneur avec son environnement d'origine. Avec les compose fournis, une variable facultative que \keshpath{.env} ne pose pas, ou laisse vide, prend son défaut, sans avertissement ; seule exception, une ligne \texttt{KESH\_LOG\_FILE\_PATH=} laissée vide désactive le journal fichier.
+\textbf{Comment \keshpath{.env} atteint Kesh.} Docker Compose lit \keshpath{.env} pour remplir les \texttt{\$\{…\}} du fichier compose ; il ne le transmet pas au conteneur. \textbf{Seules les variables listées sous \texttt{environment:} du service \texttt{kesh-api} atteignent Kesh.} Les compose fournis les listent toutes, sauf \texttt{KESH\_STATIC\_DIR} et \texttt{KESH\_LOCALES\_DIR} (fixées par l'image Docker) et \texttt{KESH\_TEST\_MODE} (jamais en production). Une modification de \keshpath{.env} s'applique par \keshcommand{docker compose up -d}, \textbf{pas} par \keshcommand{docker compose restart}, qui redémarre le conteneur avec son environnement d'origine. Avec les compose fournis, une variable facultative que \keshpath{.env} ne pose pas, ou laisse vide, prend son défaut, sans avertissement. Plus généralement, une ligne laissée vide vaut une ligne absente, sauf, sous Docker, \texttt{KESH\_LOG\_FILE\_PATH} (vide = pas de journal fichier, absente = le défaut du compose ; hors Docker, vide et absente désactivent toutes deux le journal fichier) ; les espaces de tête et de fin sont ignorés.
 \end{sloppypar}
 
 \begin{sloppypar}
@@ -673,16 +673,16 @@ Les tableaux ci-dessous listent \textbf{toutes} les variables lues par
 \texttt{kesh-api} (référence : \texttt{crates/kesh-api/src/config.rs} et
 \texttt{main.rs}), par thème. Une valeur hors borne ou invalide déclenche un
 warning au démarrage et retombe sur le défaut ; les variables « obligatoires »
-font échouer le démarrage si absentes.
+font échouer le démarrage si absentes ou vides.
 \end{sloppypar}
 
-\paragraph{Obligatoires (démarrage refusé si absentes).}\mbox{}\\
+\paragraph{Obligatoires (démarrage refusé si absentes ou vides).}\mbox{}\\
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lX}
     \toprule
     \keshtableheader{Variable} & \keshtableheader{Description} \\
     \midrule
     DATABASE\_URL & URL de connexion MariaDB : \texttt{mysql://USER:PASS@}\allowbreak\texttt{HÔTE:PORT/BASE}. \\
-    KESH\_JWT\_SECRET & Secret HS256 des JWT. \textbf{$\geq$ 32 octets}. Générer : \keshcommand{openssl rand -hex 32}. Rejeté s'il contient \texttt{change-me} ou \texttt{GENERATE\_ME} (sans égard à la casse), ou s'il est un gabarit entre chevrons \texttt{<…>}. \\
+    KESH\_JWT\_SECRET & Secret HS256 des JWT. \textbf{$\geq$ 32 octets}. Générer : \keshcommand{openssl rand -hex 32}. Les espaces de tête et de fin ne font pas partie du secret et ne comptent pas dans les 32 octets. Rejeté s'il contient \texttt{change-me} ou \texttt{GENERATE\_ME} (sans égard à la casse), ou s'il est un gabarit entre chevrons \texttt{<…>}. \\
     \bottomrule
 \end{tabularx}
 
@@ -1340,7 +1340,7 @@ WARN config: KESH_COOKIE_SECURE=false -- cookies session emis SANS le
 
 \subsubsection{Valeurs acceptées et fail-fast}
 
-\keshpath{KESH\_COOKIE\_SECURE} accepte strictement \keshcommand{true} / \keshcommand{1} (par défaut, cookies Secure activés) ou \keshcommand{false} / \keshcommand{0} (cookies sans Secure). Toute autre valeur (\keshcommand{True}, \keshcommand{TRUE}, \keshcommand{yes}, \keshcommand{on}, espaces avant/après, etc.) refuse le démarrage avec un message d'erreur explicite. Ce parsing strict (cohérent avec \keshpath{KESH\_TEST\_MODE}) évite l'ambiguïté qui ferait croire qu'un override est actif alors qu'il ne l'est pas.
+\keshpath{KESH\_COOKIE\_SECURE} accepte strictement \keshcommand{true} / \keshcommand{1} (par défaut, cookies Secure activés) ou \keshcommand{false} / \keshcommand{0} (cookies sans Secure). Les espaces de tête et de fin sont ignorés ; toute autre valeur (\keshcommand{True}, \keshcommand{TRUE}, \keshcommand{yes}, \keshcommand{on}…) refuse le démarrage avec un message d'erreur explicite. Ce parsing strict (cohérent avec \keshpath{KESH\_TEST\_MODE}) évite l'ambiguïté qui ferait croire qu'un override est actif alors qu'il ne l'est pas.
 
 \subsection{Configuration de la company via l'onboarding}
 
@@ -1764,7 +1764,7 @@ Jusqu'à la 0.12, les compose fournis ne transmettaient pas à Kesh seize variab
 \textbf{Refus de démarrer} --- le message nomme la variable (\keshcommand{docker compose logs kesh-api}) :
 \begin{itemize}
     \item \texttt{KESH\_SMTP\_TLS} ou \texttt{KESH\_FEATURE\_FORGOT\_PASSWORD} d'une valeur autre que \texttt{true}/\texttt{false}/\texttt{1}/\texttt{0} (espaces de tête et de fin ignorés), sur les deux compose --- même sans le mot de passe oublié pour \texttt{KESH\_SMTP\_TLS} ;
-    \item \texttt{KESH\_COOKIE\_SECURE} d'une valeur autre que \texttt{true}/\texttt{false}/\texttt{1}/\texttt{0}, sur \keshpath{docker-compose.prod.yml}, où il était ignoré ;
+    \item \texttt{KESH\_COOKIE\_SECURE} d'une valeur autre que \texttt{true}/\texttt{false}/\texttt{1}/\texttt{0} (espaces de tête et de fin ignorés), sur \keshpath{docker-compose.prod.yml}, où il était ignoré ;
     \item \texttt{KESH\_FEATURE\_FORGOT\_PASSWORD=true} avec l'une des cinq \texttt{KESH\_SMTP\_HOST}/\texttt{\_USER}/\texttt{\_PASSWORD}/\texttt{\_FROM}, \texttt{KESH\_PUBLIC\_BASE\_URL} absente, un \texttt{KESH\_SMTP\_FROM} mal formé (« Nom <email> ») ou un \texttt{KESH\_SMTP\_HOST} au format \texttt{hôte:port} ;
     \item \texttt{KESH\_FEATURE\_FORGOT\_PASSWORD=true} avec une configuration SMTP complète dont le mailer ne se construit pas (adresse \texttt{KESH\_SMTP\_FROM} refusée, échec de l'initialisation STARTTLS) : « le build du mailer SMTP a échoué … abandon » (sans le mot de passe oublié, le même échec rend seulement l'envoi de factures indisponible) ;
     \item \texttt{KESH\_JWT\_SECRET} resté au placeholder du gabarit ou à une valeur entre chevrons ; \texttt{KESH\_ADMIN\_PASSWORD} décommenté sans remplacer le sien, ou recopié d'un exemple de ce manuel (\texttt{<mot de passe fort, …>}, \texttt{<nouveau-mdp-12+>}).

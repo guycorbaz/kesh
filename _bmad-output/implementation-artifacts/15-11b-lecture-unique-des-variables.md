@@ -1,6 +1,6 @@
 # Story 15.11b : Une seule fonction lit l'environnement — le vide vaut l'absence — et le test qui lit le code remplace la liste écrite à la main
 
-Status: ready-for-dev
+Status: done
 
 <!-- Créée le 2026-10-08 par l'agent de découpage, en autonomie (consignes de l'Epic 15), par découpage
      de la Story 15-11 après sa validation P3 (signal D5 levé deux fois, par recyclage — choix C77).
@@ -23,9 +23,10 @@ Status: ready-for-dev
    (C70). **Un seul `syn`** : la 15-11b réutilise cette ligne (union des features : `full`, `visit` au
    moins), et ajoute `proc-macro2` (feature `span-locations`). `Cargo.lock` repris de `main` puis régénéré
    par `cargo check -p kesh-api --tests`, jamais fusionné à la main.
-3. **Avant le tag v0.13.0** (souhaité) : sans elle, la 0.13.0 émettrait au démarrage les avertissements
-   « invalide » décrits par la 15-11a (§ *Le vide avant la 15-11b*) et écrirait la sauvegarde pré-import
-   dans `/app`. Non bloquant pour la sûreté (aucun refus de démarrer).
+3. **Avant le tag v0.13.0** (souhaité). Non bloquant pour la sûreté (aucun refus de démarrer). *(Alignement
+   sur le livré, T0 : la revue de code P1 de la 15-11a — C-15-11a-6 — a déjà supprimé les avertissements
+   « invalide » et la sauvegarde pré-import dans `/app` pour les sept variables qu'elle transmet en
+   `${NOM:-}` ; ce motif d'urgence ne vaut plus. Reste : le vide et le trim de toutes les autres.)*
 
 ## Story
 
@@ -45,10 +46,23 @@ arrive **vide**. Et une ligne laissée vide dans `.env` arrive vide **quelle que
 aujourd'hui sa règle : `opt_trimmed_env`, `parse_strict_bool`, `env_flag_enabled` et les variables
 d'administration traitent le vide comme absent ; `KESH_SMTP_PORT` avertit « invalide » puis prend 587,
 `KESH_ADMIN_BACKUP_DIR` prend un chemin **vide**, `KESH_LANG` passe `""` à `Locale::from`, `DATABASE_URL`
-vide échoue plus tard à la connexion. Une seule fonction, imposée par le test, règle la question une fois :
+vide échoue plus tard à la connexion. *(T0 : depuis C-15-11a-6, `KESH_SMTP_PORT`, `KESH_ADMIN_BACKUP_DIR`,
+`KESH_LANG` et les quatre autres numériques d'administration traitent déjà le vide comme absent ; restent
+`KESH_HOST`, `KESH_PORT`, `DATABASE_URL`, `KESH_JWT_SECRET`, `KESH_DOCUMENTS_DIR`, `KESH_INBOX_DIR`, les
+variables JWT, de session, de limitation, d'inbox et de journal, `KESH_STATIC_DIR`, `KESH_LOCALES_DIR`,
+`RUST_LOG`.)* Une seule fonction, imposée par le test, règle la question une fois :
 **vide = absent**, partout.
 
 ## Inventaire des sites de lecture — refait depuis le code le 2026-10-08
+
+> **Recompte du T0 (2026-10-09, `HEAD` = `b2b09f34`, sur `8f9811d8` qui porte la 15-11a)** : la 15-11a a
+> fait passer `KESH_ADMIN_BACKUP_DIR` et `KESH_LANG` de `env::var` à `opt_trimmed_env`. D'où : **34 sites**
+> (et non 36) — `config.rs` **30** (**24** lectures littérales dans `Config::from_env`, 4 dans
+> `LogConfig::from_env`, 2 des helpers), `main.rs` 2, `logging.rs` 1, `routes/onboarding.rs` 1 ; appels
+> `opt_trimmed_env("…")` **7** (et non 5) ; identifiant `env` en production **38** (`config.rs` **33**) ;
+> ensemble lu **41**, inchangé ; appels `env_nonempty` littéraux de `Config::from_env` après le T2 :
+> 24 + 7 = **31**, inchangé. Les chiffres du paragraphe suivant sont ceux d'avant la 15-11a, conservés
+> pour la trace.
 
 **36 sites de lecture** en production (`grep -cE 'env::var(_os)?\(' ` par fichier, hors items
 `#[cfg(test)]` — les huit de `kesh-db/src` sont tous dans des `mod tests`) : `config.rs` **32** (26 lectures
@@ -107,8 +121,8 @@ occurrences.
    **perdu** ; le contrat doc-commenté le dit (« avertissement émis par `tracing`, perdu s'il précède
    l'abonné ») ; le module journal, qui collecte ses avertissements pour les rejouer
    (`config.rs:1331-1334`), n'est **pas** étendu au non-UTF-8 (angle mort).
-   **Tous les lecteurs de production passent par elle** — inventaire fermé : les **35** autres sites
-   (`config.rs` 31 : 26 de `Config::from_env`, 4 de `LogConfig::from_env`, celui de `parse_strict_bool` ;
+   **Tous les lecteurs de production passent par elle** — inventaire fermé : les **33** autres sites
+   (`config.rs` 29 : 24 de `Config::from_env`, 4 de `LogConfig::from_env`, celui de `parse_strict_bool` ;
    `main.rs` 2 ; `logging.rs` 1 — `RUST_LOG`, par `EnvFilter::DEFAULT_ENV` — ; `routes/onboarding.rs` 1 —
    `env_flag_enabled`) —, **sans exception**. **Hors de `config.rs`, l'appel s'écrit par chemin qualifié,
    sans aucun `use` d'`env_nonempty`** (R-1 = F-2 de la P2) : `kesh_api::config::env_nonempty(…)` dans
@@ -119,7 +133,11 @@ occurrences.
    commencer à `env_nonempty` (AC3) : les entrées de la table n'en dépendent pas. Ainsi : le seul « vide signifiant », `KESH_LOG_FILE_PATH`, a dans le
    code le même sens que l'absence (pas de journal fichier, `LogConfig::from_raw` filtre déjà le vide — test
    `config.rs:2315`) ; sa distinction vit côté compose (15-11a, AC2 ii).
-   **Changements de comportement, à écrire au Dev Agent Record lecteur par lecteur** (relevé au T0) :
+   **Changements de comportement, à écrire au Dev Agent Record lecteur par lecteur** (relevé au T0 —
+   *pour `KESH_SMTP_PORT`, les quatre numériques d'administration, `KESH_ADMIN_BACKUP_DIR` et `KESH_LANG`,
+   l'« avant » du vide est désormais « défaut sans avertissement » (C-15-11a-6) : la 15-11b n'y change plus
+   que le trim d'une valeur non blanche des cinq numériques — `KESH_LANG` et `KESH_ADMIN_BACKUP_DIR` sont
+   déjà trimées*) :
    pour chaque variable, ce que produisait une valeur vide (ou à bords blancs) avant et ce qu'elle produit
    après — la table nomme **au moins** : `RUST_LOG=""` (avant : erreurs seules — `EnvFilter::new("")` ne
    pose aucune directive et garde le défaut `ERROR` — `tracing-subscriber` 0.3.23 : `EnvFilter::new` vaut
@@ -172,7 +190,24 @@ occurrences.
    avertissement capté** (avant : un avertissement) ; `KESH_LANG=""` → `Locale::FrCh` **et zéro
    avertissement capté** (avant : l'avertissement de `kesh_i18n`, `Locale::from`). Les deux derniers ne
    discriminent **que par la capture** — la valeur est la même avant et après.
-   **Comment « sans avertissement » s'asserte** (F6) : une **capture `tracing` locale** dans le module de
+   **⚠️ Alignement sur le livré (T0)** : `KESH_ADMIN_BACKUP_DIR=""`, `KESH_SMTP_PORT=""` et `KESH_LANG=""`
+   **ne discriminent plus** — la 15-11a (C-15-11a-6) les rend déjà au défaut sans avertissement, et son
+   test `from_env_empty_or_blank_vars_take_code_default_silently` le vérifie (gardé tel quel, vert avant et
+   après). Ils sont **remplacés** par des cas qui discriminent sur `HEAD` (relevés au code) :
+   `KESH_INBOX_DIR=""` → `/data/inbox` (avant `""`) ; `KESH_PASSWORD_MIN_LENGTH=" 14 "` → 14 (avant :
+   avertissement « invalide » puis 12 — le trim d'une valeur **non blanche**, que la 15-11a ne fait pas) ;
+   `KESH_SMTP_PORT=" 2525 "` → 2525 **et zéro avertissement capté nommant `KESH_SMTP_PORT`** (avant :
+   avertissement puis 587) ; `KESH_COOKIE_SECURE="   "` → `true` (avant : `InvalidCookieSecureValue`) ;
+   `KESH_LOG_FILE_ROTATION=""` par `LogConfig::from_env` → aucun avertissement collecté (avant : un
+   avertissement « invalide »). Restent : `KESH_HOST`, `KESH_JWT_SECRET`, `DATABASE_URL`, `KESH_PORT`
+   (trim), `KESH_DOCUMENTS_DIR`.
+   **Comment « sans avertissement » s'asserte** (F6) — *T0 : la 15-11a a déjà posé dans le module de
+   test de `config.rs` une capture locale, `from_env_with_logs()` (abonné `fmt` écrivant dans un tampon,
+   installé par `tracing::subscriber::with_default` pour l'appel), avec son témoin
+   `from_env_non_empty_invalid_values_still_warn` (`KESH_SMTP_PORT="abc"` → un avertissement nommant la
+   variable). Elle est **réutilisée** (DRY) au lieu de la couche décrite ci-dessous ; les assertions sont
+   bornées au message nommant la variable (`KESH_SMTP_PORT`), et une assertion de montage vérifie que la
+   capture voit la ligne « Locale instance » (C-15-11b-1)* : une **capture `tracing` locale** dans le module de
    test de `config.rs`, sur le modèle de `crates/kesh-api/tests/common/capture_rejeu.rs` (15-5e1 — non
    importable depuis un test unitaire, le motif est reproduit en une vingtaine de lignes) : une couche
    `tracing_subscriber::Layer` qui compte les événements de niveau `WARN` (toutes cibles), installée par
@@ -190,7 +225,9 @@ occurrences.
    de la 15-11 ; R-2 de la P2 de la 15-11b) : il retire déjà les 22 noms que les tests existants posent
    (25 noms au total, vérifié le 2026-10-08) ; il n'y manque que **trois** variables, que les tests neufs
    posent ou dont ils assertent le défaut — `KESH_ADMIN_BACKUP_DIR`, `KESH_DOCUMENTS_DIR`,
-   `KESH_INBOX_DIR`. Contrôle, à refaire au T2 sur les tests écrits, qui voit aussi les `set_var(` écrits sur deux
+   `KESH_INBOX_DIR`. *(T0 : la 15-11a l'a porté à **28** noms, dont `KESH_ADMIN_BACKUP_DIR` ; manquent
+   `KESH_DOCUMENTS_DIR`, `KESH_INBOX_DIR`, et les quatre `KESH_LOG_FILE_*` que pose le test neuf de
+   `LogConfig::from_env`.)* Contrôle, à refaire au T2 sur les tests écrits, qui voit aussi les `set_var(` écrits sur deux
    lignes (R-7 = F7 — huit `env::set_var(\n "KESH_JWT_SECRET", …)`) :
    `grep -Pzo 'set_var\(\s*"\K[A-Z_]+' crates/kesh-api/src/config.rs | tr '\0' '\n' | sort -u`, comparé à
    sa liste.
@@ -202,7 +239,9 @@ occurrences.
    **Ce que le test affirme, et rien de plus** : il ne reconnaît **aucune forme d'appel** ; il relève
    **chaque occurrence** d'un jeton surveillé dans le flux de jetons du code de production et exige qu'elle
    figure, à son emplacement et sous sa forme, dans une liste fermée. **Faux rouge possible** (une ligne à
-   ajouter à la liste) ; **faux vert impossible pour le code du workspace** (F-6 de la P2) — toute lecture
+   ajouter à la liste) ; **faux vert impossible pour le code du workspace** (F-6 de la P2 ; *précisé en
+   revue de code P1 : pour toute lecture écrite dans `crates/*/src` par un jeton surveillé — `build.rs`,
+   `examples/` et `benches/` ne sont pas lus*) — toute lecture
    écrite dans `crates/*/src` passe par `std::env`, `dotenvy` ou une API de dépendance surveillée par un
    jeton (`EnvFilter`, `Builder`, `init`…). Une **dépendance qui lit l'environnement par son API interne**,
    sans qu'aucun jeton du workspace le trahisse, est un **angle mort écrit**, avec la liste connue et la
@@ -453,7 +492,7 @@ occurrences.
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Relevé** (AC1, AC2) : vérifier que la 15-11a et la 15-5e1 sont mergées (sinon : attendre et le
+- [x] **T0 — Relevé** (AC1, AC2) : vérifier que la 15-11a et la 15-5e1 sont mergées (sinon : attendre et le
   signaler) ; refaire les 36 sites, les indirections et la vue lexicale depuis `main` (dont : aucune autre
   fonction de production ne prend un nom de variable en argument — sinon, elle rejoint les jetons
   surveillés) ; pour chacun, ce que produit aujourd'hui une valeur vide (table « avant/après » de l'AC2) ;
@@ -464,14 +503,14 @@ occurrences.
   662, 1306`…) sont celles du dépôt **avant** le merge de la 15-11a, qui modifie `config.rs` et le manuel :
   elles se **relocalisent par le texte** au T0, depuis `main` à jour, et ne se suivent pas aveuglément (R-3,
   F-7 de la P2).
-- [ ] **T1 — Test d'abord, rouge** (AC3, AC2) : ajouter (L) lexical et le (F) du code, avec la liste
+- [x] **T1 — Test d'abord, rouge** (AC3, AC2) : ajouter (L) lexical et le (F) du code, avec la liste
   `EMPLACEMENTS_AUTORISES` **cible** (celle d'après le T2) et le jeton transitoire `opt_trimmed_env` ;
   dépendances `syn` (union) et `proc-macro2` (`span-locations`). **Asserter l'égalité de l'ensemble lu
   calculé et de `LUES`** (41 noms ; écart écrit), puis **retirer `LUES`** du test. Constater le **rouge
   attendu** — **exactement** ceci, et rien d'autre :
-  - **(L)** : les occurrences hors liste — les **39** `env` de lecture ou d'import (`config.rs` 35,
+  - **(L)** : les occurrences hors liste — les **37** `env` de lecture ou d'import (`config.rs` 33,
     `main.rs` 2, `logging.rs` 1, `routes/onboarding.rs` 1 ; le `temp_dir` d'`admin.rs` est couvert) et les
-    **6** `opt_trimmed_env` (définition et cinq appels) ; les **8** entrées qui portent sur `env_nonempty`
+    **8** `opt_trimmed_env` (définition et sept appels — T0) ; les **8** entrées qui portent sur `env_nonempty`
     (ses deux entrées propres, ses trois entrées `Littéral`, et les trois corps d'indirection
     `parse_strict_bool`, `init_tracing`, `env_flag_enabled` — 2 + 3 + 3 = 8), périmées. Les entrées
     `dotenvy`, `temp_dir`, les définitions d'indirection, l'appel `init_tracing` de `main`, les appels
@@ -486,21 +525,20 @@ occurrences.
   avant le T2. Écrire aussi, dans `config.rs`, les **tests « valeur vide » de l'AC2** et la mise à jour du
   test `:2501`, et les constater **rouges** un par un (le témoin de capture est **vert**). Sorties au Dev
   Agent Record.
-- [ ] **T2 — `env_nonempty` et bascule** (AC2) : la fonction (doc-comment sans jeton `KESH_` fictif), la
-  bascule des 35 sites, `opt_trimmed_env` retirée **et son jeton transitoire avec elle** — ⚠️ le
-  doc-comment `config.rs:1348-1363` qui précède `opt_trimmed_env` est celui d'`is_loopback_host`
-  (`:1413`, aujourd'hui sans doc) : le **replacer** sur `is_loopback_host`, ni le supprimer avec
-  `opt_trimmed_env` ni le laisser se recoller à l'élément suivant (R-8) ; `use std::env;` de production
+- [x] **T2 — `env_nonempty` et bascule** (AC2) : la fonction (doc-comment sans jeton `KESH_` fictif), la
+  bascule des 33 sites (T0 ; 35 avant la 15-11a), `opt_trimmed_env` retirée **et son jeton transitoire
+  avec elle** — ~~le doc-comment qui précède `opt_trimmed_env` est celui d'`is_loopback_host` (R-8)~~
+  **sans objet** (T0 : la 15-11a l'a déjà rattaché à sa fonction, C-15-11a-6) ; `use std::env;` de production
   retiré (le module de test reçoit le sien) ; commentaires `:838`, `:1028`, `:2195` mis à jour ;
   `reset_env()` complété des trois variables (AC2) ; appels qualifiés hors de `config.rs`, sans `use`
   (AC2) ; tests unitaires d'`env_nonempty`.
-- [ ] **T3 — Vert** : le test passe ; les tests « valeur vide » passent ; liste `EMPLACEMENTS_AUTORISES`
+- [x] **T3 — Vert** : le test passe ; les tests « valeur vide » passent ; liste `EMPLACEMENTS_AUTORISES`
   figée depuis le code (écarts aux fenêtres indicatives écrits) ; gate ciblé ; table « avant/après »
   remplie au Dev Agent Record.
-- [ ] **T4 — Mutations M1-M17** (AC4), une à une, restauration vérifiée par `git diff --stat` vide.
-- [ ] **T5 — Documentation** (AC5) : `.env.example`, manuel et PDF, CHANGELOG ; propagation (AC5 e) ; le
+- [x] **T4 — Mutations M1-M17** (AC4), une à une, restauration vérifiée par `git diff --stat` vide.
+- [x] **T5 — Documentation** (AC5) : `.env.example`, manuel et PDF, CHANGELOG ; propagation (AC5 e) ; le
   test reste vert après le T5 (aucun jeton fictif introduit).
-- [ ] **T6 — Gates** (AC6) et Dev Agent Record (décomptes recomptés depuis la source, avec leur périmètre).
+- [x] **T6 — Gates** (AC6) et Dev Agent Record (décomptes recomptés depuis la source, avec leur périmètre).
 
 ## Dev Notes
 
@@ -568,6 +606,13 @@ permet de la valider à part, sans retarder la correction de #550 dont dépend l
   aucune telle dépendance dans le workspace aujourd'hui.
 - Littéraux de chaîne d'octets (`b"…"`) et caractères : non retenus par (F).
 - **`include!`** et **`#[path]`** vers un fichier hors `crates/*/src` : non lus (aucun aujourd'hui).
+- **`build.rs`, `examples/`, `benches/`** : hors `crates/*/src`, non lus (revue de code P1, B4/E2) ; au
+  2026-10-09, aucun `build.rs`, et `kesh-db/examples/perishable_exemptions.rs`,
+  `kesh-payment/examples/gen_golden.rs`, `kesh-report/benches/export.rs` ne lisent aucune variable.
+- **Défaut appliqué au vide de `KESH_STATIC_DIR` et `KESH_LOCALES_DIR`** : (L) prouve leur passage par
+  `env_nonempty`, aucun test de comportement ne prouve le défaut — `main` ne les lit qu'après la connexion
+  à la base (revue de code P1, B3). Celui de `RUST_LOG` a son test (`rust_log_vide_vaut_info`, binaire
+  lancé).
 - **Avertissement non-UTF-8 perdu** pour les lecteurs qui précèdent l'abonné `tracing` (AC2).
 - **Module hors ligne `#[cfg(test)] mod x;`** : son fichier n'est pas exclu (faux rouge possible).
 - **`TMPDIR`** (`std::env::temp_dir()`, `routes/admin.rs:80`) : occurrence **inventoriée et autorisée**,
@@ -604,11 +649,182 @@ découpage (C77).
 
 ### Agent Model Used
 
+Claude Opus 5.5 (agent de développement, autonomie — consignes de l'Epic 15), worktree
+`/home/gcorbaz/devel/kesh-15-11b`, cible cargo `/home/gcorbaz/devel/kesh-15-11b/target`.
+
 ### Debug Log References
+
+Sorties brutes dans `target/gate-logs/` du worktree : `15-11b-t1-rouge.txt` (rouge du T1),
+`15-11b-t1-vides-rouges.txt` (tests « valeur vide » avant la bascule), `15-11b-mutations.txt` (M1-M17),
+`15-11b-gate-complet.txt`, `15-11b-e2e.txt`, `15-11b-backend-e2e.log`.
 
 ### Completion Notes List
 
+**T0** — voir Change Log « T0 : alignement sur le livré » et C-15-11b-1 (34 sites, et non 36).
+
+**T1 — rouge constaté, exactement celui attendu** (commande `cargo test -p kesh-api --test
+configuration_transmise`, avant toute modification du code de production) : `lectures` rouge à
+**53 écarts** = **37** occurrences `env` hors liste (`config.rs` 33, `main.rs` 2, `logging.rs` 1,
+`routes/onboarding.rs` 1) + **8** `opt_trimmed_env` (définition + 7 appels) + **8** entrées périmées
+(`env_nonempty` : ses deux entrées propres, les trois `Littéral`, les trois corps d'indirection). Verts :
+(T), (V), (E), (F) texte **et** code, (S), la garde, et le test transitoire `t1_egalite_avec_lues` —
+**ensemble lu calculé = `LUES` de la 15-11a, 41 noms, aucun écart** —, retiré ensuite avec `LUES`.
+Tests « valeur vide » écrits avant la bascule, **9 rouges, un par un** (le témoin
+`from_env_non_empty_invalid_values_still_warn` vert) :
+
+| test | rouge avant le T2 |
+|---|---|
+| `from_env_empty_host_takes_loopback_default` | `left: ""`, `right: "127.0.0.1"` |
+| `from_env_empty_jwt_secret_is_missing` | `got Err(WeakJwtSecret { actual_bytes: 0 })` |
+| `from_env_empty_database_url_is_missing` | `got Ok(Config { … })` (URL vide acceptée) |
+| `from_env_port_is_trimmed` | `left: 80`, `right: 8080` |
+| `from_env_empty_documents_and_inbox_dirs_take_defaults` | `left: ""`, `right: "/data/documents"` |
+| `from_env_numeric_values_are_trimmed_silently` | `left: 12`, `right: 14` |
+| `from_env_blank_strict_bools_take_defaults` | `InvalidTestModeValue { got: "   " }` |
+| `log_config_empty_values_take_defaults_silently` | trois avertissements « `''` invalide » collectés |
+| `cookie_secure_tests::cookie_secure_trimmed_value_is_accepted` | `InvalidCookieSecureValue { got: "  true  " }` |
+
+**T2** — `config::env_nonempty` (`pub`, doc-comment sans jeton `KESH_` fictif : contrat, invariant,
+trim, avertissement non-UTF-8 perdu avant l'abonné) ; lecture par `std::env::var_os(name)?.into_string()`
+— une seule occurrence d'`env` ; `use std::env;` de production retiré (le `mod tests` reçoit le sien) ;
+`opt_trimmed_env` absorbée et son jeton transitoire retiré ; **33 sites basculés** (`config.rs` 29,
+`main.rs` 2 par `kesh_api::config::env_nonempty`, `logging.rs` 1 et `routes/onboarding.rs` 1 par
+`crate::config::env_nonempty`, sans `use`). Les bras `Ok(val) if val.trim().is_empty()` de la 15-11a
+disparaissent (le vide n'arrive plus), comme les `.trim()` devenus redondants des numériques d'inbox et
+du port SMTP. Commentaires `" true"` (`:837`, `:1030`, `:2681` après bascule) et doc
+d'`is_template_placeholder` (« le secret JWT n'est pas trimé à la lecture », devenu faux) corrigés.
+`reset_env()` : + `KESH_DOCUMENTS_DIR`, `KESH_INBOX_DIR`, quatre `KESH_LOG_FILE_*` — **34 noms** (28 →
+34) ; contrôle `grep -Pzo 'set_var\(\s*"\K[A-Z_]+'` refait sur les tests écrits (comparaison `LC_ALL=C
+comm`) : les **30** noms posés littéralement y sont tous ; ceux posés par boucle (`from_env_with`,
+`VIDE_EGALE_DEFAUT`) aussi, relus à la main. Tests d'`env_nonempty` : contrat (absente,
+`""`, `"   "`, `" x "`, `"x"`) et non-UTF-8 (`OsString` Unix → `None` + avertissement capté).
+
+**T3 — vert.** `configuration_transmise` **21/21** ; tests de `config` **91/91**. **Inventaire tel que
+le test le recalcule** (AC1) : **1 site de lecture** (`env_nonempty`, `env :: var_os ( name )`) ;
+`EMPLACEMENTS_AUTORISES` **22 entrées**, toutes à leur nombre — `Config::from_env` `env_nonempty`
+`Littéral` **31**, `parse_strict_bool` `Littéral` 2, `dotenvy` 1 ; `LogConfig::from_env` `Littéral` 4 ;
+`main` `dotenvy` 1, `Littéral` 2, `init_tracing` 1 ; les définitions et corps d'indirection (1 chacun) ;
+`EnvFilter` ×4 et `init` ×1 dans `logging.rs` ; `temp_dir` 1 dans `admin.rs` ; ensemble lu **41**.
+**Fenêtres figées depuis le code : identiques, jeton pour jeton, aux fenêtres indicatives de l'AC3 —
+aucun écart.** La garde n'asserte plus le nombre d'entrées (22) : redondant avec le contrôle à nombre
+exact, il ajoutait une seconde famille rouge à M13/M14 (C-15-11b-2).
+
+**Changements de comportement, lecteur par lecteur** (vide = `""`, blanc = espaces seuls) :
+
+| variable | avant (HEAD de la 15-11a) | après |
+|---|---|---|
+| `RUST_LOG=""` | erreurs seules + `sqlx=warn` (`EnvFilter::new("")`) | `info` |
+| `KESH_HOST=""` | écoute sur `":80"`, échec au démarrage | `127.0.0.1` |
+| `KESH_PORT=""` / `" 8080"` | avertissement puis 80 / avertissement puis 80 | 80 sans avertissement / 8080 |
+| `DATABASE_URL=""` | acceptée, échec plus tard à la connexion | `MissingVar("DATABASE_URL")` |
+| `KESH_JWT_SECRET=""` | `WeakJwtSecret{0}` | `MissingVar("KESH_JWT_SECRET")` |
+| `KESH_JWT_SECRET` à bord blanc | espaces comptés dans le secret | trimé : refus si < 32 octets ; jetons émis invalidés |
+| `KESH_STATIC_DIR=""`, `KESH_LOCALES_DIR=""` (hors Docker) | chemin vide | défaut |
+| `KESH_DOCUMENTS_DIR=""`, `KESH_INBOX_DIR=""` | chemin vide | `/data/documents`, `/data/inbox` |
+| `KESH_ADMIN_BACKUP_DIR`, `KESH_LANG` (vides) | déjà défaut sans avertissement (15-11a) | inchangé |
+| `KESH_SMTP_PORT`, `KESH_PASSWORD_MIN_LENGTH`, `KESH_BANK_IMPORT_MAX_MB`, `KESH_ADMIN_EXPORT_INMEM_MB`, `KESH_ADMIN_IMPORT_MAX_MB` | vide : déjà défaut (15-11a) ; `" 14 "` : avertissement puis défaut (sauf `KESH_SMTP_PORT`, déjà trimé) | vide : inchangé ; valeur trimée lue |
+| `KESH_JWT_EXPIRY_MINUTES`, `KESH_REFRESH_*`, `KESH_RATE_LIMIT_*` | vide ou `" 30"` : avertissement puis défaut | vide : défaut sans avertissement ; trimée lue |
+| `KESH_INBOX_MAX_*` | vide : avertissement puis défaut ; déjà trimées | vide : défaut sans avertissement |
+| `KESH_COOKIE_SECURE`, `KESH_TEST_MODE` = `"   "` | refus du démarrage | défaut (cookie `Secure`, mode test inactif) |
+| `KESH_COOKIE_SECURE`, `KESH_TEST_MODE` = `" true "` | refus du démarrage | accepté ; `"True "` reste refusé |
+| `KESH_SMTP_TLS`, `KESH_FEATURE_FORGOT_PASSWORD` | déjà trimées, vide = défaut | inchangé |
+| `KESH_ADMIN_USERNAME`, `KESH_ADMIN_PASSWORD`, `KESH_SMTP_HOST/_USER/_PASSWORD/_FROM`, `KESH_PUBLIC_BASE_URL` | déjà trimées, vide = absente | inchangé |
+| `KESH_PRODUCTION_RESET` | déjà trimée, vide = `false` | inchangé |
+| `KESH_LOG_FILE_ROTATION/_MAX_FILES/_FORMAT=""` | avertissement « invalide » collecté, puis défaut | défaut sans avertissement |
+| `KESH_LOG_FILE_PATH=""` | pas de journal fichier | inchangé |
+| toute variable non-UTF-8 | `Err(NotUnicode)` : défaut silencieux, ou `MissingVar` | même résultat, précédé d'un avertissement (perdu avant l'abonné ; à chaque appel de `reset` pour `KESH_PRODUCTION_RESET`) |
+
+**T4 — mutations M1-M17** (script `scratchpad/mut15-11b.py`, une à une, fichier restauré puis `touch`,
+`git diff --stat` vide hors du travail en cours vérifié après la série) : **16 rouges, 1 verte**, chaque
+famille exactement celle attendue — M1 (E, L, T), M2 (L), M3 (E, L, T), M4 (E, L, T), M5 (F :
+`main.rs` fantôme `KESH_ADMIN_RESET`), **M6 verte**, M7 (L), M8 (L : occurrence `env :: var ( var )`
+hors liste **et** entrée `parse_strict_bool`/`env_nonempty` périmée), M9 (L), M10 (L), M11 (L), M12 (F,
+L), M13 (L seule), M14 (L seule, entrée périmée), M15 (F), M16 (E, L, T), M17 (L : `Builder` et
+`from_env_lossy` hors liste, aucun nom lu). M13 a d'abord échoué à compiler (motif de retrait trop large
+dans le script, non dans le test) : motif corrigé, rejouée, rouge (L).
+
+**T5** — `.env.example` (en-tête en prose, `KESH_COOKIE_SECURE`), `admin-manual.tex` (`:664` règle,
+`:675-676` « absentes ou vides », ligne `KESH_JWT_SECRET`, `:1343` `KESH_COOKIE_SECURE`, et `:1767` —
+propagation : « espaces de tête et de fin ignorés » ajouté à l'item `KESH_COOKIE_SECURE` de l'encadré
+« relisez », comme l'item voisin), PDF régénéré (`make admin`) : 54 `Overfull` avant **et** après (même
+build du `.tex` de `HEAD` en copie), aucun aux lignes touchées ; PDF aplati (`pdftotext | tr | tr -s`)
+contient les quatre phrases nouvelles, ne contient plus « espaces avant/après, etc.) refuse ».
+CHANGELOG `[0.13.0]` **Modifié** (dont « hors Docker » pour `RUST_LOG`/`KESH_HOST`, vérifié aux
+compose). Propagation AC5 (e) : `opt_trimmed_env` — zéro résidu dans le dépôt (code, docs) hors fiches ;
+les autres « espaces » relevés sont hors sujet. Test vert après le T5 (21/21).
+
+**T6 — gates réellement exécutés**, au dernier commit de code `4185e32f` :
+- `cargo fmt --all` / `cargo clippy --workspace --all-targets -- -D warnings` : verts (clippy rejoué
+  après la bascule).
+- **Gate backend complet** `scripts/test-fast.sh` (fmt + clippy + nextest), base `kesh_1511b` remise à
+  zéro juste avant (`DROP`/`CREATE`, 75 migrations, seed ; aucun redémarrage du conteneur) :
+  **2877/2877, 4 ignorés**.
+- **Frontend non touché** : aucun gate frontend lancé (seul `npm run build`, pour l'E2E).
+- **E2E complet** (backend `4185e32f` sur le port 3004, base `kesh_e2e_1511b` migrée, secrets générés,
+  `KESH_COOKIE_SECURE=false`, `KESH_STATIC_DIR` du worktree, `/health` `smtpConfigured: true`) :
+  **247 passés, 7 échoués, 19 ignorés** — les 7 sont exactement ceux de la KF-029 (#97) listés dans
+  `docs/testing.md` (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150`) : zéro régression. Backend arrêté par son PID.
+
+**Décomptes** (recomptés à la source par `grep -c '^#\[test\]$'` — resp. `'^    #\[test\]$'` —
+aux deux bornes ; périmètre : `origin/main` `8f9811d8` → `HEAD`) : tests de
+`configuration_transmise.rs` 12 → **21** (+9 : `lectures`, `garde_lecture_du_code` à la place de
+`garde_liste_lues`, et 8 auto-tests (S) neufs ; un `grep` naïf en compte 23, deux `#[test]` étant dans
+un doc-comment et une source synthétique) ; tests de `config.rs` 80 → **91** (+11 : 9 « valeur vide »
+— dont `cookie_secure_trimmed_value_is_accepted` —, 2 d'`env_nonempty`).
+
+**Clôture — gates réellement exécutés sur l'état rebasé** (rebase sur `origin/main` `5e4bec50`, 15-5d ;
+dernier commit de code `9aa1974d`, la remédiation P1 rebasée — D7) :
+- base `kesh_1511b` remise à zéro (`DROP`/`CREATE`, 75 migrations, seed ; aucun redémarrage du
+  conteneur) puis **`scripts/test-fast.sh`** (fmt + clippy + nextest) : **2902/2902, 4 ignorés**
+  (`target/gate-logs/15-11b-cloture-backend.log`) ; le test lexical (L) vert sur le code rebasé (les
+  fichiers Rust apportés par la 15-5d n'ajoutent aucune lecture hors liste).
+- **Frontend complet** : `npm run check` 0 erreur (27 avertissements), `lint-i18n-ownership` PASS,
+  `test:unit` **1091/1091** (112 fichiers), `build` vert (`15-11b-cloture-frontend.log`).
+- **E2E complet** : base `kesh_e2e_1511b` remise à zéro et migrée, backend `9aa1974d` + PDF sur le port
+  3004, secrets `openssl rand`, `KESH_COOKIE_SECURE=false`, `KESH_INBOX_DIR`/`KESH_DOCUMENTS_DIR` du
+  worktree, quatre `KESH_SMTP_*` (`/health` `smtpConfigured: true`), `KESH_TEST_MODE=true` des deux côtés :
+  **247 passés, 7 échoués, 19 ignorés** — les 7 sont ceux de la KF-029 (#97) de `docs/testing.md`
+  (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
+  `:77`, `:150`), comparés fichier par fichier : zéro régression (`15-11b-cloture-e2e.log`). Backend
+  arrêté par son PID.
+- `admin-manual.pdf` régénéré (`latexmk -xelatex`) sur le `.tex` fusionné (15-5d + 15-11b), contrôlé
+  aplati : « Compte créanciers », « Les avoirs ne sont pas soumis », « ne font pas partie du secret »,
+  « une ligne laissée vide vaut une ligne absente » présents.
+
+**Intégration sur `ec745d0c`** (15-7a1, #567, mergée pendant la PR #570) — rebase sur `origin/main`
+`ec745d0c` : un seul conflit, au registre (entrées C-15-7-* et C-15-7a1-* de `main`, entrées C89–C99
+reportées par la branche), résolu par union, **aucun identifiant en double** (`uniq -d` vide) ;
+`sprint-status.yaml` et CHANGELOG fusionnés sans conflit (pas de collision de `last_updated` : `main`
+s'arrête au (23)) ; aucun conflit de code ; manuel non touché par `main`, PDF inchangé. Gates
+réellement exécutés sur l'état rebasé :
+- bases `kesh_1511b` et `kesh_e2e_1511b` remises à zéro (`DROP`/`CREATE`, 75 migrations, seed sur la
+  première ; aucun redémarrage du conteneur), puis **`scripts/test-fast.sh`** : **2912/2912, 4 ignorés**
+  (`target/gate-logs/15-11b-integ-ec745d0c-backend.log`) ; test lexical (L) vert.
+- **Frontend complet** : `check` 0 erreur (27 avertissements), `lint-i18n-ownership` PASS, `test:unit`
+  **1091/1091**, `build` vert.
+- **E2E complet** (même montage que la clôture : port 3004, secrets `openssl rand`, SMTP et répertoires
+  du worktree, `smtpConfigured: true`) : **245 passés, 9 échoués, 19 ignorés**, comparés fichier par
+  fichier à `docs/testing.md` : les 7 de la KF-029 (#97) et les 2 de la **KF-045 (#421)**
+  (`invoices.spec.ts:415` « historique des rappels affiché », `:439` « axe-core sans violations sur la
+  fiche » — `manual reminder failed: 422`), attendus **avant 12:00 UTC** : le run a tourné vers 01:00 UTC.
+  Zéro régression. Backend arrêté par son PID.
+
 ### File List
+
+- `crates/kesh-api/src/config.rs`
+- `crates/kesh-api/src/main.rs`
+- `crates/kesh-api/src/logging.rs`
+- `crates/kesh-api/src/routes/onboarding.rs`
+- `crates/kesh-api/Cargo.toml` (dev : `proc-macro2` `span-locations`, `quote`)
+- `Cargo.lock` (deux lignes de dépendances de `kesh-api`, aucun paquet neuf)
+- `crates/kesh-api/tests/configuration_transmise.rs`
+- `.env.example`
+- `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/admin-manual.pdf`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/15-11b-lecture-unique-des-variables.md`,
+  `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md`,
+  `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
@@ -708,3 +924,111 @@ découpage (C77).
   - Comptes **recomptés depuis cette fiche** : AC **6**, tâches **7** (T0-T6), mutations **17** (M1-M17 ;
     16 rouges, 1 verte — M6), entrées `EMPLACEMENTS_AUTORISES` **22**, modules de code **4** — seuil de
     découpage non franchi.
+- 2026-10-09 — **T0 : alignement sur le livré de la 15-11a** (agent de développement, autonomie ; choix
+  **C-15-11b-1**). Relevé sur `HEAD` `b2b09f34` (`origin/main` `8f9811d8` + planification). 15-11a et
+  15-5e1 mergées (`syn = { version = "2", features = ["full", "visit"] }` en dev-dépendance de `kesh-api`,
+  `proc-macro2` 1.0.106 au `Cargo.lock`). Écarts, tous recomptés à la source (`grep -cE 'env::var(_os)?\('`
+  par fichier, lignes < `#[cfg(test)]` de `config.rs:1499`) :
+  - **Inventaire** : `config.rs` 32 → **30** sites (`Config::from_env` 26 → **24**), total 36 → **34**,
+    « les 35 autres » → **33** (`config.rs` 31 → **29**), appels `opt_trimmed_env("…")` 5 → **7**
+    (`KESH_LANG`, `KESH_ADMIN_BACKUP_DIR` en plus), identifiant `env` en production 40 → **38** (`config.rs`
+    35 → **33**), ensemble lu **41** inchangé, appels `Littéral` d'`env_nonempty` attendus dans
+    `Config::from_env` **31** inchangé (24 + 7). Table `EMPLACEMENTS_AUTORISES` : **22** entrées, recomptées.
+  - **Rouge exact du T1** : **37** `env` hors liste (`config.rs` 33, `main.rs` 2, `logging.rs` 1,
+    `routes/onboarding.rs` 1) et **8** `opt_trimmed_env` (définition + sept appels) ; **8** entrées périmées
+    (inchangé).
+  - **Tests « valeur vide »** : `KESH_ADMIN_BACKUP_DIR`, `KESH_SMTP_PORT`, `KESH_LANG` vides ne discriminent
+    plus (test de la 15-11a `from_env_empty_or_blank_vars_take_code_default_silently`, gardé) ; remplacés par
+    `KESH_INBOX_DIR=""`, `KESH_PASSWORD_MIN_LENGTH=" 14 "`, `KESH_SMTP_PORT=" 2525 "` (valeur et capture),
+    `KESH_COOKIE_SECURE="   "`, `KESH_LOG_FILE_ROTATION=""` (avertissement collecté). Capture : celle de la
+    15-11a (`from_env_with_logs`) est réutilisée, et son témoin `from_env_non_empty_invalid_values_still_warn`
+    tient lieu de témoin obligatoire.
+  - **`reset_env()`** : 28 noms (et non 25) ; manquent `KESH_DOCUMENTS_DIR`, `KESH_INBOX_DIR` et les quatre
+    `KESH_LOG_FILE_*` (et non trois variables).
+  - **R-8 sans objet** : le doc-comment d'`is_loopback_host` est déjà rattaché.
+  - **Citations relocalisées par le texte** : `config.rs` — `use std::env;` `:7`, `Config::from_env`
+    `:572-1222`, contrôle de longueur du secret `:683`, `KESH_DOCUMENTS_DIR`/`KESH_INBOX_DIR` `:982-987`,
+    `LogConfig::from_env` `:1375-1382`, `opt_trimmed_env` `:1388`, `parse_strict_bool` `:1441`, commentaires
+    `" true"` `:859`, `:1062`, `:2594`, test `"  true  "` `:2900`, `reset_env` `:1577` ; M5 : `main.rs:337`
+    (« recovery break-glass KESH_ADMIN_USERNAME/KESH_ADMIN_PASSWORD ») ; manuel — règle de transmission
+    `admin-manual.tex:664` (dit déjà, pour les compose fournis, « une variable facultative que `.env` ne pose
+    pas, ou laisse vide, prend son défaut »), phrase « obligatoires » `:672-676`, ligne `KESH_JWT_SECRET`
+    `:689`, `KESH_COOKIE_SECURE` `:1343` ; `.env.example:130-132` (`KESH_COOKIE_SECURE`).
+  - Aucun écart ne change une règle ni un AC sur le fond (l'AC2 change de cas de test, non de règle) :
+    développement enchaîné.
+- 2026-10-09 — **Développement** (agent de développement, autonomie ; choix **C-15-11b-1**,
+  **C-15-11b-2**). T0-T6 faits ; commits `cc53bb54` (T0), `25c7b916` (code et test), `4185e32f`
+  (documentation, garde allégée — dernier commit de code). Gates au Dev Agent Record : backend
+  **2877/2877** (4 ignorés), E2E **247 / 7 KF-029**, frontend non touché. 17 mutations : 16 rouges,
+  1 verte, familles exactes. Écarts à la fiche : ceux du T0 (C-15-11b-1) ; `quote` en dev-dépendance
+  (lecture des attributs de tête, C-15-11b-2) ; garde sans assertion du nombre d'entrées (C-15-11b-2) ;
+  fenêtres : aucun écart. Statut **review**.
+- 2026-10-09 — **Revue de code P1** (Sonnet ×3, contextes frais, diff `8f9811d8..eac870ae` : lentille B
+  `target/gate-logs/15-11b-review-p1-B.md` — 0 CRITICAL / 0 HIGH / **1 MEDIUM** / 4 LOW ; lentille E
+  `…-E.md` — 0 / 0 / 0 / 5 LOW ; lentille A `…-A.md` — 0 / 0 / 0 / 5 LOW). Recoupements : B1 = A-2,
+  B2 = E4, B4 = E2. Remédiation (agent de remédiation, autonomie ; choix **C-15-11b-3**) **sans aucune ligne
+  de code de production exécutable** : tests, doc-comment, `.env.example`, manuel, CHANGELOG.
+  - **B1 = A-2 (MEDIUM)** : `from_env_jwt_secret_blank_edges_do_not_count` (`" "` + 31 car. et 31 car. +
+    `" "` → `WeakJwtSecret { actual_bytes: 31 }`, montage : 32 octets bruts) et
+    `from_env_test_mode_trimmed_true_is_accepted` (`KESH_TEST_MODE=" true "` → `test_mode`).
+  - **B3 (LOW)** : `rust_log_vide_vaut_info` (`configuration_transmise.rs`) lance le binaire `kesh-api`
+    (environnement vidé, répertoire temporaire, `DATABASE_URL` et `KESH_JWT_SECRET` vides →
+    refus de configuration, `KESH_LOG_FILE_ROTATION` invalide → avertissement rejoué) : avec `RUST_LOG=""`
+    et `"   "`, l'avertissement passe (`info`) ; témoin `RUST_LOG=error`, il est masqué ; assertion de
+    montage sur « Erreur de configuration ». `KESH_STATIC_DIR` et `KESH_LOCALES_DIR` vides : **non
+    testés** — lus après la connexion à la base, un test de comportement exigerait un démarrage complet ou
+    une extraction de code de production ; écrits comme angle mort (§ *Angles morts*, en-tête du test).
+  - **Mutations** (temporaires, restaurées, fichier `touch`é ; `target/gate-logs/15-11b-review-p1-mutations.txt`) :
+    **MR1** `env_nonempty("KESH_JWT_SECRET")` → `std::env::var("KESH_JWT_SECRET").ok()` : rouge
+    `from_env_jwt_secret_blank_edges_do_not_count` ; **MR2** idem `KESH_TEST_MODE` : rouge
+    `from_env_test_mode_trimmed_true_is_accepted` ; **MR3** `logging.rs`
+    `crate::config::env_nonempty(EnvFilter::DEFAULT_ENV)` → `std::env::var(EnvFilter::DEFAULT_ENV).ok()` :
+    rouge `rust_log_vide_vaut_info` (sur l'assertion de l'avertissement, `RUST_LOG=""`, sortie réduite à
+    l'erreur) ; **MR4** normalisation `r#` retirée du test : rouge `s_lectures_hors_liste_rougissent_et_lisent`.
+    Quatre rouges sur quatre.
+  - **E1 (LOW)** : identifiant brut — le relevé retire le préfixe `r#` avant de comparer aux jetons
+    surveillés ; cas (S) `std::r#env::var("X")` (rouge, `X` lu).
+  - **E3 (LOW)** : `exclure_si` ne pousse une plage qu'une fois (`visit_stmt` puis `visit_item` sur un
+    `Stmt::Item`) : `Analyse::exclusions` est un nombre de plages.
+  - **B4 = E2 (LOW)** : « faux vert impossible pour le code du workspace » ramené, dans le test et à l'AC3, à
+    « pour toute lecture écrite dans `crates/*/src` par un jeton surveillé » ; angles morts écrits :
+    `build.rs`, `examples/`, `benches/`, lectures internes aux dépendances (déjà écrites), `r#env` désormais
+    relevé.
+  - **B2 = E4 (LOW)** : doc-comment de `LogConfig::from_raw` — le trim et le filtre du vide y sont
+    volontairement redondants avec `env_nonempty` (appels directs des tests avec des valeurs brutes).
+  - **B5 (LOW)** : l'exception `KESH_LOG_FILE_PATH` qualifiée « sous Docker » (son absence laisse le compose
+    poser son défaut, `${KESH_LOG_FILE_PATH-…}`), et « hors Docker, vide et absente le désactivent toutes
+    deux » — `.env.example`, manuel `admin-manual.tex:664`, CHANGELOG.
+  - **A-1 (LOW)** : intertitre `admin-manual.tex:679` « démarrage refusé si absentes ou vides » ; PDF
+    régénéré (`make admin`, 76 pages, 54 `Overfull \hbox` comme avant, aucun aux lignes touchées), contrôlé
+    aplati (`target/gate-logs/15-11b-p1-admin-flat.txt`) : les trois phrases nouvelles présentes, l'ancien
+    intertitre absent.
+  - **A-3 (LOW)** : `.env.example` dit que `DATABASE_URL` et `KESH_JWT_SECRET` vides font refuser le démarrage.
+  - **A-4 (LOW)** : les cas (S) `dotenvy::var("X")` et `use crate::config::env_nonempty;` sont jugés contre
+    une liste vide ; la protection réelle de l'autorisation `dotenvy :: dotenv ( )` et de l'entrée
+    `env_nonempty` vient des mutations **M9** et **M11** (rouges, `15-11b-mutations.txt`), non du (S). Pas
+    de test ajouté.
+  - **A-5** : sans action.
+  - Tests recomptés (`grep -cE '^\s*#\[test\]'`, de `6f82b763` à ce commit) : `config.rs` 91 → **93** (+2),
+    `configuration_transmise.rs` 21 → **22** (+1).
+  - **Gate** : ciblé seulement — `cargo fmt --all -- --check` vert, `cargo clippy --workspace --all-targets
+    -- -D warnings` vert, `cargo nextest run -p kesh-api -E 'binary(configuration_transmise) |
+    (binary(kesh_api) & test(/^config::/))'` **115/115** (`target/gate-logs/15-11b-review-p1-gate-cible.txt`).
+    Gate complet et E2E **non rejoués** : la remédiation ne touche aucune ligne de production exécutable
+    (le dernier commit de code de production reste `4185e32f`) ; au push.
+- 2026-10-09 — **Revue de code P2 ciblée** (Haiku, contexte frais, une lentille braquée sur la seule
+  remédiation `387a6aa0` ; prompt `15-11b-review-prompt-p2-ciblee.md`, rapport
+  `target/gate-logs/15-11b-review-p2-ciblee.md`) : **0 finding**, axes exercés et non exercés déclarés.
+  L'orchestrateur a vérifié lui-même que `rust_log_vide_vaut_info` lance le vrai binaire
+  (`CARGO_BIN_EXE_kesh-api`, `env_clear`, répertoire temporaire). La remédiation P1 ne touchant aucune ligne
+  de production exécutable, la boucle est **close** (règle « ce qui permet de CLORE la boucle »).
+  **Trend** : P1 (Sonnet ×3) 1 MEDIUM / 14 LOW → P2 ciblée (Haiku) 0. Aucun reclassement.
+- 2026-10-09 — **Clôture** (agent de clôture, autonomie ; choix **C-15-11b-4**). Rebase sur `origin/main`
+  `5e4bec50` (15-5d) : conflits de registre et de `sprint-status.yaml` résolus par union (ligne
+  `last_updated` renumérotée), `admin-manual.tex` fusionné sans conflit, `admin-manual.pdf` régénéré ; aucun
+  conflit de code. Gates complets sur l'état rebasé (Dev Agent Record) : backend **2902/2902** (4 ignorés),
+  Vitest **1091/1091**, E2E **247 / 7 KF-029**. Statut **done**. L'issue #550 est déjà fermée (par la
+  15-11a) : la PR la référence (`refs #550`) sans la fermer.
+- 2026-10-09 — **Intégration sur `ec745d0c`** (15-7a1) : rebase, registre par union sans doublon, gates
+  complets rejoués — backend **2912/2912**, Vitest **1091/1091**, E2E **245 / 7 KF-029 + 2 KF-045** (run
+  avant 12:00 UTC). Détail au Dev Agent Record.

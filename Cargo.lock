@@ -1986,6 +1986,8 @@ dependencies = [
  "kesh-seed",
  "lettre",
  "pdfium-render",
+ "proc-macro2",
+ "quote",
  "reqwest",
  "rust_decimal",
  "rust_decimal_macros",

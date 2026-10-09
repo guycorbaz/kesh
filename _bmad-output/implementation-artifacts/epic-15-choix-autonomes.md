@@ -3409,3 +3409,208 @@ l'import (#458–#461).
 - **Écarté** : provoquer `OptimisticLockConflict` par un déclencheur SQL de test (modifie le schéma de test pour une branche inatteignable en production) ; câbler E-1/E-3 dès la 15-7a1 (la fiche exclut `routes/onboarding.rs`, la 15-7a2 les câble avec l'audit).
 - **Clôture** : la remédiation ne touche que des commentaires et des tests — aucune ligne de production exécutable ⇒ pas de passe ciblée (§ « Ce qui permet de CLORE la boucle »).
 - **Réversible** : oui.
+
+## C89 — 15-12 : clôturer dans l'ordre (#543) — invariant « les clos forment un préfixe », filet non verrouillant aux deux points de passage, détection à l'écran, story entière avec coupe de repli
+
+- **Contexte** : #543 (P1) — `fiscal_years::close` ne regarde aucun autre exercice ; le bilan est
+  cumulatif ; dans l'état « N ouvert, N+1 clos », seuls le `PUT` et le `DELETE` d'une écriture
+  refusent (15-8a/15-8b). Relevé au code sur `origin/main` `9cb5083b` : les 22 routes `Rejouee` du
+  registre passent par **trois** points de passage — `create_in_tx_inner` (19), `update` (1, gardé),
+  `delete_in_tx` (2, dont la dévalidation non gardée, C-15-8-29). Sources de l'état fautif : clôture
+  hors ordre, création d'un exercice antérieur à un clos, restauration d'une sauvegarde ; la
+  réouverture (LIFO), la démo, la graine de test et `onboarding::finalize` ne le produisent pas.
+- **Retenu** :
+  1. **Invariant I** (les exercices clos forment un préfixe chronologique) tenu par trois transitions :
+     clôture refusée tant qu'un antérieur est ouvert (variante neuve `EarlierFiscalYearOpen`, code
+     **`409 EARLIER_FISCAL_YEAR_OPEN`**, nomme le **plus ancien** antérieur ouvert) ; création refusée
+     sous un postérieur clos (`400 LATER_FISCAL_YEAR_CLOSED`, variante existante) ; réouverture LIFO
+     inchangée.
+  2. **Code dédié plutôt que `ILLEGAL_STATE_TRANSITION`** (patron de la garde LIFO) : l'écran traduit
+     tout `ILLEGAL_STATE_TRANSITION` de la clôture en « déjà clôturé » ; une intégration doit
+     distinguer les deux refus.
+  3. **Ordre des verrous de la clôture** : lecture non verrouillante de `start_date` (immuable), puis
+     antérieurs ouverts `FOR UPDATE` en parcours ascendant, puis Y — toutes les acquisitions de lignes
+     d'exercice deviennent ascendantes. Création et clôture passent par `retry_on_deadlock` (la course
+     création/clôture se résout par un interblocage attendu, à mesurer en T0).
+  4. **Filet généralisé** (la garde de la 15-8a **se généralise**) aux deux points de passage :
+     `create_in_tx_inner` par une lecture **non verrouillante** (`find_later_closed`) — preuve écrite :
+     sous I, la clôture d'un postérieur exige l'exercice de l'écrivain clos et le lit sous verrou, que
+     l'écrivain tient ; la lecture n'a à voir que l'état hérité, stable ; aucun verrou neuf sur les 19
+     flux — et `delete_in_tx` sans la condition `enforce_ownership` (lecture verrouillante existante).
+     Bras `LATER_FISCAL_YEAR_CLOSED` dans le lot de rapprochement ; message serveur neutre (clé neuve
+     `error-later-fiscal-year-closed`, l'ancienne ne valait que pour la modification).
+  5. **Installations déjà fautives** : ni migration, ni détection au démarrage, ni refus à l'import ;
+     le filet rend l'état inoffensif, l'écran des exercices l'**affiche** (bandeau calculé depuis la
+     liste, sans changement d'API) avec la réparation : rouvrir le plus récent clos (gestes existants),
+     puis clôturer dans l'ordre.
+  6. **Pas de découpage** malgré 8 modules : la coupe A (l'ordre) / B (le filet) séparerait les deux
+     moitiés d'une seule preuve (filet non verrouillant ⇐ lecture verrouillante de la clôture, test
+     13 c). Dérogation écrite dans la fiche ; **coupe de repli 15-12a / 15-12b sans nouvelle
+     délibération** au premier défaut recyclé sur l'ordre des verrous ou à la non-convergence (D5).
+- **Écartées** : (a) garder seulement l'écriture (seconde voie de l'issue) — état fautif toujours
+  atteignable, garde sur chaque flux ; (b) filet verrouillant (`find_later_closed_in_tx`) dans
+  `create_in_tx_inner` — verrous d'intervalle neufs sur 19 routes, cycles neufs entre écrivains de N et
+  de N+1, pour aucun gain sous I ; (c) détection au démarrage — journal non lu, l'état est déjà
+  inoffensif ; (d) refuser une sauvegarde fautive à l'import — rendrait inutilisables les sauvegardes
+  v0.12.x ; (e) migration de réparation — rouvrir N+1 ou clôturer N est une décision comptable ;
+  (f) nommer le plus **proche** antérieur ouvert au refus de clôture — la même garde le refuserait à
+  son tour ; (g) découper d'emblée en 15-12a/15-12b — cf. point 6.
+- **Réversible** : oui (fiche seulement ; code non écrit). La coupe de repli est prête.
+
+## C90 — Lettrage (15-1a) : la marque en deux colonnes de `journal_entry_lines`, sans table ; révise l'arbitrage du 2026-08-25
+- **Contexte** : la reprise du lettrage (#518) relit les fiches d'août contre `origin/main`. L'arbitrage
+  du Project Lead du 2026-08-25 avait retenu une table `letterings` (compteur `seq` par société). Depuis,
+  l'import d'installation (#386, v0.12.1) exige un inventaire de tables **identique** dans les deux sens
+  (`admin_backup/import.rs:118-136`) : une table neuve rend **inimportable toute sauvegarde antérieure** —
+  motif pour lequel la 25-4-d2a a déjà préféré une colonne. Une colonne nullable passe `check_schema_compat`.
+- **Retenu** : `journal_entry_lines.lettering_key BIGINT NULL` (= plus petit `id` de ligne du groupe) et
+  `lettering_origin VARCHAR(10) NULL` (`document`, `reversal`, `manual`), deux `CHECK`, deux index, **sans
+  FK** (le garde-fou d'inventaire de la 15-8a interdit toute référence vers les lignes, que le `PUT`
+  réinsère). La clé sans compteur supprime le verrou de compteur et sa classe de défauts (P5-1, P6-1, P8-3
+  d'août). Auteur et date : au journal d'audit. **Pas** de bump `min_required` (P1 : aucune opération P3) —
+  risque nommé : un binaire antérieur pourrait modifier une écriture manuelle lettrée et casser un groupe.
+- **Écartées** : la table `letterings` (sauvegardes antérieures perdues) ; une table de liaison vers les
+  lignes (interdite par le point 1 bis du garde-fou) ; un compteur sur `companies` (verrou de plus, ABBA).
+- **Réversible** : oui tant que non développé ; après migration appliquée, revenir à une table coûte une
+  migration de données.
+
+## C91 — Lettrage (15-1a) : le code affiché est la clé en base 26 bijective
+- **Contexte** : sans compteur par société (C90), il n'y a plus de suite `A, B, C…` par société.
+- **Retenu** : `code = base26_bijective(lettering_key)` (fonction pure de `kesh-core`, avec son inverse) :
+  4 lettres jusqu'à 475 254 lignes, 5 jusqu'à ~12 millions ; stable, dictable. Un groupe dissous puis reformé
+  avec la même plus petite ligne reprend le même code — jamais deux groupes vivants à la fois.
+- **Écartées** : `A, B, C…` par société (exige un compteur sérialisé) ; l'identifiant numérique brut (moins
+  lisible sur une ligne) ; un ULID (indictable).
+- **Réversible** : oui — le code n'est jamais stocké, une autre projection se substitue sans migration.
+
+## C92 — Lettrage, question 1 du dégel : pas de lettrage partiel ; un groupe à somme nulle de N lignes
+- **Contexte** : la fiche d'août lettrait des **paires** (D2 : une facture, un règlement). La 24-2 permet
+  plusieurs règlements par facture, la 25-4-d2a un solde du reste.
+- **Retenu** : un lettrage = **groupe** de ≥ 2 lignes d'un même compte lettrable, somme `Σ(débit − crédit)`
+  **exactement nulle**. Un règlement partiel laisse ses lignes ouvertes ; la vue (15-1b) les montre avec le
+  motif « partiellement réglée ». L'écart d'un règlement amputé se traite par le solde du reste (facture) ou
+  par une écriture d'ajustement (hors pièce), jamais par une tolérance.
+- **Écartées** : le lettrage partiel (groupe à somme non nulle) — il ferait mentir l'invariant « somme des
+  ouverts = solde » ; une tolérance de 5 centimes (Kesh proposerait ce qu'il refuse).
+- **Réversible** : oui — un état « partiel » pourrait s'ajouter (valeur d'origine ou colonne nullable).
+
+## C93 — Lettrage, question 2 du dégel : trois origines ; Kesh lettre ce que l'utilisateur a déjà apparié, et propose le reste
+- **Contexte** : règle du `CLAUDE.md` « un appariement automatique propose, il ne crée jamais ».
+- **Retenu** : `document` — posé d'office quand une pièce est soldée (facture client par ses règlements,
+  solde ou avoir ; facture fournisseur par son paiement) : le rattachement a été **déclaré** par l'utilisateur
+  en saisissant le règlement, Kesh ne devine rien (15-1a2). `reversal` — posé d'office entre une ligne libre
+  et sa contre-passation (`reverses_entry_id`, lien déclaré). `manual` — choisi par l'utilisateur ; Kesh
+  **propose** des paires (même compte, sens opposés, montants égaux) et n'écrit rien sans clic. Les lignes
+  d'une pièce sont **exclues** du lettrage manuel (motifs de `reversal_blockers`) : une facture est soldée au
+  grand livre si et seulement si son reste dû est nul.
+- **Écartées** : tout manuel (double saisie de ce que `invoice_settlements` dit déjà, et vue fausse sur le cas
+  le plus fréquent) ; lettrage automatique par similarité de montant (faux rattachement muet).
+- **Réversible** : oui pour `reversal` (on peut cesser de le poser) ; `document` engage la cohérence avec les
+  pièces.
+
+## C94 — Lettrage, question 3 du dégel : lettrer toujours ; délettrer refusé si TOUTES les lignes sont sur exercice clos ; vue « au » d'une date
+- **Contexte** : D3 d'août (arbitrage de Guy) : lettrer sur exercice clos oui, délettrer non dès qu'un
+  exercice est clos. Appliquée telle quelle, elle bloquerait l'annulation (en exercice ouvert) d'un règlement
+  d'une facture d'un exercice clos.
+- **Retenu** : lettrer reste permis quel que soit l'exercice (D3 conservée). Le délettrage manuel est refusé
+  si **toutes** les lignes du groupe sont sur des exercices clôturés. La vue des postes ouverts prend une date
+  `asOf` : une ligne est ouverte à `X` si elle n'est pas lettrée ou si son groupe a une ligne postérieure à
+  `X` ; la somme des ouverts égale alors le solde cumulatif à `X`. Un groupe ayant une ligne en exercice ouvert
+  ne change donc rien de ce qui était ouvert à la fin d'un exercice clos (les clos forment un préfixe, C89).
+  La contre-passation ne défait jamais un groupe (C97).
+- **Écartées** : D3 stricte ; délettrage libre (changerait la liste des postes ouverts d'un exercice clos).
+- **Réversible** : oui (règle de garde).
+
+## C95 — Lettrage, question 4 du dégel : un écran dédié « Postes ouverts »
+- **Retenu** : `/open-items`, menu **Mensuel**, entre Réconciliation et Rapports ; liens depuis le Grand livre
+  d'un compte lettrable et depuis le code de lettrage d'une fiche d'écriture ; bandeau de frontière avec la
+  réconciliation (D6 d'août).
+- **Écartés** : un onglet du Grand livre (un rapport n'est pas le lieu d'une action d'écriture) ; un écran
+  « compte » (inexistant) ; la fiche facture (le lettrage des pièces s'y fait déjà par les règlements).
+- **Réversible** : oui.
+
+## C96 — Lettrage : comptes lettrables = Actif/Passif non rattachés à un compte bancaire
+- **Contexte** : la fiche d'août bornait la vue aux rôles `Receivable`/`Payable` ; #518 vise aussi les comptes
+  de passage, acomptes, avances, compensations, qui n'ont pas de rôle ; le compte de créance des réglages peut
+  être n'importe quel compte `Asset`.
+- **Retenu** : type `Asset` ou `Liability`, et aucun `bank_accounts.journal_account_id` ne le désigne ; un
+  compte archivé reste lettrable. Une seule fonction (`is_letterable_account`), exposée à l'écran.
+- **Écartées** : borne par rôle (trop étroite) ; drapeau « lettrable » par compte (colonne et écran de plus,
+  pour un besoin non établi).
+- **Réversible** : oui (une fonction).
+
+## C97 — Lettrage : la contre-passation lettre ce qui est libre et ne défait rien ; une écriture lettrée ne se modifie ni ne se supprime
+- **Contexte** : la 15-8a/b rend modifiables et supprimables les écritures sans pièce ; `update_in_tx` réécrit
+  les lignes. Toutes les annulations passent par `reverse_in_tx_inner`.
+- **Retenu** : motif `Lettered` dans `modification_guard` → 409 `ENTRY_LETTERED`, lecture verrouillante après
+  le verrou d'en-tête (ferme la course P8-2 d'août) — y compris pour une modification d'en-tête seul (révise la
+  clause (ii) d'AC7 d'août). La contre-passation lettre `{L, L'}` pour toute ligne libre sur compte lettrable ;
+  une ligne déjà lettrée garde son groupe et son miroir reste ouvert (mouvement nouveau). Les annulations de
+  pièce dissolvent leur groupe `document` **avant** le socle. Le lettrage verrouille les en-têtes des
+  écritures concernées (ordre `id`), puis les lignes, puis (délettrage) les exercices en mode partagé ;
+  rejeu sur interblocage.
+- **Écartées** : chemin « en-tête seul » dans `update` (seconde manière de modifier, pour un cas étroit) ;
+  délettrage automatique par la contre-passation (bute sur l'exercice clos, et réécrit le passé) ; refus de
+  contre-passer une écriture lettrée (correction d'une erreur d'un exercice clos rendue impossible).
+- **Réversible** : oui.
+
+## C98 — Lettrage (15-1a2) : synchronisation des pièces et rattrapage par migration classe A
+- **Retenu** : `sync_invoice_in_tx` et `sync_supplier_invoice_in_tx`, idempotentes, appelées par l'inventaire
+  fermé des écrivains (`invoice_settlements::create_in_tx` — qui couvre règlement, solde et rapprochement —,
+  annulation de règlement client et dé-rapprochement, avoir, paiement fournisseur et lots pain.001, annulation
+  du règlement ou de la facture fournisseur). Critère du groupe : la somme au grand livre sur le compte de la
+  pièce, pas le reste dû (test d'accord entre les deux). Rattrapage des données existantes par une migration
+  qui écrit des données, **classe A** (toutes les écritures gardées `lettering_key IS NULL`), première entrée
+  de `POST_RESTORE_BACKFILLS` (rejouée après restauration d'une sauvegarde antérieure) ; la duplication de la
+  règle (SQL figé par P8, Rust) est tenue par un test d'accord rattrapage ↔ synchronisation. 15-6a (#473)
+  recommandée avant.
+- **Écartées** : rattrapage en Rust au démarrage (écriture au boot, concurrence, aucun précédent) ; pas de
+  rattrapage (les pièces déjà soldées resteraient ouvertes à jamais).
+- **Réversible** : la migration, une fois appliquée, non (P8) ; la synchronisation, oui.
+
+## C99 — Lettrage : découpage en 15-1a → 15-1a2 → 15-1b → 15-1c
+- **Retenu** : 15-1a socle (schéma, primitive, routes manuelles, gardes, contre-passation) ; **15-1a2** (neuve)
+  lettrage des pièces et rattrapage ; 15-1b postes ouverts à une date **et** moteur de proposition (backend,
+  repris de l'ancienne 15-1c) ; 15-1c l'écran, le manuel, l'E2E. Chaque story ≤ 5 modules ; la 15-1a avant
+  tout (socle). Les propositions se limitent aux paires (le lettrage manuel à N lignes reste possible). Les
+  fiches réécrites gardent leur Change Log d'août, précédé d'une entrée « Reprise du 2026-10-08 ».
+- **Écartées** : garder trois stories (la 15-1a aurait porté la synchronisation des pièces : au-delà du
+  seuil de taille qui avait fait diverger la 15-1 d'août) ; renommer les fiches (les clés du registre et du
+  `sprint-status` y renvoient).
+- **Réversible** : oui (planification).
+
+## C-15-11b-1 — 15-11b (dev, T0) : alignement sur le livré de la 15-11a — inventaire recompté, tests « valeur vide » remplacés, capture de la 15-11a réutilisée
+
+- **Contexte** : la revue de code P1 de la 15-11a (C-15-11a-6) a fait passer `KESH_ADMIN_BACKUP_DIR` et `KESH_LANG` à `opt_trimmed_env` et donné aux cinq numériques un bras « vide = défaut ». Recompté sur `HEAD` `b2b09f34` : 34 sites (et non 36), `Config::from_env` 24 lectures littérales, 7 appels `opt_trimmed_env`, identifiant `env` 38 fois en production (`config.rs` 33), ensemble lu 41, table `EMPLACEMENTS_AUTORISES` 22 entrées (le nombre 31 des appels `Littéral` de `Config::from_env` est inchangé : 24 + 7). Trois des tests « valeur vide » prescrits (`KESH_ADMIN_BACKUP_DIR`, `KESH_SMTP_PORT`, `KESH_LANG` vides) seraient verts avant le changement : ils ne prouveraient rien. Une capture `tracing` locale existe déjà dans le module de test de `config.rs` (`from_env_with_logs`), avec son témoin.
+- **Retenu** : fiche mise à jour (Change Log « Alignement sur le livré ») ; tests remplacés par des cas qui discriminent sur `HEAD` — `KESH_INBOX_DIR=""`, `KESH_PASSWORD_MIN_LENGTH=" 14 "`, `KESH_SMTP_PORT=" 2525 "` (valeur + capture), `KESH_COOKIE_SECURE="   "`, `KESH_LOG_FILE_ROTATION=""` (avertissement collecté par `LogConfig::from_env`) — en plus de `KESH_HOST`, `KESH_JWT_SECRET`, `DATABASE_URL`, `KESH_PORT`, `KESH_DOCUMENTS_DIR` ; capture de la 15-11a réutilisée (DRY) au lieu d'une seconde couche `Layer` ; `reset_env()` complété de six noms (`KESH_DOCUMENTS_DIR`, `KESH_INBOX_DIR`, quatre `KESH_LOG_FILE_*`).
+- **Écartées** : garder les trois tests non discriminants comme preuves (ils seraient verts avant le T2 — mémoire « tests qui prouvent moins ») ; écrire la couche `Layer` de la fiche (duplication d'un outil présent) ; s'arrêter après le T0 (aucun écart ne change une règle ni un AC sur le fond : l'AC2 change de cas, pas de règle).
+- **Réversible** : oui.
+
+## C-15-11b-2 — 15-11b (dev) : `quote` en dev-dépendance pour l'exclusion `cfg(test)`, garde sans le nombre d'entrées, redondances de trim retirées
+
+- **Contexte** : la règle `cfg(test)` de l'AC3 vaut pour tout élément **et toute instruction** (`syn::Stmt`) ; `syn` 2 n'offre pas d'accès générique aux attributs d'un `Item` ni d'une expression-instruction, et ne ré-exporte pas `ToTokens` (seulement sous `__private`). Par ailleurs, la garde du test assertait `EMPLACEMENTS_AUTORISES.len() == 22`, ce qui faisait rougir une seconde famille sur M13/M14, dont la fiche attend « (L) seule ».
+- **Retenu** : `quote = "1"` en dev-dépendance de `kesh-api` (déjà au `Cargo.lock` comme dépendance de `syn` : aucun paquet neuf) — les attributs de tête de tout élément, élément d'`impl`/de trait et instruction se lisent en re-parsant ses jetons (`Attribute::parse_outer`), une seule règle pour tous ; assertion du nombre d'entrées retirée de la garde (le contrôle à nombre exact de chaque entrée rend toute liste vidée ou tronquée rouge de toute façon) ; `.trim()` redondants des numériques d'inbox et du port SMTP retirés (la valeur arrive trimée) ; doc-comment d'`is_template_placeholder` corrigé (« le secret JWT n'est pas trimé à la lecture » devenu faux).
+- **Écartées** : énumérer à la main les variantes d'`Item`/`ImplItem`/`TraitItem`/`Expr` (une liste ouverte, précisément ce que le test lexical a abandonné) ; `syn::__private::ToTokens` (API cachée) ; garder l'assertion `== 22` (redondante, et fausserait le relevé des familles des mutations).
+- **Réversible** : oui.
+
+## C-15-11b-3 — 15-11b (revue de code P1) : `RUST_LOG` vide testé en lançant le binaire ; `KESH_STATIC_DIR`/`KESH_LOCALES_DIR` vides laissés en angle mort
+
+- **Contexte** : B3 demande un test de comportement du défaut appliqué au vide de `RUST_LOG`, `KESH_STATIC_DIR` et `KESH_LOCALES_DIR`, sous la contrainte de ne toucher aucune ligne de code de production exécutable. `init_tracing` installe un abonné global (non testable en unitaire) ; les deux répertoires sont lus par `main` après la connexion à la base.
+- **Retenu** : pour `RUST_LOG`, un test d'intégration qui lance le binaire `kesh-api` (`CARGO_BIN_EXE_kesh-api`, environnement vidé, répertoire temporaire, obligatoires vides → sortie en refus de configuration) et observe si l'avertissement rejoué de `KESH_LOG_FILE_ROTATION` passe ; témoin `RUST_LOG=error`. Pour les deux répertoires, angle mort écrit (en-tête du test, § *Angles morts* de la fiche). Le dédoublonnage des plages exclues (E3) et la normalisation `r#` (E1) sont faits dans le test.
+- **Écartées** : extraire une fonction `niveau_de_log()` / `repertoire_statique()` (code de production, interdit à cette remédiation) ; démarrer le binaire complet contre une base pour observer `KESH_LOCALES_DIR` (coût, base partagée, processus à arrêter) ; renommer le champ `exclusions` au lieu de dédoublonner.
+- **Réversible** : oui.
+
+## C-15-11b-4 — 15-11b (clôture) : rebasée sur `origin/main` (`5e4bec50`, 15-5d) ; registre et sprint-status par union, PDF régénéré
+
+- **Contexte** : la 15-5d a été mergée pendant la revue de la 15-11b ; elle touche le registre,
+  `sprint-status.yaml`, le CHANGELOG et `admin-manual.tex`/`.pdf`.
+- **Retenu** : rebase (non merge) ; registre par union (les entrées C89–C99 reportées par la branche après
+  C-15-5d-8) ; `sprint-status.yaml` par union, la ligne `last_updated` de la branche renumérotée (24),
+  celle de la clôture (25) ; `admin-manual.tex` fusionné par git sans conflit, le PDF binaire pris de la
+  branche pendant le rebase puis **régénéré** sur le `.tex` fusionné et contrôlé aplati. CHANGELOG `[0.13.0]`
+  sans conflit, une seule rubrique de chaque. Aucun conflit de code ; le test lexical (L) vert sur l'état
+  rebasé. Gates complets rejoués (backend, frontend, E2E).
+- **Écartées** : merge de `main` dans la branche (historique moins lisible) ; garder le PDF de l'un des deux
+  côtés (il aurait omis l'apport de l'autre).
+- **Réversible** : oui (rebase ; branche poussée).
+
