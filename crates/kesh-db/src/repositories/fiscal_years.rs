@@ -376,16 +376,17 @@ pub async fn create(
     Ok(fy)
 }
 
-/// Variante de `create` pour le seed démo : pas d'audit log, pas de `user_id`.
+/// Variante de `create` pour le seed démo : pas d'entrée `fiscal_year.created`,
+/// pas de `user_id`.
 ///
-/// Story 3.7 T1.8 — le contexte système (seed de démonstration) ne génère pas
-/// d'entrée d'audit. *(La comparaison d'origine avec `bulk_create_from_chart`
-/// ne tient plus : l'onboarding de production trace le chargement du plan,
-/// Story 15-7a2 ; la règle reste vraie pour le seed.)* La tx interne fait
-/// toujours les pré-checks d'overlap et de nom pour respecter les UNIQUE
-/// constraints même en seed. **La démonstration est tracée par sa synthèse**
-/// (`installation.demo_seeded`, Story 15-7b1, qui porte `fiscal_year_id`), pas
-/// par fait de domaine.
+/// Story 3.7 T1.8, amendée par la Story 15-7b1 — cette fonction n'écrit pas
+/// d'entrée d'audit propre : **la démonstration est tracée par sa synthèse**
+/// (`installation.demo_seeded`, qui porte `fiscal_year_id`), écrite dans la
+/// dernière transaction de `seed_demo`, pas par fait de domaine. *(La
+/// comparaison d'origine avec `bulk_create_from_chart` ne tient plus :
+/// l'onboarding de production trace le chargement du plan, Story 15-7a2.)* La
+/// tx interne fait toujours les pré-checks d'overlap et de nom pour respecter
+/// les UNIQUE constraints même en seed.
 ///
 /// **Sans la garde de l'invariant I** (Story 15-12a) : le seed crée un seul
 /// exercice dans une société neuve (`kesh-seed`), il ne peut pas produire un

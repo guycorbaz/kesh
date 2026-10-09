@@ -148,6 +148,12 @@ fn demo_address(locale: &Locale) -> kesh_db::entities::address::StructuredAddres
 /// (`frontend/src/routes/(app)/+layout.svelte`), alors que l'échec laisse
 /// `is_demo = false`. Atomicité des quatre premières validations : #538.
 ///
+/// Même résidu sur le refus `StepAlreadyCompleted` (400) : si
+/// `start-production` franchit l'étape entre la pré-vérification non
+/// verrouillée du handler et la dernière transaction, la société renommée, le
+/// plan et l'exercice de démonstration restent commités sur une installation
+/// passée en production (#538).
+///
 /// # Rejeu
 ///
 /// La dernière transaction est rejouée sur interblocage (1213) par

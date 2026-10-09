@@ -115,7 +115,9 @@ convertit en `SeedError` (`Db`, `StepAlreadyCompleted`). La 15-7b2 **étend** ce
 `ResetForbidden`) et ce prédicat pour la remise à zéro, et son test 13 l'exerce sur un **vrai** 1213 :
 le prédicat de cette fiche est prouvé là (même release, C-15-7-31) ; le type est la garde de la
 conversion. L'interblocage de `seed_demo` lui-même n'est pas provoqué par un test (non déterministe) —
-angle mort écrit au Dev Agent Record.
+angle mort écrit au Dev Agent Record. *(Levé à la revue de code P1, B-3 : un déclencheur lève une vraie
+1213 à la première écriture de la synthèse ; tests `is_seed_retryable_accepts_1213_and_only_it` et
+`seed_demo_last_transaction_is_replayed_on_deadlock`, C-15-7b1-2.)*
 La **boucle de retry** existante (`lib.rs:184-219` : `max_retries = 3`, soit **trois rejeux, quatre
 essais**, 50 ms, sur `InactiveOrInvalidAccounts` — R2-5 de la P2) est **conservée telle quelle**
 (C-15-7-14, arbitrage réservé à Guy) et enveloppe le `retry_with` : un essai annulé n'écrit ni taux,
@@ -233,7 +235,9 @@ s'inscrit au journal d'audit, en une entrée de synthèse (#434).
 - **Concurrence avec `start-production`** (les deux partent de l'étape 2) : les premières validations
   de `seed_demo` commitent, la dernière trouve l'étape 3 et rend `StepAlreadyCompleted` ; une
   installation **de production** à l'étape 3 garde le nom « Démo SA », le plan PME et l'exercice.
-  Fenêtre étroite, **suivie par #538** ; non corrigée ici.
+  Fenêtre étroite, **suivie par #538** ; non corrigée ici. *(Revue de code P1, B-1 = E-3 : ce résidu
+  est désormais écrit au doc-comment de `seed_demo`, au CHANGELOG et aux deux manuels ; la course est
+  rendue déterministe par le test `seed_demo_race_with_start_production_is_a_400`.)*
 - **Deux `seed-demo` concurrents** (F-3 de la P1) : tous deux passent la pré-vérification non
   verrouillée ; le perdant échoue en **500** — à `companies::update` (conflit de version,
   `OptimisticLockConflict`, s'il a lu la société avant l'`update` du gagnant : le verrou de comptage
@@ -271,7 +275,11 @@ configuration d'administrateur, **sans** `create_test_company` — le bootstrap 
 | 1 | Démonstration `language` → `mode` → `seed-demo` : `is_stub = TRUE` avant ; séquence exacte (`user.created`, entrées de la 15-7a2, puis `installation.demo_seeded`, puis l'étape 2→3), détails cohérents avec la base (`accounts_created` = `COUNT(*)` des comptes, `fiscal_year_id` existant, `vat_rates_created` = 4, `invoice_settings_created` = true), `is_stub = FALSE` après. **Variante** : montage à deux taux préexistants (8.10 et 2.60 au 2024-01-01 avant `seed-demo`) ⇒ `vat_rates_created = 2` | 1 |
 | 2 | Atomicité de la dernière transaction de `seed_demo` — déclencheur de test **sélectif** (F-1 de la P1), posé **après** la montée à l'étape 2 (sinon les `installation.step_completed` de `language` et `mode` échouent d'abord, R-4) : `BEFORE INSERT ON audit_log FOR EACH ROW … IF NEW.action = 'installation.step_completed' THEN SIGNAL …`, soit la **seconde** écriture de la transaction (patron du test 9 de la 15-7a2, DDL par `sqlx::raw_sql`). Assertions : 500 ; **aucune entrée neuve** (le compte d'`audit_log` relevé juste avant l'appel est celui d'après), en particulier zéro `installation.demo_seeded` — la première écriture a été annulée avec la transaction ; étape toujours 2 ; `is_stub = TRUE` (avant et après) ; `vat_rates` et `company_invoice_settings` vides. **Résidu asserté** (F-3 de la P1) : comptes > 0, un exercice, société renommée — les quatre premières validations sont commitées. **Rejeu impossible asserté** : `DROP TRIGGER`, nouveau `POST seed-demo` ⇒ 500 (renvoi à #538 en commentaire du test ; C-15-7-13 ne prévoyait un rejeu réussi qu'avant que l'inventaire n'établisse ce résidu). **Variante** : déclencheur sur `NEW.action = 'installation.demo_seeded'` (la première écriture), mêmes assertions | 1 |
 | 3 | `seed-demo` par jeton d'API : jeton **`read-write`** (un jeton en lecture seule prend 403), créé par `POST /api/v1/settings/api-keys` **sous le JWT de l'administrateur** (la route est interdite aux jetons). Le helper `create_key_via_http` (aujourd'hui privé à `api_keys_e2e.rs:179`, sur le `TestApp` local) **remonte dans `tests/common/mod.rs`**, paramétré par client et URL de base ; `api_keys_e2e.rs` l'emploie (**dix** appels, `:205` à `:521` ; la ligne `:179` est la définition — R2-1/F2-7 de la P2), **et le test 8 de la 15-7a2**, dans `onboarding_audit_e2e.rs`, aussi : la création de jeton qu'il porte (copie ou écriture en ligne, le helper étant privé à sa naissance) est **remplacée** par l'appel au helper remonté. Les huit autres fichiers qui créent leur jeton en ligne (`admin_full_export_e2e.rs:406`, `admin_full_import_e2e.rs:414`, `admin_pat_denied_e2e.rs:731`, `audit_log_e2e.rs:254`, `fiscal_years_e2e.rs:1611`, `invoice_unvalidate_e2e.rs:517`, `invoice_frozen_pdf_e2e.rs:1004`, `reconciliation_e2e.rs:4209`) restent **hors périmètre** — la fiche ne prétend pas les couvrir. Séquence attendue : `user.created`, `api_key.created`, entrées de la 15-7a2, `installation.demo_seeded`, `installation.step_completed` ; `actor_type = 'api_key'` sur les **deux dernières** ; journal lu **par le pool** (il n'est pas lisible par jeton, `user-manual.tex:2044-2045`) | 7 |
-| 11 | Gardes de source : (a) `NewAuditLogEntry::user(` absent de `kesh-seed/src/lib.rs` — **vert dès avant la story**, garde de régression, **pas** preuve de l'AC 7, que porte le test 3 ; (b) `UPDATE companies SET is_stub` absent de `kesh-api/src/routes/onboarding.rs` (R-1/F-2 de la P1 : aucun test de comportement ne distingue un `UPDATE` résiduel redondant) — **rouge avant la story** (`:211`) | 1, 7 |
+| 11 | Gardes de source : (a) `NewAuditLogEntry::user(` absent de `kesh-seed/src/lib.rs` — **vert dès avant la story**, garde de régression, **pas** preuve de l'AC 7, que porte le test 3 ; (b) `UPDATE companies SET is_stub` absent de `kesh-api/src/routes/onboarding.rs` (R-1/F-2 de la P1 : aucun test de comportement ne distingue un `UPDATE` résiduel redondant) — **rouge avant la story** (`:211`). *Revue P1 (B-4 = A-4) : les deux sources sont normalisées (blancs réduits, casse abaissée) avant la recherche ; angle mort assumé : une requête assemblée de constantes ou de fragments de chaîne* | 1, 7 |
+| 12 | *(revue P1, E-1 = A-1)* `kesh_seed::seed_demo` appelé **directement** (sans la pré-vérification non verrouillée du handler) sur une installation passée à l'étape 3, puis 4 (`seed_demo_refuses_step_{3,4}_under_lock`) : `Err(StepAlreadyCompleted)` ; séquence d'audit, étape **et version** inchangées, `is_demo` non levé, `is_stub` intact, ni taux ni réglages ; plan commité (la garde est celle de la dernière transaction) | 1 |
+| 13 | *(revue P1, E-1 = A-1)* La course `start-production` / `seed-demo` rendue déterministe : déclencheur `AFTER INSERT ON fiscal_years` qui pose l'étape 3 (`seed_demo_race_with_start_production_is_a_400`) : `400 ONBOARDING_STEP_ALREADY_COMPLETED`, la dernière transaction n'écrit rien | 1 |
+| 14 | *(revue P1, B-3)* `is_seed_retryable` sur une **vraie** 1213 (`SIGNAL … MYSQL_ERRNO = 1213`, passée par `map_db_error`) : vrai ; 1205, `OptimisticLockConflict`, `StepAlreadyCompleted` : faux | 1 |
+| 15 | *(revue P1, B-3)* Rejeu de bout en bout : déclencheur qui lève une 1213 à la **première** écriture de `installation.demo_seeded` seulement (compteur dans une table MyISAM, que l'annulation n'efface pas) ⇒ 200, une seule synthèse, étape 3 (`seed_demo_last_transaction_is_replayed_on_deadlock`) | 1 |
 
 **AC prouvés par les gardes existantes** (R-7 de la P1) : AC 8 par
 `the_registry_partition_is_what_the_story_declares` (`audit_route_registry.rs`) ; AC 9 par
@@ -288,8 +296,10 @@ sinon le binaire muté) :
 | remettre l'`UPDATE companies SET is_stub = FALSE` dans le handler | test 11 (b) rouge |
 | écrire l'entrée par `NewAuditLogEntry::user(` | test 3 rouge (`actor_type = 'user'`), et test 11 (a) |
 | `vat_rates_created` en dur à 4 | variante du test 1 rouge (`2` attendu) |
-| `ui_mode` repris d'un paramètre (lecture non verrouillée) au lieu de l'état verrouillé | **non distinguée par un test** : `mode` est refusé à l'étape 2, les deux sources coïncident ; garde par la signature (le paramètre n'existe plus) |
-| `retry_with` retiré de la dernière transaction, ou prédicat toujours faux | **non distinguée par un test de cette fiche** : l'interblocage de `seed_demo` n'est pas provoquable de façon déterministe ; le prédicat partagé est prouvé par le test 13 de la 15-7b2, la conversion par le type `SeedAttemptError` (un `?` brut sur `sqlx::Error` ne compile pas) — angle mort écrit au Dev Agent Record (F2-3 de la P2) |
+| prédicat `is_seed_retryable` toujours faux *(revue P1, B-3 ; l'angle mort d'origine, F2-3 de la P2, est levé)* | tests 14 et 15 rouges (la route rend 500) |
+| revérification de l'étape sous verrou retirée de `final_body` *(revue P1, E-1 = A-1)* | tests 12 (étapes 3 et 4 : `Ok(())`) et 13 (200) rouges |
+| bras `StepAlreadyCompleted ⇒ 400` retiré du handler *(revue P1, E-1 = A-1)* | test 13 rouge (500) |
+| `UPDATE companies` / `set is_stub` remis dans le handler, sur deux lignes et en minuscules *(revue P1, B-4 = A-4)* | test 11 (b) rouge |
 
 ### Ce que la story ne fait pas
 
@@ -297,6 +307,15 @@ sinon le binaire muté) :
 - **L'atomicité des quatre premières validations de `seed_demo`**, et donc le rejeu après échec :
   hors périmètre, **suivi par #538** (inventaire § 2) ; le résidu est écrit et testé ici (test 2).
 - **Le RBAC de `seed-demo`** (tout rôle authentifié) : constaté, hors périmètre.
+- **Dette — message du `422`** (revue de code P1, E-2, LOW ; C-15-7b1-3) : le bras
+  `InactiveOrInvalidAccounts` du handler dit « Vérifiez que le plan comptable a bien été chargé avant
+  de relancer la démo » ; l'erreur survient désormais dans la dernière transaction, **après** le commit
+  du plan et de l'exercice, et relancer échoue (500, doublon de comptes). Le texte n'est pas changé ici
+  (code de production exécutable, règle de la remédiation) ; à reprendre avec l'atomicité des quatre
+  premières validations, **#538**, qui fait disparaître l'état non relançable. Atteinte pratiquement
+  impossible avec le plan PME embarqué.
+- **Boucle `InactiveOrInvalidAccounts`** (revue de code P1, B-2, LOW) : rejeu ×4 d'une erreur
+  permanente, code non exercé — conservé, **arbitrage réservé à Guy** (C-15-7-14).
 - **La remise à zéro dans l'interface après un échec de `seed-demo`** (F2-4 de la P2) : la bannière qui
   la propose n'est affichée qu'en démonstration ; le chemin par l'API est écrit (AC 10), l'interface
   n'est pas changée — signalé pour le complément de #538.
@@ -350,11 +369,27 @@ Journaux non versionnés : `target/gate-logs/15-7b1-gate.log` (backend), `15-7b1
   M3 `UPDATE … is_stub` remis dans le handler → test 11 rouge ; M4 `NewAuditLogEntry::user(` → test 3
   rouge (`actor_type = 'user'`) et test 11 rouge ; M5 `vat_rates_created` en dur à 4 → variante du
   test 1 rouge (4 ≠ 2). Restauration vérifiée par grep (zéro résidu).
-- **Angles morts déclarés** (fiche, mutations non distinguées) : `ui_mode` lu hors verrou (gardé par la
-  signature, le paramètre n'existe plus) ; `retry_with` retiré ou prédicat faux (l'interblocage de
-  `seed_demo` n'est pas provoqué de façon déterministe ; le prédicat est prouvé par le test 13 de la
-  15-7b2, la conversion par le type `SeedAttemptError` sans `From<sqlx::Error>`) ; boucle
-  `InactiveOrInvalidAccounts` non exercée (C-15-7-14).
+- **Angles morts déclarés** (fiche, mutations non distinguées), **après la revue de code P1** : boucle
+  `InactiveOrInvalidAccounts` non exercée (C-15-7-14) ; garde de source 11 (b) aveugle à une requête
+  assemblée de fragments. *Retirés à la P1* : `ui_mode` lu hors verrou (E-4 — la mutation n'existe
+  plus, le paramètre ayant disparu) ; `retry_with` retiré ou prédicat faux (B-3 — tests 14 et 15).
+- **Revue de code P1 — remédiation** (commit « fix(15-7b1): revue P1 — … ») : **5 tests neufs** dans
+  `onboarding_audit_e2e.rs` (28 → **33**, recompté `grep -cE '#\[sqlx::test|#\[test|#\[tokio::test'`
+  aux deux bornes `99335b53` / commit de remédiation) : `seed_demo_refuses_step_3_under_lock`,
+  `seed_demo_refuses_step_4_under_lock`, `seed_demo_race_with_start_production_is_a_400`,
+  `is_seed_retryable_accepts_1213_and_only_it`, `seed_demo_last_transaction_is_replayed_on_deadlock` ;
+  garde 11 (b) normalisée. **Mutations jouées, chacune seule, fichier restauré puis touché — 4/4
+  rouges** : M6 garde sous verrou retirée (`kesh-seed/src/lib.rs`, `if state.step_completed != 2`) →
+  tests 12 (×2, `Ok(())`) et 13 (200) rouges ; M7 bras 400 du handler retiré → test 13 rouge (500) ;
+  M8 prédicat toujours faux → tests 14 et 15 rouges (500) ; M9 `update companies\n set is_stub`
+  (minuscules, deux lignes) dans le handler → test 11 rouge. Journaux : `scratchpad/mut157b1-p1/`.
+  **Gate ciblé seulement**, base `kesh_157b1` remise à zéro avant : `cargo fmt --check` vert,
+  `cargo clippy --workspace --all-targets -D warnings` vert, `onboarding_audit_e2e` **33/33**,
+  `kesh-seed` **2/2**, `audit_route_registry` **11/11** (doc-comment touché)
+  (`target/gate-logs/15-7b1-review-p1-gate.log`) ; gate complet et E2E au push.
+  **Aucune ligne de code de production exécutable touchée** : doc-comments et commentaires de
+  `kesh-seed/src/lib.rs`, `routes/profile.rs`, `repositories/fiscal_years.rs`, doc-comment de
+  `tests/audit_route_registry.rs`, tests, CHANGELOG, manuels (`.tex` et PDF, contrôlés aplatis).
 - **Décomptes, recomptés depuis la source** (de `200f5e79` à `HEAD`) : tests de
   `onboarding_audit_e2e.rs` 22 → **28** (6 neufs) ; appels du helper remonté : **10** dans
   `api_keys_e2e.rs` + 1 dans le test 8 de la 15-7a2 ; registre **105 / 5 / 2 = 112**, colonne `Rejeu`
@@ -389,6 +424,7 @@ Journaux non versionnés : `target/gate-logs/15-7b1-gate.log` (backend), `15-7b1
   `tests/audit_route_registry.rs`, `tests/fiscal_years_e2e.rs`
 - `crates/kesh-db/src/repositories/{accounts,company_invoice_settings,fiscal_years,onboarding,vat_rates}.rs`
   (commentaires seuls)
+- revue P1 : `crates/kesh-api/src/routes/profile.rs` (commentaire seul)
 - `docs/MULTI-TENANT-SCOPING-PATTERNS.md`, `docs/manual/fr/{admin,user}-manual.{tex,pdf}`, `CHANGELOG.md`
 - `_bmad-output/implementation-artifacts/{15-7b1-trace-demonstration,15-7b2-remise-a-zero,15-7-trace-onboarding,epic-15-choix-autonomes}.md`,
   `sprint-status.yaml`
@@ -523,3 +559,24 @@ Journaux non versionnés : `target/gate-logs/15-7b1-gate.log` (backend), `15-7b1
   doc-comments, `97b367c0` manuels et CHANGELOG). Gates au dernier commit de code : backend 2979/2979,
   frontend vert (Vitest 1095/1095), E2E 245 / 9 échecs attendus (7 KF-029, 2 KF-045) ; 5 mutations
   rouges sur 5 jouées. Statut `review`. Choix C-15-7b1-1.
+- 2026-10-09 — **Revue de code P1** (Sonnet ×3 : lentilles B, E, A ; rapports
+  `target/gate-logs/15-7b1-review-p1-{B,E,A}.md`, non versionnés). **B : 4 LOW ; E : 1 MEDIUM, 3 LOW ;
+  A : 1 MEDIUM, 3 LOW** — un seul MEDIUM distinct (E-1 = A-1), convergé par deux lentilles.
+  Remédiation, **sans ligne de code de production exécutable** :
+  **E-1 = A-1** (MEDIUM, la revérification de l'étape sous verrou et son 400 ne mordaient sur aucun
+  test) → tests 12 (appel direct de `kesh_seed::seed_demo` aux étapes 3 et 4) et 13 (course
+  `start-production` rendue déterministe par un déclencheur sur `fiscal_years`) ; mutations M6, M7
+  rouges. **B-3** → tests 14 (prédicat sur une vraie 1213 `SIGNAL`ée) et 15 (rejeu de bout en bout,
+  1213 levée une fois par déclencheur), mutation M8 rouge — l'angle mort F2-3 de la P2 est levé
+  (C-15-7b1-2). **B-1 = E-3** → le résidu de la course (société, plan et exercice commités sur une
+  installation de production) écrit au doc-comment de `seed_demo`, au CHANGELOG et au manuel
+  utilisateur, renvoi à #538. **A-3** → la limite #538 écrite au manuel d'administration (`:1948`),
+  PDF régénérés et contrôlés aplatis. **A-2** → commentaires `routes/profile.rs:47-51` (« dix
+  appelants tracés », le seed compris) et `fiscal_years.rs::create_for_seed` (contradiction retirée).
+  **B-4 = A-4** → garde 11 (b) normalisée (blancs, casse), mutation M9 rouge ; angle mort résiduel écrit.
+  **E-4** → angle mort « `ui_mode` hors verrou » retiré (tableau des mutations, Dev Agent Record).
+  **E-2** → écrit comme dette (le texte du `422` est du code exécutable ; C-15-7b1-3). **B-2** →
+  inchangé, arbitrage de Guy (C-15-7-14). Propagation : grep de `contexte système`, `reste le seed`,
+  `15-7b1\)`, `pas provoqué` — le doc-comment (vi) de `audit_route_registry.rs` renvoie désormais aux
+  tests 14 et 15. Gate ciblé : fmt, clippy, `onboarding_audit_e2e` 33/33, `kesh-seed` 2/2, `audit_route_registry`
+  11/11 ; gate complet et E2E au push. Choix C-15-7b1-2, C-15-7b1-3.

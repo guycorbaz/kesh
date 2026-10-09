@@ -2251,7 +2251,9 @@ lorsque le chargement aboutit.} Un chargement interrompu peut laisser une partie
 des données de démonstration --- la société renommée, le plan comptable,
 l'exercice --- \textbf{sans entrée au journal}, et un nouveau chargement échoue
 alors jusqu'à une réinitialisation~: c'est une limite connue, suivie par
-l'issue \#538.
+l'issue \#538. Il en va de même si la configuration de production franchit
+l'étape pendant le chargement~: celui-ci est refusé, mais ces données restent sur
+l'installation de production.
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{FAQ et dépannage utilisateur}

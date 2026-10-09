@@ -1590,16 +1590,221 @@ async fn seed_demo_by_api_key_is_attributed_to_the_key(pool: MySqlPool) {
 /// drapeau provisoire dans le handler : `clear_stub_in_tx` le lève dans la
 /// dernière transaction — aucun test de comportement ne distinguerait un
 /// `UPDATE` résiduel redondant (R-1/F-2 de la validation P1).
+///
+/// Revue P1 (B-4 = A-4) : les deux sources sont **normalisées** avant la
+/// recherche — blancs (sauts de ligne compris) réduits à une espace, casse
+/// abaissée —, si bien qu'un `UPDATE` remis en forme sur plusieurs lignes ou
+/// en minuscules est vu. Angle mort assumé, écrit à la fiche : une requête
+/// assemblée à partir de constantes ou de fragments de chaîne.
 #[test]
 fn seed_demo_sources_keep_the_actor_and_the_stub_in_the_transaction() {
-    let seed = include_str!("../../kesh-seed/src/lib.rs");
+    fn normalized(src: &str) -> String {
+        src.split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+            .to_lowercase()
+    }
+    let seed = normalized(include_str!("../../kesh-seed/src/lib.rs"));
     assert!(
-        !seed.contains(concat!("NewAuditLogEntry::", "user(")),
+        !seed.contains(concat!("newauditlogentry::", "user(")),
         "kesh-seed ne doit pas construire d'entrée par `::user` (dette #431)"
     );
-    let handler = include_str!("../src/routes/onboarding.rs");
+    let handler = normalized(include_str!("../src/routes/onboarding.rs"));
     assert!(
-        !handler.contains(concat!("UPDATE companies ", "SET is_stub")),
+        !handler.contains(concat!("update companies ", "set is_stub")),
         "le drapeau provisoire se lève dans la transaction de `seed_demo`"
     );
+}
+
+// --- Revue P1 de la 15-7b1 (E-1 = A-1, B-3) ---------------------------------
+
+async fn admin_user_id(pool: &MySqlPool) -> i64 {
+    sqlx::query_scalar("SELECT id FROM users ORDER BY id LIMIT 1")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+async fn is_demo(pool: &MySqlPool) -> bool {
+    sqlx::query_scalar("SELECT is_demo FROM onboarding_state")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Ce que la dernière transaction de `seed_demo` n'a PAS écrit : ni synthèse,
+/// ni entrée neuve, ni étape (ni version), ni levée du drapeau provisoire, ni
+/// réglages, ni taux, ni `is_demo`.
+async fn assert_last_transaction_wrote_nothing(
+    pool: &MySqlPool,
+    company_id: i64,
+    audit_before: &[String],
+    state_before: (i32, i32),
+) {
+    assert_eq!(
+        audit_sequence(pool).await,
+        audit_before,
+        "aucune entrée neuve"
+    );
+    assert_eq!(
+        state_row(pool).await,
+        state_before,
+        "étape et version inchangées"
+    );
+    assert!(!is_demo(pool).await, "is_demo non levé");
+    assert!(is_stub(pool, company_id).await, "drapeau provisoire intact");
+    assert_eq!(count_for_company(pool, "vat_rates", company_id).await, 0);
+    assert_eq!(
+        count_for_company(pool, "company_invoice_settings", company_id).await,
+        0
+    );
+}
+
+/// Revue P1 (E-1 = A-1) — la revérification de l'étape SOUS VERROU, prouvée
+/// sans le handler (dont la pré-vérification non verrouillée la masquerait) :
+/// `kesh_seed::seed_demo` appelé directement sur une installation déjà passée
+/// à l'étape `step` rend `StepAlreadyCompleted`, et sa dernière transaction
+/// n'écrit rien. Les quatre premières validations, elles, ont commité (#538).
+async fn seed_demo_refuses_a_passed_step_under_lock(pool: MySqlPool, step: i32) {
+    let (app, token, company_id) = bootstrap(&pool).await;
+    assert!(
+        is_stub(&pool, company_id).await,
+        "montage : société provisoire"
+    );
+    to_demo_step(&app, &token).await;
+    set_step(&pool, step).await;
+    let audit = audit_sequence(&pool).await;
+    let state = state_row(&pool).await;
+    assert_eq!(state.0, step, "montage : étape posée");
+
+    let result = kesh_seed::seed_demo(
+        &pool,
+        &kesh_i18n::Locale::FrCh,
+        (admin_user_id(&pool).await, None),
+    )
+    .await;
+    assert!(
+        matches!(result, Err(kesh_seed::SeedError::StepAlreadyCompleted)),
+        "étape {step} : {result:?}"
+    );
+    assert_last_transaction_wrote_nothing(&pool, company_id, &audit, state).await;
+    // Résidu des quatre premières validations (#538) : la garde est bien
+    // celle de la DERNIÈRE transaction, non une garde amont.
+    assert!(accounts_count(&pool, company_id).await > 0, "plan commité");
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn seed_demo_refuses_step_3_under_lock(pool: MySqlPool) {
+    seed_demo_refuses_a_passed_step_under_lock(pool, 3).await;
+}
+
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn seed_demo_refuses_step_4_under_lock(pool: MySqlPool) {
+    seed_demo_refuses_a_passed_step_under_lock(pool, 4).await;
+}
+
+/// Revue P1 (E-1 = A-1) — le 400 du handler sur la course `start-production`
+/// contre `seed-demo`, rendue déterministe : un déclencheur franchit l'étape
+/// au moment où `create_for_seed` insère l'exercice — après la
+/// pré-vérification non verrouillée, avant la dernière transaction. La route
+/// rend `400 ONBOARDING_STEP_ALREADY_COMPLETED` (et non 500), et la dernière
+/// transaction n'écrit rien. Le résidu (société renommée, plan, exercice) est
+/// celui de #538.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn seed_demo_race_with_start_production_is_a_400(pool: MySqlPool) {
+    let (app, token, company_id) = bootstrap(&pool).await;
+    assert!(
+        is_stub(&pool, company_id).await,
+        "montage : société provisoire"
+    );
+    to_demo_step(&app, &token).await;
+    let audit = audit_sequence(&pool).await;
+    sqlx::raw_sql(
+        "CREATE TRIGGER t_15_7b1_race AFTER INSERT ON fiscal_years FOR EACH ROW \
+         UPDATE onboarding_state SET step_completed = 3",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (status, body) = post(&app, &token, "seed-demo", None).await;
+    assert_eq!(status, 400, "{body}");
+    assert_eq!(body["error"]["code"], "ONBOARDING_STEP_ALREADY_COMPLETED");
+
+    let state = state_row(&pool).await;
+    assert_eq!(state.0, 3, "l'étape franchie par le déclencheur");
+    assert_last_transaction_wrote_nothing(&pool, company_id, &audit, state).await;
+    assert_eq!(
+        count_for_company(&pool, "fiscal_years", company_id).await,
+        1,
+        "le déclencheur a bien joué"
+    );
+}
+
+/// Revue P1 (B-3) — le prédicat de rejeu, sur une VRAIE erreur 1213 rendue
+/// par MariaDB (`SIGNAL … MYSQL_ERRNO = 1213`) et passée par `map_db_error`,
+/// comme `final_attempt` la voit : reconnue ; une autre erreur de base (1205),
+/// une erreur de dépôt et le refus d'étape ne le sont pas.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn is_seed_retryable_accepts_1213_and_only_it(pool: MySqlPool) {
+    use kesh_seed::{SeedAttemptError, is_seed_retryable};
+    async fn signal(pool: &MySqlPool, errno: u32) -> SeedAttemptError {
+        let e = sqlx::query(&format!(
+            "SIGNAL SQLSTATE '40001' SET MYSQL_ERRNO = {errno}, MESSAGE_TEXT = '15-7b1'"
+        ))
+        .execute(pool)
+        .await
+        .unwrap_err();
+        SeedAttemptError::Db(kesh_db::errors::map_db_error(e))
+    }
+    assert!(is_seed_retryable(&signal(&pool, 1213).await));
+    assert!(!is_seed_retryable(&signal(&pool, 1205).await));
+    assert!(!is_seed_retryable(&SeedAttemptError::Db(
+        kesh_db::errors::DbError::OptimisticLockConflict
+    )));
+    assert!(!is_seed_retryable(&SeedAttemptError::StepAlreadyCompleted));
+}
+
+/// Revue P1 (B-3) — le rejeu de la dernière transaction, de bout en bout : un
+/// déclencheur lève une 1213 à la PREMIÈRE écriture de la synthèse, et à elle
+/// seule (compteur dans une table MyISAM, que l'annulation n'efface pas).
+/// Le second essai aboutit : 200, une seule synthèse, l'étape franchie une
+/// fois. Sans rejeu (prédicat faux ou `retry_with` retiré), la route rendrait
+/// 500.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn seed_demo_last_transaction_is_replayed_on_deadlock(pool: MySqlPool) {
+    let (app, token, company_id) = bootstrap(&pool).await;
+    to_demo_step(&app, &token).await;
+    let before = audit_sequence(&pool).await;
+    sqlx::raw_sql(
+        "CREATE TABLE t_15_7b1_once (n INT NOT NULL) ENGINE = MyISAM; \
+         INSERT INTO t_15_7b1_once VALUES (0); \
+         CREATE TRIGGER t_15_7b1_deadlock BEFORE INSERT ON audit_log FOR EACH ROW \
+         BEGIN IF NEW.action = 'installation.demo_seeded' \
+                   AND (SELECT n FROM t_15_7b1_once) = 0 THEN \
+           UPDATE t_15_7b1_once SET n = n + 1; \
+           SIGNAL SQLSTATE '40001' SET MYSQL_ERRNO = 1213, MESSAGE_TEXT = '15-7b1 deadlock'; \
+         END IF; END",
+    )
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let (status, body) = post(&app, &token, "seed-demo", None).await;
+    assert_eq!(status, 200, "{body}");
+
+    let fired: i32 = sqlx::query_scalar("SELECT n FROM t_15_7b1_once")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(fired, 1, "le déclencheur a levé une 1213, une fois");
+    let mut expected = before;
+    expected.extend([
+        "installation.demo_seeded".to_string(),
+        "installation.step_completed".to_string(),
+    ]);
+    assert_eq!(audit_sequence(&pool).await, expected);
+    assert_eq!(state_row(&pool).await.0, 3);
+    assert!(!is_stub(&pool, company_id).await);
+    assert_eq!(count_for_company(&pool, "vat_rates", company_id).await, 4);
 }

@@ -138,9 +138,10 @@
 //!   dit l'inventaire de l'AC1, pas la présence d'une enveloppe, et le volet
 //!   (c) ne les examine pas : `update_invoice_settings` est tenue par le test
 //!   7 de `rejeu_interblocage_e2e.rs`, la clôture et la création d'un exercice
-//!   par ses tests 9 et 10, `onboarding::finalize` et `onboarding::seed_demo`
-//!   par leur revue (l'interblocage de `seed_demo` n'est pas provoqué par un
-//!   test, angle mort de la 15-7b1) — et le volet
+//!   par ses tests 9 et 10, `onboarding::finalize` par sa revue,
+//!   `onboarding::seed_demo` par `seed_demo_last_transaction_is_replayed_on_deadlock`
+//!   et `is_seed_retryable_accepts_1213_and_only_it` (`onboarding_audit_e2e.rs`,
+//!   une 1213 levée par déclencheur — revue P1 de la 15-7b1) — et le volet
 //!   (c bis) interdit qu'elle revienne à un `retry_with` à prédicat écrit en
 //!   ligne.
 //! - **(vii)** — **angles morts assumés du volet (c bis)** (revue P1 de la

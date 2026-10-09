@@ -5584,3 +5584,17 @@ l'import (#458–#461).
 - **Retenu** : (1) `SansEcritureAuJournal` conservé, comme les neuf routes d'onboarding tracées par la 15-7a2 (C-15-7a2-4 : la colonne grave l'inventaire de l'AC1 de la 15-5e1, au sens du journal comptable) ; compteurs de la colonne inchangés ; le point (vi) du doc-comment du registre nomme `seed_demo` parmi les routes rejouées quand même, rejeu **dans `kesh-seed`**, que ni le volet (c) ni le (c bis) ne voient. (2) Le bras `422` est conservé tel quel ; seul s'ajoute `StepAlreadyCompleted ⇒ 400`, le repli `500` reste.
 - **Écarté** : classer `seed_demo` `Rejouee` (le volet (c) exige l'appel d'une enveloppe dans le corps du handler ; déplacer le rejeu dans le handler contredirait l'AC 1, qui le place autour de la dernière transaction de `kesh-seed`) ; retirer le bras `422` (changement de code de réponse non demandé).
 - **Réversible** : oui (une ligne du registre, un bras de `match`).
+
+## C-15-7b1-2 — 15-7b1 (revue de code P1) : la garde sous verrou et le rejeu de `seed_demo` prouvés par déclencheurs
+
+- **Contexte** : revue de code P1 de la 15-7b1, E-1 = A-1 (MEDIUM) et B-3 (LOW). La revérification de l'étape sous verrou de `seed_demo` est masquée par la pré-vérification non verrouillée du handler, et l'interblocage de la dernière transaction était déclaré non provocable de façon déterministe. La remédiation ne doit toucher aucune ligne de code de production exécutable.
+- **Retenu** : (1) appel **direct** de `kesh_seed::seed_demo` aux étapes 3 et 4 (contourne la pré-vérification) ; (2) la course `start-production` / `seed-demo` rendue déterministe par un déclencheur `AFTER INSERT ON fiscal_years` qui pose l'étape 3 — entre la pré-vérification et la dernière transaction —, pour prouver le bras `400` du handler ; (3) une **vraie** 1213 par `SIGNAL SQLSTATE '40001' SET MYSQL_ERRNO = 1213` (vérifié : MariaDB rend bien `ERROR 1213 (40001)`), pour le prédicat, et levée **une seule fois** par un déclencheur dont le compteur vit dans une table MyISAM (non transactionnelle : l'annulation de l'essai ne l'efface pas), pour le rejeu de bout en bout. Mutations M6 à M9 rouges.
+- **Écarté** : un faux `DatabaseError` construit en Rust (le prédicat descend vers `MySqlDatabaseError`, non constructible hors de sqlx) ; deux connexions en interblocage réel (patron de `rejeu_interblocage_e2e.rs`, plus lourd, et il ne vise pas la transaction de `seed_demo` elle-même) ; laisser l'angle mort écrit (la fiche le permettait, mais il était testable à faible coût).
+- **Réversible** : oui (tests seuls).
+
+## C-15-7b1-3 — 15-7b1 (revue de code P1) : le message du `422` de `seed-demo` laissé tel quel, écrit comme dette
+
+- **Contexte** : E-2 (LOW). Le message « … avant de relancer la démo » invite à relancer, alors qu'après l'échec de la dernière transaction le plan et l'exercice sont commités et un nouveau `seed-demo` échoue (500). Le corriger exige de toucher une chaîne du code de production, que la remédiation s'interdit.
+- **Retenu** : dette écrite à la fiche (« Ce que la story ne fait pas »), rattachée à **#538** — l'atomicité des quatre premières validations fait disparaître l'état non relançable, et le message redevient juste. Atteinte pratiquement impossible avec le plan PME embarqué. B-2 (boucle `InactiveOrInvalidAccounts`) reste à l'arbitrage de Guy (C-15-7-14).
+- **Écarté** : changer le texte maintenant (code de production en remédiation de fin de boucle, qui rouvrirait la boucle de revue pour un LOW).
+- **Réversible** : oui (une chaîne).
