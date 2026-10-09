@@ -2,7 +2,7 @@
 
 ## Status
 
-review
+done
 
 <!-- Spécifiée le 2026-10-08 en autonomie (bmad-create-story), fille de la 15-6 découpée d'emblée
      (choix C-15-6-1). Choix propres : C-15-6-2 (révisé par C-15-6-7 et C-15-6-8). Validation P1
@@ -1064,6 +1064,28 @@ Claude Opus 5.5 (développement en autonomie, 2026-10-09, worktree `kesh-15-6a`)
     `docs/testing.md` (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
     `:77`, `:150`) ; `credit-notes.spec.ts` vert. Backend arrêté par son PID.
 
+- **Revue de code P1 et clôture** (2026-10-09) : Sonnet ×3 (B, E, A) — 0 au-dessus de LOW, 14 LOW ; remédiation au
+  commit `3a7bddcc` (sur la base rebasée), **sans aucune ligne de production exécutable** (`git diff -U0` sur
+  `crates/*/src` : doc-comments `///` et `//!` seuls). Test 13 discriminant et test 19 neuf, tous deux **rouges** sous
+  la mutation « créance lue sur les réglages » (rejouée puis annulée, fichier `touch`é, verts ensuite) ; test 10
+  renommé. B-3 en dette (C-15-6a-4, issue à ouvrir).
+- **Rebase sur `origin/main` `ec745d0c`** (15-7a1) : registre par union (entrées 15-7 / 15-7a1 de `main`, 15-6 /
+  15-6a de la branche, disjointes), `sprint-status.yaml` (lignes 15-6* de la branche, 15-7* de `main` ; `last_updated`
+  (24) et (25) sans collision, `main` à (23)) ; aucun conflit de code — `company_invoice_settings.rs`, touché des deux
+  côtés, fusionné sans conflit et compilé. Manuels non touchés par `main` : PDF inchangés par le rebase.
+- **Gates sur l'état rebasé, au dernier commit de code `3a7bddcc`** (D7), bases `kesh_156a` / `kesh_e2e_156a`
+  remises à zéro (DROP/CREATE, migrations, seed) après `wait-kesh.sh` :
+  - backend `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) : **2906 / 2906**, 4 ignorés ;
+  - frontend : `check` 0 erreur, `lint-i18n-ownership` PASS, `test:unit` **1091 / 1091** (112 fichiers), `build` vert ;
+  - E2E complet (backend `:3011`, secrets `openssl rand`, `smtpConfigured: true`, inbox/documents dans le
+    scratchpad) : **245 passés, 9 échoués, 19 ignorés** (9,9 min). Fichier par fichier : les 7 KF-029 de
+    `docs/testing.md` (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
+    `:77`, `:150`) ; plus **`invoices.spec.ts:415` et `:439`** (21-6c), rouges aussi rejoués seuls (2 échoués / 18
+    passés) — **cause établie, étrangère à la branche** : `recordManualReminderViaApi` pose `sentAt = <date UTC du
+    jour>T12:00:00`, que `record_manual_reminder` refuse (`ReminderDateInFuture`, 422,
+    `dunning_reminders.rs:261`) tant que l'heure UTC est avant midi — le run a tourné à 01 h UTC. Défaut du test, lié
+    à l'heure : issue à ouvrir. `credit-notes.spec.ts` vert. Backend arrêté par son PID.
+
 ### File List
 
 - `crates/kesh-db/src/repositories/invoice_settlements.rs` — lecteurs `sale_receivable_account`, `sale_rounding_account`
@@ -1466,3 +1488,7 @@ Claude Opus 5.5 (développement en autonomie, 2026-10-09, worktree `kesh-15-6a`)
   Décompte (de `ec089830` à ce commit) : 1 test neuf (19), 1 modifié (13), 1 renommé (10) — 2895 → 2896.
   Pas de passe ciblée : la remédiation ne touche aucune ligne de production exécutable (critère de clôture de
   la § *La passe ciblée*).
+- 2026-10-09 — **Revue de code P1 CLOSE** (Sonnet ×3, 0 au-dessus de LOW, 14 LOW ; remédiation sans code de
+  production, donc pas de passe ciblée). Rebasée sur `origin/main` `ec745d0c` ; gates sur l'état rebasé au commit de
+  code `3a7bddcc` : backend 2906/2906, Vitest 1091/1091, E2E 245 / 7 KF-029 + 2 `invoices.spec.ts` (heure UTC, cause
+  établie, hors branche). Statut `done`.
