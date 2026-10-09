@@ -39,18 +39,28 @@ ok()  { echo "  OK    $*"; }
 ko()  { echo "  ÉCHEC $*"; ECHECS=$((ECHECS+1)); }
 verifier() { if [ "$2" = "$3" ]; then ok "$1 ($2)"; else ko "$1 : $2, attendu $3"; fi; }
 sql()  { docker exec -i "$DB" mariadb -uroot -p"$ROOTPW" --default-character-set=utf8mb4 -N "$@"; }
-# Empreinte de la base : nombre de tables, puis CHECKSUM TABLE de chacune (toutes les tables du schéma).
-empreinte() {
-    local t; t=$(sql -e "SELECT GROUP_CONCAT(CONCAT('kesh.', TABLE_NAME) ORDER BY TABLE_NAME) FROM information_schema.TABLES WHERE TABLE_SCHEMA = 'kesh'" 2>/dev/null)
-    [ -z "$t" ] || [ "$t" = NULL ] && { echo absente; return; }
-    { echo "$t" | tr ',' '\n' | wc -l; sql -e "CHECKSUM TABLE $t"; } | sha256sum | cut -c1-16
+# Empreinte de la base, par son CONTENU : liste des tables, puis toutes leurs lignes (mariadb-dump des
+# données, triées par clé primaire, sans date ni commentaire). Non CHECKSUM TABLE : mesuré le
+# 2026-10-09, CHECKSUM TABLE d'une table vivante diffère parfois de celle de la même table rechargée,
+# lignes identiques (SELECT * égal) — il lit la représentation stockée, pas le contenu.
+contenu() {
+    docker exec "$DB" mariadb-dump -uroot -p"$ROOTPW" --default-character-set=utf8mb4 --no-create-info \
+        --skip-dump-date --skip-comments --order-by-primary --skip-extended-insert kesh 2>/dev/null
 }
+empreinte() {
+    local t; t=$(sql -e "SELECT GROUP_CONCAT(TABLE_NAME ORDER BY TABLE_NAME) FROM information_schema.TABLES WHERE TABLE_SCHEMA = 'kesh'" 2>/dev/null)
+    [ -z "$t" ] || [ "$t" = NULL ] && { echo absente; return; }
+    { echo "$t"; contenu; } | sha256sum | cut -c1-16
+}
+detail() { contenu; }   # lignes de toutes les tables (diagnostic d'un écart d'empreinte)
 tables() { sql -e "SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA = 'kesh'" 2>/dev/null; }
 NONASCII='Compte é € 😀'
 hex_nonascii() { sql -e "SELECT HEX(name) FROM kesh.accounts WHERE number = '9998'" 2>/dev/null; }
 compter() { sql -e "SELECT COUNT(*) FROM kesh.accounts" 2>/dev/null || echo absente; }
 kesh_api() { ( cd "$W/kesh" && docker compose ps --status running --services 2>/dev/null | grep -cx kesh-api ); }
-lancer() { SAUVEGARDE_DOSSIER="$W/kesh" SAUVEGARDE_RESEAU="$NET" SAUVEGARDE_PROJET="$NOM" bash "$@"; }
+lancer() { SAUVEGARDE_DOSSIER="$W/kesh" SAUVEGARDE_RESEAU="$NET" bash "$@"; }
+arreter() { ( cd "$W/kesh" && docker compose stop kesh-api >/dev/null 2>&1 ); }
+demarrer() { ( cd "$W/kesh" && docker compose start kesh-api >/dev/null 2>&1 ); }
 vides() { find "$W/kesh" -type f -empty 2>/dev/null | wc -l; }
 listing() {  # contenu du lstlisting du manuel qui contient $1
     python3 - "$MANUEL" "$1" <<'PY'
@@ -91,7 +101,7 @@ printf 'services:\n  kesh-api:\n    image: %s\n    command: ["sleep", "infinity"
 sql -e "INSERT INTO kesh.accounts (company_id, number, name, account_type) SELECT company_id, '9998', '$NONASCII', account_type FROM kesh.accounts ORDER BY id LIMIT 1"
 HEXA=$(printf '%s' "$NONASCII" | od -An -tx1 | tr -d ' \n' | tr a-f A-F)
 verifier "ligne non ASCII écrite telle quelle (« $NONASCII »)" "$(hex_nonascii)" "$HEXA"
-A=$(empreinte); NA=$(compter); NT=$(tables); echo "  état A : $NT tables, empreinte $A, $NA comptes"
+A=$(empreinte); detail > "$W/A.detail"; NA=$(compter); NT=$(tables); echo "  état A : $NT tables, empreinte $A, $NA comptes"
 
 echo "== 1. Dump"
 lancer "$SCRIPTS/kesh-dump.sh" && ok "kesh-dump.sh sort en 0" || ko "kesh-dump.sh"
@@ -129,17 +139,20 @@ B=$(empreinte)
 sql -e "SET FOREIGN_KEY_CHECKS=0; DELETE FROM kesh.accounts WHERE number <> '9998' ORDER BY id LIMIT 1"
 C=$(empreinte); echo "  état C : $(compter) comptes, empreinte $C"
 
-echo "== 4. Arrêts avant tout arrêt de Kesh et toute écriture"
+echo "== 4. Refus avant toute écriture"
+SORTIE=$(lancer "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" 2>&1) && ko "Kesh en marche : sorti en 0" || ok "Kesh en marche → refus ($(echo "$SORTIE" | tail -1))"
+arreter; verifier "kesh-api arrêté par l'exploitant (factice)" "$(kesh_api)" 0
+SORTIE=$(SAUVEGARDE_BASE=autre lancer "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" 2>&1) && ko "nom de base ≠ : sorti en 0" || ok "nom de base du dump ≠ SAUVEGARDE_BASE → refus ($(echo "$SORTIE" | tail -1))"
 mkdir -p "$W/faux"; cp "$W/restaure/dump/kesh_pre_backup.sql.gz" "$W/faux/"
 echo "$(printf '0%.0s' $(seq 64))  kesh_pre_backup.sql.gz" > "$W/faux/kesh_pre_backup.sql.gz.sha256"
-lancer "$SCRIPTS/kesh-restore.sh" "$W/faux" >/dev/null 2>&1 && ko "empreinte fausse sortie en 0" || ok "empreinte fausse : sortie non nulle"
+lancer "$SCRIPTS/kesh-restore.sh" "$W/faux" >/dev/null 2>&1 && ko "empreinte fausse sortie en 0" || ok "empreinte fausse : refus"
 head -c 4000 "$W/restaure/dump/kesh_pre_backup.sql.gz" > "$W/faux/kesh_pre_backup.sql.gz"; ( cd "$W/faux" && sha256sum kesh_pre_backup.sql.gz > kesh_pre_backup.sql.gz.sha256 )
-lancer "$SCRIPTS/kesh-restore.sh" "$W/faux" >/dev/null 2>&1 && ko "archive tronquée sortie en 0" || ok "archive tronquée : sortie non nulle"
-lancer "$SCRIPTS/kesh-restore.sh" "$W/inexistant" >/dev/null 2>&1 && ko "dossier inexistant sorti en 0" || ok "dossier inexistant : sortie non nulle"
-SAUVEGARDE_DOSSIER="$W/kesh" SAUVEGARDE_RESEAU=$NOM-absent SAUVEGARDE_PROJET="$NOM" bash "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" >/dev/null 2>&1 && ko "serveur injoignable sorti en 0" || ok "serveur injoignable (sonde) : sortie non nulle"
+lancer "$SCRIPTS/kesh-restore.sh" "$W/faux" >/dev/null 2>&1 && ko "archive tronquée sortie en 0" || ok "archive tronquée : refus"
+lancer "$SCRIPTS/kesh-restore.sh" "$W/inexistant" >/dev/null 2>&1 && ko "dossier inexistant sorti en 0" || ok "dossier inexistant : refus"
+SAUVEGARDE_DOSSIER="$W/kesh" SAUVEGARDE_RESEAU=$NOM-absent bash "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" >/dev/null 2>&1 && ko "serveur injoignable sorti en 0" || ok "serveur injoignable (sonde) : refus"
 verifier "base inchangée (aucun DROP)" "$(empreinte)" "$C"
-verifier "kesh-api jamais arrêté" "$(kesh_api)" 1
 verifier "aucun dump de sécurité pris" "$(ls "$W/kesh/avant-restauration" 2>/dev/null | wc -l)" 0
+verifier "verrou libéré" "$(ls -A "$W/kesh/dump" | grep -c '^\.verrou$')" 0
 
 echo "== 5. Contrôle négatif : rechargement par le compte de sauvegarde (kesh-dump.cnf à la place de kesh-restore.cnf)"
 docker run --rm -v "$W/kesh:/k" "$IMG" sh -c 'cp -p /k/kesh-restore.cnf /k/kesh-restore.cnf.vrai && cp -p /k/kesh-dump.cnf /k/kesh-restore.cnf'
@@ -148,8 +161,7 @@ docker run --rm -v "$W/kesh:/k" "$IMG" sh -c 'mv /k/kesh-restore.cnf.vrai /k/kes
 [ $RC -ne 0 ] && ok "sortie non nulle ($RC)" || ko "contrôle négatif sorti en 0"
 echo "$SORTIE" | grep -q "ERROR 1044 .* to database 'kesh'" && ok "refus de privilège : $(echo "$SORTIE" | grep -m1 'ERROR 1044')" || ko "ERROR 1044 attendu"
 verifier "base intacte" "$(empreinte)" "$C"
-verifier "kesh-api laissé arrêté (étape 4 ratée)" "$(kesh_api)" 0
-( cd "$W/kesh" && docker compose up -d >/dev/null 2>&1 )
+verifier "verrou libéré" "$(ls -A "$W/kesh/dump" | grep -c '^\.verrou$')" 0
 docker run --rm -v "$W/kesh:/k" "$IMG" rm -rf /k/avant-restauration
 
 echo "== 5-bis. Dump de sécurité impossible alors que la base existe (dossier non inscriptible) : rien n'est rechargé"
@@ -157,26 +169,36 @@ mkdir -p "$W/kesh/avant-restauration"; chmod 500 "$W/kesh/avant-restauration"
 SORTIE=$(lancer "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" 2>&1); RC=$?
 chmod 700 "$W/kesh/avant-restauration"
 [ $RC -ne 0 ] && ok "sortie non nulle ($RC)" || ko "sorti en 0"
-echo "$SORTIE" | grep -q "ÉCHEC — dump de sécurité impossible alors que la base kesh existe" && ok "échec dit : $(echo "$SORTIE" | grep -m1 'ÉCHEC')" || ko "message d'échec absent"
+echo "$SORTIE" | grep -q "ÉCHEC — dump de sécurité impossible alors que la base kesh existe" && ok "échec dit : $(echo "$SORTIE" | grep -m1 'ÉCHEC' | cut -c1-150)…" || ko "message d'échec absent"
 verifier "base intacte (aucun DROP)" "$(empreinte)" "$C"
-verifier "kesh-api redémarré" "$(kesh_api)" 1
+verifier "aucun fichier partiel dans avant-restauration/" "$(find "$W/kesh/avant-restauration" -type f | wc -l)" 0
 
-echo "== 6. Restauration par un CHEMIN RELATIF, depuis le dossier restauré (le dump vivant B diffère)"
-SORTIE=$(cd "$W/restaure" && lancer "$SCRIPTS/kesh-restore.sh" dump 2>&1); RC=$?; echo "$SORTIE" | sed 's/^/  | /'
-verifier "code de sortie" "$RC" 0
+echo "== 6. Dump nocturne lancé pendant une restauration : bloqué par le verrou"
+( cd "$W/restaure" && lancer "$SCRIPTS/kesh-restore.sh" dump > "$W/restore-6.log" 2>&1; echo $? > "$W/restore-6.rc" ) &
+for i in $(seq 200); do [ -d "$W/kesh/dump/.verrou" ] && break; sleep 0.05; done
+SORTIE=$(lancer "$SCRIPTS/kesh-dump.sh" 2>&1) && ko "dump pendant la restauration : sorti en 0" || ok "dump pendant la restauration → refusé ($(echo "$SORTIE" | tail -1 | cut -c1-90)…)"
+wait
+verifier "restauration par CHEMIN RELATIF : code de sortie" "$(cat "$W/restore-6.rc")" 0
+sed 's/^/  | /' "$W/restore-6.log"
 verifier "base = dump RESTAURÉ (A), toutes tables" "$(empreinte)" "$A"
+[ "$(empreinte)" = "$A" ] || { echo "  écart avec A, table par table :"; detail | diff "$W/A.detail" - | head -20 | sed 's/^/    /'; }
 [ "$(empreinte)" != "$B" ] && ok "base ≠ dump vivant (B)" || ko "le dump vivant a été rechargé"
 verifier "ligne non ASCII rechargée telle quelle" "$(hex_nonascii)" "$HEXA"
-verifier "kesh-api redémarré" "$(kesh_api)" 1
-SECU=$(echo "$SORTIE" | sed -n 's/.*dump de sécurité de la base courante : //p')
-[ -n "$SECU" ] && ok "dump de sécurité : ${SECU#$W/}" || ko "dump de sécurité non annoncé"
-verifier "droits du dossier de sécurité" "$(stat -c %a "$SECU")" 700
-verifier "droits du dump de sécurité" "$(stat -c %a "$SECU/kesh_pre_backup.sql.gz")" 600
+SECU1=$(sed -n 's/.*dump de sécurité de la base courante : //p' "$W/restore-6.log")
+[ -n "$SECU1" ] && ok "dump de sécurité : ${SECU1#$W/}" || ko "dump de sécurité non annoncé"
+verifier "droits du dossier de sécurité" "$(stat -c %a "$SECU1")" 700
+verifier "droits du dump de sécurité" "$(stat -c %a "$SECU1/kesh_pre_backup.sql.gz")" 600
+( cd "$SECU1" && sha256sum -c --quiet kesh_pre_backup.sql.gz.sha256 ) && ok "empreinte du dump de sécurité" || ko "empreinte du dump de sécurité"
+verifier "verrou libéré" "$(ls -A "$W/kesh/dump" | grep -c '^\.verrou$')" 0
+verifier "kesh-api non redémarré par le script" "$(kesh_api)" 0
 
-echo "== 7. Secours : relancer le script sur le dossier du dump de sécurité (état C)"
-SORTIE=$(lancer "$SCRIPTS/kesh-restore.sh" "$SECU" 2>&1); RC=$?
-verifier "code de sortie" "$RC" 0
-verifier "base = état C d'avant la restauration, toutes tables" "$(empreinte)" "$C"
+echo "== 7. Reprise après un rechargement interrompu (base à moitié rechargée)"
+sql -e "SET FOREIGN_KEY_CHECKS=0; DROP TABLE kesh.accounts, kesh.journal_entries"
+echo "  base à moitié rechargée : $(tables) tables"
+lancer "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" >/dev/null 2>&1; verifier "« terminer » (même dossier) : code" "$?" 0
+verifier "« terminer » : base = A, toutes tables" "$(empreinte)" "$A"
+lancer "$SCRIPTS/kesh-restore.sh" "$SECU1" >/dev/null 2>&1; verifier "« revenir » (dump de sécurité du 1er passage) : code" "$?" 0
+verifier "« revenir » : base = état C d'avant la restauration" "$(empreinte)" "$C"
 
 echo "== 8. Base absente : pas de dump de sécurité, le rechargement continue"
 sql -e "DROP DATABASE kesh"
@@ -185,7 +207,14 @@ verifier "code de sortie" "$RC" 0
 echo "$SORTIE" | grep -q "la base kesh n'existe pas sur le serveur" && ok "absence dite" || ko "message d'absence attendu"
 verifier "base rechargée (A), toutes tables" "$(empreinte)" "$A"
 verifier "ligne non ASCII rechargée telle quelle" "$(hex_nonascii)" "$HEXA"
-verifier "kesh-api redémarré" "$(kesh_api)" 1
+
+echo "== 9. Base présente mais illisible : la procédure du manuel (DROP par le compte Kesh, puis rechargement)"
+listing "DROP DATABASE kesh" | sed -e "s#--network frontend#--network $NET#" -e "s#/volume1/docker/kesh#$W/kesh#g" > "$W/drop.run"
+bash "$W/drop.run" && ok "commande du manuel exécutée (DROP DATABASE kesh, compte Kesh)" || ko "commande DROP du manuel"
+verifier "base supprimée" "$(empreinte)" absente
+lancer "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" >/dev/null 2>&1; verifier "rechargement ensuite : code" "$?" 0
+verifier "base rechargée (A)" "$(empreinte)" "$A"
+demarrer; verifier "kesh-api redémarré par l'exploitant (factice)" "$(kesh_api)" 1
 
 echo
 if [ "$ECHECS" -eq 0 ]; then echo "RECETTE VERTE"; exit 0; else echo "RECETTE ROUGE ($ECHECS échec(s))"; exit 1; fi

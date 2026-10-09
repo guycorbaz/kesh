@@ -2,47 +2,61 @@
 # kesh-restore.sh <dossier> — recharge la base de Kesh depuis un dump de kesh-dump.sh
 # (manuel d'administration, « Recovery depuis Snapshot »).
 #
+# Ce script ne touche PAS à Kesh : arrêtez kesh-api AVANT, redémarrez-le APRÈS
+# (dans le dossier du compose : docker compose stop kesh-api / docker compose start
+# kesh-api). Il REFUSE de démarrer si un conteneur du service kesh-api tourne sur
+# l'hôte (label com.docker.compose.service=kesh-api, quel que soit le projet).
+#
 # <dossier> contient kesh_pre_backup.sql.gz et kesh_pre_backup.sql.gz.sha256 : le
 # dossier dump/ d'un snapshot ou d'une restauration Hyper Backup, ou un dossier
 # avant-restauration/<horodatage>/ laissé par ce script. Chemin relatif ou absolu :
-# il est résolu une fois, en absolu, avant toute autre chose.
+# il est résolu en absolu avant toute autre chose.
 #
-# Dans cet ordre, en s'arrêtant à la première erreur :
-#   1. empreinte (sha256sum -c) et intégrité (gzip -t) du dump, puis sonde de la
-#      base sur le serveur : rien n'est arrêté ni écrit si l'une échoue (serveur
-#      injoignable, compte refusé…) ;
-#   2. arrêt de kesh-api (docker compose -p <projet> stop), vérifié ;
-#   3. si la base EXISTE : dump de sécurité de la base courante dans
-#      $SAUVEGARDE_DOSSIER/avant-restauration/<horodatage>/ (dump + empreinte,
-#      700/600). S'il échoue (disque plein, dossier non inscriptible…), le script
-#      REDÉMARRE Kesh et SORT sans rien recharger : la base est intacte.
-#      Si la base est ABSENTE (établi par la sonde) : pas de dump de sécurité,
-#      c'est dit, et le rechargement continue — c'est le cas même où l'on recharge ;
-#   4. rechargement par le compte Kesh (kesh-restore.cnf), qui recrée la base
-#      (DROP DATABASE, CREATE DATABASE) ;
-#   5. redémarrage (docker compose -p <projet> up -d).
-# Si l'étape 4 échoue ou est interrompue (session SSH coupée), Kesh reste arrêté :
-# relancez ce script sur le dossier du dump de sécurité qu'il a affiché (celui du
-# PREMIER passage), ou sur le même dossier de dump.
+# Dans cet ordre, en s'arrêtant à la première erreur, sans rien écrire avant
+# l'étape 5 :
+#   1. refus si kesh-api tourne ;
+#   2. empreinte (sha256sum -c) et intégrité (gzip -t) du dump ;
+#   3. nom de la base lu dans le dump (CREATE DATABASE) : refus s'il diffère de
+#      SAUVEGARDE_BASE ;
+#   4. verrou du dump (dump/.verrou, celui de kesh-dump.sh) : pas de dump nocturne
+#      pendant la restauration ; sonde de la base sur le serveur (refus si la sonde
+#      échoue) ;
+#   5. base PRÉSENTE : dump de sécurité OBLIGATOIRE dans
+#      avant-restauration/<horodatage>/, pris par kesh-dump.sh lui-même (mêmes
+#      contrôles, .tmp puis renommage, empreinte), par le compte Kesh. S'il échoue,
+#      le script s'arrête : rien n'est rechargé, la base est intacte. Une base
+#      présente mais illisible (corrompue) ne se recharge qu'après l'avoir supprimée
+#      à la main, geste délibéré que décrit le manuel. Base ABSENTE : pas de dump de
+#      sécurité, c'est dit ;
+#   6. rechargement par le compte Kesh (kesh-restore.cnf) : le dump recrée la base
+#      (DROP DATABASE, CREATE DATABASE).
+#
+# Reprise après une interruption ou un échec de l'étape 6 (la base peut être à
+# moitié rechargée ; Kesh est toujours arrêté) — deux gestes distincts :
+#   - TERMINER la restauration : relancer ce script sur le MÊME dossier ;
+#   - REVENIR à l'état d'avant : relancer ce script sur le dossier du dump de
+#     sécurité affiché par le PREMIER passage (avant-restauration/<horodatage>).
+#     Si le premier passage a dit « pas de dump de sécurité » (base absente), il
+#     n'y a pas d'état d'avant à retrouver.
 #
 # Réglages : SAUVEGARDE_DOSSIER, SAUVEGARDE_BASE, SAUVEGARDE_RESEAU,
-# SAUVEGARDE_IMAGE, comme kesh-dump.sh ; SAUVEGARDE_PROJET, nom du projet compose
-# (kesh, celui que le manuel fait créer). SAUVEGARDE_DOSSIER contient
-# kesh-restore.cnf (compte Kesh, 600, root) et le compose.
+# SAUVEGARDE_IMAGE, comme kesh-dump.sh (qui doit être dans le même dossier que ce
+# script). SAUVEGARDE_DOSSIER contient kesh-restore.cnf (compte Kesh, 600, root).
 set -euo pipefail
 umask 077
 export PATH="/usr/local/bin:/usr/bin:/bin:${PATH:-}"
 
 [ $# -eq 1 ] || { echo "usage : kesh-restore.sh <dossier qui contient kesh_pre_backup.sql.gz>" >&2; exit 2; }
 SOURCE=$(cd "$1" && pwd -P)
+ICI=$(cd "$(dirname "$0")" && pwd -P)
 
 SAUVEGARDE_DOSSIER=${SAUVEGARDE_DOSSIER:-/volume1/docker/kesh}
 SAUVEGARDE_BASE=${SAUVEGARDE_BASE:-kesh}
 SAUVEGARDE_RESEAU=${SAUVEGARDE_RESEAU:-frontend}
 SAUVEGARDE_IMAGE=${SAUVEGARDE_IMAGE:-mariadb:10.11}
-SAUVEGARDE_PROJET=${SAUVEGARDE_PROJET:-kesh}
 SAUVEGARDE_DOSSIER=$(cd "$SAUVEGARDE_DOSSIER" && pwd -P)
 [ -f "$SAUVEGARDE_DOSSIER/kesh-restore.cnf" ] || { echo "kesh-restore : $SAUVEGARDE_DOSSIER/kesh-restore.cnf absent" >&2; exit 1; }
+[ -f "$ICI/kesh-dump.sh" ] || { echo "kesh-restore : $ICI/kesh-dump.sh absent (les deux scripts vont ensemble)" >&2; exit 1; }
 
 # Client MariaDB jetable, par le compte Kesh (kesh-restore.cnf), entrée standard ouverte (-i).
 client() {
@@ -51,39 +65,41 @@ client() {
         "$SAUVEGARDE_IMAGE" "$@"
 }
 
+# 1. Kesh doit être arrêté — une erreur de docker vaut refus (set -e).
+EN_MARCHE=$(docker ps --quiet --filter label=com.docker.compose.service=kesh-api --filter status=running)
+[ -z "$EN_MARCHE" ] || { echo "kesh-restore : kesh-api tourne — arrêtez-le d'abord (docker compose stop kesh-api) ; rien n'a été touché" >&2; exit 1; }
+
+# 2. Le dump.
 echo "kesh-restore : dump à recharger : $SOURCE/kesh_pre_backup.sql.gz"
 ( cd "$SOURCE" && sha256sum -c kesh_pre_backup.sql.gz.sha256 )
 gzip -t "$SOURCE/kesh_pre_backup.sql.gz"
+
+# 3. La base qu'il recrée.
+BASE_DU_DUMP=$(gzip -dc "$SOURCE/kesh_pre_backup.sql.gz" \
+    | awk '/^CREATE DATABASE/ { n++; if (match($0, /`[^`]+`/)) b = substr($0, RSTART + 1, RLENGTH - 2) } END { print (n == 1 ? b : "") }')
+[ "$BASE_DU_DUMP" = "$SAUVEGARDE_BASE" ] || { echo "kesh-restore : le dump recrée la base « ${BASE_DU_DUMP:-?} », non « $SAUVEGARDE_BASE » (SAUVEGARDE_BASE) — rien n'a été touché" >&2; exit 1; }
+
+# 4. Verrou du dump, puis sonde.
+mkdir -p "$SAUVEGARDE_DOSSIER/dump"
+mkdir "$SAUVEGARDE_DOSSIER/dump/.verrou" 2>/dev/null || { echo "kesh-restore : une sauvegarde ou une restauration est en cours (sinon : rmdir $SAUVEGARDE_DOSSIER/dump/.verrou) — rien n'a été touché" >&2; exit 1; }
+trap 'rmdir "$SAUVEGARDE_DOSSIER/dump/.verrou"' EXIT
+trap 'exit 1' HUP INT TERM
 PRESENTE=$(client mariadb --defaults-extra-file=/etc/kesh-restore.cnf -N -e \
     "SELECT COUNT(*) FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = '$SAUVEGARDE_BASE'" </dev/null)
-case "$PRESENTE" in 0|1) ;; *) echo "kesh-restore : sonde de la base illisible ($PRESENTE)" >&2; exit 1;; esac
+case "$PRESENTE" in 0|1) ;; *) echo "kesh-restore : sonde de la base illisible ($PRESENTE) — rien n'a été touché" >&2; exit 1;; esac
 
-cd "$SAUVEGARDE_DOSSIER"
-docker compose -p "$SAUVEGARDE_PROJET" stop kesh-api
-if docker compose -p "$SAUVEGARDE_PROJET" ps --status running --services | grep -qx kesh-api; then
-    echo "kesh-restore : kesh-api tourne encore (projet $SAUVEGARDE_PROJET ?) — rien n'a été rechargé" >&2; exit 1
-fi
-
+# 5. Dump de sécurité, obligatoire si la base existe.
 if [ "$PRESENTE" = 1 ]; then
     SECURITE="$SAUVEGARDE_DOSSIER/avant-restauration/$(date +%Y%m%d-%H%M%S)"
-    if mkdir -p "$SECURITE" \
-       && client mariadb-dump --defaults-extra-file=/etc/kesh-restore.cnf --default-character-set=utf8mb4 \
-              --single-transaction --add-drop-database --databases "$SAUVEGARDE_BASE" </dev/null \
-          | gzip > "$SECURITE/kesh_pre_backup.sql.gz" \
-       && gzip -t "$SECURITE/kesh_pre_backup.sql.gz" \
-       && ( cd "$SECURITE" && sha256sum kesh_pre_backup.sql.gz > kesh_pre_backup.sql.gz.sha256 ); then
-        echo "kesh-restore : dump de sécurité de la base courante : $SECURITE"
-    else
-        docker compose -p "$SAUVEGARDE_PROJET" up -d
-        echo "kesh-restore : ÉCHEC — dump de sécurité impossible alors que la base $SAUVEGARDE_BASE existe ; rien n'a été rechargé, la base est intacte, Kesh est redémarré" >&2
-        exit 1
-    fi
+    export SAUVEGARDE_DOSSIER SAUVEGARDE_BASE SAUVEGARDE_RESEAU SAUVEGARDE_IMAGE
+    DUMP_CIBLE="$SECURITE" DUMP_COMPTE=kesh-restore.cnf bash "$ICI/kesh-dump.sh" \
+        || { rmdir "$SECURITE" 2>/dev/null || true; echo "kesh-restore : ÉCHEC — dump de sécurité impossible alors que la base $SAUVEGARDE_BASE existe ; rien n'a été rechargé, la base est intacte (base illisible : manuel, « Base présente mais illisible »)" >&2; exit 1; }
+    echo "kesh-restore : dump de sécurité de la base courante : $SECURITE"
 else
     echo "kesh-restore : la base $SAUVEGARDE_BASE n'existe pas sur le serveur — pas de dump de sécurité ; rechargement"
 fi
 
+# 6. Rechargement.
 gunzip -c "$SOURCE/kesh_pre_backup.sql.gz" \
     | client mariadb --defaults-extra-file=/etc/kesh-restore.cnf --default-character-set=utf8mb4
-
-docker compose -p "$SAUVEGARDE_PROJET" up -d
-echo "kesh-restore : base $SAUVEGARDE_BASE rechargée depuis $SOURCE ; Kesh redémarré"
+echo "kesh-restore : base $SAUVEGARDE_BASE rechargée depuis $SOURCE — redémarrez Kesh (docker compose start kesh-api)"

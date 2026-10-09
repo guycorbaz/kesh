@@ -472,12 +472,23 @@ compose factice (`kesh-api` qui dort), tous nommés `kesh-recette-synology*`, et
 l'interruption — elle ne touche à aucun autre conteneur, jamais à `kesh-mariadb-dev`. Les comptes et le fichier
 d'options sont ceux que le manuel écrit (extraits de ses listings), avec un mot de passe à `@ # ; " \ /` et espace.
 
-Elle prouve, en comparant l'empreinte de **toutes** les tables du schéma (`CHECKSUM TABLE`) et une ligne `Compte é € 😀` octet par octet : dump (empreinte, droits 700/600, aucun `.tmp`, toutes les tables) ; dump refusé s'il est vide, verrou contre deux dumps ; `--defaults-extra-file` refusé hors de la première
-place ; dump raté (réseau, mot de passe) sans perte du dump de la veille ni fichier vide ; empreinte fausse et archive
-tronquée arrêtées **avant** d'arrêter Kesh ou d'écrire ; refus `ERROR 1044` du compte de sauvegarde au rechargement ;
-rechargement par un **chemin relatif** (c'est le dump donné qui est rechargé, non le dump vivant) ; secours depuis
-`avant-restauration/<horodatage>/` ; rechargement d'une **base absente** ; et, base présente, **aucun rechargement** si le dump de sécurité est impossible (dossier non inscriptible), comme si le serveur est injoignable ou le dossier inexistant. Elle ne rejoue pas DSM (Planificateur,
-Hyper Backup, Snapshot Replication, paquet MariaDB 10) ni root.
+Elle prouve, en comparant l'empreinte du **contenu** de toutes les tables du schéma (un `mariadb-dump` de leurs
+lignes, trié par clé primaire et haché — non `CHECKSUM TABLE`, mesuré instable entre une table vivante et la même
+table rechargée) et une ligne `Compte é € 😀` octet par octet :
+
+- **dump** : empreinte, droits 700/600, aucun `.tmp`, toutes les tables ; `--defaults-extra-file` refusé hors de la
+  première place ; dump raté (réseau, mot de passe), vide ou sous verrou refusé, sans perte du précédent ni fichier
+  vide ;
+- **rechargement refusé avant toute écriture** : Kesh en marche, nom de base du dump ≠ `SAUVEGARDE_BASE`, empreinte
+  fausse, archive tronquée, dossier inexistant, serveur injoignable ; refus `ERROR 1044` du compte de sauvegarde ;
+  base présente et dump de sécurité impossible → base intacte, aucun fichier partiel ;
+- **rechargement** par un chemin relatif (c'est le dump donné qui est rechargé, non le dump vivant), un dump nocturne
+  lancé pendant ce temps étant refusé par le verrou ; reprise « terminer » (même dossier) et « revenir » (dump de
+  sécurité) après un rechargement interrompu ; base absente ; base illisible traitée par la commande `DROP DATABASE`
+  du manuel puis rechargée.
+
+Elle ne rejoue pas DSM (Planificateur, Hyper Backup, Snapshot Replication, paquet MariaDB 10), root, ni une
+interruption réelle par signal (l'état « à moitié rechargé » est reconstitué en supprimant des tables).
 
 **Quand la lancer** : à toute modification d'un des deux scripts, de la section Synology du manuel ou de l'image
 `mariadb:10.11` qu'ils emploient — et citer sa sortie au Dev Agent Record. Elle n'est pas dans le gate : elle
