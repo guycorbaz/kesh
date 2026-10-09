@@ -2,7 +2,7 @@
 
 ## Status
 
-in-progress
+review
 
 <!-- Spécifiée le 2026-10-08 en autonomie (bmad-create-story), fille de la 15-6 découpée d'emblée
      (choix C-15-6-1). Choix propres : C-15-6-5 (révisé par C-15-6-13), C-15-6-14, C-15-6-15.
@@ -273,24 +273,24 @@ afin que **chaque encaissement ou paiement par ce compte bancaire ne produise pa
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Rebase sur `main` après les 15-5b, 15-5d et 15-6b** ; relire les numéros de ligne ;
+- [x] **T0 — Rebase sur `main` après les 15-5b, 15-5d et 15-6b** ; relire les numéros de ligne ;
   vérifier que `validate_journal_account_id`, le contrôle C10, `withCurrentAccount` sur les trois
   surfaces, le menu créanciers de la 15-5d et les fonctions de `account-options.ts` sont là où cette
   fiche les attend ; vérifier l'existence des deux fichiers de test de la 15-5b que cette fiche étend
   (`bank-accounts/+page.test.ts`, `company_invoice_settings_postable_e2e.rs`) et que
   `BankAccountList.svelte` n'a toujours aucun importeur. Rejouer l'inventaire des tests (§ *Tests
   existants qui changent de sens*), **appels directs au dépôt compris**.
-- [ ] **T1 — Variantes, codes, i18n** (AC1).
-- [ ] **T2 — Lecteurs et ordre des verrous** (AC2).
-- [ ] **T3 — Routes et dépôt bancaires** (AC3, AC4, AC6).
-- [ ] **T4 — Réglages** (AC5, AC6).
-- [ ] **T5 — Écrans** (AC7, AC8), suppression de `BankAccountList.svelte` (AC7).
-- [ ] **T6 — Tests** (§ *Tests*), chaque garde **rougit d'abord** — sauf les cas « accepté » des tests
+- [x] **T1 — Variantes, codes, i18n** (AC1).
+- [x] **T2 — Lecteurs et ordre des verrous** (AC2).
+- [x] **T3 — Routes et dépôt bancaires** (AC3, AC4, AC6).
+- [x] **T4 — Réglages** (AC5, AC6).
+- [x] **T5 — Écrans** (AC7, AC8), suppression de `BankAccountList.svelte` (AC7).
+- [x] **T6 — Tests** (§ *Tests*), chaque garde **rougit d'abord** — sauf les cas « accepté » des tests
   3, 4 et 6 (non-régression de l'exemption), verts d'avance ; le 12 bis rougit par mutation (retrait
   du `FOR UPDATE` de `before`). Adapter les tests Vitest existants (prop, mock).
-- [ ] **T7 — Documentation** : manuels + PDF (AC9), `docs/api-external.md` — ligne du § 7 et code du
+- [x] **T7 — Documentation** : manuels + PDF (AC9), `docs/api-external.md` — ligne du § 7 et code du
   § 10 (AC10) —, CHANGELOG (AC11).
-- [ ] **T8 — Gates** : backend complet (dépôt `kesh-db` touché), frontend complet, E2E complet au
+- [x] **T8 — Gates** : backend complet (dépôt `kesh-db` touché), frontend complet, E2E complet au
   dernier commit de code (`bank-accounts-crud.spec.ts`, `bank-account-journal-link.spec.ts`).
 
 ## Tests existants qui changent de sens — inventaire (fait à la remédiation P1)
@@ -496,11 +496,108 @@ changent de sens*, quatre rendus et un mock), qui ne sont pas des tests neufs.
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement, en autonomie), 2026-10-09. Worktree `kesh-15-6c`, cible cargo
+propre, bases `kesh_156c` / `kesh_e2e_156c`, backend E2E sur le port 3019.
+
 ### Debug Log References
+
+- **Gate backend, premier run** (sur `2707b69c`) : rouge à la compilation (`clippy::explicit_auto_deref`
+  sur `&mut **tx`) — corrigé (`86f945c3`). **Deuxième run** : `rejeu_interblocage_e2e`
+  `invoice_settings_update_is_replayed_when_it_is_the_deadlock_victim` rouge — son motif d'attente
+  (`UPDATE company_invoice_settings`) ne voit plus la route, qui attend désormais au `FOR UPDATE` de
+  `before` (même cycle, autre point d'attente). Motif corrigé (`673478b7`, choix C-15-6c-4).
+- **Mutations jouées par script qui restaure depuis `HEAD`** : une première série frontend a été
+  jouée alors que les écrans n'étaient pas encore commités — la restauration les a effacés et les
+  résultats de F2 à F5 de cette série étaient faux. Écrans réappliqués, commités (`c780b4f3`), puis
+  **les six mutations rejouées** sur l'arbre propre (résultats ci-dessous). Les mutations backend
+  ont toutes été jouées après commit du code muté.
+- **Vitest, premier run complet** : 3 rouges dans les gardes de décompte i18n
+  (`i18n-keys.test.ts` `sitesTotal`, `i18n-libelle-en-dur.test.ts` candidates et ventilation),
+  conséquence de la suppression de `BankAccountList.svelte` — recomptés depuis la source et
+  ajustés avec leur motif (1922 → 1916 sites, 6 `i18nMsg(` dans le fichier supprimé ; 48 → 47
+  candidates, `accountLabel`, `conforme` 41 → 40).
+- Prettier n'a pas de configuration dans `frontend/` : lancé sur trois fichiers de test, il les a
+  reformatés en entier. Annulé (`git checkout`), modifications rejouées sans lui.
 
 ### Completion Notes List
 
+- **AC1** — `DbError::BankAccountLedgerIsClaimAccount` et `DbError::ClaimAccountLinkedToBankAccount`
+  (`kesh-db/src/errors.rs`), codes 400, mapping unique `claim_configuration_response`
+  (`kesh-api/src/errors.rs`), quatre clés dans les quatre locales. Le numéro du compte se lit par
+  `accounts::number_in_company`, partagé avec le refus de la 15-6b (C-15-6c-1).
+- **AC2** — `company_invoice_settings::claim_accounts_in_share_mode` (`ClaimAccounts`, `side_of`)
+  et `bank_accounts::first_active_bank_account_linked_to`, en `LOCK IN SHARE MODE` ; `before` lu en
+  `FOR UPDATE` ; note KF-004 réécrite (sérialisé / non sérialisé, rejeu de la route). Les gestes
+  bancaires sans compte lié passent `ClaimAccounts::default()` sans lecture (`claims_for_target`).
+- **AC3/AC4** — garde unique `bank_accounts::refuse_if_ledger_is_claim_account` : à la création dans
+  la transaction de la route (premier verrou après la sentinelle, avant la démotion) ; au
+  remplacement et au lien dans le dépôt, après la postabilité, sous l'exemption « inchangé ».
+  21 appels directs au dépôt adaptés (`ClaimAccounts::default()`).
+- **AC5/AC6** — contrôle dans `company_invoice_settings::update`, après le 409, avant le no-op,
+  compte débiteurs puis créanciers ; ordre des erreurs écrit dans les sept doc-comments.
+- **AC7/AC8** — page des comptes bancaires (réglages lus par `getInvoiceSettings`, en
+  `Promise.allSettled`), `BankAccountJournalLinkForm` (prop obligatoire `claimAccountIds`), écran des
+  réglages (`listBankAccounts`, échec rattrapé) : filtre avant `withCurrentAccount`, sur les seuls
+  menus débiteurs et créanciers. `BankAccountList.svelte` supprimé (aucun importeur).
+- **AC9** — manuel utilisateur (§ *Solde comptable, relevé et écart*) et paragraphe *Comptes
+  débiteurs et créanciers.* du manuel d'administration, après « Quand un paiement… », avant « Le
+  format de décompte officiel AFC » ; il complète la présentation du compte créanciers de la 15-5d
+  et dit l'angle mort « données antérieures » (C-15-6c-3). PDF régénérés (`make fr`), contrôlés
+  aplatis sur les phrases neuves ; la brochure régénérée sans changement de source n'est pas commitée.
+- **AC10** — ligne *Comptes bancaires* au § 7 et `BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT` au § 10 du
+  guide ; `CLAIM_ACCOUNT_LINKED_TO_BANK_ACCOUNT` n'y figure pas (route fermée aux clés).
+- **AC11** — l'entrée #474 du CHANGELOG `[0.13.0]` est complétée, pas doublée.
+- **Tests** (périmètre `f8b2accd..HEAD`, recomptés par `grep -cE '#\[(sqlx::test|tokio::test|test)'`
+  et `grep -cE "^\s*it(\.each)?\("` aux deux bornes) : **15 tests backend neufs** — les 13 nommés de
+  la fiche (1 à 12 et 12 bis ; le 2 couvre PUT et PATCH dans une fonction) et 2 unitaires de mapping
+  (`configuration_claim_refusals_error_codes`, `claim_configuration_refusals_are_400_with_details`) ;
+  **7 déclarations Vitest neuves, 9 cas** (formulaire 2, page 3 déclarations / 5 cas, réglages 2) ;
+  1 test backend modifié (`rejeu_interblocage_e2e`, motif d'attente, C-15-6c-4) ; adaptations : quatre
+  rendus du formulaire, un mock de `bank-accounts.api`, un de `invoices.api`, deux gardes de
+  décompte i18n ; 1 spec E2E modifiée (lien au `1000`, absence du `1100` — C-15-6c-2).
+- **Mutations jouées et constatées rouges** (15) — backend : M1 `before` sans `FOR UPDATE` → 12 bis
+  seul rouge (le 12 reste vert, comme la fiche l'annonce) ; M2 lecteur des réglages sans verrou → 11 ;
+  M3 garde du lien retirée → 5 et 11 ; M4 lecteur bancaire sans verrou → 12 ; M5 garde de création
+  retirée → 1 ; M6 garde des réglages neutralisée → 6, 7, 8, 10 ; M7 exemption « inchangé » des
+  réglages retirée → 6 et 8 ; M8 refus avant le 409 → 9 ; M9 exemption du remplacement bancaire
+  retirée → 3. Frontend : F1 page sans filtre ; F2 formulaire sans filtre ; F3 filtre après
+  `withCurrentAccount` (lien existant perdu) ; F4 menu débiteurs sans filtre ; F5 filtre étendu à la
+  TVA ; F6 échec de `listBankAccounts` non rattrapé — chacune rouge sur le test qui la vise.
+  Chaque fichier restauré par `git checkout` puis `touch`.
+- **Gates au dernier commit de code `673478b7`** : bases `kesh_156c` / `kesh_e2e_156c` remises à zéro
+  (DROP/CREATE, migrations, seed) avant chaque gate ; `scripts/test-fast.sh` (fmt + clippy + nextest)
+  **3021/3021, 4 ignorés** ; frontend `npm run check` 0 erreur (27 avertissements, aucun dans les
+  fichiers touchés), `lint-i18n-ownership` vert, `test:unit` **1127/1127** (au commit `86f945c3` ;
+  aucun fichier frontend modifié depuis), `build` vert ; **E2E complet : 244 passés, 10 échoués,
+  19 ignorés** — 7 KF-029, 2 KF-045 (`invoices.spec.ts:415`, `:439`, run à 08:10 UTC), et
+  `invoice-minimum-amount.spec.ts:46` (page renvoyée au login, « session expirée ») : **rejoué seul,
+  vert** — l'échec variable de pollution de `docs/testing.md`. `bank-account-journal-link.spec.ts` et
+  `bank-accounts-crud.spec.ts` verts dans la suite et rejoués seuls. Montage : `KESH_TEST_MODE=true`
+  des deux côtés, `KESH_COOKIE_SECURE=false`, SMTP factices (`smtpConfigured:true`), répertoires
+  inbox, documents et sauvegarde sous `target/e2e/` du worktree. Backend arrêté par son PID.
+- **À vérifier en revue** : (1) la portée next-key du lecteur bancaire (attente possible d'une
+  création de compte bancaire pendant un PUT des réglages) reste **non mesurée** ; (2) le test de
+  rejeu 15-5e1 dépend désormais du `FOR UPDATE` de `before` ; (3) l'écran des réglages filtre sur
+  `journalAccountId` des comptes bancaires non archivés tels que les rend `GET /bank-accounts` —
+  l'onboarding et l'import de sauvegarde restent des angles morts (Dev Notes).
+
 ### File List
+
+38 chemins (`git diff --name-status f8b2accd..HEAD`) :
+
+- Supprimé : `frontend/src/lib/features/bank-accounts/BankAccountList.svelte`.
+- Backend : `crates/kesh-db/src/errors.rs`, `crates/kesh-db/src/repositories/{accounts,bank_accounts,company_invoice_settings,invoice_settlements}.rs`,
+  `crates/kesh-api/src/errors.rs`, `crates/kesh-api/src/routes/{bank_accounts,company_invoice_settings}.rs`,
+  `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`.
+- Tests backend : `crates/kesh-db/tests/{bank_accounts_repository,company_invoice_settings_repository}.rs`,
+  `crates/kesh-api/tests/{bank_accounts_e2e,company_invoice_settings_postable_e2e,reconciliation_e2e,reconciliation_split_e2e,rejeu_interblocage_e2e}.rs`.
+- Frontend : `frontend/src/lib/features/bank-accounts/BankAccountJournalLinkForm.svelte`,
+  `frontend/src/routes/(app)/bank-accounts/+page.svelte`, `frontend/src/routes/(app)/settings/invoicing/+page.svelte`.
+- Tests frontend : `BankAccountJournalLinkForm.test.ts`, `bank-accounts-page.test.ts`,
+  `settings-invoicing-page.test.ts`, `frontend/src/lib/shared/{i18n-keys,i18n-libelle-en-dur}.test.ts`,
+  `frontend/tests/e2e/bank-account-journal-link.spec.ts`.
+- Documentation : `CHANGELOG.md`, `docs/api-external.md`, `docs/manual/fr/{admin-manual,user-manual}.{tex,pdf}`.
+- Artefacts : cette fiche, `sprint-status.yaml`, `epic-15-choix-autonomes.md` (C-15-6c-1 à 4).
 
 ## Change Log
 
@@ -660,3 +757,9 @@ changent de sens*, quatre rendus et un mock), qui ne sont pas des tests neufs.
     l'AC9 décrit.
   - E2E : `payment-batches.spec.ts` lie au premier actif par numéro = `1000` (comptes triés par
     `number`) — non concerné ; aucune autre spec ne lie par la route au compte débiteurs ou créanciers.
+- 2026-10-09 — **Développement** (Opus 5.5, en autonomie ; commits `bcc5828d`, `f48bcf87`,
+  `c780b4f3`, `2707b69c`, `86f945c3`, `673478b7`). Toutes les tâches faites ; 15 tests backend et
+  9 cas Vitest neufs ; 15 mutations rouges ; gates au dernier commit de code : backend 3021/3021,
+  Vitest 1127/1127, E2E 244 / 10 (7 KF-029, 2 KF-045, 1 pollution rejouée seule verte). Écart à
+  l'inventaire de la fiche : un test de la 15-5e1 couplé au point d'attente du PUT des réglages
+  (C-15-6c-4). Choix C-15-6c-1 à C-15-6c-4. Statut `review`.
