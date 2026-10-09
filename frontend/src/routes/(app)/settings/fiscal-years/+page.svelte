@@ -375,45 +375,54 @@
 								>
 									<Pencil class="h-4 w-4" aria-hidden="true" />
 								</Button>
+								<!-- Un bouton désactivé porte `pointer-events: none` (button.svelte) :
+								     le survol n'atteint pas son `title`. L'infobulle est donc portée
+								     aussi par une enveloppe, qui reçoit le survol (revue P1 15-12a, B-3). -->
 								{#if fy.status === 'Open'}
 									{@const earlierOpen = earliestEarlierOpen(fy)}
-									<Button
-										variant="ghost"
-										size="icon-xs"
-										data-testid="fiscal-year-close-{fy.id}"
-										disabled={earlierOpen !== null}
-										title={earlierOpen
-											? i18nMsg(
-													'fiscal-year-close-blocked-earlier-open',
-													`Clôturez d'abord l'exercice « ${earlierOpen.name} », plus ancien et encore ouvert.`,
-													{ name: earlierOpen.name }
-												)
-											: undefined}
-										onclick={() => openClose(fy)}
-										aria-label="{msg('fiscal-year-close-button', 'Clôturer')} {fy.name}"
-									>
-										<Lock class="h-4 w-4" aria-hidden="true" />
-									</Button>
+									{@const closeHint = earlierOpen
+										? i18nMsg(
+												'fiscal-year-close-blocked-earlier-open',
+												`Clôturez d'abord l'exercice « ${earlierOpen.name} », plus ancien et encore ouvert.`,
+												{ name: earlierOpen.name }
+											)
+										: undefined}
+									<span class="inline-flex" title={closeHint}>
+										<Button
+											variant="ghost"
+											size="icon-xs"
+											data-testid="fiscal-year-close-{fy.id}"
+											disabled={earlierOpen !== null}
+											title={closeHint}
+											onclick={() => openClose(fy)}
+											aria-label="{msg('fiscal-year-close-button', 'Clôturer')} {fy.name}"
+										>
+											<Lock class="h-4 w-4" aria-hidden="true" />
+										</Button>
+									</span>
 								{/if}
 								{#if fy.status === 'Closed' && isAdmin}
 									{@const blocker = nearestLaterClosed(fy)}
-									<Button
-										variant="ghost"
-										size="icon-xs"
-										data-testid="fiscal-year-reopen-{fy.id}"
-										disabled={blocker !== null}
-										title={blocker
-											? i18nMsg(
-													'fiscal-year-reopen-blocked-later-closed',
-													`Rouvrez d'abord l'exercice « ${blocker.name} », plus récent et encore clôturé.`,
-													{ name: blocker.name }
-												)
-											: undefined}
-										onclick={() => openReopen(fy)}
-										aria-label="{msg('fiscal-year-reopen-button', 'Réouvrir')} {fy.name}"
-									>
-										<LockOpen class="h-4 w-4" aria-hidden="true" />
-									</Button>
+									{@const reopenHint = blocker
+										? i18nMsg(
+												'fiscal-year-reopen-blocked-later-closed',
+												`Rouvrez d'abord l'exercice « ${blocker.name} », plus récent et encore clôturé.`,
+												{ name: blocker.name }
+											)
+										: undefined}
+									<span class="inline-flex" title={reopenHint}>
+										<Button
+											variant="ghost"
+											size="icon-xs"
+											data-testid="fiscal-year-reopen-{fy.id}"
+											disabled={blocker !== null}
+											title={reopenHint}
+											onclick={() => openReopen(fy)}
+											aria-label="{msg('fiscal-year-reopen-button', 'Réouvrir')} {fy.name}"
+										>
+											<LockOpen class="h-4 w-4" aria-hidden="true" />
+										</Button>
+									</span>
 								{/if}
 							</div>
 						</Table.Cell>

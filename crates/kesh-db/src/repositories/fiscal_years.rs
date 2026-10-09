@@ -73,9 +73,15 @@
 //! la création** existent, et se résolvent par le **rejeu** des deux côtés (les
 //! cinq routes de ces flux et `create_fiscal_year` / `close_fiscal_year` sont
 //! rejouées ; Story 15-5e1, Pattern 5 : l'ordre réduit la fréquence, le rejeu
-//! est la défense). Le renommage ([`update_name`]) peut former un cycle avec
-//! la clôture (il tient l'exercice puis son homonyme) : rare, et sans enjeu —
-//! écrit au registre des routes.
+//! est la défense). Deux flux **non rejoués** gardent un cycle possible,
+//! écrits au registre des routes (`audit_route_registry.rs`, point (iv)) : le
+//! renommage ([`update_name`]) avec la clôture (il tient l'exercice puis son
+//! homonyme) — rare, et sans enjeu ; et la **réouverture** ([`reopen`]) avec la
+//! contre-passation d'une écriture d'un exercice postérieur : la réouverture
+//! tient Z puis parcourt les postérieurs, la contre-passation tient son origine
+//! Q > Z puis parcourt depuis le premier exercice, donc demande Z — si la
+//! réouverture est la victime, l'administrateur reçoit un 500 et recommence
+//! (préexistant à la Story 15-12a, qui ne le change pas).
 //!
 //! [`find_open_covering_date`], en revanche, verrouille l'exercice **au sein
 //! d'une transaction métier** qui prend d'autres verrous (validation d'une
@@ -257,8 +263,9 @@ fn build_audit_entry(
 /// 6. INSERT audit_log avec snapshot direct
 /// 7. COMMIT
 ///
-/// Interblocages possibles avec une clôture concurrente (mesuré, Story 15-12a
-/// T0 : quand un exercice antérieur existe) et avec une contre-passation ou une
+/// Le verrou de l'étape 4 est éprouvé par le test 13 b3 de la Story 15-12a
+/// (voir le commentaire au site). Interblocages possibles avec une clôture
+/// concurrente (mesuré, Story 15-12a T0 : quand un exercice antérieur existe) et avec une contre-passation ou une
 /// annulation d'une écriture postérieure : la route appelle cette fonction dans
 /// `retry_on_deadlock("fiscal_years::create", …)` (transaction unique, sûre à
 /// relancer).
@@ -301,8 +308,16 @@ pub async fn create(
     }
 
     // Garde de l'invariant I (Story 15-12a) : aucun exercice clôturé après
-    // celui qu'on crée. Lecture verrouillante : une clôture concurrente d'un
-    // postérieur se sérialise ici (ou interbloque, et la route rejoue).
+    // celui qu'on crée. Lecture verrouillante : elle tient les postérieurs
+    // qu'elle parcourt jusqu'au COMMIT, si bien qu'une clôture concurrente d'un
+    // postérieur attend la création (puis la voit en relecture (d)) ou
+    // interbloque avec elle (et la route rejoue). Ce que prouve chaque test
+    // (revue P1, A1) : le 13 b3 (`close_waits_for_a_creation_whose_guard_holds_
+    // the_later_year`) prouve CE verrou — il rougit si on le retire ; les
+    // 13 b1 / b2 prouvent la propriété « jamais X ouvert sous Y clos » contre une
+    // clôture déjà en cours, mais la création y bute dès `find_overlapping`
+    // (verrou de borne de son parcours, dépendant du plan) et lit ensuite Y clos
+    // ici : ils tueraient le retrait de la garde, non son seul verrou.
     if let Some(later) = find_later_closed_in_tx(&mut tx, new.company_id, new.start_date).await? {
         tx.rollback().await.map_err(map_db_error)?;
         return Err(DbError::LaterFiscalYearClosed {
@@ -774,7 +789,10 @@ pub async fn find_overlapping(
 /// glisser après le check. L'hypothèse vaut sous le plan par l'index
 /// `uq_fiscal_years_company_start_date`, constaté par `EXPLAIN` (descriptif,
 /// Story 15-12a T0, une et plusieurs sociétés). Ce qui l'éprouve aujourd'hui :
-/// les tests de concurrence de la Story 15-8a
+/// pour la garde de [`create`], le test 13 b3 de la Story 15-12a
+/// (`close_waits_for_a_creation_whose_guard_holds_the_later_year` — sous un plan
+/// quelconque, le parcours tient le postérieur ouvert qu'il lit) ; pour la
+/// modification et la suppression, les tests de concurrence de la Story 15-8a
 /// (`journal_entries_modification.rs`, modification et suppression contre une
 /// clôture en cours d'un exercice postérieur — transition simulée par SQL).
 /// L'ancien test de course `reopen`/`close` a été remplacé par la Story 15-12a
@@ -941,10 +959,21 @@ pub async fn list_by_company(
 /// **Ce que cette forme perd, et ce qui le rend** :
 /// - les verrous de clé suivante d'un parcours : un exercice antérieur à Y
 ///   **créé** après la vue de (a) — un fantôme — n'est ni listé en (b) ni
-///   verrouillé en (b'). La relecture (d) le voit (état validé). Et une telle
-///   création ne peut plus se valider une fois Y tenu par (c) : sa garde
+///   verrouillé en (b'). La relecture (d) le voit (état validé) — non éprouvé
+///   par un test : aucun montage simple ne force une création validée entre (a)
+///   et (c), la session qui arrête la clôture tenant un exercice que la
+///   création parcourt aussi (revue P1, B-2). Et une
+///   telle création ne peut plus se valider une fois Y tenu par (c) : sa garde
 ///   [`find_later_closed_in_tx`] examine Y et l'attend — sauf si un exercice
-///   clos s'interpose, auquel cas elle est refusée de toute façon ;
+///   clos s'interpose, auquel cas elle est refusée de toute façon. Dans les
+///   tests, la création bute même plus tôt, dans `find_overlapping`, dont le
+///   parcours s'arrête sur Y (13 b1) ou sur M (13 b2). Réciproquement, une
+///   création dont la garde a passé **tient** Y : la clôture l'attend en (c) et
+///   la voit en (d) (13 b3, qui prouve le verrou de la garde) ;
+/// - un coût : (b') tient en écriture **tous** les antérieurs, clos ou non,
+///   jusqu'au `COMMIT` ; l'insertion d'une ligne de journal dans l'un d'eux
+///   (verrou partagé de clé étrangère sur l'exercice parent) attend la clôture
+///   (revue P1, B-6). Une clôture est brève et rare : accepté ;
 /// - une requête par exercice antérieur (quelques-unes par société) ;
 /// - (d) reste un parcours d'intervalle, dont les acquisitions **nouvelles**
 ///   (les fantômes, et sous un autre plan d'autres lignes de la société)

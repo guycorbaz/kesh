@@ -4912,6 +4912,9 @@ l'import (#458–#461).
 - **Écartées** : les aligner ici (cinq clés ×4, trois replis, trois modules frontend et le manuel de plus,
   hors du défaut #543) ; ne rien écrire.
 - **Réversible** : oui.
+- **Suivi** *(ajouté en revue P1 de la 15-12a, A3)* : l'issue est
+  [#569](https://github.com/guycorbaz/kesh/issues/569) ; la fiche 15-12a et les trois replis Rust
+  d'`errors.rs` la citent.
 
 ## C123 — 15-12b / 15-12a : deux tranchages de forme (projectId de la voie « règle », rubriques du CHANGELOG)
 - **Contexte** : R4 (LOW) — la fiche promettait `projectId` « s'il y a un projet » alors que la branche en
@@ -4942,3 +4945,51 @@ l'import (#458–#461).
   `DbError::LaterFiscalYearClosed` pour choisir le texte (fait porter à la couche base une décision
   d'affichage).
 - **Réversible** : oui (une variante et une clé à retirer).
+
+## C-15-12a-2 — 15-12a (revue P1) : la preuve du verrou de la garde de création isole la garde
+- **Contexte** : A1 (MEDIUM) = B-2 = E1 — dans les 13 b1 / b2, la création bute dès `find_overlapping`
+  (verrou de borne de son parcours) et ne lit Y clos dans sa garde qu'après ; la mutation « garde non
+  verrouillante » y reste verte. Le verrou de la garde n'était prouvé par aucun test.
+- **Retenu** : un test 13 b3 où W rejoue la garde puis l'`INSERT` de `create` **sans** le pré-contrôle
+  `find_overlapping`, dont le verrou masquerait celui de la garde ; la clôture lancée entre les deux doit
+  attendre en (c) et nommer X. Mutation (xi) (`FOR UPDATE` retiré de `find_later_closed_in_tx`) jouée :
+  seul le 13 b3 rougit. Le cas « fantôme validé entre (a) et (c) » reste sans test, écrit comme tel.
+- **Écartées** : rejouer tous les gestes de `create` (le pré-contrôle tiendrait Y et le test ne
+  prouverait rien de la garde) ; seulement écrire le `FOR UPDATE` de la garde « défensif, non éprouvé »
+  (E1) — le test est bon marché et déterministe.
+- **Réversible** : oui (un test).
+
+## C-15-12a-3 — 15-12a (revue P1) : le message neutre ne promet que ce que le code garde
+- **Contexte** : B-1 (MEDIUM) = E4 — `error-later-fiscal-year-closed` disait « rien ne peut être
+  enregistré, modifié ou supprimé avant sa date de début », alors que seuls `PUT` et `DELETE` le gardent
+  (la saisie le sera par la 15-12b), contrairement au manuel (`user-manual.tex:712`) et à
+  `api-external.md`. L'AC 9 avait écrit le texte large en comptant sur la 15-12b avant le tag.
+- **Retenu** : « aucune écriture datée avant sa date de début ne peut être modifiée ni supprimée tant
+  qu'il l'est. Une telle écriture se corrige par une contre-passation ; … », aux quatre locales et au
+  repli Rust ; assertion ajoutée au test HTTP de contre-passation (`journal_entry_reversal_e2e.rs`) qui
+  refuse « enregistr ». **La 15-12b, en posant sa garde de saisie, élargira ce texte** (à reporter dans
+  sa fiche par l'orchestrateur : la fiche 15-12b dit le message « inchangé ici »).
+- **Deux clés voisines, gardées** (B-5) : `journal-entries-modify-blocked-later-fiscal-year-closed` est
+  l'explication d'écran d'une écriture affichée (« cette écriture ») ; `error-later-fiscal-year-closed`
+  la réponse du serveur, qui ne présuppose pas l'objet. Le pourquoi est écrit au mapping
+  (`kesh-api/src/errors.rs`). **Registre italien** : les clés neuves de l'écran des exercices
+  (`Chiudi prima…`) restent au tutoiement, registre que le glossaire mesure comme celui de l'italien
+  (`docs/i18n-glossaire.md` § Registre) et qu'emploient leurs voisines (`Riapri prima…`) ; la famille
+  `journal-entries-modify-blocked-*` (« Correggetela ») est au registre de courtoisie depuis avant la
+  story. Chaque message tient un seul registre ; l'alignement du fichier relève des rollouts, comme le dit
+  le glossaire.
+- **Écartées** : garder le texte large jusqu'à la 15-12b (faux entre deux merges, et contraire au
+  manuel) ; unifier les deux clés (l'une présuppose l'écriture, l'autre non) ; passer les clés neuves au
+  vouvoiement (elles détonneraient sur leur propre écran, et contre le glossaire).
+- **Réversible** : oui (textes).
+
+## C-15-12a-4 — 15-12a (revue P1) : l'infobulle d'un bouton désactivé portée par une enveloppe
+- **Contexte** : B-3 (LOW) — `button.svelte` pose `disabled:pointer-events-none` : le `title` d'un bouton
+  désactivé ne s'affiche pas au survol, alors que le manuel promet l'infobulle de « Clôturer ». Même
+  défaut, préexistant, sur « Réouvrir ».
+- **Retenu** : chaque bouton enveloppé d'un `<span class="inline-flex" title=…>` qui reçoit le survol ; le
+  bouton garde son `title` (tests existants). Appliqué aux **deux** boutons (propagation du symptôme).
+  Vitest et E2E assertent l'attribut de l'enveloppe ; un `title` natif ne se voit pas dans Playwright.
+- **Écartées** : retirer la promesse du manuel (le défaut resterait) ; retirer `pointer-events-none` du
+  composant partagé (effet sur tout le produit) ; un composant d'infobulle (hors proportion).
+- **Réversible** : oui.

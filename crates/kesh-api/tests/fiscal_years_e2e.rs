@@ -2002,6 +2002,70 @@ async fn create_before_a_closed_year_returns_400_later_fiscal_year_closed(pool: 
     assert_eq!(n, 0, "rien n'est inséré");
 }
 
+/// AC 4 / AC 5 (revue P1, E5) — les deux refus neufs atteignent une
+/// **intégration** : avec une clé d'API `read-write`, la clôture hors d'ordre rend
+/// `409 EARLIER_FISCAL_YEAR_OPEN` et la création sous un exercice clos `400
+/// LATER_FISCAL_YEAR_CLOSED` (le « changement de contrat » du CHANGELOG).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn both_refusals_reach_a_read_write_api_key(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let y2026 = create_fy(&app, &token, 2026).await;
+    let y2027 = create_fy(&app, &token, 2027).await;
+
+    let create = app
+        .client
+        .post(app.url("/api/v1/settings/api-keys"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "name": "integration", "scope": "read-write" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(create.status(), 201);
+    let key = create.json::<serde_json::Value>().await.unwrap()["key"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let bearer = format!("Bearer {key}");
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/fiscal-years/{y2027}/close")))
+        .header("Authorization", &bearer)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 409, "clôture hors d'ordre par clé");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "EARLIER_FISCAL_YEAR_OPEN");
+    assert_eq!(body["error"]["details"]["fiscalYearId"], y2026);
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/fiscal-years/{y2026}/close")))
+        .header("Authorization", &bearer)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "clôture dans l'ordre par clé");
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/fiscal-years"))
+        .header("Authorization", &bearer)
+        .json(&json!({
+            "name": "Exercice 2025",
+            "startDate": "2025-01-01",
+            "endDate": "2025-12-31"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400, "création sous un exercice clos par clé");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "LATER_FISCAL_YEAR_CLOSED");
+    assert_eq!(body["error"]["details"]["fiscalYearId"], y2026);
+}
+
 /// AC 5 — précédence : une demande qui **chevauche** un exercice et précède un
 /// exercice clos rend **`400 VALIDATION_ERROR`**, message
 /// `error-fiscal-year-overlap` — le pré-contrôle existant parle d'abord.

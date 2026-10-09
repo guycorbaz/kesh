@@ -34,11 +34,12 @@ vi.mock('$lib/shared/utils/notify', () => ({
 const listFiscalYearsMock = vi.fn<() => Promise<FiscalYearResponse[]>>();
 const reopenFiscalYearMock = vi.fn();
 const closeFiscalYearMock = vi.fn();
+const createFiscalYearMock = vi.fn();
 vi.mock('$lib/features/fiscal-years/fiscal-years.api', () => ({
 	listFiscalYears: () => listFiscalYearsMock(),
 	reopenFiscalYear: (id: number, req: { motif: string }) => reopenFiscalYearMock(id, req),
 	closeFiscalYear: (id: number) => closeFiscalYearMock(id),
-	createFiscalYear: vi.fn(),
+	createFiscalYear: (req: unknown) => createFiscalYearMock(req),
 	updateFiscalYear: vi.fn(),
 }));
 
@@ -64,6 +65,7 @@ beforeEach(() => {
 	reopenFiscalYearMock.mockReset();
 	reopenFiscalYearMock.mockResolvedValue(fy({ status: 'Open' }));
 	closeFiscalYearMock.mockReset();
+	createFiscalYearMock.mockReset();
 	vi.mocked(notifyError).mockReset();
 });
 
@@ -108,6 +110,9 @@ describe('garde LIFO client', () => {
 		const btn = (await screen.findByTestId('fiscal-year-reopen-1')) as HTMLButtonElement;
 		expect(btn.disabled).toBe(true);
 		expect(btn.getAttribute('title') ?? '').toContain('Exercice 2026');
+		// Un bouton désactivé ne reçoit pas le survol (`pointer-events: none`) :
+		// l'infobulle doit aussi être portée par son enveloppe (revue P1 15-12a, B-3).
+		expect(btn.parentElement?.getAttribute('title') ?? '').toContain('Exercice 2026');
 	});
 });
 
@@ -193,6 +198,8 @@ describe('clôture dans l’ordre (Story 15-12a, #543)', () => {
 		const title = btn2026.getAttribute('title') ?? '';
 		expect(title).toContain('« Exercice 2024 »');
 		expect(title).not.toContain('Exercice 2025');
+		// L'enveloppe, qui reçoit le survol, porte la même infobulle (revue P1, B-3).
+		expect(btn2026.parentElement?.getAttribute('title')).toBe(title);
 		// Le plus ancien se clôture.
 		const btn2024 = (await screen.findByTestId('fiscal-year-close-1')) as HTMLButtonElement;
 		expect(btn2024.disabled).toBe(false);
@@ -210,6 +217,41 @@ describe('clôture dans l’ordre (Story 15-12a, #543)', () => {
 
 		const btn = (await screen.findByTestId('fiscal-year-close-2')) as HTMLButtonElement;
 		expect(btn.disabled).toBe(false);
+	});
+
+	// Revue P1 (A6) — AC 17, dernière phrase : la boîte de création affiche le
+	// message du refus `LATER_FISCAL_YEAR_CLOSED` (chemin générique de
+	// `submitCreate`), sans toast en doublon, et reste ouverte.
+	it('refus serveur LATER_FISCAL_YEAR_CLOSED à la création : message affiché dans la boîte', async () => {
+		authState.login({ userId: '1', username: 'admin', role: 'Admin', expiresIn: 3600 });
+		listFiscalYearsMock.mockResolvedValue([
+			fy({ id: 1, name: 'Exercice 2026', startDate: '2026-01-01', endDate: '2026-12-31', status: 'Closed' }),
+		]);
+		const serveur =
+			'L’exercice « Exercice 2026 », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucun exercice ne peut être créé avant sa date de début tant qu’il l’est.';
+		createFiscalYearMock.mockRejectedValue({
+			code: 'LATER_FISCAL_YEAR_CLOSED',
+			status: 400,
+			message: serveur,
+		});
+
+		render(Page);
+
+		await fireEvent.click(await screen.findByTestId('fiscal-year-create-button'));
+		const nom = (await screen.findByLabelText('Nom')) as HTMLInputElement;
+		await fireEvent.input(nom, { target: { value: 'Exercice 2025' } });
+		await fireEvent.input(screen.getByLabelText('Début'), { target: { value: '2025-01-01' } });
+		await fireEvent.input(screen.getByLabelText('Fin'), { target: { value: '2025-12-31' } });
+		await fireEvent.submit(nom.closest('form') as HTMLFormElement);
+
+		const alerte = await screen.findByRole('alert');
+		expect(alerte.textContent).toBe(serveur);
+		expect(createFiscalYearMock).toHaveBeenCalledWith({
+			name: 'Exercice 2025',
+			startDate: '2025-01-01',
+			endDate: '2025-12-31',
+		});
+		expect(vi.mocked(notifyError)).not.toHaveBeenCalled();
 	});
 
 	// ⛔ Tue la mutation (viii) : si la branche ILLEGAL_STATE_TRANSITION

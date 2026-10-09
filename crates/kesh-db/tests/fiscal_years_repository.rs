@@ -1641,6 +1641,10 @@ async fn jamais_x_ouvert_sous_y_clos(
         (Ok(_), Err(DbError::LaterFiscalYearClosed { fiscal_year_id, .. })) => {
             assert_eq!(*fiscal_year_id, y);
         }
+        // Issue admise par la propriété, mais inatteignable dans les montages
+        // 13 b1 / b2 : la clôture y est déjà en (c) quand la création démarre,
+        // et la création bute avant de valider (revue P1, B-2). L'ordre inverse
+        // — création tenant Y, clôture qui l'attend — est le 13 b3.
         (Err(DbError::EarlierFiscalYearOpen { fiscal_year_id, .. }), Ok(fy)) => {
             assert_eq!(*fiscal_year_id, fy.id);
         }
@@ -1657,7 +1661,8 @@ async fn jamais_x_ouvert_sous_y_clos(
 /// seule tentative. (À la main, en T0, la création avait passé ce pré-contrôle
 /// et buté dans sa garde : même issue, autre point d'arrêt — le test fait foi.)
 /// Aucune mutation propre : la propriété est tenue par les gardes (i) et (iv)
-/// ensemble.
+/// ensemble. ⚠️ Il ne prouve **pas** le verrou de la garde de `create` (la
+/// mutation (xi) le laisse vert) : c'est le 13 b3.
 #[sqlx::test(migrations = "./test-schema")]
 async fn create_against_close_without_earlier_year_never_leaves_an_open_year_under_a_closed_one(
     pool: MySqlPool,
@@ -1679,7 +1684,9 @@ async fn create_against_close_without_earlier_year_never_leaves_an_open_year_und
 /// tient M (étape (b')) ; la création lit M dans `find_overlapping` et l'attend
 /// (c'est là qu'elle est vue en cours, après avoir posé le verrou d'index de
 /// M) ; la clôture, Y obtenu, demande en étape (d) ce verrou d'index : cycle. Victime observée : la création, qui, rejouée, lit Y
-/// clos et refuse. Aucune mutation propre (gardes (i) et (iv) ensemble).
+/// clos et refuse. Aucune mutation propre (gardes (i) et (iv) ensemble) ;
+/// vert sous la mutation (xi), comme le 13 b1 — le verrou de la garde est
+/// prouvé par le 13 b3.
 #[sqlx::test(migrations = "./test-schema")]
 async fn create_against_close_with_a_closed_earlier_year_never_leaves_an_open_year_under_a_closed_one(
     pool: MySqlPool,
@@ -1698,6 +1705,139 @@ async fn create_against_close_with_a_closed_earlier_year_never_leaves_an_open_ye
     jamais_x_ouvert_sous_y_clos(&pool, company_id, y, 2025, &c, &k).await;
 }
 
+/// AC 13 b3 — **le verrou de la garde de `create`** : une création de X en
+/// cours, garde passée, contre `close(Y)` (Y ouvert, X antérieur à Y, rien
+/// d'autre).
+///
+/// W refait les gestes de `create` qui suivent ses pré-contrôles, sans les
+/// valider : la garde [`fiscal_years::find_later_closed_in_tx`] (lecture
+/// verrouillante, rend rien — Y est ouvert), puis l'`INSERT` de X. La clôture
+/// est lancée **entre les deux**, dans son enveloppe, et vue à l'étape (c) :
+/// c'est la garde de W qui tient Y. W insère X et valide ; la relecture (d) lit
+/// X **ouvert** → `EarlierFiscalYearOpen` nommant X.
+///
+/// ⚠️ W ne rejoue **pas** le pré-contrôle `find_overlapping` : dans les 13 b1 /
+/// b2, c'est lui qui bute (sur Y, borne de son parcours, ou sur M), si bien que
+/// son verrou masque celui de la garde — une garde non verrouillante y passerait
+/// (revue P1, A1). Ce test isole la garde ; il ne prouve rien du pré-contrôle,
+/// dont le verrou de borne dépend du plan.
+///
+/// ⛔ **Tue la mutation (xi)** (garde de `create` non verrouillante : `FOR
+/// UPDATE` retiré de `find_later_closed_in_tx`) : W ne tient plus Y, la clôture
+/// n'est pas vue en (c) — elle passe (c), puis (d), dont les verrous
+/// d'intervalle font attendre l'`INSERT` de W jusqu'à son `COMMIT` : état final
+/// « X ouvert, Y clos ». Rouge sur l'état final (assertion placée avant celle
+/// de l'attente, pour que le message nomme la propriété).
+#[sqlx::test(migrations = "./test-schema")]
+async fn close_waits_for_a_creation_whose_guard_holds_the_later_year(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+    let y = exercice(&pool, user_id, company_id, 2026).await;
+    let x_start = NaiveDate::from_ymd_opt(2025, 1, 1).unwrap();
+
+    let mut w = pool.begin().await.unwrap();
+    assert!(
+        fiscal_years::find_later_closed_in_tx(&mut w, company_id, x_start)
+            .await
+            .unwrap()
+            .is_none(),
+        "Y est ouvert : la garde ne refuse pas"
+    );
+
+    let cloture = {
+        let pool = pool.clone();
+        tokio::spawn(async move {
+            retry_on_deadlock("fiscal_years::close", || {
+                fiscal_years::close(&pool, user_id, company_id, y)
+            })
+            .await
+        })
+    };
+    let vue_en_c =
+        attendre_une_requete_en_cours(&pool, MOTIF_ETAPE_C, || cloture.is_finished()).await;
+
+    // Les gestes restants de `create`, que la clôture attende ou non : l'état
+    // final fait foi.
+    let x = sqlx::query(
+        "INSERT INTO fiscal_years (company_id, name, start_date, end_date) VALUES (?, ?, ?, ?)",
+    )
+    .bind(company_id)
+    .bind("Exercice 2025")
+    .bind(x_start)
+    .bind(NaiveDate::from_ymd_opt(2025, 12, 31).unwrap())
+    .execute(&mut *w)
+    .await
+    .unwrap()
+    .last_insert_id();
+    let x = i64::try_from(x).unwrap();
+    w.commit().await.unwrap();
+
+    let result = cloture.await.unwrap();
+    assert!(
+        !(statut(&pool, y).await == Some(FiscalYearStatus::Closed)
+            && statut(&pool, x).await == Some(FiscalYearStatus::Open)),
+        "état fautif atteint : X ouvert sous Y clos (clôture {result:?})"
+    );
+    assert!(
+        vue_en_c,
+        "la clôture doit être vue à l'étape (c), bloquée sur Y que tient la garde de W"
+    );
+    assert!(
+        matches!(&result, Err(DbError::EarlierFiscalYearOpen { fiscal_year_id, .. }) if *fiscal_year_id == x),
+        "attendu EarlierFiscalYearOpen nommant X, obtenu {result:?}"
+    );
+    assert_eq!(statut(&pool, y).await, Some(FiscalYearStatus::Open));
+    assert_eq!(audits(&pool, "fiscal_year.closed", y).await, 0);
+}
+
+/// AC 5 (revue P1, E5) — la garde de `create` est **bornée à la société** : un
+/// exercice clos d'une autre société ne refuse rien.
+///
+/// ⛔ Tue la mutation « `company_id` neutralisé dans le filtre de
+/// `FIND_LATER_CLOSED_SQL` » (jouée en revue P1 : seul ce test rougit).
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_ignores_the_closed_years_of_another_company(pool: MySqlPool) {
+    let autre = create_other_company(&pool).await;
+    let autre_user = create_admin_user(&pool, autre).await;
+    let y_autre = exercice(&pool, autre_user, autre, 2026).await;
+    fiscal_years::close(&pool, autre_user, autre, y_autre)
+        .await
+        .unwrap();
+
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+    let mut new = ny("Exercice 2025", 2025);
+    new.company_id = company_id;
+    let result = fiscal_years::create(&pool, user_id, new).await;
+    assert!(
+        result.is_ok(),
+        "un exercice clos d'une autre société ne garde rien : {result:?}"
+    );
+}
+
+/// AC 5 (revue P1, E5) — **frontière de date** de la garde de `create` : un
+/// exercice clos qui finit **la veille** du début du nouveau (antérieur et
+/// adjacent) ne le refuse pas ; seul un postérieur clos le refuse. Le cas
+/// symétrique — le nouveau finit la veille du début d'un exercice clos — est
+/// `create_is_refused_before_a_closed_year` (2025-12-31 / 2026-01-01).
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_right_after_a_closed_year_is_allowed(pool: MySqlPool) {
+    let company_id = create_company(&pool).await;
+    let user_id = create_admin_user(&pool, company_id).await;
+    let y2025 = exercice(&pool, user_id, company_id, 2025).await;
+    fiscal_years::close(&pool, user_id, company_id, y2025)
+        .await
+        .unwrap();
+
+    let mut new = ny("Exercice 2026", 2026);
+    new.company_id = company_id;
+    let result = fiscal_years::create(&pool, user_id, new).await;
+    assert!(
+        result.is_ok(),
+        "un exercice clos antérieur et adjacent ne garde rien : {result:?}"
+    );
+}
+
 /// AC 13 d — `close(N)` contre une **contre-passation** (cycle de l'AC 3 ; M
 /// clos, N ouvert, T ouvert couvrant le jour du serveur, M < N < T).
 ///
@@ -1712,7 +1852,9 @@ async fn create_against_close_with_a_closed_earlier_year_never_leaves_an_open_ye
 /// **Objet** : le cycle existe et se résout — la clôture, dans son enveloppe,
 /// finit acceptée. Il ne tue **aucune** mutation : l'enveloppe y est écrite par
 /// le test ; c'est le test HTTP de rejeu (`rejeu_interblocage_e2e.rs`) qui tue
-/// la mutation (ix).
+/// la mutation (ix). Son assertion d'interblocage est **disjonctive** (W victime,
+/// ou la clôture rejouée une fois) : exhaustive dès que le cycle est forcé, elle
+/// ne dépend pas du choix de victime d'InnoDB — c'est voulu (revue P1, B-4).
 #[sqlx::test(migrations = "./test-schema")]
 async fn close_against_a_reversal_deadlocks_and_the_replay_resolves_it(pool: MySqlPool) {
     use chrono::Datelike;

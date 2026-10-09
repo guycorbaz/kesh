@@ -87,6 +87,9 @@ test.describe('Page exercices — création + clôture', () => {
 		const closeFy = rowFy.locator('[data-testid^="fiscal-year-close-"]');
 		await expect(closeFy).toBeDisabled();
 		await expect(closeFy).toHaveAttribute('title', /« Exercice CI 2020-2030 »/);
+		// Un bouton désactivé ne reçoit pas le survol (`pointer-events: none`) :
+		// c'est son enveloppe qui affiche l'infobulle (revue P1, B-3).
+		await expect(closeFy.locator('..')).toHaveAttribute('title', /« Exercice CI 2020-2030 »/);
 
 		// Clôturer d'abord l'exercice seedé.
 		const rowSeed = page.locator('tr', { hasText: 'Exercice CI 2020-2030' }).first();

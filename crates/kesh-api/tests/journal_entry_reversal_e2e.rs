@@ -1883,6 +1883,13 @@ async fn a_closed_later_year_freezes_the_entry_until_reopened(pool: MySqlPool) {
             .contains(&format!("Exercice {}", annee + 1)),
         "{body}"
     );
+    // Revue P1 (B-1) : le message ne promet que ce que le code garde — la
+    // modification et la suppression, non la saisie.
+    let msg = body["error"]["message"].as_str().unwrap_or_default();
+    assert!(
+        msg.contains("ne peut être modifiée ni supprimée") && !msg.contains("enregistr"),
+        "{body}"
+    );
     let ecran = detail(&app, &token, id).await;
     assert_eq!(ecran["modifiable"], false);
     assert_eq!(ecran["modificationBlockedBy"], "LATER_FISCAL_YEAR_CLOSED");

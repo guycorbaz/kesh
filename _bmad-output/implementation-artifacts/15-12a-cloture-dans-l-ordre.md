@@ -95,8 +95,9 @@ réparation). **Rien ici ne lit ni ne cite le filet comme existant** : les doc-c
 l'AC 14 nomment ce qui contourne l'invariant ; la 15-12b les complète en y décrivant son filet. Livrée
 seule, la 15-12a est complète et testable : dans un état sain, l'état fautif est inatteignable ; dans un
 état hérité, le comportement des écritures est celui de `main` (seuls `PUT` et `DELETE` refusent).
-⚠️ **Publication** : le message neutre de l'AC 9 (« rien ne peut être enregistré… ») n'est vrai de l'état
-hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qui ferme #543, P1).
+⚠️ **Publication** : **la v0.13.0 ne se tague pas sans la 15-12b** (qui ferme #543, P1). Le message neutre
+de l'AC 9 ne nomme, depuis la revue P1 (B-1, C-15-12a-3), que ce que le code de la 15-12a garde — la
+modification et la suppression d'une écriture ; la 15-12b l'élargira à la saisie avec sa garde.
 
 ### Frontière avec la 15-1a (R6, F11, C112)
 
@@ -184,7 +185,10 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
      (c) : sa garde `find_later_closed_in_tx` (AC 5) parcourt les exercices postérieurs à X et
      **examine** Y — elle le demande, et attend la clôture —, sauf si un exercice **clos** s'interpose
      entre X et Y, auquel cas la création est refusée de toute façon. Ce qui s'est validé avant (c), (d)
-     le lit ; ce qui viendrait après attend ;
+     le lit ; ce qui viendrait après attend. *(Revue P1, A1 : dans les tests, la création bute même plus
+     tôt, dans `find_overlapping` ; le verrou de la garde elle-même — une création dont la garde a
+     passé **tient** Y, la clôture l'attend en (c) et la voit en (d) — est prouvé par le 13 b3. Le cas du
+     fantôme validé entre (a) et (c) n'a pas de test : aucun montage simple ne le force, B-2.)* ;
    - **des requêtes** : une par exercice antérieur (une par année, quelques-unes par société) ;
    - **(d) reste un parcours d'intervalle**, dont les acquisitions **nouvelles** dépendent du plan. Mais
      elle vient quand la clôture tient déjà Y et tous les antérieurs connus : ce qu'elle peut encore
@@ -310,7 +314,9 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
      `onboarding::finalize`. ✅ **Mesuré en T0 : la victime se laisse forcer** — montage M clos, Y
      ouvert, M < X < Y ; la transaction lourde tient Y par clé primaire ; `POST /fiscal-years` (X) passe
      son pré-contrôle `find_overlapping` (qui lit, donc verrouille, M) et bute sur Y dans
-     `find_later_closed_in_tx` (motif `["start_date > ", "FOR UPDATE"]`) ; la transaction demande M :
+     `find_later_closed_in_tx` (motif `["start_date > ", "FOR UPDATE"]`) — **à la main** ; dans le test
+     HTTP 10, sur une base `#[sqlx::test]` de quelques lignes, elle bute dès `find_overlapping`, d'où son
+     motif large `["fiscal_years", "FOR UPDATE"]` (revue P1, A1) ; la transaction demande M :
      interblocage, la création (plus légère) est annulée, la transaction obtient M, annule ; la route
      rejoue et rend **201**. Le test est donc écrit, et il tue la mutation (x).
    **Le doc-comment du registre est mis à jour** (propagation) : le point (iv) (`:94-98`) retire
@@ -343,9 +349,12 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
    (`kesh-api/src/errors.rs:2843-2872` sur `5e4bec50`) lit une **clé neuve** `error-later-fiscal-year-closed`, aux
    quatre locales et dans le repli Rust (qui remplace celui de `:2851-2853`). Texte fr-CH de
    référence : « L'exercice « { $name } », postérieur, est clôturé, et son bilan reprend tout ce qui le
-   précède : rien ne peut être enregistré, modifié ou supprimé avant sa date de début tant qu'il l'est.
-   Une écriture se corrige alors par une contre-passation ; sinon, un administrateur rouvre les
-   exercices clôturés, en commençant par le plus récent. »
+   précède : aucune écriture datée avant sa date de début ne peut être modifiée ni supprimée tant qu'il
+   l'est. Une telle écriture se corrige par une contre-passation ; sinon, un administrateur rouvre les
+   exercices clôturés, en commençant par le plus récent. » *(Revue P1, B-1/E4, C-15-12a-3 : la première
+   rédaction disait « rien ne peut être enregistré, modifié ou supprimé » — faux de la saisie tant que
+   la 15-12b n'a pas posé sa garde, et contraire au manuel `user-manual.tex:712` et à
+   `api-external.md`. La 15-12b élargira le texte à la saisie.)*
    - La formulation ne présuppose **pas** que l'exercice visé existe (elle vaut à la création d'un
      exercice, F12) ;
    - elle **garde le conseil** que le `PUT` / `DELETE` donnait (la contre-passation, F5) ;
@@ -359,16 +368,16 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
    (ligne *clôture (d'exercice)* : *Abschluss* / *chiusura* / *closing*, jamais « fermer » — KF-041 ;
    *contre-passation* : *Stornobuchung* / *storno* / *reversal*, comme les clés voisines) :
    - `error-later-fiscal-year-closed` — de-CH : « Das spätere Geschäftsjahr „{ $name }“ ist
-     abgeschlossen, und seine Bilanz enthält alles, was ihm vorangeht: Vor seinem Beginn kann nichts
-     erfasst, geändert oder gelöscht werden, solange es abgeschlossen ist. Eine Buchung wird dann durch
-     eine Stornobuchung korrigiert; andernfalls eröffnet eine Administratorin oder ein Administrator
+     abgeschlossen, und seine Bilanz enthält alles, was ihm vorangeht: Eine Buchung vor seinem Beginn
+     kann weder geändert noch gelöscht werden, solange es abgeschlossen ist. Eine solche Buchung wird
+     durch eine Stornobuchung korrigiert; andernfalls eröffnet eine Administratorin oder ein Administrator
      die abgeschlossenen Geschäftsjahre wieder, beginnend mit dem neuesten. » ; it-CH : « L’esercizio
-     successivo « { $name } » è chiuso, e il suo bilancio riprende tutto ciò che lo precede: nulla può
-     essere registrato, modificato o eliminato prima della sua data d’inizio finché lo è. Una scrittura
-     si corregge allora con uno storno; altrimenti, un amministratore riapre gli esercizi chiusi,
+     successivo « { $name } » è chiuso, e il suo bilancio riprende tutto ciò che lo precede: nessuna
+     scrittura datata prima della sua data d’inizio può essere modificata o eliminata finché lo è. Una
+     tale scrittura si corregge con uno storno; altrimenti, un amministratore riapre gli esercizi chiusi,
      cominciando dal più recente. » ; en-CH : « The later fiscal year "{ $name }" is closed, and its
-     balance sheet includes everything before it: nothing can be recorded, changed or deleted before
-     its start date while it is closed. An entry is then corrected with a reversal; otherwise, an
+     balance sheet includes everything before it: no entry dated before its start date can be changed
+     or deleted while it is closed. Such an entry is corrected with a reversal; otherwise, an
      administrator reopens the closed fiscal years, starting with the most recent. »
    - `error-fiscal-year-create-later-closed` (AC 5) — même première proposition, puis de-CH : « Vor
      seinem Beginn kann kein Geschäftsjahr erstellt werden, solange es abgeschlossen ist. Um dieses zu
@@ -469,7 +478,11 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
       (sérialisation, sans interblocage). ✅ **Mesuré en T0** (MariaDB 10.11.16, trois sessions à la
       main, la clôture bloquée en étape (c) par une session qui tient Y, la création lancée ensuite) :
       **13 b1 — sérialisation** : la création passe ses pré-contrôles, bute sur Y dans
-      `find_later_closed_in_tx`, attend la clôture et lit Y **clos** → `LaterFiscalYearClosed` ;
+      `find_later_closed_in_tx`, attend la clôture et lit Y **clos** → `LaterFiscalYearClosed` —
+      **à la main** ; **dans les tests** (`#[sqlx::test]`), la création bute dès `find_overlapping`, sur
+      Y (b1) ou sur M (b2), et ne lit Y clos dans sa garde qu'après : les 13 b1 / b2 prouvent la
+      propriété, **non le verrou de la garde** — une garde non verrouillante y passerait aussi (revue
+      P1, A1 = B-2 = E1). D'où le **13 b3** ci-dessous ;
       **13 b2 — interblocage**, contrairement à la supposition : la clôture tient M (étape (b')), la
       création lit M dans `find_overlapping` et l'attend, la clôture, Y obtenu, demande en étape (d) le
       verrou d'index de M que la création a posé — cycle ; victime observée : la création, qui rejouée
@@ -480,6 +493,13 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
       observé (interblocage rejoué, ou sérialisation) dans son doc-comment, et la phrase de l'AC 6 est
       corrigée si aucune configuration n'interbloque. La mesure décide aussi de la preuve de
       l'enveloppe de la création (AC 6, mutation (x)).
+    - **(b3) Le verrou de la garde de `create`** *(ajouté en revue P1, A1)* : W refait les gestes de
+      `create` **qui suivent** ses pré-contrôles, sans les valider — la garde `find_later_closed_in_tx`
+      (rend rien, Y ouvert), puis, après le lancement de `close(Y)` et son attente en étape (c),
+      l'`INSERT` de X — et valide. On asserte : jamais « X ouvert, Y clos » ; la clôture vue en (c) ;
+      `EarlierFiscalYearOpen` nommant X ; Y ouvert ; aucun audit `fiscal_year.closed`. W ne rejoue
+      **pas** `find_overlapping`, dont le verrou de borne masquerait celui de la garde. **Tue la mutation
+      (xi)** (garde non verrouillante), jouée : seul ce test rougit (« X ouvert sous Y clos »).
     - **(c) Une clôture de N en cours contre `close(N+1)`** (N et N+1 ouverts) — garde contre un refus
       **parasite**, sous forme **ordonnée** (C100) : W pose `UPDATE fiscal_years SET status = 'Closed'
       WHERE id = N`, non validé ; on lance `close(N+1)`, on attend qu'elle soit vue en cours (bloquée sur
@@ -581,7 +601,9 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
     attend N, W demande Y — interblocage attendu, dont la victime peut être W, c'est-à-dire une
     réouverture, non rejouée, en 500. (Dans le 13 a tel que monté, W lit les postérieurs **avant** de
     lancer la clôture : la mutation (iii) n'y forme pas de cycle et le test reste vert.) Justification de
-    l'ordre, pas une garantie ; (iv) retirer la garde de `create` → AC 5 rouge ; (viii) faire passer
+    l'ordre, pas une garantie ; (iv) retirer la garde de `create` → AC 5 rouge ; (xi) *(revue P1, A1)*
+    rendre la garde de `create` non verrouillante (`FOR UPDATE` retiré de `find_later_closed_in_tx`) →
+    test 13 b3 rouge ; (viii) faire passer
     `EARLIER_FISCAL_YEAR_OPEN` par la branche `ILLEGAL_STATE_TRANSITION` de l'écran → Vitest rouge ; (ix)
     appeler `fiscal_years::close` hors de son enveloppe dans la **route** → test HTTP de l'AC 6 rouge
     (500 ou absence du témoin de rejeu) ; (x) appeler `fiscal_years::create` hors de son enveloppe →
@@ -858,9 +880,11 @@ l'objet).
   utilisateur (`:719` — « peut rouvrir l'exercice directement », légitime pour la procédure —,
   `:1405`, `:1427`, `:1714`, `:2242`). ⚠️ Des tests Vitest **figent** le texte courant
   (`InvoiceSettlements.test.ts`, `reconciliation-cancel.test.ts`, `CancelReconciliationDialog.test.ts`,
-  `settlement-cancel-blocked.test.ts`, `invoice-settlements-page.test.ts`) : l'issue les nommera. **Issue à ouvrir par l'orchestrateur** (P3 : texte qui décrit un geste que le code
+  `settlement-cancel-blocked.test.ts`, `invoice-settlements-page.test.ts`) : l'issue les nommera. **Issue
+  [#569](https://github.com/guycorbaz/kesh/issues/569)** (P3 : texte qui décrit un geste que le code
   refuse dans un cas), qui les alignera sur la prescription de C111 — « en commençant par le plus
-  récent ».
+  récent ». Les trois replis Rust d'`errors.rs` (règlement, rapprochement, facture fournisseur) la
+  citent en commentaire depuis la revue P1 (A3/E3).
 
 ### Dérogation règle de splitting
 
@@ -1022,8 +1046,9 @@ Claude Opus 5.5 (agent de développement, worktree `/home/gcorbaz/devel/kesh-15-
 **Tests ajoutés** (recomptés `grep -cE '#\[(sqlx|tokio)::test'` aux deux bornes `5e4bec50` → `HEAD`) :
 `fiscal_years_repository.rs` 40 → 53 (+14 neufs, −1 remplacé : `reopen_close_concurrent_is_serialized`
 → 13 a) ; `fiscal_years_e2e.rs` 41 → 44 (+3) ; `rejeu_interblocage_e2e.rs` 7 → 9 (+2, tests 9 et 10) ;
-Vitest `fiscal-years-page.test.ts` 6 → 9 (+3). Backend : +18, cohérent avec le gate (2879 sur
-`5e4bec50` selon le registre de sprint → 2897).
+Vitest `fiscal-years-page.test.ts` 6 → 9 (+3). Backend : +18, cohérent avec le gate (2879 selon le
+registre de sprint, compté sur l'état rebasé sur `8f9811d8` et **non rejoué** sur `5e4bec50` — précision
+de la revue P1, A7 → 2897).
 
 **Mutations (AC 19), jouées et constatées** (chacune restaurée par copie puis `touch`) :
 - (i) garde de `close` neutralisée → **3 rouges** : `close_is_refused_while_an_earlier_year_is_open`,
@@ -1070,7 +1095,8 @@ Un code `\texttt` qui débordait de la marge dans le PDF administrateur (tronqu�
 - frontend : `npm run check` 0 erreur (27 avertissements préexistants), `lint-i18n-ownership` PASS,
   `test:unit` **1094 / 1094** (112 fichiers), `build` OK ;
 - E2E complet (backend `:3012` sur `kesh_e2e_1512a`, secrets `openssl rand`, montage complet de
-  `docs/testing.md` — SMTP, inbox, documents ; `smtpConfigured:true`), lancé à 00:30 UTC : **245
+  `docs/testing.md` — SMTP, inbox, documents ; `smtpConfigured:true`), lancé vers 00:44 UTC (backend
+  démarré à 00:18 UTC, journal clos à 00:59 UTC ; heure corrigée en revue P1, A7) : **245
   passés, 9 échecs, 19 ignorés** (14,7 min). Les 9, jugés **fichier par fichier** contre
   `docs/testing.md` § « Les échecs attendus » : sept KF-029 (#97 — `mode-expert.spec.ts:26`, `:41`,
   `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) et deux KF-045
@@ -1082,8 +1108,71 @@ Un code `\texttt` qui débordait de la marge dans le PDF administrateur (tronqu�
 - La garde de création (AC 5) n'est pas seule à verrouiller : en 13 b1/b2 et au test HTTP, c'est
   `find_overlapping` qui bute — à lire contre l'AC 13 b (« la création postérieure attend Y »).
 - La mutation (ix)/(x) a été jouée par réduction à une tentative, non par appel nu (voir plus haut).
-- R7 de P4 (fiche 15-1a) et l'issue des « autres textes de réouverture sans ordre » (C122) restent à
-  l'orchestrateur.
+- R7 de P4 (fiche 15-1a) reste à l'orchestrateur ; l'issue des « autres textes de réouverture sans
+  ordre » (C122) est **#569**.
+
+### Remédiation de la revue de code P1 (2026-10-09)
+
+Rapports : `target/gate-logs/15-12a-review-p1-{B,E,A}.md` (worktree). Choix : C-15-12a-2, -3, -4 ;
+suivi #569 ajouté à C122.
+
+- **A1 (MEDIUM) = B-2 = E1** — test **13 b3** `close_waits_for_a_creation_whose_guard_holds_the_later_year`
+  (W : garde de `create` puis `INSERT`, sans `find_overlapping` ; clôture attendue en (c) ;
+  `EarlierFiscalYearOpen` nommant X). **Mutation (xi)** — `FOR UPDATE` retiré de
+  `find_later_closed_in_tx` — **jouée : 1 rouge, le 13 b3** (« état fautif atteint : X ouvert sous Y
+  clos ») ; 13 b1 et 13 b2 **verts** sous elle, ce qui confirme le constat de la revue. Restaurée par
+  copie puis `touch`. Fiche (AC 3, AC 6, AC 13 b, AC 19), commentaire du site de la garde
+  (`fiscal_years.rs`), doc de `create`, de `close` (« ce que cette forme perd ») et de
+  `find_later_closed_in_tx`, doc-comments des 13 b1 / b2 : chacun dit ce qu'il prouve. Branche
+  inatteignable de `jamais_x_ouvert_sous_y_clos` commentée ; le fantôme validé entre (a) et (c) écrit
+  « sans test ».
+- **B-1 (MEDIUM) = E4** — `error-later-fiscal-year-closed` (4 locales + repli Rust) ne nomme plus que la
+  modification et la suppression ; assertion ajoutée à
+  `a_closed_later_year_freezes_the_entry_until_reopened` de `journal_entry_reversal_e2e.rs` (contient « ne peut être modifiée ni
+  supprimée », pas « enregistr »). Grep par la valeur (« enregistr », « recorded », « erfasst »,
+  « registrat ») : plus aucun site hors fiches et registre. La 15-12b élargira le texte (C-15-12a-3).
+- **B-5** — deux clés voisines gardées, pourquoi écrit au mapping ; registre italien tranché par le
+  glossaire (tutoiement des clés de l'écran des exercices), C-15-12a-3.
+- **B-3** — infobulle portée par une enveloppe `<span title>` (bouton désactivé = `pointer-events:
+  none`), pour « Clôturer » **et** « Réouvrir » ; Vitest et E2E assertent l'enveloppe. Mutation
+  « `title` retiré de l'enveloppe » jouée : Vitest rouge.
+- **A6** — Vitest « refus serveur LATER_FISCAL_YEAR_CLOSED à la création : message affiché dans la
+  boîte » ; mutation « `createError = err.message` remplacé » jouée : rouge.
+- **E5** — `create_ignores_the_closed_years_of_another_company` (mutation « `company_id` neutralisé dans
+  `FIND_LATER_CLOSED_SQL` » jouée : seul ce test rougit), `create_right_after_a_closed_year_is_allowed`
+  (frontière : antérieur clos adjacent ; le cas postérieur adjacent est déjà
+  `create_is_refused_before_a_closed_year`), HTTP `both_refusals_reach_a_read_write_api_key` (409 et 400
+  par clé `read-write`).
+- **A2** — références à `reopen_close_concurrent_is_serialized` (`opening_balances_e2e.rs`,
+  `opening_balances_repository.rs` ×2) : « l'ancien …, remplacé par la Story 15-12a ».
+- **A3 / E3** — #569 cité dans la fiche (Hors périmètre, Points à vérifier), au registre (C122) et en
+  commentaire aux trois replis Rust d'`errors.rs` (règlement, rapprochement, facture fournisseur).
+  #568 (prédicteurs, 15-12b) non cité dans `api-external.md` : hors de ce que dit la ligne.
+- **A4** — `api-external.md:253` borné aux chemins d'écriture d'une écriture comptable.
+- **A7** — heure du run E2E corrigée (vers 00:44 UTC), origine du 2879 précisée.
+- **E2** — doc de module : cycle réouverture ↔ contre-passation d'un postérieur nommé (non rejouée, 500
+  possible, préexistant). **B-6** — coût de (b') écrit au doc de `close`. **B-4** — assertion
+  disjonctive du 13 d expliquée dans son doc-comment.
+- **A5 / B-7** — écrits, sans changement : (ix)/(x) jouées par réduction à une tentative, l'appel nu
+  reste une variante **non jouée** ; le cycle `reopen` ↔ contre-passation est préexistant (E2).
+- **Non traité** : aucun.
+
+**Tests ajoutés par cette remédiation** (recomptés `grep -cE '#\[(sqlx|tokio)::test'`, `1f477526` →
+arbre de travail) : `fiscal_years_repository.rs` 53 → 56 (+3), `fiscal_years_e2e.rs` 44 → 45 (+1) ;
+Vitest `fiscal-years-page.test.ts` 9 → 10 (+1). Backend +4 (2897 → 2901), frontend +1 (1094 → 1095).
+
+**Gates (arbre de la remédiation, commité tel quel)** :
+- `cargo fmt --all -- --check` vert ; `cargo clippy --workspace --all-targets -- -D warnings` vert ;
+- bases `kesh_1512a` / `kesh_e2e_1512a` remises à zéro (DROP/CREATE, migrations, seed) ;
+  `scripts/test-fast.sh` : **2901 / 2901, 4 ignorés** (`target/gate-logs/15-12a-gate-backend-p1.log`) ;
+- frontend : `check` 0 erreur (27 avertissements préexistants), `lint-i18n-ownership` PASS,
+  `test:unit` **1095 / 1095** (112 fichiers), `build` OK (`…/15-12a-gate-frontend-p1.log`) ;
+- E2E complet (backend `:3012`, `kesh_e2e_1512a`, montage complet, `smtpConfigured:true`), vers 01:34 (fin à
+  01:44 UTC) : **245 passés, 9 échecs, 19 ignorés** (10,2 min). Les 9, fichier par fichier contre
+  `docs/testing.md` : sept KF-029 (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`,
+  `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) et deux KF-045 (`invoices.spec.ts:415`, `:439`, run
+  avant 12:00 UTC). Aucun hors liste ; `fiscal-years.spec.ts:59` vert. Backend arrêté par son PID.
+- Manuels non touchés (le texte promettait déjà l'infobulle, désormais tenue) : PDF non régénérés.
 
 ### File List
 
@@ -1097,6 +1186,8 @@ Un code `\texttt` qui débordait de la marge dans le PDF administrateur (tronqu�
 - `frontend/src/routes/(app)/settings/fiscal-years/+page.svelte`, `…/fiscal-years-page.test.ts`
 - `frontend/src/lib/features/journal-entries/blocker-messages.ts`, `frontend/src/lib/shared/i18n-keys.test.ts`
 - `frontend/tests/e2e/fiscal-years.spec.ts`
+- revue P1 : `crates/kesh-api/tests/journal_entry_reversal_e2e.rs`,
+  `crates/kesh-api/tests/opening_balances_e2e.rs`, `crates/kesh-db/tests/opening_balances_repository.rs`
 - `docs/manual/fr/{user,admin}-manual.{tex,pdf}`, `docs/api-external.md`,
   `docs/MULTI-TENANT-SCOPING-PATTERNS.md`, `CHANGELOG.md`
 - `_bmad-output/implementation-artifacts/{15-12a-cloture-dans-l-ordre.md, 15-12-cloture-dans-l-ordre.md,
@@ -1104,6 +1195,16 @@ Un code `\texttt` qui débordait de la marge dans le PDF administrateur (tronqu�
 
 ## Change Log
 
+- 2026-10-09 — **Revue de code P1** (Sonnet ×3, contexte frais, lentilles B, E, A ; prompt
+  `15-12a-review-prompt-p1.md`). Bruts : B 0 / 0 / 1 MEDIUM / 6 LOW, E 0 / 0 / 0 / 5 LOW, A 0 / 0 / 1
+  MEDIUM / 6 LOW ; après dédoublonnage (B-1 = E4 ; A1 = B-2 = E1) : **0 CRITICAL, 0 HIGH, 2 MEDIUM**
+  distincts, le reste LOW. Les deux MEDIUM sont d'**origine** (aucun n'est né d'une remédiation) : le
+  verrou de la garde de création n'était prouvé par aucun test (A1 → test 13 b3, mutation (xi) rouge) ;
+  le message neutre promettait plus que le code (B-1 → texte borné à la modification et à la
+  suppression). Tous les LOW traités ou écrits (Dev Agent Record, § « Remédiation de la revue de code
+  P1 »). Choix C-15-12a-2 à -4. Gates complets sur l'arbre remédié : backend 2901/2901, Vitest
+  1095/1095, E2E 245 / 9 attendus. ⚠️ La remédiation touche du code de production (texte du repli Rust
+  et des `.ftl`, enveloppe des boutons de l'écran) : la boucle n'est pas close — passe ciblée suivante.
 - 2026-10-09 — **Développement** (T1-T10) : clôture dans l'ordre, garde de création, 409
   `EARLIER_FISCAL_YEAR_OPEN`, message neutre et message de création, rejeu des deux routes, écran,
   E2E, documentation. Gates au dernier commit de code : backend 2897/2897, Vitest 1094/1094, E2E 245 /
