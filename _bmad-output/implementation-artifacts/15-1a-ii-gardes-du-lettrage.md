@@ -948,6 +948,12 @@ Opus 5.5 (Claude Code, sous-agent de développement de l'Epic 15), le 2026-10-09
 
 ## Change Log
 
+### Intégration sur `181efa3c` (15-14a, tmpfs 8 Go) — 2026-10-09 (Opus 5.5)
+
+- **Rebase** sur `181efa3c` (15-14a, #591, après `50d3e509`, #588) ; sauvegarde `backup/15-1a-ii-avant-rebase-181efa3c` (C-15-1a-ii-12). Catalogues des quatre locales : `opening-balances-locked-first-year-closed` pris de la 15-14a, `opening-balances-locked-already-has-entries` de la 15-1a-ii (seule différence : la réserve du délettrage) ; PDF des manuels **régénérés** (`make -B`), jamais fusionnés ; registre et sprint-status par union (entrées de la 15-1a-ii renumérotées (59) et (60)).
+- **Gardes de texte de la 15-14a sur les textes de la 15-1a-ii** : `textes_coherents` (G1–G13, G4-bis, G4-ter, G8-bis) **10/10** et `kesh-i18n` (loader) 38/38 au premier passage, Vitest (G13) vert — aucun faux rouge, aucun texte à corriger.
+- **Gates sur l'état rebasé** (bases `kesh_151aii` et `kesh_e2e_151aii` recréées — 76 migrations, seed ; tmpfs MariaDB 1,3 Go / 8 Go avant et après) : `scripts/test-fast.sh` **3178/3178**, 4 ignorés (3144 de `1ae3963e` + 17 de la 15-14a + 17 de la 15-1a-ii) ; Vitest **1161/1161** (1158 + 3) ; `npm run check` 0 erreur, 27 avertissements ; `lint-i18n-ownership` vert ; build ; **E2E complet** (port 3017) : **247 passés, 7 échecs, 19 ignorés** — exactement les sept KF-029. Journaux : `15-1a-ii-gate-rebase-181efa3c.log`, `15-1a-ii-fe-rebase-181efa3c.log`, `15-1a-ii-e2e-rebase-181efa3c.log`.
+
 ### Revue de code P2 ciblée — 2026-10-09 (Opus ; boucle close)
 
 - **Passe ciblée** sur `581040aa` (prompt `f6e9f99e`, rapport `/home/gcorbaz/devel/kesh-gate-logs/15-1a-ii-review-p2-ciblee.md`) :

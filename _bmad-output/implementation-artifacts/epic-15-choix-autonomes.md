@@ -6786,3 +6786,8 @@ l'import (#458–#461).
 - **Contexte** : `origin/main` avait avancé de la 15-6d (#590) depuis `0724904c`.
 - **Retenu** : sauvegarde `backup/15-1a-ii-avant-rebase-p1`, rebase ; CHANGELOG, `api-external.md` et `user-manual.tex` fusionnés sans conflit ; `user-manual.pdf` régénéré (`make -B user`) ; registre et sprint-status **par union** (entrée de la 15-1a-ii renumérotée (49)).
 - **Réversible** : oui (branche de sauvegarde).
+
+## C-15-1a-ii-12 — 15-1a-ii : intégration sur `181efa3c` (15-14a)
+- **Contexte** : `origin/main` a reçu la 15-14a (#591 : manuels, catalogues, gardes de texte) et le tmpfs à 8 Go (#588) après la clôture de la revue.
+- **Retenu** : sauvegarde `backup/15-1a-ii-avant-rebase-181efa3c`, rebase. Conflit des catalogues ×4 tranché clé par clé : `opening-balances-locked-first-year-closed` = texte de la 15-14a (la 15-1a-ii n'y touchait pas), `opening-balances-locked-already-has-entries` = texte de la 15-1a-ii (celui de main plus la réserve du délettrage). PDF régénérés par `make -B`. Registre et sprint-status par union.
+- **Réversible** : oui (branche de sauvegarde).
