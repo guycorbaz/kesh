@@ -498,7 +498,15 @@ const ATTENDU = {
 	// dans `routes/(app)/settings/fiscal-years/+page.svelte` (56 → 57, recompté par
 	// `grep -oE "\b(msg|i18nMsg)\("` aux deux bornes, `5e4bec50` et la branche).
 	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (un littéral).
-	sitesTotal: 1916,
+	// Story 15-6b (#474) : **1916 → 1922** (+6 ; 1915 → 1921 avant le rebase sur la 15-12a), recompté par `grep -o "i18nMsg("` aux deux
+	// bornes, fichier par fichier : `payment-batches/payment-batch-helpers.ts` (9 → 11 : les deux
+	// codes neufs de `failedItemLabel`) ; `reconciliation/failed-proposal-label.ts` (28 → 30 :
+	// `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, deux cas selon `details.role`) ;
+	// `invoices/SettleInvoiceDialog.svelte` (19 → 20) et
+	// `routes/(app)/supplier-invoices/[id]/+page.svelte` (39 → 40) : le message de liste vide
+	// des comptes bancaires. `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (aucun site
+	// dynamique ajouté) ; la doublure `SettleInvoiceDialogHost.test.svelte` est hors collecte.
+	sitesTotal: 1922,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

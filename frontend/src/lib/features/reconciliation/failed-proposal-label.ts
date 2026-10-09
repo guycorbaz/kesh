@@ -6,11 +6,12 @@
  * FailedProposal per-proposal* du `CLAUDE.md` ; seul leur affichage est traduit. Patron :
  * `failedItemLabel` (`payment-batches/payment-batch-helpers.ts`).
  *
- * **Les 26 codes** sont ceux que `crates/kesh-api/src/routes/reconciliation.rs` peut poser dans
+ * **Les 27 codes** sont ceux que `crates/kesh-api/src/routes/reconciliation.rs` peut poser dans
  * `failed[]` : les 25 littéraux relevés par
  * `grep -ohE 'error_code: "[A-Z_]+"' crates/kesh-api/src/routes/reconciliation.rs | sort -u`,
- * plus `ACCOUNT_NOT_POSTABLE`, posé par `DbError::error_code()` (seule forme non littérale du
- * fichier). Un code apparu depuis retombe sur le repli, qui **montre le code brut** : mieux vaut
+ * plus les deux codes posés par `DbError::error_code()` (seules formes non littérales du
+ * fichier) : `ACCOUNT_NOT_POSTABLE` et, depuis la Story 15-6b (#474),
+ * `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`. Un code apparu depuis retombe sur le repli, qui **montre le code brut** : mieux vaut
  * un code qu'une case vide.
  *
  * ⚠️ **Clés réutilisées** (choix C37, étendu par C-15-5c-1) : quand un message existant convient
@@ -21,8 +22,10 @@
  * ⚠️ **Les clés sont écrites en toutes lettres, jamais construites par gabarit** : une clé
  * statique est vue par `i18n-keys.test.ts` dès qu'elle manque d'un catalogue.
  *
- * ⚠️ **Deux codes seulement lisent leur `details`** : `ACCOUNT_NOT_POSTABLE` (AC2), pour
- * nommer les comptes, et `RECONCILIATION_INVOICE_NOT_ELIGIBLE`, pour la seule raison
+ * ⚠️ **Trois codes seulement lisent leur `details`** : `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`
+ * (Story 15-6b), pour son `role` — le compte de banque lié au compte débiteurs et le compte
+ * d'arrondi désigné qui l'est n'appellent pas le même remède ; `ACCOUNT_NOT_POSTABLE` (AC2), pour
+ * nommer les comptes ; et `RECONCILIATION_INVOICE_NOT_ELIGIBLE`, pour la seule raison
  * `payment_date_before_invoice_date` (revue de code P1, E1 — choix C-15-5c-3). Cette raison
  * est la seule qu'un utilisateur rencontre sans avoir rien fait de travers : la proposition
  * retient les factures datées de 30 jours avant à 30 jours après la transaction, alors que
@@ -75,9 +78,19 @@ export function failureReason(details: unknown): string | null {
 }
 
 /**
+ * Rôle d'un `details` de la forme `{ role: "<rôle>" }` (Story 15-6b), ou `null` pour toute autre
+ * forme. Même prudence que `failureReason`.
+ */
+export function failureRole(details: unknown): string | null {
+	if (typeof details !== 'object' || details === null) return null;
+	const role = (details as { role?: unknown }).role;
+	return typeof role === 'string' ? role : null;
+}
+
+/**
  * Libellé traduit d'un `errorCode` de `failed[]`. `details` n'est lu que pour
- * `ACCOUNT_NOT_POSTABLE` et `RECONCILIATION_INVOICE_NOT_ELIGIBLE` ; un code inconnu rend
- * un repli qui cite le code.
+ * `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, `ACCOUNT_NOT_POSTABLE` et
+ * `RECONCILIATION_INVOICE_NOT_ELIGIBLE` ; un code inconnu rend un repli qui cite le code.
  */
 export function failedProposalLabel(code: string, details?: unknown): string {
 	switch (code) {
@@ -197,6 +210,20 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 			return i18nMsg(
 				'error-rounding-account-not-configured',
 				"Ce paiement solde la facture au centime, mais aucun compte de différences d'arrondi utilisable n'est désigné : choisissez-en un dans Paramètres → Facturation."
+			);
+		case 'SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT':
+			// Story 15-6b (#474) : l'écriture serait `D 1100 / C 1100`. Deux remèdes selon le
+			// compte en cause — le seul `rounding` renvoie aux réglages ; tout autre rôle est le
+			// compte de banque (`counterparty`), seul autre rôle que pose l'acceptation.
+			if (failureRole(details) === 'rounding') {
+				return i18nMsg(
+					'reconciliation-failed-rounding-account-is-claim-account',
+					'Le compte d’arrondi désigné est le compte débiteurs de la facture : un administrateur doit en désigner un autre dans Paramètres → Facturation.'
+				);
+			}
+			return i18nMsg(
+				'reconciliation-failed-counterparty-is-claim-account',
+				'Le compte bancaire est lié au compte débiteurs de la facture : reliez-le à son propre compte de banque.'
 			);
 		case 'VALIDATION_ERROR':
 			return i18nMsg('error-validation', 'Erreur de validation');

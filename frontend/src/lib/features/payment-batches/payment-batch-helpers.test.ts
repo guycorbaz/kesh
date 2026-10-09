@@ -56,9 +56,10 @@ describe('paymentBatchStatusLabel', () => {
 describe('failedItemLabel', () => {
 	// ⚠️ L'ancienne rédaction assertait `toContain('coordonnées')` et `toContain('lot')` — plus
 	// insidieux qu'un `toBe` : un `toContain` survit à une traduction PARTIELLE, donc il serait
-	// resté vert sur un correctif à moitié fait. Les six codes sont désormais assertés en
-	// entier, et le chemin réel est éprouvé par le cas suivant.
-	it('mappe les six codes sur leur repli français', () => {
+	// resté vert sur un correctif à moitié fait. Les huit codes sont désormais assertés en
+	// entier (les deux derniers par la Story 15-6b), et le chemin réel est éprouvé par le cas
+	// suivant.
+	it('mappe les huit codes sur leur repli français', () => {
 		expect(failedItemLabel('SUPPLIER_INVOICE_NOT_FOUND')).toBe('Facture introuvable');
 		expect(failedItemLabel('SUPPLIER_INVOICE_NOT_OPEN')).toBe('Facture non ouverte');
 		expect(failedItemLabel('NO_PAYMENT_COORDINATES')).toBe(
@@ -67,6 +68,12 @@ describe('failedItemLabel', () => {
 		expect(failedItemLabel('ALREADY_IN_GENERATED_BATCH')).toBe('Déjà dans un lot créé');
 		expect(failedItemLabel('INVALID_IBAN')).toBe('IBAN invalide');
 		expect(failedItemLabel('INVALID_QR_IBAN')).toBe('QR-IBAN invalide');
+		expect(failedItemLabel('SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT')).toBe(
+			'Le compte bancaire du lot est lié au compte créanciers de cette facture'
+		);
+		expect(failedItemLabel('SUPPLIER_INVOICE_PURCHASE_ENTRY_MALFORMED')).toBe(
+			"Écriture d'achat sans ligne de crédit : facture à vérifier"
+		);
 	});
 
 	it('un code inconnu retombe sur sa valeur brute', () => {

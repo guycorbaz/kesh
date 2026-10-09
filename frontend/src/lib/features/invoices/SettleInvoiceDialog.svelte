@@ -21,6 +21,11 @@
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
 	import { dueToCentime } from './invoice-helpers';
+	import {
+		accountIdsWithRole,
+		bankAccountsNotLinkedTo,
+		withoutAccountIds,
+	} from '$lib/features/accounts/account-options';
 
 	export type SettlementPayload = {
 		settlementType: 'bank_transfer' | 'internal_account';
@@ -86,9 +91,38 @@
 			// (« 68.1000 ») ; le champ montre des centimes.
 			amount = amountDue !== null ? dueToCentime(amountDue).toFixed(2) : '';
 			settlementType = 'bank_transfer';
-			bankAccountId = bankAccounts.find((b) => b.isPrimary)?.id ?? bankAccounts[0]?.id ?? null;
+			// La présélection du compte bancaire vit dans l'effet suivant (Story
+			// 15-6b) : elle dépend de `accounts`, que cet effet ne doit pas lire —
+			// une liste arrivée après l'ouverture effacerait la saisie en cours.
+			bankAccountId = null;
 			accountId = null;
 		}
+	});
+
+	// Story 15-6b (#474, AC8) — le compte débiteurs n'est jamais une contrepartie :
+	// `D 1100 / C 1100` s'équilibre, le reste dû baisserait sans que rien ne bouge
+	// au grand livre. Les ids se calculent sur la liste REÇUE, avant le filtre
+	// `active && postable` (un compte bancaire lié à un 1100 devenu non imputable
+	// doit être écarté aussi). La garde serveur reste l'autorité.
+	let receivableIds = $derived(accountIdsWithRole(accounts, 'Receivable'));
+	let eligibleBankAccounts = $derived(bankAccountsNotLinkedTo(bankAccounts, receivableIds));
+	// Liste vide PARCE QUE le filtre a écarté un compte : le dire. Une société
+	// sans aucun compte bancaire n'a rien d'écarté, et le message, qui accuse le
+	// compte débiteurs, y serait faux.
+	let noEligibleBankAccount = $derived(
+		eligibleBankAccounts.length === 0 && bankAccounts.length > eligibleBankAccounts.length,
+	);
+
+	// Présélection du compte bancaire, DANS la liste filtrée : le primaire, sinon
+	// le premier. Elle ne remplace la valeur courante que si celle-ci est absente
+	// de la liste (`null` compris) — un choix de l'utilisateur survit à l'arrivée
+	// tardive de `accounts`, et ni la date, ni le montant, ni le mode ne bougent.
+	$effect(() => {
+		if (!open) return;
+		const current = bankAccountId;
+		if (current !== null && eligibleBankAccounts.some((b) => b.id === current)) return;
+		bankAccountId =
+			eligibleBankAccounts.find((b) => b.isPrimary)?.id ?? eligibleBankAccounts[0]?.id ?? null;
 	});
 
 	// ⚠️ Seuls les comptes ACTIFS **et IMPUTABLES** : le backend refuse l'un et
@@ -102,7 +136,14 @@
 	// défaut même que la story ferme. Le patron est celui de l'écran de règlement
 	// fournisseur (`supplier-invoices/[id]/+page.svelte:66`), qui filtrait déjà
 	// les deux.
-	let selectableAccounts = $derived(accounts.filter((a) => a.active && a.postable));
+	//
+	// Story 15-6b : ni le compte débiteurs (rôle `Receivable`) — cf. plus haut.
+	let selectableAccounts = $derived(
+		withoutAccountIds(
+			accounts.filter((a) => a.active && a.postable),
+			receivableIds,
+		),
+	);
 
 	let clientError = $derived.by(() => {
 		if (!settledOn) {
@@ -205,10 +246,18 @@
 					bind:value={bankAccountId}
 					data-testid="settle-bank"
 				>
-					{#each bankAccounts as b (b.id)}
+					{#each eligibleBankAccounts as b (b.id)}
 						<option value={b.id}>{b.bankName} — {b.iban}</option>
 					{/each}
 				</select>
+				{#if noEligibleBankAccount}
+					<p class="mt-1 text-xs text-destructive" data-testid="settle-no-eligible-bank">
+						{i18nMsg(
+							'invoices-settle-no-eligible-bank-account',
+							'Aucun compte bancaire utilisable : le seul compte lié est le compte débiteurs de cette facture. Reliez un compte bancaire à son propre compte de banque, ou réglez par un compte interne.',
+						)}
+					</p>
+				{/if}
 			</div>
 		{:else}
 			<div class="mt-2">

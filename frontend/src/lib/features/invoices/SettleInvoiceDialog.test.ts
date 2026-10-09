@@ -11,7 +11,9 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 }));
 
 import SettleInvoiceDialog from './SettleInvoiceDialog.svelte';
+import SettleInvoiceDialogHost from './SettleInvoiceDialogHost.test.svelte';
 import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
+import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 
 const banque = {
 	id: 1,
@@ -89,5 +91,106 @@ describe('SettleInvoiceDialog — le reste dû au centime', () => {
 		await waitFor(() => expect(input().value).toBe('10.00'));
 		expect(queryByText(OVER)).toBeNull();
 		expect(queryByText(SCALE)).toBeNull();
+	});
+});
+
+// Story 15-6b (#474, AC8, AC9 ; test 18) — le compte débiteurs n'est pas une contrepartie.
+describe('SettleInvoiceDialog — la contrepartie n’est pas le compte débiteurs', () => {
+	const DEBITEURS = {
+		id: 1100,
+		number: '1100',
+		name: 'Débiteurs',
+		accountType: 'Asset',
+		active: true,
+		postable: true,
+		role: 'Receivable',
+	} as unknown as AccountResponse;
+	const CAISSE = {
+		id: 1000,
+		number: '1000',
+		name: 'Caisse',
+		accountType: 'Asset',
+		active: true,
+		postable: true,
+		role: null,
+	} as unknown as AccountResponse;
+	function compte(id: number, journalAccountId: number | null, isPrimary = false) {
+		return {
+			...banque,
+			id,
+			bankName: `Banque ${id}`,
+			isPrimary,
+			journalAccountId,
+		} as BankAccountSummary;
+	}
+	const EMPTY =
+		'Aucun compte bancaire utilisable : le seul compte lié est le compte débiteurs de cette facture. Reliez un compte bancaire à son propre compte de banque, ou réglez par un compte interne.';
+
+	function monter(accounts: AccountResponse[], bankAccounts: BankAccountSummary[], errorMsg = '') {
+		return render(SettleInvoiceDialog, {
+			open: true,
+			onOpenChange: vi.fn(),
+			invoiceDate: '2026-01-01',
+			amountDue: '100.00',
+			accounts,
+			bankAccounts,
+			errorMsg,
+			onConfirm: vi.fn(),
+		});
+	}
+	const options = (testId: string) =>
+		Array.from(
+			(document.querySelector(`[data-testid="${testId}"]`) as HTMLSelectElement).options,
+		).map((o) => o.value);
+
+	it('1100 (rôle Receivable) est absent du menu « Compte interne » (mutation : filtre retiré)', async () => {
+		const { getByTestId } = monter([CAISSE, DEBITEURS], []);
+		await fireEvent.change(getByTestId('settle-type'), { target: { value: 'internal_account' } });
+		await waitFor(() => expect(options('settle-account')).toContain('1000'));
+		expect(options('settle-account')).not.toContain('1100');
+	});
+
+	it('un compte bancaire lié au 1100 est absent, et la présélection tombe sur un autre', async () => {
+		monter([CAISSE, DEBITEURS], [compte(1, 1100, true), compte(2, 1020)]);
+		await waitFor(() => expect(options('settle-bank')).toEqual(['2']));
+		expect((document.getElementById('settle-bank') as HTMLSelectElement).value).toBe('2');
+	});
+
+	it('`accounts` arrivé APRÈS l’ouverture ne réinitialise pas la saisie (mutation : présélection dans l’effet de réinitialisation)', async () => {
+		// Hôte qui passe les props une à une (cf. son en-tête : `rerender` les changerait toutes).
+		const { getByTestId } = render(SettleInvoiceDialogHost, {
+			lateAccounts: [CAISSE, DEBITEURS],
+			bankAccounts: [compte(1, 1100, true), compte(2, 1020)],
+		});
+		const input = document.getElementById('settle-amount') as HTMLInputElement;
+		await waitFor(() => expect(input.value).toBe('100.00'));
+		await waitFor(() =>
+			expect((document.getElementById('settle-bank') as HTMLSelectElement).value).toBe('1'),
+		);
+		await fireEvent.input(input, { target: { value: '40.00' } });
+		await fireEvent.click(getByTestId('host-load-accounts'));
+		await waitFor(() => expect(options('settle-bank')).toEqual(['2']));
+		expect((document.getElementById('settle-bank') as HTMLSelectElement).value).toBe('2');
+		expect((document.getElementById('settle-amount') as HTMLInputElement).value).toBe('40.00');
+	});
+
+	it('le seul compte bancaire lié au 1100 → le message de liste vide', async () => {
+		const { findByText } = monter([CAISSE, DEBITEURS], [compte(1, 1100, true)]);
+		expect(await findByText(EMPTY)).toBeTruthy();
+	});
+
+	it('aucun compte bancaire → PAS de message de liste vide (rien n’a été écarté)', async () => {
+		const { queryByTestId } = monter([CAISSE, DEBITEURS], []);
+		await waitFor(() => expect(document.getElementById('settle-bank')).not.toBeNull());
+		expect(queryByTestId('settle-no-eligible-bank')).toBeNull();
+	});
+
+	it('la prop `errorMsg` s’affiche (AC9 — rendu seulement)', async () => {
+		const refus = 'Le compte 1100 est le compte débiteurs de cette facture';
+		const { findByText, getByTestId } = monter([CAISSE], [compte(2, 1020, true)], refus);
+		await waitFor(() =>
+			expect((getByTestId('settle-bank') as HTMLSelectElement).value).toBe('2'),
+		);
+		expect(await findByText(refus)).toBeTruthy();
 	});
 });

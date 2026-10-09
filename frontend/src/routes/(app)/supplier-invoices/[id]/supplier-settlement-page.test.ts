@@ -319,3 +319,94 @@ describe("fiche facture fournisseur — annuler la facture (Story 25-3-c)", () =
     expect(await findByTestId("supplier-invoice-status")).toBeTruthy();
   });
 });
+
+// Story 15-6b (#474, AC8 ; test 19) — le compte créanciers n'est pas une contrepartie.
+describe("fiche facture fournisseur — la contrepartie n’est pas le compte créanciers", () => {
+  const CAISSE = {
+    id: 1,
+    number: "1000",
+    name: "Caisse",
+    active: true,
+    postable: true,
+    role: null,
+  };
+  const CREANCIERS = {
+    id: 2000,
+    number: "2000",
+    name: "Créanciers",
+    active: true,
+    postable: true,
+    role: "Payable",
+  };
+  function banque(id: number, journalAccountId: number | null) {
+    return {
+      id,
+      bankName: `Banque ${id}`,
+      iban: "CH00",
+      qrIban: null,
+      isPrimary: id === 1,
+      journalAccountId,
+      version: 1,
+      archived: false,
+    };
+  }
+  const EMPTY =
+    "Aucun compte bancaire utilisable : le seul compte lié est le compte créanciers de cette facture. Reliez un compte bancaire à son propre compte de banque, ou réglez par un compte interne.";
+  const options = (testId: string) =>
+    Array.from(
+      (document.querySelector(`[data-testid="${testId}"]`) as HTMLSelectElement)
+        .options,
+    ).map((o) => o.value);
+
+  async function monter(banks: unknown[]) {
+    const { listBankAccounts } = await import(
+      "$lib/features/bank-accounts/bank-accounts.api"
+    );
+    const { fetchAccounts } = await import(
+      "$lib/features/accounts/accounts.api"
+    );
+    vi.mocked(listBankAccounts).mockResolvedValueOnce(banks as never);
+    vi.mocked(fetchAccounts).mockResolvedValueOnce([
+      CAISSE,
+      CREANCIERS,
+    ] as never);
+    getMock.mockResolvedValue(
+      inv({ status: "open", settlementJournalEntryId: null, paidAt: null }),
+    );
+    return render(Page);
+  }
+
+  it("la banque liée au 2000 est absente, l’autre reste (mutation : filtre retiré)", async () => {
+    const { findByTestId, queryByTestId } = await monter([
+      banque(1, 2000),
+      banque(2, 1020),
+    ]);
+    await findByTestId("pay-bank-account");
+    await waitFor(() => expect(options("pay-bank-account")).toContain("2"));
+    expect(options("pay-bank-account")).not.toContain("1");
+    expect(queryByTestId("pay-no-eligible-bank")).toBeNull();
+  });
+
+  it("2000 est absent du menu « Compte interne »", async () => {
+    const { findByTestId, container } = await monter([banque(2, 1020)]);
+    await findByTestId("supplier-invoice-pay");
+    const radio = container.querySelector(
+      'input[value="internal_account"]',
+    ) as HTMLInputElement;
+    await fireEvent.click(radio);
+    await findByTestId("pay-internal-account");
+    await waitFor(() => expect(options("pay-internal-account")).toContain("1"));
+    expect(options("pay-internal-account")).not.toContain("2000");
+  });
+
+  it("seule banque liée au 2000 → le message de liste vide", async () => {
+    const { findByText } = await monter([banque(1, 2000)]);
+    expect(await findByText(EMPTY)).toBeTruthy();
+  });
+
+  it("aucun compte bancaire lié → pas de message de liste vide", async () => {
+    const { findByTestId, queryByTestId } = await monter([banque(3, null)]);
+    await findByTestId("pay-bank-account");
+    expect(queryByTestId("pay-no-eligible-bank")).toBeNull();
+  });
+});

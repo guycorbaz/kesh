@@ -41,7 +41,7 @@
  * dont les options sont l'unique source de vérité de ce qui est affichable.
  */
 
-import type { AccountResponse } from './accounts.types';
+import type { AccountResponse, AccountRole } from './accounts.types';
 
 /**
  * Rend `filtered`, en y ajoutant le compte d'identifiant `currentId` s'il
@@ -71,4 +71,50 @@ export function withCurrentAccount(
 	if (!current) return filtered;
 
 	return [current, ...filtered];
+}
+
+// ---------------------------------------------------------------------------
+// Story 15-6b (#474) — les écrans de règlement ne proposent plus le compte soldé
+// ---------------------------------------------------------------------------
+
+/**
+ * Identifiants des comptes portant le rôle `role` (Story 15-6b, AC8 ; signature
+ * partagée avec la 15-6c, choix C-15-6-14).
+ *
+ * **Pourquoi le rôle** : un écran de règlement n'a pas l'écriture de vente sous
+ * la main ; le rôle `Receivable` / `Payable` est un singleton par société, dont
+ * les réglages de facturation sont dérivés. ⚠️ **La garde serveur, exacte, reste
+ * l'autorité** : elle compare la contrepartie au compte que porte l'écriture de
+ * vente ou d'achat. Si le réglage a été déplacé hors du compte de rôle, l'écran
+ * peut proposer un compte que le serveur refusera, avec un message clair —
+ * jamais l'inverse.
+ *
+ * ⛔ **Calculer les ids sur la liste que l'écran REÇOIT, avant le filtre
+ * `active && postable`** : sans quoi un compte bancaire lié à un compte
+ * débiteurs devenu **non imputable** ne serait pas écarté.
+ *
+ * ⚠️ **Les comptes archivés n'y sont pas, et c'est voulu** (choix C-15-6-17) :
+ * les écrans chargent le plan sans eux. Un compte bancaire lié à un compte
+ * archivé reste donc proposé — mais aucune écriture ne peut viser un compte
+ * archivé (garde `active` du serveur) : le serveur suffit.
+ */
+export function accountIdsWithRole(accounts: AccountResponse[], role: AccountRole): Set<number> {
+	return new Set(accounts.filter((a) => a.role === role).map((a) => a.id));
+}
+
+/** Les comptes dont l'identifiant n'est pas dans `ids` (Story 15-6b, AC8). */
+export function withoutAccountIds(accounts: AccountResponse[], ids: Set<number>): AccountResponse[] {
+	return accounts.filter((a) => !ids.has(a.id));
+}
+
+/**
+ * Les comptes bancaires dont le compte du grand livre (`journalAccountId`)
+ * n'est pas dans `ids` (Story 15-6b, AC8). Un compte bancaire sans compte lié
+ * est gardé : ce filtre ne juge que le lien au compte soldé.
+ */
+export function bankAccountsNotLinkedTo<T extends { journalAccountId: number | null }>(
+	bankAccounts: T[],
+	ids: Set<number>,
+): T[] {
+	return bankAccounts.filter((b) => b.journalAccountId === null || !ids.has(b.journalAccountId));
 }
