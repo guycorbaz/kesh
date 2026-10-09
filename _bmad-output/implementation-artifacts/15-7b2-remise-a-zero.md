@@ -1,6 +1,6 @@
 # Story 15.7b2 : La remise à zéro laisse sa trace, vide tout, et garde la société
 
-Status: review
+Status: done
 
 <!-- Née le 2026-10-08 du découpage de la 15-7b (choix C-15-7-31), à la passe de validation P4 :
      coupe Volet A / Volet B que la section « Dérogation règle de splitting » de la 15-7b prévoyait
@@ -540,7 +540,7 @@ aplatis :
 | `admin-manual.tex:1845-1860` (réserve OLICo) | « La réinitialisation des données de démonstration efface encore la table » | elle l'efface **et y inscrit son geste** (`installation.reset` : nombre et plage d'identifiants effacés) ; toujours réservée à l'administrateur et refusée après finalisation |
 | `admin-manual.tex:2004` | la remise à zéro (\#434) et les gestes de session (\#435) | seuls les gestes de session (\#435) |
 | `admin-manual.tex:691` (`KESH_PRODUCTION_RESET`, L-3 de la P4) | « Autorise le reset d'onboarding au-delà de l'étape 2 » | « Autorise la réinitialisation d'une **démonstration** au-delà de l'étape 2 — donc **toute** sortie de la démonstration, qui est à l'étape 3 (une installation de production ne l'est jamais) ; à poser le temps de la réinitialisation, puis à retirer, chaque fois suivie de `docker compose up -d` (`restart` ne relit pas `.env`) ; la réinitialisation vide alors **toutes** les données de la société » (valeurs `1`, `true`, `yes`, `on`, sans casse — `routes/onboarding.rs:45-53`). ⛔ **La mise en page des dix tableaux de `sec:env-vars` n'est plus à faire ici** : elle est **faite par la 15-11a, AC12 (j)** (C-15-7-54, qui révise C-15-7-52) ; la 15-11a merge avant cette story et ne touche ni le texte des titres `\paragraph{…}`, ni cette ligne. **Vérifier après rebase** que la cellule `KESH\_PRODUCTION\_RESET` se lit **entière** dans le PDF aplati (`pdftotext -layout` : la phrase réécrite ci-dessus, de « Autorise » à « données de la société », sans rognage), la ligne se relocalisant par le texte. La recette « poser la variable » suppose la **15-11a mergée** (C-15-7-51) |
-| `admin-manual.tex:1314` (« Parcours ») | — | **sortir de la démonstration** (F4-2/R4-2 de la P4, C-15-7-48) : la seule voie est la réinitialisation (bouton « Réinitialiser pour la production » du bandeau de démonstration), et elle n'est permise que si l'exploitant l'a autorisée — poser `KESH_PRODUCTION_RESET` (`true` ; `1`, `yes`, `on` aussi) dans le fichier `.env`, puis `docker compose up -d` (et non « redémarrer » ni `docker compose restart` : `restart` ne relit pas `.env`, la variable n'atteindrait pas le conteneur et le bouton resterait refusé), réinitialiser, puis **retirer** la variable et refaire `docker compose up -d` (recette exécutable une fois la **15-11a** mergée, qui transmet la variable au conteneur — #550, C-15-7-51 ; d'où l'ordre de merge imposé en tête de fiche) ; sans elle, le bouton est **refusé (403), même à l'administrateur**, avec un message qui accuse à tort le rôle (\#534) ; il n'existe pas d'autre passage de la démonstration à la production sur la même installation — choix de sécurité existant : une installation ne se vide pas sans un geste de l'exploitant. La réinitialisation vide **toutes** les données comptables et commerciales (écritures, factures, avoirs, contacts, articles, taux, réglages…) et ramène la société à son état initial ; les **fichiers** déjà produits (PDF figés, pièces importées) restent sur le disque, orphelins (inventaire § 5) ; elle **conserve** les utilisateurs et les clés d'API — ceux créés pendant la démonstration passent en production : **revoyez-les** ; une clé d'API saine garde son **droit d'écriture** si elle l'avait (F5-3 de la P5) —, et la société garde son identité (la session reste ouverte) ; **sauf** sur une installation déjà touchée par le défaut \#528 (société effacée par une version antérieure), **quel que soit son nombre de sociétés** (R4-5 de la P4) : les utilisateurs qui désignaient la société effacée y sont rattachés, et les clés d'API qui la désignaient sont **révoquées**, puis rattachées à la société — elles paraissent, révoquées, sur la page des clés : à recréer si elles servent ; sur une installation touchée restée **sans société**, le choix de la langue fait la même réparation ; la session en cours doit être **rouverte** (reconnexion, ou attendre le renouvellement du jeton, au plus la durée de session plus une minute) — d'ici là, certains écrans de la société répondent par une erreur, d'autres s'affichent vides (F3-4 de la P3) ; la réparation au démarrage d'une installation touchée est écrite par la 15-7b3. Une installation qui porte **plusieurs sociétés provisoires** (défaut \#542 : un redémarrage avant la création de l'administrateur en ajoutait une) est réparée **au démarrage** (15-7b3, C-15-7-46). *(La cellule tient sur une ligne dans cette fiche ; au manuel, ce texte complète l'`\item \textbf{Parcours}` en plusieurs phrases, et les renvois aux passes entre parenthèses — « F3-4 de la P3 », « R4-5 de la P4 » — ne se recopient pas ; R3-6 de la P3.)* |
+| `admin-manual.tex:1314` (« Parcours ») | — | **sortir de la démonstration** (F4-2/R4-2 de la P4, C-15-7-48) : la seule voie est la réinitialisation (bouton « Réinitialiser pour la production » du bandeau de démonstration), et elle n'est permise que si l'exploitant l'a autorisée — poser `KESH_PRODUCTION_RESET` (`true` ; `1`, `yes`, `on` aussi) dans le fichier `.env`, puis `docker compose up -d` (et non « redémarrer » ni `docker compose restart` : `restart` ne relit pas `.env`, la variable n'atteindrait pas le conteneur et le bouton resterait refusé), réinitialiser, puis **retirer** la variable et refaire `docker compose up -d` (recette exécutable une fois la **15-11a** mergée, qui transmet la variable au conteneur — #550, C-15-7-51 ; d'où l'ordre de merge imposé en tête de fiche) ; sans elle, le bouton est **refusé (403), même à l'administrateur**, avec un message qui accuse à tort le rôle (\#534) ; il n'existe pas d'autre passage de la démonstration à la production sur la même installation — choix de sécurité existant : une installation ne se vide pas sans un geste de l'exploitant. La réinitialisation vide **toutes** les données comptables et commerciales (écritures, factures, avoirs, contacts, articles, taux, réglages…) et ramène la société à son état initial ; les **fichiers** déjà produits (PDF figés, pièces importées) restent sur le disque, orphelins (inventaire § 5) ; elle **conserve** les utilisateurs et les clés d'API — ceux créés pendant la démonstration passent en production : **revoyez-les** ; une clé d'API saine garde son **droit d'écriture** si elle l'avait (F5-3 de la P5) —, et la société garde son identité (la session reste ouverte) ; **sauf** sur une installation déjà touchée par le défaut \#528 (société effacée par une version antérieure) **qui compte aucune ou une société** (R4-5 de la P4 ; corrigé à la revue de code P1, A-1 = E-3 — à deux sociétés ou plus, la réinitialisation rend une erreur interne, AC 2.2, et la réparation est celle de la 15-7b3 au démarrage) : les utilisateurs qui désignaient la société effacée y sont rattachés, et les clés d'API qui la désignaient sont **révoquées**, puis rattachées à la société — elles paraissent, révoquées, sur la page des clés : à recréer si elles servent ; sur une installation touchée restée **sans société**, le choix de la langue fait la même réparation ; la session en cours doit être **rouverte** (reconnexion, ou attendre le renouvellement du jeton, au plus la durée de session plus une minute) — d'ici là, certains écrans de la société répondent par une erreur, d'autres s'affichent vides (F3-4 de la P3) ; la réparation au démarrage d'une installation touchée est écrite par la 15-7b3. Une installation qui porte **plusieurs sociétés provisoires** (défaut \#542 : un redémarrage avant la création de l'administrateur en ajoutait une) est réparée **au démarrage** (15-7b3, C-15-7-46). *(La cellule tient sur une ligne dans cette fiche ; au manuel, ce texte complète l'`\item \textbf{Parcours}` en plusieurs phrases, et les renvois aux passes entre parenthèses — « F3-4 de la P3 », « R4-5 de la P4 » — ne se recopient pas ; R3-6 de la P3.)* |
 | `admin-manual.tex:1250-1259` (matrice du démarrage, R2-3/L-2 de la P2) | « vide & non → Crée la company stub seule » ; « vide & oui → Crée stub + admin » ; « existant & non → No-op » | « vide & non » : « Crée la company stub **si aucune société n'existe** (un redémarrage avant \keshpath{/setup} n'en ajoute plus, \#542), écran /setup actif » ; « vide & oui » : « Crée stub + admin, ou rattache l'admin à la société existante » (déjà inexact aujourd'hui, `bootstrap.rs:100-120`) ; la phrase sous le tableau sur la réparation de \#528 au démarrage est écrite par la 15-7b3 |
 | `admin-manual.tex:967` (« Le bootstrap crée seulement une company provisoire ») | — | relire : « au boot » devient « au premier démarrage, sur une base sans société » (AC 13) |
 | `user-manual.tex:2019-2023` | deux familles : la réinitialisation de la démonstration, et les gestes de session | **une** famille : les gestes de session |
@@ -863,6 +863,148 @@ Journaux non versionnés, dans `/home/gcorbaz/devel/kesh-gate-logs/` : `15-7b2-m
 
 **Choix consignés** : C-15-7b2-1 (registre, rejeu), C-15-7b2-2 (rejeu prouvé de bout en bout), C-15-7b2-3 (exception au Pattern 5 en note), C-15-7b2-4 (montage du test 4).
 
+### Revue de code P1 — remédiation (sans code)
+
+**A-1 = E-3 (MEDIUM)** — corrigé : `admin-manual.tex` (`\item \textbf{Parcours}`, paragraphe #528) borne la réparation à une installation qui compte **aucune ou une** société, et dit qu'à deux sociétés ou plus — réelles ou provisoires — le bouton répond par une erreur interne sans rien effacer (réparation : 15-7b3). Même bornage au CHANGELOG et à la ligne de l'AC 11. Grep de la valeur (`quel que soit`, `nombre de sociétés`) sur tout le dépôt suivi : seuls sites de la promesse, `admin-manual.tex:1374` et la fiche `:543` (corrigés) ; la ligne du Change Log P4 (`R4-5`) est historique ; les autres occurrences (« quel que soit le rôle », « le mode »…) sont sans rapport ; aucun site dans les quatre catalogues ni dans `user-manual.tex`. PDF : `make -B fr` exit 0, 0 référence indéfinie ; aplati, « quel que soit son nombre » : 0 occurrence, « si elle compte aucune ou une société » et « deux sociétés ou plus » présents ; brochure et manuel utilisateur, régénérés sans changement de source, remis à leur version de `HEAD`. Gardes de texte et de configuration rejouées après la correction (`textes_coherents`, `configuration_transmise`) : **36 / 36**.
+
+**A-4** — Overfull comptés **par passe** dans `kesh-gate-logs/15-7b2-make-fr-4.log` : `admin-manual` 55 et 55, `user-manual` 27 et 27, `marketing-brochure` 4 et 4. Le « 35 » relevé par la lentille additionnait la brochure à la seconde passe du manuel utilisateur.
+
+**A-2** — `docker compose config` exécuté en lecture (aucun `up`, aucun conteneur créé : `docker ps | grep -c 157b2` → 0), `.env` factice passé par `--env-file` (`MARIADB_ROOT_PASSWORD`, `MARIADB_PASSWORD`, `KESH_JWT_SECRET` factices) :
+
+```
+$ docker compose -f docker-compose.yml --env-file <factice, KESH_PRODUCTION_RESET=true> config | grep PRODUCTION_RESET
+37:      KESH_PRODUCTION_RESET: "true"
+$ docker compose -f docker-compose.prod.yml --env-file <factice, KESH_PRODUCTION_RESET=true> config | grep PRODUCTION_RESET
+30:      KESH_PRODUCTION_RESET: "true"
+$ idem docker-compose.yml, variable absente du .env :
+37:      KESH_PRODUCTION_RESET: ""
+```
+
+**A-3** — grep de l'AC 10 rejoué sur l'état rebasé (HEAD `e3368ba7`, code identique à `5fe1f918` : `git diff --stat 5fe1f918 HEAD -- crates frontend/src` vide). Sortie triée, coupée à 150 colonnes : **410 lignes**, dont **306** portées par le motif `placeholder` (attributs HTML, catalogues, gabarits de `.env` de `config.rs` — sans rapport avec la story) ; sortie intégrale versée à `kesh-gate-logs/15-7b2-ac10-grep-rebase.txt`. Les **104** autres, collées ci-dessous, sont toutes traitées par la story ou déclarées légitimes plus haut (aucun site neuf) :
+
+```
+crates/kesh-api/src/auth/bootstrap.rs:139:            // n'étant pas une route, il échappait aussi aux issues #434 et #435.
+crates/kesh-api/src/errors.rs:283:    /// sans le drapeau `KESH_PRODUCTION_RESET` (sortir d'une démonstration
+crates/kesh-api/src/lib.rs:308:        // `!is_demo && > 2`, le drapeau `KESH_PRODUCTION_RESET`. *Un état se
+crates/kesh-api/src/lib.rs:313:        // Story 15-7b2 (#434), y INSCRIT son geste (`installation.reset`), en
+crates/kesh-api/src/routes/onboarding.rs:253:/// geste** au journal d'audit (Story 15-7b2, #434, #279, #528).
+crates/kesh-api/src/routes/onboarding.rs:255:/// Toute l'opération est dans `kesh_seed::reset_demo` : **une** transaction
+crates/kesh-api/src/routes/onboarding.rs:260:/// avec le drapeau ; au-delà de l'étape 2 sans `KESH_PRODUCTION_RESET` ⇒ `403`
+crates/kesh-api/src/routes/onboarding.rs:266:/// `KESH_PRODUCTION_RESET` : une démonstration est toujours à l'étape 3, si
+crates/kesh-api/src/routes/onboarding.rs:272:/// verrou rendrait `None`, que `reset_demo` refuse en `Invariant`) ; la réponse
+crates/kesh-api/src/routes/onboarding.rs:280:    let production_reset_allowed = env_flag_enabled("KESH_PRODUCTION_RESET");
+crates/kesh-api/src/routes/onboarding.rs:282:    kesh_seed::reset_demo(
+crates/kesh-api/src/routes/onboarding.rs:292:        // Inatteignable par `reset_demo` (toute erreur sqlx y passe par
+crates/kesh-api/src/routes/onboarding.rs:50:/// Used for `KESH_PRODUCTION_RESET` and any future opt-in env flag where a
+crates/kesh-api/src/routes/onboarding.rs:712:/// KF-002-H-002 (#43) closed 2026-05-03 : la fonction est enveloppée dans
+crates/kesh-api/src/routes/onboarding.rs:723:    // KF-002-H-002 (#43) : la closure ci-dessous est rappelée intégralement
+crates/kesh-api/src/routes/reconciliation.rs:4256:/// `onboarding::finalize` (KF-002-H-002, #43). ⚠️ Le prédicat porte sur
+crates/kesh-api/tests/audit_route_registry.rs:136://!   Story 15-7b1, #434 — `onboarding::seed_demo`, dont la dernière
+crates/kesh-api/tests/audit_route_registry.rs:148://!   ligne. Et — Story 15-7b2, #434 — `onboarding::reset`, dont chaque essai
+crates/kesh-api/tests/audit_route_registry.rs:149://!   est une transaction unique rejouée **dans `kesh-seed`** (`reset_demo`,
+crates/kesh-api/tests/audit_route_registry.rs:646:         de configuration de l'installation (15-7a2, #434), plus le peuplement de \
+crates/kesh-api/tests/audit_route_registry.rs:647:         démonstration (15-7b1, #434), plus le lettrage et le délettrage manuels \
+crates/kesh-api/tests/audit_route_registry.rs:648:         (15-1a-i, #518), plus la remise à zéro (15-7b2, #434)"
+crates/kesh-api/tests/configuration_transmise.rs:164:    ("KESH_PRODUCTION_RESET", Compose::Y),
+crates/kesh-api/tests/configuration_transmise.rs:165:    ("KESH_PRODUCTION_RESET", Compose::P),
+crates/kesh-api/tests/configuration_transmise.rs:1865:        "KESH_PRODUCTION_RESET",
+crates/kesh-api/tests/onboarding_audit_e2e.rs:1252:// Story 15-7b1 (#434) — le chargement de la démonstration laisse sa trace
+crates/kesh-api/tests/onboarding_audit_e2e.rs:1764:// Story 15-7b2 (#434, #279, #528) — la remise à zéro laisse sa trace, vide
+crates/kesh-api/tests/onboarding_audit_e2e.rs:1774:/// `POST /api/v1/onboarding/reset` avec `KESH_PRODUCTION_RESET` posé le temps
+crates/kesh-api/tests/onboarding_audit_e2e.rs:1778:    let prev = std::env::var("KESH_PRODUCTION_RESET").ok();
+crates/kesh-api/tests/onboarding_audit_e2e.rs:1781:    unsafe { std::env::set_var("KESH_PRODUCTION_RESET", "true") };
+crates/kesh-api/tests/onboarding_audit_e2e.rs:1785:            Some(v) => std::env::set_var("KESH_PRODUCTION_RESET", v),
+crates/kesh-api/tests/onboarding_audit_e2e.rs:1786:            None => std::env::remove_var("KESH_PRODUCTION_RESET"),
+crates/kesh-api/tests/onboarding_audit_e2e.rs:1795:    unsafe { std::env::remove_var("KESH_PRODUCTION_RESET") };
+crates/kesh-api/tests/onboarding_audit_e2e.rs:1983:/// peuplée : **chaque** table vidée l'est (#279, la classe entière), la piste
+crates/kesh-api/tests/onboarding_audit_e2e.rs:1://! La piste de contrôle de l'installation — Story 15-7a2 (#434) pour la
+crates/kesh-api/tests/onboarding_audit_e2e.rs:2071:            assert_eq!(after[t], 0, "#279 : {t} doit être vidée");
+crates/kesh-api/tests/onboarding_audit_e2e.rs:2537:/// A tient `onboarding_state` ; `reset_demo` est vu bloqué sur son `FOR
+crates/kesh-api/tests/onboarding_audit_e2e.rs:2567:    let handle = tokio::spawn(async move { kesh_seed::reset_demo(&p, actor, true).await });
+crates/kesh-api/tests/onboarding_audit_e2e.rs:2575:        "reset_demo doit attendre le verrou d'état"
+crates/kesh-api/tests/onboarding_audit_e2e.rs:2591:/// Test 7c (15-7b2, AC 2 ; R6 de la P1) — ligne d'état absente, `reset_demo`
+crates/kesh-api/tests/onboarding_audit_e2e.rs:2600:    let result = kesh_seed::reset_demo(&pool, (admin_user_id(&pool).await, None), true).await;
+crates/kesh-api/tests/onboarding_audit_e2e.rs:2654:    let result = kesh_seed::reset_demo(&pool1, actor, true).await;
+crates/kesh-api/tests/onboarding_audit_e2e.rs:2677:    let outcome = kesh_seed::reset_demo(&pool1, actor, true).await.unwrap();
+crates/kesh-api/tests/onboarding_audit_e2e.rs:2691:    sqlx::raw_sql("DELETE FROM audit_log")
+crates/kesh-api/tests/onboarding_audit_e2e.rs:2769:/// Test 13b (15-7b2, C-15-7b2-2) — le rejeu de `reset_demo` **lui-même**, de
+crates/kesh-api/tests/onboarding_audit_e2e.rs:2://! production, Story 15-7b1 (#434) pour le chargement de la démonstration,
+crates/kesh-api/tests/onboarding_audit_e2e.rs:3://! Story 15-7b2 (#434, #279, #528) pour la remise à zéro.
+crates/kesh-api/tests/onboarding_e2e.rs:395:    // requires KESH_PRODUCTION_RESET=1 to allow (demo deployment opt-in).
+crates/kesh-api/tests/onboarding_e2e.rs:396:    let prev = std::env::var("KESH_PRODUCTION_RESET").ok();
+crates/kesh-api/tests/onboarding_e2e.rs:398:        std::env::set_var("KESH_PRODUCTION_RESET", "1");
+crates/kesh-api/tests/onboarding_e2e.rs:411:            Some(v) => std::env::set_var("KESH_PRODUCTION_RESET", v),
+crates/kesh-api/tests/onboarding_e2e.rs:412:            None => std::env::remove_var("KESH_PRODUCTION_RESET"),
+crates/kesh-api/tests/onboarding_e2e.rs:467:/// P6-L5 — Positive path: when KESH_PRODUCTION_RESET=1 and is_demo=true at step > 2,
+crates/kesh-api/tests/onboarding_e2e.rs:495:    let prev = std::env::var("KESH_PRODUCTION_RESET").ok();
+crates/kesh-api/tests/onboarding_e2e.rs:499:        std::env::set_var("KESH_PRODUCTION_RESET", "true");
+crates/kesh-api/tests/onboarding_e2e.rs:513:            Some(v) => std::env::set_var("KESH_PRODUCTION_RESET", v),
+crates/kesh-api/tests/onboarding_e2e.rs:514:            None => std::env::remove_var("KESH_PRODUCTION_RESET"),
+crates/kesh-api/tests/onboarding_e2e.rs:521:        "reset() with KESH_PRODUCTION_RESET=true must succeed for is_demo=true at step 5"
+crates/kesh-api/tests/onboarding_e2e.rs:529:/// regardless of KESH_PRODUCTION_RESET. P6-L8: distinct ONBOARDING_RESET_FORBIDDEN
+crates/kesh-db/Cargo.toml:23:# KF-002-H-002 (#43) : `tokio::time::sleep` pour le backoff entre retries
+crates/kesh-db/src/backup.rs:110:/// Les tables que la remise à zéro **vide** — Story 15-7b2 (AC 3, #279) :
+crates/kesh-db/src/backup.rs:88:/// Les tables que la **remise à zéro** d'une installation (`kesh_seed::reset_demo`)
+crates/kesh-db/src/backup.rs:89:/// **conserve** — Story 15-7b2 (AC 3, choix C-15-7-10, #279).
+crates/kesh-db/src/repositories/accounts.rs:1135:/// (`kesh_seed::reset_demo`) ne l'emprunte pas : elle vide les tables de
+crates/kesh-db/src/repositories/audit_log.rs:16://! 2. **`reset_demo`** — `DELETE FROM audit_log` non scopé, sur une route montée
+crates/kesh-db/src/repositories/audit_log.rs:20://!    refusé inconditionnellement, drapeau `KESH_PRODUCTION_RESET` posé ou non —,
+crates/kesh-db/src/repositories/audit_log.rs:21://!    et, depuis la Story 15-7b2 (#434), **elle y inscrit son geste** :
+crates/kesh-db/src/repositories/audit_log.rs:417:        sqlx::query("DELETE FROM audit_log WHERE id = ?")
+crates/kesh-db/src/repositories/audit_log.rs:452:        sqlx::query("DELETE FROM audit_log WHERE id = ?")
+crates/kesh-db/src/repositories/companies.rs:150:/// (`kesh_seed::reset_demo`, Story 15-7b2), qui le recrée **en place** ou
+crates/kesh-db/src/repositories/companies.rs:299:/// Appelants : `kesh_seed::reset_demo` (`Some`), la branche « aucune société »
+crates/kesh-db/src/repositories/journal_entries.rs:2014:/// ⚠️ **Ce doc-comment annonçait « utilisé par `reset_demo` » — c'était faux**, et
+crates/kesh-db/src/repositories/journal_entries.rs:2015:/// cette erreur a coûté une passe de revue à la Story 24-4a. `reset_demo`
+crates/kesh-db/src/repositories/journal_entries.rs:75://! et `reset_demo` de `kesh-seed` (remise à zéro de l'installation, qui vide
+crates/kesh-db/src/repositories/letterings.rs:19://! (`journal_entries::delete_all_by_company`, `reset_demo` de `kesh-seed`).
+crates/kesh-db/src/repositories/onboarding.rs:246:/// (`kesh_seed::reset_demo`) remet l'état à zéro **en place**
+crates/kesh-db/tests/letterings_lexical.rs:19://! `reset_demo`) sont des `DELETE`, qui emportent les lignes avec leurs marques.
+crates/kesh-seed/src/lib.rs:190:    // it is committed before companies::update runs, so a concurrent reset_demo
+crates/kesh-seed/src/lib.rs:40:    /// au-delà de l'étape 2 sans `KESH_PRODUCTION_RESET`. Gardes évaluées
+crates/kesh-seed/src/lib.rs:441:/// Story 15-7b2 (#434, #279, #528 ; choix C-15-7-5, C-15-7-9 à 11, C-15-7-22,
+crates/kesh-seed/src/lib.rs:462:///    canonique (le `DELETE FROM audit_log` doit effacer exactement le compte
+crates/kesh-seed/src/lib.rs:484:pub async fn reset_demo(
+crates/kesh-seed/src/lib.rs:490:        "kesh_seed::reset_demo",
+crates/kesh-seed/src/lib.rs:5://! `POST /api/v1/onboarding/reset` ([`reset_demo`], qui remet l'installation à
+crates/kesh-seed/src/lib.rs:504:/// Un essai de [`reset_demo`] : connexion dédiée fermée à sa libération,
+crates/kesh-seed/src/lib.rs:524:                tracing::warn!("reset_demo : annulation de l'essai en échec : {rb}");
+crates/kesh-seed/src/lib.rs:531:/// Le corps d'un essai de [`reset_demo`] — cf. son doc-comment. Ne commite
+crates/kesh-seed/src/lib.rs:545:        DbError::Invariant("onboarding_state absent sous verrou pendant reset_demo".into())
+crates/kesh-seed/src/lib.rs:567:                "Expected at most 1 company for reset_demo, found {}",
+crates/kesh-seed/src/lib.rs:57:/// Partagé avec la remise à zéro ([`reset_demo`], Story 15-7b2), qui l'étend
+crates/kesh-seed/src/lib.rs:583:    // 4. Le vidage, dérivé de la liste canonique (#279).
+crates/kesh-seed/src/lib.rs:85:/// essai de [`reset_demo`] : un interblocage MariaDB (1213), et lui seul —
+docker-compose.dev.yml:32:      KESH_PRODUCTION_RESET: ${KESH_PRODUCTION_RESET:-}
+docker-compose.prod.yml:148:      KESH_PRODUCTION_RESET: ${KESH_PRODUCTION_RESET:-}
+docker-compose.yml:128:      KESH_PRODUCTION_RESET: ${KESH_PRODUCTION_RESET:-}
+docs/MULTI-TENANT-SCOPING-PATTERNS.md:324:| `kesh_seed::reset_demo` (`POST /onboarding/reset`, Story 15-7b2) | **One transaction per attempt**: **onbo
+docs/MULTI-TENANT-SCOPING-PATTERNS.md:325:| `kesh_seed::seed_demo` (`POST /onboarding/seed-demo`) | **First four steps**, each in its own transaction 
+docs/MULTI-TENANT-SCOPING-PATTERNS.md:343:- **`POST /onboarding/reset` — exception to the Global Lock Order (Story 15-7b2, choice C-15-7-22).** After 
+docs/MULTI-TENANT-SCOPING-PATTERNS.md:347:### Known Risk — KF-002-H-002 (resolved 2026-05-03)
+docs/MULTI-TENANT-SCOPING-PATTERNS.md:349:**Issue:** `seed_demo` (for its **first four steps** — count-validation, `companies::update`, `bulk_create_f
+.env.example:340:# KESH_PRODUCTION_RESET=
+frontend/src/lib/components/ui/input/input.svelte:28:			"dark:bg-input/30 border-input focus-visible:border-ring focus-visible:ring-ring/50 aria-inval
+frontend/src/lib/components/ui/input/input.svelte:41:			"dark:bg-input/30 border-input focus-visible:border-ring focus-visible:ring-ring/50 aria-inval
+frontend/src/lib/features/bank-import/BankProfileSelector.svelte:50:	<option value="">— {i18nMsg('bank-import-labels-bank-profile-auto-detect-placehol
+```
+
+**Dette — LOW de code, non corrigés ici** (décision de l'orchestrateur, C-15-7b2-6 ; aucun fichier de code ni de test touché par la remédiation) :
+
+| finding | objet | motif de la dette | suite |
+|---|---|---|---|
+| B-1 | un écart de comptage d'`audit_log` rend `Invariant` (500), non rejoué | sûr (rien d'effacé) ; la lecture verrouillante agrégée est une conjecture déjà écrite (F3-6) | à rejouer si l'écart est un jour observé |
+| B-2 | deux sociétés ou plus : 500 générique | AC 2.2 ; la réparation et un refus lisible relèvent de la 15-7b3 | 15-7b3 |
+| B-3 | les clés d'API saines survivent, actives | choix de la fiche (AC 3, `RESET_PRESERVED_TABLES`), dit au manuel (« revoyez-les ») | à reconsidérer si la sortie de démonstration devient automatique |
+| B-4 | test 10 vrai en partie par construction | écrit dans son doc-comment ; la garde est le test 10b | — |
+| B-5 | `onboarding::delete_state` sans appelant de production | assumé par la fiche (AC 2 étape 6) ; sert les tests 7c et `onboarding_repository` | — |
+| B-6 = E-6 | tests qui mutent l'environnement du processus | patron hérité d'`onboarding_e2e.rs` ; sûr sous nextest (un processus par test) et sous la CI (`--test-threads=1`) | passer le drapeau par `Config` dans `AppState` |
+| E-1 | 403 de sortie de démonstration : toast qui accuse le rôle, clé `error-onboarding-reset-forbidden` absente des quatre catalogues (repli français codé en dur) | défaut antérieur, déjà nommé au manuel et au CHANGELOG | **#534** |
+| E-2 | aucun test navigateur de la recette de sortie | `onboarding.spec.ts:57` est KF-029 ; il passe avec le drapeau (mesuré au développement) | #97 (poser le drapeau au montage E2E) |
+| E-4 | à l'étape 0-2, aucune garde de présence de données | comportement hérité, conservé (décision de l'orchestrateur) ; angle mort « ligne d'état absente » déjà écrit | arbitrage de Guy |
+| E-5 | `installation.reset` ne dit pas ce qui survit (utilisateurs, clés actives) | champ d'audit = code ; non bloquant | story ultérieure |
+| E-7 | dialogue de confirmation (`demo-reset-confirm-body`) muet sur le journal effacé et les principaux conservés | texte de catalogue, non de manuel | **#534** |
+
 ### File List
 
 - `.env.example`
@@ -1127,3 +1269,4 @@ Journaux non versionnés, dans `/home/gcorbaz/devel/kesh-gate-logs/` : `15-7b2-m
 - **2026-10-08 — Ajustement après la remédiation P2 de la 15-11a (C81)** : la 15-11a (AC12 (j)) reprend la mise en page des dix tableaux de `sec:env-vars`, que cette fiche avait prévue (AC 11 ligne `:691`, T7, C-15-7-52) ; elle merge avant cette story. AC 11 et T7 ne portent plus que le contrôle, après rebase, de la lecture entière de la cellule `KESH\_PRODUCTION\_RESET` au PDF aplati (renvoi à la 15-11a, AC12 (j)). Le motif de contrôle `KESH.{1,2}PRODUCTION.{1,2}RESET` (AC 11) et le T8 énumèrent désormais les mentions que la 15-11a ajoute au manuel et au CHANGELOG, et rappellent que la 15-11a interdit de nommer la variable dans un commentaire des compose. Choix **C-15-7-54** (révise C-15-7-52). Recompte : **12 AC**, **8 tâches**, **17 tests** — inchangés (la mise en page était une sous-clause de l'AC 11 et de T7, non un décompté à part). Propagation : grep de `sec:env-vars`, `\paragraph`, `Overfull`, `C-15-7-52` sur la fiche et l'index 15-7 — résidus : l'historique (Change Log P4 et P5, R5-3, L4-1, C-15-7-52) seul ; la fiche 15-7b3 (lignes 40 et 435) mentionne `sec:env-vars` et C-15-7-52 pour son propre texte, renvoi traité à part (signalé à l'orchestrateur).
 - **2026-10-08 — Recette de redémarrage (C-15-7-55)** : la recette de sortie de la démonstration (`admin-manual.tex:1314`, cellule `:691`, T7) disait « redémarrer » ; elle prescrit désormais `docker compose up -d` après la pose puis après le retrait de `KESH_PRODUCTION_RESET`, car `restart` ne relit pas `.env` (référence : 15-11a, AC12 f, C83, C84, validée et close). `user-manual.tex:177-189` (ligne de la fiche) ne contient aucune consigne de redémarrage : inchangé. Grep des symptômes (`redémarr`, `restart`) sur les fiches 15-7* : les autres occurrences sont historiques (Change Log) ou décrivent le comportement du serveur (redémarrages avant `/setup`), non une recette d'exploitant.
 - **2026-10-09 — Développement** (Claude Opus 5.5, worktree `kesh-15-7b2`, base `origin/main` `181efa3c`, inchangée en fin de développement). T0 écrit avant tout code (11 écarts, dont registre à 114 routes et manuel déjà périmé, api-external, liste « Deny list » disparue). T1 à T8 livrés : `reset_demo` en une transaction par essai, rejouée, connexion fermée à sa libération, gardes sous le verrou de l'effacement ; société conservée en place ; règle unique des principaux orphelins ; vidage dérivé de la liste canonique gardé par quatre règles sur le schéma ; bootstrap gardé contre #542 ; `installation.reset` dans les quatre catalogues ; registre 108 / 4 / 2. Gates avant rebase (`d64a9545`) : backend 3180 / 3180, Vitest 1161 / 1161, E2E 246 / 8 attendus (7 KF-029 + #424 vert seul) ; **rebasée sur `056997b0` (15-1a-ii)**, gates de référence sur l'état rebasé : backend 3197 / 3197, Vitest 1164 / 1164, E2E 247 / 7 KF-029 ; 31 mutations, 31 rouges (mesurées avant rebase, sur le même code de la story). Choix C-15-7b2-1 à 4. Recompte : **12 AC**, **8 tâches**, **17 tests** de la fiche écrits (4, 5, 6a, 6b, 6c, 6d en deux, 6f en trois, 7, 7b, 7c, 8, 9, 10, 10b, 12 en trois, 13, 14) **plus** le 13b (C-15-7b2-2). Statut : **review**.
+- **2026-10-09 — Revue de code P1** (prompt versionné `15-7b2-review-prompt-p1.md`, commit `e3368ba7` ; trois lentilles **Sonnet** en contexte frais, B Blind Hunter, E Edge Case Hunter, A Acceptance Auditor ; rapports `kesh-gate-logs/15-7b2-review-p1-{B,E,A}.md`). Bruts, recomptés depuis les rapports : B **0 MEDIUM, 6 LOW** ; E **0 MEDIUM, 7 LOW** ; A **1 MEDIUM, 3 LOW**. Après fusion (A-1 = E-3 ; B-6 = E-6) : **0 CRITICAL, 0 HIGH, 1 MEDIUM, 14 LOW distincts**. Remédiation (C-15-7b2-5, C-15-7b2-6) : A-1 = E-3 corrigé au manuel d'administration (PDF régénéré, contrôlé aplati), au CHANGELOG et à l'AC 11 ; A-2, A-3, A-4 appliqués (sorties collées) ; les LOW de code écrits en dette avec leur motif (B-1 à B-6, E-1, E-2, E-4 à E-7). **La remédiation ne touche aucune ligne de code ni de test** : le dernier commit de code reste `5fe1f918`, et ses gates sur l'état rebasé (backend 3197 / 3197, Vitest 1164 / 1164, E2E 247 / 7 KF-029) restent valables. Trend : P1 **1 MEDIUM** (d'origine de fiche, non né d'une remédiation) → corrigé sans code. **Boucle close** (règle « passe ciblée » : une remédiation qui ne touche aucune ligne de code de production ne rouvre pas la boucle). Statut : **done**.

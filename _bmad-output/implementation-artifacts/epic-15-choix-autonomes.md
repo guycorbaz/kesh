@@ -5650,6 +5650,20 @@ l'import (#458–#461).
 - **Écarté** : désigner un compte de TVA due au montage (geste de plus, sans rapport avec la remise à zéro) ; laisser `vat_rates` seule témoin de la TVA (elle est peuplée par le seed).
 - **Réversible** : oui (montage de test).
 
+## C-15-7b2-5 — 15-7b2 (revue de code P1, A-1 = E-3) : le manuel borne la réparation de #528 à zéro ou une société
+
+- **Contexte** : revue de code P1 (Sonnet ×3, prompt `e3368ba7`) — A-1 (MEDIUM) = E-3 (LOW). Le manuel d'administration disait que la réinitialisation répare une installation touchée par #528 « quel que soit son nombre de sociétés » ; le code (`reset_body`, AC 2.2) rend `Invariant` (500, rien d'effacé) dès deux sociétés. La formule venait de la ligne de l'AC 11 (R4-5 de la P4), vraie de `reattach_orphan_principals_in_tx`, pas de la remise à zéro.
+- **Retenu** (décision de l'orchestrateur) : `admin-manual.tex` dit « si elle compte aucune ou une société », et qu'à deux sociétés ou plus — réelles ou provisoires — le bouton répond par une erreur interne sans rien effacer, la réparation relevant de la 15-7b3 ; PDF régénéré (`make -B fr`), contrôlé aplati ; même bornage au CHANGELOG `[0.13.0]` ; ligne de l'AC 11 de la fiche corrigée. Aucune ligne de code touchée.
+- **Écarté** : faire réparer la remise à zéro sur N ≥ 2 (périmètre de la 15-7b3, C-15-7-46).
+- **Réversible** : oui (texte).
+
+## C-15-7b2-6 — 15-7b2 (revue de code P1) : LOW documentaires appliqués, LOW de code écrits en dette
+
+- **Contexte** : P1 : B 6 LOW, E 7 LOW (dont E-3, absorbé par C-15-7b2-5), A 3 LOW. Consigne de l'orchestrateur : ne toucher aucun fichier de code ni de test, pour que le dernier commit de code (`5fe1f918`) et ses gates restent valables.
+- **Retenu** : appliqués — A-2 (`docker compose config` exécuté en lecture, sortie au Dev Agent Record), A-3 (grep de l'AC 10 rejoué sur l'état rebasé, sortie collée, intégrale au journal des gates), A-4 (Overfull comptés par passe). E-5 (champ d'audit) et E-7 (catalogues i18n) ne sont pas du texte de manuel : dette. En dette, avec leur motif, à la fiche : B-1 à B-6, E-1 (rattachée à #534), E-2, E-4 (comportement hérité, conservé), E-5, E-6, E-7.
+- **Écarté** : corriger maintenant les LOW de code (rouvrirait la boucle de revue et les gates pour des LOW).
+- **Réversible** : oui.
+
 ## C-15-13b-1 — 15-13b (T0) : le rapatriement n'est pas rejoué au T0, le démon Docker étant bloqué
 
 - **Contexte** : le T0 prescrit de rejouer, sur un conteneur jetable, l'écriture d'un fichier `0600` par un conteneur root dans un dossier monté, puis le rapatriement `sudo cp` + `sudo chown`. Le 2026-10-09 vers 07:10, toute création de conteneur expire (`docker run` → 124 après 60 s) : le noyau signale des tâches `dockerd` en état D, bloquées sur un rw-semaphore (`journalctl`, « blocked for more than 122 seconds »). Le démon sert encore `ps`/`info`. Les créations interrompues laissent des noms réservés sans conteneur. `sudo` n'est pas utilisable sans mot de passe depuis l'agent.
