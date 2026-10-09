@@ -6910,3 +6910,56 @@ l'import (#458–#461).
 - **Retenu** : `letterings::open_items` en `kesh-db` — la lettrabilité et la propriété y vivent ; `kesh-report` n'est touché que pour `LedgerLine`.
 - **Écartées** : `kesh-report` (il devrait importer les deux règles de `kesh-db`, pour un « rapport » qui est une liste paginée).
 - **Réversible** : oui.
+
+## C-15-1a2-1 — 15-1a2 (validation P1, F-9) : découpée en 15-1a2-i (pièces clientes) et 15-1a2-ii (fournisseurs et rattrapage)
+- **Contexte** : la fiche touchait au moins sept modules de premier niveau (lettrage, règlements clients, avoirs, factures fournisseurs, migrations et rejeu, rapprochement `kesh-api`, i18n) pour un seuil de cinq (`CLAUDE.md`, splitting préventif, premier critère). Décision de l'orchestrateur, autonomie déléguée.
+- **Retenu** : fiche mère en index (`split`, corps vidé, numérotation conservée — les renvois des fiches sœurs restent justes) ; **15-1a2-i** : groupe client, synchronisation, périodes (P7), audit, cinq sites dont `accept_one_invoice` et l'avoir, documentation client ; **15-1a2-ii** : fournisseurs (`pay_in_tx` qui couvre `pay` et `confirm_batch`, les deux annulations), rattrapage (deux migrations), rejeu, documentation fournisseur et admin. Dépendance dure : ii après i. Cinq modules chacune. ⚠️ La consigne rangeait `confirm_batch` côté client : il appelle `supplier_invoices::pay_in_tx`, il est en ii.
+- **Écartées** : dérogation écrite (garder une fiche de sept modules) ; découpage en trois (client / fournisseur / rattrapage, proposé par F-9) — le rattrapage dépend des deux familles et son test d'accord des deux synchronisations : seul, il n'aurait rien à comparer avant le merge des deux autres.
+- **Réversible** : oui avant développement.
+
+## C-15-1a2-2 — 15-1a2 (validation P1, R2 = F-6 ; Reçu points 3, 9, 10) : en période close, la synchronisation s'abstient de lettrer ET de délettrer
+- **Contexte** : le mode `System` n'évalue pas la règle des périodes du socle ; la fiche laissait ouvertes l'abstention du rattrapage (points 3, 10) et l'annulation d'un règlement de période verrouillée (point 9), avec AC5/AC6 et la D1 de la 15-1b contradictoires.
+- **Retenu** (décision de l'orchestrateur) : la synchronisation évalue elle-même, sans verrou, « au moins une ligne en période ouverte » (prédicat `any_line_in_open_period` factorisé, `lines_in_open_period`) et s'abstient sinon — à la création comme à la dissolution ; le rattrapage applique la même règle. AC5 borné aux pièces dont une ligne de C est en période ouverte ; AC6 admet `AbstainedClosedPeriods` ; AC14 nouveau. Ce que voit l'utilisateur : pièce historique close soldée → ouverte, **non** lettrable à la main (R5) ; annulation d'un règlement de période verrouillée → groupe gardé, miroir ouvert portant le reste dû ; nouveau règlement ensuite → règlement et miroir ouverts, de somme nulle.
+- **Heurt signalé** : la consigne disait « lettrable à la main si la règle le permet » — faux pour une ligne de pièce (rang 5, `LETTERING_LINE_OWNED_BY_DOCUMENT`). Le côté « délettrer » produit une facture due à ligne de vente lettrée (exception d'AC5 et d'AC9).
+- **Écartées** : poser les groupes clos (le rattrapage écrirait des groupes entièrement clos que la règle `Manual` interdit) ; dissoudre quand même à l'annulation (réécrit la vue « au 31.03 » d'un trimestre verrouillé) ; refuser en amont l'annulation d'un règlement de période verrouillée (refus neuf sur un geste existant).
+- **Réversible** : oui jusqu'au tag v0.13.0 ; à rouvrir si la recette juge trop cher le côté « délettrer ».
+
+## C-15-1a2-3 — 15-1a2 (validation P1, R5 = F-2) : un compte non lettrable est sauté, jamais une erreur
+- **Contexte** : `create_group_in_tx` exige la lettrabilité y compris en mode `System` ; sans garde, un règlement, un avoir ou un paiement échouerait en 409 de lettrage.
+- **Retenu** : `is_letterable_account` avant la primitive, `SyncOutcome::AccountNotLetterable`, aucune erreur — patron de la contre-passation (`journal_entries.rs:2578`). Le SQL de rattrapage recopie le prédicat (`Asset`/`Liability`, pas de compte bancaire). La dissolution n'exige pas la lettrabilité (C104). Exception (b) nommée d'AC5 ; AC13 et AC7.
+- **Écartées** : refuser le geste (l'utilisateur ne peut pas lever la cause) ; lettrer quand même hors primitive (violerait R3/R4 du socle).
+- **Réversible** : oui.
+
+## C-15-1a2-4 — 15-1a2 (validation P1, R3 = F-1) : rattrapage en deux migrations — documents au rejeu (classe A), paires `reversal` libres exemptées
+- **Contexte** : rejouer à chaque import les paires `reversal` relettrerait une paire délettrée à la main (`NULL` choisi) — le critère que `CLAUDE.md` P7 déclare faux. La classe B est interdite (DDL dans `20261009000001`, autre fichier). Décision de l'orchestrateur : paires faites une fois, exemptées du rejeu ; documents au registre si leur classe le permet.
+- **Retenu** : **M1** (registre, classe A, migration entière) : groupes `document` client et fournisseur, et paires `reversal` dont l'origine est l'**achat** d'une facture fournisseur (non dissolubles à la main, C106 — un `NULL` n'y est pas un choix ; exemptées, elles resteraient ouvertes ET non lettrables à la main après restauration). **M2** (`EXEMPT_MIGRATIONS`, `Durable`, justification qui ne commence pas par « Hors fenêtre ») : les autres paires `reversal`. Coût assumé : une sauvegarde d'avant la 15-1a2 importée laisse ces paires-là ouvertes, lettrables à la main.
+- **Heurt signalé** : la consigne parlait d'une migration (compteurs 76 → 77) ; le registre exige qu'un extrait porte toutes les écritures de sa migration (`extract_carries_every_write_statement_of_its_source_migration`) et interdit qu'une migration soit à la fois au registre et exemptée — d'où deux fichiers, compteurs 76 → **78**, `EXEMPT_MIGRATIONS` 16 → 17. `20261009000001` intacte (P8).
+- **Écartées** : une seule migration exemptée en entier (les documents ne seraient plus rattrapés après restauration) ; une seule migration au registre (R3) ; replier le rattrapage dans `20261009000001` (P8, migration mergée).
+- **Réversible** : oui jusqu'au tag v0.13.0 (migrations non publiées).
+
+## C-15-1a2-5 — 15-1a2-i (validation P1, R1 = F-5, R6) : signatures et audit — exercice tenu et acteur passés par l'appelant, `document` par une fonction privée
+- **Retenu** : `sync_*_in_tx(tx, company_id, id, held_open_fiscal_year_id, actor)` et `dissolve_*_document_group_in_tx(…)` ; l'exercice tenu est celui que le geste verrouille déjà (aucun verrou neuf) ; acteur `Actor { user_id, api_key_id: None }` (écart nommé, comme la contre-passation) sauf `accept_one_invoice` (`actor_api_key_id`). Les primitives gardent leur signature publique ; leur corps passe dans `create_group_inner` / `dissolve_group_inner` (+ `document: Option<&DocumentRef>`), qui ajoutent `documentType`, `documentId`, `documentNumber` aux `details` — rien quand `None`. `letterings_lexical.rs` réaligné sur `*_inner`.
+- **Écartées** : paramètre ajouté aux primitives publiques (touche routes, contre-passation et tests) ; champ dans `Mode::System` (`Mode` est `Copy`, le numéro de pièce est une `String`) ; seconde entrée d'audit (deux traces pour un geste).
+- **Réversible** : oui.
+
+## C-15-1a2-6 — 15-1a2-i (validation P1, R1, F-3) : appels explicites après le dernier `UPDATE` du geste, pas dans `invoice_settlements::create_in_tx`
+- **Contexte** : `create_in_tx` n'a ni acteur ni exercice, et `accept_one_invoice` l'appelle avant son contrôle de version (g) : une synchronisation là verrouillerait les lignes avant la ligne `invoices` (cycle avec `settle_invoice`) et une course sortirait en erreur de lettrage.
+- **Retenu** : trois appels explicites (`settle_invoice`, `write_off_invoice` après leur `UPDATE invoices` ; `accept_one_invoice` après (g)) ; l'avoir après la bascule `cancelled` ; le test lexical d'AC8 ferme l'inventaire (toute fonction qui appelle `create_in_tx` appelle ensuite la synchronisation). Erreur de synchronisation dans `accept_one_invoice` → `FailedProposal` (`LETTERING_CONCURRENT_CHANGE`, `INTERNAL_ERROR` + `tracing::error!`, `DATABASE_ERROR`).
+- **Écartées** : enveloppe `create_and_sync_in_tx` (même défaut d'ordre pour le rapprochement) ; déplacer (g) avant (f) (le reste dû après règlement en dépend).
+- **Réversible** : oui.
+
+## C-15-1a2-7 — 15-1a2-i (Reçu points 6 et 19) : la facture créditée ET réglée (héritée) reste ouverte
+- **Retenu** : `Σ C ≠ 0` → aucun groupe ; créance, avoir et règlement ouverts, non lettrables à la main ; les textes posés par la 15-1a-i (« le règlement reste ouvert au compte débiteurs », quatre locales, replis, manuel, `api-external.md`) restent justes — aucun réécrit. État produit par des données héritées seulement (l'avoir est refusé sur une facture réglée).
+- **Écartées** : exception à R5 pour ce règlement ; groupe `document` qui inclurait la contrepartie de l'avoir (somme non nulle au compte débiteurs, viole la règle du groupe).
+- **Réversible** : oui.
+
+## C-15-1a2-8 — 15-1a2-i (validation P1, R9) : message `LETTERING_IS_DOCUMENT` neutre
+- **Contexte** : « annulez le règlement plutôt que de délettrer » est faux pour un groupe facture + avoir (aucun règlement, aucun avoir annulable).
+- **Retenu** : « Ce lettrage est celui d'une pièce : il suit ses règlements et son avoir, il ne se défait pas à la main. » — quatre `.ftl` et le repli Rust.
+- **Écartées** : variante par `documentType` (le refus n'a pas la pièce sous la main au rang 1 sans lecture de plus).
+- **Réversible** : oui.
+
+## C-15-1a2-9 — 15-1a2-i : pas de synchronisation après le `DELETE` de l'annulation d'un règlement
+- **Retenu** : la dissolution avant la contre-passation suffit ; après le retrait d'un règlement de montant positif, `Σ C` vaut le reste dû, positif : C ne qualifie jamais. Le Reçu point 12 (C116, marques rendues par la contre-passation) est donc sans objet.
+- **Écartées** : l'appel ② de la fiche d'origine (inutile, et il exigerait un exercice tenu qui couvre une ligne de C — celui du règlement retiré ne la couvre plus).
+- **Réversible** : oui.
