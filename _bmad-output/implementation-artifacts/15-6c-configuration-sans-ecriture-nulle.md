@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+in-progress
 
 <!-- Spécifiée le 2026-10-08 en autonomie (bmad-create-story), fille de la 15-6 découpée d'emblée
      (choix C-15-6-1). Choix propres : C-15-6-5 (révisé par C-15-6-13), C-15-6-14, C-15-6-15.
@@ -629,3 +629,34 @@ changent de sens*, quatre rendus et un mock), qui ne sont pas des tests neufs.
   - **Validation close** : 0 au-dessus de LOW. Décompte final : **11 AC, 9 tâches (T0–T8), 16 tests**
     (13 backend, 3 fichiers Vitest) + 1 spec E2E modifiée + adaptations de deux fichiers Vitest
     existants ; un fichier supprimé (`BankAccountList.svelte`).
+- 2026-10-09 — **T0 — relecture contre `f8b2accd`** (`origin/main`, 15-5b, 15-5d, 15-6a, 15-6b mergées ;
+  agent de développement Opus 5.5). **Aucun écart ne change une règle ni un AC** ; écarts de lieu et de
+  décompte :
+  - Numéros relocalisés par le texte : `validate_journal_account_id` `bank_accounts.rs:268`, création
+    `:408` (sentinelle `:432`, `flip_primary_off` `:440`, `INSERT` en ligne `:457`), remplacement
+    `:530`, lien `:756` ; dépôt : `set_journal_account_id_for_company` `:332` (no-op `:373`, garde de
+    postabilité `:382`), `update_for_company` `:439`, `acquire_company_sentinel_lock` `:680` ;
+    `company_invoice_settings::update` `:147`, `before` en `SELECT` simple `:163`, note KF-004 `:182` ;
+    route des réglages `update_invoice_settings` `:272`.
+  - **Le PUT des réglages est rejoué sur interblocage** depuis la 15-5e1 (`retry_on_deadlock`,
+    choix C70) : l'interblocage `INSERT IGNORE` → `FOR UPDATE` que l'AC2 décrit (« l'un des deux en
+    500 ») est désormais **rejoué**, pas rendu en 500. La note KF-004 réécrite le dit ; rien d'autre ne
+    change.
+  - Le fichier Vitest de la page bancaire créé par la 15-5b s'appelle
+    `frontend/src/routes/(app)/bank-accounts/bank-accounts-page.test.ts` (et non `+page.test.ts`) :
+    c'est lui que le test 14 étend. `company_invoice_settings_postable_e2e.rs` existe et son montage
+    (`setup`, six comptes, Admin) se prête aux tests 6 à 10 : étendu, pas de fichier neuf.
+  - **Appels directs au dépôt : 21 sites** (et non 14) — `bank_accounts_repository.rs` ×19 (la 15-5b a
+    ajouté `:994`, `:1008`, `:1020` pour le lien et `:1057`, `:1073`, `:1089`, `:1102` pour le
+    remplacement), `reconciliation_e2e.rs:2645`, `reconciliation_split_e2e.rs:225`. Tous passent
+    `&ClaimAccounts::default()` (C-15-6-22), aucun ne change de sens.
+  - `BankAccountList.svelte` : toujours **aucun importeur** → supprimé. Fonctions d'écran de la 15-6b
+    présentes (`withoutAccountIds(accounts, ids: Set<number>)`). Menu créanciers de la 15-5d présent
+    (`payableOptions`, `settings/invoicing/+page.svelte:94`).
+  - Manuel d'administration : la 15-5d a déjà présenté le **compte créanciers** (§ *Compte créanciers.*,
+    `:2154`) et nommé la créance client ; le paragraphe neuf **complète** (présente le compte débiteurs,
+    renvoie au créanciers) et s'insère après « Quand un paiement… » (`:2162`), avant « Le format de
+    décompte officiel AFC » (`:2164`). La frontière avec la 15-6b (`:2158`, `:2162`) est celle que
+    l'AC9 décrit.
+  - E2E : `payment-batches.spec.ts` lie au premier actif par numéro = `1000` (comptes triés par
+    `number`) — non concerné ; aucune autre spec ne lie par la route au compte débiteurs ou créanciers.
