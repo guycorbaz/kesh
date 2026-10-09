@@ -6416,3 +6416,72 @@ l'import (#458–#461).
   CHANGELOG de l'AC 4.
 - **Écartée** : ouvrir une issue P3 à part (deux lignes dans une sous-section que la story réécrit déjà).
 - **Réversible** : oui.
+
+## C-15-14-38 — 15-14a (développement) : le tableau des plans du manuel d'administration décrit le contenu réel des trois plans
+
+- **Contexte** : l'AC 3 demande de réécrire le tableau « Choix du plan comptable » sur les trois plans
+  réels et leur choix par le type d'organisation, sans dicter les cellules. Une première rédaction
+  disait le plan indépendant « allégé » ; les fichiers le démentent (`pme.json` et `independant.json`
+  portent 86 comptes chacun, `association.json` 83).
+- **Retenu** : en-têtes « Type d'organisation / Plan mis en place » ; chaque cellule nomme ce qui
+  distingue réellement le plan, relu dans les JSON (PME : capital social ; indépendant : capital de
+  l'exploitant, prélèvements et apports privés ; association : capital de l'association, cotisations
+  des membres, dons reçus) ; une phrase « Kesh n'importe pas de plan comptable », qui remplace la ligne
+  « Personnalisé CSV ». Le `keshtip` qui suit reste, relu : il est juste.
+- **Écartées** : décrire les plans par leur public (« pour les artisans »…), ce que les fichiers ne
+  portent pas ; garder une seule ligne générique (le tableau perdrait sa raison d'être).
+- **Réversible** : oui (texte seul, garde G4 sur les formes interdites).
+
+## C-15-14-39 — 15-14a (développement) : en de-CH, it-CH et en-CH, la proposition de but passe en tête
+
+- **Contexte** : l'AC 8 donne la prescription par locale (« … muss ein Administrator die abgeschlossenen
+  Geschäftsjahre bis zu diesem wieder öffnen, beginnend mit dem neuesten ») et demande de reprendre le
+  début de chaque valeur. Laissée à sa place, la proposition finale (« damit sie storniert werden
+  kann », « per poterlo annullare », « before it can be cancelled ») serait rejetée après une longue
+  incise d'ordre.
+- **Retenu** : la proposition de but passe avant la prescription, comme le texte fr-CH de l'AC 8
+  (« pour pouvoir l'annuler, un administrateur doit … ») : « Damit sie storniert werden kann, muss ein
+  Administrator … », « per poterlo annullare, un amministratore deve … », « before it can be cancelled,
+  an administrator must … ». La prescription dictée par l'AC figure mot pour mot dans chaque valeur ; le
+  marqueur d'ordre, seul contrôlé par G8, est intact.
+- **Écartée** : garder l'ordre d'origine (phrase plus lourde, sans gain de fidélité).
+- **Réversible** : oui (libellés).
+
+## C-15-14-40 — 15-14a (développement) : les gardes de catalogue lisent les valeurs brutes, sans repli fr-CH
+
+- **Contexte** : `I18nBundle::all_messages` complète chaque locale par les clés fr-CH. Une garde qui
+  s'en servirait verrait, pour une clé absente en de-CH, la valeur française — et G8, G10, G11
+  pourraient passer sur une locale amputée.
+- **Retenu** : `valeurs_brutes(locale)` (`loader.rs`, `mod tests`) lit le `.ftl` lui-même (lignes de
+  continuation jointes, commentaires ignorés) ; une clé absente panique en nommant locale et clé, et un
+  catalogue lu à moins de 100 clés rougit (anti-test-muet). G8 contrôle au moins 10 clés (`>= 10`,
+  6 de #569 + 4 qui portaient déjà le marqueur) : une clé neuve qui prescrit la réouverture entre au
+  domaine sans casser la garde.
+- **Écartée** : `all_messages` (repli masquant) ; un compte exact du domaine (rougirait à chaque clé
+  neuve légitime).
+- **Réversible** : oui.
+
+## C-15-14-41 — 15-14a (développement) : G2 exige que tout `.tex` de `docs/manual/fr` soit gardé
+
+- **Contexte** : les gardes documentaires parcourent une liste de trois manuels. Un quatrième `.tex`
+  ajouté au répertoire échapperait à G2, G4 et G5 sans que rien ne le signale.
+- **Retenu** : `manuels_fr()` (`textes_coherents.rs`) compte les `.tex` du répertoire et rougit si ce
+  nombre diffère de la liste ; chaque manuel lu doit contenir `\begin{document}`. Une story qui ajoute
+  un manuel l'ajoute à la liste.
+- **Écartée** : lire tout `.tex` trouvé sans liste (un fichier vide ou mal nommé passerait en silence).
+- **Réversible** : oui.
+
+## C-15-14-42 — 15-14a (développement) : les comptes d'inventaire « après correction » de la fiche ne sont pas tous atteints, et c'est attendu
+
+- **Contexte** : au T0, les dix-sept commandes rendent exactement les comptes de la fiche. Après
+  correction, quatre diffèrent de l'« après » annoncé.
+- **Retenu** (ventilation, aucune correction supplémentaire) : AC 1 → 3 (2 attendus) : le doc-comment
+  de G1 (`vat_rates.rs`) nomme les taux interdits ; AC 2 (B) → 131 (129) : deux lignes de G3
+  (`loader.rs`) ; AC 6 → 4 (2) : les deux textes neufs dictés par l'AC 6 disent eux-mêmes « jusqu'à la
+  v0.9.0 incluse » (`api-external.md:484`, `admin-manual.tex:2053`) — c'est la fiche qui se trompait en
+  annonçant 2 ; AC 9 → 2 (0) et AC 10 → 11 sur le dépôt (9) : lignes des gardes G10 et G11. AC 8 : 153
+  → 155 = 153 − 3 commentaires `#569` retirés d'`errors.rs` + 5 lignes de G8. Toutes sont des gardes ou
+  des textes prescrits ; aucun site affiché ne reste à corriger.
+- **Écartée** : réécrire les gardes pour éviter les mots qu'elles interdisent (elles cesseraient de dire
+  ce qu'elles gardent).
+- **Réversible** : sans objet (constat).
