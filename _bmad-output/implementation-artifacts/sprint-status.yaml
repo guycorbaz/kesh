@@ -1,5 +1,5 @@
-# last_updated: 2026-10-09 (48) (15-6d développée, en review — gates sur l'état rebasé 803f3e15 : backend 3082/3082, Vitest 1156/1156, E2E 246 / 7 KF-029 + KF-052 rejoué vert ; choix C-15-6d-1)
-# last_updated: 2026-10-09 (47) (15-6d en développement — T0 relevé sur f2c5e419, écarts écrits à la fiche ; choix C-15-6d-1)
+# last_updated: 2026-10-09 (48) (15-6d intégrée sur 0724904c (15-1a-i) — union partout, PDF régénéré, bases recréées (76 migrations) ; gates sur l'état rebasé : backend 3144/3144, Vitest 1156/1156, E2E 245 / 7 KF-029 + KF-052 + dunning:59 rejoués verts)
+# last_updated: 2026-10-09 (47) (15-6d développée, en review — gates sur l'état rebasé 803f3e15 : backend 3082/3082, Vitest 1156/1156, E2E 246 / 7 KF-029 + KF-052 rejoué vert ; choix C-15-6d-1)
 # last_updated: 2026-10-09 (46) (15-6d en développement — T0 relevé sur f2c5e419, écarts écrits à la fiche ; choix C-15-6d-1)
 # last_updated: 2026-10-09 (45) (15-1a-i done — revue de code close (P1 Sonnet ×3 → P2 Opus ×3 → P3 ciblée Haiku, remédiation sans code de production) ; rebasée sur 803f3e15 (15-13a, 15-7b1, 15-13b, 15-6c) — registre et sprint-status par union, partition d'audit 107/5/2 = 114 recomptée, PDF utilisateur régénéré ; gate de référence sur l'état rebasé : backend 3135/3135 à huit threads, Vitest 1149/1149, E2E 246 / 7 KF-029 + 1 pollution (dunning:59, rejouée verte) ; C-15-1a-i-14)
 # last_updated: 2026-10-09 (44) (renuméroté au rebase sur 803f3e15, (40) sur dc4bc58b) (15-1a-i en review — développement achevé, gate complet vert au dernier commit de code)

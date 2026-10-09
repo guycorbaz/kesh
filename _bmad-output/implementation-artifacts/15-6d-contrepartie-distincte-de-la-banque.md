@@ -670,4 +670,20 @@ rebasé.
     toutes les bases du conteneur, d'autres agents compris.
   Décompte : 10 AC satisfaits, 6 tâches cochées, **12 tests nommés** (9 backend, 3 fichiers Vitest
   — 7 cas). Statut **review** ; revue de code non lancée.
+- 2026-10-09 — **Intégration sur `0724904c`** (15-1a-i, PR #587 : migration `20261009000001`, crates
+  0.13.0, routes `/letterings`). Branche de sauvegarde `backup/15-6d-avant-rebase-0724904c`. Rebase :
+  registre des choix et sprint-status **par union** (en-têtes renumérotés (46), (47) au-dessus du
+  (45) de `main`), CHANGELOG fusionné sans conflit (entrées #518 et #524 présentes),
+  `user-manual.pdf` **régénéré** (`make -B user`) sur le `.tex` fusionné et contrôlé aplati
+  (paragraphe de la 15-6d et lettrage présents) ; aucun conflit sur le registre des routes d'audit
+  ni sur les clés i18n. Bases `kesh_156d` et `kesh_e2e_156d` recréées (tmpfs vidé et porté à 8 Go),
+  **76 migrations** appliquées, seed. **Gates sur l'état rebasé** :
+  - backend complet (`scripts/test-fast.sh --ci`, fmt + clippy `-D warnings` + nextest) :
+    **3144 / 3144**, 4 ignorés ;
+  - frontend complet (`check` 0 erreur / 27 avertissements préexistants, `lint-i18n-ownership`,
+    `test:unit`, `build`) : **Vitest 1156 / 1156** ;
+  - E2E complet (port 3016) : **245 passés, 19 ignorés, 9 échoués** — les 7 KF-029 attendus,
+    `sidebar-navigation:75` (KF-052) et `dunning:59`, ces deux derniers **verts rejoués seuls**
+    (pollution d'état entre specs, cf. `docs/testing.md` § *Les échecs attendus*) ;
+  - tmpfs MariaDB : 244 Mo / 8,0 Go (3 %) avant les gates, 1,3 Go (16 %) après.
 
