@@ -1210,3 +1210,44 @@ deux cas de l'AC7 (non compté : conditionnel).
   - Décompte après passe : **13 AC (AC1–AC12 et AC3 bis), 10 tâches (T0–T9), 23 tests** (19 backend
     dont 10 bis, 10 ter et 16 bis, 4 fichiers Vitest ; 22 neufs, 1 existant renommé et étendu) —
     inchangé (le test 18 gagne un cas, sans test neuf). Statut : `ready-for-dev`.
+- 2026-10-09 — **T0 — relecture contre `39b52628`** (`origin/main`, qui porte la 15-6a, les
+  15-5a à 15-5e et la 15-11b ; agent de développement Opus 5.5). **Aucun écart de fond** : aucune
+  règle ni aucun AC ne change. Relevés, numéros relocalisés par le texte :
+  - `settle_invoice` (`invoice_settlements_write.rs:48`) : créance lue par le lecteur de la 15-6a
+    (`:104-107`) **avant** la contrepartie ; contrepartie `:110-172`, dont le refus
+    `ACCOUNT_NOT_POSTABLE` de la 15-5a au **bloc du compte interne** (`:161-170`) ; trop-perçu
+    `:178-186` ; compte d'arrondi du règlement `:189-199`. Ordre **contrepartie → trop-perçu →
+    arrondi** : celui de l'AC3 bis.
+  - `write_off_invoice` (`:359`) : nature `:436-437`, **puis** créance `:438-441`, quote-parts de TVA
+    (aucun refus métier), reste d'arrondi `:476-489` (non relu pour la nature `rounding`, `:476-477`),
+    TVA due `:491-495`. Ordre **nature → reste d'arrondi → TVA due** : celui de l'AC3 bis. Le
+    commentaire « 5 bis » est celui que la 15-5e a réécrit (`:459-475`).
+  - `pay_in_tx` (`supplier_invoices.rs:683`) : dette et TTC `:711-722` (requête à extraire, AC4),
+    contrepartie `:725-797`, refus `ACCOUNT_NOT_POSTABLE` au bloc du compte interne (`:779-788`) ;
+    commentaire « jumeau exact » `:752-766`.
+  - Lots (`payment_batches.rs`) : `create_batch` `:68`, compte bancaire source `:84-103`, appel
+    `validate_invoice_for_batch` `:114` ; `validate_invoice_for_batch` `:226`, `fn fail` `:235-241`,
+    `SELECT` `:251-253` ; `confirm_batch` `:304`, boucle `pay_in_tx` `:359-370` ; `cancel_batch`
+    `:431`.
+  - `accept_one_invoice` (`reconciliation.rs:1226`) : refus du score (7bis) `:1402-1411` ; compte
+    de banque (a) `:1435-1463` ; créance (b) `:1474-1494` ; trop-perçu (c) `:1504-1525` ; arrondi
+    (c-bis) `:1528-1557`. Le commentaire de classement de la 15-5b est au **doc-comment** de la
+    fonction (`:1216-1224`, « aucun compte de cette écriture ne vient du client ») : c'est lui que
+    l'AC5 amende.
+  - Routes du règlement (`invoices::settle`), du solde (`invoices::write_off`), du paiement
+    fournisseur (`supplier_invoices::pay`) et de la confirmation d'un lot (`payment_batches::confirm`)
+    : rejouées par `retry_on_deadlock` (15-5e) — rejeu limité au 1213, un refus métier n'est jamais
+    rejoué.
+  - **15-5c mergée** : `failed-proposal-label.ts` existe (AC7 s'applique, clés `reconciliation-failed-*`) ;
+    son JSDoc et son test parlent de « 26 codes » (25 littéraux + `ACCOUNT_NOT_POSTABLE`) — le code
+    neuf, posé par `DbError::error_code()` comme `ACCOUNT_NOT_POSTABLE`, les porte à **27**.
+  - Borne `sitesTotal` : **1915** sur `HEAD` (`i18n-keys.test.ts:496`) ; **+6** attendus (15-5c
+    mergée).
+  - Écrans : `SettleInvoiceDialog.svelte` — effet de réinitialisation `:82-91`, `selectableAccounts`
+    `:105`, menu des comptes bancaires `:206-208` ; fiche fournisseur — filtres `:81-82`
+    (`journalAccountId !== null`, `active && postable`).
+  - Manuels : `user-manual.tex` § règlement client `:1124-1128` (« tout autre compte » `:1127`),
+    *Solder le reste* `:1143`, « contrepartie libre » `:1402`, pain.001 `:1444`, puce *Accepter*
+    `:1629`, balance âgée `:1861` ; `admin-manual.tex` `:2153`, `:2155`, `:2159`.
+  - Choix C36, C54, C55 présents au registre de la branche ; prochain numéro propre :
+    `C-15-6b-1`.

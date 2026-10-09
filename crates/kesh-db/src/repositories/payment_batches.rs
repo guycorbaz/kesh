@@ -16,7 +16,8 @@ use sqlx::MySqlPool;
 use crate::entities::{
     NewAuditLogEntry, NewPaymentBatch, PaymentBatch, PaymentBatchItem, SettlementChoice,
 };
-use crate::errors::{DbError, map_db_error};
+use crate::errors::{ClaimSide, DbError, SettlementBatchContext, map_db_error};
+use crate::repositories::invoice_settlements::{self, ClaimSubject};
 use crate::repositories::{audit_log, supplier_invoices};
 
 /// Échec per-facture lors de la génération d'un lot (pattern `FailedProposal`).
@@ -96,11 +97,11 @@ pub async fn create_batch(
                 "le compte bancaire source est archivé".into(),
             ));
         }
-        if journal_account_id.is_none() {
+        let Some(bank_ledger_account_id) = journal_account_id else {
             return Err(DbError::ConfigurationRequired(
                 "bank_account.journal_account_id".into(),
             ));
-        }
+        };
 
         // (1) Valider chaque facture (FailedProposal per-facture).
         let mut accepted: Vec<Accepted> = Vec::new();
@@ -111,7 +112,15 @@ pub async fn create_batch(
             if !seen.insert(sid) {
                 continue; // doublon dans la requête : ignoré silencieusement.
             }
-            match validate_invoice_for_batch(&mut tx, company_id, sid).await? {
+            match validate_invoice_for_batch(
+                &mut tx,
+                company_id,
+                sid,
+                bank_account_id,
+                bank_ledger_account_id,
+            )
+            .await?
+            {
                 Ok(acc) => accepted.push(acc),
                 Err(f) => failed.push(f),
             }
@@ -227,10 +236,23 @@ pub async fn create_batch(
 /// (`FOR UPDATE`, sérialise vs pay/cancel/autre lot). Retourne `Ok(Accepted)`
 /// ou `Err(PaymentBatchFailedItem)` (échec métier per-facture), ou un `DbError`
 /// (échec infra → propage).
+///
+/// ⛔ **Story 15-6b (#474) — la défense principale contre un lot inconfirmable** :
+/// après ses refus existants, la dette lue sur l'écriture d'achat
+/// (`supplier_invoices::purchase_payable_line`) est comparée au compte du grand
+/// livre du compte bancaire source. Égalité → la facture va dans `failed[]`
+/// (`SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`) : sa confirmation écrirait
+/// `D 2000 / C 2000`, et le fichier pain.001, peut-être déjà déposé à la
+/// banque, ne pourrait plus être confirmé. Une écriture d'achat sans ligne de
+/// crédit est une donnée de CETTE facture (`SUPPLIER_INVOICE_PURCHASE_ENTRY_MALFORMED`),
+/// pas une erreur globale. Une erreur SQL de la lecture du numéro, elle, est
+/// propagée comme les autres `DbError`.
 async fn validate_invoice_for_batch(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     sid: i64,
+    bank_account_id: i64,
+    bank_ledger_account_id: i64,
 ) -> Result<Result<Accepted, PaymentBatchFailedItem>, DbError> {
     fn fail(sid: i64, code: &str) -> Result<Accepted, PaymentBatchFailedItem> {
         Err(PaymentBatchFailedItem {
@@ -240,16 +262,19 @@ async fn validate_invoice_for_batch(
         })
     }
 
-    // (status, creditor_iban, creditor_qr_iban, payment_reference, total_amount)
+    // (status, creditor_iban, creditor_qr_iban, payment_reference, total_amount,
+    //  purchase_journal_entry_id)
     type InvoiceCoordsRow = (
         String,
         Option<String>,
         Option<String>,
         Option<String>,
         Decimal,
+        i64,
     );
     let row: Option<InvoiceCoordsRow> = sqlx::query_as(
-        "SELECT status, creditor_iban, creditor_qr_iban, payment_reference, total_amount \
+        "SELECT status, creditor_iban, creditor_qr_iban, payment_reference, total_amount, \
+                purchase_journal_entry_id \
              FROM supplier_invoices WHERE id = ? AND company_id = ? FOR UPDATE",
     )
     .bind(sid)
@@ -258,7 +283,7 @@ async fn validate_invoice_for_batch(
     .await
     .map_err(map_db_error)?;
 
-    let Some((status, iban, qr_iban, _reference, total_amount)) = row else {
+    let Some((status, iban, qr_iban, _reference, total_amount, purchase_entry_id)) = row else {
         return Ok(fail(sid, "SUPPLIER_INVOICE_NOT_FOUND"));
     };
     if status != "open" {
@@ -293,6 +318,54 @@ async fn validate_invoice_for_batch(
         return Ok(fail(sid, "INVALID_IBAN"));
     }
 
+    // Story 15-6b — la dette, lue sur l'écriture d'achat, n'est pas le compte de
+    // banque du lot.
+    let Some((payable_account_id, _ttc)) =
+        supplier_invoices::purchase_payable_line(tx, company_id, purchase_entry_id).await?
+    else {
+        return Ok(Err(PaymentBatchFailedItem {
+            supplier_invoice_id: sid,
+            error_code: "SUPPLIER_INVOICE_PURCHASE_ENTRY_MALFORMED".to_string(),
+            details: Some(serde_json::json!({
+                "reason": "no_credit_line_on_purchase_entry",
+                "purchaseEntryId": purchase_entry_id,
+            })),
+        }));
+    };
+    if let Err(refusal) = invoice_settlements::refuse_if_claim_account(
+        tx,
+        company_id,
+        bank_ledger_account_id,
+        payable_account_id,
+        ClaimSubject::Counterparty(ClaimSide::Payable),
+    )
+    .await
+    {
+        return match &refusal {
+            // Le refus métier devient un item de `failed[]`, `details` par le
+            // helper commun (mêmes clés que le rapprochement et le mapping HTTP).
+            DbError::SettlementCounterpartyIsClaimAccount {
+                account_id,
+                account_number,
+                claim,
+                role,
+                ..
+            } => Ok(Err(PaymentBatchFailedItem {
+                supplier_invoice_id: sid,
+                error_code: refusal.error_code().to_string(),
+                details: Some(invoice_settlements::claim_account_refusal_details(
+                    *account_id,
+                    account_number.as_deref(),
+                    *claim,
+                    *role,
+                    Some(bank_account_id),
+                )),
+            })),
+            // Erreur SQL de la lecture du numéro : échec infra de toute la création.
+            _ => Err(refusal),
+        };
+    }
+
     Ok(Ok(Accepted {
         supplier_invoice_id: sid,
         amount: total_amount,
@@ -301,6 +374,18 @@ async fn validate_invoice_for_batch(
 
 /// Confirme un lot `generated` : poste les règlements de toutes les factures
 /// dans UNE transaction atomique. Pré-check du compte source archivé.
+///
+/// ⛔ **Story 15-6b (#474) — deux contrôles, et pourquoi le second subsiste.** La
+/// création du lot refuse déjà une facture dont le compte créanciers est le
+/// compte de banque du lot. Mais le compte bancaire a pu être **relié** entre la
+/// création et la confirmation : la garde de `pay_in_tx` refuse alors le
+/// règlement, et la confirmation entière échoue (transaction atomique, le lot
+/// reste `generated`, rien d'écrit). Le refus est **intercepté** pour porter le
+/// lot et la facture (`SettlementBatchContext`, numéro de facture relu ici) :
+/// le remède n'est pas celui du règlement unitaire. **Deux issues** : relier le
+/// compte bancaire à son propre compte de banque puis confirmer de nouveau, ou
+/// annuler le lot (`cancel_batch` — les factures redeviennent réglables à
+/// l'unité) et régler la facture depuis sa fiche.
 pub async fn confirm_batch(
     pool: &MySqlPool,
     company_id: i64,
@@ -357,7 +442,7 @@ pub async fn confirm_batch(
         .map_err(map_db_error)?;
 
         for item in &items {
-            supplier_invoices::pay_in_tx(
+            let paid = supplier_invoices::pay_in_tx(
                 &mut tx,
                 company_id,
                 item.supplier_invoice_id,
@@ -367,7 +452,43 @@ pub async fn confirm_batch(
                 payment_date,
                 user_id,
             )
-            .await?;
+            .await;
+            match paid {
+                Ok(_) => {}
+                // Story 15-6b — le refus « contrepartie = dette », reconstruit avec
+                // son lot. La transaction reste utilisable : c'est un refus métier,
+                // aucune erreur SQL ne l'a précédé.
+                Err(DbError::SettlementCounterpartyIsClaimAccount {
+                    account_id,
+                    account_number,
+                    claim,
+                    role,
+                    batch: None,
+                }) => {
+                    let supplier_invoice_number: Option<String> = sqlx::query_scalar(
+                        "SELECT supplier_invoice_number FROM supplier_invoices \
+                         WHERE id = ? AND company_id = ?",
+                    )
+                    .bind(item.supplier_invoice_id)
+                    .bind(company_id)
+                    .fetch_optional(&mut *tx)
+                    .await
+                    .map_err(map_db_error)?
+                    .flatten();
+                    return Err(DbError::SettlementCounterpartyIsClaimAccount {
+                        account_id,
+                        account_number,
+                        claim,
+                        role,
+                        batch: Some(SettlementBatchContext {
+                            payment_batch_id: batch_id,
+                            supplier_invoice_id: item.supplier_invoice_id,
+                            supplier_invoice_number,
+                        }),
+                    });
+                }
+                Err(e) => return Err(e),
+            }
         }
 
         // (4) Lot → confirmed.

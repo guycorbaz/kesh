@@ -2361,3 +2361,140 @@ mod garde_usage_comptes_reglage {
             .expect("la saisie réussit une fois l'exercice rendu");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Story 15-6b (#474, AC4) — un règlement ne vise pas le compte qu'il solde
+// ---------------------------------------------------------------------------
+
+/// Le règlement fournisseur refusé ne laisse rien : facture `open`, version
+/// inchangée, aucune écriture neuve.
+async fn assert_supplier_nothing_written(
+    pool: &MySqlPool,
+    invoice_id: i64,
+    (entries_before, version_before): (i64, i32),
+) {
+    let (status, version, settlement): (String, i32, Option<i64>) = sqlx::query_as(
+        "SELECT status, version, settlement_journal_entry_id FROM supplier_invoices WHERE id = ?",
+    )
+    .bind(invoice_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(status, "open");
+    assert_eq!(version, version_before);
+    assert!(settlement.is_none());
+    let entries: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(entries, entries_before, "aucune écriture neuve");
+}
+
+async fn supplier_before(pool: &MySqlPool, invoice_id: i64) -> (i64, i32) {
+    let entries: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let version: i32 = sqlx::query_scalar("SELECT version FROM supplier_invoices WHERE id = ?")
+        .bind(invoice_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    (entries, version)
+}
+
+fn assert_payable_refusal(err: &DbError, payable: i64) {
+    match err {
+        DbError::SettlementCounterpartyIsClaimAccount {
+            account_id,
+            account_number,
+            claim: kesh_db::errors::ClaimSide::Payable,
+            role: kesh_db::errors::SettlementAccountRole::Counterparty,
+            batch: None,
+        } => {
+            assert_eq!(*account_id, payable);
+            assert_eq!(account_number.as_deref(), Some("2000"));
+        }
+        other => panic!("refus de contrepartie attendu, obtenu {other:?}"),
+    }
+}
+
+/// Story 15-6b, test 5 — **compte interne = 2000** : `D 2000 / C 2000` refusé.
+#[sqlx::test(migrations = "./test-schema")]
+async fn pay_with_the_payable_account_as_internal_account_is_refused(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let payable = ctx.seeded.accounts["2000"];
+    let created = supplier_invoices::create(
+        &pool,
+        one_line(&ctx, dec!(500.00), dec!(0)),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap();
+    let before = supplier_before(&pool, created.invoice.id).await;
+
+    let err = supplier_invoices::pay(
+        &pool,
+        ctx.seeded.company_id,
+        created.invoice.id,
+        SettlementChoice::InternalAccount {
+            account_id: payable,
+        },
+        d(2026, 6, 20),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .expect_err("la dette comme contrepartie doit être refusée");
+    assert_payable_refusal(&err, payable);
+    assert_supplier_nothing_written(&pool, created.invoice.id, before).await;
+}
+
+/// Story 15-6b, test 6 — **virement sur un compte bancaire lié au 2000** : même
+/// refus. (La fixture `pay_bank_transfer_uses_journal_account` lie au 1100 :
+/// elle reste valide, le compte soldé est 2000.)
+#[sqlx::test(migrations = "./test-schema")]
+async fn pay_by_a_bank_account_linked_to_the_payable_account_is_refused(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let payable = ctx.seeded.accounts["2000"];
+    let bank = bank_accounts::create(
+        &pool,
+        NewBankAccount {
+            company_id: ctx.seeded.company_id,
+            bank_name: "Banque Test".into(),
+            iban: "CH9300762011623852957".into(),
+            qr_iban: None,
+            is_primary: true,
+        },
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+        .bind(payable)
+        .bind(bank.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let created = supplier_invoices::create(
+        &pool,
+        one_line(&ctx, dec!(500.00), dec!(0)),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap();
+    let before = supplier_before(&pool, created.invoice.id).await;
+
+    let err = supplier_invoices::pay(
+        &pool,
+        ctx.seeded.company_id,
+        created.invoice.id,
+        SettlementChoice::BankTransfer {
+            bank_account_id: bank.id,
+        },
+        d(2026, 6, 20),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .expect_err("un compte bancaire lié à la dette doit être refusé");
+    assert_payable_refusal(&err, payable);
+    assert_supplier_nothing_written(&pool, created.invoice.id, before).await;
+}

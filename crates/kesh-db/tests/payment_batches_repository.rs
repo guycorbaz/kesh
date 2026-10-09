@@ -538,3 +538,232 @@ async fn last_confirmed_batch_is_historical_and_most_recent(pool: MySqlPool) {
     assert_eq!(last.map(|(id, _)| id), Some(second), "le plus récent");
     assert_ne!(first, second);
 }
+
+// ---------------------------------------------------------------------------
+// Story 15-6b (#474, AC6) — refus à la création, garde à la confirmation
+// ---------------------------------------------------------------------------
+
+/// Relie le compte bancaire source du contexte au compte du grand livre `ledger`.
+async fn link_bank(pool: &MySqlPool, ctx: &Ctx, ledger: i64) {
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+        .bind(ledger)
+        .bind(ctx.bank_id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+/// Le compte de banque 1020, absent du seed.
+async fn ledger_1020(pool: &MySqlPool, ctx: &Ctx) -> i64 {
+    sqlx::query_scalar(
+        "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
+         VALUES (?, '1020', 'Banque', 'Asset', 1, 1) RETURNING id",
+    )
+    .bind(ctx.seeded.company_id)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+/// Story 15-6b, test 13 — **création** : A (dette sur 2000) refusée par
+/// facture, B (dette sur 2001) retenue ; avec A seule, aucun lot.
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_batch_refuses_an_invoice_whose_payable_is_the_bank_ledger(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let a = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("A"), dec!(100.00)).await;
+    let p2001: i64 = sqlx::query_scalar(
+        "INSERT INTO accounts (company_id, number, name, account_type) \
+         VALUES (?, '2001', 'Créanciers bis', 'Liability') RETURNING id",
+    )
+    .bind(ctx.seeded.company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_payable_account_id = ? WHERE company_id = ?",
+    )
+    .bind(p2001)
+    .bind(ctx.seeded.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let b = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("B"), dec!(200.00)).await;
+    let payable = ctx.seeded.accounts["2000"];
+    link_bank(&pool, &ctx, payable).await;
+
+    let outcome =
+        payment_batches::create_batch(&pool, new_batch(&ctx, vec![a, b]), ctx.seeded.admin_user_id)
+            .await
+            .unwrap();
+    let batch = outcome.batch.expect("B forme un lot");
+    assert_eq!(batch.items.len(), 1);
+    assert_eq!(batch.items[0].supplier_invoice_id, b);
+    assert_eq!(outcome.failed.len(), 1);
+    let failed = &outcome.failed[0];
+    assert_eq!(failed.supplier_invoice_id, a);
+    assert_eq!(
+        failed.error_code,
+        "SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT"
+    );
+    assert_eq!(
+        failed.details,
+        Some(serde_json::json!({
+            "bankAccountId": ctx.bank_id,
+            "accountId": payable,
+            "accountNumber": "2000",
+            "claim": "payable",
+            "role": "counterparty",
+        }))
+    );
+
+    // A seule : aucun lot n'est créé — donc aucun fichier pain.001.
+    let outcome =
+        payment_batches::create_batch(&pool, new_batch(&ctx, vec![a]), ctx.seeded.admin_user_id)
+            .await
+            .unwrap();
+    assert!(outcome.batch.is_none(), "aucun lot");
+    assert_eq!(
+        outcome.failed[0].error_code,
+        "SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT"
+    );
+    let batches: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM payment_batches")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(batches, 1, "seul le lot de B existe");
+}
+
+/// Story 15-6b, test 14 — **écriture d'achat sans ligne de crédit** : la
+/// facture va dans `failed[]` (donnée de CETTE facture), les autres restent.
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_batch_reports_a_purchase_entry_without_credit_line_per_invoice(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let ok = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("OK"), dec!(100.00)).await;
+    let bad = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("KO"), dec!(50.00)).await;
+    let empty_entry: i64 = sqlx::query_scalar(
+        "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, entry_date, journal, description) \
+         VALUES (?, ?, 999999, '2026-06-15', 'Achats', 'Écriture vide') RETURNING id",
+    )
+    .bind(ctx.seeded.company_id)
+    .bind(ctx.seeded.fiscal_year_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE supplier_invoices SET purchase_journal_entry_id = ? WHERE id = ?")
+        .bind(empty_entry)
+        .bind(bad)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let outcome = payment_batches::create_batch(
+        &pool,
+        new_batch(&ctx, vec![ok, bad]),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .unwrap();
+    let batch = outcome.batch.expect("lot créé avec la facture saine");
+    assert_eq!(batch.items.len(), 1);
+    assert_eq!(batch.items[0].supplier_invoice_id, ok);
+    assert_eq!(outcome.failed.len(), 1);
+    assert_eq!(outcome.failed[0].supplier_invoice_id, bad);
+    assert_eq!(
+        outcome.failed[0].error_code,
+        "SUPPLIER_INVOICE_PURCHASE_ENTRY_MALFORMED"
+    );
+    assert_eq!(
+        outcome.failed[0].details,
+        Some(serde_json::json!({
+            "reason": "no_credit_line_on_purchase_entry",
+            "purchaseEntryId": empty_entry,
+        }))
+    );
+}
+
+/// Story 15-6b, test 15 — **confirmation, puis remède** : le compte bancaire,
+/// relié au 2000 après la création, bloque la confirmation (400 contextualisé,
+/// lot toujours `generated`, rien d'écrit) ; relié de nouveau au 1020, elle
+/// passe.
+#[sqlx::test(migrations = "./test-schema")]
+async fn confirm_batch_refuses_then_passes_once_the_bank_is_relinked(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let l1020 = ledger_1020(&pool, &ctx).await;
+    link_bank(&pool, &ctx, l1020).await;
+    let inv = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("R"), dec!(100.00)).await;
+    let batch_id =
+        payment_batches::create_batch(&pool, new_batch(&ctx, vec![inv]), ctx.seeded.admin_user_id)
+            .await
+            .unwrap()
+            .batch
+            .expect("lot créé")
+            .batch
+            .id;
+    let payable = ctx.seeded.accounts["2000"];
+    link_bank(&pool, &ctx, payable).await;
+    let entries_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    let err = payment_batches::confirm_batch(
+        &pool,
+        ctx.seeded.company_id,
+        batch_id,
+        d(2026, 7, 2),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .expect_err("la confirmation doit être refusée");
+    match err {
+        DbError::SettlementCounterpartyIsClaimAccount {
+            account_id,
+            ref account_number,
+            claim: kesh_db::errors::ClaimSide::Payable,
+            role: kesh_db::errors::SettlementAccountRole::Counterparty,
+            batch: Some(ref ctx_batch),
+        } => {
+            assert_eq!(account_id, payable);
+            assert_eq!(account_number.as_deref(), Some("2000"));
+            assert_eq!(ctx_batch.payment_batch_id, batch_id);
+            assert_eq!(ctx_batch.supplier_invoice_id, inv);
+            assert_eq!(ctx_batch.supplier_invoice_number.as_deref(), Some("FF-001"));
+        }
+        other => panic!("refus contextualisé attendu, obtenu {other:?}"),
+    }
+    let (status,): (String,) = sqlx::query_as("SELECT status FROM payment_batches WHERE id = ?")
+        .bind(batch_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "generated");
+    let inv_status: String =
+        sqlx::query_scalar("SELECT status FROM supplier_invoices WHERE id = ?")
+            .bind(inv)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(inv_status, "open");
+    let entries_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(entries_after, entries_before, "aucun règlement écrit");
+
+    // Le remède : relier de nouveau le compte bancaire à son compte de banque.
+    link_bank(&pool, &ctx, l1020).await;
+    let confirmed = payment_batches::confirm_batch(
+        &pool,
+        ctx.seeded.company_id,
+        batch_id,
+        d(2026, 7, 2),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .expect("la confirmation passe après le remède");
+    assert_eq!(confirmed.batch.status, "confirmed");
+    assert_eq!(
+        account_balance(&pool, ctx.seeded.company_id, payable).await,
+        Decimal::ZERO
+    );
+}

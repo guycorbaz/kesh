@@ -14,7 +14,7 @@ use kesh_db::entities::{
     NewCreditNote, NewInvoice, NewInvoiceLine, NewJournalEntry, NewJournalEntryLine,
     SettlementChoice, SettlementWriteOffNature as Nature,
 };
-use kesh_db::errors::{DbError, SettlementCancelBlocker};
+use kesh_db::errors::{ClaimSide, DbError, SettlementAccountRole, SettlementCancelBlocker};
 use kesh_db::repositories::{
     credit_notes, invoice_settlements, invoice_settlements_write, invoices, reconciliation,
     reconciliation_cancel,
@@ -1185,4 +1185,255 @@ fn write_off_lines_put_a_sub_half_centime_remainder_on_the_rounding_account() {
         got,
         vec![(9, dec!(0.0040), dec!(0)), (2, dec!(0), dec!(0.0040))]
     );
+}
+
+// ---------------------------------------------------------------------------
+// Story 15-6b (#474, AC3 bis) — un compte d'écart désigné n'est pas la créance
+// ---------------------------------------------------------------------------
+
+/// Le chemin `confirm_retype` sans la route : la créance 1100 devient un compte
+/// de `account_type` (rôle retiré), et porte toujours la créance des ventes
+/// déjà validées. C'est ce qui rend le contrôle de TYPE d'un compte désigné
+/// insuffisant.
+async fn retype_receivable(pool: &MySqlPool, seeded: &SeededCompany, account_type: &str) {
+    sqlx::query("UPDATE accounts SET account_type = ?, role = NULL WHERE id = ?")
+        .bind(account_type)
+        .bind(seeded.accounts["1100"])
+        .execute(pool)
+        .await
+        .expect("changement de type");
+}
+
+/// Désigne `account_id` dans la colonne `column` des réglages de facturation.
+async fn designate(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    column: &str,
+    account_id: Option<i64>,
+) {
+    sqlx::query(&format!(
+        "UPDATE company_invoice_settings SET {column} = ? WHERE company_id = ?"
+    ))
+    .bind(account_id)
+    .bind(seeded.company_id)
+    .execute(pool)
+    .await
+    .expect("désignation");
+}
+
+/// Rien n'a été écrit : facture non payée, version inchangée, aucune ligne de
+/// règlement, aucune écriture neuve, aucun audit de solde.
+async fn assert_nothing_written(
+    pool: &MySqlPool,
+    inv: i64,
+    version_before: i32,
+    entries_before: i64,
+) {
+    let (paid_at, version): (Option<chrono::NaiveDateTime>, i32) =
+        sqlx::query_as("SELECT paid_at, version FROM invoices WHERE id = ?")
+            .bind(inv)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert!(paid_at.is_none(), "la facture ne doit pas être payée");
+    assert_eq!(version, version_before, "version inchangée");
+    let settlements: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM invoice_settlements WHERE invoice_id = ?")
+            .bind(inv)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(settlements, 0, "aucune ligne de règlement");
+    let entries: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(entries, entries_before, "aucune écriture neuve");
+    let audits: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'invoice.written_off' AND entity_id = ?",
+    )
+    .bind(inv)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(audits, 0, "aucun audit");
+}
+
+async fn entry_count(pool: &MySqlPool) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Story 15-6b, test 10 — **nature = créance** : la créance 1100 retypée en
+/// charge et désignée compte d'escompte ; solder en escompte écrirait
+/// `D 1100 / C 1100`. Refus `role: WriteOffNature`, rien d'écrit.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_write_off_nature_account_that_is_the_receivable_is_refused(pool: MySqlPool) {
+    let seeded = company(&pool).await;
+    let inv = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(0))]).await;
+    retype_receivable(&pool, &seeded, "Expense").await;
+    designate(
+        &pool,
+        &seeded,
+        "default_discount_account_id",
+        Some(seeded.accounts["1100"]),
+    )
+    .await;
+    let (v, n) = (version(&pool, inv).await, entry_count(&pool).await);
+
+    let err = write_off(&pool, &seeded, inv, Nature::Discount)
+        .await
+        .unwrap_err();
+    match err {
+        DbError::SettlementCounterpartyIsClaimAccount {
+            account_id,
+            ref account_number,
+            claim: ClaimSide::Receivable,
+            role: SettlementAccountRole::WriteOffNature,
+            batch: None,
+        } => {
+            assert_eq!(account_id, seeded.accounts["1100"]);
+            assert_eq!(account_number.as_deref(), Some("1100"));
+        }
+        other => panic!("refus attendu, obtenu {other:?}"),
+    }
+    assert_nothing_written(&pool, inv, v, n).await;
+}
+
+/// Story 15-6b, test 10 bis — **reste d'arrondi = créance** : la nature est un
+/// compte de charge distinct, mais le reste à quatre décimales envoie sa
+/// fraction de centime au compte d'arrondi, qui est la créance retypée. Le rôle
+/// suit la COLONNE lue (`rounding`), pas la nature du geste.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_rounding_remainder_account_that_is_the_receivable_is_refused_as_rounding(
+    pool: MySqlPool,
+) {
+    let seeded = company(&pool).await;
+    let inv = validated_invoice(&pool, &seeded, &[(dec!(3.3350), dec!(0))]).await;
+    retype_receivable(&pool, &seeded, "Expense").await;
+    designate(
+        &pool,
+        &seeded,
+        "default_rounding_account_id",
+        Some(seeded.accounts["1100"]),
+    )
+    .await;
+    let (v, n) = (version(&pool, inv).await, entry_count(&pool).await);
+
+    let err = write_off(&pool, &seeded, inv, Nature::Discount)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            DbError::SettlementCounterpartyIsClaimAccount {
+                claim: ClaimSide::Receivable,
+                role: SettlementAccountRole::Rounding,
+                ..
+            }
+        ),
+        "{err:?}"
+    );
+    assert_nothing_written(&pool, inv, v, n).await;
+}
+
+/// Story 15-6b — la nature `rounding` EST le compte d'arrondi : une seule
+/// comparaison, sous `role: Rounding`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn the_rounding_nature_on_the_receivable_is_refused_as_rounding(pool: MySqlPool) {
+    let seeded = company(&pool).await;
+    let inv = validated_invoice(&pool, &seeded, &[(dec!(0.0300), dec!(0))]).await;
+    retype_receivable(&pool, &seeded, "Expense").await;
+    designate(
+        &pool,
+        &seeded,
+        "default_rounding_account_id",
+        Some(seeded.accounts["1100"]),
+    )
+    .await;
+    let (v, n) = (version(&pool, inv).await, entry_count(&pool).await);
+
+    let err = write_off(&pool, &seeded, inv, Nature::Rounding)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            DbError::SettlementCounterpartyIsClaimAccount {
+                role: SettlementAccountRole::Rounding,
+                ..
+            }
+        ),
+        "{err:?}"
+    );
+    assert_nothing_written(&pool, inv, v, n).await;
+}
+
+/// Story 15-6b, test 10 ter — **ordre des refus du solde** : la nature égale à
+/// la créance est refusée aussitôt la créance lue, AVANT la lecture de la TVA
+/// due — donc avant son `CONFIGURATION_REQUIRED`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_nature_on_the_receivable_is_refused_before_a_missing_vat_payable(pool: MySqlPool) {
+    let seeded = company(&pool).await;
+    let inv = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(8.1))]).await;
+    retype_receivable(&pool, &seeded, "Expense").await;
+    designate(
+        &pool,
+        &seeded,
+        "default_discount_account_id",
+        Some(seeded.accounts["1100"]),
+    )
+    .await;
+    designate(&pool, &seeded, "default_vat_payable_account_id", None).await;
+    let (v, n) = (version(&pool, inv).await, entry_count(&pool).await);
+
+    let err = write_off(&pool, &seeded, inv, Nature::Discount)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            DbError::SettlementCounterpartyIsClaimAccount {
+                role: SettlementAccountRole::WriteOffNature,
+                ..
+            }
+        ),
+        "la nature précède la TVA due : {err:?}"
+    );
+    assert_nothing_written(&pool, inv, v, n).await;
+}
+
+/// Story 15-6b — **TVA due = créance** : aucun contrôle de type ne garde ce
+/// compte au moment d'écrire ; la comparaison est sa seule garde.
+#[sqlx::test(migrations = "./test-schema")]
+async fn a_vat_payable_account_that_is_the_receivable_is_refused(pool: MySqlPool) {
+    let seeded = company(&pool).await;
+    let inv = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(8.1))]).await;
+    retype_receivable(&pool, &seeded, "Liability").await;
+    designate(
+        &pool,
+        &seeded,
+        "default_vat_payable_account_id",
+        Some(seeded.accounts["1100"]),
+    )
+    .await;
+    let (v, n) = (version(&pool, inv).await, entry_count(&pool).await);
+
+    let err = write_off(&pool, &seeded, inv, Nature::Discount)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(
+            err,
+            DbError::SettlementCounterpartyIsClaimAccount {
+                claim: ClaimSide::Receivable,
+                role: SettlementAccountRole::VatPayable,
+                ..
+            }
+        ),
+        "{err:?}"
+    );
+    assert_nothing_written(&pool, inv, v, n).await;
 }

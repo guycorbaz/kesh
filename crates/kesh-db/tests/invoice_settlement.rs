@@ -1265,3 +1265,326 @@ async fn une_cloture_concurrente_attend_l_annulation(pool: MySqlPool) {
         "rien n'a été annulé"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Story 15-6b (#474) — un règlement ne vise pas le compte qu'il solde
+// ---------------------------------------------------------------------------
+mod contrepartie_distincte_de_la_creance {
+    use super::*;
+    use kesh_db::errors::{ClaimSide, SettlementAccountRole};
+
+    /// Un compte bancaire lié au compte du grand livre `ledger_id`.
+    async fn bank_account_linked_to(
+        pool: &MySqlPool,
+        seeded: &SeededCompany,
+        ledger_id: i64,
+    ) -> i64 {
+        sqlx::query_scalar(
+            "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary, journal_account_id) \
+             VALUES (?, 'UBS', 'CH4431999123000889012', TRUE, ?) RETURNING id",
+        )
+        .bind(seeded.company_id)
+        .bind(ledger_id)
+        .fetch_one(pool)
+        .await
+        .expect("compte bancaire")
+    }
+
+    /// Le compte de banque 1020, absent du seed (`test_fixtures.rs`).
+    async fn bank_ledger_1020(pool: &MySqlPool, seeded: &SeededCompany) -> i64 {
+        sqlx::query_scalar(
+            "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
+             VALUES (?, '1020', 'Banque', 'Asset', 1, 1) RETURNING id",
+        )
+        .bind(seeded.company_id)
+        .fetch_one(pool)
+        .await
+        .expect("compte banque")
+    }
+
+    async fn settle(
+        pool: &MySqlPool,
+        seeded: &SeededCompany,
+        inv_id: i64,
+        choice: SettlementChoice,
+        amount: Decimal,
+    ) -> Result<invoice_settlements_write::SettlementOutcome, DbError> {
+        invoice_settlements_write::settle_invoice(
+            pool,
+            seeded.admin_user_id,
+            seeded.company_id,
+            inv_id,
+            choice,
+            amount,
+            ymd(2026, 3, 5),
+        )
+        .await
+    }
+
+    async fn scalar(pool: &MySqlPool, sql: &str, id: i64) -> i64 {
+        sqlx::query_scalar(sql)
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .expect("lecture")
+    }
+
+    /// Rien n'est écrit : ni écriture, ni ligne de règlement, ni `paid_at`, ni
+    /// `version`, ni audit.
+    async fn assert_nothing_written(
+        pool: &MySqlPool,
+        inv_id: i64,
+        (entries_before, version_before): (i64, i32),
+    ) {
+        let (paid_at, version): (Option<chrono::NaiveDateTime>, i32) =
+            sqlx::query_as("SELECT paid_at, version FROM invoices WHERE id = ?")
+                .bind(inv_id)
+                .fetch_one(pool)
+                .await
+                .unwrap();
+        assert!(paid_at.is_none(), "paid_at inchangé");
+        assert_eq!(version, version_before, "version inchangée");
+        assert_eq!(
+            scalar(
+                pool,
+                "SELECT COUNT(*) FROM invoice_settlements WHERE invoice_id = ?",
+                inv_id
+            )
+            .await,
+            0,
+            "aucune ligne de règlement"
+        );
+        let entries: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_eq!(entries, entries_before, "aucune écriture neuve");
+        assert_eq!(
+            scalar(
+                pool,
+                "SELECT COUNT(*) FROM audit_log WHERE entity_type = 'invoice' \
+                 AND action IN ('invoice.paid', 'invoice.partially_settled') AND entity_id = ?",
+                inv_id
+            )
+            .await,
+            0,
+            "aucun audit"
+        );
+    }
+
+    /// L'état avant le geste : nombre d'écritures, `version` de la facture.
+    async fn before(pool: &MySqlPool, inv_id: i64) -> (i64, i32) {
+        let entries: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        let version: i32 = sqlx::query_scalar("SELECT version FROM invoices WHERE id = ?")
+            .bind(inv_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        (entries, version)
+    }
+
+    fn assert_counterparty_refusal(err: &DbError, receivable: i64) {
+        match err {
+            DbError::SettlementCounterpartyIsClaimAccount {
+                account_id,
+                account_number,
+                claim: ClaimSide::Receivable,
+                role: SettlementAccountRole::Counterparty,
+                batch: None,
+            } => {
+                assert_eq!(*account_id, receivable);
+                assert_eq!(account_number.as_deref(), Some("1100"));
+            }
+            other => panic!("refus de contrepartie attendu, obtenu {other:?}"),
+        }
+    }
+
+    /// Test 1 — **compte interne = créance** : `D 1100 / C 1100` refusé.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn an_internal_account_that_is_the_receivable_is_refused(pool: MySqlPool) {
+        let seeded = seed_accounting_company(&pool).await.expect("seed");
+        let creance = seeded.accounts["1100"];
+        let inv_id = validated_invoice(&pool, &seeded, dec!(100.00), ymd(2026, 3, 1)).await;
+        let n = before(&pool, inv_id).await;
+
+        let err = settle(
+            &pool,
+            &seeded,
+            inv_id,
+            SettlementChoice::InternalAccount {
+                account_id: creance,
+            },
+            dec!(100.00),
+        )
+        .await
+        .expect_err("la créance comme contrepartie doit être refusée");
+        assert_counterparty_refusal(&err, creance);
+        assert_nothing_written(&pool, inv_id, n).await;
+    }
+
+    /// Test 2 — **virement sur un compte bancaire lié au 1100** : même refus.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn a_bank_account_linked_to_the_receivable_is_refused(pool: MySqlPool) {
+        let seeded = seed_accounting_company(&pool).await.expect("seed");
+        let creance = seeded.accounts["1100"];
+        let inv_id = validated_invoice(&pool, &seeded, dec!(100.00), ymd(2026, 3, 1)).await;
+        let bank_account_id = bank_account_linked_to(&pool, &seeded, creance).await;
+        let n = before(&pool, inv_id).await;
+
+        let err = settle(
+            &pool,
+            &seeded,
+            inv_id,
+            SettlementChoice::BankTransfer { bank_account_id },
+            dec!(100.00),
+        )
+        .await
+        .expect_err("un compte bancaire lié à la créance doit être refusé");
+        assert_counterparty_refusal(&err, creance);
+        assert_nothing_written(&pool, inv_id, n).await;
+    }
+
+    /// Test 3 — non-régression : un règlement ordinaire, par banque 1020 puis
+    /// par la caisse, reste accepté.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn an_ordinary_settlement_is_still_accepted(pool: MySqlPool) {
+        let seeded = seed_accounting_company(&pool).await.expect("seed");
+        let inv_id = validated_invoice(&pool, &seeded, dec!(100.00), ymd(2026, 3, 1)).await;
+        let ledger = bank_ledger_1020(&pool, &seeded).await;
+        let bank_account_id = bank_account_linked_to(&pool, &seeded, ledger).await;
+
+        let out = settle(
+            &pool,
+            &seeded,
+            inv_id,
+            SettlementChoice::BankTransfer { bank_account_id },
+            dec!(30.00),
+        )
+        .await
+        .expect("virement");
+        assert_eq!(out.amount_due_after, dec!(70.00));
+        let out = settle(
+            &pool,
+            &seeded,
+            inv_id,
+            SettlementChoice::InternalAccount {
+                account_id: seeded.accounts["1000"],
+            },
+            dec!(70.00),
+        )
+        .await
+        .expect("espèces");
+        assert!(out.fully_settled);
+        assert_eq!(solde(&pool, seeded.accounts["1100"]).await, Decimal::ZERO);
+    }
+
+    /// Test 4 — **montant excessif sur 1100** : le refus est celui de la
+    /// contrepartie, pas le trop-perçu (la contrepartie précède).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn the_counterparty_refusal_comes_before_the_overpayment(pool: MySqlPool) {
+        let seeded = seed_accounting_company(&pool).await.expect("seed");
+        let creance = seeded.accounts["1100"];
+        let inv_id = validated_invoice(&pool, &seeded, dec!(100.00), ymd(2026, 3, 1)).await;
+        let n = before(&pool, inv_id).await;
+
+        let err = settle(
+            &pool,
+            &seeded,
+            inv_id,
+            SettlementChoice::InternalAccount {
+                account_id: creance,
+            },
+            dec!(500.00),
+        )
+        .await
+        .expect_err("refus attendu");
+        assert_counterparty_refusal(&err, creance);
+        assert_nothing_written(&pool, inv_id, n).await;
+    }
+
+    /// Test 9 — **ordre** : la créance archivée comme compte interne rend
+    /// l'ancien refus (`INACTIVE_OR_INVALID_ACCOUNTS`), qui prime.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn an_archived_receivable_as_internal_account_keeps_the_older_refusal(pool: MySqlPool) {
+        let seeded = seed_accounting_company(&pool).await.expect("seed");
+        let creance = seeded.accounts["1100"];
+        let inv_id = validated_invoice(&pool, &seeded, dec!(100.00), ymd(2026, 3, 1)).await;
+        sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+            .bind(creance)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let err = settle(
+            &pool,
+            &seeded,
+            inv_id,
+            SettlementChoice::InternalAccount {
+                account_id: creance,
+            },
+            dec!(100.00),
+        )
+        .await
+        .expect_err("refus attendu");
+        assert!(
+            matches!(err, DbError::InactiveOrInvalidAccounts),
+            "l'ancien refus prime : {err:?}"
+        );
+    }
+
+    /// Test 11 — **arrondi du règlement = créance** (AC3 bis) : la créance
+    /// retypée en charge et désignée compte d'arrondi ; un paiement au centime
+    /// d'un reste brut hors centime, par la caisse, écrirait l'écart sur 1100.
+    /// Refus `role: Rounding` — le compte interne, valide, a été contrôlé avant.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn a_payment_rounding_account_that_is_the_receivable_is_refused(pool: MySqlPool) {
+        let seeded = seed_accounting_company(&pool).await.expect("seed");
+        let creance = seeded.accounts["1100"];
+        kesh_db::test_fixtures::designate_rounding_account(&pool, seeded.company_id)
+            .await
+            .expect("compte d'arrondi");
+        let inv_id = validated_invoice(&pool, &seeded, dec!(10.0050), ymd(2026, 3, 1)).await;
+        sqlx::query("UPDATE accounts SET account_type = 'Expense', role = NULL WHERE id = ?")
+            .bind(creance)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query(
+            "UPDATE company_invoice_settings SET default_rounding_account_id = ? WHERE company_id = ?",
+        )
+        .bind(creance)
+        .bind(seeded.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+        let n = before(&pool, inv_id).await;
+
+        let err = settle(
+            &pool,
+            &seeded,
+            inv_id,
+            SettlementChoice::InternalAccount {
+                account_id: seeded.accounts["1000"],
+            },
+            dec!(10.01),
+        )
+        .await
+        .expect_err("refus attendu");
+        assert!(
+            matches!(
+                err,
+                DbError::SettlementCounterpartyIsClaimAccount {
+                    claim: ClaimSide::Receivable,
+                    role: SettlementAccountRole::Rounding,
+                    batch: None,
+                    ..
+                }
+            ),
+            "{err:?}"
+        );
+        assert_nothing_written(&pool, inv_id, n).await;
+    }
+}
