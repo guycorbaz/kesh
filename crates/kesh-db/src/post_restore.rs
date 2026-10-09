@@ -1141,9 +1141,12 @@ mod tests {
         // la troisième est cette migration même. ⛔ La sienne ne porte PAS le
         // marqueur « Hors fenêtre » : elle EST la fenêtre, et son fondement est
         // la couverture, pas la chronologie.
+        // ⚠️ **15 → 16 (Story 15-1a-i, #518)** : `20261009000001`, le bump
+        // `kesh_version_min_required` à 0.13.0 — `Durable`, patron des deux bumps
+        // précédents (table système jamais restaurée, DDL pur sinon).
         assert_eq!(
             EXEMPT_MIGRATIONS.len(),
-            15,
+            16,
             "le registre d'exemptions a changé de taille : déclarer le fondement de l'entrée \
              neuve (Durable, ou PerishableSince(<borne>) si elle argumente sur un fait daté), \
              puis bumper ce nombre."
