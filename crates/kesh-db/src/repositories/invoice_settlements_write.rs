@@ -26,6 +26,7 @@ use crate::errors::{
 };
 use crate::repositories::invoice_settlements::{ClaimSubject, GapAccountRole, PaymentAgainstDue};
 use crate::repositories::journal_entries::ReversalAuthority;
+use crate::repositories::letterings::{self, Actor};
 use crate::repositories::settlement_cancellation::{
     SettlementCancelHit, settlement_entry_cancel_blocker,
 };
@@ -328,6 +329,23 @@ pub async fn settle_invoice(
             "règlement : la facture n'a pas pu être marquée modifiée (version)".into(),
         ));
     }
+
+    // (8 bis) Le lettrage de la pièce (Story 15-1a2-i, P4) : une facture soldée
+    //     est lettrée `document` avec ses règlements. L'exercice tenu est celui
+    //     de l'écriture de règlement, verrouillé en (5). ⛔ Un règlement n'échoue
+    //     jamais à cause du lettrage : la synchronisation s'abstient plutôt que
+    //     de refuser (compte non lettrable, périodes closes).
+    letterings::sync_invoice_in_tx(
+        &mut tx,
+        company_id,
+        invoice_id,
+        fy.id,
+        Actor {
+            user_id,
+            api_key_id: None,
+        },
+    )
+    .await?;
 
     // (9) ⛔ L'audit, dans la MÊME transaction. Un règlement est un fait
     //     comptable : s'il s'enregistre sans laisser de trace, la piste d'audit
@@ -651,6 +669,21 @@ pub async fn write_off_invoice(
         ));
     }
 
+    // (8 bis) Le lettrage de la pièce (Story 15-1a2-i, P4) : le solde éteint la
+    //     facture, qui est lettrée `document` avec ses règlements et son solde.
+    //     Exercice tenu : celui de l'écriture de solde, verrouillé en (6).
+    letterings::sync_invoice_in_tx(
+        &mut tx,
+        company_id,
+        invoice_id,
+        fy.id,
+        Actor {
+            user_id,
+            api_key_id: None,
+        },
+    )
+    .await?;
+
     // (9) L'audit, dans la même transaction.
     let vat_corrected: Decimal = shares.iter().map(|s| s.vat_amount).sum();
     audit_log::insert_in_tx(
@@ -824,7 +857,10 @@ pub async fn cancel_settlement_in_tx(
     //     elle voit l'état juste : la clôture concurrente attend désormais ce
     //     verrou, et l'instantané de lecture de la transaction ne se fige qu'à
     //     sa première lecture non verrouillante, qui vient APRÈS.
-    sqlx::query(
+    //
+    //     Sa valeur est GARDÉE (Story 15-1a2-i) : c'est l'exercice tenu de la
+    //     dissolution de l'étape (3 bis).
+    let settlement_fiscal_year_id: i64 = sqlx::query_scalar(
         "SELECT fy.id FROM journal_entries je \
          JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
          WHERE je.id = ? AND je.company_id = ? FOR UPDATE",
@@ -851,6 +887,26 @@ pub async fn cancel_settlement_in_tx(
     {
         return Err(DbError::SettlementNotCancellable { blocker });
     }
+
+    // (3 bis) Le lettrage de la pièce se défait AVANT la contre-passation
+    //     (Story 15-1a2-i, P4) — après les refus, pour que la cause rendue
+    //     reste celle du refus (P5) : la contre-passation lettre ensuite le
+    //     règlement avec son miroir (15-1a-ii R6), et la créance redevient
+    //     ouverte. Aucun groupe (règlement partiel) → no-op. L'exercice tenu est
+    //     celui de l'écriture de règlement, verrouillé en (2-bis) et ouvert
+    //     (rang 2) ; le rang 2 bis garantit qu'une ligne du groupe est en
+    //     période ouverte.
+    letterings::dissolve_invoice_document_group_in_tx(
+        tx,
+        company_id,
+        invoice_id,
+        settlement_fiscal_year_id,
+        Actor {
+            user_id,
+            api_key_id: None,
+        },
+    )
+    .await?;
 
     // (4) La contre-passation, au titre de ce règlement et de lui seul.
     let reversal = journal_entries::reverse_owned_in_tx(

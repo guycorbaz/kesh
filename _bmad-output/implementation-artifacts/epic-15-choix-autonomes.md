@@ -7700,3 +7700,27 @@ l'import (#458–#461).
 - **Retenu** : un **second règlement de 60.00**, même date `D − 10` ; le règlement examiné reste celui de 40.00, inchangé pour les autres rangs ; groupe sur les trois lignes de créance (vente, deux règlements) ; verrou par `lock_books` à `D − 10`.
 - **Écartées** : régler 100.00 d'emblée quand le 2 bis est demandé (le montage des autres rangs changerait de montant selon la combinaison).
 - **Réversible** : oui.
+
+## C-15-1a2-i-1 — 15-1a2-i (développement) : `poser_groupe_document` trouve le groupe que le geste a posé
+- **Contexte** : depuis cette story, le règlement qui solde une facture pose lui-même le groupe `document` ; l'aide de montage de la 15-1a2-0 (`tests/support/document_group.rs`), qui exige des lignes libres (`… AND lettering_key IS NULL`, puis assertion sur le nombre de lignes marquées), aurait échoué dans six binaires.
+- **Retenu** : l'aide **trouve** le groupe quand toutes les lignes demandées sont déjà marquées, et lui applique les **mêmes contrôles de montage** (somme nulle, clé = plus petite ligne, taille) ; des marques partielles ou une autre clé font échouer le montage. Les tests du rang 2 bis restent inchangés et éprouvent désormais un groupe posé par le geste.
+- **Écartées** : effacer puis reposer le groupe en SQL (masquerait le geste réel) ; réécrire les montages des six binaires (fondre l'aide dans `lettering_documents.rs`, prévu « possible » par C-15-1a2-0-1, sans gain ici).
+- **Réversible** : oui.
+
+## C-15-1a2-i-2 — 15-1a2-i (développement, T0 a) : index forcés dans la découverte verrouillante
+- **Contexte** : l'`EXPLAIN` de la découverte de P3 (relevé T0 a) montre que l'optimiseur peut choisir `idx_jel_account` (filtre `account_id = A`) au lieu de `idx_jel_entry` ; sous `FOR UPDATE`, le parcours verrouillerait **toutes** les lignes du compte de créance de la société. De même, `credit_notes` peut être lu par `idx_credit_notes_company_status`, qui verrouillerait tous les avoirs émis de la société.
+- **Retenu** : `FORCE INDEX (idx_jel_entry)` sur les lignes, puis `STRAIGHT_JOIN journal_entries FORCE INDEX (PRIMARY)` sur leurs en-têtes (l’optimiseur proposait `idx_journal_entries_company_date`, qui verrouillerait les en-têtes de toute la société), `FORCE INDEX (uq_credit_notes_invoice)` sur les avoirs, `FORCE INDEX (idx_invoice_settlements_company_invoice)` sur les règlements — le verrou porte sur les lignes des écritures de la pièce, l'avoir et les règlements de la facture, seuls.
+- **Écartées** : se fier à l'optimiseur (plan instable selon les statistiques, et la fiche exige « pas de balayage ») ; une lecture non verrouillante (lirait l'instantané, finding F-3).
+- **Réversible** : oui.
+
+## C-15-1a2-i-3 — 15-1a2-i (développement) : `sync_invoice_in_tx` rend `Unchanged` sur un brouillon
+- **Contexte** : P1 ne définit le groupe que pour une facture validée ou annulée par avoir ; aucun geste n'appelle la synchronisation sur un brouillon, mais le rattrapage de la 15-1a2-ii pourrait balayer toutes les factures.
+- **Retenu** : brouillon (aucune écriture de vente) → `Unchanged`, rien n'est lu au-delà ; facture non brouillon sans écriture de vente → `Invariant` (état que les gestes ne produisent pas).
+- **Écartées** : `Invariant` pour tout brouillon (ferait échouer un balayage innocent) ; `NotFound` (confondu avec une facture d'une autre société).
+- **Réversible** : oui.
+
+## C-15-1a2-i-4 — 15-1a2-i (développement) : le README annonce le lettrage des pièces clientes livré
+- **Contexte** : la feuille de route du README listait « le lettrage des pièces clients puis fournisseurs (15-1a2) » à venir ; cette story livre la part cliente (avec le refus de la 15-1a2-0).
+- **Retenu** : 15-1a2-0 et 15-1a2-i passent dans « Livré sur `main` » (vrai au merge de la PR qui les porte), la 15-1a2-ii reste « À venir ».
+- **Écartées** : attendre la 15-1a2-ii (la règle du dépôt veut la mise à jour dans le même commit que ce qui la déclenche).
+- **Réversible** : oui.

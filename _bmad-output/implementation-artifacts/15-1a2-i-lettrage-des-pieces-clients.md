@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev *(découpée de la 15-1a2 le 2026-10-09 à la remédiation de sa validation P1 — C-15-1a2-1 ;
+review *(développée le 2026-10-09 — Opus 5.5, en autonomie ; revue de code à mener)* — ready-for-dev *(découpée de la 15-1a2 le 2026-10-09 à la remédiation de sa validation P1 — C-15-1a2-1 ;
 validation P2 remédiée le 2026-10-09 — **refus** plutôt qu'abstention au délettrage, C-15-1a2-10 ;
 validation P3 remédiée le 2026-10-09 — le refus **extrait** dans la story préalable **15-1a2-0**,
 C-15-1a2-19, la dérogation C-15-1a2-13 retirée ; validation P4 remédiée le 2026-10-09 — fixture partagée sortie
@@ -639,13 +639,13 @@ par la 15-1a2-0 (code, textes, écran) ; il ne devient **atteignable** qu'ici. P
 
 ## Tasks
 
-- [ ] **T0** — Relevés au sol sur la base du gate : (a) `EXPLAIN` de la requête de découverte de P3 (accès
+- [x] **T0** — Relevés au sol sur la base du gate : (a) `EXPLAIN` de la requête de découverte de P3 (accès
       par clé primaire / `idx` des écritures, pas de balayage de `journal_entry_lines`) ; (b) re-greper les
       ancres de P4 par le nom (`grep -nF "pub async fn settle_invoice"`, etc.) sur la base réelle du
       développement ; (c) vérifier que les routes appelantes restent `Rejouee` (`audit_route_registry.rs`) :
       `POST /invoices/{id}/settlements`, `…/settlements/{settlementId}/cancel`, `…/write-off`,
       `POST /credit-notes`, `POST /reconciliation/accept`, `POST /reconciliation/transactions/{id}/cancel`.
-- [ ] **T1** (P3) — `letterings.rs` : `SyncOutcome`, `DocumentRef` (défini en P3, champs et sérialisation
+- [x] **T1** (P3) — `letterings.rs` : `SyncOutcome`, `DocumentRef` (défini en P3, champs et sérialisation
       écrits), `create_group_inner` / `dissolve_group_inner` (+ `document`), extension de
       `audit_details`, `sync_invoice_in_tx`, `dissolve_invoice_document_group_in_tx` — sur la règle des
       périodes de la 15-1a2-0 (`open_period_rule`, `lines_in_open_period`), sans seconde factorisation ;
@@ -659,14 +659,14 @@ par la 15-1a2-0 (code, textes, écran) ; il ne devient **atteignable** qu'ici. P
       message d'échec `:291` suivent (T4) ; `kesh-core/src/lettering.rs:14` (« les fonctions de refus que la
       primitive appelle à son rang ») **reste vrai** — la primitive les appelle par son corps — : trié, non
       réécrit. Le décompte « exactement deux écritures de la marque » (`letterings_lexical.rs:299-303`) tient.
-- [ ] **T2** (P4) — Les cinq appels du tableau, chacun à la place indiquée, avec l'exercice tenu et
+- [x] **T2** (P4) — Les cinq appels du tableau, chacun à la place indiquée, avec l'exercice tenu et
       l'acteur ; `cancel_settlement_in_tx` client garde l'`id` d'exercice de l'étape (2-bis).
-- [ ] **T3** (P4, AC15) — `accept_one_invoice` : appel après (g), mappage per-proposal (fonction pure
+- [x] **T3** (P4, AC15) — `accept_one_invoice` : appel après (g), mappage per-proposal (fonction pure
       `lettering_error_to_failed_proposal`, signature d'AC15 (d), à côté de `claim_account_failed_proposal`,
       testée).
-- [ ] **T4** (AC8 part i) — Tests lexicaux dans `letterings_lexical.rs` ; réalignement de
+- [x] **T4** (AC8 part i) — Tests lexicaux dans `letterings_lexical.rs` ; réalignement de
       `each_primitive_checks_the_rows_its_update_found` sur `*_inner`.
-- [ ] **T5** — Tests (liste ci-dessous) ; la **fixture partagée** d'AC5 vit **hors de `src/`**, dans
+- [x] **T5** — Tests (liste ci-dessous) ; la **fixture partagée** d'AC5 vit **hors de `src/`**, dans
       **`crates/kesh-db/tests/support/lettering_documents.rs`**, fonction `seed_lettering_documents` et prédicat
       d'AC5 (validation P4, M-1 = F4-1 ; C-15-1a2-28). Elle est incluse par `#[path = "support/lettering_documents.rs"]
       mod lettering_support;` dans `lettering_documents.rs`, dans le binaire de rattrapage de la 15-1a2-ii (son
@@ -710,7 +710,7 @@ par la 15-1a2-0 (code, textes, écran) ; il ne devient **atteignable** qu'ici. P
         lui-même est couvert côté `kesh-api` (AC15 a, c).
       La fixture contient **les deux exceptions d'AC5** (validation P4, L-6) — sans elles, le filtre d'exceptions
       du test d'accord ne serait exercé par aucune facture, et une exception trop large resterait verte.
-- [ ] **T6** (AC12, AC18) — CHANGELOG, `api-external.md` (`:223`, `:291`, `:299`, `:324` ; et, pour AC18, `:379`,
+- [x] **T6** (AC12, AC18) — CHANGELOG, `api-external.md` (`:223`, `:291`, `:299`, `:324` ; et, pour AC18, `:379`,
       `:426`, `:434`, `:462`, `:566`), manuels FR (utilisateur : AC12 et les sites d'AC18, encadré `:588-594` et
       note `:626-631` compris ; administration `:2101`) + `make fr` + PDF aplati, greps de propagation
       (AC12, AC18).
@@ -835,11 +835,106 @@ modules au grain le plus fin (ci-dessus) et n'a plus de dérogation.
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), en autonomie, worktree `kesh-15-1a2-i`, base `46b08cde` (tête de la 15-1a2-0).
+
 ### Completion Notes List
+
+**T0 — relevés au sol** (base du gate `kesh_1a2i`). (a) `EXPLAIN` de la découverte : sur table peu peuplée,
+l'optimiseur prenait `idx_jel_account` pour les lignes (le `FOR UPDATE` aurait verrouillé toutes les lignes du
+compte de créance), `idx_journal_entries_company_date` pour l'en-tête et `idx_credit_notes_company_status` pour
+l'avoir → index **forcés** (`idx_jel_entry`, `STRAIGHT_JOIN … FORCE INDEX (PRIMARY)`, `uq_credit_notes_invoice`,
+`idx_invoice_settlements_company_invoice`), plans relus : `range idx_jel_entry` puis `eq_ref PRIMARY`
+(C-15-1a2-i-2). ⚠️ Observation **hors périmètre** : l'acte 1 de la primitive (`LOCK_LINES_BY_ID_SQL`, 15-1a-i)
+présente la même dégénérescence de plan sur base vide (`ref idx_journal_entries_company_date`) ; non touché,
+signalé. (b) ancres de P4 re-grepées par le nom (`settle_invoice`, `write_off_invoice`, `cancel_settlement_in_tx`,
+`create_credit_note`, `accept_one_invoice`, `claim_account_failed_proposal`) : présentes, conformes. (c) les six
+routes appelantes sont `Rejouee` (`audit_route_registry.rs` : `credit_notes::create_credit_note`,
+`invoices::settle_invoice_handler`, `write_off_invoice_handler`, `cancel_invoice_settlement_handler`,
+`reconciliation::post_accept`, `post_cancel_reconciliation`).
+
+**T1** — `letterings.rs` : `SyncOutcome`, `DocumentRef`, corps privés `create_group_inner` / `dissolve_group_inner`
+(les primitives publiques y délèguent avec `None`), `audit_details(group, document)` (trois clés, `documentNumber`
+présent et `null` sans numéro), `sync_invoice_in_tx` (étapes 1 à 6, étape 3 terminale), 
+`dissolve_invoice_document_group_in_tx`, sur `lines_in_open_period` de la 15-1a2-0 (aucune seconde
+factorisation). Énoncés R3 réécrits : en-tête du module, `entities/journal_entry.rs` (doc de `lettering_key`),
+`letterings_lexical.rs` (en-tête, message d'échec). Triés **vrais, non réécrits** (ils parlent de la primitive
+vue par les routes) : `kesh-core/src/lettering.rs:14`, `kesh-db/src/errors.rs:1129`,
+`kesh-db/tests/letterings.rs:2`, `kesh-api/tests/audit_route_registry.rs:248`, `journal_entries.rs:2364`.
+Brouillon → `Unchanged` (C-15-1a2-i-3). « Exactement deux écritures de la marque » : tient (`letterings_lexical`).
+
+**T2** — cinq appels : `settle_invoice` et `write_off_invoice` après l'`UPDATE invoices` (exercice `fy`),
+`create_credit_note` après la bascule (11) (exercice de l'avoir), `cancel_settlement_in_tx` après les refus de
+l'étape (3), avant `reverse_owned_in_tx` (l'`id` d'exercice de l'étape (2-bis) est gardé). **T3** — `accept_one_invoice`
+après (g), `lettering_error_to_failed_proposal` à côté de `claim_account_failed_proposal`. **T4** — trois tests
+lexicaux neufs, `each_primitive_checks_the_rows_its_update_found` réaligné sur `*_inner`. **T5** — fixture
+`tests/support/lettering_documents.rs` (C-15-1a2-28 ; incluse par `lettering_documents.rs`, `letterings.rs` (AC9)
+et `rejeu_interblocage_e2e.rs`) ; `support/document_group.rs` de la 15-1a2-0 trouve désormais le groupe posé par
+le geste (C-15-1a2-i-1). **T6** — CHANGELOG (deux entrées, AC12 et AC18), `api-external.md`, manuels FR, README
+(feuille de route, C-15-1a2-i-4), `make fr`.
+
+**Reçu B-2 de la 15-1a2-0** (texte `reconciliation-cancel-blocked-lettering-closed` pour un lien `Entry` hérité
+qui pointe la vente) : le texte reste vrai sur le fond — la vente est dans le groupe de sa facture —, mais son
+remède ne lève que le rang 2 bis ; le socle refuse ensuite par `OWNED_BY_INVOICE`. L'état est déclaré **inexistant**
+par l'arbitrage Q1 (`reconciliation_cancel.rs:26-31` : Kesh n'est pas en production, aucun chemin) : trié, texte
+**non réécrit**.
+
+**Tests** (périmètre `46b08cde` → commit de développement ; `git diff 46b08cde -- crates | grep -cE
+'^\+\s*#\[(sqlx::test|tokio::test|test)'` = **28**) : `lettering_documents.rs` **21** (les 20 prévus +
+`only_the_anchor_of_the_sale_is_in_the_group`, ajouté après la survie de la mutation M12), `letterings_lexical.rs` 3,
+`reconciliation_e2e.rs` 2, `rejeu_interblocage_e2e.rs` 1, `routes/reconciliation.rs` 1 ; **1 étendu**
+(`lettering_invariants`, AC9 : `violations_des_pieces` et deux contrôles négatifs). AC15 (c) porte un **témoin**
+(rapprochement seul, accepté et lettré) pour ne pas être vert à vide.
+
+**Mutations** (exécutées une à une, restaurées, fichier retouché ; filtre : binaires `lettering_documents`,
+`letterings_lexical`, `letterings`, ou les tests `kesh-api` visés) — **12 tuées sur 12** : M1 sans synchronisation au
+règlement (16 rouges), M2 au solde (5), M3 sans dissolution à l'annulation (8), M4 sans synchronisation à l'avoir (4),
+M5 étape 3 non terminale (1 : `receivable_not_letterable_is_skipped`), M6 somme ignorée (11), M7 périodes ignorées
+(2), M8 audit sans pièce (1), M9 `LETTERING_CONCURRENT_CHANGE` mappé hors `INTERNAL_ERROR` (1), M10 sans
+synchronisation au rapprochement (2), M11 marque étrangère acceptée (1), M12 ancre élargie à toute ligne de vente
+(survivante au premier passage → test ajouté → 1). ⚠️ Les mutations « appel neutralisé par `if false` » (M3, M4)
+ne font pas rougir les détecteurs lexicaux (le texte de l'appel reste) : c'est voulu, ils gardent l'inventaire,
+les tests de dépôt gardent le comportement.
+
+**Gates au commit de développement** : `scripts/test-fast.sh --no-lint` (avant les tests neufs) **3233 passés, 4
+ignorés** ; binaires ciblés verts (`lettering_documents` 21/21, `letterings` 33/33, `letterings_lexical` 6/6,
+`rejeu_interblocage_e2e` 11/11, trois tests `kesh-api` ciblés). **Gate complet, frontend et E2E : au dernier commit
+de code, après le rebase sur `main`.** Frontend non touché (`git diff --stat 46b08cde -- frontend` vide).
+
+**Contrôles de documentation.** PDF aplati : `(ne se lettrent pas encore|Kesh ne lettre pas encore)` → 0 ; l'item du
+motif dans les quatre listes du manuel utilisateur, la liste des exceptions, le § du verrou (deux causes),
+l'encadré, la note et le glossaire, la phrase du manuel d'administration — chacun présent. Grep d'AC12 : un seul
+résidu, `CHANGELOG.md:15` « ne se lettrent pas à la main » (énoncé vrai du lettrage manuel, trié légitime). Grep
+de la valeur `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` (`docs`, `CHANGELOG.md`) : 3 sites d'origine
+(`api-external.md` lettrage `POST`, `DELETE`, table § 10 — cette dernière complétée) + 5 neufs (CHANGELOG, 2
+tableaux et 2 listes en prose des annulations) — chacun le refus du 2 bis ou celui du lettrage manuel. Remède :
+aucun site ne prescrit « ou » seul.
+
+**Choix consignés** : C-15-1a2-i-1 à C-15-1a2-i-4.
 
 ### File List
 
+- `crates/kesh-db/src/repositories/letterings.rs` — synchronisation, `DocumentRef`, `SyncOutcome`, corps `*_inner`, audit
+- `crates/kesh-db/src/repositories/invoice_settlements_write.rs` — trois appels (règlement, solde, annulation)
+- `crates/kesh-db/src/repositories/credit_notes.rs` — un appel (avoir)
+- `crates/kesh-db/src/entities/journal_entry.rs` — doc-comment R3
+- `crates/kesh-api/src/routes/reconciliation.rs` — appel, `lettering_error_to_failed_proposal`, test
+- `crates/kesh-db/tests/lettering_documents.rs` — **neuf**
+- `crates/kesh-db/tests/support/lettering_documents.rs` — **neuf**
+- `crates/kesh-db/tests/support/document_group.rs`, `crates/kesh-db/tests/letterings.rs`, `crates/kesh-db/tests/letterings_lexical.rs`
+- `crates/kesh-api/tests/reconciliation_e2e.rs`, `crates/kesh-api/tests/rejeu_interblocage_e2e.rs`
+- `CHANGELOG.md`, `README.md`, `docs/api-external.md`
+- `docs/manual/fr/user-manual.tex`, `admin-manual.tex` et les trois PDF
+- `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md`, `sprint-status.yaml`
+
 ## Change Log
+
+### Développement — 2026-10-09 (Opus 5.5, `bmad-dev-story`, en autonomie)
+
+T0–T6 livrées : synchronisation idempotente des factures clientes (règlement, solde, avoir, rapprochement),
+dissolution à l'annulation, audit avec la pièce, inventaire fermé tenu par trois tests lexicaux, documentation
+publique du lettrage et du refus du rang 2 bis (AC12, AC18). 28 tests neufs + 1 étendu, 12 mutations tuées.
+Choix C-15-1a2-i-1 à 4. Détail au Dev Agent Record. Prochaine étape : rebase sur `main` (15-1a2-0 fusionnée,
+`a06e1927`), puis `bmad-code-review` P1.
 
 ### Validation P4 — 2026-10-09 (Opus 5.5 ×2, lentilles R et F ; remédiation Opus 5.5, seul remédiateur des fiches de la suite du lettrage, en autonomie)
 

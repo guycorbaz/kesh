@@ -28,8 +28,8 @@ use kesh_db::repositories::invoice_settlements::{ClaimSubject, GapAccountRole, P
 use kesh_db::repositories::reconciliation::UnpaidInvoiceCandidate;
 use kesh_db::repositories::{
     accounts as accounts_repo, audit_log, bank_accounts, company_invoice_settings,
-    contacts as contacts_repo, fiscal_years, invoice_settlements, journal_entries, projects,
-    reconciliation as reconciliation_repo, reconciliation_rules,
+    contacts as contacts_repo, fiscal_years, invoice_settlements, journal_entries, letterings,
+    projects, reconciliation as reconciliation_repo, reconciliation_rules,
 };
 use kesh_reconciliation::{
     MatchScore, ReconciliationError, SplitDetail, build_journal_entry_for_counterparty,
@@ -1350,6 +1350,45 @@ fn claim_account_failed_proposal(
     }
 }
 
+/// Convertit une erreur de la **synchronisation du lettrage**
+/// (`letterings::sync_invoice_in_tx`, Story 15-1a2-i, P4) en `FailedProposal`
+/// — jamais en `AppError` global (pattern batch). Même rôle que
+/// [`claim_account_failed_proposal`].
+///
+/// - Défaut structurel → `INTERNAL_ERROR`, précédé d'un `tracing::error!`,
+///   comme l'étape (e) d'`accept_one_invoice` : `Invariant`, et tout refus de
+///   lettrage que la synchronisation exclut par construction. ⛔
+///   `LETTERING_CONCURRENT_CHANGE` en fait partie (C-15-1a2-14) : l'`UPDATE` de
+///   la primitive vise des lignes tenues `FOR UPDATE` par la même transaction,
+///   le compte est égal par construction — le code n'entre pas dans `failed[]`.
+/// - Toute autre erreur (`Sqlx`, interblocage…) → `DATABASE_ERROR`
+///   (`details.message`), comme les étapes voisines ; un interblocage est
+///   ensuite rejoué par `accept_batch` (`retry_with`).
+fn lettering_error_to_failed_proposal(bank_transaction_id: i64, err: DbError) -> FailedProposal {
+    match err {
+        DbError::Invariant(_)
+        | DbError::LetteringConcurrentChange
+        | DbError::LetteringLineAlreadyLettered { .. }
+        | DbError::LetteringUnbalanced { .. }
+        | DbError::LetteringAccountNotLetterable
+        | DbError::LetteringAccountsDiffer
+        | DbError::LetteringTooFewLines
+        | DbError::NotFound => {
+            tracing::error!("encaissement : lettrage de la facture impossible : {err}");
+            FailedProposal {
+                bank_transaction_id,
+                error_code: "INTERNAL_ERROR".to_string(),
+                details: None,
+            }
+        }
+        other => FailedProposal {
+            bank_transaction_id,
+            error_code: "DATABASE_ERROR".to_string(),
+            details: Some(serde_json::json!({ "message": other.to_string() })),
+        },
+    }
+}
+
 /// Helper interne — traite UNE proposal `type='invoice'` dans son savepoint.
 ///
 /// **C2 Pass 1 code review (TOCTOU fix)** : la BankTransaction est
@@ -1948,6 +1987,26 @@ async fn accept_one_invoice(
             details: Some(serde_json::json!({ "reason": "race_during_update" })),
         });
     }
+
+    // (g bis) Le lettrage de la pièce (Story 15-1a2-i, P4) — APRÈS (g) : la
+    //     ligne `invoices` est désormais tenue par l'`UPDATE`, et une
+    //     modification concurrente a déjà été refusée en `race_during_update`
+    //     sans qu'aucune marque soit posée. ⛔ Pas dans `create_in_tx` : appelé
+    //     avant (g), il prendrait les lignes avant la facture (C-15-1a2-6).
+    //     Exercice tenu : celui de (d). Acteur : la clé d'API, s'il y en a une
+    //     (seul geste qui la porte, AC10). Toute erreur est per-proposal.
+    letterings::sync_invoice_in_tx(
+        tx,
+        company_id,
+        invoice_id,
+        fiscal_year.id,
+        letterings::Actor {
+            user_id,
+            api_key_id: actor_api_key_id,
+        },
+    )
+    .await
+    .map_err(|e| lettering_error_to_failed_proposal(bank_transaction_id, e))?;
 
     // Step 9 — audit log reconciliation.accepted.
     let details_accepted = serde_json::json!({
@@ -4482,5 +4541,46 @@ mod period_lock_tests {
             DbError::IllegalStateTransition("le projet analytique est archivé".into()),
         );
         assert_eq!(f.error_code, "PROJECT_ARCHIVED");
+    }
+
+    /// Story 15-1a2-i (AC15 d) — une erreur de la synchronisation du lettrage
+    /// est TOUJOURS per-proposal : défaut structurel → `INTERNAL_ERROR` sans
+    /// détails, `LETTERING_CONCURRENT_CHANGE` compris (C-15-1a2-14 : il n'entre
+    /// pas dans `failed[]`) ; toute autre erreur → `DATABASE_ERROR` avec son
+    /// message.
+    #[test]
+    fn lettering_errors_map_to_failed_proposals() {
+        let structurels = [
+            DbError::Invariant("x".into()),
+            DbError::LetteringConcurrentChange,
+            DbError::LetteringLineAlreadyLettered { code: "A".into() },
+            DbError::LetteringUnbalanced {
+                difference: Decimal::ONE,
+            },
+            DbError::LetteringAccountNotLetterable,
+            DbError::LetteringAccountsDiffer,
+            DbError::LetteringTooFewLines,
+            DbError::NotFound,
+        ];
+        for err in structurels {
+            let nom = format!("{err:?}");
+            let f = lettering_error_to_failed_proposal(7, err);
+            assert_eq!(f.bank_transaction_id, 7, "{nom}");
+            assert_eq!(f.error_code, "INTERNAL_ERROR", "{nom}");
+            assert!(f.details.is_none(), "{nom}");
+        }
+        let f = lettering_error_to_failed_proposal(
+            7,
+            DbError::Sqlx(sqlx::Error::Protocol("panne".into())),
+        );
+        assert_eq!(f.error_code, "DATABASE_ERROR");
+        assert!(
+            f.details
+                .as_ref()
+                .and_then(|d| d["message"].as_str())
+                .is_some(),
+            "{:?}",
+            f.details
+        );
     }
 }

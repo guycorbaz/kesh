@@ -578,7 +578,12 @@ Et aucune écriture déjà passée dans la période ne pourra plus en \textbf{di
 datée d'une période verrouillée.
 Le \textbf{lettrage} des lignes de la période se fige avec elles~: un groupe dont toutes les
 lignes sont dans la période verrouillée (ou dans des exercices clôturés) ne se lettre ni ne se
-délettre.
+délettre. L'annulation d'un règlement, d'un solde, d'un rapprochement, d'un paiement ou d'une
+facture fournisseur dont le lettrage s'est figé avec la période est donc \textbf{refusée}~: un
+administrateur fait reculer le verrou avant la date la plus récente du lettrage --- en général
+celle du dernier règlement --- pour la permettre, et rouvre aussi les exercices clôturés si
+l'exercice de cette date l'est \textbf{ou s'il est suivi d'un exercice clôturé} --- jusqu'à
+celui-ci, en commençant par le plus récent.
 
 \begin{keshtip}[title={\faLightbulb\ Deux gestes, deux exigences différentes}]
 \textbf{Verrouiller} est un geste d'hygiène~: un comptable comme un administrateur peut le
@@ -594,6 +599,9 @@ contre-passation est datée du \textbf{jour}, donc après le verrou~: elle passe
 ce qui \textbf{entre dans le passé}, jamais ce qui \textbf{corrige depuis le présent}. C'est
 cette distinction qui empêche le verrou de rendre vos livres incorrigibles --- et c'est pourquoi
 Kesh refuse de poser une borne à la date du jour ou dans le futur.
+\textbf{Une exception}~: l'annulation d'un règlement (ou d'un paiement) dont le
+\textbf{lettrage} s'est figé avec la période est refusée --- elle défairait un lettrage de la
+période verrouillée~; le verrou doit reculer pour la permettre (ci-dessus).
 \end{keshwarning}
 
 Le verrou et la clôture d'exercice sont \textbf{indépendants}~: clôturer ne touche pas la borne,
@@ -635,7 +643,9 @@ se corrige plus simplement par \textbf{modification}, ou disparaît par \textbf{
 tracées~: sa \textbf{suppression} depuis sa fiche, inscrite au journal d'audit avec son contenu
 complet~; et la \textbf{dévalidation} d'une facture, qui la repasse en brouillon avec l'écriture
 que sa validation avait créée (voir «~Supprimer ou dévalider une facture~») --- une décision de
-facturation, inscrite au journal d'audit sous son propre nom. \emph{La restauration d'une
+facturation, inscrite au journal d'audit sous son propre nom. \emph{Exception~: l'annulation
+d'un règlement (ou d'un paiement) dont le lettrage s'est figé avec la période est refusée~; le
+verrou doit reculer pour la permettre (\S\ref{sec:verrou-periode}).} \emph{La restauration d'une
 sauvegarde, qui remet les livres dans l'état de l'archive, fait exception à cette règle.}
 
 L'historique complet des corrections apportées à vos écritures se \textbf{consulte à
@@ -764,7 +774,7 @@ Sous la grille, Kesh affiche aussi le total des \textbf{Actifs}, celui des \text
 \end{keshwarning}
 
 \begin{keshnote}
-La génération n'est disponible que tant que la société ne contient \textbf{aucune écriture} (dans aucun exercice). Ensuite, l'écriture d'ouverture se \textbf{modifie} comme toute écriture saisie à la main~: si vous avez inversé débit et crédit, ouvrez sa fiche (\emph{Écritures}, première écriture du premier exercice), \emph{Modifier}, corrigez et validez --- tant que l'exercice est ouvert et hors période verrouillée, et après l'avoir délettrée si l'une de ses lignes est lettrée (ses lignes de bilan sont lettrables~: par exemple le solde d'ouverture d'un compte de passif avec l'écriture, saisie à la main, qui le règle~; les encaissements des factures ne se lettrent pas encore, une ligne de pièce ne se lettrant pas à la main). L'écran reste en mode \emph{compléter}. Elle se \textbf{supprime} aussi, dans le même cadre~: si elle est la \textbf{seule} écriture de la société, la société redevient vierge et la \textbf{génération est de nouveau proposée} --- la nouvelle écriture d'ouverture reçoit alors le numéro~2, pas le~1, car un numéro n'est jamais réattribué (le trou s'explique par la trace de la suppression au journal d'audit). Si d'autres écritures existent, la génération reste refusée~: les comptes de l'ouverture \textbf{sans autre mouvement} redeviennent complétables, mais un compte \textbf{déjà mouvementé ailleurs} --- typiquement la banque --- ne l'est pas~; son solde de départ se ressaisit à la main, par une écriture d'OD. Un complément se supprime comme l'ouverture. \emph{Limite~: rien ne la distingue plus d'une autre écriture~; rien n'empêche donc d'y ajouter une ligne de résultat, ce que la génération refuse.}
+La génération n'est disponible que tant que la société ne contient \textbf{aucune écriture} (dans aucun exercice). Ensuite, l'écriture d'ouverture se \textbf{modifie} comme toute écriture saisie à la main~: si vous avez inversé débit et crédit, ouvrez sa fiche (\emph{Écritures}, première écriture du premier exercice), \emph{Modifier}, corrigez et validez --- tant que l'exercice est ouvert et hors période verrouillée, et après l'avoir délettrée si l'une de ses lignes est lettrée (ses lignes de bilan sont lettrables~: par exemple le solde d'ouverture d'un compte de passif avec l'écriture, saisie à la main, qui le règle~; les encaissements des factures, eux, se lettrent d'eux-mêmes avec leur facture, une ligne de pièce ne se lettrant pas à la main). L'écran reste en mode \emph{compléter}. Elle se \textbf{supprime} aussi, dans le même cadre~: si elle est la \textbf{seule} écriture de la société, la société redevient vierge et la \textbf{génération est de nouveau proposée} --- la nouvelle écriture d'ouverture reçoit alors le numéro~2, pas le~1, car un numéro n'est jamais réattribué (le trou s'explique par la trace de la suppression au journal d'audit). Si d'autres écritures existent, la génération reste refusée~: les comptes de l'ouverture \textbf{sans autre mouvement} redeviennent complétables, mais un compte \textbf{déjà mouvementé ailleurs} --- typiquement la banque --- ne l'est pas~; son solde de départ se ressaisit à la main, par une écriture d'OD. Un complément se supprime comme l'ouverture. \emph{Limite~: rien ne la distingue plus d'une autre écriture~; rien n'empêche donc d'y ajouter une ligne de résultat, ce que la génération refuse.}
 \end{keshnote}
 
 \subsubsection{Compléter un compte oublié}
@@ -1209,6 +1219,13 @@ Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~:
     \item \textbf{l'exercice du règlement est clôturé}~: un administrateur doit
           d'abord \textbf{rouvrir} les exercices clôturés jusqu'à celui du règlement, en
           commençant par le plus récent~;
+    \item \textbf{le lettrage de la facture est figé par une période close}~: ce règlement est
+          lettré avec sa facture, et toutes les lignes de ce lettrage sont dans une période
+          close. Pour pouvoir l'annuler, prenez la date la plus récente du lettrage (en général
+          celle du dernier règlement)~: si elle est sous le verrou de période, un administrateur
+          doit faire reculer le verrou avant elle~; et si son exercice est suivi d'un exercice
+          clôturé, ou clôturé lui-même, il doit rouvrir les exercices clôturés jusqu'à
+          celui-ci, en commençant par le plus récent (\S\ref{sec:verrou-periode})~;
     \item \textbf{le règlement est rapproché} d'une transaction bancaire~: il faut d'abord
           annuler ce rapprochement --- le bouton \emph{Annuler le rapprochement} apparaît à
           côté du motif (\S\ref{sec:annuler-rapprochement})~;
@@ -1216,6 +1233,20 @@ Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~:
     \item \textbf{aucun exercice ouvert ne couvre la date du jour}, où la contre-passation serait
           datée~: créez-le.
 \end{itemize}
+
+\textbf{Lettrage.} Une facture \textbf{soldée} --- par ses règlements, par le solde de son reste
+ou par son avoir --- est \textbf{lettrée} d'office~: sa ligne au compte débiteurs et celles de ses
+règlements, de son solde ou de son avoir sur ce compte forment un groupe de lettrage («~pièce~»),
+et le grand livre la montre soldée, comme la fiche, l'échéancier et les rappels. Un règlement
+partiel ne lettre rien. L'\textbf{annulation} d'un règlement --- ou du solde --- \textbf{délettre}
+la facture~: sa créance et ses autres règlements redeviennent ouverts, et le règlement annulé
+est lettré avec sa contre-passation. Deux cas restent sans lettrage, et c'est la vérité du grand
+livre~: une facture \textbf{historique} dont toutes les lignes sont en période close (exercice
+clôturé ou période verrouillée) n'est pas lettrée après coup --- elle reste ouverte au compte
+débiteurs jusqu'à ce qu'un administrateur rouvre la période~; et une facture dont le compte
+débiteurs n'est \textbf{plus lettrable} (relié depuis à un compte bancaire, ou changé en compte de
+charge) n'est pas lettrée --- son règlement n'en est pas moins enregistré. Une annulation qui
+défairait un lettrage figé par une période close est refusée (motif ci-dessus).
 
 \begin{keshnote}
 Les factures réglées avant la version qui a introduit les règlements (Kesh 0.12) portent la
@@ -1261,12 +1292,12 @@ Une facture suspendue \textbf{reste dans l'échéancier et la balance âgée} �
 \subsection{Avoirs et notes de crédit}
 \label{sec:avoirs}
 
-Un avoir (note de crédit) annule une facture validée : c'est le moyen \textbf{correct} d'annuler une facture \emph{réellement émise} et déjà comptabilisée — l'écriture d'origine reste intacte (principe d'intangibilité comptable). Pour une facture validée \emph{par erreur} (jamais envoyée, ou créée pour un essai), il faut la \textbf{dévalider} d'abord --- elle redevient alors un brouillon, que l'on corrige ou que l'on supprime : voir \S\ref{sec:suppression-facture}. Pour créer un avoir, ouvrez la facture validée concernée et cliquez sur \textbf{« Créer un avoir »} (réservé aux rôles \emph{Comptable} et \emph{Administrateur}). En une seule étape, Kesh :
+Un avoir (note de crédit) annule une facture validée : c'est le moyen \textbf{correct} d'annuler une facture \emph{réellement émise} et déjà comptabilisée — l'écriture d'origine reste intacte, hors la marque de lettrage, qui la rattache à l'avoir (principe d'intangibilité comptable). Pour une facture validée \emph{par erreur} (jamais envoyée, ou créée pour un essai), il faut la \textbf{dévalider} d'abord --- elle redevient alors un brouillon, que l'on corrige ou que l'on supprime : voir \S\ref{sec:suppression-facture}. Pour créer un avoir, ouvrez la facture validée concernée et cliquez sur \textbf{« Créer un avoir »} (réservé aux rôles \emph{Comptable} et \emph{Administrateur}). En une seule étape, Kesh :
 
 \begin{itemize}
     \item crée un avoir reprenant toutes les lignes de la facture, avec son propre numéro issu d'une séquence dédiée (par défaut \keshcommand{AV-2026-0001}, configurable dans \emph{Paramètres → Facturation}) ;
     \item génère automatiquement l'\textbf{écriture de contre-passation} : l'inverse exact de l'écriture de la facture (la créance client, le produit et la TVA due — une ligne par taux — sont contre-passés), de sorte que le \textbf{solde du client revient à zéro}. L'avoir crédite le \textbf{compte débiteurs que la facture a débité}, et contre-passe l'éventuel arrondi à 5~centimes sur le \textbf{compte que la facture a mouvementé} --- même si les comptes par défaut ont été changés dans \emph{Paramètres} → \emph{Facturation} depuis la validation : c'est ce qui ramène ces comptes à zéro. \textbf{Limite connue de cette version}~: la TVA, elle, est contre-passée sur le compte de TVA due \textbf{actuellement désigné} dans les réglages~; si ce réglage a changé entre la facture et son avoir, la TVA de la facture reste sur l'ancien compte et l'avoir débite le nouveau ;
-    \item bascule la facture d'origine au statut \textbf{« annulée »} (sa propre écriture reste intacte).
+    \item bascule la facture d'origine au statut \textbf{« annulée »} (sa propre écriture reste intacte, hors la marque de lettrage, qui la rattache à l'avoir).
 \end{itemize}
 
 L'avoir est consultable dans \emph{Avoirs} (menu \emph{Quotidien}), avec un \textbf{PDF « Avoir »} téléchargeable (mention « Avoir », référence à la facture d'origine, sans section QR de paiement). Le \emph{Décompte TVA} de la période tient compte de l'annulation (la TVA de la facture annulée est exclue).
@@ -1456,7 +1487,10 @@ fournisseur~» ci-dessous~: il n'est pas nécessaire d'annuler d'abord son règl
 
 Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~: l'exercice du
 règlement est \textbf{clôturé} (un administrateur doit d'abord rouvrir les exercices clôturés
-jusqu'à celui-ci, en commençant par le plus récent), un compte du
+jusqu'à celui-ci, en commençant par le plus récent), le \textbf{lettrage} du paiement avec sa
+facture est figé par une période close (un administrateur fait reculer le verrou avant la date
+la plus récente du lettrage et/ou rouvre les exercices clôturés, selon la cause ---
+\S\ref{sec:verrou-periode}), un compte du
 règlement a été \textbf{archivé} (réactivez-le), ou aucun exercice ouvert ne couvre la date du
 jour (créez-le).
 
@@ -1479,7 +1513,10 @@ règlement d'abord}, puis la facture~: le lien avec la facture reste lisible au 
 
 Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~: l'exercice de
 l'\textbf{achat} est clôturé (un administrateur doit d'abord rouvrir les exercices clôturés
-jusqu'à celui-ci, en commençant par le plus récent), un compte de l'achat
+jusqu'à celui-ci, en commençant par le plus récent), le \textbf{lettrage} de la facture avec
+son paiement est figé par une période close (un administrateur fait reculer le verrou avant la
+date la plus récente du lettrage et/ou rouvre les exercices clôturés, selon la cause ---
+\S\ref{sec:verrou-periode}), un compte de l'achat
 a été \textbf{archivé} (réactivez-le), aucun exercice ouvert ne couvre la date du jour
 (créez-le), ou la facture figure dans un \textbf{lot de paiement en cours} (annulez d'abord le
 lot). Une facture annulée ne se \emph{désannule} pas~: si l'annulation était une erreur,
@@ -1781,6 +1818,13 @@ raison~:
           plus récent. ⚠️ C'est l'exercice du \textbf{paiement} qui compte, jamais
           celui de la facture~: une facture de décembre dont l'exercice est clôturé, payée en
           janvier, se rapproche et se dé-rapproche normalement~;
+    \item \textbf{le lettrage de la facture est figé par une période close}~: ce rapprochement
+          est lettré avec sa facture, et toutes les lignes de ce lettrage sont dans une période
+          close. Pour pouvoir l'annuler, prenez la date la plus récente du lettrage (en général
+          celle du dernier règlement)~: si elle est sous le verrou de période, un administrateur
+          doit faire reculer le verrou avant elle~; et si son exercice est suivi d'un exercice
+          clôturé, ou clôturé lui-même, il doit rouvrir les exercices clôturés jusqu'à
+          celui-ci, en commençant par le plus récent (\S\ref{sec:verrou-periode})~;
     \item \textbf{un compte de l'écriture a été archivé}~: réactivez-le (son numéro est
           indiqué)~;
     \item \textbf{aucun exercice ouvert ne couvre la date du jour}~: créez-le.
@@ -2357,7 +2401,10 @@ Selon l'action :
           \textbf{facture fournisseur} dont l'achat est dans un exercice clôturé
           (\S\ref{sec:annuler-facture-fournisseur}) ne s'annulent pas~: un administrateur doit
           d'abord rouvrir les exercices clôturés jusqu'à celui de la pièce, en commençant par
-          le plus récent.
+          le plus récent. De même, un règlement, un solde, un rapprochement, un paiement ou une
+          facture fournisseur dont le \textbf{lettrage} est figé par une période close ne
+          s'annule pas tant qu'un administrateur n'a pas fait reculer le verrou et/ou rouvert
+          les exercices clôturés (\S\ref{sec:verrou-periode}).
     \item Facture validée : passage en avoir + génération d'une nouvelle facture.
     \item Facture fournisseur~: elle s'annule depuis sa fiche, ouverte ou payée
           (\S\ref{sec:annuler-facture-fournisseur})~; payée, son règlement reste au grand
@@ -2442,8 +2489,10 @@ Le journal d'audit garde toujours la trace de l'action originale ET de l'action 
           somme est nulle, pour dire qu'elles se soldent entre elles (une écriture et sa
           contre-passation, un acompte et sa reprise\ldots). Dans cette version, le lettrage
           manuel et le délettrage se font par l'API (\texttt{/api/v1/letterings})~; l'écran viendra.
-          La contre-passation lettre d'elle-même une ligne et sa correction~; Kesh ne lettre
-          pas encore de lui-même une facture soldée par ses règlements. Une écriture dont une
+          La contre-passation lettre d'elle-même une ligne et sa correction~; Kesh lettre de
+          lui-même une facture client soldée avec ses règlements, son solde ou son avoir~; un
+          lettrage de pièce figé par une période close ne se défait pas~: l'annulation qui le
+          défairait est refusée (\S\ref{sec:verrou-periode}). Une écriture dont une
           ligne est lettrée ne se modifie ni ne se supprime~: elle se délettre d'abord.
     \item[Liquidités] Avoirs immédiatement disponibles (caisse, comptes bancaires et postaux).
     \item[Partie double] Principe selon lequel toute opération est enregistrée sur au moins deux comptes, débit = crédit.

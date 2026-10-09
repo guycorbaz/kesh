@@ -160,8 +160,10 @@ pub struct JournalEntryLine {
     /// Clé du groupe de lettrage (Story 15-1a-i, #518) — le plus petit `id` de
     /// ligne du groupe ; `None` = ligne **ouverte** (non lettrée).
     ///
-    /// ⛔ Écrite par `letterings::create_group_in_tx` et effacée par
-    /// `letterings::dissolve_group_in_tx`, **et par elles seules** (R3).
+    /// ⛔ Écrite dans `letterings::create_group_inner` et effacée dans
+    /// `letterings::dissolve_group_inner`, atteints par les deux primitives
+    /// (`create_group_in_tx`, `dissolve_group_in_tx`) et par la synchronisation
+    /// des pièces (Story 15-1a2-i) **seules** (R3).
     pub lettering_key: Option<i64>,
     /// Origine du groupe : `document`, `reversal` ou `manual` ; `None` si et
     /// seulement si `lettering_key` est `None` (contrainte `chk_jel_lettering_pair`).

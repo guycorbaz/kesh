@@ -1,8 +1,9 @@
 //! Test structurel — Story 15-1a-i (#518), R3 et R7 point 4 (T9).
 //!
 //! ⛔ **UNE seule fonction écrit la marque du lettrage**
-//! (`letterings::create_group_in_tx`) **et une seule la retire**
-//! (`letterings::dissolve_group_in_tx`). Ce test lit les sources de production
+//! (`letterings::create_group_inner`) **et une seule la retire**
+//! (`letterings::dissolve_group_inner`) — atteintes par les deux primitives et
+//! par la synchronisation des pièces seules (Story 15-1a2-i). Ce test lit les sources de production
 //! — `crates/*/src/**/*.rs`, **hors** blocs `#[cfg(test)]` (les tests de dépôt
 //! vivent aussi dans des `mod tests` de `src/`) et **hors**
 //! `kesh-db/src/repositories/letterings.rs` — et refuse tout littéral de chaîne
@@ -23,10 +24,20 @@
 //! une colonne nommée par une constante autre que `LINE_COLUMNS`. La revue
 //! reste la garde de ces formes.
 //!
-//! Second volet (R7 point 4, F4-4) : chacune des deux primitives appelle
+//! Second volet (R7 point 4, F4-4) : chacun des deux corps qui écrivent la
+//! marque (`create_group_inner`, `dissolve_group_inner`) appelle
 //! `check_rows_affected` sur le résultat de son `UPDATE` — c'est la seule garde
 //! contre la mutation « retirer la vérification », qu'aucun montage de test ne
 //! peut exercer sans crochet de production.
+//!
+//! Troisième volet (Story 15-1a2-i, AC8 part i) : l'**inventaire fermé** des
+//! écrivains des pièces clientes — tout `INSERT`/`DELETE` de
+//! `invoice_settlements` vit dans son module, toute fonction qui crée un
+//! règlement synchronise le lettrage **après**, l'unique `INSERT INTO
+//! credit_notes` aussi, et l'annulation dissout **avant** de contre-passer.
+//! ⚠️ Ce que ce volet ne voit pas : un appel par un chemin importé
+//! (`use invoice_settlements::create_in_tx;` puis `create_in_tx(`) — le volet
+//! (a), qui borne l'`INSERT` à son module, en limite la portée.
 
 use std::path::{Path, PathBuf};
 
@@ -288,8 +299,8 @@ fn no_production_code_writes_the_lettering_mark_outside_the_primitive() {
     }
     assert!(
         fautes.is_empty(),
-        "⛔ la marque du lettrage s'écrit hors de `letterings::create_group_in_tx` / \
-         `dissolve_group_in_tx` (R3) :\n{}",
+        "⛔ la marque du lettrage s'écrit hors de `letterings::create_group_inner` / \
+         `dissolve_group_inner` (R3) :\n{}",
         fautes.join("\n")
     );
 
@@ -309,9 +320,11 @@ fn each_primitive_checks_the_rows_its_update_found() {
         std::fs::read_to_string(racine_crates().join("kesh-db/src/repositories/letterings.rs"))
             .expect("primitive");
     let (_, masque) = decouper(&source);
+    // Story 15-1a2-i : les deux primitives publiques délèguent à ces corps
+    // privés, qui portent l'`UPDATE` — la vérification y est exigée.
     for primitive in [
-        "pub async fn create_group_in_tx",
-        "pub async fn dissolve_group_in_tx",
+        "async fn create_group_inner",
+        "async fn dissolve_group_inner",
     ] {
         let pos = masque
             .find(primitive)
@@ -388,4 +401,306 @@ fn the_detector_sees_writes_and_only_writes() {
     // le verbe qui la suit reste un verbe.
     assert!(vus[14].starts_with("SELECT 1;\\UPDATE"));
     assert!(vus[15].starts_with("x\\\\\\INSERT"));
+}
+
+// ===========================================================================
+// Story 15-1a2-i (#518) — AC8 part i : l'inventaire fermé des écrivains des
+// pièces clientes.
+// ===========================================================================
+
+/// Les fonctions d'une source masquée : `(nom, début du corps, fin du corps)`.
+/// Une déclaration sans corps (`fn x();`) est ignorée.
+fn fonctions(masque: &str) -> Vec<(String, usize, usize)> {
+    let b = masque.as_bytes();
+    let mut out = Vec::new();
+    let mut depuis = 0;
+    while let Some(n) = masque[depuis..].find("fn ") {
+        let pos = depuis + n;
+        depuis = pos + 3;
+        if pos > 0 && (b[pos - 1].is_ascii_alphanumeric() || b[pos - 1] == b'_') {
+            continue;
+        }
+        let nom: String = masque[pos + 3..]
+            .chars()
+            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
+            .collect();
+        if nom.is_empty() {
+            continue;
+        }
+        let Some((de, a)) = bloc_apres(masque, pos) else {
+            continue;
+        };
+        if masque[pos..de].contains(';') {
+            continue;
+        }
+        out.push((nom, de, a));
+    }
+    out
+}
+
+/// La fonction la plus intérieure qui contient la position `p`.
+fn fonction_englobante(
+    fns: &[(String, usize, usize)],
+    p: usize,
+) -> Option<&(String, usize, usize)> {
+    fns.iter()
+        .filter(|(_, de, a)| *de <= p && p <= *a)
+        .min_by_key(|(_, de, a)| a - de)
+}
+
+/// Pour chaque appel `appel` du code (hors chaînes, commentaires et blocs
+/// `#[cfg(test)]`), la fonction qui le porte et si elle appelle `suite`
+/// **après lui, dans son propre corps** : `(nom, suivi)`.
+fn appels_et_suite(source: &str, appel: &str, suite: &str) -> Vec<(String, bool)> {
+    let (_, masque) = decouper(source);
+    let tests = blocs_de_test(&masque);
+    let fns = fonctions(&masque);
+    let mut out = Vec::new();
+    let mut depuis = 0;
+    while let Some(n) = masque[depuis..].find(appel) {
+        let p = depuis + n;
+        depuis = p + appel.len();
+        if tests.iter().any(|(de, a)| p >= *de && p <= *a) {
+            continue;
+        }
+        let Some((nom, _, fin)) = fonction_englobante(&fns, p) else {
+            out.push(("<hors fonction>".into(), false));
+            continue;
+        };
+        let suivi = masque[p + appel.len()..*fin].contains(suite);
+        out.push((nom.clone(), suivi));
+    }
+    out
+}
+
+/// Les littéraux de production (hors blocs `#[cfg(test)]`) qui écrivent la
+/// table `table` par l'un des `verbes` (`"INSERT INTO"`, `"DELETE FROM"`) —
+/// blancs normalisés, insensible à la casse, nom de table entier :
+/// `(position, extrait)`.
+fn ecritures_de_table(source: &str, verbes: &[&str], table: &str) -> Vec<(usize, String)> {
+    let (litteraux, masque) = decouper(source);
+    let tests = blocs_de_test(&masque);
+    litteraux
+        .into_iter()
+        .filter(|l| !tests.iter().any(|(de, a)| l.debut >= *de && l.debut <= *a))
+        .filter(|l| {
+            let mots: Vec<String> = neutraliser_echappements(&l.texte)
+                .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .filter(|m| !m.is_empty())
+                .map(|m| m.to_ascii_uppercase())
+                .collect();
+            verbes.iter().any(|v| {
+                let v: Vec<String> = v.split_whitespace().map(str::to_string).collect();
+                mots.windows(v.len() + 1)
+                    .any(|w| w[..v.len()] == v[..] && w[v.len()].eq_ignore_ascii_case(table))
+            })
+        })
+        .map(|l| (l.debut, l.texte.chars().take(80).collect()))
+        .collect()
+}
+
+/// Les sources de production : `(chemin relatif à crates/, contenu)`.
+fn sources_de_production() -> Vec<(String, String)> {
+    let mut fichiers = Vec::new();
+    for crate_dir in std::fs::read_dir(racine_crates()).expect("crates/") {
+        let src = crate_dir.expect("crate").path().join("src");
+        if src.is_dir() {
+            sources(&src, &mut fichiers);
+        }
+    }
+    assert!(
+        fichiers.len() > 100,
+        "balayage trop court ({})",
+        fichiers.len()
+    );
+    let racine = racine_crates();
+    fichiers.sort();
+    fichiers
+        .into_iter()
+        .map(|f| {
+            let rel = f
+                .strip_prefix(&racine)
+                .expect("sous crates/")
+                .display()
+                .to_string();
+            (rel, std::fs::read_to_string(&f).expect("source"))
+        })
+        .collect()
+}
+
+/// AC8 (a), (b) — tout `INSERT INTO` / `DELETE FROM invoice_settlements` de
+/// production vit dans son module ; toute fonction de production qui crée un
+/// règlement (`invoice_settlements::create_in_tx(`) appelle
+/// `sync_invoice_in_tx(` **après lui**, dans son propre corps.
+#[test]
+fn invoice_settlement_writers_stay_in_their_module_and_sync() {
+    let modules = [
+        "kesh-db/src/repositories/invoice_settlements.rs",
+        "kesh-db/src/repositories/invoice_settlements_write.rs",
+    ];
+    let mut fautes = Vec::new();
+    let mut ecrivains = 0;
+    let mut createurs = Vec::new();
+    for (fichier, source) in sources_de_production() {
+        for (_, extrait) in ecritures_de_table(
+            &source,
+            &["INSERT INTO", "DELETE FROM"],
+            "invoice_settlements",
+        ) {
+            ecrivains += 1;
+            if !modules.contains(&fichier.as_str()) {
+                fautes.push(format!("(a) {fichier} : {extrait}"));
+            }
+        }
+        for (fonction, suivi) in appels_et_suite(
+            &source,
+            "invoice_settlements::create_in_tx(",
+            "sync_invoice_in_tx(",
+        ) {
+            createurs.push(format!("{fichier}::{fonction}"));
+            if !suivi {
+                fautes.push(format!(
+                    "(b) {fichier}, fonction `{fonction}` : crée un règlement sans appeler \
+                     `sync_invoice_in_tx(` après lui"
+                ));
+            }
+        }
+    }
+    assert!(
+        fautes.is_empty(),
+        "⛔ inventaire des écrivains de `invoice_settlements` (Story 15-1a2-i, AC8) :\n{}",
+        fautes.join("\n")
+    );
+    // Anti-muet : l'`INSERT` et le `DELETE` connus, et les trois créateurs.
+    assert_eq!(ecrivains, 2, "un INSERT et un DELETE de production");
+    createurs.sort();
+    assert_eq!(
+        createurs,
+        [
+            "kesh-api/src/routes/reconciliation.rs::accept_one_invoice",
+            "kesh-db/src/repositories/invoice_settlements_write.rs::settle_invoice",
+            "kesh-db/src/repositories/invoice_settlements_write.rs::write_off_invoice",
+        ],
+        "les créateurs de règlement connus"
+    );
+}
+
+/// AC8 (c), (d) — l'unique `INSERT INTO credit_notes` de production est dans
+/// `create_credit_note`, qui synchronise **après** lui ; l'annulation d'un
+/// règlement client dissout le groupe **avant** de contre-passer.
+#[test]
+fn credit_note_insert_is_followed_by_sync_and_cancel_dissolves_first() {
+    let mut fautes = Vec::new();
+    let mut inserts = Vec::new();
+    for (fichier, source) in sources_de_production() {
+        let (_, masque) = decouper(&source);
+        let fns = fonctions(&masque);
+        for (p, extrait) in ecritures_de_table(&source, &["INSERT INTO"], "credit_notes") {
+            let Some((nom, _, fin)) = fonction_englobante(&fns, p) else {
+                fautes.push(format!("(c) {fichier} : {extrait} hors fonction"));
+                continue;
+            };
+            inserts.push(format!("{fichier}::{nom}"));
+            if !masque[p..*fin].contains("sync_invoice_in_tx(") {
+                fautes.push(format!(
+                    "(c) {fichier}, fonction `{nom}` : INSERT INTO credit_notes sans \
+                     `sync_invoice_in_tx(` après lui"
+                ));
+            }
+        }
+    }
+    assert_eq!(
+        inserts,
+        ["kesh-db/src/repositories/credit_notes.rs::create_credit_note"],
+        "(c) l'unique INSERT INTO credit_notes de production"
+    );
+
+    let source = std::fs::read_to_string(
+        racine_crates().join("kesh-db/src/repositories/invoice_settlements_write.rs"),
+    )
+    .expect("source");
+    let (_, masque) = decouper(&source);
+    let (_, de, a) = fonctions(&masque)
+        .into_iter()
+        .find(|(nom, _, _)| nom == "cancel_settlement_in_tx")
+        .expect("cancel_settlement_in_tx");
+    let corps = &masque[de..=a];
+    match (
+        corps.find("dissolve_invoice_document_group_in_tx("),
+        corps.find("reverse_owned_in_tx("),
+    ) {
+        (Some(d), Some(r)) if d < r => {}
+        autre => fautes.push(format!(
+            "(d) invoice_settlements_write.rs, fonction `cancel_settlement_in_tx` : la \
+             dissolution doit précéder la contre-passation (positions {autre:?})"
+        )),
+    }
+    assert!(
+        fautes.is_empty(),
+        "⛔ inventaire des écrivains des pièces clientes (Story 15-1a2-i, AC8) :\n{}",
+        fautes.join("\n")
+    );
+}
+
+/// Les détecteurs d'AC8, éprouvés sur un source synthétique.
+#[test]
+fn the_function_body_detector_sees_calls_and_order() {
+    let source = r##"
+        // invoice_settlements::create_in_tx( en commentaire : ignoré
+        async fn bonne() {
+            invoice_settlements::create_in_tx(&mut tx, x).await?;
+            let f = |y| { y + 1 };
+            letterings::sync_invoice_in_tx(&mut tx, 1).await?;
+        }
+        async fn sans_sync() -> Result<(), E> {
+            super::invoice_settlements::create_in_tx(&mut tx, x).await?;
+        }
+        async fn sync_avant() {
+            sync_invoice_in_tx(&mut tx).await?;
+            invoice_settlements::create_in_tx(&mut tx, x).await?;
+        }
+        fn imbriquee() {
+            fn interne() { invoice_settlements::create_in_tx(a); }
+            sync_invoice_in_tx(b);
+        }
+        fn chaine() { let s = "invoice_settlements::create_in_tx("; }
+        const A: &str = "INSERT INTO invoice_settlements (a) VALUES (1)";
+        const B: &str = "delete\n from invoice_settlements where id = ?";
+        const C: &str = "INSERT INTO invoice_settlements_archive (a) VALUES (1)";
+        const D: &str = "SELECT * FROM invoice_settlements";
+        const E: &str = "INSERT INTO credit_note_lines (a) VALUES (1)";
+        #[cfg(test)]
+        mod tests {
+            const F: &str = "INSERT INTO invoice_settlements (a) VALUES (1)";
+            fn t() { invoice_settlements::create_in_tx(a); }
+        }
+    "##;
+    let vus = appels_et_suite(
+        source,
+        "invoice_settlements::create_in_tx(",
+        "sync_invoice_in_tx(",
+    );
+    assert_eq!(
+        vus,
+        vec![
+            ("bonne".to_string(), true),
+            ("sans_sync".to_string(), false),
+            ("sync_avant".to_string(), false),
+            ("interne".to_string(), false),
+        ],
+        "appels vus, fonction la plus intérieure, ordre exigé ; chaîne, commentaire et \
+         bloc de test ignorés"
+    );
+    let ecritures: Vec<String> = ecritures_de_table(
+        source,
+        &["INSERT INTO", "DELETE FROM"],
+        "invoice_settlements",
+    )
+    .into_iter()
+    .map(|(_, e)| e)
+    .collect();
+    assert_eq!(ecritures.len(), 2, "{ecritures:#?}");
+    assert!(ecritures[0].starts_with("INSERT INTO invoice_settlements (a)"));
+    assert!(ecritures[1].starts_with("delete"));
+    assert!(ecritures_de_table(source, &["INSERT INTO"], "credit_notes").is_empty());
 }

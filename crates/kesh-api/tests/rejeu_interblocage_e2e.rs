@@ -1383,3 +1383,257 @@ async fn fiscal_year_creation_is_replayed_when_it_is_the_deadlock_victim(pool: M
     assert_eq!(n, 1, "un seul exercice créé");
     capture.exiger_un_rejeu("fiscal_years::create");
 }
+
+// ============================================================
+// Story 15-1a2-i (#518) — AC15 (c) : rapprochement ‖ annulation d'un
+// règlement de la même facture
+// ============================================================
+
+#[path = "../../kesh-db/tests/support/lettering_documents.rs"]
+mod lettering_support;
+
+/// Un compte bancaire lié à un compte de banque (1020, distinct de la
+/// créance) et une transaction en attente par montant, datées du jour.
+async fn transactions_en_attente(
+    pool: &MySqlPool,
+    ctx: &Contexte,
+    reference: &str,
+    montants: &[&str],
+) -> (i64, Vec<i64>) {
+    use kesh_db::entities::{
+        BankImportSourceFormat, NewBankAccount, NewBankImport, NewBankTransaction,
+    };
+    use kesh_db::repositories::{bank_accounts, bank_imports};
+    use std::str::FromStr;
+
+    let banque = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type) \
+         VALUES (?, '1020', 'Banque du rapprochement', 'Asset')",
+    )
+    .bind(ctx.company_id())
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let compte_bancaire = bank_accounts::create(
+        pool,
+        NewBankAccount {
+            company_id: ctx.company_id(),
+            bank_name: "UBS".into(),
+            iban: "CH4431999123000889013".into(),
+            qr_iban: None,
+            is_primary: true,
+        },
+    )
+    .await
+    .expect("compte bancaire")
+    .id;
+    sqlx::query(
+        "UPDATE bank_accounts SET journal_account_id = ?, version = version + 1 WHERE id = ?",
+    )
+    .bind(banque)
+    .bind(compte_bancaire)
+    .execute(pool)
+    .await
+    .unwrap();
+    let jour = aujourd_hui();
+    let mut tx = pool.begin().await.unwrap();
+    let (_, inserees) = bank_imports::create_with_transactions(
+        &mut tx,
+        NewBankImport {
+            company_id: ctx.company_id(),
+            bank_account_id: compte_bancaire,
+            filename: "releve.xml".into(),
+            file_hash: format!("{:0>64}", "lettrage-course"),
+            source_format: BankImportSourceFormat::Camt053V04,
+            statement_id: Some("LETTRAGE".into()),
+            period_from: jour,
+            period_to: jour,
+            opening_balance: None,
+            closing_balance: None,
+            transaction_count: montants.len() as i32,
+            imported_by_user_id: ctx.societe.admin_user_id,
+        },
+        montants
+            .iter()
+            .map(|m| NewBankTransaction {
+                company_id: ctx.company_id(),
+                bank_account_id: compte_bancaire,
+                booking_date: jour,
+                value_date: Some(jour),
+                amount: rust_decimal::Decimal::from_str(m).unwrap(),
+                currency: "CHF".into(),
+                reference: Some(reference.into()),
+                details: "Encaissement".into(),
+                end_to_end_id: None,
+                transaction_id: None,
+                counterparty_iban: None,
+                counterparty_name: Some("Client du rejeu".into()),
+            })
+            .collect(),
+    )
+    .await
+    .expect("import bancaire");
+    tx.commit().await.unwrap();
+    (compte_bancaire, inserees.iter().map(|t| t.id).collect())
+}
+
+/// Une facture validée de 100.— HT (108.10 TTC) réglée de 60.— en espèces par
+/// la route ; rend `(facture, règlement)`. Le rapprochement de 48.10 la
+/// soldera.
+async fn facture_reglee_de_60(pool: &MySqlPool, ctx: &Contexte) -> (i64, i64) {
+    let facture = facture_validee(pool, ctx, "100.00").await;
+    let (status, corps) = requete(
+        ctx,
+        reqwest::Method::POST,
+        &format!("/api/v1/invoices/{facture}/settlements"),
+        Some(json!({
+            "settlementType": "internal_account",
+            "accountId": ctx.compte("1000"),
+            "amount": "60.00",
+            "settledOn": aujourd_hui().to_string(),
+        })),
+    )
+    .await;
+    assert_eq!(status, 200, "règlement partiel : {corps}");
+    let reglement: i64 =
+        sqlx::query_scalar("SELECT id FROM invoice_settlements WHERE invoice_id = ?")
+            .bind(facture)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    (facture, reglement)
+}
+
+fn accepter(
+    ctx: &Contexte,
+    compte_bancaire: i64,
+    tx_id: i64,
+    facture: i64,
+) -> tokio::task::JoinHandle<(u16, Value)> {
+    requete_en_tache(
+        ctx,
+        reqwest::Method::POST,
+        "/api/v1/reconciliation/accept",
+        Some(json!({
+            "bankAccountId": compte_bancaire,
+            "proposals": [{ "type": "invoice", "bankTransactionId": tx_id, "invoiceId": facture }],
+        })),
+    )
+}
+
+/// L'issue d'un `accept` : `true` accepté, `false` refusé per-proposal — et
+/// jamais un code d'erreur de lettrage (un refus per-proposal est toujours un
+/// refus du rapprochement, jamais `INTERNAL_ERROR`).
+fn issue_du_rapprochement(status: u16, corps: &Value) -> bool {
+    assert_eq!(status, 200, "pattern batch : {corps}");
+    let acceptes = corps["accepted"].as_array().map(Vec::len).unwrap_or(0);
+    let refuses = corps["failed"].as_array().cloned().unwrap_or_default();
+    assert_eq!(acceptes + refuses.len(), 1, "{corps}");
+    for f in &refuses {
+        assert_ne!(f["errorCode"], "INTERNAL_ERROR", "{corps}");
+    }
+    acceptes == 1
+}
+
+/// AC15 (c) — entrelacement *rapprochement ‖ annulation d'un règlement de la
+/// même facture* : (1) déterministe — le rapprochement attend sur `contacts`
+/// (avant toute écriture) pendant que l'annulation valide, puis reprend sur un
+/// reste périmé ; (2) cinq courses libres. Les deux gestes finissent toujours
+/// (succès, refus per-proposal, refus de la file ou rejeu), et l'état final
+/// satisfait AC5 sur toute la société.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_and_settlement_cancel_interleave(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    disable_rounding_to_5_centimes(&pool, ctx.company_id())
+        .await
+        .unwrap();
+    let _ = exercice_du_jour(&pool, ctx.company_id()).await;
+    // Six factures entrelacées, plus une septième, TÉMOIN : rapprochée seule,
+    // elle doit être acceptée et lettrée — sans quoi un rapprochement toujours
+    // refusé (score, fenêtre) laisserait ce test vert à vide.
+    let n = 7;
+    let factures_reglements = {
+        let mut v = Vec::new();
+        for _ in 0..n {
+            v.push(facture_reglee_de_60(&pool, &ctx).await);
+        }
+        v
+    };
+    let (compte_bancaire, txs) =
+        transactions_en_attente(&pool, &ctx, "REJEU", &vec!["48.10"; n]).await;
+
+    // (1) Déterministe.
+    let (facture, reglement) = factures_reglements[0];
+    let mut verrou = pool.acquire().await.unwrap().detach();
+    sqlx::query("LOCK TABLES contacts WRITE")
+        .execute(&mut verrou)
+        .await
+        .unwrap();
+    let rapprochement = accepter(&ctx, compte_bancaire, txs[0], facture);
+    let attend =
+        attendre_une_requete_en_cours(&pool, &["FROM contacts"], || rapprochement.is_finished())
+            .await;
+    assert!(attend, "le rapprochement devait attendre sur `contacts`");
+    let (status, corps) = requete(
+        &ctx,
+        reqwest::Method::POST,
+        &format!("/api/v1/invoices/{facture}/settlements/{reglement}/cancel"),
+        None,
+    )
+    .await;
+    assert_eq!(
+        status, 200,
+        "l'annulation passe pendant l'attente : {corps}"
+    );
+    sqlx::query("UNLOCK TABLES")
+        .execute(&mut verrou)
+        .await
+        .unwrap();
+    drop(verrou);
+    let (status, corps) = rapprochement.await.unwrap();
+    assert!(
+        !issue_du_rapprochement(status, &corps),
+        "reste périmé : refusé per-proposal ({corps})"
+    );
+
+    // Témoin.
+    let (temoin, _) = factures_reglements[n - 1];
+    let (status, corps) = accepter(&ctx, compte_bancaire, txs[n - 1], temoin)
+        .await
+        .unwrap();
+    assert!(
+        issue_du_rapprochement(status, &corps),
+        "témoin accepté : {corps}"
+    );
+    assert!(
+        lettering_support::lettree_document(&pool, temoin).await,
+        "témoin lettré par le rapprochement"
+    );
+
+    // (2) Courses libres.
+    for (i, (facture, reglement)) in factures_reglements.iter().enumerate().take(n - 1).skip(1) {
+        let rapprochement = accepter(&ctx, compte_bancaire, txs[i], *facture);
+        let annulation = requete_en_tache(
+            &ctx,
+            reqwest::Method::POST,
+            &format!("/api/v1/invoices/{facture}/settlements/{reglement}/cancel"),
+            None,
+        );
+        let (s1, c1) = rapprochement.await.unwrap();
+        let (s2, c2) = annulation.await.unwrap();
+        issue_du_rapprochement(s1, &c1);
+        assert!(
+            s2 == 200 || s2 == 409,
+            "l'annulation finit (succès, ou refusée parce que le règlement est rapproché \
+             ou retiré) : {s2} {c2}"
+        );
+    }
+
+    let fautes = lettering_support::divergences_ac5(&pool, ctx.company_id(), &[]).await;
+    assert!(
+        fautes.is_empty(),
+        "⛔ AC5 après les entrelacements :\n{}",
+        fautes.join("\n")
+    );
+}
