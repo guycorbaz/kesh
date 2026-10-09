@@ -1102,6 +1102,25 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie (consignes de l'Epic 15), worktree
   KF-045 d'avant 12:00 UTC (`invoices.spec.ts:415`, `:439`). Aucun échec hors liste. Backend
   arrêté par son PID (identifié par le port 3014 et son répertoire courant).
 
+### Gates sur l'état rebasé une seconde fois (`origin/main` `200f5e79`, 15-7a2)
+
+- La 15-7a2 a été mergée pendant les gates ci-dessus : branche rebasée de nouveau. Conflits
+  documentaires seulement, résolus en union — registre, CHANGELOG `[0.13.0]` / `### Corrigé`
+  (une rubrique de chaque), `sprint-status` (`last_updated` de la 15-6b renuméroté **(36)**, après
+  les (34) et (35) de main) ; PDF `user-manual` et `admin-manual` régénérés (`make fr`) et
+  contrôlés aplatis : phrases de la 15-7a2 (« routes à verbe mutant au moment de la rédaction »,
+  « Deux familles d'opérations n'y figurent pas encore »), de la 15-12a et de la 15-6b (dont la
+  condition du filtre par rôle, L10) présentes. Bornes i18n inchangées par la 15-7a2 (catalogues
+  backend seuls) : `sitesTotal` **1922**, `CLES_RELEVEES` **213**.
+- Backend complet (base `kesh_156b` remise à zéro ; un premier lancement, coupé par une borne de
+  temps de l'orchestration à 537/3006, n'est **pas** compté, la base a été reconstruite avant le
+  second) : fmt et clippy verts, nextest **3006 passés, 4 ignorés**.
+- Frontend : `check` 0 erreur (27 avertissements, fichiers non touchés), `lint-i18n-ownership`
+  PASS, `test:unit` **1118 / 1118**, `build` vert.
+- E2E complet (même montage, base `kesh_e2e_156b` reconstruite, secrets neufs ; run de 05:52 à
+  06:02 UTC) : **247 passés, 9 échoués, 17 ignorés** — les mêmes neuf, tous à la liste (sept
+  KF-029, deux KF-045 d'avant 12:00 UTC). Backend arrêté par son PID.
+
 ### File List
 
 - `crates/kesh-db/src/errors.rs`
@@ -1467,4 +1486,5 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie (consignes de l'Epic 15), worktree
   touchant aucune ligne de production (`git diff -U0` sur `crates/*/src` : commentaires seuls ;
   frontend : fichiers `.test.*` seuls). Rebasée sur `origin/main` `012fc430` (15-12a) ; gates
   complets sur l'état rebasé : backend 2984/2984, Vitest 1118/1118 + build, E2E 247 passés /
-  9 attendus. Statut : **`done`**.
+  9 attendus. Statut : **`done`**. Puis rebasée sur `200f5e79` (15-7a2, mergée pendant les
+  gates) : backend 3006/3006, Vitest 1118/1118 + build, E2E 247 passés / 9 attendus.
