@@ -1073,7 +1073,9 @@ pub enum DbError {
     #[error("Un lettrage réunit au moins deux lignes distinctes")]
     LetteringTooFewLines,
 
-    /// Plus de lignes que le plafond d'un groupe manuel (200, AC6). → 400.
+    /// Plus de lignes que le plafond d'un groupe manuel
+    /// ([`kesh_core::lettering::MAX_LINES_PER_GROUP`], AC6) → 400. Le plafond
+    /// voyage dans `max` (revue P1, E-4).
     #[error("Un lettrage réunit au plus {max} lignes")]
     LetteringTooManyLines { max: usize },
 

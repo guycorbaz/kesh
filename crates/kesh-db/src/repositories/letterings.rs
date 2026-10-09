@@ -558,6 +558,12 @@ fn check_held_fiscal_year(lines: &[LineRow], held_open_fiscal_year_id: i64) -> R
 }
 
 /// Construit le groupe décrit (réponse et audit).
+///
+/// Un exercice de ligne absent de `names` → [`DbError::Invariant`]. Chaque
+/// lecture actuelle des noms (`lock_fiscal_years_of_group`,
+/// `fiscal_year_names`) le refuse déjà (revue P1, E-2) ; la garde est
+/// répétée ici pour qu'un futur appelant ne retrouve pas en silence le nom
+/// vide qu'E-2 a proscrit (revue de code P2, B2-2).
 fn build_group(
     key: i64,
     origin: Origin,
@@ -565,30 +571,36 @@ fn build_group(
     account_number: String,
     lines: &[LineRow],
     names: &BTreeMap<i64, String>,
-) -> LetteringGroup {
-    LetteringGroup {
+) -> Result<LetteringGroup, DbError> {
+    let lines = lines
+        .iter()
+        .map(|l| {
+            let fiscal_year_name = names.get(&l.fiscal_year_id).cloned().ok_or_else(|| {
+                DbError::Invariant(format!(
+                    "lettrage : nom de l'exercice {} de la ligne {} non lu",
+                    l.fiscal_year_id, l.id
+                ))
+            })?;
+            Ok(LetteringLine {
+                id: l.id,
+                entry_id: l.entry_id,
+                entry_number: l.entry_number,
+                fiscal_year_id: l.fiscal_year_id,
+                fiscal_year_name,
+                date: l.entry_date,
+                debit: l.debit,
+                credit: l.credit,
+            })
+        })
+        .collect::<Result<Vec<_>, DbError>>()?;
+    Ok(LetteringGroup {
         key,
         code: code_of(key),
         origin,
         account_id,
         account_number,
-        lines: lines
-            .iter()
-            .map(|l| LetteringLine {
-                id: l.id,
-                entry_id: l.entry_id,
-                entry_number: l.entry_number,
-                fiscal_year_id: l.fiscal_year_id,
-                // Chaque lecture des noms (`lock_fiscal_years_of_group`,
-                // `fiscal_year_names`) rend `Invariant` s'il en manque un
-                // (E-2) : le repli vide n'est plus atteignable.
-                fiscal_year_name: names.get(&l.fiscal_year_id).cloned().unwrap_or_default(),
-                date: l.entry_date,
-                debit: l.debit,
-                credit: l.credit,
-            })
-            .collect(),
-    }
+        lines,
+    })
 }
 
 /// `details` de l'audit `lettering.created` / `lettering.removed` (AC10).
@@ -727,7 +739,7 @@ pub async fn create_group_in_tx(
     core_lettering::check_rows_affected(lines.len() as u64, resultat.rows_affected())
         .map_err(refusal)?;
 
-    let group = build_group(key, origin, account_id, account_number, &lines, &names);
+    let group = build_group(key, origin, account_id, account_number, &lines, &names)?;
     audit_log::insert_in_tx(
         tx,
         NewAuditLogEntry::for_actor(
@@ -838,7 +850,7 @@ pub async fn dissolve_group_in_tx(
     core_lettering::check_rows_affected(lines.len() as u64, resultat.rows_affected())
         .map_err(refusal)?;
 
-    let group = build_group(key, origin, account_id, account_number, &lines, &names);
+    let group = build_group(key, origin, account_id, account_number, &lines, &names)?;
     audit_log::insert_in_tx(
         tx,
         NewAuditLogEntry::for_actor(
@@ -882,14 +894,7 @@ pub async fn find_group(
     let exercices: BTreeSet<i64> = lines.iter().map(|l| l.fiscal_year_id).collect();
     let names = fiscal_year_names(&mut *conn, company_id, &exercices).await?;
     let account_number = group_account_number(conn, company_id, account_id).await?;
-    Ok(Some(build_group(
-        key,
-        origin,
-        account_id,
-        account_number,
-        &lines,
-        &names,
-    )))
+    build_group(key, origin, account_id, account_number, &lines, &names).map(Some)
 }
 
 #[cfg(test)]

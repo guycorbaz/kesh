@@ -168,6 +168,33 @@ fn blocs_de_test(masque: &str) -> Vec<(usize, usize)> {
     blocs
 }
 
+/// Le texte d'un littéral avec chaque séquence d'échappement — la barre
+/// oblique inverse ET le caractère qui la suit — remplacée par deux espaces.
+///
+/// Le texte d'un littéral est la source **brute** (`decouper` ne décode
+/// rien) : sans cette neutralisation, `"…;\nUPDATE …"` se découpe en
+/// `nUPDATE`, qui n'est aucun verbe — idem `\t`, `\r`, `\0` (revue de code
+/// P2, B2-1 / E2-1, régression née de B6). Couper sur la paire entière couvre
+/// aussi `\\` (la paire est consommée d'un bloc, le mot suivant reste
+/// entier) et la continuation de ligne (`\` suivi du saut de ligne). Appliqué
+/// aussi aux chaînes brutes, où `\` n'échappe rien : la neutralisation y
+/// élargit le détecteur, elle ne le rétrécit jamais (P7 : chercher large).
+fn neutraliser_echappements(texte: &str) -> String {
+    let mut sortie = String::with_capacity(texte.len());
+    let mut caracteres = texte.chars();
+    while let Some(c) = caracteres.next() {
+        if c == '\\' {
+            sortie.push(' ');
+            if caracteres.next().is_some() {
+                sortie.push(' ');
+            }
+        } else {
+            sortie.push(c);
+        }
+    }
+    sortie
+}
+
 /// Les écritures de la marque hors de la primitive : `(rang du littéral, extrait)`.
 fn ecritures_de_la_marque(source: &str) -> Vec<String> {
     let (litteraux, masque) = decouper(source);
@@ -177,13 +204,14 @@ fn ecritures_de_la_marque(source: &str) -> Vec<String> {
         .filter(|l| !tests.iter().any(|(de, a)| l.debut >= *de && l.debut <= *a))
         .filter(|l| {
             // Un verbe d'écriture est un MOT du littéral, quel que soit le
-            // blanc qui le suit (espace, tabulation, saut de ligne, `\n`
-            // échappé) : chercher large (P7). `REPLACE` en est un (revue P1,
+            // blanc qui le précède ou le suit (espace, tabulation, saut de
+            // ligne, `\n` / `\t` / `\r` / `\0` échappés, continuation de
+            // ligne) : chercher large (P7). `REPLACE` en est un (revue P1,
             // B6). Seuls `FOR UPDATE` (lecture verrouillante) et `ON UPDATE`
             // (DDL) ne sont pas des écritures ; `ON DUPLICATE KEY UPDATE` en
             // reste une.
-            let mots: Vec<&str> = l
-                .texte
+            let neutre = neutraliser_echappements(&l.texte);
+            let mots: Vec<&str> = neutre
                 .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
                 .filter(|m| !m.is_empty())
                 .collect();
@@ -318,9 +346,15 @@ fn the_detector_sees_writes_and_only_writes() {
         const K: &str = "SELECT lettering_key FROM journal_entry_lines WHERE updated_at > ?";
         const L: &str = "SELECT id FROM journal_entry_lines WHERE lettering_key = ? FOR UPDATE";
         const M: &str = "INSERT INTO t (a) VALUES (1) ON DUPLICATE KEY UPDATE lettering_key = 1";
+        const N: &str = "SELECT 1;\nUPDATE journal_entry_lines SET lettering_key = 1";
+        const O: &str = "x\tINSERT INTO journal_entry_lines (lettering_origin) VALUES ('x')";
+        const P: &str = "x\rREPLACE INTO journal_entry_lines (id, lettering_key) VALUES (1, 1)";
+        const Q: &str = "x\0UPDATE journal_entry_lines SET lettering_origin = NULL";
+        const R: &str = "SELECT 1; \
+            UPDATE journal_entry_lines SET lettering_key = NULL";
     "##;
     let vus = ecritures_de_la_marque(source);
-    assert_eq!(vus.len(), 9, "{vus:#?}");
+    assert_eq!(vus.len(), 14, "{vus:#?}");
     assert!(vus[0].starts_with("UPDATE journal_entry_lines SET lettering_key"));
     assert!(vus[1].starts_with("INSERT INTO journal_entry_lines (id, lettering_origin)"));
     assert!(vus[2].contains("{LINE_COLUMNS}"));
@@ -332,4 +366,11 @@ fn the_detector_sees_writes_and_only_writes() {
     assert!(vus[7].starts_with("UPDATE\n"));
     // `FOR UPDATE` n'est pas une écriture ; `ON DUPLICATE KEY UPDATE` en est une.
     assert!(vus[8].contains("ON DUPLICATE KEY UPDATE"));
+    // Revue de code P2 (B2-1 / E2-1) : un verbe PRÉCÉDÉ d'un échappement
+    // (`\nUPDATE` se découpait en `nUPDATE`), et la continuation de ligne.
+    assert!(vus[9].starts_with("SELECT 1;\\nUPDATE"));
+    assert!(vus[10].starts_with("x\\tINSERT"));
+    assert!(vus[11].starts_with("x\\rREPLACE"));
+    assert!(vus[12].starts_with("x\\0UPDATE"));
+    assert!(vus[13].starts_with("SELECT 1; \\\n"));
 }

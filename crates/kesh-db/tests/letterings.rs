@@ -1206,7 +1206,7 @@ async fn lettering_invariants(pool: MySqlPool) {
     // lettrable de la première (donnée corrompue que les FK admettent), à
     // somme nulle, rattachée au groupe {a, b} — même compte, même origine,
     // somme nulle, `MIN(id)` inchangé : seule la clause des sociétés la voit.
-    let (_, intrus) = ecriture(
+    let (intrus_ecriture, intrus) = ecriture(
         &pool,
         other,
         other_fy,
@@ -1234,6 +1234,36 @@ async fn lettering_invariants(pool: MySqlPool) {
         vec![cle_ab],
         "clause des sociétés"
     );
+    // Les deux `Invariant` de la remédiation P1 (E-2), atteints sur cette même
+    // donnée corrompue (revue de code P2, A2-3). Lu par la seconde société, le
+    // groupe se réduit aux intrus : (a) leur compte est celui de la première
+    // société → `group_account_number` refuse ; (b) leur écriture passée sur
+    // un exercice de la première société → `fiscal_year_names` refuse, avant
+    // le compte.
+    let mut conn = pool.acquire().await.unwrap();
+    let r = letterings::find_group(&mut conn, other, cle_ab).await;
+    assert!(
+        matches!(&r, Err(DbError::Invariant(msg)) if msg.contains("compte")),
+        "branche du compte : {r:?}"
+    );
+    sqlx::query("UPDATE journal_entries SET fiscal_year_id = ? WHERE id = ?")
+        .bind(m.fy26)
+        .bind(intrus_ecriture)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let r = letterings::find_group(&mut conn, other, cle_ab).await;
+    assert!(
+        matches!(&r, Err(DbError::Invariant(msg)) if msg.contains("exercice")),
+        "branche de l'exercice : {r:?}"
+    );
+    sqlx::query("UPDATE journal_entries SET fiscal_year_id = ? WHERE id = ?")
+        .bind(other_fy)
+        .bind(intrus_ecriture)
+        .execute(&pool)
+        .await
+        .unwrap();
+    drop(conn);
     sqlx::query(
         "UPDATE journal_entry_lines SET lettering_key = NULL, lettering_origin = NULL \
          WHERE lettering_key = ? AND id IN (?, ?)",

@@ -9,7 +9,8 @@
 //!
 //! ⛔ **Toute la logique est dans la primitive unique**
 //! (`kesh_db::repositories::letterings`) : ces handlers ne font que les refus
-//! de **forme** (plafond de 200 lignes, au moins deux identifiants distincts),
+//! de **forme** (plafond de [`kesh_core::lettering::MAX_LINES_PER_GROUP`]
+//! lignes, au moins deux identifiants distincts),
 //! qui ne lisent pas la base, puis délèguent.
 //!
 //! ⚠️ **Rejouées sur interblocage** : les deux écrivains appellent l'enveloppe
@@ -42,7 +43,8 @@ use crate::middleware::auth::CurrentUser;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CreateLetteringRequest {
-    /// Identifiants des lignes d'écriture que le lettrage réunit (2 à 200).
+    /// Identifiants des lignes d'écriture que le lettrage réunit (de 2 à
+    /// [`kesh_core::lettering::MAX_LINES_PER_GROUP`]).
     pub line_ids: Vec<i64>,
 }
 
