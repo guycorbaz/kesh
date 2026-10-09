@@ -1,6 +1,6 @@
 # Story 15.13a : MariaDB n'est plus publiée, et ses mots de passe sont obligatoires
 
-Status: review
+Status: done
 
 <!-- Née le 2026-10-09 du découpage de la 15-13 (`15-13-mariadb-et-sauvegarde.md`, désormais fiche index)
      après la validation P3, décision de l'orchestrateur (signal D5 de recyclage levé deux passes de suite) —
@@ -1035,6 +1035,26 @@ de production touchée (`git diff --name-only | grep '\.rs$'` → le seul fichie
   variables précédentes, ne remplacez pas ces chevrons » 1 (césure), `mot_de_passe_fort` 0, « omettez
   les lignes de l'autre » 0. Brochure non touchée.
 
+**Clôture** (agent de clôture, Opus 5.5, en autonomie). `origin/main` toujours à `200f5e79` après
+`git fetch` : base de la branche, **rebase sans objet**, aucun conflit. Gate **complet** sur la tête
+`7e471fd4` (dernier commit de code : `7faa16bb`, remédiation P1 — `ci.yml` et un test ; D7), bases
+`kesh_1513a` / `kesh_e2e_1513a` remises à zéro (`DROP`/`CREATE`, migrations, seed) avant le backend et
+avant l'E2E :
+- `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) : **2980 / 2980**, 4 ignorés ;
+- frontend : `npm run check` 0 erreur (27 avertissements préexistants), `lint-i18n-ownership` vert,
+  Vitest **1095 / 1095** (112 fichiers), `npm run build` vert ;
+- E2E complet (binaire `target/debug/kesh-api` du worktree, port 3017, base `kesh_e2e_1513a`, secrets
+  `KESH_JWT_SECRET` / `KESH_ADMIN_PASSWORD` tirés par `openssl rand`, `KESH_TEST_MODE=true` des deux
+  côtés, `KESH_COOKIE_SECURE=false`, SMTP factices, répertoires `target/e2e/{inbox,documents}` ;
+  `/health` → `smtpConfigured:true` ; de 06:29 à 06:39 UTC) : **245 passés, 9 échoués**, 19 ignorés,
+  10,0 min — KF-029 ×7 (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`,
+  `:150`) et KF-045 ×2 (`invoices:415`, `:439`, avant midi UTC) ; aucun hors liste, pas de « huitième
+  variable » ce run ; aucun `Permission denied` au journal du backend, arrêté par son PID ;
+- étape CI « Validate compose files » rejouée localement depuis `ci.yml` (`bash -eo pipefail`,
+  `RUNNER_TEMP` posé, mots de passe MariaDB retirés de l'environnement, pas de `.env` au worktree) :
+  **code 0**, refus de Compose affiché pour `MARIADB_ROOT_PASSWORD`, aucun `refus.txt` à la racine ;
+  `docker-compose.prod.yml` lisible.
+
 ### File List
 
 - `docker-compose.yml` — port de `mariadb` retiré (commentaire, forme loopback), trois `:?`.
@@ -1176,3 +1196,13 @@ de production touchée (`git diff --name-only | grep '\.rs$'` → le seul fichie
   sauf le nom de volume de B-L4, laissé à #575 (C-15-13a-4). Choix consignés : C-15-13a-3, C-15-13a-4.
   La remédiation touche la recette du manuel (refondue et rejouée), `ci.yml` (configuration CI) et un test :
   une passe suivante est requise par la règle (un MEDIUM en P1).
+- 2026-10-09 — **Revue de code close, story `done`** (agent de clôture, Opus 5.5). Passe P2 **ciblée**
+  (une lentille, **Haiku 4.5**, contexte frais, prompt versionné `15-13a-review-prompt-p2-ciblee.md`,
+  rapport `target/gate-logs/15-13a-review-p2-ciblee.md`) sur le seul commit de remédiation `7faa16bb` :
+  **0 finding**, cinq axes déclarés exercés (distinction installation neuve / base déjà créée, recette
+  `ALTER USER`, `ci.yml`, `configuration_transmise.rs`, PDF du manuel), aucun déclaré non exercé ; l'axe
+  le plus cher (la distinction) repris par l'orchestrateur au grep. La remédiation P1 ne touchait aucune
+  ligne de code Rust de production. **Trend : P1 (Sonnet ×3) 1 MEDIUM distinct (E-1 = A-1) + LOW → P2
+  ciblée (Haiku) 0.** Rebase sur `origin/main` sans objet (`200f5e79`, base inchangée). Gate complet
+  sur la tête `7e471fd4` : backend 2980/2980, Vitest 1095/1095, E2E 245 / 7 KF-029 + 2 KF-045 du matin,
+  étape CI rejouée verte (détail au Dev Agent Record, « Clôture »).
