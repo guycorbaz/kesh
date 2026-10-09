@@ -361,7 +361,7 @@ Pour retrouver un compte archivé, cocher \emph{Afficher les archivés} en haut 
 \label{sec:plan-comptable-archivage}
 
 \begin{keshwarning}
-\textbf{Avant d'archiver un compte de produit, pensez aux avoirs.} Un compte de produit imputé par des factures \textbf{déjà validées} reste nécessaire tant qu'un avoir peut être émis sur ces factures — ce qui n'a pas de limite de temps. Il en va de même du \textbf{compte débiteurs}, du \textbf{compte de différences d'arrondi} et du \textbf{compte de TVA due} que ces factures ont mouvementés. Une fois le compte archivé, l'émission d'un avoir sur ces factures est \textbf{refusée} (le motif est expliqué au \S\ref{sec:avoirs}).
+\textbf{Avant d'archiver un compte de produit, pensez aux avoirs.} Un compte de produit imputé par des factures \textbf{déjà validées} reste nécessaire tant qu'un avoir peut être émis sur ces factures — ce qui n'a pas de limite de temps. Il en va de même du \textbf{compte débiteurs} et du \textbf{compte de différences d'arrondi} que ces factures ont mouvementés, ainsi que du \textbf{compte de TVA due} désigné dans les réglages --- celui du moment, non celui que la facture a crédité --- si la facture porte de la TVA. Une fois le compte archivé, l'émission d'un avoir sur ces factures est \textbf{refusée} (le motif est expliqué au \S\ref{sec:avoirs}).
 
 Ce n'est pas bloquant : la marche à suivre est de \textbf{réactiver} le compte, d'émettre l'avoir, puis de le \textbf{ré-archiver}. Les deux mouvements étant journalisés, la manœuvre reste traçable.
 \end{keshwarning}
@@ -1268,7 +1268,7 @@ Deux précisions utiles. D'abord, la réactivation peut elle-même être refusé
 \end{keshwarning}
 
 \begin{keshwarning}
-\textbf{Avoir refusé : compte débiteurs, d'arrondi ou de TVA archivé.} L'avoir écrit aussi sur trois comptes qui ne sont pas des comptes de produit : le \textbf{compte débiteurs que la facture a débité}, le \textbf{compte qui a reçu son arrondi} à 5~centimes, et le \textbf{compte de TVA due désigné dans les réglages}. Si l'un d'eux a été archivé, Kesh refuse d'émettre l'avoir avec le message «~Impossible d'émettre l'avoir --- compte(s) archivé(s)~: \ldots{} Réactivez le ou les comptes concernés.~», qui \textbf{nomme le compte}.
+\textbf{Avoir refusé : compte débiteurs, d'arrondi ou de TVA archivé.} L'avoir écrit aussi sur jusqu'à trois comptes qui ne sont pas des comptes de produit : le \textbf{compte débiteurs que la facture a débité}, le \textbf{compte qui a reçu son arrondi} à 5~centimes, s'il y en a un, et, si la facture porte de la TVA, le \textbf{compte de TVA due désigné dans les réglages}. Si l'un d'eux a été archivé, Kesh refuse d'émettre l'avoir avec le message «~Impossible d'émettre l'avoir --- compte(s) archivé(s)~: \ldots{} Réactivez le ou les comptes concernés.~», qui \textbf{nomme le compte}.
 
 La marche à suivre est la \textbf{même procédure en trois étapes} que ci-dessus~: réactiver le compte, émettre l'avoir, ré-archiver. Si vous aviez entre-temps donné le rôle \emph{Créances clients} à un nouveau compte débiteurs, retirez-le d'abord de ce nouveau compte~: la réactivation est refusée tant qu'un autre compte porte le rôle (\S\ref{sec:plan-comptable-archivage}).
 

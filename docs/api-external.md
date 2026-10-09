@@ -346,6 +346,18 @@ Corps : `{ "version": n }` — le verrou optimiste. Réponse : la facture, même
 | Aucun exercice ouvert ne couvre la date | `FISCAL_YEAR_INVALID` | `400` |
 | Date dans une période verrouillée | `PERIOD_LOCKED` | `400` |
 
+### Émettre un avoir — refus de compte
+
+**`POST /api/v1/credit-notes`** — l'avoir contre-passe l'écriture de la facture sur **les comptes que la vente a mouvementés** : il crédite le compte débiteurs que la facture a **débité** et contre-passe l'arrondi sur le compte d'arrondi que la facture a mouvementé, non sur ceux des réglages du moment ; un réglage débiteurs vide ne l'empêche donc plus *(depuis la v0.13.0)*. Le compte de TVA due, lui, reste celui des réglages.
+
+| Refus | Code | Statut |
+|---|---|---|
+| Compte débiteurs ou compte d'arrondi de la vente archivé, ou compte de TVA due des réglages archivé (si l'avoir porte de la TVA) — contrôlé **avant** l'exercice | `ACCOUNT_ARCHIVED` | `400`, `details.rejected[{accountId, accountNumber}]` |
+| Compte de produit d'une ligne archivé | `CREDIT_NOTE_REVENUE_ACCOUNT_ARCHIVED` | `400`, `details.rejected[]` nomme la ligne |
+| Compte de produit par défaut non désigné dans les réglages (exigé dans tous les cas), ou compte de TVA due non désigné alors que l'avoir porte de la TVA | `CONFIGURATION_REQUIRED` | `400` |
+
+⚠️ **Changement** *(v0.13.0)* : un compte débiteurs, d'arrondi ou de TVA due archivé rendait `400 INACTIVE_OR_INVALID_ACCOUNTS` (ou `ROUNDING_ACCOUNT_NOT_CONFIGURED` pour l'arrondi) ; un réglage débiteurs vide rendait `CONFIGURATION_REQUIRED`.
+
 ### Annuler le règlement d'une facture fournisseur
 
 **`POST /api/v1/supplier-invoices/{id}/settlement/cancel`** — écriture (`read-write`), ouverte aux clés comme `POST /supplier-invoices/{id}/pay`. Sans corps. Contre-passe l'écriture de règlement (datée du jour) et ramène la facture à `open` : `settlementType`, `settlementJournalEntryId`, `paidAt`… reviennent à `null`. Le lot de paiement confirmé qui l'a éventuellement réglée **n'est pas modifié**. Réponse : `{ invoice, reversalJournalEntryId }`. Distinct de `POST /supplier-invoices/{id}/cancel`, qui annule la **facture** elle-même (ci-dessous).

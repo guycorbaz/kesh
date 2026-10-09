@@ -4425,3 +4425,20 @@ l'import (#458–#461).
 - **Écartées** : un fichier de test neuf pour le rejeu de l'avoir ; une `companies::create` complète pour un identifiant ;
   dupliquer le bras HTTP ; réécrire `:928`.
 - **Réversible** : oui.
+
+## C-15-6a-4 — Revue de code P1 de la 15-6a : remédiation sans code de production, une dette écrite
+
+- **Contexte** : la revue P1 (Sonnet ×3) rend 0 au-dessus de LOW et 14 LOW. Plusieurs se corrigent par des
+  tests, des doc-comments ou de la documentation ; un seul (B-3, double dérivation de l'ensemble des comptes de
+  produit dans `create_credit_note`) ne se corrige que par du code de production.
+- **Option retenue** : corriger tout ce qui se corrige hors production exécutable (renommage du test 10, test 13
+  discriminant constaté rouge sous mutation, test 19 sur l'`Invariant` « écriture de vente sans ligne de débit »,
+  doc-comments, section « Émettre un avoir » de `docs/api-external.md`, manuel et PDF) ; écrire **B-3 comme dette**
+  (P3, à ouvrir en issue par l'orchestrateur : dériver `sites` de `revenue_ids` par un seul helper, ou un
+  `debug_assert!` d'inclusion) ; écrire comme **angle mort** le second `Invariant` de l'AC3 (« facture validée sans
+  écriture de vente »), que `chk_invoices_validated_has_je` empêche de monter. Le test 19 est placé dans
+  `credit_notes_repository.rs` (patron du test 3, helpers `emit` / `assert_nothing_written`).
+- **Écartées** : poser le garde de B-3 maintenant (rouvrirait la boucle — la remédiation toucherait la production,
+  ce qui interdit de clore après elle) ; un test du second `Invariant` par désactivation de la contrainte
+  (`SET check_constraint_checks = 0`) — il monterait un état que la base interdit, sans valeur de preuve.
+- **Réversibilité** : totale ; la dette se solde par une story de quelques lignes.

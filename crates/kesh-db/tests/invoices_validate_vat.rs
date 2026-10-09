@@ -1580,12 +1580,37 @@ mod garde_usage_comptes_reglage {
     /// l'avoir à la garde à l'usage (C35), quand l'avoir relisait la créance dans
     /// les réglages. Il ne la lit plus là : sans ce ré-ancrage, le test serait
     /// resté vert pour une autre raison, sans plus rien figer.
+    ///
+    /// **Discriminant sur la source** (revue de code P1, finding A-1) : les
+    /// réglages désignent, après la validation, un AUTRE compte débiteurs
+    /// (1101, imputable et actif). Un avoir qui relirait la créance dans les
+    /// réglages créditerait 1101 et passerait la garde : l'assertion sur 1100
+    /// rougit alors (constaté sous la mutation « créance lue sur les
+    /// réglages »).
     #[sqlx::test(migrations = "./test-schema")]
     async fn credit_note_credits_a_non_postable_sale_receivable(pool: MySqlPool) {
         let (seeded, contact) = setup(&pool).await;
         let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
         validate(&pool, &seeded, id).await.expect("validée");
         set_postable(&pool, seeded.accounts["1100"], false).await;
+        let settings_receivable: i64 = sqlx::query(
+            "INSERT INTO accounts (company_id, number, name, account_type) \
+             VALUES (?, '1101', 'Débiteurs (réglages)', 'Asset')",
+        )
+        .bind(seeded.company_id)
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        sqlx::query(
+            "UPDATE company_invoice_settings SET default_receivable_account_id = ? \
+             WHERE company_id = ?",
+        )
+        .bind(settings_receivable)
+        .bind(seeded.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 
         let cn = credit_notes::create_credit_note(
             &pool,
@@ -1609,6 +1634,13 @@ mod garde_usage_comptes_reglage {
             (creance.account_id, creance.credit),
             (seeded.accounts["1100"], dec!(108.10)),
             "le crédit vise la créance de la vente"
+        );
+        assert!(
+            cn.journal_entry
+                .lines
+                .iter()
+                .all(|l| l.account_id != settings_receivable),
+            "aucune ligne sur le compte débiteurs des réglages"
         );
     }
 

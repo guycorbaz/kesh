@@ -1043,3 +1043,63 @@ async fn credit_note_lock_leaves_a_foreign_account_unlocked(pool: MySqlPool) {
     );
     holder.rollback().await.unwrap();
 }
+
+/// Test 19 (revue de code P1, finding A-3 ; AC3) — l'écriture de vente SANS
+/// ligne de débit : la facture, repointée en SQL sur un en-tête d'écriture vide
+/// de la même société, n'a plus de créance lisible. L'avoir est refusé
+/// `DbError::Invariant` (500), rien d'écrit — il ne retombe pas sur le réglage
+/// débiteurs.
+///
+/// ⚠️ Le second `Invariant` de l'AC3 (« facture validée sans écriture de
+/// vente ») n'a pas de test : `chk_invoices_validated_has_je` interdit de monter
+/// une facture `validated` dont `journal_entry_id` est `NULL`, même en SQL
+/// direct. Angle mort assumé, gardé par la contrainte elle-même.
+#[sqlx::test(migrations = "./test-schema")]
+async fn credit_note_refused_when_the_sale_entry_has_no_debit_line(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let invoice_id =
+        create_and_validate(&pool, &seeded, contact, &[(dec!(8.10), dec!(1000.00))]).await;
+    let (fy_id, entry_date): (i64, NaiveDate) = sqlx::query_as(
+        "SELECT je.fiscal_year_id, je.entry_date FROM journal_entries je \
+         JOIN invoices i ON i.journal_entry_id = je.id WHERE i.id = ?",
+    )
+    .bind(invoice_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let empty_entry: i64 = sqlx::query(
+        "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, entry_date, \
+         journal, description, version, created_at, updated_at) \
+         SELECT ?, ?, COALESCE(MAX(entry_number), 0) + 1, ?, 'Ventes', 'en-tête vide', 1, \
+         NOW(3), NOW(3) FROM journal_entries WHERE company_id = ? AND fiscal_year_id = ?",
+    )
+    .bind(seeded.company_id)
+    .bind(fy_id)
+    .bind(entry_date)
+    .bind(seeded.company_id)
+    .bind(fy_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query("UPDATE invoices SET journal_entry_id = ? WHERE id = ?")
+        .bind(empty_entry)
+        .bind(invoice_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let entries_before = count_entries(&pool).await;
+
+    let err = emit(&pool, &seeded, invoice_id, d(2026, 7, 1))
+        .await
+        .expect_err("écriture de vente sans ligne de débit");
+    match &err {
+        DbError::Invariant(msg) => assert!(
+            msg.contains("sans ligne de débit"),
+            "message inattendu : {msg}"
+        ),
+        other => panic!("attendu Invariant, obtenu {other:?}"),
+    }
+    assert_nothing_written(&pool, invoice_id, entries_before).await;
+}

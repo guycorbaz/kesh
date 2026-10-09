@@ -9,7 +9,12 @@
 //!
 //! Refus (erreurs métier) : facture inexistante, non `validated` (AC2),
 //! déjà encaissée `paid_at IS NOT NULL` (AC2bis), déjà créditée (AC3),
-//! exercice fermé sur la date de l'avoir (AC10), comptes non configurés.
+//! exercice fermé sur la date de l'avoir (AC10), produit de repli ou TVA due
+//! non configurés dans les réglages, compte de l'avoir archivé —
+//! `CreditNoteAccountsArchived` (créance ou arrondi de la vente, TVA due) et
+//! `CreditNoteRevenueAccountsArchived` (comptes de produit). Depuis la Story
+//! 15-6a, la créance et le compte d'arrondi se lisent sur l'écriture de vente,
+//! non dans les réglages.
 
 use rust_decimal::Decimal;
 use sqlx::MySqlPool;
@@ -163,7 +168,11 @@ fn credit_note_emits_vat(vat_by_rate: &std::collections::BTreeMap<Decimal, Decim
 ///
 /// Inverse exact de `invoices::generate_invoice_journal_lines` (swap débit↔crédit,
 /// montants **positifs**) :
-/// - `[0]` Crédit créance (1100) = HT + TVA (annule la créance TTC)
+/// - `[0]` Crédit créance (`receivable_account_id`, 1100 d'ordinaire) = HT + TVA
+///   (annule la créance TTC). Ce compte est celui que l'écriture de VENTE a
+///   débité (Story 15-6a, #473), lu par
+///   [`super::invoice_settlements::sale_receivable_account`] — non le réglage
+///   débiteurs du moment.
 /// - `[1..M]` Débit produit, **une ligne par compte de produit effectif** dont le
 ///   montant agrégé est `> 0`, triées par `account_id` croissant (annule chaque
 ///   crédit produit de la facture) — Story 16-1a, décision D5

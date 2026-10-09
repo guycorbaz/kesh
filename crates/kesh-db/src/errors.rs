@@ -963,6 +963,10 @@ pub enum DbError {
     /// Un champ de configuration requis pour l'opération est absent
     /// (Story 5.2 : `default_receivable_account_id` ou
     /// `default_revenue_account_id` manquant dans `company_invoice_settings`).
+    /// Depuis la Story 15-6a, l'avoir ne lit plus la créance dans les
+    /// réglages (il la lit sur l'écriture de vente) : un débiteurs vide ne
+    /// l'atteint plus ; la validation de facture, si. L'avoir peut encore le
+    /// rendre pour le produit de repli ou la TVA due.
     /// Mappé vers HTTP 400 `CONFIGURATION_REQUIRED` côté API.
     #[error("Configuration manquante : {0}")]
     ConfigurationRequired(String),

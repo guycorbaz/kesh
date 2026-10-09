@@ -683,13 +683,16 @@ privés à ce fichier, d'où ce placement :
 
 **`crates/kesh-api/tests/reconciliation_e2e.rs`** :
 
-10. **`invoice_proposal_with_a_foreign_sale_entry_is_malformed`** — non-régression de l'AC1/AC2, écrit
+10. **`invoice_proposal_with_a_sale_entry_without_debit_line_is_malformed`** — non-régression de l'AC1/AC2, écrit
     **avant** le remplacement de la copie : l'écriture de vente d'une facture repointée en SQL
     (`UPDATE invoices SET journal_entry_id = …`) sur une écriture d'une **autre société** — le lecteur,
     porté par `je.company_id`, ne trouve aucune ligne : `failed[]` porte
     `INVOICE_SALE_ENTRY_MALFORMED` avec `details = { "reason": "no_debit_line_on_sale_entry",
     "saleEntryId" }`, HTTP 200, transaction bancaire toujours en attente. Il passe avant **et** après
-    le correctif — c'est un témoin, pas un test rouge d'abord. **Montage plus léger, au choix** : le
+    le correctif — c'est un témoin, pas un test rouge d'abord. *(Renommé à la revue de code P1,
+    findings B-1/A-4 : le nom d'origine, `…_with_a_foreign_sale_entry_is_malformed`, annonçait une
+    écriture d'une autre société, que le montage retenu ci-dessous ne monte pas ; la portée société
+    du lecteur est prouvée par le test 4.)* **Montage plus léger, retenu** : le
     fichier ne crée qu'une société (`reconciliation_e2e.rs:145`) ; au lieu d'en construire une seconde
     avec exercice et écriture, un **en-tête d'écriture sans ligne** dans la même société, inséré en SQL
     et désigné par `UPDATE invoices SET journal_entry_id = …`, rend le même `None`.
@@ -734,7 +737,11 @@ avoir **par la route** (`POST /api/v1/credit-notes`, `:742` ; les autres appelle
 
 **`crates/kesh-db/tests/credit_notes_repository.rs`** (suite) :
 
-13. **Modifié, délibérément — le test de C35 que la 15-5d ajoute** (15-5d, § *Tests* : « avoir sur une
+13. *(Rangement corrigé à la revue de code P1, finding A-5 (b) : ce test vit en réalité dans
+    `crates/kesh-db/tests/invoices_validate_vat.rs`, sous le nom
+    `credit_note_credits_a_non_postable_sale_receivable` — le T0 l'a établi ; il n'est pas dans
+    `credit_notes_repository.rs`, qui compte 9 tests avant la story et 17 après.)*
+    **Modifié, délibérément — le test de C35 que la 15-5d ajoute** (15-5d, § *Tests* : « avoir sur une
     facture dont la créance des réglages est devenue non imputable → émis »). Après la 15-6a, l'avoir
     ne lit plus ce réglage : le test resterait vert **pour une autre raison** et ne figerait plus rien
     (passe à vide, forme exacte de la 16-1a). Il est **ré-ancré** : la créance **de la vente** (1100)
@@ -1418,3 +1425,44 @@ Claude Opus 5.5 (développement en autonomie, 2026-10-09, worktree `kesh-15-6a`)
   la vente devenue non imputable, non plus l'exemption C35). 16 tests neufs, 2 modifiés ; 11 rouges d'abord constatés,
   4 mutations rouges. Gates au commit de code `55143ec0` : backend 2895/2895, Vitest 1091/1091, E2E 247 / 7 KF-029.
   Choix C-15-6a-2, C-15-6a-3. Statut `review`.
+
+- 2026-10-09 — **Revue de code P1** (`bmad-code-review`, Sonnet ×3 : lentilles B, E, A — rapports
+  `target/gate-logs/15-6a-review-p1-{B,E,A}.md`, prompt `15-6a-review-prompt-p1.md`) : **0 CRITICAL, 0 HIGH,
+  0 MEDIUM, 14 LOW** (B 4, E 4, A 6 ; B-1 = A-4 et B-4 = E3 convergent). Remédiation **sans aucune ligne de
+  production exécutable** — tests, doc-comments, manuel, `docs/api-external.md`, fiche (choix C-15-6a-4) :
+  - **B-1 = A-4** : test 10 renommé `invoice_proposal_with_a_sale_entry_without_debit_line_is_malformed` — il
+    monte un en-tête **sans ligne de la même société**, non une écriture étrangère ; § *Tests* de la fiche
+    réaligné (la portée société reste prouvée par le test 4).
+  - **B-2** : doc-comment de `DbError::ConfigurationRequired` — l'avoir ne lit plus la créance des réglages.
+  - **A-5** : (a) en-tête du module `credit_notes.rs` — les refus d'archivage (`CreditNoteAccountsArchived`,
+    `CreditNoteRevenueAccountsArchived`) et la source des comptes de la vente ; (b) § *Tests*, item 13 :
+    le test vit dans `invoices_validate_vat.rs`.
+  - **A-6** : doc-comment de `generate_credit_note_journal_lines` — `[0]` crédite le compte que la vente a
+    débité.
+  - **E1** : `docs/api-external.md`, section neuve « Émettre un avoir — refus de compte » : `400
+    ACCOUNT_ARCHIVED` (créance, arrondi, TVA due des réglages), `CREDIT_NOTE_REVENUE_ACCOUNT_ARCHIVED`,
+    `CONFIGURATION_REQUIRED`, et le changement de la v0.13.0.
+  - **A-2** : `user-manual.tex:364` — la TVA due est **celle des réglages**, et seulement si la facture porte de la
+    TVA ; propagé à `:1271` (« jusqu'à trois comptes », arrondi « s'il y en a un », TVA « si la facture porte
+    de la TVA »). PDF régénéré, contrôlé aplati (`pdftotext | tr '\n' ' ' | tr -s ' '`) : les trois fragments
+    neufs présents.
+  - **A-1** : test 13 rendu discriminant sur la **source** — les réglages désignent, après la validation, un
+    autre compte débiteurs (1101, actif et imputable) ; assertion « aucune ligne sur 1101 » ajoutée. **Constaté
+    rouge** sous la mutation « créance lue sur les réglages » (`left: (6, 108.1000)`, `right: (2, 108.10)`),
+    vert après restauration (fichier `touch`é).
+  - **A-3** : test 19 `credit_note_refused_when_the_sale_entry_has_no_debit_line` (`credit_notes_repository.rs`)
+    — facture repointée en SQL sur un en-tête d'écriture vide : `DbError::Invariant`, rien d'écrit ; **rouge**
+    sous la même mutation (l'avoir est émis sur le réglage). Le second `Invariant` de l'AC3 (« facture validée
+    sans écriture de vente ») **ne se monte pas** : `chk_invoices_validated_has_je` l'interdit même en SQL
+    direct — angle mort écrit au doc-comment du test.
+  - **Acceptés sans changement** : **B-3** (double dérivation de l'ensemble des comptes de produit,
+    `credit_notes.rs` `revenue_ids` / `sites`) — un garde serait du code de production : **dette**, écrite au
+    registre C-15-6a-4 ; **B-4 = E3** (le `details.message` de `DATABASE_ERROR` au rapprochement porte
+    désormais « Erreur SQLx : … », texte du `DbError`, au lieu du texte brut de `sqlx::Error` ; code inchangé,
+    aucun test ni client ne lit ce libellé, le rejeu ne le lit pas) ; **E2** (un compte de produit d'une autre
+    société sur une ligne rend `Invariant` 500 au lieu d'un refus nommé — inatteignable par l'application,
+    donnée corrompue seulement) ; **E4** (cycle archivage en attente / écriture manuelle / avoir : rejoué par
+    la route, assumé par la doc « réduit la fréquence, ne les exclut pas »).
+  Décompte (de `ec089830` à ce commit) : 1 test neuf (19), 1 modifié (13), 1 renommé (10) — 2895 → 2896.
+  Pas de passe ciblée : la remédiation ne touche aucune ligne de production exécutable (critère de clôture de
+  la § *La passe ciblée*).

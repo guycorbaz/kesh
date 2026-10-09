@@ -4927,7 +4927,7 @@ async fn a_rounding_gap_without_a_usable_account_is_refused_per_proposal(pool: M
 /// d'écriture SANS ligne, de la même société — le lecteur ne trouve aucune
 /// ligne de débit et rend `None`.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn invoice_proposal_with_a_foreign_sale_entry_is_malformed(pool: MySqlPool) {
+async fn invoice_proposal_with_a_sale_entry_without_debit_line_is_malformed(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Malforme", "CH4431999123000889012", Role::Comptable).await;
     let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
     let inv_date = NaiveDate::from_ymd_opt(2026, 5, 1).unwrap();
