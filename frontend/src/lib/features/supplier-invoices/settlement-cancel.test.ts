@@ -22,6 +22,7 @@ describe("motifs d’annulation d’un règlement fournisseur", () => {
   it("la queue est RÉUTILISÉE, sans jumeau (mutation : texte dupliqué qui diverge)", () => {
     for (const c of [
       "FISCAL_YEAR_CLOSED",
+      "LETTERING_ALL_LINES_IN_CLOSED_PERIODS",
       "MATCHED_BANK_TRANSACTION",
       "ACCOUNT_ARCHIVED",
       "FISCAL_YEAR_INVALID",

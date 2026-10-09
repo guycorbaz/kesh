@@ -3057,7 +3057,7 @@ impl IntoResponse for AppError {
                     "LETTERING_IS_DOCUMENT",
                     &t(
                         "error-lettering-is-document",
-                        "Ce lettrage est celui d'une pièce : annulez le règlement plutôt que de délettrer.",
+                        "Ce lettrage est celui d'une pièce : il suit la pièce et ses règlements, et ne se défait pas à la main.",
                     ),
                 ),
                 // R7 point 4 — un refus MÉTIER (« réessayez »), jamais un 500.
@@ -3257,7 +3257,9 @@ impl IntoResponse for AppError {
                 // Story 25-3-a-1 (#414) — l'annulation d'un règlement refusée.
                 //
                 // ⚠️ Seuls les rangs que le GESTE refuse lui-même arrivent ici
-                // (facture créditée, exercice clos) ; les autres sont refusés
+                // (facture créditée, solde existant, facture fournisseur non
+                // payée, exercice clos, lettrage figé par la période — rang
+                // 2 bis, Story 15-1a2-0) ; les autres sont refusés
                 // par la contre-passation, avec son erreur propre. Les branches
                 // restantes gardent le `match` exhaustif. ⛔ **Les clés sont
                 // celles de l'écran** : un seul texte par motif.
@@ -3278,6 +3280,14 @@ impl IntoResponse for AppError {
                         SettlementCancelBlocker::FiscalYearClosed => (
                             "settlement-cancel-blocked-fiscal-year-closed",
                             "Ce règlement appartient à un exercice clôturé : pour pouvoir l'annuler, un administrateur doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
+                        ),
+                        // Rang 2 bis (Story 15-1a2-0) — clé de la QUEUE,
+                        // partagée par le règlement client, le solde et le
+                        // paiement fournisseur (« sa facture » vaut pour les
+                        // deux).
+                        SettlementCancelBlocker::DocumentLetteringInClosedPeriods => (
+                            "settlement-cancel-blocked-lettering-closed",
+                            "Ce règlement est lettré avec sa facture, et toutes les lignes de ce lettrage sont dans une période close : il est figé. Pour pouvoir l'annuler, prenez la date la plus récente du lettrage (en général celle du dernier règlement) : si elle est sous le verrou de période, un administrateur doit faire reculer le verrou avant elle ; et si son exercice est suivi d'un exercice clôturé, ou clôturé lui-même, il doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
                         ),
                         SettlementCancelBlocker::MatchedBankTransaction => (
                             "settlement-cancel-blocked-bank-match",
@@ -3308,7 +3318,8 @@ impl IntoResponse for AppError {
                 }
                 // Story 25-3-b (#418) — le dé-rapprochement refusé par le geste
                 // lui-même (rang 0 : transaction non rapprochée ; rang 2 :
-                // exercice clos). ⛔ Ses PROPRES textes : ceux du règlement
+                // exercice clos ; rang 2 bis : lettrage figé par la période,
+                // Story 15-1a2-0). ⛔ Ses PROPRES textes : ceux du règlement
                 // disent « ce règlement », faux pour un éclatement ou un
                 // rapprochement manuel.
                 DbError::ReconciliationNotCancellable { blocker } => {
@@ -3317,7 +3328,8 @@ impl IntoResponse for AppError {
                 }
                 // Story 25-3-c (#454) — l'annulation d'une facture fournisseur
                 // refusée par le geste lui-même (déjà annulée, exercice de
-                // l'achat clos, lot en cours). ⛔ Ses PROPRES textes, qui
+                // l'achat clos, lettrage figé par la période — rang 2 bis,
+                // Story 15-1a2-0 —, lot en cours). ⛔ Ses PROPRES textes, qui
                 // disent « cette facture » : ceux du règlement disent « ce
                 // règlement ».
                 DbError::SupplierInvoiceNotCancellable { blocker } => {
@@ -3788,6 +3800,10 @@ fn reconciliation_cancel_blocked_text(
             "reconciliation-cancel-blocked-fiscal-year-closed",
             "Ce rapprochement appartient à un exercice clôturé : pour pouvoir l'annuler, un administrateur doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
         ),
+        SettlementCancelBlocker::DocumentLetteringInClosedPeriods => (
+            "reconciliation-cancel-blocked-lettering-closed",
+            "Ce rapprochement est lettré avec sa facture, et toutes les lignes de ce lettrage sont dans une période close : il est figé. Pour pouvoir l'annuler, prenez la date la plus récente du lettrage (en général celle du dernier règlement) : si elle est sous le verrou de période, un administrateur doit faire reculer le verrou avant elle ; et si son exercice est suivi d'un exercice clôturé, ou clôturé lui-même, il doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
+        ),
         SettlementCancelBlocker::MatchedBankTransaction => (
             "reconciliation-cancel-blocked-bank-match",
             "L'écriture de ce rapprochement est aussi rapprochée d'une autre transaction bancaire : annulez d'abord cet autre rapprochement.",
@@ -3824,6 +3840,10 @@ fn supplier_invoice_cancel_blocked_text(
         SettlementCancelBlocker::FiscalYearClosed => (
             "supplier-invoices-cancel-blocked-fiscal-year-closed",
             "Cette facture appartient à un exercice clôturé : pour pouvoir l'annuler, un administrateur doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
+        ),
+        SettlementCancelBlocker::DocumentLetteringInClosedPeriods => (
+            "supplier-invoices-cancel-blocked-lettering-closed",
+            "Cette facture est lettrée avec son paiement, et toutes les lignes de ce lettrage sont dans une période close : il est figé. Pour pouvoir l'annuler, prenez la date la plus récente du lettrage (en général celle du paiement) : si elle est sous le verrou de période, un administrateur doit faire reculer le verrou avant elle ; et si son exercice est suivi d'un exercice clôturé, ou clôturé lui-même, il doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
         ),
         SettlementCancelBlocker::MatchedBankTransaction => (
             "supplier-invoices-cancel-blocked-bank-match",
@@ -4305,6 +4325,60 @@ mod tests {
                 .replace("{ $max }", &valeur);
             assert_eq!(body["error"]["message"], attendu, "{code}");
         }
+    }
+
+    /// Story 15-1a2-0 (#518, AC7 a) — le rang 2 bis rend, dans **chacune** des
+    /// trois familles d'annulation, le code réemployé
+    /// `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`, un 409, et le texte de **sa**
+    /// clé (`*-cancel-blocked-lettering-closed`) — jamais celui d'une autre
+    /// famille ni celui du lettrage manuel. L'égalité mot pour mot du repli et
+    /// du FTL est la part de G9 (`textes_coherents.rs`).
+    #[tokio::test]
+    async fn closed_lettering_texts_follow_their_family() {
+        let catalogue = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../kesh-i18n/locales/fr-CH/messages.ftl"
+        ))
+        .expect("catalogue fr-CH");
+        let texte = |cle: &str| -> String {
+            catalogue
+                .lines()
+                .find_map(|l| l.strip_prefix(&format!("{cle} = ")))
+                .unwrap_or_else(|| panic!("clé {cle} absente du catalogue"))
+                .to_string()
+        };
+        let blocker = SettlementCancelBlocker::DocumentLetteringInClosedPeriods;
+        let cas = [
+            (
+                DbError::SettlementNotCancellable { blocker },
+                "settlement-cancel-blocked-lettering-closed",
+            ),
+            (
+                DbError::ReconciliationNotCancellable { blocker },
+                "reconciliation-cancel-blocked-lettering-closed",
+            ),
+            (
+                DbError::SupplierInvoiceNotCancellable { blocker },
+                "supplier-invoices-cancel-blocked-lettering-closed",
+            ),
+        ];
+        let mut messages = std::collections::BTreeSet::new();
+        for (err, cle) in cas {
+            let (status, body) = response_body(AppError::Database(err).into_response()).await;
+            assert_eq!(status, StatusCode::CONFLICT, "{cle}");
+            assert_eq!(
+                body["error"]["code"], "LETTERING_ALL_LINES_IN_CLOSED_PERIODS",
+                "{cle}"
+            );
+            assert_eq!(body["error"]["message"], texte(cle), "{cle}");
+            assert_ne!(
+                body["error"]["message"],
+                texte("error-lettering-all-lines-in-closed-periods"),
+                "{cle} : le texte du lettrage manuel"
+            );
+            messages.insert(body["error"]["message"].to_string());
+        }
+        assert_eq!(messages.len(), 3, "trois familles, trois textes");
     }
 
     /// Les `details` des refus qui en portent (AC3).

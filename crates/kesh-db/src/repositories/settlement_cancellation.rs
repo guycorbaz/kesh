@@ -18,17 +18,29 @@ use chrono::Utc;
 use sqlx::MySqlConnection;
 
 use crate::errors::{DbError, ReversalBlocker, SettlementCancelBlocker, map_db_error};
-use crate::repositories::{fiscal_years, journal_entries};
+use crate::repositories::{fiscal_years, journal_entries, letterings};
 
 /// Un motif d'annulation refusée : le motif, l'identifiant de la pièce qui le
 /// porte (la transaction bancaire au rang 3), et son étiquette lisible (le
 /// numéro du compte archivé au rang 4).
 pub type SettlementCancelHit = (SettlementCancelBlocker, Option<i64>, Option<String>);
 
-/// Les rangs 2 à 5 de [`SettlementCancelBlocker`], évalués sur l'écriture
+/// Les rangs 2 à 5 de [`SettlementCancelBlocker`], dont le 2 bis (Story
+/// 15-1a2-0), évalués sur l'écriture
 /// `entry_id` — celle d'un **règlement**, d'un **rapprochement**, ou l'écriture
 /// d'**achat** d'une facture fournisseur qu'on annule (Story 25-3-c) — le
 /// premier qui s'applique, ou `None`.
+///
+/// ⚠️ **Rang 2 bis — le lettrage de pièce figé par la période** (Story
+/// 15-1a2-0, #518) : une ligne de l'écriture examinée appartient à un groupe
+/// d'origine `document` dont aucune ligne n'est en période ouverte
+/// ([`letterings::document_group_frozen_by_periods`]). Lu **sans verrou** (les
+/// lignes du groupe, les exercices autres que celui de l'écriture examinée, la
+/// borne) : un `lock_books`, ou la clôture d'un autre exercice du groupe ou
+/// d'un exercice postérieur, validé entre cette lecture et le `COMMIT` laisse
+/// passer l'annulation — la tolérance qu'a déjà une écriture créée pendant la
+/// pose du verrou. **Dormant** tant qu'aucun groupe `document` n'existe
+/// (15-1a2-i).
 ///
 /// ⚠️ **Rangs 4 et 5 dans l'ordre RÉEL du socle** : `reverse_in_tx` contrôle
 /// les comptes archivés (étape 3) avant l'exercice du jour (étape 4). Les
@@ -95,6 +107,20 @@ pub async fn settlement_entry_cancel_blocker(
     if status == "Closed" {
         return Ok(Some((
             SettlementCancelBlocker::FiscalYearClosed,
+            None,
+            None,
+        )));
+    }
+
+    // Rang 2 bis — le lettrage de pièce figé par la période (Story 15-1a2-0) :
+    // après le rang 2 (même remède, motif propre), avant le rang 3 (le
+    // dé-rapprochement serait refusé par ce même rang).
+    if letterings::document_group_frozen_by_periods(&mut *conn, company_id, entry_id)
+        .await?
+        .is_some()
+    {
+        return Ok(Some((
+            SettlementCancelBlocker::DocumentLetteringInClosedPeriods,
             None,
             None,
         )));

@@ -1,8 +1,9 @@
 /**
  * Ce qui empêche d'annuler un règlement — la **queue commune** (Story 25-3-a-1, #414).
  *
- * ⛔ **Partagé entre le client et le fournisseur.** Ces quatre motifs tiennent
- * à l'**écriture** de règlement (son exercice, son rapprochement, ses comptes,
+ * ⛔ **Partagé entre le client et le fournisseur.** Ces cinq motifs tiennent
+ * à l'**écriture** de règlement (son exercice, le lettrage de pièce figé par la
+ * période — rang 2 bis, Story 15-1a2-0 —, son rapprochement, ses comptes,
  * l'exercice du jour), pas à la pièce qui la possède : la fiche facture client
  * et la fiche facture fournisseur (Story 25-3-a-2) les affichent par ce seul
  * module. Chaque fiche ajoute sa **tête** propre (`INVOICE_CREDITED` côté
@@ -20,6 +21,8 @@ import { i18nMsg } from "./i18n.svelte";
 /** Les codes de la queue commune, dans l'ordre de précédence du serveur. */
 export type SettlementCancelTailCode =
   | "FISCAL_YEAR_CLOSED"
+  // Story 15-1a2-0 (#518) — rang 2 bis : le lettrage de pièce figé par la période.
+  | "LETTERING_ALL_LINES_IN_CLOSED_PERIODS"
   | "MATCHED_BANK_TRANSACTION"
   | "ACCOUNT_ARCHIVED"
   | "FISCAL_YEAR_INVALID";
@@ -37,6 +40,11 @@ export function settlementCancelTailMessage(
       return i18nMsg(
         "settlement-cancel-blocked-fiscal-year-closed",
         "Ce règlement appartient à un exercice clôturé : pour pouvoir l'annuler, un administrateur doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
+      );
+    case "LETTERING_ALL_LINES_IN_CLOSED_PERIODS":
+      return i18nMsg(
+        "settlement-cancel-blocked-lettering-closed",
+        "Ce règlement est lettré avec sa facture, et toutes les lignes de ce lettrage sont dans une période close : il est figé. Pour pouvoir l'annuler, prenez la date la plus récente du lettrage (en général celle du dernier règlement) : si elle est sous le verrou de période, un administrateur doit faire reculer le verrou avant elle ; et si son exercice est suivi d'un exercice clôturé, ou clôturé lui-même, il doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
       );
     case "MATCHED_BANK_TRANSACTION":
       return i18nMsg(

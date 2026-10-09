@@ -1068,6 +1068,15 @@ mod tests {
             "opening-balances-locked-first-year-closed",
             "error-opening-balances-first-year-closed",
         ];
+        // Les trois clés du rang 2 bis (Story 15-1a2-0, #518 ; C-15-1a2-30) —
+        // constante SŒUR, non mêlée à `CLES_569` dont le commentaire dit « les six
+        // clés de #569 » : nommées pour qu'une réécriture qui perdrait le verbe
+        // « rouvrir » ne les sorte pas du contrôle en silence (anti-test-muet).
+        const CLES_2_BIS: [&str; 3] = [
+            "settlement-cancel-blocked-lettering-closed",
+            "reconciliation-cancel-blocked-lettering-closed",
+            "supplier-invoices-cancel-blocked-lettering-closed",
+        ];
         let verbe = regex::Regex::new(r"[Rr]ouvr|[Rr]éouv").unwrap();
         let catalogues: HashMap<&str, HashMap<String, String>> =
             LOCALES.iter().map(|l| (*l, valeurs_brutes(l))).collect();
@@ -1077,7 +1086,11 @@ mod tests {
             .map(|(k, _)| k)
             .collect();
         domaine.sort();
-        for cle in EXEMPTEES.iter().chain(CLES_569.iter()) {
+        for cle in EXEMPTEES
+            .iter()
+            .chain(CLES_569.iter())
+            .chain(CLES_2_BIS.iter())
+        {
             assert!(
                 domaine.iter().any(|d| d.as_str() == *cle),
                 "{cle} n'est plus au domaine (sa valeur fr-CH ne prescrit plus de réouverture)"

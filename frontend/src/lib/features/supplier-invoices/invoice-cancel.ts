@@ -18,6 +18,8 @@ import { i18nMsg } from "$lib/shared/utils/i18n.svelte";
 export type SupplierInvoiceCancelCode =
   | "SUPPLIER_INVOICE_CANCELLED"
   | "FISCAL_YEAR_CLOSED"
+  // Story 15-1a2-0 (#518) — rang 2 bis : le lettrage de pièce figé par la période.
+  | "LETTERING_ALL_LINES_IN_CLOSED_PERIODS"
   | "MATCHED_BANK_TRANSACTION"
   | "ACCOUNT_ARCHIVED"
   | "FISCAL_YEAR_INVALID"
@@ -41,6 +43,11 @@ export function supplierInvoiceCancelMessage(
       return i18nMsg(
         "supplier-invoices-cancel-blocked-fiscal-year-closed",
         "Cette facture appartient à un exercice clôturé : pour pouvoir l'annuler, un administrateur doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
+      );
+    case "LETTERING_ALL_LINES_IN_CLOSED_PERIODS":
+      return i18nMsg(
+        "supplier-invoices-cancel-blocked-lettering-closed",
+        "Cette facture est lettrée avec son paiement, et toutes les lignes de ce lettrage sont dans une période close : il est figé. Pour pouvoir l'annuler, prenez la date la plus récente du lettrage (en général celle du paiement) : si elle est sous le verrou de période, un administrateur doit faire reculer le verrou avant elle ; et si son exercice est suivi d'un exercice clôturé, ou clôturé lui-même, il doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
       );
     case "MATCHED_BANK_TRANSACTION":
       return i18nMsg(

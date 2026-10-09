@@ -20,6 +20,10 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::MySqlPool;
 
+#[path = "support/document_group.rs"]
+mod document_group;
+use document_group::{lignes_du_groupe, poser_groupe_document};
+
 fn d(y: i32, m: u32, day: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, day).unwrap()
 }
@@ -1534,6 +1538,28 @@ async fn another_company_cannot_cancel_the_settlement(pool: MySqlPool) {
     }
 }
 
+/// Rang 2 bis (Story 15-1a2-0) : pose le groupe `document` sur les deux lignes
+/// du compte créanciers (2000) — l'achat et son paiement, somme nulle —, puis
+/// le verrou de période ENSUITE, à `le_plus_recent` (D4). Rend la clé.
+async fn figer(
+    pool: &MySqlPool,
+    ctx: &Ctx,
+    achat: i64,
+    paiement: i64,
+    le_plus_recent: NaiveDate,
+) -> i64 {
+    let cle = poser_groupe_document(pool, ctx.seeded.accounts["2000"], &[achat, paiement]).await;
+    kesh_db::repositories::companies::lock_books(
+        pool,
+        ctx.seeded.admin_user_id,
+        ctx.seeded.company_id,
+        le_plus_recent,
+    )
+    .await
+    .expect("verrou de période");
+    cle
+}
+
 /// Monte un règlement fournisseur dans un exercice raccourci à
 /// `D = aujourd'hui − 60 j`, avec ou sans exercice couvrant le jour, compte de
 /// caisse archivé et exercice du règlement clos selon `motifs`. Même calendrier
@@ -1565,13 +1591,16 @@ async fn monter(pool: &MySqlPool, motifs: &[SettlementCancelBlocker]) -> (Ctx, i
         .await
         .expect("exercice courant");
     }
-    let (id, _, _) = paid_invoice(
+    let (id, achat, paiement) = paid_invoice(
         pool,
         &ctx,
         dd - chrono::Duration::days(20),
         dd - chrono::Duration::days(10),
     )
     .await;
+    if motifs.contains(&SettlementCancelBlocker::DocumentLetteringInClosedPeriods) {
+        figer(pool, &ctx, achat, paiement, dd - chrono::Duration::days(10)).await;
+    }
     if motifs.contains(&SettlementCancelBlocker::AccountArchived) {
         let caisse = ctx.seeded.accounts["1000"];
         let version: i32 = sqlx::query_scalar("SELECT version FROM accounts WHERE id = ?")
@@ -1599,14 +1628,35 @@ async fn monter(pool: &MySqlPool, motifs: &[SettlementCancelBlocker]) -> (Ctx, i
 /// ⛔ **La queue commune, par le chemin fournisseur** : chaque motif atteignable
 /// seul, et la paire compte archivé + exercice du jour absent — la lecture
 /// annonce le motif, l'écriture refuse pour CE MÊME motif.
+///
+/// Rang **2 bis** (Story 15-1a2-0, AC2 c) : seul, puis contre chacun de ses
+/// voisins de la queue. ⛔ La tête `SupplierInvoiceNotPaid` × 2 bis **n'existe
+/// pas** : une facture non payée n'a pas de règlement, donc pas de groupe
+/// `document` — nommée ici, non montée.
 #[sqlx::test(migrations = "./test-schema")]
 async fn tail_motives_through_the_supplier_path(pool: MySqlPool) {
     use SettlementCancelBlocker::*;
-    let cas: [(&[SettlementCancelBlocker], SettlementCancelBlocker); 4] = [
+    let cas: [(&[SettlementCancelBlocker], SettlementCancelBlocker); 8] = [
         (&[FiscalYearClosed], FiscalYearClosed),
         (&[AccountArchived], AccountArchived),
         (&[NoOpenFiscalYearToday], NoOpenFiscalYearToday),
         (&[AccountArchived, NoOpenFiscalYearToday], AccountArchived),
+        (
+            &[DocumentLetteringInClosedPeriods],
+            DocumentLetteringInClosedPeriods,
+        ),
+        (
+            &[FiscalYearClosed, DocumentLetteringInClosedPeriods],
+            FiscalYearClosed,
+        ),
+        (
+            &[DocumentLetteringInClosedPeriods, AccountArchived],
+            DocumentLetteringInClosedPeriods,
+        ),
+        (
+            &[DocumentLetteringInClosedPeriods, NoOpenFiscalYearToday],
+            DocumentLetteringInClosedPeriods,
+        ),
     ];
     for (motifs, attendu) in cas {
         let (ctx, id) = monter(&pool, motifs).await;
@@ -1640,6 +1690,12 @@ async fn tail_motives_through_the_supplier_path(pool: MySqlPool) {
                 err,
                 DbError::SettlementNotCancellable {
                     blocker: FiscalYearClosed
+                }
+            ),
+            DocumentLetteringInClosedPeriods => matches!(
+                err,
+                DbError::SettlementNotCancellable {
+                    blocker: DocumentLetteringInClosedPeriods
                 }
             ),
             AccountArchived => matches!(err, DbError::ReversalAccountsArchived(_)),
@@ -1812,15 +1868,22 @@ async fn monter_achat(
         .expect("exercice courant");
     }
     let id = if payee {
-        paid_invoice(
+        let (id, achat, paiement) = paid_invoice(
             pool,
             &ctx,
             dd - chrono::Duration::days(20),
             dd - chrono::Duration::days(10),
         )
-        .await
-        .0
+        .await;
+        if motifs.contains(&SettlementCancelBlocker::DocumentLetteringInClosedPeriods) {
+            figer(pool, &ctx, achat, paiement, dd - chrono::Duration::days(10)).await;
+        }
+        id
     } else {
+        assert!(
+            !motifs.contains(&SettlementCancelBlocker::DocumentLetteringInClosedPeriods),
+            "montage : un groupe `document` suppose une facture payée"
+        );
         let mut new = one_line(&ctx, dec!(100.00), dec!(0));
         new.invoice_date = dd - chrono::Duration::days(20);
         new.due_date = Some(new.invoice_date);
@@ -1861,10 +1924,40 @@ async fn monter_achat(
 /// motif atteignable seul, puis les paires où le lot est en concurrence : le
 /// lot passe TOUJOURS en dernier. La lecture annonce le motif, l'écriture
 /// refuse pour ce même motif.
+///
+/// Rang **2 bis** (Story 15-1a2-0, AC2 c), sur une facture **payée** : seul,
+/// puis contre l'exercice clos, le compte archivé et l'exercice du jour.
+/// ⛔ Le rang 6 (`SupplierInvoiceInPaymentBatch`) × 2 bis est
+/// **INATTEIGNABLE**, nommé et non monté : il suppose une facture payée dans un
+/// lot `generated`, et `supplier_invoices.rs` l'écrit — « une facture `paid` ne
+/// peut pas être dans un lot `generated` » (`create_batch` exige `open`, `pay`
+/// et `cancel` refusent une facture en lot `generated`, `confirm_batch` règle
+/// et confirme dans la même transaction). [`engager_dans_un_lot`] forge un lot
+/// sur n'importe quelle facture : « montable » serait toujours vrai.
 #[sqlx::test(migrations = "./test-schema")]
 async fn invoice_cancel_motives_and_their_precedence(pool: MySqlPool) {
     use SettlementCancelBlocker::*;
-    let cas: [(&[SettlementCancelBlocker], bool, SettlementCancelBlocker); 7] = [
+    let cas: [(&[SettlementCancelBlocker], bool, SettlementCancelBlocker); 11] = [
+        (
+            &[DocumentLetteringInClosedPeriods],
+            true,
+            DocumentLetteringInClosedPeriods,
+        ),
+        (
+            &[FiscalYearClosed, DocumentLetteringInClosedPeriods],
+            true,
+            FiscalYearClosed,
+        ),
+        (
+            &[DocumentLetteringInClosedPeriods, AccountArchived],
+            true,
+            DocumentLetteringInClosedPeriods,
+        ),
+        (
+            &[DocumentLetteringInClosedPeriods, NoOpenFiscalYearToday],
+            true,
+            DocumentLetteringInClosedPeriods,
+        ),
         (&[FiscalYearClosed], false, FiscalYearClosed),
         (&[FiscalYearClosed], true, FiscalYearClosed),
         (&[AccountArchived], false, AccountArchived),
@@ -1909,10 +2002,12 @@ async fn invoice_cancel_motives_and_their_precedence(pool: MySqlPool) {
                 .await
                 .expect_err("refusée");
         let ok = match attendu {
-            FiscalYearClosed | SupplierInvoiceInPaymentBatch => matches!(
-                err,
-                DbError::SupplierInvoiceNotCancellable { blocker } if blocker == attendu
-            ),
+            FiscalYearClosed | DocumentLetteringInClosedPeriods | SupplierInvoiceInPaymentBatch => {
+                matches!(
+                    err,
+                    DbError::SupplierInvoiceNotCancellable { blocker } if blocker == attendu
+                )
+            }
             AccountArchived => matches!(err, DbError::ReversalAccountsArchived(_)),
             NoOpenFiscalYearToday => matches!(err, DbError::FiscalYearInvalid),
             _ => false,
@@ -2571,5 +2666,96 @@ async fn supplier_invoice_cancel_letters_a_pair_that_cannot_be_dissolved_by_hand
             })
         ),
         "obtenu {r:?}"
+    );
+}
+
+/// Story 15-1a2-0 (#518, AC5) — achat et paiement par les gestes, groupe sur les
+/// deux lignes créanciers, verrou ENSUITE : l'annulation du **paiement** et
+/// celle de la **facture** sont refusées au rang 2 bis, chacune dans sa
+/// famille ; rien n'est écrit, la facture reste `paid` ; les deux prédicteurs
+/// le disent.
+#[sqlx::test(migrations = "./test-schema")]
+async fn supplier_cancels_are_refused_under_a_frozen_lettering(pool: MySqlPool) {
+    use SettlementCancelBlocker::DocumentLetteringInClosedPeriods as Fige;
+    let ctx = setup(&pool).await;
+    let dd = chrono::Utc::now().date_naive() - chrono::Duration::days(60);
+    let (id, achat, paiement) = paid_invoice(
+        &pool,
+        &ctx,
+        dd - chrono::Duration::days(20),
+        dd - chrono::Duration::days(10),
+    )
+    .await;
+    let cle = figer(
+        &pool,
+        &ctx,
+        achat,
+        paiement,
+        dd - chrono::Duration::days(10),
+    )
+    .await;
+    let company_id = ctx.seeded.company_id;
+    let user = ctx.seeded.admin_user_id;
+
+    let mut conn = pool.acquire().await.unwrap();
+    let paiement_lu =
+        supplier_invoices::supplier_settlement_cancel_blocker(&mut conn, company_id, id)
+            .await
+            .expect("prédicteur du paiement");
+    let facture_lue = supplier_invoices::supplier_invoice_cancel_blocker(&mut conn, company_id, id)
+        .await
+        .expect("prédicteur de la facture");
+    drop(conn);
+    assert_eq!(
+        paiement_lu.map(|h| h.0),
+        Some(Fige),
+        "settlementCancelBlockedBy"
+    );
+    assert_eq!(facture_lue.map(|h| h.0), Some(Fige), "cancelBlockedBy");
+
+    let tables = ["journal_entries", "audit_log"];
+    let mut avant = Vec::new();
+    for t in tables {
+        avant.push(count(&pool, &format!("SELECT COUNT(*) FROM {t}")).await);
+    }
+
+    let err = supplier_invoices::cancel_settlement(&pool, company_id, id, user)
+        .await
+        .expect_err("paiement figé");
+    assert!(
+        matches!(err, DbError::SettlementNotCancellable { blocker: Fige }),
+        "{err:?}"
+    );
+    let err = supplier_invoices::cancel(&pool, company_id, id, user)
+        .await
+        .expect_err("facture figée");
+    assert!(
+        matches!(
+            err,
+            DbError::SupplierInvoiceNotCancellable { blocker: Fige }
+        ),
+        "{err:?}"
+    );
+
+    for (t, n) in tables.iter().zip(avant) {
+        assert_eq!(
+            count(&pool, &format!("SELECT COUNT(*) FROM {t}")).await,
+            n,
+            "rien d'écrit dans {t}"
+        );
+    }
+    let (status, reglement): (String, Option<i64>) = sqlx::query_as(
+        "SELECT status, settlement_journal_entry_id FROM supplier_invoices WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(status, "paid", "la facture reste payée");
+    assert_eq!(reglement, Some(paiement), "son règlement reste attaché");
+    assert_eq!(
+        lignes_du_groupe(&pool, cle).await,
+        2,
+        "les marques sont intactes"
     );
 }

@@ -206,7 +206,7 @@ function valeurDuCatalogueFr(cle: string): string | undefined {
  * G13 (Story 15-14a, #569 et #547) — les replis frontend **à site unique** suivent le catalogue.
  *
  * ⚠️ La garde ci-dessus ne voit pas ces clés : elle ne retient que celles qui portent **au
- * moins deux** replis distincts (`parTexte.size > 1`). Chacune des dix clés ci-dessous n'a
+ * moins deux** replis distincts (`parTexte.size > 1`). Chacune des treize clés ci-dessous n'a
  * qu'un site d'appel ; un repli resté à l'ancien texte n'y rougirait pas, et l'écran
  * l'afficherait dès que le catalogue manque (premier rendu, catalogue non chargé).
  *
@@ -228,6 +228,10 @@ const REPLIS_A_SITE_UNIQUE: readonly string[] = [
 	// plans livrés (1010 Poste, 1020 Banque) — G4-bis lit le catalogue, G13 tient le repli égal.
 	'bank-accounts-labels-page-subtitle',
 	'bank-accounts-tooltip-journal-account',
+	// Story 15-1a2-0 (#518) — le rang 2 bis, un texte par famille d'annulation.
+	'settlement-cancel-blocked-lettering-closed',
+	'reconciliation-cancel-blocked-lettering-closed',
+	'supplier-invoices-cancel-blocked-lettering-closed',
 ];
 
 describe('les replis frontend à site unique suivent le catalogue fr-CH (G13)', () => {

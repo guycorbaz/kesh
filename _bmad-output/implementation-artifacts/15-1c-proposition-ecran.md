@@ -5,26 +5,28 @@
 split
 
 ⛔ **CORPS VIDÉ — cette fiche ne contient plus ni décisions, ni critères, ni tâches** *(découpée le 2026-10-09 à la
-remédiation de sa validation P1, registre C-15-1c-1)*. Elle garde les pointeurs vers ses deux sous-fiches, la table
-qui dit où chaque critère et chaque point reçu est allé, le bilan de la validation P1 et l'historique (Change Log).
+remédiation de sa validation P1, registre C-15-1c-1 ; partie serveur extraite en 15-1c-0 à la remédiation de sa
+validation P2, C-15-1c-14)*. Elle garde les pointeurs vers ses trois sous-fiches, la table qui dit où chaque critère
+et chaque point reçu est allé, le bilan des validations P1 et P2 et l'historique (Change Log).
 Le corps d'avant le découpage se lit dans l'historique git
 (`git show 8e36a146:_bmad-output/implementation-artifacts/15-1c-proposition-ecran.md`). *(Précédents : 15-1, 15-12,
 15-1a — C124, 15-1a2 — C-15-1a2-1.)* **La numérotation des critères est conservée** dans les sous-fiches ; les
 numéros neufs commencent à AC15. Le nom de fichier est gardé (C99 : les clés du registre et du `sprint-status` y
 renvoient).
 
-## Les deux sous-fiches
+## Les trois sous-fiches
 
 | ordre | fiche | ce qu'elle porte |
 |---|---|---|
-| 1 | `15-1c-i-ecran-postes-ouverts.md` | **L'écran `/open-items`** : compte (lettrables, archivés compris) et date, la liste et ses motifs (`reason`, `documentState`, `amountDue`), la sélection et le lettrage (pages, plafond de 200, `big.js`, refus par leur code réel), les propositions (chargées à part, échec indépendant, `reversalPair`, proposition périmée), **le groupe et le délettrage** (état d'URL `?group=`, compte devenu non lettrable), **l'enrichissement serveur de `GET /letterings/{key}`** (réemploi de la requête B de la 15-1b, prévision du refus de délettrage par l'ordre même de la dissolution), le bandeau de frontière, les rôles, le menu, l'i18n, l'E2E lettrer → délettrer. `refs #518` |
-| 2 | `15-1c-ii-lettrage-dans-kesh.md` | **Le lettrage dans le reste de Kesh** : la colonne « Lettrage » de la fiche d'écriture et du Grand livre (`colspan` calculés), le lien « Postes ouverts de ce compte », le lien du motif `ENTRY_LETTERED`, les exports exclus, le **manuel** (section neuve, propagation par inventaire, PDF), le **CHANGELOG** (une entrée), `api-external.md`, le README, le site. **`closes #518`** |
+| 0 | `15-1c-0-groupe-de-lettrage-enrichi.md` | **Le serveur** : `GET /letterings/{key}` enrichi (journal, libellé, pièce, possession, période par ligne ; compte ; `manualDissolutionBlockedBy`), par réemploi de la part « pièce et période » de la requête B de la 15-1b ; les refus 1 à 3 de la dissolution passés par **une** fonction d'ordre à étapes (évaluation paresseuse, détails inchangés) ; `api-external.md`, entrée *Modifié* du CHANGELOG, README. `refs #518` |
+| 1 | `15-1c-i-ecran-postes-ouverts.md` | **L'écran `/open-items`** : compte (lettrables, archivés compris) et date, la liste et ses motifs (`reason`, `documentState`, `amountDue`), le pied avec son sens (débiteur, créditeur), la sélection et le lettrage (pages, plafond de 200, `big.js`, tout 404/409 recharge), les propositions (chargées à part, échec indépendant, `reversalPair`, proposition périmée), **le groupe et le délettrage** (état d'URL `?group=`, compte devenu non lettrable), le bandeau de frontière, les rôles, le menu, l'i18n, le composant de lien de code, l'E2E lettrer → délettrer, la ligne du README. `refs #518` |
+| 2 | `15-1c-ii-lettrage-dans-kesh.md` | **Le lettrage dans le reste de Kesh** : la colonne « Lettrage » de la fiche d'écriture et du Grand livre (`colspan` calculés), le lien « Postes ouverts de ce compte », le lien du motif `ENTRY_LETTERED`, les exports exclus, le **manuel** (section neuve, propagation par inventaire, PDF), le **CHANGELOG** (une entrée *Ajouté*), `api-external.md`, le README, le site, la brochure. **`closes #518`** |
 
-**Dépendances** : la 15-1c-i suppose la 15-1b mergée (et donc la 15-1b-0 et les 15-1a2-*) ; la 15-1c-ii suppose la
-15-1c-i. Ordre complet : **15-12a → 15-12b → 15-1a-i → 15-1a-ii → 15-1a2-0 → 15-1a2-i → 15-1a2-ii → 15-1b-0 → 15-1b
-→ 15-1c-i → 15-1c-ii**. ⛔ **Pas de tag v0.13.0 entre la 15-1c-i et la 15-1c-ii** (C124, étendue par C-15-1c-1) :
-entre les deux, le manuel et le CHANGELOG disent encore que le délettrage se fait par l'API. Les **E2E** des deux
-sous-fiches ne sont atteignables qu'une fois la 15-1b mergée (vue, propositions, `letterable`) ; le scénario (1) de
+**Dépendances** : la 15-1c-0 suppose la 15-1b mergée (et donc la 15-1b-0 et les 15-1a2-*) ; la 15-1c-i suppose la
+15-1c-0 ; la 15-1c-ii suppose la 15-1c-i. Ordre complet : **15-12a → 15-12b → 15-1a-i → 15-1a-ii → 15-1a2-0 →
+15-1a2-i → 15-1a2-ii → 15-1b-0 → 15-1b → 15-1c-0 → 15-1c-i → 15-1c-ii**. ⛔ **Pas de tag v0.13.0 entre la 15-1c-i et la 15-1c-ii** (C124, étendue par C-15-1c-1) :
+entre les deux, le manuel et le CHANGELOG disent encore que le délettrage se fait par l'API. Les **E2E** de la 15-1c-i
+et de la 15-1c-ii ne sont atteignables qu'une fois la 15-1c-0 mergée (vue, propositions, `letterable`) ; le scénario (1) de
 la 15-1c-i suppose la 15-1a2-i (groupes `document`).
 
 ## Pourquoi le découpage
@@ -37,16 +39,25 @@ et toute la documentation). Comptes aux deux grains (C-15-1a2-21) : 15-1c-i — 
 (cinq de logique, quatre mécaniques et un paragraphe de documentation) ; 15-1c-ii — 2 et 11 (trois de logique plus
 l'E2E, sept supports de texte). Dérogation écrite dans chacune (**C-15-1c-11**, patron C-15-1a2-23).
 
+**Puis la coupe « serveur d'abord »** (validation P2, F2-3 ; décision de l'orchestrateur, **C-15-1c-14**) : les onze
+MEDIUM de la P2 étaient tous nés de la remédiation P1, et le motif qui écartait cette coupe — « une route enrichie
+sans écran qui la lise n'est pas livrable seule » — est réfuté par la 15-1b, story serveur livrée sans écran. La
+**15-1c-0** prend AC15, AC16 et leurs tests ; la refonte de la dissolution — primitive unique du retrait de la
+marque — se relit seule, et la 15-1c-i ne touche plus aucun repository. Comptes : 15-1c-0 — 2 crates, 5 au grain
+fin (deux de logique, trois supports de texte), sans dérogation ; 15-1c-i — 2 crates/paquets, 8 au grain fin (trois
+de logique) ; 15-1c-ii inchangée.
+
 ## Table de correspondance — où chaque critère est allé
 
 | critère de la 15-1c (corps au `8e36a146`) | 15-1c-i | 15-1c-ii |
 |---|---|---|
+| *(la 15-1c-0 porte AC15, AC16, AC18 — voir les lignes neuves)* | | |
 | AC1 — compte et date | ✓ (réécrit : `letterable`, archivés, `asOf` explicite, 409/404) | — |
 | AC2 — la liste | ✓ (exercice avec le numéro, table des liens de pièce) | — |
 | AC3 — les motifs | ✓ (réécrit en deux dimensions, `nothingDue`) | — |
 | AC4 — lettrer à la main | ✓ (`manuallyLetterable`, pages, 200, `big.js`, `inOpenPeriod`, refus et rechargements) | — |
 | AC5 — les propositions | ✓ (chargement à part, `asOf`, `total`, périmée) | — |
-| AC6 — voir et défaire un groupe | ✓ (URL, enrichissement AC15, code `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`) | — |
+| AC6 — voir et défaire un groupe | ✓ (URL, groupe lu enrichi — 15-1c-0 AC15 —, code `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`) | — |
 | AC7 — bandeau de frontière | ✓ | — |
 | AC8 — écart avec la Balance | ✓ (**phrase réfutée remplacée** : le total égale le solde que montre la Balance) | (stabilité « au X » : au manuel, AC12) |
 | AC9 — le code visible ailleurs | — | ✓ (fiche, Grand livre, `ENTRY_LETTERED`) |
@@ -55,23 +66,132 @@ l'E2E, sept supports de texte). Dérogation écrite dans chacune (**C-15-1c-11**
 | AC12 — manuel | — | ✓ (règle C105, inventaire) |
 | AC13 — E2E | part i, scénarios (1)–(6) | part ii, scénarios (7)–(9) |
 | AC14 — CHANGELOG | — | ✓ |
-| — | **AC15** (neuf) : `GET /letterings/{key}` enrichi | — |
-| — | **AC16** (neuf) : sa documentation dans `api-external.md` | — |
-| — | — | **AC17** (neuf) : `api-external.md` (« l'écran viendra »), README, site |
+| — | **AC15** (neuf) → **15-1c-0** : `GET /letterings/{key}` enrichi | — |
+| — | **AC16** (neuf) → **15-1c-0** : sa documentation dans `api-external.md` | — |
+| — | — | **AC17** (neuf) : `api-external.md` (« l'écran viendra »), README, site, brochure |
+| — | **AC18** (neuf) → **15-1c-0** : CHANGELOG *Modifié*, README | — |
+| — | **AC19** (neuf) : README | — |
 
 ## Intégration des sections reçues
 
 **« Reçu de la 15-1a »** (points 1 à 11 du corps au `8e36a146`) : 1 (code `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`) →
 15-1c-i AC4, AC6 ; 2 (règle des périodes au manuel) → 15-1c-ii AC12 ; 3, 9 (glossaire, phrase provisoire) → 15-1c-ii
-AC12 point 2 ; 4 (`LETTERING_LINE_OWNED_BY_DOCUMENT` neutre) → 15-1c-i AC6, AC15 ; 5, 6 (ordre) → Status des deux ;
+AC12 point 2 ; 4 (`LETTERING_LINE_OWNED_BY_DOCUMENT` neutre) → 15-1c-i AC6, 15-1c-0 AC15 ; 5, 6 (ordre) → Status des deux ;
 7 (sixième condition de *Modifier*, « par l'API dans cette version ») → 15-1c-ii AC12 ; 8 (`ENTRY_LETTERED` en
-dernier) → 15-1c-ii AC9 ; 10 (CHANGELOG) → 15-1c-ii AC14 ; 11 (`fiscalYearName`) → 15-1c-i AC2, AC6, AC15.
+dernier) → 15-1c-ii AC9 ; 10 (CHANGELOG) → 15-1c-ii AC14 ; 11 (`fiscalYearName`) → 15-1c-i AC2, AC6, 15-1c-0 AC15.
 
 **« Pour la 15-1c »** de la 15-1b (points 1 à 13) : 1 → 15-1c-i AC8 ; 2 → AC3 ; 3 → AC4 ; 4, 11, 13 → AC5 ; 5 → AC6
-(et l'enrichissement AC15 pour les lignes d'un groupe) ; 6 → AC1 (`letterable`) et 15-1c-ii AC9 (`letteringCode` du
+(et l'enrichissement de la 15-1c-0 AC15 pour les lignes d'un groupe) ; 6 → AC1 (`letterable`) et 15-1c-ii AC9 (`letteringCode` du
 Grand livre) ; 7 → AC1, AC6 ; 8 → 15-1c-ii AC12 ; 9 → 15-1c-ii AC12 ; 10 → AC5 et 15-1c-ii AC12 ; 12 → AC3, AC4.
 
 ## Change Log
+
+### Validation P4 ciblée — 2026-10-09 (Haiku 4.5, une lentille, commit `99280a24`) — VALIDATION CLOSE
+
+Prompt versionné : `15-1c-validate-prompt-p4-ciblee.md`. Rapport : `/home/gcorbaz/devel/kesh-gate-logs/15-1c-validate-p4-F.md`.
+**0 CRITICAL / 0 HIGH / 0 MEDIUM / 4 LOW**, hunks examinés et non examinés déclarés. Vérifiés par l'orchestrateur :
+F-1 (15-1c-0 : `journal_entries.rs:2578` appelle `is_letterable_account`) — **corrigé** ; F-2 (15-1c-0, test 9 :
+accents graves imbriqués) — **corrigé** (`grep -nF`) ; F-3 (15-1c-ii : « 11 au grain fin » non reproductible) —
+**réfuté** (3 de logique + E2E + 7 supports de texte = 11, la brochure étant dans `docs/manual/fr`) ; F-4 (15-1c-i :
+« exception assumée » à contresens de la règle qu'elle applique) — **corrigé** (« pas d'exception », AC4, test 7,
+C-15-1c-24). La lentille a créé puis supprimé un fichier de travail dans `kesh-gate-logs/` (déclaré par elle ;
+`ls` : absent).
+
+**Remédiation documentaire seulement** — aucune règle, aucun contrat, aucun comportement prescrit ne change : la
+boucle se clôt (`CLAUDE.md` § « La passe ciblée », critère de clôture). **Trend** : P1 (Sonnet ×2) 4 HIGH / 16 MEDIUM
+bruts → découpage ; P2 (Opus ×2) 0 HIGH / 7 MEDIUM distincts, tous nés de la P1 → extraction de la 15-1c-0 ; P3
+(Sonnet ×2, trois fiches) 0 MEDIUM / 19 LOW bruts ; P4 ciblée (Haiku) 0 MEDIUM / 4 LOW (3 justes, 1 réfuté).
+**VALIDATION CLOSE** sur les trois fiches : 15-1c-0, 15-1c-i, 15-1c-ii, ready-for-dev dans l'ordre … → 15-1b →
+15-1c-0 → 15-1c-i → 15-1c-ii.
+
+### Validation P3 — 2026-10-09 (Sonnet 5.5 ×2, lentilles R et F ; remédiation Opus 5.5, en autonomie) — 0 AU-DESSUS DE LOW
+
+Prompt versionné : `15-1c-validate-prompt-p3.md` (remédiation P2 visée : `82524343`). Rapports :
+`/home/gcorbaz/devel/kesh-gate-logs/15-1c-validate-p3-R.md` et `-F.md`. **R : 0 CRITICAL / 0 HIGH / 0 MEDIUM / 10 LOW ;
+F : 0 / 0 / 0 / 9 LOW**, sur les **trois** fiches (première passe de la 15-1c-0). Les deux lentilles déclarent leurs
+axes exercés et non exercés ; l'orchestrateur a recoupé les « 0 » au code de `f9b6b199` (séquence
+`dissolve_group_in_tx` : verrous → refus 1 → propriété si `Reversal` → borne → refus 3 ; statuts 400/404/409 de
+`kesh-api/src/errors.rs` ; `colspan` du Grand livre et pied de la fiche d'écriture ; sites « lettr » des trois `.tex` :
+24 + 5 + 1 ; `LineRow` partagé ; `letterable_account` sans `name`). Recoupements : R L-2 = F-5 ; R L-5 = F-1 ;
+R L-6 ≈ F-9 (part) ; R L-9 ≈ F-9 (part). **Tous les LOW appliqués** :
+
+| finding | fiche | sort |
+|---|---|---|
+| R L-1 | 15-1c-0 | deux pièces partagées nommées (`kesh-db` : propriétaires et périodes ; `kesh-api` : constructeur de `document`) ; unicité du code prouvée par `grep` |
+| R L-2 = F-5 | 15-1c-0 | `accountNumber`/`accountName` par une requête propre ; `letterable_account`, `group_account_number` inchangées |
+| R L-3 | 15-1c-0 | colonnes ajoutées (la jointure existe) ; constante SQL et `struct` de ligne propres ; `find_group` inchangée |
+| F-2 | 15-1c-0 | transaction de lecture (C-15-1c-26) |
+| F-6 | 15-1c-0 | composition par champs communs, jamais `flatten` |
+| R L-10 | 15-1c-0 | contrôle documentaire restreint au paragraphe du `GET` |
+| F-8 | 15-1c-0 | Status : première passe tenue en P3 de l'ensemble |
+| F-3 | 15-1c-i | `LETTERING_CONCURRENT_CHANGE` vide aussi la sélection, exception assumée et motivée (C-15-1c-24) |
+| F-4 | 15-1c-i | numéro de la pièce d'un groupe `document` : facture ou facture fournisseur, sinon facture du règlement (C-15-1c-25) |
+| F-7 | 15-1c-i, 15-1c-ii | garde `i18n-entrees-a-variables` nommée |
+| R L-8 | 15-1c-i | compteur, champ « Code », ordre du serveur testés ; `letteringOrigin` retiré des champs lus |
+| obs. F | 15-1c-i | numéro de compte E2E ≤ 10 caractères |
+| R L-4 | 15-1c-ii | scénarios E2E 7 à 9 posent leur propre lettrage |
+| R L-5 = F-1 | 15-1c-ii | pied *Total* de la fiche d'écriture, test avec et sans projets |
+| R L-6, R L-9, F-9 | 15-1c-ii | 30 sites (24 + 5 + 1) ; « trois de logique et l'E2E » |
+| R L-7 | 15-1c-ii | preuve négative élargie aux textes provisoires des 15-1a2-* |
+
+**Propagation** (valeurs grepées sur les trois fiches et l'index) : `flatten` — seulement pour l'interdire ;
+« nom se lit dans la même » — plus nulle part ; « 24 lignes » — remplacé par « 30 » ; `letteringOrigin` — seulement
+pour dire qu'il n'est pas lu ; « validation P1 due » — plus nulle part.
+
+**Recompte** : 15-1c-0 — 3 / 5 / 9 ; 15-1c-i — 12 / 9 / 12 ; 15-1c-ii — 6 / 7 / 6 (critères / tâches / tests),
+inchangés.
+
+**Verdict** : 0 au-dessus de LOW. Les remédiations de cette passe touchent la spécification de code de production
+(15-1c-0 : transaction de lecture, requête du compte, `struct` de ligne) : **passe ciblée de fin de boucle due**
+(Haiku, une lentille, braquée sur le seul commit de cette remédiation).
+
+### Validation P2 — 2026-10-09 (Opus 5.5 ×2, lentilles R et F ; remédiation Opus 5.5, en autonomie) — SERVEUR EXTRAIT EN 15-1c-0
+
+Prompt versionné : `15-1c-validate-prompt-p2.md`. Rapports : `/home/gcorbaz/devel/kesh-gate-logs/15-1c-validate-p2-{R,F}.md`.
+**R : 0 HIGH / 5 MEDIUM / 11 LOW ; F : 0 HIGH / 6 MEDIUM / 10 LOW.** Recoupements : R M-1 = F2-1 ; R M-2 = F2-2 ;
+R M-3 = F2-4 ; R M-5 = F2-5 ; R M-4 ⊃ F2-L5 ; R L-1 = F2-L2 ; R L-2 = F2-L4 ; R L-3 = F2-L3 ; R L-4 = F2-L9 ;
+R L-5 ≈ F2-L7 ; R L-6 ≈ F2-L8 (part README) ; R L-7 = F2-L1 ; R L-9 ⊂ F2-3 → **7 MEDIUM distincts**, tous **nés de
+la remédiation P1** (`bb894777`). **Signal D5 levé** (recyclage : défauts nés du correctif précédent) ; décision de
+l'orchestrateur : extraire la partie serveur en **15-1c-0** (F2-3), remédier le reste dans la foulée. Chaque finding
+vérifié au code de `f9b6b199` avant d'être appliqué. Décisions au registre : **C-15-1c-14 à C-15-1c-23**.
+
+| finding | sév. | vérification | sort | où |
+|---|---|---|---|---|
+| F2-3 (+ R L-9) | MEDIUM | 15-1b : story serveur sans écran, livrable seule ; C-15-1a2-23 extrait la refonte du socle en story préalable : confirmé | **découpage** : 15-1c-0 = AC15, AC16, tests serveur ; motif de la dérogation de la 15-1c-i réécrit | 15-1c-0 ; 15-1c-i Dérogation ; C-15-1c-14 |
+| R M-1 = F2-1 | MEDIUM | `kesh-db/src/errors.rs` `LetteringLineOwnedByDocument { blocker, document_id, document_label }` ; `kesh-api/src/errors.rs` `entry_document_refusal_response` → `refusal_409` (suffixe) ; `kesh-db/tests/letterings.rs:802-803`, `supplier_invoices_repository.rs:2568` ; lectures paresseuses `letterings.rs` (refus 2 seulement pour `Reversal`, borne après) : confirmé | **corrigé** : `ManualDissolutionBlocker` + `manual_dissolution_step` à faits optionnels (`NeedOwnership`, `NeedPeriod`) ; la dissolution lit comme aujourd'hui et rend l'erreur de `first_document_owner` inchangée ; test 5 : mêmes `details` | 15-1c-0 AC15, test 5 ; C-15-1c-15 |
+| R M-2 = F2-2 | MEDIUM | 15-1b « Définitions » : « au signe près », `debit_sense` ; `kesh-report/src/opening.rs` `signed` : confirmé | **corrigé** : pied en valeur absolue + « débiteur » / « créditeur » (signe seul, aucun type lu) ; phrase « du côté naturel du compte » ; lien du Grand livre et manuel « au signe près » ; test Vitest sur un passif | 15-1c-i AC2, AC8, test 10 ; 15-1c-ii AC9, AC12 ; C-15-1c-16 |
+| R M-3 = F2-4 | MEDIUM | `journal_entries.rs` étape 9 (lignes supprimées puis réinsérées) ; `POST` : 400 de forme (`LETTERING_TOO_FEW_LINES`, `…_TOO_MANY_LINES`), 404, 409 sinon (`kesh-api/src/errors.rs`, table des codes) : confirmé | **corrigé** : tout 404/409 du `POST` et du `DELETE` recharge liste et propositions et vide la sélection ; texte d'écran pour le 404 | 15-1c-i AC4, AC5, AC6, tests 7, 8, 9 ; C-15-1c-17 |
+| R M-4 (⊃ F2-L5) | MEDIUM | 15-1a2-0 D5 réécrit `error-lettering-is-document` (« il suit la pièce et ses règlements ») ; avoir → groupe `document` (15-1a2-i) : confirmé | **corrigé** : « lettrage de la pièce » ; le texte de la clé non cité ; manuel « il suit la pièce et ses règlements » | 15-1c-i AC6, AC13, test 9 ; 15-1c-ii AC12 ; C-15-1c-18 |
+| R M-5 = F2-5 | MEDIUM | `grep -n -i lettr docs/manual/fr/marketing-brochure.tex` → `:420`, bloc « Backlog (Epic 13 à 15) » : confirmé | **corrigé** : inventaire sur `docs/manual/fr/*.tex` ; brochure à AC17 | 15-1c-ii AC12, AC17, T5 ; C-15-1c-19 |
+| F2-6 | MEDIUM | `GeneralLedgerView.svelte` : 8 en-têtes, `colspan` 7 + 1, 8, 5 + 3 : confirmé | **corrigé** : colonne en dernier ; test par somme des `colspan` de chaque `<tr>`, pied compris, débit/crédit à leur index | 15-1c-ii AC9, test 3 ; C-15-1c-20 |
+| R L-1 = F2-L2 | LOW | `Origin` : trois valeurs | **corrigé** : douze combinaisons | 15-1c-0 test 5 |
+| R L-2 = F2-L4 | LOW | `letterings_e2e.rs` : `l.get(champ).is_some()`, longueur des lignes au `GET` : confirmé | **corrigé** : test 8 **neuf**, ensembles exacts des clés | 15-1c-0 tests 1, 8 |
+| R L-3 = F2-L3 | LOW | 15-1b AC2 : B = `document`, `documentState`, `amountDue`, `inOpenPeriod` ; `FIND_GROUP_SQL` joint déjà `journal_entries` : confirmé | **corrigé** : `journal`/`description` lus avec les lignes ; part « pièce et période » seule, sans reste dû | 15-1c-0 AC15 |
+| R L-4 = F2-L9 | LOW | `fr-CH/messages.ftl:50, 53, 54` : une ligne chacune ; suffixe `refusal_409` : confirmé | **corrigé** : « texte de la clé », relevé au T0, suffixe non recomposé | 15-1c-i AC6 |
+| R L-5 ≈ F2-L7 | LOW | PDF aplati : `pdftotext … \| grep -c ellemême` → 1 (césure) : confirmé | **corrigé** : preuve négative sur les `.tex`, `l.` pour les deux apostrophes ; PDF : régénération et titre | 15-1c-ii AC12 point 3 ; C-15-1c-23 |
+| R L-6, F2-L8 | LOW | `README.md` ligne v0.13.0 ; règle d'inclusion : confirmé | **corrigé** : README par chaque story ; *Modifié* du `GET` écrit par la 15-1c-0 | 15-1c-0 AC18 ; 15-1c-i AC19 ; 15-1c-ii AC14, AC17 ; C-15-1c-21 |
+| R L-7 = F2-L1 | LOW | `supplier_invoice_cancel_letters_a_pair_that_cannot_be_dissolved_by_hand` (`supplier_invoices_repository.rs:2511`) : confirmé | **corrigé** : geste réel, aucun SQL brut | 15-1c-0 test 3 |
+| R L-8 | LOW | appelants de la dissolution hors 15-1a-i/ii | **corrigé** : inventaire `grep -rln` au T0 | 15-1c-0 T0 |
+| R L-10 | LOW | 15-1c-ii : AC14, AC17 sans contrôle | **corrigé** : test 6 | 15-1c-ii |
+| R L-11 | LOW | 15-1c-i : AC11 sans test | **corrigé** : test 12 | 15-1c-i |
+| F2-L6 | LOW | 15-1a2-i : corps dans `dissolve_group_inner` | **corrigé** : relevé au T0 | 15-1c-0 T0, contrats |
+| F2-L10 | LOW | composant de lien « s'il est partagé » | **corrigé** : créé par la 15-1c-i, sans clé | 15-1c-i AC11 ; C-15-1c-22 |
+
+**Propagation post-patch** (valeurs grepées sur les fiches 15-1c-*, le registre, l'index 15-1, le README) :
+« règlement de la pièce » — ne subsiste nulle part dans les fiches vivantes (15-1c-i AC6 et AC13 réécrits) ;
+« annulez le règlement » / « annuler le règlement » — seulement dans la 15-1c-i, pour dire que la 15-1a2-0 l'a
+retiré, et au registre (C-15-1a2-*, historique) ; `colspan` — seuls AC9 et le test 3 de la 15-1c-ii, cohérents ;
+`marketing-brochure` — AC12, AC17, T5 de la 15-1c-ii ; `huit combinaisons` — plus nulle part ; « clés figées » —
+remplacé par « ensemble exact » à la 15-1c-0 ; `AC15`/`AC16` dans la 15-1c-i — seulement comme renvois à la 15-1c-0 ;
+`15-1c-i → 15-1c-ii` dans les chaînes d'ordre — toutes passées à `15-1c-0 → 15-1c-i → 15-1c-ii` (fiches 15-1c-*,
+`15-1-lettrage.md`) ; fiches validées amont (15-1b, 15-1a2-*) laissées : elles parlent de « la 15-1c », que l'index
+couvre. README (ligne v0.13.0) et `sprint-status.yaml` (clé `15-1c-0-groupe-de-lettrage-enrichi`) mis à jour.
+
+**Recompte** (depuis les fichiers, `grep -c '^\*\*AC[0-9]'`, `grep -c '^- \[ \] \*\*T'`, `grep -cE '^[0-9]+\. AC'`) :
+15-1c-0 — **3** critères, **5** tâches, **9** tests ; 15-1c-i — **12** critères, **9** tâches, **12** tests et
+6 scénarios E2E ; 15-1c-ii — **6** critères, **7** tâches, **6** tests et 3 scénarios E2E.
+
+**Verdict : validation P3 due** — passe complète (Sonnet), sur **les trois** sous-fiches ensemble.
 
 ### Validation P1 — 2026-10-09 (Sonnet 5.5 ×2, lentilles R et F ; remédiation Opus 5.5, en autonomie) — DÉCOUPÉE
 

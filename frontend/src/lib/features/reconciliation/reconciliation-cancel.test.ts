@@ -23,6 +23,9 @@ describe('reconciliationCancelMessage', () => {
 			['INVOICE_CREDITED', 'reste ouvert au compte débiteurs'],
 			['INVOICE_WRITTEN_OFF', "annulez d'abord le solde"],
 			['FISCAL_YEAR_CLOSED', "en commençant par le plus récent"],
+			// Story 15-1a2-0 — extrait PROPRE au texte neuf : « en commençant par le
+			// plus récent » est aussi celui de FISCAL_YEAR_CLOSED.
+			['LETTERING_ALL_LINES_IN_CLOSED_PERIODS', 'toutes les lignes de ce lettrage'],
 			['MATCHED_BANK_TRANSACTION', 'autre transaction bancaire'],
 			['ACCOUNT_ARCHIVED', 'réactivez-le'],
 			['FISCAL_YEAR_INVALID', 'Aucun exercice ouvert'],
@@ -40,7 +43,7 @@ describe('reconciliationCancelMessage', () => {
 });
 
 describe('reconciliationCancelErrorMessage', () => {
-	it('un code hors des sept motifs ⇒ le message du SERVEUR (mutation : texte générique)', () => {
+	it('un code hors des huit motifs ⇒ le message du SERVEUR (mutation : texte générique)', () => {
 		expect(
 			reconciliationCancelErrorMessage({
 				code: 'PERIOD_LOCKED',
@@ -67,6 +70,21 @@ describe('reconciliationCancelErrorMessage', () => {
 				details: { rejected: [{ accountId: 3, accountNumber: '3200' }] },
 			}),
 		).toContain('(3200)');
+	});
+});
+
+// Story 15-1a2-0 (#518) — le lettrage figé par la période : reconnu, traduit
+// dans la famille du dé-rapprochement.
+describe('le motif LETTERING_ALL_LINES_IN_CLOSED_PERIODS', () => {
+	it('est reconnu et traduit dans SA famille (mutation : code absent de MOTIFS, ou texte du règlement)', () => {
+		expect(isReconciliationCancelCode('LETTERING_ALL_LINES_IN_CLOSED_PERIODS')).toBe(true);
+		const texte = reconciliationCancelErrorMessage({
+			code: 'LETTERING_ALL_LINES_IN_CLOSED_PERIODS',
+			message: 'texte serveur',
+			status: 409,
+		});
+		expect(texte).toContain('Ce rapprochement est lettré');
+		expect(texte).not.toContain('Ce règlement');
 	});
 });
 

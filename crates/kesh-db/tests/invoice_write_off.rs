@@ -24,6 +24,10 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::MySqlPool;
 
+#[path = "support/document_group.rs"]
+mod document_group;
+use document_group::{lignes_du_groupe, poser_groupe_document};
+
 fn ymd(y: i32, m: u32, d: u32) -> NaiveDate {
     NaiveDate::from_ymd_opt(y, m, d).expect("date valide")
 }
@@ -1436,4 +1440,187 @@ async fn a_vat_payable_account_that_is_the_receivable_is_refused(pool: MySqlPool
         "{err:?}"
     );
     assert_nothing_written(&pool, inv, v, n).await;
+}
+
+// ---------------------------------------------------------------------------
+// Story 15-1a2-0 (#518) — le lettrage figé par la période (rang 2 bis)
+// ---------------------------------------------------------------------------
+
+/// L'écriture d'une ligne `invoice_settlements` (règlement ou solde).
+async fn settlement_entry(pool: &MySqlPool, settlement_id: i64) -> i64 {
+    sqlx::query_scalar("SELECT journal_entry_id FROM invoice_settlements WHERE id = ?")
+        .bind(settlement_id)
+        .fetch_one(pool)
+        .await
+        .expect("écriture du règlement")
+}
+
+/// L'écriture de vente d'une facture.
+async fn sale_entry(pool: &MySqlPool, inv: i64) -> i64 {
+    sqlx::query_scalar("SELECT journal_entry_id FROM invoices WHERE id = ?")
+        .bind(inv)
+        .fetch_one(pool)
+        .await
+        .expect("écriture de vente")
+}
+
+/// Le motif lu par la vue pour une ligne `invoice_settlements`.
+async fn read_blocker(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    settlement_id: i64,
+) -> Option<SettlementCancelBlocker> {
+    let mut conn = pool.acquire().await.unwrap();
+    invoice_settlements_write::settlement_cancel_blocker(
+        &mut conn,
+        seeded.company_id,
+        settlement_id,
+    )
+    .await
+    .expect("lecture")
+    .map(|h| h.0)
+}
+
+/// Écritures, lignes `invoice_settlements` et audit — ce qu'un refus ne touche pas.
+async fn traces(pool: &MySqlPool) -> [i64; 3] {
+    let mut out = [0; 3];
+    for (i, table) in ["journal_entries", "invoice_settlements", "audit_log"]
+        .iter()
+        .enumerate()
+    {
+        out[i] = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    }
+    out
+}
+
+/// AC3 (b) — facture B soldée par un **solde seul**, lettrage figé : l'annulation
+/// du solde est refusée (rang 2 bis), rien n'est écrit. AC2 (c), **1 bis × 2
+/// bis** — facture A soldée par un règlement ET un solde, lettrage figé :
+/// l'annulation du règlement rend `WriteOffExists` (lecture et écriture), celle
+/// du solde le rang 2 bis. Deux factures DISTINCTES (D4 point 4).
+#[sqlx::test(migrations = "./test-schema")]
+async fn write_off_cancel_and_rank_1_bis_under_a_frozen_lettering(pool: MySqlPool) {
+    let seeded = company(&pool).await;
+    let creance = seeded.accounts["1100"];
+
+    // Facture A : règlement de 60, puis solde du reste.
+    let a = validated_invoice(&pool, &seeded, &[(dec!(100.00), dec!(0))]).await;
+    let reglement_a = settle_cash(&pool, &seeded, a, dec!(60.00)).await;
+    write_off(&pool, &seeded, a, Nature::BankFees)
+        .await
+        .expect("solde A");
+    let solde_a: i64 = sqlx::query_scalar(
+        "SELECT id FROM invoice_settlements WHERE invoice_id = ? AND settlement_type = 'write_off'",
+    )
+    .bind(a)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let cle_a = poser_groupe_document(
+        &pool,
+        creance,
+        &[
+            sale_entry(&pool, a).await,
+            settlement_entry(&pool, reglement_a).await,
+            settlement_entry(&pool, solde_a).await,
+        ],
+    )
+    .await;
+
+    // Facture B : un solde seul.
+    let b = validated_invoice(&pool, &seeded, &[(dec!(50.00), dec!(0))]).await;
+    write_off(&pool, &seeded, b, Nature::BankFees)
+        .await
+        .expect("solde B");
+    let solde_b: i64 = sqlx::query_scalar(
+        "SELECT id FROM invoice_settlements WHERE invoice_id = ? AND settlement_type = 'write_off'",
+    )
+    .bind(b)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let cle_b = poser_groupe_document(
+        &pool,
+        creance,
+        &[
+            sale_entry(&pool, b).await,
+            settlement_entry(&pool, solde_b).await,
+        ],
+    )
+    .await;
+
+    // Le verrou ENSUITE, à la date de toutes les lignes (`D`).
+    kesh_db::repositories::companies::lock_books(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        D(),
+    )
+    .await
+    .expect("verrou");
+
+    let cancel = |inv: i64, sid: i64| {
+        let pool = pool.clone();
+        let (user, company_id) = (seeded.admin_user_id, seeded.company_id);
+        async move {
+            invoice_settlements_write::cancel_settlement(&pool, user, company_id, inv, sid)
+                .await
+                .expect_err("refusée")
+        }
+    };
+    let refus = |err: &DbError, motif: SettlementCancelBlocker| matches!(err, DbError::SettlementNotCancellable { blocker } if *blocker == motif);
+    let avant = traces(&pool).await;
+
+    // AC3 (b) — le solde seul de B.
+    assert_eq!(
+        read_blocker(&pool, &seeded, solde_b).await,
+        Some(SettlementCancelBlocker::DocumentLetteringInClosedPeriods)
+    );
+    let err = cancel(b, solde_b).await;
+    assert!(
+        refus(
+            &err,
+            SettlementCancelBlocker::DocumentLetteringInClosedPeriods
+        ),
+        "{err:?}"
+    );
+
+    // 1 bis × 2 bis — le règlement de A : le solde d'abord (rang 1 bis).
+    assert_eq!(
+        read_blocker(&pool, &seeded, reglement_a).await,
+        Some(SettlementCancelBlocker::WriteOffExists)
+    );
+    let err = cancel(a, reglement_a).await;
+    assert!(
+        refus(&err, SettlementCancelBlocker::WriteOffExists),
+        "{err:?}"
+    );
+    // … et le solde de A : figé (rang 2 bis).
+    assert_eq!(
+        read_blocker(&pool, &seeded, solde_a).await,
+        Some(SettlementCancelBlocker::DocumentLetteringInClosedPeriods)
+    );
+    let err = cancel(a, solde_a).await;
+    assert!(
+        refus(
+            &err,
+            SettlementCancelBlocker::DocumentLetteringInClosedPeriods
+        ),
+        "{err:?}"
+    );
+
+    assert_eq!(traces(&pool).await, avant, "rien d'écrit");
+    assert_eq!(
+        lignes_du_groupe(&pool, cle_a).await,
+        3,
+        "marques de A intactes"
+    );
+    assert_eq!(
+        lignes_du_groupe(&pool, cle_b).await,
+        2,
+        "marques de B intactes"
+    );
 }

@@ -121,8 +121,15 @@ const PREFIXES = [
  * le filtre du compte créanciers), `payment-batches-failed-counterparty-is-claim-account` et
  * `payment-batches-failed-purchase-entry-malformed` (refus par facture à la création d'un lot) —
  * recompté : `git diff` du FTL fr-CH, préfixes du domaine.
+ *
+ * ⚠️ **213 → 214, +1 nommée** (Story 15-1a2-0, #518) — le lettrage figé par la période :
+ * `supplier-invoices-cancel-blocked-lettering-closed` (repli littéral dans
+ * `features/supplier-invoices/invoice-cancel.ts`). Les deux autres clés neuves de la story,
+ * `settlement-cancel-blocked-lettering-closed` et `reconciliation-cancel-blocked-lettering-closed`,
+ * ne portent aucun des quatre préfixes et n'entrent pas — recompté : `git diff` du FTL fr-CH,
+ * préfixes du domaine.
  */
-const CLES_RELEVEES = 213;
+const CLES_RELEVEES = 214;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */
