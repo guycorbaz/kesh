@@ -69,6 +69,13 @@ lettre = { version = "0.11", default-features = false, features = [
     "builder",
 ] }
 
+# Story 15-13a (#551) — lecture du mot de passe de `DATABASE_URL` pour
+# l'avertissement « mot de passe publié / gabarit ». `url` rend le mot de passe
+# encodé ; `percent-encoding` le décode (`url` ne le réexporte pas). Toutes deux
+# déjà au Cargo.lock (dépendances transitives) : aucun paquet neuf.
+url = "2"
+percent-encoding = "2"
+
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 http-body-util = "0.1"

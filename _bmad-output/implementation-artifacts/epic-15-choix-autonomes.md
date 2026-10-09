@@ -5366,4 +5366,214 @@ l'import (#458–#461).
 - **Écartées** : réécrire le message (B-1) dans cette story — hors consigne, et l'issue #569 couvre la
   famille ; ajouter le `case 'LATER_FISCAL_YEAR_CLOSED'` au `switch` (E-3) — code de composant pour un
   comportement déjà correct.
+
+## C-15-13-1 — 15-13 (spécification) : le port de MariaDB n'est plus publié du tout, pas même en loopback
+
+- **Contexte** : `docker-compose.yml:13` publie `"3306:3306"` sur toutes les interfaces (#551). `kesh-api` atteint MariaDB par le réseau interne de Compose ; aucune commande du manuel n'emploie le port publié (toutes passent par `docker compose exec`). Un port publié par Docker contourne UFW, que le manuel recommande (`admin-manual.tex:1998-2009`).
+- **Retenu** : aucune clé `ports:` au service `mariadb` ; un commentaire donne la forme loopback (`127.0.0.1:3306:3306`) à décommenter pour un dépannage ponctuel ; le test `configuration_transmise.rs` rougit sur toute clé `ports:` de `mariadb`.
+- **Écartées** : `"127.0.0.1:3306:3306"` actif (inutile au fonctionnement, et une ouverture que personne n'a demandée) ; garder `3306:3306` en avertissant (l'issue est un P2 de sécurité).
+- **Réversible** : oui (une ligne à décommenter).
+
+## C-15-13-2 — 15-13 (spécification) : les mots de passe MariaDB sont exigés par Compose (`${VAR:?message}`) ; Kesh avertit, sans refuser, sur un mot de passe publié
+
+- **Contexte** : défauts `kesh_dev_root` / `kesh_dev` dans `docker-compose.yml` (`:8`, `:11`, `:53`) et lignes **actives** de `.env.example` (`:336`, `:339`). Kesh ne voit pas le mot de passe root (non transmis, C71) ; refuser `kesh_dev` dans Kesh casserait `docker-compose.dev.yml`, le montage E2E et toutes les recettes de test, qui l'emploient ; `KESH_TEST_MODE` ne distingue pas (`TestModeWithPublicBind` interdit le mode test sur la pile de dev).
+- **Retenu** : `${MARIADB_ROOT_PASSWORD:?…}` et `${MARIADB_PASSWORD:?…}` (y compris dans la `DATABASE_URL` composée) — Compose refuse de démarrer en nommant la variable ; lignes du gabarit commentées et sans valeur ; avertissement Kesh au démarrage si le mot de passe de `DATABASE_URL` est `kesh_dev` ou `kesh_dev_root` ; indice explicite sur l'erreur 1045 (le piège de la mise à jour : MariaDB ne lit `MARIADB_PASSWORD` qu'à la création de la base) ; CI qui exige le refus sans les variables. Le manuel écrit les anciennes valeurs (pour qu'une installation qui s'y appuyait redémarre à l'identique avant de les changer) ; les fichiers distribués n'en portent plus aucune trace.
+- **Écartées** : refus Kesh de `kesh_dev` (casse la pile de dev et la CI) ; placeholder `<GENERATE_ME>` actif pour les mots de passe MariaDB (la base s'initialiserait avec le gabarit, et `<`, espace, `:` cassent la `DATABASE_URL` composée) ; message de refus qui inviterait à « choisir » un mot de passe (une valeur neuve dans `.env` sur une base déjà créée = panne 1045).
+- **Réversible** : oui.
+
+## C-15-13-3 — 15-13 (spécification) : sauvegarde pré-import par défaut dans `/data/backup`, montée en dur sur `./backup` par les deux compose
+
+- **Contexte** : `KESH_ADMIN_BACKUP_DIR` vaut `/tmp` par défaut (`config.rs:947`), transmise en `${…:-}` sans aucun montage (#552). Le gabarit suggère déjà `#KESH_ADMIN_BACKUP_DIR=/data/backup`, que rien ne monte.
+- **Retenu** : défaut du code `/data/backup` (constante nommée), comme `/data/documents` et `/data/inbox` ; montage fixe `./backup:/data/backup` dans `docker-compose.yml` et `docker-compose.prod.yml` ; transmission `${KESH_ADMIN_BACKUP_DIR:-}` inchangée (C75, liste `AJOUTS` intacte) ; `MONTAGES` du test étendu, égalité exigée pour une source fixe. Singulier, pour que l'exploitant qui a décommenté la suggestion du gabarit soit couvert sans rien changer.
+- **Écartées** : défaut de déploiement dans le compose (`${KESH_ADMIN_BACKUP_DIR:-/data/backup}`, contraire à C75 et sans effet pour un compose tiers) ; ranger les sauvegardes sous `/data/documents` ou `/var/log/kesh` (dossiers que le manuel invite à partager en SMB, et le fichier est un secret) ; variable d'hôte `KESH_BACKUP_HOST_DIR` (relève de #558) ; `/data/backups` au pluriel (laisserait dans le conteneur l'exploitant qui a suivi le gabarit).
+- **Réversible** : oui (aucune donnée déplacée : l'ancien emplacement mourait avec le conteneur).
+
+## C-15-13-4 — 15-13 (spécification) : la sauvegarde pré-import est écrite en `0600`, sans écrasement, dossier créé en `0700`
+
+- **Contexte** : rendre la sauvegarde persistante sur l'hôte change sa durée de vie ; le `.keshbackup` contient condensés de mots de passe et jetons de session ; le dossier d'hôte créé par Docker est `root:root` `0755`, et `tokio::fs::write` crée le fichier selon l'umask (`0644`).
+- **Retenu** : `OpenOptions` avec `create_new(true)` et `mode(0o600)` (unix), `sync_all` avant le journal ; `DirBuilder` récursif en `0o700` quand Kesh crée le dossier ; un dossier existant n'est pas modifié. Test avec assertion de montage sur l'umask.
+- **Écartées** : chiffrer la sauvegarde (changement de format, hors périmètre) ; `chmod` du dossier de l'hôte par Kesh (il appartient à l'exploitant).
+- **Réversible** : oui.
+
+## C-15-13-5 — 15-13 (spécification) : périmètre du manuel — `openssl rand -hex 32` pour MariaDB, `exec db` corrigé, section Synology laissée à une issue
+
+- **Contexte** : le manuel fait générer le mot de passe MariaDB de Synology en `openssl rand -base64 32` (`admin-manual.tex:546`), repris dans `DATABASE_URL` — `/` y apparaît une fois sur deux et casse l'URL. Trois commandes visent un service `db` qui n'existe pas (`:1460`, `:1511`, `:2216`) avec un `-p"${MARIADB_ROOT_PASSWORD}"` que rien ne pose. La section Synology (pré-script Hyper Backup `:1578`, aperçu Container Manager `:571`) suppose un service `mariadb` que `docker-compose.prod.yml` n'a pas ; le nom de volume `kesh_db_data` (`:1422`, `:1744`) est faux.
+- **Retenu** : traités ici, parce qu'ils sont le sujet même de la story (accès à MariaDB, mot de passe MariaDB) : `hex` partout pour MariaDB ; `exec mariadb` avec le mot de passe lu dans le conteneur. **Non traités**, signalés pour une issue P3 : la section Synology sans service `mariadb`, le nom de volume.
+- **Écartées** : réécrire la section Synology (autre sujet, autre installation, risque de déborder) ; laisser `base64` (défaut actif sur l'installation de référence).
+- **Réversible** : oui (texte).
+- **Rectificatif** (validation P2, 2026-10-09) : l'aperçu Container Manager est à `admin-manual.tex:573`, non `:571`.
+
+## C-15-13-6 — 15-13 (spécification) : l'emplacement de la sauvegarde n'est pas renvoyé par l'API ni affiché à l'écran
+
+- **Contexte** : #552 demande que « le manuel dise où les trouver ». La réponse de l'import ne porte que `backupCreated`.
+- **Retenu** : le manuel dit l'emplacement (`./backup` du dossier du compose, nom de fichier) ; ni l'API ni l'écran ne changent.
+- **Écartées** : ajouter le nom du fichier à la réponse et l'afficher (frontend, i18n ×4, contrat d'API : trois modules de plus pour une information que l'exploitant trouve au manuel ; un chemin du conteneur affiché à l'écran serait d'ailleurs trompeur — ce n'est pas celui de l'hôte).
+- **Réversible** : oui.
+
+## C-15-13-7 — 15-13 (spécification) : une seule story pour #551 et #552, pas de découpage ; ligne du registre et paragraphe de la fiche d'epic
+
+- **Contexte** : règle de découpage préventif (plus de cinq modules). Les deux issues touchent les mêmes fichiers (compose, gabarit, test `configuration_transmise.rs`, manuel § « Passer à la 0.13.0 », CHANGELOG `[0.13.0]`). Le worktree part d'`origin/main` (`de285ea8`), où la fiche d'epic ne porte pas encore le paragraphe « Story 15-13 — à spécifier » écrit sur la branche de planification du dépôt principal.
+- **Retenu** : une story, trois modules de code dans un crate (`config`, `main`, `routes/admin`) — même décompte que la 15-11a ; ligne `15-13-mariadb-et-sauvegarde: ready-for-dev` (convention « en validation » de l'epic) ajoutée après la 15-11b ; paragraphe « Story 15-13 » ajouté à la fiche d'epic après celui de la 15-11 — à fusionner par union avec la branche de planification.
+- **Écartées** : deux stories (#551 / #552), qui doubleraient les conflits sur les mêmes sections sans réduire le risque.
+- **Réversible** : oui (planification).
+- **Décompte supersédé** (ajout de la validation P2, 2026-10-09) : « trois modules » ne vaut plus depuis l'absorption de #576 ; le décompte en vigueur est celui de **C-15-13-9** (cinq modules, seuil atteint, non franchi). La décision « pas de découpage » tient sur ce nouveau décompte.
+
+## C-15-13-8 — 15-13 (validation P1) : la sauvegarde pré-import reste en `0600` ; le manuel donne le geste de rapatriement
+
+- **Contexte** : R-2 / F4 de la validation P1. L'import se fait par le navigateur ; un fichier `root` en `0600` sur l'hôte ne se lit ni par File Station, ni par SMB, ni par un `scp` sans `sudo`. La procédure « restaurer depuis la sauvegarde = l'importer par le même écran » échouait au moment où l'on en a besoin. L'affirmation « lisible du seul propriétaire » n'était pas mesurée sur Synology (ACL du dossier partagé).
+- **Retenu** (décision de l'orchestrateur) : le mode `0600` reste — la sauvegarde contient toute la comptabilité et ses secrets ; le manuel donne le rapatriement en SSH (`sudo cp` vers un dossier partagé, `sudo chown`, import, suppression de la copie), rejoué sur un conteneur jetable au T0 ; « créé en mode `0600`, propriétaire `root` », avec la limite ACL écrite non mesurée ; le tableau des cas gagne « restaurer après un import raté ».
+- **Écartées** : un mode `0640`/`0644` ou un `chown` vers un utilisateur de l'hôte (élargit l'accès à un secret, et l'UID de l'exploitant n'est pas connu du conteneur) ; renvoyer le fichier par l'API (C-15-13-6).
+- **Réversible** : oui (mode et texte du manuel).
+
+## C-15-13-9 — 15-13 (validation P1) : #576 absorbée — variante `AdminPreImportBackupFailed`, conversion à l'appel, cinq modules
+
+- **Contexte** : F7 de la validation P1. Avec le défaut `/data/backup`, toute instance lancée hors Docker (montage E2E du dépôt, développement) refuse chaque import, et le message affiché annonçait « un backup automatique a été créé ». La story faisait de ce message faux le cas nominal. L'orchestrateur a décidé que la story ferme #576.
+- **Retenu** : une variante neuve (500, code `ADMIN_PRE_IMPORT_BACKUP_FAILED`, clé `error-admin-pre-import-backup-failed`, quatre locales et repli Rust) pour **tout** échec antérieur à l'écriture réussie — y compris transaction et verrou, dont le message mentait aussi ; les deux variantes nées dans `admin_backup` (`check_schema_compat`, `build_keshbackup`) converties **à l'appel** par une fonction pure `avant_sauvegarde`, pour ne pas toucher `admin_backup` ; le texte d'`error-admin-full-import-failed` inchangé (il dit vrai pour les douze sites postérieurs). Les recettes `cargo run` du dépôt posent `KESH_ADMIN_BACKUP_DIR` (`CLAUDE.md` : la seule ligne de commande, `docs/testing.md`). Décompte : cinq modules (`config`, `main`, `routes/admin`, `errors`, catalogues `kesh-i18n`) — seuil atteint, non franchi.
+- **Écartées** : modifier `admin_backup/import.rs` et `export.rs` (sixième module, seuil franchi) ; un champ « étape » dans `AdminFullImportFailed` (même texte pour deux vérités différentes, à trier par le client) ; un contrôle du dossier au démarrage (`warn!`) — le message dit la cause au moment où elle compte, et un dossier monté tardivement le ferait mentir ; une story séparée pour #576 (elle naît du changement de défaut de #552, la séparer laisserait la 15-13 livrer un message faux).
+- **Réversible** : oui (une variante et une clé).
+
+## C-15-13-10 — 15-13 (validation P1) : le contrôle de fin de mise à jour se connecte à la base avec les anciens mots de passe
+
+- **Contexte** : F3 de la validation P1. La vérification prévue (`docker compose config | grep kesh_dev`) ne lit que `.env` : un mot de passe root neuf écrit sans `ALTER USER` la rend muette alors que la base garde `kesh_dev_root`, et fait échouer la sauvegarde nocturne sans que rien ne rougisse (Kesh n'utilise pas root, le healthcheck passe par le compte `healthcheck`). La phrase « aucun de ces cas ne casse en silence » était fausse.
+- **Retenu** (décision de l'orchestrateur) : connexion avec les **anciens** mots de passe publiés → refus attendu ; avec ceux de `.env` → succès ; pour `root` et `kesh`, en TCP (`--protocol=TCP -h 127.0.0.1`) pour que l'authentification par socket de `root@localhost` ne fausse pas la mesure — forme exacte rejouée au T7. Plus : lancer une fois à la main le script de sauvegarde après toute mise à jour ou tout changement de mot de passe. Le tableau des cas gagne la ligne « root neuf sans `ALTER USER` » et la conclusion est réécrite (deux cas silencieux nommés, avec leur geste de détection).
+- **Écartées** : garder le `grep` (faux négatif sur le cas même qu'il devait couvrir) ; transmettre `MARIADB_ROOT_PASSWORD` à Kesh pour qu'il vérifie (C71 : pas d'`env_file`, et Kesh n'a pas à connaître root).
+- **Réversible** : oui (texte du manuel).
+
+## C-15-13-11 — 15-13 (validation P1) : `init-demo.sh` lit l'identifiant MariaDB dans le conteneur
+
+- **Contexte** : R-3 / F6. `init-demo.sh` (versionné) vise par défaut `kesh-mariadb`, le conteneur de `docker-compose.yml`, avec `kesh_dev` en dur : après la story, il échoue en 1045 sur toute installation conforme ; c'était aussi le dernier outil distribué qui supposait le mot de passe publié. L'inventaire « fermé » l'avait omis.
+- **Retenu** : `docker exec -i "$CONTAINER" sh -c 'mariadb -u "$MARIADB_USER" -p"$MARIADB_PASSWORD" "$MARIADB_DATABASE"'` — les deux compose à service MariaDB posent ces variables dans le conteneur ; en-tête qui dit le caractère destructif et l'administrateur de démonstration ; vérifié contre le conteneur jetable du T7 (jamais `kesh-mariadb-dev`, dont la base `kesh` est partagée).
+- **Écartées** : le marquer « développement seulement » sur `kesh-mariadb-dev` (il resterait faux pour sa cible par défaut) ; le supprimer (outil documenté par son en-tête, décision de produit hors story).
+- **Réversible** : oui.
+- **Remplacé** (validation P2, 2026-10-09) : par **C-15-13-13** — le script est retiré du dépôt ; la lecture de l'identifiant dans le conteneur le rendait opérant, sans transaction ni confirmation, sur toute installation conforme.
+
+## C-15-13-12 — 15-13 (validation P1) : forme du message `:?` et scission de l'interpolation obligatoire
+
+- **Contexte** : R-1 / F1 et F2. Le message prescrit contenait `": "`, qui rend les deux compose invalides en YAML (scalaire non cité) ; et le test confondait `${VAR:?}` (refuse le vide) et `${VAR?}` (ne refuse que l'absence), si bien qu'une ligne `MARIADB_PASSWORD=` vide passait.
+- **Retenu** : deux formes admises — message sans `": "` ni `" #"`, ou valeur entière entre guillemets doubles —, tranchées au T0 par `docker compose config -q` **avec** les variables posées ; message qui dit d'abord le cas existant, puis le neuf ; `Interpolation::Obligatoire` scindée en `ObligatoireNonVide` / `ObligatoireSiAbsente`, la première exigée (mutations M28, M29) ; contrôle de la `DATABASE_URL` par resserrement du motif de `VALEURS_COMPOSEES` (DRY).
+- **Écartées** : guillemets simples (l'apostrophe de « d'administration ») ; un message sans indication pour l'installation existante (il pousserait à écrire une valeur neuve).
+- **Réversible** : oui.
+
+## C-15-13-13 — 15-13 (validation P2) : `init-demo.sh` est retiré du dépôt, pas corrigé
+
+- **Contexte** : F2 de la validation P2. La correction de la P1 (C-15-13-11 : identifiant lu dans le conteneur) rendait le script **opérant** sur toute installation conforme ; or il enchaîne des `DELETE` (`init-demo.sh:57-62`) sans transaction ni confirmation, et sur une base peuplée `DELETE FROM companies` échoue sur les 25 clés étrangères `ON DELETE RESTRICT` **après** que `users` et `onboarding_state` ont été vidés. L'orchestrateur a demandé de vérifier d'abord s'il est redondant.
+- **Constat** : redondant. La démonstration est semée par l'application (`POST /api/v1/onboarding/seed-demo`, `routes/onboarding.rs:177-190` → `kesh_seed::seed_demo` : plan comptable par les repositories, exercice, `is_demo`, réinitialisation par `kesh_seed::reset_demo`). Le script écrit en SQL brut dix comptes sans rôle, sans exercice, et un administrateur `admin`/`admin123`. `git grep -n init-demo` hors `_bmad-output` ne rend que le fichier lui-même : aucun script, aucune CI, aucune documentation ne l'appelle (dernier commit qui le touche : `b63dc4e1`, Story 7-1).
+- **Retenu** : `git rm init-demo.sh` (AC 12 b) ; entrée « Retiré » au CHANGELOG ; le T7 ne le lance plus ; inventaire « résolu par retrait ».
+- **Écartées** : le garder en le durcissant (refus si la base porte des données, `START TRANSACTION`, test T7 sur un conteneur peuplé) — maintient un second chemin de démonstration, hors des repositories, que rien n'appelle et qui dérive du schéma à chaque migration ; le garder tel que la P1 l'avait corrigé (risque F2 entier).
+- **Réversible** : oui (l'historique git garde le fichier).
+
+## C-15-13-14 — 15-13 (validation P2) : les dossiers montés par défaut sont ignorés de git et du contexte de build, contrôle dérivé de `MONTAGES`
+
+- **Contexte** : F1 de la validation P2. `docker compose up` se lance depuis un clone ; `./backup` y apparaît au premier import et contient un secret. Grepé par la valeur, le symptôme vaut aussi pour `./inbox` et `./documents` (justificatifs) : seul `log/` est dans `.gitignore`, aucun des quatre dans `.dockerignore`.
+- **Retenu** : `.gitignore` gagne `/inbox/`, `/documents/`, `/backup/` (ancrés à la racine ; `log/` gardé tel quel) ; `.dockerignore` gagne `log/`, `inbox/`, `documents/`, `backup/`. Un test (`montages_hors_du_depot`, test 19) **dérive** la liste des dossiers des sources de `MONTAGES` (colonne `docker-compose.prod.yml`), si bien qu'un montage ajouté demain est contrôlé sans retouche ; mutations M39, M40. `git ls-files` sous ces dossiers : 0 (aucun contenu masqué).
+- **Écartées** : `backup/` seul (laisse le même défaut sur deux dossiers voisins — propagation par le symptôme, `CLAUDE.md`) ; motifs non ancrés (`documents/` masquerait tout sous-dossier homonyme du dépôt).
+- **Réversible** : oui.
+
+## C-15-13-15 — 15-13 (validation P2) : `docs/ci.md` — le décompte des jobs est corrigé, la description d'un job `e2e` inexistant est laissée à une issue
+
+- **Contexte** : F6 de la validation P2. `docs/ci.md:9-10` annonce « 4 jobs (`backend`, `frontend`, `e2e`, `docker-build`) » ; `ci.yml` en a trois. Grepé par la valeur, le job `e2e` est décrit aussi à `:23`, `:30`, `:131`, `:164`, `:186`, et le `CLAUDE.md` affirme un smoke E2E en CI que `ci.yml` ne porte pas.
+- **Retenu** : la story corrige `:9-10` (à une ligne de `:12`, qu'elle réécrit déjà) et ajoute sous `:10` une phrase de renvoi vers une issue que l'orchestrateur ouvre ; les autres lignes et le `CLAUDE.md` restent (défaut antérieur, hors du sujet de #551/#552/#576, et la recette du `CLAUDE.md` est la seule ligne que la story y touche).
+- **Écartées** : réécrire toute la description de la CI (hors sujet, et elle dépend d'une décision — rétablir le job ou retirer sa description) ; ne rien toucher (la story réécrit `:12` à côté d'un décompte qu'elle saurait faux).
+- **Réversible** : oui.
+
+## C-15-13-16 — 15-13 (validation P3) : découpage en 15-13a (MariaDB, #551) et 15-13b (sauvegarde, #552 et #576)
+
+- **Contexte** : validation P3 (deux lentilles Opus 5.5) : 5 MEDIUM distincts, dont trois nés de la remédiation P2 (R3-1, R3-2, F-P3-2), après deux nés de la remédiation P1 en P2. Signal D5 de recyclage levé deux passes de suite — la forme qui découpe selon l'amendement D5 de la rétrospective de l'Epic 25.
+- **Retenu** (décision de l'orchestrateur) : deux fiches filles selon la couture naturelle — **15-13a** « MariaDB non publiée, mots de passe obligatoires » (`closes #551`, refs #577 ; modules `config`, `main`) et **15-13b** « sauvegarde avant import persistante » (`closes #552`, `closes #576`, refs #558 ; modules `config`, `routes/admin`, `errors`, catalogues `kesh-i18n`) ; `15-13-mariadb-et-sauvegarde.md` devient fiche index (`split`), la version complète restant au commit `8a9bcd27`. Numérotation de la fiche unique conservée dans les filles (AC, tests, mutations, tâches) ; recompte aux deux bornes écrit dans l'index. Ordre suggéré : 15-13a d'abord (#551 P2) ; chaque fille ne réécrit que ce que son changement rend faux, si bien qu'une seule mergée au tag laisse un CHANGELOG et un manuel vrais ; la seconde recompte les gestes de `admin-manual.tex:1793` et de `CHANGELOG.md:46`.
+- **Écartées** : une troisième fiche pour #576 (elle naît du défaut `/data/backup` : la séparer de #552 laisserait un message faux dans le cas nominal hors Docker, C-15-13-9) ; une coupe « code / documentation » (chaque moitié ne serait ni livrable ni testable seule) ; continuer sans découper (troisième recyclage probable : les défauts naissent désormais dans les ajouts de la passe précédente).
+- **Réversible** : oui (planification ; les deux fiches se refondent par simple concaténation, la numérotation étant commune).
+
+## C-15-13-17 — 15-13a (validation P3) : Kesh avertit aussi pour un mot de passe applicatif resté au gabarit du manuel
+
+- **Contexte** : F-P3-3. Le manuel fait recopier `MARIADB_PASSWORD=<mot de passe utilisateur applicatif>` (`admin-manual.tex:254`) et `DATABASE_URL=mysql://kesh:<MARIADB_PASSWORD>@…` (`:259`) ; recopiées telles quelles, ces chaînes — imprimées dans le PDF distribué — deviennent le mot de passe applicatif. La fiche les disait « hors de portée de Kesh pour la même raison » que root ; c'est faux : Kesh lit `DATABASE_URL`, et `is_template_placeholder` (`config.rs:1405`, 15-11a) existe.
+- **Retenu** (décision de l'orchestrateur) : AC 5 a-bis — un `warn!` **distinct** quand le mot de passe décodé satisfait `is_template_placeholder` (réemploi, DRY), renvoi à la procédure de changement (AC 11 g) ; test 7 étendu (formes encodée et non encodée, chevrons intérieurs en témoin), mutation **M42** ; doc-comment du prédicat complété ; tableau des cas et Dev Notes rectifiés. Le **root** gabarit reste un angle mort (Kesh ne voit pas root, C71), tracé par une issue que l'orchestrateur ouvre.
+- **Écartées** : refuser le démarrage (même raison que C-15-13-2 : un mot de passe faible n'empêche pas de fonctionner, et le refus casserait des installations existantes sans gain sur root) ; un message commun avec `kesh_dev` (l'exploitant ne saurait pas que la valeur vient du manuel) ; un second prédicat propre aux mots de passe (duplication).
+- **Réversible** : oui.
+
+## C-15-13-18 — 15-13a et 15-13b (validation P3) : les gestes « pour qui garde son compose » se comptent par fichier ; le contrôle des placeholders du CHANGELOG suit le manuel
+
+- **Contexte** : F-P3-1 et F-P3-2. `admin-manual.tex:1793` (« Pour qui garde son fichier compose : deux gestes. », puis « Sous `environment:` du service `kesh-api` : ») et `CHANGELOG.md:46` (« décrit les deux gestes ») deviennent faux : la 15-13 ajoute des gestes hors d'`environment:`, différents selon le fichier. `CHANGELOG.md:52` recopie le `docker compose config | grep` « doit rester muette », piège corrigé au manuel en P2 (R2-9) mais non propagé.
+- **Retenu** : le titre perd son décompte global ; le paragraphe donne le nombre **par fichier**, recompté par la fille mergée en second (aujourd'hui 2 / 2 ; 15-13a seule 4 / 2 ; 15-13b seule 3 / 3 ; les deux 5 / 3), chaque geste écrit avec son fichier et une ligne de contrôle ; `deux gestes` devient un contrôle négatif du PDF aplati. `CHANGELOG.md:52` reçoit la même forme que le manuel (mots de passe d'abord, `config -q && echo 'compose lisible'`) ou un renvoi au manuel — choix laissé au développement, écrit au Dev Agent Record. Les « Effets sans refus » de la sauvegarde sont conditionnés au compose (0.13.0 : `./backup` ; compose gardé : `/data/backup` du conteneur, éphémère).
+- **Écartées** : un nombre unique (faux pour l'un des deux fichiers) ; garder « deux gestes » en ajoutant un troisième paragraphe (le titre resterait faux) ; supprimer la commande du CHANGELOG sans renvoi (perte de l'action requise).
+- **Réversible** : oui (texte).
+
+## C-15-13-19 — 15-13b (validation P3) : motifs ancrés dans `.gitignore`, une seule tolérance nommée (`log/`)
+
+- **Contexte** : R3-1. Le test 19 admettait `x/` aussi bien que `/x/` pour toute entrée de `MONTAGES`, alors que C-15-13-14 écarte les motifs non ancrés. Mesuré : `backup/` ignore `frontend/src/routes/(app)/admin/backup/` (versionné : l'écran de la sauvegarde) — tout fichier neuf de cette route serait ignoré en silence ; `/backup/` non.
+- **Retenu** : `.gitignore` exige `/x/` ; **seule** tolérance, une constante qui ne compte que `log` : la ligne `log/` existante (`.gitignore:34`) — aucun dossier `log` versionné nulle part (`git ls-files | grep -E '(^|/)log/'` → 0), et l'ancrer ferait réapparaître des `log/` d'outils de dev sous les crates ; un `log/` versionné ajouté demain serait masqué : risque écrit. Mutation **M41** (`/backup/` → `backup/`). `.dockerignore` inchangé dans sa forme (motifs relatifs à la racine du contexte).
+- **Écartées** : ancrer aussi `log/` (change un comportement existant hors du sujet de la story) ; tolérer `x/` pour tous (le défaut mesuré).
+- **Réversible** : oui.
+
+## C-15-13-20 — 15-13 (validation P3) : rectificatifs de C-15-13-13, C-15-13-14 et C-15-13-15 ; attribution de M5
+
+- **Rectificatifs** (les entrées d'origine ne sont pas réécrites) : **C-15-13-13** — les `DELETE` d'`init-demo.sh` sont à `:70-75` (commentaire `:70`, instructions `:71-75`), non `:57-62` (`check_container()`, `:55-63`) — R3-7. **C-15-13-14** — l'homonyme réel d'un motif non ancré est `frontend/src/routes/(app)/admin/backup/` (versionné), non un hypothétique `documents/` ; la décision d'ancrer est tenue par C-15-13-19 — R3-1. **C-15-13-15** — l'issue à laquelle renvoie `docs/ci.md` existe : **#577** ; la liste des lignes qui décrivent le job `e2e` absent compte aussi `:210` — R3-3/F-P3-4, R3-5.
+- **Attribution de M5** (constat du remédiateur) : `VALEURS_COMPOSEES` n'est lu que par `controle_valeur` (`configuration_transmise.rs:592-603`), donc par le test `valeurs` (famille (V), `:1743`) ; la fiche unique rangeait son resserrement sous `transmission` et M5 sous le test 1. Retenu : ligne 3a de la 15-13a (`valeurs`, existant modifié) porte M5 ; le décompte des fonctions passe de 19 à 20 (fonction modifiée jamais comptée). Écarté : faire porter le contrôle de la `DATABASE_URL` par le test neuf `mariadb` (second contrôle sur la même valeur, contraire au DRY de l'AC 10 a).
+- **Réversible** : oui.
+
+## C-15-13-21 — 15-13b (validation P4) : la sauvegarde pré-import s'écrit sous `.partial`, puis est renommée
+
+- **Contexte** : F-P4-6. `write_backup_file` créait le fichier au nom final puis écrivait : un client déconnecté (hyper abandonne le futur du handler), un OOM ou un `docker stop` en cours d'écriture laissaient un `kesh-pre-import-….keshbackup` tronqué — désormais **persistant**, de même nom qu'une sauvegarde valide, et refusé en « corrompu » à l'import, au moment même où l'on en a besoin.
+- **Retenu** (décision de l'orchestrateur) : écriture dans `<chemin>.partial` du **même dossier** (`create_new`, `0600`), `sync_all`, puis `rename` vers le nom final (atomique sur un même système de fichiers) ; un arrêt pendant l'écriture ne laisse qu'un `.partial`, jamais un fichier nommé comme une sauvegarde. `rename` remplaçant une cible existante sur Unix, le refus d'écraser passe par une vérification du nom final avant le renommage (`try_exists`) ; la fenêtre entre les deux reste ouverte, sans portée pratique (nom unique par construction) — angle mort écrit. Test `write_backup_file_passe_par_un_partiel` (un `.partial` préexistant fait échouer l'appel, le nom final n'apparaît pas) ; mutation **M46** « écrire directement le nom final » ; M26 réécrite (« vérification du nom final retirée »). Le manuel dit qu'un `.partial` est une écriture interrompue et peut être supprimé.
+- **Écartées** : écrire au nom final et documenter l'angle mort (le fichier mentirait sur sa nature) ; `hard_link` sans écrasement puis suppression du `.partial` (atomique, mais dépend du système de fichiers du montage — NAS, SMB) ; `renameat2(RENAME_NOREPLACE)` (hors `std`, Linux seulement).
+- **Réversible** : oui (une fonction privée).
+
+## C-15-13-22 — 15-13a (validation P4) : le mot de passe de `DATABASE_URL` est décodé par `decode_utf8_lossy`, et sa non-divulgation est gardée par mutation
+
+- **Contexte** : F4 et F6. `percent_decode_str` rend un `PercentDecode` ; `decode_utf8()` renvoie une erreur sur des octets non UTF-8 (`%FF`), qu'un `?` ou un `unwrap` transformerait en échec ou en panique du démarrage — contraire à l'AC 5 b (« aucun `ConfigError` neuf »). Et la propriété « ni le mot de passe ni l'URL dans le journal » n'était gardée par aucune mutation.
+- **Retenu** : `decode_utf8_lossy()` (une valeur non UTF-8 n'est ni publiée ni gabarit ; sa forme décodée ne déclenche rien) ; témoin `%FF` au test 7 ; **M43** (l'avertissement interpole le mot de passe décodé, rouge au test 7) et **M44** (le message d'échec de connexion interpole `database_url`, rouge au test 10, qui exige l'absence de `mauvais-15-13` dans la sortie). La forme non encodée du gabarit, établie à la source (`url` 2.5.8), devient un cas positif ferme du test 7 ; le repli conditionnel est retiré.
+- **Écartées** : `decode_utf8()` avec gestion explicite de l'erreur (même effet, une branche de plus à tester) ; garder le repli du test 7 (branche morte qui laisse croire à une incertitude levée).
+- **Réversible** : oui.
+
+## C-15-13-23 — 15-13a (validation P4) : la recette de changement de mot de passe MariaDB n'expose pas le nouveau mot de passe, et commence par arrêter Kesh ; la rubrique « Retiré » du CHANGELOG est légitime
+
+- **Contexte** : F7. La recette (`ALTER USER`, puis `.env`, puis `up -d`) ne disait pas comment le nouveau mot de passe atteint la requête : tapé en ligne de commande, il resterait dans l'historique du shell et dans la liste des processus de l'hôte, alors que toute la story lit les mots de passe dans le conteneur. Entre l'`ALTER USER kesh` et le `up -d`, les connexions neuves de Kesh échouent en 1045. Annexe : la rubrique « Retiré » n'existe dans aucune version du CHANGELOG.
+- **Retenu** : nouveau mot de passe engendré dans une variable (`NEW=$(openssl rand -hex 32)`, jamais tapé), transmis à `mariadb` par l'entrée standard (document en ligne), reporté dans `.env` à l'éditeur ; la recette commence par `docker compose stop kesh-api` ; forme de référence en Dev Notes, forme finale fixée au T7. Rubrique « Retiré » gardée : *Removed* est l'une des six rubriques de Keep a Changelog 1.1.0 (vérifié en ligne le 2026-10-09), que l'en-tête du CHANGELOG déclare suivre en traduisant les intitulés.
+- **Écartées** : `sed -i` pour écrire `.env` (le mot de passe passerait un instant dans les arguments de `sed`) ; laisser la forme au seul T7 (l'exigence d'hygiène doit être écrite avant la mesure, sinon la mesure ne la vérifie pas) ; ranger le retrait d'`init-demo.sh` sous « Modifié » (moins exact).
+- **Réversible** : oui (texte du manuel et du CHANGELOG).
+
+## C-15-13-24 — 15-13b (validation P4) : le défaut `/data/backup` est lié par test au littéral et au montage ; la comparaison des sources de montage devient une fonction pure
+
+- **Contexte** : R4-1 et F-P4-2. `DEFAULT_ADMIN_BACKUP_DIR` n'était comparée qu'à elle-même : changée en `/data/backups`, elle laissait tous les tests verts et la sauvegarde retournait dans le conteneur ; M15, appliquée à la valeur de la constante, restait verte. La règle d'égalité des sources de montage vivait dans la boucle de `controle_transmission`, que l'auto-test (S) n'atteint pas : M14 n'avait aucun test capable de rougir.
+- **Retenu** : constante `pub` ; le test 6 b la compare au **littéral** `"/data/backup"` (le seul littéral voulu côté test), le test `transmission` exige qu'elle soit la cible d'une entrée de `MONTAGES` (donc d'un montage des compose) ; M15 réécrite « valeur de la constante changée en `/tmp` », rouge aux tests 3 et 6 b. Fonction pure `source_conforme(compose, source, attendue_y, exacte_p) -> bool`, appelée par la boucle et exercée par (S) avec `./backups` refusé en `Y` — rouge sous M14.
+- **Écartées** : faire porter le lien par le test 19 (il traite d'exclusion git, pas de montage) ; construire des `Service` synthétiques pour atteindre la boucle (plus lourd, même garantie).
+- **Réversible** : oui.
+
+## C-15-13-25 — 15-13b (validation P4) : le message de #576 n'oriente pas vers le seul dossier, et sa négation est exigée par test
+
+- **Contexte** : F-P4-5 et F-P4-4. Trois des cinq échecs antérieurs à l'écriture sont des pannes de base (transaction, verrou, lecture du schéma ou des données) ; un texte « dossier de sauvegarde inscriptible ? » oriente vers une fausse piste. Et les tests 15/16 n'exigeaient que l'absence de l'ancienne promesse : un texte « Échec de l'import. » passait, sans plus dire qu'aucune copie n'existe — l'objet même de #576.
+- **Retenu** : texte qui nomme les deux pistes à égalité (« dossier de sauvegarde inscriptible, base de données accessible ») ou aucune ; code et variante inchangés. Les tests 15 et 16 exigent la négation (« aucune sauvegarde n'a été créée » et ses trois traductions, à la lettre) ; mutation **M45**.
+- **Écartées** : deux variantes et deux textes (dossier / base) — un module de plus à toucher pour un tri que les journaux font déjà ; un code d'erreur neuf pour la base (même raison).
+- **Réversible** : oui (quatre catalogues et un repli).
+
+## C-15-13-26 — 15-13 (validation P4) : rectificatifs de C-15-13-9 et de C-15-13-14
+
+- **Rectificatifs** (les entrées d'origine ne sont pas réécrites) : **C-15-13-9** — « cinq modules » ne vaut plus depuis le découpage (C-15-13-16) : la 15-13a en compte deux (`config`, `main`), la 15-13b quatre (`config`, `routes/admin`, `errors`, catalogues `kesh-i18n`) — R4-10 de la validation P4 de la 15-13b. **C-15-13-14** — « un montage ajouté demain est contrôlé sans retouche » n'était vrai que si l'assertion de montage du test 19 ne fixait pas le nombre d'entrées : elle exige désormais « au moins quatre », dont `/data/backup` (R4-5). **Inventaire de la 15-13a** — la ventilation « 29 + 6 → 36 » de la fiche index ne se refaisait pas ; seuls les totaux sont gardés (R4-7).
+- **Réversible** : oui.
+
+## C-15-13a-1 — 15-13a (T0) : le manuel dit le refus de Compose tel qu'il est mesuré — `config`, `pull` et `up` refusent, `ps`, `logs`, `exec`, `stop` restent utilisables, et la variable nommée change d'un lancement à l'autre
+
+- **Contexte** : l'AC 11 f affirmait, sous réserve de mesure au T0, que « le refus de Compose frappe toute sous-commande » (`ps`, `logs`, `exec`, `stop`, `down`) et que le script de sauvegarde lancé par `cron` échoue dès que `.env` perd une des deux lignes ; l'AC 11 j, que Compose nomme « la première » variable et que « la seconde apparaît au lancement suivant ». Mesuré le 2026-10-09 (Docker Compose 2.40.3, projet jetable `kesh1513a-t0`, service `mariadb` en marche, `env -u MARIADB_ROOT_PASSWORD -u MARIADB_PASSWORD`) : `config`, `pull`, `up -d` et `up -d kesh-api` sortent en code 1 avec `required variable … is missing a value` ; `ps`, `logs`, `exec -T mariadb true` et `stop` sortent en 0 et font leur travail. Et, sur 12 lancements de la même commande, la variable nommée varie : `MARIADB_ROOT_PASSWORD`, `MARIADB_PASSWORD` ou `DATABASE_URL` (de `kesh-api`, qui nomme `MARIADB_PASSWORD`) — ordre non déterministe.
+- **Retenu** : le manuel, le CHANGELOG et `DOCKER_START.md` disent la mesure — refus de `config`, `pull`, `up` ; `ps`, `logs`, `exec`, `stop` encore utilisables avec la version mesurée (diagnostic et arrêt possibles ; le script de sauvegarde, qui passe par `exec`, ne dépend pas de `.env`, il lit le mot de passe dans le conteneur) ; Compose nomme **une** variable à la fois, **pas toujours la même** : poser les deux avant de relancer. La version mesurée est nommée, faute de pouvoir garantir les autres.
+- **Écartées** : écrire l'affirmation de la fiche (fausse sur la version mesurée) ; ne rien dire des sous-commandes (l'exploitant face au refus doit savoir s'il peut encore diagnostiquer).
+- **Réversible** : oui (texte). La règle (refus par Compose, avertissement par Kesh) n'est pas touchée : seul le constat documentaire change.
+
+## C-15-13a-2 — 15-13a (T4/T8) : l'étape CI retire aussi chaque mot de passe MariaDB SEUL, l'autre posé
+
+- **Contexte** : l'AC 4 b exige que `docker compose config -q` **sans les deux** variables échoue en nommant l'une d'elles. Jouée localement, la mutation **M27** de la fiche (« remettre `:-kesh_dev_root` ») **survit** à cette forme : `MARIADB_PASSWORD` reste obligatoire, Compose refuse en la nommant, et l'étape passe — le retour du défaut publié de root ne se voit pas en CI.
+- **Retenu** : l'étape garde la vérification de l'AC 4 b et ajoute une boucle : pour chaque variable, retirer les deux puis poser **l'autre** ; Compose doit refuser **en nommant celle qui manque** (`required variable <nom> is missing`). M27 rougit (rejouée sous `bash -eo pipefail` sur une copie). Reste vert, à dessein, le retour d'un défaut sur le seul `MARIADB_PASSWORD` du service `mariadb` : la `DATABASE_URL` de `kesh-api` exige encore la variable, Compose refuse toujours son absence — aucun changement de comportement ; le test Rust `mariadb` le voit.
+- **Écartées** : s'en tenir à l'esquisse de la fiche (M27 survit) ; ne compter que sur le test Rust (l'AC 4 veut le refus exercé par Compose lui-même).
+- **Réversible** : oui.
+
+## C-15-13a-3 — Recette `ALTER USER` : sous-shell `set -e`, mots de passe affichés avant, compte lu dans le conteneur (revue P1, B-L1, E-3 = A-5)
+
+- **Contexte** : la revue de code P1 relève que la recette n'affichait les nouveaux mots de passe qu'**après** l'`ALTER USER` (session coupée = mots de passe perdus), sans arrêt à la première erreur, et avec le compte `kesh` en dur alors que `MARIADB_USER` est réglable.
+- **Retenu** : la recette tient dans un sous-shell `( set -e … )` — arrêt à la première erreur sans fermer le terminal interactif ; `echo` des deux valeurs **avant** l'application, puis `read` (pause pour les recopier) ; compte applicatif lu par `docker compose exec -T mariadb printenv MARIADB_USER` et passé **en premier** (seule ligne sans `IF EXISTS` : s'il est refusé, rien n'a changé) ; ligne témoin `CHANGÉS DANS LA BASE` ; `up -d` dans un **second** bloc, pour qu'un collage du premier ne le lance pas avant l'enregistrement de `.env`. Rejouée sur un projet Compose jetable `kesh1513ap1` (`MARIADB_USER=compta`) : nominal, échec de connexion root (rc 1, pas de ligne témoin), compte absent (rc 1, ERROR 1396, root et compte inchangés).
+- **Écartées** : `set -e` nu (fermerait le terminal sur une erreur) ; écrire les mots de passe dans un fichier sous `umask 077` (un fichier de secrets de plus à effacer) ; dire seulement « adaptez `kesh` » (le lecteur ne le fera pas).
+- **Réversible** : oui (texte du manuel).
+
+## C-15-13a-4 — Volume `kesh_db_data` du manuel laissé à #575 (revue P1, B-L4)
+
+- **Contexte** : B-L4 relève le nom de volume `kesh\_db\_data` (`admin-manual.tex`, procédure de mise à jour standard et stratégie de sauvegarde), faux contre `kesh-mariadb-data`.
+- **Retenu** : laissé à **#575**, dont le constat cite précisément ces deux sites ; la story 15-13a ne les touche pas. Le reste de B-L4 (`cd /opt/kesh` de la restauration) est traité : renvoi à `COMPOSE_DIR` du script de sauvegarde.
+- **Écartée** : corriger ici (double traitement d'une issue ouverte, et la section Synology de #575 demande une refonte plus large).
 - **Réversible** : oui.

@@ -168,12 +168,14 @@ Le stockage est dominé par l'\emph{audit\_log} et les pièces justificatives. C
     443 & HTTPS & Accès utilisateur via reverse proxy & Publique (Internet) \\
     80 & HTTP & API Axum backend (interne) & Localhost uniquement \\
     5173 & HTTP & SvelteKit dev server (dev seul) & Localhost uniquement \\
-    3306 & MySQL/MariaDB & Connexion base de données & Localhost ou réseau privé \\
+    3306 & MySQL/MariaDB & Connexion base de données & Voir ci-dessous \\
     \bottomrule
 \end{tabularx}
 
 \begin{keshwarning}
 \textbf{Ne jamais exposer le port 80 (API Axum) ni le port 3306 (MariaDB) directement sur Internet}. Toujours passer par un reverse proxy HTTPS qui termine TLS et fait suivre vers \texttt{localhost}.
+
+\textbf{Le port 3306 n'est pas publié par \keshpath{docker-compose.yml}} (depuis la 0.13.0) : Kesh atteint MariaDB par le réseau interne de Docker (hôte \texttt{mariadb}), et l'accès à la base passe par \keshcommand{docker compose exec mariadb}. Ne le publiez pas : \textbf{un port publié par Docker contourne le pare-feu de l'hôte} --- Docker insère ses propres règles \texttt{iptables} avant celles d'UFW, si bien que \keshcommand{ufw default deny incoming} (\S\ref{sec:firewall}) ne le ferme pas. Pour un dépannage ponctuel, le compose porte en commentaire une forme liée au seul loopback (\texttt{"127.0.0.1:3306:3306"}), à recommenter ensuite. Avec \keshpath{docker-compose.prod.yml} (Synology), la base n'est pas dans le compose : c'est la vôtre, et son port 3306 reste limité à localhost ou au réseau privé.
 \end{keshwarning}
 
 \subsubsection{Changer le port d'écoute (conflit port 80, ex. Synology DSM Web Station)}
@@ -239,7 +241,11 @@ curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/main/.env.example \
 
 \textbf{\texttt{KESH\_JWT\_SECRET} est obligatoire et se génère} : générez le secret (\keshcommand{openssl rand -hex 32}) et collez-le à la place du placeholder ; vérifiez : \keshcommand{grep KESH\_JWT\_SECRET .env} ne doit montrer ni \texttt{GENERATE\_ME}, ni \texttt{change-me}, ni valeur entre chevrons \texttt{<…>}. Sans secret, Kesh refuse de démarrer, y compris avec \keshpath{docker-compose.yml}, dont le défaut \texttt{change-me…} est refusé à dessein ; le placeholder \texttt{<GENERATE\_ME: …>} laissé tel quel est refusé depuis la 0.13.0. Les variables \texttt{KESH\_ADMIN\_*} restent optionnelles (onboarding \keshpath{/setup}). Avec \keshpath{docker-compose.yml}, \texttt{DATABASE\_URL} est \textbf{composée} des \texttt{MARIADB\_*} par le compose : la ligne \texttt{DATABASE\_URL} de \keshpath{.env} y est ignorée (elle sert \keshpath{docker-compose.prod.yml}).
 
-Remplacez chaque valeur entre chevrons \texttt{<…>} : recopiée telle quelle, elle fait refuser le démarrage (depuis la 0.13.0) pour \texttt{KESH\_JWT\_SECRET} et \texttt{KESH\_ADMIN\_PASSWORD} ; pour les mots de passe MariaDB, rien ne la refuse — choisissez-les vous-même.
+Remplacez chaque valeur entre chevrons \texttt{<…>} : recopiée telle quelle, elle fait refuser le démarrage (depuis la 0.13.0) pour \texttt{KESH\_JWT\_SECRET} et \texttt{KESH\_ADMIN\_PASSWORD}.
+
+\textbf{Les deux mots de passe MariaDB sont obligatoires avec \keshpath{docker-compose.yml}} (depuis la 0.13.0) : sur une \textbf{installation neuve}, générez chacun par \keshcommand{openssl rand -hex 32} --- en hexadécimal, car une sortie base64 peut contenir \texttt{/}, qui casse une \texttt{DATABASE\_URL}. Sans eux, \textbf{Compose refuse de démarrer}, au terminal, en nommant la variable manquante --- une seule à la fois, pas toujours la même : posez les deux avant de relancer. Une valeur entre chevrons recopiée, en revanche, est acceptée par Compose et par MariaDB : Kesh \textbf{avertit au démarrage} quand c'est le mot de passe applicatif (\texttt{MARIADB\_PASSWORD}, qu'il lit dans \texttt{DATABASE\_URL}) ; \textbf{rien ne signale un mot de passe root resté au gabarit} --- Kesh ne le voit pas. Relisez ces deux lignes.
+
+\textbf{MariaDB ne lit ces deux valeurs qu'à la création de la base} (premier démarrage, volume vide) : les changer ensuite dans \keshpath{.env} ne change pas le mot de passe enregistré, et Kesh échoue alors à se connecter (erreur 1045). Une base \textbf{déjà créée} avec la chaîne gabarit littérale --- \texttt{<mot de passe fort>} ou \texttt{<mot de passe utilisateur applicatif>}, recopiées d'une version antérieure de ce manuel --- garde ce mot de passe : ne le remplacez pas dans \keshpath{.env}. De même, une base créée avant la 0.13.0 sans mot de passe posé garde les anciens défauts \texttt{kesh\_dev\_root} et \texttt{kesh\_dev} : écrivez-les dans \keshpath{.env}, jamais une valeur neuve (\S\ref{sec:maj-0-13}). Dans les deux cas, changez-le par la procédure du \S\ref{sec:mariadb-mdp} (\texttt{ALTER USER} d'abord, \keshpath{.env} ensuite).
 
 \begin{lstlisting}[language=bash]
 # Secret JWT — générer avec : openssl rand -hex 32 (minimum 32 octets)
@@ -249,13 +255,15 @@ KESH_JWT_SECRET=<secret aleatoire, min. 32 octets, sans change-me ni GENERATE_ME
 # KESH_ADMIN_USERNAME=admin
 # KESH_ADMIN_PASSWORD=<mot de passe fort, min. 12 caracteres>
 
-# Mot de passe DB (conteneur MariaDB)
-MARIADB_ROOT_PASSWORD=<mot de passe fort>
-MARIADB_PASSWORD=<mot de passe utilisateur applicatif>
+# Mots de passe MariaDB : OBLIGATOIRES avec docker-compose.yml, lus à
+# la création de la base seulement. Chacun : openssl rand -hex 32
+MARIADB_ROOT_PASSWORD=<sortie de openssl rand -hex 32>
+MARIADB_PASSWORD=<autre sortie de openssl rand -hex 32>
 MARIADB_DATABASE=kesh
 MARIADB_USER=kesh
 
-# URL de connexion DB (service MariaDB nommé "mariadb" dans docker-compose)
+# URL de connexion DB : pour docker-compose.prod.yml seulement
+# (docker-compose.yml la compose lui-même). Mot de passe hexadécimal.
 DATABASE_URL=mysql://kesh:<MARIADB_PASSWORD>@mariadb:3306/kesh
 \end{lstlisting}
 
@@ -543,7 +551,8 @@ curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/main/.env.example -o
 # Secrets obligatoires : KESH_JWT_SECRET, DATABASE_URL (et les mots de
 # passe de votre MariaDB) -- ils DOIVENT remplacer les placeholders de .env
 openssl rand -hex 32   # → KESH_JWT_SECRET
-openssl rand -base64 32 # → mot de passe MariaDB (repris dans DATABASE_URL)
+openssl rand -hex 32 # → mot de passe MariaDB (repris dans DATABASE_URL)
+# hexadécimal : un « / » de base64 casserait DATABASE_URL
 # Optionnel : sans KESH_ADMIN_PASSWORD, l'administrateur se crée à l'écran
 # /setup ; si vous décommentez la ligne, remplacez son placeholder
 openssl rand -base64 24 # → KESH_ADMIN_PASSWORD
@@ -689,8 +698,13 @@ font échouer le démarrage si absentes ou vides.
 \begin{sloppypar}
 \emph{Note} — \texttt{MARIADB\_ROOT\_PASSWORD}, \texttt{MARIADB\_USER},
 \texttt{MARIADB\_PASSWORD}, \texttt{MARIADB\_DATABASE} ne sont pas lues par
-\texttt{kesh-api} : elles configurent le \textbf{conteneur MariaDB} dans
-\texttt{docker-compose}. \texttt{DATABASE\_URL} doit rester cohérente avec elles.
+\texttt{kesh-api} : elles configurent le \textbf{conteneur MariaDB} de
+\keshpath{docker-compose.yml}, qui en compose \texttt{DATABASE\_URL}. Les deux
+mots de passe y sont \textbf{obligatoires} (sans eux, Compose refuse de
+démarrer) et ne sont lus par MariaDB qu'à la \textbf{création} de la base ---
+pour les changer : \S\ref{sec:mariadb-mdp}. \keshpath{docker-compose.prod.yml}
+ne les lit pas : \texttt{DATABASE\_URL} y vient de \keshpath{.env} (mot de passe
+hexadécimal).
 \end{sloppypar}
 
 \paragraph{Serveur \& réseau.}\mbox{}\\
@@ -956,7 +970,7 @@ Si vous ne passez pas par Docker Compose, voici comment initialiser manuellement
 \begin{lstlisting}[language=bash]
 mariadb -u root -p <<SQL
 CREATE DATABASE kesh CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-CREATE USER 'kesh'@'%' IDENTIFIED BY 'mot_de_passe_fort';
+CREATE USER 'kesh'@'%' IDENTIFIED BY '<sortie de openssl rand -hex 32>';
 GRANT ALL PRIVILEGES ON kesh.* TO 'kesh'@'%';
 FLUSH PRIVILEGES;
 SQL
@@ -1441,9 +1455,9 @@ Depuis la v0.12.1, le PDF d'une facture est \textbf{figé} au premier téléchar
 \textbf{Un fichier altéré} (empreinte différente de celle enregistrée) n'est \textbf{jamais servi} : le téléchargement répond une erreur serveur et la journalise. Le refigeage le refuse aussi (\texttt{409 INVOICE\_PDF\_INTEGRITY}) : un fichier altéré se \textbf{diagnostique}, il ne se recouvre pas. Restaurer \texttt{\{empreinte\}.pdf} depuis la sauvegarde ; à défaut, \textbf{écarter} le fichier altéré (le déplacer hors du répertoire), ce qui ramène au cas du fichier manquant, puis refiger.
 \end{keshwarning}
 
-\subsection{Script de sauvegarde mariadb-dump}
+\subsection{Script de sauvegarde mariadb-dump}\label{sec:script-sauvegarde}
 
-Voici un script bash de référence à exécuter via cron quotidien :
+Voici un script bash de référence à exécuter via cron quotidien. Il lit le mot de passe root \textbf{dans le conteneur} (la commande entière passe à \keshcommand{sh -c} entre apostrophes) : il n'a besoin d'aucune variable posée dans la crontab. \texttt{cron} ne le lance pas depuis le répertoire du compose : \texttt{COMPOSE\_DIR} le lui donne.
 
 \begin{lstlisting}[language=bash]
 #!/bin/bash
@@ -1452,24 +1466,20 @@ Voici un script bash de référence à exécuter via cron quotidien :
 
 set -euo pipefail
 
+COMPOSE_DIR="/opt/kesh"          # répertoire de docker-compose.yml
 BACKUP_DIR="/var/backups/kesh"
 RETENTION_DAYS=30
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 BACKUP_FILE="${BACKUP_DIR}/kesh_${TIMESTAMP}.sql.gz"
 
 mkdir -p "${BACKUP_DIR}"
+cd "${COMPOSE_DIR}"
 
-# Dump avec gzip et stockage hash SHA-256
-docker compose exec -T db \
-    mariadb-dump \
-    --single-transaction \
-    --routines \
-    --triggers \
-    --events \
-    --add-drop-database \
-    --databases kesh \
-    -u root \
-    -p"${MARIADB_ROOT_PASSWORD}" \
+# Dump gzip et hash SHA-256 ; mot de passe root lu dans le conteneur
+docker compose exec -T mariadb sh -c \
+    'mariadb-dump --single-transaction --routines --triggers \
+       --events --add-drop-database --databases kesh \
+       -u root -p"$MARIADB_ROOT_PASSWORD"' \
     | gzip > "${BACKUP_FILE}"
 
 # Hash SHA-256 pour verification ulterieure (OLICo Art. 9 al. 1.b ch. 1)
@@ -1487,6 +1497,10 @@ Crontab d'exemple (sauvegarde à 2h du matin chaque jour) :
 \begin{lstlisting}[language=bash]
 0 2 * * * /usr/local/bin/kesh-backup.sh >> /var/log/kesh-backup.log 2>&1
 \end{lstlisting}
+
+\begin{keshwarning}
+\textbf{Lancez le script une fois à la main} après son installation, après toute mise à jour et après tout changement de mot de passe MariaDB : un échec la nuit ne s'écrit que dans \keshpath{/var/log/kesh-backup.log}, que personne ne lit. C'est en particulier le seul signal d'un mot de passe root changé dans \keshpath{.env} sans \texttt{ALTER USER} (\S\ref{sec:mariadb-mdp}).
+\end{keshwarning}
 
 \subsection{Stockage offsite}
 
@@ -1510,9 +1524,12 @@ sha256sum -c kesh_20260520_020000.sql.gz.sha256
 # 2. Arreter Kesh (pas la DB)
 docker compose stop kesh-api
 
-# 3. Restaurer la base
-zcat kesh_20260520_020000.sql.gz | docker compose exec -T db \
-    mariadb -u root -p"${MARIADB_ROOT_PASSWORD}"
+# 3. Restaurer la base (depuis le repertoire du compose, COMPOSE_DIR du
+#    script de sauvegarde ; mot de passe root lu dans le conteneur)
+cd /opt/kesh
+zcat /var/backups/kesh/kesh_20260520_020000.sql.gz \
+    | docker compose exec -T mariadb \
+        sh -c 'mariadb -u root -p"$MARIADB_ROOT_PASSWORD"'
 
 # 4. Restaurer le repertoire des documents (PDF des factures emises,
 #    justificatifs) depuis SA sauvegarde, prise en meme temps que le dump
@@ -1757,7 +1774,7 @@ Les versions de Kesh sont publiées sur GitHub avec un tag \texttt{vX.Y.Z} (vers
 \begin{enumerate}
     \item \textbf{Sauvegarder} la base de données et le volume \texttt{kesh\_db\_data} (cf. section précédente).
     \item \textbf{Lire le changelog} de la nouvelle version pour identifier les breaking changes éventuels et les migrations nécessaires.
-    \item \textbf{Mettre à jour le fichier compose} --- \textbf{obligatoire pour passer à la 0.13.0} (\S\ref{sec:maj-0-13}) : re-télécharger le compose et y reporter ses adaptations locales, puis vérifier les placeholders de \keshpath{.env}. Pour les versions suivantes : selon le changelog (nouvelles variables, changement d'image).
+    \item \textbf{Mettre à jour le fichier compose} --- \textbf{obligatoire pour passer à la 0.13.0} (\S\ref{sec:maj-0-13}) : re-télécharger le compose et y reporter ses adaptations locales, puis vérifier les placeholders de \keshpath{.env} --- dont les lignes \texttt{MARIADB\_ROOT\_PASSWORD} et \texttt{MARIADB\_PASSWORD} : une valeur entre chevrons y est acceptée par Compose, et pour root rien d'autre ne la signale. Sur une base déjà créée, \textbf{ne remplacez pas} ces deux valeurs dans \keshpath{.env} --- ni des chevrons, ni \texttt{kesh\_dev} : la base a gardé celles de sa création, et une valeur neuve n'y change rien (1045 pour Kesh, sauvegarde en échec pour root) ; changez-les par le \S\ref{sec:mariadb-mdp}, \texttt{ALTER USER} d'abord. Pour les versions suivantes : selon le changelog (nouvelles variables, changement d'image).
     \item \textbf{Tirer la nouvelle image} : \keshcommand{docker compose pull kesh-api}.
     \item \textbf{Redémarrer} : \keshcommand{docker compose up -d kesh-api}.
     \item \textbf{Vérifier} les logs : \keshcommand{docker compose logs -f kesh-api} pour s'assurer que les migrations DB se sont bien déroulées.
@@ -1775,37 +1792,46 @@ Jusqu'à la 0.12, les compose fournis ne transmettaient pas à Kesh seize variab
 \begin{keshwarning}
 \textbf{Relisez votre \keshpath{.env} avant de mettre à jour : des lignes jusqu'ici sans effet le deviennent.}
 
+\textbf{Refus de Compose} (\keshpath{docker-compose.yml}), \textbf{avant} Kesh : sans \texttt{MARIADB\_ROOT\_PASSWORD} ou \texttt{MARIADB\_PASSWORD} dans \keshpath{.env}, ou vide, la commande s'arrête \textbf{au terminal} en nommant la variable (\texttt{required variable … is missing a value}) et aucun conteneur ne démarre --- voir le paragraphe \emph{MariaDB} ci-dessous.
+
 \textbf{Refus de démarrer} --- le message nomme la variable (\keshcommand{docker compose logs kesh-api}) :
 \begin{itemize}
     \item \texttt{KESH\_SMTP\_TLS} ou \texttt{KESH\_FEATURE\_FORGOT\_PASSWORD} d'une valeur autre que \texttt{true}/\texttt{false}/\texttt{1}/\texttt{0} (espaces de tête et de fin ignorés), sur les deux compose --- même sans le mot de passe oublié pour \texttt{KESH\_SMTP\_TLS} ;
     \item \texttt{KESH\_COOKIE\_SECURE} d'une valeur autre que \texttt{true}/\texttt{false}/\texttt{1}/\texttt{0} (espaces de tête et de fin ignorés), sur \keshpath{docker-compose.prod.yml}, où il était ignoré ;
     \item \texttt{KESH\_FEATURE\_FORGOT\_PASSWORD=true} avec l'une des cinq \texttt{KESH\_SMTP\_HOST}/\texttt{\_USER}/\texttt{\_PASSWORD}/\texttt{\_FROM}, \texttt{KESH\_PUBLIC\_BASE\_URL} absente, un \texttt{KESH\_SMTP\_FROM} mal formé (« Nom <email> ») ou un \texttt{KESH\_SMTP\_HOST} au format \texttt{hôte:port} ;
     \item \texttt{KESH\_FEATURE\_FORGOT\_PASSWORD=true} avec une configuration SMTP complète dont le mailer ne se construit pas (adresse \texttt{KESH\_SMTP\_FROM} refusée, échec de l'initialisation STARTTLS) : « le build du mailer SMTP a échoué … abandon » (sans le mot de passe oublié, le même échec rend seulement l'envoi de factures indisponible) ;
-    \item \texttt{KESH\_JWT\_SECRET} resté au placeholder du gabarit ou à une valeur entre chevrons ; \texttt{KESH\_ADMIN\_PASSWORD} décommenté sans remplacer le sien, ou recopié d'un exemple de ce manuel (\texttt{<mot de passe fort, …>}, \texttt{<nouveau-mdp-12+>}).
+    \item \texttt{KESH\_JWT\_SECRET} resté au placeholder du gabarit ou à une valeur entre chevrons ; \texttt{KESH\_ADMIN\_PASSWORD} décommenté sans remplacer le sien, ou recopié d'un exemple de ce manuel (\texttt{<mot de passe fort, …>}, \texttt{<nouveau-mdp-12+>}) ;
+    \item \texttt{MARIADB\_PASSWORD} changé dans \keshpath{.env} sans \texttt{ALTER USER} : « Base de données indisponible … 1045 … », suivi d'un indice (\S\ref{sec:mariadb-mdp}).
 \end{itemize}
 
 \textbf{Effets sans refus} : \texttt{KESH\_PRODUCTION\_RESET} posé lors d'une ancienne démonstration réautorise, \textbf{sur une installation restée en démonstration}, la réinitialisation, qui vide toutes les données de la société ; les quatre \texttt{KESH\_SMTP\_HOST}/\texttt{\_USER}/\texttt{\_PASSWORD}/\texttt{\_FROM} posées « pour plus tard » activent l'envoi de factures par e-mail, et avec \texttt{KESH\_FEATURE\_FORGOT\_PASSWORD=true} (et \texttt{KESH\_PUBLIC\_BASE\_URL}) la réinitialisation du mot de passe par e-mail --- quiconque connaît l'adresse d'un utilisateur peut alors demander un lien ; \texttt{KESH\_COOKIE\_SECURE=false} sur \keshpath{docker-compose.prod.yml} émet des cookies sans \texttt{Secure} ; \texttt{KESH\_ADMIN\_BACKUP\_DIR} (un chemin non monté fait écrire dans le conteneur) ; \texttt{KESH\_LANG} ; \texttt{KESH\_PASSWORD\_MIN\_LENGTH} sur \keshpath{docker-compose.yml} s'applique côté serveur, alors que trois écrans gardent 12 en dur : au-dessous de 12, les écrans refusent quand même ; au-dessus, l'écran accepte et le serveur refuse ; une ligne \texttt{KESH\_LOG\_FILE\_PATH=} \textbf{vide} désactive désormais le journal fichier ; et plus généralement toute ligne décommentée de ces seize variables.
 
-\textbf{Un \keshpath{.env} copié du gabarit sans modification} ne change pas de comportement --- les seules lignes actives du gabarit parmi ces variables valent leur défaut (\texttt{KESH\_LANG=fr}, \texttt{KESH\_PASSWORD\_MIN\_LENGTH=12}, \texttt{KESH\_BANK\_IMPORT\_MAX\_MB=10}, \texttt{KESH\_COOKIE\_SECURE=true}) --- \textbf{sauf} le secret JWT laissé au placeholder, désormais refusé. Un \texttt{KESH\_ADMIN\_PASSWORD} absent ou vide ne change rien avec \keshpath{docker-compose.prod.yml}, et cesse de faire refuser le démarrage avec \keshpath{docker-compose.yml}.
+\textbf{Un \keshpath{.env} copié du gabarit sans modification} ne change pas de comportement --- les seules lignes actives du gabarit parmi ces variables valent leur défaut (\texttt{KESH\_LANG=fr}, \texttt{KESH\_PASSWORD\_MIN\_LENGTH=12}, \texttt{KESH\_BANK\_IMPORT\_MAX\_MB=10}, \texttt{KESH\_COOKIE\_SECURE=true}) --- \textbf{sauf} le secret JWT laissé au placeholder, désormais refusé, \textbf{et} les mots de passe MariaDB avec \keshpath{docker-compose.yml} : copié du gabarit \textbf{0.13.0}, où ils sont commentés et sans valeur, il fait refuser Compose ; copié d'un gabarit \textbf{antérieur}, qui posait \texttt{kesh\_dev}, il fait émettre à Kesh l'avertissement « mot de passe publié ». Un \texttt{KESH\_ADMIN\_PASSWORD} absent ou vide ne change rien avec \keshpath{docker-compose.prod.yml}, et cesse de faire refuser le démarrage avec \keshpath{docker-compose.yml}.
 \end{keshwarning}
 
 \textbf{Voie recommandée : re-télécharger le compose} --- \keshpath{docker-compose.yml}, ou, sur Synology, \keshpath{docker-compose.prod.yml} enregistré sous \keshpath{docker-compose.yml} (\S\ref{sec:synology}) --- \textbf{et y reporter vos seules adaptations locales} (port \texttt{8080:80}, réseau, chemins des montages). Un montage modifié à la main et non reporté revient à \keshpath{./documents} (ou \keshpath{./inbox}, \keshpath{./log}) : justificatifs et PDF paraissent alors disparus --- ils sont toujours dans l'ancien dossier. Les commandes s'exécutent depuis le répertoire du compose (\keshpath{/volume1/docker/kesh} sur Synology) ; avec un autre nom de fichier, ajoutez \keshcommand{-f <son fichier>} à chaque commande \keshcommand{docker compose}. Puis \keshcommand{docker compose pull} \textbf{avant} \keshcommand{docker compose up -d}.
 
+\paragraph{MariaDB (\keshpath{docker-compose.yml}) : port fermé, mots de passe obligatoires.}\mbox{}\\
 \begin{sloppypar}
-\textbf{Vérifier les placeholders} (Kesh 0.13.0 refuse de démarrer si \texttt{KESH\_JWT\_SECRET} ou \texttt{KESH\_ADMIN\_PASSWORD} est resté au placeholder \texttt{<GENERATE\_ME: …>} du gabarit ou à une valeur entre chevrons \texttt{<…>}). Le contrôle se demande à Compose lui-même, le compose final en place --- Compose lit \keshpath{.env} à sa façon (\texttt{export}, espaces autour de \texttt{=}, guillemets, fins de ligne Windows), qu'aucun \texttt{grep} sur \keshpath{.env} n'imite sûrement :
+Le compose 0.13.0 ne publie plus le port 3306 de MariaDB --- le re-télécharger suffit à le fermer ; un outil de l'hôte qui s'y connectait passe désormais par \keshcommand{docker compose exec mariadb …} --- et n'a plus de mots de passe MariaDB par défaut. Avec un \keshpath{.env} sans \texttt{MARIADB\_ROOT\_PASSWORD} ou sans \texttt{MARIADB\_PASSWORD}, \textbf{Compose refuse} \keshcommand{config}, \keshcommand{pull} et \keshcommand{up} en nommant la variable, au terminal ; \keshcommand{ps}, \keshcommand{logs}, \keshcommand{exec} et \keshcommand{stop} restent utilisables (mesuré avec Docker Compose 2.40), de quoi diagnostiquer et arrêter. Écrivez alors dans \keshpath{.env} \textbf{la valeur avec laquelle la base a été créée, jamais une neuve} : si vous n'en aviez jamais posé, ce sont les anciennes valeurs par défaut, \texttt{MARIADB\_ROOT\_PASSWORD=kesh\_dev\_root} et \texttt{MARIADB\_PASSWORD=kesh\_dev}. Une valeur neuve ne change pas le mot de passe enregistré : pour \texttt{MARIADB\_PASSWORD}, Kesh échoue à se connecter (erreur 1045, avec un indice) ; pour \texttt{MARIADB\_ROOT\_PASSWORD}, \textbf{rien ne le signale}, mais la sauvegarde nocturne échoue. Démarrez, puis \textbf{changez ces mots de passe} par la procédure du \S\ref{sec:mariadb-mdp} : publiés dans le dépôt Kesh, ils ne protègent rien --- Kesh avertit au démarrage tant que celui de \texttt{DATABASE\_URL} vaut \texttt{kesh\_dev} ou une valeur gabarit \texttt{<…>}. Terminez par le \textbf{contrôle de fin de mise à jour} ci-dessous.
+\end{sloppypar}
+
+\begin{sloppypar}
+\textbf{Vérifier les placeholders} (Kesh 0.13.0 refuse de démarrer si \texttt{KESH\_JWT\_SECRET} ou \texttt{KESH\_ADMIN\_PASSWORD} est resté au placeholder \texttt{<GENERATE\_ME: …>} du gabarit ou à une valeur entre chevrons \texttt{<…>}). Le contrôle se demande à Compose lui-même, le compose final en place --- Compose lit \keshpath{.env} à sa façon (\texttt{export}, espaces autour de \texttt{=}, guillemets, fins de ligne Windows), qu'aucun \texttt{grep} sur \keshpath{.env} n'imite sûrement. Les deux mots de passe MariaDB posés (paragraphe précédent), demandez d'abord à Compose s'il lit le fichier, puis cherchez les placeholders :
 \end{sloppypar}
 
 \begin{lstlisting}[language=bash]
+sudo docker compose config -q && echo 'compose lisible'
 sudo docker compose config \
   | grep -iE 'KESH_(JWT_SECRET|ADMIN_PASSWORD): .? *(<|.*generate_me)'
 \end{lstlisting}
 
 \begin{sloppypar}
-La commande doit rester \textbf{muette}. Dans le cas qu'elle détecte, elle affiche la ligne trouvée --- un placeholder, non un secret. Elle est un sur-ensemble du refus de Kesh (une valeur qui commence par \texttt{<} sans finir par \texttt{>} y apparaît aussi, que Kesh accepte). Si elle montre \texttt{KESH\_JWT\_SECRET} : générez le secret (\keshcommand{openssl rand -hex 32}) \textbf{avant} le \keshcommand{up -d} --- les sessions ouvertes sont alors perdues, chacun se reconnecte. Si elle montre \texttt{KESH\_ADMIN\_PASSWORD} : choisissez un vrai mot de passe ($\geq$ 12 caractères) ou recommentez la ligne (onboarding \keshpath{/setup} sur une base vide, sans effet sur une base qui a déjà un administrateur). Faute de quoi Kesh refuse de démarrer.
+La première commande \textbf{doit} afficher \texttt{compose lisible} : si Compose refuse le fichier, la seconde ne reçoit rien et reste muette --- muette comme un succès. La seconde doit rester \textbf{muette}. Dans le cas qu'elle détecte, elle affiche la ligne trouvée --- un placeholder, non un secret. Elle est un sur-ensemble du refus de Kesh (une valeur qui commence par \texttt{<} sans finir par \texttt{>} y apparaît aussi, que Kesh accepte). Si elle montre \texttt{KESH\_JWT\_SECRET} : générez le secret (\keshcommand{openssl rand -hex 32}) \textbf{avant} le \keshcommand{up -d} --- les sessions ouvertes sont alors perdues, chacun se reconnecte. Si elle montre \texttt{KESH\_ADMIN\_PASSWORD} : choisissez un vrai mot de passe ($\geq$ 12 caractères) ou recommentez la ligne (onboarding \keshpath{/setup} sur une base vide, sans effet sur une base qui a déjà un administrateur). Faute de quoi Kesh refuse de démarrer. Ce contrôle ne voit pas les mots de passe MariaDB : relisez à l'éditeur les lignes \texttt{MARIADB\_ROOT\_PASSWORD} et \texttt{MARIADB\_PASSWORD} de \keshpath{.env} --- pour un root resté au gabarit \texttt{<…>}, c'est le seul signal. \textbf{Contrairement aux deux variables précédentes, ne remplacez pas ces chevrons dans \keshpath{.env}} : la base a été créée avec cette chaîne et la garde ; changez le mot de passe par le \S\ref{sec:mariadb-mdp} (\texttt{ALTER USER} d'abord, \keshpath{.env} ensuite).
 \end{sloppypar}
 
-\paragraph{Pour qui garde son fichier compose : deux gestes.}\mbox{}\\
-Sous \texttt{environment:} du service \texttt{kesh-api} :
+\paragraph{Pour qui garde son fichier compose.}\mbox{}\\
+Quatre gestes pour \keshpath{docker-compose.yml}, deux pour \keshpath{docker-compose.prod.yml}. Les deux premiers, dans les deux fichiers, sous \texttt{environment:} du service \texttt{kesh-api} :
 \begin{enumerate}
     \item \textbf{ajouter} les lignes \textbf{nouvelles}, et elles seules --- pour \keshpath{docker-compose.yml} :
 \begin{lstlisting}[language=bash]
@@ -1846,9 +1872,87 @@ Sous \texttt{environment:} du service \texttt{kesh-api} :
       KESH_ADMIN_PASSWORD: ${KESH_ADMIN_PASSWORD:-}
       KESH_LOG_FILE_PATH: ${KESH_LOG_FILE_PATH-/var/log/kesh/kesh.log}
 \end{lstlisting}
+    \item \begin{sloppypar}\keshpath{docker-compose.yml} seulement, service \texttt{mariadb} : \textbf{retirer} la clé \texttt{ports:} et sa ligne \texttt{- "3306:3306"} ;\end{sloppypar}
+    \item \begin{sloppypar}\keshpath{docker-compose.yml} seulement : \textbf{remplacer} les fragments \texttt{:-kesh\_dev\_root} et \texttt{:-kesh\_dev} --- trois occurrences : \texttt{MARIADB\_ROOT\_PASSWORD} et \texttt{MARIADB\_PASSWORD} du service \texttt{mariadb}, \texttt{DATABASE\_URL} de \texttt{kesh-api} --- par \texttt{:?} suivi d'un message, par exemple :\end{sloppypar}
+\begin{lstlisting}[language=bash]
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:?à poser dans .env}
+\end{lstlisting}
+    Exemple abrégé : le message du compose re-téléchargé ajoute « installation existante, reprendre la valeur avec laquelle la base a été créée, jamais une neuve », que Compose affiche au refus. Le plus sûr est de recopier ces trois lignes, message compris, depuis le compose re-téléchargé.
 \end{enumerate}
 \begin{sloppypar}
-Puis \keshcommand{docker compose config -q} (qui refuse une clé en double), vérifier que \keshcommand{docker compose config} montre \texttt{KESH\_SMTP\_HOST} et \texttt{KESH\_PRODUCTION\_RESET}, et \keshcommand{docker compose up -d}.
+Puis \keshcommand{docker compose config -q} (qui refuse une clé en double, et l'absence des deux mots de passe MariaDB), vérifier que \keshcommand{docker compose config} montre \texttt{KESH\_SMTP\_HOST} et \texttt{KESH\_PRODUCTION\_RESET}, et \textbf{aucune} entrée \texttt{ports} sous le service \texttt{mariadb} (Compose l'écrirait sous sa forme développée, \texttt{published: "3306"}), et \keshcommand{docker compose up -d}.
+\end{sloppypar}
+
+\paragraph{Contrôle de fin de mise à jour (MariaDB, \keshpath{docker-compose.yml}).}\mbox{}\\
+Il se fait \textbf{sur la base}, pas sur \keshpath{.env} : un \keshcommand{grep} sur \keshcommand{docker compose config} ne lit que \keshpath{.env}, et resterait muet alors que la base garde l'ancien mot de passe. Une fois les mots de passe changés (\S\ref{sec:mariadb-mdp}) et \keshcommand{docker compose up -d} passé :
+
+\begin{lstlisting}[language=bash]
+# Anciens mots de passe publiés : chaque commande doit être REFUSÉE (1045)
+sudo docker compose exec -T mariadb mariadb -uroot -pkesh_dev_root \
+    -e 'SELECT CURRENT_USER()'
+sudo docker compose exec -T mariadb mariadb --protocol=TCP \
+    -h 127.0.0.1 -uroot -pkesh_dev_root -e 'SELECT CURRENT_USER()'
+sudo docker compose exec -T mariadb mariadb --protocol=TCP \
+    -h 127.0.0.1 -ukesh -pkesh_dev -e 'SELECT CURRENT_USER()'
+# Mots de passe de .env, lus dans le conteneur : chaque commande RÉUSSIT
+sudo docker compose exec -T mariadb sh -c 'mariadb -uroot \
+    -p"$MARIADB_ROOT_PASSWORD" -e "SELECT CURRENT_USER()"'
+sudo docker compose exec -T mariadb sh -c 'mariadb --protocol=TCP \
+    -h 127.0.0.1 -uroot -p"$MARIADB_ROOT_PASSWORD" \
+    -e "SELECT CURRENT_USER()"'
+sudo docker compose exec -T mariadb sh -c 'mariadb --protocol=TCP \
+    -h 127.0.0.1 -ukesh -p"$MARIADB_PASSWORD" -e "SELECT CURRENT_USER()"'
+\end{lstlisting}
+
+\begin{sloppypar}
+Les trois premières doivent échouer (\texttt{ERROR 1045}), les trois dernières afficher le compte qui a répondu. Sans \texttt{-{}-protocol=TCP}, la connexion passe par le socket et atteint le compte \texttt{root@localhost} ; en TCP vers \texttt{127.0.0.1}, le compte \texttt{root@\%} (le serveur ne résout pas les noms) --- MariaDB exige le mot de passe dans les deux cas (mesuré, MariaDB 10.11). D'où les deux contrôles de root. Puis \textbf{lancez une fois à la main le script de sauvegarde} (\S\ref{sec:script-sauvegarde}) : c'est le seul moyen de voir qu'un mot de passe root changé dans \keshpath{.env} sans \texttt{ALTER USER} le fait échouer.
+\end{sloppypar}
+
+\subsubsection{Changer un mot de passe MariaDB}\label{sec:mariadb-mdp}
+
+\begin{sloppypar}
+Avec \keshpath{docker-compose.yml}. MariaDB ne relit pas \texttt{MARIADB\_ROOT\_PASSWORD} ni \texttt{MARIADB\_PASSWORD} après la création de la base : on change le mot de passe \textbf{dans la base} d'abord (\texttt{ALTER USER}), \textbf{puis} dans \keshpath{.env}, \textbf{puis} on recrée les conteneurs. L'ordre inverse produit un refus 1045 de Kesh, ou une sauvegarde en échec pour root. Lister d'abord les comptes :
+\end{sloppypar}
+
+\begin{lstlisting}[language=bash]
+cd /opt/kesh                         # répertoire du compose
+sudo docker compose exec -T mariadb sh -c \
+    'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD" \
+       -e "SELECT user, host FROM mysql.user"'
+\end{lstlisting}
+
+L'image MariaDB crée deux comptes \texttt{root} (\texttt{root@localhost} et \texttt{root@\%}) et le compte applicatif, \texttt{kesh@\%} par défaut --- son nom est celui de \texttt{MARIADB\_USER}, que la recette lit dans le conteneur ; il faut une ligne \texttt{ALTER USER} par compte \texttt{root} listé. Puis :
+
+\begin{lstlisting}[language=bash]
+cd /opt/kesh
+( set -e                             # s'arrête à la première erreur
+  COMPTE=$(sudo docker compose exec -T mariadb printenv MARIADB_USER)
+  NEW_ROOT=$(openssl rand -hex 32)   # jamais tapés : absents de
+  NEW_KESH=$(openssl rand -hex 32)   # l'historique du shell
+  # Affichés AVANT d'être appliqués : recopiez-les dans .env, à
+  # l'éditeur, sans enregistrer encore
+  echo "MARIADB_ROOT_PASSWORD=$NEW_ROOT"
+  echo "MARIADB_PASSWORD=$NEW_KESH"
+  read -r -p 'Recopiés ? Entrée pour appliquer, Ctrl-C pour renoncer '
+  sudo docker compose stop kesh-api
+  sudo docker compose exec -T mariadb \
+      sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD"' <<SQL
+ALTER USER '$COMPTE'@'%' IDENTIFIED BY '$NEW_KESH';
+ALTER USER IF EXISTS 'root'@'localhost' IDENTIFIED BY '$NEW_ROOT';
+ALTER USER IF EXISTS 'root'@'%' IDENTIFIED BY '$NEW_ROOT';
+SQL
+  echo 'CHANGÉS DANS LA BASE : enregistrez .env'
+)
+\end{lstlisting}
+
+\noindent Puis, \textbf{seulement} après \texttt{CHANGÉS DANS LA BASE} et \keshpath{.env} enregistré (commande à part : collée avec le bloc précédent, elle partirait avant) :
+
+\begin{lstlisting}[language=bash]
+sudo docker compose up -d
+\end{lstlisting}
+
+\begin{sloppypar}
+Kesh est arrêté d'abord : entre l'\texttt{ALTER USER} et le \keshcommand{up -d}, ses connexions neuves échoueraient. Les nouveaux mots de passe ne figurent ni dans l'historique du shell (engendrés dans une variable) ni dans la liste des processus de l'hôte (transmis à \texttt{mariadb} par l'entrée standard, jamais en argument) ; les \keshcommand{echo} les affichent \textbf{avant} l'\texttt{ALTER USER}, pour que vous les recopiiez dans \keshpath{.env} --- pas par \keshcommand{sed -i}, qui les mettrait en argument : une session coupée après le changement ne les emporte pas. Les parenthèses et \keshcommand{set -e} arrêtent la recette à la première erreur sans fermer votre terminal ; \texttt{mariadb} s'arrête de même à la première instruction refusée, et le compte applicatif --- seule ligne sans \texttt{IF EXISTS} --- passe en premier : s'il est refusé, rien n'a changé. Sans la ligne \texttt{CHANGÉS DANS LA BASE}, n'enregistrez pas \keshpath{.env} ; lisez l'erreur, puis \keshcommand{sudo docker compose start kesh-api}. La connexion utilise encore l'\textbf{ancien} mot de passe root, lu dans l'environnement du conteneur : celui-ci ne prend les nouvelles valeurs qu'au \keshcommand{up -d}, qui recrée le conteneur \texttt{mariadb} (le volume, donc la base, est conservé ; un \keshcommand{up -d kesh-api} le recrée aussi). Pour ne changer que l'un des deux, retirez pour l'autre sa génération (\texttt{NEW\_…}), son \keshcommand{echo} et ses lignes \texttt{ALTER USER}, et laissez sa ligne de \keshpath{.env} intacte. Terminez par le contrôle de fin de mise à jour (\S\ref{sec:maj-0-13}) et un lancement à la main du script de sauvegarde.
 \end{sloppypar}
 
 
@@ -2009,7 +2113,7 @@ tiers ou un horodatage qualifié.
 La signature électronique qualifiée LSCSE (QES) n'est \textbf{pas requise} par l'OLICo pour les exports comptables des PME (interprétation « p. ex. » du législateur). Le verdict (b) « Dette explicite v0.2 » du document de recherche 9-5-4 confirme la conformité v0.1. Une implémentation QES est prévue en v0.2 via Epic 14 (issue GitHub \#98).
 \end{keshnote}
 
-\subsection{Sécurité réseau (firewall)}
+\subsection{Sécurité réseau (firewall)}\label{sec:firewall}
 
 Configuration firewall minimale (UFW sur Ubuntu/Debian) :
 
@@ -2021,6 +2125,10 @@ sudo ufw allow 80/tcp comment 'HTTP (redirect to HTTPS)'
 sudo ufw allow 443/tcp comment 'HTTPS'
 sudo ufw enable
 \end{lstlisting}
+
+\begin{keshwarning}
+UFW ne filtre pas un port \textbf{publié par Docker} (\texttt{ports:} d'un compose) : Docker place ses règles avant les siennes. Les compose fournis ne publient que le port de l'application ; ne publiez jamais celui de MariaDB (3306).
+\end{keshwarning}
 
 \subsection{Mises à jour de sécurité du système hôte}
 
@@ -2206,6 +2314,8 @@ docker compose logs kesh | tail -50
 Causes courantes :
 
 \begin{itemize}
+    \item \begin{sloppypar}\textbf{Compose refuse de démarrer} (\keshpath{docker-compose.yml}, depuis la 0.13.0) : \texttt{required variable MARIADB\_PASSWORD is missing a value} (ou \texttt{MARIADB\_ROOT\_PASSWORD}), affiché \textbf{au terminal} de la commande --- aucun conteneur ne démarre, les journaux n'en disent rien. Compose ne nomme qu'une variable à la fois, pas toujours la même : posez les deux dans \keshpath{.env} --- sur une installation existante, les valeurs avec lesquelles la base a été créée (\S\ref{sec:maj-0-13}).\end{sloppypar}
+    \item \textbf{Erreur 1045} (« Access denied for user … ») dans les journaux de \texttt{kesh-api}, suivie d'un \textbf{indice} : MariaDB refuse le mot de passe de \texttt{DATABASE\_URL}. Avec \keshpath{docker-compose.yml}, presque toujours un \texttt{MARIADB\_PASSWORD} changé dans \keshpath{.env} alors que la base garde celui de sa création : revenir à l'ancienne valeur, puis suivre le \S\ref{sec:mariadb-mdp}.
     \item \textbf{DATABASE\_URL invalide} : vérifier le format \texttt{mysql://user:pass@host:port/db}.
     \item \textbf{DB pas encore prête} : ajouter un \texttt{depends\_on} avec \texttt{condition: service\_healthy} dans \keshpath{docker-compose.yml}.
     \item \textbf{KESH\_JWT\_SECRET trop court} : doit faire au moins 32 octets (ex. \texttt{openssl rand -hex 32} = 64 caractères hexadécimaux).
@@ -2227,8 +2337,9 @@ Causes courantes :
 \paragraph{Diagnostic}
 
 \begin{lstlisting}[language=bash]
-docker compose exec db mariadb -u root -p"${MARIADB_ROOT_PASSWORD}" -e \
-    "SELECT COUNT(*) FROM kesh.journal_entries GROUP BY company_id;"
+docker compose exec -T mariadb sh -c 'mariadb -u root \
+    -p"$MARIADB_ROOT_PASSWORD" -e "SELECT COUNT(*) FROM kesh.journal_entries
+    GROUP BY company_id;"'
 \end{lstlisting}
 
 \paragraph{Solutions}
@@ -2373,7 +2484,7 @@ export global) ou par les mécanismes documentés ailleurs dans ce manuel :
     \midrule
     Frontend HTTPS (utilisateur) & 443 & Via reverse proxy \\
     API Axum (interne) & 80 & Localhost uniquement \\
-    MariaDB & 3306 & Localhost ou réseau privé \\
+    MariaDB & 3306 & Non publié (\keshpath{docker-compose.yml}) \\
     \bottomrule
 \end{tabularx}
 

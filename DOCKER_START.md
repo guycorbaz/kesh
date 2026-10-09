@@ -3,23 +3,45 @@
 ## Prérequis
 
 - Docker & Docker Compose installés
-- Port 80 et 3306 disponibles sur la machine hôte
+- Port 80 disponible sur la machine hôte (MariaDB n'est pas publiée : Kesh
+  l'atteint par le réseau interne de Docker)
 
 ## Démarrage rapide
 
 ### 1. Préparer `.env` (obligatoire)
 
-Sans `.env`, Kesh refuse de démarrer : le secret JWT par défaut de
-`docker-compose.yml` (`change-me…`) est refusé à dessein.
+Sans `.env`, c'est d'abord **Compose** qui refuse, au terminal, en nommant
+`MARIADB_ROOT_PASSWORD` ou `MARIADB_PASSWORD` (une seule à la fois, pas toujours
+la même) : depuis la 0.13.0, `docker-compose.yml` n'a plus de mots de passe
+MariaDB par défaut. Ensuite seulement, Kesh refuse le secret JWT par défaut de
+`docker-compose.yml` (`change-me…`), à dessein.
+
+⚠️ **Base déjà créée** (mise à jour d'une installation existante, ou volume
+`kesh-mariadb-data` déjà présent) : **ne générez pas** de mots de passe MariaDB.
+Écrivez dans `.env` **la valeur avec laquelle la base a été créée, jamais une
+neuve** — si vous n'en aviez jamais posé, les anciens défauts
+`MARIADB_ROOT_PASSWORD=kesh_dev_root` et `MARIADB_PASSWORD=kesh_dev` ; si vous
+aviez recopié une chaîne gabarit `<…>`, cette chaîne telle quelle. Puis changez
+ces mots de passe par la procédure du manuel d'administration (§ *Changer un mot
+de passe MariaDB* : `ALTER USER` d'abord, `.env` ensuite ; § *Passer à la
+0.13.0*).
+
+**Installation neuve** (aucune base encore créée) :
 
 ```bash
 cp .env.example .env
-# Remplacer dans .env la valeur de KESH_JWT_SECRET par la sortie de :
+# Dans .env, remplacer la valeur de KESH_JWT_SECRET, puis décommenter
+# MARIADB_ROOT_PASSWORD et MARIADB_PASSWORD et leur donner une valeur —
+# chacune la sortie d'une commande (installation neuve seulement) :
 openssl rand -hex 32
 ```
 
 Le placeholder `<GENERATE_ME: …>` recopié tel quel est refusé au démarrage
-(depuis la 0.13.0).
+(depuis la 0.13.0). Les deux mots de passe MariaDB ne sont lus qu'à la
+**création** de la base : les changer ensuite dans `.env` ne change pas le mot
+de passe enregistré — Kesh échoue alors en 1045, et pour root rien ne le
+signale hormis la sauvegarde. Hexadécimal : une sortie base64 peut contenir
+`/`, qui casse une `DATABASE_URL`.
 
 ### 2. Lancer les containers
 
@@ -99,8 +121,11 @@ docker compose up -d --build kesh-api
 ### Accéder à la base de données
 
 ```bash
-docker compose exec mariadb mysql -u kesh -pkesh_dev -D kesh
+docker compose exec mariadb mariadb -u kesh -p -D kesh
 ```
+
+Le mot de passe (`MARIADB_PASSWORD` de `.env`) est demandé. Le port 3306 n'est
+pas publié sur l'hôte : un port publié par Docker contourne le pare-feu (UFW).
 
 ### Voir les volumes créés
 
@@ -131,10 +156,33 @@ Cf. `.env.example` section "Conflit port 80" et le manuel admin section
 (macvlan IP dédiée, dev `cargo run` natif sur Linux non-root, etc.).
 Puis appliquez : `docker compose up -d`.
 
-### Base de données ne s'initialise pas
+### Base de données ne démarre pas, ou Kesh ne s'y connecte pas
+
+Diagnostic d'abord (`logs` fonctionne même quand Compose refuse `up` faute de
+mots de passe — mesuré avec Docker Compose 2.40 ; si votre version refuse
+aussi `logs`, lisez l'erreur affichée au terminal par `up`) :
+```bash
+docker compose logs kesh-api
+docker compose logs mariadb
+```
+
+- **Erreur 1045** (« Access denied ») ou l'**indice** de Kesh sur
+  `MARIADB_PASSWORD` : le mot de passe de `.env` n'est pas celui avec lequel la
+  base a été créée — MariaDB ne relit pas `.env`. Revenir à la valeur
+  d'origine (manuel d'administration, § *Passer à la 0.13.0*), puis changer le
+  mot de passe par la procédure du manuel (`ALTER USER` d'abord).
+- **Compose refuse en nommant une variable** (`required variable … is missing
+  a value`) : la poser dans `.env` — sur une **base déjà créée**, la valeur
+  d'origine (`kesh_dev_root` / `kesh_dev` si vous n'en aviez jamais posé),
+  jamais une neuve ; une valeur neuve seulement sur une installation neuve.
+  Compose ne nomme qu'une variable à la fois : posez les deux.
+
+⛔ `docker compose down -v` **supprime le volume de la base, définitivement** —
+les livres avec. Ne l'employer que sur une installation **sans données à
+conserver**, pour repartir d'une base vide :
 ```bash
 docker compose down -v
-docker compose up --build
+docker compose up -d
 ```
 
 ## Notes
@@ -143,4 +191,6 @@ docker compose up --build
 - Runtime: Debian Bookworm Slim
 - Rust: 1.85 (build stage uniquement)
 - Node.js: 22 (build stage uniquement)
-- Les données sont persistées dans le volume `mariadb_data`
+- Les données sont persistées dans le volume `kesh-mariadb-data` du compose,
+  que `docker volume ls` affiche `<projet>_kesh-mariadb-data` (préfixe du
+  projet Compose, par défaut le nom du répertoire)

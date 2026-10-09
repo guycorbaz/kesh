@@ -575,6 +575,12 @@ impl Config {
         let database_url = env_nonempty("DATABASE_URL")
             .ok_or_else(|| ConfigError::MissingVar("DATABASE_URL".into()))?;
 
+        // Story 15-13a (#551) : un mot de passe publié dans le dépôt, ou un
+        // gabarit du manuel recopié, protège la base comme aucun mot de passe.
+        // Avertir, jamais refuser (C-15-13-2) : la pile de dev et les tests
+        // tournent sur `kesh_dev`.
+        avertir_mot_de_passe_base(&database_url);
+
         let port = match env_nonempty("KESH_PORT") {
             Some(val) => match val.parse::<u16>() {
                 Ok(0) => {
@@ -1385,6 +1391,101 @@ pub fn env_nonempty(name: &str) -> Option<String> {
     }
 }
 
+/// Mots de passe MariaDB que Kesh a lui-même **distribués comme défaut** d'une
+/// installation (`docker-compose.yml` et `.env.example` jusqu'à la 0.12.1) :
+/// publiés dans le dépôt, donc connus de tous. Liste fermée, comparaison
+/// exacte et sensible à la casse. Story 15-13a (#551).
+///
+/// Angle mort assumé : d'autres littéraux du dépôt (`kesh_root` de la CI,
+/// exemples du manuel hors Docker) n'y entrent pas — ils n'ont jamais été le
+/// défaut d'une installation.
+pub const MOTS_DE_PASSE_PUBLIES: &[&str] = &["kesh_dev", "kesh_dev_root"];
+
+/// Avertissement émis quand le mot de passe de `DATABASE_URL` figure dans
+/// [`MOTS_DE_PASSE_PUBLIES`]. Ne cite ni le mot de passe ni l'URL.
+pub const AVERTISSEMENT_MOT_DE_PASSE_PUBLIE: &str = "Le mot de passe de DATABASE_URL est un mot de passe publié dans le dépôt Kesh (ancienne valeur par défaut) : acceptable pour le développement seulement. Le changer — manuel d'administration, § Passer à la 0.13.0 et § Changer un mot de passe MariaDB.";
+
+/// Avertissement émis quand le mot de passe de `DATABASE_URL` est un
+/// placeholder de gabarit (cf. [`is_template_placeholder`]). Distinct de
+/// [`AVERTISSEMENT_MOT_DE_PASSE_PUBLIE`] : le remède n'est pas le même. Ne cite
+/// ni le mot de passe ni l'URL.
+pub const AVERTISSEMENT_MOT_DE_PASSE_GABARIT: &str = "Le mot de passe de DATABASE_URL est un placeholder de gabarit (par exemple une valeur entre chevrons <…> recopiée du manuel) : il protège la base comme un mot de passe publié. Le changer — manuel d'administration, § Changer un mot de passe MariaDB (ALTER USER d'abord, .env ensuite).";
+
+/// Ce que le contrôle du mot de passe de `DATABASE_URL` reconnaît.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MotDePasseBase {
+    /// Une entrée de [`MOTS_DE_PASSE_PUBLIES`].
+    Publie,
+    /// Un placeholder de gabarit ([`is_template_placeholder`]).
+    Gabarit,
+}
+
+/// Qualifie le mot de passe de `database_url`.
+///
+/// L'URL est analysée par `url` ; [`url::Url::password`] rend la forme
+/// **encodée**, décodée ici par `percent_decode_str` puis
+/// `decode_utf8_lossy` — pas par `form_urlencoded` (qui lirait `+` comme un
+/// espace), pas par `decode_utf8` (dont l'erreur sur `%FF` inviterait à faire
+/// échouer le démarrage : une valeur non UTF-8 n'est ni publiée ni gabarit, et
+/// sa forme décodée avec `U+FFFD` ne déclenche rien).
+///
+/// `None` pour une URL qui ne s'analyse pas (mot de passe contenant `/`, `?`
+/// ou `#` non encodés : l'autorité est tronquée), sans mot de passe, ou au mot
+/// de passe ni publié ni gabarit. Aucune des listes n'est entre chevrons : un
+/// même mot de passe ne peut être les deux.
+fn qualifier_mot_de_passe_base(database_url: &str) -> Option<MotDePasseBase> {
+    let url = url::Url::parse(database_url).ok()?;
+    let encode = url.password()?;
+    let decode = percent_encoding::percent_decode_str(encode).decode_utf8_lossy();
+    if MOTS_DE_PASSE_PUBLIES.contains(&decode.as_ref()) {
+        Some(MotDePasseBase::Publie)
+    } else if is_template_placeholder(&decode) {
+        Some(MotDePasseBase::Gabarit)
+    } else {
+        None
+    }
+}
+
+/// Émet au plus **un** `tracing::warn!` selon [`qualifier_mot_de_passe_base`].
+/// N'empêche jamais le démarrage (AC 5 b de la Story 15-13a).
+fn avertir_mot_de_passe_base(database_url: &str) {
+    match qualifier_mot_de_passe_base(database_url) {
+        Some(MotDePasseBase::Publie) => tracing::warn!("{}", AVERTISSEMENT_MOT_DE_PASSE_PUBLIE),
+        Some(MotDePasseBase::Gabarit) => {
+            tracing::warn!("{}", AVERTISSEMENT_MOT_DE_PASSE_GABARIT)
+        }
+        None => {}
+    }
+}
+
+/// Numéro d'erreur MariaDB **1045** : *Access denied for user … (using
+/// password: …)* — l'identifiant est refusé.
+pub const MARIADB_ACCES_REFUSE: u16 = 1045;
+
+/// Indice ajouté au message d'échec de connexion initiale quand MariaDB refuse
+/// l'identifiant (1045). Ne cite ni `DATABASE_URL` ni son mot de passe.
+pub const INDICE_ACCES_REFUSE: &str = "Indice : MariaDB refuse l'identifiant de DATABASE_URL. Avec docker-compose.yml : MARIADB_PASSWORD n'est lu qu'à la création de la base — changer sa valeur dans .env ne change pas le mot de passe enregistré (manuel d'administration, Passer à la 0.13.0).";
+
+/// Extrait le numéro d'erreur MariaDB d'une erreur `sqlx`, s'il y en a un
+/// (`Error::Database` d'origine MySQL/MariaDB). Story 15-13a (#551).
+///
+/// Séparée de [`indice_connexion`] parce que `MySqlDatabaseError` n'a pas de
+/// constructeur public : seul un binaire réel (test `demarrage_mariadb`) peut
+/// exercer l'extraction ; la décision, pure, se teste seule.
+pub fn numero_erreur_mariadb(erreur: &sqlx::Error) -> Option<u16> {
+    erreur
+        .as_database_error()?
+        .try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>()
+        .map(|e| e.number())
+}
+
+/// Indice à joindre au message d'échec de connexion, selon le numéro d'erreur
+/// MariaDB : [`INDICE_ACCES_REFUSE`] pour 1045, rien sinon (1044 — droits sur
+/// la base —, 1049 — base absente —, erreur réseau). Pure.
+pub fn indice_connexion(numero: Option<u16>) -> Option<&'static str> {
+    (numero == Some(MARIADB_ACCES_REFUSE)).then_some(INDICE_ACCES_REFUSE)
+}
+
 /// Sous-chaînes (en minuscules) qui signalent un placeholder du gabarit
 /// `.env.example` resté tel quel — comparées au texte passé par
 /// `to_ascii_lowercase`. Story 15-11a (#557).
@@ -1401,7 +1502,9 @@ const TEMPLATE_PLACEHOLDERS: &[&str] = &["generate_me"];
 /// Le trim est local au contrôle : il ne présume pas de la lecture (depuis la
 /// Story 15-11b, `env_nonempty` trime déjà les deux secrets), et `" <x> "` doit
 /// être refusé quand même. Sert aux contrôles de
-/// `KESH_JWT_SECRET` et de `KESH_ADMIN_PASSWORD` dans [`Config::from_env`].
+/// `KESH_JWT_SECRET` et de `KESH_ADMIN_PASSWORD` dans [`Config::from_env`],
+/// et à l'avertissement sur le mot de passe de `DATABASE_URL`
+/// ([`qualifier_mot_de_passe_base`], Story 15-13a).
 fn is_template_placeholder(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
     if TEMPLATE_PLACEHOLDERS.iter().any(|p| lower.contains(p)) {
@@ -3432,5 +3535,96 @@ mod smtp_config_tests {
         }
         let config = Config::from_env().expect("IPv6 literal accepté");
         assert_eq!(config.smtp_host.as_deref(), Some("fd00::25"));
+    }
+}
+
+/// Story 15-13a (#551) — avertissement sur le mot de passe de `DATABASE_URL`
+/// et indice du refus 1045.
+#[cfg(test)]
+mod mot_de_passe_base_tests {
+    use super::tests::{env_lock, from_env_with};
+    use super::*;
+
+    /// Compte les deux avertissements dans `logs`.
+    fn compte(logs: &str) -> (usize, usize) {
+        (
+            logs.matches(AVERTISSEMENT_MOT_DE_PASSE_PUBLIE).count(),
+            logs.matches(AVERTISSEMENT_MOT_DE_PASSE_GABARIT).count(),
+        )
+    }
+
+    /// Test 7 de la fiche — AC 5 a, a-bis, b. Chaque cas averti l'est **une**
+    /// fois, par le bon message ; les témoins ne déclenchent rien ; aucun
+    /// message capturé ne contient le mot de passe (formes encodée et décodée)
+    /// ni l'URL ; `from_env` réussit toujours.
+    #[test]
+    fn from_env_warns_on_published_database_password() {
+        // (URL, mot de passe encodé, mot de passe décodé)
+        let publies = [
+            ("mysql://kesh:kesh_dev@h/kesh", "kesh_dev", "kesh_dev"),
+            (
+                "mysql://kesh:kesh_dev_root@h/kesh",
+                "kesh_dev_root",
+                "kesh_dev_root",
+            ),
+            ("mysql://kesh:kesh%5Fdev@h/kesh", "kesh%5Fdev", "kesh_dev"),
+        ];
+        let gabarits = [
+            (
+                "mysql://kesh:%3Cmot%20de%20passe%20utilisateur%20applicatif%3E@h/kesh",
+                "%3Cmot%20de%20passe%20utilisateur%20applicatif%3E",
+                "<mot de passe utilisateur applicatif>",
+            ),
+            // Forme non encodée, telle que Compose la compose depuis `.env` :
+            // `url` encode l'espace et les chevrons de l'identifiant.
+            (
+                "mysql://kesh:<mot de passe utilisateur applicatif>@h/kesh",
+                "%3Cmot%20de%20passe%20utilisateur%20applicatif%3E",
+                "<mot de passe utilisateur applicatif>",
+            ),
+            (
+                "mysql://kesh:%3CMARIADB_PASSWORD%3E@h/kesh",
+                "%3CMARIADB_PASSWORD%3E",
+                "<MARIADB_PASSWORD>",
+            ),
+        ];
+        let temoins = [
+            "mysql://kesh_dev:fort-7f3a9c2e@h/kesh", // l'utilisateur, pas le mot de passe
+            "mysql://kesh:Kesh_Dev@h/kesh",          // casse
+            "mysql://kesh:a%3Cb%3Ec@h/kesh",         // chevrons intérieurs
+            "mysql://kesh:%FF@h/kesh",               // octet non UTF-8
+            "mysql://kesh:9f2c4e7a1b3d5f60@h/kesh",  // mot de passe fort
+            "mysql://kesh@h/kesh",                   // sans mot de passe
+        ];
+
+        let _guard = env_lock();
+        for (attendu, cas) in [((1, 0), &publies[..]), ((0, 1), &gabarits[..])] {
+            for (url, encode, decode) in cas {
+                let (result, logs) = from_env_with(&[("DATABASE_URL", url)]);
+                assert!(result.is_ok(), "{url} : Kesh démarre quand même");
+                assert_eq!(compte(&logs), attendu, "{url} : logs = {logs}");
+                for interdit in [*url, *encode, *decode] {
+                    assert!(
+                        !logs.contains(interdit),
+                        "{url} : le journal cite « {interdit} » : {logs}"
+                    );
+                }
+            }
+        }
+        for url in temoins {
+            let (result, logs) = from_env_with(&[("DATABASE_URL", url)]);
+            assert!(result.is_ok(), "{url} : Kesh démarre");
+            assert_eq!(compte(&logs), (0, 0), "{url} : logs = {logs}");
+        }
+    }
+
+    /// Test 9 de la fiche — AC 6 b : la décision pure.
+    #[test]
+    fn indice_connexion_refusee() {
+        assert_eq!(indice_connexion(Some(1045)), Some(INDICE_ACCES_REFUSE));
+        for autre in [Some(1049), Some(1044), None] {
+            assert_eq!(indice_connexion(autre), None, "{autre:?}");
+        }
+        assert!(!INDICE_ACCES_REFUSE.contains("mysql://"));
     }
 }

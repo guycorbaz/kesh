@@ -5,12 +5,22 @@ services:
     container_name: kesh-mariadb
     restart: unless-stopped
     environment:
-      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:-kesh_dev_root}
+      # Mots de passe OBLIGATOIRES (`:?`) : sans eux dans `.env`, Compose refuse
+      # de démarrer en nommant la variable. MariaDB ne les lit qu'à la CRÉATION
+      # de la base : les changer ensuite dans `.env` ne change pas le mot de
+      # passe enregistré (manuel d'administration, § Passer à la 0.13.0).
+      MARIADB_ROOT_PASSWORD: ${MARIADB_ROOT_PASSWORD:?à poser dans .env. Installation existante, reprendre la valeur avec laquelle la base a été créée, jamais une neuve (manuel d'administration, Passer à la 0.13.0)}
       MARIADB_DATABASE: ${MARIADB_DATABASE:-kesh}
       MARIADB_USER: ${MARIADB_USER:-kesh}
-      MARIADB_PASSWORD: ${MARIADB_PASSWORD:-kesh_dev}
-    ports:
-      - "3306:3306"
+      MARIADB_PASSWORD: ${MARIADB_PASSWORD:?à poser dans .env. Installation existante, reprendre la valeur avec laquelle la base a été créée, jamais une neuve (manuel d'administration, Passer à la 0.13.0)}
+    # Port 3306 NON publié : Kesh atteint MariaDB par le réseau interne
+    # `kesh-network` (hôte `mariadb`). Un port publié par Docker contourne le
+    # pare-feu de l'hôte (UFW) et ouvrirait la base à tout le réseau.
+    # Accès à la base : `docker compose exec mariadb mariadb -u kesh -p`.
+    # Dépannage ponctuel SEULEMENT — décommenter, lié au loopback, jamais sans
+    # adresse, puis recommenter :
+    # ports:
+    #   - "127.0.0.1:3306:3306"
     volumes:
       - kesh-mariadb-data:/var/lib/mysql
     networks:
@@ -50,7 +60,7 @@ services:
       # ne relit pas `.env`).
       #
       # Base de données — correspond au service mariadb ci-dessus
-      DATABASE_URL: mysql://${MARIADB_USER:-kesh}:${MARIADB_PASSWORD:-kesh_dev}@mariadb:3306/${MARIADB_DATABASE:-kesh}
+      DATABASE_URL: mysql://${MARIADB_USER:-kesh}:${MARIADB_PASSWORD:?à poser dans .env. Installation existante, reprendre la valeur avec laquelle la base a été créée, jamais une neuve (manuel d'administration, Passer à la 0.13.0)}@mariadb:3306/${MARIADB_DATABASE:-kesh}
 
       # Application
       KESH_PORT: ${KESH_PORT:-80}
