@@ -42,6 +42,18 @@ error-invoice-unvalidate-blocked-matched = La registrazione di questa fattura è
 error-invoice-number-fiscal-year-mismatch = Questa fattura ha già un numero: la sua data non può uscire dall'esercizio che l'ha emessa.
 error-invoice-must-be-unvalidated-first = Questa fattura è convalidata: annullate prima la convalida, poi eliminate la bozza.
 
+# Lettrage (Story 15-1a-i, #518)
+error-lettering-too-few-lines = Un abbinamento riunisce almeno due righe distinte.
+error-lettering-too-many-lines = Un abbinamento riunisce al massimo 200 righe.
+error-lettering-accounts-differ = Le righe di un abbinamento devono riguardare tutte lo stesso conto.
+error-lettering-account-not-letterable = Questo conto non si abbina: si abbinano solo i conti di attivo e di passivo che non sono conti bancari.
+error-lettering-line-owned-by-document = Una di queste righe appartiene a un documento: non si abbina né si disabbina a mano.
+error-lettering-line-already-lettered = Una di queste righe è già abbinata (codice { $code }).
+error-lettering-unbalanced = Queste righe non si pareggiano: differenza di { $difference }.
+error-lettering-all-lines-in-closed-periods = Tutte queste righe sono in un periodo chiuso — esercizio chiuso, esercizio seguito da un esercizio chiuso, o periodo bloccato: l'abbinamento lì non cambia più.
+error-lettering-is-document = Questo abbinamento è quello di un documento: annullate il pagamento invece di disabbinare.
+error-lettering-concurrent-change = L'abbinamento è cambiato nel frattempo; riprovate.
+
 # Errori di validazione
 error-validation = Errore di validazione
 error-email-invalid = Formato email non valido
@@ -745,7 +757,7 @@ invoices-settlement-cancel-button = Annulla il pagamento
 invoices-settlement-cancel-reconciliation = Annulla la riconciliazione
 invoices-settlement-cancel-confirm = Annullare questo pagamento? Una scrittura di storno con la data di oggi sarà registrata nel libro mastro, e l'importo tornerà dovuto.
 invoices-settlement-cancelled = Pagamento annullato: la scrittura di storno è stata registrata.
-invoices-settlement-cancel-blocked-credited = Questa fattura è stata stornata da una nota di credito: questo pagamento è da abbinare, non si annulla.
+invoices-settlement-cancel-blocked-credited = Questa fattura è stata stornata da una nota di credito: questo pagamento resta aperto sul conto debitori, non si annulla.
 invoices-settlement-cancel-blocked-written-off = Il residuo di questa fattura è stato saldato: annullate prima il saldo.
 invoices-amount-written-off = Saldato
 invoices-settlements-type-write-off = Saldo — { $nature }
@@ -780,7 +792,7 @@ settlement-cancel-blocked-account-archived = Un conto di questo pagamento è sta
 settlement-cancel-blocked-no-fiscal-year = Nessun esercizio aperto copre la data di oggi: crealo per poter annullare questo pagamento.
 # Story 25-3-b (#418) — annuler un rapprochement : ses motifs et son dialogue.
 reconciliation-cancel-blocked-not-reconciled = Questa transazione bancaria non è riconciliata: non c'è alcuna riconciliazione da annullare.
-reconciliation-cancel-blocked-credited = La fattura di questa riconciliazione è stata stornata da una nota di credito: il suo pagamento è un pagamento da abbinare e non si annulla.
+reconciliation-cancel-blocked-credited = La fattura di questa riconciliazione è stata stornata da una nota di credito: il suo pagamento resta aperto sul conto debitori e non si annulla.
 reconciliation-cancel-blocked-written-off = Il residuo della fattura di questa riconciliazione è stato saldato: annullate prima il saldo.
 reconciliation-cancel-blocked-fiscal-year-closed = Questa riconciliazione appartiene a un esercizio chiuso: un amministratore deve riaprire l'esercizio per poterla annullare.
 reconciliation-cancel-blocked-bank-match = La scrittura di questa riconciliazione è riconciliata anche con un'altra transazione bancaria: annulla prima quell'altra riconciliazione.
@@ -2206,6 +2218,7 @@ audit-log-entity-imported-supplier-invoice = Fattura importata
 audit-log-entity-installation = Installazione
 audit-log-entity-invoice = Fattura
 audit-log-entity-journal-entry = Registrazione
+audit-log-entity-lettering = Abbinamento
 audit-log-entity-payment-batch = Lotto di pagamento
 audit-log-entity-product = Prodotto
 audit-log-entity-project = Progetto
@@ -2219,6 +2232,8 @@ audit-log-action-journal-entry-created = Registrazione creata
 audit-log-action-journal-entry-updated = Registrazione modificata
 audit-log-action-journal-entry-reversed = Registrazione stornata
 audit-log-action-journal-entry-deleted = Registrazione eliminata
+audit-log-action-lettering-created = Abbinamento posto
+audit-log-action-lettering-removed = Abbinamento rimosso
 audit-log-action-account-chart-loaded = Piano dei conti caricato
 audit-log-action-account-created = Conto creato
 audit-log-action-account-updated = Conto aggiornato

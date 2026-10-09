@@ -324,7 +324,8 @@ pub enum SettlementCancelBlocker {
     /// rapprochement à annuler. Coupe court : aucun rang suivant ne s'évalue.
     BankTransactionNotReconciled,
     /// La facture a été **créditée** par un avoir après ce règlement. Le
-    /// règlement est alors un paiement **à lettrer** (Epic 15) — il ne
+    /// règlement reste ouvert au compte débiteurs ; il ne se lettre pas à la
+    /// main (R5 de la 15-1a-i), son traitement est la 15-1a2 — et il ne
     /// s'annule pas. ⚠️ Le statut `cancelled` d'une facture ne naît en
     /// production que de l'avoir (`credit_notes.rs`).
     ///
@@ -1061,6 +1062,70 @@ pub enum DbError {
         attempted: chrono::NaiveDate,
     },
 
+    // --- Lettrage (Story 15-1a-i, #518) — refus de la primitive unique ---
+    //
+    // ⚠️ L'ordre des variantes ci-dessous suit les RANGS des refus de
+    // `letterings::create_group_in_tx` (AC3) ; une requête qui cumule deux
+    // causes rend la première. Le 404 (rang 2) est [`DbError::NotFound`],
+    // indiscernable d'une ligne inexistante (AC11). Tous sont des refus
+    // MÉTIER, jamais un `Invariant` : mappés vers 400 (forme) ou 409 (état).
+    /// Rang 1 : moins de deux identifiants de lignes, ou un doublon. → 400.
+    #[error("Un lettrage réunit au moins deux lignes distinctes")]
+    LetteringTooFewLines,
+
+    /// Plus de lignes que le plafond d'un groupe manuel (200, AC6). → 400.
+    #[error("Un lettrage réunit au plus {max} lignes")]
+    LetteringTooManyLines { max: usize },
+
+    /// Rang 3 : les lignes ne portent pas toutes sur le même compte. → 409.
+    #[error("Les lignes d'un lettrage doivent toutes porter sur le même compte")]
+    LetteringAccountsDiffer,
+
+    /// Rang 4 : le compte n'est pas lettrable (R4 — ni actif ni passif, ou
+    /// désigné par un compte bancaire, archivé compris). Exigé à la CRÉATION
+    /// d'un groupe seulement (C104). → 409.
+    #[error("Compte non lettrable")]
+    LetteringAccountNotLetterable,
+
+    /// Rang 4 bis (mode manuel) : aucune ligne du groupe n'est « en période
+    /// ouverte » — exercice clos, exercice postérieur clos, ou date ≤ verrou de
+    /// période (R7). Vaut pour le lettrage comme pour le délettrage. → 409.
+    #[error("Toutes les lignes du lettrage sont dans une période close")]
+    LetteringAllLinesInClosedPeriods,
+
+    /// Rang 5 (mode manuel) : une ligne appartient à une pièce (motifs
+    /// `OwnedBy*` de `reversal_blockers`, R5) — son lettrage est celui de sa
+    /// pièce. Rendu aussi au délettrage d'un groupe `reversal` dont une ligne
+    /// appartient à une pièce (AC5, refus 2). → 409, avec `documentId` /
+    /// `documentNumber`.
+    #[error("Une ligne du lettrage appartient à une pièce ({})", .blocker.code())]
+    LetteringLineOwnedByDocument {
+        blocker: ReversalBlocker,
+        document_id: Option<i64>,
+        document_label: Option<String>,
+    },
+
+    /// Rang 6 : une ligne est déjà lettrée — `code` est celui de son groupe.
+    /// → 409.
+    #[error("Une ligne est déjà lettrée (code {code})")]
+    LetteringLineAlreadyLettered { code: String },
+
+    /// Rang 7 : la somme `Σ(débit − crédit)` des lignes n'est pas nulle. → 409.
+    #[error("Les lignes ne se soldent pas : écart de {difference}")]
+    LetteringUnbalanced { difference: rust_decimal::Decimal },
+
+    /// Délettrage manuel d'un groupe d'origine `document` : son lettrage suit
+    /// la pièce (annuler le règlement, pas délettrer — AC5, refus 1). → 409.
+    #[error("Ce lettrage est celui d'une pièce")]
+    LetteringIsDocument,
+
+    /// L'`UPDATE` final d'une primitive n'a pas trouvé le nombre de lignes
+    /// attendu (R7 point 4). Les lignes sont tenues depuis la lecture
+    /// verrouillante : seul un défaut y mène — mais c'est un refus MÉTIER
+    /// (« réessayez »), jamais un succès partiel ni un 500. → 409.
+    #[error("Le lettrage a changé entre-temps")]
+    LetteringConcurrentChange,
+
     /// Complément des soldes de départ refusé (Story 25-7, #445).
     ///
     /// Le statut HTTP et le code se dérivent de la raison côté API ;
@@ -1260,6 +1325,16 @@ impl DbError {
             // vient du mappage `kesh-api`, qui rend `guard.code()`.
             Self::EntryNotModifiable(_) => "ENTRY_NOT_MODIFIABLE",
             Self::PeriodLocked { .. } => "PERIOD_LOCKED",
+            Self::LetteringTooFewLines => "LETTERING_TOO_FEW_LINES",
+            Self::LetteringTooManyLines { .. } => "LETTERING_TOO_MANY_LINES",
+            Self::LetteringAccountsDiffer => "LETTERING_ACCOUNTS_DIFFER",
+            Self::LetteringAccountNotLetterable => "LETTERING_ACCOUNT_NOT_LETTERABLE",
+            Self::LetteringAllLinesInClosedPeriods => "LETTERING_ALL_LINES_IN_CLOSED_PERIODS",
+            Self::LetteringLineOwnedByDocument { .. } => "LETTERING_LINE_OWNED_BY_DOCUMENT",
+            Self::LetteringLineAlreadyLettered { .. } => "LETTERING_LINE_ALREADY_LETTERED",
+            Self::LetteringUnbalanced { .. } => "LETTERING_UNBALANCED",
+            Self::LetteringIsDocument => "LETTERING_IS_DOCUMENT",
+            Self::LetteringConcurrentChange => "LETTERING_CONCURRENT_CHANGE",
             Self::FiscalYearInvalid => "FISCAL_YEAR_INVALID",
             Self::OpeningComplementRefused { reason, .. } => reason.code(),
             Self::ConfigurationRequired(_) => "CONFIGURATION_REQUIRED",

@@ -362,6 +362,10 @@ pub fn serialize_journal_entry_lines_csv<W: Write>(
         "debit",
         "credit",
         "project_id",
+        // Story 15-1a-i (#518) — la marque du lettrage : l'export existe pour
+        // que l'utilisateur vérifie ce que Kesh affirme, ce qui est soldé compris.
+        "lettering_key",
+        "lettering_origin",
     ])
     .map_err(|e| map_csv_err("journal_entry_lines", e))?;
     for jl in rows {
@@ -374,6 +378,12 @@ pub fn serialize_journal_entry_lines_csv<W: Write>(
             fmt_decimal(jl.credit),
             // Tag analytique (Epic 19) — vide si ligne non taguée.
             jl.project_id.map(|p| p.to_string()).unwrap_or_default(),
+            // Lettrage (15-1a-i) — vide si la ligne est ouverte. L'origine est
+            // un code fermé (`document`, `reversal`, `manual`, contrainte
+            // `chk_jel_lettering_origin`) : elle passe tout de même par `txt`,
+            // comme toute cellule texte lue en base.
+            jl.lettering_key.map(|k| k.to_string()).unwrap_or_default(),
+            txt(jl.lettering_origin.clone().unwrap_or_default()),
         ])
         .map_err(|e| map_csv_err("journal_entry_lines", e))?;
     }
@@ -1692,6 +1702,8 @@ mod tests {
             debit: dec!(150.25),
             credit: dec!(0.00),
             project_id: None,
+            lettering_key: None,
+            lettering_origin: None,
         }
     }
 
@@ -2016,9 +2028,11 @@ mod tests {
         let text = std::str::from_utf8(&buf[3..]).unwrap();
         // Decimal formaté 2 décimales — debit 150.25 + credit 0.00,
         // project_id vide (ligne non taguée, Story 19-2).
-        assert!(text.contains(";150.25;0.00;\r\n"), "got: {text}");
+        assert!(text.contains(";150.25;0.00;;;\r\n"), "got: {text}");
         // Header
-        assert!(text.starts_with("id;entry_id;account_id;line_order;debit;credit;project_id"));
+        assert!(text.starts_with(
+            "id;entry_id;account_id;line_order;debit;credit;project_id;lettering_key;lettering_origin"
+        ));
     }
 
     #[test]
@@ -2028,7 +2042,29 @@ mod tests {
         let mut buf = Vec::new();
         serialize_journal_entry_lines_csv(&[line], &mut buf).expect("serialize ok");
         let text = std::str::from_utf8(&buf[3..]).unwrap();
-        assert!(text.contains(";150.25;0.00;7\r\n"), "got: {text}");
+        assert!(text.contains(";150.25;0.00;7;;\r\n"), "got: {text}");
+    }
+
+    /// Story 15-1a-i (AC14) — l'export des lignes porte la marque du lettrage :
+    /// la clé et l'origine d'une ligne lettrée, deux cellules vides sur une
+    /// ligne ouverte.
+    #[test]
+    fn csv_export_carries_lettering_columns() {
+        let mut lettree = sample_line();
+        lettree.lettering_key = Some(100);
+        lettree.lettering_origin = Some("manual".into());
+        let mut ouverte = sample_line();
+        ouverte.id = 101;
+        let mut buf = Vec::new();
+        serialize_journal_entry_lines_csv(&[lettree, ouverte], &mut buf).expect("serialize ok");
+        let text = std::str::from_utf8(&buf[3..]).unwrap();
+        let lignes: Vec<&str> = text.lines().collect();
+        assert_eq!(
+            lignes[0],
+            "id;entry_id;account_id;line_order;debit;credit;project_id;lettering_key;lettering_origin"
+        );
+        assert_eq!(lignes[1], "100;10;1;1;150.25;0.00;;100;manual");
+        assert_eq!(lignes[2], "101;10;1;1;150.25;0.00;;;");
     }
 
     #[test]

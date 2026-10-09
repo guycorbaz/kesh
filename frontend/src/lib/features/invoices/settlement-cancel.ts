@@ -26,7 +26,7 @@ export function invoiceSettlementCancelMessage(
 	if (code === 'INVOICE_CREDITED') {
 		return i18nMsg(
 			'invoices-settlement-cancel-blocked-credited',
-			'Cette facture a été créditée par un avoir : ce règlement est un paiement à lettrer, il ne s\'annule pas.',
+			'Cette facture a été créditée par un avoir : ce règlement reste ouvert au compte débiteurs, il ne s\'annule pas.',
 		);
 	}
 	if (code === 'INVOICE_WRITTEN_OFF') {

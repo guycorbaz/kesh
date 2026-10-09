@@ -42,6 +42,18 @@ error-invoice-unvalidate-blocked-matched = This invoice's journal entry is match
 error-invoice-number-fiscal-year-mismatch = This invoice already carries a number: its date cannot leave the fiscal year that issued it.
 error-invoice-must-be-unvalidated-first = This invoice is validated: unvalidate it first, then delete the draft.
 
+# Lettrage (Story 15-1a-i, #518)
+error-lettering-too-few-lines = A matching group brings together at least two distinct lines.
+error-lettering-too-many-lines = A matching group brings together at most 200 lines.
+error-lettering-accounts-differ = The lines of a matching group must all be on the same account.
+error-lettering-account-not-letterable = This account cannot be matched: only asset and liability accounts that are not bank accounts can be matched.
+error-lettering-line-owned-by-document = One of these lines belongs to a document: it cannot be matched or unmatched by hand.
+error-lettering-line-already-lettered = One of these lines is already matched (code { $code }).
+error-lettering-unbalanced = These lines do not balance: difference of { $difference }.
+error-lettering-all-lines-in-closed-periods = All these lines are in a closed period — closed fiscal year, fiscal year followed by a closed fiscal year, or locked period: matching no longer changes there.
+error-lettering-is-document = This matching group belongs to a document: cancel the settlement rather than unmatching.
+error-lettering-concurrent-change = The matching group changed in the meantime; please try again.
+
 # Validation errors
 error-validation = Validation error
 error-email-invalid = Invalid email format
@@ -745,7 +757,7 @@ invoices-settlement-cancel-button = Cancel the settlement
 invoices-settlement-cancel-reconciliation = Cancel the reconciliation
 invoices-settlement-cancel-confirm = Cancel this settlement? A reversing entry dated today will be posted to the general ledger, and the amount will be due again.
 invoices-settlement-cancelled = Settlement cancelled: the reversing entry has been posted.
-invoices-settlement-cancel-blocked-credited = This invoice has been credited by a credit note: this settlement is a payment to be matched, it cannot be cancelled.
+invoices-settlement-cancel-blocked-credited = This invoice has been credited by a credit note: this settlement stays open on the receivables account, it cannot be cancelled.
 invoices-settlement-cancel-blocked-written-off = The remainder of this invoice has been written off: cancel the write-off first.
 invoices-amount-written-off = Written off
 invoices-settlements-type-write-off = Write-off — { $nature }
@@ -780,7 +792,7 @@ settlement-cancel-blocked-account-archived = An account of this settlement has b
 settlement-cancel-blocked-no-fiscal-year = No open fiscal year covers today's date: create it to be able to cancel this settlement.
 # Story 25-3-b (#418) — annuler un rapprochement : ses motifs et son dialogue.
 reconciliation-cancel-blocked-not-reconciled = This bank transaction is not reconciled: there is no reconciliation to cancel.
-reconciliation-cancel-blocked-credited = The invoice of this reconciliation has been credited by a credit note: its settlement is a payment to be matched, it is not cancelled.
+reconciliation-cancel-blocked-credited = The invoice of this reconciliation has been credited by a credit note: its settlement stays open on the receivables account, it is not cancelled.
 reconciliation-cancel-blocked-written-off = The remainder of this reconciliation's invoice has been written off: cancel the write-off first.
 reconciliation-cancel-blocked-fiscal-year-closed = This reconciliation belongs to a closed fiscal year: an administrator must reopen the fiscal year before it can be cancelled.
 reconciliation-cancel-blocked-bank-match = The entry of this reconciliation is also reconciled with another bank transaction: cancel that other reconciliation first.
@@ -2211,6 +2223,7 @@ audit-log-entity-imported-supplier-invoice = Imported invoice
 audit-log-entity-installation = Installation
 audit-log-entity-invoice = Invoice
 audit-log-entity-journal-entry = Journal entry
+audit-log-entity-lettering = Matching
 audit-log-entity-payment-batch = Payment batch
 audit-log-entity-product = Product
 audit-log-entity-project = Project
@@ -2224,6 +2237,8 @@ audit-log-action-journal-entry-created = Journal entry created
 audit-log-action-journal-entry-updated = Journal entry modified
 audit-log-action-journal-entry-reversed = Journal entry reversed
 audit-log-action-journal-entry-deleted = Journal entry deleted
+audit-log-action-lettering-created = Matching set
+audit-log-action-lettering-removed = Matching removed
 audit-log-action-account-chart-loaded = Chart of accounts loaded
 audit-log-action-account-created = Account created
 audit-log-action-account-updated = Account updated

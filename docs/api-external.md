@@ -210,12 +210,17 @@ Les principales ressources accessibles via l'API (liste non exhaustive — toute
 | Produits | `GET /products`, `GET /products/{id}` | `POST /products`, … |
 | Factures | `GET /invoices`, `GET /invoices/{id}` | `POST /invoices`, `PUT /invoices/{id}`, … ² |
 | Écritures comptables | `GET /journal-entries`, `GET /journal-entries/{id}` | `POST /journal-entries`, `PUT /journal-entries/{id}` ⁴, `DELETE /journal-entries/{id}` ⁴, … |
+| Lettrages | `GET /letterings/{key}` ⁵ | `POST /letterings` ⁵, `DELETE /letterings/{key}` ⁵ |
 | Taux de TVA | `GET /vat-rates` | — ¹ |
 | Comptes bancaires | `GET /bank-accounts` | `POST /bank-accounts`, `PUT /bank-accounts/{id}`, `PATCH /bank-accounts/{id}` (lien au grand livre), `DELETE /bank-accounts/{id}` (archivage) |
 
 *(Préfixe `…/api/v1` omis dans le tableau. Les corps de requête d'écriture peuvent différer des champs renvoyés en lecture : référez-vous aux formulaires correspondants de l'interface web pour les champs attendus.)*
 
 ⁴ Depuis la v0.13.0 — voir « Modifier une écriture » et « Supprimer une écriture » ci-dessous.
+
+⁵ Depuis la v0.13.0 — voir « Lettrer des lignes » ci-dessous.
+
+**Les lignes d'une écriture portent leur lettrage** *(depuis la v0.13.0)* : dans toute réponse qui expose les lignes (`GET /journal-entries`, `GET /journal-entries/{id}`, et les réponses de `POST`, `PUT` et de la contre-passation), chaque ligne porte trois champs, **toujours présents** : `letteringKey` (la clé du groupe de lettrage), `letteringCode` (son code affiché, `AA` pour la clé 27) et `letteringOrigin` (`document`, `reversal` ou `manual`) — tous trois `null` quand la ligne est **ouverte**.
 
 ### Modifier une écriture — `PUT /api/v1/journal-entries/{id}`
 
@@ -279,6 +284,47 @@ Refus, **dans l'ordre où ils parlent** — 9 lignes :
 
 Les `details` sont ceux du `PUT` (`documentId`, `documentNumber` ; `fiscalYearId`, `fiscalYearName`). ⚠️ Une écriture d'une pièce sous la période verrouillée répond par **sa pièce** (`409`), pas par `PERIOD_LOCKED` : c'est la pièce qui dit où corriger. ⚠️ Un interblocage est rejoué par le serveur ; s'il persiste, la réponse est un `500` — réessayez.
 
+### Lettrer des lignes — `/api/v1/letterings`
+
+*(Depuis la v0.13.0 ; l'écran viendra.)* Un **lettrage** marque comme se soldant entre elles des lignes d'un **même compte** d'actif ou de passif — une facture et ses règlements, une écriture et sa contre-passation, un acompte et sa reprise. Un groupe réunit **de 2 à 200 lignes** dont la somme `débit − crédit` est **exactement nulle** ; pas de lettrage partiel. Sa **clé** est le plus petit identifiant de ses lignes, son **code** cette clé écrite en lettres (`1 → A`, `27 → AA`). Trois origines : `manual` (posé par ces routes), `reversal` (posé par Kesh entre une écriture et sa contre-passation) et `document` (posé par Kesh quand une pièce est soldée).
+
+**`POST /api/v1/letterings`** — écriture (`read-write`). Corps : `{ "lineIds": [ … ] }`. Réponse `201` : `{ key, code, origin: "manual", accountId, lines: [ { id, entryId, entryNumber, fiscalYearId, fiscalYearName, date, debit, credit } ] }`. ⚠️ Le numéro d'écriture repart à 1 à chaque exercice : il se lit avec `fiscalYearId` / `fiscalYearName`.
+
+**`GET /api/v1/letterings/{key}`** — lecture (`read` suffit). `{key}` est la clé numérique **ou** le code (`27` ou `AA`, minuscules acceptées) ; toute autre valeur rend `404`. Réponse `200`, même forme, `origin` réel.
+
+**`DELETE /api/v1/letterings/{key}`** — écriture (`read-write`). Délettre le groupe : ses lignes redeviennent ouvertes. Réponse `204`.
+
+Les deux gestes sont **tracés** au journal d'audit (`lettering.created`, `lettering.removed`), lignes et exercices compris — et **la clé** qui les a faits, quand c'est une clé.
+
+**La règle des périodes** : lettrer **comme délettrer** exige qu'**au moins une** ligne du groupe soit en période ouverte — exercice ouvert, aucun exercice postérieur clôturé, date **postérieure** à la période verrouillée (seuil inclusif). Un groupe à cheval sur un exercice clôturé et un exercice ouvert se lettre ; un groupe dont **toutes** les lignes sont en période close ne se lettre ni ne se délettre — le lettrage se fige avec la période.
+
+**Ce qui ne se lettre pas à la main** : les lignes d'une **pièce** (facture, avoir, facture fournisseur, règlement ou solde) — leur lettrage est celui de leur pièce ; et les comptes de charge et de produit, ainsi que les comptes liés à un compte bancaire (archivé compris), qui relèvent du rapprochement bancaire. Une écriture **rapprochée** d'une transaction bancaire, elle, n'est pas une pièce : elle se lettre.
+
+Refus du `POST`, **dans l'ordre où ils parlent** — une requête qui cumule deux causes rend la première :
+
+| Refus | Code | Statut |
+|---|---|---|
+| Plus de 200 lignes | `LETTERING_TOO_MANY_LINES` | `400` |
+| Moins de deux lignes, ou une ligne répétée | `LETTERING_TOO_FEW_LINES` | `400` |
+| Une ligne inconnue ou d'une autre company (indiscernables) | `NOT_FOUND` | `404` |
+| Lignes de comptes différents | `LETTERING_ACCOUNTS_DIFFER` | `409` |
+| Compte non lettrable (charge, produit, compte bancaire) | `LETTERING_ACCOUNT_NOT_LETTERABLE` | `409` |
+| Toutes les lignes en période close (exercice clôturé, exercice suivi d'un exercice clôturé, période verrouillée) | `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` | `409` |
+| Une ligne appartient à une pièce | `LETTERING_LINE_OWNED_BY_DOCUMENT` | `409`, `details.documentId` / `details.documentNumber` |
+| Une ligne est déjà lettrée | `LETTERING_LINE_ALREADY_LETTERED` | `409`, `details.code` = le code de son groupe |
+| La somme n'est pas nulle | `LETTERING_UNBALANCED` | `409`, `details.difference` (décimal en chaîne) |
+
+Refus du `DELETE`, dans l'ordre :
+
+| Refus | Code | Statut |
+|---|---|---|
+| Clé ou code invalide, groupe inconnu ou d'une autre company | `NOT_FOUND` | `404` |
+| Groupe d'origine `document` — annuler le règlement, pas délettrer | `LETTERING_IS_DOCUMENT` | `409` |
+| Groupe `reversal` dont une ligne appartient à une pièce | `LETTERING_LINE_OWNED_BY_DOCUMENT` | `409` |
+| Toutes les lignes en période close | `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` | `409` |
+
+Le délettrage n'exige pas que le compte soit encore lettrable : un groupe dont le compte a été retypé ou rattaché depuis à un compte bancaire se délettre. ⚠️ `LETTERING_CONCURRENT_CHANGE` (`409`) signale qu'un groupe a changé entre la lecture et l'écriture : réessayez. ⚠️ Un interblocage est rejoué par le serveur ; s'il persiste, la réponse est un `500` — réessayez.
+
 ### Dévalider une facture — `POST /api/v1/invoices/{id}/unvalidate`
 
 **Ouverte aux clés API** en écriture, comme la validation (`POST /invoices/{id}/validate`).
@@ -326,7 +372,7 @@ Corps : `{ "version": n }` — le verrou optimiste. Réponse : la facture, même
 
 | Refus | Code | Statut |
 |---|---|---|
-| Facture créditée par un avoir — le règlement est un paiement **à lettrer** | `INVOICE_CREDITED` | `409` |
+| Facture créditée par un avoir — le règlement reste ouvert au compte débiteurs | `INVOICE_CREDITED` | `409` |
 | Un **solde** existe sur la facture — annuler d'abord le solde (le solde lui-même reste annulable) | `INVOICE_WRITTEN_OFF` | `409` |
 | Règlement d'un exercice **clos** — un administrateur doit le rouvrir | `FISCAL_YEAR_CLOSED` | `409` |
 | Règlement rapproché d'une transaction bancaire | `MATCHED_BANK_TRANSACTION` | `409`, `details.documentId` = la transaction |
@@ -408,7 +454,7 @@ Le rapprochement manuel (**`POST /api/v1/reconciliation/manual`**) et ventilé (
 | Refus | Code | Statut |
 |---|---|---|
 | La transaction n'est pas rapprochée | `BANK_TRANSACTION_NOT_RECONCILED` | `409` |
-| Facture créditée par un avoir — son règlement est un paiement **à lettrer** | `INVOICE_CREDITED` | `409` |
+| Facture créditée par un avoir — son règlement reste ouvert au compte débiteurs | `INVOICE_CREDITED` | `409` |
 | Écriture du rapprochement dans un exercice **clos** — l'exercice du **paiement**, jamais celui de la facture | `FISCAL_YEAR_CLOSED` | `409` |
 | Une autre transaction pointe la même écriture | `MATCHED_BANK_TRANSACTION` | `409` |
 | Compte de l'écriture archivé | `ACCOUNT_ARCHIVED` | `400`, `details.rejected[]` nomme les comptes |
@@ -511,9 +557,11 @@ Les erreurs sont renvoyées en JSON avec ce format :
 | `400` | `LATER_FISCAL_YEAR_CLOSED` | `PUT` et `DELETE /journal-entries/{id}` : un exercice **postérieur** à celui de l'écriture est clôturé ; son bilan, cumulatif, reprend l'écriture. `POST /fiscal-years` : un exercice postérieur à la date de début demandée est clôturé — un exercice ne se crée pas avant un exercice clôturé (message propre à la création). `details.fiscalYearId` / `details.fiscalYearName` nomment le plus proche. Depuis la Story 15-12b (#543), aussi **toute création** d'écriture dans un tel exercice — `POST /journal-entries`, contre-passation, validation, règlement et dévalidation d'une facture, factures fournisseur, soldes de départ, rapprochements et leurs annulations — et, dans `failed[]` de `POST /reconciliation/accept`, la proposition concernée (`200`). ⚠️ Angles morts assumés : les champs qui annoncent un geste possible ne le prédisent pas — `cancellable` / `cancelBlockedBy` / `settlementCancelBlockedBy` des annulations ([#568](https://github.com/guycorbaz/kesh/issues/568)) et `canComplete` / `completeReason` de `GET /opening-balances/status` ; le refus vient alors au `POST`. *(Depuis la v0.13.0.)* |
 | `409` | `EARLIER_FISCAL_YEAR_OPEN` | `POST /fiscal-years/{id}/close` : un exercice **antérieur** est encore ouvert — les exercices se clôturent dans l'ordre, le bilan étant cumulatif. `details.fiscalYearId` / `details.fiscalYearName` nomment le **plus ancien** antérieur ouvert, à clôturer d'abord. ⚠️ **Changement de contrat** : une intégration qui clôturait hors d'ordre reçoit désormais ce refus. Un exercice déjà clos rend `409 ILLEGAL_STATE_TRANSITION`, qui parle d'abord. *(Depuis la v0.13.0.)* |
 | `409` | `DETACHED_SUPPLIER_SETTLEMENT` | `PUT` et `DELETE /journal-entries/{id}` : l'écriture est le paiement d'une facture fournisseur annulée — une sortie de banque réelle, qui se corrige par contre-passation. `details.documentId` est l'identifiant de la facture. *(Depuis la v0.13.0.)* |
+| `400` | `LETTERING_TOO_FEW_LINES`, `LETTERING_TOO_MANY_LINES` | `POST /letterings` : moins de deux lignes distinctes, ou plus de 200. *(Depuis la v0.13.0.)* |
+| `409` | `LETTERING_ACCOUNTS_DIFFER`, `LETTERING_ACCOUNT_NOT_LETTERABLE`, `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`, `LETTERING_LINE_OWNED_BY_DOCUMENT`, `LETTERING_LINE_ALREADY_LETTERED`, `LETTERING_UNBALANCED`, `LETTERING_IS_DOCUMENT`, `LETTERING_CONCURRENT_CHANGE` | `POST` et `DELETE /letterings` : refus du lettrage — voir « Lettrer des lignes ». *(Depuis la v0.13.0.)* |
 | `404` | `NOT_FOUND` | Ressource absente ou appartenant à une autre company (anti-énumération). Certaines ressources renvoient un code spécifique (ex. `ACCOUNT_NOT_FOUND`). |
 
-**Interblocages : les écritures au journal sont rejouées.** Toute route qui écrit au journal comptable rejoue d'elle-même un interblocage transitoire avec une autre opération, sans le montrer. Ouvertes aux clés `read-write`, ce sont : `POST /journal-entries`, `PUT` et `DELETE /journal-entries/{id}`, `POST /journal-entries/{id}/reverse`, `POST /opening-balances`, `POST /opening-balances/complete`, `POST /invoices/{id}/validate`, `POST /invoices/{id}/unvalidate`, `POST /invoices/{id}/settlements`, `POST /invoices/{id}/settlements/{settlementId}/cancel`, `POST /invoices/{id}/write-off`, `POST /credit-notes`, `POST /supplier-invoices`, `POST /supplier-invoices/{id}/pay`, `POST /supplier-invoices/{id}/cancel`, `POST /supplier-invoices/{id}/settlement/cancel`, `POST /imported-supplier-invoices/{id}/complete`, `POST /payment-batches/{id}/confirm`, `POST /reconciliation/accept`, `POST /reconciliation/manual`, `POST /reconciliation/split` et `POST /reconciliation/transactions/{id}/cancel` — ainsi que la création et la clôture d'un exercice, `POST /fiscal-years` et `POST /fiscal-years/{id}/close`, qui n'écrivent pas au journal mais forment des interblocages avec la contre-passation (depuis la v0.13.0) (la restauration d'une sauvegarde et l'effacement des données de démonstration, réservés à l'interface d'administration, ne rejouent pas). Si l'interblocage persiste après trois tentatives, la requête finit en `500 INTERNAL_ERROR` ; rien n'a été écrit, et elle peut être renvoyée telle quelle.
+**Interblocages : les écritures au journal sont rejouées.** Toute route qui écrit au journal comptable rejoue d'elle-même un interblocage transitoire avec une autre opération, sans le montrer. Ouvertes aux clés `read-write`, ce sont : `POST /journal-entries`, `PUT` et `DELETE /journal-entries/{id}`, `POST /journal-entries/{id}/reverse`, `POST /opening-balances`, `POST /opening-balances/complete`, `POST /invoices/{id}/validate`, `POST /invoices/{id}/unvalidate`, `POST /invoices/{id}/settlements`, `POST /invoices/{id}/settlements/{settlementId}/cancel`, `POST /invoices/{id}/write-off`, `POST /credit-notes`, `POST /supplier-invoices`, `POST /supplier-invoices/{id}/pay`, `POST /supplier-invoices/{id}/cancel`, `POST /supplier-invoices/{id}/settlement/cancel`, `POST /imported-supplier-invoices/{id}/complete`, `POST /payment-batches/{id}/confirm`, `POST /reconciliation/accept`, `POST /reconciliation/manual`, `POST /reconciliation/split`, `POST /reconciliation/transactions/{id}/cancel`, `POST /letterings` et `DELETE /letterings/{key}` — ainsi que la création et la clôture d'un exercice, `POST /fiscal-years` et `POST /fiscal-years/{id}/close`, qui n'écrivent pas au journal mais forment des interblocages avec la contre-passation (depuis la v0.13.0) (la restauration d'une sauvegarde et l'effacement des données de démonstration, réservés à l'interface d'administration, ne rejouent pas). Si l'interblocage persiste après trois tentatives, la requête finit en `500 INTERNAL_ERROR` ; rien n'a été écrit, et elle peut être renvoyée telle quelle.
 
 Une autre route peut, rarement, rendre `500` sur un conflit transitoire d'accès concurrent ; rien n'est alors écrit et la requête peut être renvoyée.
 

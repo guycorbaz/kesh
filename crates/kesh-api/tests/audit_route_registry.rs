@@ -24,12 +24,12 @@
 //! ⚠️ Comparer des NOMBRES ne détecterait pas une route retirée pendant qu'une
 //! autre est ajoutée : le compte resterait égal et la dérive invisible. Le test
 //! `admin_pat_denied_e2e` peut compter, lui, parce qu'il opère sur un bloc clos
-//! entre marqueurs ; les 112 routes sont réparties dans tout le fichier.
+//! entre marqueurs ; les 114 routes sont réparties dans tout le fichier.
 //!
 //! # Deux fichiers, deux volets
 //!
-//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (112 routes) ; celui du
-//! REGISTRE est plus large (115), car trois routes mutantes vivent dans
+//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (114 routes) ; celui du
+//! REGISTRE est plus large (117), car trois routes mutantes vivent dans
 //! `routes/test_endpoints.rs` et sont montées par un `nest()`. D'où :
 //!
 //! - volet « route absente du registre » → sur les **deux** fichiers, faute de
@@ -238,6 +238,12 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("delete", "journal_entries::delete_journal_entry", Traced, Rejouee),
     ("post", "companies::lock_company_books", Traced, SansEcritureAuJournal),
     ("post", "journal_entries::reverse_journal_entry", Traced, Rejouee),
+    // Story 15-1a-i (#518) : le lettrage manuel. L'audit `lettering.created` /
+    // `lettering.removed` vient de la primitive unique (`letterings::create_group_in_tx`,
+    // `dissolve_group_in_tx`). Rejouées (enveloppe `DbError`) : la séquence de verrous
+    // de la primitive forme des cycles résiduels nommés (R7 de la fiche).
+    ("post", "letterings::create_lettering", Traced, Rejouee),
+    ("delete", "letterings::delete_lettering", Traced, Rejouee),
     ("post", "opening_balances::generate_opening_balances", Traced, Rejouee),
     // Story 25-7 (#445) : l'audit vient de `create_in_tx` (`journal_entry.created`).
     ("post", "opening_balances::complete_opening_balances", Traced, Rejouee),
@@ -621,10 +627,10 @@ fn the_registry_partition_is_what_the_story_declares() {
         .filter(|(_, _, s, _)| matches!(s, NoMatter(_)))
         .count();
 
-    assert_eq!(LIB_ROUTES.len(), 112, "l'inventaire porte sur 112 routes");
+    assert_eq!(LIB_ROUTES.len(), 114, "l'inventaire porte sur 114 routes");
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
     assert_eq!(
-        traced, 105,
+        traced, 107,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -632,7 +638,8 @@ fn the_registry_partition_is_what_the_story_declares() {
          complément des soldes de départ (25-7, #445), plus la modification d'une écriture \
          (15-8a, #532 — le `PUT` gelé par la 24-4b ne mutait rien), plus les neuf routes \
          de configuration de l'installation (15-7a2, #434), plus le peuplement de \
-         démonstration (15-7b1, #434)"
+         démonstration (15-7b1, #434), plus le lettrage et le délettrage manuels \
+         (15-1a-i, #518)"
     );
     assert_eq!(
         exempt, 5,
@@ -644,7 +651,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        115,
+        117,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -818,8 +825,8 @@ fn every_replayed_route_calls_an_envelope() {
         }
     }
     assert_eq!(
-        examinees, 22,
-        "les vingt-deux routes Rejouee ont été examinées"
+        examinees, 24,
+        "les vingt-quatre routes Rejouee ont été examinées"
     );
 }
 
@@ -956,14 +963,15 @@ fn the_replay_partition_is_what_the_story_declares() {
         .count();
 
     assert_eq!(
-        rejouees, 22,
+        rejouees, 24,
         "5 rejouées avant la 15-5e1 (write_off, accept, cancel du rapprochement, \
          complément des soldes de départ, modification d'une écriture — 15-8a) + 4 par \
          elle (validation, règlement, annulation de règlement, saisie fournisseur) + la \
          suppression d'une écriture (15-8b) + 12 par la 15-5e2 (dévalidation, avoir, \
          règlement, annulation et annulation de règlement fournisseurs, lot de \
          paiement, écriture manuelle et contre-passation, bilan d'ouverture, \
-         complétion d'import, rapprochement manuel et ventilé)"
+         complétion d'import, rapprochement manuel et ventilé) + le lettrage et le \
+         délettrage manuels (15-1a-i)"
     );
     assert_eq!(
         exemptees, 4,
@@ -974,7 +982,7 @@ fn the_replay_partition_is_what_the_story_declares() {
         "88 routes de lib.rs, plus /password-reset-token de test_endpoints.rs"
     );
     assert_eq!(rejouees + exemptees + sans_ecriture, tout.len());
-    assert_eq!(tout.len(), 115);
+    assert_eq!(tout.len(), 117);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

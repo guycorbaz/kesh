@@ -523,6 +523,13 @@ pub const EXEMPT_MIGRATIONS: &[(i64, ExemptionBasis, &str)] = &[
          migration (backfill_client_number_canonical, appelée au boot et en fin d'import — D6 \
          Story 22-1), ce qui tient l'esprit de P7 sans entrée au registre.",
     ),
+    (
+        20261009000001,
+        ExemptionBasis::Durable,
+        "UPDATE sur _kesh_version (bump kesh_version_min_required), table système jamais \
+         restaurée. Le reste de la migration est du DDL pur (colonnes de lettrage, Story \
+         15-1a-i) : une sauvegarde antérieure les restaure à NULL, aucun groupe n'existait.",
+    ),
 ];
 
 /// Rejoue les backfills du registre canonique dans la transaction de restore.
