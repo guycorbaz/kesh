@@ -44,6 +44,9 @@ use rust_decimal_macros::dec;
 use serde_json::Value;
 use sqlx::MySqlPool;
 
+#[path = "../../kesh-db/tests/support/document_group.rs"]
+mod document_group;
+
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
 const TEST_ADMIN_PASSWORD: &str = "e2e-test-admin-password";
 
@@ -5786,4 +5789,89 @@ async fn accept_split_bank_ledger_counterparty_precedes_not_postable(pool: MySql
             .await
             .unwrap();
     assert_eq!(je_count, 0, "aucune écriture");
+}
+
+// ============================================================
+// Story 15-1a2-0 (#518) — le lettrage figé par la période
+// ============================================================
+
+/// AC4 par l'API — facture encaissée par un rapprochement, groupe `document`
+/// posé à la main sur la vente et l'encaissement, verrou ENSUITE à la date de
+/// l'encaissement : la vue porte le motif, et le dé-rapprochement rend `409
+/// LETTERING_ALL_LINES_IN_CLOSED_PERIODS` dans SA famille — le texte de
+/// `reconciliation-cancel-blocked-lettering-closed`, non celui du règlement
+/// (un motif codé en dur rendrait l'autre code). Rien n'est écrit, le lien
+/// reste.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn unreconcile_of_a_closed_lettering_is_refused_in_its_family(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    ensure_fiscal_year_today(&pool, ctx.company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let paid_on = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let (inv_id, tx_id) = reconciled_invoice(
+        &pool,
+        &app,
+        &ctx,
+        "INV-2026-001",
+        NaiveDate::from_ymd_opt(2026, 4, 20).unwrap(),
+        paid_on,
+        dec!(1234.56),
+    )
+    .await;
+    let encaissement = matched_entry_of(&pool, tx_id).await.expect("rapprochée");
+    let vente: i64 = sqlx::query_scalar("SELECT journal_entry_id FROM invoices WHERE id = ?")
+        .bind(inv_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let cle = document_group::poser_groupe_document(
+        &pool,
+        ctx.receivable_account_id,
+        &[vente, encaissement],
+    )
+    .await;
+    kesh_db::repositories::companies::lock_books(&pool, ctx.user_id, ctx.company_id, paid_on)
+        .await
+        .expect("verrou");
+
+    let (st, view) = get_reco(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(st, 200, "got {view:?}");
+    assert_eq!(view["cancellable"], false, "got {view:?}");
+    assert_eq!(
+        view["cancelBlockedBy"], "LETTERING_ALL_LINES_IN_CLOSED_PERIODS",
+        "got {view:?}"
+    );
+
+    let ecritures: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let (st, body) = cancel_reco(&app, &ctx.jwt, tx_id).await;
+    assert_eq!(st, 409, "got {body:?}");
+    assert_eq!(
+        body["error"]["code"],
+        "LETTERING_ALL_LINES_IN_CLOSED_PERIODS"
+    );
+    let catalogue = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../kesh-i18n/locales/fr-CH/messages.ftl"
+    ))
+    .expect("catalogue fr-CH");
+    let attendu = catalogue
+        .lines()
+        .find_map(|l| l.strip_prefix("reconciliation-cancel-blocked-lettering-closed = "))
+        .expect("clé au catalogue");
+    assert_eq!(body["error"]["message"], attendu, "le texte de SA famille");
+
+    assert_eq!(
+        matched_entry_of(&pool, tx_id).await,
+        Some(encaissement),
+        "le lien reste"
+    );
+    let apres: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(apres, ecritures, "rien d'écrit");
+    assert_eq!(document_group::lignes_du_groupe(&pool, cle).await, 2);
 }

@@ -4,7 +4,7 @@
  * ⛔ **Pas la famille `settlement-cancel-blocked-*`**, qui dit « ce règlement » :
  * une écriture d'éclatement, de règle ou de rapprochement manuel n'est pas un
  * règlement. Le dialogue traduit toujours le **code** reçu — par la lecture
- * (`GET …/transactions/{id}`) comme par le refus au clic —, pour les sept motifs,
+ * (`GET …/transactions/{id}`) comme par le refus au clic —, pour les huit motifs,
  * `INVOICE_CREDITED` compris.
  *
  * ⚠️ Les replis en dur disent **mot pour mot** le FTL fr-CH — le serveur rend
@@ -20,12 +20,13 @@ const MOTIFS: readonly ReconciliationCancelCode[] = [
 	'INVOICE_CREDITED',
 	'INVOICE_WRITTEN_OFF',
 	'FISCAL_YEAR_CLOSED',
+	'LETTERING_ALL_LINES_IN_CLOSED_PERIODS',
 	'MATCHED_BANK_TRANSACTION',
 	'ACCOUNT_ARCHIVED',
 	'FISCAL_YEAR_INVALID',
 ];
 
-/** Le code est-il l'un des sept motifs du dé-rapprochement ? */
+/** Le code est-il l'un des huit motifs du dé-rapprochement ? */
 export function isReconciliationCancelCode(code: string): code is ReconciliationCancelCode {
 	return (MOTIFS as readonly string[]).includes(code);
 }
@@ -59,6 +60,11 @@ export function reconciliationCancelMessage(
 				'reconciliation-cancel-blocked-fiscal-year-closed',
 				"Ce rapprochement appartient à un exercice clôturé : pour pouvoir l'annuler, un administrateur doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
 			);
+		case 'LETTERING_ALL_LINES_IN_CLOSED_PERIODS':
+			return i18nMsg(
+				'reconciliation-cancel-blocked-lettering-closed',
+				"Ce rapprochement est lettré avec sa facture, et toutes les lignes de ce lettrage sont dans une période close : il est figé. Pour pouvoir l'annuler, prenez la date la plus récente du lettrage (en général celle du dernier règlement) : si elle est sous le verrou de période, un administrateur doit faire reculer le verrou avant elle ; et si son exercice est suivi d'un exercice clôturé, ou clôturé lui-même, il doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
+			);
 		case 'MATCHED_BANK_TRANSACTION':
 			return i18nMsg(
 				'reconciliation-cancel-blocked-bank-match',
@@ -78,7 +84,7 @@ export function reconciliationCancelMessage(
 			);
 		default: {
 			// ⛔ C'est l'affectation à `never` qui fait rougir le type-check si un
-			// septième motif s'ajoute au type sans s'ajouter ici.
+			// neuvième motif s'ajoute au type sans s'ajouter ici.
 			const exhaustive: never = code;
 			return exhaustive;
 		}
@@ -86,7 +92,7 @@ export function reconciliationCancelMessage(
 }
 
 /**
- * Le texte d'un refus **au clic**. Un motif des six → son texte (le 400
+ * Le texte d'un refus **au clic**. Un motif des huit → son texte (le 400
  * `ACCOUNT_ARCHIVED` nomme le compte dans `details.rejected[]`). ⛔ **Tout autre
  * code** — `PERIOD_LOCKED`, `OPTIMISTIC_LOCK_CONFLICT`,
  * `RECONCILIATION_ACCOUNT_LOCKED`, `NOT_FOUND`… — affiche le **message du

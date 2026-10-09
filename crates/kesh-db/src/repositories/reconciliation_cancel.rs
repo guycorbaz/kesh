@@ -260,7 +260,8 @@ pub struct ReconciliationCancellation {
 ///    une clôture validée entre la lecture du rang 2 et la contre-passation
 ///    passerait inaperçue (leçon de la revue de la 25-3-a-1) ;
 /// 4. les motifs, par [`cancel_blocker`] **exempté** pour cette transaction :
-///    le geste refuse lui-même les rangs 0 et 2
+///    le geste refuse lui-même les rangs 0, 2 et 2 bis — le lettrage de pièce
+///    figé par la période, Story 15-1a2-0
 ///    ([`DbError::ReconciliationNotCancellable`]) ; le rang 1 est refusé par
 ///    le geste du règlement, les rangs 3 à 5 par la contre-passation — une
 ///    seule garde par motif ;
@@ -319,12 +320,18 @@ pub async fn cancel_in_tx(
 
     // (4) Les motifs — forme EXEMPTÉE : le lien existe encore, et la forme
     //     non exemptée refuserait chaque dé-rapprochement sur son propre lien.
-    if let Some((SettlementCancelBlocker::FiscalYearClosed, _, _)) =
-        cancel_blocker(tx, company_id, &bt).await?
+    //     Motif LIÉ (`blocker @`), jamais écrit en dur dans l'erreur : le rang
+    //     2 bis (Story 15-1a2-0) est refusé ici, dans SA famille, AVANT que le
+    //     lien soit défait — sans lui, il remonterait de
+    //     `cancel_settlement_in_tx` sous le texte « ce règlement ».
+    if let Some((
+        blocker @ (SettlementCancelBlocker::FiscalYearClosed
+        | SettlementCancelBlocker::DocumentLetteringInClosedPeriods),
+        _,
+        _,
+    )) = cancel_blocker(tx, company_id, &bt).await?
     {
-        return Err(DbError::ReconciliationNotCancellable {
-            blocker: SettlementCancelBlocker::FiscalYearClosed,
-        });
+        return Err(DbError::ReconciliationNotCancellable { blocker });
     }
 
     // (5) Le lien défait, AVANT la contre-passation.

@@ -315,7 +315,8 @@ impl UnvalidationBlocker {
 ///
 /// ⛔ **Une tête propre à chaque pièce, une queue commune.** Le rang 1 est
 /// propre à la pièce — `InvoiceCredited` pour le client,
-/// `SupplierInvoiceNotPaid` pour le fournisseur (Story 25-3-a-2) ; les rangs 2 à 5 s'évaluent sur
+/// `SupplierInvoiceNotPaid` pour le fournisseur (Story 25-3-a-2) ; les rangs 2 à 5, dont le 2 bis
+/// (Story 15-1a2-0), s'évaluent sur
 /// l'**écriture de règlement**, sans rien savoir de la pièce qui la possède
 /// (`settlement_cancellation::settlement_entry_cancel_blocker`), pour que le
 /// règlement fournisseur (25-3-a-2) les réutilise tels quels — une seconde
@@ -327,7 +328,7 @@ impl UnvalidationBlocker {
 /// avant l'exercice du jour (étape 4) : la lecture se règle sur l'écriture.
 ///
 /// ⚠️ **Qui refuse, à l'écriture** : le geste ne refuse lui-même que les rangs
-/// 1 et 2 ([`DbError::SettlementNotCancellable`]) ; les rangs 3 à 5 sont
+/// 1, 1 bis, 2 et 2 bis ([`DbError::SettlementNotCancellable`]) ; les rangs 3 à 5 sont
 /// refusés par le socle, avec son erreur canonique — c'est ce qui garde le 400
 /// qui **nomme** les comptes archivés.
 ///
@@ -338,7 +339,8 @@ impl UnvalidationBlocker {
 /// `SupplierInvoiceCancelled`, la queue sur l'écriture d'ACHAT, puis
 /// `SupplierInvoiceInPaymentBatch` en dernier), et c'est cette fonction qu'un
 /// test fixe. Refusés par son geste ([`DbError::SupplierInvoiceNotCancellable`]) :
-/// les deux têtes et l'exercice clos.
+/// les deux têtes, l'exercice clos et le lettrage figé par la période (rang
+/// 2 bis, Story 15-1a2-0).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SettlementCancelBlocker {
     /// Tête du **dé-rapprochement** (Story 25-3-b, #418), rang 0 : la
@@ -346,9 +348,10 @@ pub enum SettlementCancelBlocker {
     /// rapprochement à annuler. Coupe court : aucun rang suivant ne s'évalue.
     BankTransactionNotReconciled,
     /// La facture a été **créditée** par un avoir après ce règlement. Le
-    /// règlement reste ouvert au compte débiteurs ; il ne se lettre pas à la
-    /// main (R5 de la 15-1a-i), son traitement est la 15-1a2 — et il ne
-    /// s'annule pas. ⚠️ Le statut `cancelled` d'une facture ne naît en
+    /// règlement reste **ouvert** au compte débiteurs : il ne se lettre pas à la
+    /// main (R5 de la 15-1a-i), et la 15-1a2 l'a tranché — une facture créditée
+    /// **et** réglée ne se solde pas (`Σ ≠ 0`), aucun lettrage de pièce ne s'y
+    /// pose (C-15-1a2-7). Et il ne s'annule pas. ⚠️ Le statut `cancelled` d'une facture ne naît en
     /// production que de l'avoir (`credit_notes.rs`).
     ///
     /// ⚠️ **État hérité depuis la Story 25-4-a (#456)** : un avoir est refusé
@@ -378,6 +381,36 @@ pub enum SettlementCancelBlocker {
     /// Administrateur peut le rouvrir (`fiscal_years::reopen`), et c'est le
     /// chemin (arbitrage Q5).
     FiscalYearClosed,
+    /// Rang **2 bis** (Story 15-1a2-0, #518 ; C-15-1a2-12) : une ligne de
+    /// l'écriture examinée appartient à un groupe de lettrage d'origine
+    /// `document` dont **aucune** ligne n'est en période ouverte
+    /// (`letterings::document_group_frozen_by_periods`) — le lettrage de la
+    /// pièce est **figé** avec la période, et l'annulation qui le dissoudrait
+    /// est refusée.
+    ///
+    /// **Place** : après le rang 2 (un exercice clos se nomme par son propre
+    /// motif, de même remède) ; avant le rang 3 (annoncer « annulez d'abord le
+    /// rapprochement » serait vain, le dé-rapprochement étant refusé par ce
+    /// même rang).
+    ///
+    /// **Code réemployé** : `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`, celui de
+    /// [`DbError::LetteringAllLinesInClosedPeriods`] — c'est le même état du
+    /// monde. ⚠️ Le **texte** rendu sous ce code diffère selon la route : celui
+    /// du lettrage manuel (`error-lettering-all-lines-in-closed-periods`), ou
+    /// celui de la famille d'annulation (`*-cancel-blocked-lettering-closed`).
+    ///
+    /// **Remède**, lu sur la **ligne la plus récente du lettrage** (la première
+    /// à se libérer, pas toujours le dernier règlement) : si elle est sous la
+    /// borne, un administrateur fait reculer le verrou **avant** elle
+    /// (`companies::unlock_books`) ; et si son exercice est clôturé ou suivi
+    /// d'un exercice clôturé, il rouvre les exercices clôturés jusqu'au sien, du
+    /// plus récent au plus ancien (`fiscal_years::reopen`). Les deux causes se
+    /// cumulent. Variante **sans champ**, comme le rang 2 : aucune date dans
+    /// `details`.
+    ///
+    /// ⚠️ **Dormant avant la 15-1a2-i** : aucun chemin de production ne pose
+    /// encore de groupe `document`.
+    DocumentLetteringInClosedPeriods,
     /// L'écriture de règlement est rapprochée d'une transaction bancaire : le
     /// dé-rapprochement (Story 25-3-b, `reconciliation_cancel`) défait ce lien
     /// d'abord. Pour le dé-rapprochement lui-même, ce rang ne tient que si une
@@ -400,7 +433,9 @@ impl SettlementCancelBlocker {
     ///
     /// ⚠️ **Tous** ces codes réemploient ceux d'états du monde déjà nommés
     /// (`INVOICE_CREDITED` de [`UnvalidationBlocker`], `FISCAL_YEAR_CLOSED`,
-    /// `MATCHED_BANK_TRANSACTION`, `ACCOUNT_ARCHIVED`, `FISCAL_YEAR_INVALID`) :
+    /// `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` de
+    /// [`DbError::LetteringAllLinesInClosedPeriods`], `MATCHED_BANK_TRANSACTION`,
+    /// `ACCOUNT_ARCHIVED`, `FISCAL_YEAR_INVALID`) :
     /// un même fait ne reçoit pas un second nom.
     pub fn code(self) -> &'static str {
         match self {
@@ -410,6 +445,7 @@ impl SettlementCancelBlocker {
             Self::SupplierInvoiceNotPaid => "SUPPLIER_INVOICE_NOT_PAID",
             Self::SupplierInvoiceCancelled => "SUPPLIER_INVOICE_CANCELLED",
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
+            Self::DocumentLetteringInClosedPeriods => "LETTERING_ALL_LINES_IN_CLOSED_PERIODS",
             Self::MatchedBankTransaction => "MATCHED_BANK_TRANSACTION",
             Self::AccountArchived => "ACCOUNT_ARCHIVED",
             Self::NoOpenFiscalYearToday => "FISCAL_YEAR_INVALID",
@@ -854,7 +890,8 @@ pub enum DbError {
     ///
     /// Conflit d'état → HTTP **409**, avec le code canonique du
     /// [`SettlementCancelBlocker`]. ⚠️ Seuls les rangs que le **geste** refuse
-    /// lui-même passent par ici (facture créditée, exercice clos) ; les autres
+    /// lui-même passent par ici (facture créditée, solde existant, facture non
+    /// payée, exercice clos, lettrage figé par la période) ; les autres
     /// sont refusés par la contre-passation, avec son erreur propre.
     #[error("Règlement non annulable ({})", .blocker.code())]
     SettlementNotCancellable { blocker: SettlementCancelBlocker },
@@ -866,7 +903,8 @@ pub enum DbError {
     /// dont le texte dit « ce règlement » : une écriture d'éclatement, de règle
     /// ou de rapprochement manuel n'est pas un règlement. Seuls les rangs que
     /// le dé-rapprochement refuse **lui-même** passent par ici (rang 0 :
-    /// transaction non rapprochée ; rang 2 : exercice clos) ; le rang 1 est
+    /// transaction non rapprochée ; rang 2 : exercice clos ; rang 2 bis :
+    /// lettrage figé par la période) ; le rang 1 est
     /// refusé par le geste d'annulation du règlement client, les rangs 3 à 5
     /// par la contre-passation.
     #[error("Rapprochement non annulable ({})", .blocker.code())]
@@ -879,7 +917,8 @@ pub enum DbError {
     /// pour la même raison que `ReconciliationNotCancellable` : ses textes
     /// disent « cette facture », non « ce règlement ». Seuls les rangs que le
     /// geste refuse lui-même passent par ici (facture déjà annulée, exercice de
-    /// l'achat clos, lot en cours) ; les autres sont refusés par la
+    /// l'achat clos, lettrage figé par la période, lot en cours) ; les autres
+    /// sont refusés par la
     /// contre-passation, avec son erreur propre.
     #[error("Facture fournisseur non annulable ({})", .blocker.code())]
     SupplierInvoiceNotCancellable { blocker: SettlementCancelBlocker },
@@ -1114,6 +1153,11 @@ pub enum DbError {
     /// Rang 4 bis (mode manuel) : aucune ligne du groupe n'est « en période
     /// ouverte » — exercice clos, exercice postérieur clos, ou date ≤ verrou de
     /// période (R7). Vaut pour le lettrage comme pour le délettrage. → 409.
+    ///
+    /// ⚠️ Son code, `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`, est **réemployé**
+    /// par le rang 2 bis des annulations
+    /// ([`SettlementCancelBlocker::DocumentLetteringInClosedPeriods`], Story
+    /// 15-1a2-0) : le texte rendu sous ce code diffère selon la route.
     #[error("Toutes les lignes du lettrage sont dans une période close")]
     LetteringAllLinesInClosedPeriods,
 
@@ -1139,7 +1183,8 @@ pub enum DbError {
     LetteringUnbalanced { difference: rust_decimal::Decimal },
 
     /// Délettrage manuel d'un groupe d'origine `document` : son lettrage suit
-    /// la pièce (annuler le règlement, pas délettrer — AC5, refus 1). → 409.
+    /// la pièce et ses règlements, il ne se défait pas à la main (AC5, refus 1).
+    /// → 409.
     #[error("Ce lettrage est celui d'une pièce")]
     LetteringIsDocument,
 

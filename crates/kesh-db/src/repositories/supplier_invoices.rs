@@ -951,7 +951,8 @@ pub async fn pay_in_tx(
 ///
 /// ⚠️ **La précédence est composée ICI**, non par l'ordre de déclaration de
 /// [`SettlementCancelBlocker`] : rang 1, la facture est déjà `cancelled` (coupe
-/// court) ; rangs 2 à 5, la **queue commune** évaluée sur l'écriture d'**achat**
+/// court) ; rangs 2 à 5 (dont le 2 bis, le lettrage de pièce figé par la
+/// période — Story 15-1a2-0), la **queue commune** évaluée sur l'écriture d'**achat**
 /// ([`super::settlement_cancellation::settlement_entry_cancel_blocker`], aucun
 /// jumeau) ; rang 6, **en dernier**, un lot de paiement `generated` — le lever
 /// est le geste le plus lourd, et il serait vain avant un exercice clos.
@@ -1058,12 +1059,14 @@ pub async fn cancel_in_tx(
     .map_err(map_db_error)?
     .ok_or_else(|| DbError::Invariant("facture fournisseur sans écriture d'achat".into()))?;
 
-    // (2) Les motifs. Têtes et exercice clos : refusés ici. Les autres :
-    //     laissés au socle, qui les refuse avec son erreur canonique (400 qui
-    //     NOMME les comptes archivés).
+    // (2) Les motifs. Têtes, exercice clos et lettrage figé par la période
+    //     (rang 2 bis, Story 15-1a2-0) : refusés ici. Les autres : laissés au
+    //     socle, qui les refuse avec son erreur canonique (400 qui NOMME les
+    //     comptes archivés).
     if let Some((
         blocker @ (SettlementCancelBlocker::SupplierInvoiceCancelled
         | SettlementCancelBlocker::FiscalYearClosed
+        | SettlementCancelBlocker::DocumentLetteringInClosedPeriods
         | SettlementCancelBlocker::SupplierInvoiceInPaymentBatch),
         _,
         _,
@@ -1264,11 +1267,13 @@ pub async fn cancel_settlement_in_tx(
         .ok_or(DbError::NotFound)?;
     }
 
-    // (2) Les motifs. Rang 1 et « exercice clos » : refusés ici. Les autres :
+    // (2) Les motifs. Rang 1, « exercice clos » et lettrage figé par la
+    //     période (rang 2 bis, Story 15-1a2-0) : refusés ici. Les autres :
     //     laissés au socle, qui les refuse avec son erreur canonique.
     if let Some((
         blocker @ (SettlementCancelBlocker::SupplierInvoiceNotPaid
-        | SettlementCancelBlocker::FiscalYearClosed),
+        | SettlementCancelBlocker::FiscalYearClosed
+        | SettlementCancelBlocker::DocumentLetteringInClosedPeriods),
         _,
         _,
     )) = supplier_settlement_cancel_blocker(tx, company_id, id).await?

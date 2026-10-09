@@ -2,7 +2,9 @@
 
 ## Status
 
-ready-for-dev *(créée le 2026-10-09 à la remédiation de la validation P3 de la 15-1a2-i — finding F-1,
+done *(2026-10-09 : développée, revue de code CLOSE à la P2 ciblée — P1 Sonnet ×3 : 0 au-dessus de LOW, 5 LOW
+distincts appliqués ou reçus ; P2 Haiku ciblée : 0 au-dessus de LOW ; gate complet, Vitest et E2E complet au dernier
+commit de code `4ff48b03`)* — antérieurement ready-for-dev *(créée le 2026-10-09 à la remédiation de la validation P3 de la 15-1a2-i — finding F-1,
 décision de l'orchestrateur, C-15-1a2-19 ; validation P1 remédiée le 2026-10-09 — la **documentation
 publique** du refus portée à la 15-1a2-i (C-15-1a2-24), textes écrits dans les quatre locales et conformes
 aux gardes G8, G8-bis et G9 (C-15-1a2-26), précédence éprouvée contre tous les rangs voisins (C-15-1a2-27) ;
@@ -514,7 +516,7 @@ modification ; G9 compare le repli (AC7 a).
 
 ## Tasks
 
-- [ ] **T0** — Relevés au sol sur la base réelle du développement : re-greper les ancres par le nom
+- [x] **T0** — Relevés au sol sur la base réelle du développement : re-greper les ancres par le nom
       (`settlement_entry_cancel_blocker`, les quatre filtres de D3, les trois tables de textes, `RANGS`,
       `ecriture_attendue`, `tail_motives_through_the_supplier_path`, `invoice_cancel_motives_and_their_precedence`,
       la `TABLE` de G9, `CLES_569` de G8) ; vérifier que les routes des quatre gestes restent `Rejouee`
@@ -523,19 +525,19 @@ modification ; G9 compare le repli (AC7 a).
       qui fonde le rang 6 × 2 bis **inatteignable** (AC2 c — rien à trancher, la raison est écrite) ;
       grepper les gardes Vitest à valeur épinglée (`toBe(<nombre>)` sur un inventaire i18n) et vérifier que la
       liste de l'AC7 (c) est close.
-- [ ] **T1** (D1, AC1) — `OpenPeriodRule`, `open_period_rule`, `line_in_open_period` (`Result`, `Invariant` sur
+- [x] **T1** (D1, AC1) — `OpenPeriodRule`, `open_period_rule`, `line_in_open_period` (`Result`, `Invariant` sur
       un exercice non nommé), `lines_in_open_period`, prédicat par ligne factorisé avec
       `any_line_in_open_period` ; doc-comments (lecture sans verrou, tolérance, borne stricte, exercice inconnu).
-- [ ] **T2** (D2, AC2, AC6) — Variante `DocumentLetteringInClosedPeriods` (doc-comment : place, code
+- [x] **T2** (D2, AC2, AC6) — Variante `DocumentLetteringInClosedPeriods` (doc-comment : place, code
       réemployé, remède sur la ligne la plus récente, texte qui diffère selon la route), son `code()` ;
       `document_group_frozen_by_periods` ; évaluation entre les rangs 2 et 3 de
       `settlement_entry_cancel_blocker` ; **les doc-comments qui énumèrent les rangs ou les motifs** : la liste
       de **sites nommés** de D2 (dont les commentaires des quatre filtres, `kesh-db/src/errors.rs:340` et
       `:401-404`, `kesh-api/src/errors.rs:3257-3258` et `:3316-3318`, `settlement-cancel-blocked.ts:4-6`), le
       grep n'étant qu'un contrôle ; chaque site trié au Dev Agent Record.
-- [ ] **T3** (D3, AC3–AC5) — Les quatre filtres de refus, motifs **liés** (`blocker @`), dé-rapprochement
+- [x] **T3** (D3, AC3–AC5) — Les quatre filtres de refus, motifs **liés** (`blocker @`), dé-rapprochement
       avant le lien défait.
-- [ ] **T4** (D2, AC7) — `kesh-api/src/errors.rs` : un bras dans chacune des trois tables, replis mot pour mot ;
+- [x] **T4** (D2, AC7) — `kesh-api/src/errors.rs` : un bras dans chacune des trois tables, replis mot pour mot ;
       trois clés × quatre locales, **textes de D2** ; G8 (constante sœur `CLES_2_BIS` + trois clés, chaînée ; `CLES_569` inchangée), G9 (`TABLE` + quatre clés) ;
       frontend : `SettlementCancelTailCode` et `settlementCancelTailMessage`, liste et texte de
       `reconciliation-cancel.ts` et son type, cas de `invoice-cancel.ts` ; décomptes de motifs (AC7 d) ; tests
@@ -543,9 +545,9 @@ modification ; G9 compare le repli (AC7 a).
       (clé `supplier-invoices-cancel-blocked-lettering-closed` nommée dans son commentaire), `sitesTotal`
       (+3, recompté), `REPLIS_A_SITE_UNIQUE` (+3, « treize ») ;
       `lint-i18n-ownership` vert.
-- [ ] **T5** (D5, AC9) — Message `LETTERING_IS_DOCUMENT` (quatre `.ftl` + repli Rust, textes de D5) ;
+- [x] **T5** (D5, AC9) — Message `LETTERING_IS_DOCUMENT` (quatre `.ftl` + repli Rust, textes de D5) ;
       doc-comment d'`InvoiceCredited`.
-- [ ] **T6** — Tests (liste ci-dessous) ; propagation de la valeur dans le code (AC8, trois sites sur la base).
+- [x] **T6** — Tests (liste ci-dessous) ; propagation de la valeur dans le code (AC8, trois sites sur la base).
 - **T7** — *déplacée à la 15-1a2-i* (T6 de cette fiche-là, AC18 : `api-external.md`, manuels, CHANGELOG, PDF ;
   C-15-1a2-24). Numéro non réattribué.
 
@@ -642,11 +644,190 @@ P1 : 12 neufs dont un fichier neuf de sept tests, 4 fichiers Vitest modifiés �
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), en autonomie, worktree `kesh-15-1a2-0`, base `f9b6b199`.
+
 ### Completion Notes List
+
+**T0 — relevés au sol (sur `f9b6b199`, re-grepés par le nom).** `settlement_entry_cancel_blocker`
+(`settlement_cancellation.rs`), les quatre filtres de D3, les trois tables de textes
+(`SettlementNotCancellable`, `reconciliation_cancel_blocked_text`, `supplier_invoice_cancel_blocked_text`),
+`RANGS` / `monter` / `ecriture_attendue` (`invoice_settlement.rs`), `tail_motives_through_the_supplier_path`
+et `invoice_cancel_motives_and_their_precedence`, la `TABLE` de G9 et `CLES_569` de G8 : présents, conformes à
+la fiche. Routes des quatre gestes `Rejouee` (`audit_route_registry.rs:270`, `:292`, `:293`, `:313`). Phrase
+du lot `generated` : `supplier_invoices.rs:1227-1229` (« une facture `paid` ne peut pas / être dans un lot
+`generated` »). Gardes Vitest à valeur épinglée (`grep -nE "toBe\([0-9]{2,}\)|const [A-Z_]+ = [0-9]{2,}"
+lib/shared/*.test.ts`) : `CLES_RELEVEES` et `CANDIDATES_ATTENDUES` seules — la liste de l'AC7 (c) est close
+(`sitesTotal` est un champ d'objet, `REPLIS_A_SITE_UNIQUE` une liste). Aucune ancre n'avait bougé.
+
+**T1 — la règle des périodes (D1).** `OpenPeriodRule`, `open_period_rule`, `line_in_open_period`
+(`Result`, `Invariant` sur un exercice non nommé — ou d'une autre société, la lecture filtrant par
+`company_id`), `lines_in_open_period` (aucune ligne → `false`) ; le prédicat **par ligne**
+`line_open_in_period(&FiscalYearState, borne, date)` est le seul texte de la règle, appelé par
+`any_line_in_open_period` (mode `Manual`, inchangé dans son comportement : sa recherche `is_some_and` est
+gardée) et par `OpenPeriodRule`. `books_locked_through` prend désormais une `&mut MySqlConnection` (les deux
+appelants `Manual` passent leur transaction par coercition). Tests R7 de `letterings.rs` verts **sans
+modification**.
+
+**T2 — le rang 2 bis (D2).** Variante `DocumentLetteringInClosedPeriods` entre `FiscalYearClosed` et
+`MatchedBankTransaction`, code réemployé `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` ;
+`letterings::document_group_frozen_by_periods` (clés `document` de l'écriture par ordre croissant, puis
+`lines_in_open_period` sur chaque groupe) ; évaluation entre les rangs 2 et 3 de la file.
+
+*Sites nommés de D2 (la définition) — chacun relu, trié :*
+
+| site (f9b6b199) | verdict |
+|---|---|
+| `settlement_cancellation.rs:28` « Les rangs 2 à 5 » | réécrit « dont le 2 bis » + § du rang 2 bis (tolérance, dormance) |
+| `invoice_settlements_write.rs:838` « Rangs 1-2 : refusés ici » | réécrit « Rangs 1, 1 bis, 2 et 2 bis » |
+| `supplier_invoices.rs:1061` « Têtes et exercice clos » | réécrit (+ lettrage figé) |
+| `supplier_invoices.rs:1267` « Rang 1 et « exercice clos » » | réécrit (+ lettrage figé) |
+| `reconciliation_cancel.rs:322` « (4) Les motifs — forme EXEMPTÉE » | n'énumère rien : gardé, complété (motif lié, avant le lien défait) |
+| `invoice_settlements_write.rs:687-688` « rangs 2 à 5 » | réécrit « dont le 2 bis » |
+| `invoice_settlements_write.rs:772-773` « rangs 1 et 2 » | réécrit « 1, 1 bis, 2 et 2 bis » (le 1 bis manquait déjà) |
+| `reconciliation_cancel.rs:263-265` « rangs 0 et 2 » | réécrit « 0, 2 et 2 bis » |
+| `supplier_invoices.rs:954` « rangs 2 à 5 » | réécrit « dont le 2 bis » |
+| `kesh-db/src/errors.rs:318` « les rangs 2 à 5 » | réécrit « dont le 2 bis » |
+| `kesh-db/src/errors.rs:329-330` « rangs 1 et 2 » | réécrit « 1, 1 bis, 2 et 2 bis » |
+| `kesh-db/src/errors.rs:340` « les deux têtes et l'exercice clos » | réécrit (+ lettrage figé) |
+| `kesh-db/src/errors.rs:401-404` codes réemployés | `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` ajouté |
+| `kesh-db/src/errors.rs:868-870` (`SettlementNotCancellable`) | réécrit (liste complète des rangs du geste) ; et `ReconciliationNotCancellable`, `SupplierInvoiceNotCancellable` de même |
+| `kesh-api/src/errors.rs:3257-3258` « facture créditée, exercice clos » | réécrit (liste complète) |
+| `kesh-api/src/errors.rs:3308` « rang 0 … rang 2 » | réécrit (+ rang 2 bis) |
+| `kesh-api/src/errors.rs:3316-3318` | réécrit (+ lettrage figé) |
+| `settlement-cancel-blocked.ts:4-6` « Ces quatre motifs » | « cinq », parenthèse nomme le lettrage figé |
+
+*Sorties du grep de contrôle non nommées* (`git grep -niE "rangs? [0-9]+…"` sur `crates/kesh-db/src`,
+`crates/kesh-api/src`, `frontend/src`) — triées **sans objet** : `kesh-api/src/errors.rs:2968` (rang 2 d'une
+autre file, le lettrage manuel) ; `routes/reconciliation.rs:4189`, `:4191` et `reconciliation.types.ts:153`,
+`:155` (rangs 3 et 4 nommés par leur champ, sans borne de queue) ; `kesh-db/src/errors.rs:346`, `:364`,
+`:1130-1181` (rangs propres d'une tête ou du lettrage manuel) ; `invoice_settlements_write.rs:704-706`, `:732`,
+`:743`, `:814`, `:823`, `:876` ; `reconciliation_cancel.rs:8`, `:131-135`, `:245-260`, `:274` ;
+`settlement_cancellation.rs:24-25`, `:45`, `:55`, `:71-78` ; `supplier_invoices.rs:465`, `:957`, `:1170`,
+`:1194`, `:1254` ; `letterings.rs` (rangs 3 à 6 de `reversal_blockers`) ; `reconciliation_rules.rs:181` —
+chacun parle d'un rang existant sans borner la queue, ou d'une autre file.
+
+**T3 — les quatre filtres (D3)**, motifs liés (`blocker @`) ; le dé-rapprochement ne code plus
+`FiscalYearClosed` en dur et refuse **avant** de défaire le lien (étape 4).
+
+**T4 — textes et écran.** Les douze textes de D2 **tels quels** dans les quatre `.ftl`, trois replis Rust (un
+par table), mot pour mot le fr-CH ; G8 : constante sœur `CLES_2_BIS: [&str; 3]`, chaînée, `CLES_569` inchangée ;
+G9 : quatre clés à la `TABLE`, un site chacune. Frontend : `SettlementCancelTailCode`, `MOTIFS` et type du
+dé-rapprochement, `SupplierInvoiceCancelCode` + leurs `case` (repli = fr-CH). Décomptes en dur (AC7 d) :
+« sept » → « huit » (`reconciliation.types.ts`, `reconciliation-cancel.ts` ×2, `reconciliation-cancel.test.ts`),
+« septième » → « neuvième », « des six » → « des huit », « Ces quatre » → « Ces cinq » ;
+`blocker-messages.ts:9` inchangé ; les autres sorties du grep (`admin-backup.api.ts:13`,
+`duplicate-probe.test.ts:240`, `i18n-harvest.test.ts:160`, `i18n-keys.test.ts:259`, `:266`, `:470`,
+`i18n-literal-reader.test.ts:71`) sont historiques ou sans rapport. Gardes recomptées (AC7 c) :
+`CLES_RELEVEES` **213 → 214** (clé nommée au commentaire), `sitesTotal` **1920 → 1923** — recompté par
+`grep -o "i18nMsg("` aux deux bornes : `settlement-cancel-blocked.ts` 4 → 5, `reconciliation-cancel.ts` 7 → 8,
+`invoice-cancel.ts` 6 → 7 —, `REPLIS_A_SITE_UNIQUE` +3 (« treize »). `CANDIDATES_ATTENDUES = 47` inchangée.
+`lint-i18n-ownership` vert, `npm run check` 0 erreur.
+
+**T5 — `LETTERING_IS_DOCUMENT`** neutre dans les quatre `.ftl` et le repli Rust (textes de D5) ; G9 le
+compare. `git grep -nE "annulez le règlement plutôt|Stornieren Sie die Zahlung, statt|annullate il pagamento
+invece|cancel the settlement rather than" -- crates frontend/src` : **aucune sortie**. Doc-comment
+d'`InvoiceCredited` réécrit (C-15-1a2-7) ; celui de `DbError::LetteringIsDocument` aussi, qui disait encore
+« annuler le règlement, pas délettrer ».
+
+**T6 — propagation de la valeur (AC8).** `git grep -nF "LETTERING_ALL_LINES_IN_CLOSED_PERIODS" --
+crates/kesh-api/src crates/kesh-db/src frontend/src` : les **trois** sites d'origine (`kesh-db/src/errors.rs`
+`code()` de `DbError::LetteringAllLinesInClosedPeriods` ; `kesh-api/src/errors.rs:3007`, réponse du lettrage
+manuel ; `:4270`, son test) ; sites **neufs** : `kesh-db/src/errors.rs` — `SettlementCancelBlocker::code()`,
+doc de la variante, doc de `code()`, doc de `DbError::LetteringAllLinesInClosedPeriods` (« texte différent
+selon la route ») — ; `kesh-api/src/errors.rs` — le test `closed_lettering_texts_follow_their_family` — ;
+frontend — `settlement-cancel-blocked.ts`, `reconciliation-cancel.ts`, `reconciliation.types.ts`,
+`invoice-cancel.ts` et leurs tests. Chacun est le code du rang 2 bis ou celui du lettrage manuel : aucun résidu.
+
+**Choix consignés** : **C-15-1a2-0-1** (l'aide de montage `tests/support/document_group.rs`, incluse par
+`#[path]` dans six binaires — aucun binaire neuf) ; **C-15-1a2-0-2** (`monter` solde par un **second
+règlement du reste**, 60.00 à `D − 10`, le règlement examiné restant celui de 40.00).
+
+**Tests** (périmètre : `f9b6b199` → commit de développement) — **12 fonctions Rust neuves** (`letterings.rs` 2,
+`invoice_settlement.rs` 4, `invoice_write_off.rs` 1, `supplier_invoices_repository.rs` 1, `kesh-api/src/errors.rs`
+1, trois e2e `kesh-api` 1 chacun), recomptées par `git diff f9b6b199 -- crates | grep -cE '^\+\s*#\[(sqlx::test|tokio::test|test)'`
+= 12 ; **5 tests Rust modifiés** et **4 aides** comme prévu ; **Vitest : 1 fichier neuf** (`invoice-cancel.test.ts`,
+1 cas) et **2 cas neufs** dans des fichiers modifiés (`settlement-cancel-blocked.test.ts` : texte propre du 2 bis ;
+`reconciliation-cancel.test.ts` : le motif reconnu et traduit dans sa famille) — au-delà des 13 prévus ; **7
+fichiers Vitest modifiés**. **Mutations** (exécutées, restaurées, fichier touché) : retirer le 2 bis du filtre du
+dé-rapprochement → `unreconcile_refuses_in_its_family_before_unlinking` rouge ; borne `>=` → AC1 et
+`lettering_at_the_lock_boundary` rouges ; neutraliser l'évaluation du 2 bis dans la file → **12** tests rouges
+(neuf des douze tests neufs — tous sauf les deux d'AC1 et celui des textes, qui ne passent pas par la file — , la matrice `RANGS` et les deux bancs fournisseurs : 9 + 1 + 2).
+
+**Contrôle « aucune documentation publique »** : `git diff --stat f9b6b199 -- docs CHANGELOG.md` → vide.
+
+**Gates au commit de développement** : gate ciblé (`fmt --check` vert, `clippy --workspace --all-targets -D
+warnings` vert, nextest des binaires touchés : `invoice_settlement` 27/27, `letterings` 33/33,
+`invoice_write_off` 23/23, `supplier_invoices_repository` 52/52, `kesh-i18n` 38/38, kesh-api ciblé 144/144 ;
+Vitest ciblé 42 fichiers / 411 tests) — **gate complet au dernier commit de code**.
 
 ### File List
 
+- `crates/kesh-db/src/repositories/letterings.rs` — D1 (`OpenPeriodRule`, prédicat partagé), `document_group_frozen_by_periods`
+- `crates/kesh-db/src/repositories/settlement_cancellation.rs` — rang 2 bis
+- `crates/kesh-db/src/errors.rs` — variante, `code()`, doc-comments
+- `crates/kesh-db/src/repositories/invoice_settlements_write.rs`, `reconciliation_cancel.rs`, `supplier_invoices.rs` — filtres D3, doc-comments
+- `crates/kesh-api/src/errors.rs` — trois bras, repli `LETTERING_IS_DOCUMENT`, test
+- `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl` — trois clés, message neutre
+- `crates/kesh-i18n/src/loader.rs` — `CLES_2_BIS`
+- `crates/kesh-api/tests/textes_coherents.rs` — `TABLE` de G9
+- `crates/kesh-db/tests/support/document_group.rs` — **neuf** (aide de montage, C-15-1a2-0-1)
+- `crates/kesh-db/tests/{letterings,invoice_settlement,invoice_write_off,supplier_invoices_repository}.rs`
+- `crates/kesh-api/tests/{invoice_echeancier_e2e,reconciliation_e2e,supplier_settlement_cancel_e2e}.rs`
+- `frontend/src/lib/shared/utils/settlement-cancel-blocked.ts` (+ `.test.ts`)
+- `frontend/src/lib/features/reconciliation/reconciliation-cancel.ts`, `reconciliation.types.ts` (+ `reconciliation-cancel.test.ts`)
+- `frontend/src/lib/features/supplier-invoices/invoice-cancel.ts`, `invoice-cancel.test.ts` (**neuf**), `settlement-cancel.test.ts`
+- `frontend/src/lib/features/invoices/InvoiceSettlements.test.ts`
+- `frontend/src/lib/shared/{i18n-keys,i18n-repli-divergent-actif,i18n-un-repli-par-cle}.test.ts`
+- `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md`, `sprint-status.yaml`
+
 ## Change Log
+
+### Clôture — 2026-10-09 (Opus 5.5) — **REVUE CLOSE, story `done`**
+
+**Trend** : P1 (Sonnet 5.5 ×3, B/E/A, complète) **0 C / 0 H / 0 M / 5 L distincts** → P2 (Haiku 4.5, **ciblée** sur le
+commit de remédiation `9b51bab1..4ff48b03`, prompt `15-1a2-0-review-prompt-p2-ciblee.md`, rapport
+`kesh-gate-logs/15-1a2-0-review-p2-B.md`) **0 au-dessus de LOW, 1 LOW** (`15-1a-i-marque-du-lettrage.md:1004` cite
+l'ancien message : fiche historique d'une story close, **laissée**). Affirmations de la P2 vérifiées par
+`grep -rn "find_later_closed(" crates` (quatre appelants de production, conforme). Remédiation P2 : aucune ligne de
+code — la boucle se clôt. Signal D5 : sans objet (aucun MEDIUM aux deux passes). Modèles : Opus 5.5 (développement,
+remédiation, orchestration), Sonnet 5.5 (P1), Haiku 4.5 (P2 ciblée).
+
+**Gates au dernier commit de code `4ff48b03`** (exécutés, base `kesh_1a20` remise à zéro avant, sans redémarrer
+MariaDB) : `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) **3230 passés, 4 ignorés** ; frontend
+inchangé depuis `9b51bab1` (`git diff --stat 9b51bab1 4ff48b03 -- frontend` vide) — `npm run check` 0 erreur,
+`lint-i18n-ownership` vert, `test:unit` **116 fichiers / 1167 tests**, `build` vert, exécutés sur ce même arbre
+frontend ; **E2E complet** (port 3021, base `kesh_e2e_1a20` neuve, montage de `docs/testing.md`) : **241 passés, 13
+échoués, 19 ignorés**, jugés fichier par fichier — **8 attendus** (KF-029 ×7 : `mode-expert:26`, `:41`,
+`onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150` ; `sidebar-navigation:75`, KF-046) et **5 hors liste**
+(`email-templates:153`, `fiscal-years:361`, `homepage-dashboard:94`, `invoices:220`, `onboarding:33`), tous en
+`page.fill('#username')` en timeout — signature de KF-053 (#478) — et **tous verts rejoués seuls** (5/5) ; aucun ne
+touche le code de la story (rang dormant, aucun écran neuf).
+
+### Revue de code P1 — 2026-10-09 (Sonnet 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
+
+**Prompt** : `15-1a2-0-review-prompt-p1.md`. **Rapports** : `kesh-gate-logs/15-1a2-0-review-p1-{B,E,A}.md` — B **0 C / 0 H /
+0 M / 2 L**, E **0 / 0 / 0 / 3 L**, A **0 / 0 / 0 / 3 L** ; recoupements E-1 = A-2, E-2 ≈ A-3, E-3 = A-1 → **5 LOW
+distincts**, **0 au-dessus de LOW**. Chaque finding relu au code (`grep -nF` / `sed -n`) ; axes non exercés des
+trois lentilles : toute exécution — reprise par l'orchestrateur (gate complet au commit de développement : 3230
+passés, 4 ignorés ; Vitest 116 fichiers / 1167 tests ; trois mutations, au Dev Agent Record).
+
+| finding | sév. | verdict |
+|---|---|---|
+| B-1 — doc de `find_later_closed` : « Deux appelants » (quatre, dont `open_period_rule`) | LOW | **corrigé** (`fiscal_years.rs`) |
+| B-2 — texte `reconciliation-cancel-blocked-lettering-closed` (« lettré avec sa facture ») pour un lien `Entry` hérité | LOW | **reçu pour la 15-1a2-i** : l'exception nommée de D3 pointe l'écriture de **vente** d'une facture, « sa facture » y reste vrai ; dormant |
+| E-1 = A-2 — groupe dissous entre les deux lectures → `lignes = []` → « figé » à tort | LOW | **corrigé** : `continue` sur un groupe vide ; branche non montable en isolation, **dite** au commentaire |
+| E-2 ≈ A-3 — aucun groupe à cheval sur deux exercices | LOW | **corrigé** au niveau de la règle (assertion dans `open_period_rule_reads_the_bound_strictly`) ; « ligne la plus récente ≠ dernier règlement » : énoncé du remède, aucun chemin de code distinct |
+| E-3 = A-1 — `15-1c-i-ecran-postes-ouverts.md:181` cite l'ancien message | LOW | **corrigé** (texte neutre, renvoi à D5) ; `15-1a-i` et registre : historiques |
+
+Signal D5 sans objet (aucun MEDIUM). La remédiation touche du code de production (`letterings.rs`, une branche) :
+passe **P2 ciblée** (Haiku) sur le commit de remédiation.
+
+### Développement — 2026-10-09 (Opus 5.5, `bmad-dev-story`, en autonomie)
+
+T0–T6 livrées (T7 déplacée à la 15-1a2-i). Rang 2 bis dans la file commune et les quatre gestes, règle des
+périodes publique, douze textes et message neutre, écran, gardes recomptées ; dormant (aucun chemin de
+production ne pose de groupe `document`). Choix **C-15-1a2-0-1**, **C-15-1a2-0-2**. Détail et décomptes au Dev
+Agent Record. Prochaine étape : `bmad-code-review` P1.
 
 ### Validation P2 — 2026-10-09 (Opus 5.5 ×2, lentilles R et F ; remédiation Sonnet 5.5, en autonomie) — **VALIDATION CLOSE**
 

@@ -25,6 +25,9 @@ use rust_decimal_macros::dec;
 use serde_json::{Value, json};
 use sqlx::MySqlPool;
 
+#[path = "../../kesh-db/tests/support/document_group.rs"]
+mod document_group;
+
 const TEST_JWT_SECRET: &[u8] = b"test-secret-32-bytes-minimum-test-secret-padding";
 const TEST_ADMIN_PASSWORD: &str = "admin123";
 
@@ -675,4 +678,110 @@ async fn confirm_batch_after_a_relink_to_the_payable_is_a_contextual_400(pool: M
         .unwrap();
     assert_eq!(status, "generated");
     assert_eq!(status_of(&pool, id).await, "open");
+}
+
+// --- Story 15-1a2-0 (#518) — le lettrage figé par la période -------------------
+
+/// AC5 par l'API — achat et paiement par les gestes, groupe `document` posé à
+/// la main sur les deux lignes créanciers, verrou ENSUITE à la date du
+/// paiement : les deux prédicteurs (`settlementCancelBlockedBy`,
+/// `cancelBlockedBy`) le disent, puis chaque annulation rend 409
+/// `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` avec le texte de SA famille —
+/// `settlement-cancel-blocked-lettering-closed` (clé partagée de la queue) pour
+/// le paiement, `supplier-invoices-cancel-blocked-lettering-closed` pour la
+/// facture. La facture reste `paid`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn cancel_blocked_by_closed_lettering(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let id = open_invoice(&pool, &seeded).await;
+    let paid_on = NaiveDate::from_ymd_opt(2026, 6, 20).unwrap();
+    let paid = supplier_invoices::pay(
+        &pool,
+        seeded.company_id,
+        id,
+        SettlementChoice::InternalAccount {
+            account_id: seeded.accounts["1000"],
+        },
+        paid_on,
+        seeded.admin_user_id,
+    )
+    .await
+    .unwrap();
+    let cle = document_group::poser_groupe_document(
+        &pool,
+        seeded.accounts["2000"],
+        &[
+            paid.invoice.purchase_journal_entry_id,
+            paid.invoice
+                .settlement_journal_entry_id
+                .expect("écriture de paiement"),
+        ],
+    )
+    .await;
+    kesh_db::repositories::companies::lock_books(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        paid_on,
+    )
+    .await
+    .expect("verrou");
+
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app, "admin", TEST_ADMIN_PASSWORD).await;
+    let v: Value = get(&app, &token, &format!("/api/v1/supplier-invoices/{id}"))
+        .await
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(v["settlementCancellable"], false, "got {v:?}");
+    assert_eq!(
+        v["settlementCancelBlockedBy"],
+        "LETTERING_ALL_LINES_IN_CLOSED_PERIODS"
+    );
+    assert_eq!(v["cancellable"], false, "got {v:?}");
+    assert_eq!(
+        v["cancelBlockedBy"],
+        "LETTERING_ALL_LINES_IN_CLOSED_PERIODS"
+    );
+
+    let catalogue = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/../kesh-i18n/locales/fr-CH/messages.ftl"
+    ))
+    .expect("catalogue fr-CH");
+    let texte = |cle: &str| {
+        catalogue
+            .lines()
+            .find_map(|l| l.strip_prefix(&format!("{cle} = ")))
+            .unwrap_or_else(|| panic!("clé {cle} absente"))
+            .to_string()
+    };
+    for (chemin, cle_texte) in [
+        (
+            format!("/api/v1/supplier-invoices/{id}/settlement/cancel"),
+            "settlement-cancel-blocked-lettering-closed",
+        ),
+        (
+            format!("/api/v1/supplier-invoices/{id}/cancel"),
+            "supplier-invoices-cancel-blocked-lettering-closed",
+        ),
+    ] {
+        let resp = post(&app, &token, &chemin, json!({})).await;
+        assert_eq!(resp.status(), 409, "{chemin}");
+        let body: Value = resp.json().await.unwrap();
+        assert_eq!(
+            body["error"]["code"], "LETTERING_ALL_LINES_IN_CLOSED_PERIODS",
+            "{chemin} : {body:?}"
+        );
+        assert_eq!(body["error"]["message"], texte(cle_texte), "{chemin}");
+    }
+
+    let status: String = sqlx::query_scalar("SELECT status FROM supplier_invoices WHERE id = ?")
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "paid", "la facture reste payée");
+    assert_eq!(document_group::lignes_du_groupe(&pool, cle).await, 2);
 }

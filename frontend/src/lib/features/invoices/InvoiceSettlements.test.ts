@@ -77,6 +77,9 @@ describe('InvoiceSettlements', () => {
 		const cas: [InvoiceSettlementResponse['cancelBlockedBy'], string][] = [
 			['INVOICE_CREDITED', 'reste ouvert au compte débiteurs'],
 			['FISCAL_YEAR_CLOSED', "en commençant par le plus récent"],
+			// Story 15-1a2-0 — extrait PROPRE au texte neuf (celui de l'exercice
+			// clos porte déjà « en commençant par le plus récent »).
+			['LETTERING_ALL_LINES_IN_CLOSED_PERIODS', 'toutes les lignes de ce lettrage'],
 			['MATCHED_BANK_TRANSACTION', 'annulez d\'abord le rapprochement'],
 			['ACCOUNT_ARCHIVED', '(1000)'],
 			['FISCAL_YEAR_INVALID', 'Aucun exercice ouvert'],

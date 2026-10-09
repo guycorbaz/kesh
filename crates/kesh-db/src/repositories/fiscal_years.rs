@@ -874,7 +874,7 @@ const FIND_LATER_CLOSED_SQL: &str = "SELECT id, company_id, name, start_date, en
      WHERE company_id = ? AND start_date > ? AND status = 'Closed' \
      ORDER BY start_date ASC LIMIT 1";
 
-/// Variante **non verrouillante** de [`find_later_closed_in_tx`]. Deux
+/// Variante **non verrouillante** de [`find_later_closed_in_tx`]. Quatre
 /// appelants :
 ///
 /// - le motif d'écran de `GET /journal-entries/{id}` (Story 15-8a, D8) — « un
@@ -886,7 +886,10 @@ const FIND_LATER_CLOSED_SQL: &str = "SELECT id, company_id, name, start_date, en
 ///   Sans verrou **par choix** (C89, C100) : la preuve est au doc-comment du
 ///   module — un verrou n'y ajouterait aucune garantie, et poserait des verrous
 ///   d'intervalle sur `fiscal_years` dans les dix-neuf routes qui créent une
-///   écriture.
+///   écriture ;
+/// - la **règle des périodes du lettrage** : le mode `Manual` des primitives
+///   (`letterings::lock_fiscal_years_of_group`, étape (c), Story 15-1a-i) et
+///   [`super::letterings::open_period_rule`] (Story 15-1a2-0), sans verrou.
 pub async fn find_later_closed(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,

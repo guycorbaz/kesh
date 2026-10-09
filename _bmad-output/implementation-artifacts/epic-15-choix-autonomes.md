@@ -7289,3 +7289,15 @@ l'import (#458–#461).
 - **Retenu** : sa propre constante SQL et son propre `struct` de ligne (`journal`, `description`), une requête propre pour le numéro et le nom du compte, une transaction de lecture ouverte par elle (`begin`, lectures, `rollback`) comme `open_items` ; `LineRow`, la requête verrouillante, `find_group`, `letterable_account` et `group_account_number` inchangés.
 - **Écartées** : étendre `LineRow` (casse la requête verrouillante qui l'alimente) ; changer la signature de `letterable_account` (fonction publique partagée) ; lectures en autocommit (prévision incohérente en elle-même).
 - **Réversible** : oui avant développement.
+
+## C-15-1a2-0-1 — 15-1a2-0 (développement) : l'aide de montage du groupe `document` dans `tests/support/document_group.rs`
+- **Contexte** : six binaires de test (trois de `kesh-db`, trois de `kesh-api`) posent un groupe `document` à la main (D4 point 2, avec son assertion de montage). La fiche annonçait « aucun fichier de test neuf côté Rust » au sens des **binaires** ; recopier l'aide six fois violerait DRY.
+- **Retenu** : `crates/kesh-db/tests/support/document_group.rs` (`poser_groupe_document`, `lignes_du_groupe`), inclus par `#[path]` — patron de `support/installations_atteintes.rs`, inclus lui aussi depuis `kesh-api/tests` — ; `#![allow(dead_code)]`, pas une cible cargo. Hors de `crates/*/src` : les détecteurs lexicaux du lettrage n'y voient pas l'`UPDATE` brut, et c'est juste (C-15-1a2-28).
+- **Écartées** : la recopie par binaire (six copies d'une assertion de montage, qui divergeraient) ; `kesh_db::test_fixtures` (code de production pour les détecteurs, C-15-1a2-28).
+- **Réversible** : oui — la 15-1a2-i pourra fondre l'aide dans sa fixture `support/lettering_documents.rs`.
+
+## C-15-1a2-0-2 — 15-1a2-0 (développement) : `monter` (matrice `RANGS`) solde la facture par un second règlement du reste
+- **Contexte** : AC2 (c) laisse le choix entre « règlement du montant entier » et « second règlement du reste » pour que le groupe du 2 bis soit à somme nulle ; le règlement examiné par la matrice est le premier (40.00).
+- **Retenu** : un **second règlement de 60.00**, même date `D − 10` ; le règlement examiné reste celui de 40.00, inchangé pour les autres rangs ; groupe sur les trois lignes de créance (vente, deux règlements) ; verrou par `lock_books` à `D − 10`.
+- **Écartées** : régler 100.00 d'emblée quand le 2 bis est demandé (le montage des autres rangs changerait de montant selon la combinaison).
+- **Réversible** : oui.
