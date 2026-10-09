@@ -7556,3 +7556,36 @@ l'import (#458–#461).
   Écrit plutôt qu'inventé : un cas de recette distinguant « sonde ratée, serveur joignable » exigerait de faire
   échouer la seule requête `SCHEMATA`.
 - **Réversible** : oui.
+
+## C-15-14-81 — 15-14b (revue de code P5) : Kesh « actif » = tout état autre que exited, created, dead
+
+- **Contexte** : P5 (Sonnet ×3) — 0 HIGH, 3 MEDIUM distincts, convergents, nés de la P4. B5-1 = E-1 = A5-2 :
+  `--filter status=running` ratait un `kesh-api` en boucle de redémarrage (`restarting`, justement quand la base est
+  perdue et que `restart: unless-stopped` relance) ou en pause.
+- **Retenu** : `docker ps --all --filter label=com.docker.compose.service=kesh-api --format '{{.State}}'`, refus sur
+  tout état hors `exited|created|dead` (liste fermée) ; recette : conteneur factice `restarting` (commande qui sort en
+  erreur, `restart: always`, trois lectures stables avant le test — l'état alterne avec `running`) et `paused`.
+- **Réversible** : oui.
+
+## C-15-14-82 — 15-14b (revue de code P5, E-2 = A5-3) : sonde à trois états — absente, vide, avec tables
+
+- **Retenu** (décision de l'orchestrateur) : la sonde compte la base **et ses tables** ; base absente ou présente
+  **vide** (serveur neuf préparé par l'*Initialisation manuelle*, interruption juste après `CREATE DATABASE`) : rien à
+  protéger, pas de dump de sécurité, message explicite ; base avec tables : dump de sécurité obligatoire. Validation
+  stricte des deux nombres. Recette : base vide → rechargée ; manuel aligné (étapes, Initialisation manuelle).
+- **Réversible** : oui.
+
+## C-15-14-83 — 15-14b (revue de code P5) : LOW appliqués et déjà tranchés
+
+- **Appliqués** : B5-2 = E-3 = A5-1 (CHANGELOG réécrit selon le livré ; grep du dépôt : aucune autre trace d'avant la
+  P4) ; A5-4 = B5-4 = E-5 (« ne touche à la base qu'à l'étape 6, n'écrit aucun dump avant l'étape 5, seulement son
+  verrou ») ; A5-5 (`DROP DATABASE <base>`, à remplacer par `SAUVEGARDE_BASE`) ; B5-3 (verrou pris **avant** de lire le
+  dump) ; B5-5 (5-bis : cause réelle, valable pour root — vue invalide, base illisible — au lieu d'un `chmod`
+  inopérant pour root ; « dossier non inscriptible » retiré des causes du manuel) ; B5-6 (G16 exige la `trap` qui
+  libère le verrou) ; B5-7 (doc-comment du module) ; E-4 (« revenir » : le plus ancien horodatage, `ls` donné) ; E-6
+  (échec du rechargement : le script affiche les deux gestes et le dossier de sécurité) ; E-7, E-12 (angles morts
+  écrits) ; E-8 (`.gitignore`/`.dockerignore` : `/dump/`, `/avant-restauration/`, `kesh-*.cnf`) ; E-11 (l'oracle voit
+  le schéma ; verrou d'une autre restauration et interruption par `SIGTERM` joués) ; A5-6 (signal joué).
+- **Déjà tranchés, rien à faire** : B5-8 = E-9 (« multi-tenant » du site : C-15-14-76, décrit le modèle ; à Guy s'il
+  veut le marketing autrement) ; E-10 (« toutes les sociétés » à l'écran : C-15-14-70, G18-ter).
+- **Réversible** : oui.
