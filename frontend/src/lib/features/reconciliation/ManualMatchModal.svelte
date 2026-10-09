@@ -10,7 +10,9 @@
 
   Pré-filtrage client-side classes 5/6/7 (Pass 5 patch + Pass 4 Sonnet
   pattern — pas de wrapper dédié, on filtre en amont) avant passage à
-  `AccountAutocomplete`.
+  `AccountAutocomplete`. Story 15-6d (#524) : le compte comptable du compte
+  bancaire (`bankLedgerAccountId`, résolu par le parent) en est écarté ; le
+  serveur refuse de toute façon une telle contrepartie.
 
   Gestion erreur 412 BANK_ACCOUNT_NOT_CONFIGURED : affiche un message
   + lien vers `/bank-accounts` pour configurer le journal_account_id
@@ -37,10 +39,24 @@
 		/** Pré-chargé par le parent (pas de fetch dans la modal pour
 		 *  éviter une double-requête à chaque ouverture). */
 		accounts: AccountResponse[];
+		/**
+		 * Story 15-6d (AC4, #524) — compte comptable du compte bancaire, écarté des
+		 * contreparties proposées (l'écriture `D banque / C banque` serait nulle). `null`
+		 * (défaut) : aucun filtrage — la garde serveur refuse en 400 `VALIDATION_ERROR`.
+		 */
+		bankLedgerAccountId?: number | null;
 		onSuccess: () => void;
 	};
 
-	let { open, onOpenChange, bankAccountId, proposal, accounts, onSuccess }: Props = $props();
+	let {
+		open,
+		onOpenChange,
+		bankAccountId,
+		proposal,
+		accounts,
+		bankLedgerAccountId = null,
+		onSuccess,
+	}: Props = $props();
 
 	const MAX_DESCRIPTION_LEN = 200;
 
@@ -61,10 +77,15 @@
 	});
 
 	// Pré-filtrage client-side classes 5/6/7 (Pass 5 patch — pattern
-	// compatible AccountAutocomplete sans wrapper).
+	// compatible AccountAutocomplete sans wrapper). Story 15-6d (AC4) : le compte
+	// de la banque est écarté par son identifiant — un plan atypique peut le
+	// numéroter en classe 5 à 7. Filtre local d'une condition, sans emprunt à
+	// `account-options.ts`.
 	const filteredAccounts = $derived(
-		accounts.filter((a) =>
-			['5', '6', '7'].some((c) => a.number.startsWith(c)),
+		accounts.filter(
+			(a) =>
+				['5', '6', '7'].some((c) => a.number.startsWith(c)) &&
+				a.id !== bankLedgerAccountId,
 		),
 	);
 

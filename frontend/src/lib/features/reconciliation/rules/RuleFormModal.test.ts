@@ -138,3 +138,36 @@ describe('RuleFormModal — refus du serveur lisible (Story 15-5b, AC14)', () =>
 		expect(error.textContent).not.toContain('[object Object]');
 	});
 });
+
+// Story 15-6d (AC5, test 12, #524) — fige l'exclusion du compte de la banque EN CRÉATION :
+// le sélecteur ne propose que charges et produits, si bien qu'un compte d'actif (le compte
+// comptable d'un compte bancaire) n'y figure pas. En édition, `withCurrentAccount` (#271)
+// réintroduit le compte en place — voulu, la garde serveur refuse l'acceptation.
+describe('RuleFormModal — compte de la banque absent en création (Story 15-6d)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+	});
+
+	it("ne propose pas un compte d'actif en création", async () => {
+		const bank = {
+			id: 20,
+			companyId: 1,
+			number: '1020',
+			name: 'Banque',
+			accountType: 'Asset',
+			active: true,
+			role: null,
+			postable: true,
+		} as AccountResponse;
+		const { findByTestId } = render(RuleFormModal, {
+			rule: null,
+			accounts: [...makeAccounts(), bank],
+			onSuccess: () => {},
+			onCancel: () => {},
+		});
+		const select = (await findByTestId('rule-form-counterparty')) as HTMLSelectElement;
+		const values = Array.from(select.options).map((o) => o.textContent?.trim());
+		expect(values).toContain('6510 — Télécom');
+		expect(values).not.toContain('1020 — Banque');
+	});
+});

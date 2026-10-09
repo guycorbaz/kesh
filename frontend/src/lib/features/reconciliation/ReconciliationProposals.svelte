@@ -36,6 +36,7 @@
 	import TransactionSplitModal from './TransactionSplitModal.svelte';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import { listBankAccounts } from '$lib/features/bank-accounts/bank-accounts.api';
 
 	type Props = {
 		bankAccountId: number;
@@ -129,6 +130,30 @@
 				// le user ne peut pas réconcilier sans accounts mais le
 				// flow accept/reject reste fonctionnel.
 				accounts = [];
+			}
+		})();
+	});
+
+	// Story 15-6d (AC4, #524) — compte comptable du compte bancaire monté, que la modale
+	// d'affectation manuelle écarte des contreparties (une écriture `D banque / C banque` est
+	// nulle). Résolu UNE fois, au montage : la page remonte ce composant à chaque changement de
+	// compte bancaire (`{#key selectedId}`, `routes/(app)/reconciliation/+page.svelte`), si bien
+	// qu'une réponse ne peut pas arriver pour un autre `bankAccountId` que celui du montage —
+	// d'où l'absence de garde de génération (choix C-15-6-28). ⚠️ Retirer ce `{#key}` exigerait
+	// la garde. Repli `null` — aucun filtrage, la garde serveur de `POST /reconciliation/manual`
+	// tranche — pendant le chargement, en cas d'échec (ignoré sans message, comme le chargement
+	// des comptes ci-dessus), et si le compte bancaire est absent de la liste (archivé) ou non
+	// lié.
+	let bankLedgerAccountId = $state<number | null>(null);
+	$effect(() => {
+		const mountedBankAccountId = bankAccountId;
+		void (async () => {
+			try {
+				const list = await listBankAccounts();
+				bankLedgerAccountId =
+					list.find((ba) => ba.id === mountedBankAccountId)?.journalAccountId ?? null;
+			} catch {
+				bankLedgerAccountId = null;
 			}
 		})();
 	});
@@ -384,6 +409,7 @@
 			{bankAccountId}
 			proposal={manualProposal}
 			{accounts}
+			{bankLedgerAccountId}
 			onSuccess={onManualSuccess}
 		/>
 

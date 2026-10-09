@@ -50,6 +50,14 @@
 		),
 	);
 
+	// Story 15-6d (AC5, #524) — le compte comptable d'un compte bancaire (actif ou passif) est
+	// exclu EN CRÉATION par le type ci-dessus (charges et produits seulement). En ÉDITION,
+	// `withCurrentAccount` ci-dessous réintroduit le compte en place même s'il n'est pas
+	// éligible : une règle créée par l'API sur le compte de la banque s'ouvre et s'enregistre
+	// telle quelle. Voulu (#271) ; une telle règle n'est plus proposée (`get_proposals`) et son
+	// acceptation est refusée par le serveur (`accept_one_rule`, `VALIDATION_ERROR` /
+	// `counterparty_equals_bank_ledger`).
+	//
 	// Issue #271 : une règle EXISTANTE dont le compte de contrepartie est devenu
 	// non-postable — ou archivé — depuis sa création. Sans réintroduction, le
 	// champ s'affiche vide sur une règle pourtant complète, et la validation
