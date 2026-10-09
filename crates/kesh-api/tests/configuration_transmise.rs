@@ -42,8 +42,8 @@
 //!   d'administration ne cite que des services et des volumes que les compose
 //!   déclarent (G14, G15) ; ses sections Synology sauvegardent la base par le
 //!   dump d'une tâche planifiée et la restaurent par un autre compte, sans
-//!   `DROP` possible sur une étape ratée (G16) ; le compose de développement
-//!   démarre sans `.env` (G17).
+//!   jamais recharger une base qui porte des tables sans en avoir pris un dump
+//!   de sécurité (G16) ; le compose de développement démarre sans `.env` (G17).
 //!
 //! # Ce qu'elle n'établit PAS (angles morts écrits)
 //!
@@ -2661,7 +2661,8 @@ const EXEC_SYNOLOGY_ATTENDUS: usize = 0;
 ///
 /// **Formes non lues** (angle mort écrit) : `docker-compose` (v1),
 /// `docker compose -p <projet> …` (le `-p` n'est pas reconnu comme option de
-/// la commande), `docker exec <conteneur>` — aucune dans le manuel au
+/// la commande), une option à valeur (`stop -t 30 kesh-api` : `30` serait lu
+/// comme service), `up`/`down`, `docker exec <conteneur>` — aucune dans le manuel au
 /// 2026-10-09 (vérifié par `grep`). Les scripts Synology ne sont pas lus ici :
 /// G16 garde leur réseau et leur service.
 #[test]
@@ -2881,18 +2882,22 @@ fn defaut_script(texte: &str, var: &str) -> Option<String> {
 ///   empreinte calculée sur le `.tmp` avant le renommage ; un seul
 ///   `--defaults-extra-file`, monté par `-v` ; compte par défaut `kesh-dump.cnf` ;
 /// - **(c)** `kesh-restore.sh`, dans cet ordre : refus si un conteneur du service
-///   `kesh-api` tourne (`docker ps --filter label=com.docker.compose.service=…`,
-///   sans dépendre du projet ; le service existe au compose prod) ;
+///   `kesh-api` est dans un autre état que `exited`, `created` ou `dead`
+///   (`docker ps --all --filter label=com.docker.compose.service=…`, sans
+///   dépendre du projet ; le service existe au compose prod) ; verrou du dump
+///   (`dump/.verrou`), libéré par une `trap … EXIT`, **avant** de lire le dump ;
 ///   `sha256sum -c` ; `gzip -t "$SOURCE/…"` ; nom de la base lu dans le dump
-///   (`CREATE DATABASE`) et refus s'il diffère de `SAUVEGARDE_BASE` ; verrou du
-///   dump (`dump/.verrou`) ; sonde `SCHEMATA` par une affectation nue suivie d'un
-///   `case … 0|1)` qui sort sur toute autre valeur ; dump de sécurité par
-///   `kesh-dump.sh` lui-même (`DUMP_CIBLE`, `DUMP_COMPTE=kesh-restore.cnf`), sous
-///   `if [ "$PRESENTE" = 1 ]`, dont l'échec sort (`|| { … exit 1; }`) sans rien
+///   (`CREATE DATABASE`) et refus s'il diffère de `SAUVEGARDE_BASE` ; sonde en
+///   affectation nue (`SONDE=$(client …)`) qui compte la base et ses tables,
+///   validée strictement (sortie sur toute autre valeur) ; dump de sécurité par
+///   `kesh-dump.sh` lui-même (`DUMP_CIBLE`, `DUMP_COMPTE=kesh-restore.cnf`) sous
+///   `if [ "$PRESENTE" = 1 ] && [ "$NB_TABLES" -gt 0 ]` — base absente ou vide :
+///   rien à protéger —, dont l'échec sort (`|| { … exit 1; }`) sans rien
 ///   recharger ; `gunzip -c "$SOURCE/…" | client mariadb`, `client` portant
 ///   `docker run -i`. Le dossier donné est résolu en absolu (`pwd -P`), sans
-///   `cd "$SOURCE"` nu. Aucun `docker compose` (ni stop, ni up). Fichiers
-///   d'identifiants et fichiers d'hôte montés distincts de ceux du dump nocturne ;
+///   `cd "$SOURCE"` nu. Aucune commande `docker compose` (ni stop, ni up).
+///   Fichiers d'identifiants et fichiers d'hôte montés distincts de ceux du dump
+///   nocturne ;
 /// - **(d)** aucun `rm` ne vise `<cible>` : dans les scripts, toute commande `rm`
 ///   n'a que des arguments en `.tmp` ([`commandes_rm`] : `trap`, guillemets,
 ///   `/bin/rm`, `sh -c` compris) ; dans la prose des sections, même motif sur le
@@ -2916,6 +2921,8 @@ fn defaut_script(texte: &str, var: &str) -> Option<String> {
 /// retire que les lignes **entières** de commentaire (aucun commentaire de fin
 /// de ligne dans les scripts, vérifié) ; (c) exige `gunzip -c` et la forme
 /// `docker ps --filter label=…` — une écriture équivalente rougirait (couplage) ;
+/// (g) ne lit que le premier horaire de la tâche de dump (l'horaire « h50 » du
+/// paragraphe Snapshot n'est pas contrôlé) ;
 /// la normalisation du manuel ne déplie pas `\'E`, `\^o`, `\"e`, `\c{c}`, `\-`
 /// ni l'apostrophe typographique, et aucune garde ne lit le PDF (contrôles `occ`,
 /// `pdftotext -layout` et `Overfull \hbox` journalisés au Dev Agent Record).
@@ -3108,8 +3115,12 @@ fn synology_sauvegarde_la_base_par_le_dump() {
     }
     let etapes = [
         (
-            "refus « Kesh en marche » (`docker ps --filter label=…kesh-api`)",
-            r"docker ps\b[^\n]*--filter label=com\.docker\.compose\.service=kesh-api\b[^\n]*--filter status=running",
+            "refus « Kesh actif » (`docker ps --all --filter label=…kesh-api`)",
+            r"docker ps --all\b[^\n]*--filter label=com\.docker\.compose\.service=kesh-api\b[^\n]*\{\{\.State\}\}",
+        ),
+        (
+            "verrou du dump (`dump/.verrou`)",
+            r#"mkdir "\$SAUVEGARDE_DOSSIER/dump/\.verrou""#,
         ),
         ("`sha256sum -c`", r"sha256sum\s+-c\b"),
         ("`gzip -t \"$SOURCE/…\"`", r#"gzip\s+-t\s+"\$SOURCE/"#),
@@ -3118,11 +3129,7 @@ fn synology_sauvegarde_la_base_par_le_dump() {
             r"\^CREATE DATABASE",
         ),
         (
-            "verrou du dump (`dump/.verrou`)",
-            r#"mkdir "\$SAUVEGARDE_DOSSIER/dump/\.verrou""#,
-        ),
-        (
-            "sonde de la base (`SCHEMATA`)",
+            "sonde de la base (`SCHEMATA` et `TABLES`)",
             r"information_schema\.SCHEMATA\b",
         ),
         (
@@ -3147,20 +3154,28 @@ fn synology_sauvegarde_la_base_par_le_dump() {
     }
     for (quoi, re) in [
         (
-            "le refus « Kesh en marche » ne sort pas",
-            r#"\[ -z "\$EN_MARCHE" \] \|\| \{[^}]*exit 1;"#,
+            "un état actif de kesh-api ne fait pas sortir (seuls exited, created, dead admis)",
+            r#"case "\$ETAT" in exited\|created\|dead\) ;; \*\)[^\n]*exit 1;;"#,
+        ),
+        (
+            "le verrou du rechargement n'est pas libéré par une trap EXIT",
+            r#"trap 'rmdir "\$SAUVEGARDE_DOSSIER/dump/\.verrou"' EXIT"#,
         ),
         (
             "le nom de la base du dump n'est pas comparé à SAUVEGARDE_BASE avec sortie",
             r#"\[ "\$BASE_DU_DUMP" = "\$SAUVEGARDE_BASE" \] \|\| \{[^\n]*exit 1;"#,
         ),
         (
-            "la sonde illisible ne sort pas (`case … 0|1)`)",
-            r#"case "\$PRESENTE" in 0\|1\) ;; \*\)[^;]*;\s*exit 1;;"#,
+            "la sonde ne compte pas les tables de la base",
+            r"information_schema\.TABLES WHERE TABLE_SCHEMA",
         ),
         (
-            "le dump de sécurité n'est pas conditionné à la présence de la base",
-            r#"if \[ "\$PRESENTE" = 1 \]; then"#,
+            "la sonde illisible ne sort pas (validation stricte des deux nombres)",
+            r#"\[\[ "\$PRESENTE" =~ \^\[01\]\$ && "\$\{NB_TABLES:-\}" =~ \^\[0-9\]\+\$ \]\] \|\| \{[^\n]*exit 1;"#,
+        ),
+        (
+            "le dump de sécurité n'est pas conditionné à une base présente AVEC tables",
+            r#"if \[ "\$PRESENTE" = 1 \] && \[ "\$NB_TABLES" -gt 0 \]; then"#,
         ),
         (
             "le dump de sécurité n'est pas pris par le compte Kesh dans avant-restauration/",
@@ -3176,14 +3191,14 @@ fn synology_sauvegarde_la_base_par_le_dump() {
         }
     }
     // Sonde : affectation nue, sans `||` ni `&&` qui masquerait son échec (B4-L5).
-    let nue = restore.find("PRESENTE=$(client mariadb").and_then(|i| {
+    let nue = restore.find("SONDE=$(client mariadb").and_then(|i| {
         restore[i..]
             .find("</dev/null)")
             .map(|j| !restore[i..i + j].contains("||") && !restore[i..i + j].contains("&&"))
     });
     if nue != Some(true) {
         erreurs.push(
-            "(c) la sonde n'est pas une affectation nue `PRESENTE=$(client mariadb … </dev/null)`"
+            "(c) la sonde n'est pas une affectation nue `SONDE=$(client mariadb … </dev/null)`"
                 .into(),
         );
     }
@@ -3332,7 +3347,7 @@ fn synology_sauvegarde_la_base_par_le_dump() {
         ),
         (
             "la suppression délibérée d'une base illisible n'est pas écrite",
-            r"kesh-restore\.cnf\b.*-e 'DROP DATABASE".to_string(),
+            r"kesh-restore\.cnf\b.*-e 'DROP DATABASE <base>'".to_string(),
         ),
     ] {
         if !Regex::new(&re).unwrap().is_match(&normees[1]) {
