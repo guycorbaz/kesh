@@ -780,6 +780,25 @@ Vitest ciblé 42 fichiers / 411 tests) — **gate complet au dernier commit de c
 
 ## Change Log
 
+### Revue de code P1 — 2026-10-09 (Sonnet 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
+
+**Prompt** : `15-1a2-0-review-prompt-p1.md`. **Rapports** : `kesh-gate-logs/15-1a2-0-review-p1-{B,E,A}.md` — B **0 C / 0 H /
+0 M / 2 L**, E **0 / 0 / 0 / 3 L**, A **0 / 0 / 0 / 3 L** ; recoupements E-1 = A-2, E-2 ≈ A-3, E-3 = A-1 → **5 LOW
+distincts**, **0 au-dessus de LOW**. Chaque finding relu au code (`grep -nF` / `sed -n`) ; axes non exercés des
+trois lentilles : toute exécution — reprise par l'orchestrateur (gate complet au commit de développement : 3230
+passés, 4 ignorés ; Vitest 116 fichiers / 1167 tests ; trois mutations, au Dev Agent Record).
+
+| finding | sév. | verdict |
+|---|---|---|
+| B-1 — doc de `find_later_closed` : « Deux appelants » (quatre, dont `open_period_rule`) | LOW | **corrigé** (`fiscal_years.rs`) |
+| B-2 — texte `reconciliation-cancel-blocked-lettering-closed` (« lettré avec sa facture ») pour un lien `Entry` hérité | LOW | **reçu pour la 15-1a2-i** : l'exception nommée de D3 pointe l'écriture de **vente** d'une facture, « sa facture » y reste vrai ; dormant |
+| E-1 = A-2 — groupe dissous entre les deux lectures → `lignes = []` → « figé » à tort | LOW | **corrigé** : `continue` sur un groupe vide ; branche non montable en isolation, **dite** au commentaire |
+| E-2 ≈ A-3 — aucun groupe à cheval sur deux exercices | LOW | **corrigé** au niveau de la règle (assertion dans `open_period_rule_reads_the_bound_strictly`) ; « ligne la plus récente ≠ dernier règlement » : énoncé du remède, aucun chemin de code distinct |
+| E-3 = A-1 — `15-1c-i-ecran-postes-ouverts.md:181` cite l'ancien message | LOW | **corrigé** (texte neutre, renvoi à D5) ; `15-1a-i` et registre : historiques |
+
+Signal D5 sans objet (aucun MEDIUM). La remédiation touche du code de production (`letterings.rs`, une branche) :
+passe **P2 ciblée** (Haiku) sur le commit de remédiation.
+
 ### Développement — 2026-10-09 (Opus 5.5, `bmad-dev-story`, en autonomie)
 
 T0–T6 livrées (T7 déplacée à la 15-1a2-i). Rang 2 bis dans la file commune et les quatre gestes, règle des

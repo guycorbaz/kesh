@@ -1510,6 +1510,16 @@ async fn open_period_rule_reads_the_bound_strictly(pool: MySqlPool) {
         "une ligne au lendemain suffit"
     );
     assert!(
+        letterings::lines_in_open_period(
+            &mut conn,
+            m.company(),
+            &[(m.fy25, d(2025, 6, 1)), (m.fy26, d(2026, 4, 1))]
+        )
+        .await
+        .unwrap(),
+        "groupe à cheval sur deux exercices : la ligne de 2026 après la borne suffit"
+    );
+    assert!(
         !letterings::lines_in_open_period(&mut conn, m.company(), &[])
             .await
             .unwrap(),

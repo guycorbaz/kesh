@@ -692,6 +692,15 @@ pub async fn document_group_frozen_by_periods(
             .fetch_all(&mut *conn)
             .await
             .map_err(map_db_error)?;
+        // Un groupe dissous entre les deux lectures (deux instantanés distincts
+        // hors transaction) n'a plus de lignes : il n'est pas figé — `false`
+        // pour une liste vide ne veut pas dire « tout est clos » (revue P1, E-1 =
+        // A-2). ⚠️ Branche non montable en isolation : les clés sont lues SUR
+        // les lignes, seule une dissolution concurrente entre les deux lectures
+        // y mène — dite ici plutôt que forcée par un entrelacement.
+        if lignes.is_empty() {
+            continue;
+        }
         if !lines_in_open_period(&mut *conn, company_id, &lignes).await? {
             return Ok(Some(key));
         }
