@@ -44,8 +44,9 @@ pub async fn set_mode(
     // entière en mode Expert, ce qui ouvre à tous l'écriture directe au journal.
     // Écrire `entity_type = "user"` ici serait mentir sur la portée.
     //
-    // ⚠️ L'audit se pose DANS LE HANDLER, jamais dans `update_step` : dix
-    // appelants la partagent (le seed et huit routes d'onboarding), et la trace
+    // ⚠️ L'audit se pose DANS LE HANDLER, jamais dans `update_step` : neuf
+    // appelants tracés la partagent (huit routes d'onboarding et cette route,
+    // Story 15-7a2) — reste le seed de démonstration (15-7b1) —, et la trace
     // y serait écrite à chaque étape de l'installation.
     //
     // ⚠️ Une trace part même quand rien ne change : `update_step` incrémente

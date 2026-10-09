@@ -6,8 +6,10 @@
 use sqlx::mysql::MySqlPool;
 use sqlx::{MySql, Transaction};
 
+use crate::entities::audit_log::{AUDIT_ENTITY_ID_NONE, NewAuditLogEntry};
 use crate::entities::onboarding::{OnboardingState, UiMode};
 use crate::errors::{DbError, map_db_error};
+use crate::repositories::audit_log;
 
 const SELECT_SQL: &str = "SELECT id, step_completed, is_demo, ui_mode, version, created_at, updated_at \
      FROM onboarding_state LIMIT 1";
@@ -112,12 +114,14 @@ pub async fn update_step(
 /// Variante transaction-aware de [`update_step`] — Story 25-1b.
 ///
 /// ⛔ **Cette fonction n'écrit AUCUNE trace d'audit, et l'enveloppe ci-dessus
-/// non plus.** Dix appelants la partagent — le seed et huit routes d'onboarding,
-/// toutes hors du périmètre de la story et suivies par l'issue #434. Y placer
-/// l'audit ferait écrire « changement de mode d'affichage » à chaque étape de
-/// l'installation : *une trace au mauvais étage ne manque pas, elle ment.*
+/// non plus.** Ses appelants tracent eux-mêmes : neuf appelants tracés (huit
+/// routes d'onboarding et `PUT /api/v1/profile/mode`, Story 15-7a2) ; reste le
+/// seed de démonstration (15-7b1). Y placer l'audit ferait écrire « changement
+/// de mode d'affichage » à chaque étape de l'installation : *une trace au
+/// mauvais étage ne manque pas, elle ment.*
 ///
-/// Seul `PUT /api/v1/profile/mode` trace, et il le fait dans son handler.
+/// L'étape franchie s'inscrit par [`record_step_completed_in_tx`], appelé
+/// **explicitement** par chaque route, après ses entrées de domaine.
 ///
 /// Ne commite jamais.
 pub async fn update_step_in_tx(
@@ -164,6 +168,45 @@ pub async fn update_step_in_tx(
         })?;
 
     Ok(state)
+}
+
+/// Inscrit au journal d'audit qu'une étape de l'installation a été franchie —
+/// Story 15-7a2 (AC 6, choix C-15-7-2, C-15-7-15, C-15-7-20).
+///
+/// Écrit `installation.step_completed` (`entity_type = "installation"`,
+/// `entity_id = AUDIT_ENTITY_ID_NONE` : `onboarding_state` est mono-ligne et
+/// globale, l'étape porte sur l'installation et non sur une société), avec
+/// `details = {"from", "to", "step"}`. L'acteur est **threadé** (`user_id`,
+/// `api_key_id`) : `for_actor` attribue l'entrée au jeton d'API quand la
+/// route en a été atteinte — jamais `::user` (dette #431).
+///
+/// Helper **unique** des routes d'onboarding (15-7a2) et du seed de
+/// démonstration (15-7b1, 15-7b2), d'où sa place dans `kesh-db`. Distinct de
+/// [`update_step_in_tx`] à dessein (cf. son doc-comment) : l'appelant l'appelle
+/// **en dernier**, après les entrées de domaine (AC 2). Action et type sont
+/// écrits en littéral, forme que lit la garde des libellés
+/// (`tests/audit_label_registry.rs`). **Ne commite jamais.**
+pub async fn record_step_completed_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    user_id: i64,
+    api_key_id: Option<i64>,
+    from: i32,
+    to: i32,
+    step: &'static str,
+) -> Result<(), DbError> {
+    audit_log::insert_in_tx(
+        tx,
+        NewAuditLogEntry::for_actor(
+            user_id,
+            api_key_id,
+            "installation.step_completed",
+            "installation",
+            AUDIT_ENTITY_ID_NONE,
+            Some(serde_json::json!({ "from": from, "to": to, "step": step })),
+        ),
+    )
+    .await?;
+    Ok(())
 }
 
 /// Supprime la row onboarding_state (bas niveau).

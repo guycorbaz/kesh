@@ -4993,3 +4993,38 @@ l'import (#458–#461).
 - **Écartées** : retirer la promesse du manuel (le défaut resterait) ; retirer `pointer-events-none` du
   composant partagé (effet sur tout le produit) ; un composant d'infobulle (hors proportion).
 - **Réversible** : oui.
+
+## C-15-7a2-1 — Forme des neuf handlers : corps transactionnel + `conclude_step`
+
+- **Contexte** : la 15-7a2 (développement) réunit chaque route d'étape en une transaction (AC 8). `lock_state_at_step` reçoit `tx` par référence et ne peut pas annuler (R2-7).
+- **Retenu** : chaque handler valide le corps, garantit la ligne d'état (`get_or_init_state`), ouvre la transaction, exécute un corps (`async fn …_in_tx` ou bloc `async` borrowant `&mut tx`) qui rend `Result<OnboardingState, AppError>`, puis `conclude_step(pool, tx, result)` : `COMMIT` puis `response_with_stub` après commit, ou annulation et l'erreur d'origine. Deux helpers partagés : `complete_step` (`update_step_in_tx` à la version verrouillée + `record_step_completed_in_tx`, en dernier) et `update_company_in_tx` (`companies::update_in_tx` + `company.updated` ssi `version` a bougé, projection par route). Une macro `company_select!` porte la liste de colonnes de `Company` (deux requêtes : première société `FOR UPDATE`, société par id `FOR UPDATE`) et remplace les copies en ligne de `ensure_company_with_language` et de `finalize_inner`.
+- **Écarté** : une fermeture générique `run_step(|tx| async {…})` (emprunt d'une transaction par une fermeture asynchrone : signatures HRTB lourdes pour un gain nul) ; réécrire `finalize_inner` sur `conclude_step` (son `retry_app_on_deadlock`, ses chemins d'erreur et son retour idempotent sont préservés tels quels — AC 8 : « `finalize` garde sa transaction »).
+- **Réversible** : oui (forme interne au fichier).
+
+## C-15-7a2-2 — Écarts de détail tranchés au développement
+
+- **Contexte** : la fiche laisse ouverts quelques points de forme.
+- **Retenu** : (a) `account.chart_loaded` ne s'écrit que si la variante a **réellement** inséré des comptes (`Vec` non vide ; un plan vide n'est pas « chargé ») ; (b) `details.language` de cette entrée est la `Language` sérialisée (`"DE"`), comme `accounting_language` dans `company.updated`, et non la clé de traduction minuscule ; (c) société absente sous verrou dans `org-type`, `accounting-language`, `coordinates`, `bank-account` ⇒ `AppError::Internal` (message de `finalize`), là où l'ancien `fetch_one` rendait un `NotFound` — cas inatteignable hors corruption, un seul message pour les cinq routes ; (d) `language` passe aussi par `companies::update_in_tx` : une langue inchangée ne bumpe plus `version` (règle de no-op de l'AC 3, étendue à `language` par l'AC 1) ; (e) la relecture de la société après `coordinates` ne se fait que si une entrée s'écrit (elle ne sert qu'à `after`).
+- **Écarté** : écrire une entrée `account.chart_loaded` à `count = 0` ; garder l'`UPDATE` inconditionnel de la langue.
+- **Réversible** : oui.
+
+## C-15-7a2-3 — Mutations « deux commits » par `COMMIT` SQL en cours de transaction
+
+- **Contexte** : la fiche demande de prouver que les tests 9 (a) et 9 (b) mordent sur « deux commits » / « société commitée avant le plan ». Le corps transactionnel tient `&mut Transaction` et ne peut pas commiter au milieu.
+- **Retenu** : la mutation insère `sqlx::query("COMMIT")` juste après `companies::update_in_tx` (dans `update_company_in_tx` pour 9 (a), dans `update_company_coordinates_in_tx` pour 9 (b)) : la mutation de la société est commitée **avant** son entrée d'audit, que le déclencheur fait échouer — exactement la non-atomicité que l'AC 8 interdit. Un `COMMIT` placé après l'écriture d'audit ne mordrait pas (le déclencheur fait échouer l'audit avant).
+- **Écarté** : réintroduire une transaction séparée pour la société (réécriture large, mutation moins locale).
+- **Réversible** : sans objet (mutations jouées puis restaurées, fichier touché).
+
+## C-15-7a2-4 — Pas de rejeu sur interblocage pour les huit routes d'étape de l'onboarding
+
+- **Contexte** : revue de code P1 de la 15-7a2 (B-4 = E-4, LOW). Les huit routes d'étape autres que `finalize` tiennent désormais une transaction unique (`onboarding_state → companies → accounts` ou `bank_accounts`, puis 2 à 4 entrées d'audit) sans `retry_app_on_deadlock` ; seule `finalize` est rejouée. Un 1213 y rend 500.
+- **Retenu** : ne pas les envelopper, et l'écrire comme angle mort assumé au point (iv) du doc-comment de `tests/audit_route_registry.rs` (renvoi au point (vi)). L'échec est sûr — annulation complète, ni mutation ni trace —, l'administrateur rejoue l'étape, et une installation en cours de configuration n'a pas de trafic concurrent : aucun cycle n'est démontré.
+- **Écarté** : envelopper les huit routes (modification de code de production en remédiation de revue, pour un risque non démontré ; la règle de la passe interdisait de toucher le code de production) ; les classer `AvecEcritureAuJournal` (elles n'écrivent pas au journal comptable, convention du registre).
+- **Réversible** : oui — envelopper une route est local (le patron `finalize` existe) ; à reprendre si un 1213 est observé sur l'onboarding.
+
+## C-15-7a2-5 — 15-7a2 (clôture) : rebasée sur `origin/main` (`de285ea8`, 15-11b) ; registre par union, PDF admin régénéré
+
+- **Contexte** : clôture de la 15-7a2 après la revue de code (P1 Sonnet ×3, 2 MEDIUM → remédiation `23b3e46e`, devenue `004341d0` → P2 ciblée Haiku 0). `origin/main` avait avancé d'un commit (la 15-11b : `config::env_nonempty`, test lexical (L), manuel admin).
+- **Retenu** : rebase sur `de285ea8`. Deux conflits seulement : `admin-manual.pdf` (binaire — pris de `main` pendant le rebase puis **régénéré** sur le `.tex` fusionné sans conflit par git, contrôlé aplati : « 104 des 112 routes », « 104 + 6 + 2 = 112 », la réserve OLICo réécrite et les apports de la 15-11b sur `.env` sont tous présents) et ce registre (union, les entrées C-15-11b avant les C-15-7a2). `CHANGELOG.md` et `sprint-status.yaml` fusionnés sans conflit ; `last_updated` (27) pris après le (26) de `main`. Aucun conflit de code : `routes/onboarding.rs` passe déjà par `config::env_nonempty` (15-11b) et le test (L) est vert. **Partition du registre recomptée depuis `LIB_ROUTES`** (et non relue) : 112 routes = 104 `Traced` + 6 `Exempt` + 2 `NoMatter` ; colonne `Rejeu` sur les 115 entrées : 22 rejouées + 4 exemptées + 89 sans écriture — inchangée par le rebase (`main` n'a pas touché `audit_route_registry.rs`), le manuel reste juste. Gates complets rejoués sur l'état rebasé (backend, frontend, E2E).
+- **Écartées** : merge de `main` dans la branche (historique moins lisible) ; garder l'un des deux PDF (il aurait omis l'apport de l'autre).
+- **Réversible** : oui (rebase ; branche poussée, sans PR).

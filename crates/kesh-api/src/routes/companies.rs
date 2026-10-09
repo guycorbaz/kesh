@@ -229,9 +229,10 @@ fn normalize_contact_field(
 /// la société (Story 16-3a, #151), rendus sur le PDF de facture.
 ///
 /// **Endpoint dédié, sur le patron exact d'`update_company_email`** (D4) : il
-/// n'existe aucune route générique d'update company, et `update_company_coordinates`
-/// (onboarding) pose `is_stub = FALSE` inconditionnellement avec un appelant
-/// unique — deux invariants documentés qu'on ne touche pas.
+/// n'existe aucune route générique d'update company, et
+/// `update_company_coordinates_in_tx` (onboarding) lève le drapeau provisoire
+/// par `companies::clear_stub_in_tx`, avec un appelant unique (Story 15-7a2) —
+/// deux invariants documentés qu'on ne touche pas.
 ///
 /// ⚠️ Comme sa jumelle, cette route **reconstruit un `CompanyUpdate` complet**
 /// depuis l'état courant : `companies::update` est un full-replace. Tout champ

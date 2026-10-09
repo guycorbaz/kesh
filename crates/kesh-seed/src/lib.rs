@@ -63,7 +63,7 @@ fn demo_address(locale: &Locale) -> kesh_db::entities::address::StructuredAddres
 
 /// Charge les données de démonstration.
 ///
-/// Récupère la company existante créée par ensure_company_with_language,
+/// Récupère la company existante créée par ensure_company_with_language_in_tx,
 /// la met à jour avec les infos démo, crée un exercice fiscal,
 /// et met `onboarding_state` à step=3, is_demo=true.
 /// Passe par les repositories kesh-db pour respecter les contraintes DB.
@@ -153,7 +153,7 @@ pub async fn seed_demo(
     let lang_key = company.accounting_language.as_str().to_lowercase();
     // Bulk insert uses its own transaction — commits before insert_with_defaults reads.
     // P6-L3: seed_demo updates the singleton company (set up earlier by
-    // ensure_company_with_language); concurrent seed_demo calls are serialized
+    // ensure_company_with_language_in_tx); concurrent seed_demo calls are serialized
     // by the FOR UPDATE lock acquired in the count-validation block above.
     // Insert lookups (accounts 1100, 3000) are per-company and isolated.
     kesh_db::repositories::accounts::bulk_create_from_chart(pool, company.id, &chart, &lang_key)

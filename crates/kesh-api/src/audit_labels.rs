@@ -64,6 +64,7 @@ pub const ENTITY_TYPES: &[&str] = &[
 /// ⚠️ `admin_break_glass_reset` **n'a pas de point** et reste une action.
 pub const ACTIONS: &[&str] = &[
     "account.archived",
+    "account.chart_loaded",
     "account.created",
     "account.reactivated",
     "account.retyped",
@@ -85,8 +86,10 @@ pub const ACTIONS: &[&str] = &[
     "books.locked",
     "books.restored",
     "books.unlocked",
+    "company.created",
     "company.updated",
     "company_dunning_settings.updated",
+    "company_invoice_settings.created",
     "company_invoice_settings.updated",
     "contact.archived",
     "contact.created",
@@ -109,6 +112,7 @@ pub const ACTIONS: &[&str] = &[
     "imported_supplier_invoice.created",
     "imported_supplier_invoice.discarded",
     "imported_supplier_invoice.reactivated",
+    "installation.step_completed",
     "installation.ui_mode_changed",
     "invoice.cancelled",
     "invoice.created",

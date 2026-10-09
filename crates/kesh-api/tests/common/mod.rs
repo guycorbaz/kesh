@@ -119,5 +119,18 @@ pub async fn audit_count(pool: &MySqlPool) -> i64 {
         .expect("comptage des entrées d'audit")
 }
 
+/// La séquence EXACTE des actions écrites au journal d'audit, toutes entités
+/// confondues, de la plus ancienne à la plus récente (`ORDER BY id`) — Story
+/// 15-7a2 (F3-4), partagé avec la 15-7b1 et la 15-7b2.
+///
+/// ⛔ Asserter la séquence et non un nombre : un compte resterait vert sur une
+/// action remplacée par une autre.
+pub async fn audit_sequence(pool: &MySqlPool) -> Vec<String> {
+    sqlx::query_scalar("SELECT action FROM audit_log ORDER BY id")
+        .fetch_all(pool)
+        .await
+        .expect("lecture de la séquence d'audit")
+}
+
 /// Témoin du rejeu sur interblocage (Story 15-5e1, choix C74).
 pub mod capture_rejeu;

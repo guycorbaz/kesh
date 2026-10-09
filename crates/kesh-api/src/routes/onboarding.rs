@@ -16,12 +16,20 @@ use axum::extract::State;
 use axum::{Extension, Json};
 use chrono::{Datelike, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
+use kesh_db::entities::audit_log::{AUDIT_ENTITY_ID_NONE, NewAuditLogEntry};
 use kesh_db::entities::onboarding::UiMode;
-use kesh_db::entities::{Language, NewFiscalYear, OrgType};
-use kesh_db::repositories::onboarding;
+use kesh_db::entities::{
+    BankAccount, Company, CompanyInvoiceSettings, CompanyUpdate, Language, NewBankAccount,
+    NewFiscalYear, OnboardingState, OrgType, VatRate,
+};
+use kesh_db::errors::map_db_error;
+use kesh_db::repositories::bank_accounts::{self, UpsertPrimaryOutcome};
+use kesh_db::repositories::{audit_log, companies, onboarding};
 
 use crate::AppState;
+use crate::audit::AuditActor;
 use crate::errors::AppError;
 use crate::middleware::auth::CurrentUser;
 
@@ -113,8 +121,12 @@ pub struct LanguageRequest {
 /// Note : `ONBOARDING_STEP_ALREADY_COMPLETED` est utilisé comme code unique
 /// pour toute violation de progression (step trop bas ET step trop haut).
 /// Décision simplifiée : un code par type d'erreur suffit pour le MVP.
+///
+/// Story 15-7a2 : une transaction (`onboarding_state → companies`), trace
+/// `company.created` ou `company.updated {instance_language}` puis l'étape.
 pub async fn set_language(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Json(body): Json<LanguageRequest>,
 ) -> Result<Json<OnboardingResponse>, AppError> {
     let lang: Language = body
@@ -122,24 +134,21 @@ pub async fn set_language(
         .parse()
         .map_err(|_| AppError::Validation(format!("Langue invalide : {}", body.language)))?;
 
-    let current = get_or_init_state(&state).await?;
-    if current.step_completed != 0 {
-        return Err(AppError::OnboardingStepAlreadyCompleted);
-    }
+    get_or_init_state(&state).await?;
+    let mut tx = state.pool.begin().await.map_err(map_db_error)?;
+    let result = language_in_tx(&mut tx, &current_user, lang).await;
+    conclude_step(&state.pool, tx, result).await
+}
 
-    // Créer ou mettre à jour la company
-    ensure_company_with_language(&state, lang).await?;
-
-    let updated = onboarding::update_step(
-        &state.pool,
-        1,
-        current.is_demo,
-        current.ui_mode,
-        current.version,
-    )
-    .await?;
-
-    Ok(Json(response_with_stub(&state.pool, updated).await?))
+/// Corps transactionnel de [`set_language`].
+async fn language_in_tx(
+    tx: &mut Tx<'_>,
+    user: &CurrentUser,
+    lang: Language,
+) -> Result<OnboardingState, AppError> {
+    let locked = lock_state_at_step(tx, 0, false).await?;
+    ensure_company_with_language_in_tx(tx, user, lang).await?;
+    complete_step(tx, user, &locked, locked.ui_mode, "language").await
 }
 
 #[derive(Debug, Deserialize)]
@@ -148,8 +157,13 @@ pub struct ModeRequest {
 }
 
 /// POST /api/v1/onboarding/mode — step 1→2
+///
+/// Story 15-7a2 : `installation.ui_mode_changed` **si** le mode change (même
+/// action et même forme que `PUT /api/v1/profile/mode`), puis l'étape.
+/// ⚠️ `profile.rs` trace, lui, même sans changement : divergence assumée.
 pub async fn set_mode(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Json(body): Json<ModeRequest>,
 ) -> Result<Json<OnboardingResponse>, AppError> {
     let ui_mode: UiMode = body
@@ -157,21 +171,33 @@ pub async fn set_mode(
         .parse()
         .map_err(|_| AppError::Validation(format!("Mode invalide : {}", body.mode)))?;
 
-    let current = get_or_init_state(&state).await?;
-    if current.step_completed != 1 {
-        return Err(AppError::OnboardingStepAlreadyCompleted);
+    get_or_init_state(&state).await?;
+    let mut tx = state.pool.begin().await.map_err(map_db_error)?;
+    let result = mode_in_tx(&mut tx, &current_user, ui_mode).await;
+    conclude_step(&state.pool, tx, result).await
+}
+
+/// Corps transactionnel de [`set_mode`].
+async fn mode_in_tx(
+    tx: &mut Tx<'_>,
+    user: &CurrentUser,
+    ui_mode: UiMode,
+) -> Result<OnboardingState, AppError> {
+    let locked = lock_state_at_step(tx, 1, false).await?;
+    if locked.ui_mode != Some(ui_mode) {
+        audit_log::insert_in_tx(
+            tx,
+            NewAuditLogEntry::from_current_user(
+                user,
+                "installation.ui_mode_changed",
+                "installation",
+                AUDIT_ENTITY_ID_NONE,
+                Some(json!({ "before": locked.ui_mode, "after": ui_mode })),
+            ),
+        )
+        .await?;
     }
-
-    let updated = onboarding::update_step(
-        &state.pool,
-        2,
-        current.is_demo,
-        Some(ui_mode),
-        current.version,
-    )
-    .await?;
-
-    Ok(Json(response_with_stub(&state.pool, updated).await?))
+    complete_step(tx, user, &locked, Some(ui_mode), "mode").await
 }
 
 /// POST /api/v1/onboarding/seed-demo — step 2→3
@@ -237,8 +263,6 @@ pub async fn seed_demo(
 /// unreachable; full serialization (single-tx covering reset_demo) is tracked
 /// under KF-002-H-002 (issue #43).
 pub async fn reset(State(state): State<AppState>) -> Result<Json<OnboardingResponse>, AppError> {
-    use kesh_db::errors::map_db_error;
-
     // Ensure the onboarding_state row exists before locking (idempotent init).
     let _ = get_or_init_state(&state).await?;
 
@@ -297,18 +321,28 @@ pub async fn reset(State(state): State<AppState>) -> Result<Json<OnboardingRespo
 // --- Path B endpoints (Story 2.3) ---
 
 /// POST /api/v1/onboarding/start-production — step 2→3
+///
+/// Story 15-7a2 : aucune entrée de domaine — l'étape **est** le fait :
+/// l'installation devient non réinitialisable.
 pub async fn start_production(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<OnboardingResponse>, AppError> {
-    let current = get_or_init_state(&state).await?;
-    if current.step_completed != 2 || current.is_demo {
-        return Err(AppError::OnboardingStepAlreadyCompleted);
+    get_or_init_state(&state).await?;
+    let mut tx = state.pool.begin().await.map_err(map_db_error)?;
+    let result = async {
+        let locked = lock_state_at_step(&mut tx, 2, true).await?;
+        complete_step(
+            &mut tx,
+            &current_user,
+            &locked,
+            locked.ui_mode,
+            "start_production",
+        )
+        .await
     }
-
-    let updated =
-        onboarding::update_step(&state.pool, 3, false, current.ui_mode, current.version).await?;
-
-    Ok(Json(response_with_stub(&state.pool, updated).await?))
+    .await;
+    conclude_step(&state.pool, tx, result).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -318,31 +352,36 @@ pub struct OrgTypeRequest {
 }
 
 /// POST /api/v1/onboarding/org-type — step 3→4
+///
+/// Story 15-7a2 : `company.updated {org_type}` **si** il change, puis l'étape.
 pub async fn set_org_type(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Json(body): Json<OrgTypeRequest>,
 ) -> Result<Json<OnboardingResponse>, AppError> {
     let org_type: OrgType = body.org_type.parse().map_err(|_| {
         AppError::Validation(format!("Type d'organisation invalide : {}", body.org_type))
     })?;
 
-    let current = get_or_init_state(&state).await?;
-    if current.step_completed != 3 || current.is_demo {
-        return Err(AppError::OnboardingStepAlreadyCompleted);
+    get_or_init_state(&state).await?;
+    let mut tx = state.pool.begin().await.map_err(map_db_error)?;
+    let result = async {
+        let locked = lock_state_at_step(&mut tx, 3, true).await?;
+        let company = lock_company(&mut tx).await?;
+        let mut changes = company_update_of(&company);
+        changes.org_type = org_type;
+        update_company_in_tx(
+            &mut tx,
+            &current_user,
+            &company,
+            changes,
+            |c| json!({ "org_type": c.org_type }),
+        )
+        .await?;
+        complete_step(&mut tx, &current_user, &locked, locked.ui_mode, "org_type").await
     }
-
-    update_company_org_type(&state, org_type).await?;
-
-    let updated = onboarding::update_step(
-        &state.pool,
-        4,
-        current.is_demo,
-        current.ui_mode,
-        current.version,
-    )
-    .await?;
-
-    Ok(Json(response_with_stub(&state.pool, updated).await?))
+    .await;
+    conclude_step(&state.pool, tx, result).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -352,8 +391,15 @@ pub struct AccountingLanguageRequest {
 }
 
 /// POST /api/v1/onboarding/accounting-language — step 4→5
+///
+/// Story 15-7a2 : `company.updated {accounting_language}` **si** elle change,
+/// puis `account.chart_loaded` **si** le plan est chargé, puis l'étape — en
+/// une transaction `onboarding_state → companies → accounts`. La garde « aucun
+/// compte » est lue **dans** la transaction, après le verrou d'état : deux
+/// requêtes concurrentes ne chargent plus le plan deux fois.
 pub async fn set_accounting_language(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Json(body): Json<AccountingLanguageRequest>,
 ) -> Result<Json<OnboardingResponse>, AppError> {
     let lang: Language = body
@@ -361,42 +407,72 @@ pub async fn set_accounting_language(
         .parse()
         .map_err(|_| AppError::Validation(format!("Langue invalide : {}", body.language)))?;
 
-    let current = get_or_init_state(&state).await?;
-    if current.step_completed != 4 || current.is_demo {
-        return Err(AppError::OnboardingStepAlreadyCompleted);
-    }
+    get_or_init_state(&state).await?;
+    let mut tx = state.pool.begin().await.map_err(map_db_error)?;
+    let result = accounting_language_in_tx(&mut tx, &current_user, lang).await;
+    conclude_step(&state.pool, tx, result).await
+}
 
-    update_company_accounting_language(&state, lang).await?;
+/// Corps transactionnel de [`set_accounting_language`].
+async fn accounting_language_in_tx(
+    tx: &mut Tx<'_>,
+    user: &CurrentUser,
+    lang: Language,
+) -> Result<OnboardingState, AppError> {
+    use kesh_db::repositories::accounts;
+
+    let locked = lock_state_at_step(tx, 4, true).await?;
+    let company = lock_company(tx).await?;
+    let mut changes = company_update_of(&company);
+    changes.accounting_language = lang;
+    let company = update_company_in_tx(
+        tx,
+        user,
+        &company,
+        changes,
+        |c| json!({ "accounting_language": c.accounting_language }),
+    )
+    .await?;
 
     // Story 3-1 (FR5) : charger le plan comptable adapté au org_type + accounting_language.
     // À ce stade (step 4→5), org_type ET accounting_language sont tous deux connus.
     // Guard idempotence : ne pas recharger si des comptes existent déjà (retry/navigation arrière).
-    let company = get_company(&state).await?;
-    let existing =
-        kesh_db::repositories::accounts::count_by_company(&state.pool, company.id).await?;
+    // ⚠️ Lue DANS la transaction, après `lock_state_at_step` (Story 15-7a2, E-3 de
+    // la revue de la 15-7a1) : sur le pool, deux appels concurrents lisaient 0.
+    let existing = accounts::count_by_company(&mut **tx, company.id).await?;
     if existing == 0 {
         let chart = kesh_core::chart_of_accounts::load_chart(company.org_type.as_str())
             .map_err(|e| AppError::Internal(format!("Chargement plan comptable : {e}")))?;
         let lang_key = lang.as_str().to_lowercase();
-        kesh_db::repositories::accounts::bulk_create_from_chart(
-            &state.pool,
-            company.id,
-            &chart,
-            &lang_key,
-        )
-        .await?;
+        let loaded =
+            accounts::bulk_create_from_chart_in_tx(tx, company.id, &chart, &lang_key).await?;
+        if !loaded.is_empty() {
+            // Choix C-15-7-3 : une entrée AGRÉGÉE, non une par compte.
+            let listed: Vec<serde_json::Value> = loaded
+                .iter()
+                .map(|a| json!({ "id": a.id, "number": a.number }))
+                .collect();
+            audit_log::insert_in_tx(
+                tx,
+                NewAuditLogEntry::from_current_user(
+                    user,
+                    "account.chart_loaded",
+                    "account",
+                    AUDIT_ENTITY_ID_NONE,
+                    Some(json!({
+                        "company_id": company.id,
+                        "org_type": company.org_type,
+                        "language": lang,
+                        "count": loaded.len(),
+                        "accounts": listed,
+                    })),
+                ),
+            )
+            .await?;
+        }
     }
 
-    let updated = onboarding::update_step(
-        &state.pool,
-        5,
-        current.is_demo,
-        current.ui_mode,
-        current.version,
-    )
-    .await?;
-
-    Ok(Json(response_with_stub(&state.pool, updated).await?))
+    complete_step(tx, user, &locked, locked.ui_mode, "accounting_language").await
 }
 
 #[derive(Debug, Deserialize)]
@@ -417,6 +493,7 @@ pub struct CoordinatesRequest {
 /// POST /api/v1/onboarding/coordinates — step 5→6
 pub async fn set_coordinates(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Json(body): Json<CoordinatesRequest>,
 ) -> Result<Json<OnboardingResponse>, AppError> {
     // #213 — personne physique (prénom + nom) → `name` recomposé ; sinon raison
@@ -449,31 +526,33 @@ pub async fn set_coordinates(
         _ => None,
     };
 
-    let current = get_or_init_state(&state).await?;
-    if current.step_completed != 5 || current.is_demo {
-        return Err(AppError::OnboardingStepAlreadyCompleted);
+    get_or_init_state(&state).await?;
+    let mut tx = state.pool.begin().await.map_err(map_db_error)?;
+    let result = async {
+        let locked = lock_state_at_step(&mut tx, 5, true).await?;
+        update_company_coordinates_in_tx(
+            &mut tx,
+            &current_user,
+            CompanyCoordinates {
+                name,
+                first_name,
+                last_name,
+                address,
+                ide_number: normalized_ide,
+            },
+        )
+        .await?;
+        complete_step(
+            &mut tx,
+            &current_user,
+            &locked,
+            locked.ui_mode,
+            "coordinates",
+        )
+        .await
     }
-
-    update_company_coordinates(
-        &state,
-        &name,
-        first_name.as_deref(),
-        last_name.as_deref(),
-        &address,
-        normalized_ide.as_deref(),
-    )
-    .await?;
-
-    let updated = onboarding::update_step(
-        &state.pool,
-        6,
-        current.is_demo,
-        current.ui_mode,
-        current.version,
-    )
-    .await?;
-
-    Ok(Json(response_with_stub(&state.pool, updated).await?))
+    .await;
+    conclude_step(&state.pool, tx, result).await
 }
 
 #[derive(Debug, Deserialize)]
@@ -485,8 +564,14 @@ pub struct BankAccountRequest {
 }
 
 /// POST /api/v1/onboarding/bank-account — step 6→7
+///
+/// Story 15-7a2 : une transaction `onboarding_state → companies →
+/// bank_accounts` ; `bank_account.created`, `bank_account.updated` ou rien
+/// selon [`UpsertPrimaryOutcome`], puis l'étape. Aucun IBAN en clair dans la
+/// trace : seulement `iban_present` / `iban_changed` (AC 9).
 pub async fn set_bank_account(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
     Json(body): Json<BankAccountRequest>,
 ) -> Result<Json<OnboardingResponse>, AppError> {
     let bank_name = body.bank_name.trim().to_string();
@@ -510,66 +595,116 @@ pub async fn set_bank_account(
         _ => None,
     };
 
-    let current = get_or_init_state(&state).await?;
-    if current.step_completed != 6 || current.is_demo {
-        return Err(AppError::OnboardingStepAlreadyCompleted);
+    get_or_init_state(&state).await?;
+    let mut tx = state.pool.begin().await.map_err(map_db_error)?;
+    let result = async {
+        let locked = lock_state_at_step(&mut tx, 6, true).await?;
+        // Société verrouillée DANS la transaction (Pattern 5 : companies avant
+        // bank_accounts) — et non lue sur le pool : un prélèvement du pool pendant
+        // que la transaction tient sa connexion attendrait sous un pool saturé.
+        let company = lock_company(&mut tx).await?;
+        let outcome = bank_accounts::upsert_primary_in_tx(
+            &mut tx,
+            NewBankAccount {
+                company_id: company.id,
+                bank_name,
+                iban: iban.as_str().to_string(),
+                qr_iban: normalized_qr,
+                is_primary: true,
+            },
+        )
+        .await?;
+        audit_bank_account_upsert(&mut tx, &current_user, &outcome).await?;
+        complete_step(
+            &mut tx,
+            &current_user,
+            &locked,
+            locked.ui_mode,
+            "bank_account",
+        )
+        .await
     }
+    .await;
+    conclude_step(&state.pool, tx, result).await
+}
 
-    // Get company_id for FK
-    let company = get_company(&state).await?;
-
-    // Upsert primary bank account (idempotent in case of retry)
-    // TODO(L65 Story 8-5a-zero) : backfill audit_log `bank_account.created` v0.2.
-    // L'audit historique de la création initiale du bank_account n'est pas
-    // émis — Story 8-5a-zero pose le 1er audit_log (`bank_account.updated`).
-    // Pattern audit_log `entity.created` à appliquer ici en v0.2 (cohérent
-    // 8-1b/8-4 qui émettent `bank_import.created` / `reconciliation.matched`).
-    use kesh_db::entities::NewBankAccount;
-    use kesh_db::repositories::bank_accounts;
-
-    bank_accounts::upsert_primary(
-        &state.pool,
-        NewBankAccount {
-            company_id: company.id,
-            bank_name,
-            iban: iban.as_str().to_string(),
-            qr_iban: normalized_qr,
-            is_primary: true,
-        },
-    )
-    .await?;
-
-    let updated = onboarding::update_step(
-        &state.pool,
-        7,
-        current.is_demo,
-        current.ui_mode,
-        current.version,
-    )
-    .await?;
-
-    Ok(Json(response_with_stub(&state.pool, updated).await?))
+/// Trace l'upsert du compte bancaire principal de l'onboarding : créé, modifié
+/// ou rien (`Unchanged`, AC 3). Formes de `routes/bank_accounts.rs` (création,
+/// modification), avec `"trigger": "onboarding"` et les booléens
+/// `iban_changed` / `qr_iban_changed` — jamais l'IBAN lui-même.
+async fn audit_bank_account_upsert(
+    tx: &mut Tx<'_>,
+    user: &CurrentUser,
+    outcome: &UpsertPrimaryOutcome,
+) -> Result<(), AppError> {
+    match outcome {
+        UpsertPrimaryOutcome::Created(created) => {
+            audit_log::insert_in_tx(
+                tx,
+                NewAuditLogEntry::from_current_user(
+                    user,
+                    "bank_account.created",
+                    "bank_account",
+                    created.id,
+                    Some(json!({
+                        "bank_account_id": created.id,
+                        "is_primary": created.is_primary,
+                        "iban_present": true,
+                        "qr_iban_present": created.qr_iban.is_some(),
+                        "journal_account_id": created.journal_account_id,
+                    })),
+                ),
+            )
+            .await?;
+        }
+        UpsertPrimaryOutcome::Updated { before, after } => {
+            let snapshot = |b: &BankAccount| {
+                json!({
+                    "bank_name": b.bank_name,
+                    "iban_present": true,
+                    "qr_iban_present": b.qr_iban.is_some(),
+                    "is_primary": b.is_primary,
+                    "journal_account_id": b.journal_account_id,
+                    "version": b.version,
+                })
+            };
+            audit_log::insert_in_tx(
+                tx,
+                NewAuditLogEntry::from_current_user(
+                    user,
+                    "bank_account.updated",
+                    "bank_account",
+                    after.id,
+                    Some(json!({
+                        "bank_account_id": after.id,
+                        "trigger": "onboarding",
+                        "iban_changed": before.iban != after.iban,
+                        "qr_iban_changed": before.qr_iban != after.qr_iban,
+                        "before": snapshot(before),
+                        "after": snapshot(after),
+                    })),
+                ),
+            )
+            .await?;
+        }
+        UpsertPrimaryOutcome::Unchanged(_) => {}
+    }
+    Ok(())
 }
 
 /// POST /api/v1/onboarding/skip-bank — step 6→7 without creating bank account
 pub async fn skip_bank(
     State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
 ) -> Result<Json<OnboardingResponse>, AppError> {
-    let current = get_or_init_state(&state).await?;
-    if current.step_completed != 6 || current.is_demo {
-        return Err(AppError::OnboardingStepAlreadyCompleted);
+    get_or_init_state(&state).await?;
+    let mut tx = state.pool.begin().await.map_err(map_db_error)?;
+    let result = async {
+        let locked = lock_state_at_step(&mut tx, 6, true).await?;
+        complete_step(&mut tx, &current_user, &locked, locked.ui_mode, "skip_bank").await
     }
-
-    let updated = onboarding::update_step(
-        &state.pool,
-        7,
-        current.is_demo,
-        current.ui_mode,
-        current.version,
-    )
-    .await?;
-
-    Ok(Json(response_with_stub(&state.pool, updated).await?))
+    .await;
+    conclude_step(&state.pool, tx, result).await
 }
 
 /// POST /api/v1/onboarding/finalize — step 7→complete (Path B only)
@@ -630,12 +765,16 @@ pub async fn finalize(
 /// et vat_rates est idempotent, (c) `create_if_absent_in_tx` sur fiscal_year
 /// est idempotent, (d) l'`UPDATE` final ne se déclenche que si step était
 /// 7 → bumpe à 8 ou laisse no-op si quelqu'un d'autre a déjà bumpé.
+///
+/// **Audit (Story 15-7a2)** : les entrées s'écrivent DANS cette fonction, donc
+/// dans la tentative rejouée : le booléen « inséré » des réglages et la liste
+/// des taux insérés sont ceux de la tentative qui commite — l'audit d'un essai
+/// annulé disparaît avec lui. Ordre : `company_invoice_settings.created`,
+/// `vat_rate.created` (ordre du seed), `fiscal_year.created`, l'étape.
 async fn finalize_inner(
     pool: &sqlx::MySqlPool,
     current_user: &CurrentUser,
 ) -> Result<OnboardingResponse, AppError> {
-    use kesh_db::errors::map_db_error;
-
     // F2/F3/F4 CRITICAL FIX: Pessimistic locking strategy.
     // 1. Lock onboarding_state (serializes all finalize() calls on same session)
     // 2. Check state is still at step 7 or 8 (prevents TOCTOU on onboarding progression)
@@ -643,13 +782,19 @@ async fn finalize_inner(
     // 4. Proceed with insert_with_defaults() with guaranteed exclusive access
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
-    let onboarding = sqlx::query_as::<_, kesh_db::entities::OnboardingState>(
-        "SELECT id, singleton, step_completed, is_demo, ui_mode, version, created_at, updated_at \
-         FROM onboarding_state WHERE singleton = TRUE FOR UPDATE",
-    )
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(map_db_error)?;
+    let onboarding = match onboarding::lock_state_in_tx(&mut tx).await {
+        Ok(Some(row)) => row,
+        Ok(None) => {
+            best_effort_rollback(tx).await;
+            return Err(AppError::Internal(
+                "onboarding_state absent sous verrou pendant finalize".into(),
+            ));
+        }
+        Err(e) => {
+            best_effort_rollback(tx).await;
+            return Err(AppError::Database(e));
+        }
+    };
 
     // Reject demo path finalize (demo is finalized via seed_demo)
     if onboarding.is_demo {
@@ -667,7 +812,8 @@ async fn finalize_inner(
     // P17: this path is read-only — rollback releases the FOR UPDATE lock
     // without writing an empty commit record. Returned snapshot is the row
     // observed at lock acquisition; under FOR UPDATE no concurrent writer can
-    // have changed it before we release.
+    // have changed it before we release. Story 15-7a2 : il ne mute rien, il
+    // n'écrit donc aucune trace.
     if onboarding.step_completed == 8 {
         best_effort_rollback(tx).await;
         return response_with_stub(pool, onboarding).await;
@@ -679,23 +825,11 @@ async fn finalize_inner(
     // P5: ORDER BY id for deterministic row selection. v0.1 is mono-tenant so the
     // result is unambiguous, but explicit ordering matches Pattern 5 lock-discipline
     // and protects against multi-tenant drift in dev/test DBs.
-    let company = match sqlx::query_as::<_, kesh_db::entities::Company>(
-        "SELECT id, name, first_name, last_name, address, address_street, address_building, address_postal_code, \
-                address_city, address_country, ide_number, org_type, accounting_language, \
-                instance_language, email, phone, website, is_stub, books_locked_through, \
-                version, created_at, updated_at \
-         FROM companies ORDER BY id LIMIT 1 FOR UPDATE",
-    )
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(map_db_error)?
-    {
-        Some(c) => c,
-        None => {
+    let company = match lock_company(&mut tx).await {
+        Ok(c) => c,
+        Err(e) => {
             best_effort_rollback(tx).await;
-            return Err(AppError::Internal(
-                "Aucune company en base (company supprimée pendant onboarding ?)".into(),
-            ));
+            return Err(e);
         }
     };
 
@@ -712,7 +846,7 @@ async fn finalize_inner(
     // change (P1-004 + P1-007); it has been removed in this pass.
     // Open follow-up: KF-002-CR-001 (issue #44) — fallback UI to add missing accounts
     // during onboarding so the user has a recovery path.
-    let _settings =
+    let (settings, settings_inserted) =
         match kesh_db::repositories::company_invoice_settings::insert_with_defaults_in_tx(
             &mut tx, company.id,
         )
@@ -735,18 +869,37 @@ async fn finalize_inner(
     // Story 7.2 (KF-003) — seed des 4 taux TVA suisses 2024+ pour la nouvelle
     // company, dans la même transaction (atomicité avec invoice_settings et
     // fiscal_year ; rollback global si l'un échoue). INSERT IGNORE en interne
-    // → idempotent sous re-finalize.
-    if let Err(e) =
-        kesh_db::repositories::vat_rates::seed_default_swiss_rates_in_tx(&mut tx, company.id).await
-    {
+    // → idempotent sous re-finalize. Story 15-7a2 : seuls les taux RÉELLEMENT
+    // insérés sont rendus, et tracés.
+    let inserted_rates =
+        match kesh_db::repositories::vat_rates::seed_default_swiss_rates_in_tx(&mut tx, company.id)
+            .await
+        {
+            Ok(rates) => rates,
+            Err(e) => {
+                best_effort_rollback(tx).await;
+                return Err(AppError::Database(e));
+            }
+        };
+
+    let seeded = audit_finalize_seed(
+        &mut tx,
+        current_user,
+        settings_inserted.then_some(&settings),
+        &inserted_rates,
+    )
+    .await;
+    if let Err(e) = seeded {
         best_effort_rollback(tx).await;
-        return Err(AppError::Database(e));
+        return Err(e);
     }
 
     // Story 3.7 AC #13 — auto-create fiscal_year for current calendar year if
     // none exists (Path B). L'INSERT atomique anti-TOCTOU
     // (`create_if_absent_in_tx`) garantit l'idempotence sous finalize concurrent.
-    // Audit log inséré uniquement si la création a effectivement eu lieu.
+    // Audit log inséré uniquement si la création a effectivement eu lieu — par
+    // le dépôt lui-même : `finalize` n'écrit PAS sa propre entrée d'exercice
+    // (Story 15-7a2, AC 7 ; son attribution par `::user` est la dette #431).
     let year = Utc::now().naive_utc().date().year();
     let fy_name = format!("Exercice {year}");
     let fy_start = chrono::NaiveDate::from_ymd_opt(year, 1, 1).expect("valid date");
@@ -789,21 +942,30 @@ async fn finalize_inner(
         )));
     }
 
+    // Story 15-7a2 — l'étape s'inscrit EN DERNIER (AC 2).
+    if let Err(e) = onboarding::record_step_completed_in_tx(
+        &mut tx,
+        current_user.user_id,
+        current_user.api_key_id,
+        7,
+        8,
+        "finalize",
+    )
+    .await
+    {
+        best_effort_rollback(tx).await;
+        return Err(AppError::Database(e));
+    }
+
     // R2-003 Fix: Add explicit rollback on final SELECT error.
     // P1-H6: Use fetch_optional and handle None explicitly instead of fetch_one panic.
     // P6-L6: Use FOR UPDATE on the read-back so the SELECT is consistent with the
     // earlier locks under any isolation level, including non-default READ COMMITTED
     // production tunings. Pure cost: one extra IS-already-mine lock acquisition;
     // no extra contention since this tx already holds the row exclusively.
-    // P6-L9: standardize on `.map_err(map_db_error)?` style for sqlx errors.
-    let updated = match sqlx::query_as::<_, kesh_db::entities::OnboardingState>(
-        "SELECT id, singleton, step_completed, is_demo, ui_mode, version, created_at, updated_at \
-         FROM onboarding_state WHERE singleton = TRUE FOR UPDATE",
-    )
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(map_db_error)
-    {
+    // Story 15-7a2 (E-1 de la revue de la 15-7a1) : par `lock_state_in_tx`, la
+    // requête du dépôt, et non une copie en ligne.
+    let updated = match onboarding::lock_state_in_tx(&mut tx).await {
         Ok(Some(row)) => row,
         Ok(None) => {
             best_effort_rollback(tx).await;
@@ -822,7 +984,68 @@ async fn finalize_inner(
     response_with_stub(pool, updated).await
 }
 
+/// Trace ce que `finalize` a **réellement inséré** (Story 15-7a2, AC 5) :
+/// `company_invoice_settings.created` si la ligne de réglages est neuve, puis
+/// un `vat_rate.created` par taux inséré, dans l'ordre du seed.
+async fn audit_finalize_seed(
+    tx: &mut Tx<'_>,
+    user: &CurrentUser,
+    inserted_settings: Option<&CompanyInvoiceSettings>,
+    inserted_rates: &[VatRate],
+) -> Result<(), AppError> {
+    if let Some(s) = inserted_settings {
+        // La table est clée par société : `entity_id = company_id`. Clés en
+        // snake_case (convention des entrées neuves) — `.updated`, écrit par
+        // `settings_snapshot_json`, est en camelCase par héritage.
+        audit_log::insert_in_tx(
+            tx,
+            NewAuditLogEntry::from_current_user(
+                user,
+                "company_invoice_settings.created",
+                "company_invoice_settings",
+                s.company_id,
+                Some(json!({
+                    "company_id": s.company_id,
+                    "invoice_number_format": s.invoice_number_format,
+                    "default_receivable_account_id": s.default_receivable_account_id,
+                    "default_revenue_account_id": s.default_revenue_account_id,
+                    "default_payable_account_id": s.default_payable_account_id,
+                    "default_rounding_account_id": s.default_rounding_account_id,
+                    "default_discount_account_id": s.default_discount_account_id,
+                    "default_bank_fees_account_id": s.default_bank_fees_account_id,
+                    "default_bad_debt_account_id": s.default_bad_debt_account_id,
+                })),
+            ),
+        )
+        .await?;
+    }
+    for rate in inserted_rates {
+        // Forme de `routes/vat.rs` (création d'un taux).
+        audit_log::insert_in_tx(
+            tx,
+            NewAuditLogEntry::from_current_user(
+                user,
+                "vat_rate.created",
+                "vat_rate",
+                rate.id,
+                Some(json!({
+                    "vat_rate_id": rate.id,
+                    "category": rate.category,
+                    "rate": rate.rate.to_string(),
+                    "valid_from": rate.valid_from,
+                    "valid_to": rate.valid_to,
+                })),
+            ),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
 // --- Helpers ---
+
+/// La transaction d'une route d'onboarding.
+type Tx<'a> = sqlx::Transaction<'a, sqlx::MySql>;
 
 /// Retourne l'état d'onboarding existant ou en crée un nouveau.
 async fn get_or_init_state(
@@ -834,35 +1057,193 @@ async fn get_or_init_state(
     }
 }
 
-/// S'assure qu'une company existe avec la bonne `instance_language`.
+/// Verrouille l'état d'onboarding **en premier** dans la transaction et
+/// **revérifie sous verrou** l'étape attendue — Story 15-7a2 (AC 8.2, choix
+/// C-15-7-12), sur la primitive [`onboarding::lock_state_in_tx`] (15-7a1).
 ///
-/// Utilise une transaction avec SELECT FOR UPDATE pour éviter la race condition
-/// TOCTOU (deux requêtes concurrentes créant chacune une company).
-async fn ensure_company_with_language(state: &AppState, lang: Language) -> Result<(), AppError> {
-    use kesh_db::errors::map_db_error;
+/// Rend l'état verrouillé ; `OnboardingStepAlreadyCompleted` si l'étape
+/// diffère (ou si `require_not_demo` et l'installation est de démonstration) ;
+/// `Internal` si la ligne manque. ⚠️ Reçoit `tx` par référence : elle **ne peut
+/// pas** annuler — l'appelant annule ([`conclude_step`]).
+///
+/// La lecture non verrouillée de la garde disparaît : le perdant d'une course
+/// à la même étape reçoit ici 400 `ONBOARDING_STEP_ALREADY_COMPLETED` (et non
+/// plus 409 `OPTIMISTIC_LOCK_CONFLICT` au moment de `update_step`).
+async fn lock_state_at_step(
+    tx: &mut Tx<'_>,
+    expected: i32,
+    require_not_demo: bool,
+) -> Result<OnboardingState, AppError> {
+    let locked = onboarding::lock_state_in_tx(tx)
+        .await?
+        .ok_or_else(|| AppError::Internal("onboarding_state absent sous verrou".into()))?;
+    if locked.step_completed != expected || (require_not_demo && locked.is_demo) {
+        return Err(AppError::OnboardingStepAlreadyCompleted);
+    }
+    Ok(locked)
+}
 
-    let mut tx = state.pool.begin().await.map_err(map_db_error)?;
-
-    // SELECT FOR UPDATE verrouille la row (ou rien si table vide).
-    // P5: ORDER BY id pour déterminisme (cf. Pattern 5 lock-discipline).
-    let existing = sqlx::query_as::<_, kesh_db::entities::Company>(
-        "SELECT id, name, first_name, last_name, address, address_street, address_building, address_postal_code, \
-                address_city, address_country, ide_number, org_type, accounting_language, \
-                instance_language, email, phone, website, is_stub, books_locked_through, \
-                version, created_at, updated_at \
-         FROM companies ORDER BY id LIMIT 1 FOR UPDATE",
+/// Franchit l'étape verrouillée (`n → n+1`, `version` verrouillée) et
+/// l'inscrit au journal d'audit — **en dernier**, après les entrées de domaine
+/// (AC 2). Ne commite pas.
+async fn complete_step(
+    tx: &mut Tx<'_>,
+    user: &CurrentUser,
+    locked: &OnboardingState,
+    ui_mode: Option<UiMode>,
+    step: &'static str,
+) -> Result<OnboardingState, AppError> {
+    let to = locked.step_completed + 1;
+    let updated =
+        onboarding::update_step_in_tx(tx, to, locked.is_demo, ui_mode, locked.version).await?;
+    onboarding::record_step_completed_in_tx(
+        tx,
+        user.user_id,
+        user.api_key_id,
+        locked.step_completed,
+        to,
+        step,
     )
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(map_db_error)?;
+    .await?;
+    Ok(updated)
+}
+
+/// Conclut la transaction unique d'une route d'étape : `COMMIT` puis réponse
+/// (`response_with_stub` **après** commit) si le corps a réussi ; sinon
+/// annulation, et l'erreur d'origine. Une route refusée ne laisse ni mutation
+/// ni trace (AC 8).
+async fn conclude_step(
+    pool: &sqlx::MySqlPool,
+    tx: Tx<'_>,
+    result: Result<OnboardingState, AppError>,
+) -> Result<Json<OnboardingResponse>, AppError> {
+    match result {
+        Ok(updated) => {
+            tx.commit().await.map_err(map_db_error)?;
+            Ok(Json(response_with_stub(pool, updated).await?))
+        }
+        Err(e) => {
+            best_effort_rollback(tx).await;
+            Err(e)
+        }
+    }
+}
+
+/// La liste de colonnes de `Company`, suivie de la fin de requête donnée.
+macro_rules! company_select {
+    ($tail:literal) => {
+        concat!(
+            "SELECT id, name, first_name, last_name, address, address_street, address_building, \
+             address_postal_code, address_city, address_country, ide_number, org_type, accounting_language, \
+             instance_language, email, phone, website, is_stub, books_locked_through, version, created_at, updated_at \
+             FROM companies ",
+            $tail
+        )
+    };
+}
+
+// P5: ORDER BY id for deterministic row selection (Pattern 5 lock-discipline).
+const COMPANY_SELECT_FOR_UPDATE: &str = company_select!("ORDER BY id LIMIT 1 FOR UPDATE");
+const COMPANY_BY_ID_FOR_UPDATE: &str = company_select!("WHERE id = ? FOR UPDATE");
+
+/// Verrouille la company (première et unique) dans la transaction.
+/// `Internal` si aucune company n'existe.
+async fn lock_company(tx: &mut Tx<'_>) -> Result<Company, AppError> {
+    sqlx::query_as::<_, Company>(COMPANY_SELECT_FOR_UPDATE)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+        .ok_or_else(|| {
+            AppError::Internal(
+                "Aucune company en base (company supprimée pendant onboarding ?)".into(),
+            )
+        })
+}
+
+/// `CompanyUpdate` reconstruit à l'identique depuis la ligne verrouillée :
+/// `companies::update_in_tx` est un full-replace, l'appelant ne change que les
+/// champs qu'il vise (AC 3).
+fn company_update_of(c: &Company) -> CompanyUpdate {
+    CompanyUpdate {
+        name: c.name.clone(),
+        first_name: c.first_name.clone(),
+        last_name: c.last_name.clone(),
+        address_structured: c.structured_address(),
+        ide_number: c.ide_number.clone(),
+        org_type: c.org_type,
+        accounting_language: c.accounting_language,
+        instance_language: c.instance_language,
+        email: c.email.clone(),
+        phone: c.phone.clone(),
+        website: c.website.clone(),
+    }
+}
+
+/// Écrit `company.updated` (`entity_type = "company"`, `entity_id` = la
+/// société), `details = {"before", "after"}` réduits aux champs de la route.
+async fn audit_company_updated(
+    tx: &mut Tx<'_>,
+    user: &CurrentUser,
+    company_id: i64,
+    before: serde_json::Value,
+    after: serde_json::Value,
+) -> Result<(), AppError> {
+    audit_log::insert_in_tx(
+        tx,
+        NewAuditLogEntry::from_current_user(
+            user,
+            "company.updated",
+            "company",
+            company_id,
+            Some(json!({ "before": before, "after": after })),
+        ),
+    )
+    .await?;
+    Ok(())
+}
+
+/// Modifie la société verrouillée par `companies::update_in_tx` (court-circuit
+/// no-op KF-004) et trace `company.updated` **si et seulement si** `version` a
+/// bougé ; `project` réduit une société aux champs que la route écrit. Rend la
+/// société après écriture.
+async fn update_company_in_tx(
+    tx: &mut Tx<'_>,
+    user: &CurrentUser,
+    locked: &Company,
+    changes: CompanyUpdate,
+    project: fn(&Company) -> serde_json::Value,
+) -> Result<Company, AppError> {
+    let updated = companies::update_in_tx(tx, locked.id, locked.version, changes).await?;
+    if updated.version != locked.version {
+        audit_company_updated(tx, user, locked.id, project(locked), project(&updated)).await?;
+    }
+    Ok(updated)
+}
+
+/// S'assure qu'une company existe avec la bonne `instance_language`, dans la
+/// transaction de `language` (après le verrou d'état).
+///
+/// `SELECT … FOR UPDATE` contre la race TOCTOU (deux requêtes créant chacune
+/// une company). Aucune société ⇒ insertion d'une société provisoire et
+/// `company.created` ; sinon `company.updated {instance_language}` si la langue
+/// change, rien sinon.
+async fn ensure_company_with_language_in_tx(
+    tx: &mut Tx<'_>,
+    user: &CurrentUser,
+    lang: Language,
+) -> Result<(), AppError> {
+    let existing = sqlx::query_as::<_, Company>(COMPANY_SELECT_FOR_UPDATE)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
 
     match existing {
         None => {
             // Story v011-2 : placeholder marqué `is_stub = TRUE` (cohérent avec
             // le stub du bootstrap, mêmes constantes partagées). `set_coordinates`
-            // repassera is_stub=FALSE. Ce chemin ne se déclenche que si aucune
-            // company n'existe (rare hors bootstrap, ex. company supprimée).
-            sqlx::query(
+            // lèvera le drapeau (`clear_stub_in_tx`). Ce chemin ne se déclenche que si aucune
+            // company n'existe (rare hors bootstrap, ex. après une remise à zéro).
+            let result = sqlx::query(
                 "INSERT INTO companies \
                  (name, address, org_type, accounting_language, instance_language, is_stub) \
                  VALUES (?, ?, ?, ?, ?, TRUE)",
@@ -872,158 +1253,107 @@ async fn ensure_company_with_language(state: &AppState, lang: Language) -> Resul
             .bind(OrgType::Independant)
             .bind(Language::Fr)
             .bind(lang)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
             .map_err(map_db_error)?;
+            let id = i64::try_from(result.last_insert_id())
+                .ok()
+                .filter(|id| *id > 0)
+                .ok_or_else(|| {
+                    AppError::Internal("last_insert_id invalide après INSERT companies".into())
+                })?;
+            audit_log::insert_in_tx(
+                tx,
+                NewAuditLogEntry::from_current_user(
+                    user,
+                    "company.created",
+                    "company",
+                    id,
+                    Some(json!({ "instance_language": lang, "is_stub": true })),
+                ),
+            )
+            .await?;
         }
         Some(company) => {
-            let rows = sqlx::query(
-                "UPDATE companies SET instance_language = ?, version = version + 1 \
-                 WHERE id = ? AND version = ?",
+            let mut changes = company_update_of(&company);
+            changes.instance_language = lang;
+            update_company_in_tx(
+                tx,
+                user,
+                &company,
+                changes,
+                |c| json!({ "instance_language": c.instance_language }),
             )
-            .bind(lang)
-            .bind(company.id)
-            .bind(company.version)
-            .execute(&mut *tx)
-            .await
-            .map_err(map_db_error)?
-            .rows_affected();
-            if rows == 0 {
-                best_effort_rollback(tx).await;
-                return Err(AppError::Database(
-                    kesh_db::errors::DbError::OptimisticLockConflict,
-                ));
-            }
+            .await?;
         }
     }
-
-    tx.commit().await.map_err(map_db_error)?;
     Ok(())
 }
 
-// P5: ORDER BY id for deterministic row selection (Pattern 5 lock-discipline).
-const COMPANY_SELECT_FOR_UPDATE: &str = "SELECT id, name, first_name, last_name, address, address_street, address_building, \
-            address_postal_code, address_city, address_country, ide_number, org_type, accounting_language, \
-            instance_language, email, phone, website, is_stub, books_locked_through, version, created_at, updated_at \
-     FROM companies ORDER BY id LIMIT 1 FOR UPDATE";
-
-/// Retourne la company (première et unique). Erreur si aucune company n'existe.
-async fn get_company(state: &AppState) -> Result<kesh_db::entities::Company, AppError> {
-    use kesh_db::repositories::companies;
-    let list = companies::list(&state.pool, 1, 0).await?;
-    list.into_iter()
-        .next()
-        .ok_or_else(|| AppError::Internal("Aucune company en base".into()))
+/// Les coordonnées que la route `coordinates` écrit, validées.
+struct CompanyCoordinates {
+    name: String,
+    first_name: Option<String>,
+    last_name: Option<String>,
+    address: kesh_db::entities::address::StructuredAddress,
+    ide_number: Option<String>,
 }
 
-/// Met à jour `company.org_type` via SELECT FOR UPDATE + OL.
-async fn update_company_org_type(state: &AppState, org_type: OrgType) -> Result<(), AppError> {
-    use kesh_db::errors::map_db_error;
-    let mut tx = state.pool.begin().await.map_err(map_db_error)?;
-    let company = sqlx::query_as::<_, kesh_db::entities::Company>(COMPANY_SELECT_FOR_UPDATE)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(map_db_error)?;
-    let rows = sqlx::query(
-        "UPDATE companies SET org_type = ?, version = version + 1 WHERE id = ? AND version = ?",
-    )
-    .bind(org_type)
-    .bind(company.id)
-    .bind(company.version)
-    .execute(&mut *tx)
-    .await
-    .map_err(map_db_error)?
-    .rows_affected();
-    if rows == 0 {
-        best_effort_rollback(tx).await;
-        return Err(AppError::Database(
-            kesh_db::errors::DbError::OptimisticLockConflict,
-        ));
-    }
-    tx.commit().await.map_err(map_db_error)?;
-    Ok(())
+/// Les seuls champs que `coordinates` écrit, plus `version` (AC 1, 3) — la
+/// colonne combinée `address`, dérivée des cinq champs, n'y figure pas.
+fn coordinates_snapshot(c: &Company) -> serde_json::Value {
+    json!({
+        "name": c.name,
+        "first_name": c.first_name,
+        "last_name": c.last_name,
+        "address_street": c.address_street,
+        "address_building": c.address_building,
+        "address_postal_code": c.address_postal_code,
+        "address_city": c.address_city,
+        "address_country": c.address_country,
+        "ide_number": c.ide_number,
+        "is_stub": c.is_stub,
+        "version": c.version,
+    })
 }
 
-/// Met à jour `company.accounting_language` via SELECT FOR UPDATE + OL.
-async fn update_company_accounting_language(
-    state: &AppState,
-    lang: Language,
+/// Met à jour les coordonnées de la company dans la transaction de la route —
+/// Story 15-7a2 (AC 3, règle composée ; choix C-15-7-15, C-15-7-21).
+///
+/// `companies::update_in_tx` (court-circuit no-op KF-004) avec la `version`
+/// verrouillée, **puis** `companies::clear_stub_in_tx` : l'utilisateur a
+/// renseigné ses vraies coordonnées, la société n'est plus provisoire — même
+/// quand elles sont identiques au placeholder. La société est **relue** après
+/// les deux écritures ; `company.updated` s'écrit ssi `version` a bougé à
+/// l'`update_in_tx` **ou** le drapeau a été levé.
+async fn update_company_coordinates_in_tx(
+    tx: &mut Tx<'_>,
+    user: &CurrentUser,
+    coords: CompanyCoordinates,
 ) -> Result<(), AppError> {
-    use kesh_db::errors::map_db_error;
-    let mut tx = state.pool.begin().await.map_err(map_db_error)?;
-    let company = sqlx::query_as::<_, kesh_db::entities::Company>(COMPANY_SELECT_FOR_UPDATE)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(map_db_error)?;
-    let rows = sqlx::query(
-        "UPDATE companies SET accounting_language = ?, version = version + 1 WHERE id = ? AND version = ?",
-    )
-    .bind(lang)
-    .bind(company.id)
-    .bind(company.version)
-    .execute(&mut *tx)
-    .await
-    .map_err(map_db_error)?
-    .rows_affected();
-    if rows == 0 {
-        best_effort_rollback(tx).await;
-        return Err(AppError::Database(
-            kesh_db::errors::DbError::OptimisticLockConflict,
-        ));
+    let company = lock_company(tx).await?;
+    let mut changes = company_update_of(&company);
+    changes.name = coords.name;
+    changes.first_name = coords.first_name;
+    changes.last_name = coords.last_name;
+    changes.address_structured = coords.address;
+    changes.ide_number = coords.ide_number;
+    let updated = companies::update_in_tx(tx, company.id, company.version, changes).await?;
+    let stub_cleared = companies::clear_stub_in_tx(tx, company.id).await?;
+    if updated.version != company.version || stub_cleared {
+        let after = sqlx::query_as::<_, Company>(COMPANY_BY_ID_FOR_UPDATE)
+            .bind(company.id)
+            .fetch_one(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
+        audit_company_updated(
+            tx,
+            user,
+            company.id,
+            coordinates_snapshot(&company),
+            coordinates_snapshot(&after),
+        )
+        .await?;
     }
-    tx.commit().await.map_err(map_db_error)?;
-    Ok(())
-}
-
-/// Met à jour les coordonnées de la company (name, address, ide_number).
-#[allow(clippy::too_many_arguments)]
-async fn update_company_coordinates(
-    state: &AppState,
-    name: &str,
-    first_name: Option<&str>,
-    last_name: Option<&str>,
-    address: &kesh_db::entities::address::StructuredAddress,
-    ide_number: Option<&str>,
-) -> Result<(), AppError> {
-    use kesh_db::errors::map_db_error;
-    let mut tx = state.pool.begin().await.map_err(map_db_error)?;
-    let company = sqlx::query_as::<_, kesh_db::entities::Company>(COMPANY_SELECT_FOR_UPDATE)
-        .fetch_one(&mut *tx)
-        .await
-        .map_err(map_db_error)?;
-    // `is_stub = FALSE` inconditionnel : l'utilisateur a renseigné ses vraies
-    // coordonnées → la company n'est plus un placeholder. Sûr car
-    // `update_company_coordinates` n'a qu'un seul appelant (`set_coordinates`,
-    // step 5→6). Si un 2e appelant émerge, extraire un paramètre `reset_stub`.
-    // Colonne `address` dérivée (#213) + 5 champs structurés (source de vérité QR/pain.001).
-    let rows = sqlx::query(
-        "UPDATE companies SET name = ?, first_name = ?, last_name = ?, address = ?, address_street = ?, address_building = ?, \
-             address_postal_code = ?, address_city = ?, address_country = ?, \
-             ide_number = ?, is_stub = FALSE, version = version + 1 \
-         WHERE id = ? AND version = ?",
-    )
-    .bind(name)
-    .bind(first_name)
-    .bind(last_name)
-    .bind(address.combined())
-    .bind(&address.street)
-    .bind(&address.building)
-    .bind(&address.postal_code)
-    .bind(&address.city)
-    .bind(&address.country)
-    .bind(ide_number)
-    .bind(company.id)
-    .bind(company.version)
-    .execute(&mut *tx)
-    .await
-    .map_err(map_db_error)?
-    .rows_affected();
-    if rows == 0 {
-        best_effort_rollback(tx).await;
-        return Err(AppError::Database(
-            kesh_db::errors::DbError::OptimisticLockConflict,
-        ));
-    }
-    tx.commit().await.map_err(map_db_error)?;
     Ok(())
 }

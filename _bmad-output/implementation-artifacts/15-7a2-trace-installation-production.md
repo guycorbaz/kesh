@@ -1,6 +1,6 @@
 # Story 15.7a2 : La piste de contrôle de l'installation de production
 
-Status: ready-for-dev
+Status: done
 
 <!-- Née le 2026-10-08 du découpage de la 15-7a (choix C-15-7-19), à la passe de validation P2 ; la
      15-7a était elle-même née du découpage de la 15-7 à la P1 (C-15-7-8). Elle garde les routes,
@@ -216,8 +216,10 @@ registre du commerce, y figure.
 (`crates/kesh-api/tests/audit_route_registry.rs:162-171`, sauf `seed_demo` `:164` et `reset` `:76`,
 qui restent `Exempt` jusqu'à la 15-7b1 et la 15-7b2, **avec un motif réécrit** : « issue #434 — peuplement de
 démonstration (15-7b1) et remise à zéro (15-7b2) », F-9), et `the_registry_partition_is_what_the_story_declares`
-est **recompté depuis la source** : sur la base de cette branche, `traced` 94 → **103**, `exempt`
-15 → **6** (deux de #434, quatre de #435), `no_matter` **3**, total **112** inchangé. Messages des
+est **recompté depuis la source** : sur la base de cette branche, `traced` 95 → **104**, `exempt`
+15 → **6** (deux de #434, quatre de #435), `no_matter` **2**, total **112** inchangé. *(Revue P1,
+A-3 : la fiche disait 94 → 103 et `no_matter` 3, valeurs de sa base de rédaction ; le T0 les a
+recomptées — 95/15/2 → 104/6/2 —, et c'est la valeur livrée.)* Messages des
 assertions mis à jour (« 11 routes d'onboarding (#434) » `:478` → « 2 routes d'onboarding (#434,
 15-7b1, 15-7b2) ») ; le message de l'assertion `traced` (`:470`, « 73 tracées avant la 25-1b, plus ses 14, … »)
 énumère les contributions au total et reçoit « plus les neuf routes de configuration de l'installation
@@ -282,7 +284,7 @@ il échappait à #434 et le reste) ; `routes/onboarding.rs:597`, `:608` (`retry_
 
 | Site | Aujourd'hui | Après la 15-7a2 |
 |---|---|---|
-| `admin-manual.tex:1821` | « 87 des 105 routes … la séquence d'installation (issue \#434) et les gestes de session (\#435) » | décompte **recompté depuis le registre** (AC 10) : « 103 des 112 routes » ; exceptions, **comptées** : six routes exemptées — deux de \#434 (le peuplement de démonstration et la remise à zéro) et **quatre** de \#435 (connexion, déconnexion, **renouvellement de session**, changement de son propre mot de passe : le texte actuel n'en nomme que trois, F3-6) —, et les trois routes « sans matière » — de sorte que 103 + 6 + 3 = 112 se lise (R12) |
+| `admin-manual.tex:1821` | « 87 des 105 routes … la séquence d'installation (issue \#434) et les gestes de session (\#435) » | décompte **recompté depuis le registre** (AC 10) : « 104 des 112 routes » ; exceptions, **comptées** : six routes exemptées — deux de \#434 (le peuplement de démonstration et la remise à zéro) et **quatre** de \#435 (connexion, déconnexion, **renouvellement de session**, changement de son propre mot de passe : le texte actuel n'en nomme que trois, F3-6) —, et les deux routes « sans matière » — de sorte que 104 + 6 + 2 = 112 se lise (R12 ; valeurs recomptées au T0, revue P1 A-3) |
 | `admin-manual.tex:2004` | « Ce qui manque est la séquence d'installation (\#434) et les gestes de session (\#435) » | « le peuplement de démonstration et la remise à zéro (\#434), et les gestes de session (\#435) » |
 | `admin-manual.tex:2244` (glossaire) | renvoie aux réserves | relire : ne doit pas contredire les deux lignes ci-dessus |
 | `user-manual.tex:2013-2016` | énumération « …exports, gestion des utilisateurs et modification de la société » | ajouter « et la configuration initiale de l'installation » |
@@ -304,14 +306,14 @@ moitié) et la fin de la double prise du plan comptable sous requêtes concurren
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Helpers** (AC 6, 8) — `onboarding::record_step_completed_in_tx` (`kesh-db`) ; `lock_state_at_step` (`kesh-api`) sur `lock_state_in_tx`.
-- [ ] **T2 — Handlers de progression** (AC 1, 2, 3, 6, 8, 9) — `Extension(current_user)` sur les huit qui ne l'ont pas ; une transaction chacun ; helpers société en `_in_tx` sur `companies::update_in_tx` et `clear_stub_in_tx`, relecture après écriture ; `ensure_company_with_language` rend créé{id} / modifié{before} / inchangé.
-- [ ] **T3 — `finalize`** (AC 1, 2, 5, 7) — entrées dans `finalize_inner`.
-- [ ] **T4 — Libellés et registres** (AC 10, 11) — `ACTIONS`, quatre `.ftl`, registre, motifs des deux exemptions restantes, partition recomptée.
-- [ ] **T5 — Doc-comments et Pattern 5** (AC 12) — grep exécuté, sortie collée au Dev Agent Record.
-- [ ] **T6 — Tests** (Dev Notes § Tests).
-- [ ] **T7 — Manuels, PDF, CHANGELOG** (AC 13, 14).
-- [ ] **T8 — Gates** : `kesh-db` touché ⇒ **gate complet même en cours de boucle** ; base de gate remise à zéro avant ; E2E complet au dernier commit de code (comparer aux échecs attendus de `docs/testing.md`).
+- [x] **T1 — Helpers** (AC 6, 8) — `onboarding::record_step_completed_in_tx` (`kesh-db`) ; `lock_state_at_step` (`kesh-api`) sur `lock_state_in_tx`.
+- [x] **T2 — Handlers de progression** (AC 1, 2, 3, 6, 8, 9) — `Extension(current_user)` sur les huit qui ne l'ont pas ; une transaction chacun ; helpers société en `_in_tx` sur `companies::update_in_tx` et `clear_stub_in_tx`, relecture après écriture ; `ensure_company_with_language` rend créé{id} / modifié{before} / inchangé.
+- [x] **T3 — `finalize`** (AC 1, 2, 5, 7) — entrées dans `finalize_inner`.
+- [x] **T4 — Libellés et registres** (AC 10, 11) — `ACTIONS`, quatre `.ftl`, registre, motifs des deux exemptions restantes, partition recomptée.
+- [x] **T5 — Doc-comments et Pattern 5** (AC 12) — grep exécuté, sortie collée au Dev Agent Record.
+- [x] **T6 — Tests** (Dev Notes § Tests).
+- [x] **T7 — Manuels, PDF, CHANGELOG** (AC 13, 14).
+- [x] **T8 — Gates** : `kesh-db` touché ⇒ **gate complet même en cours de boucle** ; base de gate remise à zéro avant ; E2E complet au dernier commit de code (comparer aux échecs attendus de `docs/testing.md`).
 
 ## Dev Notes
 
@@ -443,11 +445,158 @@ levé » de l'AC 3 ⇒ test 5 rouge ; remettre `get_company(&state)` dans la tra
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), agent de développement en autonomie (consignes de l'Epic 15).
+
 ### Debug Log References
+
+- Gate backend complet, au dernier commit de code (`7fb1a552`), base `kesh_157a2` remise à zéro
+  (DROP/CREATE, migrations, seed) : `scripts/test-fast.sh` — fmt, clippy `-D warnings`,
+  nextest **2908 exécutés, 2908 passés, 4 ignorés** (`target/gate-15-7a2-backend.log`).
+- Gate frontend complet : `npm run check` 0 erreur (27 avertissements préexistants),
+  `lint-i18n-ownership` PASS, `test:unit` **112 fichiers, 1091 tests passés**, `build` vert.
+- E2E complet au même commit (backend `kesh-api` sur `:3013`, base `kesh_e2e_157a2` reconstruite,
+  secrets `openssl rand`, `KESH_COOKIE_SECURE=false`, SMTP factices, répertoires inbox/documents du
+  worktree ; `/health` → `smtpConfigured: true`) : **245 passés, 9 échoués, 19 sautés** (01:27 UTC).
+  Les neuf échecs sont ceux de `docs/testing.md` § « Les échecs attendus », fichier par fichier :
+  sept KF-029 (#97 — `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150` ; les deux Path B attendent `#coord-address`, absent de
+  l'écran) et deux KF-045 (#421 — `invoices.spec.ts:415`, `:439`, avant 12:00 UTC) ; pas de huitième
+  variable sur ce run. Le log backend ne porte aucune erreur interne (que des `unauth` attendus).
+  Backend arrêté par son PID.
+- **Clôture — gates complets sur l'état rebasé** (`origin/main` = `de285ea8`, 15-11b ; tête de code
+  `004341d0`, dernier commit de code de la story), base `kesh_157a2` remise à zéro (DROP/CREATE,
+  migrations, seed) : `scripts/test-fast.sh` — fmt, clippy `-D warnings`, nextest **2934 exécutés,
+  2934 passés, 4 ignorés** (`target/gate-15-7a2-backend-cloture.log`). Frontend : `npm run check`
+  0 erreur (27 avertissements préexistants), `lint-i18n-ownership` PASS, `test:unit` **112 fichiers,
+  1091 tests**, `build` vert. E2E complet (backend `:3013`, base `kesh_e2e_157a2` reconstruite,
+  secrets `openssl rand`, `KESH_COOKIE_SECURE=false`, SMTP factices, inbox/documents du worktree,
+  `/health` → `smtpConfigured: true`) : **247 passés, 9 échoués, 17 sautés** (02:37–02:47 UTC). Les
+  neuf échecs, fichier par fichier contre `docs/testing.md` : sept KF-029 (`mode-expert.spec.ts:26`,
+  `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) et deux
+  KF-045 (#421, `invoices.spec.ts:415`, `:439`, avant 12:00 UTC). Log backend sans erreur interne
+  ni `Permission denied`. Backend arrêté par son PID.
+- Gates ciblés pendant le développement : `binary(onboarding_audit_e2e)` 19/19 ;
+  `onboarding_e2e`, `onboarding_path_b_e2e`, `audit_route_registry`, `audit_label_registry`,
+  `fiscal_years_e2e`, `profile_e2e` 88/88.
+
+#### Intégration sur `012fc430`
+
+`origin/main` avait avancé de deux merges (15-6a #572, 15-12a #573). Rebase sur `012fc430` :
+- **Conflits** : `CHANGELOG.md` (deux fois — rubrique « Corrigé » de `[0.13.0]` : l'entrée #543 de la
+  15-12a et l'entrée #434 d'ici, gardées toutes deux, la version à jour de la nôtre) ;
+  `crates/kesh-db/src/repositories/fiscal_years.rs` (doc-comment de `create_for_seed` : notre
+  reformulation 15-7a2 **et** le paragraphe « Sans la garde de l'invariant I » de la 15-12a) ;
+  `crates/kesh-api/tests/audit_route_registry.rs` (doc-comment seulement : point (iv) — la liste
+  réécrite par la 15-12a, `/close` sortie car rejouée, renommage ajouté, **plus** nos huit routes
+  d'étape sans rejeu ; point (vi) — « quatre routes » de la 15-12a, avec notre précision sur
+  `finalize`) ; registre des choix (union, aucun doublon d'en-tête) ; `sprint-status.yaml` (nos lignes
+  `last_updated` renumérotées (34) puis (35), après les (33) de `main`) ; les deux PDF (régénérés).
+  `messages.ftl` des quatre locales, `ACTIONS` et `rejeu_interblocage_e2e.rs` : fusion sans conflit,
+  aucune clé en double.
+- **Partition recomptée depuis `LIB_ROUTES`** : 112 = 104 `Traced` + 6 `Exempt` + 2 `NoMatter` ;
+  rejeu sur 115 : 22 + 4 + 89 — inchangée, le manuel (« 104 des 112 », « 104 + 6 + 2 = 112 ») reste
+  juste.
+- **Manuels** : `admin-manual.tex` et `user-manual.tex` fusionnés par git ; les deux PDF régénérés
+  et contrôlés aplatis (nos passages et ceux de la 15-6a et de la 15-12a présents).
+- **Gates complets sur l'état rebasé**, bases `kesh_157a2` et `kesh_e2e_157a2` remises à zéro :
+  backend `scripts/test-fast.sh` **2973/2973** (4 ignorés) ; frontend check 0 erreur, lint i18n
+  PASS, Vitest **1095/1095**, build vert ; E2E complet (`KESH_TEST_MODE=true` des deux côtés,
+  secrets `openssl rand`, SMTP, inbox/documents du worktree, `smtpConfigured: true`) **247 passés,
+  9 échoués, 17 sautés** (03:51–04:01 UTC) — les neuf attendus : sept KF-029
+  (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) et deux
+  KF-045 (`invoices:415`, `:439`, avant 12:00 UTC). Log backend sans erreur interne. Backend arrêté
+  par son PID.
 
 ### Completion Notes List
 
+- **T0** : écarts de fait seulement (Change Log du 2026-10-09). Registre recompté depuis la source :
+  95/15/2 → **104/6/2**, total 112 (la fiche disait 94→103 et 3 « sans matière »). Le doc-comment de
+  tête du registre disait déjà 112 et 115 (exacts) : rien à recompter.
+- **Mutations jouées une à une, constatées rouges, puis fichier restauré et touché** (choix
+  C-15-7a2-3 pour la forme des deux premières) :
+  1. appel à `record_step_completed_in_tx` retiré de `complete_step` ⇒ test 1 rouge ;
+  2. `COMMIT` SQL après `update_in_tx` dans `update_company_coordinates_in_tx` ⇒ test 9 (b) rouge
+     (société `Nouveau Nom SA`, `version` 3, `is_stub` levé, malgré le 500) ;
+  3. `COMMIT` SQL après `update_in_tx` dans `update_company_in_tx` (société commitée avant le plan)
+     ⇒ test 9 (a) rouge (`accounting_language` = DE, `version` 2) ;
+  4. comparaison d'étape retirée de `lock_state_at_step` ⇒ tests 10 (200 au lieu de 400) et 11
+     (`[200, 200]`) rouges ;
+  5. condition « stub levé » retirée de la règle de l'AC 3 ⇒ test 5 (f) rouge ;
+  6. `companies::list(&state.pool, …)` au lieu de `lock_company` dans la transaction de
+     `bank-account` ⇒ test 13 rouge (503 : le pool d'une connexion expire).
+- **Test 5** est écrit en six fonctions (a à f), une par montage ; le fichier compte donc
+  **19** fonctions de test pour les **13** tests de la fiche (recompté : `grep -c` des attributs).
+- **E-1** (revue de la 15-7a1) : `grep "FROM onboarding_state WHERE singleton = TRUE FOR UPDATE"`
+  ne rend plus que `reset` (`routes/onboarding.rs:274`, 15-7b2). **E-3** : la garde « aucun compte »
+  est lue dans la transaction après le verrou d'état (`count_by_company(&mut **tx, …)`). **Booléen
+  « inséré »** : lu dans `finalize_inner`, donc dans la tentative rejouée. **B-2** : `lock_state_in_tx`,
+  `clear_stub_in_tx`, `UpsertPrimaryOutcome::{Updated, Unchanged}` et le booléen `inserted` ont
+  désormais un appelant de production.
+- **Changements de comportement à dire** (Points de vigilance) : (i) le perdant d'une course à la
+  même étape reçoit 400 `ONBOARDING_STEP_ALREADY_COMPLETED` au lieu de 409 ; (ii) `companies.version`
+  ne bouge plus quand rien ne change (`language`, `org-type`, `accounting-language`, `coordinates`
+  sur société non provisoire), et `coordinates` sur société provisoire aux coordonnées changées la
+  porte à `+2` ; (iii) `mode` n'écrit `installation.ui_mode_changed` que si le mode change, alors
+  que `PUT /profile/mode` l'écrit toujours — divergence assumée, **à signaler** (alignement hors
+  périmètre) ; (iv) `company_invoice_settings.created` est en snake_case, `.updated` en camelCase
+  (héritage `settings_snapshot_json`) — non corrigé.
+- **Dette #431** : `fiscal_years::create_if_absent_in_tx` attribue toujours `fiscal_year.created`
+  par `::user` ; `finalize` n'écrit pas sa propre entrée d'exercice (AC 7). Non corrigé ici.
+- **AC 12 — grep du symptôme**, exécuté après correction ; restent, triés à la main comme
+  légitimes : `kesh-seed/src/lib.rs:167` et `fiscal_years_e2e.rs:1299` (seed de démonstration,
+  15-7b1) ; `routes/onboarding.rs:237` (`seed_demo`, E-2 → 15-7b1) ; `auth/bootstrap.rs:34`
+  (toujours vrai, nom du helper mis à jour), `:129` (historique), `:626`, `:821` (tests du
+  break-glass) ; `routes/profile.rs:53` (la route de profil bumpe toujours) ;
+  `audit_route_registry.rs:190`, `:284`, `:603` (les deux exemptions restantes, motif réécrit) ;
+  `companies.rs:147`, `:159` (le SQL de `clear_stub_in_tx`) ; `bank_accounts.rs:633` (sans
+  rapport) ; `fiscal_years.rs:205`, `accounts.rs:9`, `:991` (réécrits par cette story). Corrigés :
+  `TODO(L65 …)` et commentaire « `is_stub = FALSE` inconditionnel » d'`onboarding.rs` (code
+  réécrit), `companies.rs` (route) `:233`, `repositories/companies.rs:151`, `accounts.rs:8`, `:985`,
+  `:1023`, `vat_rates.rs:300`, `fiscal_years.rs:203-206`, `repositories/onboarding.rs` (« dix
+  appelants »), `profile.rs:47-49`, `bootstrap.rs:32-35` et `kesh-seed/src/lib.rs:66`, `:156`
+  (nom du helper renommé `ensure_company_with_language_in_tx`), Pattern 5 (`bank_accounts` en 5ᵉ
+  position, `grep FOR UPDATE` de `bank_accounts.rs` : seule la sentinelle `companies` le précède ;
+  une ligne par famille de route).
+- **Manuels** : `admin-manual.tex` (décompte 104/112, six exemptions nommées dont le
+  renouvellement de session, deux « sans matière », 104 + 6 + 2 = 112 ; réserve OLICo), glossaire
+  relu (renvoie aux réserves, ne contredit rien) ; `user-manual.tex` (énumération, deux familles,
+  paragraphe « Les entrées de la configuration initiale »). PDF régénérés (`make fr`) et contrôlés
+  aplatis ; le PDF de la brochure, régénéré sans changement de source, a été rétabli. Valeurs
+  grepées (`434`, `87`, `105`, `séquence d.installation`) : restent la ligne v0.12.1 du README
+  (historique) et la mention légitime de #434 dans le décompte.
+- Choix consignés : **C-15-7a2-1**, **C-15-7a2-2**, **C-15-7a2-3**.
+- **Remédiation de la revue de code P1** (2026-10-09) : gate **ciblé** seulement — base `kesh_157a2`
+  remise à zéro (DROP/CREATE, migrations, seed), `cargo fmt --check` vert, `cargo clippy --workspace
+  --all-targets -D warnings` vert, `binary(onboarding_audit_e2e)` **22/22**, `binary(audit_route_registry)`
+  11/11. **Gate complet et E2E complet non rejoués : ils viendront à la clôture.** Le fichier compte
+  désormais **22** fonctions de test (21 `#[sqlx::test(` + 1 `#[test]`, recompté), contre 19 au commit
+  `a298d19f` : trois neuves (9 (c), 9 (d), 14), deux étendues (1, 13). Huit mutations jouées une à une
+  sur `routes/onboarding.rs`, constatées rouges, fichier restauré (`cmp` contre la copie) et touché :
+  7–12. `require_not_demo` à `false` sur `start-production`, `org-type`, `accounting-language`,
+  `coordinates`, `bank-account`, `skip-bank` ⇒ test 14 rouge à chaque fois, sur la route mutée
+  (200 au lieu de 400) ;
+  13. `COMMIT` SQL entre `bulk_create_from_chart_in_tx` et `account.chart_loaded` ⇒ 9 (c) rouge
+  (86 comptes restés au lieu de 0) ;
+  14. `COMMIT` SQL entre `update_step_in_tx` et `record_step_completed_in_tx` ⇒ 9 (d) rouge (état
+  `(7, 2)` au lieu de `(6, 1)`).
+  Aucune ligne de code de production exécutable touchée. Choix consigné : **C-15-7a2-4**.
+
 ### File List
+
+- `crates/kesh-api/src/routes/onboarding.rs` — neuf handlers en une transaction, helpers
+  (`lock_state_at_step`, `complete_step`, `conclude_step`, `lock_company`, `update_company_in_tx`,
+  `ensure_company_with_language_in_tx`, `update_company_coordinates_in_tx`,
+  `audit_bank_account_upsert`, `audit_finalize_seed`, macro `company_select!`).
+- `crates/kesh-db/src/repositories/onboarding.rs` — `record_step_completed_in_tx`, doc-comment.
+- `crates/kesh-api/src/audit_labels.rs`, `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`.
+- `crates/kesh-api/tests/onboarding_audit_e2e.rs` (neuf), `tests/common/mod.rs`
+  (`audit_sequence`), `tests/onboarding_path_b_e2e.rs`, `tests/audit_route_registry.rs`.
+- Commentaires seuls : `crates/kesh-db/src/repositories/{accounts,vat_rates,fiscal_years,companies}.rs`,
+  `crates/kesh-api/src/routes/{profile,companies}.rs`, `crates/kesh-api/src/auth/bootstrap.rs`,
+  `crates/kesh-seed/src/lib.rs`.
+- `docs/MULTI-TENANT-SCOPING-PATTERNS.md`, `docs/manual/fr/{admin,user}-manual.{tex,pdf}`,
+  `CHANGELOG.md`.
+- `_bmad-output/implementation-artifacts/{15-7a2-trace-installation-production.md,sprint-status.yaml,epic-15-choix-autonomes.md}`.
 
 ## Change Log
 
@@ -563,3 +712,71 @@ levé » de l'AC 3 ⇒ test 5 rouge ; remettre `get_company(&state)` dans la tra
   Le constat **E-2** (`seed_demo` lève `is_stub` sans borner à `id` ni bumper `version`,
   `routes/onboarding.rs:211`) relève de la 15-7b1, qui le prévoit déjà (son § 2 : `clear_stub_in_tx`
   remplace l'`UPDATE`). Aucun AC, tâche ni test ne change : **14 AC, 8 tâches, 13 tests**.
+- 2026-10-09 — **T0 du développement — relecture de la fiche contre `ec745d0c`** (`origin/main`, 15-7a1,
+  15-5d et 15-11a mergées). Aucun écart ne change une règle ni un AC sur le fond ; écarts de **fait**,
+  relocalisés par le texte :
+  - **Registre des routes, recompté depuis la source** (`the_registry_partition_is_what_the_story_declares`
+    et `LIB_ROUTES`) : la base porte `traced` **95** (et non 94 : la 15-8a a ajouté le `PUT` des
+    écritures), `exempt` 15, `no_matter` **2** (et non 3), total 112. Après la story :
+    `traced` **104**, `exempt` **6**, `no_matter` **2**, total 112. Le manuel (AC 13) dira donc
+    « 104 des 112 routes » et « deux routes sans matière » — 104 + 6 + 2 = 112.
+  - **Lignes dérivées** : `routes/onboarding.rs` compte 1030 lignes ; les trois copies du verrou d'état
+    sont à `:249-250` (`reset`), `:648-649` (`finalize_inner`), `:801-802` (relecture) ; le retour
+    idempotent de `finalize` à `:672-675` ; le `TODO(L65 …)` à `:523-527` ; le commentaire
+    « `is_stub = FALSE` inconditionnel » à `:995-998`. `admin-manual.tex` : `:1945` (décompte) et
+    `:2128` (réserve), au lieu de `:1821` et `:2004`. Pattern 5 : liste `:298-302` inchangée, table
+    `:318` (« company only »).
+  - **Variantes de la 15-7a1 vérifiées présentes** : `lock_state_in_tx` et `LOCK_SQL` publique,
+    `clear_stub_in_tx` (rend `bool`), `upsert_primary_in_tx` (`UpsertPrimaryOutcome`),
+    `bulk_create_from_chart_in_tx` (`Vec<Account>`), `count_by_company` générique sur l'exécuteur,
+    `insert_with_defaults_in_tx` (`(réglages, inséré)`), `seed_default_swiss_rates_in_tx`
+    (`Vec<VatRate>`, ordre du seed).
+  - **« Journal » de la colonne `Rejeu` du registre** = journal **comptable** : les neuf routes restent
+    `SansEcritureAuJournal` (elles n'écrivent aucune écriture comptable) — la story ne touche que la
+    colonne d'audit.
+- 2026-10-09 — **Développement** (commits `c64ad977` code, `e38a3b7a` tests, `7fb1a552` documentation
+  et commentaires). Gate backend complet 2908/2908 (4 ignorés), frontend complet vert, E2E complet
+  245 passés / 9 échecs attendus (7 KF-029, 2 KF-045) au dernier commit de code ; six mutations
+  rouges. Le perdant d'une course passe de 409 à 400 ; `companies.version` ne bouge plus sur un
+  no-op et prend +2 sur `coordinates` d'une société provisoire. Statut `review`.
+- 2026-10-09 — **Revue de code P1** (Sonnet ×3, contexte frais, prompt versionné ; rapports
+  `target/gate-logs/15-7a2-review-p1-{B,E,A}.md`). Bruts, recomptés depuis les rapports : B **4 LOW** ;
+  E **1 MEDIUM, 5 LOW** ; A **1 MEDIUM, 5 LOW**. Après fusion des doublons (A-4 = B-1 ; A-5 = B-2 = E-2 ;
+  B-4 = E-4) : **0 CRITICAL, 0 HIGH, 2 MEDIUM, 10 LOW distincts**. Remédiation sans aucune ligne de
+  code de production exécutable (tests, doc-comment de test, fiche, CHANGELOG, registres).
+
+  | finding | sévérité | objet | sort |
+  |---|---|---|---|
+  | E-1 | MEDIUM | la garde `require_not_demo` n'est mordue par aucun test | **test 14** `demo_installation_is_refused_by_every_production_step` : les six routes gardées (`start-production`, `org-type`, `accounting-language`, `coordinates`, `bank-account`, `skip-bank` — revérifiées au code ; E en annonçait « sept » pour six citées), `is_demo = TRUE` à l'étape exacte ⇒ 400 `ONBOARDING_STEP_ALREADY_COMPLETED`, société, état, comptes, comptes bancaires et audit inchangés ; contrôle par différence (`is_demo` levé ⇒ 200). Six mutations rouges |
+  | A-1 | MEDIUM | le test 9 échouait sur `company.updated`, avant le plan et avant l'étape : ses moitiés « plan » et « étape » étaient vraies par construction | **9 (c)** `chart_loading_is_atomic_with_its_trace` (langue égale, plan non chargé : la première écriture d'audit est `account.chart_loaded`) et **9 (d)** `step_is_atomic_with_its_own_entry` (`skip-bank` : la première écriture est l'entrée d'étape) ; les deux mutations `COMMIT` rouges |
+  | A-2 | LOW | `details` de `company_invoice_settings.created` et `vat_rate.created` peu assertés | test 1 : objets **entiers** comparés aux lignes en base (neuf clés ; cinq clés par taux) |
+  | A-3 | LOW | AC 10 / AC 13 et `sprint-status.yaml` portaient 94→103 / 3 | corrigés en 95→104 / 6 / 2 = 112, annotés. ⚠️ Résidu **hors périmètre** signalé : la fiche 15-7b1 (`:199`, `:243`, `:351`) part encore de « 103 des 112 » et de trois « sans matière » — à recompter à son développement (104 → 105, 105 + 5 + 2 = 112) |
+  | A-4 = B-1 | LOW | variation de `companies.version` non dite au CHANGELOG | une phrase au CHANGELOG (inchangée sur no-op, +2 sur les coordonnées changées d'une société provisoire) |
+  | A-5 = B-2 = E-2 | LOW | test 13 limité à quatre routes | étendu aux **neuf** routes (parcours complet sur le pool d'une connexion, puis `skip-bank` à l'étape 6). Reste non prouvé par un test : le rejeu de `finalize` sur un 1213 forcé (A-5, second volet) — angle mort laissé, le banc `capture_rejeu` n'a pas été branché ici |
+  | B-4 = E-4 | LOW | huit routes d'étape sans rejeu sur interblocage | **choix assumé** C-15-7a2-4, écrit au point (iv) du doc-comment de `audit_route_registry.rs`, renvoi au point (vi) |
+  | B-3 | LOW | duplication du `SELECT … FOR UPDATE` de la société dans `ensure_company_with_language_in_tx` ; verrou de `coordinates` pris deux niveaux plus bas | non corrigé (code de production) ; dette cosmétique |
+  | E-3 | LOW | `get_or_init_state` hors transaction : course d'initialisation possible sur une base sans ligne d'état | angle mort **préexistant**, non reproduit ; le bootstrap crée la ligne. Non corrigé (code de production) |
+  | E-5 | LOW | échec de `response_with_stub` après `COMMIT` ⇒ 500 alors que l'étape est franchie | forme inchangée depuis avant la story ; angle mort de réponse, non de données |
+  | E-6 | LOW | `fiscal_year.created` attribué par `::user` dans `finalize` (garde de source aveugle à `fiscal_years.rs`) | dette **#431** déjà assumée à l'AC 7 ; le manuel ne promet pas l'attribution à la clé (relu par E) |
+  | A-6 | LOW | E2E : les specs Path B échouent (KF-029) avant `coordinates` : le navigateur n'exerce pas `coordinates`, `bank-account`, `finalize` | limite de preuve, non défaut ; ces routes sont tenues par `onboarding_audit_e2e` et `onboarding_path_b_e2e` |
+
+  Gate **ciblé** (cf. Dev Agent Record) ; gate complet et E2E à la clôture.
+
+- 2026-10-09 — **Revue de code P2 ciblée — boucle CLOSE** (Haiku, une lentille braquée sur le seul commit
+  de remédiation `23b3e46e` — `004341d0` après rebase ; prompt versionné `15-7a2-review-prompt-p2-ciblee.md` ;
+  rapport `target/gate-logs/15-7a2-review-p2-ciblee.md`, non versionné). **0 CRITICAL, 0 HIGH, 0 MEDIUM,
+  0 LOW** ; axes exercés, déclarés par la passe : les cinq demandés (test 14 aux étapes exactes avec
+  contrôle par différence, 9 (c) et 9 (d), test 13 sur neuf routes, `details` complets du test 1,
+  aucune ligne de production touchée) ; axe non exercé : aucun déclaré. Le cinquième est vérifié par
+  l'orchestrateur de clôture (`git show --stat` : tests, fiche, registres, CHANGELOG seulement) : la
+  remédiation ne touche **aucune ligne de code de production**, ce qui permet de clore après une passe
+  ciblée (§ « La passe ciblée »). **Trend de la revue de code** : P1 (Sonnet ×3) **2 MEDIUM, 10 LOW**
+  distincts → P2 ciblée (Haiku) **0**. Modèles : Sonnet pour la passe complète, Haiku pour la passe
+  ciblée (D6). Reclassements : aucun ; B-4 = E-4 assumé (C-15-7a2-4).
+- 2026-10-09 — **Clôture** : rebasée sur `origin/main` (`de285ea8`, 15-11b). Conflits : `admin-manual.pdf`
+  (régénéré sur le `.tex` fusionné, contrôlé aplati) et le registre des choix (union). Aucun conflit de
+  code ; `routes/onboarding.rs` lit déjà l'environnement par `config::env_nonempty`. Partition du
+  registre **recomptée depuis `LIB_ROUTES`** : 104 + 6 + 2 = 112 (rejeu : 22 + 4 + 89 = 115), inchangée,
+  manuel juste. Gates complets sur l'état rebasé : backend 2934/2934, frontend vert (1091 tests), E2E
+  247 passés / 9 échecs attendus (7 KF-029, 2 KF-045). Statut **done**. Choix C-15-7a2-5. `refs #434` :
+  c'est la 15-7b2 qui la fermera — **même release que la 15-7b1 et la 15-7b2**.

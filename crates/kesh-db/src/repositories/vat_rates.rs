@@ -297,7 +297,8 @@ const DEFAULT_SWISS_RATES: [(&str, &str, i64); 4] = [
 ///
 /// Story 11-1 : pose explicitement `category` (`normal`/`special`/`reduced`/
 /// `exempt`) — sinon le défaut `'custom'` casserait la continuité par catégorie.
-/// **Pas d'audit log** : seed = contexte système.
+/// **N'écrit pas elle-même d'audit** : l'appelant `finalize` écrit un
+/// `vat_rate.created` par taux rendu (Story 15-7a2).
 pub async fn seed_default_swiss_rates_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
