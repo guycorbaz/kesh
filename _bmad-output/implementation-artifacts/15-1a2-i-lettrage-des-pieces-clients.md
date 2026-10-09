@@ -2,7 +2,7 @@
 
 ## Status
 
-review *(développée le 2026-10-09 — Opus 5.5, en autonomie ; revue de code à mener)* — ready-for-dev *(découpée de la 15-1a2 le 2026-10-09 à la remédiation de sa validation P1 — C-15-1a2-1 ;
+done *(2026-10-10 — revue de code close à la P3 ciblée ; gates au dernier commit de code `87f367df`)* — ready-for-dev *(découpée de la 15-1a2 le 2026-10-09 à la remédiation de sa validation P1 — C-15-1a2-1 ;
 validation P2 remédiée le 2026-10-09 — **refus** plutôt qu'abstention au délettrage, C-15-1a2-10 ;
 validation P3 remédiée le 2026-10-09 — le refus **extrait** dans la story préalable **15-1a2-0**,
 C-15-1a2-19, la dérogation C-15-1a2-13 retirée ; validation P4 remédiée le 2026-10-09 — fixture partagée sortie
@@ -931,6 +931,31 @@ aucun site ne prescrit « ou » seul.
 - `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md`, `sprint-status.yaml`
 
 ## Change Log
+
+### Clôture — 2026-10-10 (Opus 5.5) — **REVUE CLOSE, story `done`**
+
+**Revue P3 ciblée** (Haiku 4.5, une lentille, prompt `15-1a2-i-review-prompt-p3-ciblee.md`, diff `7b27bf99..87f367df`,
+rapport `kesh-gate-logs/15-1a2-i-review-p3-ciblee.md`) : 1 MEDIUM et 2 LOW annoncés, vérifiés par l'orchestrateur :
+
+| finding | sév. annoncée | verdict |
+|---|---|---|
+| P3-1 — « n'est jamais refusé à cause du lettrage » sans la réserve de l'`Invariant` d'E2-1 (`CHANGELOG.md:19`, commentaires de `settle_invoice`, `create_credit_note`) | MEDIUM | **reclassé LOW, réfuté sur le fond** (erreur de catégorie) : la formulation est celle que proposait A2-8 précisément pour distinguer un **refus** (motif métier rendu à l'utilisateur) d'un **échec** ; l'`Invariant` d'E2-1 est un échec, nommé comme tolérance au doc de `sync_invoice_in_tx` et de `SyncOutcome` ; l'énoncé est vrai du code |
+| P3-2 — `lettering_documents.rs:5` « pièce historique … n'est pas lettrée après coup » | LOW | **laissé** : en-tête d'un binaire de test, qui décrit la propriété éprouvée par `historical_closed_history_abstains` (l'abstention de la synchronisation) — non un énoncé public ; hors du reçu de la 15-1a2-ii, à dessein |
+| P3-3 — un `INSERT` hors fonction est rapporté sous `<hors fonction>` | LOW | **accepté** : le test rougit toujours, en nommant le fichier |
+
+**0 au-dessus de LOW ; aucune remédiation** — la boucle se clôt (aucune ligne de production touchée après la P3).
+**Trend** : P1 (Sonnet ×3) **1 M / 12 L** → P2 (Opus ×3, complète) **1 M / 13 L** (D5 déclaré, non découpé) → P3 (Haiku,
+ciblée) **0 M / 3 L** (après vérification). Modèles : Opus 5.5 (développement, remédiations, orchestration), Sonnet 5.5
+(P1), Opus 5.5 (P2), Haiku 4.5 (P3 ciblée).
+
+**Gates au dernier commit de code `87f367df`** (exécutés ; base `kesh_1a2i` remise à zéro avant, sans redémarrer
+MariaDB) : `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) **3259 passés, 4 ignorés** ; frontend
+inchangé depuis `main` (`git diff --stat a06e1927 87f367df -- frontend` vide) — `npm run check` **0 erreur** (27
+avertissements préexistants), `lint-i18n-ownership` vert, `test:unit` **116 fichiers / 1167 tests**, `build` vert ;
+**E2E complet** (port 3022, base `kesh_e2e_1a2i` neuve, montage de `docs/testing.md`, binaire construit sur
+`87f367df`) : **247 passés, 7 échoués, 19 ignorés** — jugés fichier par fichier : les **sept** sont la KF-029 (#97) de
+la liste attendue (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) ; **aucun
+hors liste**, aucun à rejouer.
 
 ### Revue de code P2 — 2026-10-09 (Opus 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
 
