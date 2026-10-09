@@ -1178,3 +1178,27 @@ rapatriement, PDF d'avant aplati, `.log` d'avant), `15-13b-mutations.txt` (banc)
     `:439`, run avant 12:00 UTC) ; aucun hors liste. Import réel par l'API sur ce backend après la suite :
     200, `backupCreated:true`, sauvegarde `kesh-pre-import-…keshbackup` en `0600`. Journaux sous
     `/home/gcorbaz/devel/kesh-gate-logs/15-13b-cloture-*`. Statut **done**.
+- **2026-10-09 — Second rebase, sur `245b91ee` (15-7b1)** (Opus 5.5, en autonomie). Branche de sauvegarde
+  `backup/15-13b-avant-rebase-245b91ee` (tête d'avant : `b2cf4ee7`, celle de la PR #584), puis rebase des
+  11 commits sur `origin/main` = `245b91ee`.
+  - **Conflits** : registre des choix (C-15-7b1-1 à -3 de `main`, puis C-15-13b-1 de la branche — union, aucun
+    doublon de numéro) ; `admin-manual.pdf` **régénéré** (`make -B admin`, 83 pages) sur le `.tex` fusionné,
+    jamais fusionné ; `sprint-status.yaml` par union, ligne `last_updated` de la 15-13b renumérotée (42) après
+    la (41) de la 15-7b1. `CHANGELOG.md` et `admin-manual.tex` fusionnés sans conflit et relus. Contrôle de
+    perte : les 973 lignes ajoutées par `245b91ee` confrontées aux lignes retirées par la branche — deux lignes
+    génériques communes (`.await`, `})?;`), sans perte, `git range-diff` donnant les commits de code
+    identiques. PDF aplati : `105 des 112` ×1 (texte de `main`), `104 des 112` ×0, `/data/backup` ×8,
+    `kesh-pre-import` ×3, `keshbackup.partial` ×1, `sudo cp backup/` ×1. Manuel utilisateur touché par `main`
+    seul : son PDF conservé.
+  - **Gates sur l'état rebasé** (`CARGO_TARGET_DIR=kesh-15-13b/target` ; `kesh_1513b` et `kesh_e2e_1513b`
+    recréées, 75 migrations, seed sur `kesh_1513b`) : `scripts/test-fast.sh` — fmt vert, clippy `-D warnings`
+    vert, nextest **3057 exécutés, 3057 passés, 4 ignorés** ; frontend — `check` 0 erreur (27 avertissements
+    préexistants), `lint-i18n-ownership` PASS, `test:unit` **1139/1139** (114 fichiers), `build` vert.
+    **E2E complet** — un premier lancement a échoué au `globalSetup` (500, `1114 The table 'credit_note_lines'
+    is full` : tmpfs de MariaDB plein, `ibdata1` à 3,5 Go, sans rapport avec la branche) ; après redémarrage de
+    MariaDB par l'orchestrateur et reconstruction des deux bases, relancé (port 3013, recette de
+    `docs/testing.md` avec `KESH_ADMIN_BACKUP_DIR` inscriptible, `smtpConfigured:true`, 11:11–11:21 UTC) :
+    **245 passés, 9 échecs, 19 ignorés** — jugés fichier par fichier contre `docs/testing.md` § *Les échecs
+    attendus* : 7 KF-029 (#97 : `mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`,
+    `:77`, `:150`) et 2 KF-045 (#421 : `invoices.spec.ts:415`, `:439`, run avant 12:00 UTC) ; aucun hors liste.
+    Journaux : `/home/gcorbaz/devel/kesh-gate-logs/15-13b-rebase-245b91ee-*`. Statut **done** maintenu.
