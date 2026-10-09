@@ -6877,6 +6877,7 @@ l'import (#458–#461).
 - **Retenu** : `journal_entries::document_owners(executor, company_id, &[entry_id])`, une requête ensembliste découpée par 500, source unique des motifs de propriété (rangs 3 à 7) ; `reversal_blockers` et `first_document_owner` réécrits dessus ; la facture d'un règlement y est jointe. Test de parité avec l'ancien comportement. Gate complet à chaque passe (repository du socle).
 - **Écartées** : boucler sur `reversal_blockers` (N+1) ; une seconde requête de propriété propre à la vue (deux listes qui divergent — C-15-8-5).
 - **Réversible** : oui.
+- ⚠️ **Révisée à la validation P2 (2026-10-09) — voir C-15-1b-9 et C-15-1b-10** : la refonte est extraite en 15-1b-0 ; signature `&mut MySqlConnection` (et non `executor`) ; le « test de parité avec l'ancien comportement » compare désormais à un oracle **indépendant** (requête gelée en module de test, valeurs écrites), la version P1 comparant deux sorties de la même fonction.
 
 ## C-15-1b-3 — 15-1b (validation P1, R2/R6/F-3) : le motif d'une ligne ouverte est à X, l'état de sa pièce est d'aujourd'hui
 - **Contexte** : `partiallySettled` et `paidWithoutSettlementEntry` se calculaient sur l'état présent de la facture, présentés comme motif « à X » ; précédence implicite ; `letteringAfterAsOf` redondant.
@@ -6889,6 +6890,7 @@ l'import (#458–#461).
 - **Retenu** : une paire tout entière hors période ouverte n'est pas proposée (prédicat pur partagé avec `any_line_in_open_period`, lu sans verrou) ; plafond de 2 000 sur les candidates **après** les filtres « ouverte » et R5 ; `limit` défaut 100, plafond 500 ; réponse `{accountId, candidateCount, total, limit, items[{amount, daysApart, reversalPair, debit, credit}]}` ; paires contre-passation/origine en tête.
 - **Écartées** : proposer et marquer `acceptable: false` (l'écran montrerait des paires inutilisables) ; plafond avant R5 (422 sur un compte sans candidate).
 - **Réversible** : oui jusqu'au tag v0.13.0.
+- ⚠️ **Révisée à la validation P2 (2026-10-09)** : le « prédicat pur partagé avec `any_line_in_open_period` » n'est plus créé par la 15-1b en `kesh-core` ; c'est **la** factorisation de la 15-1a2-i (`open_period_rule` / `OpenPeriodRule::line_in_open_period` / `lines_in_open_period`, `letterings.rs`, publique, rend `Result`), employée telle quelle (C-15-1a2-18). Le sous-objet de ligne gagne `fiscalYearName` ; le 422 porte le plafond dans sa variante.
 
 ## C-15-1b-5 — 15-1b (validation P1, L6/F-13) : entrées de la route des postes ouverts
 - **Retenu** : `asOf` parsé comme `dateFrom` des écritures (400 `VALIDATION_ERROR`) ; défaut `Utc::now().naive_utc().date()`, convention de la balance âgée (l'écart UTC la nuit est hérité, non corrigé ici) ; aucune borne de date ; `limit` 50 par défaut, `clamp(1, 500)`, `offset.max(0)`, renvoyés dans la réponse comme `ListResponse`.
@@ -6923,6 +6925,7 @@ l'import (#458–#461).
 - **Heurt signalé** : la consigne disait « lettrable à la main si la règle le permet » — faux pour une ligne de pièce (rang 5, `LETTERING_LINE_OWNED_BY_DOCUMENT`). Le côté « délettrer » produit une facture due à ligne de vente lettrée (exception d'AC5 et d'AC9).
 - **Écartées** : poser les groupes clos (le rattrapage écrirait des groupes entièrement clos que la règle `Manual` interdit) ; dissoudre quand même à l'annulation (réécrit la vue « au 31.03 » d'un trimestre verrouillé) ; refuser en amont l'annulation d'un règlement de période verrouillée (refus neuf sur un geste existant).
 - **Réversible** : oui jusqu'au tag v0.13.0 ; à rouvrir si la recette juge trop cher le côté « délettrer ».
+- ⚠️ **Révisée deux fois à la validation P2 (2026-10-09) — voir C-15-1a2-10.** Le côté « lettrer » (abstention sur une pièce historique entièrement close) est **maintenu** ; le côté « délettrer » est remplacé : d'abord par « délettrer toujours » (écartée : contredit C113 et `user-manual.tex:577-579`), puis par le **refus** du geste qui l'exigerait (rang 2 bis de la file commune). Le « groupe gardé », le « heurt signalé » et l'exception d'AC5/AC9 ci-dessus n'ont plus d'objet.
 
 ## C-15-1a2-3 — 15-1a2 (validation P1, R5 = F-2) : un compte non lettrable est sauté, jamais une erreur
 - **Contexte** : `create_group_in_tx` exige la lettrabilité y compris en mode `System` ; sans garde, un règlement, un avoir ou un paiement échouerait en 409 de lettrage.
@@ -6963,3 +6966,75 @@ l'import (#458–#461).
 - **Retenu** : la dissolution avant la contre-passation suffit ; après le retrait d'un règlement de montant positif, `Σ C` vaut le reste dû, positif : C ne qualifie jamais. Le Reçu point 12 (C116, marques rendues par la contre-passation) est donc sans objet.
 - **Écartées** : l'appel ② de la fiche d'origine (inutile, et il exigerait un exercice tenu qui couvre une ligne de C — celui du règlement retiré ne la couvre plus).
 - **Réversible** : oui.
+
+## C-15-1a2-10 — 15-1a2-i / 15-1a2-ii (validation P2) : refus plutôt qu'abstention au délettrage — C-15-1a2-2 révisée deux fois
+- **Contexte** : l'abstention « partout » de C-15-1a2-2 gardait un groupe `document` sans ligne en période ouverte quand l'annulation d'un règlement l'aurait dissous. La validation P2 (Opus ×2 sur chacune des trois fiches) en a tiré huit findings MEDIUM+ nés de cette seule décision : facture due à ligne de vente lettrée (exception d'AC5 et d'AC9), paires ouvertes à jamais, `Invariant` (500) au premier règlement après un déverrouillage (15-1a2-i R-1, M-1, M-2, M-3 ; 15-1a2-ii R-6), groupe orphelin indissoluble sur facture fournisseur annulée payée (15-1a2-ii F2-1 HIGH = R-1), et un AC de la 15-1b qui prescrivait l'inverse (15-1b R-1 = F-1 HIGH). Décision de l'orchestrateur.
+- **Historique, tel qu'il s'est déroulé** : (1) P1 — abstention partout ; (2) révision 1, **écartée** — délettrer toujours, sans évaluer la règle (le mode `System` le permet) : contredit C113, qui fait entrer le verrou dans « période ouverte » précisément pour que la vue « au 31.03 » d'un trimestre verrouillé ne soit plus réécrite, et le manuel livré (`user-manual.tex:577-579` : « un groupe dont toutes les lignes sont dans la période verrouillée (ou dans des exercices clôturés) ne se lettre ni ne se délettre ») ; (3) révision 2, **retenue** — refus.
+- **Retenu** : lettrer une pièce **s'abstient** toujours quand la règle des périodes l'interdit (pièce historique entièrement close) ; tout geste qui exigerait de **dissoudre** un groupe `document` dont aucune ligne n'est en période ouverte est **refusé** — annulation d'un règlement ou d'un solde client, dé-rapprochement d'une facture, annulation d'un paiement fournisseur, annulation d'une facture fournisseur payée. Rang 2 bis de la file commune `settlement_entry_cancel_blocker` (C-15-1a2-12), code réemployé (C-15-1a2-11), remède : un administrateur déverrouille (`unlock_books`, motif obligatoire) ou rouvre les exercices. Conséquences : plus de groupe gardé, plus d'exception de période à AC5/AC9, plus d'`Invariant` après déverrouillage (vérifié au code : aucun autre chemin ne dissout un groupe hors période — `Manual` évalue R7, la contre-passation et le rattrapage ne dissolvent rien —, sauf la tolérance nommée d'un `lock_books` concurrent), plus de groupe orphelin fournisseur ; la 15-1b retire l'AC12 (b) « l'annulation sous verrou fait réapparaître » et écrit la vraie stabilité.
+- **Écartées** : abstention (états définitifs que rien ne répare) ; délettrer toujours (ci-dessus) ; abstention plus une issue de dette pour les paires définitives (une dette qu'on fabrique).
+- **Coût** : un refus neuf sur des gestes existants — pesé faible : v0.13.0 non taguée, aucune comptabilité réelle tenue dans Kesh, forme exacte du rang 2 existant. Un sixième module pour la 15-1a2-i (C-15-1a2-13).
+- **Réversible** : oui jusqu'au tag v0.13.0.
+
+## C-15-1a2-11 — 15-1a2-i (validation P2) : le refus du rang 2 bis réemploie `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`
+- **Contexte** : la consigne de l'orchestrateur disait « nouveau code d'erreur ». `SettlementCancelBlocker::code` (`kesh-db/src/errors.rs:399-418`) pose : « ⚠️ **Tous** ces codes réemploient ceux d'états du monde déjà nommés […] : un même fait ne reçoit pas un second nom » (précédent : `INVOICE_CREDITED` repris d'`UnvalidationBlocker`).
+- **Retenu** : un **refus** neuf — variante `DocumentLetteringInClosedPeriods`, trois clés de texte par famille × quatre locales — dont le **code** est `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`, l'état « toutes les lignes du groupe sont en période close » que le socle nomme déjà (15-1a-i R7). Heurt avec la consigne signalé ; l'esprit (un refus nommé, ses textes, son écran) est tenu.
+- **Écartées** : un code neuf (`SETTLEMENT_LETTERING_FROZEN`…) — second nom pour un même fait, contre la règle écrite du type.
+- **Réversible** : oui jusqu'au tag v0.13.0 (renommer un code avant publication).
+
+## C-15-1a2-12 — 15-1a2-i / 15-1a2-ii (validation P2) : place et forme du rang 2 bis
+- **Retenu** : évalué **dans la file commune** sur l'écriture examinée (règlement, rapprochement, achat), par `letterings::document_group_frozen_by_periods` (sur `open_period_rule`) — une évaluation, deux lecteurs (prédicteur de l'écran, geste). Placé **entre** `FiscalYearClosed` (2) et `MatchedBankTransaction` (3) : après 2 (l'exercice clos se nomme par son motif, même remède), avant 3 (« annulez d'abord le rapprochement » serait vain, le dé-rapprochement étant refusé par ce même rang). Le dé-rapprochement le refuse dans **sa** famille (`ReconciliationNotCancellable`) avant de défaire le lien. La 15-1a2-i livre la variante, la file, les trois familles de textes, les quatre locales et l'écran (y compris le cas fournisseur, dormant) ; la 15-1a2-ii ajoute le rang aux refus des deux gestes fournisseurs. La dissolution elle-même n'évalue pas la règle (une seule garde par motif).
+- **Écartées** : évaluer dans chaque dissolution (deux gardes du même motif, et une erreur hors famille pour le dé-rapprochement) ; placer le rang après 5 (ferait annoncer au rang 3 un remède vain).
+- **Réversible** : oui.
+
+## C-15-1a2-13 — 15-1a2-i (validation P2) : dérogation à la règle de splitting — six modules
+- **Contexte** : le refus ajoute l'écran et ses textes ; la fiche passe de cinq à six modules. Décision de l'orchestrateur : dérogation, sauf autre débordement constaté.
+- **Retenu** : dérogation écrite dans la fiche (§ « Dérogation règle de splitting ») : un refus nommé de plus, sans logique neuve hors du blocker existant ; le séparer de la dissolution laisserait entre deux merges l'état défaillant ; revue mécanique des textes. Aucun autre débordement : les gestes fournisseurs restent à la 15-1a2-ii, qui garde cinq modules (écran et textes fournisseurs livrés par la 15-1a2-i).
+- **Écartées** : une sous-story « refus » (voir ci-dessus) ; porter l'écran fournisseur à la 15-1a2-ii (elle passerait à six modules à son tour).
+- **Réversible** : oui avant développement.
+
+## C-15-1a2-14 — 15-1a2-i (validation P2, M-4) : `LETTERING_CONCURRENT_CHANGE` n'entre pas dans `failed[]`
+- **Contexte** : la table per-proposal de P4 le mappait sur son propre code, sans libellé à l'écran (`failed-proposal-label.ts`, 28 codes en dur dans son test).
+- **Retenu** : le code naît du seul `UPDATE` final de la primitive, sur des lignes tenues `FOR UPDATE` par l'acte 1 de la même transaction (`letterings.rs:739`, `:850`, `CLIENT_FOUND_ROWS`) : **inatteignable par construction**. Mappé sur `INTERNAL_ERROR` (+ `tracing::error!`), déjà libellé ; aucun changement frontend ; aucun ajout aux tableaux de refus des routes de règlement (L-3, même motif).
+- **Écartées** : libellé ×4 et décompte 28 → 29 (un sixième module pour un code qui ne sort jamais).
+- **Réversible** : oui.
+
+## C-15-1a2-15 — 15-1a2-ii (validation P2, R-3 = F2-3) : la découverte d'une facture fournisseur dépend de son statut
+- **Retenu** : `paid` → ancre + règlement ; `open` → ancre seule ; `cancelled` → ensemble **vide** (`Unchanged`, sans lecture verrouillante) — l'achat d'une facture annulée reste possédé et R6 l'a lettré `reversal`, que l'étape 2 commune déclarerait `Invariant`.
+- **Écartées** : tolérer `reversal` sur l'ancre d'une facture annulée dans l'étape 2 (une exception de plus dans l'algorithme commun) ; restreindre AC6 (e) aux factures non annulées (cache le cas au lieu de le traiter).
+- **Réversible** : oui.
+
+## C-15-1a2-16 — 15-1a2-ii (validation P2, R-2 = F2-2, F2-5, R-5) : AC6 en deux régimes, classe A justifiée honnêtement
+- **Retenu** : AC6 (d) classe chaque pièce au moment du rattrapage — une ligne en période ouverte : identité stricte ; aucune : abstention attendue, assertée pièce par pièce. La justification de classe A de M1 ne dit plus « no-op strict » : le rejeu ne délettre ni ne réécrit jamais, mais peut **lettrer** une pièce restée ouverte à bon droit (exercice rouvert depuis l'abstention, compte devenu lettrable) — ce que la synchronisation poserait aujourd'hui, pas un choix écrasé ; AC16 (c) borné et (d) ajouté, manuel d'administration nuancé. AC16 (c) asserte `rows_affected == 0` pour M1 sur une base à jour portant des pièces lettrées — le seul discriminant d'une garde manquante (`CLIENT_FOUND_ROWS`) ; `post_restore_class_a.rs` compte par entrée.
+- **Écartées** : classe B pour M1 (interdite : DDL dans un autre fichier) ; exempter M1 (les pièces ne seraient plus rattrapées après restauration).
+- **Réversible** : oui jusqu'au tag v0.13.0.
+
+## C-15-1a2-17 — 15-1a2-ii (validation P2, R-8 = F2-6) : `documentNumber` nul pour une facture fournisseur sans numéro
+- **Retenu** : `null` (et `documentId` porte l'identifiant) — règle de `reversal_blockers`, « le numéro accompagne l'identifiant quand il existe ».
+- **Écartées** : le repli de `pay_in_tx` (l'identifiant en chaîne) — c'est un libellé d'écriture, pas un numéro de pièce.
+- **Réversible** : oui.
+
+## C-15-1a2-18 — 15-1a2-i / 15-1b (validation P2, R-6, L-1 ; 15-1b R-3, L-2) : UNE factorisation du prédicat des périodes, publique, dans `letterings.rs`
+- **Retenu** : `OpenPeriodRule` (champs privés), `open_period_rule(conn, company_id, &fiscal_year_ids) -> Result<OpenPeriodRule, DbError>` (lecture sans verrou), `OpenPeriodRule::line_in_open_period(fiscal_year_id, entry_date)`, `lines_in_open_period(conn, company_id, &[(fy, date)]) -> Result<bool, DbError>` ; le mode `Manual` (`any_line_in_open_period`) et elles appellent le même prédicat par ligne, privé. La 15-1b l'emploie telle quelle ; sa seconde factorisation en `kesh-core` est supprimée.
+- **Écartées** : prédicat pur en `kesh-core` créé par la 15-1b (seconde factorisation, après la livraison de la première) ; `-> bool` (la fonction lit la base).
+- **Réversible** : oui.
+
+## C-15-1b-9 — 15-1b (validation P2, signal D5) : la propriété des lignes par lot devient la story 15-1b-0
+- **Contexte** : signal D5 levé — P1 0 HIGH → P2 1 HIGH, né d'une remédiation (la collision des remédiations P1 de la 15-1b et de la 15-1a2) ; deux MEDIUM sur la refonte de `reversal_blockers` (R-4 = F-5 signature et appelants, F-4 parité verte par construction). Décision de l'orchestrateur.
+- **Retenu** : extraire la refonte du socle — `document_owners` par lot, `reversal_blockers` et `first_document_owner` réécrits dessus, signature, inventaire des appelants, parité par oracle indépendant, mutations éprouvées — dans une story **patron** 15-1b-0, dont la 15-1b dépend ; la 15-1b garde la vue et les propositions (numéros T2 et test 8 conservés, marqués « déplacés »). Le découpage proposé au Change Log P1 (15-1b-i postes ouverts / 15-1b-ii propositions) n'isolait aucun des findings : abandonné.
+- **Écartées** : garder la refonte dans la 15-1b (gate complet à chaque passe de la vue, et la garde verte par construction) ; le découpage vue/propositions de P1.
+- **Réversible** : oui avant développement.
+
+## C-15-1b-10 — 15-1b-0 (validation P2 de la 15-1b, R-4 = F-5, F-4) : signature, instantané, oracle
+- **Retenu** : `document_owners(conn: &mut MySqlConnection, …)` et `reversal_blockers(conn: &mut MySqlConnection, …)` (patron C-15-8-24) ; deux requêtes, un instantané sous transaction ; la route de contre-passation lit dans une transaction de lecture ; les tests sur pool passent une connexion acquise. Au plus un propriétaire par type, le plus petit `id` (rend déterministe le `LIMIT 1` sans `ORDER BY` des transactions bancaires). Parité contre la requête **gelée** de `056997b0` en module de test et contre des valeurs écrites à la main ; trois mutations éprouvées.
+- **Écartées** : fragment SQL partagé inclus dans la requête unique de `reversal_blockers` (signature inchangée, mais deux textes SQL à tenir d'accord — la parité redevient la seule garde) ; garder `E: Executor` (impossible : deux requêtes).
+- **Réversible** : oui.
+
+## C-15-1b-11 — 15-1b (validation P2, R-1 = F-1 HIGH, F-2, L-3) : la stabilité « au X » réécrite
+- **Retenu** : stable pour `X` en période close (exercice clôturé, ≤ borne, ou exercice suivi d'un clôturé) **tant qu'aucun administrateur ne déverrouille (`unlock_company_books`), ne rouvre (`reopen_fiscal_year`) ni ne restaure** ; non stable au-dessus. AC12 : gestes **réussis** en (a), refus puis déverrouillage en (b), délettrage manuel au-dessus de la borne en (c).
+- **Écartées** : « non stable sous le verrou » (version P1, contraire au refus de la 15-1a2-i) ; « stable pour un X dans un exercice clos » sans réserve (ignorait la réouverture et le déverrouillage).
+- **Réversible** : oui jusqu'au tag v0.13.0 (texte d'`api-external.md`).
+
+## C-15-1b-12 — 15-1b (validation P2, LOW) : reste dû au centime, avoir sans état, ordre des refus
+- **Retenu** : `amountDue` par `amount_due_to_centime`, seuils de `documentState` sur cette valeur ; `documentState` nul pour une ligne d'avoir ; ordre des refus : paramètres (400) → compte (404) → lettrabilité (409) ; 422 `{ max }` interpolé.
+- **Écartées** : reste brut (#490 : 0,004 classé `partiallySettled`) ; état de la facture recopié sur la ligne d'avoir (deux lignes disant la même chose).
+- **Réversible** : oui jusqu'au tag v0.13.0.

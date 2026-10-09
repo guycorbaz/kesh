@@ -17,12 +17,12 @@ Reçu ») restent justes ; les numéros neufs commencent à P7 et AC13.
 
 | ordre | fiche | ce qu'elle porte |
 |---|---|---|
-| 1 | `15-1a2-i-lettrage-des-pieces-clients.md` | **Les pièces clientes** : le groupe `document` d'une facture (P1), la synchronisation et sa jumelle de dissolution (P3), son évaluation sans verrou des périodes et son abstention (P7), l'extension d'audit (`DocumentRef`), les cinq sites — `settle_invoice`, `write_off_invoice`, `accept_one_invoice` (et son mappage per-proposal), `create_credit_note`, `cancel_settlement_in_tx` client qui couvre le dé-rapprochement (P4, P5), le compte de créance non lettrable, la documentation client et le message `LETTERING_IS_DOCUMENT` |
-| 2 | `15-1a2-ii-fournisseurs-et-rattrapage.md` | **Les fournisseurs et le rattrapage** : le groupe `document` d'une facture fournisseur (P2), sa synchronisation (P3 part ii), les trois sites — `pay_in_tx` (qui couvre `pay` et `confirm_batch`, y compris le compte interne), `cancel_settlement_in_tx` et `cancel_in_tx` fournisseurs (P4 part ii) —, les **deux** migrations de rattrapage (P6), leur triage P7, l'outillage P5/P6/P8, le rejeu après restauration, la documentation fournisseur et administrateur |
+| 1 | `15-1a2-i-lettrage-des-pieces-clients.md` | **Les pièces clientes** : le groupe `document` d'une facture (P1), la synchronisation et sa jumelle de dissolution (P3), son évaluation sans verrou des périodes — abstention à la création, **refus** du geste qui délettrerait un groupe clos (rang 2 bis de la file commune des annulations, ses textes et son écran, fournisseurs compris ; P7, C-15-1a2-10, validation P2) —, l'extension d'audit (`DocumentRef`), les cinq sites — `settle_invoice`, `write_off_invoice`, `accept_one_invoice` (et son mappage per-proposal), `create_credit_note`, `cancel_settlement_in_tx` client qui couvre le dé-rapprochement (P4, P5), le compte de créance non lettrable, la documentation client et le message `LETTERING_IS_DOCUMENT` |
+| 2 | `15-1a2-ii-fournisseurs-et-rattrapage.md` | **Les fournisseurs et le rattrapage** : le groupe `document` d'une facture fournisseur et sa découverte par statut (P2), sa synchronisation (P3 part ii), le rang 2 bis aux refus des deux annulations fournisseurs, les trois sites — `pay_in_tx` (qui couvre `pay` et `confirm_batch`, y compris le compte interne), `cancel_settlement_in_tx` et `cancel_in_tx` fournisseurs (P4 part ii) —, les **deux** migrations de rattrapage (P6), leur triage P7, l'outillage P5/P6/P8, le rejeu après restauration, la documentation fournisseur et administrateur |
 
 **Dépendance** : la **15-1a2-ii suppose la 15-1a2-i mergée** (synchronisation factorisée, périodes,
 audit, fixture ; son AC6 compare le rattrapage à la synchronisation de la 15-1a2-i). Ordre :
-**15-12a → 15-12b → 15-1a-i → 15-1a-ii → 15-1a2-i → 15-1a2-ii → 15-1b → 15-1c**. ⛔ Pas de tag entre les
+**15-12a → 15-12b → 15-1a-i → 15-1a-ii → 15-1a2-i → 15-1a2-ii → 15-1b-0 → 15-1b → 15-1c**. ⛔ Pas de tag entre les
 merges (C124) : entre la 15-1a2-i et la 15-1a2-ii, les factures fournisseurs payées ne sont pas
 lettrées et les données d'avant la mise à jour ne sont pas rattrapées.
 
@@ -63,6 +63,7 @@ critère ; le second, la non-convergence, ne joue pas en première passe). Déci
 | AC11 (migration) | — | ✓ |
 | AC12 (documentation) | part i | part ii |
 | **AC13** (créance non lettrable), **AC14** (périodes closes), **AC15** (rapprochement) — neufs | ✓ | — |
+| **AC17** (le refus du rang 2 bis, du prédicteur à l'écran) — neuf, validation P2 | ✓ | — |
 | **AC16** (rejeu après restauration) — neuf | — | ✓ |
 | T1–T6 | T0–T6 (client) | T0–T6 (fournisseur, migrations) |
 
@@ -78,7 +79,7 @@ critère ; le second, la non-convergence, ne joue pas en première passe). Déci
 | 6, 19 | facture créditée **et** réglée | 15-1a2-i P1 — **tranché** : reste ouverte, aucun site réécrit (C-15-1a2-7) |
 | 7 | appariement par position | 15-1a2-ii P6 |
 | 8, 14 | ordre de développement | Status des sous-fiches, ci-dessus |
-| 9 | annulation d'un règlement de période verrouillée | 15-1a2-i P7 point 2 (abstention, groupe gardé, C-15-1a2-2) |
+| 9 | annulation d'un règlement de période verrouillée | 15-1a2-i P7 point 2 — **refusée** (rang 2 bis, C-15-1a2-10 ; l'abstention et le groupe gardé de la P1, C-15-1a2-2, sont révisés) |
 | 12 (C116) | marques rendues par la contre-passation | **sans objet** : aucune synchronisation n'est appelée après une contre-passation (C-15-1a2-9) |
 | 16 (C126) | `ENTRY_LETTERED` parle en dernier | **sans objet** : aucun refus n'est ajouté à `delete_in_tx` ni à `invoices::unvalidate` |
 | 17, 18 (C127, C128) | exercice par ligne dans l'audit, nom lu sans verrou | 15-1a2-i AC10, P3 (aucune lecture verrouillante ajoutée) |
@@ -93,11 +94,13 @@ sur chaque fichier.)*
 
 | | 15-1a2 (`056997b0`) | 15-1a2-i | 15-1a2-ii |
 |---|---|---|---|
-| critères | 12 (AC1–AC12) | 12 (AC1–AC5, AC8–AC10, AC12–AC15) | 8 (AC6, AC7, AC8–AC10, AC11, AC12, AC16) |
-| tâches | 6 (T1–T6) | 7 (T0–T6) | 7 (T0–T6) |
-| tests nommés | aucun | 22 neufs + 1 étendu | 14 neufs + 2 modifiés |
+| critères | 12 (AC1–AC12) | 13 (AC1–AC5, AC8–AC10, AC12–AC15, AC17) | 8 (AC6, AC7, AC8–AC10, AC11, AC12, AC16) |
+| tâches | 6 (T1–T6) | 8 (T0, T1, T2, T2-bis, T3–T6) | 7 (T0–T6) |
+| tests nommés | aucun | 30 neufs + 3 étendus | 19 neufs + 4 modifiés |
 
-Critères distincts : AC1–AC16 (16) ; AC8, AC9, AC10, AC12 se partagent en parts i / ii (12 + 8 − 4 = 16).
+Critères distincts : AC1–AC17 (17) ; AC8, AC9, AC10, AC12 se partagent en parts i / ii (13 + 8 − 4 = 17).
+*(Recompté après la remédiation de la validation P2 ; à la P1 : 12 / 7 / 22 + 1 pour la part i, 8 / 7 /
+14 + 2 pour la part ii.)*
 
 ## Bilan de la validation P1 — par finding
 
@@ -130,7 +133,8 @@ CRITICAL, 2 HIGH, 7 MEDIUM, 3 LOW**). Chaque affirmation relue au code (`grep -n
 **Décisions de l'orchestrateur appliquées, et ce qui s'y est heurté** :
 
 1. **Découpage** — appliqué ; `confirm_batch` déplacé côté fournisseur (voir plus haut).
-2. **Périodes closes** — appliqué. ⚠️ **Heurt** : « la pièce reste ouverte, **lettrable à la main** si la
+2. **Périodes closes** — appliqué. *(⚠️ Révisé à la validation P2 : le côté « délettrer » est remplacé par
+   un **refus**, C-15-1a2-10 ; ce qui suit décrit la décision P1.)* ⚠️ **Heurt** : « la pièce reste ouverte, **lettrable à la main** si la
    règle le permet » est **faux** — une ligne de pièce n'est jamais lettrable à la main (15-1a R5, rang 5
    de `create_group_in_tx` en mode `Manual`, `LETTERING_LINE_OWNED_BY_DOCUMENT`). Écrit tel quel :
    ouverte, **non** lettrable à la main. ⚠️ **Coût du côté « délettrer »**, écrit et non réparé : un
@@ -148,6 +152,15 @@ CRITICAL, 2 HIGH, 7 MEDIUM, 3 LOW**). Chaque affirmation relue au code (`grep -n
 5. **Le reste** — appliqué.
 
 ## Change Log
+
+### Validation P2 — 2026-10-09 (Opus 5.5 ×2 par sous-fiche ; remédiation Opus 5.5, seul remédiateur des trois fiches de la suite du lettrage)
+
+Bilans par finding dans les Change Logs des sous-fiches (et de la 15-1b). 15-1a2-i : 0 HIGH, **4 MEDIUM
+distincts** ; 15-1a2-ii : **1 HIGH, 6 MEDIUM distincts** (signal D5 levé, déclaré, non découpé). Décision
+structurante : **refus** du geste qui délettrerait un groupe `document` sans ligne en période ouverte —
+C-15-1a2-2 révisée deux fois (abstention partout → délettrer toujours, écartée → refus ; C-15-1a2-10).
+Dérogation de la 15-1a2-i à la règle de splitting (six modules, C-15-1a2-13). Choix C-15-1a2-10 à 18.
+Corps de cet index : table, Reçu point 9 et recompte mis à jour. Prochaine passe : **P3**.
 
 ### Validation P1 — 2026-10-09 (Sonnet 5.5 ×2, lentilles R et F ; remédiation Opus 5.5, en autonomie)
 

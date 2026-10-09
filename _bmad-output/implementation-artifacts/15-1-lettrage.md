@@ -14,8 +14,8 @@ démêlé quatre passes durant — dit ce que coûte un corps complet laissé de
 | ordre | fiche | ce qu'elle porte |
 |---|---|---|
 | 1 | `15-1a-socle-lettrage.md` — **index, `split` le 2026-10-09 (C124)** : `15-1a-i-marque-du-lettrage.md` puis `15-1a-ii-gardes-du-lettrage.md` | **Socle** : (i) deux colonnes sur `journal_entry_lines` (clé = plus petit id de ligne du groupe, origine), la primitive unique de lettrage, les routes manuelles ; (ii) le gel des écritures lettrées, la contre-passation qui lettre ce qui est libre |
-| 2 | `15-1a2-lettrage-des-pieces.md` | **Lettrage des pièces** (neuve) : une facture client ou fournisseur soldée est lettrée d'office, l'annulation d'un règlement délettre ; rattrapage des données existantes par migration |
-| 3 | `15-1b-vue-lignes-ouvertes.md` | **Les postes ouverts d'un compte à une date**, l'invariant « somme des ouverts = solde », et le moteur de proposition (backend) |
+| 2 | `15-1a2-lettrage-des-pieces.md` — **index, `split` le 2026-10-09 (C-15-1a2-1)** : `15-1a2-i-lettrage-des-pieces-clients.md` puis `15-1a2-ii-fournisseurs-et-rattrapage.md` | **Lettrage des pièces** (neuve) : une facture client ou fournisseur soldée est lettrée d'office, l'annulation d'un règlement délettre ; rattrapage des données existantes par migration |
+| 3 | `15-1b-0-propriete-des-lignes-par-lot.md` (patron, extraite le 2026-10-09, C-15-1b-9) puis `15-1b-vue-lignes-ouvertes.md` | **Les postes ouverts d'un compte à une date**, l'invariant « somme des ouverts = solde », et le moteur de proposition (backend) |
 | 4 | `15-1c-proposition-ecran.md` | **L'écran « Postes ouverts »**, le manuel, l'E2E |
 
 ⛔ **Prérequis : la Story 15-12a** (`15-12a-cloture-dans-l-ordre.md`, clôture dans l'ordre, C89) se
@@ -23,9 +23,10 @@ développe **avant** la 15-1a — la règle des exercices du lettrage et la vue 
 reposent sur « les clos forment un préfixe », invariant que la 15-12a tient. La 15-12 a été découpée le
 2026-10-09 (C107) en **15-12a** (l'ordre, prérequis réel) et **15-12b** (le filet des données héritées,
 qui touche aussi `journal_entries::delete_in_tx` : elle passe avant de préférence, sans être requise).
-Ordre complet : **15-12a → 15-12b → 15-1a-i → 15-1a-ii → 15-1a2 → 15-1b → 15-1c** *(validation P1 de la
-15-1a, 2026-10-08 — C105 ; précisé le 2026-10-09 — C112 ; la 15-1a découpée à sa validation P3 —
-C124 : la v0.13.0 ne se tague pas entre la 15-1a-i et la 15-1a-ii)*. ⚠️ L'invariant ne vaut que pour les états atteints
+Ordre complet : **15-12a → 15-12b → 15-1a-i → 15-1a-ii → 15-1a2-i → 15-1a2-ii → 15-1b-0 → 15-1b → 15-1c**
+*(validation P1 de la 15-1a, 2026-10-08 — C105 ; précisé le 2026-10-09 — C112 ; la 15-1a découpée à sa
+validation P3 — C124 : la v0.13.0 ne se tague pas entre la 15-1a-i et la 15-1a-ii ; la 15-1a2 découpée à
+sa validation P1 — C-15-1a2-1 ; la 15-1b-0 extraite de la 15-1b à sa validation P2 — C-15-1b-9)*. ⚠️ L'invariant ne vaut que pour les états atteints
 depuis un état sain : dans l'état hérité (sauvegarde v0.12.x), ni la 15-12a ni la 15-12b ne gardent le
 lettrage (C112) — **la 15-1a le garde elle-même** : une ligne n'est « en période ouverte » que si aucun
 exercice postérieur n'est clos, ni sa date sous le verrou de période (C113, validation P2).

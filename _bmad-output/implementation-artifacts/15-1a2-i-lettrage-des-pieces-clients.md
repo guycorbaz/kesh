@@ -3,7 +3,8 @@
 ## Status
 
 ready-for-dev *(découpée de la 15-1a2 le 2026-10-09 à la remédiation de sa validation P1 — C-15-1a2-1 ;
-**validation P2 (Opus, contexte frais) à mener avant tout développement**)*
+validation P2 remédiée le 2026-10-09 — **refus** plutôt qu'abstention au délettrage, C-15-1a2-10 ;
+**validation P3 à mener avant tout développement**)*
 
 ## Story
 
@@ -12,11 +13,12 @@ ready-for-dev *(découpée de la 15-1a2 le 2026-10-09 à la remédiation de sa v
 soient lettrées entre elles sans que j'aie à le refaire, et délettrées si un règlement est annulé,
 **so that** le grand livre dise ce que disent la fiche facture, la balance âgée et les relances :
 une facture est soldée **si et seulement si** son reste dû est nul — dans les limites, nommées, des
-périodes closes (P7).
+périodes closes (P7) : une pièce historique entièrement close n'est pas lettrée après coup, et un
+lettrage figé par une période close ne se défait pas sans qu'un administrateur la rouvre.
 
 Première des deux sous-fiches de la **15-1a2** (index : `15-1a2-lettrage-des-pieces.md`). **Suppose la
 15-1a-i (#587) et la 15-1a-ii (#593) mergées** — base `056997b0`. Ordre : 15-1a-i → 15-1a-ii →
-**15-1a2-i** → 15-1a2-ii → 15-1b → 15-1c. ⛔ La **15-1a2-ii** (fournisseurs et rattrapage) suppose
+**15-1a2-i** → 15-1a2-ii → 15-1b-0 → 15-1b → 15-1c. ⛔ La **15-1a2-ii** (fournisseurs et rattrapage) suppose
 **celle-ci** mergée : elle réutilise sa synchronisation, son évaluation des périodes et son extension
 d'audit, et son test d'accord (AC6) compare le rattrapage à la synchronisation livrée ici.
 
@@ -71,7 +73,9 @@ tests : **un** `INSERT` (`invoice_settlements::create_in_tx`, `invoice_settlemen
 `:619`) et `accept_one_invoice` (`kesh-api/src/routes/reconciliation.rs:1383`, appel `:1820`) ; **un**
 `DELETE` (`cancel_settlement_in_tx`, `invoice_settlements_write.rs:781`, `DELETE` `:862`), aussi appelé
 par le dé-rapprochement (`reconciliation_cancel.rs`). Hors production : `invoices.rs` en porte deux dans
-son `mod tests` (`#[cfg(test)]`), et neuf fichiers de tests en écrivent en SQL brut (F-10, Dev Notes). La
+son `mod tests` (`#[cfg(test)]`, `:4662` et `:4699`), et **huit** fichiers en écrivent en SQL brut hors
+production — sept fichiers de tests et le `mod tests` d'`invoices.rs` (validation P2, R-5 : le `mod tests`
+d'`invoice_settlements.rs` n'en porte aucun, sa seule occurrence `:415` est la production ; Dev Notes). La
 FK `ON DELETE CASCADE` depuis `invoices` ne joue que sur un brouillon (`invoices::delete` refuse une
 facture validée).
 
@@ -130,12 +134,19 @@ pub enum SyncOutcome {
     Created { key: i64 },
     Dissolved { key: i64 },
     Recreated { dissolved: i64, created: i64 },
-    /// Rien n'est écrit : la règle des périodes l'interdit (P7) …
+    /// Rien n'est écrit : la règle des périodes interdit de LETTRER (P7 point 1) —
+    /// rendu par la synchronisation seule, jamais par la dissolution …
     AbstainedClosedPeriods,
     /// … ou le compte n'est pas lettrable (P3 point 3).
     AccountNotLetterable,
 }
 ```
+
+⛔ **La dissolution ne s'abstient jamais** (C-15-1a2-10, validation P2) : un groupe `document` sans
+ligne en période ouverte ne se dissout pas, et le geste qui l'exigerait est **refusé en amont** par le
+rang 2 bis de la file commune (P7 point 2) — la dissolution n'est donc appelée que sur un groupe qui a
+une ligne en période ouverte, et elle n'évalue pas elle-même la règle des périodes (une seule garde par
+motif, patron de `cancel_settlement_in_tx`).
 
 `held_open_fiscal_year_id` est l'exercice **ouvert** que l'appelant tient `FOR UPDATE` (mode
 `System`, 15-1a-i R7 point 3) ; P4 le nomme pour chaque site. `actor` est l'auteur du geste (P4,
@@ -159,23 +170,29 @@ AC10).
    `if !is_letterable_account(…) { continue; }`). **Un règlement, un solde ou un avoir n'échoue JAMAIS à
    cause du lettrage** : la primitive ne doit pas rendre `LetteringAccountNotLetterable` sur ce chemin.
 4. `E = {k}` et les lignes de `k` sont exactement `T` → `Unchanged`.
-5. `E = {k}` sinon : si aucune ligne **du groupe `k`** n'est en période ouverte (P7) →
-   `AbstainedClosedPeriods`, **rien n'est écrit** (ni dissolution, ni création) ; sinon
+5. `E = {k}` sinon — **défensif, inatteignable par un geste** (voir ci-dessous) : si aucune ligne **du
+   groupe `k`** n'est en période ouverte (P7) → `AbstainedClosedPeriods`, **rien n'est écrit** ; sinon
    `dissolve_group` (mode `System`) puis, si `T`, création.
 6. `E = ∅` et `T` → création (mode `System`, origine `document`) ; `E = ∅` sans `T` → `Unchanged`, ou
    `AbstainedClosedPeriods` / `AccountNotLetterable` si c'est la seule raison qui l'empêche.
 
-**`dissolve_invoice_document_group_in_tx`** (appelée **avant** une contre-passation, P4) : étapes 1 et 2 ;
-`E = ∅` → `Unchanged` (**no-op**, finding F-11 : l'annulation d'un règlement **partiel** n'a aucun groupe
-à défaire, et `dissolve_group_in_tx` rendrait `NotFound`) ; aucune ligne du groupe en période ouverte →
-`AbstainedClosedPeriods` ; sinon dissolution (mode `System`).
+**`dissolve_invoice_document_group_in_tx`** (appelée **avant** une contre-passation, P4, **après** les
+refus du geste, dont le rang 2 bis) : étapes 1 et 2 ; `E = ∅` → `Unchanged` (**no-op**, finding F-11 :
+l'annulation d'un règlement **partiel** n'a aucun groupe à défaire, et `dissolve_group_in_tx` rendrait
+`NotFound`) ; sinon dissolution (mode `System`) → `Dissolved`. Elle ne rend jamais
+`AbstainedClosedPeriods`.
 
 ⚠️ **L'exercice tenu doit couvrir une ligne du groupe** (`check_held_fiscal_year`, sinon
 `DbError::Invariant`). Les sites de P4 le garantissent : la ligne de règlement (création, dissolution)
-ou d'avoir (création) est dans l'exercice tenu. Un groupe existant qui ne contient **aucune** ligne de
-l'exercice tenu et qu'il faudrait défaire sur un chemin de création n'est produit par aucun geste (une
-facture soldée n'accepte ni règlement, ni solde, ni avoir) : l'`Invariant` qui en sortirait signale un
-défaut.
+ou d'avoir (création) est dans l'exercice tenu. **Un groupe existant différent de `T` sur un chemin de
+création (étape 5) n'est produit par aucun geste** : un groupe `document` n'existe que sur une facture
+soldée, qui n'accepte ni règlement, ni solde, ni avoir ; et l'état que la validation P2 avait montré
+atteignable — facture **due** dont la ligne de vente est restée lettrée après l'annulation d'un
+règlement de période verrouillée, puis déverrouillage et nouveau règlement en N+1 → `Invariant` (R-1,
+M-2) — **n'existe plus** : cette annulation est refusée (P7 point 2). L'`Invariant` qui sortirait de
+l'étape 5 signale donc un défaut. Vérifié contre le motif « invariant dans le temps » : ni
+`unlock_books`, ni `fiscal_years::reopen`, ni la restauration d'une sauvegarde (qui rejoue M1 de la
+15-1a2-ii, même règle) ne produisent un groupe `document` sur une facture non soldée.
 
 **L'audit** (findings R6 = F-5, C-15-1a2-5). Les deux primitives de la 15-1a-i gardent leur signature
 publique ; leur corps passe dans deux fonctions **privées** du même module (`create_group_inner`,
@@ -196,7 +213,15 @@ test est réaligné sur elles (T4), jamais affaibli.
 | `write_off_invoice` (`:411`) | `sync_invoice_in_tx` | après l'`UPDATE invoices` (`:639`) | `fy` (`:588`) | idem |
 | `accept_one_invoice` (`routes/reconciliation.rs:1383`) | `sync_invoice_in_tx` | **après** l'étape (g) — l'`UPDATE invoices … AND version = ?` et son contrôle `rows_affected` —, avant l'audit « Step 9 » | `fiscal_year` de l'étape (d) (`:1744`) | `Actor { user_id, api_key_id: actor_api_key_id }` |
 | `create_credit_note` (`credit_notes.rs:327`) | `sync_invoice_in_tx` | **après** l'étape (11), la bascule `UPDATE invoices SET status = 'cancelled'` (`:772`), avant la relecture (12) | `fy` de la date de l'avoir (`:553`) | `Actor { user_id, api_key_id: None }` |
-| `cancel_settlement_in_tx` client (`invoice_settlements_write.rs:781`) — **couvre** le dé-rapprochement (`reconciliation_cancel.rs`) | `dissolve_invoice_document_group_in_tx` | **après** les gardes de l'étape (3), **avant** `reverse_owned_in_tx` (étape (4), `:852`) | l'exercice de l'écriture de règlement, verrouillé à l'étape (2-bis) (`:827` — sa valeur, aujourd'hui jetée, est **gardée**) | `Actor { user_id, api_key_id: None }` |
+| `cancel_settlement_in_tx` client (`invoice_settlements_write.rs:781`) — **couvre** l'annulation d'un **solde** (`write_off`, une ligne `invoice_settlements` comme une autre) et le dé-rapprochement (`reconciliation_cancel.rs`) | `dissolve_invoice_document_group_in_tx` | **après** les gardes de l'étape (3) — qui refusent désormais aussi le **rang 2 bis** (P7 point 2) —, **avant** `reverse_owned_in_tx` (étape (4), `:852`) | l'exercice de l'écriture de règlement, verrouillé à l'étape (2-bis) (`:827` — sa valeur, aujourd'hui jetée, est **gardée**) | `Actor { user_id, api_key_id: None }` |
+
+**Le dé-rapprochement refuse le rang 2 bis dans SA famille** (C-15-1a2-12). `reconciliation_cancel::cancel_in_tx`
+refuse à son étape (4) le rang 2 (`FiscalYearClosed`) en `ReconciliationNotCancellable`, **avant** de défaire
+le lien, puis appelle `cancel_settlement_in_tx`. Le rang 2 bis s'ajoute à ce même filtre (`if let
+Some((FiscalYearClosed | <rang 2 bis>, _, _))`) : sans lui, le refus remonterait de `cancel_settlement_in_tx`
+en `SettlementNotCancellable`, avec le texte « ce règlement » au lieu de « ce rapprochement ». Le
+dé-rapprochement d'une écriture **propre** (`ReconciliationKind::Entry`) ne rencontre jamais ce rang : une
+écriture qui n'appartient à aucune pièce ne porte pas de lettrage `document`.
 
 ⛔ **Pourquoi pas dans `create_in_tx`** (finding R1 = F-5, C-15-1a2-6). `invoice_settlements::create_in_tx`
 ne reçoit ni acteur ni exercice, et surtout `accept_one_invoice` l'appelle **avant** son contrôle de
@@ -204,8 +229,14 @@ version (g) : une synchronisation placée là prendrait les verrous des lignes *
 `invoices` — l'ordre inverse de `settle_invoice` (facture `FOR UPDATE`, puis lignes), d'où un cycle
 (finding F-3) — et une modification concurrente sortirait en erreur de lettrage au lieu du refus
 `RECONCILIATION_INVOICE_NOT_ELIGIBLE` / `race_during_update`. Placée **après** (g), elle suit la ligne
-`invoices` déjà verrouillée par l'`UPDATE` : même ordre que les autres gestes. Les trois appels sont
-donc **explicites**, et c'est le test lexical d'AC8 qui ferme l'inventaire.
+`invoices` déjà verrouillée par l'`UPDATE`. ⚠️ Ce n'est **pas** l'ordre des autres gestes (validation P2,
+L-2) : `accept_one_invoice` insère l'écriture et la ligne `invoice_settlements` (`:1806`, `:1820`)
+**avant** de prendre la facture (`:1930` ; `:1913-1914` « Pas de `FOR UPDATE` sur la facture en amont »),
+quand `settle_invoice`, `write_off_invoice` et `cancel_settlement_in_tx` tiennent la facture d'abord.
+Le cycle *accept ‖ règlement ou solde de la même facture* — la découverte `FOR UPDATE` de ceux-ci lit
+`invoice_settlements` de la facture et attend la ligne non commitée du rapprochement, qui attend la
+facture — est **nommé** (Dev Notes) et défendu par le rejeu. Les trois appels sont **explicites**, et
+c'est le test lexical d'AC8 qui ferme l'inventaire.
 
 ⛔ **Pas de synchronisation après le `DELETE`** de l'annulation (C-15-1a2-9). Après le retrait d'un
 règlement de montant `> 0`, `Σ C(I)` vaut le reste dû, `> 0` : `C(I)` ne qualifie jamais. La
@@ -220,9 +251,19 @@ La créance **redevient ouverte**.
 
 | erreur | `error_code` | motif |
 |---|---|---|
-| `DbError::LetteringConcurrentChange` | `LETTERING_CONCURRENT_CHANGE` | refus métier « réessayez » du socle (15-1a-i R7 point 4) |
-| `DbError::Invariant`, et tout refus de lettrage que la synchronisation exclut par construction (`LetteringLineAlreadyLettered`, `LetteringUnbalanced`, `LetteringAccountNotLetterable`, `LetteringAccountsDiffer`, `LetteringTooFewLines`, `NotFound`) | `INTERNAL_ERROR`, précédé d'un `tracing::error!` | défaut structurel — même traitement que l'étape (e) de la même fonction |
+| `DbError::Invariant`, `DbError::LetteringConcurrentChange`, et tout refus de lettrage que la synchronisation exclut par construction (`LetteringLineAlreadyLettered`, `LetteringUnbalanced`, `LetteringAccountNotLetterable`, `LetteringAccountsDiffer`, `LetteringTooFewLines`, `NotFound`) | `INTERNAL_ERROR`, précédé d'un `tracing::error!` | défaut structurel — même traitement que l'étape (e) de la même fonction |
 | toute autre (`Sqlx`…) | `DATABASE_ERROR` (`details.message`) | comme les autres étapes |
+
+⛔ **`LETTERING_CONCURRENT_CHANGE` n'est pas un code per-proposal** (validation P2, M-4 ; C-15-1a2-14). Il
+naît d'un seul site : l'`UPDATE` final de la primitive, dont le compte de lignes trouvées
+(`CLIENT_FOUND_ROWS`) passe par `kesh_core::lettering::check_rows_affected` (`letterings.rs:739`, `:850`).
+Or cet `UPDATE` vise les lignes **tenues `FOR UPDATE` par l'acte 1 de la même transaction** : aucune
+transaction concurrente ne peut les modifier entre les deux, et le compte est égal par construction. Le
+code est donc **inatteignable** sur ce chemin ; s'il sortait, ce serait un défaut — `INTERNAL_ERROR`, déjà
+libellé à l'écran (`failed-proposal-label.ts:152`). Conséquence : `failed-proposal-label.ts`, son décompte
+de **28** codes et son test restent inchangés, et `api-external.md` § rapprochement aussi. Il en va de même
+pour les routes de règlement, de solde, d'annulation et d'avoir (validation P2, L-3) : elles ne peuvent
+pas rendre ce 409 ; rien n'est ajouté à leurs tableaux de refus.
 
 Un interblocage levé **dans** la synchronisation est absorbé en `FailedProposal`, puis le
 `ROLLBACK TO SAVEPOINT` échoue (1305) et `accept_batch` rejoue tout le lot (`retry_with`,
@@ -230,10 +271,11 @@ Un interblocage levé **dans** la synchronisation est absorbé en `FailedProposa
 
 ### P5 — Les dissolutions ne butent pas sur un exercice clos
 
-La dissolution ① de P4 est appelée **après** le verrou de l'étape (2-bis) et les refus des rangs 1 et 2
-(`settlement_cancel_blocker` ; le rang 2 lit l'exercice de l'écriture de règlement,
-`settlement_cancellation.rs:95`) : l'exercice tenu est **ouvert**, et il porte la ligne de règlement
-du groupe — condition du mode `System`. Les refus des rangs 3 à 5 viennent **après**, dans le socle
+La dissolution ① de P4 est appelée **après** le verrou de l'étape (2-bis) et les refus des rangs 1, 2 et
+**2 bis** (`settlement_cancel_blocker` ; le rang 2 lit l'exercice de l'écriture de règlement,
+`settlement_cancellation.rs:85-100` ; le rang 2 bis, P7 point 2) : l'exercice tenu est **ouvert**, il
+porte la ligne de règlement du groupe — condition du mode `System` —, et le groupe a une ligne en période
+ouverte. Les refus des rangs 3 à 5 viennent **après**, dans le socle
 (`reverse_owned_in_tx`) : s'ils parlent, ils annulent la dissolution avec la transaction (finding F-12 :
 la phrase « laisserait… rien » est retirée). Ce que l'ordre protège, c'est **la cause du refus rendu** :
 une dissolution appelée avant les gardes rendrait un `Invariant` sur un exercice clos au lieu du refus
@@ -242,67 +284,148 @@ une dissolution appelée avant les gardes rendrait un `Invariant` sur un exercic
 Facture de l'exercice N **clos**, règlement et annulation en N+1 : le groupe a une ligne en N+1, tenue et
 ouverte → la dissolution passe (AC4).
 
-### P7 — Les périodes closes : la synchronisation s'abstient (C-15-1a2-2)
+### P7 — Les périodes closes : lettrer s'abstient, délettrer est refusé (C-15-1a2-2, révisée par C-15-1a2-10)
 
-**Règle.** La synchronisation **ne lettre pas** un groupe dont aucune ligne n'est en période ouverte, et
-**ne délettre pas** un groupe dont aucune ligne n'est en période ouverte — la règle du socle (15-1a-i R7,
-`LETTERING_ALL_LINES_IN_CLOSED_PERIODS`) que le mode `System` n'évalue pas, la synchronisation l'évalue
-**elle-même**, sans verrou. « En période ouverte » : exercice `Open`, aucun exercice postérieur `Closed`,
-date strictement postérieure à `companies.books_locked_through`.
+**Règle.** « En période ouverte » : exercice `Open`, aucun exercice postérieur `Closed`, date strictement
+postérieure à `companies.books_locked_through` — la règle du socle (15-1a-i R7, C113,
+`LETTERING_ALL_LINES_IN_CLOSED_PERIODS`), que le mode `System` n'évalue pas. Elle joue des deux côtés,
+mais **pas de la même façon** :
 
-**Évaluation** : une fonction du module, `lines_in_open_period(conn, company_id, &lines) -> bool`, qui
-lit sans verrou le statut des exercices des lignes, `fiscal_years::find_later_closed` pour chaque
-exercice ouvert et la borne, puis appelle **le même** prédicat que le mode `Manual`
-(`any_line_in_open_period`, `letterings.rs` — factorisé, jamais recopié). Tolérance : l'exercice tenu
-est verrouillé par l'appelant ; la borne se lit ordinairement, avec la même tolérance qu'à la création
-d'écriture.
+- **lettrer** une pièce dont aucune ligne n'est en période ouverte : la synchronisation **s'abstient**
+  (`AbstainedClosedPeriods`, rien n'est écrit) — un geste qui crée ne doit jamais échouer à cause du
+  lettrage (P3 point 3) ;
+- **délettrer** un groupe `document` dont aucune ligne n'est en période ouverte : **le geste qui
+  l'exigerait est refusé** — rang **2 bis** de la file commune des annulations (point 2).
+
+**Évaluation — UNE seule factorisation, publique** (C-15-1a2-18 ; validation P2, R-6, L-1 ; reprise par la
+15-1b) : dans `letterings.rs`,
+
+```rust
+/// L'état des exercices et la borne, lus SANS verrou — la règle des périodes hors du mode `Manual`.
+pub struct OpenPeriodRule { /* privés : exercices (open, later_closed) par id, locked_through */ }
+pub async fn open_period_rule(conn: &mut MySqlConnection, company_id: i64, fiscal_year_ids: &[i64])
+    -> Result<OpenPeriodRule, DbError>;
+impl OpenPeriodRule {
+    pub fn line_in_open_period(&self, fiscal_year_id: i64, entry_date: NaiveDate) -> bool;
+}
+/// `open_period_rule` puis « au moins une ligne en période ouverte ».
+pub async fn lines_in_open_period(conn: &mut MySqlConnection, company_id: i64,
+    lines: &[(i64, NaiveDate)]) -> Result<bool, DbError>;
+```
+
+`open_period_rule` lit le statut des exercices nommés, `fiscal_years::find_later_closed` pour chaque
+exercice ouvert, et la borne. `line_in_open_period` et le `any_line_in_open_period` du mode `Manual`
+(`letterings.rs:494`, dont l'état des exercices est lu sous verrou) appellent **le même** prédicat par
+ligne, privé — factorisé, jamais recopié. Elle **rend un `Result`** (elle lit la base) et ses types sont
+**publics** : la 15-1b l'emploie telle quelle pour `inOpenPeriod` et le filtre de ses propositions, sans
+seconde factorisation. Tolérance : l'exercice de l'écriture examinée est verrouillé par le geste ; la
+borne se lit ordinairement, avec la même tolérance qu'à la création d'écriture (`lock_books` pris entre
+la lecture et le `COMMIT` : voir point 2).
 
 **Ce que la règle atteint réellement**, et ce que voit l'utilisateur :
 
-1. **Création** — un geste vivant ajoute toujours une ligne **en période ouverte** (une écriture ne se
-   crée ni sur un exercice clos, ni sous la borne : `PeriodLocked`, `journal_entries.rs:402`). La
-   création ne s'abstient donc **jamais** sur un geste ; elle s'abstient sur les pièces **historiques**
-   entièrement closes — le rattrapage de la 15-1a2-ii et la synchronisation appelée sur elles (AC6 de la
-   15-1a2-ii, AC14 (c) ici). **Ce que voit l'utilisateur** : la facture soldée reste **ouverte** au grand
-   livre (la 15-1b la liste, `documentState = nothingDue`). ⛔ Elle n'est **pas** lettrable à la main :
-   ses lignes sont des lignes de pièce (15-1a R5, `LETTERING_LINE_OWNED_BY_DOCUMENT`). Elle le reste.
-2. **Dissolution** — l'annulation d'un règlement dont **toutes** les lignes du groupe sont sous la borne
-   `books_locked_through` (facture et règlement du premier trimestre, verrou au 31.03, annulation en
-   avril : le socle l'accepte, l'exercice étant ouvert — `settlement_cancellation.rs`, « le verrou de
-   période du jour n'est pas évalué ici »). Le groupe **est gardé** ; la contre-passation laisse la ligne
-   de règlement dans son groupe (15-1a-ii R6, « une ligne déjà lettrée garde son groupe ») et le
-   **miroir**, daté du jour, reste **ouvert**. **Ce que voit l'utilisateur** : au 31.03, la vue des
-   postes ouverts est inchangée (c'est l'objet du verrou) ; aujourd'hui, la créance et le règlement
-   annulé sont lettrés ensemble, et le **miroir ouvert porte exactement le montant redevenu dû** — la
-   somme des postes ouverts égale le reste dû. Mais la facture **due** a une ligne de vente **lettrée** :
-   c'est l'exception nommée d'AC5 et d'AC9.
-3. **Après 2, un nouveau règlement** de la même facture : le groupe gardé n'a toujours aucune ligne en
-   période ouverte → abstention entière (étape 5 de P3). Le nouveau règlement (ligne de pièce) et le
-   miroir restent **ouverts** l'un en face de l'autre, de somme nulle, **ni l'un ni l'autre lettrable à
-   la main** (le règlement est une ligne de pièce, R5). Coût assumé et nommé (AC14 (b)).
+1. **Création — abstention.** Un geste vivant ajoute toujours une ligne **en période ouverte** (une
+   écriture ne se crée ni sur un exercice clos, ni sous la borne : `PeriodLocked`,
+   `journal_entries.rs:402`). La création ne s'abstient donc **jamais** sur un geste ; elle s'abstient
+   sur les pièces **historiques** entièrement closes — le rattrapage de la 15-1a2-ii et la
+   synchronisation appelée sur elles (AC6 de la 15-1a2-ii, AC14 (c) ici). **Ce que voit
+   l'utilisateur** : la facture soldée reste **ouverte** au grand livre (la 15-1b la liste,
+   `documentState = nothingDue`). ⛔ Elle n'est **pas** lettrable à la main : ses lignes sont des lignes
+   de pièce (15-1a R5, `LETTERING_LINE_OWNED_BY_DOCUMENT`). Elle le reste — jusqu'à ce qu'un
+   administrateur rouvre la période : la synchronisation ne repasse pas d'elle-même, mais un rejeu de M1
+   à l'import d'une sauvegarde la lettrerait alors (15-1a2-ii, P6).
+2. **Dissolution — refus, rang 2 bis.** L'annulation d'un règlement, d'un solde (`write_off`) ou d'un
+   rapprochement de facture dont le groupe `document` n'a **aucune** ligne en période ouverte — facture
+   et règlement du premier trimestre, verrou au 31.03, annulation en avril ; ou groupe entièrement dans
+   un exercice clos, ou suivi d'un exercice clos — est **refusée**. Aujourd'hui le socle l'accepte : le
+   rang 2 ne lit que `fy.status == "Closed"` de l'écriture de règlement (`settlement_cancellation.rs:85-100`)
+   et aucun rang ne compare la **date** du règlement à la borne (la contre-passation, datée du jour,
+   franchit le verrou). Le rang neuf :
+   - **variante** `SettlementCancelBlocker::DocumentLetteringInClosedPeriods` (`kesh-db/src/errors.rs`),
+     placée **entre** `FiscalYearClosed` (rang 2) et `MatchedBankTransaction` (rang 3) — d'où « 2 bis »
+     (C-15-1a2-12). Après le rang 2 : un exercice clos se nomme par son propre motif, de même remède.
+     Avant le rang 3 : annoncer « annulez d'abord le rapprochement » serait vain, le dé-rapprochement
+     étant refusé par ce même rang ;
+   - **évalué dans la file commune** `settlement_entry_cancel_blocker`, sur l'écriture examinée : « une
+     ligne de cette écriture appartient à un groupe d'origine `document` dont aucune ligne n'est en
+     période ouverte » — par une fonction publique de `letterings.rs`,
+     `document_group_frozen_by_periods(conn, company_id, entry_id) -> Result<Option<i64>, DbError>` (la
+     clé du premier tel groupe), qui s'appuie sur `open_period_rule`. ⛔ Une seule évaluation, deux
+     lecteurs : le **prédicteur** (l'écran masque le bouton et dit le motif, `cancelBlockedBy`) et le
+     **geste** (`cancel_settlement_in_tx` étape (3) l'ajoute aux rangs qu'il refuse ;
+     `reconciliation_cancel::cancel_in_tx` étape (4) aussi, dans sa famille — P4). La file étant
+     commune, les deux gestes fournisseurs en héritent : la 15-1a2-ii n'a qu'à ajouter le rang aux
+     refus de `supplier_invoices::cancel_settlement_in_tx` et `cancel_in_tx` ;
+   - **code** : `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`, réemployé (C-15-1a2-11) — `SettlementCancelBlocker::code`
+     pose que « tous ces codes réemploient ceux d'états du monde déjà nommés » ; « toutes les lignes du
+     groupe sont en période close » est l'état que ce code nomme déjà. Statut **409**
+     (`SettlementNotCancellable`, `ReconciliationNotCancellable`, `SupplierInvoiceNotCancellable` le
+     rendent tous en `CONFLICT`) ;
+   - **remède écrit**, comme le rang 2 : un **administrateur** déverrouille la période
+     (`POST /companies/current/books-lock/release`, `companies::unlock_books`, motif obligatoire) ou
+     **rouvre** les exercices clôturés concernés, du plus récent au plus ancien (`fiscal_years::reopen`) ;
+     l'annulation passe alors, avec dissolution et paires `reversal` (AC4) ;
+   - **textes** : une clé par famille, quatre locales — `settlement-cancel-blocked-lettering-closed`
+     (règlement et solde, client **et** fournisseur : la clé de la queue est partagée),
+     `reconciliation-cancel-blocked-lettering-closed`, `supplier-invoices-cancel-blocked-lettering-closed` —
+     et leurs replis Rust (`kesh-api/src/errors.rs`), **mot pour mot** le FTL fr-CH ; l'écran (AC17).
+   **Ce que voit l'utilisateur** : au 31.03, rien ne bouge — ni la vue des postes ouverts, ni la pièce ;
+   la fiche facture n'offre pas l'annulation et dit pourquoi, et qui peut la débloquer. **Il n'existe
+   plus de groupe gardé** : aucune facture due n'a de ligne de vente lettrée, AC5 et AC9 n'ont plus
+   d'exception de période, et l'`Invariant` que la validation P2 avait atteint après un déverrouillage
+   (R-1, M-2) n'a plus d'état qui le produise (P3).
+   ⚠️ **Tolérance résiduelle, nommée** : la règle se lit sans verrou sur la borne et sur les exercices
+   autres que celui de l'écriture examinée. Un `lock_books` (ou une clôture d'un autre exercice du groupe)
+   validé entre la lecture du rang 2 bis et le `COMMIT` laisse passer une dissolution dont toutes les
+   lignes sont, au `COMMIT`, en période close — la même tolérance qu'une écriture créée pendant la pose
+   du verrou, que le socle assume déjà. C'est le **seul** chemin qui dissout un groupe hors période ; il
+   n'en reste aucun par un geste séquentiel (vérifié : `dissolve_group_in_tx` en mode `Manual` évalue R7 ;
+   les dissolutions `System` sont celles de P3, gardées par ce rang ou défensives ; la contre-passation et
+   le rattrapage ne dissolvent rien).
 
-⚠️ **Le coût du 2 et du 3 est écrit, non réparé.** L'alternative — dissoudre quand même (le mode
-`System` le permet) — réécrirait la liste des postes ouverts « au 31.03 » d'un trimestre verrouillé ;
-celle de refuser en amont l'annulation d'un règlement de période verrouillée serait un refus neuf sur
-un geste existant. Décision de l'orchestrateur (C-15-1a2-2) ; à rouvrir si la recette le demande.
+**Historique de la décision — écrit tel qu'il s'est déroulé** (C-15-1a2-2, révisée deux fois) :
+1. *Validation P1* : **abstention partout** — lettrer comme délettrer. Elle produisait le « groupe gardé » :
+   une facture due à ligne de vente lettrée, des paires ouvertes à jamais, et un `Invariant` (500) au
+   premier règlement après un déverrouillage (validation P2 : R-1, R-2, M-1 à M-3 ; 15-1a2-ii R-1, R-6,
+   F2-1 HIGH ; 15-1b R-1/F-1 HIGH).
+2. *Révision 1, écartée* : **délettrer toujours** (dissoudre sans évaluer la règle, le mode `System` le
+   permet). Elle contredit C113 — la règle des périodes fait entrer le verrou dans « période ouverte »
+   pour que la vue « au 31.03 » d'un trimestre verrouillé ne soit plus réécrite — et le manuel livré,
+   `user-manual.tex:577-579` : « un groupe dont toutes les lignes sont dans la période verrouillée (ou
+   dans des exercices clôturés) ne se lettre ni ne se délettre ».
+3. *Révision 2, retenue* : **refus** du geste qui exigerait de délettrer (C-15-1a2-10). L'objection écrite en
+   P1 contre ce choix — « un refus neuf sur un geste existant » — pèse peu : la v0.13.0 n'est pas taguée,
+   aucune comptabilité réelle n'est encore tenue dans Kesh (`CLAUDE.md`), et le refus a la forme exacte du
+   rang 2 existant (même file, même remède administratif).
 
 ## Pour la 15-1b — ce que cette fiche change à sa D1
 
-*(Section d'information ; la fiche 15-1b n'est **pas** modifiée ici — une remédiation en cours la tient.)*
+*(Section d'information. **Intégrée à la fiche 15-1b par la même remédiation** — validation P2 des trois
+fiches, menée par un seul remédiateur pour qu'elles cessent de se contredire ; la D1, la définition de la
+stabilité, AC12 et « Pour la 15-1c » de la 15-1b sont réécrits en conséquence.)*
 
 La D1 de la 15-1b (« sans objet : la 15-1a2 garantit *lettrée `document`* ⇔ *reste dû nul* ») tient
-**pour toute facture dont une ligne est en période ouverte**, hors les exceptions nommées d'AC5. Elle ne
-tient pas dans deux cas, que la 15-1b doit pouvoir montrer :
+**pour toute facture dont une ligne de `C(I)` est en période ouverte**, hors les deux exceptions nommées
+d'AC5 (avoir hérité sur un autre compte ; compte de créance non lettrable). Hors de ce périmètre, **un
+seul** cas atteignable : la **facture soldée non lettrée** d'une pièce historique entièrement close
+(P7 point 1) — lignes ouvertes, `documentState = nothingDue`, `manuallyLetterable = false` (R5). Le cas
+du compte de créance non lettrable (AC13) **n'est pas montrable par la vue** : elle répond 409
+`LETTERING_ACCOUNT_NOT_LETTERABLE` sur un tel compte (15-1b AC7, C-15-1b-1) ; il se lit au grand livre.
+Le cas « facture due, ligne de vente lettrée » que la version P1 annonçait **n'existe plus** (refus, P7
+point 2).
 
-- **facture soldée, non lettrée** — pièce historique entièrement close (P7 point 1) ou compte de
-  créance non lettrable (AC13) : lignes ouvertes, `documentState = nothingDue` ;
-- **facture due, ligne de vente lettrée** — groupe gardé après l'annulation d'un règlement de période
-  verrouillée (P7 point 2) : le miroir de l'annulation est la ligne ouverte qui porte le reste dû ;
-  après un nouveau règlement (point 3), deux lignes ouvertes de somme nulle.
+**Stabilité « au X »** (pour la définition de la 15-1b) : pour un `X` ≤ `books_locked_through`, ou situé
+dans un exercice clos ou suivi d'un exercice clos, aucune ligne datée ≤ X n'entre ni ne sort d'un groupe
+entièrement daté ≤ X — lettrage et délettrage manuels exigent une ligne en période ouverte (R7), la
+synchronisation s'abstient de lettrer (point 1), le geste qui délettrerait est refusé (point 2), et tout
+groupe créé par un geste contient une ligne en période ouverte, donc datée après X. La liste « au X » ne change donc que si un
+**administrateur** déverrouille (`unlock_books`) ou rouvre un exercice (`fiscal_years::reopen`), ou
+restaure une sauvegarde — sous la tolérance nommée au point 2.
 
-La balance âgée, les relances et le rapprochement lisent le reste dû : ils ne sont pas touchés. La
-fonction `lines_in_open_period` (P7) est celle que la 15-1b peut réutiliser pour son prédicat partagé
-(C-15-1b-4).
+La balance âgée, les relances et le rapprochement lisent le reste dû : ils ne sont pas touchés. Le
+prédicat des périodes est `open_period_rule` / `OpenPeriodRule::line_in_open_period` /
+`lines_in_open_period` (P7) : la 15-1b l'emploie tel quel, sans seconde factorisation (C-15-1a2-18,
+C-15-1b-4 révisée).
 
 ## Critères d'acceptation
 
@@ -319,21 +442,26 @@ la ligne de solde comprise. Arrondi à 5 centimes (`round_to_5_centimes`) et rè
 puis synchronisation → aucun groupe, aucune erreur.
 
 **AC4** — Annulation d'un règlement d'une facture soldée → le groupe `document` est **dissous**, le
-règlement et son miroir sont lettrés `reversal`, la créance est **ouverte** (et les autres règlements
-partiels aussi). Même résultat par le **dé-rapprochement** d'une facture encaissée par rapprochement.
+règlement et son miroir sont lettrés `reversal` (et, pour un règlement `internal_account` sur un compte
+lettrable, sa ligne de contrepartie avec la sienne — R6), la créance est **ouverte** (et les autres
+règlements partiels aussi). Même résultat par l'annulation du **solde** (`write_off`) qui éteignait la
+facture (validation P2, L-5) et par le **dé-rapprochement** d'une facture encaissée par rapprochement.
 Annulation d'un règlement **partiel** (aucun groupe) → réussit, aucune dissolution, aucune entrée
 `lettering.removed` (F-11). Facture de l'exercice N **clos**, règlement et annulation en N+1 →
-**réussit** (P5).
+**réussit** (P5 : le groupe a une ligne en N+1, en période ouverte).
 
 **AC5** — **Accord grand livre ↔ pièce**, sur la **fixture partagée** de T5 (paiement total, partiels,
 solde, avoir, annulation, rapprochement, données héritées `paid_at` sans règlement, facture créditée et
-réglée héritée) : pour chaque facture validée ou créditée **dont une ligne de `C(I)` est en période
-ouverte**, *lettrée `document`* ⇔ *reste dû dérivé nul* — avec **deux** exceptions nommées, et elles
-seules : (a) l'avoir **hérité** crédité sur un autre compte que `A` (d'avant la 15-6a) ; (b) le compte
-de créance **non lettrable** (AC13). Les pièces sans ligne en période ouverte sont **hors** de ce
-critère et vérifiées par AC14. L'héritage `paid_at` sans règlement et la facture créditée et réglée ne
-sont **pas** des exceptions (les deux côtés s'accordent : non lettrées, reste dû non nul). Toute autre
-divergence fait rougir le test **en nommant la facture**.
+réglée héritée, **pièce soldée puis passée sous la borne** — validation P2, R-2) : pour chaque facture
+validée ou créditée **dont une ligne de `C(I)` est en période ouverte**, *lettrée `document`* ⇔ *reste dû
+dérivé nul*, où **« lettrée `document` » signifie : les lignes de `C(I)` forment exactement un groupe, et
+il est d'origine `document`** (prédicat testé, écrit dans le test) — avec **deux** exceptions nommées, et
+elles seules : (a) l'avoir **hérité** crédité sur un autre compte que `A` (d'avant la 15-6a) ; (b) le
+compte de créance **non lettrable** (AC13). Le refus du rang 2 bis (P7 point 2) ne laisse aucune troisième
+exception : aucun geste ne produit une facture due dont une ligne de `C(I)` est lettrée. Les pièces sans
+ligne en période ouverte sont **hors** de ce critère et vérifiées par AC14. L'héritage `paid_at` sans
+règlement et la facture créditée et réglée ne sont **pas** des exceptions (les deux côtés s'accordent :
+non lettrées, reste dû non nul). Toute autre divergence fait rougir le test **en nommant la facture**.
 
 **AC8 (part i)** — **Inventaire fermé, tenu par un test lexical** (dans `letterings_lexical.rs`, qui
 réutilise `decouper`, `bloc_apres` et `blocs_de_test` — finding R11) :
@@ -351,9 +479,11 @@ source synthétique (patron `the_detector_sees_writes_and_only_writes`).
 **AC9 (part i)** — Ajout au test d'invariant de la 15-1a (`lettering_invariants`,
 `crates/kesh-db/tests/letterings.rs`) : une ligne d'origine `document` est sur l'écriture de vente, d'un
 règlement **en vigueur** ou d'un avoir émis d'une facture client ; une ligne d'une de ces écritures n'est
-ni `manual` ni `reversal`. **Exceptions nommées** : la ligne d'un règlement **annulé** (plus possédée :
-`reversal` avec son miroir, ou — P7 point 2 — encore dans le groupe `document` gardé, dont **aucune**
-ligne n'est alors en période ouverte ; le test vérifie cette condition au lieu d'exempter en bloc).
+ni `manual` ni `reversal`. La ligne d'un règlement **annulé** n'est plus possédée (sa ligne
+`invoice_settlements` est retirée) et n'est **jamais** `document` : `reversal` avec son miroir, ou libre si
+`A` n'est plus lettrable (R6 saute un compte non lettrable, C104). ⛔ **Aucune exception de période** : le
+« groupe gardé » de la version P1 n'existe plus (P7 point 2) — l'invariant ne décrit donc que des états
+que les gestes produisent, à toute date, déverrouillage ou réouverture compris.
 
 **AC10 (part i)** — Audit : chaque création/dissolution `document` d'une facture client produit
 `lettering.created` / `lettering.removed` (15-1a-i AC10, `fiscalYearId`/`fiscalYearName` par ligne)
@@ -372,11 +502,22 @@ des routes `/letterings` et de la contre-passation sont **inchangés** (aucune c
   lignes d'une facture client soldée ; il suit ses règlements et son avoir ») ; `:324` — retirer
   l'annotation « *(aucun groupe `document` n'existe encore)* » et réécrire le libellé du refus (voir le
   message ci-dessous).
+- `docs/api-external.md`, tableaux des refus de `POST /invoices/{id}/settlements/{settlementId}/cancel`
+  (≈ `:377`) et de `POST /reconciliation/transactions/{id}/cancel` (≈ `:461`) : une ligne « Règlement
+  (rapprochement) lettré avec sa facture dans une période close — période verrouillée, exercice clôturé
+  ou suivi d'un exercice clôturé ; un administrateur déverrouille ou rouvre » | `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`
+  | `409`, placée **après** `FISCAL_YEAR_CLOSED` et **avant** `MATCHED_BANK_TRANSACTION` (l'ordre des rangs).
+  Les tableaux fournisseurs sont à la 15-1a2-ii.
 - `docs/manual/fr/user-manual.tex` : `:765` (« les encaissements des factures ne se lettrent pas encore »
   → « les encaissements des factures se lettrent d'eux-mêmes avec leur facture ») ; § « Enregistrer et
   annuler un règlement » (`sec:reglement-client`, `:1141`) — un paragraphe *Lettrage* : facture soldée
-  lettrée, annulation qui délettre, cas du règlement de période verrouillée (P7 points 2-3), créance
-  non lettrable ; § « Avoirs et notes de crédit » (`:1262`, `:1267`) — « l'écriture d'origine reste
+  lettrée, annulation (et annulation du solde) qui délettre, **refus** de l'annulation quand le lettrage
+  est figé par une période close et son remède (P7 point 2), pièce historique close restée ouverte (P7
+  point 1), créance non lettrable ; § du verrou de période (`sec:verrou-periode`, `:562`, après
+  `:577-579`) — une phrase : « l'annulation d'un règlement ou d'un rapprochement dont le lettrage s'est
+  figé avec la période est refusée ; un administrateur déverrouille la période pour la permettre » ; le §
+  du dé-rapprochement (re-greper « rapprochement » dans le chapitre des imports bancaires) — même refus,
+  même remède ; § « Avoirs et notes de crédit » (`:1262`, `:1267`) — « l'écriture d'origine reste
   intacte » et « sa propre écriture reste intacte » complétés « hors la marque de lettrage, qui la
   rattache à l'avoir » (Reçu point 20) ; glossaire, entrée *Lettrage* (`:2420-2426`, **coupée sur deux
   lignes** : « Kesh ne lettre / pas encore de lui-même ») — « Kesh lettre de lui-même une facture client
@@ -389,22 +530,51 @@ des routes `/letterings` et de la contre-passation sont **inchangés** (aucune c
 - **PDF** : `make fr` dans `docs/manual/`, les trois PDF commités ; contrôle **aplati** :
   `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -oE "(ne se lettrent pas encore|Kesh ne lettre pas encore)[^.]*\."`
   ne rend **plus rien** (deux lignes aujourd'hui, relevées en validation P1).
-- Contrôle de propagation : `git grep -nE "ne se lettrent pas|ne lettre pas encore|réservée? aux lettrages|aucune route ne la rend|n'existe encore|annulez le règlement plutôt" -- CHANGELOG.md docs crates/kesh-i18n crates/kesh-api/src website README.md`
-  ne rend plus que les sites **fournisseurs** laissés à la 15-1a2-ii, nommés au Change Log.
+- `CHANGELOG.md`, même entrée : « l'annulation d'un règlement, d'un solde ou d'un rapprochement dont le
+  lettrage est figé par une période close est refusée (`409 LETTERING_ALL_LINES_IN_CLOSED_PERIODS`) ; un
+  administrateur déverrouille la période ou rouvre l'exercice ».
+- Contrôle de propagation, **dans les quatre langues** (validation P2, R-9) : `git grep -nE "ne se lettrent pas|ne lettre pas encore|réservée? aux lettrages|aucune route ne la rend|n'existe encore|annulez le règlement plutôt|Stornieren Sie die Zahlung, statt|annullate il pagamento invece|cancel the settlement rather than" -- CHANGELOG.md docs crates/kesh-i18n crates/kesh-api/src website README.md`
+  ne rend plus que les sites **fournisseurs** laissés à la 15-1a2-ii, nommés au Change Log (les trois
+  jetons de/it/en relevés en validation P2 au `messages.ftl:54` de leur locale disparaissent avec la
+  réécriture du message).
 
 **AC13** — **Compte de créance non lettrable** (findings R5 = F-2) : le compte `A` d'une facture validée
-est retypé en charge (`Expense`) ou rattaché à un compte bancaire, puis la facture est réglée en entier
+est **rattaché à un compte bancaire** (voie de la fixture : un compte d'actif y est admis) — ou retypé
+en charge (`Expense`), ce qui exige de lui retirer d'abord tout rôle (`check_role_account_type`,
+`accounts.rs:72-97`) et de confirmer le retypage d'un compte mouvementé (`confirm_retype`, Story 25-2-a ;
+validation P2, R-7) —, puis la facture est réglée en entier
 → le règlement **réussit**, aucun groupe, aucune erreur, aucune entrée d'audit de lettrage
 (`SyncOutcome::AccountNotLetterable`). Réciproquement, un groupe `document` posé **avant** le retypage
 survit (C104) et se **dissout** à l'annulation d'un règlement (la dissolution n'exige pas la
 lettrabilité).
 
 **AC14** — **Périodes closes** (P7) : (a) facture et règlement complet datés sous
-`books_locked_through`, exercice ouvert ; annulation du règlement → **réussit**, le groupe `document`
-est **gardé**, le miroir est **ouvert**, aucune paire `reversal`, aucune entrée `lettering.removed` ;
-(b) puis nouveau règlement complet → réussit, **rien** n'est lettré (règlement et miroir ouverts) ;
+`books_locked_through`, exercice ouvert, groupe `document` posé avant le verrou ; l'annulation du
+règlement est **refusée** — `409 LETTERING_ALL_LINES_IN_CLOSED_PERIODS`, clé
+`settlement-cancel-blocked-lettering-closed` —, **rien** n'est écrit (aucune écriture inverse, la ligne
+`invoice_settlements` reste, le groupe est intact, aucune entrée d'audit) ; même refus pour l'annulation
+d'un **solde** et pour le **dé-rapprochement** d'une facture encaissée par rapprochement, ce dernier dans
+**sa** famille (`ReconciliationNotCancellable`, clé `reconciliation-cancel-blocked-lettering-closed`) ;
+(b) puis un administrateur **déverrouille** (`POST /companies/current/books-lock/release`, motif) →
+l'annulation **réussit** : dissolution, règlement ↔ miroir `reversal`, créance ouverte — et un nouveau
+règlement complet daté en N+1 **réussit** et lettre (aucun `Invariant` : l'état de R-1/M-2 n'existe pas) ;
 (c) facture et règlements historiques entièrement sous la borne, **sans** lettrage (marques effacées en
-SQL brut) → `sync_invoice_in_tx` rend `AbstainedClosedPeriods` et n'écrit rien.
+SQL brut) → `sync_invoice_in_tx` rend `AbstainedClosedPeriods` et n'écrit rien ; (d) état hérité « exercice
+du groupe ouvert, suivi d'un exercice clos » (fabriqué en SQL brut, comme les tests de la 15-12b) → même
+refus qu'en (a), le texte prescrivant de rouvrir les exercices postérieurs.
+
+**AC17** — **Le refus du rang 2 bis, du prédicteur à l'écran** (C-15-1a2-10 à 12) : (a) **une seule
+évaluation** — `settlement_entry_cancel_blocker` rend `DocumentLetteringInClosedPeriods` au rang 2 bis :
+sur une écriture de règlement à la fois lettrée dans un groupe clos **et** rapprochée d'une transaction,
+le motif rendu est le 2 bis (pas `MATCHED_BANK_TRANSACTION`) ; sur une écriture d'exercice clos, c'est
+`FISCAL_YEAR_CLOSED` ; (b) la vue de la facture porte `cancelBlockedBy = "LETTERING_ALL_LINES_IN_CLOSED_PERIODS"`
+sur ce règlement, et l'écran masque l'annulation en affichant le texte du motif (fiche facture,
+`settlement-cancel-blocked.ts` ; dialogue de dé-rapprochement, `reconciliation-cancel.ts`) ; (c) les
+trois clés existent dans les **quatre** locales, chaque repli Rust (`kesh-api/src/errors.rs`) et Svelte dit
+**mot pour mot** le FTL fr-CH, et chaque texte nomme le remède (déverrouiller, ou rouvrir les exercices
+clôturés du plus récent au plus ancien) ; (d) la clé fournisseur
+`supplier-invoices-cancel-blocked-lettering-closed` et son cas dans `invoice-cancel.ts` sont posés ici,
+**dormants** jusqu'à la 15-1a2-ii (aucun groupe `document` fournisseur n'existe avant elle).
 
 **AC15** — **Le rapprochement** (`accept_one_invoice`) : (a) une proposition qui solde la facture la
 lettre `document`, via l'API (`POST /reconciliation/accept`) ; (b) une modification concurrente de la
@@ -412,7 +582,9 @@ facture entre l'instantané et l'étape (g) rend `RECONCILIATION_INVOICE_NOT_ELI
 `race_during_update` **sans** qu'aucune marque ne soit posée ; (c) entrelacement *accept ‖ annulation
 d'un règlement de la même facture* (patron `rejeu_interblocage_e2e.rs`) : les deux finissent (succès,
 refus per-proposal ou rejeu), et l'état final satisfait AC5 ; (d) une erreur de synchronisation devient
-un `FailedProposal` selon la table de P4 — test du mappage sur une fonction pure extraite.
+un `FailedProposal` selon la table de P4 — test du mappage sur une fonction pure extraite, qui couvre
+`LetteringConcurrentChange` → `INTERNAL_ERROR` (C-15-1a2-14 : le code n'entre pas dans `failed[]`, et le
+décompte de 28 codes de `failed-proposal-label.ts` ne bouge pas).
 
 ## Tasks
 
@@ -422,8 +594,9 @@ un `FailedProposal` selon la table de P4 — test du mappage sur une fonction pu
       développement ; (c) vérifier que les routes appelantes restent `Rejouee` (`audit_route_registry.rs`) :
       `POST /invoices/{id}/settlements`, `…/settlements/{settlementId}/cancel`, `…/write-off`,
       `POST /credit-notes`, `POST /reconciliation/accept`, `POST /reconciliation/transactions/{id}/cancel`.
-- [ ] **T1** (P3, P7) — `letterings.rs` : `SyncOutcome`, `DocumentRef`, `lines_in_open_period`
-      (prédicat factorisé), `create_group_inner` / `dissolve_group_inner` (+ `document`), extension de
+- [ ] **T1** (P3, P7) — `letterings.rs` : `SyncOutcome`, `DocumentRef`, `OpenPeriodRule`,
+      `open_period_rule`, `lines_in_open_period` (prédicat par ligne factorisé avec
+      `any_line_in_open_period`, types publics), `document_group_frozen_by_periods`, `create_group_inner` / `dissolve_group_inner` (+ `document`), extension de
       `audit_details`, `sync_invoice_in_tx`, `dissolve_invoice_document_group_in_tx` ; doc-comments
       (verrous, abstention, compte non lettrable) ; en-tête du module : les exceptions nommées au lettrage
       gagnent la synchronisation (elle **appelle** la primitive, n'écrit pas la marque).
@@ -431,37 +604,64 @@ un `FailedProposal` selon la table de P4 — test du mappage sur une fonction pu
       traitement est la 15-1a2 ») réécrit selon C-15-1a2-7 : le règlement reste ouvert, la 15-1a2 l'a tranché.
 - [ ] **T2** (P4) — Les cinq appels du tableau, chacun à la place indiquée, avec l'exercice tenu et
       l'acteur ; `cancel_settlement_in_tx` client garde l'`id` d'exercice de l'étape (2-bis).
+- [ ] **T2-bis** (P7 point 2, AC14, AC17) — Le refus du rang 2 bis : variante
+      `SettlementCancelBlocker::DocumentLetteringInClosedPeriods` (doc-comment : remède, place, code
+      réemployé) et son `code()` ; évaluation dans `settlement_entry_cancel_blocker` entre les rangs 2 et
+      3 (doc-comment du module : « Les rangs 2 à 5 » → « 2 à 5, dont 2 bis ») ; refus dans
+      `cancel_settlement_in_tx` étape (3) et dans `reconciliation_cancel::cancel_in_tx` étape (4) ;
+      `kesh-api/src/errors.rs` : un bras dans chacune des trois tables de textes
+      (`SettlementNotCancellable`, `reconciliation_cancel_blocked_text`, `supplier_invoice_cancel_blocked_text`),
+      replis mot pour mot ; trois clés × quatre locales ; frontend : `SettlementCancelTailCode` et
+      `settlementCancelTailMessage` (`lib/shared/utils/settlement-cancel-blocked.ts`), la liste et le
+      texte de `features/reconciliation/reconciliation-cancel.ts` (et `reconciliation.types.ts:132`), le
+      cas de `features/supplier-invoices/invoice-cancel.ts` (dormant), la liste de
+      `lib/shared/i18n-repli-divergent-actif.test.ts:217-219` si elle doit nommer les clés de la famille ;
+      `lint-i18n-ownership` vert.
 - [ ] **T3** (P4, AC15) — `accept_one_invoice` : appel après (g), mappage per-proposal (fonction pure
       `lettering_error_to_failed_proposal`, testée).
 - [ ] **T4** (AC8 part i) — Tests lexicaux dans `letterings_lexical.rs` ; réalignement de
       `each_primitive_checks_the_rows_its_update_found` sur `*_inner`.
 - [ ] **T5** — Tests (liste ci-dessous) ; la **fixture partagée** d'AC5 vit dans
       `crates/kesh-db/tests/common/` (module `lettering_documents`), réutilisée par AC6 de la 15-1a2-ii.
-- [ ] **T6** (AC12) — CHANGELOG, `api-external.md`, manuel FR + `make fr` + PDF aplati, message
-      `LETTERING_IS_DOCUMENT` (quatre `.ftl` + repli Rust), grep de propagation.
+- [ ] **T6** (AC12) — CHANGELOG, `api-external.md` (dont les deux tableaux de refus), manuel FR (dont
+      le refus, `sec:verrou-periode`, le dé-rapprochement) + `make fr` + PDF aplati, message
+      `LETTERING_IS_DOCUMENT` (quatre `.ftl` + repli Rust), grep de propagation dans les quatre langues.
 
-**Tests prévus** (22 neufs, 1 étendu) :
-- `crates/kesh-db/tests/lettering_documents.rs` (neuf, `test-schema`) — 15 :
+**Tests prévus** (30 neufs, 3 étendus) :
+- `crates/kesh-db/tests/lettering_documents.rs` (neuf, `test-schema`) — 19 :
   `full_settlement_letters_sale_and_settlements` (AC1), `three_partials_with_internal_account_letter_on_the_last` (AC1),
   `partial_settlement_letters_nothing` (AC1), `write_off_each_kind_letters` (AC2),
   `rounding_line_is_left_out` (AC2), `credit_note_letters_invoice_and_note` (AC3),
   `legacy_credit_note_on_other_account_forms_no_group` (AC3), `cancel_settlement_dissolves_and_pairs` (AC4),
-  `unreconcile_dissolves_and_pairs` (AC4), `cancel_partial_without_group_is_a_noop` (AC4),
-  `closed_year_n_settled_and_cancelled_in_n1` (AC4, P5), `ledger_agrees_with_amount_due` (AC5),
-  `audit_details_carry_the_invoice` (AC10), `receivable_not_letterable_is_skipped` (AC13, deux volets),
-  `locked_period_cancel_keeps_the_group` (AC14 a, b, c) ;
+  `cancel_write_off_dissolves_and_pairs` (AC4, L-5), `unreconcile_dissolves_and_pairs` (AC4),
+  `cancel_partial_without_group_is_a_noop` (AC4), `closed_year_n_settled_and_cancelled_in_n1` (AC4, P5),
+  `ledger_agrees_with_amount_due` (AC5), `audit_details_carry_the_invoice` (AC10),
+  `receivable_not_letterable_is_skipped` (AC13, deux volets),
+  `locked_period_cancel_is_refused_until_unlocked` (AC14 a — règlement, solde —, b),
+  `historical_closed_history_abstains` (AC14 c), `later_closed_year_cancel_is_refused` (AC14 d),
+  `closed_lettering_rank_precedes_bank_match` (AC17 a) ;
 - `crates/kesh-db/tests/letterings.rs` — `lettering_invariants` **étendu** (AC9 part i ; pas un test neuf) ;
 - `crates/kesh-db/tests/letterings_lexical.rs` — 3 neufs : `invoice_settlement_writers_stay_in_their_module_and_sync`
   (AC8 a, b), `credit_note_insert_is_followed_by_sync_and_cancel_dissolves_first` (AC8 c, d),
   `the_function_body_detector_sees_calls_and_order` (synthétique) ;
-- `crates/kesh-api/tests/reconciliation_e2e.rs` — 2 neufs : `accept_letters_a_fully_settled_invoice` (AC15 a),
-  `accept_race_refuses_before_any_lettering` (AC15 b) ;
+- `crates/kesh-api/tests/reconciliation_e2e.rs` — 3 neufs : `accept_letters_a_fully_settled_invoice` (AC15 a),
+  `accept_race_refuses_before_any_lettering` (AC15 b),
+  `unreconcile_of_a_closed_lettering_is_refused_in_its_family` (AC14 a, par l'API : code, clé, rien d'écrit) ;
 - `crates/kesh-api/tests/rejeu_interblocage_e2e.rs` — 1 neuf : `accept_and_settlement_cancel_interleave` (AC15 c) ;
+- `crates/kesh-api/tests/invoice_echeancier_e2e.rs` — 1 neuf : `settlement_cancel_blocked_by_closed_lettering`
+  (AC17 b : `cancelBlockedBy` de la vue, puis `POST …/cancel` → 409, même code) ;
 - `crates/kesh-api/src/routes/reconciliation.rs` (`mod tests`) — 1 neuf :
-  `lettering_errors_map_to_failed_proposals` (AC15 d).
+  `lettering_errors_map_to_failed_proposals` (AC15 d) ;
+- `crates/kesh-api/src/errors.rs` (`mod tests`) — 1 neuf : `closed_lettering_texts_follow_their_family`
+  (AC17 c : trois familles, trois clés, replis non vides, remède nommé) ;
+- `frontend/src/lib/features/supplier-invoices/invoice-cancel.test.ts` (neuf, Vitest) — 1 :
+  le motif dormant a son texte (AC17 d) ;
+- **étendus** (Vitest) : `lib/shared/utils/settlement-cancel-blocked.test.ts` et
+  `features/reconciliation/reconciliation-cancel.test.ts` — le code neuf a son texte, mot pour mot le FTL
+  (AC17 b, c).
 
-*(Recompte depuis cette liste : 15 + 3 + 2 + 1 + 1 = **22 fonctions de test neuves**, plus **1 test
-étendu**.)*
+*(Recompte depuis cette liste : 19 + 3 + 3 + 1 + 1 + 1 + 1 + 1 = **30 fonctions de test neuves** (29 Rust,
+1 Vitest), plus **3 tests étendus** (`lettering_invariants`, deux fichiers Vitest).)*
 
 ## Dev Notes
 
@@ -478,12 +678,23 @@ un `FailedProposal` selon la table de P4 — test du mappage sur une fonction pu
   dissolution du groupe de plus petite clé, mesuré en T0 de la 15-1a-i (toute insertion de ligne,
   toutes sociétés). **Aucune absence de cycle n'est affirmée** : l'ordre réduit la fréquence, le rejeu
   est la défense — toutes les routes de T0 (c) sont rejouées (`Rejouee`, et `retry_with` pour
-  `accept_batch`).
+  `accept_batch`). Cycle **neuf**, nommé (validation P2, L-2) : *accept ‖ règlement ou solde de la même
+  facture* — `accept_one_invoice` insère sa ligne `invoice_settlements` avant de prendre la facture,
+  `settle_invoice` / `write_off_invoice` tiennent la facture puis lisent `invoice_settlements` par la
+  découverte `FOR UPDATE` ; AC15 (c) ne couvre que *accept ‖ annulation* — le rejeu couvre les deux.
+  Le rang 2 bis n'ajoute **aucun** verrou : il lit, sans verrou, les lignes du groupe, les exercices et
+  la borne, après les verrous que le geste prend déjà.
+- **Codes jamais rendus par ces routes** (validation P2, L-3, réfuté sur le fond) : `409
+  LETTERING_CONCURRENT_CHANGE` et un `Invariant` de synchronisation ne sont pas des refus de ces gestes —
+  le premier est inatteignable par construction (C-15-1a2-14), le second est un défaut ; ni l'un ni
+  l'autre n'entre aux tableaux de refus d'`api-external.md`.
 - **Tests existants touchés** (finding F-10, relevés sur `056997b0`, non exécutés) :
-  - neuf fichiers écrivent `INSERT INTO invoice_settlements` en SQL brut (`admin_full_import_e2e.rs`,
-    `reconciliation_e2e.rs`, `exports_global_e2e.rs`, `journal_entry_reversal_e2e.rs`,
-    `reconciliation_repository.rs`, `invoice_write_off.rs`, `invoice_settlement.rs`, plus les `mod tests`
-    de `invoice_settlements.rs` et `invoices.rs`) : ils fabriquent des factures « soldées » **sans**
+  - **huit** fichiers écrivent `INSERT INTO invoice_settlements` en SQL brut hors production
+    (`admin_full_import_e2e.rs`, `reconciliation_e2e.rs`, `exports_global_e2e.rs`,
+    `journal_entry_reversal_e2e.rs`, `reconciliation_repository.rs`, `invoice_write_off.rs`,
+    `invoice_settlement.rs`, plus le `mod tests` d'`invoices.rs` — relevé par
+    `grep -rlE "INSERT INTO invoice_settlements" --include=*.rs crates/`, qui rend neuf fichiers dont
+    `invoice_settlements.rs`, où la seule occurrence `:415` est la production ; validation P2, R-5) : ils fabriquent des factures « soldées » **sans**
     groupe — cohérent (le SQL brut contourne le geste) ; aucun n'asserte l'absence de marque. À relire
     si l'un rougit ;
   - `reconciliation_cancel.rs` (`reconciliation_cancel_letters_the_reversal_pair`, rapprochement **hors
@@ -491,16 +702,53 @@ un `FailedProposal` selon la table de P4 — test du mappage sur une fonction pu
   - `journal_entry_reversal_e2e.rs`, `letterings.rs`, `letterings_e2e.rs` : `details` d'audit des routes
     et de la contre-passation **inchangés** (aucune clé `document*` quand `None`) ;
   - `invoice_settlement.rs` (annulations) : le résultat final de R6 ne change pas ; la séquence devient
-    dissolution → paire.
+    dissolution → paire ;
+  - les tests de la file commune (`settlement_cancellation`, prédicteurs client et fournisseur, textes
+    de `kesh-api/src/errors.rs`, `invoice_echeancier_e2e.rs`, `supplier_settlement_cancel_e2e.rs`,
+    `reconciliation_e2e.rs`) : un `match` exhaustif sur `SettlementCancelBlocker` gagne un bras ; aucun
+    rang existant ne change de place ; le test des textes de la queue côté frontend
+    (`settlement-cancel-blocked.test.ts`) gagne un code. ⚠️ Le commentaire d'`invoices.rs:1667-1673`
+    (« la marque de lettrage … inatteignable ici », dévalidation) **reste vrai** : sans groupe gardé,
+    aucune facture sans règlement n'a de ligne de vente lettrée (validation P2, M-2 — dépendait du
+    groupe gardé).
 - **Dépendances** : 15-1a-i, 15-1a-ii (mergées). 15-6a/b/c/d **mergées** (`39b52628`, `f8b2accd`,
   `803f3e15`, `1ae3963e`) : les avertissements #473/#474 de la fiche d'origine sont retirés.
 - **Règle de découpage** : modules **de premier niveau** touchés, comptés par domaine : (1) le lettrage
   (`kesh-db` `letterings.rs` + son message `LETTERING_IS_DOCUMENT` — quatre `.ftl` et un repli Rust),
-  (2) les règlements clients (`invoice_settlements_write.rs`), (3) les avoirs (`credit_notes.rs`),
-  (4) le rapprochement (`kesh-api` `routes/reconciliation.rs`), (5) la documentation. **Cinq**, au seuil.
-  Par fichier de production : `letterings.rs`, `invoice_settlements_write.rs`, `credit_notes.rs`,
-  `routes/reconciliation.rs`, `errors.rs` (une chaîne), quatre `.ftl`. `invoice_settlements.rs`,
-  `reconciliation_cancel.rs`, `routes/letterings.rs` et `journal_entries.rs` ne changent pas.
+  (2) les règlements clients **et leur file d'annulation** (`invoice_settlements_write.rs`,
+  `settlement_cancellation.rs`, la variante de `SettlementCancelBlocker` dans `kesh-db/src/errors.rs`),
+  (3) les avoirs (`credit_notes.rs`), (4) le rapprochement (`kesh-api` `routes/reconciliation.rs`,
+  `kesh-db` `reconciliation_cancel.rs`), (5) **l'écran et ses textes** — trois clés × quatre locales, trois
+  bras de `kesh-api/src/errors.rs`, `settlement-cancel-blocked.ts`, `reconciliation-cancel.ts`,
+  `invoice-cancel.ts` —, (6) la documentation. **Six**, un de plus que le seuil : voir la dérogation
+  ci-dessous. Par fichier de production : `letterings.rs`, `invoice_settlements_write.rs`,
+  `settlement_cancellation.rs`, `reconciliation_cancel.rs`, `kesh-db/src/errors.rs`, `credit_notes.rs`,
+  `routes/reconciliation.rs`, `kesh-api/src/errors.rs`, quatre `.ftl`, trois modules TypeScript (et
+  `reconciliation.types.ts`). `invoice_settlements.rs`, `routes/letterings.rs` et `journal_entries.rs` ne
+  changent pas.
+
+### Dérogation règle de splitting
+
+*(C-15-1a2-13 ; décision de l'orchestrateur, validation P2.)* Le refus du rang 2 bis (P7 point 2) fait
+passer la fiche de **cinq** à **six** modules : l'écran et ses textes s'ajoutent. **Dérogation**, non
+découpage, pour trois raisons :
+
+1. **Un refus nommé de plus, sans logique neuve hors du blocker existant.** Le rang 2 bis s'insère dans
+   `SettlementCancelBlocker` et dans la file `settlement_entry_cancel_blocker`, qui ont **déjà** leurs
+   trois familles de textes, leurs trois listes TypeScript et leurs tests ; chaque site gagne un bras d'un
+   `match` exhaustif — le compilateur et `never` les énumèrent. Aucune règle métier neuve n'y vit :
+   l'évaluation est celle de P7 (`document_group_frozen_by_periods`, module du lettrage).
+2. **Le découper le séparerait de ce qu'il garde.** Sans le refus, la dissolution de P4 rencontre un
+   groupe clos et retombe dans l'alternative écartée (abstention ou dissolution) ; une sous-story « refus »
+   mergée après la synchronisation laisserait entre les deux merges l'état que la validation P2 a montré
+   défaillant (R-1, M-2). Le refus et la dissolution vont ensemble.
+3. **Le motif du seuil — la tenue dans un seul modèle mental adversarial — ne joue pas** sur ce module :
+   la revue de l'écran est mécanique (trois textes, trois cas de `switch`), file par file.
+
+**Risque accepté** : une revue plus large. **Contre-mesure** : la passe de revue de code nomme l'axe
+« les trois familles de textes et leurs replis, mot pour mot », et le gate frontend complet
+(`npm run check`, `lint-i18n-ownership`, `test:unit`, `build`) tourne au dernier commit de code. Aucun
+autre débordement constaté (les gestes fournisseurs restent à la 15-1a2-ii, qui garde ses cinq modules).
 
 ## Dev Agent Record
 
@@ -511,6 +759,49 @@ un `FailedProposal` selon la table de P4 — test du mappage sur une fonction pu
 ### File List
 
 ## Change Log
+
+### Validation P2 — 2026-10-09 (Opus 5.5 ×2, lentilles R et F ; remédiation Opus 5.5, seul remédiateur des trois fiches, en autonomie)
+
+**Rapports** : `kesh-gate-logs/15-1a2-i-validate-p2-R.md` (**0 CRITICAL, 0 HIGH, 2 MEDIUM, 7 LOW**) et
+`…-F.md` (**0 CRITICAL, 0 HIGH, 4 MEDIUM, 5 LOW**). Doublons : R-1 ≈ M-2, R-2 ≈ M-3, R-6 = L-1 → **4 MEDIUM
+distincts**, tous **nés de la remédiation P1** (trois de C-15-1a2-2, un de la table per-proposal de P4).
+**Trend** (la passe 1 portait sur la fiche mère 15-1a2) : P1 **3 HIGH / 7 MEDIUM** (R) et **2 HIGH / 7
+MEDIUM** (F) → P2 **0 HIGH / 4 MEDIUM distincts**. Signal D5 : **non levé** (sévérité en baisse) ; le motif
+« la sévérité se déplace vers ce qu'on vient d'écrire » est en revanche **entier** — d'où la décision de
+l'orchestrateur de traiter la cause (C-15-1a2-2) plutôt que ses symptômes. Chaque finding relu au code
+(`grep -nF` / `sed -n` sur `056997b0`).
+
+| finding | sévérité | verdict | où |
+|---|---|---|---|
+| R-1 ≈ M-2 — après un déverrouillage, le groupe gardé fait sortir `Invariant` (500) d'un règlement, d'un avoir ou d'une annulation | MEDIUM | **corrigé à la racine** : le groupe gardé n'existe plus (refus, C-15-1a2-10) ; réserve de P3 réécrite ; AC14 (b) asserte un règlement réussi après déverrouillage | P3, P7 point 2, AC14 |
+| R-2 ≈ M-3 — AC5 « deux exceptions et elles seules » faux sur un état atteignable ; « lettrée `document` » non défini | MEDIUM | **corrigé** : prédicat écrit (« les lignes de `C(I)` forment exactement un groupe `document` ») ; l'état divergent n'existe plus ; fixture enrichie d'une pièce passée sous la borne | AC5 |
+| M-1 — le groupe gardé produit des états définitifs que rien ne répare | MEDIUM | **corrigé** : la voie que la lentille proposait est retenue — refus au rang 2 bis, remède administratif (C-15-1a2-10 à 12) | P7, AC14, AC17, T2-bis |
+| M-4 — `LETTERING_CONCURRENT_CHANGE` per-proposal sans libellé, test du compte muet | MEDIUM | **corrigé** : inatteignable par construction (lignes tenues par l'acte 1) → `INTERNAL_ERROR` ; aucun module frontend (C-15-1a2-14) | P4, AC15 (d) |
+| R-3 — mauvaise phrase du socle citée | LOW | **corrigé** (rang 2, `:85-100`) | P5, P7 |
+| R-4 — « aucune paire `reversal` » faux pour un `internal_account` | LOW | **corrigé** (AC4 nomme la contrepartie ; AC14 ne porte plus sur les paires) | AC4 |
+| R-5 — « neuf fichiers » | LOW | **corrigé** : **huit** (F le confirmait à tort en comptant la production d'`invoice_settlements.rs`) | modèle, Dev Notes |
+| R-6 = L-1 — `-> bool` qui lit la base ; frontière avec la 15-1b | LOW | **corrigé** : `Result`, types publics, **une** factorisation reprise par la 15-1b (C-15-1a2-18) | P7, T1 |
+| R-7 — retypage refusé si `A` porte un rôle | LOW | **corrigé** (voie bancaire privilégiée ; rôle retiré, `confirm_retype`) | AC13 |
+| R-8 — l'avoir après un groupe gardé | LOW | **sans objet** (état disparu) | — |
+| R-9 — grep de propagation en français seulement | LOW | **corrigé** (jetons de/it/en) | AC12 |
+| L-2 — « même ordre que les autres gestes » inexact ; cycle accept ‖ règlement | LOW | **corrigé** (phrase réécrite, cycle nommé) | P4, Dev Notes |
+| L-3 — 409 / 500 non documentés sur les routes de règlement | LOW | **réfuté sur le fond** : inatteignables (C-15-1a2-14) ; écrit aux Dev Notes | Dev Notes |
+| L-4 — « une remédiation en cours la tient » périmé | LOW | **corrigé** : « Pour la 15-1b » réécrite **et intégrée** à la 15-1b dans la même passe | Pour la 15-1b |
+| L-5 — annulation d'un solde non testée | LOW | **corrigé** (`cancel_write_off_dissolves_and_pairs`) | AC4, tests |
+
+**Décisions de l'orchestrateur appliquées** : (1) **refus** au délettrage — C-15-1a2-2 révisée **deux
+fois**, historique écrit en P7 et au registre (abstention partout → délettrer toujours, écartée : contredit
+C113 et `user-manual.tex:577-579` → refus) ; (2) **dérogation** à la règle de splitting (six modules,
+C-15-1a2-13 ; aucun autre débordement constaté) ; (3) le prédicat des périodes, **une** factorisation
+(C-15-1a2-18) ; (4) `LETTERING_CONCURRENT_CHANGE` → `INTERNAL_ERROR` (C-15-1a2-14). ⚠️ **Heurt signalé** :
+la consigne disait « nouveau code d'erreur » ; le type pose que ses codes réemploient ceux d'états du
+monde déjà nommés — le refus est neuf, son code réemploie `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`
+(C-15-1a2-11). **Propagation** (valeurs grepées sur les trois fiches, l'index et le registre) : « gardé »,
+`AbstainedClosedPeriods` côté dissolution, « points 2-3 », « une remédiation en cours », « neuf fichiers »,
+`-> bool`. Choix consignés : **C-15-1a2-10 à 14, 18** ; C-15-1a2-2 annotée. **Recompte** (depuis ce
+fichier) : **13 critères** (AC1–AC5, AC8–AC10, AC12–AC15, AC17 neuf), **8 tâches** (T0, T1, T2, T2-bis,
+T3–T6), **30 tests neufs** (29 Rust, 1 Vitest) **+ 3 étendus**. Prochaine passe : **P3, Sonnet**, complète
+(la remédiation change une règle métier et touche plusieurs modules).
 
 ### Validation P1 — 2026-10-09 (Sonnet 5.5 ×2, lentilles R et F ; remédiation Opus 5.5, en autonomie)
 
