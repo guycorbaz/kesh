@@ -76,17 +76,27 @@ services:
     # NON recyclables : elles pèsent sur cette pression-là, et le conteneur vit
     # dans `system.slice`, hors de portée de `scripts/mem-guard.sh`.
     #
-    # ⚠️ 4 Go couvrent un run VERT (≤ 6 bases éphémères vivantes à la fois, plus
-    # la base de dev et celles de gate), pas un run massivement ROUGE : sqlx ne
-    # détruit PAS la base d'un test échoué. À ~17 Mo la base, les ~3,3 Go libres
-    # en tiennent environ 190 — au-delà, MariaDB rend « table is full » sur les
+    # ⚠️ Le plafond couvre un run VERT (≤ 8 bases éphémères vivantes à la fois,
+    # plus la base de dev et celles de gate), pas un run massivement ROUGE : sqlx
+    # ne détruit PAS la base d'un test échoué. À ~17 Mo la base, chaque Go libre
+    # en tient une soixantaine — au-delà, MariaDB rend « table is full » sur les
     # suivants. Les PREMIERS échecs portent la cause réelle ; ceux d'après ne
     # portent que la saturation. La reprise est un `restart` du conteneur, qui
     # efface tout (cf. docs/testing.md § « Base de dev jetable »).
     # *(Chiffres mesurés dans le conteneur par la passe 1 de revue de code, qui
     # a réfuté l'affirmation « 4 Go couvrent largement un run complet ».)*
+    #
+    # ⚠️ Et le tmpfs se remplit AUSSI d'un gate VERT à l'autre, sans restart :
+    # `ibdata1`, le tablespace système, porte l'historique d'annulation (undo,
+    # `innodb_undo_tablespaces=0`) et ne rétrécit jamais. Mesuré le 2026-10-09 :
+    # 3,5 Go après une journée de gates complets menés en parallèle dans
+    # plusieurs worktrees, puis `1114 table is full` sur des tests sains ; après
+    # restart, +0,3 à +0,7 Go par gate complet. D'où 8 Go (décision de Guy, le
+    # même jour) au lieu de 4 : le restart reste le remède, le plafond n'en fait
+    # qu'espacer le besoin. Le coût est de la mémoire non recyclable — 8 Go sur
+    # les 30 de la station, à garder en tête avant un build lourd.
     tmpfs:
-      - /var/lib/mysql:size=4g
+      - /var/lib/mysql:size=8g
     # Corollaire du tmpfs : les tables système repartent vierges à chaque
     # démarrage, donc les droits globaux dont `#[sqlx::test]` a besoin pour
     # créer ses bases éphémères disparaissent avec elles. L'entrypoint MariaDB
