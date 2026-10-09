@@ -2,8 +2,9 @@
 
 ## Status
 
-in-progress *(créée le 2026-10-09 au découpage de la 15-1a en validation P3 — C124 ; validation close en P5 ;
-développement ouvert le 2026-10-09 sur `dc4bc58b`, qui porte la 15-12a et la 15-12b)*
+review *(créée le 2026-10-09 au découpage de la 15-1a en validation P3 — C124 ; validation close en P5 ;
+développement ouvert le 2026-10-09 sur `dc4bc58b`, qui porte la 15-12a et la 15-12b ; développement
+achevé le 2026-10-09, gate complet au dernier commit de code `ee6cb1c3` — revue de code à lancer)*
 
 ## Story
 
@@ -923,7 +924,7 @@ des gardes i18n ne bouge pour elles.
 
 ## Tasks
 
-- [ ] **T0 (part i)** (R7) — Relevés au sol sur le `main` du moment — la migration de T1 appliquée
+- [x] **T0 (part i)** (R7) — Relevés au sol sur le `main` du moment — la migration de T1 appliquée
       (index `idx_jel_lettering`), **avant** T3 : `EXPLAIN` de l'acte 1 (création et dissolution) ;
       résultats au Dev Agent Record. Constater que la 15-12a est mergée (prérequis : `grep -n
       "LOCK_EARLIER_BY_ID_SQL\|EarlierFiscalYearOpen" crates/kesh-db/src/repositories/fiscal_years.rs`),
@@ -934,7 +935,7 @@ des gardes i18n ne bouge pour elles.
       "lettering_key IS NULL"]`) ? Résultat au Dev Agent Record, et R7 corrigé s'il dément le
       raisonnement. *(Le code d'erreur de la sonde `NOWAIT` n'est **pas** à relever : 1205, déjà mesuré
       sous MariaDB 10.11 par la Story 15-5d — `test_fixtures::sonde_verrou_nowait`, F4-5.)*
-- [ ] **T1** (AC1) — Migration R1 avec le bump `min_required = '0.13.0'` en dernière instruction ;
+- [x] **T1** (AC1) — Migration R1 avec le bump `min_required = '0.13.0'` en dernière instruction ;
       **dans le même commit** les dix `Cargo.toml` à `0.13.0` (+ `Cargo.lock`) ; entrée
       `EXEMPT_MIGRATIONS` (`Durable`) ; squash régénéré ; `migrations.sha384` ; ligne d'audit
       d'idempotence et compteurs recomptés — **et la décomposition par story de la ligne `Total`**
@@ -944,12 +945,12 @@ des gardes i18n ne bouge pour elles.
       à `0.13.0` ; `migrations_upgrade_path.rs:509` (binaire `0.13.0` → `Aligned`) et `:524`
       (`db_min` `0.13.0`, binaire `0.14.0` → `BinaryAhead`) et leurs commentaires `:510`,
       `:525-526` ; en-tête `-- BREAKING (P1) :` recopié de R1.
-- [ ] **T2** (AC2, R3, R7) — `kesh-core::lettering` : `code_from_key`, `key_from_code` (arithmétique
+- [x] **T2** (AC2, R3, R7) — `kesh-core::lettering` : `code_from_key`, `key_from_code` (arithmétique
       vérifiée, borne `i64::MAX`, `to_ascii_uppercase` puis validation `A-Z` — F4-2), **une fonction
       pure par cause** (`check_line_ids`, `check_same_account`, `check_none_lettered`,
       `check_balanced`), et `check_rows_affected(expected, actual)` (R7 point 4 — F4-4), tests
       unitaires.
-- [ ] **T3** (AC3, AC4, AC5, R4, R7) — `kesh-db/src/repositories/letterings.rs` :
+- [x] **T3** (AC3, AC4, AC5, R4, R7) — `kesh-db/src/repositories/letterings.rs` :
       `create_group_in_tx`, `dissolve_group_in_tx`, `find_group`, `is_letterable_account` (tout
       `bank_accounts` qui désigne le compte, **archivé compris** — C127), `enum Mode { Manual,
       System { held_open_fiscal_year_id } }`, erreurs `DbError::Lettering*` (dont
@@ -961,22 +962,22 @@ des gardes i18n ne bouge pour elles.
       des lignes trouvées par `check_rows_affected`)
       **documentée dans le doc-comment**, étape par étape, avec la phrase « ces requêtes sont reconnues
       à leur texte par les tests » et leurs motifs (R7 point 2).
-- [ ] **T6** (AC6, AC11, AC12) — Routes `kesh-api/src/routes/letterings.rs` (`create_lettering`,
+- [x] **T6** (AC6, AC11, AC12) — Routes `kesh-api/src/routes/letterings.rs` (`create_lettering`,
       `get_lettering`, `delete_lettering`), enveloppe de rejeu, registres, ligne du Pattern 5.
       ⚠️ Montage dans `kesh-api/src/lib.rs` *(axe signalé non exercé par la lentille F de P2)* :
       `POST`/`DELETE` dans `comptable_routes` (`:347`), **avant** son `route_layer` (`:723`), `GET`
       dans `authenticated_routes` (`:728`) — `route_layer` n'enveloppe que les routes déjà
       enregistrées (avertissement écrit au bloc admin, `:321-332`) : une route chaînée après
       échapperait au RBAC. Les tests 403 d'AC6 (Consultation au `POST` et au `DELETE`) le vérifient.
-- [ ] **T7** (AC10) — Audit par `for_actor` + labels + 4 locales ; lignes des `details` avec
+- [x] **T7** (AC10) — Audit par `for_actor` + labels + 4 locales ; lignes des `details` avec
       `fiscalYearId`/`fiscalYearName` (C127).
-- [ ] **T8** (AC13, AC14) — Struct, `LINE_COLUMNS` et liste de `list_all_lines_by_company`, les deux
+- [x] **T8** (AC13, AC14) — Struct, `LINE_COLUMNS` et liste de `list_all_lines_by_company`, les deux
       littéraux `JournalEntryLine {` de `kesh-api`, DTO, type frontend `journal-entries.types.ts:11`
       (champs requis et nullables) **et ses fixtures typées** (`JournalEntryForm.edit.test.ts:66-67`,
       `form-helpers.test.ts:29`, `:38-44`, `:50-56`, `:62-68` — AC14, R4-3 = F4-3), export CSV ; `COLONNES_DES_LIGNES` (+ commentaire renvoyant au gel `Lettered` de la 15-1a-ii, AC8),
       vérification du test de mutation `:197/:220`, doc-comment `journal_entries_modification.rs:181`
       (`lettering_id` → `lettering_key`).
-- [ ] **T9** (R3) — Test structurel, sur le patron des tests lexicaux du dépôt : dans
+- [x] **T9** (R3) — Test structurel, sur le patron des tests lexicaux du dépôt : dans
       `crates/*/src/**/*.rs`, **hors** blocs `#[cfg(test)]` (les tests de dépôt vivent aussi dans des
       `mod tests` de `src/`) et hors `kesh-db/src/repositories/letterings.rs`, aucun statement
       `UPDATE` **ni** `INSERT` (toutes formes : `VALUES`, `SELECT`) qui nomme `lettering_key` ou
@@ -984,7 +985,7 @@ des gardes i18n ne bouge pour elles.
       restauration nomme ses colonnes dynamiquement) — le dire au doc-comment du test. **Et** dans
       `letterings.rs`, chacune des deux primitives appelle `check_rows_affected` (R7 point 4 — F4-4 :
       c'est la seule garde contre la mutation « retirer la vérification »).
-- [ ] **T10 (part i)** (AC3, AC4, AC5, R7) — i18n, **dix** clés dans les **quatre** locales, chacune
+- [x] **T10 (part i)** (AC3, AC4, AC5, R7) — i18n, **dix** clés dans les **quatre** locales, chacune
       avec son repli FR identique au catalogue (le 404 d'AC11 n'a **pas** de message dédié) :
 
       | code | clé | texte FR |
@@ -1013,7 +1014,7 @@ des gardes i18n ne bouge pour elles.
       depuis sa source. ⚠️ **Hors des deux lots, deux clés existantes réécrites** (R5, C130) :
       `invoices-settlement-cancel-blocked-credited` et `reconciliation-cancel-blocked-credited`, quatre
       locales, replis Rust et frontend — texte arrêté à AC15 part i ; aucun compte figé n'en bouge.
-- [ ] **T11 (part i)** (AC15 part i) — `api-external.md` (routes, refus, et **tous** les sites du
+- [x] **T11 (part i)** (AC15 part i) — `api-external.md` (routes, refus, et **tous** les sites du
       tableau d'AC15 part i : `:212`, réponse d'une écriture, `:325`, `:386`, `:485`, `:488`),
       CHANGELOG (*Ajouté* **complétée** + avertissement de non-retour ; *Modifié* : champs et colonnes
       neufs ; le motif « facture créditée » qui ne promet plus de lettrage), manuel —
@@ -1022,7 +1023,7 @@ des gardes i18n ne bouge pour elles.
       « à lettrer » d'AC15 part i** (i18n quatre locales, replis Rust et frontend, quatre tests
       frontend, doc-comment `kesh-db/src/errors.rs:327`), contrôlé par son `git grep` (cinq lignes
       triées restantes) — R4-1, C130.
-- [ ] **T12 (part i)** — Tests :
+- [x] **T12 (part i)** — Tests :
       - AC1 : `migrations_fresh_install` à `0.13.0`, `downgrade_protection_aligned_when_binary_equals_min`
         et `downgrade_protection_binary_ahead_when_binary_greater` **mis à jour**,
         `downgrade_protection_rejects_old_binary` (non-régression), `every_data_backfill_migration_is_triaged`
@@ -1150,11 +1151,104 @@ des gardes i18n ne bouge pour elles.
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement), en deux sessions : la première (T0, `bc32f92a` ; implémentation,
+`cbaf5a18`) interrompue par un crash de la station au moment du gate ; la seconde (reprise) a intégré
+la correction restée non commitée, achevé le contrôle d'AC15 et exécuté les gates.
+
 ### Completion Notes List
+
+- **Toutes les tâches de la part (i) sont livrées** (T0, T1, T2, T3, T6–T12) ; R6, AC8, AC9 et la part (ii)
+  d'AC15 restent à la 15-1a-ii. Choix consignés au registre : **C-15-1a-i-1** (verrou d'intervalle « plus
+  grande clé » démenti par la mesure, R7 corrigé), **-2** (plafond de 200 lignes = refus de forme de la
+  route), **-3** (l'acte 1 lit `je.entry_number` ; rang 4 lu après les verrous d'exercice), **-4**
+  (vocabulaire DE/EN/IT du lettrage), **-5** (clés `15-13*` au registre de sprint).
+- **Reprise après crash** : la session précédente avait laissé non commitée la mise à jour du compte figé
+  `EXEMPT_MIGRATIONS.len()` 15 → 16 (`post_restore.rs`). Vérifiée contre T1 (une entrée `Durable` pour
+  `20261009000001`, **16** entrées recomptées depuis la source) et commitée (`74d164ca`).
+- **Contrôle d'AC15 part i relancé au dernier commit** : le `git grep` du relevé rendait **six** lignes —
+  les cinq triées plus un doc-comment neuf de la story (`routes/letterings.rs:45`, « lignes … à lettrer
+  ensemble », sans promesse mais hors inventaire). Reformulé (`ee6cb1c3`) : le contrôle rend désormais les
+  **cinq** lignes triées (`CHANGELOG.md:96` sous `[0.12.1]`, la migration `20260827000001:16`,
+  `supplier-invoices-cancel-confirm-paid` en `de-CH`, `en-CH`, `it-CH`). PDF du manuel contrôlé aplati :
+  zéro « à lettrer », la phrase du verrou de période (« se fige avec elles ») et le glossaire
+  (`/api/v1/letterings`) présents.
+- **Comptes figés des gardes i18n et d'audit** (T10) : `i18n-keys.test.ts` (sites `i18nMsg` du frontend),
+  `i18n-un-repli-par-cle.test.ts` (replis frontend) et `audit_label_registry.rs` ne bougent pas — les dix
+  clés d'erreur et les trois libellés d'audit n'ont **aucun site frontend** ; recomptés par l'exécution des
+  gardes, verts.
+- **Mutations rejouées dans la reprise** (chacune restaurée, puis `letterings` + `letterings_lexical`
+  rejoués verts, 34/34) : « trier les exercices du groupe par `id` au lieu de `start_date` »
+  (`FISCAL_YEARS_OF_GROUP_SQL`) → `lettering_locks_fiscal_years_in_date_order_not_id_order` **rouge** sur
+  la sonde `NOWAIT` de B (`letterings.rs:1231`) ; « retirer `check_rows_affected` de
+  `dissolve_group_in_tx` », puis de `create_group_in_tx` → `each_primitive_checks_the_rows_its_update_found`
+  **rouge** les deux fois. Les autres mutations citées par la fiche (`:197` de
+  `journal_entries_modification.rs`) n'ont **pas** été rejouées dans cette session.
+- **Tests ajoutés**, recomptés depuis la source, périmètre `dc4bc58b..ee6cb1c3` : `kesh-db/tests/letterings.rs`
+  **31**, `kesh-db/tests/letterings_lexical.rs` **3**, `kesh-api/tests/letterings_e2e.rs` **7**,
+  `kesh-core/src/lettering.rs` **12**, `kesh-api/src/errors.rs` 26 → 28 (**+2**),
+  `kesh-api/src/exports/csv_tables.rs` 16 → 17 (**+1**) — **56** ; tests existants mis à jour sans
+  changement de nombre : `migrations_upgrade_path.rs`, `migrations_fresh_install.rs`,
+  `journal_entries_modification.rs`, `audit_route_registry.rs`, et cinq fichiers de test frontend.
+- **Écart connu, écrit au T0, non corrigé** : sur tables **vides**, le plan de l'acte 1 de la création à
+  40 identifiants passe par `idx_journal_entries_company_date` (sur-verrouillage des seules bases
+  minuscules, sans effet sur l'exactitude : routes rejouées).
+
+**Gates, au dernier commit de code `ee6cb1c3`** (bases `kesh_151ai` et `kesh_e2e_151ai` reconstruites par
+`DROP/CREATE` + migrations du worktree + `scripts/seed-dev-db.sql` immédiatement avant) :
+
+| gate | résultat |
+|---|---|
+| `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest) | vert — **3086** exécutés, **3086** réussis, 4 ignorés (115,7 s) |
+| `npm run check` | 0 erreur, 27 avertissements (préexistants, aucun dans un fichier de la story) |
+| `npm run lint-i18n-ownership` | PASS |
+| `npm run test:unit` | vert — 114 fichiers, **1139** tests |
+| `npm run build` | vert |
+| E2E complet (`npm run test:e2e`, backend `0.13.0` sur `:3011`) | **245** réussis, **9** échecs, 19 sautés (11,4 min) |
+
+Les neuf échecs E2E sont **tous** dans la liste des attendus (`docs/testing.md` § « Les échecs
+attendus »), jugés fichier par fichier : les **sept** KF-029 (#97 — `mode-expert:26`, `:41`,
+`onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) et les **deux** KF-045 (#421 —
+`invoices.spec.ts:415` et `:439`, l'ancien `:405`/`:429` décalé ; run achevé à 09:25 UTC, avant 12:00).
+Aucune pollution ce run. Le gate runtime P2-bis est donc passé : `migrations_fresh_install`,
+`downgrade_protection_*`, `admin_backup_e2e` et `admin_full_import_e2e` dans les 3086, et le backend
+`0.13.0` a booté sur une base migrée jusqu'à `20261009000001` (`/health` : `version 0.13.0`).
+⚠️ Le frontend n'a pas changé entre `74d164ca` (où `check` et `test:unit` ont tourné) et `ee6cb1c3`
+(le diff ne touche qu'un doc-comment Rust) ; `build` et l'E2E ont tourné sur `ee6cb1c3`. Un premier gate
+backend, sur `74d164ca`, avait rendu le même 3086/3086.
 
 ### File List
 
+Code et tests : `crates/kesh-core/src/lettering.rs` (neuf), `crates/kesh-core/src/lib.rs`,
+`crates/kesh-db/migrations/20261009000001_journal_entry_lines_lettering.sql` (neuf),
+`crates/kesh-db/migrations.sha384`, `crates/kesh-db/test-schema/0001_schema_squash.sql`,
+`crates/kesh-db/src/entities/journal_entry.rs`, `crates/kesh-db/src/errors.rs`,
+`crates/kesh-db/src/post_restore.rs`, `crates/kesh-db/src/repositories/journal_entries.rs`,
+`crates/kesh-db/src/repositories/letterings.rs` (neuf), `crates/kesh-db/src/repositories/mod.rs`,
+`crates/kesh-db/tests/letterings.rs` (neuf), `crates/kesh-db/tests/letterings_lexical.rs` (neuf),
+`crates/kesh-db/tests/journal_entries_modification.rs`, `crates/kesh-db/tests/migrations_fresh_install.rs`,
+`crates/kesh-db/tests/migrations_upgrade_path.rs`, `crates/kesh-api/src/audit_labels.rs`,
+`crates/kesh-api/src/errors.rs`, `crates/kesh-api/src/exports/csv_tables.rs`, `crates/kesh-api/src/lib.rs`,
+`crates/kesh-api/src/routes/journal_entries.rs`, `crates/kesh-api/src/routes/letterings.rs` (neuf),
+`crates/kesh-api/src/routes/mod.rs`, `crates/kesh-api/tests/audit_route_registry.rs`,
+`crates/kesh-api/tests/letterings_e2e.rs` (neuf), `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`,
+les dix `crates/*/Cargo.toml` (0.13.0) et `Cargo.lock`.
+Frontend : `journal-entries.types.ts`, `JournalEntryForm.edit.test.ts`, `form-helpers.test.ts`,
+`invoices/settlement-cancel.ts` et `.test.ts`, `InvoiceSettlements.test.ts`,
+`reconciliation/reconciliation-cancel.ts` et `.test.ts`, `shared/utils/settlement-cancel-blocked.test.ts`.
+Documentation : `CHANGELOG.md`, `docs/api-external.md`, `docs/MULTI-TENANT-SCOPING-PATTERNS.md`,
+`docs/migrations-idempotence-audit.md`, `docs/manual/fr/user-manual.tex` et `.pdf`.
+Planification : cette fiche, `epic-15-choix-autonomes.md`, `sprint-status.yaml`.
+
 ## Change Log
+
+### Développement — 2026-10-09 (Opus 5.5, agent de développement)
+
+Implémentation (`cbaf5a18`), correctif du compte figé des exemptions resté non commité au crash
+(`74d164ca`), doc-comment reformulé pour que le contrôle d'AC15 rende ses cinq lignes triées
+(`ee6cb1c3`). Gate complet au dernier commit de code : backend 3086/3086 (4 ignorés), Vitest 1139/1139,
+build vert, E2E 245 réussis / 9 attendus (7 KF-029 + 2 KF-045 du matin). Trois mutations rejouées et
+tuées (tri par `id` ; retrait de `check_rows_affected` dans chacune des deux primitives). Détail au Dev
+Agent Record. Statut → `review`.
 
 ### T0 — relevés au sol sur `dc4bc58b` — 2026-10-09 (Opus 5.5, agent de développement)
 
