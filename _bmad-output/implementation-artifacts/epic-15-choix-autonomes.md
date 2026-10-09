@@ -5288,3 +5288,54 @@ l'import (#458–#461).
   du manuel d'administration et un tableau d'API, pour annoncer à l'utilisateur un refus qu'il ne peut
   pas rencontrer ; laisser « quatre » d'un côté et « huit » de l'autre (incohérent, le défaut signalé).
 - **Réversible** : oui (texte de doc-comments).
+
+## C-15-12b-1 — 15-12b (T0) : le message de `LATER_FISCAL_YEAR_CLOSED` élargi à la saisie, la contre-passation dite « d'une écriture existante »
+- **Contexte** : la 15-12a avait borné `error-later-fiscal-year-closed` (4 locales + repli Rust) à
+  « modifiée ni supprimée » (C-15-12a-3) ; le filet de cette story refuse aussi la **création**. Le reçu
+  du 2026-10-09 demande d'élargir le texte et d'inverser l'assertion « enregistr ».
+- **Retenu** : « … aucune écriture datée avant sa date de début ne peut être **enregistrée, modifiée ni
+  supprimée** tant qu'il l'est. **Une écriture existante** se corrige par une contre-passation ; sinon,
+  un administrateur rouvre les exercices clôturés, en commençant par le plus récent. » — « Une telle
+  écriture » devient « Une écriture existante » : pour un refus de saisie, il n'y a rien à corriger, et
+  le conseil ne vaut que pour une écriture déjà passée. Même retouche dans les trois autres locales.
+  L'assertion de `journal_entry_reversal_e2e.rs` est **inversée** (elle exige désormais « ne peut être
+  enregistrée, modifiée ni supprimée »), et le test neuf `filet_bilan_clos_e2e.rs` l'exige sur le refus
+  de la saisie et de la contre-passation.
+- **Écartées** : un second message propre à la création (deux clés pour un même code et un même état —
+  le message neutre de la 15-12a est fait pour ne pas présupposer le geste) ; ajouter au message la
+  marche à suivre du bandeau (« clôturez d'abord l'exercice ouvert le plus ancien ») — le message est
+  déjà long et la 15-12a l'a validé tel quel ; le bandeau la porte.
+- **Réversible** : oui (texte).
+
+## C-15-12b-2 — 15-12b (T0) : `GET /opening-balances/status` ne prédit pas le filet — angle mort assumé, écrit et fixé
+- **Contexte** : l'inventaire des prédicteurs de l'AC 18 (P3, C120) part des champs d'annulation
+  (`cancelBlockedBy`…). Rejoué par le symptôme (« un champ d'API qui annonce un geste »), il trouve un
+  sixième prédicteur : `canComplete` / `completeReason` (et `canEnter`) de l'écran des soldes de départ
+  (`opening_complement::complement_status`), qui ne lit pas les exercices postérieurs. Dans l'état hérité,
+  l'écran annonce le complément possible et le `POST` rend `400 LATER_FISCAL_YEAR_CLOSED`.
+- **Retenu** : même traitement que C120 — **angle mort assumé, écrit** au doc-comment de
+  `complement_status`, au Dev Agent Record et dans `api-external.md` (section des soldes de départ), et
+  **fixé** par le test `le_complement_sous_un_exercice_posterieur_clos_est_refuse`
+  (`opening_complement_repository.rs`), qui asserte `refusal = None` **et** le refus du `POST` : il
+  rougira le jour où le statut le prédira. Le refus au clic est exact et son message porte la marche à
+  suivre. Un module de premier niveau de plus au décompte de la dérogation (11 au lieu de 10 : un
+  doc-comment).
+- **Écartées** : un motif neuf `LATER_FISCAL_YEAR_CLOSED` dans `OpeningComplementRefusal` (variante,
+  mapping de la route, `switch` de l'écran, clés ×4 — le coût que C120 a refusé pour les annulations, sur
+  un état hérité étroit) ; ne rien écrire (le défaut que la règle « inventorier les sites non résolus »
+  interdit). **À signaler à l'orchestrateur** : l'issue #568 pourrait couvrir aussi ce prédicteur.
+- **Réversible** : oui.
+
+## C-15-12b-3 — 15-12b (T2) : le libellé du lot a deux clés, avec et sans nom
+- **Contexte** : AC 11 (C100) — clé neuve `reconciliation-failed-later-fiscal-year-closed`
+  (« Exercice postérieur « { $name } » clôturé »), `$name` lu dans `details.fiscalYearName`, « repli sans
+  nom si le champ manque ».
+- **Retenu** : le repli sans nom est une **seconde clé**, `reconciliation-failed-later-fiscal-year-closed-generic`
+  — patron d'`ACCOUNT_NOT_POSTABLE` / `-generic` du même fichier : un message Fluent dont la variable
+  manque rendrait les marques d'isolation ou un nom vide. Texte complété d'une demi-phrase qui dit la
+  conséquence : « Exercice postérieur « { $name } » clôturé : aucune écriture ne peut être datée avant
+  lui. » La lecture de `details` passe par une aide pure `fiscalYearName` (même prudence que
+  `rejectedAccountNumbers`).
+- **Écartées** : une seule clé avec `$name` vide (affiche « « » ») ; renvoyer le code brut (le repli
+  « Refus non reconnu ») quand le nom manque.
+- **Réversible** : oui.

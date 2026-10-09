@@ -723,3 +723,43 @@ de la base partagée, AC 21), `CHANGELOG.md`. **Aucune migration** (P1-P8 sans o
   (« enregistrée, modifiée ni supprimée »), retirer ou inverser l'assertion « enregistr » de
   `journal_entry_reversal_e2e.rs`, et regrep par la valeur (« enregistr », « recorded », « erfasst »,
   « registrat ») sur catalogues, replis, manuels et docs. Édition de l'orchestrateur, pas de passe.
+
+- **2026-10-09 — T0 (développement), relevés au sol sur `012fc430`** (15-12a mergée ; `ENTRY_LETTERED`
+  absent de `journal_entries.rs` — la 15-1a-ii n'est pas mergée, la paire de C117 reste à elle). **Aucun
+  écart ne change une règle ni un AC.** Relevés, par le texte :
+  - **Numéros relocalisés** : `create_in_tx_inner` `:258`, étape 1 `:308-335` (verdict « exercice clos »
+    `:322`) ; `update` `:1260`, refus `:1377-1390` ; `delete_in_tx` `:1648`, condition `if
+    enforce_ownership` `:1681` ; `find_later_closed_in_tx` `fiscal_years.rs:804`, `FIND_LATER_CLOSED_SQL`
+    `:829`, `find_later_closed` `:839` ; `invoices::unvalidate` `:1487`, appel `delete_in_tx` `:1660`
+    (cinq refus propres `InvoiceNotUnvalidatable`, dans l'ordre de la fiche, vérifié au code) ;
+    `reconciliation.rs` : `period_locked_failed_proposal` `:193`, `project_error_to_failed_proposal`
+    `:244`, `create_in_tx` des trois voies `:1623` / `:2150` / `:2520`, unitaires `:3296` / `:3748` —
+    leur erreur sort par `conclude_locked_attempt` (`ReconciliationError::Db` → mapping global), rien à y
+    ajouter ; littéraux `error_code` : **25** (→ 26 avec le neuf, 27 codes au total).
+  - **Registre** (`awk` borné à `LIB_ROUTES`) : **22** `Rejouee`, **2** `Exemptee` — la table de l'AC 12
+    est exacte (19 / 1 / 2 / 2).
+  - **Inventaire SQL de l'AC 12** rejoué : sites hors tests conformes à la fiche (`journal_entries.rs`
+    insertions `:401`, `:418`, `:449` ; `update` `:1459-1480` ; `delete_in_tx` `:1782` ;
+    `delete_all_by_company` `:1859-1866`, **reconfirmé** sans appelant de production ; compteur ; `kesh-seed`
+    `:257-272` ; dynamiques `backup.rs:457`, `:509`, `test_fixtures.rs:401`) ; faux positifs
+    `TABLES_TO_TRUNCATE` conformes ; `accounts.rs:1258`/`:1264`, `invoices.rs:4387`/`:4430`,
+    `journal_entries.rs:2517`, `:3011`, `:3035`, `:3530`, `:4375` sont dans leur `mod tests`. **Aucun trou.**
+    Pas de lettrage sur `main`.
+  - **AC 21 par le symptôme** : la commande rend **78** lignes (72 sur `5e4bec50`) — **7 neuves**, toutes de
+    la 15-12a : `rejeu_interblocage_e2e.rs:1284`, `:1339` (M 2010 clos, aucun exercice ouvert antérieur,
+    aucune écriture), `:1311` (assertion de réponse) ; `fiscal_years_repository.rs:1141`, `:1502`
+    (doc-comments), `:1145` (aide `poser_clos`, appelée `:899` et `:1306` : ni écriture ni dévalidation
+    après la pose) et `:1517` (clôture concurrente, aucune écriture) ; **une** de moins
+    (`fiscal_years.rs` ×5 au lieu de ×6). Partition recomptée : **48 lignes = 46 sites** qui posent un
+    exercice clos (deux sites sur deux lignes : `journal_entries.rs:3274-3275`, `:3468-3469`) et **30** qui
+    ne posent rien. **Aucun site neuf ne change de sens** ; la liste fermée reste `journal_entries.rs`
+    `:3468-3469` (C-15-8-29), résolue par l'AC 10. Le triage au gate reste le filet.
+  - **AC 18, frontend** (inventaire par les appelants, 20 points d'appel dans 12 fichiers) : tous
+    retombent sur `err.message` sauf la boîte de validation d'une facture (déjà prévue) et `failed[]` du
+    lot (prévu, AC 11). Détail au Dev Agent Record.
+  - **AC 18, prédicteurs** : s'ajoute à l'inventaire de la fiche un prédicteur que la P3 n'avait pas
+    listé — `GET /opening-balances/status` (`canComplete` / `completeReason`, et `canEnter`), qui ne lit
+    pas les exercices postérieurs : même nature que C120 ; traité en angle mort assumé, écrit et fixé par
+    un test (C-15-12b-2).
+  - **Message de l'AC 9** : borné par la 15-12a à « modifiée ni supprimée » (`errors.rs` repli, 4
+    locales, assertion « enregistr » de `journal_entry_reversal_e2e.rs:1890`) — élargi ici (C-15-12b-1).
