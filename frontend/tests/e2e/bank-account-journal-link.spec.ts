@@ -3,7 +3,10 @@
  * `/bank-accounts`.
  *
  * 2 scénarios :
- *   1. Lier un bank_account au compte 1100 Banque CI (AC #78 UI)
+ *   1. Lier un bank_account au compte 1000 Caisse CI (AC #78 UI). Story 15-6c
+ *      (#474, choix C-15-6-15) : plus au 1100 « Banque CI », que le seed désigne
+ *      comme compte débiteurs — l'écran ne le propose plus et le serveur refuse
+ *      ce lien ; la spec vérifie qu'il est absent du menu.
  *   2. Accessibility — axe scan zero violations sur la modal/form (AC #82)
  *
  * Pré-requis :
@@ -102,21 +105,28 @@ test('bank-account journal link end-to-end', async ({ page }) => {
 	await expect(page.getByTestId('bank-account-journal-link-form')).toBeVisible();
 	await expect(page.getByTestId('journal-account-select')).toBeVisible();
 
-	// Sélectionne le compte 1100 Banque CI (Asset, classe 1).
+	// Sélectionne le compte 1000 Caisse CI (Asset, classe 1, imputable, non
+	// désigné comme compte de créance). Le 1100, compte débiteurs désigné par le
+	// seed, n'est pas proposé (Story 15-6c, AC7) : la désignation traverse la
+	// frontière HTTP (`GET /company/invoice-settings`).
 	const select = page.getByTestId('journal-account-select');
 	const options = await select.locator('option').allTextContents();
-	const banqueOption = options.find((o) => o.includes('1100'));
-	expect(banqueOption, 'Account 1100 must be in dropdown').toBeTruthy();
-	await select.selectOption({ label: banqueOption! });
+	expect(
+		options.some((o) => o.includes('1100')),
+		'le compte débiteurs désigné ne doit pas être proposé',
+	).toBe(false);
+	const caisseOption = options.find((o) => o.includes('1000'));
+	expect(caisseOption, 'Account 1000 must be in dropdown').toBeTruthy();
+	await select.selectOption({ label: caisseOption! });
 
 	// Submit.
 	await page.getByTestId('submit-link').click();
 
 	// La page recharge l'état (le composant met à jour la liste in-place) —
-	// vérifier que la cellule du compte comptable affiche maintenant 1100.
+	// vérifier que la cellule du compte comptable affiche maintenant 1000.
 	await expect(
 		page.locator('[data-testid^="journal-account-cell-"]').first(),
-	).toContainText('1100');
+	).toContainText('1000');
 });
 
 test('accessibility — bank-account-journal-link form axe scan', async ({ page }) => {
