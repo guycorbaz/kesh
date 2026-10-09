@@ -575,6 +575,12 @@ impl Config {
         let database_url = env_nonempty("DATABASE_URL")
             .ok_or_else(|| ConfigError::MissingVar("DATABASE_URL".into()))?;
 
+        // Story 15-13a (#551) : un mot de passe publié dans le dépôt, ou un
+        // gabarit du manuel recopié, protège la base comme aucun mot de passe.
+        // Avertir, jamais refuser (C-15-13-2) : la pile de dev et les tests
+        // tournent sur `kesh_dev`.
+        avertir_mot_de_passe_base(&database_url);
+
         let port = match env_nonempty("KESH_PORT") {
             Some(val) => match val.parse::<u16>() {
                 Ok(0) => {
@@ -1385,6 +1391,101 @@ pub fn env_nonempty(name: &str) -> Option<String> {
     }
 }
 
+/// Mots de passe MariaDB que Kesh a lui-même **distribués comme défaut** d'une
+/// installation (`docker-compose.yml` et `.env.example` jusqu'à la 0.12.1) :
+/// publiés dans le dépôt, donc connus de tous. Liste fermée, comparaison
+/// exacte et sensible à la casse. Story 15-13a (#551).
+///
+/// Angle mort assumé : d'autres littéraux du dépôt (`kesh_root` de la CI,
+/// exemples du manuel hors Docker) n'y entrent pas — ils n'ont jamais été le
+/// défaut d'une installation.
+pub const MOTS_DE_PASSE_PUBLIES: &[&str] = &["kesh_dev", "kesh_dev_root"];
+
+/// Avertissement émis quand le mot de passe de `DATABASE_URL` figure dans
+/// [`MOTS_DE_PASSE_PUBLIES`]. Ne cite ni le mot de passe ni l'URL.
+pub const AVERTISSEMENT_MOT_DE_PASSE_PUBLIE: &str = "Le mot de passe de DATABASE_URL est un mot de passe publié dans le dépôt Kesh (ancienne valeur par défaut) : acceptable pour le développement seulement. Le changer — manuel d'administration, § Passer à la 0.13.0 et § Changer un mot de passe MariaDB.";
+
+/// Avertissement émis quand le mot de passe de `DATABASE_URL` est un
+/// placeholder de gabarit (cf. [`is_template_placeholder`]). Distinct de
+/// [`AVERTISSEMENT_MOT_DE_PASSE_PUBLIE`] : le remède n'est pas le même. Ne cite
+/// ni le mot de passe ni l'URL.
+pub const AVERTISSEMENT_MOT_DE_PASSE_GABARIT: &str = "Le mot de passe de DATABASE_URL est un placeholder de gabarit (par exemple une valeur entre chevrons <…> recopiée du manuel) : il protège la base comme un mot de passe publié. Le changer — manuel d'administration, § Changer un mot de passe MariaDB (ALTER USER d'abord, .env ensuite).";
+
+/// Ce que le contrôle du mot de passe de `DATABASE_URL` reconnaît.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MotDePasseBase {
+    /// Une entrée de [`MOTS_DE_PASSE_PUBLIES`].
+    Publie,
+    /// Un placeholder de gabarit ([`is_template_placeholder`]).
+    Gabarit,
+}
+
+/// Qualifie le mot de passe de `database_url`.
+///
+/// L'URL est analysée par `url` ; [`url::Url::password`] rend la forme
+/// **encodée**, décodée ici par `percent_decode_str` puis
+/// `decode_utf8_lossy` — pas par `form_urlencoded` (qui lirait `+` comme un
+/// espace), pas par `decode_utf8` (dont l'erreur sur `%FF` inviterait à faire
+/// échouer le démarrage : une valeur non UTF-8 n'est ni publiée ni gabarit, et
+/// sa forme décodée avec `U+FFFD` ne déclenche rien).
+///
+/// `None` pour une URL qui ne s'analyse pas (mot de passe contenant `/`, `?`
+/// ou `#` non encodés : l'autorité est tronquée), sans mot de passe, ou au mot
+/// de passe ni publié ni gabarit. Aucune des listes n'est entre chevrons : un
+/// même mot de passe ne peut être les deux.
+fn qualifier_mot_de_passe_base(database_url: &str) -> Option<MotDePasseBase> {
+    let url = url::Url::parse(database_url).ok()?;
+    let encode = url.password()?;
+    let decode = percent_encoding::percent_decode_str(encode).decode_utf8_lossy();
+    if MOTS_DE_PASSE_PUBLIES.contains(&decode.as_ref()) {
+        Some(MotDePasseBase::Publie)
+    } else if is_template_placeholder(&decode) {
+        Some(MotDePasseBase::Gabarit)
+    } else {
+        None
+    }
+}
+
+/// Émet au plus **un** `tracing::warn!` selon [`qualifier_mot_de_passe_base`].
+/// N'empêche jamais le démarrage (AC 5 b de la Story 15-13a).
+fn avertir_mot_de_passe_base(database_url: &str) {
+    match qualifier_mot_de_passe_base(database_url) {
+        Some(MotDePasseBase::Publie) => tracing::warn!("{}", AVERTISSEMENT_MOT_DE_PASSE_PUBLIE),
+        Some(MotDePasseBase::Gabarit) => {
+            tracing::warn!("{}", AVERTISSEMENT_MOT_DE_PASSE_GABARIT)
+        }
+        None => {}
+    }
+}
+
+/// Numéro d'erreur MariaDB **1045** : *Access denied for user … (using
+/// password: …)* — l'identifiant est refusé.
+pub const MARIADB_ACCES_REFUSE: u16 = 1045;
+
+/// Indice ajouté au message d'échec de connexion initiale quand MariaDB refuse
+/// l'identifiant (1045). Ne cite ni `DATABASE_URL` ni son mot de passe.
+pub const INDICE_ACCES_REFUSE: &str = "Indice : MariaDB refuse l'identifiant de DATABASE_URL. Avec docker-compose.yml : MARIADB_PASSWORD n'est lu qu'à la création de la base — changer sa valeur dans .env ne change pas le mot de passe enregistré (manuel d'administration, Passer à la 0.13.0).";
+
+/// Extrait le numéro d'erreur MariaDB d'une erreur `sqlx`, s'il y en a un
+/// (`Error::Database` d'origine MySQL/MariaDB). Story 15-13a (#551).
+///
+/// Séparée de [`indice_connexion`] parce que `MySqlDatabaseError` n'a pas de
+/// constructeur public : seul un binaire réel (test `demarrage_mariadb`) peut
+/// exercer l'extraction ; la décision, pure, se teste seule.
+pub fn numero_erreur_mariadb(erreur: &sqlx::Error) -> Option<u16> {
+    erreur
+        .as_database_error()?
+        .try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>()
+        .map(|e| e.number())
+}
+
+/// Indice à joindre au message d'échec de connexion, selon le numéro d'erreur
+/// MariaDB : [`INDICE_ACCES_REFUSE`] pour 1045, rien sinon (1044 — droits sur
+/// la base —, 1049 — base absente —, erreur réseau). Pure.
+pub fn indice_connexion(numero: Option<u16>) -> Option<&'static str> {
+    (numero == Some(MARIADB_ACCES_REFUSE)).then_some(INDICE_ACCES_REFUSE)
+}
+
 /// Sous-chaînes (en minuscules) qui signalent un placeholder du gabarit
 /// `.env.example` resté tel quel — comparées au texte passé par
 /// `to_ascii_lowercase`. Story 15-11a (#557).
@@ -1401,7 +1502,9 @@ const TEMPLATE_PLACEHOLDERS: &[&str] = &["generate_me"];
 /// Le trim est local au contrôle : il ne présume pas de la lecture (depuis la
 /// Story 15-11b, `env_nonempty` trime déjà les deux secrets), et `" <x> "` doit
 /// être refusé quand même. Sert aux contrôles de
-/// `KESH_JWT_SECRET` et de `KESH_ADMIN_PASSWORD` dans [`Config::from_env`].
+/// `KESH_JWT_SECRET` et de `KESH_ADMIN_PASSWORD` dans [`Config::from_env`],
+/// et à l'avertissement sur le mot de passe de `DATABASE_URL`
+/// ([`qualifier_mot_de_passe_base`], Story 15-13a).
 fn is_template_placeholder(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
     if TEMPLATE_PLACEHOLDERS.iter().any(|p| lower.contains(p)) {
