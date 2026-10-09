@@ -6693,3 +6693,32 @@ l'import (#458–#461).
   vérifiables ; écrit tel quel dans la fiche, sans réécrire le chiffre. Celles de P1 et P2 sont journalisées.
 - **Écarté** : aucun.
 - **Réversible** : oui.
+
+## C-15-14-53 — 15-14a (revue de code P3) : E3-1 reclassé en dette documentée (#589) ; LOW documentaires appliqués, LOW de garde écrits en dette
+
+- **Contexte** : passe P3 (Sonnet ×3) — B 0 MEDIUM / 4 LOW, A 0 MEDIUM / 4 LOW, E 1 MEDIUM / 6 LOW. Le seul
+  MEDIUM, E3-1 (l'infobulle du bouton « Réouvrir » nomme l'exercice clos le plus **proche**, que la garde LIFO
+  refuse à son tour), tient à une logique d'écran antérieure à la story ; vérifié au code par l'orchestrateur.
+- **Retenu** :
+  - **E3-1 → dette documentée** : issue **#589** (P3), propriétaire = cette issue (exception « dette
+    documentée » de la § *Review Iteration Rule*). La boucle de revue est **close** : P1 3 MEDIUM → P2 2
+    MEDIUM → P3 0 MEDIUM + 1 reclassé.
+  - **LOW documentaires appliqués** : B3-3 = LOW-2 (le CHANGELOG nomme le changement visible de l'écran
+    *Comptes bancaires*) ; LOW-1 (fiche : G9 « huit clés, neuf sites » à l'AC 8 et au T4) ; E3-2
+    (`admin-manual.tex:1401` aligné sur `:1714` — saisie, règlement, dévalidation, modification, suppression ;
+    et « exercices clôturés postérieurs » dans la même phrase) + PDF ; **B3-2** (commentaire Rust
+    `errors.rs`, « ne prescrit jamais de rouvrir l'exercice nommé **seul** … il prescrit les exercices
+    postérieurs clôturés ») — appliqué plutôt que reporté : c'est du code au sens D7, mais le rebase sur
+    `0724904c` impose de toute façon un gate complet et un E2E complet sur le dernier commit, qui le couvrent ;
+    le reporter aurait laissé un commentaire contradictoire sans gain.
+  - **LOW de garde laissés en dette, sans modification de code** (écrits ici, à reprendre avec la prochaine
+    story qui touche `textes_coherents.rs` ou `loader.rs`) : B3-1 = LOW-3 (G4-bis lit les catalogues entiers :
+    une limite « 4000 caractères », « ISO 8601 », « port 8080 » rougirait — déjà déclaré « rouge bruyant »
+    au doc-comment ; correction possible : liste fermée d'exemptions `(fichier, sous-chaîne)` motivées) ; E3-3
+    (lecture ligne à ligne : un numéro en fin de ligne dont le nom passe à la ligne suivante échappe à la forme
+    nommée) ; E3-4 (`montant_ou_npa` : « 1030 CHF » passe pour un montant) ; E3-5 (G4-ter lit aussi les
+    `#[cfg(test)] mod tests` des `src/`) ; E3-6 (exemptions de G8 et G8-bis dupliquées en dur) ; E3-7 (G9 table
+    fermée, non inventaire des non-résolus).
+  - **Sans suite** : B3-4 (guide et écran proposent des exemples différents, tous deux vrais) ; LOW-4 (deux
+    chemins vers l'écran des exercices) — territoire de #585.
+- **Réversible** : oui.

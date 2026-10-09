@@ -1,6 +1,6 @@
 # Story 15-14a : Manuels et libellés — dix défauts P3/P4 qui disent autre chose que le code
 
-Status: review
+Status: done
 
 <!-- Spécifiée le 2026-10-09 sur origin/main = dc4bc58b (worktree kesh-15-14). Sous-story de la 15-14
      (lot de défauts de documentation et de libellés, découpé d'emblée — C-15-14-1). Choix C-15-14-1 à 8.
@@ -1183,3 +1183,41 @@ compilation à froid** (`CARGO_TARGET_DIR` du worktree vide au départ) :
     **2,0 G (49 %)** après.
   - **Suite** : la remédiation touche du code de production (textes) dans plusieurs modules : passe P3
     complète (Sonnet), non ciblée.
+- 2026-10-09 — **Revue de code P3 — boucle CLOSE** (Sonnet ×3 : lentilles B, E, A ; rapports
+  `kesh-gate-logs/15-14a-review-p3-{B,E,A}.md`, prompt versionné `99485848`). Bruts : B 0 MEDIUM / 4 LOW,
+  A 0 MEDIUM / 4 LOW, E 1 MEDIUM / 6 LOW. **Trend de la boucle : P1 3 MEDIUM → P2 2 MEDIUM (distincts, nés
+  de P1) → P3 0 MEDIUM + 1 reclassé en dette documentée** ; modèles Sonnet → Opus → Sonnet (rotation des
+  passes complètes, D6). Décisions :
+  - **E3-1** (MEDIUM : l'infobulle du bouton *Réouvrir* nomme l'exercice clos le plus proche, que la garde
+    LIFO refuse) : logique d'écran antérieure à la story, vérifiée au code par l'orchestrateur, **reclassée en
+    dette documentée — issue #589 (P3)**, propriétaire cette issue (C-15-14-53).
+  - **LOW documentaires appliqués** : B3-3 = LOW-2 (CHANGELOG : l'écran *Comptes bancaires* passe de
+    « 1020 Caisse, 1030 Banque » à « 1010 Poste, 1020 Banque ») ; LOW-1 (G9 « huit clés, neuf sites » à
+    l'AC 8 et au T4) ; E3-2 (`admin-manual.tex:1401` aligné sur `:1714`, et « exercices clôturés
+    postérieurs » dans la même phrase ; PDF régénéré) ; B3-2 (commentaire `errors.rs`, « l'exercice nommé
+    **seul** ») — c'est du code au sens D7, appliqué parce que le rebase imposait de toute façon gate et E2E
+    complets au dernier commit.
+  - **LOW de garde laissés en dette, code non modifié** : B3-1 = LOW-3, E3-3, E3-4, E3-5, E3-6, E3-7 ;
+    **sans suite** : B3-4, LOW-4 (#585). Détail et corrections possibles : C-15-14-53.
+  - **Rebase** sur `0724904c` (15-1a-i, PR #587 : migration 76, crates 0.13.0, lettrage) ; sauvegarde
+    `backup/15-14a-avant-rebase-0724904c` ; registre par union (**454** entrées = union exacte de main et de
+    la branche, vérifié par identifiants, aucun doublon) ; sprint-status par union, lignes d'historique
+    dédoublonnées et renumérotées ; un conflit de code résolu à la main
+    (`InvoiceSettlements.test.ts` : texte `INVOICE_CREDITED` de main, marqueur d'ordre de la story) ; PDF
+    régénérés (`make -B` ×2, 0 « Label(s) may have changed ») et contrôlés aplatis (lettrage de la 15-1a-i
+    présent, textes P2/P3 présents, ancienne phrase de `:1401` à 0). T0 rejoué sur l'état rebasé : AC 1 4,
+    AC 2 (A) 13 / (B) 154, AC 3 2, AC 5 20, AC 6 **5** (+1 : commentaire de la migration
+    `20261009000001` de la 15-1a-i, « v0.1.0 à v0.9.0 », historique de versions, non la faille KF-036),
+    AC 7 54/54, AC 8 162, AC 9 2, AC 10 8 / 11 — inchangés sinon. Les gardes G1 à G13, G4-bis, G4-ter et
+    G8-bis passent sur les textes neufs du lettrage (17 tests de garde verts dans le gate).
+  - **Gates au dernier commit de code** (`3d81e88c`), tmpfs MariaDB passé à 8 Go et vidé : bases
+    `kesh_1514a` (migrée 76, semée) et `kesh_e2e_1514a` (migrée 76) recréées : `scripts/test-fast.sh` (fmt,
+    clippy `-D warnings`, nextest) **3152 / 3152**, 4 ignorés ; `npm run check` 0 erreur, 27 avertissements ;
+    `lint-i18n-ownership` PASS ; `test:unit` **1151 / 1151** (114 fichiers) ; `build` vert ; **E2E complet**
+    sur 3015 (`smtpConfigured: true`, version 0.13.0), lancé à 14:40 UTC : **246 réussis, 8 échecs, 19
+    ignorés** — les 7 KF-029 nommément (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`,
+    `onboarding:57`, `:77`, `:150`) et `sidebar-navigation:75`, **rouge aussi rejoué seul** : c'est la
+    variante déterministe de #424 (KF-046), dépendante de la route d'atterrissage (`docs/testing.md`
+    § « Les échecs attendus ») ; la branche ne touche ni la barre latérale ni sa spec. tmpfs : **403 M / 8,0 G
+    (5 %)** avant, **1,3 G (16 %)** après.
+  - **Statut : done.**
