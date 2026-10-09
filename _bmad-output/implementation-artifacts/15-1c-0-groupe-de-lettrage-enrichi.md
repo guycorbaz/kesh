@@ -267,3 +267,10 @@ reste dû), R L-7 = F2-L1 (geste réel au test 3), R L-8 (inventaire des tests a
 Log de l'index `15-1c-proposition-ecran.md`. Recompté depuis ce fichier (`grep -c '^\*\*AC[0-9]'`,
 `grep -c '^- \[ \] \*\*T'`, `grep -cE '^[0-9]+\. AC'`) : **3 critères** (AC15, AC16, AC18), **5 tâches** (T0–T4),
 **9 tests** numérotés.
+
+### Validation P3 — 2026-10-09 (Sonnet 5.5 ×2, lentilles R et F ; remédiation Opus 5.5, en autonomie)
+
+Prompt `15-1c-validate-prompt-p3.md` ; rapports `/home/gcorbaz/devel/kesh-gate-logs/15-1c-validate-p3-R.md` et `-F.md`.
+**R : 0 MEDIUM / 10 LOW ; F : 0 MEDIUM / 9 LOW** — aucun MEDIUM+ ; les « 0 » vérifiés par l'orchestrateur (axes
+déclarés exercés par les deux lentilles, recoupés au code : séquence de `dissolve_group_in_tx`, statuts des refus,
+`colspan`, sites du manuel). LOW appliqués ici : R L-1 (deux pièces partagées nommées, une par crate ; unicité du code prouvée par grep), R L-2 = F-5 (nom du compte par une requête propre), R L-3 (constante SQL et `struct` de ligne propres ; `find_group` inchangée), F-2 (transaction de lecture — C-15-1c-26), F-6 (composition, pas de `flatten`), R L-10 (contrôle documentaire restreint au paragraphe du `GET`), F-8 (Status : première passe tenue en P3 de l'ensemble). Bilan complet : Change Log de l'index. Recompté : **3** critères, **5** tâches, **9** tests.

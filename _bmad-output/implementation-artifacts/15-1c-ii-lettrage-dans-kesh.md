@@ -285,3 +285,10 @@ et CHANGELOG *Modifié* tenus par chaque story dans sa PR — C-15-1c-21), R L-1
 la 15-1c-i (C-15-1c-14) : l'ordre gagne un maillon. Bilan complet : Change Log de l'index. Recompté depuis ce
 fichier (`grep -c '^\*\*AC[0-9]'`, `grep -c '^- \[ \] \*\*T'`, `grep -cE '^[0-9]+\. AC'`) : **6 critères**
 (inchangé), **7 tâches** (inchangé), **6 tests** numérotés et 3 scénarios E2E.
+
+### Validation P3 — 2026-10-09 (Sonnet 5.5 ×2, lentilles R et F ; remédiation Opus 5.5, en autonomie)
+
+Prompt `15-1c-validate-prompt-p3.md` ; rapports `/home/gcorbaz/devel/kesh-gate-logs/15-1c-validate-p3-R.md` et `-F.md`.
+**R : 0 MEDIUM / 10 LOW ; F : 0 MEDIUM / 9 LOW** — aucun MEDIUM+ ; les « 0 » vérifiés par l'orchestrateur (axes
+déclarés exercés par les deux lentilles, recoupés au code : séquence de `dissolve_group_in_tx`, statuts des refus,
+`colspan`, sites du manuel). LOW appliqués ici : R L-5 = F-1 (pied *Total* de la fiche d'écriture), R L-4 (scénarios 7 à 9 indépendants), R L-6 = F-9 (30 sites, dont 5 du manuel d'administration ; « trois de logique et l'E2E »), R L-7 (preuve négative élargie), F-7 (garde `i18n-entrees-a-variables`). Bilan complet : Change Log de l'index. Recompté : **6** critères, **7** tâches, **6** tests.

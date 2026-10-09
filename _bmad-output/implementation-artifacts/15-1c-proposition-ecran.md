@@ -86,6 +86,47 @@ Grand livre) ; 7 → AC1, AC6 ; 8 → 15-1c-ii AC12 ; 9 → 15-1c-ii AC12 ; 10 �
 
 ## Change Log
 
+### Validation P3 — 2026-10-09 (Sonnet 5.5 ×2, lentilles R et F ; remédiation Opus 5.5, en autonomie) — 0 AU-DESSUS DE LOW
+
+Prompt versionné : `15-1c-validate-prompt-p3.md` (remédiation P2 visée : `82524343`). Rapports :
+`/home/gcorbaz/devel/kesh-gate-logs/15-1c-validate-p3-R.md` et `-F.md`. **R : 0 CRITICAL / 0 HIGH / 0 MEDIUM / 10 LOW ;
+F : 0 / 0 / 0 / 9 LOW**, sur les **trois** fiches (première passe de la 15-1c-0). Les deux lentilles déclarent leurs
+axes exercés et non exercés ; l'orchestrateur a recoupé les « 0 » au code de `f9b6b199` (séquence
+`dissolve_group_in_tx` : verrous → refus 1 → propriété si `Reversal` → borne → refus 3 ; statuts 400/404/409 de
+`kesh-api/src/errors.rs` ; `colspan` du Grand livre et pied de la fiche d'écriture ; sites « lettr » des trois `.tex` :
+24 + 5 + 1 ; `LineRow` partagé ; `letterable_account` sans `name`). Recoupements : R L-2 = F-5 ; R L-5 = F-1 ;
+R L-6 ≈ F-9 (part) ; R L-9 ≈ F-9 (part). **Tous les LOW appliqués** :
+
+| finding | fiche | sort |
+|---|---|---|
+| R L-1 | 15-1c-0 | deux pièces partagées nommées (`kesh-db` : propriétaires et périodes ; `kesh-api` : constructeur de `document`) ; unicité du code prouvée par `grep` |
+| R L-2 = F-5 | 15-1c-0 | `accountNumber`/`accountName` par une requête propre ; `letterable_account`, `group_account_number` inchangées |
+| R L-3 | 15-1c-0 | colonnes ajoutées (la jointure existe) ; constante SQL et `struct` de ligne propres ; `find_group` inchangée |
+| F-2 | 15-1c-0 | transaction de lecture (C-15-1c-26) |
+| F-6 | 15-1c-0 | composition par champs communs, jamais `flatten` |
+| R L-10 | 15-1c-0 | contrôle documentaire restreint au paragraphe du `GET` |
+| F-8 | 15-1c-0 | Status : première passe tenue en P3 de l'ensemble |
+| F-3 | 15-1c-i | `LETTERING_CONCURRENT_CHANGE` vide aussi la sélection, exception assumée et motivée (C-15-1c-24) |
+| F-4 | 15-1c-i | numéro de la pièce d'un groupe `document` : facture ou facture fournisseur, sinon facture du règlement (C-15-1c-25) |
+| F-7 | 15-1c-i, 15-1c-ii | garde `i18n-entrees-a-variables` nommée |
+| R L-8 | 15-1c-i | compteur, champ « Code », ordre du serveur testés ; `letteringOrigin` retiré des champs lus |
+| obs. F | 15-1c-i | numéro de compte E2E ≤ 10 caractères |
+| R L-4 | 15-1c-ii | scénarios E2E 7 à 9 posent leur propre lettrage |
+| R L-5 = F-1 | 15-1c-ii | pied *Total* de la fiche d'écriture, test avec et sans projets |
+| R L-6, R L-9, F-9 | 15-1c-ii | 30 sites (24 + 5 + 1) ; « trois de logique et l'E2E » |
+| R L-7 | 15-1c-ii | preuve négative élargie aux textes provisoires des 15-1a2-* |
+
+**Propagation** (valeurs grepées sur les trois fiches et l'index) : `flatten` — seulement pour l'interdire ;
+« nom se lit dans la même » — plus nulle part ; « 24 lignes » — remplacé par « 30 » ; `letteringOrigin` — seulement
+pour dire qu'il n'est pas lu ; « validation P1 due » — plus nulle part.
+
+**Recompte** : 15-1c-0 — 3 / 5 / 9 ; 15-1c-i — 12 / 9 / 12 ; 15-1c-ii — 6 / 7 / 6 (critères / tâches / tests),
+inchangés.
+
+**Verdict** : 0 au-dessus de LOW. Les remédiations de cette passe touchent la spécification de code de production
+(15-1c-0 : transaction de lecture, requête du compte, `struct` de ligne) : **passe ciblée de fin de boucle due**
+(Haiku, une lentille, braquée sur le seul commit de cette remédiation).
+
 ### Validation P2 — 2026-10-09 (Opus 5.5 ×2, lentilles R et F ; remédiation Opus 5.5, en autonomie) — SERVEUR EXTRAIT EN 15-1c-0
 
 Prompt versionné : `15-1c-validate-prompt-p2.md`. Rapports : `/home/gcorbaz/devel/kesh-gate-logs/15-1c-validate-p2-{R,F}.md`.

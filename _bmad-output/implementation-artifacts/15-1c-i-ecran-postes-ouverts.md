@@ -423,3 +423,10 @@ R L-11 (test 12), F2-L10 (composant de lien créé ici — C-15-1c-22). Bilan co
 l'index `15-1c-proposition-ecran.md`. Recompté depuis ce fichier (`grep -c '^\*\*AC[0-9]'`,
 `grep -c '^- \[ \] \*\*T'`, `grep -cE '^[0-9]+\. AC'`) : **12 critères** (AC1–AC8, AC10, AC11 part i,
 AC13 part i, AC19), **9 tâches** (T0–T8), **12 tests** numérotés (Vitest) et 6 scénarios E2E.
+
+### Validation P3 — 2026-10-09 (Sonnet 5.5 ×2, lentilles R et F ; remédiation Opus 5.5, en autonomie)
+
+Prompt `15-1c-validate-prompt-p3.md` ; rapports `/home/gcorbaz/devel/kesh-gate-logs/15-1c-validate-p3-R.md` et `-F.md`.
+**R : 0 MEDIUM / 10 LOW ; F : 0 MEDIUM / 9 LOW** — aucun MEDIUM+ ; les « 0 » vérifiés par l'orchestrateur (axes
+déclarés exercés par les deux lentilles, recoupés au code : séquence de `dissolve_group_in_tx`, statuts des refus,
+`colspan`, sites du manuel). LOW appliqués ici : F-3 (`LETTERING_CONCURRENT_CHANGE` vide aussi la sélection, exception assumée — C-15-1c-24), F-4 (numéro de la pièce d'un groupe `document` — C-15-1c-25), F-7 (garde `i18n-entrees-a-variables`), R L-8 (compteur, champ « Code », ordre du serveur testés ; `letteringOrigin` non lu), observation F (numéro de compte E2E ≤ 10 caractères). Bilan complet : Change Log de l'index. Recompté : **12** critères, **9** tâches, **12** tests.
