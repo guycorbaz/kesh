@@ -5621,3 +5621,10 @@ l'import (#458–#461).
 - **Retenu** : dette écrite à la fiche (« Ce que la story ne fait pas »), rattachée à **#538** — l'atomicité des quatre premières validations fait disparaître l'état non relançable, et le message redevient juste. Atteinte pratiquement impossible avec le plan PME embarqué. B-2 (boucle `InactiveOrInvalidAccounts`) reste à l'arbitrage de Guy (C-15-7-14).
 - **Écarté** : changer le texte maintenant (code de production en remédiation de fin de boucle, qui rouvrirait la boucle de revue pour un LOW).
 - **Réversible** : oui (une chaîne).
+
+## C-15-13b-1 — 15-13b (T0) : le rapatriement n'est pas rejoué au T0, le démon Docker étant bloqué
+
+- **Contexte** : le T0 prescrit de rejouer, sur un conteneur jetable, l'écriture d'un fichier `0600` par un conteneur root dans un dossier monté, puis le rapatriement `sudo cp` + `sudo chown`. Le 2026-10-09 vers 07:10, toute création de conteneur expire (`docker run` → 124 après 60 s) : le noyau signale des tâches `dockerd` en état D, bloquées sur un rw-semaphore (`journalctl`, « blocked for more than 122 seconds »). Le démon sert encore `ps`/`info`. Les créations interrompues laissent des noms réservés sans conteneur. `sudo` n'est pas utilisable sans mot de passe depuis l'agent.
+- **Retenu** : faire au T0 ce qui ne dépend pas du démon (`docker compose config`, client seul : graphie et contrôle rouge mesurés ; `make fr`), écrire le manuel selon la fiche, et **retenter** le rapatriement au T10 ; s'il est toujours impossible, l'écrire au Dev Agent Record comme **non mesuré**, à rejouer par l'orchestrateur ou en recette. `sudo` y est joué par un conteneur root (même effet de droits), ce qui sera dit.
+- **Écartées** : redémarrer `dockerd` (emporterait `kesh-mariadb-dev` et les bases des autres agents — interdit) ; attendre sans fin ; déclarer le geste vérifié par raisonnement (« une hypothèse éliminée par raisonnement n'est pas une hypothèse testée »).
+- **Réversible** : oui — la mesure se rejoue à tout moment.

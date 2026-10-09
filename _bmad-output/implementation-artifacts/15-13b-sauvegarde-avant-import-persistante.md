@@ -32,7 +32,15 @@ l'autre ajoute. Elles touchent les **mêmes fichiers**, à des endroits distinct
 et les **PDF versionnés** `admin-manual.pdf` et `marketing-brochure.pdf`, que les deux régénèrent.
 La seconde mergée rebase et **recompte les gestes** du paragraphe « Pour qui garde son fichier compose »
 (AC 11 f) ; un conflit sur un PDF ne se rebase pas : on fusionne les `.tex`, puis on **régénère** les PDF
-(`make fr`) et on rejoue les contrôles aplatis des **deux** fiches (R4-3 de la validation P4 de la 15-13a). **Ordre suggéré : après la 15-13a** (#551 est P2, sécurité ; #552 et #576 P3) ; l'ordre inverse
+(`make fr`) et on rejoue les contrôles aplatis des **deux** fiches (R4-3 de la validation P4 de la 15-13a).
+**Conflits certains au merge** (F-P6-1 de la validation P6) : `CHANGELOG.md` — le paragraphe d'une seule
+ligne « ⚠️ Action requise » (`:46` à la spécification, `:56` au `HEAD` `200f5e79`) porte les cinq phrases
+des deux fiches, dont **une même phrase** (« Une variable que `.env` ne pose pas… prend son défaut sans
+avertissement — la sauvegarde pré-import reste dans `/tmp` ») réécrite par la 15-13a au début et par la
+15-13b à la fin — et `admin-manual.tex`, le paragraphe « Pour qui garde son fichier compose »
+(`:1793` à la spécification, `:1796` au `HEAD`). Git fusionne par lignes : la **seconde** mergée résout à la
+main, en relisant la phrase « défaut sans avertissement » **entière** et en refaisant le décompte des gestes.
+**Ordre suggéré : après la 15-13a** (#551 est P2, sécurité ; #552 et #576 P3) ; l'ordre inverse
 est possible sans autre effet que le recompte. Release visée : **v0.13.0**, la même que la 15-11a — la
 section du manuel « Passer à la 0.13.0 » et l'entrée `[0.13.0]` du CHANGELOG sont **complétées**, pas
 doublées.
@@ -87,7 +95,7 @@ laisser lisible par tous (AC 9, C-15-13-4).
 | `crates/kesh-api/src/routes/admin.rs:236`, `:240`, `:246` ; `admin_backup/import.rs:204` (via `check_schema_compat`, appelé `admin.rs:172`) | échecs **antérieurs** à la sauvegarde, même variante, même message |
 | `crates/kesh-api/src/admin_backup/export.rs:103-105` (`map_db` → `AdminFullExportFailed`), appelé par `build_keshbackup` (`admin.rs:259`) | échec de lecture de la base pendant la sauvegarde : message « l'**export** n'a pas pu être généré », alors que l'utilisateur importait |
 
-Le frontend affiche le `message` du corps pour un 500 (`AdminRestorePanel.svelte:82-84`) : aucun code client
+Le frontend affiche le `message` du corps pour un 500 (`frontend/src/lib/features/admin-restore/AdminRestorePanel.svelte:81-84`) : aucun code client
 ne dépend de `ADMIN_FULL_IMPORT_FAILED` (`grep -rn ADMIN_FULL_IMPORT frontend/src` → vide). Les échecs
 **postérieurs** à l'écriture (`admin.rs:283` à `:462`, douze sites) disent vrai : la sauvegarde existe et la
 transaction est annulée.
@@ -166,7 +174,8 @@ des AC 10 à 14 qui portent sur MariaDB aussi.)*
    C-15-13-8.)
    (a) `write_pre_import_backup` (`routes/admin.rs:471`) garde le choix du nom (inchangé) et délègue
    l'écriture à une fonction factorisée **sur un chemin donné**, `write_backup_file(path: &Path, bytes:
-   &[u8]) -> Result<(), AppError>` (privée au module, appelée par les tests 11 et 12). **Écriture par
+   &[u8]) -> Result<(), AppError>` (privée au module ; appelée directement par le test 12, à travers `write_pre_import_backup` par le
+   test 11 — F-P6-3 de la validation P6). **Écriture par
    fichier temporaire, puis renommage** (F-P4-6 de la validation P4, décision de l'orchestrateur,
    C-15-13-21) : elle crée `<path>.partial` — **même dossier**, donc même système de fichiers — par
    `tokio::fs::OpenOptions` avec `create_new(true)` et, sous `#[cfg(unix)]`, `mode(0o600)` ; écrit les
@@ -192,6 +201,9 @@ des AC 10 à 14 qui portent sur MariaDB aussi.)*
    d'écraser et la variante d'erreur.
    (b) Le dossier, quand Kesh le crée, l'est en `0o700` (`tokio::fs::DirBuilder`, `recursive(true)`,
    `mode(0o700)` sous `#[cfg(unix)]`) ; un dossier **existant** (le montage de l'hôte) n'est pas modifié.
+   Le mode s'applique à **tous les niveaux créés** par l'appel récursif, parents compris (R6-3 = F-P6-6 de
+   la validation P6) : un `KESH_ADMIN_BACKUP_DIR` sous un parent absent crée ce parent en `0700` aussi —
+   sans conséquence dans le conteneur (root), écrit au doc-comment et aux angles morts.
    (c) Une erreur rend `AppError::AdminPreImportBackupFailed` (AC 15) avec un détail **par étape**, qui
    nomme le chemin (R5-3/F-P5-8 de la validation P5 : le journal est le seul diagnostic, le corps n'expose
    rien) — « création répertoire backup '…' : … » (inchangé), « création fichier partiel '…' : … »
@@ -275,9 +287,13 @@ des AC 10 à 14 qui portent sur MariaDB aussi.)*
     `sudo chown <utilisateur> /volume1/<partage>/kesh-pre-import-<...>.keshbackup` en mesure **76**
     (`printf '%s' … | wc -m`, remesuré en remédiation P5 avec `<...>`), soit la limite exacte ; si la mise
     en page l'exige, elle est coupée par `\`. **Le bloc est en ASCII** (F-P5-6 de la validation P5) : `<...>`
-    et non `<…>` (U+2026) — aucun `lstlisting` du manuel ne porte de caractère hors ASCII, et `listings`
-    sous XeLaTeX en place mal certains ; la prose, elle, garde `…`. Contrôle aplati positif ajouté à l'AC 11 l
-    pour la ligne entière. **Ouverture de la section** (`:1643`, « sans accès
+    et non `<…>` (U+2026) — **par prudence** : le contrôle aplati ne dépend ainsi d'aucun rendu de glyphe
+    par `listings` (R6-1 de la validation P6 : dix `lstlisting` du manuel portent déjà du non-ASCII ; la
+    règle vaut pour ce bloc, non pour le manuel) ; la prose, elle, garde `…`. Contrôle aplati positif ajouté à l'AC 11 l
+    pour la ligne entière — **si la ligne est coupée** à la mise en page (`breaklines`, ou `\`), le contrôle
+    suit la forme coupée relevée au T5, écrite au Dev Agent Record (F-P6-5 de la validation P6).
+    **Vocabulaire** (F-P6-8) : aux sites que la story réécrit (`:757`, `:1699` à la spécification), le
+    manuel dit « dossier de sauvegarde », le mot même du message de l'AC 15. **Ouverture de la section** (`:1643`, « sans accès
     SSH ni ligne de commande ») : vraie pour l'export et l'import par l'écran, mais la section reçoit
     désormais un geste en SSH ; une phrase la précise — la sauvegarde de sécurité **pré-import** fait
     exception, son rapatriement demande un accès SSH (voir plus bas) — (F-P4-7). Le tableau `:1712`
@@ -392,7 +408,8 @@ des AC 10 à 14 qui portent sur MariaDB aussi.)*
     `routes/admin.rs`, par une fonction pure `avant_sauvegarde(AppError) -> AppError` qui change
     `AdminFullImportFailed` et `AdminFullExportFailed` en `AdminPreImportBackupFailed` et rend toute autre
     variante telle quelle (`ImportSchemaMismatch` reste un 400). `admin_backup` n'est pas modifié.
-    **Forme prescrite de l'appel** : `….await.map_err(avant_sauvegarde)?`, dans l'instruction même de
+    **Forme prescrite de l'appel** : `….await.map_err(avant_sauvegarde)?` (rustfmt la répartit sur
+    plusieurs lignes : sans effet, le test 20 lit l'instruction jusqu'au `;` — R6-2 de la validation P6), dans l'instruction même de
     l'appel — pas de fermeture `|e| avant_sauvegarde(e)`, pas de conversion différée. **Le branchement est
     gardé** (F-P5-1 de la validation P5, C-15-13-28) : les deux sources ne sont pas injectables à bon
     compte (une table supprimée fait d'abord rougir `check_schema_compat` en 400), si bien que le test 14
@@ -405,8 +422,8 @@ des AC 10 à 14 qui portent sur MariaDB aussi.)*
     journaux du serveur, puis réessayer — **sans orienter vers une seule cause** (F-P4-5 de la validation P4,
     C-15-13-25) : sur les **sept** sites antérieurs à l'écriture (AC 15 a-b, R5-2 de la validation P5),
     **cinq** relèvent de la **base** (`:172` lecture du schéma, `:236` transaction, `:240` verrou, `:246`
-    ligne `_kesh_version` absente, `:259` lecture des données — et erreurs `zip`/`serde_json` de
-    `build_keshbackup`), **deux** du **dossier** (`:473`, `:487` devenu `write_backup_file`, avec ses étapes
+    ligne `_kesh_version` absente, `:259` export de la base — lecture des données ou assemblage du ZIP
+    de `build_keshbackup`, aucune erreur `serde_json` n'y naît, R6-4 de la validation P6), **deux** du **dossier** (`:473`, `:487` devenu `write_backup_file`, avec ses étapes
     `.partial`). **Le texte nomme toujours les deux pistes, à égalité** (R5-1 de la validation P5,
     C-15-13-27, qui rectifie C-15-13-25 : l'option « n'en nommer aucune » est **retirée**) — le dossier de
     sauvegarde (inscriptible ?) **et** la base de données (joignable ?) —, dans les quatre locales **et** le
@@ -432,7 +449,7 @@ des AC 10 à 14 qui portent sur MariaDB aussi.)*
     même que le repli Rust contient « aucune sauvegarde n'a été créée ». **Les deux pistes sont exigées de
     même** (R5-1) : le test 16 vérifie que chaque texte **contient** ses deux jetons, le test 15 que le
     repli Rust contient « dossier de sauvegarde » et « base de données » (mutations **M49**, **M50**).
-    (d) Frontend **non touché** : un 500 affiche le `message` du corps (`AdminRestorePanel.svelte:82-84`),
+    (d) Frontend **non touché** : un 500 affiche le `message` du corps (`frontend/src/lib/features/admin-restore/AdminRestorePanel.svelte:81-84`),
     aucun code client ne lit `ADMIN_FULL_IMPORT_FAILED`. Le test de parité des catalogues
     (`kesh-i18n/src/loader.rs:729-800`) reste vert sans entrée neuve dans `dette-parite-connue.txt`.
     (e) Manuel : la liste des refus de `sec:backup-ui-keshbackup` (AC 11 e).
@@ -571,15 +588,15 @@ Numérotation de la fiche unique conservée.
 | 14 | `avant_sauvegarde_convertit_les_echecs_anterieurs` (nouveau, unitaire, `routes/admin.rs`) — `AdminFullImportFailed` et `AdminFullExportFailed` → `AdminPreImportBackupFailed`, détail conservé ; `ImportSchemaMismatch` et `InvalidBackupStructure` rendus tels quels | AC 15 b | **M30** `avant_sauvegarde` rend l'erreur telle quelle · **M31** `avant_sauvegarde` convertit toute variante (un 400 devient un 500) |
 | 15 | `pre_import_backup_failed_maps_to_500_without_promise` (nouveau, `errors.rs`, repli Rust — aucun catalogue n'est chargé dans les tests de la bibliothèque, `init_error_i18n` n'y est jamais appelé) — 500, `ADMIN_PRE_IMPORT_BACKUP_FAILED`, message sans le détail et sans promesse de sauvegarde, et qui **contient** « aucune sauvegarde n'a été créée » (F-P4-4) ainsi que les deux pistes, « dossier de sauvegarde » **et** « base de données » (R5-1 de la validation P5) ; **témoin** : `AdminFullImportFailed` rend `ADMIN_FULL_IMPORT_FAILED` et un repli **différent** | AC 15 a, c | **M32** le bras de la variante neuve rend le code et la clé d'`AdminFullImportFailed` · **M50** repli Rust de la variante neuve sans « base de données » (une seule piste) |
 | 16 | `catalogues_distinguent_l_echec_de_sauvegarde` (nouveau, `errors.rs`, `I18nBundle::load` sur `concat!(env!("CARGO_MANIFEST_DIR"), "/../kesh-i18n/locales")` — chemin indépendant du répertoire courant (F-P3-10) —, **sans** toucher au catalogue global) — pour chacune des quatre locales : `error-admin-pre-import-backup-failed` ≠ `error-admin-full-import-failed` de la même locale ; hors `fr-CH`, ≠ le texte `fr-CH` (sinon `format` est retombé sur le français, `loader.rs:116-121`) ; ne contient pas la **promesse** de l'ancien texte, phrase intérieure de sa parenthèse **sans les parenthèses** (R3-9) : `un backup automatique a été créé avant l'opération`, `vor dem Vorgang wurde automatisch ein Backup erstellt`, `an automatic backup was created before the operation`, `prima dell'operazione è stato creato un backup automatico` — **pas** des sous-chaînes que la négation prescrite contient (`a été créé` est préfixe de « n'a été créée ») ; **assertion de montage** : chaque interdit figure dans `error-admin-full-import-failed` de **sa** locale (texte inchangé), faute de quoi l'interdit est une coquille et le test passe à vide. Vérifié en remédiation P3 : `grep -cF` de chaque interdit (sans parenthèses) → 1 dans le `messages.ftl` de sa locale (`fr-CH:1478`, `de-CH`/`en-CH`/`it-CH:1407`), et dans aucun autre ; `printf '%s' "<négation naturelle>" \| grep -cF -- "<interdit>"` → 0 pour les vingt couples (quatre formulations de l'AC 15 c et « Non è stato creato un backup automatico », contre les quatre interdits) ; **et** (F-P4-4 de la validation P4) chaque texte neuf **contient** la négation de sa locale, à la lettre (`aucune sauvegarde n'a été créée`, `Es wurde keine Sicherung erstellt`, `No backup was created`, `Non è stato creato alcun backup`) ; **et** (R5-1 de la validation P5) chaque texte neuf **contient** ses deux jetons de piste, à la lettre (`dossier de sauvegarde`/`base de données`, `Sicherungsordner`/`Datenbank`, `backup folder`/`database`, `cartella di backup`/`database`) | AC 15 c | **M33** texte `de-CH` remplacé par celui d'`error-admin-full-import-failed` · **M34** clé retirée d'`it-CH` (rouge aussi à `parity_between_locales`) · **M38** texte `fr-CH` neuf qui recopie la parenthèse de l'ancien · **M45** texte `fr-CH` neuf réduit à « Échec de l'import. » (sans négation ni promesse) · **M49** texte `en-CH` neuf sans « database » (une seule piste, le dossier) |
-| 17 | `full_import_refuses_when_backup_cannot_be_written` (nouveau, `admin_full_import_e2e.rs`) — `admin_backup_dir` = chemin d'un **fichier** existant (la création du dossier échoue même sous root : en CI comme en local) ; `spawn_app` factorisé en `spawn_app_with(pool, config)` (DRY) ; 500, `ADMIN_PRE_IMPORT_BACKUP_FAILED`, message = repli (ce binaire n'appelle pas `init_error_i18n`) ; installation intacte (société et administrateur d'origine, comme le test 18) | AC 15 a, 9 c | **M35** `admin.rs:473` (création du dossier) rend `AdminFullImportFailed` |
-| 18 | `full_import_rolls_back_on_insert_failure` (existant, `admin_full_import_e2e.rs:559-605`, complété) — échec **après** la sauvegarde : code `ADMIN_FULL_IMPORT_FAILED` | AC 15 a | **M37** `admin.rs:291` (`restore :`) rend `AdminPreImportBackupFailed` |
+| 17 | `full_import_refuses_when_backup_cannot_be_written` (nouveau, `admin_full_import_e2e.rs`) — `admin_backup_dir` = chemin d'un **fichier** existant (la création du dossier échoue même sous root : en CI comme en local) ; `spawn_app` factorisé en `spawn_app_with(pool, config)` (DRY) ; 500, `ADMIN_PRE_IMPORT_BACKUP_FAILED`, message = repli (ce binaire n'appelle pas `init_error_i18n`) ; installation intacte (société et administrateur d'origine, comme le test 18) | AC 15 a, 9 c | **M35** la création du dossier dans `write_pre_import_backup` (`admin.rs:473` à la spécification, réécrite en `DirBuilder` : F-P6-7) rend `AdminFullImportFailed` |
+| 18 | `full_import_rolls_back_on_insert_failure` (existant, `admin_full_import_e2e.rs:559-605`, complété) — échec **après** la sauvegarde : code `ADMIN_FULL_IMPORT_FAILED` | AC 15 a | **M37** le site `restore :` de `run_backup_and_restore` (`admin.rs:291`) rend `AdminPreImportBackupFailed` |
 | 19 | `montages_hors_du_depot` (nouveau, `configuration_transmise.rs`) — pour **chaque** entrée de `MONTAGES`, le dossier de sa source `docker-compose.prod.yml` (`./x` → `x`) a sa ligne dans `.gitignore` sous la forme **ancrée** `/x/` — **seule tolérance** : `log`, pour qui `log/` (ligne existante, `.gitignore:34`) est admise, la liste des tolérances étant une constante qui ne compte que `log` (assertion) — et dans `.dockerignore` (`x/`) ; la liste est **dérivée** de `MONTAGES`, pas recopiée (un cinquième montage ajouté demain est contrôlé sans retouche) ; **assertion de montage** : `MONTAGES` compte **au moins** quatre entrées, dont celle de cible `/data/backup` (R4-5 de la validation P4, C-15-13-26 : un compte exact obligerait à retoucher le test au cinquième montage, contre la phrase précédente), et chaque ligne est cherchée **entière** (après `trim`), pas en sous-chaîne (`log/` ne doit pas satisfaire `/backup/`, ni `backup/` satisfaire `/backup/`) | AC 8 e | **M39** retirer `/backup/` de `.gitignore` · **M40** retirer `backup/` de `.dockerignore` · **M41** `/backup/` remplacé par `backup/` (non ancré) dans `.gitignore` (R3-1) |
-| 20 | `avant_sauvegarde_branchee_aux_appels_de_l_import` (nouveau, `mod tests` de `routes/admin.rs`, F-P5-1 de la validation P5, C-15-13-28) — **garde lexicale** : lit `include_str!("admin.rs")` tronqué à la première ligne `#[cfg(test)]` (le module de test ne se lit pas lui-même), lignes dont le `trim_start` commence par `//` écartées (les doc-comments nomment `build_keshbackup` : `:129`, `:256`) ; repère chaque **appel** `check_schema_compat(` et `build_keshbackup(` (identifiant suivi de `(`, précédé ni de `fn ` ni d'un `use`), le rattache à la fonction de premier niveau qui l'entoure (dernière ligne `pub async fn <nom>` / `async fn <nom>` en colonne 0 qui le précède) et lit son **instruction** (texte jusqu'au `;` suivant, retours à la ligne compris : `rustfmt` peut la couper) — dans `full_import` et `run_backup_and_restore`, l'instruction **contient** `.map_err(avant_sauvegarde)` ; dans `full_export`, elle **ne le contient pas** ; **assertion de montage** : exactement **un** appel de `check_schema_compat` et **deux** de `build_keshbackup` (un par route), sinon échec qui nomme le décompte trouvé — un garde qui ne trouve rien passerait à vide, et un appel ajouté demain doit être trié | AC 15 b | **M47** `.map_err(avant_sauvegarde)` retiré à l'appel de `check_schema_compat` (`:172`) · **M48** retiré à l'appel de `build_keshbackup` (`:259`) |
+| 20 | `avant_sauvegarde_branchee_aux_appels_de_l_import` (nouveau, `mod tests` de `routes/admin.rs`, F-P5-1 de la validation P5, C-15-13-28) — **garde lexicale** : lit `include_str!("admin.rs")` tronqué à la première ligne `#[cfg(test)]` (le module de test ne se lit pas lui-même), lignes dont le `trim_start` commence par `//` écartées (les doc-comments nomment `build_keshbackup` : `:129`, `:256`) ; repère chaque **appel** `check_schema_compat(` et `build_keshbackup(` (identifiant suivi de `(`, précédé ni de `fn ` ni d'un `use`), le rattache à la fonction de premier niveau qui l'entoure (dernière ligne `pub async fn <nom>` / `async fn <nom>` en colonne 0 qui le précède) et lit son **instruction** (texte jusqu'au `;` suivant, retours à la ligne compris : `rustfmt` peut la couper) — dans `full_import` et `run_backup_and_restore`, l'instruction **contient** `.map_err(avant_sauvegarde)` ; dans `full_export`, elle **ne le contient pas** ; **assertion de montage** : exactement **un** appel de `check_schema_compat` et **deux** de `build_keshbackup` (un par route), sinon échec qui nomme le décompte trouvé — un garde qui ne trouve rien passerait à vide, et un appel ajouté demain doit être trié | AC 15 b | **M47** `.map_err(avant_sauvegarde)` retiré à l'appel de `check_schema_compat` (`:172`) · **M48** retiré à l'appel de `build_keshbackup` (`:259`) · **M52** `.map_err(avant_sauvegarde)` **ajouté** à l'appel de `build_keshbackup` de `full_export` (`:39`) — branche négative (F-P6-2 de la validation P6) |
 
 **Décompte** (recompté sur le tableau) : 12 lignes, toutes côté Rust, qui portent **14 fonctions de test**
 (10 neuves : lignes 6 b, 11, 12 ×2, 14, 15, 16, 17, 19, 20 ; 4 existantes complétées : lignes 3, 5, 6 a, 18), dans
 cinq fichiers existants (`configuration_transmise.rs`, `config.rs`, `routes/admin.rs`, `errors.rs`,
-`admin_full_import_e2e.rs`) ; **27 mutations** (M9–M11, M14, M15, M24–M26, M30–M41, M45–M51), toutes
+`admin_full_import_e2e.rs`) ; **28 mutations** (M9–M11, M14, M15, M24–M26, M30–M41, M45–M52 — M52 ajoutée au T0, F-P6-2), toutes
 attendues rouges. M11 rougit **deux** familles ((T) et (F)), M15 et M34 deux tests chacune : attendu, le
 relever. **M26** change de sens avec l'écriture par `.partial` : `create_new` porte désormais sur le
 `.partial`, et c'est la vérification d'existence du nom final qui empêche l'écrasement. Non couverts par
@@ -702,7 +719,7 @@ validation P3. **Résolu** = un AC le traite ; **assumé** = angle mort écrit.
 | `DOCKER_START.md` § *Notes* (`:140`, puce neuve — le fichier n'a pas de section « dossiers ») | `./backup` | résolu (AC 12 a', F-P5-4) |
 | `admin-manual.tex:757`, `:807-822` (dont `:812`, énumération des montages fixes) | `sec:env-vars` (ligne `KESH_ADMIN_BACKUP_DIR`, montages) | résolu (AC 11 d, F-P4-3) |
 | `admin-manual.tex:1643` (« sans accès SSH ni ligne de commande », ouverture de `sec:backup-ui-keshbackup`) | contradiction avec le rapatriement en SSH de la même section | résolu (AC 11 e, F-P4-7 : phrase d'exception) |
-| `admin-manual.tex:1712` (« restauration self-service sans SSH »), `website/roadmap.html:231` (« SSH-free migration and restore ») | promesse de l'export/import par l'écran | **assumé** — vraie pour un `.keshbackup` exporté ; la sauvegarde pré-import en fait exception, dite à `:1643` (F-P4-7) |
+| `admin-manual.tex:1712` (« restauration self-service sans SSH »), `website/roadmap.html:231` (« SSH-free migration and restore »), `README.md:48` (« sans accès SSH ✓ », F-P6-4 de la validation P6) | promesse de l'export/import par l'écran | **assumé** — vraie pour un `.keshbackup` exporté ; la sauvegarde pré-import en fait exception, dite à `:1643` (F-P4-7) |
 | `admin-manual.tex:1417-1425`, `:1664`, `:1667-1672`, `:1699` | sauvegarde | résolu (AC 11 e, i) |
 | `admin-manual.tex:1452-1477`, `:2312-2317` (`BACKUP_DIR` du script de sauvegarde) | homonyme : variable de shell, pas de Kesh | **assumé** — hors sujet (le `cd` et `exec db` du même script : 15-13a, AC 11 h) |
 | `admin-manual.tex:1757-1841` — paragraphe sauvegarde, `:1773` (« Effets sans refus »), `:1793` (« deux gestes », « Sous `environment:` ») | mise à jour 0.13.0 — parties sauvegarde | résolu (AC 11 f) |
@@ -752,6 +769,9 @@ existante.
   peut pas dire laquelle : le journal le dit), les tests 15 et 16 l'exigent (M49, M50), et les recettes
   hors Docker posent la variable (AC 16). Ce fondement tient **tant que** le message nomme le dossier :
   s'il cessait de le faire, l'écartement serait à rouvrir.
+- **Parents créés en `0700`** (R6-3 = F-P6-6) : `DirBuilder` récursif pose `0700` sur chaque niveau qu'il
+  crée ; un `KESH_ADMIN_BACKUP_DIR` sous un parent absent (hors Docker, sous root : `/data`) le crée fermé.
+  Sans conséquence dans le conteneur (root) ; écrit au doc-comment, non traité.
 - **Montage d'hôte `./backup` créé `root:root` `0755`** : l'exploitant qui le veut fermé fait
   `chmod 700 backup` (manuel) ; les fichiers sont `0600` de toute façon.
 
@@ -932,3 +952,39 @@ converties à l'appel (AC 15 b), précisément pour ne pas ouvrir un module de p
   l'écrire), R6-4 (pas de `serde_json` dans `export.rs`), F-P6-1 (conflit certain avec la 15-13a sur
   `CHANGELOG.md:46` et `admin-manual.tex:1793` : à écrire aux Dépendances), F-P6-2 (M52 : branche négative du
   test 20), F-P6-3, F-P6-4 (`README.md:48`), F-P6-5, F-P6-7, F-P6-8 (« dossier » contre « répertoire »).
+
+- **2026-10-09 — T0 du développement** (agent de développement, Opus 5.5, en autonomie ; worktree `kesh-15-13b`,
+  base `200f5e79` + `dd9c3b1f`).
+  - **Les 12 LOW de la P6 appliqués** : R6-1 (AC 11 e, motif ASCII « par prudence »), R6-2 (AC 15 b, rustfmt),
+    R6-3 = F-P6-6 (AC 9 b et angle mort « parents créés en `0700` »), R6-4 (AC 15 c, ZIP et non `serde_json`),
+    F-P6-1 (§ *Dépendances* : conflits certains sur le paragraphe « Action requise » du CHANGELOG et sur
+    « Pour qui garde son fichier compose »), F-P6-2 (**M52**, branche négative du test 20 ; **28 mutations**,
+    union avec la 15-13a : 52, M52 absente de la 15-13a — vérifié), F-P6-3 (AC 9 a), F-P6-4 (`README.md:48` à
+    l'inventaire, ligne assumée — **42 lignes d'inventaire inchangées**, ligne enrichie), F-P6-5 (AC 11 e :
+    forme coupée), F-P6-7 (M35, M37 désignées par le texte ; chemin et lignes `:81-84` d'`AdminRestorePanel`),
+    F-P6-8 (AC 11 e : « dossier de sauvegarde » au manuel). Angles morts : **11**.
+  - **Relecture contre `200f5e79`** (la 15-7a2, la 15-12a et la 15-6a sont mergées depuis la spécification) :
+    **aucun écart de fond**, seulement des numéros de ligne décalés. `routes/admin.rs`, `config.rs`,
+    `configuration_transmise.rs`, `admin_full_import_e2e.rs`, les compose, `.env.example`, `docs/testing.md`,
+    `README.md`, `DOCKER_START.md`, `.gitignore`, `.dockerignore`, `CLAUDE.md` : **inchangés** (`git diff --stat
+    de285ea8 200f5e79` vide sur eux) — tous les numéros de la fiche y valent. Décalés : `errors.rs` +13
+    (`AdminFullExportFailed` `:459`, `AdminFullImportFailed` `:467`, doc `:461-466`, bras `:1874-1884`) ;
+    catalogues +5 (`error-admin-full-import-failed` `fr-CH:1483`, `de/en/it-CH:1412`) ; `admin-manual.tex` +3
+    (`:1646` ouverture de la section, `:1796` « Pour qui garde… ») ; `CHANGELOG.md` +10 (`:54` entrée #550
+    « Inchangé », `:56` paragraphe « Action requise »). Les AC citent la ligne de la spécification ; le
+    développement se repère au texte.
+  - **Mesures** (`target/gate-logs/15-13b-t0-*`) : (1) **graphie** de `docker compose config` (client seul,
+    sans démon) pour `- ./backup:/data/backup` : forme longue `type: bind` / `source: …/backup` /
+    `target: /data/backup` / `bind: create_host_path: true`, **identique** pour les deux compose ;
+    `grep -c 'target: /data/backup'` → **1** avec le montage ; sur les compose **sans** montage avec
+    `KESH_ADMIN_BACKUP_DIR=/data/backup` dans `.env` → **0** (alors que `grep -c '/data/backup'` → 1, la ligne
+    d'environnement) : le contrôle de l'AC 11 f est discriminant, motif inchangé. (2) **`make fr` d'avant** :
+    `.log` de référence (55 lignes `Overfull`), PDF aplatis ; contrôles de l'AC 11 l sur le PDF d'avant :
+    positifs tous à **0** (`/data/backup`, `sudo cp backup/`, `kesh-pre-import`, `keshbackup.partial`,
+    `target: /data/backup`, ligne `sudo chown` entière, `base de données.{0,40}inaccessible`) ; négatifs
+    présents (`défaut /tmp` ×2, `deux gestes` ×1, `BACKUP_DIR.{0,90}/tmp` ×3) — tous discriminants. PDF
+    versionnés restaurés (`git checkout`). (3) **Rapatriement sur conteneur jetable** : **non mesuré au T0** —
+    le démon Docker de la station est bloqué au noyau (tâches `dockerd` en état D sur un rw-semaphore depuis
+    07:06, `docker run` expire à 60 s), et le relancer toucherait `kesh-mariadb-dev` (interdit). Reporté au
+    T10, choix C-15-13b-1.
+  - **Registre** : `15-13` (`split`) et `15-13b` (`in-progress`) ajoutées à `sprint-status.yaml`.
