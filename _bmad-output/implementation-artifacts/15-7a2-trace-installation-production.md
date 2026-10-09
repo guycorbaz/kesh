@@ -479,6 +479,34 @@ Claude Opus 5.5 (`claude-opus-5-5`), agent de développement en autonomie (consi
   `onboarding_e2e`, `onboarding_path_b_e2e`, `audit_route_registry`, `audit_label_registry`,
   `fiscal_years_e2e`, `profile_e2e` 88/88.
 
+#### Intégration sur `012fc430`
+
+`origin/main` avait avancé de deux merges (15-6a #572, 15-12a #573). Rebase sur `012fc430` :
+- **Conflits** : `CHANGELOG.md` (deux fois — rubrique « Corrigé » de `[0.13.0]` : l'entrée #543 de la
+  15-12a et l'entrée #434 d'ici, gardées toutes deux, la version à jour de la nôtre) ;
+  `crates/kesh-db/src/repositories/fiscal_years.rs` (doc-comment de `create_for_seed` : notre
+  reformulation 15-7a2 **et** le paragraphe « Sans la garde de l'invariant I » de la 15-12a) ;
+  `crates/kesh-api/tests/audit_route_registry.rs` (doc-comment seulement : point (iv) — la liste
+  réécrite par la 15-12a, `/close` sortie car rejouée, renommage ajouté, **plus** nos huit routes
+  d'étape sans rejeu ; point (vi) — « quatre routes » de la 15-12a, avec notre précision sur
+  `finalize`) ; registre des choix (union, aucun doublon d'en-tête) ; `sprint-status.yaml` (nos lignes
+  `last_updated` renumérotées (34) puis (35), après les (33) de `main`) ; les deux PDF (régénérés).
+  `messages.ftl` des quatre locales, `ACTIONS` et `rejeu_interblocage_e2e.rs` : fusion sans conflit,
+  aucune clé en double.
+- **Partition recomptée depuis `LIB_ROUTES`** : 112 = 104 `Traced` + 6 `Exempt` + 2 `NoMatter` ;
+  rejeu sur 115 : 22 + 4 + 89 — inchangée, le manuel (« 104 des 112 », « 104 + 6 + 2 = 112 ») reste
+  juste.
+- **Manuels** : `admin-manual.tex` et `user-manual.tex` fusionnés par git ; les deux PDF régénérés
+  et contrôlés aplatis (nos passages et ceux de la 15-6a et de la 15-12a présents).
+- **Gates complets sur l'état rebasé**, bases `kesh_157a2` et `kesh_e2e_157a2` remises à zéro :
+  backend `scripts/test-fast.sh` **2973/2973** (4 ignorés) ; frontend check 0 erreur, lint i18n
+  PASS, Vitest **1095/1095**, build vert ; E2E complet (`KESH_TEST_MODE=true` des deux côtés,
+  secrets `openssl rand`, SMTP, inbox/documents du worktree, `smtpConfigured: true`) **247 passés,
+  9 échoués, 17 sautés** (03:51–04:01 UTC) — les neuf attendus : sept KF-029
+  (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) et deux
+  KF-045 (`invoices:415`, `:439`, avant 12:00 UTC). Log backend sans erreur interne. Backend arrêté
+  par son PID.
+
 ### Completion Notes List
 
 - **T0** : écarts de fait seulement (Change Log du 2026-10-09). Registre recompté depuis la source :
