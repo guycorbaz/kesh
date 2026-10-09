@@ -5550,6 +5550,29 @@ l'import (#458–#461).
 - **Rectificatifs** (les entrées d'origine ne sont pas réécrites) : **C-15-13-9** — « cinq modules » ne vaut plus depuis le découpage (C-15-13-16) : la 15-13a en compte deux (`config`, `main`), la 15-13b quatre (`config`, `routes/admin`, `errors`, catalogues `kesh-i18n`) — R4-10 de la validation P4 de la 15-13b. **C-15-13-14** — « un montage ajouté demain est contrôlé sans retouche » n'était vrai que si l'assertion de montage du test 19 ne fixait pas le nombre d'entrées : elle exige désormais « au moins quatre », dont `/data/backup` (R4-5). **Inventaire de la 15-13a** — la ventilation « 29 + 6 → 36 » de la fiche index ne se refaisait pas ; seuls les totaux sont gardés (R4-7).
 - **Réversible** : oui.
 
+## C-15-13-27 — 15-13b (validation P5) : le message de #576 nomme toujours les deux pistes — rectifie C-15-13-25 et le motif de C-15-13-9
+
+- **Contexte** : R5-1 de la validation P5, **né de la remédiation P4**. C-15-13-25 admettait un texte qui « nomme les deux pistes à égalité, ou aucune ». Or l'écartement du contrôle du dossier au démarrage (C-15-13-9, angle mort de la 15-13b) repose sur un message qui « dit la cause au moment où elle compte » : avec l'option « aucune », le cas que #576 rend nominal (instance hors Docker sans `KESH_ADMIN_BACKUP_DIR`) rendrait un 500 qui ne mentionne plus le dossier, et l'écartement n'aurait plus de fondement — sans qu'aucun test le voie.
+- **Retenu** (décision de l'orchestrateur) : le message d'échec antérieur à la sauvegarde nomme **toujours** les deux pistes — le dossier de sauvegarde (inscriptible ?) **et** la base de données (joignable ?) — dans les quatre locales et le repli Rust, par des jetons fixés à la lettre (`dossier de sauvegarde`/`base de données`, `Sicherungsordner`/`Datenbank`, `backup folder`/`database`, `cartella di backup`/`database`). Les tests 15 (repli) et 16 (catalogues) exigent leur présence ; mutations **M49** (`en-CH` sans « database ») et **M50** (repli sans « base de données »). La liste des refus du manuel nomme les mêmes deux pistes (F-P5-7).
+- **Rectificatifs** (entrées d'origine non réécrites) : **C-15-13-25** — « ou aucune » est retiré ; « trois des cinq échecs antérieurs » devient « cinq des **sept** » (R5-2 : `:172`, `:236`, `:240`, `:246`, `:259` pour la base ; `:473`, `:487` pour le dossier). **C-15-13-9** — le motif d'écartement du `warn!` au démarrage se lit désormais : « le message **nomme les deux causes possibles** au moment où elles comptent » ; il tient tant que le message nomme le dossier.
+- **Écartées** : garder « ou aucune » et rouvrir le contrôle au démarrage (plus coûteux, et un dossier monté tardivement ferait mentir le `warn!`) ; deux variantes dossier/base (déjà écartées par C-15-13-25).
+- **Réversible** : oui (quatre catalogues, un repli, deux assertions).
+
+## C-15-13-28 — 15-13b (validation P5) : le branchement d'`avant_sauvegarde` est gardé par un test lexical
+
+- **Contexte** : F-P5-1 de la validation P5 (d'origine P1, `07e168e1`). Le test 14 exerce la fonction pure `avant_sauvegarde`, mais rien ne vérifiait qu'elle est appliquée aux appels de `check_schema_compat` (`routes/admin.rs:172`) et de `build_keshbackup` (`:259`) : un `.map_err(avant_sauvegarde)` oublié laissait tous les tests verts et rendait le message faux de #576 (ou « l'export n'a pas pu être généré »). Les deux pannes ne sont pas injectables à bon compte.
+- **Retenu** : un garde **lexical**, test 20 `avant_sauvegarde_branchee_aux_appels_de_l_import` (`mod tests` de `routes/admin.rs`) — `include_str!("admin.rs")` tronqué au `#[cfg(test)]`, commentaires écartés, chaque appel des deux fonctions rattaché à sa fonction de premier niveau ; dans `full_import` et `run_backup_and_restore`, l'instruction (jusqu'au `;`) contient `.map_err(avant_sauvegarde)` ; dans `full_export` (`:39`), elle ne le contient pas ; assertion de montage : exactement un appel de `check_schema_compat` et deux de `build_keshbackup`. Forme d'appel prescrite à l'AC 15 b (`….await.map_err(avant_sauvegarde)?`). Mutations **M47** (`:172`) et **M48** (`:259`) **couvertes**.
+- **Pourquoi c'est fiable** : la forme est unique et prescrite ; toute écriture que le test ne reconnaît pas (fermeture, conversion différée, alias) le fait rougir **à tort**, jamais passer à tort — un faux rouge coûte une ligne, un faux vert est muet. Le précédent du dépôt est le contrôle (L) de `configuration_transmise.rs`, lexical lui aussi. L'appel de l'export est contrôlé dans l'autre sens, pour que le garde ne pousse pas à convertir partout. Reste angle mort : aucune panne effective ne traverse jusqu'à la réponse HTTP.
+- **Écartées** : l'angle mort seul, avec mutation déclarée non couverte (le garde est bon marché et ferme la mutation) ; extraire `sauvegarde_pre_import(pool, dir)` et la tester sur une base dégradée (lourd, change la frontière du verrou, et une table supprimée fait d'abord rougir `check_schema_compat` en 400).
+- **Réversible** : oui (un test).
+
+## C-15-13-29 — 15-13b (validation P5) : précisions de C-15-13-21 — on ne supprime que ce qu'on a créé, `try_exists` en erreur vaut échec
+
+- **Contexte** : F-P5-3, R5-3/F-P5-8 de la validation P5 (nés de la remédiation P4). C-15-13-21 ne disait pas si l'échec de `create_new` nettoyait le `.partial` (qui n'est alors pas celui de l'appel), ni ce que vaut un `try_exists` en `Err`, ni les détails journalisés des étapes neuves.
+- **Retenu** : l'échec de `create_new` ne supprime **rien** (test 12 : le `.partial` préexistant garde son contenu ; mutation **M51**) ; seul le `.partial` créé par l'appel est nettoyé ; `try_exists` en `Err` = **échec** (jamais « absent », qui rouvrirait l'écrasement) ; un détail journalisé par étape, qui nomme le chemin (AC 9 c), non testé à la lettre.
+- **Écartées** : nettoyer sur toute erreur (supprimerait le fichier d'un autre écrivain) ; traiter `Err` comme absent.
+- **Réversible** : oui.
+
 ## C-15-13a-1 — 15-13a (T0) : le manuel dit le refus de Compose tel qu'il est mesuré — `config`, `pull` et `up` refusent, `ps`, `logs`, `exec`, `stop` restent utilisables, et la variable nommée change d'un lancement à l'autre
 
 - **Contexte** : l'AC 11 f affirmait, sous réserve de mesure au T0, que « le refus de Compose frappe toute sous-commande » (`ps`, `logs`, `exec`, `stop`, `down`) et que le script de sauvegarde lancé par `cron` échoue dès que `.env` perd une des deux lignes ; l'AC 11 j, que Compose nomme « la première » variable et que « la seconde apparaît au lancement suivant ». Mesuré le 2026-10-09 (Docker Compose 2.40.3, projet jetable `kesh1513a-t0`, service `mariadb` en marche, `env -u MARIADB_ROOT_PASSWORD -u MARIADB_PASSWORD`) : `config`, `pull`, `up -d` et `up -d kesh-api` sortent en code 1 avec `required variable … is missing a value` ; `ps`, `logs`, `exec -T mariadb true` et `stop` sortent en 0 et font leur travail. Et, sur 12 lancements de la même commande, la variable nommée varie : `MARIADB_ROOT_PASSWORD`, `MARIADB_PASSWORD` ou `DATABASE_URL` (de `kesh-api`, qui nomme `MARIADB_PASSWORD`) — ordre non déterministe.
@@ -5598,3 +5621,38 @@ l'import (#458–#461).
 - **Retenu** : dette écrite à la fiche (« Ce que la story ne fait pas »), rattachée à **#538** — l'atomicité des quatre premières validations fait disparaître l'état non relançable, et le message redevient juste. Atteinte pratiquement impossible avec le plan PME embarqué. B-2 (boucle `InactiveOrInvalidAccounts`) reste à l'arbitrage de Guy (C-15-7-14).
 - **Écarté** : changer le texte maintenant (code de production en remédiation de fin de boucle, qui rouvrirait la boucle de revue pour un LOW).
 - **Réversible** : oui (une chaîne).
+
+## C-15-13b-1 — 15-13b (T0) : le rapatriement n'est pas rejoué au T0, le démon Docker étant bloqué
+
+- **Contexte** : le T0 prescrit de rejouer, sur un conteneur jetable, l'écriture d'un fichier `0600` par un conteneur root dans un dossier monté, puis le rapatriement `sudo cp` + `sudo chown`. Le 2026-10-09 vers 07:10, toute création de conteneur expire (`docker run` → 124 après 60 s) : le noyau signale des tâches `dockerd` en état D, bloquées sur un rw-semaphore (`journalctl`, « blocked for more than 122 seconds »). Le démon sert encore `ps`/`info`. Les créations interrompues laissent des noms réservés sans conteneur. `sudo` n'est pas utilisable sans mot de passe depuis l'agent.
+- **Retenu** : faire au T0 ce qui ne dépend pas du démon (`docker compose config`, client seul : graphie et contrôle rouge mesurés ; `make fr`), écrire le manuel selon la fiche, et **retenter** le rapatriement au T10 ; s'il est toujours impossible, l'écrire au Dev Agent Record comme **non mesuré**, à rejouer par l'orchestrateur ou en recette. `sudo` y est joué par un conteneur root (même effet de droits), ce qui sera dit.
+- **Écartées** : redémarrer `dockerd` (emporterait `kesh-mariadb-dev` et les bases des autres agents — interdit) ; attendre sans fin ; déclarer le geste vérifié par raisonnement (« une hypothèse éliminée par raisonnement n'est pas une hypothèse testée »).
+- **Réversible** : oui — la mesure se rejoue à tout moment.
+
+## C-15-13b-2 — 15-13b (T6) : `CLAUDE.md` — seule la ligne de commande de la recette change, pas la mention de date
+
+- **Contexte** : l'AC 16 a prescrit deux modifications du `CLAUDE.md` (la variable ajoutée à la recette E2E, et une mention « `KESH_ADMIN_BACKUP_DIR` ajoutée le … » accolée à « vérifié le 2026-08-04 »). La consigne de l'orchestrateur pour ce développement dit : « ne change QUE la ligne de commande de la recette E2E, rien d'autre dans ce fichier ».
+- **Retenu** : la consigne de l'orchestrateur prime sur la fiche — `KESH_ADMIN_BACKUP_DIR=target/kesh-backup` ajoutée à la ligne `KESH_PORT=3000 KESH_STATIC_DIR=frontend/build`, rien d'autre. La date de vérification reste celle du 2026-08-04 ; le Dev Agent Record dit que la recette modifiée a tourné au gate E2E.
+- **Écartées** : appliquer l'AC 16 a à la lettre (contrevient à la consigne).
+- **Réversible** : oui (une phrase à ajouter si l'orchestrateur le souhaite).
+
+## C-15-13b-3 — 15-13b (T6) : la phrase « deux gestes » du CHANGELOG devient un renvoi sans nombre
+
+- **Contexte** : AC 13 c — la phrase partagée avec la 15-13a (« le manuel d'administration décrit les **deux gestes** ») est réécrite par la première fiche mergée, soit avec le décompte par fichier, soit par un renvoi sans nombre.
+- **Retenu** : « décrit les gestes à faire, fichier par fichier (§ *Passer à la 0.13.0*) » — un renvoi qui n'a rien à recompter au rebase de la 15-13a ; le manuel, lui, porte le décompte (« Trois gestes pour chacun des deux compose » avec la 15-13b seule).
+- **Écartées** : « trois gestes pour chacun » au CHANGELOG (à recompter par la seconde mergée, conflit certain sur la même ligne).
+- **Réversible** : oui.
+
+## C-15-13b-4 — 15-13b (T5) : la brochure reste telle quelle ; le nom du fichier est décrit, non écrit en entier
+
+- **Contexte** : AC 11 n (brochure `:398`, « restauration sans accès SSH ») et AC 11 e (nom `kesh-pre-import-<horodatage>-….keshbackup`). Écrit d'un bloc dans la prose, ce nom insécable produisait un `Overfull \hbox` de 155 pt ; deux autres débordements (14 et 18 pt) venaient de la ligne `KESH_ADMIN_BACKUP_DIR` de la liste des variables et d'une incise ajoutée au premier geste.
+- **Retenu** : brochure **inchangée** — elle vend l'export/import par l'écran, qui reste sans SSH ; l'exception de la sauvegarde pré-import est dite au manuel d'administration (ouverture de la section). Le nom est décrit « commence par `kesh-pre-import-` (suivi de l'horodatage) et finit par `.keshbackup` » ; `\sloppy` sur l'entrée de la liste ; l'incise « sous `environment:` » du premier geste retirée (la phrase d'ouverture le dit). Résultat : 55 `Overfull`, la même liste qu'avant, aucun nouveau.
+- **Écartées** : nuancer la brochure (promesse vraie pour ce qu'elle vend) ; garder le nom entier avec des `\allowbreak` (rendu haché, contrôle aplati fragilisé).
+- **Réversible** : oui.
+
+## C-15-13b-5 — 15-13b (clôture) : rebasée sur `origin/main` (`bcded0c8`, 15-13a) ; union partout, décompte du manuel recompté à cinq et trois
+
+- **Contexte** : clôture de la 15-13b après la revue de code (P1 Sonnet ×3, 15 LOW → remédiation `7b1db902` → P2 ciblée Haiku 0 au-dessus de LOW, rapport perdu au `cargo clean`). Elle devait passer **après** la 15-13a, mergée en `bcded0c8`. Conflits annoncés aux Dépendances de la fiche : paragraphe « Action requise » du CHANGELOG et « Pour qui garde son fichier compose » du manuel ; s'y sont ajoutés les fiches 15-13/15-13b (ajout/ajout), le registre, `sprint-status.yaml`, `DOCKER_START.md` et le PDF.
+- **Retenu** : rebase (branche de sauvegarde `backup/15-13b-avant-rebase-bcded0c8`). Fiches : version de la branche (celle de `main` était l'état d'avant la validation P5, sans ligne propre). Registre et `sprint-status.yaml` par union. CHANGELOG : paragraphe de `main`, la phrase « la sauvegarde pré-import reste dans `/tmp` » remplacée par celle de la 15-13b ; l'entrée Sécurité « dossiers montés » placée avant #557 et #551. Manuel : les deux paragraphes conservés ; « Cinq gestes pour `docker-compose.yml`, trois pour `docker-compose.prod.yml` », montage `./backup` en dernier ; une seule phrase « Puis `docker compose config -q` » qui réunit les deux contrôles (aucun `ports` sous `mariadb`, `target: /data/backup` compté à 1). PDF régénéré, contrôlé aplati. Gates complets et E2E rejoués sur l'état rebasé, compilation à froid.
+- **Écartées** : merge de `main` dans la branche (historique moins lisible) ; garder l'un des deux PDF (il aurait omis l'apport de l'autre) ; deux phrases « Puis … » successives (deux `config -q` à lancer, l'un sans l'autre).
+- **Réversible** : oui (rebase ; branche non poussée, sauvegarde gardée).

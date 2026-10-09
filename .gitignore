@@ -32,6 +32,14 @@ Thumbs.db
 *.log
 # Story v011-1 : répertoire de logs fichier monté par docker-compose.prod.yml
 log/
+# Sources des montages par défaut des compose (15-13b, AC 8 e) : justificatifs,
+# factures déposées et sauvegarde pré-import (SECRET) ne se versionnent jamais.
+# Motifs ANCRÉS à la racine : `backup/` seul ignorerait aussi la route versionnée
+# frontend/src/routes/(app)/admin/backup/. (`log/` reste non ancré : tolérance
+# nommée, aucun dossier log versionné — test montages_hors_du_depot.)
+/inbox/
+/documents/
+/backup/
 
 # LaTeX build artifacts (manuels docs/manual/) — ne versionner que .tex + .pdf
 # (aligne admin-manual sur la convention marketing-brochure ; Story 17-3f)

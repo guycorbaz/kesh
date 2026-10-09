@@ -208,9 +208,12 @@ const MARIADB: &[&str] = &[
     "MARIADB_USER",
 ];
 
-/// Les trois montages de `kesh-api` : (cible dans le conteneur, source exigée
-/// dans `docker-compose.yml` — préfixe —, source exigée dans
-/// `docker-compose.prod.yml` — exacte).
+/// Les montages de `kesh-api` : (cible dans le conteneur, source exigée dans
+/// `docker-compose.yml` — préfixe si elle commence par `${`, exacte sinon —,
+/// source exigée dans `docker-compose.prod.yml` — exacte). Voir
+/// [`source_conforme`]. Story 15-13b (#552) : quatrième entrée, la sauvegarde
+/// pré-import, montage fixe dans les deux compose (cible
+/// `kesh_api::config::DEFAULT_ADMIN_BACKUP_DIR`, contrôlé par (T)).
 const MONTAGES: &[(&str, &str, &str)] = &[
     ("/var/log/kesh", "${KESH_LOG_HOST_DIR:-", "./log"),
     ("/data/inbox", "${KESH_INBOX_HOST_DIR:-", "./inbox"),
@@ -219,7 +222,13 @@ const MONTAGES: &[(&str, &str, &str)] = &[
         "${KESH_DOCUMENTS_HOST_DIR:-",
         "./documents",
     ),
+    ("/data/backup", "./backup", "./backup"),
 ];
+
+/// Story 15-13b (AC 8 e) — sources de montage admises dans `.gitignore` sous
+/// une forme **non ancrée** : `log` seul (ligne `log/` historique, aucun
+/// dossier `log` versionné dans le dépôt). Toute autre source exige `/x/`.
+const TOLERANCES_NON_ANCREES: &[&str] = &["log"];
 
 /// Le marqueur que le commentaire d'une variable de [`VIDE_SIGNIFIANT`] doit
 /// porter dans `.env.example`.
@@ -395,8 +404,8 @@ fn source_montage<'a>(entree: &'a str, cible: &str) -> Option<&'a str> {
     None
 }
 
-/// Les sources des trois montages de [`MONTAGES`] dans un service, par cible.
-/// Une entrée en forme longue, ou dont la cible n'est pas l'une des trois,
+/// Les sources des montages de [`MONTAGES`] dans un service, par cible.
+/// Une entrée en forme longue, ou dont la cible n'est pas l'une d'elles,
 /// rougit (« forme de montage non reconnue ») ; chaque cible doit être trouvée
 /// exactement une fois.
 fn sources_montages(svc: &Service) -> Result<BTreeMap<&'static str, String>, Vec<String>> {
@@ -456,6 +465,19 @@ fn dockerfile_fixe(dockerfile: &str, nom: &str) -> bool {
     lignes[debut..]
         .iter()
         .any(|l| l.trim_start().starts_with(&attendu))
+}
+
+/// Story 15-13b (AC 10 c) — la source `source` d'un montage est-elle celle
+/// qu'exige [`MONTAGES`] ? Pour `docker-compose.yml` : préfixe si la source
+/// attendue commence par `${` (montage variable), **égalité** sinon (montage
+/// fixe : `./backups` ne vaut pas `./backup`) ; pour
+/// `docker-compose.prod.yml` : égalité.
+fn source_conforme(compose: Compose, source: &str, attendue_y: &str, exacte_p: &str) -> bool {
+    match compose {
+        Compose::Y if attendue_y.starts_with("${") => source.starts_with(attendue_y),
+        Compose::Y => source == attendue_y,
+        Compose::P => source == exacte_p,
+    }
 }
 
 /// Contrôle (T) sur les deux services : transmission, exceptions, clés
@@ -528,19 +550,34 @@ fn controle_transmission(
             Ok(sources) => {
                 for (cible, prefixe_y, exacte_p) in MONTAGES {
                     let source = &sources[cible];
+                    if source_conforme(compose, source, prefixe_y, exacte_p) {
+                        continue;
+                    }
                     match compose {
-                        Compose::Y if !source.starts_with(prefixe_y) => erreurs.push(format!(
+                        Compose::Y if prefixe_y.starts_with("${") => erreurs.push(format!(
                             "{f} : le montage de `{cible}` doit avoir pour source `{prefixe_y}…}}`, trouvé `{source}`"
                         )),
-                        Compose::P if source != exacte_p => erreurs.push(format!(
+                        Compose::Y => erreurs.push(format!(
+                            "{f} : le montage de `{cible}` doit être exactement `{prefixe_y}` (montage fixe), trouvé `{source}`"
+                        )),
+                        Compose::P => erreurs.push(format!(
                             "{f} : le montage de `{cible}` doit rester `{exacte_p}` (montage fixe), trouvé `{source}` — \
                              le rendre configurable exige la procédure de déplacement des données de l'issue #558 (choix C83, AC 4)"
                         )),
-                        _ => {}
                     }
                 }
             }
         }
+    }
+    // Story 15-13b (R4-1) — le défaut du code est la cible d'un montage : sans
+    // ce lien, une constante changée renverrait la sauvegarde dans le système
+    // de fichiers éphémère du conteneur sans qu'aucun contrôle ne rougisse.
+    let defaut = kesh_api::config::DEFAULT_ADMIN_BACKUP_DIR;
+    if !MONTAGES.iter().any(|(cible, _, _)| *cible == defaut) {
+        erreurs.push(format!(
+            "`DEFAULT_ADMIN_BACKUP_DIR` vaut `{defaut}`, qui n'est la cible d'aucun montage de `MONTAGES` : \
+             la sauvegarde pré-import ne survivrait pas au conteneur (#552)"
+        ));
     }
     erreurs
 }
@@ -1852,6 +1889,55 @@ fn transmission() {
     );
 }
 
+/// Story 15-13b (AC 8 e, test 19) — les sources des montages par défaut ne se
+/// versionnent pas et n'entrent pas dans le contexte de build : pour chaque
+/// entrée de [`MONTAGES`] (liste **dérivée**, un montage ajouté demain est
+/// contrôlé sans retouche), `.gitignore` porte la ligne ancrée `/x/` (seule
+/// tolérance : [`TOLERANCES_NON_ANCREES`]) et `.dockerignore` la ligne `x/`.
+/// Lignes comparées **entières** (après `trim`), jamais en sous-chaîne.
+#[test]
+fn montages_hors_du_depot() {
+    assert_eq!(
+        TOLERANCES_NON_ANCREES,
+        &["log"],
+        "seule tolérance admise : log"
+    );
+    assert!(
+        MONTAGES.len() >= 4,
+        "assertion de montage : au moins quatre montages attendus, trouvé {}",
+        MONTAGES.len()
+    );
+    assert!(
+        MONTAGES
+            .iter()
+            .any(|(cible, _, _)| *cible == "/data/backup"),
+        "assertion de montage : le montage de la sauvegarde pré-import manque"
+    );
+    let gitignore = lire(".gitignore");
+    let dockerignore = lire(".dockerignore");
+    let lignes =
+        |texte: &str| -> BTreeSet<String> { texte.lines().map(|l| l.trim().to_string()).collect() };
+    let (g, d) = (lignes(&gitignore), lignes(&dockerignore));
+    let mut erreurs = Vec::new();
+    for (_, _, exacte_p) in MONTAGES {
+        let dossier = exacte_p
+            .strip_prefix("./")
+            .unwrap_or_else(|| panic!("source de montage inattendue : {exacte_p}"));
+        let ancree = format!("/{dossier}/");
+        let tolere =
+            TOLERANCES_NON_ANCREES.contains(&dossier) && g.contains(&format!("{dossier}/"));
+        if !g.contains(&ancree) && !tolere {
+            erreurs.push(format!(
+                ".gitignore : ligne `{ancree}` absente (motif ancré exigé)"
+            ));
+        }
+        if !d.contains(&format!("{dossier}/")) {
+            erreurs.push(format!(".dockerignore : ligne `{dossier}/` absente"));
+        }
+    }
+    echouer_si(erreurs, "montages hors du dépôt");
+}
+
 #[test]
 fn valeurs() {
     let (y, p, _) = services();
@@ -2188,6 +2274,44 @@ fn s_sources_de_montage() {
         sources_montages(&s).is_err(),
         "une forme longue doit rougir"
     );
+    // Story 15-13b (AC 10 d) — `source_conforme` : égalité exacte pour un
+    // montage fixe, préfixe pour un montage variable (M14).
+    assert!(source_conforme(
+        Compose::Y,
+        "./backup",
+        "./backup",
+        "./backup"
+    ));
+    assert!(!source_conforme(
+        Compose::Y,
+        "./backups",
+        "./backup",
+        "./backup"
+    ));
+    assert!(!source_conforme(
+        Compose::Y,
+        "${X:-./backup}",
+        "./backup",
+        "./backup"
+    ));
+    assert!(source_conforme(
+        Compose::Y,
+        "${KESH_INBOX_HOST_DIR:-./inbox}",
+        "${KESH_INBOX_HOST_DIR:-",
+        "./inbox"
+    ));
+    assert!(source_conforme(
+        Compose::P,
+        "./backup",
+        "./backup",
+        "./backup"
+    ));
+    assert!(!source_conforme(
+        Compose::P,
+        "./backups",
+        "./backup",
+        "./backup"
+    ));
 }
 
 // ---------------------------------------------------------------------------

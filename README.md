@@ -87,7 +87,7 @@ npm install
 npm run dev
 ```
 
-L'application est accessible sur http://localhost:5173 (frontend dev) et http://localhost (API en mode Docker, port 80 ; en mode `cargo run` natif sur Linux non-root, lancer le backend avec `KESH_PORT=3000` ET le frontend avec `KESH_BACKEND_URL=http://localhost:3000 npm run dev` pour aligner le proxy vite).
+L'application est accessible sur http://localhost:5173 (frontend dev) et http://localhost (API en mode Docker, port 80 ; en mode `cargo run` natif sur Linux non-root, lancer le backend avec `KESH_PORT=3000` — et `KESH_ADMIN_BACKUP_DIR` sur un dossier inscriptible, sans quoi tout import d'installation est refusé — ET le frontend avec `KESH_BACKEND_URL=http://localhost:3000 npm run dev` pour aligner le proxy vite).
 
 ### Image Docker (production)
 

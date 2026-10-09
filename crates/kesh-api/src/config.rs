@@ -249,10 +249,16 @@ pub struct Config {
     /// `KESH_ADMIN_IMPORT_MAX_MB` ; défaut 512, borne [1, 10240].
     pub admin_import_max_mib: u32,
 
-    /// Story 17-3c (DC5) — répertoire où écrire le **backup automatique
-    /// pré-import** (`.keshbackup` de l'état courant, filet de sécurité avant
-    /// le restore destructeur). Lu depuis `KESH_ADMIN_BACKUP_DIR` ; défaut
-    /// `/tmp`. Créé s'il n'existe pas. La purge est à la charge de l'opérateur.
+    /// Story 17-3c (DC5) — dossier où écrire la **sauvegarde de sécurité
+    /// pré-import** (`.keshbackup` de l'état courant, filet avant le restore
+    /// destructeur). Lu depuis `KESH_ADMIN_BACKUP_DIR` ; défaut
+    /// [`DEFAULT_ADMIN_BACKUP_DIR`] (`/data/backup`), que les compose distribués
+    /// montent sur `./backup` (Story 15-13b, #552 — l'ancien défaut `/tmp`
+    /// mourait avec le conteneur). **Hors Docker**, poser la variable sur un
+    /// dossier inscriptible : sinon la création du dossier échoue et l'import
+    /// est refusé avant toute suppression (`AdminPreImportBackupFailed`).
+    /// Créé (en `0700`) s'il n'existe pas ; fichiers en `0600`. La purge est à
+    /// la charge de l'exploitant.
     pub admin_backup_dir: String,
 
     /// Story 12-5b (#194) — répertoire de stockage des **justificatifs**
@@ -942,15 +948,17 @@ impl Config {
             None => 512,
         };
 
-        // Story 17-3c (DC5) — KESH_ADMIN_BACKUP_DIR : répertoire du backup
-        // automatique pré-import. Défaut `/tmp`. Créé si absent (au moment de
-        // l'import, pas au boot). Pas de borne (chemin arbitraire opérateur).
-        // Story 15-11a (revue P1, B1/E-1) — vide ou blanc = absente : les
-        // compose transmettent `${KESH_ADMIN_BACKUP_DIR:-}`, et un chemin vide
-        // ferait écrire le backup pré-import dans le répertoire courant
-        // (`/app` dans l'image) au lieu de `/tmp`.
-        let admin_backup_dir =
-            env_nonempty("KESH_ADMIN_BACKUP_DIR").unwrap_or_else(|| "/tmp".to_string());
+        // Story 17-3c (DC5) — KESH_ADMIN_BACKUP_DIR : dossier de la sauvegarde
+        // de sécurité pré-import. Défaut `DEFAULT_ADMIN_BACKUP_DIR`
+        // (`/data/backup`, monté sur `./backup` par les compose distribués —
+        // Story 15-13b, #552 ; hors Docker, poser la variable). Créé si absent
+        // (au moment de l'import, pas au boot). Pas de borne (chemin arbitraire
+        // opérateur). Story 15-11a (revue P1, B1/E-1) — vide ou blanc = absente :
+        // les compose transmettent `${KESH_ADMIN_BACKUP_DIR:-}`, et un chemin vide
+        // ferait écrire la sauvegarde dans le répertoire courant (`/app` dans
+        // l'image) au lieu du défaut.
+        let admin_backup_dir = env_nonempty("KESH_ADMIN_BACKUP_DIR")
+            .unwrap_or_else(|| DEFAULT_ADMIN_BACKUP_DIR.to_string());
 
         // Story 12-5b (#194) — KESH_DOCUMENTS_DIR : stockage des justificatifs
         // importés. Défaut `/data/documents` (volume persistant Docker, PAS /tmp).
@@ -1256,6 +1264,14 @@ impl LogFormat {
 
 /// Nombre de fichiers de log conservés par défaut (rotation).
 const DEFAULT_LOG_MAX_FILES: usize = 7;
+
+/// Story 15-13b (#552) — défaut de `KESH_ADMIN_BACKUP_DIR` : dossier de la
+/// sauvegarde de sécurité prise avant chaque import d'installation. Les deux
+/// compose distribués le montent sur `./backup` (le test `transmission` de
+/// `configuration_transmise.rs` exige qu'une entrée de `MONTAGES` ait cette
+/// cible) ; sa valeur est fixée par le test
+/// `from_env_absent_backup_dir_takes_data_backup`. Publique pour ce lien.
+pub const DEFAULT_ADMIN_BACKUP_DIR: &str = "/data/backup";
 
 fn parse_max_files(raw: &str, warnings: &mut Vec<String>) -> usize {
     match raw.trim().parse::<usize>() {
@@ -1745,8 +1761,9 @@ mod tests {
 
     /// Story 15-11a (revue P1, B1/E-1) — une variable transmise VIDE ou BLANCHE
     /// par les compose (`${NOM:-}`) prend le défaut du code, **sans**
-    /// avertissement : `/tmp` (et non un chemin vide, qui ferait écrire le
-    /// backup pré-import dans le répertoire courant), `fr`, 12, 10, 50, 512, 587.
+    /// avertissement : `/data/backup` (et non un chemin vide, qui ferait écrire
+    /// la sauvegarde pré-import dans le répertoire courant), `fr`, 12, 10, 50,
+    /// 512, 587.
     #[test]
     fn from_env_empty_or_blank_vars_take_code_default_silently() {
         for raw in ["", "   "] {
@@ -1761,7 +1778,10 @@ mod tests {
             }
             let (result, logs) = from_env_with_logs();
             let config = result.expect("Config should load");
-            assert_eq!(config.admin_backup_dir, "/tmp", "raw={raw:?}");
+            assert_eq!(
+                config.admin_backup_dir, DEFAULT_ADMIN_BACKUP_DIR,
+                "raw={raw:?}"
+            );
             assert_eq!(config.locale, kesh_i18n::Locale::FrCh, "raw={raw:?}");
             assert_eq!(config.password_min_length, 12, "raw={raw:?}");
             assert_eq!(config.bank_import_max_mib, 10, "raw={raw:?}");
@@ -1786,6 +1806,25 @@ mod tests {
             );
             reset_env();
         }
+    }
+
+    /// Story 15-13b (#552) — `KESH_ADMIN_BACKUP_DIR` absente → `/data/backup`.
+    /// Seul littéral voulu côté test : il fixe la valeur dont dépend la
+    /// persistance de la sauvegarde (le montage `./backup:/data/backup` des
+    /// compose). Le test précédent compare à la constante, qui ne se garde pas
+    /// elle-même (mutation M15).
+    #[test]
+    fn from_env_absent_backup_dir_takes_data_backup() {
+        let _guard = env_lock();
+        reset_env();
+        set_minimum_required();
+        unsafe {
+            env::set_var("KESH_HOST", "127.0.0.1");
+            env::remove_var("KESH_ADMIN_BACKUP_DIR");
+        }
+        let config = Config::from_env().expect("Config should load");
+        assert_eq!(config.admin_backup_dir, "/data/backup");
+        reset_env();
     }
 
     /// Témoin de la précédente : une valeur NON vide invalide garde son

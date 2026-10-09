@@ -194,3 +194,4 @@ docker compose up -d
 - Les données sont persistées dans le volume `kesh-mariadb-data` du compose,
   que `docker volume ls` affiche `<projet>_kesh-mariadb-data` (préfixe du
   projet Compose, par défaut le nom du répertoire)
+- Dossier `./backup` : créé par Docker au premier `docker compose up`, il reçoit la sauvegarde de sécurité prise avant chaque import d'installation (fichiers `0600`, propriétaire `root`). **Secret**, ignoré de git ; à purger (une sauvegarde par import). Restauration : manuel d'administration, § *La sauvegarde de sécurité pré-import*.

@@ -1422,6 +1422,7 @@ export-global-souverainete-note = I vostri dati vi appartengono. Kesh non effett
 error-global-export-failed = L'esportazione globale non è potuta essere generata. Se il problema persiste, contattate l'assistenza.
 error-admin-full-export-failed = L'esportazione completa dell'installazione non è potuta essere generata. Riprovate tra poco; se il problema persiste, contattate l'assistenza.
 error-admin-full-import-failed = L'importazione dell'installazione non è riuscita. Lo stato precedente è stato preservato (prima dell'operazione è stato creato un backup automatico). Controllate i log del server e riprovate.
+error-admin-pre-import-backup-failed = L'importazione dell'installazione non è riuscita prima o durante la scrittura del backup di sicurezza. Non è stato creato alcun backup e nulla è stato eliminato. Verificate che la cartella di backup sia scrivibile e che il database sia raggiungibile (i log del server indicano la causa), poi riprovate.
 error-invalid-backup-structure = Il file di backup non è valido o è danneggiato (struttura inattesa o controllo di integrità fallito). Assicuratevi che sia un file .keshbackup prodotto da Kesh.
 error-import-schema-mismatch = Lo schema di questo backup non è compatibile con questa versione di Kesh. Aggiornate Kesh o utilizzate un backup compatibile.
 error-import-client-number-collision = Il backup contiene numeri cliente in collisione (identici dopo la normalizzazione di maiuscole, accenti e caratteri invisibili). Correggete le schede indicate nel rapporto, riesportate e riprovate.

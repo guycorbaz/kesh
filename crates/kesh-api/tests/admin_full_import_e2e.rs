@@ -70,7 +70,12 @@ fn test_config() -> Config {
 }
 
 async fn spawn_app(pool: MySqlPool) -> TestApp {
-    let config = test_config();
+    spawn_app_with(pool, test_config()).await
+}
+
+/// Story 15-13b — `spawn_app` sur une configuration donnée (test 17 : dossier
+/// de sauvegarde inutilisable).
+async fn spawn_app_with(pool: MySqlPool, config: Config) -> TestApp {
     let rate_limiter = kesh_api::middleware::rate_limit::RateLimiter::new(&config);
     let i18n = Arc::new(
         kesh_i18n::I18nBundle::load(
@@ -585,6 +590,10 @@ async fn full_import_rolls_back_on_insert_failure(pool: MySqlPool) {
 
     let resp = post_import(&app, &keep.jwt, forged).await;
     assert_eq!(resp.status(), 500, "INSERT invalide → 500 (rollback)");
+    // Story 15-13b (#576, test 18) — échec APRÈS la sauvegarde : le code reste
+    // celui de l'import, dont le message dit vrai (la sauvegarde existe).
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ADMIN_FULL_IMPORT_FAILED");
 
     // Destination intacte : la company KeepMe d'origine est toujours là.
     let names: Vec<String> = sqlx::query_scalar("SELECT name FROM companies ORDER BY name")
@@ -602,6 +611,46 @@ async fn full_import_rolls_back_on_insert_failure(pool: MySqlPool) {
         .await
         .unwrap();
     assert_eq!(admin_count, 1, "admin d'origine préservé après rollback");
+}
+
+// ============================================================
+// Story 15-13b (#576, test 17) — la sauvegarde ne peut pas être écrite
+// ============================================================
+
+/// Le dossier de sauvegarde est le chemin d'un FICHIER existant : sa création
+/// échoue même sous root (en CI comme en local). L'import est refusé en
+/// `ADMIN_PRE_IMPORT_BACKUP_FAILED`, avec le repli Rust (ce binaire n'appelle
+/// pas `init_error_i18n`) qui ne promet aucune sauvegarde, et l'installation
+/// reste intacte.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_refuses_when_backup_cannot_be_written(pool: MySqlPool) {
+    let occupe = tempfile::NamedTempFile::new().expect("fichier témoin");
+    let mut config = test_config();
+    config.admin_backup_dir = occupe.path().to_str().unwrap().to_string();
+    let app = spawn_app_with(pool.clone(), config).await;
+    let keep = seed_admin(&pool, "KeepMe").await;
+    let backup = export_backup(&app, &keep.jwt).await;
+
+    let resp = post_import(&app, &keep.jwt, backup).await;
+    assert_eq!(resp.status(), 500, "sauvegarde impossible → 500");
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ADMIN_PRE_IMPORT_BACKUP_FAILED");
+    let message = body["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("aucune sauvegarde n'a été créée"),
+        "message : {message}"
+    );
+
+    let names: Vec<String> = sqlx::query_scalar("SELECT name FROM companies ORDER BY name")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(names, vec!["CI KeepMe".to_string()], "installation intacte");
+    let admin_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE role = 'Admin'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(admin_count, 1, "admin d'origine préservé");
 }
 
 // ============================================================

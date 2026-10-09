@@ -12,3 +12,9 @@ design-artifacts/
 docs/
 charts/
 .claude/
+# Sources des montages par défaut des compose (15-13b, AC 8 e) — hors du
+# contexte de build (la sauvegarde pré-import est un secret).
+log/
+inbox/
+documents/
+backup/

@@ -178,7 +178,7 @@ juge pas au nombre : il se juge fichier par fichier contre cette liste.
 KESH_TEST_MODE=true KESH_HOST=127.0.0.1 KESH_COOKIE_SECURE=false \
   DATABASE_URL='mysql://kesh:kesh_dev@127.0.0.1:3306/kesh_e2e' \
   KESH_JWT_SECRET='<32+ octets>' KESH_ADMIN_PASSWORD='<12+ caractères>' \
-  KESH_PORT=3000 KESH_STATIC_DIR=frontend/build \
+  KESH_PORT=3000 KESH_STATIC_DIR=frontend/build KESH_ADMIN_BACKUP_DIR=target/kesh-backup \
   cargo run -p kesh-api
 
 # terminal 2

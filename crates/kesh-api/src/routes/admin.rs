@@ -169,7 +169,11 @@ pub async fn full_import(
     }
 
     // 2c. Compat colonnes bidirectionnelle (AC12c) → 400 IMPORT_SCHEMA_MISMATCH.
-    check_schema_compat(&state.pool, &parsed).await?;
+    //    Antérieur à la sauvegarde : un échec de lecture du schéma ne promet
+    //    aucune copie (Story 15-13b, #576 — `avant_sauvegarde`).
+    check_schema_compat(&state.pool, &parsed)
+        .await
+        .map_err(avant_sauvegarde)?;
 
     // 3 + 4 + 5. Backup pré-import + restore transactionnel. La sérialisation
     //    des imports destructeurs concurrents est assurée par un verrou
@@ -229,21 +233,19 @@ async fn run_backup_and_restore(
     // Un 2e import bloque ici jusqu'au COMMIT/rollback du 1er. `_kesh_version`
     // n'est jamais supprimée (table système), la row id=1 existe toujours
     // (migration). Auto-relâché avec la transaction (robuste aux panics).
-    let mut tx = state
-        .pool
-        .begin()
-        .await
-        .map_err(|e| AppError::AdminFullImportFailed(format!("ouverture transaction : {e}")))?;
+    let mut tx = state.pool.begin().await.map_err(|e| {
+        AppError::AdminPreImportBackupFailed(format!("ouverture transaction : {e}"))
+    })?;
     sqlx::query("SELECT id FROM _kesh_version WHERE id = 1 FOR UPDATE")
         .fetch_optional(&mut *tx)
         .await
-        .map_err(|e| AppError::AdminFullImportFailed(format!("verrou installation : {e}")))?
+        .map_err(|e| AppError::AdminPreImportBackupFailed(format!("verrou installation : {e}")))?
         .ok_or_else(|| {
             // Row id=1 absente = installation incohérente (le boot l'aurait
             // refusée via check_downgrade_protection::RowMissing). Sans elle, le
             // FOR UPDATE ne verrouille rien → refuser l'import plutôt que de
             // risquer une course entre imports concurrents (review Pass 2).
-            AppError::AdminFullImportFailed(
+            AppError::AdminPreImportBackupFailed(
                 "verrou installation : row _kesh_version id=1 absente (installation incohérente)"
                     .into(),
             )
@@ -255,8 +257,12 @@ async fn run_backup_and_restore(
     //    lecture (ils bloquent au FOR UPDATE ci-dessus) ⇒ pas de torn-read
     //    inter-imports. `build_keshbackup` lit via le pool (connexions
     //    séparées) ; le SELECT non-bloquant sur `_kesh_version` ne deadlocke
-    //    pas avec le FOR UPDATE détenu par cette transaction.
-    let (backup_bytes, _meta) = build_keshbackup(&state.pool).await?;
+    //    pas avec le FOR UPDATE détenu par cette transaction. Tout échec
+    //    jusqu'à l'écriture réussie du fichier est `AdminPreImportBackupFailed`
+    //    (Story 15-13b, #576) : aucune sauvegarde n'existe encore.
+    let (backup_bytes, _meta) = build_keshbackup(&state.pool)
+        .await
+        .map_err(avant_sauvegarde)?;
     let backup_created =
         write_pre_import_backup(&state.config.admin_backup_dir, &backup_bytes).await?;
 
@@ -464,17 +470,44 @@ async fn run_backup_and_restore(
     Ok((backup_created, tables_restored, rows_restored))
 }
 
-/// Écrit le backup pré-import sur disque (filet de sécurité rollback). Le
-/// chemin est **loggé serveur uniquement** (jamais exposé en réponse — l'admin
-/// n'a pas d'accès disque sans SSH). Échec d'écriture → 500 (jamais d'import
-/// sans backup réussi).
+/// Story 15-13b (#576) — convertit, **à l'appel**, un échec né hors de ce
+/// module **avant** que la sauvegarde pré-import soit sur disque
+/// (`check_schema_compat`, `build_keshbackup`) : `AdminFullImportFailed` et
+/// `AdminFullExportFailed` deviennent `AdminPreImportBackupFailed`, détail
+/// conservé ; toute autre variante est rendue telle quelle
+/// (`ImportSchemaMismatch` reste un 400). Forme d'appel prescrite :
+/// `….await.map_err(avant_sauvegarde)?`, gardée lexicalement par le test
+/// `avant_sauvegarde_branchee_aux_appels_de_l_import`.
+fn avant_sauvegarde(err: AppError) -> AppError {
+    match err {
+        AppError::AdminFullImportFailed(detail) | AppError::AdminFullExportFailed(detail) => {
+            AppError::AdminPreImportBackupFailed(detail)
+        }
+        autre => autre,
+    }
+}
+
+/// Écrit la sauvegarde de sécurité pré-import sur disque (filet avant le
+/// restore destructeur). Le chemin est **journalisé côté serveur uniquement**
+/// (jamais exposé en réponse). Story 15-13b (#552) : le dossier, quand Kesh le
+/// crée, l'est en `0700` — **chaque niveau créé**, parents compris
+/// (`DirBuilder` récursif) ; un dossier existant (montage de l'hôte) n'est pas
+/// modifié. Le fichier est écrit par [`write_backup_file`] : mode `0600`,
+/// sous `<nom>.partial` puis renommé, jamais par-dessus un fichier existant.
+/// Tout échec rend `AdminPreImportBackupFailed` : aucun import sans
+/// sauvegarde réussie (DC5).
 async fn write_pre_import_backup(dir: &str, bytes: &[u8]) -> Result<bool, AppError> {
-    tokio::fs::create_dir_all(dir).await.map_err(|e| {
-        AppError::AdminFullImportFailed(format!("création répertoire backup '{dir}' : {e}"))
+    let mut builder = tokio::fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    builder.mode(0o700);
+    builder.create(dir).await.map_err(|e| {
+        AppError::AdminPreImportBackupFailed(format!("création répertoire backup '{dir}' : {e}"))
     })?;
-    // Nom unique même pour deux backups dans la même milliseconde (le backup
-    // pré-import est pris avant le verrou FOR UPDATE) : pid + compteur atomique
-    // process-global, comme `stream_via_tempfile` (review Pass 2).
+    // Nom unique même pour deux sauvegardes dans la même milliseconde : pid +
+    // compteur atomique process-global, comme `stream_via_tempfile` (review
+    // Pass 2). (La sauvegarde est prise SOUS le verrou `FOR UPDATE` de
+    // `run_backup_and_restore` — un ancien commentaire disait « avant ».)
     use std::sync::atomic::{AtomicU64, Ordering};
     static SEQ: AtomicU64 = AtomicU64::new(0);
     let path = std::path::Path::new(dir).join(format!(
@@ -483,15 +516,113 @@ async fn write_pre_import_backup(dir: &str, bytes: &[u8]) -> Result<bool, AppErr
         std::process::id(),
         SEQ.fetch_add(1, Ordering::Relaxed)
     ));
-    tokio::fs::write(&path, bytes).await.map_err(|e| {
-        AppError::AdminFullImportFailed(format!("écriture backup '{}' : {e}", path.display()))
-    })?;
+    write_backup_file(&path, bytes).await?;
     tracing::info!(
         path = %path.display(),
         bytes = bytes.len(),
         "backup pré-import écrit (filet de sécurité avant restore)"
     );
     Ok(true)
+}
+
+/// Story 15-13b (#552) — écrit `bytes` sous `path` sans jamais exposer un
+/// fichier incomplet sous ce nom ni écraser un fichier existant :
+///
+/// 1. crée `<path>.partial` (même dossier, donc même système de fichiers) en
+///    `create_new` et, sous Unix, mode `0600` — un `.partial` déjà présent
+///    fait échouer l'appel **sans rien supprimer** (on ne supprime que ce
+///    qu'on a créé) ;
+/// 2. écrit, puis `sync_all` ;
+/// 3. vérifie que `path` n'existe pas (`try_exists` en erreur vaut échec,
+///    jamais « absent ») — `rename` remplacerait une cible existante ;
+/// 4. renomme `<path>.partial` en `path` (atomique sur un même système de
+///    fichiers).
+///
+/// Si 2, 3 ou 4 échouent, le `.partial` créé est supprimé au mieux (un échec
+/// de suppression est journalisé en `warn!` avec son chemin, sans masquer
+/// l'erreur d'origine). Toute erreur : `AdminPreImportBackupFailed`, avec un
+/// détail par étape qui nomme le chemin (journal seulement).
+///
+/// Angles morts écrits (non traités) :
+/// - la fenêtre entre la vérification 3 et le renommage 4 n'est pas fermée
+///   (le nom est unique par construction) ;
+/// - **annulation** : si le futur est abandonné pendant 2 à 4 (client qui
+///   coupe la connexion), ni la suppression du `.partial` ni le `warn!`
+///   n'ont lieu — le `.partial` (0600) reste, sans jamais porter le nom
+///   d'une sauvegarde ; le manuel dit qu'il peut être supprimé ;
+/// - **durabilité** : le dossier n'est pas synchronisé après le renommage —
+///   après une coupure de courant, l'entrée du dossier peut manquer alors
+///   que le contenu était synchronisé ;
+/// - `try_exists` **suit** les liens symboliques : un lien pendant au nom
+///   final est vu absent, et `rename` remplace le lien (pas sa cible) ; sans
+///   portée (nom unique, dossier `0700` créé par Kesh).
+async fn write_backup_file(path: &std::path::Path, bytes: &[u8]) -> Result<(), AppError> {
+    use tokio::io::AsyncWriteExt;
+
+    let mut partial_os = path.as_os_str().to_owned();
+    partial_os.push(".partial");
+    let partial = std::path::PathBuf::from(partial_os);
+
+    let mut options = tokio::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options.open(&partial).await.map_err(|e| {
+        AppError::AdminPreImportBackupFailed(format!(
+            "création fichier partiel '{}' : {e}",
+            partial.display()
+        ))
+    })?;
+
+    let resultat: Result<(), AppError> = async {
+        file.write_all(bytes).await.map_err(|e| {
+            AppError::AdminPreImportBackupFailed(format!(
+                "écriture backup '{}' : {e}",
+                partial.display()
+            ))
+        })?;
+        file.sync_all().await.map_err(|e| {
+            AppError::AdminPreImportBackupFailed(format!(
+                "synchronisation backup '{}' : {e}",
+                partial.display()
+            ))
+        })?;
+        drop(file);
+        match tokio::fs::try_exists(path).await {
+            Ok(false) => {}
+            Ok(true) => {
+                return Err(AppError::AdminPreImportBackupFailed(format!(
+                    "nom final déjà présent '{}'",
+                    path.display()
+                )));
+            }
+            Err(e) => {
+                return Err(AppError::AdminPreImportBackupFailed(format!(
+                    "vérification nom final '{}' : {e}",
+                    path.display()
+                )));
+            }
+        }
+        tokio::fs::rename(&partial, path).await.map_err(|e| {
+            AppError::AdminPreImportBackupFailed(format!(
+                "renommage backup '{}' → '{}' : {e}",
+                partial.display(),
+                path.display()
+            ))
+        })
+    }
+    .await;
+
+    if resultat.is_err()
+        && let Err(e) = tokio::fs::remove_file(&partial).await
+    {
+        tracing::warn!(
+            path = %partial.display(),
+            "fichier partiel non supprimé après un échec d'écriture de la sauvegarde \
+             pré-import — ce n'est PAS une sauvegarde valide, il peut être supprimé : {e}"
+        );
+    }
+    resultat
 }
 
 /// Émet `audit_log` `action='admin.full_export'`, `entity_type='installation'`
@@ -533,6 +664,321 @@ async fn emit_full_export_audit(
             error = ?e,
             user_id = current_user.user_id,
             "audit insert failed (admin.full_export) — non-blocking"
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Story 15-13b (#552, #576) — sauvegarde pré-import : mode `0600`,
+    //! écriture par `.partial`, refus d'écraser, conversion des échecs
+    //! antérieurs à la sauvegarde, et branchement de cette conversion.
+
+    use super::*;
+
+    /// Test 11 — `write_pre_import_backup` sur un sous-dossier absent : dossier
+    /// créé en `0700`, fichier en `0600`, contenu identique, aucun `.partial`
+    /// restant. Assertions de montage : un fichier et un dossier témoins créés
+    /// par `std::fs` ne sont PAS en `0600`/`0700` — sinon l'umask rend le test
+    /// non discriminant.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn write_pre_import_backup_en_0600() {
+        use std::os::unix::fs::PermissionsExt;
+        let racine = tempfile::tempdir().expect("tempdir");
+        let dir = racine.path().join("sauvegardes");
+        let ecrit = write_pre_import_backup(dir.to_str().unwrap(), b"contenu-de-test")
+            .await
+            .expect("écriture de la sauvegarde");
+        assert!(ecrit);
+
+        let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        let temoin_fichier = dir.join("temoin.txt");
+        std::fs::write(&temoin_fichier, b"t").unwrap();
+        let temoin_dossier = racine.path().join("temoin-dossier");
+        std::fs::create_dir(&temoin_dossier).unwrap();
+        assert_ne!(
+            mode(&temoin_fichier),
+            0o600,
+            "umask de l'environnement trop restrictif (077 ?) : le test ne peut pas distinguer le mode posé par le code"
+        );
+        assert_ne!(
+            mode(&temoin_dossier),
+            0o700,
+            "umask de l'environnement trop restrictif (077 ?) : le test ne peut pas distinguer le mode posé par le code"
+        );
+
+        assert_eq!(mode(&dir), 0o700, "dossier de sauvegarde créé par Kesh");
+        let entrees: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| *p != temoin_fichier)
+            .collect();
+        assert_eq!(
+            entrees.len(),
+            1,
+            "une seule sauvegarde attendue : {entrees:?}"
+        );
+        let sauvegarde = &entrees[0];
+        let nom = sauvegarde.file_name().unwrap().to_str().unwrap();
+        assert!(
+            nom.starts_with("kesh-pre-import-") && nom.ends_with(".keshbackup"),
+            "nom inattendu : {nom}"
+        );
+        assert_eq!(mode(sauvegarde), 0o600, "sauvegarde en 0600");
+        assert_eq!(std::fs::read(sauvegarde).unwrap(), b"contenu-de-test");
+    }
+
+    /// Revue P1 (E3, A-4) — `write_pre_import_backup` sur deux niveaux absents :
+    /// **chaque** niveau créé est en `0700`, le parent intermédiaire compris
+    /// (`DirBuilder` récursif) ; et un dossier **existant** n'est pas modifié
+    /// (`0755` reste `0755`, cas du `./backup` créé par Docker). Assertion de
+    /// montage : un dossier témoin créé par `std::fs` n'est pas en `0700`.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn write_pre_import_backup_dossiers_crees_et_existants() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        let racine = tempfile::tempdir().expect("tempdir");
+        let temoin = racine.path().join("temoin-dossier");
+        std::fs::create_dir(&temoin).unwrap();
+        assert_ne!(
+            mode(&temoin),
+            0o700,
+            "umask de l'environnement trop restrictif (077 ?) : le test ne peut pas distinguer le mode posé par le code"
+        );
+
+        let parent = racine.path().join("a");
+        let feuille = parent.join("b");
+        assert!(
+            write_pre_import_backup(feuille.to_str().unwrap(), b"x")
+                .await
+                .expect("écriture sous deux niveaux absents")
+        );
+        assert_eq!(mode(&parent), 0o700, "parent intermédiaire créé par Kesh");
+        assert_eq!(mode(&feuille), 0o700, "dossier de sauvegarde créé par Kesh");
+
+        let existant = racine.path().join("existant");
+        std::fs::create_dir(&existant).unwrap();
+        std::fs::set_permissions(&existant, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(
+            write_pre_import_backup(existant.to_str().unwrap(), b"y")
+                .await
+                .expect("écriture dans un dossier existant")
+        );
+        assert_eq!(
+            mode(&existant),
+            0o755,
+            "un dossier existant n'est pas modifié"
+        );
+    }
+
+    /// Test 12 (a) — un nom final déjà occupé fait échouer l'écriture en
+    /// `AdminPreImportBackupFailed` ; le fichier existant garde son contenu et
+    /// aucun `.partial` ne reste.
+    #[tokio::test]
+    async fn write_backup_file_n_ecrase_pas() {
+        let racine = tempfile::tempdir().expect("tempdir");
+        let path = racine.path().join("kesh-pre-import-x.keshbackup");
+        std::fs::write(&path, b"existant").unwrap();
+        let err = write_backup_file(&path, b"nouveau")
+            .await
+            .expect_err("le nom final existe : échec attendu");
+        assert!(
+            matches!(err, AppError::AdminPreImportBackupFailed(_)),
+            "variante inattendue : {err:?}"
+        );
+        assert_eq!(std::fs::read(&path).unwrap(), b"existant");
+        assert!(
+            !racine
+                .path()
+                .join("kesh-pre-import-x.keshbackup.partial")
+                .exists(),
+            "le .partial créé par l'appel doit être supprimé"
+        );
+    }
+
+    /// Test 12 (b) — un `.partial` préexistant (écriture interrompue) fait
+    /// échouer l'appel ; le nom final n'apparaît pas, et ce `.partial`, qui
+    /// n'est pas celui de l'appel, garde son contenu (on ne supprime que ce
+    /// qu'on a créé).
+    #[tokio::test]
+    async fn write_backup_file_passe_par_un_partiel() {
+        let racine = tempfile::tempdir().expect("tempdir");
+        let path = racine.path().join("kesh-pre-import-y.keshbackup");
+        let partial = racine.path().join("kesh-pre-import-y.keshbackup.partial");
+        std::fs::write(&partial, b"interrompu").unwrap();
+        let err = write_backup_file(&path, b"complet")
+            .await
+            .expect_err("un .partial préexistant doit faire échouer l'appel");
+        assert!(
+            matches!(err, AppError::AdminPreImportBackupFailed(_)),
+            "variante inattendue : {err:?}"
+        );
+        assert!(!path.exists(), "le nom final ne doit pas apparaître");
+        assert_eq!(std::fs::read(&partial).unwrap(), b"interrompu");
+    }
+
+    /// Test 14 — `avant_sauvegarde` convertit les deux variantes nées avant la
+    /// sauvegarde, détail conservé, et rend les autres telles quelles.
+    #[test]
+    fn avant_sauvegarde_convertit_les_echecs_anterieurs() {
+        for err in [
+            AppError::AdminFullImportFailed("d1".into()),
+            AppError::AdminFullExportFailed("d1".into()),
+        ] {
+            match avant_sauvegarde(err) {
+                AppError::AdminPreImportBackupFailed(d) => assert_eq!(d, "d1"),
+                autre => panic!("conversion attendue, trouvé {autre:?}"),
+            }
+        }
+        match avant_sauvegarde(AppError::ImportSchemaMismatch {
+            table: "t".into(),
+            unknown_columns: vec![],
+            missing_required_columns: vec!["c".into()],
+        }) {
+            AppError::ImportSchemaMismatch { table, .. } => assert_eq!(table, "t"),
+            autre => panic!("ImportSchemaMismatch doit rester un 400, trouvé {autre:?}"),
+        }
+        match avant_sauvegarde(AppError::InvalidBackupStructure("s".into())) {
+            AppError::InvalidBackupStructure(d) => assert_eq!(d, "s"),
+            autre => panic!("InvalidBackupStructure doit rester tel quel, trouvé {autre:?}"),
+        }
+    }
+
+    /// Test 20 — garde LEXICALE (C-15-13-28) : `avant_sauvegarde` est appliquée
+    /// aux appels de `check_schema_compat` et `build_keshbackup` de l'import
+    /// (`full_import`, `run_backup_and_restore`), et PAS à celui de l'export
+    /// (`full_export`). Lit ce fichier, tronqué à la première ligne
+    /// `#[cfg(test)]`, commentaires `//` écartés ; une instruction court
+    /// jusqu'au `;` suivant (rustfmt peut la couper). Assertion de montage :
+    /// un appel de `check_schema_compat`, deux de `build_keshbackup`.
+    #[test]
+    fn avant_sauvegarde_branchee_aux_appels_de_l_import() {
+        let code = code_de_production();
+        let fonction_englobante = |pos: usize| -> String {
+            code[..pos]
+                .lines()
+                .rev()
+                .find_map(|l| {
+                    l.strip_prefix("pub async fn ")
+                        .or_else(|| l.strip_prefix("async fn "))
+                        .map(|reste| reste.split('(').next().unwrap_or("").to_string())
+                })
+                .unwrap_or_default()
+        };
+        let mut appels: Vec<(&str, String, String)> = Vec::new();
+        for ident in ["check_schema_compat", "build_keshbackup"] {
+            let motif = format!("{ident}(");
+            for (pos, _) in code.match_indices(&motif) {
+                let avant = &code[..pos];
+                if avant
+                    .chars()
+                    .last()
+                    .is_some_and(|c| c.is_alphanumeric() || c == '_')
+                    || avant.ends_with("fn ")
+                {
+                    continue;
+                }
+                let fin = code[pos..].find(';').map_or(code.len(), |i| pos + i);
+                appels.push((ident, fonction_englobante(pos), code[pos..fin].to_string()));
+            }
+        }
+        let compte = |ident: &str| appels.iter().filter(|(i, _, _)| *i == ident).count();
+        assert_eq!(
+            (compte("check_schema_compat"), compte("build_keshbackup")),
+            (1, 2),
+            "assertion de montage : un appel de check_schema_compat et deux de build_keshbackup attendus, trouvé {appels:#?}"
+        );
+        for (ident, fonction, instruction) in &appels {
+            let convertie = instruction.contains(".map_err(avant_sauvegarde)");
+            match fonction.as_str() {
+                "full_import" | "run_backup_and_restore" => assert!(
+                    convertie,
+                    "{fonction} : l'appel de {ident} doit porter `.map_err(avant_sauvegarde)` : {instruction}"
+                ),
+                "full_export" => assert!(
+                    !convertie,
+                    "full_export : un échec d'export reste un échec d'export : {instruction}"
+                ),
+                autre => {
+                    panic!("appel de {ident} dans une fonction non triée `{autre}` : {instruction}")
+                }
+            }
+        }
+    }
+    /// Code de production de ce fichier (avant la première ligne
+    /// `#[cfg(test)]`), lignes de commentaire `//` écartées — base des gardes
+    /// lexicales ci-dessous et du test 20.
+    fn code_de_production() -> String {
+        include_str!("admin.rs")
+            .lines()
+            .take_while(|l| l.trim() != "#[cfg(test)]")
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Revue P1 (E5) — garde LEXICALE des conversions directes : dans
+    /// `run_backup_and_restore`, tout ce qui précède l'appel de
+    /// `write_pre_import_backup` (ouverture de transaction, verrou `FOR
+    /// UPDATE`, ligne `_kesh_version` absente, `build_keshbackup`) ne construit
+    /// ni `AdminFullImportFailed` ni `AdminFullExportFailed`, et chaque `?` y
+    /// est couvert par une conversion : autant de `?` que de
+    /// `AdminPreImportBackupFailed` construites plus de `.map_err(avant_sauvegarde)`.
+    /// Assertion de montage : trois constructions directes, une conversion par
+    /// `avant_sauvegarde`. Un nouveau site d'échec dans ce segment fait rougir
+    /// le test : il est à trier, puis le décompte à mettre à jour.
+    #[test]
+    fn echecs_avant_sauvegarde_tous_convertis() {
+        let code = code_de_production();
+        let debut = code
+            .find("async fn run_backup_and_restore(")
+            .expect("run_backup_and_restore introuvable");
+        let fin = debut
+            + code[debut..]
+                .find("write_pre_import_backup(")
+                .expect("appel de write_pre_import_backup introuvable");
+        let segment = &code[debut..fin];
+        for interdit in ["AdminFullImportFailed", "AdminFullExportFailed"] {
+            assert!(
+                !segment.contains(interdit),
+                "{interdit} construite avant la sauvegarde : le message promettrait une sauvegarde absente"
+            );
+        }
+        let directes = segment.matches("AdminPreImportBackupFailed").count();
+        let par_avant_sauvegarde = segment.matches(".map_err(avant_sauvegarde)").count();
+        assert_eq!(
+            (directes, par_avant_sauvegarde),
+            (3, 1),
+            "assertion de montage : trois constructions directes et une conversion attendues"
+        );
+        assert_eq!(
+            segment.matches('?').count(),
+            directes + par_avant_sauvegarde,
+            "un `?` avant la sauvegarde n'est pas couvert par une conversion"
+        );
+    }
+
+    /// Revue P1 (B1 = E2 = A-1) — aucune ligne de code de production de ce
+    /// fichier ne porte deux espaces consécutives après son indentation. Le
+    /// formatage n'en produit jamais hors commentaires : une telle suite ne
+    /// peut venir que d'un littéral de chaîne dont la continuation `\` s'est
+    /// perdue (l'indentation de la ligne suivante entre alors dans le texte
+    /// journalisé). Le test ne dépend d'aucun message. Assertion de montage :
+    /// le prédicat mord sur une ligne fabriquée.
+    #[test]
+    fn aucun_blanc_parasite_dans_le_code() {
+        let parasite = |l: &str| l.trim_start().contains("  ");
+        assert!(
+            parasite("        \"de la sauvegarde              pré-import\""),
+            "assertion de montage : le prédicat doit reconnaître une suite d'espaces"
+        );
+        let code = code_de_production();
+        let fautives: Vec<&str> = code.lines().filter(|l| parasite(l)).collect();
+        assert!(
+            fautives.is_empty(),
+            "suite d'espaces dans le code (continuation `\\` perdue ?) : {fautives:#?}"
         );
     }
 }

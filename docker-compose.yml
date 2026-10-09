@@ -151,6 +151,12 @@ services:
       # Défauts (dev, sans .env) : sous-dossiers ./inbox et ./documents du projet.
       - ${KESH_INBOX_HOST_DIR:-./inbox}:/data/inbox
       - ${KESH_DOCUMENTS_HOST_DIR:-./documents}:/data/documents
+      # Sauvegarde de sécurité prise avant chaque import d'installation (#552) —
+      # défaut du code /data/backup, monté ici sur ./backup (montage fixe, sans
+      # variable d'hôte). SECRET (condensés des mots de passe, jetons de session) :
+      # fichiers en 0600. Dans le périmètre de sauvegarde du dossier du compose
+      # (Hyper Backup) ; à purger par l'exploitant (une sauvegarde par import).
+      - ./backup:/data/backup
     networks:
       - kesh-network
     healthcheck:
