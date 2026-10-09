@@ -1,6 +1,6 @@
 # Story 15.13b : la sauvegarde prise avant un import survit au redémarrage, et son échec est annoncé tel quel
 
-Status: ready-for-dev
+Status: review
 
 <!-- Née le 2026-10-09 du découpage de la 15-13 (`15-13-mariadb-et-sauvegarde.md`, désormais fiche index)
      après la validation P3, décision de l'orchestrateur (signal D5 de recyclage levé deux passes de suite) —
@@ -504,51 +504,51 @@ des AC 10 à 14 qui portent sur MariaDB aussi.)*
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Mesures avant d'écrire** (AC 11 e, 11 f, 11 l)
-  - [ ] Rapatriement de la sauvegarde (AC 11 e) rejoué sur un **conteneur jetable** : un conteneur root
+- [x] **T0 — Mesures avant d'écrire** (AC 11 e, 11 f, 11 l)
+  - [x] Rapatriement de la sauvegarde (AC 11 e) rejoué sur un **conteneur jetable** : un conteneur root
         écrit un fichier `0600` dans un dossier monté de l'hôte ; vérifier qu'il est illisible de
         l'utilisateur, que `sudo cp` + `sudo chown` le rendent lisible, puis supprimer copie et dossier.
-  - [ ] Graphie de `docker compose config` pour un montage (forme longue `target: /data/backup`), pour la
+  - [x] Graphie de `docker compose config` pour un montage (forme longue `target: /data/backup`), pour la
         ligne de contrôle de l'AC 11 f ; puis le contrôle **rouge** : sur une copie du compose **sans** le
         montage, avec `KESH_ADMIN_BACKUP_DIR=/data/backup` posé dans l'environnement,
         `docker compose config | grep -c 'target: /data/backup'` → **0** (alors que `grep -c '/data/backup'`
         rend 1 : la ligne d'environnement) — R4-2/F-P4-1 de la validation P4.
-  - [ ] `make fr` sur l'état d'avant : garder le `.log` (référence des `Overfull`) et le PDF aplati
+  - [x] `make fr` sur l'état d'avant : garder le `.log` (référence des `Overfull`) et le PDF aplati
         (référence des contrôles de l'AC 11 l, chacun **rouge** dessus).
-- [ ] **T1 — Compose, gabarit, fichiers d'exclusion** (AC 8)
-  - [ ] `docker-compose.yml` et `docker-compose.prod.yml` : montage `./backup` + commentaire (rien d'autre
+- [x] **T1 — Compose, gabarit, fichiers d'exclusion** (AC 8)
+  - [x] `docker-compose.yml` et `docker-compose.prod.yml` : montage `./backup` + commentaire (rien d'autre
         dans `docker-compose.prod.yml`).
-  - [ ] `.gitignore` (`/inbox/`, `/documents/`, `/backup/` — **ancrés**) et `.dockerignore` (`log/`,
+  - [x] `.gitignore` (`/inbox/`, `/documents/`, `/backup/` — **ancrés**) et `.dockerignore` (`log/`,
         `inbox/`, `documents/`, `backup/`) — AC 8 e ; `git ls-files` sous ces dossiers à la racine → vide ;
         `git check-ignore -v --no-index "frontend/src/routes/(app)/admin/backup/+page.svelte"` → **non**
         ignoré (sans `--no-index`, git ne rapporte jamais un fichier suivi : le contrôle ne pourrait pas
         rougir — R4-3 de la validation P4 ; avec `backup/` non ancré, la même commande le rend ignoré).
-  - [ ] `.env.example` : commentaire `KESH_ADMIN_BACKUP_DIR` (`:179-182`), paragraphe (d) du mode
+  - [x] `.env.example` : commentaire `KESH_ADMIN_BACKUP_DIR` (`:179-182`), paragraphe (d) du mode
         `cargo run` natif (`:77-82`), et les deux énumérations des montages fixes (`:208-210`, `:241-242`,
         AC 8 c).
-- [ ] **T2 — Code** (AC 7, 9, 15)
-  - [ ] `config.rs` : `pub const DEFAULT_ADMIN_BACKUP_DIR`, doc-comments.
-  - [ ] `routes/admin.rs` : `write_backup_file` (`.partial` en `create_new` + `0o600`, `sync_all`, refus si
+- [x] **T2 — Code** (AC 7, 9, 15)
+  - [x] `config.rs` : `pub const DEFAULT_ADMIN_BACKUP_DIR`, doc-comments.
+  - [x] `routes/admin.rs` : `write_backup_file` (`.partial` en `create_new` + `0o600`, `sync_all`, refus si
         le nom final existe, `rename` ; `.partial` supprimé au mieux en cas d'échec) ; dossier créé en `0o700` ; commentaire `:475-477` corrigé ; sites
         antérieurs à la sauvegarde sur `AdminPreImportBackupFailed` ; `avant_sauvegarde` aux appels de
         `check_schema_compat` et `build_keshbackup` (forme `.map_err(avant_sauvegarde)`, AC 15 b, test 20).
-  - [ ] `errors.rs` : variante `AdminPreImportBackupFailed`, son bras de réponse et son repli ; doc et
+  - [x] `errors.rs` : variante `AdminPreImportBackupFailed`, son bras de réponse et son repli ; doc et
         repli d'`AdminFullImportFailed` (AC 15 a, c).
-  - [ ] `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl` : clé
+  - [x] `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl` : clé
         `error-admin-pre-import-backup-failed`, à côté de `error-admin-full-import-failed`.
-- [ ] **T3 — Tests Rust** (AC 7, 8 e, 9, 10 c-e, 15) — voir § *Tests et mutations*. Dans
+- [x] **T3 — Tests Rust** (AC 7, 8 e, 9, 10 c-e, 15) — voir § *Tests et mutations*. Dans
       `configuration_transmise.rs` : quatrième entrée de `MONTAGES`, fonction pure `source_conforme` (égalité
       exacte pour une source sans `${`), lien `DEFAULT_ADMIN_BACKUP_DIR` ↔ cible de `MONTAGES`, textes
       « trois » mis à jour, message de refus `Y` d'une source exacte (AC 10 c, e) ; test 19 (AC 8 e).
-- [ ] **T5 — Manuel et brochure** (AC 11) : sites (d) (ligne `KESH_ADMIN_BACKUP_DIR`, montages, `:194`),
+- [x] **T5 — Manuel et brochure** (AC 11) : sites (d) (ligne `KESH_ADMIN_BACKUP_DIR`, montages, `:194`),
       (e), (f) (paragraphe sauvegarde, `:1773`, `:1793`), (i), puis relecture de la brochure (n) ;
       `make fr` (trois PDF), contrôles (k)–(l).
-- [ ] **T6 — `DOCKER_START.md`, recettes, CHANGELOG** (AC 12 a', 13, 16) — `CLAUDE.md` : la ligne de
+- [x] **T6 — `DOCKER_START.md`, recettes, CHANGELOG** (AC 12 a', 13, 16) — `CLAUDE.md` : la ligne de
       commande de la recette et la mention de date de `:174` (AC 16 a), rien d'autre ; CHANGELOG `:44`
       (montages de `docker-compose.prod.yml`) et `:46` (AC 13 c).
-- [ ] **T8 — Mutations** : chacune appliquée, test rouge relevé, fichier restauré **et touché**
+- [x] **T8 — Mutations** : chacune appliquée, test rouge relevé, fichier restauré **et touché**
       (`touch`, mémoire « mutation restaurée, binaire périmé ») ; tableau au Dev Agent Record.
-- [ ] **T9 — Propagation et inventaire** (AC 14) — exclusions communes
+- [x] **T9 — Propagation et inventaire** (AC 14) — exclusions communes
       `--exclude-dir={target,node_modules,.git,_bmad-output,_bmad,.claude,.svelte-kit}` :
       (1) `grep -rnIE "BACKUP_DIR|pré-import|pre-import|admin-full-import-failed|AdminFullImportFailed|/tmp|(compose|décrit les)[^.]{0,20}deux gestes|backup/" …`
       — chaque résultat est dans l'inventaire (résolu ou angle mort), sinon il y entre (le jeton `/tmp`
@@ -566,7 +566,7 @@ des AC 10 à 14 qui portent sur MariaDB aussi.)*
       `grep -rnIE '\./(inbox|documents|log)\b' …` — tout site qui énumère les montages de
       `docker-compose.prod.yml` (ou de `kesh-api`) en entier gagne `./backup`, les autres sont triés
       (inventaire, ligne « grep (4) »).
-- [ ] **T10 — Gates** : `scripts/test-fast.sh` complet (base du worktree remise à zéro avant —
+- [x] **T10 — Gates** : `scripts/test-fast.sh` complet (base du worktree remise à zéro avant —
       `DROP`/`CREATE` de **ses** bases, jamais un redémarrage du conteneur), frontend non touché (gate
       frontend tout de même, CLAUDE.md), **E2E complet au dernier commit de code** (D7), lancé avec la
       recette corrigée de l'AC 16 ; la story ne touche aucune migration (exception `kesh-db` sans objet).
@@ -809,11 +809,93 @@ converties à l'appel (AC 15 b), précisément pour ne pas ouvrir un module de p
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement, en autonomie), worktree `kesh-15-13b`, cible
+`CARGO_TARGET_DIR=kesh-15-13b/target`, bases `kesh_1513b` et `kesh_e2e_1513b`, port E2E 3018.
+
 ### Debug Log References
+
+Journaux sous `target/gate-logs/` du worktree (non versionnés) : `15-13b-t0-*` (mesures du T0,
+rapatriement, PDF d'avant aplati, `.log` d'avant), `15-13b-mutations.txt` (banc), `15-13b-gate-backend.txt`,
+`15-13b-gate-frontend.txt`, `15-13b-e2e.txt`, `15-13b-e2e-backend.log`, `15-13b-admin-apres-plat.txt`,
+`15-13b-admin-apres.log`.
 
 ### Completion Notes List
 
+- **Gates réellement exécutés, au dernier commit de code `50cada06`** (les commits suivants ne portent que
+  documentation, PDF et comptes rendus) :
+  - remise à zéro de **mes** bases (`DROP`/`CREATE` de `kesh_1513b` et `kesh_e2e_1513b`, 75 migrations,
+    seed `scripts/seed-dev-db.sql`) après `wait-kesh.sh` ;
+  - `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest, `DATABASE_URL` sur `kesh_1513b`) :
+    **2983 exécutés, 2983 passés, 4 ignorés**, rc 0 ;
+  - frontend : `npm run check` 0 erreur (27 avertissements préexistants), `lint-i18n-ownership` PASS,
+    `test:unit` **1095/1095** (112 fichiers), `build` vert ;
+  - **E2E complet** (`npm run test:e2e`, 10,0 min, lancé à 06:09 UTC) avec la recette **modifiée** du
+    `CLAUDE.md` (`KESH_ADMIN_BACKUP_DIR=target/kesh-backup`), secrets générés (`openssl rand`),
+    `KESH_TEST_MODE=true` des deux côtés, `KESH_COOKIE_SECURE=false`, les quatre `KESH_SMTP_*`
+    (`/health` → `smtpConfigured:true`), `KESH_INBOX_DIR`/`KESH_DOCUMENTS_DIR` du worktree : **245 passés,
+    9 échecs, 19 ignorés**. Les 9, jugés fichier par fichier contre `docs/testing.md` § *Les échecs
+    attendus* : 7 KF-029 (#97 — `mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`,
+    `:77`, `:150`) et 2 KF-045 (#421 — `invoices.spec.ts:415`, `:439`, run avant 12:00 UTC). **Aucun hors
+    liste.** Backend arrêté par son PID.
+  - **Import réel** sur ce backend après la suite (export puis import par l'API, admin du seed) : 200,
+    `backupCreated:true` ; `target/kesh-backup` créé en **700**, sauvegarde `kesh-pre-import-…keshbackup`
+    en **600**, aucun `.partial`. Dossier supprimé ensuite.
+- **Mutations (T8)** — banc `target/mut/mutations.py`, chaque mutation appliquée, test ciblé, fichier
+  restauré par `git checkout` **et touché** : **28/28 rouges**, aucune par erreur de compilation. M11 rougit
+  `transmission` **et** `fantomes` ; M15 `from_env_absent_backup_dir_takes_data_backup` **et** `transmission`
+  (le test 6 a, qui compare à la constante, reste vert : attendu) ; M34 `catalogues_distinguent_…` **et**
+  `kesh-i18n parity_between_locales`. Formes retenues là où la fiche décrit l'intention : **M30** retrait
+  du bras de conversion (seul `autre => autre` reste) ; **M31** `autre =>
+  AdminPreImportBackupFailed(format!("{autre}"))` ; **M36** variante rendue au refus d'écraser ; **M46**
+  `partial = path` **et** vérification du nom final neutralisée (sans la seconde, l'appel échoue quand même
+  sur le nom final — la mutation ne représenterait pas « écrire directement le nom final ») ; **M51**
+  `remove_file(&partial)` ajouté dans l'erreur de `create_new`.
+- **Manuel** : `make fr` (trois PDF), contrôles de l'AC 11 l sur le PDF aplati final — positifs :
+  `/data/backup` ×8, `sudo cp backup/` ×1, `kesh-pre-import` ×3, `keshbackup.partial` ×1,
+  `target: /data/backup` ×1, ligne `sudo chown` **entière** ×1 (non coupée), `base de données.{0,40}inaccessible`
+  ×1 ; négatifs : `BACKUP_DIR.{0,90}/tmp` 0, `défaut /tmp` 0, `deux gestes` 0 — chacun rouge sur le PDF
+  d'avant (T0). `Overfull \hbox` : **55**, liste identique à l'avant (trois débordements apparus à la
+  première compilation corrigés, C-15-13b-4). `user-manual.pdf` et `marketing-brochure.pdf` régénérés
+  **identiques à l'octet** (`.tex` inchangés) : non modifiés. **Brochure** (AC 11 n) : relue, laissée telle
+  quelle (C-15-13b-4).
+- **Contrôle de l'AC 11 f** : motif `target: /data/backup` confirmé au T0 (forme longue de
+  `docker compose config`), rouge (0) sur un compose sans montage avec la variable posée.
+- **Rapatriement (AC 11 e)** : non mesurable au T0 (démon Docker bloqué, C-15-13b-1), **mesuré à 07:48**
+  après son retour, conteneurs `debian:bookworm-slim` jetables : Docker crée `./backup` en `root:root
+  0755` ; le fichier `0600 root` est illisible de l'utilisateur (`cat`, `cp` → *Permission denied*) ;
+  `cp` puis `chown <uid>` **en root** — joués par un conteneur root, `sudo` n'étant pas utilisable sans mot
+  de passe depuis l'agent — rendent la copie lisible (`0600`, propriétaire l'utilisateur) ; copie et
+  dossier supprimés. Le geste `sudo` lui-même, sur un NAS, reste à la recette de Guy.
+- **Écarts à la fiche** : (1) `CLAUDE.md` — seule la ligne de commande change, pas la mention de date
+  de l'AC 16 a (consigne de l'orchestrateur, C-15-13b-2) ; (2) CHANGELOG — la phrase « deux gestes »
+  devient un renvoi sans nombre (option de l'AC 13 c, C-15-13b-3) ; (3) le nom du fichier est décrit
+  au manuel, non écrit en entier (C-15-13b-4) ; (4) le test 17 exige en plus la négation dans le message.
+- **Test 3** : le lien `DEFAULT_ADMIN_BACKUP_DIR` ↔ `MONTAGES` est porté par `controle_transmission`
+  (donc par `transmission`).
+- **Inventaire (AC 14)** : greps du T9 rejoués sur l'arbre final — (1) `BACKUP_DIR.{0,90}/tmp` ne rend
+  que les trois recettes `/tmp/kesh-e2e/backup` de `docs/testing.md` (voulues, AC 16 b) ; le jeton des
+  « deux gestes » restreint ne rend plus rien ; `pré-import|pre-import` ne rend que des sites de
+  l'inventaire et la clé neuve ; (2) `cargo run -p kesh-api` : les sites de l'AC 16 ; (3) `git ls-files`
+  sous les quatre dossiers à la racine : vide ; (4) par la valeur `\./(inbox|documents|log)\b` : les deux
+  énumérations complètes (`.env.example:214`, `admin-manual.tex:812`) se poursuivent par `./backup` à la
+  ligne suivante ; les autres sont des défauts de montages variables. Aucun site hors inventaire.
+- **Issues** : la PR devra porter `closes #552` et `closes #576` (titre ou corps) ; `refs #558`.
+- **Conflits certains** avec la 15-13a au merge : `CHANGELOG.md` (paragraphe « Action requise ») et
+  `admin-manual.tex` (« Pour qui garde son fichier compose ») — § *Dépendances* ; le manuel compte ici
+  « Trois gestes pour chacun des deux compose » (15-13b seule) : à recompter si la 15-13a passe avant.
+
 ### File List
+
+- `.dockerignore`, `.gitignore`, `.env.example`, `docker-compose.yml`, `docker-compose.prod.yml`
+- `crates/kesh-api/src/config.rs`, `crates/kesh-api/src/routes/admin.rs`, `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/tests/configuration_transmise.rs`, `crates/kesh-api/tests/admin_full_import_e2e.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`
+- `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/admin-manual.pdf`
+- `CHANGELOG.md`, `CLAUDE.md` (ligne de commande de la recette E2E), `DOCKER_START.md`, `README.md`,
+  `docs/testing.md`
+- `_bmad-output/implementation-artifacts/15-13b-sauvegarde-avant-import-persistante.md`,
+  `_bmad-output/implementation-artifacts/sprint-status.yaml`,
+  `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md`
 
 ## Change Log
 
@@ -988,3 +1070,8 @@ converties à l'appel (AC 15 b), précisément pour ne pas ouvrir un module de p
     07:06, `docker run` expire à 60 s), et le relancer toucherait `kesh-mariadb-dev` (interdit). Reporté au
     T10, choix C-15-13b-1.
   - **Registre** : `15-13` (`split`) et `15-13b` (`in-progress`) ajoutées à `sprint-status.yaml`.
+- **2026-10-09 — Développement** (Opus 5.5, en autonomie) : T1 à T10 faits ; commits `fcd711e4` (T1),
+  `50cada06` (T2-T3, dernier commit de code), `969c1ee2` (T5-T6). Gates au dernier commit de code :
+  backend 2983/2983, frontend 1095/1095, E2E 245 passés / 9 échecs attendus (7 KF-029, 2 KF-045) ;
+  28/28 mutations rouges ; PDF contrôlé aplati, 55 `Overfull` inchangés. Choix C-15-13b-1 à 4. Statut
+  `review`.
