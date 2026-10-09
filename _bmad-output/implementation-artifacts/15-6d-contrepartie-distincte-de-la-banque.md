@@ -2,7 +2,7 @@
 
 ## Status
 
-review
+done
 
 <!-- Créée le 2026-10-08 à la validation P1 de la 15-6b (finding F1 = R3, #524 ; finding F4 :
      découpage, plus de cinq modules), en autonomie. Choix propres : C-15-6-9 (qui révise C-15-6-6),
@@ -418,7 +418,7 @@ Claude Opus 5.5 (`claude-opus-5-5`), en autonomie (consignes de l'Epic 15).
 - **CHANGELOG** : `## [0.13.0] — Non publié` présent (`:11`), avec `### Modifié` (`:17`) et
   `### Corrigé` (`:37`).
 - **Libellé de la 15-5c (AC6)** : `VALIDATION_ERROR` → clé `error-validation`, « Erreur de
-  validation » (`failed-proposal-label.ts:259-260`, fr-CH `messages.ftl:42`). Son doc-comment
+  validation » (`failed-proposal-label.ts:259-260`, fr-CH `messages.ftl:46`). Son doc-comment
   (`:44-47`) compte « six raisons sur sept sites » : la garde de la règle ajoute un **huitième**
   site — à mettre à jour (propagation).
 - **Manuel** : sections réécrites par la 15-5c — *Réconciliation manuelle* `:1687`, *Éclatement*
@@ -534,6 +534,24 @@ rebasé.
   `sprint-status.yaml`, `epic-15-choix-autonomes.md`
 
 ## Change Log
+
+- 2026-10-09 — **Revue de code close en une passe** (P1 Sonnet ×3, prompt `36806423` ; rapports
+  `/home/gcorbaz/devel/kesh-gate-logs/15-6d-review-p1-{B,E,A}.md`) : **0 CRITICAL, 0 HIGH, 0 MEDIUM** ; 13 LOW.
+  Aucune passe suivante (CLAUDE.md § Review Iteration Rule : seuls des LOW). LOW appliqués par l'orchestrateur,
+  **documentation seule** : A-L2 (le CHANGELOG nuance « l'écran ne propose plus ce compte » par les cas de repli
+  sans filtre que le manuel et la fiche admettent), A-L3 (`messages.ftl:46`, non `:42`), A-L4 (les mutations ont
+  tourné avant le rebase sur `803f3e15` ; la 15-6c ne touche pas `reconciliation.rs`), A-L1 (les quatre mutations
+  frontend F1-F4 n'ont pas de journal : déclaration non vérifiable, écrite ici telle quelle). **LOW laissés en dette
+  documentée**, parce qu'ils toucheraient du code et rouvriraient gate et E2E pour un gain mineur : B1 (étape 1 bis
+  d'`accept_one_rule` dupliquée de l'« étape c » d'`accept_one_split`, ~20 lignes — helper commun à extraire),
+  B2 (`is_bank_ledger` sans test unitaire direct, dépend d'`ensure_not_claim_account`), B3 (tests 8, 9 et 12
+  témoins verts avant et après ; `let _ = bank_rule;` inutile ; test 11 lié au nom de prop de la doublure,
+  C-15-6d-1), B4 = E4 (`$effect` sans garde de génération, sûr tant que `{#key selectedId}` existe,
+  `+page.svelte:70`), E1 (`build_journal_entry_for_counterparty` sans garde propre : un appelant futur la
+  perdrait), E2 (`journal_account_id` lu hors verrou par `post_manual`/`post_split`, antérieur à la story),
+  E3 (refus direct sans `details.reason`, annoncé). E5 = angles morts déjà déclarés (édition de règle,
+  `TransactionSplitModal`, `accept_one_invoice`). Le dernier commit de code reste `04510336` ; ses gates
+  (backend 3082/3082, Vitest 1156/1156, E2E 246 / 7 KF-029 + KF-052 rejouée verte) tiennent.
 
 - 2026-10-08 — Création à la validation P1 de la 15-6b (findings F1 = R3 et F4), en autonomie :
   #524 sort de la 15-6b, qui dépassait cinq modules avec lui. Choix C-15-6-9. **9 AC, 6 tâches
