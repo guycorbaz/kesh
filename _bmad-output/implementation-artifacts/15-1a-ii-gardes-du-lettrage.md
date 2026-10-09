@@ -2,7 +2,7 @@
 
 ## Status
 
-review *(développée le 2026-10-09 sur `0724904c` — revue de code à lancer ; créée le 2026-10-09 au découpage de la 15-1a en validation P3 — C124 ; corps repris de
+done *(revue de code close le 2026-10-09, P2 ciblée à 0 MEDIUM ; développée le 2026-10-09 sur `0724904c` ; créée le 2026-10-09 au découpage de la 15-1a en validation P3 — C124 ; corps repris de
 `15-1a-socle-lettrage.md` (validations P1 et P2 remédiées, P3 remédiée ici) ; validations P4 et **P5
 remédiées le 2026-10-09 — passe P6 à lancer** avant tout développement ; prérequis : **15-1a-i mergée**, et, comme elle, la 15-12a ; la 15-12b de
 préférence avant)*
@@ -947,6 +947,23 @@ Opus 5.5 (Claude Code, sous-agent de développement de l'Epic 15), le 2026-10-09
   epic-15-choix-autonomes.md}`
 
 ## Change Log
+
+### Revue de code P2 ciblée — 2026-10-09 (Opus ; boucle close)
+
+- **Passe ciblée** sur `581040aa` (prompt `f6e9f99e`, rapport `/home/gcorbaz/devel/kesh-gate-logs/15-1a-ii-review-p2-ciblee.md`) :
+  **0 CRITICAL, 0 HIGH, 0 MEDIUM, 4 LOW**. Les cinq axes exercés : les autres 409 passés par `refusal_409` gardent leur
+  forme ; aucun client ne lit `documentNumber` sur `ENTRY_LETTERED` ; la garde de longueur est levée avant toute pose de
+  marque ; `lettering_guard` n'a aucun appelant hors de son module, et ses trois appelants vérifient la société ; le test
+  de rollback prouve la marque et l'audit dans la transaction puis leur absence après.
+- **LOW laissés en dette écrite** (aucun ne toucherait le code de production) : L1 — les deux assertions d'après le
+  rollback ne sont mordues par aucune des trois mutations (la preuve positive dans la transaction suffit ; redondance à
+  signaler au commentaire) ; L2 — garde de longueur sans test, branche inatteignable par construction ; L3 — le
+  doc-comment du cycle lignes ↔ écriture (`journal_entries.rs:2362`) et la note du Pattern 5 ne nomment que l'acte 1 de
+  la création, la dissolution fait le même croisement (même défense : le rejeu) ; L4 — le commentaire de
+  `journal_entry_reversal_e2e.rs:269` renvoie à un journal de mutations hors du dépôt.
+- **Boucle de revue close** : la passe ciblée de fin de boucle ne demande aucun correctif de production (CLAUDE.md §
+  « La passe ciblée »). Trend : P1 (Sonnet ×3) 1 MEDIUM → P2 ciblée (Opus) 0. Dernier commit de code : `581040aa` ; ses
+  gates (backend 3161/3161, Vitest 1159/1159, E2E 247 / 7 KF-029) tiennent jusqu'au prochain rebase.
 
 ### Revue de code P1 — 2026-10-09 (Sonnet ×3 ; remédiation Opus 5.5)
 
