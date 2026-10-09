@@ -7082,3 +7082,10 @@ l'import (#458–#461).
 - **Retenu** : `GET …/lettering-proposals` n'a pas d'`offset` (l'écran accepte puis recharge ; `total` dit ce qui reste) ; les deux routes n'émettent aucun audit de lecture (écran de travail du lettrage, comme `GET /letterings/{key}` et `GET /accounts` ; les audits de lecture restent aux rapports) ; tri de la vue = celui du Grand livre (date, exercice, numéro, `line_order`, `lineId`) ; R7 filtrée avant le glouton ; `open_items` ouvre sa propre transaction.
 - **Écartées** : `offset` sur les propositions (un glouton paginé change de résultat à chaque acceptation) ; audit best-effort de la vue (bruit au journal sans usage de contrôle identifié).
 - **Réversible** : oui jusqu'au tag v0.13.0.
+
+## C-15-1a2-23 — Dérogation au découpage pour la 15-1a2-0 et la 15-1b (orchestrateur, 2026-10-09)
+
+**Contexte.** Le remédiateur de la validation P3 a compté les modules de chaque fiche aux deux grains (C-15-1a2-21) : 15-1a2-0 = 4 crates/paquets, 11 modules au grain fin dont 7 mécaniques ; 15-1b = 5 crates/paquets, 8 au grain fin dont 4 mécaniques. La règle de splitting préventif du CLAUDE.md compte « crates Rust, packages npm, ou modules métier de premier niveau ».
+**Décision.** Pas de découpage. Au grain que la règle a toujours appliqué dans cet epic (crates et paquets), les deux fiches sont sous le seuil ; le dépassement au grain fin ne vient que de la **propagation mécanique de textes** — catalogues i18n ×4, manuels .tex/PDF, `api-external.md`, CHANGELOG, libellés d'écran — qui n'est pas un « module métier » et ne porte aucune règle. Ce qui fonde la règle (une story trop large pour un modèle mental adversarial fiable) ne joue pas : la logique de la 15-1a2-0 tient en un rang de refus dans une file existante.
+**Alternatives écartées.** Découper la 15-1a2-0 en serveur / écran : l'écran sans le serveur ne peut rien montrer, le serveur sans l'écran laisse un refus sans libellé — deux moitiés non livrables seules. Découper la 15-1b davantage : la 15-1b-0 en a déjà extrait la refonte du socle.
+**Réversibilité.** Totale tant qu'aucun développement n'a commencé ; le signal D5 reste surveillé à chaque passe.

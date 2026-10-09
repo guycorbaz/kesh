@@ -430,3 +430,7 @@ d'administration), et, de la 15-1a2-ii, **R3-6 = F3-5** (listes en prose fournis
 de F (`user-manual.tex:2337`). **9 critères** (AC1–AC9), **8 tâches** (T0–T7), **12 tests neufs** (11 Rust, 1
 Vitest) **+ 4 fichiers modifiés** — recomptés depuis ce fichier. Choix consignés : **C-15-1a2-19, 20, 21**.
 Prochaine passe : validation **P1**, complète (Sonnet, contexte frais).
+
+## Dérogation règle de splitting
+
+Au grain fin, la fiche dépasse cinq modules ; au grain des crates et paquets — celui que la règle a toujours appliqué dans cet epic —, elle est sous le seuil. Le dépassement ne vient que de la propagation mécanique de textes (catalogues ×4, manuels et PDF, `api-external.md`, CHANGELOG, libellés), qui ne porte aucune règle. Décision de l'orchestrateur : pas de découpage (registre **C-15-1a2-23**, alternatives et réversibilité). Accepted risk : une passe de revue doit relire la propagation des textes comme un axe à part entière.

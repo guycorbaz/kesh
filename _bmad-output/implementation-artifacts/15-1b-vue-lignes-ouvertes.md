@@ -1047,3 +1047,7 @@ sans contrepartie comptable, **P3-8** le canal sans garde d'exercice).
 posées en tête, chacune avec ses conduites possibles et son coût. Ce ne sont pas des
 précisions manquantes : chacune, laissée au développeur, produit un résultat faux — et trois
 d'entre elles le produisent **en silence**.
+
+## Dérogation règle de splitting
+
+Au grain fin, la fiche dépasse cinq modules ; au grain des crates et paquets — celui que la règle a toujours appliqué dans cet epic —, elle est sous le seuil. Le dépassement ne vient que de la propagation mécanique de textes (catalogues ×4, manuels et PDF, `api-external.md`, CHANGELOG, libellés), qui ne porte aucune règle. Décision de l'orchestrateur : pas de découpage (registre **C-15-1a2-23**, alternatives et réversibilité). Accepted risk : une passe de revue doit relire la propagation des textes comme un axe à part entière.
