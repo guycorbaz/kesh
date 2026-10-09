@@ -579,7 +579,8 @@ fn build_group(
                 entry_id: l.entry_id,
                 entry_number: l.entry_number,
                 fiscal_year_id: l.fiscal_year_id,
-                // Les deux lectures de noms rendent `Invariant` s'il en manque un
+                // Chaque lecture des noms (`lock_fiscal_years_of_group`,
+                // `fiscal_year_names`) rend `Invariant` s'il en manque un
                 // (E-2) : le repli vide n'est plus atteignable.
                 fiscal_year_name: names.get(&l.fiscal_year_id).cloned().unwrap_or_default(),
                 date: l.entry_date,
