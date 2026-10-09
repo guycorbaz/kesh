@@ -1,6 +1,6 @@
 # Story 15.12a : Clôturer les exercices dans l'ordre — l'invariant, ses trois transitions, son écran
 
-Status: in-progress
+Status: review
 
 <!-- Créée le 2026-10-09 par DÉCOUPAGE de la Story 15-12 à la remédiation de sa validation P2 (décision de
      l'orchestrateur, choix C107 de `epic-15-choix-autonomes.md`). Version complète de la 15-12 avant
@@ -698,57 +698,57 @@ hérité qu'avec la 15-12b — **la v0.13.0 ne se tague pas sans la 15-12b** (qu
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Relevés au sol sur le `main` du moment** (AC 3, 6, 9, 13, 14, 21) *(ex-T0, part A)*
-  - [ ] Refaire les numéros de ligne cités, par leur texte.
-  - [ ] Vérifier que `start_date` n'est écrite nulle part après l'`INSERT` (AC 3 a).
-  - [ ] Mesurer en MariaDB 10.11 (deux sessions `mariadb` à la main) le mécanisme de l'AC 13 b dans
+- [x] **T0 — Relevés au sol sur le `main` du moment** (AC 3, 6, 9, 13, 14, 21) *(ex-T0, part A)*
+  - [x] Refaire les numéros de ligne cités, par leur texte.
+  - [x] Vérifier que `start_date` n'est écrite nulle part après l'`INSERT` (AC 3 a).
+  - [x] Mesurer en MariaDB 10.11 (deux sessions `mariadb` à la main) le mécanisme de l'AC 13 b dans
         ses **deux** configurations (b1, b2), le cycle de l'AC 13 d et le moyen d'en forcer la victime ;
         `EXPLAIN` **descriptif** (C119 : rien n'en dépend) de `FIND_EARLIER_OPEN_SQL` (relecture (d)) et
         de `FIND_LATER_CLOSED_SQL`, **dans les deux régimes** — base éphémère `#[sqlx::test]` à une
         société, base de dev à plusieurs sociétés —, écrit au Dev Agent Record ; un plan de
         `FIND_LATER_CLOSED_SQL` qui ne suit pas `uq_fiscal_years_company_start_date` est signalé à
         l'orchestrateur (AC 3, limite préexistante de `reopen` et de la garde 15-8a).
-  - [ ] Constater la forme de `PROCESSLIST.INFO` d'une requête préparée (`?` ou valeurs) ; vérifier les
+  - [x] Constater la forme de `PROCESSLIST.INFO` d'une requête préparée (`?` ou valeurs) ; vérifier les
         motifs de l'AC 13 et ceux de `journal_entries_modification.rs:410`, `:511` (AC 21).
-  - [ ] Refaire le `grep` des sites de l'ancienne clé (AC 9) et chercher toute assertion de test sur
+  - [x] Refaire le `grep` des sites de l'ancienne clé (AC 9) et chercher toute assertion de test sur
         son texte ou sur celui du repli Rust.
-- [ ] **T1 — Clôture dans l'ordre (dépôt)** (AC 1, 2, 3, 7, 14) *(ex-T1)*
-  - [ ] `DbError::EarlierFiscalYearOpen { fiscal_year_id, fiscal_year_name }` (+ `error_code()` si la
+- [x] **T1 — Clôture dans l'ordre (dépôt)** (AC 1, 2, 3, 7, 14) *(ex-T1)*
+  - [x] `DbError::EarlierFiscalYearOpen { fiscal_year_id, fiscal_year_name }` (+ `error_code()` si la
         famille l'exige — suivre `DbError::LaterFiscalYearClosed` : variante `errors.rs:562`,
         `error_code()` `:1015` ; `ModificationBlocker::LaterFiscalYearClosed` (`:198-221`) est une
         autre énumération et **ne change pas** — T0, R2 de P4).
-  - [ ] Constantes `LIST_EARLIER_SQL`, `LOCK_EARLIER_BY_ID_SQL`, `FIND_EARLIER_OPEN_SQL` ; `close`
+  - [x] Constantes `LIST_EARLIER_SQL`, `LOCK_EARLIER_BY_ID_SQL`, `FIND_EARLIER_OPEN_SQL` ; `close`
         réordonné en (a)-(b)-(b')-(c)-(d)-(e), la boucle (b') en Rust (C119) ; `OPEN_COVERING_DATE_SQL`
         **inchangée** (C119 révise C110) ; doc-comments (module, `close`, `FIND_LATER_CLOSED_SQL` et
         `find_later_closed_in_tx` — R5 —, invariant I et sa portée, `DbError::LaterFiscalYearClosed`,
         `reverse_in_tx_inner`) ; `docs/MULTI-TENANT-SCOPING-PATTERNS.md` (AC 14).
-  - [ ] Tests : refus, précédence (paires), autre société, rien d'écrit (statut + audit) ; **deux
+  - [x] Tests : refus, précédence (paires), autre société, rien d'écrit (statut + audit) ; **deux
         exercices antérieurs aux `id` inversés** par rapport à leurs dates (le plus ancien créé en
         second), le plus ancien ouvert → `EarlierFiscalYearOpen` le nomme ; exercice disparu entre (a)
         et (c) → `NotFound` (F6 : W tient Y, la clôture bute en (c), W supprime Y — sans écriture —
         et valide ; jamais de panique).
-- [ ] **T2 — Création** (AC 5) *(ex-T2)* — garde, doc-comments de `create_for_seed` /
+- [x] **T2 — Création** (AC 5) *(ex-T2)* — garde, doc-comments de `create_for_seed` /
       `create_if_absent_in_tx`, tests de dépôt ; test HTTP `POST /fiscal-years` → `400
       LATER_FISCAL_YEAR_CLOSED` et paire chevauchement (`400 VALIDATION_ERROR`) (avec T3).
-- [ ] **T3 — HTTP, message et rejeu** (AC 4, 6, 9) *(ex-T3, et la part « message » de l'ex-T4)* —
+- [x] **T3 — HTTP, message et rejeu** (AC 4, 6, 9) *(ex-T3, et la part « message » de l'ex-T4)* —
       mapping 409 dans `kesh-api/src/errors.rs` ; clé `error-later-fiscal-year-closed` ×4 + repli Rust ;
       ancienne clé alignée ×4 + repli de `blocker-messages.ts` (C111) ; enveloppes des deux routes ;
       tests `fiscal_years_e2e.rs` (corps complet : code, message, `details`) ; test HTTP de rejeu de la
       clôture (et de la création si T0 le permet) dans `rejeu_interblocage_e2e.rs` ; registre vert et son
       doc-comment (points (ii), (iii bis), (iv) et (vi) — F4).
-- [ ] **T4 — Concurrence** (AC 13) *(ex-T6)* — tests (a), (b1), (b2), (c), (d), entrelacements forcés,
+- [x] **T4 — Concurrence** (AC 13) *(ex-T6)* — tests (a), (b1), (b2), (c), (d), entrelacements forcés,
       motifs de l'AC 13 ; `reopen_close_concurrent_is_serialized` remplacé par le 13 a.
-- [ ] **T5 — Écran des exercices : la clôture** (AC 17) *(ex-T7, part A)* — bouton désactivé,
+- [x] **T5 — Écran des exercices : la clôture** (AC 17) *(ex-T7, part A)* — bouton désactivé,
       `earliestEarlierOpen`, `submitClose` ; clés `fiscal-year-close-blocked-earlier-open`,
       `error-fiscal-year-close-earlier-open` ×4 ; `npm run lint-i18n-ownership` ; Vitest
       (`fiscal-years-page.test.ts`).
-- [ ] **T6 — Tests existants** (AC 21, part A) *(ex-T9, part A)* — triage écrit, test par test, `mod
+- [x] **T6 — Tests existants** (AC 21, part A) *(ex-T9, part A)* — triage écrit, test par test, `mod
       tests` de `src/` compris ; doc-comments des tests 15-8a/15-8b.
-- [ ] **T7 — E2E** (AC 22) *(ex-T10)*.
-- [ ] **T8 — Mutations** (AC 19, part A) *(ex-T11, part A)*.
-- [ ] **T9 — Documentation** (AC 23, part A) *(ex-T12, part A)* — manuels + PDF aplatis,
+- [x] **T7 — E2E** (AC 22) *(ex-T10)*.
+- [x] **T8 — Mutations** (AC 19, part A) *(ex-T11, part A)*.
+- [x] **T9 — Documentation** (AC 23, part A) *(ex-T12, part A)* — manuels + PDF aplatis,
       `api-external.md`, CHANGELOG.
-- [ ] **T10 — Gates** *(ex-T13)* — base remise à zéro (DROP/CREATE de **ses** bases, jamais de
+- [x] **T10 — Gates** *(ex-T13)* — base remise à zéro (DROP/CREATE de **ses** bases, jamais de
       redémarrage du conteneur) ; `scripts/test-fast.sh` complet (story `kesh-db` : gate complet même en
       cours de boucle) ; frontend (`check`, `lint-i18n-ownership`, `test:unit`, `build`) ; E2E complet au
       **dernier commit de code**, jugé fichier par fichier contre `docs/testing.md` § « Les échecs
@@ -973,16 +973,142 @@ Claude Opus 5.5 (agent de développement, worktree `/home/gcorbaz/devel/kesh-15-
 - **Ancienne clé (AC 9)** : sites relocalisés (fr-CH `:376`, autres `:382`, `blocker-messages.ts:94`,
   repli Rust `errors.rs:2852`) ; seule assertion de test sur son texte :
   `blocker-messages.test.ts:27`, fragment conservé par la réécriture.
-- **Forme de `PROCESSLIST.INFO`** : constatée au premier test à deux connexions (T4), consignée là.
+- **Forme de `PROCESSLIST.INFO`** (constatée en T4, dans un test à deux connexions) : le texte de la
+  requête préparée **avec ses `?`**, non substitués (« … WHERE company_id = ? AND start_date <= ? AND
+  end_date >= ? LIMIT 1 FOR UPDATE »). Les motifs, qui évitent `?`, valent dans les deux cas.
+- ⚠️ **Écart de mesure 13 b1** : à la main (T0), la création passait `find_overlapping` et butait dans
+  sa garde ; **dans le test** (`#[sqlx::test]`), elle bute dès `find_overlapping`, sur Y (borne de son
+  parcours), que la session W tient. Même issue (sérialisation, création refusée en une tentative) ;
+  le test fait foi et son doc-comment le dit. En 13 b2 comme dans le montage HTTP de l'AC 6, la
+  création bute aussi dans `find_overlapping` (sur M en b2) : les motifs des tests visent ce
+  pré-contrôle (`["end_date >= ", "LIMIT 1 FOR UPDATE"]`), ou un motif tolérant au test HTTP.
 
 ### Debug Log References
 
+- Gate backend : `target/gate-logs/15-12a-gate-backend.log` (worktree) ; frontend :
+  `target/gate-logs/15-12a-gate-frontend.log` ; E2E : `target/gate-logs/15-12a-e2e.log`, backend
+  `target/gate-logs/15-12a-backend-e2e.log`.
+
 ### Completion Notes List
+
+**Commits** (sur `5e4bec50` + planification `77194098`) : `15144b1f` (T0), `1d17cc2c` (dépôt, T1/T2/T4),
+`15814d29` (HTTP, message, rejeu, T3), `a29cc474` (écran, T5), `f0bee2a0` (E2E et doc-comments des tests
+15-8a/15-8b, T6/T7), `2c69ce4b` (documentation, T9).
+
+**Ce qui est livré** :
+- `DbError::EarlierFiscalYearOpen` ; `close` en étapes (a)-(e) — constantes `START_DATE_IN_COMPANY_SQL`,
+  `LIST_EARLIER_SQL`, `LOCK_EARLIER_BY_ID_SQL`, `LOCK_IN_COMPANY_SQL` (partagée avec `reopen` et
+  `update_name`, qui l'écrivaient chacune à la main), `FIND_EARLIER_OPEN_SQL` ; `OPEN_COVERING_DATE_SQL`
+  inchangée (C119).
+- `create` : garde `find_later_closed_in_tx` après les pré-contrôles ; `create_for_seed` et
+  `create_if_absent_in_tx` inchangés, leur doc-comment dit pourquoi.
+- HTTP : `409 EARLIER_FISCAL_YEAR_OPEN` ; `400 LATER_FISCAL_YEAR_CLOSED` à la création, message propre
+  (`AppError::FiscalYearBeforeClosedYear`, clé `error-fiscal-year-create-later-closed` — C-15-12a-1) ;
+  clé neuve `error-later-fiscal-year-closed` au mapping global ; corps `LATER_FISCAL_YEAR_CLOSED` construit
+  par une seule fonction (`later_fiscal_year_closed_response`) pour les deux messages ; ancienne clé
+  alignée aux quatre locales et au repli de `blocker-messages.ts`. `grep` de l'ancienne prescription
+  (`rouvrir cet exercice|reopen that fiscal year|wieder eröffnen;|riaprire quell`) hors fiches et PDF :
+  **0 résultat**.
+- Enveloppes `retry_on_deadlock("fiscal_years::create" | "fiscal_years::close", …)` dans les routes ;
+  doc-comment du registre (points (ii), (iii bis), (iv) — cycle renommage/clôture nommé, `/close` retirée
+  — et (vi) : **quatre** routes) ; en-tête de `rejeu_interblocage_e2e.rs`.
+- Écran : `earliestEarlierOpen`, bouton désactivé (`data-testid="fiscal-year-close-{id}"`, `title`),
+  `submitClose` traite `EARLIER_FISCAL_YEAR_OPEN` avant `ILLEGAL_STATE_TRANSITION` ; la boîte de
+  création affiche `err.message` (chemin générique **vérifié** dans `submitCreate`).
+- Doc-comments : module `fiscal_years.rs` (invariant I, portée, angle mort de la restauration, ordre des
+  verrous), `close`, `create`, `FIND_LATER_CLOSED_SQL`, `find_later_closed_in_tx`,
+  `DbError::LaterFiscalYearClosed`, `reverse_in_tx_inner` ; `docs/MULTI-TENANT-SCOPING-PATTERNS.md`.
+
+**Tests ajoutés** (recomptés `grep -cE '#\[(sqlx|tokio)::test'` aux deux bornes `5e4bec50` → `HEAD`) :
+`fiscal_years_repository.rs` 40 → 53 (+14 neufs, −1 remplacé : `reopen_close_concurrent_is_serialized`
+→ 13 a) ; `fiscal_years_e2e.rs` 41 → 44 (+3) ; `rejeu_interblocage_e2e.rs` 7 → 9 (+2, tests 9 et 10) ;
+Vitest `fiscal-years-page.test.ts` 6 → 9 (+3). Backend : +18, cohérent avec le gate (2879 sur
+`5e4bec50` selon le registre de sprint → 2897).
+
+**Mutations (AC 19), jouées et constatées** (chacune restaurée par copie puis `touch`) :
+- (i) garde de `close` neutralisée → **3 rouges** : `close_is_refused_while_an_earlier_year_is_open`,
+  `close_names_the_oldest_earlier_open_year_whatever_the_ids`, `close_sees_a_concurrent_reopening_of_an_earlier_year`.
+- (ii) `FIND_EARLIER_OPEN_SQL` sans `FOR UPDATE` → **2 rouges** : 13 a et 13 c.
+- (iii) étape (b') retirée → **observation**, sur une variante temporaire du 13 a (W verrouille N, lance
+  la clôture, puis lit les postérieurs) : avec le code réel, aucun interblocage ; sous la mutation, **W
+  — la réouverture — reçoit un 1213** (soit un 500 côté route, `reopen` n'étant pas rejouée). Le 13 a tel
+  que monté reste vert, comme prévu. Variante retirée.
+- (iv) garde de `create` neutralisée → **3 rouges** : `create_is_refused_before_a_closed_year`, 13 b1, 13 b2.
+- (viii) `EARLIER_FISCAL_YEAR_OPEN` routé dans la branche « déjà clôturé » → Vitest **rouge**
+  (« refus serveur EARLIER_FISCAL_YEAR_OPEN… »).
+- (ix) enveloppe de la clôture ramenée à **une** tentative (`retry_on_deadlock_with(…, 1, …)`, c'est-à-dire
+  sans rejeu, le nom restant visible du volet (c)) → test HTTP 9 **rouge** ; (x) idem pour la création →
+  test HTTP 10 **rouge**. ⚠️ Forme de la mutation choisie pour garder l'appel nommé : un appel nu ferait
+  rougir le test **et** changerait le texte que lit le registre ; l'effet mesuré est le même (aucun rejeu).
+- Après restauration : fichier de tests du dépôt 53/53, tests HTTP de rejeu 2/2, Vitest 9/9.
+
+**Triage des tests existants (AC 21)** — au gate complet, **aucun rouge** à trier hors des deux tests
+repris d'avance : `reopen_lifo_three_years_intercalated` (FY3 clos **par SQL**, catégorie (a), état
+hérité) et `reopen_close_concurrent_is_serialized` (remplacé par le 13 a). Les autres sites de
+l'inventaire (`fiscal_years_e2e.rs`, `reconciliation_e2e.rs`, `invoice_settlement.rs`,
+`supplier_invoices_repository.rs`, `opening_balances_*`, `invoice_echeancier_e2e.rs`, les deux tests du
+`mod tests` de `journal_entries.rs` sur la base partagée) clôturent dans l'ordre ou un exercice seul :
+verts. Aucune création ne rougit en `LATER_FISCAL_YEAR_CLOSED`. Doc-comments des deux tests 15-8a/15-8b
+« clôture **en cours** » réécrits (transition simulée par SQL). Motifs `["ORDER BY start_date ASC", "FOR
+UPDATE"]` de `journal_entries_modification.rs` **laissés tels quels** (aucune clôture ne tourne pendant
+leurs attentes).
+
+**Documentation** : manuel utilisateur (création, clôture dans l'ordre, item « Verrouille l'exercice »
+réécrit, réouverture, `:752`, `:762`), manuel administrateur (paragraphe « Clôture dans l'ordre »),
+`api-external.md` (ligne `409 EARLIER_FISCAL_YEAR_OPEN`, création parmi les routes de
+`LATER_FISCAL_YEAR_CLOSED`, rejeu des deux routes), CHANGELOG `[0.13.0]` (`Modifié` : contrat d'API ;
+`Corrigé` : le défaut). PDF régénérés (`make fr`), **contrôlés aplatis** : les phrases neuves présentes
+dans les deux PDF ; la phrase réfutée « clôturer l'exercice suivant fige aussi celui-ci » absente (0).
+Un code `\texttt` qui débordait de la marge dans le PDF administrateur (tronqué en
+`EARLIER_FISCAL_YEAR_OP`) a été rendu sécable (`\allowbreak`) et revérifié. La brochure, régénérée par
+`make fr` sans changement de source, n'est **pas** commitée. README inchangé (correctif, vérifié).
+
+**Gates au dernier commit de code** (`2c69ce4b` porte la doc et les PDF ; le dernier commit de code est
+`f0bee2a0` — aucun code n'a changé depuis, la suite E2E a tourné sur `2c69ce4b`) :
+- bases `kesh_1512a` / `kesh_e2e_1512a` remises à zéro (DROP/CREATE, migrations, seed) ;
+- `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) : **2897 / 2897, 4 ignorés** ;
+- frontend : `npm run check` 0 erreur (27 avertissements préexistants), `lint-i18n-ownership` PASS,
+  `test:unit` **1094 / 1094** (112 fichiers), `build` OK ;
+- E2E complet (backend `:3012` sur `kesh_e2e_1512a`, secrets `openssl rand`, montage complet de
+  `docs/testing.md` — SMTP, inbox, documents ; `smtpConfigured:true`), lancé à 00:30 UTC : **245
+  passés, 9 échecs, 19 ignorés** (14,7 min). Les 9, jugés **fichier par fichier** contre
+  `docs/testing.md` § « Les échecs attendus » : sept KF-029 (#97 — `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) et deux KF-045
+  (#421 — `invoices.spec.ts:415`, `:439`, attendus **avant 12:00 UTC**). Aucun huitième variable,
+  aucun échec hors liste. Le scénario réécrit `fiscal-years.spec.ts:59` (clôture dans l'ordre) passe.
+  Backend arrêté par son PID.
+
+**Points à vérifier en revue** :
+- La garde de création (AC 5) n'est pas seule à verrouiller : en 13 b1/b2 et au test HTTP, c'est
+  `find_overlapping` qui bute — à lire contre l'AC 13 b (« la création postérieure attend Y »).
+- La mutation (ix)/(x) a été jouée par réduction à une tentative, non par appel nu (voir plus haut).
+- R7 de P4 (fiche 15-1a) et l'issue des « autres textes de réouverture sans ordre » (C122) restent à
+  l'orchestrateur.
 
 ### File List
 
+- `crates/kesh-db/src/errors.rs`, `crates/kesh-db/src/repositories/fiscal_years.rs`,
+  `crates/kesh-db/src/repositories/journal_entries.rs` (doc-comment)
+- `crates/kesh-db/tests/fiscal_years_repository.rs`, `crates/kesh-db/tests/journal_entries_modification.rs`
+- `crates/kesh-api/src/errors.rs`, `crates/kesh-api/src/routes/fiscal_years.rs`
+- `crates/kesh-api/tests/fiscal_years_e2e.rs`, `crates/kesh-api/tests/rejeu_interblocage_e2e.rs`,
+  `crates/kesh-api/tests/audit_route_registry.rs` (doc-comment)
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `frontend/src/routes/(app)/settings/fiscal-years/+page.svelte`, `…/fiscal-years-page.test.ts`
+- `frontend/src/lib/features/journal-entries/blocker-messages.ts`, `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/tests/e2e/fiscal-years.spec.ts`
+- `docs/manual/fr/{user,admin}-manual.{tex,pdf}`, `docs/api-external.md`,
+  `docs/MULTI-TENANT-SCOPING-PATTERNS.md`, `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/{15-12a-cloture-dans-l-ordre.md, 15-12-cloture-dans-l-ordre.md,
+  sprint-status.yaml, epic-15-choix-autonomes.md}`
+
 ## Change Log
 
+- 2026-10-09 — **Développement** (T1-T10) : clôture dans l'ordre, garde de création, 409
+  `EARLIER_FISCAL_YEAR_OPEN`, message neutre et message de création, rejeu des deux routes, écran,
+  E2E, documentation. Gates au dernier commit de code : backend 2897/2897, Vitest 1094/1094, E2E 245 /
+  9 attendus (7 KF-029 + 2 KF-045). Mutations (i), (ii), (iv), (viii), (ix), (x) tuées, (iii)
+  observée. Statut `review`.
 - 2026-10-09 — **T0 (développement)** : 15 des 16 LOW de la validation P4 appliqués à la fiche (F1 = R5
   constante `LOCK_IN_COMPANY_SQL` ; F2 bornes de `i18n-keys.test.ts` ; F3 textes DE/IT/EN, glossaire,
   message propre à la création — C-15-12a-1 ; F4/F7 manuel ; F5 immutabilité de `start_date` ; F6 qui
