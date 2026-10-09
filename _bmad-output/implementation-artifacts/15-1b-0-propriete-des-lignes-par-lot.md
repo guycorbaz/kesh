@@ -3,12 +3,14 @@
 ## Status
 
 ready-for-dev *(extraite de la 15-1b le 2026-10-09 à la remédiation de sa validation P2 — signal D5 levé
-par un HIGH né d'une remédiation, C-15-1b-9 ; **validation P1 à mener avant tout développement**)*.
+par un HIGH né d'une remédiation, C-15-1b-9 ; validation P1 remédiée le 2026-10-09 — la lecture de la
+route en une transaction, la forme et la mesure du lot fixées, l'oracle durci, les prédicats de
+`DocumentKind` publiés ; **validation P2 à mener avant tout développement**)*.
 
 Story **patron** au sens de la § « Règle de splitting préventif » (« dégager d'abord un story-zero qui
 pose le pattern ») : elle pose la lecture **par lot** de la propriété des écritures et réécrit dessus les
 deux lecteurs du socle ; la **15-1b** (vue des postes ouverts, propositions) la consomme. **Ordre** :
-15-1a-i → 15-1a-ii → 15-1a2-i → 15-1a2-ii → **15-1b-0** → 15-1b → 15-1c. Elle ne dépend **pas** de la
+15-1a-i → 15-1a-ii → 15-1a2-0 → 15-1a2-i → 15-1a2-ii → **15-1b-0** → 15-1b → 15-1c. Elle ne dépend **pas** de la
 15-1a2 (aucune marque `document` n'y est lue) : elle pourrait la précéder ; l'ordre de l'epic la place
 juste avant la 15-1b, qui la suppose mergée. ⛔ Pas de tag entre les merges (C124).
 
@@ -40,15 +42,24 @@ une story propre, la 15-1b gardant la vue et les propositions.
 
 **`journal_entries::reversal_blockers<'e, E: Executor>(executor: E, company_id, id) -> Result<Vec<ReversalBlockerHit>, DbError>`**
 (`journal_entries.rs:2090`) : **une** requête, onze colonnes par sous-requêtes corrélées
-(`:2117-2141`), consommée par `.fetch_optional(executor)` (`:2143`). Ordre des motifs = précédence
+(`sqlx::query_as(` `:2118`, sous-requêtes `:2119-2141`), consommée par `.fetch_optional(executor)`
+(`:2144`). Ordre des motifs = précédence
 (`IsAReversal`, `AlreadyReversed`, `OwnedByInvoice`, `OwnedByCreditNote`, `OwnedBySupplierInvoice`,
 `OwnedBySettlement`, `MatchedBankTransaction`, `AccountArchived`). Chaque sous-requête de propriété est un
-`LIMIT 1` **sans `ORDER BY`** : déterministe tant qu'une seule pièce de chaque type vise l'écriture, ce que
-garantissent les contraintes pour les quatre pièces — mais **pas** pour `bank_transactions.matched_entry_id`
+`LIMIT 1` **sans `ORDER BY`** : déterministe tant qu'une seule pièce de chaque type vise l'écriture. Pour
+les quatre pièces, c'est un **invariant applicatif, non une contrainte** (validation P1, R6 = F-6) : seul
+`invoice_settlements.journal_entry_id` est `UNIQUE` (`uq_invoice_settlements_entry`, squash
+`0001_schema_squash.sql:690`) ; `invoices.journal_entry_id`, `credit_notes.journal_entry_id` et les deux
+colonnes de `supplier_invoices` n'ont qu'un `KEY` et une FK — un `INSERT` brut peut faire viser une même
+écriture par deux factures, ou par une facture **et** un avoir **et** une facture fournisseur. Rien ne
+l'interdit non plus pour `bank_transactions.matched_entry_id`
 (deux transactions peuvent pointer la même écriture : c'est l'« exemption étroite » de la file des
 annulations, `settlement_cancellation.rs` doc-comment du rang 3). Le doc-comment de `reversal_blocker`
 (`:2051-2053`) pose « ⛔ **Une seule requête** : les sept causes se calculent par sous-requêtes corrélées,
-jamais par sept allers-retours ».
+jamais par sept allers-retours ». ⚠️ **Défaut de l'ancienne requête, nommé** (validation P1, F-8) : pour la
+facture fournisseur, `id` et `supplier_invoice_number` sont lus par **deux** sous-requêtes `LIMIT 1`
+indépendantes (`:2127-2132`), qui peuvent désigner deux lignes différentes si deux factures visent
+l'écriture ; la nouvelle lit l'identifiant et le numéro **de la même ligne** (D1).
 
 **`letterings::first_document_owner`** (`letterings.rs:511`, privée) : boucle sur les écritures
 distinctes du groupe et appelle `reversal_blockers` **une écriture à la fois** (`:522`), retenant
@@ -56,25 +67,30 @@ distinctes du groupe et appelle `reversal_blockers` **une écriture à la fois**
 `MatchedBankTransaction` n'en est pas.
 
 **Appelants de `reversal_blockers` / `reversal_blocker`** — inventaire **fermé**, relevé par
-`grep -rn "reversal_blockers\|reversal_blocker(" crates --include=*.rs` :
+`grep -rn "reversal_blockers\|reversal_blocker(" crates --include=*.rs`, **et leurs appelants transitifs** par
+`modification_guard` (validation P1, R1 = F-1) :
 
 | site | exécuteur passé | contexte |
 |---|---|---|
 | `kesh-api/src/routes/journal_entries.rs:472` (`reversal_blocker`) | `&state.pool` | lecture pour l'écran — **hors transaction** |
-| `kesh-db/src/repositories/journal_entries.rs:1068` (`modification_guard`) | `&mut *conn` | sous le verrou de l'écriture (C-15-8-24 : « une connexion, pas un `Executor` générique ») |
+| `kesh-api/src/routes/journal_entries.rs:474` (`modification_blocker`, **transitif**) | `&state.pool` | lecture pour l'écran ; `modification_blocker` (`journal_entries.rs:1203`) fait `pool.acquire()` (`:1208`, **pas** de `begin`) et enchaîne **six** lectures en autocommit, dont `modification_guard` (`:1233`) — six instantanés, sept après la refonte |
+| `kesh-db/src/repositories/journal_entries.rs:1068` (`modification_guard`) | `&mut *conn` | appelée par `update` (`:1529`) et `delete_in_tx` (`:1877`) **sous le verrou** de l'écriture, et par `modification_blocker` (`:1233`) **sur une connexion nue** (C-15-8-24 : « une connexion, pas un `Executor` générique ») |
 | `journal_entries.rs:2072` (`reversal_blocker`, enveloppe) | `executor` | délègue |
 | `journal_entries.rs:2438` (`reverse_owned_in_tx`) | `&mut **tx` | dans la transaction du geste |
-| `settlement_cancellation.rs:107` (file commune des annulations) | `&mut *conn` | prédicteur et gestes |
+| `settlement_cancellation.rs:107` (file commune des annulations) | `&mut *conn` | prédicteurs (en transaction : `routes/invoices.rs:1440`, `supplier_invoices.rs:1414`, `reconciliation_cancel.rs:220`) et gestes |
 | `letterings.rs:522` (`first_document_owner`) | `&mut **tx` | acte 1 du lettrage, mode `Manual` |
-| `kesh-db/tests/letterings.rs:588` | `&mut *conn` | test |
+| `kesh-db/tests/letterings.rs:588` | `&mut *conn` | test — **déjà** sur une connexion : compile sans changement |
 | `kesh-db/tests/invoice_settlement.rs:579`, `:584` | `&pool` | test |
 | `kesh-db/tests/supplier_invoices_repository.rs:298`, `:724`, `:1300` | `&pool` | test |
+| `kesh-db/tests/supplier_invoices_repository.rs:746` (`modification_guard`, **transitif**) | `&mut conn` | test sur connexion nue — inchangé |
 
 S'y ajoutent deux **mentions** sans appel, à relire : `kesh-db/tests/journal_entries_modification.rs:104`
 (la constante `QUOI_FAIRE` renvoie à `reversal_blockers` pour trier une référence) et
-`kesh-api/tests/journal_entry_reversal_e2e.rs:1061` (commentaire). **Six** sites de production (dont
-l'enveloppe), **six** appels de test dans **cinq** fonctions et **trois** fichiers, **deux** mentions dans
-deux autres fichiers — **cinq** fichiers de tests en tout.
+`kesh-api/tests/journal_entry_reversal_e2e.rs:1061` (commentaire). **Six** sites de production directs (dont
+l'enveloppe) **plus un** transitif de route (`modification_blocker`) ; **six** appels de test directs dans
+**cinq** fonctions et **trois** fichiers — dont **cinq** à adapter (`letterings.rs:588` passe déjà une
+connexion ; validation P1, R7) — plus **un** transitif inchangé (`supplier_invoices_repository.rs:746`) ;
+**deux** mentions dans deux autres fichiers — **cinq** fichiers de tests en tout.
 
 ## Décisions
 
@@ -82,12 +98,30 @@ deux autres fichiers — **cinq** fichiers de tests en tout.
 
 ```rust
 /// Le type d'une pièce propriétaire, dans l'ordre de précédence de `reversal_blockers` (rangs 3 à 7).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum DocumentKind { Invoice, CreditNote, SupplierInvoice, Settlement, BankTransaction }
 
+impl DocumentKind {
+    /// Le motif de contre-passation que porte ce type — la table de correspondance, écrite UNE fois,
+    /// employée par `reversal_blockers` (pour rendre `ReversalBlockerHit`) et par `first_document_owner`
+    /// (pour `DbError::LetteringLineOwnedByDocument`).
+    pub fn reversal_blocker(self) -> ReversalBlocker;
+    /// R5 : ce type fait-il d'une ligne une **ligne de pièce**, non lettrable à la main ? Vrai pour
+    /// Invoice, CreditNote, SupplierInvoice, Settlement ; **faux pour BankTransaction**. Employé par
+    /// `first_document_owner` et par la 15-1b (`manuallyLetterable`, filtre des propositions) — jamais
+    /// une seconde liste.
+    pub fn blocks_manual_lettering(self) -> bool;
+    /// La valeur sérialisée : `invoice`, `creditNote`, `supplierInvoice`, `settlement`, `bankTransaction` —
+    /// celle de `document.type` de la vue (15-1b) et de `documentType` d'audit (`DocumentRef`, 15-1a2-i).
+    pub fn as_str(self) -> &'static str;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocumentOwner {
     pub kind: DocumentKind,
     pub id: i64,
-    /// Numéro de la pièce quand elle en a un (facture, avoir, facture fournisseur), sinon `None`.
+    /// Numéro de la pièce quand elle en a un (facture, avoir, facture fournisseur), sinon `None` — lu sur
+    /// la MÊME ligne que `id`.
     pub number: Option<String>,
     /// Pour `Settlement` : la facture réglée (`invoice_settlements.invoice_id`) et son numéro ; `None` sinon.
     pub invoice_id: Option<i64>,
@@ -99,17 +133,31 @@ pub async fn document_owners(
 ) -> Result<BTreeMap<i64, Vec<DocumentOwner>>, DbError>;
 ```
 
-- **Une requête ensembliste par tranche de 500** écritures (`WHERE je.id IN (…) AND je.company_id = ?`),
-  sans N+1 ; liste vide → `Ok(BTreeMap::new())` sans requête.
+Dans `crates/kesh-db/src/repositories/journal_entries.rs` (le module que la 15-1b appelle).
+
+- **Forme fixée** (validation P1, R2 = F-4) : **une** instruction par tranche de **500** écritures — un
+  `UNION ALL` de **cinq** blocs, un par type, chacun borné par `… IN (…) AND je.company_id = ?` et rendant
+  `(entry_id, kind, id, number, invoice_id, invoice_number)` ; dans chaque bloc, le **plus petit `id`** par
+  écriture est choisi par une table dérivée `GROUP BY entry_id` (`MIN(id)`) **jointe en retour** sur la table
+  de la pièce, si bien que `id` et `number` sortent **de la même ligne** (F-8) ; le bloc fournisseur porte les
+  deux colonnes (`purchase_journal_entry_id`, `settlement_journal_entry_id`) dans sa dérivée ; le bloc
+  règlement joint `invoices` pour le numéro de la facture réglée. Liste vide → `Ok(BTreeMap::new())` **sans
+  requête**. Doublons dans `entry_ids` : dédupliqués avant découpage.
 - `Vec<DocumentOwner>` **dans l'ordre de précédence** (Invoice, CreditNote, SupplierInvoice, Settlement,
-  BankTransaction) ; une écriture sans propriétaire est **absente** de la table (ou présente avec un
-  vecteur vide — à fixer au développement et à écrire dans le doc-comment ; le test l'asserte).
+  BankTransaction — l'ordre de `DocumentKind`). Une écriture sans propriétaire est **absente** de la table —
+  jamais présente avec un vecteur vide (tranché ; validation P1, R8 = F-9 ; écrit en doc-comment, asserté).
+  Une écriture d'une autre société, ou inexistante, est absente elle aussi.
 - **Au plus un propriétaire par type et par écriture, le plus petit `id`** — là où la requête d'aujourd'hui
-  prend un `LIMIT 1` arbitraire. Écart **nommé** : pour les quatre pièces il ne change rien (une seule
-  pièce par type) ; pour `BankTransaction`, il rend déterministe ce qui ne l'était pas.
+  prend un `LIMIT 1` arbitraire. Écart **nommé** : sur des données **saines** (une pièce par type, l'invariant
+  applicatif du modèle réel), rien ne change ; sur des données qui violent cet invariant — deux factures, ou
+  deux transactions bancaires, visant une écriture —, le résultat devient déterministe ; et l'identifiant et
+  le numéro de la facture fournisseur viennent de la même ligne (F-8).
 - ⛔ **`&mut MySqlConnection`, pas un `Executor` générique** (C-15-1b-10) — patron C-15-8-24 de
   `modification_guard` : la fonction enchaîne plusieurs requêtes, ce qu'un exécuteur consommé par valeur
   interdit. Une transaction se passe déréférencée (`&mut **tx`), une connexion se reprête (`&mut *conn`).
+- **Les trois méthodes de `DocumentKind`** (validation P1, R4 = F-5 ; C-15-1b-0-2) sont la **source unique** de
+  la correspondance type → motif, de la liste R5 et des chaînes sérialisées ; un test à **table fermée** (les
+  cinq variants, valeurs écrites à la main) les fige.
 
 ### D2 — `reversal_blockers` réécrit dessus, signature `&mut MySqlConnection`
 
@@ -121,95 +169,167 @@ pub async fn document_owners(
 - `reversal_blocker` (enveloppe) suit la même signature.
 - **Le doc-comment « ⛔ Une seule requête » est réécrit** : deux requêtes, **un instantané** dès que
   l'appelant tient une transaction (`REPEATABLE READ` : l'instantané se fige à la première lecture et vaut
-  pour la seconde). Tous les appelants de production en tiennent une, **sauf la route** :
-- **La route** (`routes/journal_entries.rs:472`) ouvre une transaction de **lecture** (`state.pool.begin()`,
-  lecture puis `rollback`) et y appelle `reversal_blocker(&mut *tx, …)` — sans quoi les deux requêtes
-  liraient deux instantanés, et un motif pourrait s'afficher contre un état qu'aucun instant n'a connu.
-  Patron : la vue des postes ouverts (15-1b AC1, « une transaction, vue unique »).
-- Les tests sur `&pool` passent une connexion acquise (`&mut *pool.acquire().await?`) — deux instantanés
-  y sont indifférents (aucun écrivain concurrent dans ces tests).
+  pour la seconde). ⚠️ Cette propriété repose sur le **niveau d'isolation par défaut** d'InnoDB, que Kesh ne
+  configure pas (`grep -rn "ISOLATION" crates --include=*.rs` hors tests : aucune sortie ; 15-1b P3, F L-8) —
+  écrit tel quel dans le doc-comment.
+- **La route** (`routes/journal_entries.rs:472-474`) ouvre **une** transaction de **lecture**
+  (`state.pool.begin()`, lectures, puis `rollback`) et y lit les **trois** champs de ce que l'écran peut faire
+  — `reversal_blocker(&mut *tx, …)`, `reversed_by(&mut *tx, …)` (exécuteur générique, accepte la connexion) et
+  `modification_blocker(&mut *tx, …)` — sans quoi les requêtes liraient plusieurs instantanés et un motif
+  pourrait s'afficher contre un état qu'aucun instant n'a connu (validation P1, R1 = F-1 ; C-15-1b-0-1).
+- **`modification_blocker` prend `conn: &mut MySqlConnection`** au lieu de `&MySqlPool` (son seul appelant est
+  la route ; son doc-comment « sur une connexion acquise du pool (six lectures enchaînées) » est réécrit :
+  « dans la transaction de lecture de l'appelant, un instantané »). `find_by_id` (`:741`, `&MySqlPool`, ses
+  propres requêtes) **reste hors** de cette transaction — écart **assumé**, préexistant : l'en-tête de
+  l'écriture n'est pas un motif, et le rattacher changerait une signature de plus sans rien fermer de ce que
+  la refonte ouvre.
+- Tous les autres appelants de production tiennent déjà une transaction (tableau ci-dessus). Les tests sur
+  `&pool` passent une connexion acquise (`&mut *pool.acquire().await?`) — plusieurs instantanés y sont
+  indifférents (aucun écrivain concurrent dans ces tests).
 
 ### D3 — `first_document_owner` en un lot
 
 Un seul appel `document_owners(&mut **tx, company_id, &entrées_distinctes)` au lieu de la boucle ; la
-première ligne (dans l'ordre des lignes, comme aujourd'hui) dont l'écriture a un propriétaire de type
-Invoice, CreditNote, SupplierInvoice ou Settlement rend `LetteringLineOwnedByDocument` avec **le même**
-`blocker`, `document_id` et `document_label` qu'aujourd'hui. Sous les verrous de l'acte 1 : inchangé.
+première ligne (dans l'ordre des lignes, comme aujourd'hui) dont l'écriture a un propriétaire `o` tel que
+`o.kind.blocks_manual_lettering()` rend `LetteringLineOwnedByDocument { blocker: o.kind.reversal_blocker(),
+document_id, document_label }` avec **les mêmes** valeurs qu'aujourd'hui — aucune liste de quatre motifs
+écrite dans le corps. Sous les verrous de l'acte 1 : inchangé (aucun verrou pris). Le doc-comment
+(`letterings.rs:507-510`, « rangs 3 à 6 — réutilisés, jamais une seconde liste ») renvoie aux méthodes de
+`DocumentKind`.
+
+⚠️ **Changement de comportement nommé** (validation P1, F-10) : l'ancienne boucle faisait remonter
+`NotFound` de `reversal_blockers` pour une écriture absente ou d'une autre société ; `document_owners` la
+rend absente, et `first_document_owner` rend `None` pour elle. **Inatteignable** : les lignes viennent de
+l'acte 1, lecture bornée par société (`letterings.rs:197`).
 
 ### D4 — La parité se prouve contre un ORACLE INDÉPENDANT (C-15-1b-10)
 
+**Fixture**, montée en **SQL direct** (patron de l'en-tête de `kesh-db/tests/letterings.rs` ; validation P1,
+R10) — aucun dépôt, pour pouvoir poser des cumuls que les gestes interdisent (le schéma, lui, les permet :
+modèle réel). Elle exerce les **huit** rangs, seuls **et cumulés** : règlement encaissé par rapprochement
+(`OwnedBySettlement` **et** `MatchedBankTransaction`) ; facture fournisseur achat **et** règlement ;
+contre-passation et contre-passée ; compte archivé ; et (validation P1, R3 = F-2) **une écriture qui porte
+les cinq types à la fois** — une facture, un avoir, une facture fournisseur, une ligne `invoice_settlements`
+et une transaction bancaire visant la même écriture — pour que toute permutation de deux types soit
+observable.
+
 Deux oracles, aucun ne sortant de `document_owners` :
 
-1. **L'ancien code, gelé dans un module de test** — `crates/kesh-db/tests/common/reversal_blockers_frozen.rs` :
-   la requête de `reversal_blockers` **copiée telle qu'au commit `056997b0`** (SQL et décodage, ordre des
-   rangs), avec un en-tête qui dit d'où elle vient, pourquoi elle ne doit **pas** suivre le code de
-   production, et le commit de référence. Pour **chaque** écriture d'une fixture qui exerce les huit
-   rangs, seuls et cumulés (règlement encaissé par rapprochement : `OwnedBySettlement` **et**
-   `MatchedBankTransaction` ; facture fournisseur achat **et** règlement ; contre-passation et contre-passée ;
-   compte archivé), `reversal_blockers` (nouveau) == oracle gelé — motif, identifiant, étiquette, ordre.
-   ⚠️ La fixture ne contient **pas** deux transactions pointant la même écriture (le `LIMIT 1` sans
-   `ORDER BY` de l'oracle n'y serait pas déterministe) ; ce cas a son test propre, à valeurs écrites.
-2. **Des valeurs écrites à la main** : pour une écriture de chaque type, le `DocumentOwner` attendu
-   (type, id, numéro, facture du règlement) est écrit en dur dans le test — ce qui garde l'oracle gelé
-   contre un défaut qu'il partagerait avec le nouveau code — ; et le cas « deux transactions » rend la
-   plus petite.
+1. **L'ancien code, gelé dans le binaire de test** — module `crates/kesh-db/tests/document_owners/reversal_blockers_frozen.rs`,
+   inclus par `#[path]` dans `document_owners.rs` et **dans lui seul** (validation P1, R5 : pas sous
+   `tests/common/`, dont `mod.rs` sert cinq binaires de backfill sans `#[allow(dead_code)]` — un module qu'ils
+   n'appellent pas y ferait rougir `clippy -D warnings` ; un fichier d'un sous-dossier de `tests/` sans
+   `main.rs` n'est pas une cible cargo) : la requête de `reversal_blockers` **copiée telle qu'au commit
+   `056997b0`** (SQL et décodage, ordre des rangs), avec un en-tête qui dit d'où elle vient, pourquoi elle ne
+   doit **pas** suivre le code de production, et le commit de référence. Pour **chaque** écriture de la
+   fixture, `reversal_blockers` (nouveau) == oracle gelé — motif, identifiant, étiquette, ordre — **y compris**
+   le cas **`NotFound`** (écriture inexistante, écriture d'une autre société : les deux rendent `NotFound`).
+   ⚠️ La fixture ne contient **pas** deux pièces **du même type** sur une écriture (le `LIMIT 1` sans
+   `ORDER BY` de l'oracle n'y serait pas déterministe) ; ce cas — deux transactions, deux factures — a son
+   test propre, à valeurs écrites.
+2. **Des valeurs écrites à la main** : pour une écriture de chaque type **et** pour l'écriture aux cinq types,
+   le `Vec<DocumentOwner>` attendu (type, id, numéro, facture du règlement), **dans l'ordre**, est écrit en dur
+   dans le test — ce qui garde l'oracle gelé contre un défaut qu'il partagerait avec le nouveau code — ; le cas
+   « deux transactions » (et « deux factures ») rend la plus petite ; la table des trois méthodes de
+   `DocumentKind` est écrite en dur (cinq lignes).
+3. **`first_document_owner`** (validation P1, F-3) : un test par type de R5 (facture, avoir, facture
+   fournisseur, règlement) sur `POST`/`create_group_in_tx` en mode `Manual`, avec `blocker`, `document_id` et
+   `document_label` écrits en dur ; une ligne **seulement** rapprochée d'une transaction ne refuse pas
+   (`kesh-db/tests/letterings.rs:588`, nommé ici, inchangé) ; deux écritures possédées dans le groupe → la
+   **première ligne** gagne.
+4. **La portée par société** : `owners_are_scoped_by_company` entre dans les tests de D4 (elle tue la
+   mutation (c), F-11).
 
 ### D5 — La mutation est ÉPROUVÉE, pas supposée
 
-Au développement, trois mutations de `document_owners`, chacune appliquée puis annulée (fichier **touché**
-après restauration : cargo garde sinon le binaire muté) : (a) inverser deux rangs (CreditNote avant
-Invoice) ; (b) retirer la jointure de la facture d'un règlement ; (c) retirer le filtre `company_id`. Chacune
-doit faire **rougir** au moins un test de D4 ; le Dev Agent Record nomme, pour chacune, le test qui a rougi.
-Une mutation qui reste verte est un finding.
+Au développement, quatre mutations, chacune appliquée puis annulée (fichier **touché** après restauration :
+cargo garde sinon le binaire muté) : (a) inverser deux rangs (CreditNote avant Invoice) — rougit sur
+l'écriture aux cinq types (valeurs écrites **et** oracle gelé) ; (b) retirer la jointure de la facture d'un
+règlement ; (c) retirer le filtre `company_id` de `document_owners` — rougit `owners_are_scoped_by_company` ;
+(d) retirer un type de `blocks_manual_lettering`, ou y ajouter `BankTransaction` — rougit la table fermée de
+`DocumentKind` et un test de `first_document_owner`. Chacune doit faire **rougir** au moins un test de D4 ; le
+Dev Agent Record nomme, pour chacune, le test qui a rougi. Une mutation qui reste verte est un finding.
 
 ## Critères d'acceptation
 
-**AC1** — `document_owners` existe avec la signature et le type de D1 ; une liste de 1 200 écritures est
-lue en **trois** requêtes (tranches de 500), mesuré par un compteur de requêtes ou par la journalisation de
-test ; une liste vide n'émet aucune requête ; une écriture d'une autre société n'a aucun propriétaire.
+**AC1** — `document_owners` existe avec la signature, les types et les trois méthodes de `DocumentKind` de
+D1 ; **mesure du lot** (validation P1, R2 = F-4) : 1 200 écritures posées par un `INSERT` direct multi-valeurs
+(dont des écritures **possédées** dans la première, la deuxième **et** la troisième tranche, pour que le test
+prouve que toutes les tranches sont lues, pas seulement comptées) sont lues en **trois** instructions — mesuré
+par le delta de `SHOW SESSION STATUS LIKE 'Com_select'` lu **avant et après** l'appel **sur la même
+connexion** (compteur de session, déterministe ; `SHOW STATUS` incrémente `Com_show_status`, non
+`Com_select` — **étalonné** au T0 par le delta d'un `SELECT 1`, qui doit valoir 1) ; une liste vide donne un
+delta de **0** ; une écriture d'une autre société n'a aucun propriétaire ; une écriture sans propriétaire est
+absente de la table.
 
 **AC2** — `reversal_blockers` et `reversal_blocker` prennent `&mut MySqlConnection` ; leurs résultats sont
-**identiques** à l'oracle gelé sur toute la fixture de D4 (1) ; leur doc-comment ne dit plus « une seule
-requête » et dit l'instantané.
+**identiques** à l'oracle gelé sur toute la fixture de D4 (1), `NotFound` compris ; leur doc-comment ne dit
+plus « une seule requête » et dit l'instantané, et sa dépendance au niveau d'isolation par défaut.
 
 **AC3** — `first_document_owner` fait **un** appel à `document_owners` par groupe (plus de boucle sur
-`reversal_blockers`) ; les tests de R5 existants (`kesh-db/tests/letterings.rs`,
-`supplier_invoices_repository.rs`) restent verts **sans modification de leurs assertions**.
+`reversal_blockers`) et décide par `DocumentKind::blocks_manual_lettering` / `reversal_blocker` ; les tests de
+R5 existants — `kesh-db/tests/letterings.rs:533` et `:802` (`OwnedByInvoice`),
+`supplier_invoices_repository.rs:2568` (`OwnedBySupplierInvoice`) — restent verts **sans modification de leurs
+assertions**, et les tests neufs de D4 (3) couvrent les deux types qu'aucun test n'exerçait
+(`OwnedByCreditNote`, `OwnedBySettlement`), l'exclusion de `BankTransaction` et l'ordre des lignes.
+*(Les sites `supplier_invoices_repository.rs:298`, `:724`, `:1300` sont des appels directs de
+`reversal_blocker(s)`, non des tests de R5 — AC4 ; validation P1, F-3.)*
 
-**AC4** — **Inventaire fermé des appelants** : les six sites de production et les six appels de test du
-tableau sont adaptés ; la route lit dans une transaction de lecture (D2) ; `grep -rn
-"reversal_blockers\|reversal_blocker(" crates --include=*.rs` ne rend plus aucun appel qui passe un pool.
+**AC4** — **Inventaire fermé des appelants** : les six sites de production directs, le transitif
+`modification_blocker` et les cinq appels de test à adapter du tableau sont adaptés ; la route lit
+`reversal_blocker`, `reversed_by` et `modification_blocker` dans **une** transaction de lecture (D2) ;
+`modification_blocker` prend `&mut MySqlConnection`. Contrôle : **le workspace compile** (`cargo build
+--workspace --all-targets`) — un `&pool` ne se déréférence pas en `&mut MySqlConnection`, c'est le compilateur
+qui ferme l'inventaire, non un `grep` (validation P1, R9 = F-11).
 
-**AC5** — **Oracle indépendant** (D4) et **mutations éprouvées** (D5), consignées au Dev Agent Record.
+**AC5** — **Oracle indépendant** (D4) et **mutations éprouvées** (D5, quatre), consignées au Dev Agent Record.
 
 **AC6** — **Aucun changement visible** : aucune route, aucun code d'erreur, aucun texte, aucune clé i18n ;
-`CHANGELOG.md`, `api-external.md` et les manuels **inchangés** (refonte interne, sans effet de contrat —
-contrôlé par `git diff --stat` sur `docs/`, `CHANGELOG.md`, `crates/kesh-i18n/`, `frontend/`).
+`CHANGELOG.md`, `api-external.md` et les manuels **inchangés** (refonte interne, sans effet de contrat).
+Contrôle **manuel**, consigné au Dev Agent Record (validation P1, R9) : `git diff --stat` sur `docs/`,
+`CHANGELOG.md`, `crates/kesh-i18n/`, `frontend/` ne rend rien.
 
 ## Tasks
 
-- [ ] **T0** — Re-greper l'inventaire des appelants sur la base réelle du développement (le tableau est
-      relevé sur `056997b0` ; la 15-1a2 aura pu en ajouter, par exemple dans la file commune) ; tout site
-      neuf entre au tableau et à AC4.
-- [ ] **T1** (D1, AC1) — `DocumentKind`, `DocumentOwner`, `document_owners`, doc-comments.
-- [ ] **T2** (D2, D3, AC2, AC3) — `reversal_blockers` / `reversal_blocker` réécrits ; `first_document_owner`
-      en un lot ; doc-comment « une seule requête » réécrit.
-- [ ] **T3** (AC4) — Les appelants : route en transaction de lecture, tests sur connexion acquise, mentions
-      relues (`journal_entries_modification.rs:104`, `journal_entry_reversal_e2e.rs:1061`).
-- [ ] **T4** (D4, D5, AC5) — Module gelé, fixture, valeurs écrites, mutations et leur procès-verbal.
+- [ ] **T0** — Re-greper l'inventaire des appelants **et transitifs** (`modification_guard`,
+      `modification_blocker`) sur la base réelle du développement (le tableau est relevé sur `056997b0` ; la
+      15-1a2 aura pu en ajouter, par exemple dans la file commune) ; tout site neuf entre au tableau et à AC4.
+      Étalonner `Com_select` (AC1).
+- [ ] **T1** (D1, AC1) — `DocumentKind` et ses trois méthodes, `DocumentOwner`, `document_owners` (forme de
+      D1), doc-comments.
+- [ ] **T2** (D2, D3, AC2, AC3) — `reversal_blockers` / `reversal_blocker` réécrits ; `first_document_owner` en
+      un lot, sur les méthodes de `DocumentKind`. Doc-comments qui vieillissent avec la refonte (validation
+      P1, F-7), greppés **par la valeur** (`git grep -nE "Une seule requête|exécuteur par|LIMIT 1. \*\*sans|rangs 3 à 6" --
+      crates/kesh-db/src`) et réécrits : `reversal_blocker` (`journal_entries.rs:2051-2053`), `reversal_blockers`
+      (`:2078-2089` : y écrire les deux requêtes et l'instantané), `modification_guard` (`:1025-1029`, « [`reversal_blockers`] prend son exécuteur
+      par valeur » ; « [`modification_blocker`] passe la connexion qu'il a acquise »), `modification_blocker`
+      (`:1199-1200`), `settlement_cancellation.rs:64-71` (« l'identifiant que rend `reversal_blockers` sort d'un
+      `LIMIT 1` **sans `ORDER BY`** » → le plus petit `id` ; l'argument de la requête dédiée tient toujours),
+      `letterings.rs:507-510`. Chaque site du grep est trié au Dev Agent Record (sur `056997b0`, « Une seule
+      requête » rend aussi `email_templates.rs:137`, `accounts.rs:445`, `invoices.rs:563`, qui parlent d'autre
+      chose).
+- [ ] **T3** (AC4) — Les appelants : route en **une** transaction de lecture pour trois lectures,
+      `modification_blocker` sur une connexion, tests sur connexion acquise, mentions relues
+      (`journal_entries_modification.rs:104`, `journal_entry_reversal_e2e.rs:1061`).
+- [ ] **T4** (D4, D5, AC5) — Module gelé, fixture SQL directe (dont l'écriture aux cinq types), valeurs écrites,
+      tests de `first_document_owner`, quatre mutations et leur procès-verbal.
 
-**Tests prévus** (4 neufs) — `crates/kesh-db/tests/document_owners.rs` (neuf, `test-schema`) :
-`owners_match_the_frozen_reversal_blockers` (AC2, D4 (1)), `owners_match_handwritten_expectations` (D4 (2),
-dont deux transactions sur une écriture), `owners_are_read_by_batches_of_500` (AC1),
-`owners_are_scoped_by_company` (AC1). Plus le module de test `common/reversal_blockers_frozen.rs` (oracle,
-pas un test). Tests existants **adaptés sans changement d'assertion** : `letterings.rs:588`,
-`invoice_settlement.rs:579`, `:584`, `supplier_invoices_repository.rs:298`, `:724`, `:1300`.
+**Tests prévus** (11 neufs) — `crates/kesh-db/tests/document_owners.rs` (neuf, `test-schema`) :
+`owners_match_the_frozen_reversal_blockers` (AC2, D4 (1), `NotFound` compris), `owners_match_handwritten_expectations`
+(D4 (2), dont l'écriture aux cinq types, deux transactions et deux factures sur une écriture),
+`document_kind_table_is_closed` (D1, D4 (2) : les trois méthodes, cinq variants écrits à la main),
+`owners_are_read_by_batches_of_500` (AC1, `Com_select`), `owners_are_scoped_by_company` (AC1, D4 (4)),
+`first_document_owner_names_an_invoice`, `…_a_credit_note`, `…_a_supplier_invoice`, `…_a_settlement` (D4 (3) :
+quatre tests, un par type), `first_document_owner_ignores_a_bank_transaction_only` (D4 (3)),
+`first_document_owner_takes_the_first_line` (D4 (3)). Plus le module `document_owners/reversal_blockers_frozen.rs`
+(oracle, pas un test). Tests existants **adaptés sans changement d'assertion** : `invoice_settlement.rs:579`,
+`:584`, `supplier_invoices_repository.rs:298`, `:724`, `:1300` ; `letterings.rs:588` **déjà conforme**.
 
-*(Recompte depuis cette liste : **4 fonctions de test neuves** ; **6 appels de test adaptés**, dans
-**5 fonctions** — `invoice_settlement.rs:579` et `:584` sont dans la même,
-`annuler_l_unique_reglement_remet_la_facture_a_regler` — et **3 fichiers**, relevés par `awk` sur
-`056997b0`.)* ⚠️ À recompter au T0 depuis la source : le nombre de **fonctions** de test touchées n'est pas
-celui des **appels**.
+*(Recompte depuis cette liste : 5 + 4 + 2 = **11 fonctions de test neuves** ; **5 appels de test adaptés**, dans
+**4 fonctions** — `invoice_settlement.rs:579` et `:584` sont dans la même,
+`annuler_l_unique_reglement_remet_la_facture_a_regler` — et **2 fichiers** ; `letterings.rs:588` compile sans
+changement (validation P1, R7). ⚠️ À recompter au T0 depuis la source : le nombre de **fonctions** de test
+touchées n'est pas celui des **appels**.)*
 
 ## Dev Notes
 
@@ -217,9 +337,11 @@ celui des **appels**.
   `CLAUDE.md`) ; base remise à zéro avant ; E2E complet au dernier commit de code (la route de
   contre-passation est exercée par l'écran).
 - **Aucune migration** : P5–P8 sans objet.
-- **Modules** : `kesh-db` (`journal_entries.rs`, `letterings.rs` ; `settlement_cancellation.rs`,
-  `modification_guard` et `reverse_owned_in_tx` passent déjà une connexion ou une transaction déréférencée,
-  et restent tels quels), `kesh-api` (une route). **Deux**, très en deçà du seuil.
+- **Modules** — aux deux grains (C-15-1a2-21) : crates `kesh-db`, `kesh-api` = **2** ; modules métier
+  `kesh-db/repositories/journal_entries` (lot, `reversal_blockers`, `modification_blocker`, doc-comments),
+  `…/letterings` (`first_document_owner`, doc-comment), `…/settlement_cancellation` (doc-comment seul),
+  `kesh-api/routes/journal_entries` (une route) = **4**, sous le seuil. `modification_guard` et
+  `reverse_owned_in_tx` passent déjà une connexion ou une transaction déréférencée, et restent tels quels.
 - **Ce que la story ne fait pas** : elle n'expose rien à l'API ; la vue et les propositions sont la 15-1b.
 
 ## Dev Agent Record
@@ -231,6 +353,35 @@ celui des **appels**.
 ### File List
 
 ## Change Log
+
+### Validation P1 — 2026-10-09 (Sonnet 5.5 ×2, lentilles R et F ; remédiation Opus 5.5, seul remédiateur des fiches de la suite du lettrage, en autonomie)
+
+**Rapports** : `kesh-gate-logs/15-1b-0-validate-p1-R.md` (**0 CRITICAL, 0 HIGH, 4 MEDIUM, 6 LOW**) et `…-F.md`
+(**0 CRITICAL, 0 HIGH, 5 MEDIUM, 6 LOW**). Recoupements : R1 = F-1, R2 = F-4, R3 = F-2 + F-3, R4 = F-5 ; R6 =
+F-6, R8 = F-9, R9 = F-11 → **4 MEDIUM distincts**, **9 LOW distincts**. Première passe : pas de trend. Chaque
+finding relu au code (`056997b0`).
+
+| finding | sévérité | verdict | où |
+|---|---|---|---|
+| R1 = F-1 — `modification_blocker` lit sur une connexion nue (`journal_entries.rs:1203-1208`, `pool.acquire()`), appelée par la même route ; `supplier_invoices_repository.rs:746` absent | MEDIUM | **corrigé** : `modification_blocker(&mut MySqlConnection)`, la route lit trois champs dans **une** transaction de lecture ; `find_by_id` hors, écart assumé (C-15-1b-0-1) ; inventaire avec transitifs | modèle réel, D2, AC4, T3 |
+| R2 = F-4 — « trois requêtes » sans compteur ni forme | MEDIUM | **corrigé** : un `UNION ALL` par tranche, delta de `Com_select` sur la même connexion (étalonné au T0), amorçage par `INSERT` direct avec des écritures possédées dans chaque tranche (vérifié : aucun compteur dans `crates/`) | D1, AC1, T0 |
+| R3 = F-2 + F-3 — mutation (a) non observable ; `first_document_owner` exercé pour 2 types sur 4 ; `NotFound` absent de l'oracle | MEDIUM | **corrigé** : écriture aux **cinq** types en SQL direct (vérifié : seul `invoice_settlements` est `UNIQUE`, squash `:690`), `NotFound` comparé, six tests de `first_document_owner`, mutation (d) | D4, D5, AC3, tests |
+| R4 = F-5 — liste R5 privée ; correspondance type → motif écrite deux fois | MEDIUM | **corrigé** : `DocumentKind::reversal_blocker()`, `blocks_manual_lettering()`, `as_str()` publics, table fermée testée ; la 15-1b les consomme (C-15-1b-0-2) | D1, D3 |
+| R5 — `tests/common/` et `dead_code` | LOW | **corrigé** (`tests/document_owners/…` par `#[path]`) | D4 |
+| R6 = F-6 — « garanti par les contraintes » faux | LOW | **corrigé** (invariant applicatif ; écart nommé sur données saines) | modèle réel, D1 |
+| R7 — citations décalées ; `letterings.rs:588` déjà conforme | LOW | **corrigé** (`:2118`, `:2144` ; 5 appels adaptés, 4 fonctions, 2 fichiers) | modèle réel, tests |
+| R8 = F-9 — absente ou vecteur vide ; dérivations | LOW | **corrigé** (absente ; `Debug, Clone, PartialEq, Eq` ; doublons dédupliqués ; module `journal_entries`) | D1 |
+| R9 = F-11 — contrôles par `grep` | LOW | **corrigé** (AC4 : le workspace compile ; AC6 : contrôle manuel nommé) | AC4, AC6 |
+| R10 — fixture non guidée | LOW | **corrigé** (SQL direct) | D4 |
+| F-7 — doc-comments qui vieillissent | LOW | **corrigé** (six sites nommés, grep de la valeur, sites hors lot triés) | T2 |
+| F-8 — l'ancienne requête fournisseur lit id et numéro sur deux lignes | LOW | **corrigé** (défaut nommé, la nouvelle lit la même ligne) | modèle réel, D1 |
+| F-10 — `NotFound` de l'ancienne boucle | LOW | **corrigé** (changement nommé, inatteignable) | D3 |
+
+**Propagation** : « tests/common/reversal_blockers_frozen », « six appels de test adaptés », « 4 tests neufs »,
+« trois mutations », `modification_blocker(pool` grepés sur les fiches 15-1b-0, 15-1b, l'index et le registre.
+**Recompte** (depuis ce fichier) : **6 critères** (AC1–AC6), **5 tâches** (T0–T4), **11 tests neufs** ; 5 appels
+de test adaptés. Choix : **C-15-1b-0-1, C-15-1b-0-2**. Prochaine passe : **P2, complète, Opus** — la remédiation
+change une signature (`modification_blocker`), la forme de la requête et la surface publique de `DocumentKind`.
 
 ### Création — 2026-10-09 (Opus 5.5, remédiation de la validation P2 de la 15-1b, en autonomie)
 
