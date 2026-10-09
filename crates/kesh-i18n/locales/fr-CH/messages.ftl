@@ -2383,6 +2383,7 @@ audit-log-action-company-updated = Société modifiée
 audit-log-action-email-template-updated = Modèle d'e-mail modifié
 audit-log-action-email-template-restored-default = Modèle d'e-mail réinitialisé
 audit-log-action-installation-demo-seeded = Données de démonstration chargées
+audit-log-action-installation-repaired = Réparation de l'installation
 audit-log-action-installation-reset = Installation réinitialisée
 audit-log-action-installation-step-completed = Étape d'installation franchie
 audit-log-action-installation-ui-mode-changed = Mode d'utilisation changé

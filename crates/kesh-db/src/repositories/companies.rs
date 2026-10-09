@@ -14,7 +14,9 @@ use serde_json::json;
 use sqlx::mysql::MySqlPool;
 use sqlx::{MySql, Transaction};
 
-use crate::entities::{Company, CompanyUpdate, Language, NewAuditLogEntry, NewCompany, OrgType};
+use crate::entities::{
+    AUDIT_ENTITY_ID_NONE, Company, CompanyUpdate, Language, NewAuditLogEntry, NewCompany, OrgType,
+};
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::MAX_LIST_LIMIT;
 use crate::repositories::{api_keys, audit_log};
@@ -380,6 +382,313 @@ pub async fn reattach_orphan_principals_in_tx(
         api_keys_revoked,
         api_keys_repointed,
     })
+}
+
+/// Ce qui déclenche une réparation d'installation — Story 15-7b3 (AC 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RepairTrigger {
+    /// Le démarrage du serveur (`ensure_admin_user`). Seul déclencheur qui
+    /// supprime les sociétés provisoires superflues (#542).
+    Startup,
+    /// L'import d'une sauvegarde (`run_backup_and_restore`), dans sa
+    /// transaction. `actor_user_id` signe l'entrée (le même acteur
+    /// qu'`admin.full_import` : le plus petit administrateur du jeu restauré) ;
+    /// `triggered_by_user` est l'utilisateur qui a lancé l'import, écrit au
+    /// détail.
+    Restore {
+        actor_user_id: i64,
+        triggered_by_user: i64,
+    },
+}
+
+impl RepairTrigger {
+    /// Code stable écrit dans `details.trigger`.
+    fn code(self) -> &'static str {
+        match self {
+            Self::Startup => "startup",
+            Self::Restore { .. } => "restore",
+        }
+    }
+}
+
+/// Ce qu'une réparation d'installation a fait — Story 15-7b3 (AC 1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InstallationRepair {
+    /// La société de rattachement : `Some` s'il reste **exactement une**
+    /// société, `None` s'il n'en reste aucune ou plusieurs.
+    pub company_id: Option<i64>,
+    /// Les sociétés provisoires superflues supprimées (#542) — démarrage
+    /// seulement.
+    pub stub_companies_removed: Vec<i64>,
+    /// Ce qu'a fait la règle des principaux orphelins
+    /// ([`reattach_orphan_principals_in_tx`]).
+    pub principals: OrphanPrincipals,
+}
+
+/// Nom **constant** du point de sauvegarde d'une suppression de société
+/// provisoire — jamais dérivé d'une entrée.
+const REPAIR_SAVEPOINT: &str = "repair_stub";
+
+/// Les colonnes `(table, colonne)` qui désignent `companies(id)` par une clé
+/// étrangère, **lues dans le schéma** (`information_schema.KEY_COLUMN_USAGE`),
+/// triées — Story 15-7b3 (AC 1, étape 2 ; choix C-15-7-50).
+///
+/// La liste n'est pas recopiée dans le code : elle couvre ainsi les tables en
+/// `ON DELETE CASCADE` (`users`, `bank_profiles`, `contact_persons`,
+/// `email_templates`) et toute table future. `audit_log.company_id`, pointeur
+/// logique **sans** clé étrangère, n'y figure pas.
+pub async fn company_referencing_columns(
+    conn: &mut sqlx::MySqlConnection,
+) -> Result<Vec<(String, String)>, DbError> {
+    sqlx::query_as(
+        "SELECT CAST(TABLE_NAME AS CHAR), CAST(COLUMN_NAME AS CHAR) \
+         FROM information_schema.KEY_COLUMN_USAGE \
+         WHERE TABLE_SCHEMA = DATABASE() \
+           AND REFERENCED_TABLE_SCHEMA = DATABASE() \
+           AND REFERENCED_TABLE_NAME = 'companies' \
+           AND REFERENCED_COLUMN_NAME = 'id' \
+         ORDER BY TABLE_NAME, COLUMN_NAME",
+    )
+    .fetch_all(conn)
+    .await
+    .map_err(map_db_error)
+}
+
+/// `true` si **une** ligne d'**une** des colonnes `refs` désigne la société
+/// `id`. Les identifiants viennent du schéma (jamais d'une entrée) et sont
+/// cités entre accents graves.
+async fn company_is_referenced(
+    tx: &mut Transaction<'_, MySql>,
+    refs: &[(String, String)],
+    id: i64,
+) -> Result<bool, DbError> {
+    for (table, column) in refs {
+        let exists: bool = sqlx::query_scalar(&format!(
+            "SELECT EXISTS(SELECT 1 FROM `{table}` WHERE `{column}` = ?)"
+        ))
+        .bind(id)
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+        if exists {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+/// Exécute une instruction de point de sauvegarde (`SAVEPOINT`, `RELEASE
+/// SAVEPOINT`, `ROLLBACK TO SAVEPOINT`) sur [`REPAIR_SAVEPOINT`].
+async fn savepoint_statement(
+    tx: &mut Transaction<'_, MySql>,
+    verb: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(&format!("{verb} {REPAIR_SAVEPOINT}"))
+        .execute(&mut **tx)
+        .await
+        .map(|_| ())
+}
+
+/// Supprime, **chacune sous un point de sauvegarde**, les sociétés `ids`, et
+/// rend celles qui l'ont été. Une suppression en erreur est annulée
+/// (`ROLLBACK TO SAVEPOINT`) : la société reste, un `warn!` le dit, et la
+/// boucle continue. Si l'annulation échoue elle-même (un 1213, ou un 1205 sous
+/// `innodb_rollback_on_timeout`, a déjà annulé la transaction entière et le
+/// point de sauvegarde avec elle — continuer écrirait hors transaction), rend
+/// l'**erreur d'origine**, celle du `DELETE`, et journalise celle du
+/// `ROLLBACK TO`. Une erreur de `SAVEPOINT` ou de `RELEASE` est rendue telle
+/// quelle.
+async fn delete_stubs_under_savepoints(
+    tx: &mut Transaction<'_, MySql>,
+    ids: &[i64],
+) -> Result<Vec<i64>, DbError> {
+    let mut removed = Vec::with_capacity(ids.len());
+    for &id in ids {
+        savepoint_statement(tx, "SAVEPOINT")
+            .await
+            .map_err(map_db_error)?;
+        let deleted = sqlx::query("DELETE FROM companies WHERE id = ?")
+            .bind(id)
+            .execute(&mut **tx)
+            .await;
+        match deleted {
+            Ok(_) => {
+                savepoint_statement(tx, "RELEASE SAVEPOINT")
+                    .await
+                    .map_err(map_db_error)?;
+                removed.push(id);
+            }
+            Err(e) => {
+                if let Err(rollback) = savepoint_statement(tx, "ROLLBACK TO SAVEPOINT").await {
+                    tracing::warn!(
+                        company_id = id,
+                        error = %rollback,
+                        "réparation de l'installation : retour au point de sauvegarde impossible"
+                    );
+                    return Err(map_db_error(e));
+                }
+                tracing::warn!("société provisoire {id} conservée : {e}");
+            }
+        }
+    }
+    Ok(removed)
+}
+
+/// Répare une installation atteinte par #528 (principaux orphelins d'une
+/// remise à zéro v0.12.x) ou #542 (sociétés provisoires ajoutées à chaque
+/// démarrage), **dans la transaction de l'appelant** — Story 15-7b3 (AC 1 ;
+/// choix C-15-7-44 à 47, C-15-7-49, C-15-7-50).
+///
+/// Partagée par le démarrage (`ensure_admin_user`, [`RepairTrigger::Startup`])
+/// et l'import d'une sauvegarde (`run_backup_and_restore`,
+/// [`RepairTrigger::Restore`]). Dans cet ordre :
+///
+/// 1. `SELECT id, is_stub FROM companies ORDER BY id FOR UPDATE` (Pattern 5 :
+///    `companies` d'abord ; c'est aussi la pré-condition de
+///    [`reattach_orphan_principals_in_tx`], et ce qui sérialise deux instances
+///    démarrant sur la même base) ;
+/// 2. **démarrage seulement**, s'il y a plus d'une société : supprime les
+///    sociétés provisoires (`is_stub = TRUE`) qu'**aucune ligne d'aucune
+///    table** ne désigne ([`company_referencing_columns`]) — si toutes le
+///    sont, la plus petite (`MIN(id)`, celle que `/setup` rattache) est
+///    conservée ; chaque suppression sous un point de sauvegarde (une erreur
+///    laisse la société en place, et la réparation continue). À la
+///    restauration, rien n'est supprimé : une archive est l'état choisi par
+///    l'administrateur, le démarrage suivant le fait ;
+/// 3. société de rattachement : `Some` s'il en reste **exactement une** ;
+/// 4. **installation sans utilisateur** : rien de plus — `info!` si des
+///    sociétés ont été supprimées, **sans** entrée d'audit (personne pour la
+///    signer ; aucune clé ne peut exister sans son créateur,
+///    `fk_api_keys_created_by`) — `Ok(None)` ;
+/// 5. [`reattach_orphan_principals_in_tx`] avec la société de l'étape 3 : la
+///    règle unique de la 15-7b2 (clés actives orphelines **révoquées** quel
+///    que soit le nombre de sociétés, puis, avec une cible, utilisateurs
+///    rattachés et clés repointées) — non réécrite ici ;
+/// 6. rien fait ⇒ `Ok(None)`, rien d'écrit (toute installation saine).
+///    ⚠️ `None` a donc **deux** sens : « rien fait » ou « sociétés supprimées
+///    sur une base sans utilisateur » (étape 4) — dans le second, la
+///    transaction **a écrit** et le `commit` de l'appelant les rend durables ;
+/// 7. une entrée `installation.repaired` (`entity_type = "installation"`,
+///    `entity_id = AUDIT_ENTITY_ID_NONE`), écrite **après** le rattachement.
+///
+/// **Acteur** : il n'existe aucun acteur « système » (`ActorType` ne connaît
+/// que `User` et `ApiKey`). Au démarrage, l'entrée est signée par
+/// l'**administrateur actif** de plus petit `id` — à défaut l'utilisateur de
+/// plus petit `id` — **bien que personne n'ait rien fait** ;
+/// `details.trigger = "startup"` le dit. À la restauration, par
+/// `actor_user_id`. ⚠️ La société de l'entrée est celle de l'acteur
+/// (sous-SELECT de `audit_log::insert_in_tx`) : sans société de rattachement,
+/// elle désigne la société effacée, et le journal — qui filtre par société —
+/// ne l'affiche pas.
+///
+/// **Ni `begin` ni `commit`** : c'est l'appelant.
+pub async fn repair_installation_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    trigger: RepairTrigger,
+) -> Result<Option<InstallationRepair>, DbError> {
+    // 1. `companies` d'abord.
+    let companies: Vec<(i64, bool)> =
+        sqlx::query_as("SELECT id, is_stub FROM companies ORDER BY id FOR UPDATE")
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
+
+    // 2. Les sociétés provisoires superflues (#542), au démarrage seulement.
+    let mut stub_companies_removed = Vec::new();
+    if trigger == RepairTrigger::Startup && companies.len() > 1 {
+        let refs = company_referencing_columns(&mut *tx).await?;
+        let mut superfluous = Vec::new();
+        for &(id, is_stub) in &companies {
+            if is_stub && !company_is_referenced(tx, &refs, id).await? {
+                superfluous.push(id);
+            }
+        }
+        if superfluous.len() == companies.len() {
+            // Toutes superflues : la plus petite, celle que `/setup` rattache,
+            // est conservée (les deux listes sont triées par `id`).
+            superfluous.remove(0);
+        }
+        stub_companies_removed = delete_stubs_under_savepoints(tx, &superfluous).await?;
+    }
+
+    // 3. La société de rattachement.
+    let remaining: Vec<i64> = companies
+        .iter()
+        .map(|&(id, _)| id)
+        .filter(|id| !stub_companies_removed.contains(id))
+        .collect();
+    let target = match remaining.as_slice() {
+        [only] => Some(*only),
+        _ => None,
+    };
+
+    // 4. Installation sans utilisateur.
+    let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    if user_count == 0 {
+        if !stub_companies_removed.is_empty() {
+            tracing::info!(
+                stub_companies_removed = ?stub_companies_removed,
+                "réparation de l'installation : sociétés provisoires superflues supprimées \
+                 (aucun utilisateur, aucune entrée d'audit)"
+            );
+        }
+        return Ok(None);
+    }
+
+    // 5. La règle unique des principaux orphelins (15-7b2).
+    let principals = reattach_orphan_principals_in_tx(tx, target).await?;
+
+    // 6. Rien fait : rien d'écrit.
+    if stub_companies_removed.is_empty() && principals.is_empty() {
+        return Ok(None);
+    }
+
+    // 7. L'entrée, après le rattachement.
+    let actor = match trigger {
+        RepairTrigger::Restore { actor_user_id, .. } => actor_user_id,
+        RepairTrigger::Startup => sqlx::query_scalar(
+            "SELECT id FROM users \
+             ORDER BY (role = 'Admin' AND active = TRUE) DESC, id LIMIT 1",
+        )
+        .fetch_one(&mut **tx)
+        .await
+        .map_err(map_db_error)?,
+    };
+    let mut details = json!({
+        "company_id": target,
+        "stub_companies_removed": stub_companies_removed,
+        "users_repointed": principals.user_ids.len(),
+        "user_ids": principals.user_ids,
+        "api_keys_revoked": principals.api_keys_revoked,
+        "api_keys_repointed": principals.api_keys_repointed,
+        "trigger": trigger.code(),
+    });
+    if let RepairTrigger::Restore {
+        triggered_by_user, ..
+    } = trigger
+    {
+        details["triggered_by_user"] = json!(triggered_by_user);
+    }
+    audit_log::insert_in_tx(
+        tx,
+        NewAuditLogEntry::user(
+            actor,
+            "installation.repaired",
+            "installation",
+            AUDIT_ENTITY_ID_NONE,
+            Some(details),
+        ),
+    )
+    .await?;
+
+    Ok(Some(InstallationRepair {
+        company_id: target,
+        stub_companies_removed,
+        principals,
+    }))
 }
 
 /// Lève le drapeau « société provisoire » (`is_stub`) d'une société, **dans la

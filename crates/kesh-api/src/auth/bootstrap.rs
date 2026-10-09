@@ -3,7 +3,16 @@
 //!
 //! Appelé depuis `main.rs` après l'exécution des migrations. Idempotent
 //! et tolérant aux race conditions (démarrage concurrent de plusieurs
-//! instances contre la même DB).
+//! instances contre la même DB) : la réparation qui précède les cas
+//! (Story 15-7b3) verrouille `companies … FOR UPDATE` en premier, si bien
+//! que deux instances se **sérialisent** sur elle — la seconde attend le
+//! `commit` de la première, puis ne trouve plus rien à réparer.
+//!
+//! **Avant la matrice, à chaque démarrage** (Story 15-7b3, #528, #542) :
+//! réparation de l'installation (`companies::repair_installation_in_tx`) —
+//! principaux orphelins d'une remise à zéro v0.12.x, sociétés provisoires
+//! superflues. Rien sur une installation saine ; un échec est journalisé et
+//! **n'empêche pas** le démarrage.
 //!
 //! **Matrice 6 cas** (cf. story v011-5 Scope) :
 //!
@@ -11,7 +20,7 @@
 //! |---|-------|---------------|---------------------------------------------------------------|
 //! | 1 | 0     | false         | INSERT stub company si aucune société (#542) ; admin via `/setup` |
 //! | 2 | 0     | true          | INSERT stub + admin (bootstrap déclaratif, ≡ v011-2)           |
-//! | 3 | > 0   | false         | no-op (régime nominal post-bootstrap)                          |
+//! | 3 | > 0   | false         | no-op (régime nominal ; la réparation l'a précédé)             |
 //! | 4 | > 0   | true, match user, hash identique | no-op silencieux + warn « retirer les vars » |
 //! | 5 | > 0   | true, match user, hash diff | **RECOVERY** : warn préventif + tx atomique UPDATE+audit_log + revoke_all + error! |
 //! | 6 | > 0   | true, no match  | no-op + warn « no user matches KESH_ADMIN_USERNAME=<x> »      |
@@ -21,6 +30,7 @@
 
 use kesh_db::entities::{Language, NewAuditLogEntry, NewUser, Role};
 use kesh_db::errors::{DbError, map_db_error};
+use kesh_db::repositories::companies::{self, RepairTrigger};
 use kesh_db::repositories::{audit_log, refresh_tokens, users};
 use sqlx::MySqlPool;
 
@@ -47,9 +57,23 @@ use crate::errors::AppError;
 /// début, partagée par toutes les branches (cleanup orphan stub race cas 2
 /// inclus). La société provisoire n'est insérée (cas 1 et 2) que sur une base
 /// **sans société** (Story 15-7b2, #542) : un démarrage n'en ajoute jamais une
-/// seconde. La réparation des installations déjà touchées (#528, #542) relève
-/// de la Story 15-7b3.
+/// seconde.
+///
+/// **Réparation, en tête, avant la lecture des compteurs** (Story 15-7b3,
+/// AC 2 ; #528, #542) : [`repair_installation_at_startup`] — principaux
+/// orphelins rattachés et clés d'API orphelines révoquées, sociétés
+/// provisoires superflues supprimées ; l'entrée `installation.repaired` est
+/// signée par le plus ancien administrateur actif **bien que personne ne l'ait
+/// faite** (`details.trigger = "startup"`). Les compteurs reflètent ainsi
+/// l'état réparé. **Invariant** : la réparation n'insère ni ne supprime aucune
+/// ligne de `users`, et ne ramène jamais le nombre de sociétés à zéro (la plus
+/// petite est conservée) ; la garde `company_count == 0` des cas 1 et 2 et la
+/// relecture `ORDER BY id LIMIT 1` du cas 2 prennent donc les mêmes décisions
+/// qu'avant elle. **Un échec ne refuse pas le démarrage** : l'installation
+/// démarre dans l'état qu'elle avait.
 pub async fn ensure_admin_user(pool: &MySqlPool, config: &Config) -> Result<i64, AppError> {
+    repair_installation_at_startup(pool).await;
+
     let company_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM companies")
         .fetch_one(pool)
         .await
@@ -350,6 +374,61 @@ pub async fn ensure_admin_user(pool: &MySqlPool, config: &Config) -> Result<i64,
                 }
             }
         }
+    }
+}
+
+/// Réparation de l'installation au démarrage — Story 15-7b3 (AC 2 ; choix
+/// C-15-7-38, C-15-7-47).
+///
+/// Une transaction : `repair_installation_in_tx(Startup)`, puis `commit`
+/// **dans tous les cas** — sur `None` aussi, la transaction ayant pu supprimer
+/// des sociétés provisoires d'une base sans utilisateur. Sur `Some`, le
+/// rapport est journalisé ici (`info!`) ; le cas sans utilisateur l'est par la
+/// fonction elle-même.
+///
+/// **Non bloquante** : une erreur est journalisée (`error!`), la transaction
+/// annulée *best-effort* (l'erreur du `rollback` en `warn!`, jamais
+/// substituée), et le démarrage se poursuit sur l'installation **inchangée**
+/// — mode dégradé (écrans de la société en erreur, connexion et export de
+/// sauvegarde disponibles) : une réparation qui échoue ne doit pas rendre
+/// l'installation **moins** utilisable qu'avant. **Pas de rejeu** : le
+/// démarrage précède l'ouverture du port, aucune transaction HTTP ne peut
+/// interbloquer ; un 1205/1213 ne viendrait que d'un client SQL externe, et
+/// un redémarrage le lève.
+async fn repair_installation_at_startup(pool: &MySqlPool) {
+    let attempt = async {
+        let mut tx = pool.begin().await.map_err(map_db_error)?;
+        match companies::repair_installation_in_tx(&mut tx, RepairTrigger::Startup).await {
+            Ok(report) => {
+                tx.commit().await.map_err(map_db_error)?;
+                Ok(report)
+            }
+            Err(e) => {
+                if let Err(rollback) = tx.rollback().await {
+                    tracing::warn!(
+                        error = %rollback,
+                        "réparation de l'installation au démarrage : échec du rollback"
+                    );
+                }
+                Err(e)
+            }
+        }
+    }
+    .await;
+    match attempt {
+        Ok(Some(report)) => tracing::info!(
+            company_id = ?report.company_id,
+            stub_companies_removed = ?report.stub_companies_removed,
+            users_repointed = report.principals.user_ids.len(),
+            api_keys_revoked = report.principals.api_keys_revoked.len(),
+            api_keys_repointed = report.principals.api_keys_repointed,
+            "réparation de l'installation au démarrage : faite (entrée installation.repaired)"
+        ),
+        Ok(None) => {}
+        Err(e) => tracing::error!(
+            "réparation de l'installation au démarrage : {e} — démarrage poursuivi, \
+             installation inchangée"
+        ),
     }
 }
 
@@ -926,5 +1005,510 @@ mod tests {
             updated, has_audit,
             "atomicity broken: UPDATE applied without audit OR audit without UPDATE"
         );
+    }
+
+    // --- Story 15-7b3 — réparation des installations atteintes (#528, #542) ---
+
+    /// Un id qu'aucune société ne porte : la société effacée par une remise à
+    /// zéro v0.12.x.
+    const DEAD: i64 = 999_999;
+
+    async fn insert_company(pool: &MySqlPool, is_stub: bool) -> i64 {
+        sqlx::query(
+            "INSERT INTO companies (name, address, org_type, accounting_language, \
+             instance_language, is_stub) VALUES ('Société', 'Rue', 'Independant', 'FR', 'FR', ?)",
+        )
+        .bind(is_stub)
+        .execute(pool)
+        .await
+        .expect("insert company")
+        .last_insert_id() as i64
+    }
+
+    async fn insert_user(
+        pool: &MySqlPool,
+        name: &str,
+        role: &str,
+        active: bool,
+        company: i64,
+    ) -> i64 {
+        sqlx::query(
+            "INSERT INTO users (username, password_hash, role, active, company_id) \
+             VALUES (?, 'argon2id-hash-placeholder-long-enough', ?, ?, ?)",
+        )
+        .bind(name)
+        .bind(role)
+        .bind(active)
+        .bind(company)
+        .execute(pool)
+        .await
+        .expect("insert user")
+        .last_insert_id() as i64
+    }
+
+    /// Une clé d'API créée comme la route la crée (`generate_pat` +
+    /// `create_in_tx`) ; rend `(id, empreinte)`.
+    async fn create_key(pool: &MySqlPool, company: i64, creator: i64, name: &str) -> (i64, String) {
+        let (_token, key_hash) = crate::auth::api_key::generate_pat();
+        let mut tx = pool.begin().await.unwrap();
+        let key = kesh_db::repositories::api_keys::create_in_tx(
+            &mut tx,
+            kesh_db::entities::NewApiKey {
+                company_id: company,
+                created_by_user_id: creator,
+                name: name.into(),
+                key_hash: key_hash.clone(),
+                scope: kesh_db::entities::ApiKeyScope::ReadWrite,
+                expires_at: None,
+            },
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        (key.id, key_hash)
+    }
+
+    async fn revoke_key(pool: &MySqlPool, company: i64, id: i64) {
+        let mut tx = pool.begin().await.unwrap();
+        kesh_db::repositories::api_keys::revoke_in_tx(&mut tx, company, id, 1)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+    }
+
+    /// `(company_id, revoked_at IS NOT NULL, version)` d'une clé.
+    async fn key_row(pool: &MySqlPool, id: i64) -> (i64, bool, i32) {
+        sqlx::query_as(
+            "SELECT company_id, revoked_at IS NOT NULL, version FROM api_keys WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    async fn user_companies(pool: &MySqlPool) -> Vec<i64> {
+        sqlx::query_scalar("SELECT company_id FROM users ORDER BY id")
+            .fetch_all(pool)
+            .await
+            .unwrap()
+    }
+
+    async fn company_ids(pool: &MySqlPool) -> Vec<i64> {
+        sqlx::query_scalar("SELECT id FROM companies ORDER BY id")
+            .fetch_all(pool)
+            .await
+            .unwrap()
+    }
+
+    /// Les entrées `installation.repaired` : `(user_id, company_id, details)`.
+    async fn repaired_entries(pool: &MySqlPool) -> Vec<(i64, Option<i64>, serde_json::Value)> {
+        sqlx::query_as(
+            "SELECT user_id, company_id, details_json FROM audit_log \
+             WHERE action = 'installation.repaired' ORDER BY id",
+        )
+        .fetch_all(pool)
+        .await
+        .unwrap()
+    }
+
+    /// La clé telle que l'entrée la décrit.
+    async fn revoked_key_json(pool: &MySqlPool, id: i64) -> serde_json::Value {
+        let (name, created_by_user_id, created_at, last_used_at): (
+            String,
+            i64,
+            chrono::NaiveDateTime,
+            Option<chrono::NaiveDateTime>,
+        ) = sqlx::query_as(
+            "SELECT name, created_by_user_id, created_at, last_used_at FROM api_keys WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+        serde_json::to_value(kesh_db::repositories::companies::RevokedApiKey {
+            id,
+            name,
+            created_by_user_id,
+            created_at,
+            last_used_at,
+        })
+        .unwrap()
+    }
+
+    /// Montage du test 1 : une société ; U (Comptable), A0 (administrateur
+    /// **inactif**), A1 (administrateur actif) — dans cet ordre, si bien que
+    /// A1 n'est ni le plus petit utilisateur ni le plus petit administrateur ;
+    /// deux clés créées par A1, dont une déjà révoquée ; puis l'état orphelin.
+    struct Montage1 {
+        company: i64,
+        users: [i64; 3],
+        a1: i64,
+        active_key: (i64, String),
+        revoked_key: i64,
+    }
+
+    async fn montage_1(pool: &MySqlPool, with_active_admin: bool) -> Montage1 {
+        let company = insert_company(pool, false).await;
+        let u = insert_user(pool, "u", "Comptable", true, company).await;
+        let a0 = insert_user(pool, "a0", "Admin", false, company).await;
+        let a1 = insert_user(pool, "a1", "Admin", with_active_admin, company).await;
+        let active_key = create_key(pool, company, a1, "intégration").await;
+        let (revoked_key, _) = create_key(pool, company, a1, "ancienne").await;
+        revoke_key(pool, company, revoked_key).await;
+        kesh_db::test_fixtures::rendre_principaux_orphelins(pool, DEAD).await;
+        Montage1 {
+            company,
+            users: [u, a0, a1],
+            a1,
+            active_key,
+            revoked_key,
+        }
+    }
+
+    /// Test 1 (15-7b3, AC 1, 2, 4) — au démarrage, une installation atteinte par
+    /// #528 est réparée : utilisateurs rattachés, clé active **révoquée puis**
+    /// repointée, clé déjà révoquée repointée sans changer ; une entrée signée
+    /// par l'administrateur **actif** de plus petit id ; un second démarrage
+    /// n'écrit rien.
+    #[sqlx::test(migrations = "../kesh-db/test-schema")]
+    async fn startup_repairs_orphan_principals(pool: MySqlPool) {
+        let m = montage_1(&pool, true).await;
+        let revoked_before = key_row(&pool, m.revoked_key).await;
+        assert_eq!(revoked_before, (DEAD, true, 2), "montage");
+        assert_eq!(
+            key_row(&pool, m.active_key.0).await,
+            (DEAD, false, 1),
+            "montage"
+        );
+
+        assert_eq!(
+            ensure_admin_user(&pool, &test_config_no_env())
+                .await
+                .unwrap(),
+            3
+        );
+
+        assert_eq!(user_companies(&pool).await, vec![m.company; 3]);
+        assert_eq!(key_row(&pool, m.active_key.0).await, (m.company, true, 2));
+        assert!(
+            kesh_db::repositories::api_keys::find_active_auth_by_key_hash(&pool, &m.active_key.1)
+                .await
+                .unwrap()
+                .is_none(),
+            "la clé révoquée n'authentifie plus"
+        );
+        assert_eq!(key_row(&pool, m.revoked_key).await, (m.company, true, 2));
+        let listed: Vec<i64> =
+            kesh_db::repositories::api_keys::list_by_company(&pool, m.company, true)
+                .await
+                .unwrap()
+                .iter()
+                .map(|k| k.id)
+                .collect();
+        assert_eq!(listed.len(), 2);
+        assert!(listed.contains(&m.active_key.0) && listed.contains(&m.revoked_key));
+
+        let entries = repaired_entries(&pool).await;
+        assert_eq!(entries.len(), 1, "{entries:?}");
+        let (actor, company_id, details) = &entries[0];
+        assert_eq!(
+            *actor, m.a1,
+            "acteur : l'administrateur actif de plus petit id"
+        );
+        assert_eq!(*company_id, Some(m.company));
+        assert_eq!(
+            *details,
+            serde_json::json!({
+                "company_id": m.company,
+                "stub_companies_removed": [],
+                "users_repointed": 3,
+                "user_ids": m.users,
+                "api_keys_revoked": [revoked_key_json(&pool, m.active_key.0).await],
+                "api_keys_repointed": 2,
+                "trigger": "startup",
+            })
+        );
+
+        assert_eq!(
+            ensure_admin_user(&pool, &test_config_no_env())
+                .await
+                .unwrap(),
+            3
+        );
+        assert_eq!(
+            repaired_entries(&pool).await.len(),
+            1,
+            "second démarrage : rien d'écrit"
+        );
+    }
+
+    /// Test 1, variante saine — principaux rattachés : aucune entrée.
+    #[sqlx::test(migrations = "../kesh-db/test-schema")]
+    async fn startup_on_a_sane_installation_writes_nothing(pool: MySqlPool) {
+        let company = insert_company(&pool, false).await;
+        let a = insert_user(&pool, "a", "Admin", true, company).await;
+        create_key(&pool, company, a, "saine").await;
+        assert_eq!(
+            ensure_admin_user(&pool, &test_config_no_env())
+                .await
+                .unwrap(),
+            1
+        );
+        assert!(repaired_entries(&pool).await.is_empty());
+    }
+
+    /// Test 1, variante sans administrateur actif — U et A0 seulement : l'entrée
+    /// est signée par l'utilisateur de plus petit id, U.
+    #[sqlx::test(migrations = "../kesh-db/test-schema")]
+    async fn startup_without_active_admin_signs_with_the_smallest_user(pool: MySqlPool) {
+        let m = montage_1(&pool, false).await;
+        assert_eq!(
+            ensure_admin_user(&pool, &test_config_no_env())
+                .await
+                .unwrap(),
+            3
+        );
+        let entries = repaired_entries(&pool).await;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].0, m.users[0], "acteur : U");
+    }
+
+    /// Test 1, variante deux sociétés non provisoires — la seconde n'est pas
+    /// supprimée ; aucun rattachement (aucune société ne serait sûre), clé
+    /// active révoquée sur son id mort ; une entrée `company_id: null`.
+    #[sqlx::test(migrations = "../kesh-db/test-schema")]
+    async fn startup_with_two_companies_revokes_without_reattaching(pool: MySqlPool) {
+        let m = montage_1(&pool, true).await;
+        let second = insert_company(&pool, false).await;
+        assert_eq!(
+            ensure_admin_user(&pool, &test_config_no_env())
+                .await
+                .unwrap(),
+            3
+        );
+        assert_eq!(company_ids(&pool).await, vec![m.company, second]);
+        assert_eq!(user_companies(&pool).await, vec![DEAD; 3]);
+        assert_eq!(key_row(&pool, m.active_key.0).await, (DEAD, true, 2));
+        let entries = repaired_entries(&pool).await;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].2["company_id"], serde_json::Value::Null);
+        assert_eq!(entries[0].2["users_repointed"], 0);
+        assert_eq!(entries[0].2["api_keys_repointed"], 0);
+        assert_eq!(
+            entries[0].2["stub_companies_removed"],
+            serde_json::json!([])
+        );
+    }
+
+    /// Test 1, variante aucune société — clé active révoquée, non repointée,
+    /// utilisateurs inchangés ; une entrée `company_id: null`.
+    #[sqlx::test(migrations = "../kesh-db/test-schema")]
+    async fn startup_without_any_company_only_revokes(pool: MySqlPool) {
+        let m = montage_1(&pool, true).await;
+        sqlx::query("DELETE FROM companies")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            ensure_admin_user(&pool, &test_config_no_env())
+                .await
+                .unwrap(),
+            3
+        );
+        assert!(company_ids(&pool).await.is_empty());
+        assert_eq!(user_companies(&pool).await, vec![DEAD; 3]);
+        assert_eq!(key_row(&pool, m.active_key.0).await, (DEAD, true, 2));
+        let entries = repaired_entries(&pool).await;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].2["company_id"], serde_json::Value::Null);
+        assert_eq!(entries[0].2["users_repointed"], 0);
+        assert_eq!(entries[0].2["api_keys_repointed"], 0);
+    }
+
+    /// Porte l'onboarding à l'étape 2 (langue et mode choisis), l'état que
+    /// `seed_demo` exige.
+    async fn onboarding_at_step_2(pool: &MySqlPool) {
+        kesh_db::repositories::onboarding::init_state(pool)
+            .await
+            .unwrap();
+        sqlx::query("UPDATE onboarding_state SET step_completed = 2, ui_mode = 'guided'")
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    /// Test 4 (i) (15-7b3, AC 1, 2 ; #542) — deux sociétés provisoires de plus
+    /// (redémarrages v0.12.x simulés) : au démarrage suivant, seule reste celle
+    /// de l'administrateur ; une entrée les nomme ; `seed_demo` passe ensuite.
+    #[sqlx::test(migrations = "../kesh-db/test-schema")]
+    async fn startup_removes_superfluous_stubs_and_demo_seeds(pool: MySqlPool) {
+        let config = test_config_with_env();
+        assert_eq!(ensure_admin_user(&pool, &config).await.unwrap(), 1);
+        let admin_company = company_ids(&pool).await[0];
+        let mut extra = Vec::new();
+        for _ in 0..2 {
+            extra.push(
+                kesh_db::repositories::companies::insert_stub(&pool, Language::Fr)
+                    .await
+                    .unwrap(),
+            );
+        }
+
+        assert_eq!(ensure_admin_user(&pool, &config).await.unwrap(), 1);
+
+        assert_eq!(company_ids(&pool).await, vec![admin_company]);
+        let entries = repaired_entries(&pool).await;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].2["stub_companies_removed"],
+            serde_json::json!(extra)
+        );
+        assert_eq!(entries[0].2["users_repointed"], 0);
+        assert_eq!(entries[0].2["company_id"], admin_company);
+
+        onboarding_at_step_2(&pool).await;
+        let admin: i64 = sqlx::query_scalar("SELECT id FROM users")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        kesh_seed::seed_demo(&pool, &config.locale, (admin, None))
+            .await
+            .expect("seed_demo ne rend plus 500 sur plusieurs sociétés provisoires");
+    }
+
+    /// Test 4 (ii) — une société provisoire désignée par une clé d'API n'est
+    /// **pas** supprimée (comportement ; `api_keys` est en `RESTRICT`, la garde
+    /// et le point de sauvegarde s'y recouvrent).
+    #[sqlx::test(migrations = "../kesh-db/test-schema")]
+    async fn startup_keeps_a_stub_referenced_by_an_api_key(pool: MySqlPool) {
+        let config = test_config_with_env();
+        ensure_admin_user(&pool, &config).await.unwrap();
+        let admin_company = company_ids(&pool).await[0];
+        let admin: i64 = sqlx::query_scalar("SELECT id FROM users")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        let referenced = kesh_db::repositories::companies::insert_stub(&pool, Language::Fr)
+            .await
+            .unwrap();
+        create_key(&pool, referenced, admin, "sur le stub").await;
+        let free = kesh_db::repositories::companies::insert_stub(&pool, Language::Fr)
+            .await
+            .unwrap();
+
+        ensure_admin_user(&pool, &config).await.unwrap();
+
+        assert_eq!(company_ids(&pool).await, vec![admin_company, referenced]);
+        let entries = repaired_entries(&pool).await;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].2["stub_companies_removed"],
+            serde_json::json!([free])
+        );
+    }
+
+    /// Test 4 (iii) — sans utilisateur, trois sociétés provisoires : deux
+    /// supprimées, la plus petite conservée, **aucune** entrée d'audit.
+    #[sqlx::test(migrations = "../kesh-db/test-schema")]
+    async fn startup_without_users_removes_stubs_silently(pool: MySqlPool) {
+        let mut stubs = Vec::new();
+        for _ in 0..3 {
+            stubs.push(
+                kesh_db::repositories::companies::insert_stub(&pool, Language::Fr)
+                    .await
+                    .unwrap(),
+            );
+        }
+        assert_eq!(
+            ensure_admin_user(&pool, &test_config_no_env())
+                .await
+                .unwrap(),
+            0
+        );
+        assert_eq!(company_ids(&pool).await, vec![stubs[0]]);
+        let audit: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM audit_log")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(audit, 0);
+    }
+
+    /// Test 4 (iv) — montage défensif (#542 cumulé avec #528) : trois sociétés
+    /// provisoires sans principal, utilisateur orphelin ⇒ `MIN(id)` conservée,
+    /// deux supprimées, l'utilisateur rattaché.
+    #[sqlx::test(migrations = "../kesh-db/test-schema")]
+    async fn startup_repairs_stubs_and_orphans_together(pool: MySqlPool) {
+        let mut stubs = Vec::new();
+        for _ in 0..3 {
+            stubs.push(
+                kesh_db::repositories::companies::insert_stub(&pool, Language::Fr)
+                    .await
+                    .unwrap(),
+            );
+        }
+        insert_user(&pool, "seul", "Admin", true, stubs[0]).await;
+        kesh_db::test_fixtures::rendre_principaux_orphelins(&pool, DEAD).await;
+
+        assert_eq!(
+            ensure_admin_user(&pool, &test_config_no_env())
+                .await
+                .unwrap(),
+            1
+        );
+
+        assert_eq!(company_ids(&pool).await, vec![stubs[0]]);
+        assert_eq!(user_companies(&pool).await, vec![stubs[0]]);
+        let entries = repaired_entries(&pool).await;
+        assert_eq!(entries.len(), 1);
+        assert_eq!(
+            entries[0].2["stub_companies_removed"],
+            serde_json::json!([stubs[1], stubs[2]])
+        );
+        assert_eq!(entries[0].2["users_repointed"], 1);
+    }
+
+    /// Test 5 (15-7b3, AC 2) — un échec de la réparation **n'empêche pas** le
+    /// démarrage : `Ok(3)`, installation inchangée ; le déclencheur retiré, le
+    /// démarrage suivant répare.
+    #[sqlx::test(migrations = "../kesh-db/test-schema")]
+    async fn startup_repair_failure_does_not_block_startup(pool: MySqlPool) {
+        let m = montage_1(&pool, true).await;
+        kesh_db::test_fixtures::poser_declencheur_en_echec(
+            &pool,
+            "t_15_7b3_audit",
+            "BEFORE INSERT ON audit_log",
+            None,
+        )
+        .await;
+
+        assert_eq!(
+            ensure_admin_user(&pool, &test_config_no_env())
+                .await
+                .unwrap(),
+            3
+        );
+
+        assert_eq!(
+            user_companies(&pool).await,
+            vec![DEAD; 3],
+            "installation inchangée"
+        );
+        assert_eq!(key_row(&pool, m.active_key.0).await, (DEAD, false, 1));
+        assert!(repaired_entries(&pool).await.is_empty());
+
+        sqlx::raw_sql("DROP TRIGGER t_15_7b3_audit")
+            .execute(&pool)
+            .await
+            .unwrap();
+        assert_eq!(
+            ensure_admin_user(&pool, &test_config_no_env())
+                .await
+                .unwrap(),
+            3
+        );
+        assert_eq!(user_companies(&pool).await, vec![m.company; 3]);
+        assert_eq!(key_row(&pool, m.active_key.0).await, (m.company, true, 2));
+        assert_eq!(repaired_entries(&pool).await.len(), 1);
     }
 }

@@ -2621,15 +2621,6 @@ async fn reset_without_state_row_is_an_invariant(pool: MySqlPool) {
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn reset_failure_erases_nothing_and_never_returns_its_connection(pool: MySqlPool) {
     let (_app, _token, company_id) = seeded_demo(&pool).await;
-    let log_bin: i64 = sqlx::query_scalar("SELECT CAST(@@log_bin AS SIGNED)")
-        .fetch_one(&pool)
-        .await
-        .unwrap();
-    assert_eq!(
-        log_bin, 0,
-        "pré-requis du montage : journal binaire inactif (sinon CREATE TRIGGER exige \
-         SUPER ou log_bin_trust_function_creators)"
-    );
     let pool1 = sqlx::mysql::MySqlPoolOptions::new()
         .max_connections(1)
         .connect_with((*pool.connect_options()).clone())
@@ -2639,13 +2630,14 @@ async fn reset_failure_erases_nothing_and_never_returns_its_connection(pool: MyS
         .fetch_one(&pool1)
         .await
         .unwrap();
-    sqlx::raw_sql(
-        "CREATE TRIGGER t_15_7b2_fail BEFORE INSERT ON audit_log FOR EACH ROW \
-         SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = '15-7b2 atomicity'",
+    // Pré-requis `@@log_bin = 0` asserté par le helper (Story 15-7b3, C-15-7b3-1).
+    kesh_db::test_fixtures::poser_declencheur_en_echec(
+        &pool,
+        "t_15_7b2_fail",
+        "BEFORE INSERT ON audit_log",
+        None,
     )
-    .execute(&pool)
-    .await
-    .unwrap();
+    .await;
     let before = table_counts(&pool).await;
     let company_before = snapshot(&pool, "companies").await;
     let state_before = snapshot(&pool, "onboarding_state").await;

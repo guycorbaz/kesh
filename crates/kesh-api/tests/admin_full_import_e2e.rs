@@ -2884,3 +2884,112 @@ async fn full_import_round_trip_keeps_lettering_marks(pool: MySqlPool) {
     import_ok(&app, &biz.ctx.jwt, &ancien, &data).await;
     assert_eq!(marques(&pool, &[a, b]).await, vec![(None, None); 2]);
 }
+
+// --- Story 15-7b3 — réparation à la restauration (#528) ---------------------
+
+/// Un id qu'aucune société ne porte : la société effacée par une remise à zéro
+/// v0.12.x.
+const DEAD_COMPANY_15_7B3: i64 = 999_999;
+
+/// Test 2 (15-7b3, AC 3, 4) — l'import d'une archive prise sur une installation
+/// atteinte par #528 la répare **dans sa transaction** : A et B rattachés à la
+/// société restante ; la clé d'API — acceptée avant l'import, mais en 500 sur
+/// la société effacée — est révoquée puis repointée, et répond 401 ; l'entrée
+/// `installation.repaired` est signée par A, l'acteur d'`admin.full_import`
+/// (plus petit administrateur du jeu restauré), **non** par B qui a lancé
+/// l'import ; l'entrée `admin.full_import` désigne la société vivante.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_repairs_an_installation_hit_by_528(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let a = seed_admin(&pool, "A").await;
+    let company = a.company_id;
+    let b = users::create(
+        &pool,
+        NewUser {
+            username: "b_admin".into(),
+            password_hash: hash_password("password123").unwrap(),
+            role: Role::Admin,
+            active: true,
+            company_id: company,
+            email: None,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    assert!(b > a.user_id, "montage : B d'id supérieur à A");
+    let (token, key_hash) = kesh_api::auth::api_key::generate_pat();
+    let mut tx = pool.begin().await.unwrap();
+    let key = kesh_db::repositories::api_keys::create_in_tx(
+        &mut tx,
+        kesh_db::entities::NewApiKey {
+            company_id: company,
+            created_by_user_id: a.user_id,
+            name: "intégration".into(),
+            key_hash,
+            scope: kesh_db::entities::ApiKeyScope::ReadWrite,
+            expires_at: None,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    tx.commit().await.unwrap();
+    kesh_db::test_fixtures::rendre_principaux_orphelins(&pool, DEAD_COMPANY_15_7B3).await;
+
+    let current_by_key = || {
+        app.client
+            .get(app.url("/api/v1/companies/current"))
+            .header("Authorization", format!("Bearer {token}"))
+            .send()
+    };
+    assert_eq!(
+        current_by_key().await.unwrap().status(),
+        500,
+        "avant l'import : la clé est acceptée, la société qu'elle désigne n'existe pas"
+    );
+
+    let jwt_b = forge_jwt(b, "Admin", company);
+    let backup = export_backup(&app, &jwt_b).await;
+    let resp = post_import(&app, &jwt_b, backup).await;
+    assert_eq!(resp.status(), 200, "import → 200");
+
+    let user_companies: Vec<i64> = sqlx::query_scalar("SELECT company_id FROM users ORDER BY id")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+    assert_eq!(user_companies, vec![company, company]);
+    let (key_company, revoked): (i64, bool) =
+        sqlx::query_as("SELECT company_id, revoked_at IS NOT NULL FROM api_keys WHERE id = ?")
+            .bind(key)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!((key_company, revoked), (company, true));
+    assert_eq!(current_by_key().await.unwrap().status(), 401);
+
+    let repaired: Vec<(i64, Value)> = sqlx::query_as(
+        "SELECT user_id, details_json FROM audit_log WHERE action = 'installation.repaired'",
+    )
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(repaired.len(), 1, "{repaired:?}");
+    assert_eq!(repaired[0].0, a.user_id, "acteur : A, non B");
+    assert_eq!(repaired[0].1["trigger"], "restore");
+    assert_eq!(repaired[0].1["triggered_by_user"], b);
+    assert_eq!(repaired[0].1["company_id"], company);
+    assert_eq!(repaired[0].1["users_repointed"], 2);
+    let import_entry: (i64, Option<i64>) = sqlx::query_as(
+        "SELECT user_id, company_id FROM audit_log WHERE action = 'admin.full_import' \
+         ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        import_entry,
+        (a.user_id, Some(company)),
+        "admin.full_import : même acteur, société vivante"
+    );
+}
