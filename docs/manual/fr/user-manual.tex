@@ -1719,6 +1719,8 @@ Cas d'usage : un prélèvement de carte de crédit de CHF 480 couvre des frais d
 
 Kesh passe \textbf{une seule} écriture à plusieurs lignes~: la banque d'un côté, chaque compte de la ventilation de l'autre. Comme l'affectation manuelle, l'éclatement ne règle pas de facture.
 
+\paragraph{La contrepartie n'est jamais le compte de la banque.} La contrepartie d'un rapprochement ne peut pas être le compte comptable du compte bancaire lui-même~: l'écriture passerait au débit et au crédit du même compte, et serait nulle. Kesh le \textbf{refuse} dans les trois cas --- affectation manuelle, éclatement et règle d'affectation (\S\ref{sec:regles-affectation})~; une règle refusée pour ce motif apparaît dans les \emph{Échecs partiels}, avec le libellé «~Erreur de validation~». En règle générale, le sélecteur de l'affectation manuelle ne propose pas ce compte, et une règle qui le vise n'est pas proposée --- la règle suivante qui correspond l'est à sa place. Ce filtrage n'est toutefois pas complet~: c'est le refus qui protège le grand livre.
+
 \subsection{Règles d'affectation automatique}\label{sec:regles-affectation}
 
 \keshscreenshot{reconciliation-regles.png}{Liste des règles d'affectation~: libellé, type de correspondance, valeur, compte de contrepartie, priorité et état.}  % TODO capture: ecran regles d'affectation
