@@ -4,7 +4,9 @@
 
 review *(créée le 2026-10-09 au découpage de la 15-1a en validation P3 — C124 ; validation close en P5 ;
 développement ouvert le 2026-10-09 sur `dc4bc58b`, qui porte la 15-12a et la 15-12b ; développement
-achevé le 2026-10-09, gate complet au dernier commit de code `ee6cb1c3` — revue de code à lancer)*
+achevé le 2026-10-09, gate complet au dernier commit de code `ee6cb1c3` ; revue de code P1 (Sonnet ×3)
+remédiée le 2026-10-09, gate complet et E2E complet au dernier commit de code `15a67932` — passe suivante
+à lancer)*
 
 ## Story
 
@@ -1186,14 +1188,29 @@ la correction restée non commitée, achevé le contrôle d'AC15 et exécuté le
 - **Tests ajoutés**, recomptés depuis la source, périmètre `dc4bc58b..ee6cb1c3` : `kesh-db/tests/letterings.rs`
   **31**, `kesh-db/tests/letterings_lexical.rs` **3**, `kesh-api/tests/letterings_e2e.rs` **7**,
   `kesh-core/src/lettering.rs` **12**, `kesh-api/src/errors.rs` 26 → 28 (**+2**),
-  `kesh-api/src/exports/csv_tables.rs` 16 → 17 (**+1**) — **56** ; tests existants mis à jour sans
+  `kesh-api/src/exports/csv_tables.rs` 16 → 17 (**+1**), `kesh-api/src/routes/journal_entries.rs` 6 → 7
+  (**+1**, `journal_entry_line_response_exposes_lettering`), `kesh-db/src/repositories/letterings.rs`
+  0 → 3 (**+3**, `mod tests`) — **60** *(le compte rendu d'origine écrivait 56 : les deux derniers
+  fichiers manquaient à la ventilation — revue P1, A-L1 ; recompté :
+  `git diff dc4bc58b..ee6cb1c3 -- '*.rs' | grep -E '^\+.*#\[(sqlx::test|test|tokio::test)' | wc -l` → 60)* ;
+  tests existants mis à jour sans
   changement de nombre : `migrations_upgrade_path.rs`, `migrations_fresh_install.rs`,
   `journal_entries_modification.rs`, `audit_route_registry.rs`, et cinq fichiers de test frontend.
+- **AC14 — les vérifications « par leurs gardes » faites, et écrites** *(revue P1, A-L4 = E-1, C-15-1a-i-8)* :
+  `is_no_op_change` (`journal_entries.rs:1179`) compare date, journal, libellé puis, ligne à ligne, compte,
+  débit, crédit et projet ; `entry_snapshot_json` (`:992`) construit les lignes champ par champ (`lineOrder`,
+  `accountId`, `debit`, `credit`, `projectId`). **Ni l'un ni l'autre n'est faussé** par les deux colonnes,
+  qu'ils ignorent : la marque n'est pas un contenu de l'écriture. Ce qu'ils ne voient pas — un `PUT`
+  identique sur une écriture lettrée serait un no-op, un `PUT` réel détruirait la marque sans la tracer —
+  est fermé par la garde de la 15-1a-ii (AC8, étape 7-bis, **avant** l'instantané et le no-op). La
+  **sauvegarde** est désormais prouvée par un aller-retour (`full_import_round_trip_keeps_lettering_marks`),
+  et non plus supposée de la lecture dynamique des colonnes.
 - **Écart connu, écrit au T0, non corrigé** : sur tables **vides**, le plan de l'acte 1 de la création à
   40 identifiants passe par `idx_journal_entries_company_date` (sur-verrouillage des seules bases
   minuscules, sans effet sur l'exactitude : routes rejouées).
 
-**Gates, au dernier commit de code `ee6cb1c3`** (bases `kesh_151ai` et `kesh_e2e_151ai` reconstruites par
+**Gates du développement, au dernier commit de code `ee6cb1c3` — sauf `npm run check` et `npm run
+test:unit`, rejoués sur `74d164ca`** (revue P1, A-L5 ; bases `kesh_151ai` et `kesh_e2e_151ai` reconstruites par
 `DROP/CREATE` + migrations du worktree + `scripts/seed-dev-db.sql` immédiatement avant) :
 
 | gate | résultat |
@@ -1216,6 +1233,63 @@ Aucune pollution ce run. Le gate runtime P2-bis est donc passé : `migrations_fr
 (le diff ne touche qu'un doc-comment Rust) ; `build` et l'E2E ont tourné sur `ee6cb1c3`. Un premier gate
 backend, sur `74d164ca`, avait rendu le même 3086/3086.
 
+### Remédiation de la revue de code P1 — 2026-10-09 (Opus 5.5, remédiateur)
+
+Commits : `b335e90a` (code, tests, documentation), `15a67932` (catalogue `fr-CH` rétabli — voir
+ci-dessous). Choix au registre : **C-15-1a-i-6** à **-10**.
+
+- **Ce que la remédiation touche en production** : `kesh-db/src/repositories/letterings.rs`
+  (`fiscal_year_names` prend une connexion et rend `Invariant` si un exercice manque ;
+  `group_account_number`, nouveau, rend `Invariant` si le compte manque ; `find_group` partage ces deux
+  lectures) ; `kesh-api/src/errors.rs` (le bras `LetteringTooManyLines` lit `max`) ; la clé
+  `error-lettering-too-many-lines` des quatre catalogues (`{ $max }`). Documentation : `CHANGELOG.md`,
+  `docs/api-external.md`, `docs/manual/fr/user-manual.tex` et `.pdf` (régénéré, glossaire contrôlé aplati).
+- **Tests ajoutés**, périmètre `b4ed4d61..15a67932`, recomptés par fichier : `admin_full_import_e2e.rs`
+  33 → 34 (`full_import_round_trip_keeps_lettering_marks`), `letterings_e2e.rs` 7 → 8
+  (`a_read_only_key_reads_but_cannot_letter`) — **+2** ; renforcés sans changement de nombre :
+  `lettering_invariants` (groupe `System`, seconde société, deux contrôles négatifs),
+  `the_detector_sees_writes_and_only_writes` (cinq littéraux neufs), le test de mapping (`max: 7`),
+  `form_refusals_are_400` (message rendu).
+- **Mutations rejouées** (chacune restaurée puis le binaire touché) :
+  colonnes de lettrage exclues de l'**export** (`non_generated_columns`) → `full_import_round_trip_keeps_lettering_marks`
+  **rouge** (« lettering_key absent du manifeste ») ; colonnes écartées de l'**INSERT de restauration** → **rouge**
+  (« l'import doit rétablir la marque ») ; clause `COUNT(DISTINCT je.company_id)` retirée → `lettering_invariants`
+  **rouge** (« clause des sociétés ») ; clause des origines retirée → **rouge** (« clause des origines ») ;
+  `REPLACE` retiré du détecteur → `the_detector_sees_writes_and_only_writes` **rouge** (8 ≠ 9) ; message rendu
+  par `t` sans la variable → `form_refusals_are_400` **rouge** (`{$max}` non substitué). ⚠️ **Non tuée** : passer
+  `200` en dur dans l'argument au lieu de `max` — équivalente tant que le plafond vaut 200, seul plafond de
+  production ; le repli, lui, est éprouvé avec `max: 7`.
+- ⚠️ **Incident de mutation, rattrapé par le gate** : la mutation du plafond avait d'abord été posée par un
+  `sed` sans ancrage sur le catalogue `fr-CH`, qui a réécrit en « 200 » la première variable `{ $max }` de
+  **sept** autres clés (`error-username-too-long`, `invoices-*-too-long`, `invoices-format-error-*`,
+  `reconciliation-*`) ; la restauration ne visait que la ligne du lettrage, et le résidu est parti dans
+  `b335e90a`. Le gate complet l'a vu (`kesh-i18n loader::tests::format_with_args` rouge) ; catalogue repris
+  de `b4ed4d61` dans `15a67932`, diff des quatre catalogues contre `b4ed4d61` réduit à la seule clé du
+  lettrage (vérifié). Les autres mutations étaient restaurées par copie du fichier.
+- ⚠️ **Environnement** (C-15-1a-i-10) : tmpfs MariaDB plein (`ibdata1` à 3,5 Go). Deux premiers gates
+  complets **non concluants** (1523 puis 330 échecs `1114 table is full`, aucun du code) ;
+  `innodb_file_per_table` basculé à `OFF` (volatil), mes bases de test résiduelles supprimées, gate rejoué
+  à **deux** threads.
+
+**Gates de la remédiation, au dernier commit de code `15a67932`** (bases `kesh_151ai` et
+`kesh_e2e_151ai` reconstruites par `DROP/CREATE` + migrations du worktree + seed immédiatement avant) :
+
+| gate | résultat |
+|---|---|
+| `cargo fmt --all -- --check` | vert |
+| `cargo clippy --workspace --all-targets -- -D warnings` | vert, 0 avertissement |
+| `cargo nextest run --workspace --profile ci --test-threads=2` *(au lieu de `scripts/test-fast.sh --ci`, 8 threads : même contenu, parallélisme réduit par l'espace disque)* | vert — **3088** exécutés, **3088** réussis, 4 ignorés, 0 flaky (331,6 s) |
+| `npm run check` | 0 erreur, 27 avertissements (préexistants) |
+| `npm run lint-i18n-ownership` | PASS |
+| `npm run test:unit` | vert — 114 fichiers, **1139** tests |
+| `npm run build` | vert |
+| E2E complet (backend `0.13.0` sur `:3011`, `/health` : `smtpConfigured: true`) | **245** réussis, **9** échecs, 19 sautés (10,2 min) |
+
+Les neuf échecs E2E sont ceux de la liste des attendus, jugés fichier par fichier : sept KF-029 (#97 —
+`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) et deux KF-045 (#421
+— `invoices.spec.ts:415`, `:439` ; run achevé vers 10:45 UTC, avant 12:00). Aucune pollution. 3086 → 3088 :
+les deux tests ajoutés.
+
 ### File List
 
 Code et tests : `crates/kesh-core/src/lettering.rs` (neuf), `crates/kesh-core/src/lib.rs`,
@@ -1235,11 +1309,31 @@ les dix `crates/*/Cargo.toml` (0.13.0) et `Cargo.lock`.
 Frontend : `journal-entries.types.ts`, `JournalEntryForm.edit.test.ts`, `form-helpers.test.ts`,
 `invoices/settlement-cancel.ts` et `.test.ts`, `InvoiceSettlements.test.ts`,
 `reconciliation/reconciliation-cancel.ts` et `.test.ts`, `shared/utils/settlement-cancel-blocked.test.ts`.
+Revue P1 : `crates/kesh-api/tests/admin_full_import_e2e.rs` (en plus des fichiers déjà listés).
 Documentation : `CHANGELOG.md`, `docs/api-external.md`, `docs/MULTI-TENANT-SCOPING-PATTERNS.md`,
 `docs/migrations-idempotence-audit.md`, `docs/manual/fr/user-manual.tex` et `.pdf`.
 Planification : cette fiche, `epic-15-choix-autonomes.md`, `sprint-status.yaml`.
 
 ## Change Log
+
+### Revue de code P1 — 2026-10-09 (Sonnet ×3 ; remédiation Opus 5.5)
+
+Trois lentilles Sonnet en contexte frais sur `dc4bc58b..09a9d16b` (rapports
+`kesh-gate-logs/15-1a-i-review-p1-{B,E,A}.md`) : **B** 0 CRITICAL / 0 HIGH / 2 MEDIUM / 6 LOW, **E** 0 / 0 / 1 / 7,
+**A** 0 / 0 / 0 / 6. Après dédoublonnage (B2 = A-L3, E-1 = A-L4, E-6 ⊂ A-L6, E-5 = B8) : **3 MEDIUM** distincts.
+
+- **Reclassé** : B1 (MEDIUM → **LOW**, décision de l'orchestrateur, C-15-1a-i-6) — modification et suppression
+  d'une écriture lettrée : périmètre de la 15-1a-ii, dont AC8 couvre `update_in_tx` (étape 7-bis, avant le
+  `DELETE`+`INSERT`) et `delete_in_tx` (étape 3-quinquies, inconditionnelle) ; C124 interdit tout tag entre les
+  deux merges.
+- **Remédiés** : B2 = A-L3 et A-L2 (textes publics ramenés au code livré, C-15-1a-i-7) ; E-1 = A-L4 (aller-retour
+  de sauvegarde, `is_no_op_change` et `entry_snapshot_json` constatés, C-15-1a-i-8). LOW appliqués : E-2, E-4,
+  B6, E-6 = A-L6 (première moitié), E-7, E-8, A-L1, A-L5. LOW écartés avec motif : B3, B4, B5, B7, B8 = E-5, E-3,
+  A-L6 (seconde moitié) — C-15-1a-i-9.
+- **Code de production touché** : oui — `letterings.rs` (E-2), `errors.rs` et les quatre catalogues (E-4). La
+  boucle ne peut donc pas se clore sur cette passe (règle de la passe ciblée).
+- Gate complet et E2E complet au dernier commit de code `15a67932` : backend 3088/3088, Vitest 1139, E2E 245 /
+  9 attendus. Détail, mutations et incident de catalogue au Dev Agent Record.
 
 ### Développement — 2026-10-09 (Opus 5.5, agent de développement)
 
