@@ -1,6 +1,6 @@
 # Story 15.7b1 : Le chargement de la démonstration laisse sa trace
 
-Status: ready-for-dev
+Status: review
 
 <!-- Née le 2026-10-08 du découpage de la 15-7b (choix C-15-7-31), à la passe de validation P4 :
      coupe Volet A / Volet B que la section « Dérogation règle de splitting » de la 15-7b prévoyait
@@ -218,13 +218,13 @@ s'inscrit au journal d'audit, en une entrée de synthèse (#434).
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — `kesh-seed::seed_demo`** (AC 1, 7) — `SeedError::StepAlreadyCompleted`, `SeedAttemptError` et `is_seed_retryable`, signature `actor`, dernière transaction (réglages puis taux), `retry_with` sur 1213 autour d'elle, boucle `InactiveOrInvalidAccounts` conservée autour, `serde_json` ajouté à `crates/kesh-seed/Cargo.toml`.
-- [ ] **T2 — Handler** (AC 1, 7) — `seed_demo` : `Extension(current_user)`, `StepAlreadyCompleted` ⇒ 400, **toute autre erreur ⇒ `AppError::Internal`, 500** (repli actuel conservé, R2-3 de la P2), plus d'`UPDATE is_stub` ni de lecture de `ui_mode` (pré-vérification conservée).
-- [ ] **T3 — Libellés et registre** (AC 8, 9).
-- [ ] **T4 — Doc-comments** (AC 10).
-- [ ] **T5 — Tests** (Dev Notes § Tests) — helper de création de jeton remonté dans `tests/common/mod.rs`, `api_keys_e2e.rs` adapté (dix appels), création de jeton du test 8 de la 15-7a2 (`onboarding_audit_e2e.rs`) remplacée par le helper.
-- [ ] **T6 — Manuels, PDF, CHANGELOG** (AC 11, 12).
-- [ ] **T7 — Gates** : `kesh-db` non touché en code (commentaires seuls), mais `kesh-seed` et les tests DB le sont ⇒ gate complet avant push ; base remise à zéro avant ; E2E complet au dernier commit de code (règle D7), jugé contre les échecs attendus de `docs/testing.md`.
+- [x] **T1 — `kesh-seed::seed_demo`** (AC 1, 7) — `SeedError::StepAlreadyCompleted`, `SeedAttemptError` et `is_seed_retryable`, signature `actor`, dernière transaction (réglages puis taux), `retry_with` sur 1213 autour d'elle, boucle `InactiveOrInvalidAccounts` conservée autour, `serde_json` ajouté à `crates/kesh-seed/Cargo.toml`.
+- [x] **T2 — Handler** (AC 1, 7) — `seed_demo` : `Extension(current_user)`, `StepAlreadyCompleted` ⇒ 400, **toute autre erreur ⇒ `AppError::Internal`, 500** (repli actuel conservé, R2-3 de la P2), plus d'`UPDATE is_stub` ni de lecture de `ui_mode` (pré-vérification conservée).
+- [x] **T3 — Libellés et registre** (AC 8, 9).
+- [x] **T4 — Doc-comments** (AC 10).
+- [x] **T5 — Tests** (Dev Notes § Tests) — helper de création de jeton remonté dans `tests/common/mod.rs`, `api_keys_e2e.rs` adapté (dix appels), création de jeton du test 8 de la 15-7a2 (`onboarding_audit_e2e.rs`) remplacée par le helper.
+- [x] **T6 — Manuels, PDF, CHANGELOG** (AC 11, 12).
+- [x] **T7 — Gates** : `kesh-db` non touché en code (commentaires seuls), mais `kesh-seed` et les tests DB le sont ⇒ gate complet avant push ; base remise à zéro avant ; E2E complet au dernier commit de code (règle D7), jugé contre les échecs attendus de `docs/testing.md`.
 
 ## Dev Notes
 
@@ -316,11 +316,82 @@ sinon le binaire muté) :
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), agent de développement en autonomie (consignes de l'Epic 15),
+worktree `kesh-15-7b1`, cible `CARGO_TARGET_DIR` propre, bases `kesh_157b1` / `kesh_e2e_157b1`.
+
 ### Debug Log References
+
+Journaux non versionnés : `target/gate-logs/15-7b1-gate.log` (backend), `15-7b1-front.log`,
+`15-7b1-e2e.log`, `15-7b1-backend-e2e.log` ; mutations : `scratchpad/mut157b1/M{1..5}-*.log`.
 
 ### Completion Notes List
 
+- **T0** : écarts consignés au Change Log (partition 104/6/2 → 105/5/2, colonne `Rejeu`, bras `422`,
+  renvois relocalisés) ; choix **C-15-7b1-1**. Aucun écart ne changeait une règle ni un AC.
+- **Tests d'abord** : les six tests neufs ont été écrits avant le code et exécutés sur `200f5e79` + tests :
+  **5 rouges** (tests 1-variante, 2, 2-variante, 3, 11) — le test 1 principal n'a pas été atteint
+  (fail-fast) —, la garde 11 rouge sur sa part (b) comme prévu.
+- **Gates réels, au dernier commit de code (`638a80ef`, commentaires de `kesh-db` ; la suite ne porte que
+  des `.tex`, PDF, CHANGELOG et la fiche)**, base remise à zéro avant (DROP/CREATE de mes deux bases,
+  migrations, seed) :
+  - backend `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) : **2979/2979**, 4 ignorés ;
+  - frontend : `npm run check` vert, `lint-i18n-ownership` PASS, Vitest **1095/1095** (112 fichiers),
+    `npm run build` vert ;
+  - E2E complet (port 3016, secrets aléatoires, `KESH_TEST_MODE=true` des deux côtés,
+    `KESH_COOKIE_SECURE=false`, SMTP factices, `/health` → `smtpConfigured:true`, inbox et documents du
+    scratchpad) : **245 passés, 9 échecs, 19 ignorés**, tous attendus selon `docs/testing.md` — les 7
+    KF-029 (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) et
+    les 2 KF-045 (`invoices:415`, `:439`), run à 05:50–06:03 UTC, avant midi. Backend arrêté par son PID.
+  - gate ciblé intermédiaire : 122/122 (`onboarding_audit_e2e`, `api_keys_e2e`, `audit_route_registry`,
+    `audit_label_registry`, `onboarding_e2e`, `fiscal_years_e2e`, `kesh-seed`).
+- **Mutations jouées, chacune seule, fichier restauré puis touché** — 5/5 rouges :
+  M1 `demo_seeded` écrite par le pool hors de la dernière transaction → test 2 rouge (« aucune entrée
+  neuve » : 5 ≠ 4) ; M2 `clear_stub_in_tx` sorti de la transaction → test 2 rouge (drapeau levé) ;
+  M3 `UPDATE … is_stub` remis dans le handler → test 11 rouge ; M4 `NewAuditLogEntry::user(` → test 3
+  rouge (`actor_type = 'user'`) et test 11 rouge ; M5 `vat_rates_created` en dur à 4 → variante du
+  test 1 rouge (4 ≠ 2). Restauration vérifiée par grep (zéro résidu).
+- **Angles morts déclarés** (fiche, mutations non distinguées) : `ui_mode` lu hors verrou (gardé par la
+  signature, le paramètre n'existe plus) ; `retry_with` retiré ou prédicat faux (l'interblocage de
+  `seed_demo` n'est pas provoqué de façon déterministe ; le prédicat est prouvé par le test 13 de la
+  15-7b2, la conversion par le type `SeedAttemptError` sans `From<sqlx::Error>`) ; boucle
+  `InactiveOrInvalidAccounts` non exercée (C-15-7-14).
+- **Décomptes, recomptés depuis la source** (de `200f5e79` à `HEAD`) : tests de
+  `onboarding_audit_e2e.rs` 22 → **28** (6 neufs) ; appels du helper remonté : **10** dans
+  `api_keys_e2e.rs` + 1 dans le test 8 de la 15-7a2 ; registre **105 / 5 / 2 = 112**, colonne `Rejeu`
+  inchangée (22 / 4 / 89 sur 115) ; une action neuve, quatre libellés.
+- **AC 10 — grep exécuté** (`grep -rnE "#434|seed_demo|KF-002-H-002|lock-and-release|contexte système|sans audit log|onboarding_version|is_stub|Deny list" crates docs/MULTI-TENANT-SCOPING-PATTERNS.md`) ; sites traités :
+  doc et commentaires de `seed_demo` (`kesh-seed`), handler (`UPDATE` retiré, doc réécrite),
+  `company_invoice_settings.rs` (variante pool non appelée ; rejeu « conservé par prudence, sans effet
+  attendu »), `vat_rates.rs` (variante pool), `fiscal_years.rs::create_for_seed` (synthèse), `accounts.rs`
+  (en-tête et `bulk_create_from_chart` : « contexte système » remplacé), `onboarding.rs::update_step_in_tx`
+  (le seed trace désormais), `fiscal_years_e2e.rs:1299`, Pattern 5 (ligne `seed_demo` : séquence exacte
+  et rejeu) et « Known Risk » (renvoi à **#538**, non à #43). Laissés : les sites légitimes nommés par la
+  fiche, `company.rs:178` (juste) ; **renvoyés nommément à la 15-7b2** : `routes/onboarding.rs` doc de
+  `reset` (« KF-002-H-002 (issue #43) », `:264-269`, `:314`) et le commentaire de `reset_demo`. Contrôle :
+  `grep -rnF "UPDATE companies SET is_stub = FALSE" crates/` ne rend plus que `companies.rs` (reçu E-2).
+- **AC 11 — PDF régénérés** (`make fr`, admin et utilisateur ; la brochure, inchangée, n'est pas
+  committée) et **contrôlés aplatis** : « 105 des 112 », « 105 + 5 + 2 = 112 », « cinq routes
+  exemptées » ; « Deux familles … la réinitialisation » ; « Données de démonstration chargées »,
+  « aboutit », « interrompu », `KESH_PRODUCTION_RESET` présents ; **zéro** occurrence de `contacts
+  d.exemple|écritures d.exemple|nouvelle company|peuplement` dans les deux `.tex`, les PDF, `README.md`
+  et `website/` (la phrase d'accueil « nouvelle company » du § Onboarding a été réécrite en « nouvelle
+  installation », et la négation « ni … écritures d'exemple » reformulée, pour que le grep de l'AC tienne).
+  Glossaires relus : user « deux familles » toujours juste ; admin renvoie aux réserves, cohérent.
+- **AC 12** : entrée `### Corrigé` sous `## [0.13.0]`, relue ; la phrase de l'entrée 15-7a2 « le
+  peuplement de démonstration et la remise à zéro restent à tracer » corrigée en conséquence.
+
 ### File List
+
+- `crates/kesh-seed/Cargo.toml`, `crates/kesh-seed/src/lib.rs`, `Cargo.lock`
+- `crates/kesh-api/src/routes/onboarding.rs`, `crates/kesh-api/src/audit_labels.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `crates/kesh-api/tests/onboarding_audit_e2e.rs`, `tests/common/mod.rs`, `tests/api_keys_e2e.rs`,
+  `tests/audit_route_registry.rs`, `tests/fiscal_years_e2e.rs`
+- `crates/kesh-db/src/repositories/{accounts,company_invoice_settings,fiscal_years,onboarding,vat_rates}.rs`
+  (commentaires seuls)
+- `docs/MULTI-TENANT-SCOPING-PATTERNS.md`, `docs/manual/fr/{admin,user}-manual.{tex,pdf}`, `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/{15-7b1-trace-demonstration,15-7b2-remise-a-zero,15-7-trace-onboarding,epic-15-choix-autonomes}.md`,
+  `sprint-status.yaml`
 
 ## Change Log
 
@@ -448,3 +519,7 @@ sinon le binaire muté) :
   `company_select!` sont **privés au handler** (`AppError`) — `kesh-seed` emploie les primitives de
   `kesh-db` que nomme la fiche (`onboarding::lock_state_in_tx`, `update_step_in_tx`,
   `record_step_completed_in_tx`), non les helpers du handler.
+- 2026-10-09 — **Développée** (commits `518b5ae8` T0, `a04fde73` code et tests, `638a80ef`
+  doc-comments, `97b367c0` manuels et CHANGELOG). Gates au dernier commit de code : backend 2979/2979,
+  frontend vert (Vitest 1095/1095), E2E 245 / 9 échecs attendus (7 KF-029, 2 KF-045) ; 5 mutations
+  rouges sur 5 jouées. Statut `review`. Choix C-15-7b1-1.
