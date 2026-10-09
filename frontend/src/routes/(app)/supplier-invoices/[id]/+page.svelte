@@ -20,6 +20,11 @@
 	import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
+	import {
+		accountIdsWithRole,
+		bankAccountsNotLinkedTo,
+		withoutAccountIds,
+	} from '$lib/features/accounts/account-options';
 	import { listProjects } from '$lib/features/projects/projects.api';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import { isApiError } from '$lib/shared/utils/api-client';
@@ -35,6 +40,8 @@
 
 	let bankAccounts = $state<BankAccountSummary[]>([]);
 	let accounts = $state<AccountResponse[]>([]);
+	/** Story 15-6b : tous les comptes bancaires liés ont été écartés (liés au compte créanciers). */
+	let noEligibleBankAccount = $state(false);
 	let projects = $state<ProjectResponse[]>([]);
 
 	/** Libellé du projet analytique affecté (Story 19-3), ou `null`. */
@@ -80,8 +87,21 @@
 				fetchAccounts(),
 				listProjects(true), // inclut les archivés pour résoudre le nom d'un projet tagué puis archivé
 			]);
-			bankAccounts = banks.filter((b) => b.journalAccountId !== null);
-			accounts = accts.filter((a) => a.active && a.postable); // 14-3b : compte posté
+			// Story 15-6b (#474, AC8) — le compte créanciers n'est jamais une
+			// contrepartie : `D 2000 / C 2000` s'équilibre et la facture passerait
+			// « payée » sans paiement. Les ids se calculent sur la liste REÇUE,
+			// avant le filtre `active && postable` ; la garde serveur reste
+			// l'autorité.
+			const payableIds = accountIdsWithRole(accts, 'Payable');
+			const linked = banks.filter((b) => b.journalAccountId !== null);
+			bankAccounts = bankAccountsNotLinkedTo(linked, payableIds);
+			// Le message ne vaut que si le filtre a ÉCARTÉ un compte : une société
+			// sans compte bancaire lié garde son comportement.
+			noEligibleBankAccount = bankAccounts.length === 0 && linked.length > bankAccounts.length;
+			accounts = withoutAccountIds(
+				accts.filter((a) => a.active && a.postable), // 14-3b : compte posté
+				payableIds,
+			);
 			projects = projs;
 		} catch (err) {
 			if (isApiError(err)) errorMsg = err.message;
@@ -324,6 +344,14 @@
 						<option value={b.id}>{b.bankName} — {b.iban}</option>
 					{/each}
 				</select>
+				{#if noEligibleBankAccount}
+					<p class="-mt-2 mb-3 text-xs text-destructive" data-testid="pay-no-eligible-bank">
+						{i18nMsg(
+							'supplier-invoices-pay-no-eligible-bank-account',
+							'Aucun compte bancaire utilisable : le seul compte lié est le compte créanciers de cette facture. Reliez un compte bancaire à son propre compte de banque, ou réglez par un compte interne.',
+						)}
+					</p>
+				{/if}
 			{:else}
 				<select
 					class="mb-3 w-full rounded border px-2 py-1 text-sm"

@@ -6,7 +6,12 @@
 
 import { describe, it, expect } from 'vitest';
 import type { AccountResponse } from './accounts.types';
-import { withCurrentAccount } from './account-options';
+import {
+	accountIdsWithRole,
+	bankAccountsNotLinkedTo,
+	withCurrentAccount,
+	withoutAccountIds,
+} from './account-options';
 
 function acc(
 	partial: Partial<AccountResponse> & { id: number; number: string; name: string },
@@ -95,5 +100,54 @@ describe('withCurrentAccount — un compte ARCHIVÉ configuré avant son archiva
 	it('est réintroduit lui aussi', () => {
 		const options = withCurrentAccount(postables, ARCHIVE.id, tous);
 		expect(options[0].id).toBe(ARCHIVE.id);
+	});
+});
+
+// Story 15-6b (#474, AC8, test 17) — les écrans de règlement ne proposent plus le compte soldé.
+describe('fonctions d’écran de la Story 15-6b', () => {
+	const DEBITEURS = acc({ id: 1100, number: '1100', name: 'Débiteurs', role: 'Receivable' });
+	const CREANCIERS = acc({
+		id: 2000,
+		number: '2000',
+		name: 'Créanciers',
+		accountType: 'Liability',
+		role: 'Payable',
+	});
+	const SANS_ROLE = acc({ id: 1000, number: '1000', name: 'Caisse' });
+	const PLAN = [SANS_ROLE, DEBITEURS, CREANCIERS];
+
+	function bank(id: number, journalAccountId: number | null) {
+		return { id, journalAccountId };
+	}
+
+	it('accountIdsWithRole rend les seuls comptes du rôle donné', () => {
+		expect([...accountIdsWithRole(PLAN, 'Receivable')]).toEqual([1100]);
+		expect([...accountIdsWithRole(PLAN, 'Payable')]).toEqual([2000]);
+		expect(accountIdsWithRole(PLAN, 'VatPayable').size).toBe(0);
+	});
+
+	it('withoutAccountIds écarte le rôle donné et garde les autres, sans rôle compris', () => {
+		const kept = withoutAccountIds(PLAN, accountIdsWithRole(PLAN, 'Receivable'));
+		expect(kept.map((a) => a.id)).toEqual([1000, 2000]);
+	});
+
+	it('bankAccountsNotLinkedTo écarte les comptes bancaires liés, garde les autres et les non liés', () => {
+		const ids = accountIdsWithRole(PLAN, 'Receivable');
+		const kept = bankAccountsNotLinkedTo([bank(1, 1100), bank(2, 1020), bank(3, null)], ids);
+		expect(kept.map((b) => b.id)).toEqual([2, 3]);
+	});
+
+	it('un compte bancaire lié à un débiteurs NON IMPUTABLE est écarté (ids calculés avant le filtre)', () => {
+		const nonImputable = acc({ ...DEBITEURS, postable: false });
+		const plan = [SANS_ROLE, nonImputable];
+		// Le geste correct : les ids sur la liste reçue, puis le filtre `active && postable`.
+		const ids = accountIdsWithRole(plan, 'Receivable');
+		expect(bankAccountsNotLinkedTo([bank(1, 1100)], ids)).toEqual([]);
+		// La mutation à éviter : calculer les ids APRÈS le filtre laisse passer le compte bancaire.
+		const idsApresFiltre = accountIdsWithRole(
+			plan.filter((a) => a.active && a.postable),
+			'Receivable',
+		);
+		expect(bankAccountsNotLinkedTo([bank(1, 1100)], idsApresFiltre)).toHaveLength(1);
 	});
 });

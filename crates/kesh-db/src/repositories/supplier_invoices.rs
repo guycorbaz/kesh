@@ -23,9 +23,10 @@ use crate::entities::{
     NewAuditLogEntry, NewJournalEntryLine, NewSupplierInvoice, SettlementChoice, SupplierInvoice,
     SupplierInvoiceLine,
 };
-use crate::errors::{DbError, NonPostableAccount, map_db_error};
+use crate::errors::{ClaimSide, DbError, NonPostableAccount, map_db_error};
 use crate::repositories::audit_log;
 use crate::repositories::company_invoice_settings::{DesignatedRole, GeneratedLines};
+use crate::repositories::invoice_settlements::{self, ClaimSubject};
 
 /// SELECT scopé multi-tenant (anti-IDOR — toujours `AND company_id = ?`).
 const FIND_SCOPED_SQL: &str = "SELECT id, company_id, contact_id, supplier_invoice_number, status, \
@@ -645,6 +646,35 @@ async fn in_generated_batch(
     .map_err(map_db_error)
 }
 
+/// La ligne de **crédit** de l'écriture d'achat — `(compte créanciers, TTC)` —
+/// ou `None` si l'écriture n'en a pas (Story 15-6b, #474 ; choix C-15-6-11).
+///
+/// Lecteur sœur de `invoice_settlements::sale_receivable_account` : la dette se
+/// lit **sur l'écriture d'achat**, jamais sur les réglages, pour que le compte
+/// se solde exactement quoi qu'il soit arrivé à la configuration. Il diffère du
+/// lecteur de la vente (ligne de crédit, et le montant). Deux appelants :
+/// `pay_in_tx` (dont `None` est un `Invariant`) et la création d'un lot de
+/// paiement (dont `None` est un refus de **cette** facture,
+/// `SUPPLIER_INVOICE_PURCHASE_ENTRY_MALFORMED`). Portée par `je.company_id`.
+/// Aucun verrou : les lignes d'une écriture d'achat sont gelées.
+pub async fn purchase_payable_line(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    purchase_entry_id: i64,
+) -> Result<Option<(i64, Decimal)>, DbError> {
+    sqlx::query_as(
+        "SELECT jel.account_id, jel.credit FROM journal_entry_lines jel \
+         JOIN journal_entries je ON je.id = jel.entry_id \
+         WHERE jel.entry_id = ? AND je.company_id = ? AND jel.credit > 0 \
+         ORDER BY jel.id LIMIT 1",
+    )
+    .bind(purchase_entry_id)
+    .bind(company_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(map_db_error)
+}
+
 /// Règle une facture fournisseur `open` (choix binaire). Poste l'écriture de
 /// règlement et passe en `paid`. Refuse si la facture est dans un lot `generated`.
 pub async fn pay(
@@ -708,18 +738,13 @@ pub async fn pay_in_tx(
 
     // (2) Compte débité (créanciers) ET montant = ligne de crédit de l'écriture
     //     d'achat → solde 2000 garanti à 0 quelle que soit l'évolution des settings.
-    let (payable_account_id, ttc): (i64, Decimal) = sqlx::query_as(
-        "SELECT jel.account_id, jel.credit FROM journal_entry_lines jel \
-         JOIN journal_entries je ON je.id = jel.entry_id \
-         WHERE jel.entry_id = ? AND je.company_id = ? AND jel.credit > 0 \
-         ORDER BY jel.id LIMIT 1",
-    )
-    .bind(inv.purchase_journal_entry_id)
-    .bind(company_id)
-    .fetch_optional(&mut **tx)
-    .await
-    .map_err(map_db_error)?
-    .ok_or_else(|| DbError::Invariant("écriture d'achat sans ligne de crédit créanciers".into()))?;
+    //     Lecteur partagé avec la création d'un lot (Story 15-6b).
+    let (payable_account_id, ttc) =
+        purchase_payable_line(tx, company_id, inv.purchase_journal_entry_id)
+            .await?
+            .ok_or_else(|| {
+                DbError::Invariant("écriture d'achat sans ligne de crédit créanciers".into())
+            })?;
 
     // (3) Contrepartie selon le choix binaire (company-scoped).
     let (counterparty_account_id, settlement_type, bank_account_id, internal_account_id, journal) =
@@ -754,7 +779,8 @@ pub async fn pay_in_tx(
                 // postabilité de la 14-3b, donc ce SELECT est le seul contrôle.
                 //
                 // Ici l'écran filtre déjà `active && postable`
-                // (`supplier-invoices/[id]/+page.svelte:66`), si bien que le
+                // (`supplier-invoices/[id]/+page.svelte`, chargement des comptes
+                // internes), si bien que le
                 // trou n'était atteignable que par appel direct à l'API — à la
                 // différence de son jumeau côté client, où l'écran offrait le
                 // compte. Le fermer quand même : une garde serveur ne se déduit
@@ -764,6 +790,9 @@ pub async fn pay_in_tx(
                 // de revue de code de la Story 24-5, #375) — la lentille avait
                 // nommé ce fichier pour SA validation de compte de charge, pas
                 // pour ce site-ci.
+                //
+                // Jumeau aussi pour la garde qui suit l'étape (3) : la
+                // contrepartie n'est pas le compte créanciers (Story 15-6b).
                 let account: Option<(bool, bool, String)> = sqlx::query_as(
                     "SELECT active, postable, number FROM accounts WHERE id = ? AND company_id = ? \
                      FOR UPDATE",
@@ -795,6 +824,20 @@ pub async fn pay_in_tx(
                 )
             }
         };
+
+    // (3 bis) ⛔ Story 15-6b (#474) — la contrepartie n'est pas la dette :
+    //         `D 2000 / C 2000` s'équilibre, et la facture passerait « payée »
+    //         sans paiement. Comparée aussitôt résolue, après ses propres refus.
+    //         À la confirmation d'un lot, `confirm_batch` intercepte ce refus pour
+    //         le contextualiser.
+    invoice_settlements::refuse_if_claim_account(
+        tx,
+        company_id,
+        counterparty_account_id,
+        payable_account_id,
+        ClaimSubject::Counterparty(ClaimSide::Payable),
+    )
+    .await?;
 
     // (4) Exercice ouvert couvrant la date de règlement.
     let fy = fiscal_years::find_open_covering_date(tx, company_id, payment_date)

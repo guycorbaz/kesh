@@ -1837,3 +1837,111 @@ async fn write_off_route_refusals(pool: MySqlPool) {
         "{body}"
     );
 }
+
+// --- Story 15-6b (#474) — la contrepartie n'est pas la créance, à la frontière HTTP
+
+/// Story 15-6b, test 16 — `POST …/settlements` par compte interne = la créance :
+/// **400**, code, `details.claim = "receivable"`, message **fr** (la langue des
+/// messages est globale au processus, `init_error_i18n`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn settle_on_the_receivable_account_is_a_400_with_details(pool: MySqlPool) {
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(&pool, company_id, admin_id).await;
+    let (id, _v) = create_validated_invoice(
+        &pool,
+        company_id,
+        contact_id,
+        admin_id,
+        NaiveDate::from_ymd_opt(2026, 4, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 4, 30).unwrap(),
+        dec!(100.00),
+    )
+    .await;
+    let creance = receivable_id(&pool, company_id).await;
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+
+    let resp = post_settle(&app, &token, id, creance, "108.10").await;
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"]["code"],
+        "SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT"
+    );
+    assert_eq!(
+        body["error"]["details"],
+        json!({
+            "accountId": creance,
+            "accountNumber": "1100",
+            "claim": "receivable",
+            "role": "counterparty",
+        })
+    );
+    let msg = body["error"]["message"].as_str().unwrap();
+    assert!(
+        msg.contains("1100") && msg.contains("compte débiteurs de cette facture"),
+        "message fr attendu : {msg}"
+    );
+    assert!(!msg.contains('$') && !msg.contains('\u{2068}'), "{msg}");
+    assert!(!paid(&pool, id).await);
+}
+
+/// Story 15-6b, test 16 bis — `POST …/write-off` dont le compte de la nature
+/// `discount` est la créance retypée : **400**, `details.role =
+/// "write_off_nature"`, message qui renvoie à Paramètres → Facturation — et non
+/// à « banque, caisse » (clé plate `error-settlement-write-off-account-is-receivable`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn write_off_on_a_nature_account_that_is_the_receivable_is_a_400(pool: MySqlPool) {
+    let (admin_id, company_id) = seed_base(&pool).await;
+    let contact_id = seed_contact(&pool, company_id, admin_id).await;
+    let (id, _v) = create_validated_invoice(
+        &pool,
+        company_id,
+        contact_id,
+        admin_id,
+        NaiveDate::from_ymd_opt(2026, 4, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 4, 30).unwrap(),
+        dec!(100.00),
+    )
+    .await;
+    let creance = receivable_id(&pool, company_id).await;
+    sqlx::query("UPDATE accounts SET account_type = 'Expense', role = NULL WHERE id = ?")
+        .bind(creance)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_discount_account_id = ? WHERE company_id = ?",
+    )
+    .bind(creance)
+    .bind(company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let version = invoice_version(&app, &token, id).await;
+
+    let resp = post_write_off(
+        &app,
+        &token,
+        id,
+        json!({ "nature": "discount", "settledOn": "2026-04-20", "version": version }),
+    )
+    .await;
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"]["code"],
+        "SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT"
+    );
+    assert_eq!(body["error"]["details"]["role"], "write_off_nature");
+    assert_eq!(body["error"]["details"]["claim"], "receivable");
+    let msg = body["error"]["message"].as_str().unwrap();
+    assert!(
+        msg.contains("nature de solde") && msg.contains("Paramètres → Facturation"),
+        "{msg}"
+    );
+    assert!(!msg.contains("banque, caisse"), "{msg}");
+    assert!(!paid(&pool, id).await);
+}

@@ -1128,8 +1128,18 @@ Pour relancer les factures en retard, Kesh dispose d'un \textbf{écran de rappel
 \subsection{Enregistrer et annuler un règlement}\label{sec:reglement-client}
 
 \textbf{Enregistrer.} Sur la fiche d'une facture validée, \emph{Enregistrer un règlement}~: le
-mode (virement sur un compte bancaire, ou espèces et tout autre compte), le montant et la date.
-Kesh passe l'écriture \emph{Débit contrepartie / Crédit débiteurs} et calcule ce qui reste dû.
+mode (virement sur un compte bancaire, ou espèces et un autre compte de contrepartie), le montant
+et la date. Kesh passe l'écriture \emph{Débit contrepartie / Crédit débiteurs} et calcule ce qui
+reste dû. La contrepartie \textbf{ne peut pas être le compte débiteurs de la facture}~: l'écriture
+serait nulle, et le reste dû baisserait sans que rien ne bouge au grand livre. Kesh le refuse dans
+tous les cas~--- de même qu'un compte bancaire lié au compte débiteurs~--- et ne le propose pas dans
+les listes, \textbf{à condition} qu'il porte, au plan comptable, le \textbf{rôle} de compte de
+créances clients~: un compte qui l'a perdu reste proposé, et c'est l'enregistrement qui est
+refusé. Si le compte en cause
+est celui que vous \textbf{choisissez} (compte interne, compte bancaire), choisissez-en un autre
+ou reliez le compte bancaire à son propre compte de banque~; si c'est un compte \textbf{désigné
+dans les réglages} --- le compte de différences d'arrondi ---, un administrateur doit en désigner
+un autre dans \emph{Paramètres} → \emph{Facturation}.
 Un règlement \textbf{partiel} est permis~: la facture reste validée, avec son reste dû, et
 redevient «~payée~» quand le solde atteint zéro. Un montant supérieur au reste dû est
 \textbf{refusé}, de même qu'un montant à plus de deux décimales.
@@ -1157,7 +1167,11 @@ signale. Le \emph{reste d'arrondi} n'est proposé que pour un reste de moins de 
 ainsi que se solde un reste trop petit pour être payé, inférieur au demi-centime. Si le reste porte
 une fraction de centime, elle va au compte de différences d'arrondi. La facture est alors
 «~payée~»~; la liste des règlements montre le solde («~Solde --- escompte accordé~»), et la fiche le
-distingue de ce qui a été encaissé (\emph{Déjà réglé} / \emph{Soldé}). Un solde s'\textbf{annule}
+distingue de ce qui a été encaissé (\emph{Déjà réglé} / \emph{Soldé}). Un solde est
+\textbf{refusé}, sans rien écrire, si le compte de la nature, le compte de différences d'arrondi
+ou le compte de TVA due est le \textbf{compte débiteurs de la facture} (un compte débiteurs
+changé de type depuis, puis désigné)~: un administrateur doit en désigner un autre dans
+\emph{Paramètres} → \emph{Facturation}. Un solde s'\textbf{annule}
 comme un règlement --- bouton \emph{Annuler le solde}, contre-passation datée du jour, TVA
 comprise.
 
@@ -1403,8 +1417,15 @@ cas selon le moyen de paiement :
     \item \textbf{Virement bancaire} : vous choisissez le \emph{compte bancaire
     source}. Kesh solde la dette fournisseur par le crédit de ce compte bancaire.
     \item \textbf{Compte interne} (caisse, carte, compte de passage) : vous
-    choisissez un \emph{compte de contrepartie} libre.
+    choisissez un \emph{compte de contrepartie}.
 \end{itemize}
+
+La contrepartie \textbf{ne peut pas être le compte créanciers de la facture}~: l'écriture serait
+nulle, et la facture passerait «~payée~» sans paiement. Kesh le refuse dans tous les cas~--- de
+même qu'un compte bancaire lié au compte créanciers~--- et ne le propose pas dans les listes,
+\textbf{à condition} qu'il porte, au plan comptable, le \textbf{rôle} de compte de dettes
+fournisseurs~: un compte qui l'a perdu reste proposé, et c'est l'enregistrement qui est refusé.
+Choisissez un autre compte, ou reliez le compte bancaire à son propre compte de banque.
 
 \textbf{Annuler le règlement.} Un règlement enregistré par erreur ne se supprime pas~: sur la
 fiche d'une facture payée, \emph{Annuler le règlement} (comptable ou administrateur) passe une
@@ -1459,6 +1480,14 @@ dans l'e-banking. Le flux est en \textbf{deux temps} :
     dans Kesh : les écritures de règlement sont alors passées (un lot peut aussi
     être \textbf{annulé} tant qu'il n'est pas confirmé).
 \end{enumerate}
+
+Une facture dont le compte créanciers est le compte lié au compte bancaire du lot
+\textbf{n'entre pas dans le lot}~: elle apparaît parmi les refus, avec son motif, et le fichier
+ne la porte pas. Si le compte bancaire a été relié à ce compte \emph{après} la création du lot,
+la \textbf{confirmation est refusée}, sans rien écrire~; deux issues~: relier de nouveau le compte
+bancaire à son propre compte de banque puis confirmer, ou annuler le lot et régler la facture
+depuis sa fiche. Le fichier \texttt{pain.001} a pu être exécuté par la banque~: c'est alors la
+première qu'il faut choisir.
 
 \begin{keshwarning}[title=\faExclamationTriangle\ Annuler le règlement d'une facture payée par lot]
 Le règlement d'une facture payée par un lot \textbf{confirmé} peut être annulé --- le cas
@@ -1630,7 +1659,7 @@ Une candidate dont le score vaut zéro n'est pas proposée. Quand aucune facture
 Cochez les transactions à traiter, puis cliquez sur l'un des deux boutons placés au-dessus de la liste~:
 
 \begin{itemize}
-    \item \emph{Accepter (N)} --- N est le nombre de lignes cochées --- accepte, pour chaque ligne, \textbf{la candidate affichée}. Pour une facture, l'écriture de règlement est créée (Débit banque / Crédit débiteurs). Si la transaction solde une facture dont le reste porte plus de deux décimales, l'écart d'arrondi passe en troisième ligne, comme pour un règlement manuel (\S\ref{sec:reglement-client}) ; sans compte de différences d'arrondi, la ligne apparaît dans les \emph{Échecs partiels} avec le message «~aucun compte de différences d'arrondi utilisable n'est désigné~» --- désignez-en un dans \emph{Paramètres} → \emph{Facturation}. Pour une règle, l'écriture est passée entre la banque et le compte de contrepartie de la règle.
+    \item \emph{Accepter (N)} --- N est le nombre de lignes cochées --- accepte, pour chaque ligne, \textbf{la candidate affichée}. Pour une facture, l'écriture de règlement est créée (Débit banque / Crédit débiteurs). Si la transaction solde une facture dont le reste porte plus de deux décimales, l'écart d'arrondi passe en troisième ligne, comme pour un règlement manuel (\S\ref{sec:reglement-client}) ; sans compte de différences d'arrondi, la ligne apparaît dans les \emph{Échecs partiels} avec le message «~aucun compte de différences d'arrondi utilisable n'est désigné~» --- désignez-en un dans \emph{Paramètres} → \emph{Facturation}. La proposition échoue aussi, avec son libellé, si le compte bancaire est lié au \textbf{compte débiteurs} de la facture (reliez-le à son propre compte de banque) ou si le compte de différences d'arrondi désigné \textbf{est} le compte débiteurs (un administrateur doit en désigner un autre dans \emph{Paramètres} → \emph{Facturation})~: l'écriture serait nulle. Pour une règle, l'écriture est passée entre la banque et le compte de contrepartie de la règle.
     \item \emph{Rejeter} écarte la proposition~: la transaction est marquée comme revue et \textbf{quitte la liste} de la réconciliation. Elle reste visible dans le \textbf{détail de son import} (\emph{Import bancaire}, puis l'import), avec le statut «~pending~», mais \textbf{sans aucune action}~: aucun geste de l'interface ne permet ensuite de la passer en comptabilité. Ne rejetez donc une transaction que si vous ne comptez pas la comptabiliser par ce chemin.
 \end{itemize}
 
@@ -1862,7 +1891,7 @@ Depuis la version \textbf{0.7}, l'onglet \emph{Rapports → Balance âgée} rép
 \keshscreenshot{balance-agee.png}{Balance âgée : reste dû par client et par tranche de retard, avec total général.}  % TODO capture: onglet Rapports/Balance âgée
 
 \begin{itemize}
-    \item \textbf{Colonnes} : \emph{Non échu} \textbar{} \emph{1-30} \textbar{} \emph{31-60} \textbar{} \emph{61-90} \textbar{} \emph{90+} jours de retard. Avec la colonne « Non échu », le \textbf{total général réconcilie} avec le solde du compte clients (débiteurs) du bilan \emph{tant que ce compte n'est mouvementé que par les factures, leurs règlements et leurs avoirs} (y compris leurs annulations). Toute autre écriture qui le touche l'en écarte : solde de départ, écriture saisie au journal, virement bancaire affecté à ce compte sans passer par une facture, paiement d'une facture fournisseur compensé sur ce compte, ou règlement dont la contrepartie est ce compte lui-même. De même un changement du compte clients dans les réglages de facturation, ou des données antérieures à la version 0.12.1, restaurées ou mises à jour.
+    \item \textbf{Colonnes} : \emph{Non échu} \textbar{} \emph{1-30} \textbar{} \emph{31-60} \textbar{} \emph{61-90} \textbar{} \emph{90+} jours de retard. Avec la colonne « Non échu », le \textbf{total général réconcilie} avec le solde du compte clients (débiteurs) du bilan \emph{tant que ce compte n'est mouvementé que par les factures, leurs règlements et leurs avoirs} (y compris leurs annulations). Toute autre écriture qui le touche l'en écarte : solde de départ, écriture saisie au journal, virement bancaire affecté à ce compte sans passer par une facture, paiement d'une facture fournisseur compensé sur ce compte, ou règlement enregistré avant la version 0.13.0 dont la contrepartie était ce compte lui-même. De même un changement du compte clients dans les réglages de facturation, ou des données antérieures à la version 0.12.1, restaurées ou mises à jour.
     \item \textbf{Détail} : une ligne par client, un total par tranche, et un total général. Chaque client renvoie d'un clic vers \textbf{ses factures}.
     \item \textbf{Export CSV} : réservé aux rôles \emph{Comptable} et \emph{Administrateur} (le rapport lui-même est consultable par tous les rôles).
 \end{itemize}

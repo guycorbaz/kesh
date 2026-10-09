@@ -5267,3 +5267,219 @@ async fn accept_split_missing_and_non_postable_reports_not_found_first(pool: MyS
     assert_eq!(failed.len(), 1, "{body}");
     assert_eq!(failed[0]["errorCode"], "ACCOUNT_NOT_FOUND");
 }
+
+// ============================================================
+// Story 15-6b (#474) — le compte de banque n'est pas la créance
+// ============================================================
+
+/// Une transaction de `amount`, référencée `reference`, sur le compte bancaire
+/// du contexte. Rend son id.
+async fn one_tx(
+    pool: &MySqlPool,
+    ctx: &CompanyCtx,
+    hash_seed: &str,
+    amount: Decimal,
+    reference: &str,
+) -> i64 {
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    seed_bank_transactions(
+        pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash(hash_seed),
+        day,
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            Some(day),
+            amount,
+            "CHF",
+            reference,
+            None,
+        )],
+    )
+    .await[0]
+}
+
+async fn tx_status(pool: &MySqlPool, tx_id: i64) -> String {
+    sqlx::query_scalar("SELECT status FROM bank_transactions WHERE id = ?")
+        .bind(tx_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Story 15-6b, test 7 — **un lot de deux propositions, deux créances** : A sur
+/// 1100, B sur 1101 ; le compte bancaire du lot est lié au 1100. HTTP 200, B
+/// acceptée, A dans `failed[]` avec ses cinq clés ; la transaction de A reste
+/// en attente.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_refuses_per_proposal_a_bank_ledger_that_is_the_receivable(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "ContrepA", "CH4431999123000889012", Role::Comptable).await;
+    let inv_date = NaiveDate::from_ymd_opt(2026, 5, 1).unwrap();
+    let (inv_a, _) = seed_validated_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-CP-A",
+        inv_date,
+        dec!(100.00),
+    )
+    .await;
+    let (inv_b, je_b) = seed_validated_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-CP-B",
+        inv_date,
+        dec!(200.00),
+    )
+    .await;
+    // B porte sa créance sur un 1101 (débiteurs changé dans les réglages entre
+    // les deux ventes) : la ligne de débit de son écriture de vente.
+    let r1101: i64 = sqlx::query_scalar(
+        "INSERT INTO accounts (company_id, number, name, account_type, active, postable) \
+         VALUES (?, '1101', 'Débiteurs bis', 'Asset', 1, 1) RETURNING id",
+    )
+    .bind(ctx.company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query("UPDATE journal_entry_lines SET account_id = ? WHERE entry_id = ? AND debit > 0")
+        .bind(r1101)
+        .bind(je_b)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // Le compte bancaire du lot, lié au 1100 (sans passer par la 15-6c).
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+        .bind(ctx.receivable_account_id)
+        .bind(ctx.bank_account_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let tx_a = one_tx(&pool, &ctx, "cp-a", dec!(100.00), "INV-CP-A").await;
+    let tx_b = one_tx(&pool, &ctx, "cp-b", dec!(200.00), "INV-CP-B").await;
+    let app = spawn_app(pool.clone()).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/accept"))
+        .bearer_auth(&ctx.jwt)
+        .json(&serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "proposals": [
+                { "type": "invoice", "bankTransactionId": tx_a, "invoiceId": inv_a },
+                { "type": "invoice", "bankTransactionId": tx_b, "invoiceId": inv_b },
+            ],
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "succès partiel = succès HTTP");
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["accepted"].as_array().map(Vec::len), Some(1), "{body}");
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(failed[0]["bankTransactionId"], tx_a);
+    assert_eq!(
+        failed[0]["errorCode"],
+        "SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT"
+    );
+    assert_eq!(
+        failed[0]["details"],
+        serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "accountId": ctx.receivable_account_id,
+            "accountNumber": "1100",
+            "claim": "receivable",
+            "role": "counterparty",
+        })
+    );
+    assert_eq!(settlements_and_paid_at(&pool, inv_a).await, (0, None));
+    assert_eq!(tx_status(&pool, tx_a).await, "pending");
+    let (settled_b, _) = settlements_and_paid_at(&pool, inv_b).await;
+    assert_eq!(settled_b, 1, "B est réglée");
+}
+
+/// Story 15-6b, test 8 — **ordre** : sur A, une transaction supérieure au reste
+/// (référencée, donc de score positif — l'étape 7bis passe) rend le refus de
+/// contrepartie, pas `RECONCILIATION_OVERPAYMENT`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn the_counterparty_refusal_comes_before_the_reconciliation_overpayment(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "ContrepB", "CH4431999123000889012", Role::Comptable).await;
+    let (inv_a, _) = seed_validated_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-CP-C",
+        NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+        dec!(100.00),
+    )
+    .await;
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+        .bind(ctx.receivable_account_id)
+        .bind(ctx.bank_account_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let tx_a = one_tx(&pool, &ctx, "cp-c", dec!(150.00), "INV-CP-C").await;
+    let app = spawn_app(pool.clone()).await;
+
+    let body = post_accept_one(&app, &ctx, tx_a, inv_a).await;
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(
+        failed[0]["errorCode"], "SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT",
+        "la contrepartie précède le trop-perçu"
+    );
+    assert_eq!(settlements_and_paid_at(&pool, inv_a).await, (0, None));
+}
+
+/// Story 15-6b, test 12 — **arrondi (c-bis) = créance** (AC3 bis) : la créance
+/// retypée en charge et désignée compte d'arrondi. `failed[]`, HTTP 200,
+/// `details.role = "rounding"`, et PAS de `bankAccountId`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_refuses_a_rounding_account_that_is_the_receivable(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "ContrepR", "CH4431999123000889012", Role::Comptable).await;
+    designate_rounding_account(&pool, ctx.company_id).await;
+    let (inv_id, tx_id) =
+        half_centime_invoice_and_tx(&pool, &ctx, "INV-CP-R", dec!(10.01), "INV-CP-R").await;
+    sqlx::query("UPDATE accounts SET account_type = 'Expense', role = NULL WHERE id = ?")
+        .bind(ctx.receivable_account_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_rounding_account_id = ? WHERE company_id = ?",
+    )
+    .bind(ctx.receivable_account_id)
+    .bind(ctx.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let app = spawn_app(pool.clone()).await;
+
+    let body = post_accept_one(&app, &ctx, tx_id, inv_id).await;
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(
+        failed[0]["errorCode"],
+        "SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT"
+    );
+    assert_eq!(
+        failed[0]["details"],
+        serde_json::json!({
+            "accountId": ctx.receivable_account_id,
+            "accountNumber": "1100",
+            "claim": "receivable",
+            "role": "rounding",
+        })
+    );
+    assert!(failed[0]["details"].get("bankAccountId").is_none());
+    assert_eq!(settlements_and_paid_at(&pool, inv_id).await, (0, None));
+    assert_eq!(tx_status(&pool, tx_id).await, "pending");
+}

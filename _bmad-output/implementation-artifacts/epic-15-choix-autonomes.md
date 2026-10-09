@@ -5028,3 +5028,58 @@ l'import (#458–#461).
 - **Retenu** : rebase sur `de285ea8`. Deux conflits seulement : `admin-manual.pdf` (binaire — pris de `main` pendant le rebase puis **régénéré** sur le `.tex` fusionné sans conflit par git, contrôlé aplati : « 104 des 112 routes », « 104 + 6 + 2 = 112 », la réserve OLICo réécrite et les apports de la 15-11b sur `.env` sont tous présents) et ce registre (union, les entrées C-15-11b avant les C-15-7a2). `CHANGELOG.md` et `sprint-status.yaml` fusionnés sans conflit ; `last_updated` (27) pris après le (26) de `main`. Aucun conflit de code : `routes/onboarding.rs` passe déjà par `config::env_nonempty` (15-11b) et le test (L) est vert. **Partition du registre recomptée depuis `LIB_ROUTES`** (et non relue) : 112 routes = 104 `Traced` + 6 `Exempt` + 2 `NoMatter` ; colonne `Rejeu` sur les 115 entrées : 22 rejouées + 4 exemptées + 89 sans écriture — inchangée par le rebase (`main` n'a pas touché `audit_route_registry.rs`), le manuel reste juste. Gates complets rejoués sur l'état rebasé (backend, frontend, E2E).
 - **Écartées** : merge de `main` dans la branche (historique moins lisible) ; garder l'un des deux PDF (il aurait omis l'apport de l'autre).
 - **Réversible** : oui (rebase ; branche poussée, sans PR).
+
+
+## C-15-6b-1 — 15-6b : une garde d'un tenant, `refuse_if_claim_account`, au-dessus des deux fonctions de la fiche
+
+- **Contexte** : l'AC1 sépare la comparaison pure (`ensure_not_claim_account`) de la construction
+  du refus (`claim_account_refusal`, numéro lu à l'échec) et veut que chaque site appelle l'une
+  puis, sur `Err` seulement, l'autre. Neuf sites (règlement : contrepartie et arrondi ; solde :
+  nature, reste d'arrondi, TVA due ; règlement fournisseur ; création d'un lot ; rapprochement :
+  banque et arrondi) auraient chacun écrit le même `match` de quatre lignes.
+- **Retenu** : une troisième fonction publique, `invoice_settlements::refuse_if_claim_account`,
+  qui fait exactement les deux gestes dans cet ordre et rend `Result<(), DbError>`. Les sites
+  l'appellent ; le rapprochement et la création de lot convertissent son `Err` (refus → item
+  `failed[]`, toute autre erreur → `DATABASE_ERROR` / propagation). Les deux fonctions de la fiche
+  restent publiques — la 15-6d emprunte la comparaison pure.
+- **Écarté** : le `match` recopié site par site (DRY, et un site qui oublierait la lecture à
+  l'échec seulement).
+- **Réversibilité** : totale (une fonction d'enrobage).
+
+## C-15-6b-2 — 15-6b : `GapAccountRole` au lieu du `DesignatedRole` de la fiche
+
+- **Contexte** : la fiche (AC1, signature indicative) nomme `DesignatedRole` le sous-ensemble
+  `{ Rounding, WriteOffNature, VatPayable }`. Un `DesignatedRole` existe déjà dans
+  `company_invoice_settings.rs` (Story 15-5d) : les quatre **champs** que la validation et la
+  saisie fournisseur écrivent (`Receivable`, `VatPayable`, `Payable`, `VatRecoverable`) — un autre
+  ensemble, au sens voisin. Deux types homonymes dans `kesh_db::repositories`, dont un
+  `VatPayable` de chaque côté, inviteraient à l'import du mauvais.
+- **Retenu** : `invoice_settlements::GapAccountRole` (« compte d'écart », le vocabulaire de la
+  fiche : « comptes d'écart du même geste »), dans le même fichier et au même usage que la fiche
+  décrit (`ClaimSubject::Designated(GapAccountRole)`). Le doc-comment dit pourquoi.
+- **Écarté** : garder l'homonyme (confusion à l'import) ; renommer celui de la 15-5d (hors
+  périmètre, 26 occurrences).
+- **Réversibilité** : totale (renommage).
+
+## C-15-6b-3 — 15-6b : les LOW de la revue P1 qui exigent du code exécutable sont écrits en dette, pas corrigés
+
+- **Contexte** : la revue de code P1 (Sonnet ×3) rend 0 au-dessus de LOW et 20 LOW. La consigne de
+  clôture borne la remédiation aux lignes non exécutables (tests, doc-comments, commentaires,
+  `.ftl`, fiche, manuel). Quatre LOW ne se corrigent qu'en touchant du code de production :
+  B-1 (« le seul compte lié » faux quand plusieurs comptes bancaires sont écartés — le texte vit
+  aussi dans les replis `i18nMsg` de `SettleInvoiceDialog.svelte` et de la fiche fournisseur, et
+  dans deux tests qui le comparent au repli) ; B-2 = E2 (remède du message HTTP quand la
+  contrepartie vient d'un compte bancaire : il faudrait porter `bankAccountId` jusqu'au mapping, ou
+  retoucher le repli Rust `format!` avec la clé) ; B-4 (apostrophe droite de
+  `payment-batches-failed-purchase-entry-malformed`, dont le repli est dans
+  `payment-batch-helpers.ts`) ; B-6 (DRY : deux `match` d'extraction des champs du refus).
+- **Retenu** : les quatre écrits comme dette au Change Log de la fiche, sans modifier le seul
+  catalogue — corriger le `.ftl` sans le repli ferait diverger le texte affiché selon que la clé
+  est chargée ou non, défaut pire que celui qu'on corrige. B-4 est de plus discutable sur le fond :
+  le catalogue `fr-CH` écrit l'apostrophe droite sur 316 lignes et la typographique sur 70 ; la
+  clé neuve suit la majorité. Le doc-comment de `claim_account_refusal_details` dit désormais que
+  seules les clés sont construites une fois, pas l'extraction (B-6).
+- **Écarté** : corriger les replis malgré la consigne (elle est explicite) ; corriger le `.ftl`
+  seul (divergence repli/catalogue).
+- **Réversibilité** : totale ; la dette se solde dans une story de rattrapage i18n ou dans la
+  15-6c, qui retouche les écrans de liaison bancaire.

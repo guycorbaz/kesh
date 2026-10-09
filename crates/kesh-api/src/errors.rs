@@ -3041,6 +3041,22 @@ impl IntoResponse for AppError {
                     });
                     (StatusCode::CONFLICT, Json(body)).into_response()
                 }
+                // Story 15-6b (#474) — un règlement viserait le compte qu'il
+                // solde. 400 (la donnée proposée est invalide), un code pour les
+                // quatre rôles ; le message suit le rôle (le remède diffère).
+                DbError::SettlementCounterpartyIsClaimAccount {
+                    account_id,
+                    account_number,
+                    claim,
+                    role,
+                    batch,
+                } => settlement_counterparty_response(
+                    account_id,
+                    account_number.as_deref(),
+                    claim,
+                    role,
+                    batch.as_ref(),
+                ),
                 // Story 25-3-a-1 (#414) — l'annulation d'un règlement refusée.
                 //
                 // ⚠️ Seuls les rangs que le GESTE refuse lui-même arrivent ici
@@ -3648,6 +3664,109 @@ fn supplier_invoice_cancel_blocked_text(
     }
 }
 
+/// Clé i18n et repli français du refus « contrepartie = compte soldé »
+/// (Story 15-6b, AC2) — **un rôle, une clé**, toutes **plates** : un sélecteur
+/// Fluent neuf rougirait `no_new_select_expression_reaches_the_frontend_dictionary`
+/// (kesh-i18n), et le dictionnaire du frontend le résoudrait sans argument.
+///
+/// ⚠️ `t_args` rend le repli **tel quel**, sans les arguments : il est donc
+/// construit par `format!`, numéro et facture déjà en place.
+fn settlement_counterparty_message(
+    account: &str,
+    claim: kesh_db::errors::ClaimSide,
+    role: kesh_db::errors::SettlementAccountRole,
+    batch: Option<&kesh_db::errors::SettlementBatchContext>,
+) -> String {
+    use kesh_db::errors::{ClaimSide, SettlementAccountRole};
+    let mut args = FluentArgs::new();
+    args.set("account", account.to_string());
+    let (key, fallback) = match (role, claim) {
+        (SettlementAccountRole::Counterparty, ClaimSide::Payable) => match batch {
+            Some(ctx) => {
+                let invoice = ctx
+                    .supplier_invoice_number
+                    .clone()
+                    .unwrap_or_else(|| format!("#{}", ctx.supplier_invoice_id));
+                args.set("invoice", invoice.clone());
+                (
+                    "error-settlement-counterparty-is-payable-in-batch",
+                    format!(
+                        "Le compte bancaire de ce lot est lié au compte {account}, le compte créanciers de la facture {invoice} : le lot ne peut pas être confirmé. Reliez le compte bancaire à son propre compte de banque puis confirmez de nouveau, ou annulez le lot et réglez la facture depuis sa fiche."
+                    ),
+                )
+            }
+            None => (
+                "error-settlement-counterparty-is-payable",
+                format!(
+                    "Le compte {account} est le compte créanciers de cette facture : un règlement doit éteindre la dette par un autre compte (banque, caisse, compensation…)."
+                ),
+            ),
+        },
+        (SettlementAccountRole::Counterparty, ClaimSide::Receivable) => (
+            "error-settlement-counterparty-is-receivable",
+            format!(
+                "Le compte {account} est le compte débiteurs de cette facture : un règlement doit faire sortir la créance vers un autre compte (banque, caisse, compensation…)."
+            ),
+        ),
+        (SettlementAccountRole::Rounding, _) => (
+            "error-settlement-rounding-account-is-receivable",
+            format!(
+                "Le compte {account}, désigné dans les réglages comme compte de différences d'arrondi, est le compte débiteurs de cette facture : un administrateur doit désigner un autre compte dans Paramètres → Facturation."
+            ),
+        ),
+        (SettlementAccountRole::WriteOffNature, _) => (
+            "error-settlement-write-off-account-is-receivable",
+            format!(
+                "Le compte {account}, désigné dans les réglages comme compte de cette nature de solde, est le compte débiteurs de cette facture : un administrateur doit désigner un autre compte dans Paramètres → Facturation."
+            ),
+        ),
+        (SettlementAccountRole::VatPayable, _) => (
+            "error-settlement-vat-payable-account-is-receivable",
+            format!(
+                "Le compte {account}, désigné dans les réglages comme compte de TVA due, est le compte débiteurs de cette facture : un administrateur doit désigner un autre compte dans Paramètres → Facturation."
+            ),
+        ),
+    };
+    t_args(key, &fallback, &args)
+}
+
+/// Réponse **400** `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` (Story 15-6b,
+/// AC2). `details` vient de `claim_account_refusal_details` — la forme que
+/// partagent le rapprochement et la création d'un lot ; les clés **de lot**
+/// (`paymentBatchId`, `supplierInvoiceId`) ne sont ajoutées qu'ici, seul
+/// consommateur qui en ait.
+fn settlement_counterparty_response(
+    account_id: i64,
+    account_number: Option<&str>,
+    claim: kesh_db::errors::ClaimSide,
+    role: kesh_db::errors::SettlementAccountRole,
+    batch: Option<&kesh_db::errors::SettlementBatchContext>,
+) -> Response {
+    let account = account_number
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("#{account_id}"));
+    let message = settlement_counterparty_message(&account, claim, role, batch);
+    let mut details = kesh_db::repositories::invoice_settlements::claim_account_refusal_details(
+        account_id,
+        account_number,
+        claim,
+        role,
+        None,
+    );
+    if let Some(ctx) = batch {
+        details["paymentBatchId"] = serde_json::json!(ctx.payment_batch_id);
+        details["supplierInvoiceId"] = serde_json::json!(ctx.supplier_invoice_id);
+    }
+    let body = serde_json::json!({
+        "error": {
+            "code": "SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT",
+            "message": message,
+            "details": details,
+        }
+    });
+    (StatusCode::BAD_REQUEST, Json(body)).into_response()
+}
+
 /// Le 400 `ACCOUNT_ARCHIVED` d'une contre-passation dont un compte a été
 /// archivé — [`DbError::ReversalAccountsArchived`] et sa jumelle de l'avoir
 /// [`DbError::CreditNoteAccountsArchived`] (Story 15-6a) : même code, même
@@ -4023,6 +4142,127 @@ mod tests {
         assert!(
             msg.contains("1100") && msg.contains("avoir"),
             "le compte et le geste doivent être nommés : {msg}"
+        );
+    }
+
+    fn claim_refusal(
+        role: kesh_db::errors::SettlementAccountRole,
+        claim: kesh_db::errors::ClaimSide,
+        batch: Option<kesh_db::errors::SettlementBatchContext>,
+    ) -> DbError {
+        DbError::SettlementCounterpartyIsClaimAccount {
+            account_id: 17,
+            account_number: Some("1100".into()),
+            claim,
+            role,
+            batch,
+        }
+    }
+
+    /// Story 15-6b (#474, AC2) — 400, un code, `details` de la forme commune,
+    /// et un repli français **formaté** : sans i18n initialisée, `t_args` rend
+    /// le repli tel quel, qui ne doit pas laisser fuir le gabarit `{ $account }`.
+    #[tokio::test]
+    async fn settlement_counterparty_is_claim_account_is_400_with_details() {
+        use kesh_db::errors::{ClaimSide, SettlementAccountRole};
+        let resp = AppError::from(claim_refusal(
+            SettlementAccountRole::Counterparty,
+            ClaimSide::Receivable,
+            None,
+        ))
+        .into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            body["error"]["code"],
+            "SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT"
+        );
+        assert_eq!(
+            body["error"]["details"],
+            serde_json::json!({
+                "accountId": 17,
+                "accountNumber": "1100",
+                "claim": "receivable",
+                "role": "counterparty",
+            })
+        );
+        let msg = body["error"]["message"].as_str().unwrap();
+        assert!(msg.contains("1100") && msg.contains("débiteurs"), "{msg}");
+        assert!(!msg.contains('$'), "gabarit non résolu : {msg}");
+    }
+
+    /// Story 15-6b (AC2) — la clé suit le RÔLE : un compte désigné renvoie à
+    /// Paramètres → Facturation, jamais à « banque, caisse ».
+    #[tokio::test]
+    async fn settlement_counterparty_message_follows_the_role() {
+        use kesh_db::errors::{ClaimSide, SettlementAccountRole};
+        for (role, marker) in [
+            (SettlementAccountRole::Rounding, "différences d'arrondi"),
+            (SettlementAccountRole::WriteOffNature, "nature de solde"),
+            (SettlementAccountRole::VatPayable, "TVA due"),
+        ] {
+            let resp =
+                AppError::from(claim_refusal(role, ClaimSide::Receivable, None)).into_response();
+            let (_, body) = response_body(resp).await;
+            assert_eq!(body["error"]["details"]["role"], role.as_str());
+            let msg = body["error"]["message"].as_str().unwrap();
+            assert!(msg.contains(marker), "{role:?} : {msg}");
+            assert!(msg.contains("Paramètres → Facturation"), "{role:?} : {msg}");
+            assert!(!msg.contains("banque, caisse"), "{role:?} : {msg}");
+        }
+        let resp = AppError::from(claim_refusal(
+            SettlementAccountRole::Counterparty,
+            ClaimSide::Payable,
+            None,
+        ))
+        .into_response();
+        let (_, body) = response_body(resp).await;
+        assert_eq!(body["error"]["details"]["claim"], "payable");
+        let msg = body["error"]["message"].as_str().unwrap();
+        assert!(msg.contains("créanciers"), "{msg}");
+    }
+
+    /// Story 15-6b (AC2, AC6) — à la confirmation d'un lot, le message dit les
+    /// deux issues et `details` gagne les clés de lot, et elles seules.
+    #[tokio::test]
+    async fn settlement_counterparty_in_batch_carries_batch_keys() {
+        use kesh_db::errors::{ClaimSide, SettlementAccountRole, SettlementBatchContext};
+        let resp = AppError::from(claim_refusal(
+            SettlementAccountRole::Counterparty,
+            ClaimSide::Payable,
+            Some(SettlementBatchContext {
+                payment_batch_id: 5,
+                supplier_invoice_id: 42,
+                supplier_invoice_number: Some("FF-7".into()),
+            }),
+        ))
+        .into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["details"]["paymentBatchId"], 5);
+        assert_eq!(body["error"]["details"]["supplierInvoiceId"], 42);
+        assert!(body["error"]["details"].get("bankAccountId").is_none());
+        let msg = body["error"]["message"].as_str().unwrap();
+        assert!(
+            msg.contains("FF-7") && msg.contains("1100") && msg.contains("annulez le lot"),
+            "{msg}"
+        );
+
+        // Sans numéro de facture : repli `#<id>`.
+        let resp = AppError::from(claim_refusal(
+            SettlementAccountRole::Counterparty,
+            ClaimSide::Payable,
+            Some(SettlementBatchContext {
+                payment_batch_id: 5,
+                supplier_invoice_id: 42,
+                supplier_invoice_number: None,
+            }),
+        ))
+        .into_response();
+        let (_, body) = response_body(resp).await;
+        assert!(
+            body["error"]["message"].as_str().unwrap().contains("#42"),
+            "{body}"
         );
     }
 

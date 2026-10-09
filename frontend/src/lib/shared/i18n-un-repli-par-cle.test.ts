@@ -115,8 +115,14 @@ const PREFIXES = [
  * `in-payment-batch`) — recompté : `git diff main` du FTL fr-CH, onze lignes dont
  * deux clés existantes réécrites (`-cancel-confirm`,
  * `journal-entries-reverse-blocked-supplier-invoice`).
+ *
+ * ⚠️ **210 → 213, +3 nommées** (Story 15-6b, #474) — la contrepartie qui serait le compte
+ * soldé : `supplier-invoices-pay-no-eligible-bank-account` (liste des comptes bancaires vidée par
+ * le filtre du compte créanciers), `payment-batches-failed-counterparty-is-claim-account` et
+ * `payment-batches-failed-purchase-entry-malformed` (refus par facture à la création d'un lot) —
+ * recompté : `git diff` du FTL fr-CH, préfixes du domaine.
  */
-const CLES_RELEVEES = 210;
+const CLES_RELEVEES = 213;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

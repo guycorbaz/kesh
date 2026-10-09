@@ -23,8 +23,8 @@ use chrono::{Duration, NaiveDate};
 use kesh_db::entities::audit_log::NewAuditLogEntry;
 use kesh_db::entities::bank_transaction::{BankTransaction, BankTransactionStatus};
 use kesh_db::entities::invoice::Invoice;
-use kesh_db::errors::DbError;
-use kesh_db::repositories::invoice_settlements::PaymentAgainstDue;
+use kesh_db::errors::{ClaimSide, DbError};
+use kesh_db::repositories::invoice_settlements::{ClaimSubject, GapAccountRole, PaymentAgainstDue};
 use kesh_db::repositories::reconciliation::UnpaidInvoiceCandidate;
 use kesh_db::repositories::{
     accounts as accounts_repo, audit_log, bank_accounts, company_invoice_settings,
@@ -1204,6 +1204,43 @@ async fn accept_one(
     }
 }
 
+/// Convertit le refus « compte = créance » (Story 15-6b, #474) en
+/// `FailedProposal` — **une seule** fonction pour l'étape (b bis) et (c-bis),
+/// `details` par le helper commun `claim_account_refusal_details`.
+/// `bank_account_id` n'est fourni que pour le rôle `counterparty`. Toute autre
+/// erreur — celle de la lecture du numéro — est un `DATABASE_ERROR`, comme aux
+/// étapes voisines (pattern batch : jamais d'`AppError` global).
+fn claim_account_failed_proposal(
+    bank_transaction_id: i64,
+    err: DbError,
+    bank_account_id: Option<i64>,
+) -> FailedProposal {
+    match &err {
+        DbError::SettlementCounterpartyIsClaimAccount {
+            account_id,
+            account_number,
+            claim,
+            role,
+            ..
+        } => FailedProposal {
+            bank_transaction_id,
+            error_code: err.error_code().to_string(),
+            details: Some(invoice_settlements::claim_account_refusal_details(
+                *account_id,
+                account_number.as_deref(),
+                *claim,
+                *role,
+                bank_account_id,
+            )),
+        },
+        other => FailedProposal {
+            bank_transaction_id,
+            error_code: "DATABASE_ERROR".to_string(),
+            details: Some(serde_json::json!({ "message": other.to_string() })),
+        },
+    }
+}
+
 /// Helper interne — traite UNE proposal `type='invoice'` dans son savepoint.
 ///
 /// **C2 Pass 1 code review (TOCTOU fix)** : la BankTransaction est
@@ -1222,6 +1259,17 @@ async fn accept_one(
 /// `company_invoice_settings::rounding_account_for_write`. Les deux autres
 /// flux d'acceptation (`split`, `rule`) et les rapprochements manuel et ventilé
 /// gardent, eux, le compte de contrepartie venu du client.
+///
+/// ⚠️ **Mais ne pas venir du client ne veut pas dire ne pas pouvoir être la
+/// créance** (Story 15-6b, #474, amendement du classement ci-dessus) : le compte
+/// de banque vient de la **configuration** du compte bancaire, et rien n'y
+/// interdit le 1100 ; le compte d'arrondi vient des réglages, et la créance
+/// retypée en charge passe son contrôle de type. L'un et l'autre écriraient
+/// `D 1100 / C 1100`. Ils sont donc **comparés à la créance** — le compte de
+/// banque aussitôt la créance lue (étape b bis, avant le trop-perçu), le compte
+/// d'arrondi aussitôt lu (c-bis) — et le refus est une proposition de
+/// `failed[]` (`SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`), jamais une erreur
+/// globale.
 #[allow(clippy::too_many_arguments)]
 async fn accept_one_invoice(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
@@ -1493,6 +1541,19 @@ async fn accept_one_invoice(
         }
     };
 
+    // (b bis) ⛔ Story 15-6b (#474) — le compte de banque n'est pas la créance.
+    //         Après tous les refus antérieurs (score, compte bancaire sans
+    //         journal, écriture de vente malformée), avant le trop-perçu.
+    invoice_settlements::refuse_if_claim_account(
+        tx,
+        company_id,
+        bank_ledger_account_id,
+        receivable_account_id,
+        ClaimSubject::Counterparty(ClaimSide::Receivable),
+    )
+    .await
+    .map_err(|e| claim_account_failed_proposal(bank_transaction_id, e, Some(bank_account_id)))?;
+
     // (c) ⛔ Le trop-perçu est REFUSÉ, il ne s'écrit pas. Sans ce garde, le
     //     compte de créance passerait CRÉDITEUR — un solde contre nature que le
     //     grand livre signalerait, mais après coup.
@@ -1533,7 +1594,20 @@ async fn accept_one_invoice(
         )
         .await
         {
-            Ok(id) => Some(id),
+            // Story 15-6b (AC3 bis) — le compte d'arrondi n'est pas la créance :
+            // `details` sans `bankAccountId`, qui n'a pas de sens ici.
+            Ok(id) => {
+                invoice_settlements::refuse_if_claim_account(
+                    tx,
+                    company_id,
+                    id,
+                    receivable_account_id,
+                    ClaimSubject::Designated(GapAccountRole::Rounding),
+                )
+                .await
+                .map_err(|e| claim_account_failed_proposal(bank_transaction_id, e, None))?;
+                Some(id)
+            }
             Err(DbError::RoundingAccountNotConfigured { .. }) => {
                 return Err(FailedProposal {
                     bank_transaction_id,

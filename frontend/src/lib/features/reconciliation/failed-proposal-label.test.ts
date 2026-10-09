@@ -3,7 +3,8 @@
 // ⚠️ La liste des codes est ÉCRITE EN DUR, et non lue depuis le module : un test qui
 // itérerait sur la table de production serait vert par construction (fiche, § « Tests — ce qui
 // rendrait un test vert sans rien prouver »). Relevé : les 25 littéraux de
-// `crates/kesh-api/src/routes/reconciliation.rs` + `ACCOUNT_NOT_POSTABLE` (DbError::error_code).
+// `crates/kesh-api/src/routes/reconciliation.rs` + les deux codes de `DbError::error_code()` :
+// `ACCOUNT_NOT_POSTABLE` et `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` (Story 15-6b).
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -50,6 +51,7 @@ const EXPECTED_KEYS: Record<string, string> = {
 	RECONCILIATION_SPLIT_IMBALANCE: 'reconciliation-split-error-imbalance',
 	RECONCILIATION_TRANSACTION_NOT_PENDING: 'reconciliation-failed-transaction-not-pending',
 	ROUNDING_ACCOUNT_NOT_CONFIGURED: 'error-rounding-account-not-configured',
+	SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT: 'reconciliation-failed-counterparty-is-claim-account',
 	VALIDATION_ERROR: 'error-validation',
 };
 
@@ -58,8 +60,8 @@ describe('failedProposalLabel', () => {
 		calls.length = 0;
 	});
 
-	it('couvre les 26 codes relevés', () => {
-		expect(Object.keys(EXPECTED_KEYS)).toHaveLength(26);
+	it('couvre les 27 codes relevés', () => {
+		expect(Object.keys(EXPECTED_KEYS)).toHaveLength(27);
 	});
 
 	for (const [code, key] of Object.entries(EXPECTED_KEYS)) {
@@ -122,6 +124,38 @@ describe('failedProposalLabel', () => {
 		});
 		expect(calls).toEqual(['reconciliation-failed-payment-before-invoice']);
 		expect(label).toContain('plus d’un jour avant la facture');
+	});
+
+	// Story 15-6b (#474, AC7) — deux remèdes selon `details.role`.
+	it('SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT, role counterparty : relier le compte bancaire', () => {
+		const label = failedProposalLabel('SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT', {
+			bankAccountId: 3,
+			accountId: 7,
+			accountNumber: '1100',
+			claim: 'receivable',
+			role: 'counterparty',
+		});
+		expect(calls).toEqual(['reconciliation-failed-counterparty-is-claim-account']);
+		expect(label).toContain('propre compte de banque');
+	});
+
+	it('SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT, role rounding : renvoi aux réglages (mutation : rôle ignoré)', () => {
+		const label = failedProposalLabel('SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT', {
+			accountId: 7,
+			accountNumber: '1100',
+			claim: 'receivable',
+			role: 'rounding',
+		});
+		expect(calls).toEqual(['reconciliation-failed-rounding-account-is-claim-account']);
+		expect(label).toContain('Paramètres → Facturation');
+	});
+
+	it.each([
+		['role non chaîne', { role: 1 }],
+		['details absent', null],
+	])('SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT (%s) → libellé du compte bancaire', (_cas, details) => {
+		failedProposalLabel('SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT', details);
+		expect(calls).toEqual(['reconciliation-failed-counterparty-is-claim-account']);
 	});
 
 	it.each([

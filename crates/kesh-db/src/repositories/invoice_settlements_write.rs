@@ -21,8 +21,10 @@ use crate::entities::{
     Journal, NewInvoiceSettlement, NewJournalEntry, SettlementChoice, SettlementKind,
     SettlementWriteOffNature,
 };
-use crate::errors::{DbError, NonPostableAccount, SettlementCancelBlocker, map_db_error};
-use crate::repositories::invoice_settlements::PaymentAgainstDue;
+use crate::errors::{
+    ClaimSide, DbError, NonPostableAccount, SettlementCancelBlocker, map_db_error,
+};
+use crate::repositories::invoice_settlements::{ClaimSubject, GapAccountRole, PaymentAgainstDue};
 use crate::repositories::journal_entries::ReversalAuthority;
 use crate::repositories::settlement_cancellation::{
     SettlementCancelHit, settlement_entry_cancel_blocker,
@@ -45,6 +47,22 @@ pub struct SettlementOutcome {
 /// ⛔ **Le trop-perçu est refusé, jamais écrit** : sinon le compte de créance
 /// passerait créditeur, une anomalie que le grand livre signalerait — mais après
 /// coup.
+///
+/// ⛔ **Un règlement ne vise pas le compte qu'il solde** (Story 15-6b, #474) : ni
+/// la contrepartie (compte interne choisi, ou compte du grand livre du compte
+/// bancaire) ni le compte d'arrondi ne peuvent être la créance lue sur la vente
+/// — l'écriture serait `D 1100 / C 1100`, équilibrée, et le reste dû baisserait
+/// sans que rien ne bouge au grand livre.
+///
+/// **Ordre des refus**, celui des lectures : statut et date ; créance (lue sur
+/// la vente) ; **contrepartie** — compte bancaire inconnu (404), sans compte lié
+/// (`CONFIGURATION_REQUIRED`), compte interne archivé ou inconnu
+/// (`INACTIVE_OR_INVALID_ACCOUNTS`), non imputable (`ACCOUNT_NOT_POSTABLE`),
+/// **puis** contrepartie = créance (`SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`,
+/// `role: counterparty`) ; **trop-perçu** ; **compte d'arrondi** —
+/// `ROUNDING_ACCOUNT_NOT_CONFIGURED`, puis compte d'arrondi = créance
+/// (`role: rounding`). Trop-perçu et écart d'arrondi sont exclusifs. Aucun de
+/// ces refus n'écrit rien.
 pub async fn settle_invoice(
     pool: &MySqlPool,
     user_id: i64,
@@ -171,6 +189,19 @@ pub async fn settle_invoice(
         }
     };
 
+    // (3 bis) ⛔ Story 15-6b (#474) — la contrepartie n'est pas la créance.
+    //         Comparée aussitôt résolue, donc après ses propres refus et avant
+    //         le trop-perçu : un montant excessif sur 1100 rend ce refus-ci, le
+    //         défaut de fond. Aucune relecture, sauf le numéro à l'échec.
+    invoice_settlements::refuse_if_claim_account(
+        &mut tx,
+        company_id,
+        counterparty_account_id,
+        receivable_account_id,
+        ClaimSubject::Counterparty(ClaimSide::Receivable),
+    )
+    .await?;
+
     // (4) ⛔ Le trop-perçu est refusé AVANT toute écriture — à DOUBLE BORNE
     //     (Story 25-4-c3-b, AC 3) : un paiement égal au reste arrondi au centime
     //     solde la facture, l'écart passant en écriture ; au-delà du brut, tout le
@@ -185,18 +216,27 @@ pub async fn settle_invoice(
             }
             PaymentAgainstDue::Ordinary => (amount, None),
             // (4bis) Le compte d'arrondi n'est exigé QUE s'il y a un écart, et il
-            //        est revérifié ici, au moment d'écrire (AC 4).
-            PaymentAgainstDue::SettlesWithRounding { raw_due } => (
-                raw_due,
-                Some(
-                    company_invoice_settings::rounding_account_for_write(
-                        &mut tx,
-                        company_id,
-                        crate::errors::RoundingContext::Payment,
-                    )
-                    .await?,
-                ),
-            ),
+            //        est revérifié ici, au moment d'écrire (AC 4) — puis comparé
+            //        à la créance (Story 15-6b, AC3 bis) : son type, contrôlé, ne
+            //        suffit pas, celui d'un compte qui porte des écritures se
+            //        change avec confirmation.
+            PaymentAgainstDue::SettlesWithRounding { raw_due } => {
+                let rounding = company_invoice_settings::rounding_account_for_write(
+                    &mut tx,
+                    company_id,
+                    crate::errors::RoundingContext::Payment,
+                )
+                .await?;
+                invoice_settlements::refuse_if_claim_account(
+                    &mut tx,
+                    company_id,
+                    rounding,
+                    receivable_account_id,
+                    ClaimSubject::Designated(GapAccountRole::Rounding),
+                )
+                .await?;
+                (raw_due, Some(rounding))
+            }
         };
 
     // (5) Exercice OUVERT couvrant la date de règlement.
@@ -355,6 +395,18 @@ pub struct WriteOffOutcome {
 /// - ⛔ **Tant qu'un solde existe, la facture est payée** : il éteint tout le
 ///   reste, et aucun autre règlement ne s'annule avant lui
 ///   (`SettlementCancelBlocker::WriteOffExists`).
+/// - ⛔ **Aucun compte d'écart n'est la créance** (Story 15-6b, #474, AC3 bis) :
+///   le compte de la nature, celui du reste d'arrondi et celui de TVA due sont
+///   comparés par **identifiant** à la créance lue sur la vente — le contrôle de
+///   type des comptes désignés ne suffit pas (un compte qui porte des écritures
+///   change de type avec confirmation), et la TVA due n'en a aucun au moment
+///   d'écrire. Chaque comparaison suit la lecture de son compte et celle de la
+///   créance ; l'ordre des refus est donc celui des lectures : **nature**
+///   (`role: write_off_nature`, ou `rounding` pour la nature `rounding`), **reste
+///   d'arrondi** (`role: rounding` — même colonne de réglage), **TVA due**
+///   (`role: vat_payable`). Le premier égal est nommé ; une nature égale à la
+///   créance précède les refus de configuration du reste d'arrondi et de la TVA
+///   due.
 #[allow(clippy::too_many_arguments)]
 pub async fn write_off_invoice(
     pool: &MySqlPool,
@@ -439,6 +491,23 @@ pub async fn write_off_invoice(
         invoice_settlements::sale_receivable_account(&mut tx, company_id, sale_entry_id)
             .await?
             .ok_or_else(|| DbError::Invariant("écriture de vente sans ligne de débit".into()))?;
+    // (4 bis) Story 15-6b — le compte de la nature n'est pas la créance, comparé
+    //         aussitôt la créance lue (la nature a été lue avant elle ; aucun
+    //         refus métier ne les sépare, et aucune lecture ne s'avance). La
+    //         nature `rounding` lit la colonne du compte d'arrondi : son rôle est
+    //         `rounding`.
+    invoice_settlements::refuse_if_claim_account(
+        &mut tx,
+        company_id,
+        nature_account_id,
+        receivable_account_id,
+        ClaimSubject::Designated(if nature == SettlementWriteOffNature::Rounding {
+            GapAccountRole::Rounding
+        } else {
+            GapAccountRole::WriteOffNature
+        }),
+    )
+    .await?;
 
     // (5) La TVA corrigée, au prorata des taux (escompte, perte).
     let shares = if nature.corrects_vat() {
@@ -476,14 +545,22 @@ pub async fn write_off_invoice(
     let rounding_account_id = if nature == SettlementWriteOffNature::Rounding {
         Some(nature_account_id)
     } else if amount != invoice_settlements::amount_due_to_centime(amount) {
-        Some(
-            company_invoice_settings::write_off_account_for_write(
-                &mut tx,
-                company_id,
-                SettlementWriteOffNature::Rounding,
-            )
-            .await?,
+        let rounding = company_invoice_settings::write_off_account_for_write(
+            &mut tx,
+            company_id,
+            SettlementWriteOffNature::Rounding,
         )
+        .await?;
+        // Story 15-6b — le compte du reste d'arrondi n'est pas la créance.
+        invoice_settlements::refuse_if_claim_account(
+            &mut tx,
+            company_id,
+            rounding,
+            receivable_account_id,
+            ClaimSubject::Designated(GapAccountRole::Rounding),
+        )
+        .await?;
+        Some(rounding)
     } else {
         None
     };
@@ -491,7 +568,20 @@ pub async fn write_off_invoice(
     let vat_account_id = if shares.is_empty() {
         None
     } else {
-        Some(company_invoice_settings::vat_payable_account_for_write(&mut tx, company_id).await?)
+        let vat =
+            company_invoice_settings::vat_payable_account_for_write(&mut tx, company_id).await?;
+        // Story 15-6b — la TVA due n'est pas la créance. Aucun contrôle de type ne
+        // garde ce compte au moment d'écrire : cette comparaison est sa seule
+        // garde contre `D 1100 / C 1100`.
+        invoice_settlements::refuse_if_claim_account(
+            &mut tx,
+            company_id,
+            vat,
+            receivable_account_id,
+            ClaimSubject::Designated(GapAccountRole::VatPayable),
+        )
+        .await?;
+        Some(vat)
     };
 
     // (6) Exercice ouvert, puis l'écriture au journal OD.

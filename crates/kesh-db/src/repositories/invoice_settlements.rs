@@ -20,7 +20,7 @@ const COLUMNS: &str = "id, company_id, invoice_id, journal_entry_id, amount, set
      write_off_nature, write_off_vat, created_at";
 
 use crate::entities::{InvoiceSettlement, NewInvoiceSettlement, NewJournalEntryLine};
-use crate::errors::{DbError, map_db_error};
+use crate::errors::{ClaimSide, DbError, SettlementAccountRole, map_db_error};
 use crate::repositories::invoices::line_ttc_sql;
 
 /// Forme **scalaire par facture** du total réglé — sous-requête corrélée.
@@ -618,6 +618,179 @@ pub async fn sale_rounding_account(
 }
 
 // ---------------------------------------------------------------------------
+// Story 15-6b (#474) — un règlement ne vise pas le compte qu'il solde
+// ---------------------------------------------------------------------------
+
+/// Constat **pur** qu'un compte coïncide avec le compte soldé — rendu par
+/// [`ensure_not_claim_account`], consommé par [`claim_account_refusal`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ClaimAccountClash {
+    /// Le compte en cause (égal au compte soldé).
+    pub account_id: i64,
+}
+
+/// Le **compte d'écart** désigné dans les réglages qu'un geste écrit en face de
+/// la créance (Story 15-6b, AC3 bis). Sous-ensemble de
+/// [`SettlementAccountRole`] : un compte désigné est toujours comparé à une
+/// **créance** client.
+///
+/// ⚠️ Nommé `GapAccountRole`, et non `DesignatedRole` comme l'écrivait la fiche
+/// (signature indicative ; choix C-15-6b-2) : un `DesignatedRole` existe déjà
+/// dans `company_invoice_settings` (Story 15-5d), qui désigne les quatre champs
+/// que la validation et la saisie fournisseur écrivent — un autre ensemble.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GapAccountRole {
+    /// `default_rounding_account_id`, quel que soit le geste.
+    Rounding,
+    /// Le compte d'une nature `discount`, `bank_fees` ou `bad_debt`.
+    WriteOffNature,
+    /// `default_vat_payable_account_id` (solde du reste).
+    VatPayable,
+}
+
+/// Le **sujet** d'une comparaison au compte soldé (Story 15-6b, AC1 ; finding
+/// F5 de la P5) : la combinaison « dette fournisseur + compte désigné » est
+/// **irreprésentable** — le règlement fournisseur n'écrit aucun compte d'écart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClaimSubject {
+    /// La contrepartie choisie, ou celle que porte le compte bancaire du geste.
+    Counterparty(ClaimSide),
+    /// Un compte désigné dans les réglages — comparé à la créance client.
+    Designated(GapAccountRole),
+}
+
+impl ClaimSubject {
+    /// Le côté soldé : celui de la contrepartie, ou la créance pour un compte
+    /// désigné.
+    pub fn claim(self) -> ClaimSide {
+        match self {
+            Self::Counterparty(side) => side,
+            Self::Designated(_) => ClaimSide::Receivable,
+        }
+    }
+
+    /// Le rôle exposé (`details.role`), qui porte le remède.
+    pub fn role(self) -> SettlementAccountRole {
+        match self {
+            Self::Counterparty(_) => SettlementAccountRole::Counterparty,
+            Self::Designated(GapAccountRole::Rounding) => SettlementAccountRole::Rounding,
+            Self::Designated(GapAccountRole::WriteOffNature) => {
+                SettlementAccountRole::WriteOffNature
+            }
+            Self::Designated(GapAccountRole::VatPayable) => SettlementAccountRole::VatPayable,
+        }
+    }
+}
+
+/// Compare un compte que le geste écrit **en face** du compte soldé à ce compte
+/// soldé (Story 15-6b, #474). **Pure** : ni I/O ni transaction — c'est la seule
+/// partie que la 15-6d emprunte (sa garde compare la contrepartie au compte de
+/// banque).
+///
+/// ⛔ Une écriture `D X / C X` s'équilibre : rien, au grand livre, ne la refuse.
+/// Seule cette comparaison d'**identifiants** la ferme — le contrôle de type
+/// d'un compte désigné ne suffit pas, le type d'un compte qui porte des
+/// écritures se changeant avec confirmation.
+pub fn ensure_not_claim_account(
+    account_id: i64,
+    claim_account_id: i64,
+) -> Result<(), ClaimAccountClash> {
+    if account_id == claim_account_id {
+        Err(ClaimAccountClash { account_id })
+    } else {
+        Ok(())
+    }
+}
+
+/// Construit le refus [`DbError::SettlementCounterpartyIsClaimAccount`] —
+/// **seule** construction de la variante hors de l'interception de
+/// `payment_batches::confirm_batch` (qui la reconstruit avec son lot).
+///
+/// Appelée **à l'échec seulement** : elle lit le numéro du compte dans la
+/// transaction de l'appelant (la requête est écrite d'un tenant, sur une ligne,
+/// pour rester trouvable par `grep`). Une erreur SQL de cette lecture est rendue
+/// telle quelle — c'est alors elle, et non le refus, que l'appelant propage.
+/// `batch` vaut toujours `None` ici.
+pub async fn claim_account_refusal(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    clash: ClaimAccountClash,
+    subject: ClaimSubject,
+) -> DbError {
+    let number: Result<Option<String>, DbError> =
+        sqlx::query_scalar("SELECT number FROM accounts WHERE id = ? AND company_id = ?")
+            .bind(clash.account_id)
+            .bind(company_id)
+            .fetch_optional(&mut *conn)
+            .await
+            .map_err(map_db_error);
+    match number {
+        Ok(account_number) => DbError::SettlementCounterpartyIsClaimAccount {
+            account_id: clash.account_id,
+            account_number,
+            claim: subject.claim(),
+            role: subject.role(),
+            batch: None,
+        },
+        Err(e) => e,
+    }
+}
+
+/// Garde complète d'un site : [`ensure_not_claim_account`], puis, sur
+/// coïncidence **seulement**, [`claim_account_refusal`] (Story 15-6b ; choix
+/// C-15-6b-1). Rend `Err` avec le refus — ou avec l'erreur SQL de la lecture du
+/// numéro.
+pub async fn refuse_if_claim_account(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    account_id: i64,
+    claim_account_id: i64,
+    subject: ClaimSubject,
+) -> Result<(), DbError> {
+    match ensure_not_claim_account(account_id, claim_account_id) {
+        Ok(()) => Ok(()),
+        Err(clash) => Err(claim_account_refusal(conn, company_id, clash, subject).await),
+    }
+}
+
+/// Les `details` du refus, construits **une fois** pour ses trois
+/// consommateurs — le mapping HTTP, le `FailedProposal` du rapprochement et le
+/// `PaymentBatchFailedItem` de la création d'un lot — pour que leurs clés ne
+/// divergent pas.
+///
+/// `bankAccountId` n'est posé que s'il est fourni (rôle `counterparty` d'un
+/// geste qui porte un compte bancaire). Les clés **de lot**
+/// (`paymentBatchId`, `supplierInvoiceId`) sont hors de ce helper : le mapping
+/// HTTP, seul consommateur qui en ait, les ajoute.
+///
+/// ⚠️ **Ce qui est construit une fois, ce sont les CLÉS, pas l'extraction** :
+/// les consommateurs du rapprochement
+/// (`routes/reconciliation.rs::claim_account_failed_proposal`) et de la
+/// création d'un lot (`payment_batches.rs::validate_invoice_for_batch`)
+/// déstructurent chacun la variante `SettlementCounterpartyIsClaimAccount`
+/// par leur propre `match` avant d'appeler ce helper. Une méthode sur
+/// `DbError` qui rende directement les `details` supprimerait ces deux `match`
+/// — dette écrite au Change Log de la 15-6b (revue de code P1, finding B-6).
+pub fn claim_account_refusal_details(
+    account_id: i64,
+    account_number: Option<&str>,
+    claim: ClaimSide,
+    role: SettlementAccountRole,
+    bank_account_id: Option<i64>,
+) -> serde_json::Value {
+    let mut details = serde_json::json!({
+        "accountId": account_id,
+        "accountNumber": account_number,
+        "claim": claim.as_str(),
+        "role": role.as_str(),
+    });
+    if let Some(bank_account_id) = bank_account_id {
+        details["bankAccountId"] = serde_json::json!(bank_account_id);
+    }
+    details
+}
+
+// ---------------------------------------------------------------------------
 // Story 25-5-a (#386) — lecture exhaustive pour l'export de souveraineté
 // ---------------------------------------------------------------------------
 
@@ -753,5 +926,91 @@ mod tests {
         ] {
             assert!(parse_write_off_vat(&bad).is_err(), "accepté : {bad}");
         }
+    }
+
+    /// Story 15-6b (#474) — la comparaison est une égalité d'identifiants, et
+    /// rien d'autre.
+    #[test]
+    fn la_comparaison_au_compte_solde_est_une_egalite_d_identifiants() {
+        assert_eq!(ensure_not_claim_account(7, 8), Ok(()));
+        assert_eq!(
+            ensure_not_claim_account(8, 8),
+            Err(ClaimAccountClash { account_id: 8 })
+        );
+    }
+
+    /// Story 15-6b — le sujet rend le côté et le rôle ; un compte désigné est
+    /// toujours comparé à la créance.
+    #[test]
+    fn le_sujet_rend_le_cote_et_le_role() {
+        let cases = [
+            (
+                ClaimSubject::Counterparty(ClaimSide::Receivable),
+                ClaimSide::Receivable,
+                SettlementAccountRole::Counterparty,
+            ),
+            (
+                ClaimSubject::Counterparty(ClaimSide::Payable),
+                ClaimSide::Payable,
+                SettlementAccountRole::Counterparty,
+            ),
+            (
+                ClaimSubject::Designated(GapAccountRole::Rounding),
+                ClaimSide::Receivable,
+                SettlementAccountRole::Rounding,
+            ),
+            (
+                ClaimSubject::Designated(GapAccountRole::WriteOffNature),
+                ClaimSide::Receivable,
+                SettlementAccountRole::WriteOffNature,
+            ),
+            (
+                ClaimSubject::Designated(GapAccountRole::VatPayable),
+                ClaimSide::Receivable,
+                SettlementAccountRole::VatPayable,
+            ),
+        ];
+        for (subject, claim, role) in cases {
+            assert_eq!(subject.claim(), claim, "{subject:?}");
+            assert_eq!(subject.role(), role, "{subject:?}");
+        }
+    }
+
+    /// Story 15-6b — forme des `details`, avec et sans compte bancaire.
+    #[test]
+    fn les_details_du_refus_ont_une_seule_forme() {
+        assert_eq!(
+            claim_account_refusal_details(
+                3,
+                Some("1100"),
+                ClaimSide::Receivable,
+                SettlementAccountRole::Counterparty,
+                Some(9),
+            ),
+            serde_json::json!({
+                "accountId": 3,
+                "accountNumber": "1100",
+                "claim": "receivable",
+                "role": "counterparty",
+                "bankAccountId": 9,
+            })
+        );
+        let sans_banque = claim_account_refusal_details(
+            3,
+            None,
+            ClaimSide::Receivable,
+            SettlementAccountRole::Rounding,
+            None,
+        );
+        assert_eq!(
+            sans_banque,
+            serde_json::json!({
+                "accountId": 3,
+                "accountNumber": null,
+                "claim": "receivable",
+                "role": "rounding",
+            })
+        );
+        assert!(sans_banque.get("bankAccountId").is_none());
     }
 }

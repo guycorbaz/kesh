@@ -919,6 +919,47 @@ pub enum DbError {
     #[error("Comptes archivés sur l'avoir à émettre ({})", .0.len())]
     CreditNoteAccountsArchived(Vec<ArchivedAccount>),
 
+    /// Un règlement viserait **le compte même qu'il doit solder** (Story 15-6b,
+    /// #474) : la contrepartie — ou un compte d'écart du même geste — est le
+    /// compte débiteurs de la facture client, ou le compte créanciers de la
+    /// facture fournisseur.
+    ///
+    /// ⛔ **Le motif** : l'écriture serait `D X / C X`. Elle s'équilibre (rien
+    /// n'interdit un même compte au débit et au crédit), le règlement
+    /// s'enregistre, le reste dû baisse, la facture peut passer « payée » — et le
+    /// grand livre **ne bouge pas**. Le refus vient avant toute écriture.
+    ///
+    /// `role` dit **d'où vient** le compte en cause, donc le remède
+    /// ([`SettlementAccountRole`]). ⚠️ **Le rôle suit la colonne de réglage lue,
+    /// pas la route** : le compte d'arrondi du règlement, celui du rapprochement,
+    /// le reste d'arrondi d'un solde et le compte de la nature `rounding` lisent
+    /// tous `default_rounding_account_id` — ils sortent tous sous
+    /// `role: Rounding`. `claim: Payable` ne se combine qu'avec `Counterparty` :
+    /// le règlement fournisseur n'écrit aucun compte d'écart, et le constructeur
+    /// unique (`invoice_settlements::claim_account_refusal`) rend la combinaison
+    /// irreprésentable.
+    ///
+    /// `batch` ne vaut `Some` qu'à la **confirmation d'un lot** de paiement
+    /// (`payment_batches::confirm_batch`), qui intercepte le refus de
+    /// `pay_in_tx` pour dire lequel de ses règlements est en cause.
+    ///
+    /// Mappé vers HTTP **400** `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` — un
+    /// seul code pour les quatre rôles, le défaut étant le même ; `details.role`
+    /// et le message distinguent le remède.
+    #[error("La contrepartie du règlement est le compte qu'il solde (compte {account_id})")]
+    SettlementCounterpartyIsClaimAccount {
+        /// Le compte en cause — qui **est** le compte soldé.
+        account_id: i64,
+        /// Son numéro, lu à l'échec ; `None` s'il n'a pas pu être résolu.
+        account_number: Option<String>,
+        /// Le côté soldé : créance client ou dette fournisseur.
+        claim: ClaimSide,
+        /// D'où vient le compte en cause, donc quel est le remède.
+        role: SettlementAccountRole,
+        /// Le lot et la facture, à la seule confirmation d'un lot.
+        batch: Option<SettlementBatchContext>,
+    },
+
     /// L'écriture a été contre-passée : on ne la modifie ni ne la supprime
     /// plus (Story 24-4a ; la modification, Story 15-8a).
     ///
@@ -1042,6 +1083,72 @@ pub enum RoundingContext {
     Issuance,
 }
 
+/// Le côté que solde un règlement (Story 15-6b, #474) : la **créance** d'une
+/// facture client, ou la **dette** d'une facture fournisseur.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClaimSide {
+    /// Le compte débiteurs, lu sur l'écriture de vente.
+    Receivable,
+    /// Le compte créanciers, lu sur l'écriture d'achat.
+    Payable,
+}
+
+impl ClaimSide {
+    /// Discriminant machine exposé dans `details.claim`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Receivable => "receivable",
+            Self::Payable => "payable",
+        }
+    }
+}
+
+/// D'où vient le compte qui coïncide avec le compte soldé — donc quel est le
+/// remède (Story 15-6b, #474 ; choix C-15-6-26, C-15-6-30).
+///
+/// ⚠️ **Le rôle suit la colonne de réglage lue, pas la route** : un même compte
+/// désigné sort sous le même rôle partout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SettlementAccountRole {
+    /// La contrepartie que l'utilisateur **choisit** (compte interne, compte
+    /// bancaire du virement) ou que porte le **compte bancaire** du geste (lot,
+    /// rapprochement). Remède : un autre compte, ou relier le compte bancaire à
+    /// son propre compte de banque.
+    Counterparty,
+    /// Le compte de différences d'arrondi des réglages
+    /// (`default_rounding_account_id`), **quel que soit le geste** : règlement,
+    /// rapprochement, reste d'arrondi d'un solde, nature `rounding`.
+    Rounding,
+    /// Le compte d'une nature de solde des réglages — `discount`, `bank_fees`,
+    /// `bad_debt` seulement (la nature `rounding` est [`Self::Rounding`]).
+    WriteOffNature,
+    /// Le compte de TVA due des réglages (solde du reste).
+    VatPayable,
+}
+
+impl SettlementAccountRole {
+    /// Discriminant machine exposé dans `details.role`.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Counterparty => "counterparty",
+            Self::Rounding => "rounding",
+            Self::WriteOffNature => "write_off_nature",
+            Self::VatPayable => "vat_payable",
+        }
+    }
+}
+
+/// Le lot de paiement et la facture en cause, quand le refus naît à la
+/// **confirmation d'un lot** (Story 15-6b, AC6) : le remède n'y est pas celui
+/// du règlement unitaire — l'utilisateur n'y choisit aucun compte.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettlementBatchContext {
+    pub payment_batch_id: i64,
+    pub supplier_invoice_id: i64,
+    /// Numéro de la facture fournisseur, relu par `confirm_batch`.
+    pub supplier_invoice_number: Option<String>,
+}
+
 impl DbError {
     /// Raccourci de construction de [`DbError::AccountsNotPostable`] : trie,
     /// dédoublonne et vérifie la non-vacuité par [`NonPostableAccounts::new`].
@@ -1081,6 +1188,9 @@ impl DbError {
             Self::EntryNotReversable { .. } => "ENTRY_NOT_REVERSABLE",
             Self::ReversalAccountsArchived(_) => "ACCOUNT_ARCHIVED",
             Self::CreditNoteAccountsArchived(_) => "ACCOUNT_ARCHIVED",
+            Self::SettlementCounterpartyIsClaimAccount { .. } => {
+                "SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT"
+            }
             Self::InvoiceNotUnvalidatable { blocker, .. } => blocker.code(),
             Self::SettlementNotCancellable { blocker } => blocker.code(),
             Self::ReconciliationNotCancellable { blocker } => blocker.code(),
@@ -1216,5 +1326,39 @@ mod tests {
     fn accounts_not_postable_error_code() {
         let err = DbError::accounts_not_postable([acc(1, "1000")]);
         assert_eq!(err.error_code(), "ACCOUNT_NOT_POSTABLE");
+    }
+
+    /// Story 15-6b (#474) — un code pour les quatre rôles.
+    #[test]
+    fn settlement_counterparty_is_claim_account_error_code() {
+        for role in [
+            SettlementAccountRole::Counterparty,
+            SettlementAccountRole::Rounding,
+            SettlementAccountRole::WriteOffNature,
+            SettlementAccountRole::VatPayable,
+        ] {
+            let err = DbError::SettlementCounterpartyIsClaimAccount {
+                account_id: 1,
+                account_number: Some("1100".into()),
+                claim: ClaimSide::Receivable,
+                role,
+                batch: None,
+            };
+            assert_eq!(err.error_code(), "SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT");
+        }
+    }
+
+    /// Story 15-6b — les discriminants machine de `details.claim` et `details.role`.
+    #[test]
+    fn claim_side_and_role_discriminants() {
+        assert_eq!(ClaimSide::Receivable.as_str(), "receivable");
+        assert_eq!(ClaimSide::Payable.as_str(), "payable");
+        assert_eq!(SettlementAccountRole::Counterparty.as_str(), "counterparty");
+        assert_eq!(SettlementAccountRole::Rounding.as_str(), "rounding");
+        assert_eq!(
+            SettlementAccountRole::WriteOffNature.as_str(),
+            "write_off_nature"
+        );
+        assert_eq!(SettlementAccountRole::VatPayable.as_str(), "vat_payable");
     }
 }

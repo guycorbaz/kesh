@@ -56,7 +56,7 @@ export function paymentBatchStatusLabel(status: PaymentBatchStatus): string {
  * § *Pattern batch — FailedProposal per-proposal* de `CLAUDE.md`. Seul leur affichage est
  * traduit ; un code inconnu retombe sur sa valeur brute, ce qui vaut mieux qu'une case vide.
  *
- * ⚠️ **Les six libellés sont RELEVÉS, pas inventés** : `SUPPLIER_INVOICE_NOT_FOUND` sur
+ * ⚠️ **Huit codes. Les six premiers libellés sont RELEVÉS, pas inventés** : `SUPPLIER_INVOICE_NOT_FOUND` sur
  * `reminders-error-invoice-not-found`, les deux IBAN sur
  * `imported-supplier-invoices-error-invalid-iban` — **sans** « du créancier », qui ne
  * s'applique pas ici —, et *ouverte* est en partie A du glossaire. `NO_PAYMENT_COORDINATES`
@@ -70,7 +70,15 @@ export function paymentBatchStatusLabel(status: PaymentBatchStatus): string {
  * désormais le mot exact de la colonne Statut. Laisser cette ligne de côté aurait rendu le
  * correctif incohérent avec lui-même.
  *
- * ⚠️ **Les six clés sont écrites en toutes lettres, jamais construites par gabarit.** Une
+ * ⚠️ **Les deux derniers libellés sont ÉCRITS par la Story 15-6b (#474), non relevés du
+ * glossaire** : `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` — le compte bancaire du lot est lié au
+ * compte créanciers de la facture, dont le règlement écrirait `D 2000 / C 2000` (la facture n'entre
+ * pas dans le lot, aucun fichier pain.001 ne la porte) — et `SUPPLIER_INVOICE_PURCHASE_ENTRY_MALFORMED`
+ * — l'écriture d'achat n'a pas de ligne de crédit, la facture est à vérifier. Le libellé ne nomme
+ * pas le compte : le `failed[]` du lot n'affiche que `#id — libellé`, et le compte en cause est
+ * celui du compte bancaire choisi à l'écran.
+ *
+ * ⚠️ **Les huit clés sont écrites en toutes lettres, jamais construites par gabarit.** Une
  * clé statique est vue par `i18n-keys.test.ts` dès qu'elle manque d'un catalogue ; une clé
  * dynamique demande un motif déclaré, et une carte peut grandir sans qu'aucune garde ne
  * rougisse — c'est exactement ce qui a été mesuré en passe 4 de la story 23-3.
@@ -92,6 +100,16 @@ export function failedItemLabel(code: string): string {
 			return i18nMsg('payment-batches-failed-invalid-iban', 'IBAN invalide');
 		case 'INVALID_QR_IBAN':
 			return i18nMsg('payment-batches-failed-invalid-qr-iban', 'QR-IBAN invalide');
+		case 'SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT':
+			return i18nMsg(
+				'payment-batches-failed-counterparty-is-claim-account',
+				'Le compte bancaire du lot est lié au compte créanciers de cette facture'
+			);
+		case 'SUPPLIER_INVOICE_PURCHASE_ENTRY_MALFORMED':
+			return i18nMsg(
+				'payment-batches-failed-purchase-entry-malformed',
+				"Écriture d'achat sans ligne de crédit : facture à vérifier"
+			);
 		default:
 			return code;
 	}
