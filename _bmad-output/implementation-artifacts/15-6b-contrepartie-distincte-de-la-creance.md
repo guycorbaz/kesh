@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+review
 
 <!-- Spécifiée le 2026-10-08 en autonomie (bmad-create-story), fille de la 15-6 découpée d'emblée
      (choix C-15-6-1). Choix propres : C-15-6-3, C-15-6-4 (précisé par C-15-6-14), C-15-6-10,
@@ -955,11 +955,133 @@ deux cas de l'AC7 (non compté : conditionnel).
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), en autonomie (consignes de l'Epic 15), worktree
+`/home/gcorbaz/devel/kesh-15-6b`, branche `story/15-6b-contrepartie-distincte-de-la-creance` depuis
+`39b52628`. Le 2026-10-09.
+
 ### Debug Log References
+
+- Tests neufs joués **avant** les gardes (`target/red-run.log`, non versionné) : **19 rouges / 22**
+  — les 19 tests de garde, chacun pour la bonne raison (écriture `D X / C X` acceptée, ou
+  `ConfigurationRequired` / `RECONCILIATION_OVERPAYMENT` là où l'ordre attend le refus neuf) ; verts :
+  les tests 3 et 9 (non-régression, verts avant comme après) et un test existant attrapé par le
+  filtre. Après les gardes : **22/22**.
+- Mutations jouées et constatées rouges, puis sources restaurées et `touch`ées :
+  1. `confirm_batch` n'intercepte plus le refus (`batch: None` → `batch: Some(_)` dans le motif) →
+     `confirm_batch_refuses_then_passes_once_the_bank_is_relinked` rouge ;
+  2. la nature `rounding` classée `WriteOffNature` → `the_rounding_nature_on_the_receivable_is_refused_as_rounding` rouge ;
+  3. (c-bis) passe `Some(bank_account_id)` → `accept_refuses_a_rounding_account_that_is_the_receivable` rouge ;
+  4. présélection du compte bancaire remise dans l'effet de réinitialisation → test 18 « `accounts`
+     arrivé APRÈS l'ouverture » rouge ;
+  5. filtre du rôle `Receivable` retiré du menu « Compte interne » → test 18 « 1100 absent » rouge.
+- **Artefact de banc relevé** : le `rerender` de `@testing-library/svelte` 5.3.1 remplace l'objet de
+  props entier (`$state.raw`, `svelte-core/src/props.svelte.js`), si bien que toute prop paraît
+  changée et que l'effet de réinitialisation du dialogue se rejoue — ce qu'un parent réel ne fait
+  pas. Le test 18 passe donc par une doublure `SettleInvoiceDialogHost.test.svelte` (patron
+  `ModalSuccessStub.test.svelte`), qui ne change que `accounts`.
 
 ### Completion Notes List
 
+- **T0** : aucun écart de fond (entrée datée au Change Log). Numéros relocalisés.
+- **AC1** : variante, `ClaimSide`, `SettlementAccountRole`, `SettlementBatchContext` dans
+  `kesh-db/src/errors.rs` ; `ClaimAccountClash`, `GapAccountRole` (**et non `DesignatedRole`**,
+  homonyme d'un type de la 15-5d — choix **C-15-6b-2**), `ClaimSubject`, `ensure_not_claim_account`,
+  `claim_account_refusal`, `claim_account_refusal_details` dans `invoice_settlements.rs`, plus
+  `refuse_if_claim_account`, qui enchaîne les deux gestes (choix **C-15-6b-1**).
+- **AC2** : mapping 400, six clés plates (aucun sélecteur), repli `format!`, quatre locales.
+- **AC3 / AC3 bis** : `settle_invoice` (contrepartie → trop-perçu → arrondi) et `write_off_invoice`
+  (nature → reste d'arrondi → TVA due), chaque comparaison aussitôt sa lecture et celle de la
+  créance ; doc-comments.
+- **AC4** : `pay_in_tx` + lecteur sœur `supplier_invoices::purchase_payable_line` (deux appelants).
+- **AC5** : `accept_one_invoice` étape (b bis) et (c-bis), une seule fonction de conversion
+  (`claim_account_failed_proposal`) ; commentaire de classement de la 15-5b amendé.
+- **AC6** : création (`failed[]` avec `bankAccountId`, écriture d'achat malformée en
+  `SUPPLIER_INVOICE_PURCHASE_ENTRY_MALFORMED`, erreur SQL propagée) ; confirmation interceptée et
+  contextualisée (numéro de facture relu) ; `failedItemLabel` à huit codes (les « six » → « huit »
+  aux quatre sites).
+- **AC7** : la 15-5c est mergée — `failedProposalLabel` à deux cas selon `details.role` (27 codes).
+- **AC8** : trois fonctions dans `account-options.ts` ; dialogue client (effet de présélection
+  distinct) et fiche fournisseur filtrés ; messages de liste vide conditionnés ; borne
+  `sitesTotal` **1915 → 1921** (+6, recompté par fichier aux deux bornes) ; et — non prévu par la
+  fiche — `CLES_RELEVEES` de `i18n-un-repli-par-cle.test.ts` **210 → 213** (+3 nommées), garde
+  qui a rougi au premier `test:unit` complet.
+- **AC9** : aucun changement de code ; le rendu de `errorMsg` est figé par le test 18.
+- **AC10** : `docs/api-external.md` — phrase de refus de `POST …/settlements` hors de la table
+  d'annulation ; ligne à la table du solde ; phrase de `POST …/pay` et des deux routes de lot, posée
+  avant la ligne de refus de l'annulation, que j'ai libellée « Refus de l'annulation : » pour lever
+  toute ambiguïté ; refus par proposition au § du rapprochement.
+- **AC11** : manuel utilisateur (cinq sections, `:1754` → balance âgée relocalisée) et manuel
+  d'administration (deux phrases) ; PDF `user-manual` et `admin-manual` régénérés (`make fr`) et
+  contrôlés **aplatis** (une phrase neuve au moins par section, « tout autre compte » et
+  « contrepartie libre » absents). La brochure, régénérée par `make` sans changement de source,
+  a été restaurée depuis git. **Hors fiche** : `README.md` (§ Fonctionnalités) disait « virement,
+  espèces ou tout autre compte » — corrigé (grep de propagation).
+- **AC12** : CHANGELOG `[0.13.0]` / `### Corrigé`.
+- **T8 — inventaire fermé** : les cinq commandes rejouées sur `HEAD` ne rendent **aucun site neuf** ;
+  écrivains : `pay_in_tx`, `settle_invoice`, `write_off_invoice`, `accept_one_invoice` (gardés),
+  `accept_one_split` (déjà gardé), `accept_one_rule`, `post_manual_once`, `post_split_once` (15-6d /
+  déjà gardé), `credit_notes` (#525), `invoices` validation et son arrondi (#537),
+  `supplier_invoices::create` (#537), `opening_complement` (hors classe) ; écrans : ceux des tables
+  de la fiche.
+- **Critère de T2** : `grep -rnF "SettlementCounterpartyIsClaimAccount" crates/*/src` (commentaires
+  exclus) ne rend que les cinq fichiers de la liste ; constructions : `claim_account_refusal`,
+  l'interception de `confirm_batch`, et deux tests ; `SELECT number FROM accounts WHERE id = ? AND company_id = ?`
+  ne rend que `claim_account_refusal`.
+- **Tests ajoutés**, de `39b52628` à `HEAD` (recompté par `grep -c` aux deux bornes) : backend
+  **29** — 21 d'intégration (`invoice_settlement` +6, `invoice_write_off` +5,
+  `supplier_invoices_repository` +2, `payment_batches_repository` +3, `reconciliation_e2e` +3,
+  `invoice_echeancier_e2e` +2) et 8 unitaires (`kesh-db` errors +2, `invoice_settlements` +3,
+  `kesh-api` errors +3) ; frontend **17** déclarations `it` / `it.each` (`account-options` +4,
+  `SettleInvoiceDialog` +6, `supplier-settlement-page` +4, `failed-proposal-label` +3) et le test
+  « mappe les six codes » de `payment-batch-helpers` renommé et étendu à huit. Les 23 tests nommés
+  par la fiche y sont tous ; s'y ajoutent deux cas backend non nommés : nature `rounding` sur la
+  créance (rôle `rounding`) et TVA due = créance (rôle `vat_payable`, sa seule garde).
+- **Verdict de lecture sur les E2E existants** (recopié de la fiche, § *Tests*) : aucune rupture
+  attendue — le filtre par rôle est inerte en E2E (seed sans rôle) ; aucune spec ne règle par le
+  compte soldé. *Confronté au run : voir Gates.*
+
+### Gates (dernier commit de code : `77930445`)
+
+- Backend complet (`scripts/test-fast.sh`, base `kesh_156b` remise à zéro par `DROP`/`CREATE`,
+  migrations, seed) : `cargo fmt --check` vert, `clippy -D warnings` vert, nextest **2958 passés,
+  4 ignorés**.
+- Frontend : `npm run check` 0 erreur (27 avertissements, tous dans des fichiers non touchés),
+  `lint-i18n-ownership` PASS, `test:unit` **1110 / 1110** (112 fichiers), `build` vert.
+- Tests `kesh-i18n` (parité des locales, sélecteurs) : 32 / 32.
+- E2E complet (Playwright, au dernier commit de code ; backend `./target/debug/kesh-api` sur le
+  port 3014, base `kesh_e2e_156b` reconstruite, secrets tirés par `openssl rand`,
+  `KESH_TEST_MODE=true` côté backend et runner, `KESH_COOKIE_SECURE=false`, quatre `KESH_SMTP_*`,
+  répertoires inbox/documents/sauvegarde du worktree ; `/health` : `smtpConfigured: true`) — run de
+  03:32 à 03:42 UTC : **247 passés, 9 échoués, 17 ignorés**. Les 9, fichier par fichier, sont
+  **tous** à la liste de `docs/testing.md` § « Les échecs attendus » : les sept KF-029 (#97)
+  (`mode-expert.spec.ts:26`, `:41` ; `onboarding-path-b.spec.ts:65`, `:92` ; `onboarding.spec.ts:57`,
+  `:77`, `:150`) et les deux KF-045 (#421) d'avant 12:00 UTC (`invoices.spec.ts:415` « historique des
+  rappels affiché », `:439` « axe-core … fiche »). **Aucun échec hors liste, aucune pollution.**
+  Confronté au verdict de lecture : aucune des specs nommées par la fiche n'a rougi
+  (`invoices_echeancier`, `invoices.spec.ts:318-321` sous son numéro actuel, `reminders`,
+  `invoice-write-off`, `invoices-settlement-cancel`, `reconciliation-*`, `payment-batches`,
+  `supplier-invoices`, `bank-account-journal-link`). Backend arrêté par son PID.
+
 ### File List
+
+- `crates/kesh-db/src/errors.rs`
+- `crates/kesh-db/src/repositories/invoice_settlements.rs`
+- `crates/kesh-db/src/repositories/invoice_settlements_write.rs`
+- `crates/kesh-db/src/repositories/supplier_invoices.rs`
+- `crates/kesh-db/src/repositories/payment_batches.rs`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/src/routes/reconciliation.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `crates/kesh-db/tests/{invoice_settlement,invoice_write_off,supplier_invoices_repository,payment_batches_repository}.rs`
+- `crates/kesh-api/tests/{reconciliation_e2e,invoice_echeancier_e2e}.rs`
+- `frontend/src/lib/features/accounts/account-options.ts` (+ `.test.ts`)
+- `frontend/src/lib/features/invoices/SettleInvoiceDialog.svelte` (+ `.test.ts`, `SettleInvoiceDialogHost.test.svelte`)
+- `frontend/src/routes/(app)/supplier-invoices/[id]/+page.svelte` (+ `supplier-settlement-page.test.ts`)
+- `frontend/src/lib/features/payment-batches/payment-batch-helpers.ts` (+ `.test.ts`)
+- `frontend/src/lib/features/reconciliation/failed-proposal-label.ts` (+ `.test.ts`)
+- `frontend/src/lib/shared/i18n-keys.test.ts`, `frontend/src/lib/shared/i18n-un-repli-par-cle.test.ts`
+- `docs/api-external.md`, `docs/manual/fr/{user-manual,admin-manual}.{tex,pdf}`, `README.md`, `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md` (C-15-6b-1, C-15-6b-2)
 
 ## Change Log
 
@@ -1251,3 +1373,12 @@ deux cas de l'AC7 (non compté : conditionnel).
     `:1629`, balance âgée `:1861` ; `admin-manual.tex` `:2153`, `:2155`, `:2159`.
   - Choix C36, C54, C55 présents au registre de la branche ; prochain numéro propre :
     `C-15-6b-1`.
+- 2026-10-09 — **Développement** (Opus 5.5, en autonomie). T0 (sans écart de fond) ; T1 à T8 selon la
+  fiche ; commits `fc50312c` (serveur), `77930445` (écrans et libellés), `2a3ede61`
+  (documentation). Choix **C-15-6b-1** (`refuse_if_claim_account`) et **C-15-6b-2**
+  (`GapAccountRole`). Écarts à la fiche, tous dits au Dev Agent Record : borne `CLES_RELEVEES`
+  de `i18n-un-repli-par-cle.test.ts` relevée (210 → 213) ; `README.md` corrigé (« tout autre
+  compte ») ; « Refus : » de l'annulation fournisseur libellé « Refus de l'annulation : » dans
+  `api-external.md` ; deux tests backend de plus que la fiche (nature `rounding`, TVA due) ;
+  doublure `SettleInvoiceDialogHost.test.svelte` pour le test 18. Gates : backend 2958/2958,
+  frontend 1110/1110 + build, E2E 247 passés / 9 attendus. Statut : `review`.
