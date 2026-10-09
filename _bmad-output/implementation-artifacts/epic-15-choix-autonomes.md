@@ -7301,3 +7301,76 @@ l'import (#458–#461).
 - **Retenu** : `\label{sec:init-db-manuelle}` ajouté à ce `\subsubsection`, renvoi `\S\ref{…}` depuis la
   section Synology. Aucun autre effet.
 - **Réversible** : oui.
+
+## C-15-14-62 — 15-14b (revue de code P1, B4) : le dump Synology passe par le Planificateur de tâches de DSM
+
+- **Contexte** : la revue P1 (B4) doute qu'Hyper Backup ait un champ « pré-script » ; **confirmé par Guy sur son
+  NAS le 2026-10-09** : « il n'y a pas de pré-script ». Décision de l'orchestrateur : une tâche du Planificateur de
+  tâches (root) fait le dump, calée avant la tâche Hyper Backup.
+- **Retenu** : script `/volume1/docker/kesh/kesh-dump.sh` (`set -euo pipefail`, `umask 077`, `PATH` explicite,
+  `trap` qui supprime le `.tmp`, dump dans `dump/` en 700) lancé à 1h30 par une tâche planifiée root, Hyper
+  Backup à 2h ; notification de la tâche en cas d'arrêt anormal (Hyper Backup ignore la tâche et sauvegarderait
+  le dump de la veille sans rien dire) ; vérification du dump du jour dans l'Explorateur de sauvegardes ; plus de
+  « post-script ». `synobackup --backup` non prescrit (non documenté par Synology). Le manuel dit que la recette
+  est rejouée hors DSM et que les **chemins de menus** sont à confirmer ; l'absence de pré-script, elle, est
+  écrite comme constatée.
+- **Question ouverte, non fondée** : Guy signale qu'Hyper Backup « arrête mariadb avant les backups » ; on ignore
+  s'il s'agit du paquet MariaDB 10 ou d'un conteneur. **Rien n'est écrit au manuel** : la phrase suggérée (« cela
+  ne concerne pas Kesh, dont la base vit dans son propre conteneur ») serait fausse avec `docker-compose.prod.yml`,
+  dont la base peut justement être le paquet MariaDB 10. À trancher sur réponse de Guy.
+- **Réversible** : oui (texte du manuel, gardes G16 (f)).
+
+## C-15-14-63 — 15-14b (revue de code P1, B1 = A-2) : le rechargement ne peut pas atteindre `DROP DATABASE` sur une étape ratée
+
+- **Retenu** : le rechargement devient un script, `kesh-restore.sh <dossier du dump>` (un `set -e` collé dans un
+  shell interactif fermerait la session SSH au premier échec) : `set -euo pipefail`, `sha256sum -c`, `gzip -t`,
+  dump de l'état courant dans `avant-restauration/` (700, conservé, horodaté), `docker compose stop kesh-api`,
+  `gunzip -c … | docker run --rm -i …`, `docker compose up -d`. Le script lit le dump **là où le snapshot l'a
+  restauré** : plus de copie sur le dump courant (A-10). Prouvé par la recette : empreinte fausse → arrêt, aucun
+  `DROP`, aucun dump d'avant pris ; archive tronquée (empreinte recalculée) → arrêt à `gzip -t`.
+- **Écart à la consigne, écrit** : l'orchestrateur écrit « `docker exec -i` » ; le rechargement passe par un
+  conteneur **jetable** (`docker run --rm -i`), il n'y a pas de conteneur où `exec` — le `-i` est exigé par G16 (c).
+- **Réversible** : oui.
+
+## C-15-14-64 — 15-14b (revue de code P1, B6, B7 = A-4 = E-5) : `GRANT SELECT` seul ; `\"` et `\\` entre guillemets
+
+- **Retenu** : `LOCK TABLES` retiré du compte de sauvegarde — `--single-transaction` ne verrouille rien ; la
+  recette le prouve (dump complet avec `GRANT SELECT` seul). Fichier d'options : même entre guillemets, `"`
+  s'écrit `\"` et `\` s'écrit `\\` — prouvé par la recette avec le mot de passe `Pa@ss#;w"0rd\x/ %q` (migrations
+  par `DATABASE_URL` pourcentage-encodée, rechargement par `kesh-restore.cnf` : vert). Les chevrons du `CREATE USER`
+  sont dits « à remplacer, non à recopier ».
+- **Réversible** : oui.
+
+## C-15-14-65 — 15-14b (revue de code P1, E-2, A-6) : G18 élargie, sites réécrits ou assumés ; G18-bis
+
+- **Retenu** : motif élargi (`toutes les sociétés|entreprises`, `ensemble des sociétés`, `entre (plusieurs)
+  sociétés|dossiers`, `autre|seconde|deuxième société`, `multi-soci…`) ; total **exact** 16 (7 + 9). Réécrits :
+  `admin-manual` « l'ensemble des sociétés » → « la société de l'installation, ses utilisateurs » et « toutes
+  entreprises + comptes » → « société, utilisateurs, comptes et données système » (l'opposition à « une seule
+  entreprise » suggérait plusieurs sociétés) ; `README:48` idem. **Assumés** (vrais pour une société) : six
+  fragments ajoutés (absence : « pas de seconde société » ×2, « aucun écran ne rattache un compte à une autre
+  société », brochure « la bascule entre sociétés … reste à venir » ; modèle : « multi-société » ×2) ; et, **hors
+  domaine de G18**, la clé `admin-backup-page-description` des quatre locales et son repli
+  `AdminBackupPanel.svelte:63` (« toutes les sociétés » que contient la sauvegarde d'une installation —
+  littéralement vrai) : **aucun code de production touché**. G18-bis : le manuel utilisateur ne décrit ni
+  invitation ni connexion par e-mail, ni écran de changement en session.
+- **Réversible** : oui.
+
+## C-15-14-66 — 15-14b (revue de code P1) : LOW écartés, et pourquoi
+
+- **B8** (empreinte calculée avant le `mv`) : écarté. Les deux ordres laissent une fenêtre ; avec l'ordre actuel,
+  une interruption entre `mv` et `sha256sum` laisse une empreinte de la veille, que `sha256sum -c` refuse : le
+  rechargement **s'arrête**, sans rien écrire (sens sûr). L'empreinte porte sur le fichier final, celui que le
+  rechargement vérifie.
+- **B13** (« multi-tenant » sur `website/index.html:76`) : écarté. Décrit le modèle de données, vrai ; la fiche
+  l'assume déjà (§ *Hors motif, assumés*) ; `roadmap.html` est historique.
+- **Réversible** : oui.
+
+## C-15-14-67 — 15-14b (revue de code P1) : défaut neuf trouvé par G14 élargie, et défaut de la recette
+
+- **G14** lit désormais `stop|start|restart|logs|pull|rm` : elle a trouvé `docker compose logs kesh` et « container
+  `kesh` » dans *Kesh ne démarre pas* (`admin-manual.tex:2420-2425`) — le service s'appelle `kesh-api` ; corrigé.
+- **Recette** : l'attente « base prête » (`SELECT 1`) passait pendant le serveur **temporaire** d'initialisation de
+  l'image MariaDB ; un passage a tout raté (`ERROR 2002`). Les passages antérieurs l'avaient évité par chance.
+  Attente corrigée : second « ready for connections », puis `SELECT 1`.
+- **Réversible** : oui.
