@@ -333,7 +333,7 @@ async fn legacy_credit_note_on_other_account_forms_no_group(pool: MySqlPool) {
     let inv = facture(&pool, &seeded, dec!(100.00), jours_avant(100)).await;
     let avoir = crediter(&pool, &seeded, inv, jours_avant(90)).await;
     effacer_marques(&pool, cle_de(&pool, inv).await.expect("lettrée")).await;
-    sqlx::query(
+    let deplacees = sqlx::query(
         "UPDATE journal_entry_lines SET account_id = ? WHERE entry_id = ? AND account_id = ?",
     )
     .bind(seeded.accounts["2000"])
@@ -341,7 +341,9 @@ async fn legacy_credit_note_on_other_account_forms_no_group(pool: MySqlPool) {
     .bind(seeded.accounts["1100"])
     .execute(&pool)
     .await
-    .unwrap();
+    .unwrap()
+    .rows_affected();
+    assert_eq!(deplacees, 1, "montage : la ligne de créance de l'avoir");
     let audits = audits_de_lettrage(&pool).await;
 
     let issue = synchroniser(&pool, &seeded, inv, seeded.fiscal_year_id)

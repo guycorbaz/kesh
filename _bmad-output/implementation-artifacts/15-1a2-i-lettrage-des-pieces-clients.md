@@ -8,7 +8,7 @@ validation P3 remédiée le 2026-10-09 — le refus **extrait** dans la story pr
 C-15-1a2-19, la dérogation C-15-1a2-13 retirée ; validation P4 remédiée le 2026-10-09 — fixture partagée sortie
 du code de production (`tests/support/`, C-15-1a2-28), étape 3 **terminale** (C-15-1a2-29), documentation
 publique du refus du rang 2 bis reçue de la 15-1a2-0 (**AC18**, C-15-1a2-24) ; **validation P5 à mener avant
-tout développement**)*
+tout développement** — faite : P5 ciblée close, cf. Change Log)*
 
 ## Story
 
@@ -905,8 +905,9 @@ motif dans les quatre listes du manuel utilisateur, la liste des exceptions, le 
 l'encadré, la note et le glossaire, la phrase du manuel d'administration — chacun présent. Grep d'AC12 : un seul
 résidu, `CHANGELOG.md:15` « ne se lettrent pas à la main » (énoncé vrai du lettrage manuel, trié légitime). Grep
 de la valeur `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` (`docs`, `CHANGELOG.md`) : 3 sites d'origine
-(`api-external.md` lettrage `POST`, `DELETE`, table § 10 — cette dernière complétée) + 5 neufs (CHANGELOG, 2
-tableaux et 2 listes en prose des annulations) — chacun le refus du 2 bis ou celui du lettrage manuel. Remède :
+(`api-external.md` lettrage `POST`, `DELETE`, table § 10 — cette dernière complétée) + **6** neufs (CHANGELOG,
+`api-external.md:293`, 2 tableaux et 2 listes en prose des annulations) = **9** *(corrigé en revue P1, A-3 : « 5 neufs »
+oubliait `:293`)* — chacun le refus du 2 bis ou celui du lettrage manuel. Remède :
 aucun site ne prescrit « ou » seul.
 
 **Choix consignés** : C-15-1a2-i-1 à C-15-1a2-i-4.
@@ -927,6 +928,36 @@ aucun site ne prescrit « ou » seul.
 - `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md`, `sprint-status.yaml`
 
 ## Change Log
+
+### Revue de code P1 — 2026-10-09 (Sonnet 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
+
+**Prompt** : `15-1a2-i-review-prompt-p1.md`. **Rapports** : `kesh-gate-logs/15-1a2-i-review-p1-{B,E,A}.md` — B **0 C / 0 H /
+0 M / 4 L**, E **0 / 0 / 0 / 3 L**, A **0 / 0 / 1 M / 6 L** ; recoupement B-2 = E-1 → **1 MEDIUM, 12 LOW distincts**.
+Affirmations vérifiées par `grep -nF` (A-1 : `user-manual.tex:1246` « jusqu'à ce qu'un administrateur rouvre la
+période » ; `sync_invoice_in_tx(` appelé aux quatre seuls sites de geste ; A-2 : `letterings.rs:878`, `:1028`).
+Axes non exercés des trois lentilles : toute exécution — reprise par l'orchestrateur (gate complet, ci-dessous ;
+mutations au Dev Agent Record).
+
+| finding | sév. | verdict |
+|---|---|---|
+| A-1 — paragraphe *Lettrage* du manuel : « deux cas » (il y en a plus) et « jusqu'à ce qu'un administrateur rouvre la période » (rien ne relettre à la réouverture) | MEDIUM | **corrigé** : critère du grand livre, cas listés (période close, créance non lettrable, deux états hérités), « rouvrir la période ne la lettre pas d'elle-même », « au moment du geste qui la solde » ; `make fr`, PDF aplati contrôlé. Les factures soldées **avant** la mise à jour relèvent du rattrapage de la 15-1a2-ii, qui le documente (C124 : aucun tag entre les deux) |
+| A-2 — « la seule fonction qui écrit / efface la marque » sur les primitives publiques | LOW | **corrigé** (doc-comments renvoient aux corps `*_inner`) |
+| A-3 — décompte des sites de la valeur (5 neufs → 6, total 9) | LOW | **corrigé** (Dev Agent Record) |
+| A-4 — `documentNumber: null` non exercé | LOW | **corrigé** : test unitaire `audit_details_carry_the_document_or_nothing` (`letterings.rs`, `mod tests`) |
+| A-5 — volets (c), (d) d'AC8 non éprouvés sur source synthétique | LOW | **corrigé** : `appelle_avant` extraite, (c) et (d) éprouvés dans `the_function_body_detector_sees_calls_and_order` |
+| A-6 — `UPDATE` du test d'avoir hérité sans assertion de montage | LOW | **corrigé** (`rows_affected == 1`) |
+| A-7 — Status : « validation P5 à mener » | LOW | **corrigé** |
+| B-1 — cycles *rapprochement ‖ rapprochement* et *‖ avoir* non nommés | LOW | **corrigé** (doc du module) |
+| B-2 = E-1 — verrous d'intervalle des lectures `FOR UPDATE` de `invoice_settlements` / `credit_notes` | LOW | **nommé** au module (attente d'une facture voisine, au pire interblocage rejoué) ; non mesuré |
+| B-3 — refus du mode `Manual` mappés `DATABASE_ERROR` | LOW | **corrigé** : `INTERNAL_ERROR` (inatteignables en `System`), test étendu |
+| B-4 — un règlement sans ligne sur `A` ferait sortir `Invariant` de la dissolution | LOW | **réfuté** : `create_in_tx` des trois écrivains crédite toujours `A` (`settlement_journal_lines`, `write_off_journal_lines`) ; un règlement hérité sans ligne sur `A` ne laisse pas la facture soldée sur `A` (reste dû négatif, trop-perçu refusé) — aucun groupe ne le contient |
+| E-2 — lectures ordinaires (étapes 4, 5, lettrabilité, périodes) sur l'instantané d'`accept_batch` | LOW | **accepté** : le groupe `k` d'une facture ne change que sous le verrou de la facture, tenu par l'`UPDATE` de (g) avant la synchronisation ; pire cas une abstention ou une recréation superflue, jamais un échec du geste |
+| E-3 — bords sans test dédié (arrondi négatif réel, règlement daté la veille, restauration, règlements concurrents, `ENTRY_LETTERED` sur une ligne `document`) | LOW | **accepté** : le filtre de l'ancre est tenu par `only_the_anchor_of_the_sale_is_in_the_group` ; la garde `ENTRY_LETTERED` est indépendante de l'origine (15-1a-ii) ; la restauration et son rejeu sont la 15-1a2-ii |
+
+**Gate au commit de remédiation** (base `kesh_1a2i` remise à zéro, sans redémarrer MariaDB) : `scripts/test-fast.sh`
+**3259 passés, 4 ignorés** (+1 : le test unitaire d'A-4). Signal D5 : sans objet (sévérité en baisse). La remédiation
+touche du code de production (`letterings.rs` : doc-comments et `mod tests` ; `routes/reconciliation.rs` : quatre bras
+du mappage) et deux modules : passe **P2 complète, Opus**.
 
 ### Développement — 2026-10-09 (Opus 5.5, `bmad-dev-story`, en autonomie)
 

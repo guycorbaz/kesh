@@ -1235,17 +1235,20 @@ Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~:
 \end{itemize}
 
 \textbf{Lettrage.} Une facture \textbf{soldée} --- par ses règlements, par le solde de son reste
-ou par son avoir --- est \textbf{lettrée} d'office~: sa ligne au compte débiteurs et celles de ses
+ou par son avoir --- est \textbf{lettrée} d'office, au moment du geste qui la solde~: sa ligne au compte débiteurs et celles de ses
 règlements, de son solde ou de son avoir sur ce compte forment un groupe de lettrage («~pièce~»),
 et le grand livre la montre soldée, comme la fiche, l'échéancier et les rappels. Un règlement
 partiel ne lettre rien. L'\textbf{annulation} d'un règlement --- ou du solde --- \textbf{délettre}
 la facture~: sa créance et ses autres règlements redeviennent ouverts, et le règlement annulé
-est lettré avec sa contre-passation. Deux cas restent sans lettrage, et c'est la vérité du grand
-livre~: une facture \textbf{historique} dont toutes les lignes sont en période close (exercice
-clôturé ou période verrouillée) n'est pas lettrée après coup --- elle reste ouverte au compte
-débiteurs jusqu'à ce qu'un administrateur rouvre la période~; et une facture dont le compte
+est lettré avec sa contre-passation. Kesh ne lettre une facture que si ses lignes sur le compte
+débiteurs se soldent \textbf{au grand livre}~; restent donc sans lettrage, et c'est la vérité du
+grand livre~: une facture dont toutes les lignes sont en \textbf{période close} (exercice clôturé
+ou période verrouillée) au moment où Kesh la lettrerait --- elle reste ouverte au compte
+débiteurs, et rouvrir la période ne la lettre pas d'elle-même~; une facture dont le compte
 débiteurs n'est \textbf{plus lettrable} (relié depuis à un compte bancaire, ou changé en compte de
-charge) n'est pas lettrée --- son règlement n'en est pas moins enregistré. Une annulation qui
+charge) --- son règlement n'en est pas moins enregistré~; et deux états hérités de versions
+antérieures à la 0.13, un \textbf{avoir} porté sur un autre compte que le compte débiteurs de la
+facture, et une facture à la fois \textbf{créditée et réglée} --- ses lignes ne se soldent pas. Une annulation qui
 défairait un lettrage figé par une période close est refusée (motif ci-dessus).
 
 \begin{keshnote}

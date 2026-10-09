@@ -499,6 +499,23 @@ fn ecritures_de_table(source: &str, verbes: &[&str], table: &str) -> Vec<(usize,
         .collect()
 }
 
+/// AC8 (d) — le corps de la fonction `fonction` appelle `premier` **avant**
+/// `second` (code seul : chaînes et commentaires masqués).
+fn appelle_avant(source: &str, fonction: &str, premier: &str, second: &str) -> Result<(), String> {
+    let (_, masque) = decouper(source);
+    let (_, de, a) = fonctions(&masque)
+        .into_iter()
+        .find(|(nom, _, _)| nom == fonction)
+        .ok_or_else(|| format!("fonction `{fonction}` introuvable"))?;
+    let corps = &masque[de..=a];
+    match (corps.find(premier), corps.find(second)) {
+        (Some(p), Some(s)) if p < s => Ok(()),
+        autre => Err(format!(
+            "fonction `{fonction}` : `{premier}` doit précéder `{second}` (positions {autre:?})"
+        )),
+    }
+}
+
 /// Les sources de production : `(chemin relatif à crates/, contenu)`.
 fn sources_de_production() -> Vec<(String, String)> {
     let mut fichiers = Vec::new();
@@ -619,21 +636,13 @@ fn credit_note_insert_is_followed_by_sync_and_cancel_dissolves_first() {
         racine_crates().join("kesh-db/src/repositories/invoice_settlements_write.rs"),
     )
     .expect("source");
-    let (_, masque) = decouper(&source);
-    let (_, de, a) = fonctions(&masque)
-        .into_iter()
-        .find(|(nom, _, _)| nom == "cancel_settlement_in_tx")
-        .expect("cancel_settlement_in_tx");
-    let corps = &masque[de..=a];
-    match (
-        corps.find("dissolve_invoice_document_group_in_tx("),
-        corps.find("reverse_owned_in_tx("),
+    if let Err(e) = appelle_avant(
+        &source,
+        "cancel_settlement_in_tx",
+        "dissolve_invoice_document_group_in_tx(",
+        "reverse_owned_in_tx(",
     ) {
-        (Some(d), Some(r)) if d < r => {}
-        autre => fautes.push(format!(
-            "(d) invoice_settlements_write.rs, fonction `cancel_settlement_in_tx` : la \
-             dissolution doit précéder la contre-passation (positions {autre:?})"
-        )),
+        fautes.push(format!("(d) invoice_settlements_write.rs : {e}"));
     }
     assert!(
         fautes.is_empty(),
@@ -703,4 +712,52 @@ fn the_function_body_detector_sees_calls_and_order() {
     assert!(ecritures[0].starts_with("INSERT INTO invoice_settlements (a)"));
     assert!(ecritures[1].starts_with("delete"));
     assert!(ecritures_de_table(source, &["INSERT INTO"], "credit_notes").is_empty());
+
+    // Volets (c) et (d) (revue P1, A-5) : l'INSERT d'avoir suivi — ou non — de
+    // la synchronisation dans sa fonction, et l'ordre dissolution → contre-passation.
+    let avoirs = r##"
+        async fn suivi() {
+            sqlx::query("INSERT INTO credit_notes (a) VALUES (1)").execute(t).await?;
+            letterings::sync_invoice_in_tx(t).await?;
+        }
+        async fn orphelin() {
+            sqlx::query("INSERT INTO credit_notes (a) VALUES (1)").execute(t).await?;
+        }
+        async fn annule_bien() {
+            dissolve_invoice_document_group_in_tx(t).await?;
+            reverse_owned_in_tx(t).await?;
+        }
+        async fn annule_mal() {
+            reverse_owned_in_tx(t).await?;
+            // dissolve_invoice_document_group_in_tx( en commentaire : ignoré
+            let s = "dissolve_invoice_document_group_in_tx(";
+        }
+    "##;
+    let (_, masque) = decouper(avoirs);
+    let fns = fonctions(&masque);
+    let suivis: Vec<(String, bool)> = ecritures_de_table(avoirs, &["INSERT INTO"], "credit_notes")
+        .into_iter()
+        .map(|(p, _)| {
+            let (nom, _, fin) = fonction_englobante(&fns, p).expect("fonction");
+            (nom.clone(), masque[p..*fin].contains("sync_invoice_in_tx("))
+        })
+        .collect();
+    assert_eq!(
+        suivis,
+        vec![("suivi".to_string(), true), ("orphelin".to_string(), false)]
+    );
+    let ordre = |f: &str| {
+        appelle_avant(
+            avoirs,
+            f,
+            "dissolve_invoice_document_group_in_tx(",
+            "reverse_owned_in_tx(",
+        )
+    };
+    assert!(ordre("annule_bien").is_ok());
+    assert!(
+        ordre("annule_mal").is_err(),
+        "absente du code : chaîne et commentaire masqués"
+    );
+    assert!(ordre("inconnue").is_err());
 }

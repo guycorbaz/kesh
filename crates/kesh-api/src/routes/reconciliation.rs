@@ -1357,7 +1357,9 @@ fn claim_account_failed_proposal(
 ///
 /// - Défaut structurel → `INTERNAL_ERROR`, précédé d'un `tracing::error!`,
 ///   comme l'étape (e) d'`accept_one_invoice` : `Invariant`, et tout refus de
-///   lettrage que la synchronisation exclut par construction. ⛔
+///   lettrage que la synchronisation exclut par construction — dont les refus
+///   propres au mode `Manual` (périodes, ligne de pièce, groupe `document`),
+///   que le mode `System` n'évalue pas (revue P1, B-3). ⛔
 ///   `LETTERING_CONCURRENT_CHANGE` en fait partie (C-15-1a2-14) : l'`UPDATE` de
 ///   la primitive vise des lignes tenues `FOR UPDATE` par la même transaction,
 ///   le compte est égal par construction — le code n'entre pas dans `failed[]`.
@@ -1373,6 +1375,10 @@ fn lettering_error_to_failed_proposal(bank_transaction_id: i64, err: DbError) ->
         | DbError::LetteringAccountNotLetterable
         | DbError::LetteringAccountsDiffer
         | DbError::LetteringTooFewLines
+        | DbError::LetteringTooManyLines { .. }
+        | DbError::LetteringAllLinesInClosedPeriods
+        | DbError::LetteringLineOwnedByDocument { .. }
+        | DbError::LetteringIsDocument
         | DbError::NotFound => {
             tracing::error!("encaissement : lettrage de la facture impossible : {err}");
             FailedProposal {
@@ -4560,6 +4566,9 @@ mod period_lock_tests {
             DbError::LetteringAccountNotLetterable,
             DbError::LetteringAccountsDiffer,
             DbError::LetteringTooFewLines,
+            DbError::LetteringTooManyLines { max: 200 },
+            DbError::LetteringAllLinesInClosedPeriods,
+            DbError::LetteringIsDocument,
             DbError::NotFound,
         ];
         for err in structurels {

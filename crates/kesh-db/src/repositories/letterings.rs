@@ -105,6 +105,13 @@
 //! `accept_one_invoice` insère sa ligne `invoice_settlements` avant de prendre
 //! la facture (par l'`UPDATE … AND version = ?`), quand `settle_invoice` et
 //! `write_off_invoice` tiennent la facture puis lisent `invoice_settlements`.
+//! Le même raisonnement vaut pour *rapprochement ‖ rapprochement* de la même
+//! facture (deux comptes bancaires) et *rapprochement ‖ avoir* (revue P1,
+//! B-1). ⚠️ La découverte lit `invoice_settlements` et `credit_notes` `FOR
+//! UPDATE` par leurs index de facture : sous `REPEATABLE READ`, ces lectures
+//! posent des verrous d'intervalle, qui peuvent faire attendre l'insertion d'un
+//! règlement ou d'un avoir d'une facture **voisine** (revue P1, B-2 = E-1) —
+//! attente, et au pire interblocage rejoué ; non mesuré.
 //! Aucune absence de cycle n'est affirmée : toutes les routes appelantes sont
 //! rejouées (`Rejouee`, et `retry_with` pour `accept_batch`).
 
@@ -875,7 +882,8 @@ fn audit_details(group: &LetteringGroup, document: Option<&DocumentRef>) -> serd
     details
 }
 
-/// **Pose la marque** d'un groupe de lettrage — la seule fonction qui l'écrit
+/// **Pose la marque** d'un groupe de lettrage — primitive publique (R3), dont le
+/// corps [`create_group_inner`] est la seule fonction qui l'écrit.
 /// (R3). Dans la transaction de l'appelant, sans BEGIN ni COMMIT ; en cas
 /// d'erreur, l'appelant laisse tomber la transaction (rollback).
 ///
@@ -1025,7 +1033,8 @@ async fn create_group_inner(
     Ok(group)
 }
 
-/// **Retire la marque** d'un groupe — la seule fonction qui l'efface (R3).
+/// **Retire la marque** d'un groupe — primitive publique (R3), dont le corps
+/// [`dissolve_group_inner`] est la seule fonction qui l'efface.
 /// Dans la transaction de l'appelant, sans BEGIN ni COMMIT.
 ///
 /// Groupe introuvable ou d'une autre société → [`DbError::NotFound`]. En mode
@@ -1581,6 +1590,46 @@ mod tests {
             with_placeholders("x IN ({ids}) AND", 3),
             "x IN (?, ?, ?) AND"
         );
+    }
+
+    /// AC10 (revue P1, A-4) — `documentNumber` est PRÉSENT et `null` quand la
+    /// pièce n'a pas de numéro ; aucune clé `document*` sans pièce.
+    #[test]
+    fn audit_details_carry_the_document_or_nothing() {
+        let group = LetteringGroup {
+            key: 27,
+            code: code_of(27),
+            origin: Origin::Document,
+            account_id: 3,
+            account_number: "1100".into(),
+            lines: vec![],
+        };
+        let sans = audit_details(&group, None);
+        for cle in ["documentType", "documentId", "documentNumber"] {
+            assert!(sans.get(cle).is_none(), "{cle} sans pièce");
+        }
+        let doc = DocumentRef {
+            document_type: "invoice",
+            id: 9,
+            number: None,
+        };
+        let avec = audit_details(&group, Some(&doc));
+        assert_eq!(avec["documentType"], "invoice");
+        assert_eq!(avec["documentId"], 9);
+        assert!(
+            avec.get("documentNumber")
+                .is_some_and(serde_json::Value::is_null),
+            "documentNumber présent et null : {avec}"
+        );
+        let numerote = DocumentRef {
+            number: Some("F-1".into()),
+            ..doc
+        };
+        assert_eq!(
+            audit_details(&group, Some(&numerote))["documentNumber"],
+            "F-1"
+        );
+        assert_eq!(avec["code"], "AA", "les clés d'origine restent");
     }
 
     #[test]
