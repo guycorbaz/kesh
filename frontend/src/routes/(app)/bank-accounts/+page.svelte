@@ -294,7 +294,7 @@
 		<p class="mt-2 text-sm text-text-muted">
 			{i18nMsg(
 				'bank-accounts-labels-page-subtitle',
-				'Lier chaque compte bancaire à un compte du plan comptable (classe 1 typique : 1020 Caisse, 1030 Banque).',
+				'Lier chaque compte bancaire à un compte du plan comptable (classe 1 typique : 1010 Poste, 1020 Banque).',
 			)}
 		</p>
 	</div>
@@ -362,7 +362,7 @@
 						<p class="mt-1 text-xs text-text-muted">
 							{i18nMsg(
 								'bank-accounts-tooltip-journal-account',
-								'Lie ce compte bancaire à un compte du plan comptable (typiquement 1020 Caisse, 1030 Banque). Permet à la réconciliation automatique de créer les écritures vers le bon compte, et l\'affichage du solde sur la page d\'accueil. Note multi-comptes : si plusieurs comptes courants distincts, lier au sous-compte spécifique (1030.001 BCV CHF), pas au parent 1030.',
+								'Lie ce compte bancaire à un compte du plan comptable (typiquement 1010 Poste, 1020 Banque). Permet à la réconciliation automatique de créer les écritures vers le bon compte, et l\'affichage du solde sur la page d\'accueil. Note multi-comptes : si plusieurs comptes courants distincts, lier au sous-compte spécifique (1020.001 BCV CHF), pas au parent 1020.',
 							)}
 						</p>
 					</div>

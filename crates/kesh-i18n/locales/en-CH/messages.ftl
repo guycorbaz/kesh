@@ -402,8 +402,8 @@ journal-entries-delete-blocked-reversed = This entry has been reversed: it can n
 journal-entries-edit-conflict = This entry was modified in the meantime: the page has been reloaded.
 journal-entries-line-account-unusable = Account archived or not postable — replace it
 journal-entries-modify-blocked-fiscal-year-closed = The fiscal year of this entry is closed: it can no longer be modified. Correct it with a reversal.
-journal-entries-modify-blocked-later-fiscal-year-closed = The later fiscal year { $name } is closed, and its balance sheet includes this entry: it stays fixed while that year is closed. Correct it with a reversal; otherwise, an administrator reopens the closed fiscal years, starting with the most recent.
-error-later-fiscal-year-closed = The later fiscal year "{ $name }" is closed, and its balance sheet includes everything before it: no entry dated before its start date can be recorded, changed or deleted while it is closed. An existing entry is corrected with a reversal; otherwise, an administrator reopens the closed fiscal years, starting with the most recent.
+journal-entries-modify-blocked-later-fiscal-year-closed = The later fiscal year { $name } is closed, and its balance sheet includes this entry: it stays fixed while that year is closed. Correct it with a reversal; otherwise, an administrator reopens the later closed fiscal years, starting with the most recent.
+error-later-fiscal-year-closed = The later fiscal year "{ $name }" is closed, and its balance sheet includes everything before it: no entry dated before its start date can be recorded, changed or deleted while it is closed. An existing entry is corrected with a reversal; otherwise, an administrator reopens the later closed fiscal years, starting with the most recent.
 journal-entries-modify-blocked-period-locked = The period is locked through { $date }: this entry, dated within it, stays fixed. Correct it with a reversal.
 journal-entries-modify-blocked-detached-settlement = This payment belongs to a cancelled supplier invoice: the money has left, it stays fixed. Correct it with a reversal.
 journal-entries-period-locked = Entries are locked through { $lockedThrough }; this one is dated { $attempted }.
@@ -866,7 +866,7 @@ invoice-settings-required = Please configure the invoicing accounts in settings 
 # === Story 3.7 — Fiscal Years (EN-CH) ===
 
 fiscal-year-title = Fiscal Years
-fiscal-year-out-of-order-warning = The fiscal year "{ $open }" is open although a later fiscal year, "{ $closed }", is closed: nothing can be recorded in it until the order is restored. Close "{ $open }" if its books are final, then the following open fiscal years, from the oldest to the most recent. Otherwise, an administrator reopens the closed fiscal years, starting with the most recent, "{ $latest }": Kesh only reopens a fiscal year when no more recent one is closed.
+fiscal-year-out-of-order-warning = The fiscal year "{ $open }" is open although a later fiscal year, "{ $closed }", is closed: nothing can be recorded in it until the order is restored. Close "{ $open }" if its books are final, then the following open fiscal years, from the oldest to the most recent. Otherwise, an administrator reopens the later closed fiscal years, starting with the most recent, "{ $latest }": Kesh only reopens a fiscal year when no more recent one is closed.
 fiscal-year-list-empty = No fiscal years.
 fiscal-year-create-button = New fiscal year
 fiscal-year-name-label = Name
@@ -897,7 +897,7 @@ error-fiscal-year-reopen-motif-too-long = The reason for reopening is too long (
 error-fiscal-year-already-open = This fiscal year is already open.
 error-fiscal-year-reopen-blocked = Cannot reopen: a later fiscal year is closed; first reopen the later closed fiscal years, starting with the most recent.
 error-fiscal-year-close-earlier-open = First close fiscal year "{ $name }", which is earlier and still open: the balance sheet is cumulative, and a fiscal year can only be closed after all those before it.
-error-fiscal-year-create-later-closed = The later fiscal year "{ $name }" is closed, and its balance sheet includes everything before it: no fiscal year can be created before its start date while it is closed. To create this one, an administrator first reopens the closed fiscal years, starting with the most recent.
+error-fiscal-year-create-later-closed = The later fiscal year "{ $name }" is closed, and its balance sheet includes everything before it: no fiscal year can be created before its start date while it is closed. To create this one, an administrator first reopens the later closed fiscal years, starting with the most recent.
 error-fiscal-year-overlap = This fiscal year overlaps with an existing one.
 error-fiscal-year-name-duplicate = A fiscal year with this name already exists.
 error-fiscal-year-name-empty = The fiscal year name is required.
@@ -1156,7 +1156,7 @@ reconciliation-cols-actions = Actions
 
 # Story 8-5a-zero — `bank_account.journal_account_id` link configuration.
 bank-accounts-labels-page-title = Bank accounts
-bank-accounts-labels-page-subtitle = Link each bank account to a chart-of-accounts entry (typical class 1: 1020 Cash, 1030 Bank).
+bank-accounts-labels-page-subtitle = Link each bank account to a chart-of-accounts entry (typical class 1: 1010 Postal account, 1020 Bank).
 bank-accounts-labels-bank-name = Bank
 bank-accounts-labels-iban = IBAN
 bank-accounts-labels-journal-account-id = Linked ledger account
@@ -1191,7 +1191,7 @@ bank-accounts-labels-is-primary = Primary account
 bank-accounts-labels-primary-badge = Primary
 bank-accounts-labels-archived-badge = Archived
 bank-accounts-confirm-archive = Confirm archiving this bank account? This action is irreversible in v0.1.
-bank-accounts-tooltip-journal-account = Links this bank account to a ledger account (typically 1020 Cash, 1030 Bank). Allows automatic reconciliation to create entries on the right account, and balance display on the homepage. Multiple accounts: if you have several distinct current accounts (BCV + PostFinance), link to a specific sub-account (1030.001 BCV CHF), not the parent 1030.
+bank-accounts-tooltip-journal-account = Links this bank account to a ledger account (typically 1010 Postal account, 1020 Bank). Allows automatic reconciliation to create entries on the right account, and balance display on the homepage. Multiple accounts: if you have several distinct current accounts (BCV + UBS), link to a specific sub-account (1020.001 BCV CHF), not the parent 1020.
 bank-accounts-toast-create-success = Bank account created.
 bank-accounts-toast-update-success = Bank account updated.
 bank-accounts-toast-archive-success = Bank account archived.

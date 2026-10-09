@@ -402,8 +402,8 @@ journal-entries-delete-blocked-reversed = Diese Buchung wurde storniert: Sie kan
 journal-entries-edit-conflict = Diese Buchung wurde inzwischen geändert: Die Detailansicht wurde neu geladen.
 journal-entries-line-account-unusable = Konto archiviert oder nicht bebuchbar — bitte ersetzen
 journal-entries-modify-blocked-fiscal-year-closed = Das Geschäftsjahr dieser Buchung ist abgeschlossen: Sie kann nicht mehr geändert werden. Korrigieren Sie sie durch eine Stornobuchung.
-journal-entries-modify-blocked-later-fiscal-year-closed = Das spätere Geschäftsjahr { $name } ist abgeschlossen, und seine Bilanz enthält diese Buchung: Sie bleibt fixiert, solange es abgeschlossen ist. Korrigieren Sie sie durch eine Stornobuchung; andernfalls eröffnet eine Administratorin oder ein Administrator die abgeschlossenen Geschäftsjahre wieder, beginnend mit dem neuesten.
-error-later-fiscal-year-closed = Das spätere Geschäftsjahr „{ $name }“ ist abgeschlossen, und seine Bilanz enthält alles, was ihm vorangeht: Eine Buchung vor seinem Beginn kann weder erfasst noch geändert oder gelöscht werden, solange es abgeschlossen ist. Eine bestehende Buchung wird durch eine Stornobuchung korrigiert; andernfalls eröffnet eine Administratorin oder ein Administrator die abgeschlossenen Geschäftsjahre wieder, beginnend mit dem neuesten.
+journal-entries-modify-blocked-later-fiscal-year-closed = Das spätere Geschäftsjahr { $name } ist abgeschlossen, und seine Bilanz enthält diese Buchung: Sie bleibt fixiert, solange es abgeschlossen ist. Korrigieren Sie sie durch eine Stornobuchung; andernfalls eröffnet eine Administratorin oder ein Administrator die späteren abgeschlossenen Geschäftsjahre wieder, beginnend mit dem neuesten.
+error-later-fiscal-year-closed = Das spätere Geschäftsjahr „{ $name }“ ist abgeschlossen, und seine Bilanz enthält alles, was ihm vorangeht: Eine Buchung vor seinem Beginn kann weder erfasst noch geändert oder gelöscht werden, solange es abgeschlossen ist. Eine bestehende Buchung wird durch eine Stornobuchung korrigiert; andernfalls eröffnet eine Administratorin oder ein Administrator die späteren abgeschlossenen Geschäftsjahre wieder, beginnend mit dem neuesten.
 journal-entries-modify-blocked-period-locked = Die Periode ist bis zum { $date } gesperrt: Diese Buchung, datiert in der Periode, bleibt fixiert. Korrigieren Sie sie durch eine Stornobuchung.
 journal-entries-modify-blocked-detached-settlement = Diese Zahlung gehört zu einer stornierten Lieferantenrechnung: Das Geld ist abgeflossen, sie bleibt unveränderlich. Korrigieren Sie sie durch eine Stornobuchung.
 journal-entries-period-locked = Die Buchungen sind bis zum { $lockedThrough } gesperrt; diese ist auf den { $attempted } datiert.
@@ -866,7 +866,7 @@ invoice-settings-required = Konfigurieren Sie zunächst die Abrechnungskonten in
 # === Story 3.7 — Geschäftsjahresverwaltung (DE-CH) ===
 
 fiscal-year-title = Geschäftsjahre
-fiscal-year-out-of-order-warning = Das Geschäftsjahr „{ $open }“ ist offen, obwohl ein späteres Geschäftsjahr, „{ $closed }“, abgeschlossen ist: Darin kann nichts erfasst werden, bis die Reihenfolge wiederhergestellt ist. Schliessen Sie „{ $open }“ ab, wenn seine Bücher abgeschlossen sind, danach die folgenden offenen Geschäftsjahre, vom ältesten zum neuesten. Andernfalls eröffnet eine Administratorin oder ein Administrator die abgeschlossenen Geschäftsjahre wieder, beginnend mit dem neuesten, „{ $latest }“: Kesh eröffnet ein Geschäftsjahr nur wieder, wenn kein neueres abgeschlossen ist.
+fiscal-year-out-of-order-warning = Das Geschäftsjahr „{ $open }“ ist offen, obwohl ein späteres Geschäftsjahr, „{ $closed }“, abgeschlossen ist: Darin kann nichts erfasst werden, bis die Reihenfolge wiederhergestellt ist. Schliessen Sie „{ $open }“ ab, wenn seine Bücher abgeschlossen sind, danach die folgenden offenen Geschäftsjahre, vom ältesten zum neuesten. Andernfalls eröffnet eine Administratorin oder ein Administrator die späteren abgeschlossenen Geschäftsjahre wieder, beginnend mit dem neuesten, „{ $latest }“: Kesh eröffnet ein Geschäftsjahr nur wieder, wenn kein neueres abgeschlossen ist.
 fiscal-year-list-empty = Keine Geschäftsjahre.
 fiscal-year-create-button = Neues Geschäftsjahr
 fiscal-year-name-label = Name
@@ -897,7 +897,7 @@ error-fiscal-year-reopen-motif-too-long = Der Grund der Wiedereröffnung ist zu 
 error-fiscal-year-already-open = Dieses Geschäftsjahr ist bereits offen.
 error-fiscal-year-reopen-blocked = Wiedereröffnung nicht möglich: Ein späteres Geschäftsjahr ist abgeschlossen; öffnen Sie zuerst die späteren abgeschlossenen Geschäftsjahre wieder, beginnend mit dem neuesten.
 error-fiscal-year-close-earlier-open = Schliessen Sie zuerst das Geschäftsjahr „{ $name }“ ab, das älter und noch offen ist: Die Bilanz ist kumulativ, und ein Geschäftsjahr wird erst nach allen vorangehenden abgeschlossen.
-error-fiscal-year-create-later-closed = Das spätere Geschäftsjahr „{ $name }“ ist abgeschlossen, und seine Bilanz enthält alles, was ihm vorangeht: Vor seinem Beginn kann kein Geschäftsjahr erstellt werden, solange es abgeschlossen ist. Um dieses zu erstellen, eröffnet eine Administratorin oder ein Administrator zuerst die abgeschlossenen Geschäftsjahre wieder, beginnend mit dem neuesten.
+error-fiscal-year-create-later-closed = Das spätere Geschäftsjahr „{ $name }“ ist abgeschlossen, und seine Bilanz enthält alles, was ihm vorangeht: Vor seinem Beginn kann kein Geschäftsjahr erstellt werden, solange es abgeschlossen ist. Um dieses zu erstellen, eröffnet eine Administratorin oder ein Administrator zuerst die späteren abgeschlossenen Geschäftsjahre wieder, beginnend mit dem neuesten.
 error-fiscal-year-overlap = Dieses Geschäftsjahr überschneidet sich mit einem bestehenden Jahr.
 error-fiscal-year-name-duplicate = Ein Geschäftsjahr mit diesem Namen existiert bereits.
 error-fiscal-year-name-empty = Der Name des Geschäftsjahres ist erforderlich.
@@ -1156,7 +1156,7 @@ reconciliation-cols-actions = Aktionen
 
 # Story 8-5a-zero — Verbindung `bank_account.journal_account_id`.
 bank-accounts-labels-page-title = Bankkonten
-bank-accounts-labels-page-subtitle = Jedes Bankkonto mit einem Konto des Kontorahmens verbinden (typisch Klasse 1: 1020 Kasse, 1030 Bank).
+bank-accounts-labels-page-subtitle = Jedes Bankkonto mit einem Konto des Kontorahmens verbinden (typisch Klasse 1: 1010 Post, 1020 Bank).
 bank-accounts-labels-bank-name = Bank
 bank-accounts-labels-iban = IBAN
 bank-accounts-labels-journal-account-id = Verbundenes Buchhaltungskonto
@@ -1191,7 +1191,7 @@ bank-accounts-labels-is-primary = Hauptkonto
 bank-accounts-labels-primary-badge = Hauptkonto
 bank-accounts-labels-archived-badge = Archiviert
 bank-accounts-confirm-archive = Archivierung dieses Bankkontos bestätigen? Diese Aktion ist in v0.1 unwiderruflich.
-bank-accounts-tooltip-journal-account = Verbindet dieses Bankkonto mit einem Konto aus dem Kontenrahmen (typisch 1020 Kasse, 1030 Bank). Ermöglicht der automatischen Abstimmung, Buchungen auf das richtige Konto zu erstellen, und die Anzeige des Saldos auf der Startseite. Mehrere Konten: Wenn Sie mehrere separate Kontokorrente haben, verbinden Sie mit einem spezifischen Unterkonto (1030.001 BCV CHF), nicht mit dem übergeordneten Konto 1030.
+bank-accounts-tooltip-journal-account = Verbindet dieses Bankkonto mit einem Konto aus dem Kontenrahmen (typisch 1010 Post, 1020 Bank). Ermöglicht der automatischen Abstimmung, Buchungen auf das richtige Konto zu erstellen, und die Anzeige des Saldos auf der Startseite. Mehrere Konten: Wenn Sie mehrere separate Kontokorrente haben, verbinden Sie mit einem spezifischen Unterkonto (1020.001 BCV CHF), nicht mit dem übergeordneten Konto 1020.
 bank-accounts-toast-create-success = Bankkonto erstellt.
 bank-accounts-toast-update-success = Bankkonto geändert.
 bank-accounts-toast-archive-success = Bankkonto archiviert.

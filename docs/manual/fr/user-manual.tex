@@ -196,9 +196,9 @@ Si vous souhaitez \textbf{tenir votre comptabilité réelle}, choisissez le mode
 \keshscreenshot{onboarding-production.png}{Saisie des coordonnées légales en mode production (raison sociale, adresse, IDE).}  % TODO capture: ecran coordonnees production (donnees factices : ABC Web Sarl, CHE-123.456.789)
 
 \begin{enumerate}
-    \item \textbf{Type d'organisation} : indépendant, association ou PME. Ce choix adapte les libellés et les valeurs par défaut (par exemple, une PME inscrite au registre du commerce renseigne obligatoirement son IDE).
+    \item \textbf{Type d'organisation} : indépendant, association ou PME. Ce choix détermine le plan comptable que Kesh met en place (voir ci-dessous) ; il ne se modifie plus après l'onboarding.
     \item \textbf{Langue comptable} : langue des comptes et des rapports, indépendante de la langue de l'interface (utile si vous travaillez en français mais produisez des rapports en allemand, par exemple).
-    \item \textbf{Coordonnées légales} : raison sociale (ou nom pour un indépendant), adresse, et IDE (CHE-XXX.XXX.XXX) pour une entité inscrite au registre du commerce.
+    \item \textbf{Coordonnées légales} : raison sociale (ou nom pour un indépendant), adresse, et IDE (CHE-XXX.XXX.XXX), facultatif quel que soit le type d'organisation --- une entité inscrite au registre du commerce a intérêt à le renseigner.
     \item \textbf{Compte bancaire} : nom de la banque, IBAN et QR-IBAN éventuel (cette étape peut être passée et complétée plus tard).
 \end{enumerate}
 
@@ -334,7 +334,7 @@ Le plan comptable est la colonne vertébrale de votre comptabilité. Kesh fourni
 
 \begin{itemize}
     \item \textbf{Numéro} : par exemple 1020.1 pour un sous-compte de la banque.
-    \item \textbf{Libellé} : par exemple « CCP 12-345-6 ».
+    \item \textbf{Libellé} : par exemple « UBS compte courant ».
     \item \textbf{Compte parent} : compte de niveau supérieur (1020 dans l'exemple).
     \item \textbf{Type} : Actif / Passif / Produit / Charge / Bilan / Résultat.
     \item \textbf{Rôle} : fonction du compte dans l'application (\emph{Créances clients}, \emph{TVA due}, \emph{Capital}, \emph{Résultat de l'exercice}\ldots) ou \emph{Aucun}. Voir la section \emph{Rôles des comptes} ci-dessous.
@@ -688,7 +688,7 @@ Un exercice comptable est une période sur laquelle s'établissent les comptes a
 
 Le nouvel exercice s'ouvre vide. Les comptes du bilan sont automatiquement reportés depuis le bilan de clôture de l'exercice précédent (si clôturé).
 
-Un exercice \textbf{ne se crée pas avant un exercice clôturé} (depuis la v0.13.0)~: si un exercice dont la date de début est postérieure à celle demandée est déjà clôturé, Kesh refuse la création et nomme cet exercice --- son bilan, cumulatif, reprendrait tout ce que le nouvel exercice contiendrait. Pour créer malgré tout un exercice antérieur, un administrateur rouvre d'abord les exercices clôturés, en commençant par le plus récent.
+Un exercice \textbf{ne se crée pas avant un exercice clôturé} (depuis la v0.13.0)~: si un exercice dont la date de début est postérieure à celle demandée est déjà clôturé, Kesh refuse la création et nomme cet exercice --- son bilan, cumulatif, reprendrait tout ce que le nouvel exercice contiendrait. Pour créer malgré tout un exercice antérieur, un administrateur rouvre d'abord les exercices clôturés postérieurs, en commençant par le plus récent.
 
 \subsection{Clôture d'un exercice}
 

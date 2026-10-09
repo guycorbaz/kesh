@@ -146,6 +146,9 @@ Kesh pose 0 %, 2,6 %, 3,8 % et 8,1 % (`DEFAULT_SWISS_RATES`, `crates/kesh-db/src
   `docs/manual/fr/*.tex`. Mutations : réécrire `3.7\%` au manuel → rouge ; changer `380` en `370` dans
   la constante → rouge (sur le manuel corrigé ; cette mutation touche une constante de production —
   restaurer par `git checkout` **puis `touch`**).
+  *(Élargi en revue de code P1, B-5/A-3, C-15-14-48 — ce paragraphe est la prescription d'origine : G1 lit
+  aussi la ligne `\textbf{TVA due}`, et refuse **toute graphie** d'un taux périmé,
+  `\b(2[.,]50?|3[.,]70?|7[.,]70?)[ ~]?\\?%`, non les seules formes `X.Y\%`.)*
 
 ### AC 2 — Le manuel et les messages renvoient à « Paramètres » (#547, C-15-14-5)
 
@@ -410,7 +413,7 @@ fr-CH.
 | `settlement-cancel-blocked-fiscal-year-closed` (`:821`) | Ce règlement appartient à un exercice clôturé : pour pouvoir l'annuler, un administrateur doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent. |
 | `reconciliation-cancel-blocked-fiscal-year-closed` (`:829`) | Ce rapprochement appartient à un exercice clôturé : pour pouvoir l'annuler, un administrateur doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent. |
 | `supplier-invoices-cancel-blocked-fiscal-year-closed` (`:1966`) | Cette facture appartient à un exercice clôturé : pour pouvoir l'annuler, un administrateur doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent. |
-| `error-fiscal-year-reopen-blocked` (`:933`) | Réouverture impossible : un exercice postérieur est clôturé ; rouvrez d’abord les exercices clôturés, en commençant par le plus récent. |
+| `error-fiscal-year-reopen-blocked` (`:933`) | Réouverture impossible : un exercice postérieur est clôturé ; rouvrez d’abord les exercices **postérieurs** clôturés, en commençant par le plus récent. *(Revue de code P1, B-6, C-15-14-47 : la prescription d'origine disait « les exercices clôturés », sans borne.)* |
 | `opening-balances-locked-first-year-closed` (`:964`) | Le premier exercice « { $name } » est clôturé : avant la saisie des soldes de départ, un administrateur doit rouvrir les exercices clôturés jusqu’à celui-ci, en commençant par le plus récent. |
 | `error-opening-balances-first-year-closed` (`:972`) | Le premier exercice est clôturé : avant de saisir les soldes de départ, rouvrez les exercices clôturés jusqu’à celui-ci, en commençant par le plus récent. |
 
@@ -434,6 +437,15 @@ Trois autres locales, même structure (marqueurs d'ordre déjà employés par
 - en-CH : « … an administrator must reopen the closed fiscal years down to this one, starting with the
   most recent » ; reopen-blocked : « Cannot reopen: a later fiscal year is closed; first reopen the closed
   fiscal years, starting with the most recent. »
+
+*(Revue de code P1, B-6, et P2, A-1 — C-15-14-47, C-15-14-49. Les formes ci-dessus sont la prescription
+d'origine ; le code dit désormais : de « bis zu diesem **Geschäftsjahr** » et « die **späteren**
+abgeschlossenen Geschäftsjahre » ; it « fino a questo **esercizio** » et « gli esercizi **successivi**
+chiusi » ; en « the **later** closed fiscal years ». La borne « postérieurs » s'étend en P2 aux quatre clés
+sœurs de la famille `LATER_FISCAL_YEAR_CLOSED` — `error-fiscal-year-create-later-closed`,
+`error-later-fiscal-year-closed`, `journal-entries-modify-blocked-later-fiscal-year-closed`,
+`fiscal-year-out-of-order-warning` —, quatre locales, leurs quatre replis et `user-manual.tex:684` ; garde
+G8-bis `les_prescriptions_de_reouverture_sont_bornees`.)*
 
 Le développeur écrit les 18 valeurs cibles complètes en reprenant le début actuel de chaque valeur (sujet,
 « Diese Zahlung gehört … », etc.) ; seule la prescription change.
@@ -565,7 +577,9 @@ réglages » au repli d'`errors.rs:1807` → G9 rouge.
 — validation P3, R-1 ; C-15-14-26). La garde existante ne compare pas un repli au catalogue : elle ne retient
 que les clés à **au moins deux** replis distincts (`parTexte.size > 1`, ligne 141), et chacune des cinq clés
 ci-dessous n'a **qu'un** site d'appel — un repli resté à l'ancien texte n'y rougit pas. G13, table fermée de
-cinq clés : `settlement-cancel-blocked-fiscal-year-closed`, `reconciliation-cancel-blocked-fiscal-year-closed`,
+cinq clés *(six en revue de code P1 — `vat-purchase-no-rates`, B-7 ; dix en P2 —
+`journal-entries-modify-blocked-later-fiscal-year-closed`, `fiscal-year-out-of-order-warning`,
+`bank-accounts-labels-page-subtitle`, `bank-accounts-tooltip-journal-account`, C-15-14-49, C-15-14-50)* : `settlement-cancel-blocked-fiscal-year-closed`, `reconciliation-cancel-blocked-fiscal-year-closed`,
 `supplier-invoices-cancel-blocked-fiscal-year-closed`, `opening-balances-locked-first-year-closed`,
 `invoice-default-revenue-account-unusable` (AC 2). Pour chacune : `[...(releve.get(cle)?.keys() ?? [])]`
 **égale** `[valeur fr-CH de la clé]` — lue dans `fr-CH/messages.ftl` (valeurs sur une ligne), comparée
@@ -756,10 +770,13 @@ ligne `api-external.md:330` → rouge.
 | G6 `la_faille_kf036_n_est_pas_annoncee_ouverte` | `textes_coherents.rs` | `[Unreleased]` remis à `api-external.md` ; « n'est pas dans la v0.9.0 » remis à `admin-manual.tex` |
 | G7 `references_d_issues_du_readme_sont_des_liens` | `textes_coherents.rs` | un `[#164]` nu ; un lien au mauvais numéro |
 | G8 `les_prescriptions_de_reouverture_disent_l_ordre` | `loader.rs` | ancienne valeur fr-CH de `error-fiscal-year-reopen-blocked` ; ancienne valeur **de-CH** de la même clé ; exemption d'une clé dont la valeur fr-CH ne matche plus le verbe |
-| G9 `les_replis_rust_suivent_le_catalogue` | `textes_coherents.rs` | ancien repli d'`errors.rs:3085` ; « dans les réglages » remis au repli d'`errors.rs:1807` |
+| G9 `les_replis_rust_suivent_le_catalogue` | `textes_coherents.rs` | ancien repli d'`errors.rs:3085` ; « dans les réglages » remis au repli d'`errors.rs:1807` ; formule large remise au repli paramétré d'`errors.rs:1556`, apostrophe droite à `:2960` (P2) |
 | G10 `glossaire_mwst` | `loader.rs` | `reports-vat = MwSt` |
 | G11 `la_cloture_d_exercice_ne_parle_pas_comme_un_panneau` | `loader.rs` | `fiscal-year-close-button = Schliessen` ; `fiscal-year-closed = Geschäftsjahr geschlossen.` |
 | G12 `le_manuel_dit_l_ordre_de_reouverture` | `textes_coherents.rs` | ancien `user-manual.tex:1209` ; ancienne ligne `api-external.md:330` |
+| G4-bis `les_comptes_cites_en_exemple_existent_dans_les_plans_livres` (revue P1, élargie en P2 aux quatre catalogues) | `textes_coherents.rs` | 3600, 1030, « Honoraires », guide `1030 Banque`, 6997 (P1) ; `1030` remis au catalogue de-CH, `\textbf{3600}` au manuel, `1020 Caisse` au catalogue en-CH (P2) |
+| G4-ter `la_forme_libre_nnnn_nom_est_juste_partout` (revue P2) | `textes_coherents.rs` | `1020 Caisse` remis au repli Svelte de l'écran Comptes bancaires ; au doc-comment de `bank_account.rs` |
+| G8-bis `les_prescriptions_de_reouverture_sont_bornees` (revue P2) | `loader.rs` | formule large remise à `error-fiscal-year-create-later-closed` (it-CH) ; à `error-fiscal-year-reopen-blocked` (fr-CH) |
 | G13 `les_replis_frontend_a_site_unique_suivent_le_catalogue` | `frontend/src/lib/shared/i18n-repli-divergent-actif.test.ts` (Vitest) | ancien repli d'`invoice-cancel.ts:43` ; « dans les Réglages » remis au repli d'`InvoiceForm.svelte:768` ; ancien repli d'`opening-balances/+page.svelte:382` |
 | Vitest (5 fichiers de l'AC 8, 7 sites : 6 assertions, 1 donnée de mock) | frontend | ancien repli de `settlement-cancel-blocked.ts:39` |
 
@@ -888,6 +905,9 @@ PME », sous-section d'import de contacts, « KMU » au guide), G5 ×2, G6 ×2, 
 exemption morte : `fiscal-year-reopen-button = Réactiver`), G9 ×2, G10, G11 ×2, G12 ×2, G13 ×3, et la
 Vitest de l'AC 8 (ancien repli de `settlement-cancel-blocked.ts` → `settlement-cancel-blocked.test.ts`
 rouge).
+*(Revue de code P2, A-5 : ces 30 mutations n'ont **pas de journal** — ni « Debug Log References » ni
+`kesh-gate-logs/` n'en gardent la trace. Le chiffre est la déclaration du développement, non vérifiable
+après coup ; il n'est ni retiré ni rejoué. Les mutations des revues P1 (12) et P2 sont journalisées.)*
 
 **T7.** CHANGELOG `[0.13.0] — Non publié` / `### Corrigé` : une entrée, les dix issues en liens. README
 « Fonctionnalités » ne promet plus de surveillance de dossier (G5) ; feuille de route inchangée.

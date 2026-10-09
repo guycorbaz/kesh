@@ -402,8 +402,8 @@ journal-entries-delete-blocked-reversed = Questa scrittura è stata stornata: no
 journal-entries-edit-conflict = Questa scrittura è stata modificata nel frattempo: la scheda è stata ricaricata.
 journal-entries-line-account-unusable = Conto archiviato o non imputabile — da sostituire
 journal-entries-modify-blocked-fiscal-year-closed = L’esercizio di questa scrittura è chiuso: non si modifica più. Correggetela con uno storno.
-journal-entries-modify-blocked-later-fiscal-year-closed = L’esercizio successivo { $name } è chiuso, e il suo bilancio riprende questa scrittura: resta bloccata finché lo è. Correggetela con uno storno; altrimenti, un amministratore riapre gli esercizi chiusi, cominciando dal più recente.
-error-later-fiscal-year-closed = L’esercizio successivo « { $name } » è chiuso, e il suo bilancio riprende tutto ciò che lo precede: nessuna scrittura datata prima della sua data d’inizio può essere registrata, modificata o eliminata finché lo è. Una scrittura esistente si corregge con uno storno; altrimenti, un amministratore riapre gli esercizi chiusi, cominciando dal più recente.
+journal-entries-modify-blocked-later-fiscal-year-closed = L’esercizio successivo { $name } è chiuso, e il suo bilancio riprende questa scrittura: resta bloccata finché lo è. Correggetela con uno storno; altrimenti, un amministratore riapre gli esercizi successivi chiusi, cominciando dal più recente.
+error-later-fiscal-year-closed = L’esercizio successivo « { $name } » è chiuso, e il suo bilancio riprende tutto ciò che lo precede: nessuna scrittura datata prima della sua data d’inizio può essere registrata, modificata o eliminata finché lo è. Una scrittura esistente si corregge con uno storno; altrimenti, un amministratore riapre gli esercizi successivi chiusi, cominciando dal più recente.
 journal-entries-modify-blocked-period-locked = Il periodo è bloccato fino al { $date }: questa scrittura, datata nel periodo, resta bloccata. Correggetela con uno storno.
 journal-entries-modify-blocked-detached-settlement = Questo pagamento appartiene a una fattura fornitore annullata: il denaro è uscito, resta bloccato. Correggetelo con uno storno.
 journal-entries-period-locked = Le scritture sono bloccate fino al { $lockedThrough }; questa è datata { $attempted }.
@@ -866,7 +866,7 @@ invoice-settings-required = Configurare innanzitutto i conti di fatturazione nel
 # === Story 3.7 — Gestione esercizi contabili (IT-CH) ===
 
 fiscal-year-title = Esercizi contabili
-fiscal-year-out-of-order-warning = L’esercizio « { $open } » è aperto mentre un esercizio successivo, « { $closed } », è chiuso: non vi si può registrare nulla finché l’ordine non è ristabilito. Chiudete « { $open } » se i suoi conti sono definitivi, poi gli esercizi aperti successivi, dal più vecchio al più recente. Altrimenti, un amministratore riapre gli esercizi chiusi, cominciando dal più recente, « { $latest } »: Kesh riapre un esercizio solo se nessun esercizio più recente è chiuso.
+fiscal-year-out-of-order-warning = L’esercizio « { $open } » è aperto mentre un esercizio successivo, « { $closed } », è chiuso: non vi si può registrare nulla finché l’ordine non è ristabilito. Chiudete « { $open } » se i suoi conti sono definitivi, poi gli esercizi aperti successivi, dal più vecchio al più recente. Altrimenti, un amministratore riapre gli esercizi successivi chiusi, cominciando dal più recente, « { $latest } »: Kesh riapre un esercizio solo se nessun esercizio più recente è chiuso.
 fiscal-year-list-empty = Nessun esercizio contabile.
 fiscal-year-create-button = Nuovo esercizio
 fiscal-year-name-label = Nome
@@ -897,7 +897,7 @@ error-fiscal-year-reopen-motif-too-long = Il motivo della riapertura è troppo l
 error-fiscal-year-already-open = Questo esercizio è già aperto.
 error-fiscal-year-reopen-blocked = Riapertura impossibile: un esercizio successivo è chiuso; riapri prima gli esercizi successivi chiusi, cominciando dal più recente.
 error-fiscal-year-close-earlier-open = Chiudi prima l’esercizio « { $name } », più vecchio e ancora aperto: il bilancio è cumulativo, e un esercizio si chiude solo dopo tutti quelli che lo precedono.
-error-fiscal-year-create-later-closed = L’esercizio successivo « { $name } » è chiuso, e il suo bilancio riprende tutto ciò che lo precede: nessun esercizio può essere creato prima della sua data d’inizio finché lo è. Per crearlo, un amministratore riapre prima gli esercizi chiusi, cominciando dal più recente.
+error-fiscal-year-create-later-closed = L’esercizio successivo « { $name } » è chiuso, e il suo bilancio riprende tutto ciò che lo precede: nessun esercizio può essere creato prima della sua data d’inizio finché lo è. Per crearlo, un amministratore riapre prima gli esercizi successivi chiusi, cominciando dal più recente.
 error-fiscal-year-overlap = Questo esercizio si sovrappone a un esercizio esistente.
 error-fiscal-year-name-duplicate = Un esercizio con questo nome esiste già.
 error-fiscal-year-name-empty = Il nome dell’esercizio è obbligatorio.
@@ -1156,7 +1156,7 @@ reconciliation-cols-actions = Azioni
 
 # Story 8-5a-zero — Collegamento `bank_account.journal_account_id`.
 bank-accounts-labels-page-title = Conti bancari
-bank-accounts-labels-page-subtitle = Collegare ogni conto bancario a un conto del piano dei conti (classe 1 tipica: 1020 Cassa, 1030 Banca).
+bank-accounts-labels-page-subtitle = Collegare ogni conto bancario a un conto del piano dei conti (classe 1 tipica: 1010 Posta, 1020 Banca).
 bank-accounts-labels-bank-name = Banca
 bank-accounts-labels-iban = IBAN
 bank-accounts-labels-journal-account-id = Conto contabile collegato
@@ -1191,7 +1191,7 @@ bank-accounts-labels-is-primary = Conto principale
 bank-accounts-labels-primary-badge = Principale
 bank-accounts-labels-archived-badge = Archiviato
 bank-accounts-confirm-archive = Confermare l'archiviazione di questo conto bancario? Questa azione è irreversibile in v0.1.
-bank-accounts-tooltip-journal-account = Collega questo conto bancario a un conto del piano dei conti (tipicamente 1020 Cassa, 1030 Banca). Permette alla riconciliazione automatica di creare le scritture sul conto corretto, e la visualizzazione del saldo sulla home page. Più conti: se ne hai diversi distinti (BCV + PostFinance), collega a un sotto-conto specifico (1030.001 BCV CHF), non al conto padre 1030.
+bank-accounts-tooltip-journal-account = Collega questo conto bancario a un conto del piano dei conti (tipicamente 1010 Posta, 1020 Banca). Permette alla riconciliazione automatica di creare le scritture sul conto corretto, e la visualizzazione del saldo sulla home page. Più conti: se ne hai diversi distinti (BCV + UBS), collega a un sotto-conto specifico (1020.001 BCV CHF), non al conto padre 1020.
 bank-accounts-toast-create-success = Conto bancario creato.
 bank-accounts-toast-update-success = Conto bancario modificato.
 bank-accounts-toast-archive-success = Conto bancario archiviato.

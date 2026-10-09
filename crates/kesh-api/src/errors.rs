@@ -722,8 +722,8 @@ pub enum AppError {
 
     /// Le compte référencé n'est pas de type Asset ou Liability → `400`
     /// `INVALID_ACCOUNT_TYPE`. Un bank_account ne peut être lié qu'à un
-    /// compte d'actif (1020 Caisse, 1030 Banque) ou de passif rare (2100
-    /// découvert chronique). Revenue/Expense rejetés (cf. §validation-account-type).
+    /// compte d'actif (1010 Poste, 1020 Banque) ou de passif rare (2100
+    /// Dettes bancaires à court terme, découvert chronique). Revenue/Expense rejetés (cf. §validation-account-type).
     #[error("Type de compte invalide : {account_type} (Asset|Liability requis)")]
     InvalidAccountType {
         account_id: i64,
@@ -1553,7 +1553,7 @@ impl IntoResponse for AppError {
                 fiscal_year_name,
             } => {
                 let fallback = format!(
-                    "L'exercice « {fiscal_year_name} », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucun exercice ne peut être créé avant sa date de début tant qu'il l'est. Pour créer celui-ci, un administrateur rouvre d'abord les exercices clôturés, en commençant par le plus récent."
+                    "L’exercice « {fiscal_year_name} », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucun exercice ne peut être créé avant sa date de début tant qu’il l’est. Pour créer celui-ci, un administrateur rouvre d’abord les exercices postérieurs clôturés, en commençant par le plus récent."
                 );
                 later_fiscal_year_closed_response(
                     fiscal_year_id,
@@ -3063,7 +3063,7 @@ impl IntoResponse for AppError {
                     fiscal_year_name,
                 } => {
                     let fallback = format!(
-                        "L'exercice « {fiscal_year_name} », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucune écriture datée avant sa date de début ne peut être enregistrée, modifiée ni supprimée tant qu'il l'est. Une écriture existante se corrige par une contre-passation ; sinon, un administrateur rouvre les exercices clôturés, en commençant par le plus récent."
+                        "L’exercice « {fiscal_year_name} », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucune écriture datée avant sa date de début ne peut être enregistrée, modifiée ni supprimée tant qu’il l’est. Une écriture existante se corrige par une contre-passation ; sinon, un administrateur rouvre les exercices postérieurs clôturés, en commençant par le plus récent."
                     );
                     later_fiscal_year_closed_response(
                         fiscal_year_id,

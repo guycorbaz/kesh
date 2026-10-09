@@ -31,7 +31,7 @@ Après la connexion, l'onboarding vous guide, dans cet ordre :
 6. **Coordonnées de l'organisation** (raison sociale ou prénom et nom, adresse, numéro IDE facultatif).
 7. **Compte bancaire principal** — nom de la banque et IBAN, QR-IBAN facultatif ; l'étape peut être passée (« Configurer plus tard »).
 
-À la finalisation, qui suit la dernière étape, Kesh crée votre premier exercice comptable : l'année civile en cours (du 1er janvier au 31 décembre). Aucune étape ne le demande ; vous le renommez ou en créez d'autres ensuite dans les Paramètres.
+À la finalisation, qui suit la dernière étape, Kesh crée votre premier exercice comptable : l'année civile en cours (du 1er janvier au 31 décembre). Aucune étape ne le demande ; vous le renommez ou en créez d'autres ensuite depuis **Administration → Exercices comptables**.
 
 À tout moment, vous pouvez quitter l'onboarding et y revenir.
 
@@ -50,7 +50,7 @@ Pour que la **réconciliation automatique** (FR47) puisse créer les écritures 
    - `1020 Banque` pour un compte courant.
 4. Valider.
 
-**Cas multi-comptes courants** (ex. BCV + PostFinance) :
+**Cas multi-comptes courants** (ex. BCV + UBS) :
 
 Si vous avez plusieurs comptes courants distincts, **NE PAS** lier les deux au compte parent `1020 Banque`. Sinon le solde affiché en page d'accueil agrégerait les deux et serait incorrect (la hiérarchie parent/enfants n'est pas remontée v0.1).
 
@@ -58,7 +58,7 @@ Si vous avez plusieurs comptes courants distincts, **NE PAS** lier les deux au c
 
 1. Créer des **sous-comptes auxiliaires** via Administration → Plan comptable :
    - `1020.001 BCV CHF` (parent : `1020`).
-   - `1020.002 PostFinance épargne` (parent : `1020`).
+   - `1020.002 UBS CHF` (parent : `1020`).
 2. Lier chaque `bank_account` à son sous-compte respectif.
 
 Le solde affiché en page d'accueil sera alors correct pour chaque compte bancaire séparément.

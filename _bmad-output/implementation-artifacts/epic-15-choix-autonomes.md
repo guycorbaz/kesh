@@ -6568,13 +6568,17 @@ l'import (#458–#461).
   d'ordre de G8 conservé dans chaque locale) ; repli Rust `fiscal_years.rs` identique (G9). it « fino a
   questo esercizio », de « bis zu diesem Geschäftsjahr » sur les cinq clés de la famille, pour qu'elles
   restent parallèles.
-- **Non touché, signalé** : la même formule large (« un administrateur rouvre [d'abord] les exercices
-  clôturés, en commençant par le plus récent ») figure dans `error-fiscal-year-create-later-closed`
-  (4 locales et repli `errors.rs:1539`), le repli `errors.rs:2925`, `blocker-messages.ts:94`,
-  `settings/fiscal-years/+page.svelte:355` et `user-manual.tex:684`. Le contexte y nomme d'abord
-  l'exercice postérieur clôturé, ce qui la rend moins trompeuse ; surtout, ces messages appartiennent à
-  la famille `LATER_FISCAL_YEAR_CLOSED` que la 15-12b doit élargir (reçu `598a16ba`) : les réécrire ici
-  provoquerait un conflit de fusion sur des textes en cours de reprise. À traiter par la 15-12b.
+- **Non touché en P1, ~~signalé à la 15-12b~~ — rectifié en revue de code P2 (A-1, E2-2, B2-1)** : la même
+  formule large (« un administrateur rouvre [d'abord] les exercices clôturés, en commençant par le plus
+  récent ») restait dans **quatre** clés de la famille `LATER_FISCAL_YEAR_CLOSED`, quatre locales chacune
+  (`error-fiscal-year-create-later-closed`, `error-later-fiscal-year-closed`,
+  `journal-entries-modify-blocked-later-fiscal-year-closed`, `fiscal-year-out-of-order-warning` : 16
+  valeurs — l'inventaire de P1 n'en citait que 4), leurs quatre replis (`errors.rs:1556`, `:2960` — numéros
+  de P1 `:1539`, `:2925` périmés —, `blocker-messages.ts:94`, `settings/fiscal-years/+page.svelte:355`) et
+  `user-manual.tex:684`. ⚠️ **Le renvoi « à traiter par la 15-12b » était faux dès son écriture** : la
+  15-12b était mergée (`dc4bc58b`, ancêtre de la branche, sur lequel la 15-14a a été spécifiée) ; plus
+  personne ne reprenait ces textes, et la dette n'avait ni propriétaire ni story. Traités dans la 15-14a :
+  C-15-14-49.
 - **Réversible** : oui.
 
 ## C-15-14-48 — 15-14a (revue de code P1) : les LOW appliqués, et l'unique écarté
@@ -6597,5 +6601,95 @@ l'import (#458–#461).
   de tension avec « l'import ne se déclenche pas tout seul »).
 - **A-2** (non demandé par l'orchestrateur, traité par le geste) : `npm run check` et
   `lint-i18n-ownership` sont journalisés cette fois dans `kesh-gate-logs/15-14a-review-p1-*.log`.
+- **Écarté** : aucun.
+- **Réversible** : oui.
+
+## C-15-14-49 — 15-14a (revue de code P2, A-1 = E2-2 = B2-1, A-2, E2-7) : toute la famille `LATER_FISCAL_YEAR_CLOSED` prescrit de rouvrir les exercices **postérieurs** ; garde G8-bis par inventaire des non-bornées
+
+- **Contexte** : P1 avait borné la seule `error-fiscal-year-reopen-blocked` et renvoyé ses sœurs à une
+  15-12b déjà mergée (C-15-14-47, rectifié). Vérifié au code : `FIND_LATER_CLOSED_SQL`
+  (`kesh-db/src/repositories/fiscal_years.rs`, `start_date > ? AND status = 'Closed'`), utilisée par
+  `create` (garde de création), `find_later_closed*` (saisie, modification, suppression d'une écriture,
+  15-12a/b) et la garde LIFO de `reopen` : seul un exercice clôturé **postérieur** bloque. Cas atteignable où
+  la formule large est fausse : 2024 et 2026 clos, création de 2025 — seule la réouverture de 2026 est
+  requise ; le message faisait rouvrir aussi 2024 (verrou CO 957-964 levé, entrée d'audit) sans raison.
+- **Retenu** : la formule de B-6, déjà écrite dans les quatre langues — fr « les exercices postérieurs
+  clôturés », de « die späteren abgeschlossenen Geschäftsjahre », it « gli esercizi successivi chiusi », en
+  « the later closed fiscal years » — dans les quatre clés × quatre locales ; `user-manual.tex:684` aligné
+  sur `:726` (« les exercices clôturés postérieurs ») ; les deux replis Rust réécrits **depuis** le catalogue
+  (apostrophes typographiques comprises, E2-7) et entrés dans **G9**, qui compare désormais un repli
+  paramétré après réécriture des variables Fluent (`{ $name }` → `{fiscal_year_name}`) ; les deux replis
+  frontend entrés dans **G13** (site unique vérifié par la garde elle-même). CHANGELOG : « rouvrir les
+  exercices clôturés postérieurs, ou jusqu'à celui-ci ». Pour `fiscal-year-out-of-order-warning`, la même
+  formule que ses sœurs, plutôt que « postérieurs à « { $open } » » (B2-1) : la phrase vient de nommer
+  `{ $open }` et l'exercice postérieur clôturé ; une seule formule rend la garde exacte.
+- **Garde G8-bis** (`les_prescriptions_de_reouverture_sont_bornees`, `kesh-i18n/src/loader.rs`) :
+  inventaire des **non-bornées** — tout le domaine de G8 (verbe fr-CH, mêmes exemptions) doit porter, dans
+  chaque locale, l'une des deux bornes justes (« postérieurs » ou « jusqu'à celui-ci ») ; plus une assertion
+  **positive** « postérieurs » par clé et par locale sur les cinq clés qui la portent (couvre A-2 : B-6
+  n'était gardée par rien).
+- **Écartée** : une issue P3 avec propriétaire (A-1, alternative) — le correctif est mécanique, dans le
+  périmètre de #569, et la raison du report a disparu ; ouvrir une issue pour un défaut qu'on peut fermer
+  dans la même passe déplacerait la dette sans raison.
+- **Réversible** : oui.
+
+## C-15-14-50 — 15-14a (revue de code P2, E2-1, B2-2, B2-3, E2-3) : l'écran *Comptes bancaires* cite les comptes livrés ; G4-bis lit les catalogues, G4-ter la forme libre partout
+
+- **Contexte** : l'en-tête et l'info-bulle de l'écran *Comptes bancaires* (`bank-accounts-labels-page-subtitle`,
+  `bank-accounts-tooltip-journal-account`, quatre locales, deux replis Svelte) et deux doc-comments
+  (`errors.rs:725`, `bank_account.rs:10`) disaient « 1020 Caisse, 1030 Banque », « sous-compte 1030.001,
+  pas au parent 1030 » — le symptôme corrigé dans le guide en P1, non grepé ailleurs. Les trois JSON :
+  `1000 Caisse`, `1010 Poste`, `1020 Banque` ; aucun 1030.
+- **Retenu** : « 1010 Poste, 1020 Banque » (de Post/Bank, it Posta/Banca, en Postal account/Bank) — les deux
+  comptes qu'un compte bancaire alimente ; « Caisse » (proposé par E2-1) n'est pas un compte bancaire.
+  Sous-compte `1020.001 BCV CHF`, parent `1020`. it/en : l'exemple « BCV + PostFinance » devient
+  « BCV + UBS » (PostFinance relève de 1010). Commentaire de la migration
+  `20260507200001_bank_account_journal_link.sql:4` **non touché** (P8 : le checksum). CHANGELOG `:627`
+  (entrée d'une release publiée, `1030.001/1030.002`) non touché : l'historique ne se réécrit pas.
+- **Gardes** : G4-bis lit désormais les **quatre catalogues** en entier (inventaire de numéros) ; ses bornes
+  sont relevées par caractère voisin **sans consommation** (`1000 1030` : les deux lus), `{`/`}` ne bornent
+  plus (`\textbf{3600}` lu ; vérifié : aucun faux rouge neuf sur les deux textes), `/` en tête non plus ;
+  montants (devise adjacente), NPA (mot à majuscule qui n'ouvre aucun nom de compte, en fin de segment) et
+  années (2001-2099, aussi dans les listes entre parenthèses) écartés ; noms comparés apostrophes
+  normalisées ; forme `NNNN (Nom)` ajoutée. **G4-ter** (`la_forme_libre_nnnn_nom_est_juste_partout`) :
+  « NNNN Mot », quand `Mot` ouvre un nom de compte de la langue, doit être juste dans le manuel
+  d'administration, la brochure, le README, `api-external.md`, et le code (Svelte, TS, Rust hors tests et
+  `test_fixtures.rs`, dont « 1100 Banque » / « 2000 Capital » sont des données de test). Angles morts
+  écrits dans les doc-comments (`-` collé, borne/année hors 2001-2099, NPA à plusieurs mots, montant sans
+  devise).
+- **Écartée** : l'inventaire complet sur le code et le manuel d'administration (ports, codes, montants de
+  test : une liste d'exceptions) ; une liste des numéros faux (une forme imprévue passerait).
+- **Réversible** : oui.
+
+## C-15-14-51 — 15-14a (revue de code P2, B2-4, E2-4, A-4) : les trois analyseurs de catalogue appliquent la même règle, et chacun a son anti-test-muet
+
+- **Contexte** : le doc-comment de `catalogue_fr` les disait « identiques » ; `valeurs_brutes` ajoutait
+  toute ligne non indentée (le `}` de sélecteur), le Vitest acceptait `cle=valeur`, les trois laissaient un
+  blanc de tête à une clé en forme bloc, et seul `catalogue_fr` avait un anti-test-muet, qui n'assertait
+  pas la clé suivante.
+- **Retenu** : aligner plutôt que corriger le doc-comment — tête `^([a-zA-Z][\w-]*) = ?(.*)$`,
+  continuation indentée seule, jonction sans blanc sur valeur vide ; un anti-test-muet par analyseur, sur
+  les trois mêmes cas réels (`email-password-reset-body` entier sans blanc de tête,
+  `auth-recovery-forgot-title` intact, `}` de `error-account-not-postable` non ajouté). Tout est code de
+  test (`valeurs_brutes` vit dans `mod tests`).
+- **Écartée** : factoriser (C-15-14-46, inchangé).
+- **Réversible** : oui.
+
+## C-15-14-52 — 15-14a (revue de code P2) : les LOW appliqués, et ce qui ne l'est pas
+
+- **B2-5 = E2-6** : `user-manual.tex:333` « CCP 12-345-6 » sous 1020 → « UBS compte courant » ; guide
+  « BCV + PostFinance » / `1020.002 PostFinance épargne` → « BCV + UBS » / `1020.002 UBS CHF`.
+- **B2-6 = E2-5** : `user-manual.tex:199` (« une PME … renseigne obligatoirement son IDE ») faux au code —
+  `set_coordinates` ne valide l'IDE que s'il est fourni, sans condition sur `org_type` ; l'écran dit
+  « optionnel » ; le formulaire des coordonnées ne varie pas non plus selon le type. Réécrit : le type
+  détermine le plan et ne se modifie plus après l'onboarding ; `:201` dit l'IDE facultatif quel que soit
+  le type.
+- **A-3** : AC 1, AC 8 (table, locales, famille P2) et G13 de la fiche annotés de la valeur que le code
+  porte, avec renvoi au choix ; table des tests complétée (G4-bis, G4-ter, G8-bis).
+- **A-6** : guide « dans les Paramètres » → « depuis **Administration → Exercices comptables** » (entrée de
+  menu réelle, `nav-fiscal-years`). `user-manual.tex:708` « \emph{Paramètres} → \emph{Exercices
+  comptables} » reste : chemin réel (bouton « Gérer » de `/settings`), territoire de #585.
+- **A-5** : les 30 mutations du développement n'ont **pas de journal** — déclarées au Dev Agent Record, non
+  vérifiables ; écrit tel quel dans la fiche, sans réécrire le chiffre. Celles de P1 et P2 sont journalisées.
 - **Écarté** : aucun.
 - **Réversible** : oui.

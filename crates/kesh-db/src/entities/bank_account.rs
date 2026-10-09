@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 ///
 /// Story 8-5a-zero — ajout du champ `journal_account_id` (Option<i64>)
 /// qui lie le `bank_account` à un compte du plan comptable
-/// (typiquement classe 1 — 1020 Caisse / 1030 Banque). Initialement
+/// (typiquement classe 1 — 1010 Poste / 1020 Banque). Initialement
 /// NULL pour les rows pré-migration : le user **doit** configurer
 /// avant d'utiliser FR45 (8-5a-base) ou FR48 (8-5a-bis), via la route
 /// `PATCH /api/v1/bank-accounts/{id}`.

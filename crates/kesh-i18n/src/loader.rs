@@ -935,8 +935,16 @@ mod tests {
 
     // ── Story 15-14a — gardes de texte des catalogues (G3, G8, G10, G11) ──────────
 
-    /// Valeurs **brutes** d'un catalogue : `clé = valeur`, lignes de continuation
-    /// (indentées) jointes par une espace, commentaires ignorés.
+    /// Valeurs **brutes** d'un catalogue : `clé = valeur`, commentaires ignorés.
+    ///
+    /// Règle commune aux trois analyseurs de catalogue (`catalogue_fr` de
+    /// `kesh-api/tests/textes_coherents.rs`, `valeurDuCatalogueFr` du Vitest G13 ; revue
+    /// de code P2, B2-4, E2-4, A-4) : une ligne qui commence par un blanc prolonge la
+    /// valeur (jointe par une espace, sauf à une valeur encore vide — forme bloc) ; toute
+    /// autre ligne — tête, commentaire, ligne vide, `}` de sélecteur en colonne 0 — la
+    /// clôt sans s'y ajouter. Avant la P2, celui-ci ajoutait aussi les lignes non
+    /// indentées, dont le `}` ; anti-test-muet :
+    /// `valeurs_brutes_suit_la_regle_commune_des_trois_analyseurs`.
     ///
     /// ⚠️ Volontairement **sans** repli sur `fr-CH` ni formatage Fluent : une clé
     /// absente d'une locale doit rougir, pas retomber silencieusement sur le français
@@ -949,18 +957,20 @@ mod tests {
         let mut out = HashMap::new();
         let mut courante: Option<String> = None;
         for ligne in texte.lines() {
-            if ligne.starts_with('#') || ligne.trim().is_empty() {
-                courante = None;
-                continue;
-            }
             if let Some(c) = tete.captures(ligne) {
                 let cle = c[1].to_string();
                 out.insert(cle.clone(), c[2].to_string());
                 courante = Some(cle);
-            } else if let Some(cle) = &courante {
-                let v = out.get_mut(cle).unwrap();
-                v.push(' ');
-                v.push_str(ligne.trim());
+            } else if ligne.starts_with([' ', '\t']) && !ligne.trim().is_empty() {
+                if let Some(cle) = &courante {
+                    let v: &mut String = out.get_mut(cle).unwrap();
+                    if !v.is_empty() {
+                        v.push(' ');
+                    }
+                    v.push_str(ligne.trim());
+                }
+            } else {
+                courante = None;
             }
         }
         assert!(
@@ -969,6 +979,25 @@ mod tests {
             out.len()
         );
         out
+    }
+
+    /// Anti-test-muet de [`valeurs_brutes`] — les trois cas réels de la règle commune
+    /// (même test que `le_catalogue_fr_joint_les_continuations` côté `kesh-api` et que
+    /// le Vitest G13).
+    #[test]
+    fn valeurs_brutes_suit_la_regle_commune_des_trois_analyseurs() {
+        let fr = valeurs_brutes("fr-CH");
+        let corps = &fr["email-password-reset-body"];
+        assert!(
+            corps.starts_with("Vous avez demandé") && corps.ends_with("ignorez cet email."),
+            "continuations non jointes, ou blanc de tête : {corps:?}"
+        );
+        assert_eq!(fr["auth-recovery-forgot-title"], "Mot de passe oublié");
+        let selecteur = &fr["error-account-not-postable"];
+        assert!(
+            selecteur.ends_with("choisissez des comptes imputables."),
+            "`}}` de sélecteur ajouté, ou variante perdue : {selecteur:?}"
+        );
     }
 
     const LOCALES: [&str; 4] = ["fr-CH", "de-CH", "it-CH", "en-CH"];
@@ -1072,6 +1101,99 @@ mod tests {
             controlees >= 10,
             "domaine contrôlé trop petit : {controlees}"
         );
+    }
+
+    /// **G8-bis** (Story 15-14a, revue de code P2, A-1, A-2, E2-2, B2-1) — toute
+    /// prescription de réouverture est **bornée**, dans les quatre locales : elle dit
+    /// jusqu'où rouvrir.
+    ///
+    /// La garde de création et la garde de réouverture (`FIND_LATER_CLOSED_SQL`,
+    /// `start_date > ? AND status = 'Closed'`, `kesh-db/src/repositories/fiscal_years.rs`)
+    /// ne bloquent que sur un exercice clôturé **postérieur** : « rouvrez les exercices
+    /// clôturés » sans borne ferait rouvrir aussi les exercices antérieurs, et lever sans
+    /// raison le verrou CO 957-964 de comptes arrêtés. Deux bornes justes coexistent :
+    /// « les exercices **postérieurs** clôturés » (famille `LATER_FISCAL_YEAR_CLOSED` et
+    /// réouverture refusée) et « **jusqu'à celui-ci** » (famille #569 : annulations,
+    /// soldes de départ).
+    ///
+    /// Inventaire des non-bornées, non liste de formes : le domaine est celui de G8
+    /// (verbe fr-CH), moins ses exemptions ; chaque clé y porte l'une des deux bornes
+    /// dans chaque locale, ou la garde rougit en la nommant. S'y ajoute une assertion
+    /// **positive** par clé et par locale sur la borne « postérieurs » des cinq clés
+    /// qui la portent — sans quoi un retour à la formule large sur l'une d'elles, avec
+    /// « jusqu'à » ailleurs dans la phrase, passerait.
+    #[test]
+    fn les_prescriptions_de_reouverture_sont_bornees() {
+        const POSTERIEURS: [(&str, &str); 4] = [
+            ("fr-CH", "les exercices postérieurs clôturés"),
+            ("de-CH", "die späteren abgeschlossenen Geschäftsjahre"),
+            ("it-CH", "gli esercizi successivi chiusi"),
+            ("en-CH", "the later closed fiscal years"),
+        ];
+        const JUSQU_A: [(&str, &[&str]); 4] = [
+            ("fr-CH", &["jusqu'à celui-ci", "jusqu’à celui-ci"]),
+            ("de-CH", &["bis zu diesem Geschäftsjahr"]),
+            ("it-CH", &["fino a questo esercizio"]),
+            ("en-CH", &["down to this one"]),
+        ];
+        const CLES_POSTERIEURS: [&str; 5] = [
+            "error-fiscal-year-reopen-blocked",
+            "error-fiscal-year-create-later-closed",
+            "error-later-fiscal-year-closed",
+            "journal-entries-modify-blocked-later-fiscal-year-closed",
+            "fiscal-year-out-of-order-warning",
+        ];
+        // Même domaine et mêmes exemptions que G8 (`les_prescriptions_de_reouverture_disent_l_ordre`).
+        const EXEMPTEES: [&str; 10] = [
+            "fiscal-year-reopen-button",
+            "fiscal-year-reopen-confirmation-title",
+            "fiscal-year-reopen-confirmation-action",
+            "fiscal-year-reopen-motif-label",
+            "error-fiscal-year-reopen-motif-empty",
+            "error-fiscal-year-reopen-motif-too-long",
+            "fiscal-year-close-confirmation-body",
+            "fiscal-year-reopen-confirmation-body",
+            "fiscal-year-reopen-blocked-later-closed",
+            "error-reminder-amounts-changed",
+        ];
+        let verbe = regex::Regex::new(r"[Rr]ouvr|[Rr]éouv").unwrap();
+        let catalogues: HashMap<&str, HashMap<String, String>> =
+            LOCALES.iter().map(|l| (*l, valeurs_brutes(l))).collect();
+        let mut domaine: Vec<&String> = catalogues["fr-CH"]
+            .iter()
+            .filter(|(k, v)| verbe.is_match(v) && !EXEMPTEES.contains(&k.as_str()))
+            .map(|(k, _)| k)
+            .collect();
+        domaine.sort();
+        for cle in &CLES_POSTERIEURS {
+            assert!(
+                domaine.iter().any(|d| d.as_str() == *cle),
+                "{cle} n'est plus au domaine"
+            );
+            for (locale, borne) in POSTERIEURS {
+                let valeur = &catalogues[locale][*cle];
+                assert!(
+                    valeur.contains(borne),
+                    "{locale} : {cle} sans « {borne} » : {valeur}"
+                );
+            }
+        }
+        let mut bornees = 0;
+        for cle in &domaine {
+            for ((locale, posterieurs), (_, jusqu_a)) in POSTERIEURS.iter().zip(JUSQU_A) {
+                let valeur = catalogues[locale]
+                    .get(cle.as_str())
+                    .unwrap_or_else(|| panic!("{locale} : {cle} absente"));
+                assert!(
+                    valeur.contains(posterieurs) || jusqu_a.iter().any(|j| valeur.contains(j)),
+                    "{locale} : {cle} prescrit une réouverture sans borne : {valeur}"
+                );
+            }
+            bornees += 1;
+        }
+        // 5 clés « postérieurs » + 5 clés « jusqu'à celui-ci » (#569) ; une clé neuve
+        // du domaine s'y ajoute et doit être bornée, d'où un plancher et non un compte.
+        assert!(bornees >= 10, "domaine contrôlé trop petit : {domaine:?}");
     }
 
     /// **G10** (Story 15-14a, #321) — l'allemand de Suisse écrit `MWST`, jamais `MwSt`.
