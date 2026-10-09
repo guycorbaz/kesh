@@ -1261,7 +1261,7 @@ ci-dessous). Choix au registre : **C-15-1a-i-6** à **-10**.
   production ; le repli, lui, est éprouvé avec `max: 7`.
 - ⚠️ **Incident de mutation, rattrapé par le gate** : la mutation du plafond avait d'abord été posée par un
   `sed` sans ancrage sur le catalogue `fr-CH`, qui a réécrit en « 200 » la première variable `{ $max }` de
-  **sept** autres clés (`error-username-too-long`, `invoices-*-too-long`, `invoices-format-error-*`,
+  **huit** autres clés *(le message de `15a67932` dit « sept » : recompté depuis le diff, `git diff b4ed4d61 b335e90a -- crates/kesh-i18n/locales/fr-CH/messages.ftl`, huit lignes hors lettrage)* (`error-username-too-long`, `invoices-*-too-long`, `invoices-format-error-*`,
   `reconciliation-*`) ; la restauration ne visait que la ligne du lettrage, et le résidu est parti dans
   `b335e90a`. Le gate complet l'a vu (`kesh-i18n loader::tests::format_with_args` rouge) ; catalogue repris
   de `b4ed4d61` dans `15a67932`, diff des quatre catalogues contre `b4ed4d61` réduit à la seule clé du
