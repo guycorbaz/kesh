@@ -563,7 +563,7 @@ validation P3, R-1) :
 | `crates/kesh-api/src/routes/fiscal_years.rs` | `error-fiscal-year-reopen-blocked` (`:188`) |
 | `crates/kesh-api/src/routes/opening_balances.rs` | `error-opening-balances-first-year-closed` (`:205` **et** `:406` : la valeur doit y figurer deux fois) |
 
-Six clés, sept sites. La comparaison se fait **après normalisation des continuations** de chaîne Rust (`\` en fin de ligne suivi du saut de
+Six clés, sept sites *(huit clés, neuf sites depuis la revue de code P2 : `error-fiscal-year-create-later-closed` et `error-later-fiscal-year-closed`, paramétrées, C-15-14-49 ; revue P3, LOW-1)*. La comparaison se fait **après normalisation des continuations** de chaîne Rust (`\` en fin de ligne suivi du saut de
 ligne et des blancs de tête retirés : le repli de `error-invoice-pdf-header-overflow` s'écrit sur cinq
 lignes, et une comparaison brute passerait au rouge sur un repli juste) ; et aucune des chaînes
 `rouvrir l'exercice pour`, `rouvrez-le`, `dans les réglages :`. Mutations : remettre l'ancienne valeur
@@ -735,7 +735,7 @@ ligne `api-external.md:330` → rouge.
         sortie consignée au Dev Agent Record.
 - [x] **T3 — Catalogues** (AC 2, 8, 9, 10 — dont les six participes de-CH de l'AC 10) — 4 locales
       ensemble, parité verte.
-- [x] **T4 — Replis** (AC 2, 8) — Rust (7 sites, 6 clés : table de G9) et frontend (5) égaux au fr-CH,
+- [x] **T4 — Replis** (AC 2, 8) — Rust (7 sites, 6 clés — 9 sites, 8 clés après la revue de code P2 : table de G9) et frontend (5) égaux au fr-CH,
       apostrophes du catalogue ; retirer les 3 commentaires `#569`.
 - [x] **T5 — Tests** : G1 (`vat_rates.rs`, `mod tests` neuf — C-15-14-13), G3/G8/G10/G11
       (`kesh-i18n/src/loader.rs` `mod tests`), G2/G4/G5/G6/G7/G9/G12 (nouveau

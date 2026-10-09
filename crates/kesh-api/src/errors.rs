@@ -3042,8 +3042,10 @@ impl IntoResponse for AppError {
                 // l'objet. Story 15-12a (AC 9) : message neutre, clé
                 // `error-later-fiscal-year-closed` — il ne présuppose pas que
                 // l'objet visé existe, garde le conseil de contre-passation et
-                // ne prescrit jamais de rouvrir l'exercice nommé (la garde LIFO
-                // le refuserait dès qu'un plus récent est clos). La création
+                // ne prescrit jamais de rouvrir l'exercice nommé **seul** (la garde
+                // LIFO le refuserait dès qu'un plus récent est clos) : il prescrit
+                // les exercices postérieurs clôturés, du plus récent (revue de
+                // code P3 de la 15-14a, B3-2). La création
                 // d'un exercice a son propre message
                 // (`AppError::FiscalYearBeforeClosedYear`). Le texte nomme la
                 // saisie, la modification et la suppression : depuis la Story
