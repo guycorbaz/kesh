@@ -325,16 +325,25 @@ pub async fn upsert_primary_in_tx(
 /// archivé est immuable hors `un-archive` workflow (L1 v0.1 — pas de
 /// restoration UI).
 ///
-/// **Ordre des erreurs** (Story 15-5b, AC12) : `DbError::NotFound` →
-/// `DbError::OptimisticLockConflict` → court-circuit no-op (valeur inchangée,
-/// rien n'est contrôlé) → `DbError::AccountsNotPostable` (nouveau compte lié
-/// actif et non imputable).
+/// **Ordre des erreurs** (Story 15-5b, AC12 ; Story 15-6c, AC6) :
+/// `DbError::NotFound` → `DbError::OptimisticLockConflict` → court-circuit
+/// no-op (valeur inchangée, rien n'est contrôlé) → `DbError::AccountsNotPostable`
+/// (nouveau compte lié actif et non imputable) →
+/// `DbError::BankAccountLedgerIsClaimAccount` (nouveau compte lié = un compte
+/// de créance de `claims`).
+///
+/// `claims` (Story 15-6c, AC4) : les comptes de créance lus par l'appelant
+/// **sous verrou partagé, avant** le `FOR UPDATE` de la ligne
+/// (`company_invoice_settings::claim_accounts_in_share_mode`) ;
+/// [`ClaimAccounts::default`](super::company_invoice_settings::ClaimAccounts)
+/// quand la cible est `NULL` (dé-liaison : ni lecture ni verrou).
 pub async fn set_journal_account_id_for_company(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,
     id: i64,
     journal_account_id: Option<i64>,
     expected_version: i32,
+    claims: &super::company_invoice_settings::ClaimAccounts,
 ) -> Result<(BankAccount, BankAccount), DbError> {
     // SELECT FOR UPDATE scopé multi-tenant + verrou X sur la row.
     // Le `existing` retourné sert également de source `before` pour
@@ -380,6 +389,9 @@ pub async fn set_journal_account_id_for_company(
     // accepté tel quel (D-A0).
     if let Some(account_id) = journal_account_id {
         super::accounts::ensure_postable_if_active_in_tx(tx, company_id, account_id).await?;
+        // Story 15-6c (AC4) — puis le compte de créance, au même endroit et
+        // sous la même exemption « inchangé ».
+        refuse_if_ledger_is_claim_account(tx, company_id, account_id, claims).await?;
     }
 
     // M4 defense-in-depth : ajout `AND company_id = ?` au scope de l'UPDATE.
@@ -429,13 +441,20 @@ pub async fn set_journal_account_id_for_company(
 ///
 /// Retourne `(updated, before)` cohérent avec `set_journal_account_id_for_company`.
 ///
-/// **Ordre des erreurs** (Story 15-5b, AC12) : `DbError::NotFound` (compte
-/// bancaire inconnu, d'une autre société ou archivé) →
-/// `DbError::OptimisticLockConflict` (version périmée) →
+/// **Ordre des erreurs** (Story 15-5b, AC12 ; Story 15-6c, AC6) :
+/// `DbError::NotFound` (compte bancaire inconnu, d'une autre société ou
+/// archivé) → `DbError::OptimisticLockConflict` (version périmée) →
 /// `DbError::AccountsNotPostable` (nouveau compte lié actif et non imputable,
-/// contrôlé seulement s'il change). Un refus abandonne la transaction du
-/// caller : une démotion de l'ancien principal faite dans la même transaction
-/// est annulée avec elle.
+/// contrôlé seulement s'il change) → `DbError::BankAccountLedgerIsClaimAccount`
+/// (nouveau compte lié = un compte de créance de `claims`, même exemption). Un
+/// refus abandonne la transaction du caller : une démotion de l'ancien
+/// principal faite dans la même transaction est annulée avec elle. Un compte
+/// bancaire **déjà** lié à un compte de créance (donnée antérieure) reste
+/// modifiable dans ses autres champs.
+///
+/// `claims` : comme pour [`set_journal_account_id_for_company`] — lus par la
+/// route sous verrou partagé juste après la sentinelle, `default()` quand la
+/// cible est `NULL`.
 pub async fn update_for_company(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,
@@ -443,6 +462,7 @@ pub async fn update_for_company(
     new: &NewBankAccount,
     new_journal_account_id: Option<i64>,
     expected_version: i32,
+    claims: &super::company_invoice_settings::ClaimAccounts,
 ) -> Result<(BankAccount, BankAccount), DbError> {
     let existing = sqlx::query_as::<_, BankAccount>(
         "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, \
@@ -471,6 +491,8 @@ pub async fn update_for_company(
         && let Some(account_id) = new_journal_account_id
     {
         super::accounts::ensure_postable_if_active_in_tx(tx, company_id, account_id).await?;
+        // Story 15-6c (AC4) — puis le compte de créance, même exemption.
+        refuse_if_ledger_is_claim_account(tx, company_id, account_id, claims).await?;
     }
 
     let rows = sqlx::query(
@@ -666,6 +688,68 @@ pub async fn count_other_active_for_company(
     .await
     .map_err(map_db_error)?;
     Ok(row.0)
+}
+
+/// Le **premier compte bancaire non archivé** (par `id`) lié au compte du grand
+/// livre `account_id`, lu **sous verrou partagé** — `(id, bank_name)`, ou `None`
+/// (Story 15-6c, AC2 ; choix C-15-6-13, C-15-6-21, C-15-6-27).
+///
+/// ⛔ **Ordre des verrous** : appelé par `company_invoice_settings::update`
+/// **après** le `FOR UPDATE` de la ligne des réglages — ordre global
+/// `companies` → réglages → `bank_accounts`, celui de
+/// `company_invoice_settings::claim_accounts_in_share_mode`. L'ordre inverse
+/// ouvrirait un interblocage entre une désignation et un lien concurrents.
+///
+/// ⚠️ **Portée réelle du verrou** : sous REPEATABLE READ, ce balayage
+/// verrouillant de l'index secondaire non unique `idx_bank_accounts_journal_account`
+/// pose des verrous **next-key / d'intervalle**, y compris quand il ne trouve
+/// aucune ligne. Un `INSERT INTO bank_accounts` dont le `journal_account_id`
+/// tombe dans l'intervalle voisin peut donc **attendre** la fin du PUT des
+/// réglages — attente transitoire, sans cycle (aucun flux ne tient
+/// `bank_accounts` puis ne réclame les réglages), non mesurée.
+///
+/// ⚠️ `LOCK IN SHARE MODE`, pas `FOR SHARE` (erreur de syntaxe sur MariaDB
+/// 10.11). Le test de sérialisation côté réglages attend sur le texte
+/// `FROM bank_accounts` + `LOCK IN SHARE MODE`.
+pub async fn first_active_bank_account_linked_to(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    account_id: i64,
+) -> Result<Option<(i64, String)>, DbError> {
+    sqlx::query_as(
+        "SELECT id, bank_name FROM bank_accounts WHERE company_id = ? AND journal_account_id = ? AND archived = FALSE ORDER BY id LIMIT 1 LOCK IN SHARE MODE",
+    )
+    .bind(company_id)
+    .bind(account_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)
+}
+
+/// Refuse de lier un compte bancaire au compte `account_id` s'il est l'un des
+/// deux comptes de créance désignés (`claims`, lus par la route sous verrou
+/// partagé) — [`DbError::BankAccountLedgerIsClaimAccount`] (Story 15-6c, AC3,
+/// AC4). Le numéro n'est lu qu'une fois le refus décidé, sans verrou.
+///
+/// Partagé par la création (route) et par [`update_for_company`] /
+/// [`set_journal_account_id_for_company`] (dépôt) : la comparaison n'existe
+/// qu'une fois. Aux appelants de n'appeler que si la valeur **change**.
+pub async fn refuse_if_ledger_is_claim_account(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    account_id: i64,
+    claims: &super::company_invoice_settings::ClaimAccounts,
+) -> Result<(), DbError> {
+    let Some(claim) = claims.side_of(account_id) else {
+        return Ok(());
+    };
+    let account_number =
+        super::accounts::number_in_company(&mut **tx, company_id, account_id).await?;
+    Err(DbError::BankAccountLedgerIsClaimAccount {
+        account_id,
+        account_number,
+        claim,
+    })
 }
 
 /// Acquiert un advisory lock sentinel sur la row `companies.id` pour

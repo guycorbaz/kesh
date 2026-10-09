@@ -266,6 +266,22 @@ pub async fn get_invoice_settings(
 
 /// `PUT /api/v1/company/invoice-settings` — mise à jour config (Admin).
 ///
+/// **Ordre des erreurs** (Story 15-6c, AC6 ; choix C-15-6-21) : forme et
+/// contrôles du handler — dont le 400 `VALIDATION_ERROR` des comptes (type,
+/// actif, imputable s'il change), qui ne dépendent que du corps et des comptes
+/// visés — → **409** version (dépôt, `before` lu sous verrou) → **400**
+/// `CLAIM_ACCOUNT_LINKED_TO_BANK_ACCOUNT` (compte débiteurs ou créanciers
+/// **changé** vers un compte lié à un compte bancaire non archivé) →
+/// court-circuit no-op.
+///
+/// ⚠️ **Un refus typé et traduit parmi des refus en français en dur** (Story
+/// 15-6c, AC1) : les autres refus de cette route sont des
+/// `AppError::Validation` au texte fixe (limite écrite par la 15-5b, choix
+/// C3). `CLAIM_ACCOUNT_LINKED_TO_BANK_ACCOUNT` est au contraire un code dédié,
+/// traduit, avec des `details` qui nomment le compte bancaire — par symétrie
+/// avec son pendant bancaire `BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT`. Route
+/// fermée aux clés d'API : le code ne sert que l'écran.
+///
 /// ⚠️ **Rejouée sur interblocage** (Story 15-5e1, choix C70) par l'enveloppe
 /// `DbError` [`kesh_db::retry::retry_on_deadlock`] ; la `version` du corps est
 /// rejugée à chaque tentative par le verrou optimiste de `update`.

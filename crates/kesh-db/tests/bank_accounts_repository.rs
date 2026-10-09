@@ -4,6 +4,7 @@ use kesh_db::entities::account::AccountType;
 use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::{Language, NewAccount, NewBankAccount, NewCompany, OrgType};
 use kesh_db::errors::DbError;
+use kesh_db::repositories::company_invoice_settings::ClaimAccounts;
 use kesh_db::repositories::{accounts, bank_accounts, companies};
 use sqlx::MySqlPool;
 
@@ -333,6 +334,7 @@ async fn set_journal_account_id_updates_column_and_bumps_version(pool: MySqlPool
         bank_account_id,
         Some(account_id),
         pre_version,
+        &ClaimAccounts::default(),
     )
     .await
     .unwrap();
@@ -386,6 +388,7 @@ async fn set_journal_account_id_returns_optimistic_lock_conflict_on_version_mism
         bank_account_id,
         Some(account_id),
         pre.version + 99, // version mismatch volontaire
+        &ClaimAccounts::default(),
     )
     .await;
     let _ = tx.rollback().await;
@@ -446,6 +449,7 @@ async fn set_journal_account_id_does_not_leak_cross_tenant(pool: MySqlPool) {
         bank_a,
         Some(account_a),
         pre.version,
+        &ClaimAccounts::default(),
     )
     .await;
     let _ = tx.rollback().await;
@@ -482,6 +486,7 @@ async fn set_journal_account_id_to_null_unlinks_successfully(pool: MySqlPool) {
         bank_account_id,
         Some(account_id),
         pre.version,
+        &ClaimAccounts::default(),
     )
     .await
     .unwrap();
@@ -496,6 +501,7 @@ async fn set_journal_account_id_to_null_unlinks_successfully(pool: MySqlPool) {
         bank_account_id,
         None,
         linked.version,
+        &ClaimAccounts::default(),
     )
     .await
     .unwrap();
@@ -535,6 +541,7 @@ async fn find_by_id_for_company_returns_journal_account_id_when_set(pool: MySqlP
         bank_account_id,
         Some(account_id),
         pre.version,
+        &ClaimAccounts::default(),
     )
     .await
     .unwrap();
@@ -576,6 +583,7 @@ async fn set_journal_account_id_no_op_short_circuits_without_bump(pool: MySqlPoo
         bank_account_id,
         Some(account_id),
         pre.version,
+        &ClaimAccounts::default(),
     )
     .await
     .unwrap();
@@ -590,6 +598,7 @@ async fn set_journal_account_id_no_op_short_circuits_without_bump(pool: MySqlPoo
         bank_account_id,
         Some(account_id),
         version_after_link,
+        &ClaimAccounts::default(),
     )
     .await
     .unwrap();
@@ -708,6 +717,7 @@ async fn set_journal_account_id_no_op_with_stale_version_returns_conflict(pool: 
         bank_account_id,
         Some(account_id),
         pre.version,
+        &ClaimAccounts::default(),
     )
     .await
     .unwrap();
@@ -723,6 +733,7 @@ async fn set_journal_account_id_no_op_with_stale_version_returns_conflict(pool: 
         bank_account_id,
         Some(account_id),
         pre.version, // version stale
+        &ClaimAccounts::default(),
     )
     .await;
     let _ = tx.rollback().await;
@@ -871,6 +882,7 @@ async fn archived_invariants_set_journal_account_id_on_archived_returns_not_foun
         archived_id,
         Some(1),
         1,
+        &ClaimAccounts::default(),
     )
     .await;
     let _ = tx.rollback().await;
@@ -897,8 +909,16 @@ async fn archived_invariants_update_for_company_on_archived_returns_not_found(po
         is_primary: false,
     };
     let mut tx = pool.begin().await.unwrap();
-    let result =
-        bank_accounts::update_for_company(&mut tx, company_id, archived_id, &new, None, 1).await;
+    let result = bank_accounts::update_for_company(
+        &mut tx,
+        company_id,
+        archived_id,
+        &new,
+        None,
+        1,
+        &ClaimAccounts::default(),
+    )
+    .await;
     let _ = tx.rollback().await;
 
     assert!(
@@ -997,6 +1017,7 @@ async fn set_journal_account_id_guards_only_a_changed_account(pool: MySqlPool) {
         bank_account_id,
         Some(linked),
         1,
+        &ClaimAccounts::default(),
     )
     .await
     .unwrap();
@@ -1011,6 +1032,7 @@ async fn set_journal_account_id_guards_only_a_changed_account(pool: MySqlPool) {
         bank_account_id,
         Some(target),
         after.version,
+        &ClaimAccounts::default(),
     )
     .await;
     drop(tx);
@@ -1023,6 +1045,7 @@ async fn set_journal_account_id_guards_only_a_changed_account(pool: MySqlPool) {
         bank_account_id,
         Some(linked),
         after.version,
+        &ClaimAccounts::default(),
     )
     .await
     .expect("inchangé : no-op, sans contrôle");
@@ -1061,6 +1084,7 @@ async fn update_for_company_guards_only_a_changed_account(pool: MySqlPool) {
         &bank_payload(company_id),
         Some(linked),
         1,
+        &ClaimAccounts::default(),
     )
     .await
     .unwrap();
@@ -1077,6 +1101,7 @@ async fn update_for_company_guards_only_a_changed_account(pool: MySqlPool) {
         &bank_payload(company_id),
         Some(target),
         after.version + 7,
+        &ClaimAccounts::default(),
     )
     .await;
     drop(tx);
@@ -1093,6 +1118,7 @@ async fn update_for_company_guards_only_a_changed_account(pool: MySqlPool) {
         &bank_payload(company_id),
         Some(target),
         after.version,
+        &ClaimAccounts::default(),
     )
     .await;
     drop(tx);
@@ -1106,6 +1132,7 @@ async fn update_for_company_guards_only_a_changed_account(pool: MySqlPool) {
         &bank_payload(company_id),
         Some(linked),
         after.version,
+        &ClaimAccounts::default(),
     )
     .await
     .expect("compte inchangé : accepté");
@@ -1270,4 +1297,184 @@ async fn upsert_primary_returns_original_error_and_writes_nothing(pool: MySqlPoo
         .await
         .unwrap();
     assert_eq!(n, 0);
+}
+
+// ---------------------------------------------------------------------------
+// Story 15-6c (#474) — un compte bancaire ne se lie pas au compte de créance
+// désigné (`DbError::BankAccountLedgerIsClaimAccount`), sous le verrou de la
+// ligne, après la postabilité, seulement si le compte lié change.
+// ---------------------------------------------------------------------------
+
+/// Test 5 (AC4) — `set_journal_account_id_for_company` avec des
+/// `ClaimAccounts` désignant la cible : refus, rien d'écrit, `version`
+/// inchangée — côté débiteurs comme côté créanciers. Avec des `claims` vides,
+/// la même cible est acceptée.
+#[sqlx::test(migrations = "./test-schema")]
+async fn set_journal_account_id_refuses_a_designated_claim_account(pool: MySqlPool) {
+    use kesh_db::errors::ClaimSide;
+    let company_id = create_test_company(&pool).await;
+    let user_id = create_test_user(&pool, company_id, "admin").await;
+    let receivable = create_account(
+        &pool,
+        company_id,
+        user_id,
+        "1100",
+        "Débiteurs",
+        AccountType::Asset,
+    )
+    .await;
+    let payable = create_account(
+        &pool,
+        company_id,
+        user_id,
+        "2000",
+        "Créanciers",
+        AccountType::Liability,
+    )
+    .await;
+    let bank_account_id = create_bank_account(&pool, company_id).await;
+    let claims = ClaimAccounts {
+        receivable: Some(receivable),
+        payable: Some(payable),
+    };
+
+    for (target, number, side) in [
+        (receivable, "1100", ClaimSide::Receivable),
+        (payable, "2000", ClaimSide::Payable),
+    ] {
+        let mut tx = pool.begin().await.unwrap();
+        let res = bank_accounts::set_journal_account_id_for_company(
+            &mut tx,
+            company_id,
+            bank_account_id,
+            Some(target),
+            1,
+            &claims,
+        )
+        .await;
+        drop(tx);
+        match res {
+            Err(DbError::BankAccountLedgerIsClaimAccount {
+                account_id,
+                account_number,
+                claim,
+            }) => {
+                assert_eq!(account_id, target);
+                assert_eq!(account_number.as_deref(), Some(number));
+                assert_eq!(claim, side);
+            }
+            other => panic!("attendu BankAccountLedgerIsClaimAccount, obtenu {other:?}"),
+        }
+        let row = bank_accounts::find_by_id_for_company(&pool, company_id, bank_account_id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(row.journal_account_id, None, "rien n'est écrit");
+        assert_eq!(row.version, 1, "version inchangée");
+    }
+
+    // Mêmes cibles, `claims` vides : acceptées (la garde ne joue que sur les
+    // comptes que la route a lus dans les réglages).
+    let mut tx = pool.begin().await.unwrap();
+    let (linked, _) = bank_accounts::set_journal_account_id_for_company(
+        &mut tx,
+        company_id,
+        bank_account_id,
+        Some(receivable),
+        1,
+        &ClaimAccounts::default(),
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(linked.journal_account_id, Some(receivable));
+}
+
+/// Test 11 (AC2) — **sérialisation, côté compte bancaire**. Une transaction
+/// tenue à la main verrouille la ligne des réglages (`FOR UPDATE`) et y désigne
+/// le compte X sans valider ; le lien démarre, lit les réglages en
+/// `LOCK IN SHARE MODE` et **attend**. Une fois la désignation validée, il lit
+/// X et refuse.
+///
+/// ⚠️ L'attente est prouvée par `attendre_une_requete_en_cours` sur le texte
+/// `FROM company_invoice_settings` + `LOCK IN SHARE MODE` — couplé à la forme
+/// du verrou de `claim_accounts_in_share_mode` : changer l'une, c'est changer
+/// l'autre. Sans ce verrou (lecture simple), le lien lirait l'ancien réglage,
+/// passerait, et la désignation concurrente aussi.
+#[sqlx::test(migrations = "./test-schema")]
+async fn bank_link_waits_for_a_concurrent_receivable_designation(pool: MySqlPool) {
+    use kesh_db::repositories::company_invoice_settings;
+    let company_id = create_test_company(&pool).await;
+    let user_id = create_test_user(&pool, company_id, "admin").await;
+    let x = create_account(
+        &pool,
+        company_id,
+        user_id,
+        "1100",
+        "Débiteurs",
+        AccountType::Asset,
+    )
+    .await;
+    let bank_account_id = create_bank_account(&pool, company_id).await;
+    sqlx::query("INSERT IGNORE INTO company_invoice_settings (company_id) VALUES (?)")
+        .bind(company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    // (1) La désignation concurrente, non validée, qui tient la ligne.
+    let mut concurrent = pool.begin().await.unwrap();
+    sqlx::query("SELECT company_id FROM company_invoice_settings WHERE company_id = ? FOR UPDATE")
+        .bind(company_id)
+        .execute(&mut *concurrent)
+        .await
+        .unwrap();
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_receivable_account_id = ? WHERE company_id = ?",
+    )
+    .bind(x)
+    .bind(company_id)
+    .execute(&mut *concurrent)
+    .await
+    .unwrap();
+
+    // (2) Le lien démarre et attend.
+    let p = pool.clone();
+    let lien = tokio::spawn(async move {
+        let mut tx = p.begin().await.unwrap();
+        let claims = company_invoice_settings::claim_accounts_in_share_mode(&mut tx, company_id)
+            .await
+            .unwrap();
+        bank_accounts::set_journal_account_id_for_company(
+            &mut tx,
+            company_id,
+            bank_account_id,
+            Some(x),
+            1,
+            &claims,
+        )
+        .await
+        .map(|(updated, _)| updated.journal_account_id)
+    });
+    let vue = kesh_db::test_fixtures::attendre_une_requete_en_cours(
+        &pool,
+        &["FROM company_invoice_settings", "LOCK IN SHARE MODE"],
+        || lien.is_finished(),
+    )
+    .await;
+    if !vue {
+        panic!("le lien a fini sans attendre le verrou : {:?}", lien.await);
+    }
+
+    // (3) La désignation est validée.
+    concurrent.commit().await.unwrap();
+
+    let result = lien.await.expect("tâche du lien");
+    assert!(
+        matches!(
+            result,
+            Err(DbError::BankAccountLedgerIsClaimAccount { account_id, .. }) if account_id == x
+        ),
+        "le lien devait attendre la désignation puis refuser — reçu {result:?}"
+    );
 }

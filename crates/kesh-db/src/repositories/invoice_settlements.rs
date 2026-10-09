@@ -707,8 +707,8 @@ pub fn ensure_not_claim_account(
 /// `payment_batches::confirm_batch` (qui la reconstruit avec son lot).
 ///
 /// Appelée **à l'échec seulement** : elle lit le numéro du compte dans la
-/// transaction de l'appelant (la requête est écrite d'un tenant, sur une ligne,
-/// pour rester trouvable par `grep`). Une erreur SQL de cette lecture est rendue
+/// transaction de l'appelant (`accounts::number_in_company`, partagé avec les
+/// refus de configuration de la Story 15-6c). Une erreur SQL de cette lecture est rendue
 /// telle quelle — c'est alors elle, et non le refus, que l'appelant propage.
 /// `batch` vaut toujours `None` ici.
 pub async fn claim_account_refusal(
@@ -717,14 +717,7 @@ pub async fn claim_account_refusal(
     clash: ClaimAccountClash,
     subject: ClaimSubject,
 ) -> DbError {
-    let number: Result<Option<String>, DbError> =
-        sqlx::query_scalar("SELECT number FROM accounts WHERE id = ? AND company_id = ?")
-            .bind(clash.account_id)
-            .bind(company_id)
-            .fetch_optional(&mut *conn)
-            .await
-            .map_err(map_db_error);
-    match number {
+    match super::accounts::number_in_company(conn, company_id, clash.account_id).await {
         Ok(account_number) => DbError::SettlementCounterpartyIsClaimAccount {
             account_id: clash.account_id,
             account_number,

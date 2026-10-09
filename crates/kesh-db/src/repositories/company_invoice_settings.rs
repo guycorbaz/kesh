@@ -26,7 +26,7 @@ use crate::entities::{
     AccountRole, AccountType, CompanyInvoiceSettings, CompanyInvoiceSettingsUpdate, Journal,
 };
 use crate::errors::{
-    DbError, NonPostableAccount, NonPostableAccounts, RoundingContext, map_db_error,
+    ClaimSide, DbError, NonPostableAccount, NonPostableAccounts, RoundingContext, map_db_error,
 };
 use crate::repositories::audit_log;
 
@@ -121,6 +121,116 @@ pub async fn get_or_create_default_in_tx(
     Ok(settings)
 }
 
+// ---------------------------------------------------------------------------
+// Story 15-6c (#474) — la configuration ne prépare plus l'écriture nulle
+// ---------------------------------------------------------------------------
+
+/// Les deux **comptes de créance** désignés dans les réglages : le compte
+/// débiteurs et le compte créanciers (Story 15-6c, AC2). `Default` = deux
+/// `None` — ce que passent les gestes bancaires **sans** compte lié (aucune
+/// lecture, aucun verrou) et les tests qui appellent le dépôt directement.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ClaimAccounts {
+    /// `default_receivable_account_id`.
+    pub receivable: Option<i64>,
+    /// `default_payable_account_id`.
+    pub payable: Option<i64>,
+}
+
+impl ClaimAccounts {
+    /// Le réglage qu'occupe `account_id`, s'il en occupe un — le compte
+    /// débiteurs d'abord.
+    pub fn side_of(&self, account_id: i64) -> Option<ClaimSide> {
+        if self.receivable == Some(account_id) {
+            Some(ClaimSide::Receivable)
+        } else if self.payable == Some(account_id) {
+            Some(ClaimSide::Payable)
+        } else {
+            None
+        }
+    }
+}
+
+/// Lit les deux comptes de créance **sous verrou partagé** (Story 15-6c, AC2 ;
+/// choix C-15-6-13, C-15-6-21) — ligne absente → [`ClaimAccounts::default`].
+///
+/// ⛔ **Ordre des verrous** : la ligne des réglages est **toujours verrouillée
+/// avant** les comptes bancaires — ordre global `companies` (sentinelle, quand
+/// elle est prise) → réglages → `bank_accounts`. Côté compte bancaire, cet
+/// appel est le **premier verrou après la sentinelle** (création, remplacement)
+/// ou la première instruction de la transaction (lien) ; côté réglages,
+/// [`update`] tient la ligne en `FOR UPDATE` avant de lire
+/// `bank_accounts::first_active_bank_account_linked_to`. Lire les réglages
+/// **après** le `FOR UPDATE` de la ligne bancaire ouvrirait un interblocage
+/// entre les deux gestes. Ainsi un lien et une désignation concurrents ne
+/// passent plus tous les deux : le second attend le premier, lit sa valeur
+/// validée, puis refuse.
+///
+/// ⚠️ `LOCK IN SHARE MODE` et non `FOR SHARE`, erreur de syntaxe sur MariaDB
+/// 10.11. Le test de sérialisation côté compte bancaire attend sur le texte
+/// `FROM company_invoice_settings` + `LOCK IN SHARE MODE` : changer la forme du
+/// verrou, c'est changer ce motif.
+///
+/// ⚠️ **Latence** : le verrou S attend toute transaction qui tient la ligne en
+/// X — PUT des réglages, validation de facture, avoir, facture fournisseur —
+/// le temps de cette transaction. Une dé-liaison ne l'appelle pas.
+pub async fn claim_accounts_in_share_mode(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+) -> Result<ClaimAccounts, DbError> {
+    let row: Option<(Option<i64>, Option<i64>)> = sqlx::query_as(
+        "SELECT default_receivable_account_id, default_payable_account_id FROM company_invoice_settings WHERE company_id = ? LOCK IN SHARE MODE",
+    )
+    .bind(company_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    Ok(row
+        .map(|(receivable, payable)| ClaimAccounts {
+            receivable,
+            payable,
+        })
+        .unwrap_or_default())
+}
+
+/// Refuse de désigner `requested` comme compte de créance `claim` s'il **change**
+/// (≠ `current`, lu sous verrou) et qu'il est lié à un compte bancaire non
+/// archivé (Story 15-6c, AC5) — [`DbError::ClaimAccountLinkedToBankAccount`],
+/// nommant le premier compte bancaire par `id`.
+///
+/// Valeur inchangée ou `NULL` : aucun contrôle — une configuration antérieure
+/// fautive ne bloque pas l'enregistrement des autres réglages (patron C4 de la
+/// 15-5b) ; la garde à l'usage de la 15-6b reste son filet.
+async fn refuse_if_linked_to_bank_account(
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
+    company_id: i64,
+    requested: Option<i64>,
+    current: Option<i64>,
+    claim: ClaimSide,
+) -> Result<(), DbError> {
+    let Some(account_id) = requested else {
+        return Ok(());
+    };
+    if requested == current {
+        return Ok(());
+    }
+    let Some((bank_account_id, bank_name)) =
+        super::bank_accounts::first_active_bank_account_linked_to(tx, company_id, account_id)
+            .await?
+    else {
+        return Ok(());
+    };
+    let account_number =
+        super::accounts::number_in_company(&mut **tx, company_id, account_id).await?;
+    Err(DbError::ClaimAccountLinkedToBankAccount {
+        account_id,
+        account_number,
+        claim,
+        bank_account_id,
+        bank_name,
+    })
+}
+
 /// Compare l'état persisté au payload — `true` si aucun champ métier ne diffère
 /// (KF-004 : court-circuit no-op pour ne pas bumper version inutilement).
 fn is_no_op_change(
@@ -149,6 +259,13 @@ fn is_no_op_change(
 ///
 /// Le caller doit avoir validé les données en amont (format, comptes,
 /// journal). Audit log wrapper `{before, after}`.
+///
+/// **Ordre des erreurs** (Story 15-6c, AC6 ; choix C-15-6-21) :
+/// `DbError::OptimisticLockConflict` (version périmée, jugée contre `before`
+/// lu en `FOR UPDATE`) → `DbError::ClaimAccountLinkedToBankAccount` (compte
+/// débiteurs, puis compte créanciers, **changé** vers un compte lié à un compte
+/// bancaire non archivé) → court-circuit no-op. Le 409 d'abord : l'exemption
+/// « inchangé » se calcule contre `before`, que le client doit avoir vu.
 pub async fn update(
     pool: &MySqlPool,
     company_id: i64,
@@ -165,8 +282,12 @@ pub async fn update(
         .await
         .map_err(map_db_error)?;
 
+    // Story 15-6c (AC2) — `before` lu en `FOR UPDATE` : la ligne des réglages
+    // est verrouillée AVANT les comptes bancaires (ordre de
+    // `claim_accounts_in_share_mode`), et un lien bancaire concurrent qui la
+    // tient en S fait attendre ce PUT jusqu'à sa validation.
     let before = sqlx::query_as::<_, CompanyInvoiceSettings>(&format!(
-        "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ?"
+        "SELECT {COLUMNS} FROM company_invoice_settings WHERE company_id = ? FOR UPDATE"
     ))
     .bind(company_id)
     .fetch_one(&mut *tx)
@@ -178,11 +299,44 @@ pub async fn update(
         return Err(DbError::OptimisticLockConflict);
     }
 
+    // Story 15-6c (AC5, AC6) — après le 409 (le client voit l'état courant
+    // avant qu'on juge son changement), avant le court-circuit no-op : un compte
+    // de créance qui CHANGE ne peut pas être lié à un compte bancaire non
+    // archivé. Le compte débiteurs d'abord, puis le compte créanciers.
+    for (requested, current, claim) in [
+        (
+            changes.default_receivable_account_id,
+            before.default_receivable_account_id,
+            ClaimSide::Receivable,
+        ),
+        (
+            changes.default_payable_account_id,
+            before.default_payable_account_id,
+            ClaimSide::Payable,
+        ),
+    ] {
+        if let Err(e) =
+            refuse_if_linked_to_bank_account(&mut tx, company_id, requested, current, claim).await
+        {
+            tx.rollback().await.map_err(map_db_error)?;
+            return Err(e);
+        }
+    }
+
     // KF-004 : court-circuit no-op AVANT toute mutation.
-    // NOTE concurrence (KF-004): sous REPEATABLE READ + plain SELECT, si une tx
-    // parallèle commit entre notre BEGIN et ce check, on retourne notre snapshot
-    // stale au lieu d'un 409. Race acceptée v0.1 (cf. spec 7-3 §race-condition).
-    // Mitigation future: SELECT FOR UPDATE partout (non v0.1).
+    // NOTE concurrence (KF-004, réécrite Story 15-6c) : `before` est lu en
+    // `FOR UPDATE`, si bien que ce PUT est SÉRIALISÉ contre les gestes bancaires
+    // vers un compte (lien, création, remplacement — verrou S de
+    // `claim_accounts_in_share_mode`) et contre les autres écrivains de la
+    // ligne : une version validée entre notre BEGIN et ce point est vue, et rend
+    // le 409. Ce qui ne l'est PAS : l'`INSERT IGNORE` ci-dessus pose sur une
+    // ligne existante un verrou PARTAGÉ, et le `FOR UPDATE` est une promotion
+    // S → X. Deux écrivains qui font tous deux `INSERT IGNORE` puis `FOR UPDATE`
+    // — deux PUT, ou un PUT et `get_or_create_default_in_tx` (validation de
+    // facture, avoir, facture fournisseur) — peuvent s'interbloquer (1213).
+    // Préexistant (l'`UPDATE` promouvait déjà), non aggravé ; la route rejoue
+    // l'interblocage (`retry_on_deadlock`, Story 15-5e1), et la `version` est
+    // rejugée à chaque tentative.
     if is_no_op_change(&before, &changes) {
         tx.rollback().await.map_err(map_db_error)?;
         return Ok(before);

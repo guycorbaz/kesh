@@ -359,6 +359,26 @@ pub async fn ensure_postable_if_active_in_tx(
     Ok(())
 }
 
+/// Le **numéro** d'un compte de la société, lu dans la connexion de l'appelant
+/// **sans verrou** — `None` si la ligne est absente (Story 15-6c ; partagé avec
+/// le refus de la 15-6b, `invoice_settlements::claim_account_refusal`).
+///
+/// Sert à **nommer** un compte dans un refus déjà décidé : le refus ne dépend
+/// plus de cette lecture, d'où l'absence de verrou. Une erreur SQL est rendue
+/// telle quelle ; c'est alors elle que l'appelant propage.
+pub async fn number_in_company(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    account_id: i64,
+) -> Result<Option<String>, DbError> {
+    sqlx::query_scalar("SELECT number FROM accounts WHERE id = ? AND company_id = ?")
+        .bind(account_id)
+        .bind(company_id)
+        .fetch_optional(conn)
+        .await
+        .map_err(map_db_error)
+}
+
 /// `include_archived` : si `false`, seuls les comptes actifs sont retournés.
 /// Pas de pagination — un plan comptable est borné à ~200-400 comptes.
 pub async fn list_by_company(
