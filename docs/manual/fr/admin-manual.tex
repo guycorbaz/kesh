@@ -95,7 +95,7 @@ Kesh est conçu pour :
     \item Les \textbf{entreprises individuelles} et les \textbf{sociétés de personnes} avec un chiffre d'affaires supérieur à CHF 500'000 (régime « comptabilité complète » selon CO Art. 957 al. 1).
     \item Les \textbf{entreprises individuelles} et \textbf{sociétés de personnes} avec un chiffre d'affaires inférieur à CHF 500'000, qui peuvent légalement se limiter au régime « recettes-dépenses + patrimoine » (CO Art. 957 al. 2). ⚠️ \emph{Kesh ne propose pas ce régime simplifié : il tient une comptabilité en partie double, ce qui est admis mais plus exigeant que ce que la loi leur impose.}
     \item Les \textbf{personnes morales} (SA, Sàrl, coopératives, associations, fondations).
-    \item Les \textbf{fiduciaires} gérant plusieurs dossiers clients. ⚠️ \emph{Un dossier = une instance ou un compte dédié : l'interface ne permet pas encore de basculer entre sociétés.}
+    \item Les \textbf{fiduciaires} gérant plusieurs dossiers clients. ⚠️ \emph{Un dossier = une instance : l'interface ne crée pas de seconde société et ne permet pas d'en changer.}
 \end{itemize}
 
 Kesh n'est pas conçu pour les grands groupes soumis à l'audit ordinaire (Art. 727 CO, seuils 20/40/250 selon Art. 727 al. 1 ch. 2 CO) ni aux entités cotées en bourse soumises à IFRS / Swiss GAAP RPC obligatoires.
@@ -517,7 +517,7 @@ Synology DSM (DiskStation Manager) 7.2+ inclut le paquet \emph{Container Manager
 \begin{itemize}
     \item \textbf{DSM} ≥ 7.2 (Container Manager n'est pas disponible sur DSM 6.x).
     \item \textbf{Modèle NAS} compatible Docker — vérifier sur la liste officielle Synology : modèles avec processeur Intel/AMD x86\_64 (DS220+, DS720+, DS920+, DS1522+, DS1821+, etc.). Les modèles ARM (DS120j, DS220j, DS418, etc.) ne supportent pas Container Manager.
-    \item \textbf{RAM} : minimum 2 GiB (4 GiB recommandés pour confort utilisateur multi-tenant avec plusieurs companies actives).
+    \item \textbf{RAM} : minimum 2 GiB (4 GiB recommandés pour un usage confortable).
     \item \textbf{Stockage} : au moins 10 GiB libres sur le volume \keshpath{/volume1} (5 GiB pour l'image Kesh + 1 GiB pour MariaDB initial + 4 GiB marge pour les imports bancaires, exports PDF/ZIP, et croissance données).
     \item \textbf{Paquet Container Manager} installé via Package Center (gratuit, fourni par Synology). Pour DSM 7.2+, c'est l'unique paquet officiel — il remplace l'ancien paquet \emph{Docker}.
 \end{itemize}
@@ -579,7 +579,7 @@ sudo nano .env
             \item \textbf{Chemin} : naviguer vers \keshpath{/volume1/docker/kesh}
             \item \textbf{Source} : \emph{Utiliser docker-compose.yml existant}
         \end{itemize}
-    \item Container Manager affiche un preview du compose. Vérifier que les services attendus apparaissent (\keshcommand{kesh-api}, \keshcommand{mariadb}, éventuellement \keshcommand{traefik} si vous l'avez ajouté).
+    \item Container Manager affiche un preview du compose. Vérifier que le service \keshcommand{kesh-api} apparaît (et \keshcommand{traefik} si vous l'avez ajouté). La base n'est pas dans ce compose : c'est la vôtre.
     \item Cliquer \textbf{Suivant} → \textbf{Démarrer le projet maintenant} → \textbf{Terminé}.
 \end{enumerate}
 
@@ -880,11 +880,7 @@ limiter la charge sur des PDF volumineux.
     \item La bibliothèque pdfium n'est pas isolée : un PDF gravement malformé
     peut faire planter le processus serveur (le conteneur redémarre alors
     automatiquement). Limitez l'inbox aux fichiers de confiance.
-    \item L'inbox est un dossier \textbf{unique} par instance, non séparé par
-    société. Sur une instance hébergeant plusieurs sociétés, le premier
-    comptable qui déclenche l'import récupère tous les fichiers présents pour
-    \emph{sa} société. Sans effet pour le déploiement standard « une PME par
-    instance » (cf. issue GitHub \#199).
+    \item L'inbox est un dossier \textbf{unique} par instance.
 \end{itemize}
 
 \subsubsection{Monitoring}
@@ -963,10 +959,10 @@ expire_logs_days        = 14
 \end{lstlisting}
 
 \begin{keshtip}
-Pour une PME standard (1 société, < 50'000 écritures/an), les paramètres par défaut MariaDB suffisent largement. Cette configuration avancée n'est utile qu'à partir de plusieurs sociétés ou de très gros volumes.
+Pour une PME standard (1 société, < 50'000 écritures/an), les paramètres par défaut MariaDB suffisent largement. Cette configuration avancée n'est utile qu'à partir de très gros volumes.
 \end{keshtip}
 
-\subsubsection{Initialisation manuelle de la base}
+\subsubsection{Initialisation manuelle de la base}\label{sec:init-db-manuelle}
 
 Si vous ne passez pas par Docker Compose, voici comment initialiser manuellement la DB :
 
@@ -983,7 +979,7 @@ Au premier démarrage, l'application exécute les migrations SQLx.
 
 \subsection{Configuration multi-tenant}
 
-Kesh supporte plusieurs sociétés (\emph{companies}) sur une même instance, avec isolation stricte des données.
+Le modèle de données de Kesh est multi-société : chaque enregistrement porte le \texttt{company\_id} de sa société, et l'isolation est stricte (défense contre les accès croisés, ci-dessous). Mais \textbf{une installation porte une société} : l'interface ne crée pas de seconde société et ne permet pas d'en changer.
 
 \subsubsection{Concept de \emph{company}}
 
@@ -1005,11 +1001,7 @@ Toutes les requêtes API et toutes les requêtes SQL Kesh sont filtrées par \te
 
 \subsubsection{Cas d'usage fiduciaire}
 
-Un fiduciaire peut créer une seule instance Kesh avec N companies, une par dossier client. L'isolation par \texttt{company\_id} garantit la confidentialité inter-client. Le fiduciaire peut être membre de toutes les companies avec un rôle d'administrateur ; chaque utilisateur PME ne voit que sa propre company.
-
-\begin{keshnote}
-La création d'une company se fait via l'interface utilisateur après connexion d'un administrateur. Voir le \emph{Manuel utilisateur} pour les détails opérationnels.
-\end{keshnote}
+Un fiduciaire installe \textbf{une instance par dossier client} : chaque installation porte la société de son client, et ses utilisateurs --- créés par l'administrateur de l'installation --- appartiennent tous à cette société. Un utilisateur créé reçoit la société de celui qui le crée ; aucun écran ne rattache un compte à une autre société.
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Premier démarrage}
@@ -1450,7 +1442,7 @@ La sauvegarde régulière de l'instance Kesh est \textbf{critique} pour deux rai
     \item \textbf{Quotidienne} : \keshcommand{mariadb-dump} complet, conservé 30 jours, stocké en local + offsite (cloud).
     \item \textbf{Quotidienne, avec la base} : copie du répertoire des documents (\texttt{KESH\_DOCUMENTS\_DIR}, monté depuis \keshpath{./documents} avec \keshpath{docker-compose.prod.yml} ; avec \keshpath{docker-compose.yml}, depuis le dossier de \texttt{KESH\_DOCUMENTS\_HOST\_DIR} s'il est posé) --- il porte les \textbf{PDF des factures émises}, que ni le dump ni l'export ne contiennent (cf. \S\ref{sec:pdf-factures-sauvegarde}).
     \item \textbf{Avec le répertoire du compose} : le dossier \keshpath{./backup}, où Kesh écrit la sauvegarde de sécurité prise avant chaque import d'installation, est dans le périmètre du répertoire du compose --- il contient des \textbf{secrets} (\S\ref{sec:backup-ui-keshbackup}).
-    \item \textbf{Hebdomadaire} : snapshot du volume Docker \keshpath{/var/lib/docker/volumes/kesh\_db\_data} (gel cohérent via \keshcommand{docker compose stop} puis snapshot, ou via LVM/ZFS).
+    \item \textbf{Hebdomadaire} : snapshot du volume Docker \keshpath{/var/lib/docker/volumes/<projet>\_kesh-mariadb-data} (volume \texttt{kesh-mariadb-data} de \keshpath{docker-compose.yml}, préfixé du nom du projet) (gel cohérent via \keshcommand{docker compose stop} puis snapshot, ou via LVM/ZFS).
     \item \textbf{Mensuelle} : export ZIP de souveraineté (Story 9-2b) pour chaque company depuis l'interface utilisateur.
     \item \textbf{Annuelle} : archivage long terme conforme OLICo Art. 9 (support non-modifiable type CD-R, ou hash signé sur support modifiable WORM).
 \end{itemize}
@@ -1573,7 +1565,7 @@ Automatisez ce test annuel via un workflow CI/CD : provisioning Docker éphémè
 
 \subsection{Backup natif sur Synology DSM (Hyper Backup + Snapshot Replication)}\label{sec:backup-dsm}
 
-Pour les installations sur Synology DSM (cf. section \ref{sec:synology}), DSM intègre nativement deux outils de backup éprouvés : \textbf{Hyper Backup} (backup incrémental versionné, idéal cloud + LAN) et \textbf{Snapshot Replication} (snapshot Btrfs point-in-time, idéal recovery instantané). Ces outils remplacent ou complètent le script \keshcommand{mariadb-dump} CLI ci-dessus selon votre stratégie.
+Pour les installations sur Synology DSM (cf. section \ref{sec:synology}), DSM intègre nativement deux outils de backup éprouvés : \textbf{Hyper Backup} (backup incrémental versionné, idéal cloud + LAN) et \textbf{Snapshot Replication} (snapshot Btrfs point-in-time, idéal recovery instantané). Ces outils \textbf{complètent} le dump \keshcommand{mariadb-dump}, ils ne le remplacent pas : ils copient le dossier du compose, \keshpath{/volume1/docker/kesh}, et le dump qu'y dépose le pré-script décrit ci-dessous ; ils ne voient pas la base elle-même. Avec \keshpath{docker-compose.prod.yml}, la base est celle que désigne \texttt{DATABASE\_URL} --- le paquet MariaDB~10 de DSM, un conteneur séparé ou une base gérée ---, et elle n'est \textbf{pas} dans ce dossier : elle ne se sauvegarde, et ne se restaure, que par ce dump (ou là où vous l'hébergez).
 
 \subsubsection{Hyper Backup — backup incrémental + offsite intégré}
 
@@ -1586,48 +1578,94 @@ Hyper Backup est l'outil principal Synology pour les backups versionnés vers st
     \item Lancer Hyper Backup → \textbf{+ Tâche de sauvegarde de données} → choisir la destination (ex. \emph{Synology C2 Backup} pour offsite managé, \emph{S3 Storage} pour AWS/Wasabi/Backblaze, \emph{Dossier local} pour HDD USB attaché au NAS).
     \item Cocher les dossiers à backup :
         \begin{itemize}
-            \item \textbf{Obligatoire} : \keshpath{/volume1/docker/kesh/} (compose + .env + tous les volumes via bind-mount si vous utilisez le pattern Synology recommandé) --- \textbf{y compris le répertoire des documents} (\keshpath{./documents} avec \keshpath{docker-compose.prod.yml} ; avec \keshpath{docker-compose.yml}, le dossier de \texttt{KESH\_DOCUMENTS\_HOST\_DIR} s'il est posé --- à ajouter alors à la tâche de sauvegarde), qui porte les PDF des factures émises (\S\ref{sec:pdf-factures-sauvegarde}). À restaurer avec la base.
-            \item \textbf{Optionnel} : volumes Docker nommés si vous n'utilisez pas le bind-mount (rare sur DSM) — accessibles via \keshpath{/volume1/@docker/volumes/kesh\_*}.
+            \item \textbf{Obligatoire} : \keshpath{/volume1/docker/kesh/} --- le compose, \keshpath{.env}, \keshpath{log/}, \keshpath{inbox/}, \keshpath{documents/}, \keshpath{backup/}, les deux fichiers d'identifiants (\keshpath{kesh-dump.cnf}, \keshpath{kesh-restore.cnf}) et le \textbf{dump de la base} que le pré-script y dépose (\keshpath{kesh\_pre\_backup.sql.gz}). La base elle-même n'est pas dans ce dossier : seul ce dump l'y fait entrer. \keshpath{documents/} porte les PDF des factures émises (\S\ref{sec:pdf-factures-sauvegarde}) ; avec \keshpath{docker-compose.yml}, c'est le dossier de \texttt{KESH\_DOCUMENTS\_HOST\_DIR} s'il est posé --- à ajouter alors à la tâche de sauvegarde. \keshpath{backup/} contient la sauvegarde de sécurité prise avant chaque import d'installation : elle porte des \textbf{secrets} (condensés des mots de passe, jetons de session), d'où le chiffrement client-side ci-dessous (\S\ref{sec:backup-ui-keshbackup}). À restaurer avec la base.
         \end{itemize}
     \item Cocher l'application \textbf{Container Manager} dans \emph{Applications} pour backup automatique de la configuration des projets.
     \item Activer le \textbf{chiffrement client-side} (mot de passe différent du KESH\_JWT\_SECRET, stocké séparément offline — la perte de ce mot de passe rend les backups illisibles).
     \item Configurer la rotation \textbf{Smart Recycle} : recommandé \emph{Conservez toutes les versions des derniers 30 jours + 1 par semaine pour 12 semaines + 1 par mois pour 12 mois}. Convertit OLICo 10 ans en pratique via archivage annuel séparé (cf. \emph{Stockage offsite} ci-dessus).
     \item Planifier la fréquence : \textbf{quotidienne à 2h du matin} (équivalent du cron du script CLI).
+    \item Renseigner le \textbf{pré-script} de la tâche (ci-dessous).
     \item Activer les notifications email/push DSM pour alerter d'un échec de backup.
 \end{enumerate}
 
 \paragraph{Cohérence transactionnelle MariaDB}
 
-Hyper Backup copie les fichiers data au niveau système sans coordination avec MariaDB. Pour garantir un dump cohérent (pas de transactions partielles capturées), utiliser un \textbf{pre-script Hyper Backup} qui dump MariaDB juste avant le backup, et un post-script qui nettoie après :
+Hyper Backup ne voit pas la base : il copie des fichiers, et la base n'est pas dans le dossier du compose. Le \textbf{pré-script} de la tâche en prend un dump cohérent (\keshcommand{-{}-single-transaction} : une seule transaction de lecture, sans arrêter Kesh) juste avant la copie, et le dépose dans le dossier du compose, où Hyper Backup le copie avec le reste. Si le dump échoue, le pré-script échoue, et la tâche Hyper Backup avec lui : c'est voulu, un échec visible vaut mieux qu'une sauvegarde sans base. Le dump s'écrit d'abord dans un fichier \keshpath{.tmp}, renommé seulement après son succès : un dump raté ne remplace pas celui de la veille.
+
+\paragraph{Deux comptes, deux fichiers d'identifiants}
+
+Les identifiants de la base ne sont pas lus dans \keshpath{.env} : ils sont dans deux fichiers d'options MariaDB, un par usage.
+
+\begin{itemize}
+    \item \textbf{Sauvegarde} --- le \textbf{compte de sauvegarde} \texttt{kesh\_backup}, créé pour elle, qui ne peut que lire (\texttt{SELECT}, \texttt{LOCK TABLES}). Ses identifiants vont dans \keshpath{/volume1/docker/kesh/kesh-dump.cnf}, lu par le seul pré-script. Le compte Kesh conviendrait techniquement ; un fichier lu chaque nuit par une tâche planifiée porte le moindre privilège.
+    \item \textbf{Restauration} --- le \textbf{compte Kesh}, celui de \texttt{DATABASE\_URL}. Le dump recrée la base (\texttt{DROP DATABASE}, \texttt{CREATE DATABASE}, puis tables et lignes) : il faut \texttt{ALL PRIVILEGES} sur la base, que porte le compte Kesh créé par le compose ou par l'\emph{Initialisation manuelle de la base} (\S\ref{sec:init-db-manuelle}). Ses identifiants vont dans \keshpath{/volume1/docker/kesh/kesh-restore.cnf}, lu par la seule procédure de rechargement (\S\ref{sec:backup-dsm-recovery}, \emph{Recovery depuis Snapshot}). Le compte de sauvegarde, lui, ne peut pas recharger : sa tentative est refusée (\texttt{ERROR 1044}) et la base reste intacte.
+\end{itemize}
+
+Créer le compte de sauvegarde, sur votre MariaDB, avec un compte d'administration du serveur (remplacez \texttt{kesh} par la base de \texttt{DATABASE\_URL} si elle porte un autre nom) :
+
+\begin{lstlisting}[language=SQL]
+CREATE USER 'kesh_backup'@'%' IDENTIFIED BY '<sortie de openssl rand -hex 32>';
+GRANT SELECT, LOCK TABLES ON kesh.* TO 'kesh_backup'@'%';
+\end{lstlisting}
+
+Chaque fichier d'identifiants a la forme suivante --- \texttt{host}, \texttt{port} et \texttt{password} de la base de \texttt{DATABASE\_URL} ; \texttt{user} : \texttt{kesh\_backup} dans \keshpath{kesh-dump.cnf}, le compte Kesh dans \keshpath{kesh-restore.cnf} :
+
+\begin{lstlisting}
+[client]
+host = "192.168.1.10"
+port = 3307
+user = "kesh_backup"
+password = "<mot de passe en clair, décodé>"
+\end{lstlisting}
+
+Puis, en session root (\keshcommand{sudo -i}) :
+
+\begin{lstlisting}[language=bash]
+cd /volume1/docker/kesh
+nano kesh-dump.cnf              # compte de sauvegarde (kesh_backup)
+nano kesh-restore.cnf           # compte Kesh, celui de DATABASE_URL
+chown root:root kesh-dump.cnf kesh-restore.cnf
+chmod 600 kesh-dump.cnf kesh-restore.cnf
+docker pull mariadb:10.11       # une fois : le pré-script et la restauration l'emploient
+\end{lstlisting}
+
+\begin{itemize}
+    \item \keshcommand{-{}-defaults-extra-file=…} doit être la \textbf{première} option de \keshcommand{mariadb-dump} comme de \keshcommand{mariadb} : placée après une autre, elle est refusée.
+    \item Le mot de passe s'écrit \textbf{en clair, décodé}, et \textbf{entre guillemets} : celui de \texttt{DATABASE\_URL} est pourcentage-encodé s'il contient \texttt{@ : / \% \# ?} (\texttt{\%40} pour \texttt{@}) --- décodez-le avant de l'écrire ; dans un fichier d'options, \texttt{\#}, \texttt{;}, les espaces et \texttt{\textbackslash} sont spéciaux hors guillemets.
+    \item \texttt{host} et \texttt{port} sont ceux de \texttt{DATABASE\_URL}, vus \textbf{depuis un conteneur} : \texttt{localhost} ou \texttt{127.0.0.1} y désigne le conteneur, non le NAS --- prenez l'IP LAN du NAS (dans \texttt{DATABASE\_URL} aussi, pour la même raison). Si la base est un conteneur du réseau \keshcommand{frontend}, \texttt{host} est son nom.
+    \item Le \textbf{paquet MariaDB~10 de DSM} écoute par défaut sur le port \textbf{3307} (et sur un socket local, que le conteneur ne voit pas) --- fait de la documentation Synology, que la recette de ce manuel, menée sur conteneurs, ne rejoue pas. Sa connexion TCP/IP peut être désactivée (case à cocher dans l'application MariaDB~10), et le pare-feu de DSM (\emph{Panneau de configuration → Sécurité → Pare-feu}) peut refuser le sous-réseau Docker : le conteneur n'atteint alors pas la base, et le pré-script échoue.
+    \item Sans l'image \keshcommand{mariadb:10.11} et hors ligne, le pré-script échoue, et la tâche avec lui --- voulu : un échec visible vaut mieux qu'une sauvegarde sans base.
+    \item Le schéma de Kesh n'a ni routine, ni déclencheur, ni événement, ni vue : le dump ne prend donc ni \keshcommand{-{}-routines} ni \keshcommand{-{}-events}.
+\end{itemize}
+
+Le pré-script, à renseigner dans \emph{Hyper Backup → Paramètres → Pré-script} (Hyper Backup l'exécute en root) :
 
 \begin{lstlisting}[language=bash]
 #!/bin/bash
 # /volume1/docker/kesh/pre-backup.sh
-# Configure dans Hyper Backup > Parametres > Pre-script
 
 set -euo pipefail
 cd /volume1/docker/kesh
 
-# Dump MariaDB juste avant Hyper Backup capture les fichiers
-sudo docker compose exec -T mariadb \
-    mariadb-dump --single-transaction --routines --triggers --events \
-    --add-drop-database --databases kesh \
-    -u root -p"$(grep MARIADB_ROOT_PASSWORD .env | cut -d= -f2)" \
-    | gzip > /volume1/docker/kesh/kesh_pre_backup.sql.gz
-
-sha256sum /volume1/docker/kesh/kesh_pre_backup.sql.gz \
-    > /volume1/docker/kesh/kesh_pre_backup.sql.gz.sha256
+docker run --rm --network frontend \
+    -v /volume1/docker/kesh/kesh-dump.cnf:/etc/kesh-dump.cnf:ro \
+    mariadb:10.11 \
+    mariadb-dump --defaults-extra-file=/etc/kesh-dump.cnf \
+    --single-transaction --add-drop-database --databases kesh \
+    | gzip > kesh_pre_backup.sql.gz.tmp
+mv kesh_pre_backup.sql.gz.tmp kesh_pre_backup.sql.gz
+sha256sum kesh_pre_backup.sql.gz > kesh_pre_backup.sql.gz.sha256
 \end{lstlisting}
 
-Le post-script peut être laissé vide ou utilisé pour supprimer le dump intermédiaire si on préfère minimiser l'espace disque local (au prix de devoir restorer via Hyper Backup pour recovery).
+Laissez le post-script vide : le dump doit \textbf{rester} dans le dossier du compose, car c'est lui que capturent les snapshots horaires et Hyper Backup. Le supprimer après la tâche retirerait la base de presque tous les snapshots : la recovery (\S\ref{sec:backup-dsm-recovery}, \emph{Recovery depuis Snapshot}) n'aurait plus rien à recharger. Pour économiser l'espace, réduisez plutôt la rotation des snapshots.
 
 \begin{keshnote}
-Pour les charges légères (mono-fiduciaire, < 100 écritures/jour), le simple backup des volumes Docker via Hyper Backup sans pre-script suffit dans 99\% des cas — MariaDB redémarre depuis un état semi-cohérent à la restauration, et les éventuelles transactions perdues correspondent à la fraction de seconde du backup. Le pre-script devient utile pour les fiduciaires avec saisie 9-17h continue.
+Avec \keshpath{docker-compose.prod.yml}, la base n'est \textbf{pas} sous \keshpath{/volume1/docker/kesh} : sans pré-script, Hyper Backup ne la sauvegarde que si son répertoire de données est lui-même dans la tâche. Le pré-script est donc la voie normale, quelle que soit la charge. Hyper Backup ne sauvegarde pas la base au titre du dossier du compose ; si vous cochez aussi le paquet MariaDB~10 de DSM parmi les \emph{Applications} de la tâche (possibilité de DSM, que la recette de ce manuel ne vérifie pas), cette copie s'ajoute au dump sans le remplacer : la voie que décrit ce manuel, et qu'il a éprouvée, est le dump.
 \end{keshnote}
 
 \subsubsection{Snapshot Replication — recovery instantané point-in-time}
 
-\emph{Snapshot Replication} fournit des snapshots Btrfs natifs du volume \keshpath{/volume1/} avec recovery quasi-instantané (< 1 minute) et point-in-time precision (jusqu'à 1 snapshot par 5 minutes). Idéal pour se prémunir contre erreurs humaines récentes (suppression accidentelle d'une écriture, corruption logique) où Hyper Backup serait trop coûteux à restorer (téléchargement cloud + déchiffrement + restore).
+\emph{Snapshot Replication} fournit des snapshots Btrfs natifs du volume \keshpath{/volume1/} avec recovery quasi-instantané (< 1 minute) et point-in-time precision (jusqu'à 1 snapshot par 5 minutes). Le snapshot du dossier partagé \keshcommand{docker} couvre le dossier du compose --- documents, logs, \keshpath{.env}, \keshpath{backup/}, le dump du jour ---, pas la base. Pour les \textbf{fichiers} de ce dossier, il protège contre les erreurs humaines récentes (document supprimé, \keshpath{.env} écrasé) qu'Hyper Backup serait trop coûteux à restaurer (téléchargement cloud + déchiffrement + restore). Pour la \textbf{base}, le point de restauration est celui du \textbf{dernier dump}, à la fréquence du pré-script ; pour le resserrer, planifiez le même script (\keshpath{pre-backup.sh}) dans le \emph{Planificateur de tâches} de DSM, en root, aux heures des snapshots.
 
 \paragraph{Prérequis Snapshot Replication}
 
@@ -1648,25 +1686,40 @@ Pour les charges légères (mono-fiduciaire, < 100 écritures/jour), le simple b
     \item Activer \emph{Visible aux utilisateurs} si vous voulez permettre aux utilisateurs DSM de naviguer les snapshots via File Station (utile pour récupérer manuellement un fichier supprimé sans intervention admin).
 \end{enumerate}
 
-\paragraph{Recovery depuis Snapshot}
+\paragraph{Recovery depuis Snapshot}\label{sec:backup-dsm-recovery}
+
+Le snapshot rend le dossier du compose, dump de la base compris ; il ne rend pas la base. Sans le rechargement du dump (étape 4), Kesh redémarre sur la base actuelle, et aucune écriture n'est restaurée.
 
 \begin{enumerate}
     \item Snapshot Replication → \textbf{Snapshots} → sélectionner le dossier \keshcommand{docker}.
     \item Choisir le snapshot avec le timestamp pre-incident.
-    \item \textbf{Actions} → \textbf{Restaurer} → \emph{Restaurer dans un nouveau dossier} (recommandé, préserve l'état actuel pour comparaison) OU \emph{Écraser le dossier original} (si certain).
-    \item Après restore : \keshcommand{cd /volume1/docker/kesh \&\& sudo docker compose down \&\& sudo docker compose up -d} pour recharger l'instance Kesh sur le state restoré.
+    \item \textbf{Actions} → \textbf{Restaurer} → \emph{Restaurer dans un nouveau dossier} (recommandé, préserve l'état actuel pour comparaison --- copiez-en alors \keshpath{kesh\_pre\_backup.sql.gz} et son \keshpath{.sha256} dans \keshpath{/volume1/docker/kesh}) OU \emph{Écraser le dossier original} (si certain).
+    \item Recharger le dump dans la base de \texttt{DATABASE\_URL}, par le compte Kesh (\keshpath{kesh-restore.cnf}) --- non par \keshpath{kesh-dump.cnf}, dont le compte ne peut que lire --- puis redémarrer Kesh. En session root (\keshcommand{sudo -i}) :
 \end{enumerate}
+
+\begin{lstlisting}[language=bash]
+cd /volume1/docker/kesh
+sha256sum -c kesh_pre_backup.sql.gz.sha256
+docker compose stop kesh-api
+gunzip -c kesh_pre_backup.sql.gz | docker run --rm -i --network frontend \
+    -v /volume1/docker/kesh/kesh-restore.cnf:/etc/kesh-restore.cnf:ro \
+    mariadb:10.11 \
+    mariadb --defaults-extra-file=/etc/kesh-restore.cnf
+docker compose up -d
+\end{lstlisting}
 
 \subsubsection{Stratégie 3-2-1 sur DSM}
 
 Combiner les outils pour atteindre la règle \textbf{3-2-1} (3 copies des données, sur 2 supports différents, dont 1 offsite) :
 
 \begin{itemize}
-    \item \textbf{Copie 1 (primaire)} : volume Btrfs DSM avec Snapshot Replication actif (recovery rapide erreurs récentes).
+    \item \textbf{Copie 1 (primaire)} : volume Btrfs DSM avec Snapshot Replication actif --- dossier du compose et dump de la base (recovery rapide erreurs récentes).
     \item \textbf{Copie 2 (locale, support différent)} : Hyper Backup vers HDD USB externe attaché au NAS, rotation Smart Recycle 30 jours + 12 mois.
     \item \textbf{Copie 3 (offsite)} : Hyper Backup vers cloud (Synology C2 Backup pour le confort, ou S3/Backblaze B2 pour le coût optimal), chiffré client-side.
     \item \textbf{Archivage long terme (OLICo 10 ans)} : 1 dump annuel par year exporté manuellement sur média WORM (CD-R ou DVD-R inscriptible une fois) ou archivage tape LTO si volume.
 \end{itemize}
+
+Les copies 2 et 3 ont le périmètre de la copie 1. Après restauration du dossier du compose par Hyper Backup, la base se recharge par la même procédure : arrêt de \keshcommand{kesh-api}, rechargement du dump par \keshpath{kesh-restore.cnf}, redémarrage (\S\ref{sec:backup-dsm-recovery}, \emph{Recovery depuis Snapshot}).
 
 \begin{keshwarning}
 \textbf{Test de restauration annuel obligatoire} (cf. sous-section précédente OLICo Art. 10 al. 1) : applicable aux backups DSM aussi. Inclure dans le procès-verbal annuel la mention explicite de la méthode utilisée (Hyper Backup, Snapshot Replication) et le temps de recovery mesuré (RTO).
@@ -1765,14 +1818,14 @@ Kesh propose trois approches complémentaires de sauvegarde. Choisissez selon le
     \toprule
     \keshtableheader{Méthode} & \keshtableheader{Périmètre} & \keshtableheader{Usage recommandé} \\
     \midrule
-    Hyper Backup DSM & Volume Docker / MariaDB complet (niveau système, cf. \ref{sec:backup-dsm}) & Sauvegarde \textbf{planifiée automatique} quotidienne en production (NAS Synology), avec rotation et offsite. \\
+    Hyper Backup DSM & Dossier du compose (documents, logs, \keshpath{.env}, \keshpath{backup/}) + dump de la base par le pré-script (cf. \ref{sec:backup-dsm}) & Sauvegarde \textbf{planifiée automatique} quotidienne en production (NAS Synology), avec rotation et offsite. \\
     \keshcommand{mariadb-dump} CLI & Dump SQL d'une base (niveau base de données) & Sauvegarde \textbf{ponctuelle technique} ou scriptée, pour un opérateur disposant d'un accès SSH. \\
     Export/import \keshcommand{.keshbackup} (UI) & Installation Kesh complète, portable (niveau applicatif) --- \textbf{sans les fichiers} du répertoire des documents (\S\ref{sec:pdf-factures-sauvegarde}) & \textbf{Migration entre instances} ou restauration \textbf{self-service sans SSH}, déclenchée par un administrateur depuis l'interface. \\
     \bottomrule
 \end{tabularx}
 
 \begin{keshtip}
-Ces méthodes ne s'excluent pas : en production, conservez une sauvegarde système \textbf{automatique} (Hyper Backup) comme filet quotidien, et utilisez l'export \keshcommand{.keshbackup} pour les \textbf{migrations ponctuelles} (changement de serveur, duplication d'environnement) où la portabilité applicative et l'absence d'accès SSH priment.
+Ces méthodes ne s'excluent pas : en production, conservez une sauvegarde système \textbf{automatique} (Hyper Backup avec son pré-script, \S\ref{sec:backup-dsm}) comme filet quotidien, et utilisez l'export \keshcommand{.keshbackup} pour les \textbf{migrations ponctuelles} (changement de serveur, duplication d'environnement) où la portabilité applicative et l'absence d'accès SSH priment.
 \end{keshtip}
 
 %%─────────────────────────────────────────────────────────────────────────────
@@ -1799,7 +1852,7 @@ Les versions de Kesh sont publiées sur GitHub avec un tag \texttt{vX.Y.Z} (vers
 \subsection{Procédure de mise à jour standard}
 
 \begin{enumerate}
-    \item \textbf{Sauvegarder} la base de données et le volume \texttt{kesh\_db\_data} (cf. section précédente).
+    \item \textbf{Sauvegarder} la base de données et le volume \texttt{<projet>\_kesh-mariadb-data} (cf. section précédente).
     \item \textbf{Lire le changelog} de la nouvelle version pour identifier les breaking changes éventuels et les migrations nécessaires.
     \item \textbf{Mettre à jour le fichier compose} --- \textbf{obligatoire pour passer à la 0.13.0} (\S\ref{sec:maj-0-13}) : re-télécharger le compose et y reporter ses adaptations locales, puis vérifier les placeholders de \keshpath{.env} --- dont les lignes \texttt{MARIADB\_ROOT\_PASSWORD} et \texttt{MARIADB\_PASSWORD} : une valeur entre chevrons y est acceptée par Compose, et pour root rien d'autre ne la signale. Sur une base déjà créée, \textbf{ne remplacez pas} ces deux valeurs dans \keshpath{.env} --- ni des chevrons, ni \texttt{kesh\_dev} : la base a gardé celles de sa création, et une valeur neuve n'y change rien (1045 pour Kesh, sauvegarde en échec pour root) ; changez-les par le \S\ref{sec:mariadb-mdp}, \texttt{ALTER USER} d'abord. Pour les versions suivantes : selon le changelog (nouvelles variables, changement d'image).
     \item \textbf{Tirer la nouvelle image} : \keshcommand{docker compose pull kesh-api}.
@@ -2399,7 +2452,7 @@ Kesh démarre quand même, sur l'installation \textbf{inchangée} : la connexion
 
 \subsection{Performance lente sur de gros datasets}
 
-\paragraph{Symptômes} Génération de rapports ou exports ZIP > 30 secondes sur des companies avec > 50'000 écritures.
+\paragraph{Symptômes} Génération de rapports ou exports ZIP > 30 secondes sur une société de plus de 50'000 écritures.
 
 \paragraph{Diagnostic}
 
@@ -2539,8 +2592,10 @@ export global) ou par les mécanismes documentés ailleurs dans ce manuel :
     via les logs de démarrage.
     \item \textbf{Export / import complet} : écran \emph{Administration →
     Sauvegarde complète / Restaurer} (format \texttt{.keshbackup}).
-    \item \textbf{Sauvegarde DB brute} : \texttt{mariadb-dump} sur le conteneur
-    MariaDB, ou Hyper Backup au niveau NAS.
+    \item \textbf{Sauvegarde DB brute} : \texttt{mariadb-dump} --- sur le conteneur
+    MariaDB du \keshpath{docker-compose.yml} standard (\S\ref{sec:script-sauvegarde}) ;
+    sur Synology, par le pré-script d'Hyper Backup (\S\ref{sec:backup-dsm}), qui en
+    copie ensuite le dump, non la base.
 \end{itemize}
 
 \subsection{Référence des ports}

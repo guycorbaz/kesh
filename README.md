@@ -73,10 +73,11 @@
 git clone https://github.com/guycorbaz/kesh.git
 cd kesh
 
-# 2. Démarrer MariaDB + backend (mode dev complet)
+# 2. Démarrer MariaDB + backend (mode dev complet) — sans .env : au premier
+#    accès, l'écran /setup crée l'administrateur
 docker compose -f docker-compose.dev.yml up -d
 
-# 3. Configurer l'environnement
+# 3. (Facultatif) Fixer vos propres valeurs
 cp .env.example .env
 # Adapter les valeurs dans .env, dont KESH_JWT_SECRET (openssl rand -hex 32) —
 # le placeholder <GENERATE_ME: …> laissé tel quel est refusé au démarrage

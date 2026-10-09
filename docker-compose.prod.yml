@@ -110,7 +110,9 @@ services:
 
       # Logs fichier avec rotation (Story v011-1, Issue #119) — EN PLUS de
       # stdout/`docker logs`. Écrits dans /var/log/kesh (monté sur ./log côté
-      # hôte, co-localisé avec .env + DB pour le scope unique Hyper Backup).
+      # hôte, co-localisé avec .env dans le dossier du compose, que sauvegarde
+      # Hyper Backup ; la base, hors de ce compose, se sauvegarde par le
+      # pré-script du manuel).
       # Opt-out : une ligne `KESH_LOG_FILE_PATH=` VIDE dans .env → stdout pur
       # (le mount ./log devient alors inutilisé mais inoffensif). Tiret SANS
       # deux-points : le défaut ne vaut que pour une variable absente de .env.
