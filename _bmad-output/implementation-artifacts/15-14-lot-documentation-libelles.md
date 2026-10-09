@@ -5,7 +5,8 @@ Status: split
 <!-- Spécifiée le 2026-10-09 sur origin/main = dc4bc58b (worktree kesh-15-14, branche
      story/15-14-lot-documentation-libelles). Découpée d'emblée en 15-14a et 15-14b (C-15-14-1).
      Cette fiche est l'index du tri ; les critères, tâches et tests sont dans les deux sous-fiches.
-     Validation P1 : branche rebasée sur origin/main = bcded0c8 (15-13a mergée, #551 fermée). -->
+     Validation P1 : branche rebasée sur origin/main = bcded0c8 (15-13a mergée, #551 fermée).
+     Validation P3 : branche rebasée sur origin/main = 245b91ee (15-7b1 mergée). -->
 
 ## Pourquoi ce lot
 
@@ -31,8 +32,8 @@ touche le lettrage (#518), et #577 (texte du `CLAUDE.md`, affaire de Guy).
 
 | Sous-story | Fiche | Issues fermées | Dépendance |
 |---|---|---|---|
-| **15-14a** — manuels et libellés | `15-14a-manuels-et-libelles.md` | #539, #547, #488, #291, #458, #449, #432, #569, #321, #323 (refs #459) | **après le merge de la 15-7b1** (PR #583, en cours — elle corrige `user-manual.tex:182` ; C-15-14-19). **Conflits de rebase attendus** avec la 15-7b1 (`user-manual.tex:173-189`, `admin-manual.pdf`, `user-manual.pdf`, et `crates/kesh-db/src/repositories/vat_rates.rs` — doc-comment `:351-353` contre le `mod tests` neuf : zones disjointes, mais un repository, donc gate complet après rebase ; validation P2, L-8) et la 15-13b (manuel d'administration) : le dernier mergé rebase et **régénère** les PDF |
-| **15-14b** — exploitation et multi-société | `15-14b-exploitation-et-multi-societe.md` | #575, #554, #127 | **après** le merge de 15-13b (PR #584), 15-7b1 (PR #583) et 15-14a (15-13a : mergée, `bcded0c8`) ; textes cibles écrits pour l'état après la 15-13b (C-15-14-21) |
+| **15-14a** — manuels et libellés | `15-14a-manuels-et-libelles.md` | #539, #547, #488, #291, #458, #449, #432, #569, #321, #323 (refs #459) | **aucune restante** : la 15-7b1, dont elle dépendait (`user-manual.tex:182` ; C-15-14-19), est **mergée** (`245b91ee`, PR #583) — branche rebasée dessus en validation P3. **Conflits de rebase attendus** avec la 15-13b (PR #584, en cours d'intégration : manuel d'administration, `admin-manual.pdf`) : le dernier mergé rebase et **régénère** les PDF ; `vat_rates.rs` (doc-comment de la 15-7b1 contre le `mod tests` neuf) est déjà rebasé — gate complet au développement (exception `kesh-db`) |
+| **15-14b** — exploitation et multi-société | `15-14b-exploitation-et-multi-societe.md` | #575, #554, #127 | **après** le merge de la 15-13b (PR #584) et de la 15-14a (15-13a et 15-7b1 : mergées, `bcded0c8` et `245b91ee`) ; textes cibles écrits pour l'état après la 15-13b (C-15-14-21) |
 
 Motif : une **dépendance**, non le nombre de modules. La 15-14b réécrit le manuel d'administration et le
 compose de développement, que la 15-13a (+187 lignes au manuel) et la 15-13b réécrivent aussi, et le
@@ -60,8 +61,8 @@ une coupe « doc / libellés » ferait se disputer le manuel utilisateur aux deu
 
 - **Validation** : chaque sous-fiche a sa section « Ce que la validation P1 doit regarder ».
 - **Issues** : #324 déjà commentée (le 2026-10-09, 08:24 UTC) — **ne pas reposter** ; aucune issue à créer.
-- **Ordre** : 15-14a après le merge de la 15-7b1 ; 15-14b après les merges de 15-13b, 15-7b1 et 15-14a
-  (15-13a faite).
+- **Ordre** : 15-14a développable dès maintenant (15-7b1 mergée, `245b91ee`) ; 15-14b après les merges de
+  15-13b et 15-14a (15-13a et 15-7b1 faites).
 
 ## Change Log
 
@@ -89,3 +90,28 @@ une coupe « doc / libellés » ferait se disputer le manuel utilisateur aux deu
   coupée, et le recyclage porte sur la complétude des inventaires, traitée à la racine par C-15-14-17 :
   chaque inventaire s'écrit désormais comme une commande exécutée, comptée sur `bcded0c8`, partitionnée.
   Choix C-15-14-17 à C-15-14-24. Détail dans le Change Log de chaque sous-fiche.
+- 2026-10-09 — **Validation P3** (Sonnet ×2, lentilles R et F ; rapports `kesh-gate-logs/15-14-validate-p3-{R,F}.md`) :
+  0 CRITICAL, 0 HIGH ; **5 MEDIUM bruts** (R 3, F 2), un recoupement (R-3 = F-2), soit **4 MEDIUM distincts** ;
+  **14 LOW bruts** (R 8 listés — le bilan de son rapport en annonce 6 —, F 6), deux recoupements (L-3 = F-3 ;
+  étiquettes de gardes de R = F-6), soit **12 LOW distincts**. Ventilation : 15-14a — R-1 (replis frontend
+  sans garde), F-1 (périmètre de l'inventaire « réglages ») ; 15-14b — R-3 = F-2 (inventaire borné aux
+  sections Synology) ; planification — R-2 (`sprint-status.yaml` et document d'epic muets sur la dépendance
+  envers la 15-7b1). **Les deux lentilles recomptent à l'identique tous les comptes de la remédiation P2** :
+  les défauts ne sont plus dans les comptes, mais dans les **périmètres** des commandes, une affirmation de
+  couverture par un test, et des artefacts de planification. **Aucun finding réfuté** ; chacun vérifié au
+  code (`grep -nF`, commandes rejouées) avant correction.
+  **Trend** : P1 8 MEDIUM (Sonnet ×2) → P2 9 MEDIUM (Opus ×2) → **P3 4 MEDIUM** (Sonnet ×2). **Part née de la
+  remédiation P2** (`144639d0`) : R-2 entièrement, R-3 = F-2 par la borne `awk` qu'elle avait posée, R-1 en
+  partie (l'affirmation venait de la spécification, `144639d0` l'avait étendue) ; F-1 préexistait
+  (`f5812294`).
+  **Faits nouveaux** : la 15-7b1 est mergée (`origin/main = 245b91ee`, PR #583) — la branche y est rebasée
+  (sauvegarde `backup/15-14-avant-rebase-245b91ee` ; registre et sprint-status **par union** : 374 entrées
+  de `main` + 24 de la branche = 398, puis 7 neuves = 405), la dépendance de la 15-14a est **satisfaite** ;
+  la 15-13b (PR #584) est en cours d'intégration, la 15-14b l'attend toujours.
+  Remède à la racine (C-15-14-25) : **toute** commande d'inventaire porte sur le dépôt suivi entier, moins un
+  ensemble d'exclusions écrit une fois et justifié ; toutes relancées sur `245b91ee`. G13 neuf (C-15-14-26),
+  gardes de la 15-14b renumérotées G14-G18 (C-15-14-31). Choix C-15-14-25 à C-15-14-31.
+  **Signal D5 levé et déclaré** (MEDIUM → MEDIUM) : le nombre baisse de moitié, mais R-3 = F-2 et F-1
+  **recyclent** la famille des P1/P2 (inventaires incomplets), cette fois par le périmètre. Pas de nouveau
+  découpage proposé : la story est déjà coupée, et le recyclage est traité à la racine — plus aucune commande
+  ne choisit d'avance où regarder. **Arbitrage laissé à l'orchestrateur et au Project Lead.**

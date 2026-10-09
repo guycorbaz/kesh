@@ -6,7 +6,9 @@ Status: ready-for-dev
      (lot de défauts de documentation et de libellés, découpé d'emblée — C-15-14-1). Choix C-15-14-1 à 8.
      Rebasée sur bcded0c8 (15-13a mergée) à la validation P1 : numéros de ligne réalignés sur ce commit ;
      choix C-15-14-11 à 16. Validation P2 : inventaires réécrits en commandes comptées (C-15-14-17),
-     choix C-15-14-17 à 20, 23 ; dépendance envers la 15-7b1 (PR #583). -->
+     choix C-15-14-17 à 20, 23 ; dépendance envers la 15-7b1 (PR #583).
+     Validation P3 : branche rebasée sur origin/main = 245b91ee (15-7b1 mergée, dépendance satisfaite) ;
+     inventaires sur tout le dépôt suivi, exclusions justifiées ; G13 ; choix C-15-14-25 à 27, 31. -->
 
 ## Story
 
@@ -21,8 +23,8 @@ adressent une issue* du `CLAUDE.md`) :
 | Issue | Prio. | Labels | Objet | État au code (`bcded0c8`) |
 |---|---|---|---|---|
 | #539 | P3 | bug, documentation | taux de TVA du manuel (2,5 / 3,7 %) | **non corrigé** — `user-manual.tex:875`, `:1928` |
-| #547 | P4 | bug | « Réglages » au lieu de « Paramètres » | **non corrigé** — 4 sites au manuel **+ 2 messages + 1 commentaire de `.env.example`** (propagation) |
-| #488 | P3 | bug, documentation | « deux plans pré-configurés (Sterchi PME, KMU) » | **non corrigé** — 12 sites dans 3 documents |
+| #547 | P4 | bug | « Réglages » au lieu de « Paramètres » | **non corrigé** — 4 sites au manuel **+ 2 messages + 1 commentaire de `.env.example` + `README.md:34`** (propagation) |
+| #488 | P3 | bug, documentation | « deux plans pré-configurés (Sterchi PME, KMU) » | **non corrigé** — 14 lignes dans 4 documents (inventaire de l'AC 3) |
 | #291 | P3 | documentation | « Contacts → Import CSV » inexistant | **non corrigé** — `user-manual.tex:857-859` |
 | #458 | P3 | documentation | « dossier surveillé » | **non corrigé** — 4 sites (+2 historiques assumés) |
 | #449 | P3 | bug | faille KF-036 annoncée ouverte | **non corrigé** — `api-external.md:484` **+ 2 sites au manuel d'administration** |
@@ -54,6 +56,9 @@ adressent une issue* du `CLAUDE.md`) :
 > et traits d'union sont retirés des deux côtés) :
 >
 > ```sh
+> export LC_ALL=C.UTF-8   # obligatoire : sous LC_ALL=C, la classe [’‘ʼ] est lue octet par octet et
+>                         # tout compte tombe à 0 (validation P3, L-3 = F-3) ; mem-guard.sh ne propage
+>                         # pas forcément LANG
 > norm() { sed "s/[’‘ʼ]/'/g; s/ﬁ/fi/g; s/ﬂ/fl/g; s/ﬀ/ff/g; s/ﬃ/ffi/g; s/ﬄ/ffl/g; s/\xc2\xad//g; s/\xc2\xa0/ /g; s/\xe2\x80\xaf/ /g; s/\xe2\x80\x89/ /g" | tr -d '\n -'; }
 > occ() { pdftotext "$1" - | norm > "${TMPDIR:-/tmp}/aplati"; printf '%s' "$2" | norm > "${TMPDIR:-/tmp}/motif"; grep -oF -f "${TMPDIR:-/tmp}/motif" "${TMPDIR:-/tmp}/aplati" | wc -l; }
 > occ docs/manual/fr/user-manual.pdf "doit d'abord le rouvrir"     # 3 sur bcded0c8
@@ -65,17 +70,53 @@ adressent une issue* du `CLAUDE.md`) :
 > que le motif sait trouver le texte. Vérifié à la validation P2 sur les PDF de `bcded0c8` :
 > `doit d'abord le rouvrir` → 3, `un administrateur doit d'abord rouvrir l'exercice` → 1,
 > `créer le compte super-administrateur` → 1, `n'est pas dans la v0.9.0` → 1 (admin), `QR-facture`
-> → 6, `Sterchi PME` → 6 (user) et 1 (admin), `dossier surveillé` → 1, `2.5%` → 2.
+> → 6, `Sterchi PME` → 6 (user) et 1 (admin), `dossier surveillé` → 1, `2.5%` → 2. **Rejoué en validation
+> P3 sur les PDF de `245b91ee`** (régénérés par la 15-7b1) : mêmes valeurs, sauf `Sterchi PME` (user) → 5
+> (le site `:182`, corrigé par la 15-7b1) et `un administrateur doit d'abord rouvrir l'exercice` → **2** —
+> le PDF de `bcded0c8` était **en retard sur son `.tex`** (le site `:1208-1209` n'y figurait pas). D'où :
+> au T0, **régénérer les PDF de l'état de départ avant** le contrôle « présent avant », pour qu'il porte
+> sur le texte réel. Limite résiduelle : une phrase
+> coupée par un saut de page (en-tête ou pied intercalé) échappe à `occ` — faux 0 possible sur un contrôle
+> « ancien absent » ; G12 et les gardes sur le `.tex` couvrent ce risque pour #569, pas pour les autres AC
+> (validation P3, F-3 : angle mort déclaré).
 >
 > **Inventaires** (validation P2 — trois MEDIUM y sont nés de la P1, tous des inventaires déclarés
-> complets qui ne l'étaient pas). Chaque AC qui corrige une famille de textes donne la **commande**
-> d'inventaire, son **résultat compté** sur `bcded0c8`, et la **partition** corrigé / assumé-avec-raison,
-> de sorte que le compte se recalcule. Au T0, le développeur relance chaque commande : un compte qui
-> diffère se ventile avant toute écriture — jamais « tout autre site s'ajoute » sans recompte.
-> Périmètre documentaire commun, sauf mention contraire : `docs/manual/fr/*.tex`, `docs/*.md`,
-> **`docs/user-guide/`** (validation P2, F-4 — guide lié depuis `README.md:124`), `README.md`,
-> `website/*.html`, `.env.example`, `DOCKER_START.md`. Les commandes ci-dessous ont été exécutées à la
-> validation P2 ; leurs comptes sont ceux de `bcded0c8`.
+> complets qui ne l'étaient pas ; validation P3 — deux MEDIUM nés d'un **périmètre de commande** trop
+> étroit). Chaque AC qui corrige une famille de textes donne la **commande** d'inventaire, son **résultat
+> compté**, et la **partition** corrigé / assumé-avec-raison, de sorte que le compte se recalcule. Au T0,
+> le développeur relance chaque commande : un compte qui diffère se ventile avant toute écriture — jamais
+> « tout autre site s'ajoute » sans recompte.
+>
+> **Périmètre : tout le dépôt suivi, et c'est l'exclusion qui se justifie** (validation P3, F-1, R-3 ;
+> C-15-14-25). Chaque commande est un `git grep -I` sur `.` (fichiers suivis, binaires écartés — les PDF se
+> contrôlent par `occ`), moins l'ensemble d'exclusions commun `E`, écrit une fois ici avec sa raison :
+>
+> ```sh
+> export LC_ALL=C.UTF-8
+> E=(':(exclude)_bmad-output' ':(exclude)_bmad' ':(exclude).claude' ':(exclude)CLAUDE.md' ':(exclude)CHANGELOG.md' ':(exclude).svelte-kit' ':(exclude,glob)docs/kesh-specifications.*' ':(exclude)docs/kesh-prd-v0.2.md' ':(exclude)docs/change_request.md' ':(exclude)docs/known-failures.md' ':(exclude,glob)**/*.test.ts' ':(exclude,glob)**/*.test.svelte' ':(exclude)frontend/tests' ':(exclude,glob)crates/*/tests/**')
+> ```
+>
+> | Exclu | Raison |
+> |---|---|
+> | `_bmad-output/` | artefacts de planification (fiches, registre, sprint-status) : ils citent les anciens textes par nécessité |
+> | `_bmad/`, `.claude/` | cadre BMAD et skills installés : tiers, hors produit |
+> | `CLAUDE.md` | instructions de travail (affaire de Guy, #577) |
+> | `CHANGELOG.md` | notes de versions publiées : on ne réécrit pas l'historique ; l'entrée de cette story s'y ajoute (AC 11) |
+> | `.svelte-kit/` | fichiers engendrés par SvelteKit (versionnés à la racine du dépôt) |
+> | `docs/kesh-specifications.*`, `docs/kesh-prd-v0.2.md` | spécification et PRD de conception, datés (validation P3, F-7) |
+> | `docs/change_request.md`, `docs/known-failures.md` | archivés (`CLAUDE.md` § *Legacy*) |
+> | `**/*.test.ts`, `**/*.test.svelte`, `frontend/tests/`, `crates/*/tests/` | tests : ils n'affichent rien ; un test qui fige un ancien texte rougit au gate, et l'AC 8 inventorie à part les Vitest qui le figent |
+>
+> Les comptes ci-dessous sont ceux de **`245b91ee`** (15-7b1 mergée ; validation P3), sauf mention. Les
+> **numéros de ligne** restent ceux de `bcded0c8` (C-15-14-25) ; sur `245b91ee`, la 15-7b1 a décalé
+> `user-manual.tex` de **+1 à partir de la ligne 190** et de **+15 à partir de la ligne 2243**,
+> `CHANGELOG.md` de +1 à partir de la ligne 42, `vat_rates.rs` de +1 à partir de la ligne 353 ; le manuel
+> d'administration et les catalogues sont inchangés aux lignes citées. Les deux lignes neuves de la
+> 15-7b1 se citent avec leur numéro sur `245b91ee`, signalé comme tel. Dans une partition, une ligne de
+> **code** est classée « commentaire » quand elle commence (blancs ôtés) par `//`, `*`, `/*`, `<!--`,
+> `--` ou `#` — détecteur `grep -E '^[^:]+:[0-9]+:\s*(//|\*|/\*|<!--|--|#)'` — ou continue un commentaire
+> multiligne (nommée alors une à une) ; ce détecteur ne s'applique **pas** aux fichiers de texte
+> (`.tex`, `.md`, `.ftl`, `.env.example`), où `---` ou `#` sont du contenu.
 
 ### AC 1 — Les taux de TVA du manuel sont ceux que Kesh pose (#539)
 
@@ -86,8 +127,11 @@ Kesh pose 0 %, 2,6 %, 3,8 % et 8,1 % (`DEFAULT_SWISS_RATES`, `crates/kesh-db/src
   `\item \textbf{Taux TVA} : 0\%, 2.6\%, 3.8\%, 8.1\% --- les taux suisses en vigueur depuis le 1\textsuperscript{er} janvier 2024, que Kesh pose à la création de la société (\emph{Paramètres} → \emph{Taux de TVA}).`
   (« au moment de la rédaction » disparaît : c'est lui qui a laissé la phrase se périmer.)
 - `user-manual.tex:1928` : « ventilée par taux (8.1\%, 3.8\%, 2.6\%, 0\%) ».
-- Inventaire : `grep -rnE '2[.,]5 ?\\?%|3[.,]7 ?\\?%|7[.,]7 ?\\?%' docs/manual website README.md docs/*.md docs/user-guide`
-  → **2** sur `bcded0c8` (`user-manual.tex:875`, `:1928`), 2 corrigés, 0 assumé ; **0** après correction.
+- Inventaire : `git grep -InE '2[.,]5 ?\\?%|3[.,]7 ?\\?%|7[.,]7 ?\\?%' -- . "${E[@]}"`
+  → **4** sur `245b91ee`. **Corrigés : 2** (`user-manual.tex:875`, `:1928`). **Assumés : 2** — le
+  commentaire de la migration `20260613000001_vat_rates_crud.sql:11` (une migration appliquée ne se
+  modifie plus, `CLAUDE.md` P8) et le doc-comment `crates/kesh-qrbill/src/types.rs:195` (« e.g. 7.70 for
+  7.7% », exemple de format, non un taux en vigueur). 2 + 2 = 4 ; **2** après correction.
 - **Test** (G1) : `le_manuel_cite_les_taux_poses_par_kesh`, dans un **`#[cfg(test)] mod tests` neuf** de
   `vat_rates.rs` (le fichier n'en a pas : `grep -n 'cfg(test)' crates/kesh-db/src/repositories/vat_rates.rs`
   ne rend rien ; précédents dans le même répertoire : `accounts.rs:1136`, `bank_profiles.rs:343`), test
@@ -113,8 +157,12 @@ Le menu affiche `nav-settings = Paramètres` ; l'écran de facturation s'intitul
   - de-CH : « … — korrigieren Sie es unter Einstellungen → Fakturierung oder wählen Sie pro Zeile ein Konto. »
   - it-CH : « … — correggilo in Impostazioni → Fatturazione oppure scegli un conto per ogni riga. »
   - en-CH : « … — fix it in Settings → Invoicing, or pick an account on each line. »
-  - repli `frontend/src/lib/components/invoices/InvoiceForm.svelte:768` **identique** au catalogue fr-CH
-    (la garde `i18n-repli-divergent-actif.test.ts` l'impose déjà).
+  - repli `frontend/src/lib/components/invoices/InvoiceForm.svelte:768` **identique** au catalogue fr-CH,
+    gardé par **G13** (validation P3, R-1 : `i18n-repli-divergent-actif.test.ts` ne garde **pas** une clé à
+    un seul site d'appel — il ne retient que les clés à au moins deux replis distincts, `parTexte.size > 1`).
+  - Les trois locales autres que fr-CH disent **déjà** le menu (« Einstellungen », « Impostazioni »,
+    « Settings ») : leur réécriture en « → Fakturierung » etc. est une **extension de périmètre** voulue,
+    que G3 impose pour que les quatre valeurs nomment le même écran (validation P3, L-7).
 - **Second message** (validation P1, R3 = F-11 ; C-15-14-11) : fr-CH `error-invoice-pdf-header-overflow`
   (`fr-CH:1887`) dit « Supprimez une coordonnée … **dans les réglages** : … » — un renvoi à l'écran où l'on
   agit, que les trois autres locales nomment déjà par le menu (« in den Einstellungen », « nelle
@@ -122,48 +170,63 @@ Le menu affiche `nav-settings = Paramètres` ; l'écran de facturation s'intitul
   segment change) ; repli Rust `crates/kesh-api/src/errors.rs:1807` (chaîne sur plusieurs lignes, `\` de
   continuation) égal au catalogue ; aucun repli frontend (`pdf-error.ts:21` ne porte que la clé).
 - **Commentaire de `.env.example:305`** : « la société s'il est renseigné (Réglages) » → « (Paramètres) ».
-- **Inventaire, deux commandes, la casse comptant** (unité : la **ligne** — une ligne peut porter
-  plusieurs occurrences, `user-manual.tex:380` en porte quatre) :
-  - (A) `grep -rn 'Réglages' docs/manual frontend/src crates/kesh-i18n/locales crates/kesh-api/src website README.md docs/*.md docs/user-guide .env.example DOCKER_START.md`
-    → **17** lignes sur `bcded0c8`. **Corrigées : 7** — `user-manual.tex:575`, `:907`, `:952`, `:2085` ;
-    fr-CH `:1856` (`invoice-default-revenue-account-unusable`) et son repli `InvoiceForm.svelte:768` ;
-    `.env.example:305`. **Assumées : 10** — `README.md:213` (feuille de route publiée) ; cinq noms d'entité
-    et d'action du journal d'audit (fr-CH `:2244`, `:2245`, `:2307`, `:2308`, `:2309` :
-    `audit-log-entity-company-*-settings`, `audit-log-action-company-*-settings-*`) — des noms d'objet,
-    non des renvois au menu ; quatre commentaires de code (`dunning/+page.svelte:2`, `dunning.api.ts:57`,
-    `dunning.types.ts:34`, `write-off.ts:75`). 7 + 10 = 17. Hors du périmètre de la commande, assumés
-    aussi : `frontend/tests/e2e/dunning.spec.ts:6,26` (titres de test) ; `CHANGELOG.md:347`, `:433`, `:451`
-    (notes de versions publiées, 0.10.0 et antérieures).
-  - (B) `grep -n 'réglages' crates/kesh-i18n/locales/fr-CH/messages.ftl crates/kesh-api/src/errors.rs docs/manual/fr/*.tex docs/user-guide/fr/*.md | grep -vE ':[0-9]+:\s*(#|//|%)'`
-    → **28** lignes sur `bcded0c8` (fr-CH 6, `errors.rs` 4, manuel d'administration 5, manuel utilisateur
-    13, guide 0). **Corrigées : 2** — fr-CH `:1887` (`error-invoice-pdf-header-overflow`) et son repli
-    `errors.rs:1807` (renvois à l'écran où l'on agit). **Assumées : 26**, « réglages » nom commun — les
-    valeurs configurées, non le menu (C-15-14-11, recompté en validation P2 : la P1 écrivait 22 —
-    C-15-14-17) : fr-CH `:31`, `:32`, `:33`
-    (`error-settlement-{rounding,write-off,vat-payable}-account-is-receivable`, « désigné dans les
-    réglages comme compte de … », qui renvoient ensuite à « Paramètres ») et leurs replis `errors.rs:3713`,
-    `:3719`, `:3725` ; `dunning-load-error`, `dunning-settings-conflict` (`:1718`, `:1752`, sur l'écran
-    même) ; manuel utilisateur `:364`, `:380`, `:394` (« désigné dans les réglages », « les réglages de
-    facturation refusent »), `:946`, `:965`, `:1155`, `:1266`, `:1303`, `:1307`, `:1538`, `:1910`, `:2048`,
-    `:2235` ; manuel d'administration `:1244`, `:1246`, `:1263`, `:2271`, `:2277`. Recompte : 3 + 3 + 2 +
-    13 + 5 = 26 ; 2 + 26 = 28. **`:965`** (« La valeur complète reste intacte dans vos réglages ») est
-    tranché **assumé** (validation P2, F-6) : il dit où la valeur est **conservée**, il ne prescrit aucun
-    geste — le critère de C-15-14-11 (« renvoi à l'écran où l'on agit ») corrige
-    `error-invoice-pdf-header-overflow` parce qu'il ordonne d'y supprimer une coordonnée.
-  - **Après la 15-7b1** (PR #583, en cours de merge) : (B) rend **30** — elle ajoute au manuel
-    utilisateur deux « réglages de facturation » nom commun (liste du mode exploration et entrée de
-    journal du chargement de démonstration — lignes 185 et 2248 de sa branche), assumés au même titre ;
-    les autres lignes y sont décalées d'un cran (`:364` → 365…). Tout autre écart
-    au T0 se ventile avant écriture.
+- **`README.md:34`** (validation P3, F-1 — hors de la commande (B) d'alors) : « saisis une fois dans les
+  réglages » désigne l'écran où l'on saisit les coordonnées — un renvoi à l'écran où l'on agit, au sens de
+  C-15-14-11 → « saisis une fois dans les Paramètres ».
+- **Inventaire, deux commandes, la casse comptant**, sur tout le dépôt suivi moins `E` (validation P3,
+  F-1 ; C-15-14-25 — la P2 bornait (B) à quatre fichiers, et `README.md:34` lui échappait). Unité : la
+  **ligne** (une ligne peut porter plusieurs occurrences, `user-manual.tex:380` en porte quatre).
+  - (A) `git grep -In 'Réglages' -- . "${E[@]}"` → **21** lignes sur `245b91ee`. **Corrigées : 7** —
+    `user-manual.tex:575`, `:907`, `:952`, `:2085` ; fr-CH `:1856` (`invoice-default-revenue-account-unusable`)
+    et son repli `InvoiceForm.svelte:768` ; `.env.example:305`. **Assumées : 14** — `README.md:213`
+    (feuille de route publiée) ; cinq noms d'entité et d'action du journal d'audit (fr-CH `:2244`, `:2245`,
+    `:2307`, `:2308`, `:2309` : `audit-log-entity-company-*-settings`, `audit-log-action-company-*-settings-*`)
+    — des noms d'objet, non des renvois au menu ; **huit commentaires de code**, non affichés
+    (`dunning/+page.svelte:2`, `dunning.api.ts:57`, `dunning.types.ts:34`, `write-off.ts:75`,
+    `company_dunning_settings.rs:1`, `:11`, `supplier_invoices.rs:404`, `kesh-seed/src/lib.rs:370`).
+    7 + 1 + 5 + 8 = 21. Exclus par `E` : `frontend/tests/e2e/dunning.spec.ts:6,26` (titres de test),
+    `CHANGELOG.md` (notes publiées).
+  - (B) `git grep -In 'réglages' -- . "${E[@]}"` → **132** lignes sur `245b91ee` : **38** dans les fichiers
+    de texte (`README.md`, `docs/`, `website/`, `.env.example`, `DOCKER_START.md`, catalogues — commande :
+    `git grep -In 'réglages' -- README.md docs website .env.example DOCKER_START.md crates/kesh-i18n/locales "${E[@]}"`),
+    **94** dans le code.
+    - Texte, **corrigées : 2** — `README.md:34` et fr-CH `:1887` (`error-invoice-pdf-header-overflow`),
+      renvois à l'écran où l'on agit. **Assumées : 36**, « réglages » nom commun — les valeurs configurées,
+      non le menu (C-15-14-11 ; C-15-14-17) : fr-CH `:31`, `:32`, `:33`
+      (`error-settlement-{rounding,write-off,vat-payable}-account-is-receivable`, « désigné dans les réglages
+      comme compte de … », qui renvoient ensuite à « Paramètres »), `:1718`, `:1752` (`dunning-load-error`,
+      `dunning-settings-conflict`, sur l'écran même) ; quatre commentaires de catalogue (fr-CH `:1877`,
+      de-CH `:1760`, en-CH `:1765`, it-CH `:1758`, non affichés) ; `docs/api-external.md:338`, `:359`,
+      `:363`, `:365`, `:393`, `:508` (« désigné dans les réglages », « compte … des réglages ») ;
+      `docs/i18n-glossaire.md:197` (l'entrée « réglages de facturation », qui atteste le nom commun) ;
+      manuel d'administration `:1244`, `:1246`, `:1263`, `:2271`, `:2277` ; manuel utilisateur **15** —
+      `:364`, `:380`, `:394` (« désigné dans les réglages », « les réglages de facturation refusent »),
+      `:946`, `:965`, `:1155`, `:1266`, `:1303`, `:1307`, `:1538`, `:1910`, `:2048`, `:2235`, et les deux
+      lignes de la 15-7b1, **`:185` et `:2248` sur `245b91ee`** (liste du mode exploration, entrée de
+      journal du chargement de démonstration). 5 + 4 + 6 + 1 + 5 + 15 = 36 ; 2 + 36 = 38.
+      **`:965`** (« La valeur complète reste intacte dans vos réglages ») est tranché **assumé** (validation
+      P2, F-6) : il dit où la valeur est **conservée**, il ne prescrit aucun geste.
+    - Code, **corrigée : 1** — le repli `errors.rs:1807` d'`error-invoice-pdf-header-overflow`.
+      **Assumées : 93** — cinq replis égaux à des clés assumées (`errors.rs:3713`, `:3719`, `:3725` ;
+      `settings/dunning/+page.svelte:73`, `:170`) ; deux messages non affichés (`kesh-db/src/errors.rs:644`,
+      le `Display` de `DbError::DesignatedAccountsNotPostable`, que `kesh-api/src/errors.rs:3290` traduit en
+      code ; `company_invoice_settings.rs:313`, un `tracing::warn!`) ; **86 commentaires** — 84 au détecteur
+      de la convention, plus deux continuations de commentaire HTML (`InvoiceForm.svelte:736`, `:821`).
+      1 + 5 + 2 + 86 = 94. Contrôle : `git grep -In 'réglages' -- . "${E[@]}" ':(exclude)README.md' ':(exclude)docs' ':(exclude)website' ':(exclude).env.example' ':(exclude)DOCKER_START.md' ':(exclude)crates/kesh-i18n/locales' | grep -cE '^[^:]+:[0-9]+:\s*(//|\*|/\*|<!--|--|#)'` → 84.
+  - L'ancienne commande (B), bornée à quatre fichiers, rend 30 sur `245b91ee` (28 sur `bcded0c8`, plus les
+    deux lignes de la 15-7b1) : ce sont les 30 lignes de manuels, fr-CH et `errors.rs` ci-dessus.
 - **Tests** : G2 (`aucun_renvoi_au_menu_reglages`, garde documentaire : aucun `\emph{Réglages}` ni
-  `Réglages et` dans `docs/manual/fr/*.tex`, aucun `(Réglages)` dans `.env.example`) ; G3
+  `Réglages et` dans `docs/manual/fr/*.tex`, aucun `(Réglages)` dans `.env.example`, aucun `dans les
+  réglages` dans `README.md` — positif : `README.md` contient `dans les Paramètres`) ; G3
   (`le_message_du_compte_de_produit_renvoie_a_l_ecran_reel`, kesh-i18n : pour chaque locale, la valeur de
   `invoice-default-revenue-account-unusable` contient `settings-invoicing-title` de la même locale, ` — `
   remplacé par ` → ` ; et la valeur fr-CH de `error-invoice-pdf-header-overflow` contient `dans les
   Paramètres` et non `dans les réglages`) ; le repli Rust de `error-invoice-pdf-header-overflow` est gardé
-  par G9. Mutations : remettre « dans les Réglages » au catalogue fr → G3 rouge ; remettre « dans les
-  réglages » à `error-invoice-pdf-header-overflow` (fr-CH) → G3 rouge ; remettre `\emph{Réglages}` au
-  manuel → G2 rouge ; remettre `(Réglages)` à `.env.example` → G2 rouge.
+  par G9, le repli de `InvoiceForm.svelte` par G13. Mutations : remettre « dans les Réglages » au
+  catalogue fr → G3 rouge ; remettre « dans les réglages » à `error-invoice-pdf-header-overflow` (fr-CH)
+  → G3 rouge ; remettre `\emph{Réglages}` au manuel → G2 rouge ; remettre `(Réglages)` à `.env.example`
+  → G2 rouge ; remettre « dans les réglages » à `README.md:34` → G2 rouge ; remettre « dans les
+  Réglages » au repli d'`InvoiceForm.svelte` → G13 rouge.
 
 ### AC 3 — Les plans comptables décrits sont les trois que Kesh livre (#488, C-15-14-3)
 
@@ -188,13 +251,10 @@ n'existe (aucune route, aucun écran).
 - `marketing-brochure.tex:260` : « Plan comptable suisse PME, adapté à votre forme juridique. » ;
   `:385` : « Plan comptable suisse (PME, indépendant, association) avec saisie d'écritures en partie double. »
 - `user-manual.tex:182` (« Une company fictive avec un plan comptable Sterchi PME ») : **corrigé par la
-  15-7b1** (PR #583, en cours de merge — validation P2, F-7/L-8 ; C-15-14-19), qui réécrit la liste du mode
-  exploration (`:173`-`:189`). **Dépendance déclarée** : la 15-14a se développe **après** ce merge ; au T0,
-  constater `grep -c 'Sterchi' docs/manual/fr/user-manual.tex` sans le site `:182` et ne rien faire à
-  ces lignes. Repli, si la 15-7b1 n'était pas mergée au T0 : écrire le texte **identique** au sien
-  (`origin/story/15-7b1-trace-demonstration`, ligne 183 : « \item Le plan comptable PME, dans la langue de
-  l'installation. »), pour qu'un conflit de rebase se résolve en gardant l'un ou l'autre — G4 interdisant
-  `Sterchi`, le site ne peut pas rester tel quel.
+  15-7b1**, **mergée** (`245b91ee`, PR #583 — validation P3 : la dépendance de C-15-14-19 est satisfaite).
+  Constaté sur `245b91ee` : la ligne `:183` porte « \item Le plan comptable PME, dans la langue de
+  l'installation. », et `grep -c 'Sterchi' docs/manual/fr/user-manual.tex` → 5 (`:205`, `:309`, `:315`,
+  `:427`, `:438` sur `245b91ee`), tous corrigés ci-dessous. Ne rien faire aux lignes `:173`-`:190`.
 - **`docs/user-guide/fr/getting-started.md:29`** (validation P2, F-4 — guide lié depuis `README.md:124`) :
   « 4. **Plan comptable** (PME Suisse / Indépendant / KMU / Verein, ou import CSV custom *(à venir
   v0.2)*). » décrit une étape inexistante, deux plans fictifs et un import de plan. **Retirée** ; l'étape 1
@@ -206,13 +266,15 @@ n'existe (aucune route, aucun écran).
 - **Liens externes conservés** : `admin-manual.tex:2516` (`:2405` sur `dc4bc58b` — validation P2, R-9 =
   L-2), `user-manual.tex:2461` (URL `kmu.admin.ch`, en minuscules : la commande ci-dessous, sensible à la
   casse, ne les rend pas).
-- **Inventaire** : `grep -rn 'Sterchi\|KMU\|pré-configur\|Import CSV' docs/manual/fr/*.tex README.md website/*.html docs/*.md docs/user-guide`
-  → **18** lignes sur `bcded0c8`. **Corrigées : 15** — brochure `:260`, `:385` ; manuel d'administration
-  `:79`, `:1375`, `:1381`, `:1382` (tableau, dont la ligne `:1383` « Personnalisé CSV », hors motif, part
-  avec lui) ; manuel utilisateur `:182` (par la 15-7b1), `:204`, `:308`, `:314`, `:411` (sous-section
-  retirée), `:426`, `:437`, `:859` (AC 4) ; guide `:29`. **Assumées : 3** — `user-manual.tex:1588`
-  (« Import CSV multi-encodage » : l'import **bancaire**, réel) ; `docs/change_request.md:40`, `:43`
-  (fichier archivé ; « pré-configurés » y qualifie des types d'amortissement). 15 + 3 = 18.
+- **Inventaire** : `git grep -InE 'Sterchi|KMU|pré-configur|Import CSV' -- . "${E[@]}"`
+  → **16** lignes sur `245b91ee` (validation P3 : 18 sur `bcded0c8` avec l'ancienne commande bornée,
+  dont `:182`, corrigé depuis par la 15-7b1, et `docs/change_request.md:40`, `:43`, désormais exclus par
+  `E`). **Corrigées : 14** — brochure `:260`, `:385` ; manuel d'administration `:79`, `:1375`, `:1381`,
+  `:1382` (tableau, dont la ligne `:1383` « Personnalisé CSV », hors motif, part avec lui) ; manuel
+  utilisateur `:204`, `:308`, `:314`, `:411` (sous-section retirée), `:426`, `:437`, `:859` (AC 4) ;
+  guide `:29`. **Assumées : 2** — `user-manual.tex:1588` (« Import CSV multi-encodage » : l'import
+  **bancaire**, réel) ; de-CH `:106` (`onboarding-org-pme = KMU` : « KMU » est le mot allemand pour PME,
+  libellé du type d'organisation, non un plan). 14 + 2 = 16.
 - **Test** G4 (`plans_comptables_reels`) : aucun `Sterchi`, aucun `KMU` hors URL dans `docs/manual/fr/*.tex`,
   `README.md` **et `docs/user-guide/fr/getting-started.md`** ; aucun `\emph{Import CSV}` (forme des deux
   imports fictifs — l'import bancaire s'écrit `\emph{Nouvel import CSV}` et reste permis) ni `import CSV
@@ -248,12 +310,17 @@ Aucun processus ne surveille `KESH_INBOX_DIR` (vérifié : aucune tâche de fond
   « Surveiller les logs / CVE » du manuel d'administration sont d'un autre sens. « Dossier inbox **scruté à
   l'import** » (`admin-manual.tex:781`, `.env.example:204`) : dit que le dossier est lu **au moment de**
   l'import, ce qui est exact — conservé (validation P1, R7 ; C-15-14-12).
-- **Inventaire** : `grep -rn -i 'surveill\|scrut' docs/manual README.md website docs/*.md docs/user-guide .env.example DOCKER_START.md CHANGELOG.md`
-  → **13** lignes sur `bcded0c8`. **Corrigées : 4** — `README.md:43`, `.env.example:197`,
-  `marketing-brochure.tex:396`, `user-manual.tex:1524`. **Assumées : 9** — `README.md:211` et
-  `CHANGELOG.md:499` (historique publié) ; « scruté à l'import » `.env.example:204` et
-  `admin-manual.tex:781` (exact, C-15-14-12) ; `admin-manual.tex:506`, `:1972`, `:2137`, `:2138`, `:2350`
-  (« surveiller » des logs, des CVE, du renouvellement de certificats : autre sens). 4 + 9 = 13.
+- **Inventaire** : `git grep -IniE 'surveill|scrut' -- . "${E[@]}"` → **25** lignes sur `245b91ee`
+  (validation P3 : la commande bornée de la P2 rendait 13, dont `CHANGELOG.md:499`, désormais exclu par
+  `E`). **Corrigées : 4** — `README.md:43`, `.env.example:197`, `marketing-brochure.tex:396`,
+  `user-manual.tex:1524`. **Assumées : 21** — `README.md:211` (feuille de route publiée) ; « scruté à
+  l'import » `.env.example:204` et `admin-manual.tex:781` (exact, C-15-14-12) ; `admin-manual.tex:506`,
+  `:1972`, `:2137`, `:2138`, `:2350` (« surveiller » des logs, des CVE, du renouvellement de certificats :
+  autre sens) ; **13 commentaires de code ou de script**, autre sens (gardes de mise en page, mémoire,
+  inbox « scruté à l'import ») : `kesh-api/src/config.rs:264`, `:891`, `:960`,
+  `routes/invoice_pdf_service.rs:956`, `kesh-qrbill/src/pdf.rs:252`, `:432`, `:486`, `:514`, `:1133`,
+  `:1435`, `kesh-qrbill/src/types.rs:398`, `kesh-report/src/trial_balance.rs:49`, `scripts/mem-guard.sh:6`.
+  4 + 1 + 2 + 5 + 13 = 25.
 - **Test** G5 (`aucun_dossier_surveille`) : la chaîne `dossier surveillé` n'apparaît dans aucun
   `docs/manual/fr/*.tex`, ni dans `.env.example`, ni dans `README.md` hors de la ligne de feuille de route
   `| v0.4.0 |`. Mutations : remettre « dossier surveillé » à `user-manual.tex` → rouge ; à `.env.example`
@@ -276,10 +343,10 @@ Le correctif (#167) est sous `## [0.10.0] — 2026-08-19` du CHANGELOG (`CHANGEL
   faille existait jusqu'à la v0.9.0 incluse ; le correctif est livré par la v0.10.0 (entrée \#167 du
   \keshcommand{CHANGELOG.md}) ; sur une version antérieure, la consigne de prudence. **Plus aucun renvoi à
   une section `[Unreleased]`** (elle se renomme à chaque release — c'est ce qui a périmé le texte).
-- **Inventaire** : `grep -rnE 'Unreleased|v0\.9\.0' docs/api-external.md docs/manual docs/user-guide`
-  → **3** lignes sur `bcded0c8` (`api-external.md:484`, `admin-manual.tex:2035`, `:2051`), 3 corrigées ;
-  et `grep -rnF 'Unreleased' README.md website` → 0. Les lignes de feuille de route du README et de
-  `website/roadmap.html` qui citent `v0.9.0` sont hors de la première commande, et restent.
+- **Inventaire** : `git grep -InE 'Unreleased|v0\.9\.0' -- . "${E[@]}"` → **5** lignes sur `245b91ee`.
+  **Corrigées : 3** (`api-external.md:484`, `admin-manual.tex:2035`, `:2051`). **Assumées : 2** — les
+  lignes de feuille de route qui citent `v0.9.0` (`README.md:216`, `website/roadmap.html:277`), publiées.
+  3 + 2 = 5. Après correction : **2**, et `git grep -IF 'Unreleased' -- . "${E[@]}"` → 0 (2 avant, les deux sites corrigés).
 - **Test** G6 (`la_faille_kf036_n_est_pas_annoncee_ouverte`) : ni `Unreleased`, ni `n'est **pas** dans la
   v0.9.0` (forme Markdown), ni `n'est pas dans la v0.9.0` (forme LaTeX de `admin-manual.tex:2035` —
   validation P1, R11 = F-7), ni `Pas dans celle que décrit ce manuel` dans `docs/api-external.md` et
@@ -289,6 +356,8 @@ Le correctif (#167) est sous `## [0.10.0] — 2026-08-19` du CHANGELOG (`CHANGEL
 
 - Les 54 références `#NNN` du README (lignes 211-223 sur `dc4bc58b` : 32 `[#NNN]`, 22 nues) s'écrivent
   `[#NNN](https://github.com/guycorbaz/kesh/issues/NNN)`. Contenu des lignes inchangé par ailleurs.
+- Périmètre : le **README seul** — l'objet de #432 ; les autres fichiers à références d'issues
+  (`CHANGELOG.md`, fiches) sont hors de l'issue, et `website/` n'en porte aucune (`grep -noE '#[0-9]{2,4}\b' website/*.html` → le seul exemple `refs #42` d'`issues.html:128`).
 - Recompte à la source avant et après : `grep -oE '#[0-9]{2,4}\b' README.md | wc -l` (54 avant) ;
   `grep -oE '\[#[0-9]+\]\(https://github.com/guycorbaz/kesh/issues/[0-9]+\)' README.md | wc -l` (54 après).
 - **Test** G7 (`references_d_issues_du_readme_sont_des_liens`) : toute occurrence de `#\d+` du README
@@ -370,20 +439,43 @@ message serveur simulé, aligné sur la valeur neuve) — plus **1 assumée** :
   `:722` (procédure de réouverture, qui dit déjà la garde d'ordre plus bas) restent.
 - `docs/api-external.md:330` : « Règlement d'un exercice **clos** — un administrateur doit rouvrir les
   exercices clôturés jusqu'à celui-ci, en commençant par le plus récent ».
-- **Inventaire documentaire** (validation P2, R-6 = F-9) : `grep -nE '[Rr]ouvr|[Rr]éouv' docs/manual/fr/*.tex docs/api-external.md README.md docs/user-guide/fr/*.md`
-  → **25** lignes sur `bcded0c8` (manuel utilisateur 16, manuel d'administration 5, `api-external.md` 2,
-  README 2, brochure et guide 0). **Corrigées : 6** — utilisateur `:1209`, `:1456`, `:1478`, `:1773`,
-  `:2317` ; `api-external.md:330`. **Disent déjà l'ordre : 5** — utilisateur `:698`, `:725`, `:740` ;
-  administration `:1399` (« garde d'ordre »), `:1700`. **Décrivent ou nomment sans prescrire : 14** —
-  utilisateur `:406` (rouvrir un **compte**), `:587`, `:600`, `:717` (renvoie à la procédure), `:720`
-  (titre), `:722` (procédure, l'ordre suit à `:725`), `:1237` (« rouvrez l'aperçu »), `:2311` ;
-  administration `:1396`, `:1398` (titre), `:2035` (liste des routes d'administration) ;
-  `api-external.md:77` (même liste) ; README `:46`, `:215` (fonctionnalités, feuille de route).
-  6 + 5 + 14 = 25.
+- **Inventaire, sur tout le dépôt suivi** (validation P2, R-6 = F-9 ; validation P3, C-15-14-25) :
+  `git grep -InE '[Rr]ouvr|[Rr]éouv' -- . "${E[@]}"` → **153** lignes sur `245b91ee`, en trois parts :
+  catalogue fr-CH **21**, documentation **26**, code **106** (commande du code :
+  `git grep -InE '[Rr]ouvr|[Rr]éouv' -- crates frontend scripts ':(exclude)crates/kesh-i18n/locales' "${E[@]}"`).
+  Les catalogues de-CH/it-CH/en-CH n'ont aucune forme française. 21 + 26 + 106 = 153.
+  - **Catalogue fr-CH, 21** : les **20 clés** du domaine de G8 (partition 6 + 4 + 10 ci-dessous) et un
+    commentaire (`:921`, en-tête de section, non affiché).
+  - **Documentation, 26** — manuel utilisateur 16, manuel d'administration 5, `api-external.md` 2,
+    README 2, `docs/optimistic-locking-patterns.md` 1. **Corrigées : 6** — utilisateur `:1209`, `:1456`,
+    `:1478`, `:1773`, `:2317` ; `api-external.md:330`. **Disent déjà l'ordre : 5** — utilisateur `:698`,
+    `:725`, `:740` ; administration `:1399` (« garde d'ordre »), `:1700`. **Décrivent ou nomment sans
+    prescrire : 15** — utilisateur `:406` (rouvrir un **compte**), `:587`, `:600`, `:717` (renvoie à la
+    procédure), `:720` (titre), `:722` (procédure, l'ordre suit à `:725`), `:1237` (« rouvrez l'aperçu »),
+    `:2311` ; administration `:1396`, `:1398` (titre), `:2035` (liste des routes d'administration) ;
+    `api-external.md:77` (même liste) ; README `:46`, `:215` (fonctionnalités, feuille de route) ;
+    `optimistic-locking-patterns.md:7` (« deux utilisateurs qui rouvrent le même formulaire » : autre
+    objet). 6 + 5 + 15 = 26.
+  - **Code, 106** — **72 commentaires** au détecteur de la convention ; **34** autres lignes :
+    - les **replis des six clés de l'AC**, corrigés : 10 — Rust `errors.rs:3085`, `:3597`, `:3637`,
+      `routes/fiscal_years.rs:188`, `routes/opening_balances.rs:205`, `:406` ; frontend les quatre de la
+      liste ci-dessus ;
+    - les replis des **4 clés qui portent déjà le marqueur**, qui le portent aussi : 4 — `errors.rs:1539`,
+      `:2925`, `journal-entries/blocker-messages.ts:94`, `settings/fiscal-years/+page.svelte:355` ;
+    - les replis des **clés exemptées** : 12 — `errors.rs:1631` (`error-reminder-amounts-changed`),
+      `routes/fiscal_years.rs:359`, `:365` (motif), `settings/fiscal-years/+page.svelte:78`, `:88`, `:435`,
+      `:447`, `:585`, `:620`, `:626`, `:641`, `:668` ;
+    - autre objet ou non affiché : 8 — `kesh-core/src/chart_of_accounts/mod.rs:1020`, `:1032`, `:1037`
+      (un test sur un **compte**) ; `kesh-db/src/post_restore.rs:422` (justification d'exemption :
+      `postable` « réouvrable ») ; `frontend/scripts/mutants-22-2b.mjs:145` (outil de mutation) ; trois
+      continuations de commentaire HTML (`invoices/[id]/+page.svelte:1572`,
+      `settings/fiscal-years/+page.svelte:346`, `:347`).
+    10 + 4 + 12 + 8 = 34 ; 72 + 34 = 106. **Aucun repli hors de la liste ci-dessus ne prescrit la
+    réouverture sans l'ordre.**
 
 **Domaine et inventaire des sites non résolus** (C-15-14-14). Le verbe se cherche **en fr-CH seulement**,
 où il est univoque : `grep -nE '[Rr]ouvr|[Rr]éouv' crates/kesh-i18n/locales/fr-CH/messages.ftl` (hors
-commentaires) — **20 clés** sur `bcded0c8`. Le domaine du test est **l'ensemble de ces clés**, contrôlées
+commentaires) — **20 clés** sur `bcded0c8` et sur `245b91ee`. Le domaine du test est **l'ensemble de ces clés**, contrôlées
 **dans les quatre locales** : en allemand, le verbe prend au moins cinq formes (« wieder öffnen »,
 « öffnen Sie dieses zuerst », « Öffnen Sie es wieder », « Wiedereröffnung », « wieder eröffnet ») et un
 motif par locale passerait à vide sur l'une d'elles (validation P1, R5 = F-2). Partition des 20 :
@@ -416,7 +508,8 @@ appartenir au domaine et porter le marqueur dans les quatre locales (anti-test-m
 (`les_replis_rust_suivent_le_catalogue`, `textes_coherents.rs`) : chaque fichier Rust contient la valeur
 fr-CH exacte de ses clés, selon cette table fermée (validation P2, R-8 = L-4 — **cinq** des six clés de
 l'AC ont un repli Rust ; `opening-balances-locked-first-year-closed` n'a que le repli Svelte, gardé par
-`i18n-repli-divergent-actif.test.ts`) :
+**G13** — et non par `i18n-repli-divergent-actif.test.ts`, qui ne voit pas une clé à site unique,
+validation P3, R-1) :
 
 | Fichier | Clés (sites sur `bcded0c8`) |
 |---|---|
@@ -430,17 +523,33 @@ lignes, et une comparaison brute passerait au rouge sur un repli juste) ; et auc
 `rouvrir l'exercice pour`, `rouvrez-le`, `dans les réglages :`. Mutations : remettre l'ancienne valeur
 fr-CH de `error-fiscal-year-reopen-blocked` → G8 rouge ; remettre l'ancienne valeur **de-CH** de la même
 clé (« öffnen Sie dieses zuerst », sans « wieder ») → G8 rouge ; remettre l'ancien repli d'`errors.rs:3085`
-→ G9 rouge (et le repli frontend → `i18n-repli-divergent-actif.test.ts` rouge) ; remettre « dans les
+→ G9 rouge ; remettre l'ancien repli de `invoice-cancel.ts:43` → **G13** rouge ; remettre « dans les
 réglages » au repli d'`errors.rs:1807` → G9 rouge.
+
+**Test** G13 (`les_replis_frontend_a_site_unique_suivent_le_catalogue`, Vitest, nouveau `describe` de
+`frontend/src/lib/shared/i18n-repli-divergent-actif.test.ts`, qui possède déjà le relevé `replisParCle()`
+— validation P3, R-1 ; C-15-14-26). La garde existante ne compare pas un repli au catalogue : elle ne retient
+que les clés à **au moins deux** replis distincts (`parTexte.size > 1`, ligne 141), et chacune des cinq clés
+ci-dessous n'a **qu'un** site d'appel — un repli resté à l'ancien texte n'y rougit pas. G13, table fermée de
+cinq clés : `settlement-cancel-blocked-fiscal-year-closed`, `reconciliation-cancel-blocked-fiscal-year-closed`,
+`supplier-invoices-cancel-blocked-fiscal-year-closed`, `opening-balances-locked-first-year-closed`,
+`invoice-default-revenue-account-unusable` (AC 2). Pour chacune : `[...(releve.get(cle)?.keys() ?? [])]`
+**égale** `[valeur fr-CH de la clé]` — lue dans `fr-CH/messages.ftl` (valeurs sur une ligne), comparée
+telle quelle (même patron que l'assertion des deux titres d'avoir du même fichier, ligne 169). Le tableau à
+un élément est l'anti-test-muet : un relevé vide, une clé disparue du catalogue (`undefined`) ou un second
+repli divergent rougissent tous. Mutations : remettre l'ancien repli d'`invoice-cancel.ts:43` → rouge ;
+remettre « dans les Réglages » au repli d'`InvoiceForm.svelte:768` → rouge ; remettre l'ancien repli
+d'`opening-balances/+page.svelte:382` → rouge.
 
 **Test** G12 (`le_manuel_dit_l_ordre_de_reouverture`, `textes_coherents.rs` — validation P2, R-6 = F-9 ;
 C-15-14-8 appliqué à l'AC 8) : lit `docs/manual/fr/user-manual.tex` et `docs/api-external.md`, **normalisés**
-(commandes `\textbf{…}` et `\emph{…}` dépliées, `~` → espace, blancs et sauts de ligne réduits à une
-espace — les phrases visées sont coupées sur deux lignes) ; aucune occurrence de `doit d'abord le
+(commandes `\textbf{…}`, `\emph{…}`, `\texttt{…}`, `\textit{…}`, `\keshcommand{…}`, `\keshpath{…}`
+dépliées **jusqu'à stabilité** — imbrications comprises, validation P3, F-4 —, `~` → espace, blancs et
+sauts de ligne réduits à une espace — les phrases visées sont coupées sur deux lignes) ; aucune occurrence de `doit d'abord le
 rouvrir`, `doit d'abord rouvrir l'exercice` (manuel), ni de `doit le rouvrir` (`api-external.md`) ;
 **positif** : `en commençant par le plus récent` figure **au moins 7 fois** dans le manuel normalisé
 (2 aujourd'hui, `:698` et `:740`, + 5 corrigés) et au moins une fois dans `api-external.md`.
-**Présent avant**, vérifié en validation P2 sur `bcded0c8` avec cette normalisation : `doit d'abord le
+**Présent avant**, vérifié en validation P2 sur `bcded0c8`, et en validation P3 sur `245b91ee` avec la normalisation bouclée : `doit d'abord le
 rouvrir` → 3, `doit d'abord rouvrir l'exercice` → 2, `en commençant par le plus récent` → 2 ; `doit le
 rouvrir` (`api-external.md`) → 1. Mutations : remettre l'ancien `:1209` → rouge ; remettre l'ancienne
 ligne `api-external.md:330` → rouge.
@@ -452,8 +561,8 @@ ligne `api-external.md:330` → rouge.
   `reports-vat-column-vat-due = Geschuldete MWST` ; commentaire `# MWST-Bericht (Story 11-2)`.
   Relevé sur `dc4bc58b` : `de-CH/messages.ftl:565`, `:608`, `:680`, `:1293`, `:1294`, `:1297`.
 - **Ne pas propager** aux autres locales (IVA, TVA, VAT sont justes — avertissement de l'issue).
-- **Inventaire** : `grep -rnE '\bMwSt\b' crates frontend/src docs website` (replis compris) → **6** lignes sur
-  `bcded0c8`, toutes en de-CH, 6 corrigées, 0 assumée.
+- **Inventaire** : `git grep -InE '\bMwSt\b' -- . "${E[@]}"` (replis compris) → **6** lignes sur
+  `245b91ee` (6 aussi sur `bcded0c8`), toutes en de-CH, 6 corrigées, 0 assumée.
 - **Test** G10 (`glossaire_mwst`, kesh-i18n) : aucune valeur de-CH ne matche `\bMwSt\b` ; au moins une
   valeur contient `MWST` (anti-test-muet). Mutation : remettre `reports-vat = MwSt` → rouge.
 
@@ -472,8 +581,12 @@ ligne `api-external.md:330` → rouge.
   fiscal years ») restent : la phrase nomme les exercices, le verbe n'y est pas ambigu.
 - **Inventaire de-CH** (validation P2, R-1 = F-5 : la P1 affirmait ici « le seul autre site de-CH », ce
   qui était faux) : `grep -nE '\b([Gg]eschlossen|[Ss]chliessen|[Ss]chliessung)\b' crates/kesh-i18n/locales/de-CH/messages.ftl | grep -vE '^[0-9]+:#'`
-  → **20** lignes sur `bcded0c8` (`\b` écarte « abgeschlossen », « abschliessen », « einschliessen »).
-  Partition :
+  → **20** lignes sur `bcded0c8` et `245b91ee` (`\b` écarte « abgeschlossen », « abschliessen »,
+  « einschliessen »). Sur tout le dépôt suivi (validation P3, C-15-14-25) :
+  `git grep -InE '\b([Gg]eschlossen|[Ss]chliessen|[Ss]chliessung)\b' -- . "${E[@]}"` → **21** : ces 20
+  lignes et `docs/i18n-glossaire.md:102`, la cellule que l'AC réécrit ci-dessous (elle nommera encore le
+  verbe générique, réservé aux panneaux — elle reste donc au compte après correction). Aucun repli ni
+  test ne porte ces formes (`frontend/src` n'a que des replis français). Partition des 20 :
   - **corrigées par le tableau ci-dessus et `settings-fiscal-years-link` : 5** — `:863`, `:864`, `:865`,
     `:866`, `:895` ;
   - **corrigée par l'AC 8 : 1** — `:882` (`error-fiscal-year-reopen-blocked`, « ist abgeschlossen ») ;
@@ -495,7 +608,8 @@ ligne `api-external.md:330` → rouge.
     `:853`, `:878`, `:883` ;
   - **assumées, fermeture d'un panneau — le sens que #323 réserve à « Schliessen » : 4** — `:790`
     (`reconciliation-cancel-dismiss`), `:1481`, `:1975`, `:2112` (`*-close`).
-  5 + 1 + 6 + 4 + 4 = 20. Après correction, la commande rend **8** lignes (les deux groupes assumés).
+  5 + 1 + 6 + 4 + 4 = 20. Après correction, la commande de-CH rend **8** lignes (les deux groupes
+  assumés), celle du dépôt **9** (avec le glossaire).
   it-CH (« chiuso ») et en-CH (« closed ») ne sont pas inventoriés : le participe y est univoque, seule
   l'action prêtait à confusion.
 - **Glossaire** `docs/i18n-glossaire.md:102` (validation P1, R4) : la cellule « ⚠️⚠️ NE PAS confondre avec
@@ -531,42 +645,53 @@ ligne `api-external.md:330` → rouge.
 
 ## Tasks / Subtasks
 
-> Les tâches s'appellent **T0-T8**, les tests **G1-G12** (« garde ») depuis la validation P2 (R-14) ; les
-> Change Logs et le registre antérieurs écrivent les tests « T1-T11 » — même numéro, même test.
+> Les tâches s'appellent **T0-T8**, les tests **G1-G13** (« garde ») depuis la validation P2 (R-14 ; G13
+> ajouté en validation P3) ; les Change Logs et le registre antérieurs écrivent les tests « T1-T11 » — même
+> numéro, même test. La 15-14b numérote les siens **G14-G18** (validation P3, F-6), pour qu'un « G5 » ne
+> désigne qu'un test.
 
 - [ ] **T0 — Rebase et relevé** (AC tous)
-  - [ ] `git fetch && git rebase origin/main` ; la 15-13a est mergée (`bcded0c8`, numéros réalignés à la
-        validation P1). **La 15-7b1 (PR #583) doit l'être aussi** (dépendance déclarée, AC 3 : `:182`) ;
-        si la 15-13b l'est, re-trouver chaque site **par la valeur** (commandes des AC) et noter les
-        écarts au Dev Agent Record. La 15-7b1 touche aussi `vat_rates.rs` (doc-comment `:351-353`), où T5
-        ajoute un `mod tests` : zones disjointes, mais c'est un repository — **gate complet** après le
-        rebase (exception `kesh-db`, validation P2, L-8).
+  - [ ] `git fetch && git rebase origin/main` ; la 15-13a (`bcded0c8`) et la **15-7b1** (`245b91ee`, PR
+        #583) sont mergées — la dépendance déclarée (C-15-14-19) est **satisfaite** depuis la validation P3 ;
+        la branche de spécification est rebasée sur `245b91ee`. Si la 15-13b (PR #584) est mergée à son tour,
+        re-trouver chaque site **par la valeur** (commandes des AC) et noter les écarts au Dev Agent Record.
+        La 15-7b1 a touché `vat_rates.rs` (doc-comment `:351-353`), où T5 ajoute un `mod tests` : zones
+        disjointes, mais c'est un repository — **gate complet** (exception `kesh-db`, validation P2, L-8).
   - [ ] **PDF** (validation P1, F-8 ; R13) : la 15-7b1 modifie `admin-manual.pdf` et `user-manual.pdf`, la
         15-13b le manuel d'administration — un conflit sur un PDF ne se résout **jamais** à la main : prendre
         les `.tex` résolus, puis **régénérer** les trois PDF (`make fr`). Le `.tex` d'un manuel ne se fusionne
         pas non plus de confiance : relire chaque hunk en conflit contre les deux fiches.
-  - [ ] **Relancer chaque commande d'inventaire** des AC et comparer au compte écrit (AC 1 : 2 ; AC 2 :
-        17 et 28 — 30 après la 15-7b1 ; AC 3 : 18 ; AC 5 : 13 ; AC 6 : 3 ; AC 7 : 54 ; AC 8 : 20 clés
-        fr-CH, 25 lignes de documentation, 8 lignes Vitest ; AC 9 : 6 ; AC 10 : 20) ; tout écart se
-        ventile (corrigé ou assumé, avec sa raison) **avant** d'écrire.
-  - [ ] **Contrôle « présent avant »** : la fonction `occ` de la convention, sur les PDF de `bcded0c8`, pour
-        chaque ancien texte dont T1 contrôlera l'absence ; un motif qui rend 0 ici est à réécrire.
+  - [ ] **Relancer chaque commande d'inventaire** des AC — sur tout le dépôt suivi moins `E`, `LC_ALL=C.UTF-8`
+        — et comparer au compte écrit, relevé sur `245b91ee` (AC 1 : 4 ; AC 2 : 21 et 132 ; AC 3 : 16 ;
+        AC 5 : 25 ; AC 6 : 5 ; AC 7 : 54 ; AC 8 : 20 clés fr-CH, 153 lignes sur le dépôt, 8 lignes Vitest ;
+        AC 9 : 6 ; AC 10 : 20 en de-CH, 21 sur le dépôt) ; tout écart se ventile (corrigé ou assumé, avec sa
+        raison) **avant** d'écrire.
+  - [ ] **Contrôle « présent avant »** : régénérer d'abord les PDF de l'état de départ (`make fr` — celui de
+        `bcded0c8` était en retard sur son `.tex`), puis la fonction `occ` de la convention pour chaque
+        ancien texte dont T1 contrôlera l'absence ; un motif qui rend 0 ici est à réécrire.
 - [ ] **T1 — Manuel utilisateur, brochure, manuel d'administration, guide** (AC 1-6, 8)
-  - [ ] AC 1 (2 sites), AC 2 (4 sites), AC 3 (user 204/308/314/409-422/426/437 — 182 par la 15-7b1 —,
+  - [ ] AC 1 (2 sites), AC 2 (4 sites), AC 3 (user 204/308/314/409-422/426/437 — 182 fait par la 15-7b1 —,
         admin 79/1375-1386, brochure 260/385, guide `getting-started.md:26-32`), AC 4 (857-859), AC 5 (user
         1524, brochure 396), AC 6 (admin 2035/2051), AC 8 (user 1208-1209/1456/1478/1773/2316-2317) —
         numéros de `bcded0c8`.
   - [ ] `scripts/mem-guard.sh make -C docs/manual fr` ; contrôle `occ` de chaque texte neuf (présent, ≥ 1)
         et ancien (absent, 0) dans les trois PDF.
-- [ ] **T2 — `api-external.md`, README, `.env.example`, glossaire** (AC 2, 5, 6, 7, 8, 10)
+- [ ] **T2 — `api-external.md`, README (dont `:34`, AC 2), `.env.example`, glossaire** (AC 2, 5, 6, 7, 8, 10)
 - [ ] **T3 — Catalogues** (AC 2, 8, 9, 10 — dont les six participes de-CH de l'AC 10) — 4 locales
       ensemble, parité verte.
 - [ ] **T4 — Replis** (AC 2, 8) — Rust (7 sites, 6 clés : table de G9) et frontend (5) égaux au fr-CH,
       apostrophes du catalogue ; retirer les 3 commentaires `#569`.
 - [ ] **T5 — Tests** : G1 (`vat_rates.rs`, `mod tests` neuf — C-15-14-13), G3/G8/G10/G11
       (`kesh-i18n/src/loader.rs` `mod tests`), G2/G4/G5/G6/G7/G9/G12 (nouveau
-      `crates/kesh-api/tests/textes_coherents.rs`, sans base) ; Vitest : les 7 sites des 5 fichiers de
-      l'AC 8 (six assertions et une donnée de mock).
+      `crates/kesh-api/tests/textes_coherents.rs`, sans base) ; Vitest : G13 (nouveau `describe` de
+      `i18n-repli-divergent-actif.test.ts`) et les 7 sites des 5 fichiers de l'AC 8 (six assertions et une
+      donnée de mock).
+  - [ ] **Dépendance `regex`** (validation P3, L-1 ; C-15-14-27) : ni `kesh-api` ni `kesh-i18n` ne
+        l'ont (`grep -c regex crates/kesh-api/Cargo.toml crates/kesh-i18n/Cargo.toml` → 0 et 0) ; l'ajouter
+        en **`[dev-dependencies]`** des deux (`regex = "1.10"`, la version de `kesh-db` et `kesh-import`, déjà
+        verrouillée dans `Cargo.lock`) — aucune dépendance de production. Le crate `regex` n'a **pas** de
+        lookahead : une garde qui compte des occurrences qui se recouvrent (G18 de la 15-14b) boucle sur
+        chaque alternative séparément, ou avance d'un caractère après chaque correspondance.
 - [ ] **T6 — Mutations** : chacune de la liste ci-dessous observée **rouge**, puis restaurée (`git checkout`
       **puis `touch`** du fichier — mémoire *Mutation restaurée, binaire périmé*).
 - [ ] **T7 — CHANGELOG** (AC 11).
@@ -582,7 +707,7 @@ ligne `api-external.md:330` → rouge.
 | Test | Lieu | Mutation qui doit le faire rougir |
 |---|---|---|
 | G1 `le_manuel_cite_les_taux_poses_par_kesh` | `kesh-db/src/repositories/vat_rates.rs` (`#[cfg(test)] mod tests` neuf) | `3.7\%` réécrit au manuel ; `380` → `370` dans `DEFAULT_SWISS_RATES` |
-| G2 `aucun_renvoi_au_menu_reglages` | `kesh-api/tests/textes_coherents.rs` | `\emph{Réglages}` remis à `user-manual.tex` ; `(Réglages)` remis à `.env.example` |
+| G2 `aucun_renvoi_au_menu_reglages` | `kesh-api/tests/textes_coherents.rs` | `\emph{Réglages}` remis à `user-manual.tex` ; `(Réglages)` remis à `.env.example` ; « dans les réglages » remis à `README.md:34` |
 | G3 `le_message_du_compte_de_produit_renvoie_a_l_ecran_reel` | `kesh-i18n/src/loader.rs` | « dans les Réglages » remis en fr-CH ; « dans les réglages » remis à `error-invoice-pdf-header-overflow` (fr-CH) |
 | G4 `plans_comptables_reels` | `textes_coherents.rs` | « Sterchi PME » remis ; `\emph{Import CSV}` remis (contacts) ; « KMU » remis au guide |
 | G5 `aucun_dossier_surveille` | `textes_coherents.rs` | « dossier surveillé » remis à `user-manual.tex` ; à `.env.example` |
@@ -593,6 +718,7 @@ ligne `api-external.md:330` → rouge.
 | G10 `glossaire_mwst` | `loader.rs` | `reports-vat = MwSt` |
 | G11 `la_cloture_d_exercice_ne_parle_pas_comme_un_panneau` | `loader.rs` | `fiscal-year-close-button = Schliessen` ; `fiscal-year-closed = Geschäftsjahr geschlossen.` |
 | G12 `le_manuel_dit_l_ordre_de_reouverture` | `textes_coherents.rs` | ancien `user-manual.tex:1209` ; ancienne ligne `api-external.md:330` |
+| G13 `les_replis_frontend_a_site_unique_suivent_le_catalogue` | `frontend/src/lib/shared/i18n-repli-divergent-actif.test.ts` (Vitest) | ancien repli d'`invoice-cancel.ts:43` ; « dans les Réglages » remis au repli d'`InvoiceForm.svelte:768` ; ancien repli d'`opening-balances/+page.svelte:382` |
 | Vitest (5 fichiers de l'AC 8, 7 sites : 6 assertions, 1 donnée de mock) | frontend | ancien repli de `settlement-cancel-blocked.ts:39` |
 
 `textes_coherents.rs` lit ses fichiers par `env!("CARGO_MANIFEST_DIR")` + `../../` ; chaque assertion
@@ -604,8 +730,8 @@ section attendue) : un chemin faux ne doit pas rendre un vert muet (mémoire *Te
 ### Modules touchés, et dérogation à la règle de découpage
 
 Paquets de code : **kesh-i18n** (catalogues, tests), **kesh-api** (`errors.rs`, `routes/fiscal_years.rs`,
-`routes/opening_balances.rs`, un fichier de test), **frontend** (quatre replis, un repli d'`InvoiceForm`,
-cinq tests), plus un **`#[cfg(test)] mod tests` neuf** dans **kesh-db** (`vat_rates.rs`, sans code de
+`routes/opening_balances.rs`, un fichier de test, `regex` en dépendance de test), **frontend** (quatre
+replis, un repli d'`InvoiceForm`, cinq tests et G13), plus un **`#[cfg(test)] mod tests` neuf** dans **kesh-db** (`vat_rates.rs`, sans code de
 production — le module n'existe pas encore ; C-15-14-13 pour le lieu et le rayon du gate). Comptés en
 modules métier de premier niveau, les replis de #569 en touchent plus de cinq (exercices, soldes de départ,
 règlements, rapprochement, factures fournisseurs, facturation). **Dérogation assumée** : chaque changement
@@ -636,7 +762,7 @@ ailleurs, sur une dépendance (C-15-14-1).
 ### Références
 
 - Issues : #539, #547, #488, #291, #458, #449, #432, #569, #321, #323 ; #459 ; #579, #324 (écartées).
-- Registre : C-15-14-1 à C-15-14-8, C-15-14-11 à C-15-14-20, C-15-14-23 ; C111, C122 (15-12a) ; C-15-12b-4 (B-1 = E-1).
+- Registre : C-15-14-1 à C-15-14-8, C-15-14-11 à C-15-14-20, C-15-14-23, C-15-14-25 à C-15-14-27, C-15-14-31 ; C111, C122 (15-12a) ; C-15-12b-4 (B-1 = E-1).
 - Fiches : `15-12a-cloture-dans-l-ordre.md` § *Hors périmètre* (liste d'origine des sites de #569).
 - `CLAUDE.md` : § *Propagation post-patch*, § *Le prompt d'une passe doit NOMMER le manuel*, § *Inventorier
   les sites NON RÉSOLUS*, § *Recompter ses propres comptes rendus*.
@@ -731,3 +857,38 @@ ailleurs, sur une dépendance (C-15-14-1).
     tâches T0-T8 : 9 ; tests G1-G12 : 12 + Vitest ; issues : 10 fermées + refs #459.
   - **Signal D5 levé** (MEDIUM → MEDIUM ; F-5 et F-6, ici, sont nés de la remédiation P1) : pas de nouveau
     découpage (C-15-14-23), déclaré à l'index.
+- 2026-10-09 — **Validation P3** (Sonnet ×2 : lentilles R et F ; rapports `kesh-gate-logs/15-14-validate-p3-{R,F}.md`).
+  Pour cette fiche : 0 CRITICAL, 0 HIGH, **2 MEDIUM distincts** (R-1, F-1 ; R-2, de planification, est
+  porté à l'index), **6 LOW distincts** (dont L-1 et F-6, partagés ; F-4, de la 15-14b, appliqué ici par
+  extension à G12) ; décompte des deux fiches : index, §
+  Change Log. Chaque finding vérifié au code avant correction ; **aucun réfuté**. Branche rebasée sur
+  `245b91ee` (15-7b1 mergée) : comptes relevés sur cet état, numéros de ligne laissés sur `bcded0c8` avec la
+  table des décalages de la 15-7b1 (convention ; C-15-14-25).
+  - **MEDIUM R-1** — « gardé par `i18n-repli-divergent-actif.test.ts` » faux : la garde ne retient que les
+    clés à deux replis distincts (`grep -nF "parTexte.size > 1"` → ligne 141), et les cinq clés visées ont un
+    seul site d'appel chacune (vérifié par `grep -rln` sur `frontend/src`). **Corrigé** : G13, `describe` neuf
+    du même fichier, table fermée de cinq clés, ensemble des replis = `[valeur fr-CH]`, trois mutations
+    (C-15-14-26) ; l'affirmation retirée de l'AC 2, de l'AC 8 et des mutations.
+  - **MEDIUM F-1** — commande (B) bornée à quatre fichiers ; `README.md:34` (« saisis une fois dans les
+    réglages ») lui échappait : **corrigé** — toutes les commandes portent sur le dépôt suivi moins `E`
+    (C-15-14-25) ; (A) 21 = 7 + 14, (B) 132 = 3 + 129 (38 lignes de texte, 94 de code dont 86 commentaires) ;
+    `README.md:34` corrigé, G2 étendu au README. Les autres AC relancés de même : AC 1 4 (2 + 2), AC 3 16
+    (14 + 2 ; `onboarding-org-pme = KMU` assumé), AC 5 25 (4 + 21), AC 6 5 (3 + 2), AC 8 153 (21 + 26 + 106 :
+    aucun repli hors liste ne prescrit la réouverture sans l'ordre), AC 9 6, AC 10 21 (20 + le glossaire).
+  - **LOW** : L-1 (`regex` absent de kesh-api et kesh-i18n) corrigé — `[dev-dependencies]`, C-15-14-27 ;
+    L-2 (AC 3 : 18 → 17 après la 15-7b1) dépassé — 16 sur le dépôt entier ; L-3 = F-3 (`occ` dépendante de
+    la locale) corrigé — `export LC_ALL=C.UTF-8` en tête, et la limite du saut de page écrite comme angle
+    mort (aucun remède robuste ; G12 couvre #569) ; L-7 (de/it/en disaient déjà le menu) écrit comme
+    extension de périmètre voulue ; F-4 (normalisation à un niveau) appliqué à G12 — dépliage jusqu'à
+    stabilité, comptes « présent avant » inchangés (3 / 2 / 2 / 1, rejoués) ; F-6 (deux « G5 ») corrigé —
+    G13 ici, G14-G18 à la 15-14b (C-15-14-31) ; F-7 (CHANGELOG et PRD au périmètre hétérogène) corrigé par
+    `E`, chaque exclusion justifiée.
+  - **Trouvé par la remédiation** : le PDF de `bcded0c8` était en retard sur son `.tex` (`un administrateur
+    doit d'abord rouvrir l'exercice` → 1 sur ce PDF, 2 sur celui de `245b91ee`) — le T0 régénère désormais
+    les PDF avant le contrôle « présent avant ».
+  - **Propagation** : valeurs grepées sur les trois fiches et le registre — `\b(18|28|13|25|34|26)\b` des
+    anciens comptes, `en cours de merge`, `#583`, `Indépendante`, `i18n-repli-divergent-actif`, `G1`-`G5` de
+    la 15-14b, `awk` ; chaque commande des AC **exécutée telle qu'écrite** (copiée depuis la fiche) sur
+    `245b91ee`. Recomptes : AC 1-11 : 11 ; tâches T0-T8 : 9 ; tests G1-G13 : 13 + Vitest ; issues : 10
+    fermées + refs #459.
+  - **Signal D5** : levé et déclaré à l'index.

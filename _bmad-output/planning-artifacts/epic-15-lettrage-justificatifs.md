@@ -30,8 +30,9 @@ la recette de la 15-7b2 en dépend.
 de Guy pour faire baisser le nombre de bugs (70 ouverts ce jour-là). Treize issues P3/P4 où le texte dit
 autre chose que le code, vérifiées une à une sur `dc4bc58b`, découpées d'emblée sur une dépendance
 (C-15-14-1) : **15-14a** — manuels et libellés (#539, #547, #488, #291, #458, #449, #432, #569, #321,
-#323), indépendante ; **15-14b** — exploitation et multi-société (#575, #554, #127), après le merge de
-15-13a (fait, `bcded0c8`), 15-13b et 15-14a. Une garde testée lit désormais la documentation (C-15-14-8). Fiche index
+#323), après le merge de la 15-7b1 (fait, `245b91ee` ; C-15-14-19) ; **15-14b** — exploitation et
+multi-société (#575, #554, #127), après le merge de 15-13a (fait, `bcded0c8`), 15-7b1 (fait), 15-13b et
+15-14a. Une garde testée lit désormais la documentation (C-15-14-8). Fiche index
 `15-14-lot-documentation-libelles.md` ; écartées et raisons : C-15-14-2.
 
 **Décompte des bugs au kickoff** : 49 (§ *Priorités des défauts* du `CLAUDE.md`). Il doit

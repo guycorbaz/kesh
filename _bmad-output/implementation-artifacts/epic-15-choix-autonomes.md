@@ -6229,3 +6229,107 @@ l'import (#458–#461).
   dédié aux frais bancaires ») doit rester verte.
 - **Écartée** : allonger la liste de formes interdites (ouverte par nature).
 - **Réversible** : oui.
+
+## C-15-14-25 — 15-14 (validation P3) : un inventaire porte sur tout le dépôt suivi, et c'est l'exclusion qui se justifie
+
+- **Contexte** : F-1 (MEDIUM) et R-3 = F-2 (MEDIUM). Les comptes de la remédiation P2 se recomptent à
+  l'identique ; le défaut est le **périmètre** des commandes. (B) « réglages » était bornée à quatre
+  fichiers (`README.md:34`, un renvoi à l'écran où l'on agit, lui échappait) ; l'inventaire de l'AC 1 de la
+  15-14b était borné par un `awk` aux deux sections Synology (`admin-manual.tex:2475-2476`, « Hyper Backup
+  au niveau NAS » comme sauvegarde de la base, et `:1748` lui échappaient). Dans les deux cas, la commande
+  choisissait d'avance où regarder. Fait nouveau : la 15-7b1 est mergée (`origin/main = 245b91ee`).
+- **Retenu** : chaque commande d'inventaire est un `git grep -I` sur **tout le dépôt suivi**, moins un
+  ensemble d'exclusions commun `E` écrit **une fois**, avec la raison de chaque exclusion (convention de la
+  15-14a : `_bmad-output/`, `_bmad/`, `.claude/`, `CLAUDE.md`, `CHANGELOG.md`, `.svelte-kit/`, spécification
+  et PRD datés, fichiers archivés, tests) ; `LC_ALL=C.UTF-8` forcé. Pour l'AC 1 de la 15-14b, plus de borne
+  de section : le manuel d'administration **entier** (144 lignes, partitionnées par section — 43 dans les
+  sections Synology, 101 ailleurs, dont 6 corrigées), plus le reste du dépôt pour le symptôme de #575 (5).
+  Toutes les commandes relancées sur `245b91ee` : 15-14a AC 1 : 4 ; AC 2 : 21 et 132 ; AC 3 : 16 ; AC 5 :
+  25 ; AC 6 : 5 ; AC 8 : 153 ; AC 9 : 6 ; AC 10 : 21 ; 15-14b AC 3 : 477. Branche rebasée sur `245b91ee`
+  (sauvegarde `backup/15-14-avant-rebase-245b91ee`, registre et sprint-status par union). Les **numéros de
+  ligne** restent ceux de `bcded0c8`, avec la table des décalages de la 15-7b1 (`user-manual.tex` +1 à
+  partir de 190, +15 à partir de 2243 ; `CHANGELOG.md` +1 à partir de 42 ; `vat_rates.rs` +1 à partir de
+  353) — un réalignement partiel mêlerait deux bases dans les mêmes listes, et le T0 re-trouve chaque site
+  par la valeur.
+- **Écartées** : élargir chaque commande d'un cran (`+ README.md`, `+ frontend/src`…) — c'est recommencer
+  l'énumération qui a manqué ; réaligner tous les numéros sur `245b91ee` (la 15-13b, en cours
+  d'intégration, les décalera de nouveau).
+- **Réversible** : oui (fiches seules).
+
+## C-15-14-26 — 15-14a (validation P3) : les replis frontend à site unique ont leur garde, G13
+
+- **Contexte** : R-1 (MEDIUM). La fiche disait le repli d'`InvoiceForm.svelte` et celui des soldes de départ
+  « gardés par `i18n-repli-divergent-actif.test.ts` ». Faux au code : cette garde ne retient que les clés à
+  **au moins deux** replis distincts (`parTexte.size > 1 && auCatalogue.has(cle)`, ligne 141) ; les cinq clés
+  visées n'ont qu'un site d'appel chacune — trois replis (`invoice-cancel.ts`, `opening-balances/+page.svelte`,
+  `InvoiceForm.svelte`) n'avaient aucun test.
+- **Retenu** : G13, un `describe` neuf du même fichier, qui réutilise son relevé `replisParCle()` : pour une
+  table fermée de cinq clés, l'ensemble des replis égale `[valeur fr-CH]` (même patron que l'assertion des
+  deux titres d'avoir, ligne 169). Mutations : ancien repli d'`invoice-cancel.ts:43`, « Réglages » remis à
+  `InvoiceForm.svelte:768`, ancien repli des soldes de départ → rouges. L'affirmation fausse est retirée
+  partout (AC 2, AC 8, mutations).
+- **Écartées** : étendre G9 (Rust) aux fichiers frontend — il faudrait réécrire un lecteur de littéraux
+  TS/Svelte que `i18n-literal-reader.js` fournit déjà ; retirer l'affirmation sans test — T4 « replis égaux
+  au fr-CH » n'aurait plus de vérification pour trois de ses sites.
+- **Réversible** : oui.
+
+## C-15-14-27 — 15-14 (validation P3) : `regex` en dépendance de test de kesh-api et kesh-i18n
+
+- **Contexte** : L-1 (LOW). G2-G7, G9, G12 et G3, G8, G10, G11 sont écrits en motifs ; ni `kesh-api` ni
+  `kesh-i18n` n'ont le crate `regex` ; G18 (ex-G5 de la 15-14b) compte des occurrences qui se recouvrent,
+  ce que la commande perl fait par lookahead — absent du crate `regex`.
+- **Retenu** : `regex = "1.10"` en `[dev-dependencies]` des deux crates (version de `kesh-db` et
+  `kesh-import`, déjà dans `Cargo.lock`), à la T5 de la 15-14a ; G18 cherche chaque alternative séparément.
+- **Écartée** : se passer de `regex` (motifs réécrits à la main, plus fragiles) ; `fancy-regex` (dépendance
+  neuve pour un seul test).
+- **Réversible** : oui.
+
+## C-15-14-28 — 15-14b (validation P3) : le pré-script se passe de `--routines`/`--events`, et son compte de `SELECT` et `LOCK TABLES`
+
+- **Contexte** : L-4 (LOW). La fiche exigeait `SHOW VIEW`, `TRIGGER`, `EVENT` et une vérification de
+  `--routines` sur 10.11 ; le schéma de Kesh n'a ni routine, ni déclencheur, ni événement, ni vue (`grep`
+  sur les migrations → 0). La restauration depuis Hyper Backup (copies 2 et 3 du 3-2-1) n'avait pas de
+  procédure ; et « Hyper Backup ne voit pas la base » ignorait que DSM permet de cocher le paquet MariaDB.
+- **Retenu** : `--single-transaction --add-drop-database --databases <base>`, compte à `SELECT` + `LOCK
+  TABLES`, prouvé par la recette avec un compte qui n'a que ces privilèges ; angle mort écrit (une routine,
+  un déclencheur, un événement ou une vue ajoutés un jour rendraient le dump incomplet sans bruit).
+  Restauration Hyper Backup : renvoi à la procédure de rechargement de la recovery Snapshot. Le manuel dit
+  qu'Hyper Backup ne sauvegarde pas la base **au titre du dossier du compose**, la copie applicative du
+  paquet DSM, non vérifiable ici, s'ajoutant au dump sans le remplacer.
+- **Écartée** : garder `--routines --events` et leurs privilèges « par précaution » (privilèges inutiles,
+  et une vérification sur 10.11 que personne ne rejoue).
+- **Réversible** : oui.
+
+## C-15-14-29 — 15-14b (validation P3) : le pré-script écrit son dump dans un `.tmp`, puis le renomme
+
+- **Contexte** : F-5 (LOW). `… | gzip > kesh_pre_backup.sql.gz` ouvre la cible avant que le dump ne
+  réussisse : un échec la tronque, et le snapshot horaire capture le fichier vide à la place du dump de la
+  veille.
+- **Retenu** : écriture dans `kesh_pre_backup.sql.gz.tmp`, `mv` après succès, empreinte sur le fichier
+  renommé ; G16 extrait le nom du dump de la cible du `mv` et exige le couple `.tmp` + `mv` (mutation :
+  `| gzip >` directement sur la cible → rouge).
+- **Écartée** : garder le comportement actuel (« la tâche échoue, c'est voulu ») — l'échec est voulu, la
+  perte de la dernière copie saine ne l'est pas.
+- **Réversible** : oui.
+
+## C-15-14-30 — 15-14b (validation P3) : les formes « toutes les sociétés », « chaque company » restent hors du motif de G18
+
+- **Contexte** : L-6 et F-8 (LOW). Le domaine fermé de G18 reste défini par un motif ; des formes voisines
+  lui échappent (`admin-manual.tex:987`, `:1393`, `:1440`, `:1663`, `README.md:48`, la clé
+  `admin-backup-page-description` et son repli, la brochure `:97`, `:314`).
+- **Retenu** : relues une à une, aucune n'est fausse pour une installation à une société (définition du
+  modèle, contenu d'une sauvegarde, ciblage commercial compatible avec « une instance par dossier ») :
+  écrites en liste « hors motif, assumés » dans l'AC 3, pour qu'une revue la conteste ; motif inchangé.
+- **Écartée** : élargir le motif (`chaque company`, `toutes les sociétés`…) — G18 rougirait sur des phrases
+  vraies, et chaque forme ajoutée en appellerait une autre.
+- **Réversible** : oui.
+
+## C-15-14-31 — 15-14 (validation P3) : les gardes de la 15-14b deviennent G14-G18
+
+- **Contexte** : F-6 et une remarque de la lentille R (LOW). Les deux fiches numérotaient leurs gardes à partir
+  de G1 ; « G5 » désignait `aucun_dossier_surveille` (15-14a) et `une_installation_une_societe` (15-14b),
+  qui vivent dans le **même** fichier `textes_coherents.rs`.
+- **Retenu** : la 15-14a garde G1-G13 (G13 neuf, C-15-14-26) ; la 15-14b passe à G14-G18 (G1 → G14 … G5 →
+  G18), correspondance écrite en tête de ses tâches ; les Change Logs antérieurs gardent leurs numéros.
+- **Écartée** : préfixer (`15-14b-G5`) — plus long à chaque citation, pour le même effet.
+- **Réversible** : oui.
