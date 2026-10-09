@@ -193,7 +193,7 @@ KESH_PORT=3000
 
     \item \textbf{Container sur une IP dédiée (Docker macvlan/ipvlan)} — configurer le container avec sa propre IP via réseau \texttt{macvlan} ; le mapping host devient inutile (le container répond directement sur son \texttt{IP:80}). Procédure spécifique à votre infrastructure réseau.
 
-    \item \textbf{Mode \keshcommand{cargo run} natif (hors Docker) sur Linux non-root} — Linux n'autorise pas les utilisateurs non-root à bind un port \texttt{<1024} (\emph{security feature}). Dans ce contexte, set \textbf{obligatoirement} \keshcommand{KESH\_PORT=3000} (ou un autre port \texttt{≥ 1024}) dans votre \keshpath{.env} local. Alternatives possibles mais déconseillées : lancer avec \keshcommand{sudo}, ou ajouter la \emph{capability} via \keshcommand{sudo setcap 'cap\_net\_bind\_service=+ep' target/debug/kesh-api}.
+    \item \textbf{Mode \keshcommand{cargo run} natif (hors Docker) sur Linux non-root} — Linux n'autorise pas les utilisateurs non-root à bind un port \texttt{<1024} (\emph{security feature}). Dans ce contexte, set \textbf{obligatoirement} \keshcommand{KESH\_PORT=3000} (ou un autre port \texttt{≥ 1024}) dans votre \keshpath{.env} local. Alternatives possibles mais déconseillées : lancer avec \keshcommand{sudo}, ou ajouter la \emph{capability} via \keshcommand{sudo setcap 'cap\_net\_bind\_service=+ep' target/debug/kesh-api}. Hors Docker, posez aussi \keshcommand{KESH\_ADMIN\_BACKUP\_DIR} sur un dossier inscriptible par l'utilisateur qui lance Kesh (son défaut \texttt{/data/backup} ne l'est pas) : sans quoi tout import d'installation est refusé (\S\ref{sec:backup-ui-keshbackup}).
 \end{enumerate}
 
 \begin{keshtip}
@@ -768,7 +768,7 @@ hexadécimal).
     KESH\_BANK\_IMPORT\_MAX\_MB & Taille max fichier bank-import (CAMT.053/CSV), MiB. Borne [1, 100]. & \texttt{10} \\
     KESH\_ADMIN\_EXPORT\_INMEM\_MB & Plafond in-memory de l'export \texttt{.keshbackup} (au-delà : streaming). Borne [1, 2048]. & \texttt{50} \\
     KESH\_ADMIN\_IMPORT\_MAX\_MB & Taille max upload \texttt{.keshbackup} à l'import. Borne [1, 10240]. & \texttt{512} \\
-    KESH\_ADMIN\_BACKUP\_DIR & Répertoire du backup automatique pré-import. Vide = défaut. & \texttt{/tmp} \\
+    KESH\_ADMIN\_BACKUP\_DIR & Dossier de sauvegarde de sécurité pré-import, monté sur \texttt{./backup} par les compose fournis. Hors Docker : un dossier inscriptible. Vide = défaut. & \texttt{/data/backup} \\
     \bottomrule
 \end{tabularx}
 
@@ -824,8 +824,11 @@ Où les dossiers du conteneur sont montés sur l'hôte, pour un accès depuis le
 \textbf{seul} : pointez alors vers un dossier partagé DSM (\texttt{/volume1/...}).
 Avec \keshpath{docker-compose.prod.yml} (installation Synology de ce manuel), les
 montages sont fixes --- \keshpath{./inbox}, \keshpath{./documents}, \keshpath{./log}
-dans le répertoire du compose --- et ces trois variables sont \textbf{sans effet}
-(une version configurable est suivie par l'issue \#558).\par\noindent
+et \keshpath{./backup} dans le répertoire du compose --- et ces trois variables sont
+\textbf{sans effet} (une version configurable est suivie par l'issue \#558). Les deux
+compose montent en outre \keshpath{./backup} sur \texttt{/data/backup} (sauvegarde de
+sécurité pré-import, \S\ref{sec:backup-ui-keshbackup}), \textbf{sans} variable
+d'hôte : ce montage n'a pas de ligne dans le tableau.\par\noindent
 \begin{tabularx}{\linewidth}{>{\bfseries\ttfamily}lXl}
     \toprule
     \keshtableheader{Variable} & \keshtableheader{Monte sur} & \keshtableheader{Défaut host} \\
@@ -1436,6 +1439,7 @@ La sauvegarde régulière de l'instance Kesh est \textbf{critique} pour deux rai
 \begin{itemize}
     \item \textbf{Quotidienne} : \keshcommand{mariadb-dump} complet, conservé 30 jours, stocké en local + offsite (cloud).
     \item \textbf{Quotidienne, avec la base} : copie du répertoire des documents (\texttt{KESH\_DOCUMENTS\_DIR}, monté depuis \keshpath{./documents} avec \keshpath{docker-compose.prod.yml} ; avec \keshpath{docker-compose.yml}, depuis le dossier de \texttt{KESH\_DOCUMENTS\_HOST\_DIR} s'il est posé) --- il porte les \textbf{PDF des factures émises}, que ni le dump ni l'export ne contiennent (cf. \S\ref{sec:pdf-factures-sauvegarde}).
+    \item \textbf{Avec le répertoire du compose} : le dossier \keshpath{./backup}, où Kesh écrit la sauvegarde de sécurité prise avant chaque import d'installation, est dans le périmètre du répertoire du compose --- il contient des \textbf{secrets} (\S\ref{sec:backup-ui-keshbackup}).
     \item \textbf{Hebdomadaire} : snapshot du volume Docker \keshpath{/var/lib/docker/volumes/kesh\_db\_data} (gel cohérent via \keshcommand{docker compose stop} puis snapshot, ou via LVM/ZFS).
     \item \textbf{Mensuelle} : export ZIP de souveraineté (Story 9-2b) pour chaque company depuis l'interface utilisateur.
     \item \textbf{Annuelle} : archivage long terme conforme OLICo Art. 9 (support non-modifiable type CD-R, ou hash signé sur support modifiable WORM).
@@ -1660,7 +1664,7 @@ Combiner les outils pour atteindre la règle \textbf{3-2-1} (3 copies des donné
 
 \subsection{Export/import d'installation via l'interface Kesh}\label{sec:backup-ui-keshbackup}
 
-Depuis la version v0.2, Kesh permet d'\textbf{exporter et de réimporter l'intégralité d'une installation} directement depuis l'interface web d'administration, sans accès SSH ni ligne de commande. L'export produit un fichier unique \keshcommand{.keshbackup} (conteneur compressé) contenant \textbf{toutes les données d'installation} : l'ensemble des sociétés, les utilisateurs, et les données système --- \textbf{à l'exception des fichiers} du répertoire des documents (justificatifs importés, PDF des factures émises), qui se sauvegardent à part (\S\ref{sec:pdf-factures-sauvegarde}, issue \#503). Cette fonction est \textbf{réservée au rôle Administrateur} et \textbf{inaccessible via une clé API (PAT)} — les opérations d'infrastructure ne transitent jamais par une intégration externe.
+Depuis la version v0.2, Kesh permet d'\textbf{exporter et de réimporter l'intégralité d'une installation} directement depuis l'interface web d'administration, sans accès SSH ni ligne de commande. L'export produit un fichier unique \keshcommand{.keshbackup} (conteneur compressé) contenant \textbf{toutes les données d'installation} : l'ensemble des sociétés, les utilisateurs, et les données système --- \textbf{à l'exception des fichiers} du répertoire des documents (justificatifs importés, PDF des factures émises), qui se sauvegardent à part (\S\ref{sec:pdf-factures-sauvegarde}, issue \#503). Cette fonction est \textbf{réservée au rôle Administrateur} et \textbf{inaccessible via une clé API (PAT)} — les opérations d'infrastructure ne transitent jamais par une intégration externe. La \textbf{sauvegarde de sécurité pré-import} fait exception à l'absence de SSH : la rapatrier pour la restaurer demande un accès SSH (voir plus bas).
 
 \begin{keshnote}
 À ne pas confondre avec l'\textbf{export global per-société} (menu \textbf{Administration → Export global}, fichier CSV/ZIP) qui n'extrait les données comptables que d'\emph{une seule} entreprise pour transmission à un tiers. L'export/import \keshcommand{.keshbackup} décrit ici porte sur l'\textbf{installation complète} (toutes entreprises + comptes), pour la migration ou la restauration.
@@ -1681,15 +1685,27 @@ Menu \textbf{Administration → Restaurer / Importer} (\keshpath{/admin/restore}
 \textbf{Cette fonction sert à restaurer \emph{votre} installation} --- la remettre dans un état antérieur, ou la déplacer telle quelle vers un autre serveur. Ce n'est \textbf{pas} un outil pour verser les données d'une \emph{autre} installation dans la vôtre~: c'est techniquement possible, et les conséquences sur le journal d'audit sont décrites plus bas (section \emph{Conformité OLICo}).
 
 \begin{keshwarning}
-\textbf{Opération destructrice et irréversible.} L'import \textbf{remplace l'intégralité des données} de l'installation actuelle par celles du fichier. À la fin, vous êtes \textbf{déconnecté} et devez vous reconnecter avec les \textbf{identifiants tels qu'ils étaient au moment de la sauvegarde} --- tout compte créé, renommé ou dont le mot de passe a changé \emph{depuis} cette sauvegarde revient à son état d'alors, et les comptes créés depuis n'existent plus. Avant toute suppression, Kesh crée \textbf{automatiquement une sauvegarde de l'état courant} côté serveur (répertoire \keshcommand{KESH\_ADMIN\_BACKUP\_DIR}, défaut \keshpath{/tmp}) en filet de sécurité ; conservez ce répertoire à l'abri et purgez-le selon votre politique.
+\textbf{Opération destructrice et irréversible.} L'import \textbf{remplace l'intégralité des données} de l'installation actuelle par celles du fichier. À la fin, vous êtes \textbf{déconnecté} et devez vous reconnecter avec les \textbf{identifiants tels qu'ils étaient au moment de la sauvegarde} --- tout compte créé, renommé ou dont le mot de passe a changé \emph{depuis} cette sauvegarde revient à son état d'alors, et les comptes créés depuis n'existent plus. Avant toute suppression, Kesh crée \textbf{automatiquement une sauvegarde de l'état courant} côté serveur, en filet de sécurité --- dans le dossier de sauvegarde \keshcommand{KESH\_ADMIN\_BACKUP\_DIR}, défaut \keshpath{/data/backup}, monté sur \keshpath{./backup} par les compose fournis (voir \emph{La sauvegarde de sécurité pré-import} ci-dessous).
 \end{keshwarning}
 
 L'import \textbf{refuse} le fichier et préserve l'installation si :
 \begin{itemize}
     \item le fichier est \textbf{corrompu} ou n'est pas un \keshcommand{.keshbackup} valide (contrôle d'intégrité SHA-256) ;
     \item le \textbf{schéma} de la sauvegarde est incompatible avec la version de Kesh installée ;
-    \item la sauvegarde \textbf{exige une version minimale de Kesh supérieure} à celle de l'installation cible (protection anti-downgrade : ce seuil n'est relevé que par les migrations qui changent le schéma de façon incompatible) — mettez à jour Kesh avant de réimporter.
+    \item la sauvegarde \textbf{exige une version minimale de Kesh supérieure} à celle de l'installation cible (protection anti-downgrade : ce seuil n'est relevé que par les migrations qui changent le schéma de façon incompatible) — mettez à jour Kesh avant de réimporter ;
+    \item la \textbf{sauvegarde de sécurité} ne peut pas être prise ni écrite --- dossier de sauvegarde non inscriptible ou disque plein, ou base de données momentanément inaccessible : le message le dit, \textbf{aucune sauvegarde n'est créée et rien n'est supprimé} ; les journaux du serveur (\keshcommand{docker compose logs kesh-api}) indiquent la cause.
 \end{itemize}
+
+\paragraph{La sauvegarde de sécurité pré-import}
+
+Elle est écrite dans le dossier \keshpath{backup/} du répertoire du compose (\keshpath{/volume1/docker/kesh/backup} sur Synology), sous un nom qui commence par \keshcommand{kesh-pre-import-} (suivi de l'horodatage) et finit par \keshcommand{.keshbackup} : elle \textbf{survit} au conteneur, à sa recréation et à la mise à jour de l'image. Le fichier est créé en mode \texttt{0600}, propriétaire \texttt{root} (le conteneur tourne en \texttt{root}) ; sur Synology, les ACL du dossier partagé peuvent s'ajouter à ces droits --- limite non mesurée. C'est un \textbf{secret} (mêmes contenus qu'un export). Il s'en ajoute une à chaque import, de la taille de l'installation : leur \textbf{purge} est à votre charge. Un fichier \keshcommand{….keshbackup.partial} est une écriture interrompue, \textbf{pas} une sauvegarde : il peut être supprimé.
+
+\textbf{Restaurer depuis elle.} L'import se fait par le navigateur, et ni File Station, ni un partage SMB, ni un \keshcommand{scp} sans \keshcommand{sudo} ne lisent un fichier \texttt{root} en \texttt{0600}. Rapatriez-la donc en SSH vers un dossier partagé, depuis le répertoire du compose :
+\begin{lstlisting}[language=bash]
+sudo cp backup/kesh-pre-import-<...>.keshbackup /volume1/<partage>/
+sudo chown <utilisateur> /volume1/<partage>/kesh-pre-import-<...>.keshbackup
+\end{lstlisting}
+puis importez la copie par l'écran (ci-dessus), et \textbf{supprimez-la} ensuite : c'est un secret, et l'original reste dans \keshpath{backup/}.
 
 \paragraph{Exercices clôturés dans le désordre}
 
@@ -1727,7 +1743,7 @@ Il n'existe pas de commande qui rejouerait les reprises \textbf{sans} restaurer 
 \begin{itemize}
     \item \keshcommand{KESH\_ADMIN\_IMPORT\_MAX\_MB} — taille maximale d'un fichier \keshcommand{.keshbackup} importé, en Mio (défaut \textbf{512}, bornes [1, 10240]).
     \item \keshcommand{KESH\_ADMIN\_EXPORT\_INMEM\_MB} — plafond d'assemblage en mémoire de l'export ; au-delà, l'export est streamé via un fichier temporaire (défaut \textbf{50}, bornes [1, 2048]).
-    \item \keshcommand{KESH\_ADMIN\_BACKUP\_DIR} — répertoire de la sauvegarde automatique pré-import (défaut \keshpath{/tmp}, y compris quand la variable est vide ; créé s'il n'existe pas).
+    \item \sloppy\keshcommand{KESH\_ADMIN\_BACKUP\_DIR} — dossier de sauvegarde de sécurité pré-import (défaut \keshpath{/data/backup}, y compris quand la variable est vide, monté sur \keshpath{./backup} par les compose fournis ; créé en \texttt{0700} s'il n'existe pas). Une autre valeur doit être un chemin \textbf{monté}, sans quoi la sauvegarde retourne dans le conteneur ; hors Docker, un dossier inscriptible.
 \end{itemize}
 
 \subsubsection{Quelle méthode de sauvegarde choisir ?}
@@ -1804,12 +1820,12 @@ Jusqu'à la 0.12, les compose fournis ne transmettaient pas à Kesh seize variab
     \item \texttt{MARIADB\_PASSWORD} changé dans \keshpath{.env} sans \texttt{ALTER USER} : « Base de données indisponible … 1045 … », suivi d'un indice (\S\ref{sec:mariadb-mdp}).
 \end{itemize}
 
-\textbf{Effets sans refus} : \texttt{KESH\_PRODUCTION\_RESET} posé lors d'une ancienne démonstration réautorise, \textbf{sur une installation restée en démonstration}, la réinitialisation, qui vide toutes les données de la société ; les quatre \texttt{KESH\_SMTP\_HOST}/\texttt{\_USER}/\texttt{\_PASSWORD}/\texttt{\_FROM} posées « pour plus tard » activent l'envoi de factures par e-mail, et avec \texttt{KESH\_FEATURE\_FORGOT\_PASSWORD=true} (et \texttt{KESH\_PUBLIC\_BASE\_URL}) la réinitialisation du mot de passe par e-mail --- quiconque connaît l'adresse d'un utilisateur peut alors demander un lien ; \texttt{KESH\_COOKIE\_SECURE=false} sur \keshpath{docker-compose.prod.yml} émet des cookies sans \texttt{Secure} ; \texttt{KESH\_ADMIN\_BACKUP\_DIR} (un chemin non monté fait écrire dans le conteneur) ; \texttt{KESH\_LANG} ; \texttt{KESH\_PASSWORD\_MIN\_LENGTH} sur \keshpath{docker-compose.yml} s'applique côté serveur, alors que trois écrans gardent 12 en dur : au-dessous de 12, les écrans refusent quand même ; au-dessus, l'écran accepte et le serveur refuse ; une ligne \texttt{KESH\_LOG\_FILE\_PATH=} \textbf{vide} désactive désormais le journal fichier ; et plus généralement toute ligne décommentée de ces seize variables.
+\textbf{Effets sans refus} : \texttt{KESH\_PRODUCTION\_RESET} posé lors d'une ancienne démonstration réautorise, \textbf{sur une installation restée en démonstration}, la réinitialisation, qui vide toutes les données de la société ; les quatre \texttt{KESH\_SMTP\_HOST}/\texttt{\_USER}/\texttt{\_PASSWORD}/\texttt{\_FROM} posées « pour plus tard » activent l'envoi de factures par e-mail, et avec \texttt{KESH\_FEATURE\_FORGOT\_PASSWORD=true} (et \texttt{KESH\_PUBLIC\_BASE\_URL}) la réinitialisation du mot de passe par e-mail --- quiconque connaît l'adresse d'un utilisateur peut alors demander un lien ; \texttt{KESH\_COOKIE\_SECURE=false} sur \keshpath{docker-compose.prod.yml} émet des cookies sans \texttt{Secure} ; \texttt{KESH\_ADMIN\_BACKUP\_DIR} (un chemin non monté fait écrire dans le conteneur ; sans cette ligne, la sauvegarde pré-import va désormais, avec le compose de la 0.13.0, dans \keshpath{./backup} --- avec un compose gardé sans ce montage, dans \texttt{/data/backup} du conteneur, éphémère comme avant) ; \texttt{KESH\_LANG} ; \texttt{KESH\_PASSWORD\_MIN\_LENGTH} sur \keshpath{docker-compose.yml} s'applique côté serveur, alors que trois écrans gardent 12 en dur : au-dessous de 12, les écrans refusent quand même ; au-dessus, l'écran accepte et le serveur refuse ; une ligne \texttt{KESH\_LOG\_FILE\_PATH=} \textbf{vide} désactive désormais le journal fichier ; et plus généralement toute ligne décommentée de ces seize variables.
 
 \textbf{Un \keshpath{.env} copié du gabarit sans modification} ne change pas de comportement --- les seules lignes actives du gabarit parmi ces variables valent leur défaut (\texttt{KESH\_LANG=fr}, \texttt{KESH\_PASSWORD\_MIN\_LENGTH=12}, \texttt{KESH\_BANK\_IMPORT\_MAX\_MB=10}, \texttt{KESH\_COOKIE\_SECURE=true}) --- \textbf{sauf} le secret JWT laissé au placeholder, désormais refusé, \textbf{et} les mots de passe MariaDB avec \keshpath{docker-compose.yml} : copié du gabarit \textbf{0.13.0}, où ils sont commentés et sans valeur, il fait refuser Compose ; copié d'un gabarit \textbf{antérieur}, qui posait \texttt{kesh\_dev}, il fait émettre à Kesh l'avertissement « mot de passe publié ». Un \texttt{KESH\_ADMIN\_PASSWORD} absent ou vide ne change rien avec \keshpath{docker-compose.prod.yml}, et cesse de faire refuser le démarrage avec \keshpath{docker-compose.yml}.
 \end{keshwarning}
 
-\textbf{Voie recommandée : re-télécharger le compose} --- \keshpath{docker-compose.yml}, ou, sur Synology, \keshpath{docker-compose.prod.yml} enregistré sous \keshpath{docker-compose.yml} (\S\ref{sec:synology}) --- \textbf{et y reporter vos seules adaptations locales} (port \texttt{8080:80}, réseau, chemins des montages). Un montage modifié à la main et non reporté revient à \keshpath{./documents} (ou \keshpath{./inbox}, \keshpath{./log}) : justificatifs et PDF paraissent alors disparus --- ils sont toujours dans l'ancien dossier. Les commandes s'exécutent depuis le répertoire du compose (\keshpath{/volume1/docker/kesh} sur Synology) ; avec un autre nom de fichier, ajoutez \keshcommand{-f <son fichier>} à chaque commande \keshcommand{docker compose}. Puis \keshcommand{docker compose pull} \textbf{avant} \keshcommand{docker compose up -d}.
+\textbf{Voie recommandée : re-télécharger le compose} --- \keshpath{docker-compose.yml}, ou, sur Synology, \keshpath{docker-compose.prod.yml} enregistré sous \keshpath{docker-compose.yml} (\S\ref{sec:synology}) --- \textbf{et y reporter vos seules adaptations locales} (port \texttt{8080:80}, réseau, chemins des montages). Un montage modifié à la main et non reporté revient à \keshpath{./documents} (ou \keshpath{./inbox}, \keshpath{./log}) : justificatifs et PDF paraissent alors disparus --- ils sont toujours dans l'ancien dossier. Les commandes s'exécutent depuis le répertoire du compose (\keshpath{/volume1/docker/kesh} sur Synology) ; avec un autre nom de fichier, ajoutez \keshcommand{-f <son fichier>} à chaque commande \keshcommand{docker compose}. Puis \keshcommand{docker compose pull} \textbf{avant} \keshcommand{docker compose up -d}. Le compose de la 0.13.0 monte en outre \keshpath{./backup} (sauvegarde de sécurité pré-import, \S\ref{sec:backup-ui-keshbackup}) : le re-télécharger suffit pour ce montage.
 
 \paragraph{MariaDB (\keshpath{docker-compose.yml}) : port fermé, mots de passe obligatoires.}\mbox{}\\
 \begin{sloppypar}
@@ -1831,7 +1847,7 @@ La première commande \textbf{doit} afficher \texttt{compose lisible} : si Compo
 \end{sloppypar}
 
 \paragraph{Pour qui garde son fichier compose.}\mbox{}\\
-Quatre gestes pour \keshpath{docker-compose.yml}, deux pour \keshpath{docker-compose.prod.yml}. Les deux premiers, dans les deux fichiers, sous \texttt{environment:} du service \texttt{kesh-api} :
+Cinq gestes pour \keshpath{docker-compose.yml}, trois pour \keshpath{docker-compose.prod.yml}. Les deux premiers, dans les deux fichiers, sous \texttt{environment:} du service \texttt{kesh-api} ; le dernier, dans les deux fichiers aussi, sous ses \texttt{volumes:} :
 \begin{enumerate}
     \item \textbf{ajouter} les lignes \textbf{nouvelles}, et elles seules --- pour \keshpath{docker-compose.yml} :
 \begin{lstlisting}[language=bash]
@@ -1878,10 +1894,17 @@ Quatre gestes pour \keshpath{docker-compose.yml}, deux pour \keshpath{docker-com
       MARIADB_PASSWORD: ${MARIADB_PASSWORD:?à poser dans .env}
 \end{lstlisting}
     Exemple abrégé : le message du compose re-téléchargé ajoute « installation existante, reprendre la valeur avec laquelle la base a été créée, jamais une neuve », que Compose affiche au refus. Le plus sûr est de recopier ces trois lignes, message compris, depuis le compose re-téléchargé.
+    \item \textbf{ajouter} sous \texttt{volumes:} du service \texttt{kesh-api}, dans les deux compose, le montage de la sauvegarde de sécurité pré-import --- sans lui, elle reste dans le conteneur et disparaît à sa recréation :
+\begin{lstlisting}[language=bash]
+      - ./backup:/data/backup
+\end{lstlisting}
 \end{enumerate}
 \begin{sloppypar}
-Puis \keshcommand{docker compose config -q} (qui refuse une clé en double, et l'absence des deux mots de passe MariaDB), vérifier que \keshcommand{docker compose config} montre \texttt{KESH\_SMTP\_HOST} et \texttt{KESH\_PRODUCTION\_RESET}, et \textbf{aucune} entrée \texttt{ports} sous le service \texttt{mariadb} (Compose l'écrirait sous sa forme développée, \texttt{published: "3306"}), et \keshcommand{docker compose up -d}.
+Puis \keshcommand{docker compose config -q} (qui refuse une clé en double, et l'absence des deux mots de passe MariaDB), vérifier que \keshcommand{docker compose config} montre \texttt{KESH\_SMTP\_HOST} et \texttt{KESH\_PRODUCTION\_RESET}, et \textbf{aucune} entrée \texttt{ports} sous le service \texttt{mariadb} (Compose l'écrirait sous sa forme développée, \texttt{published: "3306"}), que la commande ci-dessous affiche \texttt{1} --- elle compte la \textbf{cible} du montage, pas la variable, qu'un \keshpath{.env} peut poser sans montage ---, et \keshcommand{docker compose up -d}.
 \end{sloppypar}
+\begin{lstlisting}[language=bash]
+sudo docker compose config | grep -c 'target: /data/backup'
+\end{lstlisting}
 
 \paragraph{Contrôle de fin de mise à jour (MariaDB, \keshpath{docker-compose.yml}).}\mbox{}\\
 Il se fait \textbf{sur la base}, pas sur \keshpath{.env} : un \keshcommand{grep} sur \keshcommand{docker compose config} ne lit que \keshpath{.env}, et resterait muet alors que la base garde l'ancien mot de passe. Une fois les mots de passe changés (\S\ref{sec:mariadb-mdp}) et \keshcommand{docker compose up -d} passé :

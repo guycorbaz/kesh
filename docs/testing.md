@@ -163,10 +163,11 @@ Le défaut applicatif de `KESH_HOST` est passé de `0.0.0.0` à `127.0.0.1` (Sto
 docker compose -f docker-compose.dev.yml up -d mariadb
 cd /path/to/kesh
 (cd frontend && npm run build)          # KESH_STATIC_DIR pointe sur le résultat
-mkdir -p /tmp/kesh-e2e/inbox /tmp/kesh-e2e/documents
+mkdir -p /tmp/kesh-e2e/inbox /tmp/kesh-e2e/documents /tmp/kesh-e2e/backup
 KESH_TEST_MODE=true KESH_HOST=127.0.0.1 KESH_COOKIE_SECURE=false \
   KESH_PORT=3000 KESH_STATIC_DIR="$PWD/frontend/build" \
   KESH_INBOX_DIR=/tmp/kesh-e2e/inbox KESH_DOCUMENTS_DIR=/tmp/kesh-e2e/documents \
+  KESH_ADMIN_BACKUP_DIR=/tmp/kesh-e2e/backup \
   KESH_ADMIN_USERNAME=admin KESH_ADMIN_PASSWORD=e2e-admin-password-12chars \
   KESH_SMTP_HOST=smtp.invalid KESH_SMTP_USER=e2e \
   KESH_SMTP_PASSWORD=e2e KESH_SMTP_FROM=kesh@example.invalid \
@@ -281,6 +282,7 @@ Le `globalSetup` Playwright (`tests/e2e/global-setup.ts`) appelle `seedTestState
 KESH_TEST_MODE=true KESH_HOST=127.0.0.1 KESH_PORT=8181 \
   KESH_ADMIN_USERNAME=admin KESH_ADMIN_PASSWORD=e2e-admin-password-12chars \
   KESH_FEATURE_FORGOT_PASSWORD=true KESH_PUBLIC_BASE_URL=http://127.0.0.1:8181 \
+  KESH_ADMIN_BACKUP_DIR=/tmp/kesh-e2e/backup \
   KESH_SMTP_HOST=127.0.0.1 KESH_SMTP_PORT=2525 KESH_SMTP_USER=e2e \
   KESH_SMTP_PASSWORD=e2e KESH_SMTP_FROM=kesh@example.invalid \
   DATABASE_URL="mysql://root:kesh_dev_root@127.0.0.1:3306/kesh" \
@@ -301,6 +303,7 @@ KESH_TEST_MODE=true KESH_HOST=127.0.0.1 KESH_PORT=8181 \
   KESH_SMTP_HOST=smtp.invalid KESH_SMTP_USER=e2e \
   KESH_SMTP_PASSWORD=e2e KESH_SMTP_FROM=kesh@example.invalid \
   KESH_STATIC_DIR=../frontend/build KESH_COOKIE_SECURE=false \
+  KESH_ADMIN_BACKUP_DIR=/tmp/kesh-e2e/backup \
   DATABASE_URL="mysql://kesh:kesh_dev@127.0.0.1:3306/kesh_e2e" \
   KESH_JWT_SECRET="dev-secret-at-least-32-bytes-long-for-testing" \
   cargo run -p kesh-api

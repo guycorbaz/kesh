@@ -5628,3 +5628,24 @@ l'import (#458–#461).
 - **Retenu** : faire au T0 ce qui ne dépend pas du démon (`docker compose config`, client seul : graphie et contrôle rouge mesurés ; `make fr`), écrire le manuel selon la fiche, et **retenter** le rapatriement au T10 ; s'il est toujours impossible, l'écrire au Dev Agent Record comme **non mesuré**, à rejouer par l'orchestrateur ou en recette. `sudo` y est joué par un conteneur root (même effet de droits), ce qui sera dit.
 - **Écartées** : redémarrer `dockerd` (emporterait `kesh-mariadb-dev` et les bases des autres agents — interdit) ; attendre sans fin ; déclarer le geste vérifié par raisonnement (« une hypothèse éliminée par raisonnement n'est pas une hypothèse testée »).
 - **Réversible** : oui — la mesure se rejoue à tout moment.
+
+## C-15-13b-2 — 15-13b (T6) : `CLAUDE.md` — seule la ligne de commande de la recette change, pas la mention de date
+
+- **Contexte** : l'AC 16 a prescrit deux modifications du `CLAUDE.md` (la variable ajoutée à la recette E2E, et une mention « `KESH_ADMIN_BACKUP_DIR` ajoutée le … » accolée à « vérifié le 2026-08-04 »). La consigne de l'orchestrateur pour ce développement dit : « ne change QUE la ligne de commande de la recette E2E, rien d'autre dans ce fichier ».
+- **Retenu** : la consigne de l'orchestrateur prime sur la fiche — `KESH_ADMIN_BACKUP_DIR=target/kesh-backup` ajoutée à la ligne `KESH_PORT=3000 KESH_STATIC_DIR=frontend/build`, rien d'autre. La date de vérification reste celle du 2026-08-04 ; le Dev Agent Record dit que la recette modifiée a tourné au gate E2E.
+- **Écartées** : appliquer l'AC 16 a à la lettre (contrevient à la consigne).
+- **Réversible** : oui (une phrase à ajouter si l'orchestrateur le souhaite).
+
+## C-15-13b-3 — 15-13b (T6) : la phrase « deux gestes » du CHANGELOG devient un renvoi sans nombre
+
+- **Contexte** : AC 13 c — la phrase partagée avec la 15-13a (« le manuel d'administration décrit les **deux gestes** ») est réécrite par la première fiche mergée, soit avec le décompte par fichier, soit par un renvoi sans nombre.
+- **Retenu** : « décrit les gestes à faire, fichier par fichier (§ *Passer à la 0.13.0*) » — un renvoi qui n'a rien à recompter au rebase de la 15-13a ; le manuel, lui, porte le décompte (« Trois gestes pour chacun des deux compose » avec la 15-13b seule).
+- **Écartées** : « trois gestes pour chacun » au CHANGELOG (à recompter par la seconde mergée, conflit certain sur la même ligne).
+- **Réversible** : oui.
+
+## C-15-13b-4 — 15-13b (T5) : la brochure reste telle quelle ; le nom du fichier est décrit, non écrit en entier
+
+- **Contexte** : AC 11 n (brochure `:398`, « restauration sans accès SSH ») et AC 11 e (nom `kesh-pre-import-<horodatage>-….keshbackup`). Écrit d'un bloc dans la prose, ce nom insécable produisait un `Overfull \hbox` de 155 pt ; deux autres débordements (14 et 18 pt) venaient de la ligne `KESH_ADMIN_BACKUP_DIR` de la liste des variables et d'une incise ajoutée au premier geste.
+- **Retenu** : brochure **inchangée** — elle vend l'export/import par l'écran, qui reste sans SSH ; l'exception de la sauvegarde pré-import est dite au manuel d'administration (ouverture de la section). Le nom est décrit « commence par `kesh-pre-import-` (suivi de l'horodatage) et finit par `.keshbackup` » ; `\sloppy` sur l'entrée de la liste ; l'incise « sous `environment:` » du premier geste retirée (la phrase d'ouverture le dit). Résultat : 55 `Overfull`, la même liste qu'avant, aucun nouveau.
+- **Écartées** : nuancer la brochure (promesse vraie pour ce qu'elle vend) ; garder le nom entier avec des `\allowbreak` (rendu haché, contrôle aplati fragilisé).
+- **Réversible** : oui.
