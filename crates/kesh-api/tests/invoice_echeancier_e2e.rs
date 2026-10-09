@@ -797,6 +797,51 @@ async fn get_credited_invoice_reports_zero_amount_due(pool: MySqlPool) {
     assert_eq!(montant(&v, "amountSettled"), rust_decimal::Decimal::ZERO);
 }
 
+/// Story 15-6a (test 12) — la frontière HTTP du changement de contrat : la
+/// créance de la vente archivée, `POST /api/v1/credit-notes` rend **400**
+/// `ACCOUNT_ARCHIVED`, nomme 1100 dans `details.rejected[]`, et dit
+/// « Impossible d'émettre l'avoir ». Il rendait `INACTIVE_OR_INVALID_ACCOUNTS`,
+/// anonyme.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn credit_note_route_names_the_archived_sale_receivable(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool)
+        .await
+        .expect("seed_accounting_company");
+    let contact_id = seed_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let (id, _v) = create_validated_invoice(
+        &pool,
+        seeded.company_id,
+        contact_id,
+        seeded.admin_user_id,
+        NaiveDate::from_ymd_opt(2026, 4, 1).unwrap(),
+        NaiveDate::from_ymd_opt(2026, 4, 30).unwrap(),
+        dec!(100.00),
+    )
+    .await;
+    let receivable = seeded.accounts["1100"];
+    sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+        .bind(receivable)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let app = spawn_app(pool.clone()).await;
+    let token = login(&app).await;
+    let resp = post_credit_note(&app, &token, id).await;
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "ACCOUNT_ARCHIVED", "got {body:?}");
+    assert_eq!(
+        body["error"]["details"]["rejected"],
+        json!([{ "accountId": receivable, "accountNumber": "1100" }])
+    );
+    let message = body["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("Impossible d'émettre l'avoir") && message.contains("1100"),
+        "message : {message}"
+    );
+}
+
 /// #456 — un avoir sur une facture réglée en partie est refusé en **409**, avec
 /// son code et un message qui dit quoi faire.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

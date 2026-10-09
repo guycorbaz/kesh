@@ -12,7 +12,10 @@ use chrono::NaiveDate;
 use kesh_db::entities::contact::{ContactType, NewContact};
 use kesh_db::entities::{NewCreditNote, NewInvoice, NewInvoiceLine, SettlementChoice};
 use kesh_db::errors::DbError;
-use kesh_db::repositories::{contacts, credit_notes, invoice_settlements_write, invoices};
+use kesh_db::repositories::{
+    company_invoice_settings, contacts, credit_notes, invoice_settlements,
+    invoice_settlements_write, invoices,
+};
 use kesh_db::test_fixtures::{SeededCompany, seed_accounting_company};
 use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
@@ -653,4 +656,450 @@ async fn credit_note_waits_for_a_concurrent_settlement(pool: MySqlPool) {
         "l'avoir devait attendre le règlement puis refuser — reçu {:?}",
         result.map(|c| c.credit_note.id)
     );
+}
+
+// ---------------------------------------------------------------------------
+// Story 15-6a (#473, #523) — l'avoir crédite la créance de la vente ; ses
+// comptes sont verrouillés en partage avant l'exercice.
+// ---------------------------------------------------------------------------
+
+/// Émet l'avoir d'une facture à `date`.
+async fn emit(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    invoice_id: i64,
+    date: NaiveDate,
+) -> Result<credit_notes::IssuedCreditNote, DbError> {
+    credit_notes::create_credit_note(
+        pool,
+        NewCreditNote {
+            company_id: seeded.company_id,
+            invoice_id,
+            date,
+        },
+        seeded.admin_user_id,
+    )
+    .await
+}
+
+/// Solde (débit − crédit) d'un compte sur les écritures de la société.
+async fn balance(pool: &MySqlPool, company_id: i64, account_id: i64) -> Decimal {
+    sqlx::query_scalar(
+        "SELECT COALESCE(SUM(jel.debit) - SUM(jel.credit), 0) FROM journal_entry_lines jel \
+         JOIN journal_entries je ON je.id = jel.entry_id \
+         WHERE je.company_id = ? AND jel.account_id = ?",
+    )
+    .bind(company_id)
+    .bind(account_id)
+    .fetch_one(pool)
+    .await
+    .unwrap()
+}
+
+async fn archive(pool: &MySqlPool, account_id: i64) {
+    sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+        .bind(account_id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+/// Rien d'écrit par un avoir refusé : ni avoir, ni écriture de plus, ni numéro
+/// d'avoir tiré, facture toujours `validated`.
+async fn assert_nothing_written(pool: &MySqlPool, invoice_id: i64, entries_before: i64) {
+    let notes: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM credit_notes")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let entries: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let drawn: i64 = sqlx::query_scalar(
+        "SELECT CAST(COALESCE(SUM(next_number - 1), 0) AS SIGNED) FROM credit_note_number_sequences",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let status: String = sqlx::query_scalar("SELECT status FROM invoices WHERE id = ?")
+        .bind(invoice_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        (notes, entries, drawn, status.as_str()),
+        (0, entries_before, 0, "validated"),
+        "rien d'écrit"
+    );
+}
+
+async fn count_entries(pool: &MySqlPool) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Le refus nommé de l'avoir, réduit à `(id, numéro)` par compte.
+fn archived_of(err: &DbError) -> Vec<(i64, Option<String>)> {
+    match err {
+        DbError::CreditNoteAccountsArchived(a) => a
+            .iter()
+            .map(|x| (x.account_id, x.account_number.clone()))
+            .collect(),
+        other => panic!("attendu CreditNoteAccountsArchived, obtenu {other:?}"),
+    }
+}
+
+/// Test 1 (#473) — l'avoir crédite la créance que la VENTE a débitée (1100),
+/// même après que les réglages désignent un autre compte débiteurs (1101) :
+/// solde de 1100 à zéro, aucune ligne sur 1101.
+#[sqlx::test(migrations = "./test-schema")]
+async fn credit_note_credits_the_sale_receivable_after_settings_change(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let invoice_id =
+        create_and_validate(&pool, &seeded, contact, &[(dec!(8.10), dec!(1000.00))]).await;
+    let new_receivable: i64 = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type) \
+         VALUES (?, '1101', 'Débiteurs (nouveau)', 'Asset')",
+    )
+    .bind(seeded.company_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_receivable_account_id = ? \
+         WHERE company_id = ?",
+    )
+    .bind(new_receivable)
+    .bind(seeded.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let issued = emit(&pool, &seeded, invoice_id, d(2026, 7, 1))
+        .await
+        .expect("avoir");
+    let receivable = seeded.accounts["1100"];
+    let creance = issued
+        .journal_entry
+        .lines
+        .iter()
+        .find(|l| l.credit > Decimal::ZERO)
+        .unwrap();
+    assert_eq!(
+        (creance.account_id, creance.credit),
+        (receivable, dec!(1081.00))
+    );
+    assert_eq!(balance(&pool, seeded.company_id, receivable).await, dec!(0));
+    assert!(
+        issued
+            .journal_entry
+            .lines
+            .iter()
+            .all(|l| l.account_id != new_receivable),
+        "aucune ligne sur le compte désigné depuis"
+    );
+}
+
+/// Test 2 (#473) — le réglage débiteurs VIDÉ après la validation (SQL direct)
+/// n'empêche plus l'avoir. Borné à la créance : le produit par défaut reste posé.
+#[sqlx::test(migrations = "./test-schema")]
+async fn credit_note_needs_no_receivable_setting(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let invoice_id =
+        create_and_validate(&pool, &seeded, contact, &[(dec!(8.10), dec!(1000.00))]).await;
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_receivable_account_id = NULL \
+         WHERE company_id = ?",
+    )
+    .bind(seeded.company_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    emit(&pool, &seeded, invoice_id, d(2026, 7, 1))
+        .await
+        .expect("avoir sans réglage débiteurs");
+    assert_eq!(
+        balance(&pool, seeded.company_id, seeded.accounts["1100"]).await,
+        dec!(0)
+    );
+}
+
+/// Test 3 — la créance de la vente archivée après la validation : refus qui
+/// NOMME 1100 (`ACCOUNT_ARCHIVED`), rien d'écrit.
+#[sqlx::test(migrations = "./test-schema")]
+async fn credit_note_refused_when_sale_receivable_archived(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let invoice_id =
+        create_and_validate(&pool, &seeded, contact, &[(dec!(8.10), dec!(1000.00))]).await;
+    archive(&pool, seeded.accounts["1100"]).await;
+    let entries_before = count_entries(&pool).await;
+
+    let err = emit(&pool, &seeded, invoice_id, d(2026, 7, 1))
+        .await
+        .expect_err("créance archivée");
+    assert_eq!(
+        archived_of(&err),
+        vec![(seeded.accounts["1100"], Some("1100".to_string()))]
+    );
+    assert_nothing_written(&pool, invoice_id, entries_before).await;
+}
+
+/// Test 4 — le lecteur de créance est porté par la société : l'écriture de vente
+/// d'une société, lue avec l'identifiant d'une autre, rend `None`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn sale_receivable_account_is_scoped_to_the_company(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let invoice_id =
+        create_and_validate(&pool, &seeded, contact, &[(dec!(8.10), dec!(1000.00))]).await;
+    let sale_entry: i64 = sqlx::query_scalar("SELECT journal_entry_id FROM invoices WHERE id = ?")
+        .bind(invoice_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let other_company = other_company(&pool).await;
+
+    let mut conn = pool.acquire().await.unwrap();
+    let own =
+        invoice_settlements::sale_receivable_account(&mut conn, seeded.company_id, sale_entry)
+            .await
+            .unwrap();
+    assert_eq!(own, Some(seeded.accounts["1100"]), "témoin : sa société");
+    let foreign =
+        invoice_settlements::sale_receivable_account(&mut conn, other_company, sale_entry)
+            .await
+            .unwrap();
+    assert_eq!(foreign, None);
+}
+
+/// Une seconde société, minimale.
+async fn other_company(pool: &MySqlPool) -> i64 {
+    sqlx::query(
+        "INSERT INTO companies (name, address, org_type, accounting_language, \
+         instance_language) VALUES ('Autre SA', 'Rue 3\n1000 Lausanne', 'Independant', \
+         'FR', 'FR')",
+    )
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+/// Test 11 — la course de l'AC6 : un archivage de la créance, tenu non validé,
+/// fait ATTENDRE l'avoir sur le verrou de ses comptes ; validé, l'avoir voit le
+/// compte archivé et le nomme, rien d'écrit.
+///
+/// ⚠️ Motifs couplés à la forme du verrou (`FROM accounts`, `LOCK IN SHARE
+/// MODE`) : changer la requête du helper impose de les revoir. La facture est
+/// **sans arrondi** pour que seul ce verrou lise `accounts` sous verrou. Sur le
+/// code d'avant la Story 15-6a, l'avoir n'y attend jamais (il bute plus tard sur
+/// la clé étrangère de l'insertion des lignes) : c'est le délai de
+/// `attendre_une_requete_en_cours` qui rougit.
+#[sqlx::test(migrations = "./test-schema")]
+async fn credit_note_waits_for_a_concurrent_archive_of_the_sale_receivable(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let invoice_id =
+        create_and_validate(&pool, &seeded, contact, &[(dec!(8.10), dec!(1000.00))]).await;
+    let receivable = seeded.accounts["1100"];
+    let entries_before = count_entries(&pool).await;
+
+    let mut concurrent = pool.begin().await.unwrap();
+    sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+        .bind(receivable)
+        .execute(&mut *concurrent)
+        .await
+        .unwrap();
+
+    let p = pool.clone();
+    let (company_id, user_id) = (seeded.company_id, seeded.admin_user_id);
+    let avoir = tokio::spawn(async move {
+        credit_notes::create_credit_note(
+            &p,
+            NewCreditNote {
+                company_id,
+                invoice_id,
+                date: d(2026, 7, 1),
+            },
+            user_id,
+        )
+        .await
+    });
+    let vue = kesh_db::test_fixtures::attendre_une_requete_en_cours(
+        &pool,
+        &["FROM accounts", "LOCK IN SHARE MODE"],
+        || avoir.is_finished(),
+    )
+    .await;
+    if !vue {
+        panic!(
+            "l'avoir a fini sans attendre le verrou des comptes : {:?}",
+            avoir.await.map(|r| r.map(|c| c.credit_note.id))
+        );
+    }
+    concurrent.commit().await.unwrap();
+
+    let err = avoir.await.expect("tâche").expect_err("créance archivée");
+    assert_eq!(
+        archived_of(&err),
+        vec![(receivable, Some("1100".to_string()))]
+    );
+    assert_nothing_written(&pool, invoice_id, entries_before).await;
+}
+
+/// Test 14 — ordre des refus : la créance archivée l'emporte sur l'absence
+/// d'exercice ouvert — le verrou des comptes de l'avoir précède l'exercice.
+#[sqlx::test(migrations = "./test-schema")]
+async fn credit_note_archived_sale_receivable_is_refused_before_the_fiscal_year(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let invoice_id =
+        create_and_validate(&pool, &seeded, contact, &[(dec!(8.10), dec!(1000.00))]).await;
+    archive(&pool, seeded.accounts["1100"]).await;
+
+    let err = emit(&pool, &seeded, invoice_id, d(2031, 1, 15))
+        .await
+        .expect_err("refusé");
+    assert_eq!(
+        archived_of(&err),
+        vec![(seeded.accounts["1100"], Some("1100".to_string()))],
+        "et non FiscalYearInvalid"
+    );
+}
+
+/// Test 16 (C-15-6-29) — le compte de TVA due des réglages archivé après la
+/// validation d'une facture avec TVA : refus qui le NOMME, rien d'écrit.
+#[sqlx::test(migrations = "./test-schema")]
+async fn credit_note_refused_when_vat_payable_archived(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let invoice_id =
+        create_and_validate(&pool, &seeded, contact, &[(dec!(8.10), dec!(1000.00))]).await;
+    let vat = seeded.accounts["2000"];
+    archive(&pool, vat).await;
+    let entries_before = count_entries(&pool).await;
+
+    let err = emit(&pool, &seeded, invoice_id, d(2026, 7, 1))
+        .await
+        .expect_err("TVA due archivée");
+    assert_eq!(archived_of(&err), vec![(vat, Some("2000".to_string()))]);
+    assert_nothing_written(&pool, invoice_id, entries_before).await;
+}
+
+/// Test 17 (C51, C88) — le helper de verrou de liste, appelé en direct avec la
+/// créance et l'identifiant d'un compte d'une AUTRE société, ne verrouille pas
+/// la ligne étrangère (patron `owned_account_ids`) : une sonde `FOR UPDATE
+/// NOWAIT` y réussit, alors qu'elle échoue sur la créance (témoin). La ligne
+/// étrangère est absente de l'instantané.
+#[sqlx::test(migrations = "./test-schema")]
+async fn credit_note_lock_leaves_a_foreign_account_unlocked(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let other = other_company(&pool).await;
+    let foreign: i64 = sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type) \
+         VALUES (?, '1100', 'Débiteurs étrangers', 'Asset')",
+    )
+    .bind(other)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    let receivable = seeded.accounts["1100"];
+
+    let mut holder = pool.begin().await.unwrap();
+    let snapshot = company_invoice_settings::lock_designated_accounts_in_tx(
+        &mut holder,
+        seeded.company_id,
+        &[foreign, receivable],
+    )
+    .await
+    .unwrap();
+    let ids: Vec<i64> = snapshot.accounts().iter().map(|a| a.id).collect();
+    assert_eq!(ids, vec![receivable], "la ligne étrangère est absente");
+
+    async fn nowait(pool: &MySqlPool, id: i64) -> bool {
+        let mut probe = pool.begin().await.unwrap();
+        let r = sqlx::query("SELECT id FROM accounts WHERE id = ? FOR UPDATE NOWAIT")
+            .bind(id)
+            .fetch_all(&mut *probe)
+            .await;
+        probe.rollback().await.unwrap();
+        r.is_ok()
+    }
+    assert!(
+        nowait(&pool, foreign).await,
+        "le compte d'une autre société ne doit pas être verrouillé"
+    );
+    assert!(
+        !nowait(&pool, receivable).await,
+        "témoin : la créance de la société est tenue en partagé"
+    );
+    holder.rollback().await.unwrap();
+}
+
+/// Test 19 (revue de code P1, finding A-3 ; AC3) — l'écriture de vente SANS
+/// ligne de débit : la facture, repointée en SQL sur un en-tête d'écriture vide
+/// de la même société, n'a plus de créance lisible. L'avoir est refusé
+/// `DbError::Invariant` (500), rien d'écrit — il ne retombe pas sur le réglage
+/// débiteurs.
+///
+/// ⚠️ Le second `Invariant` de l'AC3 (« facture validée sans écriture de
+/// vente ») n'a pas de test : `chk_invoices_validated_has_je` interdit de monter
+/// une facture `validated` dont `journal_entry_id` est `NULL`, même en SQL
+/// direct. Angle mort assumé, gardé par la contrainte elle-même.
+#[sqlx::test(migrations = "./test-schema")]
+async fn credit_note_refused_when_the_sale_entry_has_no_debit_line(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let contact = make_contact(&pool, seeded.company_id, seeded.admin_user_id).await;
+    let invoice_id =
+        create_and_validate(&pool, &seeded, contact, &[(dec!(8.10), dec!(1000.00))]).await;
+    let (fy_id, entry_date): (i64, NaiveDate) = sqlx::query_as(
+        "SELECT je.fiscal_year_id, je.entry_date FROM journal_entries je \
+         JOIN invoices i ON i.journal_entry_id = je.id WHERE i.id = ?",
+    )
+    .bind(invoice_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let empty_entry: i64 = sqlx::query(
+        "INSERT INTO journal_entries (company_id, fiscal_year_id, entry_number, entry_date, \
+         journal, description, version, created_at, updated_at) \
+         SELECT ?, ?, COALESCE(MAX(entry_number), 0) + 1, ?, 'Ventes', 'en-tête vide', 1, \
+         NOW(3), NOW(3) FROM journal_entries WHERE company_id = ? AND fiscal_year_id = ?",
+    )
+    .bind(seeded.company_id)
+    .bind(fy_id)
+    .bind(entry_date)
+    .bind(seeded.company_id)
+    .bind(fy_id)
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query("UPDATE invoices SET journal_entry_id = ? WHERE id = ?")
+        .bind(empty_entry)
+        .bind(invoice_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let entries_before = count_entries(&pool).await;
+
+    let err = emit(&pool, &seeded, invoice_id, d(2026, 7, 1))
+        .await
+        .expect_err("écriture de vente sans ligne de débit");
+    match &err {
+        DbError::Invariant(msg) => assert!(
+            msg.contains("sans ligne de débit"),
+            "message inattendu : {msg}"
+        ),
+        other => panic!("attendu Invariant, obtenu {other:?}"),
+    }
+    assert_nothing_written(&pool, invoice_id, entries_before).await;
 }

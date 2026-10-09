@@ -839,9 +839,17 @@ mod arrondi_5_centimes {
     }
 
     /// ⛔ Avoir d'une facture ARRONDIE dont le compte d'arrondi a été archivé
-    /// depuis (#486) : refus au contexte émission, et RIEN d'écrit — ni avoir, ni
-    /// écriture, ni numéro consommé (la transaction emporte le compteur tiré plus
-    /// tôt). Revue de code P1, lentille B.
+    /// depuis (#486) : refus, et RIEN d'écrit — ni avoir, ni écriture, ni numéro
+    /// consommé. Revue de code P1, lentille B.
+    ///
+    /// **Modifié délibérément par la Story 15-6a** (AC6, choix C-15-6-25) : le
+    /// refus était `RoundingAccountNotConfigured { Issuance }`, dont le message
+    /// renvoie à *Paramètres → Facturation* — remède faux, l'avoir ne lisant plus
+    /// ce réglage (#523). Il est désormais `CreditNoteAccountsArchived`, qui
+    /// NOMME le compte à réactiver — celui que la vente a mouvementé. Le refus
+    /// vient du verrou des comptes de l'avoir, AVANT la séquence : aucun numéro
+    /// n'est tiré. L'assertion « premier numéro après réactivation » fige donc
+    /// l'ORDRE (refus avant la séquence), et non plus le rollback du compteur.
     #[sqlx::test(migrations = "./test-schema")]
     async fn a_credit_note_is_refused_when_the_rounding_account_was_archived(pool: MySqlPool) {
         let (seeded, contact, rounding) = setup(&pool).await;
@@ -865,15 +873,16 @@ mod arrondi_5_centimes {
         let err = credit_notes::create_credit_note(&pool, new(), seeded.admin_user_id)
             .await
             .expect_err("compte d'arrondi archivé");
-        assert!(
-            matches!(
-                err,
-                DbError::RoundingAccountNotConfigured {
-                    context: RoundingContext::Issuance
-                }
+        match &err {
+            DbError::CreditNoteAccountsArchived(archived) => assert_eq!(
+                archived,
+                &vec![kesh_db::errors::ArchivedAccount {
+                    account_id: rounding,
+                    account_number: Some("6940".into()),
+                }]
             ),
-            "got {err:?}"
-        );
+            other => panic!("attendu CreditNoteAccountsArchived(6940), obtenu {other:?}"),
+        }
         let notes: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM credit_notes")
             .fetch_one(&pool)
             .await
@@ -902,6 +911,175 @@ mod arrondi_5_centimes {
             "numéro {:?}",
             cn.credit_note.credit_note_number
         );
+    }
+
+    /// Avoir émis par le dépôt, à la date de la facture.
+    async fn avoir(
+        pool: &MySqlPool,
+        seeded: &SeededCompany,
+        invoice_id: i64,
+    ) -> Result<credit_notes::IssuedCreditNote, DbError> {
+        credit_notes::create_credit_note(
+            pool,
+            NewCreditNote {
+                company_id: seeded.company_id,
+                invoice_id,
+                date: NaiveDate::from_ymd_opt(INVOICE_DATE.0, INVOICE_DATE.1, INVOICE_DATE.2)
+                    .unwrap(),
+            },
+            seeded.admin_user_id,
+        )
+        .await
+    }
+
+    /// Un second compte de charge `6941`, désigné comme compte d'arrondi —
+    /// `designate_rounding_account` insère toujours `6940` et ne peut pas
+    /// servir deux fois.
+    async fn redesignate_rounding(pool: &MySqlPool, company_id: i64) -> i64 {
+        let id = sqlx::query(
+            "INSERT INTO accounts (company_id, number, name, account_type) \
+             VALUES (?, '6941', 'Différences d''arrondi (nouveau)', 'Expense')",
+        )
+        .bind(company_id)
+        .execute(pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        sqlx::query(
+            "UPDATE company_invoice_settings SET default_rounding_account_id = ? \
+             WHERE company_id = ?",
+        )
+        .bind(id)
+        .bind(company_id)
+        .execute(pool)
+        .await
+        .unwrap();
+        id
+    }
+
+    /// Solde (débit − crédit) d'un compte sur toutes les écritures.
+    async fn solde(pool: &MySqlPool, account_id: i64) -> Decimal {
+        sqlx::query_scalar(
+            "SELECT COALESCE(SUM(debit) - SUM(credit), 0) FROM journal_entry_lines \
+             WHERE account_id = ?",
+        )
+        .bind(account_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+    }
+
+    /// Story 15-6a (test 5) — sur une facture à arrondi NÉGATIF, l'écriture de
+    /// vente porte deux lignes de débit (créance, puis arrondi) : le lecteur de
+    /// créance rend la créance, pas le compte d'arrondi.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn sale_receivable_reader_skips_a_negative_rounding_line(pool: MySqlPool) {
+        let (seeded, contact, _rounding) = setup(&pool).await;
+        let v = create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(234.52))])
+            .await
+            .expect("validate");
+        assert_eq!(v.invoice.rounding_amount, dec!(-0.02));
+        let mut conn = pool.acquire().await.unwrap();
+        let got = invoice_settlements::sale_receivable_account(
+            &mut conn,
+            seeded.company_id,
+            v.journal_entry.entry.id,
+        )
+        .await
+        .unwrap();
+        assert_eq!(got, Some(seeded.accounts["1100"]));
+    }
+
+    /// Story 15-6a (test 6, #523) — l'avoir contre-passe l'arrondi sur le compte
+    /// que la VENTE a mouvementé (6940), même après qu'un autre compte (6941) a
+    /// été désigné : solde de 6940 à zéro, aucune ligne sur 6941.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn a_credit_note_reverses_the_sale_rounding_after_redesignation(pool: MySqlPool) {
+        let (seeded, contact, rounding) = setup(&pool).await;
+        let v = create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(123.44))])
+            .await
+            .expect("validate");
+        assert_eq!(v.invoice.rounding_amount, dec!(0.01));
+        let other = redesignate_rounding(&pool, seeded.company_id).await;
+
+        let cn = avoir(&pool, &seeded, v.invoice.id).await.expect("avoir");
+        assert_eq!(
+            lignes(&cn.journal_entry),
+            vec![
+                (seeded.accounts["1100"], dec!(0), dec!(123.45)),
+                (seeded.accounts["3000"], dec!(123.44), dec!(0)),
+                (rounding, dec!(0.01), dec!(0)),
+            ]
+        );
+        assert_eq!(solde(&pool, rounding).await, dec!(0), "6940 revient à zéro");
+        let on_other: i64 =
+            sqlx::query_scalar("SELECT COUNT(*) FROM journal_entry_lines WHERE account_id = ?")
+                .bind(other)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(on_other, 0, "aucune ligne sur le compte désigné depuis");
+    }
+
+    /// Story 15-6a (test 7, #523) — le réglage d'arrondi VIDÉ après la validation
+    /// (SQL direct) n'empêche plus l'avoir : la ligne d'arrondi vise 6940.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn a_credit_note_needs_no_rounding_setting(pool: MySqlPool) {
+        let (seeded, contact, rounding) = setup(&pool).await;
+        let v = create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(123.44))])
+            .await
+            .expect("validate");
+        sqlx::query(
+            "UPDATE company_invoice_settings SET default_rounding_account_id = NULL \
+             WHERE company_id = ?",
+        )
+        .bind(seeded.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let cn = avoir(&pool, &seeded, v.invoice.id)
+            .await
+            .expect("avoir sans réglage d'arrondi");
+        assert_eq!(
+            lignes(&cn.journal_entry).last(),
+            Some(&(rounding, dec!(0.01), dec!(0)))
+        );
+        assert_eq!(solde(&pool, rounding).await, dec!(0));
+    }
+
+    /// Story 15-6a (test 8) — le lecteur d'arrondi RECOUPE la dernière ligne avec
+    /// l'arrondi de la facture : appelé avec le signe opposé, il refuse
+    /// (`Invariant`) au lieu de rendre une ligne en silence. Le bon signe rend
+    /// bien le compte (témoin).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn sale_rounding_reader_refuses_a_mismatched_line(pool: MySqlPool) {
+        let (seeded, contact, rounding) = setup(&pool).await;
+        let v = create_and_validate(&pool, &seeded, contact, &[(dec!(0), dec!(123.44))])
+            .await
+            .expect("validate");
+        let entry = v.journal_entry.entry.id;
+        let mut conn = pool.acquire().await.unwrap();
+        let ok = invoice_settlements::sale_rounding_account(
+            &mut conn,
+            seeded.company_id,
+            entry,
+            dec!(0.01),
+        )
+        .await
+        .unwrap();
+        assert_eq!(ok, rounding, "témoin : le bon signe rend le compte");
+        for wrong in [dec!(-0.01), dec!(0.02)] {
+            let err = invoice_settlements::sale_rounding_account(
+                &mut conn,
+                seeded.company_id,
+                entry,
+                wrong,
+            )
+            .await
+            .expect_err("forme différente");
+            assert!(matches!(err, DbError::Invariant(_)), "{wrong} : {err:?}");
+        }
     }
 
     /// La dévalidation remet l'arrondi figé à zéro.
@@ -1392,17 +1570,49 @@ mod garde_usage_comptes_reglage {
         assert_nothing_written(&pool, &seeded, id).await;
     }
 
-    /// L'AVOIR est exempté de la garde à l'usage, délibérément (C35) : une
-    /// facture dont la créance des réglages est devenue non imputable reste
-    /// annulable.
+    /// L'AVOIR ne contrôle pas l'imputabilité de ce qu'il contre-passe
+    /// (choix C-15-6-2, C-15-6-7 ; Story 15-6a) : la créance **de la vente**,
+    /// rendue non imputable après la validation, reste celle que l'avoir
+    /// crédite, et l'avoir est émis — « mêmes comptes que l'origine, seule
+    /// l'inactivité bloque ».
+    ///
+    /// **Changé de sens par la Story 15-6a** : ce test figeait l'exemption de
+    /// l'avoir à la garde à l'usage (C35), quand l'avoir relisait la créance dans
+    /// les réglages. Il ne la lit plus là : sans ce ré-ancrage, le test serait
+    /// resté vert pour une autre raison, sans plus rien figer.
+    ///
+    /// **Discriminant sur la source** (revue de code P1, finding A-1) : les
+    /// réglages désignent, après la validation, un AUTRE compte débiteurs
+    /// (1101, imputable et actif). Un avoir qui relirait la créance dans les
+    /// réglages créditerait 1101 et passerait la garde : l'assertion sur 1100
+    /// rougit alors (constaté sous la mutation « créance lue sur les
+    /// réglages »).
     #[sqlx::test(migrations = "./test-schema")]
-    async fn credit_note_is_exempt_from_the_guard(pool: MySqlPool) {
+    async fn credit_note_credits_a_non_postable_sale_receivable(pool: MySqlPool) {
         let (seeded, contact) = setup(&pool).await;
         let id = draft(&pool, &seeded, contact, &[(dec!(8.10), dec!(100.00), None)]).await;
         validate(&pool, &seeded, id).await.expect("validée");
         set_postable(&pool, seeded.accounts["1100"], false).await;
+        let settings_receivable: i64 = sqlx::query(
+            "INSERT INTO accounts (company_id, number, name, account_type) \
+             VALUES (?, '1101', 'Débiteurs (réglages)', 'Asset')",
+        )
+        .bind(seeded.company_id)
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        sqlx::query(
+            "UPDATE company_invoice_settings SET default_receivable_account_id = ? \
+             WHERE company_id = ?",
+        )
+        .bind(settings_receivable)
+        .bind(seeded.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
 
-        credit_notes::create_credit_note(
+        let cn = credit_notes::create_credit_note(
             &pool,
             NewCreditNote {
                 company_id: seeded.company_id,
@@ -1413,7 +1623,25 @@ mod garde_usage_comptes_reglage {
             seeded.admin_user_id,
         )
         .await
-        .expect("l'avoir est émis malgré la créance non imputable (C35)");
+        .expect("l'avoir est émis malgré la créance non imputable");
+        let creance = cn
+            .journal_entry
+            .lines
+            .iter()
+            .find(|l| l.credit > Decimal::ZERO)
+            .expect("ligne de crédit");
+        assert_eq!(
+            (creance.account_id, creance.credit),
+            (seeded.accounts["1100"], dec!(108.10)),
+            "le crédit vise la créance de la vente"
+        );
+        assert!(
+            cn.journal_entry
+                .lines
+                .iter()
+                .all(|l| l.account_id != settings_receivable),
+            "aucune ligne sur le compte débiteurs des réglages"
+        );
     }
 
     /// Un compte d'une AUTRE société posé comme TVA due des réglages

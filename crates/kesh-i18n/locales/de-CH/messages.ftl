@@ -306,6 +306,7 @@ invoice-line-account-not-revenue = { $subject }: Konto { $number } ist kein Ertr
 invoice-line-account-not-postable = { $subject }: Konto { $number } ist nicht bebuchbar — wählen Sie ein anderes Konto
 invoice-line-revenue-account-invalid = Ungültiges Ertragskonto — { $detail }
 credit-note-revenue-account-archived = Gutschrift kann nicht ausgestellt werden — { $detail }. Reaktivieren Sie die betroffenen Konten.
+credit-note-account-archived = Gutschrift kann nicht ausgestellt werden — archivierte(s) Konto/Konten: { $detail }. Reaktivieren Sie die betroffenen Konten.
 invoice-error-total-zero = Diese Rechnung hat einen Gesamtbetrag von null und kann nicht validiert werden. Erfassen Sie mindestens eine Position mit einem Einzelpreis grösser als null.
 credit-note-error-total-zero = Diese Rechnung hat einen Gesamtbetrag von null: Es kann keine Gutschrift ausgestellt werden.
 

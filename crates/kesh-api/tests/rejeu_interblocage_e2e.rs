@@ -1155,3 +1155,87 @@ async fn manual_match_is_replayed_when_it_is_the_deadlock_victim(pool: MySqlPool
     );
     capture.exiger_un_rejeu("reconciliation::manual");
 }
+
+// ============================================================
+// Story 15-6a (test 15) — l'avoir victime sur l'attente neuve de ses comptes
+// ============================================================
+
+/// Le rejeu de `POST /api/v1/credit-notes` (posé par la Story 15-5e2) couvre
+/// l'attente **neuve** que la Story 15-6a crée : le verrou partagé des comptes
+/// de l'avoir, pris avant l'exercice (AC6).
+///
+/// Montage déterministe (patron du fichier) : la transaction de test, alourdie
+/// (table de lest hors de tout flux métier — un lest dans une table applicative
+/// poserait des verrous de clé étrangère sur `accounts` et changerait le cycle),
+/// tient la créance 1100 en exclusif ; l'avoir, qui tient déjà la facture et les
+/// réglages, est vu en attente de son `LOCK IN SHARE MODE` sur `accounts` ; la
+/// transaction de test demande alors la facture → cycle, InnoDB annule l'avoir
+/// (la plus légère), la transaction de test annule, et le rejeu repart à neuf :
+/// 201, un seul avoir, facture annulée, premier numéro d'avoir.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn credit_note_route_replays_when_it_is_the_deadlock_victim(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    disable_rounding_to_5_centimes(&pool, ctx.company_id())
+        .await
+        .unwrap();
+    let capture = CaptureRejeu::installer();
+    let facture = facture_validee(&pool, &ctx, "100.00").await;
+
+    // (1) La transaction de test : lourde, puis la créance de la vente.
+    let mut lourde = transaction_lourde(&pool).await;
+    sqlx::query("SELECT id FROM accounts WHERE id = ? FOR UPDATE")
+        .bind(ctx.compte("1100"))
+        .fetch_one(&mut *lourde)
+        .await
+        .unwrap();
+
+    // (2) L'avoir : facture, réglages, puis le verrou partagé de ses comptes.
+    let route = requete_en_tache(
+        &ctx,
+        reqwest::Method::POST,
+        "/api/v1/credit-notes",
+        Some(json!({ "invoiceId": facture, "date": aujourd_hui().to_string() })),
+    );
+    // (3) La facture, que tient l'avoir.
+    let (status, corps) = victime(
+        &pool,
+        lourde,
+        route,
+        &["FROM accounts", "LOCK IN SHARE MODE"],
+        "SELECT id FROM invoices WHERE id = ? FOR UPDATE",
+        facture,
+    )
+    .await;
+
+    assert_eq!(status, 201, "⛔ l'interblocage doit être rejoué : {corps}");
+    assert_eq!(
+        compter(
+            &pool,
+            "SELECT COUNT(*) FROM credit_notes WHERE invoice_id = ?",
+            facture
+        )
+        .await,
+        1,
+        "un seul avoir"
+    );
+    let statut: String = sqlx::query_scalar("SELECT status FROM invoices WHERE id = ?")
+        .bind(facture)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(statut, "cancelled");
+    // Premier numéro : la tentative annulée n'a rien consommé (le compteur se
+    // rembobine au rollback), la séquence n'a servi qu'une fois.
+    assert_eq!(
+        compter(
+            &pool,
+            "SELECT CAST(COALESCE(SUM(next_number - 1), 0) AS SIGNED) FROM credit_note_number_sequences \
+             WHERE company_id = ?",
+            ctx.company_id()
+        )
+        .await,
+        1,
+        "un seul numéro d'avoir tiré : {corps}"
+    );
+    capture.exiger_un_rejeu("credit_notes::create");
+}

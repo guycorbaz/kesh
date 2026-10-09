@@ -306,6 +306,7 @@ invoice-line-account-not-revenue = { $subject }: account { $number } is not a re
 invoice-line-account-not-postable = { $subject }: account { $number } is not postable — pick another account
 invoice-line-revenue-account-invalid = Invalid revenue account — { $detail }
 credit-note-revenue-account-archived = Cannot issue the credit note — { $detail }. Reactivate the affected accounts.
+credit-note-account-archived = Cannot issue the credit note — archived account(s): { $detail }. Reactivate the accounts concerned.
 invoice-error-total-zero = This invoice has a total amount of zero and cannot be validated. Add at least one line with a unit price greater than zero.
 credit-note-error-total-zero = This invoice has a total amount of zero: no credit note can be issued.
 

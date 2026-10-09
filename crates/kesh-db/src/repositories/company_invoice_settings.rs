@@ -589,21 +589,26 @@ pub(in crate::repositories) struct GeneratedLines {
     pub roles: BTreeSet<DesignatedRole>,
 }
 
-/// Un compte désigné tel que l'a lu le verrou de
-/// [`lock_designated_accounts_in_tx`].
+/// Un compte tel que l'a lu le verrou de [`lock_designated_accounts_in_tx`].
+///
+/// Public depuis la Story 15-6a (choix C-15-6-36, C-15-6a-2) : l'avoir lit ses
+/// lignes, et un test d'intégration appelle le helper directement. **Un seul
+/// type** de ligne pour le verrou d'une liste de comptes.
 #[derive(Debug, Clone, sqlx::FromRow)]
-struct LockedDesignatedAccount {
-    id: i64,
-    number: String,
-    active: bool,
-    postable: bool,
+pub struct LockedDesignatedAccount {
+    pub id: i64,
+    pub number: String,
+    pub active: bool,
+    pub postable: bool,
 }
 
 /// L'instantané **verrouillé** des comptes candidats d'un flux, rendu par
 /// [`lock_designated_accounts_in_tx`] ; ses lignes restent verrouillées (en
 /// partagé) jusqu'au commit, il n'y a donc rien à relire pour le contrôle.
+///
+/// Son champ reste privé : un instantané ne se fabrique que par le verrou.
 #[derive(Debug)]
-pub(in crate::repositories) struct DesignatedAccountsSnapshot(Vec<LockedDesignatedAccount>);
+pub struct DesignatedAccountsSnapshot(Vec<LockedDesignatedAccount>);
 
 /// **Premier temps** de la garde à l'usage des comptes de réglage (Story 15-5d,
 /// #429 ; choix C27, C43, C49, C51, C87, C88) : verrouille **tous les comptes
@@ -616,6 +621,12 @@ pub(in crate::repositories) struct DesignatedAccountsSnapshot(Vec<LockedDesignat
 /// Verrouiller un candidat que le générateur n'écrira pas (TVA due d'une
 /// facture sans TVA) coûte un verrou partagé superflu, jamais un refus. Le
 /// **second temps** est [`DesignatedAccountsSnapshot::check_written`].
+///
+/// **Seul helper de verrou d'une liste de comptes** (Story 15-6a, choix
+/// C-15-6-32, C-15-6-35, C-15-6a-2) : l'avoir l'emploie aussi, pour verrouiller
+/// en partagé tous les comptes qu'il écrit, et fait lui-même ses contrôles
+/// ([`super::credit_notes::create_credit_note`]). D'où sa visibilité publique et
+/// celle de [`LockedDesignatedAccount`].
 ///
 /// # Le verrou : partagé, une requête, `ORDER BY id`
 ///
@@ -685,9 +696,12 @@ pub(in crate::repositories) struct DesignatedAccountsSnapshot(Vec<LockedDesignat
 /// - le **compte bancaire** (D-A0, C6), le **compte de produit par défaut**
 ///   (D3-bis de la 16-1a), le compte de **décompte TVA** (lu par aucun flux
 ///   d'écriture) ;
-/// - **l'avoir**, qui relit la créance et la TVA due dans les réglages du moment
-///   sans ce contrôle, délibérément (C35 : ces lectures sont elles-mêmes le
-///   défaut de #473 et #525) ;
+/// - **l'avoir**, délibérément (C35) : il emploie ce helper pour son propre
+///   verrou (Story 15-6a), mais ne contrôle que l'état **actif** de ce qu'il
+///   écrit — la créance et l'arrondi lus **sur l'écriture de vente** (#473,
+///   #523), la TVA due relue dans les réglages (#525, angle mort tracé), les
+///   comptes de produit — et jamais `postable` : une contre-passation vise les
+///   mêmes comptes que l'origine ;
 /// - le **solde du reste** garde son refus `ConfigurationRequired` pour une TVA
 ///   due inutilisable ([`vat_payable_account_for_write`]) — divergence assumée
 ///   (C28).
@@ -695,7 +709,7 @@ pub(in crate::repositories) struct DesignatedAccountsSnapshot(Vec<LockedDesignat
 /// `journal_entries::create_in_tx` garde `enforce_postable = false` (D-A0) : la
 /// garde est en amont, sur les seuls comptes de réglage. Elle révise la limite
 /// **L2** de D-A0 (`14-3b-consommateurs-roles.md`) pour ces quatre comptes.
-pub(in crate::repositories) async fn lock_designated_accounts_in_tx(
+pub async fn lock_designated_accounts_in_tx(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,
     ids: &[i64],
@@ -754,6 +768,14 @@ pub(in crate::repositories) async fn lock_designated_accounts_in_tx(
 }
 
 impl DesignatedAccountsSnapshot {
+    /// Les lignes verrouillées, **toutes** — archivées comprises —, par ordre
+    /// d'identifiant (Story 15-6a : l'avoir les partage lui-même entre son refus
+    /// nommé et la 6 ter). Un identifiant demandé qui n'est pas de la société
+    /// en est absent.
+    pub fn accounts(&self) -> &[LockedDesignatedAccount] {
+        &self.0
+    }
+
     /// **Second temps** de la garde (Story 15-5d ; choix C39, C40, C49) :
     /// contrôle, sur l'instantané verrouillé, **les seuls comptes des rôles
     /// effectivement écrits** par le générateur (`roles`), traduits en

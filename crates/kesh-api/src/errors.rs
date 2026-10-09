@@ -3043,42 +3043,20 @@ impl IntoResponse for AppError {
                         "Cette facture est validée : dévalidez-la d'abord, puis supprimez le brouillon.",
                     ),
                 ),
-                // ⚠️ **400**, comme le gabarit `CreditNoteRevenueAccountsArchived`
-                // dont il reprend la forme : un compte archivé est une donnée
-                // d'entrée invalide, là où un refus de propriété est un conflit
-                // d'état. Le refus NOMME les comptes — un « interdit » sec ne
-                // serait pas utilisable, la réactivation étant le chemin de sortie
-                // (`PUT /api/v1/accounts/{id}/reactivate`).
-                DbError::ReversalAccountsArchived(archived) => {
-                    let detail = archived
-                        .iter()
-                        .map(|a| {
-                            a.account_number
-                                .clone()
-                                .unwrap_or_else(|| a.account_id.to_string())
-                        })
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    let fallback = format!(
-                        "Impossible de contre-passer — compte(s) archivé(s) : {detail}. Réactivez le ou les comptes concernés."
-                    );
-                    let mut args = FluentArgs::new();
-                    args.set("detail", detail.clone());
-                    let msg = t_args("journal-entries-reverse-account-archived", &fallback, &args);
-                    let body = serde_json::json!({
-                        "error": {
-                            "code": "ACCOUNT_ARCHIVED",
-                            "message": msg,
-                            "details": {
-                                "rejected": archived.iter().map(|a| serde_json::json!({
-                                    "accountId": a.account_id,
-                                    "accountNumber": a.account_number,
-                                })).collect::<Vec<_>>(),
-                            },
-                        }
-                    });
-                    (StatusCode::BAD_REQUEST, Json(body)).into_response()
-                }
+                // ⚠️ **400** qui NOMME les comptes : raisons au doc-comment de
+                // `archived_accounts_response`.
+                DbError::ReversalAccountsArchived(archived) => archived_accounts_response(
+                    &archived,
+                    "journal-entries-reverse-account-archived",
+                    "Impossible de contre-passer",
+                ),
+                // Story 15-6a (#473, #523 ; C-15-6-25) — la jumelle de l'avoir :
+                // même code, même forme ; seul le message parle du geste.
+                DbError::CreditNoteAccountsArchived(archived) => archived_accounts_response(
+                    &archived,
+                    "credit-note-account-archived",
+                    "Impossible d'émettre l'avoir",
+                ),
                 // ⚠️ Refuser est VOULU : supprimer une écriture qu'on a corrigée
                 // effacerait la correction. Rendu explicite plutôt que laissé
                 // remonter comme une violation de clé étrangère au message opaque.
@@ -3572,6 +3550,52 @@ fn supplier_invoice_cancel_blocked_text(
     }
 }
 
+/// Le 400 `ACCOUNT_ARCHIVED` d'une contre-passation dont un compte a été
+/// archivé — [`DbError::ReversalAccountsArchived`] et sa jumelle de l'avoir
+/// [`DbError::CreditNoteAccountsArchived`] (Story 15-6a) : même code, même
+/// `details.rejected[]` (`{ accountId, accountNumber }`), seul le message
+/// (`key`, et son repli français commençant par `fallback_lead`) diffère.
+///
+/// ⚠️ **400**, comme le gabarit `CreditNoteRevenueAccountsArchived` : un compte
+/// archivé est une donnée d'entrée invalide, là où un refus de propriété est un
+/// conflit d'état. Le refus NOMME les comptes — un « interdit » sec ne serait
+/// pas utilisable, la réactivation étant le chemin de sortie
+/// (`PUT /api/v1/accounts/{id}/reactivate`).
+fn archived_accounts_response(
+    archived: &[kesh_db::errors::ArchivedAccount],
+    key: &str,
+    fallback_lead: &str,
+) -> Response {
+    let detail = archived
+        .iter()
+        .map(|a| {
+            a.account_number
+                .clone()
+                .unwrap_or_else(|| a.account_id.to_string())
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    let fallback = format!(
+        "{fallback_lead} — compte(s) archivé(s) : {detail}. Réactivez le ou les comptes concernés."
+    );
+    let mut args = FluentArgs::new();
+    args.set("detail", detail.clone());
+    let msg = t_args(key, &fallback, &args);
+    let body = serde_json::json!({
+        "error": {
+            "code": "ACCOUNT_ARCHIVED",
+            "message": msg,
+            "details": {
+                "rejected": archived.iter().map(|a| serde_json::json!({
+                    "accountId": a.account_id,
+                    "accountNumber": a.account_number,
+                })).collect::<Vec<_>>(),
+            },
+        }
+    });
+    (StatusCode::BAD_REQUEST, Json(body)).into_response()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -3874,6 +3898,34 @@ mod tests {
         );
         let msg = body["error"]["message"].as_str().unwrap();
         assert!(msg.contains("3200"), "le compte doit être nommé : {msg}");
+    }
+
+    /// Story 15-6a (test 18) — le bras de `CreditNoteAccountsArchived` : 400,
+    /// code `ACCOUNT_ARCHIVED` (celui de la contre-passation), `details.rejected[]`
+    /// par compte (`accountId`, `accountNumber`), et un message du geste de
+    /// l'avoir — clé `credit-note-account-archived`, ou son repli français si
+    /// l'i18n n'est pas initialisée — qui nomme le compte.
+    #[tokio::test]
+    async fn credit_note_accounts_archived_is_400_account_archived() {
+        let resp = AppError::from(DbError::CreditNoteAccountsArchived(vec![
+            kesh_db::errors::ArchivedAccount {
+                account_id: 17,
+                account_number: Some("1100".into()),
+            },
+        ]))
+        .into_response();
+        let (status, body) = response_body(resp).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(body["error"]["code"], "ACCOUNT_ARCHIVED");
+        assert_eq!(
+            body["error"]["details"]["rejected"],
+            serde_json::json!([{ "accountId": 17, "accountNumber": "1100" }])
+        );
+        let msg = body["error"]["message"].as_str().unwrap();
+        assert!(
+            msg.contains("1100") && msg.contains("avoir"),
+            "le compte et le geste doivent être nommés : {msg}"
+        );
     }
 
     /// Story 16-3b — le conflit de numéro de client porte **son propre code**,

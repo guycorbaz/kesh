@@ -306,6 +306,7 @@ invoice-line-account-not-revenue = { $subject }: il conto { $number } non è un 
 invoice-line-account-not-postable = { $subject }: il conto { $number } non è imputabile — scegliete un altro conto
 invoice-line-revenue-account-invalid = Conto di ricavo non valido — { $detail }
 credit-note-revenue-account-archived = Impossibile emettere la nota di credito — { $detail }. Riattivate i conti interessati.
+credit-note-account-archived = Impossibile emettere la nota di credito — conto/conti archiviato/i: { $detail }. Riattivate i conti interessati.
 invoice-error-total-zero = Questa fattura ha un importo totale nullo: non può essere convalidata. Inserite almeno una riga con un prezzo unitario superiore a zero.
 credit-note-error-total-zero = Questa fattura ha un importo totale nullo: non è possibile emettere alcuna nota di credito.
 

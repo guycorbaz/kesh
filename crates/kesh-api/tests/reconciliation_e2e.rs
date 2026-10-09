@@ -4916,6 +4916,90 @@ async fn a_rounding_gap_without_a_usable_account_is_refused_per_proposal(pool: M
     assert_eq!(status, "pending", "la transaction reste à rapprocher");
 }
 
+/// Story 15-6a (AC1, AC2 ; test 10) — **témoin** du refus
+/// `INVOICE_SALE_ENTRY_MALFORMED`, écrit AVANT que la requête de créance de
+/// `accept_one_invoice` ne soit remplacée par le lecteur partagé
+/// `invoice_settlements::sale_receivable_account` : aucun autre test ne figeait
+/// ce refus, et la copie remplacée devait garder un témoin. Il passe avant et
+/// après le remplacement.
+///
+/// Montage léger (choix de la fiche) : la facture est repointée sur un en-tête
+/// d'écriture SANS ligne, de la même société — le lecteur ne trouve aucune
+/// ligne de débit et rend `None`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn invoice_proposal_with_a_sale_entry_without_debit_line_is_malformed(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Malforme", "CH4431999123000889012", Role::Comptable).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let inv_date = NaiveDate::from_ymd_opt(2026, 5, 1).unwrap();
+    let (inv_id, je_id) = seed_validated_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-MAL-1",
+        inv_date,
+        dec!(100.00),
+    )
+    .await;
+    let fy_id: i64 = sqlx::query_scalar("SELECT fiscal_year_id FROM journal_entries WHERE id = ?")
+        .bind(je_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let empty_entry = insert_fake_journal_entry(&pool, ctx.company_id, fy_id).await;
+    sqlx::query("UPDATE invoices SET journal_entry_id = ? WHERE id = ?")
+        .bind(empty_entry)
+        .bind(inv_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let tx_id = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("sale_entry_malformed"),
+        day,
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            Some(day),
+            dec!(100.00),
+            "CHF",
+            "INV-MAL-1",
+            Some("Malforme Client"),
+        )],
+    )
+    .await[0];
+    let app = spawn_app(pool.clone()).await;
+
+    let body = post_accept_one(&app, &ctx, tx_id, inv_id).await;
+    assert_eq!(
+        body["accepted"].as_array().map(Vec::len),
+        Some(0),
+        "got {body:?}"
+    );
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "got {body:?}");
+    assert_eq!(failed[0]["bankTransactionId"], tx_id);
+    assert_eq!(failed[0]["errorCode"], "INVOICE_SALE_ENTRY_MALFORMED");
+    assert_eq!(
+        failed[0]["details"],
+        serde_json::json!({
+            "reason": "no_debit_line_on_sale_entry",
+            "saleEntryId": empty_entry,
+        })
+    );
+    assert_eq!(settlements_and_paid_at(&pool, inv_id).await, (0, None));
+    let status: String = sqlx::query_scalar("SELECT status FROM bank_transactions WHERE id = ?")
+        .bind(tx_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "pending", "la transaction reste à rapprocher");
+}
+
 /// ⛔ **Dé-rapprocher un règlement à trois lignes contre-passe les trois** : le
 /// reste dû redevient le brut d'avant, créance et compte d'arrondi reviennent.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

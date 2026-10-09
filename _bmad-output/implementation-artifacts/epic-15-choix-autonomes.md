@@ -3614,3 +3614,831 @@ l'import (#458–#461).
   côtés (il aurait omis l'apport de l'autre).
 - **Réversible** : oui (rebase ; branche poussée).
 
+## C-15-6-1 — 15-6 : découpée d'emblée en trois (a, b, c)
+
+- **Contexte** : #473 et #474 réunis touchent `kesh-db` (avoir, règlement client, règlement
+  fournisseur, comptes bancaires, erreurs), `kesh-api` (rapprochement, comptes bancaires, réglages de
+  facturation, erreurs), `kesh-i18n`, trois écrans et le manuel : bien plus de cinq modules — le
+  critère de périmètre de la § *Règle de splitting préventif* est franchi avant toute validation.
+- **Retenu** : trois sous-stories, comptées en modules métier (la plomberie d'erreur et d'i18n
+  suit le geste qu'elle sert, comme pour la 15-5a) :
+  - **15-6a** — l'avoir crédite la créance de la vente (#473) : avoir, règlement, rapprochement
+    (3 modules) ; elle pose le lecteur partagé du compte de créance.
+  - **15-6b** — un règlement ne vise pas le compte qu'il solde (#474, cœur) : règlement client,
+    règlement fournisseur, rapprochement, et les deux écrans de règlement (5 modules).
+  - **15-6c** — la configuration ne prépare pas l'écriture nulle (#474, voisin) : compte comptable
+    d'un compte bancaire, réglages de facturation, écran des comptes bancaires (3 modules).
+- **Ordre** : a → b (mêmes fichiers) ; c **après le merge de la 15-5b** (mêmes routes
+  `bank_accounts.rs` et `company_invoice_settings.rs`) ; b de préférence après la 15-5b aussi (le
+  libellé du nouveau code dans `failed[]` passe par l'écran de #492 que la 15-5b pose).
+- **Écartées** : une story unique (règle franchie) ; deux stories « serveur / écrans » (le filtre
+  d'écran se séparerait de la garde qu'il reflète, et la story serveur dépasserait encore cinq
+  modules).
+- **Réversible** : oui, tant qu'aucune n'est développée.
+
+## C-15-6-2 — 15-6a : l'avoir lit la créance sur l'écriture de vente ; arrondi et TVA restent aux réglages
+
+- **Contexte** : l'avoir lit dans les réglages du moment trois comptes que la vente a déjà
+  mouvementés : créance (#473), compte de différences d'arrondi (même défaut, non signalé), TVA due.
+  Le compte de produit est déjà recopié par ligne (16-1a, D5).
+- **Retenu** : la créance se lit sur l'écriture de vente par un **lecteur partagé**
+  (`invoice_settlements::sale_receivable_account`) qui remplace aussi les trois copies de la même
+  requête (règlement, solde du reste, rapprochement). L'avoir ne dépend plus du réglage
+  `default_receivable_account_id`.
+- **Laissés, en angles morts écrits dans la fiche** :
+  - la **TVA due** reste débitée sur le compte **courant** — c'est la convention écrite du solde du
+    reste (doc de `write_off_invoice` : « comme l'avoir ») et la changer toucherait le décompte TVA ;
+  - le **compte d'arrondi** reste lu dans les réglages : le lire sur la vente casserait le refus
+    nommé de #486 (`a_credit_note_is_refused_when_the_rounding_account_was_archived`, dont le message
+    renvoie aux réglages) et demanderait un refus neuf « réactivez tel compte » ; l'écart en jeu est
+    d'au plus 2,5 centimes par facture. **Issue à ouvrir** par l'orchestrateur ;
+  - le repli sur le produit par défaut des lignes sans compte (D-B2), inchangé.
+- **Écartée** : construire l'avoir en miroir ligne à ligne de l'écriture de vente (exact par
+  construction, mais refonte de la génération, de la garde des comptes archivés de la 16-1a et de
+  leurs tests, hors de la mesure d'un P1).
+- **Réversible** : oui.
+
+## C-15-6-3 — 15-6b : un refus dédié, sur les deux modes de règlement, après les contrôles existants
+
+- **Retenu** : nouvelle variante `DbError::SettlementCounterpartyIsClaimAccount`, code stable
+  `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` (HTTP 400), `details = { accountId, accountNumber,
+  claim: "receivable" | "payable" }`, message 4 locales (deux clés : client, fournisseur). Elle
+  s'applique au **virement** autant qu'au **compte interne** (un compte bancaire lié au 1100 produit la
+  même écriture nulle), au règlement client, au règlement fournisseur et à l'acceptation d'un
+  rapprochement de facture (`failed[]`, même code). Elle vient **après** les refus existants (404,
+  configuration, inactif/non imputable) : leur ordre ne change pas.
+- **Résolus par le type, sans garde neuve** : compte d'arrondi et comptes des natures de solde,
+  revérifiés « charge ou produit » au moment d'écrire — jamais 1100 ni 2000.
+- **Écartées** : `InvalidInput("…")` (code générique `INVALID_INPUT`, pas de `details`, contraire à
+  la consigne) ; `ACCOUNT_NOT_POSTABLE` de la 15-5a (autre motif : 1100 est imputable).
+- **Réversible** : oui.
+
+## C-15-6-4 — 15-6b : le filtre d'écran se fait par rôle, sans champ d'API nouveau
+
+- **Contexte** : l'écran ne connaît pas le compte de créance d'une facture ; l'échéancier ouvre le
+  même dialogue depuis une liste.
+- **Retenu** : le dialogue de règlement client écarte les comptes de **rôle `Receivable`** et les
+  comptes bancaires liés à un tel compte ; la fiche fournisseur, ceux de rôle `Payable`. Les rôles
+  sont des singletons par société (`uq_accounts_company_singleton_role`) et les réglages en sont
+  dérivés. La garde serveur reste exacte (compte de l'écriture de vente) ; l'écart possible — réglage
+  changé depuis — se solde par un refus clair, non par une écriture fausse.
+- **Écartée** : exposer `receivableAccountId` sur la fiche et sur les lignes de l'échéancier (deux
+  DTO, une sous-requête de plus sur une liste tenue à parité par `invoice_amount_due_parity.rs`).
+- **Réversible** : oui.
+
+## C-15-6-5 — 15-6c : la configuration refuse le couple, dans les deux sens, avec exemption « inchangé »
+
+- **Retenu** : le compte comptable d'un compte bancaire ne peut être ni le compte débiteurs ni le
+  compte créanciers **des réglages** ; symétriquement, les réglages refusent un compte débiteurs ou
+  créanciers lié à un compte bancaire non archivé. Exemption quand la valeur ne change pas (patron
+  C4/C10 de la 15-5b) ; contrôle des routes bancaires dans la transaction, comme la 15-5b. Deux
+  codes : `BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT`, `CLAIM_ACCOUNT_LINKED_TO_BANK_ACCOUNT`.
+- **Assumé** : la course entre les deux gestes (deux administrateurs, deux tables) n'est pas
+  verrouillée ; la garde à l'usage de la 15-6b reste le filet. Écrit dans la fiche.
+- **Écartée** : ne garder que l'usage (la configuration fautive resterait offerte par l'écran, et
+  chaque rapprochement échouerait ensuite un par un).
+- **Réversible** : oui.
+
+## C-15-6-6 — Voisin relevé, hors périmètre : la contrepartie égale au compte de banque
+
+- **Constat (lu au code, non exécuté)** : le rapprochement **ventilé** refuse une contrepartie égale
+  au compte de banque (`reconciliation.rs:1941-1950`, `:3462-3474`) ; le rapprochement **manuel**
+  (`post_manual`, `:2942`) et l'acceptation **par règle** (`accept_one_rule`, `:2207`) ne le font pas,
+  et `build_journal_entry_for_counterparty` (`kesh-reconciliation/src/manual.rs:67`) non plus — même
+  écriture nulle `D banque / C banque`.
+- **Retenu** : hors de #474 (le compte soldé n'est pas une créance) ; signalé à l'orchestrateur pour
+  une issue, non traité ici.
+- **Réversible** : sans objet.
+
+## C-15-6-7 — 15-6a absorbe #523 : l'arrondi de l'avoir se lit sur la vente ; un compte archivé est refusé par `create_in_tx` (révise C-15-6-2)
+
+- **Contexte** : validation P1 de la 15-6a (findings F1 = R1, HIGH). C-15-6-2 laissait le compte
+  d'arrondi de l'avoir aux réglages pour ne pas casser le refus nommé de #486 ; l'orchestrateur a
+  ouvert #523 et décidé de le traiter dans la 15-6a (`closes #473, closes #523`).
+- **Retenu** : un second lecteur de l'écriture de vente, sur sa **dernière** ligne
+  (`ORDER BY jel.id DESC LIMIT 1`), **recoupée** avec l'arrondi figé sur la facture (sens et valeur
+  absolue), sinon `DbError::Invariant` ; appelé seulement si l'arrondi ≠ 0. Compte de la vente archivé
+  depuis : **voie (b)** — `journal_entries::create_in_tx` refuse en `INACTIVE_OR_INVALID_ACCOUNTS`,
+  comme pour la créance. Le test `invoices_validate_vat.rs:846` change d'assertion, délibérément, et
+  la fiche l'écrit comme tel. Trois tests neufs : réglage redésigné, réglage vidé, recoupement.
+- **Écartées** : (a) garder `RoundingAccountNotConfigured { Issuance }` en vérifiant le compte de la
+  vente — son message renvoie aux paramètres, remède **faux** puisque l'avoir ne les lit plus ; (c) une
+  variante neuve nommant le compte de la vente — un refus de plus pour un cas que le refus générique
+  existant couvre déjà, comme pour la créance ; réutiliser `usable_designated_account` — contraire à la
+  doctrine « mêmes comptes que l'origine, seule l'inactivité bloque ».
+- **Réversible** : oui, tant que la 15-6a n'est pas développée.
+
+## C-15-6-8 — 15-6a : la TVA due de l'avoir reste un angle mort, tracé par #525 ; le manuel dit la limite
+
+- **Contexte** : finding F3 (MEDIUM) de la 15-6a — l'avoir débite la TVA due sur le compte **courant**
+  des réglages ; même classe que #473. L'orchestrateur a ouvert **#525** (P1, jalon de la TVA, report
+  assumé).
+- **Retenu** : la fiche cite #525 comme angle mort tracé. Le manuel **ne présente pas** l'écriture
+  comme juste : il dit que la TVA de l'avoir suit le compte de TVA due actuellement désigné, et que
+  changer ce réglage entre une facture et son avoir est une limite connue de cette version.
+- **Écartée** : le traiter dans la 15-6a (toucherait le décompte TVA et la convention partagée avec le
+  solde du reste, `vat_payable_account_for_write` — c'est l'objet du jalon de la TVA).
+- **Réversible** : oui.
+
+## C-15-6-9 — #524 devient la sous-story 15-6d ; même refus que le flux ventilé existant (révise C-15-6-6)
+
+- **Contexte** : validation P1 de la 15-6b — finding F1 (HIGH) : #524 doit être traité ; finding F4
+  (MEDIUM) : avec lui et les lots de paiement, la 15-6b dépasse cinq modules. C-15-6-6 le laissait
+  hors périmètre ; **il est retiré** par la présente entrée.
+- **Retenu** : sous-story **15-6d-contrepartie-distincte-de-la-banque** (`closes #524`).
+  `post_manual` et `accept_one_rule` refusent une contrepartie égale au compte de la banque **avec le
+  même refus que le flux ventilé existant** : manuel → `AppError::Validation` comme `post_split` (400,
+  message français en dur — limite assumée de ce flux existant, écrite comme telle) ; règle →
+  `FailedProposal VALIDATION_ERROR`, `details.reason = "counterparty_equals_bank_ledger"`, HTTP 200,
+  comme `accept_one_split`. Ordre : 404, puis `ACCOUNT_NOT_POSTABLE` (15-5b), puis ce refus. L'écran du
+  rapprochement manuel ne propose pas le compte de la banque (test Vitest). Dépend de la 15-5b.
+- **Écartées** : un code dédié et traduit (divergerait des deux chemins ventilés existants ; s'il
+  devient souhaitable, il vaudra pour les quatre chemins, story à part) ; garder #524 dans la 15-6b
+  (règle de découpage franchie).
+- **Réversible** : oui, tant qu'elle n'est pas développée.
+
+## C-15-6-10 — 15-6b : les lots de paiement refusent le compte créanciers à la création, et gardent le refus à la confirmation
+
+- **Contexte** : findings F2 (HIGH) / R4 de la 15-6b — `confirm_batch` est le troisième appelant de
+  `pay_in_tx`. Avec la seule garde de `pay_in_tx`, un compte bancaire lié au compte créanciers produit
+  un lot **et son fichier pain.001**, puis un lot inconfirmable — alors que le fichier est peut-être
+  déjà à la banque.
+- **Retenu** : `create_batch` compare, **par facture**, la dette de l'écriture d'achat au compte lié du
+  compte bancaire source **avant** de produire le fichier : égalité → la facture va dans `failed[]` du
+  lot (`SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, `details` avec `claim: "payable"`), patron batch ;
+  aucune facture retenue → aucun lot, aucun fichier. `confirm_batch` garde le refus de `pay_in_tx`
+  (le compte bancaire a pu être relié entre-temps) : 400, lot toujours `generated`. Libellé à l'écran
+  des lots, manuel (§ pain.001), `docs/api-external.md`.
+- **Écartées** : refuser le lot entier en erreur globale (contraire au patron batch : une facture
+  fautive ne doit pas bloquer les autres) ; ne garder que la confirmation (le défaut même du finding).
+- **Réversible** : oui.
+
+## C-15-6-11 — 15-6b : les gardes réutilisent les lecteurs ; côté fournisseur, un lecteur sœur
+
+- **Contexte** : finding R7 (MEDIUM) de la 15-6b — la dépendance au lecteur de la 15-6a était déclarée
+  mais inemployée.
+- **Retenu** : côté client (`settle_invoice`, `accept_one_invoice`), la garde compare l'identifiant que
+  le lecteur `sale_receivable_account` de la 15-6a a **déjà** rendu — aucune requête neuve. Côté
+  fournisseur, la requête est **différente** (ligne de **crédit** de l'écriture d'achat **et** le TTC,
+  `supplier_invoices.rs:582-593`) : elle est extraite en lecteur sœur `purchase_payable_line`, partagé
+  par `pay_in_tx` et la création de lot (C-15-6-10).
+- **Écartée** : faire lire la dette par le lecteur de la créance (autre sens, autre montant).
+- **Réversible** : oui.
+
+## C-15-6-12 — #492 relève de la 15-5c, non de la 15-5b (révise l'ordre de C-15-6-1)
+
+- **Contexte** : findings F3 = R5 de la 15-6b. C-15-6-1 disait « le libellé du nouveau code dans
+  `failed[]` passe par l'écran de #492 que la 15-5b pose » ; depuis C15, #492 est dans la **15-5c**
+  (`frontend/src/lib/features/reconciliation/failed-proposal-label.ts`).
+- **Retenu** : la 15-6b est « de préférence après la 15-5c » ; son développeur ajoute le code au module
+  si la 15-5c est mergée, sinon il le signale (pas de second mécanisme). Fiches 15-6 et 15-6b corrigées.
+- **Réversible** : sans objet (correction d'une référence).
+
+## C-15-6-13 — 15-6c : contrôles dans la transaction, et les deux gestes se sérialisent (révise C-15-6-5)
+
+- **Contexte** : findings F1 et F2 (HIGH) de la 15-6c — le contrôle des réglages se faisait hors
+  transaction, contre une valeur lue sans verrou ; la course entre les deux gestes était déclarée en
+  angle mort alors qu'elle se ferme à bon marché.
+- **Retenu** : deux lecteurs uniques — `company_invoice_settings::claim_accounts_for_share` (`FOR
+  SHARE` sur la ligne des réglages) et `bank_accounts::first_active_bank_account_linked_to` (`FOR
+  SHARE`, premier compte bancaire non archivé par `id`) — et un **ordre de verrous unique** : la ligne
+  des réglages d'abord, les comptes bancaires ensuite. Côté compte bancaire, la lecture des réglages
+  est la première de la transaction (après le verrou sentinelle, avant tout `FOR UPDATE` de ligne
+  bancaire) ; côté réglages, `company_invoice_settings::update` lit `before` en `FOR UPDATE`, compare
+  contre lui (exemption « inchangé »), puis interroge les comptes bancaires. **L'angle mort « course »
+  est supprimé.** Variantes nommées : `DbError::BankAccountLedgerIsClaimAccount`,
+  `DbError::ClaimAccountLinkedToBankAccount`. **Ordre des erreurs** : routes bancaires — celui de C10
+  (le refus neuf en dernier, **après** le 409 de version et le non-imputable) ; route des réglages —
+  forme → refus → 409, tous les 400 de cette route précédant déjà le 409.
+- **Écartées** : contrôle dans le handler (valeur lue hors verrou, F1) ; verrou sentinelle `companies`
+  sur les quatre gestes (aurait sérialisé aussi, mais le PATCH et le PUT des réglages ne le prennent
+  pas, et la sentinelle sérialise bien plus que ces deux gestes) ; lire les réglages **après** la
+  ligne bancaire (ordre inverse → interblocage entre les deux gestes).
+- **Réversible** : oui, tant qu'elle n'est pas développée.
+
+## C-15-6-14 — 15-6b/15-6c : des fonctions d'écran par ensemble d'identifiants ; la 15-6b les nourrit par le rôle, la 15-6c par les réglages (précise C-15-6-4)
+
+- **Contexte** : finding F3 (MEDIUM) de la 15-6c — un écran filtré par **rôle** et un serveur qui
+  refuse selon les **réglages** divergent ; finding R2 (MEDIUM) — la signature du helper de la 15-6b
+  (un rôle) ne servait pas la 15-6c (deux comptes, et pas par rôle).
+- **Retenu** : trois fonctions pures dans `account-options.ts`, posées par la 15-6b :
+  `accountIdsWithRole`, `withoutAccountIds`, `bankAccountsNotLinkedTo`, et des identifiants calculés
+  sur la liste **complète** des comptes. La 15-6b les nourrit par le rôle (C-15-6-4 maintenu : le
+  dialogue de règlement ne connaît pas la créance de la facture) ; la 15-6c par les identifiants
+  **désignés dans les réglages** (`getInvoiceSettings`, lisible par tout rôle), comme son serveur, et
+  l'écran des réglages par les comptes liés à un compte bancaire non archivé.
+- **Écartée** : un helper par story (deux filtres voisins dans le même module, qui dériveraient).
+- **Réversible** : oui.
+
+## C-15-6-15 — 15-6c : la spec E2E qui liait un compte bancaire au 1100 le lie au 1000
+
+- **Contexte** : finding R4 (MEDIUM) de la 15-6c. Vérifié au code : le préréglage E2E `with-company`
+  (`seed_accounting_company`, `test_fixtures.rs:88-107`) désigne **1100 « Banque CI »** comme compte
+  débiteurs ; `bank-account-journal-link.spec.ts:105-119` lie un compte bancaire au 1100 par l'écran.
+  Après la 15-6c, le menu ne le propose plus et le serveur le refuse. Le seed de dev
+  (`scripts/seed-dev-db.sql`) ne crée pas de réglages : non concerné.
+- **Retenu** : la spec lie au **1000 « Caisse CI »** (actif, imputable, non désigné comme créance).
+- **Écartée** : changer la fixture partagée (désigner un autre compte débiteurs) — elle sert des
+  204 appels dans 41 fichiers (`grep -rho "seed_accounting_company(" crates/`, relevé le 2026-10-08),
+  dont beaucoup supposent la créance sur 1100.
+- **Réversible** : oui.
+
+## C-15-6-16 — 15-6a : les comptes lus sur la vente sont verrouillés ; un compte archivé est refusé par le refus nommé de la contre-passation (révise la voie (b) de C-15-6-7)
+
+- **Contexte** : validation P2 de la 15-6a — R-2 = F-1 (MEDIUM) : remplacer `rounding_account_for_write`
+  par un lecteur sans verrou retirait le `FOR UPDATE` que #486 posait sur le compte d'arrondi ; la garde
+  `active` de `create_in_tx` est une lecture simple, qui sous REPEATABLE READ ne voit pas un archivage
+  validé entre-temps. R-3 = F-2 (MEDIUM) : la voie (b) rendait un refus anonyme
+  (`INACTIVE_OR_INVALID_ACCOUNTS`), que la 6 ter de la même fonction avait justement écarté pour les
+  comptes de produit. Décisions de l'orchestrateur : fermer la course, nommer le compte par la forme
+  la plus simple.
+- **Retenu** : après les deux lecteurs et la garde 6 ter, `create_credit_note` verrouille en une
+  instruction les lignes `accounts` de la créance et de l'arrondi de la vente
+  (`SELECT id, number, active … ORDER BY id FOR UPDATE`, **sans** filtre `active`) et lit l'état actif
+  **dans** cette lecture verrouillante. Un compte archivé → `DbError::ReversalAccountsArchived`
+  (400 `ACCOUNT_ARCHIVED`, `details.rejected[]`, clé `journal-entries-reverse-account-archived`
+  existante) : l'avoir est une contre-passation, c'est le refus que la contre-passation rend pour le
+  même cas. Aucune variante, aucun code, aucune clé neuve. La garde de `create_in_tx` reste, en filet.
+  Ordre des verrous : facture → règlements → avoir existant → comptes (celui de `validate_invoice`).
+  Test neuf de la course (attente puis refus nommé). Manuel : `keshwarning` au § *Avoirs*,
+  avertissement du plan comptable étendu, phrase du manuel d'administration sur l'arrondi.
+- **Concilie** deux consignes : « le refus reste celui de `create_in_tx` » (pas de refus neuf — tenu :
+  aucun code neuf) et « nommer le compte » (tenu par le refus nommé existant). Lire `active` par la
+  garde de `create_in_tx` après le verrou n'aurait pas suffi : sa lecture simple rend l'instantané.
+- **Écartées** : une variante neuve propre à l'avoir (un refus de plus pour un cas que la
+  contre-passation nomme déjà) ; garder `INACTIVE_OR_INVALID_ACCOUNTS` anonyme et le compenser au
+  manuel (l'utilisateur ne saurait pas quel compte réactiver) ; assumer la course en dette LOW (un site
+  aujourd'hui verrouillé l'aurait perdu).
+- **Conséquence assumée** : deux avoirs simultanés sur des factures de même compte débiteurs se
+  sérialisent sur la ligne de ce compte, le temps d'une transaction. Le code du refus change pour
+  l'arrondi (`ROUNDING_ACCOUNT_NOT_CONFIGURED` → `ACCOUNT_ARCHIVED`) : l'esprit de la contrainte de
+  #523 (refus nommé) est tenu, sa lettre non — à commenter sur #523.
+- **Réversible** : oui, tant que la 15-6a n'est pas développée.
+
+## C-15-6-17 — 15-6b : les écrans renoncent aux comptes archivés ; clés d'écran conformes au lint
+
+- **Contexte** : validation P2 de la 15-6b — R-1 = F1 (MEDIUM) : l'AC8 promettait d'écarter un compte
+  bancaire lié à un compte de rôle `Receivable` **archivé**, mais les trois écrans chargent le plan sans
+  les archivés ; F2 (MEDIUM) : la clé `invoice-settle-no-eligible-bank-account` faisait rougir
+  `lint-i18n-ownership` dans `src/lib/features/invoices/`.
+- **Retenu** : l'AC8 **renonce** aux archivés — un compte archivé ne peut recevoir aucune écriture (la
+  garde `active` de `create_in_tx` est inconditionnelle), la garde serveur suffit ; les ids se
+  calculent avant le filtre `active && postable` (cas non imputable, qui lui arrive à l'écran). Clés
+  renommées `invoices-settle-no-eligible-bank-account` et `supplier-invoices-pay-no-eligible-bank-account`
+  (alignée sur ses voisines).
+- **Écartées** : charger `fetchAccounts(true)` dans trois écrans pour un cas que le serveur refuse
+  déjà ; allonger `KNOWN_VIOLATIONS` (dette #30) au lieu de nommer la clé correctement.
+- **Réversible** : oui.
+
+## C-15-6-18 — 15-6b : les comptes d'écart sont comparés à la créance par identifiant (révise le « résolu par le type » de C-15-6-3)
+
+- **Contexte** : finding F3 (MEDIUM) de la 15-6b — le « résolu par le type » reposait sur un invariant
+  qu'un geste ultérieur défait : le type d'un compte porteur d'écritures se change avec confirmation
+  (`accounts.rs:497-512`, `confirm_retype`), et le 1100 devenu `Expense` porte toujours la créance des
+  ventes antérieures ; `write_off_invoice` écrirait `D 1100 / C 1100`, l'arrondi du règlement de même.
+- **Retenu** : le même refus `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, par comparaison
+  d'identifiants avec la créance lue sur la vente, garde le compte d'arrondi de `settle_invoice` (4bis)
+  et de `accept_one_invoice` (c-bis) et les comptes de `write_off_invoice` (nature, reste d'arrondi, TVA
+  due) — AC3 bis, trois tests. Le contrôle de type existant reste. Le test qui figeait le « résolu par
+  le type » est retiré.
+- **Écartée** : écrire le chemin du changement de type en angle mort avec une issue (trois `if` sur des
+  identifiants déjà lus coûtent moins qu'une dette tracée).
+- **Réversible** : oui.
+
+## C-15-6-19 — 15-6b : lots — refus contextualisé à la confirmation, écriture d'achat malformée en `failed[]`, écran de création non filtré
+
+- **Contexte** : findings F4 (MEDIUM), R-7 = F10 et F6 (LOW) de la 15-6b. Le refus à la confirmation
+  d'un lot disait « par un autre compte » alors que l'utilisateur n'en choisit aucun, et que le fichier
+  pain.001 a pu être exécuté par la banque ; le cas « écriture d'achat sans ligne de crédit » à la
+  création n'était pas dit ; l'écran de création d'un lot propose un compte bancaire lié au compte
+  créanciers.
+- **Retenu** : la variante porte un contexte de lot optionnel (`SettlementBatchContext`), rempli par
+  `confirm_batch` ; clé propre `error-settlement-counterparty-is-payable-in-batch` qui dit les deux
+  issues (relier de nouveau le compte bancaire puis confirmer, ou annuler le lot et régler depuis la
+  fiche), `details.paymentBatchId` / `supplierInvoiceId`, manuel ; test du remède. Le refus à la
+  création reste la défense principale. À la création, une écriture d'achat sans ligne de crédit est
+  une donnée de **cette** facture : item `failed[]` `SUPPLIER_INVOICE_PURCHASE_ENTRY_MALFORMED`
+  (patron `INVOICE_SALE_ENTRY_MALFORMED`, § *Pattern batch*), libellé à l'écran des lots. L'écran de
+  création n'est **pas** filtré : il ne charge pas le plan comptable, et le refus y arrive par facture,
+  libellé, avant tout fichier — angle mort écrit.
+- **Écartées** : le message du règlement unitaire à la confirmation (remède faux) ; une erreur globale
+  (500) pour l'écriture d'achat malformée (contraire au patron batch) ; charger le plan comptable sur
+  l'écran de création pour un filtre que le serveur double.
+- **Réversible** : oui.
+
+## C-15-6-20 — 15-6b : décompte des modules refait, signal D5 déclaré, pas de découpage
+
+- **Contexte** : finding F5 (MEDIUM) de la 15-6b — la P1 avait ajouté les lots sans recompter.
+- **Retenu** : décompte écrit dans la fiche — huit modules au barème des fichiers, cinq au barème du
+  geste (patron de la 15-5a). Signal **déclaré au Project Lead** ; pas de découpage : les gestes ne sont
+  pas indépendants (une variante, un `ClaimSide`, un lecteur sœur partagé par `pay_in_tx` et les lots,
+  trois fonctions d'écran ; les lots n'appellent que la garde de `pay_in_tx`), et aucun défaut de la P2
+  ne recycle un défaut de la P1.
+- **Écartée** : sortir les lots en sous-story (elle naîtrait sans sa garde, ou dupliquerait la
+  plomberie d'erreur et d'i18n).
+- **Réversible** : oui — un découpage reste possible tant que la story n'est pas développée, sur
+  arbitrage de Guy.
+
+## C-15-6-21 — 15-6c : `LOCK IN SHARE MODE` ; route des réglages, le 409 d'abord ; son code n'est pas pour les intégrateurs (révise C-15-6-13)
+
+- **Contexte** : validation P2 de la 15-6c — R2-1 = F1 (HIGH) : `FOR SHARE`, écrit par C-15-6-13, est
+  une erreur de syntaxe (1064) sur MariaDB 10.11 ; F2 (MEDIUM) : le refus des réglages avant le 409
+  jugeait un changement contre un état que le client n'avait pas vu ; R2-3 = F3 (MEDIUM) : la route des
+  réglages est fermée aux clés d'API.
+- **Retenu** : `LOCK IN SHARE MODE` dans les deux lecteurs (graphie du dépôt,
+  `opening_complement.rs:38-39`), lecteur renommé `claim_accounts_in_share_mode` ; route des réglages :
+  forme → 409 version → 400 `CLAIM_ACCOUNT_LINKED_TO_BANK_ACCOUNT` → no-op ; `docs/api-external.md` ne
+  documente que `BANK_ACCOUNT_LEDGER_IS_CLAIM_ACCOUNT` (routes bancaires, ouvertes aux clés). La graphie
+  `FOR SHARE` de C-15-6-13 est **fausse** ; cette entrée la corrige (l'entrée d'origine n'est pas
+  réécrite).
+- **Écartées** : garder le refus avant le 409 « parce que les autres 400 de la route le précèdent »
+  (ceux-là ne dépendent que du corps) ; lister le second code au guide comme « interne » (le guide
+  documente l'API par clé : un code qu'elle ne peut pas rendre n'y a pas sa place).
+- **Réversible** : oui.
+
+## C-15-6-22 — 15-6c : appels directs au dépôt, fichiers de test de la 15-5b, code mort, signal D5
+
+- **Contexte** : validation P2 de la 15-6c — R2-4 (MEDIUM) : 14 sites de test appellent directement les
+  deux fonctions du dépôt dont la signature change ; R2-2 = F4 (MEDIUM) : deux fichiers de test
+  doublaient ceux que crée la 15-5b ; F6 (LOW) : `BankAccountList.svelte`, second appelant du formulaire
+  de lien, n'est importé nulle part ; F8 : signal de découpage (le HIGH de la P2 naît de la remédiation
+  P1). Consigne de l'orchestrateur : tenir compte de la 15-5d, qui expose `defaultPayableAccountId` à
+  l'écran des réglages.
+- **Retenu** : les appels directs passent `&ClaimAccounts::default()` (la garde n'est l'objet d'aucun
+  d'eux ; aucun test ne change de sens) ; les tests 6 et 14 étendent `company_invoice_settings_postable_e2e.rs`
+  et `bank-accounts/+page.test.ts` de la 15-5b ; `BankAccountList.svelte` est supprimé, la prop
+  `claimAccountIds` obligatoire ; le menu créanciers de la 15-5d est filtré comme celui des débiteurs.
+  Signal D5 **déclaré au Project Lead**, pas de découpage : le défaut est une graphie de mot-clé, non
+  une conception qui tourne en rond, et séparer les deux sens casserait l'ordre de verrous qui les
+  tient ensemble. Références de fixture de C-15-6-15 (`test_fixtures.rs:88-107`) **fausses** : lire
+  `:80-172`, désignation `:157-172`.
+- **Écartées** : passer les réglages réels de la fixture aux appels directs (ferait rougir un test qui
+  lie au 1100, sans rapport avec son objet) ; prop optionnelle (laisserait le composant mort non
+  filtré, en silence).
+- **Réversible** : oui ; la suppression de `BankAccountList.svelte` se défait par l'historique.
+
+## C-15-6-23 — 15-6d : l'égalité avec le compte de banque testée d'abord ; règle sur ce compte plus proposée ; filtre d'écran local (révise l'ordre de C-15-6-9)
+
+- **Contexte** : validation P1 de la 15-6d — F1 (MEDIUM) : la fiche plaçait le refus après le 404 et
+  `ACCOUNT_NOT_POSTABLE`, à l'inverse du flux ventilé qu'elle prétendait reproduire ; F2 (MEDIUM) :
+  `get_proposals` proposait une règle sur le compte de banque, que l'acceptation refuserait toujours,
+  et qui masquait une règle suivante ; R-1 = F3, R-3 (MEDIUM) : câblage de l'écran non testé, filtre
+  conditionné à la 15-6b. Décisions de l'orchestrateur.
+- **Retenu** : `post_manual` compare juste après l'étape 2 bis, `accept_one_rule` juste après l'étape 4
+  — avant 404 et non imputable, et avant la recherche de la transaction en attente (une transaction
+  déjà rapprochée rend 400) ; même réponse sur tous les chemins. `get_proposals` retire le compte de
+  banque de l'ensemble passé à `first_matching_rule` (patron 15-5b AC5). Écran : `ReconciliationProposals`
+  résout le compte de banque par `listBankAccounts()` (effet dépendant de `bankAccountId`, garde de
+  génération ; repli `null` = aucun filtrage), testé dans son fichier existant (mock de
+  `bank-accounts.api`) ; filtre **local** d'une condition dans `ManualMatchModal`. L'écran de
+  ventilation reste non filtré (angle mort écrit). Course résiduelle de `post_manual` écrite.
+- **Écartées** : garder l'ordre « après la 15-5b » (réponse différente selon le chemin, message
+  trompeur) ; faire passer le compte de banque par la page (`/companies/current` le porte, mais la page
+  n'a pas de test : le câblage resterait non vérifié) ; `withoutAccountIds` de la 15-6b (dépendance pour
+  un seul id).
+- **Réversible** : oui, tant qu'elle n'est pas développée.
+
+## C-15-6-24 — 15-6a : comptes de la vente verrouillés EN PARTAGE et AVANT l'exercice (rectifie C-15-6-16)
+
+- **Contexte** : validation P3 de la 15-6a — R3-1 (HIGH, né de la remédiation P2) : C-15-6-16 plaçait
+  le verrou des comptes de la vente (créance, arrondi) **après** `fiscal_years` et la séquence, et
+  affirmait « c'est l'ordre de `validate_invoice` » ; c'est l'inverse de l'ordre canonique
+  (`invoices.rs:1916-1925` : `invoices` → `accounts` (1 bis) → `fiscal_years` → séquences →
+  écriture), et la 15-5d verrouille la créance dans `validate_invoice` avant l'exercice : cycle sur la
+  ligne 1100 entre chaque validation et chaque avoir. F-1 (MEDIUM) : un `FOR UPDATE` (X) sur la
+  créance ouvrait un cycle neuf avec `accept_one_invoice`, qui tient S sur 1100 (clé étrangère des
+  lignes insérées) avant de demander X sur la facture, que l'avoir tient. F-8 : la « conséquence
+  assumée » (deux avoirs se sérialisent sur la ligne du compte) était fausse. Décision de
+  l'orchestrateur.
+- **Retenu** : les deux lecteurs sont appelés juste après les réglages (étape (3)) ; les comptes de la
+  vente sont verrouillés en une instruction `… ORDER BY id LOCK IN SHARE MODE`, **avant** l'exercice
+  (4) et la séquence (5) — ordre : facture → règlements → avoir existant → réglages → comptes de la
+  vente (S) → exercice → séquence → écriture, conforme à la validation, au règlement et à la 15-5d. Un
+  S suffit à faire attendre `accounts::archive` (X) et rend l'état courant de `active` ; S + S ne
+  bloque ni le rapprochement ni un second avoir. Ordre des refus qui en découle : compte de la vente
+  archivé avant `FISCAL_YEAR_INVALID`, `creditNoteTotalZero` et `CREDIT_NOTE_REVENUE_ACCOUNT_ARCHIVED`
+  (test 14). Test de course sur `attendre_une_requete_en_cours` (motif `LOCK IN SHARE MODE`). Ce que
+  le verrou ne couvre pas — comptes de produit (6 ter) et TVA due, lus sans verrou — est écrit comme
+  angle mort assumé, préexistant.
+- **Rectification de C-15-6-16** (entrée non réécrite) : ses phrases « ordre des verrous : … comptes
+  de la vente. C'est celui de `validate_invoice` » et « deux avoirs simultanés … se sérialisent sur la
+  ligne de ce compte » sont **fausses** ; le mode `FOR UPDATE` qu'elle prescrivait est remplacé par
+  `LOCK IN SHARE MODE`. Le reste de C-15-6-16 (comptes verrouillés sans filtre `active`, état lu sous
+  verrou, refus nommé) tient, le refus étant précisé par C-15-6-25.
+- **Écartées** : garder `FOR UPDATE` en le déclarant risque connu (cycle avec le rapprochement sur le
+  compte le plus mouvementé du grand livre) ; garder la place après l'exercice en écrivant l'inversion
+  comme angle mort (cycle avec chaque validation dès la 15-5d) ; joindre les comptes de produit et de
+  TVA due au même verrou (exige de faire lire la 6 ter sous verrou ; hors sujet de #473/#523).
+- **Réversible** : oui, tant qu'elle n'est pas développée.
+
+## C-15-6-25 — 15-6a : un seul vocabulaire de refus pour l'avoir — variante propre, code `ACCOUNT_ARCHIVED`, libellé « Impossible d'émettre l'avoir » (révise C-15-6-16)
+
+- **Contexte** : validation P3 de la 15-6a — F-9 (LOW) : sur `POST /api/v1/credit-notes`, un compte
+  de produit archivé rend `CREDIT_NOTE_REVENUE_ACCOUNT_ARCHIVED` (« Impossible d'émettre l'avoir —
+  … ») et un compte de la vente archivé rendait, par C-15-6-16, `ACCOUNT_ARCHIVED` avec le message de
+  la contre-passation (« Impossible de contre-passer — … ») : deux vocabulaires pour un même geste.
+  L'orchestrateur demande de trancher entre étendre `CREDIT_NOTE_REVENUE_ACCOUNT_ARCHIVED` et un
+  libellé « Impossible d'émettre l'avoir » pour `ACCOUNT_ARCHIVED` sur cette route.
+- **Retenu** : la seconde voie. Variante `DbError::CreditNoteAccountsArchived(Vec<ArchivedAccount>)`,
+  **même code** `ACCOUNT_ARCHIVED`, même `details.rejected[]` (`accountId`, `accountNumber`) que la
+  contre-passation ; clé neuve `credit-note-account-archived` dans les quatre locales — fr :
+  « Impossible d'émettre l'avoir — compte(s) archivé(s) : { $detail }. Réactivez le ou les comptes
+  concernés. » Le manuel et le CHANGELOG disent les deux codes de la route (par ligne / par compte de
+  la vente). Révise le « aucune variante, aucun code, aucune clé neuve » de C-15-6-16 : aucun **code**
+  neuf, une variante et une clé.
+- **Écartées** : étendre `CREDIT_NOTE_REVENUE_ACCOUNT_ARCHIVED` (sa structure `RejectedRevenueAccount`
+  désigne une **ligne de facture** ou le produit par défaut, et son nom dit « produit » : y loger la
+  créance mentirait au lecteur de l'API et exigerait un sujet neuf dans `format_rejected_revenue_accounts`) ;
+  garder le message de la contre-passation (« contre-passer » face au bouton « Créer un avoir »,
+  incohérent avec le refus voisin de la même route).
+- **Réversible** : oui, tant qu'elle n'est pas développée ; après, retirer la variante ne change pas le
+  code rendu.
+
+## C-15-6-26 — 15-6b : un code, un rôle, deux remèdes ; tables de refus du guide ; comparaison séparée de la construction du refus (révise C-15-6-18 ; C-15-6-3 révisé par C-15-6-18 et ce choix)
+
+- **Contexte** : validation P3 de la 15-6b (lentilles R et F, Sonnet ; remédiation Opus 5.5).
+  R1 = F1 (MEDIUM) : l'AC3 bis ajoutée en P2 (C-15-6-18) rendait, pour un compte d'arrondi, de nature
+  ou de TVA due **désigné dans les réglages**, le message du règlement unitaire, qui renvoie à « un
+  autre compte (banque, caisse…) » alors que l'utilisateur n'a choisi aucun compte — cas du dialogue
+  de solde, qui affiche `err.message` (`invoices/[id]/+page.svelte:509`). R2 = F2 (MEDIUM) : l'AC10
+  visait le § 10 générique de `docs/api-external.md` et oubliait la table des refus du solde
+  (`:274-283`). F3 (MEDIUM) : six à sept sites répétaient comparaison, lecture du numéro et
+  construction du refus. Le corps de C-15-6-3 dit encore « deux clés » et « résolu par le type » pour
+  les comptes d'écart : révisé par C-15-6-18 puis par ce choix, non réécrit. Décisions de
+  l'orchestrateur.
+- **Retenu** : (a) un seul code `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, discriminant
+  `role: SettlementAccountRole` dans la variante et en `details.role` (`counterparty`, `rounding`,
+  `write_off_nature`, `vat_payable`) ; quatrième clé `error-settlement-designated-account-is-receivable`
+  (sélecteur Fluent sur `$role`) qui renvoie à *Paramètres → Facturation* ; deux cas dans le libellé
+  `failed[]` du rapprochement et au manuel ; `claim: Payable` ne se combine qu'avec `counterparty`.
+  (b) Guide : une ligne dans la table du solde, une phrase « Refus » sous le § des règlements client et
+  sous celui du règlement fournisseur (qui couvre les deux routes de lot) ; le § 10 n'est pas touché.
+  (c) Helper commun dans `invoice_settlements.rs` : `ensure_not_claim_account` (comparaison **pure**,
+  seule partie empruntée par la 15-6d), `claim_account_refusal` (lit le numéro à l'échec seulement),
+  `claim_account_refusal_details` (mapping HTTP, `FailedProposal`, `PaymentBatchFailedItem`).
+  (d) `confirm_batch` relit `supplier_invoice_number` par une `SELECT` ; la variante ne gagne pas de
+  champ. (e) Signal D5 levé (MEDIUM → MEDIUM, deux défauts nés de la remédiation P2, confinés à
+  l'AC3 bis), déclaré, sans découpage ; la P4 est une passe complète.
+- **Écartées** : un second code pour le compte désigné (même défaut `D X / C X`, un intégrateur le
+  traite d'un seul bras ; la différence de remède est une information) ; un message unique reformulé
+  (vague pour les deux cas) ; inscrire le code au § 10 (rompt la convention) ; un helper qui compare et
+  construit en une fonction (inempruntable par la 15-6d, dont le refus est le `VALIDATION_ERROR` du flux
+  ventilé) ; ajouter `supplier_invoice_number` à `pay_in_tx` ou à la variante.
+- **Réversible** : oui avant le développement ; après, `details.role` et la quatrième clé sont des
+  ajouts compatibles, retirer `role` romprait un contrat d'API documenté.
+
+## C-15-6-27 — 15-6c : le `FOR UPDATE` de `before` testé, attente prouvée, pas de verrou pour une dé-liaison, place du manuel, routes bancaires au guide
+
+- **Contexte** : validation P3 de la 15-6c (lentilles R et F, Sonnet ; remédiation Opus 5.5) — 3
+  MEDIUM, 11 LOW. F1 : le `FOR UPDATE` de `before` dans `company_invoice_settings::update` ferme une
+  course, mais aucun test ne l'épinglait (les tests 11 et 12 passent avec un `SELECT` simple). F2 : les
+  attentes des tests étaient bornées à 300 ms. R3-1 : le paragraphe du manuel d'administration était
+  placé juste avant un paragraphe sans en-tête, qui en serait devenu la suite. F8 : les routes
+  `/bank-accounts` ne figurent nulle part dans `docs/api-external.md`. Décisions de l'orchestrateur.
+- **Retenu** : test 12 bis — une transaction tenue pose S sur les réglages par
+  `claim_accounts_in_share_mode`, le PUT doit attendre au `FOR UPDATE` (rougit si on le retire) ;
+  tests 11, 12 et 12 bis prouvent l'attente par `attendre_une_requete_en_cours`, jamais par un délai ;
+  une cible `NULL` (dé-liaison, création ou remplacement sans compte) ne lit pas les réglages et ne pose
+  aucun verrou S (`ClaimAccounts::default()`) ; `$account` = numéro du compte lu sans verrou après la
+  décision du refus, repli `#<id>` ; `$bank` = `bank_name` ; paragraphe du manuel d'administration
+  après `:2033` (borne `:2017-2033`), qui présente d'abord les comptes débiteurs et créanciers puis la
+  règle réciproque ; `docs/api-external.md` : une ligne *Comptes bancaires* au § 7 et le code au § 10,
+  sans section neuve ; portée réelle des verrous dite (next-key et intervalle, attente transitoire
+  possible, non mesurée) ; tests Vitest existants adaptés (`BankAccountJournalLinkForm.test.ts`,
+  `settings-invoicing-page.test.ts`), aucun ne change de sens.
+- **Écartées** : garder le délai de 300 ms (passe à vide sur machine chargée) ; verrouiller aussi pour
+  une dé-liaison (attente inutile, le contrôle ne joue jamais sur `NULL`) ; insérer le paragraphe après
+  *Montant minimum* (`:2031`) ; documenter toute la ressource bancaire au guide (hors périmètre) ; ne
+  rien ajouter au § 7 (le § 10 renverrait à des routes que le guide ne présente pas).
+- **Réversible** : oui, la fiche n'est pas codée.
+
+## C-15-6-28 — 15-6d : contrôle du compte de banque actif sur le chemin par règle ; gardes ventilées figées ; pas de garde de génération ; comparaison empruntée au helper de la 15-6b (complète C-15-6-23)
+
+- **Contexte** : validation P2 de la 15-6d (lentilles R et F, Opus ; remédiation Opus 5.5) — R-1
+  (MEDIUM) = F-4 (LOW) : `accept_one_rule` ne contrôle pas l'activité du compte de banque, que les
+  trois autres chemins contrôlent avant leur garde d'égalité ; « même réponse sur tous les chemins »
+  était faux pour un compte de banque archivé. F-2 (MEDIUM) : l'ordre « égalité avant postabilité » de
+  C-15-6-23 reposait sur deux gardes ventilées qu'aucun test n'exerce. F-6 (LOW) : la garde de
+  génération protégeait un cas que la page ne produit pas (`{#key selectedId}`). F3 de la P3 de la
+  15-6b : helper commun dans `invoice_settlements`. Décisions de l'orchestrateur.
+- **Retenu** : `accept_one_rule` gagne, juste après l'étape 1, l'étape « compte de banque actif »
+  d'`accept_one_split` (`reconciliation.rs:1912-1938` ; `DATABASE_ERROR`,
+  `BANK_ACCOUNT_NOT_CONFIGURED` + `details.bankAccountId`), avant la garde d'égalité — même réponse
+  sur les quatre chemins (actif → `VALIDATION_ERROR`, non imputable → `VALIDATION_ERROR`, archivé →
+  `BANK_ACCOUNT_NOT_CONFIGURED`) ; changement délibéré d'un refus existant, relevé en T0, testé
+  (test 7). Deux témoins figent les gardes ventilées (`post_split`, `accept_one_split`). Écran :
+  `listBankAccounts()` une fois au montage, sans garde de génération (le `{#key}` de la page remonte
+  le composant ; son retrait exigerait la garde, dit au doc-comment). Backend : la **comparaison**
+  emprunte `ensure_not_claim_account` (fonction pure de la 15-6b, C-15-6-26) ; la **construction** du
+  refus reste celle du flux ventilé, ramenée à deux fonctions locales. La 15-6d passe donc après la
+  15-6b. L'angle mort « course résiduelle » est retiré : la valeur comparée est celle qui construit
+  l'écriture, aucun verrou à ajouter.
+- **Écartées** : écrire la divergence du chemin par règle comme angle mort (un même défaut rendrait
+  trois réponses) ; garder la garde de génération « par cohérence avec `loadGen` » (justification
+  fausse, test d'un cas impossible) ; emprunter aussi la construction de refus de la 15-6b (changerait
+  la forme `VALIDATION_ERROR` fixée par C-15-6-9 / C-15-6-23) ; `withoutAccountIds` à l'écran (écarté
+  par C-15-6-23).
+- **Réversible** : oui, tant qu'elle n'est pas développée.
+
+## C-15-6-29 — 15-6a : le verrou partagé couvre tous les comptes que l'avoir écrit ; rejeu de la route sur interblocage ; ligne absente → `Invariant` (rectifie C-15-6-24 ; étend C-15-6-25)
+
+- **Contexte** : validation P4 de la 15-6a (lentilles R et F, Opus ; remédiation Opus 5.5). F-1
+  (MEDIUM) : la TVA due et les comptes de produit demandaient leur S **après** l'exercice, face au X
+  que le solde du reste y prend **avant** le sien — cycle préexistant que la 15-5d décrit et ferme pour
+  la validation, non pour l'avoir. R4-1 ≈ F-2 (MEDIUM) : l'analyse de C-15-6-24 (« S + S ne bloque ni
+  le rapprochement ni un second avoir ») était fausse pour l'arrondi — le rapprochement prend X sur
+  l'arrondi et sur l'exercice avant son `UPDATE invoices`, et le cycle avoir ↔ rapprochement de la
+  même facture préexiste par l'exercice (**#536**, ouverte par l'orchestrateur) ; la route de l'avoir
+  ne rejoue pas un 1213 (500). F-3 (LOW) : cycle à trois neuf par un X en attente. R4-9 = F-5 (LOW) :
+  ligne absente du résultat du verrou non spécifiée. Décisions de l'orchestrateur.
+- **Retenu** : (1) le `LOCK IN SHARE MODE`, pris avant l'exercice, en **une** requête `ORDER BY id`,
+  couvre la créance et l'arrondi de la vente, la TVA due des réglages (si l'avoir porte de la TVA et
+  que le réglage est posé) et les comptes de produit effectifs (repli D-B2 compris) — règle écrite :
+  un compte qu'un autre flux tient en X avant l'exercice se verrouille avant l'exercice ; (2) la 6 ter
+  lit `active` dans le résultat du verrou (l'instantané REPEATABLE READ, établi au snapshot des lignes,
+  précède le verrou), en gardant son code, son message par ligne et sa place ; (3) un compte de TVA
+  due archivé rend `CreditNoteAccountsArchived` (`ACCOUNT_ARCHIVED` nommé) au lieu de
+  `INACTIVE_OR_INVALID_ACCOUNTS` anonyme — même remède que la créance et l'arrondi ; (4) un id que le
+  verrou ne rend pas → `DbError::Invariant` ; (5) la route `POST /api/v1/credit-notes` enveloppe le
+  dépôt dans `retry_with` (`is_deadlock_error`), patron de `write_off_invoice_handler`, figé par un
+  test qui provoque un interblocage déterministe dont l'avoir est la victime ; (6) trois cycles
+  résiduels inscrits à l'inventaire (avoir ↔ rapprochement, #536 ; avoir ↔ solde du reste par ordres
+  opposés entre deux comptes ; X en attente), tous détectés par InnoDB et rejoués. L'angle mort « un
+  compte lu sans verrou pendant l'avoir » disparaît. C-15-6-24 reste vrai sur le mode (S) et la place
+  (avant l'exercice) ; sa justification « S + S ne bloque pas le rapprochement » est rectifiée ici.
+- **Écartées** : garder le verrou à la créance et à l'arrondi et inscrire le cycle de la TVA due et
+  des produits en angle mort (la 15-5d a fermé la même forme pour la validation ; l'avoir serait le
+  dernier chemin à l'ouvrir) ; un refus `ACCOUNT_ARCHIVED` pour les produits aussi (changerait le
+  refus par ligne de la 6 ter, figé par ses tests et son message) ; laisser la ligne absente au filet
+  anonyme de `create_in_tx` ; laisser la route sans rejeu (un 500 opaque sur « Créer un avoir » quand
+  l'avoir est la victime).
+- **Réversible** : oui, tant qu'elle n'est pas développée.
+
+## C-15-6-30 — 15-6b : le compte d'arrondi porte le rôle `rounding` quel que soit le geste ; validation et avoir en angles morts écrits ; message de liste vide conditionné
+
+- **Contexte** : validation P4 de la 15-6b (lentilles R et F, Opus ; remédiation Opus 5.5). R1 = F1
+  (MEDIUM) : le reste d'arrondi du solde (5 bis) et la nature `rounding` étaient classés
+  `write_off_nature`, alors qu'ils lisent `default_rounding_account_id`, la colonne du compte d'arrondi
+  du règlement — le message renvoyait au champ d'escompte (recyclage du discriminant posé en P3,
+  C-15-6-26). F2 (MEDIUM) : « résolu par le type » faux pour la validation (créance des réglages sans
+  type contrôlé) et pour l'avoir (TVA due, produit de repli). F3 (MEDIUM) : le message de liste vide
+  accusait le compte débiteurs dans une société sans compte bancaire. F4 (LOW) : « désignez » s'adresse
+  à un Comptable sans accès aux réglages. Décisions de l'orchestrateur.
+- **Retenu** : `role: rounding` pour tout compte lu dans `default_rounding_account_id` (règlement,
+  rapprochement, reste d'arrondi et nature `rounding` du solde) ; `write_off_nature` pour `discount`,
+  `bank_fees`, `bad_debt` seulement ; le rôle suit la colonne lue, pas la route ; ordre des refus au
+  solde : nature, reste d'arrondi, TVA due. Angles morts écrits, sans garde neuve : créance retypée à
+  la validation (**#537**, ouverte par l'orchestrateur), TVA due et produit de repli de l'avoir
+  (#525). Message de liste vide seulement si au moins un compte bancaire a été écarté par le filtre.
+  Messages : « un administrateur doit désigner », comme C36. Sélecteur Fluent multi-lignes, repli Rust
+  par rôle. **Signal D5 levé (recyclage de F1), pas de découpage** : recyclage contenu au même
+  discriminant (une ligne de classement, un test), F2/F3 d'origine, aucun module de plus ; un troisième
+  recyclage sur l'AC3 bis en P5 en déciderait la sortie en story propre.
+- **Écartées** : un rôle distinct « reste d'arrondi » (deux valeurs pour une même colonne, un
+  intégrateur verrait deux rôles pour un même compte désigné) ; garder la validation et l'avoir
+  (sixième et septième modules, hors de la classe « règlement ») ; un second message pour « aucun
+  compte bancaire » (aucun état vide n'existe aujourd'hui, le comportement actuel suffit) ;
+  « désignez » avec une branche d'écran par rôle (écartée par C36).
+- **Réversible** : oui, tant qu'elle n'est pas développée.
+
+## C-15-6-31 — 15-6d : clôture de la validation ; C-15-6-28 révise C-15-6-23 (garde de génération, course résiduelle) ; texte du refus selon le champ
+
+- **Contexte** : validation P3 de la 15-6d (lentilles R et F, Sonnet ; remédiation Opus 5.5) — 10 LOW,
+  0 au-dessus. F3-1 : C-15-6-23 « Retenu » dit toujours « effet dépendant de `bankAccountId`, garde de
+  génération » et « course résiduelle de `post_manual` écrite », que C-15-6-28 retire en se disant
+  « complète » ; le registre ne se réécrit pas. F3-2 : « le même refus que `post_split` » n'est pas le
+  même texte (`splits[{idx}].…`). R1 : l'étape ajoutée à `accept_one_rule` est atteignable depuis
+  l'écran.
+- **Retenu** : C-15-6-28 **révise** C-15-6-23 sur deux points — plus de garde de génération à l'écran,
+  plus d'angle mort « course résiduelle » — ; le reste de C-15-6-23 tient. Une fonction de refus
+  `counterparty_is_bank_ledger_error(field)` pour `post_split` et `post_manual`, même code, texte selon
+  le champ ; tests sur le code seul. Compte de banque archivé avant l'ouverture de l'écran : angle mort
+  écrit, aucun contrôle ajouté à `get_proposals`. Manuel : le refus seul est affirmé sans réserve.
+  CHANGELOG : `### Modifié` pour le changement délibéré de l'AC2. Validation close.
+- **Écartées** : réécrire C-15-6-23 (interdit par la consigne du registre) ; un message identique sur
+  les deux routes (`post_manual` n'a pas d'index de ligne) ; contrôler l'activité du compte lié dans
+  `get_proposals` (hors périmètre, la garde d'acceptation suffit).
+- **Réversible** : oui, tant qu'elle n'est pas développée.
+
+## C-15-6-32 — 15-6a : alignement sur la 15-5e réécrite par C54 — le rejeu de la route vient de la 15-5e, le verrou reste pour la seule course de lecture, aucun réordonnancement, cycles nommés sans prétention d'absence ; helper de verrou de liste partagé avec la 15-5d ; « émet de la TVA » à source unique (révise C-15-6-29 sur le rejeu et les cycles)
+
+- **Contexte** : validation P5 de la 15-6a (lentilles R et F, Sonnet ; remédiation Opus 5.5). R5-1 =
+  F5-1 (MEDIUM) : la fiche ignorait la 15-5e (C52). R5-2 (MEDIUM) et F5-3 (LOW) : cycles non
+  inscrits (avoir ↔ solde du reste par TVA due ↔ arrondi ; avoir ↔ règlement par compte interne).
+  F5-5 (LOW) : deux helpers jumeaux (15-5d en X, 15-6a en S). R5-4 = F5-2 (LOW) : condition « l'avoir
+  émet de la TVA » calculée après le verrou. Consigne initiale de l'orchestrateur : « une seule règle
+  d'ordre des verrous pour l'epic, celle de la 15-5e », avec « l'arrondi d'abord ». **Correction de
+  consigne reçue pendant la remédiation** : la 15-5e est réécrite selon **C54** (la défense contre
+  l'interblocage est le rejeu ; la 15-5e rejoue toutes les routes d'écriture, avoir compris, et ne pose
+  plus « l'arrondi d'abord », C55) ; ne pas réordonner l'avoir pour fermer des cycles, garder les
+  verrous qui ferment une course de lecture, retirer toute affirmation d'absence de cycle.
+- **Retenu** : (1) dépendances « après 15-5a à 15-5e » ; (2) l'AC7 ne réécrit ni le doc-comment
+  canonique, ni le « 5 bis », ni le doc-comment de la route, que la 15-5e réécrit ou pose ; elle ne
+  corrige qu'une phrase qui décrirait l'ancien ordre de l'avoir, s'il y en a une ; (3) la route
+  `POST /api/v1/credit-notes` est rejouée **par la 15-5e** — la 15-6a ne spécifie plus de `retry_with`
+  (révise C-15-6-29) ; son test 15 fige que ce rejeu couvre l'attente neuve créée par le verrou ;
+  (4) le verrou `LOCK IN SHARE MODE` des comptes écrits reste **en une instruction `ORDER BY id`**,
+  avant l'exercice, pour la seule **course de lecture** (archivage concurrent, `active` lu frais) ;
+  aucun réordonnancement ; (5) les cycles connus — #536 (rejeu, C57), solde du reste (nature
+  commune, ou TVA due ↔ arrondi), règlement par compte interne, X en attente — sont **nommés, non
+  exhaustifs**, couverts par le rejeu ; plus d'« ensemble clos » ; (6) **un seul** helper de verrou
+  d'une liste de comptes, paramétré par le mode, créé par la première story mergée (a priori la
+  15-5d), réutilisé par la 15-6a ; `EXPLAIN` et test d'identifiant étranger comme la 15-5d (C51) ;
+  (7) agrégation de la TVA de l'avoir extraite en fonction pure partagée par le générateur et le
+  calcul des ids ; refus `ConfigurationRequired(TVA)` laissé à sa place ; (8) une ligne pour l'avoir
+  au Pattern 5, dans la forme que la 15-5e lui donne.
+- **Écartées** : « l'arrondi de la vente d'abord » (demandé par la consigne initiale, retiré par la
+  correction : un réordonnancement pour fermer un cycle, contraire à C54/C55) ; un « ensemble clos »
+  de cycles (affirmation d'absence, contraire à C54) ; garder un `retry_with` propre à la route (doublon
+  de la 15-5e) ; un second helper en S (DRY) ; avancer le générateur avant le verrou (déplacerait le
+  refus de TVA devant `FISCAL_YEAR_INVALID`) ; dupliquer `total_vat > 0`.
+- **Réversible** : oui, tant qu'elle n'est pas développée. **À répercuter hors du worktree** (par
+  l'orchestrateur) : la fiche 15-5d peut dire que son helper prend un mode.
+
+## C-15-6-33 — 15-6b : alignement sur la 15-5e réécrite par C54 (aucun ordre ne change ; chaque comparaison suit sa lecture) ; trois clés plates ; critère de T2 par nom sur liste fermée ; sujet de refus typé (révise C-15-6-26 et C-15-6-30 sur la forme des messages)
+
+- **Contexte** : validation P5 de la 15-6b (lentilles R et F, Sonnet ; remédiation Opus 5.5). F1
+  (MEDIUM) : la 15-5e (C52) réordonnait `settle_invoice` et `write_off_invoice` ; sa réécriture par
+  C54, reçue en cours de remédiation, retire ce réordonnancement et rejoue les routes. R5-1 (MEDIUM) :
+  le sélecteur Fluent `$role` rougit un test de `kesh-i18n` et se résout mal côté frontend. R5-2
+  (MEDIUM) : la borne `sitesTotal` existe déjà. R5-3 = F2 (MEDIUM) : le critère de T2 (P4) ne voyait
+  pas un littéral coupé par rustfmt. F3 (MEDIUM) : `user-manual.tex:1754`. F5, F6, F7, R5-4 à R5-8 (LOW).
+- **Retenu** : (1) dépendances « après 15-5a à 15-5e », étapes citées par leur nom ; (2) **chaque
+  comparaison suit aussitôt la lecture de son compte**, dans l'ordre des lectures du code, que la
+  15-5e ne change pas : au solde, nature → reste d'arrondi → TVA due ; au règlement, contrepartie →
+  trop-perçu → compte d'arrondi ; une nature égale à la créance précède les refus de configuration
+  des comptes lus après elle (test 10 ter) ; (3) trois clés plates
+  (`error-settlement-{rounding,write-off,vat-payable}-account-is-receivable`), un rôle une clé, sans
+  `match` de repli ; (4) `sitesTotal` relevé pour tous les sites neufs (+4, +6 avec la 15-5c), recompté
+  sur l'état rebasé ; (5) critère de T2 : `grep -rnF` du nom, commentaires exclus, sur une liste fermée
+  de cinq fichiers, chaque occurrence lue ; (6) helper de construction à sujet typé
+  (`ClaimSubject::{Counterparty(ClaimSide), Designated(DesignatedRole)}`) ; (7) `:1754` au manuel ;
+  phrase « Refus » du paiement fournisseur avant la ligne d'annulation ; (8) produit de repli de l'avoir
+  écrit « non tracé » (#525 ne le couvre pas), signalé à l'orchestrateur. **Signal D5 non déclenché** :
+  F1 vient d'un changement extérieur (la 15-5e), les recyclages (R5-1, F2) sont hors de l'AC3 bis.
+- **Écartées** : suivre l'ordre « l'arrondi d'abord » de la première version de la 15-5e (retiré par
+  C54/C55) ; inscrire la clé à sélecteur à `SELECTEURS_RESOLUS_COTE_SERVEUR` (ajoute `loader.rs` et un
+  repli Rust par `match` ; la 15-5c a choisi les clés plates pour la même raison) ; toutes les
+  comparaisons après la dernière lecture (ordre des refus dépendant de refus de configuration
+  étrangers au défaut) ; un critère `rg -U` multi-lignes (plus fragile qu'une liste fermée) ; un
+  `debug_assert!` pour `Payable` + rôle désigné (muet en production).
+- **Réversible** : oui, tant qu'elle n'est pas développée.
+
+## C-15-6-34 — 15-6b : clôture de la validation à la P6 ; produit de repli et validation d'achat tracés (#525, #537) ; règle de placement « après son compte et la créance » ; manuel d'administration ; dispersion déclarée sans découpage
+
+- **Contexte** : validation P6 de la 15-6b (Opus, lentilles R et F) : 0 au-dessus de LOW (R 11 LOW,
+  F 7 LOW, R6-4 = F6-6). Après la P5, l'orchestrateur a tracé le produit de repli de l'avoir sur #525
+  et la forme côté dette de la validation d'achat sur #537 (commentaires du 2026-10-08) ; la fiche les
+  disait « non tracé » / « signalé ». F6-1 : le manuel d'administration n'avait aucun verdict. F6-7 :
+  le critère de dispersion de l'amendement D5 est rempli au barème de la règle (neuf modules).
+- **Retenu** : (1) **validation close** (0 > LOW, § *Review Iteration Rule*) ; tous les LOW appliqués ;
+  (2) « tracé par #525 / #537 » aux trois sites de la fiche et dans la 15-6a ; (3) règle de placement :
+  chaque comparaison suit la lecture de son compte **et** celle de la créance (la nature est lue avant
+  la créance au solde) — aucun réordonnancement (C55) ; (4) manuel d'administration : `:2027` inchangée,
+  une phrase à `:2029`, une condition à `:2033`, frontière de la 15-6c alignée ; (5) présélection du
+  dialogue de règlement dans un effet distinct qui n'efface pas la saisie ; (6) clés de lot de
+  `details` ajoutées par le mapping HTTP seul ; (7) `DesignatedRole` avec `ClaimSubject` dans
+  `invoice_settlements.rs` ; (8) **dispersion déclarée au Project Lead, non découpée** : le « barème du
+  geste » n'est plus invoqué ; raison — fiche convergée en six passes, gestes liés par une variante, un
+  sujet typé, un lecteur sœur et trois fonctions d'écran ; le risque visé (non-convergence) ne s'est
+  pas réalisé ; arbitrage de Guy en revue de fin d'epic.
+- **Écartées** : une P7 (aucun finding > LOW ; la boucle s'arrête) ; un angle mort écrit pour le
+  manuel d'administration au lieu de deux phrases (le remède du message envoie l'administrateur à ce
+  manuel) ; découper la story à ce stade (rouvrirait deux validations pour séparer ce que la
+  conception lie) ; reconstruire le `default` de `t_args` par un `match` (le `format!` du patron
+  `errors.rs:88-92` suffit).
+- **Réversible** : oui, tant qu'elle n'est pas développée ; le découpage reste ouvert à l'arbitrage
+  de Guy.
+
+## C-15-6-35 — 15-6a : un seul contrat pour le helper de verrou de liste (mode, `pub`, ne refuse rien, type nommé distinct de `LockedAccount`) ; critère DRY à exception écrite ; partenaires réels du cycle (iv) ; dépendance ferme à la 15-5d
+
+- **Contexte** : validation P6 de la 15-6a (Opus, lentilles R et F) : 4 MEDIUM distincts — F6-1 = R6-1
+  (deux contrats pour la fonction de verrou), R6-2 (critère DRY faux : `opening_complement.rs:518-537`),
+  R6-3 (doctrine retirée restée aux Dev Notes et en T0), F6-2 = R6-4 (validation impossible comme
+  partenaire du cycle (iv)) ; trois recyclent la remédiation P5.
+- **Retenu** : (1) la puce « Un seul helper » est le **seul** contrat : paramétré par le mode, à
+  l'emplacement de la 15-5d, `id, number, active, postable`, ne refuse rien (« ligne absente » et
+  partage chez `create_credit_note`), **`pub`** (test 17 d'intégration), type de ligne nommé et public
+  **distinct** de `opening_complement::LockedAccount` (p. ex. `LockedAccountState`), ou celui de la
+  15-5d s'il existe ; le paragraphe « Refus nommé » y renvoie ; (2) critère DRY : aucune autre requête
+  de verrou d'une liste d'ids de comptes **hors** `opening_complement.rs:518-537`, exception écrite
+  (forme distincte, hors périmètre) ; (3) Dev Notes et T0 : plus de « règle de l'AC6 » ni de
+  conformité à vérifier — le verrou avant l'exercice sert la course de lecture, la défense est le
+  rejeu (C54) ; (4) cycle (iv) : partenaires = flux qui prennent l'exercice sans la ligne des réglages
+  (saisie manuelle, règlement, solde du reste, rapprochement) ; validation et saisie fournisseur
+  exclues ; (5) la 15-5d devient une dépendance **ferme** (la story attend) ; (6) test 17 : issue
+  attendue rouge d'après la mesure du dépôt, puis `owned_account_ids`, sauf adoption par la 15-5d ;
+  (7) **signal D5 levé** (MEDIUM → MEDIUM, recyclage de la P5) et dispersion (six modules métier, plus
+  la plomberie) **déclarés**, pas de découpage : recyclage contenu au texte de l'AC6, sans règle métier
+  ni module ; P7 complète (Sonnet) due.
+- **Écartées** : réutiliser `opening_complement::LockedAccount` (privé, autres colonnes, flux hors
+  epic) ou lui prendre son nom (homonymie) ; refondre `create_opening_complement` sur le helper
+  (changement sans motif d'un flux livré) ; restreindre le critère DRY aux seuls flux de facturation
+  (moins décidable qu'une exception nommée) ; garder la branche « si la 15-5d n'est pas mergée »
+  (deux chemins à spécifier pour un ordre d'epic déjà fixé) ; découper l'AC6 (le défaut est une
+  propagation incomplète, que le grep du symptôme traite).
+- **Réversible** : oui, tant qu'elle n'est pas développée. **À faire par l'orchestrateur** :
+  commentaire sur #536 (l'avoir est couvert par le rejeu de la 15-5e ; la 15-6a ne ferme aucun cycle —
+  finding F6-6).
+
+## C-15-6-36 — 15-6a : un seul type de ligne pour le helper de verrou (révise C-15-6-35 (1)) ; C-15-6-32 (6) et C-15-6-29 marqués révisés ; manuel : le rôle repris avant la réactivation
+
+- **Contexte** : validation P7 de la 15-6a (Sonnet, lentilles R et F) : 1 MEDIUM (R7-1), 10 LOW. R7-1 : la fiche
+  (AC6) disait « la 15-6a prend le sien » si la 15-5d a nommé le type, le registre (C-15-6-35 (1)) « ou celui de
+  la 15-5d s'il existe » ; deux consignes qui s'excluent, la première produisant deux types publics de même forme.
+- **Retenu** : (1) **un seul type, jamais deux** : si la 15-5d a nommé **et exposé (`pub`)** le type de ligne de
+  son helper, la 15-6a l'emploie ; sinon elle le rend public sous le nom qu'il porte (ou `LockedAccountState`
+  s'il n'en a pas). **Cette entrée révise C-15-6-35 (1)** (« type nommé et public distinct de `LockedAccount`,
+  ou celui de la 15-5d s'il existe »), la fiche (AC6) étant alignée ; (2) **C-15-6-32 (6)** (« créé par la
+  première story mergée, a priori la 15-5d ») est **révisé** : la 15-5d est une dépendance ferme (C-15-6-35 (5)) ;
+  **C-15-6-29** (« angle mort : cycle avec chaque validation dès la 15-5d ») est **révisé** : la validation
+  n'est pas partenaire du cycle (iv) (C-15-6-35 (4)) ; (3) le cycle (iv) ne cite `invoices.rs:2006` et `:2172`
+  que pour la validation ; l'ordre de la saisie fournisseur est relevé par T0 ; (4) test 17 : appel direct du
+  helper avec des ids explicites, sans `UPDATE` des réglages ; tests 2 et 7 : « par SQL direct » ; (5) le
+  `keshwarning` du manuel dit de retirer d'abord le rôle *Créances clients* du nouveau compte si nécessaire avant
+  de réactiver (`user-manual.tex:358-359`) ; (6) numéros de ligne relevés de `credit_notes.rs` et
+  `opening_complement.rs` corrigés (T0 les refait de toute façon).
+- **Écartées** : deux types (un par story) ; remplacer le type de la 15-5d par celui de la 15-6a (change le retour
+  d'un helper d'une autre story).
+- **Réversible** : oui, tant qu'elle n'est pas développée. **Pour le message de PR** (F7-6) : `closes #523`
+  renvoie au commentaire du 2026-10-08 sur #523 — la contrainte « sans casser le refus nommé de #486 » est levée
+  en esprit, pas à la lettre (l'assertion de `invoices_validate_vat.rs:846` change).
+
+## C-15-6a-1 — 15-6a : T0 fait, développement suspendu jusqu'au merge de la 15-5d ; helper employé tel quel (partagé, sans mode), rendu `pub` sans second type
+
+- **Contexte** : T0 de la 15-6a sur `origin/main` `9cb5083b`. La 15-5d (helper `lock_designated_accounts_in_tx`,
+  test de C35) est développée et revue (branche `story/15-5d-garde-usage-comptes-reglage`, `5624ca78`) mais **non
+  mergée**. La fiche en fait une dépendance **ferme** (« si l'une n'est pas mergée au moment de T0, la story
+  attend », R6-10 ; C-15-6-35 a écarté la branche « si la 15-5d n'est pas mergée »). Sur la branche de la 15-5d,
+  le helper est déjà en **partagé seul** (C87), déjà sur le patron `owned_account_ids` (C88), `FORCE INDEX
+  (PRIMARY)`, `pub(in crate::repositories)`, type de ligne privé `LockedDesignatedAccount` dans le newtype
+  `DesignatedAccountsSnapshot` ; son test de C35 est dans `invoices_validate_vat.rs`.
+- **Retenu** : (1) **arrêt après le T0**, relevés et écarts consignés (Change Log de la fiche, « Alignement sur le
+  livré (T0) ») ; (2) une fois la 15-5d mergée, la 15-6a **emploie le helper tel quel, sans paramètre de mode**
+  (aucun appelant exclusif ne reste ; un mode à une seule valeur serait du code mort) et rend `pub` la fonction,
+  `LockedDesignatedAccount` et l'accès aux lignes de `DesignatedAccountsSnapshot` sous leurs noms (C-15-6-36 :
+  un seul type) ; (3) le test 13 se ré-ancre dans `invoices_validate_vat.rs`, le test 17 est attendu vert
+  d'emblée ; (4) la ligne Pattern 5 de l'avoir prend la forme « par renvoi » (C68).
+- **Écartées** : fusionner la branche de la 15-5d dans celle de la 15-6a (les consignes interdisent tout merge ;
+  et la résolution du conflit 15-5d ↔ 15-5e2 sur `invoice_settlements_write.rs` reviendrait à qui merge la 15-5d) ;
+  écrire un helper jumeau (contraire au critère DRY de l'AC6, conflit certain au merge) ; développer T1/T2 seuls
+  (story livrée en deux temps, sans motif — T1/T2 ne prennent qu'une fraction du travail).
+- **Réversible** : oui. **À faire par l'orchestrateur** : merger la 15-5d, puis relancer le développement de la
+  15-6a sur `main` à jour (le T0 n'aura à refaire que les numéros de ligne des fichiers que la 15-5d touche :
+  `company_invoice_settings.rs`, `invoices.rs`, `invoice_settlements_write.rs`, `invoices_validate_vat.rs`, manuels).
+
+## C-15-6a-2 — 15-6a (dev) : rebase sur `5e4bec50` par union ; helper de la 15-5d rendu `pub` avec un accesseur, sans mode
+
+- **Contexte** : la 15-5d est mergée (`5e4bec50`) ; la branche de la 15-6a portait la planification (fiches 15-6*,
+  registre) et le T0. Rebase : conflit du registre (entrées disjointes — 15-11a/15-5d côté `main`, C-15-6-1 à 36
+  côté branche) et de l'en-tête de `sprint-status.yaml` (deux lignes `(19)`). Au code mergé, le helper
+  `lock_designated_accounts_in_tx` est partagé seul, privé au module `repositories`, et rend un newtype à champ privé.
+- **Retenu** : (1) union sans dédoublonnage nécessaire (aucun titre commun, vérifié par `uniq -d`) ; la ligne
+  `last_updated` du T0 renumérotée `(24)` et placée en tête, la mention de sa numérotation d'origine gardée ;
+  (2) le helper est employé **tel quel, sans paramètre de mode** (C-15-6a-1 confirmé) ; sont rendus `pub` la
+  fonction, `LockedDesignatedAccount` (champs `pub`) et `DesignatedAccountsSnapshot`, auquel s'ajoute un
+  accesseur en lecture `accounts()`. Le champ du newtype reste privé : on ne fabrique pas d'instantané hors du
+  helper, et `check_written` reste `pub(in crate::repositories)`.
+- **Écartées** : rendre le champ du newtype `pub` (permettrait de construire un faux instantané hors du verrou) ;
+  un second type pour l'avoir (C-15-6-36) ; ajouter un mode à une seule valeur.
+- **Réversible** : oui (visibilité seule).
+
+## C-15-6a-3 — 15-6a (dev) : placement des tests, bras HTTP factorisé, passages du manuel laissés tels quels
+
+- **Contexte** : développement de la 15-6a (T1–T5). Plusieurs points laissés « au choix » ou non tranchés par la fiche.
+- **Retenu** : (1) **test 15** dans `crates/kesh-api/tests/rejeu_interblocage_e2e.rs` (la fiche laissait le choix avec
+  `invoice_echeancier_e2e.rs`) : le fichier porte déjà le harnais du patron (`transaction_lourde`, `victime`,
+  `CaptureRejeu`), ce qui évite une troisième copie et ajoute le témoin `exiger_un_rejeu("credit_notes::create")` ;
+  « premier numéro » vérifié par la séquence (un seul numéro tiré), non par la forme du numéro. (2) **Tests 4 et 17** :
+  seconde société par `INSERT INTO companies` direct (patron du test `foreign_account_is_never_locked_and_is_refused`
+  de la 15-5d), non par `companies::create` — le lecteur et le helper n'en lisent que l'identifiant. (3) **Test 10** :
+  montage léger prévu par la fiche (en-tête d'écriture sans ligne, même société), nom de la fiche gardé. (4) **Test 13**
+  renommé `credit_note_credits_a_non_postable_sale_receivable` et doté d'une assertion sur le compte crédité (sans
+  elle, il ne figeait rien de la 15-6a). (5) **Bras HTTP** : `ReversalAccountsArchived` et `CreditNoteAccountsArchived`
+  partagent `archived_accounts_response(archived, clé, amorce du repli)` (DRY) — corps et statut inchangés pour la
+  contre-passation. (6) **Manuel** : `user-manual.tex:928` (« L'avoir n'est pas soumis à ce contrôle … même si sa
+  créance ou sa TVA due est devenue non imputable ») **reste vrai** — la créance de la vente non imputable est toujours
+  créditée — et n'est pas réécrit ; seule `:380` (« relit la créance … dans les réglages ») l'est. La balance âgée
+  (`:1846-1851`) et « un avoir le reprend et l'annule » restent vrais. (7) **CHANGELOG** : l'entrée de la 15-5d qui
+  annonçait « ce que corrigeront #473 et #525 » est réécrite dans la même version non publiée (0.13.0), pour ne pas
+  contredire l'entrée neuve.
+- **Écartées** : un fichier de test neuf pour le rejeu de l'avoir ; une `companies::create` complète pour un identifiant ;
+  dupliquer le bras HTTP ; réécrire `:928`.
+- **Réversible** : oui.
+
+## C-15-6a-4 — Revue de code P1 de la 15-6a : remédiation sans code de production, une dette écrite
+
+- **Contexte** : la revue P1 (Sonnet ×3) rend 0 au-dessus de LOW et 14 LOW. Plusieurs se corrigent par des
+  tests, des doc-comments ou de la documentation ; un seul (B-3, double dérivation de l'ensemble des comptes de
+  produit dans `create_credit_note`) ne se corrige que par du code de production.
+- **Option retenue** : corriger tout ce qui se corrige hors production exécutable (renommage du test 10, test 13
+  discriminant constaté rouge sous mutation, test 19 sur l'`Invariant` « écriture de vente sans ligne de débit »,
+  doc-comments, section « Émettre un avoir » de `docs/api-external.md`, manuel et PDF) ; écrire **B-3 comme dette**
+  (P3, à ouvrir en issue par l'orchestrateur : dériver `sites` de `revenue_ids` par un seul helper, ou un
+  `debug_assert!` d'inclusion) ; écrire comme **angle mort** le second `Invariant` de l'AC3 (« facture validée sans
+  écriture de vente »), que `chk_invoices_validated_has_je` empêche de monter. Le test 19 est placé dans
+  `credit_notes_repository.rs` (patron du test 3, helpers `emit` / `assert_nothing_written`).
+- **Écartées** : poser le garde de B-3 maintenant (rouvrirait la boucle — la remédiation toucherait la production,
+  ce qui interdit de clore après elle) ; un test du second `Invariant` par désactivation de la contrainte
+  (`SET check_constraint_checks = 0`) — il monterait un état que la base interdit, sans valeur de preuve.
+- **Réversibilité** : totale ; la dette se solde par une story de quelques lignes.

@@ -1888,9 +1888,16 @@ pub(in crate::repositories) fn generate_invoice_journal_lines(
 /// le compte de différences d'arrondi — au **crédit** s'il est positif (le total
 /// monte), au **débit** s'il est négatif.
 ///
-/// ⛔ **La créance reste la PREMIÈRE ligne au débit.** Le règlement manuel et le
-/// rapprochement la lisent par `jel.debit > 0 ORDER BY jel.id LIMIT 1` : un
-/// arrondi négatif, écrit au débit, doit donc venir après elle.
+/// ⛔ **La créance reste la PREMIÈRE ligne au débit.** Le règlement manuel, le
+/// solde du reste, le rapprochement et l'avoir la lisent par
+/// `jel.debit > 0 ORDER BY jel.id LIMIT 1`
+/// (`invoice_settlements::sale_receivable_account`) : un arrondi négatif, écrit
+/// au débit, doit donc venir après elle.
+///
+/// ⛔ **L'arrondi reste la DERNIÈRE ligne** (Story 15-6a, #523). L'avoir l'y
+/// relit et la recoupe avec l'arrondi figé sur la facture
+/// (`invoice_settlements::sale_rounding_account`) : une ligne ajoutée après lui
+/// bloquerait tous les avoirs de factures arrondies (`DbError::Invariant`).
 pub(in crate::repositories) fn generate_invoice_journal_lines_rounded(
     lines: &[InvoiceLine],
     receivable_account_id: i64,

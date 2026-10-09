@@ -510,6 +510,114 @@ where
 }
 
 // ---------------------------------------------------------------------------
+// Story 15-6a (#473, #523) — les comptes de la vente, lus sur son écriture
+// ---------------------------------------------------------------------------
+
+/// Le compte de **créance** d'une facture, lu sur son **écriture de vente** —
+/// jamais sur les réglages (Story 15-6a, #473).
+///
+/// ⛔ **La créance se lit sur l'écriture de vente, jamais sur les réglages.**
+/// Les réglages disent quel compte la *prochaine* facture débitera ; une
+/// facture déjà validée a débité le compte que portait son écriture, et tout
+/// geste qui la solde — règlement, solde du reste, encaissement par
+/// rapprochement, avoir — doit créditer **ce** compte-là, pour qu'il revienne
+/// à zéro quoi qu'il soit arrivé à la configuration entre-temps.
+///
+/// La créance est la **première** ligne au débit de l'écriture — d'où
+/// `ORDER BY jel.id LIMIT 1`. Pas la **seule** : un arrondi à 5 centimes
+/// **négatif** (Story 25-4-c4-a) ajoute une ligne de débit, toujours **après**
+/// elle (`invoices::generate_invoice_journal_lines_rounded`). L'ordre est celui
+/// de `jel.id`, qui suit l'ordre d'insertion des lignes ; une écriture
+/// enregistrée ne se modifie plus (gardes de `journal_entries::update` et
+/// `delete_in_tx` sur une écriture possédée par une pièce).
+///
+/// Portée par `je.company_id` (anti-IDOR) : une écriture d'une autre société
+/// rend `None`, comme une écriture sans ligne de débit. Chaque appelant garde
+/// **son** refus pour `None` (`DbError::Invariant` pour le règlement, le solde
+/// du reste et l'avoir ; `INVOICE_SALE_ENTRY_MALFORMED` en `failed[]` pour le
+/// rapprochement). Ne prend aucun verrou : les lignes d'une écriture de vente
+/// sont gelées.
+pub async fn sale_receivable_account(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    sale_entry_id: i64,
+) -> Result<Option<i64>, DbError> {
+    sqlx::query_scalar(
+        "SELECT jel.account_id FROM journal_entry_lines jel \
+         JOIN journal_entries je ON je.id = jel.entry_id \
+         WHERE jel.entry_id = ? AND je.company_id = ? AND jel.debit > 0 \
+         ORDER BY jel.id LIMIT 1",
+    )
+    .bind(sale_entry_id)
+    .bind(company_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(map_db_error)
+}
+
+/// Le compte d'**arrondi à 5 centimes** d'une facture, lu sur la **dernière**
+/// ligne de son écriture de vente et **recoupé** avec l'arrondi figé sur la
+/// facture (Story 15-6a, #523).
+///
+/// La validation pousse l'écart d'arrondi en **dernière** ligne
+/// (`invoices::generate_invoice_journal_lines_rounded`) : au **crédit** si
+/// l'arrondi est positif, au **débit** s'il est négatif. L'avoir le contre-passe
+/// sur **ce** compte, non sur celui que les réglages désignent au moment de
+/// l'avoir — sinon l'ancien compte garderait l'écart et le nouveau prendrait
+/// l'opposé.
+///
+/// **Pourquoi le recoupement** : un lecteur positionnel qui ne vérifierait rien
+/// rendrait en silence n'importe quelle ligne (une écriture retouchée, une
+/// ligne ajoutée après l'arrondi). La dernière ligne doit donc porter
+/// exactement l'arrondi : `rounding_amount > 0` ⇒ `credit = rounding_amount`
+/// et `debit = 0` ; `rounding_amount < 0` ⇒ `debit = −rounding_amount` et
+/// `credit = 0`. Toute autre forme — pas de ligne, sens ou montant différent —
+/// est un [`DbError::Invariant`].
+///
+/// **Pourquoi pas `usable_designated_account`** : celle-ci contrôle un compte
+/// **désigné** (type charge ou produit, actif, imputable). La doctrine de la
+/// contre-passation est « mêmes comptes que l'origine, seule l'inactivité
+/// bloque » (6 ter de la Story 16-1a) : l'état actif du compte rendu ici est
+/// contrôlé par l'appelant, sous verrou.
+///
+/// À n'appeler que si `rounding_amount ≠ 0` : une facture émise sans arrondi
+/// n'a pas de ligne d'arrondi. Portée par `je.company_id`. Aucun verrou.
+pub async fn sale_rounding_account(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    sale_entry_id: i64,
+    rounding_amount: Decimal,
+) -> Result<i64, DbError> {
+    let last: Option<(i64, Decimal, Decimal)> = sqlx::query_as(
+        "SELECT jel.account_id, jel.debit, jel.credit FROM journal_entry_lines jel \
+         JOIN journal_entries je ON je.id = jel.entry_id \
+         WHERE jel.entry_id = ? AND je.company_id = ? \
+         ORDER BY jel.id DESC LIMIT 1",
+    )
+    .bind(sale_entry_id)
+    .bind(company_id)
+    .fetch_optional(&mut *conn)
+    .await
+    .map_err(map_db_error)?;
+    let matches = |debit: Decimal, credit: Decimal| {
+        if rounding_amount > Decimal::ZERO {
+            credit == rounding_amount && debit.is_zero()
+        } else if rounding_amount < Decimal::ZERO {
+            debit == -rounding_amount && credit.is_zero()
+        } else {
+            false
+        }
+    };
+    match last {
+        Some((account_id, debit, credit)) if matches(debit, credit) => Ok(account_id),
+        _ => Err(DbError::Invariant(format!(
+            "écriture de vente {sale_entry_id} : la dernière ligne n'est pas l'arrondi de la \
+             facture ({rounding_amount})"
+        ))),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Story 25-5-a (#386) — lecture exhaustive pour l'export de souveraineté
 // ---------------------------------------------------------------------------
 
