@@ -21,6 +21,7 @@ use regex::Regex;
 /// Normalisation `N` (fiche 15-14b, AC 3 — même ordre que la commande `perl`
 /// d'inventaire, pour que le test et l'inventaire comptent la même chose) :
 ///
+/// 0. `-{}-` → `--` ;
 /// 1. `\textbf`, `\emph`, `\texttt`, `\textit`, `\keshcommand`, `\keshpath`
 ///    dépliés **jusqu'à stabilité** (imbrications comprises) ;
 /// 2. accents écrits en macros : `\'e` → `é`, `` \`e `` → `è`, `\^e` → `ê`,
@@ -33,7 +34,10 @@ use regex::Regex;
 pub fn normaliser(texte: &str) -> String {
     let commande =
         Regex::new(r"\\(?:textbf|emph|texttt|textit|keshcommand|keshpath)\{([^{}]*)\}").unwrap();
-    let mut courant = texte.to_string();
+    // `-{}-` (deux tirets que LaTeX ne lie pas en tiret moyen) se lit `--` :
+    // sans cela, `\keshcommand{-{}-single-transaction}` ne se déplie pas
+    // (revue de code P3, B-5).
+    let mut courant = texte.replace("-{}-", "--");
     loop {
         let suivant = commande.replace_all(&courant, "$1").into_owned();
         if suivant == courant {

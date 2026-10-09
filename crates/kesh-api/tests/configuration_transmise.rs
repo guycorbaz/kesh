@@ -2835,11 +2835,12 @@ fn commandes_rm(texte: &str) -> Vec<(usize, Vec<String>)> {
             let debut = c.get(0).unwrap().end();
             let guillemet = c[1].chars().next().filter(|ch| *ch == '\'' || *ch == '"');
             let reste = &texte[debut..];
+            let fin_commande = reste
+                .find([';', '&', '|', ')', '`', '\n'])
+                .unwrap_or(reste.len());
             let fin = match guillemet {
-                Some(q) => reste.find(q).unwrap_or(reste.len()),
-                None => reste
-                    .find([';', '&', '|', ')', '`', '\n'])
-                    .unwrap_or(reste.len()),
+                Some(q) => reste.find(q).unwrap_or(reste.len()).min(fin_commande),
+                None => fin_commande,
             };
             let args = reste[..fin]
                 .split_whitespace()
@@ -2892,11 +2893,28 @@ fn commandes_rm(texte: &str) -> Vec<(usize, Vec<String>)> {
 ///   ni chemin de menu `→ Pré-script` (Hyper Backup n'en a pas, constaté sur DSM
 ///   le 2026-10-09).
 ///
+/// - **(g)** cohérence du manuel et des scripts : mêmes réglages
+///   `SAUVEGARDE_*` des deux côtés, défauts cités égaux à ceux des scripts,
+///   tâche de dump planifiée avant Hyper Backup, et aucune routine, déclencheur,
+///   événement ni vue dans les migrations (le dump ne les prend pas).
+///
+/// Depuis la revue de code P3, (c) exige aussi la **sonde** de la base avant
+/// l'arrêt de Kesh, l'arrêt **vérifié** (`ps --status running`), le projet
+/// compose explicite (`-p`, défaut `kesh`), et un dump de sécurité
+/// **obligatoire** quand la base existe : son échec redémarre Kesh et sort
+/// sans rien recharger ; il n'est sauté que si la sonde établit l'absence.
+///
 /// **Angles morts écrits** : en (d), jokers (`rm kesh_pre*`), `truncate`,
 /// `: > <cible>`, `mv <cible> …`, `unlink`, `find -delete` ; en (c), un `-i`
 /// placé après une option à valeur (`--network x -i`) ou écrit `--interactive`
 /// rougirait (couplage), de même que `docker stop` pour `docker compose stop
-/// kesh-api`.
+/// kesh-api`. [`code_shell`] ne retire que les lignes **entières** de
+/// commentaire : un commentaire en fin de ligne (`docker run … # --x`)
+/// satisferait encore une exigence — les scripts n'en portent aucun (vérifié au
+/// 2026-10-09). La normalisation du manuel ne déplie pas `\'E`, `\^o`, `\"e`,
+/// `\c{c}`, `\-` ni l'apostrophe typographique : aucun dans les sections
+/// lues ; aucune garde ne lit le PDF (contrôle `occ` et `pdftotext -layout` à la
+/// main, journalisé au Dev Agent Record).
 #[test]
 fn synology_sauvegarde_la_base_par_le_dump() {
     let brut = lire(MANUEL_ADMIN);
@@ -3084,8 +3102,12 @@ fn synology_sauvegarde_la_base_par_le_dump() {
         ("`sha256sum -c`", r"sha256sum\s+-c\b"),
         ("`gzip -t`", r#"gzip\s+-t\s+"\$SOURCE/"#),
         (
-            "`docker compose stop kesh-api`",
-            r"docker compose stop kesh-api\b",
+            "sonde de la base (`SCHEMATA`)",
+            r"information_schema\.SCHEMATA\b",
+        ),
+        (
+            "`docker compose -p … stop kesh-api`",
+            r"docker compose(?:\s+-p\s+\S+)?\s+stop kesh-api\b",
         ),
         ("dump de sécurité (`mariadb-dump`)", r"mariadb-dump\b"),
         ("`gunzip -c`", r"gunzip -c\b"),
@@ -3104,39 +3126,81 @@ fn synology_sauvegarde_la_base_par_le_dump() {
             }
         }
     }
-    if let Some(p) = premier(&restore, r"mariadb-dump\b") {
-        let avant = &restore[..p];
-        let si = avant.rfind("\nif ").map(|i| i + 1);
-        let bloquant = match si {
-            None => true,
-            Some(i) => {
-                avant[i..].contains("\nthen")
-                    || avant[i..].contains("; then")
-                    || avant[i..].contains("\nfi")
-            }
-        };
-        if bloquant {
-            erreurs.push(
-                "(c) le dump de sécurité n'est pas dans la condition d'un `if` : une base absente arrêterait le rechargement".into(),
-            );
-        }
-    }
-    let ligne_gunzip = restore
-        .lines()
-        .find(|l| l.contains("gunzip -c"))
-        .unwrap_or("");
-    let interactif = Regex::new(r"^-[a-zA-Z]*i[a-zA-Z]*$").unwrap();
-    if !ligne_gunzip
-        .split("docker run")
-        .nth(1)
-        .unwrap_or("")
-        .split_whitespace()
-        .take_while(|t| t.starts_with('-'))
-        .any(|t| interactif.is_match(t))
+    // Arrêt vérifié, projet explicite, service du compose prod (E3-6, B-3).
+    if premier(
+        &restore,
+        r"ps\s+--status\s+running\s+--services\s*\|\s*grep\s+-qx\s+kesh-api",
+    )
+    .is_none()
     {
+        erreurs.push("(c) l'arrêt de kesh-api n'est pas vérifié (`ps --status running`)".into());
+    }
+    if premier(
+        &restore,
+        r#"(?m)^SAUVEGARDE_PROJET=\$\{SAUVEGARDE_PROJET:-kesh\}"#,
+    )
+    .is_none()
+    {
+        erreurs
+            .push("(c) projet compose par défaut ≠ `kesh` (celui que le manuel fait créer)".into());
+    }
+    let (services_prod, _) = services_et_volumes(&lire("docker-compose.prod.yml"));
+    if !services_prod.contains("kesh-api") {
+        erreurs.push(format!(
+            "(c) le script arrête `kesh-api`, absent de docker-compose.prod.yml {services_prod:?}"
+        ));
+    }
+    // Dump de sécurité : obligatoire si la base existe (échec → redémarrage et sortie
+    // sans rien recharger), sauté si elle est établie absente (E3-3).
+    match (
+        premier(&restore, r#"if \[ "\$PRESENTE" = 1 \]"#),
+        premier(&restore, r"mariadb-dump\b"),
+    ) {
+        (Some(si_presente), Some(dump)) if si_presente < dump => {
+            let avant = &restore[..dump];
+            let dans_condition = avant
+                .rfind("\n    if ")
+                .is_some_and(|i| !avant[i..].contains("then") && !avant[i..].contains("\n    fi"));
+            if !dans_condition {
+                erreurs.push("(c) le dump de sécurité n'est pas la condition d'un `if`".into());
+            }
+            let apres = &restore[dump..];
+            let branche_echec = apres
+                .find("\n    else")
+                .and_then(|e| apres[e..].find("\n    fi").map(|f| &apres[e..e + f]));
+            match branche_echec {
+                Some(b) if b.contains("up -d") && b.contains("exit 1") => {}
+                _ => erreurs.push(
+                    "(c) un échec du dump de sécurité, base présente, ne redémarre pas Kesh et ne sort pas sans recharger".into(),
+                ),
+            }
+        }
+        _ => erreurs.push(
+            "(c) dump de sécurité non conditionné à la présence de la base (`if [ \"$PRESENTE\" = 1 ]`)".into(),
+        ),
+    }
+    // `-i` : le rechargement passe par `client`, dont le `docker run` porte `-i`.
+    let interactif = Regex::new(r"^-[a-zA-Z]*i[a-zA-Z]*$").unwrap();
+    let client_i = restore
+        .find("client() {")
+        .and_then(|i| {
+            restore[i..]
+                .find("docker run")
+                .map(|j| &restore[i + j + "docker run".len()..])
+        })
+        .is_some_and(|apres| {
+            apres
+                .split_whitespace()
+                .take_while(|t| t.starts_with('-'))
+                .any(|t| interactif.is_match(t))
+        });
+    let recharge_par_client =
+        Regex::new(r#"gunzip -c "\$SOURCE/[^"]+"\s*\\?\s*\|\s*client mariadb\b"#)
+            .unwrap()
+            .is_match(&restore);
+    if !(client_i && recharge_par_client) {
         erreurs.push(
-            "(c) `gunzip -c … | docker run` sans `-i` : Docker ferme l'entrée, rien n'est rechargé"
-                .into(),
+            "(c) `gunzip -c … | client mariadb` avec `docker run -i` dans `client` attendu : sans `-i`, rien n'est rechargé".into(),
         );
     }
     let f_rec: Vec<String> = option
@@ -3238,17 +3302,95 @@ fn synology_sauvegarde_la_base_par_le_dump() {
 
     // (f)
     for exige in [
-        format!("raw.githubusercontent.com/guycorbaz/kesh/main/{SCRIPT_DUMP}"),
-        format!("raw.githubusercontent.com/guycorbaz/kesh/main/{SCRIPT_RECHARGEMENT}"),
+        "DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/main".to_string(),
+        format!("curl -fsSLO \"$DEPOT/{SCRIPT_DUMP}\""),
+        format!("curl -fsSLO \"$DEPOT/{SCRIPT_RECHARGEMENT}\""),
         format!("bash {DOSSIER_SYNOLOGY}/kesh-dump.sh"),
         // Rechargement depuis le dossier restauré, et secours depuis le dump de sécurité.
         format!("bash {DOSSIER_SYNOLOGY}/kesh-restore.sh <dossier dump restauré>"),
-        format!("bash {DOSSIER_SYNOLOGY}/kesh-restore.sh {DOSSIER_SYNOLOGY}/avant-restauration/"),
         "Planificateur de tâches".to_string(),
     ] {
         if !normees[1].contains(&exige) {
             erreurs.push(format!("(f) sec:backup-dsm ne cite pas « {exige} »"));
         }
+    }
+    let secours = Regex::new(&format!(
+        r"bash {d}/kesh-restore\.sh\s*\\?\s*{d}/avant-restauration/",
+        d = regex::escape(DOSSIER_SYNOLOGY)
+    ))
+    .unwrap();
+    if !secours.is_match(&normees[1]) {
+        erreurs.push("(f) la commande de secours (`kesh-restore.sh` sur `avant-restauration/`) n'est pas écrite".into());
+    }
+    // (g) Réglages : chaque `SAUVEGARDE_*` du manuel est lu par un script, et
+    // réciproquement ; les défauts cités sont ceux des scripts (A3-4, E3-2).
+    let reglage = Regex::new(r"\bSAUVEGARDE_[A-Z]+\b").unwrap();
+    let du_manuel: BTreeSet<&str> = reglage.find_iter(&normees[1]).map(|m| m.as_str()).collect();
+    let des_scripts: BTreeSet<&str> = reglage
+        .find_iter(&dump)
+        .chain(reglage.find_iter(&restore))
+        .map(|m| m.as_str())
+        .collect();
+    if du_manuel != des_scripts {
+        erreurs.push(format!(
+            "(g) réglages du manuel {du_manuel:?} ≠ réglages lus par les scripts {des_scripts:?}"
+        ));
+    }
+    for var in [
+        "SAUVEGARDE_DOSSIER",
+        "SAUVEGARDE_BASE",
+        "SAUVEGARDE_RESEAU",
+        "SAUVEGARDE_IMAGE",
+    ] {
+        let defaut = Regex::new(&format!(r"(?m)^{var}=\$\{{{var}:-([^}}]*)\}}"))
+            .unwrap()
+            .captures(&dump)
+            .map(|c| c[1].to_string());
+        match defaut {
+            Some(d) if normees[1].contains(&format!("{var} ({d}")) => {}
+            autre => erreurs.push(format!(
+                "(g) le manuel ne cite pas « {var} (<défaut>) » avec le défaut du script {autre:?}"
+            )),
+        }
+    }
+    // (g) Horaires : la tâche de dump précède Hyper Backup.
+    let heure = |re: &str| -> Option<u32> {
+        Regex::new(re).unwrap().captures(&normees[1]).map(|c| {
+            c[1].parse::<u32>().unwrap() * 60
+                + c.get(2).map_or(0, |m| m.as_str().parse().unwrap_or(0))
+        })
+    };
+    match (
+        heure(r"Programmer : tous les jours à (\d+)h(\d+)?"),
+        heure(r"Planifier la fréquence : quotidienne à (\d+)h(\d+)?"),
+    ) {
+        (Some(d), Some(h)) if d < h => {}
+        autre => erreurs.push(format!(
+            "(g) horaires : la tâche de dump doit précéder Hyper Backup (minutes {autre:?})"
+        )),
+    }
+    // (g) Pas de routine, déclencheur, événement ni vue dans le schéma — le dump ne
+    // prend ni `--routines` ni `--events`, ce que le manuel écrit (B-5).
+    let objet = Regex::new(
+        r"(?i)CREATE\s+(?:OR\s+REPLACE\s+)?(?:DEFINER\s*=\s*\S+\s+)?(?:TRIGGER|VIEW|PROCEDURE|FUNCTION|EVENT)\b",
+    )
+    .unwrap();
+    let mut migrations = 0;
+    for e in std::fs::read_dir(racine().join("crates/kesh-db/migrations")).unwrap() {
+        let chemin = e.unwrap().path();
+        if chemin.extension().and_then(|x| x.to_str()) == Some("sql") {
+            migrations += 1;
+            if objet.is_match(&std::fs::read_to_string(&chemin).unwrap()) {
+                erreurs.push(format!(
+                    "(g) {} crée une routine, un déclencheur, un événement ou une vue : le dump l'omettrait",
+                    chemin.display()
+                ));
+            }
+        }
+    }
+    assert!(migrations > 50, "(g) migrations lues à vide : {migrations}");
+    if !normees[1].contains("ni routine, ni déclencheur, ni événement, ni vue") {
+        erreurs.push("(g) la phrase sur l'absence de routines n'est plus au manuel".into());
     }
     for listing in parts.iter().flat_map(|p| manuel::listings(p)) {
         if listing.contains("mariadb-dump") || listing.contains("gunzip -c") {
