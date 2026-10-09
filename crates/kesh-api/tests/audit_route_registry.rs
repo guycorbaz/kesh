@@ -121,7 +121,7 @@
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **quatre routes `SansEcritureAuJournal` sont rejouées quand
+//! - **(vi)** **cinq routes `SansEcritureAuJournal` sont rejouées quand
 //!   même** : `onboarding::finalize` (enveloppe `AppError`, Story 15-5e2 — la
 //!   seule des neuf routes d'étape à l'être, cf. (iv)),
 //!   `company_invoice_settings::update_invoice_settings` (enveloppe `DbError`,
@@ -130,11 +130,18 @@
 //!   `fiscal_years::close_fiscal_year` (enveloppe `DbError`
 //!   `kesh_db::retry::retry_on_deadlock`, opérations `fiscal_years::create` /
 //!   `fiscal_years::close` : la clôture dans l'ordre et la garde de création
-//!   forment des cycles avec la contre-passation et entre elles). La colonne
+//!   forment des cycles avec la contre-passation et entre elles), et —
+//!   Story 15-7b1, #434 — `onboarding::seed_demo`, dont la dernière
+//!   transaction est rejouée **dans `kesh-seed`** (`retry_with`, prédicat
+//!   `kesh_seed::is_seed_retryable`), hors de `src/routes/` : ni le volet (c)
+//!   ni le (c bis) ne la voient (choix C-15-7b1-1). La colonne
 //!   dit l'inventaire de l'AC1, pas la présence d'une enveloppe, et le volet
 //!   (c) ne les examine pas : `update_invoice_settings` est tenue par le test
 //!   7 de `rejeu_interblocage_e2e.rs`, la clôture et la création d'un exercice
-//!   par ses tests 9 et 10, `onboarding::finalize` par sa revue — et le volet
+//!   par ses tests 9 et 10, `onboarding::finalize` par sa revue,
+//!   `onboarding::seed_demo` par `seed_demo_last_transaction_is_replayed_on_deadlock`
+//!   et `is_seed_retryable_accepts_1213_and_only_it` (`onboarding_audit_e2e.rs`,
+//!   une 1213 levée par déclencheur — revue P1 de la 15-7b1) — et le volet
 //!   (c bis) interdit qu'elle revienne à un `retry_with` à prédicat écrit en
 //!   ligne.
 //! - **(vii)** — **angles morts assumés du volet (c bis)** (revue P1 de la
@@ -215,7 +222,7 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("put", "companies::update_company_contact_details", Traced, SansEcritureAuJournal),
     ("post", "fiscal_years::reopen_fiscal_year", Traced, SansEcritureAuJournal),
     ("post", "companies::unlock_company_books", Traced, SansEcritureAuJournal),
-    ("post", "onboarding::reset", Exempt("issue #434 — peuplement de démonstration (15-7b1) et remise à zéro (15-7b2)"), Exemptee("effacement de la démo : geste d'administration exclusif, hors exploitation — un 1213 annule sa transaction unique et la relance manuelle est sûre")),
+    ("post", "onboarding::reset", Exempt("issue #434 — remise à zéro (15-7b2)"), Exemptee("effacement de la démo : geste d'administration exclusif, hors exploitation — un 1213 annule sa transaction unique et la relance manuelle est sûre")),
     ("post", "accounts::create_account", Traced, SansEcritureAuJournal),
     ("put", "accounts::update_account", Traced, SansEcritureAuJournal),
     ("put", "accounts::archive_account", Traced, SansEcritureAuJournal),
@@ -309,7 +316,7 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("put", "profile::set_mode", Traced, SansEcritureAuJournal),
     ("post", "onboarding::set_language", Traced, SansEcritureAuJournal),
     ("post", "onboarding::set_mode", Traced, SansEcritureAuJournal),
-    ("post", "onboarding::seed_demo", Exempt("issue #434 — peuplement de démonstration (15-7b1) et remise à zéro (15-7b2)"), SansEcritureAuJournal),
+    ("post", "onboarding::seed_demo", Traced, SansEcritureAuJournal),
     ("post", "onboarding::start_production", Traced, SansEcritureAuJournal),
     ("post", "onboarding::set_org_type", Traced, SansEcritureAuJournal),
     ("post", "onboarding::set_accounting_language", Traced, SansEcritureAuJournal),
@@ -617,18 +624,19 @@ fn the_registry_partition_is_what_the_story_declares() {
     assert_eq!(LIB_ROUTES.len(), 112, "l'inventaire porte sur 112 routes");
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
     assert_eq!(
-        traced, 104,
+        traced, 105,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
          (25-4-d2a, #384), plus le refigeage du PDF d'une facture (25-6-b, #387), plus le \
          complément des soldes de départ (25-7, #445), plus la modification d'une écriture \
          (15-8a, #532 — le `PUT` gelé par la 24-4b ne mutait rien), plus les neuf routes \
-         de configuration de l'installation (15-7a2, #434)"
+         de configuration de l'installation (15-7a2, #434), plus le peuplement de \
+         démonstration (15-7b1, #434)"
     );
     assert_eq!(
-        exempt, 6,
-        "2 routes d'onboarding (#434, 15-7b1, 15-7b2) + 4 d'auth (#435)"
+        exempt, 5,
+        "1 route d'onboarding (#434, 15-7b2) + 4 d'auth (#435)"
     );
     assert_eq!(
         no_matter, 2,

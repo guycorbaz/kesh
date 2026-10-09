@@ -6,7 +6,8 @@
 //!
 //! **Exception** : `bulk_create_from_chart` et sa variante `_in_tx` n'écrivent
 //! pas elles-mêmes d'entrée d'audit. Le seed de démonstration n'en écrit pas
-//! (contexte système) ; l'onboarding de production, appelant de la variante
+//! pour le plan (sa synthèse `installation.demo_seeded` en porte le nombre de
+//! comptes, Story 15-7b1) ; l'onboarding de production, appelant de la variante
 //! `_in_tx`, écrit une entrée agrégée `account.chart_loaded` (Story 15-7a2).
 
 use sqlx::mysql::MySqlPool;
@@ -988,7 +989,9 @@ pub async fn bulk_create(
 /// n'emprunte pas le chemin `create` audité (FR88, Story 3.5). C'est à
 /// l'appelant de tracer — l'onboarding de production écrit
 /// `account.chart_loaded` autour de la variante `_in_tx` (Story 15-7a2) ; le
-/// seed de démonstration n'écrit rien (contexte système).
+/// seed de démonstration ne trace pas le plan par fait de domaine : sa
+/// synthèse `installation.demo_seeded` en porte le nombre de comptes (Story
+/// 15-7b1).
 pub async fn bulk_create_from_chart(
     pool: &MySqlPool,
     company_id: i64,

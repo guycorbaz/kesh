@@ -837,7 +837,8 @@ impl DesignatedAccountsSnapshot {
 /// accounts is loaded).
 ///
 /// **Pool-level variant** (`insert_with_defaults`): Opens its own transaction.
-/// Used by seed_demo (Path A), which doesn't need locking coordination.
+/// `seed_demo` (Path A) ne l'appelle plus depuis la Story 15-7b1 : il emploie la
+/// variante `_in_tx` dans sa dernière transaction.
 ///
 /// **Transaction-level variant** (`insert_with_defaults_in_tx`): Works within caller's transaction.
 /// Used by finalize() (Path B), which holds locks on company and onboarding_state.
@@ -846,8 +847,12 @@ impl DesignatedAccountsSnapshot {
 /// **Délégation (Story 15-7a1)** : la variante pool n'a plus de corps propre —
 /// elle **appelle** [`insert_with_defaults_in_tx`] (`begin`, variante, `commit`) ;
 /// sur erreur, rollback *best-effort* puis l'**erreur d'origine rendue telle
-/// quelle** (P6-M2 : la boucle de retry de `seed_demo` reconnaît exactement
-/// `DbError::InactiveOrInvalidAccounts`). La duplication et ses marqueurs
+/// quelle**. *(Story 15-7b1 : la boucle de retry de `seed_demo` reconnaît
+/// désormais la variante rendue par `_in_tx`, dans sa dernière transaction ; ce
+/// rejeu se justifiait par la visibilité entre transactions — le plan commité
+/// hors verrou. Sous les lectures verrouillantes de `_in_tx`, qui lisent le
+/// dernier état commité, `InactiveOrInvalidAccounts` y est permanent : rejeu
+/// conservé par prudence, sans effet attendu.)* La duplication et ses marqueurs
 /// `MIRROR` ont disparu.
 ///
 /// Résolution des comptes par défaut **par rôle** (Story 14-3b, chantier C) et
@@ -889,9 +894,8 @@ pub async fn insert_with_defaults(
         }
         Err(e) => {
             // P6-M2: rollback is best-effort. Propagating a rollback error here
-            // would hide InactiveOrInvalidAccounts behind a transient error and
-            // break the retry-loop matching in seed_demo (which keys on this
-            // exact variant).
+            // would hide the original error (InactiveOrInvalidAccounts among
+            // them) behind a transient one.
             let _ = tx.rollback().await;
             Err(e)
         }

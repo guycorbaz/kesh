@@ -11,6 +11,8 @@
 //! Pré-requis : MariaDB démarré (sqlx::test crée une DB éphémère par test).
 //! Pattern hérité de `bank_accounts_e2e.rs`.
 
+mod common;
+
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::Arc;
@@ -175,24 +177,6 @@ async fn setup(pool: &MySqlPool, label: &str, role: Role) -> Ctx {
     }
 }
 
-/// Crée une clé via l'endpoint HTTP (JWT) et retourne le secret clair `kesh_pat_…`.
-async fn create_key_via_http(app: &TestApp, jwt: &str, name: &str, scope: &str) -> (i64, String) {
-    let resp = app
-        .client
-        .post(app.url("/api/v1/settings/api-keys"))
-        .header("Authorization", format!("Bearer {jwt}"))
-        .json(&json!({ "name": name, "scope": scope }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 201, "création de clé doit réussir");
-    let body: Value = resp.json().await.unwrap();
-    let id = body["id"].as_i64().unwrap();
-    let key = body["key"].as_str().unwrap().to_string();
-    assert!(key.starts_with("kesh_pat_"), "secret au format attendu");
-    (id, key)
-}
-
 // ============================================================
 // AC2/AC7 — création (secret une fois) + liste (jamais le hash)
 // ============================================================
@@ -202,7 +186,14 @@ async fn create_returns_secret_once_and_list_hides_hash(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup(&pool, "Acme", Role::Comptable).await;
 
-    let (id, key) = create_key_via_http(&app, &ctx.jwt, "CI integration", "read-write").await;
+    let (id, key) = common::create_key_via_http(
+        &app.client,
+        &app.base_url,
+        &ctx.jwt,
+        "CI integration",
+        "read-write",
+    )
+    .await;
 
     // La liste ne doit jamais exposer le hash ni le secret.
     let resp = app
@@ -245,7 +236,8 @@ async fn create_returns_secret_once_and_list_hides_hash(pool: MySqlPool) {
 async fn read_write_pat_can_call_protected_get(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup(&pool, "Acme", Role::Comptable).await;
-    let (_id, key) = create_key_via_http(&app, &ctx.jwt, "rw", "read-write").await;
+    let (_id, key) =
+        common::create_key_via_http(&app.client, &app.base_url, &ctx.jwt, "rw", "read-write").await;
 
     let resp = app
         .client
@@ -276,7 +268,8 @@ async fn unknown_pat_returns_401(pool: MySqlPool) {
 async fn inactive_creator_pat_returns_401(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup(&pool, "Acme", Role::Comptable).await;
-    let (_id, key) = create_key_via_http(&app, &ctx.jwt, "rw", "read-write").await;
+    let (_id, key) =
+        common::create_key_via_http(&app.client, &app.base_url, &ctx.jwt, "rw", "read-write").await;
 
     // Désactive le créateur → le PAT doit être invalidé immédiatement (DC2/AC5).
     sqlx::query("UPDATE users SET active = FALSE WHERE id = ?")
@@ -299,7 +292,8 @@ async fn inactive_creator_pat_returns_401(pool: MySqlPool) {
 async fn expired_pat_returns_401(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup(&pool, "Acme", Role::Comptable).await;
-    let (id, key) = create_key_via_http(&app, &ctx.jwt, "rw", "read-write").await;
+    let (id, key) =
+        common::create_key_via_http(&app.client, &app.base_url, &ctx.jwt, "rw", "read-write").await;
 
     // Force une expiration dans le passé.
     sqlx::query("UPDATE api_keys SET expires_at = NOW(3) - INTERVAL 1 DAY WHERE id = ?")
@@ -322,7 +316,8 @@ async fn expired_pat_returns_401(pool: MySqlPool) {
 async fn revoked_pat_returns_401(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup(&pool, "Acme", Role::Comptable).await;
-    let (id, key) = create_key_via_http(&app, &ctx.jwt, "rw", "read-write").await;
+    let (id, key) =
+        common::create_key_via_http(&app.client, &app.base_url, &ctx.jwt, "rw", "read-write").await;
 
     // Révoque via l'endpoint HTTP (JWT).
     let resp = app
@@ -367,7 +362,8 @@ async fn revoked_pat_returns_401(pool: MySqlPool) {
 async fn read_scope_pat_post_returns_403_read_only(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup(&pool, "Acme", Role::Comptable).await;
-    let (_id, key) = create_key_via_http(&app, &ctx.jwt, "ro", "read").await;
+    let (_id, key) =
+        common::create_key_via_http(&app.client, &app.base_url, &ctx.jwt, "ro", "read").await;
 
     // Une méthode mutante (POST) avec une clé read → 403 API_KEY_READ_ONLY,
     // AVANT toute logique métier.
@@ -388,7 +384,8 @@ async fn read_scope_pat_post_returns_403_read_only(pool: MySqlPool) {
 async fn read_scope_pat_get_allowed(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup(&pool, "Acme", Role::Comptable).await;
-    let (_id, key) = create_key_via_http(&app, &ctx.jwt, "ro", "read").await;
+    let (_id, key) =
+        common::create_key_via_http(&app.client, &app.base_url, &ctx.jwt, "ro", "read").await;
 
     let resp = app
         .client
@@ -408,7 +405,8 @@ async fn read_scope_pat_get_allowed(pool: MySqlPool) {
 async fn read_write_pat_cannot_manage_keys(pool: MySqlPool) {
     let app = spawn_app(pool.clone()).await;
     let ctx = setup(&pool, "Acme", Role::Comptable).await;
-    let (_id, key) = create_key_via_http(&app, &ctx.jwt, "rw", "read-write").await;
+    let (_id, key) =
+        common::create_key_via_http(&app.client, &app.base_url, &ctx.jwt, "rw", "read-write").await;
 
     // Même une clé read-write ne peut pas lister les clés (anti auto-propagation).
     let resp = app
@@ -477,7 +475,8 @@ async fn pat_mutation_is_audited_as_api_key(pool: MySqlPool) {
     .unwrap()
     .id;
 
-    let (key_id, key) = create_key_via_http(&app, &ctx.jwt, "rw", "read-write").await;
+    let (key_id, key) =
+        common::create_key_via_http(&app.client, &app.base_url, &ctx.jwt, "rw", "read-write").await;
 
     // Mutation via PAT : PATCH /bank-accounts/{id} (handler utilise from_current_user).
     let resp = app
@@ -518,7 +517,9 @@ async fn keys_are_company_scoped(pool: MySqlPool) {
     let a = setup(&pool, "CompanyA", Role::Comptable).await;
     let b = setup(&pool, "CompanyB", Role::Comptable).await;
 
-    let (id_a, _key_a) = create_key_via_http(&app, &a.jwt, "a-key", "read-write").await;
+    let (id_a, _key_a) =
+        common::create_key_via_http(&app.client, &app.base_url, &a.jwt, "a-key", "read-write")
+            .await;
 
     // B ne voit pas la clé de A.
     let resp = app

@@ -348,8 +348,9 @@ pub async fn seed_default_swiss_rates_in_tx(
     Ok(inserted)
 }
 
-/// Variante pool : ouvre une transaction interne, commit. Utilisée par
-/// `kesh_seed::seed_demo` (Path A).
+/// Variante pool : ouvre une transaction interne, commit. *(`kesh_seed::seed_demo`
+/// ne l'appelle plus depuis la Story 15-7b1 : il emploie la variante `_in_tx`
+/// dans sa dernière transaction.)*
 pub async fn seed_default_swiss_rates(pool: &MySqlPool, company_id: i64) -> Result<(), DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
     seed_default_swiss_rates_in_tx(&mut tx, company_id).await?;

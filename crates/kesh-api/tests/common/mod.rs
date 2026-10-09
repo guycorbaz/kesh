@@ -132,5 +132,35 @@ pub async fn audit_sequence(pool: &MySqlPool) -> Vec<String> {
         .expect("lecture de la séquence d'audit")
 }
 
+/// Crée un jeton d'API par l'endpoint HTTP, **sous un JWT** (la route est
+/// interdite aux jetons), et rend `(id, secret clair kesh_pat_…)` — Story
+/// 15-7b1 (R2-1/F2-7 de sa validation), remonté de `api_keys_e2e.rs` pour être
+/// partagé avec `onboarding_audit_e2e.rs`.
+///
+/// Paramétré par le client et l'URL de base, chaque fichier de test ayant son
+/// propre `TestApp`. `scope` vaut `"read"` ou `"read-write"` — un jeton en
+/// lecture seule prend 403 sur toute route mutante.
+pub async fn create_key_via_http(
+    client: &reqwest::Client,
+    base_url: &str,
+    jwt: &str,
+    name: &str,
+    scope: &str,
+) -> (i64, String) {
+    let resp = client
+        .post(format!("{base_url}/api/v1/settings/api-keys"))
+        .header("Authorization", format!("Bearer {jwt}"))
+        .json(&serde_json::json!({ "name": name, "scope": scope }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "création de clé doit réussir");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let id = body["id"].as_i64().unwrap();
+    let key = body["key"].as_str().unwrap().to_string();
+    assert!(key.starts_with("kesh_pat_"), "secret au format attendu");
+    (id, key)
+}
+
 /// Témoin du rejeu sur interblocage (Story 15-5e1, choix C74).
 pub mod capture_rejeu;

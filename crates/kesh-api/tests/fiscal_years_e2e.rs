@@ -1296,7 +1296,8 @@ async fn demo_path_creates_fiscal_year(pool: MySqlPool) {
         "seed_demo creates an Open fiscal year"
     );
 
-    // AC #14 — pas d'entrée audit fiscal_year.created (seed contexte système).
+    // AC #14 — pas d'entrée audit fiscal_year.created : la démonstration est
+    // tracée par sa synthèse `installation.demo_seeded` (Story 15-7b1).
     let entries = audit_log::find_by_entity(&pool, "fiscal_year", fy.id, 10)
         .await
         .unwrap();

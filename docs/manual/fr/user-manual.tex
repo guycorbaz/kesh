@@ -170,23 +170,24 @@ signale.
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Onboarding}
 
-À votre première connexion sur une nouvelle company, Kesh vous guide via un assistant d'onboarding. Deux parcours sont proposés :
+À votre première connexion sur une nouvelle installation, Kesh vous guide via un assistant d'onboarding. Deux parcours sont proposés :
 
 \keshscreenshot{onboarding-welcome.png}{Écran d'accueil de l'assistant d'onboarding : choix entre le mode exploration et le mode production.}  % TODO capture: 1er ecran onboarding
 
 \subsection{Chemin A — Mode exploration}
 
-Si vous souhaitez \textbf{tester Kesh sans données réelles}, choisissez le mode exploration. Kesh crée :
+Si vous souhaitez \textbf{tester Kesh sans données réelles}, choisissez le mode exploration. Kesh prépare :
 
 \begin{itemize}
-    \item Une company fictive avec un plan comptable Sterchi PME.
-    \item Quelques contacts d'exemple (clients, fournisseurs).
-    \item Quelques produits et conditions de paiement.
-    \item Un exercice fiscal en cours.
-    \item Des écritures d'exemple pour illustrer les rapports.
+    \item Une société fictive (« Démo SA », ou sa traduction dans la langue de l'installation), avec une adresse et un numéro IDE d'exemple.
+    \item Le plan comptable PME, dans la langue de l'installation.
+    \item L'exercice de l'année en cours.
+    \item Les quatre taux de TVA suisses et les réglages de facturation par défaut.
 \end{itemize}
 
-Vous pouvez librement créer, modifier, supprimer des données dans ce mode. Pour passer en mode production, créez une nouvelle company en mode B.
+\textbf{Rien d'autre} : aucun contact, aucun produit, aucune écriture. Les listes sont vides~; c'est à vous de saisir les données sur lesquelles vous voulez essayer Kesh.
+
+Vous pouvez librement créer, modifier, supprimer des données dans ce mode. L'installation ne porte qu'une société~: pour passer en mode production, réinitialisez-la par le bouton \emph{Réinitialiser pour la production} de la bannière de démonstration, qui efface les données de démonstration et ramène l'assistant au début. ⚠️ \emph{Ce bouton n'agit que si l'administrateur de l'installation l'a autorisé} (variable \texttt{KESH\_PRODUCTION\_RESET}, voir le manuel d'administration)~: sinon la réinitialisation est refusée, même à un administrateur.
 
 \subsection{Chemin B — Mode production}
 
@@ -2173,8 +2174,8 @@ imports, réconciliations, exports, gestion des utilisateurs, modification de
 la société et la configuration initiale de l'installation — avec l'auteur,
 l'horodatage et le contexte.
 
-⚠️ \textbf{Deux familles d'opérations n'y figurent pas encore} : le
-\emph{peuplement de démonstration} et sa réinitialisation, et les \emph{gestes de
+⚠️ \textbf{Deux familles d'opérations n'y figurent pas encore} : la
+\emph{réinitialisation} des données de démonstration, et les \emph{gestes de
 session} : connexion, déconnexion, changement de votre propre mot de passe. Ce
 sont des manques connus et suivis, pas des oublis.
 
@@ -2239,6 +2240,20 @@ créés~: filtrer sur le type \emph{Compte} et un numéro d'entité ne retrouve
 \textbf{pas} la création d'un compte du plan livré --- ouvrez le détail de cette
 entrée. Enfin, la société de départ créée par le \textbf{premier démarrage}
 n'est pas inscrite~: seule la configuration qui suit l'est.
+
+Sur le chemin de démonstration, le \textbf{chargement des données de
+démonstration} s'inscrit en \textbf{une seule entrée} (\emph{Données de
+démonstration chargées}, type \emph{Installation}), suivie de l'étape franchie~;
+son détail donne la société, le nombre de comptes créés, l'exercice, le nombre de
+taux de TVA créés et si les réglages de facturation l'ont été. Les données
+elles-mêmes n'ont pas d'entrée chacune. ⚠️ \emph{Cette entrée n'est écrite que
+lorsque le chargement aboutit.} Un chargement interrompu peut laisser une partie
+des données de démonstration --- la société renommée, le plan comptable,
+l'exercice --- \textbf{sans entrée au journal}, et un nouveau chargement échoue
+alors jusqu'à une réinitialisation~: c'est une limite connue, suivie par
+l'issue \#538. Il en va de même si la configuration de production franchit
+l'étape pendant le chargement~: celui-ci est refusé, mais ces données restent sur
+l'installation de production.
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{FAQ et dépannage utilisateur}
