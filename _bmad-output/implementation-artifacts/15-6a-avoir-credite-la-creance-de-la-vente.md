@@ -1086,6 +1086,22 @@ Claude Opus 5.5 (développement en autonomie, 2026-10-09, worktree `kesh-15-6a`)
     `dunning_reminders.rs:261`) tant que l'heure UTC est avant midi — le run a tourné à 01 h UTC. Défaut du test, lié
     à l'heure : issue à ouvrir. `credit-notes.spec.ts` vert. Backend arrêté par son PID.
 
+- **Intégration sur `de285ea8`** (2026-10-09, 15-11b mergée, #570) : branche rebasée sur `origin/main` `de285ea8`.
+  Conflits : registre par union (aucun identifiant `## C-…` en double, contrôlé par `sort | uniq -d`) ;
+  `sprint-status.yaml` — `main` porte désormais les `last_updated` (24) à (26) de la 15-11b, les trois lignes de la
+  branche sont **renumérotées (27), (28), (29)** ; aucune clé de story en double ; `admin-manual.pdf` en conflit
+  binaire, le `.tex` fusionné sans conflit → PDF **régénéré** et contrôlé aplati (fragment de la 15-6a « Changer de
+  compte d'arrondi ne déplace pas … » et deux fragments de la 15-11b présents). CHANGELOG `[0.13.0]` : une rubrique
+  de chaque. Aucun conflit de code ; la story n'ajoute aucune lecture d'environnement (`config::env_nonempty`
+  inchangé, test lexical (L) vert dans le gate). Gates sur l'état rebasé, bases `kesh_156a` / `kesh_e2e_156a`
+  remises à zéro après `wait-kesh.sh` :
+  - backend `scripts/test-fast.sh` : **2929 / 2929**, 4 ignorés ;
+  - frontend : `check` 0 erreur, `lint-i18n-ownership` PASS, `test:unit` **1091 / 1091**, `build` vert ;
+  - E2E complet (`:3011`, secrets `openssl rand`, `smtpConfigured: true`, inbox/documents dans le scratchpad) :
+    **245 passés, 9 échoués, 19 ignorés** (12,2 min) — les 7 KF-029 et les deux `invoices.spec.ts:415`, `:439`
+    (`manual reminder failed: 422`, run vers 02 h UTC : même cause d'horloge que ci-dessus, hors branche). Backend
+    arrêté par son PID.
+
 ### File List
 
 - `crates/kesh-db/src/repositories/invoice_settlements.rs` — lecteurs `sale_receivable_account`, `sale_rounding_account`
