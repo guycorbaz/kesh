@@ -6,7 +6,8 @@ ready-for-dev *(créée le 2026-10-09 à la remédiation de la validation P3 de 
 décision de l'orchestrateur, C-15-1a2-19 ; validation P1 remédiée le 2026-10-09 — la **documentation
 publique** du refus portée à la 15-1a2-i (C-15-1a2-24), textes écrits dans les quatre locales et conformes
 aux gardes G8, G8-bis et G9 (C-15-1a2-26), précédence éprouvée contre tous les rangs voisins (C-15-1a2-27) ;
-**validation P2 à mener avant tout développement**)*.
+**validation P2 remédiée le 2026-10-09 — VALIDATION CLOSE** : 0 MEDIUM restant, les sept LOW appliqués,
+antécédent de « celui-ci » levé et constante sœur de G8 (C-15-1a2-30) ; prochaine étape : `bmad-dev-story`)*.
 
 ⛔ **Story DORMANTE : elle n'écrit que ce qu'exige le code** (C-15-1a2-24) — la règle des périodes, la
 variante et son rang, la file, les quatre filtres, les prédicteurs, les textes i18n (quatre locales, conformes
@@ -178,16 +179,38 @@ exercices des lignes mêmes, sous verrou, le cas ne s'y produit pas ; AC1 : ses 
       entry_id: i64) -> Result<Option<i64>, DbError>;
   ```
 
-  **Doc-comments à numéros de rang** (validation P1, F-5, R-6 — greppés **par la valeur**, `git grep -nE
-  "rangs? [0-9]+( (à|et) [0-9]+)?"` sur les six fichiers ci-dessous, relevé sur `056997b0`) : chaque énoncé
-  qui borne ou énumère les rangs de la queue est relu et, s'il devient faux avec le 2 bis, réécrit —
-  `settlement_cancellation.rs:28` (« Les rangs 2 à 5 » → « 2 à 5, dont 2 bis ») ;
-  `invoice_settlements_write.rs:687-688` (« rangs 2 à 5 »), `:772-773` (« ne refuse lui-même que les rangs 1
-  et 2 … les rangs 3 à 5 ») ; `reconciliation_cancel.rs:263-265` (« les rangs 0 et 2 … les rangs 3 à 5 ») ;
-  `supplier_invoices.rs:954` (« rangs 2 à 5 ») ; `kesh-db/src/errors.rs:318` (« les rangs 2 à 5 »), `:329-330`,
-  `:868-870` ; `kesh-api/src/errors.rs:3308` (« rang 0 … rang 2 »). Les sites qui ne parlent que d'un rang
-  existant sans borner la queue (`:2966` de `kesh-api/src/errors.rs`, rang 2 d'une autre file ;
-  `settlement_cancellation.rs:24-25`, `:43`, `:59`, `:64-66`) sont triés au Dev Agent Record, non réécrits.
+  **Doc-comments qui énumèrent les rangs ou les motifs — un ensemble clos de SITES NOMMÉS** (validation P1,
+  F-5, R-6 ; **P2, R2-3 = F2-1, R2-7** : l'inventaire de la P1 était une *forme* de grep, `rangs? [0-9]+( (à|et)
+  [0-9]+)?`, et elle ratait la majuscule, le tiret « 1-2 » et les énumérations en prose — les trois commentaires
+  posés au-dessus des filtres mêmes que D3 modifie. Sites relevés par `git grep -niE "rangs? [0-9]+( ?(à|et|-)
+  ?[0-9]+)?|refusés? ici|arrivent ici|Refusés par son geste"` sur `056997b0`, **contrôle, non définition** :
+  la liste ci-dessous est la définition, chaque site est relu et, s'il devient faux avec le 2 bis, réécrit,
+  puis trié au Dev Agent Record) :
+  - la file : `settlement_cancellation.rs:28` (« Les rangs 2 à 5 » → « 2 à 5, dont 2 bis ») ;
+  - **les commentaires des quatre filtres de D3** : `invoice_settlements_write.rs:838` (« Rangs 1-2 : refusés
+    ici. Rangs 3-5 : laissés au socle » : le 2 bis y est aussi refusé), `supplier_invoices.rs:1061` (« Têtes et
+    exercice clos : refusés ici », filtre de la facture), `supplier_invoices.rs:1267` (« Rang 1 et « exercice
+    clos » : refusés ici », filtre du paiement) — `reconciliation_cancel.rs:322` (« (4) Les motifs — forme
+    EXEMPTÉE ») n'énumère rien et reste juste, trié ;
+  - les énoncés de rang des gestes : `invoice_settlements_write.rs:687-688` (« rangs 2 à 5 »), `:772-773` (« ne
+    refuse lui-même que les rangs 1 et 2 … les rangs 3 à 5 ») ; `reconciliation_cancel.rs:263-265` (« les rangs 0
+    et 2 … les rangs 3 à 5 ») ; `supplier_invoices.rs:954` (« rangs 2 à 5 ») ;
+  - `kesh-db/src/errors.rs` : `:318` (« les rangs 2 à 5 »), `:329-330`, **`:340`** (« Refusés par son geste
+    ([`DbError::SupplierInvoiceNotCancellable`]) : les deux têtes et l'exercice clos » → + le 2 bis),
+    `:401-404` (la doc de `SettlementCancelBlocker::code()` énumère entre parenthèses les codes réemployés :
+    y ajouter `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`, de `DbError::LetteringAllLinesInClosedPeriods` — le
+    code du 2 bis y est réemployé, la parenthèse le tait), `:868-870` ;
+  - `kesh-api/src/errors.rs` : **`:3257-3258`** (« Seuls les rangs que le GESTE refuse lui-même arrivent ici
+    (facture créditée, exercice clos) » → + le 2 bis), `:3308` (« rang 0 … rang 2 »), **`:3316-3318`** (« refusée
+    par le geste lui-même (déjà annulée, exercice de l'achat clos, lot en cours) » → + le 2 bis) ;
+  - `frontend/src/lib/shared/utils/settlement-cancel-blocked.ts:4-6` : « Ces quatre motifs tiennent à
+    l'**écriture** de règlement (son exercice, son rapprochement, ses comptes, l'exercice du jour) » — le compte
+    (AC7 d, « quatre » → « cinq ») **et** la parenthèse, qui doit nommer le lettrage figé par la période.
+  Les sites qui ne parlent que d'un rang existant sans borner la queue (`kesh-api/src/errors.rs:2966`, rang 2
+  d'une autre file ; `settlement_cancellation.rs:24-25`, `:43`, `:59`, `:64-66`) sont triés au Dev Agent Record,
+  non réécrits. ⚠️ Le contrôle par grep rend des sites que la liste n'a pas nommés : chacun est **ajouté à la
+  liste**, ou trié « sans objet » avec sa raison — un site ni nommé ni trié est le défaut que cette liste
+  existe pour fermer.
 - **Code** : `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`, réemployé (C-15-1a2-11) — `SettlementCancelBlocker::code`
   pose que « tous ces codes réemploient ceux d'états du monde déjà nommés » (`errors.rs:401`) ; « toutes
   les lignes du groupe sont en période close » est l'état que ce code nomme déjà. Statut **409**.
@@ -215,39 +238,44 @@ exercices des lignes mêmes, sous verrou, le cas ne s'y produit pas ; AC1 : ses 
   leurs replis Rust (`kesh-api/src/errors.rs`, un bras dans chacune des trois tables), **mot pour mot** le
   FTL fr-CH, **comparés par G9** (les trois clés inscrites à sa `TABLE`, un site chacune — validation P1, R-2).
   **Les douze textes sont fixés ici** (validation P1, R-1, F-10 ; C-15-1a2-26) — chacun porte le marqueur
-  d'ordre de G8 **et** la borne « jusqu'à celui-ci » de G8-bis, dont l'antécédent est écrit juste avant
-  (« son exercice » : celui de la date la plus récente) ; aucun ne dit « son avoir » (un groupe fournisseur
+  d'ordre de G8 **et** la borne « jusqu'à celui-ci » de G8-bis. **L'antécédent de « celui-ci » est le dernier
+  terme de la condition** (validation P2, R2-6 = F2-4 : dans « clôturé ou suivi d'un exercice clôturé », le nom
+  le plus proche était « un exercice clôturé », le **successeur** — lu ainsi, quand l'exercice de la date est
+  lui-même clos et suivi d'un clos, la réouverture s'arrêtait un exercice trop tôt et le refus revenait) : les
+  deux causes sont donc écrites dans l'ordre « suivi d'un exercice clôturé, **ou clôturé lui-même** … jusqu'à
+  celui-ci », qui laisse « son exercice » (celui de la date la plus récente) comme seul antécédent possible ;
+  la borne littérale qu'exige G8-bis et le marqueur d'ordre de G8 sont gardés (C-15-1a2-30) ; aucun ne dit « son avoir » (un groupe fournisseur
   n'en a pas) ; la queue dit « sa facture », vrai pour le client comme pour le fournisseur :
 
   | clé | fr-CH |
   |---|---|
-  | `settlement-cancel-blocked-lettering-closed` | Ce règlement est lettré avec sa facture, et toutes les lignes de ce lettrage sont dans une période close : il est figé. Pour pouvoir l'annuler, prenez la date la plus récente du lettrage (en général celle du dernier règlement) : si elle est sous le verrou de période, un administrateur doit faire reculer le verrou avant elle ; et si son exercice est clôturé ou suivi d'un exercice clôturé, il doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent. |
-  | `reconciliation-cancel-blocked-lettering-closed` | Ce rapprochement est lettré avec sa facture, et toutes les lignes de ce lettrage sont dans une période close : il est figé. Pour pouvoir l'annuler, prenez la date la plus récente du lettrage (en général celle du dernier règlement) : si elle est sous le verrou de période, un administrateur doit faire reculer le verrou avant elle ; et si son exercice est clôturé ou suivi d'un exercice clôturé, il doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent. |
-  | `supplier-invoices-cancel-blocked-lettering-closed` | Cette facture est lettrée avec son paiement, et toutes les lignes de ce lettrage sont dans une période close : il est figé. Pour pouvoir l'annuler, prenez la date la plus récente du lettrage (en général celle du paiement) : si elle est sous le verrou de période, un administrateur doit faire reculer le verrou avant elle ; et si son exercice est clôturé ou suivi d'un exercice clôturé, il doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent. |
+  | `settlement-cancel-blocked-lettering-closed` | Ce règlement est lettré avec sa facture, et toutes les lignes de ce lettrage sont dans une période close : il est figé. Pour pouvoir l'annuler, prenez la date la plus récente du lettrage (en général celle du dernier règlement) : si elle est sous le verrou de période, un administrateur doit faire reculer le verrou avant elle ; et si son exercice est suivi d'un exercice clôturé, ou clôturé lui-même, il doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent. |
+  | `reconciliation-cancel-blocked-lettering-closed` | Ce rapprochement est lettré avec sa facture, et toutes les lignes de ce lettrage sont dans une période close : il est figé. Pour pouvoir l'annuler, prenez la date la plus récente du lettrage (en général celle du dernier règlement) : si elle est sous le verrou de période, un administrateur doit faire reculer le verrou avant elle ; et si son exercice est suivi d'un exercice clôturé, ou clôturé lui-même, il doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent. |
+  | `supplier-invoices-cancel-blocked-lettering-closed` | Cette facture est lettrée avec son paiement, et toutes les lignes de ce lettrage sont dans une période close : il est figé. Pour pouvoir l'annuler, prenez la date la plus récente du lettrage (en général celle du paiement) : si elle est sous le verrou de période, un administrateur doit faire reculer le verrou avant elle ; et si son exercice est suivi d'un exercice clôturé, ou clôturé lui-même, il doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent. |
 
   | clé | de-CH |
   |---|---|
-  | `settlement-cancel-blocked-lettering-closed` | Diese Zahlung ist mit ihrer Rechnung ausgeglichen, und alle Zeilen dieses Ausgleichs liegen in einer abgeschlossenen Periode: Er ist fixiert. Damit sie storniert werden kann, nehmen Sie das jüngste Datum des Ausgleichs (meist das der letzten Zahlung): Liegt es in der Periodensperre, muss ein Administrator die Sperre vor dieses Datum zurücksetzen; und ist sein Geschäftsjahr abgeschlossen oder folgt ihm ein abgeschlossenes, muss er die abgeschlossenen Geschäftsjahre bis zu diesem Geschäftsjahr wieder öffnen, beginnend mit dem neuesten. |
-  | `reconciliation-cancel-blocked-lettering-closed` | Dieser Abgleich ist mit seiner Rechnung ausgeglichen, und alle Zeilen dieses Ausgleichs liegen in einer abgeschlossenen Periode: Er ist fixiert. Damit der Abgleich aufgehoben werden kann, nehmen Sie das jüngste Datum des Ausgleichs (meist das der letzten Zahlung): Liegt es in der Periodensperre, muss ein Administrator die Sperre vor dieses Datum zurücksetzen; und ist sein Geschäftsjahr abgeschlossen oder folgt ihm ein abgeschlossenes, muss er die abgeschlossenen Geschäftsjahre bis zu diesem Geschäftsjahr wieder öffnen, beginnend mit dem neuesten. |
-  | `supplier-invoices-cancel-blocked-lettering-closed` | Diese Rechnung ist mit ihrer Zahlung ausgeglichen, und alle Zeilen dieses Ausgleichs liegen in einer abgeschlossenen Periode: Er ist fixiert. Damit sie storniert werden kann, nehmen Sie das jüngste Datum des Ausgleichs (meist das der Zahlung): Liegt es in der Periodensperre, muss ein Administrator die Sperre vor dieses Datum zurücksetzen; und ist sein Geschäftsjahr abgeschlossen oder folgt ihm ein abgeschlossenes, muss er die abgeschlossenen Geschäftsjahre bis zu diesem Geschäftsjahr wieder öffnen, beginnend mit dem neuesten. |
+  | `settlement-cancel-blocked-lettering-closed` | Diese Zahlung ist mit ihrer Rechnung ausgeglichen, und alle Zeilen dieses Ausgleichs liegen in einer abgeschlossenen Periode: Er ist fixiert. Damit sie storniert werden kann, nehmen Sie das jüngste Datum des Ausgleichs (meist das der letzten Zahlung): Liegt es in der Periodensperre, muss ein Administrator die Sperre vor dieses Datum zurücksetzen; und folgt seinem Geschäftsjahr ein abgeschlossenes oder ist es selbst abgeschlossen, muss er die abgeschlossenen Geschäftsjahre bis zu diesem Geschäftsjahr wieder öffnen, beginnend mit dem neuesten. |
+  | `reconciliation-cancel-blocked-lettering-closed` | Dieser Abgleich ist mit seiner Rechnung ausgeglichen, und alle Zeilen dieses Ausgleichs liegen in einer abgeschlossenen Periode: Er ist fixiert. Damit der Abgleich aufgehoben werden kann, nehmen Sie das jüngste Datum des Ausgleichs (meist das der letzten Zahlung): Liegt es in der Periodensperre, muss ein Administrator die Sperre vor dieses Datum zurücksetzen; und folgt seinem Geschäftsjahr ein abgeschlossenes oder ist es selbst abgeschlossen, muss er die abgeschlossenen Geschäftsjahre bis zu diesem Geschäftsjahr wieder öffnen, beginnend mit dem neuesten. |
+  | `supplier-invoices-cancel-blocked-lettering-closed` | Diese Rechnung ist mit ihrer Zahlung ausgeglichen, und alle Zeilen dieses Ausgleichs liegen in einer abgeschlossenen Periode: Er ist fixiert. Damit sie storniert werden kann, nehmen Sie das jüngste Datum des Ausgleichs (meist das der Zahlung): Liegt es in der Periodensperre, muss ein Administrator die Sperre vor dieses Datum zurücksetzen; und folgt seinem Geschäftsjahr ein abgeschlossenes oder ist es selbst abgeschlossen, muss er die abgeschlossenen Geschäftsjahre bis zu diesem Geschäftsjahr wieder öffnen, beginnend mit dem neuesten. |
 
   | clé | it-CH |
   |---|---|
-  | `settlement-cancel-blocked-lettering-closed` | Questo pagamento è abbinato alla sua fattura, e tutte le righe di questo abbinamento sono in un periodo chiuso: è bloccato. Per poterlo annullare, considerate la data più recente dell'abbinamento (in genere quella dell'ultimo pagamento): se cade nel blocco di periodo, un amministratore deve riportare il blocco prima di essa; e se il suo esercizio è chiuso o seguito da un esercizio chiuso, deve riaprire gli esercizi chiusi fino a questo esercizio, cominciando dal più recente. |
-  | `reconciliation-cancel-blocked-lettering-closed` | Questa riconciliazione è abbinata alla sua fattura, e tutte le righe di questo abbinamento sono in un periodo chiuso: è bloccata. Per poterla annullare, considerate la data più recente dell'abbinamento (in genere quella dell'ultimo pagamento): se cade nel blocco di periodo, un amministratore deve riportare il blocco prima di essa; e se il suo esercizio è chiuso o seguito da un esercizio chiuso, deve riaprire gli esercizi chiusi fino a questo esercizio, cominciando dal più recente. |
-  | `supplier-invoices-cancel-blocked-lettering-closed` | Questa fattura è abbinata al suo pagamento, e tutte le righe di questo abbinamento sono in un periodo chiuso: è bloccata. Per poterla annullare, considerate la data più recente dell'abbinamento (in genere quella del pagamento): se cade nel blocco di periodo, un amministratore deve riportare il blocco prima di essa; e se il suo esercizio è chiuso o seguito da un esercizio chiuso, deve riaprire gli esercizi chiusi fino a questo esercizio, cominciando dal più recente. |
+  | `settlement-cancel-blocked-lettering-closed` | Questo pagamento è abbinato alla sua fattura, e tutte le righe di questo abbinamento sono in un periodo chiuso: è bloccato. Per poterlo annullare, considerate la data più recente dell'abbinamento (in genere quella dell'ultimo pagamento): se cade nel blocco di periodo, un amministratore deve riportare il blocco prima di essa; e se il suo esercizio è seguito da un esercizio chiuso, o è chiuso esso stesso, deve riaprire gli esercizi chiusi fino a questo esercizio, cominciando dal più recente. |
+  | `reconciliation-cancel-blocked-lettering-closed` | Questa riconciliazione è abbinata alla sua fattura, e tutte le righe di questo abbinamento sono in un periodo chiuso: è bloccata. Per poterla annullare, considerate la data più recente dell'abbinamento (in genere quella dell'ultimo pagamento): se cade nel blocco di periodo, un amministratore deve riportare il blocco prima di essa; e se il suo esercizio è seguito da un esercizio chiuso, o è chiuso esso stesso, deve riaprire gli esercizi chiusi fino a questo esercizio, cominciando dal più recente. |
+  | `supplier-invoices-cancel-blocked-lettering-closed` | Questa fattura è abbinata al suo pagamento, e tutte le righe di questo abbinamento sono in un periodo chiuso: è bloccata. Per poterla annullare, considerate la data più recente dell'abbinamento (in genere quella del pagamento): se cade nel blocco di periodo, un amministratore deve riportare il blocco prima di essa; e se il suo esercizio è seguito da un esercizio chiuso, o è chiuso esso stesso, deve riaprire gli esercizi chiusi fino a questo esercizio, cominciando dal più recente. |
 
   | clé | en-CH |
   |---|---|
-  | `settlement-cancel-blocked-lettering-closed` | This settlement is matched with its invoice, and all lines of this matching group are in a closed period: it is fixed. Before it can be cancelled, take the most recent date of the matching group (usually that of the last settlement): if it falls under the period lock, an administrator must move the lock back before it; and if its fiscal year is closed or followed by a closed fiscal year, the administrator must reopen the closed fiscal years down to this one, starting with the most recent. |
-  | `reconciliation-cancel-blocked-lettering-closed` | This reconciliation is matched with its invoice, and all lines of this matching group are in a closed period: it is fixed. Before it can be cancelled, take the most recent date of the matching group (usually that of the last settlement): if it falls under the period lock, an administrator must move the lock back before it; and if its fiscal year is closed or followed by a closed fiscal year, the administrator must reopen the closed fiscal years down to this one, starting with the most recent. |
-  | `supplier-invoices-cancel-blocked-lettering-closed` | This invoice is matched with its payment, and all lines of this matching group are in a closed period: it is fixed. Before it can be cancelled, take the most recent date of the matching group (usually that of the payment): if it falls under the period lock, an administrator must move the lock back before it; and if its fiscal year is closed or followed by a closed fiscal year, the administrator must reopen the closed fiscal years down to this one, starting with the most recent. |
+  | `settlement-cancel-blocked-lettering-closed` | This settlement is matched with its invoice, and all lines of this matching group are in a closed period: it is fixed. Before it can be cancelled, take the most recent date of the matching group (usually that of the last settlement): if it falls under the period lock, an administrator must move the lock back before it; and if its fiscal year is followed by a closed fiscal year, or is closed itself, the administrator must reopen the closed fiscal years down to this one, starting with the most recent. |
+  | `reconciliation-cancel-blocked-lettering-closed` | This reconciliation is matched with its invoice, and all lines of this matching group are in a closed period: it is fixed. Before it can be cancelled, take the most recent date of the matching group (usually that of the last settlement): if it falls under the period lock, an administrator must move the lock back before it; and if its fiscal year is followed by a closed fiscal year, or is closed itself, the administrator must reopen the closed fiscal years down to this one, starting with the most recent. |
+  | `supplier-invoices-cancel-blocked-lettering-closed` | This invoice is matched with its payment, and all lines of this matching group are in a closed period: it is fixed. Before it can be cancelled, take the most recent date of the matching group (usually that of the payment): if it falls under the period lock, an administrator must move the lock back before it; and if its fiscal year is followed by a closed fiscal year, or is closed itself, the administrator must reopen the closed fiscal years down to this one, starting with the most recent. |
 
   Vocabulaire repris des catalogues : *lettrage* / *Ausgleich* / *abbinamento* / *matching group*
   (`error-lettering-*`), *verrou de période* / *Periodensperre* / *blocco di periodo* / *period lock*
   (`settings-books-lock-title`). ⚠️ Les gardes G8 et G8-bis prennent le **verbe fr-CH** comme critère de domaine
-  (`rouvrir` y est) : les trois clés y entrent d'elles-mêmes ; elles sont en outre **nommées** dans la liste
-  anti-muet de G8 (`CLES_569`), pour qu'une réécriture qui perdrait le verbe ne les sorte pas du contrôle en
+  (`rouvrir` y est) : les trois clés y entrent d'elles-mêmes ; elles sont en outre **nommées** dans une liste
+  anti-muet de G8 (la constante sœur `CLES_2_BIS`, AC7 a), pour qu'une réécriture qui perdrait le verbe ne les sorte pas du contrôle en
   silence (AC7 a). Le développeur peut retoucher la forme de/it/en ; il ne retire ni le marqueur, ni la borne,
   ni l'antécédent, et il recopie le fr-CH tel quel dans les replis Rust et Svelte.
 
@@ -287,13 +315,20 @@ synchronisation).
 **Le montage, dans cet ordre** (validation P1, F-9 ; C-15-1a2-27) :
 1. **les écritures d'abord**, par les gestes réels (facture validée, règlement, solde, paiement) — une
    écriture ne se crée plus sous une borne posée (`PeriodLocked`) : verrouiller d'abord rendrait le montage
-   impossible, ou le ferait passer par du SQL qui contourne ce qu'on veut éprouver ;
+   impossible, ou le ferait passer par du SQL qui contourne ce qu'on veut éprouver. ⚠️ **Toutes les lignes du
+   groupe sont datées STRICTEMENT AVANT aujourd'hui** (validation P2, R2-5 = F2-3) : `lock_books` **et**
+   `unlock_books` refusent toute borne `>= aujourd'hui` (`BOOKS_LOCK_BOUND_NOT_PAST`, `companies.rs:369` et
+   `:455-458`) — un règlement daté du jour rendrait le verrou **et** le déverrouillage d'AC3 (a) impossibles.
+   Calendrier de `monter` (`invoice_settlement.rs`) : `D = aujourd'hui − 60 j`, facture `D − 20`, règlement
+   `D − 10` ; les montages API (`invoice_echeancier_e2e.rs`, `reconciliation_e2e.rs`,
+   `supplier_settlement_cancel_e2e.rs`) passent un `settledOn` passé de même ;
 2. **le groupe** par l'`UPDATE` brut, suivi d'une **assertion de montage** : nombre de lignes marquées égal au
    nombre attendu (`rows_affected`), somme `débit − crédit` nulle sur la clé, clé = plus petite ligne — sans
    elle, un `UPDATE` qui ne trouverait rien laisserait les assertions négatives (AC2 b) vertes à vide ;
-3. **le verrou ensuite** (`companies::lock_books`, ou l'`UPDATE companies SET books_locked_through` brut si le
-   chemin réel refuse la date — dit au Dev Agent Record), à une date **au moins égale à la plus récente** des
-   lignes du groupe ; puis, s'il y a lieu, la clôture ;
+3. **le verrou ensuite**, par `companies::lock_books` (jamais par `UPDATE` brut : les dates sont passées, le
+   chemin réel les accepte, et une borne `>= aujourd'hui` est un état que l'application interdit — invariant
+   I2), à une date **au moins égale à la plus récente** des lignes du groupe ; puis, s'il y a lieu, la
+   clôture ;
 4. **règlement et solde sur deux factures distinctes** : sur une même facture soldée par un règlement **et** un
    solde, l'annulation du règlement rend `INVOICE_WRITTEN_OFF` (rang 1 bis, qui précède le 2 bis) — c'est la
    précédence 1 bis × 2 bis (AC2 c), pas le refus d'AC3.
@@ -302,7 +337,8 @@ synchronisation).
 le lettrage est figé, et dit pourquoi et qui peut la débloquer ; la vue des postes ouverts « au 31.03 » ne
 bouge plus. ⚠️ **Tolérance résiduelle, nommée** : la règle se lit sans verrou sur la borne et sur les
 exercices autres que celui de l'écriture examinée (tenu par le geste). Un `lock_books` (ou la clôture d'un
-autre exercice du groupe) validé entre la lecture du rang 2 bis et le `COMMIT` laisse passer l'annulation
+autre exercice du groupe **ou d'un exercice postérieur** à celui de la ligne la plus récente, que
+`find_later_closed` lit sans verrou) validé entre la lecture du rang 2 bis et le `COMMIT` laisse passer l'annulation
 — la tolérance qu'a déjà une écriture créée pendant la pose du verrou. Aucun verrou neuf.
 
 ### D5 — Le message `LETTERING_IS_DOCUMENT` neutre, et un doc-comment (C-15-1a2-8, C-15-1a2-7)
@@ -367,9 +403,14 @@ C-15-1a2-27) — par les bancs qui la prouvent déjà pour les autres rangs, non
 - **fournisseur, facture** : `invoice_cancel_motives_and_their_precedence` gagne quatre cas sur une facture
   **payée** — `[2 bis]` → 2 bis ; `[FiscalYearClosed, 2 bis]` → `FiscalYearClosed` ; `[2 bis, AccountArchived]`
   → 2 bis ; `[2 bis, NoOpenFiscalYearToday]` → 2 bis — et le bras `SupplierInvoiceNotCancellable { blocker }`
-  pour le 2 bis. Le rang 6 (`SupplierInvoiceInPaymentBatch`) × 2 bis suppose une facture **payée** dans un lot
-  `generated` : **relevé au T0** — montable, le cas entre à la table (attendu : 2 bis, le lot passant en
-  dernier) ; non montable, il est nommé au test comme inatteignable, avec la raison lue au code.
+  pour le 2 bis. Le rang 6 (`SupplierInvoiceInPaymentBatch`) × 2 bis est **inatteignable** (validation P2, R2-2 = F2-2) :
+  il suppose une facture **payée** dans un lot `generated`, et `supplier_invoices.rs:1224-1228` l'écrit — « une
+  facture `paid` ne peut pas être dans un lot `generated` (`create_batch` exige `open`, `pay` et `cancel`
+  refusent une facture en lot `generated`, et `confirm_batch` règle et confirme dans la même transaction) ».
+  Il est **nommé au test avec cette raison**, comme `InvoiceCredited` × 2 bis et la tête `SupplierInvoiceNotPaid`
+  × 2 bis, et **non monté en forçant** : `engager_dans_un_lot` forge un lot en SQL sur n'importe quelle facture
+  (`supplier_invoices_repository.rs:1744-1780`), si bien qu'un critère « montable » serait toujours vrai et
+  ferait monter un état que le code déclare impossible.
 
 **AC3** — **Règlement et solde clients** : (a) **règlement** — facture A soldée par un règlement, groupe et
 verrou selon D4 → `invoice_settlements_write::cancel_settlement` rend `SettlementNotCancellable { blocker:
@@ -406,18 +447,38 @@ seule.
 
 **AC7** — **Les textes et l'écran** : (a) les trois clés existent dans les **quatre** locales avec les textes de
 D2 ; **G8 et G8-bis vertes** sur elles (marqueur d'ordre et borne « jusqu'à celui-ci » dans chaque locale), et
-les trois clés **nommées** dans la liste anti-muet `CLES_569` de G8 (`les_prescriptions_de_reouverture_disent_l_ordre`,
-`[&str; 6]` → `[&str; 9]`, commentaire recompté) ; **G9 verte** : les trois clés et `error-lettering-is-document`
+les trois clés **nommées** dans une **constante sœur dédiée** `CLES_2_BIS: [&str; 3]` de G8
+(`les_prescriptions_de_reouverture_disent_l_ordre`), chaînée dans la boucle anti-muet existante
+(`EXEMPTEES.iter().chain(CLES_569.iter()).chain(CLES_2_BIS.iter())`) — **`CLES_569` reste `[&str; 6]`**, son
+commentaire « Les six clés de #569 » et le plancher `controlees >= 10` (« 6 clés de #569 + 4 ») restent vrais :
+mêler trois clés d'une autre story à une liste documentée comme « les six clés de #569 » rendrait son
+commentaire faux (validation P2, F2-6 ; C-15-1a2-30) ; **G9 verte** : les trois clés et `error-lettering-is-document`
 inscrites à la `TABLE` de `les_replis_rust_suivent_le_catalogue` (`kesh-api/tests/textes_coherents.rs`), un site
 chacune — c'est G9, non un test neuf, qui prouve « le repli Rust dit mot pour mot le FTL fr-CH » (validation P1,
 R-2) ; (b) l'écran masque l'annulation et affiche le texte du motif — fiche facture
 (`settlement-cancel-blocked.ts`), dialogue de dé-rapprochement (`reconciliation-cancel.ts`), fiche fournisseur
-(`invoice-cancel.ts`, et la queue partagée pour le paiement) ; (c) les gardes frontend à valeur épinglée sont
-**recomptées**, pas contournées (finding F-3 de la P3) : `sitesTotal` de `lib/shared/i18n-keys.test.ts`
-(`:526`, `1920` sur `056997b0`) par la procédure écrite dans ce fichier (`grep -o "i18nMsg("` aux deux bornes),
-et la liste `REPLIS_A_SITE_UNIQUE` de `lib/shared/i18n-repli-divergent-actif.test.ts` (`:216`) gagne les
-**trois** clés neuves — **impératif** : c'est ce test seul qui fait tenir « chaque repli Svelte dit mot pour mot
-le FTL » pour une clé à site unique ; son commentaire « Chacune des dix clés » (`:209`) est recompté ;
+(`invoice-cancel.ts`, et la queue partagée pour le paiement) ; (c) les gardes frontend à valeur épinglée sont **recomptées**, pas contournées (finding F-3 de la P3 ; **P2,
+R2-1** : la version P1 n'en nommait que deux et en omettait une qui rougit) — **trois gardes bougent** :
+- `CLES_RELEVEES` de `lib/shared/i18n-un-repli-par-cle.test.ts` (`:125` et son `toBe(CLES_RELEVEES)` `:207`,
+  `213` sur `056997b0`) : **213 → 214, +1 nommée** — `supplier-invoices-cancel-blocked-lettering-closed`, clé au
+  préfixe `supplier-invoices-` portant un repli littéral dans `invoice-cancel.ts` (les deux autres clés neuves,
+  `settlement-cancel-blocked-lettering-closed` et `reconciliation-cancel-blocked-lettering-closed`, n'ont aucun
+  des quatre préfixes de la garde et n'y entrent pas). Le **commentaire** du fichier, qui exige qu'une hausse
+  soit nommée (« Un +11 dont on ne sait pas dire lesquels se recompte, il ne s'entérine pas »), gagne son
+  paragraphe `213 → 214, +1 nommée (Story 15-1a2-0, #518)` avec la clé, recomptée par la procédure du fichier ;
+- `sitesTotal` de `lib/shared/i18n-keys.test.ts` (`:526`, `1920` sur `056997b0`) : **+3** attendu — un
+  `i18nMsg(` neuf dans chacun de `settlement-cancel-blocked.ts` (4 → 5), `reconciliation-cancel.ts` (7 → 8) et
+  `invoice-cancel.ts` (6 → 7) — soit `1923`, **recompté** par la procédure écrite dans ce fichier
+  (`grep -o "i18nMsg("` aux deux bornes), non entériné ; `sitesNonResolus`, `relais`, `sitesGabarit` (clés
+  littérales) ne bougent pas, `litterauxMin` et `clesDepuisTsMin` sont des planchers ;
+- la liste `REPLIS_A_SITE_UNIQUE` de `lib/shared/i18n-repli-divergent-actif.test.ts` (`:216`) gagne les
+  **trois** clés neuves — **impératif** : c'est ce test seul qui fait tenir « chaque repli Svelte dit mot pour
+  mot le FTL » pour une clé à site unique ; son commentaire « Chacune des dix clés » (`:209`) devient « treize ».
+  Relevé des autres gardes à valeur épinglée de `lib/shared/*.test.ts`
+  (`grep -nE "toBe\([0-9]{2,}\)|const [A-Z_]+ = [0-9]{2,}"`, `056997b0`) : **seule `CANDIDATES_ATTENDUES = 47`**
+  de `i18n-libelle-en-dur.test.ts` reste, et elle **ne bouge pas** (elle compte des déclarations à suffixe
+  `Label`/`Message` : les trois ajouts sont des `case` dans des fonctions existantes). T0 refait ce grep ;
+  `lint-i18n-ownership` vert ;
 (d) **les décomptes de motifs écrits en dur**, par la **valeur** (validation P1, R-6) — `git grep -nE
 "sept motifs|les sept|Les sept|septième|des six|six motifs|quatre motifs|Ces quatre" frontend/src` trié (sur `056997b0` : quinze sorties, dont des commentaires historiques de `i18n-keys.test.ts:259`, `:266`, `:470` et des « septième conflit » sans rapport, qui restent) : « sept » →
 « huit » partout où il compte les motifs du dé-rapprochement (`reconciliation.types.ts:126`,
@@ -428,7 +489,10 @@ motifs de pièce de la contre-passation, **ne change pas** ; les doc-comments Ru
 D2 ; (e) **les tests Vitest à listes figées** (validation P1, F-4) gagnent le code neuf, faute de quoi « chaque
 code » cesserait d'être vrai sans rougir : `features/supplier-invoices/settlement-cancel.test.ts:22-31` (« la queue
 est RÉUTILISÉE », quatre codes), `features/invoices/InvoiceSettlements.test.ts:77-83` (code → marqueur : le code
-neuf avec « en commençant par le plus récent »), `shared/utils/settlement-cancel-blocked.test.ts` (`textes.size`
+neuf avec un extrait **propre au texte neuf** — « toutes les lignes de ce lettrage » —, non « en commençant par
+le plus récent », que `FISCAL_YEAR_CLOSED` porte déjà à la ligne 79 : une mutation renvoyant le code neuf vers
+le texte de l'exercice clos passerait ; validation P2, R2-4 ; même extrait pour le tableau de
+`reconciliation-cancel.test.ts:21-29`), `shared/utils/settlement-cancel-blocked.test.ts` (`textes.size`
 `4` → `5`, `:29`, et la liste `:50-60`) ; `lint-i18n-ownership` vert.
 
 **AC8** — *déplacé à la 15-1a2-i* (**AC18** : documentation publique du refus — `api-external.md`, manuels,
@@ -455,23 +519,29 @@ modification ; G9 compare le repli (AC7 a).
       `ecriture_attendue`, `tail_motives_through_the_supplier_path`, `invoice_cancel_motives_and_their_precedence`,
       la `TABLE` de G9, `CLES_569` de G8) ; vérifier que les routes des quatre gestes restent `Rejouee`
       (`audit_route_registry.rs`) ; relever `sitesTotal` et la liste `REPLIS_A_SITE_UNIQUE` aux deux bornes ;
-      **trancher** le cas « facture payée dans un lot `generated` » (AC2 c, rang 6 × 2 bis : montable ou non,
-      raison lue au code).
+      re-greper la phrase de `supplier_invoices.rs:1224-1228` (« ne peut pas être dans un lot `generated` »)
+      qui fonde le rang 6 × 2 bis **inatteignable** (AC2 c — rien à trancher, la raison est écrite) ;
+      grepper les gardes Vitest à valeur épinglée (`toBe(<nombre>)` sur un inventaire i18n) et vérifier que la
+      liste de l'AC7 (c) est close.
 - [ ] **T1** (D1, AC1) — `OpenPeriodRule`, `open_period_rule`, `line_in_open_period` (`Result`, `Invariant` sur
       un exercice non nommé), `lines_in_open_period`, prédicat par ligne factorisé avec
       `any_line_in_open_period` ; doc-comments (lecture sans verrou, tolérance, borne stricte, exercice inconnu).
 - [ ] **T2** (D2, AC2, AC6) — Variante `DocumentLetteringInClosedPeriods` (doc-comment : place, code
       réemployé, remède sur la ligne la plus récente, texte qui diffère selon la route), son `code()` ;
       `document_group_frozen_by_periods` ; évaluation entre les rangs 2 et 3 de
-      `settlement_entry_cancel_blocker` ; **les doc-comments à numéros de rang** de D2 (six fichiers, grep de la
-      valeur, chaque site trié au Dev Agent Record).
+      `settlement_entry_cancel_blocker` ; **les doc-comments qui énumèrent les rangs ou les motifs** : la liste
+      de **sites nommés** de D2 (dont les commentaires des quatre filtres, `kesh-db/src/errors.rs:340` et
+      `:401-404`, `kesh-api/src/errors.rs:3257-3258` et `:3316-3318`, `settlement-cancel-blocked.ts:4-6`), le
+      grep n'étant qu'un contrôle ; chaque site trié au Dev Agent Record.
 - [ ] **T3** (D3, AC3–AC5) — Les quatre filtres de refus, motifs **liés** (`blocker @`), dé-rapprochement
       avant le lien défait.
 - [ ] **T4** (D2, AC7) — `kesh-api/src/errors.rs` : un bras dans chacune des trois tables, replis mot pour mot ;
-      trois clés × quatre locales, **textes de D2** ; G8 (`CLES_569` + trois clés), G9 (`TABLE` + quatre clés) ;
+      trois clés × quatre locales, **textes de D2** ; G8 (constante sœur `CLES_2_BIS` + trois clés, chaînée ; `CLES_569` inchangée), G9 (`TABLE` + quatre clés) ;
       frontend : `SettlementCancelTailCode` et `settlementCancelTailMessage`, liste et texte de
       `reconciliation-cancel.ts` et son type, cas de `invoice-cancel.ts` ; décomptes de motifs (AC7 d) ; tests
-      Vitest à listes figées (AC7 e) ; gardes `sitesTotal` et `REPLIS_A_SITE_UNIQUE` recomptées ;
+      Vitest à listes figées (AC7 e) ; **trois** gardes recomptées (AC7 c) : `CLES_RELEVEES` 213 → 214
+      (clé `supplier-invoices-cancel-blocked-lettering-closed` nommée dans son commentaire), `sitesTotal`
+      (+3, recompté), `REPLIS_A_SITE_UNIQUE` (+3, « treize ») ;
       `lint-i18n-ownership` vert.
 - [ ] **T5** (D5, AC9) — Message `LETTERING_IS_DOCUMENT` (quatre `.ftl` + repli Rust, textes de D5) ;
       doc-comment d'`InvoiceCredited`.
@@ -479,7 +549,7 @@ modification ; G9 compare le repli (AC7 a).
 - **T7** — *déplacée à la 15-1a2-i* (T6 de cette fiche-là, AC18 : `api-external.md`, manuels, CHANGELOG, PDF ;
   C-15-1a2-24). Numéro non réattribué.
 
-**Tests prévus** (13 neufs ; 5 tests Rust et 6 fichiers Vitest modifiés) — chaque test **dans le binaire qui
+**Tests prévus** (13 neufs ; 5 tests Rust et 7 fichiers Vitest modifiés) — chaque test **dans le binaire qui
 porte déjà son montage** (validation P1, R-5 ; C-15-1a2-27 : `validated_invoice`, `settle_cash`,
 `match_to_bank`, `monter` sont locaux à `invoice_settlement.rs`, les montages fournisseurs à
 `supplier_invoices_repository.rs`, ceux du solde à `invoice_write_off.rs`, ceux de R7 à `letterings.rs` ; un
@@ -497,7 +567,7 @@ binaire neuf les aurait recopiés) :
   (AC3 b : solde refusé, rien d'écrit ; AC2 c : 1 bis × 2 bis) ;
 - `crates/kesh-db/tests/supplier_invoices_repository.rs` — 1 neuf : `supplier_cancels_are_refused_under_a_frozen_lettering`
   (AC5, dépôt : rien d'écrit, facture `paid`) ; **modifiés** : `tail_motives_through_the_supplier_path` (+4
-  cas) et `invoice_cancel_motives_and_their_precedence` (+4 cas, plus le rang 6 si T0 le dit montable) — avec
+  cas) et `invoice_cancel_motives_and_their_precedence` (+4 cas ; rang 6 × 2 bis inatteignable, nommé) — avec
   leurs aides `monter` et `monter_achat` (motif 2 bis) ;
 - `crates/kesh-api/src/errors.rs` (`mod tests`) — 1 neuf : `closed_lettering_texts_follow_their_family` (AC7 a :
   chaque famille rend **sa** clé et le code `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` ; l'égalité mot pour mot
@@ -505,7 +575,7 @@ binaire neuf les aurait recopiés) :
 - `crates/kesh-api/tests/textes_coherents.rs` — **modifié** : `les_replis_rust_suivent_le_catalogue` (`TABLE` +
   quatre clés) ;
 - `crates/kesh-i18n/src/loader.rs` (`mod tests`) — **modifié** : `les_prescriptions_de_reouverture_disent_l_ordre`
-  (`CLES_569` + trois clés) ; `les_prescriptions_de_reouverture_sont_bornees` (G8-bis) **inchangé**, il les
+  (constante sœur `CLES_2_BIS`, trois clés, chaînée à la boucle anti-muet ; `CLES_569` inchangée) ; `les_prescriptions_de_reouverture_sont_bornees` (G8-bis) **inchangé**, il les
   contrôle par le domaine ;
 - `crates/kesh-api/tests/invoice_echeancier_e2e.rs` — 1 neuf : `settlement_cancel_blocked_by_closed_lettering`
   (AC3 par l'API : `cancelBlockedBy` de la vue, puis `POST …/cancel` → 409, même code, clé) ;
@@ -515,18 +585,20 @@ binaire neuf les aurait recopiés) :
   l'API : les deux prédicteurs, puis 409 et clé) ;
 - `frontend/src/lib/features/supplier-invoices/invoice-cancel.test.ts` (neuf, Vitest) — 1 : le motif a son
   texte, mot pour mot le FTL (AC7 b) ;
-- **modifiés** (Vitest, six fichiers) : `lib/shared/utils/settlement-cancel-blocked.test.ts` (code neuf, taille
+- **modifiés** (Vitest, **sept** fichiers) : `lib/shared/utils/settlement-cancel-blocked.test.ts` (code neuf, taille
   `4` → `5`, liste `:50-60`) et `features/reconciliation/reconciliation-cancel.test.ts` (code neuf, « huit »),
   `features/supplier-invoices/settlement-cancel.test.ts` et `features/invoices/InvoiceSettlements.test.ts`
   (listes figées, AC7 e), `lib/shared/i18n-keys.test.ts` (`sitesTotal` recompté),
-  `lib/shared/i18n-repli-divergent-actif.test.ts` (`REPLIS_A_SITE_UNIQUE` + trois clés).
+  `lib/shared/i18n-repli-divergent-actif.test.ts` (`REPLIS_A_SITE_UNIQUE` + trois clés) et
+  `lib/shared/i18n-un-repli-par-cle.test.ts` (`CLES_RELEVEES` 213 → 214, clé nommée au commentaire).
 
 *(Recompte depuis cette liste : 2 + 4 + 1 + 1 + 1 + 1 + 1 + 1 + 1 = **13 fonctions de test neuves** (12 Rust,
 1 Vitest) ; **5 tests Rust modifiés** (`la_precedence_de_l_annulation_lecture_et_ecriture`,
 `tail_motives_through_the_supplier_path`, `invoice_cancel_motives_and_their_precedence`,
 `les_replis_rust_suivent_le_catalogue`, `les_prescriptions_de_reouverture_disent_l_ordre`) et **4 aides** de
 montage (`monter` et `ecriture_attendue` d'`invoice_settlement.rs`, `monter` et `monter_achat` de
-`supplier_invoices_repository.rs`) ; **6 fichiers Vitest modifiés**. Aucun fichier de test neuf côté Rust. À la
+`supplier_invoices_repository.rs`) ; **7 fichiers Vitest modifiés** (les six de la P1 + `i18n-un-repli-par-cle.test.ts`, P2 R2-1 : le recompte
+« 6 » de la P1 omettait la garde `CLES_RELEVEES`). Aucun fichier de test neuf côté Rust. À la
 P1 : 12 neufs dont un fichier neuf de sept tests, 4 fichiers Vitest modifiés — décompte faux, il omettait le
 `match` exhaustif d'`invoice_settlement.rs`, R-3 = F-3.)*
 
@@ -575,6 +647,46 @@ P1 : 12 neufs dont un fichier neuf de sept tests, 4 fichiers Vitest modifiés �
 ### File List
 
 ## Change Log
+
+### Validation P2 — 2026-10-09 (Opus 5.5 ×2, lentilles R et F ; remédiation Sonnet 5.5, en autonomie) — **VALIDATION CLOSE**
+
+**Rapports** : `kesh-gate-logs/15-1a2-0-validate-p2-R.md` (**0 CRITICAL, 0 HIGH, 1 MEDIUM, 6 LOW**) et `…-F.md`
+(**0 CRITICAL, 0 HIGH, 0 MEDIUM, 6 LOW**). Recoupements : R2-2 = F2-2, R2-3 = F2-1, R2-5 = F2-3, R2-6 = F2-4 (R2-7 est voisin de F2-1 :
+`kesh-db/src/errors.rs:401-404`, que F ne nomme pas, est compté à part) → **1 MEDIUM** (R2-1) et **8 LOW
+distincts** (6 + 6 − 4 recoupements : R2-2, R2-3, R2-4, R2-5, R2-6, R2-7, F2-5, F2-6), soit **9 findings**
+(autant de lignes au tableau). **Trend** : P1 R 4 / F 3 MEDIUM → **P2 R 1 / F 0 MEDIUM** ; aucun CRITICAL/HIGH
+aux deux passes. Le MEDIUM de la P2 **n'est pas né de la remédiation P1** : omission d'origine (la clé
+fournisseur existait avant), **reconduite** par un recompte de P1 (« 6 fichiers Vitest »). Six des huit LOW
+naissent de la remédiation P1 ou de ses textes (R2-2, R2-3, R2-4, R2-5 — F le dit né de F-9 —, R2-6, F2-6) ; R2-7
+et F2-5 lui sont antérieurs. Signal D5 :
+sévérité en baisse, défauts locaux, aucun module gagné — sans objet. Chaque finding relu au code
+(`grep -nF` / `sed -n` sur `056997b0` ; `git diff --stat 056997b0 HEAD -- crates frontend docs` : vide).
+
+| finding | sév. | verdict | où |
+|---|---|---|---|
+| R2-1 — la garde `CLES_RELEVEES = 213` (`i18n-un-repli-par-cle.test.ts:125`, `:207`) rougit avec la clé neuve `supplier-invoices-cancel-blocked-lettering-closed` ; absente de l'inventaire | MEDIUM | **corrigé** : 213 → 214, clé nommée au commentaire ; AC7 (c) à trois gardes, T4 et la liste des tests la nomment ; **7** fichiers Vitest ; autres gardes grepées (`sitesTotal` +3 attendu, `REPLIS_A_SITE_UNIQUE` +3, `CANDIDATES_ATTENDUES` inchangée) | AC7 (c), T4, tests |
+| R2-2 = F2-2 — rang 6 × 2 bis « à trancher au T0 » | LOW | **corrigé** : **inatteignable** (`supplier_invoices.rs:1224-1228`), nommé au test, retiré du T0 | AC2 (c), T0, tests |
+| R2-3 = F2-1 — le grep des commentaires à rangs rate les trois commentaires des filtres et les énumérations en prose | LOW | **corrigé** : liste de **sites nommés** (dont `invoice_settlements_write.rs:838`, `supplier_invoices.rs:1061`, `:1267`, `kesh-api/src/errors.rs:3257-3258`, `:3316-3318`, `kesh-db/src/errors.rs:340`, `settlement-cancel-blocked.ts:4-6`) ; le grep devient un contrôle | D2, T2 |
+| R2-4 — extrait « en commençant par le plus récent » non discriminant (déjà porté par `FISCAL_YEAR_CLOSED`) | LOW | **corrigé** : extrait propre « toutes les lignes de ce lettrage » (`InvoiceSettlements.test.ts`, `reconciliation-cancel.test.ts`) | AC7 (e) |
+| R2-5 = F2-3 — `lock_books` / `unlock_books` refusent le jour ; dates passées non prescrites | LOW | **corrigé** : écritures datées strictement avant aujourd'hui (calendrier de `monter`), repli SQL du verrou **retiré** | D4 (1, 3) |
+| R2-6 = F2-4 — antécédent de « celui-ci » ambigu | LOW | **corrigé** : ordre des causes inversé dans les **douze** textes (C-15-1a2-30) | D2 |
+| R2-7 — `SettlementCancelBlocker::code()` (`kesh-db/src/errors.rs:401-404`) énumère les codes réemployés | LOW | **corrigé** : site nommé à la liste de D2/T2 | D2 |
+| F2-5 — la tolérance de D4 ne nomme pas la clôture d'un exercice **postérieur** | LOW | **corrigé** | D4 |
+| F2-6 — trois clés neuves dans `CLES_569`, « Les six clés de #569 » | LOW | **corrigé** : constante sœur `CLES_2_BIS: [&str; 3]` chaînée (C-15-1a2-30) | AC7 (a), T4, tests |
+
+**Les douze textes** relus contre `loader.rs` (G8 : `rouvr`/`réouv` au domaine fr-CH, `MARQUEURS` ; G8-bis :
+`JUSQU_A`) et `textes_coherents.rs` (G9 : littéral exact, apostrophes droites, aucun `"`) après l'inversion :
+marqueur d'ordre et borne présents dans chacun, verbe « rouvrir » conservé, aucune chaîne de `perime`.
+
+**Propagation** (valeurs grepées sur `_bmad-output`, `docs`, `crates`, `frontend/src`) : « clôturé ou suivi d'un
+exercice clôturé » (les douze textes réécrits ; les deux proses de D2 et AC1 le disent comme une description, non
+comme un texte rendu ; la 15-1a2-i `:603`, `:622` le dit pour le CHANGELOG, sans « celui-ci » — hors du défaut),
+`CLES_569` (fiche : trois sites rendus à la constante sœur), `213`, « 6 fichiers Vitest » / « six fichiers »,
+« montable » / « à trancher » / « plus le rang 6 ». **Recompte** (depuis ce fichier) : **8 critères actifs**
+(AC1–AC7, AC9), **7 tâches** (T0–T6), **13 tests neufs** (12 Rust, 1 Vitest), **5 tests Rust modifiés**,
+**7 fichiers Vitest modifiés** (+1), 4 aides de montage ; modules **4** / **11** (inchangé). Choix consigné :
+**C-15-1a2-30**. **Aucun code, aucun fichier hors fiche, registre et `sprint-status.yaml`.** La remédiation ne
+touche aucune ligne de production : **validation close**, prochaine étape `bmad-dev-story`.
 
 ### Validation P1 — 2026-10-09 (Sonnet 5.5 ×2, lentilles R et F ; remédiation Opus 5.5, seul remédiateur des fiches de la suite du lettrage, en autonomie)
 
