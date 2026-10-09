@@ -308,8 +308,10 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         // `!is_demo && > 2`, le drapeau `KESH_PRODUCTION_RESET`. *Un état se
         // contourne en amenant le système dans l'état voulu ; un droit, non.*
         //
-        // Elle efface `audit_log` (`kesh-seed`, `DELETE` non scopé) : c'était le
-        // second des trois chemins par lesquels la piste de contrôle se perdait.
+        // Elle efface `audit_log` (`kesh-seed`) — c'était le second des trois
+        // chemins par lesquels la piste de contrôle se perdait — et, depuis la
+        // Story 15-7b2 (#434), y INSCRIT son geste (`installation.reset`), en
+        // une transaction qui porte les trois gardes sous son verrou.
         .route("/api/v1/onboarding/reset", post(routes::onboarding::reset))
         // Story 25-6-b (#387, arbitrage 7) : REFIGER le PDF d'une facture dont
         // le fichier a disparu. Admin uniquement, refusé aux clés d'API : le

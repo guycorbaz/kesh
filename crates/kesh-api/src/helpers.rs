@@ -52,9 +52,14 @@ pub fn exceeds_len(value: &str, max: usize) -> bool {
 ///
 /// **Sémantique** :
 /// - Retourne `Ok(Company)` si la company existe et correspond au JWT.
-/// - Retourne `Err(AppError::Internal(...))` si la company n'existe pas
-///   (situation défensive : le JWT porte un company_id orphelin, ce qui ne
-///   devrait jamais arriver grâce à la FK RESTRICT de `users.company_id`).
+/// - Retourne `Err(AppError::Internal(...))` si la company n'existe pas : le
+///   JWT porte un `company_id` orphelin. `fk_users_company` est `ON DELETE
+///   CASCADE` et ne protège rien ici — c'est le cas #528 : une remise à zéro
+///   antérieure à la 0.13.0 effaçait la société sous `FOREIGN_KEY_CHECKS=0`.
+///   Depuis la Story 15-7b2, la remise à zéro et le choix de la langue
+///   rattachent les utilisateurs orphelins, mais un jeton émis **avant** ce
+///   rattachement garde l'id mort jusqu'à son renouvellement (`refresh`, ou
+///   reconnexion).
 ///
 /// Le 404 du scoping « resource not found in your company » est implémenté
 /// par le handler lui-même, pas par ce helper.

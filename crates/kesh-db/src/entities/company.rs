@@ -173,7 +173,10 @@ pub struct Company {
     pub website: Option<String>,
     /// `true` si la company est un placeholder créé automatiquement par le
     /// bootstrap (DB vide) pour permettre la création de l'admin du `.env`
-    /// (cf. fix catch-22 onboarding, Story v011-2). Repassé à `false` quand
+    /// (cf. fix catch-22 onboarding, Story v011-2) — ou remis à l'état
+    /// provisoire par la remise à zéro (Story 15-7b2) : **en place**
+    /// (`companies::reset_to_stub_in_tx`), ou inséré sur une base sans société
+    /// (`companies::insert_stub`). Repassé à `false` quand
     /// l'utilisateur renseigne ses vraies coordonnées (`set_coordinates`) ou
     /// choisit le path demo (`seed_demo`). Le frontend l'utilise pour un
     /// nudge de renommage non-bloquant.

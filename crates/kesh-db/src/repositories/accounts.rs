@@ -1131,7 +1131,9 @@ pub async fn bulk_create_from_chart_in_tx(
     query.fetch_all(&mut **tx).await.map_err(map_db_error)
 }
 
-/// Supprime tous les comptes d'une company (utilisé par reset_demo et tests).
+/// Supprime tous les comptes d'une company (tests). La remise à zéro
+/// (`kesh_seed::reset_demo`) ne l'emprunte pas : elle vide les tables de
+/// `backup::reset_cleared_tables()` en SQL, dans sa transaction.
 pub async fn delete_all_by_company(pool: &MySqlPool, company_id: i64) -> Result<u64, DbError> {
     // Supprimer d'abord les enfants (parent_id NOT NULL) puis les parents
     // En deux passes pour respecter la FK auto-référentielle

@@ -1834,10 +1834,16 @@ async fn snapshot(pool: &MySqlPool, table: &str) -> Vec<String> {
     .unwrap()
 }
 
-/// L'unique entrée d'audit après une remise à zéro : `(action, entity_type,
-/// entity_id, company_id, id, détails)`.
-async fn sole_entry(pool: &MySqlPool) -> (String, String, i64, Option<i64>, i64, Value) {
-    let rows: Vec<(String, String, i64, Option<i64>, i64, Vec<u8>)> = sqlx::query_as(
+/// Une ligne d'audit lue : `(action, entity_type, entity_id, company_id, id,
+/// détails)` — détails bruts.
+type AuditRow = (String, String, i64, Option<i64>, i64, Vec<u8>);
+
+/// [`AuditRow`], détails décodés.
+type AuditEntry = (String, String, i64, Option<i64>, i64, Value);
+
+/// L'unique entrée d'audit après une remise à zéro.
+async fn sole_entry(pool: &MySqlPool) -> AuditEntry {
+    let rows: Vec<AuditRow> = sqlx::query_as(
         "SELECT action, entity_type, entity_id, company_id, id, details_json FROM audit_log",
     )
     .fetch_all(pool)

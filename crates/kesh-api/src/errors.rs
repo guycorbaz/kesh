@@ -279,8 +279,10 @@ pub enum AppError {
     #[error("Étape d'onboarding déjà complétée")]
     OnboardingStepAlreadyCompleted,
 
-    /// Reset d'onboarding refusé par policy (production sans `KESH_PRODUCTION_RESET=1`,
-    /// ou production user au-delà du step 2). Distinct de `OnboardingStepAlreadyCompleted`
+    /// Reset d'onboarding refusé par policy : démonstration au-delà de l'étape 2
+    /// sans le drapeau `KESH_PRODUCTION_RESET` (sortir d'une démonstration
+    /// l'exige), ou installation de production au-delà de l'étape 2 (drapeau
+    /// posé ou non). Distinct de `OnboardingStepAlreadyCompleted`
     /// pour donner un signal actionnable au client (cf. Story 7-1, P6-L8).
     /// HTTP 403 Forbidden — code unique `ONBOARDING_RESET_FORBIDDEN`.
     #[error("Reset d'onboarding refusé par la configuration (production)")]
