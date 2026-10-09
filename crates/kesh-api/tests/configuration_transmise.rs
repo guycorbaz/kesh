@@ -41,8 +41,9 @@
 //! - **(D) Documentation d'exploitation** (15-14b, #575, #554) — le manuel
 //!   d'administration ne cite que des services et des volumes que les compose
 //!   déclarent (G14, G15) ; ses sections Synology sauvegardent la base par le
-//!   dump du pré-script et la restaurent par un autre compte (G16) ; le compose
-//!   de développement démarre sans `.env` (G17).
+//!   dump d'une tâche planifiée et la restaurent par un autre compte, sans
+//!   `DROP` possible sur une étape ratée (G16) ; le compose de développement
+//!   démarre sans `.env` (G17).
 //!
 //! # Ce qu'elle n'établit PAS (angles morts écrits)
 //!
@@ -2645,16 +2646,23 @@ fn ligne_de(source: &str, pos: usize) -> usize {
 
 /// Nombre de `docker compose exec` attendus dans les sections Synology :
 /// **zéro, par construction** — `docker-compose.prod.yml` n'a pas de service de
-/// base ; le pré-script et la recovery passent par un conteneur jetable
+/// base ; le dump et le rechargement passent par un conteneur jetable
 /// (`docker run … mariadb:10.11`), non par `exec` (C-15-14-10).
 const EXEC_SYNOLOGY_ATTENDUS: usize = 0;
 
-/// **G14** (#575) — chaque `docker compose exec [-T] <service>` du manuel
-/// d'administration nomme un service qui existe : dans les sections Synology,
-/// un service de `docker-compose.prod.yml` (groupe vide par construction,
-/// [`EXEC_SYNOLOGY_ATTENDUS`]) ; ailleurs, un service de `docker-compose.yml`
-/// (au moins une commande trouvée — anti-test-muet). Le défaut fermé : le
-/// pré-script Synology faisait `exec -T mariadb` sur un compose sans `mariadb`.
+/// **G14** (#575) — chaque service nommé par une commande `docker compose
+/// <exec|stop|start|restart|logs|pull|rm> [options] <service>` du manuel
+/// d'administration existe : dans les sections Synology, un service de
+/// `docker-compose.prod.yml` ; ailleurs, un service de `docker-compose.yml`. Au
+/// moins une commande dans chaque groupe (anti-test-muet) ; et, à part, aucun
+/// `exec` dans les sections Synology ([`EXEC_SYNOLOGY_ATTENDUS`]) — la base n'y
+/// est pas un service du compose. Le défaut fermé : le pré-script Synology
+/// faisait `exec -T mariadb` sur un compose sans `mariadb`.
+///
+/// **Formes non lues** (angle mort écrit) : `docker-compose` (v1),
+/// `docker compose -p <projet> …`, `docker exec <conteneur>` — aucune n'est dans
+/// le manuel au 2026-10-09. Le réseau des conteneurs jetables est contrôlé par
+/// G16 (b).
 #[test]
 fn les_services_cites_existent() {
     let source = manuel::desechapper(&lire(MANUEL_ADMIN));
@@ -2668,40 +2676,47 @@ fn les_services_cites_existent() {
         "standard lu à vide : {standard:?}"
     );
 
-    let exec =
-        Regex::new(r"docker compose(?:\s+-f\s+\S+)?\s+exec(?:\s+-T)?\s+([A-Za-z0-9_.-]+)").unwrap();
+    // `[ \t]` et non `\s` : une commande sans service (`docker compose ps`) ne
+    // doit pas prendre le premier mot de la ligne suivante pour un service.
+    let commande = Regex::new(
+        r"docker compose(?:[ \t]+-f[ \t]+\S+)?[ \t]+(exec|stop|start|restart|logs|pull|rm)((?:[ \t]+-[A-Za-z]+)*)[ \t]+([A-Za-z0-9_][A-Za-z0-9_.-]*)",
+    )
+    .unwrap();
     let mut erreurs = Vec::new();
-    let (mut dans, mut hors) = (0usize, 0usize);
-    for c in exec.captures_iter(&source) {
+    let (mut dans, mut hors, mut exec_dans) = (0usize, 0usize, 0usize);
+    for c in commande.captures_iter(&source) {
         let pos = c.get(0).unwrap().start();
-        let nom = &c[1];
+        let (verbe, nom) = (&c[1], &c[3]);
         let ligne = ligne_de(&source, pos);
         if synology.iter().any(|(d, f)| pos >= *d && pos < *f) {
             dans += 1;
+            if verbe == "exec" {
+                exec_dans += 1;
+            }
             if !prod.contains(nom) {
                 erreurs.push(format!(
-                    ":{ligne} (section Synology) : `exec {nom}`, service absent de docker-compose.prod.yml {prod:?}"
+                    ":{ligne} (section Synology) : `{verbe} {nom}`, service absent de docker-compose.prod.yml {prod:?}"
                 ));
             }
         } else {
             hors += 1;
             if !standard.contains(nom) {
                 erreurs.push(format!(
-                    ":{ligne} : `exec {nom}`, service absent de docker-compose.yml {standard:?}"
+                    ":{ligne} : `{verbe} {nom}`, service absent de docker-compose.yml {standard:?}"
                 ));
             }
         }
     }
-    if dans != EXEC_SYNOLOGY_ATTENDUS {
+    if exec_dans != EXEC_SYNOLOGY_ATTENDUS {
         erreurs.push(format!(
-            "sections Synology : {dans} `docker compose exec`, {EXEC_SYNOLOGY_ATTENDUS} attendu(s) — \
-             la base n'y est pas un service du compose"
+            "sections Synology : {exec_dans} `docker compose exec`, {EXEC_SYNOLOGY_ATTENDUS} attendu(s) — \
+             le dump et le rechargement passent par un conteneur jetable, pas par `exec`"
         ));
     }
-    if hors == 0 {
-        erreurs.push(
-            "aucun `docker compose exec` hors des sections Synology : extracteur muet ?".into(),
-        );
+    if dans == 0 || hors == 0 {
+        erreurs.push(format!(
+            "commandes trouvées : {dans} dans les sections Synology, {hors} ailleurs — extracteur muet ?"
+        ));
     }
     echouer_si(
         erreurs,
@@ -2711,30 +2726,36 @@ fn les_services_cites_existent() {
 
 /// **G15** (#575) — tout volume Docker nommé par le manuel d'administration
 /// (`/var/lib/docker/volumes/<x>`, « volume \texttt{<x>} ») est un volume de
-/// `docker-compose.yml`, avec ou sans le préfixe de projet `<…>_` que
-/// `docker volume ls` affiche ; et aucun chemin `@docker/volumes/` (volumes
-/// DSM d'un compose qui n'en déclare aucun) n'apparaît.
+/// `docker-compose.yml`, nu ou préfixé du nom de projet (`<projet>_`,
+/// `kesh_`… : ce que `docker volume ls` affiche) ; et aucun chemin
+/// `@docker/volumes/` n'apparaît **dans les sections Synology**, qui décrivent
+/// `docker-compose.prod.yml`, lequel n'a aucun volume nommé (ailleurs, un
+/// compose standard sur DSM y loge légitimement les siens).
 #[test]
 fn les_volumes_cites_existent() {
     let source = manuel::desechapper(&lire(MANUEL_ADMIN));
+    let synology = manuel::sections_synology(&source);
     let (_, volumes) = services_et_volumes(&lire("docker-compose.yml"));
     assert!(!volumes.is_empty(), "docker-compose.yml : aucun volume lu");
     let mut erreurs = Vec::new();
-    if let Some(p) = source.find("@docker/volumes/") {
-        erreurs.push(format!(
-            ":{} : chemin `@docker/volumes/` — docker-compose.prod.yml n'a aucun volume nommé",
-            ligne_de(&source, p)
-        ));
+    for (d, f) in &synology {
+        if let Some(p) = source[*d..*f].find("@docker/volumes/") {
+            erreurs.push(format!(
+                ":{} (section Synology) : chemin `@docker/volumes/` — docker-compose.prod.yml n'a aucun volume nommé",
+                ligne_de(&source, d + p)
+            ));
+        }
     }
     let cite =
         Regex::new(r"/var/lib/docker/volumes/([^\s}/]+)|volume\s+\\texttt\{([^}]+)\}").unwrap();
-    let prefixe = Regex::new(r"^<[^>]+>_").unwrap();
     let mut trouves = 0;
     for c in cite.captures_iter(&source) {
         trouves += 1;
         let brut = c.get(1).or_else(|| c.get(2)).unwrap().as_str();
-        let nom = prefixe.replace(brut, "");
-        if !volumes.contains(nom.as_ref()) {
+        let connu = volumes
+            .iter()
+            .any(|v| brut == v || brut.ends_with(&format!("_{v}")));
+        if !connu {
             erreurs.push(format!(
                 ":{} : volume `{brut}` absent de docker-compose.yml {volumes:?}",
                 ligne_de(&source, c.get(0).unwrap().start())
@@ -2752,55 +2773,74 @@ fn les_volumes_cites_existent() {
 
 /// Les « Hyper Backup » permis **hors** des sections Synology (G16 (e)) :
 /// liste fermée, un fragment normalisé par site, chacun trouvé **une et une
-/// seule** fois. `true` : fragment à renvoi, qui doit contenir le renvoi à
-/// `sec:backup-dsm` (le fragment va de l'occurrence à ce renvoi).
-const HYPER_BACKUP_HORS_SYNOLOGY: &[(&str, bool)] = &[
+/// seule** fois (une exemption morte ou ambiguë rougit). Un fragment de site à
+/// renvoi va de l'occurrence au `\ref{sec:backup-dsm}` qui la suit : le renvoi
+/// fait partie du fragment, si bien que sa présence est prouvée par le décompte
+/// lui-même — retirer le renvoi du manuel rend le fragment introuvable.
+const HYPER_BACKUP_HORS_SYNOLOGY: &[&str] = &[
     // Avertissement sur les droits des logs (root) : juste, sans rapport avec
-    // la base (inventaire de l'AC 1, classe (iii)) — exempté.
-    (
-        "Hyper Backup (qui tourne en root) les sauvegarde sans problème",
-        false,
-    ),
+    // la base (inventaire de l'AC 1, classe (iii)) — exempté, sans renvoi.
+    "Hyper Backup (qui tourne en root) les sauvegarde sans problème",
     // Tableau des méthodes : périmètre réel, renvoi conservé.
-    (
-        "Hyper Backup DSM & Dossier du compose (documents, logs, .env, backup/) + dump de la base par le pré-script (cf. \\ref{sec:backup-dsm}",
-        true,
-    ),
-    // `keshtip` : le filet quotidien n'est juste qu'avec le pré-script.
-    (
-        "Hyper Backup avec son pré-script, \\S\\ref{sec:backup-dsm}",
-        true,
-    ),
+    "Hyper Backup DSM & Dossier du compose (documents, logs, .env, backup/) + dump de la base par une tâche planifiée (cf. \\ref{sec:backup-dsm}",
+    // `keshtip` : le filet quotidien n'est juste qu'avec la tâche de dump.
+    "Hyper Backup avec sa tâche de dump, \\S\\ref{sec:backup-dsm}",
     // Annexe *Opérations en ligne de commande* : une seule occurrence.
-    ("Hyper Backup (\\S\\ref{sec:backup-dsm}", true),
+    "Hyper Backup (\\S\\ref{sec:backup-dsm}",
 ];
 
-/// **G16** (#575) — les sections Synology sauvegardent la base par le dump du
-/// pré-script, et la restaurent par un autre compte. Sur le manuel normalisé
-/// (`N`, [`manuel::normaliser`]) ; bornes prises sur le source brut, titre
-/// compris. Cinq clauses :
+/// Position du premier motif `re` dans `texte`, ou `None`.
+fn premier(texte: &str, re: &str) -> Option<usize> {
+    Regex::new(re).unwrap().find(texte).map(|m| m.start())
+}
+
+/// `set -e…o pipefail` (ou équivalent) : le script s'arrête sur toute erreur,
+/// pipelines compris.
+const SET_E_PIPEFAIL: &str = r"(?m)^set\s+-[a-zA-Z]*e[a-zA-Z]*o\s+pipefail\b";
+
+/// **G16** (#575) — les sections Synology sauvegardent la base par un dump
+/// planifié, et la restaurent par un autre compte, sans pouvoir détruire la base
+/// sur une étape ratée. Sur le source dont les commentaires LaTeX sont retirés
+/// ([`manuel::sans_commentaires`]), normalisé pour la prose ([`manuel::normaliser`]) ;
+/// bornes prises sur le source brut, titre compris. Le **script de dump** est
+/// le seul `lstlisting` des sections, hors recovery, qui contient
+/// `mariadb-dump` ; le **script de rechargement**, le seul `lstlisting` du
+/// `\paragraph{Recovery depuis Snapshot}` qui contient `gunzip -c`. Clauses :
 ///
-/// - **(a)** aucun `MARIADB_ROOT_PASSWORD` dans les sections Synology (le
-///   pré-script ne lit plus le `root` dans `.env`) ;
-/// - **(b)** le pré-script — le **seul** `lstlisting` des sections qui
-///   contient `mariadb-dump` — écrit le dump dans `<cible>.tmp`, qu'un `mv`
-///   renomme en `<cible>`, sans jamais écrire `<cible>` directement ;
-///   l'empreinte se calcule ensuite sur `<cible>`. `<cible>` et le fichier
-///   `--defaults-extra-file` sont **extraits** du listing, jamais recopiés ;
-/// - **(c)** le `\paragraph{Recovery depuis Snapshot}` cite `<cible>`,
-///   `gunzip -c`, et un `--defaults-extra-file=<f>` dont ni `<f>` ni le
-///   fichier d'hôte monté sur `<f>` ne sont ceux du pré-script ;
+/// - **(a)** aucun `MARIADB_ROOT_PASSWORD` dans les sections Synology ;
+/// - **(b)** script de dump : `set -euo pipefail` et `umask 077` avant le
+///   premier `docker run` (sans `pipefail`, `… | gzip` réussit même quand le
+///   dump échoue, et un `.gz` vide remplacerait celui de la veille ; sans
+///   `umask`, le dump — qui porte des secrets — serait lisible de tous) ;
+///   `--single-transaction` ; écriture dans `<cible>.tmp` qu'un `mv` renomme en
+///   `<cible>`, jamais `> <cible>` ; empreinte sur `<cible>` après le `mv` ; un
+///   seul `--defaults-extra-file`, monté par `-v` ; réseau `--network` déclaré
+///   par `docker-compose.prod.yml`. `<cible>`, le fichier d'identifiants et le
+///   réseau sont **extraits**, jamais recopiés ;
+/// - **(c)** script de rechargement : cite `<cible>` ; `set -euo pipefail` avant
+///   le premier `docker run` ; dans cet ordre, `sha256sum -c`, un `mariadb-dump`
+///   de l'état courant, `docker compose stop kesh-api`, puis `gunzip -c … |
+///   docker run … -i` (sans `-i`, Docker ferme l'entrée et `mariadb` charge un
+///   flux vide en réussissant) ; chaque `--defaults-extra-file`, et le fichier
+///   d'hôte monté dessus, diffèrent de ceux du script de dump ;
 /// - **(d)** aucune commande `rm` ne vise `<cible>` (un `rm` du `.tmp` reste
-///   permis ; `--rm` de `docker run` n'est pas une commande ; `rm` se
-///   reconnaît en tête de ligne, après un blanc, `;`, `&`, `|`, `(`, une
-///   accolade — `\keshcommand{rm …}` en prose — ou un accent grave ; la cible
-///   suivie de `;`, d'un guillemet simple ou double, d'une accolade, d'un
-///   blanc ou de la fin de ligne, sous tout chemin, relatif ou absolu), le fragment
-///   `supprimer le dump` est absent, et « Laissez le post-script vide » est
-///   présent. **Angle mort** : une autre tournure en prose, ou `unlink`,
-///   `find -delete`, ne sont pas vus — la phrase positive est le filet ;
+///   permis ; `--rm` de `docker run` n'est pas une commande ; `rm` se reconnaît
+///   en tête de ligne, après un blanc, `;`, `&`, `|`, `(`, `/` — `/bin/rm` —,
+///   une accolade — `\keshcommand{rm …}` — ou un accent grave ; la cible suivie
+///   de tout caractère hors nom de fichier, sous tout chemin), le fragment
+///   `supprimer le dump` est absent, et « Ne supprimez pas le dump » est
+///   présent. **Angles morts** : jokers (`rm kesh_pre*`, `rm -rf dump/`),
+///   `truncate`, `: > <cible>`, `mv <cible> …`, `unlink`, `find -delete`, et
+///   toute autre tournure en prose — la phrase positive est le filet ;
 /// - **(e)** hors des sections, chaque « Hyper Backup » tombe dans un fragment
-///   de [`HYPER_BACKUP_HORS_SYNOLOGY`].
+///   de [`HYPER_BACKUP_HORS_SYNOLOGY`] ;
+/// - **(f)** Hyper Backup n'a pas de pré-script (constaté sur DSM le
+///   2026-10-09) : aucun « post-script » ni chemin de menu `→ Pré-script` dans
+///   les sections ; le « Planificateur de tâches » y est nommé, avec la
+///   commande `bash <script de dump>` dont le chemin est extrait du listing.
+///
+/// **Couplage écrit** : (c) exige `gunzip -c` ; un texte juste écrit `zcat` ou
+/// `gzip -dc` rougirait — à élargir alors.
 #[test]
 fn synology_sauvegarde_la_base_par_le_dump() {
     let brut = lire(MANUEL_ADMIN);
@@ -2816,8 +2856,24 @@ fn synology_sauvegarde_la_base_par_le_dump() {
             && parts[1].contains("Snapshot Replication"),
         "sec:backup-dsm mal bornée (titre compris)"
     );
-    let normees: Vec<String> = parts.iter().map(|p| manuel::normaliser(p)).collect();
+    let normees: Vec<String> = parts
+        .iter()
+        .map(|p| manuel::normaliser(&manuel::sans_commentaires(p)))
+        .collect();
     let mut erreurs = Vec::new();
+
+    // Bornes du \paragraph{Recovery depuis Snapshot}, jusqu'au \paragraph,
+    // \subsubsection, \subsection ou \section suivant.
+    let titre = "\\paragraph{Recovery depuis Snapshot}";
+    let debut = brut[bornes[1].0..bornes[1].1]
+        .find(titre)
+        .map(|i| bornes[1].0 + i)
+        .expect("(c) \\paragraph{Recovery depuis Snapshot} absent de sec:backup-dsm");
+    let suivant = Regex::new(r"\\(?:paragraph|subsubsection|subsection|section)\*?\{").unwrap();
+    let fin = suivant
+        .find(&brut[debut + titre.len()..])
+        .map(|m| debut + titre.len() + m.start())
+        .expect("(c) rien ne suit la recovery");
 
     // (a)
     for (n, label) in normees.iter().zip(manuel::LABELS_SYNOLOGY) {
@@ -2830,23 +2886,55 @@ fn synology_sauvegarde_la_base_par_le_dump() {
         "(a) sec:backup-dsm normalisée ne nomme pas DATABASE_URL : lecture à vide ?"
     );
 
-    // (b)
-    let pre: Vec<String> = parts
+    // (b) — le script de dump : listings des sections, hors recovery.
+    let hors_recovery: Vec<String> = bornes
+        .iter()
+        .map(|(d, f)| manuel::hors_sections(&brut[*d..*f], &[]))
+        .enumerate()
+        .map(|(i, p)| {
+            if i == 1 {
+                let (d, f) = (debut - bornes[1].0, fin - bornes[1].0);
+                manuel::hors_sections(&p, &[(d, f)])
+            } else {
+                p
+            }
+        })
+        .collect();
+    let dumps: Vec<String> = hors_recovery
         .iter()
         .flat_map(|p| manuel::listings(p))
         .filter(|l| l.contains("mariadb-dump"))
         .map(|l| manuel::desechapper(&l))
         .collect();
     assert_eq!(
-        pre.len(),
+        dumps.len(),
         1,
-        "(b) un et un seul listing `mariadb-dump` attendu dans les sections Synology"
+        "(b) un et un seul listing `mariadb-dump` attendu hors recovery dans les sections Synology"
     );
-    let script = &pre[0];
+    let script = &dumps[0];
+    let premier_run = script
+        .find("docker run")
+        .expect("(b) script de dump sans `docker run`");
+    match premier(script, SET_E_PIPEFAIL) {
+        Some(p) if p < premier_run => {}
+        _ => erreurs.push(
+            "(b) script de dump sans `set -euo pipefail` avant le `docker run` : un dump raté passerait".into(),
+        ),
+    }
+    match premier(script, r"(?m)^umask\s+0?077\b") {
+        Some(p) if p < premier_run => {}
+        _ => erreurs.push(
+            "(b) script de dump sans `umask 077` avant le `docker run` : dump lisible de tous"
+                .into(),
+        ),
+    }
+    if !script.contains("--single-transaction") {
+        erreurs.push("(b) script de dump sans `--single-transaction` : dump incohérent".into());
+    }
     let mv = Regex::new(r"\bmv\s+(\S+)\.tmp\s+(\S+)").unwrap();
     let c = mv
         .captures(script)
-        .unwrap_or_else(|| panic!("(b) pré-script sans `mv <cible>.tmp <cible>` :\n{script}"));
+        .unwrap_or_else(|| panic!("(b) script de dump sans `mv <cible>.tmp <cible>` :\n{script}"));
     let cible = c[2].to_string();
     assert_eq!(&c[1], cible, "(b) `mv` : la source n'est pas `<cible>.tmp`");
     let pos_mv = c.get(0).unwrap().start();
@@ -2894,57 +2982,124 @@ fn synology_sauvegarde_la_base_par_le_dump() {
     assert_eq!(
         f_pre.len(),
         1,
-        "(b) pré-script : un `--defaults-extra-file` attendu"
+        "(b) script de dump : un `--defaults-extra-file` attendu"
     );
     let f_pre = &f_pre[0];
     let hote_pre = montage(script, f_pre)
-        .unwrap_or_else(|| panic!("(b) pré-script : `{f_pre}` n'est pas monté par `-v`"));
+        .unwrap_or_else(|| panic!("(b) script de dump : `{f_pre}` n'est pas monté par `-v`"));
+    let (_, _, reseaux_prod) = compose_reseaux(&lire("docker-compose.prod.yml"));
+    for c in Regex::new(r"--network\s+(\S+)")
+        .unwrap()
+        .captures_iter(script)
+    {
+        if !reseaux_prod.contains(&c[1]) {
+            erreurs.push(format!(
+                "(b) réseau `{}` absent de docker-compose.prod.yml {reseaux_prod:?}",
+                &c[1]
+            ));
+        }
+    }
 
-    // (c)
-    let debut = brut[bornes[1].0..bornes[1].1]
-        .find("\\paragraph{Recovery depuis Snapshot}")
-        .map(|i| bornes[1].0 + i)
-        .expect("(c) \\paragraph{Recovery depuis Snapshot} absent de sec:backup-dsm");
-    let titre = "\\paragraph{Recovery depuis Snapshot}".len();
-    let suivant = Regex::new(r"\\(?:paragraph|subsubsection|subsection|section)\*?\{").unwrap();
-    let fin = suivant
-        .find(&brut[debut + titre..])
-        .map(|m| debut + titre + m.start())
-        .expect("(c) rien ne suit la recovery");
-    let recovery = manuel::desechapper(&brut[debut..fin]);
-    for attendu in [cible.as_str(), "gunzip -c"] {
-        if !recovery.contains(attendu) {
-            erreurs.push(format!(
-                "(c) la recovery ne cite pas `{attendu}` : le dump n'est pas rechargé"
-            ));
-        }
-    }
-    let f_rec: Vec<String> = option
-        .captures_iter(&recovery)
-        .map(|c| c[1].to_string())
+    // (c) — le script de rechargement.
+    let rechargements: Vec<String> = manuel::listings(&brut[debut..fin])
+        .into_iter()
+        .filter(|l| l.contains("gunzip -c"))
+        .map(|l| manuel::desechapper(&l))
         .collect();
-    if f_rec.is_empty() {
-        erreurs.push("(c) la recovery n'a aucun `--defaults-extra-file`".into());
+    if rechargements.len() != 1 {
+        erreurs.push(format!(
+            "(c) {} listing(s) `gunzip -c` dans la recovery, 1 attendu : le dump n'est pas rechargé",
+            rechargements.len()
+        ));
     }
-    for f in &f_rec {
-        if f == f_pre {
-            erreurs.push(format!(
-                "(c) la recovery lit `{f}`, le fichier du pré-script, dont le compte ne peut que lire"
-            ));
+    if let Some(recovery) = rechargements.first() {
+        if !recovery.contains(cible.as_str()) {
+            erreurs.push(format!("(c) le rechargement ne cite pas `{cible}`"));
         }
-        match montage(&recovery, f) {
-            Some(h) if h == hote_pre => erreurs.push(format!(
-                "(c) la recovery monte `{h}`, le fichier d'identifiants du pré-script"
-            )),
-            Some(_) => {}
-            None => erreurs.push(format!("(c) recovery : `{f}` n'est pas monté par `-v`")),
+        let run = recovery.find("docker run").unwrap_or(usize::MAX);
+        match premier(recovery, SET_E_PIPEFAIL) {
+            Some(p) if p < run => {}
+            _ => erreurs.push(
+                "(c) rechargement sans `set -euo pipefail` avant le premier `docker run` : une étape ratée n'arrêterait pas le DROP".into(),
+            ),
+        }
+        let etapes = [
+            ("`sha256sum -c`", r"sha256sum\s+-c\b"),
+            ("dump de l'état courant (`mariadb-dump`)", r"mariadb-dump\b"),
+            (
+                "`docker compose stop kesh-api`",
+                r"docker compose stop kesh-api\b",
+            ),
+            ("`gunzip -c`", r"gunzip -c\b"),
+        ];
+        let mut precedente: Option<(&str, usize)> = None;
+        for (nom, re) in etapes {
+            match premier(recovery, re) {
+                None => erreurs.push(format!("(c) rechargement sans {nom}")),
+                Some(p) => {
+                    if let Some((avant, q)) = precedente
+                        && p < q
+                    {
+                        erreurs.push(format!("(c) {nom} vient avant {avant}"));
+                    }
+                    precedente = Some((nom, p));
+                }
+            }
+        }
+        let ligne_gunzip = recovery
+            .lines()
+            .find(|l| l.contains("gunzip -c"))
+            .unwrap_or("");
+        let apres_run = ligne_gunzip.split("docker run").nth(1).unwrap_or("");
+        let interactif = Regex::new(r"^-[a-zA-Z]*i[a-zA-Z]*$").unwrap();
+        if !apres_run
+            .split_whitespace()
+            .take_while(|t| t.starts_with('-'))
+            .any(|t| interactif.is_match(t))
+        {
+            erreurs.push(
+                "(c) `gunzip -c … | docker run` sans `-i` : Docker ferme l'entrée, rien n'est rechargé".into(),
+            );
+        }
+        let f_rec: Vec<String> = option
+            .captures_iter(recovery)
+            .map(|c| c[1].to_string())
+            .collect();
+        if f_rec.is_empty() {
+            erreurs.push("(c) le rechargement n'a aucun `--defaults-extra-file`".into());
+        }
+        for f in &f_rec {
+            if f == f_pre {
+                erreurs.push(format!(
+                    "(c) le rechargement lit `{f}`, le fichier du script de dump, dont le compte ne peut que lire"
+                ));
+            }
+        }
+        // **Tous** les montages, non le premier : le script monte le même
+        // chemin deux fois (dump de l'état courant, puis rechargement).
+        let tous = Regex::new(r"-v\s+(\S+?):(\S+?)(?::ro)?(?:\s|$)").unwrap();
+        let montes: Vec<(String, String)> = tous
+            .captures_iter(recovery)
+            .map(|c| (c[1].to_string(), c[2].to_string()))
+            .collect();
+        for f in &f_rec {
+            if !montes.iter().any(|(_, conteneur)| conteneur == f) {
+                erreurs.push(format!("(c) rechargement : `{f}` n'est pas monté par `-v`"));
+            }
+        }
+        for (hote, conteneur) in &montes {
+            if *hote == hote_pre {
+                erreurs.push(format!(
+                    "(c) le rechargement monte `{hote}` (sur `{conteneur}`), le fichier d'identifiants du script de dump"
+                ));
+            }
         }
     }
 
     // (d) — sur le source brut dé-échappé (les sauts de ligne bornent une commande).
     let base = cible.rsplit('/').next().unwrap();
     let rm = Regex::new(&format!(
-        r"(?m)(?:^|[\s;&|({{`]){}\s+[^;&|\n]*?{}(?:[^A-Za-z0-9_.-]|$)",
+        r"(?m)(?:^|[\s;&|({{`/]){}\s+[^;&|\n]*?{}(?:[^A-Za-z0-9_.-]|$)",
         "rm",
         regex::escape(base)
     ))
@@ -2961,23 +3116,20 @@ fn synology_sauvegarde_la_base_par_le_dump() {
     if normees.iter().any(|n| n.contains("supprimer le dump")) {
         erreurs.push("(d) « supprimer le dump » : le post-script d'avant".into());
     }
-    if !normees[1].contains("Laissez le post-script vide") {
-        erreurs.push("(d) phrase « Laissez le post-script vide » absente".into());
+    if !normees[1].contains("Ne supprimez pas le dump") {
+        erreurs.push("(d) phrase « Ne supprimez pas le dump » absente".into());
     }
 
     // (e)
-    let hors = manuel::normaliser(&manuel::hors_sections(&brut, &bornes));
+    let hors = manuel::normaliser(&manuel::sans_commentaires(&manuel::hors_sections(
+        &brut, &bornes,
+    )));
     let mut couverts: Vec<(usize, usize)> = Vec::new();
-    for (fragment, a_renvoi) in HYPER_BACKUP_HORS_SYNOLOGY {
+    for fragment in HYPER_BACKUP_HORS_SYNOLOGY {
         let n = hors.matches(fragment).count();
         if n != 1 {
             erreurs.push(format!(
                 "(e) fragment trouvé {n} fois (1 attendue — exemption morte ou ambiguë) : « {fragment} »"
-            ));
-        }
-        if *a_renvoi && !fragment.contains("\\ref{sec:backup-dsm}") {
-            erreurs.push(format!(
-                "(e) fragment à renvoi sans renvoi : « {fragment} »"
             ));
         }
         couverts.extend(hors.match_indices(fragment).map(|(i, f)| (i, i + f.len())));
@@ -3003,7 +3155,43 @@ fn synology_sauvegarde_la_base_par_le_dump() {
             ));
         }
     }
+
+    // (f)
+    let post = Regex::new(r"(?i)post-?script|→\s*pré-?script").unwrap();
+    for (n, label) in normees.iter().zip(manuel::LABELS_SYNOLOGY) {
+        if let Some(m) = post.find(n) {
+            erreurs.push(format!(
+                "(f) {label} : « {} » — Hyper Backup n'a pas de pré-script ni de post-script",
+                m.as_str()
+            ));
+        }
+    }
+    let chemin = Regex::new(r"(?m)^#\s*(/\S+\.sh)\b")
+        .unwrap()
+        .captures(script)
+        .map(|c| c[1].to_string())
+        .expect("(f) script de dump sans son chemin en commentaire de tête");
+    if !normees[1].contains("Planificateur de tâches") {
+        erreurs.push("(f) le Planificateur de tâches n'est pas nommé".into());
+    }
+    if !normees[1].contains(&format!("bash {chemin}")) {
+        erreurs.push(format!(
+            "(f) la tâche planifiée ne lance pas `bash {chemin}`"
+        ));
+    }
     echouer_si(erreurs, "G16 — la sauvegarde Synology passe par le dump");
+}
+
+/// Services, volumes et réseaux (`networks:` de tête) d'un compose.
+fn compose_reseaux(source: &str) -> (BTreeSet<String>, BTreeSet<String>, BTreeSet<String>) {
+    let (services, volumes) = services_et_volumes(source);
+    let docs = YamlLoader::load_from_str(source).expect("compose : YAML lisible");
+    let reseaux = match &docs[0]["networks"] {
+        Yaml::Hash(h) => h.keys().filter_map(scalaire).collect(),
+        _ => BTreeSet::new(),
+    };
+    assert!(!reseaux.is_empty(), "compose : aucun réseau de tête lu");
+    (services, volumes, reseaux)
 }
 
 /// **G17** (#554) — le compose de développement démarre **sans `.env`** : les

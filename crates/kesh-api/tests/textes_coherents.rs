@@ -19,6 +19,7 @@
 //! | G9 | #569, #547 | les replis Rust égalent la valeur fr-CH de leur clé |
 //! | G12 | #569 | le manuel et le guide d'API disent l'ordre de réouverture |
 //! | G18 | #127 | une installation porte une société (Story 15-14b) |
+//! | G18-bis | #127 | le manuel utilisateur dit comment on entre : compte créé par l'administrateur, connexion par identifiant |
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -786,8 +787,14 @@ fn documentation_utilisateur() -> Vec<(String, String)> {
 /// compte les occurrences qui se recouvrent (`plusieurs companies` et
 /// `companies`) comme la commande `perl` d'inventaire (C-15-14-27).
 /// « compte dédié » n'y entre que dans ses locutions `ou` / `via` : l'expression
-/// nue est d'usage courant (« un compte dédié aux frais »).
+/// nue est d'usage courant (« un compte dédié aux frais »). Élargi en revue de
+/// code P1 (E-2, A-6) aux tournures plurielles et au titre « Multi-sociétés ».
 const MULTI_SOCIETE: &[&str] = &[
+    r"(?i)toutes? (?:les )?(?:sociétés|entreprises|companies)",
+    r"(?i)ensemble des sociétés",
+    r"(?i)entre (?:plusieurs )?(?:sociétés|dossiers)",
+    r"(?i)(?:autre|seconde|deuxième) société",
+    r"(?i)multi-soci\w*",
     r"(?i)plusieurs (?:sociétés|companies)",
     r"(?i)\bcompanies\b",
     r"(?i)(?:ou|via) un compte dédié",
@@ -828,7 +835,44 @@ const MULTI_SOCIETE_ASSUME: &[(&str, &str)] = &[
     ),
     // Nom de table.
     ("README.md", "FK vers `companies.id`"),
+    // Ajoutés en revue de code P1 (motif élargi) — absence ou modèle, vrais
+    // pour une installation à une société.
+    // L'absence, deux phrases distinctes (public visé ; configuration).
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "Un dossier = une instance : l'interface ne crée pas de seconde société",
+    ),
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "Mais une installation porte une société : l'interface ne crée pas de seconde société",
+    ),
+    // Le modèle de données.
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "Le modèle de données de Kesh est multi-société",
+    ),
+    // L'absence.
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "aucun écran ne rattache un compte à une autre société",
+    ),
+    // Le modèle de données.
+    (
+        "docs/manual/fr/marketing-brochure.tex",
+        "Le modèle de données est multi-société",
+    ),
+    // L'absence, et l'intention de feuille de route.
+    (
+        "docs/manual/fr/marketing-brochure.tex",
+        "(La bascule entre sociétés depuis l'interface reste à venir.)",
+    ),
 ];
+
+/// Nombre **exact** d'occurrences de [`MULTI_SOCIETE`] dans la documentation
+/// utilisateur, toutes assumées (recompté le 2026-10-09 en revue de code P1 :
+/// 7 de la forme d'origine + 9 du motif élargi). Un motif qui cesserait de voir
+/// un site rougit (A-9, B10 : `>=` laissait passer une occurrence perdue).
+const MULTI_SOCIETE_TOTAL: usize = 16;
 
 /// **G18** (#127) — une installation porte une société : la documentation
 /// utilisateur ne promet pas le contraire. Chaque occurrence de
@@ -846,7 +890,7 @@ fn une_installation_une_societe() {
     let mut total = 0;
     let mut admin = String::new();
     for (nom, brut) in documentation_utilisateur() {
-        let texte = normaliser(&brut);
+        let texte = normaliser(&manuel::sans_commentaires(&brut));
         if nom == "docs/manual/fr/admin-manual.tex" {
             admin = texte.clone();
         }
@@ -886,12 +930,12 @@ fn une_installation_une_societe() {
             }
         }
     }
-    // Anti-test-muet : les occurrences assumées sont bien vues par les motifs
-    // (7 au 2026-10-09 — deux pour le premier fragment).
-    assert!(
-        total >= MULTI_SOCIETE_ASSUME.len(),
-        "motifs muets : {total} occurrence(s)"
-    );
+    // Anti-test-muet : les motifs voient exactement les occurrences assumées.
+    if total != MULTI_SOCIETE_TOTAL {
+        erreurs.push(format!(
+            "{total} occurrence(s) du motif, {MULTI_SOCIETE_TOTAL} attendues : motif muet ou site neuf"
+        ));
+    }
     if !admin.contains("une instance par dossier") {
         erreurs
             .push("admin-manual.tex : phrase positive « une instance par dossier » absente".into());
@@ -899,6 +943,43 @@ fn une_installation_une_societe() {
     assert!(
         erreurs.is_empty(),
         "G18 — {} écart(s) :\n  - {}",
+        erreurs.len(),
+        erreurs.join("\n  - ")
+    );
+}
+
+/// **G18-bis** (#127, revue de code P1 A-6) — le manuel utilisateur dit comment
+/// on entre dans Kesh : aucune invitation par e-mail (il n'en existe pas — le
+/// compte est créé par l'administrateur, `CreateUserRequest`), aucune connexion
+/// par e-mail (on se connecte par son identifiant, `LoginRequest`), aucun
+/// renvoi à un écran de changement de mot de passe en session (il n'en existe
+/// pas). Sur le texte normalisé, commentaires retirés.
+#[test]
+fn le_manuel_utilisateur_dit_comment_on_entre() {
+    let texte = normaliser(&manuel::sans_commentaires(&lire(
+        "docs/manual/fr/user-manual.tex",
+    )));
+    let mut erreurs = Vec::new();
+    for interdit in [
+        r"(?i)invitation par e-?mail",
+        r"(?i)saisir votre (?:adresse )?e-?mail et votre mot de passe",
+        r"(?i)passez par votre compte une fois connecté",
+    ] {
+        if let Some(m) = Regex::new(interdit).unwrap().find(&texte) {
+            erreurs.push(format!("« {} »", m.as_str()));
+        }
+    }
+    for exige in [
+        "Saisir votre identifiant (nom d'utilisateur) et votre mot de passe",
+        "L'administrateur de l'installation crée votre compte",
+    ] {
+        if !texte.contains(exige) {
+            erreurs.push(format!("phrase absente : « {exige} »"));
+        }
+    }
+    assert!(
+        erreurs.is_empty(),
+        "G18-bis — {} écart(s) :\n  - {}",
         erreurs.len(),
         erreurs.join("\n  - ")
     );

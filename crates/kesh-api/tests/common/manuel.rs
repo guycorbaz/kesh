@@ -125,3 +125,45 @@ pub fn listings(extrait: &str) -> Vec<String> {
         .map(|c| c[1].to_string())
         .collect()
 }
+
+/// Le source privé de ses **commentaires LaTeX** : de tout `%` non échappé
+/// (`\%` reste) jusqu'à la fin de la ligne, **hors** des `lstlisting`, où `%`
+/// est littéral (`date +%Y%m%d`). Sans cela, une phrase exigée par une garde
+/// pourrait n'exister qu'en commentaire, absente du PDF, et la garde passerait
+/// (revue de code P1 de la 15-14b, B10). La commande `perl` d'inventaire de
+/// l'AC 3 ne retire pas les commentaires : les deux ne diffèrent que sur une
+/// ligne commentée qui porterait le motif (aucune au 2026-10-09).
+pub fn sans_commentaires(source: &str) -> String {
+    let mut out = String::with_capacity(source.len());
+    let mut dans_listing = false;
+    for ligne in source.split_inclusive('\n') {
+        if dans_listing {
+            out.push_str(ligne);
+            if ligne.contains("\\end{lstlisting}") {
+                dans_listing = false;
+            }
+            continue;
+        }
+        let mut coupe = None;
+        let octets = ligne.as_bytes();
+        for (i, b) in octets.iter().enumerate() {
+            if *b == b'%' && (i == 0 || octets[i - 1] != b'\\') {
+                coupe = Some(i);
+                break;
+            }
+        }
+        match coupe {
+            Some(i) => {
+                out.push_str(&ligne[..i]);
+                if ligne.ends_with('\n') {
+                    out.push('\n');
+                }
+            }
+            None => out.push_str(ligne),
+        }
+        if ligne.contains("\\begin{lstlisting}") && !ligne.contains("\\end{lstlisting}") {
+            dans_listing = true;
+        }
+    }
+    out
+}
