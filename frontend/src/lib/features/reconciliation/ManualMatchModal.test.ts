@@ -227,3 +227,36 @@ describe('ManualMatchModal', () => {
 		// flow apiClient → isApiError typed guard.
 	});
 });
+
+// Story 15-6d (AC4, test 10, #524) — le compte comptable du compte bancaire n'est pas proposé
+// comme contrepartie, même numéroté en classe 5/6/7 (plan atypique) ; `null` → aucun filtrage
+// (la garde serveur tranche).
+describe('ManualMatchModal — compte de la banque écarté (Story 15-6d)', () => {
+	// Compte d'actif numéroté en classe 5 : seul le filtre par identifiant l'écarte.
+	const atypicalBank = makeAccount(104, '5999', 'Banque atypique', 'Asset');
+
+	async function proposedNumbers(bankLedgerAccountId: number | null): Promise<string[]> {
+		const { getByRole, findAllByRole, unmount } = render(ManualMatchModal, {
+			open: true,
+			onOpenChange: () => {},
+			bankAccountId: 17,
+			proposal: makeProposal(),
+			accounts: [...makeAccounts(), atypicalBank],
+			bankLedgerAccountId,
+			onSuccess: () => {},
+		});
+		await fireEvent.focus(getByRole('textbox', { name: 'Compte' }));
+		const options = await findAllByRole('option');
+		const numbers = options.map((o) => o.querySelector('.font-mono')?.textContent?.trim() ?? '');
+		unmount();
+		return numbers.sort();
+	}
+
+	it("n'offre pas le compte passé en bankLedgerAccountId, même en classe 5/6/7", async () => {
+		expect(await proposedNumbers(104)).toEqual(['5200', '6810', '7510']);
+	});
+
+	it('bankLedgerAccountId null → aucun filtrage au-delà des classes 5/6/7', async () => {
+		expect(await proposedNumbers(null)).toEqual(['5200', '5999', '6810', '7510']);
+	});
+});

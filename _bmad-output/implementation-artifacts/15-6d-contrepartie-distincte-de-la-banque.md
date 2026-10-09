@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev
+done
 
 <!-- Créée le 2026-10-08 à la validation P1 de la 15-6b (finding F1 = R3, #524 ; finding F4 :
      découpage, plus de cinq modules), en autonomie. Choix propres : C-15-6-9 (qui révise C-15-6-6),
@@ -231,7 +231,7 @@ banque`, nulle au grand livre**.
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Rebase après la 15-5b et la 15-6b** (et la 15-5c si mergée — elle touche
+- [x] **T0 — Rebase après la 15-5b et la 15-6b** (et la 15-5c si mergée — elle touche
   `ReconciliationProposals.svelte` et `ReconciliationProposals.test.ts`) ; relire les numéros de ligne
   de `post_manual`, `accept_one_rule`, `accept_one_split`, `post_split` et `get_proposals` ; vérifier
   où la 15-5b a placé `ACCOUNT_NOT_POSTABLE` (le refus de cette story le précède), comment elle a réduit
@@ -239,14 +239,14 @@ banque`, nulle au grand livre**.
   réutiliser, ou le dupliquer dans chaque binaire de test qui l'emploie : tests 2, 5, 8, 9) ; reprendre
   le nom réel du helper de comparaison de la 15-6b ; relever le code que rend aujourd'hui une règle
   ordinaire sur un compte de banque archivé (AC2) ; refaire le grep de `docs/api-external.md` (AC7).
-- [ ] **T1 — Gardes serveur** (AC1, AC2 dont l'étape du compte de banque actif, AC3 et ses deux
+- [x] **T1 — Gardes serveur** (AC1, AC2 dont l'étape du compte de banque actif, AC3 et ses deux
   fonctions de refus) et proposition (AC2 bis, commentaire du site d'appel).
-- [ ] **T2 — Écrans** (AC4, AC5) — dont le mock de `bank-accounts.api` dans
+- [x] **T2 — Écrans** (AC4, AC5) — dont le mock de `bank-accounts.api` dans
   `ReconciliationProposals.test.ts` ; libellé (AC6) ou signalement.
-- [ ] **T3 — Tests** (§ *Tests*), chaque test d'une garde neuve **rougit d'abord** ; les témoins 8
+- [x] **T3 — Tests** (§ *Tests*), chaque test d'une garde neuve **rougit d'abord** ; les témoins 8
   et 9 (gardes ventilées existantes) passent avant **et** après.
-- [ ] **T4 — Documentation** : `docs/api-external.md` (AC7), manuel + PDF (AC8), CHANGELOG (AC9).
-- [ ] **T5 — Gates** : backend complet, frontend complet, E2E complet au dernier commit de code (D7).
+- [x] **T4 — Documentation** : `docs/api-external.md` (AC7), manuel + PDF (AC8), CHANGELOG (AC9).
+- [x] **T5 — Gates** : backend complet, frontend complet, E2E complet au dernier commit de code (D7).
 
 ## Tests
 
@@ -382,13 +382,176 @@ Soit **12 tests nommés** (9 backend dont 2 témoins, 3 fichiers Vitest).
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), en autonomie (consignes de l'Epic 15).
+
 ### Debug Log References
+
+**T0 — relevés au sol, 2026-10-09, sur `f2c5e419` (`origin/main`), avant tout code.**
+
+- **Prérequis** : 15-5b, 15-5c et 15-6b mergées (sprint-status `done`) ; la **15-6c** (PR #586)
+  ne l'est pas au relevé (`git fetch` : `origin/main` = `f2c5e419`) — rebase à refaire si elle
+  arrive pendant le travail. Aucun rebase nécessaire au départ : la branche part de `origin/main`.
+- **Numéros de ligne** (`crates/kesh-api/src/routes/reconciliation.rs`, 4357 lignes ; la fiche
+  citait l'état d'avant la 15-5b) : `get_proposals` `:527` (`ba_check` `:547-556`, qui porte
+  `journal_account_id` ; `active_account_ids` `:639-643`, réduit par la 15-5b aux comptes actifs
+  **et** imputables, commentaire de site `:629-638` ; `first_matching_rule` `:724-728`) ;
+  `accept_one_split` `:1997` (« Step c » `:2079-2105`, garde d'égalité `:2108-2118`, puis
+  « Step d » `ACCOUNT_NOT_POSTABLE`) ; `accept_one_rule` `:2400` (étape 1 `:2411-2445`, étape 2
+  `:2447`, étape 4 `:2466`, étape 5 `:2478-2525` avec `ACCOUNT_NOT_POSTABLE` de la 15-5b) ;
+  `post_manual` `:3178` (étape 2 `:3225`, 2 bis `:3233-3249`, étape 3 `:3251-3265`, 3 bis
+  `ACCOUNT_NOT_POSTABLE` `:3266-3280`, étape 4 `:3282`) ; `post_split` `:3577` (« Step 4bis »
+  `:3662-3674`, garde `:3676-3690`, texte `:3686`).
+- **Helper de la 15-6b** : `kesh_db::repositories::invoice_settlements::ensure_not_claim_account(account_id: i64, claim_account_id: i64) -> Result<(), ClaimAccountClash>`
+  (`invoice_settlements.rs:694`), pure, sans `async` — nom et signature conformes à la fiche ;
+  son doc-comment annonce déjà l'emprunt par la 15-6d.
+- **`set_account_not_postable`** : la 15-5b l'a **dupliqué** dans chaque binaire de test — il
+  existe déjà dans les quatre fichiers visés : `reconciliation_manual_e2e.rs:1325`,
+  `reconciliation_rules_e2e.rs:2058`, `reconciliation_split_e2e.rs:1006`,
+  `reconciliation_e2e.rs:5145` (nommé `set_account_not_postable_15_5b`). Réutilisé tel quel.
+- **Code rendu aujourd'hui** pour une règle ordinaire sur un compte de banque archivé (AC2) : par
+  lecture, l'acceptation passe les étapes 1 à 11 et `journal_entries::create_in_tx` rend
+  `DbError::InactiveOrInvalidAccounts` (`journal_entries.rs:162-163`), que le repli générique
+  d'`accept_one_rule` mappe en **`DATABASE_ERROR`** (`details.message`). **Mesuré** au rouge du
+  test 7 (ci-dessous, T3) avant d'être écrit au CHANGELOG.
+- **`docs/api-external.md`** : `grep -n "reconciliation/manual\|reconciliation/split"` rend la
+  phrase de la 15-5b à `:399` — l'AC7 la complète. § *Accepter des propositions* `:385-397`.
+- **CHANGELOG** : `## [0.13.0] — Non publié` présent (`:11`), avec `### Modifié` (`:17`) et
+  `### Corrigé` (`:37`).
+- **Libellé de la 15-5c (AC6)** : `VALIDATION_ERROR` → clé `error-validation`, « Erreur de
+  validation » (`failed-proposal-label.ts:259-260`, fr-CH `messages.ftl:46`). Son doc-comment
+  (`:44-47`) compte « six raisons sur sept sites » : la garde de la règle ajoute un **huitième**
+  site — à mettre à jour (propagation).
+- **Manuel** : sections réécrites par la 15-5c — *Réconciliation manuelle* `:1687`, *Éclatement*
+  `:1701`, *Règles d'affectation* `:1715` (`user-manual.tex`).
+- **Occupation du tmpfs MariaDB** (lecture seule, `df -h /var/lib/mysql` dans
+  `kesh-mariadb-dev`) avant tout gate : **1,3 Go / 4,0 Go (31 %)**.
+
+**Écarts avec la fiche, ventilés :**
+
+1. **Test 11 — la modale est une doublure.** Depuis la revue P1 de la 15-5c,
+   `ReconciliationProposals.test.ts` remplace `ManualMatchModal` par `ModalSuccessStub.test.svelte`
+   (`:36-41`) : « la modale ouverte ne propose pas le `journalAccountId` » n'y est pas observable.
+   Le test 11 asserte donc la **valeur de la prop** `bankLedgerAccountId` reçue par la doublure
+   (étendue pour l'exposer), et le test 10 asserte le filtre dans la vraie modale ; les deux
+   ensemble couvrent le câblage. Choix C-15-6d-1.
+2. **Numéros de ligne** : tous décalés par les 15-5b/c, 15-6b, 15-5e2 (ci-dessus) ; aucun
+   changement de fond — l'ordre décrit par l'AC1 et l'AC2 est celui du code.
+3. **`set_account_not_postable`** : la fiche hésitait (réutiliser ou dupliquer) ; il est déjà
+   dans chaque binaire — rien à ajouter.
+4. **AC6** : la 15-5c est mergée ; rien à ajouter au mécanisme, seul le doc-comment de décompte
+   (écart de propagation) change.
+5. **AC7** : la phrase de la 15-5b existe (`:399`) — complétée, pas créée.
+
+**Mesuré au rouge (T3, avant toute ligne de code de production)** — sur `f2c5e419` :
+
+- test 1 : **200** — l'écriture `D 1020 / C 1020` était bien passée (le défaut de #524 reproduit).
+  Premier essai sans `description` : `400 CHECK_CONSTRAINT_VIOLATION`
+  (`chk_journal_entries_description_nonempty`) — le test aurait passé **sans** la garde ; une
+  description est désormais envoyée, commentaire au test ;
+- test 2 : `ACCOUNT_NOT_POSTABLE` ; test 3 : `404` ; test 4 : la proposition sur le compte de
+  banque **acceptée** (`failed[]` vide) ; test 5 : `ACCOUNT_NOT_POSTABLE` ; test 6 : la règle
+  proposée était celle du compte de banque ;
+- test 7 — **code rendu aujourd'hui** (AC2, AC9) : règle ordinaire → **`DATABASE_ERROR`**,
+  `details.message` = « Un ou plusieurs comptes sont archivés ou invalides » (garde `active` de
+  l'écriture) ; règle sur le compte de banque → **`ACCOUNT_NOT_FOUND`** (`missingAccountIds`).
+  Écrit au CHANGELOG (`### Modifié`) et au guide ;
+- témoins 8 et 9 : **verts avant** (et après), comme exigé.
+
+**Rebase pendant le travail** : la **15-6c** (PR #586) a été mergée (`803f3e15`) après le commit de
+la documentation ; branche rebasée sur `803f3e15`. Conflits résolus **par union** : registre des
+choix (C-15-6c-1..6 de `main` + C-15-6d-1), sprint-status (ligne 15-6c de `main`, ligne 15-6d de la
+branche ; en-tête `(44)`), CHANGELOG (entrée #474 réécrite par la 15-6c conservée, entrée #524
+ajoutée). `user-manual.pdf` **régénéré** (`make -B user`) sur le `.tex` fusionné, contrôlé aplati.
+La 15-6c ne touche pas `reconciliation.rs` ni de migration ; les gates ci-dessous sont sur l'état
+rebasé.
 
 ### Completion Notes List
 
+- **Serveur** (`reconciliation.rs`) : trois fonctions neuves — `is_bank_ledger` (comparaison par
+  `invoice_settlements::ensure_not_claim_account`, helper de la 15-6b), `counterparty_is_bank_ledger_failed_proposal`
+  (lot) et `counterparty_is_bank_ledger_error(field)` (routes directes) ; les deux sites ventilés
+  existants y sont ramenés (`accept_one_split`, `post_split` — texte inchangé). `post_manual` :
+  étape 2 ter, après 2 bis, avant le 404 / `ACCOUNT_NOT_POSTABLE` / l'état de la transaction (AC1).
+  `accept_one_rule` : étape 1 bis (compte de banque actif → `BANK_ACCOUNT_NOT_CONFIGURED`,
+  C-15-6-28) et étape 4 bis (égalité, après `RULE_MISMATCH`, avant l'étape 5) ; ordre écrit dans
+  les doc-comments des deux handlers et de `post_split` (AC2, AC3). `get_proposals` : le compte de
+  la banque (`ba_check.journal_account_id`) retiré de `active_account_ids`, commentaire du site mis
+  à jour (AC2 bis).
+- **Écrans** : `ReconciliationProposals.svelte` résout `journalAccountId` par `listBankAccounts()`
+  une fois au montage, sans garde de génération (doc-comment : le `{#key}` de la page) ;
+  `ManualMatchModal.svelte` reçoit `bankLedgerAccountId` (`null` par défaut) et l'écarte par une
+  condition locale (AC4). `RuleFormModal.svelte` : commentaire seul (AC5). `TransactionSplitModal`
+  non filtré (angle mort de la fiche).
+- **AC6** : la 15-5c est mergée ; libellé effectif `error-validation` = « Erreur de validation »
+  (fr-CH), générique, `details.reason` non affiché — assumé. Doc-comment de
+  `failed-proposal-label.ts` recompté : six raisons sur **huit** sites. **Aucune clé i18n** ajoutée
+  ni modifiée (AC3, « Ce qui doit être préservé ») : les quatre locales sont inchangées.
+- **Docs** : `docs/api-external.md` (AC7 — refus par lot, archivé, règle non proposée, phrase de la
+  15-5b complétée) ; manuel FR (AC8, paragraphe *La contrepartie n'est jamais le compte de la
+  banque*, après *Éclatement* ; refus sans réserve, filtrage « en règle générale ») et PDF
+  régénéré (`make -B user`), contrôlé aplati ; CHANGELOG `[0.13.0]` `### Corrigé` et
+  `### Modifié` (AC9). Manuels DE/IT/EN : vides (README seul), rien à traduire.
+- **Tests** : 9 backend (`reconciliation_manual_e2e` 3, `reconciliation_rules_e2e` 4,
+  `reconciliation_split_e2e` 1, `reconciliation_e2e` 1 — recomptés par
+  `git diff origin/main HEAD | grep -c '^+#\[sqlx::test'`) et 7 Vitest (test 10 : 2 ; test 11 : 4,
+  dont un `it.each` à 2 cas ; test 12 : 1). Périmètre : `origin/main` (`803f3e15`) → `HEAD`.
+- **Mutations** (rejouées, toutes rouges ; journal `kesh-gate-logs/156d-mutations-backend.log`) :
+  - M1 garde de `post_manual` neutralisée → tests 1, 2, 3 rouges ;
+  - M2 garde d'égalité de la règle neutralisée → tests 4, 5 ;
+  - M3 contrôle du compte de banque actif de la règle neutralisé → test 7 ;
+  - M4 retrait du compte de banque de `active_account_ids` neutralisé → test 6 ;
+  - M5 garde de `post_manual` déplacée après `ACCOUNT_NOT_POSTABLE` → test 2 ;
+  - M6 garde de `post_manual` déplacée après l'étape 4 → tests 2, 3 ;
+  - M7 garde de la règle déplacée après l'étape 5 → test 5 ;
+  - M8 (témoin) garde de `post_split` neutralisée → test 8 ;
+  - M9 (témoin) garde d'`accept_one_split` neutralisée → test 9 ;
+  - M10 comparaison inversée dans `is_bank_ledger` → tests 1 à 5 ;
+  - frontend F1 filtre de la modale retiré → test 10 ; F2 prop non passée → test 11 (4 cas) ;
+    F3 résolution sans l'identifiant monté (`list[0]`) → test 11 (2 cas) ; F4 repli d'échec non
+    nul → test 11 (cas d'échec).
+  Restauration par `git checkout --` du fichier puis `touch` (binaire cargo).
+- **Gates** (état rebasé sur `803f3e15`, code final = commit `04510336`) : voir le Change Log.
+
 ### File List
 
+- `crates/kesh-api/src/routes/reconciliation.rs`
+- `crates/kesh-api/tests/reconciliation_manual_e2e.rs`
+- `crates/kesh-api/tests/reconciliation_rules_e2e.rs`
+- `crates/kesh-api/tests/reconciliation_split_e2e.rs`
+- `crates/kesh-api/tests/reconciliation_e2e.rs`
+- `frontend/src/lib/features/reconciliation/ManualMatchModal.svelte`
+- `frontend/src/lib/features/reconciliation/ManualMatchModal.test.ts`
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.svelte`
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.test.ts`
+- `frontend/src/lib/features/reconciliation/ModalSuccessStub.test.svelte`
+- `frontend/src/lib/features/reconciliation/rules/RuleFormModal.svelte`
+- `frontend/src/lib/features/reconciliation/rules/RuleFormModal.test.ts`
+- `frontend/src/lib/features/reconciliation/failed-proposal-label.ts`
+- `docs/api-external.md`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`
+- `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/15-6d-contrepartie-distincte-de-la-banque.md`,
+  `sprint-status.yaml`, `epic-15-choix-autonomes.md`
+
 ## Change Log
+
+- 2026-10-09 — **Revue de code close en une passe** (P1 Sonnet ×3, prompt `36806423` ; rapports
+  `/home/gcorbaz/devel/kesh-gate-logs/15-6d-review-p1-{B,E,A}.md`) : **0 CRITICAL, 0 HIGH, 0 MEDIUM** ; 13 LOW.
+  Aucune passe suivante (CLAUDE.md § Review Iteration Rule : seuls des LOW). LOW appliqués par l'orchestrateur,
+  **documentation seule** : A-L2 (le CHANGELOG nuance « l'écran ne propose plus ce compte » par les cas de repli
+  sans filtre que le manuel et la fiche admettent), A-L3 (`messages.ftl:46`, non `:42`), A-L4 (les mutations ont
+  tourné avant le rebase sur `803f3e15` ; la 15-6c ne touche pas `reconciliation.rs`), A-L1 (les quatre mutations
+  frontend F1-F4 n'ont pas de journal : déclaration non vérifiable, écrite ici telle quelle). **LOW laissés en dette
+  documentée**, parce qu'ils toucheraient du code et rouvriraient gate et E2E pour un gain mineur : B1 (étape 1 bis
+  d'`accept_one_rule` dupliquée de l'« étape c » d'`accept_one_split`, ~20 lignes — helper commun à extraire),
+  B2 (`is_bank_ledger` sans test unitaire direct, dépend d'`ensure_not_claim_account`), B3 (tests 8, 9 et 12
+  témoins verts avant et après ; `let _ = bank_rule;` inutile ; test 11 lié au nom de prop de la doublure,
+  C-15-6d-1), B4 = E4 (`$effect` sans garde de génération, sûr tant que `{#key selectedId}` existe,
+  `+page.svelte:70`), E1 (`build_journal_entry_for_counterparty` sans garde propre : un appelant futur la
+  perdrait), E2 (`journal_account_id` lu hors verrou par `post_manual`/`post_split`, antérieur à la story),
+  E3 (refus direct sans `details.reason`, annoncé). E5 = angles morts déjà déclarés (édition de règle,
+  `TransactionSplitModal`, `accept_one_invoice`). Le dernier commit de code reste `04510336` ; ses gates
+  (backend 3082/3082, Vitest 1156/1156, E2E 246 / 7 KF-029 + KF-052 rejouée verte) tiennent.
 
 - 2026-10-08 — Création à la validation P1 de la 15-6b (findings F1 = R3 et F4), en autonomie :
   #524 sort de la 15-6b, qui dépassait cinq modules avec lui. Choix C-15-6-9. **9 AC, 6 tâches
@@ -483,3 +646,44 @@ Soit **12 tests nommés** (9 backend dont 2 témoins, 3 fichiers Vitest).
     levé (sous le seuil de cinq modules, défauts distincts d'une passe à l'autre).
   - **Validation close** : 0 au-dessus de LOW. Décompte final : **10 AC (AC1–AC9 et AC2 bis),
     6 tâches (T0–T5), 12 tests** (9 backend dont 2 témoins, 3 fichiers Vitest) — inchangé par la P3.
+- 2026-10-09 — **Développement** (Claude Opus 5.5, `bmad-dev-story`, en autonomie). T0 relevé sur
+  `f2c5e419` avant tout code (Debug Log : numéros de ligne, helper de la 15-6b conforme,
+  `set_account_not_postable` déjà présent dans les quatre binaires, code d'avant mesuré au rouge —
+  `DATABASE_ERROR` / `ACCOUNT_NOT_FOUND` —, écarts ventilés). Choix **C-15-6d-1** (test 11 sur la
+  prop reçue par la doublure de la modale, la 15-5c ayant remplacé la modale par une doublure).
+  Rouge d'abord : les 7 tests des gardes neuves (1 à 7) rouges sur le code d'avant, les témoins 8
+  et 9 verts avant et après ; 5 des 7 cas Vitest rouges avant (les cas `null` et le test 12, qui
+  figent un comportement existant, verts). 10 mutations backend et 4 frontend, toutes rouges
+  (Completion Notes). Rebasée sur `803f3e15` (15-6c, PR #586) après le commit de la documentation :
+  registre, sprint-status et CHANGELOG par union, PDF régénéré.
+  **Gates, sur l'état rebasé, au dernier commit de code (`04510336`, inchangé par les commits de
+  documentation qui suivent)** :
+  - backend complet (`scripts/test-fast.sh --ci` : fmt, clippy `-D warnings`, nextest, base
+    `kesh_156d` remise à zéro avant) : **3082 / 3082**, 4 ignorés (= 3073 de `main` + 9) ;
+  - frontend complet (`check` 0 erreur / 27 avertissements préexistants, `lint-i18n-ownership`,
+    `test:unit`, `build`) : **Vitest 1156 / 1156** (= 1149 de `main` + 7) ;
+  - E2E complet (port 3016, base `kesh_e2e_156d`) : **246 passés, 19 ignorés, 8 échoués** — les
+    7 KF-029 attendus (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`,
+    `:77`, `:150`) et `sidebar-navigation:75` (KF-052, pollution connue), **rejoué seul : vert**.
+    Les 10 specs `reconciliation*` vertes.
+  - tmpfs MariaDB : 1,3 Go / 4,0 Go (31 %) avant les gates, 2,0 Go (50 %) après — le relevé couvre
+    toutes les bases du conteneur, d'autres agents compris.
+  Décompte : 10 AC satisfaits, 6 tâches cochées, **12 tests nommés** (9 backend, 3 fichiers Vitest
+  — 7 cas). Statut **review** ; revue de code non lancée.
+- 2026-10-09 — **Intégration sur `0724904c`** (15-1a-i, PR #587 : migration `20261009000001`, crates
+  0.13.0, routes `/letterings`). Branche de sauvegarde `backup/15-6d-avant-rebase-0724904c`. Rebase :
+  registre des choix et sprint-status **par union** (en-têtes renumérotés (46), (47) au-dessus du
+  (45) de `main`), CHANGELOG fusionné sans conflit (entrées #518 et #524 présentes),
+  `user-manual.pdf` **régénéré** (`make -B user`) sur le `.tex` fusionné et contrôlé aplati
+  (paragraphe de la 15-6d et lettrage présents) ; aucun conflit sur le registre des routes d'audit
+  ni sur les clés i18n. Bases `kesh_156d` et `kesh_e2e_156d` recréées (tmpfs vidé et porté à 8 Go),
+  **76 migrations** appliquées, seed. **Gates sur l'état rebasé** :
+  - backend complet (`scripts/test-fast.sh --ci`, fmt + clippy `-D warnings` + nextest) :
+    **3144 / 3144**, 4 ignorés ;
+  - frontend complet (`check` 0 erreur / 27 avertissements préexistants, `lint-i18n-ownership`,
+    `test:unit`, `build`) : **Vitest 1156 / 1156** ;
+  - E2E complet (port 3016) : **245 passés, 19 ignorés, 9 échoués** — les 7 KF-029 attendus,
+    `sidebar-navigation:75` (KF-052) et `dunning:59`, ces deux derniers **verts rejoués seuls**
+    (pollution d'état entre specs, cf. `docs/testing.md` § *Les échecs attendus*) ;
+  - tmpfs MariaDB : 244 Mo / 8,0 Go (3 %) avant les gates, 1,3 Go (16 %) après.
+

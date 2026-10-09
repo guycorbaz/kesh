@@ -5724,3 +5724,66 @@ async fn accept_split_under_a_closed_later_year_lands_in_failed(pool: MySqlPool)
     assert_eq!(accepted[0]["bankTransactionId"].as_i64(), Some(tx_ids[1]));
     assert_eq!(ecritures_de(&pool, ctx.company_id).await, avant + 1);
 }
+
+/// Story 15-6d (test 9, #524) — **témoin** de la garde existante
+/// d'`accept_one_split` : une proposition ventilée dont une ligne vise le
+/// compte de banque **rendu non imputable** → `failed[]` `VALIDATION_ERROR` /
+/// `counterparty_equals_bank_ledger`, pas `ACCOUNT_NOT_POSTABLE` ; rien
+/// d'écrit pour elle. Fige l'ordre « égalité avant postabilité » du lot
+/// (choix C-15-6-23), auquel `accept_one_rule` s'aligne.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_split_bank_ledger_counterparty_precedes_not_postable(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = setup_accept_split_ctx(&pool, "accept_split_bank", "CH1000000000000099005").await;
+    let bank_ledger: i64 =
+        sqlx::query_scalar("SELECT journal_account_id FROM bank_accounts WHERE id = ?")
+            .bind(ctx.bank_account_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    set_account_not_postable_15_5b(&pool, bank_ledger).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/accept"))
+        .header("Authorization", format!("Bearer {}", ctx.jwt))
+        .json(&serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "proposals": [{
+                "type": "split",
+                "bankTransactionId": ctx.tx_ids[0],
+                "splits": [
+                    { "counterpartyAccountId": ctx.cp_a, "amount": "60.00", "description": "Ligne" },
+                    { "counterpartyAccountId": bank_ledger, "amount": "40.00", "description": "Ligne" },
+                ],
+            }]
+        }))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status();
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(status, 200, "pattern batch — {body}");
+    let failed = body["failed"].as_array().expect("failed[]");
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(failed[0]["errorCode"], "VALIDATION_ERROR", "{body}");
+    assert_eq!(
+        failed[0]["details"],
+        serde_json::json!({ "reason": "counterparty_equals_bank_ledger" })
+    );
+    let (status, matched): (String, Option<i64>) =
+        sqlx::query_as("SELECT status, matched_entry_id FROM bank_transactions WHERE id = ?")
+            .bind(ctx.tx_ids[0])
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(status, "pending", "rien d'écrit");
+    assert_eq!(matched, None);
+    let je_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE company_id = ?")
+            .bind(ctx.company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(je_count, 0, "aucune écriture");
+}

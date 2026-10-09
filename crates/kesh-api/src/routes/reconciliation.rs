@@ -282,6 +282,54 @@ fn non_postable_failed_proposal(
     }
 }
 
+/// Story 15-6d (#524, choix C-15-6-9, C-15-6-23, C-15-6-28) — la contrepartie
+/// d'un rapprochement est-elle **le compte comptable du compte bancaire** ?
+/// Une écriture `D banque / C banque` s'équilibre et rien, au grand livre, ne
+/// la refuse : seule cette comparaison d'identifiants la ferme.
+///
+/// La comparaison est celle du helper commun de la 15-6b
+/// ([`invoice_settlements::ensure_not_claim_account`], pure) — sa
+/// **construction** de refus (variante nommée d'un compte de créance) n'est pas
+/// empruntée : le refus reste celui du flux ventilé, construit par
+/// [`counterparty_is_bank_ledger_failed_proposal`] (lot) et
+/// [`counterparty_is_bank_ledger_error`] (routes directes).
+///
+/// **Place sur les quatre chemins** (même réponse pour un même défaut) :
+/// **après** le contrôle du compte de banque actif (archivé →
+/// `BANK_ACCOUNT_NOT_CONFIGURED`), **avant** la validation de la contrepartie
+/// (`ACCOUNT_NOT_FOUND`, puis `ACCOUNT_NOT_POSTABLE`) — si bien qu'un compte de
+/// banque devenu non imputable pris pour contrepartie rend ce refus, et non
+/// `ACCOUNT_NOT_POSTABLE`, qui inviterait à agir sur la mauvaise chose.
+///
+/// La valeur comparée est celle qui construit l'écriture : aucun verrou n'est
+/// nécessaire pour que l'égalité soit sûre.
+fn is_bank_ledger(counterparty_account_id: i64, bank_ledger_account_id: i64) -> bool {
+    invoice_settlements::ensure_not_claim_account(counterparty_account_id, bank_ledger_account_id)
+        .is_err()
+}
+
+/// Story 15-6d (AC3) — le refus **par lot** d'une contrepartie égale au compte
+/// de banque, pour `accept_one_split` et `accept_one_rule` : `failed[]` avec
+/// `errorCode = "VALIDATION_ERROR"` et `details = { "reason":
+/// "counterparty_equals_bank_ledger" }` — la forme du flux ventilé existant,
+/// que la règle reprend (cf. [`is_bank_ledger`] pour la place).
+fn counterparty_is_bank_ledger_failed_proposal(bank_transaction_id: i64) -> FailedProposal {
+    FailedProposal {
+        bank_transaction_id,
+        error_code: "VALIDATION_ERROR".to_string(),
+        details: Some(serde_json::json!({ "reason": "counterparty_equals_bank_ledger" })),
+    }
+}
+
+/// Story 15-6d (AC3) — le refus **direct** d'une contrepartie égale au compte
+/// de banque, pour `post_split` et `post_manual` : 400 `VALIDATION_ERROR`, dont
+/// le texte nomme le champ en cause (`splits[{idx}].counterpartyAccountId` ou
+/// `counterpartyAccountId`). ⚠️ Limite héritée de `post_split` : le message est
+/// en français en dur, non traduit ; le code est le champ stable.
+fn counterparty_is_bank_ledger_error(field: &str) -> AppError {
+    AppError::Validation(format!("{field} ne peut pas être le compte ledger banque"))
+}
+
 fn project_error_to_failed_proposal(
     bank_transaction_id: i64,
     project_id: Option<i64>,
@@ -636,9 +684,18 @@ pub async fn get_proposals(
     // l'affichage, garde tous les comptes actifs. Le paramètre de
     // `kesh_reconciliation` s'appelle encore `active_account_ids` (crate hors
     // périmètre) : ce qu'il reçoit ici est plus étroit que son nom.
+    //
+    // Story 15-6d (AC2 bis, #524) : le compte de la banque (s'il est configuré)
+    // en est **retiré** — une règle dont la contrepartie est ce compte n'est
+    // plus proposée (l'acceptation la refuserait toujours, `accept_one_rule`
+    // étape 4 bis) et ne masque plus une règle suivante valable. L'ensemble
+    // contient donc les comptes **actifs, imputables, hors compte de la
+    // banque** ; le doc-comment de `first_matching_rule` (« non archivé »)
+    // reste tel quel, le site d'appel fait foi.
+    let bank_ledger_account_id = ba_check.journal_account_id;
     let active_account_ids: std::collections::HashSet<i64> = accounts_info_rows
         .iter()
-        .filter(|(_, _, _, postable)| *postable)
+        .filter(|(id, _, _, postable)| *postable && Some(*id) != bank_ledger_account_id)
         .map(|(id, _, _, _)| *id)
         .collect();
     let accounts_info: HashMap<i64, (String, String)> = accounts_info_rows
@@ -2107,13 +2164,14 @@ async fn accept_one_split(
     }
 
     // P2 (ECH-02) defense-in-depth — counterparty != bank_ledger inside lock.
+    // Story 15-6d (AC3) : refus et comparaison partagés avec `accept_one_rule`
+    // (même place : après la « Step c », avant la « Step d ») et, pour la
+    // comparaison, avec `post_split` et `post_manual` — cf. `is_bank_ledger`.
     for s in splits {
-        if s.counterparty_account_id == bank_ledger_account_id {
-            return Err(FailedProposal {
+        if is_bank_ledger(s.counterparty_account_id, bank_ledger_account_id) {
+            return Err(counterparty_is_bank_ledger_failed_proposal(
                 bank_transaction_id,
-                error_code: "VALIDATION_ERROR".to_string(),
-                details: Some(serde_json::json!({ "reason": "counterparty_equals_bank_ledger" })),
-            });
+            ));
         }
     }
 
@@ -2391,6 +2449,15 @@ async fn accept_one_split(
 /// 16 steps documentés §accept-with-rule-flow. Décisions Pass 1-4 :
 /// - Step 0 : currency CHF defense-in-depth (Pass 3 R1).
 /// - Step 4 : counterparty mismatch RULE_MISMATCH per-proposal (AC #120).
+///
+/// **Ordre des refus** (Story 15-6d, #524) : étape 1, compte bancaire
+/// (`DATABASE_ERROR`, `BANK_ACCOUNT_NOT_CONFIGURED`, `BANK_ACCOUNT_NOT_FOUND`)
+/// → 1 bis, compte de banque **actif** (`DATABASE_ERROR`,
+/// `BANK_ACCOUNT_NOT_CONFIGURED`) → 2 (`RECONCILIATION_RULE_NOT_FOUND`) → 4
+/// (`RECONCILIATION_RULE_MISMATCH`) → 4 bis, contrepartie = compte de banque
+/// (`VALIDATION_ERROR` / `counterparty_equals_bank_ledger`, forme et place
+/// d'`accept_one_split` — cf. [`is_bank_ledger`]) → 5 (`ACCOUNT_NOT_FOUND`,
+/// `ACCOUNT_NOT_POSTABLE`) → 6 et la suite.
 /// - Step 7 : re-validation `rule_matches` anti-race (AC #119).
 /// - Step 11 : description handler-side `"Règle '{label}' — {counterparty}"`
 ///   tronquée 200 chars UTF-8-safe (Pass 2 Q9).
@@ -2444,6 +2511,35 @@ async fn accept_one_rule(
         }
     };
 
+    // Step 1 bis — Story 15-6d (AC2, choix C-15-6-28) : le compte de banque est
+    // ACTIF — la « Step c » d'`accept_one_split`. Sans elle, un compte de banque
+    // archivé rendait ici `DATABASE_ERROR` (garde `active` de l'écriture) ou
+    // `ACCOUNT_NOT_FOUND` (règle sur ce compte), quand les trois autres chemins
+    // rendent `BANK_ACCOUNT_NOT_CONFIGURED`.
+    let ledger_active: Option<(bool,)> =
+        match sqlx::query_as("SELECT active FROM accounts WHERE id = ? AND company_id = ? LIMIT 1")
+            .bind(bank_ledger_account_id)
+            .bind(company_id)
+            .fetch_optional(&mut **tx)
+            .await
+        {
+            Ok(r) => r,
+            Err(e) => {
+                return Err(FailedProposal {
+                    bank_transaction_id,
+                    error_code: "DATABASE_ERROR".to_string(),
+                    details: Some(serde_json::json!({ "message": e.to_string() })),
+                });
+            }
+        };
+    if !matches!(ledger_active, Some((true,))) {
+        return Err(FailedProposal {
+            bank_transaction_id,
+            error_code: "BANK_ACCOUNT_NOT_CONFIGURED".to_string(),
+            details: Some(serde_json::json!({ "bankAccountId": bank_account_id })),
+        });
+    }
+
     // Step 2 — SELECT rule (transaction-bound). RuleNotFound si None ou inactive.
     let rule =
         match reconciliation_rules::find_by_id_for_company(&mut **tx, company_id, rule_id).await {
@@ -2475,6 +2571,19 @@ async fn accept_one_rule(
                 "actualAccount": counterparty_account_id,
             })),
         });
+    }
+
+    // Step 4 bis — Story 15-6d (AC2, #524) : la contrepartie de la règle n'est
+    // pas le compte de la banque — même refus et même place que dans
+    // `accept_one_split` (après le compte de banque actif, avant la validation
+    // de la contrepartie, donc avant `ACCOUNT_NOT_POSTABLE`). `get_proposals` ne
+    // propose plus une telle règle (AC2 bis) : cette garde est le filet d'un
+    // client d'API ou d'une règle modifiée entre la proposition et
+    // l'acceptation.
+    if is_bank_ledger(counterparty_account_id, bank_ledger_account_id) {
+        return Err(counterparty_is_bank_ledger_failed_proposal(
+            bank_transaction_id,
+        ));
     }
 
     // Step 5 — counterparty account actif ET imputable (SELECT inline).
@@ -3164,6 +3273,10 @@ pub struct ManualMatchResponse {
 /// **Ordre de validation** (cf. spec §validation-handler-side) :
 /// 1. `bankAccountId` ownership multi-tenant → 404 BANK_ACCOUNT_NOT_FOUND.
 /// 2. `bank_account.journal_account_id` configuré → 412 BANK_ACCOUNT_NOT_CONFIGURED.
+///    2bis. compte de banque actif → 412 BANK_ACCOUNT_NOT_CONFIGURED.
+///    2ter. `counterpartyAccountId` = compte de banque → 400 VALIDATION_ERROR
+///    (Story 15-6d, #524) — même refus et même place que `post_split` et que
+///    le lot (`accept_one_split`, `accept_one_rule`) : cf. [`is_bank_ledger`].
 /// 3. `counterpartyAccountId` ownership + active → 404 ACCOUNT_NOT_FOUND.
 ///    3bis. compte de contrepartie non imputable → 400 ACCOUNT_NOT_POSTABLE
 ///    (Story 15-5b, #427) — après le 404, prioritaire (anti-énumération).
@@ -3250,6 +3363,16 @@ pub async fn post_manual(
                 bank_account_id: body.bank_account_id,
             });
         }
+    }
+
+    // Step 2 ter — Story 15-6d (AC1, #524) : la contrepartie ne peut pas être
+    // le compte de la banque (l'écriture `D banque / C banque` serait nulle).
+    // Même refus et même place que le flux ventilé (`post_split`, choix
+    // C-15-6-23) : après le contrôle du compte de banque actif, avant le 404 et
+    // `ACCOUNT_NOT_POSTABLE` de la contrepartie, et avant l'état de la
+    // transaction (le défaut de la requête prime).
+    if is_bank_ledger(body.counterparty_account_id, bank_ledger_account_id) {
+        return Err(counterparty_is_bank_ledger_error("counterpartyAccountId"));
     }
 
     // Step 3 — counterpartyAccountId ownership + active check.
@@ -3563,6 +3686,9 @@ pub struct SplitResponse {
 /// step 2 `splits[i].amount > 0` strict (C1''') → 400 Validation ;
 /// step 3 `bankAccountId` ownership multi-tenant → 404 BANK_ACCOUNT_NOT_FOUND ;
 /// step 4 `bank_account.journal_account_id` configuré → 412 BANK_ACCOUNT_NOT_CONFIGURED ;
+/// step 4bis compte de banque actif → 412 BANK_ACCOUNT_NOT_CONFIGURED ;
+/// garde « contrepartie = compte de banque » → 400 VALIDATION_ERROR (même refus
+///   que `post_manual`, Story 15-6d — cf. [`is_bank_ledger`]) ;
 /// step 5 batch ownership/active des `counterpartyAccountId` → 404 ACCOUNT_NOT_FOUND ;
 /// step 5bis comptes de contrepartie non imputables → 400 ACCOUNT_NOT_POSTABLE,
 ///   tous nommés (Story 15-5b, #427) — après le 404, prioritaire ;
@@ -3680,10 +3806,13 @@ pub async fn post_split(
     // frontend filtre client-side classes 5/6/7 (le bank ledger est classe 1/2),
     // donc en UX normal pas de collision possible — mais un client API direct
     // pourrait bypass. Defense-in-depth backend.
+    //
+    // Story 15-6d (AC3) : refus et comparaison partagés avec `post_manual`
+    // (même place : après la « Step 4bis », avant la « Step 5 »).
     for (idx, s) in body.splits.iter().enumerate() {
-        if s.counterparty_account_id == bank_ledger_account_id {
-            return Err(AppError::Validation(format!(
-                "splits[{idx}].counterpartyAccountId ne peut pas être le compte ledger banque"
+        if is_bank_ledger(s.counterparty_account_id, bank_ledger_account_id) {
+            return Err(counterparty_is_bank_ledger_error(&format!(
+                "splits[{idx}].counterpartyAccountId"
             )));
         }
     }
