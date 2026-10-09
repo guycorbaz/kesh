@@ -1369,6 +1369,29 @@ Planification : cette fiche, `epic-15-choix-autonomes.md`, `sprint-status.yaml`.
 
 ## Change Log
 
+### Revue de code P3 ciblée — 2026-10-09 (Haiku ; remédiation par l'orchestrateur, Opus 5.5)
+
+Passe ciblée sur `8cda7041` (prompt `d3bead04`, rapport `/home/gcorbaz/devel/kesh-gate-logs/15-1a-i-review-p3-ciblee.md`) :
+**1 MEDIUM**, né de la remédiation P2. **F1** — `neutraliser_echappements` consomme le caractère qui suit toute
+barre oblique ; dans une chaîne brute, où `\` n'échappe rien, `\UPDATE` devenait `  PDATE` et le verbe
+échappait au détecteur, alors qu'il le voyait avant `8cda7041` ; le doc-comment « elle ne le rétrécit jamais »
+était faux. Vérifié par l'orchestrateur à la lecture du code. **Correction** : `ecritures_de_la_marque` cherche
+le verbe dans **l'union** de deux lectures — le texte neutralisé (`\nUPDATE` → `UPDATE`) et le texte brut, où
+`\` fait séparateur (`\UPDATE` → `UPDATE`) ; doc-comment rectifié ; deux littéraux neufs à l'auto-test
+(`S` : `r#"SELECT 1;\UPDATE …"#`, `T` : `r#"x\\\INSERT …"#`), 14 → 16 écritures vues. **Mutation rejouée** :
+retirer la lecture brute (`|| ecrit_dans(&l.texte)`) → `the_detector_sees_writes_and_only_writes` rouge
+(`left: 14`, attendu 16) ; fichier restauré puis touché, binaire vert. Points 1, 3 et 4 de la lentille
+(`build_group` → `Result`, contrôle négatif A2-3, doc-comments `MAX_LINES_PER_GROUP`) : sans finding.
+
+**Gate ciblé** (fichier de test seul, aucun code de production) : `cargo fmt --all -- --check` vert ;
+`cargo clippy --workspace --all-targets -- -D warnings` vert ; `cargo nextest run -p kesh-db --test
+letterings_lexical` 3/3. **Le dernier commit de code de production reste `8cda7041`** : gate complet de référence
+(8 threads) et E2E complet à y rejouer après le redémarrage de MariaDB (tmpfs saturé), avant la PR.
+
+**Boucle de revue close** : la remédiation de cette passe ciblée ne touche aucune ligne de code de production
+(CLAUDE.md § « La passe ciblée »). Trend : P1 (Sonnet ×3) 3 MEDIUM → P2 (Opus ×3) 2 MEDIUM, nés de P1 → P3 ciblée
+(Haiku) 1 MEDIUM, né de P2, dans un fichier de test.
+
 ### Revue de code P2 — 2026-10-09 (Opus ×3 ; remédiation Opus 5.5)
 
 Trois lentilles Opus en contexte frais sur `dc4bc58b..30398986`, lues d'abord sur la remédiation P1

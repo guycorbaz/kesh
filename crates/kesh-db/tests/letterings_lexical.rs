@@ -176,9 +176,13 @@ fn blocs_de_test(masque: &str) -> Vec<(usize, usize)> {
 /// `nUPDATE`, qui n'est aucun verbe — idem `\t`, `\r`, `\0` (revue de code
 /// P2, B2-1 / E2-1, régression née de B6). Couper sur la paire entière couvre
 /// aussi `\\` (la paire est consommée d'un bloc, le mot suivant reste
-/// entier) et la continuation de ligne (`\` suivi du saut de ligne). Appliqué
-/// aussi aux chaînes brutes, où `\` n'échappe rien : la neutralisation y
-/// élargit le détecteur, elle ne le rétrécit jamais (P7 : chercher large).
+/// entier) et la continuation de ligne (`\` suivi du saut de ligne).
+///
+/// ⚠️ Seule, elle **rétrécit** le détecteur : dans une chaîne brute, où `\`
+/// n'échappe rien, `\UPDATE` devient `  PDATE` (revue P3 ciblée, F1). C'est
+/// pourquoi `ecritures_de_la_marque` cherche le verbe dans le texte neutralisé
+/// **et** dans le texte brut, la barre oblique y servant de séparateur : l'union
+/// des deux lectures ne rate aucune des deux formes (P7 : chercher large).
 fn neutraliser_echappements(texte: &str) -> String {
     let mut sortie = String::with_capacity(texte.len());
     let mut caracteres = texte.chars();
@@ -210,21 +214,26 @@ fn ecritures_de_la_marque(source: &str) -> Vec<String> {
             // B6). Seuls `FOR UPDATE` (lecture verrouillante) et `ON UPDATE`
             // (DDL) ne sont pas des écritures ; `ON DUPLICATE KEY UPDATE` en
             // reste une.
-            let neutre = neutraliser_echappements(&l.texte);
-            let mots: Vec<&str> = neutre
-                .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-                .filter(|m| !m.is_empty())
-                .collect();
-            let ecrit = mots.iter().enumerate().any(|(n, mot)| {
-                let verbe = ["UPDATE", "INSERT", "REPLACE"]
-                    .iter()
-                    .any(|v| mot.eq_ignore_ascii_case(v));
-                let lecture_ou_ddl = mot.eq_ignore_ascii_case("UPDATE")
-                    && n > 0
-                    && (mots[n - 1].eq_ignore_ascii_case("FOR")
-                        || mots[n - 1].eq_ignore_ascii_case("ON"));
-                verbe && !lecture_ou_ddl
-            });
+            // Deux lectures, et leur union : le texte neutralisé (`\nUPDATE`
+            // → `UPDATE`) et le texte brut, `\` y faisant séparateur
+            // (`\UPDATE` d'une chaîne brute → `UPDATE`). Revue P3 ciblée, F1.
+            let ecrit_dans = |texte: &str| {
+                let mots: Vec<&str> = texte
+                    .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                    .filter(|m| !m.is_empty())
+                    .collect();
+                mots.iter().enumerate().any(|(n, mot)| {
+                    let verbe = ["UPDATE", "INSERT", "REPLACE"]
+                        .iter()
+                        .any(|v| mot.eq_ignore_ascii_case(v));
+                    let lecture_ou_ddl = mot.eq_ignore_ascii_case("UPDATE")
+                        && n > 0
+                        && (mots[n - 1].eq_ignore_ascii_case("FOR")
+                            || mots[n - 1].eq_ignore_ascii_case("ON"));
+                    verbe && !lecture_ou_ddl
+                })
+            };
+            let ecrit = ecrit_dans(&neutraliser_echappements(&l.texte)) || ecrit_dans(&l.texte);
             let nomme = l.texte.contains("lettering_key")
                 || l.texte.contains("lettering_origin")
                 || l.texte.contains("{LINE_COLUMNS}");
@@ -352,9 +361,11 @@ fn the_detector_sees_writes_and_only_writes() {
         const Q: &str = "x\0UPDATE journal_entry_lines SET lettering_origin = NULL";
         const R: &str = "SELECT 1; \
             UPDATE journal_entry_lines SET lettering_key = NULL";
+        const S: &str = r#"SELECT 1;\UPDATE journal_entry_lines SET lettering_key = NULL"#;
+        const T: &str = r#"x\\\INSERT INTO journal_entry_lines (lettering_origin) VALUES ('x')"#;
     "##;
     let vus = ecritures_de_la_marque(source);
-    assert_eq!(vus.len(), 14, "{vus:#?}");
+    assert_eq!(vus.len(), 16, "{vus:#?}");
     assert!(vus[0].starts_with("UPDATE journal_entry_lines SET lettering_key"));
     assert!(vus[1].starts_with("INSERT INTO journal_entry_lines (id, lettering_origin)"));
     assert!(vus[2].contains("{LINE_COLUMNS}"));
@@ -373,4 +384,8 @@ fn the_detector_sees_writes_and_only_writes() {
     assert!(vus[11].starts_with("x\\rREPLACE"));
     assert!(vus[12].starts_with("x\\0UPDATE"));
     assert!(vus[13].starts_with("SELECT 1; \\\n"));
+    // Revue P3 ciblée, F1 : une barre oblique d'une chaîne brute n'échappe rien,
+    // le verbe qui la suit reste un verbe.
+    assert!(vus[14].starts_with("SELECT 1;\\UPDATE"));
+    assert!(vus[15].starts_with("x\\\\\\INSERT"));
 }
