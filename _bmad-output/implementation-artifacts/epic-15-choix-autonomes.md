@@ -5880,7 +5880,7 @@ l'import (#458–#461).
   de modules — la 15-14a seule ne touche que trois paquets de code (kesh-i18n, kesh-api, frontend) et la 15-14b
   aucun module de production.
 - **Écartées** : une story unique (bloquée tout entière par la 15-13b, encore à développer) ; une coupe par nature
-  « doc / libellés » (les deux moitiés réécriraient le manuel utilisateur — #569 y a quatre sites — et se
+  « doc / libellés » (les deux moitiés réécriraient le manuel utilisateur — #569 y a cinq sites, C-15-14-16 — et se
   disputeraient les mêmes lignes).
 - **Réversible** : oui (fiches seules).
 
@@ -5926,7 +5926,7 @@ l'import (#458–#461).
 
 ## C-15-14-4 — 15-14a : formulation des prescriptions de réouverture (#569)
 
-- **Contexte** : six clés (×4 locales), six replis Rust, quatre replis frontend, quatre phrases du manuel et une
+- **Contexte** : six clés (×4 locales), six replis Rust, quatre replis frontend, quatre phrases du manuel (cinq : C-15-14-16) et une
   ligne d'`api-external.md` prescrivent « rouvrir l'exercice » sans l'ordre LIFO. La 15-12b a en outre renvoyé à
   #569 (B-1 = E-1) la clause « une écriture existante se corrige par une contre-passation » de
   `error-later-fiscal-year-closed`, qu'un exercice du jour suivi d'un exercice clôturé ferait refuser.
@@ -5986,7 +5986,8 @@ l'import (#458–#461).
 - **Contexte** : « aucun gate ne lit le manuel » (rétrospective de l'Epic 24) ; les dix défauts de ce lot sont des
   phrases que rien n'a contrôlées. Un test qui fige un texte de catalogue existe (parité, replis) ; aucun ne lit
   `docs/manual/`, `README.md` ni `api-external.md`.
-- **Retenu** : un fichier de test pur, sans base, `crates/kesh-api/tests/documentation_coherente.rs`, qui lit ces
+- **Retenu** : un fichier de test pur, sans base, `crates/kesh-api/tests/textes_coherents.rs` (nom rectifié en
+  validation P1, C-15-14-16), qui lit ces
   fichiers et y interdit les valeurs corrigées par le lot (et, pour les taux de TVA, un test de module de
   `vat_rates.rs` qui confronte le manuel à `DEFAULT_SWISS_RATES`). La 15-14b l'étend. Chaque assertion se prouve
   par mutation (valeur réintroduite → rouge).
@@ -6016,4 +6017,101 @@ l'import (#458–#461).
   `.env` d'une installation Synology.
 - **Écartées** : le client du paquet MariaDB de DSM (chemin propre à la version du paquet, absent si la base est
   ailleurs) ; garder `grep .env` (deux lignes, et un secret root dans un fichier lu par Compose).
+- **Réversible** : oui.
+
+## C-15-14-11 — 15-14a (validation P1) : « réglages » en minuscule est un nom commun, sauf deux renvois à l'écran
+
+- **Contexte** : R3 ≈ F-11. L'inventaire de #547 était relevé par un grep sensible à la casse. Le minuscule
+  « réglages » apparaît 22 fois hors commentaires de code (catalogue fr-CH, replis Rust, deux manuels), et deux
+  renvois à l'écran avaient échappé : fr-CH `error-invoice-pdf-header-overflow` (« Supprimez une coordonnée …
+  dans les réglages », où de-CH, it-CH et en-CH nomment le menu) avec son repli `errors.rs:1807`, et
+  `.env.example:305` (« (Réglages) », fichier hors du périmètre du grep).
+- **Retenu** : ces deux renvois deviennent « Paramètres » ; les 22 autres sont le **nom commun** — les valeurs
+  configurées (« le compte de TVA due désigné dans les réglages », « les trois réglages sont vides ») — et entrent
+  à l'inventaire des non résolus de l'AC 2, avec les notes de versions publiées du CHANGELOG (`:347`, `:433`,
+  `:451`). T2, T3 et T9 gardent les deux renvois corrigés.
+- **Écartées** : remplacer tout « réglages » par « paramètres » (réécriture de style sans défaut, 22 sites dont
+  des replis Rust gardés par test) ; laisser `error-invoice-pdf-header-overflow` (même symptôme que #547, seul
+  écart de la locale fr avec les trois autres).
+- **Réversible** : oui (texte).
+
+## C-15-14-12 — 15-14a (validation P1) : « dossier surveillé » se corrige aussi dans `.env.example` ; « scruté à l'import » reste
+
+- **Contexte** : F-4, R7. `.env.example:197` (sur `bcded0c8`) écrit « déposées dans un dossier surveillé » —
+  le fichier que l'exploitant lit pour configurer l'inbox. `admin-manual.tex:781` et `.env.example:204` disent
+  « Dossier inbox scruté à l'import ».
+- **Retenu** : `.env.example:197` corrigé et gardé par T5 ; « scruté à l'import » conservé — il dit que le dossier
+  est lu au moment de l'import, ce qui est exact (l'import, lancé à la main, parcourt le dossier). Les notes de la
+  0.4.0 (`CHANGELOG.md:499`) sont historiques, assumées.
+- **Écartée** : réécrire « scruté à l'import » (pas de défaut : la phrase ne prête à l'import aucun déclenchement).
+- **Réversible** : oui.
+
+## C-15-14-13 — 15-14a (validation P1) : le test des taux de TVA vit dans un `mod tests` neuf de `vat_rates.rs`, et ce choix coûte le gate complet
+
+- **Contexte** : F-6 ≈ R6. La fiche plaçait T1 « dans le `mod tests` de `vat_rates.rs` » ; ce module n'existe
+  pas. `DEFAULT_SWISS_RATES` est un `const` privé. Trois lieux possibles : (a) un `#[cfg(test)] mod tests` neuf
+  dans `vat_rates.rs` ; (b) rendre la constante `pub` et tester depuis `textes_coherents.rs` (kesh-api) ; (c) un
+  fichier `kesh-db/tests/`, qui exige aussi une constante publique.
+- **Retenu** : (a). Aucun changement de visibilité ni de code de production ; précédents du même répertoire
+  (`accounts.rs:1136`, `bank_profiles.rs:343`). Le test est un `#[test]` pur, **pas** un `#[sqlx::test]` :
+  `test_schema_guard.rs` ne recense que ces derniers (`TOKEN = "#[sqlx::test"`) et ne le voit pas. Il lit
+  `docs/manual/fr/user-manual.tex` par `env!("CARGO_MANIFEST_DIR")/../../` — couplage d'un crate de
+  persistance à la documentation, accepté : kesh-db n'est pas publié (seul `kesh-import` l'est).
+  **Rayon du gate** : `vat_rates.rs` est un repository — l'**exception `kesh-db`** du `CLAUDE.md` s'applique :
+  tout patch qui touche ce fichier, y compris en boucle de revue, impose le gate complet ; un patch limité à
+  `textes_coherents.rs`, `loader.rs` ou aux catalogues relève du gate ciblé. La mutation `380 → 370` touche la
+  constante de production : restaurée par `git checkout` puis `touch`.
+- **Écartées** : (b) et (c) — modifier la visibilité d'une constante de production pour un test de
+  documentation ; dupliquer les taux dans le test (une règle recopiée peut diverger, mémoire *Tests qui prouvent
+  moins*).
+- **Réversible** : oui (un module de test).
+
+## C-15-14-14 — 15-14a (validation P1) : le domaine du test des prescriptions de réouverture se prend en fr-CH, et se contrôle dans les quatre locales
+
+- **Contexte** : R5 ≈ F-2. T8 demandait « le verbe de réouverture de la locale » sans le donner. En de-CH, ce
+  verbe prend au moins cinq formes (« wieder öffnen », « öffnen Sie dieses zuerst », « Öffnen Sie es wieder »,
+  « Wiedereröffnung », « wieder eröffnet ») ; un motif par locale passait à vide sur la clé même que la story
+  corrige (`error-fiscal-year-reopen-blocked`, de-CH « öffnen Sie dieses zuerst »), et un motif large (`öffn`)
+  ramasse « Detailansicht öffnen », « Einstellungen öffnen ». La liste d'exemptions ne couvrait pas les clés
+  `-reopen-*` qui nomment l'acte, ni `error-reminder-amounts-changed` hors fr.
+- **Retenu** : le domaine est l'ensemble des clés dont la valeur **fr-CH** matche `[Rr]ouvr|[Rr]éouv` — univoque
+  en français ; 20 clés sur `bcded0c8`. Pour chacune, hors exemptions, **chaque** locale doit porter son marqueur
+  d'ordre. Exemptions **par clé**, liste fermée de 10 (six qui nomment l'acte, deux corps qui décrivent, la clé
+  qui nomme l'exercice à rouvrir, `error-reminder-amounts-changed`) ; partition recomptée 6 + 4 + 10 = 20. Une
+  mutation de-CH s'ajoute à la mutation fr.
+- **Écartées** : un motif par locale (ouvert par nature : une forme imprévue le contourne — § *Inventorier les
+  sites NON RÉSOLUS*) ; des exemptions par clé × locale (la parité des catalogues rend la clé suffisante).
+- **Limite assumée** : une valeur non française qui prescrirait la réouverture sous une clé dont la valeur fr-CH
+  ne la prescrit pas échapperait au test — la parité des catalogues rend ce cas improbable.
+- **Réversible** : oui.
+
+## C-15-14-15 — 15-14b (validation P1) : le pré-script Hyper Backup dit ses conditions de fonctionnement
+
+- **Contexte** : R14, F-10. Le pré-script de C-15-14-10 ne disait ni l'ordre des options de `mariadb-dump`, ni
+  la forme du mot de passe (celui de `DATABASE_URL` est pourcentage-encodé), ni les conditions réseau du paquet
+  MariaDB de DSM, ni le cas d'une image absente hors ligne. Aucune n'a été rejouée par les lentilles (Docker
+  interdit en lecture seule).
+- **Retenu** : l'AC 1 les prescrit au manuel et à la recette du T1 — `--defaults-extra-file` en première option ;
+  mot de passe décodé et entre guillemets dans le fichier d'options ; port 3307, accès TCP et pare-feu du paquet
+  DSM, `localhost` qui désigne le conteneur ; `docker pull mariadb:10.11` à la mise en place, et l'échec visible
+  de la tâche s'il manque (voulu). Ce qui relève de la documentation Synology et non de la recette est écrit
+  comme tel.
+- **Écartée** : renvoyer ces points à la recette sans les écrire (le manuel est ce que l'exploitant suit).
+- **Réversible** : oui.
+
+## C-15-14-16 — 15-14 (validation P1) : rectificatifs et réalignement sur `bcded0c8`
+
+- **Rebase** : la 15-13a est mergée (`bcded0c8`, #551 fermée) entre la passe et sa remédiation ; la branche est
+  rebasée (sauvegarde `backup/15-14-avant-rebase-bcded0c8`), `sprint-status.yaml` résolu par union (ligne
+  d'en-tête de la 15-14 renumérotée (41)), registre fusionné sans conflit. Numéros de ligne réalignés dans les
+  deux fiches ; ceux de la spécification restent entre parenthèses. La 15-14b ne dépend plus que de la 15-13b et
+  de la 15-14a.
+- **Rectificatif de C-15-14-8** : le fichier de test se nomme `crates/kesh-api/tests/textes_coherents.rs`, comme
+  le disent les deux fiches — non `documentation_coherente.rs`. C-15-14-8 est corrigé en place, avec renvoi ici.
+- **Rectificatif de C-15-14-1 et C-15-14-4** : #569 a **cinq** sites au manuel utilisateur, non quatre
+  (`user-manual.tex:1208-1209` trouvé par R1 = F-1).
+- **Rectificatif de C-15-14-3** : la ligne « Personnalisé CSV » est à `admin-manual.tex:1383` sur `bcded0c8`
+  (`:1369` sur `dc4bc58b`).
+- **`user-manual.tex:182`** (R12) : corrigé par la 15-14a sans condition, texte identique à celui de la 15-7b1
+  (non mergée), pour que le conflit de rebase se résolve en gardant l'un ou l'autre.
 - **Réversible** : oui.

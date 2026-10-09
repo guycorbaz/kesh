@@ -4,13 +4,15 @@ Status: split
 
 <!-- Spécifiée le 2026-10-09 sur origin/main = dc4bc58b (worktree kesh-15-14, branche
      story/15-14-lot-documentation-libelles). Découpée d'emblée en 15-14a et 15-14b (C-15-14-1).
-     Cette fiche est l'index du tri ; les critères, tâches et tests sont dans les deux sous-fiches. -->
+     Cette fiche est l'index du tri ; les critères, tâches et tests sont dans les deux sous-fiches.
+     Validation P1 : branche rebasée sur origin/main = bcded0c8 (15-13a mergée, #551 fermée). -->
 
 ## Pourquoi ce lot
 
 Décision de Guy : faire baisser le nombre de bugs ouverts — **70** au 2026-10-09, **49** au kickoff de
 l'Epic 15 (engagement 1 du § *Priorités des défauts* du `CLAUDE.md`). Le lot réunit des défauts **P3/P4 de
-documentation et de libellés** : textes qui disent autre chose que le code, sans règle métier neuve, sans
+documentation et de libellés** (**69** à la validation P1, même jour, recompté par la commande du
+`CLAUDE.md`) : textes qui disent autre chose que le code, sans règle métier neuve, sans
 migration, sans changement de comportement.
 
 ## Méthode du tri
@@ -19,7 +21,7 @@ Toutes les issues ouvertes portant `bug`, `known-failure` ou `documentation`, pr
 (`gh issue list --state open --limit 500 --json number,title,labels`), chacune lue avec ses commentaires
 (`gh api repos/guycorbaz/kesh/issues/N` et `/comments`) et **vérifiée au code de `dc4bc58b`** — aucune
 n'était déjà corrigée en entier ; deux l'étaient en partie (#127 : `kesh-cli` et RBAC ; #575 : `exec db`,
-corrigé par la 15-13a non mergée).
+corrigé par la 15-13a, mergée depuis — `bcded0c8`).
 
 Exclues d'office par l'orchestrateur (stories en cours ou spécifiées) : #551 (15-13a), #552 et #576
 (15-13b), #474 (15-6c), #524 (15-6d), #544 (15-7b1), #528 et #542 (15-7b3), #279 (15-7b2), tout ce qui
@@ -29,13 +31,14 @@ touche le lettrage (#518), et #577 (texte du `CLAUDE.md`, affaire de Guy).
 
 | Sous-story | Fiche | Issues fermées | Dépendance |
 |---|---|---|---|
-| **15-14a** — manuels et libellés | `15-14a-manuels-et-libelles.md` | #539, #547, #488, #291, #458, #449, #432, #569, #321, #323 (refs #459) | aucune ; développable sur `main` |
-| **15-14b** — exploitation et multi-société | `15-14b-exploitation-et-multi-societe.md` | #575, #554, #127 | **après** le merge de 15-13a, 15-13b et 15-14a |
+| **15-14a** — manuels et libellés | `15-14a-manuels-et-libelles.md` | #539, #547, #488, #291, #458, #449, #432, #569, #321, #323 (refs #459) | aucune dépendance de code ; développable sur `main`. **Conflits de rebase attendus** avec la 15-7b1 (`user-manual.tex:182`, `admin-manual.pdf`, `user-manual.pdf`) et la 15-13b (manuel d'administration) : le dernier mergé rebase et **régénère** les PDF |
+| **15-14b** — exploitation et multi-société | `15-14b-exploitation-et-multi-societe.md` | #575, #554, #127 | **après** le merge de 15-13b et 15-14a (15-13a : mergée, `bcded0c8`) |
 
 Motif : une **dépendance**, non le nombre de modules. La 15-14b réécrit le manuel d'administration et le
 compose de développement, que la 15-13a (+187 lignes au manuel) et la 15-13b réécrivent aussi, et le
 complément de #575 n'existe qu'après la 15-13a. Une story unique serait bloquée tout entière par la 15-13b ;
-une coupe « doc / libellés » ferait se disputer le manuel utilisateur aux deux moitiés (#569 y a quatre sites).
+une coupe « doc / libellés » ferait se disputer le manuel utilisateur aux deux moitiés (#569 y a cinq sites —
+« quatre » à la spécification, un cinquième trouvé en validation P1).
 
 **Décompte attendu** : 11 issues `bug`/`known-failure` fermées (8 par la 15-14a, 3 par la 15-14b), plus
 #291 et #458 (`documentation` seul, hors décompte).
@@ -57,8 +60,17 @@ une coupe « doc / libellés » ferait se disputer le manuel utilisateur aux deu
 
 - **Validation** : chaque sous-fiche a sa section « Ce que la validation P1 doit regarder ».
 - **Issues** : commenter #324 (prémisse réfutée, question de vocabulaire posée à Guy) ; aucune issue à créer.
-- **Ordre** : 15-14a quand un agent est libre ; 15-14b après les merges de 15-13a, 15-13b et 15-14a.
+- **Ordre** : 15-14a quand un agent est libre ; 15-14b après les merges de 15-13b et 15-14a (15-13a faite).
 
 ## Change Log
 
 - 2026-10-09 — Spécification et découpage (Opus 5.5), sur `dc4bc58b`. Choix C-15-14-1 à C-15-14-10.
+- 2026-10-09 — **Validation P1** (Sonnet ×2, lentilles R et F ; rapports `kesh-gate-logs/15-14-validate-p1-{R,F}.md`) :
+  0 CRITICAL, 0 HIGH ; **11 MEDIUM bruts** (R 5, F 6) — trois recoupements MEDIUM/MEDIUM (R1 = F-1,
+  R2 ≈ F-3, R5 ≈ F-2) et deux MEDIUM qui recoupent un LOW de l'autre lentille (R3 ≈ F-11, F-6 ≈ R6, retenus
+  MEDIUM) —, soit **8 MEDIUM distincts** ; **17 LOW bruts** (R 9, F 8), dont deux absorbés par un MEDIUM et
+  quatre groupes de recoupement (R9 = F-9, R11 = F-7, R10 ≈ R13 ≈ F-8, R14 ≈ F-10 : cinq doublons), soit
+  **10 LOW distincts** (15 − 5).
+  Tous des **sites d'inventaire manqués** ou des **tests sous-spécifiés** ; aucun fait de fond réfuté.
+  Remédiation dans les deux sous-fiches (leur Change Log détaille), branche rebasée sur `bcded0c8` (15-13a
+  mergée) et numéros réalignés. Choix C-15-14-11 à C-15-14-16. Signal D5 : non levé (passe 1).
