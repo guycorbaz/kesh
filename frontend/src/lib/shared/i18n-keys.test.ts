@@ -513,7 +513,12 @@ const ATTENDU = {
 	// hérité (`fiscal-year-out-of-order-warning`). Recompté par
 	// `grep -oE "\b(msg|i18nMsg)\("` aux deux bornes (`012fc430` et la branche).
 	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (trois littéraux).
-	sitesTotal: 1925,
+	// Story 15-6c (#474) : **1925 → 1919** (−6 ; 1922 → 1916 avant le rebase sur la 15-12b), la suppression de
+	// `features/bank-accounts/BankAccountList.svelte` (code mort, choix C-15-6-22), qui
+	// portait 6 `i18nMsg(` — recompté par `git show f8b2accd:<fichier> | grep -o "i18nMsg("`.
+	// Les écrans touchés par la story n'en ajoutent aucun (filtres seuls). `sitesNonResolus`,
+	// `relais`, `sitesGabarit` inchangés (six littéraux).
+	sitesTotal: 1919,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

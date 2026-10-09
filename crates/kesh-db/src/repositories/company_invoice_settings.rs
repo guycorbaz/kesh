@@ -220,8 +220,7 @@ async fn refuse_if_linked_to_bank_account(
     else {
         return Ok(());
     };
-    let account_number =
-        super::accounts::number_in_company(&mut **tx, company_id, account_id).await?;
+    let account_number = super::accounts::number_in_company(tx, company_id, account_id).await?;
     Err(DbError::ClaimAccountLinkedToBankAccount {
         account_id,
         account_number,

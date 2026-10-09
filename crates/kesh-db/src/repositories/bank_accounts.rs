@@ -743,8 +743,7 @@ pub async fn refuse_if_ledger_is_claim_account(
     let Some(claim) = claims.side_of(account_id) else {
         return Ok(());
     };
-    let account_number =
-        super::accounts::number_in_company(&mut **tx, company_id, account_id).await?;
+    let account_number = super::accounts::number_in_company(tx, company_id, account_id).await?;
     Err(DbError::BankAccountLedgerIsClaimAccount {
         account_id,
         account_number,
