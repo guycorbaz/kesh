@@ -65,6 +65,20 @@
 //! ancienne ne produit qu'un refus de trop. ⚠️ La preuve tombe si une
 //! transition écrit `fiscal_years.status` hors de [`close`] / [`reopen`].
 //!
+//! **La vue est figée AVANT le verrou, et la preuve en tient compte.** Sous
+//! REPEATABLE READ, des lectures ordinaires précèdent le `FOR UPDATE` de
+//! l'exercice dans `create_in_tx_inner` (postabilité, projets, verrou de
+//! période) : [`find_later_closed`] lit donc une vue **antérieure** à l'attente
+//! de ce verrou — le piège que `docs/MULTI-TENANT-SCOPING-PATTERNS.md` décrit
+//! pour le `PUT`. Sans conséquence ici : une vue ancienne ne manque un
+//! postérieur clos que s'il a été clos **après** elle, alors que N est relu
+//! ouvert sous verrou (lecture courante) ; or [`close`] verrouille un à un tous
+//! ses antérieurs (étape (b')), dont N, et refuse de clore tant que N est
+//! ouvert — cela n'arrive pas depuis un état sain. Dans l'état hérité, les
+//! postérieurs clos ne font que se résorber : la vue ancienne rend au pire un
+//! refus de trop, jamais une acceptation de trop. *(Revue de code P1 de la
+//! Story 15-12b, B-2.)*
+//!
 //! ## Story 3.7 — Lock ordering & audit
 //!
 //! Les fns mutatrices [`create`], [`update_name`], [`close`], [`reopen`] ouvrent

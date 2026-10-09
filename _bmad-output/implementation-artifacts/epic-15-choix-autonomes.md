@@ -5339,3 +5339,31 @@ l'import (#458–#461).
 - **Écartées** : une seule clé avec `$name` vide (affiche « « » ») ; renvoyer le code brut (le repli
   « Refus non reconnu ») quand le nom manque.
 - **Réversible** : oui.
+
+## C-15-12b-4 — 15-12b (revue de code P1) : seize LOW traités sans toucher une ligne de production Rust ni un catalogue
+- **Contexte** : revue de code P1 (Sonnet ×3, lentilles B / E / A ; rapports
+  `target/gate-logs/15-12b-review-p1-{B,E,A}.md`) — 0 au-dessus de LOW, 16 LOW (B 5, E 4, A 7). Consigne
+  de l'orchestrateur : remédier sans code exécutable de production (ni repli Rust, ni catalogue de
+  messages), le reste écrit.
+- **Retenu** :
+  - **B-4** — le bandeau passe de `role="alert"` à `role="status"` : un attribut ARIA du gabarit, qui ne
+    change aucun comportement (aucune logique Svelte touchée) ; une information d'état rendue au
+    chargement n'a pas à être annoncée de façon assertive à chaque visite. Test mis à jour, AC 15 annoté.
+  - **B-1 = E-1** — le message (« Une écriture existante se corrige par une contre-passation ») renvoie à un
+    geste que le filet peut refuser à son tour : **message non réécrit**, suivi par l'issue #569 (messages
+    de réparation) — écrit au Change Log.
+  - **A-2, E-3** — deux tests neufs, sans code de production : la branche `projectId` du constructeur du
+    lot (test unitaire dans `period_lock_tests`), et le repli `default` du formulaire de saisie en création
+    sur `LATER_FISCAL_YEAR_CLOSED` (`JournalEntryForm.create.test.ts`, mutation du `default` observée
+    rouge). Le `case` explicite qu'E-3 proposait aurait touché le composant : écarté, le test écrit
+    l'intention.
+  - **A-4** — **rectification de C-15-12b-2**, sans réécrire l'entrée : l'angle mort du statut des soldes
+    de départ n'est pas dans une « section des soldes de départ » d'`api-external.md` — il n'y en a pas —,
+    mais dans la ligne `LATER_FISCAL_YEAR_CLOSED` du tableau des erreurs (`:504`). Aucune section ajoutée :
+    la route `GET /opening-balances/status` n'est pas documentée dans ce fichier.
+  - **E-2** (apostrophe droite du repli Rust contre typographique des catalogues, préexistant) et **E-4**
+    (« avant lui » du libellé de lot) : écrits, non traités — ils toucheraient le repli et les catalogues.
+- **Écartées** : réécrire le message (B-1) dans cette story — hors consigne, et l'issue #569 couvre la
+  famille ; ajouter le `case 'LATER_FISCAL_YEAR_CLOSED'` au `switch` (E-3) — code de composant pour un
+  comportement déjà correct.
+- **Réversible** : oui.

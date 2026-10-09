@@ -4294,6 +4294,43 @@ mod period_lock_tests {
         assert_eq!(details["lockedThrough"], "2026-03-31");
     }
 
+    /// Story 15-12b (#543, AC 11 ; revue de code P1, A-2) — la branche
+    /// `projectId` du constructeur `later_fiscal_year_closed_failed_proposal`,
+    /// par le bras du mapper : **avec** un projet, la clé est portée ; **sans**,
+    /// elle est omise. Les trois tests du lot (`reconciliation_e2e.rs`,
+    /// `reconciliation_rules_e2e.rs`) n'exercent que des voies sans projet :
+    /// retirer l'insertion de `projectId` les laissait verts.
+    #[test]
+    fn later_fiscal_year_closed_carries_the_project_only_when_known() {
+        let refus = || DbError::LaterFiscalYearClosed {
+            fiscal_year_id: 12,
+            fiscal_year_name: "Exercice 2027".to_string(),
+        };
+
+        let avec = project_error_to_failed_proposal(42, Some(7), refus());
+        assert_eq!(avec.bank_transaction_id, 42);
+        assert_eq!(avec.error_code, "LATER_FISCAL_YEAR_CLOSED");
+        assert_eq!(
+            avec.details.expect("details attendus"),
+            serde_json::json!({
+                "fiscalYearId": 12,
+                "fiscalYearName": "Exercice 2027",
+                "projectId": 7
+            })
+        );
+
+        let sans = project_error_to_failed_proposal(9, None, refus());
+        let details = sans.details.expect("details attendus");
+        assert!(
+            details.get("projectId").is_none(),
+            "la clé doit être ABSENTE, pas nulle : {details}"
+        );
+        assert_eq!(
+            details,
+            serde_json::json!({ "fiscalYearId": 12, "fiscalYearName": "Exercice 2027" })
+        );
+    }
+
     /// Verrouille les deux mappages voisins, `PROJECT_NOT_FOUND` et
     /// `PROJECT_ARCHIVED`.
     ///

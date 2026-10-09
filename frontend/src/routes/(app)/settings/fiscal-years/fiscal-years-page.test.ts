@@ -307,7 +307,7 @@ describe('bandeau « exercices dans le désordre » (état hérité)', () => {
 			listFiscalYearsMock.mockResolvedValue(desordre);
 			render(Page);
 			const bandeau = await screen.findByTestId('fiscal-year-out-of-order');
-			expect(bandeau.getAttribute('role')).toBe('alert');
+			expect(bandeau.getAttribute('role')).toBe('status');
 			const texte = bandeau.textContent ?? '';
 			// {open} = 2025 (le plus ancien ouvert), {closed} = 2026, {latest} = 2028 ≠ {closed}.
 			expect(texte).toContain('L’exercice « Exercice 2025 » est ouvert');

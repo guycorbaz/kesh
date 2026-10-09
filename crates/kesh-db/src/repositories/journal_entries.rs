@@ -64,6 +64,14 @@
 //! suppression par la route et la dévalidation d'une facture). La
 //! modification ([`update`]) porte la même garde depuis la Story 15-8a. Depuis
 //! la Story 15-12a, cet état n'est atteignable que par des données héritées.
+//!
+//! **Exceptions nommées** — deux écrivains suppriment des écritures sans passer
+//! par [`delete_in_tx`] ni par le filet, et c'est voulu : ce sont des remises à
+//! zéro de **toutes** les écritures d'une société, hors exploitation — il ne
+//! reste ensuite aucune écriture dont un bilan clos dépende.
+//! [`delete_all_by_company`] (teardown des tests, sans appelant de production)
+//! et `reset_demo` de `kesh-seed` (données de démonstration, qui efface aussi
+//! les exercices).
 
 use std::str::FromStr;
 

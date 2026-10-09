@@ -347,7 +347,7 @@
 		     récent clos. Jamais « rouvrir l'exercice clos le plus proche » en premier. -->
 		<div
 			class="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-text"
-			role="alert"
+			role="status"
 			data-testid="fiscal-year-out-of-order"
 		>
 			{i18nMsg(

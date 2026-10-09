@@ -227,7 +227,9 @@ documentation (AC 23, part B). La dépendance est à sens unique : B → A.
 15. **Détection à l'écran, sans changement d'API.** La page `/settings/fiscal-years` calcule, depuis la
     liste qu'elle charge déjà, l'ensemble des exercices **ouverts suivis d'un exercice clos** (la
     fonction `nearestLaterClosed` existe, `+page.svelte:93-106`). S'il est non vide, un **bandeau
-    d'avertissement** (`role="alert"`, `data-testid="fiscal-year-out-of-order"`) s'affiche au-dessus du
+    d'avertissement** (`role="status"` — `role="alert"` à la spécification, remplacé à la revue de code P1,
+    B-4 : une information d'état rendue au chargement, non une alerte déclenchée par un geste ;
+    `data-testid="fiscal-year-out-of-order"`) s'affiche au-dessus du
     tableau, **pour tous les rôles** (Consultation compris : c'est une information sur l'état des
     comptes). Il nomme `{open}` — le **plus ancien** exercice ouvert, qui est toujours concerné dès que
     l'état est fautif (tout exercice ouvert antérieur à un exercice ouvert concerné l'est aussi) —, son
@@ -571,7 +573,13 @@ deux sites et non dix-neuf ; l'inventaire de l'AC 12 est ce qui le prouve, et c'
 *(Section rédigée en P3 — F9, décision de l'orchestrateur, C121.)*
 
 - **Le critère franchi** : le premier critère de la § « Règle de splitting préventif » du `CLAUDE.md`
-  (plus de 5 modules). Recompté en P3, au même critère que la 15-12a (un module dont seul un
+  (plus de 5 modules). ⚠️ **Recompté au code livré, à la revue de code P1 (A-3) : 13 modules**, et non
+  10 — `git diff --stat 012fc430..<dev> -- crates frontend/src`, fichiers de test exclus. S'ajoutent aux
+  dix ci-dessous : `kesh-db/repositories/opening_complement` (doc-comment de l'angle mort de
+  `complement_status`, C-15-12b-2), `kesh-api/errors` (repli du message élargi, C-15-12b-1) et
+  `frontend/features/fiscal-years` (l'aide pure `outOfOrderState` du bandeau, sortie de la page pour être
+  testée). Les trois ne portent qu'un site chacun ; le raisonnement ci-dessous tient, signal redéclaré au
+  Project Lead avec ce nombre. Recompté en P3, au même critère que la 15-12a (un module dont seul un
   doc-comment change compte) : **10** modules de premier niveau — `kesh-db/repositories/journal_entries`,
   `kesh-db/repositories/invoices` (doc-comment de `unvalidate`, commentaires C-15-8-29),
   `kesh-db/repositories/fiscal_years` et `kesh-db/errors` (doc-comments complétés),
@@ -667,6 +675,17 @@ identique à celle de la fiche : 19 routes par `create_in_tx_inner`, 1 par `upda
 de `kesh-seed`, de `delete_all_by_company` (sans appelant de production, reconfirmé) et des trois sites
 dynamiques de restauration et de mode test.
 
+*(Table reproduite à la revue de code P1, A-6 — l'AC 12 l'exige au record, qui ne la citait que par
+renvoi. Recompte : `awk '/^const LIB_ROUTES/,/^const TEST_ENDPOINT_ROUTES/' … | grep -c 'Rejouee)'` → 22,
+`… | grep -c 'Exemptee('` → 2, sur `012fc430`.)*
+
+| Point de passage | Routes (`012fc430`) |
+|---|---|
+| `create_in_tx_inner` (AC 8) — 19 | `journal_entries::create_journal_entry`, `reverse_journal_entry` ; `opening_balances::generate_opening_balances`, `complete_opening_balances` ; `credit_notes::create_credit_note` ; `supplier_invoices::create_supplier_invoice`, `pay_supplier_invoice`, `cancel_supplier_invoice`, `cancel_supplier_invoice_settlement` ; `imported_supplier_invoices::complete_import` ; `payment_batches::confirm_payment_batch` ; `invoices::validate_invoice_handler`, `settle_invoice_handler`, `write_off_invoice_handler`, `cancel_invoice_settlement_handler` ; `reconciliation::post_accept`, `post_manual`, `post_split`, `post_cancel_reconciliation` |
+| `update` (garde 15-8a, inchangée) — 1 | `journal_entries::update_journal_entry` |
+| `delete_in_tx` (AC 10) — 2 | `journal_entries::delete_journal_entry` (garde 15-8b), `invoices::unvalidate_invoice_handler` (neuf) |
+| Hors filet, écrit — 2 | `admin::full_import` (remplace toute la base : source de l'état fautif, détectée par l'AC 15) ; `onboarding::reset` (efface la société entière) |
+
 **Le filet n'ajoute aucun verrou** (`grep -rnE "find_later_closed(_in_tx)?\(" crates/kesh-db/src`) : la
 version `_in_tx` est appelée par `fiscal_years::create` (`:342`), `reopen` (`:1211`), `journal_entries::update`
 (`:1406`) et `delete_in_tx` (`:1725`) ; la non verrouillante par `modification_blocker` (`:1142`, motif
@@ -709,10 +728,43 @@ existant n'a changé de sens hors du seul site inventorié (`journal_entries.rs`
 inversé et renommé `la_devalidation_voit_l_exercice_posterieur`). Mode d'échec de la base partagée écrit
 dans `docs/testing.md` § « Base de dev jetable ».
 
+**Table de l'AC 21, recomptée sur `012fc430`** *(reproduite à la revue de code P1, A-6 ; elle n'était qu'au
+Change Log, en totaux)* — `git grep -nE "'Closed'|\"Closed\"|status = \?" 012fc430 -- 'crates/*.rs'` :
+**78 lignes**, dont **30** qui ne posent rien et **48** lignes = **46 sites** qui posent un exercice clos.
+
+- **30 lignes qui ne posent rien** : production qui lit ou écrit le statut (`fiscal_years.rs` `:784`,
+  `:831`, `:1077`, `:1126`, `:1189` ; `journal_entries.rs` `:53`, `:322`, `:663`, `:1097`, `:1378`, `:1689` ;
+  `accounts.rs:450` ; `settlement_cancellation.rs:81` ; `entities/fiscal_year.rs` `:30`, `:40` ;
+  `imported_supplier_invoices.rs:281`, autre table) ; doc-comments de routes (`routes/fiscal_years.rs`
+  `:50`, `:267` ; `routes/opening_balances.rs:95`) ; assertions sur une réponse (`fiscal_years_e2e.rs:681`,
+  `opening_balances_e2e.rs` `:965`, `:1101`, `rejeu_interblocage_e2e.rs:1311`, `fiscal_years_repository.rs`
+  `:322`, `:757`) ; doc-comments de test (`fiscal_years_repository.rs` `:1141`, `:1502`) ; constructeurs en
+  mémoire (`opening_complement.rs` `:730`, `:749`) ; `vat_report.rs:510`.
+- **48 lignes, 46 sites qui posent un exercice clos** :
+
+| Sites (`012fc430`) | Ce que le test fait après la pose | Verdict |
+|---|---|---|
+| `journal_entries.rs` `mod tests` `:3468-3469` (C-15-8-29) | dévalidation (`delete_in_tx`, `enforce_ownership = false`) d'une écriture de N sous N+1 clos | **change de sens** — inversé et renommé `la_devalidation_voit_l_exercice_posterieur` (AC 10) |
+| `journal_entries.rs` `:3274-3275`, `:3285` ; `journal_entries_modification.rs` `:398`, `:504` | `delete_in_tx(…, true)` ou `update` : gardes 15-8a / 15-8b | inchangé |
+| `journal_entry_reversal_e2e.rs` — aide `set_status` `:1372` et appels `:1846`, `:2093`, `:2142`, `:2533`, `:2600` ; aide `exercice_de` aux appels clos `:1863-1865`, `:2084`, `:2517`, `:2592` ; `:1103`, `:2730`, `:2901` | `PUT` / `DELETE` sous gardes 15-8a / 15-8b ; écritures et contre-passations faites avant la pose, ou dans l'exercice du jour quand le seul exercice clos lui est antérieur ; `:1103`, `:2730` un seul exercice ; `:2901` clôt l'exercice passé puis contre-passe dans le courant | inchangé |
+| `opening_complement_repository.rs` aide `:197`, appels `:288`, `:311`, `:484`, `:685` | clôt le premier exercice : aucun ne le précède | inchangé |
+| `opening_balances_e2e.rs:1493` | clôt tous les exercices | inchangé |
+| `reconciliation_manual_e2e.rs:264` | seul exercice de la société, clos | inchangé |
+| `rejeu_interblocage_e2e.rs` `:1284`, `:1339` (15-12a) | exercice 2010 clos, aucun exercice ouvert antérieur, aucune écriture | inchangé |
+| `fiscal_years_repository.rs` `:1145` (aide `poser_clos`, appelée `:899`, `:1306`), `:1517` (15-12a) | ni écriture ni dévalidation après la pose ; clôture concurrente | inchangé |
+| `accounts_e2e.rs:363` ; `accounts.rs` `mod tests` `:1496`, `:1605`, `:1796` ; `period_lock_e2e.rs` `:608`, `:709` ; `invoice_settlement.rs:1212` ; `invoice_write_off.rs:756` ; `invoices_validate_vat.rs:1508` ; `reconciliation_cancel.rs:133` ; `supplier_invoices_repository.rs` `:1660`, `:1966`, `:2240` ; `invoices.rs` `mod tests` `:4883`, `:4961` | un seul exercice dans le montage : aucun postérieur | inchangé |
+
+Décompte, ligne par ligne de la table : lignes 2 + 5 + 15 + 5 + 1 + 1 + 2 + 2 + 15 = **48** ; sites
+1 + 4 + 15 + 5 + 1 + 1 + 2 + 2 + 15 = **46** (deux sites s'écrivent sur deux lignes : `:3468-3469` et
+`:3274-3275`). Recompté par fichier sur la sortie de la commande ; 30 + 48 = 78.
+
 **AC 19 — mutations** (jouées, observées rouges, restaurées par `git checkout` puis `touch`) :
-- (v) filet retiré de `create_in_tx_inner` (`.filter(|_| false)`) → **15 rouges** : 10 de
-  `filet_bilan_clos` (tous sauf dévalidation, facture envoyée, réparation directe — qui ne passent pas par
-  la création), les 2 de `filet_bilan_clos_e2e`, le complément, les 3 voies du lot ;
+- (v) filet retiré de `create_in_tx_inner` (`.filter(|_| false)`) → **15 rouges** : **9** des 13 de
+  `filet_bilan_clos` — tous sauf la dévalidation, la facture envoyée, la réparation directe (qui ne passent
+  pas par la création) **et `l_exercice_clos_parle_avant_le_posterieur`**, qui attend `FiscalYearClosed`,
+  refus que le filet ne produit pas —, les 2 de `filet_bilan_clos_e2e`, le complément, les 3 voies du lot :
+  9 + 2 + 1 + 3 = 15. *(Ventilation corrigée à la revue de code P1, A-1 : elle écrivait « 10 de
+  `filet_bilan_clos` », soit 16 pour un total de 15 ; le total, observé, était juste.)*
 - (vi) `if enforce_ownership` rétabli dans `delete_in_tx` → **2 rouges** :
   `la_devalidation_voit_l_exercice_posterieur` (lib) et `la_devalidation_sous_un_posterieur_clos_est_refusee` ;
 - (vii-a) bras retiré du mapper → **facture et ventilé rouges** (chacun), règle verte ;
@@ -741,6 +793,21 @@ montage E2E n'a pas de SQL direct ; le bandeau est couvert par Vitest (texte, tr
   `:539`, `:582`, `:593` (période verrouillée), `:626` (note de la contre-passation — vraie : la
   contre-passation datée du jour corrige dans l'exercice courant), `:698` (création), `:1610`, `:1729`,
   `:2268`, `:2219-2228` ;
+- *(complété à la revue de code P1, A-6 — la commande de l'AC 23 rejouée sur le `.tex` livré, sites que
+  le relevé P1 nommait et que le record taisait, par leur texte)* : `:539` (« Une fois l'exercice
+  clôturé, ou la période verrouillée » — correction apparente : vrai) ; `:1269`, `:1289` (refus de
+  l'avoir sur compte archivé : sans rapport avec l'ordre des exercices) ; `:1624` (facture postérieure
+  au paiement refusée à l'acceptation : autre motif, vrai) ; `:1655` (« motif du refus en clair :
+  période verrouillée, exercice fermé, … etc. » — la liste ouverte reste vraie, le libellé neuf s'y
+  range) ; `:1745` (« une facture de décembre dont l'exercice est clôturé, payée en janvier, se
+  rapproche et se dé-rapproche normalement » — vrai : l'exercice clos est **antérieur** à celui du
+  paiement, le filet ne joue pas) ; `:350`, `:380`, `:394`, `:698`, `:706`, `:985`, `:2203` (reclassement,
+  postabilité, création et clôture d'exercice — 15-12a —, contacts, équilibre) : **inchangés**, sans
+  rapport avec le filet ou déjà conformes. Paragraphe **neuf** `:734` (« Des boutons offerts, puis
+  refusés au clic », A-7). `docs/api-external.md` : la commande rend `:238-253`, `:270-279`, `:295-314`,
+  `:322-335`, `:350-352`, `:372`, `:380`, `:382`, `:388-390`, `:398-411`, `:504` — tous traités ci-dessous
+  sauf `:238-251`, `:270-279` (déjà conformes) et `:382` (statut `409` de `FISCAL_YEAR_CLOSED` à
+  l'annulation : sans rapport avec le filet), **inchangés** ;
 - manuel administrateur : paragraphe neuf « Exercices clôturés dans le désordre » (section de l'import),
   paragraphe « Clôture dans l'ordre » complété, « huit refus / motifs » de la dévalidation → **neuf**
   (`:1922`, `:1964`, propagation : `invoices.rs:1376`, `invoices/[id]/+page.svelte:355`) ;
@@ -911,3 +978,40 @@ montage E2E n'a pas de SQL direct ; le bandeau est couvert par Vitest (texte, tr
   `MULTI-TENANT-SCOPING-PATTERNS.md`). Mutations (v), (vi), (vii-a), (vii-b) observées rouges. Gates :
   backend 2970/2970, Vitest 1115/1115, E2E 245 / 9 attendus. Statut `review`.
 
+
+- **2026-10-09 — Revue de code P1** (Sonnet ×3, contexte frais, lentilles Blind / Edge / Acceptance ; prompt
+  `15-12b-review-prompt-p1.md`, rapports `target/gate-logs/15-12b-review-p1-{B,E,A}.md`) : **0 CRITICAL, 0
+  HIGH, 0 MEDIUM, 16 LOW** (B 5, E 4, A 7 — recomptés aux rapports). Chaque lentille déclare ses axes
+  exercés et non exercés ; aucune n'a exécuté de code (lecture seule). **Remédiation sans aucune ligne de
+  production Rust ni de catalogue de messages** (C-15-12b-4) :
+  - **B-3** — les deux tests de `filet_bilan_clos.rs` qui posaient un exercice « futur » 2031 dérivent
+    désormais l'année de l'horloge (aide `societe_du_jour`, patron de `filet_bilan_clos_e2e.rs::setup`) ;
+  - **B-2** — doc-comment de module de `fiscal_years.rs` : la vue REPEATABLE READ est figée **avant** le
+    `FOR UPDATE` de l'exercice, et la preuve écrite de ce qu'elle ne rend au pire qu'un refus de trop ;
+  - **B-5** — doc-comment de module de `journal_entries.rs` : `delete_all_by_company` et `reset_demo` de
+    `kesh-seed` nommés comme exceptions aux deux points de passage ;
+  - **B-4** — bandeau `role="status"` (attribut ARIA du gabarit, aucun comportement changé ; test et AC 15
+    mis à jour) ;
+  - **A-1** — ventilation de la mutation (v) corrigée au record : 9 + 2 + 1 + 3 = 15 ;
+  - **A-2** — test unitaire neuf `later_fiscal_year_closed_carries_the_project_only_when_known`
+    (`reconciliation.rs`, `period_lock_tests`) : la branche `projectId` du constructeur, avec et sans projet ;
+  - **A-3** — dérogation recomptée au code livré : **13** modules (et non 10) ;
+  - **A-4** — rectification de C-15-12b-2 portée par C-15-12b-4 (l'angle mort est à la ligne `:504` du
+    tableau des erreurs d'`api-external.md`, non dans une section qui n'existe pas) ;
+  - **A-5** — `CHANGELOG.md` : la contre-passation et l'annulation retirées des gestes refusés dans
+    l'exercice ouvert concerné ; datées du jour, elles ne sont refusées que si l'exercice du jour est suivi
+    d'un exercice clôturé ;
+  - **A-6** — tables des AC 12 et 21 reproduites au record (recomptées sur `012fc430` : 22 / 2 ; 78 lignes
+    = 30 + 48, 46 sites), sites de l'AC 23 nommés « inchangé, motif » ;
+  - **A-7** — manuel utilisateur, § « Exercices dans le désordre » : paragraphe « Des boutons offerts, puis
+    refusés au clic » (annulations, contre-passation, complément des soldes de départ ; renvoi à #568) ;
+    PDF régénéré, contrôlé aplati ;
+  - **E-3** — test neuf `JournalEntryForm.create.test.ts` : en création, `LATER_FISCAL_YEAR_CLOSED` retombe
+    sur le `default` et affiche le message du serveur, formulaire ouvert ; mutation du `default` observée
+    rouge, restaurée (`git checkout` puis `touch`) ;
+  - **B-1 = E-1** — le message élargi renvoie à une contre-passation qui peut elle-même être refusée (exercice
+    du jour suivi d'un clos) : **non réécrit**, suivi par **#569** ;
+  - **E-2** (apostrophe droite du repli Rust, préexistant) et **E-4** (« avant lui » du libellé du lot) :
+    écrits, non traités (repli et catalogues hors consigne).
+  Trend : revue P1 0 au-dessus de LOW — **revue close** (16 LOW, aucun MEDIUM+ : critère d'arrêt de la
+  § *Review Iteration Rule*).

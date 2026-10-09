@@ -16,7 +16,7 @@
 //! 3. la réparation (AC 16) — les deux voies du bandeau ;
 //! 4. l'angle mort assumé des prédicteurs d'annulation (AC 18, C120, #568).
 
-use chrono::{NaiveDate, Utc};
+use chrono::{Datelike, NaiveDate, Utc};
 use kesh_db::entities::contact::{ContactType, NewContact, Salutation};
 use kesh_db::entities::journal_entry::Journal;
 use kesh_db::entities::{
@@ -50,6 +50,26 @@ async fn societe(pool: &MySqlPool) -> SeededCompany {
     .await
     .unwrap();
     s
+}
+
+/// Société seedée ; son exercice ramené à l'**année courante**, nommé
+/// « Exercice <année> » — pour les tests qui écrivent au jour (contre-passation,
+/// prédicteur) et posent un exercice **futur** clos l'année suivante. L'année
+/// est dérivée de l'horloge, comme dans `filet_bilan_clos_e2e.rs::setup` : un
+/// « futur » codé en dur (2031) cesserait de l'être, et l'exercice du seed
+/// (2020-2030) de couvrir le jour. *(Revue de code P1, B-3.)*
+async fn societe_du_jour(pool: &MySqlPool) -> (SeededCompany, i32) {
+    let s = seed_accounting_company(pool).await.expect("seed");
+    let annee = Utc::now().date_naive().year();
+    sqlx::query("UPDATE fiscal_years SET name = ?, start_date = ?, end_date = ? WHERE id = ?")
+        .bind(format!("Exercice {annee}"))
+        .bind(d(annee, 1, 1))
+        .bind(d(annee, 12, 31))
+        .bind(s.fiscal_year_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    (s, annee)
 }
 
 /// Un exercice annuel au statut voulu, posé par SQL (la création refuserait un
@@ -528,8 +548,8 @@ async fn la_facture_fournisseur_et_son_paiement_sont_refuses(pool: MySqlPool) {
 /// postérieur clos (un exercice futur clôturé d'avance). Aucune écriture.
 #[sqlx::test(migrations = "./test-schema")]
 async fn la_contre_passation_du_jour_sous_un_futur_clos_est_refusee(pool: MySqlPool) {
-    // Exercice du seed (2020-2030) laissé tel quel : il couvre le jour.
-    let s = seed_accounting_company(&pool).await.expect("seed");
+    // Exercice de l'année courante : il couvre le jour.
+    let (s, annee) = societe_du_jour(&pool).await;
     let e = journal_entries::create(
         &pool,
         s.fiscal_year_id,
@@ -538,14 +558,14 @@ async fn la_contre_passation_du_jour_sous_un_futur_clos_est_refusee(pool: MySqlP
     )
     .await
     .expect("origine");
-    let futur = exercice(&pool, &s, 2031, "Closed").await;
+    let futur = exercice(&pool, &s, annee + 1, "Closed").await;
     let avant = ecritures(&pool, &s).await;
 
     let mut tx = pool.begin().await.unwrap();
     let r =
         journal_entries::reverse_in_tx(&mut tx, s.company_id, e.entry.id, s.admin_user_id).await;
     drop(tx);
-    assert_posterieur_clos(r, futur, "Exercice 2031");
+    assert_posterieur_clos(r, futur, &format!("Exercice {}", annee + 1));
     assert_eq!(ecritures(&pool, &s).await, avant);
 }
 
@@ -639,7 +659,7 @@ async fn la_reparation_directe_cloture_le_plus_ancien_ouvert(pool: MySqlPool) {
 /// (issue #568). Il faudra alors l'inverser — c'est voulu.
 #[sqlx::test(migrations = "./test-schema")]
 async fn predicteur_muet_sous_un_exercice_futur_clos(pool: MySqlPool) {
-    let s = seed_accounting_company(&pool).await.expect("seed");
+    let (s, annee) = societe_du_jour(&pool).await;
     let e = journal_entries::create(
         &pool,
         s.fiscal_year_id,
@@ -648,7 +668,7 @@ async fn predicteur_muet_sous_un_exercice_futur_clos(pool: MySqlPool) {
     )
     .await
     .expect("écriture");
-    let futur = exercice(&pool, &s, 2031, "Closed").await;
+    let futur = exercice(&pool, &s, annee + 1, "Closed").await;
 
     let mut conn = pool.acquire().await.unwrap();
     let annonce = settlement_cancellation::settlement_entry_cancel_blocker(
@@ -669,5 +689,5 @@ async fn predicteur_muet_sous_un_exercice_futur_clos(pool: MySqlPool) {
     let r =
         journal_entries::reverse_in_tx(&mut tx, s.company_id, e.entry.id, s.admin_user_id).await;
     drop(tx);
-    assert_posterieur_clos(r, futur, "Exercice 2031");
+    assert_posterieur_clos(r, futur, &format!("Exercice {}", annee + 1));
 }
