@@ -406,7 +406,7 @@ fn les_comptes_cites_en_exemple_existent_dans_les_plans_livres() {
                     .unwrap_or_else(|| panic!("{nom_fichier} : compte {n} absent : {ligne}"));
                 let nom = apostrophes(nom.trim());
                 assert!(
-                    livres.iter().any(|l| *l == nom),
+                    livres.contains(&nom),
                     "{nom_fichier} : {n} « {nom} » — les plans livrés le nomment {livres:?}"
                 );
                 nommes_vus += 1;
