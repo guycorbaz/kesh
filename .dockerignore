@@ -18,3 +18,8 @@ log/
 inbox/
 documents/
 backup/
+# Sauvegarde Synology (15-14b) : dumps et fichiers d'identifiants (secrets).
+dump/
+avant-restauration/
+kesh-dump.cnf
+kesh-restore.cnf

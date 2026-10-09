@@ -986,7 +986,7 @@ FLUSH PRIVILEGES;
 SQL
 \end{lstlisting}
 
-Au premier démarrage, l'application exécute les migrations SQLx.
+Au premier démarrage, l'application exécute les migrations SQLx. Pour recharger un dump sur ce serveur (\S\ref{sec:backup-dsm-recovery}), la base ainsi créée, vide, n'a pas besoin de dump de sécurité : le script de rechargement le constate et la recharge.
 
 \subsection{Configuration multi-tenant}
 
@@ -1738,35 +1738,36 @@ docker compose start kesh-api
 \end{lstlisting}
 \end{enumerate}
 
-\keshpath{kesh-restore.sh} recharge par le compte Kesh (\keshpath{kesh-restore.cnf}) --- non par \keshpath{kesh-dump.cnf}, dont le compte ne peut que lire. Il ne touche pas à Kesh, et s'arrête à la première erreur, dans cet ordre, sans rien écrire avant l'étape 5 :
+\keshpath{kesh-restore.sh} recharge par le compte Kesh (\keshpath{kesh-restore.cnf}) --- non par \keshpath{kesh-dump.cnf}, dont le compte ne peut que lire. Il ne touche pas à Kesh, et s'arrête à la première erreur, dans cet ordre ; il ne touche à la base qu'à l'étape 6, n'écrit aucun dump avant l'étape 5, et avant cela n'écrit que son verrou :
 
 \begin{enumerate}
-    \item il refuse si un conteneur du service \keshcommand{kesh-api} tourne sur le NAS, quel que soit le nom du projet ;
-    \item il vérifie l'empreinte et l'intégrité du dump ;
-    \item il lit dans le dump le nom de la base qu'il recrée, et refuse s'il diffère de \texttt{SAUVEGARDE\_BASE} ;
-    \item il prend le verrou du dump, puis demande au serveur si la base existe ; si la sonde échoue (serveur injoignable, compte refusé), il s'arrête ;
-    \item si la base existe, il en prend un \textbf{dump de sécurité} dans \keshpath{avant-restauration/<horodatage>/} --- par \keshpath{kesh-dump.sh} lui-même : mêmes contrôles, mêmes fichiers --- et en affiche le chemin. \textbf{Si ce dump échoue} (disque plein, dossier non inscriptible, base illisible), il s'arrête \textbf{sans rien recharger} : la base est intacte. Si la base n'existe pas --- le cas même où l'on recharge après sa perte ---, il le dit et passe au rechargement ;
-    \item il recharge le dump, qui recrée la base.
+    \item il refuse si un conteneur du service \keshcommand{kesh-api} est actif sur le NAS --- en marche, en boucle de redémarrage, en pause ---, quel que soit le nom du projet ;
+    \item il prend le verrou du dump : pas de dump nocturne, ni d'autre restauration, pendant la sienne ;
+    \item il vérifie l'empreinte et l'intégrité du dump, puis lit dans le dump le nom de la base qu'il recrée, et refuse s'il diffère de \texttt{SAUVEGARDE\_BASE} ;
+    \item il demande au serveur si la base existe et combien de tables elle porte ; si la sonde échoue (serveur injoignable, compte refusé), il s'arrête ;
+    \item si la base porte des tables, il en prend un \textbf{dump de sécurité} dans \keshpath{avant-restauration/<horodatage>/} --- par \keshpath{kesh-dump.sh} lui-même : mêmes contrôles, mêmes fichiers --- et en affiche le chemin. \textbf{Si ce dump échoue} (disque plein, base illisible), il s'arrête \textbf{sans rien recharger} : la base est intacte. Si la base n'existe pas, ou existe sans aucune table (serveur neuf préparé par l'\emph{Initialisation manuelle de la base}, ou rechargement interrompu juste après la création de la base), il n'y a rien à protéger : il le dit et passe au rechargement ;
+    \item il recharge le dump, qui recrée la base ; s'il échoue, il affiche les deux gestes de reprise ci-dessous.
 \end{enumerate}
 
 \textbf{Reprise après un échec ou une interruption de l'étape 6} (session SSH coupée, erreur du serveur) : Kesh est toujours arrêté et la base peut être à moitié rechargée. Deux gestes distincts :
 \begin{itemize}
     \item \textbf{terminer la restauration} : relancer le script sur le \textbf{même} dossier ;
-    \item \textbf{revenir à l'état d'avant} : relancer le script sur le dossier du dump de sécurité qu'a affiché le \textbf{premier} passage (un second passage en prend un nouveau, de la base à moitié rechargée). Si le premier passage a dit « pas de dump de sécurité » (base absente), il n'y a pas d'état d'avant à retrouver.
+    \item \textbf{revenir à l'état d'avant} : relancer le script sur le dossier de sécurité du \textbf{premier} passage, c'est-à-dire le plus \textbf{ancien} horodatage d'\keshpath{avant-restauration/} pris pour cette restauration (chaque passage en prend un nouveau, de la base à moitié rechargée). Si le premier passage n'en a pas pris (base absente ou vide), il n'y a pas d'état d'avant à retrouver.
 \end{itemize}
 
 \begin{lstlisting}[language=bash]
+ls /volume1/docker/kesh/avant-restauration/     # le plus ancien de cette restauration
 bash /volume1/docker/kesh/kesh-restore.sh \
     /volume1/docker/kesh/avant-restauration/<horodatage>
 \end{lstlisting}
 
-\textbf{Base présente mais illisible} (corrompue : le dump de sécurité échoue sur une erreur de la base) : le script ne la remplace pas sans copie, et n'a pas d'option pour passer outre. La seule issue est délibérée --- conservez d'abord ce qui peut l'être (copie du répertoire de données si la base est la vôtre), puis supprimez la base vous-même, par le compte Kesh, et relancez le rechargement, qui la recrée :
+\textbf{Base présente mais illisible} (le dump de sécurité échoue sur une erreur de la base : table endommagée, vue invalide) : le script ne la remplace pas sans copie, et n'a pas d'option pour passer outre. La seule issue est délibérée --- conservez d'abord ce qui peut l'être (copie du répertoire de données si la base est la vôtre), puis supprimez la base vous-même, par le compte Kesh, en remplaçant \texttt{<base>} par la valeur de \texttt{SAUVEGARDE\_BASE}, et relancez le rechargement, qui la recrée :
 
 \begin{lstlisting}[language=bash]
 docker run --rm --network frontend \
     -v /volume1/docker/kesh/kesh-restore.cnf:/etc/kesh-restore.cnf:ro \
     mariadb:10.11 mariadb --defaults-extra-file=/etc/kesh-restore.cnf \
-    -e 'DROP DATABASE kesh'
+    -e 'DROP DATABASE <base>'
 \end{lstlisting}
 
 Les dossiers d'\keshpath{avant-restauration/} contiennent des secrets et ne sont pas purgés : supprimez-les vous-même une fois la restauration vérifiée.

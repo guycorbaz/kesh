@@ -472,23 +472,25 @@ compose factice (`kesh-api` qui dort), tous nommés `kesh-recette-synology*`, et
 l'interruption — elle ne touche à aucun autre conteneur, jamais à `kesh-mariadb-dev`. Les comptes et le fichier
 d'options sont ceux que le manuel écrit (extraits de ses listings), avec un mot de passe à `@ # ; " \ /` et espace.
 
-Elle prouve, en comparant l'empreinte du **contenu** de toutes les tables du schéma (un `mariadb-dump` de leurs
-lignes, trié par clé primaire et haché — non `CHECKSUM TABLE`, mesuré instable entre une table vivante et la même
-table rechargée) et une ligne `Compte é € 😀` octet par octet :
+Elle prouve, en comparant l'empreinte du **contenu** de la base (schéma et lignes de toutes les tables de base, par
+un `mariadb-dump` trié par clé primaire et haché — non `CHECKSUM TABLE`, mesuré instable entre une table vivante et
+la même table rechargée) et une ligne `Compte é € 😀` octet par octet :
 
 - **dump** : empreinte, droits 700/600, aucun `.tmp`, toutes les tables ; `--defaults-extra-file` refusé hors de la
   première place ; dump raté (réseau, mot de passe), vide ou sous verrou refusé, sans perte du précédent ni fichier
   vide ;
-- **rechargement refusé avant toute écriture** : Kesh en marche, nom de base du dump ≠ `SAUVEGARDE_BASE`, empreinte
-  fausse, archive tronquée, dossier inexistant, serveur injoignable ; refus `ERROR 1044` du compte de sauvegarde ;
-  base présente et dump de sécurité impossible → base intacte, aucun fichier partiel ;
+- **rechargement refusé avant toute écriture dans la base** : Kesh actif (en marche, en boucle de redémarrage
+  `restarting`, en pause), verrou déjà pris par une autre restauration, nom de base du dump ≠ `SAUVEGARDE_BASE`,
+  empreinte fausse, archive tronquée, dossier inexistant, serveur injoignable ; refus `ERROR 1044` du compte de
+  sauvegarde ; base avec tables mais illisible (vue invalide) → dump de sécurité impossible, base intacte ;
 - **rechargement** par un chemin relatif (c'est le dump donné qui est rechargé, non le dump vivant), un dump nocturne
-  lancé pendant ce temps étant refusé par le verrou ; reprise « terminer » (même dossier) et « revenir » (dump de
-  sécurité) après un rechargement interrompu ; base absente ; base illisible traitée par la commande `DROP DATABASE`
-  du manuel puis rechargée.
+  lancé pendant ce temps étant refusé par le verrou ; interruption réelle (`SIGTERM`) → verrou libéré ; reprise
+  « terminer » (même dossier) et « revenir » (dump de sécurité) ; base absente ; base présente **vide** (rien à
+  protéger) ; base illisible traitée par la commande `DROP DATABASE <base>` du manuel puis rechargée.
 
-Elle ne rejoue pas DSM (Planificateur, Hyper Backup, Snapshot Replication, paquet MariaDB 10), root, ni une
-interruption réelle par signal (l'état « à moitié rechargé » est reconstitué en supprimant des tables).
+Elle ne rejoue pas DSM (Planificateur, Hyper Backup, Snapshot Replication, paquet MariaDB 10) ni root ; la fenêtre
+entre la lecture du dump et la prise du verrou, que le script ferme en prenant le verrou d'abord, n'est pas
+reproductible de façon déterministe.
 
 **Quand la lancer** : à toute modification d'un des deux scripts, de la section Synology du manuel ou de l'image
 `mariadb:10.11` qu'ils emploient — et citer sa sortie au Dev Agent Record. Elle n'est pas dans le gate : elle
