@@ -16,20 +16,32 @@ la même) : depuis la 0.13.0, `docker-compose.yml` n'a plus de mots de passe
 MariaDB par défaut. Ensuite seulement, Kesh refuse le secret JWT par défaut de
 `docker-compose.yml` (`change-me…`), à dessein.
 
+⚠️ **Base déjà créée** (mise à jour d'une installation existante, ou volume
+`kesh-mariadb-data` déjà présent) : **ne générez pas** de mots de passe MariaDB.
+Écrivez dans `.env` **la valeur avec laquelle la base a été créée, jamais une
+neuve** — si vous n'en aviez jamais posé, les anciens défauts
+`MARIADB_ROOT_PASSWORD=kesh_dev_root` et `MARIADB_PASSWORD=kesh_dev` ; si vous
+aviez recopié une chaîne gabarit `<…>`, cette chaîne telle quelle. Puis changez
+ces mots de passe par la procédure du manuel d'administration (§ *Changer un mot
+de passe MariaDB* : `ALTER USER` d'abord, `.env` ensuite ; § *Passer à la
+0.13.0*).
+
+**Installation neuve** (aucune base encore créée) :
+
 ```bash
 cp .env.example .env
 # Dans .env, remplacer la valeur de KESH_JWT_SECRET, puis décommenter
 # MARIADB_ROOT_PASSWORD et MARIADB_PASSWORD et leur donner une valeur —
-# chacune la sortie d'une commande :
+# chacune la sortie d'une commande (installation neuve seulement) :
 openssl rand -hex 32
 ```
 
 Le placeholder `<GENERATE_ME: …>` recopié tel quel est refusé au démarrage
 (depuis la 0.13.0). Les deux mots de passe MariaDB ne sont lus qu'à la
 **création** de la base : les changer ensuite dans `.env` ne change pas le mot
-de passe enregistré (manuel d'administration, § *Changer un mot de passe
-MariaDB*). Hexadécimal : une sortie base64 peut contenir `/`, qui casse une
-`DATABASE_URL`.
+de passe enregistré — Kesh échoue alors en 1045, et pour root rien ne le
+signale hormis la sauvegarde. Hexadécimal : une sortie base64 peut contenir
+`/`, qui casse une `DATABASE_URL`.
 
 ### 2. Lancer les containers
 
@@ -146,7 +158,9 @@ Puis appliquez : `docker compose up -d`.
 
 ### Base de données ne démarre pas, ou Kesh ne s'y connecte pas
 
-Diagnostic d'abord :
+Diagnostic d'abord (`logs` fonctionne même quand Compose refuse `up` faute de
+mots de passe — mesuré avec Docker Compose 2.40 ; si votre version refuse
+aussi `logs`, lisez l'erreur affichée au terminal par `up`) :
 ```bash
 docker compose logs kesh-api
 docker compose logs mariadb
@@ -158,7 +172,10 @@ docker compose logs mariadb
   d'origine (manuel d'administration, § *Passer à la 0.13.0*), puis changer le
   mot de passe par la procédure du manuel (`ALTER USER` d'abord).
 - **Compose refuse en nommant une variable** (`required variable … is missing
-  a value`) : la poser dans `.env`.
+  a value`) : la poser dans `.env` — sur une **base déjà créée**, la valeur
+  d'origine (`kesh_dev_root` / `kesh_dev` si vous n'en aviez jamais posé),
+  jamais une neuve ; une valeur neuve seulement sur une installation neuve.
+  Compose ne nomme qu'une variable à la fois : posez les deux.
 
 ⛔ `docker compose down -v` **supprime le volume de la base, définitivement** —
 les livres avec. Ne l'employer que sur une installation **sans données à

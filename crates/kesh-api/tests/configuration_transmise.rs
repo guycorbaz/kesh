@@ -1886,7 +1886,11 @@ fn mots_de_passe_publies() {
     let contenus: Vec<(&str, String)> = FICHIERS_DISTRIBUES.iter().map(|f| (*f, lire(f))).collect();
     let fichiers: Vec<(&str, &str)> = contenus.iter().map(|(n, c)| (*n, c.as_str())).collect();
     // Assertion de montage : le gabarit porte bien les deux lignes commentées.
-    let gabarit = &contenus[2].1;
+    let gabarit = &contenus
+        .iter()
+        .find(|(n, _)| *n == ".env.example")
+        .expect("montage : .env.example doit figurer dans FICHIERS_DISTRIBUES")
+        .1;
     for cle in MOTS_DE_PASSE_MARIADB {
         assert!(
             lignes_affectation(gabarit)

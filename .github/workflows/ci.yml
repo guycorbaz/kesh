@@ -241,30 +241,36 @@ jobs:
       # Story 15-13a (#551) — `docker-compose.yml` exige ses deux mots de passe
       # MariaDB (`${…:?…}`) : validé AVEC des valeurs factices, puis le refus
       # SANS elles est exigé (sortie en échec, variable nommée). Chaque
-      # variable est aussi retirée SEULE, l'autre posée : le retour d'un défaut
-      # publié sur une seule des deux ferait rougir cette étape (sinon le refus
-      # sur l'autre le masquerait). `docker-compose.prod.yml` n'a pas de
-      # variable obligatoire de cette forme : validé sans `.env`.
+      # variable est aussi retirée SEULE, l'autre posée (sinon le refus sur
+      # l'autre masquerait un défaut revenu) : le retour d'un défaut publié
+      # pour `MARIADB_ROOT_PASSWORD` fait rougir cette étape. Pour
+      # `MARIADB_PASSWORD`, non : la `DATABASE_URL` de `kesh-api` l'exige
+      # aussi, et Compose la nomme encore si le seul service `mariadb`
+      # retrouve un défaut — c'est le test Rust `configuration_transmise::
+      # mariadb` qui rougit alors. `docker-compose.prod.yml` n'a pas de
+      # variable obligatoire de cette forme : validé sans `.env`. La sortie
+      # d'erreur va sous `$RUNNER_TEMP`, hors du contexte de build Docker.
       - name: Validate compose files
         run: |
+          refus="$RUNNER_TEMP/refus.txt"
           MARIADB_ROOT_PASSWORD=ci MARIADB_PASSWORD=ci \
             docker compose -f docker-compose.yml config -q
           if env -u MARIADB_ROOT_PASSWORD -u MARIADB_PASSWORD \
-               docker compose -f docker-compose.yml config -q 2> refus.txt; then
+               docker compose -f docker-compose.yml config -q 2> "$refus"; then
             echo "docker-compose.yml doit refuser l'absence des mots de passe MariaDB"
             exit 1
           fi
-          cat refus.txt
-          grep -qE 'MARIADB_(ROOT_)?PASSWORD' refus.txt
+          cat "$refus"
+          grep -qE 'MARIADB_(ROOT_)?PASSWORD' "$refus"
           for paire in MARIADB_ROOT_PASSWORD:MARIADB_PASSWORD \
                        MARIADB_PASSWORD:MARIADB_ROOT_PASSWORD; do
             absente="${paire%%:*}"; posee="${paire#*:}"
             if env -u MARIADB_ROOT_PASSWORD -u MARIADB_PASSWORD "$posee=ci" \
-                 docker compose -f docker-compose.yml config -q 2> refus.txt; then
+                 docker compose -f docker-compose.yml config -q 2> "$refus"; then
               echo "docker-compose.yml doit refuser l'absence de $absente"
               exit 1
             fi
-            grep -q "required variable $absente is missing" refus.txt
+            grep -q "required variable $absente is missing" "$refus"
           done
           docker compose -f docker-compose.prod.yml config -q
       - uses: docker/setup-buildx-action@v3

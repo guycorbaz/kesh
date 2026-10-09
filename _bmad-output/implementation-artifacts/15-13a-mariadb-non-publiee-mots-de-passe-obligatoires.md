@@ -991,6 +991,50 @@ neuves sont dans le § 0.13.0 et le § *Changer un mot de passe MariaDB*, après
   15-11a, davantage ici — signalé, non réécrit (inventaire).
 - `CLAUDE.md` § E2E annonce encore un smoke E2E en CI : #577.
 
+**Revue de code P1 — remédiation** (agent remédiateur, Opus 5.5, en autonomie). Aucune ligne de code Rust
+de production touchée (`git diff --name-only | grep '\.rs$'` → le seul fichier de test
+`configuration_transmise.rs`).
+- **E-1 + A-1 (MEDIUM)** — distinction *installation neuve* (valeurs neuves, `openssl rand -hex 32`) /
+  *base déjà créée* (valeur d'origine : `kesh_dev_root`/`kesh_dev`, ou la chaîne gabarit recopiée, jamais
+  une neuve, puis `ALTER USER`) écrite à : `DOCKER_START.md` étape 1 (encadré « Base déjà créée » avant le
+  bloc de génération, bloc qualifié « installation neuve ») et dépannage « Compose refuse » ; manuel,
+  Étape 3 d'installation (`générez` qualifié « installation neuve », anciens défauts ajoutés à la phrase
+  « base déjà créée »), étape 3 de la procédure de mise à jour standard (« ne remplacez pas ces deux
+  valeurs »), fin de « Vérifier les placeholders » (« ne remplacez pas ces chevrons »), exemple `:?`
+  (A-6) ; CHANGELOG #551 (gabarit recopié, installation neuve, chevrons à ne pas remplacer). Grep par la
+  valeur (`openssl rand`, `générez`, `choisissez`, `MARIADB_ROOT_PASSWORD`, `MARIADB_PASSWORD`, formes
+  LaTeX comprises) sur tout le dépôt hors `_bmad-output` : sites restants triés comme justes —
+  `.env.example` (déjà en deux cas), compose (`:?` porte la mise en garde), `README.md:81` (compose de
+  dev), `crates/kesh-api/README.md` (JWT seul), manuel `:553-554` (Synology, base de l'exploitant, #575),
+  `:2295` (dépannage, déjà distingué), brochure (instance locale neuve), CI (factices).
+- **LOW** : B-L1/E-3=A-5 recette `ALTER USER` refondue (C-15-13a-3), **rejouée** sur un projet Compose
+  jetable `kesh1513ap1` (MariaDB 10.11, `MARIADB_USER=compta`, puis `down -v`) — nominal rc 0 et ligne
+  témoin, anciens mots de passe → 1045 (socket et TCP), neufs → `root@localhost`, `root@%`, `compta@%` ;
+  reprise sans recréation → rc 1 (1045), pas de ligne témoin ; compte absent → rc 1, ERROR 1396, root et
+  compte inchangés. Non remesuré : l'absence des mots de passe dans `ps` (mécanisme inchangé, entrée
+  standard). E-2 (« omettez les lignes de l'autre » → génération, `echo`, `ALTER USER`, ligne de `.env`
+  intacte) ; E-4 (`mot_de_passe_fort` → `<sortie de openssl rand -hex 32>`) ; B-L4 (`cd /opt/kesh` de la
+  restauration renvoyé à `COMPOSE_DIR` ; volume `kesh_db_data` **laissé à #575**, C-15-13a-4) ; B-L5
+  (tableau des ports : « Voir ci-dessous », encadré complété pour `docker-compose.prod.yml` ; référence
+  des ports : « Non publié (`docker-compose.yml`) ») ; A-2 (`logs` qualifié « mesuré avec Docker Compose
+  2.40 ») ; A-3 (commentaire CI : rouge pour `MARIADB_ROOT_PASSWORD`, test Rust `mariadb` pour
+  `MARIADB_PASSWORD`) ; B-L2 (`refus.txt` sous `$RUNNER_TEMP`) ; B-L3 (`contenus[2]` → recherche par
+  nom avec `expect` de montage) ; B-L6=E-5=A-4 (CHANGELOG : ligne vide double retirée, ligne vide avant
+  `---`).
+- **Gate ciblé** (base `kesh_1513a` remise à zéro par `DROP`/`CREATE`, migrations, seed) : `cargo fmt
+  --check` vert ; `cargo clippy --workspace --all-targets -D warnings` vert ; `cargo nextest run -p
+  kesh-api -E 'binary(configuration_transmise) | binary(demarrage_mariadb)'` **27/27** (25 + 2). Étape CI
+  « Validate compose files » rejouée localement depuis `ci.yml` (`bash -eo pipefail`, `RUNNER_TEMP` posé) :
+  nominal rc 0, aucun `refus.txt` à la racine ; mutation « défaut `:-kesh_dev_root` revenu » → rc 1
+  (« doit refuser l'absence de MARIADB_ROOT_PASSWORD »). Gate complet et E2E **non rejoués** (aucun code
+  de production touché ; à refaire au dernier commit de code selon D7 si la boucle continue).
+- **Manuel** : `make admin` ; `Overfull \hbox` **55 → 55**, ensemble identique (comparé par texte de
+  ligne ; un 56e né de la référence des ports, résorbé) ; aucun renvoi indéfini. Aplati (`pdftotext |
+  tr`) : « ne remplacez pas ces deux valeurs » 1, « CHANGÉS DANS LA BASE » 3, « printenv MARIADB_USER » 1,
+  « sur une installation neuve, générez chacun » 1, « Exemple abrégé » 1, « Contrai- rement aux deux
+  variables précédentes, ne remplacez pas ces chevrons » 1 (césure), `mot_de_passe_fort` 0, « omettez
+  les lignes de l'autre » 0. Brochure non touchée.
+
 ### File List
 
 - `docker-compose.yml` — port de `mariadb` retiré (commentaire, forme loopback), trois `:?`.
@@ -1008,7 +1052,7 @@ neuves sont dans le § 0.13.0 et le § *Changer un mot de passe MariaDB*, après
 - `docs/ci.md` — 3 jobs, renvoi à #577, deux sens du contrôle.
 - `docs/manual/fr/admin-manual.tex` + `.pdf` — AC 11 a–d, f–h, j, k.
 - `docs/manual/fr/marketing-brochure.tex` + `.pdf` — AC 11 m.
-- `DOCKER_START.md` — AC 12 a, a-bis.
+- `DOCKER_START.md` — AC 12 a, a-bis ; revue P1 (base déjà créée / installation neuve, `logs`).
 - `init-demo.sh` — **supprimé** (AC 12 b).
 - `CHANGELOG.md` — `[0.13.0]` : Sécurité #551, Retiré, propagation `:46` et `:52`.
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`, `epic-15-choix-autonomes.md` (C-15-13a-1, -2),
@@ -1123,3 +1167,12 @@ neuves sont dans le § 0.13.0 et le § *Changer un mot de passe MariaDB*, après
     `openssl rand -hex 32 # → mot de passe MariaDB` 0, `MARIADB_ROOT_PASSWORD"'` 0, `--protocol=TCP` 0,
     `CURRENT_USER()` 0, `compose lisible` 0 ; `deux gestes` 1 ; `exec (-T )?db` 3 ; brochure `MARIADB` 0.
   - **`.env` local** : absent du worktree (aucune mesure faussée).
+- 2026-10-09 — **Remédiation de la revue de code P1** (agent remédiateur, Opus 5.5, en autonomie). Passe P1 :
+  trois lentilles **Sonnet** en contexte frais (prompt `15-13a-review-prompt-p1.md`) — B (Blind Hunter)
+  **0 CRITICAL / 0 HIGH / 0 MEDIUM / 6 LOW**, E (Edge Case Hunter) **0 / 0 / 1 MEDIUM / 4 LOW**, A
+  (Acceptance Auditor) **0 / 0 / 1 MEDIUM / 5 LOW** ; E-1 et A-1 sont un même thème (un mot de passe
+  MariaDB neuf écrit dans `.env` sur une base déjà créée), soit **1 MEDIUM distinct** ; doublons LOW :
+  B-L6 = E-5 = A-4, E-3 = A-5. Tout est remédié sans code Rust de production (détail au Dev Agent Record),
+  sauf le nom de volume de B-L4, laissé à #575 (C-15-13a-4). Choix consignés : C-15-13a-3, C-15-13a-4.
+  La remédiation touche la recette du manuel (refondue et rejouée), `ci.yml` (configuration CI) et un test :
+  une passe suivante est requise par la règle (un MEDIUM en P1).

@@ -5563,3 +5563,17 @@ l'import (#458–#461).
 - **Retenu** : l'étape garde la vérification de l'AC 4 b et ajoute une boucle : pour chaque variable, retirer les deux puis poser **l'autre** ; Compose doit refuser **en nommant celle qui manque** (`required variable <nom> is missing`). M27 rougit (rejouée sous `bash -eo pipefail` sur une copie). Reste vert, à dessein, le retour d'un défaut sur le seul `MARIADB_PASSWORD` du service `mariadb` : la `DATABASE_URL` de `kesh-api` exige encore la variable, Compose refuse toujours son absence — aucun changement de comportement ; le test Rust `mariadb` le voit.
 - **Écartées** : s'en tenir à l'esquisse de la fiche (M27 survit) ; ne compter que sur le test Rust (l'AC 4 veut le refus exercé par Compose lui-même).
 - **Réversible** : oui.
+
+## C-15-13a-3 — Recette `ALTER USER` : sous-shell `set -e`, mots de passe affichés avant, compte lu dans le conteneur (revue P1, B-L1, E-3 = A-5)
+
+- **Contexte** : la revue de code P1 relève que la recette n'affichait les nouveaux mots de passe qu'**après** l'`ALTER USER` (session coupée = mots de passe perdus), sans arrêt à la première erreur, et avec le compte `kesh` en dur alors que `MARIADB_USER` est réglable.
+- **Retenu** : la recette tient dans un sous-shell `( set -e … )` — arrêt à la première erreur sans fermer le terminal interactif ; `echo` des deux valeurs **avant** l'application, puis `read` (pause pour les recopier) ; compte applicatif lu par `docker compose exec -T mariadb printenv MARIADB_USER` et passé **en premier** (seule ligne sans `IF EXISTS` : s'il est refusé, rien n'a changé) ; ligne témoin `CHANGÉS DANS LA BASE` ; `up -d` dans un **second** bloc, pour qu'un collage du premier ne le lance pas avant l'enregistrement de `.env`. Rejouée sur un projet Compose jetable `kesh1513ap1` (`MARIADB_USER=compta`) : nominal, échec de connexion root (rc 1, pas de ligne témoin), compte absent (rc 1, ERROR 1396, root et compte inchangés).
+- **Écartées** : `set -e` nu (fermerait le terminal sur une erreur) ; écrire les mots de passe dans un fichier sous `umask 077` (un fichier de secrets de plus à effacer) ; dire seulement « adaptez `kesh` » (le lecteur ne le fera pas).
+- **Réversible** : oui (texte du manuel).
+
+## C-15-13a-4 — Volume `kesh_db_data` du manuel laissé à #575 (revue P1, B-L4)
+
+- **Contexte** : B-L4 relève le nom de volume `kesh\_db\_data` (`admin-manual.tex`, procédure de mise à jour standard et stratégie de sauvegarde), faux contre `kesh-mariadb-data`.
+- **Retenu** : laissé à **#575**, dont le constat cite précisément ces deux sites ; la story 15-13a ne les touche pas. Le reste de B-L4 (`cd /opt/kesh` de la restauration) est traité : renvoi à `COMPOSE_DIR` du script de sauvegarde.
+- **Écartée** : corriger ici (double traitement d'une issue ouverte, et la section Synology de #575 demande une refonte plus large).
+- **Réversible** : oui.
