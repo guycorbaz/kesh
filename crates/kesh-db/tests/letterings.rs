@@ -1061,10 +1061,32 @@ async fn lettering_removed_is_audited(pool: MySqlPool) {
 // AC13 — l'invariant des groupes
 // ---------------------------------------------------------------------------
 
+/// Les clés des groupes qui violent l'invariant d'AC13 (toutes sociétés).
+async fn violations_des_groupes(pool: &MySqlPool) -> Vec<i64> {
+    sqlx::query_scalar(
+        "SELECT jel.lettering_key FROM journal_entry_lines jel \
+         JOIN journal_entries je ON je.id = jel.entry_id \
+         WHERE jel.lettering_key IS NOT NULL \
+         GROUP BY jel.lettering_key \
+         HAVING COUNT(*) < 2 \
+             OR COUNT(DISTINCT jel.account_id) <> 1 \
+             OR COUNT(DISTINCT jel.lettering_origin) <> 1 \
+             OR COUNT(DISTINCT je.company_id) <> 1 \
+             OR SUM(jel.debit - jel.credit) <> 0 \
+             OR MIN(jel.id) <> jel.lettering_key",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
 /// Tout groupe a ≥ 2 lignes, un seul compte, une seule origine, une seule
 /// société, une somme nulle, et `lettering_key = MIN(id)`. ⛔ La lettrabilité
 /// n'est PAS contrôlée, par décision (C104). La 15-1a-ii y ajoutera des
-/// groupes `reversal` posés par la contre-passation.
+/// groupes `reversal` posés par la contre-passation ; un groupe `reversal`
+/// posé en mode `System` et un groupe d'une seconde société y figurent déjà,
+/// et deux contrôles négatifs prouvent que les clauses « une origine » et
+/// « une société » rougissent (revue P1, E-6).
 #[sqlx::test(migrations = "./test-schema")]
 async fn lettering_invariants(pool: MySqlPool) {
     let m = monde(&pool).await;
@@ -1099,8 +1121,44 @@ async fn lettering_invariants(pool: MySqlPool) {
     let (_, i) = ligne(&pool, &m, passif, m.fy26, d(2026, 3, 2), dec!(50)).await;
     lettrer(&pool, &m, &[h, i]).await.unwrap();
     paire(&pool, &m, (m.fy26, d(2026, 4, 1)), (m.fy26, d(2026, 4, 2))).await;
+    // Un groupe d'une autre origine (mode System, comme la 15-1a-ii le posera)
+    // et un groupe dans une seconde société : sans eux, les clauses « une
+    // seule origine » et « une seule société » portaient sur une seule valeur
+    // possible (revue P1, E-6 / A-L6).
+    let (_, r1) = ligne(&pool, &m, passif, m.fy26, d(2026, 5, 1), dec!(70)).await;
+    let (_, r2) = ligne(&pool, &m, passif, m.fy26, d(2026, 5, 2), dec!(-70)).await;
+    lettrer_avec(
+        &pool,
+        &m,
+        &[r1, r2],
+        Origin::Reversal,
+        Mode::System {
+            held_open_fiscal_year_id: m.fy26,
+        },
+    )
+    .await
+    .unwrap();
     let (x, y) = autre_societe(&pool, &m).await;
-    let _ = (x, y);
+    let (other, other_fy): (i64, i64) = sqlx::query_as(
+        "SELECT je.company_id, je.fiscal_year_id FROM journal_entry_lines jel \
+         JOIN journal_entries je ON je.id = jel.entry_id WHERE jel.id = ?",
+    )
+    .bind(x)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    letterings::create_group_in_tx(
+        &mut tx,
+        other,
+        &[x, y],
+        Origin::Manual,
+        Mode::Manual,
+        m.actor(),
+    )
+    .await
+    .expect("groupe de la seconde société");
+    tx.commit().await.unwrap();
 
     let groupes: i64 = sqlx::query_scalar(
         "SELECT COUNT(DISTINCT lettering_key) FROM journal_entry_lines WHERE lettering_key IS NOT NULL",
@@ -1108,24 +1166,85 @@ async fn lettering_invariants(pool: MySqlPool) {
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(groupes, 3);
-
-    let violations: Vec<(i64, String)> = sqlx::query_as(
-        "SELECT jel.lettering_key, 'groupe invalide' FROM journal_entry_lines jel \
-         JOIN journal_entries je ON je.id = jel.entry_id \
-         WHERE jel.lettering_key IS NOT NULL \
-         GROUP BY jel.lettering_key \
-         HAVING COUNT(*) < 2 \
-             OR COUNT(DISTINCT jel.account_id) <> 1 \
-             OR COUNT(DISTINCT jel.lettering_origin) <> 1 \
-             OR COUNT(DISTINCT je.company_id) <> 1 \
-             OR SUM(jel.debit - jel.credit) <> 0 \
-             OR MIN(jel.id) <> jel.lettering_key",
+    assert_eq!(groupes, 5);
+    let (origines, societes): (i64, i64) = sqlx::query_as(
+        "SELECT COUNT(DISTINCT jel.lettering_origin), COUNT(DISTINCT je.company_id) \
+         FROM journal_entry_lines jel JOIN journal_entries je ON je.id = jel.entry_id \
+         WHERE jel.lettering_key IS NOT NULL",
     )
-    .fetch_all(&pool)
+    .fetch_one(&pool)
     .await
     .unwrap();
-    assert!(violations.is_empty(), "groupes invalides : {violations:?}");
+    assert_eq!((origines, societes), (2, 2), "deux origines, deux sociétés");
+
+    assert!(
+        violations_des_groupes(&pool).await.is_empty(),
+        "groupes invalides : {:?}",
+        violations_des_groupes(&pool).await
+    );
+
+    // Contrôles négatifs : chaque clause qu'un montage ordinaire ne peut
+    // violer rougit sur une violation isolée, posée en SQL direct puis
+    // défaite — sans quoi la requête pourrait être vraie par construction.
+    // (1) Une seule origine : une ligne d'un groupe manuel passe `reversal`.
+    sqlx::query("UPDATE journal_entry_lines SET lettering_origin = 'reversal' WHERE id = ?")
+        .bind(c)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        violations_des_groupes(&pool).await.len(),
+        1,
+        "clause des origines"
+    );
+    sqlx::query("UPDATE journal_entry_lines SET lettering_origin = 'manual' WHERE id = ?")
+        .bind(c)
+        .execute(&pool)
+        .await
+        .unwrap();
+    // (2) Une seule société : une écriture de la seconde société, sur le compte
+    // lettrable de la première (donnée corrompue que les FK admettent), à
+    // somme nulle, rattachée au groupe {a, b} — même compte, même origine,
+    // somme nulle, `MIN(id)` inchangé : seule la clause des sociétés la voit.
+    let (_, intrus) = ecriture(
+        &pool,
+        other,
+        other_fy,
+        d(2026, 6, 1),
+        &[
+            (m.lettrable(), dec!(50), dec!(0)),
+            (m.lettrable(), dec!(0), dec!(50)),
+        ],
+    )
+    .await;
+    let cle_ab = marque(&pool, a).await.0.expect("groupe {a, b}");
+    for id in &intrus {
+        sqlx::query(
+            "UPDATE journal_entry_lines SET lettering_key = ?, lettering_origin = 'manual' \
+             WHERE id = ?",
+        )
+        .bind(cle_ab)
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    assert_eq!(
+        violations_des_groupes(&pool).await,
+        vec![cle_ab],
+        "clause des sociétés"
+    );
+    sqlx::query(
+        "UPDATE journal_entry_lines SET lettering_key = NULL, lettering_origin = NULL \
+         WHERE lettering_key = ? AND id IN (?, ?)",
+    )
+    .bind(cle_ab)
+    .bind(intrus[0])
+    .bind(intrus[1])
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(violations_des_groupes(&pool).await.is_empty());
     let demi: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM journal_entry_lines \
          WHERE (lettering_key IS NULL) <> (lettering_origin IS NULL)",

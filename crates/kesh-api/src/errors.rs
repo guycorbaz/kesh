@@ -2941,14 +2941,18 @@ impl IntoResponse for AppError {
                         "Un lettrage réunit au moins deux lignes distinctes.",
                     ),
                 ),
-                DbError::LetteringTooManyLines { .. } => build_response(
-                    StatusCode::BAD_REQUEST,
-                    "LETTERING_TOO_MANY_LINES",
-                    &t(
-                        "error-lettering-too-many-lines",
-                        "Un lettrage réunit au plus 200 lignes.",
-                    ),
-                ),
+                DbError::LetteringTooManyLines { max } => {
+                    // Le plafond voyage dans la variante : le message le lit,
+                    // au lieu d'écrire « 200 » en dur (revue P1, E-4).
+                    let fallback = format!("Un lettrage réunit au plus {max} lignes.");
+                    let mut args = FluentArgs::new();
+                    args.set("max", max as i64);
+                    build_response(
+                        StatusCode::BAD_REQUEST,
+                        "LETTERING_TOO_MANY_LINES",
+                        &t_args("error-lettering-too-many-lines", &fallback, &args),
+                    )
+                }
                 DbError::LetteringAccountsDiffer => build_response(
                     StatusCode::CONFLICT,
                     "LETTERING_ACCOUNTS_DIFFER",
@@ -4193,11 +4197,12 @@ mod tests {
                 sans(),
             ),
             (
-                DbError::LetteringTooManyLines { max: 200 },
+                // Un plafond autre que 200 : le message doit le lire (E-4).
+                DbError::LetteringTooManyLines { max: 7 },
                 StatusCode::BAD_REQUEST,
                 "LETTERING_TOO_MANY_LINES",
                 "error-lettering-too-many-lines",
-                sans(),
+                "7".into(),
             ),
             (
                 DbError::LetteringAccountsDiffer,
@@ -4270,7 +4275,8 @@ mod tests {
             assert_eq!(body["error"]["code"], code);
             let attendu = texte(cle)
                 .replace("{ $code }", &valeur)
-                .replace("{ $difference }", &valeur);
+                .replace("{ $difference }", &valeur)
+                .replace("{ $max }", &valeur);
             assert_eq!(body["error"]["message"], attendu, "{code}");
         }
     }

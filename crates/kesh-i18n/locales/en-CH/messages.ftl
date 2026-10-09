@@ -44,7 +44,7 @@ error-invoice-must-be-unvalidated-first = This invoice is validated: unvalidate 
 
 # Lettrage (Story 15-1a-i, #518)
 error-lettering-too-few-lines = A matching group brings together at least two distinct lines.
-error-lettering-too-many-lines = A matching group brings together at most 200 lines.
+error-lettering-too-many-lines = A matching group brings together at most { $max } lines.
 error-lettering-accounts-differ = The lines of a matching group must all be on the same account.
 error-lettering-account-not-letterable = This account cannot be matched: only asset and liability accounts that are not bank accounts can be matched.
 error-lettering-line-owned-by-document = One of these lines belongs to a document: it cannot be matched or unmatched by hand.

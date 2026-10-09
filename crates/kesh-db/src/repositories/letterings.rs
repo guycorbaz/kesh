@@ -426,9 +426,15 @@ async fn lock_fiscal_years_of_group(
     Ok(resultat)
 }
 
-/// R7 point 3 — mode `System` : le nom des exercices du groupe, lu sans verrou.
+/// Le nom des exercices du groupe, lu sans verrou — mode `System` (R7 point 3)
+/// et lecture d'un groupe ([`find_group`]).
+///
+/// Un exercice manquant est un [`DbError::Invariant`], comme en mode `Manual`
+/// ([`lock_fiscal_years_of_group`]) : l'exercice d'une ligne lue ne peut
+/// disparaître (`fk_journal_entries_fiscal_year`, sans cascade). Le taire
+/// écrirait un nom vide dans la réponse et dans l'audit (revue P1, E-2).
 async fn fiscal_year_names(
-    tx: &mut Transaction<'_, MySql>,
+    conn: &mut MySqlConnection,
     company_id: i64,
     fiscal_year_ids: &BTreeSet<i64>,
 ) -> Result<BTreeMap<i64, String>, DbError> {
@@ -437,11 +443,39 @@ async fn fiscal_year_names(
     for id in fiscal_year_ids {
         q = q.bind(*id);
     }
-    Ok(q.fetch_all(&mut **tx)
+    let names: BTreeMap<i64, String> = q
+        .fetch_all(conn)
         .await
         .map_err(map_db_error)?
         .into_iter()
-        .collect())
+        .collect();
+    if names.len() != fiscal_year_ids.len() {
+        return Err(DbError::Invariant(format!(
+            "lettrage : {} exercice(s) attendu(s) pour le groupe, {} lu(s)",
+            fiscal_year_ids.len(),
+            names.len()
+        )));
+    }
+    Ok(names)
+}
+
+/// Le numéro du compte d'un groupe (réponse et audit), sans exiger qu'il soit
+/// encore lettrable (C104). Compte hors de la société → [`DbError::Invariant`] :
+/// le compte d'une ligne lue ne peut disparaître (FK sans cascade), et le taire
+/// écrirait un numéro vide (revue P1, E-2).
+async fn group_account_number(
+    conn: &mut MySqlConnection,
+    company_id: i64,
+    account_id: i64,
+) -> Result<String, DbError> {
+    letterable_account(conn, company_id, account_id)
+        .await?
+        .map(|(_, number)| number)
+        .ok_or_else(|| {
+            DbError::Invariant(format!(
+                "lettrage : le compte {account_id} d'un groupe est hors de la société"
+            ))
+        })
 }
 
 /// La borne du verrou de période, lue ordinairement.
@@ -545,6 +579,8 @@ fn build_group(
                 entry_id: l.entry_id,
                 entry_number: l.entry_number,
                 fiscal_year_id: l.fiscal_year_id,
+                // Les deux lectures de noms rendent `Invariant` s'il en manque un
+                // (E-2) : le repli vide n'est plus atteignable.
                 fiscal_year_name: names.get(&l.fiscal_year_id).cloned().unwrap_or_default(),
                 date: l.entry_date,
                 debit: l.debit,
@@ -785,10 +821,7 @@ pub async fn dissolve_group_in_tx(
         }
     };
 
-    let account_number = letterable_account(tx, company_id, account_id)
-        .await?
-        .map(|(_, number)| number)
-        .unwrap_or_default();
+    let account_number = group_account_number(tx, company_id, account_id).await?;
 
     let resultat = sqlx::query(
         "UPDATE journal_entry_lines SET lettering_key = NULL, lettering_origin = NULL \
@@ -846,21 +879,8 @@ pub async fn find_group(
         })?;
     let account_id = premiere.account_id;
     let exercices: BTreeSet<i64> = lines.iter().map(|l| l.fiscal_year_id).collect();
-    let sql = with_placeholders(LETTERING_FISCAL_YEAR_NAMES_SQL, exercices.len());
-    let mut q = sqlx::query_as::<_, (i64, String)>(&sql).bind(company_id);
-    for id in &exercices {
-        q = q.bind(*id);
-    }
-    let names: BTreeMap<i64, String> = q
-        .fetch_all(&mut *conn)
-        .await
-        .map_err(map_db_error)?
-        .into_iter()
-        .collect();
-    let account_number = letterable_account(conn, company_id, account_id)
-        .await?
-        .map(|(_, number)| number)
-        .unwrap_or_default();
+    let names = fiscal_year_names(&mut *conn, company_id, &exercices).await?;
+    let account_number = group_account_number(conn, company_id, account_id).await?;
     Ok(Some(build_group(
         key,
         origin,

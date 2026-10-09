@@ -2418,9 +2418,11 @@ Le journal d'audit garde toujours la trace de l'action originale ET de l'action 
     \item[Journal] Enregistrement chronologique de toutes les écritures comptables.
     \item[Journal d'audit (angl. audit log)] Registre des modifications comptables (qui, quand, quelle valeur), exigé par le CO Art. 957a. ⚠️ \emph{La couverture n'est pas totale --- voir la section «~Traçabilité~» pour les deux familles d'opérations qui n'y figurent pas encore.} Il se consulte à l'écran, \emph{Administration} → \emph{Journal d'audit} (\S\ref{sec:tracabilite}). À ne pas confondre avec le \emph{journal} des écritures, ci-dessus. Aucune entrée ne peut y être modifiée, ni supprimée sur une installation en service.
     \item[Lettrage] Marque posée sur des lignes d'un même compte d'actif ou de passif dont la
-          somme est nulle, pour dire qu'elles se soldent entre elles (une facture et ses
-          règlements, une écriture et sa contre-passation\ldots). Dans cette version, le lettrage
+          somme est nulle, pour dire qu'elles se soldent entre elles (une écriture et sa
+          contre-passation, un acompte et sa reprise\ldots). Dans cette version, le lettrage
           manuel et le délettrage se font par l'API (\texttt{/api/v1/letterings})~; l'écran viendra.
+          Kesh ne lettre encore rien de lui-même~: ni une facture soldée par ses règlements, ni une
+          écriture et sa contre-passation.
     \item[Liquidités] Avoirs immédiatement disponibles (caisse, comptes bancaires et postaux).
     \item[Partie double] Principe selon lequel toute opération est enregistrée sur au moins deux comptes, débit = crédit.
     \item[Passif] Origine des ressources de l'entreprise (dettes + capitaux propres). Classe 2.

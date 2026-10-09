@@ -44,7 +44,7 @@ error-invoice-must-be-unvalidated-first = Cette facture est validée : dévalide
 
 # Lettrage (Story 15-1a-i, #518)
 error-lettering-too-few-lines = Un lettrage réunit au moins deux lignes distinctes.
-error-lettering-too-many-lines = Un lettrage réunit au plus 200 lignes.
+error-lettering-too-many-lines = Un lettrage réunit au plus { $max } lignes.
 error-lettering-accounts-differ = Les lignes d'un lettrage doivent toutes porter sur le même compte.
 error-lettering-account-not-letterable = Ce compte ne se lettre pas : seuls les comptes d'actif et de passif qui ne sont pas des comptes bancaires se lettrent.
 error-lettering-line-owned-by-document = Une de ces lignes appartient à une pièce : elle ne se lettre ni ne se délettre à la main.
@@ -58,7 +58,7 @@ error-lettering-concurrent-change = Le lettrage a changé entre-temps ; réessay
 error-validation = Erreur de validation
 error-email-invalid = Format d'email invalide
 error-username-empty = Le nom d'utilisateur ne peut pas être vide
-error-username-too-long = Le nom d'utilisateur ne doit pas dépasser { $max } caractères
+error-username-too-long = Le nom d'utilisateur ne doit pas dépasser 200 caractères
 error-username-contains-at = Le nom d'utilisateur ne peut pas contenir le caractère « @ »
 error-email-template-unknown-variables = Le template contient des variables inconnues
 
@@ -549,17 +549,17 @@ invoices-settings-vat-payable = Compte TVA due (Passif)
 invoices-settings-vat-recoverable = Compte TVA récupérable (Actif)
 invoices-settings-vat-decompte = Compte de décompte TVA (Passif)
 invoices-description-error-empty = Le libellé est vide
-invoices-description-error-too-long = Le libellé dépasse { $max } caractères (actuel : { $actual })
+invoices-description-error-too-long = Le libellé dépasse 200 caractères (actuel : { $actual })
 invoices-description-error-control-char = Caractère de contrôle non autorisé
 invoices-description-error-unknown-placeholder = Placeholder inconnu : {"{"}{ $name }{"}"}
 invoices-description-error-no-placeholder = Le libellé doit contenir au moins un placeholder reconnu ({"{"}YEAR{"}"}, {"{"}INVOICE_NUMBER{"}"}, {"{"}CONTACT_NAME{"}"})
 invoices-format-error-empty = Le format de numérotation est vide
-invoices-format-error-too-long = Le format dépasse { $max } caractères (actuel : { $actual })
+invoices-format-error-too-long = Le format dépasse 200 caractères (actuel : { $actual })
 invoices-format-error-bad-chars = Le format contient des caractères non autorisés
-invoices-format-error-bad-padding = Padding {"{"}SEQ:{ $n }{"}"} invalide — doit être entre 1 et { $max }
+invoices-format-error-bad-padding = Padding {"{"}SEQ:{ $n }{"}"} invalide — doit être entre 1 et 200
 invoices-format-error-unknown-placeholder = Placeholder inconnu : {"{"}{ $name }{"}"}
 invoices-format-error-no-placeholder = Le format doit contenir au moins un placeholder reconnu ({"{"}YEAR{"}"}, {"{"}FY{"}"}, {"{"}SEQ{"}"}, {"{"}SEQ:NN{"}"})
-invoices-format-error-rendered-too-long = Le format générerait un numéro de { $len } caractères (max { $max })
+invoices-format-error-rendered-too-long = Le format générerait un numéro de { $len } caractères (max 200)
 invoice-new-title = Nouvelle facture
 invoice-edit-title = Modifier la facture
 invoice-view-title = Facture
@@ -1207,7 +1207,7 @@ reconciliation-manual-value-date-label = Date de valeur
 reconciliation-manual-submit = Affecter
 reconciliation-manual-error-no-proposal = Aucune transaction sélectionnée
 reconciliation-manual-error-counterparty-required = Compte de contrepartie obligatoire
-reconciliation-manual-error-description-too-long = Description trop longue (max { $max } caractères)
+reconciliation-manual-error-description-too-long = Description trop longue (max 200 caractères)
 reconciliation-manual-description-placeholder = Frais bancaires mai
 
 # Story 8-5a-bis FR48 — éclatement de transaction agrégée.
@@ -1333,10 +1333,10 @@ reconciliation-split-th-description = Description
 reconciliation-split-th-project = Projet
 reconciliation-split-value-date-label = Date de valeur
 reconciliation-split-error-min-lines = Au moins { $min } lignes requises
-reconciliation-split-error-max-lines = Maximum { $max } lignes
+reconciliation-split-error-max-lines = Maximum 200 lignes
 reconciliation-split-error-account-required = Ligne { $line } : compte requis
 reconciliation-split-error-amount-positive = Ligne { $line } : montant > 0 requis
-reconciliation-split-error-description-too-long = Ligne { $line } : description trop longue (max { $max })
+reconciliation-split-error-description-too-long = Ligne { $line } : description trop longue (max 200)
 
 # === Story 9-1 — Rapports comptables (34 clés) ===
 

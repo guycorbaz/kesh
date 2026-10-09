@@ -6,7 +6,8 @@
 //! — `crates/*/src/**/*.rs`, **hors** blocs `#[cfg(test)]` (les tests de dépôt
 //! vivent aussi dans des `mod tests` de `src/`) et **hors**
 //! `kesh-db/src/repositories/letterings.rs` — et refuse tout littéral de chaîne
-//! qui est un `UPDATE` ou un `INSERT` (toutes formes : `VALUES`, `SELECT`) et
+//! qui porte le mot `UPDATE`, `INSERT` ou `REPLACE` (toutes formes : `VALUES`,
+//! `SELECT`, quel que soit le blanc qui suit le verbe) et
 //! qui nomme `lettering_key` ou `lettering_origin`, ou qui interpole
 //! `LINE_COLUMNS` (la liste de colonnes des lignes, qui les porte).
 //!
@@ -175,8 +176,27 @@ fn ecritures_de_la_marque(source: &str) -> Vec<String> {
         .into_iter()
         .filter(|l| !tests.iter().any(|(de, a)| l.debut >= *de && l.debut <= *a))
         .filter(|l| {
-            let majuscules = l.texte.to_ascii_uppercase();
-            let ecrit = majuscules.contains("UPDATE ") || majuscules.contains("INSERT ");
+            // Un verbe d'écriture est un MOT du littéral, quel que soit le
+            // blanc qui le suit (espace, tabulation, saut de ligne, `\n`
+            // échappé) : chercher large (P7). `REPLACE` en est un (revue P1,
+            // B6). Seuls `FOR UPDATE` (lecture verrouillante) et `ON UPDATE`
+            // (DDL) ne sont pas des écritures ; `ON DUPLICATE KEY UPDATE` en
+            // reste une.
+            let mots: Vec<&str> = l
+                .texte
+                .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                .filter(|m| !m.is_empty())
+                .collect();
+            let ecrit = mots.iter().enumerate().any(|(n, mot)| {
+                let verbe = ["UPDATE", "INSERT", "REPLACE"]
+                    .iter()
+                    .any(|v| mot.eq_ignore_ascii_case(v));
+                let lecture_ou_ddl = mot.eq_ignore_ascii_case("UPDATE")
+                    && n > 0
+                    && (mots[n - 1].eq_ignore_ascii_case("FOR")
+                        || mots[n - 1].eq_ignore_ascii_case("ON"));
+                verbe && !lecture_ou_ddl
+            });
             let nomme = l.texte.contains("lettering_key")
                 || l.texte.contains("lettering_origin")
                 || l.texte.contains("{LINE_COLUMNS}");
@@ -290,11 +310,26 @@ fn the_detector_sees_writes_and_only_writes() {
             fn g() { let s = "{ids}"; }
         }
         const F: &str = "update journal_entry_lines set lettering_origin = 'manual'";
+        const G: &str = "REPLACE INTO journal_entry_lines (id, lettering_key) VALUES (1, 1)";
+        const H: &str = "UPDATE\njournal_entry_lines SET lettering_key = 1";
+        const I: &str = "INSERT\tINTO journal_entry_lines (lettering_origin) VALUES ('x')";
+        const J: &str = r#"UPDATE
+            journal_entry_lines SET lettering_origin = NULL"#;
+        const K: &str = "SELECT lettering_key FROM journal_entry_lines WHERE updated_at > ?";
+        const L: &str = "SELECT id FROM journal_entry_lines WHERE lettering_key = ? FOR UPDATE";
+        const M: &str = "INSERT INTO t (a) VALUES (1) ON DUPLICATE KEY UPDATE lettering_key = 1";
     "##;
     let vus = ecritures_de_la_marque(source);
-    assert_eq!(vus.len(), 4, "{vus:#?}");
+    assert_eq!(vus.len(), 9, "{vus:#?}");
     assert!(vus[0].starts_with("UPDATE journal_entry_lines SET lettering_key"));
     assert!(vus[1].starts_with("INSERT INTO journal_entry_lines (id, lettering_origin)"));
     assert!(vus[2].contains("{LINE_COLUMNS}"));
     assert!(vus[3].starts_with("update journal_entry_lines set lettering_origin"));
+    // Revue P1 (B6) : `REPLACE`, et un verbe suivi d'un autre blanc qu'une espace.
+    assert!(vus[4].starts_with("REPLACE INTO"));
+    assert!(vus[5].starts_with("UPDATE\\njournal_entry_lines"));
+    assert!(vus[6].starts_with("INSERT\\tINTO"));
+    assert!(vus[7].starts_with("UPDATE\n"));
+    // `FOR UPDATE` n'est pas une écriture ; `ON DUPLICATE KEY UPDATE` en est une.
+    assert!(vus[8].contains("ON DUPLICATE KEY UPDATE"));
 }

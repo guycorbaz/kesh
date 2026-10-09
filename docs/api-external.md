@@ -220,7 +220,7 @@ Les principales ressources accessibles via l'API (liste non exhaustive — toute
 
 ⁵ Depuis la v0.13.0 — voir « Lettrer des lignes » ci-dessous.
 
-**Les lignes d'une écriture portent leur lettrage** *(depuis la v0.13.0)* : dans toute réponse qui expose les lignes (`GET /journal-entries`, `GET /journal-entries/{id}`, et les réponses de `POST`, `PUT` et de la contre-passation), chaque ligne porte trois champs, **toujours présents** : `letteringKey` (la clé du groupe de lettrage), `letteringCode` (son code affiché, `AA` pour la clé 27) et `letteringOrigin` (`document`, `reversal` ou `manual`) — tous trois `null` quand la ligne est **ouverte**.
+**Les lignes d'une écriture portent leur lettrage** *(depuis la v0.13.0)* : dans toute réponse qui expose les lignes (`GET /journal-entries`, `GET /journal-entries/{id}`, et les réponses de `POST`, `PUT` et de la contre-passation), chaque ligne porte trois champs, **toujours présents** : `letteringKey` (la clé du groupe de lettrage), `letteringCode` (son code affiché, `AA` pour la clé 27) et `letteringOrigin` (`manual` ; `document` et `reversal` sont réservés aux lettrages que Kesh posera de lui-même, voir « Lettrer des lignes ») — tous trois `null` quand la ligne est **ouverte**.
 
 ### Modifier une écriture — `PUT /api/v1/journal-entries/{id}`
 
@@ -286,7 +286,7 @@ Les `details` sont ceux du `PUT` (`documentId`, `documentNumber` ; `fiscalYearId
 
 ### Lettrer des lignes — `/api/v1/letterings`
 
-*(Depuis la v0.13.0 ; l'écran viendra.)* Un **lettrage** marque comme se soldant entre elles des lignes d'un **même compte** d'actif ou de passif — une facture et ses règlements, une écriture et sa contre-passation, un acompte et sa reprise. Un groupe réunit **de 2 à 200 lignes** dont la somme `débit − crédit` est **exactement nulle** ; pas de lettrage partiel. Sa **clé** est le plus petit identifiant de ses lignes, son **code** cette clé écrite en lettres (`1 → A`, `27 → AA`). Trois origines : `manual` (posé par ces routes), `reversal` (posé par Kesh entre une écriture et sa contre-passation) et `document` (posé par Kesh quand une pièce est soldée).
+*(Depuis la v0.13.0 ; l'écran viendra.)* Un **lettrage** marque comme se soldant entre elles des lignes d'un **même compte** d'actif ou de passif — une écriture et sa contre-passation, un acompte et sa reprise. Un groupe réunit **de 2 à 200 lignes** dont la somme `débit − crédit` est **exactement nulle** ; pas de lettrage partiel. Sa **clé** est le plus petit identifiant de ses lignes, son **code** cette clé écrite en lettres (`1 → A`, `27 → AA`). L'origine d'un groupe est `manual` : il est posé par ces routes. ⚠️ **À ce stade, Kesh ne lettre rien de lui-même** : les origines `reversal` (une écriture et sa contre-passation) et `document` (une pièce soldée) sont réservées aux lettrages que Kesh posera de lui-même dans une version ultérieure ; aucune route ne les rend encore.
 
 **`POST /api/v1/letterings`** — écriture (`read-write`). Corps : `{ "lineIds": [ … ] }`. Réponse `201` : `{ key, code, origin: "manual", accountId, lines: [ { id, entryId, entryNumber, fiscalYearId, fiscalYearName, date, debit, credit } ] }`. ⚠️ Le numéro d'écriture repart à 1 à chaque exercice : il se lit avec `fiscalYearId` / `fiscalYearName`.
 
@@ -319,8 +319,8 @@ Refus du `DELETE`, dans l'ordre :
 | Refus | Code | Statut |
 |---|---|---|
 | Clé ou code invalide, groupe inconnu ou d'une autre company | `NOT_FOUND` | `404` |
-| Groupe d'origine `document` — annuler le règlement, pas délettrer | `LETTERING_IS_DOCUMENT` | `409` |
-| Groupe `reversal` dont une ligne appartient à une pièce | `LETTERING_LINE_OWNED_BY_DOCUMENT` | `409` |
+| Groupe d'origine `document` — annuler le règlement, pas délettrer *(aucun groupe `document` n'existe encore)* | `LETTERING_IS_DOCUMENT` | `409` |
+| Groupe `reversal` dont une ligne appartient à une pièce *(aucun groupe `reversal` n'existe encore)* | `LETTERING_LINE_OWNED_BY_DOCUMENT` | `409` |
 | Toutes les lignes en période close | `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` | `409` |
 
 Le délettrage n'exige pas que le compte soit encore lettrable : un groupe dont le compte a été retypé ou rattaché depuis à un compte bancaire se délettre. ⚠️ `LETTERING_CONCURRENT_CHANGE` (`409`) signale qu'un groupe a changé entre la lecture et l'écriture : réessayez. ⚠️ Un interblocage est rejoué par le serveur ; s'il persiste, la réponse est un `500` — réessayez.

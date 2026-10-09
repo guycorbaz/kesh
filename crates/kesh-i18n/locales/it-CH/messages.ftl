@@ -44,7 +44,7 @@ error-invoice-must-be-unvalidated-first = Questa fattura è convalidata: annulla
 
 # Lettrage (Story 15-1a-i, #518)
 error-lettering-too-few-lines = Un abbinamento riunisce almeno due righe distinte.
-error-lettering-too-many-lines = Un abbinamento riunisce al massimo 200 righe.
+error-lettering-too-many-lines = Un abbinamento riunisce al massimo { $max } righe.
 error-lettering-accounts-differ = Le righe di un abbinamento devono riguardare tutte lo stesso conto.
 error-lettering-account-not-letterable = Questo conto non si abbina: si abbinano solo i conti di attivo e di passivo che non sono conti bancari.
 error-lettering-line-owned-by-document = Una di queste righe appartiene a un documento: non si abbina né si disabbina a mano.

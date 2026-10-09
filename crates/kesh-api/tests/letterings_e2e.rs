@@ -4,7 +4,8 @@
 //! forme (exercice par ligne) ; `GET /api/v1/letterings/{key}` par clé et par
 //! code ; les références invalides → 404 ; les refus de forme (201 lignes, une
 //! seule ligne) ; le RBAC (Consultation lit, ne lettre ni ne délettre) ;
-//! l'anti-IDOR ; l'audit d'un `POST` par clé d'API (`actor_api_key_id`) ; le
+//! l'anti-IDOR ; l'audit d'un `POST` par clé d'API (`actor_api_key_id`), et le
+//! refus d'une clé `read` (`API_KEY_READ_ONLY`) au `POST` et au `DELETE` ; le
 //! `DELETE` → 204 ; les trois champs neufs des lignes d'écriture traversant la
 //! frontière HTTP ; et deux `POST` simultanés partageant une ligne — exactement
 //! un 201 et un 409, jamais un 500.
@@ -400,6 +401,15 @@ async fn form_refusals_are_400(pool: MySqlPool) {
     let (status, body) = post(&m.app, &m.token, &trop).await;
     assert_eq!(status, 400);
     assert_eq!(body["error"]["code"], "LETTERING_TOO_MANY_LINES");
+    // Le message lit le plafond par sa variable `{ $max }` du catalogue
+    // chargé (revue P1, E-4) — une variable non passée se verrait ici.
+    assert_eq!(
+        body["error"]["message"],
+        format!(
+            "Un lettrage réunit au plus {} lignes.",
+            kesh_core::lettering::MAX_LINES_PER_GROUP
+        )
+    );
     let (status, body) = post(&m.app, &m.token, &[999_999]).await;
     assert_eq!(status, 400);
     assert_eq!(body["error"]["code"], "LETTERING_TOO_FEW_LINES");
@@ -516,26 +526,66 @@ async fn foreign_lines_and_groups_are_not_found(pool: MySqlPool) {
     assert_eq!(reste, Some(theirs.key), "le groupe étranger est intact");
 }
 
+/// Crée une clé d'API par la route de gestion (session JWT) ; rend son secret.
+async fn creer_cle(m: &Monde, name: &str, scope: &str) -> String {
+    let resp = m
+        .app
+        .client
+        .post(m.app.url("/api/v1/settings/api-keys"))
+        .bearer_auth(&m.token)
+        .json(&json!({ "name": name, "scope": scope }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "création de clé");
+    resp.json::<Value>().await.unwrap()["key"]
+        .as_str()
+        .unwrap()
+        .to_string()
+}
+
+/// Une clé d'API `read` lit un groupe mais ne lettre ni ne délettre :
+/// `403 API_KEY_READ_ONLY` au `POST` et au `DELETE`, et le groupe reste
+/// intact (revue P1, E-8 — le cas négatif des routes neuves par clé).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_read_only_key_reads_but_cannot_letter(pool: MySqlPool) {
+    let m = setup(&pool).await;
+    let (a, b) = paire(&pool, &m).await;
+    let lecture = creer_cle(&m, "lecture-15-1a-i", "read").await;
+
+    let (status, body) = post(&m.app, &lecture, &[a, b]).await;
+    assert_eq!(status, 403, "{body}");
+    assert_eq!(body["error"]["code"], "API_KEY_READ_ONLY");
+    let ouvertes: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM journal_entry_lines WHERE id IN (?, ?) AND lettering_key IS NULL",
+    )
+    .bind(a)
+    .bind(b)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(ouvertes, 2, "le refus n'a rien posé");
+
+    let (status, body) = post(&m.app, &m.token, &[a, b]).await;
+    assert_eq!(status, 201, "{body}");
+    let key = body["key"].as_i64().unwrap().to_string();
+    let (status, lu) = get(&m.app, &lecture, &key).await;
+    assert_eq!(status, 200, "une clé read lit : {lu}");
+    assert_eq!(lu["key"], body["key"]);
+    let (status, body) = delete(&m.app, &lecture, &key).await;
+    assert_eq!(status, 403, "{body}");
+    assert_eq!(body["error"]["code"], "API_KEY_READ_ONLY");
+    let (status, _) = get(&m.app, &m.token, &key).await;
+    assert_eq!(status, 200, "le groupe est intact");
+}
+
 /// AC10 — un `POST` par clé d'API `read-write` est audité **comme la clé**, avec
 /// ses lignes ; la route est ouverte aux clés.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn a_read_write_key_letters_and_is_traced_as_the_key(pool: MySqlPool) {
     let m = setup(&pool).await;
     let (a, b) = paire(&pool, &m).await;
-    let resp = m
-        .app
-        .client
-        .post(m.app.url("/api/v1/settings/api-keys"))
-        .bearer_auth(&m.token)
-        .json(&json!({ "name": "integration-15-1a-i", "scope": "read-write" }))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(resp.status(), 201, "création de clé");
-    let cle = resp.json::<Value>().await.unwrap()["key"]
-        .as_str()
-        .unwrap()
-        .to_string();
+    let cle = creer_cle(&m, "integration-15-1a-i", "read-write").await;
     let key_id: i64 =
         sqlx::query_scalar("SELECT id FROM api_keys WHERE name = 'integration-15-1a-i'")
             .fetch_one(&pool)
@@ -578,6 +628,13 @@ async fn a_read_write_key_letters_and_is_traced_as_the_key(pool: MySqlPool) {
 /// Concurrence — deux `POST` simultanés partageant une ligne : exactement un
 /// 201 et un 409 `LETTERING_LINE_ALREADY_LETTERED`, **jamais** un 500 (un
 /// interblocage doit être absorbé par le rejeu, pas affaiblir le test).
+///
+/// ⚠️ **Portée** (revue P1, E-7) : ce résultat est aussi celui d'une exécution
+/// sérialisée — le test prouve l'absence de 500 et de double pose sous course,
+/// pas qu'une attente de verrou ait eu lieu. Aucun test n'observe l'attente de
+/// la seconde création sur la lecture `FOR UPDATE` de l'acte 1 (les sondes
+/// d'attente de `crates/kesh-db/tests/letterings.rs` portent sur la clôture et
+/// sur l'ordre des verrous d'exercice) : angle mort assumé.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn two_simultaneous_posts_sharing_a_line(pool: MySqlPool) {
     let m = setup(&pool).await;
