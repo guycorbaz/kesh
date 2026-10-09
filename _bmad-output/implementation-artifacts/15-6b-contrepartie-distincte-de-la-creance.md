@@ -152,6 +152,11 @@ le défait aussi, et la créance lue dans les réglages n'a **aucun type contrô
    `"SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT"` — **un** code pour les quatre rôles (le défaut est le
    même : une écriture `D X / C X`) ; `details.role` et le message distinguent le remède. Doc-comment :
    le motif (écriture nulle, reste dû qui baisse sans mouvement), #474.
+   ⚠️ **Amendé le 2026-10-09 (revue de code P1, finding L3)** : le sous-ensemble
+   `{ Rounding, WriteOffNature, VatPayable }` est **livré sous le nom `GapAccountRole`**, et non
+   `DesignatedRole` — un `DesignatedRole` de la 15-5d existe déjà dans
+   `company_invoice_settings.rs`, avec un autre ensemble (choix **C-15-6b-2**). Lire
+   `ClaimSubject::Designated(GapAccountRole)` partout où cette fiche écrit `DesignatedRole`.
    **Helper commun** (finding F3 de la P3, DRY ; choix C-15-6-26) — dans
    `crates/kesh-db/src/repositories/invoice_settlements.rs`, à côté du lecteur de la 15-6a, la
    **comparaison** est séparée de la **construction du refus** (signatures indicatives) :
@@ -562,7 +567,7 @@ le défait aussi, et la créance lue dans les réglages n'a **aucun type contrô
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Rebase** sur `main` après le merge de la 15-6a et des 15-5a à 15-5e ;
+- [x] **T0 — Rebase** sur `main` après le merge de la 15-6a et des 15-5a à 15-5e ;
   **refaire tous les numéros de ligne** de la fiche sur `HEAD` ; vérifier où la 15-5a a placé
   `ACCOUNT_NOT_POSTABLE` dans `settle_invoice` et `pay_in_tx` (AC3, AC4) ; **relever l'ordre des
   lectures** de `settle_invoice` et de `write_off_invoice` sur `HEAD` et vérifier que l'AC3 bis le suit
@@ -573,8 +578,8 @@ le défait aussi, et la créance lue dans les réglages n'a **aucun type contrô
   `failed-proposal-label.ts` (AC7), relever `sitesTotal` (AC8). Les choix **C36, C52, C54, C55**
   que la fiche cite vivent au registre de la branche des 15-5 (dépôt principal) : absents de cette
   branche avant le rebase, ils y arrivent avec lui (finding R6-11 de la P6).
-- [ ] **T1 — Variante, rôle, contexte de lot, code, mapping, i18n** (AC1, AC2).
-- [ ] **T2 — Helper commun puis gardes serveur** : `ensure_not_claim_account`,
+- [x] **T1 — Variante, rôle, contexte de lot, code, mapping, i18n** (AC1, AC2).
+- [x] **T2 — Helper commun puis gardes serveur** : `ensure_not_claim_account`,
   `claim_account_refusal` et `claim_account_refusal_details` dans `invoice_settlements.rs` (AC1), **avant** les sites qui les
   appellent ; gardes (AC3, AC3 bis, AC4, AC5), lecteur sœur fournisseur (AC4). Aucun site ne compare
   ni ne construit le refus ni ne lit le numéro par lui-même. **Critère par le nom seul, sur une liste
@@ -597,16 +602,16 @@ le défait aussi, et la créance lue dans les réglages n'a **aucun type contrô
   `confirm_batch` est un défaut. Et `grep -rnF "SELECT number FROM accounts WHERE id = ? AND company_id = ?" crates/*/src`
   ne rend, pour cette story, que `claim_account_refusal` (chaîne écrite sur une ligne — une requête
   coupée par `\` y échapperait : le helper l'écrit d'un tenant, et le doc-comment le dit).
-- [ ] **T3 — Lots de paiement** (AC6), serveur (création, écriture d'achat malformée, confirmation
+- [x] **T3 — Lots de paiement** (AC6), serveur (création, écriture d'achat malformée, confirmation
   contextualisée) et libellés.
-- [ ] **T4 — Libellé `failed[]` du rapprochement** (AC7) ou signalement.
-- [ ] **T5 — Fonctions d'écran et écrans** (AC8, AC9).
-- [ ] **T6 — Tests** (§ *Tests*) — chaque test de garde **rougit d'abord** sur le code non corrigé,
+- [x] **T4 — Libellé `failed[]` du rapprochement** (AC7) ou signalement.
+- [x] **T5 — Fonctions d'écran et écrans** (AC8, AC9).
+- [x] **T6 — Tests** (§ *Tests*) — chaque test de garde **rougit d'abord** sur le code non corrigé,
   **sauf** les tests de non-régression 3 et 9, verts avant comme après.
-- [ ] **T7 — Documentation** : `docs/api-external.md` (AC10), manuel + PDF (AC11), CHANGELOG (AC12).
-- [ ] **T8 — Inventaire fermé** (§ *Inventaire*) : rejouer les commandes ; tout site neuf est traité
+- [x] **T7 — Documentation** : `docs/api-external.md` (AC10), manuel + PDF (AC11), CHANGELOG (AC12).
+- [x] **T8 — Inventaire fermé** (§ *Inventaire*) : rejouer les commandes ; tout site neuf est traité
   ou écrit en angle mort avec sa raison.
-- [ ] **T9 — Gates** : backend complet (dépôts `kesh-db` touchés : pas de ciblage), frontend complet
+- [x] **T9 — Gates** : backend complet (dépôts `kesh-db` touchés : pas de ciblage), frontend complet
   (`check`, `lint-i18n-ownership`, `test:unit` — dont la borne `sitesTotal` relevée, AC8 —, `build`),
   E2E complet au dernier commit de code (D7).
   Le verdict de lecture sur les E2E existants (§ *Tests*, « E2E existants ») est recopié au Dev Agent
@@ -662,7 +667,8 @@ Finding F5 de la P2 : la P1 a ajouté les lots sans recompter. Recompté le 2026
 la P5, finding R5-5), **au barème de la règle** (« modules métier de premier niveau ») : `kesh-db`
 règlement client (`invoice_settlements_write.rs`, solde du reste compris), `kesh-db` helper commun
 (`invoice_settlements.rs` : trois fonctions publiques et les types `ClaimAccountClash`,
-`ClaimSubject`, `DesignatedRole` — les deux premiers omis jusqu'à la P4, le troisième jusqu'à la P6), `kesh-db` règlement fournisseur
+`ClaimSubject`, `DesignatedRole` — les deux premiers omis jusqu'à la P4, le troisième jusqu'à la P6 ;
+livré sous le nom `GapAccountRole`, C-15-6b-2, amendé le 2026-10-09), `kesh-db` règlement fournisseur
 (`supplier_invoices.rs`), `kesh-db` lots (`payment_batches.rs`), `kesh-api` rapprochement
 (`routes/reconciliation.rs`), `frontend` factures (`features/invoices`), `frontend` factures
 fournisseurs (`routes/supplier-invoices`), `frontend` lots (`features/payment-batches`), `frontend`
@@ -923,6 +929,16 @@ deux cas de l'AC7 (non compté : conditionnel).
   de la story (aucun ne solde un compte), et deux modules de plus.
 - **Le filtre d'écran n'est exercé par aucun E2E** : le seed E2E n'a pas de rôle (§ *Tests*, « E2E
   existants ») ; l'AC8 n'est figé que par Vitest (tests 17-19).
+- **Plan comptable non chargé** (revue de code P1, finding E4) : si `fetchAccounts` échoue, les
+  écrans de règlement retombent sur une liste vide (`invoices/[id]/+page.svelte`,
+  `invoices/due-dates/+page.svelte`), le filtre par rôle n'a rien à écarter et le compte débiteurs
+  redevient proposé ; la garde serveur le refuse avec son message. Même famille que le premier
+  point : l'écran peut proposer ce que le serveur refuse, jamais l'inverse.
+- **Branches d'erreur infra non exercées** (revue de code P1, finding B-5) : le bras
+  `other => DATABASE_ERROR` de `claim_account_failed_proposal` (rapprochement) et le bras
+  `_ => Err(refusal)` de `validate_invoice_for_batch` (erreur SQL de la lecture du numéro) ne sont
+  déclenchés par aucun test — il y faudrait une injection de panne SQL au milieu d'une transaction,
+  que le banc ne sait pas faire. Les tests ne couvrent que le bras du refus métier.
 - **Données antérieures** : des règlements `D 1100 / C 1100` ou `D 2000 / C 2000` déjà écrits par une
   instance v0.12 restent tels quels, sans détection. Acceptable : le produit ne tient pas encore de
   comptabilité réelle (`CLAUDE.md` § *Project Overview*) ; à réexaminer si une instance en a écrit.
@@ -1073,7 +1089,8 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie (consignes de l'Epic 15), worktree
 - `crates/kesh-api/src/routes/reconciliation.rs`
 - `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
 - `crates/kesh-db/tests/{invoice_settlement,invoice_write_off,supplier_invoices_repository,payment_batches_repository}.rs`
-- `crates/kesh-api/tests/{reconciliation_e2e,invoice_echeancier_e2e}.rs`
+- `crates/kesh-api/tests/{reconciliation_e2e,invoice_echeancier_e2e,supplier_settlement_cancel_e2e}.rs`
+  (le dernier : revue de code P1, finding L5)
 - `frontend/src/lib/features/accounts/account-options.ts` (+ `.test.ts`)
 - `frontend/src/lib/features/invoices/SettleInvoiceDialog.svelte` (+ `.test.ts`, `SettleInvoiceDialogHost.test.svelte`)
 - `frontend/src/routes/(app)/supplier-invoices/[id]/+page.svelte` (+ `supplier-settlement-page.test.ts`)
@@ -1382,3 +1399,42 @@ Opus 5.5 (`claude-opus-5-5`), en autonomie (consignes de l'Epic 15), worktree
   `api-external.md` ; deux tests backend de plus que la fiche (nature `rounding`, TVA due) ;
   doublure `SettleInvoiceDialogHost.test.svelte` pour le test 18. Gates : backend 2958/2958,
   frontend 1110/1110 + build, E2E 247 passés / 9 attendus. Statut : `review`.
+- 2026-10-09 — **Revue de code P1** (Sonnet ×3, lentilles B, E et A ; prompt
+  `15-6b-review-prompt-p1.md`) : **0 CRITICAL, 0 HIGH, 0 MEDIUM, 20 LOW** (B 6, E 4, A 10 ; recoupements
+  L4 = E3, B-2 = E2). Remédiation **sans aucune ligne de code exécutable** (choix **C-15-6b-3**) :
+  - **Fiche** : tâches T0 à T9 cochées (L1) ; ligne du `sprint-status` réécrite (L2) ; AC1 et
+    décompte amendés — `GapAccountRole`, et non `DesignatedRole` (L3, C-15-6b-2) ; angles morts du
+    plan comptable non chargé (E4) et des deux branches d'erreur infra non exercées (B-5).
+  - **Tests ajoutés** (de `67775634` à ce commit, recomptés aux deux bornes) : backend **4** —
+    `payment_batches_repository` 13 → 14 (`confirm_batch_rolls_back_the_invoices_settled_before_the_refused_one`,
+    L4 = E3 ; mutation `tx.rollback()` → `tx.commit()` dans la branche d'échec de `confirm_batch`
+    **constatée rouge**, le test 15 à une facture restant vert sous la même mutation),
+    `supplier_settlement_cancel_e2e` 4 → 7 (`POST …/pay`, `POST /payment-batches`,
+    `POST /payment-batches/{id}/confirm` par HTTP, L5) ; frontend **4** — `SettleInvoiceDialog`
+    12 → 15 (1100 non imputable, L6 ; réouverture et choix survivant, L7, par la doublure qui gagne
+    un bouton `host-toggle-open`), `supplier-settlement-page` 16 → 17 (2000 non imputable, L6).
+    Mutations constatées rouges puis sources restaurées et `touch`ées : ids calculés après le
+    filtre `active && postable` (les deux tests L6) ; `bankAccountId = null` retiré de l'effet de
+    réinitialisation (le test de réouverture).
+  - **Commentaires et doc-comments** : `supplier_invoices.rs` (`pay_in_tx`), la mention de la 15-6b
+    sortie du paragraphe qu'elle coupait, et le numéro de ligne périmé remplacé par un nom (L9) ;
+    `validate_invoice_for_batch` — garde de création **consultative**, compte bancaire lu sans
+    verrou (B-3) ; `claim_account_refusal_details` — ce sont les clés qui sont construites une
+    fois, pas l'extraction (B-6).
+  - **i18n** : `it-CH` `error-settlement-counterparty-is-payable-in-batch` à l'infinitif, comme les
+    autres clés neuves (L8).
+  - **Manuel** : la condition du filtre par rôle écrite aux deux sections de règlement (L10).
+  - **E1** : vérifié — la fiche 15-6d couvre `post_manual` et `accept_one_rule` (16 mentions) ;
+    rien à rendre à l'orchestrateur.
+  - **Dette écrite, non corrigée** (code exécutable, C-15-6b-3) : **B-1** — « le seul compte lié »
+    est faux quand plusieurs comptes bancaires sont écartés (quatre locales **et** replis
+    `i18nMsg` des deux écrans) ; **B-2 = E2** — le message HTTP du rôle `counterparty` ne dit pas
+    « reliez le compte bancaire » quand la contrepartie vient d'un virement, et `details` ne porte
+    pas `bankAccountId` hors rapprochement et lot (mapping et repli Rust) ; **B-4** — apostrophe
+    droite de `payment-batches-failed-purchase-entry-malformed` (repli TypeScript ; majorité du
+    catalogue `fr-CH` à l'apostrophe droite) ; **B-6** — deux `match` d'extraction du refus, à
+    remplacer par une méthode sur `DbError`.
+  - Grep du symptôme : « ne le propose pas » (deux sites, les deux traités), « Collega » dans les
+    clés neuves (un site), `DesignatedRole` dans la fiche (amendements aux deux sites de
+    définition ; les mentions historiques du Change Log restent).
+

@@ -174,6 +174,55 @@ describe('SettleInvoiceDialog — la contrepartie n’est pas le compte débiteu
 		expect((document.getElementById('settle-amount') as HTMLInputElement).value).toBe('40.00');
 	});
 
+	// Revue de code P1 (finding L6) — les ids se calculent AVANT le filtre
+	// `active && postable` : un 1100 devenu non imputable écarte toujours la
+	// banque qui y est liée.
+	it('1100 non imputable : la banque qui y est liée reste absente (mutation : ids calculés après le filtre `active && postable`)', async () => {
+		monter(
+			[CAISSE, { ...DEBITEURS, postable: false } as AccountResponse],
+			[compte(1, 1100, true), compte(2, 1020)],
+		);
+		await waitFor(() => expect(options('settle-bank')).toEqual(['2']));
+	});
+
+	// Revue de code P1 (finding L7) — la réouverture : la réinitialisation remet
+	// le compte bancaire à `null`, puis l'effet distinct présélectionne DANS la
+	// liste filtrée ; le montant revient au reste dû.
+	it('réouverture : saisie réinitialisée, présélection refaite dans la liste filtrée', async () => {
+		const { getByTestId } = render(SettleInvoiceDialogHost, {
+			lateAccounts: [CAISSE, DEBITEURS],
+			bankAccounts: [compte(1, 1100, true), compte(2, 1020), compte(3, 1030)],
+		});
+		await fireEvent.click(getByTestId('host-load-accounts'));
+		const bank = () => document.getElementById('settle-bank') as HTMLSelectElement;
+		const amount = () => document.getElementById('settle-amount') as HTMLInputElement;
+		await waitFor(() => expect(options('settle-bank')).toEqual(['2', '3']));
+		await waitFor(() => expect(bank().value).toBe('2'));
+		await fireEvent.change(bank(), { target: { value: '3' } });
+		await fireEvent.input(amount(), { target: { value: '40.00' } });
+		expect(bank().value).toBe('3');
+
+		await fireEvent.click(getByTestId('host-toggle-open')); // fermer
+		await fireEvent.click(getByTestId('host-toggle-open')); // rouvrir
+		await waitFor(() => expect(amount().value).toBe('100.00'));
+		await waitFor(() => expect(bank().value).toBe('2'));
+	});
+
+	// Revue de code P1 (finding L7) — un choix de l'utilisateur, encore éligible,
+	// survit à l'arrivée tardive de `accounts`.
+	it('un choix de l’utilisateur encore éligible survit à l’arrivée tardive de `accounts`', async () => {
+		const { getByTestId } = render(SettleInvoiceDialogHost, {
+			lateAccounts: [CAISSE, DEBITEURS],
+			bankAccounts: [compte(1, 1100, true), compte(2, 1020), compte(3, 1030)],
+		});
+		const bank = () => document.getElementById('settle-bank') as HTMLSelectElement;
+		await waitFor(() => expect(bank().value).toBe('1'));
+		await fireEvent.change(bank(), { target: { value: '3' } });
+		await fireEvent.click(getByTestId('host-load-accounts'));
+		await waitFor(() => expect(options('settle-bank')).toEqual(['2', '3']));
+		expect(bank().value).toBe('3');
+	});
+
 	it('le seul compte bancaire lié au 1100 → le message de liste vide', async () => {
 		const { findByText } = monter([CAISSE, DEBITEURS], [compte(1, 1100, true)]);
 		expect(await findByText(EMPTY)).toBeTruthy();

@@ -1131,8 +1131,11 @@ Pour relancer les factures en retard, Kesh dispose d'un \textbf{écran de rappel
 mode (virement sur un compte bancaire, ou espèces et un autre compte de contrepartie), le montant
 et la date. Kesh passe l'écriture \emph{Débit contrepartie / Crédit débiteurs} et calcule ce qui
 reste dû. La contrepartie \textbf{ne peut pas être le compte débiteurs de la facture}~: l'écriture
-serait nulle, et le reste dû baisserait sans que rien ne bouge au grand livre. Kesh ne le propose
-pas et le refuse~--- de même qu'un compte bancaire lié au compte débiteurs. Si le compte en cause
+serait nulle, et le reste dû baisserait sans que rien ne bouge au grand livre. Kesh le refuse dans
+tous les cas~--- de même qu'un compte bancaire lié au compte débiteurs~--- et ne le propose pas dans
+les listes, \textbf{à condition} qu'il porte, au plan comptable, le \textbf{rôle} de compte de
+créances clients~: un compte qui l'a perdu reste proposé, et c'est l'enregistrement qui est
+refusé. Si le compte en cause
 est celui que vous \textbf{choisissez} (compte interne, compte bancaire), choisissez-en un autre
 ou reliez le compte bancaire à son propre compte de banque~; si c'est un compte \textbf{désigné
 dans les réglages} --- le compte de différences d'arrondi ---, un administrateur doit en désigner
@@ -1418,9 +1421,11 @@ cas selon le moyen de paiement :
 \end{itemize}
 
 La contrepartie \textbf{ne peut pas être le compte créanciers de la facture}~: l'écriture serait
-nulle, et la facture passerait «~payée~» sans paiement. Kesh ne le propose pas et le refuse~--- de
-même qu'un compte bancaire lié au compte créanciers~: choisissez un autre compte, ou reliez le
-compte bancaire à son propre compte de banque.
+nulle, et la facture passerait «~payée~» sans paiement. Kesh le refuse dans tous les cas~--- de
+même qu'un compte bancaire lié au compte créanciers~--- et ne le propose pas dans les listes,
+\textbf{à condition} qu'il porte, au plan comptable, le \textbf{rôle} de compte de dettes
+fournisseurs~: un compte qui l'a perdu reste proposé, et c'est l'enregistrement qui est refusé.
+Choisissez un autre compte, ou reliez le compte bancaire à son propre compte de banque.
 
 \textbf{Annuler le règlement.} Un règlement enregistré par erreur ne se supprime pas~: sur la
 fiche d'une facture payée, \emph{Annuler le règlement} (comptable ou administrateur) passe une

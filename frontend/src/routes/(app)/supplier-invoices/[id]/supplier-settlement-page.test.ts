@@ -358,7 +358,7 @@ describe("fiche facture fournisseur — la contrepartie n’est pas le compte cr
         .options,
     ).map((o) => o.value);
 
-  async function monter(banks: unknown[]) {
+  async function monter(banks: unknown[], accounts: unknown[] = [CAISSE, CREANCIERS]) {
     const { listBankAccounts } = await import(
       "$lib/features/bank-accounts/bank-accounts.api"
     );
@@ -366,10 +366,7 @@ describe("fiche facture fournisseur — la contrepartie n’est pas le compte cr
       "$lib/features/accounts/accounts.api"
     );
     vi.mocked(listBankAccounts).mockResolvedValueOnce(banks as never);
-    vi.mocked(fetchAccounts).mockResolvedValueOnce([
-      CAISSE,
-      CREANCIERS,
-    ] as never);
+    vi.mocked(fetchAccounts).mockResolvedValueOnce(accounts as never);
     getMock.mockResolvedValue(
       inv({ status: "open", settlementJournalEntryId: null, paidAt: null }),
     );
@@ -402,6 +399,19 @@ describe("fiche facture fournisseur — la contrepartie n’est pas le compte cr
   it("seule banque liée au 2000 → le message de liste vide", async () => {
     const { findByText } = await monter([banque(1, 2000)]);
     expect(await findByText(EMPTY)).toBeTruthy();
+  });
+
+  // Revue de code P1 (finding L6) — les ids se calculent AVANT le filtre
+  // `active && postable` : un 2000 devenu non imputable écarte toujours la
+  // banque qui y est liée.
+  it("2000 non imputable : la banque qui y est liée reste absente (mutation : ids calculés après le filtre `active && postable`)", async () => {
+    const { findByTestId } = await monter(
+      [banque(1, 2000), banque(2, 1020)],
+      [CAISSE, { ...CREANCIERS, postable: false }],
+    );
+    await findByTestId("pay-bank-account");
+    await waitFor(() => expect(options("pay-bank-account")).toContain("2"));
+    expect(options("pay-bank-account")).not.toContain("1");
   });
 
   it("aucun compte bancaire lié → pas de message de liste vide", async () => {

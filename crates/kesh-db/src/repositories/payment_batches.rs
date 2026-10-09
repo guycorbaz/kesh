@@ -247,6 +247,17 @@ pub async fn create_batch(
 /// crédit est une donnée de CETTE facture (`SUPPLIER_INVOICE_PURCHASE_ENTRY_MALFORMED`),
 /// pas une erreur globale. Une erreur SQL de la lecture du numéro, elle, est
 /// propagée comme les autres `DbError`.
+///
+/// ⚠️ **« Principale » ne veut pas dire « définitive »** : le compte du grand
+/// livre du compte bancaire est lu par `create_batch` **sans verrou** (la
+/// lecture de `bank_accounts`, au début de la création, n'est pas un
+/// `FOR UPDATE`, alors que `pay_in_tx` lit le même champ `FOR UPDATE`). Un
+/// relien concurrent du compte bancaire entre la création et la confirmation
+/// peut donc laisser entrer une facture que la confirmation refusera : c'est le
+/// cas que la garde de seconde ligne de `confirm_batch` (refus intercepté et
+/// contextualisé) est faite pour tenir. La garde de création est
+/// **consultative** — elle évite le cas courant, elle ne le rend pas
+/// impossible (revue de code P1, finding B-3).
 async fn validate_invoice_for_batch(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,

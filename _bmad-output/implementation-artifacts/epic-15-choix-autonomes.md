@@ -5060,3 +5060,26 @@ l'import (#458–#461).
 - **Écarté** : garder l'homonyme (confusion à l'import) ; renommer celui de la 15-5d (hors
   périmètre, 26 occurrences).
 - **Réversibilité** : totale (renommage).
+
+## C-15-6b-3 — 15-6b : les LOW de la revue P1 qui exigent du code exécutable sont écrits en dette, pas corrigés
+
+- **Contexte** : la revue de code P1 (Sonnet ×3) rend 0 au-dessus de LOW et 20 LOW. La consigne de
+  clôture borne la remédiation aux lignes non exécutables (tests, doc-comments, commentaires,
+  `.ftl`, fiche, manuel). Quatre LOW ne se corrigent qu'en touchant du code de production :
+  B-1 (« le seul compte lié » faux quand plusieurs comptes bancaires sont écartés — le texte vit
+  aussi dans les replis `i18nMsg` de `SettleInvoiceDialog.svelte` et de la fiche fournisseur, et
+  dans deux tests qui le comparent au repli) ; B-2 = E2 (remède du message HTTP quand la
+  contrepartie vient d'un compte bancaire : il faudrait porter `bankAccountId` jusqu'au mapping, ou
+  retoucher le repli Rust `format!` avec la clé) ; B-4 (apostrophe droite de
+  `payment-batches-failed-purchase-entry-malformed`, dont le repli est dans
+  `payment-batch-helpers.ts`) ; B-6 (DRY : deux `match` d'extraction des champs du refus).
+- **Retenu** : les quatre écrits comme dette au Change Log de la fiche, sans modifier le seul
+  catalogue — corriger le `.ftl` sans le repli ferait diverger le texte affiché selon que la clé
+  est chargée ou non, défaut pire que celui qu'on corrige. B-4 est de plus discutable sur le fond :
+  le catalogue `fr-CH` écrit l'apostrophe droite sur 316 lignes et la typographique sur 70 ; la
+  clé neuve suit la majorité. Le doc-comment de `claim_account_refusal_details` dit désormais que
+  seules les clés sont construites une fois, pas l'extraction (B-6).
+- **Écarté** : corriger les replis malgré la consigne (elle est explicite) ; corriger le `.ftl`
+  seul (divergence repli/catalogue).
+- **Réversibilité** : totale ; la dette se solde dans une story de rattrapage i18n ou dans la
+  15-6c, qui retouche les écrans de liaison bancaire.

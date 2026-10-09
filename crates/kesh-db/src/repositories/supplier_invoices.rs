@@ -777,11 +777,10 @@ pub async fn pay_in_tx(
                 // ⚠️ ACTIF **et IMPUTABLE** — jumeau exact de la garde de
                 // `invoice_settlements_write.rs`. Ce flux écrit sans la garde de
                 // postabilité de la 14-3b, donc ce SELECT est le seul contrôle.
-                // Jumeau aussi pour la garde qui suit l'étape (3) : la
-                // contrepartie n'est pas le compte créanciers (Story 15-6b).
                 //
                 // Ici l'écran filtre déjà `active && postable`
-                // (`supplier-invoices/[id]/+page.svelte:66`), si bien que le
+                // (`supplier-invoices/[id]/+page.svelte`, chargement des comptes
+                // internes), si bien que le
                 // trou n'était atteignable que par appel direct à l'API — à la
                 // différence de son jumeau côté client, où l'écran offrait le
                 // compte. Le fermer quand même : une garde serveur ne se déduit
@@ -791,6 +790,9 @@ pub async fn pay_in_tx(
                 // de revue de code de la Story 24-5, #375) — la lentille avait
                 // nommé ce fichier pour SA validation de compte de charge, pas
                 // pour ce site-ci.
+                //
+                // Jumeau aussi pour la garde qui suit l'étape (3) : la
+                // contrepartie n'est pas le compte créanciers (Story 15-6b).
                 let account: Option<(bool, bool, String)> = sqlx::query_as(
                     "SELECT active, postable, number FROM accounts WHERE id = ? AND company_id = ? \
                      FOR UPDATE",

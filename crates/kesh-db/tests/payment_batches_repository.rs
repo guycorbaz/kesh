@@ -767,3 +767,114 @@ async fn confirm_batch_refuses_then_passes_once_the_bank_is_relinked(pool: MySql
         Decimal::ZERO
     );
 }
+
+/// Story 15-6b, revue de code P1 (findings L4 = E3) — **atomicité de la
+/// confirmation** : un lot de deux factures, A (dette sur 2001) puis B (dette
+/// sur 2000). Le compte bancaire, relié au 2000 après la création, laisse
+/// passer A et refuse B. Le règlement de A, déjà écrit dans la transaction,
+/// doit être défait avec elle : A reste `open`, aucune écriture neuve, le lot
+/// reste `generated`. Le test à une seule facture (test 15) ne pouvait pas le
+/// montrer — le refus y tombait avant toute écriture.
+///
+/// Mutation constatée rouge : `tx.rollback()` remplacé par `tx.commit()` dans
+/// la branche d'échec de `confirm_batch` (l'effet d'un « commit par facture »).
+#[sqlx::test(migrations = "./test-schema")]
+async fn confirm_batch_rolls_back_the_invoices_settled_before_the_refused_one(pool: MySqlPool) {
+    let ctx = setup(&pool).await;
+    let l1020 = ledger_1020(&pool, &ctx).await;
+    link_bank(&pool, &ctx, l1020).await;
+    let p2001: i64 = sqlx::query_scalar(
+        "INSERT INTO accounts (company_id, number, name, account_type) \
+         VALUES (?, '2001', 'Créanciers bis', 'Liability') RETURNING id",
+    )
+    .bind(ctx.seeded.company_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let set_payable = |account: i64| {
+        sqlx::query(
+            "UPDATE company_invoice_settings SET default_payable_account_id = ? \
+             WHERE company_id = ?",
+        )
+        .bind(account)
+        .bind(ctx.seeded.company_id)
+        .execute(&pool)
+    };
+    set_payable(p2001).await.unwrap();
+    let a = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("A"), dec!(100.00)).await;
+    let payable = ctx.seeded.accounts["2000"];
+    set_payable(payable).await.unwrap();
+    let b = make_invoice(&pool, &ctx, Some(IBAN_A), None, Some("B"), dec!(200.00)).await;
+
+    let batch_id =
+        payment_batches::create_batch(&pool, new_batch(&ctx, vec![a, b]), ctx.seeded.admin_user_id)
+            .await
+            .unwrap()
+            .batch
+            .expect("lot créé avec A et B")
+            .batch
+            .id;
+    // Montage : A est réglée AVANT B — sans quoi le refus tomberait avant
+    // toute écriture et le test passerait à vide.
+    let order: Vec<i64> = sqlx::query_scalar(
+        "SELECT supplier_invoice_id FROM payment_batch_items \
+         WHERE payment_batch_id = ? ORDER BY position",
+    )
+    .bind(batch_id)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(order, vec![a, b], "A doit précéder B dans le lot");
+
+    link_bank(&pool, &ctx, payable).await;
+    let entries_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    let err = payment_batches::confirm_batch(
+        &pool,
+        ctx.seeded.company_id,
+        batch_id,
+        d(2026, 7, 2),
+        ctx.seeded.admin_user_id,
+    )
+    .await
+    .expect_err("la confirmation doit être refusée sur B");
+    match err {
+        DbError::SettlementCounterpartyIsClaimAccount {
+            batch: Some(ref ctx_batch),
+            ..
+        } => assert_eq!(ctx_batch.supplier_invoice_id, b, "le refus nomme B"),
+        other => panic!("refus contextualisé attendu, obtenu {other:?}"),
+    }
+
+    for (id, label) in [(a, "A"), (b, "B")] {
+        let status: String =
+            sqlx::query_scalar("SELECT status FROM supplier_invoices WHERE id = ?")
+                .bind(id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        assert_eq!(status, "open", "{label} reste ouverte");
+    }
+    let entries_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        entries_after, entries_before,
+        "le règlement de A est défait avec la transaction"
+    );
+    assert_eq!(
+        account_balance(&pool, ctx.seeded.company_id, p2001).await,
+        dec!(-100.00),
+        "la dette de A reste entière"
+    );
+    let status: String = sqlx::query_scalar("SELECT status FROM payment_batches WHERE id = ?")
+        .bind(batch_id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(status, "generated");
+}

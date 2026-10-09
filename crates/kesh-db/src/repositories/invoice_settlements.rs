@@ -762,6 +762,15 @@ pub async fn refuse_if_claim_account(
 /// geste qui porte un compte bancaire). Les clés **de lot**
 /// (`paymentBatchId`, `supplierInvoiceId`) sont hors de ce helper : le mapping
 /// HTTP, seul consommateur qui en ait, les ajoute.
+///
+/// ⚠️ **Ce qui est construit une fois, ce sont les CLÉS, pas l'extraction** :
+/// les consommateurs du rapprochement
+/// (`routes/reconciliation.rs::claim_account_failed_proposal`) et de la
+/// création d'un lot (`payment_batches.rs::validate_invoice_for_batch`)
+/// déstructurent chacun la variante `SettlementCounterpartyIsClaimAccount`
+/// par leur propre `match` avant d'appeler ce helper. Une méthode sur
+/// `DbError` qui rende directement les `details` supprimerait ces deux `match`
+/// — dette écrite au Change Log de la 15-6b (revue de code P1, finding B-6).
 pub fn claim_account_refusal_details(
     account_id: i64,
     account_number: Option<&str>,

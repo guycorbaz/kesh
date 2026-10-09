@@ -1,6 +1,7 @@
 <!--
   Doublure de test (Story 15-6b, test 18) — hôte de `SettleInvoiceDialog` qui lui passe ses props
-  UNE À UNE, comme un vrai parent, et ne change que `accounts` (bouton `host-load-accounts`).
+  UNE À UNE, comme un vrai parent, et ne change que `accounts` (bouton `host-load-accounts`)
+  ou `open` (bouton `host-toggle-open` — réouverture, revue de code P1, finding L7).
 
   ⚠️ Pourquoi pas `rerender` : celui de @testing-library/svelte remplace l'objet de props entier
   (`$state.raw`), si bien que CHAQUE prop paraît changée et que l'effet de réinitialisation du
@@ -18,13 +19,17 @@
 	};
 	let { lateAccounts, bankAccounts }: Props = $props();
 	let accounts = $state<AccountResponse[]>([]);
+	let open = $state(true);
 </script>
 
 <button type="button" data-testid="host-load-accounts" onclick={() => (accounts = lateAccounts)}>
 	charger
 </button>
+<button type="button" data-testid="host-toggle-open" onclick={() => (open = !open)}>
+	basculer
+</button>
 <SettleInvoiceDialog
-	open={true}
+	{open}
 	onOpenChange={() => {}}
 	invoiceDate="2026-01-01"
 	amountDue="100.00"
