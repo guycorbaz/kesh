@@ -1,6 +1,6 @@
 # Story 15.12b : Ne plus écrire sous un bilan clos — le filet des données héritées, son écran, sa réparation
 
-Status: ready-for-dev
+Status: review
 
 <!-- Créée le 2026-10-09 par DÉCOUPAGE de la Story 15-12 à la remédiation de sa validation P2 (décision de
      l'orchestrateur, choix C107 de `epic-15-choix-autonomes.md`). Version complète de la 15-12 avant
@@ -644,11 +644,149 @@ de la base partagée, AC 21), `CHANGELOG.md`. **Aucune migration** (P1-P8 sans o
 
 ### Agent Model Used
 
+Claude Opus 5.5 (agent de développement, worktree `kesh-15-12b`, cible cargo propre), 2026-10-09.
+
 ### Debug Log References
+
+- Gate backend complet : `target/gate-1512b-1.log` (worktree) — `scripts/test-fast.sh`, bases `kesh_1512b`
+  remises à zéro (DROP/CREATE, migrations, seed) juste avant.
+- Gate frontend : `scratchpad/1512b/front.log` ; LaTeX : `scratchpad/1512b/latex.log` ; E2E :
+  `target/e2e/playwright.log`, backend `target/e2e/backend.log`.
 
 ### Completion Notes List
 
+**T0** — au Change Log (entrée du 2026-10-09 « T0 (développement) ») : aucun écart de fond ; 15-1a-ii non
+mergée (`ENTRY_LETTERED` absent), donc ni paire C117 ni doc-comment ici ; registre 22 / 2 ; inventaire SQL
+sans trou ; AC 21 : 78 lignes, 7 neuves (15-12a), aucune ne change de sens. Choix C-15-12b-1 (message),
+C-15-12b-2 (prédicteur des soldes de départ), C-15-12b-3 (deux clés du libellé du lot).
+
+**Table de l'AC 12, recomptée sur `012fc430`** (`awk` borné à `LIB_ROUTES` : 22 `Rejouee`, 2 `Exemptee`) —
+identique à celle de la fiche : 19 routes par `create_in_tx_inner`, 1 par `update`, 2 par `delete_in_tx`
+(`delete_journal_entry`, `unvalidate_invoice_handler` — neuf), 2 hors filet (`admin::full_import`,
+`onboarding::reset`). Inventaire SQL hors tests : aucun site hors des trois points de passage, du compteur,
+de `kesh-seed`, de `delete_all_by_company` (sans appelant de production, reconfirmé) et des trois sites
+dynamiques de restauration et de mode test.
+
+**Le filet n'ajoute aucun verrou** (`grep -rnE "find_later_closed(_in_tx)?\(" crates/kesh-db/src`) : la
+version `_in_tx` est appelée par `fiscal_years::create` (`:342`), `reopen` (`:1211`), `journal_entries::update`
+(`:1406`) et `delete_in_tx` (`:1725`) ; la non verrouillante par `modification_blocker` (`:1142`, motif
+d'écran) et `create_in_tx_inner` (`:358`, neuf). Ordre des verrous : seule la dévalidation change (lecture
+verrouillante des postérieurs) ; ligne `DELETE` de `docs/MULTI-TENANT-SCOPING-PATTERNS.md` relue — « No
+known cycle » reste vrai pour la route, une phrase y décrit le chemin de la dévalidation (cycle possible
+hors plan par l'index avec la clôture, absorbé par le rejeu des deux routes, vérifié `retry_on_deadlock`).
+
+**AC 18 — écrans, par les appelants** (20 points d'appel, 12 fichiers) :
+- **changé** — `invoices/[id]/+page.svelte`, boîte de validation : `LATER_FISCAL_YEAR_CLOSED` ajouté aux
+  codes qui la ferment ; test `invoice-validate-page.test.ts` (mutation « code retiré » observée rouge) ;
+- **changé** — `failed-proposal-label.ts` (AC 11) ;
+- **retombe sur le message du serveur, vérifié au code** — `JournalEntryForm.svelte` (création :
+  `default: toast.error(err.message)` ; édition : `editRefusalOutcome` le classe déjà `stale`) ; fiche
+  d'écriture, contre-passation (`err.message`, la boîte reste ouverte pour tout refus) ;
+  `settings/opening-balances` (génération et complément : `err.message`) ; `invoices/[id]` — avoir
+  (`err.message`, boîte ouverte : un nouvel essai rend le même refus, sans gravité, laissé tel quel),
+  dévalidation, règlement, solde, annulation de règlement (`err.message`) ; `invoices/due-dates`
+  (règlement) ; `supplier-invoices` (création), `supplier-invoices/[id]` (paiement, annulation du
+  règlement, annulation) ; `supplier-invoices/import` (`completeErrorLabel` → `default: err.message`) ;
+  `payment-batches/[id]` (confirmation) ; `ReconciliationProposals.svelte` (exception globale,
+  `errorMessageOf`) ; `ManualMatchModal.svelte`, `TransactionSplitModal.svelte` (`err.message`) ;
+  `CancelReconciliationDialog.svelte` (`reconciliationCancelErrorMessage` → `err.message` hors motifs) ;
+- **contrôle des dix fichiers qui citent `FISCAL_YEAR_CLOSED`** : `notify.ts` (égalité stricte), 
+  `form-helpers.ts` et `journal-entries.types.ts` (déjà traité), `blocker-messages.ts` (motif d'écran,
+  déjà traité), `JournalEntryForm.svelte` (remplace le texte pour `FISCAL_YEAR_CLOSED` seul — le nouveau
+  code garde `err.message`, ce qui convient) ; `invoice-cancel.ts`, `settlement-cancel-blocked.ts`,
+  `reconciliation-cancel.ts` + `reconciliation.types.ts` : `switch` exhaustifs sur les motifs des
+  **prédicteurs** (GET), que le serveur ne rend pas pour ce code (angle mort C120) — inchangés ;
+  `failed-proposal-label.ts` : changé.
+
+**AC 18 — prédicteurs serveur** : angle mort de la queue commune écrit au doc-comment de
+`settlement_entry_cancel_blocker` (cite #568) et fixé par `predicteur_muet_sous_un_exercice_futur_clos`
+(`kesh-db/tests/filet_bilan_clos.rs`) ; `reversalBlockedBy` : même trou, préexistant. **Prédicteur
+supplémentaire trouvé** : `GET /opening-balances/status` (`complement_status`) — angle mort écrit au
+doc-comment et fixé par `le_complement_sous_un_exercice_posterieur_clos_est_refuse` (C-15-12b-2).
+
+**AC 21 — triage au gate** : le gate backend complet (2970 tests) est **vert du premier coup** : aucun test
+existant n'a changé de sens hors du seul site inventorié (`journal_entries.rs` `mod tests`, C-15-8-29,
+inversé et renommé `la_devalidation_voit_l_exercice_posterieur`). Mode d'échec de la base partagée écrit
+dans `docs/testing.md` § « Base de dev jetable ».
+
+**AC 19 — mutations** (jouées, observées rouges, restaurées par `git checkout` puis `touch`) :
+- (v) filet retiré de `create_in_tx_inner` (`.filter(|_| false)`) → **15 rouges** : 10 de
+  `filet_bilan_clos` (tous sauf dévalidation, facture envoyée, réparation directe — qui ne passent pas par
+  la création), les 2 de `filet_bilan_clos_e2e`, le complément, les 3 voies du lot ;
+- (vi) `if enforce_ownership` rétabli dans `delete_in_tx` → **2 rouges** :
+  `la_devalidation_voit_l_exercice_posterieur` (lib) et `la_devalidation_sous_un_posterieur_clos_est_refusee` ;
+- (vii-a) bras retiré du mapper → **facture et ventilé rouges** (chacun), règle verte ;
+- (vii-b) appel du constructeur retiré de la branche de la règle → **règle rouge**, les deux autres vertes ;
+- frontend, hors AC : code retiré de la liste de fermeture → test de la boîte rouge ; `open` = plus récent
+  ouvert au lieu du plus ancien → 5 rouges (aide et bandeau).
+
+**Tests ajoutés** (périmètre `012fc430` → `HEAD`, recomptés par `grep -c '#\[sqlx::test'` aux deux bornes et
+`vitest list`) : **19 Rust** — `kesh-db/tests/filet_bilan_clos.rs` 0 → 13, `opening_complement_repository.rs`
+24 → 25, `kesh-api/tests/filet_bilan_clos_e2e.rs` 0 → 2, `reconciliation_e2e.rs` 55 → 57,
+`reconciliation_rules_e2e.rs` 43 → 44 — plus 1 test inversé (`mod tests` de `journal_entries.rs`) ;
+**20 Vitest** — `fiscal-years.helpers.test.ts` 0 → 7, `fiscal-years-page.test.ts` 10 → 14,
+`failed-proposal-label.test.ts` 44 → 52, `invoice-validate-page.test.ts` 2 → 3. Compteur des sites i18n
+1916 → 1919 (recompté aux deux bornes).
+
+**Angle mort assumé — le bandeau n'a pas d'E2E** (R6) : l'état fautif ne s'obtient pas par l'API et le
+montage E2E n'a pas de SQL direct ; le bandeau est couvert par Vitest (texte, trois noms, cas `{closed}` ≠
+`{latest}`, trois rôles, état sain).
+
+**AC 23 — documentation** :
+- manuel utilisateur : `:494-500` (conditions de modification) réécrit sans #543 ; `:712` (« Verrouille
+  l'exercice ») réécrit — rien ne s'enregistre plus ; sous-section neuve « Exercices dans le désordre »
+  (`sec:exercices-desordre`, après la réouverture) : la procédure du bandeau, dans le même ordre ; `:768`
+  (soldes de départ) réécrit — complément refusé, écran qui ne le prévoit pas ; puce neuve de la
+  dévalidation après « exercice clos ». Inchangés, relus : `:352` (reclassement d'un exercice clos),
+  `:539`, `:582`, `:593` (période verrouillée), `:626` (note de la contre-passation — vraie : la
+  contre-passation datée du jour corrige dans l'exercice courant), `:698` (création), `:1610`, `:1729`,
+  `:2268`, `:2219-2228` ;
+- manuel administrateur : paragraphe neuf « Exercices clôturés dans le désordre » (section de l'import),
+  paragraphe « Clôture dans l'ordre » complété, « huit refus / motifs » de la dévalidation → **neuf**
+  (`:1922`, `:1964`, propagation : `invoices.rs:1376`, `invoices/[id]/+page.svelte:355`) ;
+- PDF régénérés (`make fr`), contrôlés aplatis : 0 « #543 », 0 « ?? », phrases neuves présentes ; la
+  brochure, non touchée, restaurée ;
+- `api-external.md` : `:253` réécrit (plus de limite) ; dévalidation : ligne `LATER_FISCAL_YEAR_CLOSED`,
+  forme de ses `details`, phrase recomptée **11 lignes, 6 avec `details`, 5 sans** (recomptée au tableau) ;
+  annulation d'un règlement client, solde du reste, annulation d'un rapprochement : ligne neuve ; listes de
+  l'annulation du règlement fournisseur et de la facture fournisseur : code à son rang (après
+  `FISCAL_YEAR_INVALID` / `SUPPLIER_INVOICE_IN_PAYMENT_BATCH`, avant `PERIOD_LOCKED`, relu au code) ;
+  acceptation par lot ; prédicteurs (#568) ; tableau des erreurs. Inchangés : `:238-251` (`PUT`),
+  `:270-279` (`DELETE`), déjà conformes ;
+- `CHANGELOG.md` `[0.13.0]` : parenthèse de #532 réécrite, entrée #543 de `### Corrigé` complétée ;
+  `grep -rn "543"` sur `CHANGELOG.md docs crates frontend/src` : plus aucune « limite connue ».
+
+**Gates réellement exécutés** :
+- **backend complet** (`scripts/test-fast.sh` : fmt, clippy `-D warnings`, nextest) sur `0dad32b5`, dernier
+  commit de code Rust, bases `kesh_1512b` remises à zéro (DROP/CREATE, migrations, seed) juste avant :
+  **2970 / 2970 verts**, 4 ignorés. Les commits suivants ne touchent pas de code Rust (documentation ;
+  compteur Vitest) ;
+- **frontend complet** (`check` 0 erreur, `lint-i18n-ownership`, `test:unit`, `build`) sur `e03db355` :
+  **1115 / 1115** ; le premier passage avait rougi sur le compteur `sitesTotal` (1916 attendu, 1919 relevé :
+  les trois sites neufs), mis à jour et recompté aux deux bornes ;
+- **E2E complet** sur `e03db355` (dernier commit de code), base `kesh_e2e_1512b` reconstruite, backend sur
+  `:3015` avec secrets aléatoires, `KESH_TEST_MODE=true` des deux côtés, `KESH_COOKIE_SECURE=false`, SMTP
+  et répertoires du worktree (`/health` : `smtpConfigured:true`), lancé à 04:53 UTC : **245 passés, 9
+  échecs, 19 ignorés** — les **9 sont attendus**, jugés fichier par fichier contre `docs/testing.md` : 7
+  KF-029 (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) et 2
+  KF-045 #421 (`invoices.spec.ts:415`, `:439` — « historique des rappels », run avant midi UTC). Aucun
+  échec hors liste. Backend arrêté par son PID.
+
 ### File List
+
+`crates/kesh-db/src/repositories/{journal_entries,invoices,fiscal_years,opening_complement,settlement_cancellation}.rs`,
+`crates/kesh-db/src/errors.rs`, `crates/kesh-db/tests/{filet_bilan_clos,opening_complement_repository}.rs`,
+`crates/kesh-api/src/{errors.rs,routes/reconciliation.rs}`,
+`crates/kesh-api/tests/{filet_bilan_clos_e2e,journal_entry_reversal_e2e,reconciliation_e2e,reconciliation_rules_e2e,audit_route_registry}.rs`,
+`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`,
+`frontend/src/lib/features/fiscal-years/fiscal-years.helpers{,.test}.ts`,
+`frontend/src/lib/features/reconciliation/failed-proposal-label{,.test}.ts`,
+`frontend/src/lib/shared/i18n-keys.test.ts`,
+`frontend/src/routes/(app)/settings/fiscal-years/{+page.svelte,fiscal-years-page.test.ts}`,
+`frontend/src/routes/(app)/invoices/[id]/{+page.svelte,invoice-validate-page.test.ts}`,
+`docs/manual/fr/{user,admin}-manual.{tex,pdf}`, `docs/api-external.md`, `docs/testing.md`,
+`docs/MULTI-TENANT-SCOPING-PATTERNS.md`, `CHANGELOG.md`,
+`_bmad-output/implementation-artifacts/{15-12b-filet-sous-un-bilan-clos.md,epic-15-choix-autonomes.md,sprint-status.yaml}`.
 
 ## Change Log
 
@@ -763,3 +901,13 @@ de la base partagée, AC 21), `CHANGELOG.md`. **Aucune migration** (P1-P8 sans o
     un test (C-15-12b-2).
   - **Message de l'AC 9** : borné par la 15-12a à « modifiée ni supprimée » (`errors.rs` repli, 4
     locales, assertion « enregistr » de `journal_entry_reversal_e2e.rs:1890`) — élargi ici (C-15-12b-1).
+
+- **2026-10-09 — Développement (T1-T8)**, Claude Opus 5.5, worktree `kesh-15-12b` : filet aux deux
+  points de passage (`create_in_tx_inner` sans verrou, `delete_in_tx` sans condition), trois voies du lot
+  (constructeur unique, littéral), bandeau de l'état hérité (aide pure `outOfOrderState`, Vitest),
+  boîte de validation fermée, message élargi à la saisie (C-15-12b-1), angles morts assumés écrits et
+  fixés (prédicteurs d'annulation #568 ; statut des soldes de départ, C-15-12b-2), libellé du lot à deux
+  clés (C-15-12b-3), documentation (manuels + PDF, `api-external.md`, CHANGELOG, `testing.md`,
+  `MULTI-TENANT-SCOPING-PATTERNS.md`). Mutations (v), (vi), (vii-a), (vii-b) observées rouges. Gates :
+  backend 2970/2970, Vitest 1115/1115, E2E 245 / 9 attendus. Statut `review`.
+
