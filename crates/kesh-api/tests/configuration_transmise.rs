@@ -30,6 +30,13 @@
 //!   catalogues i18n, du manuel français **et des littéraux de chaîne du code
 //!   de production** (doc-comments, macros, attributs compris) nomme une
 //!   variable connue.
+//! - **(M) Service MariaDB** (15-13a, #551) — le service `mariadb` de
+//!   `docker-compose.yml` ne publie aucun port (pas de clé `ports:`) et ses
+//!   deux mots de passe sont de la forme `${NOM:?…}` (obligatoires, vide
+//!   refusé) ; la `DATABASE_URL` composée de `kesh-api` exige
+//!   `${MARIADB_PASSWORD:?` (famille (V), [`VALEURS_COMPOSEES`]) ; aucun
+//!   fichier distribué ne porte `kesh_dev`, et les mots de passe MariaDB de
+//!   `.env.example` sont des lignes commentées.
 //! - **(S) Auto-test** des extracteurs sur des sources synthétiques.
 //!
 //! # Ce qu'elle n'établit PAS (angles morts écrits)
@@ -49,7 +56,10 @@
 //! (`rust_log_vide_vaut_info`).
 //! `TMPDIR` (`std::env::temp_dir()`) est inventorié mais non compté dans
 //! l'ensemble lu. `docker-compose.dev.yml` (pile de développement, non
-//! distribuée) n'est pas contraint.
+//! distribuée) n'est pas contraint — ni par (T), ni par (M) : ses mots de
+//! passe de développement et son port en loopback y restent. (M) ne voit pas
+//! un mot de passe **root** posé dans `.env` sur une valeur gabarit `<…>`
+//! (issue #578).
 //!
 //! L'analyseur YAML (`yaml-rust2`) ne connaît pas les clés de fusion
 //! (`<<: *ancre`) : une forme non reconnue fait **rougir**, jamais passer. La
@@ -60,6 +70,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};
 
 use yaml_rust2::{Yaml, YamlLoader};
+
+#[path = "common/binaire.rs"]
+mod binaire;
 
 // ---------------------------------------------------------------------------
 // Listes fermées
@@ -168,8 +181,10 @@ const AJOUTS: &[(&str, Compose)] = &[
 /// valeur contient l'interpolation annoncée.
 const VALEURS_COMPOSEES: &[(&str, Compose, &str)] = &[
     // `docker-compose.yml` compose l'URL depuis les `MARIADB_*` de son
-    // service MariaDB : la ligne `DATABASE_URL` de `.env` y est ignorée.
-    ("DATABASE_URL", Compose::Y, "${MARIADB_"),
+    // service MariaDB : la ligne `DATABASE_URL` de `.env` y est ignorée. Le
+    // mot de passe y est OBLIGATOIRE et non vide (Story 15-13a, #551) : aucun
+    // défaut publié ne doit pouvoir s'y glisser.
+    ("DATABASE_URL", Compose::Y, "${MARIADB_PASSWORD:?"),
 ];
 
 /// Variables de `.env.example` que le code ne lit pas, utilisées par les
@@ -258,9 +273,12 @@ enum ValeurEnv {
     NonReconnue(String),
 }
 
-/// Le service `kesh-api` d'un compose, tel que ce test le lit.
+/// Un service d'un compose (`kesh-api`, ou `mariadb` depuis la Story 15-13a),
+/// tel que ce test le lit.
 #[derive(Debug, Default)]
 struct Service {
+    /// Clé `ports:` présente (quelle qu'en soit la forme). Story 15-13a.
+    ports: bool,
     /// Entrées de `environment:`, dans l'ordre.
     environnement: Vec<(String, ValeurEnv)>,
     /// `env_file` présent.
@@ -293,23 +311,25 @@ fn scalaire(y: &Yaml) -> Option<String> {
     }
 }
 
-/// Analyse un compose et rend son service `kesh-api`, ou les raisons pour
+/// Analyse un compose et rend son service `nom`, ou les raisons pour
 /// lesquelles il ne se lit pas (forme non reconnue : rouge, jamais ignorée).
-fn service_kesh_api(source: &str) -> Result<Service, Vec<String>> {
+/// Généralisée de `service_kesh_api` à la Story 15-13a (service `mariadb`).
+fn service(source: &str, nom: &str) -> Result<Service, Vec<String>> {
     let docs =
         YamlLoader::load_from_str(source).map_err(|e| vec![format!("YAML invalide : {e}")])?;
     let doc = docs
         .first()
         .ok_or_else(|| vec!["document YAML vide".to_string()])?;
-    let svc = &doc["services"]["kesh-api"];
+    let svc = &doc["services"][nom];
     let Some(hash) = svc.as_hash() else {
-        return Err(vec!["service `kesh-api` introuvable".to_string()]);
+        return Err(vec![format!("service `{nom}` introuvable")]);
     };
     let mut erreurs = Vec::new();
     let mut out = Service::default();
     for (k, v) in hash {
         match k.as_str() {
             Some("env_file") => out.env_file = true,
+            Some("ports") => out.ports = true,
             Some("image") => out.image = scalaire(v),
             Some("volumes") => match v {
                 Yaml::Array(a) => out.volumes = a.clone(),
@@ -538,8 +558,11 @@ enum Interpolation<'a> {
     DefautSiVide(&'a str, &'a str),
     /// `${NOM-défaut}`
     DefautSiAbsente(&'a str, &'a str),
-    /// `${NOM:?message}` ou `${NOM?message}`
-    Obligatoire(&'a str),
+    /// `${NOM:?message}` : refuse une variable absente **ou vide**.
+    ObligatoireNonVide(&'a str),
+    /// `${NOM?message}` : ne refuse qu'une variable **absente** — une ligne
+    /// `NOM=` vide passe. Scindée de la précédente à la Story 15-13a.
+    ObligatoireSiAbsente(&'a str),
 }
 
 fn interpolation(valeur: &str) -> Option<Interpolation<'_>> {
@@ -560,8 +583,10 @@ fn interpolation(valeur: &str) -> Option<Interpolation<'_>> {
         Some(Interpolation::DefautSiVide(nom, d))
     } else if let Some(d) = reste.strip_prefix('-') {
         Some(Interpolation::DefautSiAbsente(nom, d))
-    } else if reste.starts_with(":?") || reste.starts_with('?') {
-        Some(Interpolation::Obligatoire(nom))
+    } else if reste.starts_with(":?") {
+        Some(Interpolation::ObligatoireNonVide(nom))
+    } else if reste.starts_with('?') {
+        Some(Interpolation::ObligatoireSiAbsente(nom))
     } else {
         None
     }
@@ -623,7 +648,8 @@ fn controle_valeur(compose: Compose, cle: &str, valeur: &ValeurEnv) -> Option<St
                 Interpolation::Simple(n)
                 | Interpolation::DefautSiVide(n, _)
                 | Interpolation::DefautSiAbsente(n, _)
-                | Interpolation::Obligatoire(n) => n,
+                | Interpolation::ObligatoireNonVide(n)
+                | Interpolation::ObligatoireSiAbsente(n) => n,
             };
             if nom != cle {
                 return Some(format!(
@@ -660,6 +686,93 @@ fn controle_valeur(compose: Compose, cle: &str, valeur: &ValeurEnv) -> Option<St
             None
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// (M) Service MariaDB et mots de passe publiés — Story 15-13a (#551)
+// ---------------------------------------------------------------------------
+
+/// Mots de passe du service `mariadb` qui doivent être OBLIGATOIRES et non
+/// vides (`${NOM:?…}`) : sans eux, Compose refuse de démarrer.
+const MOTS_DE_PASSE_MARIADB: &[&str] = &["MARIADB_ROOT_PASSWORD", "MARIADB_PASSWORD"];
+
+/// Sous-chaîne commune aux anciens mots de passe par défaut (`kesh_dev`,
+/// `kesh_dev_root`) : aucun fichier distribué ne doit la porter.
+const MOT_DE_PASSE_PUBLIE: &str = "kesh_dev";
+
+/// Fichiers distribués où [`MOT_DE_PASSE_PUBLIE`] est interdit, commentaires
+/// compris.
+const FICHIERS_DISTRIBUES: &[&str] = &[
+    "docker-compose.yml",
+    "docker-compose.prod.yml",
+    ".env.example",
+];
+
+/// (M) Le service `mariadb` de `source` : aucune clé `ports:` (un port publié
+/// par Docker contourne le pare-feu de l'hôte), et chaque entrée de
+/// [`MOTS_DE_PASSE_MARIADB`] de la forme `${NOM:?…}` sur elle-même. La forme
+/// `${NOM?…}` est refusée : une ligne `NOM=` décommentée sans valeur ferait
+/// démarrer MariaDB sans mot de passe. La valeur est lue après l'analyse YAML :
+/// une valeur citée arrive sans ses guillemets.
+fn controle_service_mariadb(source: &str) -> Vec<String> {
+    let svc = match service(source, "mariadb") {
+        Ok(s) => s,
+        Err(e) => return e,
+    };
+    let mut erreurs = Vec::new();
+    if svc.ports {
+        erreurs.push(
+            "service `mariadb` : clé `ports:` présente — le port de la base ne doit pas être publié \
+             (Kesh passe par le réseau interne ; un port publié contourne UFW)"
+                .to_string(),
+        );
+    }
+    for cle in MOTS_DE_PASSE_MARIADB {
+        let ok = match svc.valeur(cle) {
+            Some(ValeurEnv::Scalaire(v)) => {
+                matches!(interpolation(v), Some(Interpolation::ObligatoireNonVide(n)) if n == *cle)
+            }
+            _ => false,
+        };
+        if !ok {
+            erreurs.push(format!(
+                "service `mariadb` : `{cle}` doit être de la forme `${{{cle}:?message}}` (obligatoire, \
+                 non vide, sans défaut), trouvé {:?}",
+                svc.valeur(cle)
+            ));
+        }
+    }
+    erreurs
+}
+
+/// (M) Aucun fichier distribué ne porte [`MOT_DE_PASSE_PUBLIE`] (recherche de
+/// sous-chaîne, commentaires compris) ; dans `.env.example`, toute ligne
+/// d'affectation d'un mot de passe MariaDB est commentée. `fichiers` :
+/// (nom, contenu).
+fn controle_mots_de_passe_publies(fichiers: &[(&str, &str)]) -> Vec<String> {
+    let mut erreurs = Vec::new();
+    for (nom, contenu) in fichiers {
+        for (i, ligne) in contenu.lines().enumerate() {
+            if ligne.contains(MOT_DE_PASSE_PUBLIE) {
+                erreurs.push(format!(
+                    "{nom}:{} : mot de passe publié `{MOT_DE_PASSE_PUBLIE}`",
+                    i + 1
+                ));
+            }
+        }
+        if *nom == ".env.example" {
+            for (i, var, commentee) in lignes_affectation(contenu) {
+                if MOTS_DE_PASSE_MARIADB.contains(&var.as_str()) && !commentee {
+                    erreurs.push(format!(
+                        ".env.example:{} : `{var}` doit rester commentée et sans valeur (un `.env` copié \
+                         du gabarit fait alors refuser Compose)",
+                        i + 1
+                    ));
+                }
+            }
+        }
+    }
+    erreurs
 }
 
 /// Lignes d'affectation de `.env.example` : `^#?\s*[A-Z][A-Z0-9_]*=`. Rend
@@ -1685,9 +1798,9 @@ fn corpus_code() -> Vec<(String, String)> {
 fn services() -> (Service, Service, String) {
     let y_source = lire(Compose::Y.fichier());
     let p_source = lire(Compose::P.fichier());
-    let y = service_kesh_api(&y_source).unwrap_or_else(|e| panic!("docker-compose.yml : {e:?}"));
-    let p =
-        service_kesh_api(&p_source).unwrap_or_else(|e| panic!("docker-compose.prod.yml : {e:?}"));
+    let y = service(&y_source, "kesh-api").unwrap_or_else(|e| panic!("docker-compose.yml : {e:?}"));
+    let p = service(&p_source, "kesh-api")
+        .unwrap_or_else(|e| panic!("docker-compose.prod.yml : {e:?}"));
     (y, p, y_source)
 }
 
@@ -1756,6 +1869,38 @@ fn env_example() {
     );
 }
 
+/// Test 1 de la fiche 15-13a — (M) le service `mariadb` de
+/// `docker-compose.yml`.
+#[test]
+fn mariadb() {
+    echouer_si(
+        controle_service_mariadb(&lire(Compose::Y.fichier())),
+        "(M) service mariadb",
+    );
+}
+
+/// Test 2 de la fiche 15-13a — (M) aucun mot de passe publié dans les
+/// fichiers distribués ; mots de passe MariaDB commentés dans le gabarit.
+#[test]
+fn mots_de_passe_publies() {
+    let contenus: Vec<(&str, String)> = FICHIERS_DISTRIBUES.iter().map(|f| (*f, lire(f))).collect();
+    let fichiers: Vec<(&str, &str)> = contenus.iter().map(|(n, c)| (*n, c.as_str())).collect();
+    // Assertion de montage : le gabarit porte bien les deux lignes commentées.
+    let gabarit = &contenus[2].1;
+    for cle in MOTS_DE_PASSE_MARIADB {
+        assert!(
+            lignes_affectation(gabarit)
+                .iter()
+                .any(|(_, v, c)| v == cle && *c),
+            "montage : `#{cle}=` attendue dans .env.example"
+        );
+    }
+    echouer_si(
+        controle_mots_de_passe_publies(&fichiers),
+        "(M) mots de passe publiés",
+    );
+}
+
 #[test]
 fn fantomes() {
     let mut corpus = corpus_texte();
@@ -1777,7 +1922,7 @@ fn lectures() {
 
 fn svc(env_yaml: &str) -> Service {
     let source = format!("services:\n  kesh-api:\n    environment:\n{env_yaml}");
-    service_kesh_api(&source).expect("YAML synthétique valide")
+    service(&source, "kesh-api").expect("YAML synthétique valide")
 }
 
 fn valeur_de(env_yaml: &str, cle: &str, compose: Compose) -> Option<String> {
@@ -1791,6 +1936,63 @@ fn s_liste_et_dictionnaire_rendent_les_memes_cles() {
     let l = svc("      - KESH_PORT=${KESH_PORT:-80}\n      - KESH_HOST=0.0.0.0\n");
     assert_eq!(d.cles(), l.cles());
     assert_eq!(d.valeur("KESH_PORT"), l.valeur("KESH_PORT"));
+}
+
+/// Test 4 de la fiche 15-13a — (S) le contrôle (M) du service `mariadb` sur
+/// des sources synthétiques.
+#[test]
+fn s_service_mariadb() {
+    let source = |root: &str, mdp: &str, ports: &str| {
+        format!(
+            "services:\n  mariadb:\n    environment:\n      MARIADB_ROOT_PASSWORD: {root}\n      \
+             MARIADB_PASSWORD: {mdp}\n{ports}"
+        )
+    };
+    let ok_root = "${MARIADB_ROOT_PASSWORD:?m}";
+    let ok_mdp = "${MARIADB_PASSWORD:?m}";
+    // Acceptées : forme `:?` nue, et citée (les guillemets tombent à l'analyse).
+    assert_eq!(
+        controle_service_mariadb(&source(ok_root, ok_mdp, "")),
+        Vec::<String>::new()
+    );
+    assert_eq!(
+        controle_service_mariadb(&source(&format!("\"{ok_root}\""), ok_mdp, "")),
+        Vec::<String>::new()
+    );
+    // Refusées.
+    for (cas, src) in [
+        (
+            "ports",
+            source(
+                ok_root,
+                ok_mdp,
+                "    ports:\n      - \"127.0.0.1:3306:3306\"\n",
+            ),
+        ),
+        ("défaut", source(ok_root, "${MARIADB_PASSWORD:-x}", "")),
+        ("simple", source(ok_root, "${MARIADB_PASSWORD}", "")),
+        ("forme ?", source(ok_root, "${MARIADB_PASSWORD?m}", "")),
+        (
+            "autre variable",
+            source(ok_root, "${MARIADB_ROOT_PASSWORD:?m}", ""),
+        ),
+        ("littéral", source(ok_root, "kesh_dev", "")),
+    ] {
+        assert_eq!(
+            controle_service_mariadb(&src).len(),
+            1,
+            "{cas} doit rougir une fois : {src}"
+        );
+    }
+    // Mots de passe publiés : commentaire compris, ligne active refusée.
+    let rouge =
+        controle_mots_de_passe_publies(&[("docker-compose.yml", "# ancien : kesh_dev_root\n")]);
+    assert_eq!(rouge.len(), 1, "{rouge:?}");
+    let rouge = controle_mots_de_passe_publies(&[(
+        ".env.example",
+        "MARIADB_ROOT_PASSWORD=x\n#MARIADB_PASSWORD=\n",
+    )]);
+    assert_eq!(rouge.len(), 1, "{rouge:?}");
 }
 
 #[test]
@@ -1977,7 +2179,7 @@ fn s_sources_de_montage() {
     );
     assert_eq!(source_montage("./a:/data/inboxe", "/data/inbox"), None);
     let longue = "services:\n  kesh-api:\n    volumes:\n      - type: bind\n        source: ./a\n        target: /data/inbox\n";
-    let s = service_kesh_api(longue).expect("YAML valide");
+    let s = service(longue, "kesh-api").expect("YAML valide");
     assert!(
         sources_montages(&s).is_err(),
         "une forme longue doit rougir"
@@ -2230,26 +2432,17 @@ fn s_fantomes_du_code() {
 /// invalide fait rejouer un avertissement (`warn`) par `main` après
 /// l'installation de l'abonné. Rend la sortie complète (stdout + stderr).
 fn sortie_du_binaire_sans_configuration(rust_log: &str) -> String {
-    let dir = tempfile::tempdir().expect("répertoire temporaire");
-    let sortie = std::process::Command::new(env!("CARGO_BIN_EXE_kesh-api"))
-        .current_dir(dir.path())
-        .env_clear()
-        .env("RUST_LOG", rust_log)
-        .env("NO_COLOR", "1")
-        .env("DATABASE_URL", "")
-        .env("KESH_JWT_SECRET", "")
-        .env("KESH_LOG_FILE_ROTATION", "inconnue")
-        .output()
-        .expect("lancement du binaire kesh-api");
+    let sortie = binaire::lancer_binaire(&[
+        ("RUST_LOG", rust_log),
+        ("DATABASE_URL", ""),
+        ("KESH_JWT_SECRET", ""),
+        ("KESH_LOG_FILE_ROTATION", "inconnue"),
+    ]);
     assert!(
         !sortie.status.success(),
         "le binaire doit refuser de démarrer sans configuration"
     );
-    format!(
-        "{}{}",
-        String::from_utf8_lossy(&sortie.stdout),
-        String::from_utf8_lossy(&sortie.stderr)
-    )
+    binaire::texte(&sortie)
 }
 
 /// `RUST_LOG=""` vaut une absence : le niveau `info` s'applique, et

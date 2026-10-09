@@ -3537,3 +3537,94 @@ mod smtp_config_tests {
         assert_eq!(config.smtp_host.as_deref(), Some("fd00::25"));
     }
 }
+
+/// Story 15-13a (#551) — avertissement sur le mot de passe de `DATABASE_URL`
+/// et indice du refus 1045.
+#[cfg(test)]
+mod mot_de_passe_base_tests {
+    use super::tests::{env_lock, from_env_with};
+    use super::*;
+
+    /// Compte les deux avertissements dans `logs`.
+    fn compte(logs: &str) -> (usize, usize) {
+        (
+            logs.matches(AVERTISSEMENT_MOT_DE_PASSE_PUBLIE).count(),
+            logs.matches(AVERTISSEMENT_MOT_DE_PASSE_GABARIT).count(),
+        )
+    }
+
+    /// Test 7 de la fiche — AC 5 a, a-bis, b. Chaque cas averti l'est **une**
+    /// fois, par le bon message ; les témoins ne déclenchent rien ; aucun
+    /// message capturé ne contient le mot de passe (formes encodée et décodée)
+    /// ni l'URL ; `from_env` réussit toujours.
+    #[test]
+    fn from_env_warns_on_published_database_password() {
+        // (URL, mot de passe encodé, mot de passe décodé)
+        let publies = [
+            ("mysql://kesh:kesh_dev@h/kesh", "kesh_dev", "kesh_dev"),
+            (
+                "mysql://kesh:kesh_dev_root@h/kesh",
+                "kesh_dev_root",
+                "kesh_dev_root",
+            ),
+            ("mysql://kesh:kesh%5Fdev@h/kesh", "kesh%5Fdev", "kesh_dev"),
+        ];
+        let gabarits = [
+            (
+                "mysql://kesh:%3Cmot%20de%20passe%20utilisateur%20applicatif%3E@h/kesh",
+                "%3Cmot%20de%20passe%20utilisateur%20applicatif%3E",
+                "<mot de passe utilisateur applicatif>",
+            ),
+            // Forme non encodée, telle que Compose la compose depuis `.env` :
+            // `url` encode l'espace et les chevrons de l'identifiant.
+            (
+                "mysql://kesh:<mot de passe utilisateur applicatif>@h/kesh",
+                "%3Cmot%20de%20passe%20utilisateur%20applicatif%3E",
+                "<mot de passe utilisateur applicatif>",
+            ),
+            (
+                "mysql://kesh:%3CMARIADB_PASSWORD%3E@h/kesh",
+                "%3CMARIADB_PASSWORD%3E",
+                "<MARIADB_PASSWORD>",
+            ),
+        ];
+        let temoins = [
+            "mysql://kesh_dev:fort-7f3a9c2e@h/kesh", // l'utilisateur, pas le mot de passe
+            "mysql://kesh:Kesh_Dev@h/kesh",          // casse
+            "mysql://kesh:a%3Cb%3Ec@h/kesh",         // chevrons intérieurs
+            "mysql://kesh:%FF@h/kesh",               // octet non UTF-8
+            "mysql://kesh:9f2c4e7a1b3d5f60@h/kesh",  // mot de passe fort
+            "mysql://kesh@h/kesh",                   // sans mot de passe
+        ];
+
+        let _guard = env_lock();
+        for (attendu, cas) in [((1, 0), &publies[..]), ((0, 1), &gabarits[..])] {
+            for (url, encode, decode) in cas {
+                let (result, logs) = from_env_with(&[("DATABASE_URL", url)]);
+                assert!(result.is_ok(), "{url} : Kesh démarre quand même");
+                assert_eq!(compte(&logs), attendu, "{url} : logs = {logs}");
+                for interdit in [*url, *encode, *decode] {
+                    assert!(
+                        !logs.contains(interdit),
+                        "{url} : le journal cite « {interdit} » : {logs}"
+                    );
+                }
+            }
+        }
+        for url in temoins {
+            let (result, logs) = from_env_with(&[("DATABASE_URL", url)]);
+            assert!(result.is_ok(), "{url} : Kesh démarre");
+            assert_eq!(compte(&logs), (0, 0), "{url} : logs = {logs}");
+        }
+    }
+
+    /// Test 9 de la fiche — AC 6 b : la décision pure.
+    #[test]
+    fn indice_connexion_refusee() {
+        assert_eq!(indice_connexion(Some(1045)), Some(INDICE_ACCES_REFUSE));
+        for autre in [Some(1049), Some(1044), None] {
+            assert_eq!(indice_connexion(autre), None, "{autre:?}");
+        }
+        assert!(!INDICE_ACCES_REFUSE.contains("mysql://"));
+    }
+}

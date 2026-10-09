@@ -84,11 +84,10 @@ async fn main() {
             // indice — le piège le plus probable après la 0.13.0 est un mot de
             // passe neuf écrit dans `.env` alors que MariaDB garde celui de la
             // création. Ni le message ni l'indice ne citent l'URL.
-            let indice = kesh_api::config::indice_connexion(
-                kesh_api::config::numero_erreur_mariadb(&e),
-            )
-            .map(|i| format!(" — {i}"))
-            .unwrap_or_default();
+            let indice =
+                kesh_api::config::indice_connexion(kesh_api::config::numero_erreur_mariadb(&e))
+                    .map(|i| format!(" — {i}"))
+                    .unwrap_or_default();
             tracing::error!(
                 "Base de données indisponible au démarrage — l'authentification ne peut pas fonctionner sans DB. Arrêt. Erreur : {}{}",
                 e,
