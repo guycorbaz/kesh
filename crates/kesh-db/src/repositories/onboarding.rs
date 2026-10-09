@@ -210,10 +210,42 @@ pub async fn record_step_completed_in_tx(
     Ok(())
 }
 
+/// Remet l'état d'onboarding à zéro **en place**, dans la transaction de
+/// l'appelant — Story 15-7b2 (AC 2 étape 6, choix C-15-7-16).
+///
+/// `UPDATE … SET step_completed = 0, is_demo = FALSE, ui_mode = NULL,
+/// version = version + 1` sur la ligne singleton. La ligne est **conservée**
+/// (même `id`) : la rédaction d'avant la supprimait puis la recréait sur le
+/// pool, hors de toute transaction. Une ligne absente rend
+/// `DbError::Invariant` — l'appelant l'a verrouillée par [`lock_state_in_tx`]
+/// et a déjà refusé son absence.
+///
+/// N'écrit **aucune** trace : la remise à zéro s'inscrit par sa propre entrée,
+/// `installation.reset`. **Ne commite jamais.**
+pub async fn reset_state_in_tx(tx: &mut Transaction<'_, MySql>) -> Result<(), DbError> {
+    let rows = sqlx::query(
+        "UPDATE onboarding_state \
+         SET step_completed = 0, is_demo = FALSE, ui_mode = NULL, version = version + 1 \
+         WHERE singleton = TRUE",
+    )
+    .execute(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .rows_affected();
+    if rows != 1 {
+        return Err(DbError::Invariant(format!(
+            "onboarding_state : {rows} ligne(s) remise(s) à zéro, 1 attendue"
+        )));
+    }
+    Ok(())
+}
+
 /// Supprime la row onboarding_state (bas niveau).
 ///
-/// L'orchestration complète du reset (nettoyage FK-safe des tables de données)
-/// est dans `kesh_seed::reset_demo()`.
+/// **Sans appelant de production** depuis la Story 15-7b2 : la remise à zéro
+/// (`kesh_seed::reset_demo`) remet l'état à zéro **en place**
+/// ([`reset_state_in_tx`]). Reste pour les tests qui montent une installation
+/// sans état d'onboarding.
 pub async fn delete_state(pool: &MySqlPool) -> Result<(), DbError> {
     sqlx::query("DELETE FROM onboarding_state")
         .execute(pool)

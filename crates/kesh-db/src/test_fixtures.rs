@@ -477,8 +477,8 @@ pub async fn seed_stub_company_only(pool: &MySqlPool) -> Result<i64, FixtureErro
         "INSERT INTO companies (name, address, org_type, accounting_language, instance_language, is_stub) \
          VALUES (?, ?, ?, ?, ?, TRUE)",
     )
-    .bind("(en cours de configuration)")
-    .bind("-")
+    .bind(crate::repositories::companies::STUB_COMPANY_NAME)
+    .bind(crate::repositories::companies::STUB_COMPANY_ADDRESS)
     .bind("Independant")
     .bind("FR")
     .bind("FR")
