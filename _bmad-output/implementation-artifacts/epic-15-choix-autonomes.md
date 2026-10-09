@@ -5850,3 +5850,10 @@ l'import (#458–#461).
 - **Écartées** : gate complet à deux threads comme en P1 — interdit par l'orchestrateur, et ce ne serait toujours pas le gate de référence.
 - **Réversible** : sans objet (report de gate, non une décision de code).
 
+
+## C-15-1a-i-14 — 15-1a-i (intégration) : rebasée sur `origin/main` `803f3e15` ; union partout, partition d'audit recomptée, statuts 15-13* de `main`
+- **Contexte** : depuis `dc4bc58b`, `main` a reçu la 15-13a, la 15-7b1, la 15-13b et la 15-6c. Conflits sur le registre des choix, le sprint-status, le module `tests` d'`errors.rs`, la partition de `audit_route_registry.rs` et le PDF du manuel utilisateur. Aucune migration mergée entre-temps ; version Cargo de `main` restée `0.12.1`.
+- **Retenu** : union pour le registre, le sprint-status et les tests d'`errors.rs` ; les clés 15-13* prennent le statut de `main` — **C-15-1a-i-5 est dépassé** (les statuts relevés au T0 sur les branches, dont « 15-13b review », étaient périmés) ; partition des routes recomptée, 114 = 107 tracées (105 + lettrage + délettrage) + 5 exemptées + 2 sans objet ; PDF utilisateur régénéré par `make -B fr`, les deux autres PDF rendus à leur version de `main` (`.tex` inchangés, octets d'horodatage seulement). Gate de référence à huit threads et E2E complet rejoués sur l'état rebasé.
+- **Signalé, non traité** : le § « Passer à la 0.13.0 » du manuel d'administration (`admin-manual.tex`, `sec:maj-0-13`, écrit par la 15-13a sans connaître la migration du lettrage) ne dit pas que la 0.13.0 relève `kesh_version_min_required` et interdit le retour à un binaire antérieur ; seul l'avertissement général « toujours sauvegarder avant la mise à jour » le couvre. Le CHANGELOG, lui, le dit. À trancher par l'orchestrateur — candidat naturel : la 15-1a-ii, ou la préparation de la release v0.13.0.
+- **Écartées** : réécrire le manuel d'administration à l'intégration (texte neuf hors de toute passe de revue, sur une story dont la boucle est close) ; reprendre les statuts 15-13* de la branche.
+- **Réversible** : oui (branche de sauvegarde `backup/15-1a-i-avant-rebase-803f3e15`).

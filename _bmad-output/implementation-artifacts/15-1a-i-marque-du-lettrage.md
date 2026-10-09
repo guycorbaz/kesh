@@ -2,13 +2,12 @@
 
 ## Status
 
-review *(créée le 2026-10-09 au découpage de la 15-1a en validation P3 — C124 ; validation close en P5 ;
-développement ouvert le 2026-10-09 sur `dc4bc58b`, qui porte la 15-12a et la 15-12b ; développement
-achevé le 2026-10-09, gate complet au dernier commit de code `ee6cb1c3` ; revue de code P1 (Sonnet ×3)
-remédiée le 2026-10-09, gate complet (à `--test-threads=2`, `innodb_file_per_table=OFF` — C-15-1a-i-10)
-et E2E complet au dernier commit de code `15a67932` ; revue de code P2 (Opus ×3) remédiée le 2026-10-09 —
-code de production touché (B2-2), **gate ciblé seulement, gate complet et E2E complet à rejouer après
-redémarrage de MariaDB** ; passe suivante à lancer)*
+done *(créée le 2026-10-09 au découpage de la 15-1a en validation P3 — C124 ; validation close en P5 ;
+développement ouvert le 2026-10-09 sur `dc4bc58b` ; revue de code close après trois passes (P1 Sonnet ×3,
+P2 Opus ×3, P3 ciblée Haiku) ; **intégrée le 2026-10-09 sur `origin/main` `803f3e15`** (15-13a, 15-7b1,
+15-13b, 15-6c) — gate de référence sur l'état rebasé : `scripts/test-fast.sh` à huit threads 3135/3135,
+Vitest 1149/1149, E2E 246 / 7 KF-029 + 1 pollution rejouée verte. ⛔ refs #518, pas closes : la 15-1a-ii
+suit, et aucun tag v0.13.0 ne se pose avant son merge — C124)*
 
 ## Story
 
@@ -1343,6 +1342,54 @@ frontal touché, mais l'E2E complet est dû au dernier commit de code). **À l'o
 redémarrage du conteneur, gate complet de référence (`scripts/test-fast.sh --ci`, huit threads) et E2E
 complet sur le dernier commit de code de cette remédiation.
 
+### Intégration sur `origin/main` `803f3e15` — 2026-10-09 (Opus 5.5, intégrateur)
+
+**Rebase** de la branche (17 commits, base `dc4bc58b`) sur `origin/main` `803f3e15`, qui porte la 15-13a,
+la 15-7b1, la 15-13b et la 15-6c ; sauvegarde préalable `backup/15-1a-i-avant-rebase-803f3e15` (tête
+`17d9de95`). Conflits, tous résolus sans toucher au sens de la story (C-15-1a-i-14) :
+
+- `epic-15-choix-autonomes.md` et `sprint-status.yaml` : par **union** ; les clés 15-13* prennent le statut
+  de `main` (celui relevé au T0 sur leurs branches, C-15-1a-i-5, était périmé) ; l'en-tête de cette branche
+  renuméroté (44), puis (45) à la clôture.
+- `crates/kesh-api/src/errors.rs` (module `tests`) : union des tests de la 15-13b et de ceux du lettrage.
+- `crates/kesh-api/tests/audit_route_registry.rs` : partition **recomptée** — 114 routes = **107** tracées
+  (105 de `main`, dont le peuplement de démonstration de la 15-7b1, + le lettrage et le délettrage) +
+  **5** exemptées (`main`, 15-7b1) + 2 sans objet ; registre 117 inchangé.
+- `docs/manual/fr/user-manual.pdf` : jamais fusionné ; `.tex` fusionné automatiquement, PDF régénéré par
+  `make -B fr` (les PDF d'administration et de la brochure, dont le `.tex` est celui de `main`, rendus à
+  leur version de `main`).
+
+**Contrôles de version et de migrations** : `main` n'a reçu **aucune migration** depuis `dc4bc58b`
+(dernière : `20261003000001`) ; `20261009000001_journal_entry_lines_lettering.sql` reste la dernière et son
+`UPDATE _kesh_version SET kesh_version_min_required = '0.13.0'` est en dernière instruction ; la version
+Cargo de `main` est restée `0.12.1`, les dix crates de la branche sont à `0.13.0` (P2-bis tenu).
+`ls crates/kesh-db/migrations/*.sql | wc -l` → **76** = `grep -c '^| `20' docs/migrations-idempotence-audit.md`
+→ 76 = en-tête et ligne `Total` (76) ; partition recomptée depuis le tableau : `yes` 8 + `tracked-by-sqlx`
+68 + `no` 0 = 76. Empreinte `migrations.sha384` de `20261009000001` = `sha384sum` du fichier. **P6** :
+`grep -rn "migrations.len()\|apply_migrations_up_to" crates/` — tous les sites résolvent par version
+(`migrations_before`) ou portent leur garde-fou (`migrations_upgrade_path.rs`) ; aucune migration neuve de
+`main` ne les décale.
+
+**Gate de référence sur l'état rebasé** (tête `f12f4ca2`, dont le dernier commit de code est `f983f5df` —
+le `acd19bd8` rebasé ; MariaDB redémarrée, `innodb_file_per_table=ON`, tmpfs 1,3 Go / 4 Go avant et après ;
+bases `kesh_151ai` et `kesh_e2e_151ai` reconstruites par `DROP/CREATE` + 76 migrations du worktree + seed
+immédiatement avant ; `CARGO_TARGET_DIR` du worktree) :
+
+| gate | résultat |
+|---|---|
+| `scripts/test-fast.sh` (fmt, clippy `-D warnings`, nextest profil par défaut, **huit threads**) | vert — **3135** exécutés, **3135** réussis, 4 ignorés, 0 flaky (518,4 s) |
+| `npm run check` | 0 erreur, 27 avertissements (préexistants) |
+| `npm run lint-i18n-ownership` | PASS |
+| `npm run test:unit` | vert — 114 fichiers, **1149** tests |
+| `npm run build` | vert |
+| E2E complet (backend `0.13.0` sur `:3011`, `/health` : `smtpConfigured: true`) | **246** réussis, **8** échecs, 19 sautés (15,2 min) |
+
+Les huit échecs E2E, jugés fichier par fichier contre `docs/testing.md` § « Les échecs attendus » : les
+sept KF-029 (#97 — `mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`,
+`:150`) et `dunning.spec.ts:59` (« éditer la période de grâce », valeur `5` lue au lieu de `10`), **hors
+liste, rejoué seul : vert** — la pollution d'état « qui change d'identité ». KF-045 n'a pas rougi (run
+après 12:00 UTC). Aucun `reconciliation_*_e2e` rouge au gate backend.
+
 ### File List
 
 Code et tests : `crates/kesh-core/src/lettering.rs` (neuf), `crates/kesh-core/src/lib.rs`,
@@ -1368,6 +1415,14 @@ Documentation : `CHANGELOG.md`, `docs/api-external.md`, `docs/MULTI-TENANT-SCOPI
 Planification : cette fiche, `epic-15-choix-autonomes.md`, `sprint-status.yaml`.
 
 ## Change Log
+
+### Intégration sur `origin/main` `803f3e15` — 2026-10-09 (Opus 5.5, intégrateur)
+
+Rebase sur `803f3e15` (15-13a, 15-7b1, 15-13b, 15-6c) ; conflits résolus par union (registre, sprint-status,
+tests d'`errors.rs`), partition d'audit recomptée (114 = 107 + 5 + 2), PDF utilisateur régénéré (C-15-1a-i-14).
+Aucune migration mergée entre-temps, version Cargo de `main` inchangée (0.12.1), compteurs d'audit 76 = 8 + 68 + 0.
+Gate de référence sur l'état rebasé : backend **3135/3135** à huit threads, Vitest **1149/1149**, E2E **246** /
+7 KF-029 + 1 pollution rejouée verte. Statut **done**.
 
 ### Revue de code P3 ciblée — 2026-10-09 (Haiku ; remédiation par l'orchestrateur, Opus 5.5)
 
