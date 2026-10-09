@@ -794,3 +794,21 @@ propre, bases `kesh_156c` / `kesh_e2e_156c`, backend E2E sur le port 3019.
     (Haiku) 0 au-dessus de LOW. Modèles : Sonnet pour la passe complète, Haiku pour la passe ciblée de
     fin de boucle (D6). Aucun finding MEDIUM+ reclassé en dette ; deux LOW écrits en choix (C-15-6c-5,
     C-15-6c-6). La remédiation de la P2 ne touche que des commentaires : **boucle close**. Statut `done`.
+- 2026-10-09 — **Intégration — rebase et gates sur l'état rebasé** (orchestrateur Opus 5.5).
+  - Rebasée deux fois : sur `245b91ee` (15-13a, 15-7b1 ; sauvegarde `backup/15-6c-avant-rebase`),
+    puis sur `f2c5e419` (15-13b ; sauvegarde `backup/15-6c-avant-rebase-f2c5e419`). Registre et
+    `sprint-status.yaml` fusionnés **par union** ; PDF jamais fusionnés — pris de `main` au rebase, puis
+    régénérés (`make -B fr`), contrôlés aplatis sur les phrases de la 15-6c et de la 15-13b ; la brochure,
+    sans changement de source, n'est pas commitée.
+  - Un premier gate sur `245b91ee` s'est arrêté sur deux échecs de **montage sqlx** (`errno: 168`) :
+    tmpfs de MariaDB plein (`ibdata1` à 3,5 Go). MariaDB redémarré par l'orchestrateur ; tmpfs avant le
+    gate **1,3 Go / 4,0 Go**, après le gate et l'E2E **1,3 Go**.
+  - **Gates sur `7d9a2835`** (état rebasé sur `f2c5e419`), bases `kesh_156c` / `kesh_e2e_156c` recréées
+    (migrations du worktree, seed), cible cargo du worktree compilée à froid :
+    `scripts/test-fast.sh` (fmt + clippy + nextest) **3073/3073, 4 ignorés** ; frontend `check`
+    0 erreur (27 avertissements), `lint-i18n-ownership` vert, `test:unit` **1149/1149** (114 fichiers),
+    `build` vert ; **E2E complet (port 3012) : 247 passés, 7 échoués, 19 ignorés** — les sept KF-029
+    (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
+    `:77`, `:150`), aucun hors de la liste de `docs/testing.md` § « Les échecs attendus » (run de l'après-midi :
+    KF-045 verte). Specs `bank-account*` vertes. Backend arrêté par son PID.
+
