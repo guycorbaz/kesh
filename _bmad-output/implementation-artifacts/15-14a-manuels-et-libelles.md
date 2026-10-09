@@ -1,6 +1,6 @@
 # Story 15-14a : Manuels et libellés — dix défauts P3/P4 qui disent autre chose que le code
 
-Status: ready-for-dev
+Status: review
 
 <!-- Spécifiée le 2026-10-09 sur origin/main = dc4bc58b (worktree kesh-15-14). Sous-story de la 15-14
      (lot de défauts de documentation et de libellés, découpé d'emblée — C-15-14-1). Choix C-15-14-1 à 8.
@@ -659,58 +659,58 @@ ligne `api-external.md:330` → rouge.
 > numéro, même test. La 15-14b numérote les siens **G14-G18** (validation P3, F-6), pour qu'un « G5 » ne
 > désigne qu'un test.
 
-- [ ] **T0 — Rebase et relevé** (AC tous)
-  - [ ] `git fetch && git rebase origin/main` ; la 15-13a (`bcded0c8`) et la **15-7b1** (`245b91ee`, PR
+- [x] **T0 — Rebase et relevé** (AC tous)
+  - [x] `git fetch && git rebase origin/main` ; la 15-13a (`bcded0c8`) et la **15-7b1** (`245b91ee`, PR
         #583) sont mergées — la dépendance déclarée (C-15-14-19) est **satisfaite** depuis la validation P3 ;
         la branche de spécification est rebasée sur `245b91ee`. Si la 15-13b (PR #584) est mergée à son tour,
         re-trouver chaque site **par la valeur** (commandes des AC) et noter les écarts au Dev Agent Record.
         La 15-7b1 a touché `vat_rates.rs` (doc-comment `:351-353`), où T5 ajoute un `mod tests` : zones
         disjointes, mais c'est un repository — **gate complet** (exception `kesh-db`, validation P2, L-8).
-  - [ ] **PDF** (validation P1, F-8 ; R13) : la 15-7b1 modifie `admin-manual.pdf` et `user-manual.pdf`, la
+  - [x] **PDF** (validation P1, F-8 ; R13) : la 15-7b1 modifie `admin-manual.pdf` et `user-manual.pdf`, la
         15-13b le manuel d'administration — un conflit sur un PDF ne se résout **jamais** à la main : prendre
         les `.tex` résolus, puis **régénérer** les trois PDF (`make -B fr`). Le `.tex` d'un manuel ne se fusionne
         pas non plus de confiance : relire chaque hunk en conflit contre les deux fiches.
-  - [ ] **Relancer chaque commande d'inventaire** des AC — sur tout le dépôt suivi moins `E`, `LC_ALL=C.UTF-8`
+  - [x] **Relancer chaque commande d'inventaire** des AC — sur tout le dépôt suivi moins `E`, `LC_ALL=C.UTF-8`
         — et comparer au compte écrit, relevé sur `245b91ee` (AC 1 : 4 ; AC 2 : 21 et 132 ; AC 3 : 16 ;
         AC 5 : 25 ; AC 6 : 5 ; AC 7 : 54 ; AC 8 : 20 clés fr-CH, 153 lignes sur le dépôt, 8 lignes Vitest ;
         AC 9 : 6 ; AC 10 : 20 en de-CH, 21 sur le dépôt) ; tout écart se ventile (corrigé ou assumé, avec sa
         raison) **avant** d'écrire.
-  - [ ] **Contrôle « présent avant »** : régénérer d'abord les PDF de l'état de départ (`make -B fr` — celui de
+  - [x] **Contrôle « présent avant »** : régénérer d'abord les PDF de l'état de départ (`make -B fr` — celui de
         `bcded0c8` était en retard sur son `.tex` ; `-B` parce que la règle `%.pdf: %.tex` ne rebâtit qu'un
         PDF plus ancien que son `.tex`, et qu'après un `checkout` ou un `rebase` les deux portent la date
         de l'écriture par git — constaté en P4 sur la brochure ; validation P4, L-2 de la lentille F), puis la fonction `occ` de la convention pour chaque
         ancien texte dont T1 contrôlera l'absence ; un motif qui rend 0 ici est à réécrire.
-- [ ] **T1 — Manuel utilisateur, brochure, manuel d'administration, guide** (AC 1-6, 8)
-  - [ ] AC 1 (2 sites), AC 2 (4 sites), AC 3 (user 204/308/314/409-422/426/437 — 182 fait par la 15-7b1 —,
+- [x] **T1 — Manuel utilisateur, brochure, manuel d'administration, guide** (AC 1-6, 8)
+  - [x] AC 1 (2 sites), AC 2 (4 sites), AC 3 (user 204/308/314/409-422/426/437 — 182 fait par la 15-7b1 —,
         admin 79/1375-1386, brochure 260/385, guide `getting-started.md:26-32`), AC 4 (857-859), AC 5 (user
         1524, brochure 396), AC 6 (admin 2035/2051), AC 8 (user 1208-1209/1456/1478/1773/2316-2317) —
         numéros de `bcded0c8`.
-  - [ ] `scripts/mem-guard.sh make -B -C docs/manual fr` ; contrôle `occ` de chaque texte neuf (présent, ≥ 1)
+  - [x] `scripts/mem-guard.sh make -B -C docs/manual fr` ; contrôle `occ` de chaque texte neuf (présent, ≥ 1)
         et ancien (absent, 0) dans les trois PDF.
-- [ ] **T2 — `api-external.md`, README (dont `:34`, AC 2), `.env.example`, glossaire** (AC 2, 5, 6, 7, 8, 10)
-  - [ ] **Contrôle par la valeur du glossaire** (validation P4, L-8 de la lentille R : aucune garde ne lit
+- [x] **T2 — `api-external.md`, README (dont `:34`, AC 2), `.env.example`, glossaire** (AC 2, 5, 6, 7, 8, 10)
+  - [x] **Contrôle par la valeur du glossaire** (validation P4, L-8 de la lentille R : aucune garde ne lit
         `docs/i18n-glossaire.md`, G11 lit les catalogues) : `grep -nF 'porte encore la confusion'
         docs/i18n-glossaire.md` → 0 ; `grep -nF '#323' docs/i18n-glossaire.md` → au moins la ligne réécrite ;
         sortie consignée au Dev Agent Record.
-- [ ] **T3 — Catalogues** (AC 2, 8, 9, 10 — dont les six participes de-CH de l'AC 10) — 4 locales
+- [x] **T3 — Catalogues** (AC 2, 8, 9, 10 — dont les six participes de-CH de l'AC 10) — 4 locales
       ensemble, parité verte.
-- [ ] **T4 — Replis** (AC 2, 8) — Rust (7 sites, 6 clés : table de G9) et frontend (5) égaux au fr-CH,
+- [x] **T4 — Replis** (AC 2, 8) — Rust (7 sites, 6 clés : table de G9) et frontend (5) égaux au fr-CH,
       apostrophes du catalogue ; retirer les 3 commentaires `#569`.
-- [ ] **T5 — Tests** : G1 (`vat_rates.rs`, `mod tests` neuf — C-15-14-13), G3/G8/G10/G11
+- [x] **T5 — Tests** : G1 (`vat_rates.rs`, `mod tests` neuf — C-15-14-13), G3/G8/G10/G11
       (`kesh-i18n/src/loader.rs` `mod tests`), G2/G4/G5/G6/G7/G9/G12 (nouveau
       `crates/kesh-api/tests/textes_coherents.rs`, sans base) ; Vitest : G13 (nouveau `describe` de
       `i18n-repli-divergent-actif.test.ts`) et les 7 sites des 5 fichiers de l'AC 8 (six assertions et une
       donnée de mock).
-  - [ ] **Dépendance `regex`** (validation P3, L-1 ; C-15-14-27) : ni `kesh-api` ni `kesh-i18n` ne
+  - [x] **Dépendance `regex`** (validation P3, L-1 ; C-15-14-27) : ni `kesh-api` ni `kesh-i18n` ne
         l'ont (`grep -c regex crates/kesh-api/Cargo.toml crates/kesh-i18n/Cargo.toml` → 0 et 0) ; l'ajouter
         en **`[dev-dependencies]`** des deux (`regex = "1.10"`, la version de `kesh-db` et `kesh-import`, déjà
         verrouillée dans `Cargo.lock`) — aucune dépendance de production. Le crate `regex` n'a **pas** de
         lookahead : une garde qui compte des occurrences qui se recouvrent (G18 de la 15-14b) boucle sur
         chaque alternative séparément, ou avance d'un caractère après chaque correspondance.
-- [ ] **T6 — Mutations** : chacune de la liste ci-dessous observée **rouge**, puis restaurée (`git checkout`
+- [x] **T6 — Mutations** : chacune de la liste ci-dessous observée **rouge**, puis restaurée (`git checkout`
       **puis `touch`** du fichier — mémoire *Mutation restaurée, binaire périmé*).
-- [ ] **T7 — CHANGELOG** (AC 11).
-- [ ] **T8 — Gates** : fmt + clippy workspace ; `scripts/test-fast.sh` (gate complet : la story touche
+- [x] **T7 — CHANGELOG** (AC 11).
+- [x] **T8 — Gates** : fmt + clippy workspace ; `scripts/test-fast.sh` (gate complet : la story touche
       `kesh-api` et un repository de `kesh-db` — **exception `kesh-db` du `CLAUDE.md` : tout patch de revue
       qui touche `vat_rates.rs` impose le gate complet, même en cours de boucle** ; un patch qui ne touche
       que `textes_coherents.rs` ou les catalogues relève du gate ciblé, C-15-14-13) ; frontend `npm run check`, `lint-i18n-ownership`, `test:unit`, `build` ; **E2E complet au
@@ -801,11 +801,116 @@ ailleurs, sur une dépendance (C-15-14-1).
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), worktree `kesh-15-14`, branche `story/15-14-lot-documentation-libelles`,
+base `origin/main` = `245b91ee` (inchangé pendant tout le développement — `git fetch` au début et avant
+la clôture : la 15-13b n'était pas mergée, aucun rebase). Sauvegarde : `backup/15-14-avant-dev`.
+
 ### Debug Log References
+
+Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/` : `15-14a-build-froid.log`, `15-14a-make-avant.log`,
+`15-14a-make-t1.log`, `15-14a-make-final.log`, `15-14a-gate-backend.log`, `15-14a-vitest.log`,
+`15-14a-build-front.log`, `15-14a-e2e.log`.
 
 ### Completion Notes List
 
+**T0 — relevé.** Les dix-sept commandes d'inventaire, relancées telles qu'écrites (`LC_ALL=C.UTF-8`,
+ensemble `E`), rendent **exactement** les comptes de la fiche sur `245b91ee` : AC 1 4 ; AC 2 (A) 21,
+(B) 132 (38 texte, 84 commentaires au détecteur) ; AC 3 16 ; AC 5 25 ; AC 6 5 (`Unreleased` 2) ; AC 7 54 ;
+AC 8 20 clés fr-CH, 153 lignes (106 de code), 8 Vitest ; AC 9 6 ; AC 10 20 en de-CH, 21 sur le dépôt.
+Aucun écart à ventiler avant écriture. PDF de départ régénérés (`make -B fr`), puis contrôle « présent
+avant » par `occ` : tous ≥ 1 (user : `doit d'abord le rouvrir` 3, `un administrateur doit d'abord rouvrir
+l'exercice` 2, `2.5%` 2, `3.7%` 2, `Sterchi PME` 5, `KMU` 1, `Import d'un plan personnalisé` 2, `Import en
+masse` 2, `dossier surveillé` 1, `Réglages` 4 ; admin : `Sterchi PME` 1, `n'est pas dans la v0.9.0` 1,
+`Personnalisé CSV` 1, `Unreleased` 1 ; brochure : `Sterchi` 2, `dossier surveillé` 1, `KMU` 2). Le motif
+`(Réglages → Facturation)` rendait 0 : le site `:908` s'écrit « (\emph{Réglages} → facturation) », en
+minuscule — motif réécrit, contrôlé à 1 puis 0.
+
+**T1-T4 — textes.** Manuel utilisateur (19 remplacements), manuel d'administration (7), brochure (3),
+guide de démarrage (étape « Plan comptable » retirée, 7 → 6 étapes), `api-external.md` (2), README
+(2 textes + 54 références d'issues en liens), `.env.example` (2), glossaire (1) ; catalogues fr-CH 8,
+de-CH 23 clés + 1 commentaire, it-CH 9, en-CH 9 ; replis Rust 7 sites (6 clés) et 3 commentaires `#569`
+retirés ; replis frontend 5. Contrôle du glossaire par la valeur (T2) : `grep -nF 'porte encore la
+confusion' docs/i18n-glossaire.md` → aucune ligne ; `grep -nF '#323'` → ligne 102 (la ligne réécrite).
+Collision de l'AC 10 : la commande rend 0 avant écriture, et après, seulement les six lignes attendues.
+`fiscal-year-close-button` n'a qu'un repli, français (`settings/fiscal-years/+page.svelte:424`).
+
+**PDF.** `make -B fr` deux fois (la première compilation après le retrait d'une sous-section signalait
+« Label(s) may have changed » ; la seconde rend 0 avertissement de renvoi), aucun `??` dans les trois
+PDF, `\keshVersion` inchangé (0.12.1). Contrôle `occ` final : les 21 anciens textes → 0 ; les 23 textes
+neufs → ≥ 1 (`en commençant par le plus récent` → 7 au manuel utilisateur).
+
+**Recompte après correction** (ventilé en C-15-14-42) : AC 1 3 (le doc-comment de G1), AC 2 (A) 14,
+(B) 131 (+2 lignes de G3), AC 3 2, AC 5 21, AC 6 4 (les textes neufs dictés par l'AC 6 disent « jusqu'à
+la v0.9.0 incluse » : l'« après : 2 » de la fiche était faux), `Unreleased` 0, AC 7 54 liens / 54
+références, même numéro des deux côtés, AC 8 155 lignes (= 153 − 3 commentaires `#569` + 5 lignes de
+G8), 20 clés fr-CH, AC 9 2 (lignes de G10), AC 10 8 en de-CH et 11 sur le dépôt (+2 lignes de G11).
+Aucun site affiché ne reste à corriger.
+
+**T5 — gardes.** G1 (`vat_rates.rs`, `mod tests` neuf, `#[test]` pur) ; G3, G8, G10, G11 (`loader.rs`,
+valeurs brutes sans repli fr-CH — C-15-14-40) ; G2, G4, G5, G6, G7, G9, G12 (`textes_coherents.rs`,
+sans base, chaque négatif adossé à un positif ; G2 exige que tout `.tex` de `docs/manual/fr` soit
+gardé — C-15-14-41) ; G13 (Vitest, `describe` neuf). `regex = "1.10"` en `[dev-dependencies]` de
+kesh-api et kesh-i18n (aucun paquet neuf au `Cargo.lock`, seules les deux lignes de dépendance). Les 7
+sites Vitest de l'AC 8 (5 fichiers) basculés sur le marqueur « en commençant par le plus récent ». G12 :
+normalisation rejouée sur les fichiers de `245b91ee` → 3 / 2 / 2 / 1, comme la fiche.
+
+**T6 — mutations : 30, toutes ROUGES**, chacune appliquée par remplacement exact (occurrence unique
+vérifiée), test visé lancé, fichier restauré par `git checkout` puis `touch` ; arbre propre ensuite :
+G1 ×2 (`3.7\%` au manuel ; `380` → `370` dans `DEFAULT_SWISS_RATES`), G2 ×3, G3 ×2, G4 ×3 (« Sterchi
+PME », sous-section d'import de contacts, « KMU » au guide), G5 ×2, G6 ×2, G7 ×2, G8 ×3 (fr-CH, de-CH,
+exemption morte : `fiscal-year-reopen-button = Réactiver`), G9 ×2, G10, G11 ×2, G12 ×2, G13 ×3, et la
+Vitest de l'AC 8 (ancien repli de `settlement-cancel-blocked.ts` → `settlement-cancel-blocked.test.ts`
+rouge).
+
+**T7.** CHANGELOG `[0.13.0] — Non publié` / `### Corrigé` : une entrée, les dix issues en liens. README
+« Fonctionnalités » ne promet plus de surveillance de dossier (G5) ; feuille de route inchangée.
+
+**T8 — gates, sur l'état final du code (`b22e7b71` ; `4803060e` ne porte que CHANGELOG, PDF et registre),
+compilation à froid** (`CARGO_TARGET_DIR` du worktree vide au départ) :
+- `cargo fmt --all -- --check` vert ; `cargo clippy --workspace --all-targets -D warnings` vert, 0 warning ;
+- `scripts/test-fast.sh` (gate complet, exception `kesh-db`), base `kesh_1514a` neuve, migrée (75) et
+  semée : **3056 / 3056** réussis, 4 ignorés ;
+- `configuration_transmise` (lit `.env.example`) : 25 / 25, aussi inclus dans le gate complet ;
+- frontend : `npm run check` 0 erreur, 27 avertissements (aucun sur un fichier touché) ;
+  `lint-i18n-ownership` PASS ; `test:unit` **1140 / 1140** (114 fichiers ; 1139 + G13) ; `build` vert ;
+- **E2E complet** au dernier commit de code, backend sur 3015, base `kesh_e2e_1514a` neuve, montage
+  complet (SMTP, inbox, documents, backup ; `smtpConfigured: true`), lancé à 11:30 UTC : **245 réussis,
+  9 échecs, 19 ignorés**. Les 9, nommément : 7 KF-029 (`mode-expert:26`, `:41`, `onboarding-path-b:65`,
+  `:92`, `onboarding:57`, `:77`, `:150`) + 2 KF-045 matinales (`invoices:415`, `:439`, avant 12:00 UTC).
+  Aucun hors liste, aucune pollution.
+
 ### File List
+
+- `.env.example`
+- `CHANGELOG.md`
+- `Cargo.lock`
+- `README.md`
+- `crates/kesh-api/Cargo.toml`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/src/routes/fiscal_years.rs`
+- `crates/kesh-api/src/routes/opening_balances.rs`
+- `crates/kesh-api/tests/textes_coherents.rs` (nouveau)
+- `crates/kesh-db/src/repositories/vat_rates.rs`
+- `crates/kesh-i18n/Cargo.toml`
+- `crates/kesh-i18n/locales/{de-CH,en-CH,fr-CH,it-CH}/messages.ftl`
+- `crates/kesh-i18n/src/loader.rs`
+- `docs/api-external.md`
+- `docs/i18n-glossaire.md`
+- `docs/manual/fr/{admin-manual,user-manual,marketing-brochure}.{tex,pdf}`
+- `docs/user-guide/fr/getting-started.md`
+- `frontend/src/lib/components/invoices/InvoiceForm.svelte`
+- `frontend/src/lib/features/invoices/InvoiceSettlements.test.ts`
+- `frontend/src/lib/features/reconciliation/CancelReconciliationDialog.test.ts`
+- `frontend/src/lib/features/reconciliation/reconciliation-cancel.test.ts`
+- `frontend/src/lib/features/reconciliation/reconciliation-cancel.ts`
+- `frontend/src/lib/features/supplier-invoices/invoice-cancel.ts`
+- `frontend/src/lib/shared/i18n-repli-divergent-actif.test.ts`
+- `frontend/src/lib/shared/utils/settlement-cancel-blocked.test.ts`
+- `frontend/src/lib/shared/utils/settlement-cancel-blocked.ts`
+- `frontend/src/routes/(app)/invoices/[id]/invoice-settlements-page.test.ts`
+- `frontend/src/routes/(app)/settings/opening-balances/+page.svelte`
+- `_bmad-output/implementation-artifacts/15-14a-manuels-et-libelles.md`,
+  `epic-15-choix-autonomes.md` (C-15-14-38 à 42), `sprint-status.yaml`
 
 ## Change Log
 
@@ -925,3 +1030,8 @@ ailleurs, sur une dépendance (C-15-14-1).
   - **Propagation** : `make fr`, `make -C docs/manual fr`, `typographique au catalogue` grepés dans les
     deux fiches : ne restent que les Change Logs antérieurs. Recomptes : AC 1-11 : 11 ; tâches T0-T8 : 9 ;
     gardes G1-G13 : 13 ; issues : 10 fermées + refs #459.
+- 2026-10-09 — **Développement** (Opus 5.5, `bmad-dev-story`), sur `245b91ee`. T0-T8 faits ; inventaires du
+  T0 conformes à la fiche ; 30 mutations rouges ; gates sur l'état final, compilation à froid : backend
+  3056/3056, Vitest 1140/1140, E2E 245 / 9 attendus (7 KF-029 + 2 KF-045). Choix C-15-14-38 à 42 (tableau
+  des plans, ordre des propositions de-CH/it-CH/en-CH, valeurs brutes des catalogues, garde de tout `.tex`,
+  comptes « après » ventilés — dont l'« AC 6 : 2 » de la fiche, faux). Statut `review`.
