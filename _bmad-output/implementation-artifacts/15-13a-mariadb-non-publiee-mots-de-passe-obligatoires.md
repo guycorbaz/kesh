@@ -1,6 +1,6 @@
 # Story 15.13a : MariaDB n'est plus publiée, et ses mots de passe sont obligatoires
 
-Status: ready-for-dev
+Status: review
 
 <!-- Née le 2026-10-09 du découpage de la 15-13 (`15-13-mariadb-et-sauvegarde.md`, désormais fiche index)
      après la validation P3, décision de l'orchestrateur (signal D5 de recyclage levé deux passes de suite) —
@@ -473,8 +473,8 @@ sous-points des AC 10 à 14 qui portent sur la sauvegarde aussi.)*
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Mesures avant d'écrire** (AC 2 c, 6 c, 11 f, 11 j, 11 l ; test 8)
-  - [ ] `docker compose -f docker-compose.yml config -q` sur une copie du compose portant le message de
+- [x] **T0 — Mesures avant d'écrire** (AC 2 c, 6 c, 11 f, 11 j, 11 l ; test 8)
+  - [x] `docker compose -f docker-compose.yml config -q` sur une copie du compose portant le message de
         l'AC 2 c, **sous ses deux formes** (c1 non citée, c2 entre guillemets doubles), **avec** les deux
         variables posées (le fichier doit se lire : c'est ce que le YAML casserait) puis **sans** elles :
         relever le message exact (accents restitués ?), la forme retenue, et **laquelle des deux
@@ -483,28 +483,28 @@ sous-points des AC 10 à 14 qui portent sur la sauvegarde aussi.)*
         (AC 11 f) ? Relever. Sur la copie **avec** les variables : graphie de `docker compose config` pour
         un service sans `ports` et pour un service qui en a (forme longue `published:`), pour le contrôle
         écrit de l'AC 11 f.
-  - [ ] Erreur `sqlx` d'un mauvais mot de passe sur la MariaDB de dev (base du worktree, **jamais** le
+  - [x] Erreur `sqlx` d'un mauvais mot de passe sur la MariaDB de dev (base du worktree, **jamais** le
         conteneur `kesh-mariadb-dev` redémarré) : variante d'`sqlx::Error`, numéro 1045 joignable ou non.
-  - [ ] Durée de l'échec de connexion du test 8 : hôte `kesh-15-13.invalid` (échec de résolution, non
+  - [x] Durée de l'échec de connexion du test 8 : hôte `kesh-15-13.invalid` (échec de résolution, non
         rejoué par `sqlx`) contre `127.0.0.1:1` (`ConnectionRefused`, rejoué jusqu'à
         `db_connect_timeout` = 10 s, `config.rs:639`) ; retenir le premier s'il échoue vite **et** produit
         « Base de données indisponible », sinon le second, durée écrite.
-  - [ ] `make fr` sur l'état d'avant : garder le `.log` (référence des `Overfull`) et le PDF aplati
+  - [x] `make fr` sur l'état d'avant : garder le `.log` (référence des `Overfull`) et le PDF aplati
         (référence des contrôles de l'AC 11 l, chacun **rouge** dessus).
-- [ ] **T1 — Compose, gabarit** (AC 1, 2, 3)
-  - [ ] `docker-compose.yml` : `ports:` de `mariadb` retiré + commentaire ; trois `:?` (forme du T0).
-  - [ ] `.env.example` : bloc MariaDB réécrit (ordre de l'AC 3 c), lignes commentées ; commentaire
+- [x] **T1 — Compose, gabarit** (AC 1, 2, 3)
+  - [x] `docker-compose.yml` : `ports:` de `mariadb` retiré + commentaire ; trois `:?` (forme du T0).
+  - [x] `.env.example` : bloc MariaDB réécrit (ordre de l'AC 3 c), lignes commentées ; commentaire
         `DATABASE_URL` (hex).
-  - [ ] `grep -rnF kesh_dev docker-compose.yml docker-compose.prod.yml .env.example` → vide.
-- [ ] **T2 — Code** (AC 5, 6)
-  - [ ] `config.rs` : `MOTS_DE_PASSE_PUBLIES` + avertissement (a) **et** avertissement gabarit (a-bis) par
+  - [x] `grep -rnF kesh_dev docker-compose.yml docker-compose.prod.yml .env.example` → vide.
+- [x] **T2 — Code** (AC 5, 6)
+  - [x] `config.rs` : `MOTS_DE_PASSE_PUBLIES` + avertissement (a) **et** avertissement gabarit (a-bis) par
         `is_template_placeholder` (doc-comment complété, AC 5 d) — crates `url` **et** `percent-encoding`
         en dépendances directes de `kesh-api` (`url` ne réexporte pas `percent_encoding` ; toutes deux
         déjà au `Cargo.lock`, `url` 2.5.8 et `percent-encoding` 2.3.2 : aucun paquet neuf) ;
         `numero_erreur_mariadb` et `indice_connexion` (AC 6 b).
-  - [ ] `main.rs:82-87` : le message d'erreur ajoute l'indice quand la composition des deux fonctions en
+  - [x] `main.rs:82-87` : le message d'erreur ajoute l'indice quand la composition des deux fonctions en
         rend un.
-- [ ] **T3 — Tests Rust** (AC 5, 6, 10) — voir § *Tests et mutations*. Dans
+- [x] **T3 — Tests Rust** (AC 5, 6, 10) — voir § *Tests et mutations*. Dans
       `configuration_transmise.rs` : scission d'`Interpolation::Obligatoire`, `VALEURS_COMPOSEES`
       resserré (AC 10 a, test `valeurs`). Le lancement du binaire est factorisé (DRY) :
       `sortie_du_binaire_sans_configuration` (`configuration_transmise.rs:2232`, privée) devient un appel
@@ -516,7 +516,7 @@ sous-points des AC 10 à 14 qui portent sur la sauvegarde aussi.)*
       **Le helper ne fait aucune assertion** (F-P3-9) : chaque appelant pose la sienne —
       `sortie_du_binaire_sans_configuration` garde son `!sortie.status.success()`
       (`configuration_transmise.rs:2232-2254`), les tests 8 et 10 posent « code de sortie ≠ 0 ».
-- [ ] **T4 — CI** (AC 4) : `.github/workflows/ci.yml` et `docs/ci.md` — dont le « 4 jobs (`backend`,
+- [x] **T4 — CI** (AC 4) : `.github/workflows/ci.yml` et `docs/ci.md` — dont le « 4 jobs (`backend`,
       `frontend`, `e2e`, `docker-build`) » de `docs/ci.md:9-10` (ligne 9 : pull request ; ligne 10 :
       « mêmes 4 jobs » au push), faux (`ci.yml` n'en a que trois : `backend:` `:21`, `frontend:` `:189`,
       `docker-build:` `:233` ; aucun job `e2e`), corrigé en « 3 jobs (`backend`, `frontend`,
@@ -528,10 +528,10 @@ sous-points des AC 10 à 14 qui portent sur la sauvegarde aussi.)*
       décrivent `e2e` ne correspondent à aucun job de `ci.yml` et renvoie à **#577** (le `CLAUDE.md`
       affirme lui aussi un smoke E2E en CI que `ci.yml` ne porte pas — même issue, `CLAUDE.md` non modifié
       ici).
-- [ ] **T5 — Manuel et brochure** (AC 11) : sites (a)–(d), (f)–(h), (j) et (m), puis `make fr` (trois
+- [x] **T5 — Manuel et brochure** (AC 11) : sites (a)–(d), (f)–(h), (j) et (m), puis `make fr` (trois
       PDF), contrôles (k)–(m).
-- [ ] **T6 — `DOCKER_START.md`, retrait d'`init-demo.sh`, CHANGELOG** (AC 12, 13) — `git rm init-demo.sh`.
-- [ ] **T7 — Recette de changement de mot de passe rejouée** (AC 11 f-h) sur un **conteneur MariaDB
+- [x] **T6 — `DOCKER_START.md`, retrait d'`init-demo.sh`, CHANGELOG** (AC 12, 13) — `git rm init-demo.sh`.
+- [x] **T7 — Recette de changement de mot de passe rejouée** (AC 11 f-h) sur un **conteneur MariaDB
       jetable** (`docker run --rm -d --name kesh-15-13-recette mariadb:10.11`, sans port publié, réseau
       jetable, **jamais** `kesh-mariadb-dev`) : initialisé avec `kesh_dev`/`kesh_dev_root`, recette
       appliquée ; **contrôle de fin de mise à jour** de l'AC 11 f rejoué tel qu'il sera écrit (forme
@@ -544,9 +544,9 @@ sous-points des AC 10 à 14 qui portent sur la sauvegarde aussi.)*
       restauration** dans la forme du § *Forme du script de sauvegarde* (une table témoin créée, dumpée,
       supprimée, restaurée, relue) ; effet de `up -d kesh-api` (forme nommée, `admin-manual.tex:1747-1748`)
       sur le service `mariadb` relevé ; conteneur supprimé. Commandes et sorties au Dev Agent Record.
-- [ ] **T8 — Mutations** : chacune appliquée, test rouge relevé, fichier restauré **et touché**
+- [x] **T8 — Mutations** : chacune appliquée, test rouge relevé, fichier restauré **et touché**
       (`touch`, mémoire « mutation restaurée, binaire périmé ») ; tableau au Dev Agent Record.
-- [ ] **T9 — Propagation et inventaire** (AC 14) — exclusions communes
+- [x] **T9 — Propagation et inventaire** (AC 14) — exclusions communes
       `--exclude-dir={target,node_modules,.git,_bmad-output,_bmad,.claude,.svelte-kit}` (les skills BMAD de
       `.claude/` et `_bmad/` portent des `docker-compose up` étrangers au dépôt) :
       (1) `grep -rnIE "3306|kesh_dev|exec (-T )?db\b|base64 32|init-demo|down -v|(compose|décrit les)[^.]{0,20}deux gestes|doit rester muet" …`
@@ -568,7 +568,7 @@ sous-points des AC 10 à 14 qui portent sur la sauvegarde aussi.)*
       (4) `grep -rnE "config \| grep|config \\\\$" …` puis lecture de la ligne suivante : tout contrôle
       « doit rester muet » qui suit un `docker compose config` est précédé du `config -q && echo` (AC 11 f,
       13 d).
-- [ ] **T10 — Gates** : `scripts/test-fast.sh` complet (base du worktree remise à zéro avant —
+- [x] **T10 — Gates** : `scripts/test-fast.sh` complet (base du worktree remise à zéro avant —
       `DROP`/`CREATE` de **ses** bases, jamais un redémarrage du conteneur), frontend non touché (gate
       frontend tout de même, CLAUDE.md), **E2E complet au dernier commit de code** (D7) ; la story ne
       touche aucune migration (exception `kesh-db` sans objet).
@@ -867,11 +867,152 @@ code** au sens du `CLAUDE.md` ; tests, configuration, CI, scripts et documentati
 
 ### Agent Model Used
 
+Opus 5.5 (agent de développement, en autonomie — Epic 15), worktree `kesh-15-13a`, branche
+`story/15-13a-mariadb-non-publiee`, base `200f5e79` + planification `08816686`.
+
 ### Debug Log References
+
+Journaux non versionnés sous `target/gate-logs/` du worktree : `15-13a-t0/` (référence `make` d'avant :
+`.log`, aplatis), `15-13a-t5/` (aplatis du neuf), `15-13a-mut-M*.txt` (23 mutations Rust),
+`15-13a-gate-backend.txt`, `15-13a-front-*.txt`, `15-13a-e2e.txt`, `15-13a-e2e-backend.log`.
+Mesures T0/T7 : journaux du T7 dans le répertoire de travail de la session (non versionnés), résumés
+ci-dessous.
 
 ### Completion Notes List
 
+**T0 — mesures** (détail au Change Log, entrée « T0 du développement »).
+- Docker Compose **2.40.3**. Message `:?` : formes c1 et c2 lisibles, accents restitués → **c1 retenue**
+  (valeurs non citées). Sans les variables : `config`, `pull`, `up -d`, `up -d kesh-api` refusent (code 1) ;
+  `ps`, `logs`, `exec`, `stop`, `down` passent (code 0) — **écart à l'AC 11 f**, écrit selon la mesure
+  (C-15-13a-1). Variable nommée **non déterministe** (12 lancements : `MARIADB_ROOT_PASSWORD` 5,
+  `MARIADB_PASSWORD` 3, `DATABASE_URL` 4) — **écart à l'AC 11 j**, écrit « une à la fois, pas toujours la
+  même ».
+- `sqlx` : mauvais mot de passe → `Error::Database`, numéro **1045** joignable par
+  `try_downcast_ref::<MySqlDatabaseError>()`, immédiat ; base sans droit → 1044. Pas de repli textuel.
+- Test 8 : `kesh-15-13.invalid` échoue en 16 ms (retenu) ; `127.0.0.1:1` en 10 000 ms.
+- `docker compose config` : forme développée des ports (`- mode: ingress` / `host_ip` / `target` /
+  `published: "…"`) ; aucune entrée sous `mariadb` après la story.
+
+**T7 — recette rejouée** (MariaDB 10.11.16 jetable ; d'abord sur un projet Compose jetable
+`kesh1513a-t0`, puis — le démon Docker ayant figé ce conteneur lors d'une recréation sous une charge de 35,
+`inspect`, `exec` et `kill` bloqués, aucun autre conteneur touché — sur des conteneurs `docker run`
+jetables `kesh1513a-t7a/b`, réseau et volume propres ; tout supprimé à la fin, `kesh-mariadb-dev` jamais
+touché) :
+- comptes de l'image : `root@localhost`, `root@%`, `kesh@%`, `healthcheck@{127.0.0.1,::1,localhost}`,
+  `mariadb.sys@localhost` ; `@@skip_name_resolve = 1` ;
+- `CURRENT_USER()` : socket → `root@localhost` ; `--protocol=TCP -h 127.0.0.1` → `root@%` ;
+  `-h mariadb` (alias réseau) → `root@%` ; `kesh` en TCP → `kesh@%` ;
+- **socket avec un mauvais mot de passe root → 1045** : pas d'authentification `unix_socket`, d'où deux
+  contrôles de root au manuel (socket et TCP) ;
+- recette : `ALTER USER IF EXISTS` pour les deux root et `ALTER USER kesh`, en **un** document en ligne par
+  `sh -c 'mariadb -uroot -p"$MARIADB_ROOT_PASSWORD"'` → code 0 ; `ps -eo args` de l'hôte pendant
+  l'exécution : **aucune** ligne avec les nouveaux mots de passe hors le `grep` de contrôle ; après
+  l'`ALTER`, avant recréation, la connexion par l'environnement du conteneur (ancien root) → **1045**
+  (d'où un seul lot) ; `healthcheck.sh --connect --innodb_initialized` → 0 ;
+- après recréation avec les nouvelles valeurs : contrôle de fin **dans la forme exacte du manuel**
+  (coupée par `\`, y compris dans `sh -c '…'`) — trois anciens → `ERROR 1045`, trois de l'environnement →
+  `root@localhost`, `root@%`, `kesh@%` ;
+- sauvegarde puis restauration dans la forme du manuel (`sh -c`, `-T`) : table témoin créée, dumpée
+  (présente dans le dump), supprimée, restaurée, relue (`1 avant-dump`) ; dump avec un mot de passe faux →
+  code 2 sous `pipefail` (le script s'arrête) ;
+- `up -d` après changement de `.env` : Compose décide **Recreate** pour `mariadb` ; `up -d kesh-api
+  --dry-run` aussi (la forme nommée recrée la dépendance dont l'environnement a changé) ;
+- `down` sans `.env` sur un projet en marche : code 0.
+
+**Choix tranchés au fil du développement.**
+- Forme du message : c1 (non citée). CHANGELOG `:52` (AC 13 d) : commande `config -q && echo 'compose
+  lisible'` **recopiée** avant le `grep`, plutôt qu'un simple renvoi (l'entrée #557 recopiait déjà le
+  `grep` : le renvoi seul l'aurait laissé piégeux). CHANGELOG `:46` : « les gestes, fichier par fichier »
+  (**renvoi sans nombre**, insensible à l'ordre de merge 15-13a/15-13b).
+- Étape CI renforcée (C-15-13a-2) : M27 tel qu'écrit **survivait** à l'esquisse de la fiche.
+- Manuel : le contrôle de fin couvre `root@localhost` (socket) **et** `root@%` (TCP), mesure T7 ; la
+  recette change les trois comptes en un lot (après l'`ALTER` de root, une seconde connexion par
+  l'ancienne valeur échoue) ; `ALTER USER IF EXISTS` pour root (comptes listés d'abord).
+- Script de sauvegarde : `COMPOSE_DIR="/opt/kesh"` (répertoire d'installation de l'étape 1 du manuel) ;
+  encadré « lancer une fois à la main » ajouté sous la crontab.
+- `DOCKER_START.md:12-13` réécrit (Compose d'abord), `:146` → `kesh-mariadb-data` /
+  `<projet>_kesh-mariadb-data`.
+- Contrôles de l'AC 11 l validés sur l'aplati neuf : apostrophe et double tiret sortent **droits** en
+  `lstlisting` (`MARIADB_ROOT_PASSWORD"'` ×3, `--protocol=TCP` ×5 dont un `\texttt{-{}-…}` de prose) ;
+  aucun ajustement de motif.
+
+**Mutations (T8)** — 24 jouées, **24 rouges**, chacune sur le test visé et pour le motif voulu (aucun
+échec de compilation) ; fichier restauré par `git checkout` puis `touch` (banc scripté) :
+
+| Mut. | Test rouge |
+|---|---|
+| M1, M2, M3, M4, M28 | `configuration_transmise::mariadb` |
+| M5 | `configuration_transmise::valeurs` |
+| M6, M7, M8 | `configuration_transmise::mots_de_passe_publies` |
+| M12, M13, M29 | `configuration_transmise::s_service_mariadb` |
+| M16, M17, M18, M19, M42, M43 | `config::mot_de_passe_base_tests::from_env_warns_on_published_database_password` (M43 : « le journal cite « kesh_dev » ») |
+| M20 | `demarrage_mariadb::mot_de_passe_publie_avertit_au_demarrage` |
+| M21, M22 | `config::mot_de_passe_base_tests::indice_connexion_refusee` |
+| M23, M44 | `demarrage_mariadb::mauvais_mot_de_passe_donne_l_indice` (M44 : « ne doit pas citer le mot de passe ») |
+| M27 | étape CI « Validate compose files », rejouée sous `bash -eo pipefail` sur une copie : rouge (après renforcement, C-15-13a-2) ; le retour du seul défaut `MARIADB_PASSWORD` du service reste vert à dessein (la `DATABASE_URL` l'exige encore ; test Rust `mariadb` rouge) |
+
+**Gates (T10)**, au commit `e38d96cf` (dernier commit de code : `38428924`, les deux suivants sont de la
+documentation), bases `kesh_1513a` / `kesh_e2e_1513a` remises à zéro (`DROP`/`CREATE`, migrations, seed)
+avant chacun :
+- `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) : **2980 / 2980**, 4 ignorés (2973 sur
+  `main` + 7 fonctions neuves) ;
+- frontend : `npm run check` 0 erreur (27 avertissements préexistants), `lint-i18n-ownership` vert,
+  Vitest **1095 / 1095**, `npm run build` vert (frontend non touché) ;
+- E2E complet (backend `target/debug/kesh-api` du worktree sur le port 3017, base `kesh_e2e_1513a`,
+  `KESH_TEST_MODE=true` des deux côtés, `KESH_COOKIE_SECURE=false`, SMTP factices, répertoires
+  `target/e2e/{inbox,documents}` ; `/health` → `smtpConfigured:true` ; lancé à 05:52 UTC) : **245 passés,
+  9 échoués**, 19 ignorés, 10,5 min — les 9 sont la liste attendue de `docs/testing.md` : KF-029 ×7
+  (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) et KF-045 ×2
+  (`invoices:415`, `:439`, avant midi UTC) ; aucun hors liste, aucune pollution. Le journal de ce backend
+  porte une fois l'avertissement « mot de passe publié » (`DATABASE_URL` sur `kesh_dev`) : AC 5 observé en
+  conditions réelles. Backend arrêté par son PID ;
+- manuels : `make fr` ; `Overfull \hbox` du manuel d'administration **55 → 55**, aucun nouveau (comparés
+  par texte de ligne source au `.log` d'avant ; 7 nouveaux au premier passage, résorbés par `sloppypar`) ;
+  brochure 4 → 4 ; aucun renvoi indéfini ; `user-manual.pdf` restauré (non touché, seuls des numéros de
+  page de la table différaient).
+- Contrôles aplatis (AC 11 l, m) — avant → après : `openssl rand -hex 32 # → mot de passe MariaDB` 0 → 1 ;
+  `MARIADB_ROOT_PASSWORD"'` 0 → 3 ; `--protocol=TCP` 0 → 5 ; `CURRENT_USER()` 0 → 6 ; `compose lisible`
+  0 → 2 ; `exec (-T )?db` 3 → **0** ; `deux gestes` 1 → **0** ; brochure `MARIADB_ROOT_PASSWORD` 0 → 1.
+- Étape CI : rejouée localement (nominal vert, M27 rouge) ; le job `docker-build` lui-même n'a pas tourné.
+
+**T9 — propagation et inventaire** : greps (1) à (4) rejoués à `e38d96cf`. Aucun site hors inventaire.
+Sites **neufs** créés par la story, voulus : constantes et témoins de test (`config.rs`
+`MOTS_DE_PASSE_PUBLIES` et test 7, `configuration_transmise.rs` (M), `demarrage_mariadb.rs:25`), les
+commentaires `3306` de `docker-compose.yml` (forme loopback à décommenter), `docs/ci.md` (`MARIADB_` de la
+validation), les mentions du manuel et du CHANGELOG (anciens défauts écrits **au manuel seulement**,
+contrôle de fin). `admin-manual.tex` porte désormais 23 lignes `docker compose up` (21 avant) : les deux
+neuves sont dans le § 0.13.0 et le § *Changer un mot de passe MariaDB*, après la pose des mots de passe.
+`git grep -n init-demo -- . ':(exclude)_bmad-output' ':(exclude)CHANGELOG.md'` → vide.
+
+**À l'orchestrateur.**
+- Conteneur figé du T7 : supprimé ensuite (`docker rm -f` a fini par aboutir) ; plus aucune ressource
+  `kesh1513a` (conteneur, volume, réseau). Le démon a été lent tout le long (création d'un conteneur : 49 s).
+- `docs/kesh-specifications.txt` (NFR-DEPLOY-1, « une seule commande `docker-compose up` ») : faux depuis la
+  15-11a, davantage ici — signalé, non réécrit (inventaire).
+- `CLAUDE.md` § E2E annonce encore un smoke E2E en CI : #577.
+
 ### File List
+
+- `docker-compose.yml` — port de `mariadb` retiré (commentaire, forme loopback), trois `:?`.
+- `.env.example` — bloc MariaDB réécrit, mots de passe commentés ; commentaire `DATABASE_URL` (hex).
+- `crates/kesh-api/Cargo.toml` — `url`, `percent-encoding` en dépendances directes (déjà au `Cargo.lock`).
+- `crates/kesh-api/src/config.rs` — `MOTS_DE_PASSE_PUBLIES`, avertissements, `numero_erreur_mariadb`,
+  `indice_connexion`, doc d'`is_template_placeholder` ; tests 7 et 9.
+- `crates/kesh-api/src/main.rs` — indice dans le message d'échec de connexion.
+- `crates/kesh-api/tests/configuration_transmise.rs` — `service(source, nom)`, `ports`, scission
+  d'`Interpolation::Obligatoire`, `VALEURS_COMPOSEES` resserré, contrôle (M), tests 1, 2, 4, en-tête ;
+  `sortie_du_binaire_sans_configuration` sur `lancer_binaire`.
+- `crates/kesh-api/tests/common/binaire.rs` (neuf) — `lancer_binaire`, `texte`.
+- `crates/kesh-api/tests/demarrage_mariadb.rs` (neuf) — tests 8 et 10.
+- `.github/workflows/ci.yml` — étape « Validate compose files ».
+- `docs/ci.md` — 3 jobs, renvoi à #577, deux sens du contrôle.
+- `docs/manual/fr/admin-manual.tex` + `.pdf` — AC 11 a–d, f–h, j, k.
+- `docs/manual/fr/marketing-brochure.tex` + `.pdf` — AC 11 m.
+- `DOCKER_START.md` — AC 12 a, a-bis.
+- `init-demo.sh` — **supprimé** (AC 12 b).
+- `CHANGELOG.md` — `[0.13.0]` : Sécurité #551, Retiré, propagation `:46` et `:52`.
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`, `epic-15-choix-autonomes.md` (C-15-13a-1, -2),
+  cette fiche.
 
 ## Change Log
 
