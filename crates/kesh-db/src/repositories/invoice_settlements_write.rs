@@ -332,8 +332,8 @@ pub async fn settle_invoice(
 
     // (8 bis) Le lettrage de la pièce (Story 15-1a2-i, P4) : une facture soldée
     //     est lettrée `document` avec ses règlements. L'exercice tenu est celui
-    //     de l'écriture de règlement, verrouillé en (5). ⛔ Un règlement n'échoue
-    //     jamais à cause du lettrage : la synchronisation s'abstient plutôt que
+    //     de l'écriture de règlement, verrouillé en (5). ⛔ Un règlement n'est
+    //     jamais refusé à cause du lettrage : la synchronisation s'abstient plutôt que
     //     de refuser (compte non lettrable, périodes closes).
     letterings::sync_invoice_in_tx(
         &mut tx,

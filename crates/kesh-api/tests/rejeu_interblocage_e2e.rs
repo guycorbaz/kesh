@@ -1610,6 +1610,31 @@ async fn accept_and_settlement_cancel_interleave(pool: MySqlPool) {
         lettering_support::lettree_document(&pool, temoin).await,
         "témoin lettré par le rapprochement"
     );
+    // … puis l'annulation de son règlement de 60.— DISSOUT le groupe posé par le
+    // rapprochement (revue P2, A2-7 : la partie déterministe ne passait pas par
+    // la dissolution).
+    let (_, reglement_temoin) = factures_reglements[n - 1];
+    let (status, corps) = requete(
+        &ctx,
+        reqwest::Method::POST,
+        &format!("/api/v1/invoices/{temoin}/settlements/{reglement_temoin}/cancel"),
+        None,
+    )
+    .await;
+    assert_eq!(status, 200, "annulation après le rapprochement : {corps}");
+    assert!(
+        !lettering_support::lettree_document(&pool, temoin).await,
+        "le groupe du témoin est dissous"
+    );
+    let dissous: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE action = 'lettering.removed' \
+         AND JSON_EXTRACT(details_json, '$.documentId') = ?",
+    )
+    .bind(temoin)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(dissous, 1, "une dissolution tracée pour le témoin");
 
     // (2) Courses libres.
     for (i, (facture, reglement)) in factures_reglements.iter().enumerate().take(n - 1).skip(1) {

@@ -4569,6 +4569,11 @@ mod period_lock_tests {
             DbError::LetteringTooManyLines { max: 200 },
             DbError::LetteringAllLinesInClosedPeriods,
             DbError::LetteringIsDocument,
+            DbError::LetteringLineOwnedByDocument {
+                blocker: kesh_db::errors::ReversalBlocker::OwnedByInvoice,
+                document_id: Some(1),
+                document_label: None,
+            },
             DbError::NotFound,
         ];
         for err in structurels {

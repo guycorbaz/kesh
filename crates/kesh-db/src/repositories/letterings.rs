@@ -100,20 +100,25 @@
 //! La **synchronisation des pièces** (Story 15-1a2-i, [`sync_invoice_in_tx`])
 //! s'exécute après les verrous du geste (facture, écriture, exercice) et
 //! prend ensuite, par sa découverte, `invoice_settlements` et `credit_notes` de
-//! la facture, puis les lignes et en-têtes du groupe. Cycle **neuf**, nommé :
-//! *rapprochement ‖ règlement ou solde de la même facture* —
-//! `accept_one_invoice` insère sa ligne `invoice_settlements` avant de prendre
-//! la facture (par l'`UPDATE … AND version = ?`), quand `settle_invoice` et
-//! `write_off_invoice` tiennent la facture puis lisent `invoice_settlements`.
-//! Le même raisonnement vaut pour *rapprochement ‖ rapprochement* de la même
-//! facture (deux comptes bancaires) et *rapprochement ‖ avoir* (revue P1,
-//! B-1). ⚠️ La découverte lit `invoice_settlements` et `credit_notes` `FOR
-//! UPDATE` par leurs index de facture : sous `REPEATABLE READ`, ces lectures
-//! posent des verrous d'intervalle, qui peuvent faire attendre l'insertion d'un
-//! règlement ou d'un avoir d'une facture **voisine** (revue P1, B-2 = E-1) —
-//! attente, et au pire interblocage rejoué ; non mesuré.
-//! Aucune absence de cycle n'est affirmée : toutes les routes appelantes sont
-//! rejouées (`Rejouee`, et `retry_with` pour `accept_batch`).
+//! la facture, puis les lignes et en-têtes des écritures de la pièce. Ce
+//! qu'elle ajoute aux verrous des gestes (revue P2, B2-1 = E2-4 ; non mesuré) :
+//! - **toutes** les lignes des écritures parcourues par `idx_jel_entry` — produit,
+//!   TVA, banque compris, non seulement celles sur la créance —, et le verrou de
+//!   clé suivante de cet index non unique, qui fait attendre jusqu'au `COMMIT`
+//!   l'insertion de lignes d'une écriture d'identifiant voisin (toutes sociétés) ;
+//! - les verrous d'intervalle des lectures `FOR UPDATE` d'`invoice_settlements`
+//!   et de `credit_notes` par leurs index de facture, qui peuvent faire attendre
+//!   l'insertion d'un règlement ou d'un avoir d'une facture **voisine** (revue
+//!   P1, B-2 = E-1).
+//!
+//! Ce sont des **attentes** ; aucun cycle neuf n'a été établi. Les gestes d'une
+//! même facture restent sérialisés par la facture : règlement, solde, avoir et
+//! annulation la verrouillent d'abord ; le rapprochement y pose un verrou
+//! partagé dès l'`INSERT` d'`invoice_settlements` (clé étrangère), monté en
+//! exclusif à l'`UPDATE … AND version = ?` — montée et interblocage antérieurs
+//! à cette story. Aucune absence de cycle n'est affirmée pour autant : toutes
+//! les routes appelantes sont rejouées (`Rejouee`, et `retry_with` pour
+//! `accept_batch`).
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -1168,8 +1173,9 @@ async fn dissolve_group_inner(
 /// Issue d'une synchronisation de pièce (Story 15-1a2-i, P3).
 ///
 /// ⛔ Aucune de ces issues n'est une erreur : **un règlement, un solde, un avoir
-/// ou un rapprochement n'échoue jamais à cause du lettrage**. Seul un état que
-/// les gestes ne produisent pas sort en [`DbError::Invariant`].
+/// ou un rapprochement n'est jamais refusé à cause du lettrage**. Seul un état
+/// que les gestes ne produisent pas sort en [`DbError::Invariant`] — et la
+/// tolérance nommée à [`sync_invoice_in_tx`] (un exercice créé pendant le geste).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SyncOutcome {
     /// Rien à faire : le groupe existant est exactement la cible, ou il n'y a ni
@@ -1227,7 +1233,10 @@ const SYNC_DOCUMENT_LINES_SQL: &str = "SELECT jel.id, jel.entry_id, jel.account_
      ORDER BY jel.id FOR UPDATE";
 
 /// Les identifiants des lignes d'un groupe, **sans verrou** — la comparaison de
-/// l'étape 4 (les lignes de `C(I)` qui le portent sont déjà tenues).
+/// l'étape 4. ⚠️ Lecture d'instantané : tenir des lignes ne rafraîchit pas
+/// la vue ; elle reste juste parce que le groupe `k` d'une facture ne change que
+/// sous le verrou de la facture, que tout geste prend avant la synchronisation
+/// (revue P2, B2 sur E-2).
 const GROUP_LINE_IDS_SQL: &str = "SELECT jel.id \
      FROM journal_entry_lines jel JOIN journal_entries je ON je.id = jel.entry_id \
      WHERE jel.lettering_key = ? AND je.company_id = ? ORDER BY jel.id";
@@ -1395,7 +1404,10 @@ fn line_periods(lines: &[LineRow]) -> Vec<(i64, NaiveDate)> {
 /// 4. `E = {k}` et les lignes de `k` sont exactement la cible → `Unchanged` ;
 /// 5. `E = {k}` sinon — **défensif, inatteignable par un geste** : aucune ligne
 ///    du groupe `k` en période ouverte → `AbstainedClosedPeriods`, rien d'écrit ;
-///    sinon dissolution puis, s'il y a une cible, création ;
+///    sinon dissolution puis, s'il y a une cible, création. ⚠️ La dissolution est
+///    en mode `System` sur l'exercice tenu : si aucune ligne de `k` n'y est,
+///    elle rend [`DbError::Invariant`] (revue P2, B2-3) — un état que la
+///    15-1a2-ii (rattrapage) devra traiter s'il le rencontre ;
 /// 6. `E = ∅` : cible → création ; sinon `Unchanged`, ou
 ///    `AbstainedClosedPeriods` si la règle des périodes est la seule raison.
 ///
@@ -1409,6 +1421,16 @@ fn line_periods(lines: &[LineRow]) -> Vec<(i64, NaiveDate)> {
 /// puis les lignes et en-têtes de `C(I)` ; la primitive les reprend ensuite.
 /// Les cycles résiduels sont nommés au module (§ « Interblocages résiduels ») ;
 /// les routes appelantes sont rejouées.
+///
+/// ⚠️ **Tolérance nommée** (revue P2, E2-1) : la règle des périodes et les noms
+/// d'exercices sont lus **sans verrou**, sur l'instantané de la transaction. Un
+/// exercice **créé** par une autre session après la première lecture ordinaire
+/// du geste et avant son `find_open_covering_date … FOR UPDATE` en est absent :
+/// la synchronisation rend alors [`DbError::Invariant`] et le geste échoue (500,
+/// ou `INTERNAL_ERROR` per-proposal au rapprochement) — à refaire. Fenêtre de
+/// la création d'exercice seule, que le lettrage `reversal` de la
+/// contre-passation (15-1a-ii) partage déjà ; aucun verrou n'est pris sur les
+/// exercices hors de l'ordre de la clôture.
 pub async fn sync_invoice_in_tx(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,

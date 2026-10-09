@@ -1235,21 +1235,23 @@ Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~:
 \end{itemize}
 
 \textbf{Lettrage.} Une facture \textbf{soldée} --- par ses règlements, par le solde de son reste
-ou par son avoir --- est \textbf{lettrée} d'office, au moment du geste qui la solde~: sa ligne au compte débiteurs et celles de ses
-règlements, de son solde ou de son avoir sur ce compte forment un groupe de lettrage («~pièce~»),
-et le grand livre la montre soldée, comme la fiche, l'échéancier et les rappels. Un règlement
-partiel ne lettre rien. L'\textbf{annulation} d'un règlement --- ou du solde --- \textbf{délettre}
-la facture~: sa créance et ses autres règlements redeviennent ouverts, et le règlement annulé
-est lettré avec sa contre-passation. Kesh ne lettre une facture que si ses lignes sur le compte
-débiteurs se soldent \textbf{au grand livre}~; restent donc sans lettrage, et c'est la vérité du
-grand livre~: une facture dont toutes les lignes sont en \textbf{période close} (exercice clôturé
-ou période verrouillée) au moment où Kesh la lettrerait --- elle reste ouverte au compte
-débiteurs, et rouvrir la période ne la lettre pas d'elle-même~; une facture dont le compte
-débiteurs n'est \textbf{plus lettrable} (relié depuis à un compte bancaire, ou changé en compte de
-charge) --- son règlement n'en est pas moins enregistré~; et deux états hérités de versions
-antérieures à la 0.13, un \textbf{avoir} porté sur un autre compte que le compte débiteurs de la
-facture, et une facture à la fois \textbf{créditée et réglée} --- ses lignes ne se soldent pas. Une annulation qui
-défairait un lettrage figé par une période close est refusée (motif ci-dessus).
+ou par son avoir --- est \textbf{lettrée} d'office, au moment du geste qui la solde~: sa ligne au
+compte débiteurs et celles de ses règlements, de son solde ou de son avoir sur ce compte forment
+un groupe de lettrage («~pièce~»), et le grand livre la montre soldée, comme la fiche, l'échéancier
+et les rappels. Un règlement partiel ne lettre rien. L'\textbf{annulation} d'un règlement --- ou du
+solde, ou le dé-rapprochement (\S\ref{sec:annuler-rapprochement}) --- \textbf{délettre} la
+facture~: sa créance et ses autres règlements redeviennent ouverts, et le règlement annulé est
+lettré avec sa contre-passation. ⚠️ Une facture \textbf{déjà soldée avant la mise à jour} vers la
+version 0.13 n'est pas lettrée par cette version~: elle reste ouverte au compte débiteurs.
+
+Kesh ne lettre une facture que si ses lignes sur le compte débiteurs se soldent \textbf{au grand
+livre}~: un \textbf{avoir} émis avant la version 0.13 et porté sur un autre compte que le compte
+débiteurs de la facture, ou une facture à la fois \textbf{créditée et réglée} (avant la version
+0.12.1), ne sont pas lettrés --- leurs lignes ne se soldent pas. Un compte débiteurs qui n'est
+\textbf{plus lettrable} (relié depuis à un compte bancaire, ou changé en compte de charge) n'est
+plus lettré par un nouveau règlement --- celui-ci n'en est pas moins enregistré ---, mais un
+lettrage posé avant le changement subsiste, et l'annulation d'un règlement le défait. Une
+annulation qui défairait un lettrage figé par une période close est refusée (motif ci-dessus).
 
 \begin{keshnote}
 Les factures réglées avant la version qui a introduit les règlements (Kesh 0.12) portent la

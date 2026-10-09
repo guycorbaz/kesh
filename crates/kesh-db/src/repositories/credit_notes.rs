@@ -786,7 +786,7 @@ pub async fn create_credit_note(
         // (11 bis) Le lettrage de la pièce (Story 15-1a2-i, P4) : l'avoir total
         // crédite la créance de la vente (15-6a) — facture et avoir sont lettrés
         // `document`. Exercice tenu : celui de l'avoir, verrouillé en (4). ⛔ Un
-        // avoir n'échoue jamais à cause du lettrage (abstention, P3).
+        // avoir n'est jamais refusé à cause du lettrage (abstention, P3).
         super::letterings::sync_invoice_in_tx(
             &mut tx,
             company_id,

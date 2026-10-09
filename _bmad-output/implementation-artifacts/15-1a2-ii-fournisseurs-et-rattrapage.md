@@ -31,6 +31,18 @@ Ordre : 15-1a-i → 15-1a-ii → 15-1a2-0 → 15-1a2-i → **15-1a2-ii** → 15-
 **Numérotation conservée** de la 15-1a2 (P2, P3, P4, P6 ; AC6, AC7, AC8–AC12) ; numéro neuf : **AC16**.
 Les éléments partagés avec la 15-1a2-i (AC8, AC9, AC10, AC12, P3, P4) portent ici leur **part ii**.
 
+## Reçu de la 15-1a2-i (revue de code P2, A2-1 — à traiter au T0)
+
+La 15-1a2-i documente que le lettrage se pose **au geste** et qu'**une facture déjà soldée avant la mise à jour
+n'est pas lettrée par cette version** (vrai tant que le rattrapage M1 n'existe pas ; C-15-1a-i-7 : un texte faux
+entre deux merges est un texte faux). Le rattrapage de cette story rend ces phrases fausses : elles sont à
+**réécrire ici**, par la valeur (`git grep -nE "déjà soldée avant la mise à jour|au geste qui solde|au moment du
+geste qui la solde" -- CHANGELOG.md docs`) — trois sites à la 15-1a2-i : `CHANGELOG.md` (entrée « Une facture
+client soldée est lettrée d'office »), `docs/api-external.md` (§ « Lettrer des lignes », origine `document`),
+`docs/manual/fr/user-manual.tex` (§ `sec:reglement-client`, paragraphe *Lettrage*) — et y écrire alors le cas que
+la 15-1a2-i a retiré faute d'être atteignable par un geste : **une pièce historique dont toutes les lignes sont en
+période close n'est pas lettrée par le rattrapage** (P7 point 1 de la 15-1a2-i, AC6 d'ici). Puis `make fr`.
+
 ## Le modèle réel — relevé sur `056997b0`
 
 *(Lignes sur `056997b0` ; **citer et re-greper par le nom de fonction**.)*

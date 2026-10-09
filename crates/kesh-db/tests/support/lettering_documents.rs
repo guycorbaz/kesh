@@ -10,6 +10,7 @@
 //! lexicaux du lettrage, qui refuseraient ces littéraux. Ce fichier n'appartient
 //! à aucune crate ; il est **inclus par `#[path]`** dans
 //! `crates/kesh-db/tests/lettering_documents.rs`,
+//! `crates/kesh-db/tests/letterings.rs` (AC9, `lettering_invariants`),
 //! `crates/kesh-api/tests/rejeu_interblocage_e2e.rs` (AC15 c) et, à la
 //! 15-1a2-ii, dans le binaire de son rattrapage (son AC6).
 //!

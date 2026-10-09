@@ -499,6 +499,22 @@ fn ecritures_de_table(source: &str, verbes: &[&str], table: &str) -> Vec<(usize,
         .collect()
 }
 
+/// AC8 (c) — pour chaque `INSERT INTO <table>` de production, la fonction qui le
+/// porte et si elle appelle `suite` **après lui**, dans son corps : `(nom, suivi)`.
+/// Un `INSERT` hors de toute fonction est rendu sous le nom `<hors fonction>`,
+/// non suivi.
+fn ecritures_et_suite(source: &str, table: &str, suite: &str) -> Vec<(String, bool)> {
+    let (_, masque) = decouper(source);
+    let fns = fonctions(&masque);
+    ecritures_de_table(source, &["INSERT INTO"], table)
+        .into_iter()
+        .map(|(p, _)| match fonction_englobante(&fns, p) {
+            Some((nom, _, fin)) => (nom.clone(), masque[p..*fin].contains(suite)),
+            None => ("<hors fonction>".to_string(), false),
+        })
+        .collect()
+}
+
 /// AC8 (d) — le corps de la fonction `fonction` appelle `premier` **avant**
 /// `second` (code seul : chaînes et commentaires masqués).
 fn appelle_avant(source: &str, fonction: &str, premier: &str, second: &str) -> Result<(), String> {
@@ -610,20 +626,14 @@ fn credit_note_insert_is_followed_by_sync_and_cancel_dissolves_first() {
     let mut fautes = Vec::new();
     let mut inserts = Vec::new();
     for (fichier, source) in sources_de_production() {
-        let (_, masque) = decouper(&source);
-        let fns = fonctions(&masque);
-        for (p, extrait) in ecritures_de_table(&source, &["INSERT INTO"], "credit_notes") {
-            let Some((nom, _, fin)) = fonction_englobante(&fns, p) else {
-                fautes.push(format!("(c) {fichier} : {extrait} hors fonction"));
-                continue;
-            };
-            inserts.push(format!("{fichier}::{nom}"));
-            if !masque[p..*fin].contains("sync_invoice_in_tx(") {
+        for (nom, suivi) in ecritures_et_suite(&source, "credit_notes", "sync_invoice_in_tx(") {
+            if !suivi {
                 fautes.push(format!(
                     "(c) {fichier}, fonction `{nom}` : INSERT INTO credit_notes sans \
                      `sync_invoice_in_tx(` après lui"
                 ));
             }
+            inserts.push(format!("{fichier}::{nom}"));
         }
     }
     assert_eq!(
@@ -733,17 +743,8 @@ fn the_function_body_detector_sees_calls_and_order() {
             let s = "dissolve_invoice_document_group_in_tx(";
         }
     "##;
-    let (_, masque) = decouper(avoirs);
-    let fns = fonctions(&masque);
-    let suivis: Vec<(String, bool)> = ecritures_de_table(avoirs, &["INSERT INTO"], "credit_notes")
-        .into_iter()
-        .map(|(p, _)| {
-            let (nom, _, fin) = fonction_englobante(&fns, p).expect("fonction");
-            (nom.clone(), masque[p..*fin].contains("sync_invoice_in_tx("))
-        })
-        .collect();
     assert_eq!(
-        suivis,
+        ecritures_et_suite(avoirs, "credit_notes", "sync_invoice_in_tx("),
         vec![("suivi".to_string(), true), ("orphelin".to_string(), false)]
     );
     let ordre = |f: &str| {

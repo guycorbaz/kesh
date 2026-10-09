@@ -6070,6 +6070,10 @@ async fn accept_race_refuses_before_any_lettering(pool: MySqlPool) {
     assert_eq!(status, 200, "{body}");
     let failed = body["failed"].as_array().unwrap();
     assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(
+        failed[0]["errorCode"], "RECONCILIATION_INVOICE_NOT_ELIGIBLE",
+        "le refus du contrôle de version (g), non celui de la transaction"
+    );
     assert_eq!(failed[0]["details"]["reason"], "race_during_update");
 
     assert_eq!(
