@@ -107,12 +107,23 @@
 //!   la victime, en 500, sur un renommage que le pré-contrôle aurait refusé.
 //!   `POST /fiscal-years/{id}/close` n'est plus de la liste : elle est rejouée
 //!   (point (vi)).
+//!   S'y ajoutent, **par choix** (Story 15-7a2, revue P1 B-4 = E-4, choix
+//!   C-15-7a2-4), les **huit routes d'étape de l'onboarding** autres que
+//!   `finalize` (`language`, `mode`, `start-production`, `org-type`,
+//!   `accounting-language`, `coordinates`, `bank-account`, `skip-bank`) : leur
+//!   transaction unique prend `onboarding_state → companies → accounts` ou
+//!   `bank_accounts` et écrit leurs entrées d'audit, **sans enveloppe de rejeu**.
+//!   Un 1213 y rend 500 avec annulation complète — rien de partiel, ni mutation
+//!   ni trace —, et l'administrateur rejoue l'étape. Une installation en cours
+//!   de configuration n'a pas de trafic concurrent : le rejeu n'achèterait rien
+//!   qu'on puisse mesurer.
 //! - **(v)** quoi que ce soit d'une route `GET` : l'extracteur ne balaie que
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
 //! - **(vi)** **quatre routes `SansEcritureAuJournal` sont rejouées quand
-//!   même** : `onboarding::finalize` (enveloppe `AppError`, Story 15-5e2),
+//!   même** : `onboarding::finalize` (enveloppe `AppError`, Story 15-5e2 — la
+//!   seule des neuf routes d'étape à l'être, cf. (iv)),
 //!   `company_invoice_settings::update_invoice_settings` (enveloppe `DbError`,
 //!   exposée par l'avance des réglages de la saisie fournisseur — choix C70),
 //!   et — Story 15-12a, #543 — `fiscal_years::create_fiscal_year` et

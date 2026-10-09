@@ -216,8 +216,10 @@ registre du commerce, y figure.
 (`crates/kesh-api/tests/audit_route_registry.rs:162-171`, sauf `seed_demo` `:164` et `reset` `:76`,
 qui restent `Exempt` jusqu'à la 15-7b1 et la 15-7b2, **avec un motif réécrit** : « issue #434 — peuplement de
 démonstration (15-7b1) et remise à zéro (15-7b2) », F-9), et `the_registry_partition_is_what_the_story_declares`
-est **recompté depuis la source** : sur la base de cette branche, `traced` 94 → **103**, `exempt`
-15 → **6** (deux de #434, quatre de #435), `no_matter` **3**, total **112** inchangé. Messages des
+est **recompté depuis la source** : sur la base de cette branche, `traced` 95 → **104**, `exempt`
+15 → **6** (deux de #434, quatre de #435), `no_matter` **2**, total **112** inchangé. *(Revue P1,
+A-3 : la fiche disait 94 → 103 et `no_matter` 3, valeurs de sa base de rédaction ; le T0 les a
+recomptées — 95/15/2 → 104/6/2 —, et c'est la valeur livrée.)* Messages des
 assertions mis à jour (« 11 routes d'onboarding (#434) » `:478` → « 2 routes d'onboarding (#434,
 15-7b1, 15-7b2) ») ; le message de l'assertion `traced` (`:470`, « 73 tracées avant la 25-1b, plus ses 14, … »)
 énumère les contributions au total et reçoit « plus les neuf routes de configuration de l'installation
@@ -282,7 +284,7 @@ il échappait à #434 et le reste) ; `routes/onboarding.rs:597`, `:608` (`retry_
 
 | Site | Aujourd'hui | Après la 15-7a2 |
 |---|---|---|
-| `admin-manual.tex:1821` | « 87 des 105 routes … la séquence d'installation (issue \#434) et les gestes de session (\#435) » | décompte **recompté depuis le registre** (AC 10) : « 103 des 112 routes » ; exceptions, **comptées** : six routes exemptées — deux de \#434 (le peuplement de démonstration et la remise à zéro) et **quatre** de \#435 (connexion, déconnexion, **renouvellement de session**, changement de son propre mot de passe : le texte actuel n'en nomme que trois, F3-6) —, et les trois routes « sans matière » — de sorte que 103 + 6 + 3 = 112 se lise (R12) |
+| `admin-manual.tex:1821` | « 87 des 105 routes … la séquence d'installation (issue \#434) et les gestes de session (\#435) » | décompte **recompté depuis le registre** (AC 10) : « 104 des 112 routes » ; exceptions, **comptées** : six routes exemptées — deux de \#434 (le peuplement de démonstration et la remise à zéro) et **quatre** de \#435 (connexion, déconnexion, **renouvellement de session**, changement de son propre mot de passe : le texte actuel n'en nomme que trois, F3-6) —, et les deux routes « sans matière » — de sorte que 104 + 6 + 2 = 112 se lise (R12 ; valeurs recomptées au T0, revue P1 A-3) |
 | `admin-manual.tex:2004` | « Ce qui manque est la séquence d'installation (\#434) et les gestes de session (\#435) » | « le peuplement de démonstration et la remise à zéro (\#434), et les gestes de session (\#435) » |
 | `admin-manual.tex:2244` (glossaire) | renvoie aux réserves | relire : ne doit pas contredire les deux lignes ci-dessus |
 | `user-manual.tex:2013-2016` | énumération « …exports, gestion des utilisateurs et modification de la société » | ajouter « et la configuration initiale de l'installation » |
@@ -523,6 +525,21 @@ Claude Opus 5.5 (`claude-opus-5-5`), agent de développement en autonomie (consi
   grepées (`434`, `87`, `105`, `séquence d.installation`) : restent la ligne v0.12.1 du README
   (historique) et la mention légitime de #434 dans le décompte.
 - Choix consignés : **C-15-7a2-1**, **C-15-7a2-2**, **C-15-7a2-3**.
+- **Remédiation de la revue de code P1** (2026-10-09) : gate **ciblé** seulement — base `kesh_157a2`
+  remise à zéro (DROP/CREATE, migrations, seed), `cargo fmt --check` vert, `cargo clippy --workspace
+  --all-targets -D warnings` vert, `binary(onboarding_audit_e2e)` **22/22**, `binary(audit_route_registry)`
+  11/11. **Gate complet et E2E complet non rejoués : ils viendront à la clôture.** Le fichier compte
+  désormais **22** fonctions de test (21 `#[sqlx::test(` + 1 `#[test]`, recompté), contre 19 au commit
+  `a298d19f` : trois neuves (9 (c), 9 (d), 14), deux étendues (1, 13). Huit mutations jouées une à une
+  sur `routes/onboarding.rs`, constatées rouges, fichier restauré (`cmp` contre la copie) et touché :
+  7–12. `require_not_demo` à `false` sur `start-production`, `org-type`, `accounting-language`,
+  `coordinates`, `bank-account`, `skip-bank` ⇒ test 14 rouge à chaque fois, sur la route mutée
+  (200 au lieu de 400) ;
+  13. `COMMIT` SQL entre `bulk_create_from_chart_in_tx` et `account.chart_loaded` ⇒ 9 (c) rouge
+  (86 comptes restés au lieu de 0) ;
+  14. `COMMIT` SQL entre `update_step_in_tx` et `record_step_completed_in_tx` ⇒ 9 (d) rouge (état
+  `(7, 2)` au lieu de `(6, 1)`).
+  Aucune ligne de code de production exécutable touchée. Choix consigné : **C-15-7a2-4**.
 
 ### File List
 
@@ -682,3 +699,25 @@ Claude Opus 5.5 (`claude-opus-5-5`), agent de développement en autonomie (consi
   245 passés / 9 échecs attendus (7 KF-029, 2 KF-045) au dernier commit de code ; six mutations
   rouges. Le perdant d'une course passe de 409 à 400 ; `companies.version` ne bouge plus sur un
   no-op et prend +2 sur `coordinates` d'une société provisoire. Statut `review`.
+- 2026-10-09 — **Revue de code P1** (Sonnet ×3, contexte frais, prompt versionné ; rapports
+  `target/gate-logs/15-7a2-review-p1-{B,E,A}.md`). Bruts, recomptés depuis les rapports : B **4 LOW** ;
+  E **1 MEDIUM, 5 LOW** ; A **1 MEDIUM, 5 LOW**. Après fusion des doublons (A-4 = B-1 ; A-5 = B-2 = E-2 ;
+  B-4 = E-4) : **0 CRITICAL, 0 HIGH, 2 MEDIUM, 10 LOW distincts**. Remédiation sans aucune ligne de
+  code de production exécutable (tests, doc-comment de test, fiche, CHANGELOG, registres).
+
+  | finding | sévérité | objet | sort |
+  |---|---|---|---|
+  | E-1 | MEDIUM | la garde `require_not_demo` n'est mordue par aucun test | **test 14** `demo_installation_is_refused_by_every_production_step` : les six routes gardées (`start-production`, `org-type`, `accounting-language`, `coordinates`, `bank-account`, `skip-bank` — revérifiées au code ; E en annonçait « sept » pour six citées), `is_demo = TRUE` à l'étape exacte ⇒ 400 `ONBOARDING_STEP_ALREADY_COMPLETED`, société, état, comptes, comptes bancaires et audit inchangés ; contrôle par différence (`is_demo` levé ⇒ 200). Six mutations rouges |
+  | A-1 | MEDIUM | le test 9 échouait sur `company.updated`, avant le plan et avant l'étape : ses moitiés « plan » et « étape » étaient vraies par construction | **9 (c)** `chart_loading_is_atomic_with_its_trace` (langue égale, plan non chargé : la première écriture d'audit est `account.chart_loaded`) et **9 (d)** `step_is_atomic_with_its_own_entry` (`skip-bank` : la première écriture est l'entrée d'étape) ; les deux mutations `COMMIT` rouges |
+  | A-2 | LOW | `details` de `company_invoice_settings.created` et `vat_rate.created` peu assertés | test 1 : objets **entiers** comparés aux lignes en base (neuf clés ; cinq clés par taux) |
+  | A-3 | LOW | AC 10 / AC 13 et `sprint-status.yaml` portaient 94→103 / 3 | corrigés en 95→104 / 6 / 2 = 112, annotés. ⚠️ Résidu **hors périmètre** signalé : la fiche 15-7b1 (`:199`, `:243`, `:351`) part encore de « 103 des 112 » et de trois « sans matière » — à recompter à son développement (104 → 105, 105 + 5 + 2 = 112) |
+  | A-4 = B-1 | LOW | variation de `companies.version` non dite au CHANGELOG | une phrase au CHANGELOG (inchangée sur no-op, +2 sur les coordonnées changées d'une société provisoire) |
+  | A-5 = B-2 = E-2 | LOW | test 13 limité à quatre routes | étendu aux **neuf** routes (parcours complet sur le pool d'une connexion, puis `skip-bank` à l'étape 6). Reste non prouvé par un test : le rejeu de `finalize` sur un 1213 forcé (A-5, second volet) — angle mort laissé, le banc `capture_rejeu` n'a pas été branché ici |
+  | B-4 = E-4 | LOW | huit routes d'étape sans rejeu sur interblocage | **choix assumé** C-15-7a2-4, écrit au point (iv) du doc-comment de `audit_route_registry.rs`, renvoi au point (vi) |
+  | B-3 | LOW | duplication du `SELECT … FOR UPDATE` de la société dans `ensure_company_with_language_in_tx` ; verrou de `coordinates` pris deux niveaux plus bas | non corrigé (code de production) ; dette cosmétique |
+  | E-3 | LOW | `get_or_init_state` hors transaction : course d'initialisation possible sur une base sans ligne d'état | angle mort **préexistant**, non reproduit ; le bootstrap crée la ligne. Non corrigé (code de production) |
+  | E-5 | LOW | échec de `response_with_stub` après `COMMIT` ⇒ 500 alors que l'étape est franchie | forme inchangée depuis avant la story ; angle mort de réponse, non de données |
+  | E-6 | LOW | `fiscal_year.created` attribué par `::user` dans `finalize` (garde de source aveugle à `fiscal_years.rs`) | dette **#431** déjà assumée à l'AC 7 ; le manuel ne promet pas l'attribution à la clé (relu par E) |
+  | A-6 | LOW | E2E : les specs Path B échouent (KF-029) avant `coordinates` : le navigateur n'exerce pas `coordinates`, `bank-account`, `finalize` | limite de preuve, non défaut ; ces routes sont tenues par `onboarding_audit_e2e` et `onboarding_path_b_e2e` |
+
+  Gate **ciblé** (cf. Dev Agent Record) ; gate complet et E2E à la clôture.

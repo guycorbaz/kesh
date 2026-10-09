@@ -5014,3 +5014,10 @@ l'import (#458–#461).
 - **Retenu** : la mutation insère `sqlx::query("COMMIT")` juste après `companies::update_in_tx` (dans `update_company_in_tx` pour 9 (a), dans `update_company_coordinates_in_tx` pour 9 (b)) : la mutation de la société est commitée **avant** son entrée d'audit, que le déclencheur fait échouer — exactement la non-atomicité que l'AC 8 interdit. Un `COMMIT` placé après l'écriture d'audit ne mordrait pas (le déclencheur fait échouer l'audit avant).
 - **Écarté** : réintroduire une transaction séparée pour la société (réécriture large, mutation moins locale).
 - **Réversible** : sans objet (mutations jouées puis restaurées, fichier touché).
+
+## C-15-7a2-4 — Pas de rejeu sur interblocage pour les huit routes d'étape de l'onboarding
+
+- **Contexte** : revue de code P1 de la 15-7a2 (B-4 = E-4, LOW). Les huit routes d'étape autres que `finalize` tiennent désormais une transaction unique (`onboarding_state → companies → accounts` ou `bank_accounts`, puis 2 à 4 entrées d'audit) sans `retry_app_on_deadlock` ; seule `finalize` est rejouée. Un 1213 y rend 500.
+- **Retenu** : ne pas les envelopper, et l'écrire comme angle mort assumé au point (iv) du doc-comment de `tests/audit_route_registry.rs` (renvoi au point (vi)). L'échec est sûr — annulation complète, ni mutation ni trace —, l'administrateur rejoue l'étape, et une installation en cours de configuration n'a pas de trafic concurrent : aucun cycle n'est démontré.
+- **Écarté** : envelopper les huit routes (modification de code de production en remédiation de revue, pour un risque non démontré ; la règle de la passe interdisait de toucher le code de production) ; les classer `AvecEcritureAuJournal` (elles n'écrivent pas au journal comptable, convention du registre).
+- **Réversible** : oui — envelopper une route est local (le patron `finalize` existe) ; à reprendre si un 1213 est observé sur l'onboarding.

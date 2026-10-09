@@ -418,16 +418,90 @@ async fn production_path_writes_the_exact_sequence(pool: MySqlPool) {
     assert_eq!(raw, 0, "aucun IBAN en clair dans details_json");
 
     // Finalisation : réglages créés, quatre taux dans l'ordre du seed, un exercice.
+    // Revue P1 (A-2) : l'objet `details` ENTIER, contre la ligne insérée —
+    // une clé renommée ou perdue rougit, et pas seulement les trois premières.
     let settings = details_of(&all, "company_invoice_settings.created")[0];
-    assert_eq!(settings["company_id"], company_id);
     assert!(settings["default_receivable_account_id"].is_i64());
     assert!(settings["default_revenue_account_id"].is_i64());
-    let categories: Vec<&str> = details_of(&all, "vat_rate.created")
+    assert_eq!(*settings, settings_row_json(&pool, company_id).await);
+    let rates: Vec<Value> = details_of(&all, "vat_rate.created")
+        .into_iter()
+        .cloned()
+        .collect();
+    assert_eq!(rates, vat_rate_rows_json(&pool, company_id).await);
+    let categories: Vec<&str> = rates
         .iter()
         .map(|d| d["category"].as_str().unwrap())
         .collect();
     assert_eq!(categories, ["normal", "special", "reduced", "exempt"]);
     assert_eq!(details_of(&all, "fiscal_year.created").len(), 1);
+}
+
+/// La forme attendue de `company_invoice_settings.created`, relue de la ligne
+/// en base (les neuf clés de l'AC 5).
+async fn settings_row_json(pool: &MySqlPool, company_id: i64) -> Value {
+    type Row = (
+        i64,
+        String,
+        Option<i64>,
+        Option<i64>,
+        Option<i64>,
+        Option<i64>,
+        Option<i64>,
+        Option<i64>,
+        Option<i64>,
+    );
+    let r: Row = sqlx::query_as(
+        "SELECT company_id, invoice_number_format, default_receivable_account_id, \
+         default_revenue_account_id, default_payable_account_id, default_rounding_account_id, \
+         default_discount_account_id, default_bank_fees_account_id, default_bad_debt_account_id \
+         FROM company_invoice_settings WHERE company_id = ?",
+    )
+    .bind(company_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    json!({
+        "company_id": r.0,
+        "invoice_number_format": r.1,
+        "default_receivable_account_id": r.2,
+        "default_revenue_account_id": r.3,
+        "default_payable_account_id": r.4,
+        "default_rounding_account_id": r.5,
+        "default_discount_account_id": r.6,
+        "default_bank_fees_account_id": r.7,
+        "default_bad_debt_account_id": r.8,
+    })
+}
+
+/// La forme attendue de chaque `vat_rate.created` (forme de `routes/vat.rs`),
+/// relue des taux en base dans l'ordre d'insertion.
+async fn vat_rate_rows_json(pool: &MySqlPool, company_id: i64) -> Vec<Value> {
+    let rows: Vec<(
+        i64,
+        String,
+        String,
+        chrono::NaiveDate,
+        Option<chrono::NaiveDate>,
+    )> = sqlx::query_as(
+        "SELECT id, category, CAST(rate AS CHAR), valid_from, valid_to \
+             FROM vat_rates WHERE company_id = ? ORDER BY id",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    rows.into_iter()
+        .map(|(id, category, rate, from, to)| {
+            json!({
+                "vat_rate_id": id,
+                "category": category,
+                "rate": rate,
+                "valid_from": from,
+                "valid_to": to,
+            })
+        })
+        .collect()
 }
 
 // --- Test 2 -----------------------------------------------------------------
@@ -942,6 +1016,74 @@ async fn coordinates_is_atomic_with_its_trace(pool: MySqlPool) {
     );
 }
 
+/// Test 9 (c) — revue P1 (A-1) : `accounting-language` à langue ÉGALE, plan non
+/// chargé. Aucune `company.updated` : la première écriture d'audit est
+/// `account.chart_loaded`, APRÈS `bulk_create_from_chart_in_tx`. Son échec doit
+/// emporter le plan et l'étape — ce que 9 (a), qui échoue sur `company.updated`
+/// avant tout compte, ne pouvait pas montrer.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn chart_loading_is_atomic_with_its_trace(pool: MySqlPool) {
+    let (app, token, company_id) = bootstrap(&pool).await;
+    set_step(&pool, 4).await;
+    let company = company_snapshot(&pool, company_id).await;
+    assert_eq!(company.1, "FR", "montage : langue comptable FR");
+    let state = state_row(&pool).await;
+    let audit = audit_count(&pool).await;
+    assert_eq!(accounts_count(&pool, company_id).await, 0);
+    sqlx::raw_sql(FAIL_TRIGGER).execute(&pool).await.unwrap();
+    assert!(trigger_present(&pool).await);
+
+    let body = json!({ "language": "FR" });
+    let (status, _) = post(&app, &token, "accounting-language", Some(body.clone())).await;
+    assert_eq!(status, 500);
+    assert_eq!(accounts_count(&pool, company_id).await, 0, "plan annulé");
+    assert_eq!(company_snapshot(&pool, company_id).await, company);
+    assert_eq!(state_row(&pool).await, state, "étape annulée");
+    assert_eq!(audit_count(&pool).await, audit);
+
+    sqlx::raw_sql("DROP TRIGGER t_15_7a_fail")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let marker = max_audit_id(&pool).await;
+    let (status, _) = post(&app, &token, "accounting-language", Some(body)).await;
+    assert_eq!(status, 200, "le même montage, sans déclencheur, réussit");
+    assert!(accounts_count(&pool, company_id).await > 0);
+    assert_eq!(
+        actions_after(&pool, marker).await,
+        ["account.chart_loaded", "installation.step_completed"],
+        "la première écriture d'audit de ce montage est bien le plan"
+    );
+}
+
+/// Test 9 (d) — revue P1 (A-1) : `skip-bank`, sans entrée de domaine. La
+/// première écriture d'audit est l'entrée d'étape elle-même, APRÈS
+/// `update_step_in_tx` : son échec doit laisser `onboarding_state` intact.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn step_is_atomic_with_its_own_entry(pool: MySqlPool) {
+    let (app, token, company_id) = bootstrap(&pool).await;
+    set_step(&pool, 6).await;
+    let company = company_snapshot(&pool, company_id).await;
+    let state = state_row(&pool).await;
+    let audit = audit_count(&pool).await;
+    sqlx::raw_sql(FAIL_TRIGGER).execute(&pool).await.unwrap();
+    assert!(trigger_present(&pool).await);
+
+    let (status, _) = post(&app, &token, "skip-bank", None).await;
+    assert_eq!(status, 500);
+    assert_eq!(state_row(&pool).await, state, "étape et version annulées");
+    assert_eq!(company_snapshot(&pool, company_id).await, company);
+    assert_eq!(audit_count(&pool).await, audit);
+
+    sqlx::raw_sql("DROP TRIGGER t_15_7a_fail")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (status, _) = post(&app, &token, "skip-bank", None).await;
+    assert_eq!(status, 200, "le même montage, sans déclencheur, réussit");
+    assert_eq!(state_row(&pool).await, (7, state.1 + 1));
+}
+
 // --- Test 10 ----------------------------------------------------------------
 
 /// Test 10 — étape refusée sous verrou : `org-type` à l'étape 4 ⇒ 400, aucune
@@ -1053,7 +1195,6 @@ async fn routes_never_draw_from_the_pool_inside_their_transaction(pool: MySqlPoo
     kesh_db::repositories::onboarding::init_state(&pool)
         .await
         .unwrap();
-    set_step(&pool, 3).await;
     let single = MySqlPoolOptions::new()
         .max_connections(1)
         .acquire_timeout(Duration::from_secs(2))
@@ -1063,16 +1204,104 @@ async fn routes_never_draw_from_the_pool_inside_their_transaction(pool: MySqlPoo
     let app = spawn_app(single).await;
     let token = login(&app).await;
 
+    // Revue P1 (A-5, B-2, E-2) : les NEUF routes d'étape, dans l'ordre du
+    // parcours, puis `skip-bank` sur un état ramené à l'étape 6.
     for (route, body) in [
-        ("org-type", json!({ "orgType": "Pme" })),
-        ("accounting-language", json!({ "language": "FR" })),
-        ("coordinates", coordinates_body("Une Seule Connexion SA")),
+        ("language", Some(json!({ "language": "FR" }))),
+        ("mode", Some(json!({ "mode": "guided" }))),
+        ("start-production", None),
+        ("org-type", Some(json!({ "orgType": "Pme" }))),
+        ("accounting-language", Some(json!({ "language": "FR" }))),
+        (
+            "coordinates",
+            Some(coordinates_body("Une Seule Connexion SA")),
+        ),
         (
             "bank-account",
-            json!({ "bankName": "UBS", "iban": IBAN, "qrIban": null }),
+            Some(json!({ "bankName": "UBS", "iban": IBAN, "qrIban": null })),
         ),
+        ("finalize", None),
     ] {
-        let (status, body) = post(&app, &token, route, Some(body)).await;
+        let (status, body) = post(&app, &token, route, body).await;
         assert_eq!(status, 200, "{route} sur un pool d'une connexion : {body}");
+    }
+    assert_eq!(state_row(&pool).await.0, 8);
+    set_step(&pool, 6).await;
+    let (status, body) = post(&app, &token, "skip-bank", None).await;
+    assert_eq!(
+        status, 200,
+        "skip-bank sur un pool d'une connexion : {body}"
+    );
+}
+
+// --- Test 14 ----------------------------------------------------------------
+
+/// Les six routes que `lock_state_at_step` garde contre l'installation de
+/// démonstration (`require_not_demo = true`), à leur étape attendue.
+fn demo_guarded_routes() -> Vec<(&'static str, i32, Option<Value>)> {
+    vec![
+        ("start-production", 2, None),
+        ("org-type", 3, Some(json!({ "orgType": "Association" }))),
+        ("accounting-language", 4, Some(json!({ "language": "DE" }))),
+        ("coordinates", 5, Some(coordinates_body("Démo Modifiée SA"))),
+        (
+            "bank-account",
+            6,
+            Some(json!({ "bankName": "UBS", "iban": IBAN, "qrIban": null })),
+        ),
+        ("skip-bank", 6, None),
+    ]
+}
+
+async fn set_demo(pool: &MySqlPool, is_demo: bool) {
+    sqlx::query("UPDATE onboarding_state SET is_demo = ?")
+        .bind(is_demo)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+async fn bank_accounts_count(pool: &MySqlPool) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM bank_accounts")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Test 14 — revue P1 (E-1) : une installation de DÉMONSTRATION, à l'étape
+/// exacte de la route, est refusée par les six routes gardées — 400, aucune
+/// mutation (société, état, comptes, comptes bancaires), aucune trace. Origine
+/// prouvée par différence : la même requête, `is_demo` levé, réussit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn demo_installation_is_refused_by_every_production_step(pool: MySqlPool) {
+    let (app, token, company_id) = bootstrap(&pool).await;
+    for (route, step, body) in demo_guarded_routes() {
+        set_step(&pool, step).await;
+        set_demo(&pool, true).await;
+        let company = company_snapshot(&pool, company_id).await;
+        let state = state_row(&pool).await;
+        let audit = audit_count(&pool).await;
+        let accounts = accounts_count(&pool, company_id).await;
+        let banks = bank_accounts_count(&pool).await;
+
+        let (status, resp) = post(&app, &token, route, body.clone()).await;
+        assert_eq!(status, 400, "{route} sur une démonstration : {resp}");
+        assert_eq!(
+            resp["error"]["code"], "ONBOARDING_STEP_ALREADY_COMPLETED",
+            "{route}"
+        );
+        assert_eq!(
+            company_snapshot(&pool, company_id).await,
+            company,
+            "{route}"
+        );
+        assert_eq!(state_row(&pool).await, state, "{route}");
+        assert_eq!(audit_count(&pool).await, audit, "{route}");
+        assert_eq!(accounts_count(&pool, company_id).await, accounts, "{route}");
+        assert_eq!(bank_accounts_count(&pool).await, banks, "{route}");
+
+        set_demo(&pool, false).await;
+        let (status, resp) = post(&app, &token, route, body).await;
+        assert_eq!(status, 200, "{route} hors démonstration : {resp}");
     }
 }
