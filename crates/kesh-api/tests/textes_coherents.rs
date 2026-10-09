@@ -19,6 +19,7 @@
 //! | G9 | #569, #547 | les replis Rust égalent la valeur fr-CH de leur clé |
 //! | G12 | #569 | le manuel et le guide d'API disent l'ordre de réouverture |
 //! | G18 | #127 | une installation porte une société (Story 15-14b) |
+//! | G18-ter | #127 | les textes d'écran « toutes les sociétés » (sauvegarde d'installation) sont une liste fermée assumée |
 //! | G18-bis | #127 | le manuel utilisateur dit comment on entre : compte créé par l'administrateur, connexion par identifiant |
 
 use std::collections::HashMap;
@@ -795,6 +796,10 @@ const MULTI_SOCIETE: &[&str] = &[
     r"(?i)entre (?:plusieurs )?(?:sociétés|dossiers)",
     r"(?i)(?:autre|seconde|deuxième) société",
     r"(?i)multi-soci\w*",
+    // Revue de code P2 (E2-6) : formes équivalentes, aucun site au 2026-10-09.
+    r"(?i)plusieurs (?:entreprises|mandants)",
+    r"(?i)multi-?entreprises?",
+    r"(?i)vos sociétés",
     r"(?i)plusieurs (?:sociétés|companies)",
     r"(?i)\bcompanies\b",
     r"(?i)(?:ou|via) un compte dédié",
@@ -961,8 +966,8 @@ fn le_manuel_utilisateur_dit_comment_on_entre() {
     )));
     let mut erreurs = Vec::new();
     for interdit in [
-        r"(?i)invitation par e-?mail",
-        r"(?i)saisir votre (?:adresse )?e-?mail et votre mot de passe",
+        r"(?i)invitation par (?:e-?mail|courriel)",
+        r"(?i)saisir votre (?:adresse )?(?:e-?mail|courriel|adresse électronique) et votre mot de passe",
         r"(?i)passez par votre compte une fois connecté",
     ] {
         if let Some(m) = Regex::new(interdit).unwrap().find(&texte) {
@@ -980,6 +985,88 @@ fn le_manuel_utilisateur_dit_comment_on_entre() {
     assert!(
         erreurs.is_empty(),
         "G18-bis — {} écart(s) :\n  - {}",
+        erreurs.len(),
+        erreurs.join("\n  - ")
+    );
+}
+
+/// Les textes d'écran et commentaires du catalogue fr-CH et du panneau de
+/// sauvegarde que le motif [`MULTI_SOCIETE`] attrape, **assumés** (revue de code P2,
+/// A2-5 = E2-5 ; C-15-14-70) : la sauvegarde d'une installation contient
+/// « toutes les sociétés » de l'installation — vrai, il y en a une —, et la
+/// réécrire toucherait le code de production (quatre catalogues et un repli)
+/// pour une nuance. Les locales de-CH (« alle Firmen »), it-CH (« tutte le
+/// società ») et en-CH (« all companies ») portent la même clé traduite ; elles
+/// ne sont pas lues ici (motif français), et suivent la valeur fr-CH par la garde
+/// G9 de la 15-14a pour le repli.
+const ECRANS_ASSUMES: &[(&str, &str)] = &[
+    // Nom de colonne, dans un commentaire du catalogue.
+    (
+        "crates/kesh-i18n/locales/fr-CH/messages.ftl",
+        "locale = companies.accounting_language",
+    ),
+    // admin-backup-page-description : le contenu d'une sauvegarde d'installation.
+    (
+        "crates/kesh-i18n/locales/fr-CH/messages.ftl",
+        "(toutes les sociétés, les utilisateurs et les données système)",
+    ),
+    // Commentaire de tête du composant : même contenu.
+    (
+        "frontend/src/lib/features/admin-backup/AdminBackupPanel.svelte",
+        "(toutes sociétés + utilisateurs + système)",
+    ),
+    // Repli de admin-backup-page-description (égal à la valeur fr-CH).
+    (
+        "frontend/src/lib/features/admin-backup/AdminBackupPanel.svelte",
+        "(toutes les sociétés, les utilisateurs et les données système)",
+    ),
+];
+
+/// **G18-ter** (#127, revue de code P2 A2-5) — dans le catalogue fr-CH et le
+/// panneau de sauvegarde, chaque occurrence du motif [`MULTI_SOCIETE`] tombe dans
+/// un fragment de [`ECRANS_ASSUMES`], et chaque fragment est trouvé une et une
+/// seule fois : une promesse multi-société ajoutée à l'écran rougit, une
+/// exemption morte aussi.
+#[test]
+fn les_ecrans_multi_societe_sont_assumes() {
+    let motifs: Vec<Regex> = MULTI_SOCIETE
+        .iter()
+        .map(|m| Regex::new(m).unwrap())
+        .collect();
+    let mut erreurs = Vec::new();
+    let blancs = Regex::new(r"\s+").unwrap();
+    let mut fichiers: Vec<&str> = ECRANS_ASSUMES.iter().map(|(f, _)| *f).collect();
+    fichiers.dedup();
+    for nom in fichiers {
+        let texte = blancs.replace_all(&lire(nom), " ").into_owned();
+        assert!(texte.len() > 1000, "{nom} lu à vide");
+        let mut couverts = Vec::new();
+        for (_, frag) in ECRANS_ASSUMES.iter().filter(|(f, _)| *f == nom) {
+            let n = texte.matches(frag).count();
+            if n != 1 {
+                erreurs.push(format!(
+                    "{nom} : fragment assumé trouvé {n} fois (1 attendue) : « {frag} »"
+                ));
+            }
+            couverts.extend(texte.match_indices(frag).map(|(i, f)| (i, i + f.len())));
+        }
+        for motif in &motifs {
+            for m in motif.find_iter(&texte) {
+                if !couverts
+                    .iter()
+                    .any(|(d, f)| m.start() >= *d && m.end() <= *f)
+                {
+                    erreurs.push(format!(
+                        "{nom} : « {} » hors des fragments assumés",
+                        m.as_str()
+                    ));
+                }
+            }
+        }
+    }
+    assert!(
+        erreurs.is_empty(),
+        "G18-ter — {} écart(s) :\n  - {}",
         erreurs.len(),
         erreurs.join("\n  - ")
     );

@@ -133,6 +133,11 @@ pub fn listings(extrait: &str) -> Vec<String> {
 /// (revue de code P1 de la 15-14b, B10). La commande `perl` d'inventaire de
 /// l'AC 3 ne retire pas les commentaires : les deux ne diffèrent que sur une
 /// ligne commentée qui porterait le motif (aucune au 2026-10-09).
+///
+/// **Angles morts écrits** (revue de code P2, E2-10) : `\\%` (saut de ligne LaTeX
+/// suivi d'un commentaire) est pris pour un `\%` échappé, et le commentaire reste
+/// lu ; un `% \begin{lstlisting}` commenté fait passer en mode listing jusqu'au
+/// `\end{lstlisting}` suivant. Aucun des deux dans les manuels au 2026-10-09.
 pub fn sans_commentaires(source: &str) -> String {
     let mut out = String::with_capacity(source.len());
     let mut dans_listing = false;
