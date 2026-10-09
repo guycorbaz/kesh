@@ -7436,3 +7436,64 @@ l'import (#458–#461).
   désigne aussi la table et l'entité du modèle partout dans le code et la doc de développement) ; mutation
   journalisée verte.
 - **Réversible** : oui.
+
+## C-15-14-73 — 15-14b (revue de code P3, E3-3 = B-1) : un dump de sécurité raté n'autorise plus le rechargement, sauf base établie absente
+
+- **Retenu** : `kesh-restore.sh` sonde la base **avant** d'arrêter Kesh (`information_schema.SCHEMATA` par le compte
+  Kesh : serveur injoignable ou compte refusé → arrêt, rien touché). Base **présente** : le dump de sécurité est
+  **obligatoire** ; s'il échoue (disque plein, dossier non inscriptible, image…), le script redémarre Kesh et sort
+  en 1, base intacte, avec le message exact. Base **absente** (sonde = 0) : pas de dump de sécurité, c'est dit, et le
+  rechargement continue. Arrêt de `kesh-api` vérifié (`ps --status running`), projet compose explicite
+  (`SAUVEGARDE_PROJET`, défaut `kesh` — B-3). Recette : « dump de sécurité impossible, base présente » (dossier non
+  inscriptible) → sortie 1, base intacte (empreinte de toutes les tables), Kesh redémarré ; serveur injoignable et
+  dossier inexistant → rien d'arrêté.
+- **Écartée** : une option `--sans-securite` pour passer outre (proposée par E3-3) — le cas « base illisible mais
+  présente » se traite en rechargeant après l'avoir supprimée explicitement (`DROP DATABASE` par l'administrateur),
+  geste conscient ; une option dans le script rendrait l'écrasement d'une base saine à une faute de frappe près.
+- **Réversible** : oui.
+
+## C-15-14-74 — 15-14b (revue de code P3, E3-4) : fidélité du rechargement — toutes les tables, données non ASCII
+
+- **Retenu** : la recette compare l'**empreinte** de la base (nombre de tables et `CHECKSUM TABLE` de **toutes** les
+  tables de `information_schema.TABLES`, 41 au 2026-10-09) au lieu du seul compte d'`accounts`, et une ligne
+  `Compte é € 😀` vérifiée octet par octet (`HEX`). Les scripts passent `--default-character-set=utf8mb4` aux deux
+  `mariadb-dump` et au client de rechargement, explicitement ; la mutation qui le retire est jouée contre la recette
+  (résultat au Dev Agent Record : le défaut du client 10.11 suffit-il ou non). Le dump est refusé s'il ne contient
+  aucune table ou pas de « -- Dump completed » (A3-8, B-7a), et les tables qu'il contient sont comptées.
+- **Réversible** : oui.
+
+## C-15-14-75 — 15-14b (revue de code P3, E3-1) : commandes en listing, sections en `\sloppy`, débordements mesurés
+
+- **Retenu** : les commandes longues (tâche, rechargement, secours, base renommée, réseau) passent en `lstlisting` ;
+  les URL passent par une variable `DEPOT` (une URL sans espace ne se coupe pas, même avec `breaklines`) ; les deux
+  sections Synology sont composées en `\sloppy` (TeX étire les espaces au lieu de déborder sur un chemin en police
+  fixe). **Vérification** : `Overfull \hbox` du journal LaTeX dans les deux sections : **18 → 0** (manuel entier :
+  70 → 52) ; chaque commande retrouvée **entière** sur une ligne de `pdftotext -layout` (journal
+  `15-14b-pdf-commandes-p3.txt`). Pas de garde sur le PDF (non exigée) : le contrôle est le journal LaTeX, rejouable.
+- **Réversible** : oui.
+
+## C-15-14-76 — 15-14b (revue de code P3) : LOW appliqués et écartés
+
+- **Appliqués** : E3-2 = A3-1 (« variable `BASE` » → réglage `SAUVEGARDE_BASE` ; G16 (g) : réglages du manuel =
+  réglages des scripts, défauts cités = défauts des scripts, tâche de dump avant Hyper Backup — A3-4) ; E3-5 (titre
+  de l'encadré de la brochure « Multi-tenant pour fiduciaires » → « Fiduciaires : une instance par dossier » : le
+  titre promettait ce que le corps dément) ; E3-6 (service `kesh-api` présent au compose prod) ; E3-9 = A3-5 = B-6
+  (prérequis complets ; empreintes au lieu d'un compte fixe du seed ; dossier inexistant joué) ; E3-10 = A3-6 = B-7
+  (empreinte renommée avant le dump — fenêtre résiduelle écrite, sens sûr ; verrou `dump/.verrou` par `mkdir`,
+  libéré par `rmdir` ; `dump/` forcé en 700 ; dossier résolu en absolu) ; E3-11, E3-7 (angles morts écrits) ; E3-12
+  (`avant-restauration/` parmi les secrets, à Hyper Backup et au snapshot ; commentaire de `docker-compose.prod.yml`
+  sur `./inbox`/`./documents`) ; E3-13 (interruption : relancer sur le même dossier ; dump d'une version plus récente
+  refusé au démarrage) ; B-3 (`-p`) ; B-4 (Container Manager rendu facultatif, renvoi à la note) ; B-5 (garde (g)
+  sur les migrations ; `normaliser` lit `-{}-` comme `--`).
+- **Écartés** : E3-5, `website/index.html:76` et `roadmap.html:93` — « multi-tenant » y décrit le **modèle**
+  (vrai) et la feuille de route historique ; le terme n'entre pas au motif de G18 (il qualifierait aussi
+  `README` § *Multi-tenant*, la sous-section *Configuration multi-tenant*, tous des descriptions du modèle). A3-7 =
+  E3-8 (épingler l'URL sur le tag) : **non** dans le listing — l'étiquette `v0.13.0` n'existe qu'à la publication,
+  et la macro `\keshVersion` ne se déplie pas dans un `lstlisting` ; le compose est téléchargé de `main` par le même
+  manuel. Le manuel dit désormais comment figer les scripts (« remplacez `main` par l'étiquette de votre version »).
+  À reprendre si la release veut épingler compose et scripts ensemble (signalé à l'orchestrateur).
+- **Rectifications** : A3-2 — C-15-14-62 écrivait « rien n'est écrit au manuel » sur l'arrêt par Hyper Backup ; depuis
+  la P2, le manuel l'écrit **comme possibilité à vérifier** (note de `sec:backup-dsm`, sans l'affirmer) — c'est l'état
+  réel, et la question de Guy reste ouverte. A3-3 — le registre P2 disait les findings « tous nés de la remédiation
+  P1 » : c'est vrai des MEDIUM+ (E2-1 à E2-4) ; A2-5 = E2-5 (écran « toutes les sociétés ») était préexistant.
+- **Réversible** : oui.
