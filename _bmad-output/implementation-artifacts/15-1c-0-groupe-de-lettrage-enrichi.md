@@ -4,7 +4,8 @@
 
 ready-for-dev **après la livraison de la 15-1b** *(et donc de la 15-1b-0, des 15-1a2-0, -i, -ii)* — créée le
 2026-10-09 par extraction de la partie serveur de la 15-1c-i, à la remédiation de la validation P2 de la 15-1c
-(registre **C-15-1c-14**) ; **validation P1 due** (passe complète, avec les 15-1c-i et 15-1c-ii).
+(registre **C-15-1c-14**) ; sa **première** passe de validation a été tenue en **P3 de l'ensemble 15-1c** (avec la
+15-1c-i et la 15-1c-ii : 0 au-dessus de LOW, LOW appliqués) ; **passe ciblée de fin de boucle due**.
 
 ⛔ **Ordre** : **15-12a → 15-12b → 15-1a-i → 15-1a-ii → 15-1a2-0 → 15-1a2-i → 15-1a2-ii → 15-1b-0 → 15-1b →
 15-1c-0 → 15-1c-i → 15-1c-ii**. Sur la base `f9b6b199`, seules la 15-1a-i et la 15-1a-ii sont livrées : **rien de
@@ -64,23 +65,42 @@ de savoir si « Délettrer » aboutira. Elle gagne, **pour le seul `GET`**, par 
 }
 ```
 
-- **`document` et `inOpenPeriod` : même source que les items de la vue.** La part « pièce et période » de la
-  requête B de la 15-1b — `document_owners` sur les écritures distinctes en **un** lot, sous-objet `document`
-  construit par la même fonction (sérialisé par `DocumentKind::as_str()`), `inOpenPeriod` par `open_period_rule`
-  chargé **une fois** pour les exercices distincts puis `line_in_open_period` — est **une** fonction de
-  `kesh-db/src/repositories/letterings.rs` qu'appellent `open_items` **et** la lecture d'un groupe ; **jamais** une
-  seconde implémentation de la propriété ou des périodes. Le **reste dû** (`documentState`, `amountDue`, trois
-  agrégations, 15-1b AC8) n'appartient pas à cette part : la lecture d'un groupe ne le calcule pas. Si la 15-1b n'a
-  pas déjà exposé la part ainsi, cette story l'extrait (refactor sans changement de comportement, prouvé par les
-  tests de la 15-1b **inchangés et verts**). La forme exacte se tranche au T0 et s'écrit au Dev Agent Record.
+- **`document` et `inOpenPeriod` : même source que les items de la vue** (validation P3, R L-1). Le partage porte
+  sur **deux** pièces, une par crate :
+  - **`kesh-db`** — une fonction de `repositories/letterings.rs`, par exemple
+    `lines_documents_and_periods(conn, company_id, &[(line_id, entry_id, fiscal_year_id, entry_date)]) ->
+    (BTreeMap<entry_id, Vec<DocumentOwner>>, BTreeMap<line_id, bool>)` : **un** appel `document_owners` sur les
+    écritures distinctes, `open_period_rule` chargé **une fois** pour les exercices distincts, puis
+    `line_in_open_period` par ligne — appelée par `open_items` (part « pièce et période » de la requête B) **et**
+    par la lecture d'un groupe. Le **reste dû** (`documentState`, `amountDue`, trois agrégations, 15-1b AC8) n'en
+    fait pas partie : la lecture d'un groupe ne le calcule pas.
+  - **`kesh-api`** — le constructeur du sous-objet `document` à partir d'un `DocumentOwner` (sérialisé par
+    `DocumentKind::as_str()`, 15-1b AC3), écrit **une** fois et appelé par le DTO de la vue et par celui du
+    groupe. ⛔ La table de sérialisation reste dans `DocumentKind` ; `kesh-db` ne construit pas de JSON.
+  Si la 15-1b n'a pas exposé ces deux pièces ainsi, cette story les extrait (refactor sans changement de
+  comportement, prouvé par les tests de la 15-1b **inchangés et verts**). Les noms réels s'écrivent au Dev Agent
+  Record. Le test 6 prouve l'**égalité des sorties** ; l'**unicité du code** se prouve par
+  `grep -rn "document_owners\|open_period_rule" crates/kesh-db/src crates/kesh-api/src` au Dev Agent Record (un site
+  d'appel de chaque pour la vue et le groupe : la fonction partagée).
 - **`journal` et `description` ne viennent pas de la requête B** : ce sont des colonnes des écritures (requête A de
-  la 15-1b, `journal_entries`), lues par la lecture du groupe **dans la même requête que ses lignes**
-  (`FIND_GROUP_SQL` étendu d'une jointure à `journal_entries`, déjà présente pour `entry_number`) — aucun N+1.
+  la 15-1b, `journal_entries`), lues par la lecture du groupe **dans la même requête que ses lignes** — la jointure
+  `journal_entries` existe déjà dans `FIND_GROUP_SQL` (pour `entry_number`) : seules les **colonnes** s'ajoutent
+  (`je.journal`, `je.description`), aucun N+1. ⚠️ `FIND_GROUP_SQL` et `LOCK_LINES_BY_KEY_SQL` alimentent le même
+  `struct LineRow` (validation P3, R L-3) : la lecture détaillée a **sa propre** constante SQL et **son propre**
+  `struct` de ligne ; `LineRow`, la requête verrouillante et `find_group` (appelée par les tests de la 15-1a-i)
+  restent **inchangés**.
 - `ownedByDocument` = un propriétaire de l'écriture de la ligne a `DocumentKind::blocks_manual_lettering()`
   (15-1b-0) — la possession au sens de R5 ; `bankTransaction` seul ne la donne pas. C'est le prédicat même de
   `first_document_owner` (15-1b-0 D3), lu sur le même lot.
-- `accountNumber`, `accountName` : le compte du groupe — `group_account_number` existe ; le nom se lit dans la même
-  requête que le numéro.
+- `accountNumber`, `accountName` : le compte du groupe, lus **ensemble** par une requête propre à la lecture
+  détaillée (`SELECT number, name FROM accounts WHERE id = ? AND company_id = ?`) — validation P3, R L-2 = F-5 :
+  `letterable_account` (publique, appelée aussi par `is_letterable_account` et `journal_entries.rs`) et
+  `group_account_number` ne lisent pas le nom et restent **inchangées**.
+- **Une transaction de lecture** (validation P3, F-2) : la lecture détaillée ouvre elle-même une transaction
+  (`conn.begin()`, lectures, `rollback`) où se lisent les lignes, le compte, les noms d'exercice, `document_owners`
+  et la règle des périodes — un seul instantané, comme `open_items` (15-1b AC1), sous l'isolation par défaut
+  d'InnoDB (`REPEATABLE READ`, que Kesh ne configure pas — réserve écrite au doc-comment comme à la 15-1b). La
+  prévision reste indicative au regard du `DELETE`, mais cohérente en elle-même.
 - **`manualDissolutionBlockedBy`** = le **premier** refus que la dissolution en mode `Manual` rendrait, **dans son
   ordre** (refus 1, 2, 3 de `dissolve_group_in_tx`, `letterings.rs` ; « Vérifié et confirmé » du rapport R de la
   validation P2) : `LETTERING_IS_DOCUMENT` si l'origine est `document` ; sinon
@@ -153,7 +173,8 @@ compte cité en exemple existe dans un plan livré (G4-bis).
 - [ ] **T1** (AC15) — `kesh-db` `repositories/letterings.rs` : part « pièce et période » factorisée et réemployée
       par `open_items` ; `ManualDissolutionBlocker`, `DissolutionStep`, `manual_dissolution_step` ; la dissolution
       réécrite sur l'étape (lectures paresseuses, détails inchangés) ; lecture détaillée d'un groupe
-      (`find_group_detail`, ou nom relevé au T0). `kesh-api` `routes/letterings.rs` : `LetteringDetailResponse` pour
+      (`find_group_detail`, ou nom relevé au T0 ; sa constante SQL, son `struct` de ligne et sa transaction de lecture
+      propres ; `find_group`, `letterable_account`, `group_account_number` inchangées). `kesh-api` `routes/letterings.rs` : `LetteringDetailResponse` pour
       le seul `GET` ; le `POST` inchangé.
 - [ ] **T2** (AC16) — `docs/api-external.md`, paragraphe du `GET`.
 - [ ] **T3** (AC18) — `CHANGELOG.md` (*Modifié*), `README.md` (ligne v0.13.0).
@@ -198,8 +219,9 @@ dépôt ; `kesh-api`, binaire des routes du lettrage — noms relevés au T0)* :
    inexistant, indiscernables ; clé d'API en lecture et rôle Consultation admis.
 9. AC16, AC18 — contrôles documentaires exécutés, sortie au Dev Agent Record :
    `grep -n "manualDissolutionBlockedBy" docs/api-external.md CHANGELOG.md` (présent aux deux),
-   `grep -n "même forme" docs/api-external.md` (le paragraphe du `GET` ne le dit plus), ligne v0.13.0 du README
-   relue.
+   le paragraphe du `GET` relu en entier — `grep -n '^\*\*`GET /api/v1/letterings/{key}`' docs/api-external.md`
+   puis `sed -n` de ce paragraphe — et il ne dit plus « même forme » (validation P3, R L-10 : le motif a trois
+   occurrences dans le fichier, une seule visée) ; ligne v0.13.0 du README relue.
 
 *Tests existants à relire* : l'inventaire du T0 (tout test de la dissolution, de la 15-1a-i, de la 15-1a-ii, des
 15-1a2-*, de la 15-1b-0 — verts **sans modification**) ; les tests de la 15-1b sur `open_items` (verts sans
@@ -218,9 +240,10 @@ modification après la factorisation) ; `letterings_lexical.rs` (il ne contraint
 - Aucune migration (P5–P8 sans objet).
 - La prévision est lue **sans verrou** ; la dissolution garde ses verrous d'exercice pris **avant** le refus 1, et
   ses lectures dans le même ordre : aucun verrou neuf, aucune lecture neuve sous verrou.
-- `LetteringResponse` (le `POST`) et `LetteringDetailResponse` (le `GET`) : le second **contient** les champs du
-  premier ; un `#[serde(flatten)]` ou une composition, au choix du T0 — mais les clés JSON du `POST` ne bougent pas
-  (test 8).
+- `LetteringResponse` (le `POST`) et `LetteringDetailResponse` (le `GET`) : **composition par les champs
+  communs** (`key`, `code`, `origin`, `accountId`), `lines` **propre** au détail (lignes plus larges) — jamais un
+  `#[serde(flatten)]` de `LetteringResponse`, qui produirait deux clés `lines` (validation P3, F-6). Les clés JSON du
+  `POST` ne bougent pas (test 8).
 
 ## Dev Agent Record
 

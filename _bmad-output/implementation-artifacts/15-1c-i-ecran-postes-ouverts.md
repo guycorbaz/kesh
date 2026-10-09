@@ -34,7 +34,7 @@ la 15-1c-0. La suivante (15-1c-ii) porte le lettrage dans le reste de Kesh — f
 
 | contrat | fiche validée | ce que l'écran en lit |
 |---|---|---|
-| `GET /api/v1/accounts/{id}/open-items?asOf=&limit=&offset=` | 15-1b AC1, AC3, AC4, AC7 | items (`reason`, `documentState`, `amountDue`, `manuallyLetterable`, `inOpenPeriod`, `letteringCode`, `letteringOrigin`, `letteredOn`, `document`, `fiscalYearName`), `balance`, `openTotal`, `total`, `offset`, `limit` ; 409 `LETTERING_ACCOUNT_NOT_LETTERABLE`, 404, 400 |
+| `GET /api/v1/accounts/{id}/open-items?asOf=&limit=&offset=` | 15-1b AC1, AC3, AC4, AC7 | items (`reason`, `documentState`, `amountDue`, `manuallyLetterable`, `inOpenPeriod`, `letteringCode`, `letteredOn`, `document`, `fiscalYearName` — `letteringOrigin` n'est pas lu : l'origine s'affiche au panneau du groupe, depuis le `GET`), `balance`, `openTotal`, `total`, `offset`, `limit` ; 409 `LETTERING_ACCOUNT_NOT_LETTERABLE`, 404, 400 |
 | `GET /api/v1/accounts/{id}/lettering-proposals?limit=` | 15-1b AC5 | paires (`amount`, `daysApart`, `reversalPair`, `debit`, `credit`), `candidateCount`, `total`, `limit` ; **pas d'`offset`** ; 422 `LETTERING_PROPOSALS_TOO_MANY_LINES` |
 | `GET /api/v1/accounts` → `letterable` | 15-1b AC11 | le sélecteur |
 | `POST /api/v1/letterings`, `DELETE /api/v1/letterings/{key}` | 15-1a-i (livrée, `routes/letterings.rs`) | lettrer (201 ; refus 400, 404, 409), délettrer (204 ; refus 404, 409) |
@@ -142,7 +142,10 @@ d'aujourd'hui**, le motif à la date étant `reason` (point 2).
   la somme affichée, faite sur les montants **retenus**, est nulle), ou être passée sous un verrou posé entre-temps.
   Donc, après l'affichage du message : la liste **et** les propositions se **rechargent**, et la sélection est
   **effacée** — pour **tout** 404 ou 409, sans liste de codes à tenir ; seuls les 400 de forme gardent la
-  sélection. Le 404 ne porte pas de message utile : l'écran affiche le sien (clé `open-items-*`) — « une ligne
+  sélection. ⚠️ **Exception assumée** pour `LETTERING_CONCURRENT_CHANGE` (« réessayez » ; validation P3, F-3) : la
+  sélection est effacée **aussi** — le refus dit que les lignes ont changé entre la lecture et l'écriture, sans dire
+  lesquelles ; « réessayer » sur des montants retenus avant le changement pourrait lettrer un état que l'écran n'a
+  pas montré. L'utilisateur reconstruit sa sélection sur la liste rechargée. Le 404 ne porte pas de message utile : l'écran affiche le sien (clé `open-items-*`) — « une ligne
   sélectionnée n'existe plus : son écriture a été modifiée ou supprimée ».
 - **Après succès** (201) : la liste et les propositions se rechargent ; un message annonce le **code** du groupe,
   en lien vers lui (AC6).
@@ -182,8 +185,10 @@ d'aujourd'hui**, le motif à la date étant `reason` (point 2).
 - **Contenu** (réponse enrichie, 15-1c-0 AC15) : le code, l'origine **en clair**, le compte (`accountNumber`,
   `accountName`), et chaque ligne — date, exercice et n° d'écriture (lien vers la fiche), journal, libellé, pièce
   (table d'AC2), débit, crédit. Origine : `manual` → « lettrage manuel » ; `reversal` → « contre-passation » ;
-  `document` → « lettrage de la pièce » suivi du numéro de la **pièce** portée par les lignes (la facture, la
-  facture fournisseur ; à défaut d'une pièce numérotée, « lettrage d'une pièce »). ⚠️ Jamais « règlement de la
+  `document` → « lettrage de la pièce » suivi du numéro de la **pièce** portée par les lignes, choisi ainsi
+  (validation P3, F-4) : le `number` de la **première** ligne (ordre des lignes du `GET`) dont `document.type` est
+  `invoice` ou `supplierInvoice` ; sinon l'`invoiceNumber` de la première ligne `settlement` ; sinon « lettrage d'une
+  pièce ». Un groupe facture + avoir montre donc le numéro de la facture, jamais celui de l'avoir. ⚠️ Jamais « règlement de la
   pièce » (validation P2, R M-4 = F2-L5 ; **C-15-1c-18**) : un groupe `document` naît aussi d'un **avoir**
   (15-1a2-i, `create_credit_note` → `sync_invoice_in_tx`), où aucun règlement n'existe.
 - **« Délettrer »** affiché si et seulement si `manualDissolutionBlockedBy` est nul (15-1c-0 AC15) **et**
@@ -253,7 +258,9 @@ d'écriture). Comptable et Admin : tout. Le 403 du serveur reste le refus qui fa
   `sitesNonResolus`, `relais`, `sitesGabarit`, **relevées aux deux bornes** au T0 et au dernier commit, justifiées
   en commentaire — jamais citées par numéro de ligne), `i18n-un-repli-par-cle.test.ts` (un même repli par clé),
   `i18n-libelle-en-dur.test.ts` (toute fonction `*Label` passe par `i18nMsg`), `i18n-repli-divergent-actif.test.ts`
-  (**G13** : repli Svelte = valeur FTL fr-CH), `e2e-selecteurs-traduits.test.ts` (#326) ; côté Rust,
+  (**G13** : repli Svelte = valeur FTL fr-CH), `i18n-entrees-a-variables.test.ts` (variables Fluent ↔ arguments du
+  site d'appel — « écart X », « reste dû : X », « N autres », le numéro de la pièce ; validation P3, F-7),
+  `e2e-selecteurs-traduits.test.ts` (#326) ; côté Rust,
   `parity_between_locales` (`kesh-i18n/src/loader.rs`), **G8 / G8-bis** (marqueurs d'ordre et bornes de réouverture,
   `loader.rs`, si une clé neuve prescrit une réouverture), **G9** `les_replis_rust_suivent_le_catalogue` et **G4-bis**
   `les_comptes_cites_en_exemple_existent_dans_les_plans_livres` / `la_forme_libre_nnnn_nom_est_juste_partout`
@@ -264,7 +271,8 @@ d'écriture). Comptable et Admin : tout. Le 403 du serveur reste le refus qui fa
 **AC13 (part i) — E2E** (`frontend/tests/e2e/open-items.spec.ts`), sélecteurs `data-testid` seuls (garde #326) :
 
 - **Montage** (C-15-1c-13) : le spec **crée son propre compte** lettrable par l'API des comptes (`Asset`, numéro
-  unique dérivé de `Date.now()`, jamais rattaché à un compte bancaire) et des **montants uniques** ; il n'emploie
+  unique dérivé de `Date.now()` **tronqué à dix caractères au plus** — `routes/accounts.rs` refuse au-delà ; patron
+  `accounts.spec.ts`, `T${Date.now().toString().slice(-5)}` —, jamais rattaché à un compte bancaire) et des **montants uniques** ; il n'emploie
   aucun compte du seed (1100 est ou devient un compte de journal bancaire, donc non lettrable). Il ne lit que les
   lignes qu'il a créées (par leur `lineId`, en `data-testid`). Les écritures lettrées par le test restent en base
   (figées, `ENTRY_LETTERED`) : le scénario (3) les délettre avant la fin.
@@ -315,24 +323,28 @@ serveur de l'ancienne numérotation 1 à 8 sont à la 15-1c-0)* :
 2. AC1 — sélecteur : seuls les comptes `letterable`, archivés compris et marqués ; 409 de la vue → message du
    serveur à la place de la liste ; 404 → « compte introuvable ».
 3. AC2 — colonnes, exercice avec le numéro, table des liens de pièce (cinq types, `settlement` à `invoiceId` nul
-   sans lien, `bankTransaction` sans lien), pagination (page suivante demandée avec `offset`).
+   sans lien, `bankTransaction` sans lien), pagination (page suivante demandée avec `offset`), ordre du serveur
+   conservé (une réponse dont l'ordre n'est pas celui des dates s'affiche telle quelle).
 4. AC3 — les six libellés, `amountDue` formaté, note « état d'aujourd'hui » quand `asOf` < aujourd'hui et pas
    sinon ; `documentState` nul → aucune seconde ligne.
 5. AC4 — case présente **ssi** `manuallyLetterable` (dont une ligne `bankTransaction` lettrable) ; infobulle par
    cause (trois causes).
 6. AC4 — somme en décimal : `0.1 + 0.2 − 0.3` à quatre décimales donne **zéro exact** ; états du bouton (moins de
    deux lignes, 201 lignes, écart, toutes en période close, actif) ; sélection conservée d'une page à l'autre et
-   effacée au changement de compte ou de date.
+   effacée au changement de compte ou de date ; le **compteur** dit le nombre de lignes sélectionnées et combien
+   hors de la page (validation P3, R L-8).
 7. AC4 — refus : chaque code affiché par son message ; **un 409 de chaque code** et **un 404** → rechargement de la
    liste et des propositions, sélection vidée — dont `LETTERING_UNBALANCED` sur une sélection dont la somme
-   affichée est nulle, et le 404 par le texte d'écran ; un 400 (`LETTERING_TOO_FEW_LINES`) → sélection gardée ;
+   affichée est nulle, `LETTERING_CONCURRENT_CHANGE` (sélection effacée, exception assumée), et le 404 par le texte
+   d'écran ; un 400 (`LETTERING_TOO_FEW_LINES`) → sélection gardée ;
    succès → rechargement et code annoncé en lien.
 8. AC5 — panneau : **aucun `POST` au montage ni au rendu** ; échec des propositions (422, autre) sans effet sur la
    liste ; repère « contre-passation » ; phrase « N autres » quand `total` dépasse le nombre de paires ; pas de
    rechargement au seul changement de date ; « Lettrer » envoie les deux `lineId` ; refus périmé — un 409 et un
    404 (paire dont une ligne a disparu) → rechargement.
 9. AC6 — panneau du groupe : libellés des trois origines (dont « lettrage de la pièce » + numéro, et jamais
-   « règlement ») ; « Délettrer » **ssi** `manualDissolutionBlockedBy` nul et rôle d'écriture ; chacun des trois
+   « règlement » ; groupe facture + avoir → le numéro de la **facture**) ; le champ « Code » ouvre le groupe saisi
+   (`?group=` écrit dans l'URL) ; « Délettrer » **ssi** `manualDissolutionBlockedBy` nul et rôle d'écriture ; chacun des trois
    motifs par sa clé `error-lettering-*` ; refus au clic (409, 404) par son message puis rechargement ; 204 →
    `group` retiré de l'URL ; 404 à l'ouverture → « aucun groupe ne porte ce code » ; vue en 409 et groupe affiché
    ensemble.

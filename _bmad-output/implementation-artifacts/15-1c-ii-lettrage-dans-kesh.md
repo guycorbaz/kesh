@@ -34,7 +34,9 @@ serveur.
 **AC9 — Le code visible ailleurs.**
 
 - **Fiche d'écriture** (`frontend/src/routes/(app)/journal-entries/[id]/+page.svelte`) : une colonne
-  **« Lettrage »**, **la dernière** du tableau des lignes ; une ligne lettrée y montre son code (`JournalEntryLineResponse.letteringCode`, livré par la
+  **« Lettrage »**, **la dernière** du tableau des lignes — et la ligne *Total* du pied gagne sa cellule (sur
+  `f9b6b199`, `colspan={hasProjects ? 2 : 1}` + débit + crédit ; validation P3, R L-5 = F-1) : pour chaque `<tr>`,
+  la somme des `colspan` égale le nombre d'en-têtes, avec et sans projets ; une ligne lettrée y montre son code (`JournalEntryLineResponse.letteringCode`, livré par la
   15-1a-i) **en lien** vers `/open-items?group=<code>` (AC6 de la 15-1c-i) ; une ligne ouverte, rien. L'en-tête est
   traduit (`i18nMsg`, clé `journal-entries-*`), même si les en-têtes voisins sont encore en dur (« Compte »,
   « Débit », hors de cette story).
@@ -70,7 +72,8 @@ serveur.
 **AC11 (part ii) — i18n.** Les clés d'AC9 dans les **quatre** locales, au vocabulaire de C-15-1a-i-4 /
 C-15-1a-ii-2 (*Ausgleich*, *matching*, *abbinamento*) ; mêmes gardes que la 15-1c-i (AC11 part i : bornes de
 `i18n-keys.test.ts` relevées aux deux bornes, `i18n-un-repli-par-cle`, `i18n-libelle-en-dur`, G13
-`i18n-repli-divergent-actif`, `e2e-selecteurs-traduits`, `parity_between_locales`, G9, G4-bis) ; **gate backend
+`i18n-repli-divergent-actif`, `i18n-entrees-a-variables` (validation P3, F-7), `e2e-selecteurs-traduits`,
+`parity_between_locales`, G9, G4-bis) ; **gate backend
 complet** au dernier commit de code (les FTL sont dans `kesh-i18n`).
 
 **AC12 — Manuel utilisateur** (`docs/manual/fr/user-manual.tex`).
@@ -117,9 +120,12 @@ complet** au dernier commit de code (les FTL sont dans `kesh-i18n`).
    ```
    — **les trois sources des trois PDF** (`user-manual.tex`, `admin-manual.tex`, `marketing-brochure.tex` :
    validation P2, R M-5 = F2-5 ; C-15-1c-19) — et **chaque** site est classé au Dev Agent Record — **réécrit** (et
-   comment) ou **juste en l'état** (et pourquoi) ; total des sites = réécrits + justes. Sur `f9b6b199`, 24 lignes du
-   manuel utilisateur et **une** de la brochure (`marketing-brochure.tex`, bloc « Backlog (Epic 13 à 15) » :
-   « Justificatifs, lettrage, journaux personnalisables. ») contiennent « lettr » ; les 15-1a2-* en auront ajouté. **Sites à réécrire certainement**, désignés par leur section et leur
+   comment) ou **juste en l'état** (et pourquoi) ; total des sites = réécrits + justes. Sur `f9b6b199`, **30** lignes
+   contiennent « lettr » : 24 du manuel utilisateur, **5** du manuel d'administration (`:1238`, « lettres », faux
+   positif à classer juste ; quatre sur la modification et la correction d'une écriture lettrée, qui gagnent à dire
+   **où** se fait le délettrage — validation P3, R L-6 = F-9) et **une** de la brochure (`marketing-brochure.tex`,
+   bloc « Backlog (Epic 13 à 15) » : « Justificatifs, lettrage, journaux personnalisables. ») ; les 15-1a2-* en
+   auront ajouté. **Sites à réécrire certainement**, désignés par leur section et leur
    phrase : *Modifier ou supprimer une écriture*, sixième condition — « (le délettrage se fait par l'API dans cette
    version) » à retirer, et renvoi à la section neuve ; le **glossaire**, entrée *Lettrage* — « Dans cette version,
    le lettrage manuel et le délettrage se font par l'API (`/api/v1/letterings`) ; l'écran viendra. » à retirer, et
@@ -131,7 +137,8 @@ complet** au dernier commit de code (les FTL sont dans `kesh-i18n`).
    15-1a2-i si elle ne l'a pas retiré), *Balance*.
 3. **Preuves** (validation P2, R L-5 = F2-L7 ; C-15-1c-23). La preuve **négative** est le `grep` des sources
    `.tex`, les deux apostrophes couvertes par un point : `grep -n -i "l.écran viendra\|par l.API dans cette
-   version" docs/manual/fr/*.tex` ne rend plus rien — le PDF aplati ne la porte pas, `pdftotext` coupant les mots
+   version\|ne se lettrent pas encore\|pas encore de lui-même" docs/manual/fr/*.tex` ne rend plus rien (les deux
+   derniers textes provisoires retirés par les 15-1a2-* ou par cette story — validation P3, R L-7) — le PDF aplati ne la porte pas, `pdftotext` coupant les mots
    à la césure (« d’ellemême » pour « d'elle-même » sur le PDF actuel : un « vien-dra » passerait). Les **PDF**
    régénérés (`make fr` dans `docs/manual/` — les trois) et aplatis (`pdftotext docs/manual/fr/user-manual.pdf - |
    tr '\n' ' ' | tr -s ' '`) prouvent la régénération et la présence du titre de la section neuve ; la brochure
@@ -143,8 +150,10 @@ complet** au dernier commit de code (les FTL sont dans `kesh-i18n`).
 15-1c-i) : (7) après le lettrage du scénario (2), la **fiche d'écriture** montre le code dans la colonne
 « Lettrage », et le lien ouvre le groupe (`?group=`) ; (8) au **Grand livre** du compte créé, la colonne porte le
 code et le lien « Postes ouverts de ce compte » ouvre `/open-items` sur ce compte, à la fin de la période ;
-(9) la fiche d'une écriture lettrée montre le motif `ENTRY_LETTERED` **avec** le lien vers le groupe. Le spec
-délettre en fin de parcours (comme le scénario 3). **Lancée au dernier commit de code** (D7), suite complète, jugée
+(9) la fiche d'une écriture lettrée montre le motif `ENTRY_LETTERED` **avec** le lien vers le groupe. ⚠️ Le
+scénario (3) de la 15-1c-i délettre le groupe du scénario (2) (validation P3, R L-4) : les scénarios (7) à (9)
+**posent leur propre lettrage** (deux écritures opposées à montants uniques sur le compte créé, lettrées par
+l'API `POST /letterings`) et le délettrent à la fin — ils ne dépendent d'aucun autre scénario. **Lancée au dernier commit de code** (D7), suite complète, jugée
 contre `docs/testing.md` § « Les échecs attendus ».
 
 **AC14 — CHANGELOG** (`[0.13.0]`) : **une** entrée cohérente pour le lettrage sous *Ajouté*, non des fragments.
@@ -198,7 +207,8 @@ contre `docs/testing.md` § « Les échecs attendus ».
 **Tests de T6** — un par ligne, rattaché à son critère :
 
 1. AC9 — fiche d'écriture (Vitest de la page ou de son composant de ligne) : code en lien vers `?group=` sur une
-   ligne lettrée, cellule vide sur une ligne ouverte, en-tête traduit.
+   ligne lettrée, cellule vide sur une ligne ouverte, en-tête traduit ; somme des `colspan` de chaque `<tr>`, pied
+   *Total* compris, égale au nombre d'en-têtes, **avec et sans** projets.
 2. AC9 — motif `ENTRY_LETTERED` : le code du motif est un lien ; les autres motifs (pièce, exercice) restent du
    texte ; Consultation ne voit pas de motif (C-15-8-14, inchangé).
 3. AC9 — `GeneralLedgerView` : colonne du code, **la dernière** ; pour **chaque** `<tr>` du corps et du pied, **la
@@ -227,8 +237,8 @@ livre, s'il les compte).
 
 - **Modules — aux deux grains** (C-15-1a2-21) : crates et paquets — `frontend`, `kesh-i18n` = **2** ; modules de
   premier niveau — `features/reports` (Grand livre) et `routes/(app)/reports` (la liste des comptes passée à la
-  vue), `routes/(app)/journal-entries/[id]` (colonne, motif), l'E2E — **trois de logique** —, puis la propagation de
-  textes : `kesh-i18n` (catalogues), `docs/manual/fr` (+ PDF), `docs/api-external.md`, `CHANGELOG.md`, `README.md`,
+  vue), `routes/(app)/journal-entries/[id]` (colonne, motif) — **trois de logique** — et l'E2E, puis la propagation
+  de textes : `kesh-i18n` (catalogues), `docs/manual/fr` (+ PDF), `docs/api-external.md`, `CHANGELOG.md`, `README.md`,
   `website/`, `shared/i18n-keys.test.ts` — **sept** : **11 au grain fin**. Le dépassement ne vient que de la
   propagation de textes : dérogation sur le patron exact de C-15-1a2-23 (C-15-1c-11), plus bas.
 - Aucune migration, aucun code serveur. Gate backend complet quand même au dernier commit de code (FTL de

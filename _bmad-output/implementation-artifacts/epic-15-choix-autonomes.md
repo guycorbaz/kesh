@@ -7273,3 +7273,19 @@ l'import (#458–#461).
 - **Retenu** : `grep -n -i "l.écran viendra\|par l.API dans cette version" docs/manual/fr/*.tex` vide ; le PDF aplati prouve la régénération et la présence du titre neuf.
 - **Écartées** : deux `grep` sur le PDF aux deux apostrophes (toujours aveugles à la césure).
 - **Réversible** : oui.
+
+## C-15-1c-24 — 15-1c-i (validation P3, F-3) : `LETTERING_CONCURRENT_CHANGE` vide aussi la sélection
+- **Contexte** : le serveur dit « réessayez » ; la règle « tout 404/409 vide la sélection » (C-15-1c-17) oblige l'utilisateur à la refaire.
+- **Retenu** : la sélection est effacée aussi pour ce code, exception écrite et motivée — le refus dit que des lignes ont changé sans dire lesquelles ; réessayer sur des montants retenus avant le changement pourrait lettrer un état que l'écran n'a pas montré.
+- **Écartées** : garder la sélection pour ce seul code (rouvre la liste de codes que C-15-1c-17 a fermée).
+- **Réversible** : oui.
+
+## C-15-1c-25 — 15-1c-i (validation P3, F-4) : le numéro affiché pour « lettrage de la pièce »
+- **Retenu** : le `number` de la première ligne (ordre du `GET`) dont `document.type` est `invoice` ou `supplierInvoice` ; sinon l'`invoiceNumber` de la première ligne `settlement` ; sinon « lettrage d'une pièce ». Un groupe facture + avoir montre la facture. Testé.
+- **Écartées** : la première ligne quelle qu'elle soit (un avoir pourrait nommer le groupe d'une facture).
+- **Réversible** : oui.
+
+## C-15-1c-26 — 15-1c-0 (validation P3, F-2, R L-2, R L-3) : la lecture détaillée d'un groupe est une lecture à part, dans une transaction
+- **Retenu** : sa propre constante SQL et son propre `struct` de ligne (`journal`, `description`), une requête propre pour le numéro et le nom du compte, une transaction de lecture ouverte par elle (`begin`, lectures, `rollback`) comme `open_items` ; `LineRow`, la requête verrouillante, `find_group`, `letterable_account` et `group_account_number` inchangés.
+- **Écartées** : étendre `LineRow` (casse la requête verrouillante qui l'alimente) ; changer la signature de `letterable_account` (fonction publique partagée) ; lectures en autocommit (prévision incohérente en elle-même).
+- **Réversible** : oui avant développement.
