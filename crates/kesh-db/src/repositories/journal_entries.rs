@@ -51,7 +51,19 @@
 //!
 //! Un `SELECT fiscal_years FOR UPDATE` en tête de transaction verrouille
 //! l'exercice contre toute clôture concurrente. Si `status = 'Closed'`,
-//! la création est refusée avec `DbError::IllegalStateTransition`.
+//! la création est refusée avec `DbError::FiscalYearClosed`.
+//!
+//! # Le filet sous un bilan clos (Story 15-12b, #543)
+//!
+//! Le bilan est cumulatif depuis l'origine : une écriture de N figure dans le
+//! bilan de tout exercice postérieur. Aucune écriture ne se **crée** ni ne se
+//! **supprime** donc dans un exercice dont un exercice postérieur est clos
+//! (`DbError::LaterFiscalYearClosed`) — aux deux points de passage de toutes
+//! les écritures du journal : `create_in_tx_inner` (les dix-neuf routes qui
+//! créent une écriture, contre-passation comprise) et [`delete_in_tx`] (la
+//! suppression par la route et la dévalidation d'une facture). La
+//! modification ([`update`]) porte la même garde depuis la Story 15-8a. Depuis
+//! la Story 15-12a, cet état n'est atteignable que par des données héritées.
 
 use std::str::FromStr;
 
@@ -321,6 +333,35 @@ async fn create_in_tx_inner(
         None => return Err(DbError::NotFound),
         Some((_, status, _, _)) if status == "Closed" => return Err(DbError::FiscalYearClosed),
         Some((_, _, fy_start, fy_end)) => {
+            // Étape 1-a (Story 15-12b, #543) — LE FILET : un exercice
+            // POSTÉRIEUR est clos. Le bilan est cumulatif depuis l'origine
+            // (`kesh-report/src/balance_sheet.rs`) : une écriture créée ici
+            // changerait en silence le bilan de l'exercice clos. Précédence,
+            // celle du `PUT` : `NotFound` → `FISCAL_YEAR_CLOSED` →
+            // `LATER_FISCAL_YEAR_CLOSED` → `DATE_OUTSIDE_FISCAL_YEAR` →
+            // `PERIOD_LOCKED`.
+            //
+            // ⚠️ Lecture NON verrouillante, et c'est un choix (C89, C100) : la
+            // sûreté repose sur (α) l'invariant I du module `fiscal_years`, vrai
+            // de tout état validé obtenu depuis un état sain, et (β) le verrou de
+            // l'exercice de l'écriture, pris par la requête ci-dessus, sous lequel
+            // il a été lu OUVERT : aucun postérieur ne peut se clôturer avant le
+            // `COMMIT` (la clôture attend ses antérieurs ouverts). La lecture n'a
+            // donc à voir que l'état HÉRITÉ (données antérieures, restauration),
+            // qui ne peut que se résorber : une vue ancienne n'y produit qu'un
+            // refus de trop, jamais une acceptation de trop. Un verrou ici
+            // poserait des verrous d'intervalle sur `fiscal_years` dans les
+            // dix-neuf routes qui créent une écriture, sans gain de garantie.
+            // Angle mort assumé : la restauration EN VOL (doc-comment du module
+            // `fiscal_years`).
+            if let Some(later) =
+                super::fiscal_years::find_later_closed(tx, new.company_id, fy_start).await?
+            {
+                return Err(DbError::LaterFiscalYearClosed {
+                    fiscal_year_id: later.id,
+                    fiscal_year_name: later.name,
+                });
+            }
             // Garde défensive symétrique à l'étape 5 de `update` — l'invariant
             // `entry_date ∈ [fy_start, fy_end]` est ce dont dépend l'équation du
             // bilan cumulatif (Story 14-1 Dev Note 4) : l'actif/passif cumulés
@@ -1596,10 +1637,11 @@ pub async fn delete_by_id(
 ///
 /// - **2** — écriture introuvable ou d'une autre société → [`DbError::NotFound`] ;
 /// - **3** — exercice de l'écriture clos → [`DbError::FiscalYearClosed`] ;
-/// - **2-bis** (`enforce_ownership`) — un exercice **postérieur** clos →
+/// - **2-bis** — un exercice **postérieur** clos →
 ///   [`DbError::LaterFiscalYearClosed`] : le bilan est cumulatif, supprimer
 ///   une écriture de N réécrirait le bilan d'un N+1 clos (C-15-8-22). Lu sous
-///   verrou avant l'étape 3, rendu après elle ;
+///   verrou avant l'étape 3, rendu après elle ; **quel que soit**
+///   `enforce_ownership` depuis la Story 15-12b (#543) ;
 /// - **3-bis** — écriture contre-passée → [`DbError::EntryIsReversed`] ;
 /// - **3-ter** (`enforce_ownership`) — la garde de la modification
 ///   ([`modification_guard`] → [`modification_refusal`]) : contre-passation,
@@ -1632,15 +1674,14 @@ pub async fn delete_by_id(
 ///
 /// # `enforce_ownership` — qui passe quoi
 ///
-/// - **`true`** : [`delete_by_id`], donc la route. Les étapes 2-bis et 3-ter
-///   s'appliquent.
+/// - **`true`** : [`delete_by_id`], donc la route. L'étape 3-ter s'applique.
 /// - **`false`** : `invoices::unvalidate` seul (25-2-b-1, #440) — la facture
 ///   supprime **sa** propre écriture, sous ses propres gardes (non réglée, même
 ///   partiellement, non créditée, sans rappel, non envoyée, non rapprochée) : la
-///   garde « possédée par une facture » n'y aurait pas de sens. Les étapes 3,
-///   3-bis et 3-quater tiennent quand même. ⚠️ L'exercice postérieur clos **n'y est pas
-///   contrôlé** (C-15-8-29) : défaut préexistant, signalé pour une issue avec la
-///   création et le règlement.
+///   garde « possédée par une facture » n'y aurait pas de sens. Les étapes 2-bis,
+///   3, 3-bis et 3-quater tiennent quand même — l'étape 2-bis depuis la
+///   Story 15-12b (#543) : avant elle, l'exercice postérieur clos n'était pas
+///   contrôlé sur ce chemin (C-15-8-29).
 ///
 /// ⛔ **Le drapeau vit ICI et non chez l'appelant** : une garde posée dans
 /// `delete_by_id` laisserait `delete_in_tx` nu, et un futur appelant obtiendrait
@@ -1676,13 +1717,12 @@ pub(crate) async fn delete_in_tx(
 
     // Étape 2-bis (Story 15-8b, C-15-8-22) — les exercices POSTÉRIEURS clos,
     // verrouillés et lus à l'état courant, juste après le verrou joint et avant
-    // toute lecture ordinaire. Seulement sur le chemin de la route
-    // (C-15-8-29) : la dévalidation garde son comportement.
-    let later_closed = if enforce_ownership {
-        super::fiscal_years::find_later_closed_in_tx(tx, company_id, fy_start).await?
-    } else {
-        None
-    };
+    // toute lecture ordinaire. SANS CONDITION depuis la Story 15-12b (#543) :
+    // la dévalidation d'une facture (`enforce_ownership = false`) supprime elle
+    // aussi une écriture que le bilan cumulatif d'un exercice clos reprend
+    // (ancien choix C-15-8-29, qui laissait ce chemin sans contrôle).
+    let later_closed =
+        super::fiscal_years::find_later_closed_in_tx(tx, company_id, fy_start).await?;
 
     // Étape 3 : exercice de l'écriture clos — il parle avant l'exercice
     // postérieur (AC 4-bis).
@@ -3439,11 +3479,15 @@ mod tests {
         assert!(reste);
     }
 
-    /// Le chemin de la dévalidation (`enforce_ownership = false`) ignore
-    /// l'exercice postérieur clos (C-15-8-29) — défaut préexistant, signalé ;
-    /// ce test le FIXE par écrit pour qu'un changement se voie.
+    /// Le chemin de la dévalidation (`enforce_ownership = false`) refuse, lui
+    /// aussi, l'exercice postérieur clos (Story 15-12b, #543, AC 10). Ce test
+    /// FIXAIT l'ancien comportement (C-15-8-29 : la dévalidation l'ignorait),
+    /// « pour qu'il rougisse quand #543 sera corrigée » : il est inversé.
+    ///
+    /// ⛔ Tue la mutation (vi) — rétablir `if enforce_ownership` devant la
+    /// lecture de l'étape 2-bis de `delete_in_tx`.
     #[tokio::test]
-    async fn la_devalidation_ne_voit_pas_l_exercice_posterieur() {
+    async fn la_devalidation_voit_l_exercice_posterieur() {
         let pool = test_pool().await;
         let (company_id, fy_id, admin) = setup(&pool).await;
         let (a1, a2) = two_accounts(&pool, company_id).await;
@@ -3476,7 +3520,17 @@ mod tests {
         .unwrap();
         let r = delete_in_tx(&mut tx, company_id, e.entry.id, admin, None, false).await;
         tx.rollback().await.unwrap();
-        assert!(r.is_ok(), "obtenu {r:?}");
+        assert!(
+            matches!(r, Err(DbError::LaterFiscalYearClosed { ref fiscal_year_name, .. })
+                if fiscal_year_name == "Exercice postérieur 15-8b"),
+            "obtenu {r:?}"
+        );
+        let restante: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE id = ?")
+            .bind(e.entry.id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(restante, 1, "l'écriture refusée n'est pas supprimée");
     }
 
     #[tokio::test]

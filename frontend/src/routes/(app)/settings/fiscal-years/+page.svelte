@@ -15,6 +15,7 @@
 	} from '$lib/features/fiscal-years/fiscal-years.api';
 	import {
 		currentYearDefaults,
+		outOfOrderState,
 		validateFiscalYearForm
 	} from '$lib/features/fiscal-years/fiscal-years.helpers';
 	import type {
@@ -89,6 +90,11 @@
 		}
 		return '';
 	});
+
+	// Story 15-12b (#543, AC 15) — l'état hérité « exercice ouvert suivi d'un exercice
+	// clos », recalculé à chaque rechargement de la liste. Visible de TOUS les rôles :
+	// c'est une information sur l'état des comptes, pas un geste.
+	let outOfOrder = $derived(outOfOrderState(fiscalYears));
 
 	// Garde LIFO côté client : le plus proche exercice postérieur encore clos
 	// (min startDate parmi les postérieurs clos), aligné sur le serveur
@@ -335,6 +341,26 @@
 {#if loading}
 	<p class="text-sm text-text-muted">{msg('common-loading', 'Chargement…')}</p>
 {:else}
+	{#if outOfOrder}
+		<!-- Story 15-12b (#543, AC 15) : la marche à suivre, dans l'ordre que les gardes
+		     acceptent — clôturer le plus ancien ouvert ; sinon rouvrir à partir du plus
+		     récent clos. Jamais « rouvrir l'exercice clos le plus proche » en premier. -->
+		<div
+			class="mb-4 rounded-md border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-sm text-text"
+			role="alert"
+			data-testid="fiscal-year-out-of-order"
+		>
+			{i18nMsg(
+				'fiscal-year-out-of-order-warning',
+				'L’exercice « { $open } » est ouvert alors qu’un exercice postérieur, « { $closed } », est clôturé : rien ne peut y être enregistré tant que l’ordre n’est pas rétabli. Clôturez « { $open } » si ses comptes sont arrêtés, puis les exercices ouverts suivants, du plus ancien au plus récent. Sinon, un administrateur rouvre les exercices clôturés, en commençant par le plus récent, « { $latest } » : Kesh ne rouvre un exercice que si aucun exercice plus récent n’est clôturé.',
+				{
+					open: outOfOrder.open.name,
+					closed: outOfOrder.closed.name,
+					latest: outOfOrder.latest.name
+				}
+			)}
+		</div>
+	{/if}
 	<Table.Root data-testid="fiscal-year-table">
 		<Table.Header>
 			<Table.Row>

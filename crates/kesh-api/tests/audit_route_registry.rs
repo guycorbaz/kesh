@@ -208,7 +208,7 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("delete", "dunning_levels::delete_dunning_level", Traced, SansEcritureAuJournal),
     ("delete", "invoices::delete_invoice", Traced, SansEcritureAuJournal),
     ("post", "dunning_reminders::cancel_reminder", Traced, SansEcritureAuJournal),
-    ("post", "admin::full_import", Traced, Exemptee("restauration d'instance : geste d'administration exclusif, hors exploitation — un 1213 annule sa transaction unique et la relance manuelle est sûre")),
+    ("post", "admin::full_import", Traced, Exemptee("restauration d'instance : geste d'administration exclusif des autres imports seulement (pas des écrivains : angle mort assumé de la restauration en vol, Story 15-12b), hors exploitation — un 1213 annule sa transaction unique et la relance manuelle est sûre")),
     ("put", "email_templates::update_email_template", Traced, SansEcritureAuJournal),
     ("delete", "email_templates::restore_email_template_default", Traced, SansEcritureAuJournal),
     ("put", "companies::update_company_email", Traced, SansEcritureAuJournal),

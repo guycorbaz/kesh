@@ -51,3 +51,51 @@ export function currentYearDefaults(): CreateFiscalYearRequest {
 		endDate: `${year}-12-31`
 	};
 }
+
+/**
+ * Les trois exercices que nomme le bandeau d'état hérité (Story 15-12b, #543, AC 15).
+ */
+export interface OutOfOrderState {
+	/** Le **plus ancien** exercice ouvert — toujours concerné dès que l'état est fautif. */
+	open: FiscalYearResponse;
+	/** Son plus proche exercice postérieur clos. */
+	closed: FiscalYearResponse;
+	/** Le plus récent exercice clos — celui par lequel une réouverture commence (LIFO). */
+	latest: FiscalYearResponse;
+}
+
+/**
+ * Détecte, depuis la liste déjà chargée, l'état hérité « exercice ouvert suivi d'un
+ * exercice clos » (données d'une version antérieure, sauvegarde restaurée). Depuis la
+ * Story 15-12a, l'application ne peut plus le produire ; le serveur refuse alors toute
+ * écriture dans l'exercice ouvert (`LATER_FISCAL_YEAR_CLOSED`), et l'écran doit dire
+ * comment rétablir l'ordre. `null` si l'état est sain.
+ *
+ * Pourquoi `open` est le PLUS ANCIEN exercice ouvert : si un exercice ouvert X précède un
+ * exercice clos C, le plus ancien ouvert O vérifie O ≤ X < C — il est concerné lui aussi.
+ * C'est lui que l'on clôture d'abord : la clôture le refuse tant qu'un antérieur est ouvert.
+ *
+ * Comparaison des dates par chaîne `YYYY-MM-DD` (ordre lexicographique = chronologique),
+ * comme `nearestLaterClosed` de la page.
+ */
+export function outOfOrderState(fiscalYears: FiscalYearResponse[]): OutOfOrderState | null {
+	let open: FiscalYearResponse | null = null;
+	let latest: FiscalYearResponse | null = null;
+	for (const fy of fiscalYears) {
+		if (fy.status === 'Open' && (open === null || fy.startDate < open.startDate)) open = fy;
+		if (fy.status === 'Closed' && (latest === null || fy.startDate > latest.startDate)) latest = fy;
+	}
+	if (open === null || latest === null || latest.startDate <= open.startDate) return null;
+	let closed: FiscalYearResponse | null = null;
+	for (const fy of fiscalYears) {
+		if (
+			fy.status === 'Closed' &&
+			fy.startDate > open.startDate &&
+			(closed === null || fy.startDate < closed.startDate)
+		) {
+			closed = fy;
+		}
+	}
+	// `latest` est postérieur à `open` : `closed` existe toujours ici.
+	return closed === null ? null : { open, closed, latest };
+}

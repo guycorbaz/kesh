@@ -39,6 +39,20 @@ pub type SettlementCancelHit = (SettlementCancelBlocker, Option<i64>, Option<Str
 /// évalué ici — il se contrôle au clic (`PERIOD_LOCKED`, 400). Une borne ne
 /// peut pas être future ; seule une borne égale au jour l'atteindrait.
 ///
+/// ⚠️ **Angle mort assumé — l'exercice du jour suivi d'un exercice clos**
+/// (Story 15-12b, #543, C120 ; rang tracé par l'issue **#568**). Le rang 5
+/// contrôle qu'un exercice **ouvert** couvre le jour où la contre-passation
+/// serait datée, **pas** qu'aucun exercice postérieur à celui-ci n'est clos.
+/// Dans l'état hérité où l'exercice du jour est suivi d'un exercice clos (un
+/// exercice futur clôturé d'avance), ce prédicteur rend `None` — l'écran
+/// annonce l'annulation possible — et le clic est refusé par le filet de
+/// `journal_entries::create_in_tx_inner` (`400 LATER_FISCAL_YEAR_CLOSED`, dont
+/// le message porte sa propre marche à suivre). Même nature que la limite
+/// précédente : un refus du socle, au clic, que la lecture ne reproduit pas.
+/// Fixé par le test `predicteur_muet_sous_un_exercice_futur_clos`
+/// (`kesh-db/tests/filet_bilan_clos.rs`), qui rougira le jour où le rang sera
+/// ajouté.
+///
 /// **Lecture seule** : aucun verrou n'est posé ici. ⛔ **Un geste qui s'en sert
 /// pour REFUSER doit donc verrouiller avant** — la pièce, puis l'écriture de
 /// règlement **et son exercice** (`… JOIN fiscal_years … FOR UPDATE`) : sans ce

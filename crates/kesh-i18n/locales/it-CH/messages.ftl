@@ -387,7 +387,7 @@ journal-entries-edit-conflict = Questa scrittura è stata modificata nel frattem
 journal-entries-line-account-unusable = Conto archiviato o non imputabile — da sostituire
 journal-entries-modify-blocked-fiscal-year-closed = L’esercizio di questa scrittura è chiuso: non si modifica più. Correggetela con uno storno.
 journal-entries-modify-blocked-later-fiscal-year-closed = L’esercizio successivo { $name } è chiuso, e il suo bilancio riprende questa scrittura: resta bloccata finché lo è. Correggetela con uno storno; altrimenti, un amministratore riapre gli esercizi chiusi, cominciando dal più recente.
-error-later-fiscal-year-closed = L’esercizio successivo « { $name } » è chiuso, e il suo bilancio riprende tutto ciò che lo precede: nessuna scrittura datata prima della sua data d’inizio può essere modificata o eliminata finché lo è. Una tale scrittura si corregge con uno storno; altrimenti, un amministratore riapre gli esercizi chiusi, cominciando dal più recente.
+error-later-fiscal-year-closed = L’esercizio successivo « { $name } » è chiuso, e il suo bilancio riprende tutto ciò che lo precede: nessuna scrittura datata prima della sua data d’inizio può essere registrata, modificata o eliminata finché lo è. Una scrittura esistente si corregge con uno storno; altrimenti, un amministratore riapre gli esercizi chiusi, cominciando dal più recente.
 journal-entries-modify-blocked-period-locked = Il periodo è bloccato fino al { $date }: questa scrittura, datata nel periodo, resta bloccata. Correggetela con uno storno.
 journal-entries-modify-blocked-detached-settlement = Questo pagamento appartiene a una fattura fornitore annullata: il denaro è uscito, resta bloccato. Correggetelo con uno storno.
 journal-entries-period-locked = Le scritture sono bloccate fino al { $lockedThrough }; questa è datata { $attempted }.
@@ -850,6 +850,7 @@ invoice-settings-required = Configurare innanzitutto i conti di fatturazione nel
 # === Story 3.7 — Gestione esercizi contabili (IT-CH) ===
 
 fiscal-year-title = Esercizi contabili
+fiscal-year-out-of-order-warning = L’esercizio « { $open } » è aperto mentre un esercizio successivo, « { $closed } », è chiuso: non vi si può registrare nulla finché l’ordine non è ristabilito. Chiudete « { $open } » se i suoi conti sono definitivi, poi gli esercizi aperti successivi, dal più vecchio al più recente. Altrimenti, un amministratore riapre gli esercizi chiusi, cominciando dal più recente, « { $latest } »: Kesh riapre un esercizio solo se nessun esercizio più recente è chiuso.
 fiscal-year-list-empty = Nessun esercizio contabile.
 fiscal-year-create-button = Nuovo esercizio
 fiscal-year-name-label = Nome
@@ -1083,6 +1084,8 @@ reconciliation-failed-bank-transaction-not-found = Transazione bancaria introvab
 reconciliation-failed-database-error = Errore della banca dati: riprovare; se il problema persiste, contattare il supporto.
 reconciliation-failed-invoice-not-found = Fattura introvabile.
 reconciliation-failed-invoice-sale-entry-malformed = La scrittura di vendita di questa fattura non ha una riga sul conto debitori: il pagamento non può essere registrato.
+reconciliation-failed-later-fiscal-year-closed = Esercizio successivo « { $name } » chiuso: nessuna scrittura può essere datata prima di esso.
+reconciliation-failed-later-fiscal-year-closed-generic = Un esercizio successivo è chiuso: nessuna scrittura può essere datata prima di esso.
 reconciliation-failed-period-locked = La data di questa transazione cade nel periodo bloccato: nessuna scrittura può esservi datata (vedere il blocco del periodo).
 reconciliation-failed-project-archived = Il progetto analitico è archiviato.
 reconciliation-failed-project-not-found = Progetto analitico introvabile.

@@ -2,9 +2,10 @@
 //
 // ⚠️ La liste des codes est ÉCRITE EN DUR, et non lue depuis le module : un test qui
 // itérerait sur la table de production serait vert par construction (fiche, § « Tests — ce qui
-// rendrait un test vert sans rien prouver »). Relevé : les 25 littéraux de
+// rendrait un test vert sans rien prouver »). Relevé : les 26 littéraux de
 // `crates/kesh-api/src/routes/reconciliation.rs` + les deux codes de `DbError::error_code()` :
-// `ACCOUNT_NOT_POSTABLE` et `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` (Story 15-6b).
+// `ACCOUNT_NOT_POSTABLE` et `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` (Story 15-6b) — 28 codes.
+// Story 15-12b : `LATER_FISCAL_YEAR_CLOSED` est l'un des 26 littéraux.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -21,6 +22,7 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 import {
 	failedProposalLabel,
 	failureReason,
+	fiscalYearName,
 	rejectedAccountNumbers,
 } from './failed-proposal-label';
 
@@ -36,6 +38,7 @@ const EXPECTED_KEYS: Record<string, string> = {
 	INTERNAL_ERROR: 'error-internal',
 	INVOICE_NOT_FOUND: 'reconciliation-failed-invoice-not-found',
 	INVOICE_SALE_ENTRY_MALFORMED: 'reconciliation-failed-invoice-sale-entry-malformed',
+	LATER_FISCAL_YEAR_CLOSED: 'reconciliation-failed-later-fiscal-year-closed-generic',
 	PERIOD_LOCKED: 'reconciliation-failed-period-locked',
 	PROJECT_ARCHIVED: 'reconciliation-failed-project-archived',
 	PROJECT_NOT_FOUND: 'reconciliation-failed-project-not-found',
@@ -60,8 +63,8 @@ describe('failedProposalLabel', () => {
 		calls.length = 0;
 	});
 
-	it('couvre les 27 codes relevés', () => {
-		expect(Object.keys(EXPECTED_KEYS)).toHaveLength(27);
+	it('couvre les 28 codes relevés', () => {
+		expect(Object.keys(EXPECTED_KEYS)).toHaveLength(28);
 	});
 
 	for (const [code, key] of Object.entries(EXPECTED_KEYS)) {
@@ -106,6 +109,30 @@ describe('failedProposalLabel', () => {
 		expect(calls).toEqual(['reconciliation-failed-account-not-postable-generic']);
 		expect(label).not.toContain('undefined');
 		expect(label).not.toContain('null');
+	});
+
+	// Story 15-12b (#543, AC 11) — le filet sous un bilan clos : l'exercice nommé.
+	it('LATER_FISCAL_YEAR_CLOSED nomme l’exercice de details.fiscalYearName', () => {
+		const label = failedProposalLabel('LATER_FISCAL_YEAR_CLOSED', {
+			fiscalYearId: 7,
+			fiscalYearName: 'Exercice 2027',
+		});
+		expect(calls).toEqual(['reconciliation-failed-later-fiscal-year-closed']);
+		expect(label).toContain('« Exercice 2027 »');
+		expect(label).not.toContain('LATER_FISCAL_YEAR_CLOSED');
+	});
+
+	it.each([
+		['absent', undefined],
+		['null', null],
+		['sans fiscalYearName', { fiscalYearId: 7 }],
+		['nom non chaîne', { fiscalYearName: 2027 }],
+		['nom vide', { fiscalYearName: '  ' }],
+	])('LATER_FISCAL_YEAR_CLOSED, details %s → repli sans nom', (_cas, details) => {
+		const label = failedProposalLabel('LATER_FISCAL_YEAR_CLOSED', details);
+		expect(calls).toEqual(['reconciliation-failed-later-fiscal-year-closed-generic']);
+		expect(label).not.toContain('undefined');
+		expect(label).not.toContain('«');
 	});
 
 	it('PERIOD_LOCKED ne lit pas son details (limite assumée, C32)', () => {
@@ -166,6 +193,15 @@ describe('failedProposalLabel', () => {
 	])('RECONCILIATION_INVOICE_NOT_ELIGIBLE (%s) garde le libellé générique', (_cas, details) => {
 		failedProposalLabel('RECONCILIATION_INVOICE_NOT_ELIGIBLE', details);
 		expect(calls).toEqual(['reconciliation-errors-invoice-not-eligible']);
+	});
+});
+
+describe('fiscalYearName', () => {
+	it('ne rend qu’un nom chaîne non vide', () => {
+		expect(fiscalYearName({ fiscalYearName: 'FY 2027' })).toBe('FY 2027');
+		expect(fiscalYearName({ fiscalYearName: '' })).toBeNull();
+		expect(fiscalYearName({})).toBeNull();
+		expect(fiscalYearName('x')).toBeNull();
 	});
 });
 

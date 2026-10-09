@@ -42,7 +42,28 @@
 //! ⚠️ **Angle mort assumé — la restauration en vol** : `admin::full_import` ne
 //! se sérialise qu'avec les autres imports (verrou `_kesh_version`), pas avec
 //! la clôture ni les écrivains — cas préexistant de toute écriture en vol
-//! pendant une restauration.
+//! pendant une restauration. Un écrivain dont la vue précède une restauration
+//! peut lire, par le filet ci-dessous, la table `fiscal_years` d'avant, alors
+//! que son verrou porte sur la ligne restaurée.
+//!
+//! ## Story 15-12b — le filet sous un bilan clos, pour l'état hérité
+//!
+//! L'état hérité est **toléré** sans être réparé d'office : aucune écriture ne
+//! se crée ni ne se supprime dans un exercice suivi d'un exercice clos
+//! ([`DbError::LaterFiscalYearClosed`], aux deux points de passage
+//! `journal_entries::create_in_tx_inner` et `journal_entries::delete_in_tx`),
+//! et l'écran des exercices le signale avec la marche à suivre — clôturer
+//! l'exercice ouvert le plus ancien, puis les suivants ; sinon rouvrir les
+//! exercices clos en commençant par le plus récent (LIFO).
+//!
+//! **Pourquoi la création d'écriture lit sans verrou** ([`find_later_closed`]) :
+//! (α) l'invariant I est vrai de tout état validé obtenu depuis un état sain ;
+//! (β) l'écrivain tient le verrou de **son** exercice, lu ouvert, jusqu'à son
+//! `COMMIT` — et la clôture d'un postérieur attend ses antérieurs ouverts. Sous
+//! (α) et (β), aucun postérieur clos n'apparaît pendant l'écriture si l'état
+//! était sain ; s'il était hérité, il ne peut que se résorber, et une vue
+//! ancienne ne produit qu'un refus de trop. ⚠️ La preuve tombe si une
+//! transition écrit `fiscal_years.status` hors de [`close`] / [`reopen`].
 //!
 //! ## Story 3.7 — Lock ordering & audit
 //!
@@ -802,7 +823,10 @@ pub async fn find_overlapping(
 /// hypothèse-ci).
 ///
 /// Appelée par [`reopen`] (garde LIFO), [`create`] (garde de l'invariant I,
-/// Story 15-12a) et `journal_entries::update` / `delete_in_tx` (garde 15-8a).
+/// Story 15-12a) et `journal_entries::update` / `delete_in_tx` (garde 15-8a ;
+/// pour `delete_in_tx`, sur tous ses chemins — dévalidation comprise — depuis la
+/// Story 15-12b). La **création** d'écriture lit, elle, sans verrou
+/// ([`find_later_closed`]) : raison au doc-comment du module.
 pub async fn find_later_closed_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
@@ -833,11 +857,19 @@ const FIND_LATER_CLOSED_SQL: &str = "SELECT id, company_id, name, start_date, en
      WHERE company_id = ? AND start_date > ? AND status = 'Closed' \
      ORDER BY start_date ASC LIMIT 1";
 
-/// Variante **non verrouillante** de [`find_later_closed_in_tx`] (Story 15-8a,
-/// D8) : le motif d'écran de `GET /journal-entries/{id}` — « un exercice
-/// postérieur est clos » — se lit sans verrou, sur une connexion qui enchaîne
-/// d'autres lectures (d'où `&mut MySqlConnection` plutôt qu'un `Executor` pris
-/// par valeur). L'écriture, elle, relit sous verrou.
+/// Variante **non verrouillante** de [`find_later_closed_in_tx`]. Deux
+/// appelants :
+///
+/// - le motif d'écran de `GET /journal-entries/{id}` (Story 15-8a, D8) — « un
+///   exercice postérieur est clos » —, lu sans verrou sur une connexion qui
+///   enchaîne d'autres lectures (d'où `&mut MySqlConnection` plutôt qu'un
+///   `Executor` pris par valeur) ; la modification, elle, relit sous verrou ;
+/// - **le filet de la création d'écriture** (`journal_entries::create_in_tx_inner`,
+///   Story 15-12b, #543), dans la transaction de l'écrivain.
+///   Sans verrou **par choix** (C89, C100) : la preuve est au doc-comment du
+///   module — un verrou n'y ajouterait aucune garantie, et poserait des verrous
+///   d'intervalle sur `fiscal_years` dans les dix-neuf routes qui créent une
+///   écriture.
 pub async fn find_later_closed(
     conn: &mut sqlx::MySqlConnection,
     company_id: i64,

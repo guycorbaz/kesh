@@ -953,3 +953,50 @@ async fn entrelacement_5_contre_passation_en_vol(pool: MySqlPool) {
             .unwrap();
     assert_eq!(reversals, i64::from(r.is_ok()));
 }
+
+// ============================================================
+// Story 15-12b (#543) — le filet sous un bilan clos
+// ============================================================
+
+/// AC 20 — le complément des soldes de départ, dans le premier exercice ouvert
+/// suivi d'un exercice clos (état hérité, posé par SQL), est refusé par le filet
+/// de `create_in_tx_inner` : `LaterFiscalYearClosed`, aucune écriture. Le bilan
+/// reporté de l'exercice clos ne change donc plus en silence.
+///
+/// ⚠️ **Angle mort assumé, fixé par écrit** (Story 15-12b, C-15-12b-2) :
+/// `complement_status` ne lit pas les exercices postérieurs — l'écran annonce le
+/// complément possible (`READY`) et le clic rend `400 LATER_FISCAL_YEAR_CLOSED`,
+/// dont le message porte la marche à suivre. Ce test rougira le jour où le
+/// statut le prédira : il faudra alors l'inverser.
+#[sqlx::test(migrations = "./test-schema")]
+async fn le_complement_sous_un_exercice_posterieur_clos_est_refuse(pool: MySqlPool) {
+    let co = setup(&pool, &[year_span(2026), year_span(2027)]).await;
+    set_status(&pool, co.fy[1], "Closed").await;
+    let today = d(2026, 6, 1);
+
+    let status = opening_complement::complement_status(&pool, co.company_id, today)
+        .await
+        .unwrap();
+    assert_eq!(
+        status.refusal, None,
+        "angle mort assumé : le statut ne le voit pas"
+    );
+
+    let avant = count_entries(&pool, &co, "Complément des soldes de départ").await;
+    let r = complete(&pool, &co, &[debit(&co, "1100", dec!(250))], today).await;
+    match r {
+        Err(DbError::LaterFiscalYearClosed {
+            fiscal_year_id,
+            fiscal_year_name,
+        }) => {
+            assert_eq!(fiscal_year_id, co.fy[1]);
+            assert_eq!(fiscal_year_name, "FY1");
+        }
+        other => panic!("attendu LaterFiscalYearClosed, obtenu {other:?}"),
+    }
+    assert_eq!(
+        count_entries(&pool, &co, "Complément des soldes de départ").await,
+        avant,
+        "aucune écriture créée"
+    );
+}

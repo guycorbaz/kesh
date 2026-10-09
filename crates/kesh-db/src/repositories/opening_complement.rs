@@ -314,6 +314,16 @@ where
 }
 
 /// État du mode « compléter » (status). Lectures **sans verrou**.
+///
+/// ⚠️ **Angle mort assumé** (Story 15-12b, #543, C-15-12b-2) : le statut ne lit
+/// pas les exercices **postérieurs** à celui qui porterait le complément. Dans
+/// l'état hérité où cet exercice est suivi d'un exercice clos, il annonce le
+/// complément possible, et le `POST` est refusé par le filet de
+/// `journal_entries::create_in_tx_inner` (`LATER_FISCAL_YEAR_CLOSED`, dont le
+/// message porte la marche à suivre). Fixé par le test
+/// `le_complement_sous_un_exercice_posterieur_clos_est_refuse`
+/// (`tests/opening_complement_repository.rs`). Même nature que l'angle mort
+/// des prédicteurs d'annulation (`settlement_cancellation`, #568).
 pub async fn complement_status(
     pool: &MySqlPool,
     company_id: i64,

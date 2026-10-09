@@ -2530,3 +2530,117 @@ async fn rule_patch_reactivation_on_archived_non_postable_account_keeps_behaviou
     .await;
     assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
 }
+
+// ============================================================
+// Story 15-12b (#543, AC 11) — le filet sous un bilan clos, voie « règle »
+// ============================================================
+
+/// AC 11, voie **règle** (branche en ligne d'`accept_one_rule`, qui n'emprunte
+/// pas `project_error_to_failed_proposal`). État hérité posé par SQL : 2026
+/// ouvert, **2027 clos**, 2028 ouvert. La proposition datée de 2026 est rendue
+/// dans `failed[]` sous `LATER_FISCAL_YEAR_CLOSED`, `details` **sans**
+/// `projectId` (patron de son `PeriodLocked`, C123) ; la proposition saine du
+/// même lot, datée de 2028, passe.
+///
+/// ⛔ Tue la mutation (vii-b) — retirer l'appel du constructeur dans la branche
+/// en ligne d'`accept_one_rule`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_with_rule_under_a_closed_later_year_lands_in_failed(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Filet", "CH4431999123000889012", Role::Comptable).await;
+    let mut clos = 0;
+    for (annee, statut) in [(2027, "Closed"), (2028, "Open")] {
+        let id = sqlx::query(
+            "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(ctx.company_id)
+        .bind(annee.to_string())
+        .bind(NaiveDate::from_ymd_opt(annee, 1, 1).unwrap())
+        .bind(NaiveDate::from_ymd_opt(annee, 12, 31).unwrap())
+        .bind(statut)
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        if statut == "Closed" {
+            clos = id;
+        }
+    }
+    let app = spawn_app(pool.clone()).await;
+    let (rule_id, tx_a) = create_rule_and_tx(
+        &pool,
+        &app,
+        &ctx,
+        "Swisscom Schweiz AG",
+        "Swisscom",
+        dec!(-150.00),
+        "CHF",
+        Some(NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()),
+    )
+    .await;
+    let tx_b = create_pending_bank_tx(
+        &pool,
+        ctx.company_id,
+        ctx.user_id,
+        ctx.bank_account_id,
+        dec!(-150.00),
+        "Swisscom Schweiz AG",
+        None,
+        None,
+        "CHF",
+        Some(NaiveDate::from_ymd_opt(2028, 5, 10).unwrap()),
+    )
+    .await;
+    let compter = || async {
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM journal_entries WHERE company_id = ?")
+            .bind(ctx.company_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+    };
+    let avant = compter().await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/accept"))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankAccountId": ctx.bank_account_id,
+            "proposals": [
+                {
+                    "type": "rule",
+                    "bankTransactionId": tx_a,
+                    "ruleId": rule_id,
+                    "counterpartyAccountId": ctx.counterparty_account_id,
+                },
+                {
+                    "type": "rule",
+                    "bankTransactionId": tx_b,
+                    "ruleId": rule_id,
+                    "counterpartyAccountId": ctx.counterparty_account_id,
+                },
+            ],
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(failed[0]["bankTransactionId"].as_i64(), Some(tx_a));
+    assert_eq!(failed[0]["errorCode"], "LATER_FISCAL_YEAR_CLOSED", "{body}");
+    assert_eq!(
+        failed[0]["details"],
+        json!({ "fiscalYearId": clos, "fiscalYearName": "2027" }),
+        "sans projectId : {body}"
+    );
+    let accepted = body["accepted"].as_array().unwrap();
+    assert_eq!(accepted.len(), 1, "{body}");
+    assert_eq!(accepted[0]["bankTransactionId"].as_i64(), Some(tx_b));
+    assert_eq!(
+        compter().await,
+        avant + 1,
+        "seule la proposition saine écrit"
+    );
+}
