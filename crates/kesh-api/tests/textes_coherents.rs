@@ -11,6 +11,7 @@
 //! |---|---|---|
 //! | G2 | #547 | aucun renvoi au menu « Réglages » (le menu s'appelle « Paramètres ») |
 //! | G4 | #488, #291 | trois plans comptables réels, ni Sterchi, ni KMU, ni import fictif |
+//! | G4-bis | #488 | tout numéro de compte cité en exemple existe dans un plan livré, sous son nom |
 //! | G5 | #458 | aucun « dossier surveillé » : l'import de factures se lance à la main |
 //! | G6 | #449 | la faille KF-036 n'est plus annoncée ouverte : corrigée depuis la v0.10.0 |
 //! | G7 | #432 | toute référence d'issue du README est un lien vers la même issue |
@@ -66,30 +67,64 @@ fn manuels_fr() -> Vec<(&'static str, String)> {
     lus
 }
 
-/// Valeurs `fr-CH` (une ligne par valeur, comme les clés gardées ici).
+/// Valeurs `fr-CH`, **lignes de continuation comprises** : une ligne qui commence par
+/// un blanc prolonge la valeur de la clé précédente (jointe par une espace, comme
+/// `valeurs_brutes` de `kesh-i18n/src/loader.rs` et `valeurDuCatalogueFr` du Vitest
+/// G13 — revue de code P1, B-4). Sans cela, une clé passée sur plusieurs lignes serait
+/// lue tronquée à sa première ligne, et G9 rougirait sans régression.
+///
+/// ⚠️ Trois analyseurs du même format, dans trois crates ou langages qui ne
+/// partagent pas de code de test : ils sont tenus **identiques** par la règle
+/// ci-dessus, et le test `le_catalogue_fr_joint_les_continuations` l'exerce sur une
+/// clé réelle du catalogue.
 fn catalogue_fr() -> HashMap<String, String> {
     let tete = Regex::new(r"^([a-zA-Z][\w-]*) = ?(.*)$").unwrap();
     let texte = lire("crates/kesh-i18n/locales/fr-CH/messages.ftl");
-    let out: HashMap<_, _> = texte
-        .lines()
-        .filter_map(|l| {
-            tete.captures(l)
-                .map(|c| (c[1].to_string(), c[2].to_string()))
-        })
-        .collect();
+    let mut out: HashMap<String, String> = HashMap::new();
+    let mut courante: Option<String> = None;
+    for ligne in texte.lines() {
+        if let Some(c) = tete.captures(ligne) {
+            out.insert(c[1].to_string(), c[2].to_string());
+            courante = Some(c[1].to_string());
+        } else if ligne.starts_with([' ', '\t']) && !ligne.trim().is_empty() {
+            if let Some(cle) = &courante {
+                let v = out.get_mut(cle).unwrap();
+                v.push(' ');
+                v.push_str(ligne.trim());
+            }
+        } else {
+            // Commentaire, ligne vide : la valeur en cours est close.
+            courante = None;
+        }
+    }
     assert!(out.len() > 100, "catalogue fr-CH lu à vide");
     out
 }
 
+/// Anti-test-muet de [`catalogue_fr`] : une clé réelle sur plusieurs lignes
+/// (`email-password-reset-body`) est lue entière, et la clé suivante n'en hérite rien.
+#[test]
+fn le_catalogue_fr_joint_les_continuations() {
+    let fr = catalogue_fr();
+    let corps = &fr["email-password-reset-body"];
+    assert!(
+        corps.contains("mot de passe Kesh.") && corps.contains("ignorez cet email"),
+        "continuations non jointes : {corps}"
+    );
+}
+
 /// **G2** (#547) — le menu s'appelle « Paramètres » ; aucun texte ne renvoie aux « Réglages ».
+///
+/// ⚠️ Élargi en revue de code P1 (B-1) : la première version cherchait des **formes**
+/// (`\emph{Réglages}`, `Réglages et`, `(Réglages)`, `dans les réglages`), et
+/// `README.md:213` — « éditables (Réglages, Admin) » — passait entre elles. Désormais
+/// le mot capitalisé « Réglages » est interdit **sous toute forme** dans les manuels,
+/// le README et `.env.example` : aucun de ces textes ne l'emploie comme nom d'objet
+/// (les noms d'objet assumés — entités du journal d'audit — vivent au catalogue).
 #[test]
 fn aucun_renvoi_au_menu_reglages() {
     for (nom, texte) in manuels_fr() {
-        assert!(
-            !texte.contains("\\emph{Réglages}"),
-            "{nom} : \\emph{{Réglages}}"
-        );
-        assert!(!texte.contains("Réglages et"), "{nom} : « Réglages et »");
+        assert!(!texte.contains("Réglages"), "{nom} : « Réglages »");
     }
     let manuel = lire("docs/manual/fr/user-manual.tex");
     assert!(
@@ -98,10 +133,11 @@ fn aucun_renvoi_au_menu_reglages() {
     );
 
     let env = lire(".env.example");
-    assert!(!env.contains("(Réglages)"), ".env.example : (Réglages)");
+    assert!(!env.contains("Réglages"), ".env.example : « Réglages »");
     assert!(env.contains("(Paramètres)"), ".env.example : positif");
 
     let readme = lire("README.md");
+    assert!(!readme.contains("Réglages"), "README.md : « Réglages »");
     assert!(
         !readme.contains("dans les réglages"),
         "README.md : dans les réglages"
@@ -147,6 +183,106 @@ fn plans_comptables_reels() {
     );
 }
 
+/// **G4-bis** (#488, revue de code P1, E-1/E-5) — tout numéro de compte que le
+/// manuel utilisateur ou le guide de démarrage cite **existe dans un des trois plans
+/// livrés**, et, quand il est nommé, **sous le nom que ce plan lui donne**.
+///
+/// ⚠️ Pourquoi un inventaire, et non une liste de numéros interdits : l'exemple
+/// « Association » faisait créer 3600/3601, absents des trois plans, alors que le plan
+/// association porte 3000 « Cotisations des membres » et 3100 « Dons reçus » ; la
+/// relecture a trouvé six autres numéros ou noms faux (1030, 4200 « Charges de
+/// personnel », 6500 « Entretien », 6997/7997, 3200 « Honoraires »). Interdire ces
+/// formes-là laisserait passer la suivante ; la garde inventorie donc **tous** les
+/// nombres de quatre chiffres isolés et exige que chacun soit un compte livré.
+///
+/// - Un sous-compte (`3200.1`) est un compte **à créer** : seul son parent doit
+///   exister — le texte qui le cite doit le dire à créer, ce que la garde ne lit pas.
+/// - Les nombres de 2001 à 2099 sont des années (aucun plan livré n'y a de compte,
+///   ce que la garde vérifie) ; 1000, montant ou borne (« de 1 à 1000 »), est aussi
+///   le compte Caisse et passe donc — faux vert accepté, il ne cache aucun compte faux.
+/// - Formes nommées contrôlées : `NNNN « Nom »`, `\texttt{NNNN Nom}`,
+///   `NNNN \emph{Nom}`, `` `NNNN Nom` `` et les listes entre parenthèses
+///   `(NNNN Nom, NNNN Nom, etc.)`. Un nom écrit autrement (« Crédit 3000 Ventes … »)
+///   n'est contrôlé que par son numéro : angle mort déclaré.
+#[test]
+fn les_comptes_cites_en_exemple_existent_dans_les_plans_livres() {
+    use kesh_core::chart_of_accounts::load_chart;
+    let mut noms: HashMap<String, Vec<String>> = HashMap::new();
+    for org in ["Pme", "Independant", "Association"] {
+        for e in load_chart(org).expect("plan livré") {
+            let nom = e.name.get("fr").cloned().unwrap_or_default();
+            noms.entry(e.number).or_default().push(nom);
+        }
+    }
+    // Positifs : les plans sont lus, et le trou des années est réel.
+    assert!(noms.contains_key("6940") && noms.contains_key("3100"));
+    assert!(
+        !noms
+            .keys()
+            .any(|n| n.len() == 4 && ("2001".."2100").contains(&n.as_str())),
+        "un plan livré a un compte entre 2001 et 2099 : la garde le prendrait pour une année"
+    );
+
+    let nombre =
+        Regex::new(r"(?:^|[^\d.,'’\-/:#{_A-Za-z])([1-9]\d{3})(\.\d+)?(?:$|[^\d'’%A-Za-z_}])")
+            .unwrap();
+    let nommes = [
+        Regex::new(r"\b([1-9]\d{3}) « ([^»]+?) »").unwrap(),
+        Regex::new(r"\\texttt\{([1-9]\d{3}) ([^}]+)\}").unwrap(),
+        Regex::new(r"\b([1-9]\d{3}) \\emph\{([^}]+)\}").unwrap(),
+        Regex::new(r"`([1-9]\d{3}) ([^`]+)`").unwrap(),
+    ];
+    let parentheses = Regex::new(r"\(([^()]*)\)").unwrap();
+    let element = Regex::new(r"^([1-9]\d{3}) ([A-ZÉ][^«»]*)$").unwrap();
+
+    let mut vus = 0;
+    let mut nommes_vus = 0;
+    for nom_fichier in [
+        "docs/manual/fr/user-manual.tex",
+        "docs/user-guide/fr/getting-started.md",
+    ] {
+        let texte = lire(nom_fichier);
+        for ligne in texte.lines() {
+            for c in nombre.captures_iter(ligne) {
+                let n = &c[1];
+                if ("2001".."2100").contains(&n) {
+                    continue;
+                }
+                assert!(
+                    noms.contains_key(n),
+                    "{nom_fichier} : compte {n}{} absent des trois plans livrés : {ligne}",
+                    c.get(2).map_or("", |m| m.as_str())
+                );
+                vus += 1;
+            }
+            let mut controler = |n: &str, nom: &str| {
+                let livres = noms
+                    .get(n)
+                    .unwrap_or_else(|| panic!("{nom_fichier} : compte {n} absent : {ligne}"));
+                assert!(
+                    livres.iter().any(|l| l == nom.trim()),
+                    "{nom_fichier} : {n} « {nom} » — les plans livrés le nomment {livres:?}"
+                );
+                nommes_vus += 1;
+            };
+            for re in &nommes {
+                for c in re.captures_iter(ligne) {
+                    controler(&c[1], &c[2]);
+                }
+            }
+            for p in parentheses.captures_iter(ligne) {
+                for item in p[1].split(", ") {
+                    if let Some(c) = element.captures(item.trim()) {
+                        controler(&c[1], &c[2]);
+                    }
+                }
+            }
+        }
+    }
+    assert!(vus > 30, "numéros de compte lus : {vus}");
+    assert!(nommes_vus > 20, "comptes nommés lus : {nommes_vus}");
+}
+
 /// **G5** (#458, refs #459) — aucun processus ne surveille le dossier d'import :
 /// l'import se lance depuis l'écran.
 ///
@@ -172,10 +308,13 @@ fn aucun_dossier_surveille() {
     assert!(env.contains("KESH_INBOX_DIR"), ".env.example : positif");
 
     let readme = lire("README.md");
-    // La ligne de feuille de route v0.4.0 est publiée : on ne réécrit pas l'historique.
-    for ligne in readme.lines().filter(|l| !l.starts_with("| v0.4.0 |")) {
-        assert!(!ligne.contains("dossier surveillé"), "README.md : {ligne}");
-    }
+    // Sans exemption : la ligne de feuille de route v0.4.0 disait elle aussi
+    // « dossier surveillé », et c'était faux dès la v0.4.0, dont l'import passait
+    // déjà par `POST /api/v1/inbox-import` (revue de code P1, B-2, C-15-14-44).
+    assert!(
+        !readme.contains("dossier surveillé"),
+        "README.md : dossier surveillé"
+    );
     assert!(
         readme.contains("import lancé depuis l'écran"),
         "README.md : positif"

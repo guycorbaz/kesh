@@ -338,7 +338,7 @@ journal-entry-open = Ouvrir la fiche
 # Assistant TVA achat (Story 18-1c)
 vat-purchase-title = Assistant TVA achat
 vat-purchase-config-required = Configurez le compte d'impôt préalable dans Paramètres → Facturation pour utiliser l'assistant.
-vat-purchase-no-rates = Aucun taux TVA configuré — voir Paramètres → Taux TVA.
+vat-purchase-no-rates = Aucun taux de TVA configuré — voir Paramètres → Taux de TVA.
 vat-purchase-charge-account = Compte de charge
 vat-purchase-ht = Montant HT
 vat-purchase-rate = Taux TVA
@@ -946,7 +946,7 @@ fiscal-year-close-blocked-earlier-open = Clôturez d’abord l’exercice « { $
 error-fiscal-year-reopen-motif-empty = Le motif de réouverture est obligatoire.
 error-fiscal-year-reopen-motif-too-long = Le motif de réouverture est trop long (500 caractères maximum).
 error-fiscal-year-already-open = Cet exercice est déjà ouvert.
-error-fiscal-year-reopen-blocked = Réouverture impossible : un exercice postérieur est clôturé ; rouvrez d’abord les exercices clôturés, en commençant par le plus récent.
+error-fiscal-year-reopen-blocked = Réouverture impossible : un exercice postérieur est clôturé ; rouvrez d’abord les exercices postérieurs clôturés, en commençant par le plus récent.
 error-fiscal-year-close-earlier-open = Clôturez d’abord l’exercice « { $name } », plus ancien et encore ouvert : le bilan est cumulatif, et un exercice ne se clôt qu’après tous ceux qui le précèdent.
 error-fiscal-year-create-later-closed = L’exercice « { $name } », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucun exercice ne peut être créé avant sa date de début tant qu’il l’est. Pour créer celui-ci, un administrateur rouvre d’abord les exercices clôturés, en commençant par le plus récent.
 error-fiscal-year-overlap = Cet exercice chevauche un exercice existant.

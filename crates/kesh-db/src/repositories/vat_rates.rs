@@ -375,8 +375,12 @@ mod tests {
     }
 
     /// **G1** (Story 15-14a, #539, C-15-14-13) — le manuel utilisateur cite les
-    /// taux que Kesh pose à la création de la société, et aucun des taux d'avant
-    /// 2024 (2,5 %, 3,7 %, 7,7 %) ne survit dans un manuel.
+    /// taux que Kesh pose à la création de la société, sur les **deux** lignes qui
+    /// les énumèrent (la fiche article, `\textbf{Taux TVA}`, et le rapport TVA,
+    /// `\textbf{TVA due}` — revue de code P1, A-3), et aucun des taux d'avant 2024
+    /// (2,5 %, 3,7 %, 7,7 %) ne survit dans un manuel, **quelle que soit sa
+    /// graphie** : point ou virgule, zéro final, espace ou `\%` (revue de code
+    /// P1, B-5 — la première version ne reconnaissait que `X.Y\%`).
     ///
     /// Test pur (`#[test]`, sans base) : il lit les `.tex` depuis le dépôt.
     #[test]
@@ -384,17 +388,22 @@ mod tests {
         let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/manual/fr");
         let manuel = std::fs::read_to_string(dir.join("user-manual.tex"))
             .expect("lecture de docs/manual/fr/user-manual.tex");
-        let ligne = manuel
-            .lines()
-            .find(|l| l.contains("\\textbf{Taux TVA}"))
-            .expect("ligne « Taux TVA » absente du manuel utilisateur");
-        for (categorie, _, taux) in DEFAULT_SWISS_RATES {
-            let forme = forme_latex(taux);
-            assert!(
-                ligne.contains(&forme),
-                "taux {categorie} ({forme}) absent de : {ligne}"
-            );
+        for repere in ["\\textbf{Taux TVA}", "\\textbf{TVA due} : la TVA facturée"] {
+            let ligne = manuel
+                .lines()
+                .find(|l| l.contains(repere))
+                .unwrap_or_else(|| panic!("ligne « {repere} » absente du manuel utilisateur"));
+            for (categorie, _, taux) in DEFAULT_SWISS_RATES {
+                let forme = forme_latex(taux);
+                assert!(
+                    ligne.contains(&forme),
+                    "taux {categorie} ({forme}) absent de : {ligne}"
+                );
+            }
         }
+        // 2.5 / 2,5 / 2.50, suivi d'un `%` ou `\%`, espace (insécable `~` comprise)
+        // admise ; `\b` de tête : `12.5\%` n'est pas visé.
+        let perimes = regex::Regex::new(r"\b(2[.,]50?|3[.,]70?|7[.,]70?)[ ~]?\\?%").unwrap();
         let mut lus = 0;
         for entree in std::fs::read_dir(&dir).expect("lecture de docs/manual/fr") {
             let chemin = entree.unwrap().path();
@@ -402,12 +411,8 @@ mod tests {
                 continue;
             }
             let texte = std::fs::read_to_string(&chemin).unwrap();
-            for perime in ["2.5\\%", "3.7\\%", "7.7\\%"] {
-                assert!(
-                    !texte.contains(perime),
-                    "{} cite un taux périmé : {perime}",
-                    chemin.display()
-                );
+            if let Some(m) = perimes.find(&texte) {
+                panic!("{} cite un taux périmé : {}", chemin.display(), m.as_str());
             }
             lus += 1;
         }

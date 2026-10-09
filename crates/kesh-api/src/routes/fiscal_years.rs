@@ -185,7 +185,7 @@ fn map_reopen_error(err: DbError) -> AppError {
         )),
         DbError::Invariant(ref s) if s == FY_REOPEN_LIFO_BLOCKED_KEY => AppError::IllegalState(t(
             "error-fiscal-year-reopen-blocked",
-            "Réouverture impossible : un exercice postérieur est clôturé ; rouvrez d’abord les exercices clôturés, en commençant par le plus récent.",
+            "Réouverture impossible : un exercice postérieur est clôturé ; rouvrez d’abord les exercices postérieurs clôturés, en commençant par le plus récent.",
         )),
         other => AppError::from(other),
     }

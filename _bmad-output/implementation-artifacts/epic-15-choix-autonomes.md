@@ -6485,3 +6485,117 @@ l'import (#458–#461).
 - **Écartée** : réécrire les gardes pour éviter les mots qu'elles interdisent (elles cesseraient de dire
   ce qu'elles gardent).
 - **Réversible** : sans objet (constat).
+
+## C-15-14-43 — 15-14a (revue de code P1, B-1) : « Réglages » interdit sous toute forme dans les manuels, le README et `.env.example`
+
+- **Contexte** : `README.md:213` (« éditables (Réglages, Admin) ») renvoyait encore au menu, que la fiche
+  avait classé « feuille de route publiée ». G2 cherchait quatre formes (`\emph{Réglages}`, `Réglages et`,
+  `(Réglages)`, `dans les réglages`) ; celle-ci passait entre elles.
+- **Retenu** : la ligne est corrigée (« (Paramètres, Admin) ») — le tableau de feuille de route du README
+  est tenu à jour, ce n'est pas une note publiée (celles-ci vivent au CHANGELOG, exclu). G2 interdit le mot
+  capitalisé « Réglages » **sans forme** dans les trois manuels, le README et `.env.example` ; aucun de ces
+  textes ne l'emploie comme nom d'objet. Inventaire AC 2 (A) rejoué sur tout le dépôt : 13 lignes, les
+  5 noms d'objet du journal d'audit et les 8 commentaires assumés ; (B) 131, inchangé.
+- **Écartée** : ajouter la forme `(Réglages,` à la liste (la suivante passerait).
+- **Réversible** : oui.
+
+## C-15-14-44 — 15-14a (revue de code P1, B-2) : la ligne v0.4.0 du README perd « dossier surveillé », G5 perd son exemption
+
+- **Contexte** : la fiche gardait `README.md:211` (« import de factures depuis un dossier surveillé ») au
+  titre de l'historique publié, et G5 l'exemptait.
+- **Retenu** : corriger. Vérifié au tag `v0.4.0` : l'import passait déjà par `POST /api/v1/inbox-import`,
+  sans tâche de fond — la phrase était fausse **dès cette version** ; ce n'est donc pas réécrire
+  l'historique, c'est corriger une description. Nouveau texte : « import de factures déposées dans un
+  dossier d'import, lancé depuis l'écran ». G5 n'a plus d'exemption. Inventaire AC 5 : 25 → 20 (5 corrigées).
+- **Écartée** : garder l'exemption (deux affirmations contraires dans le même README sur le même flux).
+- **Réversible** : oui.
+
+## C-15-14-45 — 15-14a (revue de code P1, E-1, E-2, E-5) : un numéro de compte cité existe dans un plan livré, sous son nom ; garde G4-bis par inventaire
+
+- **Contexte** : l'exemple « Association » faisait créer 3600/3601 alors que le plan association porte
+  3000 « Cotisations des membres » et 3100 « Dons reçus ». L'inventaire de tous les nombres de quatre
+  chiffres du manuel utilisateur et du guide de démarrage contre les trois JSON (script en lecture) en a
+  trouvé d'autres : `1030` (absent des trois plans, manuel et guide), `1020 CCP` / `1020 Caisse` (1020 =
+  Banque), `3200 Ventes de services` / `3200 Honoraires` (3200 = Prestations de services en PME),
+  `4200 Charges de personnel` (4200 = Achats de matières premières), `5700 AVS/AI/APG` (Charges sociales),
+  `6500 Entretien` (Administration), `3400 Maintenance` (3400 = Autres produits), `6997 ou 7997` (le compte
+  d'arrondi des trois plans est 6940), `2800 Capital` (nom incomplet). Le manuel d'administration, relu de
+  même, n'a que des numéros justes. Ventilation des sites corrigés : manuel utilisateur `:205` (voir
+  ci-dessous), `:318`-`:323`, `:332`, `:416`, `:419`, `:859`, `:906`, `:909`, `:917`, `:2249` ; guide
+  `:46`-`:58`. Les sous-comptes (`1200.1`, `3000.1`, `3200.1`, `4000.1`, `1100.1`, `1020.1`) sont présentés
+  « à créer » et restent.
+- **Retenu** : chaque exemple prend le compte livré et son nom ; quand l'exemple veut un compte qui
+  n'existe pas (maintenance), il devient un sous-compte **dit à créer** (`3200.1 Maintenance`). Garde
+  **G4-bis** (`les_comptes_cites_en_exemple_existent_dans_les_plans_livres`, `textes_coherents.rs`) :
+  inventaire de tous les nombres de quatre chiffres isolés (années 2001-2099 écartées, trou vérifié dans
+  les plans), chacun doit être un compte livré ; les formes nommées (`« »`, `\texttt`, `\emph`, backticks,
+  listes entre parenthèses) doivent porter le nom du plan. Source : `kesh_core::chart_of_accounts::load_chart`,
+  non une copie.
+- **E-2, guide de démarrage** : le §3 est réécrit sur `onboarding/+page.svelte` (sept étapes, dans
+  l'ordre du code) ; l'exercice est créé à la finalisation. En le relisant, la phrase que la fiche avait
+  prescrite à `user-manual.tex:204` s'est révélée fausse : le plan est mis en place **à l'étape de la langue
+  comptable** (`set_accounting_language` → `load_chart`), non à la finalisation. Corrigée dans le manuel et
+  dans le guide.
+- **Écartée** : interdire la liste des numéros faux trouvés (une forme imprévue passerait) ; contrôler
+  aussi le manuel d'administration par inventaire (ports, codes d'erreur, modèles de NAS : la garde y
+  serait une liste d'exceptions — ses numéros de compte ont été vérifiés à la main, tous justes).
+  Angles morts déclarés : un nom écrit hors des formes reconnues (« Crédit 3000 Ventes … ») n'est contrôlé
+  que par son numéro ; `1000` (montant, borne) passe parce qu'il est aussi le compte Caisse.
+- **Réversible** : oui.
+
+## C-15-14-46 — 15-14a (revue de code P1, B-4) : trois analyseurs de catalogue alignés, non factorisés
+
+- **Contexte** : `catalogue_fr` (`textes_coherents.rs`) et `valeurDuCatalogueFr` (Vitest G13) ne lisaient
+  que la première ligne d'une valeur ; `valeurs_brutes` (`kesh-i18n`, `mod tests`) joint les continuations.
+- **Retenu** : les deux premiers joignent désormais les lignes qui commencent par un blanc (espace de
+  jonction), comme le troisième ; un commentaire ou une ligne vide clôt la valeur. Anti-test-muet Rust :
+  `le_catalogue_fr_joint_les_continuations` lit `email-password-reset-body` (cinq lignes) entier — la
+  mutation « ne pas joindre » le rend rouge.
+- **Écartée** : factoriser. Les trois vivent dans deux crates de test et un fichier TypeScript ; un
+  analyseur partagé exigerait d'exposer une fonction publique dans `kesh-i18n` (code de production) pour
+  des tests, ou une crate utilitaire de test — disproportionné pour douze lignes. La règle commune est
+  écrite dans chacun des doc-comments.
+- **Réversible** : oui.
+
+## C-15-14-47 — 15-14a (revue de code P1, B-6) : la réouverture bloquée nomme les exercices **postérieurs** ; le référent italien et allemand est explicite
+
+- **Contexte** : `error-fiscal-year-reopen-blocked` disait « rouvrez d'abord les exercices clôturés ».
+  Vérifié au code : la garde LIFO (`find_later_closed_in_tx`, `start_date > ? AND status = 'Closed'`) ne
+  bloque que sur un exercice **postérieur** clôturé. En it/de, « fino a questo » / « bis zu diesem » après
+  « Questo pagamento » / « Dieser Abgleich » pouvait se lire comme le paiement ou le rapprochement.
+- **Retenu** : fr « les exercices postérieurs clôturés », de « die späteren abgeschlossenen
+  Geschäftsjahre », it « gli esercizi successivi chiusi », en « the later closed fiscal years » (marqueur
+  d'ordre de G8 conservé dans chaque locale) ; repli Rust `fiscal_years.rs` identique (G9). it « fino a
+  questo esercizio », de « bis zu diesem Geschäftsjahr » sur les cinq clés de la famille, pour qu'elles
+  restent parallèles.
+- **Non touché, signalé** : la même formule large (« un administrateur rouvre [d'abord] les exercices
+  clôturés, en commençant par le plus récent ») figure dans `error-fiscal-year-create-later-closed`
+  (4 locales et repli `errors.rs:1539`), le repli `errors.rs:2925`, `blocker-messages.ts:94`,
+  `settings/fiscal-years/+page.svelte:355` et `user-manual.tex:684`. Le contexte y nomme d'abord
+  l'exercice postérieur clôturé, ce qui la rend moins trompeuse ; surtout, ces messages appartiennent à
+  la famille `LATER_FISCAL_YEAR_CLOSED` que la 15-12b doit élargir (reçu `598a16ba`) : les réécrire ici
+  provoquerait un conflit de fusion sur des textes en cours de reprise. À traiter par la 15-12b.
+- **Réversible** : oui.
+
+## C-15-14-48 — 15-14a (revue de code P1) : les LOW appliqués, et l'unique écarté
+
+- **B-3 = E-3** : `.env.example` réécrit en deux phrases (« … déposées dans un dossier. L'import se lance
+  à la demande depuis l'écran « Importer des factures » : Kesh décode alors le QR … et crée … »).
+- **B-5, A-3** : G1 reconnaît toute graphie d'un taux périmé (`\b(2[.,]50?|3[.,]70?|7[.,]70?)[ ~]?\\?%`)
+  et exige les quatre taux posés sur la ligne `\textbf{TVA due}` aussi.
+- **B-7** : l'écran s'intitule `vat-rates-title = Taux de TVA` (`settings/+page.svelte:596`) ; fr-CH
+  `vat-purchase-no-rates` et son repli (`VatPurchaseAssistant.svelte:149`) disent « Aucun taux de TVA
+  configuré — voir Paramètres → Taux de TVA. » ; la clé entre dans G13. Les trois autres locales
+  nommaient déjà leur titre d'écran.
+- **A-1** : les « après correction » des AC 1, 6, 9, 10 portent les valeurs atteintes, avec renvoi à
+  C-15-14-42 ; l'AC 2 (A) et l'AC 5 portent la partition révisée.
+- **A-4** : le `keshtip` du manuel d'administration dit choisir le **type d'organisation** (seul choix
+  existant, fixé à l'onboarding : `companies.rs` recopie `org_type` sans le modifier).
+- **A-5** : de-CH `settings-fiscal-years-link` à l'impératif de politesse, comme ses voisines :
+  « Verwalten Sie die Geschäftsjahre Ihres Unternehmens: erstellen, umbenennen, abschliessen. »
+- **E-4** : « Kesh peut décoder automatiquement » → « Kesh peut lire, sans saisie de votre part » (plus
+  de tension avec « l'import ne se déclenche pas tout seul »).
+- **A-2** (non demandé par l'orchestrateur, traité par le geste) : `npm run check` et
+  `lint-i18n-ownership` sont journalisés cette fois dans `kesh-gate-logs/15-14a-review-p1-*.log`.
+- **Écarté** : aucun.
+- **Réversible** : oui.

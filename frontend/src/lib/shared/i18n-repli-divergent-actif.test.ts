@@ -175,21 +175,34 @@ describe('le catalogue fr-CH ne ment sur aucun site', () => {
 	});
 });
 
-/** Valeur `fr-CH` d'une clé (valeurs sur une ligne) — `undefined` si la clé n'y figure pas. */
+/**
+ * Valeur `fr-CH` d'une clé, **lignes de continuation comprises** — une ligne qui commence
+ * par un blanc prolonge la valeur, jointe par une espace : même règle que `catalogue_fr`
+ * (`crates/kesh-api/tests/textes_coherents.rs`) et `valeurs_brutes` (`kesh-i18n`), revue
+ * de code P1, B-4. Sans elle, une clé passée sur plusieurs lignes serait lue tronquée et
+ * G13 rougirait sans régression. `undefined` si la clé n'y figure pas.
+ */
 function valeurDuCatalogueFr(cle: string): string | undefined {
 	const texte = readFileSync(join(RACINE_FTL, 'fr-CH', 'messages.ftl'), 'utf-8');
+	let valeur: string | undefined;
 	for (const ligne of texte.split('\n')) {
 		const m = /^([a-zA-Z][\w-]*)\s*=\s?(.*)$/.exec(ligne);
-		if (m && m[1] === cle) return m[2];
+		if (m) {
+			if (valeur !== undefined) return valeur;
+			if (m[1] === cle) valeur = m[2];
+		} else if (valeur !== undefined) {
+			if (/^[ \t]/.test(ligne) && ligne.trim() !== '') valeur += ' ' + ligne.trim();
+			else return valeur;
+		}
 	}
-	return undefined;
+	return valeur;
 }
 
 /**
  * G13 (Story 15-14a, #569 et #547) — les replis frontend **à site unique** suivent le catalogue.
  *
  * ⚠️ La garde ci-dessus ne voit pas ces clés : elle ne retient que celles qui portent **au
- * moins deux** replis distincts (`parTexte.size > 1`). Chacune des cinq clés ci-dessous n'a
+ * moins deux** replis distincts (`parTexte.size > 1`). Chacune des six clés ci-dessous n'a
  * qu'un site d'appel ; un repli resté à l'ancien texte n'y rougirait pas, et l'écran
  * l'afficherait dès que le catalogue manque (premier rendu, catalogue non chargé).
  *
@@ -202,6 +215,8 @@ const REPLIS_A_SITE_UNIQUE: readonly string[] = [
 	'supplier-invoices-cancel-blocked-fiscal-year-closed',
 	'opening-balances-locked-first-year-closed',
 	'invoice-default-revenue-account-unusable',
+	// Revue de code P1, B-7 : le message renvoie à l'écran « Taux de TVA » (`vat-rates-title`).
+	'vat-purchase-no-rates',
 ];
 
 describe('les replis frontend à site unique suivent le catalogue fr-CH (G13)', () => {

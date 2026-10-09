@@ -132,7 +132,9 @@ Kesh pose 0 %, 2,6 %, 3,8 % et 8,1 % (`DEFAULT_SWISS_RATES`, `crates/kesh-db/src
   → **4** sur `245b91ee`. **Corrigés : 2** (`user-manual.tex:875`, `:1928`). **Assumés : 2** — le
   commentaire de la migration `20260613000001_vat_rates_crud.sql:11` (une migration appliquée ne se
   modifie plus, `CLAUDE.md` P8) et le doc-comment `crates/kesh-qrbill/src/types.rs:195` (« e.g. 7.70 for
-  7.7% », exemple de format, non un taux en vigueur). 2 + 2 = 4 ; **2** après correction.
+  7.7% », exemple de format, non un taux en vigueur). 2 + 2 = 4 ; après correction : **4** — les 2 assumés et
+  deux lignes de G1 qui nomment les taux interdits (doc-comment et commentaire du motif ; revue de code P1,
+  A-1 ; C-15-14-42 — la fiche annonçait **2**, que personne ne pouvait atteindre).
 - **Test** (G1) : `le_manuel_cite_les_taux_poses_par_kesh`, dans un **`#[cfg(test)] mod tests` neuf** de
   `vat_rates.rs` (le fichier n'en a pas : `grep -n 'cfg(test)' crates/kesh-db/src/repositories/vat_rates.rs`
   ne rend rien ; précédents dans le même répertoire : `accounts.rs:1136`, `bank_profiles.rs:343`), test
@@ -193,6 +195,11 @@ Le menu affiche `nav-settings = Paramètres` ; l'écran de facturation s'intitul
     `company_dunning_settings.rs:1`, `:11`, `supplier_invoices.rs:404`, `kesh-seed/src/lib.rs:370`).
     7 + 1 + 5 + 8 = 21. Exclus par `E` : `frontend/tests/e2e/dunning.spec.ts:6,26` (titres de test),
     `CHANGELOG.md` (notes publiées).
+    **Revue de code P1, B-1 (C-15-14-43)** : `README.md:213` (« éditables (Réglages, Admin) ») n'est pas une
+    note publiée mais une ligne du tableau de feuille de route, tenu à jour, et elle renvoie au menu : elle
+    passe en **corrigée** (« (Paramètres, Admin) »). Partition révisée : **corrigées 8, assumées 13**
+    (5 noms d'objet + 8 commentaires) ; après correction, la commande rend **13**, rejoué sur l'état de
+    la remédiation.
   - (B) `git grep -In 'réglages' -- . "${E[@]}"` → **132** lignes sur `245b91ee` : **38** dans les fichiers
     de texte (`README.md`, `docs/`, `website/`, `.env.example`, `DOCKER_START.md`, catalogues — commande :
     `git grep -In 'réglages' -- README.md docs website .env.example DOCKER_START.md crates/kesh-i18n/locales "${E[@]}"`),
@@ -222,9 +229,11 @@ Le menu affiche `nav-settings = Paramètres` ; l'écran de facturation s'intitul
       1 + 5 + 2 + 86 = 94. Contrôle : `git grep -In 'réglages' -- . "${E[@]}" ':(exclude)README.md' ':(exclude)docs' ':(exclude)website' ':(exclude).env.example' ':(exclude)DOCKER_START.md' ':(exclude)crates/kesh-i18n/locales' | grep -cE '^[^:]+:[0-9]+:\s*(//|\*|/\*|<!--|--|#)'` → 84.
   - L'ancienne commande (B), bornée à quatre fichiers, rend 30 sur `245b91ee` (28 sur `bcded0c8`, plus les
     deux lignes de la 15-7b1) : ce sont les 30 lignes de manuels, fr-CH et `errors.rs` ci-dessus.
-- **Tests** : G2 (`aucun_renvoi_au_menu_reglages`, garde documentaire : aucun `\emph{Réglages}` ni
-  `Réglages et` dans `docs/manual/fr/*.tex`, aucun `(Réglages)` dans `.env.example`, aucun `dans les
-  réglages` dans `README.md` — positif : `README.md` contient `dans les Paramètres`) ; G3
+- **Tests** : G2 (`aucun_renvoi_au_menu_reglages`, garde documentaire : **aucun « Réglages » capitalisé,
+  sous quelque forme que ce soit**, dans `docs/manual/fr/*.tex`, `.env.example` et `README.md` — élargi en
+  revue de code P1, B-1 : la version d'origine cherchait quatre formes, et « (Réglages, Admin) » passait
+  entre elles —, aucun `dans les réglages` dans `README.md` — positif : `README.md` contient `dans les
+  Paramètres`) ; G3
   (`le_message_du_compte_de_produit_renvoie_a_l_ecran_reel`, kesh-i18n : pour chaque locale, la valeur de
   `invoice-default-revenue-account-unusable` contient `settings-invoicing-title` de la même locale, ` — `
   remplacé par ` → ` ; et la valeur fr-CH de `error-invoice-pdf-header-overflow` contient `dans les
@@ -268,6 +277,14 @@ n'existe (aucune route, aucun écran).
   (`:26`) devient « **Choix du type d'organisation** (indépendant, PME, association) — il détermine le plan
   comptable que Kesh met en place. » et les étapes suivantes se renumérotent. Les autres étapes du guide ne
   sont **pas** auditées contre l'onboarding réel (hors #488) : angle mort déclaré.
+  **Revue de code P1, E-2 (C-15-14-45)** : l'angle mort a été comblé — la liste était fausse au code (étapes
+  inexistantes, ordre faux, mode omis). Le §3 du guide est réécrit sur `frontend/src/routes/onboarding/+page.svelte`
+  (langue, mode, chemin, type d'organisation, langue comptable, coordonnées, compte bancaire) ; l'exercice
+  est créé à la finalisation (`routes/onboarding.rs`, `create_if_absent_in_tx`), et le plan **à l'étape de
+  la langue comptable** (`set_accounting_language`, `load_chart`), non à la finalisation : la phrase
+  prescrite plus haut pour `user-manual.tex:204` (« À la finalisation, Kesh met en place le plan … ») était
+  fausse sur ce point et a été corrigée. Les exemples `1020 Caisse` / `1030 Banque` du §3 bis passent à
+  `1000 Caisse` / `1020 Banque` (G4-bis).
 - **Capture `plan-comptable.png`** (`:314`) : le fichier n'existe pas (`docs/manual/fr/screenshots/` ne
   contient que `_placeholder.png`) ; seule la légende porte le texte, corrigée ci-dessus (F-14 réfuté).
 - **Liens externes conservés** : `admin-manual.tex:2516` (`:2405` sur `dc4bc58b` — validation P2, R-9 =
@@ -313,9 +330,15 @@ Aucun processus ne surveille `KESH_INBOX_DIR` (vérifié : aucune tâche de fond
   le QR … » → « … déposées dans un dossier, importées à la demande depuis l'écran « Importer des
   factures », décoder le QR … ». Validation P1, F-4 : c'est le fichier que l'exploitant lit pour configurer l'inbox.
   `configuration_transmise.rs` lit `.env.example` (ses lignes d'affectation et les commentaires qui les
-  précèdent) : relancer ce binaire après la modification.
-- **Assumé** : `README.md:211` (feuille de route v0.4.0 publiée — on ne réécrit pas l'historique ; seule
-  la forme de ses références d'issues change, AC 7) ; `CHANGELOG.md:499` (notes de la 0.4.0, publiées). Les
+  précèdent) : relancer ce binaire après la modification. **Revue de code P1, B-3 = E-3** : ce texte
+  rompait la phrase (participe au milieu d'une suite d'infinitifs) ; devenu « … déposées dans un dossier.
+  L'import se lance à la demande depuis l'écran « Importer des factures » : Kesh décode alors le QR côté
+  serveur et crée des factures « à compléter ». »
+- **Assumé** : ~~`README.md:211` (feuille de route v0.4.0 publiée)~~ — **corrigé en revue de code P1, B-2
+  (C-15-14-44)** : la v0.4.0 n'a jamais surveillé de dossier (`git grep` sur le tag `v0.4.0` : la route
+  `POST /api/v1/inbox-import`, aucune tâche de fond), la ligne était donc fausse dès l'origine, et le
+  tableau de feuille de route est tenu à jour, non publié ; G5 perd son exemption `| v0.4.0 |`. Restent
+  assumés : `CHANGELOG.md:499` (notes de la 0.4.0, publiées). Les
   « Surveiller les logs / CVE » du manuel d'administration sont d'un autre sens. « Dossier inbox **scruté à
   l'import** » (`admin-manual.tex:781`, `.env.example:204`) : dit que le dossier est lu **au moment de**
   l'import, ce qui est exact — conservé (validation P1, R7 ; C-15-14-12).
@@ -329,10 +352,11 @@ Aucun processus ne surveille `KESH_INBOX_DIR` (vérifié : aucune tâche de fond
   inbox « scruté à l'import ») : `kesh-api/src/config.rs:264`, `:891`, `:960`,
   `routes/invoice_pdf_service.rs:956`, `kesh-qrbill/src/pdf.rs:252`, `:432`, `:486`, `:514`, `:1133`,
   `:1435`, `kesh-qrbill/src/types.rs:398`, `kesh-report/src/trial_balance.rs:49`, `scripts/mem-guard.sh:6`.
-  4 + 1 + 2 + 5 + 13 = 25.
+  4 + 1 + 2 + 5 + 13 = 25. Après la revue de code P1 (B-2) : `README.md:211` passe en corrigée — **5 + 20**,
+  la commande rend **20**.
 - **Test** G5 (`aucun_dossier_surveille`) : la chaîne `dossier surveillé` n'apparaît dans aucun
-  `docs/manual/fr/*.tex`, ni dans `.env.example`, ni dans `README.md` hors de la ligne de feuille de route
-  `| v0.4.0 |`. Mutations : remettre « dossier surveillé » à `user-manual.tex` → rouge ; à `.env.example`
+  `docs/manual/fr/*.tex`, ni dans `.env.example`, ni dans `README.md` (sans exemption depuis la revue de
+  code P1, B-2). Mutations : remettre « dossier surveillé » à `user-manual.tex` → rouge ; à `.env.example`
   → rouge.
 
 ### AC 6 — La correction de la KF-036 se dit livrée, dans la version qui l'a livrée (#449)
@@ -355,7 +379,8 @@ Le correctif (#167) est sous `## [0.10.0] — 2026-08-19` du CHANGELOG (`CHANGEL
 - **Inventaire** : `git grep -InE 'Unreleased|v0\.9\.0' -- . "${E[@]}"` → **5** lignes sur `245b91ee`.
   **Corrigées : 3** (`api-external.md:484`, `admin-manual.tex:2035`, `:2051`). **Assumées : 2** — les
   lignes de feuille de route qui citent `v0.9.0` (`README.md:216`, `website/roadmap.html:277`), publiées.
-  3 + 2 = 5. Après correction : **2**, et `git grep -IF 'Unreleased' -- . "${E[@]}"` → 0 (2 avant, les deux sites corrigés).
+  3 + 2 = 5. Après correction : **4** — les 2 assumés et les deux textes neufs dictés ci-dessus, qui disent
+  « jusqu'à la v0.9.0 incluse » (revue de code P1, A-1 ; C-15-14-42 — la fiche annonçait **2**), et `git grep -IF 'Unreleased' -- . "${E[@]}"` → 0 (2 avant, les deux sites corrigés).
 - **Test** G6 (`la_faille_kf036_n_est_pas_annoncee_ouverte`) : ni `Unreleased`, ni `n'est **pas** dans la
   v0.9.0` (forme Markdown), ni `n'est pas dans la v0.9.0` (forme LaTeX de `admin-manual.tex:2035` —
   validation P1, R11 = F-7), ni `Pas dans celle que décrit ce manuel` dans `docs/api-external.md` et
@@ -571,7 +596,8 @@ ligne `api-external.md:330` → rouge.
   Relevé sur `dc4bc58b` : `de-CH/messages.ftl:565`, `:608`, `:680`, `:1293`, `:1294`, `:1297`.
 - **Ne pas propager** aux autres locales (IVA, TVA, VAT sont justes — avertissement de l'issue).
 - **Inventaire** : `git grep -InE '\bMwSt\b' -- . "${E[@]}"` (replis compris) → **6** lignes sur
-  `245b91ee` (6 aussi sur `bcded0c8`), toutes en de-CH, 6 corrigées, 0 assumée.
+  `245b91ee` (6 aussi sur `bcded0c8`), toutes en de-CH, 6 corrigées, 0 assumée. Après correction : **2** — les deux lignes de G10 (`loader.rs`),
+  qui nomment la forme interdite (revue de code P1, A-1 ; C-15-14-42).
 - **Test** G10 (`glossaire_mwst`, kesh-i18n) : aucune valeur de-CH ne matche `\bMwSt\b` ; au moins une
   valeur contient `MWST` (anti-test-muet). Mutation : remettre `reports-vat = MwSt` → rouge.
 
@@ -618,7 +644,8 @@ ligne `api-external.md:330` → rouge.
   - **assumées, fermeture d'un panneau — le sens que #323 réserve à « Schliessen » : 4** — `:790`
     (`reconciliation-cancel-dismiss`), `:1481`, `:1975`, `:2112` (`*-close`).
   5 + 1 + 6 + 4 + 4 = 20. Après correction, la commande de-CH rend **8** lignes (les deux groupes
-  assumés), celle du dépôt **9** (avec le glossaire).
+  assumés), celle du dépôt **11** (le glossaire et deux lignes de G11 ; revue de code P1, A-1 ;
+  C-15-14-42 — la fiche annonçait **9**).
   it-CH (« chiuso ») et en-CH (« closed ») ne sont pas inventoriés : le participe y est univoque, seule
   l'action prêtait à confusion.
 - **Glossaire** `docs/i18n-glossaire.md:102` (validation P1, R4) : la cellule « ⚠️⚠️ NE PAS confondre avec

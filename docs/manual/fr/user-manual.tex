@@ -202,7 +202,7 @@ Si vous souhaitez \textbf{tenir votre comptabilité réelle}, choisissez le mode
     \item \textbf{Compte bancaire} : nom de la banque, IBAN et QR-IBAN éventuel (cette étape peut être passée et complétée plus tard).
 \end{enumerate}
 
-À la finalisation, Kesh met en place le plan comptable de votre type d'organisation et votre premier exercice. Vous êtes alors prêt à saisir vos premières écritures.
+Dès que vous avez choisi la langue comptable, Kesh met en place le plan comptable de votre type d'organisation, libellé dans cette langue. À la finalisation, il crée votre premier exercice, l'année civile en cours. Vous êtes alors prêt à saisir vos premières écritures.
 
 \begin{keshnote}
 Vous pourrez à tout moment ajouter ou modifier vos comptes bancaires après l'onboarding (\emph{Administration} → \emph{Comptes bancaires}) et adapter votre plan comptable (cf. section \emph{Plan comptable}).
@@ -319,12 +319,12 @@ Le plan comptable est la colonne vertébrale de votre comptabilité. Kesh fourni
 \keshscreenshot{plan-comptable.png}{Plan comptable PME affiché par classes hiérarchiques.}  % TODO capture: page plan comptable
 
 \begin{itemize}
-    \item Classe 1 : Actifs (1000 Caisse, 1020 CCP, 1030 Compte courant, 1100 Débiteurs, etc.).
-    \item Classe 2 : Passifs (2000 Créanciers, 2200 TVA due, 2800 Capital, etc.).
-    \item Classe 3 : Produits (3000 Ventes de marchandises, 3200 Ventes de services, etc.).
-    \item Classe 4 : Charges de marchandises (4000 Achats de marchandises, 4200 Charges de personnel, etc.).
-    \item Classe 5 : Charges de personnel (5000 Salaires, 5700 AVS/AI/APG, etc.).
-    \item Classe 6 : Autres charges d'exploitation (6000 Loyer, 6500 Entretien, etc.).
+    \item Classe 1 : Actifs (1000 Caisse, 1020 Banque, 1100 Débiteurs, 1171 Impôt préalable, etc.).
+    \item Classe 2 : Passifs (2000 Créanciers, 2200 TVA due, 2800 Capital social, etc.).
+    \item Classe 3 : Produits (3000 Ventes de marchandises, 3200 Prestations de services, etc.).
+    \item Classe 4 : Charges de marchandises (4000 Achats de marchandises, 4200 Achats de matières premières, etc.).
+    \item Classe 5 : Charges de personnel (5000 Salaires, 5700 Charges sociales, etc.).
+    \item Classe 6 : Autres charges d'exploitation (6000 Loyers, 6100 Entretien et réparations, 6500 Administration, etc.).
     \item Classe 7 : Résultat hors exploitation et impôts.
 \end{itemize}
 
@@ -333,7 +333,7 @@ Le plan comptable est la colonne vertébrale de votre comptabilité. Kesh fourni
 \emph{Administration} → \emph{Plan comptable} → \emph{Nouveau compte}. Saisir :
 
 \begin{itemize}
-    \item \textbf{Numéro} : par exemple 1020.1 pour un sous-compte du CCP.
+    \item \textbf{Numéro} : par exemple 1020.1 pour un sous-compte de la banque.
     \item \textbf{Libellé} : par exemple « CCP 12-345-6 ».
     \item \textbf{Compte parent} : compte de niveau supérieur (1020 dans l'exemple).
     \item \textbf{Type} : Actif / Passif / Produit / Charge / Bilan / Résultat.
@@ -417,10 +417,10 @@ Le plan PME couvre la plupart des besoins, mais chaque PME l'adapte à son activ
 
 \begin{itemize}
     \item \textbf{Commerce de détail} (ex. \emph{Boutique Pierre Exemple Sàrl}) : créez des sous-comptes de stock sous la classe 1 (ex. 1200.1 « Stock textile », 1200.2 « Stock accessoires ») et ventilez les ventes par rayon en sous-comptes de 3000 (ex. 3000.1 « Ventes textile », 3000.2 « Ventes accessoires ») pour suivre vos marges par catégorie.
-    \item \textbf{Cabinet médical ou prestataire de services} (ex. \emph{Dr Marie Exemple}) : peu de stock, l'essentiel est dans les produits de services (3200 « Honoraires ») et les charges de personnel (classe 5). Créez un sous-compte 3200.1 par type de prestation si vous voulez analyser votre activité.
+    \item \textbf{Cabinet médical ou prestataire de services} (ex. \emph{Dr Marie Exemple}) : peu de stock, l'essentiel est dans les produits de services (3200 « Prestations de services ») et les charges de personnel (classe 5). Créez un sous-compte 3200.1 par type de prestation si vous voulez analyser votre activité.
     \item \textbf{Agence web / indépendant} (ex. \emph{ABC Web Sàrl}) : facturation au forfait ou à l'heure via le catalogue produits ; suivez les sous-traitances en sous-compte de la classe 4 (ex. 4400 « Prestations de tiers »).
     \item \textbf{Artisan} (ex. \emph{Menuiserie Exemple}) : distinguez achats de matières premières (classe 4) et outillage (classe 1, immobilisations) ; un sous-compte 4000.1 « Bois » / 4000.2 « Quincaillerie » facilite le suivi des coûts de matière.
-    \item \textbf{Association} (ex. \emph{Association Exemple}) : les cotisations des membres se comptabilisent en classe 3 (ex. 3600 « Cotisations »), les dons en 3601 « Dons et subventions ». Pas de TVA si l'association n'est pas assujettie.
+    \item \textbf{Association} (ex. \emph{Association Exemple}) : le plan association porte déjà les comptes de produits propres à une association --- 3000 « Cotisations des membres », 3100 « Dons reçus », 3200 « Subventions », 3300 « Produits des manifestations » ; créez des sous-comptes (ex. 3300.1 « Fête d'été ») si vous voulez suivre chaque manifestation à part. Pas de TVA si l'association n'est pas assujettie.
 \end{itemize}
 
 \begin{keshtip}
@@ -863,7 +863,7 @@ dans la recherche. La forme imprimée sur les documents officiels,
     \item \textbf{Prix unitaire HT}.
     \item \textbf{Taux TVA} : 0\%, 2.6\%, 3.8\%, 8.1\% --- les taux suisses en vigueur depuis le 1\textsuperscript{er} janvier 2024, que Kesh pose à la création de la société (\emph{Paramètres} → \emph{Taux de TVA}).
     \item \textbf{Unité} : pièce, heure, mètre, kilo, etc.
-    \item \textbf{Compte de produit} (facultatif) : le compte du plan comptable sur lequel le chiffre d'affaires de cet article sera crédité — par exemple 3200 \emph{Honoraires} pour du conseil, 3400 \emph{Maintenance} pour un abonnement. Quand vous montez une facture depuis le catalogue, la ligne créée reprend ce compte automatiquement ; vous pouvez encore le changer sur la ligne. \textbf{Laissé vide}, l'article n'impose rien : la ligne suit alors le compte de produit par défaut de la société.
+    \item \textbf{Compte de produit} (facultatif) : le compte du plan comptable sur lequel le chiffre d'affaires de cet article sera crédité — par exemple 3200 \emph{Prestations de services} pour du conseil, ou un sous-compte 3200.1 \emph{Maintenance}, à créer d'abord dans le plan, pour un abonnement. Quand vous montez une facture depuis le catalogue, la ligne créée reprend ce compte automatiquement ; vous pouvez encore le changer sur la ligne. \textbf{Laissé vide}, l'article n'impose rien : la ligne suit alors le compte de produit par défaut de la société.
 \end{itemize}
 
 \subsection{Conditions de paiement}
@@ -910,10 +910,10 @@ dans la recherche. La forme imprimée sur les documents officiels,
     \item Compte de réception : le compte bancaire QR-IBAN de l'agence.
 \end{itemize}
 
-À la validation, Kesh attribue le numéro \texttt{F-2026-0042} et crée l'écriture comptable automatique (Débit 1100 Débiteurs / Crédit 3200 Honoraires). Le PDF QR Bill est produit et \textbf{figé} au premier téléchargement ou au premier envoi (cf. \S\ref{sec:pdf-fige}).
+À la validation, Kesh attribue le numéro \texttt{F-2026-0042} et crée l'écriture comptable automatique (Débit 1100 Débiteurs / Crédit 3200 Prestations de services, désigné par l'agence comme compte de produit par défaut). Le PDF QR Bill est produit et \textbf{figé} au premier téléchargement ou au premier envoi (cf. \S\ref{sec:pdf-fige}).
 
 \medskip
-\noindent\emph{Variante ventilée.} Si l'agence souhaite distinguer ses activités, elle affecte la ligne 1 au compte \texttt{3200 Honoraires} et la ligne 2 au compte \texttt{3400 Maintenance}. L'écriture générée porte alors \textbf{deux lignes de crédit distinctes} — Crédit 3200 pour CHF 4'500.00 et Crédit 3400 pour CHF 450.00 — au lieu d'un crédit unique. Le compte de résultat devient exploitable sans reclassement manuel a posteriori. Les lignes laissées vides suivent le compte de produit par défaut de la société et s'y regroupent — y compris celles qui viennent du catalogue, dont le compte a été vidé après la recopie. Si les lignes de la facture portent un taux de TVA, Kesh comptabilise aussi automatiquement la TVA due au compte de TVA (p.~ex. 2200) ; ici l'agence n'est pas assujettie, l'écriture se limite donc à CHF 4'950.00 (cf. \emph{Décompte TVA}).
+\noindent\emph{Variante ventilée.} Si l'agence souhaite distinguer ses activités, elle crée d'abord dans son plan le sous-compte \texttt{3200.1 Maintenance}, puis affecte la ligne 1 au compte \texttt{3200 Prestations de services} et la ligne 2 au compte \texttt{3200.1 Maintenance}. L'écriture générée porte alors \textbf{deux lignes de crédit distinctes} — Crédit 3200 pour CHF 4'500.00 et Crédit 3200.1 pour CHF 450.00 — au lieu d'un crédit unique. Le compte de résultat devient exploitable sans reclassement manuel a posteriori. Les lignes laissées vides suivent le compte de produit par défaut de la société et s'y regroupent — y compris celles qui viennent du catalogue, dont le compte a été vidé après la recopie. Si les lignes de la facture portent un taux de TVA, Kesh comptabilise aussi automatiquement la TVA due au compte de TVA (p.~ex. 2200) ; ici l'agence n'est pas assujettie, l'écriture se limite donc à CHF 4'950.00 (cf. \emph{Décompte TVA}).
 
 \subsection{Validation d'une facture}
 
@@ -921,7 +921,7 @@ Une facture passe par trois états :
 
 \begin{enumerate}
     \item \textbf{Brouillon} : modification libre, n'apparaît pas dans les rapports. Un brouillon n'a en général \emph{pas} de numéro --- sauf s'il vient d'être \textbf{dévalidé}, auquel cas il \textbf{conserve} celui qu'il portait, et le reprendra à la revalidation (cf. \S\ref{sec:suppression-facture}).
-    \item \textbf{Validée} : numéro définitif attribué, PDF QR Bill disponible (figé au premier téléchargement ou envoi), écriture comptable créée automatiquement (Débit 1100 Débiteurs / Crédit 3000 Ventes + 2200 TVA), et \textbf{comptes de produit figés}. Une facture validée n'est plus modifiable : le compte de chaque ligne reste néanmoins \textbf{consultable} dans la colonne « Compte de produit » de l'écran de détail, où les lignes suivant le compte par défaut de la société l'affichent avec la mention \emph{(défaut)}. C'est le moyen de contrôler la ventilation sans avoir à ouvrir l'écriture comptable et à la relire à l'envers.
+    \item \textbf{Validée} : numéro définitif attribué, PDF QR Bill disponible (figé au premier téléchargement ou envoi), écriture comptable créée automatiquement (Débit 1100 Débiteurs / Crédit 3000 Ventes de marchandises + 2200 TVA due), et \textbf{comptes de produit figés}. Une facture validée n'est plus modifiable : le compte de chaque ligne reste néanmoins \textbf{consultable} dans la colonne « Compte de produit » de l'écran de détail, où les lignes suivant le compte par défaut de la société l'affichent avec la mention \emph{(défaut)}. C'est le moyen de contrôler la ventilation sans avoir à ouvrir l'écriture comptable et à la relire à l'envers.
     \item \textbf{Payée} : \textbf{soldée} par un ou plusieurs règlements --- enregistrés à la main
           depuis la fiche, ou par le rapprochement d'une transaction bancaire entrante
           (\S\ref{sec:reglement-client}). Une facture réglée en partie reste \emph{validée}, avec
@@ -1512,7 +1512,7 @@ fiche, jamais par un nouveau lot.
 \subsection{Importer des factures depuis un dossier}
 \label{sec:import-factures}
 
-Kesh peut décoder automatiquement les factures fournisseurs suisses porteuses
+Kesh peut lire, sans saisie de votre part, les factures fournisseurs suisses porteuses
 d'un \textbf{QR-facture} (Swiss QR Code) déposées dans le dossier d'import (voir le
 manuel administrateur pour sa configuration). L'import ne se déclenche pas tout seul~:
 vous le lancez depuis l'écran décrit ci-dessous.
@@ -2255,7 +2255,7 @@ l'installation de production.
 
 \subsection{Mes écritures ne se balancent pas, que faire ?}
 
-Vérifiez que la somme des débits égale exactement la somme des crédits (à 1 centime près). Kesh refuse d'enregistrer une écriture déséquilibrée. Si vous avez un écart d'arrondi sur de la TVA, utilisez un compte d'écart d'arrondi (typiquement 6997 ou 7997).
+Vérifiez que la somme des débits égale exactement la somme des crédits (à 1 centime près). Kesh refuse d'enregistrer une écriture déséquilibrée. Si vous avez un écart d'arrondi sur de la TVA, utilisez le compte d'écart d'arrondi (6940 « Différences d'arrondi » dans les trois plans livrés).
 
 \subsection{Mon QR Bill ne s'affiche pas correctement, que faire ?}
 
