@@ -146,7 +146,7 @@
 				<p class="text-sm text-destructive">
 					{i18nMsg(
 						'vat-purchase-no-rates',
-						'Aucun taux TVA configuré — voir Paramètres → Taux TVA.'
+						'Aucun taux de TVA configuré — voir Paramètres → Taux de TVA.'
 					)}
 				</p>
 			{/if}

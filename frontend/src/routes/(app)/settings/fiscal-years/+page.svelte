@@ -352,7 +352,7 @@
 		>
 			{i18nMsg(
 				'fiscal-year-out-of-order-warning',
-				'L’exercice « { $open } » est ouvert alors qu’un exercice postérieur, « { $closed } », est clôturé : rien ne peut y être enregistré tant que l’ordre n’est pas rétabli. Clôturez « { $open } » si ses comptes sont arrêtés, puis les exercices ouverts suivants, du plus ancien au plus récent. Sinon, un administrateur rouvre les exercices clôturés, en commençant par le plus récent, « { $latest } » : Kesh ne rouvre un exercice que si aucun exercice plus récent n’est clôturé.',
+				'L’exercice « { $open } » est ouvert alors qu’un exercice postérieur, « { $closed } », est clôturé : rien ne peut y être enregistré tant que l’ordre n’est pas rétabli. Clôturez « { $open } » si ses comptes sont arrêtés, puis les exercices ouverts suivants, du plus ancien au plus récent. Sinon, un administrateur rouvre les exercices postérieurs clôturés, en commençant par le plus récent, « { $latest } » : Kesh ne rouvre un exercice que si aucun exercice plus récent n’est clôturé.',
 				{
 					open: outOfOrder.open.name,
 					closed: outOfOrder.closed.name,

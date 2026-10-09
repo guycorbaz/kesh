@@ -57,7 +57,7 @@ export function reconciliationCancelMessage(
 		case 'FISCAL_YEAR_CLOSED':
 			return i18nMsg(
 				'reconciliation-cancel-blocked-fiscal-year-closed',
-				"Ce rapprochement appartient à un exercice clôturé : un administrateur doit rouvrir l'exercice pour pouvoir l'annuler.",
+				"Ce rapprochement appartient à un exercice clôturé : pour pouvoir l'annuler, un administrateur doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
 			);
 		case 'MATCHED_BANK_TRANSACTION':
 			return i18nMsg(

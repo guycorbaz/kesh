@@ -932,4 +932,330 @@ mod tests {
             "Les comptes 1100, 2000, désignés dans Paramètres → Facturation, ne sont pas imputables (comptes de regroupement, de résultat ou de clôture) : un administrateur doit y désigner à leur place des comptes imputables."
         );
     }
+
+    // ── Story 15-14a — gardes de texte des catalogues (G3, G8, G10, G11) ──────────
+
+    /// Valeurs **brutes** d'un catalogue : `clé = valeur`, commentaires ignorés.
+    ///
+    /// Règle commune aux trois analyseurs de catalogue (`catalogue_fr` de
+    /// `kesh-api/tests/textes_coherents.rs`, `valeurDuCatalogueFr` du Vitest G13 ; revue
+    /// de code P2, B2-4, E2-4, A-4) : une ligne qui commence par un blanc prolonge la
+    /// valeur (jointe par une espace, sauf à une valeur encore vide — forme bloc) ; toute
+    /// autre ligne — tête, commentaire, ligne vide, `}` de sélecteur en colonne 0 — la
+    /// clôt sans s'y ajouter. Avant la P2, celui-ci ajoutait aussi les lignes non
+    /// indentées, dont le `}` ; anti-test-muet :
+    /// `valeurs_brutes_suit_la_regle_commune_des_trois_analyseurs`.
+    ///
+    /// ⚠️ Volontairement **sans** repli sur `fr-CH` ni formatage Fluent : une clé
+    /// absente d'une locale doit rougir, pas retomber silencieusement sur le français
+    /// (c'est le défaut que `all_messages` masquerait).
+    fn valeurs_brutes(locale: &str) -> HashMap<String, String> {
+        let chemin = locales_dir().join(locale).join("messages.ftl");
+        let texte = std::fs::read_to_string(&chemin)
+            .unwrap_or_else(|e| panic!("lecture de {}: {e}", chemin.display()));
+        let tete = regex::Regex::new(r"^([a-zA-Z][\w-]*) = ?(.*)$").unwrap();
+        let mut out = HashMap::new();
+        let mut courante: Option<String> = None;
+        for ligne in texte.lines() {
+            if let Some(c) = tete.captures(ligne) {
+                let cle = c[1].to_string();
+                out.insert(cle.clone(), c[2].to_string());
+                courante = Some(cle);
+            } else if ligne.starts_with([' ', '\t']) && !ligne.trim().is_empty() {
+                if let Some(cle) = &courante {
+                    let v: &mut String = out.get_mut(cle).unwrap();
+                    if !v.is_empty() {
+                        v.push(' ');
+                    }
+                    v.push_str(ligne.trim());
+                }
+            } else {
+                courante = None;
+            }
+        }
+        assert!(
+            out.len() > 100,
+            "{locale} : catalogue lu à vide ({})",
+            out.len()
+        );
+        out
+    }
+
+    /// Anti-test-muet de [`valeurs_brutes`] — les trois cas réels de la règle commune
+    /// (même test que `le_catalogue_fr_joint_les_continuations` côté `kesh-api` et que
+    /// le Vitest G13).
+    #[test]
+    fn valeurs_brutes_suit_la_regle_commune_des_trois_analyseurs() {
+        let fr = valeurs_brutes("fr-CH");
+        let corps = &fr["email-password-reset-body"];
+        assert!(
+            corps.starts_with("Vous avez demandé") && corps.ends_with("ignorez cet email."),
+            "continuations non jointes, ou blanc de tête : {corps:?}"
+        );
+        assert_eq!(fr["auth-recovery-forgot-title"], "Mot de passe oublié");
+        let selecteur = &fr["error-account-not-postable"];
+        assert!(
+            selecteur.ends_with("choisissez des comptes imputables."),
+            "`}}` de sélecteur ajouté, ou variante perdue : {selecteur:?}"
+        );
+    }
+
+    const LOCALES: [&str; 4] = ["fr-CH", "de-CH", "it-CH", "en-CH"];
+
+    /// **G3** (Story 15-14a, #547) — le message du compte de produit inutilisable
+    /// nomme l'écran réel, dans chaque locale : son titre (`settings-invoicing-title`,
+    /// « Paramètres — Facturation ») écrit comme un chemin (` — ` → ` → `). Et le
+    /// message d'en-tête de PDF trop haut renvoie aux « Paramètres », non aux
+    /// « réglages » (nom commun) en fr-CH.
+    #[test]
+    fn le_message_du_compte_de_produit_renvoie_a_l_ecran_reel() {
+        for locale in LOCALES {
+            let v = valeurs_brutes(locale);
+            let titre = v
+                .get("settings-invoicing-title")
+                .unwrap_or_else(|| panic!("{locale} : settings-invoicing-title absent"));
+            let chemin = titre.replace(" — ", " → ");
+            assert_ne!(&chemin, titre, "{locale} : titre sans « — » : {titre}");
+            let message = v
+                .get("invoice-default-revenue-account-unusable")
+                .unwrap_or_else(|| panic!("{locale} : clé absente"));
+            assert!(
+                message.contains(&chemin),
+                "{locale} : « {chemin} » absent de : {message}"
+            );
+        }
+        let fr = valeurs_brutes("fr-CH");
+        let entete = &fr["error-invoice-pdf-header-overflow"];
+        assert!(entete.contains("dans les Paramètres"), "{entete}");
+        assert!(!entete.contains("dans les réglages"), "{entete}");
+    }
+
+    /// **G8** (Story 15-14a, #569, C-15-14-14) — toute clé qui **prescrit** une
+    /// réouverture d'exercice dit l'ordre (« en commençant par le plus récent »),
+    /// dans les quatre locales.
+    ///
+    /// Le domaine se prend en **fr-CH**, où le verbe est univoque (`rouvr`, `réouv`) ;
+    /// en allemand il a au moins cinq formes, et un motif par locale passerait à vide
+    /// sur l'une d'elles. Les exemptions sont **par clé**, liste fermée, et chacune
+    /// doit encore appartenir au domaine — sans quoi l'exemption est morte.
+    #[test]
+    fn les_prescriptions_de_reouverture_disent_l_ordre() {
+        const MARQUEURS: [(&str, &str); 4] = [
+            ("fr-CH", "en commençant par le plus récent"),
+            ("de-CH", "beginnend mit dem neuesten"),
+            ("it-CH", "cominciando dal più recente"),
+            ("en-CH", "starting with the most recent"),
+        ];
+        // Nomment l'acte, le décrivent, nomment l'exercice à rouvrir, ou autre objet.
+        const EXEMPTEES: [&str; 10] = [
+            "fiscal-year-reopen-button",
+            "fiscal-year-reopen-confirmation-title",
+            "fiscal-year-reopen-confirmation-action",
+            "fiscal-year-reopen-motif-label",
+            "error-fiscal-year-reopen-motif-empty",
+            "error-fiscal-year-reopen-motif-too-long",
+            "fiscal-year-close-confirmation-body",
+            "fiscal-year-reopen-confirmation-body",
+            "fiscal-year-reopen-blocked-later-closed",
+            "error-reminder-amounts-changed",
+        ];
+        // Les six clés de #569 (anti-test-muet : nommées, elles doivent être au domaine).
+        const CLES_569: [&str; 6] = [
+            "settlement-cancel-blocked-fiscal-year-closed",
+            "reconciliation-cancel-blocked-fiscal-year-closed",
+            "supplier-invoices-cancel-blocked-fiscal-year-closed",
+            "error-fiscal-year-reopen-blocked",
+            "opening-balances-locked-first-year-closed",
+            "error-opening-balances-first-year-closed",
+        ];
+        let verbe = regex::Regex::new(r"[Rr]ouvr|[Rr]éouv").unwrap();
+        let catalogues: HashMap<&str, HashMap<String, String>> =
+            LOCALES.iter().map(|l| (*l, valeurs_brutes(l))).collect();
+        let mut domaine: Vec<&String> = catalogues["fr-CH"]
+            .iter()
+            .filter(|(_, v)| verbe.is_match(v))
+            .map(|(k, _)| k)
+            .collect();
+        domaine.sort();
+        for cle in EXEMPTEES.iter().chain(CLES_569.iter()) {
+            assert!(
+                domaine.iter().any(|d| d.as_str() == *cle),
+                "{cle} n'est plus au domaine (sa valeur fr-CH ne prescrit plus de réouverture)"
+            );
+        }
+        let mut controlees = 0;
+        for cle in domaine.iter().filter(|c| !EXEMPTEES.contains(&c.as_str())) {
+            for (locale, marqueur) in MARQUEURS {
+                let valeur = catalogues[locale]
+                    .get(cle.as_str())
+                    .unwrap_or_else(|| panic!("{locale} : {cle} absente"));
+                assert!(
+                    valeur.contains(marqueur),
+                    "{locale} : {cle} prescrit la réouverture sans l'ordre « {marqueur} » : {valeur}"
+                );
+            }
+            controlees += 1;
+        }
+        // 6 clés de #569 + 4 qui portaient déjà le marqueur (C-15-14-14).
+        assert!(
+            controlees >= 10,
+            "domaine contrôlé trop petit : {controlees}"
+        );
+    }
+
+    /// **G8-bis** (Story 15-14a, revue de code P2, A-1, A-2, E2-2, B2-1) — toute
+    /// prescription de réouverture est **bornée**, dans les quatre locales : elle dit
+    /// jusqu'où rouvrir.
+    ///
+    /// La garde de création et la garde de réouverture (`FIND_LATER_CLOSED_SQL`,
+    /// `start_date > ? AND status = 'Closed'`, `kesh-db/src/repositories/fiscal_years.rs`)
+    /// ne bloquent que sur un exercice clôturé **postérieur** : « rouvrez les exercices
+    /// clôturés » sans borne ferait rouvrir aussi les exercices antérieurs, et lever sans
+    /// raison le verrou CO 957-964 de comptes arrêtés. Deux bornes justes coexistent :
+    /// « les exercices **postérieurs** clôturés » (famille `LATER_FISCAL_YEAR_CLOSED` et
+    /// réouverture refusée) et « **jusqu'à celui-ci** » (famille #569 : annulations,
+    /// soldes de départ).
+    ///
+    /// Inventaire des non-bornées, non liste de formes : le domaine est celui de G8
+    /// (verbe fr-CH), moins ses exemptions ; chaque clé y porte l'une des deux bornes
+    /// dans chaque locale, ou la garde rougit en la nommant. S'y ajoute une assertion
+    /// **positive** par clé et par locale sur la borne « postérieurs » des cinq clés
+    /// qui la portent — sans quoi un retour à la formule large sur l'une d'elles, avec
+    /// « jusqu'à » ailleurs dans la phrase, passerait.
+    #[test]
+    fn les_prescriptions_de_reouverture_sont_bornees() {
+        const POSTERIEURS: [(&str, &str); 4] = [
+            ("fr-CH", "les exercices postérieurs clôturés"),
+            ("de-CH", "die späteren abgeschlossenen Geschäftsjahre"),
+            ("it-CH", "gli esercizi successivi chiusi"),
+            ("en-CH", "the later closed fiscal years"),
+        ];
+        const JUSQU_A: [(&str, &[&str]); 4] = [
+            ("fr-CH", &["jusqu'à celui-ci", "jusqu’à celui-ci"]),
+            ("de-CH", &["bis zu diesem Geschäftsjahr"]),
+            ("it-CH", &["fino a questo esercizio"]),
+            ("en-CH", &["down to this one"]),
+        ];
+        const CLES_POSTERIEURS: [&str; 5] = [
+            "error-fiscal-year-reopen-blocked",
+            "error-fiscal-year-create-later-closed",
+            "error-later-fiscal-year-closed",
+            "journal-entries-modify-blocked-later-fiscal-year-closed",
+            "fiscal-year-out-of-order-warning",
+        ];
+        // Même domaine et mêmes exemptions que G8 (`les_prescriptions_de_reouverture_disent_l_ordre`).
+        const EXEMPTEES: [&str; 10] = [
+            "fiscal-year-reopen-button",
+            "fiscal-year-reopen-confirmation-title",
+            "fiscal-year-reopen-confirmation-action",
+            "fiscal-year-reopen-motif-label",
+            "error-fiscal-year-reopen-motif-empty",
+            "error-fiscal-year-reopen-motif-too-long",
+            "fiscal-year-close-confirmation-body",
+            "fiscal-year-reopen-confirmation-body",
+            "fiscal-year-reopen-blocked-later-closed",
+            "error-reminder-amounts-changed",
+        ];
+        let verbe = regex::Regex::new(r"[Rr]ouvr|[Rr]éouv").unwrap();
+        let catalogues: HashMap<&str, HashMap<String, String>> =
+            LOCALES.iter().map(|l| (*l, valeurs_brutes(l))).collect();
+        let mut domaine: Vec<&String> = catalogues["fr-CH"]
+            .iter()
+            .filter(|(k, v)| verbe.is_match(v) && !EXEMPTEES.contains(&k.as_str()))
+            .map(|(k, _)| k)
+            .collect();
+        domaine.sort();
+        for cle in &CLES_POSTERIEURS {
+            assert!(
+                domaine.iter().any(|d| d.as_str() == *cle),
+                "{cle} n'est plus au domaine"
+            );
+            for (locale, borne) in POSTERIEURS {
+                let valeur = &catalogues[locale][*cle];
+                assert!(
+                    valeur.contains(borne),
+                    "{locale} : {cle} sans « {borne} » : {valeur}"
+                );
+            }
+        }
+        let mut bornees = 0;
+        for cle in &domaine {
+            for ((locale, posterieurs), (_, jusqu_a)) in POSTERIEURS.iter().zip(JUSQU_A) {
+                let valeur = catalogues[locale]
+                    .get(cle.as_str())
+                    .unwrap_or_else(|| panic!("{locale} : {cle} absente"));
+                assert!(
+                    valeur.contains(posterieurs) || jusqu_a.iter().any(|j| valeur.contains(j)),
+                    "{locale} : {cle} prescrit une réouverture sans borne : {valeur}"
+                );
+            }
+            bornees += 1;
+        }
+        // 5 clés « postérieurs » + 5 clés « jusqu'à celui-ci » (#569) ; une clé neuve
+        // du domaine s'y ajoute et doit être bornée, d'où un plancher et non un compte.
+        assert!(bornees >= 10, "domaine contrôlé trop petit : {domaine:?}");
+    }
+
+    /// **G10** (Story 15-14a, #321) — l'allemand de Suisse écrit `MWST`, jamais `MwSt`.
+    #[test]
+    fn glossaire_mwst() {
+        let de = valeurs_brutes("de-CH");
+        let mwst = regex::Regex::new(r"\bMwSt\b").unwrap();
+        let fautives: Vec<_> = de.iter().filter(|(_, v)| mwst.is_match(v)).collect();
+        assert!(fautives.is_empty(), "MwSt en de-CH : {fautives:?}");
+        assert!(
+            de.values().any(|v| v.contains("MWST")),
+            "aucune valeur de-CH ne porte MWST (lecture à vide ?)"
+        );
+    }
+
+    /// **G11** (Story 15-14a, #323, C-15-14-7, C-15-14-18) — clôturer un exercice
+    /// n'emprunte pas le verbe qui ferme un panneau.
+    #[test]
+    fn la_cloture_d_exercice_ne_parle_pas_comme_un_panneau() {
+        const ATTENDUS: [(&str, &str); 3] = [
+            ("de-CH", "Abschliessen"),
+            ("it-CH", "Chiudi l’esercizio"),
+            ("en-CH", "Close fiscal year"),
+        ];
+        for (locale, attendu) in ATTENDUS {
+            let v = valeurs_brutes(locale);
+            let panneaux: Vec<(&String, &String)> = v
+                .iter()
+                .filter(|(k, _)| k.ends_with("-close") || k.ends_with("-dismiss"))
+                .collect();
+            assert!(!panneaux.is_empty(), "{locale} : aucune clé de panneau");
+            for cle in [
+                "fiscal-year-close-button",
+                "fiscal-year-close-confirmation-action",
+            ] {
+                let valeur = &v[cle];
+                assert_eq!(valeur, attendu, "{locale} : {cle}");
+                for (k, p) in &panneaux {
+                    assert_ne!(valeur, *p, "{locale} : {cle} parle comme {k}");
+                }
+            }
+        }
+        // de-CH : « geschlossen / schliessen / Schliessung » nu est réservé aux panneaux ;
+        // ailleurs, seule la forme séparable « Schliessen Sie … ab » (= abschliessen).
+        let de = valeurs_brutes("de-CH");
+        let nu = regex::Regex::new(r"\b([Gg]eschlossen|[Ss]chliessen|[Ss]chliessung)\b").unwrap();
+        let separable = regex::Regex::new(r"[Ss]chliessen Sie [^.;:]* ab\b").unwrap();
+        let (mut panneaux, mut separables) = (0, 0);
+        for (cle, valeur) in &de {
+            if !nu.is_match(valeur) {
+                continue;
+            }
+            if cle.ends_with("-close") || cle.ends_with("-dismiss") {
+                panneaux += 1;
+            } else {
+                assert!(
+                    separable.is_match(valeur),
+                    "de-CH : {cle} emploie le verbe du panneau pour un exercice : {valeur}"
+                );
+                separables += 1;
+            }
+        }
+        assert!(panneaux > 0 && separables > 0, "{panneaux} / {separables}");
+    }
 }

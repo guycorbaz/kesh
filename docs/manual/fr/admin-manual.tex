@@ -76,7 +76,7 @@ Ce manuel décrit Kesh version \keshVersion. Pour la dernière version, consulte
 Kesh est un \textbf{logiciel de comptabilité et de gestion} destiné aux indépendants, petites et moyennes entreprises (PME) et associations en Suisse. Il fournit un système complet conforme aux exigences du Code des obligations suisse, incluant :
 
 \begin{itemize}
-    \item \textbf{Comptabilité en partie double} avec plan comptable suisse PME (Sterchi, KMU, ou personnalisé).
+    \item \textbf{Comptabilité en partie double} avec les plans comptables suisses PME, indépendant et association.
     \item \textbf{Facturation QR Bill 2.2} conforme au standard SIX Interbank Clearing (norme suisse 2020+).
     \item \textbf{Import bancaire} CAMT.053 (ISO 20022) et CSV multi-encodage avec profils banque réutilisables.
     \item \textbf{Réconciliation automatique et manuelle} des transactions bancaires avec règles d'affectation.
@@ -1375,20 +1375,22 @@ Tant que les coordonnées ne sont pas renseignées, une bannière non-bloquante 
 
 \subsection{Choix du plan comptable}
 
-Kesh inclut plusieurs plans comptables suisses pré-configurés :
+Kesh livre trois plans comptables, dont la structure suit le plan comptable PME suisse. Le plan n'est pas choisi dans une liste~: il découle du \textbf{type d'organisation} indiqué à l'onboarding.
 
 \begin{tabularx}{\linewidth}{>{\bfseries}lX}
     \toprule
-    \keshtableheader{Plan} & \keshtableheader{Description} \\
+    \keshtableheader{Type d'organisation} & \keshtableheader{Plan mis en place} \\
     \midrule
-    Sterchi PME & Plan comptable standard PME suisse, version Sterchi (la plus répandue). Recommandé pour la majorité des cas. \\
-    KMU & Plan KMU (Käfer / Treuhand-Kammer), version simplifiée orientée artisans et indépendants. \\
-    Personnalisé CSV & Import d'un plan personnalisé depuis un fichier CSV (format spécifié dans le manuel utilisateur). \\
+    PME & Plan comptable PME suisse, capitaux propres d'une société (capital social). \\
+    Indépendant & Même structure, adaptée à l'entreprise individuelle (capital de l'exploitant, prélèvements et apports privés). \\
+    Association & Même structure, adaptée à une association (capital de l'association, cotisations des membres, dons reçus). \\
     \bottomrule
 \end{tabularx}
 
+Kesh n'importe pas de plan comptable~: le plan mis en place s'adapte ensuite compte par compte.
+
 \begin{keshtip}
-Le plan comptable peut être modifié après création (ajout de comptes auxiliaires, sous-comptes, etc.) mais sa structure globale reste stable. Choisir le plan le plus proche de votre activité dès la création évite des migrations ultérieures.
+Le plan comptable peut être modifié après création (ajout de comptes auxiliaires, sous-comptes, etc.) mais sa structure globale reste stable. Le type d'organisation se choisit une seule fois, à l'onboarding, et le plan qui en découle est mis en place à ce moment~: choisir le type le plus proche de votre activité évite d'avoir à adapter le plan compte par compte ensuite.
 \end{keshtip}
 
 \subsection{Configuration des exercices comptables}
@@ -1396,7 +1398,7 @@ Le plan comptable peut être modifié après création (ajout de comptes auxilia
 Chaque company doit définir au moins un exercice comptable (\emph{fiscal year}). Par défaut, l'exercice civil 1\textsuperscript{er} janvier -- 31 décembre est créé automatiquement à la création de la company. Pour d'autres exercices (décalés, courts, longs), aller dans \emph{Paramètres} → \emph{Exercices}.
 
 \paragraph{Clôture dans l'ordre (depuis la v0.13.0).}
-Les exercices se clôturent \textbf{du plus ancien vers le plus récent}, symétrique de la garde de réouverture ci-dessous~: la clôture d'un exercice est refusée tant qu'un exercice de date de début antérieure est encore ouvert (\texttt{409 EARLIER\_\allowbreak FISCAL\_\allowbreak YEAR\_\allowbreak OPEN}, qui nomme le plus ancien à clôturer d'abord), et la création d'un exercice est refusée si un exercice postérieur est déjà clôturé (\texttt{400 LATER\_\allowbreak FISCAL\_\allowbreak YEAR\_\allowbreak CLOSED}). Le bilan étant cumulatif, ces deux gardes empêchent qu'un exercice ouvert précède un exercice clôturé. ⚠️ Une \textbf{installation mise à jour} ou une \textbf{sauvegarde restaurée} peut porter cet état, hérité d'une version antérieure~: l'import l'accepte, l'écran des exercices le signale par un bandeau, et \textbf{aucune écriture} ne se crée ni ne se supprime dans l'exercice ouvert concerné tant qu'il dure (\texttt{400 LATER\_\allowbreak FISCAL\_\allowbreak YEAR\_\allowbreak CLOSED})~; il se résorbe en clôturant le plus ancien exercice ouvert, ou en rouvrant les exercices clôturés du plus récent vers l'ancien (section \emph{Exercices clôturés dans le désordre}).
+Les exercices se clôturent \textbf{du plus ancien vers le plus récent}, symétrique de la garde de réouverture ci-dessous~: la clôture d'un exercice est refusée tant qu'un exercice de date de début antérieure est encore ouvert (\texttt{409 EARLIER\_\allowbreak FISCAL\_\allowbreak YEAR\_\allowbreak OPEN}, qui nomme le plus ancien à clôturer d'abord), et la création d'un exercice est refusée si un exercice postérieur est déjà clôturé (\texttt{400 LATER\_\allowbreak FISCAL\_\allowbreak YEAR\_\allowbreak CLOSED}). Le bilan étant cumulatif, ces deux gardes empêchent qu'un exercice ouvert précède un exercice clôturé. ⚠️ Une \textbf{installation mise à jour} ou une \textbf{sauvegarde restaurée} peut porter cet état, hérité d'une version antérieure~: l'import l'accepte, l'écran des exercices le signale par un bandeau, et \textbf{rien ne s'enregistre} dans l'exercice ouvert concerné tant qu'il dure --- ni saisie, ni règlement, ni dévalidation, ni modification, ni suppression d'écriture (\texttt{400 LATER\_\allowbreak FISCAL\_\allowbreak YEAR\_\allowbreak CLOSED})~; il se résorbe en clôturant le plus ancien exercice ouvert, ou en rouvrant les exercices clôturés postérieurs, du plus récent vers l'ancien (section \emph{Exercices clôturés dans le désordre}).
 
 \paragraph{Réouverture d'un exercice clôturé (Admin uniquement).}
 La clôture d'un exercice est un verrou réversible et tracé. La \textbf{réouverture} est réservée aux \textbf{administrateurs} — plus strict que la clôture, accessible aux comptables — et n'est \textbf{pas} disponible via une clé API (opération privilégiée). Elle se fait depuis \emph{Paramètres} → \emph{Exercices comptables}, bouton \emph{Réouvrir}, et exige un \textbf{motif obligatoire} conservé dans le journal d'audit (\texttt{audit\_log}, action \texttt{fiscal\_year.reopened}, avec l'état avant/après et l'auteur ; conservation 10 ans). Une \textbf{garde d'ordre} impose de rouvrir du plus récent vers l'ancien : si un exercice de date de début postérieure est encore clôturé, la réouverture est refusée jusqu'à ce que celui-ci soit rouvert d'abord. Un exercice rouvert redevient éditable et pourra être re-clôturé. Aucune procédure en ligne de commande n'est nécessaire ni disponible pour cette opération.
@@ -2055,7 +2057,7 @@ En complément de l'authentification web par cookie, Kesh permet à des \textbf{
 
 \begin{itemize}
     \item \textbf{Gestion} : les clés se créent et se révoquent depuis l'interface web, page \textbf{Paramètres → Clés API} (\texttt{/settings/api-keys}), accessible aux rôles Comptable et Administrateur. La gestion des clés est \textbf{impossible via l'API elle-même} (protection anti-auto-propagation : une clé compromise ne peut pas en créer d'autres).
-    \item \textbf{Administration} : plus largement, \textbf{aucune route réservée au rôle Administrateur n'est atteignable avec une clé API}, quel que soit le rôle de son créateur --- gestion des utilisateurs et des mots de passe, paramètres de facturation et de relance, taux de TVA, niveaux de rappel, modèles d'e-mail, coordonnées de l'entreprise, suppression de facture, export et import d'installation, réouverture d'exercice. La réponse est \texttt{403 API\_KEY\_ADMIN\_FORBIDDEN}. Ces opérations se font dans l'interface web. \textbf{Attention à la version} : cette fermeture n'est pas dans la v0.9.0 --- voir l'encadré \emph{« Dans quelle version ? »} plus bas.
+    \item \textbf{Administration} : plus largement, \textbf{aucune route réservée au rôle Administrateur n'est atteignable avec une clé API}, quel que soit le rôle de son créateur --- gestion des utilisateurs et des mots de passe, paramètres de facturation et de relance, taux de TVA, niveaux de rappel, modèles d'e-mail, coordonnées de l'entreprise, suppression de facture, export et import d'installation, réouverture d'exercice. La réponse est \texttt{403 API\_KEY\_ADMIN\_FORBIDDEN}. Ces opérations se font dans l'interface web. Cette fermeture est livrée depuis la v0.10.0 --- voir l'encadré \emph{« Dans quelle version ? »} plus bas.
     \item \textbf{Journal d'audit} : la \textbf{consultation du journal} --- la liste, le vocabulaire et l'export CSV (\texttt{/api/v1/audit-log*}) --- est elle aussi \textbf{fermée aux clés API}, y compris en lecture seule et y compris pour une clé créée par un Administrateur. ⚠️ \emph{La réponse porte ici un \textbf{autre} code~: \texttt{403 API\_KEY\_MANAGEMENT\_FORBIDDEN}, et non \texttt{API\_KEY\_ADMIN\_FORBIDDEN} --- le journal n'est pas une route d'administration. Le libellé parle de «~gestion de clés~» pour des raisons historiques~; sur ces trois routes, il signifie simplement qu'une clé n'y a pas accès. Ne cherchez pas le défaut dans la configuration de la clé.} Le journal d'audit se lit dans l'interface web, par un Comptable ou un Administrateur.
     \item ⚠️ \textbf{Ce qu'une clé \texttt{read-write} peut faire depuis la v0.12.1, et qu'elle ne pouvait pas avant} : \textbf{dévalider une facture}, donc \textbf{supprimer l'écriture comptable} que sa validation avait créée. La route n'est pas réservée à l'administrateur --- elle est ouverte au Comptable, et donc aux clés --- par un choix délibéré, aligné sur les API de facturation comparables. Les neuf refus de la dévalidation s'y appliquent intégralement (exercice clos, exercice suivi d'un exercice clôturé, verrou de période, facture réglée, créditée, relancée, envoyée, rapprochée, contre-passée), et chaque dévalidation est journalisée sous son propre nom. Si cette capacité vous paraît trop large pour une intégration, donnez-lui une clé en \emph{lecture seule}.
     \item ⚠️ \textbf{Depuis la v0.13.0, une clé \texttt{read-write} peut aussi modifier une écriture} saisie à la main (\texttt{PUT /api/v1/journal-entries/\{id\}}), sous les mêmes gardes qu'à l'écran~: exercice ouvert, aucun exercice postérieur clôturé, aucune pièce propriétaire, période non verrouillée, mêmes contrôles qu'à la saisie. Chaque modification est tracée avec l'état avant et après, \textbf{au nom de la clé}. Dans le \textbf{même cadre}, elle peut \textbf{supprimer} une écriture saisie à la main (\texttt{DELETE /api/v1/journal-entries/\{id\}})~: la trace \texttt{journal\_entry.deleted} porte le contenu complet de l'écriture, \textbf{au nom de la clé}, et le numéro n'est jamais réattribué.
@@ -2071,7 +2073,7 @@ En complément de l'authentification web par cookie, Kesh permet à des \textbf{
 
 \medskip
 \begin{keshwarning}
-\textbf{Dans quelle version ? Pas dans celle que décrit ce manuel.} Jusqu'à la \textbf{v0.9.0 incluse}, une clé \texttt{read-write} créée par un Administrateur atteint bien les routes d'administration --- elle peut donc créer un compte administrateur, ce qui rend la révocation de la clé \textbf{inopérante}. Le correctif décrit au point \textbf{Administration} ci-dessus est livré à la \textbf{prochaine version publiée} (section \texttt{[Unreleased]} du \keshcommand{CHANGELOG.md}). \textbf{Si vous exploitez la v0.9.0, traitez une clé d'origine Administrateur comme un secret d'administrateur} : ne l'utilisez que si l'intégration en a réellement besoin, et préférez un créateur Comptable. Suivi GitHub \texttt{KF-036 / \#167}.
+\textbf{Dans quelle version ? Depuis la v0.10.0.} Jusqu'à la \textbf{v0.9.0 incluse}, une clé \texttt{read-write} créée par un Administrateur atteint bien les routes d'administration --- elle peut donc créer un compte administrateur, ce qui rend la révocation de la clé \textbf{inopérante}. Le correctif décrit au point \textbf{Administration} ci-dessus est livré par la \textbf{v0.10.0} (entrée \#167 du \keshcommand{CHANGELOG.md}). \textbf{Si vous exploitez encore une version antérieure, traitez une clé d'origine Administrateur comme un secret d'administrateur} : ne l'utilisez que si l'intégration en a réellement besoin, préférez un créateur Comptable, et mettez Kesh à jour. Suivi GitHub \texttt{KF-036 / \#167}.
 \end{keshwarning}
 \end{keshwarning}
 

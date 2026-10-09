@@ -174,3 +174,77 @@ describe('le catalogue fr-CH ne ment sur aucun site', () => {
 		expect(TOLEREES.filter((t) => t.motif.trim().length < 20).map((t) => t.cle)).toEqual([]);
 	});
 });
+
+/**
+ * Valeur `fr-CH` d'une clé, **lignes de continuation comprises**. Règle commune aux trois
+ * analyseurs de catalogue — celui-ci, `catalogue_fr` (`crates/kesh-api/tests/textes_coherents.rs`)
+ * et `valeurs_brutes` (`kesh-i18n`), alignés en revue de code P2 (B2-4, E2-4, A-4) : tête
+ * `^([a-zA-Z][\w-]*) = ?(.*)$` ; une ligne qui commence par un blanc prolonge la valeur, jointe
+ * par une espace sauf à une valeur encore vide (forme bloc) ; toute autre ligne — tête,
+ * commentaire, ligne vide, `}` de sélecteur en colonne 0 — la clôt sans s'y ajouter. Sans elle,
+ * une clé passée sur plusieurs lignes serait lue tronquée et G13 rougirait sans régression.
+ * `undefined` si la clé n'y figure pas. Anti-test-muet : le premier `it` de G13.
+ */
+function valeurDuCatalogueFr(cle: string): string | undefined {
+	const texte = readFileSync(join(RACINE_FTL, 'fr-CH', 'messages.ftl'), 'utf-8');
+	let valeur: string | undefined;
+	for (const ligne of texte.split('\n')) {
+		const m = /^([a-zA-Z][\w-]*) = ?(.*)$/.exec(ligne);
+		if (m) {
+			if (valeur !== undefined) return valeur;
+			if (m[1] === cle) valeur = m[2];
+		} else if (valeur !== undefined) {
+			if (/^[ \t]/.test(ligne) && ligne.trim() !== '') {
+				valeur += (valeur === '' ? '' : ' ') + ligne.trim();
+			} else return valeur;
+		}
+	}
+	return valeur;
+}
+
+/**
+ * G13 (Story 15-14a, #569 et #547) — les replis frontend **à site unique** suivent le catalogue.
+ *
+ * ⚠️ La garde ci-dessus ne voit pas ces clés : elle ne retient que celles qui portent **au
+ * moins deux** replis distincts (`parTexte.size > 1`). Chacune des dix clés ci-dessous n'a
+ * qu'un site d'appel ; un repli resté à l'ancien texte n'y rougirait pas, et l'écran
+ * l'afficherait dès que le catalogue manque (premier rendu, catalogue non chargé).
+ *
+ * Le tableau attendu à UN élément est l'anti-test-muet : un relevé vide, une clé disparue du
+ * catalogue (`[undefined]`) ou un second repli divergent rougissent tous.
+ */
+const REPLIS_A_SITE_UNIQUE: readonly string[] = [
+	'settlement-cancel-blocked-fiscal-year-closed',
+	'reconciliation-cancel-blocked-fiscal-year-closed',
+	'supplier-invoices-cancel-blocked-fiscal-year-closed',
+	'opening-balances-locked-first-year-closed',
+	'invoice-default-revenue-account-unusable',
+	// Revue de code P1, B-7 : le message renvoie à l'écran « Taux de TVA » (`vat-rates-title`).
+	'vat-purchase-no-rates',
+	// Revue de code P2, A-1/E2-2 : la réouverture prescrite est bornée aux exercices postérieurs.
+	'journal-entries-modify-blocked-later-fiscal-year-closed',
+	'fiscal-year-out-of-order-warning',
+	// Revue de code P2, E2-1 : les numéros de compte de l'écran Comptes bancaires sont ceux des
+	// plans livrés (1010 Poste, 1020 Banque) — G4-bis lit le catalogue, G13 tient le repli égal.
+	'bank-accounts-labels-page-subtitle',
+	'bank-accounts-tooltip-journal-account',
+];
+
+describe('les replis frontend à site unique suivent le catalogue fr-CH (G13)', () => {
+	// Anti-test-muet de `valeurDuCatalogueFr` — les trois cas réels de la règle commune aux trois
+	// analyseurs (mêmes assertions dans `kesh-api` et `kesh-i18n`).
+	it('valeurDuCatalogueFr suit la règle commune des trois analyseurs', () => {
+		const corps = valeurDuCatalogueFr('email-password-reset-body') ?? '';
+		expect(corps.startsWith('Vous avez demandé'), corps).toBe(true);
+		expect(corps.endsWith('ignorez cet email.'), corps).toBe(true);
+		expect(valeurDuCatalogueFr('auth-recovery-forgot-title')).toBe('Mot de passe oublié');
+		expect(valeurDuCatalogueFr('error-account-not-postable')?.endsWith('choisissez des comptes imputables.')).toBe(true);
+	});
+
+	it('les_replis_frontend_a_site_unique_suivent_le_catalogue', () => {
+		const releve = replisParCle();
+		for (const cle of REPLIS_A_SITE_UNIQUE) {
+			expect([...(releve.get(cle)?.keys() ?? [])], cle).toEqual([valeurDuCatalogueFr(cle)]);
+		}
+	});
+});

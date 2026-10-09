@@ -22,7 +22,7 @@ describe('reconciliationCancelMessage', () => {
 			['BANK_TRANSACTION_NOT_RECONCILED', "n'est pas rapprochée"],
 			['INVOICE_CREDITED', 'reste ouvert au compte débiteurs'],
 			['INVOICE_WRITTEN_OFF', "annulez d'abord le solde"],
-			['FISCAL_YEAR_CLOSED', "rouvrir l'exercice"],
+			['FISCAL_YEAR_CLOSED', "en commençant par le plus récent"],
 			['MATCHED_BANK_TRANSACTION', 'autre transaction bancaire'],
 			['ACCOUNT_ARCHIVED', 'réactivez-le'],
 			['FISCAL_YEAR_INVALID', 'Aucun exercice ouvert'],
@@ -58,7 +58,7 @@ describe('reconciliationCancelErrorMessage', () => {
 				message: 'texte serveur',
 				status: 409,
 			}),
-		).toContain("rouvrir l'exercice");
+		).toContain("en commençant par le plus récent");
 		expect(
 			reconciliationCancelErrorMessage({
 				code: 'ACCOUNT_ARCHIVED',

@@ -170,7 +170,7 @@ describe("fiche facture — annuler un règlement", () => {
     cancelSettlementMock.mockRejectedValue({
       code: "FISCAL_YEAR_CLOSED",
       message:
-        "Ce règlement appartient à un exercice clôturé : un administrateur doit rouvrir l'exercice pour pouvoir l'annuler.",
+        "Ce règlement appartient à un exercice clôturé : pour pouvoir l'annuler, un administrateur doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
       status: 409,
     });
     const { findByTestId, getByTestId, findByText } = render(Page);
@@ -179,7 +179,7 @@ describe("fiche facture — annuler un règlement", () => {
     await fireEvent.click(getByTestId("invoice-settlement-cancel-confirm"));
 
     const erreur = await findByTestId("invoice-settlement-cancel-error");
-    expect(erreur.textContent).toContain("rouvrir l");
+    expect(erreur.textContent).toContain("en commençant par le plus récent");
     // La fiche est toujours là.
     expect(await findByText("F-2026-005", { exact: false })).toBeTruthy();
   });

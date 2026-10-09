@@ -5863,3 +5863,862 @@ l'import (#458–#461).
 - **Option retenue** : la doublure expose la prop `bankLedgerAccountId` qu'elle reçoit (attribut `data-bank-ledger-account-id`) ; le test 11 asserte la valeur résolue (le `journalAccountId` du compte monté ; `null` si `listBankAccounts` échoue, si le compte manque ou n'est pas lié). Le filtre lui-même est asserté dans la vraie modale par le test 10. Les deux tests couvrent ensemble le câblage parent → prop → filtre.
 - **Alternatives** : retirer la doublure pour ce test (défait la décision de la 15-5c et oblige à piloter l'autocomplétion depuis le parent) ; un second fichier de test sans doublure (dédouble le montage pour un seul cas).
 - **Réversibilité** : totale — un test et une doublure de test.
+
+## C-15-14-1 — 15-14 : tri des P3/P4 de documentation et de libellés, et découpage d'emblée en 15-14a / 15-14b
+
+- **Contexte** : lot décidé par Guy pour faire baisser le nombre de bugs (70 ouverts au 2026-10-09). Tri des issues
+  ouvertes `bug`/`known-failure` (et `documentation`) P3/P4 sur `dc4bc58b`, chaque défaut vérifié au code.
+  Retenues : #539, #547, #488, #291, #458, #449, #432, #569, #321, #323 (lot « manuels et libellés ») ; #575,
+  #554, #127 (lot « exploitation »). Les secondes réécrivent le manuel d'administration et le compose de
+  développement, que la 15-13a (*done*, non mergée : +187 lignes au manuel d'administration, refonte de
+  `DOCKER_START.md`) et la 15-13b (*ready-for-dev*) touchent aussi — #575 porte même un complément qui n'existe
+  qu'après l'AC 3 b de la 15-13a (deux lignes `MARIADB_ROOT_PASSWORD`).
+- **Retenu** : découpage d'emblée en **15-14a** (manuel utilisateur, brochure, `api-external.md`, README,
+  catalogues et replis — indépendante, développable tout de suite) et **15-14b** (manuel d'administration :
+  Synology, volumes, multi-société ; `docker-compose.dev.yml` — **après** le merge de 15-13a, 15-13b et 15-14a).
+  La fiche `15-14-lot-documentation-libelles.md` devient l'index du tri. Motif : une dépendance, non le nombre
+  de modules — la 15-14a seule ne touche que trois paquets de code (kesh-i18n, kesh-api, frontend) et la 15-14b
+  aucun module de production.
+- **Écartées** : une story unique (bloquée tout entière par la 15-13b, encore à développer) ; une coupe par nature
+  « doc / libellés » (les deux moitiés réécriraient le manuel utilisateur — #569 y a cinq sites, C-15-14-16 — et se
+  disputeraient les mêmes lignes).
+- **Réversible** : oui (fiches seules).
+
+## C-15-14-2 — 15-14 : issues écartées du lot, avec leur raison
+
+- **Contexte** : le tri a examiné toutes les P3/P4 ouvertes ; l'orchestrateur avait exclu d'office #551, #552,
+  #576, #474, #524, #544, #528, #542, #279, #518 et #577.
+- **Retenu — écartées** :
+  - **#579** (P4, libellés du refus `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`) : B-2 exige un champ neuf dans
+    la variante `DbError::SettlementCounterpartyIsClaimAccount` et chez tous ses producteurs (`kesh-db`), B-6 une
+    refonte d'extraction ; C-15-6b-3 en a confié le solde à la 15-6c, qui retouche les écrans de liaison bancaire
+    et est en développement dans `kesh-15-6c`. Corriger B-1/B-4 ici et laisser B-2/B-6 ne fermerait pas l'issue.
+  - **#324** (P3, KF-042, « Valider ») : sa **prémisse est fausse au code** — une écriture saisie n'est pas figée,
+    elle reste modifiable et supprimable tant que son exercice est ouvert (manuel utilisateur `:476-481` :
+    « il n'y a rien à valider »). `Speichern`/`Salva`/`Save` disent donc vrai ; c'est le français « Valider »
+    qui est le faux ami, et le changer touche une quinzaine de sélecteurs E2E et Vitest
+    (`journal-entries.spec.ts`, `vat-purchase-assistant.spec.ts`, `JournalEntryForm.*.test.ts`) pour un
+    arbitrage de vocabulaire qui revient à Guy. **À commenter sur l'issue** (orchestrateur).
+  - **#469** (P4) : traduire les refus de validation de la route du journal d'audit demande un mécanisme
+    `AppError` résolu par clé — changement de comportement, non un libellé.
+  - **#339** (P4, KF-046) : 48 sites de markup en dur sur 12 fichiers — un rollout i18n, pas un lot.
+  - **#504** (P4) : la langue de la communication QR dépend du contact — règle métier.
+  - **#253** (P4) : contraste CSS, ni documentation ni libellé.
+  - Les KF de tests et de couverture (#76, #97, #125, #126, #287, #310, #421, #424, #478, #498) et les défauts de
+    comportement P3 (#293, #522, #537, #538, #546, #548, #555, #568, #578) : hors de la nature du lot.
+- **Écartée** : prendre #579 en partie (une issue ne se ferme pas à moitié) ; corriger #324 dans le sens que
+  propose l'issue (`Buchen`/`Post`), qui ferait dire aux cibles l'inverse de ce que fait le bouton en édition.
+- **Réversible** : oui.
+
+## C-15-14-3 — 15-14a : les fonctions promises et absentes se retirent du manuel, elles ne se livrent pas ici
+
+- **Contexte** : #291 (« Contacts → Import CSV ») laisse l'arbitrage au Project Lead entre retirer et livrer ; la
+  vérification de #488 révèle une seconde fonction fictive du même type, « Administration → Plan comptable →
+  Import CSV » (`user-manual.tex:409-422`, ligne « Personnalisé CSV » du tableau `admin-manual.tex:1369`) — aucune
+  route ni écran d'import de plan. #458 (« dossier surveillé ») hésite entre corriger le texte et automatiser
+  l'import, automatisation que suit déjà #459.
+- **Retenu** : retirer les deux sous-sections d'import fictives et la promesse de surveillance ; le texte décrit
+  ce qui existe (plans choisis par le type d'organisation, comptes ajoutés un par un ; import déclenché à la main).
+  #458 se ferme sur la correction du texte, `refs #459` pour l'automatisation.
+- **Écartées** : livrer un import de contacts ou de plan (fonctionnalité, hors lot) ; garder le texte « en
+  attendant » (il promet ce qui n'existe pas, défaut que l'issue nomme).
+- **Réversible** : oui — si l'une de ces fonctions est livrée, sa story réécrit la section.
+
+## C-15-14-4 — 15-14a : formulation des prescriptions de réouverture (#569)
+
+- **Contexte** : six clés (×4 locales), six replis Rust, quatre replis frontend, quatre phrases du manuel (cinq : C-15-14-16) et une
+  ligne d'`api-external.md` prescrivent « rouvrir l'exercice » sans l'ordre LIFO. La 15-12b a en outre renvoyé à
+  #569 (B-1 = E-1) la clause « une écriture existante se corrige par une contre-passation » de
+  `error-later-fiscal-year-closed`, qu'un exercice du jour suivi d'un exercice clôturé ferait refuser.
+- **Retenu** : la prescription devient « rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le
+  plus récent » (forme de C111, « jusqu'à celui-ci » ajouté parce que ces messages désignent l'exercice à
+  atteindre). La clause de contre-passation de `error-later-fiscal-year-closed` et de
+  `journal-entries-modify-blocked-later-fiscal-year-closed` est **examinée et conservée** : l'exercice du jour
+  suivi d'un exercice clôturé n'existe que dans l'état hérité, que l'écran des exercices signale par son propre
+  bandeau, et l'alternative que donne déjà le message (« sinon, un administrateur rouvre … en commençant par le
+  plus récent ») reste juste dans ce cas. Les corps de confirmation (« seul un administrateur peut le rouvrir »,
+  « Vous êtes sur le point de rouvrir l'exercice ») décrivent, ils ne prescrivent pas : hors inventaire.
+- **Écartées** : nommer l'exercice le plus récent dans chaque message (argument neuf à porter par six
+  producteurs) ; réécrire la clause de contre-passation (elle alourdirait un message juste dans l'état sain).
+- **Réversible** : oui.
+
+## C-15-14-5 — 15-14a : « Réglages » devient « Paramètres » partout où le manuel ou un message désigne l'écran
+
+- **Contexte** : #547. Le menu affiche « Paramètres » (`nav-settings`). Le manuel utilisateur écrit « Réglages »
+  quatre fois (`:575`, `:907`, `:952`, `:2085`) ; la propagation trouve un cinquième site, un **message** :
+  `invoice-default-revenue-account-unusable` (« corrigez-le dans les Réglages ») et son repli
+  (`InvoiceForm.svelte:768`).
+- **Retenu** : les quatre phrases du manuel et le message (4 locales, chemin complet `Paramètres → Facturation`
+  aligné sur `settings-invoicing-title` de chaque locale, repli identique au catalogue `fr-CH`). Restent assumés :
+  les noms d'entité du journal d'audit (« Réglages de facturation », « Réglages de recouvrement » — des noms
+  d'objet, non des renvois au menu), les commentaires de code, et la ligne historique `README.md:213` (feuille de
+  route publiée).
+- **Écartée** : renommer aussi les entités d'audit (vocabulaire du journal, autre domaine).
+- **Réversible** : oui.
+
+## C-15-14-6 — 15-14a : les références d'issues du README deviennent des liens explicites (#432)
+
+- **Contexte** : #432 propose d'uniformiser sur `#NNN` nu, « auto-lié par GitHub ». Vérifié par l'API de rendu
+  de GitHub (`POST /markdown`) : en mode `markdown` (rendu de fichier sans contexte de dépôt), **ni** `(#195)`
+  **ni** `[#164]` ne deviennent des liens ; en mode `gfm` avec contexte, **les deux** le deviennent (les crochets
+  restant affichés). La prémisse « l'une est cliquable, l'autre non » ne tient donc dans aucun des deux modes.
+- **Retenu** : toute référence d'issue du README (54 occurrences, lignes 211-223 sur `dc4bc58b`) s'écrit
+  `[#NNN](https://github.com/guycorbaz/kesh/issues/NNN)` — la forme du CHANGELOG, lien dans tous les modes ; un
+  test l'impose.
+- **Écartées** : `#NNN` nu (non lié si le rendu de fichier est en mode `markdown`) ; des définitions de référence
+  en pied de fichier (une oubliée redevient du texte sans signal — l'issue elle-même l'écarte).
+- **Réversible** : oui.
+
+## C-15-14-7 — 15-14a : vocabulaire de la clôture d'exercice dans les trois cibles (#323)
+
+- **Contexte** : `fiscal-year-close-button` et `fiscal-year-close-confirmation-action` portent `Schliessen` /
+  `Chiudi` / `Close`, le verbe des panneaux (`api-keys-actions-close`, `supplier-invoices-form-close`,
+  `payment-batches-form-close`, `reconciliation-cancel-dismiss`).
+- **Retenu** : `Abschliessen` (de-CH, verbe déjà employé par les messages de clôture dans l'ordre :
+  « Schliessen Sie … ab ») ; `Chiudi l’esercizio` (it-CH) ; `Close fiscal year` (en-CH) ; titres de confirmation
+  alignés (`Geschäftsjahr abschliessen?`). Le français ne change pas (la suite E2E tourne en français : aucun
+  sélecteur touché). Un test interdit que le libellé de la clôture égale celui d'un panneau.
+- **Écartée** : `Jahresabschluss` (substantif sur un bouton d'action) ; garder `Close` seul en anglais.
+- **Réversible** : oui.
+
+## C-15-14-8 — 15-14 : une garde testée lit la documentation
+
+- **Contexte** : « aucun gate ne lit le manuel » (rétrospective de l'Epic 24) ; les dix défauts de ce lot sont des
+  phrases que rien n'a contrôlées. Un test qui fige un texte de catalogue existe (parité, replis) ; aucun ne lit
+  `docs/manual/`, `README.md` ni `api-external.md`.
+- **Retenu** : un fichier de test pur, sans base, `crates/kesh-api/tests/textes_coherents.rs` (nom rectifié en
+  validation P1, C-15-14-16), qui lit ces
+  fichiers et y interdit les valeurs corrigées par le lot (et, pour les taux de TVA, un test de module de
+  `vat_rates.rs` qui confronte le manuel à `DEFAULT_SWISS_RATES`). La 15-14b l'étend. Chaque assertion se prouve
+  par mutation (valeur réintroduite → rouge).
+- **Écartées** : se fier au grep du développeur (c'est le régime qui a laissé passer ces défauts) ; un script hors
+  gate (rien ne le lancerait).
+- **Réversible** : oui (un fichier de test).
+
+## C-15-14-9 — 15-14b : le compose de développement démarre sans `.env` par l'écran `/setup` (#554)
+
+- **Contexte** : `docker-compose.dev.yml:25` pose `${KESH_ADMIN_PASSWORD:-admin}` (5 caractères), refusé par
+  `WeakAdminPassword`. L'issue admet deux remèdes : un défaut de 12 caractères au moins, ou pas de défaut.
+- **Retenu** : `${KESH_ADMIN_PASSWORD:-}` — absent ou vide, l'administrateur se crée à `/setup`, comme avec
+  `docker-compose.prod.yml` ; aucun mot de passe publié dans un fichier du dépôt.
+- **Écartée** : un défaut long « de développement » (un mot de passe publié de plus — précisément ce que la 15-13a
+  retire de `docker-compose.yml`).
+- **Réversible** : oui.
+
+## C-15-14-10 — 15-14b : le pré-script Hyper Backup vise la base de `DATABASE_URL`, par un conteneur jetable
+
+- **Contexte** : #575. `docker-compose.prod.yml` n'a pas de service `mariadb` : la base est celle de l'exploitant
+  (paquet DSM, conteneur séparé, base gérée). Le pré-script du manuel fait `docker compose exec -T mariadb` et lit
+  `MARIADB_ROOT_PASSWORD` dans `.env` par `grep | cut` — deux lignes possibles après la 15-13a (complément de
+  l'issue).
+- **Retenu** : le pré-script exécute `mariadb-dump` dans un conteneur jetable `mariadb:10.11` attaché au réseau
+  `frontend`, avec un fichier d'identifiants dédié (`--defaults-extra-file`, droits 600, hors du `.env`), contre
+  l'hôte et la base que nomme `DATABASE_URL`. Le manuel ne demande plus d'écrire `MARIADB_ROOT_PASSWORD` dans le
+  `.env` d'une installation Synology.
+- **Écartées** : le client du paquet MariaDB de DSM (chemin propre à la version du paquet, absent si la base est
+  ailleurs) ; garder `grep .env` (deux lignes, et un secret root dans un fichier lu par Compose).
+- **Réversible** : oui.
+
+## C-15-14-11 — 15-14a (validation P1) : « réglages » en minuscule est un nom commun, sauf deux renvois à l'écran
+
+- **Contexte** : R3 ≈ F-11. L'inventaire de #547 était relevé par un grep sensible à la casse. Le minuscule
+  « réglages » apparaît 22 fois hors commentaires de code *(faux : 28 lignes, 26 assumées — rectifié par
+  C-15-14-17)* (catalogue fr-CH, replis Rust, deux manuels), et deux
+  renvois à l'écran avaient échappé : fr-CH `error-invoice-pdf-header-overflow` (« Supprimez une coordonnée …
+  dans les réglages », où de-CH, it-CH et en-CH nomment le menu) avec son repli `errors.rs:1807`, et
+  `.env.example:305` (« (Réglages) », fichier hors du périmètre du grep).
+- **Retenu** : ces deux renvois deviennent « Paramètres » ; les 22 *(26 : C-15-14-17)* autres sont le **nom commun** — les valeurs
+  configurées (« le compte de TVA due désigné dans les réglages », « les trois réglages sont vides ») — et entrent
+  à l'inventaire des non résolus de l'AC 2, avec les notes de versions publiées du CHANGELOG (`:347`, `:433`,
+  `:451`). T2, T3 et T9 gardent les deux renvois corrigés.
+- **Écartées** : remplacer tout « réglages » par « paramètres » (réécriture de style sans défaut, 22 sites dont
+  des replis Rust gardés par test) ; laisser `error-invoice-pdf-header-overflow` (même symptôme que #547, seul
+  écart de la locale fr avec les trois autres).
+- **Réversible** : oui (texte).
+
+## C-15-14-12 — 15-14a (validation P1) : « dossier surveillé » se corrige aussi dans `.env.example` ; « scruté à l'import » reste
+
+- **Contexte** : F-4, R7. `.env.example:197` (sur `bcded0c8`) écrit « déposées dans un dossier surveillé » —
+  le fichier que l'exploitant lit pour configurer l'inbox. `admin-manual.tex:781` et `.env.example:204` disent
+  « Dossier inbox scruté à l'import ».
+- **Retenu** : `.env.example:197` corrigé et gardé par T5 ; « scruté à l'import » conservé — il dit que le dossier
+  est lu au moment de l'import, ce qui est exact (l'import, lancé à la main, parcourt le dossier). Les notes de la
+  0.4.0 (`CHANGELOG.md:499`) sont historiques, assumées.
+- **Écartée** : réécrire « scruté à l'import » (pas de défaut : la phrase ne prête à l'import aucun déclenchement).
+- **Réversible** : oui.
+
+## C-15-14-13 — 15-14a (validation P1) : le test des taux de TVA vit dans un `mod tests` neuf de `vat_rates.rs`, et ce choix coûte le gate complet
+
+- **Contexte** : F-6 ≈ R6. La fiche plaçait T1 « dans le `mod tests` de `vat_rates.rs` » ; ce module n'existe
+  pas. `DEFAULT_SWISS_RATES` est un `const` privé. Trois lieux possibles : (a) un `#[cfg(test)] mod tests` neuf
+  dans `vat_rates.rs` ; (b) rendre la constante `pub` et tester depuis `textes_coherents.rs` (kesh-api) ; (c) un
+  fichier `kesh-db/tests/`, qui exige aussi une constante publique.
+- **Retenu** : (a). Aucun changement de visibilité ni de code de production ; précédents du même répertoire
+  (`accounts.rs:1136`, `bank_profiles.rs:343`). Le test est un `#[test]` pur, **pas** un `#[sqlx::test]` :
+  `test_schema_guard.rs` ne recense que ces derniers (`TOKEN = "#[sqlx::test"`) et ne le voit pas. Il lit
+  `docs/manual/fr/user-manual.tex` par `env!("CARGO_MANIFEST_DIR")/../../` — couplage d'un crate de
+  persistance à la documentation, accepté : kesh-db n'est pas publié (seul `kesh-import` l'est).
+  **Rayon du gate** : `vat_rates.rs` est un repository — l'**exception `kesh-db`** du `CLAUDE.md` s'applique :
+  tout patch qui touche ce fichier, y compris en boucle de revue, impose le gate complet ; un patch limité à
+  `textes_coherents.rs`, `loader.rs` ou aux catalogues relève du gate ciblé. La mutation `380 → 370` touche la
+  constante de production : restaurée par `git checkout` puis `touch`.
+- **Écartées** : (b) et (c) — modifier la visibilité d'une constante de production pour un test de
+  documentation ; dupliquer les taux dans le test (une règle recopiée peut diverger, mémoire *Tests qui prouvent
+  moins*).
+- **Réversible** : oui (un module de test).
+
+## C-15-14-14 — 15-14a (validation P1) : le domaine du test des prescriptions de réouverture se prend en fr-CH, et se contrôle dans les quatre locales
+
+- **Contexte** : R5 ≈ F-2. T8 demandait « le verbe de réouverture de la locale » sans le donner. En de-CH, ce
+  verbe prend au moins cinq formes (« wieder öffnen », « öffnen Sie dieses zuerst », « Öffnen Sie es wieder »,
+  « Wiedereröffnung », « wieder eröffnet ») ; un motif par locale passait à vide sur la clé même que la story
+  corrige (`error-fiscal-year-reopen-blocked`, de-CH « öffnen Sie dieses zuerst »), et un motif large (`öffn`)
+  ramasse « Detailansicht öffnen », « Einstellungen öffnen ». La liste d'exemptions ne couvrait pas les clés
+  `-reopen-*` qui nomment l'acte, ni `error-reminder-amounts-changed` hors fr.
+- **Retenu** : le domaine est l'ensemble des clés dont la valeur **fr-CH** matche `[Rr]ouvr|[Rr]éouv` — univoque
+  en français ; 20 clés sur `bcded0c8`. Pour chacune, hors exemptions, **chaque** locale doit porter son marqueur
+  d'ordre. Exemptions **par clé**, liste fermée de 10 (six qui nomment l'acte, deux corps qui décrivent, la clé
+  qui nomme l'exercice à rouvrir, `error-reminder-amounts-changed`) ; partition recomptée 6 + 4 + 10 = 20. Une
+  mutation de-CH s'ajoute à la mutation fr.
+- **Écartées** : un motif par locale (ouvert par nature : une forme imprévue le contourne — § *Inventorier les
+  sites NON RÉSOLUS*) ; des exemptions par clé × locale (la parité des catalogues rend la clé suffisante).
+- **Limite assumée** : une valeur non française qui prescrirait la réouverture sous une clé dont la valeur fr-CH
+  ne la prescrit pas échapperait au test — la parité des catalogues rend ce cas improbable.
+- **Réversible** : oui.
+
+## C-15-14-15 — 15-14b (validation P1) : le pré-script Hyper Backup dit ses conditions de fonctionnement
+
+- **Contexte** : R14, F-10. Le pré-script de C-15-14-10 ne disait ni l'ordre des options de `mariadb-dump`, ni
+  la forme du mot de passe (celui de `DATABASE_URL` est pourcentage-encodé), ni les conditions réseau du paquet
+  MariaDB de DSM, ni le cas d'une image absente hors ligne. Aucune n'a été rejouée par les lentilles (Docker
+  interdit en lecture seule).
+- **Retenu** : l'AC 1 les prescrit au manuel et à la recette du T1 — `--defaults-extra-file` en première option ;
+  mot de passe décodé et entre guillemets dans le fichier d'options ; port 3307, accès TCP et pare-feu du paquet
+  DSM, `localhost` qui désigne le conteneur ; `docker pull mariadb:10.11` à la mise en place, et l'échec visible
+  de la tâche s'il manque (voulu). Ce qui relève de la documentation Synology et non de la recette est écrit
+  comme tel.
+- **Écartée** : renvoyer ces points à la recette sans les écrire (le manuel est ce que l'exploitant suit).
+- **Réversible** : oui.
+
+## C-15-14-16 — 15-14 (validation P1) : rectificatifs et réalignement sur `bcded0c8`
+
+- **Rebase** : la 15-13a est mergée (`bcded0c8`, #551 fermée) entre la passe et sa remédiation ; la branche est
+  rebasée (sauvegarde `backup/15-14-avant-rebase-bcded0c8`), `sprint-status.yaml` résolu par union (ligne
+  d'en-tête de la 15-14 renumérotée (41)), registre fusionné sans conflit. Numéros de ligne réalignés dans les
+  deux fiches ; ceux de la spécification restent entre parenthèses. La 15-14b ne dépend plus que de la 15-13b et
+  de la 15-14a.
+- **Rectificatif de C-15-14-8** : le fichier de test se nomme `crates/kesh-api/tests/textes_coherents.rs`, comme
+  le disent les deux fiches — non `documentation_coherente.rs`. C-15-14-8 est corrigé en place, avec renvoi ici.
+- **Rectificatif de C-15-14-1 et C-15-14-4** : #569 a **cinq** sites au manuel utilisateur, non quatre
+  (`user-manual.tex:1208-1209` trouvé par R1 = F-1).
+- **Rectificatif de C-15-14-3** : la ligne « Personnalisé CSV » est à `admin-manual.tex:1383` sur `bcded0c8`
+  (`:1369` sur `dc4bc58b`).
+- **`user-manual.tex:182`** (R12) : corrigé par la 15-14a sans condition, texte identique à celui de la 15-7b1
+  (non mergée), pour que le conflit de rebase se résolve en gardant l'un ou l'autre.
+- **Réversible** : oui.
+
+## C-15-14-17 — 15-14 (validation P2) : un inventaire s'écrit comme une commande comptée et partitionnée, PDF normalisé, `docs/user-guide/` compris
+
+- **Contexte** : trois MEDIUM de la validation P2 sont nés de la remédiation P1, tous des inventaires déclarés
+  complets qui ne l'étaient pas (R-1 = F-5 « le seul autre site de-CH » ; R-2 = F-6 « 22 » réglages, 26 en
+  réalité ; F-8, la liste de formes de G5 étendue par la P1, qui laisse passer les affirmations réécrites) ;
+  un quatrième, manqué depuis la spécification, est de même nature (R-3 = F-2, Snapshot Replication hors
+  inventaire de #575). F-1 : le contrôle aplati des PDF prescrit
+  (`pdftotext | tr | grep -F`) passe à vide sur toute apostrophe (`'` y devient `’`) et sur les traits d'union
+  coupés — vert avant correction. F-4 : `docs/user-guide/fr/getting-started.md:29`, lié depuis le README,
+  promettait KMU, Verein et un import de plan, hors de tout périmètre de grep.
+- **Retenu** : chaque AC qui corrige une famille de textes écrit la **commande** d'inventaire, son **compte** sur
+  `bcded0c8` et la **partition** corrigé / assumé-avec-raison, recalculable ; le T0 relance chaque commande et
+  ventile tout écart avant d'écrire. Le contrôle des PDF passe par une fonction `occ` qui normalise PDF **et**
+  motif (apostrophes, ligatures, espaces insécables, espaces et traits d'union retirés), et chaque contrôle
+  d'absence est précédé du même contrôle de présence sur le PDF d'avant (≥ 1). `docs/user-guide/` entre dans le
+  périmètre commun ; la ligne 29 du guide est corrigée (15-14a, AC 3) et gardée par G4. Rectificatif de
+  C-15-14-11 : **26** lignes « réglages » minuscules assumées (28 − 2), non 22 — `user-manual.tex:364`, `:380`,
+  `:394` manquaient ; `:965` (« reste intacte dans vos réglages ») est assumé, il ne prescrit aucun geste. Les
+  tests sont renommés **G1-G12** (15-14a) et **G1-G5** (15-14b) pour ne plus se confondre avec les tâches
+  T0-T8 (R-14).
+- **Écartées** : recopier des listes de sites (c'est ce qui a produit les trois MEDIUM) ; contrôler les PDF sur
+  `pdftotext` brut ; laisser `docs/user-guide/` hors périmètre (document vivant, lié depuis le README).
+- **Réversible** : oui (fiches).
+
+## C-15-14-18 — 15-14a (validation P2) : en de-CH, l'état d'un exercice clôturé se dit « abgeschlossen », comme son action
+
+- **Contexte** : R-1 = F-5. L'AC 10 corrigeait le verbe du bouton et réécrivait déjà deux participes
+  (« geschlossen bleibt », « ist geschlossen ») ; six autres valeurs de-CH gardaient « geschlossen » /
+  « Schliessung » pour un exercice clôturé, dont le toast qui suit immédiatement le clic sur « Abschliessen ».
+  Inventaire `\b([Gg]eschlossen|[Ss]chliessen|[Ss]chliessung)\b` : 20 lignes.
+- **Retenu** : corriger les six (`:861`, `:869`, `:873`, `:877`, `:890`, `:893` → « abgeschlossen », « erneuten
+  Abschluss ») — même critère que les deux participes déjà réécrits, glossaire « clôture = Abschluss », forme
+  déjà employée au catalogue (`:241`, `:288`, `:2224`). Partition 5 + 1 + 6 + 4 + 4 = 20 ; restent 8 lignes,
+  verbe séparable « Schliessen Sie … ab » (4) et fermeture de panneau (4). G11 garde la partition.
+- **Écartée** : n'inventorier les six qu'en « assumés » (le participe d'état est défendable, mais la story
+  corrige déjà ce même participe ailleurs : deux traitements pour un même cas). Aucun test ni repli ne les fige.
+- **Réversible** : oui (catalogue).
+
+## C-15-14-19 — 15-14 (validation P2) : dépendance déclarée envers la 15-7b1, qui corrige les mêmes lignes
+
+- **Contexte** : F-7, L-8. La 15-7b1 (PR #583, en cours de merge) réécrit `user-manual.tex:173`-`:189` — dont
+  `:182` (« Sterchi PME », AC 3 de la 15-14a) et les deux « nouvelle company » (`:173`, `:189`) que F-7 trouve
+  hors de l'AC 3 de la 15-14b — et modifie un doc-comment de `vat_rates.rs`, où la 15-14a ajoute un `mod tests`.
+- **Retenu** (consigne de l'orchestrateur) : ne pas doubler son travail. La 15-14a et la 15-14b se développent
+  **après** son merge ; le T0 constate les sites corrigés. Repli de la 15-14a si elle n'était pas mergée : texte
+  identique au sien à `:182` (G4 interdit `Sterchi`). Rebase sur `vat_rates.rs` : gate complet (exception
+  `kesh-db`). Ses deux « réglages de facturation » ajoutés portent l'inventaire (B) de l'AC 2 à 30.
+- **Écartée** : réécrire `:173`/`:189` dans la 15-14b (conflit certain, travail fait deux fois).
+- **Réversible** : oui.
+
+## C-15-14-20 — 15-14a (validation P2) : deux verbes de réouverture coexistent en de-CH
+
+- **Contexte** : L-3. Les quatre clés qui portent déjà le marqueur d'ordre écrivent « eröffnet eine
+  Administratorin oder ein Administrator … wieder » ; les six de l'AC 8 écriront « muss ein Administrator …
+  wieder öffnen » (validation P1, F-2 : le verbe du bouton `Wieder öffnen`).
+- **Retenu** : laisser coexister, chaque clé gardant sa forme ; le marqueur « beginnend mit dem neuesten », seul
+  contrôlé par G8, est identique.
+- **Écartée** : harmoniser les quatre autres clés (hors #569, et réécriture de style sans défaut).
+- **Réversible** : oui.
+
+## C-15-14-21 — 15-14b (validation P2) : l'AC 1 est écrit pour l'état après la 15-13b, et la base se restaure par son dump
+
+- **Contexte** : F-3 — la 15-13b (*done*, PR #584) monte `./backup` (secrets) dans les deux compose : « trois
+  montages » et la liste Hyper Backup de l'AC 1 seraient faux à son merge. R-3 = F-2 — la sous-section Snapshot
+  Replication et la copie 1 du 3-2-1 promettent de restaurer des écritures que le snapshot du dossier du compose
+  ne contient pas, et la procédure de recovery ne recharge aucun dump.
+- **Retenu** (consigne de l'orchestrateur pour F-3) : texte cible pour l'état **après** la 15-13b — quatre
+  montages, `backup/` coché avec sa mise en garde « secrets » ; numéros de `bcded0c8`, réalignés au T0 (la 15-13b
+  décale de +4, même contenu vérifié sur sa branche). Snapshot Replication, copie 1, introduction (« remplacent »)
+  et « cohérence transactionnelle » réécrits : le dossier du compose ne contient pas la base ; elle se restaure
+  par le dump du pré-script, rechargé par le même conteneur jetable ; la recette rejoue la recovery ; G3 exige
+  que la sous-section Snapshot cite le fichier de dump. Inventaire borné aux deux sections : 34 lignes, 13 + 21.
+- **Écartées** : écrire contre l'état de `bcded0c8` (faux au merge de la dépendance) ; formuler la liste par
+  la seule commande `grep` sur le compose (moins lisible pour l'exploitant) ; laisser Snapshot Replication en
+  angle mort (c'est le symptôme même de #575).
+- **Réversible** : oui (texte).
+
+## C-15-14-22 — 15-14b (validation P2) : un commentaire de `docker-compose.prod.yml` se corrige
+
+- **Contexte** : R-4. `docker-compose.prod.yml:112-113` dit le dossier `./log` « co-localisé avec .env + DB pour
+  le scope unique Hyper Backup » — même faux que `admin-manual.tex:1575` ; la fiche s'interdisait ce fichier.
+- **Retenu** : autoriser cette seule ligne de commentaire (aucune clé, aucun montage) ; `configuration_transmise`
+  et l'étape CI « Validate compose files » rejouées au T7.
+- **Écartée** : l'inventorier comme assumé — c'est le fichier que l'exploitant télécharge et lit.
+- **Réversible** : oui.
+
+## C-15-14-23 — 15-14 (validation P2) : signal D5 levé, pas de nouveau découpage
+
+- **Contexte** : la validation P2 rend **9 MEDIUM distincts** (12 bruts, recoupements R-1 = F-5, R-2 = F-6,
+  R-3 = F-2) contre 8 en P1 : sévérité égale (MEDIUM → MEDIUM), et **trois** sont nés de la remédiation P1
+  (F-5, F-6, F-8 — inventaires ou listes déclarés complets) — recyclage au sens de l'amendement D5 de la
+  § *Règle de splitting préventif*.
+- **Retenu** (décision de l'orchestrateur) : **pas** de nouveau découpage. La story est déjà coupée en 15-14a /
+  15-14b, et le recyclage porte sur la **complétude des inventaires**, que C-15-14-17 traite à la racine
+  (commandes comptées et partitionnées, recalculables). Signal déclaré au Change Log.
+- **Écartée** : découper encore (par manuel, ou par issue) : la cause — des listes recopiées au lieu de
+  commandes — se reproduirait dans chaque morceau.
+- **Réversible** : oui (une passe P3 qui verrait recycler un inventaire écrit selon C-15-14-17 rouvrirait la
+  question).
+
+## C-15-14-24 — 15-14b (validation P2) : le test du multi-société porte sur un domaine fermé, non sur des formes
+
+- **Contexte** : F-8. G5 interdisait six formes ; les affirmations réécrites par l'AC 3 en ont d'autres
+  (« plusieurs sociétés (companies) sur une même instance », « plusieurs sociétés\n peuvent coexister sur une
+  même instance ») — remises en place, aucune ne le faisait rougir. Et `compte dédié`, interdit partout,
+  aurait rougi sur un emploi légitime (« un compte MariaDB dédié » de l'AC 1).
+- **Retenu** : domaine calculé sur le texte normalisé (motif de l'AC 3, 26 occurrences sur `bcded0c8`) ; toute
+  occurrence doit tomber dans une liste fermée de 7 fragments assumés, chacun encore présent ; `compte dédié`
+  n'entre au domaine que dans `ou un compte dédié` / `via un compte dédié`, et une contre-mutation (« un compte
+  dédié aux frais bancaires ») doit rester verte.
+- **Écartée** : allonger la liste de formes interdites (ouverte par nature).
+- **Réversible** : oui.
+
+## C-15-14-25 — 15-14 (validation P3) : un inventaire porte sur tout le dépôt suivi, et c'est l'exclusion qui se justifie
+
+- **Contexte** : F-1 (MEDIUM) et R-3 = F-2 (MEDIUM). Les comptes de la remédiation P2 se recomptent à
+  l'identique ; le défaut est le **périmètre** des commandes. (B) « réglages » était bornée à quatre
+  fichiers (`README.md:34`, un renvoi à l'écran où l'on agit, lui échappait) ; l'inventaire de l'AC 1 de la
+  15-14b était borné par un `awk` aux deux sections Synology (`admin-manual.tex:2475-2476`, « Hyper Backup
+  au niveau NAS » comme sauvegarde de la base, et `:1748` lui échappaient). Dans les deux cas, la commande
+  choisissait d'avance où regarder. Fait nouveau : la 15-7b1 est mergée (`origin/main = 245b91ee`).
+- **Retenu** : chaque commande d'inventaire est un `git grep -I` sur **tout le dépôt suivi**, moins un
+  ensemble d'exclusions commun `E` écrit **une fois**, avec la raison de chaque exclusion (convention de la
+  15-14a : `_bmad-output/`, `_bmad/`, `.claude/`, `CLAUDE.md`, `CHANGELOG.md`, `.svelte-kit/`, spécification
+  et PRD datés, fichiers archivés, tests) ; `LC_ALL=C.UTF-8` forcé. Pour l'AC 1 de la 15-14b, plus de borne
+  de section : le manuel d'administration **entier** (144 lignes, partitionnées par section — 43 dans les
+  sections Synology, 101 ailleurs, dont 6 corrigées), plus le reste du dépôt pour le symptôme de #575 (5).
+  Toutes les commandes relancées sur `245b91ee` : 15-14a AC 1 : 4 ; AC 2 : 21 et 132 ; AC 3 : 16 ; AC 5 :
+  25 ; AC 6 : 5 ; AC 8 : 153 ; AC 9 : 6 ; AC 10 : 21 ; 15-14b AC 3 : 477. Branche rebasée sur `245b91ee`
+  (sauvegarde `backup/15-14-avant-rebase-245b91ee`, registre et sprint-status par union). Les **numéros de
+  ligne** restent ceux de `bcded0c8`, avec la table des décalages de la 15-7b1 (`user-manual.tex` +1 à
+  partir de 190, +15 à partir de 2243 ; `CHANGELOG.md` +1 à partir de 42 ; `vat_rates.rs` +1 à partir de
+  353) — un réalignement partiel mêlerait deux bases dans les mêmes listes, et le T0 re-trouve chaque site
+  par la valeur.
+- **Écartées** : élargir chaque commande d'un cran (`+ README.md`, `+ frontend/src`…) — c'est recommencer
+  l'énumération qui a manqué ; réaligner tous les numéros sur `245b91ee` (la 15-13b, en cours
+  d'intégration, les décalera de nouveau).
+- **Réversible** : oui (fiches seules).
+
+## C-15-14-26 — 15-14a (validation P3) : les replis frontend à site unique ont leur garde, G13
+
+- **Contexte** : R-1 (MEDIUM). La fiche disait le repli d'`InvoiceForm.svelte` et celui des soldes de départ
+  « gardés par `i18n-repli-divergent-actif.test.ts` ». Faux au code : cette garde ne retient que les clés à
+  **au moins deux** replis distincts (`parTexte.size > 1 && auCatalogue.has(cle)`, ligne 141) ; les cinq clés
+  visées n'ont qu'un site d'appel chacune — trois replis (`invoice-cancel.ts`, `opening-balances/+page.svelte`,
+  `InvoiceForm.svelte`) n'avaient aucun test.
+- **Retenu** : G13, un `describe` neuf du même fichier, qui réutilise son relevé `replisParCle()` : pour une
+  table fermée de cinq clés, l'ensemble des replis égale `[valeur fr-CH]` (même patron que l'assertion des
+  deux titres d'avoir, ligne 169). Mutations : ancien repli d'`invoice-cancel.ts:43`, « Réglages » remis à
+  `InvoiceForm.svelte:768`, ancien repli des soldes de départ → rouges. L'affirmation fausse est retirée
+  partout (AC 2, AC 8, mutations).
+- **Écartées** : étendre G9 (Rust) aux fichiers frontend — il faudrait réécrire un lecteur de littéraux
+  TS/Svelte que `i18n-literal-reader.js` fournit déjà ; retirer l'affirmation sans test — T4 « replis égaux
+  au fr-CH » n'aurait plus de vérification pour trois de ses sites.
+- **Réversible** : oui.
+
+## C-15-14-27 — 15-14 (validation P3) : `regex` en dépendance de test de kesh-api et kesh-i18n
+
+- **Contexte** : L-1 (LOW). G2-G7, G9, G12 et G3, G8, G10, G11 sont écrits en motifs ; ni `kesh-api` ni
+  `kesh-i18n` n'ont le crate `regex` ; G18 (ex-G5 de la 15-14b) compte des occurrences qui se recouvrent,
+  ce que la commande perl fait par lookahead — absent du crate `regex`.
+- **Retenu** : `regex = "1.10"` en `[dev-dependencies]` des deux crates (version de `kesh-db` et
+  `kesh-import`, déjà dans `Cargo.lock`), à la T5 de la 15-14a ; G18 cherche chaque alternative séparément.
+- **Écartée** : se passer de `regex` (motifs réécrits à la main, plus fragiles) ; `fancy-regex` (dépendance
+  neuve pour un seul test).
+- **Réversible** : oui.
+
+## C-15-14-28 — 15-14b (validation P3) : le pré-script se passe de `--routines`/`--events`, et son compte de `SELECT` et `LOCK TABLES`
+
+- **Contexte** : L-4 (LOW). La fiche exigeait `SHOW VIEW`, `TRIGGER`, `EVENT` et une vérification de
+  `--routines` sur 10.11 ; le schéma de Kesh n'a ni routine, ni déclencheur, ni événement, ni vue (`grep`
+  sur les migrations → 0). La restauration depuis Hyper Backup (copies 2 et 3 du 3-2-1) n'avait pas de
+  procédure ; et « Hyper Backup ne voit pas la base » ignorait que DSM permet de cocher le paquet MariaDB.
+- **Retenu** : `--single-transaction --add-drop-database --databases <base>`, compte à `SELECT` + `LOCK
+  TABLES`, prouvé par la recette avec un compte qui n'a que ces privilèges ; angle mort écrit (une routine,
+  un déclencheur, un événement ou une vue ajoutés un jour rendraient le dump incomplet sans bruit).
+  Restauration Hyper Backup : renvoi à la procédure de rechargement de la recovery Snapshot. Le manuel dit
+  qu'Hyper Backup ne sauvegarde pas la base **au titre du dossier du compose**, la copie applicative du
+  paquet DSM, non vérifiable ici, s'ajoutant au dump sans le remplacer.
+- **Écartée** : garder `--routines --events` et leurs privilèges « par précaution » (privilèges inutiles,
+  et une vérification sur 10.11 que personne ne rejoue).
+- **Réversible** : oui.
+
+## C-15-14-29 — 15-14b (validation P3) : le pré-script écrit son dump dans un `.tmp`, puis le renomme
+
+- **Contexte** : F-5 (LOW). `… | gzip > kesh_pre_backup.sql.gz` ouvre la cible avant que le dump ne
+  réussisse : un échec la tronque, et le snapshot horaire capture le fichier vide à la place du dump de la
+  veille.
+- **Retenu** : écriture dans `kesh_pre_backup.sql.gz.tmp`, `mv` après succès, empreinte sur le fichier
+  renommé ; G16 extrait le nom du dump de la cible du `mv` et exige le couple `.tmp` + `mv` (mutation :
+  `| gzip >` directement sur la cible → rouge).
+- **Écartée** : garder le comportement actuel (« la tâche échoue, c'est voulu ») — l'échec est voulu, la
+  perte de la dernière copie saine ne l'est pas.
+- **Réversible** : oui.
+
+## C-15-14-30 — 15-14b (validation P3) : les formes « toutes les sociétés », « chaque company » restent hors du motif de G18
+
+- **Contexte** : L-6 et F-8 (LOW). Le domaine fermé de G18 reste défini par un motif ; des formes voisines
+  lui échappent (`admin-manual.tex:987`, `:1393`, `:1440`, `:1663`, `README.md:48`, la clé
+  `admin-backup-page-description` et son repli, la brochure `:97`, `:314`).
+- **Retenu** : relues une à une, aucune n'est fausse pour une installation à une société (définition du
+  modèle, contenu d'une sauvegarde, ciblage commercial compatible avec « une instance par dossier ») :
+  écrites en liste « hors motif, assumés » dans l'AC 3, pour qu'une revue la conteste ; motif inchangé.
+- **Écartée** : élargir le motif (`chaque company`, `toutes les sociétés`…) — G18 rougirait sur des phrases
+  vraies, et chaque forme ajoutée en appellerait une autre.
+- **Réversible** : oui.
+
+## C-15-14-31 — 15-14 (validation P3) : les gardes de la 15-14b deviennent G14-G18
+
+- **Contexte** : F-6 et une remarque de la lentille R (LOW). Les deux fiches numérotaient leurs gardes à partir
+  de G1 ; « G5 » désignait `aucun_dossier_surveille` (15-14a) et `une_installation_une_societe` (15-14b),
+  qui vivent dans le **même** fichier `textes_coherents.rs`.
+- **Retenu** : la 15-14a garde G1-G13 (G13 neuf, C-15-14-26) ; la 15-14b passe à G14-G18 (G1 → G14 … G5 →
+  G18), correspondance écrite en tête de ses tâches ; les Change Logs antérieurs gardent leurs numéros.
+- **Écartée** : préfixer (`15-14b-G5`) — plus long à chaque citation, pour le même effet.
+- **Réversible** : oui.
+
+## C-15-14-32 — 15-14a (validation P4) : validation close
+
+- **Contexte** : la P4 (Opus ×2) ne rend **aucun MEDIUM** sur la 15-14a ; ses LOW (R L-2, L-5, L-7, L-8, F
+  L-2) sont justes et mineurs. Trend du lot 8 → 9 → 4 → 3 MEDIUM, les trois de la P4 sur la 15-14b.
+- **Retenu** (décision de l'orchestrateur) : critère d'arrêt du `CLAUDE.md` atteint — validation de la
+  15-14a **close**, LOW appliqués dans la même remédiation, statut `ready-for-dev` (déjà posé). R L-2
+  (« Paramètres → Facturation », titre d'écran) hors périmètre : #585 (P4) ouverte par l'orchestrateur ;
+  R L-5 : #459 commentée par l'orchestrateur.
+- **Écartée** : une passe P5 sur la 15-14a — aucun MEDIUM à vérifier, et ses LOW ne touchent que la fiche.
+- **Réversible** : oui (une revue ultérieure peut rouvrir la validation).
+
+## C-15-14-33 — 15-14b (validation P4) : « Hyper Backup » hors des sections Synology, par une liste fermée de fragments
+
+- **Contexte** : R-2 = F-1 (MEDIUM). La clause de G16 posée en P3 — chaque « Hyper Backup » hors des sections
+  suivi d'un `\ref{sec:backup-dsm}` à moins de 300 caractères — rougissait sur le texte cible de la fiche
+  même : `:912` (logs de `root`, assumée, sans renvoi), seconde occurrence dans la cible de `:2476`, renvoi
+  de la cellule `:1741` non dit conservé.
+- **Retenu** : G16 (e), **liste fermée** de quatre fragments normalisés — trois à renvoi (`:1741`, `:1748`,
+  `:2476`, chaque fragment contenant le `\ref{sec:backup-dsm}` qui suit l'occurrence), un exempté (`:912`) ;
+  toute autre occurrence rouge, toute exemption morte rouge. Cible de `:2476` réécrite à une seule
+  occurrence ; renvoi de `:1741` conservé. Bornes de section prises sur le source brut au `\subsection{`
+  qui porte le label (le titre de `sec:backup-dsm` nomme Hyper Backup avant le label — relevé en appliquant
+  la garde au texte cible).
+- **Écartée** : garder une règle de distance en l'assortissant d'exemptions (deux mécanismes pour un même
+  contrôle, et une distance arbitraire) ; ajouter un renvoi à `:912` (le texte y est juste et ne parle pas de
+  la base : un renvoi y serait du bruit).
+- **Réversible** : oui.
+
+## C-15-14-34 — 15-14b (validation P4) : le post-script ne supprime plus le dump
+
+- **Contexte** : R-1 = F-3 (MEDIUM). `admin-manual.tex:1608` propose un post-script qui supprime le dump ;
+  avec des snapshots horaires et un dump qui n'existe que le temps de la tâche, presque aucun snapshot ne
+  contiendrait la base, et la recovery n'aurait rien à recharger. La P3 l'avait classée « assumée ».
+- **Retenu** : `:1608` passe dans les corrigées (14 + 29 = 43, contrôlé par `comm`) ; texte cible « Laissez
+  le post-script vide : le dump doit rester … » ; G16 (d) : aucun `rm` sur la cible du dump dans les sections
+  Synology (un `rm` du `.tmp` permis), aucun « supprimer le dump », phrase positive présente ; angle mort
+  écrit (une autre tournure en prose).
+- **Écartée** : garder l'option en ajoutant une réserve (« … au prix de ne plus pouvoir restaurer la base
+  depuis un snapshot ») — une option qui défait la copie 1 du 3-2-1 n'a pas sa place dans une recette.
+- **Réversible** : oui.
+
+## C-15-14-35 — 15-14b (validation P4) : deux comptes, deux fichiers, deux recettes ; la restauration par le compte Kesh
+
+- **Contexte** : F-2 (MEDIUM). Le compte de sauvegarde à `SELECT` + `LOCK TABLES` (C-15-14-28) et la
+  recovery « par le même fichier d'identifiants que le pré-script » s'excluaient : un dump
+  `--add-drop-database --databases` exige `DROP`/`CREATE DATABASE`, `CREATE TABLE`, `INSERT`. Faite telle
+  qu'écrite, la recette échouait au rechargement — le jour du sinistre.
+- **Retenu** : sauvegarde par un compte `kesh_backup` (`GRANT SELECT, LOCK TABLES ON kesh.*`) dans
+  `kesh-dump.cnf`, lu par le seul pré-script ; restauration par le **compte Kesh** de `DATABASE_URL`, que
+  le manuel crée déjà avec `GRANT ALL PRIVILEGES ON kesh.*` (`admin-manual.tex:974`), dans
+  `kesh-restore.cnf`, lu par la seule commande de rechargement. Deux recettes plus un contrôle négatif
+  (rechargement avec `kesh-dump.cnf` → refusé), listings rejoués à l'identique, substitutions listées.
+  G16 (c) exige un fichier de recovery différent de celui du pré-script.
+- **Écartées** : le `root` du SGBD pour la restauration (mot de passe d'administration sur disque pour une
+  opération que le compte Kesh sait faire ; un texte qui nommerait `MARIADB_ROOT_PASSWORD` dans les sections
+  Synology rougirait G16 (a)) ; un seul compte Kesh pour les deux usages (perd le moindre privilège d'une
+  tâche planifiée nocturne).
+- **Réversible** : oui — si la recette montre que le compte Kesh ne peut pas `CREATE DATABASE`, le
+  consigner et rouvrir.
+
+## C-15-14-36 — 15-14b (validation P4) : signal D5 levé de nouveau, pas de découpage
+
+- **Contexte** : les trois MEDIUM de la P4 sont nés de la remédiation P3 (`b02e9af7`), tous dans la
+  recette de sauvegarde et ses gardes — le recyclage que vise la décision D5.
+- **Retenu** (décision de l'orchestrateur) : pas de découpage. Quatre AC ; un seul fichier de test pour
+  les gardes de l'AC 1 ; la story attend de toute façon le merge de la 15-13b (PR #584). La remédiation
+  ajoute un contrôle de cohérence garde par garde contre le texte cible, et la P5 sera une passe ciblée sur
+  la seule 15-14b, braquée sur cette remédiation.
+- **Écartée** : sortir l'AC 1 dans une 15-14c — elle partagerait le manuel d'administration et
+  `configuration_transmise.rs` avec le reste de la 15-14b, pour une séquence de merges plus longue.
+- **Réversible** : oui (découpage possible à la P5 si la recette recycle encore).
+
+## C-15-14-37 — 15-14b (validation P4) : l'invitation et la connexion par e-mail du manuel utilisateur entrent dans l'AC 3
+
+- **Contexte** : L-1 de la lentille F (LOW). `user-manual.tex:79` décrit une invitation par e-mail et
+  `:91` une connexion par e-mail ; aucune route d'invitation n'existe, la connexion prend un `username`
+  (`LoginRequest`), l'écran affiche « Identifiant ». Ce sont les voisines de `:83`, que l'AC 3 corrige déjà.
+- **Retenu** (décision de l'orchestrateur) : intégrées à l'AC 3, vérifiées au code, avec contrôle `occ`
+  « présent avant » relevé (1 et 1) ; hors du motif de G18, sites ajoutés hors décompte ; une phrase au
+  CHANGELOG de l'AC 4.
+- **Écartée** : ouvrir une issue P3 à part (deux lignes dans une sous-section que la story réécrit déjà).
+- **Réversible** : oui.
+
+## C-15-14-38 — 15-14a (développement) : le tableau des plans du manuel d'administration décrit le contenu réel des trois plans
+
+- **Contexte** : l'AC 3 demande de réécrire le tableau « Choix du plan comptable » sur les trois plans
+  réels et leur choix par le type d'organisation, sans dicter les cellules. Une première rédaction
+  disait le plan indépendant « allégé » ; les fichiers le démentent (`pme.json` et `independant.json`
+  portent 86 comptes chacun, `association.json` 83).
+- **Retenu** : en-têtes « Type d'organisation / Plan mis en place » ; chaque cellule nomme ce qui
+  distingue réellement le plan, relu dans les JSON (PME : capital social ; indépendant : capital de
+  l'exploitant, prélèvements et apports privés ; association : capital de l'association, cotisations
+  des membres, dons reçus) ; une phrase « Kesh n'importe pas de plan comptable », qui remplace la ligne
+  « Personnalisé CSV ». Le `keshtip` qui suit reste, relu : il est juste.
+- **Écartées** : décrire les plans par leur public (« pour les artisans »…), ce que les fichiers ne
+  portent pas ; garder une seule ligne générique (le tableau perdrait sa raison d'être).
+- **Réversible** : oui (texte seul, garde G4 sur les formes interdites).
+
+## C-15-14-39 — 15-14a (développement) : en de-CH, it-CH et en-CH, la proposition de but passe en tête
+
+- **Contexte** : l'AC 8 donne la prescription par locale (« … muss ein Administrator die abgeschlossenen
+  Geschäftsjahre bis zu diesem wieder öffnen, beginnend mit dem neuesten ») et demande de reprendre le
+  début de chaque valeur. Laissée à sa place, la proposition finale (« damit sie storniert werden
+  kann », « per poterlo annullare », « before it can be cancelled ») serait rejetée après une longue
+  incise d'ordre.
+- **Retenu** : la proposition de but passe avant la prescription, comme le texte fr-CH de l'AC 8
+  (« pour pouvoir l'annuler, un administrateur doit … ») : « Damit sie storniert werden kann, muss ein
+  Administrator … », « per poterlo annullare, un amministratore deve … », « before it can be cancelled,
+  an administrator must … ». La prescription dictée par l'AC figure mot pour mot dans chaque valeur ; le
+  marqueur d'ordre, seul contrôlé par G8, est intact.
+- **Écartée** : garder l'ordre d'origine (phrase plus lourde, sans gain de fidélité).
+- **Réversible** : oui (libellés).
+
+## C-15-14-40 — 15-14a (développement) : les gardes de catalogue lisent les valeurs brutes, sans repli fr-CH
+
+- **Contexte** : `I18nBundle::all_messages` complète chaque locale par les clés fr-CH. Une garde qui
+  s'en servirait verrait, pour une clé absente en de-CH, la valeur française — et G8, G10, G11
+  pourraient passer sur une locale amputée.
+- **Retenu** : `valeurs_brutes(locale)` (`loader.rs`, `mod tests`) lit le `.ftl` lui-même (lignes de
+  continuation jointes, commentaires ignorés) ; une clé absente panique en nommant locale et clé, et un
+  catalogue lu à moins de 100 clés rougit (anti-test-muet). G8 contrôle au moins 10 clés (`>= 10`,
+  6 de #569 + 4 qui portaient déjà le marqueur) : une clé neuve qui prescrit la réouverture entre au
+  domaine sans casser la garde.
+- **Écartée** : `all_messages` (repli masquant) ; un compte exact du domaine (rougirait à chaque clé
+  neuve légitime).
+- **Réversible** : oui.
+
+## C-15-14-41 — 15-14a (développement) : G2 exige que tout `.tex` de `docs/manual/fr` soit gardé
+
+- **Contexte** : les gardes documentaires parcourent une liste de trois manuels. Un quatrième `.tex`
+  ajouté au répertoire échapperait à G2, G4 et G5 sans que rien ne le signale.
+- **Retenu** : `manuels_fr()` (`textes_coherents.rs`) compte les `.tex` du répertoire et rougit si ce
+  nombre diffère de la liste ; chaque manuel lu doit contenir `\begin{document}`. Une story qui ajoute
+  un manuel l'ajoute à la liste.
+- **Écartée** : lire tout `.tex` trouvé sans liste (un fichier vide ou mal nommé passerait en silence).
+- **Réversible** : oui.
+
+## C-15-14-42 — 15-14a (développement) : les comptes d'inventaire « après correction » de la fiche ne sont pas tous atteints, et c'est attendu
+
+- **Contexte** : au T0, les dix-sept commandes rendent exactement les comptes de la fiche. Après
+  correction, quatre diffèrent de l'« après » annoncé.
+- **Retenu** (ventilation, aucune correction supplémentaire) : AC 1 → 3 (2 attendus) : le doc-comment
+  de G1 (`vat_rates.rs`) nomme les taux interdits ; AC 2 (B) → 131 (129) : deux lignes de G3
+  (`loader.rs`) ; AC 6 → 4 (2) : les deux textes neufs dictés par l'AC 6 disent eux-mêmes « jusqu'à la
+  v0.9.0 incluse » (`api-external.md:484`, `admin-manual.tex:2053`) — c'est la fiche qui se trompait en
+  annonçant 2 ; AC 9 → 2 (0) et AC 10 → 11 sur le dépôt (9) : lignes des gardes G10 et G11. AC 8 : 153
+  → 155 = 153 − 3 commentaires `#569` retirés d'`errors.rs` + 5 lignes de G8. Toutes sont des gardes ou
+  des textes prescrits ; aucun site affiché ne reste à corriger.
+- **Écartée** : réécrire les gardes pour éviter les mots qu'elles interdisent (elles cesseraient de dire
+  ce qu'elles gardent).
+- **Réversible** : sans objet (constat).
+
+## C-15-14-43 — 15-14a (revue de code P1, B-1) : « Réglages » interdit sous toute forme dans les manuels, le README et `.env.example`
+
+- **Contexte** : `README.md:213` (« éditables (Réglages, Admin) ») renvoyait encore au menu, que la fiche
+  avait classé « feuille de route publiée ». G2 cherchait quatre formes (`\emph{Réglages}`, `Réglages et`,
+  `(Réglages)`, `dans les réglages`) ; celle-ci passait entre elles.
+- **Retenu** : la ligne est corrigée (« (Paramètres, Admin) ») — le tableau de feuille de route du README
+  est tenu à jour, ce n'est pas une note publiée (celles-ci vivent au CHANGELOG, exclu). G2 interdit le mot
+  capitalisé « Réglages » **sans forme** dans les trois manuels, le README et `.env.example` ; aucun de ces
+  textes ne l'emploie comme nom d'objet. Inventaire AC 2 (A) rejoué sur tout le dépôt : 13 lignes, les
+  5 noms d'objet du journal d'audit et les 8 commentaires assumés ; (B) 131, inchangé.
+- **Écartée** : ajouter la forme `(Réglages,` à la liste (la suivante passerait).
+- **Réversible** : oui.
+
+## C-15-14-44 — 15-14a (revue de code P1, B-2) : la ligne v0.4.0 du README perd « dossier surveillé », G5 perd son exemption
+
+- **Contexte** : la fiche gardait `README.md:211` (« import de factures depuis un dossier surveillé ») au
+  titre de l'historique publié, et G5 l'exemptait.
+- **Retenu** : corriger. Vérifié au tag `v0.4.0` : l'import passait déjà par `POST /api/v1/inbox-import`,
+  sans tâche de fond — la phrase était fausse **dès cette version** ; ce n'est donc pas réécrire
+  l'historique, c'est corriger une description. Nouveau texte : « import de factures déposées dans un
+  dossier d'import, lancé depuis l'écran ». G5 n'a plus d'exemption. Inventaire AC 5 : 25 → 20 (5 corrigées).
+- **Écartée** : garder l'exemption (deux affirmations contraires dans le même README sur le même flux).
+- **Réversible** : oui.
+
+## C-15-14-45 — 15-14a (revue de code P1, E-1, E-2, E-5) : un numéro de compte cité existe dans un plan livré, sous son nom ; garde G4-bis par inventaire
+
+- **Contexte** : l'exemple « Association » faisait créer 3600/3601 alors que le plan association porte
+  3000 « Cotisations des membres » et 3100 « Dons reçus ». L'inventaire de tous les nombres de quatre
+  chiffres du manuel utilisateur et du guide de démarrage contre les trois JSON (script en lecture) en a
+  trouvé d'autres : `1030` (absent des trois plans, manuel et guide), `1020 CCP` / `1020 Caisse` (1020 =
+  Banque), `3200 Ventes de services` / `3200 Honoraires` (3200 = Prestations de services en PME),
+  `4200 Charges de personnel` (4200 = Achats de matières premières), `5700 AVS/AI/APG` (Charges sociales),
+  `6500 Entretien` (Administration), `3400 Maintenance` (3400 = Autres produits), `6997 ou 7997` (le compte
+  d'arrondi des trois plans est 6940), `2800 Capital` (nom incomplet). Le manuel d'administration, relu de
+  même, n'a que des numéros justes. Ventilation des sites corrigés : manuel utilisateur `:205` (voir
+  ci-dessous), `:318`-`:323`, `:332`, `:416`, `:419`, `:859`, `:906`, `:909`, `:917`, `:2249` ; guide
+  `:46`-`:58`. Les sous-comptes (`1200.1`, `3000.1`, `3200.1`, `4000.1`, `1100.1`, `1020.1`) sont présentés
+  « à créer » et restent.
+- **Retenu** : chaque exemple prend le compte livré et son nom ; quand l'exemple veut un compte qui
+  n'existe pas (maintenance), il devient un sous-compte **dit à créer** (`3200.1 Maintenance`). Garde
+  **G4-bis** (`les_comptes_cites_en_exemple_existent_dans_les_plans_livres`, `textes_coherents.rs`) :
+  inventaire de tous les nombres de quatre chiffres isolés (années 2001-2099 écartées, trou vérifié dans
+  les plans), chacun doit être un compte livré ; les formes nommées (`« »`, `\texttt`, `\emph`, backticks,
+  listes entre parenthèses) doivent porter le nom du plan. Source : `kesh_core::chart_of_accounts::load_chart`,
+  non une copie.
+- **E-2, guide de démarrage** : le §3 est réécrit sur `onboarding/+page.svelte` (sept étapes, dans
+  l'ordre du code) ; l'exercice est créé à la finalisation. En le relisant, la phrase que la fiche avait
+  prescrite à `user-manual.tex:204` s'est révélée fausse : le plan est mis en place **à l'étape de la langue
+  comptable** (`set_accounting_language` → `load_chart`), non à la finalisation. Corrigée dans le manuel et
+  dans le guide.
+- **Écartée** : interdire la liste des numéros faux trouvés (une forme imprévue passerait) ; contrôler
+  aussi le manuel d'administration par inventaire (ports, codes d'erreur, modèles de NAS : la garde y
+  serait une liste d'exceptions — ses numéros de compte ont été vérifiés à la main, tous justes).
+  Angles morts déclarés : un nom écrit hors des formes reconnues (« Crédit 3000 Ventes … ») n'est contrôlé
+  que par son numéro ; `1000` (montant, borne) passe parce qu'il est aussi le compte Caisse.
+- **Réversible** : oui.
+
+## C-15-14-46 — 15-14a (revue de code P1, B-4) : trois analyseurs de catalogue alignés, non factorisés
+
+- **Contexte** : `catalogue_fr` (`textes_coherents.rs`) et `valeurDuCatalogueFr` (Vitest G13) ne lisaient
+  que la première ligne d'une valeur ; `valeurs_brutes` (`kesh-i18n`, `mod tests`) joint les continuations.
+- **Retenu** : les deux premiers joignent désormais les lignes qui commencent par un blanc (espace de
+  jonction), comme le troisième ; un commentaire ou une ligne vide clôt la valeur. Anti-test-muet Rust :
+  `le_catalogue_fr_joint_les_continuations` lit `email-password-reset-body` (cinq lignes) entier — la
+  mutation « ne pas joindre » le rend rouge.
+- **Écartée** : factoriser. Les trois vivent dans deux crates de test et un fichier TypeScript ; un
+  analyseur partagé exigerait d'exposer une fonction publique dans `kesh-i18n` (code de production) pour
+  des tests, ou une crate utilitaire de test — disproportionné pour douze lignes. La règle commune est
+  écrite dans chacun des doc-comments.
+- **Réversible** : oui.
+
+## C-15-14-47 — 15-14a (revue de code P1, B-6) : la réouverture bloquée nomme les exercices **postérieurs** ; le référent italien et allemand est explicite
+
+- **Contexte** : `error-fiscal-year-reopen-blocked` disait « rouvrez d'abord les exercices clôturés ».
+  Vérifié au code : la garde LIFO (`find_later_closed_in_tx`, `start_date > ? AND status = 'Closed'`) ne
+  bloque que sur un exercice **postérieur** clôturé. En it/de, « fino a questo » / « bis zu diesem » après
+  « Questo pagamento » / « Dieser Abgleich » pouvait se lire comme le paiement ou le rapprochement.
+- **Retenu** : fr « les exercices postérieurs clôturés », de « die späteren abgeschlossenen
+  Geschäftsjahre », it « gli esercizi successivi chiusi », en « the later closed fiscal years » (marqueur
+  d'ordre de G8 conservé dans chaque locale) ; repli Rust `fiscal_years.rs` identique (G9). it « fino a
+  questo esercizio », de « bis zu diesem Geschäftsjahr » sur les cinq clés de la famille, pour qu'elles
+  restent parallèles.
+- **Non touché en P1, ~~signalé à la 15-12b~~ — rectifié en revue de code P2 (A-1, E2-2, B2-1)** : la même
+  formule large (« un administrateur rouvre [d'abord] les exercices clôturés, en commençant par le plus
+  récent ») restait dans **quatre** clés de la famille `LATER_FISCAL_YEAR_CLOSED`, quatre locales chacune
+  (`error-fiscal-year-create-later-closed`, `error-later-fiscal-year-closed`,
+  `journal-entries-modify-blocked-later-fiscal-year-closed`, `fiscal-year-out-of-order-warning` : 16
+  valeurs — l'inventaire de P1 n'en citait que 4), leurs quatre replis (`errors.rs:1556`, `:2960` — numéros
+  de P1 `:1539`, `:2925` périmés —, `blocker-messages.ts:94`, `settings/fiscal-years/+page.svelte:355`) et
+  `user-manual.tex:684`. ⚠️ **Le renvoi « à traiter par la 15-12b » était faux dès son écriture** : la
+  15-12b était mergée (`dc4bc58b`, ancêtre de la branche, sur lequel la 15-14a a été spécifiée) ; plus
+  personne ne reprenait ces textes, et la dette n'avait ni propriétaire ni story. Traités dans la 15-14a :
+  C-15-14-49.
+- **Réversible** : oui.
+
+## C-15-14-48 — 15-14a (revue de code P1) : les LOW appliqués, et l'unique écarté
+
+- **B-3 = E-3** : `.env.example` réécrit en deux phrases (« … déposées dans un dossier. L'import se lance
+  à la demande depuis l'écran « Importer des factures » : Kesh décode alors le QR … et crée … »).
+- **B-5, A-3** : G1 reconnaît toute graphie d'un taux périmé (`\b(2[.,]50?|3[.,]70?|7[.,]70?)[ ~]?\\?%`)
+  et exige les quatre taux posés sur la ligne `\textbf{TVA due}` aussi.
+- **B-7** : l'écran s'intitule `vat-rates-title = Taux de TVA` (`settings/+page.svelte:596`) ; fr-CH
+  `vat-purchase-no-rates` et son repli (`VatPurchaseAssistant.svelte:149`) disent « Aucun taux de TVA
+  configuré — voir Paramètres → Taux de TVA. » ; la clé entre dans G13. Les trois autres locales
+  nommaient déjà leur titre d'écran.
+- **A-1** : les « après correction » des AC 1, 6, 9, 10 portent les valeurs atteintes, avec renvoi à
+  C-15-14-42 ; l'AC 2 (A) et l'AC 5 portent la partition révisée.
+- **A-4** : le `keshtip` du manuel d'administration dit choisir le **type d'organisation** (seul choix
+  existant, fixé à l'onboarding : `companies.rs` recopie `org_type` sans le modifier).
+- **A-5** : de-CH `settings-fiscal-years-link` à l'impératif de politesse, comme ses voisines :
+  « Verwalten Sie die Geschäftsjahre Ihres Unternehmens: erstellen, umbenennen, abschliessen. »
+- **E-4** : « Kesh peut décoder automatiquement » → « Kesh peut lire, sans saisie de votre part » (plus
+  de tension avec « l'import ne se déclenche pas tout seul »).
+- **A-2** (non demandé par l'orchestrateur, traité par le geste) : `npm run check` et
+  `lint-i18n-ownership` sont journalisés cette fois dans `kesh-gate-logs/15-14a-review-p1-*.log`.
+- **Écarté** : aucun.
+- **Réversible** : oui.
+
+## C-15-14-49 — 15-14a (revue de code P2, A-1 = E2-2 = B2-1, A-2, E2-7) : toute la famille `LATER_FISCAL_YEAR_CLOSED` prescrit de rouvrir les exercices **postérieurs** ; garde G8-bis par inventaire des non-bornées
+
+- **Contexte** : P1 avait borné la seule `error-fiscal-year-reopen-blocked` et renvoyé ses sœurs à une
+  15-12b déjà mergée (C-15-14-47, rectifié). Vérifié au code : `FIND_LATER_CLOSED_SQL`
+  (`kesh-db/src/repositories/fiscal_years.rs`, `start_date > ? AND status = 'Closed'`), utilisée par
+  `create` (garde de création), `find_later_closed*` (saisie, modification, suppression d'une écriture,
+  15-12a/b) et la garde LIFO de `reopen` : seul un exercice clôturé **postérieur** bloque. Cas atteignable où
+  la formule large est fausse : 2024 et 2026 clos, création de 2025 — seule la réouverture de 2026 est
+  requise ; le message faisait rouvrir aussi 2024 (verrou CO 957-964 levé, entrée d'audit) sans raison.
+- **Retenu** : la formule de B-6, déjà écrite dans les quatre langues — fr « les exercices postérieurs
+  clôturés », de « die späteren abgeschlossenen Geschäftsjahre », it « gli esercizi successivi chiusi », en
+  « the later closed fiscal years » — dans les quatre clés × quatre locales ; `user-manual.tex:684` aligné
+  sur `:726` (« les exercices clôturés postérieurs ») ; les deux replis Rust réécrits **depuis** le catalogue
+  (apostrophes typographiques comprises, E2-7) et entrés dans **G9**, qui compare désormais un repli
+  paramétré après réécriture des variables Fluent (`{ $name }` → `{fiscal_year_name}`) ; les deux replis
+  frontend entrés dans **G13** (site unique vérifié par la garde elle-même). CHANGELOG : « rouvrir les
+  exercices clôturés postérieurs, ou jusqu'à celui-ci ». Pour `fiscal-year-out-of-order-warning`, la même
+  formule que ses sœurs, plutôt que « postérieurs à « { $open } » » (B2-1) : la phrase vient de nommer
+  `{ $open }` et l'exercice postérieur clôturé ; une seule formule rend la garde exacte.
+- **Garde G8-bis** (`les_prescriptions_de_reouverture_sont_bornees`, `kesh-i18n/src/loader.rs`) :
+  inventaire des **non-bornées** — tout le domaine de G8 (verbe fr-CH, mêmes exemptions) doit porter, dans
+  chaque locale, l'une des deux bornes justes (« postérieurs » ou « jusqu'à celui-ci ») ; plus une assertion
+  **positive** « postérieurs » par clé et par locale sur les cinq clés qui la portent (couvre A-2 : B-6
+  n'était gardée par rien).
+- **Écartée** : une issue P3 avec propriétaire (A-1, alternative) — le correctif est mécanique, dans le
+  périmètre de #569, et la raison du report a disparu ; ouvrir une issue pour un défaut qu'on peut fermer
+  dans la même passe déplacerait la dette sans raison.
+- **Réversible** : oui.
+
+## C-15-14-50 — 15-14a (revue de code P2, E2-1, B2-2, B2-3, E2-3) : l'écran *Comptes bancaires* cite les comptes livrés ; G4-bis lit les catalogues, G4-ter la forme libre partout
+
+- **Contexte** : l'en-tête et l'info-bulle de l'écran *Comptes bancaires* (`bank-accounts-labels-page-subtitle`,
+  `bank-accounts-tooltip-journal-account`, quatre locales, deux replis Svelte) et deux doc-comments
+  (`errors.rs:725`, `bank_account.rs:10`) disaient « 1020 Caisse, 1030 Banque », « sous-compte 1030.001,
+  pas au parent 1030 » — le symptôme corrigé dans le guide en P1, non grepé ailleurs. Les trois JSON :
+  `1000 Caisse`, `1010 Poste`, `1020 Banque` ; aucun 1030.
+- **Retenu** : « 1010 Poste, 1020 Banque » (de Post/Bank, it Posta/Banca, en Postal account/Bank) — les deux
+  comptes qu'un compte bancaire alimente ; « Caisse » (proposé par E2-1) n'est pas un compte bancaire.
+  Sous-compte `1020.001 BCV CHF`, parent `1020`. it/en : l'exemple « BCV + PostFinance » devient
+  « BCV + UBS » (PostFinance relève de 1010). Commentaire de la migration
+  `20260507200001_bank_account_journal_link.sql:4` **non touché** (P8 : le checksum). CHANGELOG `:627`
+  (entrée d'une release publiée, `1030.001/1030.002`) non touché : l'historique ne se réécrit pas.
+- **Gardes** : G4-bis lit désormais les **quatre catalogues** en entier (inventaire de numéros) ; ses bornes
+  sont relevées par caractère voisin **sans consommation** (`1000 1030` : les deux lus), `{`/`}` ne bornent
+  plus (`\textbf{3600}` lu ; vérifié : aucun faux rouge neuf sur les deux textes), `/` en tête non plus ;
+  montants (devise adjacente), NPA (mot à majuscule qui n'ouvre aucun nom de compte, en fin de segment) et
+  années (2001-2099, aussi dans les listes entre parenthèses) écartés ; noms comparés apostrophes
+  normalisées ; forme `NNNN (Nom)` ajoutée. **G4-ter** (`la_forme_libre_nnnn_nom_est_juste_partout`) :
+  « NNNN Mot », quand `Mot` ouvre un nom de compte de la langue, doit être juste dans le manuel
+  d'administration, la brochure, le README, `api-external.md`, et le code (Svelte, TS, Rust hors tests et
+  `test_fixtures.rs`, dont « 1100 Banque » / « 2000 Capital » sont des données de test). Angles morts
+  écrits dans les doc-comments (`-` collé, borne/année hors 2001-2099, NPA à plusieurs mots, montant sans
+  devise).
+- **Écartée** : l'inventaire complet sur le code et le manuel d'administration (ports, codes, montants de
+  test : une liste d'exceptions) ; une liste des numéros faux (une forme imprévue passerait).
+- **Réversible** : oui.
+
+## C-15-14-51 — 15-14a (revue de code P2, B2-4, E2-4, A-4) : les trois analyseurs de catalogue appliquent la même règle, et chacun a son anti-test-muet
+
+- **Contexte** : le doc-comment de `catalogue_fr` les disait « identiques » ; `valeurs_brutes` ajoutait
+  toute ligne non indentée (le `}` de sélecteur), le Vitest acceptait `cle=valeur`, les trois laissaient un
+  blanc de tête à une clé en forme bloc, et seul `catalogue_fr` avait un anti-test-muet, qui n'assertait
+  pas la clé suivante.
+- **Retenu** : aligner plutôt que corriger le doc-comment — tête `^([a-zA-Z][\w-]*) = ?(.*)$`,
+  continuation indentée seule, jonction sans blanc sur valeur vide ; un anti-test-muet par analyseur, sur
+  les trois mêmes cas réels (`email-password-reset-body` entier sans blanc de tête,
+  `auth-recovery-forgot-title` intact, `}` de `error-account-not-postable` non ajouté). Tout est code de
+  test (`valeurs_brutes` vit dans `mod tests`).
+- **Écartée** : factoriser (C-15-14-46, inchangé).
+- **Réversible** : oui.
+
+## C-15-14-52 — 15-14a (revue de code P2) : les LOW appliqués, et ce qui ne l'est pas
+
+- **B2-5 = E2-6** : `user-manual.tex:333` « CCP 12-345-6 » sous 1020 → « UBS compte courant » ; guide
+  « BCV + PostFinance » / `1020.002 PostFinance épargne` → « BCV + UBS » / `1020.002 UBS CHF`.
+- **B2-6 = E2-5** : `user-manual.tex:199` (« une PME … renseigne obligatoirement son IDE ») faux au code —
+  `set_coordinates` ne valide l'IDE que s'il est fourni, sans condition sur `org_type` ; l'écran dit
+  « optionnel » ; le formulaire des coordonnées ne varie pas non plus selon le type. Réécrit : le type
+  détermine le plan et ne se modifie plus après l'onboarding ; `:201` dit l'IDE facultatif quel que soit
+  le type.
+- **A-3** : AC 1, AC 8 (table, locales, famille P2) et G13 de la fiche annotés de la valeur que le code
+  porte, avec renvoi au choix ; table des tests complétée (G4-bis, G4-ter, G8-bis).
+- **A-6** : guide « dans les Paramètres » → « depuis **Administration → Exercices comptables** » (entrée de
+  menu réelle, `nav-fiscal-years`). `user-manual.tex:708` « \emph{Paramètres} → \emph{Exercices
+  comptables} » reste : chemin réel (bouton « Gérer » de `/settings`), territoire de #585.
+- **A-5** : les 30 mutations du développement n'ont **pas de journal** — déclarées au Dev Agent Record, non
+  vérifiables ; écrit tel quel dans la fiche, sans réécrire le chiffre. Celles de P1 et P2 sont journalisées.
+- **Écarté** : aucun.
+- **Réversible** : oui.
+
+## C-15-14-53 — 15-14a (revue de code P3) : E3-1 reclassé en dette documentée (#589) ; LOW documentaires appliqués, LOW de garde écrits en dette
+
+- **Contexte** : passe P3 (Sonnet ×3) — B 0 MEDIUM / 4 LOW, A 0 MEDIUM / 4 LOW, E 1 MEDIUM / 6 LOW. Le seul
+  MEDIUM, E3-1 (l'infobulle du bouton « Réouvrir » nomme l'exercice clos le plus **proche**, que la garde LIFO
+  refuse à son tour), tient à une logique d'écran antérieure à la story ; vérifié au code par l'orchestrateur.
+- **Retenu** :
+  - **E3-1 → dette documentée** : issue **#589** (P3), propriétaire = cette issue (exception « dette
+    documentée » de la § *Review Iteration Rule*). La boucle de revue est **close** : P1 3 MEDIUM → P2 2
+    MEDIUM → P3 0 MEDIUM + 1 reclassé.
+  - **LOW documentaires appliqués** : B3-3 = LOW-2 (le CHANGELOG nomme le changement visible de l'écran
+    *Comptes bancaires*) ; LOW-1 (fiche : G9 « huit clés, neuf sites » à l'AC 8 et au T4) ; E3-2
+    (`admin-manual.tex:1401` aligné sur `:1714` — saisie, règlement, dévalidation, modification, suppression ;
+    et « exercices clôturés postérieurs » dans la même phrase) + PDF ; **B3-2** (commentaire Rust
+    `errors.rs`, « ne prescrit jamais de rouvrir l'exercice nommé **seul** … il prescrit les exercices
+    postérieurs clôturés ») — appliqué plutôt que reporté : c'est du code au sens D7, mais le rebase sur
+    `0724904c` impose de toute façon un gate complet et un E2E complet sur le dernier commit, qui le couvrent ;
+    le reporter aurait laissé un commentaire contradictoire sans gain.
+  - **LOW de garde laissés en dette, sans modification de code** (écrits ici, à reprendre avec la prochaine
+    story qui touche `textes_coherents.rs` ou `loader.rs`) : B3-1 = LOW-3 (G4-bis lit les catalogues entiers :
+    une limite « 4000 caractères », « ISO 8601 », « port 8080 » rougirait — déjà déclaré « rouge bruyant »
+    au doc-comment ; correction possible : liste fermée d'exemptions `(fichier, sous-chaîne)` motivées) ; E3-3
+    (lecture ligne à ligne : un numéro en fin de ligne dont le nom passe à la ligne suivante échappe à la forme
+    nommée) ; E3-4 (`montant_ou_npa` : « 1030 CHF » passe pour un montant) ; E3-5 (G4-ter lit aussi les
+    `#[cfg(test)] mod tests` des `src/`) ; E3-6 (exemptions de G8 et G8-bis dupliquées en dur) ; E3-7 (G9 table
+    fermée, non inventaire des non-résolus).
+  - **Sans suite** : B3-4 (guide et écran proposent des exemples différents, tous deux vrais) ; LOW-4 (deux
+    chemins vers l'écran des exercices) — territoire de #585.
+- **Réversible** : oui.

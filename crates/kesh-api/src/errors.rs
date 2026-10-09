@@ -722,8 +722,8 @@ pub enum AppError {
 
     /// Le compte référencé n'est pas de type Asset ou Liability → `400`
     /// `INVALID_ACCOUNT_TYPE`. Un bank_account ne peut être lié qu'à un
-    /// compte d'actif (1020 Caisse, 1030 Banque) ou de passif rare (2100
-    /// découvert chronique). Revenue/Expense rejetés (cf. §validation-account-type).
+    /// compte d'actif (1010 Poste, 1020 Banque) ou de passif rare (2100
+    /// Dettes bancaires à court terme, découvert chronique). Revenue/Expense rejetés (cf. §validation-account-type).
     #[error("Type de compte invalide : {account_type} (Asset|Liability requis)")]
     InvalidAccountType {
         account_id: i64,
@@ -1553,7 +1553,7 @@ impl IntoResponse for AppError {
                 fiscal_year_name,
             } => {
                 let fallback = format!(
-                    "L'exercice « {fiscal_year_name} », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucun exercice ne peut être créé avant sa date de début tant qu'il l'est. Pour créer celui-ci, un administrateur rouvre d'abord les exercices clôturés, en commençant par le plus récent."
+                    "L’exercice « {fiscal_year_name} », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucun exercice ne peut être créé avant sa date de début tant qu’il l’est. Pour créer celui-ci, un administrateur rouvre d’abord les exercices postérieurs clôturés, en commençant par le plus récent."
                 );
                 later_fiscal_year_closed_response(
                     fiscal_year_id,
@@ -1821,7 +1821,7 @@ impl IntoResponse for AppError {
                 let msg = t(
                     "error-invoice-pdf-header-overflow",
                     "L'en-tête du document ne tient pas sur la page. Supprimez une \
-                     coordonnée — téléphone, e-mail ou site web — dans les réglages : \
+                     coordonnée — téléphone, e-mail ou site web — dans les Paramètres : \
                      les raccourcir ne libère aucune place, chaque coordonnée occupe \
                      une ligne entière. Ou réduisez le nombre de lignes de l'adresse \
                      du destinataire.",
@@ -3042,8 +3042,10 @@ impl IntoResponse for AppError {
                 // l'objet. Story 15-12a (AC 9) : message neutre, clé
                 // `error-later-fiscal-year-closed` — il ne présuppose pas que
                 // l'objet visé existe, garde le conseil de contre-passation et
-                // ne prescrit jamais de rouvrir l'exercice nommé (la garde LIFO
-                // le refuserait dès qu'un plus récent est clos). La création
+                // ne prescrit jamais de rouvrir l'exercice nommé **seul** (la garde
+                // LIFO le refuserait dès qu'un plus récent est clos) : il prescrit
+                // les exercices postérieurs clôturés, du plus récent (revue de
+                // code P3 de la 15-14a, B3-2). La création
                 // d'un exercice a son propre message
                 // (`AppError::FiscalYearBeforeClosedYear`). Le texte nomme la
                 // saisie, la modification et la suppression : depuis la Story
@@ -3063,7 +3065,7 @@ impl IntoResponse for AppError {
                     fiscal_year_name,
                 } => {
                     let fallback = format!(
-                        "L'exercice « {fiscal_year_name} », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucune écriture datée avant sa date de début ne peut être enregistrée, modifiée ni supprimée tant qu'il l'est. Une écriture existante se corrige par une contre-passation ; sinon, un administrateur rouvre les exercices clôturés, en commençant par le plus récent."
+                        "L’exercice « {fiscal_year_name} », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucune écriture datée avant sa date de début ne peut être enregistrée, modifiée ni supprimée tant qu’il l’est. Une écriture existante se corrige par une contre-passation ; sinon, un administrateur rouvre les exercices postérieurs clôturés, en commençant par le plus récent."
                     );
                     later_fiscal_year_closed_response(
                         fiscal_year_id,
@@ -3240,12 +3242,9 @@ impl IntoResponse for AppError {
                             "supplier-invoices-settlement-cancel-blocked-not-paid",
                             "Cette facture fournisseur n'est pas payée : il n'y a pas de règlement à annuler.",
                         ),
-                        // #569 : ce texte prescrit « rouvrir l'exercice » sans l'ordre qu'impose
-                        // la garde LIFO (en commençant par le plus récent) — hors périmètre de la
-                        // Story 15-12a, qui n'aligne que les messages de `LATER_FISCAL_YEAR_CLOSED` (C122).
                         SettlementCancelBlocker::FiscalYearClosed => (
                             "settlement-cancel-blocked-fiscal-year-closed",
-                            "Ce règlement appartient à un exercice clôturé : un administrateur doit rouvrir l'exercice pour pouvoir l'annuler.",
+                            "Ce règlement appartient à un exercice clôturé : pour pouvoir l'annuler, un administrateur doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
                         ),
                         SettlementCancelBlocker::MatchedBankTransaction => (
                             "settlement-cancel-blocked-bank-match",
@@ -3752,12 +3751,9 @@ fn reconciliation_cancel_blocked_text(
             "supplier-invoices-settlement-cancel-blocked-not-paid",
             "Cette facture fournisseur n'est pas payée : il n'y a pas de règlement à annuler.",
         ),
-        // #569 : ce texte prescrit « rouvrir l'exercice » sans l'ordre qu'impose
-        // la garde LIFO (en commençant par le plus récent) — hors périmètre de la
-        // Story 15-12a, qui n'aligne que les messages de `LATER_FISCAL_YEAR_CLOSED` (C122).
         SettlementCancelBlocker::FiscalYearClosed => (
             "reconciliation-cancel-blocked-fiscal-year-closed",
-            "Ce rapprochement appartient à un exercice clôturé : un administrateur doit rouvrir l'exercice pour pouvoir l'annuler.",
+            "Ce rapprochement appartient à un exercice clôturé : pour pouvoir l'annuler, un administrateur doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
         ),
         SettlementCancelBlocker::MatchedBankTransaction => (
             "reconciliation-cancel-blocked-bank-match",
@@ -3792,12 +3788,9 @@ fn supplier_invoice_cancel_blocked_text(
             "supplier-invoices-cancel-blocked-cancelled",
             "Cette facture fournisseur est déjà annulée.",
         ),
-        // #569 : ce texte prescrit « rouvrir l'exercice » sans l'ordre qu'impose
-        // la garde LIFO (en commençant par le plus récent) — hors périmètre de la
-        // Story 15-12a, qui n'aligne que les messages de `LATER_FISCAL_YEAR_CLOSED` (C122).
         SettlementCancelBlocker::FiscalYearClosed => (
             "supplier-invoices-cancel-blocked-fiscal-year-closed",
-            "Cette facture appartient à un exercice clôturé : un administrateur doit rouvrir l'exercice pour pouvoir l'annuler.",
+            "Cette facture appartient à un exercice clôturé : pour pouvoir l'annuler, un administrateur doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
         ),
         SettlementCancelBlocker::MatchedBankTransaction => (
             "supplier-invoices-cancel-blocked-bank-match",

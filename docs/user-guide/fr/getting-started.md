@@ -19,17 +19,19 @@ Au premier démarrage de Kesh (v0.1.2+), l'écran `/setup` affiche un formulaire
 
 Si vous oubliez votre mot de passe, le manuel administrateur explique la procédure de recovery break-glass via la variable d'environnement `KESH_ADMIN_PASSWORD`.
 
-## 3. Configurer l'exercice comptable
+## 3. Configurer votre organisation (onboarding)
 
-Après la connexion, l'onboarding vous guide :
+Après la connexion, l'onboarding vous guide, dans cet ordre :
 
-1. **Choix du type d'organisation** (indépendant, PME, association).
-2. **Coordonnées de la company** (nom, adresse, IDE).
-3. **Langue de l'interface** + langue comptable.
-4. **Plan comptable** (PME Suisse / Indépendant / KMU / Verein, ou import CSV custom *(à venir v0.2)*).
-5. **Exercice comptable** (typiquement 2026-01-01 → 2026-12-31).
-6. **Compte bancaire principal** — saisir nom de banque + IBAN. QR-IBAN optionnel.
-7. **Finalisation**.
+1. **Langue de l'interface** (français, allemand, italien, anglais).
+2. **Mode d'utilisation** — *Guidé* ou *Expert*.
+3. **Chemin** — explorer Kesh avec des données de démonstration, ou le configurer pour la production. Les étapes suivantes sont celles du chemin production.
+4. **Type d'organisation** (indépendant, association, PME) — il détermine le plan comptable que Kesh met en place.
+5. **Langue comptable** — langue des libellés du plan comptable, indépendante de celle de l'interface. C'est à cette étape que Kesh met en place le plan comptable de votre type d'organisation.
+6. **Coordonnées de l'organisation** (raison sociale ou prénom et nom, adresse, numéro IDE facultatif).
+7. **Compte bancaire principal** — nom de la banque et IBAN, QR-IBAN facultatif ; l'étape peut être passée (« Configurer plus tard »).
+
+À la finalisation, qui suit la dernière étape, Kesh crée votre premier exercice comptable : l'année civile en cours (du 1er janvier au 31 décembre). Aucune étape ne le demande ; vous le renommez ou en créez d'autres ensuite depuis **Administration → Exercices comptables**.
 
 À tout moment, vous pouvez quitter l'onboarding et y revenir.
 
@@ -44,19 +46,19 @@ Pour que la **réconciliation automatique** (FR47) puisse créer les écritures 
 1. Naviguer vers **Administration → Comptes bancaires** (depuis la sidebar).
 2. Cliquer sur le bouton « Lier » (ou « Modifier » pour l'édition complète) à droite du compte concerné.
 3. Choisir le compte comptable dans le menu déroulant. Typiquement :
-   - `1020 Caisse` pour la petite caisse.
-   - `1030 Banque` pour un compte courant.
+   - `1000 Caisse` pour la petite caisse.
+   - `1020 Banque` pour un compte courant.
 4. Valider.
 
-**Cas multi-comptes courants** (ex. BCV + PostFinance) :
+**Cas multi-comptes courants** (ex. BCV + UBS) :
 
-Si vous avez plusieurs comptes courants distincts, **NE PAS** lier les deux au compte parent `1030 Banque`. Sinon le solde affiché en page d'accueil agrégerait les deux et serait incorrect (la hiérarchie parent/enfants n'est pas remontée v0.1).
+Si vous avez plusieurs comptes courants distincts, **NE PAS** lier les deux au compte parent `1020 Banque`. Sinon le solde affiché en page d'accueil agrégerait les deux et serait incorrect (la hiérarchie parent/enfants n'est pas remontée v0.1).
 
 À la place :
 
 1. Créer des **sous-comptes auxiliaires** via Administration → Plan comptable :
-   - `1030.001 BCV CHF` (parent : `1030`).
-   - `1030.002 PostFinance épargne` (parent : `1030`).
+   - `1020.001 BCV CHF` (parent : `1020`).
+   - `1020.002 UBS CHF` (parent : `1020`).
 2. Lier chaque `bank_account` à son sous-compte respectif.
 
 Le solde affiché en page d'accueil sera alors correct pour chaque compte bancaire séparément.

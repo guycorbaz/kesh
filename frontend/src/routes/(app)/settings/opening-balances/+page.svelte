@@ -379,7 +379,7 @@
 				{:else if status.reason === 'FIRST_YEAR_CLOSED'}
 					{i18nMsg(
 						'opening-balances-locked-first-year-closed',
-						'Le premier exercice « { $name } » est clôturé : un administrateur doit le rouvrir avant la saisie des soldes de départ.',
+						'Le premier exercice « { $name } » est clôturé : avant la saisie des soldes de départ, un administrateur doit rouvrir les exercices clôturés jusqu’à celui-ci, en commençant par le plus récent.',
 						{ name: status.fiscalYear?.name ?? '' }
 					)}
 				{:else if status.reason === 'ALREADY_HAS_ENTRIES'}

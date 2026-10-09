@@ -374,7 +374,7 @@ Corps : `{ "version": n }` — le verrou optimiste. Réponse : la facture, même
 |---|---|---|
 | Facture créditée par un avoir — le règlement reste ouvert au compte débiteurs | `INVOICE_CREDITED` | `409` |
 | Un **solde** existe sur la facture — annuler d'abord le solde (le solde lui-même reste annulable) | `INVOICE_WRITTEN_OFF` | `409` |
-| Règlement d'un exercice **clos** — un administrateur doit le rouvrir | `FISCAL_YEAR_CLOSED` | `409` |
+| Règlement d'un exercice **clos** — un administrateur doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent | `FISCAL_YEAR_CLOSED` | `409` |
 | Règlement rapproché d'une transaction bancaire | `MATCHED_BANK_TRANSACTION` | `409`, `details.documentId` = la transaction |
 | Compte du règlement archivé | `ACCOUNT_ARCHIVED` | `400`, `details.rejected[]` nomme les comptes |
 | Aucun exercice ouvert ne couvre la date du jour | `FISCAL_YEAR_INVALID` | `400` |
@@ -530,7 +530,7 @@ La même sémantique de remplacement s'applique à **`PUT /api/v1/invoices/:id`*
 
 > ✅ **Corrigé — auto-propagation des clés Administrateur** ([KF-036 / #167](https://github.com/guycorbaz/kesh/issues/167)). Une clé `read-write` créée par un Administrateur atteignait auparavant les routes réservées aux Administrateurs : elle pouvait donc créer un compte administrateur, ce qui rendait la révocation de la clé inopérante. Ce n'est plus le cas. **Si une intégration existante appelait ces routes, elle reçoit désormais `403 API_KEY_ADMIN_FORBIDDEN`.**
 >
-> ⚠️ **Dans quelle version ?** Ce correctif n'est **pas** dans la v0.9.0 : il figure sous **`[Unreleased]`** du [CHANGELOG](../CHANGELOG.md) et sera livré à la prochaine version publiée. Si vous exploitez la v0.9.0, **la faille y est encore ouverte** — traitez une clé d'origine Administrateur comme un secret d'administrateur.
+> ⚠️ **Dans quelle version ?** Cette fermeture est livrée depuis la **v0.10.0** (entrée [#167](https://github.com/guycorbaz/kesh/issues/167) du [CHANGELOG](../CHANGELOG.md)). Jusqu'à la v0.9.0 incluse, une clé `read-write` créée par un Administrateur atteint les routes d'administration : sur une telle version, traitez une clé d'origine Administrateur comme un secret d'administrateur, et mettez Kesh à jour.
 
 Hors périmètre (non planifié pour v0.2) : OAuth/SSO, webhooks, serveur MCP Kesh-natif (cf. `epic-17.md` — « Hors scope »).
 

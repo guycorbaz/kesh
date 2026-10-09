@@ -88,7 +88,7 @@ describe('CancelReconciliationDialog', () => {
 		);
 		const { findByTestId, queryByTestId } = monter();
 		expect((await findByTestId('reconciliation-cancel-motif')).textContent).toContain(
-			"rouvrir l'exercice",
+			"en commençant par le plus récent",
 		);
 		expect(queryByTestId('reconciliation-cancel-submit')).toBeNull();
 	});
