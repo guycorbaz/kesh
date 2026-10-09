@@ -859,6 +859,38 @@ revue P1 comprise ; décision D7) :
   phrases des deux côtés présentes (« 104 des 112 routes » de la 15-7a2 ; « Exercices dans le désordre »,
   « Des boutons offerts, puis refusés au clic », « neuf refus »).
 
+**Intégration sur `f8b2accd`** (15-6b mergée, #580 ; rebase demandé par l'orchestrateur après l'ouverture
+de la PR #581) :
+- **Conflits** : registre des choix (union, aucun doublon de titre `## C…`) ; `sprint-status.yaml` (union,
+  lignes `last_updated` renumérotées (37) et (38) après le (36) de `main`) ; PDF des manuels (binaires,
+  régénérés) ; **code** :
+  - `kesh-api/tests/reconciliation_e2e.rs` — les deux stories ajoutaient chacune une section en fin de
+    fichier : la version de `main` (section 15-6b, `one_tx`, `tx_status`, ses tests) suivie de la section
+    15-12b à l'identique (préfixe commun vérifié) ;
+  - `failed-proposal-label.ts` — les deux intentions gardées : `failureRole` (15-6b) **et**
+    `fiscalYearName` (15-12b) ; doc-comment : **quatre** codes lisent leur `details` ; **28 codes** = 26
+    littéraux (`grep -ohE 'error_code: "[A-Z_]+"' … | sort -u | wc -l` → 26, dont
+    `LATER_FISCAL_YEAR_CLOSED`) + 2 de `DbError::error_code()` (`ACCOUNT_NOT_POSTABLE`,
+    `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`) ; son test : 28 clés (`toHaveLength(28)`, recomptées dans
+    `EXPECTED_KEYS`) ;
+  - `i18n-keys.test.ts` — `sitesTotal` **1925** = 1922 (`main`) + 3 (15-12b) ;
+    `failed-proposal-label.ts` 32 sites (`grep -oE "\b(msg|i18nMsg)\("`) ; vérifié vert par la suite ;
+  - `docs/api-external.md` — paragraphe des refus du règlement fournisseur (15-6b) gardé, suivi de
+    « Refus de l'annulation » avec `LATER_FISCAL_YEAR_CLOSED` à son rang.
+- `reconciliation.rs`, `errors.rs`, `messages.ftl`, `CHANGELOG.md`, `.tex` : fusionnés sans conflit.
+  **Ordre des refus dans le lot, recompté** : sur la voie facture (`accept_one_invoice`), le contrôle
+  `refuse_if_claim_account` de la 15-6b (`:1599`, `:1652`) précède `create_in_tx` (`:1749`) — donc
+  `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` parle **avant** `LATER_FISCAL_YEAR_CLOSED` ; les voies
+  ventilé et règle ne portent pas le contrôle de la 15-6b, rien n'y change.
+- **Gates sur l'état rebasé** (dernier commit de code `514cee77`, PDF `dde8a04e`, tête `HEAD` de ce commit) : bases `kesh_1512b`
+  remises à zéro (DROP/CREATE, migrations, seed), `wait-kesh.sh`, `scripts/test-fast.sh` : **3026 / 3026**,
+  4 ignorés (`target/gate-1512b-3.log`) = 3006 de `main` + 20 ; frontend complet (check 0 erreur, lint
+  i18n, unit, build) : **1139 / 1139** = 1118 + 21 ; **E2E complet** (base `kesh_e2e_1512b` reconstruite,
+  `:3015`, secrets aléatoires, `KESH_TEST_MODE=true` des deux côtés, SMTP et répertoires,
+  `smtpConfigured:true`), lancé à 07:06 UTC : **247 passés, 9 échecs, 17 ignorés** — 7 KF-029 et 2 KF-045
+  (`invoices.spec.ts:415`, `:439`, avant 12:00 UTC), tous dans `docs/testing.md` ; aucun hors liste.
+  Backend arrêté par son PID. PDF contrôlés aplatis : 0 « ?? », phrases des deux côtés présentes.
+
 ### File List
 
 `crates/kesh-db/src/repositories/{journal_entries,invoices,fiscal_years,opening_complement,settlement_cancellation}.rs`,
