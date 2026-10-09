@@ -5863,3 +5863,157 @@ l'import (#458–#461).
 - **Option retenue** : la doublure expose la prop `bankLedgerAccountId` qu'elle reçoit (attribut `data-bank-ledger-account-id`) ; le test 11 asserte la valeur résolue (le `journalAccountId` du compte monté ; `null` si `listBankAccounts` échoue, si le compte manque ou n'est pas lié). Le filtre lui-même est asserté dans la vraie modale par le test 10. Les deux tests couvrent ensemble le câblage parent → prop → filtre.
 - **Alternatives** : retirer la doublure pour ce test (défait la décision de la 15-5c et oblige à piloter l'autocomplétion depuis le parent) ; un second fichier de test sans doublure (dédouble le montage pour un seul cas).
 - **Réversibilité** : totale — un test et une doublure de test.
+
+## C-15-14-1 — 15-14 : tri des P3/P4 de documentation et de libellés, et découpage d'emblée en 15-14a / 15-14b
+
+- **Contexte** : lot décidé par Guy pour faire baisser le nombre de bugs (70 ouverts au 2026-10-09). Tri des issues
+  ouvertes `bug`/`known-failure` (et `documentation`) P3/P4 sur `dc4bc58b`, chaque défaut vérifié au code.
+  Retenues : #539, #547, #488, #291, #458, #449, #432, #569, #321, #323 (lot « manuels et libellés ») ; #575,
+  #554, #127 (lot « exploitation »). Les secondes réécrivent le manuel d'administration et le compose de
+  développement, que la 15-13a (*done*, non mergée : +187 lignes au manuel d'administration, refonte de
+  `DOCKER_START.md`) et la 15-13b (*ready-for-dev*) touchent aussi — #575 porte même un complément qui n'existe
+  qu'après l'AC 3 b de la 15-13a (deux lignes `MARIADB_ROOT_PASSWORD`).
+- **Retenu** : découpage d'emblée en **15-14a** (manuel utilisateur, brochure, `api-external.md`, README,
+  catalogues et replis — indépendante, développable tout de suite) et **15-14b** (manuel d'administration :
+  Synology, volumes, multi-société ; `docker-compose.dev.yml` — **après** le merge de 15-13a, 15-13b et 15-14a).
+  La fiche `15-14-lot-documentation-libelles.md` devient l'index du tri. Motif : une dépendance, non le nombre
+  de modules — la 15-14a seule ne touche que trois paquets de code (kesh-i18n, kesh-api, frontend) et la 15-14b
+  aucun module de production.
+- **Écartées** : une story unique (bloquée tout entière par la 15-13b, encore à développer) ; une coupe par nature
+  « doc / libellés » (les deux moitiés réécriraient le manuel utilisateur — #569 y a quatre sites — et se
+  disputeraient les mêmes lignes).
+- **Réversible** : oui (fiches seules).
+
+## C-15-14-2 — 15-14 : issues écartées du lot, avec leur raison
+
+- **Contexte** : le tri a examiné toutes les P3/P4 ouvertes ; l'orchestrateur avait exclu d'office #551, #552,
+  #576, #474, #524, #544, #528, #542, #279, #518 et #577.
+- **Retenu — écartées** :
+  - **#579** (P4, libellés du refus `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`) : B-2 exige un champ neuf dans
+    la variante `DbError::SettlementCounterpartyIsClaimAccount` et chez tous ses producteurs (`kesh-db`), B-6 une
+    refonte d'extraction ; C-15-6b-3 en a confié le solde à la 15-6c, qui retouche les écrans de liaison bancaire
+    et est en développement dans `kesh-15-6c`. Corriger B-1/B-4 ici et laisser B-2/B-6 ne fermerait pas l'issue.
+  - **#324** (P3, KF-042, « Valider ») : sa **prémisse est fausse au code** — une écriture saisie n'est pas figée,
+    elle reste modifiable et supprimable tant que son exercice est ouvert (manuel utilisateur `:476-481` :
+    « il n'y a rien à valider »). `Speichern`/`Salva`/`Save` disent donc vrai ; c'est le français « Valider »
+    qui est le faux ami, et le changer touche une quinzaine de sélecteurs E2E et Vitest
+    (`journal-entries.spec.ts`, `vat-purchase-assistant.spec.ts`, `JournalEntryForm.*.test.ts`) pour un
+    arbitrage de vocabulaire qui revient à Guy. **À commenter sur l'issue** (orchestrateur).
+  - **#469** (P4) : traduire les refus de validation de la route du journal d'audit demande un mécanisme
+    `AppError` résolu par clé — changement de comportement, non un libellé.
+  - **#339** (P4, KF-046) : 48 sites de markup en dur sur 12 fichiers — un rollout i18n, pas un lot.
+  - **#504** (P4) : la langue de la communication QR dépend du contact — règle métier.
+  - **#253** (P4) : contraste CSS, ni documentation ni libellé.
+  - Les KF de tests et de couverture (#76, #97, #125, #126, #287, #310, #421, #424, #478, #498) et les défauts de
+    comportement P3 (#293, #522, #537, #538, #546, #548, #555, #568, #578) : hors de la nature du lot.
+- **Écartée** : prendre #579 en partie (une issue ne se ferme pas à moitié) ; corriger #324 dans le sens que
+  propose l'issue (`Buchen`/`Post`), qui ferait dire aux cibles l'inverse de ce que fait le bouton en édition.
+- **Réversible** : oui.
+
+## C-15-14-3 — 15-14a : les fonctions promises et absentes se retirent du manuel, elles ne se livrent pas ici
+
+- **Contexte** : #291 (« Contacts → Import CSV ») laisse l'arbitrage au Project Lead entre retirer et livrer ; la
+  vérification de #488 révèle une seconde fonction fictive du même type, « Administration → Plan comptable →
+  Import CSV » (`user-manual.tex:409-422`, ligne « Personnalisé CSV » du tableau `admin-manual.tex:1369`) — aucune
+  route ni écran d'import de plan. #458 (« dossier surveillé ») hésite entre corriger le texte et automatiser
+  l'import, automatisation que suit déjà #459.
+- **Retenu** : retirer les deux sous-sections d'import fictives et la promesse de surveillance ; le texte décrit
+  ce qui existe (plans choisis par le type d'organisation, comptes ajoutés un par un ; import déclenché à la main).
+  #458 se ferme sur la correction du texte, `refs #459` pour l'automatisation.
+- **Écartées** : livrer un import de contacts ou de plan (fonctionnalité, hors lot) ; garder le texte « en
+  attendant » (il promet ce qui n'existe pas, défaut que l'issue nomme).
+- **Réversible** : oui — si l'une de ces fonctions est livrée, sa story réécrit la section.
+
+## C-15-14-4 — 15-14a : formulation des prescriptions de réouverture (#569)
+
+- **Contexte** : six clés (×4 locales), six replis Rust, quatre replis frontend, quatre phrases du manuel et une
+  ligne d'`api-external.md` prescrivent « rouvrir l'exercice » sans l'ordre LIFO. La 15-12b a en outre renvoyé à
+  #569 (B-1 = E-1) la clause « une écriture existante se corrige par une contre-passation » de
+  `error-later-fiscal-year-closed`, qu'un exercice du jour suivi d'un exercice clôturé ferait refuser.
+- **Retenu** : la prescription devient « rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le
+  plus récent » (forme de C111, « jusqu'à celui-ci » ajouté parce que ces messages désignent l'exercice à
+  atteindre). La clause de contre-passation de `error-later-fiscal-year-closed` et de
+  `journal-entries-modify-blocked-later-fiscal-year-closed` est **examinée et conservée** : l'exercice du jour
+  suivi d'un exercice clôturé n'existe que dans l'état hérité, que l'écran des exercices signale par son propre
+  bandeau, et l'alternative que donne déjà le message (« sinon, un administrateur rouvre … en commençant par le
+  plus récent ») reste juste dans ce cas. Les corps de confirmation (« seul un administrateur peut le rouvrir »,
+  « Vous êtes sur le point de rouvrir l'exercice ») décrivent, ils ne prescrivent pas : hors inventaire.
+- **Écartées** : nommer l'exercice le plus récent dans chaque message (argument neuf à porter par six
+  producteurs) ; réécrire la clause de contre-passation (elle alourdirait un message juste dans l'état sain).
+- **Réversible** : oui.
+
+## C-15-14-5 — 15-14a : « Réglages » devient « Paramètres » partout où le manuel ou un message désigne l'écran
+
+- **Contexte** : #547. Le menu affiche « Paramètres » (`nav-settings`). Le manuel utilisateur écrit « Réglages »
+  quatre fois (`:575`, `:907`, `:952`, `:2085`) ; la propagation trouve un cinquième site, un **message** :
+  `invoice-default-revenue-account-unusable` (« corrigez-le dans les Réglages ») et son repli
+  (`InvoiceForm.svelte:768`).
+- **Retenu** : les quatre phrases du manuel et le message (4 locales, chemin complet `Paramètres → Facturation`
+  aligné sur `settings-invoicing-title` de chaque locale, repli identique au catalogue `fr-CH`). Restent assumés :
+  les noms d'entité du journal d'audit (« Réglages de facturation », « Réglages de recouvrement » — des noms
+  d'objet, non des renvois au menu), les commentaires de code, et la ligne historique `README.md:213` (feuille de
+  route publiée).
+- **Écartée** : renommer aussi les entités d'audit (vocabulaire du journal, autre domaine).
+- **Réversible** : oui.
+
+## C-15-14-6 — 15-14a : les références d'issues du README deviennent des liens explicites (#432)
+
+- **Contexte** : #432 propose d'uniformiser sur `#NNN` nu, « auto-lié par GitHub ». Vérifié par l'API de rendu
+  de GitHub (`POST /markdown`) : en mode `markdown` (rendu de fichier sans contexte de dépôt), **ni** `(#195)`
+  **ni** `[#164]` ne deviennent des liens ; en mode `gfm` avec contexte, **les deux** le deviennent (les crochets
+  restant affichés). La prémisse « l'une est cliquable, l'autre non » ne tient donc dans aucun des deux modes.
+- **Retenu** : toute référence d'issue du README (54 occurrences, lignes 211-223 sur `dc4bc58b`) s'écrit
+  `[#NNN](https://github.com/guycorbaz/kesh/issues/NNN)` — la forme du CHANGELOG, lien dans tous les modes ; un
+  test l'impose.
+- **Écartées** : `#NNN` nu (non lié si le rendu de fichier est en mode `markdown`) ; des définitions de référence
+  en pied de fichier (une oubliée redevient du texte sans signal — l'issue elle-même l'écarte).
+- **Réversible** : oui.
+
+## C-15-14-7 — 15-14a : vocabulaire de la clôture d'exercice dans les trois cibles (#323)
+
+- **Contexte** : `fiscal-year-close-button` et `fiscal-year-close-confirmation-action` portent `Schliessen` /
+  `Chiudi` / `Close`, le verbe des panneaux (`api-keys-actions-close`, `supplier-invoices-form-close`,
+  `payment-batches-form-close`, `reconciliation-cancel-dismiss`).
+- **Retenu** : `Abschliessen` (de-CH, verbe déjà employé par les messages de clôture dans l'ordre :
+  « Schliessen Sie … ab ») ; `Chiudi l’esercizio` (it-CH) ; `Close fiscal year` (en-CH) ; titres de confirmation
+  alignés (`Geschäftsjahr abschliessen?`). Le français ne change pas (la suite E2E tourne en français : aucun
+  sélecteur touché). Un test interdit que le libellé de la clôture égale celui d'un panneau.
+- **Écartée** : `Jahresabschluss` (substantif sur un bouton d'action) ; garder `Close` seul en anglais.
+- **Réversible** : oui.
+
+## C-15-14-8 — 15-14 : une garde testée lit la documentation
+
+- **Contexte** : « aucun gate ne lit le manuel » (rétrospective de l'Epic 24) ; les dix défauts de ce lot sont des
+  phrases que rien n'a contrôlées. Un test qui fige un texte de catalogue existe (parité, replis) ; aucun ne lit
+  `docs/manual/`, `README.md` ni `api-external.md`.
+- **Retenu** : un fichier de test pur, sans base, `crates/kesh-api/tests/documentation_coherente.rs`, qui lit ces
+  fichiers et y interdit les valeurs corrigées par le lot (et, pour les taux de TVA, un test de module de
+  `vat_rates.rs` qui confronte le manuel à `DEFAULT_SWISS_RATES`). La 15-14b l'étend. Chaque assertion se prouve
+  par mutation (valeur réintroduite → rouge).
+- **Écartées** : se fier au grep du développeur (c'est le régime qui a laissé passer ces défauts) ; un script hors
+  gate (rien ne le lancerait).
+- **Réversible** : oui (un fichier de test).
+
+## C-15-14-9 — 15-14b : le compose de développement démarre sans `.env` par l'écran `/setup` (#554)
+
+- **Contexte** : `docker-compose.dev.yml:25` pose `${KESH_ADMIN_PASSWORD:-admin}` (5 caractères), refusé par
+  `WeakAdminPassword`. L'issue admet deux remèdes : un défaut de 12 caractères au moins, ou pas de défaut.
+- **Retenu** : `${KESH_ADMIN_PASSWORD:-}` — absent ou vide, l'administrateur se crée à `/setup`, comme avec
+  `docker-compose.prod.yml` ; aucun mot de passe publié dans un fichier du dépôt.
+- **Écartée** : un défaut long « de développement » (un mot de passe publié de plus — précisément ce que la 15-13a
+  retire de `docker-compose.yml`).
+- **Réversible** : oui.
+
+## C-15-14-10 — 15-14b : le pré-script Hyper Backup vise la base de `DATABASE_URL`, par un conteneur jetable
+
+- **Contexte** : #575. `docker-compose.prod.yml` n'a pas de service `mariadb` : la base est celle de l'exploitant
+  (paquet DSM, conteneur séparé, base gérée). Le pré-script du manuel fait `docker compose exec -T mariadb` et lit
+  `MARIADB_ROOT_PASSWORD` dans `.env` par `grep | cut` — deux lignes possibles après la 15-13a (complément de
+  l'issue).
+- **Retenu** : le pré-script exécute `mariadb-dump` dans un conteneur jetable `mariadb:10.11` attaché au réseau
+  `frontend`, avec un fichier d'identifiants dédié (`--defaults-extra-file`, droits 600, hors du `.env`), contre
+  l'hôte et la base que nomme `DATABASE_URL`. Le manuel ne demande plus d'écrire `MARIADB_ROOT_PASSWORD` dans le
+  `.env` d'une installation Synology.
+- **Écartées** : le client du paquet MariaDB de DSM (chemin propre à la version du paquet, absent si la base est
+  ailleurs) ; garder `grep .env` (deux lignes, et un secret root dans un fichier lu par Compose).
+- **Réversible** : oui.
