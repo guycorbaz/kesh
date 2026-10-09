@@ -202,7 +202,7 @@ Si vous souhaitez \textbf{tenir votre comptabilité réelle}, choisissez le mode
     \item \textbf{Compte bancaire} : nom de la banque, IBAN et QR-IBAN éventuel (cette étape peut être passée et complétée plus tard).
 \end{enumerate}
 
-À la finalisation, Kesh met en place votre plan comptable (Sterchi PME par défaut) et votre premier exercice. Vous êtes alors prêt à saisir vos premières écritures.
+À la finalisation, Kesh met en place le plan comptable de votre type d'organisation et votre premier exercice. Vous êtes alors prêt à saisir vos premières écritures.
 
 \begin{keshnote}
 Vous pourrez à tout moment ajouter ou modifier vos comptes bancaires après l'onboarding (\emph{Administration} → \emph{Comptes bancaires}) et adapter votre plan comptable (cf. section \emph{Plan comptable}).
@@ -310,13 +310,13 @@ La documentation complète de l'API externe (authentification, points d'accès, 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Plan comptable}
 
-Le plan comptable est la colonne vertébrale de votre comptabilité. Kesh fournit deux plans pré-configurés (Sterchi PME, KMU) et permet l'import d'un plan personnalisé.
+Le plan comptable est la colonne vertébrale de votre comptabilité. Kesh fournit trois plans comptables, dont la structure suit le plan comptable PME suisse : un pour les PME, un pour les indépendants, un pour les associations. Le plan est choisi par le type d'organisation que vous indiquez à l'onboarding ; vous l'adaptez ensuite en ajoutant, modifiant ou archivant des comptes.
 
 \subsection{Visualisation}
 
 \emph{Administration} → \emph{Plan comptable}. La page affiche tous les comptes organisés selon leur structure hiérarchique :
 
-\keshscreenshot{plan-comptable.png}{Plan comptable Sterchi PME affiché par classes hiérarchiques.}  % TODO capture: page plan comptable
+\keshscreenshot{plan-comptable.png}{Plan comptable PME affiché par classes hiérarchiques.}  % TODO capture: page plan comptable
 
 \begin{itemize}
     \item Classe 1 : Actifs (1000 Caisse, 1020 CCP, 1030 Compte courant, 1100 Débiteurs, etc.).
@@ -411,24 +411,9 @@ La mise à jour \textbf{ferme ces comptes pour l'avenir, elle ne corrige pas le 
 Si votre plan a été renuméroté et que le numéro 9000 y désigne un compte que vous utilisez, la page \emph{Plan comptable} vous permet de le rouvrir~: ouvrez sa fiche et rétablissez l'indicateur \emph{postable}.
 \end{keshnote}
 
-\subsection{Import d'un plan personnalisé}
-
-\emph{Administration} → \emph{Plan comptable} → \emph{Import CSV}. Format attendu :
-
-\begin{lstlisting}
-numero,libelle,parent,type,devise
-1000,Caisse,,Actif,CHF
-1020,Comptes courants postaux,,Actif,CHF
-1020.1,"CCP 12-345-6",1020,Actif,CHF
-\end{lstlisting}
-
-\begin{keshwarning}
-L'import remplace intégralement le plan comptable existant. Cette opération n'est possible qu'au début d'un exercice, avant toute saisie. Au-delà, vous devez ajouter les comptes manquants un par un.
-\end{keshwarning}
-
 \subsection{Adapter le plan à votre secteur}
 
-Le plan Sterchi PME couvre la plupart des besoins, mais chaque PME l'adapte à son activité. Quelques exemples concrets :
+Le plan PME couvre la plupart des besoins, mais chaque PME l'adapte à son activité. Quelques exemples concrets :
 
 \begin{itemize}
     \item \textbf{Commerce de détail} (ex. \emph{Boutique Pierre Exemple Sàrl}) : créez des sous-comptes de stock sous la classe 1 (ex. 1200.1 « Stock textile », 1200.2 « Stock accessoires ») et ventilez les ventes par rayon en sous-comptes de 3000 (ex. 3000.1 « Ventes textile », 3000.2 « Ventes accessoires ») pour suivre vos marges par catégorie.
@@ -439,7 +424,7 @@ Le plan Sterchi PME couvre la plupart des besoins, mais chaque PME l'adapte à s
 \end{itemize}
 
 \begin{keshtip}
-Archivez (plutôt que supprimer) les comptes Sterchi PME que vous n'utilisez pas : ils disparaissent de la saisie tout en restant disponibles pour l'historique. C'est particulièrement utile pour un indépendant ou une petite structure dont le plan complet est surdimensionné.
+Archivez (plutôt que supprimer) les comptes du plan que vous n'utilisez pas : ils disparaissent de la saisie tout en restant disponibles pour l'historique. C'est particulièrement utile pour un indépendant ou une petite structure dont le plan complet est surdimensionné.
 \end{keshtip}
 
 %%─────────────────────────────────────────────────────────────────────────────
@@ -577,7 +562,7 @@ Rien n'empêchait alors de \textbf{saisir après coup} une écriture datée d'un
 déclarée --- et comme les rapports se recalculent à la volée, le chiffre changeait \textbf{sans
 que rien ne le signale}.
 
-Le \textbf{verrou de période} ferme cela. Dans \emph{Réglages} $\rightarrow$ \emph{Verrou de
+Le \textbf{verrou de période} ferme cela. Dans \emph{Paramètres} $\rightarrow$ \emph{Verrou de
 période}, indiquez une date~: «~les écritures jusqu'au 31 mars 2026 inclus sont verrouillées~». Aucune écriture ne pourra plus y être datée, \textbf{par aucun chemin} ---
 ni la saisie manuelle, ni la validation d'une facture antérieure, ni un rapprochement bancaire.
 Et aucune écriture déjà passée dans la période ne pourra plus en \textbf{disparaître} ni
@@ -862,10 +847,6 @@ dans la recherche. La forme imprimée sur les documents officiels,
 \texttt{CHE-109.322.551}, ne remonte \emph{rien}.
 \end{keshwarning}
 
-\subsubsection{Import en masse}
-
-\emph{Contacts} → \emph{Import CSV}. Format attendu : voir exemples dans la documentation technique.
-
 \subsection{Catalogue produits}
 
 \emph{Produits}. Les produits sont les biens ou services que vous vendez régulièrement et que vous voulez réutiliser dans vos factures.
@@ -880,7 +861,7 @@ dans la recherche. La forme imprimée sur les documents officiels,
     \item \textbf{Code interne} : identifiant unique (ex. PROD-001).
     \item \textbf{Désignation} : libellé qui apparaîtra sur les factures.
     \item \textbf{Prix unitaire HT}.
-    \item \textbf{Taux TVA} : 0\%, 2.5\%, 3.7\%, 8.1\% (taux suisses au moment de la rédaction).
+    \item \textbf{Taux TVA} : 0\%, 2.6\%, 3.8\%, 8.1\% --- les taux suisses en vigueur depuis le 1\textsuperscript{er} janvier 2024, que Kesh pose à la création de la société (\emph{Paramètres} → \emph{Taux de TVA}).
     \item \textbf{Unité} : pièce, heure, mètre, kilo, etc.
     \item \textbf{Compte de produit} (facultatif) : le compte du plan comptable sur lequel le chiffre d'affaires de cet article sera crédité — par exemple 3200 \emph{Honoraires} pour du conseil, 3400 \emph{Maintenance} pour un abonnement. Quand vous montez une facture depuis le catalogue, la ligne créée reprend ce compte automatiquement ; vous pouvez encore le changer sur la ligne. \textbf{Laissé vide}, l'article n'impose rien : la ligne suit alors le compte de produit par défaut de la société.
 \end{itemize}
@@ -912,7 +893,7 @@ dans la recherche. La forme imprimée sur les documents officiels,
     \item \textbf{Date d'échéance} : calculée automatiquement selon les conditions de paiement du client (modifiable).
     \item \textbf{Numéro} : généré automatiquement selon le pattern configuré (cf. \emph{Numérotation}).
     \item \textbf{Lignes de facture} : un ou plusieurs produits avec quantité, prix, TVA, et \textbf{compte de produit}.
-    \item \textbf{Compte de produit (par ligne)} : le compte du plan comptable sur lequel le chiffre d'affaires de cette ligne sera crédité. Quand vous ajoutez une ligne \textbf{depuis le catalogue}, Kesh y \textbf{recopie} le compte de produit de l'article, s'il en porte un ; vous restez libre de le changer ensuite. Laissé vide, le champ suit le \textbf{compte de produit par défaut de la société} (\emph{Réglages} → facturation) — il affiche alors ce compte entre parenthèses, pour que vous voyiez d'un coup d'œil où ira le produit. \textbf{Attention} : la recopie a lieu \textbf{une seule fois}, au moment où vous choisissez l'article ; la ligne ne reste pas liée à lui. Vider le champ d'une ligne venue du catalogue la ramène donc au compte par défaut de la société, \textbf{pas} au compte de l'article. Renseigné, il permet de \textbf{ventiler une même facture sur plusieurs comptes} : honoraires, marchandises, prestations, etc. Le compte reste \textbf{modifiable tant que la facture est un brouillon} ; il est figé à la validation.
+    \item \textbf{Compte de produit (par ligne)} : le compte du plan comptable sur lequel le chiffre d'affaires de cette ligne sera crédité. Quand vous ajoutez une ligne \textbf{depuis le catalogue}, Kesh y \textbf{recopie} le compte de produit de l'article, s'il en porte un ; vous restez libre de le changer ensuite. Laissé vide, le champ suit le \textbf{compte de produit par défaut de la société} (\emph{Paramètres} → \emph{Facturation}) — il affiche alors ce compte entre parenthèses, pour que vous voyiez d'un coup d'œil où ira le produit. \textbf{Attention} : la recopie a lieu \textbf{une seule fois}, au moment où vous choisissez l'article ; la ligne ne reste pas liée à lui. Vider le champ d'une ligne venue du catalogue la ramène donc au compte par défaut de la société, \textbf{pas} au compte de l'article. Renseigné, il permet de \textbf{ventiler une même facture sur plusieurs comptes} : honoraires, marchandises, prestations, etc. Le compte reste \textbf{modifiable tant que la facture est un brouillon} ; il est figé à la validation.
     \item \textbf{Remarques} : texte libre apparaissant en bas de facture (mention de remerciement, conditions particulières, etc.).
     \item \textbf{Compte bancaire de réception} : le compte sur lequel vous attendez le paiement (utilisé pour générer la référence QR Bill).
 \end{itemize}
@@ -957,7 +938,7 @@ Une facture passe par trois états :
 
 Le bloc en haut à gauche du PDF porte votre \textbf{nom}, votre \textbf{adresse} et votre \textbf{numéro IDE}. Vous pouvez y ajouter vos \textbf{coordonnées de contact} --- téléphone, e-mail et site web --- pour qu'un client qui a une question sur la facture puisse vous joindre depuis le document lui-même.
 
-\textbf{Où les saisir} : \emph{Réglages} $\rightarrow$ section \emph{Organisation}, bouton \textbf{Modifier} en face de « Téléphone · Site web ». La saisie est réservée aux administrateurs, comme celle de l'adresse de réponse.
+\textbf{Où les saisir} : \emph{Paramètres} $\rightarrow$ section \emph{Organisation}, bouton \textbf{Modifier} en face de « Téléphone · Site web ». La saisie est réservée aux administrateurs, comme celle de l'adresse de réponse.
 
 \begin{keshnote}
 \textbf{Chaque champ est facultatif, et un champ vide ne laisse aucun blanc sur le document} : la ligne correspondante n'est simplement pas imprimée. Si vous ne renseignez rien, votre facture est exactement celle que vous aviez avant --- aucune mise en page ne bouge.
@@ -1213,8 +1194,9 @@ Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~:
           antérieure~: un avoir est désormais refusé sur une facture réglée (\S\ref{sec:avoirs})~;
     \item \textbf{le reste de la facture a été soldé}~: annulez d'abord le \textbf{solde} --- lui
           reste annulable --- puis le règlement~;
-    \item \textbf{l'exercice du règlement est clôturé}~: un administrateur doit d'abord
-          \textbf{rouvrir} l'exercice~;
+    \item \textbf{l'exercice du règlement est clôturé}~: un administrateur doit
+          d'abord \textbf{rouvrir} les exercices clôturés jusqu'à celui du règlement, en
+          commençant par le plus récent~;
     \item \textbf{le règlement est rapproché} d'une transaction bancaire~: il faut d'abord
           annuler ce rapprochement --- le bouton \emph{Annuler le rapprochement} apparaît à
           côté du motif (\S\ref{sec:annuler-rapprochement})~;
@@ -1461,7 +1443,8 @@ d'audit nomme le geste. Un lien mène de la fiche à l'écriture de règlement. 
 fournisseur~» ci-dessous~: il n'est pas nécessaire d'annuler d'abord son règlement.
 
 Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~: l'exercice du
-règlement est \textbf{clôturé} (un administrateur doit d'abord le rouvrir), un compte du
+règlement est \textbf{clôturé} (un administrateur doit d'abord rouvrir les exercices clôturés
+jusqu'à celui-ci, en commençant par le plus récent), un compte du
 règlement a été \textbf{archivé} (réactivez-le), ou aucun exercice ouvert ne couvre la date du
 jour (créez-le).
 
@@ -1483,7 +1466,8 @@ garde le lien vers la facture annulée. La fiche de ce paiement n'offre ni «~Mo
 règlement d'abord}, puis la facture~: le lien avec la facture reste lisible au grand livre.
 
 Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~: l'exercice de
-l'\textbf{achat} est clôturé (un administrateur doit d'abord le rouvrir), un compte de l'achat
+l'\textbf{achat} est clôturé (un administrateur doit d'abord rouvrir les exercices clôturés
+jusqu'à celui-ci, en commençant par le plus récent), un compte de l'achat
 a été \textbf{archivé} (réactivez-le), aucun exercice ouvert ne couvre la date du jour
 (créez-le), ou la facture figure dans un \textbf{lot de paiement en cours} (annulez d'abord le
 lot). Une facture annulée ne se \emph{désannule} pas~: si l'annulation était une erreur,
@@ -1529,8 +1513,9 @@ fiche, jamais par un nouveau lot.
 \label{sec:import-factures}
 
 Kesh peut décoder automatiquement les factures fournisseurs suisses porteuses
-d'un \textbf{QR-facture} (Swiss QR Code) déposées dans un dossier surveillé — voir
-le manuel administrateur pour la configuration du dossier.
+d'un \textbf{QR-facture} (Swiss QR Code) déposées dans le dossier d'import (voir le
+manuel administrateur pour sa configuration). L'import ne se déclenche pas tout seul~:
+vous le lancez depuis l'écran décrit ci-dessous.
 
 \emph{Quotidien} → \emph{Importer des factures}, puis \textbf{« Importer le
 dossier »}. Kesh lit chaque fichier (PDF ou image), décode le QR côté serveur,
@@ -1780,7 +1765,8 @@ raison~:
           compte débiteurs, il ne s'annule pas --- cas hérité d'une version antérieure à la 0.12.1
           ou d'une sauvegarde restaurée~;
     \item \textbf{l'exercice de l'écriture du rapprochement est clôturé}~: un administrateur
-          doit d'abord le rouvrir. ⚠️ C'est l'exercice du \textbf{paiement} qui compte, jamais
+          doit d'abord rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le
+          plus récent. ⚠️ C'est l'exercice du \textbf{paiement} qui compte, jamais
           celui de la facture~: une facture de décembre dont l'exercice est clôturé, payée en
           janvier, se rapproche et se dé-rapproche normalement~;
     \item \textbf{un compte de l'écriture a été archivé}~: réactivez-le (son numéro est
@@ -1935,7 +1921,7 @@ Les factures dont les rappels sont \textbf{suspendus restent comptées} dans la 
 \emph{Mensuel} → \emph{Rapports} → \emph{TVA}. Produit le décompte de la TVA pour la période sélectionnée. La TVA due est calculée \textbf{à partir des factures} validées de la période --- et non du grand livre ---, la TVA récupérable à partir du compte d'impôt préalable.
 
 \begin{itemize}
-    \item \textbf{TVA due} : la TVA facturée sur les ventes, ventilée par taux (8.1\%, 3.7\%, 2.5\%, 0\%). Elle est comptabilisée automatiquement lors de la validation de chaque facture de vente (compte \emph{TVA due}, p.~ex. 2200).
+    \item \textbf{TVA due} : la TVA facturée sur les ventes, ventilée par taux (8.1\%, 3.8\%, 2.6\%, 0\%). Elle est comptabilisée automatiquement lors de la validation de chaque facture de vente (compte \emph{TVA due}, p.~ex. 2200).
     \item \textbf{TVA récupérable} (impôt préalable) : la TVA payée sur les achats, lue du solde du compte d'impôt préalable (p.~ex. 1171). Elle s'alimente via l'assistant de saisie d'achat (cf. \emph{Saisie d'une écriture}), qui pré-remplit la ligne d'impôt préalable à partir d'un taux.
     \item \textbf{Diminutions de contre-prestation (soldes)} : la TVA corrigée par les \emph{soldes} (escompte accordé, perte sur débiteur --- \S\ref{sec:reglement-client}) datés dans la période, ventilée par taux. La section n'apparaît que s'il y a de tels soldes, suivie de la \textbf{TVA due nette} (TVA due − TVA des soldes).
     \item \textbf{Solde net dû à l'AFC} : TVA due \textbf{nette} − TVA récupérable. Un solde négatif signifie un crédit d'impôt en votre faveur.
@@ -2092,7 +2078,7 @@ couvrent l'ensemble de votre comptabilité~:
           \texttt{products.csv}, \texttt{projects.csv}.
     \item \textbf{Banque}~: \texttt{bank\_accounts.csv}, \texttt{bank\_imports.csv},
           \texttt{bank\_transactions.csv}, \texttt{reconciliation\_rules.csv}, \texttt{bank\_profiles.csv}.
-    \item \textbf{Réglages et traçabilité}~: \texttt{company.csv}, \texttt{vat\_rates.csv},
+    \item \textbf{Paramètres et traçabilité}~: \texttt{company.csv}, \texttt{vat\_rates.csv},
           \texttt{company\_invoice\_settings.csv}, \texttt{dunning\_levels.csv},
           \texttt{company\_dunning\_settings.csv}, et \texttt{audit\_log.csv} --- le journal d'audit.
     \item \texttt{metadata.json}~: le manifeste (version de Kesh, date, auteur, et le hash
@@ -2338,7 +2324,8 @@ Selon l'action :
           \textbf{rapprochement bancaire} (\S\ref{sec:annuler-rapprochement}) et une
           \textbf{facture fournisseur} dont l'achat est dans un exercice clôturé
           (\S\ref{sec:annuler-facture-fournisseur}) ne s'annulent pas~: un administrateur doit
-          d'abord rouvrir l'exercice.
+          d'abord rouvrir les exercices clôturés jusqu'à celui de la pièce, en commençant par
+          le plus récent.
     \item Facture validée : passage en avoir + génération d'une nouvelle facture.
     \item Facture fournisseur~: elle s'annule depuis sa fiche, ouverte ou payée
           (\S\ref{sec:annuler-facture-fournisseur})~; payée, son règlement reste au grand

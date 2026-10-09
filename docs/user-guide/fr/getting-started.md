@@ -23,13 +23,12 @@ Si vous oubliez votre mot de passe, le manuel administrateur explique la procéd
 
 Après la connexion, l'onboarding vous guide :
 
-1. **Choix du type d'organisation** (indépendant, PME, association).
+1. **Choix du type d'organisation** (indépendant, PME, association) — il détermine le plan comptable que Kesh met en place.
 2. **Coordonnées de la company** (nom, adresse, IDE).
 3. **Langue de l'interface** + langue comptable.
-4. **Plan comptable** (PME Suisse / Indépendant / KMU / Verein, ou import CSV custom *(à venir v0.2)*).
-5. **Exercice comptable** (typiquement 2026-01-01 → 2026-12-31).
-6. **Compte bancaire principal** — saisir nom de banque + IBAN. QR-IBAN optionnel.
-7. **Finalisation**.
+4. **Exercice comptable** (typiquement 2026-01-01 → 2026-12-31).
+5. **Compte bancaire principal** — saisir nom de banque + IBAN. QR-IBAN optionnel.
+6. **Finalisation**.
 
 À tout moment, vous pouvez quitter l'onboarding et y revenir.
 

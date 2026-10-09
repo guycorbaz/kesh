@@ -174,3 +174,41 @@ describe('le catalogue fr-CH ne ment sur aucun site', () => {
 		expect(TOLEREES.filter((t) => t.motif.trim().length < 20).map((t) => t.cle)).toEqual([]);
 	});
 });
+
+/** Valeur `fr-CH` d'une clé (valeurs sur une ligne) — `undefined` si la clé n'y figure pas. */
+function valeurDuCatalogueFr(cle: string): string | undefined {
+	const texte = readFileSync(join(RACINE_FTL, 'fr-CH', 'messages.ftl'), 'utf-8');
+	for (const ligne of texte.split('\n')) {
+		const m = /^([a-zA-Z][\w-]*)\s*=\s?(.*)$/.exec(ligne);
+		if (m && m[1] === cle) return m[2];
+	}
+	return undefined;
+}
+
+/**
+ * G13 (Story 15-14a, #569 et #547) — les replis frontend **à site unique** suivent le catalogue.
+ *
+ * ⚠️ La garde ci-dessus ne voit pas ces clés : elle ne retient que celles qui portent **au
+ * moins deux** replis distincts (`parTexte.size > 1`). Chacune des cinq clés ci-dessous n'a
+ * qu'un site d'appel ; un repli resté à l'ancien texte n'y rougirait pas, et l'écran
+ * l'afficherait dès que le catalogue manque (premier rendu, catalogue non chargé).
+ *
+ * Le tableau attendu à UN élément est l'anti-test-muet : un relevé vide, une clé disparue du
+ * catalogue (`[undefined]`) ou un second repli divergent rougissent tous.
+ */
+const REPLIS_A_SITE_UNIQUE: readonly string[] = [
+	'settlement-cancel-blocked-fiscal-year-closed',
+	'reconciliation-cancel-blocked-fiscal-year-closed',
+	'supplier-invoices-cancel-blocked-fiscal-year-closed',
+	'opening-balances-locked-first-year-closed',
+	'invoice-default-revenue-account-unusable',
+];
+
+describe('les replis frontend à site unique suivent le catalogue fr-CH (G13)', () => {
+	it('les_replis_frontend_a_site_unique_suivent_le_catalogue', () => {
+		const releve = replisParCle();
+		for (const cle of REPLIS_A_SITE_UNIQUE) {
+			expect([...(releve.get(cle)?.keys() ?? [])], cle).toEqual([valeurDuCatalogueFr(cle)]);
+		}
+	});
+});

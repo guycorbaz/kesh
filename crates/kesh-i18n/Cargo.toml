@@ -15,3 +15,6 @@ tracing = "0.1"
 
 [dev-dependencies]
 rust_decimal_macros = "1"
+# Story 15-14a (C-15-14-27) — gardes de texte G8, G10, G11. Déjà au Cargo.lock
+# (version de kesh-db et kesh-import) : aucun paquet neuf.
+regex = "1.10"

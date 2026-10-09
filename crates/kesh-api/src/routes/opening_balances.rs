@@ -202,7 +202,7 @@ fn map_opening_balances_error(err: DbError) -> AppError {
         DbError::Invariant(ref s) if s == FY_OPENING_FIRST_YEAR_CLOSED_KEY => {
             AppError::Validation(t(
                 "error-opening-balances-first-year-closed",
-                "Le premier exercice est clôturé : rouvrez-le avant de saisir les soldes de départ.",
+                "Le premier exercice est clôturé : avant de saisir les soldes de départ, rouvrez les exercices clôturés jusqu’à celui-ci, en commençant par le plus récent.",
             ))
         }
         other => AppError::from(other),
@@ -403,7 +403,7 @@ pub async fn generate_opening_balances(
     if fiscal_year.status == FiscalYearStatus::Closed {
         return Err(AppError::Validation(t(
             "error-opening-balances-first-year-closed",
-            "Le premier exercice est clôturé : rouvrez-le avant de saisir les soldes de départ.",
+            "Le premier exercice est clôturé : avant de saisir les soldes de départ, rouvrez les exercices clôturés jusqu’à celui-ci, en commençant par le plus récent.",
         )));
     }
 

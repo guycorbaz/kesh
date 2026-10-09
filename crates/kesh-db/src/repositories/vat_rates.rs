@@ -357,3 +357,60 @@ pub async fn seed_default_swiss_rates(pool: &MySqlPool, company_id: i64) -> Resu
     tx.commit().await.map_err(map_db_error)?;
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::DEFAULT_SWISS_RATES;
+
+    /// Forme LaTeX d'un taux en centièmes de pour-cent : `810` → `8.1\%`, `0` → `0\%`.
+    fn forme_latex(centiemes: i64) -> String {
+        let entier = centiemes / 100;
+        let decimales = format!("{:02}", centiemes % 100);
+        let decimales = decimales.trim_end_matches('0');
+        if decimales.is_empty() {
+            format!("{entier}\\%")
+        } else {
+            format!("{entier}.{decimales}\\%")
+        }
+    }
+
+    /// **G1** (Story 15-14a, #539, C-15-14-13) — le manuel utilisateur cite les
+    /// taux que Kesh pose à la création de la société, et aucun des taux d'avant
+    /// 2024 (2,5 %, 3,7 %, 7,7 %) ne survit dans un manuel.
+    ///
+    /// Test pur (`#[test]`, sans base) : il lit les `.tex` depuis le dépôt.
+    #[test]
+    fn le_manuel_cite_les_taux_poses_par_kesh() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/manual/fr");
+        let manuel = std::fs::read_to_string(dir.join("user-manual.tex"))
+            .expect("lecture de docs/manual/fr/user-manual.tex");
+        let ligne = manuel
+            .lines()
+            .find(|l| l.contains("\\textbf{Taux TVA}"))
+            .expect("ligne « Taux TVA » absente du manuel utilisateur");
+        for (categorie, _, taux) in DEFAULT_SWISS_RATES {
+            let forme = forme_latex(taux);
+            assert!(
+                ligne.contains(&forme),
+                "taux {categorie} ({forme}) absent de : {ligne}"
+            );
+        }
+        let mut lus = 0;
+        for entree in std::fs::read_dir(&dir).expect("lecture de docs/manual/fr") {
+            let chemin = entree.unwrap().path();
+            if chemin.extension().and_then(|e| e.to_str()) != Some("tex") {
+                continue;
+            }
+            let texte = std::fs::read_to_string(&chemin).unwrap();
+            for perime in ["2.5\\%", "3.7\\%", "7.7\\%"] {
+                assert!(
+                    !texte.contains(perime),
+                    "{} cite un taux périmé : {perime}",
+                    chemin.display()
+                );
+            }
+            lus += 1;
+        }
+        assert!(lus >= 3, "manuels lus : {lus}");
+    }
+}

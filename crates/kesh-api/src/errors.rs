@@ -1821,7 +1821,7 @@ impl IntoResponse for AppError {
                 let msg = t(
                     "error-invoice-pdf-header-overflow",
                     "L'en-tête du document ne tient pas sur la page. Supprimez une \
-                     coordonnée — téléphone, e-mail ou site web — dans les réglages : \
+                     coordonnée — téléphone, e-mail ou site web — dans les Paramètres : \
                      les raccourcir ne libère aucune place, chaque coordonnée occupe \
                      une ligne entière. Ou réduisez le nombre de lignes de l'adresse \
                      du destinataire.",
@@ -3240,12 +3240,9 @@ impl IntoResponse for AppError {
                             "supplier-invoices-settlement-cancel-blocked-not-paid",
                             "Cette facture fournisseur n'est pas payée : il n'y a pas de règlement à annuler.",
                         ),
-                        // #569 : ce texte prescrit « rouvrir l'exercice » sans l'ordre qu'impose
-                        // la garde LIFO (en commençant par le plus récent) — hors périmètre de la
-                        // Story 15-12a, qui n'aligne que les messages de `LATER_FISCAL_YEAR_CLOSED` (C122).
                         SettlementCancelBlocker::FiscalYearClosed => (
                             "settlement-cancel-blocked-fiscal-year-closed",
-                            "Ce règlement appartient à un exercice clôturé : un administrateur doit rouvrir l'exercice pour pouvoir l'annuler.",
+                            "Ce règlement appartient à un exercice clôturé : pour pouvoir l'annuler, un administrateur doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
                         ),
                         SettlementCancelBlocker::MatchedBankTransaction => (
                             "settlement-cancel-blocked-bank-match",
@@ -3752,12 +3749,9 @@ fn reconciliation_cancel_blocked_text(
             "supplier-invoices-settlement-cancel-blocked-not-paid",
             "Cette facture fournisseur n'est pas payée : il n'y a pas de règlement à annuler.",
         ),
-        // #569 : ce texte prescrit « rouvrir l'exercice » sans l'ordre qu'impose
-        // la garde LIFO (en commençant par le plus récent) — hors périmètre de la
-        // Story 15-12a, qui n'aligne que les messages de `LATER_FISCAL_YEAR_CLOSED` (C122).
         SettlementCancelBlocker::FiscalYearClosed => (
             "reconciliation-cancel-blocked-fiscal-year-closed",
-            "Ce rapprochement appartient à un exercice clôturé : un administrateur doit rouvrir l'exercice pour pouvoir l'annuler.",
+            "Ce rapprochement appartient à un exercice clôturé : pour pouvoir l'annuler, un administrateur doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
         ),
         SettlementCancelBlocker::MatchedBankTransaction => (
             "reconciliation-cancel-blocked-bank-match",
@@ -3792,12 +3786,9 @@ fn supplier_invoice_cancel_blocked_text(
             "supplier-invoices-cancel-blocked-cancelled",
             "Cette facture fournisseur est déjà annulée.",
         ),
-        // #569 : ce texte prescrit « rouvrir l'exercice » sans l'ordre qu'impose
-        // la garde LIFO (en commençant par le plus récent) — hors périmètre de la
-        // Story 15-12a, qui n'aligne que les messages de `LATER_FISCAL_YEAR_CLOSED` (C122).
         SettlementCancelBlocker::FiscalYearClosed => (
             "supplier-invoices-cancel-blocked-fiscal-year-closed",
-            "Cette facture appartient à un exercice clôturé : un administrateur doit rouvrir l'exercice pour pouvoir l'annuler.",
+            "Cette facture appartient à un exercice clôturé : pour pouvoir l'annuler, un administrateur doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
         ),
         SettlementCancelBlocker::MatchedBankTransaction => (
             "supplier-invoices-cancel-blocked-bank-match",

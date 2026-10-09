@@ -31,7 +31,7 @@ describe("motifs d’annulation d’un règlement", () => {
 
   it("exercice clos : le chemin est la réouverture (mutation : texte générique)", () => {
     expect(settlementCancelTailMessage("FISCAL_YEAR_CLOSED", null)).toBe(
-      "Ce règlement appartient à un exercice clôturé : un administrateur doit rouvrir l'exercice pour pouvoir l'annuler.",
+      "Ce règlement appartient à un exercice clôturé : pour pouvoir l'annuler, un administrateur doit rouvrir les exercices clôturés jusqu'à celui-ci, en commençant par le plus récent.",
     );
   });
 
