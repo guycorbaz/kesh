@@ -6,8 +6,8 @@
  * FailedProposal per-proposal* du `CLAUDE.md` ; seul leur affichage est traduit. Patron :
  * `failedItemLabel` (`payment-batches/payment-batch-helpers.ts`).
  *
- * **Les 27 codes** sont ceux que `crates/kesh-api/src/routes/reconciliation.rs` peut poser dans
- * `failed[]` : les 25 littéraux relevés par
+ * **Les 28 codes** sont ceux que `crates/kesh-api/src/routes/reconciliation.rs` peut poser dans
+ * `failed[]` : les 26 littéraux relevés par
  * `grep -ohE 'error_code: "[A-Z_]+"' crates/kesh-api/src/routes/reconciliation.rs | sort -u`,
  * plus les deux codes posés par `DbError::error_code()` (seules formes non littérales du
  * fichier) : `ACCOUNT_NOT_POSTABLE` et, depuis la Story 15-6b (#474),
@@ -22,10 +22,12 @@
  * ⚠️ **Les clés sont écrites en toutes lettres, jamais construites par gabarit** : une clé
  * statique est vue par `i18n-keys.test.ts` dès qu'elle manque d'un catalogue.
  *
- * ⚠️ **Trois codes seulement lisent leur `details`** : `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`
+ * ⚠️ **Quatre codes seulement lisent leur `details`** : `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`
  * (Story 15-6b), pour son `role` — le compte de banque lié au compte débiteurs et le compte
  * d'arrondi désigné qui l'est n'appellent pas le même remède ; `ACCOUNT_NOT_POSTABLE` (AC2), pour
- * nommer les comptes ; et `RECONCILIATION_INVOICE_NOT_ELIGIBLE`, pour la seule raison
+ * nommer les comptes ; `LATER_FISCAL_YEAR_CLOSED` (Story 15-12b, #543), pour nommer l'exercice
+ * postérieur clos (`details.fiscalYearName`, repli sans nom si le champ manque) ; et
+ * `RECONCILIATION_INVOICE_NOT_ELIGIBLE`, pour la seule raison
  * `payment_date_before_invoice_date` (revue de code P1, E1 — choix C-15-5c-3). Cette raison
  * est la seule qu'un utilisateur rencontre sans avoir rien fait de travers : la proposition
  * retient les factures datées de 30 jours avant à 30 jours après la transaction, alors que
@@ -88,9 +90,20 @@ export function failureRole(details: unknown): string | null {
 }
 
 /**
+ * Nom de l'exercice d'un `details` de la forme `{ fiscalYearName: "<nom>" }` (refus
+ * `LATER_FISCAL_YEAR_CLOSED`, Story 15-12b), ou `null` pour toute autre forme ou un nom vide.
+ * Même prudence que `rejectedAccountNumbers` : `details` est typé `unknown`.
+ */
+export function fiscalYearName(details: unknown): string | null {
+	if (typeof details !== 'object' || details === null) return null;
+	const name = (details as { fiscalYearName?: unknown }).fiscalYearName;
+	return typeof name === 'string' && name.trim() !== '' ? name : null;
+}
+
+/**
  * Libellé traduit d'un `errorCode` de `failed[]`. `details` n'est lu que pour
- * `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, `ACCOUNT_NOT_POSTABLE` et
- * `RECONCILIATION_INVOICE_NOT_ELIGIBLE` ; un code inconnu rend un repli qui cite le code.
+ * `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, `ACCOUNT_NOT_POSTABLE`, `LATER_FISCAL_YEAR_CLOSED`
+ * et `RECONCILIATION_INVOICE_NOT_ELIGIBLE` ; un code inconnu rend un repli qui cite le code.
  */
 export function failedProposalLabel(code: string, details?: unknown): string {
 	switch (code) {
@@ -144,6 +157,24 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 				'reconciliation-failed-invoice-sale-entry-malformed',
 				'L’écriture de vente de cette facture n’a pas de ligne au compte débiteurs : le règlement ne peut pas être passé.'
 			);
+		case 'LATER_FISCAL_YEAR_CLOSED': {
+			// Story 15-12b (#543) — l'exercice de la transaction est suivi d'un exercice clos
+			// (état hérité) : le bilan de celui-ci reprendrait l'écriture. La clé globale
+			// `error-later-fiscal-year-closed` porte une phrase entière, trop longue pour une
+			// ligne d'échec (choix C100).
+			const name = fiscalYearName(details);
+			if (name !== null) {
+				return i18nMsg(
+					'reconciliation-failed-later-fiscal-year-closed',
+					'Exercice postérieur « { $name } » clôturé : aucune écriture ne peut être datée avant lui.',
+					{ name }
+				);
+			}
+			return i18nMsg(
+				'reconciliation-failed-later-fiscal-year-closed-generic',
+				'Un exercice postérieur est clôturé : aucune écriture ne peut être datée avant lui.'
+			);
+		}
 		case 'PERIOD_LOCKED':
 			return i18nMsg(
 				'reconciliation-failed-period-locked',

@@ -5483,3 +5483,242 @@ async fn accept_refuses_a_rounding_account_that_is_the_receivable(pool: MySqlPoo
     assert_eq!(settlements_and_paid_at(&pool, inv_id).await, (0, None));
     assert_eq!(tx_status(&pool, tx_id).await, "pending");
 }
+
+// ============================================================
+// Story 15-12b (#543, AC 11) — le filet sous un bilan clos, dans le lot
+//
+// État hérité posé par SQL : 2026 ouvert, **2027 clos**, 2028 ouvert. Une
+// proposition datée de 2026 est refusée par le filet de `create_in_tx_inner` et
+// rendue dans `failed[]` sous `LATER_FISCAL_YEAR_CLOSED` (jamais
+// `DATABASE_ERROR`) ; une proposition saine du MÊME lot, datée de 2028, passe.
+// ============================================================
+
+/// Pose 2027 **clos** et 2028 **ouvert** à côté de l'exercice 2026 du montage ;
+/// rend l'identifiant et le nom de 2027.
+async fn poser_un_posterieur_clos(pool: &MySqlPool, company_id: i64) -> (i64, String) {
+    let _ = insert_fake_fiscal_year(pool, company_id).await;
+    let mut clos = 0;
+    for (annee, statut) in [(2027, "Closed"), (2028, "Open")] {
+        let id = sqlx::query(
+            "INSERT INTO fiscal_years (company_id, name, start_date, end_date, status) \
+             VALUES (?, ?, ?, ?, ?)",
+        )
+        .bind(company_id)
+        .bind(format!("FY {annee} c{company_id}"))
+        .bind(NaiveDate::from_ymd_opt(annee, 1, 1).unwrap())
+        .bind(NaiveDate::from_ymd_opt(annee, 12, 31).unwrap())
+        .bind(statut)
+        .execute(pool)
+        .await
+        .expect("exercice")
+        .last_insert_id() as i64;
+        if statut == "Closed" {
+            clos = id;
+        }
+    }
+    (clos, format!("FY 2027 c{company_id}"))
+}
+
+async fn ecritures_de(pool: &MySqlPool, company_id: i64) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries WHERE company_id = ?")
+        .bind(company_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Le refus attendu dans `failed[]` : code littéral et `details` exacts.
+fn assert_refus_du_filet(f: &Value, tx_id: i64, fy_id: i64, fy_name: &str) {
+    assert_eq!(f["bankTransactionId"].as_i64(), Some(tx_id), "{f}");
+    assert_eq!(f["errorCode"], "LATER_FISCAL_YEAR_CLOSED", "{f}");
+    assert_eq!(
+        f["details"],
+        serde_json::json!({ "fiscalYearId": fy_id, "fiscalYearName": fy_name }),
+        "{f}"
+    );
+}
+
+/// AC 11, voie **facture** (`accept_one_invoice` → `project_error_to_failed_proposal`).
+///
+/// ⛔ Tue la mutation (vii-a) — retirer le bras `LaterFiscalYearClosed` du mapper.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_invoice_under_a_closed_later_year_lands_in_failed(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Filet", "CH4431999123000889012", Role::Comptable).await;
+    let (inv_a, _) = seed_validated_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-A",
+        NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+        dec!(100.00),
+    )
+    .await;
+    let (inv_b, _) = seed_validated_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-B",
+        NaiveDate::from_ymd_opt(2028, 5, 1).unwrap(),
+        dec!(200.00),
+    )
+    .await;
+    let (fy_clos, nom) = poser_un_posterieur_clos(&pool, ctx.company_id).await;
+    let (jour_a, jour_b) = (
+        NaiveDate::from_ymd_opt(2026, 5, 15).unwrap(),
+        NaiveDate::from_ymd_opt(2028, 5, 15).unwrap(),
+    );
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("filet_facture"),
+        jour_a,
+        jour_b,
+        vec![
+            make_new_tx(
+                ctx.company_id,
+                ctx.bank_account_id,
+                jour_a,
+                Some(jour_a),
+                dec!(100.00),
+                "CHF",
+                "INV-A",
+                Some("Filet Client"),
+            ),
+            make_new_tx(
+                ctx.company_id,
+                ctx.bank_account_id,
+                jour_b,
+                Some(jour_b),
+                dec!(200.00),
+                "CHF",
+                "INV-B",
+                Some("Filet Client"),
+            ),
+        ],
+    )
+    .await;
+    let avant = ecritures_de(&pool, ctx.company_id).await;
+
+    let app = spawn_app(pool.clone()).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/accept"))
+        .bearer_auth(&ctx.jwt)
+        .json(&serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "proposals": [
+                { "type": "invoice", "bankTransactionId": tx_ids[0], "invoiceId": inv_a },
+                { "type": "invoice", "bankTransactionId": tx_ids[1], "invoiceId": inv_b },
+            ],
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "pattern batch : succès partiel = 200");
+    let body: Value = resp.json().await.unwrap();
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_refus_du_filet(&failed[0], tx_ids[0], fy_clos, &nom);
+    let accepted = body["accepted"].as_array().unwrap();
+    assert_eq!(accepted.len(), 1, "{body}");
+    assert_eq!(accepted[0]["bankTransactionId"].as_i64(), Some(tx_ids[1]));
+    assert_eq!(
+        ecritures_de(&pool, ctx.company_id).await,
+        avant + 1,
+        "seule la proposition saine écrit"
+    );
+}
+
+/// AC 11, voie **ventilé** (`accept_one_split` → `project_error_to_failed_proposal`,
+/// `projectId` inconnu → omis).
+///
+/// ⛔ Tue la mutation (vii-a), indépendamment de la voie facture.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_split_under_a_closed_later_year_lands_in_failed(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "FiletV", "CH4431999123000889012", Role::Comptable).await;
+    let (fy_clos, nom) = poser_un_posterieur_clos(&pool, ctx.company_id).await;
+    let charge = accounts::create(
+        &pool,
+        ctx.user_id,
+        NewAccount {
+            company_id: ctx.company_id,
+            number: "5000".into(),
+            name: "Salaires".into(),
+            account_type: AccountType::Expense,
+            parent_id: None,
+            role: None,
+            postable: true,
+        },
+    )
+    .await
+    .unwrap()
+    .id;
+    let (jour_a, jour_b) = (
+        NaiveDate::from_ymd_opt(2026, 5, 31).unwrap(),
+        NaiveDate::from_ymd_opt(2028, 5, 31).unwrap(),
+    );
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("filet_ventile"),
+        jour_a,
+        jour_b,
+        vec![
+            make_new_tx(
+                ctx.company_id,
+                ctx.bank_account_id,
+                jour_a,
+                Some(jour_a),
+                dec!(-100.00),
+                "CHF",
+                "LOT-A",
+                None,
+            ),
+            make_new_tx(
+                ctx.company_id,
+                ctx.bank_account_id,
+                jour_b,
+                Some(jour_b),
+                dec!(-100.00),
+                "CHF",
+                "LOT-B",
+                None,
+            ),
+        ],
+    )
+    .await;
+    let avant = ecritures_de(&pool, ctx.company_id).await;
+    let ventilation = serde_json::json!([
+        { "counterpartyAccountId": charge, "amount": "60.00", "description": "Salaire" },
+        { "counterpartyAccountId": charge, "amount": "40.00", "description": "Salaire bis" },
+    ]);
+
+    let app = spawn_app(pool.clone()).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/accept"))
+        .bearer_auth(&ctx.jwt)
+        .json(&serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "proposals": [
+                { "type": "split", "bankTransactionId": tx_ids[0], "splits": ventilation },
+                { "type": "split", "bankTransactionId": tx_ids[1], "splits": ventilation },
+            ],
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_refus_du_filet(&failed[0], tx_ids[0], fy_clos, &nom);
+    let accepted = body["accepted"].as_array().unwrap();
+    assert_eq!(accepted.len(), 1, "{body}");
+    assert_eq!(accepted[0]["bankTransactionId"].as_i64(), Some(tx_ids[1]));
+    assert_eq!(ecritures_de(&pool, ctx.company_id).await, avant + 1);
+}

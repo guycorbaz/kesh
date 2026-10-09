@@ -493,11 +493,10 @@ Le bouton n'est offert que si \textbf{toutes} ces conditions tiennent~:
     \item l'\textbf{exercice} de l'écriture est \textbf{ouvert}~;
     \item \textbf{aucun exercice postérieur n'est clôturé}~: le bilan étant cumulatif depuis
           l'origine, un exercice suivant clôturé reprend cette écriture dans ses soldes ---
-          la modifier réécrirait son bilan. ⚠️ Cette garde ne couvre encore \textbf{que la
-          modification et la suppression}~: saisir une écriture neuve, contre-passer, régler, dévalider ou
-          compléter les soldes de départ dans un exercice ouvert reste possible quand un
-          exercice postérieur est clôturé, et change alors son bilan reporté --- limite
-          connue, suivie par l'issue~\#543~;
+          la modifier réécrirait son bilan. Depuis la v0.13.0, la même garde vaut pour
+          \textbf{toute} écriture de cet exercice~: rien ne s'y saisit, ne s'y règle, ne s'y
+          dévalide ni ne s'y supprime tant qu'un exercice postérieur est clôturé
+          (\S\ref{sec:exercices-desordre})~;
     \item sa date est \textbf{après} la période verrouillée (\S\ref{sec:verrou-periode})~---
           et la nouvelle date aussi~;
     \item \textbf{aucune pièce} ne la possède~: l'écriture d'une facture, d'un avoir, d'une
@@ -709,7 +708,7 @@ Les exercices se clôturent \textbf{dans l'ordre} (depuis la v0.13.0)~: un exerc
 La clôture est un simple \textbf{verrou} : elle ne génère aucune écriture. Le report des soldes de bilan d'un exercice à l'autre est \textbf{calculé en temps réel} depuis l'origine (report à-nouveau automatique), sans écriture de clôture ni de report à passer. La clôture :
 
 \begin{itemize}
-    \item Verrouille l'exercice : plus aucune écriture ne peut y être \textbf{saisie} tant qu'il reste clôturé (immutabilité, CO art. 957-964). C'est aussi la clôture qui \textbf{ferme la modification}~: une écriture se modifie tant que son exercice est ouvert. Un exercice ne se clôturant qu'après tous ceux qui le précèdent, aucun exercice postérieur n'est clôturé tant que le sien est ouvert. Si des données antérieures à la v0.13.0 (installation mise à jour, sauvegarde restaurée) portent déjà un exercice clôturé après un exercice ouvert, cet exercice ouvert reste figé pour la modification --- le bilan étant cumulatif, le modifier réécrirait le bilan clos (pour la modification et la suppression seulement~: les autres écritures restent possibles dans l'exercice ouvert, limite suivie par l'issue~\#543). La clôture ferme de même la \textbf{suppression} d'une écriture --- celle de l'exercice clôturé, et celle de tout exercice antérieur.
+    \item Verrouille l'exercice : plus aucune écriture ne peut y être \textbf{saisie} tant qu'il reste clôturé (immutabilité, CO art. 957-964). C'est aussi la clôture qui \textbf{ferme la modification}~: une écriture se modifie tant que son exercice est ouvert. Un exercice ne se clôturant qu'après tous ceux qui le précèdent, aucun exercice postérieur n'est clôturé tant que le sien est ouvert. Si des données antérieures à la v0.13.0 (installation mise à jour, sauvegarde restaurée) portent déjà un exercice clôturé après un exercice ouvert, \textbf{rien} ne s'enregistre plus dans cet exercice ouvert --- ni saisie, ni règlement, ni modification, ni suppression~: le bilan étant cumulatif, toute écriture y changerait le bilan clos. L'écran des exercices le signale et indique comment rétablir l'ordre (\S\ref{sec:exercices-desordre}). La clôture ferme de même la \textbf{suppression} d'une écriture --- celle de l'exercice clôturé, et celle de tout exercice antérieur.
     \item Inscrit l'opération dans le journal d'audit (\texttt{audit\_log}).
     \item N'affecte pas le report à-nouveau, qui reste calculé automatiquement — les rapports finaux (bilan, compte de résultat, balance) demeurent consultables et exportables (CSV/PDF).
 \end{itemize}
@@ -718,13 +717,28 @@ La clôture est un simple \textbf{verrou} : elle ne génère aucune écriture. L
 La clôture d'un exercice est une opération critique. Effectuez d'abord une sauvegarde complète. Une fois clôturé, l'exercice ne peut plus être modifié tant qu'il reste clôturé ; seul un administrateur peut le rouvrir (voir ci-dessous).
 \end{keshwarning}
 
-\subsection{Réouverture d'un exercice clôturé}
+\subsection{Réouverture d'un exercice clôturé}\label{sec:reouverture-exercice}
 
 En cas d'erreur découverte après clôture, un \textbf{administrateur} peut rouvrir l'exercice directement depuis l'interface : \emph{Paramètres} → \emph{Exercices comptables} → bouton \emph{Réouvrir} (visible uniquement pour les administrateurs sur un exercice clôturé). Un \textbf{motif est obligatoire} ; il est conservé, avec l'auteur et l'horodatage, dans le journal d'audit (\texttt{audit\_log}, conservation 10 ans). L'exercice rouvert redevient modifiable --- ses écritures saisies à la main se modifient de nouveau, si aucun exercice postérieur n'est clôturé ---, puis pourra être re-clôturé.
 
 \begin{keshtip}
 On rouvre les exercices \textbf{du plus récent vers l'ancien} : si un exercice postérieur est encore clôturé, Kesh refuse la réouverture et indique lequel rouvrir d'abord. C'est l'ordre inverse de la clôture, qui va du plus ancien vers le plus récent~: ensemble, ils garantissent qu'aucun exercice ouvert ne précède un exercice clôturé. Effectuer cette opération avec parcimonie pour préserver l'intégrité légale.
 \end{keshtip}
+
+\subsubsection{Exercices dans le désordre --- données antérieures à la v0.13.0}\label{sec:exercices-desordre}
+
+Les exercices se clôturant désormais dans l'ordre, un exercice ouvert ne peut plus précéder un exercice clôturé. Des données plus anciennes --- une installation mise à jour, une sauvegarde restaurée --- peuvent pourtant porter cet état. Kesh le tolère sans le réparer d'office, et l'écran \emph{Exercices comptables} l'affiche dans un \textbf{bandeau d'avertissement}, visible de tous les rôles~: il nomme l'exercice ouvert le plus ancien, l'exercice clôturé qui le suit, et l'exercice clôturé le plus récent.
+
+Tant que l'ordre n'est pas rétabli, \textbf{rien ne s'enregistre} dans l'exercice ouvert concerné~: ni saisie, ni validation ou règlement de facture, ni paiement fournisseur, ni complément des soldes de départ, ni dévalidation, ni modification, ni suppression. Le bilan étant cumulatif, chacune de ces écritures changerait le bilan de l'exercice clôturé qui le suit. Le refus nomme cet exercice. Une contre-passation, datée du jour, n'est refusée que si l'exercice du jour est lui-même suivi d'un exercice clôturé.
+
+\textbf{Des boutons offerts, puis refusés au clic.} Dans cet état, l'écran ne prévoit pas toujours le refus~: les boutons \emph{Annuler} d'un règlement client, d'un rapprochement bancaire, d'un paiement ou d'une facture fournisseur, et \emph{Contre-passer} sur une écriture, restent affichés, et le complément des soldes de départ reste proposé. Le clic est alors refusé, avec un message qui nomme l'exercice clôturé~: rien n'a été enregistré. Rétablissez l'ordre ci-dessous, puis recommencez (issue \#568).
+
+Pour rétablir l'ordre, \textbf{dans cet ordre}~:
+
+\begin{enumerate}
+    \item \textbf{Si les comptes de l'exercice ouvert sont arrêtés}, clôturez-le --- c'est la réparation directe, ouverte au Comptable~: aucun exercice antérieur n'étant ouvert, Kesh l'accepte. S'il reste d'autres exercices ouverts suivis d'un exercice clôturé, clôturez-les à leur tour, \textbf{du plus ancien au plus récent}~; le bandeau disparaît quand l'ordre est rétabli.
+    \item \textbf{Sinon}, un administrateur rouvre les exercices clôturés postérieurs, \textbf{en commençant par le plus récent} (celui que le bandeau nomme en dernier) et jusqu'à celui qui suit l'exercice ouvert (\S\ref{sec:reouverture-exercice}). Rouvrir d'abord l'exercice clôturé le plus proche est refusé dès qu'un exercice plus récent est clôturé.
+\end{enumerate}
 
 \subsection{Reprise de comptabilité — soldes de départ}\label{sec:soldes-depart}
 
@@ -753,7 +767,7 @@ La génération n'est disponible que tant que la société ne contient \textbf{a
 Une fois l'ouverture générée, l'écran passe en mode \emph{compléter}~: sous le rappel de ce qui a été généré, il propose les comptes de bilan --- actifs et passifs --- \textbf{jamais mouvementés}~: en service, imputables, sans aucune ligne d'écriture dans aucun exercice. Il faut pour cela un compte de rôle \emph{Bénéfice/perte reporté} en service et imputable et, pour une régularisation, un exercice ouvert qui couvre la date du jour~; à défaut, l'écran dit ce qui manque. Saisissez le solde des seuls comptes oubliés, puis \emph{Compléter}~: Kesh crée une écriture OD «~Complément des soldes de départ~», dont il \textbf{calcule lui-même la contrepartie} sur le compte de rôle \emph{Bénéfice/perte reporté}~: elle équilibre l'ensemble des lignes saisies --- au crédit quand leurs débits l'emportent (un actif oublié, saisi au débit), au débit dans le cas contraire (un passif, saisi au crédit). Si les lignes saisies s'équilibrent entre elles, il n'y a pas de contrepartie.
 
 \begin{itemize}
-    \item \textbf{La date.} Si votre premier exercice est encore ouvert et que son premier jour n'est pas dans la période verrouillée, le complément est daté de ce premier jour~: le compte oublié faisait partie de l'ouverture, et les soldes d'ouverture --- donc tout rapport déjà tiré sur cet exercice --- en sont modifiés. Si un exercice suivant est déjà clôturé --- ce qui ne se rencontre plus qu'avec des données antérieures à la v0.13.0, les exercices se clôturant désormais dans l'ordre ---, son bilan reporté l'est aussi. Sinon, le complément est une \textbf{régularisation datée du jour}, dans l'exercice ouvert qui couvre cette date. La date annoncée par l'écran est indicative~; elle est confirmée à l'enregistrement.
+    \item \textbf{La date.} Si votre premier exercice est encore ouvert et que son premier jour n'est pas dans la période verrouillée, le complément est daté de ce premier jour~: le compte oublié faisait partie de l'ouverture, et les soldes d'ouverture --- donc tout rapport déjà tiré sur cet exercice --- en sont modifiés. Si un exercice suivant est déjà clôturé --- ce qui ne se rencontre plus qu'avec des données antérieures à la v0.13.0, les exercices se clôturant désormais dans l'ordre ---, le complément est \textbf{refusé} tant qu'il l'est (\S\ref{sec:exercices-desordre})~: il changerait son bilan reporté. ⚠️ L'écran ne le prévoit pas et propose le complément~; le refus vient à l'enregistrement, et nomme l'exercice clôturé. Sinon, le complément est une \textbf{régularisation datée du jour}, dans l'exercice ouvert qui couvre cette date. La date annoncée par l'écran est indicative~; elle est confirmée à l'enregistrement.
     \item \textbf{Le jour est celui du serveur, en temps universel}~: entre minuit et une ou deux heures du matin, heure suisse, c'est encore la veille --- le 1\textsuperscript{er} janvier, une régularisation peut tomber dans l'exercice précédent, ou être refusée s'il est clôturé.
     \item \textbf{La numérotation.} Daté du premier jour, le complément porte pourtant le numéro suivant du journal~: dans cet exercice, l'ordre des numéros cesse de suivre l'ordre des dates.
 \end{itemize}
@@ -1361,6 +1375,8 @@ Le refus \textbf{nomme toujours son motif}~:
           celui que Kesh conserve~;
     \item écriture \textbf{rapprochée} d'une transaction bancaire~;
     \item écriture d'un \textbf{exercice clos}~;
+    \item écriture d'un exercice \textbf{suivi d'un exercice clôturé}~: son bilan, cumulatif,
+          reprend l'écriture (\S\ref{sec:exercices-desordre})~;
     \item écriture déjà \textbf{contre-passée}~;
     \item écriture datée d'une \textbf{période verrouillée} (cf. \S\ref{sec:verrou-periode})~: la
           supprimer changerait les totaux d'une période déjà déclarée.

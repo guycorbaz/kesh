@@ -2904,12 +2904,11 @@ impl IntoResponse for AppError {
                 // ne prescrit jamais de rouvrir l'exercice nommé (la garde LIFO
                 // le refuserait dès qu'un plus récent est clos). La création
                 // d'un exercice a son propre message
-                // (`AppError::FiscalYearBeforeClosedYear`). Revue P1 (B-1) : le
-                // texte ne nomme que la modification et la suppression — les
-                // seuls gestes que garde aujourd'hui `LaterFiscalYearClosed` sur
-                // une écriture (`journal_entries::update` / `delete_in_tx`) ; la
-                // saisie y entrera avec la garde de la 15-12b (#543), qui
-                // élargira ce texte.
+                // (`AppError::FiscalYearBeforeClosedYear`). Le texte nomme la
+                // saisie, la modification et la suppression : depuis la Story
+                // 15-12b (#543), `LaterFiscalYearClosed` garde les trois sur une
+                // écriture (`create_in_tx_inner`, `update`, `delete_in_tx`) ; la
+                // 15-12a l'avait borné aux deux dernières (revue P1, B-1).
                 //
                 // Pourquoi deux clés voisines (revue P1, B-5) :
                 // `journal-entries-modify-blocked-later-fiscal-year-closed` est
@@ -2923,7 +2922,7 @@ impl IntoResponse for AppError {
                     fiscal_year_name,
                 } => {
                     let fallback = format!(
-                        "L'exercice « {fiscal_year_name} », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucune écriture datée avant sa date de début ne peut être modifiée ni supprimée tant qu'il l'est. Une telle écriture se corrige par une contre-passation ; sinon, un administrateur rouvre les exercices clôturés, en commençant par le plus récent."
+                        "L'exercice « {fiscal_year_name} », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucune écriture datée avant sa date de début ne peut être enregistrée, modifiée ni supprimée tant qu'il l'est. Une écriture existante se corrige par une contre-passation ; sinon, un administrateur rouvre les exercices clôturés, en commençant par le plus récent."
                     );
                     later_fiscal_year_closed_response(
                         fiscal_year_id,

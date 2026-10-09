@@ -1373,10 +1373,11 @@ pub async fn delete(
         //
         // Le geste existe toujours, mais il se nomme : `unvalidate` repasse la
         // facture en brouillon, garde son numéro et supprime l'écriture sous
-        // **huit** empêchements — les trois d'ici, plus le règlement partiel,
-        // l'envoi au client, le rapprochement bancaire, la contre-passation et
-        // le verrou de période. ⚠️ Ces trois gardes ne disparaissent donc pas :
-        // elles ont déménagé, et se sont élargies.
+        // **neuf** empêchements — les trois d'ici, plus le règlement partiel,
+        // l'envoi au client, le rapprochement bancaire, l'exercice postérieur
+        // clos (Story 15-12b, #543), la contre-passation et le verrou de
+        // période. ⚠️ Ces trois gardes ne disparaissent donc pas : elles ont
+        // déménagé, et se sont élargies.
         //
         // ⚠️ Ce bras rend un code PROPRE, et non le fourre-tout
         // `IllegalStateTransition` du bras suivant : l'utilisateur doit
@@ -1469,10 +1470,18 @@ pub async fn delete(
 /// # Les empêchements, et pourquoi leur ORDRE est figé
 ///
 /// Cinq motifs sont contrôlés ici, **avant** l'appel à
-/// [`journal_entries::delete_in_tx`] ; trois autres y vivent déjà (exercice
-/// clos, écriture contre-passée, période verrouillée) et parlent après. La
-/// précédence est donc `Settled → Credited → HasReminders → Emailed →
-/// MatchedBankTransaction`, puis celle de `delete_in_tx`.
+/// [`journal_entries::delete_in_tx`] ; quatre autres y vivent déjà (exercice
+/// clos, exercice postérieur clos, écriture contre-passée, période verrouillée)
+/// et parlent après. La précédence complète, par code d'erreur :
+///
+/// `INVOICE_HAS_SETTLEMENTS → INVOICE_CREDITED → INVOICE_HAS_REMINDERS →
+/// INVOICE_EMAILED → MATCHED_BANK_TRANSACTION → FISCAL_YEAR_CLOSED →
+/// LATER_FISCAL_YEAR_CLOSED → ENTRY_IS_REVERSED → PERIOD_LOCKED`.
+///
+/// `LATER_FISCAL_YEAR_CLOSED` (Story 15-12b, #543) : un exercice postérieur à
+/// celui de l'écriture est clos, et son bilan cumulatif la reprend — la
+/// supprimer changerait ce bilan en silence. Avant la Story 15-12b, ce chemin ne
+/// le contrôlait pas (C-15-8-29).
 ///
 /// ⛔ **Le motif 7 (rapprochement) ne peut PAS attendre `delete_in_tx`** : la FK
 /// `bank_transactions.matched_entry_id` est `ON DELETE SET NULL`, et le lien
@@ -1652,10 +1661,10 @@ pub async fn unvalidate(
         // modification — dont « possédée par une facture » — n'a pas de sens
         // ici, c'est la facture qui supprime SA propre écriture, sous ses
         // propres gardes. Celles de `delete_in_tx` qui ne dépendent pas du
-        // drapeau — exercice clos, contre-passation, période verrouillée (#443)
-        // — tiennent. ⚠️ L'exercice postérieur clos n'est contrôlé que sur le
-        // chemin de la route (C-15-8-29) : défaut préexistant, signalé. Pas de
-        // clé d'API ici (`None`) : `unvalidate` n'en reçoit pas (hors périmètre).
+        // drapeau — exercice clos, exercice postérieur clos (Story 15-12b,
+        // #543 ; ancien C-15-8-29), contre-passation, période verrouillée
+        // (#443) — tiennent. Pas de clé d'API ici (`None`) : `unvalidate` n'en
+        // reçoit pas (hors périmètre).
         if let Some(je_id) = current.journal_entry_id {
             journal_entries::delete_in_tx(&mut tx, company_id, je_id, user_id, None, false).await?;
         }

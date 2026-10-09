@@ -381,7 +381,7 @@ journal-entries-edit-conflict = Cette écriture a été modifiée entre-temps : 
 journal-entries-line-account-unusable = Compte archivé ou non imputable — à remplacer
 journal-entries-modify-blocked-fiscal-year-closed = L’exercice de cette écriture est clôturé : elle est figée. Corrigez-la par une contre-passation.
 journal-entries-modify-blocked-later-fiscal-year-closed = L’exercice postérieur { $name } est clôturé, et son bilan reprend cette écriture : elle reste figée tant qu’il l’est. Corrigez-la par une contre-passation ; sinon, un administrateur rouvre les exercices clôturés, en commençant par le plus récent.
-error-later-fiscal-year-closed = L’exercice « { $name } », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucune écriture datée avant sa date de début ne peut être modifiée ni supprimée tant qu’il l’est. Une telle écriture se corrige par une contre-passation ; sinon, un administrateur rouvre les exercices clôturés, en commençant par le plus récent.
+error-later-fiscal-year-closed = L’exercice « { $name } », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucune écriture datée avant sa date de début ne peut être enregistrée, modifiée ni supprimée tant qu’il l’est. Une écriture existante se corrige par une contre-passation ; sinon, un administrateur rouvre les exercices clôturés, en commençant par le plus récent.
 journal-entries-modify-blocked-period-locked = La période est verrouillée jusqu’au { $date } : cette écriture, datée dans la période, reste figée. Corrigez-la par une contre-passation.
 journal-entries-modify-blocked-detached-settlement = Ce paiement appartient à une facture fournisseur annulée : l’argent est sorti, il reste figé. Corrigez-le par une contre-passation.
 journal-entries-period-locked = Les écritures sont verrouillées jusqu'au { $lockedThrough } ; celle-ci est datée du { $attempted }.
@@ -901,6 +901,7 @@ invoice-settings-required = Configurez d'abord les comptes de facturation dans l
 # === Story 3.7 — Gestion des exercices comptables (FR-CH) ===
 
 fiscal-year-title = Exercices comptables
+fiscal-year-out-of-order-warning = L’exercice « { $open } » est ouvert alors qu’un exercice postérieur, « { $closed } », est clôturé : rien ne peut y être enregistré tant que l’ordre n’est pas rétabli. Clôturez « { $open } » si ses comptes sont arrêtés, puis les exercices ouverts suivants, du plus ancien au plus récent. Sinon, un administrateur rouvre les exercices clôturés, en commençant par le plus récent, « { $latest } » : Kesh ne rouvre un exercice que si aucun exercice plus récent n’est clôturé.
 fiscal-year-list-empty = Aucun exercice comptable.
 fiscal-year-create-button = Nouvel exercice
 fiscal-year-name-label = Nom
@@ -1146,6 +1147,8 @@ reconciliation-failed-bank-transaction-not-found = Transaction bancaire introuva
 reconciliation-failed-database-error = Erreur de la base de données : réessayez ; si le problème persiste, contactez le support.
 reconciliation-failed-invoice-not-found = Facture introuvable.
 reconciliation-failed-invoice-sale-entry-malformed = L’écriture de vente de cette facture n’a pas de ligne au compte débiteurs : le règlement ne peut pas être passé.
+reconciliation-failed-later-fiscal-year-closed = Exercice postérieur « { $name } » clôturé : aucune écriture ne peut être datée avant lui.
+reconciliation-failed-later-fiscal-year-closed-generic = Un exercice postérieur est clôturé : aucune écriture ne peut être datée avant lui.
 reconciliation-failed-period-locked = La date de cette transaction tombe dans la période verrouillée : aucune écriture ne peut y être datée (voir le verrou de période).
 reconciliation-failed-project-archived = Le projet analytique est archivé.
 reconciliation-failed-project-not-found = Projet analytique introuvable.

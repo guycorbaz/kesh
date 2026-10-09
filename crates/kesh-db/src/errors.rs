@@ -550,12 +550,18 @@ pub enum DbError {
     FiscalYearClosed,
 
     /// Un exercice **postérieur** est clôturé (Story 15-8a, #532, C-15-8-22 ;
-    /// Story 15-12a, #543).
+    /// Stories 15-12a et 15-12b, #543).
     ///
     /// Le bilan est **cumulatif** (`kesh-report/src/balance_sheet.rs`) : toucher
     /// à ce qui précède un exercice clos change son bilan. Rendue par :
-    /// - le `PUT` et le `DELETE` d'une écriture (`journal_entries::update`,
-    ///   `delete_in_tx`) dont un exercice postérieur est clos ;
+    /// - le `PUT` d'une écriture (`journal_entries::update`) dont un exercice
+    ///   postérieur est clos ;
+    /// - **toute création** d'écriture dans un tel exercice
+    ///   (`journal_entries::create_in_tx_inner`, Story 15-12b — saisie,
+    ///   contre-passation, et les dix-sept autres routes qui écrivent au
+    ///   journal ; dans `failed[]` pour l'acceptation par lot du rapprochement) ;
+    /// - **toute suppression** (`journal_entries::delete_in_tx` : la route
+    ///   `DELETE` et, depuis la Story 15-12b, la dévalidation d'une facture) ;
     /// - la **création** d'un exercice (`fiscal_years::create`, Story 15-12a)
     ///   dont la date de début précède celle d'un exercice clos.
     ///
@@ -563,11 +569,12 @@ pub enum DbError {
     /// qu'un exercice antérieur est ouvert ([`DbError::EarlierFiscalYearOpen`]) :
     /// « N ouvert, N+1 clos » n'est plus atteignable **à partir d'un état sain**.
     /// Il subsiste dans les données héritées (version antérieure, sauvegarde
-    /// restaurée) — d'où ces gardes. Le refus nomme le **plus proche**
+    /// restaurée) — d'où ces gardes, et le bandeau de l'écran des exercices qui
+    /// le signale (Story 15-12b). Le refus nomme le **plus proche**
     /// postérieur clos. Mappé vers HTTP **400** `LATER_FISCAL_YEAR_CLOSED` —
     /// l'état d'un exercice, comme `FISCAL_YEAR_CLOSED`, pas un conflit sur
     /// l'objet.
-    #[error("Exercice postérieur {fiscal_year_name} clôturé — écriture figée")]
+    #[error("Exercice postérieur {fiscal_year_name} clôturé — écriture refusée")]
     LaterFiscalYearClosed {
         fiscal_year_id: i64,
         fiscal_year_name: String,

@@ -387,7 +387,7 @@ journal-entries-edit-conflict = Diese Buchung wurde inzwischen geändert: Die De
 journal-entries-line-account-unusable = Konto archiviert oder nicht bebuchbar — bitte ersetzen
 journal-entries-modify-blocked-fiscal-year-closed = Das Geschäftsjahr dieser Buchung ist abgeschlossen: Sie kann nicht mehr geändert werden. Korrigieren Sie sie durch eine Stornobuchung.
 journal-entries-modify-blocked-later-fiscal-year-closed = Das spätere Geschäftsjahr { $name } ist abgeschlossen, und seine Bilanz enthält diese Buchung: Sie bleibt fixiert, solange es abgeschlossen ist. Korrigieren Sie sie durch eine Stornobuchung; andernfalls eröffnet eine Administratorin oder ein Administrator die abgeschlossenen Geschäftsjahre wieder, beginnend mit dem neuesten.
-error-later-fiscal-year-closed = Das spätere Geschäftsjahr „{ $name }“ ist abgeschlossen, und seine Bilanz enthält alles, was ihm vorangeht: Eine Buchung vor seinem Beginn kann weder geändert noch gelöscht werden, solange es abgeschlossen ist. Eine solche Buchung wird durch eine Stornobuchung korrigiert; andernfalls eröffnet eine Administratorin oder ein Administrator die abgeschlossenen Geschäftsjahre wieder, beginnend mit dem neuesten.
+error-later-fiscal-year-closed = Das spätere Geschäftsjahr „{ $name }“ ist abgeschlossen, und seine Bilanz enthält alles, was ihm vorangeht: Eine Buchung vor seinem Beginn kann weder erfasst noch geändert oder gelöscht werden, solange es abgeschlossen ist. Eine bestehende Buchung wird durch eine Stornobuchung korrigiert; andernfalls eröffnet eine Administratorin oder ein Administrator die abgeschlossenen Geschäftsjahre wieder, beginnend mit dem neuesten.
 journal-entries-modify-blocked-period-locked = Die Periode ist bis zum { $date } gesperrt: Diese Buchung, datiert in der Periode, bleibt fixiert. Korrigieren Sie sie durch eine Stornobuchung.
 journal-entries-modify-blocked-detached-settlement = Diese Zahlung gehört zu einer stornierten Lieferantenrechnung: Das Geld ist abgeflossen, sie bleibt unveränderlich. Korrigieren Sie sie durch eine Stornobuchung.
 journal-entries-period-locked = Die Buchungen sind bis zum { $lockedThrough } gesperrt; diese ist auf den { $attempted } datiert.
@@ -850,6 +850,7 @@ invoice-settings-required = Konfigurieren Sie zunächst die Abrechnungskonten in
 # === Story 3.7 — Geschäftsjahresverwaltung (DE-CH) ===
 
 fiscal-year-title = Geschäftsjahre
+fiscal-year-out-of-order-warning = Das Geschäftsjahr „{ $open }“ ist offen, obwohl ein späteres Geschäftsjahr, „{ $closed }“, abgeschlossen ist: Darin kann nichts erfasst werden, bis die Reihenfolge wiederhergestellt ist. Schliessen Sie „{ $open }“ ab, wenn seine Bücher abgeschlossen sind, danach die folgenden offenen Geschäftsjahre, vom ältesten zum neuesten. Andernfalls eröffnet eine Administratorin oder ein Administrator die abgeschlossenen Geschäftsjahre wieder, beginnend mit dem neuesten, „{ $latest }“: Kesh eröffnet ein Geschäftsjahr nur wieder, wenn kein neueres abgeschlossen ist.
 fiscal-year-list-empty = Keine Geschäftsjahre.
 fiscal-year-create-button = Neues Geschäftsjahr
 fiscal-year-name-label = Name
@@ -1083,6 +1084,8 @@ reconciliation-failed-bank-transaction-not-found = Banktransaktion nicht gefunde
 reconciliation-failed-database-error = Datenbankfehler: Versuchen Sie es erneut; besteht das Problem weiter, wenden Sie sich an den Support.
 reconciliation-failed-invoice-not-found = Rechnung nicht gefunden.
 reconciliation-failed-invoice-sale-entry-malformed = Die Verkaufsbuchung dieser Rechnung hat keine Zeile auf dem Debitorenkonto: Die Zahlung kann nicht verbucht werden.
+reconciliation-failed-later-fiscal-year-closed = Späteres Geschäftsjahr „{ $name }“ abgeschlossen: Vor seinem Beginn kann keine Buchung datiert werden.
+reconciliation-failed-later-fiscal-year-closed-generic = Ein späteres Geschäftsjahr ist abgeschlossen: Vor seinem Beginn kann keine Buchung datiert werden.
 reconciliation-failed-period-locked = Das Datum dieser Transaktion liegt in der gesperrten Periode: Dort kann keine Buchung datiert werden (siehe Periodensperre).
 reconciliation-failed-project-archived = Das Analyseprojekt ist archiviert.
 reconciliation-failed-project-not-found = Analyseprojekt nicht gefunden.

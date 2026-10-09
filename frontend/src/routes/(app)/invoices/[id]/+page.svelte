@@ -352,7 +352,7 @@
 				i18nMsg('invoice-unvalidated-success', 'Facture repassée en brouillon'),
 			);
 		} catch (err) {
-			// ⛔ Le refus NOMME son motif : les huit empêchements ont chacun leur
+			// ⛔ Le refus NOMME son motif : les neuf empêchements ont chacun leur
 			// code et leur message traduit. L'afficher tel quel vaut mieux que
 			// de le réécrire ici.
 			if (isApiError(err)) {
@@ -431,10 +431,14 @@
 				// imputable — réessayer rend le même refus. Son message dit déjà où
 				// agir et qui le peut : il n'emprunte PAS la branche
 				// `CONFIGURATION_REQUIRED` ci-dessus, il est affiché tel quel.
+				// Story 15-12b (#543) : `LATER_FISCAL_YEAR_CLOSED` — l'exercice de la facture
+				// est suivi d'un exercice clos ; rien dans ce dialogue ne le rend corrigeable
+				// (le message du serveur dit la marche à suivre, sur l'écran des exercices).
 				if (
 					err.code === 'FISCAL_YEAR_INVALID' ||
 					err.code === 'CONFIGURATION_REQUIRED' ||
-					err.code === 'ACCOUNT_NOT_POSTABLE'
+					err.code === 'ACCOUNT_NOT_POSTABLE' ||
+					err.code === 'LATER_FISCAL_YEAR_CLOSED'
 				) {
 					validateOpen = false;
 				}

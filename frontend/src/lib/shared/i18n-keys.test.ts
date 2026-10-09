@@ -506,7 +506,14 @@ const ATTENDU = {
 	// `routes/(app)/supplier-invoices/[id]/+page.svelte` (39 → 40) : le message de liste vide
 	// des comptes bancaires. `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (aucun site
 	// dynamique ajouté) ; la doublure `SettleInvoiceDialogHost.test.svelte` est hors collecte.
-	sitesTotal: 1922,
+	// Story 15-12b (#543) : **1922 → 1925** (+3 ; 1916 → 1919 avant le rebase sur la 15-6b) — `failed-proposal-label.ts` (30 → 32 ; 28 → 30 avant le rebase) : le
+	// libellé `LATER_FISCAL_YEAR_CLOSED` avec et sans nom d'exercice
+	// (`reconciliation-failed-later-fiscal-year-closed{,-generic}`) ;
+	// `routes/(app)/settings/fiscal-years/+page.svelte` (57 → 58) : le bandeau de l'état
+	// hérité (`fiscal-year-out-of-order-warning`). Recompté par
+	// `grep -oE "\b(msg|i18nMsg)\("` aux deux bornes (`012fc430` et la branche).
+	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (trois littéraux).
+	sitesTotal: 1925,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

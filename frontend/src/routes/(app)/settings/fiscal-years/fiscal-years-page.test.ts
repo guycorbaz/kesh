@@ -21,9 +21,13 @@ import type { FiscalYearResponse } from '$lib/features/fiscal-years/fiscal-years
 
 vi.mock('$app/environment', () => ({ browser: true }));
 
-// i18nMsg renvoie le fallback (déterministe, couvre la copie fallback svelte).
+// i18nMsg renvoie le fallback (déterministe, couvre la copie fallback svelte), variables
+// substituées (Story 15-12b : le bandeau nomme trois exercices).
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
-	i18nMsg: (_key: string, fallback: string) => fallback,
+	i18nMsg: (_key: string, fallback: string, args?: Record<string, string | number>) =>
+		args
+			? fallback.replace(/\{\s*\$(\w+)\s*\}/g, (_, n) => String(args[n] ?? ''))
+			: fallback,
 }));
 
 vi.mock('$lib/shared/utils/notify', () => ({
@@ -282,5 +286,49 @@ describe('clôture dans l’ordre (Story 15-12a, #543)', () => {
 		expect(closeFiscalYearMock).toHaveBeenCalledWith(2);
 		// La liste se recharge.
 		await waitFor(() => expect(listFiscalYearsMock).toHaveBeenCalledTimes(2));
+	});
+});
+
+// ---------------------------------------------------------------------------
+// Story 15-12b (#543, AC 15) — le bandeau de l'état hérité
+// ---------------------------------------------------------------------------
+
+describe('bandeau « exercices dans le désordre » (état hérité)', () => {
+	const desordre = [
+		fy({ id: 1, name: 'Exercice 2025', startDate: '2025-01-01', endDate: '2025-12-31', status: 'Open' }),
+		fy({ id: 2, name: 'Exercice 2026', startDate: '2026-01-01', endDate: '2026-12-31', status: 'Closed' }),
+		fy({ id: 3, name: 'Exercice 2027', startDate: '2027-01-01', endDate: '2027-12-31', status: 'Open' }),
+		fy({ id: 4, name: 'Exercice 2028', startDate: '2028-01-01', endDate: '2028-12-31', status: 'Closed' }),
+	];
+
+	for (const role of ['Admin', 'Comptable', 'Consultation'] as const) {
+		it(`${role} : le bandeau nomme le plus ancien ouvert, son plus proche clos et le plus récent clos`, async () => {
+			authState.login({ userId: '1', username: 'u', role, expiresIn: 3600 });
+			listFiscalYearsMock.mockResolvedValue(desordre);
+			render(Page);
+			const bandeau = await screen.findByTestId('fiscal-year-out-of-order');
+			expect(bandeau.getAttribute('role')).toBe('status');
+			const texte = bandeau.textContent ?? '';
+			// {open} = 2025 (le plus ancien ouvert), {closed} = 2026, {latest} = 2028 ≠ {closed}.
+			expect(texte).toContain('L’exercice « Exercice 2025 » est ouvert');
+			expect(texte).toContain('un exercice postérieur, « Exercice 2026 », est clôturé');
+			expect(texte).toContain('Clôturez « Exercice 2025 » si ses comptes sont arrêtés');
+			expect(texte).toContain('en commençant par le plus récent, « Exercice 2028 »');
+			// ⛔ Jamais « rouvrir l'exercice clos le plus proche » en premier.
+			expect(texte).not.toMatch(/rouvre[^.]*« Exercice 2026 »/);
+			expect(texte).not.toContain('{ $');
+		});
+	}
+
+	it('état sain (les clos forment un préfixe) : pas de bandeau', async () => {
+		authState.login({ userId: '1', username: 'u', role: 'Admin', expiresIn: 3600 });
+		listFiscalYearsMock.mockResolvedValue([
+			fy({ id: 1, name: 'Exercice 2025', startDate: '2025-01-01', status: 'Closed' }),
+			fy({ id: 2, name: 'Exercice 2026', startDate: '2026-01-01', status: 'Open' }),
+			fy({ id: 3, name: 'Exercice 2027', startDate: '2027-01-01', status: 'Open' }),
+		]);
+		render(Page);
+		await screen.findByTestId('fiscal-year-table');
+		expect(screen.queryByTestId('fiscal-year-out-of-order')).toBeNull();
 	});
 });

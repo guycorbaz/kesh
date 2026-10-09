@@ -215,6 +215,47 @@ fn period_locked_failed_proposal(
     }
 }
 
+/// Story 15-12b (#543, AC 11) — le refus « exercice postérieur clos » dans une
+/// acceptation par lot : le filet de `journal_entries::create_in_tx_inner`
+/// refuse toute écriture dans un exercice dont un exercice postérieur est clos
+/// (état hérité), et le § *Pattern batch* du `CLAUDE.md` exige un **code
+/// canonique** dans `failed[]`, jamais un repli `DATABASE_ERROR`.
+///
+/// ⛔ **Un seul constructeur pour les DEUX sites** (patron de
+/// [`period_locked_failed_proposal`]) : le bras de
+/// [`project_error_to_failed_proposal`] (voies « facture » et « ventilé ») et
+/// la branche en ligne d'`accept_one_rule` (voie « règle »). Le code est un
+/// **littéral**, visible au `grep` du décompte des codes de
+/// `failed-proposal-label.ts`.
+///
+/// `details` : `{ fiscalYearId, fiscalYearName }` — l'exercice postérieur clos
+/// le plus proche —, plus `projectId` quand il est connu ; **omis** quand il
+/// vaut `None` (voie « règle » et « ventilé »), jamais publié à `null`.
+fn later_fiscal_year_closed_failed_proposal(
+    bank_transaction_id: i64,
+    project_id: Option<i64>,
+    fiscal_year_id: i64,
+    fiscal_year_name: &str,
+) -> FailedProposal {
+    let mut obj = serde_json::Map::new();
+    obj.insert(
+        "fiscalYearId".to_string(),
+        serde_json::json!(fiscal_year_id),
+    );
+    obj.insert(
+        "fiscalYearName".to_string(),
+        serde_json::json!(fiscal_year_name),
+    );
+    if let Some(pid) = project_id {
+        obj.insert("projectId".to_string(), serde_json::json!(pid));
+    }
+    FailedProposal {
+        bank_transaction_id,
+        error_code: "LATER_FISCAL_YEAR_CLOSED".to_string(),
+        details: Some(serde_json::Value::Object(obj)),
+    }
+}
+
 /// Story 15-5b (AC3, AC4, #427) — le refus d'un compte de contrepartie **non
 /// imputable** dans une acceptation par lot, sous la forme du § *Pattern batch*
 /// du `CLAUDE.md` : `failed[]` avec `errorCode = "ACCOUNT_NOT_POSTABLE"` et
@@ -287,6 +328,17 @@ fn project_error_to_failed_proposal(
             project_id,
             *locked_through,
             *attempted,
+        ),
+        // Story 15-12b (#543, AC 11) — le filet sous un bilan clos : un refus
+        // MÉTIER (état hérité des exercices), jamais `DATABASE_ERROR`.
+        DbError::LaterFiscalYearClosed {
+            fiscal_year_id,
+            fiscal_year_name,
+        } => later_fiscal_year_closed_failed_proposal(
+            bank_transaction_id,
+            project_id,
+            *fiscal_year_id,
+            fiscal_year_name,
         ),
         _ => FailedProposal {
             bank_transaction_id,
@@ -2613,6 +2665,22 @@ async fn accept_one_rule(
                     *attempted,
                 ));
             }
+            // ⛔ Story 15-12b (#543, AC 11) : le filet sous un bilan clos, même
+            // exception, même constructeur que les deux autres voies. `None`
+            // pour `projectId`, comme le `PeriodLocked` ci-dessus : les deux
+            // refus de cette branche publient les mêmes `details`.
+            if let kesh_db::errors::DbError::LaterFiscalYearClosed {
+                fiscal_year_id,
+                fiscal_year_name,
+            } = &e
+            {
+                return Err(later_fiscal_year_closed_failed_proposal(
+                    bank_transaction_id,
+                    None,
+                    *fiscal_year_id,
+                    fiscal_year_name,
+                ));
+            }
             return Err(FailedProposal {
                 bank_transaction_id,
                 error_code: "DATABASE_ERROR".to_string(),
@@ -4224,6 +4292,43 @@ mod period_lock_tests {
             "la clé doit être ABSENTE, pas nulle : {details}"
         );
         assert_eq!(details["lockedThrough"], "2026-03-31");
+    }
+
+    /// Story 15-12b (#543, AC 11 ; revue de code P1, A-2) — la branche
+    /// `projectId` du constructeur `later_fiscal_year_closed_failed_proposal`,
+    /// par le bras du mapper : **avec** un projet, la clé est portée ; **sans**,
+    /// elle est omise. Les trois tests du lot (`reconciliation_e2e.rs`,
+    /// `reconciliation_rules_e2e.rs`) n'exercent que des voies sans projet :
+    /// retirer l'insertion de `projectId` les laissait verts.
+    #[test]
+    fn later_fiscal_year_closed_carries_the_project_only_when_known() {
+        let refus = || DbError::LaterFiscalYearClosed {
+            fiscal_year_id: 12,
+            fiscal_year_name: "Exercice 2027".to_string(),
+        };
+
+        let avec = project_error_to_failed_proposal(42, Some(7), refus());
+        assert_eq!(avec.bank_transaction_id, 42);
+        assert_eq!(avec.error_code, "LATER_FISCAL_YEAR_CLOSED");
+        assert_eq!(
+            avec.details.expect("details attendus"),
+            serde_json::json!({
+                "fiscalYearId": 12,
+                "fiscalYearName": "Exercice 2027",
+                "projectId": 7
+            })
+        );
+
+        let sans = project_error_to_failed_proposal(9, None, refus());
+        let details = sans.details.expect("details attendus");
+        assert!(
+            details.get("projectId").is_none(),
+            "la clé doit être ABSENTE, pas nulle : {details}"
+        );
+        assert_eq!(
+            details,
+            serde_json::json!({ "fiscalYearId": 12, "fiscalYearName": "Exercice 2027" })
+        );
     }
 
     /// Verrouille les deux mappages voisins, `PROJECT_NOT_FOUND` et

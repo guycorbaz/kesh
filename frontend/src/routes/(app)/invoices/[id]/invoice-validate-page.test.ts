@@ -154,3 +154,28 @@ describe("fiche facture — validation refusée par la garde des comptes désign
     });
   }
 });
+
+// Story 15-12b (#543, AC 18) — le filet sous un bilan clos : l'exercice de la facture est
+// suivi d'un exercice clos (état hérité). Rien dans le dialogue ne le rend corrigeable :
+// le message du serveur (qui porte la marche à suivre) est affiché tel quel et le dialogue
+// se ferme.
+describe("fiche facture — validation refusée par le filet sous un bilan clos", () => {
+  const FILET =
+    "L’exercice « Exercice 2027 », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucune écriture datée avant sa date de début ne peut être enregistrée, modifiée ni supprimée tant qu’il l’est.";
+  it("le message du serveur est affiché et le dialogue se ferme (mutation : code retiré de la liste de fermeture)", async () => {
+    auth.currentUser = { role: "Comptable", username: "u", userId: "1" };
+    validateInvoiceMock.mockRejectedValue({
+      code: "LATER_FISCAL_YEAR_CLOSED",
+      status: 400,
+      message: FILET,
+      details: { fiscalYearId: 9, fiscalYearName: "Exercice 2027" },
+    });
+    const r = render(Page);
+    await fireEvent.click(await r.findByTestId("invoice-validate-button"));
+    await r.findByTestId("invoice-validate-dialog");
+    await fireEvent.click(r.getByTestId("invoice-validate-confirm"));
+    await waitFor(() => expect(validateInvoiceMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(notifyError).toHaveBeenCalledWith(FILET));
+    await waitFor(() => expect(r.queryByTestId("invoice-validate-dialog")).toBeNull());
+  });
+});

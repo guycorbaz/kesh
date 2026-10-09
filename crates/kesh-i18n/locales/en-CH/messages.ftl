@@ -387,7 +387,7 @@ journal-entries-edit-conflict = This entry was modified in the meantime: the pag
 journal-entries-line-account-unusable = Account archived or not postable — replace it
 journal-entries-modify-blocked-fiscal-year-closed = The fiscal year of this entry is closed: it can no longer be modified. Correct it with a reversal.
 journal-entries-modify-blocked-later-fiscal-year-closed = The later fiscal year { $name } is closed, and its balance sheet includes this entry: it stays fixed while that year is closed. Correct it with a reversal; otherwise, an administrator reopens the closed fiscal years, starting with the most recent.
-error-later-fiscal-year-closed = The later fiscal year "{ $name }" is closed, and its balance sheet includes everything before it: no entry dated before its start date can be changed or deleted while it is closed. Such an entry is corrected with a reversal; otherwise, an administrator reopens the closed fiscal years, starting with the most recent.
+error-later-fiscal-year-closed = The later fiscal year "{ $name }" is closed, and its balance sheet includes everything before it: no entry dated before its start date can be recorded, changed or deleted while it is closed. An existing entry is corrected with a reversal; otherwise, an administrator reopens the closed fiscal years, starting with the most recent.
 journal-entries-modify-blocked-period-locked = The period is locked through { $date }: this entry, dated within it, stays fixed. Correct it with a reversal.
 journal-entries-modify-blocked-detached-settlement = This payment belongs to a cancelled supplier invoice: the money has left, it stays fixed. Correct it with a reversal.
 journal-entries-period-locked = Entries are locked through { $lockedThrough }; this one is dated { $attempted }.
@@ -850,6 +850,7 @@ invoice-settings-required = Please configure the invoicing accounts in settings 
 # === Story 3.7 — Fiscal Years (EN-CH) ===
 
 fiscal-year-title = Fiscal Years
+fiscal-year-out-of-order-warning = The fiscal year "{ $open }" is open although a later fiscal year, "{ $closed }", is closed: nothing can be recorded in it until the order is restored. Close "{ $open }" if its books are final, then the following open fiscal years, from the oldest to the most recent. Otherwise, an administrator reopens the closed fiscal years, starting with the most recent, "{ $latest }": Kesh only reopens a fiscal year when no more recent one is closed.
 fiscal-year-list-empty = No fiscal years.
 fiscal-year-create-button = New fiscal year
 fiscal-year-name-label = Name
@@ -1083,6 +1084,8 @@ reconciliation-failed-bank-transaction-not-found = Bank transaction not found.
 reconciliation-failed-database-error = Database error: try again; if the problem persists, contact support.
 reconciliation-failed-invoice-not-found = Invoice not found.
 reconciliation-failed-invoice-sale-entry-malformed = This invoice's sales entry has no line on the receivables account: the payment cannot be posted.
+reconciliation-failed-later-fiscal-year-closed = Later fiscal year "{ $name }" closed: no entry can be dated before it.
+reconciliation-failed-later-fiscal-year-closed-generic = A later fiscal year is closed: no entry can be dated before it.
 reconciliation-failed-period-locked = This transaction's date falls in the locked period: no entry can be dated there (see the period lock).
 reconciliation-failed-project-archived = The analytical project is archived.
 reconciliation-failed-project-not-found = Analytical project not found.
