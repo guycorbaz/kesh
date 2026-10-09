@@ -1,194 +1,132 @@
-# Story 15.1c : L'écran « Postes ouverts » — consulter, lettrer, délettrer
+# Story 15.1c : L'écran « Postes ouverts » — index (découpée)
 
 ## Status
 
-ready-for-dev *(réécrite le 2026-10-08, à valider — `bmad-create-story validate` avant tout développement)*
+split
 
-## Story
+⛔ **CORPS VIDÉ — cette fiche ne contient plus ni décisions, ni critères, ni tâches** *(découpée le 2026-10-09 à la
+remédiation de sa validation P1, registre C-15-1c-1)*. Elle garde les pointeurs vers ses deux sous-fiches, la table
+qui dit où chaque critère et chaque point reçu est allé, le bilan de la validation P1 et l'historique (Change Log).
+Le corps d'avant le découpage se lit dans l'historique git
+(`git show 8e36a146:_bmad-output/implementation-artifacts/15-1c-proposition-ecran.md`). *(Précédents : 15-1, 15-12,
+15-1a — C124, 15-1a2 — C-15-1a2-1.)* **La numérotation des critères est conservée** dans les sous-fiches ; les
+numéros neufs commencent à AC15. Le nom de fichier est gardé (C99 : les clés du registre et du `sprint-status` y
+renvoient).
 
-**As a** indépendant, PME ou fiduciaire,
-**I want** un écran où je choisis un compte et une date, vois ce qui y reste ouvert et pourquoi,
-lettre à la main ce que Kesh ne lettre pas seul — en m'appuyant sur ses propositions —, et
-délettre une erreur,
-**so that** je tienne mes comptes de tiers et de passage soldés sans quitter Kesh, et sache, à
-la clôture, ce que porte chacun d'eux.
+## Les deux sous-fiches
 
-Dernière des quatre sous-stories du lettrage (#518). **Suppose 15-1a, 15-1a2 et 15-1b livrées** — la
-15-1a étant découpée (C124) en **15-1a-i** (la marque, les routes) et **15-1a-ii** (les gardes), les
-deux ; les renvois « 15-1a Rn / ACn » gardent leur numéro (table de `15-1a-socle-lettrage.md`).
-Story **frontend + manuel + E2E** ; aucune route neuve.
+| ordre | fiche | ce qu'elle porte |
+|---|---|---|
+| 1 | `15-1c-i-ecran-postes-ouverts.md` | **L'écran `/open-items`** : compte (lettrables, archivés compris) et date, la liste et ses motifs (`reason`, `documentState`, `amountDue`), la sélection et le lettrage (pages, plafond de 200, `big.js`, refus par leur code réel), les propositions (chargées à part, échec indépendant, `reversalPair`, proposition périmée), **le groupe et le délettrage** (état d'URL `?group=`, compte devenu non lettrable), **l'enrichissement serveur de `GET /letterings/{key}`** (réemploi de la requête B de la 15-1b, prévision du refus de délettrage par l'ordre même de la dissolution), le bandeau de frontière, les rôles, le menu, l'i18n, l'E2E lettrer → délettrer. `refs #518` |
+| 2 | `15-1c-ii-lettrage-dans-kesh.md` | **Le lettrage dans le reste de Kesh** : la colonne « Lettrage » de la fiche d'écriture et du Grand livre (`colspan` calculés), le lien « Postes ouverts de ce compte », le lien du motif `ENTRY_LETTERED`, les exports exclus, le **manuel** (section neuve, propagation par inventaire, PDF), le **CHANGELOG** (une entrée), `api-external.md`, le README, le site. **`closes #518`** |
 
-## Reprise du 2026-10-08 — ce qui change
+**Dépendances** : la 15-1c-i suppose la 15-1b mergée (et donc la 15-1b-0 et les 15-1a2-*) ; la 15-1c-ii suppose la
+15-1c-i. Ordre complet : **15-12a → 15-12b → 15-1a-i → 15-1a-ii → 15-1a2-0 → 15-1a2-i → 15-1a2-ii → 15-1b-0 → 15-1b
+→ 15-1c-i → 15-1c-ii**. ⛔ **Pas de tag v0.13.0 entre la 15-1c-i et la 15-1c-ii** (C124, étendue par C-15-1c-1) :
+entre les deux, le manuel et le CHANGELOG disent encore que le délettrage se fait par l'API. Les **E2E** des deux
+sous-fiches ne sont atteignables qu'une fois la 15-1b mergée (vue, propositions, `letterable`) ; le scénario (1) de
+la 15-1c-i suppose la 15-1a2-i (groupes `document`).
 
-La fiche d'août portait le **moteur** de proposition et l'écran. Le moteur est passé en 15-1b
-(backend), avec ses deux réserves tranchées ; ses décisions ouvertes au terme de la passe 3
-sont closes : (3) **pas d'acceptation par lot** — chaque proposition s'accepte par un
-`POST /api/v1/letterings` (15-1a), et une proposition périmée rend son refus nommé
-(`LETTERING_LINE_ALREADY_LETTERED`, `LETTERING_UNBALANCED`…), si bien que le pattern
-`FailedProposal` ne s'applique pas ; (4) **l'exposition du code** est faite par la 15-1a
-(`JournalEntryLineResponse.letteringCode`) et la 15-1b (`LedgerLine.lettering_code`).
+## Pourquoi le découpage
 
-**Q4 du dégel — depuis quel écran ?** (C95) Un **écran dédié** `/open-items`, entrée de menu
-**« Postes ouverts »** dans le groupe **Mensuel** (`+layout.svelte:107-111`, entre
-« Réconciliation » et « Rapports ») ; atteint aussi depuis le **Grand livre** d'un compte
-lettrable (lien « Postes ouverts de ce compte ») et depuis la **fiche d'écriture** (le code d'une
-ligne lettrée ouvre le groupe). Écartés : un onglet du Grand livre (un rapport en lecture seule
-n'est pas le lieu d'une action d'écriture) ; un écran « compte » (il n'en existe pas, `/accounts`
-est le plan comptable).
+Findings **R-10 = F-10** de la validation P1 : la fiche se déclarait « cinq modules, au seuil » ; au recompte, huit
+à onze au grain fin, et — après les findings R-2 = F-2 — un enrichissement serveur de plus. Décision de
+l'orchestrateur, **C-15-1c-1** : couture **l'écran** (tout ce qui vit à `/open-items`, y compris le groupe et le
+délettrage, et le serveur qu'il exige) / **le lettrage dans le reste de Kesh** (les autres écrans qui le montrent,
+et toute la documentation). Comptes aux deux grains (C-15-1a2-21) : 15-1c-i — 4 crates/paquets, 9 au grain fin
+(cinq de logique, quatre mécaniques et un paragraphe de documentation) ; 15-1c-ii — 2 et 11 (trois de logique plus
+l'E2E, sept supports de texte). Dérogation écrite dans chacune (**C-15-1c-11**, patron C-15-1a2-23).
 
-## Reçu de la 15-1a — validation P2 du socle (2026-10-09)
+## Table de correspondance — où chaque critère est allé
 
-*Section ajoutée par la remédiation de la validation P2 de la 15-1a (registre C113). Elle ne
-réécrit pas cette fiche : elle liste ce que le socle a changé et que **cette** story doit intégrer
-à sa propre validation.*
+| critère de la 15-1c (corps au `8e36a146`) | 15-1c-i | 15-1c-ii |
+|---|---|---|
+| AC1 — compte et date | ✓ (réécrit : `letterable`, archivés, `asOf` explicite, 409/404) | — |
+| AC2 — la liste | ✓ (exercice avec le numéro, table des liens de pièce) | — |
+| AC3 — les motifs | ✓ (réécrit en deux dimensions, `nothingDue`) | — |
+| AC4 — lettrer à la main | ✓ (`manuallyLetterable`, pages, 200, `big.js`, `inOpenPeriod`, refus et rechargements) | — |
+| AC5 — les propositions | ✓ (chargement à part, `asOf`, `total`, périmée) | — |
+| AC6 — voir et défaire un groupe | ✓ (URL, enrichissement AC15, code `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`) | — |
+| AC7 — bandeau de frontière | ✓ | — |
+| AC8 — écart avec la Balance | ✓ (**phrase réfutée remplacée** : le total égale le solde que montre la Balance) | (stabilité « au X » : au manuel, AC12) |
+| AC9 — le code visible ailleurs | — | ✓ (fiche, Grand livre, `ENTRY_LETTERED`) |
+| AC10 — rôles | ✓ | (motif `ENTRY_LETTERED` : rôle inchangé) |
+| AC11 — i18n | part i | part ii |
+| AC12 — manuel | — | ✓ (règle C105, inventaire) |
+| AC13 — E2E | part i, scénarios (1)–(6) | part ii, scénarios (7)–(9) |
+| AC14 — CHANGELOG | — | ✓ |
+| — | **AC15** (neuf) : `GET /letterings/{key}` enrichi | — |
+| — | **AC16** (neuf) : sa documentation dans `api-external.md` | — |
+| — | — | **AC17** (neuf) : `api-external.md` (« l'écran viendra »), README, site |
 
-1. **Le refus des périodes change de code** : `LETTERING_FISCAL_YEARS_CLOSED` (cité à l'AC6 de cette
-   fiche) est remplacé par **`LETTERING_ALL_LINES_IN_CLOSED_PERIODS`** — « Toutes ces lignes sont dans
-   une période close — exercice clôturé, exercice suivi d'un exercice clôturé, ou période verrouillée :
-   le lettrage n'y change plus. » Il vaut au lettrage comme au délettrage.
-2. **La section du manuel sur le lettrage** énonce la règle entière : au moins une ligne « en période
-   ouverte » (exercice ouvert, aucun exercice postérieur clos, date après le verrou de période). La
-   15-1a écrit déjà la phrase symétrique au § du verrou de période (`user-manual.tex:578-583`).
-3. **Le glossaire** (`user-manual.tex:2308`) est réécrit par la 15-1a avec une dernière phrase
-   provisoire — « Dans cette version, le lettrage manuel et le délettrage se font par l'API
-   (`/api/v1/letterings`) ; l'écran viendra. » — que **cette** story retire en livrant l'écran.
-4. **`LETTERING_LINE_OWNED_BY_DOCUMENT`** porte un texte neutre (« Une de ces lignes appartient à une
-   pièce : elle ne se lettre ni ne se délettre à la main. ») : il sert aussi au refus de dissoudre un
-   groupe `reversal` qui contient une ligne de pièce.
-5. **Prérequis** : la 15-12a ; ordre **15-12a → 15-12b → 15-1a → 15-1a2 → 15-1b → 15-1c** (C112).
+## Intégration des sections reçues
 
-*Ajouts de la remédiation de la validation P3 du socle (2026-10-09, registre C124, C126, C127) :*
+**« Reçu de la 15-1a »** (points 1 à 11 du corps au `8e36a146`) : 1 (code `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`) →
+15-1c-i AC4, AC6 ; 2 (règle des périodes au manuel) → 15-1c-ii AC12 ; 3, 9 (glossaire, phrase provisoire) → 15-1c-ii
+AC12 point 2 ; 4 (`LETTERING_LINE_OWNED_BY_DOCUMENT` neutre) → 15-1c-i AC6, AC15 ; 5, 6 (ordre) → Status des deux ;
+7 (sixième condition de *Modifier*, « par l'API dans cette version ») → 15-1c-ii AC12 ; 8 (`ENTRY_LETTERED` en
+dernier) → 15-1c-ii AC9 ; 10 (CHANGELOG) → 15-1c-ii AC14 ; 11 (`fiscalYearName`) → 15-1c-i AC2, AC6, AC15.
 
-6. **Ordre** : la 15-1a est découpée (C124) — **15-12a → 15-12b → 15-1a-i → 15-1a-ii → 15-1a2 → 15-1b →
-   15-1c**.
-7. **Le manuel de la modification est déjà touché** par la 15-1a-ii : un **sixième** point dans la
-   liste des conditions de *Modifier* (`user-manual.tex:490-508` au 2026-10-09 — « aucune de ses lignes
-   n'est lettrée »), et la réserve « lettrée » aux sites qui promettent « modifiable tant que l'exercice
-   est ouvert ». L'AC12 de cette fiche (« `ENTRY_LETTERED` — si la 15-1a ne l'a pas déjà fait ») n'a
-   donc qu'à **renvoyer** de ce point à la section du lettrage qu'elle écrit, et à retirer « le
-   délettrage se fait par l'API dans cette version ».
-8. **`ENTRY_LETTERED` parle en dernier** (C126) : quand l'écran l'affiche, l'écriture est en période
-   ouverte et le délettrage qu'il prescrit aboutit — la section du manuel peut le dire sans réserve.
-9. **Le glossaire** est désormais à `user-manual.tex:2323` (au 2026-10-09 ; `:2308` au point 3).
-10. **CHANGELOG** : la 15-1a-i complète la section *Ajouté* existante et annonce sous *Modifié* les champs
-    et colonnes neufs ; la 15-1a-ii réécrit les entrées #532 et annonce la contre-passation qui lettre.
-    L'entrée « lettrage » que l'AC14 complète est celle de la 15-1a-i.
-11. **Les lignes des routes de lettrage** portent `fiscalYearId` et `fiscalYearName` (C127) : un groupe à
-    cheval peut montrer deux « écriture n° 12 » — l'écran affiche l'exercice avec le numéro.
-
-## Critères d'acceptation
-
-**AC1 — Choisir un compte et une date.** Sélecteur des comptes **lettrables** (15-1a R4 — même
-règle que le serveur ; la liste vient du serveur, pas d'une règle recopiée en TypeScript), date
-`asOf` (défaut : aujourd'hui), état dans l'URL (`/open-items?accountId=…&asOf=…`), pour que le
-lien du Grand livre et un rechargement retombent sur la même vue.
-
-**AC2 — La liste.** Colonnes : date, n° d'écriture (lien vers la fiche), journal, libellé, pièce
-(lien vers la facture / l'avoir / la facture fournisseur / la transaction), débit, crédit, motif.
-En pied : **total des postes ouverts** et **solde du compte à la date**, égaux (15-1b AC2) — et
-une phrase qui le dit. Pagination du serveur.
-
-**AC3 — Les motifs, en clair** (15-1b AC4), un libellé et une aide par motif :
-`partiallySettled` (« facture partiellement réglée — reste dû : X »), `paidWithoutSettlementEntry`
-(« marquée payée avant la v0.12.0, sans écriture d'encaissement : le compte porte encore cette
-créance »), `letteredAfterAsOf` (« lettrée après cette date, par … »), `unlettered`.
-
-**AC4 — Lettrer à la main.** Cases à cocher sur les lignes **lettrables à la main** (une ligne de
-pièce n'a pas de case, et une infobulle dit pourquoi : « son lettrage suit ses règlements ») ;
-**somme de la sélection** affichée en continu ; bouton **« Lettrer »** actif si ≥ 2 lignes et
-somme **nulle** ; sinon le bouton dit ce qui manque (« la sélection ne s'équilibre pas : écart
-X »). Un refus du serveur s'affiche **par son message** (codes de la 15-1a AC3), jamais en erreur
-générique. Après succès : la liste se recharge, le code du groupe est annoncé.
-
-⚠️ **Le lettrage à N lignes est permis** (règlement groupé manuel, acompte imputé sur plusieurs
-factures… hors pièces) ; seules les **propositions** sont limitées aux paires (15-1b AC5).
-
-**AC5 — Les propositions.** Panneau **« Rapprochements proposés »** (15-1b AC5), chaque paire avec
-ses deux lignes et un bouton **« Lettrer »** ; **aucun** lettrage sans clic (règle du `CLAUDE.md` —
-« propose, ne crée jamais »). Le refus 422 « trop de lignes » s'affiche tel quel, l'écran reste
-utilisable pour le lettrage manuel.
-
-**AC6 — Voir et défaire un groupe.** Un groupe s'ouvre par son code (lien depuis la fiche
-d'écriture, le Grand livre, ou un champ « Code ») : ses lignes, son origine en clair
-(« règlement de la facture F-… », « contre-passation », « manuel »), et **« Délettrer »** pour les
-origines `manual` et `reversal`, si l'utilisateur est Comptable ou Admin. Groupe `document` : pas
-de bouton, la phrase « ce lettrage suit les règlements de la pièce — annulez le règlement depuis
-la facture ». Refus `LETTERING_FISCAL_YEARS_CLOSED` affiché par son message.
-
-**AC7 — La frontière avec la réconciliation, pour l'UTILISATEUR** (D6 d'août, conservée) : un
-bandeau visible dit que cet écran **solde des lignes de comptes de tiers et de passage entre
-elles**, et que **le rapprochement des relevés bancaires** se fait dans *Mensuel →
-Réconciliation* ; les comptes bancaires n'apparaissent pas au sélecteur (15-1a R4). Le test E2E
-l'atteint par un `data-testid`, jamais par son libellé.
-
-**AC8 — Écart avec la Balance**, dit à l'écran (15-1b, définitions) : « ce total est cumulatif ;
-la Balance d'un exercice ne lit que ses écritures ».
-
-**AC9 — Le code visible ailleurs.** Fiche d'écriture `/journal-entries/[id]` : colonne « Lettrage »
-(code en lien vers le groupe) ; Grand livre (`GeneralLedgerView.svelte`) : même colonne, et le lien
-« Postes ouverts de ce compte » si le compte est lettrable. Refus `ENTRY_LETTERED` sur
-**Modifier/Supprimer** une écriture : message affiché, avec lien vers le groupe.
-
-**AC10 — Rôles.** Consultation : voit tout, n'a ni cases, ni « Lettrer », ni « Délettrer ».
-
-**AC11 — i18n.** Clés `open-items-*` (dossier `features/open-items/` — propriété vérifiée par
-`lint-i18n-ownership`) et les quelques clés `journal-entries-*` / `reports-*` d'AC9, dans les
-**quatre** locales ; `nav-open-items`. Les bornes **exactes** de
-`frontend/src/lib/shared/i18n-keys.test.ts` (`sitesTotal`, etc., `:491-494`) sont relevées et
-justifiées en commentaire.
-
-**AC12 — Manuel utilisateur** (`docs/manual/fr/user-manual.tex`) : une section **« Lettrage et
-postes ouverts »** — ce qu'est un lettrage (groupe à somme nulle, sur un compte), les trois
-origines, qui lettre quoi (les pièces d'office, la contre-passation d'office, le reste à la main),
-la date et l'invariant, les propositions, le délettrage et sa borne d'exercice (C94), **ce que le
-lettrage ne fait pas** (pas de lettrage partiel, pas de tolérance de montant : le solde du reste
-pour une facture, une écriture d'ajustement sinon ; une facture payée par écriture manuelle se
-règle sur la facture), la frontière avec la réconciliation. Et la **propagation** dans les
-sections existantes, **toutes greppées** : Modifier/supprimer une écriture (`:483`,
-`ENTRY_LETTERED` — si la 15-1a ne l'a pas déjà fait), contre-passation (`:604`), règlements
-(`:1122`), avoirs (`:1225`), factures fournisseurs (`:1354-1372`), Grand livre (`:1790`).
-PDF régénéré (`make fr`), contrôlé **aplati** (`pdftotext … | tr '\n' ' '`).
-
-**AC13 — E2E** (`frontend/tests/e2e/open-items.spec.ts`), sélecteurs `data-testid` seuls (garde
-#326) : (1) une facture soldée par un règlement n'apparaît pas ouverte, sa créance porte un code ;
-(2) deux écritures manuelles opposées sur un compte de passage → proposées → « Lettrer » → plus
-ouvertes, code visible sur la fiche d'écriture ; (3) délettrer → de nouveau ouvertes ; (4) la
-sélection déséquilibrée garde « Lettrer » inactif ; (5) le bandeau de frontière est présent.
-**Lancée au dernier commit de code** (D7, rétrospective de l'Epic 25), jugée fichier par fichier
-contre `docs/testing.md` § « Les échecs attendus ».
-
-**AC14 — CHANGELOG** : l'entrée « lettrage » de `[0.13.0]` (15-1a, 15-1a2) est complétée par
-l'écran — **une** entrée cohérente, pas trois fragments.
-
-## Tasks
-
-- [ ] **T1** (AC1–AC6, AC8, AC10) — `frontend/src/lib/features/open-items/` (API, types, composants)
-      et la route `frontend/src/routes/(app)/open-items/+page.svelte` ; entrée de menu.
-- [ ] **T2** (AC7) — Bandeau de frontière.
-- [ ] **T3** (AC9) — Fiche d'écriture, Grand livre, refus `ENTRY_LETTERED`.
-- [ ] **T4** (AC11) — i18n quatre locales, bornes du test des clés.
-- [ ] **T5** (AC12) — Manuel FR + PDF ; DE/IT/EN : noter « à traduire » si le manuel y est vide.
-- [ ] **T6** (AC13) — Spec E2E ; tests Vitest des composants (somme de sélection, état du bouton,
-      cases absentes sur une ligne de pièce, rôle Consultation).
-- [ ] **T7** (AC14) — CHANGELOG ; `README.md` « Feuille de route » (le lettrage livré) ;
-      `website/` si une page le promet ou le tait.
-
-## Dev Notes
-
-- Modules : `features/open-items`, `features/journal-entries`, `features/reports`, `kesh-i18n`,
-  `docs/manual` — cinq, au seuil du découpage préventif.
-- Le sélecteur E2E ne se fige jamais sur un libellé traduit (garde #326, allowlist décroissante).
-- Le montage E2E local : `KESH_COOKIE_SECURE=false`, `PLAYWRIGHT_HOST_PLATFORM_OVERRIDE` (CLAUDE.md).
-
-## Dev Agent Record
-
-### Agent Model Used
-
-### Completion Notes List
-
-### File List
+**« Pour la 15-1c »** de la 15-1b (points 1 à 13) : 1 → 15-1c-i AC8 ; 2 → AC3 ; 3 → AC4 ; 4, 11, 13 → AC5 ; 5 → AC6
+(et l'enrichissement AC15 pour les lignes d'un groupe) ; 6 → AC1 (`letterable`) et 15-1c-ii AC9 (`letteringCode` du
+Grand livre) ; 7 → AC1, AC6 ; 8 → 15-1c-ii AC12 ; 9 → 15-1c-ii AC12 ; 10 → AC5 et 15-1c-ii AC12 ; 12 → AC3, AC4.
 
 ## Change Log
+
+### Validation P1 — 2026-10-09 (Sonnet 5.5 ×2, lentilles R et F ; remédiation Opus 5.5, en autonomie) — DÉCOUPÉE
+
+Prompt versionné : `15-1c-validate-prompt-p1.md` (`8e36a146`). Rapports :
+`/home/gcorbaz/devel/kesh-gate-logs/15-1c-validate-p1-{R,F}.md`. **R : 2 HIGH / 8 MEDIUM / 6 LOW ; F : 2 HIGH / 8
+MEDIUM / 5 LOW.** Recoupements (orchestrateur) : R-1 = F-1 (partie Balance) ; R-2 = F-2 ; R-3, R-4, R-5 ⊂ F-1 ;
+R-8 = F-9 ; R-10 = F-10 ; R-9 ≈ F-11 ; R-7 ≈ F-6 / F-14 ; R-5 (d) = F-3 ; R-11 = F-5 ; R-14 = F-15. Chaque finding
+vérifié au code de `e892dcfa` (`grep -nF`, lectures) et dans les fiches validées avant d'être appliqué. Décisions au
+registre : **C-15-1c-1 à C-15-1c-13**.
+
+| finding | sév. | vérification | sort | où |
+|---|---|---|---|---|
+| R-1 = F-1 (Balance) | HIGH | 15-1b « Définitions » (« Ce solde EST celui de la Balance ») et point 1 : confirmé | **corrigé** : phrase réfutée retirée, la vraie écrite | 15-1c-i AC8 |
+| R-2 = F-2 | HIGH | `routes/letterings.rs` `LetteringLineResponse` : 8 champs, ni pièce, ni journal, ni libellé, ni période : confirmé | **corrigé** : `GET /letterings/{key}` enrichi par réemploi de la requête B ; prévision du refus par la fonction pure que la dissolution appelle (C-15-1c-2) ; « aucune route neuve » tenu (route existante, réponse enrichie) | 15-1c-i AC15, AC16, AC6 |
+| R-3 (⊂ F-1) | MEDIUM | 15-1b AC4 : deux champs, `nothingDue` sans libellé : confirmé | **corrigé** : AC3 en deux dimensions, six libellés, état d'aujourd'hui ; « par … » non affiché (aucun auteur au contrat) ; AC2 avec l'exercice | 15-1c-i AC2, AC3 |
+| R-4 (⊂ F-1) | MEDIUM | 15-1b AC3, AC5 ; `MAX_LINES_PER_GROUP = 200` (`kesh-core/src/lettering.rs:27`) : confirmé | **corrigé** : case par `manuallyLetterable`, infobulle par cause, `inOpenPeriod`, sélection multi-pages, `total` des propositions, périmée → rechargement, `LETTERING_CONCURRENT_CHANGE` | 15-1c-i AC4, AC5 |
+| R-5 (⊂ F-1), F-3 | MEDIUM | `grep -rn LETTERING_FISCAL_YEARS_CLOSED crates frontend/src docs` : aucune sortie ; C105 révise C94 (registre) : confirmé | **corrigé** : code réel ; règle C105 citée au manuel ; points 7–10 intégrés ; état d'URL `?group=` (C-15-1c-3) | 15-1c-i AC1, AC6 ; 15-1c-ii AC12 |
+| R-6 | MEDIUM | `git log` : sur `e892dcfa`, seules 15-1a-i et 15-1a-ii livrées : confirmé | **corrigé** : ordre complet dans les deux Status et l'index ; E2E atteignables après la 15-1b, scénario (1) après la 15-1a2-i | Status, index |
+| R-7 ≈ F-6 / F-14 | MEDIUM | (a) **en partie réfuté** : la page des rapports charge déjà les comptes **archivés compris** (`reports/+page.svelte:127`, `fetchAccounts(true)`) ; `LedgerSection` sans `letterable` : confirmé. (b) `ENTRY_LETTERED` câblé (`form-helpers.ts:120` → `stale`), refus de suppression en toast puis relecture (`[id]/+page.svelte`, `confirmDelete`) : confirmé. (c) exports : C-15-1b-6 | **corrigé** : lien depuis `GET /accounts` (C-15-1c-8), `asOf` = fin de période ; lien vers le groupe dans le **motif d'écran**, jamais dans le toast (C-15-1c-9) ; exports **exclus**, dit au manuel | 15-1c-ii AC9, AC12 |
+| R-8 = F-9 | MEDIUM | `grep -n 'subsection{' user-manual.tex` : *Modifier ou supprimer* `:474`, contre-passation `:601`, règlement `:1141`, avoirs `:1259`, fournisseurs `:1400`, Grand livre `:1870`, glossaire *Lettrage* `:2431-2437` ; `grep -c -i lettr` = 24 ; `CHANGELOG.md:15`, `api-external.md:291`, `README.md:222` : confirmé | **corrigé** : propagation **par inventaire** (commandes au T0, chaque site classé), sites désignés par section et phrase ; CHANGELOG, `api-external.md`, README, site couverts | 15-1c-ii AC12, AC14, AC17 |
+| R-9 ≈ F-11 | MEDIUM | `tests/e2e/helpers/api-fixtures.ts` : aucun helper de compte ni de règlement ; seed : 1000/1100/2000/3000/4000 : confirmé. ⚠️ « les lignes des autres specs polluent » **en partie réfuté** : les specs repartent d'un preset (`seedTestState`, troncature) — le remède est gardé, pour l'isolement et parce que les écritures lettrées restent figées | **corrigé** : tests numérotés par AC (Rust, Vitest, E2E) dans chaque sous-fiche ; compte lettrable **créé** par le spec, montants uniques ; rôle Consultation en E2E (C-15-1c-13) | 15-1c-i T9, AC13 ; 15-1c-ii T6, AC13 |
+| R-10 = F-10 | MEDIUM | recompte au grain fin : > 5 | **découpage** (C-15-1c-1) ; dérogations au grain fin (C-15-1c-11) | index, Dev Notes |
+| F-4 | MEDIUM | `accounts.api.ts:10` `includeArchived = false` par défaut ; C96 « un compte archivé reste lettrable » : confirmé | **corrigé** : `fetchAccounts(true)`, archivés marqués | 15-1c-i AC1 |
+| F-5 = R-11 | MEDIUM / LOW | `bank-import/[id]` prend un identifiant d'import ; aucune route de transaction : confirmé | **corrigé** : table type → cible ; `bankTransaction` sans lien ; `settlement` sans lien si `invoiceId` nul (C-15-1c-6) | 15-1c-i AC2 |
+| F-7 | MEDIUM | `balance.ts` (`big.js`) ; plafond 200 : confirmé | **corrigé** (avec R-4) : décimal, 200, pages (C-15-1c-4) | 15-1c-i AC4 |
+| F-8 | MEDIUM | 15-1b AC5 « aujourd'hui », pas d'`offset` : confirmé | **corrigé** : chargement séparé, échec indépendant, indépendant de `asOf`, rechargement après acceptation ou refus périmé (C-15-1c-7) | 15-1c-i AC5 |
+| F-12 | LOW | `+layout.svelte:109-110` ; `i18n-keys.test.ts:526-529` (`sitesTotal: 1920`) : confirmé | **corrigé** : aucun numéro de ligne prescrit ; bornes relevées aux deux bornes | 15-1c-i AC11 |
+| F-13 | LOW | ⚠️ **référence fausse** : C132 porte sur la dévalidation ; le vocabulaire est **C-15-1a-i-4** et **C-15-1a-ii-2** (`grep -n Ausgleich epic-15-choix-autonomes.md`). En-têtes en dur de la fiche (`Compte`, `Débit`) : confirmé | **corrigé** : vocabulaire imposé (référence juste) ; gardes nommées (G4-bis, G8/G8-bis, G9, G13, parité, un repli par clé, libellé en dur, sélecteurs traduits, bornes) ; gate backend dû ; en-tête « Lettrage » traduit | 15-1c-i AC11 ; 15-1c-ii AC9, AC11 |
+| F-14 | LOW | voir R-7 (b) | **corrigé** (C-15-1c-9) | 15-1c-ii AC9 |
+| F-15 = R-14 | LOW | 15-1b AC1 : `asOf` absent = date UTC du serveur : confirmé | **corrigé** : `asOf` toujours explicite, date locale, écrite dans l'URL (C-15-1c-5) ; lien du Grand livre à la fin de période | 15-1c-i AC1 ; 15-1c-ii AC9 |
+| R-12 | LOW | voir F-12 ; replis et gardes | **corrigé** | 15-1c-i AC11 |
+| R-13 | LOW | `CHANGELOG.md:15` titre « par l'API » : confirmé | **corrigé** : titre réécrit, phrase « L'écran viendra » retirée ; glossaire | 15-1c-ii AC14, AC12 |
+| R-15 | LOW | `parse_reference` → 404 indiscernable | **corrigé** : « aucun groupe ne porte ce code » | 15-1c-i AC6 |
+| R-16 | LOW | #518 : compte fournisseur | **non retenu**, motif écrit : l'écran ne dépend pas du type de pièce (il lit `document`, `manuallyLetterable`) ; la vue sur les pièces fournisseurs est prouvée côté serveur par la 15-1b (tests 6, 7 : facture fournisseur, achat et règlement) ; un E2E fournisseur exigerait un helper de paiement absent pour une assertion que le serveur porte déjà | — |
+
+**Propagation post-patch** (valeurs grepées sur tout le dépôt) : `LETTERING_FISCAL_YEARS_CLOSED` — il
+n'apparaissait, hors des textes historiques, que dans le corps remplacé de cette fiche (retiré) ; la 15-1a-socle
+et la 15-1a-i (`:530`, « retiré ») le citent comme le code d'avant C113 ; le registre aussi — inchangés, ils sont historiques. Dans la 15-1c-i, il n'apparaît que pour dire qu'il n'existe pas. « ne lit que ses écritures » — ne subsiste qu'au point 1 de « Pour la 15-1c » de la 15-1b (qui la déclare fausse) et dans la 15-1c-i AC8 (qui la cite pour la retirer). `C94` — la 15-1c-ii cite C105 qui le révise.
+`15-1c-proposition-ecran` — renvois des fiches validées (lecture seule) laissés : ils désignent désormais l'index,
+qui pointe vers les deux sous-fiches. Index `15-1-lettrage.md`, `sprint-status.yaml` (clés `15-1c-i-ecran-postes-ouverts`,
+`15-1c-ii-lettrage-dans-kesh`, la clé `15-1c-proposition-ecran` passée à `split`) et `README.md` (ligne v0.13.0)
+mis à jour.
+
+**Recompte** (depuis les fichiers, `grep -c '^\*\*AC[0-9]'`, `grep -c '^- \[ \] \*\*T'`, `grep -cE '^[0-9]+\. AC'`) :
+15-1c-i — **13** critères, **10** tâches, **19** tests numérotés (8 Rust, 11 Vitest) et 6 scénarios E2E ;
+15-1c-ii — **6** critères, **7** tâches, **5** tests numérotés et 3 scénarios E2E. Le corps d'avant (14 critères,
+7 tâches) n'est plus dans ce fichier.
+
+**Verdict : validation P2 due** — passe complète (Opus), sur **les deux** sous-fiches ensemble : deux HIGH corrigés,
+un enrichissement serveur neuf (AC15) qui touche `dissolve_group_in_tx`, et un découpage dont la couture se relit.
+
+### Corps d'avant le découpage — résumé
+
+Le corps remplacé (Story, Reprise du 2026-10-08, Reçu de la 15-1a points 1–11, AC1–AC14, T1–T7, Dev Notes) se lit à
+`8e36a146`. Les entrées ci-dessous décrivent ce corps et ceux qui l'ont précédé.
 
 ### Reçu de la validation P3 du socle — 2026-10-09 (Opus 5.5, remédiation de la 15-1a)
 
