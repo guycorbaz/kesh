@@ -1,6 +1,6 @@
 # Story 15.7b3 : Les installations déjà atteintes par #528 et #542 sont réparées, au démarrage et à la restauration
 
-Status: backlog
+Status: in-progress
 
 <!-- Née le 2026-10-08 du découpage de la 15-7b2 (choix C-15-7-40), à la passe de validation P3 de
      celle-ci : la clause de coupe de la 15-7b2 (C-15-7-39) s'est déclenchée — deux MEDIUM nés de la
@@ -528,6 +528,62 @@ test 6f ; les tests 1 et 2 ci-dessus les voient aussi.
 
 ### Debug Log References
 
+#### T0 — relecture de la fiche contre `e892dcfa` (2026-10-09, avant tout code)
+
+La fiche date du 2026-10-08 ; depuis, la 15-7b2 (qu'elle appelle), les 15-13a/b, 15-6c/d, 15-1a-i/ii et
+15-14a ont été mergées. Écarts relevés, **avant** de coder :
+
+- **E1 — statut.** L'en-tête disait `Status: backlog` alors que la validation est close (P4 ciblée,
+  sprint-status `ready-for-dev`) : passé à `ready-for-dev` puis `in-progress` (Change Log).
+- **E2 — ce que la 15-7b2 a réellement posé : conforme.**
+  `companies::reattach_orphan_principals_in_tx(tx, target: Option<i64>) -> Result<OrphanPrincipals, DbError>`
+  (`repositories/companies.rs:306`) ; `OrphanPrincipals { user_ids: Vec<i64>, api_keys_revoked:
+  Vec<RevokedApiKey>, api_keys_repointed: u64 }` + `is_empty()` ; `RevokedApiKey { id, name,
+  created_by_user_id, created_at, last_used_at }` (`Serialize`, aucune empreinte). Règle « révoquer
+  puis repointer » conforme (révocation de toute clé active orpheline quelle que soit la cible, puis,
+  avec cible, rattachement des utilisateurs et repointage de toutes les clés orphelines sans toucher
+  `version` ni `revoked_at`). **Pré-condition écrite** : l'appelant tient `companies … FOR UPDATE` ;
+  ordre `users` puis `api_keys`. `companies::insert_stub<E: Executor>(executor, Language) -> i64` (`:173`)
+  conforme ; garde `company_count == 0` des cas 1 et 2 du bootstrap présente.
+- **E3 — détail de l'entrée.** L'entrée `installation.reset` de la 15-7b2 porte `users_repointed`
+  (nombre) **sans** `user_ids` ; l'AC 1 étape 7 de cette fiche demande les deux : appliqué tel
+  qu'écrit ici, divergence assumée (l'entrée de réparation désigne des utilisateurs qui n'ont rien fait).
+- **E4 — renvois de ligne décalés** (relocalisés par symbole) : `bootstrap.rs` compteurs `:52-60`,
+  doc de tête `:37-50`, matrice `//!` `:8-17` (le cas 1 y dit déjà #542) ; `main.rs` doc `:19`,
+  `ensure_admin_user` `:190`, `exit(1)` `:194`, `TcpListener::bind` `:380` (fiche : `:181`, `:185`,
+  `:369`) ; `routes/admin.rs` `run_backup_and_restore` `:225` (fiche `:221`), `restore_tables_in_tx`
+  `:295`, 5-ter `:329-349`, `audit_uid` `:355-370`, `a_recule` `:393-397`, `books.restored` `:398-418`,
+  `admin.full_import` `:446-459`.
+- **E5 — `seed_demo` a changé de signature** (15-7b1) : `kesh_seed::seed_demo(pool, locale, actor:
+  SeedActor)` et la dernière transaction exige `onboarding_state.step_completed == 2`. Le test 4 (i)
+  appelle donc `seed_demo(&pool, &Locale, (admin, None))` après avoir porté l'état à l'étape 2 (la fiche
+  écrivait `(pool, locale, UiMode::Guided, version)`).
+- **E6 — tests d'intégration qui appellent `ensure_admin_user` : 18, non 15.** `grep -rln
+  ensure_admin_user crates/kesh-api/tests | sort` rend en plus `filet_bilan_clos_e2e`, `letterings_e2e`,
+  `onboarding_audit_e2e`. Contrôle des montages à risque (`grep -cE
+  "insert_stub|is_stub|FOREIGN_KEY_CHECKS *= *0|seed_stub_company_only"`) : 0 pour quinze fichiers ;
+  `onboarding_e2e` (2) et `onboarding_path_b_e2e` (1) ne le portent qu'en commentaires (`:578-579`,
+  `:449`) ; `onboarding_audit_e2e` (39) monte ses états **après** `ensure_admin_user` (montage commun
+  `bootstrap`, `:137-145` ; test 13 `:1136`) — aucun montage ne pose, **avant** l'appel, une société
+  provisoire superflue ni un principal au `company_id` mort. Verdict confirmé par le gate complet (§
+  Completion Notes).
+- **E7 — schéma : conforme.** 29 clés étrangères vers `companies` dans le squash, dont 4 en
+  `ON DELETE CASCADE` (`grep -ic "references \`\?companies"`, puis `| grep -ic cascade`) ; aucune table
+  ajoutée par les 15-1a-i/ii ne désigne `companies` en cascade.
+- **E8 — registre des routes : inchangé** (108 tracées / 4 / 2 sur 114, `audit_route_registry.rs:636-639`) :
+  aucune route neuve.
+- **E9 — restauration.** `post_restore` n'est pas touché (aucune migration) ; la garde lexicale
+  `echecs_avant_sauvegarde_tous_convertis` (`routes/admin.rs`) ne couvre que le segment **avant**
+  `write_pre_import_backup` : l'étape 5-quater, placée après la lecture d'`audit_uid`, n'y entre pas.
+- **E10 — CHANGELOG.** `## [0.13.0] — Non publié` et `### Corrigé` existent sur la branche (rebasée sur
+  `main`) ; l'entrée #542 de la 15-7b2 (« Un redémarrage avant la création de l'administrateur n'ajoute
+  plus de société provisoire ») y est : l'entrée de la réparation s'ajoute à côté.
+- **E11 — tri d'`ACTIONS`.** `installation.repaired` se range entre `installation.demo_seeded` et
+  `installation.reset`.
+- **E12 — montage du déclencheur.** Celui du test 8 de la 15-7b2 vit dans
+  `crates/kesh-api/tests/onboarding_audit_e2e.rs` (`reset_failure_erases_nothing_and_never_returns_its_connection`) ;
+  la fiche demande de le factoriser si les deux fiches le portent : voir C-15-7b3-1.
+
 ### Completion Notes List
 
 ### File List
@@ -683,3 +739,7 @@ test 6f ; les tests 1 et 2 ci-dessus les voient aussi.
   écart. **Validation CLOSE.** Trend : P1 1 HIGH / 6 MEDIUM → P2 4 MEDIUM → P3 2 MEDIUM (recyclage, signal D5)
   → P4 ciblée 0 retenu. Modèles : Opus ×2, Sonnet ×2, Opus ×2, Haiku (ciblée).
 - **2026-10-08 — Coordination avec la 15-11a (C-15-7-55)** : `admin-manual.tex:1704-1717` (§ *Procédure de mise à jour standard*) est une **zone partagée** : la 15-11a y réécrit le point 3 (consigne datée, deux `lstlisting`, encadré « Relisez votre `.env` »). Ordre de merge : **15-11a d'abord**. Au rebase, la 15-7b3 se **relocalise par le texte** (`\subsection{Procédure de mise à jour standard}`, l'item « Vérifier les logs », `\subsection{Rollback en cas d'échec}`) et place son texte **après** l'énumération et l'encadré de la 15-11a, **sans les réécrire** ; `:1734-1749` (§ Rollback) est décalé par l'insertion ; le PDF est régénéré (`make fr`) par celle qui merge en second. Toute recette de redémarrage de cette fiche dit `docker compose up -d` (`restart` ne relit pas `.env`) : la seule, du *Dépannage* (T6, ligne `:2054`), corrigée ; les autres occurrences de « redémarrage » décrivent le comportement du serveur, non une recette.
+- **2026-10-09 — Développement (Opus 5.5, worktree `kesh-15-7b3`, base `e892dcfa`).** En-tête
+  `Status: backlog` corrigé en `ready-for-dev` (validation close, P4 ciblée — le sprint-status le
+  disait déjà) puis `in-progress` au démarrage du développement. T0 écrit au Dev Agent Record (E1 à
+  E12) avant tout code.
