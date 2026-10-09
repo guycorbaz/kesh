@@ -61,6 +61,8 @@ Dans Kesh, connecté en tant qu'utilisateur (rôle Comptable ou Administrateur) 
 
 La liste affiche aussi la date de dernière utilisation et le statut (active / expirée / révoquée).
 
+Après la mise à jour en 0.13.0, une clé qui désignait une société effacée (défaut [#528](https://github.com/guycorbaz/kesh/issues/528)) est **révoquée par Kesh** et répond `401 UNAUTHENTICATED` ; elle paraît « révoquée » dans la liste. Créez-en une neuve.
+
 ---
 
 ## 4. Portées (*scopes*)

@@ -10,6 +10,9 @@ use kesh_db::errors::DbError;
 use kesh_db::repositories::companies;
 use sqlx::MySqlPool;
 
+#[path = "support/installations_atteintes.rs"]
+mod installations_atteintes;
+
 fn sample_new_company() -> NewCompany {
     NewCompany {
         name: "Test SA".into(),
@@ -708,4 +711,370 @@ async fn reattach_without_orphans_writes_nothing(pool: MySqlPool) {
     assert!(out.is_empty(), "{out:?}");
     assert_eq!(snapshot(pool.clone()).await, before);
     assert_eq!(user_company(&pool, m.orphan_user).await, m.company);
+}
+
+// --- Story 15-7b3 — `repair_installation_in_tx` ------------------------------
+
+/// Appelle la réparation dans une transaction, puis commite.
+async fn repair(
+    pool: &MySqlPool,
+    trigger: companies::RepairTrigger,
+) -> Option<companies::InstallationRepair> {
+    let mut tx = pool.begin().await.unwrap();
+    let out = companies::repair_installation_in_tx(&mut tx, trigger)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    out
+}
+
+async fn insert_admin(pool: &MySqlPool, name: &str, company_id: i64) -> i64 {
+    sqlx::query(
+        "INSERT INTO users (username, password_hash, role, active, company_id) \
+         VALUES (?, 'argon2id-hash-placeholder-long-enough', 'Admin', TRUE, ?)",
+    )
+    .bind(name)
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+async fn insert_active_key(pool: &MySqlPool, company_id: i64, creator: i64, name: &str) -> i64 {
+    sqlx::query(
+        "INSERT INTO api_keys (company_id, created_by_user_id, name, key_hash, scope) \
+         VALUES (?, ?, ?, SHA2(?, 256), 'read-write')",
+    )
+    .bind(company_id)
+    .bind(creator)
+    .bind(name)
+    .bind(name)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+/// Porte les seules clés d'API à `DEAD_COMPANY` (connexion détachée,
+/// `FOREIGN_KEY_CHECKS = 0`) : les utilisateurs restent sains.
+async fn orphan_keys_only(pool: &MySqlPool) {
+    use sqlx::Connection;
+    let mut conn = pool.acquire().await.unwrap().detach();
+    sqlx::query("SET FOREIGN_KEY_CHECKS = 0")
+        .execute(&mut conn)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE api_keys SET company_id = ?")
+        .bind(DEAD_COMPANY)
+        .execute(&mut conn)
+        .await
+        .unwrap();
+    conn.close().await.unwrap();
+}
+
+async fn repaired_entries(pool: &MySqlPool) -> Vec<(i64, serde_json::Value)> {
+    sqlx::query_as(
+        "SELECT user_id, details_json FROM audit_log \
+         WHERE action = 'installation.repaired' ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+async fn company_ids(pool: &MySqlPool) -> Vec<i64> {
+    sqlx::query_scalar("SELECT id FROM companies ORDER BY id")
+        .fetch_all(pool)
+        .await
+        .unwrap()
+}
+
+/// Test 3 (a) — clés seules orphelines, utilisateurs sains : la clé est
+/// révoquée et repointée, aucun utilisateur rattaché.
+#[sqlx::test(migrations = "./test-schema")]
+async fn repair_with_only_orphan_keys(pool: MySqlPool) {
+    let company = companies::create(&pool, sample_new_company())
+        .await
+        .unwrap()
+        .id;
+    let admin = insert_admin(&pool, "a", company).await;
+    let key = insert_active_key(&pool, company, admin, "k").await;
+    orphan_keys_only(&pool).await;
+
+    let out = repair(&pool, companies::RepairTrigger::Startup)
+        .await
+        .expect("Some");
+    assert_eq!(out.company_id, Some(company));
+    assert!(out.principals.user_ids.is_empty());
+    assert_eq!(
+        out.principals
+            .api_keys_revoked
+            .iter()
+            .map(|k| k.id)
+            .collect::<Vec<_>>(),
+        vec![key]
+    );
+    assert_eq!(out.principals.api_keys_repointed, 1);
+    assert_eq!(key_row(&pool, key).await, (company, true, 2));
+}
+
+/// Test 3 (b) — base sans société, utilisateurs orphelins, aucune clé :
+/// `None`, rien d'écrit (le rattachement est laissé à `language`).
+#[sqlx::test(migrations = "./test-schema")]
+async fn repair_without_company_nor_key_writes_nothing(pool: MySqlPool) {
+    let company = companies::create(&pool, sample_new_company())
+        .await
+        .unwrap()
+        .id;
+    let user = insert_admin(&pool, "a", company).await;
+    installations_atteintes::rendre_principaux_orphelins(&pool, DEAD_COMPANY).await;
+    sqlx::query("DELETE FROM companies")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(repair(&pool, companies::RepairTrigger::Startup).await, None);
+    assert_eq!(user_company(&pool, user).await, DEAD_COMPANY);
+    assert!(repaired_entries(&pool).await.is_empty());
+}
+
+/// Test 3 (b') — base sans société, une clé active orpheline : `Some`,
+/// `company_id: None`, clé révoquée, non repointée.
+#[sqlx::test(migrations = "./test-schema")]
+async fn repair_without_company_revokes_the_orphan_key(pool: MySqlPool) {
+    let company = companies::create(&pool, sample_new_company())
+        .await
+        .unwrap()
+        .id;
+    let admin = insert_admin(&pool, "a", company).await;
+    let key = insert_active_key(&pool, company, admin, "k").await;
+    installations_atteintes::rendre_principaux_orphelins(&pool, DEAD_COMPANY).await;
+    sqlx::query("DELETE FROM companies")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let out = repair(&pool, companies::RepairTrigger::Startup)
+        .await
+        .expect("Some");
+    assert_eq!(out.company_id, None);
+    assert_eq!(out.principals.api_keys_repointed, 0);
+    assert_eq!(key_row(&pool, key).await, (DEAD_COMPANY, true, 2));
+    let entries = repaired_entries(&pool).await;
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].1["company_id"], serde_json::Value::Null);
+}
+
+/// Test 3 (c) — à la restauration, l'entrée est signée par `actor_user_id`
+/// (X), et `triggered_by_user` (Y ≠ X) est écrit au détail.
+#[sqlx::test(migrations = "./test-schema")]
+async fn repair_on_restore_signs_with_the_actor(pool: MySqlPool) {
+    let company = companies::create(&pool, sample_new_company())
+        .await
+        .unwrap()
+        .id;
+    let x = insert_admin(&pool, "x", company).await;
+    let y = insert_admin(&pool, "y", company).await;
+    installations_atteintes::rendre_principaux_orphelins(&pool, DEAD_COMPANY).await;
+
+    let out = repair(
+        &pool,
+        companies::RepairTrigger::Restore {
+            actor_user_id: x,
+            triggered_by_user: y,
+        },
+    )
+    .await
+    .expect("Some");
+    assert_eq!(out.principals.user_ids, vec![x, y]);
+    assert!(out.stub_companies_removed.is_empty());
+    let entries = repaired_entries(&pool).await;
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0].0, x, "acteur : actor_user_id");
+    assert_eq!(entries[0].1["trigger"], "restore");
+    assert_eq!(entries[0].1["triggered_by_user"], y);
+}
+
+/// Test 6 (a) — les colonnes qui désignent `companies` sont lues dans le
+/// schéma : l'ensemble **contient** une liste écrite (les quatre tables en
+/// `ON DELETE CASCADE`, `api_keys`, et deux tables en `RESTRICT`) — inclusion,
+/// non égalité avec une seconde lecture du même schéma.
+#[sqlx::test(migrations = "./test-schema")]
+async fn company_referencing_columns_reads_the_schema(pool: MySqlPool) {
+    let cols = companies::company_referencing_columns(&mut pool.acquire().await.unwrap())
+        .await
+        .unwrap();
+    for table in [
+        "users",
+        "api_keys",
+        "bank_profiles",
+        "contact_persons",
+        "email_templates",
+        "accounts",
+        "fiscal_years",
+    ] {
+        assert!(
+            cols.contains(&(table.to_string(), "company_id".to_string())),
+            "{table}.company_id absente de {cols:?}"
+        );
+    }
+}
+
+/// Test 6 (b) — **une seule table suffit** : une société provisoire désignée
+/// par une seule ligne de `bank_profiles` (CASCADE), d'`email_templates`
+/// (CASCADE) ou d'`accounts` (RESTRICT) **reste**, ses lignes filles aussi ; une
+/// société provisoire sans aucune référence est supprimée.
+#[sqlx::test(migrations = "./test-schema")]
+async fn repair_keeps_every_referenced_stub(pool: MySqlPool) {
+    let company = companies::create(&pool, sample_new_company())
+        .await
+        .unwrap()
+        .id;
+    insert_admin(&pool, "a", company).await;
+    let stub = || companies::insert_stub(&pool, Language::Fr);
+    let by_bank_profile = stub().await.unwrap();
+    sqlx::query(
+        "INSERT INTO bank_profiles (company_id, bank_name, column_mapping, date_format, \
+         decimal_separator, field_separator) VALUES (?, 'Banque', '{}', '%d.%m.%Y', '.', ';')",
+    )
+    .bind(by_bank_profile)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let by_email_template = stub().await.unwrap();
+    sqlx::query(
+        "INSERT INTO email_templates (company_id, template_type, language, subject, body) \
+         VALUES (?, 'invoice_send', 'FR', 'Objet', 'Corps')",
+    )
+    .bind(by_email_template)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let by_account = stub().await.unwrap();
+    sqlx::query(
+        "INSERT INTO accounts (company_id, number, name, account_type) \
+         VALUES (?, '1000', 'Caisse', 'Asset')",
+    )
+    .bind(by_account)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let free = stub().await.unwrap();
+
+    let out = repair(&pool, companies::RepairTrigger::Startup)
+        .await
+        .expect("Some");
+    assert_eq!(out.stub_companies_removed, vec![free]);
+    assert_eq!(
+        company_ids(&pool).await,
+        vec![company, by_bank_profile, by_email_template, by_account]
+    );
+    for (table, id) in [
+        ("bank_profiles", by_bank_profile),
+        ("email_templates", by_email_template),
+        ("accounts", by_account),
+    ] {
+        let n: i64 = sqlx::query_scalar(&format!(
+            "SELECT COUNT(*) FROM {table} WHERE company_id = ?"
+        ))
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+        assert_eq!(n, 1, "{table} : la ligne fille reste");
+    }
+}
+
+/// Test 6 (c) — **point de sauvegarde** : la suppression d'une société
+/// provisoire échoue (déclencheur) ⇒ elle reste, l'autre est supprimée et seule
+/// rapportée ; deux sociétés restent, donc aucun rattachement ; la clé active
+/// orpheline est révoquée quand même ; une entrée est écrite.
+#[sqlx::test(migrations = "./test-schema")]
+async fn repair_survives_a_failed_stub_deletion(pool: MySqlPool) {
+    let mut stubs = Vec::new();
+    for _ in 0..3 {
+        stubs.push(companies::insert_stub(&pool, Language::Fr).await.unwrap());
+    }
+    let user = insert_admin(&pool, "a", stubs[0]).await;
+    let key = insert_active_key(&pool, stubs[0], user, "k").await;
+    installations_atteintes::rendre_principaux_orphelins(&pool, DEAD_COMPANY).await;
+    installations_atteintes::poser_declencheur_en_echec(
+        &pool,
+        "t_15_7b3_delete",
+        "BEFORE DELETE ON companies",
+        Some(&format!("OLD.id = {}", stubs[1])),
+    )
+    .await;
+
+    let out = repair(&pool, companies::RepairTrigger::Startup)
+        .await
+        .expect("Some");
+
+    assert_eq!(out.stub_companies_removed, vec![stubs[2]]);
+    assert_eq!(company_ids(&pool).await, vec![stubs[0], stubs[1]]);
+    assert_eq!(out.company_id, None);
+    assert_eq!(user_company(&pool, user).await, DEAD_COMPANY);
+    assert_eq!(key_row(&pool, key).await, (DEAD_COMPANY, true, 2));
+    assert_eq!(repaired_entries(&pool).await.len(), 1);
+}
+
+/// Revue P1 de la 15-7b3, B-1 — **à la restauration, aucune société provisoire
+/// n'est supprimée**, même superflue : une archive est l'état choisi par
+/// l'administrateur (AC 1, étape 2). Trois sociétés, dont deux provisoires
+/// qu'aucune ligne ne désigne : toutes restent, aucune n'est cible ; la clé
+/// active orpheline est révoquée quand même.
+#[sqlx::test(migrations = "./test-schema")]
+async fn repair_on_restore_keeps_superfluous_stubs(pool: MySqlPool) {
+    let company = companies::create(&pool, sample_new_company())
+        .await
+        .unwrap()
+        .id;
+    let stub_a = companies::insert_stub(&pool, Language::Fr).await.unwrap();
+    let stub_b = companies::insert_stub(&pool, Language::Fr).await.unwrap();
+    let admin = insert_admin(&pool, "a", company).await;
+    let key = insert_active_key(&pool, company, admin, "k").await;
+    installations_atteintes::rendre_principaux_orphelins(&pool, DEAD_COMPANY).await;
+
+    let out = repair(
+        &pool,
+        companies::RepairTrigger::Restore {
+            actor_user_id: admin,
+            triggered_by_user: admin,
+        },
+    )
+    .await
+    .expect("Some");
+
+    assert!(out.stub_companies_removed.is_empty());
+    assert_eq!(company_ids(&pool).await, vec![company, stub_a, stub_b]);
+    assert_eq!(out.company_id, None);
+    assert_eq!(user_company(&pool, admin).await, DEAD_COMPANY);
+    assert_eq!(key_row(&pool, key).await, (DEAD_COMPANY, true, 2));
+}
+
+/// Revue P1 de la 15-7b3, E1 — une lecture du schéma qui ne trouve **aucune**
+/// clé étrangère vers `companies` est refusée (`Invariant`), et non lue comme
+/// « rien ne désigne aucune société ». Montage : une base vide, choisie par
+/// `USE` sur une connexion détachée, puis supprimée.
+#[sqlx::test(migrations = "./test-schema")]
+async fn company_referencing_columns_refuses_an_empty_answer(pool: MySqlPool) {
+    use sqlx::Connection;
+    let base = format!("kesh_157b3_vide_{}", uuid::Uuid::new_v4().simple());
+    let mut conn = pool.acquire().await.unwrap().detach();
+    sqlx::raw_sql(&format!("CREATE DATABASE `{base}`"))
+        .execute(&mut conn)
+        .await
+        .unwrap();
+    sqlx::raw_sql(&format!("USE `{base}`"))
+        .execute(&mut conn)
+        .await
+        .unwrap();
+    let result = companies::company_referencing_columns(&mut conn).await;
+    sqlx::raw_sql(&format!("DROP DATABASE `{base}`"))
+        .execute(&mut conn)
+        .await
+        .unwrap();
+    conn.close().await.unwrap();
+    assert!(matches!(result, Err(DbError::Invariant(_))), "{result:?}");
 }

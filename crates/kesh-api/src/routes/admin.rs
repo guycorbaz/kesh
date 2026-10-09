@@ -368,6 +368,29 @@ async fn run_backup_and_restore(
         )
     })?;
 
+    // 5-quater. Réparation de l'installation restaurée (Story 15-7b3, #528) —
+    //    une archive prise sur une installation atteinte ramène des
+    //    utilisateurs et des clés d'API désignant une société effacée. Même
+    //    règle qu'au démarrage (`repair_installation_in_tx`), **sans** la
+    //    suppression des sociétés provisoires superflues (#542), que fait le
+    //    démarrage suivant : une archive est l'état choisi par l'administrateur.
+    //    Signée par `audit_uid`, l'acteur d'`admin.full_import`, pour la même
+    //    raison ; `triggered_by_user` au détail. **Avant** `books.restored` et
+    //    `admin.full_import` : leur `company_id` (sous-SELECT sur `users`)
+    //    désigne ainsi la société vivante. Une erreur annule l'import entier,
+    //    comme toute autre — la règle non bloquante ne vaut qu'au démarrage.
+    //    Aucun verrou neuf : `companies`, `users` et `api_keys` viennent d'être
+    //    vidées puis réinsérées par cette transaction.
+    kesh_db::repositories::companies::repair_installation_in_tx(
+        &mut tx,
+        kesh_db::repositories::companies::RepairTrigger::Restore {
+            actor_user_id: audit_uid,
+            triggered_by_user: current_user.user_id,
+        },
+    )
+    .await
+    .map_err(|e| AppError::AdminFullImportFailed(format!("réparation de l'installation : {e}")))?;
+
     // Story 24-4c (#380) : la borne a-t-elle RECULÉ ? Si oui, la restauration
     // vaut déverrouillage et doit se voir.
     //

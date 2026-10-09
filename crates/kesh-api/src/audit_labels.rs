@@ -114,6 +114,7 @@ pub const ACTIONS: &[&str] = &[
     "imported_supplier_invoice.discarded",
     "imported_supplier_invoice.reactivated",
     "installation.demo_seeded",
+    "installation.repaired",
     "installation.reset",
     "installation.step_completed",
     "installation.ui_mode_changed",

@@ -16,7 +16,9 @@
 //!    Record boot version (story 10-2) — `record_boot_version` met à
 //!    jour `_kesh_version.kesh_version_last_applied` + `last_boot_at`
 //!    pour audit. Non-fatal si échec.
-//! 5. Bootstrap admin (`ensure_admin_user`) si la table users est vide.
+//! 5. Bootstrap (`ensure_admin_user`) : à **chaque** démarrage, réparation
+//!    de l'installation (Story 15-7b3 — #528, #542 ; non bloquante), puis
+//!    création de l'administrateur si la table users est vide.
 //! 6. Build router + axum::serve.
 
 use std::sync::Arc;

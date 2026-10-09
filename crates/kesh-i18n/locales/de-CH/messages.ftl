@@ -2329,6 +2329,7 @@ audit-log-action-company-updated = Unternehmen aktualisiert
 audit-log-action-email-template-updated = E-Mail-Vorlage aktualisiert
 audit-log-action-email-template-restored-default = E-Mail-Vorlage auf Standard zurückgesetzt
 audit-log-action-installation-demo-seeded = Demodaten geladen
+audit-log-action-installation-repaired = Reparatur der Installation
 audit-log-action-installation-reset = Installation zurückgesetzt
 audit-log-action-installation-step-completed = Installationsschritt abgeschlossen
 audit-log-action-installation-ui-mode-changed = Nutzungsmodus geändert

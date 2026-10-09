@@ -303,6 +303,8 @@ Si vous avez oublié votre mot de passe, utilisez le lien \emph{Mot de passe oub
 
 Pour connecter Kesh à un logiciel tiers ou à une intégration (script, outil d'IA, etc.), vous pouvez créer une \textbf{clé API} (jeton d'accès personnel) depuis \emph{Paramètres} → \emph{Clés API} (\keshpath{/settings/api-keys}). Chaque clé porte un périmètre (\emph{lecture seule} ou \emph{lecture-écriture}) et une date d'expiration optionnelle ; le secret n'est affiché qu'une seule fois à la création. La gestion des clés est accessible aux rôles \emph{Comptable} et \emph{Administrateur}.
 
+Une clé peut paraître « révoquée » sans que personne l'ait révoquée : Kesh l'a fait en réparant une installation touchée par le défaut \#528 (entrée \emph{Réparation de l'installation} du journal d'audit). Elle n'authentifie plus : créez-en une neuve.
+
 \begin{keshnote}
 La documentation complète de l'API externe (authentification, points d'accès, exemples) se trouve dans \keshpath{docs/api-external.md}. Les aspects d'administration (rotation, durcissement) sont décrits dans le manuel administrateur.
 \end{keshnote}
@@ -2270,6 +2272,14 @@ la seule du journal neuf. Son détail dit l'étape et le mode d'avant, le
 tables vidées, et les utilisateurs ou clés d'API rattachés à la société. Les numéros
 des entrées ne repartent pas de 1~: \textbf{le trou qui précède cette entrée
 s'explique par elle}.
+
+\paragraph{La réparation de l'installation.} Une entrée \emph{Réparation de
+l'installation}, type \emph{Installation}, dit que Kesh a réparé de lui-même une
+installation touchée par un défaut d'une version antérieure (\#528, \#542) ---
+au démarrage, ou à l'import d'une sauvegarde. Personne ne l'a faite~: au
+démarrage, elle est signée par le plus ancien administrateur actif. Son détail
+nomme les utilisateurs rattachés, les clés d'API révoquées et les sociétés
+provisoires supprimées.
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{FAQ et dépannage utilisateur}

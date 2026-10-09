@@ -1018,7 +1018,7 @@ La création d'une company se fait via l'interface utilisateur après connexion 
 
 Depuis la version \textbf{v0.1.2}, Kesh adopte l'approche \emph{self-service} commune aux applications self-hosted modernes (Jellyfin, Bitwarden, Vaultwarden) : au tout premier démarrage sur une base de données vide, un écran web \keshpath{/setup} accueille l'administrateur pour créer son compte via un formulaire — sans édition préalable du fichier \keshpath{.env}.
 
-Le \emph{bootstrap} crée seulement une \textbf{company provisoire} (placeholder), au premier démarrage, sur une base \textbf{sans société} --- un redémarrage avant la création de l'administrateur n'en ajoute plus (depuis la 0.13.0, \#542). L'administrateur est ensuite créé via le formulaire \keshpath{POST /api/v1/setup/admin} (route publique gated par \keshcommand{user\_count == 0} → désactivée automatiquement en 410 Gone dès le 1\textsuperscript{er} admin créé).
+Le \emph{bootstrap} crée seulement une \textbf{company provisoire} (placeholder), au premier démarrage, sur une base \textbf{sans société} --- un redémarrage avant la création de l'administrateur n'en ajoute plus (depuis la 0.13.0, \#542), et celles qu'une version antérieure avait ajoutées en trop sont supprimées au démarrage (\S\ref{sec:reparation-installation}). L'administrateur est ensuite créé via le formulaire \keshpath{POST /api/v1/setup/admin} (route publique gated par \keshcommand{user\_count == 0} → désactivée automatiquement en 410 Gone dès le 1\textsuperscript{er} admin créé).
 
 \subsubsection{Procédure (nouveau flow recommandé v0.1.2+)}
 
@@ -1307,12 +1307,14 @@ Selon l'état de la base de données et la présence des variables \keshpath{KES
     \midrule
     vide & non & --- & Crée la company stub \textbf{si aucune société n'existe} (un redémarrage avant \keshpath{/setup} n'en ajoute plus, \#542), écran \keshpath{/setup} actif \\
     vide & oui & --- & Crée stub + admin déclaratif (équivalent v011-2), ou rattache l'admin à la société existante \\
-    existant & non & --- & No-op (régime nominal post-bootstrap) \\
+    existant & non & --- & Réparation si nécessaire (\#528, \#542), sinon no-op (régime nominal) \\
     existant & oui & match + hash identique & No-op silencieux, warning « retirer les vars » \\
     existant & oui & match + hash différent & \textbf{RECOVERY} : reset password + révocation tokens + audit\_log \\
     existant & oui & no match username & No-op + warning « no user matches » \\
     \bottomrule
 \end{tabularx}
+
+À \textbf{chaque} démarrage, \textbf{avant} ces cas, Kesh répare une installation touchée par le défaut \#528 ou \#542 (\S\ref{sec:reparation-installation}) ; sur une installation saine, il ne fait rien. Un échec de cette réparation est journalisé et \textbf{n'empêche pas} le démarrage.
 
 \subsection{Déploiement LAN HTTP-only (sans HTTPS) — v0.1.3+}
 
@@ -1371,7 +1373,7 @@ Une fois connecté, l'\textbf{assistant d'onboarding} (wizard) configure la comp
 
     La réinitialisation vide \textbf{toutes} les données comptables et commerciales (écritures, factures, avoirs, contacts, articles, taux, réglages, journal d'audit…) et ramène la société à son état initial, sous la même identité : la session reste ouverte. Elle s'inscrit au journal d'audit (\S\ref{sec:conformite-audit}). Les \textbf{fichiers} déjà produits --- PDF figés, pièces importées, sauvegardes prises avant un import --- restent sur le disque. Elle \textbf{conserve} les utilisateurs et les clés d'API : ceux créés pendant la démonstration passent en production, \textbf{revoyez-les} --- une clé d'API saine garde son droit d'écriture si elle l'avait.
 
-    \textbf{Installation touchée par le défaut \#528} (société effacée par une réinitialisation d'une version antérieure), si elle compte \textbf{aucune ou une} société : la réinitialisation rattache à la société les utilisateurs qui désignaient la société effacée, et \textbf{révoque} les clés d'API qui la désignaient avant de les rattacher --- elles paraissent, révoquées, sur la page des clés : recréez celles qui servent. Sur une installation touchée restée \textbf{sans société}, le choix de la langue fait la même réparation. La session en cours doit alors être \textbf{rouverte} --- reconnexion, ou attendre le renouvellement de la session, au plus sa durée plus une minute ; d'ici là, certains écrans de la société répondent par une erreur, d'autres s'affichent vides. Une installation qui porte \textbf{deux sociétés ou plus} --- réelles ou provisoires, ces dernières venant du défaut \#542 (un redémarrage avant la création de l'administrateur en ajoutait une) --- n'est \textbf{pas} réinitialisable par ce bouton : il y répond par une erreur interne et n'efface rien ; sa réparation au démarrage relève d'une version ultérieure.
+    \textbf{Installation touchée par le défaut \#528} (société effacée par une réinitialisation d'une version antérieure), si elle compte \textbf{aucune ou une} société : la réinitialisation rattache à la société les utilisateurs qui désignaient la société effacée, et \textbf{révoque} les clés d'API qui la désignaient avant de les rattacher --- elles paraissent, révoquées, sur la page des clés : recréez celles qui servent. Sur une installation touchée restée \textbf{sans société}, le choix de la langue fait la même réparation. La session en cours doit alors être \textbf{rouverte} --- reconnexion, ou attendre le renouvellement de la session, au plus sa durée plus une minute ; d'ici là, certains écrans de la société répondent par une erreur, d'autres s'affichent vides. Une installation qui porte \textbf{deux sociétés ou plus} --- réelles ou provisoires, ces dernières venant du défaut \#542 (un redémarrage avant la création de l'administrateur en ajoutait une) --- n'était \textbf{pas} réinitialisable par ce bouton : il y répondait par une erreur interne et n'effaçait rien. Depuis la 0.13.0, une installation déjà touchée par \#528 ou \#542 est \textbf{réparée au premier démarrage} de la nouvelle version --- voir \S\ref{sec:reparation-installation} et, si la réparation échoue, la section \emph{Dépannage}.
     \item \textbf{Type d'organisation} (indépendant, association, PME) et \textbf{langue comptable}.
     \item \textbf{Coordonnées} de l'organisation (raison sociale, adresse, numéro IDE) — ceci renomme la company provisoire et lève la bannière « nom provisoire ».
     \item \textbf{Compte bancaire} principal (optionnel, configurable plus tard).
@@ -1738,6 +1740,7 @@ Kesh \textbf{rejoue donc ces reprises à la fin de chaque import}, dans la même
     \item \textbf{Vos données ne sont jamais écrasées.} Si la sauvegarde contenait déjà l'information, elle fait foi : un rôle de compte ou un réglage que vous aviez ajusté à la main est conservé tel quel.
     \item \textbf{L'ordre est celui des mises à jour successives}, afin que le résultat soit identique à celui d'une installation qui aurait suivi le chemin normal des versions.
     \item \textbf{Le détail est tracé} dans le journal d'audit (opération \keshcommand{admin.full\_import}) et dans le journal du serveur, qui indiquent quelles reprises ont été rejouées et combien de lignes elles ont touchées.
+    \item \textbf{Une sauvegarde d'une installation touchée par \#528} est réparée de la même façon qu'au démarrage (\S\ref{sec:reparation-installation}) --- sauf la suppression des sociétés provisoires en trop, faite au démarrage suivant ---, \textbf{dans la même opération} que l'import (tout ou rien), sous une entrée \emph{Réparation de l'installation} signée comme l'import. \textbf{Celui qui importe} est déconnecté ; les \textbf{autres sessions ouvertes} (autres navigateurs, autres utilisateurs) gardent l'ancienne société jusqu'à l'expiration de leur session (au plus sa durée plus une minute) et voient d'ici là des écrans en erreur ou vides : qu'elles se reconnectent. \textbf{Limite} : une sauvegarde \textbf{sans société} (exportée pendant la configuration, après une réinitialisation d'une version antérieure) importée sur une installation déjà configurée laisse ses utilisateurs sans société, et rien ne les rattache ensuite --- importez une autre sauvegarde.
 \end{itemize}
 
 \begin{keshwarning}
@@ -1808,6 +1811,22 @@ Les versions de Kesh sont publiées sur GitHub avec un tag \texttt{vX.Y.Z} (vers
 \begin{keshwarning}
 Toujours sauvegarder \textbf{avant} la mise à jour. Une migration DB peut être irréversible. En cas de problème, la restauration depuis sauvegarde reste votre filet de sécurité.
 \end{keshwarning}
+
+\paragraph{Réparation de l'installation au premier démarrage (0.13.0).}\label{sec:reparation-installation}
+Au premier démarrage de la nouvelle version, Kesh répare de lui-même une installation déjà touchée par l'un de deux défauts des versions antérieures. Sur une installation saine, il ne fait rien --- et il refait ce contrôle à chaque démarrage.
+
+\begin{itemize}
+    \item \textbf{Défaut \#528} --- une réinitialisation des données de démonstration d'une version antérieure a effacé la société sans rien rattacher. Les utilisateurs qui désignaient la société effacée sont rattachés à la société restante, s'il n'en reste qu'une. Les clés d'API qui la désignaient sont \textbf{révoquées}, puis rattachées à elle : elles paraissent, révoquées et sous leur nom, sur la page des clés. \textbf{Recréez celles qui servent} --- une clé créée pendant une démonstration ne devient pas un accès à votre comptabilité sans un geste de votre part.
+    \item \textbf{Défaut \#542} --- des redémarrages avant la création de l'administrateur ont ajouté des sociétés provisoires. Celles en trop, qu'\textbf{aucune donnée} ne désigne --- le journal d'audit excepté, qui ne retient que le numéro de la société sans la protéger ---, sont supprimées au même moment, y compris avant la création de l'administrateur. Une société provisoire qui porte la moindre donnée est laissée en place.
+\end{itemize}
+
+\begin{sloppypar}
+L'opération s'inscrit au journal d'audit sous \emph{Réparation de l'installation} (\texttt{installation.repaired}). Elle est \textbf{signée par le plus ancien administrateur actif, bien que personne ne l'ait faite} : son détail porte \texttt{trigger~: startup}, les clés révoquées (numéro, nom, créateur, dates de création et de dernière utilisation) et les sociétés supprimées. Avant la création de l'administrateur, aucune entrée n'est écrite --- personne ne pourrait la signer --- et seul le journal du serveur en garde la trace. Sur une installation restée \textbf{sans} société, l'entrée existe mais n'est pas visible au journal : elle désigne la société effacée.
+\end{sloppypar}
+
+La session ouverte doit être \textbf{rouverte} --- reconnexion, ou au plus la durée de session plus une minute ; d'ici là, certains écrans de la société répondent par une erreur, d'autres s'affichent vides. Si le journal du serveur porte « réparation de l'installation au démarrage » suivi d'une erreur, voir la section \emph{Dépannage}.
+
+\textbf{Limite} : les données de démonstration laissées par une réinitialisation antérieure (taux de TVA, réglages de facturation, contacts, articles, factures, avoirs) qui désignent la société effacée restent en base, invisibles et inertes (\#546).
 
 \subsubsection{Passer à la 0.13.0 : le compose et le fichier \texttt{.env}}\label{sec:maj-0-13}
 
@@ -2020,6 +2039,8 @@ docker compose up -d
 # la sauvegarde DB d'avant la mise a jour (cf. section Restauration).
 \end{lstlisting}
 
+Revenir à l'image précédente \textbf{ne défait pas} la réparation de l'installation faite au premier démarrage (\S\ref{sec:reparation-installation}) : les clés révoquées restent révoquées --- aucune ne se réactive ---, et les sociétés provisoires supprimées ne reviennent pas ; seule la restauration de la sauvegarde d'avant la mise à jour les rend. La réparation n'impose elle-même aucune version minimale ; le retour à la version précédente n'est possible que si \textbf{aucune autre} migration de la release ne relève la version minimale exigée --- vérifiez-le au CHANGELOG.
+
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Sécurité}
 
@@ -2070,7 +2091,7 @@ En complément de l'authentification web par cookie, Kesh permet à des \textbf{
     \item \textbf{Portée} : chaque clé est en \emph{lecture seule} (\texttt{read} --- méthodes GET/HEAD/OPTIONS ; une lecture n'écrit rien, à une exception près : le \textbf{premier téléchargement} du PDF d'une facture --- y compris une simple requête \texttt{HEAD} --- le \textbf{fige} et l'inscrit au journal d'audit au nom de la clé) ou \emph{lecture-écriture} (\texttt{read-write} --- toutes les méthodes). La permission effective est l'intersection de la portée de la clé et du rôle de son créateur --- \textbf{et l'administration en est exclue dans tous les cas} (point \emph{Administration} ci-dessus), \textbf{de même que le journal d'audit} (point précédent).
     \item \textbf{Périmètre} : une clé est liée à \textbf{une seule entreprise} (\emph{company}) et agit au nom de son créateur (rôle relu en base à chaque requête --- désactiver le créateur invalide ses clés immédiatement).
     \item \textbf{Stockage} : seul un condensé SHA-256 de la clé est conservé en base (table \texttt{api\_keys}) ; le secret en clair n'est affiché qu'une seule fois, à la création.
-    \item \textbf{Expiration / révocation} : une clé peut avoir une date d'expiration optionnelle ; la révocation prend effet immédiatement.
+    \item \textbf{Expiration / révocation} : une clé peut avoir une date d'expiration optionnelle ; la révocation prend effet immédiatement. Une clé peut aussi avoir été \textbf{révoquée par Kesh} en réparant une installation touchée par \#528 (entrée \emph{Réparation de l'installation} du journal, \S\ref{sec:reparation-installation}) : elle paraît révoquée dans la liste ; créez-en une neuve.
     \item \textbf{Journal d'audit} : les mutations effectuées via une clé sont tracées dans \texttt{audit\_log}. ⚠️ \emph{L'attribution n'est pas encore complète~: une quinzaine de dépôts de données inscrivent \texttt{actor\_type = 'user'} au lieu de \texttt{'api\_key'}, si bien qu'une action faite par une intégration peut être journalisée comme venant d'une personne. L'imputabilité humaine est préservée --- c'est le créateur de la clé qui figure --- mais l'information «~c'était une intégration~» se perd. Correction suivie à l'issue \#431.}
 \end{itemize}
 
@@ -2092,7 +2113,9 @@ Le contrôle d'accès basé sur les rôles est appliqué \textbf{au niveau de ch
 \subsection{Journal d'audit (audit\_log)}
 \label{sec:conformite-audit}
 
-La quasi-totalité des actions métier mutantes est enregistrée dans la table \texttt{audit\_log} --- 108 des 114 routes à verbe mutant au moment de la rédaction, dont, depuis la v0.13.0, la configuration d'une installation de production (une entrée par étape franchie), le chargement des données de démonstration (une entrée de synthèse) et leur réinitialisation (\texttt{installation.reset}, qui dit le nombre et la plage d'identifiants des entrées effacées). ⚠️ \emph{Les exceptions sont connues, comptées et suivies~: quatre routes exemptées --- les gestes de session, la connexion, la déconnexion, le renouvellement de session et le changement de son propre mot de passe (issue \#435) ---, et deux autres routes qui n'écrivent rien parce qu'elles ne modifient rien~: 108 + 4 + 2 = 114.} ⚠️ \emph{Limite connue, suivie par l'issue \#538~: l'entrée du chargement des données de démonstration n'est écrite que lorsqu'il aboutit. Un chargement interrompu --- ou refusé parce que la configuration de production a franchi l'étape entre-temps --- laisse la société renommée, le plan comptable et l'exercice \textbf{sans entrée au journal}.} La liste complète, route par route, est tenue dans le dépôt et contrôlée par un test~:
+\begin{sloppypar}
+La quasi-totalité des actions métier mutantes est enregistrée dans la table \texttt{audit\_log} --- 108 des 114 routes à verbe mutant au moment de la rédaction, dont, depuis la v0.13.0, la configuration d'une installation de production (une entrée par étape franchie), le chargement des données de démonstration (une entrée de synthèse) et leur réinitialisation (\texttt{installation.reset}, qui dit le nombre et la plage d'identifiants des entrées effacées). S'y ajoute une entrée qu'aucune route n'écrit d'elle-même : la réparation d'une installation touchée par \#528 ou \#542, au démarrage ou à l'import d'une sauvegarde (\texttt{installation.repaired}, \S\ref{sec:reparation-installation}). ⚠️ \emph{Les exceptions sont connues, comptées et suivies~: quatre routes exemptées --- les gestes de session, la connexion, la déconnexion, le renouvellement de session et le changement de son propre mot de passe (issue \#435) ---, et deux autres routes qui n'écrivent rien parce qu'elles ne modifient rien~: 108 + 4 + 2 = 114.} ⚠️ \emph{Limite connue, suivie par l'issue \#538~: l'entrée du chargement des données de démonstration n'est écrite que lorsqu'il aboutit. Un chargement interrompu --- ou refusé parce que la configuration de production a franchi l'étape entre-temps --- laisse la société renommée, le plan comptable et l'exercice \textbf{sans entrée au journal}.} La liste complète, route par route, est tenue dans le dépôt et contrôlée par un test~:
+\end{sloppypar}
 
 \begin{itemize}
     \item Contrainte \textbf{insert-only} : aucune route API ne permet de modifier ou supprimer une entrée \texttt{audit\_log}, et \textbf{aucune ne permet d'effacer la table} sur une installation finalisée. \emph{La formulation antérieure ne parlait que d'«~une entrée~»~: elle était exacte au mot près et trompeuse en substance, une route effaçant alors la table entière.}
@@ -2181,8 +2204,8 @@ Par défaut, Kesh écrit ses logs sur \texttt{stdout} (capturés par Docker) et,
 
 \begin{lstlisting}[language=bash]
 docker compose logs -f kesh-api
-docker compose logs --tail=100 kesh
-docker compose logs --since=1h kesh
+docker compose logs --tail=100 kesh-api
+docker compose logs --since=1h kesh-api
 \end{lstlisting}
 
 \subsection{Centralisation des logs}
@@ -2338,12 +2361,12 @@ Une revue juridique externe (avocat suisse spécialisé en droit commercial / IT
 
 \subsection{Kesh ne démarre pas}
 
-\paragraph{Symptômes} Le container \texttt{kesh} sort immédiatement après \texttt{docker compose up}, ou \texttt{docker compose ps} montre \texttt{kesh} en \texttt{Restarting}.
+\paragraph{Symptômes} Le container \texttt{kesh-api} sort immédiatement après \texttt{docker compose up}, ou \texttt{docker compose ps} montre \texttt{kesh-api} en \texttt{Restarting}.
 
 \paragraph{Diagnostic}
 
 \begin{lstlisting}[language=bash]
-docker compose logs kesh | tail -50
+docker compose logs kesh-api | tail -50
 \end{lstlisting}
 
 Causes courantes :
@@ -2356,6 +2379,15 @@ Causes courantes :
     \item \textbf{KESH\_JWT\_SECRET trop court} : doit faire au moins 32 octets (ex. \texttt{openssl rand -hex 32} = 64 caractères hexadécimaux).
     \item \textbf{Migrations DB échouées} : voir log détaillé. Solution : restaurer depuis sauvegarde et investiguer.
 \end{itemize}
+
+\subsection{Réparation de l'installation en échec au démarrage}
+
+\paragraph{Symptômes} Kesh démarre, mais les écrans de la société restent en erreur ; le journal du serveur (\keshcommand{docker compose logs kesh-api}) porte « réparation de l'installation au démarrage » suivi de l'erreur.
+
+\paragraph{Conduite}\mbox{}\\
+\begin{sloppypar}
+Kesh démarre quand même, sur l'installation \textbf{inchangée} : la connexion et l'export d'une sauvegarde fonctionnent. Exportez une sauvegarde, puis redémarrez le service une fois (\keshcommand{docker compose restart kesh-api}) : chaque démarrage rejoue la réparation. \keshcommand{docker compose up -d} ne suffit pas ici --- sur un conteneur dont ni l'image ni la configuration n'ont changé, il ne redémarre rien. Si le message revient, ouvrez un ticket en le joignant. Une société provisoire laissée en place porte un avertissement distinct (« société provisoire … conservée »), sans effet sur le reste de la réparation. Pour revenir à la version précédente, voir \S\ref{sec:reparation-installation} et la section \emph{Rollback en cas d'échec}.
+\end{sloppypar}
 
 \subsection{Erreurs 401 en cascade côté frontend}
 
