@@ -464,6 +464,11 @@ pub enum AppError {
     /// compte Admin, commit). HTTP 500 ; la destination reste intacte
     /// (rollback) et la sauvegarde pré-import existe. Story 15-13b (#576) : un
     /// échec **antérieur** à la sauvegarde rend `AdminPreImportBackupFailed`.
+    /// ⚠️ Cette variante est encore **construite** avant la sauvegarde par
+    /// `admin_backup::import::check_schema_compat` (lecture du schéma) : c'est
+    /// la **conversion à l'appel** (`routes::admin::avant_sauvegarde`) qui la
+    /// change en `AdminPreImportBackupFailed` — tout nouvel appelant d'avant
+    /// sauvegarde doit la reprendre (revue P1, A-3).
     /// Détail loggé, jamais exposé en HTTP body.
     #[error("Échec import installation : {0}")]
     AdminFullImportFailed(String),

@@ -37,6 +37,11 @@ pub struct KeshBackupMeta {
 /// DC8 : l'assemblage est in-memory ; le handler décide ensuite de la
 /// livraison (in-memory vs spill fichier temporaire + streaming) selon le
 /// plafond `KESH_ADMIN_EXPORT_INMEM_MB`.
+///
+/// Erreurs : [`AppError::AdminFullExportFailed`]. ⚠️ L'import l'appelle pour
+/// **produire** la sauvegarde pré-import : il convertit l'échec par
+/// `routes::admin::avant_sauvegarde` en `AdminPreImportBackupFailed`
+/// (Story 15-13b, #576) ; l'export, lui, le rend tel quel.
 pub async fn build_keshbackup(pool: &MySqlPool) -> Result<(Vec<u8>, KeshBackupMeta), AppError> {
     let min_required = read_min_required(pool).await.map_err(map_db)?;
     let instance_id = read_instance_id(pool).await.map_err(map_db)?;

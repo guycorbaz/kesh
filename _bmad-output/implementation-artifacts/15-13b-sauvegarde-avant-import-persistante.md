@@ -737,7 +737,13 @@ existante.
   `0600` ; non mesurées depuis le poste (AC 11 e).
 - **Échecs antérieurs à la sauvegarde sans test** : `routes/admin.rs:236`, `:240`, `:246` (panne de base
   avant le verrou) et la suppression du `.partial` de l'AC 9 a — non injectables sans abstraction ;
-  relus en revue, écrits ici. **`:172` et `:259`** (F-P5-1 de la validation P5) : la panne réelle (lecture
+  relus en revue, écrits ici. *(Revue de code P1, E5 : leur conversion est désormais gardée
+  **lexicalement** par `echecs_avant_sauvegarde_tous_convertis` — aucune `AdminFullImportFailed` ni
+  `AdminFullExportFailed` avant l'appel de `write_pre_import_backup`, autant de `?` que de conversions ;
+  la panne effective, elle, reste non injectée.)* **Échecs de `write_all`, `sync_all`, `try_exists` et
+  `rename`** (revue de code P1, B4) : aucun n'est exercé individuellement ; ils convergent vers la même
+  suppression du `.partial`, dont le retrait est attrapé par le test 12 a, mais une mutation du détail ou de
+  la variante d'une seule de ces branches ne ferait rougir aucun test. **`:172` et `:259`** (F-P5-1 de la validation P5) : la panne réelle (lecture
   du schéma, lecture des données, `zip`) n'est pas injectable non plus ; seul leur **branchement** sur
   `avant_sauvegarde` est gardé, **lexicalement**, par le test 20 (M47, M48) — un garde qui lit le source
   et non un comportement : une écriture que le test ne reconnaît pas (fermeture, conversion différée)
@@ -745,7 +751,9 @@ existante.
   une panne effective jusqu'à la réponse HTTP. L'extraction d'une fonction `sauvegarde_pre_import`
   testable sur une base dégradée a été écartée (C-15-13-28).
 - **`.partial` non supprimé** : si l'écriture échoue après la création **et** que `remove_file` échoue à
-  son tour — ou si le processus est arrêté pendant l'écriture —, un `….keshbackup.partial` reste dans le
+  son tour — ou si le processus est arrêté pendant l'écriture, ou encore si la **requête est annulée**
+  (client qui coupe la connexion : le futur du handler est abandonné, ni `remove_file` ni le `warn!` ne
+  s'exécutent ; revue de code P1, B2 = E1) —, un `….keshbackup.partial` reste dans le
   dossier de sauvegarde ; il ne porte pas le nom d'une sauvegarde, le message « aucune sauvegarde n'a été
   créée » reste vrai, le `warn!` nomme le chemin, et le manuel dit qu'un `.partial` peut être supprimé
   (AC 9 a, 11 e, C-15-13-21). Suppression non injectable, non testée.
@@ -755,7 +763,11 @@ existante.
   un second écrivain du même nom serait déjà un défaut (C-15-13-21).
 - **Durabilité du renommage** : le dossier n'est pas synchronisé après `rename` ; une coupure de courant
   juste après pourrait perdre l'entrée du dossier — le fichier était complet et synchronisé, seul le nom
-  serait en cause. Non traité.
+  serait en cause. Non traité ; écrit aussi au doc-comment de `write_backup_file` (revue de code P1,
+  B3 = E4).
+- **`try_exists` suit les liens symboliques** (revue de code P1, E6) : un lien pendant au nom final est vu
+  « absent », et `rename` remplace le lien (pas sa cible). Sans portée : nom unique par construction,
+  dossier `0700` créé par Kesh. Écrit au doc-comment, non traité.
 - **SELinux** : le montage `./backup` n'a pas de suffixe `:z` (les trois montages existants non plus) ;
   sur un hôte SELinux en mode `enforcing`, l'écriture pourrait être refusée — l'import le dirait alors
   (AC 15). Non mesuré.
@@ -771,7 +783,10 @@ existante.
   s'il cessait de le faire, l'écartement serait à rouvrir.
 - **Parents créés en `0700`** (R6-3 = F-P6-6) : `DirBuilder` récursif pose `0700` sur chaque niveau qu'il
   crée ; un `KESH_ADMIN_BACKUP_DIR` sous un parent absent (hors Docker, sous root : `/data`) le crée fermé.
-  Sans conséquence dans le conteneur (root) ; écrit au doc-comment, non traité.
+  Sans conséquence dans le conteneur (root) ; écrit au doc-comment, non traité. *(Revue de code P1,
+  E3 : le comportement est désormais **testé** sur deux niveaux par
+  `write_pre_import_backup_dossiers_crees_et_existants`, qui vérifie aussi qu'un dossier existant n'est
+  pas modifié — A-4.)*
 - **Montage d'hôte `./backup` créé `root:root` `0755`** : l'exploitant qui le veut fermé fait
   `chmod 700 backup` (manuel) ; les fichiers sont `0600` de toute façon.
 
@@ -840,6 +855,35 @@ rapatriement, PDF d'avant aplati, `.log` d'avant), `15-13b-mutations.txt` (banc)
   - **Import réel** sur ce backend après la suite (export puis import par l'API, admin du seed) : 200,
     `backupCreated:true` ; `target/kesh-backup` créé en **700**, sauvegarde `kesh-pre-import-…keshbackup`
     en **600**, aucun `.partial`. Dossier supprimé ensuite.
+- **Total de départ des tests** (revue de code P1, A-5) : **2973** à `200f5e79`, **déduit** et non mesuré —
+  2983 exécutés au commit `50cada06`, moins 10 attributs de test ajoutés et 0 retiré entre les deux bornes
+  (`git diff 200f5e79..50cada06 -- crates | grep -cE '^\+.*(#\[test\]|#\[tokio::test\]|#\[sqlx::test)'`
+  → 10 ; même motif en `^-` → 0). Aucun nextest n'a tourné à `200f5e79` dans ce worktree.
+- **Remédiation de la revue de code P1** (Opus 5.5) : **une seule ligne de production touchée**, le texte
+  du `warn!` de `write_backup_file` (continuation `\` rétablie, plus de suite d'espaces dans le message) ;
+  **3 tests neufs** dans `mod tests` de `routes/admin.rs` (périmètre : de `7ff477ab` au commit de
+  remédiation ; `#[test]` ×2, `#[tokio::test]` ×1, aucun retiré) — `aucun_blanc_parasite_dans_le_code`
+  (garde lexicale, indépendante du texte : aucune ligne de code de production ne porte deux espaces
+  consécutives après son indentation ; **rouge avant la correction**, vert après),
+  `echecs_avant_sauvegarde_tous_convertis` (E5 : aucune `AdminFullImportFailed`/`AdminFullExportFailed`
+  avant `write_pre_import_backup` dans `run_backup_and_restore`, autant de `?` que de conversions, montage
+  (3, 1)), `write_pre_import_backup_dossiers_crees_et_existants` (E3 : parent intermédiaire **et** feuille
+  en `0700` ; A-4 : un dossier existant `0755` reste `0755`) ; le test 20 et le neuf partagent
+  `code_de_production()` (DRY, sans changement de comportement). **Mutations jouées** (fichier restauré par
+  copie **et touché**, `cmp` vérifié) : begin → `AdminFullImportFailed` et verrou → `map_db_error` rougissent
+  `echecs_avant_sauvegarde_tous_convertis` ; `builder.mode(0o755)` rougit le test 11 et le neuf ; un
+  `create_dir_all` du parent avant le `DirBuilder` (parent en `0755`) rougit **le seul** neuf ; un
+  `set_permissions(dir, 0700)` avant la création rougit le seul neuf. Doc-comments complétés :
+  `write_backup_file` (angles morts annulation, durabilité du renommage, `try_exists` et liens
+  symboliques), `AdminFullImportFailed`, `check_schema_compat`, `build_keshbackup` (conversion à l'appel
+  par `avant_sauvegarde`, A-3). **Gate ciblé réellement exécuté**, après remise à zéro de **ma** base
+  `kesh_1513b` (`DROP`/`CREATE`, 75 migrations, seed) et `wait-kesh.sh` : `cargo fmt --all -- --check`
+  vert ; `cargo clippy --workspace --all-targets -- -D warnings` vert (relancé après les doc-comments) ;
+  `cargo nextest run -p kesh-api -E 'test(/routes::admin::tests/) | binary(configuration_transmise) |
+  binary(/^admin_/)'` : **90 exécutés, 90 passés** (`routes::admin::tests` 8, `configuration_transmise` 23,
+  `admin_full_import_e2e` 33, `admin_pat_denied_e2e` 16, `admin_full_export_e2e` 7, `admin_backup_e2e` 3 ;
+  journal `target/gate-logs/15-13b-review-p1-remediation-cible.txt`). **Gate complet et E2E : non rejoués**
+  — à faire au dernier commit de code (D7).
 - **Mutations (T8)** — banc `target/mut/mutations.py`, chaque mutation appliquée, test ciblé, fichier
   restauré par `git checkout` **et touché** : **28/28 rouges**, aucune par erreur de compilation. M11 rougit
   `transmission` **et** `fantomes` ; M15 `from_env_absent_backup_dir_takes_data_backup` **et** `transmission`
@@ -1075,3 +1119,12 @@ rapatriement, PDF d'avant aplati, `.log` d'avant), `15-13b-mutations.txt` (banc)
   backend 2983/2983, frontend 1095/1095, E2E 245 passés / 9 échecs attendus (7 KF-029, 2 KF-045) ;
   28/28 mutations rouges ; PDF contrôlé aplati, 55 `Overfull` inchangés. Choix C-15-13b-1 à 4. Statut
   `review`.
+- **2026-10-09 — Revue de code P1** (Sonnet ×3 : lentilles B, E, A ; rapports
+  `target/gate-logs/15-13b-review-p1-{B,E,A}.md`) : **0 CRITICAL, 0 HIGH, 0 MEDIUM, 15 LOW** (B 4, E 6,
+  A 5 ; B1 = E2 = A-1, B2 = E1, B3 = E4 se recouvrent). Remédiation (Opus 5.5) : **une seule ligne de
+  production touchée, le texte du `warn!`** de `write_backup_file` (B1 = E2 = A-1) ; 3 tests neufs (garde du
+  blanc parasite, E5, E3 + A-4) ; doc-comments (B2 = E1, B3 = E4, E6, A-3) ; angles morts de la fiche
+  (B2 = E1, B3 = E4, B4, E6 ; **12** désormais, +1 : `try_exists` et liens symboliques) ; total de départ
+  des tests au record (A-5). **A-2** laissé en l'état : écart assumé et consigné (C-15-13b-2). Gate ciblé
+  vert (fmt, clippy, 90/90 sur les binaires d'admin et `configuration_transmise`) ; gate complet et E2E au
+  dernier commit de code.

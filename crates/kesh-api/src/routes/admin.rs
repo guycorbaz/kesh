@@ -541,9 +541,21 @@ async fn write_pre_import_backup(dir: &str, bytes: &[u8]) -> Result<bool, AppErr
 /// Si 2, 3 ou 4 échouent, le `.partial` créé est supprimé au mieux (un échec
 /// de suppression est journalisé en `warn!` avec son chemin, sans masquer
 /// l'erreur d'origine). Toute erreur : `AdminPreImportBackupFailed`, avec un
-/// détail par étape qui nomme le chemin (journal seulement). Angle mort
-/// écrit : la fenêtre entre la vérification 3 et le renommage 4 n'est pas
-/// fermée (le nom est unique par construction).
+/// détail par étape qui nomme le chemin (journal seulement).
+///
+/// Angles morts écrits (non traités) :
+/// - la fenêtre entre la vérification 3 et le renommage 4 n'est pas fermée
+///   (le nom est unique par construction) ;
+/// - **annulation** : si le futur est abandonné pendant 2 à 4 (client qui
+///   coupe la connexion), ni la suppression du `.partial` ni le `warn!`
+///   n'ont lieu — le `.partial` (0600) reste, sans jamais porter le nom
+///   d'une sauvegarde ; le manuel dit qu'il peut être supprimé ;
+/// - **durabilité** : le dossier n'est pas synchronisé après le renommage —
+///   après une coupure de courant, l'entrée du dossier peut manquer alors
+///   que le contenu était synchronisé ;
+/// - `try_exists` **suit** les liens symboliques : un lien pendant au nom
+///   final est vu absent, et `rename` remplace le lien (pas sa cible) ; sans
+///   portée (nom unique, dossier `0700` créé par Kesh).
 async fn write_backup_file(path: &std::path::Path, bytes: &[u8]) -> Result<(), AppError> {
     use tokio::io::AsyncWriteExt;
 
@@ -606,7 +618,8 @@ async fn write_backup_file(path: &std::path::Path, bytes: &[u8]) -> Result<(), A
     {
         tracing::warn!(
             path = %partial.display(),
-            "fichier partiel non supprimé après un échec d'écriture de la sauvegarde              pré-import — ce n'est PAS une sauvegarde valide, il peut être supprimé : {e}"
+            "fichier partiel non supprimé après un échec d'écriture de la sauvegarde \
+             pré-import — ce n'est PAS une sauvegarde valide, il peut être supprimé : {e}"
         );
     }
     resultat
@@ -716,6 +729,50 @@ mod tests {
         assert_eq!(std::fs::read(sauvegarde).unwrap(), b"contenu-de-test");
     }
 
+    /// Revue P1 (E3, A-4) — `write_pre_import_backup` sur deux niveaux absents :
+    /// **chaque** niveau créé est en `0700`, le parent intermédiaire compris
+    /// (`DirBuilder` récursif) ; et un dossier **existant** n'est pas modifié
+    /// (`0755` reste `0755`, cas du `./backup` créé par Docker). Assertion de
+    /// montage : un dossier témoin créé par `std::fs` n'est pas en `0700`.
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn write_pre_import_backup_dossiers_crees_et_existants() {
+        use std::os::unix::fs::PermissionsExt;
+        let mode = |p: &std::path::Path| std::fs::metadata(p).unwrap().permissions().mode() & 0o777;
+        let racine = tempfile::tempdir().expect("tempdir");
+        let temoin = racine.path().join("temoin-dossier");
+        std::fs::create_dir(&temoin).unwrap();
+        assert_ne!(
+            mode(&temoin),
+            0o700,
+            "umask de l'environnement trop restrictif (077 ?) : le test ne peut pas distinguer le mode posé par le code"
+        );
+
+        let parent = racine.path().join("a");
+        let feuille = parent.join("b");
+        assert!(
+            write_pre_import_backup(feuille.to_str().unwrap(), b"x")
+                .await
+                .expect("écriture sous deux niveaux absents")
+        );
+        assert_eq!(mode(&parent), 0o700, "parent intermédiaire créé par Kesh");
+        assert_eq!(mode(&feuille), 0o700, "dossier de sauvegarde créé par Kesh");
+
+        let existant = racine.path().join("existant");
+        std::fs::create_dir(&existant).unwrap();
+        std::fs::set_permissions(&existant, std::fs::Permissions::from_mode(0o755)).unwrap();
+        assert!(
+            write_pre_import_backup(existant.to_str().unwrap(), b"y")
+                .await
+                .expect("écriture dans un dossier existant")
+        );
+        assert_eq!(
+            mode(&existant),
+            0o755,
+            "un dossier existant n'est pas modifié"
+        );
+    }
+
     /// Test 12 (a) — un nom final déjà occupé fait échouer l'écriture en
     /// `AdminPreImportBackupFailed` ; le fichier existant garde son contenu et
     /// aucun `.partial` ne reste.
@@ -798,13 +855,7 @@ mod tests {
     /// un appel de `check_schema_compat`, deux de `build_keshbackup`.
     #[test]
     fn avant_sauvegarde_branchee_aux_appels_de_l_import() {
-        let source = include_str!("admin.rs");
-        let code: String = source
-            .lines()
-            .take_while(|l| l.trim() != "#[cfg(test)]")
-            .filter(|l| !l.trim_start().starts_with("//"))
-            .collect::<Vec<_>>()
-            .join("\n");
+        let code = code_de_production();
         let fonction_englobante = |pos: usize| -> String {
             code[..pos]
                 .lines()
@@ -855,5 +906,79 @@ mod tests {
                 }
             }
         }
+    }
+    /// Code de production de ce fichier (avant la première ligne
+    /// `#[cfg(test)]`), lignes de commentaire `//` écartées — base des gardes
+    /// lexicales ci-dessous et du test 20.
+    fn code_de_production() -> String {
+        include_str!("admin.rs")
+            .lines()
+            .take_while(|l| l.trim() != "#[cfg(test)]")
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    /// Revue P1 (E5) — garde LEXICALE des conversions directes : dans
+    /// `run_backup_and_restore`, tout ce qui précède l'appel de
+    /// `write_pre_import_backup` (ouverture de transaction, verrou `FOR
+    /// UPDATE`, ligne `_kesh_version` absente, `build_keshbackup`) ne construit
+    /// ni `AdminFullImportFailed` ni `AdminFullExportFailed`, et chaque `?` y
+    /// est couvert par une conversion : autant de `?` que de
+    /// `AdminPreImportBackupFailed` construites plus de `.map_err(avant_sauvegarde)`.
+    /// Assertion de montage : trois constructions directes, une conversion par
+    /// `avant_sauvegarde`. Un nouveau site d'échec dans ce segment fait rougir
+    /// le test : il est à trier, puis le décompte à mettre à jour.
+    #[test]
+    fn echecs_avant_sauvegarde_tous_convertis() {
+        let code = code_de_production();
+        let debut = code
+            .find("async fn run_backup_and_restore(")
+            .expect("run_backup_and_restore introuvable");
+        let fin = debut
+            + code[debut..]
+                .find("write_pre_import_backup(")
+                .expect("appel de write_pre_import_backup introuvable");
+        let segment = &code[debut..fin];
+        for interdit in ["AdminFullImportFailed", "AdminFullExportFailed"] {
+            assert!(
+                !segment.contains(interdit),
+                "{interdit} construite avant la sauvegarde : le message promettrait une sauvegarde absente"
+            );
+        }
+        let directes = segment.matches("AdminPreImportBackupFailed").count();
+        let par_avant_sauvegarde = segment.matches(".map_err(avant_sauvegarde)").count();
+        assert_eq!(
+            (directes, par_avant_sauvegarde),
+            (3, 1),
+            "assertion de montage : trois constructions directes et une conversion attendues"
+        );
+        assert_eq!(
+            segment.matches('?').count(),
+            directes + par_avant_sauvegarde,
+            "un `?` avant la sauvegarde n'est pas couvert par une conversion"
+        );
+    }
+
+    /// Revue P1 (B1 = E2 = A-1) — aucune ligne de code de production de ce
+    /// fichier ne porte deux espaces consécutives après son indentation. Le
+    /// formatage n'en produit jamais hors commentaires : une telle suite ne
+    /// peut venir que d'un littéral de chaîne dont la continuation `\` s'est
+    /// perdue (l'indentation de la ligne suivante entre alors dans le texte
+    /// journalisé). Le test ne dépend d'aucun message. Assertion de montage :
+    /// le prédicat mord sur une ligne fabriquée.
+    #[test]
+    fn aucun_blanc_parasite_dans_le_code() {
+        let parasite = |l: &str| l.trim_start().contains("  ");
+        assert!(
+            parasite("        \"de la sauvegarde              pré-import\""),
+            "assertion de montage : le prédicat doit reconnaître une suite d'espaces"
+        );
+        let code = code_de_production();
+        let fautives: Vec<&str> = code.lines().filter(|l| parasite(l)).collect();
+        assert!(
+            fautives.is_empty(),
+            "suite d'espaces dans le code (continuation `\\` perdue ?) : {fautives:#?}"
+        );
     }
 }

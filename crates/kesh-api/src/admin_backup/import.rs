@@ -191,7 +191,12 @@ pub fn parse_and_verify(bytes: &[u8]) -> Result<ParsedBackup, AppError> {
 /// - (c2) chaque colonne destination `NOT NULL` sans défaut, non-générée,
 ///   non-auto-increment ⊆ colonnes source (sinon `missingRequiredColumns`).
 ///
-/// Retourne [`AppError::ImportSchemaMismatch`] (→400) au premier écart.
+/// Retourne [`AppError::ImportSchemaMismatch`] (→400) au premier écart, et
+/// [`AppError::AdminFullImportFailed`] si la lecture du schéma échoue.
+/// ⚠️ Appelée **avant** la sauvegarde pré-import : l'appelant de l'import la
+/// convertit par `routes::admin::avant_sauvegarde` (Story 15-13b, #576), sans
+/// quoi le message annoncerait une sauvegarde qui n'existe pas. Tout nouvel
+/// appelant d'avant sauvegarde doit reprendre cette conversion.
 pub async fn check_schema_compat(pool: &MySqlPool, parsed: &ParsedBackup) -> Result<(), AppError> {
     for (table, data) in &parsed.tables {
         // `onboarding_state` n'est jamais restaurée (DC11) → inutile de valider
