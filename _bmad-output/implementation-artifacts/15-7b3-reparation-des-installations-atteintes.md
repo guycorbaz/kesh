@@ -1,6 +1,6 @@
 # Story 15.7b3 : Les installations déjà atteintes par #528 et #542 sont réparées, au démarrage et à la restauration
 
-Status: review
+Status: done
 
 <!-- Née le 2026-10-08 du découpage de la 15-7b2 (choix C-15-7-40), à la passe de validation P3 de
      celle-ci : la clause de coupe de la 15-7b2 (C-15-7-39) s'est déclenchée — deux MEDIUM nés de la
@@ -673,6 +673,16 @@ deux bases de la story.
 - `_bmad-output/implementation-artifacts/15-7b3-reparation-des-installations-atteintes.md`, `sprint-status.yaml`, `epic-15-choix-autonomes.md`
 
 ## Change Log
+
+- 2026-10-09 — **Revue de code close** : passe P2 ciblée (Haiku, prompt `b36b2114`, rapport
+  `/home/gcorbaz/devel/kesh-gate-logs/15-7b3-review-p2-ciblee.md`) sur `d38aeb45` : **0 CRITICAL, 0 HIGH, 0 MEDIUM**, 2 LOW
+  (un `mod #[path]` inséré entre des blocs `use` dans `admin_full_import_e2e.rs:38-40` et `onboarding_audit_e2e.rs:28-30`,
+  cosmétique ; une remarque sur la garde de liste vide, sans correction demandée) — laissés en l'état. Les quatre axes
+  exercés : garde de liste vide (Invariant, connexion détachée sans pollution), aides déplacées (plus aucune référence
+  à l'ancien emplacement, `test_fixtures.rs` identique à `e892dcfa`), tests neufs probants, manuel (`restart` justifié,
+  recettes `up -d` préservées). Trend : P1 (Sonnet ×3) 3 MEDIUM → P2 ciblée (Haiku) 0. Dernier commit de code :
+  `d38aeb45`, dont les gates (backend 3218/3218, Vitest 1164/1164, E2E 245 / 7 KF-029 + 2 KF-053 rejoués verts seuls,
+  19 mutations rouges) tiennent. Statut **done**.
 
 - 2026-10-08 — **Née du découpage de la 15-7b2** à sa passe de validation P3 (choix C-15-7-40). Reprend
   l'AC 14 de la 15-7b2 (réparation au démarrage, C-15-7-38), son test 15 et ses trois mutations, la
