@@ -106,6 +106,26 @@
 		return best;
 	}
 
+	/**
+	 * Story 15-12a (#543) — le **plus ancien** exercice antérieur encore ouvert,
+	 * ou `null`. Sœur de `nearestLaterClosed`, alignée sur la requête serveur de
+	 * la clôture (`FIND_EARLIER_OPEN_SQL`, `ORDER BY start_date ASC LIMIT 1`) :
+	 * c'est lui qu'il faut clôturer d'abord — en nommer un plus proche enverrait
+	 * l'utilisateur sur un exercice que la même garde refuserait à son tour. Le
+	 * serveur reste l'autorité (409 `EARLIER_FISCAL_YEAR_OPEN`).
+	 */
+	function earliestEarlierOpen(fy: FiscalYearResponse): FiscalYearResponse | null {
+		let best: FiscalYearResponse | null = null;
+		for (const other of fiscalYears) {
+			if (other.status === 'Open' && other.startDate < fy.startDate) {
+				if (best === null || other.startDate < best.startDate) {
+					best = other;
+				}
+			}
+		}
+		return best;
+	}
+
 	// --- Loading ---
 	async function loadFiscalYears(): Promise<void> {
 		loading = true;
@@ -223,9 +243,16 @@
 			closeTarget = null;
 		} catch (err) {
 			if (isApiError(err)) {
-				// Story 3.7 P3-M8 — mapping context-aware ILLEGAL_STATE_TRANSITION
-				// vers la clé i18n spécifique « déjà clôturé ».
-				if (err.code === 'ILLEGAL_STATE_TRANSITION') {
+				// Story 15-12a (#543) — un exercice antérieur est encore ouvert :
+				// le message du serveur le nomme. Traité AVANT la branche
+				// ILLEGAL_STATE_TRANSITION, qui dirait « déjà clôturé » à tort.
+				if (err.code === 'EARLIER_FISCAL_YEAR_OPEN') {
+					closeError = err.message;
+					notifyError(err.message);
+					closeOpen = false;
+				} else if (err.code === 'ILLEGAL_STATE_TRANSITION') {
+					// Story 3.7 P3-M8 — mapping context-aware ILLEGAL_STATE_TRANSITION
+					// vers la clé i18n spécifique « déjà clôturé ».
 					closeError = msg(
 						'error-fiscal-year-already-closed',
 						'Cet exercice est déjà clôturé'
@@ -348,35 +375,54 @@
 								>
 									<Pencil class="h-4 w-4" aria-hidden="true" />
 								</Button>
+								<!-- Un bouton désactivé porte `pointer-events: none` (button.svelte) :
+								     le survol n'atteint pas son `title`. L'infobulle est donc portée
+								     aussi par une enveloppe, qui reçoit le survol (revue P1 15-12a, B-3). -->
 								{#if fy.status === 'Open'}
-									<Button
-										variant="ghost"
-										size="icon-xs"
-										onclick={() => openClose(fy)}
-										aria-label="{msg('fiscal-year-close-button', 'Clôturer')} {fy.name}"
-									>
-										<Lock class="h-4 w-4" aria-hidden="true" />
-									</Button>
+									{@const earlierOpen = earliestEarlierOpen(fy)}
+									{@const closeHint = earlierOpen
+										? i18nMsg(
+												'fiscal-year-close-blocked-earlier-open',
+												`Clôturez d'abord l'exercice « ${earlierOpen.name} », plus ancien et encore ouvert.`,
+												{ name: earlierOpen.name }
+											)
+										: undefined}
+									<span class="inline-flex" title={closeHint}>
+										<Button
+											variant="ghost"
+											size="icon-xs"
+											data-testid="fiscal-year-close-{fy.id}"
+											disabled={earlierOpen !== null}
+											title={closeHint}
+											onclick={() => openClose(fy)}
+											aria-label="{msg('fiscal-year-close-button', 'Clôturer')} {fy.name}"
+										>
+											<Lock class="h-4 w-4" aria-hidden="true" />
+										</Button>
+									</span>
 								{/if}
 								{#if fy.status === 'Closed' && isAdmin}
 									{@const blocker = nearestLaterClosed(fy)}
-									<Button
-										variant="ghost"
-										size="icon-xs"
-										data-testid="fiscal-year-reopen-{fy.id}"
-										disabled={blocker !== null}
-										title={blocker
-											? i18nMsg(
-													'fiscal-year-reopen-blocked-later-closed',
-													`Rouvrez d'abord l'exercice « ${blocker.name} », plus récent et encore clôturé.`,
-													{ name: blocker.name }
-												)
-											: undefined}
-										onclick={() => openReopen(fy)}
-										aria-label="{msg('fiscal-year-reopen-button', 'Réouvrir')} {fy.name}"
-									>
-										<LockOpen class="h-4 w-4" aria-hidden="true" />
-									</Button>
+									{@const reopenHint = blocker
+										? i18nMsg(
+												'fiscal-year-reopen-blocked-later-closed',
+												`Rouvrez d'abord l'exercice « ${blocker.name} », plus récent et encore clôturé.`,
+												{ name: blocker.name }
+											)
+										: undefined}
+									<span class="inline-flex" title={reopenHint}>
+										<Button
+											variant="ghost"
+											size="icon-xs"
+											data-testid="fiscal-year-reopen-{fy.id}"
+											disabled={blocker !== null}
+											title={reopenHint}
+											onclick={() => openReopen(fy)}
+											aria-label="{msg('fiscal-year-reopen-button', 'Réouvrir')} {fy.name}"
+										>
+											<LockOpen class="h-4 w-4" aria-hidden="true" />
+										</Button>
+									</span>
 								{/if}
 							</div>
 						</Table.Cell>

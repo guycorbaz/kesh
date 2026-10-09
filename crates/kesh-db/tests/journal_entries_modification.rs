@@ -378,7 +378,10 @@ async fn update_waits_for_a_concurrent_reversal_then_refuses(pool: MySqlPool) {
     );
 }
 
-/// AC 8 · C-15-8-22 — la clôture **en cours** d'un exercice postérieur : le
+/// AC 8 · C-15-8-22 — la clôture **en cours** d'un exercice postérieur
+/// (transition **simulée par SQL** : la clôture la refuse depuis la Story
+/// 15-12a, N étant ouvert ; le test garde la propriété du verrou pour les
+/// données héritées) : le
 /// `PUT` l'attend sur le verrou d'intervalle des exercices postérieurs, puis la
 /// voit et refuse — `LaterFiscalYearClosed` nommant N+1, écriture inchangée.
 ///
@@ -482,7 +485,9 @@ async fn delete_waits_for_a_concurrent_reversal_then_refuses(pool: MySqlPool) {
 }
 
 /// Story 15-8b, AC 5 · C-15-8-22 — la clôture **en cours** d'un exercice
-/// postérieur : la suppression l'attend sur le verrou d'intervalle des
+/// postérieur (transition **simulée par SQL** : la clôture la refuse depuis la
+/// Story 15-12a ; le test garde la propriété du verrou pour les données
+/// héritées) : la suppression l'attend sur le verrou d'intervalle des
 /// exercices postérieurs (étape 2-bis), puis la voit et refuse —
 /// `LaterFiscalYearClosed` nommant N+1, écriture intacte.
 ///

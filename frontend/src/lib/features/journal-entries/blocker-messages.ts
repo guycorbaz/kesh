@@ -91,7 +91,7 @@ export function modificationBlockerLabel(
 		case 'LATER_FISCAL_YEAR_CLOSED':
 			return i18nMsg(
 				'journal-entries-modify-blocked-later-fiscal-year-closed',
-				'L’exercice postérieur { $name } est clôturé, et son bilan reprend cette écriture : elle reste figée tant qu’il l’est. Un administrateur peut rouvrir cet exercice ; sinon, corrigez par une contre-passation.',
+				'L’exercice postérieur { $name } est clôturé, et son bilan reprend cette écriture : elle reste figée tant qu’il l’est. Corrigez-la par une contre-passation ; sinon, un administrateur rouvre les exercices clôturés, en commençant par le plus récent.',
 				{ name: label ?? '' }
 			);
 		case 'PERIOD_LOCKED':

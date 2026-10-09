@@ -8,11 +8,81 @@
 //! **trace d'audit** (`fiscal_year.reopened`). La réouverture reste disciplinée
 //! par une garde LIFO (aucun exercice postérieur ne doit rester clos).
 //!
+//! ## Story 15-12a — l'invariant I : les exercices se clôturent dans l'ordre
+//!
+//! **Invariant I** : *pour chaque société, les exercices clôturés forment un
+//! préfixe de l'ordre chronologique* — aucun exercice ouvert ne précède un
+//! exercice clôturé. Le bilan est cumulatif depuis l'origine
+//! (`kesh-report/src/balance_sheet.rs`) : toute écriture de N figure dans le
+//! bilan de N+1, si bien qu'« N ouvert, N+1 clos » laisserait un bilan clos
+//! changer en silence (#543).
+//!
+//! Trois transitions le tiennent :
+//! - **clôture** ([`close`]) : refusée tant qu'un exercice antérieur est ouvert
+//!   ([`DbError::EarlierFiscalYearOpen`]) — le préfixe ne s'allonge que par son
+//!   premier exercice ouvert ;
+//! - **création** ([`create`]) : refusée si un exercice postérieur à la date de
+//!   début demandée est clôturé ([`DbError::LaterFiscalYearClosed`]) ;
+//! - **réouverture** ([`reopen`]) : garde LIFO (Story 14-2) — le préfixe ne
+//!   raccourcit que par son dernier exercice.
+//!
+//! ⚠️ **Portée** : I est vrai de tout état obtenu **par ces trois transitions à
+//! partir d'un état sain**. Il ne l'est pas des installations qui portent déjà
+//! l'état fautif — données d'une version antérieure, restauration d'une
+//! sauvegarde (`admin::full_import`, qui accepte une sauvegarde fautive) — ni
+//! d'un état écrit hors de [`close`] / [`reopen`] (SQL direct, future
+//! transition qui écrirait `fiscal_years.status` : la preuve tomberait). Ces
+//! états ne repassent par aucune transition et ne peuvent que se résorber
+//! (clôture du plus ancien ouvert, réouvertures LIFO). Tout consommateur de
+//! l'invariant doit **tolérer** l'état hérité ou l'écrire comme limite.
+//! [`create_for_seed`] et [`create_if_absent_in_tx`] ne peuvent pas produire
+//! l'état fautif (une société neuve, un seul exercice ; ou aucun exercice
+//! préexistant) et ne portent pas la garde.
+//!
+//! ⚠️ **Angle mort assumé — la restauration en vol** : `admin::full_import` ne
+//! se sérialise qu'avec les autres imports (verrou `_kesh_version`), pas avec
+//! la clôture ni les écrivains — cas préexistant de toute écriture en vol
+//! pendant une restauration.
+//!
 //! ## Story 3.7 — Lock ordering & audit
 //!
 //! Les fns mutatrices [`create`], [`update_name`], [`close`], [`reopen`] ouvrent
 //! leur propre transaction interne et auditent via `audit_log::insert_in_tx`.
 //! Ces fonctions mutatrices ne verrouillent que `fiscal_years` (et l'audit).
+//!
+//! **Ordre des verrous** (Story 15-12a, C119) :
+//! - **la clôture** acquiert ses exercices antérieurs connus **un par un, par
+//!   clé primaire, dans l'ordre chronologique — ordre fixé par le code**, puis
+//!   l'exercice, puis relit les antérieurs ouverts sous verrou (étapes (a)-(e)
+//!   du doc-comment de [`close`]) ;
+//! - **la réouverture, la garde 15-8a (`journal_entries::update` /
+//!   `delete_in_tx`) et la création** prennent leur exercice (ou leurs
+//!   pré-contrôles) puis **parcourent** les postérieurs
+//!   (`FIND_LATER_CLOSED_SQL`), dans l'ordre du **plan** — ascendant sous l'index
+//!   `uq_fiscal_years_company_start_date`, constaté par `EXPLAIN` (descriptif,
+//!   Story 15-12a T0) ;
+//! - [`find_open_covering_date`] parcourt un intervalle dans l'ordre du plan :
+//!   convention de fréquence.
+//!
+//! ⛔ Ce n'est **pas** « l'ordre ascendant de toutes les acquisitions » : un
+//! `ORDER BY` fixe le résultat d'un parcours, pas l'ordre de ses verrous. Les
+//! flux qui verrouillent l'exercice d'une **origine** puis cherchent
+//! l'exercice **du jour** — la contre-passation
+//! (`journal_entries::reverse_in_tx_inner`) et les quatre annulations qui la
+//! portent — prennent l'ordre inverse : leurs cycles avec la clôture **et avec
+//! la création** existent, et se résolvent par le **rejeu** des deux côtés (les
+//! cinq routes de ces flux et `create_fiscal_year` / `close_fiscal_year` sont
+//! rejouées ; Story 15-5e1, Pattern 5 : l'ordre réduit la fréquence, le rejeu
+//! est la défense). Deux flux **non rejoués** gardent un cycle possible,
+//! écrits au registre des routes (`audit_route_registry.rs`, point (iv)) : le
+//! renommage ([`update_name`]) avec la clôture (il tient l'exercice puis son
+//! homonyme) — rare, et sans enjeu ; et la **réouverture** ([`reopen`]) avec la
+//! contre-passation d'une écriture d'un exercice postérieur : la réouverture
+//! tient Z puis parcourt les postérieurs, la contre-passation tient son origine
+//! Q > Z puis parcourt depuis le premier exercice, donc demande Z — si la
+//! réouverture est la victime, l'administrateur reçoit un 500 et recommence
+//! (préexistant à la Story 15-12a, qui ne le change pas).
+//!
 //! [`find_open_covering_date`], en revanche, verrouille l'exercice **au sein
 //! d'une transaction métier** qui prend d'autres verrous (validation d'une
 //! facture, règlements, rapprochements, écritures…) : l'ordre de chaque flux
@@ -44,6 +114,47 @@ const FIND_BY_ID_SQL: &str = "SELECT id, company_id, name, start_date, end_date,
 // tête), cohérent avec l'AC #1 de la page UI.
 const LIST_BY_COMPANY_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
      FROM fiscal_years WHERE company_id = ? ORDER BY start_date DESC LIMIT ?";
+
+/// Verrou d'un exercice **par clé primaire, scopé à la société** — texte unique
+/// de [`update_name`], [`reopen`] et de l'étape (c) de [`close`] (Story 15-12a,
+/// extrait des deux copies qui existaient).
+///
+/// ⚠️ Les tests de concurrence de la Story 15-12a reconnaissent l'étape (c) de
+/// la clôture à ce texte (`attendre_une_requete_en_cours`, motifs
+/// `"SELECT id, company_id"`, `"WHERE id = "`, `"FOR UPDATE"`) : sa liste de
+/// colonnes l'oppose à [`LOCK_EARLIER_BY_ID_SQL`]. La changer, c'est changer
+/// leurs motifs.
+const LOCK_IN_COMPANY_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+     FROM fiscal_years WHERE id = ? AND company_id = ? FOR UPDATE";
+
+/// Étape (a) de [`close`] : date de début de l'exercice, **sans verrou**.
+const START_DATE_IN_COMPANY_SQL: &str =
+    "SELECT start_date FROM fiscal_years WHERE id = ? AND company_id = ?";
+
+/// Étape (b) de [`close`] : les exercices **antérieurs**, **tous statuts**, sans
+/// verrou, dans l'ordre chronologique (Story 15-12a, C119).
+const LIST_EARLIER_SQL: &str = "SELECT id FROM fiscal_years \
+     WHERE company_id = ? AND start_date < ? ORDER BY start_date ASC";
+
+/// Étape (b') de [`close`] : verrou d'un antérieur **par clé primaire** — la
+/// boucle Rust qui l'exécute fixe l'ordre des verrous, que l'optimiseur ne
+/// choisit plus (C119). Liste de colonnes réduite à `id` : c'est ce qui
+/// l'oppose, dans les motifs des tests, à [`LOCK_IN_COMPANY_SQL`].
+const LOCK_EARLIER_BY_ID_SQL: &str =
+    "SELECT id FROM fiscal_years WHERE id = ? AND company_id = ? FOR UPDATE";
+
+/// Étape (d) de [`close`] : le **plus ancien** exercice antérieur **ouvert**, en
+/// lecture **verrouillante** — donc sur l'état validé le plus récent, non sur la
+/// vue fixée à l'étape (a). C'est elle qui rend le verdict
+/// [`DbError::EarlierFiscalYearOpen`].
+///
+/// ⚠️ Porte aussi le texte `ORDER BY start_date ASC` … `FOR UPDATE` que les
+/// tests de la Story 15-8a attendent pour [`FIND_LATER_CLOSED_SQL`] : aucune
+/// clôture ne tourne pendant leurs attentes (vérifié, Story 15-12a T0).
+const FIND_EARLIER_OPEN_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
+     FROM fiscal_years \
+     WHERE company_id = ? AND start_date < ? AND status = 'Open' \
+     ORDER BY start_date ASC LIMIT 1 FOR UPDATE";
 
 // --- Story 3.7 — clés Invariant namespacées (Pass 2 HP2-M4) ---
 
@@ -144,9 +255,20 @@ fn build_audit_entry(
 /// 1. `tx = pool.begin()`
 /// 2. `find_overlapping FOR UPDATE` → `Invariant(FY_OVERLAP_KEY)` si chevauchement
 /// 3. `find_by_name FOR UPDATE` → `Invariant(FY_NAME_DUPLICATE_KEY)` si nom déjà pris
-/// 4. INSERT
-/// 5. INSERT audit_log avec snapshot direct
-/// 6. COMMIT
+/// 4. **Garde de l'invariant I** (Story 15-12a, #543) : [`find_later_closed_in_tx`]
+///    (lecture verrouillante) → `DbError::LaterFiscalYearClosed` nommant le plus
+///    proche exercice **postérieur clos** — un exercice ne se crée pas avant un
+///    exercice clôturé. Après les pré-contrôles : un chevauchement parle d'abord.
+/// 5. INSERT
+/// 6. INSERT audit_log avec snapshot direct
+/// 7. COMMIT
+///
+/// Le verrou de l'étape 4 est éprouvé par le test 13 b3 de la Story 15-12a
+/// (voir le commentaire au site). Interblocages possibles avec une clôture
+/// concurrente (mesuré, Story 15-12a T0 : quand un exercice antérieur existe) et avec une contre-passation ou une
+/// annulation d'une écriture postérieure : la route appelle cette fonction dans
+/// `retry_on_deadlock("fiscal_years::create", …)` (transaction unique, sûre à
+/// relancer).
 ///
 /// Les contraintes DB (`uq_fiscal_years_company_name`,
 /// `uq_fiscal_years_company_start_date`, `chk_fiscal_years_dates`) restent
@@ -185,6 +307,25 @@ pub async fn create(
         return Err(DbError::Invariant(FY_NAME_DUPLICATE_KEY.to_string()));
     }
 
+    // Garde de l'invariant I (Story 15-12a) : aucun exercice clôturé après
+    // celui qu'on crée. Lecture verrouillante : elle tient les postérieurs
+    // qu'elle parcourt jusqu'au COMMIT, si bien qu'une clôture concurrente d'un
+    // postérieur attend la création (puis la voit en relecture (d)) ou
+    // interbloque avec elle (et la route rejoue). Ce que prouve chaque test
+    // (revue P1, A1) : le 13 b3 (`close_waits_for_a_creation_whose_guard_holds_
+    // the_later_year`) prouve CE verrou — il rougit si on le retire ; les
+    // 13 b1 / b2 prouvent la propriété « jamais X ouvert sous Y clos » contre une
+    // clôture déjà en cours, mais la création y bute dès `find_overlapping`
+    // (verrou de borne de son parcours, dépendant du plan) et lit ensuite Y clos
+    // ici : ils tueraient le retrait de la garde, non son seul verrou.
+    if let Some(later) = find_later_closed_in_tx(&mut tx, new.company_id, new.start_date).await? {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(DbError::LaterFiscalYearClosed {
+            fiscal_year_id: later.id,
+            fiscal_year_name: later.name,
+        });
+    }
+
     let id = insert_fiscal_year_in_tx(&mut tx, &new).await?;
 
     let fy = fetch_fiscal_year_in_tx(&mut tx, id).await?;
@@ -206,6 +347,10 @@ pub async fn create(
 /// `bulk_create_from_chart` : le contexte système (seed) ne génère pas
 /// d'entrée d'audit. La tx interne fait toujours les pré-checks d'overlap
 /// et de nom pour respecter les UNIQUE constraints même en seed.
+///
+/// **Sans la garde de l'invariant I** (Story 15-12a) : le seed crée un seul
+/// exercice dans une société neuve (`kesh-seed`), il ne peut pas produire un
+/// exercice ouvert antérieur à un exercice clos.
 pub async fn create_for_seed(pool: &MySqlPool, new: NewFiscalYear) -> Result<FiscalYear, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
@@ -247,6 +392,9 @@ pub async fn create_for_seed(pool: &MySqlPool, new: NewFiscalYear) -> Result<Fis
 /// - Si `rows_affected == 0` → un fiscal_year existait déjà → idempotent → `None`.
 ///
 /// Le helper EST responsable de l'audit log (cohérent avec la décision story 3.5).
+///
+/// **Sans la garde de l'invariant I** (Story 15-12a) : n'insère que si la société
+/// n'a **aucun** exercice — il n'y a donc aucun exercice clos après lui.
 pub async fn create_if_absent_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     user_id: i64,
@@ -359,15 +507,12 @@ pub async fn update_name(
     // SELECT FOR UPDATE scopé `(id, company_id)` — fige le before-snapshot
     // ET empêche toute mutation cross-tenant si le pre-check du handler est
     // contourné (Code Review Pass 1 F2).
-    let before_opt = sqlx::query_as::<_, FiscalYear>(
-        "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
-         FROM fiscal_years WHERE id = ? AND company_id = ? FOR UPDATE",
-    )
-    .bind(id)
-    .bind(company_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(map_db_error)?;
+    let before_opt = sqlx::query_as::<_, FiscalYear>(LOCK_IN_COMPANY_SQL)
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
 
     let before = match before_opt {
         None => {
@@ -641,8 +786,21 @@ pub async fn find_overlapping(
 /// (company_id, start_date)` l'est). Le `FOR UPDATE` s'appuie donc sur le
 /// **next-key locking** InnoDB du range scan `start_date > ?` pour verrouiller
 /// le gap et empêcher une clôture concurrente d'un exercice postérieur de se
-/// glisser après le check. Hypothèse **testée** par le test de course
-/// concurrente `reopen`/`close` (`fiscal_years_repository.rs`).
+/// glisser après le check. L'hypothèse vaut sous le plan par l'index
+/// `uq_fiscal_years_company_start_date`, constaté par `EXPLAIN` (descriptif,
+/// Story 15-12a T0, une et plusieurs sociétés). Ce qui l'éprouve aujourd'hui :
+/// pour la garde de [`create`], le test 13 b3 de la Story 15-12a
+/// (`close_waits_for_a_creation_whose_guard_holds_the_later_year` — sous un plan
+/// quelconque, le parcours tient le postérieur ouvert qu'il lit) ; pour la
+/// modification et la suppression, les tests de concurrence de la Story 15-8a
+/// (`journal_entries_modification.rs`, modification et suppression contre une
+/// clôture en cours d'un exercice postérieur — transition simulée par SQL).
+/// L'ancien test de course `reopen`/`close` a été remplacé par la Story 15-12a
+/// (test 13 a, qui éprouve la relecture verrouillante de la clôture, non cette
+/// hypothèse-ci).
+///
+/// Appelée par [`reopen`] (garde LIFO), [`create`] (garde de l'invariant I,
+/// Story 15-12a) et `journal_entries::update` / `delete_in_tx` (garde 15-8a).
 pub async fn find_later_closed_in_tx(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
@@ -664,7 +822,10 @@ pub async fn find_later_closed_in_tx(
 /// ⚠️ Les tests de concurrence de la Story 15-8a reconnaissent la requête
 /// verrouillante à son texte (`attendre_une_requete_en_cours`, motifs
 /// `ORDER BY start_date ASC` et `FOR UPDATE`) : le changer, c'est changer leurs
-/// motifs.
+/// motifs. Depuis la Story 15-12a, [`FIND_EARLIER_OPEN_SQL`] porte aussi ce
+/// texte ; les attentes de la 15-8a restent sans ambiguïté tant qu'aucune
+/// clôture ne tourne pendant elles (vérifié en T0 ; sinon, passer au motif
+/// `"start_date > "`).
 const FIND_LATER_CLOSED_SQL: &str = "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
      FROM fiscal_years \
      WHERE company_id = ? AND start_date > ? AND status = 'Closed' \
@@ -754,22 +915,88 @@ pub async fn list_by_company(
         .map_err(map_db_error)
 }
 
-/// Clôture un exercice (`Open` → `Closed`) avec audit log.
+/// Clôture un exercice (`Open` → `Closed`) avec audit log — **dans l'ordre** :
+/// refusée tant qu'un exercice antérieur de la société est ouvert (Story 15-12a,
+/// #543 ; invariant I, doc du module).
 ///
-/// Transaction atomique avec guard SQL `WHERE status = 'Open'`. La réouverture
-/// d'un exercice clos est possible depuis la Story 14-2 (via [`reopen`], Admin +
-/// motif + audit) ; `close` lui-même reste inchangé (verrou Comptable+ sans
-/// motif). Re-clore un exercice déjà clos = erreur d'idempotence (voir plus bas).
+/// La réouverture d'un exercice clos est possible depuis la Story 14-2 (via
+/// [`reopen`], Admin + motif + audit) ; `close` reste un verrou Comptable+ sans
+/// motif. Re-clore un exercice déjà clos = erreur d'idempotence.
 ///
-/// Story 3.7 Code Review Pass 1 F2 — `company_id` ajouté à la signature et
-/// au SQL `WHERE` pour défense en profondeur multi-tenant. Toute tentative
-/// de clôture cross-tenant (handler bypass, futur caller direct) est
-/// rejetée avec `NotFound` même si l'`id` existe sous une autre company.
+/// Story 3.7 Code Review Pass 1 F2 — `company_id` scope toutes les requêtes :
+/// une clôture cross-tenant est rejetée en `NotFound`.
+///
+/// # Étapes, et l'ordre des verrous (Story 15-12a, C119)
+///
+/// - **(a)** lecture **non verrouillante** de `start_date` de Y
+///   (`START_DATE_IN_COMPANY_SQL`) — `start_date` est immuable (aucun `UPDATE`
+///   ne l'écrit) ; absente → `NotFound` ;
+/// - **(b)** liste des exercices **antérieurs**, **tous statuts**, sans verrou
+///   (`LIST_EARLIER_SQL`, `ORDER BY start_date ASC`) — un antérieur clos dans la
+///   vue peut être en cours de réouverture ;
+/// - **(b')** **chacun verrouillé, un par un, dans cet ordre**, par clé primaire
+///   (`LOCK_EARLIER_BY_ID_SQL`), dans une boucle Rust : l'ordre des verrous est
+///   fixé par le code, non par le plan de l'optimiseur. Un exercice listé puis
+///   disparu (`onboarding::reset`) est ignoré : la relecture (d) fait foi ;
+/// - **(c)** verrou de Y par clé primaire (`LOCK_IN_COMPANY_SQL`) — Y disparu
+///   depuis (a) → `NotFound` ; Y clos → « déjà clos »
+///   (`IllegalStateTransition`) ;
+/// - **(d)** **relecture verrouillante** du plus ancien antérieur ouvert
+///   (`FIND_EARLIER_OPEN_SQL`) : lecture verrouillante, donc sur l'état
+///   **validé le plus récent**, non sur la vue fixée en (a). C'est elle qui rend
+///   le verdict [`DbError::EarlierFiscalYearOpen`] — l'invariant I en dépend,
+///   quel que soit le plan ;
+/// - **(e)** `UPDATE`, audit `fiscal_year.closed`, `COMMIT`.
+///
+/// **Pourquoi un par un** : une lecture verrouillante par intervalle
+/// (`… ORDER BY start_date ASC FOR UPDATE`) ne fixe que l'ordre de son
+/// **résultat** ; InnoDB verrouille dans l'ordre du **parcours**, que choisit
+/// l'optimiseur (index `uq_fiscal_years_company_start_date`, l'autre index
+/// préfixé par `company_id`, ou la clé primaire suivie d'un `filesort`). L'ordre
+/// des `id` diverge de celui des dates dès qu'un exercice antérieur est créé
+/// après un postérieur.
+///
+/// **Ce que cette forme perd, et ce qui le rend** :
+/// - les verrous de clé suivante d'un parcours : un exercice antérieur à Y
+///   **créé** après la vue de (a) — un fantôme — n'est ni listé en (b) ni
+///   verrouillé en (b'). La relecture (d) le voit (état validé) — non éprouvé
+///   par un test : aucun montage simple ne force une création validée entre (a)
+///   et (c), la session qui arrête la clôture tenant un exercice que la
+///   création parcourt aussi (revue P1, B-2). Et une
+///   telle création ne peut plus se valider une fois Y tenu par (c) : sa garde
+///   [`find_later_closed_in_tx`] examine Y et l'attend — sauf si un exercice
+///   clos s'interpose, auquel cas elle est refusée de toute façon. Dans les
+///   tests, la création bute même plus tôt, dans `find_overlapping`, dont le
+///   parcours s'arrête sur Y (13 b1) ou sur M (13 b2). Réciproquement, une
+///   création dont la garde a passé **tient** Y : la clôture l'attend en (c) et
+///   la voit en (d) (13 b3, qui prouve le verrou de la garde) ;
+/// - un coût : (b') tient en écriture **tous** les antérieurs, clos ou non,
+///   jusqu'au `COMMIT` ; l'insertion d'une ligne de journal dans l'un d'eux
+///   (verrou partagé de clé étrangère sur l'exercice parent) attend la clôture
+///   (revue P1, B-6). Une clôture est brève et rare : accepté ;
+/// - une requête par exercice antérieur (quelques-unes par société) ;
+/// - (d) reste un parcours d'intervalle, dont les acquisitions **nouvelles**
+///   (les fantômes, et sous un autre plan d'autres lignes de la société)
+///   dépendent du plan : un cycle qui y naîtrait est absorbé par le rejeu.
+///
+/// **Pourquoi cet ordre** : la clôture acquiert ses antérieurs **avant** Y.
+/// Verrouiller Y d'abord l'exposerait au cycle avec une réouverture de Y-1 (qui
+/// tient Y-1 puis demande les postérieurs) — et `reopen` n'est pas rejouée.
+///
+/// ⚠️ **Ce n'est pas l'ordre de tous les flux** : la contre-passation et les
+/// quatre annulations tiennent l'exercice d'une origine, puis parcourent depuis
+/// le premier exercice pour trouver celui du jour. Cycle possible avec la
+/// clôture quel que soit le plan (mesuré en T0 : la victime est la clôture) —
+/// résolu par le **rejeu** des deux côtés : la route appelle cette fonction
+/// dans `retry_on_deadlock("fiscal_years::close", …)` (au plus trois
+/// tentatives ; un dépassement du délai d'attente, `1205`, n'est pas rejoué).
 ///
 /// Retourne :
-/// - `DbError::NotFound` si l'exercice n'existe pas dans cette company
-/// - `DbError::IllegalStateTransition` si l'exercice est déjà clos
-///   (le guard `WHERE status = 'Open'` a échoué — transition interdite)
+/// - `DbError::NotFound` si l'exercice n'existe pas dans cette company ;
+/// - `DbError::IllegalStateTransition` s'il est déjà clos (prime sur la garde :
+///   l'état de l'exercice lui-même parle d'abord, même dans un état hérité) ;
+/// - `DbError::EarlierFiscalYearOpen` si un exercice antérieur est ouvert — le
+///   **plus ancien**, qu'il faut clôturer d'abord.
 pub async fn close(
     pool: &MySqlPool,
     user_id: i64,
@@ -778,6 +1005,74 @@ pub async fn close(
 ) -> Result<FiscalYear, DbError> {
     let mut tx = pool.begin().await.map_err(map_db_error)?;
 
+    // (a) Date de début, sans verrou.
+    let start_date: Option<NaiveDate> = sqlx::query_scalar(START_DATE_IN_COMPANY_SQL)
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+    let Some(start_date) = start_date else {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(DbError::NotFound);
+    };
+
+    // (b) Les antérieurs, tous statuts, sans verrou, dans l'ordre chronologique.
+    let earlier: Vec<i64> = sqlx::query_scalar(LIST_EARLIER_SQL)
+        .bind(company_id)
+        .bind(start_date)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+
+    // (b') Chacun verrouillé, un par un, dans cet ordre — l'ordre des verrous est
+    // celui de cette boucle. Un exercice disparu entre-temps est ignoré.
+    for earlier_id in earlier {
+        let _: Option<i64> = sqlx::query_scalar(LOCK_EARLIER_BY_ID_SQL)
+            .bind(earlier_id)
+            .bind(company_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .map_err(map_db_error)?;
+    }
+
+    // (c) L'exercice lui-même, par clé primaire.
+    let target = sqlx::query_as::<_, FiscalYear>(LOCK_IN_COMPANY_SQL)
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+    let Some(target) = target else {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(DbError::NotFound);
+    };
+    if target.status == FiscalYearStatus::Closed {
+        tx.rollback().await.map_err(map_db_error)?;
+        // Story 14-2 (D6) : re-clore un exercice déjà clos reste une erreur
+        // d'idempotence. Le `Display` (log-only) n'atteint jamais le client.
+        return Err(DbError::IllegalStateTransition(format!(
+            "fiscal_year {id} déjà clos (re-clôture no-op)"
+        )));
+    }
+
+    // (d) Relecture verrouillante : le plus ancien antérieur ouvert, sur l'état
+    // validé le plus récent.
+    let earliest_open = sqlx::query_as::<_, FiscalYear>(FIND_EARLIER_OPEN_SQL)
+        .bind(company_id)
+        .bind(target.start_date)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+    if let Some(open) = earliest_open {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Err(DbError::EarlierFiscalYearOpen {
+            fiscal_year_id: open.id,
+            fiscal_year_name: open.name,
+        });
+    }
+
+    // (e) La transition.
     let rows_affected = sqlx::query(
         "UPDATE fiscal_years SET status = 'Closed' \
          WHERE id = ? AND company_id = ? AND status = 'Open'",
@@ -788,38 +1083,14 @@ pub async fn close(
     .await
     .map_err(map_db_error)?
     .rows_affected();
-
     if rows_affected == 0 {
-        // Soit l'exercice n'existe pas dans cette company, soit il est déjà clos.
-        let current: Option<(String,)> =
-            sqlx::query_as("SELECT status FROM fiscal_years WHERE id = ? AND company_id = ?")
-                .bind(id)
-                .bind(company_id)
-                .fetch_optional(&mut *tx)
-                .await
-                .map_err(map_db_error)?;
+        // Défensif : Y est tenu par (c) et lu ouvert ; seul un trigger
+        // inattendu ou une isolation plus faible mènerait ici.
         tx.rollback().await.map_err(map_db_error)?;
-        return match current {
-            None => Err(DbError::NotFound),
-            // Story 14-2 (D6) : re-clore un exercice déjà clos reste une erreur
-            // d'idempotence de `close`. Le message (log-only) ne prétend PLUS
-            // que la réouverture est impossible — elle l'est désormais via
-            // `reopen` (Admin + motif + audit). Le `Display` n'atteint jamais le
-            // client (`kesh-db/errors.rs` : « Ne jamais exposer le Display »).
-            Some((status,)) if status == "Closed" => Err(DbError::IllegalStateTransition(format!(
-                "fiscal_year {id} déjà clos (re-clôture no-op)"
-            ))),
-            // Défensif : sous REPEATABLE READ InnoDB et dans la même transaction,
-            // le SELECT post-UPDATE devrait voir cohérent. Cette branche ne peut
-            // survenir que via un trigger inattendu ou une isolation plus faible.
-            Some((status,)) if status == "Open" => Err(DbError::Invariant(format!(
-                "fiscal_year {id} est Open mais l'UPDATE n'a affecté aucune ligne \
-                 (race condition ou trigger inattendu)"
-            ))),
-            Some((status,)) => Err(DbError::Invariant(format!(
-                "fiscal_year {id} a un statut inattendu hors schéma : {status}"
-            ))),
-        };
+        return Err(DbError::Invariant(format!(
+            "fiscal_year {id} est Open mais l'UPDATE n'a affecté aucune ligne \
+             (race condition ou trigger inattendu)"
+        )));
     }
 
     let fy = fetch_fiscal_year_in_tx(&mut tx, id).await?;
@@ -881,15 +1152,12 @@ pub async fn reopen(
     // SELECT FOR UPDATE scopé `(id, company_id)` — fige le before-snapshot ET
     // empêche toute mutation cross-tenant si le pré-check du handler est
     // contourné (miroir `update_name`).
-    let before_opt = sqlx::query_as::<_, FiscalYear>(
-        "SELECT id, company_id, name, start_date, end_date, status, created_at, updated_at \
-         FROM fiscal_years WHERE id = ? AND company_id = ? FOR UPDATE",
-    )
-    .bind(id)
-    .bind(company_id)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(map_db_error)?;
+    let before_opt = sqlx::query_as::<_, FiscalYear>(LOCK_IN_COMPANY_SQL)
+        .bind(id)
+        .bind(company_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
 
     let before = match before_opt {
         None => {

@@ -1903,3 +1903,198 @@ async fn path_b_finalize_designates_the_charts_marked_accounts(pool: MySqlPool) 
         assert_eq!(designated, Some(expected), "{column} désigné d'office");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Story 15-12a (#543) — les exercices se clôturent dans l'ordre
+// ---------------------------------------------------------------------------
+
+/// Crée un exercice `année` (1er janvier – 31 décembre) via l'API ; rend son id.
+async fn create_fy(app: &TestApp, token: &str, year: i32) -> i64 {
+    let resp = app
+        .client
+        .post(app.url("/api/v1/fiscal-years"))
+        .header("Authorization", auth(token))
+        .json(&json!({
+            "name": format!("Exercice {year}"),
+            "startDate": format!("{year}-01-01"),
+            "endDate": format!("{year}-12-31"),
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "création de l'exercice {year}");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    body["id"].as_i64().unwrap()
+}
+
+async fn close_fy(app: &TestApp, token: &str, id: i64) -> reqwest::Response {
+    app.client
+        .post(app.url(&format!("/api/v1/fiscal-years/{id}/close")))
+        .header("Authorization", auth(token))
+        .send()
+        .await
+        .unwrap()
+}
+
+/// AC 4 — la clôture d'un exercice précédé d'un exercice ouvert rend **409
+/// `EARLIER_FISCAL_YEAR_OPEN`**, corps complet : `details` nommant l'exercice à
+/// clôturer d'abord, message de `error-fiscal-year-close-earlier-open`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn close_with_an_earlier_open_year_returns_409_earlier_fiscal_year_open(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let y2026 = create_fy(&app, &token, 2026).await;
+    let y2027 = create_fy(&app, &token, 2027).await;
+
+    let resp = close_fy(&app, &token, y2027).await;
+    assert_eq!(resp.status(), 409);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "EARLIER_FISCAL_YEAR_OPEN");
+    assert_eq!(body["error"]["details"]["fiscalYearId"], y2026);
+    assert_eq!(body["error"]["details"]["fiscalYearName"], "Exercice 2026");
+    let msg = body["error"]["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("« Exercice 2026 », plus ancien et encore ouvert"),
+        "message attendu de error-fiscal-year-close-earlier-open, obtenu : {msg}"
+    );
+
+    // Dans l'ordre : 200, puis 200.
+    assert_eq!(close_fy(&app, &token, y2026).await.status(), 200);
+    assert_eq!(close_fy(&app, &token, y2027).await.status(), 200);
+}
+
+/// AC 5 — `POST /fiscal-years` sous un exercice clos rend **400
+/// `LATER_FISCAL_YEAR_CLOSED`**, corps complet, message **propre à la
+/// création** (`error-fiscal-year-create-later-closed`, C-15-12a-1).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn create_before_a_closed_year_returns_400_later_fiscal_year_closed(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let y2026 = create_fy(&app, &token, 2026).await;
+    assert_eq!(close_fy(&app, &token, y2026).await.status(), 200);
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/fiscal-years"))
+        .header("Authorization", auth(&token))
+        .json(&json!({
+            "name": "Exercice 2025",
+            "startDate": "2025-01-01",
+            "endDate": "2025-12-31"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "LATER_FISCAL_YEAR_CLOSED");
+    assert_eq!(body["error"]["details"]["fiscalYearId"], y2026);
+    assert_eq!(body["error"]["details"]["fiscalYearName"], "Exercice 2026");
+    let msg = body["error"]["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("« Exercice 2026 », postérieur, est clôturé")
+            && msg.contains("aucun exercice ne peut être créé avant sa date de début"),
+        "message de création attendu, obtenu : {msg}"
+    );
+    let n: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM fiscal_years WHERE name = 'Exercice 2025'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(n, 0, "rien n'est inséré");
+}
+
+/// AC 4 / AC 5 (revue P1, E5) — les deux refus neufs atteignent une
+/// **intégration** : avec une clé d'API `read-write`, la clôture hors d'ordre rend
+/// `409 EARLIER_FISCAL_YEAR_OPEN` et la création sous un exercice clos `400
+/// LATER_FISCAL_YEAR_CLOSED` (le « changement de contrat » du CHANGELOG).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn both_refusals_reach_a_read_write_api_key(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let y2026 = create_fy(&app, &token, 2026).await;
+    let y2027 = create_fy(&app, &token, 2027).await;
+
+    let create = app
+        .client
+        .post(app.url("/api/v1/settings/api-keys"))
+        .header("Authorization", auth(&token))
+        .json(&json!({ "name": "integration", "scope": "read-write" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(create.status(), 201);
+    let key = create.json::<serde_json::Value>().await.unwrap()["key"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let bearer = format!("Bearer {key}");
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/fiscal-years/{y2027}/close")))
+        .header("Authorization", &bearer)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 409, "clôture hors d'ordre par clé");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "EARLIER_FISCAL_YEAR_OPEN");
+    assert_eq!(body["error"]["details"]["fiscalYearId"], y2026);
+
+    let resp = app
+        .client
+        .post(app.url(&format!("/api/v1/fiscal-years/{y2026}/close")))
+        .header("Authorization", &bearer)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200, "clôture dans l'ordre par clé");
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/fiscal-years"))
+        .header("Authorization", &bearer)
+        .json(&json!({
+            "name": "Exercice 2025",
+            "startDate": "2025-01-01",
+            "endDate": "2025-12-31"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400, "création sous un exercice clos par clé");
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "LATER_FISCAL_YEAR_CLOSED");
+    assert_eq!(body["error"]["details"]["fiscalYearId"], y2026);
+}
+
+/// AC 5 — précédence : une demande qui **chevauche** un exercice et précède un
+/// exercice clos rend **`400 VALIDATION_ERROR`**, message
+/// `error-fiscal-year-overlap` — le pré-contrôle existant parle d'abord.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn create_overlapping_and_before_a_closed_year_returns_the_overlap(pool: MySqlPool) {
+    let (app, token) = bootstrap_admin(&pool).await;
+    let y2024 = create_fy(&app, &token, 2024).await;
+    let y2026 = create_fy(&app, &token, 2026).await;
+    assert_eq!(close_fy(&app, &token, y2024).await.status(), 200);
+    assert_eq!(close_fy(&app, &token, y2026).await.status(), 200);
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/fiscal-years"))
+        .header("Authorization", auth(&token))
+        .json(&json!({
+            "name": "Exercice décalé",
+            "startDate": "2024-07-01",
+            "endDate": "2025-06-30"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    let msg = body["error"]["message"].as_str().unwrap_or("");
+    assert!(
+        msg.contains("chevauche") || msg.contains("overlap"),
+        "message de chevauchement attendu, obtenu : {msg}"
+    );
+}

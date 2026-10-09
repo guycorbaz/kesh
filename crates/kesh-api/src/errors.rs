@@ -325,6 +325,19 @@ pub enum AppError {
         date: String,
     },
 
+    /// Story 15-12a (#543, choix C-15-12a-1) — la **création** d'un exercice est
+    /// refusée : un exercice postérieur à sa date de début est clôturé. Même
+    /// code, même statut et mêmes `details` que `DbError::LaterFiscalYearClosed`
+    /// (`400 LATER_FISCAL_YEAR_CLOSED`), mais un message **propre à la création**
+    /// (`error-fiscal-year-create-later-closed`) : celui des écritures conseille
+    /// une contre-passation, qui n'a pas d'objet ici. Produite par
+    /// `routes::fiscal_years::map_create_error`.
+    #[error("Exercice postérieur {fiscal_year_name} clôturé — création refusée")]
+    FiscalYearBeforeClosedYear {
+        fiscal_year_id: i64,
+        fiscal_year_name: String,
+    },
+
     // --- Story 4.1 ---
     /// Un contact avec ce numéro IDE (CHE) existe déjà dans la même company.
     /// Code client dédié (`IDE_ALREADY_EXISTS`) pour UX précise côté form,
@@ -1088,6 +1101,33 @@ fn build_response(status: StatusCode, code: &'static str, message: &str) -> Resp
         .into_response()
 }
 
+/// Corps `400 LATER_FISCAL_YEAR_CLOSED` (Stories 15-8a, 15-12a) : un seul
+/// gabarit pour les deux messages — celui des écritures
+/// (`error-later-fiscal-year-closed`) et celui de la création d'un exercice
+/// (`error-fiscal-year-create-later-closed`) —, pour que leurs `details` ne
+/// divergent jamais.
+fn later_fiscal_year_closed_response(
+    fiscal_year_id: i64,
+    fiscal_year_name: &str,
+    key: &str,
+    fallback: &str,
+) -> Response {
+    let mut args = FluentArgs::new();
+    args.set("name", fiscal_year_name.to_string());
+    let message = t_args(key, fallback, &args);
+    let body = serde_json::json!({
+        "error": {
+            "code": "LATER_FISCAL_YEAR_CLOSED",
+            "message": message,
+            "details": {
+                "fiscalYearId": fiscal_year_id,
+                "fiscalYearName": fiscal_year_name,
+            },
+        }
+    });
+    (StatusCode::BAD_REQUEST, Json(body)).into_response()
+}
+
 /// Clé i18n et repli d'un motif de contre-passation (Story 24-4a), partagés
 /// par le refus de contre-passation et le refus de modification (Story 15-8a,
 /// D2 — mêmes codes, mêmes messages : ils nomment déjà le chemin de la pièce).
@@ -1489,6 +1529,21 @@ impl IntoResponse for AppError {
                     "L'exercice pour la date {date} est clôturé — aucune écriture ne peut y être ajoutée ou modifiée (CO art. 957-964)."
                 );
                 build_response(StatusCode::BAD_REQUEST, "FISCAL_YEAR_CLOSED", &fallback)
+            }
+
+            AppError::FiscalYearBeforeClosedYear {
+                fiscal_year_id,
+                fiscal_year_name,
+            } => {
+                let fallback = format!(
+                    "L'exercice « {fiscal_year_name} », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucun exercice ne peut être créé avant sa date de début tant qu'il l'est. Pour créer celui-ci, un administrateur rouvre d'abord les exercices clôturés, en commençant par le plus récent."
+                );
+                later_fiscal_year_closed_response(
+                    fiscal_year_id,
+                    &fiscal_year_name,
+                    "error-fiscal-year-create-later-closed",
+                    &fallback,
+                )
             }
 
             AppError::DateOutsideFiscalYear { date } => {
@@ -2841,26 +2896,60 @@ impl IntoResponse for AppError {
                     )
                 }
                 // Story 15-8a (#532, C-15-8-22) — un exercice POSTÉRIEUR est
-                // clos : son bilan cumulatif reprend l'écriture. 400, comme
+                // clos : son bilan cumulatif reprend ce qui le précède. 400, comme
                 // `FISCAL_YEAR_CLOSED` : l'état d'un exercice, pas un conflit sur
-                // l'écriture.
+                // l'objet. Story 15-12a (AC 9) : message neutre, clé
+                // `error-later-fiscal-year-closed` — il ne présuppose pas que
+                // l'objet visé existe, garde le conseil de contre-passation et
+                // ne prescrit jamais de rouvrir l'exercice nommé (la garde LIFO
+                // le refuserait dès qu'un plus récent est clos). La création
+                // d'un exercice a son propre message
+                // (`AppError::FiscalYearBeforeClosedYear`). Revue P1 (B-1) : le
+                // texte ne nomme que la modification et la suppression — les
+                // seuls gestes que garde aujourd'hui `LaterFiscalYearClosed` sur
+                // une écriture (`journal_entries::update` / `delete_in_tx`) ; la
+                // saisie y entrera avec la garde de la 15-12b (#543), qui
+                // élargira ce texte.
+                //
+                // Pourquoi deux clés voisines (revue P1, B-5) :
+                // `journal-entries-modify-blocked-later-fiscal-year-closed` est
+                // l'explication **d'écran**, posée avant tout geste sur une
+                // écriture affichée (« cette écriture ») ; celle-ci est la
+                // réponse du **serveur**, qui ne présuppose pas que l'objet visé
+                // existe. Même prescription dans les deux (contre-passation, puis
+                // réouverture en commençant par le plus récent).
                 DbError::LaterFiscalYearClosed {
                     fiscal_year_id,
                     fiscal_year_name,
                 } => {
                     let fallback = format!(
-                        "L'exercice postérieur {fiscal_year_name} est clôturé, et son bilan reprend cette écriture : elle reste figée tant qu'il l'est. Un administrateur peut rouvrir cet exercice ; sinon, corrigez par une contre-passation."
+                        "L'exercice « {fiscal_year_name} », postérieur, est clôturé, et son bilan reprend tout ce qui le précède : aucune écriture datée avant sa date de début ne peut être modifiée ni supprimée tant qu'il l'est. Une telle écriture se corrige par une contre-passation ; sinon, un administrateur rouvre les exercices clôturés, en commençant par le plus récent."
+                    );
+                    later_fiscal_year_closed_response(
+                        fiscal_year_id,
+                        &fiscal_year_name,
+                        "error-later-fiscal-year-closed",
+                        &fallback,
+                    )
+                }
+                // Story 15-12a (#543) — la clôture d'un exercice précédé d'un
+                // exercice ouvert. 409, comme les autres refus de transition de
+                // l'écran des exercices, mais un code DÉDIÉ : l'écran traduit
+                // tout `ILLEGAL_STATE_TRANSITION` de la clôture en « déjà
+                // clôturé », et une intégration doit pouvoir distinguer les deux.
+                DbError::EarlierFiscalYearOpen {
+                    fiscal_year_id,
+                    fiscal_year_name,
+                } => {
+                    let fallback = format!(
+                        "Clôturez d'abord l'exercice « {fiscal_year_name} », plus ancien et encore ouvert : le bilan est cumulatif, et un exercice ne se clôt qu'après tous ceux qui le précèdent."
                     );
                     let mut args = FluentArgs::new();
                     args.set("name", fiscal_year_name.clone());
-                    let message = t_args(
-                        "journal-entries-modify-blocked-later-fiscal-year-closed",
-                        &fallback,
-                        &args,
-                    );
+                    let message = t_args("error-fiscal-year-close-earlier-open", &fallback, &args);
                     let body = serde_json::json!({
                         "error": {
-                            "code": "LATER_FISCAL_YEAR_CLOSED",
+                            "code": "EARLIER_FISCAL_YEAR_OPEN",
                             "message": message,
                             "details": {
                                 "fiscalYearId": fiscal_year_id,
@@ -2868,7 +2957,7 @@ impl IntoResponse for AppError {
                             },
                         }
                     });
-                    (StatusCode::BAD_REQUEST, Json(body)).into_response()
+                    (StatusCode::CONFLICT, Json(body)).into_response()
                 }
                 // Story 25-2-b-1 (#440) — la dévalidation refusée.
                 //
@@ -2973,6 +3062,9 @@ impl IntoResponse for AppError {
                             "supplier-invoices-settlement-cancel-blocked-not-paid",
                             "Cette facture fournisseur n'est pas payée : il n'y a pas de règlement à annuler.",
                         ),
+                        // #569 : ce texte prescrit « rouvrir l'exercice » sans l'ordre qu'impose
+                        // la garde LIFO (en commençant par le plus récent) — hors périmètre de la
+                        // Story 15-12a, qui n'aligne que les messages de `LATER_FISCAL_YEAR_CLOSED` (C122).
                         SettlementCancelBlocker::FiscalYearClosed => (
                             "settlement-cancel-blocked-fiscal-year-closed",
                             "Ce règlement appartient à un exercice clôturé : un administrateur doit rouvrir l'exercice pour pouvoir l'annuler.",
@@ -3482,6 +3574,9 @@ fn reconciliation_cancel_blocked_text(
             "supplier-invoices-settlement-cancel-blocked-not-paid",
             "Cette facture fournisseur n'est pas payée : il n'y a pas de règlement à annuler.",
         ),
+        // #569 : ce texte prescrit « rouvrir l'exercice » sans l'ordre qu'impose
+        // la garde LIFO (en commençant par le plus récent) — hors périmètre de la
+        // Story 15-12a, qui n'aligne que les messages de `LATER_FISCAL_YEAR_CLOSED` (C122).
         SettlementCancelBlocker::FiscalYearClosed => (
             "reconciliation-cancel-blocked-fiscal-year-closed",
             "Ce rapprochement appartient à un exercice clôturé : un administrateur doit rouvrir l'exercice pour pouvoir l'annuler.",
@@ -3519,6 +3614,9 @@ fn supplier_invoice_cancel_blocked_text(
             "supplier-invoices-cancel-blocked-cancelled",
             "Cette facture fournisseur est déjà annulée.",
         ),
+        // #569 : ce texte prescrit « rouvrir l'exercice » sans l'ordre qu'impose
+        // la garde LIFO (en commençant par le plus récent) — hors périmètre de la
+        // Story 15-12a, qui n'aligne que les messages de `LATER_FISCAL_YEAR_CLOSED` (C122).
         SettlementCancelBlocker::FiscalYearClosed => (
             "supplier-invoices-cancel-blocked-fiscal-year-closed",
             "Cette facture appartient à un exercice clôturé : un administrateur doit rouvrir l'exercice pour pouvoir l'annuler.",

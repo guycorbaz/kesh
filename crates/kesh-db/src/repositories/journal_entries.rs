@@ -2172,6 +2172,20 @@ pub async fn reverse_owned_in_tx(
 }
 
 /// La contre-passation, **écrite une seule fois** (25-3-zero, 25-3-a-1).
+///
+/// ⚠️ **Ordre des verrous et cycles** (Story 15-12a, #543) : l'étape (1)
+/// verrouille l'origine et **son** exercice par clé primaire ; l'étape (4)
+/// cherche l'exercice **du jour** (`find_open_covering_date`), dont le parcours
+/// part du premier exercice de la société et verrouille donc les exercices
+/// **antérieurs** à l'origine **après** elle. C'est l'ordre inverse de la
+/// clôture (`fiscal_years::close`, qui tient ses antérieurs puis l'exercice) et
+/// de la création (`fiscal_years::create`, qui tient ses antérieurs puis ses
+/// postérieurs) : une contre-passation d'une écriture de N peut interbloquer
+/// avec `close(N)` ou avec la création d'un exercice antérieur à N. Ces cycles
+/// existent quel que soit le plan, et se résolvent par le **rejeu** des deux
+/// côtés : les routes de la contre-passation et des quatre annulations qui
+/// passent par ici sont `Rejouee`, la clôture et la création d'un exercice le
+/// sont aussi (Story 15-12a, AC 6 ; test 13 d de `fiscal_years_repository.rs`).
 async fn reverse_in_tx_inner(
     tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
@@ -2295,7 +2309,9 @@ async fn reverse_in_tx_inner(
         )
         .collect();
 
-    // (4) Exercice ouvert du JOUR.
+    // (4) Exercice ouvert du JOUR — verrouillé APRÈS l'exercice de l'origine :
+    // cycle possible avec une clôture ou une création d'exercice, résolu par le
+    // rejeu (doc-comment ci-dessus, Story 15-12a).
     let today = Utc::now().date_naive();
     let fy = super::fiscal_years::find_open_covering_date(tx, company_id, today)
         .await?

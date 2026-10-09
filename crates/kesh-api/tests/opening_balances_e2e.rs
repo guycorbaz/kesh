@@ -1019,8 +1019,9 @@ async fn status_rbac_consultation_403_unauth_401(pool: MySqlPool) {
 
 /// Deux générations HTTP simultanées sur la même company vierge : exactement
 /// une réussit (201), l'autre reçoit 409 `ALREADY_HAS_ENTRIES` — état final =
-/// UNE écriture (sérialisation par `fiscal_years FOR UPDATE`, miroir
-/// `reopen_close_concurrent_is_serialized` 14-2).
+/// UNE écriture (sérialisation par `fiscal_years FOR UPDATE`, miroir de
+/// l'ancien `reopen_close_concurrent_is_serialized` de 14-2, course libre
+/// remplacée par la Story 15-12a — test 13 a de `fiscal_years_repository.rs`).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_concurrent_generation_only_one_succeeds(pool: MySqlPool) {
     let (app, token) = bootstrap_admin(&pool).await;

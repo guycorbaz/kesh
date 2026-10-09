@@ -549,17 +549,42 @@ pub enum DbError {
     #[error("Exercice clôturé — modification interdite (CO art. 957-964)")]
     FiscalYearClosed,
 
-    /// Un exercice **postérieur** à celui de l'écriture est clôturé (Story
-    /// 15-8a, #532, C-15-8-22).
+    /// Un exercice **postérieur** est clôturé (Story 15-8a, #532, C-15-8-22 ;
+    /// Story 15-12a, #543).
     ///
-    /// Le bilan est **cumulatif** (`kesh-report/src/balance_sheet.rs`) : modifier
-    /// une écriture de N change le bilan de tout exercice postérieur. Or « N
-    /// ouvert, N+1 clos » est atteignable (`fiscal_years::close` ne regarde pas
-    /// les exercices antérieurs). Le refus nomme le **plus proche** postérieur
-    /// clos. Mappé vers HTTP **400** `LATER_FISCAL_YEAR_CLOSED` — l'état d'un
-    /// exercice, comme `FISCAL_YEAR_CLOSED`, pas un conflit sur l'écriture.
+    /// Le bilan est **cumulatif** (`kesh-report/src/balance_sheet.rs`) : toucher
+    /// à ce qui précède un exercice clos change son bilan. Rendue par :
+    /// - le `PUT` et le `DELETE` d'une écriture (`journal_entries::update`,
+    ///   `delete_in_tx`) dont un exercice postérieur est clos ;
+    /// - la **création** d'un exercice (`fiscal_years::create`, Story 15-12a)
+    ///   dont la date de début précède celle d'un exercice clos.
+    ///
+    /// Depuis la Story 15-12a, `fiscal_years::close` refuse de clôturer tant
+    /// qu'un exercice antérieur est ouvert ([`DbError::EarlierFiscalYearOpen`]) :
+    /// « N ouvert, N+1 clos » n'est plus atteignable **à partir d'un état sain**.
+    /// Il subsiste dans les données héritées (version antérieure, sauvegarde
+    /// restaurée) — d'où ces gardes. Le refus nomme le **plus proche**
+    /// postérieur clos. Mappé vers HTTP **400** `LATER_FISCAL_YEAR_CLOSED` —
+    /// l'état d'un exercice, comme `FISCAL_YEAR_CLOSED`, pas un conflit sur
+    /// l'objet.
     #[error("Exercice postérieur {fiscal_year_name} clôturé — écriture figée")]
     LaterFiscalYearClosed {
+        fiscal_year_id: i64,
+        fiscal_year_name: String,
+    },
+
+    /// La clôture d'un exercice est refusée : un exercice **antérieur** de la
+    /// même société est encore ouvert (Story 15-12a, #543).
+    ///
+    /// Invariant I (`repositories::fiscal_years`, doc du module) : les exercices
+    /// clôturés forment un **préfixe** de l'ordre chronologique. La variante
+    /// nomme le **plus ancien** antérieur ouvert — celui qu'il faut clôturer
+    /// d'abord (un plus proche serait refusé à son tour). Mappée vers HTTP
+    /// **409** `EARLIER_FISCAL_YEAR_OPEN` : un refus de transition, comme la
+    /// garde LIFO de la réouverture, mais avec un code dédié — l'écran traduit
+    /// tout `ILLEGAL_STATE_TRANSITION` de la clôture en « déjà clôturé ».
+    #[error("Exercice antérieur {fiscal_year_name} encore ouvert — clôture refusée")]
+    EarlierFiscalYearOpen {
         fiscal_year_id: i64,
         fiscal_year_name: String,
     },
@@ -1036,6 +1061,7 @@ impl DbError {
             Self::IllegalStateTransition(_) => "ILLEGAL_STATE_TRANSITION",
             Self::FiscalYearClosed => "FISCAL_YEAR_CLOSED",
             Self::LaterFiscalYearClosed { .. } => "LATER_FISCAL_YEAR_CLOSED",
+            Self::EarlierFiscalYearOpen { .. } => "EARLIER_FISCAL_YEAR_OPEN",
             Self::InactiveOrInvalidAccounts => "INACTIVE_OR_INVALID_ACCOUNTS",
             Self::AccountsNotPostable(_) => "ACCOUNT_NOT_POSTABLE",
             Self::DesignatedAccountsNotPostable(_) => "ACCOUNT_NOT_POSTABLE",

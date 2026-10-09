@@ -4,8 +4,9 @@
 //! `accounts::find_types_by_ids_in_tx`) et la fn dédiée atomique
 //! `journal_entries::create_opening_entry` (garde « company vierge » +
 //! statut exercice sous `fiscal_years FOR UPDATE`, P1-C1/P3-BH3-1),
-//! y compris la course concurrente (P1-M3-BH, miroir
-//! `reopen_close_concurrent_is_serialized` de 14-2).
+//! y compris la course concurrente (P1-M3-BH, miroir de
+//! l'ancien `reopen_close_concurrent_is_serialized` de 14-2, course libre
+//! remplacée par la Story 15-12a — test 13 a de `fiscal_years_repository.rs`).
 
 use chrono::NaiveDate;
 use kesh_db::entities::account::AccountType;
@@ -498,8 +499,9 @@ async fn create_opening_entry_not_found_for_missing_fy(pool: MySqlPool) {
     );
 }
 
-/// Course concurrente (P1-M3-BH, miroir `reopen_close_concurrent_is_serialized`
-/// de 14-2) : deux générations simultanées sur la même company vierge — le
+/// Course concurrente (P1-M3-BH, miroir de l'ancien
+/// `reopen_close_concurrent_is_serialized` de 14-2, remplacé par la Story
+/// 15-12a) : deux générations simultanées sur la même company vierge — le
 /// `fiscal_years FOR UPDATE` + garde `count_by_company` sous le lock
 /// sérialisent : exactement UNE écriture créée, l'autre reçoit
 /// `ALREADY_HAS_ENTRIES`.
