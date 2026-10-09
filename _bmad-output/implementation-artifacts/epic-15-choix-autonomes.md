@@ -7497,3 +7497,62 @@ l'import (#458–#461).
   réel, et la question de Guy reste ouverte. A3-3 — le registre P2 disait les findings « tous nés de la remédiation
   P1 » : c'est vrai des MEDIUM+ (E2-1 à E2-4) ; A2-5 = E2-5 (écran « toutes les sociétés ») était préexistant.
 - **Réversible** : oui.
+
+## C-15-14-77 — 15-14b (revue de code P4, signal D5) : `kesh-restore.sh` simplifié à la racine — il ne touche plus à Kesh
+
+- **Contexte** : P4 (Opus ×3) — 0 HIGH, 4 MEDIUM, comme en P3, la plupart nés de la remédiation P3 et tous dans
+  `kesh-restore.sh` (arrêt « vérifié » qui ne détecte pas un projet faux, `up -d` sur une base à moitié rechargée,
+  deux consignes de reprise contradictoires, dump de sécurité sauté quand la base du dump ≠ réglage). **Signal D5
+  levé** (recyclage). Décision de l'orchestrateur : simplifier plutôt que rapiécer.
+- **Retenu** : le script ne fait plus ni `stop` ni `up` : l'exploitant arrête `kesh-api` avant
+  (`docker compose stop kesh-api`) et le redémarre après (`docker compose start kesh-api`), commandes au manuel ;
+  le script **refuse** si un conteneur du service `kesh-api` tourne sur l'hôte
+  (`docker ps --filter label=com.docker.compose.service=kesh-api --filter status=running`, une erreur de docker
+  vaut refus) — sans dépendre du nom de projet ; `SAUVEGARDE_PROJET` supprimé. **Angle mort écrit** : la détection
+  porte sur tout l'hôte — deux installations Kesh sur le même NAS se gêneraient (refus, sens sûr).
+- **Réversible** : oui.
+
+## C-15-14-78 — 15-14b (revue de code P4) : nom de la base lu dans le dump ; verrou partagé ; dump de sécurité par `kesh-dump.sh`
+
+- **Retenu** : (B4-1 = A4-2 = E4-2) le script lit dans le dump la base qu'il recrée (unique `CREATE DATABASE`) et
+  refuse si elle diffère de `SAUVEGARDE_BASE` ; le manuel montre `SAUVEGARDE_BASE=kesh` dans la commande de
+  rechargement. (A4-11 = E4-8) il prend le verrou `dump/.verrou` du dump nocturne pour toute la restauration : un dump
+  lancé pendant ce temps est refusé (recette, étape 6) — la suspension de la tâche n'est plus une consigne. (A4-8,
+  B4-L4, E4-10) le dump de sécurité est pris par **`kesh-dump.sh` lui-même** (réglages internes `DUMP_CIBLE`,
+  `DUMP_COMPTE` sans préfixe `SAUVEGARDE_`, non cités au manuel) : une seule définition d'un dump valide (`.tmp`
+  puis renommage, tables, `-- Dump completed`, empreinte) ; son échec ne laisse aucun fichier partiel et arrête tout,
+  rien rechargé. Signaux `HUP INT TERM` convertis en sortie dans les deux scripts : le `trap` nettoie aussi sur
+  interruption.
+- **Base présente mais illisible** (A4-1) : seule issue, délibérée et écrite au manuel (commande `DROP DATABASE` par
+  le compte Kesh, puis rechargement) — rejouée par la recette (étape 9) ; « Données corrompues détectées » y renvoie.
+  Pas d'option `--sans-securite`.
+- **Réversible** : oui.
+
+## C-15-14-79 — 15-14b (revue de code P4) : l'oracle de la recette n'était pas fiable — empreinte de contenu
+
+- **Constat, mesuré** : la recette réécrite rougissait par intermittence sur `accounts` (1 passage sur 2 à 3) ; le
+  relevé ligne par ligne (`SELECT *`) était **identique** — `CHECKSUM TABLE` (choisi en P3, C-15-14-74) d'une table
+  vivante diffère parfois de celle de la même table rechargée : il lit la représentation stockée, pas le contenu. Le
+  « vert » de la P3 ne prouvait donc pas l'égalité par cet oracle.
+- **Retenu** : empreinte = liste des tables + `mariadb-dump --no-create-info --order-by-primary --skip-dump-date
+  --skip-comments --skip-extended-insert` haché ; diagnostic `detail` (diff de contenu) imprimé sur tout écart.
+  Trois passages consécutifs verts, puis la recette finale ; les mutations `latin1` et « chemin relatif » la font
+  toujours rougir.
+- **Réversible** : oui.
+
+## C-15-14-80 — 15-14b (revue de code P4) : LOW appliqués et écartés
+
+- **Appliqués** : B4-4 = A4-4 = E4-4 (G16 (g) : défauts des deux scripts égaux, et cités au manuel bornés par `[,)]`) ;
+  B4-L5 = E4-5 (G16 (c) : sonde en affectation nue, `case … 0|1)` qui sort) ; E4-6 (motif des vues : `ALGORITHM=`,
+  `SQL SECURITY`, `AGGREGATE` ; phrase du manuel sur le privilège `TRIGGER`) ; E4-11 (horaires modulo 24 h, marge 15
+  min à 12 h) ; B4-L1, A4-6 (doc-comments de G14 et G16 réécrits dans leur état final) ; B4-L2 (plus de `docker compose
+  -p kesh stop` au manuel : `docker compose stop kesh-api`) ; B4-L3 = E4-7 (dump « quelques minutes avant chaque
+  snapshot » ; `rmdir dump/.verrou` d'un snapshot restauré) ; B4-L6 (plus d'heuristique d'indentation) ; B4-L7
+  (`defaut_script` partagé) ; B4-L8 (interruption entre les deux renommages : écrite dans l'en-tête de `kesh-dump.sh`) ;
+  E4-9 (sorties : le script ne redémarre plus rien ; « revenir » impossible si la base était absente, écrit) ; A4-3
+  (encart de l'AC 1), A4-5 (deux commentaires du compose prod), A4-9 (File List), A4-10 (« création de la société »).
+- **Écarté** : B4-L5 côté recette — une sonde masquée (`|| echo 0`) ne fait pas rougir la recette quand le serveur est
+  injoignable, le rechargement échouant ensuite pour la même raison ; seule la garde (c) la tient (mutation rouge).
+  Écrit plutôt qu'inventé : un cas de recette distinguant « sonde ratée, serveur joignable » exigerait de faire
+  échouer la seule requête `SCHEMATA`.
+- **Réversible** : oui.
