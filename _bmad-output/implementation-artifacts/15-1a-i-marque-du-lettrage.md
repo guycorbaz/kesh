@@ -5,8 +5,10 @@
 review *(créée le 2026-10-09 au découpage de la 15-1a en validation P3 — C124 ; validation close en P5 ;
 développement ouvert le 2026-10-09 sur `dc4bc58b`, qui porte la 15-12a et la 15-12b ; développement
 achevé le 2026-10-09, gate complet au dernier commit de code `ee6cb1c3` ; revue de code P1 (Sonnet ×3)
-remédiée le 2026-10-09, gate complet et E2E complet au dernier commit de code `15a67932` — passe suivante
-à lancer)*
+remédiée le 2026-10-09, gate complet (à `--test-threads=2`, `innodb_file_per_table=OFF` — C-15-1a-i-10)
+et E2E complet au dernier commit de code `15a67932` ; revue de code P2 (Opus ×3) remédiée le 2026-10-09 —
+code de production touché (B2-2), **gate ciblé seulement, gate complet et E2E complet à rejouer après
+redémarrage de MariaDB** ; passe suivante à lancer)*
 
 ## Story
 
@@ -993,7 +995,7 @@ des gardes i18n ne bouge pour elles.
       | code | clé | texte FR |
       |---|---|---|
       | `LETTERING_TOO_FEW_LINES` | `error-lettering-too-few-lines` | Un lettrage réunit au moins deux lignes distinctes. |
-      | `LETTERING_TOO_MANY_LINES` | `error-lettering-too-many-lines` | Un lettrage réunit au plus 200 lignes. |
+      | `LETTERING_TOO_MANY_LINES` | `error-lettering-too-many-lines` | Un lettrage réunit au plus { $max } lignes. *(plafond passé en variable — revue P1, E-4)* |
       | `LETTERING_ACCOUNTS_DIFFER` | `error-lettering-accounts-differ` | Les lignes d'un lettrage doivent toutes porter sur le même compte. |
       | `LETTERING_ACCOUNT_NOT_LETTERABLE` | `error-lettering-account-not-letterable` | Ce compte ne se lettre pas : seuls les comptes d'actif et de passif qui ne sont pas des comptes bancaires se lettrent. |
       | `LETTERING_LINE_OWNED_BY_DOCUMENT` | `error-lettering-line-owned-by-document` | Une de ces lignes appartient à une pièce : elle ne se lettre ni ne se délettre à la main. |
@@ -1248,7 +1250,7 @@ ci-dessous). Choix au registre : **C-15-1a-i-6** à **-10**.
   33 → 34 (`full_import_round_trip_keeps_lettering_marks`), `letterings_e2e.rs` 7 → 8
   (`a_read_only_key_reads_but_cannot_letter`) — **+2** ; renforcés sans changement de nombre :
   `lettering_invariants` (groupe `System`, seconde société, deux contrôles négatifs),
-  `the_detector_sees_writes_and_only_writes` (cinq littéraux neufs), le test de mapping (`max: 7`),
+  `the_detector_sees_writes_and_only_writes` (sept littéraux neufs : cinq écritures `G`, `H`, `I`, `J`, `M`, et deux témoins négatifs `K` `updated_at` et `L` `FOR UPDATE` — « cinq » corrigé en revue de code P2, A2-4), le test de mapping (`max: 7`),
   `form_refusals_are_400` (message rendu).
 - **Mutations rejouées** (chacune restaurée puis le binaire touché) :
   colonnes de lettrage exclues de l'**export** (`non_generated_columns`) → `full_import_round_trip_keeps_lettering_marks`
@@ -1269,7 +1271,12 @@ ci-dessous). Choix au registre : **C-15-1a-i-6** à **-10**.
 - ⚠️ **Environnement** (C-15-1a-i-10) : tmpfs MariaDB plein (`ibdata1` à 3,5 Go). Deux premiers gates
   complets **non concluants** (1523 puis 330 échecs `1114 table is full`, aucun du code) ;
   `innodb_file_per_table` basculé à `OFF` (volatil), mes bases de test résiduelles supprimées, gate rejoué
-  à **deux** threads.
+  à **deux** threads. *(Revue de code P2, A2-2 : les journaux des deux runs non concluants n'ont pas été
+  conservés — « aucun du code » n'est donc **pas étayé** par un journal, seulement par le code d'erreur
+  observé. Le réglage est **global** : tant que le conteneur n'est pas redémarré, les gates de tous les
+  agents tournent sous `innodb_file_per_table=OFF` — sans effet sur les verrous ni la sémantique SQL.
+  Ce gate à deux threads n'est pas le gate de référence à huit, celui du `CLAUDE.md` : il est à rejouer
+  par l'orchestrateur après redémarrage.)*
 
 **Gates de la remédiation, au dernier commit de code `15a67932`** (bases `kesh_151ai` et
 `kesh_e2e_151ai` reconstruites par `DROP/CREATE` + migrations du worktree + seed immédiatement avant) :
@@ -1289,6 +1296,52 @@ Les neuf échecs E2E sont ceux de la liste des attendus, jugés fichier par fich
 `mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) et deux KF-045 (#421
 — `invoices.spec.ts:415`, `:439` ; run achevé vers 10:45 UTC, avant 12:00). Aucune pollution. 3086 → 3088 :
 les deux tests ajoutés.
+
+### Remédiation de la revue de code P2 — 2026-10-09 (Opus 5.5, remédiateur)
+
+Choix au registre : **C-15-1a-i-11** à **-13**. Section « Reçu de la 15-1a-i » ajoutée aux fiches
+`15-1a-ii-gardes-du-lettrage.md` et `15-1a2-lettrage-des-pieces.md` sur la branche de planification
+`story/15-5-gardes-postabilite-serveur` (`fecf18ae`).
+
+- **Ce que la remédiation touche en production** : `kesh-db/src/repositories/letterings.rs` —
+  `build_group` rend `Result` et refuse en `Invariant` un exercice de ligne absent des noms lus, au lieu
+  du repli `unwrap_or_default()` (B2-2) ; ses trois appelants propagent par `?`. Doc-comments seulement :
+  `kesh-api/src/routes/letterings.rs` (`:12`, `:45`) et `kesh-db/src/errors.rs` (`LetteringTooManyLines`)
+  renvoient à `MAX_LINES_PER_GROUP` au lieu d'écrire « 200 » (B2-5).
+- **Détecteur lexical** (`letterings_lexical.rs`, B2-1 = E2-1) : `neutraliser_echappements` remplace
+  chaque séquence d'échappement — la barre oblique inverse et le caractère qui la suit — par deux espaces
+  avant le découpage en mots ; l'auto-test gagne cinq littéraux (`N` `\nUPDATE`, `O` `\tINSERT`,
+  `P` `\rREPLACE`, `Q` `\0UPDATE`, `R` continuation de ligne) et passe de 9 à 14 écritures vues.
+  **Mutation rejouée** : neutralisation retirée (découpage du texte brut) →
+  `the_detector_sees_writes_and_only_writes` **rouge** (`left: 10`, `right: 14` — `N`, `O`, `P`, `Q`
+  manqués ; `R` vu sans la neutralisation, le saut de ligne séparant déjà les mots : témoin, non preuve) ;
+  fichier restauré par copie puis `touch`, binaire relancé vert.
+- **Test ajouté au contrôle négatif (2) de `lettering_invariants`** (A2-3) : `find_group` lu par la seconde
+  société sur la donnée corrompue rend `Invariant` du **compte** ; l'écriture intruse passée sur un exercice
+  de la première société, il rend `Invariant` de l'**exercice** ; état rétabli. ⚠️ **Compilé (clippy
+  `--all-targets`), non exécuté** : il exige MariaDB, saturée — au gate complet de l'orchestrateur.
+- **Fiche** : T10 en `{ $max }` (A2-5) ; « cinq littéraux » → sept (A2-4) ; gate de la remédiation P1
+  qualifié au Status, au Change Log et au Dev Agent Record (A2-2).
+- **« 200 » re-grepé par la valeur** sur les fichiers de la story (`git diff dc4bc58b --name-only | xargs grep
+  -nE "\b200\b"`) : restent légitimes `MAX_LINES_PER_GROUP = 200` (la définition), le test
+  `manual_line_count_is_capped_at_200` (il fige la valeur d'AC6 contre la constante), et la documentation
+  publique (`CHANGELOG.md:15`, `api-external.md:288`, `:306`, `:558` — valeur annoncée à l'intégrateur) ;
+  `errors.rs:767` et `kesh-api/src/errors.rs:3464` parlent des lignes de facture, hors sujet.
+
+**Gate de la remédiation P2 — gate ciblé, gate complet à rejouer après redémarrage de MariaDB** (tmpfs
+plein, C-15-1a-i-10 ; consigne de l'orchestrateur : pas de gate complet) :
+
+| gate | résultat |
+|---|---|
+| `cargo fmt --all -- --check` | vert |
+| `cargo clippy --workspace --all-targets -- -D warnings` | vert, 0 avertissement |
+| `cargo nextest run -p kesh-db -E 'binary(letterings_lexical) \| (kind(lib) & test(/repositories::letterings::tests/))'` | vert — 6 exécutés, 6 réussis |
+
+Non exécutés : `kesh-db/tests/letterings.rs` (test A2-3, base requise) et tout ce qui touche la base,
+dont les suites qui traversent `build_group` (`letterings`, `letterings_e2e`) ; front et E2E (rien de
+frontal touché, mais l'E2E complet est dû au dernier commit de code). **À l'orchestrateur** : après
+redémarrage du conteneur, gate complet de référence (`scripts/test-fast.sh --ci`, huit threads) et E2E
+complet sur le dernier commit de code de cette remédiation.
 
 ### File List
 
@@ -1316,6 +1369,25 @@ Planification : cette fiche, `epic-15-choix-autonomes.md`, `sprint-status.yaml`.
 
 ## Change Log
 
+### Revue de code P2 — 2026-10-09 (Opus ×3 ; remédiation Opus 5.5)
+
+Trois lentilles Opus en contexte frais sur `dc4bc58b..30398986`, lues d'abord sur la remédiation P1
+`b4ed4d61..30398986` (rapports `kesh-gate-logs/15-1a-i-review-p2-{B,E,A}.md`) : **B** 0 CRITICAL / 0 HIGH /
+1 MEDIUM / 4 LOW, **E** 0 / 0 / 1 / 3, **A** 0 / 0 / 1 / 4. Après dédoublonnage (B2-1 = E2-1, B2-3 = E2-3,
+B2-5 ≈ A2-5) : **2 MEDIUM distincts, tous deux nés de la remédiation P1** (B6 et C-15-1a-i-7), aucun de la
+conception d'origine. **Trend** : P1 **3 MEDIUM** → P2 **2 MEDIUM** distincts de ceux de P1 — le motif « la
+remédiation introduit le défaut suivant », non une stagnation (pas de signal de découpage au sens de D5).
+
+- **Remédiés** : B2-1 = E2-1 (détecteur aveugle à `\nUPDATE` — échappements neutralisés, mutation tuée,
+  C-15-1a-i-11) ; A2-1 (relais des six textes provisoires écrit aux fiches 15-1a-ii et 15-1a2, `fecf18ae`
+  sur la branche de planification, C-15-1a-i-11). LOW appliqués : B2-2, B2-5 = A2-5, A2-2, A2-3, A2-4.
+  LOW écartés avec motif : B2-3 = E2-3, B2-4, E2-2, E2-4 — C-15-1a-i-12.
+- **Code de production touché** : oui — `letterings.rs` (`build_group` rend `Result`, B2-2) ; doc-comments
+  de `routes/letterings.rs` et `errors.rs` (B2-5). La boucle ne se clôt donc pas sur cette passe.
+- **Gate ciblé seulement** (fmt, clippy, `binary(letterings_lexical)` et tests unitaires de `letterings`,
+  6/6) ; le test A2-3 est compilé, non exécuté. Gate complet et E2E complet **à rejouer après redémarrage
+  de MariaDB** (C-15-1a-i-13). Détail au Dev Agent Record.
+
 ### Revue de code P1 — 2026-10-09 (Sonnet ×3 ; remédiation Opus 5.5)
 
 Trois lentilles Sonnet en contexte frais sur `dc4bc58b..09a9d16b` (rapports
@@ -1332,8 +1404,10 @@ Trois lentilles Sonnet en contexte frais sur `dc4bc58b..09a9d16b` (rapports
   A-L6 (seconde moitié) — C-15-1a-i-9.
 - **Code de production touché** : oui — `letterings.rs` (E-2), `errors.rs` et les quatre catalogues (E-4). La
   boucle ne peut donc pas se clore sur cette passe (règle de la passe ciblée).
-- Gate complet et E2E complet au dernier commit de code `15a67932` : backend 3088/3088, Vitest 1139, E2E 245 /
-  9 attendus. Détail, mutations et incident de catalogue au Dev Agent Record.
+- Gate complet et E2E complet au dernier commit de code `15a67932` : backend 3088/3088 **à `--test-threads=2`,
+  `innodb_file_per_table=OFF`** (tmpfs plein, C-15-1a-i-10 — pas le gate de référence à huit threads ;
+  qualificatif ajouté en revue de code P2, A2-2), Vitest 1139, E2E 245 / 9 attendus. Détail, mutations et
+  incident de catalogue au Dev Agent Record.
 
 ### Développement — 2026-10-09 (Opus 5.5, agent de développement)
 
