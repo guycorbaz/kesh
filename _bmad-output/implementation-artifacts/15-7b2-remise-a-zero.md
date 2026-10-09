@@ -979,8 +979,8 @@ docker-compose.dev.yml:32:      KESH_PRODUCTION_RESET: ${KESH_PRODUCTION_RESET:-
 docker-compose.prod.yml:148:      KESH_PRODUCTION_RESET: ${KESH_PRODUCTION_RESET:-}
 docker-compose.yml:128:      KESH_PRODUCTION_RESET: ${KESH_PRODUCTION_RESET:-}
 docs/MULTI-TENANT-SCOPING-PATTERNS.md:324:| `kesh_seed::reset_demo` (`POST /onboarding/reset`, Story 15-7b2) | **One transaction per attempt**: **onbo
-docs/MULTI-TENANT-SCOPING-PATTERNS.md:325:| `kesh_seed::seed_demo` (`POST /onboarding/seed-demo`) | **First four steps**, each in its own transaction 
-docs/MULTI-TENANT-SCOPING-PATTERNS.md:343:- **`POST /onboarding/reset` — exception to the Global Lock Order (Story 15-7b2, choice C-15-7-22).** After 
+docs/MULTI-TENANT-SCOPING-PATTERNS.md:325:| `kesh_seed::seed_demo` (`POST /onboarding/seed-demo`) | **First four steps**, each in its own transaction
+docs/MULTI-TENANT-SCOPING-PATTERNS.md:343:- **`POST /onboarding/reset` — exception to the Global Lock Order (Story 15-7b2, choice C-15-7-22).** After
 docs/MULTI-TENANT-SCOPING-PATTERNS.md:347:### Known Risk — KF-002-H-002 (resolved 2026-05-03)
 docs/MULTI-TENANT-SCOPING-PATTERNS.md:349:**Issue:** `seed_demo` (for its **first four steps** — count-validation, `companies::update`, `bulk_create_f
 .env.example:340:# KESH_PRODUCTION_RESET=
