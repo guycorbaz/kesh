@@ -1095,3 +1095,41 @@ async fn split_missing_and_non_postable_is_404_first(pool: MySqlPool) {
     assert_eq!(body["error"]["code"], "ACCOUNT_NOT_FOUND");
     assert_nothing_written(&pool, ctx.company_id, ctx.tx_id).await;
 }
+
+// ============================================================
+// Story 15-6d (test 8, #524) — témoin de l'ordre ventilé direct
+// ============================================================
+
+/// Story 15-6d (test 8) — **témoin** de la garde existante de `post_split` :
+/// une ligne dont la contrepartie est le compte de banque **rendu non
+/// imputable** → 400 `VALIDATION_ERROR`, pas `ACCOUNT_NOT_POSTABLE` ; rien
+/// n'est écrit. Fige l'ordre « égalité avant postabilité » sur lequel repose
+/// le choix C-15-6-23 (le rapprochement manuel et la règle s'y alignent).
+/// Seul le **code** est asserté : le message est en français en dur.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn split_bank_ledger_counterparty_precedes_not_postable(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = setup_split_ctx(&pool, "split_bank_ledger", "CH1000000000000000001").await;
+    set_account_not_postable(&pool, ctx.bank_ledger_account_id).await;
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/split"))
+        .header("Authorization", format!("Bearer {}", ctx.jwt))
+        .json(&serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "bankTransactionId": ctx.tx_id,
+            "splits": [
+                { "counterpartyAccountId": ctx.cp_a_account_id, "amount": "5000", "description": "Ligne" },
+                { "counterpartyAccountId": ctx.bank_ledger_account_id, "amount": "5700", "description": "Ligne" },
+            ],
+            "valueDate": "2026-05-31"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 400);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR", "{body}");
+    assert_nothing_written(&pool, ctx.company_id, ctx.tx_id).await;
+}

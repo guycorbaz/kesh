@@ -2644,3 +2644,282 @@ async fn accept_with_rule_under_a_closed_later_year_lands_in_failed(pool: MySqlP
         "seule la proposition saine écrit"
     );
 }
+
+// ============================================================
+// Story 15-6d (AC2, AC2 bis, #524) — la contrepartie n'est pas le compte de
+// la banque
+// ============================================================
+
+/// Une règle `counterparty_contains` sur `account_id`, créée par l'API.
+async fn rule_on_account_15_6d(
+    app: &TestApp,
+    ctx: &Ctx,
+    match_value: &str,
+    account_id: i64,
+    priority: i32,
+) -> i64 {
+    create_rule_ok(
+        app,
+        &ctx.jwt,
+        json!({
+            "label": format!("Règle {match_value}"),
+            "matchType": "counterparty_contains",
+            "matchValue": match_value,
+            "counterpartyAccountId": account_id,
+            "priority": priority,
+        }),
+    )
+    .await["id"]
+        .as_i64()
+        .unwrap()
+}
+
+/// Une transaction CHF `pending` de -150.00, contrepartie `name`.
+async fn pending_tx_15_6d(pool: &MySqlPool, ctx: &Ctx, name: &str) -> i64 {
+    create_pending_bank_tx(
+        pool,
+        ctx.company_id,
+        ctx.user_id,
+        ctx.bank_account_id,
+        dec!(-150.00),
+        name,
+        None,
+        None,
+        "CHF",
+        Some(NaiveDate::from_ymd_opt(2026, 5, 10).unwrap()),
+    )
+    .await
+}
+
+/// `POST /reconciliation/accept` d'un lot de propositions `rule` construites
+/// — `(bankTransactionId, ruleId, counterpartyAccountId)` — et rend le corps
+/// (HTTP 200 exigé : pattern batch).
+async fn accept_rules_15_6d(app: &TestApp, ctx: &Ctx, proposals: &[(i64, i64, i64)]) -> Value {
+    let proposals: Vec<Value> = proposals
+        .iter()
+        .map(|(tx_id, rule_id, cp)| {
+            json!({
+                "type": "rule",
+                "bankTransactionId": tx_id,
+                "ruleId": rule_id,
+                "counterpartyAccountId": cp,
+            })
+        })
+        .collect();
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/accept"))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "bankAccountId": ctx.bank_account_id, "proposals": proposals }))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status();
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(status, 200, "pattern batch : succès partiel = 200 — {body}");
+    body
+}
+
+/// La proposition de `tx_id` n'a rien écrit : transaction `pending`, aucune
+/// écriture qui lui soit liée, aucun audit d'application de `rule_id`.
+async fn assert_rule_wrote_nothing_15_6d(pool: &MySqlPool, tx_id: i64, rule_id: i64) {
+    let (status, matched): (String, Option<i64>) =
+        sqlx::query_as("SELECT status, matched_entry_id FROM bank_transactions WHERE id = ?")
+            .bind(tx_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(status, "pending", "transaction toujours en attente");
+    assert_eq!(matched, None, "aucune écriture liée");
+    let applied: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log \
+         WHERE action = 'reconciliation_rule.applied' AND entity_id = ?",
+    )
+    .bind(rule_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(applied, 0, "aucun audit d'application");
+    let accepted: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log \
+         WHERE action = 'reconciliation.accepted' AND entity_id = ?",
+    )
+    .bind(tx_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(accepted, 0, "aucun audit d'acceptation");
+}
+
+/// Story 15-6d (AC2, test 4) — un lot de deux propositions construites,
+/// l'une par une règle dont la contrepartie est le compte de la banque,
+/// l'autre valable : HTTP 200, la valable acceptée, l'autre dans `failed[]`
+/// en `VALIDATION_ERROR` / `counterparty_equals_bank_ledger` — la forme
+/// d'`accept_one_split` —, rien d'écrit pour elle.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_rule_on_bank_ledger_fails_per_proposal(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let bank_rule =
+        rule_on_account_15_6d(&app, &ctx, "Virement", ctx.bank_ledger_account_id, 10).await;
+    let ok_rule =
+        rule_on_account_15_6d(&app, &ctx, "Swisscom", ctx.counterparty_account_id, 20).await;
+    let tx_bank = pending_tx_15_6d(&pool, &ctx, "Virement interne").await;
+    let tx_ok = pending_tx_15_6d(&pool, &ctx, "Swisscom Schweiz AG").await;
+
+    let body = accept_rules_15_6d(
+        &app,
+        &ctx,
+        &[
+            (tx_bank, bank_rule, ctx.bank_ledger_account_id),
+            (tx_ok, ok_rule, ctx.counterparty_account_id),
+        ],
+    )
+    .await;
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(failed[0]["bankTransactionId"].as_i64(), Some(tx_bank));
+    assert_eq!(failed[0]["errorCode"], "VALIDATION_ERROR");
+    assert_eq!(
+        failed[0]["details"],
+        json!({ "reason": "counterparty_equals_bank_ledger" })
+    );
+    let accepted = body["accepted"].as_array().unwrap();
+    assert_eq!(accepted.len(), 1, "{body}");
+    assert_eq!(accepted[0]["bankTransactionId"].as_i64(), Some(tx_ok));
+    assert_rule_wrote_nothing_15_6d(&pool, tx_bank, bank_rule).await;
+}
+
+/// Story 15-6d (AC2, test 5) — **ordre côté règle** : la règle sur le compte
+/// de banque, créée d'abord, puis ce compte rendu non imputable : `failed[]`
+/// `VALIDATION_ERROR` / `counterparty_equals_bank_ledger`, **pas**
+/// `ACCOUNT_NOT_POSTABLE`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_rule_on_bank_ledger_precedes_not_postable(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let bank_rule =
+        rule_on_account_15_6d(&app, &ctx, "Virement", ctx.bank_ledger_account_id, 10).await;
+    set_account_not_postable(&pool, ctx.bank_ledger_account_id).await;
+    let tx_bank = pending_tx_15_6d(&pool, &ctx, "Virement interne").await;
+
+    let body = accept_rules_15_6d(
+        &app,
+        &ctx,
+        &[(tx_bank, bank_rule, ctx.bank_ledger_account_id)],
+    )
+    .await;
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(failed[0]["errorCode"], "VALIDATION_ERROR", "{body}");
+    assert_eq!(
+        failed[0]["details"],
+        json!({ "reason": "counterparty_equals_bank_ledger" })
+    );
+    assert_rule_wrote_nothing_15_6d(&pool, tx_bank, bank_rule).await;
+}
+
+/// Story 15-6d (AC2 bis, test 6) — deux règles concordent avec la même
+/// transaction, la **première** (priorité 10) sur le compte de la banque, la
+/// seconde valable : la proposition porte la **seconde**. Avec la première
+/// seule, aucune proposition par règle.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn get_proposals_skips_rule_on_bank_ledger_and_proposes_next(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let bank_rule =
+        rule_on_account_15_6d(&app, &ctx, "Swisscom", ctx.bank_ledger_account_id, 10).await;
+    let ok_rule =
+        rule_on_account_15_6d(&app, &ctx, "Schweiz", ctx.counterparty_account_id, 20).await;
+    pending_tx_15_6d(&pool, &ctx, "Swisscom Schweiz AG").await;
+
+    let rule_candidates = |body: &Value| -> Vec<Value> {
+        body["proposals"][0]["candidates"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|c| c["candidateType"] == "rule")
+            .cloned()
+            .collect()
+    };
+    let get = || async {
+        let resp = app
+            .client
+            .get(app.url(&format!(
+                "/api/v1/reconciliation/proposals?bankAccountId={}",
+                ctx.bank_account_id
+            )))
+            .bearer_auth(&ctx.jwt)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        resp.json::<Value>().await.unwrap()
+    };
+
+    let body = get().await;
+    let rules = rule_candidates(&body);
+    assert_eq!(rules.len(), 1, "{body}");
+    assert_eq!(rules[0]["ruleId"].as_i64(), Some(ok_rule), "{body}");
+    assert_eq!(
+        rules[0]["counterpartyAccountId"].as_i64(),
+        Some(ctx.counterparty_account_id)
+    );
+
+    // La règle valable désactivée : la règle sur le compte de banque reste
+    // seule, et elle n'est pas proposée.
+    sqlx::query("UPDATE reconciliation_rules SET active = FALSE WHERE id = ?")
+        .bind(ok_rule)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let body = get().await;
+    assert!(rule_candidates(&body).is_empty(), "{body}");
+    let _ = bank_rule;
+}
+
+/// Story 15-6d (AC2, test 7) — compte de banque **archivé**, chemin par
+/// règle (étape ajoutée, choix C-15-6-28) : règles créées d'abord (la
+/// création refuse un compte archivé), compte lié archivé ensuite ; deux
+/// propositions construites, l'une par une règle ordinaire (6510), l'autre
+/// par la règle sur le compte de banque → les deux dans `failed[]` en
+/// `BANK_ACCOUNT_NOT_CONFIGURED` avec `details.bankAccountId`, rien d'écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_rule_with_archived_bank_ledger_reports_not_configured(pool: MySqlPool) {
+    let ctx = setup_ctx(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let bank_rule =
+        rule_on_account_15_6d(&app, &ctx, "Virement", ctx.bank_ledger_account_id, 10).await;
+    let ok_rule =
+        rule_on_account_15_6d(&app, &ctx, "Swisscom", ctx.counterparty_account_id, 20).await;
+    let tx_bank = pending_tx_15_6d(&pool, &ctx, "Virement interne").await;
+    let tx_ok = pending_tx_15_6d(&pool, &ctx, "Swisscom Schweiz AG").await;
+    sqlx::query("UPDATE accounts SET active = FALSE, version = version + 1 WHERE id = ?")
+        .bind(ctx.bank_ledger_account_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let body = accept_rules_15_6d(
+        &app,
+        &ctx,
+        &[
+            (tx_ok, ok_rule, ctx.counterparty_account_id),
+            (tx_bank, bank_rule, ctx.bank_ledger_account_id),
+        ],
+    )
+    .await;
+    assert!(body["accepted"].as_array().unwrap().is_empty(), "{body}");
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 2, "{body}");
+    for f in failed {
+        assert_eq!(f["errorCode"], "BANK_ACCOUNT_NOT_CONFIGURED", "{body}");
+        assert_eq!(
+            f["details"],
+            json!({ "bankAccountId": ctx.bank_account_id }),
+            "{body}"
+        );
+    }
+    assert_rule_wrote_nothing_15_6d(&pool, tx_ok, ok_rule).await;
+    assert_rule_wrote_nothing_15_6d(&pool, tx_bank, bank_rule).await;
+}

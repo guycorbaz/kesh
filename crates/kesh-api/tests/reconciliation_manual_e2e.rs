@@ -1449,3 +1449,128 @@ async fn post_manual_archived_non_postable_counterparty_is_404_first(pool: MySql
     let body: Value = resp.json().await.unwrap();
     assert_eq!(body["error"]["code"], "ACCOUNT_NOT_FOUND");
 }
+
+// ============================================================
+// Story 15-6d (AC1, #524) — la contrepartie n'est pas le compte de la banque
+// ============================================================
+
+/// Pose une transaction bancaire `pending` de -50.00 sur le compte du
+/// contexte et rend son id.
+async fn seed_pending_tx_15_6d(pool: &MySqlPool, ctx: &ManualCtx, tag: &str) -> i64 {
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    seed_bank_transactions(
+        pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash(tag),
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            dec!(-50.00),
+            "FEES",
+        )],
+    )
+    .await[0]
+}
+
+/// `POST /reconciliation/manual` avec le compte de la banque pour contrepartie.
+async fn post_manual_on_bank_ledger(pool: &MySqlPool, ctx: &ManualCtx, tx_id: i64) -> Value {
+    let app = spawn_app(pool.clone()).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/manual"))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({
+            "bankAccountId": ctx.bank_account_id,
+            "bankTransactionId": tx_id,
+            "counterpartyAccountId": ctx.bank_ledger_account_id,
+            // Une description non vide : sans elle, l'écriture serait refusée
+            // par `chk_journal_entries_description_nonempty`, et le test
+            // passerait sans la garde (constaté au rouge du T3).
+            "description": "Virement interne",
+        }))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status();
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(status, 400, "{body}");
+    body
+}
+
+/// Rien n'est écrit : aucune écriture, aucun audit de rapprochement manuel
+/// pour la transaction, dont le statut est rendu pour l'appelant.
+async fn assert_nothing_written_15_6d(pool: &MySqlPool, ctx: &ManualCtx, tx_id: i64) -> String {
+    let je_count: (i64,) =
+        sqlx::query_as("SELECT COUNT(*) FROM journal_entries WHERE company_id = ?")
+            .bind(ctx.company_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert_eq!(je_count.0, 0, "aucune écriture créée");
+    let audit_count: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM audit_log \
+         WHERE action = 'reconciliation.manual_matched' AND entity_id = ?",
+    )
+    .bind(tx_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(audit_count.0, 0, "aucun audit");
+    sqlx::query_scalar("SELECT status FROM bank_transactions WHERE id = ?")
+        .bind(tx_id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Story 15-6d (AC1, test 1) — la contrepartie est le compte comptable du
+/// compte bancaire : 400 `VALIDATION_ERROR` (forme du flux ventilé), rien
+/// n'est écrit, la transaction reste `pending`. Seul le **code** est asserté :
+/// le message est en français en dur (AC3).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_manual_rejects_bank_ledger_as_counterparty(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let tx_id = seed_pending_tx_15_6d(&pool, &ctx, "bank_ledger_cp").await;
+    let body = post_manual_on_bank_ledger(&pool, &ctx, tx_id).await;
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR", "{body}");
+    let status = assert_nothing_written_15_6d(&pool, &ctx, tx_id).await;
+    assert_eq!(status, "pending", "transaction toujours pending");
+}
+
+/// Story 15-6d (AC1, test 2) — **ordre** : le compte de banque rendu **non
+/// imputable** (toujours actif) et pris pour contrepartie rend ce refus
+/// (`VALIDATION_ERROR`), pas `ACCOUNT_NOT_POSTABLE` — même place que le flux
+/// ventilé (choix C-15-6-23).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_manual_bank_ledger_counterparty_precedes_not_postable(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    set_account_not_postable(&pool, ctx.bank_ledger_account_id).await;
+    let tx_id = seed_pending_tx_15_6d(&pool, &ctx, "bank_ledger_np").await;
+    let body = post_manual_on_bank_ledger(&pool, &ctx, tx_id).await;
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR", "{body}");
+    let status = assert_nothing_written_15_6d(&pool, &ctx, tx_id).await;
+    assert_eq!(status, "pending");
+}
+
+/// Story 15-6d (AC1, test 3) — transaction **déjà rapprochée** et
+/// contrepartie = compte de banque : 400 `VALIDATION_ERROR`, pas 404
+/// `RECONCILIATION_TRANSACTION_NOT_PENDING` (le défaut de la requête prime
+/// l'état de la transaction).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_manual_bank_ledger_counterparty_precedes_not_pending(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let tx_id = seed_pending_tx_15_6d(&pool, &ctx, "bank_ledger_done").await;
+    sqlx::query("UPDATE bank_transactions SET status = 'reconciled' WHERE id = ?")
+        .bind(tx_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let body = post_manual_on_bank_ledger(&pool, &ctx, tx_id).await;
+    assert_eq!(body["error"]["code"], "VALIDATION_ERROR", "{body}");
+    let status = assert_nothing_written_15_6d(&pool, &ctx, tx_id).await;
+    assert_eq!(status, "reconciled", "statut inchangé");
+}

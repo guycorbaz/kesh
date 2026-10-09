@@ -30,6 +30,12 @@ vi.mock('$lib/features/accounts/accounts.api', () => ({
 	fetchAccounts: vi.fn().mockResolvedValue([]),
 }));
 
+// Story 15-6d (AC4, test 11) — le composant résout le compte comptable du compte bancaire par
+// `listBankAccounts` ; sans ce mock, l'appel partirait sur l'`apiClient` réel.
+vi.mock('$lib/features/bank-accounts/bank-accounts.api', () => ({
+	listBankAccounts: vi.fn().mockResolvedValue([]),
+}));
+
 // Revue de code P1 de la 15-5c (B1, E3) — les deux modales sont remplacées par une doublure
 // qui appelle `onSuccess` d'un clic : seul le bilan du parent est en cause ici, et les
 // modales ont leurs propres tests.
@@ -48,6 +54,8 @@ vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 }));
 
 import * as api from './reconciliation.api';
+import * as bankAccountsApi from '$lib/features/bank-accounts/bank-accounts.api';
+import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
 import ReconciliationProposals from './ReconciliationProposals.svelte';
 
 const mockApi = vi.mocked(api);
@@ -512,5 +520,73 @@ describe('ReconciliationProposals — refus par lot lisibles (Story 15-5c, AC3)'
 			expect(queryByTestId('reconciliation-failed')).toBeNull();
 			expect(queryByTestId('reconciliation-success')).toBeNull();
 		});
+	});
+});
+
+// Story 15-6d (AC4, test 11, #524, choix C-15-6d-1) — le `journalAccountId` du compte bancaire
+// monté est passé à la modale d'affectation manuelle (`bankLedgerAccountId`), qui l'écarte des
+// contreparties (test 10, `ManualMatchModal.test.ts`). Repli : échec de l'appel, compte absent
+// ou non lié → `null`, aucun filtrage, aucune erreur affichée.
+describe('ReconciliationProposals — compte de la banque passé à la modale (Story 15-6d)', () => {
+	const mockBankAccounts = vi.mocked(bankAccountsApi);
+
+	function bankAccount(id: number, journalAccountId: number | null): BankAccountSummary {
+		return {
+			id,
+			bankName: 'UBS',
+			iban: `CH00${id}`,
+			qrIban: null,
+			isPrimary: id === 17,
+			journalAccountId,
+			version: 1,
+			archived: false,
+			currentBalance: null,
+			lastTransactionDate: null,
+		} as BankAccountSummary;
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		mockApi.getProposals.mockResolvedValue({
+			proposals: [makeProposalWithoutCandidate(1)],
+			hasMore: false,
+		} satisfies GetProposalsResponse);
+	});
+
+	async function ledgerPassedToModal(): Promise<{ value: string | null; errorShown: boolean }> {
+		const { findByTestId, queryByTestId, unmount } = render(ReconciliationProposals, {
+			bankAccountId: 17,
+		});
+		await fireEvent.click(await findByTestId('manual-match-button'));
+		const stub = await findByTestId('stub-modal-success');
+		// Laisse se résoudre la promesse de `listBankAccounts` avant de lire la prop.
+		await vi.waitFor(() => expect(mockBankAccounts.listBankAccounts).toHaveBeenCalled());
+		await new Promise((r) => setTimeout(r, 0));
+		const value = stub.getAttribute('data-bank-ledger-account-id');
+		const errorShown = queryByTestId('reconciliation-error') !== null;
+		unmount();
+		return { value, errorShown };
+	}
+
+	it('passe le journalAccountId du compte bancaire monté', async () => {
+		mockBankAccounts.listBankAccounts.mockResolvedValue([bankAccount(18, 43), bankAccount(17, 42)]);
+		const r = await ledgerPassedToModal();
+		expect(r.value).toBe('42');
+		expect(mockBankAccounts.listBankAccounts).toHaveBeenCalledTimes(1);
+	});
+
+	it('listBankAccounts en échec → null (aucun filtrage), aucune erreur affichée', async () => {
+		mockBankAccounts.listBankAccounts.mockRejectedValue(new Error('boom'));
+		const r = await ledgerPassedToModal();
+		expect(r.value).toBe('null');
+		expect(r.errorShown).toBe(false);
+	});
+
+	it.each([
+		['absent de la liste (archivé)', [bankAccount(18, 43)]],
+		['non lié', [bankAccount(17, null)]],
+	])('compte bancaire %s → null', async (_cas, list) => {
+		mockBankAccounts.listBankAccounts.mockResolvedValue(list);
+		expect((await ledgerPassedToModal()).value).toBe('null');
 	});
 });

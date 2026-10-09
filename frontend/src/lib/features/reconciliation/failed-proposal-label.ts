@@ -41,9 +41,10 @@
  *   `payment_date_before_invoice_date`, `payment_date_outside_window`,
  *   `race_during_update`) : une seule a son libellé, les cinq autres partagent
  *   « n'est pas éligible » ;
- * - `VALIDATION_ERROR` porte six raisons sur sept sites (`splits_count_out_of_range`,
+ * - `VALIDATION_ERROR` porte six raisons sur huit sites (`splits_count_out_of_range`,
  *   `split_description_too_long`, `split_amount_not_positive`, `split_amount_scale_too_high`,
- *   `counterparty_equals_bank_ledger`, `zero_amount_transaction`), toutes rendues
+ *   `counterparty_equals_bank_ledger` — sur deux sites, la proposition ventilée et, depuis la
+ *   Story 15-6d (#524), la proposition par règle —, `zero_amount_transaction`), toutes rendues
  *   « Erreur de validation » par la clé globale `error-validation`.
  * Le code brut reste en `title` de chaque refus, pour le support.
  */
