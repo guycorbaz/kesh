@@ -155,7 +155,9 @@ describe('page des comptes bancaires — comptes de créance désignés (Story 1
 		return Array.from(select.options).map((o) => o.textContent ?? '');
 	}
 
+	// Création : revue de code P1 (A3) — le troisième <select> de la page.
 	it.each([
+		['création', 'create-bank-account-button', 'form-journal-account'],
 		['modification', 'edit-button-5', 'edit-journal-account'],
 		['lien', 'link-button-5', 'journal-account-select'],
 	])("le <select> du formulaire de %s n'offre ni le compte débiteurs ni le compte créanciers", async (_cas, button, select) => {

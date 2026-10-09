@@ -4428,8 +4428,6 @@ mod tests {
         assert!(!msg.contains('$'), "gabarit non résolu : {msg}");
     }
 
-    /// Story 15-6b (AC2) — la clé suit le RÔLE : un compte désigné renvoie à
-    /// Paramètres → Facturation, jamais à « banque, caisse ».
     /// Story 15-6c (#474, AC1) — les deux refus de configuration : 400, leur
     /// code, des `details` en camelCase, et un repli français qui nomme le
     /// compte (repli `#<id>` sans numéro) et, au second, le compte bancaire.
@@ -4487,6 +4485,8 @@ mod tests {
         assert!(!msg.contains("{ $"), "gabarit non formaté : {msg}");
     }
 
+    /// Story 15-6b (AC2) — la clé suit le RÔLE : un compte désigné renvoie à
+    /// Paramètres → Facturation, jamais à « banque, caisse ».
     #[tokio::test]
     async fn settlement_counterparty_message_follows_the_role() {
         use kesh_db::errors::{ClaimSide, SettlementAccountRole};

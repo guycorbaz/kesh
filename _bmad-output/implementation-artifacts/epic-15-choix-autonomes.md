@@ -5710,3 +5710,35 @@ l'import (#458–#461).
 - **Écarté** : garder la lecture simple de `before` (rouvrirait la course que l'AC2 ferme, et le
   test 12 bis rougirait).
 - **Réversibilité** : totale (un motif de test).
+
+## C-15-6c-5 — 15-6c : pas de test neuf du filet de la 15-6b pour la sauvegarde et l'onboarding
+
+- **Contexte** : revue de code P1, F3 (LOW) — l'import d'une sauvegarde et la création des
+  réglages à l'onboarding peuvent produire le couple fautif ; la fiche les écrit comme angles morts,
+  avec pour filet la garde à l'usage de la 15-6b. La consigne : un test du filet dans l'un des deux
+  scénarios « si le montage est simple ».
+- **Retenu** : pas de test neuf. L'état que produisent ces deux chemins — un compte bancaire lié au
+  compte débiteurs désigné, écrit **sans** passer par les routes — est exactement celui que posent
+  déjà les tests de la 15-6b, par `UPDATE bank_accounts SET journal_account_id = …` en SQL brut
+  (`reconciliation_e2e.rs`, « sans passer par la 15-6c », tests 7 et 8 de la 15-6b) : le filet y est
+  prouvé sur l'état, quel que soit le chemin qui l'a écrit. Monter un `.keshbackup` complet (inventaire
+  de tables identique, manifeste, rejeu) pour reproduire le même état n'est pas un montage simple.
+- **Écarté** : un test d'import de sauvegarde portant le couple fautif (montage lourd, ne prouverait
+  rien de plus sur la garde) ; un test d'onboarding (même état final).
+- **Réversibilité** : totale (un test pourra s'ajouter quand le produit tiendra une comptabilité réelle).
+
+## C-15-6c-6 — 15-6c : la duplication création / `claims_for_target` est écrite comme dette, non refactorée
+
+- **Contexte** : revue de code P1, B3 = A4 (LOW) — `create_bank_account` lit les comptes de créance
+  par `claim_accounts_in_share_mode` puis appelle `refuse_if_ledger_is_claim_account` en ligne, dans un
+  `if let Some(account_id)`, alors que le remplacement et le lien passent par `claims_for_target`.
+  Deux sites de la même règle d'acquisition (« pas de lecture ni de verrou S sans cible ») : l'un peut
+  dériver de l'autre.
+- **Retenu** : **dette écrite**, pas de refactorisation à la clôture — la remédiation de la revue P1
+  ne touche aucune ligne de code exécutable (consigne de l'orchestrateur), et un changement de code de
+  production rouvrirait la boucle de revue. **Propriétaire** : l'orchestrateur de l'Epic 15 ; remède
+  attendu : remplacer le bloc en ligne de la création par `claims_for_target` (une ligne), à la
+  prochaine story qui touche `routes/bank_accounts.rs`. Le comportement est aujourd'hui identique sur
+  les trois sites (test 1, tests 2 à 4).
+- **Écarté** : refactorer maintenant (code de production après une revue close) ; taire la duplication.
+- **Réversibilité** : totale.

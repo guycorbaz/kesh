@@ -705,8 +705,12 @@ pub async fn count_other_active_for_company(
 /// pose des verrous **next-key / d'intervalle**, y compris quand il ne trouve
 /// aucune ligne. Un `INSERT INTO bank_accounts` dont le `journal_account_id`
 /// tombe dans l'intervalle voisin peut donc **attendre** la fin du PUT des
-/// réglages — attente transitoire, sans cycle (aucun flux ne tient
-/// `bank_accounts` puis ne réclame les réglages), non mesurée.
+/// réglages — y compris un INSERT **à `journal_account_id` NULL** (création
+/// sans lien, `upsert_primary_in_tx` de l'onboarding) : les NULL précèdent les
+/// valeurs dans l'index, et l'INSERT se pose au bord de l'intervalle qui
+/// précède la première valeur non nulle. Attente transitoire, sans cycle
+/// (aucun flux ne tient `bank_accounts` puis ne réclame les réglages), **non
+/// mesurée** (revue de code P1, F1).
 ///
 /// ⚠️ `LOCK IN SHARE MODE`, pas `FOR SHARE` (erreur de syntaxe sur MariaDB
 /// 10.11). Le test de sérialisation côté réglages attend sur le texte

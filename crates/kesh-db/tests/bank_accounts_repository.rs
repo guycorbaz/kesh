@@ -1390,6 +1390,82 @@ async fn set_journal_account_id_refuses_a_designated_claim_account(pool: MySqlPo
     assert_eq!(linked.journal_account_id, Some(receivable));
 }
 
+/// Story 15-6c (AC4 ; revue de code P1, A5) — **exemption « inchangé »**, au
+/// niveau du dépôt : un compte bancaire **déjà** lié au compte débiteurs
+/// (donnée antérieure, posée ici avec des `claims` vides) reste modifiable.
+/// Le remplacement qui renvoie le même compte lié (`update_for_company`) passe
+/// et écrit les autres champs ; le lien au même compte
+/// (`set_journal_account_id_for_company`) court-circuite en no-op — alors même
+/// que `claims` désigne ce compte.
+#[sqlx::test(migrations = "./test-schema")]
+async fn already_linked_claim_account_is_exempt_in_the_repository(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+    let user_id = create_test_user(&pool, company_id, "admin").await;
+    let receivable = create_account(
+        &pool,
+        company_id,
+        user_id,
+        "1100",
+        "Débiteurs",
+        AccountType::Asset,
+    )
+    .await;
+    let bank_account_id = create_bank_account(&pool, company_id).await;
+    // Donnée antérieure : le lien fautif, posé sans la garde.
+    let mut tx = pool.begin().await.unwrap();
+    bank_accounts::set_journal_account_id_for_company(
+        &mut tx,
+        company_id,
+        bank_account_id,
+        Some(receivable),
+        1,
+        &ClaimAccounts::default(),
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    let claims = ClaimAccounts {
+        receivable: Some(receivable),
+        payable: None,
+    };
+
+    // Remplacement : autre nom, même compte lié → accepté.
+    let mut payload = bank_payload(company_id);
+    payload.bank_name = "Raiffeisen".into();
+    let mut tx = pool.begin().await.unwrap();
+    let (after, _) = bank_accounts::update_for_company(
+        &mut tx,
+        company_id,
+        bank_account_id,
+        &payload,
+        Some(receivable),
+        2,
+        &claims,
+    )
+    .await
+    .expect("le compte lié inchangé n'est pas contrôlé");
+    tx.commit().await.unwrap();
+    assert_eq!(after.bank_name, "Raiffeisen");
+    assert_eq!(after.journal_account_id, Some(receivable));
+    assert_eq!(after.version, 3);
+
+    // Lien au même compte → no-op, sans refus ni nouvelle version.
+    let mut tx = pool.begin().await.unwrap();
+    let (updated, before) = bank_accounts::set_journal_account_id_for_company(
+        &mut tx,
+        company_id,
+        bank_account_id,
+        Some(receivable),
+        3,
+        &claims,
+    )
+    .await
+    .expect("le lien inchangé court-circuite avant la garde");
+    tx.commit().await.unwrap();
+    assert_eq!(updated.version, before.version, "no-op : version inchangée");
+    assert_eq!(updated.journal_account_id, Some(receivable));
+}
+
 /// Test 11 (AC2) — **sérialisation, côté compte bancaire**. Une transaction
 /// tenue à la main verrouille la ligne des réglages (`FOR UPDATE`) et y désigne
 /// le compte X sans valider ; le lien démarre, lit les réglages en
