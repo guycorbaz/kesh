@@ -1082,9 +1082,11 @@ async fn violations_des_groupes(pool: &MySqlPool) -> Vec<i64> {
 
 /// Tout groupe a ≥ 2 lignes, un seul compte, une seule origine, une seule
 /// société, une somme nulle, et `lettering_key = MIN(id)`. ⛔ La lettrabilité
-/// n'est PAS contrôlée, par décision (C104). La 15-1a-ii y ajoutera des
-/// groupes `reversal` posés par la contre-passation ; un groupe `reversal`
-/// posé en mode `System` et un groupe d'une seconde société y figurent déjà,
+/// n'est PAS contrôlée, par décision (C104). La Story 15-1a-ii y ajoute des
+/// groupes `reversal` posés par la contre-passation (AC13 part ii) — dont une
+/// écriture à une ligne déjà lettrée (R6, seconde branche : son groupe reste,
+/// son miroir reste ouvert) ; un groupe `reversal`
+/// posé en mode `System` et un groupe d'une seconde société y figurent aussi,
 /// et deux contrôles négatifs prouvent que les clauses « une origine » et
 /// « une société » rougissent (revue P1, E-6).
 #[sqlx::test(migrations = "./test-schema")]
@@ -1160,13 +1162,75 @@ async fn lettering_invariants(pool: MySqlPool) {
     .expect("groupe de la seconde société");
     tx.commit().await.unwrap();
 
+    // AC13 part (ii) — la contre-passation lettre (R6). Une écriture à deux
+    // lignes lettrables (1100, 2000) → deux groupes `reversal` ; une seconde,
+    // dont la ligne 1100 est déjà lettrée `manual`, → un seul groupe `reversal`
+    // (2000), le groupe manuel intact et le miroir 1100 ouvert.
+    let annee = chrono::Datelike::year(&chrono::Utc::now().date_naive());
+    if !(2025..=2027).contains(&annee) {
+        exercice(&pool, m.company(), annee, "Open").await;
+    }
+    let (libre, _) = ecriture(
+        &pool,
+        m.company(),
+        m.fy26,
+        d(2026, 6, 1),
+        &[
+            (m.lettrable(), dec!(40), Decimal::ZERO),
+            (passif, Decimal::ZERO, dec!(40)),
+        ],
+    )
+    .await;
+    let (en_partie, lignes_ep) = ecriture(
+        &pool,
+        m.company(),
+        m.fy26,
+        d(2026, 6, 2),
+        &[
+            (m.lettrable(), dec!(60), Decimal::ZERO),
+            (passif, Decimal::ZERO, dec!(60)),
+        ],
+    )
+    .await;
+    let (_, lignes_contre) = ecriture(
+        &pool,
+        m.company(),
+        m.fy26,
+        d(2026, 6, 3),
+        &[
+            (passif, dec!(60), Decimal::ZERO),
+            (m.lettrable(), Decimal::ZERO, dec!(60)),
+        ],
+    )
+    .await;
+    let manuel = lettrer(&pool, &m, &[lignes_ep[0], lignes_contre[1]])
+        .await
+        .unwrap();
+    for origine in [libre, en_partie] {
+        kesh_db::repositories::journal_entries::reverse(
+            &pool,
+            m.company(),
+            origine,
+            m.s.admin_user_id,
+        )
+        .await
+        .expect("contre-passation");
+    }
+    let cle_1100: Option<i64> =
+        sqlx::query_scalar("SELECT lettering_key FROM journal_entry_lines WHERE id = ?")
+            .bind(lignes_ep[0])
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(cle_1100, Some(manuel.key), "le groupe manuel reste");
+
     let groupes: i64 = sqlx::query_scalar(
         "SELECT COUNT(DISTINCT lettering_key) FROM journal_entry_lines WHERE lettering_key IS NOT NULL",
     )
     .fetch_one(&pool)
     .await
     .unwrap();
-    assert_eq!(groupes, 5);
+    assert_eq!(groupes, 9, "5 du scénario, 2 + 1 reversal, 1 manuel (R6)");
     let (origines, societes): (i64, i64) = sqlx::query_as(
         "SELECT COUNT(DISTINCT jel.lettering_origin), COUNT(DISTINCT je.company_id) \
          FROM journal_entry_lines jel JOIN journal_entries je ON je.id = jel.entry_id \

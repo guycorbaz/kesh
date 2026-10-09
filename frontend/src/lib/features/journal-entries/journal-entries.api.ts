@@ -40,9 +40,11 @@ export async function getJournalEntry(id: number): Promise<JournalEntryDetailRes
 /**
  * Contre-passe une écriture (Story 24-4a, #380).
  *
- * ⛔ Ne modifie rien : crée l'écriture inverse et rend celle-ci. L'origine
- * demeure — c'est la correction qui doit se voir, pas remplacer ce qu'elle
- * corrige.
+ * ⛔ Crée l'écriture inverse et rend celle-ci ; de l'origine, ne touche qu'à la
+ * marque de lettrage (ses lignes lettrables encore ouvertes sont lettrées avec
+ * leur miroir, groupe `reversal` — Story 15-1a-ii). L'origine demeure dans ses
+ * montants, comptes, date et libellé — c'est la correction qui doit se voir,
+ * pas remplacer ce qu'elle corrige.
  */
 export async function reverseJournalEntry(id: number): Promise<JournalEntryResponse> {
 	return apiClient.post<JournalEntryResponse>(`/api/v1/journal-entries/${id}/reverse`, {});
@@ -68,7 +70,7 @@ export async function updateJournalEntry(
 /**
  * Supprime une écriture (Story 15-8b, #532) — dans le cadre de la
  * modification : exercice ouvert, aucun exercice postérieur clos, aucune pièce,
- * hors période verrouillée. Les refus sont nommés par le serveur ; le numéro
+ * hors période verrouillée, aucune ligne lettrée (Story 15-1a-ii). Les refus sont nommés par le serveur ; le numéro
  * n'est jamais réattribué. Appelée par la fiche (`journal-entries/[id]`).
  */
 export async function deleteJournalEntry(id: number): Promise<void> {

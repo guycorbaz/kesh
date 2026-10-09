@@ -472,7 +472,7 @@
 			<p id="reverse-confirm-desc" class="text-sm text-text-muted mb-4">
 				{i18nMsg(
 					'journal-entries-reverse-dialog-body',
-					"Kesh créera une écriture inverse à la date du jour. L'écriture d'origine reste intacte : c'est la correction qui doit se voir, pas disparaître."
+					"Kesh créera une écriture inverse à la date du jour. L'écriture d'origine reste intacte dans ses montants, ses comptes, sa date et son libellé — seules ses lignes reçoivent, le cas échéant, la marque de lettrage qui les apparie à l'écriture inverse : c'est la correction qui doit se voir, pas disparaître."
 				)}
 			</p>
 			<div class="flex justify-end gap-2">

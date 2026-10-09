@@ -117,6 +117,7 @@ export function editRefusalOutcome(code: string): 'stale' | 'stay' | 'other' {
 		case 'OWNED_BY_SETTLEMENT':
 		case 'MATCHED_BANK_TRANSACTION':
 		case 'DETACHED_SUPPLIER_SETTLEMENT':
+		case 'ENTRY_LETTERED':
 		case 'OPTIMISTIC_LOCK_CONFLICT':
 			return 'stale';
 		case 'PERIOD_LOCKED':

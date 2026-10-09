@@ -2921,6 +2921,12 @@ impl IntoResponse for AppError {
                             "journal-entries-modify-blocked-detached-settlement",
                             "Ce paiement appartient à une facture fournisseur annulée : l'argent est sorti, il reste figé. Corrigez-le par une contre-passation.",
                         ),
+                        // Story 15-1a-ii (AC8) — la marque de lettrage : `details.documentId`
+                        // nul, `details.documentNumber` = le code du premier groupe.
+                        ModificationGuard::Lettered { .. } => (
+                            "journal-entries-modify-blocked-lettered",
+                            "Cette écriture est lettrée : délettrez-la d'abord.",
+                        ),
                     };
                     entry_document_refusal_response(
                         code,

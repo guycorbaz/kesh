@@ -85,10 +85,10 @@ const COLONNES_DES_LIGNES: &[&str] = &[
     "project_id",
     // Story 15-1a-i (#518) — la marque du lettrage. Une ligne lettrée ne doit
     // pas être réécrite en silence : la modification et la suppression d'une
-    // écriture qui porte une ligne lettrée sont gelées par le motif `Lettered`
-    // (AC8 de la Story 15-1a-ii, qui suit — tant qu'elle n'est pas mergée, une
-    // écriture manuelle lettrée reste modifiable par l'API : dépendance
-    // résiduelle écrite à la fiche de la 15-1a-i).
+    // écriture qui porte une ligne lettrée sont gelées par
+    // `journal_entries::lettering_guard` (motif `ModificationGuard::Lettered`,
+    // `409 ENTRY_LETTERED` — AC8 de la Story 15-1a-ii), inconditionnel et
+    // évalué après le verrou de période.
     "lettering_key",
     "lettering_origin",
 ];

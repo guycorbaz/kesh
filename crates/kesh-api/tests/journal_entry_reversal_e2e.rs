@@ -22,6 +22,13 @@
 //! nominale tracée, clé d'API, pièces (dont le rapprochement, intact), paiement
 //! détaché, exercices clos et postérieur, verrou de période, précédence, et la
 //! colonne `DELETE` de la table de correspondance.
+//!
+//! Story 15-1a-ii (#518) : les gardes du lettrage — gel `ENTRY_LETTERED` sur le
+//! `PUT`, le `DELETE` et le motif d'écran, sa précédence après le verrou de
+//! période (C126), le délettrage qui le lève, l'entrelacement avec un lettrage
+//! concurrent ; la contre-passation qui lettre (R6 : corps du `201`, groupe
+//! existant intact, exercice clos et période verrouillée, retypage et compte
+//! bancaire), et l'audit de ce lettrage.
 
 mod common;
 
@@ -254,13 +261,21 @@ async fn post_reverse(app: &TestApp, token: &str, id: i64) -> (reqwest::StatusCo
 // Parcours nominal et invariants
 // ---------------------------------------------------------------------------
 
-/// AC 1, 2, 3, 13 — la contre-passation crée l'inverse et **ne touche pas**
-/// l'origine ; I1 : la somme des deux est nulle **compte par compte**.
+/// AC 1, 2, 3, 13 — la contre-passation crée l'inverse et laisse l'origine
+/// inchangée dans ses montants, comptes, date et libellé — seule la marque de
+/// lettrage est posée sur sa ligne lettrable (Story 15-1a-ii, R6, C129) ; I1 : la
+/// somme des deux est nulle **compte par compte**.
+///
+/// ⛔ Mutations tuées (AC9 (f)) : R6 qui ne lettre que le miroir, ou qui ne
+/// lettre rien (la marque de l'origine manque) ; R6 qui réécrirait un montant
+/// ou un compte de l'origine (le tuple `account_id, debit, credit` diffère).
 ///
 /// ⚠️ L'invariant se vérifie par compte et non globalement : un total nul se
 /// laisserait tromper par une compensation entre deux comptes différents.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn reverse_creates_the_opposite_entry_and_leaves_the_origin_intact(pool: MySqlPool) {
+async fn reverse_creates_the_opposite_entry_and_marks_the_origin_without_altering_it(
+    pool: MySqlPool,
+) {
     let (app, token, company_id, fy_id) = setup(&pool).await;
     let d = make_account(&pool, company_id, "6000", AccountType::Expense).await;
     let c = make_account(&pool, company_id, "1020", AccountType::Asset).await;
@@ -278,7 +293,9 @@ async fn reverse_creates_the_opposite_entry_and_leaves_the_origin_intact(pool: M
         "la contre-passation porte la date du JOUR, jamais celle de l'origine"
     );
 
-    // ⛔ **L'origine est inchangée — les SIX champs, pas deux.** Se contenter de
+    // ⛔ **L'origine est inchangée dans ses montants, comptes, date et libellé —
+    // les SIX champs de l'en-tête, pas deux ; seule la marque de lettrage est
+    // posée (R6).** Se contenter de
     // `version` laisserait passer une réécriture qui ne bumpe pas la version, et
     // c'est précisément le geste que cette story interdit.
     let (number, date, journal, description, version, rev): (
@@ -300,7 +317,10 @@ async fn reverse_creates_the_opposite_entry_and_leaves_the_origin_intact(pool: M
     assert_eq!(date, Utc::now().date_naive());
     assert_eq!(journal, "OD");
     assert_eq!(description, "Écriture à corriger");
-    assert_eq!(version, 1, "l'écriture d'origine ne doit pas être touchée");
+    assert_eq!(
+        version, 1,
+        "origine inchangée dans ses montants, comptes, date et libellé ; seule la marque est posée"
+    );
     assert_eq!(rev, None);
 
     // …et ses LIGNES, que la spec nomme en premier.
@@ -315,8 +335,40 @@ async fn reverse_creates_the_opposite_entry_and_leaves_the_origin_intact(pool: M
     assert_eq!(
         origin_lines,
         vec![(d, dec!(100.00), dec!(0)), (c, dec!(0), dec!(100.00))],
-        "les lignes de l'origine sont intactes"
+        "lignes de l'origine inchangées dans leurs montants et comptes ; seule la marque est posée"
     );
+
+    // …et la MARQUE (R6) : la ligne 1020 (`Asset`, lettrable) de l'origine et
+    // son miroir forment un groupe `reversal` ; la ligne 6000 (`Expense`) n'en
+    // porte pas, ni son miroir.
+    let marque = |entry: i64, account: i64| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query_as::<_, (Option<i64>, Option<String>)>(
+                "SELECT lettering_key, lettering_origin FROM journal_entry_lines \
+                 WHERE entry_id = ? AND account_id = ?",
+            )
+            .bind(entry)
+            .bind(account)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        }
+    };
+    let origine_1020 = marque(origin, c).await;
+    let miroir_1020 = marque(reversal_id, c).await;
+    assert!(
+        origine_1020.0.is_some(),
+        "la ligne 1020 de l'origine est lettrée"
+    );
+    assert_eq!(origine_1020, miroir_1020, "même groupe que son miroir");
+    assert_eq!(origine_1020.1.as_deref(), Some("reversal"));
+    assert_eq!(
+        marque(origin, d).await,
+        (None, None),
+        "6000 n'est pas lettrable"
+    );
+    assert_eq!(marque(reversal_id, d).await, (None, None));
 
     // I1 — somme nulle COMPTE PAR COMPTE sur les deux écritures.
     let sums: Vec<(i64, rust_decimal::Decimal)> = sqlx::query_as(
@@ -2107,7 +2159,7 @@ async fn the_precedence_of_the_put_refusals_is_fixed(pool: MySqlPool) {
 }
 
 /// AC 12 — **la table de correspondance**, écrite en dur : pour chacun des
-/// onze codes d'écran, un montage qui ne porte QUE cette cause ; le détail rend
+/// douze codes d'écran (le douzième, `ENTRY_LETTERED`, Story 15-1a-ii), un montage qui ne porte QUE cette cause ; le détail rend
 /// le code, et le `PUT` identique rend le refus associé — et (Story 15-8b, AC 8)
 /// le `DELETE` **le même**. `ALREADY_REVERSED` ↔
 /// `ENTRY_IS_REVERSED` est le seul écart de nom, voulu. Un compte archivé ou
@@ -2201,6 +2253,35 @@ async fn each_screen_code_maps_to_its_put_and_delete_refusal(pool: MySqlPool) {
     let e = detail(&app, &token, pieces[0].entry).await;
     assert_eq!(e["modificationBlockedLabel"], "F-2026-014");
 
+    // ENTRY_LETTERED (Story 15-1a-ii, AC8 / F-1) — un montage qui ne porte QUE
+    // cette cause : une écriture manuelle en période ouverte, lettrée avec une
+    // autre. ⛔ Mutation tuée : retirer `lettering_guard` de
+    // `modification_blocker` (l'écran ne rend plus le code, `vus` reste à 11).
+    let lettree = make_entry(&pool, company_id, fy_id, d, c, (None, None)).await;
+    let partenaire = make_entry(&pool, company_id, fy_id, c, d, (None, None)).await;
+    let ids = [
+        line_on(&pool, lettree, c).await,
+        line_on(&pool, partenaire, c).await,
+    ];
+    let (status, lettrage) = post_lettering(&app, &token, &ids).await;
+    assert_eq!(status, 201, "{lettrage}");
+    let e = detail(&app, &token, lettree).await;
+    assert_eq!(e["modificationBlockedBy"], "ENTRY_LETTERED");
+    assert_eq!(e["modificationBlockedLabel"], lettrage["code"]);
+    let corps = corps_identique(&app, &token, lettree).await;
+    let (status, body) = put_json(&app, &token, lettree, &corps).await;
+    assert_eq!(
+        (status.as_u16(), body["error"]["code"].as_str()),
+        (409, Some("ENTRY_LETTERED"))
+    );
+    let (status, body) = delete_entry(&app, &token, lettree).await;
+    assert_eq!(
+        (status.as_u16(), body["error"]["code"].as_str()),
+        (409, Some("ENTRY_LETTERED")),
+        "DELETE — ENTRY_LETTERED"
+    );
+    vus.insert("ENTRY_LETTERED");
+
     // PERIOD_LOCKED, en dernier : la borne gèlerait les autres montages.
     let borne = NaiveDate::from_ymd_opt(annee, 1, 1).unwrap();
     poser_borne(&pool, company_id, Some(borne)).await;
@@ -2223,8 +2304,8 @@ async fn each_screen_code_maps_to_its_put_and_delete_refusal(pool: MySqlPool) {
     poser_borne(&pool, company_id, None).await;
     assert_eq!(
         vus.len(),
-        11,
-        "les onze codes d'écran sont exercés : {vus:?}"
+        12,
+        "les douze codes d'écran sont exercés : {vus:?}"
     );
 
     // `null` : modifiable ; le PUT identique rend 200.
@@ -2928,4 +3009,659 @@ async fn an_entry_of_a_closed_year_stays_correctable(pool: MySqlPool) {
     .await
     .unwrap();
     assert_eq!(fy_contre, fy_id);
+}
+
+// ---------------------------------------------------------------------------
+// Story 15-1a-ii (#518) — les gardes du lettrage : gel `ENTRY_LETTERED` (AC8),
+// contre-passation qui lettre (AC9, R6), audit du lettrage `reversal` (AC10).
+// ---------------------------------------------------------------------------
+
+/// `POST /api/v1/letterings` — rend `(statut, corps)`.
+async fn post_lettering(app: &TestApp, token: &str, ids: &[i64]) -> (reqwest::StatusCode, Value) {
+    let resp = app
+        .client
+        .post(app.url("/api/v1/letterings"))
+        .header("Authorization", auth(token))
+        .json(&json!({ "lineIds": ids }))
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status();
+    (status, resp.json().await.unwrap_or(Value::Null))
+}
+
+/// `DELETE /api/v1/letterings/{reference}` — rend le statut.
+async fn delete_lettering(app: &TestApp, token: &str, reference: &str) -> reqwest::StatusCode {
+    app.client
+        .delete(app.url(&format!("/api/v1/letterings/{reference}")))
+        .header("Authorization", auth(token))
+        .send()
+        .await
+        .unwrap()
+        .status()
+}
+
+/// La ligne de `account` dans l'écriture `entry`.
+async fn line_on(pool: &MySqlPool, entry: i64, account: i64) -> i64 {
+    sqlx::query_scalar("SELECT id FROM journal_entry_lines WHERE entry_id = ? AND account_id = ?")
+        .bind(entry)
+        .bind(account)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Marque `(lettering_key, lettering_origin)` d'une ligne.
+async fn marque_of(pool: &MySqlPool, line: i64) -> (Option<i64>, Option<String>) {
+    sqlx::query_as("SELECT lettering_key, lettering_origin FROM journal_entry_lines WHERE id = ?")
+        .bind(line)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Le monde des gardes : la société, un compte **lettrable** (`1020`, `Asset`)
+/// et une contrepartie qui ne l'est pas (`6000`, `Expense`).
+struct Lettrage {
+    app: TestApp,
+    token: String,
+    company_id: i64,
+    fy_id: i64,
+    lettrable: i64,
+    charge: i64,
+}
+
+async fn monde_lettrage(pool: &MySqlPool) -> Lettrage {
+    let (app, token, company_id, fy_id) = setup(pool).await;
+    let charge = make_account(pool, company_id, "6000", AccountType::Expense).await;
+    let lettrable = make_account(pool, company_id, "1020", AccountType::Asset).await;
+    Lettrage {
+        app,
+        token,
+        company_id,
+        fy_id,
+        lettrable,
+        charge,
+    }
+}
+
+/// Une écriture **manuelle** (`date_e`, exercice `fy`) lettrée avec la ligne
+/// d'une autre écriture (`date_p`), en période ouverte, par la route : rend
+/// `(écriture, partenaire, code du groupe)`. L'écriture crédite le compte
+/// lettrable, la partenaire le débite.
+async fn ecriture_lettree(
+    pool: &MySqlPool,
+    m: &Lettrage,
+    fy: i64,
+    date_e: NaiveDate,
+    date_p: NaiveDate,
+) -> (i64, i64, String) {
+    let e = make_entry_on(pool, m.company_id, fy, m.charge, m.lettrable, date_e).await;
+    let p = make_entry_on(pool, m.company_id, fy, m.lettrable, m.charge, date_p).await;
+    let ids = [
+        line_on(pool, e, m.lettrable).await,
+        line_on(pool, p, m.lettrable).await,
+    ];
+    let (status, body) = post_lettering(&m.app, &m.token, &ids).await;
+    assert_eq!(status, 201, "lettrage du montage : {body}");
+    (e, p, body["code"].as_str().unwrap().to_string())
+}
+
+/// Un exercice **N-1 ouvert** et deux dates qui y tombent, de part et d'autre
+/// de la borne `(N-1)-03-31` : le montage du verrou de période ne dépend pas du
+/// jour où le test tourne (une borne au jour même serait refusée aux créations
+/// datées du jour, celles de la contre-passation comprises).
+fn dates_n1() -> (NaiveDate, NaiveDate, NaiveDate) {
+    let n1 = annee_courante() - 1;
+    (
+        NaiveDate::from_ymd_opt(n1, 3, 1).unwrap(),
+        NaiveDate::from_ymd_opt(n1, 3, 31).unwrap(),
+        NaiveDate::from_ymd_opt(n1, 6, 1).unwrap(),
+    )
+}
+
+/// AC8 — une écriture lettrée : `PUT` (lignes changées), `PUT` d'en-tête seul,
+/// `PUT` identique (no-op) et `DELETE` → `409 ENTRY_LETTERED`, `details` de la
+/// forme commune (`documentId` nul, `documentNumber` = code) ; le `GET` rend le
+/// motif et le code. L'écriture reste en base, inchangée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_lettered_entry_is_frozen_on_every_path(pool: MySqlPool) {
+    let m = monde_lettrage(&pool).await;
+    let today = Utc::now().date_naive();
+    let (e, _, code) = ecriture_lettree(&pool, &m, m.fy_id, today, today).await;
+
+    let fiche = detail(&m.app, &m.token, e).await;
+    assert_eq!(fiche["modifiable"], false);
+    assert_eq!(fiche["modificationBlockedBy"], "ENTRY_LETTERED");
+    assert_eq!(fiche["modificationBlockedLabel"], code);
+
+    let avant = (lines_of(&pool, e).await, header_of(&pool, e).await);
+    let identique = corps_identique(&m.app, &m.token, e).await;
+    let mut entete_seul = identique.clone();
+    entete_seul["description"] = json!("Libellé corrigé");
+    let mut lignes_changees = identique.clone();
+    lignes_changees["lines"][0]["debit"] = json!("200.00");
+    lignes_changees["lines"][1]["credit"] = json!("200.00");
+    for (cas, corps) in [
+        ("lignes changées", &lignes_changees),
+        ("en-tête seul", &entete_seul),
+        ("identique (no-op)", &identique),
+    ] {
+        let (status, body) = put_json(&m.app, &m.token, e, corps).await;
+        assert_eq!(status, 409, "{cas} : {body}");
+        assert_eq!(body["error"]["code"], "ENTRY_LETTERED", "{cas}");
+        assert!(body["error"]["details"]["documentId"].is_null(), "{cas}");
+        assert_eq!(body["error"]["details"]["documentNumber"], code, "{cas}");
+        assert_eq!(
+            body["error"]["message"],
+            format!("Cette écriture est lettrée : délettrez-la d’abord. ({code})"),
+            "{cas}"
+        );
+    }
+    let (status, body) = delete_entry(&m.app, &m.token, e).await;
+    assert_eq!(status, 409, "{body}");
+    assert_eq!(body["error"]["code"], "ENTRY_LETTERED");
+    assert_eq!(
+        (lines_of(&pool, e).await, header_of(&pool, e).await),
+        avant,
+        "l'écriture refusée reste en base, inchangée"
+    );
+}
+
+/// AC8 — la promesse du message est tenue : `PUT` → `ENTRY_LETTERED` ;
+/// `DELETE /letterings/{code}` → `204` ; `PUT` → `200`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn entry_lettered_refusal_leads_to_a_dissolution_that_succeeds(pool: MySqlPool) {
+    let m = monde_lettrage(&pool).await;
+    let today = Utc::now().date_naive();
+    let (e, _, code) = ecriture_lettree(&pool, &m, m.fy_id, today, today).await;
+    let mut corps = corps_identique(&m.app, &m.token, e).await;
+    corps["description"] = json!("Corrigée après délettrage");
+
+    let (status, body) = put_json(&m.app, &m.token, e, &corps).await;
+    assert_eq!(
+        (status.as_u16(), body["error"]["code"].as_str()),
+        (409, Some("ENTRY_LETTERED"))
+    );
+    assert_eq!(delete_lettering(&m.app, &m.token, &code).await, 204);
+    let (status, body) = put_json(&m.app, &m.token, e, &corps).await;
+    assert_eq!(
+        status, 200,
+        "le délettrage rend la modification possible : {body}"
+    );
+}
+
+/// AC8 / C126 — `DELETE` d'une écriture lettrée datée ≤ la borne →
+/// `PERIOD_LOCKED` (le délettrage n'y lèverait rien) ; datée après →
+/// `ENTRY_LETTERED`. ⛔ Mutation tuée : la marque avant le verrou de période.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn delete_of_a_lettered_entry_in_a_locked_period_says_period_locked(pool: MySqlPool) {
+    let m = monde_lettrage(&pool).await;
+    let n1 = exercice_de(&pool, m.company_id, annee_courante() - 1, "Open").await;
+    let (avant, borne, apres) = dates_n1();
+    let (sous_borne, apres_borne, _) = ecriture_lettree(&pool, &m, n1, avant, apres).await;
+    poser_borne(&pool, m.company_id, Some(borne)).await;
+
+    let (status, body) = delete_entry(&m.app, &m.token, sous_borne).await;
+    assert_eq!(
+        (status.as_u16(), body["error"]["code"].as_str()),
+        (400, Some("PERIOD_LOCKED"))
+    );
+    let (status, body) = delete_entry(&m.app, &m.token, apres_borne).await;
+    assert_eq!(
+        (status.as_u16(), body["error"]["code"].as_str()),
+        (409, Some("ENTRY_LETTERED"))
+    );
+    poser_borne(&pool, m.company_id, None).await;
+}
+
+/// AC8 / C126 — `PUT` : ancienne date ≤ borne → `PERIOD_LOCKED` ; nouvelle date
+/// ≤ borne sur une écriture datée après → `PERIOD_LOCKED` ; sans borne →
+/// `ENTRY_LETTERED`. ⛔ Mutation tuée : la marque avant le verrou de période.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn update_of_a_lettered_entry_in_a_locked_period_says_period_locked(pool: MySqlPool) {
+    let m = monde_lettrage(&pool).await;
+    let n1 = exercice_de(&pool, m.company_id, annee_courante() - 1, "Open").await;
+    let (avant, borne, apres) = dates_n1();
+    let (sous_borne, apres_borne, _) = ecriture_lettree(&pool, &m, n1, avant, apres).await;
+    poser_borne(&pool, m.company_id, Some(borne)).await;
+
+    let corps = corps_identique(&m.app, &m.token, sous_borne).await;
+    let (status, body) = put_json(&m.app, &m.token, sous_borne, &corps).await;
+    assert_eq!(
+        (status.as_u16(), body["error"]["code"].as_str()),
+        (400, Some("PERIOD_LOCKED"))
+    );
+    let mut recule = corps_identique(&m.app, &m.token, apres_borne).await;
+    recule["entryDate"] = json!(avant.to_string());
+    let (status, body) = put_json(&m.app, &m.token, apres_borne, &recule).await;
+    assert_eq!(
+        (status.as_u16(), body["error"]["code"].as_str()),
+        (400, Some("PERIOD_LOCKED")),
+        "nouvelle date sous la borne"
+    );
+    poser_borne(&pool, m.company_id, None).await;
+    let (status, body) = put_json(&m.app, &m.token, sous_borne, &corps).await;
+    assert_eq!(
+        (status.as_u16(), body["error"]["code"].as_str()),
+        (409, Some("ENTRY_LETTERED"))
+    );
+}
+
+/// AC8 / C126 — le motif d'écran : datée ≤ la borne → `PERIOD_LOCKED` ; datée
+/// après → `ENTRY_LETTERED`. ⛔ Mutation tuée : la marque avant le verrou.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn blocker_of_a_lettered_entry_in_a_locked_period_is_period_locked(pool: MySqlPool) {
+    let m = monde_lettrage(&pool).await;
+    let n1 = exercice_de(&pool, m.company_id, annee_courante() - 1, "Open").await;
+    let (avant, borne, apres) = dates_n1();
+    let (sous_borne, apres_borne, code) = ecriture_lettree(&pool, &m, n1, avant, apres).await;
+    poser_borne(&pool, m.company_id, Some(borne)).await;
+
+    let fiche = detail(&m.app, &m.token, sous_borne).await;
+    assert_eq!(fiche["modificationBlockedBy"], "PERIOD_LOCKED");
+    let fiche = detail(&m.app, &m.token, apres_borne).await;
+    assert_eq!(fiche["modificationBlockedBy"], "ENTRY_LETTERED");
+    assert_eq!(fiche["modificationBlockedLabel"], code);
+    poser_borne(&pool, m.company_id, None).await;
+}
+
+/// AC8 / C126 — un `PUT` à version périmée sur une écriture lettrée rend
+/// `OPTIMISTIC_LOCK_CONFLICT` : le délettrage ne lèverait pas ce refus, il
+/// parle donc avant la marque.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn update_of_a_lettered_entry_with_a_stale_version_says_conflict(pool: MySqlPool) {
+    let m = monde_lettrage(&pool).await;
+    let today = Utc::now().date_naive();
+    let (e, _, _) = ecriture_lettree(&pool, &m, m.fy_id, today, today).await;
+    let mut corps = corps_identique(&m.app, &m.token, e).await;
+    corps["version"] = json!(corps["version"].as_i64().unwrap() + 7);
+    let (status, body) = put_json(&m.app, &m.token, e, &corps).await;
+    assert_eq!(
+        (status.as_u16(), body["error"]["code"].as_str()),
+        (409, Some("OPTIMISTIC_LOCK_CONFLICT"))
+    );
+}
+
+/// R7 (côté gardes) — un `POST /letterings` et un `PUT` de l'une des écritures,
+/// entrelacés de façon **déterministe** dans les deux ordres : jamais un 500.
+///
+/// Le montage tient l'en-tête de l'écriture dans une transaction du test, et
+/// lance les deux requêtes l'une après l'autre, chacune VUE en attente
+/// (`attendre_une_requete_en_cours`) avant la suivante :
+///
+/// - **lettrage d'abord** — l'acte 1 du lettrage (motif `["jel.id IN", "FOR
+///   UPDATE"]`) prend la ligne puis attend l'en-tête ; le `PUT` attend
+///   l'en-tête derrière lui. Le lettrage passe (201), le `PUT` voit la marque :
+///   `409 ENTRY_LETTERED` ;
+/// - **`PUT` d'abord** (motif `["je.version", "FOR UPDATE"]`) — le lettrage
+///   tient la ligne et attend l'en-tête que le `PUT` obtient, et qui demande à
+///   l'étape 7-bis la ligne que tient le lettrage : le **cycle** lignes ↔
+///   écriture. InnoDB en sacrifie un, que le rejeu reprend : soit le `PUT`
+///   passe (200) et le lettrage ne trouve plus sa ligne (404), soit le lettrage
+///   passe (201) et le `PUT` rend `409 ENTRY_LETTERED`.
+///
+/// ⛔ Jamais `["je.fiscal_year_id", "FOR UPDATE"]` : l'étape 2 de
+/// `delete_in_tx` et l'acte 1 du lettrage le contiennent tous deux (F3-6).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn lettering_and_put_interleaved_never_answer_500(pool: MySqlPool) {
+    let m = monde_lettrage(&pool).await;
+    let today = Utc::now().date_naive();
+    for put_first in [false, true] {
+        let e = make_entry_on(&pool, m.company_id, m.fy_id, m.charge, m.lettrable, today).await;
+        let p = make_entry_on(&pool, m.company_id, m.fy_id, m.lettrable, m.charge, today).await;
+        let ids = [
+            line_on(&pool, e, m.lettrable).await,
+            line_on(&pool, p, m.lettrable).await,
+        ];
+        let mut corps = corps_identique(&m.app, &m.token, e).await;
+        corps["description"] = json!("Modifiée pendant un lettrage");
+
+        let mut tenue = pool.begin().await.unwrap();
+        sqlx::query("SELECT id FROM journal_entries WHERE id = ? FOR UPDATE")
+            .bind(e)
+            .fetch_one(&mut *tenue)
+            .await
+            .unwrap();
+
+        let lance_post = |app_url: String, token: String| {
+            let client = reqwest::Client::new();
+            tokio::spawn(async move {
+                let r = client
+                    .post(format!("{app_url}/api/v1/letterings"))
+                    .header("Authorization", format!("Bearer {token}"))
+                    .json(&json!({ "lineIds": ids }))
+                    .send()
+                    .await
+                    .unwrap();
+                let s = r.status().as_u16();
+                (s, r.json::<Value>().await.unwrap_or(Value::Null))
+            })
+        };
+        let lance_put = |app_url: String, token: String, corps: Value| {
+            let client = reqwest::Client::new();
+            tokio::spawn(async move {
+                let r = client
+                    .put(format!("{app_url}/api/v1/journal-entries/{e}"))
+                    .header("Authorization", format!("Bearer {token}"))
+                    .json(&corps)
+                    .send()
+                    .await
+                    .unwrap();
+                let s = r.status().as_u16();
+                (s, r.json::<Value>().await.unwrap_or(Value::Null))
+            })
+        };
+        let (premier, second) = if put_first {
+            let put = lance_put(m.app.base_url.clone(), m.token.clone(), corps.clone());
+            assert!(
+                kesh_db::test_fixtures::attendre_une_requete_en_cours(
+                    &pool,
+                    &["je.version", "FOR UPDATE"],
+                    || put.is_finished()
+                )
+                .await,
+                "le PUT devait attendre l'en-tête"
+            );
+            let post = lance_post(m.app.base_url.clone(), m.token.clone());
+            assert!(
+                kesh_db::test_fixtures::attendre_une_requete_en_cours(
+                    &pool,
+                    &["jel.id IN", "FOR UPDATE"],
+                    || post.is_finished()
+                )
+                .await,
+                "le lettrage devait attendre l'en-tête"
+            );
+            (put, post)
+        } else {
+            let post = lance_post(m.app.base_url.clone(), m.token.clone());
+            assert!(
+                kesh_db::test_fixtures::attendre_une_requete_en_cours(
+                    &pool,
+                    &["jel.id IN", "FOR UPDATE"],
+                    || post.is_finished()
+                )
+                .await,
+                "le lettrage devait attendre l'en-tête"
+            );
+            let put = lance_put(m.app.base_url.clone(), m.token.clone(), corps.clone());
+            assert!(
+                kesh_db::test_fixtures::attendre_une_requete_en_cours(
+                    &pool,
+                    &["je.version", "FOR UPDATE"],
+                    || put.is_finished()
+                )
+                .await,
+                "le PUT devait attendre l'en-tête"
+            );
+            (post, put)
+        };
+        tenue.commit().await.unwrap();
+        let r1 = premier.await.unwrap();
+        let r2 = second.await.unwrap();
+        let (post_r, put_r) = if put_first { (r2, r1) } else { (r1, r2) };
+        let issue = (
+            post_r.0,
+            put_r.0,
+            put_r.1["error"]["code"].as_str().map(str::to_string),
+        );
+        let attendues = if put_first {
+            vec![
+                (201, 409, Some("ENTRY_LETTERED".to_string())),
+                (404, 200, None),
+            ]
+        } else {
+            vec![(201, 409, Some("ENTRY_LETTERED".to_string()))]
+        };
+        assert!(
+            attendues.contains(&issue),
+            "put_first = {put_first} : issue {issue:?} — POST {} / PUT {}",
+            post_r.1,
+            put_r.1
+        );
+    }
+}
+
+/// AC9 (a) — R6 : la ligne lettrable et libre de l'origine forme avec son
+/// miroir un groupe `reversal` ; la ligne `Revenue` n'est pas lettrée.
+/// ⛔ Assertions sur le **corps du `201`** (C116) — la valeur rendue est relue
+/// après le lettrage — puis en base.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reversal_letters_each_free_letterable_line_with_its_mirror(pool: MySqlPool) {
+    let (app, token, company_id, fy_id) = setup(&pool).await;
+    let lettrable = make_account(&pool, company_id, "1100", AccountType::Asset).await;
+    let produit = make_account(&pool, company_id, "3200", AccountType::Revenue).await;
+    let origin = make_entry(&pool, company_id, fy_id, lettrable, produit, (None, None)).await;
+
+    let (status, body) = post_reverse(&app, &token, origin).await;
+    assert_eq!(status, 201, "{body}");
+    let reversal = body["id"].as_i64().unwrap();
+    let lignes = body["lines"].as_array().unwrap();
+    let miroir_1100 = lignes.iter().find(|l| l["accountId"] == lettrable).unwrap();
+    let miroir_3200 = lignes.iter().find(|l| l["accountId"] == produit).unwrap();
+    let key = miroir_1100["letteringKey"]
+        .as_i64()
+        .expect("le 201 porte la marque");
+    assert_eq!(
+        miroir_1100["letteringCode"],
+        kesh_core::lettering::code_from_key(key as u64)
+    );
+    assert_eq!(miroir_1100["letteringOrigin"], "reversal");
+    assert!(miroir_3200["letteringCode"].is_null());
+
+    let origine_1100 = line_on(&pool, origin, lettrable).await;
+    assert_eq!(key, origine_1100, "la clé est le plus petit id du groupe");
+    assert_eq!(
+        marque_of(&pool, origine_1100).await,
+        (Some(key), Some("reversal".into()))
+    );
+    assert_eq!(
+        marque_of(&pool, line_on(&pool, reversal, lettrable).await).await,
+        (Some(key), Some("reversal".into()))
+    );
+    assert_eq!(
+        marque_of(&pool, line_on(&pool, origin, produit).await).await,
+        (None, None)
+    );
+}
+
+/// AC9 (b) — R6, seconde branche : la ligne 1100 déjà lettrée `manual` garde
+/// son groupe, intact ; son miroir reste **ouvert**.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reversal_leaves_an_existing_group_intact_and_the_mirror_open(pool: MySqlPool) {
+    let m = monde_lettrage(&pool).await;
+    let today = Utc::now().date_naive();
+    let (e, p, code) = ecriture_lettree(&pool, &m, m.fy_id, today, today).await;
+    let ligne_e = line_on(&pool, e, m.lettrable).await;
+    let ligne_p = line_on(&pool, p, m.lettrable).await;
+    let avant = (
+        marque_of(&pool, ligne_e).await,
+        marque_of(&pool, ligne_p).await,
+    );
+
+    let (status, body) = post_reverse(&m.app, &m.token, e).await;
+    assert_eq!(status, 201, "{body}");
+    let reversal = body["id"].as_i64().unwrap();
+    assert_eq!(
+        (
+            marque_of(&pool, ligne_e).await,
+            marque_of(&pool, ligne_p).await
+        ),
+        avant,
+        "le groupe {code} est intact"
+    );
+    assert_eq!(avant.0.1.as_deref(), Some("manual"));
+    assert_eq!(
+        marque_of(&pool, line_on(&pool, reversal, m.lettrable).await).await,
+        (None, None),
+        "le miroir de la ligne lettrée reste ouvert"
+    );
+    for l in body["lines"].as_array().unwrap() {
+        assert!(l["letteringCode"].is_null(), "aucun groupe posé : {l}");
+    }
+}
+
+/// AC9 (c) — origine sur exercice **clos** : la contre-passation réussit et
+/// lettre ; et origine en exercice ouvert datée **≤ la borne** du verrou
+/// (posée après sa création) : `201`, groupe `reversal` posé — R6 n'évalue
+/// pas la règle des périodes sur l'origine (F6-1). ⛔ Mutation tuée : R6 qui
+/// l'évaluerait (refus ou lettrage sauté sous le verrou de période).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reversal_of_an_entry_in_a_closed_year_letters_too(pool: MySqlPool) {
+    let m = monde_lettrage(&pool).await;
+    let (avant, borne, _) = dates_n1();
+    let n1 = exercice_de(&pool, m.company_id, annee_courante() - 1, "Open").await;
+    let n2 = exercice_de(&pool, m.company_id, annee_courante() - 2, "Open").await;
+
+    // Cas 1 — exercice clos (N-2 clos, N-1 ouvert : la clôture dans l'ordre).
+    let d2 = NaiveDate::from_ymd_opt(annee_courante() - 2, 5, 1).unwrap();
+    let clos = make_entry_on(&pool, m.company_id, n2, m.charge, m.lettrable, d2).await;
+    set_status(&pool, n2, "Closed").await;
+    // Cas 2 — exercice ouvert, datée sous la borne posée ensuite.
+    let verrouillee = make_entry_on(&pool, m.company_id, n1, m.charge, m.lettrable, avant).await;
+    poser_borne(&pool, m.company_id, Some(borne)).await;
+
+    for origin in [clos, verrouillee] {
+        let (status, body) = post_reverse(&m.app, &m.token, origin).await;
+        assert_eq!(status, 201, "{body}");
+        let reversal = body["id"].as_i64().unwrap();
+        let o = marque_of(&pool, line_on(&pool, origin, m.lettrable).await).await;
+        assert!(o.0.is_some(), "origine {origin} lettrée");
+        assert_eq!(o.1.as_deref(), Some("reversal"));
+        assert_eq!(
+            marque_of(&pool, line_on(&pool, reversal, m.lettrable).await).await,
+            o,
+            "même groupe que son miroir"
+        );
+    }
+    poser_borne(&pool, m.company_id, None).await;
+}
+
+/// AC9 (e) — le groupe `reversal` survit au retypage du compte en `Expense`
+/// (`confirm_retype`) puis se dissout par `DELETE` → 204 ; idem après
+/// rattachement d'un compte bancaire au compte (C104 : la dissolution n'exige
+/// pas la lettrabilité). Compte **sans rôle** (F-10).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reversal_group_survives_retyping_and_bank_attachment_and_dissolves(pool: MySqlPool) {
+    use kesh_db::entities::AccountUpdate;
+    let m = monde_lettrage(&pool).await;
+
+    // Retypage.
+    let origin = make_entry(
+        &pool,
+        m.company_id,
+        m.fy_id,
+        m.charge,
+        m.lettrable,
+        (None, None),
+    )
+    .await;
+    assert_eq!(post_reverse(&m.app, &m.token, origin).await.0, 201);
+    let key = marque_of(&pool, line_on(&pool, origin, m.lettrable).await)
+        .await
+        .0
+        .unwrap();
+    let version: i32 = sqlx::query_scalar("SELECT version FROM accounts WHERE id = ?")
+        .bind(m.lettrable)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    accounts::update(
+        &pool,
+        m.lettrable,
+        version,
+        1,
+        AccountUpdate {
+            name: "Compte 1020".into(),
+            account_type: AccountType::Expense,
+            role: None,
+            postable: true,
+        },
+        true,
+    )
+    .await
+    .expect("retypage confirmé");
+    let groupe = marque_of(&pool, line_on(&pool, origin, m.lettrable).await).await;
+    assert_eq!(
+        groupe,
+        (Some(key), Some("reversal".into())),
+        "le groupe survit"
+    );
+    assert_eq!(
+        delete_lettering(&m.app, &m.token, &key.to_string()).await,
+        204
+    );
+
+    // Rattachement d'un compte bancaire.
+    let autre = make_account(&pool, m.company_id, "1030", AccountType::Asset).await;
+    let origin = make_entry(&pool, m.company_id, m.fy_id, m.charge, autre, (None, None)).await;
+    assert_eq!(post_reverse(&m.app, &m.token, origin).await.0, 201);
+    let key = marque_of(&pool, line_on(&pool, origin, autre).await)
+        .await
+        .0
+        .unwrap();
+    sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, journal_account_id) \
+         VALUES (?, 'Banque 15-1a-ii', 'CH9300762011623852957', ?)",
+    )
+    .bind(m.company_id)
+    .bind(autre)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        delete_lettering(&m.app, &m.token, &key.to_string()).await,
+        204
+    );
+}
+
+/// AC10 (part ii) — le lettrage `reversal` est audité par la primitive, dans
+/// la transaction de la contre-passation, au nom de l'auteur de celle-ci et
+/// sans clé d'API ; `details` porte l'exercice de chaque ligne (C127).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn reversal_lettering_is_audited_by_the_reverser(pool: MySqlPool) {
+    let m = monde_lettrage(&pool).await;
+    let origin = make_entry(
+        &pool,
+        m.company_id,
+        m.fy_id,
+        m.charge,
+        m.lettrable,
+        (None, None),
+    )
+    .await;
+    let (status, body) = post_reverse(&m.app, &m.token, origin).await;
+    assert_eq!(status, 201, "{body}");
+    let key = marque_of(&pool, line_on(&pool, origin, m.lettrable).await)
+        .await
+        .0
+        .unwrap();
+    let admin: i64 = sqlx::query_scalar("SELECT id FROM users WHERE username = 'admin'")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let (actor_type, user_id, api_key, details): (String, i64, Option<i64>, Value) =
+        sqlx::query_as(
+            "SELECT actor_type, user_id, actor_api_key_id, details_json FROM audit_log \
+             WHERE entity_type = 'lettering' AND entity_id = ? AND action = 'lettering.created'",
+        )
+        .bind(key)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(
+        (actor_type.as_str(), user_id, api_key),
+        ("user", admin, None)
+    );
+    assert_eq!(details["origin"], "reversal");
+    let lignes = details["lines"].as_array().unwrap();
+    assert_eq!(lignes.len(), 2);
+    for l in lignes {
+        assert_eq!(l["fiscalYearId"], m.fy_id);
+        assert_eq!(
+            l["fiscalYearName"],
+            format!("Exercice {}", annee_courante())
+        );
+    }
 }

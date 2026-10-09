@@ -186,3 +186,42 @@ async fn a_concurrent_close_waits_for_the_unreconciliation(pool: MySqlPool) {
             .unwrap();
     assert_eq!(reversals, 0, "rien n'a été contre-passé");
 }
+
+/// Story 15-1a-ii (AC9, R6) — le dé-rapprochement d'un rapprochement **hors
+/// facture** (`cancel_in_tx`, qui appelle `reverse_in_tx`) lettre lui aussi :
+/// la ligne `1000` (actif, lettrable — le compte bancaire du montage ne la
+/// désigne pas) et son miroir forment un groupe `reversal` ; la ligne `3000`
+/// (produit) reste ouverte.
+#[sqlx::test(migrations = "./test-schema")]
+async fn reconciliation_cancel_letters_the_reversal_pair(pool: MySqlPool) {
+    let (seeded, _, entry, tx_id) = monter(&pool).await;
+    reconciliation_cancel::cancel(&pool, seeded.company_id, tx_id, seeded.admin_user_id)
+        .await
+        .expect("dé-rapprochement");
+    let marques: Vec<(i64, i64, Option<i64>, Option<String>)> = sqlx::query_as(
+        "SELECT jel.entry_id, jel.account_id, jel.lettering_key, jel.lettering_origin \
+         FROM journal_entry_lines jel JOIN journal_entries je ON je.id = jel.entry_id \
+         WHERE je.id = ? OR je.reverses_entry_id = ? ORDER BY jel.id",
+    )
+    .bind(entry)
+    .bind(entry)
+    .fetch_all(&pool)
+    .await
+    .unwrap();
+    assert_eq!(marques.len(), 4);
+    let caisse = seeded.accounts["1000"];
+    let cles: Vec<Option<i64>> = marques
+        .iter()
+        .filter(|(_, a, _, _)| *a == caisse)
+        .map(|(_, _, k, _)| *k)
+        .collect();
+    assert_eq!(cles.len(), 2);
+    assert!(cles[0].is_some() && cles[0] == cles[1], "{marques:?}");
+    for (_, a, k, o) in &marques {
+        if *a == caisse {
+            assert_eq!(o.as_deref(), Some("reversal"));
+        } else {
+            assert_eq!((k, o), (&None, &None), "le produit reste ouvert");
+        }
+    }
+}

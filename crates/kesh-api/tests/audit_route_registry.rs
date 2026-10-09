@@ -80,9 +80,11 @@
 //!   15-8a) pour `journal_entries::update`. Pour toutes les autres routes
 //!   `Rejouee` — dont `reconciliation::split` et
 //!   `imported_supplier_invoices::complete`, les deux autres fonctions « une
-//!   tentative » extraites par la 15-5e2, et `journal_entries::delete` (15-8b,
-//!   rejouée par uniformité avec le `PUT`, sans cycle connu — choix
-//!   C-15-8b-6) —, c'est la revue fichier par fichier.
+//!   tentative » extraites par la 15-5e2, et `journal_entries::delete`
+//!   (rejouée par uniformité avec le `PUT` à la 15-8b — choix C-15-8b-6 —, et
+//!   contre un cycle connu depuis la 15-1a-ii : l'acte 1 du lettrage prend une
+//!   ligne puis son écriture, le `DELETE` l'écriture puis ses lignes) —, c'est
+//!   la revue fichier par fichier.
 //! - **(iv)** — **angle mort assumé** — qu'une route `SansEcritureAuJournal` qui
 //!   prend un verrou ne soit pas la **victime** d'un cycle avec un flux qui écrit
 //!   au journal. P. ex. `accept_batch` tient un verrou partagé sur la ligne
@@ -234,7 +236,7 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("put", "journal_entries::update_journal_entry", Traced, Rejouee),
     // Story 15-8b (#532) : l'audit `journal_entry.deleted` vient de `journal_entries::delete_in_tx`.
     // Rejouée par la 15-8b (par uniformité avec le `PUT`), nommée à son intégration ; enveloppe
-    // `DbError` depuis la 15-5e2.
+    // `DbError` depuis la 15-5e2 ; cycle connu avec l'acte 1 du lettrage depuis la Story 15-1a-ii.
     ("delete", "journal_entries::delete_journal_entry", Traced, Rejouee),
     ("post", "companies::lock_company_books", Traced, SansEcritureAuJournal),
     ("post", "journal_entries::reverse_journal_entry", Traced, Rejouee),

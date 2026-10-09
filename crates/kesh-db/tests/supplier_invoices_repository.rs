@@ -2498,3 +2498,78 @@ async fn pay_by_a_bank_account_linked_to_the_payable_account_is_refused(pool: My
     assert_payable_refusal(&err, payable);
     assert_supplier_nothing_written(&pool, created.invoice.id, before).await;
 }
+
+/// Story 15-1a-ii (AC9 (d), R6, C106) — l'annulation d'une facture
+/// fournisseur validée et non payée contre-passe son achat : la ligne
+/// fournisseurs (`2000`, passif, lettrable) et son miroir forment un groupe
+/// `reversal`. L'origine reste l'écriture d'**achat** de la facture (motif
+/// `OwnedBySupplierInvoice`) : ce groupe ne se dissout pas à la main —
+/// `dissolve_group_in_tx` en mode `Manual` (celui de `DELETE /letterings`)
+/// rend `LetteringLineOwnedByDocument`, sans quoi la paire resterait ouverte
+/// pour toujours (R5 interdit de la relettrer).
+#[sqlx::test(migrations = "./test-schema")]
+async fn supplier_invoice_cancel_letters_a_pair_that_cannot_be_dissolved_by_hand(pool: MySqlPool) {
+    use kesh_db::repositories::letterings::{self, Actor, Mode};
+    let (ctx, id) = monter_achat(&pool, &[], false).await;
+    let achat: i64 =
+        sqlx::query_scalar("SELECT purchase_journal_entry_id FROM supplier_invoices WHERE id = ?")
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    supplier_invoices::cancel(&pool, ctx.seeded.company_id, id, ctx.seeded.admin_user_id)
+        .await
+        .expect("annulation");
+
+    let fournisseurs = ctx.seeded.accounts["2000"];
+    let (ligne, key, origin): (i64, Option<i64>, Option<String>) = sqlx::query_as(
+        "SELECT id, lettering_key, lettering_origin FROM journal_entry_lines \
+         WHERE entry_id = ? AND account_id = ?",
+    )
+    .bind(achat)
+    .bind(fournisseurs)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        key,
+        Some(ligne),
+        "la ligne fournisseurs de l'achat est lettrée"
+    );
+    assert_eq!(origin.as_deref(), Some("reversal"));
+    let miroir: Option<i64> = sqlx::query_scalar(
+        "SELECT jel.lettering_key FROM journal_entry_lines jel \
+         JOIN journal_entries je ON je.id = jel.entry_id \
+         WHERE je.reverses_entry_id = ? AND jel.account_id = ?",
+    )
+    .bind(achat)
+    .bind(fournisseurs)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(miroir, key, "avec son miroir");
+
+    let mut tx = pool.begin().await.unwrap();
+    let r = letterings::dissolve_group_in_tx(
+        &mut tx,
+        ctx.seeded.company_id,
+        ligne,
+        Mode::Manual,
+        Actor {
+            user_id: ctx.seeded.admin_user_id,
+            api_key_id: None,
+        },
+    )
+    .await;
+    tx.rollback().await.unwrap();
+    assert!(
+        matches!(
+            r,
+            Err(DbError::LetteringLineOwnedByDocument {
+                blocker: kesh_db::errors::ReversalBlocker::OwnedBySupplierInvoice,
+                ..
+            })
+        ),
+        "obtenu {r:?}"
+    );
+}
