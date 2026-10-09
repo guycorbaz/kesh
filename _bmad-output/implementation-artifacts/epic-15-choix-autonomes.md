@@ -6833,3 +6833,20 @@ l'import (#458–#461).
 - **Contexte** : `origin/main` a reçu la 15-14a (#591 : manuels, catalogues, gardes de texte) et le tmpfs à 8 Go (#588) après la clôture de la revue.
 - **Retenu** : sauvegarde `backup/15-1a-ii-avant-rebase-181efa3c`, rebase. Conflit des catalogues ×4 tranché clé par clé : `opening-balances-locked-first-year-closed` = texte de la 15-14a (la 15-1a-ii n'y touchait pas), `opening-balances-locked-already-has-entries` = texte de la 15-1a-ii (celui de main plus la réserve du délettrage). PDF régénérés par `make -B`. Registre et sprint-status par union.
 - **Réversible** : oui (branche de sauvegarde).
+
+## C-15-7b3-1 — 15-7b3 (développement) : deux helpers de montage partagés dans `kesh_db::test_fixtures`
+- **Contexte** : la fiche demande de factoriser le montage du déclencheur du test 8 de la 15-7b2 « si les deux fiches le portent » (Dev Notes), et son montage commun de l'état orphelin sert trois fichiers dans deux crates (`kesh-api/src/auth/bootstrap.rs`, `kesh-api/tests/admin_full_import_e2e.rs`, `kesh-db/tests/companies_repository.rs`).
+- **Retenu** : `test_fixtures::rendre_principaux_orphelins(pool, dead_id)` (connexion détachée, `FOREIGN_KEY_CHECKS = 0` de session, `users` et **toutes** les `api_keys`) et `test_fixtures::poser_declencheur_en_echec(pool, nom, quand, condition)` (pré-requis `@@log_bin = 0` **asserté** avec un message qui le nomme, corps `SIGNAL` éventuellement sous `IF`). Le test 8 de la 15-7b2 (`reset_failure_erases_nothing_and_never_returns_its_connection`) passe par le second : seul son message `MESSAGE_TEXT` change.
+- **Écartées** : une copie par fichier (DRY) ; un module de test partagé entre crates (aucun n'existe ; `test_fixtures` est déjà le lieu des montages communs, compilé en permanence).
+- **Réversible** : oui (tests seulement).
+
+## C-15-7b3-2 — 15-7b3 (développement) : l'acteur du démarrage en une requête ; `user_ids` au détail
+- **Contexte** : AC 1, étape 7 — l'administrateur actif de plus petit `id`, à défaut l'utilisateur de plus petit `id` ; détail `users_repointed` **et** `user_ids`, alors que l'entrée `installation.reset` de la 15-7b2 ne porte que le nombre (T0, E3).
+- **Retenu** : `SELECT id FROM users ORDER BY (role = 'Admin' AND active = TRUE) DESC, id LIMIT 1` — une requête, les deux branches ; mutations 7a et 7b rouges. Détail conforme à l'AC (`user_ids` en plus) : l'entrée désigne des utilisateurs qui n'ont rien fait, les nommer est l'objet de la trace.
+- **Écartées** : deux requêtes successives (même résultat, un aller-retour de plus) ; aligner sur `installation.reset` en retirant `user_ids` (contraire à l'AC).
+- **Réversible** : oui avant publication (le détail d'audit devient une archive à la release).
+
+## C-15-7b3-3 — 15-7b3 (documentation) : où vit le texte, et ce qui devait changer au passage
+- **Contexte** : AC 6 relocalisé par titre de section (fiche du 2026-10-08, manuel réécrit depuis par les 15-11a, 15-13b, 15-14a).
+- **Retenu** : (1) le texte principal est un `\paragraph` étiqueté `sec:reparation-installation` placé **après** l'énumération et l'encadré « Toujours sauvegarder » de la § *Procédure de mise à jour standard*, avant la sous-section 0.13.0 de la 15-11a, sans la réécrire (C-15-7-55) ; les autres sites y renvoient. (2) L'étape *Parcours* disait « sa réparation au démarrage relève d'une version ultérieure » et le CHANGELOG de la 15-7b2 « correction ultérieure » (deux fois) : devenus faux, réécrits pour renvoyer à la réparation. (3) Ajouts **hors liste de l'AC 6**, parce que l'action paraît au journal : un paragraphe *La réparation de l'installation* dans la section journal d'audit du manuel utilisateur, une mention d'`installation.repaired` au § *Journal d'audit* et à la ligne du bootstrap (`#542`) du manuel d'administration. (4) Trois débordements créés par ces ajouts enveloppés dans `sloppypar` (57 → 54 au journal LaTeX) ; le symptôme du Dépannage reformulé (le nom `kesh-api` sortait de la page en fin de ligne, « kesh-a » au PDF aplati). (5) `make -B fr` régénère aussi la brochure : ses octets changent sans changement de source.
+- **Réversible** : oui.

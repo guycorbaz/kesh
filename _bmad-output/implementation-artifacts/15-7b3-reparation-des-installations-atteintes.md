@@ -1,6 +1,6 @@
 # Story 15.7b3 : Les installations déjà atteintes par #528 et #542 sont réparées, au démarrage et à la restauration
 
-Status: in-progress
+Status: review
 
 <!-- Née le 2026-10-08 du découpage de la 15-7b2 (choix C-15-7-40), à la passe de validation P3 de
      celle-ci : la clause de coupe de la 15-7b2 (C-15-7-39) s'est déclenchée — deux MEDIUM nés de la
@@ -379,13 +379,13 @@ qui doit ne plus rien rendre ; le tout sur `docs/manual/fr/*.tex`
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — `kesh-db`** (AC 1, 4) — `RepairTrigger`, `InstallationRepair`, `repair_installation_in_tx` (sociétés provisoires superflues au démarrage — références lues par `company_referencing_columns` dans `information_schema`, une suppression par `SAVEPOINT` —, société de rattachement, base sans utilisateur, appel de `reattach_orphan_principals_in_tx` de la 15-7b2, entrée) ; doc-comment (acteur du démarrage, entrée invisible sans société).
-- [ ] **T2 — Démarrage** (AC 2) — appel en tête d'`ensure_admin_user`, **avant la lecture des compteurs**, transaction, `info!` ; **erreur non fatale** (`rollback` *best-effort*, `error!`, démarrage poursuivi) ; doc de tête (invariant des compteurs), matrice `//!` du module, doc de tête de `main.rs:19`.
-- [ ] **T3 — Restauration** (AC 3) — appel dans `run_backup_and_restore`, étape « 5-quater », erreur ⇒ `AdminFullImportFailed`.
-- [ ] **T4 — Libellés** (AC 5) — `ACTIONS`, quatre `.ftl`.
-- [ ] **T5 — Tests** (Dev Notes § Tests) et mutations.
-- [ ] **T6 — Manuels, PDF, `docs/api-external.md`, CHANGELOG, doc-comments** (AC 6) — admin (renvoi `:1314`, procédure de mise à jour, dépannage — dont le nom du service `kesh-api` aux quatre lignes fausses, `:1905`, `:1906`, `:2058`, `:2063` —, rollback, matrice, reprises, clés) et utilisateur (`:297`) ; CHANGELOG après rebase sur `main`.
-- [ ] **T7 — Gates** : `kesh-db` touché ⇒ gate complet même en cours de boucle ; base remise à zéro avant ; E2E complet au dernier commit de code (aucun changement frontend attendu ; l'E2E reste la règle).
+- [x] **T1 — `kesh-db`** (AC 1, 4) — `RepairTrigger`, `InstallationRepair`, `repair_installation_in_tx` (sociétés provisoires superflues au démarrage — références lues par `company_referencing_columns` dans `information_schema`, une suppression par `SAVEPOINT` —, société de rattachement, base sans utilisateur, appel de `reattach_orphan_principals_in_tx` de la 15-7b2, entrée) ; doc-comment (acteur du démarrage, entrée invisible sans société).
+- [x] **T2 — Démarrage** (AC 2) — appel en tête d'`ensure_admin_user`, **avant la lecture des compteurs**, transaction, `info!` ; **erreur non fatale** (`rollback` *best-effort*, `error!`, démarrage poursuivi) ; doc de tête (invariant des compteurs), matrice `//!` du module, doc de tête de `main.rs:19`.
+- [x] **T3 — Restauration** (AC 3) — appel dans `run_backup_and_restore`, étape « 5-quater », erreur ⇒ `AdminFullImportFailed`.
+- [x] **T4 — Libellés** (AC 5) — `ACTIONS`, quatre `.ftl`.
+- [x] **T5 — Tests** (Dev Notes § Tests) et mutations.
+- [x] **T6 — Manuels, PDF, `docs/api-external.md`, CHANGELOG, doc-comments** (AC 6) — admin (renvoi `:1314`, procédure de mise à jour, dépannage — dont le nom du service `kesh-api` aux quatre lignes fausses, `:1905`, `:1906`, `:2058`, `:2063` —, rollback, matrice, reprises, clés) et utilisateur (`:297`) ; CHANGELOG après rebase sur `main`.
+- [x] **T7 — Gates** : `kesh-db` touché ⇒ gate complet même en cours de boucle ; base remise à zéro avant ; E2E complet au dernier commit de code (aucun changement frontend attendu ; l'E2E reste la règle).
 
 ## Dev Notes
 
@@ -526,6 +526,8 @@ test 6f ; les tests 1 et 2 ci-dessus les voient aussi.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), worktree `kesh-15-7b3`, base `e892dcfa`.
+
 ### Debug Log References
 
 #### T0 — relecture de la fiche contre `e892dcfa` (2026-10-09, avant tout code)
@@ -586,7 +588,88 @@ La fiche date du 2026-10-08 ; depuis, la 15-7b2 (qu'elle appelle), les 15-13a/b,
 
 ### Completion Notes List
 
+**Ce qui est livré** (commits `059dc9a7` code et tests, `d7f4c1f3` documentation ; dernier commit de
+code et de documentation = `d7f4c1f3`, sur lequel tous les gates ci-dessous ont tourné) :
+
+- **T1** — `companies::{RepairTrigger, InstallationRepair, company_referencing_columns,
+  repair_installation_in_tx}` (`crates/kesh-db/src/repositories/companies.rs`), dans l'ordre de
+  l'AC 1 : `companies … FOR UPDATE` ; au démarrage seulement et à plus d'une société, sociétés
+  provisoires qu'aucune ligne d'aucune table ne désigne (colonnes lues dans
+  `information_schema.KEY_COLUMN_USAGE`, une requête `EXISTS` par colonne, identifiants entre accents
+  graves), `MIN(id)` conservée si toutes le sont, chaque `DELETE` sous `SAVEPOINT repair_stub`
+  (échec ⇒ `ROLLBACK TO`, `warn!` « société provisoire {id} conservée : {e} », réparation poursuivie ;
+  échec du `ROLLBACK TO` ⇒ erreur **d'origine** rendue, celle du `ROLLBACK TO` en `warn!`) ;
+  société de rattachement ; base sans utilisateur ⇒ `info!` et `Ok(None)` ; appel de
+  `reattach_orphan_principals_in_tx` (15-7b2, non réécrite) ; rien fait ⇒ `Ok(None)` ; entrée
+  `installation.repaired` (C-15-7b3-2). Ni `begin` ni `commit`. Écart de forme : `&mut *tx` au lieu du
+  `&mut **tx` de la fiche pour `company_referencing_columns` (clippy `explicit_auto_deref`).
+- **T2** — `ensure_admin_user` appelle en tête `repair_installation_at_startup` (privée) : une
+  transaction, `commit` dans tous les cas, `info!` sur `Some`, **erreur non fatale** (`rollback`
+  *best-effort* en `warn!`, `error!` « réparation de l'installation au démarrage : {e} — démarrage
+  poursuivi, installation inchangée »). Doc de tête (invariant des compteurs), matrice `//!` (cas 3,
+  sérialisation par `companies`), doc de tête de `main.rs`.
+- **T3** — étape « 5-quater » de `run_backup_and_restore`, après la lecture d'`audit_uid`, avant
+  `books.restored` et `admin.full_import` ; `Restore { actor_user_id: audit_uid, triggered_by_user:
+  current_user.user_id }` ; erreur ⇒ `AdminFullImportFailed("réparation de l'installation : …")`.
+- **T4** — `installation.repaired` dans `ACTIONS` (entre `demo_seeded` et `reset`) et dans les quatre
+  catalogues (libellés de l'AC 5).
+- **T5** — **18 tests neufs** (périmètre `e892dcfa..d7f4c1f3`, recomptés par `grep -c '#\[sqlx::test'`
+  aux deux bornes) : `auth/bootstrap.rs` 10 → 20 (test 1 et ses quatre variantes, test 4 (i) à (iv),
+  test 5), `companies_repository.rs` 21 → 28 (tests 3 (a), (b), (b'), (c), 6 (a), (b), (c)),
+  `admin_full_import_e2e.rs` 35 → 36 (test 2). Helpers partagés dans `test_fixtures`
+  (C-15-7b3-1) ; le test 8 de la 15-7b2 y est raccordé. **Mutations : 16 jouées, 16 rouges** — les
+  quatorze numérotées de la fiche sauf la 11 (sans test, choix écrit), avec les variantes 7a/7b et
+  9a/9b/9c ; script et journal `kesh-gate-logs/157b3-mutations.{py,log}` (fichier restauré et
+  `touch` après chaque mutation). Première passe : la mutation 4 ne compilait pas (motif mal formé),
+  corrigée et rejouée, puis les seize rejouées avec un verdict strict (« `FAIL [` » présent).
+- **T6** — manuel d'administration, manuel utilisateur, PDF (`make -B fr`), `docs/api-external.md`,
+  CHANGELOG `[0.13.0]` `### Corrigé` (C-15-7b3-3) ; les quatre lignes `docker compose logs kesh`
+  (`--tail=100`, `--since=1h`, `| tail -50`) et les deux `kesh` du symptôme « Kesh ne démarre pas »
+  passées à `kesh-api`. Contrôles : `grep -nE "compose (logs|ps).*\bkesh\b" docs/manual/fr/*.tex | grep
+  -v kesh-api` muet ; PDF aplatis (`pdftotext | tr '\n' ' ' | tr -s ' '`, apostrophes typographiques
+  normalisées) : les dix phrases-témoins du manuel d'administration et les deux du manuel utilisateur
+  présentes ; journal LaTeX 57 → 54 `Overfull` après correction des trois créés ici.
+- **T7** — gates sur `d7f4c1f3`, bases `kesh_157b3` et `kesh_e2e_157b3` reconstruites avant :
+  - **backend** `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) : **3215/3215, 4 ignorés**
+    (3197 de la 15-7b2 + 18) — `kesh-gate-logs/157b3-gate-complet-1.log` ;
+  - **frontend** : `npm run check` 0 erreur (27 avertissements préexistants), `lint-i18n-ownership`
+    PASS, Vitest **1164/1164** (115 fichiers), `npm run build` vert — `157b3-frontend.log` ;
+  - **E2E complet** (port 3020, recette de `docs/testing.md`, `KESH_ADMIN_BACKUP_DIR` inscriptible) :
+    **239 passés, 15 échecs, 19 ignorés** — 7 **KF-029** attendus (`mode-expert:26`, `:41`,
+    `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) + 8 hors liste
+    (`invoice-frozen-pdf:74`, `invoices:715`, `supplier-invoice-scan:39`, `bank-accounts-crud:143`,
+    `bank-import:186`, `contacts:69`, `:113`, `:149`), tous en `waiting for locator('#username')`,
+    **8/8 verts rejoués seuls** ; les deux traces conservées portent `ERR_NETWORK_CHANGED` (12 et 44
+    occurrences) : **KF-053 (#478)**. Run après 12:00 UTC (KF-045 hors jeu). Journaux
+    `157b3-e2e.log`, `157b3-e2e-rejeu.log`, `test-results` copiés dans
+    `157b3-e2e-test-results-run1/`. Backend arrêté par son PID.
+  - tmpfs de `kesh-mariadb-dev` relevé avant et après (lecture seule) : 1,5 G / 8 G, 18 %, inchangé.
+
+**Contrôle des tests appelant `ensure_admin_user`** (Dev Notes, F3-5) : voir T0, E6 — dix-huit
+fichiers, aucun montage à risque avant l'appel ; confirmé par le gate complet vert.
+
+**Choix consignés** : C-15-7b3-1 (helpers de montage partagés), C-15-7b3-2 (acteur en une requête ;
+`user_ids` au détail), C-15-7b3-3 (lieu du texte au manuel, textes devenus faux, ajouts hors liste,
+débordements).
+
+**Non fait, à dessein** : revue de code (non lancée, consigne) ; rien sur `kesh-mariadb-dev` hors des
+deux bases de la story.
+
 ### File List
+
+- `crates/kesh-db/src/repositories/companies.rs` — `RepairTrigger`, `InstallationRepair`, `company_referencing_columns`, `repair_installation_in_tx`
+- `crates/kesh-db/src/test_fixtures.rs` — `rendre_principaux_orphelins`, `poser_declencheur_en_echec`
+- `crates/kesh-db/tests/companies_repository.rs` — tests 3 et 6
+- `crates/kesh-api/src/auth/bootstrap.rs` — appel au démarrage, doc-comments, tests 1, 4, 5
+- `crates/kesh-api/src/main.rs` — doc de tête
+- `crates/kesh-api/src/routes/admin.rs` — étape 5-quater
+- `crates/kesh-api/src/audit_labels.rs` — `installation.repaired`
+- `crates/kesh-api/tests/admin_full_import_e2e.rs` — test 2
+- `crates/kesh-api/tests/onboarding_audit_e2e.rs` — test 8 de la 15-7b2 raccordé au helper
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` — libellé
+- `docs/manual/fr/admin-manual.tex`, `docs/manual/fr/user-manual.tex` et leurs PDF ; `docs/manual/fr/marketing-brochure.pdf` (régénérée par `make -B fr`, source inchangée)
+- `docs/api-external.md`, `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/15-7b3-reparation-des-installations-atteintes.md`, `sprint-status.yaml`, `epic-15-choix-autonomes.md`
 
 ## Change Log
 
@@ -743,3 +826,8 @@ La fiche date du 2026-10-08 ; depuis, la 15-7b2 (qu'elle appelle), les 15-13a/b,
   `Status: backlog` corrigé en `ready-for-dev` (validation close, P4 ciblée — le sprint-status le
   disait déjà) puis `in-progress` au démarrage du développement. T0 écrit au Dev Agent Record (E1 à
   E12) avant tout code.
+- **2026-10-09 — Développement achevé, statut `review`.** Commits `9710a01e` (T0), `059dc9a7` (code et
+  tests), `d7f4c1f3` (documentation). Gates sur `d7f4c1f3` : backend 3215/3215 (4 ignorés), Vitest
+  1164/1164, E2E 239 passés / 15 échecs = 7 KF-029 + 8 KF-053 (#478, verts rejoués seuls). 16/16
+  mutations rouges. 18 tests neufs. Choix C-15-7b3-1 à 3. `origin/main` n'avait pas avancé au gate
+  final (`git log HEAD..origin/main` vide). Revue de code non lancée.
