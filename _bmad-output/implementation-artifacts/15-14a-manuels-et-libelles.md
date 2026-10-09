@@ -927,6 +927,7 @@ compilation à froid** (`CARGO_TARGET_DIR` du worktree vide au départ) :
 - `docs/user-guide/fr/getting-started.md`
 - `frontend/src/lib/components/invoices/InvoiceForm.svelte`
 - `frontend/src/lib/features/invoices/InvoiceSettlements.test.ts`
+- `frontend/src/lib/features/journal-entries/VatPurchaseAssistant.svelte` (revue de code P1, B-7)
 - `frontend/src/lib/features/reconciliation/CancelReconciliationDialog.test.ts`
 - `frontend/src/lib/features/reconciliation/reconciliation-cancel.test.ts`
 - `frontend/src/lib/features/reconciliation/reconciliation-cancel.ts`
@@ -937,7 +938,7 @@ compilation à froid** (`CARGO_TARGET_DIR` du worktree vide au départ) :
 - `frontend/src/routes/(app)/invoices/[id]/invoice-settlements-page.test.ts`
 - `frontend/src/routes/(app)/settings/opening-balances/+page.svelte`
 - `_bmad-output/implementation-artifacts/15-14a-manuels-et-libelles.md`,
-  `epic-15-choix-autonomes.md` (C-15-14-38 à 42), `sprint-status.yaml`
+  `epic-15-choix-autonomes.md` (C-15-14-38 à 42 ; revue de code P1 : C-15-14-43 à 48), `sprint-status.yaml`
 
 ## Change Log
 
@@ -1062,3 +1063,47 @@ compilation à froid** (`CARGO_TARGET_DIR` du worktree vide au départ) :
   3056/3056, Vitest 1140/1140, E2E 245 / 9 attendus (7 KF-029 + 2 KF-045). Choix C-15-14-38 à 42 (tableau
   des plans, ordre des propositions de-CH/it-CH/en-CH, valeurs brutes des catalogues, garde de tout `.tex`,
   comptes « après » ventilés — dont l'« AC 6 : 2 » de la fiche, faux). Statut `review`.
+- 2026-10-09 — **Revue de code P1** (Sonnet ×3 : B, E, A ; rapports `kesh-gate-logs/15-14a-review-p1-{B,E,A}.md`)
+  et **remédiation** (Opus 5.5). Bilan : **3 MEDIUM** distincts (B-1, E-1, E-2), **13 LOW** (B-2 à B-7, E-3 = B-3,
+  E-4, E-5, A-1 à A-5), aucun CRITICAL ni HIGH. Tout est traité, rien d'écarté :
+  - **B-1** (MEDIUM) : `README.md:213` « (Réglages, Admin) » → « (Paramètres, Admin) » ; G2 interdit désormais
+    « Réglages » sous toute forme dans les manuels, le README et `.env.example` (C-15-14-43). Inventaire AC 2
+    rejoué sur tout le dépôt : (A) **13** (5 noms d'objet du journal d'audit + 8 commentaires), (B) **131**.
+  - **E-1, E-5** (MEDIUM, LOW) : inventaire de **tous** les numéros de compte du manuel utilisateur et du guide
+    contre les trois JSON — 11 numéros ou noms faux corrigés (3600/3601, 1030, 1020 CCP / Caisse, 3200
+    Ventes de services / Honoraires, 4200 Charges de personnel, 5700 AVS/AI/APG, 6500 Entretien, 3400
+    Maintenance, 6997/7997, 2800 Capital, 3000 Ventes) ; le manuel d'administration, relu de même, est juste.
+    Garde **G4-bis** par inventaire des sites non résolus (C-15-14-45).
+  - **E-2** (MEDIUM) : §3 du guide de démarrage réécrit sur `onboarding/+page.svelte` (sept étapes) ; ce
+    faisant, la phrase prescrite à `user-manual.tex:204` s'est révélée fausse (le plan est mis en place à
+    l'étape de la langue comptable, non à la finalisation) : corrigée au manuel.
+  - **LOW** : B-2 `README.md:211` corrigé, G5 sans exemption — la v0.4.0 n'a jamais surveillé de dossier
+    (C-15-14-44) ; B-3 = E-3 `.env.example` ; B-4 analyseurs alignés sur les continuations, non factorisés
+    (C-15-14-46) ; B-5 + A-3 G1 élargi (toute graphie ; ligne « TVA due ») ; B-6 réouverture bloquée bornée
+    aux exercices **postérieurs** (vérifié : `find_later_closed_in_tx`), référent it/de explicite — formules
+    sœurs de la famille `LATER_FISCAL_YEAR_CLOSED` laissées à la 15-12b (C-15-14-47) ; B-7 « Taux de TVA »
+    (titre réel de l'écran) au message et à son repli, clé entrée dans G13 ; A-1 « après correction » des AC
+    1, 6, 9, 10 rectifiés ; A-2 journaux `check` et `lint-i18n-ownership` versés ; A-4 `keshtip` ; A-5
+    de-CH impératif ; E-4 (C-15-14-48).
+  - **Code de production touché** : oui — catalogues des quatre locales (`vat-purchase-no-rates`,
+    `error-fiscal-year-reopen-blocked`, cinq clés it/de de #569, `settings-fiscal-years-link` de-CH), repli
+    Rust `routes/fiscal_years.rs`, repli Svelte `VatPurchaseAssistant.svelte`. Aucune logique.
+  - **Rebase** sur `f2c5e419` (15-13b, PR #584) ; sauvegarde `backup/15-14a-avant-rebase-p1` ; registre et
+    sprint-status par union (430 entrées = union exacte de main et de la branche, vérifié par identifiants) ;
+    CHANGELOG résolu à la main (entrées #552, #576 de main + celle de la story) ; PDF pris tels quels pendant
+    le rebase puis **régénérés** (`make -B` ×2, 0 « Label(s) may have changed », 0 `??`) et contrôlés aplatis
+    (15-13b présent au manuel d'administration, 15-14a présent, anciens textes à 0). T0 rejoué sur l'état
+    rebasé : AC 1 **4**, AC 2 (A) 13 / (B) 131, AC 3 2, AC 5 **20**, AC 6 4 (`Unreleased` 0), AC 7 54/54,
+    AC 8 155, AC 9 2, AC 10 8 / 11 — identiques à l'avant-rebase.
+  - **Mutations** des gardes modifiées : **12/12 rouges** (journal `15-14a-review-p1-mutations.log`) —
+    G1 ×2 (graphie `2,5~\%`, `3.9\%` sur la ligne TVA due), G2 ×2 (README, manuel d'administration), G5 ×1
+    (ligne v0.4.0), G4-bis ×5 (3600, 1030, nom « Honoraires », guide `1030 Banque`, 6997), jonction des
+    continuations ×1, G13 ×1 (repli `vat-purchase-no-rates`). Restauration par copie puis `touch`.
+  - **Gates sur l'état final** (code au commit de remédiation rebasé, puis commit des PDF seuls), bases
+    `kesh_1514a` (migrée 75, semée) et `kesh_e2e_1514a` (migrée 75) reconstruites : `fmt` et `clippy -D
+    warnings` verts ; `scripts/test-fast.sh` **3071 / 3071**, 4 ignorés ; `npm run check` 0 erreur,
+    27 avertissements ; `lint-i18n-ownership` PASS ; `test:unit` **1140 / 1140** (114 fichiers) ; `build`
+    vert ; **E2E complet** sur 3015 (montage complet, `smtpConfigured: true`), lancé à 12:15 UTC : **247
+    réussis, 7 échecs, 19 ignorés** — les 7 KF-029 nommément (`mode-expert:26`, `:41`,
+    `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`), aucun hors liste ; KF-045 absente
+    (run après midi UTC). tmpfs MariaDB : **1,3 G / 4,0 G (32 %)** avant, **1,3 G (31 %)** après.
