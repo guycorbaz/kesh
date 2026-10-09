@@ -6,7 +6,7 @@ ready-for-dev *(découpée de la 15-1a2 le 2026-10-09 à la remédiation de sa v
 validation P2 remédiée le 2026-10-09 — refus au délettrage (C-15-1a2-10), découverte par statut,
 classe A justifiée honnêtement ; validation P3 remédiée le 2026-10-09 — les refus fournisseurs du rang 2 bis
 partis à la **15-1a2-0** (C-15-1a2-19), un test existant de plus à modifier, la définition de la classe A
-réécrite dans le code ; **validation P4 à mener avant tout développement**)*
+réécrite dans le code ; **validation P4 (ciblée) CLOSE le 2026-10-09** — 0 au-dessus de LOW, six LOW appliqués)*
 
 ## Story
 
@@ -24,7 +24,8 @@ Troisième des trois sous-fiches de la **15-1a2** (index : `15-1a2-lettrage-des-
 fournisseurs** (`cancel_settlement_in_tx`, `cancel_in_tx` — sa D3), avec textes et écran. De la
 **15-1a2-i** : sa synchronisation (P3 : découverte verrouillante, groupe existant, cible, abstention), son
 extension d'audit (`DocumentRef`, défini en sa P3 ; `*_inner`) et sa fixture partagée
-(`kesh_db::test_fixtures`) ; et son test d'accord (AC6) compare le rattrapage à **cette** synchronisation.
+(`crates/kesh-db/tests/support/lettering_documents.rs`, incluse par `#[path]` — sa T5, C-15-1a2-28) ; et son test
+d'accord (AC6) compare le rattrapage à **cette** synchronisation.
 Ordre : 15-1a-i → 15-1a-ii → 15-1a2-0 → 15-1a2-i → **15-1a2-ii** → 15-1b-0 → 15-1b → 15-1c.
 
 **Numérotation conservée** de la 15-1a2 (P2, P3, P4, P6 ; AC6, AC7, AC8–AC12) ; numéro neuf : **AC16**.
@@ -44,7 +45,7 @@ de paiement partiel fournisseur, une seule colonne de règlement). Mode de règl
 
 | fonction | ligne | effet |
 |---|---|---|
-| `pay_in_tx` (`:713`) — appelée par `pay` (`:680`) **et** par `payment_batches::confirm_batch` (`payment_batches.rs:400`, appel `:456`) | `UPDATE … status = 'paid' …` `:895` | pose le règlement |
+| `pay_in_tx` (`:713`) — appelée par `pay` (`:680`) **et** par `payment_batches::confirm_batch` (`payment_batches.rs:400`, appel `:457`, dans la boucle de `:456`) | `UPDATE … status = 'paid' …` `:895` | pose le règlement |
 | `cancel_in_tx` (`:1032`) | `UPDATE … status = 'cancelled' …` `:1090` | contre-passe l'achat ; une facture **payée** voit son règlement **détaché** (colonnes à `NULL`), **non** contre-passé |
 | `cancel_settlement_in_tx` (`:1229`) | `UPDATE … status = 'open' …` `:1299` | contre-passe le règlement |
 
@@ -82,9 +83,12 @@ n'échoue **jamais** à cause d'un **refus** de lettrage (C-15-1a2-3). ⚠️ **
 (validation P3, F3-7) : une erreur **structurelle** de la synchronisation — `DbError::Invariant`, ou
 `LetteringConcurrentChange`, inatteignable par construction (15-1a2-i P4, C-15-1a2-14) — se propage par `?`
 depuis `pay_in_tx` : le paiement est annulé avec sa transaction, et dans `confirm_batch`
-(`payment_batches.rs:456`, N règlements en une transaction) **le lot entier** ; la route répond `500`. C'est
-l'exception « 500 » du `CLAUDE.md` § « Pattern batch » (un défaut structurel n'est pas une erreur de
-proposition) — écrit, non masqué. Audit : `DocumentRef` de la 15-1a2-i (sa P3), `document_type =
+(`payment_batches.rs:457`, dans la boucle `for item` de `:456` ; N règlements en une transaction) **le lot
+entier**. La route répond **selon l'erreur** (validation P4, F4-1 — la version P3 disait « `500` » pour les deux) :
+`Invariant` → `500` (`kesh-api/src/errors.rs` ≈ `:3720-3726`), c'est l'exception « 500 » du `CLAUDE.md`
+§ « Pattern batch » (un défaut structurel n'est pas une erreur de proposition) ; `LetteringConcurrentChange` →
+`409 LETTERING_CONCURRENT_CHANGE` (`errors.rs` ≈ `:3061-3068`, « un refus MÉTIER, jamais un 500 »), que la route
+rendrait telle quelle s'il sortait — inatteignable, il n'entre à aucun tableau de refus. Écrit, non masqué. Audit : `DocumentRef` de la 15-1a2-i (sa P3), `document_type =
 "supplierInvoice"` — la valeur même de `document.type` de la vue des postes ouverts (15-1b), non plus
 `"supplier_invoice"` (C-15-1a2-22) —, `number = supplier_invoice_number`, **`None` quand la facture n'en a
 pas**, émis `documentNumber: null` (la clé est présente ; la colonne est optionnelle ; `documentId` porte l'identifiant — même règle que `reversal_blockers`, « le numéro accompagne
@@ -256,7 +260,10 @@ Il n'y a pas d'autre différence : le « groupe gardé » de la version P1, seco
 (refus, 15-1a2-0 D2-D3) ; (e) l'appel de `sync_invoice_in_tx` / `sync_supplier_invoice_in_tx` sur
 **chaque** pièce rend `Unchanged`, `AbstainedClosedPeriods` ou `AccountNotLetterable` — **jamais** une
 écriture, jamais `Invariant` (une facture fournisseur **annulée** a une découverte vide, P2) —, et ne
-produit **aucune** entrée d'audit. **Exercice tenu** (validation P3, R3-7 a) : le test tient `FOR UPDATE`
+produit **aucune** entrée d'audit. Cela vaut **aussi** pour la pièce dont un groupe `document` a survécu au
+passage de son compte en non lettrable (C104) : l'étape 3 de la synchronisation est **terminale** — elle rend
+`AccountNotLetterable` sans rien écrire, quel que soit le groupe existant (15-1a2-i P3, validation P4, M-2 =
+F4-3 ; C-15-1a2-29) — et la fixture porte ce cas. **Exercice tenu** (validation P3, R3-7 a) : le test tient `FOR UPDATE`
 l'exercice **ouvert courant** de la fixture et le passe à chaque appel ; `check_held_fiscal_year` n'est
 évalué que par les primitives, c'est-à-dire **seulement quand la synchronisation écrit** — or (e) asserte
 qu'elle n'écrit pas : un appel qui voudrait écrire échoue le test (issue `Created`/`Recreated`, ou
@@ -271,13 +278,15 @@ dans un second volet, **contre-passé** par sa fiche d'écriture → lettré `re
 paiement par **compte interne** lettrable puis annulation → la ligne de contrepartie et son miroir sont
 aussi lettrés `reversal` ; compte `B` **non lettrable** → paiement réussi, aucun groupe, aucune erreur.
 **Périodes closes** (rang 2 bis de la 15-1a2-0, ici sur un groupe posé **par le paiement**) : achat et
-paiement datés sous `books_locked_through`, exercice ouvert, groupe posé avant le verrou → l'annulation du
-**paiement** est refusée (`409
-LETTERING_ALL_LINES_IN_CLOSED_PERIODS`, clé `settlement-cancel-blocked-lettering-closed`), l'annulation de
-la **facture** aussi (clé `supplier-invoices-cancel-blocked-lettering-closed`) ; rien n'est écrit, le
-groupe est intact, la facture reste `paid` ; les prédicteurs le disent (`cancelBlockedBy`) ; après
-déverrouillage (borne avant la date du paiement), les deux passent — avec dissolution et paires
-`reversal`, ce que la 15-1a2-0 ne pouvait pas éprouver.
+paiement en période ouverte, groupe posé par le paiement, verrou posé ensuite → au **dépôt**, où vit le test
+(validation P4, F4-6), l'annulation du **paiement** rend `SettlementNotCancellable { blocker:
+DocumentLetteringInClosedPeriods }`, celle de la **facture** `SupplierInvoiceNotCancellable { blocker:
+DocumentLetteringInClosedPeriods }` ; rien n'est écrit, le groupe est intact, la facture reste `paid` ; les deux
+prédicteurs de dépôt (`supplier_settlement_cancel_blocker`, `supplier_invoice_cancel_blocker`) rendent ce
+motif ; après déverrouillage (borne avant la date la plus récente du groupe), les deux passent — avec
+dissolution et paires `reversal`, ce que la 15-1a2-0 ne pouvait pas éprouver. *(Le code HTTP `409
+LETTERING_ALL_LINES_IN_CLOSED_PERIODS` et les deux clés de texte sont éprouvés par l'API à la 15-1a2-0, AC5 —
+le mappage ne dépend pas de la façon dont le groupe a été posé.)*
 
 **AC8 (part ii)** — Test lexical (même fichier et mêmes outils que la part i) : chacun des trois
 `UPDATE supplier_invoices … settlement_journal_entry_id` de production est dans une fonction dont le
@@ -334,20 +343,21 @@ acteur : l'auteur du geste, `api_key_id: None` (écart nommé, comme la part i).
 - **P8** : `20261009000001` inchangée (`git diff` nul sur le fichier).
 
 **AC12 (part ii)** — Documentation, par la valeur :
-- `CHANGELOG.md` : « une facture fournisseur payée est lettrée avec son achat ; l'annulation de son
-  paiement ou de la facture est refusée quand ce lettrage est figé par une période close ; à la mise à
+- `CHANGELOG.md` : « une facture fournisseur payée est lettrée avec son achat ; à la mise à
   jour, les pièces déjà soldées et les contre-passations déjà passées sont lettrées (sauf en période
   close) — sans entrée au journal d'audit ; une sauvegarde **antérieure** restaurée retrouve le lettrage de
   ses pièces, **pas** celui de ses contre-passations libres » (validation P2, R-11 : le coût de M2 au
-  CHANGELOG, pas seulement au manuel d'administration).
+  CHANGELOG, pas seulement au manuel d'administration). *(Le refus de l'annulation sous une période close —
+  paiement et facture fournisseurs compris — a **une** entrée, celle de la 15-1a2-i AC18 : la clause est retirée
+  d'ici, validation P4, F4-2, pour qu'il n'entre pas deux fois aux notes de version.)*
 - `docs/api-external.md` : `document` couvre aussi les factures fournisseurs ; le message
   `LETTERING_IS_DOCUMENT` (réécrit par la 15-1a2-0) reste juste ; § de l'annulation d'une facture payée : le
   règlement détaché, une fois contre-passé, est lettré avec son miroir. *(Le refus sous une période close
   dans les deux listes en prose des annulations fournisseurs — après `FISCAL_YEAR_CLOSED`, avant
-  `ACCOUNT_ARCHIVED` — est l'AC8 de la 15-1a2-0 ; validation P3, R3-6 = F3-5.)*
+  `ACCOUNT_ARCHIVED` — est l'AC18 de la 15-1a2-i, C-15-1a2-24 ; validation P3, R3-6 = F3-5.)*
 - `docs/manual/fr/user-manual.tex` : § des factures fournisseurs (paiement, `sec:annuler-facture-fournisseur`,
   `sec:paiements-fournisseurs`) — lettrage, règlement détaché lettrable à la main (le refus de l'annulation
-  sous une période close est dans les listes de motifs, 15-1a2-0 AC8 : y renvoyer, sans le redire) ; glossaire
+  sous une période close est dans les listes de motifs, 15-1a2-i AC18 : y renvoyer, sans le redire) ; glossaire
   *Lettrage* élargi aux factures fournisseurs ; une note sur le rattrapage (période close, pas d'audit).
 - `docs/manual/fr/admin-manual.tex` § « Reprises de données rejouées à l'import » (`:1722-1723`) : le
   lettrage des pièces est rejoué ; les paires de contre-passation libres **ne le sont pas** (motif, coût) ;
@@ -369,7 +379,7 @@ une facture fournisseur payée, une facture fournisseur annulée — soit les tr
 inchangées **et** `rows_affected == 0` pour l'entrée M1 du rapport de rejeu, **asserté** (validation P2,
 R-5) — et, second lieu de la même assertion, `full_import_report_mirrors_the_production_registry` (modifié,
 ci-dessous). Ce n'est pas une assertion de succès — la réserve de `post_restore.rs:190-193` ne s'y oppose pas — :
-c'est le seul discriminant. sqlx pose `CLIENT_FOUND_ROWS` (`letterings.rs:736`) : un M1 privé de sa garde
+c'est le seul discriminant **de ce test-là**. sqlx pose `CLIENT_FOUND_ROWS` (`letterings.rs:736`) : un M1 privé de sa garde
 `lettering_key IS NULL` **trouverait** les lignes déjà lettrées et compterait > 0 en les réécrivant à
 l'identique, là où « marques inchangées » resterait vert ; (d) une base où une facture historique
 entièrement close est restée **non lettrée** (abstention), dont un administrateur **rouvre** ensuite
@@ -387,7 +397,13 @@ faite pour `20260729000001` (facture validée **sans** règlement, `:317-375`), 
 (`:225-246`, `.sum()`) — M1 y serait vide sans que rien ne rougisse. La fixture gagne une facture soldée
 (et une facture fournisseur payée), et le test asserte un compte **par entrée** : M1 > 0 sur la base
 d'avant la migration, M1 == 0 sur la base à jour (`class_a_entries_are_no_ops_on_a_nominal_up_to_date_base`,
-`:318`).
+`:318`). **Recette** (validation P4, F4-5 ; le fichier fabrique tout en SQL brut, `insert_canonical_entry`,
+`insert_invoice`) : la base **« à jour »** reçoit ses marques par un `UPDATE journal_entry_lines` **brut et
+explicite** — le groupe que la synchronisation aurait posé (vente + règlement, achat + paiement ; clé = plus petite
+ligne, origine `document`), suivi d'une assertion de montage (lignes trouvées) — et **jamais** en exécutant M1
+elle-même, ce qui rendrait le test tautologique sur l'accord rattrapage ↔ vivant (que tient AC6, D4-ter) ; la base
+**« d'avant »** porte les **mêmes** pièces, marques à `NULL` (l'état pré-migration explicite qu'exige déjà
+l'en-tête du fichier, `:35-39`).
 
 ## Tasks
 
@@ -404,19 +420,30 @@ d'avant la migration, M1 == 0 sur la base à jour (`class_a_entries_are_no_ops_o
       de `letterings.rs` gagne le **rejeu à l'import** (`replay_post_restore_backfills`, entrée M1 de
       `POST_RESTORE_BACKFILLS`) : un écrivain de production de la marque, hors des deux primitives et sans
       audit, à chaque import (validation P2, F2-7). `post_restore_class_a.rs` : fixture et assertions par
-      entrée (AC16). **Définition de la classe A** réécrite (P6 ; F3-2 = R3-2) : `post_restore.rs:41-43`
+      entrée (AC16 ; recette de la base « à jour » et de la base « d'avant » écrite sous AC16, F4-5). **Définition de la classe A** réécrite (P6 ; F3-2 = R3-2) : `post_restore.rs:41-43`
       (doc du module), `:121` (doc de `BackfillTrigger::Unconditional`), `post_restore_class_a.rs:358`
-      (message d'échec « no-op STRICT ») ; le **commentaire faux** de
-      `class_a_entries_are_no_ops_on_a_nominal_up_to_date_base` (`post_restore_class_a.rs:309-312`, « MariaDB ne
-      compte dans `rows_affected` que les lignes réellement **modifiées** ») corrigé en « **trouvées** » — sqlx
-      pose `CLIENT_FOUND_ROWS` (`sqlx-mysql-0.8.6`, `connection/stream.rs:46` ; `letterings.rs:736` s'y appuie) ;
-      un rejeu privé de sa garde réécrivant `3000` sur `3000` compterait donc la ligne (F3-8 = R3-3). Contrôle
+      (message d'échec « no-op STRICT » — réécrit pour dire aussi « base **nominale** : sans pièce rendue
+      lettrable depuis », validation P4, F4-5) ; le **paragraphe** « ⚠️ Le montage qui rend ce test
+      DISCRIMINANT, et le piège qu'il évite » de `class_a_entries_are_no_ops_on_a_nominal_up_to_date_base`
+      (`post_restore_class_a.rs:300-312`) est **réécrit en entier**, titre compris — non un mot remplacé
+      (validation P4, F4-4) : toute sa prémisse est fausse (« le **seul** montage qui teste quelque chose », le
+      test « serait **muet** », « MariaDB ne compte … que les lignes réellement **modifiées** » et
+      « rapporterait quand même `0` »). sqlx pose `CLIENT_FOUND_ROWS` (`sqlx-mysql-0.8.6`,
+      `connection/stream.rs:46` ; `letterings.rs:736` s'y appuie) : `rows_affected` compte les lignes
+      **trouvées**, un rejeu privé de sa garde réécrivant `3000` sur `3000` compterait donc la ligne
+      (F3-8 = R3-3). Le paragraphe neuf dit : le montage `3200` ≠ `3000` reste **valide** — il distingue un
+      rejeu qui écraserait une valeur posée —, mais n'est plus le seul discriminant, puisque `CLIENT_FOUND_ROWS`
+      fait aussi compter une réécriture à l'identique ; il ne prétend plus qu'un montage `3000` serait muet. Les
+      docs `:13`, `:21`, `:297` (« no-op sur une base nominale ») restent vraies sous la réserve « nominale » et
+      ne sont pas réécrites. Contrôle
       par la **valeur** : `git grep -niE "no-op strict|no-op STRICT|réellement \*\*modifiées" -- crates docs`,
       chaque site trié (hors registre : `invoices.rs:5501`, `accounts.rs:2685`,
       `invoice_lines_revenue_account_backfill.rs:1151` parlent d'autre chose). `admin_full_import_e2e.rs` :
       `full_import_report_mirrors_the_production_registry` modifié (ci-dessous).
 - [ ] **T4** (AC8 part ii) — Test lexical fournisseur.
-- [ ] **T5** — Tests (liste ci-dessous) ; extension de la fixture partagée.
+- [ ] **T5** — Tests (liste ci-dessous) ; extension de la fixture partagée — dans
+      `crates/kesh-db/tests/support/lettering_documents.rs` (15-1a2-i T5, C-15-1a2-28 : hors de `src/`, états
+      hérités en SQL brut), incluse par `#[path]` dans `lettering_documents_backfill.rs`.
 - [ ] **T6** (AC12 part ii) — CHANGELOG, `api-external.md`, manuels FR (utilisateur, administrateur) +
       `make fr` + PDF aplati, README.
 
@@ -478,8 +505,10 @@ reprennent matière sans être écrits, AC11. Parti à la 15-1a2-0 : `supplier_s
   tourner à vide (AC16) ; `supplier_settlement_cancel_e2e.rs` et les tests des prédicteurs fournisseurs —
   relèvent de la 15-1a2-0 (le rang y est ajouté).
 - **Ordre avec d'autres migrations** (validation P3, R3-5) : `registry_entries_are_within_import_window`
-  exige qu'aucune table applicative ne soit créée **après** M1. Une story qui crée une table avant le tag
-  v0.13.0 (la 15-4, au backlog, en est une) fera sortir M1 de la fenêtre d'importabilité : M1 devra alors être
+  exige qu'aucune table applicative ne soit créée **après** M1. Toute story de l'epic 15 qui crée une table
+  avant le tag v0.13.0 (la 15-2, pièces justificatives, y est candidate — sa fiche n'existe pas encore ; la 15-4,
+  citée en P3, est **sortie de l'epic**, `sprint-status.yaml` ; validation P4, F4-3) fera sortir M1 de la fenêtre
+  d'importabilité : M1 devra alors être
   exemptée « Hors fenêtre », et AC16 (a), (d) perdront leur objet. Ce rouge est **attendu** — à traiter par la
   story qui crée la table, pas à découvrir.
 - **Verrous du rang 2 bis** : aucun neuf — lecture sans verrou des lignes du groupe, des exercices et de
@@ -504,6 +533,30 @@ reprennent matière sans être écrits, AC11. Parti à la 15-1a2-0 : `supplier_s
 ### File List
 
 ## Change Log
+
+### Validation P4 ciblée — 2026-10-09 (une lentille, chasseur de régressions de `76e7893a` ; remédiation Opus 5.5, seul remédiateur des fiches de la suite du lettrage, en autonomie) — VALIDATION CLOSE
+
+**Rapport** : `kesh-gate-logs/15-1a2-ii-validate-p4-ciblee.md` (**0 CRITICAL, 0 HIGH, 0 MEDIUM, 6 LOW**), prompt
+versionné `15-1a2-ii-validate-prompt-p4-ciblee.md`, axes 1 à 5 déclarés exercés. **Trend** : P1 (fiche mère)
+**3 HIGH / 7 MEDIUM** (R), **2 HIGH / 7 MEDIUM** (F) → P2 **1 HIGH / 6 MEDIUM distincts** → P3 **0 HIGH / 2 MEDIUM
+distincts** → P4 ciblée **0 au-dessus de LOW** : la boucle de validation est **close** (CLAUDE.md, « uniquement
+des findings LOW »). Les six LOW appliqués, chacun relu au code (`056997b0`) :
+
+| finding | verdict | où |
+|---|---|---|
+| F4-1 — `LetteringConcurrentChange` ne répond pas `500` | **corrigé** : `Invariant` → `500`, `LetteringConcurrentChange` → `409 LETTERING_CONCURRENT_CHANGE` (vérifié `kesh-api/src/errors.rs:3062`, `:3720`) ; lot annulé dans les deux cas ; appel cité `payment_batches.rs:457` | P3 part ii |
+| F4-2 — le refus entrerait deux fois au CHANGELOG | **corrigé** : clause retirée d'ici ; **une** entrée, celle de la 15-1a2-i AC18 (où la documentation du refus est désormais, C-15-1a2-24) | AC12 |
+| F4-3 — l'exemple « la 15-4 » est hors de l'epic | **corrigé** (« toute story de l'epic 15 qui crée une table, la 15-2 y est candidate ») | Dev Notes |
+| F4-4 — correction prescrite comme un mot remplacé | **corrigé** : le **paragraphe** `post_restore_class_a.rs:300-312` réécrit en entier, titre compris | T3 |
+| F4-5 — l'état « à jour » de M1 sans recette | **corrigé** : marques par `UPDATE` brut explicite (jamais par M1 elle-même), base « d'avant » = mêmes pièces sans marques ; message `:358` borné à la base « nominale » | AC16, T3 |
+| F4-6 — AC7 affirme un `409` et des clés que son test de dépôt n'éprouve pas | **corrigé** : AC7 énoncé au dépôt (variantes, prédicteurs) ; code et clés renvoyés à la 15-1a2-0 AC5 | AC7 |
+
+**Reçu de la validation P4 de la 15-1a2-i** (même remédiation) : AC6 (e) aligné sur l'étape 3 **terminale**
+(C-15-1a2-29 — un groupe survivant de C104 rend `AccountNotLetterable` sans écriture, la fixture porte le cas) ;
+la fixture partagée sort de `kesh_db::test_fixtures` pour `tests/support/` (C-15-1a2-28) ; les renvois
+« 15-1a2-0 AC8 » deviennent « 15-1a2-i AC18 » (C-15-1a2-24). Aucun de ces reçus ne change une règle de cette
+fiche. **Recompte** (depuis ce fichier) : **8 critères**, **7 tâches** (T0–T6), **18 tests neufs + 5 modifiés** —
+inchangés. Prochaine étape : développement, après la 15-1a2-0 et la 15-1a2-i.
 
 ### Validation P3 — 2026-10-09 (Sonnet 5.5 ×2, lentilles R et F ; remédiation Opus 5.5, seul remédiateur des fiches de la suite du lettrage, en autonomie)
 
