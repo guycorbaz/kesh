@@ -2,7 +2,9 @@
 
 ## Status
 
-review *(développement livré le 2026-10-09, Opus 5.5 ; revue de code à mener)* — antérieurement ready-for-dev *(créée le 2026-10-09 à la remédiation de la validation P3 de la 15-1a2-i — finding F-1,
+done *(2026-10-09 : développée, revue de code CLOSE à la P2 ciblée — P1 Sonnet ×3 : 0 au-dessus de LOW, 5 LOW
+distincts appliqués ou reçus ; P2 Haiku ciblée : 0 au-dessus de LOW ; gate complet, Vitest et E2E complet au dernier
+commit de code `4ff48b03`)* — antérieurement ready-for-dev *(créée le 2026-10-09 à la remédiation de la validation P3 de la 15-1a2-i — finding F-1,
 décision de l'orchestrateur, C-15-1a2-19 ; validation P1 remédiée le 2026-10-09 — la **documentation
 publique** du refus portée à la 15-1a2-i (C-15-1a2-24), textes écrits dans les quatre locales et conformes
 aux gardes G8, G8-bis et G9 (C-15-1a2-26), précédence éprouvée contre tous les rangs voisins (C-15-1a2-27) ;
@@ -779,6 +781,27 @@ Vitest ciblé 42 fichiers / 411 tests) — **gate complet au dernier commit de c
 - `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md`, `sprint-status.yaml`
 
 ## Change Log
+
+### Clôture — 2026-10-09 (Opus 5.5) — **REVUE CLOSE, story `done`**
+
+**Trend** : P1 (Sonnet 5.5 ×3, B/E/A, complète) **0 C / 0 H / 0 M / 5 L distincts** → P2 (Haiku 4.5, **ciblée** sur le
+commit de remédiation `9b51bab1..4ff48b03`, prompt `15-1a2-0-review-prompt-p2-ciblee.md`, rapport
+`kesh-gate-logs/15-1a2-0-review-p2-B.md`) **0 au-dessus de LOW, 1 LOW** (`15-1a-i-marque-du-lettrage.md:1004` cite
+l'ancien message : fiche historique d'une story close, **laissée**). Affirmations de la P2 vérifiées par
+`grep -rn "find_later_closed(" crates` (quatre appelants de production, conforme). Remédiation P2 : aucune ligne de
+code — la boucle se clôt. Signal D5 : sans objet (aucun MEDIUM aux deux passes). Modèles : Opus 5.5 (développement,
+remédiation, orchestration), Sonnet 5.5 (P1), Haiku 4.5 (P2 ciblée).
+
+**Gates au dernier commit de code `4ff48b03`** (exécutés, base `kesh_1a20` remise à zéro avant, sans redémarrer
+MariaDB) : `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) **3230 passés, 4 ignorés** ; frontend
+inchangé depuis `9b51bab1` (`git diff --stat 9b51bab1 4ff48b03 -- frontend` vide) — `npm run check` 0 erreur,
+`lint-i18n-ownership` vert, `test:unit` **116 fichiers / 1167 tests**, `build` vert, exécutés sur ce même arbre
+frontend ; **E2E complet** (port 3021, base `kesh_e2e_1a20` neuve, montage de `docs/testing.md`) : **241 passés, 13
+échoués, 19 ignorés**, jugés fichier par fichier — **8 attendus** (KF-029 ×7 : `mode-expert:26`, `:41`,
+`onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150` ; `sidebar-navigation:75`, KF-046) et **5 hors liste**
+(`email-templates:153`, `fiscal-years:361`, `homepage-dashboard:94`, `invoices:220`, `onboarding:33`), tous en
+`page.fill('#username')` en timeout — signature de KF-053 (#478) — et **tous verts rejoués seuls** (5/5) ; aucun ne
+touche le code de la story (rang dormant, aucun écran neuf).
 
 ### Revue de code P1 — 2026-10-09 (Sonnet 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
 
