@@ -110,7 +110,9 @@ services:
 
       # Logs fichier avec rotation (Story v011-1, Issue #119) — EN PLUS de
       # stdout/`docker logs`. Écrits dans /var/log/kesh (monté sur ./log côté
-      # hôte, co-localisé avec .env + DB pour le scope unique Hyper Backup).
+      # hôte, co-localisé avec .env dans le dossier du compose, que sauvegarde
+      # Hyper Backup ; la base, hors de ce compose, se sauvegarde par la
+      # tâche de dump planifiée que décrit le manuel).
       # Opt-out : une ligne `KESH_LOG_FILE_PATH=` VIDE dans .env → stdout pur
       # (le mount ./log devient alors inutilisé mais inoffensif). Tiret SANS
       # deux-points : le défaut ne vaut que pour une variable absente de .env.
@@ -161,8 +163,9 @@ services:
       # du compose. Créé au 1er boot, owned root:root (le container tourne en
       # root) — cf. warning permissions dans .env.example.
       - ./log:/var/log/kesh
-      # Import de factures (Story 12-5, #194) — bind mounts host co-localisés
-      # (scope Hyper Backup unique). Déposez vos factures dans ./inbox ; les
+      # Import de factures (Story 12-5, #194) — bind mounts dans le dossier du
+      # compose, que copie Hyper Backup (la base, elle, se sauvegarde par le dump
+      # du manuel). Déposez vos factures dans ./inbox ; les
       # justificatifs archivés vivent dans ./documents.
       - ./inbox:/data/inbox
       - ./documents:/data/documents

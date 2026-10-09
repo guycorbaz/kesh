@@ -22,7 +22,11 @@ services:
       # (ConfigError::TestModeWithPublicBind refusera le démarrage).
       KESH_HOST: "0.0.0.0"
       KESH_ADMIN_USERNAME: ${KESH_ADMIN_USERNAME:-admin}
-      KESH_ADMIN_PASSWORD: ${KESH_ADMIN_PASSWORD:-admin}
+      # Absent ou vide (cas par défaut, sans .env) : l'administrateur se crée à
+      # l'écran /setup au premier accès. S'il est posé : 12 caractères au moins
+      # (ConfigError::WeakAdminPassword, crates/kesh-api/src/config.rs), ni
+      # « changeme » ni placeholder du gabarit — sinon Kesh refuse de démarrer.
+      KESH_ADMIN_PASSWORD: ${KESH_ADMIN_PASSWORD:-}
       KESH_JWT_SECRET: ${KESH_JWT_SECRET:-dev-secret-at-least-32-bytes-long-for-testing}
       # Onboarding reset gate (Story 7-1, KF-002 ; Story 15-7b2).
       # Set to "1" / "true" / "yes" / "on" to allow /onboarding/reset past step 2 on a

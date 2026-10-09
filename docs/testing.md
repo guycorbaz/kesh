@@ -455,6 +455,48 @@ décomptes de story.
 lançait la suite, nulle part ailleurs. La KF-029 est ouverte depuis avril ; la traiter reste
 une décision distincte, à prendre en rétrospective.)*
 
+
+## Recette des scripts de sauvegarde Synology
+
+`scripts/synology/kesh-dump.sh` et `scripts/synology/kesh-restore.sh` sont les scripts que le manuel d'administration
+fait télécharger sur un NAS Synology (§ *Backup natif sur Synology DSM*). Ils ne tournent dans aucun test Rust ni
+Playwright : la garde G16 (`crates/kesh-api/tests/configuration_transmise.rs`) lit leurs invariants, et **seule la
+recette les exécute** :
+
+```sh
+bash scripts/synology/recette.sh        # depuis la racine du dépôt ; ≈ 2 min ; code 0 = « RECETTE VERTE »
+```
+
+Prérequis : `docker` avec le plugin `docker compose` v2, `sqlx` (migrations du dépôt), `python3`, `openssl`, les outils GNU usuels (`sha256sum`, `gzip`, `stat -c`, `od`) et l'image `mariadb:10.11` (tirée au besoin : réseau). Les comptes de départ viennent de `scripts/seed-dev-db.sql` : la recette compare des empreintes, non un nombre fixe. Elle monte un réseau, une MariaDB 10.11 et un projet
+compose factice (`kesh-api` qui dort), tous nommés `kesh-recette-synology*`, et les **détruit** à la fin comme à
+l'interruption — elle ne touche à aucun autre conteneur, jamais à `kesh-mariadb-dev`. Les comptes et le fichier
+d'options sont ceux que le manuel écrit (extraits de ses listings), avec un mot de passe à `@ # ; " \ /` et espace.
+
+Elle prouve, en comparant l'empreinte du **contenu** de la base (schéma et lignes de toutes les tables de base, par
+un `mariadb-dump` trié par clé primaire et haché — non `CHECKSUM TABLE`, mesuré instable entre une table vivante et
+la même table rechargée) et une ligne `Compte é € 😀` octet par octet :
+
+- **dump** : empreinte, droits 700/600, aucun `.tmp`, toutes les tables ; `--defaults-extra-file` refusé hors de la
+  première place ; dump raté (réseau, mot de passe), vide ou sous verrou refusé, sans perte du précédent ni fichier
+  vide ;
+- **rechargement refusé avant toute écriture dans la base** : Kesh actif (en marche, en boucle de redémarrage
+  `restarting`, en pause), verrou déjà pris par une autre restauration, nom de base du dump ≠ `SAUVEGARDE_BASE`,
+  empreinte fausse, archive tronquée, dossier inexistant, serveur injoignable ; refus `ERROR 1044` du compte de
+  sauvegarde ; base avec tables mais illisible (vue invalide) → dump de sécurité impossible, base intacte ;
+- **rechargement** par un chemin relatif (c'est le dump donné qui est rechargé, non le dump vivant), un dump nocturne
+  lancé pendant ce temps étant refusé par le verrou ; interruption réelle (`SIGTERM`) → verrou libéré ; reprise
+  « terminer » (même dossier) et « revenir » (dump de sécurité) ; deux passages qui échouent au rechargement (dump
+  intègre qui casse au milieu) → le message du second liste le dossier de sécurité du **premier** avant le sien, et
+  « revenir » ne désigne pas celui du passage en cours ; base absente ; base présente **vide** (rien à protéger) ; base illisible traitée par la commande `DROP DATABASE <base>` du manuel puis rechargée.
+
+Elle ne rejoue pas DSM (Planificateur, Hyper Backup, Snapshot Replication, paquet MariaDB 10) ni root ; la fenêtre
+entre la lecture du dump et la prise du verrou, que le script ferme en prenant le verrou d'abord, n'est pas
+reproductible de façon déterministe.
+
+**Quand la lancer** : à toute modification d'un des deux scripts, de la section Synology du manuel ou de l'image
+`mariadb:10.11` qu'ils emploient — et citer sa sortie au Dev Agent Record. Elle n'est pas dans le gate : elle
+exige Docker et des conteneurs, et elle ne dépend que de ces fichiers.
+
 ## Cleanup entre tests (dette technique acceptée)
 
 - **Pas de reset entre tests individuels d'une même spec** (dette `D-6-4-A`). Si un test pollue (création + archivage incomplet), le test suivant peut être affecté. Mitigation : convention de cleanup explicite dans chaque test, ou adoption progressive de `test.beforeEach(seedTestState(...))` si symptômes apparaissent.

@@ -45,7 +45,7 @@
 - **Comptabilité analytique par projet** — dimension « projet » (2 niveaux, projet → sous-projets) affectable sur **tous les flux** de saisie : écritures manuelles (par ligne), factures de vente et fournisseurs (document), et réconciliation bancaire (rapprochement, ventilation, projet par défaut sur règle) ✓ ; deux **rapports** exportables PDF/CSV — **Dépenses par projet** (toutes les charges, drill-down jusqu'à l'écriture, pour les déductions fiscales) et **Rendement par projet** (coût investi / revenus / résultat net / rendement %), avec agrégation des sous-projets et vue par exercice ou cumulée ✓
 - **Clôture d'exercice & report à-nouveau** — les soldes du bilan se **reportent automatiquement** d'un exercice à l'autre, calculés en temps réel depuis l'origine (aucune écriture de clôture ni de report à passer à la main) ✓ ; lignes **« Résultat reporté »** et **« Résultat de l'exercice »** au bilan, section **« Capitaux propres »** dédiée (CO 959a) ✓ ; la clôture est un **verrou** (immutabilité + audit, CO art. 957-964) avec **réouverture possible** par un administrateur sur motif justifié et tracé ✓ ; **rôle explicite** par compte — Kesh ne devine jamais la fonction d'un compte d'après son numéro, le plan comptable reste librement renumérotable ✓ ; **bilan d'ouverture** pour reprendre une comptabilité existante (écran « Soldes de départ »), avec **complément d'un compte oublié** sans tout ressaisir ✓
 - **API externe à clé PAT** — clés d'accès *read* / *read-write* par entreprise pour intégrations IA & logiciels tiers (auth `Authorization: Bearer`, gestion via `/settings/api-keys`) ✓ ; **aucune clé n'atteint les fonctions d'administration**, quel que soit le rôle de qui l'a créée — révoquer une clé compromise suffit ✓ — voir [`docs/api-external.md`](docs/api-external.md)
-- **Export/import d'installation** — sauvegarde complète `.keshbackup` (toutes les sociétés, utilisateurs et données système) via l'UI admin (`Administration → Sauvegarde complète` / `Restaurer / Importer`) pour migrer ou restaurer une installation sans accès SSH ✓ — réservé au rôle Admin
+- **Export/import d'installation** — sauvegarde complète `.keshbackup` (la société de l'installation, ses utilisateurs et les données système) via l'UI admin (`Administration → Sauvegarde complète` / `Restaurer / Importer`) pour migrer ou restaurer une installation sans accès SSH ✓ — réservé au rôle Admin
 - **Récupération de mot de passe par email** — lien de réinitialisation self-service (valable 30 min, usage unique, anti-énumération), opt-in via `KESH_FEATURE_FORGOT_PASSWORD` + config SMTP ✓ — fallback break-glass admin conservé
 - **Multilingue** — messages d'erreur API en FR/DE/IT/EN (langue choisie à l'onboarding ; sélecteur de langue dans l'interface à venir)
 - **Multi-utilisateurs** — RBAC avec rôles, JWT + refresh tokens, isolation multi-tenant par `company_id`
@@ -73,10 +73,11 @@
 git clone https://github.com/guycorbaz/kesh.git
 cd kesh
 
-# 2. Démarrer MariaDB + backend (mode dev complet)
+# 2. Démarrer MariaDB + backend (mode dev complet) — sans .env : au premier
+#    accès, l'écran /setup crée l'administrateur
 docker compose -f docker-compose.dev.yml up -d
 
-# 3. Configurer l'environnement
+# 3. (Facultatif) Fixer vos propres valeurs
 cp .env.example .env
 # Adapter les valeurs dans .env, dont KESH_JWT_SECRET (openssl rand -hex 32) —
 # le placeholder <GENERATE_ME: …> laissé tel quel est refusé au démarrage
@@ -131,7 +132,7 @@ kesh/
 
 ### Multi-tenant (Story 6.2)
 
-Kesh supporte plusieurs sociétés par instance via un modèle multi-tenant :
+Le modèle isole chaque société par `company_id` ; une installation en porte une :
 
 - **JWT claims** : chaque token contient `user_id`, `role`, et **`company_id`**
 - **Scoping** : toutes les requêtes filtrent par `company_id` du JWT (défense en profondeur contre IDOR)

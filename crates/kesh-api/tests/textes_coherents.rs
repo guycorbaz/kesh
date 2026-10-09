@@ -18,12 +18,19 @@
 //! | G7 | #432 | toute référence d'issue du README est un lien vers la même issue |
 //! | G9 | #569, #547 | les replis Rust égalent la valeur fr-CH de leur clé |
 //! | G12 | #569 | le manuel et le guide d'API disent l'ordre de réouverture |
+//! | G18 | #127 | une installation porte une société (Story 15-14b) |
+//! | G18-ter | #127 | les textes d'écran « toutes les sociétés » (sauvegarde d'installation) sont une liste fermée assumée |
+//! | G18-bis | #127 | le manuel utilisateur dit comment on entre : compte créé par l'administrateur, connexion par identifiant |
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::LazyLock;
 
 use regex::Regex;
+
+#[path = "common/manuel.rs"]
+mod manuel;
+use manuel::normaliser;
 
 /// Racine du dépôt.
 fn racine() -> PathBuf {
@@ -725,26 +732,6 @@ fn les_replis_rust_suivent_le_catalogue() {
     }
 }
 
-/// Déplie les commandes de mise en forme LaTeX jusqu'à stabilité (imbrications
-/// comprises), remplace `~` par une espace et réduit les blancs : une phrase coupée
-/// sur deux lignes ou mise en gras en son milieu se lit d'un tenant.
-fn normaliser(texte: &str) -> String {
-    let commande =
-        Regex::new(r"\\(?:textbf|emph|texttt|textit|keshcommand|keshpath)\{([^{}]*)\}").unwrap();
-    let mut courant = texte.to_string();
-    loop {
-        let suivant = commande.replace_all(&courant, "$1").into_owned();
-        if suivant == courant {
-            break;
-        }
-        courant = suivant;
-    }
-    let blancs = Regex::new(r"\s+").unwrap();
-    blancs
-        .replace_all(&courant.replace('~', " "), " ")
-        .into_owned()
-}
-
 /// **G12** (#569) — le manuel utilisateur et le guide d'API disent l'ordre de
 /// réouverture (« en commençant par le plus récent »).
 #[test]
@@ -771,5 +758,322 @@ fn le_manuel_dit_l_ordre_de_reouverture() {
     assert!(
         api.contains(MARQUEUR),
         "api-external.md : marqueur d'ordre absent"
+    );
+}
+
+/// Le domaine de G18 : la documentation utilisateur (manuels français, README,
+/// guide de démarrage) — la première part de l'inventaire de l'AC 3 de la
+/// 15-14b. Les catalogues et le code (noms de table, de route, commentaires)
+/// sont assumés en bloc à la fiche.
+fn documentation_utilisateur() -> Vec<(String, String)> {
+    let mut docs: Vec<(String, String)> = manuels_fr()
+        .into_iter()
+        .map(|(nom, texte)| (nom.to_string(), texte))
+        .collect();
+    docs.push(("README.md".into(), lire("README.md")));
+    for chemin in fichiers_sous("docs/user-guide/fr", &|n: &str| n.ends_with(".md")) {
+        let relatif = chemin
+            .strip_prefix(racine())
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let texte = std::fs::read_to_string(&chemin).unwrap();
+        docs.push((relatif, texte));
+    }
+    assert!(
+        docs.len() >= 5,
+        "documentation utilisateur lue à vide : {}",
+        docs.len()
+    );
+    docs
+}
+
+/// Les formes qui promettent plusieurs sociétés par installation (motif de
+/// l'inventaire de l'AC 3, une alternative par entrée). Le crate `regex` n'a
+/// pas de lookahead : chaque alternative est cherchée **séparément**, ce qui
+/// compte les occurrences qui se recouvrent (`plusieurs companies` et
+/// `companies`) comme la commande `perl` d'inventaire (C-15-14-27).
+/// « compte dédié » n'y entre que dans ses locutions `ou` / `via` : l'expression
+/// nue est d'usage courant (« un compte dédié aux frais »). Élargi en revue de
+/// code P1 (E-2, A-6) aux tournures plurielles et au titre « Multi-sociétés ».
+const MULTI_SOCIETE: &[&str] = &[
+    r"(?i)toutes? (?:les )?(?:sociétés|entreprises|companies)",
+    r"(?i)ensemble des sociétés",
+    r"(?i)entre (?:plusieurs )?(?:sociétés|dossiers)",
+    r"(?i)(?:autre|seconde|deuxième) société",
+    r"(?i)multi-soci\w*",
+    // Revue de code P2 (E2-6) : formes équivalentes, aucun site au 2026-10-09.
+    r"(?i)plusieurs (?:entreprises|mandants)",
+    r"(?i)multi-?entreprises?",
+    r"(?i)vos sociétés",
+    r"(?i)plusieurs (?:sociétés|companies)",
+    r"(?i)\bcompanies\b",
+    r"(?i)(?:ou|via) un compte dédié",
+    r"(?i)nouvelle company",
+    r"(?i)super.?admin",
+    r"(?i)kesh-cli",
+    r"(?i)même instance",
+    r"(?i)sélecteur (?:de société|multi-dossiers|permettant de basculer)",
+];
+
+/// Les occurrences **assumées** de [`MULTI_SOCIETE`] : liste fermée, un
+/// fragment normalisé par site, chacun trouvé une et une seule fois.
+const MULTI_SOCIETE_ASSUME: &[(&str, &str)] = &[
+    // Dit l'absence (deux occurrences : `super-admin`, `sélecteur de société`).
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "il n'existe pas de rôle « super-admin » cross-société ni de sélecteur de société",
+    ),
+    // Dit l'absence.
+    (
+        "docs/manual/fr/user-manual.tex",
+        "Il n'y a pas de sélecteur permettant de basculer entre plusieurs dossiers depuis un même compte",
+    ),
+    // Intention de feuille de route.
+    (
+        "docs/manual/fr/user-manual.tex",
+        "Un sélecteur multi-dossiers est envisagé pour une version ultérieure",
+    ),
+    // Dit l'absence.
+    (
+        "docs/manual/fr/marketing-brochure.tex",
+        "ne propose pas encore de créer ni de basculer entre plusieurs sociétés",
+    ),
+    // Intention de feuille de route, au même titre que la ligne qui précède.
+    (
+        "docs/manual/fr/marketing-brochure.tex",
+        "Un sélecteur permettant de basculer entre dossiers depuis un même compte est prévu pour une version ultérieure",
+    ),
+    // Nom de table.
+    ("README.md", "FK vers `companies.id`"),
+    // Ajoutés en revue de code P1 (motif élargi) — absence ou modèle, vrais
+    // pour une installation à une société.
+    // L'absence, deux phrases distinctes (public visé ; configuration).
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "Un dossier = une instance : l'interface ne crée pas de seconde société",
+    ),
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "Mais une installation porte une société : l'interface ne crée pas de seconde société",
+    ),
+    // Le modèle de données.
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "Le modèle de données de Kesh est multi-société",
+    ),
+    // L'absence.
+    (
+        "docs/manual/fr/admin-manual.tex",
+        "aucun écran ne rattache un compte à une autre société",
+    ),
+    // Le modèle de données.
+    (
+        "docs/manual/fr/marketing-brochure.tex",
+        "Le modèle de données est multi-société",
+    ),
+    // L'absence, et l'intention de feuille de route.
+    (
+        "docs/manual/fr/marketing-brochure.tex",
+        "(La bascule entre sociétés depuis l'interface reste à venir.)",
+    ),
+];
+
+/// Nombre **exact** d'occurrences de [`MULTI_SOCIETE`] dans la documentation
+/// utilisateur, toutes assumées (recompté le 2026-10-09 en revue de code P1 :
+/// 7 de la forme d'origine + 9 du motif élargi). Un motif qui cesserait de voir
+/// un site rougit (A-9, B10 : `>=` laissait passer une occurrence perdue).
+const MULTI_SOCIETE_TOTAL: usize = 16;
+
+/// **G18** (#127) — une installation porte une société : la documentation
+/// utilisateur ne promet pas le contraire. Chaque occurrence de
+/// [`MULTI_SOCIETE`] (texte normalisé, [`normaliser`]) tombe dans un fragment
+/// de [`MULTI_SOCIETE_ASSUME`] ; chaque fragment est encore trouvé (exemption
+/// morte → rouge) ; la phrase positive « une instance par dossier » figure au
+/// manuel d'administration.
+#[test]
+fn une_installation_une_societe() {
+    let motifs: Vec<Regex> = MULTI_SOCIETE
+        .iter()
+        .map(|m| Regex::new(m).unwrap())
+        .collect();
+    let mut erreurs = Vec::new();
+    let mut total = 0;
+    let mut admin = String::new();
+    for (nom, brut) in documentation_utilisateur() {
+        let texte = normaliser(&manuel::sans_commentaires(&brut));
+        if nom == "docs/manual/fr/admin-manual.tex" {
+            admin = texte.clone();
+        }
+        let fragments: Vec<&str> = MULTI_SOCIETE_ASSUME
+            .iter()
+            .filter(|(f, _)| *f == nom)
+            .map(|(_, frag)| *frag)
+            .collect();
+        let mut couverts: Vec<(usize, usize)> = Vec::new();
+        for frag in &fragments {
+            let n = texte.matches(frag).count();
+            if n != 1 {
+                erreurs.push(format!(
+                    "{nom} : fragment assumé trouvé {n} fois (1 attendue) : « {frag} »"
+                ));
+            }
+            couverts.extend(texte.match_indices(frag).map(|(i, f)| (i, i + f.len())));
+        }
+        for motif in &motifs {
+            for m in motif.find_iter(&texte) {
+                total += 1;
+                if !couverts
+                    .iter()
+                    .any(|(d, f)| m.start() >= *d && m.end() <= *f)
+                {
+                    let d = texte[..m.start()]
+                        .char_indices()
+                        .rev()
+                        .nth(50)
+                        .map_or(0, |(i, _)| i);
+                    let f = (m.end() + 50).min(texte.len());
+                    let f = (f..=texte.len())
+                        .find(|i| texte.is_char_boundary(*i))
+                        .unwrap();
+                    erreurs.push(format!("{nom} : « {} » — …{}…", m.as_str(), &texte[d..f]));
+                }
+            }
+        }
+    }
+    // Anti-test-muet : les motifs voient exactement les occurrences assumées.
+    if total != MULTI_SOCIETE_TOTAL {
+        erreurs.push(format!(
+            "{total} occurrence(s) du motif, {MULTI_SOCIETE_TOTAL} attendues : motif muet ou site neuf"
+        ));
+    }
+    if !admin.contains("une instance par dossier") {
+        erreurs
+            .push("admin-manual.tex : phrase positive « une instance par dossier » absente".into());
+    }
+    assert!(
+        erreurs.is_empty(),
+        "G18 — {} écart(s) :\n  - {}",
+        erreurs.len(),
+        erreurs.join("\n  - ")
+    );
+}
+
+/// **G18-bis** (#127, revue de code P1 A-6) — le manuel utilisateur dit comment
+/// on entre dans Kesh : aucune invitation par e-mail (il n'en existe pas — le
+/// compte est créé par l'administrateur, `CreateUserRequest`), aucune connexion
+/// par e-mail (on se connecte par son identifiant, `LoginRequest`), aucun
+/// renvoi à un écran de changement de mot de passe en session (il n'en existe
+/// pas). Sur le texte normalisé, commentaires retirés.
+#[test]
+fn le_manuel_utilisateur_dit_comment_on_entre() {
+    let texte = normaliser(&manuel::sans_commentaires(&lire(
+        "docs/manual/fr/user-manual.tex",
+    )));
+    let mut erreurs = Vec::new();
+    for interdit in [
+        r"(?i)invitation par (?:e-?mail|courriel)",
+        r"(?i)saisir votre (?:adresse )?(?:e-?mail|courriel|adresse électronique) et votre mot de passe",
+        r"(?i)passez par votre compte une fois connecté",
+    ] {
+        if let Some(m) = Regex::new(interdit).unwrap().find(&texte) {
+            erreurs.push(format!("« {} »", m.as_str()));
+        }
+    }
+    for exige in [
+        "Saisir votre identifiant (nom d'utilisateur) et votre mot de passe",
+        "L'administrateur de l'installation crée votre compte",
+    ] {
+        if !texte.contains(exige) {
+            erreurs.push(format!("phrase absente : « {exige} »"));
+        }
+    }
+    assert!(
+        erreurs.is_empty(),
+        "G18-bis — {} écart(s) :\n  - {}",
+        erreurs.len(),
+        erreurs.join("\n  - ")
+    );
+}
+
+/// Les textes d'écran et commentaires du catalogue fr-CH et du panneau de
+/// sauvegarde que le motif [`MULTI_SOCIETE`] attrape, **assumés** (revue de code P2,
+/// A2-5 = E2-5 ; C-15-14-70) : la sauvegarde d'une installation contient
+/// « toutes les sociétés » de l'installation — vrai, il y en a une —, et la
+/// réécrire toucherait le code de production (quatre catalogues et un repli)
+/// pour une nuance. Les locales de-CH (« alle Firmen »), it-CH (« tutte le
+/// società ») et en-CH (« all companies ») portent la même clé traduite ; elles
+/// ne sont pas lues ici (motif français), et suivent la valeur fr-CH par la garde
+/// G9 de la 15-14a pour le repli.
+const ECRANS_ASSUMES: &[(&str, &str)] = &[
+    // Nom de colonne, dans un commentaire du catalogue.
+    (
+        "crates/kesh-i18n/locales/fr-CH/messages.ftl",
+        "locale = companies.accounting_language",
+    ),
+    // admin-backup-page-description : le contenu d'une sauvegarde d'installation.
+    (
+        "crates/kesh-i18n/locales/fr-CH/messages.ftl",
+        "(toutes les sociétés, les utilisateurs et les données système)",
+    ),
+    // Commentaire de tête du composant : même contenu.
+    (
+        "frontend/src/lib/features/admin-backup/AdminBackupPanel.svelte",
+        "(toutes sociétés + utilisateurs + système)",
+    ),
+    // Repli de admin-backup-page-description (égal à la valeur fr-CH).
+    (
+        "frontend/src/lib/features/admin-backup/AdminBackupPanel.svelte",
+        "(toutes les sociétés, les utilisateurs et les données système)",
+    ),
+];
+
+/// **G18-ter** (#127, revue de code P2 A2-5) — dans le catalogue fr-CH et le
+/// panneau de sauvegarde, chaque occurrence du motif [`MULTI_SOCIETE`] tombe dans
+/// un fragment de [`ECRANS_ASSUMES`], et chaque fragment est trouvé une et une
+/// seule fois : une promesse multi-société ajoutée à l'écran rougit, une
+/// exemption morte aussi.
+#[test]
+fn les_ecrans_multi_societe_sont_assumes() {
+    let motifs: Vec<Regex> = MULTI_SOCIETE
+        .iter()
+        .map(|m| Regex::new(m).unwrap())
+        .collect();
+    let mut erreurs = Vec::new();
+    let blancs = Regex::new(r"\s+").unwrap();
+    let mut fichiers: Vec<&str> = ECRANS_ASSUMES.iter().map(|(f, _)| *f).collect();
+    fichiers.dedup();
+    for nom in fichiers {
+        let texte = blancs.replace_all(&lire(nom), " ").into_owned();
+        assert!(texte.len() > 1000, "{nom} lu à vide");
+        let mut couverts = Vec::new();
+        for (_, frag) in ECRANS_ASSUMES.iter().filter(|(f, _)| *f == nom) {
+            let n = texte.matches(frag).count();
+            if n != 1 {
+                erreurs.push(format!(
+                    "{nom} : fragment assumé trouvé {n} fois (1 attendue) : « {frag} »"
+                ));
+            }
+            couverts.extend(texte.match_indices(frag).map(|(i, f)| (i, i + f.len())));
+        }
+        for motif in &motifs {
+            for m in motif.find_iter(&texte) {
+                if !couverts
+                    .iter()
+                    .any(|(d, f)| m.start() >= *d && m.end() <= *f)
+                {
+                    erreurs.push(format!(
+                        "{nom} : « {} » hors des fragments assumés",
+                        m.as_str()
+                    ));
+                }
+            }
+        }
+    }
+    assert!(
+        erreurs.is_empty(),
+        "G18-ter — {} écart(s) :\n  - {}",
+        erreurs.len(),
+        erreurs.join("\n  - ")
     );
 }

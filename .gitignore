@@ -40,6 +40,12 @@ log/
 /inbox/
 /documents/
 /backup/
+# Sauvegarde Synology (15-14b) : dumps de la base et fichiers d'identifiants du
+# dossier du compose — SECRETS, si les scripts sont lancés depuis un clone.
+/dump/
+/avant-restauration/
+/kesh-dump.cnf
+/kesh-restore.cnf
 
 # LaTeX build artifacts (manuels docs/manual/) — ne versionner que .tex + .pdf
 # (aligne admin-manual sur la convention marketing-brochure ; Story 17-3f)

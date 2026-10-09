@@ -7213,6 +7213,405 @@ l'import (#458–#461).
 ## C-15-1c-13 — 15-1c-i (validation P1, R-9 ≈ F-11) : l'E2E crée son compte lettrable et ses montants
 - **Retenu** : le spec crée un compte `Asset` à numéro unique par l'API des comptes, des écritures à montants uniques, lit ses lignes par `lineId` (`data-testid`), délettre en fin de parcours ; rôle Consultation par un utilisateur créé par l'API (patron `journal-entries.spec.ts`).
 - **Écartées** : un compte du seed (1100 est ou devient un compte de journal bancaire, non lettrable ; 1000/2000 partagés) ; ajouter un « compte de passage » au seed (changerait tous les presets pour un spec).
+
+## C-15-14-54 — 15-14b (développement) : listings Synology rejouables sans `sudo` — « en session root »
+
+- **Contexte** : l'AC 1 exige que la recette rejoue les listings du manuel **à l'identique**, substitutions
+  listées seulement ; l'ancien pré-script écrivait `sudo docker compose exec …`. La station de recette n'a
+  pas de `sudo` non interactif (l'utilisateur est dans le groupe `docker`), et `sudo` n'est pas dans la liste
+  des substitutions permises.
+- **Retenu** : le pré-script s'écrit **sans** `sudo` (Hyper Backup l'exécute en root — fait déjà écrit dans
+  `.env.example`) ; la mise en place des fichiers d'identifiants et la recovery s'écrivent « en session root
+  (`sudo -i`) », sans `sudo` par ligne. Les listings se rejouent alors tels quels.
+- **Alternatives** : garder `sudo` et le neutraliser dans la recette (substitution de plus, non listée) ;
+  exiger une station avec `sudo`.
+- **Réversible** : oui (texte du manuel).
+
+## C-15-14-55 — 15-14b (développement) : recette de sauvegarde — commandes root par un conteneur, deux étapes ajoutées
+
+- **Contexte** : `chown root:root` et `chmod 600` d'un fichier devenu root échouent hors root (premier
+  passage : `chmod` refusé, fichiers restés en 664 — constaté, corrigé, rejoué).
+- **Retenu** : substitution déclarée — `chown root:root` et `chmod 600` exécutés dans un conteneur
+  `mariadb:10.11` (root) sur le dossier de test. Deux étapes **ajoutées** à la recette de la fiche, parce
+  que le manuel affirme deux faits de plus : 1-bis (`--defaults-extra-file` non première → refusée,
+  `mariadb-dump: unknown variable`, exit 7) et 1-ter (pré-script raté, réseau absent → exit 125, dump de la
+  veille intact, empreinte vérifiée). Mot de passe du compte Kesh à caractères spéciaux (`@ # ; / %`, espace)
+  pour éprouver les guillemets du fichier d'options. `docker pull mariadb:10.11` exécuté réellement (étape
+  du listing) : il a mis à jour le tag local `mariadb:10.11` de la station — aucun conteneur en cours n'en
+  dépend (`kesh-mariadb-dev` intact). Pilote et extracteur versionnés hors dépôt :
+  `kesh-gate-logs/15-14b-recette.sh`, `15-14b-recette-listings.py`.
+- **Réversible** : oui.
+
+## C-15-14-56 — 15-14b (développement) : G17 lance le vrai binaire au lieu de recopier la règle
+
+- **Contexte** : la fiche autorise à recopier les règles de `config.rs` (avec renvoi) si elles ne sont pas
+  exposées ; `is_template_placeholder` est privée et `Config` n'expose que `from_env`.
+- **Retenu** : G17 lance `kesh-api` (`tests/common/binaire.rs`, environnement vidé) avec les défauts du
+  compose de dev et une base injoignable (`.invalid`) : configuration acceptée ⇔ « Base de données
+  indisponible » sans « Erreur de configuration ». La règle est **appelée** — aucune copie à faire diverger
+  (mémoire *Tests qui prouvent moins*). Mutations `:-admin` et secret court : rouges.
+- **Alternatives** : recopier la règle (fiche) ; rendre `is_template_placeholder` publique (code de
+  production touché pour un test).
+- **Réversible** : oui.
+
+## C-15-14-57 — 15-14b (développement) : normalisation `N` et bornes Synology factorisées (`tests/common/manuel.rs`)
+
+- **Contexte** : G16 (`configuration_transmise.rs`) et G18 (`textes_coherents.rs`) appliquent la même
+  normalisation ; `textes_coherents.rs` portait déjà une `normaliser` partielle (sans accents ni `\_`).
+- **Retenu** : un module `tests/common/manuel.rs` (inclus par `#[path]`, comme `binaire.rs`) porte `N`
+  complète, `desechapper`, `section`/`sections_synology`, `hors_sections`, `listings` ; `textes_coherents.rs`
+  y prend sa `normaliser` (G12 inchangée : ses marqueurs n'ont ni accent en macro ni `\_`, verte).
+- **Réversible** : oui.
+
+## C-15-14-58 — 15-14b (développement) : G16 resserrée au-delà de la fiche
+
+- **Retenu** : (b) l'empreinte doit se calculer sur `<cible>` **après** le `mv` (contrôle de cohérence de la
+  fiche, rendu exécutable) ; (c) le fichier d'**hôte** monté sur le `--defaults-extra-file` de la recovery
+  doit aussi différer de celui du pré-script (sinon un `-v kesh-dump.cnf:/etc/kesh-restore.cnf` passerait) ;
+  (d) motif `rm` élargi (F-2 de la validation P5) — `rm` reconnu en tête de ligne ou après blanc, `;`, `&`,
+  `|`, `(`, accolade (`\keshcommand{rm …}`) ou accent grave, **pas** après `-` (`docker run --rm`) ; cible
+  par son nom de base, sous tout chemin ; terminateur = tout caractère hors nom de fichier (`;`, `'`, `"`,
+  `}`, blanc, fin de ligne) ; (e) et G18 : chaque fragment assumé trouvé **exactement une fois** (une
+  exemption ambiguë rougit comme une morte).
+- **Constat** : au premier jet, la classe des préfixes omettait l'accolade et la mutation n° 9 de la fiche
+  (`\keshcommand{rm -f …}` au post-script) passait **vert** — trouvé par la mutation, corrigé.
+- **Réversible** : oui.
+
+## C-15-14-59 — 15-14b (développement) : contrôle « par la valeur » du T2 mal formé
+
+- **Contexte** : le T2 prescrit `grep -c ':-admin}' docker-compose.dev.yml` → 0. Il rend **1** :
+  `KESH_ADMIN_USERNAME: ${KESH_ADMIN_USERNAME:-admin}`, que l'AC 2 garde **voulu**.
+- **Retenu** : contrôle resserré sur le mot de passe, `grep -c 'PASSWORD:-admin}'` → 0 ; le compose n'est pas
+  en cause. G17 tient la valeur de toute façon.
+- **Réversible** : oui.
+
+## C-15-14-60 — 15-14b (développement) : sondes `occ` corrigées au T4
+
+- **Retenu** : « volume Btrfs DSM avec Snapshot Replication actif » est **conservé** (l'AC 1 dit « préciser »
+  la copie 1, non la réécrire) : la sonde d'absence vise la parenthèse d'avant, « Snapshot Replication actif
+  (recovery rapide » — présente 1 fois sur le PDF de `181efa3c` (régénéré par la 15-14a), 0 après. Deux
+  sondes de présence corrigées (majuscule ; cellule de tableau coupée en colonnes par `pdftotext`). Résultat
+  final : 31 anciens textes à 0, 39 neufs ≥ 1 (`kesh-gate-logs/15-14b-occ-apres.txt`).
+- **Réversible** : oui.
+
+## C-15-14-61 — 15-14b (développement) : label `sec:init-db-manuelle`
+
+- **Contexte** : la validation P5 (F-4) demande que la restauration renvoie à l'« Initialisation manuelle de
+  la base » (`admin-manual.tex:966` sur `bcded0c8`), qui n'avait pas de label.
+- **Retenu** : `\label{sec:init-db-manuelle}` ajouté à ce `\subsubsection`, renvoi `\S\ref{…}` depuis la
+  section Synology. Aucun autre effet.
+- **Réversible** : oui.
+
+## C-15-14-62 — 15-14b (revue de code P1, B4) : le dump Synology passe par le Planificateur de tâches de DSM
+
+- **Contexte** : la revue P1 (B4) doute qu'Hyper Backup ait un champ « pré-script » ; **confirmé par Guy sur son
+  NAS le 2026-10-09** : « il n'y a pas de pré-script ». Décision de l'orchestrateur : une tâche du Planificateur de
+  tâches (root) fait le dump, calée avant la tâche Hyper Backup.
+- **Retenu** : script `/volume1/docker/kesh/kesh-dump.sh` (`set -euo pipefail`, `umask 077`, `PATH` explicite,
+  `trap` qui supprime le `.tmp`, dump dans `dump/` en 700) lancé à 1h30 par une tâche planifiée root, Hyper
+  Backup à 2h ; notification de la tâche en cas d'arrêt anormal (Hyper Backup ignore la tâche et sauvegarderait
+  le dump de la veille sans rien dire) ; vérification du dump du jour dans l'Explorateur de sauvegardes ; plus de
+  « post-script ». `synobackup --backup` non prescrit (non documenté par Synology). Le manuel dit que la recette
+  est rejouée hors DSM et que les **chemins de menus** sont à confirmer ; l'absence de pré-script, elle, est
+  écrite comme constatée.
+- **Question ouverte, non fondée** : Guy signale qu'Hyper Backup « arrête mariadb avant les backups » ; on ignore
+  s'il s'agit du paquet MariaDB 10 ou d'un conteneur. **Rien n'est écrit au manuel** : la phrase suggérée (« cela
+  ne concerne pas Kesh, dont la base vit dans son propre conteneur ») serait fausse avec `docker-compose.prod.yml`,
+  dont la base peut justement être le paquet MariaDB 10. À trancher sur réponse de Guy.
+- **Réversible** : oui (texte du manuel, gardes G16 (f)).
+
+## C-15-14-63 — 15-14b (revue de code P1, B1 = A-2) : le rechargement ne peut pas atteindre `DROP DATABASE` sur une étape ratée
+
+- **Retenu** : le rechargement devient un script, `kesh-restore.sh <dossier du dump>` (un `set -e` collé dans un
+  shell interactif fermerait la session SSH au premier échec) : `set -euo pipefail`, `sha256sum -c`, `gzip -t`,
+  dump de l'état courant dans `avant-restauration/` (700, conservé, horodaté), `docker compose stop kesh-api`,
+  `gunzip -c … | docker run --rm -i …`, `docker compose up -d`. Le script lit le dump **là où le snapshot l'a
+  restauré** : plus de copie sur le dump courant (A-10). Prouvé par la recette : empreinte fausse → arrêt, aucun
+  `DROP`, aucun dump d'avant pris ; archive tronquée (empreinte recalculée) → arrêt à `gzip -t`.
+- **Écart à la consigne, écrit** : l'orchestrateur écrit « `docker exec -i` » ; le rechargement passe par un
+  conteneur **jetable** (`docker run --rm -i`), il n'y a pas de conteneur où `exec` — le `-i` est exigé par G16 (c).
+- **Réversible** : oui.
+
+## C-15-14-64 — 15-14b (revue de code P1, B6, B7 = A-4 = E-5) : `GRANT SELECT` seul ; `\"` et `\\` entre guillemets
+
+- **Retenu** : `LOCK TABLES` retiré du compte de sauvegarde — `--single-transaction` ne verrouille rien ; la
+  recette le prouve (dump complet avec `GRANT SELECT` seul). Fichier d'options : même entre guillemets, `"`
+  s'écrit `\"` et `\` s'écrit `\\` — prouvé par la recette avec le mot de passe `Pa@ss#;w"0rd\x/ %q` (migrations
+  par `DATABASE_URL` pourcentage-encodée, rechargement par `kesh-restore.cnf` : vert). Les chevrons du `CREATE USER`
+  sont dits « à remplacer, non à recopier ».
+- **Réversible** : oui.
+
+## C-15-14-65 — 15-14b (revue de code P1, E-2, A-6) : G18 élargie, sites réécrits ou assumés ; G18-bis
+
+- **Retenu** : motif élargi (`toutes les sociétés|entreprises`, `ensemble des sociétés`, `entre (plusieurs)
+  sociétés|dossiers`, `autre|seconde|deuxième société`, `multi-soci…`) ; total **exact** 16 (7 + 9). Réécrits :
+  `admin-manual` « l'ensemble des sociétés » → « la société de l'installation, ses utilisateurs » et « toutes
+  entreprises + comptes » → « société, utilisateurs, comptes et données système » (l'opposition à « une seule
+  entreprise » suggérait plusieurs sociétés) ; `README:48` idem. **Assumés** (vrais pour une société) : six
+  fragments ajoutés (absence : « pas de seconde société » ×2, « aucun écran ne rattache un compte à une autre
+  société », brochure « la bascule entre sociétés … reste à venir » ; modèle : « multi-société » ×2) ; et, **hors
+  domaine de G18**, la clé `admin-backup-page-description` des quatre locales et son repli
+  `AdminBackupPanel.svelte:63` (« toutes les sociétés » que contient la sauvegarde d'une installation —
+  littéralement vrai) : **aucun code de production touché**. G18-bis : le manuel utilisateur ne décrit ni
+  invitation ni connexion par e-mail, ni écran de changement en session.
+- **Réversible** : oui.
+
+## C-15-14-66 — 15-14b (revue de code P1) : LOW écartés, et pourquoi
+
+- **B8** (empreinte calculée avant le `mv`) : écarté. Les deux ordres laissent une fenêtre ; avec l'ordre actuel,
+  une interruption entre `mv` et `sha256sum` laisse une empreinte de la veille, que `sha256sum -c` refuse : le
+  rechargement **s'arrête**, sans rien écrire (sens sûr). L'empreinte porte sur le fichier final, celui que le
+  rechargement vérifie.
+- **B13** (« multi-tenant » sur `website/index.html:76`) : écarté. Décrit le modèle de données, vrai ; la fiche
+  l'assume déjà (§ *Hors motif, assumés*) ; `roadmap.html` est historique.
+- **Réversible** : oui.
+
+## C-15-14-67 — 15-14b (revue de code P1) : défaut neuf trouvé par G14 élargie, et défaut de la recette
+
+- **G14** lit désormais `stop|start|restart|logs|pull|rm` : elle a trouvé `docker compose logs kesh` et « container
+  `kesh` » dans *Kesh ne démarre pas* (`admin-manual.tex:2420-2425`) — le service s'appelle `kesh-api` ; corrigé.
+- **Recette** : l'attente « base prête » (`SELECT 1`) passait pendant le serveur **temporaire** d'initialisation de
+  l'image MariaDB ; un passage a tout raté (`ERROR 2002`). Les passages antérieurs l'avaient évité par chance.
+  Attente corrigée : second « ready for connections », puis `SELECT 1`.
+- **Réversible** : oui.
+
+## C-15-14-68 — 15-14b (revue de code P2) : les scripts Synology deviennent des fichiers versionnés, que le manuel cite
+
+- **Contexte** : P2 (Opus ×3) — 1 HIGH, 3 MEDIUM distincts, **tous** dans les scripts que la remédiation P1 avait
+  écrits en listing au manuel ; signal D5 levé (défauts recyclés dans la recette). Décision de l'orchestrateur.
+- **Retenu** : `scripts/synology/kesh-dump.sh` et `scripts/synology/kesh-restore.sh` (exécutables, `set -euo
+  pipefail`, `umask 077`), réglages par variables `SAUVEGARDE_DOSSIER`, `SAUVEGARDE_BASE`, `SAUVEGARDE_RESEAU`,
+  `SAUVEGARDE_IMAGE` (défauts du manuel) ; le manuel les fait télécharger (`curl` depuis `main`, comme le compose)
+  et décrit ce qu'ils font, sans les recopier ; G16 lit leur **code** (commentaires retirés) et refuse qu'un listing
+  du manuel les recopie. **Jugée proportionnée** : un script n'est éprouvé que tel qu'il est livré ; recopié dans un
+  `lstlisting`, il ne peut être ni exécuté ni gardé autrement que par motif, et les quatre défauts de la P2 en
+  sont nés.
+- **Écart de nommage** : les réglages ne portent pas le préfixe `KESH_` — la garde (F) « fantômes » exige que tout
+  `KESH_…` cité par le manuel soit une variable lue par le binaire (constaté : rouge sur `KESH_DIR` & co.).
+- **Réversible** : oui.
+
+## C-15-14-69 — 15-14b (revue de code P2) : recette versionnée, hors gate
+
+- **Retenu** : `scripts/synology/recette.sh`, documentée dans `docs/testing.md` § *Recette des scripts de
+  sauvegarde Synology* : réseau, MariaDB 10.11 et projet compose factice (`kesh-api` qui dort) nommés
+  `kesh-recette-synology*`, détruits à la fin et à l'interruption (`trap`) — jamais `kesh-mariadb-dev`. Comptes et
+  `.cnf` extraits des listings du manuel. **Hors gate** : elle exige Docker et dure ≈ 1 min ; elle ne dépend que des
+  scripts, de la section Synology et de l'image ; sa sortie est citée au Dev Agent Record. Mutations de recette : les
+  trois défauts de la P2 réintroduits dans les scripts la font rougir.
+- **Réversible** : oui.
+
+## C-15-14-70 — 15-14b (revue de code P2, A2-5 = E2-5) : l'écran « toutes les sociétés » assumé en liste fermée
+
+- **Retenu** : `admin-backup-page-description` (« toutes les sociétés, les utilisateurs et les données système »),
+  son repli `AdminBackupPanel.svelte` et un commentaire du composant sont **vrais** — la sauvegarde d'une
+  installation contient toutes ses sociétés, une — : assumés dans une liste fermée vérifiée par **G18-ter**
+  (exemption morte ou promesse neuve → rouge). Le README et le manuel restent réécrits (formulation plus claire, sans
+  coût) ; les catalogues ne le sont pas : ce serait du code de production (4 locales + repli) pour une nuance P4.
+  de-CH, it-CH, en-CH : même clé, non lues (motif français), déclarées au doc-comment.
+- **Réversible** : oui.
+
+## C-15-14-71 — 15-14b (revue de code P2) : comportement du rechargement
+
+- **Retenu** : `SOURCE=$(cd "$1" && pwd -P)` avant tout (E2-1 : avec un chemin relatif, l'empreinte vérifiée et le
+  dump rechargé étaient deux fichiers — la recette le prouve, 3 lignes rechargées au lieu de 5 sur la version P1) ;
+  empreinte et `gzip -t` **avant** d'arrêter Kesh ; arrêt **puis** dump de sécurité (B2-6) ; dump de sécurité
+  **non bloquant** (E2-3), dans `avant-restauration/<horodatage>/` avec son empreinte, dossier renommé `-echec` s'il
+  échoue ; secours = le même script sur ce dossier (E2-4 = B2-2 = A2-2), rejoué. Script de dump : `gzip -t` et
+  empreinte sur le `.tmp` avant renommage (B2-7) ; `trap` ne supprime que des `.tmp`, et G16 voit les `rm` dans un
+  `trap`, entre guillemets, après `/` (E2-2 = B2-3).
+- **Réversible** : oui.
+
+## C-15-14-72 — 15-14b (revue de code P2) : LOW traités et écartés
+
+- **Appliqués** : A2-3 (encart d'amendement en tête de l'AC 1), A2-7 (recopier `documents/`), A2-8 = B2-8
+  (CHANGELOG : bloc « Action requise » refermé), A2-9 (bloc T7 marqué antérieur), `.env.example` (paquet DSM : IP
+  LAN, port 3307), E2-6 (formes équivalentes dans G18 / G18-bis), E2-7 et B2-5 (couplages déclarés), E2-8 (copie à
+  chaud ; arrêt possible du paquet MariaDB 10 ou des conteneurs par Hyper Backup, **écrit comme à vérifier**),
+  E2-9 (suspendre la tâche pendant une restauration ; « Écraser le dossier original » restaure tout le dossier
+  `docker`), E2-10 (angles morts de `sans_commentaires`), A2-4 (`gzip -t`, réseau, `umask` du rechargement gardés),
+  A2-6 (snapshot : « pas la base, sauf données sous le dossier partagé »), B2-4 (réseau des deux scripts gardé),
+  B2-9 (« pour chaque company » réécrit ; mise à jour standard renvoie au dump sur Synology), B2-7 (purge
+  d'`avant-restauration/` dite).
+- **Écarté** : B2-9, partie garde — le singulier « company » reste hors du motif de G18 (angle mort : `company`
+  désigne aussi la table et l'entité du modèle partout dans le code et la doc de développement) ; mutation
+  journalisée verte.
+- **Réversible** : oui.
+
+## C-15-14-73 — 15-14b (revue de code P3, E3-3 = B-1) : un dump de sécurité raté n'autorise plus le rechargement, sauf base établie absente
+
+- **Retenu** : `kesh-restore.sh` sonde la base **avant** d'arrêter Kesh (`information_schema.SCHEMATA` par le compte
+  Kesh : serveur injoignable ou compte refusé → arrêt, rien touché). Base **présente** : le dump de sécurité est
+  **obligatoire** ; s'il échoue (disque plein, dossier non inscriptible, image…), le script redémarre Kesh et sort
+  en 1, base intacte, avec le message exact. Base **absente** (sonde = 0) : pas de dump de sécurité, c'est dit, et le
+  rechargement continue. Arrêt de `kesh-api` vérifié (`ps --status running`), projet compose explicite
+  (`SAUVEGARDE_PROJET`, défaut `kesh` — B-3). Recette : « dump de sécurité impossible, base présente » (dossier non
+  inscriptible) → sortie 1, base intacte (empreinte de toutes les tables), Kesh redémarré ; serveur injoignable et
+  dossier inexistant → rien d'arrêté.
+- **Écartée** : une option `--sans-securite` pour passer outre (proposée par E3-3) — le cas « base illisible mais
+  présente » se traite en rechargeant après l'avoir supprimée explicitement (`DROP DATABASE` par l'administrateur),
+  geste conscient ; une option dans le script rendrait l'écrasement d'une base saine à une faute de frappe près.
+- **Réversible** : oui.
+
+## C-15-14-74 — 15-14b (revue de code P3, E3-4) : fidélité du rechargement — toutes les tables, données non ASCII
+
+- **Retenu** : la recette compare l'**empreinte** de la base (nombre de tables et `CHECKSUM TABLE` de **toutes** les
+  tables de `information_schema.TABLES`, 41 au 2026-10-09) au lieu du seul compte d'`accounts`, et une ligne
+  `Compte é € 😀` vérifiée octet par octet (`HEX`). Les scripts passent `--default-character-set=utf8mb4` aux deux
+  `mariadb-dump` et au client de rechargement, explicitement ; la mutation qui le retire est jouée contre la recette
+  (résultat au Dev Agent Record : le défaut du client 10.11 suffit-il ou non). Le dump est refusé s'il ne contient
+  aucune table ou pas de « -- Dump completed » (A3-8, B-7a), et les tables qu'il contient sont comptées.
+- **Réversible** : oui.
+
+## C-15-14-75 — 15-14b (revue de code P3, E3-1) : commandes en listing, sections en `\sloppy`, débordements mesurés
+
+- **Retenu** : les commandes longues (tâche, rechargement, secours, base renommée, réseau) passent en `lstlisting` ;
+  les URL passent par une variable `DEPOT` (une URL sans espace ne se coupe pas, même avec `breaklines`) ; les deux
+  sections Synology sont composées en `\sloppy` (TeX étire les espaces au lieu de déborder sur un chemin en police
+  fixe). **Vérification** : `Overfull \hbox` du journal LaTeX dans les deux sections : **18 → 0** (manuel entier :
+  70 → 52) ; chaque commande retrouvée **entière** sur une ligne de `pdftotext -layout` (journal
+  `15-14b-pdf-commandes-p3.txt`). Pas de garde sur le PDF (non exigée) : le contrôle est le journal LaTeX, rejouable.
+- **Réversible** : oui.
+
+## C-15-14-76 — 15-14b (revue de code P3) : LOW appliqués et écartés
+
+- **Appliqués** : E3-2 = A3-1 (« variable `BASE` » → réglage `SAUVEGARDE_BASE` ; G16 (g) : réglages du manuel =
+  réglages des scripts, défauts cités = défauts des scripts, tâche de dump avant Hyper Backup — A3-4) ; E3-5 (titre
+  de l'encadré de la brochure « Multi-tenant pour fiduciaires » → « Fiduciaires : une instance par dossier » : le
+  titre promettait ce que le corps dément) ; E3-6 (service `kesh-api` présent au compose prod) ; E3-9 = A3-5 = B-6
+  (prérequis complets ; empreintes au lieu d'un compte fixe du seed ; dossier inexistant joué) ; E3-10 = A3-6 = B-7
+  (empreinte renommée avant le dump — fenêtre résiduelle écrite, sens sûr ; verrou `dump/.verrou` par `mkdir`,
+  libéré par `rmdir` ; `dump/` forcé en 700 ; dossier résolu en absolu) ; E3-11, E3-7 (angles morts écrits) ; E3-12
+  (`avant-restauration/` parmi les secrets, à Hyper Backup et au snapshot ; commentaire de `docker-compose.prod.yml`
+  sur `./inbox`/`./documents`) ; E3-13 (interruption : relancer sur le même dossier ; dump d'une version plus récente
+  refusé au démarrage) ; B-3 (`-p`) ; B-4 (Container Manager rendu facultatif, renvoi à la note) ; B-5 (garde (g)
+  sur les migrations ; `normaliser` lit `-{}-` comme `--`).
+- **Écartés** : E3-5, `website/index.html:76` et `roadmap.html:93` — « multi-tenant » y décrit le **modèle**
+  (vrai) et la feuille de route historique ; le terme n'entre pas au motif de G18 (il qualifierait aussi
+  `README` § *Multi-tenant*, la sous-section *Configuration multi-tenant*, tous des descriptions du modèle). A3-7 =
+  E3-8 (épingler l'URL sur le tag) : **non** dans le listing — l'étiquette `v0.13.0` n'existe qu'à la publication,
+  et la macro `\keshVersion` ne se déplie pas dans un `lstlisting` ; le compose est téléchargé de `main` par le même
+  manuel. Le manuel dit désormais comment figer les scripts (« remplacez `main` par l'étiquette de votre version »).
+  À reprendre si la release veut épingler compose et scripts ensemble (signalé à l'orchestrateur).
+- **Rectifications** : A3-2 — C-15-14-62 écrivait « rien n'est écrit au manuel » sur l'arrêt par Hyper Backup ; depuis
+  la P2, le manuel l'écrit **comme possibilité à vérifier** (note de `sec:backup-dsm`, sans l'affirmer) — c'est l'état
+  réel, et la question de Guy reste ouverte. A3-3 — le registre P2 disait les findings « tous nés de la remédiation
+  P1 » : c'est vrai des MEDIUM+ (E2-1 à E2-4) ; A2-5 = E2-5 (écran « toutes les sociétés ») était préexistant.
+- **Réversible** : oui.
+
+## C-15-14-77 — 15-14b (revue de code P4, signal D5) : `kesh-restore.sh` simplifié à la racine — il ne touche plus à Kesh
+
+- **Contexte** : P4 (Opus ×3) — 0 HIGH, 4 MEDIUM, comme en P3, la plupart nés de la remédiation P3 et tous dans
+  `kesh-restore.sh` (arrêt « vérifié » qui ne détecte pas un projet faux, `up -d` sur une base à moitié rechargée,
+  deux consignes de reprise contradictoires, dump de sécurité sauté quand la base du dump ≠ réglage). **Signal D5
+  levé** (recyclage). Décision de l'orchestrateur : simplifier plutôt que rapiécer.
+- **Retenu** : le script ne fait plus ni `stop` ni `up` : l'exploitant arrête `kesh-api` avant
+  (`docker compose stop kesh-api`) et le redémarre après (`docker compose start kesh-api`), commandes au manuel ;
+  le script **refuse** si un conteneur du service `kesh-api` tourne sur l'hôte
+  (`docker ps --filter label=com.docker.compose.service=kesh-api --filter status=running`, une erreur de docker
+  vaut refus) — sans dépendre du nom de projet ; `SAUVEGARDE_PROJET` supprimé. **Angle mort écrit** : la détection
+  porte sur tout l'hôte — deux installations Kesh sur le même NAS se gêneraient (refus, sens sûr).
+- **Réversible** : oui.
+
+## C-15-14-78 — 15-14b (revue de code P4) : nom de la base lu dans le dump ; verrou partagé ; dump de sécurité par `kesh-dump.sh`
+
+- **Retenu** : (B4-1 = A4-2 = E4-2) le script lit dans le dump la base qu'il recrée (unique `CREATE DATABASE`) et
+  refuse si elle diffère de `SAUVEGARDE_BASE` ; le manuel montre `SAUVEGARDE_BASE=kesh` dans la commande de
+  rechargement. (A4-11 = E4-8) il prend le verrou `dump/.verrou` du dump nocturne pour toute la restauration : un dump
+  lancé pendant ce temps est refusé (recette, étape 6) — la suspension de la tâche n'est plus une consigne. (A4-8,
+  B4-L4, E4-10) le dump de sécurité est pris par **`kesh-dump.sh` lui-même** (réglages internes `DUMP_CIBLE`,
+  `DUMP_COMPTE` sans préfixe `SAUVEGARDE_`, non cités au manuel) : une seule définition d'un dump valide (`.tmp`
+  puis renommage, tables, `-- Dump completed`, empreinte) ; son échec ne laisse aucun fichier partiel et arrête tout,
+  rien rechargé. Signaux `HUP INT TERM` convertis en sortie dans les deux scripts : le `trap` nettoie aussi sur
+  interruption.
+- **Base présente mais illisible** (A4-1) : seule issue, délibérée et écrite au manuel (commande `DROP DATABASE` par
+  le compte Kesh, puis rechargement) — rejouée par la recette (étape 9) ; « Données corrompues détectées » y renvoie.
+  Pas d'option `--sans-securite`.
+- **Réversible** : oui.
+
+## C-15-14-79 — 15-14b (revue de code P4) : l'oracle de la recette n'était pas fiable — empreinte de contenu
+
+- **Constat, mesuré** : la recette réécrite rougissait par intermittence sur `accounts` (1 passage sur 2 à 3) ; le
+  relevé ligne par ligne (`SELECT *`) était **identique** — `CHECKSUM TABLE` (choisi en P3, C-15-14-74) d'une table
+  vivante diffère parfois de celle de la même table rechargée : il lit la représentation stockée, pas le contenu. Le
+  « vert » de la P3 ne prouvait donc pas l'égalité par cet oracle.
+- **Retenu** : empreinte = liste des tables + `mariadb-dump --no-create-info --order-by-primary --skip-dump-date
+  --skip-comments --skip-extended-insert` haché ; diagnostic `detail` (diff de contenu) imprimé sur tout écart.
+  Trois passages consécutifs verts, puis la recette finale ; les mutations `latin1` et « chemin relatif » la font
+  toujours rougir.
+- **Réversible** : oui.
+
+## C-15-14-80 — 15-14b (revue de code P4) : LOW appliqués et écartés
+
+- **Appliqués** : B4-4 = A4-4 = E4-4 (G16 (g) : défauts des deux scripts égaux, et cités au manuel bornés par `[,)]`) ;
+  B4-L5 = E4-5 (G16 (c) : sonde en affectation nue, `case … 0|1)` qui sort) ; E4-6 (motif des vues : `ALGORITHM=`,
+  `SQL SECURITY`, `AGGREGATE` ; phrase du manuel sur le privilège `TRIGGER`) ; E4-11 (horaires modulo 24 h, marge 15
+  min à 12 h) ; B4-L1, A4-6 (doc-comments de G14 et G16 réécrits dans leur état final) ; B4-L2 (plus de `docker compose
+  -p kesh stop` au manuel : `docker compose stop kesh-api`) ; B4-L3 = E4-7 (dump « quelques minutes avant chaque
+  snapshot » ; `rmdir dump/.verrou` d'un snapshot restauré) ; B4-L6 (plus d'heuristique d'indentation) ; B4-L7
+  (`defaut_script` partagé) ; B4-L8 (interruption entre les deux renommages : écrite dans l'en-tête de `kesh-dump.sh`) ;
+  E4-9 (sorties : le script ne redémarre plus rien ; « revenir » impossible si la base était absente, écrit) ; A4-3
+  (encart de l'AC 1), A4-5 (deux commentaires du compose prod), A4-9 (File List), A4-10 (« création de la société »).
+- **Écarté** : B4-L5 côté recette — une sonde masquée (`|| echo 0`) ne fait pas rougir la recette quand le serveur est
+  injoignable, le rechargement échouant ensuite pour la même raison ; seule la garde (c) la tient (mutation rouge).
+  Écrit plutôt qu'inventé : un cas de recette distinguant « sonde ratée, serveur joignable » exigerait de faire
+  échouer la seule requête `SCHEMATA`.
+- **Réversible** : oui.
+
+## C-15-14-81 — 15-14b (revue de code P5) : Kesh « actif » = tout état autre que exited, created, dead
+
+- **Contexte** : P5 (Sonnet ×3) — 0 HIGH, 3 MEDIUM distincts, convergents, nés de la P4. B5-1 = E-1 = A5-2 :
+  `--filter status=running` ratait un `kesh-api` en boucle de redémarrage (`restarting`, justement quand la base est
+  perdue et que `restart: unless-stopped` relance) ou en pause.
+- **Retenu** : `docker ps --all --filter label=com.docker.compose.service=kesh-api --format '{{.State}}'`, refus sur
+  tout état hors `exited|created|dead` (liste fermée) ; recette : conteneur factice `restarting` (commande qui sort en
+  erreur, `restart: always`, trois lectures stables avant le test — l'état alterne avec `running`) et `paused`.
+- **Réversible** : oui.
+
+## C-15-14-82 — 15-14b (revue de code P5, E-2 = A5-3) : sonde à trois états — absente, vide, avec tables
+
+- **Retenu** (décision de l'orchestrateur) : la sonde compte la base **et ses tables** ; base absente ou présente
+  **vide** (serveur neuf préparé par l'*Initialisation manuelle*, interruption juste après `CREATE DATABASE`) : rien à
+  protéger, pas de dump de sécurité, message explicite ; base avec tables : dump de sécurité obligatoire. Validation
+  stricte des deux nombres. Recette : base vide → rechargée ; manuel aligné (étapes, Initialisation manuelle).
+- **Réversible** : oui.
+
+## C-15-14-83 — 15-14b (revue de code P5) : LOW appliqués et déjà tranchés
+
+- **Appliqués** : B5-2 = E-3 = A5-1 (CHANGELOG réécrit selon le livré ; grep du dépôt : aucune autre trace d'avant la
+  P4) ; A5-4 = B5-4 = E-5 (« ne touche à la base qu'à l'étape 6, n'écrit aucun dump avant l'étape 5, seulement son
+  verrou ») ; A5-5 (`DROP DATABASE <base>`, à remplacer par `SAUVEGARDE_BASE`) ; B5-3 (verrou pris **avant** de lire le
+  dump) ; B5-5 (5-bis : cause réelle, valable pour root — vue invalide, base illisible — au lieu d'un `chmod`
+  inopérant pour root ; « dossier non inscriptible » retiré des causes du manuel) ; B5-6 (G16 exige la `trap` qui
+  libère le verrou) ; B5-7 (doc-comment du module) ; E-4 (« revenir » : le plus ancien horodatage, `ls` donné) ; E-6
+  (échec du rechargement : le script affiche les deux gestes et le dossier de sécurité) ; E-7, E-12 (angles morts
+  écrits) ; E-8 (`.gitignore`/`.dockerignore` : `/dump/`, `/avant-restauration/`, `kesh-*.cnf`) ; E-11 (l'oracle voit
+  le schéma ; verrou d'une autre restauration et interruption par `SIGTERM` joués) ; A5-6 (signal joué).
+- **Déjà tranchés, rien à faire** : B5-8 = E-9 (« multi-tenant » du site : C-15-14-76, décrit le modèle ; à Guy s'il
+  veut le marketing autrement) ; E-10 (« toutes les sociétés » à l'écran : C-15-14-70, G18-ter).
+- **Réversible** : oui.
+
+## C-15-14-84 — 15-14b (revue P6 ciblée, MEDIUM-1) : « revenir » ne devine pas le dossier
+
+- **Contexte** : P6 ciblée (Haiku, sur `b4d64596^..cf2a24c6`) — 0 HIGH, 1 MEDIUM confirmé par l'orchestrateur,
+  4 LOW. Le message d'échec de l'étape 6 désignait `$SECURITE`, le dossier du passage **en cours**, en le disant « le
+  plus ancien » : au second passage, c'est le dump d'une base à moitié rechargée ; sur une base devenue vide, il disait
+  « aucun dump » alors que celui du premier passage existe.
+- **Retenu** (décision de l'orchestrateur) : le message ne prétend plus deviner. Il liste les dossiers
+  d'`avant-restauration/`, plus ancien en tête, dit de relancer sur le **plus ancien pris depuis le début de cette
+  restauration**, et ne rappelle celui du passage qu'à titre d'information. Manuel (étape 6, reprise) et en-tête du
+  script alignés ; G16 (c) exige la liste et interdit que « revenir » désigne `$SECURITE` ; recette 7-quater (deux
+  passages qui échouent : le dossier du premier est listé avant celui du second, « revenir » sur lui rend l'état d'avant).
+- **Angle mort assumé** : le script ne sait pas quand « cette restauration » a commencé ; les dossiers de restaurations
+  antérieures figurent dans la liste, c'est à l'exploitant de choisir (dit au manuel).
+- **Réversible** : oui.
+
+## C-15-14-85 — 15-14b (revue P6 ciblée) : LOW
+
+- **Appliqués** : LOW-1 (`ls -d …/avant-restauration/*/ # plus ancien en tête` : les seuls dossiers) ; LOW-3
+  (CHANGELOG : « n'est pas arrêté — en marche, en boucle de redémarrage ou en pause ») ; LOW-4 (G16 (c) lit le `case`
+  sur une ou plusieurs lignes : réécriture équivalente verte, branche sans `exit 1` rouge — mutations).
+- **Sans objet** : LOW-2 (routines) — aucune `CREATE PROCEDURE|FUNCTION|TRIGGER|EVENT` dans les migrations (grep : 0
+  fichier), et G16 (g) le garde déjà (« aucune routine, déclencheur, événement ni vue dans les migrations »).
 - **Réversible** : oui.
 
 ## C-15-1c-14 — 15-1c (validation P2, F2-3 ; signal D5 levé) : la partie serveur de la 15-1c-i extraite en 15-1c-0
