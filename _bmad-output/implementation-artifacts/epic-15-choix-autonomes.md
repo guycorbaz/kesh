@@ -7589,3 +7589,27 @@ l'import (#458–#461).
 - **Déjà tranchés, rien à faire** : B5-8 = E-9 (« multi-tenant » du site : C-15-14-76, décrit le modèle ; à Guy s'il
   veut le marketing autrement) ; E-10 (« toutes les sociétés » à l'écran : C-15-14-70, G18-ter).
 - **Réversible** : oui.
+
+## C-15-14-84 — 15-14b (revue P6 ciblée, MEDIUM-1) : « revenir » ne devine pas le dossier
+
+- **Contexte** : P6 ciblée (Haiku, sur `b4d64596^..cf2a24c6`) — 0 HIGH, 1 MEDIUM confirmé par l'orchestrateur,
+  4 LOW. Le message d'échec de l'étape 6 désignait `$SECURITE`, le dossier du passage **en cours**, en le disant « le
+  plus ancien » : au second passage, c'est le dump d'une base à moitié rechargée ; sur une base devenue vide, il disait
+  « aucun dump » alors que celui du premier passage existe.
+- **Retenu** (décision de l'orchestrateur) : le message ne prétend plus deviner. Il liste les dossiers
+  d'`avant-restauration/`, plus ancien en tête, dit de relancer sur le **plus ancien pris depuis le début de cette
+  restauration**, et ne rappelle celui du passage qu'à titre d'information. Manuel (étape 6, reprise) et en-tête du
+  script alignés ; G16 (c) exige la liste et interdit que « revenir » désigne `$SECURITE` ; recette 7-quater (deux
+  passages qui échouent : le dossier du premier est listé avant celui du second, « revenir » sur lui rend l'état d'avant).
+- **Angle mort assumé** : le script ne sait pas quand « cette restauration » a commencé ; les dossiers de restaurations
+  antérieures figurent dans la liste, c'est à l'exploitant de choisir (dit au manuel).
+- **Réversible** : oui.
+
+## C-15-14-85 — 15-14b (revue P6 ciblée) : LOW
+
+- **Appliqués** : LOW-1 (`ls -d …/avant-restauration/*/ # plus ancien en tête` : les seuls dossiers) ; LOW-3
+  (CHANGELOG : « n'est pas arrêté — en marche, en boucle de redémarrage ou en pause ») ; LOW-4 (G16 (c) lit le `case`
+  sur une ou plusieurs lignes : réécriture équivalente verte, branche sans `exit 1` rouge — mutations).
+- **Sans objet** : LOW-2 (routines) — aucune `CREATE PROCEDURE|FUNCTION|TRIGGER|EVENT` dans les migrations (grep : 0
+  fichier), et G16 (g) le garde déjà (« aucune routine, déclencheur, événement ni vue dans les migrations »).
+- **Réversible** : oui.
