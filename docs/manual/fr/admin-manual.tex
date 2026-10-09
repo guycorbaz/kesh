@@ -561,6 +561,8 @@ openssl rand -base64 24 # → KESH_ADMIN_PASSWORD
 sudo nano .env
 \end{lstlisting}
 
+\keshpath{docker-compose.prod.yml} rattache \keshcommand{kesh-api} à un réseau Docker \textbf{externe}, \keshcommand{frontend}, qu'il ne crée pas : créez-le une fois, avant le premier démarrage (\keshcommand{sudo docker network create frontend}). C'est aussi par lui que les conteneurs de sauvegarde atteignent la base (\S\ref{sec:backup-dsm}).
+
 \begin{keshwarning}
 \textbf{Sécurité} : ne jamais laisser les valeurs par défaut \keshcommand{changeme} ou \keshcommand{change-me-32-bytes-...}, le placeholder \keshcommand{<GENERATE\_ME: ...>} du gabarit, ni aucune valeur entre chevrons \texttt{<…>} dans \keshpath{.env} pour \texttt{KESH\_JWT\_SECRET} et \texttt{KESH\_ADMIN\_PASSWORD}. Kesh fait fail-fast au boot si ces placeholders restent — c'est intentionnel pour protéger les utilisateurs débutants qui oublient cette étape.
 \end{keshwarning}
