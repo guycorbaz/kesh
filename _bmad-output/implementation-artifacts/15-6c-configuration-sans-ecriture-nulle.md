@@ -2,7 +2,7 @@
 
 ## Status
 
-review
+done
 
 <!-- Spécifiée le 2026-10-08 en autonomie (bmad-create-story), fille de la 15-6 découpée d'emblée
      (choix C-15-6-1). Choix propres : C-15-6-5 (révisé par C-15-6-13), C-15-6-14, C-15-6-15.
@@ -763,3 +763,34 @@ propre, bases `kesh_156c` / `kesh_e2e_156c`, backend E2E sur le port 3019.
   Vitest 1127/1127, E2E 244 / 10 (7 KF-029, 2 KF-045, 1 pollution rejouée seule verte). Écart à
   l'inventaire de la fiche : un test de la 15-5e1 couplé au point d'attente du PUT des réglages
   (C-15-6c-4). Choix C-15-6c-1 à C-15-6c-4. Statut `review`.
+- 2026-10-09 — **Revue de code — boucle close** (bmad-code-review ; orchestrateur Opus 5.5).
+  - **P1 complète** (Sonnet, trois lentilles ; prompt versionné `15-6c-review-prompt-p1.md`).
+    ⚠️ **Les trois rapports ont été perdus** — écrits sous `target/gate-logs/`, effacés par un
+    `cargo clean` après le crash de la station du 2026-10-09 (d'où la consigne « rapports hors de
+    `target/` »). Le **décompte par sévérité n'est pas reconstituable** et n'est donc pas écrit ici.
+    Ce qui en reste se lit dans le message de `73ba6211` et au registre : F1 (portée next-key de
+    l'`INSERT` sans lien), F3 (filet de la sauvegarde et de l'onboarding — C-15-6c-5, LOW), A3 (test du
+    formulaire de création), B3 = A4 (duplication création / `claims_for_target` — dette écrite,
+    C-15-6c-6, LOW), plus les doc-comments de tests mal placés dans `errors.rs`, « Ce solde » au manuel
+    utilisateur et la clause règlement/rapprochement au CHANGELOG.
+  - **Remédiation P1** (`73ba6211`) : **aucune ligne exécutable de production** — doc-comments,
+    deux tests neufs (`already_linked_claim_account_is_exempt_in_the_repository`, cas « création » de
+    `bank-accounts-page.test.ts`), manuel utilisateur (PDF régénéré), CHANGELOG, registre.
+  - **P2 ciblée** (Haiku 4.5, une lentille braquée sur le seul `73ba6211` ; prompt
+    `15-6c-review-prompt-p2-ciblee.md` ; rapport `/home/gcorbaz/devel/kesh-gate-logs/15-6c-review-p2-ciblee.md`) :
+    **0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW**, axes exercés et non exercés déclarés. Vérifiée par
+    l'orchestrateur : `git show 73ba6211` ne change, dans `errors.rs` et `repositories/bank_accounts.rs`,
+    que des lignes `///`. Les deux LOW appliqués (commentaires seulement) :
+    - **F-1** — doc-comment de `first_active_bank_account_linked_to` : condition de l'attente d'un
+      `INSERT` à `journal_account_id` NULL précisée (seulement quand aucune valeur non nulle de l'index
+      n'est inférieure à `account_id`) ; l'axe que la lentille n'avait pas exercé est fait : l'`INSERT`
+      de `upsert_primary_in_tx` ne nomme pas `journal_account_id` (NULL), et
+      `idx_bank_accounts_journal_account` porte sur cette seule colonne
+      (`20260507200001_bank_account_journal_link.sql:27-28`).
+    - **F-2** — `bank-accounts-page.test.ts` : « le troisième `<select>` de la page » était faux (la page
+      en a deux, le select de lien vit dans `BankAccountJournalLinkForm`) ; ordinal retiré. Symptôme grepé
+      (« troisième <select> », « NULL précèdent ») : aucun autre site.
+  - **Trend** : P1 (Sonnet ×3) décompte perdu → remédiation sans code de production → P2 ciblée
+    (Haiku) 0 au-dessus de LOW. Modèles : Sonnet pour la passe complète, Haiku pour la passe ciblée de
+    fin de boucle (D6). Aucun finding MEDIUM+ reclassé en dette ; deux LOW écrits en choix (C-15-6c-5,
+    C-15-6c-6). La remédiation de la P2 ne touche que des commentaires : **boucle close**. Statut `done`.

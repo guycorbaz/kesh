@@ -706,9 +706,15 @@ pub async fn count_other_active_for_company(
 /// aucune ligne. Un `INSERT INTO bank_accounts` dont le `journal_account_id`
 /// tombe dans l'intervalle voisin peut donc **attendre** la fin du PUT des
 /// réglages — y compris un INSERT **à `journal_account_id` NULL** (création
-/// sans lien, `upsert_primary_in_tx` de l'onboarding) : les NULL précèdent les
-/// valeurs dans l'index, et l'INSERT se pose au bord de l'intervalle qui
-/// précède la première valeur non nulle. Attente transitoire, sans cycle
+/// sans lien : l'`INSERT` de `upsert_primary_in_tx`, à l'onboarding, ne nomme
+/// pas la colonne, qui prend donc NULL). Les NULL précèdent les valeurs dans
+/// l'index (`idx_bank_accounts_journal_account`, sur la seule colonne
+/// `journal_account_id`), et l'INSERT se pose au bord de l'intervalle qui
+/// précède la première valeur non nulle : il n'attend donc **que lorsque
+/// aucune valeur non nulle de l'index n'est inférieure à `account_id`** —
+/// c'est-à-dire quand `account_id` est inférieur ou égal à la plus petite
+/// valeur non nulle, seul cas où l'intervalle verrouillé par le balayage
+/// touche la zone des NULL. Attente transitoire, sans cycle
 /// (aucun flux ne tient `bank_accounts` puis ne réclame les réglages), **non
 /// mesurée** (revue de code P1, F1).
 ///

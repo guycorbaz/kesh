@@ -155,7 +155,8 @@ describe('page des comptes bancaires — comptes de créance désignés (Story 1
 		return Array.from(select.options).map((o) => o.textContent ?? '');
 	}
 
-	// Création : revue de code P1 (A3) — le troisième <select> de la page.
+	// Création : revue de code P1 (A3) — le select du formulaire de création de la
+	// page, ajouté aux deux autres (modification ; lien, dans BankAccountJournalLinkForm).
 	it.each([
 		['création', 'create-bank-account-button', 'form-journal-account'],
 		['modification', 'edit-button-5', 'edit-journal-account'],
