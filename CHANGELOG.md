@@ -8,6 +8,19 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.13.1] — Non publié
+
+### Ajouté
+
+- **Une description optionnelle pour chaque compte bancaire ([#622](https://github.com/guycorbaz/kesh/issues/622)).** Dans *Administration → Comptes bancaires*, un compte peut porter une courte description de 60 caractères au plus — « Personnel », « Épargne » — pour distinguer deux comptes de la même banque. Kesh nomme alors le compte « UBS — Personnel » dans les listes de comptes (la page des comptes, la tuile de l'accueil, *Paramètres*) et dans les sélecteurs (import bancaire, réconciliation, règlement d'une facture, règlement d'une facture fournisseur, lot de paiement), où l'IBAN reste affiché à la suite ; le refus de désigner comme compte débiteurs ou créanciers un compte lié à un compte bancaire nomme aussi ce compte ainsi. Un compte sans description s'affiche exactement comme avant ; les comptes existants n'ont rien à saisir. La description ne se saisit pas à l'onboarding, et ne figure ni sur la QR-facture ni dans le fichier de paiement. Le manuel utilisateur gagne une section « Comptes bancaires ».
+- **Export et API : le champ `description` des comptes bancaires ([#622](https://github.com/guycorbaz/kesh/issues/622)).** `bank_accounts.csv` de l'export global gagne la colonne `description`, **juste après `bank_name`** : les colonnes suivantes se décalent d'un rang pour un lecteur positionnel. Les réponses des routes des comptes bancaires (`GET`, `POST`, `PUT`, `PATCH`, `DELETE /api/v1/bank-accounts…`) et de `GET /api/v1/companies/current` portent `description` (`null` si absente) — changement additif. La sauvegarde d'installation la porte aussi ; une sauvegarde antérieure s'importe, ses comptes sans description.
+
+### Modifié
+
+- **⚠️ Changement de contrat pour une intégration par clé d'API : `PUT /api/v1/bank-accounts/{id}` remplace aussi la description ([#622](https://github.com/guycorbaz/kesh/issues/622)).** Comme pour les autres champs du compte, la route remplace tout : un corps qui **omet** `description` — un corps écrit pour la 0.13.0 — l'**efface**. Pour la garder, la renvoyer. `PATCH /api/v1/bank-accounts/{id}` (le lien au grand livre) ne la touche pas.
+- **Le refus `CLAIM_ACCOUNT_LINKED_TO_BANK_ACCOUNT` nomme le compte bancaire complet ([#622](https://github.com/guycorbaz/kesh/issues/622)).** Son message et `details.bankName` portent désormais le nom du compte avec sa description (« UBS — Personnel »), la banque seule sans description. La clé `bankName` ne change pas ; la route (`PUT /api/v1/company/invoice-settings`) est fermée aux clés d'API.
+- **Manuel : le compte de la QR-facture.** Le manuel utilisateur décrivait à la création d'une facture un champ « Compte bancaire de réception » qui n'existe pas, et une référence ISO 11649 que Kesh ne produit pas. Il dit désormais ce que fait Kesh : la QR-facture porte le **compte bancaire principal** ; avec un QR-IBAN, une référence QRR ; sinon l'IBAN, sans référence structurée. La brochure est corrigée de même.
+
 ## [0.13.0] — 2026-10-10
 
 ⚠️ **Cette version n'est pas encore destinée à tenir une comptabilité réelle.** Elle apporte le lettrage — ce qui reste ouvert sur un compte, ligne à ligne —, la modification et la suppression d'une écriture tant que son exercice est ouvert, la clôture des exercices dans l'ordre, et ferme une série de défauts d'écriture, d'audit et d'exploitation. Mais deux fonctions nécessaires à un exercice complet manquent encore : le **bouclement d'exercice** — écritures de clôture, report à nouveau, transitoires ([#232](https://github.com/guycorbaz/kesh/issues/232)) — et les **pièces justificatives** rattachées aux écritures ([#235](https://github.com/guycorbaz/kesh/issues/235)). Elle s'installe et s'exerce ; elle ne remplace pas encore votre comptabilité.

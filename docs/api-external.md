@@ -215,7 +215,7 @@ Les principales ressources accessibles via l'API (liste non exhaustive — toute
 | Lettrages | `GET /letterings/{key}` ⁵ | `POST /letterings` ⁵, `DELETE /letterings/{key}` ⁵ |
 | Postes ouverts et rapprochements proposés | `GET /accounts/{id}/open-items` ⁶, `GET /accounts/{id}/lettering-proposals` ⁶ | — (accepter une proposition : `POST /letterings`) |
 | Taux de TVA | `GET /vat-rates` | — ¹ |
-| Comptes bancaires | `GET /bank-accounts` | `POST /bank-accounts`, `PUT /bank-accounts/{id}`, `PATCH /bank-accounts/{id}` (lien au grand livre), `DELETE /bank-accounts/{id}` (archivage) |
+| Comptes bancaires | `GET /bank-accounts` | `POST /bank-accounts`, `PUT /bank-accounts/{id}` ⁷, `PATCH /bank-accounts/{id}` (lien au grand livre), `DELETE /bank-accounts/{id}` (archivage) |
 
 *(Préfixe `…/api/v1` omis dans le tableau. Les corps de requête d'écriture peuvent différer des champs renvoyés en lecture : référez-vous aux formulaires correspondants de l'interface web pour les champs attendus.)*
 
@@ -224,6 +224,8 @@ Les principales ressources accessibles via l'API (liste non exhaustive — toute
 ⁵ Depuis la v0.13.0 — voir « Lettrer des lignes » ci-dessous.
 
 ⁶ Depuis la v0.13.0 — voir « Les postes ouverts d'un compte » ci-dessous.
+
+⁷ *Depuis la v0.13.1* : les comptes bancaires portent un champ `description` (optionnel, 60 caractères au plus, `null` si absent) ; `PUT /bank-accounts/{id}` le remplace comme les autres champs — **l'omettre l'efface** ; `PATCH` (lien au grand livre) ne le touche pas.
 
 **Le plan comptable dit quels comptes se lettrent** *(depuis la v0.13.0)* : chaque compte de `GET /accounts` — archivés compris — et des réponses de `POST /accounts`, `PUT /accounts/{id}`, `PUT /accounts/{id}/archive` et `PUT /accounts/{id}/reactivate` porte `letterable` (booléen) : vrai pour un compte d'actif ou de passif qu'aucun compte bancaire — archivé compris — ne désigne. Le **Grand livre**, `GET /reports/general-ledger`, porte depuis la v0.13.0 `letteringCode` par ligne (le code du groupe de lettrage, `null` si la ligne est ouverte) ; ses exports CSV et PDF sont inchangés.
 
