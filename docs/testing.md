@@ -515,8 +515,8 @@ rend 97 avec `FAUX DOCKER : appel inattendu`.
   sous-shell de chaque cas**, avec ses variables `FAUX_*` ; les `SAUVEGARDE_*` du shell appelant y sont désarmées.
   Une assertion vérifie, après la section 0 et en tête de la section 1, que `docker` redevient le vrai
   (`type -t docker` = `file`).
-- **Prérequis du mode 0** : `bash`, coreutils (`mktemp`, `rm`, `cat`, `dirname`, `sha256sum`, `wc`, `head`, `seq`,
-  `tr`, `tail`, `cut`), `gzip`,
+- **Prérequis du mode 0** : `bash`, coreutils (`mktemp`, `mkdir`, `rm`, `rmdir`, `cat`, `dirname`, `sha256sum`,
+  `wc`, `head`, `seq`, `tr`, `tail`, `cut`), `gzip`,
   `grep`, `awk` — ni `docker`, ni `openssl`, ni `sqlx`, ni `python3`, ni réseau. La recette pose d'abord une trap
   minimale qui n'efface que son dossier de travail ; `openssl` et la trap qui appelle `docker` (`nettoyer`) ne
   viennent qu'**après** la section 0.

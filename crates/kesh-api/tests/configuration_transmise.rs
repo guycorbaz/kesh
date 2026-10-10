@@ -2667,10 +2667,11 @@ const EXEC_SYNOLOGY_ATTENDUS: usize = 0;
 /// **Formes non lues** (angle mort écrit) : `docker-compose` (v1),
 /// `docker compose -p <projet> …` (le `-p` n'est pas reconnu comme option de
 /// la commande), une option à valeur (`stop -t 30 kesh-api` : `30` serait lu
-/// comme service ; de même une option longue à valeur, `logs --tail 50 kesh-api` — faux
-/// positif **bruyant** : G14 rougirait, elle ne se tairait pas ; avec `--timeout=30`, la
-/// commande entière n'est pas lue), `down`, `docker exec <conteneur>` — aucune dans le manuel au
-/// 2026-10-11 (vérifié par `grep`). Les scripts Synology ne sont pas lus ici :
+/// comme service ; de même une option longue à valeur séparée par une espace, `logs --tail
+/// 50 kesh-api` — faux positif **bruyant** : G14 rougirait, elle ne se tairait pas ; la forme
+/// `--tail=100` est lue depuis la revue de code P2 de la 26-3, deux lignes du manuel
+/// l'employant), `down`, `docker exec <conteneur>` — aucune dans le manuel au
+/// 2026-10-11 (vérifié par `grep -nE "docker compose [a-z]+ -"`). Les scripts Synology ne sont pas lus ici :
 /// G16 garde leur réseau et leur service.
 #[test]
 fn les_services_cites_existent() {
@@ -2688,7 +2689,7 @@ fn les_services_cites_existent() {
     // `[ \t]` et non `\s` : une commande sans service (`docker compose ps`) ne
     // doit pas prendre le premier mot de la ligne suivante pour un service.
     let commande = Regex::new(
-        r"docker compose(?:[ \t]+-f[ \t]+\S+)?[ \t]+(exec|stop|start|restart|logs|pull|rm|up)((?:[ \t]+-{1,2}[A-Za-z][A-Za-z-]*)*)[ \t]+([A-Za-z0-9_][A-Za-z0-9_.-]*)",
+        r"docker compose(?:[ \t]+-f[ \t]+\S+)?[ \t]+(exec|stop|start|restart|logs|pull|rm|up)((?:[ \t]+-{1,2}[A-Za-z][A-Za-z-]*(?:=\S+)?)*)[ \t]+([A-Za-z0-9_][A-Za-z0-9_.-]*)",
     )
     .unwrap();
     let mut erreurs = Vec::new();
@@ -3148,6 +3149,11 @@ fn synology_sauvegarde_la_base_par_le_dump() {
             r#"docker ps --all\b[^\n]*\{\{\.State\}\}[^\n]*\{\{\.Image\}\}[^\n]*\{\{\.Label "com\.docker\.compose\.service"\}\}"#,
         ),
         (
+            // Ordonnée : avant le verrou, comme toute la garde (revue de code P2, A2-L3).
+            "sortie sur zéro conteneur du service SAUVEGARDE_SERVICE (26-3, AC 5.4)",
+            r#"\[ "\$N" -gt 0 \] \|\| \{[^\n]*aucun conteneur du service[^\n]*exit 1;"#,
+        ),
+        (
             "verrou du dump (`dump/.verrou`)",
             r#"mkdir "\$SAUVEGARDE_DOSSIER/dump/\.verrou""#,
         ),
@@ -3193,12 +3199,10 @@ fn synology_sauvegarde_la_base_par_le_dump() {
             r#"(?s)--format '\{\{\.State\}\}\|\{\{\.Image\}\}\|\{\{\.Label "com\.docker\.compose\.service"\}\}\|\{\{\.Names\}\}'.*IFS='\|' read -r ETAT IMAGE SERVICE NOM RESTE\b"#,
         ),
         (
-            "zéro conteneur du service SAUVEGARDE_SERVICE ne fait pas sortir (26-3, AC 5.4)",
-            r#"\[ "\$N" -gt 0 \] \|\| \{[^\n]*aucun conteneur du service[^\n]*exit 1;"#,
-        ),
-        (
-            "la garde ne compare pas le service au réglage SAUVEGARDE_SERVICE, ou n'en compte pas les conteneurs (26-3, revue P1)",
-            r#"if \[ "\$SERVICE" = "\$SAUVEGARDE_SERVICE" \]; then\s+N=\$\(\(N\+1\)\)"#,
+            "la branche « service » de la garde ne compare pas au réglage SAUVEGARDE_SERVICE, n'en compte pas les conteneurs, ou ne refuse pas un état actif (26-3, revues P1 et P2)",
+            // Jusqu'au refus de SA branche : sans lui, la clause « état actif » se contentait
+            // du `case` du filet (revue de code P2, B-1 = E2-M1).
+            r#"if \[ "\$SERVICE" = "\$SAUVEGARDE_SERVICE" \]; then\s+N=\$\(\(N\+1\)\)\s+case "\$ETAT" in exited\|created\|dead\) ;; \*\) echo "kesh-restore : le conteneur \$NOM \(service « \$SERVICE »\) est « \$ETAT »[^\n]*exit 1;; esac"#,
         ),
         (
             "une ligne de docker ps illisible ne fait pas sortir (26-3, AC 5.2, revue P1)",

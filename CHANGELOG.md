@@ -10,7 +10,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ## [0.13.1] — Non publié
 
-⚠️ **Action requise sur Synology** (sauvegarde par `kesh-dump.sh` et `kesh-restore.sh`) : re-télécharger `kesh-restore.sh` **au tag de la version** ; poser `SAUVEGARDE_SERVICE` si le service de Kesh ne s'appelle pas `kesh-api` dans votre compose, et `SAUVEGARDE_RESEAU` si `kesh-api` n'est pas sur le réseau `frontend` ; si le conteneur de Kesh a été supprimé (`docker compose down`), le recréer sans le démarrer par `docker compose up --no-start kesh-api` avant un rechargement — le script refuse désormais de commencer sans lui. Le détail est au manuel d'administration, *Backup natif sur Synology DSM*.
+⚠️ **Action requise sur Synology** (sauvegarde par `kesh-dump.sh` et `kesh-restore.sh`) : re-télécharger `kesh-restore.sh` **au tag de la version** ; poser `SAUVEGARDE_SERVICE` si le service de Kesh ne s'appelle pas `kesh-api` dans votre compose, et `SAUVEGARDE_RESEAU` si `kesh-api` n'est pas sur le réseau `frontend` ; si le conteneur de Kesh a été supprimé (`docker compose down`), le recréer sans le démarrer par `docker compose up --no-start kesh-api` (ou le nom de votre service) avant un rechargement — le script refuse désormais de commencer sans lui. Le détail est au manuel d'administration, *Backup natif sur Synology DSM*.
 
 ### Corrigé
 

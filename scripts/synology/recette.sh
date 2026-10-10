@@ -15,7 +15,8 @@
 # Section 0 seule (Story 26-3, #619) : RECETTE_SECTION=0 bash scripts/synology/recette.sh
 # joue la garde de kesh-restore.sh contre un FAUX docker (fonction bash exportée dans le
 # sous-shell de chaque cas), puis sort, avant toute mise en place. Prérequis de ce mode :
-# bash, coreutils (mktemp, rm, cat, dirname, sha256sum, wc, head, seq, tr, tail, cut), gzip,
+# bash, coreutils (mktemp, mkdir, rm, rmdir, cat, dirname, sha256sum, wc, head, seq, tr, tail,
+# cut), gzip,
 # grep, awk — ni
 # docker, ni openssl, ni sqlx, ni python3, ni réseau : la seule trap posée avant la
 # section 0 efface le dossier de travail, sans appeler docker. C'est le mode des preuves
@@ -107,6 +108,7 @@ cas() {
         if motif_de_classe "$m" <<< "$sortie"; then pb="$pb motif de la classe $m présent ;"; fi
     done
     if [ "$id" = S5 ] && ! grep -qF 'docker compose up --no-start' <<< "$sortie"; then pb="$pb « up --no-start » absent du message ;"; fi
+    if [ "$classe" = ERREUR ] && ! grep -qF 'Cannot connect to the Docker daemon' <<< "$sortie"; then pb="$pb erreur du démon absente de la sortie ;"; fi
     if [ "$(wc -l < "$d/journal")" -ne 1 ] || [ "$(head -c 7 "$d/journal")" != "ps --al" ] || grep -q INATTENDU "$d/journal"; then
         pb="$pb journal du faux ≠ un seul « ps --all » ($(tr '\n' '/' < "$d/journal")) ;"
     fi
@@ -271,16 +273,16 @@ sql -e "SET FOREIGN_KEY_CHECKS=0; DELETE FROM kesh.accounts WHERE number <> '999
 C=$(empreinte); echo "  état C : $(compter) comptes, empreinte $C"
 
 echo "== 4. Refus avant toute écriture"
-SORTIE=$(lancer "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" 2>&1) && ko "Kesh en marche : sorti en 0" || { echo "$SORTIE" | grep -q "est « running »" && ok "Kesh en marche → refus ($(echo "$SORTIE" | tail -1 | cut -c1-80)…)" || ko "refus, mais pas sur l'état running : $(echo "$SORTIE" | tail -1)"; }
+SORTIE=$(lancer "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" 2>&1) && ko "Kesh en marche : sorti en 0" || { echo "$SORTIE" | grep -qF "(service « kesh-api ») est « running »" && ok "Kesh en marche → refus ($(echo "$SORTIE" | tail -1 | cut -c1-80)…)" || ko "refus, mais pas sur l'état running : $(echo "$SORTIE" | tail -1)"; }
 compose_factice '["sh", "-c", "exit 1"]' "always"
 # L'état alterne running / restarting à chaque redémarrage ; le délai entre deux redémarrages double à
 # chaque fois : attendre trois lectures « restarting » consécutives (0,5 s d'écart) avant de lancer.
 STABLE=0; for i in $(seq 80); do if [ "$(etat_kesh_api)" = restarting ]; then STABLE=$((STABLE+1)); [ $STABLE -ge 3 ] && break; else STABLE=0; fi; sleep 0.5; done
 verifier "kesh-api factice en boucle de redémarrage (3 lectures stables)" "$STABLE" 3
-SORTIE=$(lancer "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" 2>&1) && ko "Kesh « restarting » : sorti en 0" || { echo "$SORTIE" | grep -q "est « restarting »" && ok "Kesh « restarting » → refus ($(echo "$SORTIE" | tail -1 | cut -c1-70)…)" || ko "refus, mais pas sur l'état restarting : $(echo "$SORTIE" | tail -1)"; }
+SORTIE=$(lancer "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" 2>&1) && ko "Kesh « restarting » : sorti en 0" || { echo "$SORTIE" | grep -qF "(service « kesh-api ») est « restarting »" && ok "Kesh « restarting » → refus ($(echo "$SORTIE" | tail -1 | cut -c1-70)…)" || ko "refus, mais pas sur l'état restarting : $(echo "$SORTIE" | tail -1)"; }
 compose_factice '["sleep", "infinity"]' "no"; ( cd "$W/kesh" && docker compose pause kesh-api >/dev/null 2>&1 )
 verifier "kesh-api factice en pause" "$(etat_kesh_api)" paused
-SORTIE=$(lancer "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" 2>&1) && ko "Kesh « paused » : sorti en 0" || { echo "$SORTIE" | grep -q "est « paused »" && ok "Kesh « paused » → refus ($(echo "$SORTIE" | tail -1 | cut -c1-70)…)" || ko "refus, mais pas sur l'état paused : $(echo "$SORTIE" | tail -1)"; }
+SORTIE=$(lancer "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" 2>&1) && ko "Kesh « paused » : sorti en 0" || { echo "$SORTIE" | grep -qF "(service « kesh-api ») est « paused »" && ok "Kesh « paused » → refus ($(echo "$SORTIE" | tail -1 | cut -c1-70)…)" || ko "refus, mais pas sur l'état paused : $(echo "$SORTIE" | tail -1)"; }
 ( cd "$W/kesh" && docker compose unpause kesh-api >/dev/null 2>&1 )
 arreter; verifier "kesh-api arrêté par l'exploitant (factice)" "$(etat_kesh_api)" exited
 mkdir "$W/kesh/dump/.verrou"

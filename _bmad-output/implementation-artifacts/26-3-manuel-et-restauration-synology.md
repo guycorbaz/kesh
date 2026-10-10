@@ -288,7 +288,7 @@ erreurs vers `/dev/null`), s'exécutent avant toute section :
    `trap nettoyer EXIT` (qui remplace la trap minimale et efface `$W` comme aujourd'hui), puis la mise en
    place et les sections 1 à 9, inchangées.
 **Prérequis exacts de ce mode** : `bash` ; coreutils (`mktemp`, `rm`, `cat`, `printf` interne, `dirname`,
-`sha256sum`, `wc`, `head`, `seq`, `tr`, `tail`, `cut` — complété en revue de code P1) ; `gzip` ; `grep` ; `awk` (étape 3 de `kesh-restore.sh`). **Ni `docker`, ni `openssl`,
+`sha256sum`, `wc`, `head`, `seq`, `tr`, `tail`, `cut`, `mkdir`, `rmdir` — complété en revues de code P1 et P2) ; `gzip` ; `grep` ; `awk` (étape 3 de `kesh-restore.sh`). **Ni `docker`, ni `openssl`,
 ni `sqlx`, ni `python3`, ni réseau** — et c'est vérifiable : en mode 0, aucun appel au vrai `docker` n'est
 possible, puisque la seule trap posée est la trap minimale. Sans la variable, la recette entière tourne
 comme aujourd'hui, section 0 en tête. C'est ce mode qui sert aux preuves de mutation.
@@ -1087,3 +1087,36 @@ mettrait dans le gate (observation P3 R-L9).
     après l'`elif`, un état ajouté la rougit ; E-L5 (regex `docker compose` antérieure à la story) ; A-L1
     (Vitest complète à rejouer : fait au dernier commit de code).
   - Pas de signal de recyclage : les deux MEDIUM sont des défauts du développement, distincts.
+- 2026-10-11 — **Revue de code P2 remédiée** (Opus, contexte frais, trois lentilles B/E/A ; prompt
+  `26-3-review-prompt-p2.md`, rapports `kesh-gate-logs/26-3-review-p2-{B,E,A}.md`, diff `f00aa6c0..de4ad407`).
+  **Bilan : B 0H/2M/5L ; E 0H/1M/4L ; A 0H/1M/4L.** Après dédoublonnage, **3 MEDIUM distincts**, vérifiés
+  par l'orchestrateur (`sed -n 107,112p kesh-restore.sh` ; `grep -nF -- "--tail=100 kesh-api"
+  admin-manual.tex` → `:2360`).
+  - **B-1 = E2-M1** (né de la remédiation P1, restée à moitié : la clause neuve s'arrêtait à `N=$((N+1))`, la
+    clause historique « état actif » se contentait du `case` du filet — retirer le refus de la branche
+    service laissait G16 verte) → la clause de la branche service va jusqu'à son `case … (service « $SERVICE »)
+    est … exit 1;; esac`. Mutations : refus de la branche retiré → rouge ; `running` admis → rouge ; (R) →
+    rouge ; (c) filet retiré → **filet seul** rouge (la clause ne déborde pas sur l'`elif`).
+  - **B-2** (d'origine du développement : la doc-comment de G14 affirmait « aucune forme non lue » alors que
+    `admin-manual.tex:2360`-`:2361` portent `logs --tail=100 kesh-api` et `--since=1h kesh-api`, ignorés) →
+    options `--opt=valeur` lues (`(?:=\S+)?`) ; mutation `--tail=100 keshx` → G14 rouge sur `:2360` ;
+    doc-comment corrigée, `--tail 50` (valeur séparée) écrite en faux positif bruyant.
+  - **A2-M1** (Dev Agent Record : « aucun code modifié depuis » faux après `de4ad407`, gates et recette non
+    rejoués) → tous les gates sont rejoués au dernier commit de code, et le Dev Agent Record réécrit
+    (section *Gates au dernier commit*).
+  - **LOW traités** : `mkdir`/`rmdir` aux prérequis du mode 0 (trois sites) ; S17 exige « Cannot connect to
+    the Docker daemon » ; section 4 réelle : motifs `(service « kesh-api ») est « running|restarting|paused »`
+    (le libellé du filet porte aussi `est « running »`) ; sortie sur zéro **ordonnée** avant le verrou dans
+    G16 (mutation : zéro déplacé après le verrou → rouge « verrou … vient avant sortie sur zéro ») ; manuel :
+    le rapprochement manuel et l'éclatement refusent aussi (autre libellé) ; CHANGELOG : « ou le nom de
+    votre service ».
+  - **LOW non traités, motivés** : `v0.13.0` en dur au manuel (bump de release) ; `docker compose ps -a` ne
+    voit que le projet (E2-L3 : échec bruyant de `up --no-start` en cas de conflit de nom, sans dommage) ;
+    installation par `docker run` hors compose : la garde refuse (fermée), non documenté (B-7) ;
+    `docs/testing.md` n'écrit pas `SAUVEGARDE_SERVICE` (A2-L4 : il décrit la recette, non le réglage).
+  - Mutations rejouées après remédiation : G16 (a)-(e) aux ensembles de l'AC 7.6 ; section 0 : huit
+    mutations, ensembles inchangés.
+  - Signal D5 : B-1 recycle la remédiation P1 (même site, forme incomplète) — **déclaré** ; pas de
+    découpage : le site est une regex de test, la remédiation ne touche aucune ligne de production
+    (`kesh-restore.sh`, écrans, catalogues inchangés depuis `cf1316b3`). Suite : passe **ciblée** P3 (Haiku)
+    sur le seul commit de remédiation P2.
