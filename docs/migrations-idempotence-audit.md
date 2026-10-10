@@ -10,7 +10,7 @@ Cet audit est **purement informationnel** : les fichiers `.sql` historiques ne s
 
 ## Verdicts
 
-- **`yes`** — re-exécution serait no-op. Deux mécanismes possibles : **DDL conditionnel** (`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE … IF [NOT] EXISTS`, `CREATE INDEX IF NOT EXISTS`, `DROP INDEX IF EXISTS`) ; ou **migration sans DDL** dont les `UPDATE` sont gardés et déterministes, donc à point fixe (ajouté en passe 2 de `bmad-code-review` de la Story 16-1a-bis, seule migration du dépôt dans ce cas à ce jour).
+- **`yes`** — re-exécution serait no-op. Deux mécanismes possibles : **DDL conditionnel** (`CREATE TABLE IF NOT EXISTS`, `ALTER TABLE … IF [NOT] EXISTS`, `CREATE INDEX IF NOT EXISTS`, `DROP INDEX IF EXISTS`) ; ou **migration sans DDL** dont les `UPDATE` sont gardés et déterministes, donc à point fixe (ajouté en passe 2 de `bmad-code-review` de la Story 16-1a-bis, première migration du dépôt dans ce cas ; d'autres l'ont suivie depuis).
 - **`tracked-by-sqlx`** — l'idempotence est garantie uniquement par le tracking `_sqlx_migrations`. Re-exécution manuelle hors sqlx échouerait avec un code d'erreur MariaDB précisé en justification (1050 table exists, 1060 duplicate column, 1061 duplicate key, 1091 index not found, etc.).
 - **`no`** — re-exécution échouerait toujours (non utilisé sur le repo actuel).
 

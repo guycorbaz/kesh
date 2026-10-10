@@ -1440,13 +1440,13 @@ async fn payable_not_letterable_is_skipped(pool: MySqlPool) {
         "paid",
         "paiement réussi"
     );
-    assert!(
-        lignes_de_piece_fournisseur(&pool, s)
-            .await
-            .iter()
-            .all(|l| l.2.is_none()),
-        "aucune marque"
+    let lignes = lignes_de_piece_fournisseur(&pool, s).await;
+    assert_eq!(
+        lignes.len(),
+        2,
+        "montage : l'achat et le paiement sur la dette"
     );
+    assert!(lignes.iter().all(|l| l.2.is_none()), "aucune marque");
     assert_eq!(audits_de_lettrage(&pool).await, 0);
     assert_eq!(
         synchroniser_fournisseur(&pool, &seeded, s, seeded.fiscal_year_id)

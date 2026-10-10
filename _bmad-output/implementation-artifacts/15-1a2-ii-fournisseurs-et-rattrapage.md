@@ -583,15 +583,15 @@ client réécrite, deux entrées neuves), `api-external.md`, manuels FR (utilisa
 factures fournisseurs, annulation, lots, glossaire ; administration : rejeu, nuance de la classe A), README (feuille de
 route), `make -B fr`, PDF aplatis contrôlés (phrases neuves présentes, 0 référence non définie dans les logs finaux).
 
-**Tests** (périmètre `c148034b` → commit de développement) : **19 neufs** — `git diff c148034b -- crates | grep -cE
-'^\+\s*#\[(sqlx::test|tokio::test|test)'` = 15, plus les 4 du fichier neuf `lettering_documents_backfill.rs` —
-soit `lettering_documents.rs` 10, `lettering_documents_backfill.rs` **4** (les 3 prévus + `backfill_abstains_on_closed_years_without_lock`,
+**Tests** (périmètre `240deef8` → commit de développement `c2619dff`) : **19 neufs** — `git diff 240deef8 c2619dff -- crates
+| grep -cE '^\+\s*#\[(sqlx::test|tokio::test|test)'` = 19 (fichier neuf compris ; revue P1, A : le « 15 + 4 » écrit
+avant le commit comptait le fichier neuf à part) — soit `lettering_documents.rs` 10, `lettering_documents_backfill.rs` **4** (les 3 prévus + `backfill_abstains_on_closed_years_without_lock`,
 ajouté après la survie de MU8 et MU9), `letterings_lexical.rs` 1, `admin_full_import_e2e.rs` 4 ; **5 modifiés**
 (`lettering_invariants`, `full_import_report_mirrors_the_production_registry`, les deux de `post_restore_class_a.rs`,
 `upgrade_path_preserves_data`) ; les tests unitaires de `post_restore.rs` qui reprennent matière sur M1 passent.
 
 **Mutations** (une à une, fichier restauré et retouché ; empreintes des migrations vérifiées identiques après) —
-**18 essayées, 16 tuées au premier passage, 2 survivantes puis tuées** : MU1 pas de synchronisation au paiement (7
+**17 essayées, 15 tuées au premier passage, 2 survivantes puis tuées** *(revue P1, A-1 : « 18 / 16 » comptait une MU16 jamais exécutée — numéro sauté, non une mutation)* : MU1 pas de synchronisation au paiement (7
 rouges), MU2 pas de dissolution à l'annulation du paiement (5), MU3 pas de dissolution à l'annulation de la facture (5),
 MU4 facture annulée découverte comme ouverte (1), MU5 règlement absent de la découverte (7), MU6 `documentType`
 `"invoice"` (1), MU7 M1 sans règle des périodes (1), **MU8** M1 sans « exercice postérieur clos » et **MU9** M1 sans
@@ -602,6 +602,15 @@ périodes (1). ⚠️ MU1 à MU3 neutralisent l'appel par `if id < 0` : le déte
 rougit pas (le texte reste) — les tests de dépôt gardent le comportement (même remarque qu'à la 15-1a2-i). Non
 mutée, faute de discriminant constructible : l'ancre de M1 étape 2 (`l.id = ancre.id`) — une écriture d'achat n'a qu'une
 ligne sur `B`.
+
+**Angles morts assumés du SQL de M1 étape 3 et M2** (revue P1, B-1, B-2 = E-1, E-2 ; inatteignables par un geste, écrits
+plutôt que corrigés dans un SQL que P8 figera) : (1) une paire de **longueurs différentes** (donnée héritée anormale) est
+appariée sur les rangs communs, le reste laissé ouvert — là où le geste rend `Invariant` ; aucun faux rattachement
+(même compte, montants croisés exigés) ; (2) une écriture à la fois **miroir et origine** (contre-passation d'une
+contre-passation, interdite par `IsAReversal` depuis la 24-4a) rendrait une ligne candidate deux fois ; (3) aucune
+**égalité de société** entre l'origine et son miroir — le socle crée toujours le miroir dans la société de l'origine ;
+(4) une paire dont **les deux** lignes sont aujourd'hui en période close n'est pas lettrée, là où R6 vivant l'avait
+lettrée sans règle des périodes — c'est le régime (d-ii) d'AC6, dit au manuel.
 
 **Choix consignés** : C-15-1a2-ii-1 à C-15-1a2-ii-8.
 
@@ -625,6 +634,33 @@ ligne sur `B`.
 - `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md`, `sprint-status.yaml`
 
 ## Change Log
+
+### Revue de code P1 — 2026-10-10 (Sonnet 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5) — REVUE CLOSE
+
+**Prompt** : `15-1a2-ii-review-prompt-p1.md` (diff `240deef8..c2619dff`). **Rapports** :
+`kesh-gate-logs/15-1a2-ii-review-p1-{B,E,A}.md` — B **0 C / 0 H / 0 M / 3 L**, E **0 / 0 / 0 / 2 L** (+ 3 notes), A **0 / 0 /
+0 / 5 L** ; recoupement B-2 ≈ E-1 (société origine ↔ miroir) → **9 LOW distincts, 0 au-dessus de LOW**. Axes non exercés
+déclarés par les trois lentilles : toute exécution — reprise par l'orchestrateur (gate complet au commit de
+développement, 3285/3285 ; mutations au Dev Agent Record). Affirmations vérifiées (`grep -nF` : liste
+`EXEMPT_MIGRATIONS` déjà non chronologique avant la story — `20260828000001` précède `20260722000001` ; phrase
+`audit:13` présente ; MU16 absente des relevés ; décompte `git diff 240deef8 c2619dff -- crates | grep -cE …` = 19).
+
+| finding | verdict |
+|---|---|
+| A-1 — 18 mutations annoncées, 17 nommées | **corrigé** : 17 essayées, 15 tuées au premier passage, 2 survivantes puis tuées (Dev Agent Record, `sprint-status.yaml`) |
+| A-2 — l'exemption M2 rangée avant `20261009000001` | **réfuté** : la liste n'est pas chronologique (`20260828000001` avant `20260722000001`), aucun invariant d'ordre ; laissé |
+| A-3 — « seule migration du dépôt dans ce cas » (`migrations-idempotence-audit.md:13`) | **corrigé** |
+| A-4 — `payable_not_letterable_is_skipped` : `.all()` sur un vecteur possiblement vide | **corrigé** (assertion de montage : deux lignes) |
+| A-5 — § de l'annulation du règlement fournisseur muet sur le délettrage | **corrigé** (`api-external.md`) |
+| A (décompte) — « 15 + 4 » | **corrigé** (19, périmètre `240deef8..c2619dff`) |
+| B-1 — paires de longueurs différentes | **angle mort assumé**, écrit au Dev Agent Record (donnée héritée anormale, aucun faux rattachement) |
+| B-2 = E-1 — miroir-et-origine, société origine ↔ miroir | **angle mort assumé**, écrit (inatteignable : `IsAReversal`, socle) ; corriger toucherait le SQL de deux migrations pour un état qu'aucun geste ne produit |
+| B-3 — plans à balayages complets | **accepté** (C-15-1a2-ii-5) |
+| E-2 — paire entièrement close non lettrée, R6 l'avait lettrée | **conforme** au régime (d-ii) d'AC6 ; écrit au Dev Agent Record |
+
+**Trend** : P1 **0 au-dessus de LOW** — critère d'arrêt atteint dès la première passe. La remédiation ne touche **aucune
+ligne de code de production** (un test, deux documents, la fiche) : la boucle est **close** sans passe ciblée.
+Signal D5 : sans objet. Modèles : Opus 5.5 (développement, remédiation), Sonnet 5.5 (P1).
 
 ### Validation P4 ciblée — 2026-10-09 (une lentille, chasseur de régressions de `76e7893a` ; remédiation Opus 5.5, seul remédiateur des fiches de la suite du lettrage, en autonomie) — VALIDATION CLOSE
 
