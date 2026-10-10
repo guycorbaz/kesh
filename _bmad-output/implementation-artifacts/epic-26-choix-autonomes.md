@@ -50,7 +50,7 @@ le contexte, l'option retenue, les options écartées et la réversibilité. **M
   2. **fermée** : si **aucun** conteneur de ce service n'existe sur l'hôte, refus (le script ne sait
      pas ce qu'il garde) — message qui nomme `SAUVEGARDE_SERVICE` et, pour un hôte où Kesh n'est pas
      encore installé, la commande qui crée le conteneur sans le démarrer (`docker compose create
-     <service>`, état `created`, admis) ;
+     <service>`, état `created`, admis — **amendé par C-26-3-11** : `docker compose up --no-start`) ;
   3. **filet** : est aussi refusé tout conteneur actif dont l'image est `gcorbaz/kesh` (toute
      étiquette ou empreinte, préfixe `docker.io/` admis), quel que soit son service — c'est lui qui
      voit l'orphelin et le service renommé.
@@ -87,7 +87,8 @@ le contexte, l'option retenue, les options écartées et la réversibilité. **M
   garde (sa regex exige aujourd'hui `--filter label=com.docker.compose.service=kesh-api`), le réglage
   `SAUVEGARDE_SERVICE` (défaut = service de `docker-compose.prod.yml`, cité au manuel sous la forme
   `SAUVEGARDE_SERVICE (kesh-api`), la sortie sur zéro conteneur et le filet par l'image. Une garde de
-  texte neuve, **G20** dans `textes_coherents.rs`, interdit « Compte de banque » et « toutes les
+  texte neuve, **G20** dans `textes_coherents.rs`, interdit « Compte de banque » (**forme du défaut,
+  sensible à la casse — amendé par C-26-3-9**) et « toutes les
   banques suisses » dans les manuels français et les catalogues, chaque négative adossée à une
   positive sur le même fichier.
 - **Écarté** : ne compter que sur la recette — elle n'est pas dans le gate ; seule G16 l'est.
@@ -122,4 +123,61 @@ le contexte, l'option retenue, les options écartées et la réversibilité. **M
   fusion par union au merge), entrées sous `### Corrigé`, plus une ligne « Action requise » pour
   l'exploitant Synology : re-télécharger `kesh-restore.sh` au tag `v0.13.1`, poser
   `SAUVEGARDE_SERVICE` si son service ne s'appelle pas `kesh-api`.
+- **Amendé en validation P1 (R-9)** : au rebase, les entrées des trois stories se fusionnent par
+  union sous **une seule** section `[0.13.1]` (`prepare-release.sh` refuse plus d'une section) ;
+  contrôle `grep -c '^## \[0\.13\.1\] — ' CHANGELOG.md` = 1.
+- **Réversible** : oui.
+
+## C-26-3-9 — 26-3 (validation P1, R-1 = HIGH-2, R-5 = MEDIUM-1) : G20 ciblée ; lecture de `docker ps` à séparateur `|`
+
+- **Contexte** : G20 prescrite « insensible à la casse » sur « Compte de banque » aurait rougi sur six
+  phrases justes des manuels (« son propre compte de banque »). La lecture unique de `docker ps`, sans
+  séparateur fixé, décalait les champs sur une étiquette de service vide (conteneur hors compose).
+- **Retenu** : G20 cherche la **forme du défaut**, sensible à la casse, sur la source brute
+  (`\textbf{Compte de banque}`, `« Compte de banque »`), avec « propre compte de banque » en positive ;
+  elle lit les **quatre** catalogues (drop-zone avec « CSV », titre sans « CAMT.053 ») avec un
+  anti-test-muet (> 1000 clés). Lecture `docker ps --format '{{.State}}|{{.Image}}|{{.Label …}}|{{.Names}}'`,
+  `IFS='|' read -r ETAT IMAGE SERVICE NOM RESTE`, ligne vide ignorée, ligne incomplète ou à cinq champs
+  = refus.
+- **Écarté** : G20 limitée aux deux numéros de ligne (fragile) ; tabulation comme séparateur (IFS
+  blanc : champs vides avalés).
+- **Réversible** : oui.
+
+## C-26-3-10 — 26-3 (validation P1, R-2 = HIGH-1, R-4, R-7, MEDIUM-5) : la recette ne recharge jamais dans 4-bis
+
+- **Contexte** : R5/R6 laissaient le script recharger ; les oracles `$C` des sections 5, 5-bis, 7
+  rougissaient, et une mutation faisait rougir tous les cas suivants. Le garde-fou d'étiquette cité
+  (`recette.sh:31`) n'existait pas ; un Kesh étranger sur l'hôte aurait fait rougir la recette sans cause.
+- **Retenu** : section « 4-bis » après la 4, chaque cas en `SAUVEGARDE_BASE=autre` — la garde qui passe
+  s'arrête à l'étape 3 sur « recrée la base », sans écriture ; oracle de motif distinct par cas ; R6
+  « rechargement abouti » supprimé (couvert par 6-9) ; R7 conteneur hors compose ; état de sortie
+  prescrit et vérifié ; étiquette `gcorbaz/kesh:recette-synology-<8 hex>` construite, refusée si
+  préexistante, retirée seule ; pré-vol « aucun `gcorbaz/kesh` actif ».
+- **Écarté** : rejouer R6 après la section 9 (rechargement déjà couvert, et état final de la recette à
+  remonter) ; restaurer C après chaque cas (oracle de plus, sans gain).
+- **Réversible** : oui.
+
+## C-26-3-11 — 26-3 (validation P1, MEDIUM-4) : une seule commande de recréation, `docker compose up --no-start`
+
+- **Contexte** : la fiche donnait `docker compose create` au message et `up --no-start` en note
+  technique ; le manuel ne disait pas qu'un `docker compose down` rend désormais le rechargement
+  impossible sans recréer le conteneur.
+- **Retenu** : `docker compose up --no-start <service>` partout (script, manuel — étape d'arrêt de la
+  *Recovery* et *Stratégie 3-2-1* —, recette), avec l'angle mort : la commande lit le compose entier,
+  `.env` doit être en place.
+- **Écarté** : `create` (moins répandue dans les versions de Compose v2) ; les deux formes (deux
+  consignes pour un geste).
+- **Réversible** : oui.
+
+## C-26-3-12 — 26-3 (validation P1, MEDIUM-3, R-8) : chemins d'écran et e-banking tiers
+
+- **Retenu** : l'inventaire des renvois au chemin de l'écran d'import est fermé par un grep
+  (`emph{Importer}`, `emph{Import bancaire}`, `Quotidien → Importer**`, `Nouvel import` : 7 lignes, 0
+  attendu) — `user-manual.tex:1756`, `:1826`, `docs/user-guide/fr/getting-started.md:74` ajoutés —, et
+  `docs/i18n-glossaire.md:151` suit la valeur d'écran. La sous-section « Récupération du fichier
+  CAMT.053 » perd ses chemins de menus d'e-banking tiers (Multibanking/Klippa, PostFinance Yellownet),
+  invérifiables, au profit d'une consigne générale.
+- **Écarté** : garder les chemins tiers « à titre indicatif » — c'est la forme exacte de #617.
+- **Hors inventaire, assumés** : `\section{Import bancaire}` (titre de chapitre), noms de fonctionnalité
+  (manuel admin, brochure, README), type d'entité du journal d'audit, `docs/kesh-specifications.txt`.
 - **Réversible** : oui.
