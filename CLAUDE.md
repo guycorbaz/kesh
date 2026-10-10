@@ -212,6 +212,8 @@ function isLocalHostname(hostname) {
 
 **La CI n'exécute PAS la suite complète** (coût récurrent : MariaDB, seed, navigateurs, durée) — **mais elle exécute un SMOKE** : une seule spec, login puis un appel API authentifié, 2-3 minutes.
 
+⛔ **Constat du 2026-10-10 : ce smoke N'EXISTE PAS dans la CI actuelle.** `.github/workflows/ci.yml` n'a aucun job Playwright (seul `release.yml` lance un smoke, de l'image Docker : `/health`, pas de navigateur). Le paragraphe ci-dessus décrit une intention, pas le dépôt — issue #577 : recréer le smoke ou réécrire ce texte. D'ici là, **le gate E2E local avant push est le seul filet**.
+
 ⚠️ **Le smoke ne teste aucune fonctionnalité, et c'est délibéré : il vérifie que le HARNAIS EST VIVANT.** Les fonctionnalités restent couvertes par le gate local avant push.
 
 **Pourquoi les deux niveaux, et pas seulement le local.** Une règle qui repose sur la seule discipline de qui pousse a la même faiblesse que celle qui impose de « ne déclarer que ce qui a tourné » : on peut l'affirmer sans l'avoir fait. Et une story qui ne touche pas le frontend fait **légitimement** sauter les E2E — si le harnais casse à ce moment-là, personne ne le saura.
