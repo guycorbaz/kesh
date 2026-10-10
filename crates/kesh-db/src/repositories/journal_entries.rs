@@ -75,6 +75,7 @@
 //! et `reset_demo` de `kesh-seed` (remise à zéro de l'installation, qui vide
 //! toutes les données de la société, exercices compris — Story 15-7b2).
 
+use std::collections::{BTreeMap, BTreeSet};
 use std::str::FromStr;
 
 use chrono::{NaiveDate, Utc};
@@ -1023,10 +1024,11 @@ fn entry_snapshot_json(entry: &JournalEntry, lines: &[JournalEntryLine]) -> serd
 /// fournisseur annulée (C-15-8-20), sinon `None`.
 ///
 /// ⛔ **Une connexion, pas un `Executor` générique** (C-15-8-24) : le corps
-/// enchaîne deux lectures, et [`reversal_blockers`] prend son exécuteur par
-/// valeur. Une connexion se reprête (`&mut *conn`). [`update`] passe sa transaction (déréférencée en connexion)
+/// enchaîne plusieurs lectures ([`reversal_blockers`] en fait deux), ce qu'un
+/// exécuteur consommé par valeur interdit. Une connexion se reprête
+/// (`&mut *conn`). [`update`] passe sa transaction (déréférencée en connexion)
 /// — la garde se lit DANS la transaction, sous le verrou de l'écriture ;
-/// [`modification_blocker`] passe la connexion qu'il a acquise.
+/// [`modification_blocker`] passe la transaction de lecture de la route.
 ///
 /// # Le paiement détaché — une lecture d'AUDIT, palliatif de #541
 ///
@@ -1126,8 +1128,8 @@ enum Lecture {
     /// verrou de l'en-tête (défense en profondeur : une lecture courante ne
     /// dépend d'aucune vue).
     Verrouillante,
-    /// Sans verrou — [`modification_blocker`], sur une connexion du pool, hors
-    /// transaction : l'écran conseille, le `PUT` tranche. Une lecture
+    /// Sans verrou — [`modification_blocker`], dans la transaction de lecture
+    /// de la route : l'écran conseille, le `PUT` tranche. Une lecture
     /// verrouillante y attendrait derrière tout lettrage en cours.
     Conseil,
 }
@@ -1196,16 +1198,22 @@ async fn lettering_guard(
 /// ([`modification_guard`]), verrou de période sur la date **présente**, puis
 /// la marque de lettrage (`lettering_guard`, Story 15-1a-ii), en dernier.
 ///
-/// Lecture **sans verrou**, sur une connexion acquise du pool (six lectures
-/// enchaînées) : l'écran conseille, le `PUT` tranche — sous verrou.
+/// Lecture **sans verrou**, dans la transaction de lecture de l'appelant —
+/// un instantané pour toutes ses lectures (Story 15-1b-0, D2 ; en `REPEATABLE
+/// READ`, niveau par défaut d'InnoDB que Kesh ne configure pas) : l'écran
+/// conseille, le `PUT` tranche — sous verrou.
+///
+/// ⛔ **Une transaction, pas une connexion** (C-15-1b-0-4) : avec une
+/// connexion, un `pool.acquire()` compilerait et rouvrirait un instantané par
+/// lecture ; le type fait du compilateur la garde de ce lecteur.
 ///
 /// Écriture introuvable (ou d'une autre société) → [`DbError::NotFound`].
 pub async fn modification_blocker(
-    pool: &MySqlPool,
+    tx: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
     id: i64,
 ) -> Result<Option<ModificationBlocker>, DbError> {
-    let mut conn = pool.acquire().await.map_err(map_db_error)?;
+    let conn: &mut sqlx::MySqlConnection = tx;
 
     let row: Option<(String, NaiveDate, NaiveDate)> = sqlx::query_as(
         "SELECT fy.status, fy.start_date, je.entry_date \
@@ -1224,13 +1232,13 @@ pub async fn modification_blocker(
         return Ok(Some(ModificationBlocker::FiscalYearClosed));
     }
     if let Some(later) =
-        super::fiscal_years::find_later_closed(&mut conn, company_id, fy_start).await?
+        super::fiscal_years::find_later_closed(&mut *conn, company_id, fy_start).await?
     {
         return Ok(Some(ModificationBlocker::LaterFiscalYearClosed {
             fiscal_year_name: later.name,
         }));
     }
-    if let Some(guard) = modification_guard(&mut conn, company_id, id).await? {
+    if let Some(guard) = modification_guard(&mut *conn, company_id, id).await? {
         return Ok(Some(ModificationBlocker::Guard(guard)));
     }
     let books_locked_through: Option<NaiveDate> =
@@ -1246,7 +1254,7 @@ pub async fn modification_blocker(
         return Ok(Some(ModificationBlocker::PeriodLocked { locked_through }));
     }
     // Story 15-1a-ii (AC8) — la marque de lettrage, DERNIER motif (C126).
-    if let Some(guard) = lettering_guard(&mut conn, id, Lecture::Conseil).await? {
+    if let Some(guard) = lettering_guard(&mut *conn, id, Lecture::Conseil).await? {
         return Ok(Some(ModificationBlocker::Guard(guard)));
     }
     Ok(None)
@@ -2045,15 +2053,275 @@ pub async fn delete_all_by_company(pool: &MySqlPool, company_id: i64) -> Result<
 /// qui le porte, et son étiquette lisible (numéro de pièce ou de compte).
 pub type ReversalBlockerHit = (ReversalBlocker, Option<i64>, Option<String>);
 
+// ---------------------------------------------------------------------------
+// Propriété des écritures, par lot (Story 15-1b-0)
+// ---------------------------------------------------------------------------
+
+/// Le type d'une pièce propriétaire, dans l'ordre de précédence de
+/// [`reversal_blockers`] (rangs 3 à 7) — l'ordre des variants EST cet ordre
+/// (`Ord` dérivé), et [`document_owners`] trie chaque vecteur par lui.
+///
+/// Les trois méthodes sont la **source unique** (Story 15-1b-0, D1 ;
+/// C-15-1b-0-2) de la correspondance type → motif, de la liste R5 des lignes
+/// de pièce et des chaînes sérialisées — jamais une seconde liste ailleurs.
+/// Un type de pièce propriétaire neuf s'ajoute ici et dans [`document_owners`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum DocumentKind {
+    /// Facture client (`invoices.journal_entry_id`) — rang 3.
+    Invoice,
+    /// Avoir (`credit_notes.journal_entry_id`) — rang 4.
+    CreditNote,
+    /// Facture fournisseur, achat **ou** règlement
+    /// (`supplier_invoices.purchase_journal_entry_id`,
+    /// `settlement_journal_entry_id`) — rang 5.
+    SupplierInvoice,
+    /// Règlement de facture client (`invoice_settlements.journal_entry_id`) —
+    /// rang 6.
+    Settlement,
+    /// Transaction bancaire rapprochée (`bank_transactions.matched_entry_id`) —
+    /// rang 7.
+    BankTransaction,
+}
+
+impl DocumentKind {
+    /// Le motif de contre-passation que porte ce type — la table de
+    /// correspondance, écrite UNE fois, employée par [`reversal_blockers`]
+    /// (pour rendre [`ReversalBlockerHit`]) et par le refus R5 du lettrage
+    /// manuel (`letterings::first_document_owner`, pour
+    /// [`DbError::LetteringLineOwnedByDocument`]).
+    pub fn reversal_blocker(self) -> ReversalBlocker {
+        match self {
+            Self::Invoice => ReversalBlocker::OwnedByInvoice,
+            Self::CreditNote => ReversalBlocker::OwnedByCreditNote,
+            Self::SupplierInvoice => ReversalBlocker::OwnedBySupplierInvoice,
+            Self::Settlement => ReversalBlocker::OwnedBySettlement,
+            Self::BankTransaction => ReversalBlocker::MatchedBankTransaction,
+        }
+    }
+
+    /// R5 : ce type fait-il d'une ligne une **ligne de pièce**, non lettrable à
+    /// la main ? Vrai pour la facture, l'avoir, la facture fournisseur et le
+    /// règlement ; **faux pour la transaction bancaire** — une ligne seulement
+    /// rapprochée reste lettrable (`a_bank_matched_entry_is_not_a_document`).
+    /// Employé par `letterings::first_document_owner` et par la vue des postes
+    /// ouverts (15-1b) — jamais une seconde liste.
+    pub fn blocks_manual_lettering(self) -> bool {
+        match self {
+            Self::Invoice | Self::CreditNote | Self::SupplierInvoice | Self::Settlement => true,
+            Self::BankTransaction => false,
+        }
+    }
+
+    /// La valeur sérialisée : `invoice`, `creditNote`, `supplierInvoice`,
+    /// `settlement`, `bankTransaction` — celle de `documentType` dans l'audit
+    /// du lettrage (`letterings::DocumentRef`, typé par ce type) et de
+    /// `document.type` de la vue des postes ouverts (15-1b).
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Invoice => "invoice",
+            Self::CreditNote => "creditNote",
+            Self::SupplierInvoice => "supplierInvoice",
+            Self::Settlement => "settlement",
+            Self::BankTransaction => "bankTransaction",
+        }
+    }
+
+    /// Le code de ce type dans la colonne `kind` de la requête de
+    /// [`document_owners`] (0 à 4) — l'inverse de [`DocumentKind::from_rank`].
+    /// ⚠️ Rien à voir avec les « rangs 3 à 7 » de la précédence de
+    /// [`reversal_blockers`] : ce n'est qu'un identifiant de transport.
+    const fn rank(self) -> i64 {
+        match self {
+            Self::Invoice => 0,
+            Self::CreditNote => 1,
+            Self::SupplierInvoice => 2,
+            Self::Settlement => 3,
+            Self::BankTransaction => 4,
+        }
+    }
+
+    fn from_rank(rank: i64) -> Result<Self, DbError> {
+        [
+            Self::Invoice,
+            Self::CreditNote,
+            Self::SupplierInvoice,
+            Self::Settlement,
+            Self::BankTransaction,
+        ]
+        .into_iter()
+        .find(|k| k.rank() == rank)
+        .ok_or_else(|| {
+            DbError::Invariant(format!("document_owners : type de pièce {rank} inconnu"))
+        })
+    }
+}
+
+/// La pièce qui possède une écriture (Story 15-1b-0, D1).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DocumentOwner {
+    pub kind: DocumentKind,
+    /// Identifiant de la pièce (facture, avoir, facture fournisseur, ligne
+    /// `invoice_settlements`, transaction bancaire).
+    pub id: i64,
+    /// Numéro de la pièce quand elle en a un (facture, avoir, facture
+    /// fournisseur), sinon `None` — lu sur la MÊME ligne que `id`.
+    pub number: Option<String>,
+    /// Pour [`DocumentKind::Settlement`] : la facture réglée
+    /// (`invoice_settlements.invoice_id`) ; `None` sinon.
+    pub invoice_id: Option<i64>,
+    /// Pour [`DocumentKind::Settlement`] : le numéro de la facture réglée
+    /// (`None` aussi si elle n'en a pas) ; `None` sinon.
+    pub invoice_number: Option<String>,
+}
+
+/// Taille d'une tranche de [`document_owners`] : une instruction par tranche.
+const DOCUMENT_OWNERS_BATCH: usize = 500;
+
+/// **La propriété d'un lot d'écritures** (Story 15-1b-0, D1) : pour chaque
+/// écriture du lot, les pièces qui la possèdent — facture, avoir, facture
+/// fournisseur, règlement, transaction bancaire.
+///
+/// - Rendu : une table `écriture → Vec<DocumentOwner>`, chaque vecteur **dans
+///   l'ordre de précédence** de [`DocumentKind`]. Une écriture **sans**
+///   propriétaire est **absente** de la table — jamais présente avec un
+///   vecteur vide ; une écriture d'une autre société, ou inexistante, l'est
+///   aussi.
+/// - **Au plus un propriétaire par type et par écriture : le plus petit
+///   `id`.** Sur des données saines (une pièce par type — invariant
+///   applicatif, non une contrainte : seul `invoice_settlements.journal_entry_id`
+///   est `UNIQUE`), c'est la seule ; sur des données qui le violent, le choix
+///   est déterministe, et `id` et `number` sortent **de la même ligne**
+///   (table dérivée `GROUP BY` + `MIN(id)` jointe en retour sur `id`).
+/// - **Forme** : une instruction par tranche de 500 écritures, `UNION ALL` de
+///   cinq blocs bornés par la liste et par `je.company_id`. Le bloc
+///   fournisseur lit ses **deux** colonnes par un `UNION ALL` dans sa dérivée
+///   — ⛔ jamais un `CASE` qui n'en choisirait qu'une par facture : l'achat et
+///   le règlement d'une même facture, présents dans un même lot, seraient
+///   l'un des deux perdus (une ligne de règlement rendue libre, en silence).
+/// - Liste vide → table vide **sans requête** ; doublons dédupliqués et triés
+///   avant découpage (tranches déterministes).
+///
+/// ⛔ **Une connexion, pas un `Executor` générique** (C-15-1b-10, patron
+/// C-15-8-24 de [`modification_guard`]) : la fonction enchaîne plusieurs
+/// instructions. Une transaction se passe déréférencée (`&mut **tx`), une
+/// connexion se reprête (`&mut *conn`).
+pub async fn document_owners(
+    conn: &mut sqlx::MySqlConnection,
+    company_id: i64,
+    entry_ids: &[i64],
+) -> Result<BTreeMap<i64, Vec<DocumentOwner>>, DbError> {
+    #[derive(sqlx::FromRow)]
+    struct OwnerRow {
+        entry_id: i64,
+        kind: i64,
+        id: i64,
+        number: Option<String>,
+        invoice_id: Option<i64>,
+        invoice_number: Option<String>,
+    }
+
+    let ids: Vec<i64> = entry_ids
+        .iter()
+        .copied()
+        .collect::<BTreeSet<i64>>()
+        .into_iter()
+        .collect();
+    let mut owners: BTreeMap<i64, Vec<DocumentOwner>> = BTreeMap::new();
+    for tranche in ids.chunks(DOCUMENT_OWNERS_BATCH) {
+        let liste = vec!["?"; tranche.len()].join(",");
+        // Chaque bloc : une dérivée `entry_id → MIN(id)` bornée par la liste,
+        // jointe en retour sur `id` (numéro de la même ligne), puis sur
+        // l'écriture de la société. Colonnes typées par CAST pour que
+        // l'`UNION ALL` ne dépende pas du premier bloc.
+        let sql = format!(
+            "SELECT d.entry_id, CAST({inv} AS SIGNED) AS kind, i.id, \
+                    CAST(i.invoice_number AS CHAR) AS number, \
+                    CAST(NULL AS SIGNED) AS invoice_id, CAST(NULL AS CHAR) AS invoice_number \
+               FROM (SELECT journal_entry_id AS entry_id, MIN(id) AS id FROM invoices \
+                      WHERE journal_entry_id IN ({liste}) GROUP BY journal_entry_id) d \
+               JOIN invoices i ON i.id = d.id \
+               JOIN journal_entries je ON je.id = d.entry_id AND je.company_id = ? \
+             UNION ALL \
+             SELECT d.entry_id, CAST({cn} AS SIGNED), c.id, CAST(c.credit_note_number AS CHAR), \
+                    CAST(NULL AS SIGNED), CAST(NULL AS CHAR) \
+               FROM (SELECT journal_entry_id AS entry_id, MIN(id) AS id FROM credit_notes \
+                      WHERE journal_entry_id IN ({liste}) GROUP BY journal_entry_id) d \
+               JOIN credit_notes c ON c.id = d.id \
+               JOIN journal_entries je ON je.id = d.entry_id AND je.company_id = ? \
+             UNION ALL \
+             SELECT d.entry_id, CAST({si} AS SIGNED), s.id, CAST(s.supplier_invoice_number AS CHAR), \
+                    CAST(NULL AS SIGNED), CAST(NULL AS CHAR) \
+               FROM (SELECT u.entry_id, MIN(u.id) AS id FROM ( \
+                       SELECT purchase_journal_entry_id AS entry_id, id FROM supplier_invoices \
+                        WHERE purchase_journal_entry_id IN ({liste}) \
+                       UNION ALL \
+                       SELECT settlement_journal_entry_id AS entry_id, id FROM supplier_invoices \
+                        WHERE settlement_journal_entry_id IN ({liste}) \
+                     ) u GROUP BY u.entry_id) d \
+               JOIN supplier_invoices s ON s.id = d.id \
+               JOIN journal_entries je ON je.id = d.entry_id AND je.company_id = ? \
+             UNION ALL \
+             SELECT d.entry_id, CAST({st} AS SIGNED), st.id, CAST(NULL AS CHAR), \
+                    CAST(st.invoice_id AS SIGNED), CAST(inv.invoice_number AS CHAR) \
+               FROM (SELECT journal_entry_id AS entry_id, MIN(id) AS id FROM invoice_settlements \
+                      WHERE journal_entry_id IN ({liste}) GROUP BY journal_entry_id) d \
+               JOIN invoice_settlements st ON st.id = d.id \
+               JOIN invoices inv ON inv.id = st.invoice_id \
+               JOIN journal_entries je ON je.id = d.entry_id AND je.company_id = ? \
+             UNION ALL \
+             SELECT d.entry_id, CAST({bt} AS SIGNED), d.id, CAST(NULL AS CHAR), \
+                    CAST(NULL AS SIGNED), CAST(NULL AS CHAR) \
+               FROM (SELECT matched_entry_id AS entry_id, MIN(id) AS id FROM bank_transactions \
+                      WHERE matched_entry_id IN ({liste}) GROUP BY matched_entry_id) d \
+               JOIN journal_entries je ON je.id = d.entry_id AND je.company_id = ?",
+            inv = DocumentKind::Invoice.rank(),
+            cn = DocumentKind::CreditNote.rank(),
+            si = DocumentKind::SupplierInvoice.rank(),
+            st = DocumentKind::Settlement.rank(),
+            bt = DocumentKind::BankTransaction.rank(),
+        );
+        let mut query = sqlx::query_as::<_, OwnerRow>(&sql);
+        // Ordre des marqueurs : par bloc, la (ou les deux) liste(s), puis la
+        // société — le fournisseur en porte deux.
+        for listes in [1, 1, 2, 1, 1] {
+            for _ in 0..listes {
+                for id in tranche {
+                    query = query.bind(*id);
+                }
+            }
+            query = query.bind(company_id);
+        }
+        let rows = query.fetch_all(&mut *conn).await.map_err(map_db_error)?;
+        for row in rows {
+            owners.entry(row.entry_id).or_default().push(DocumentOwner {
+                kind: DocumentKind::from_rank(row.kind)?,
+                id: row.id,
+                number: row.number,
+                invoice_id: row.invoice_id,
+                invoice_number: row.invoice_number,
+            });
+        }
+    }
+    // ⛔ Le tri est la SEULE garantie de l'ordre de précédence : un `UNION ALL`
+    // sans `ORDER BY` ne garantit pas l'ordre de ses blocs, même si MariaDB les
+    // rend en pratique dans l'ordre d'écriture. Garde défensive, que les tests
+    // ne peuvent pas faire rougir (revue P1, A-4 = B-2 = E5).
+    for vecteur in owners.values_mut() {
+        vecteur.sort_by_key(|o| o.kind);
+    }
+    Ok(owners)
+}
+
 /// Recense ce qui **empêche** de contre-passer une écriture (Story 24-4a, #380).
 ///
 /// Rend `None` quand l'écriture est contre-passable, et `Some((motif, id de la
 /// pièce))` sinon — c'est-à-dire le **premier** des motifs de
-/// [`reversal_blockers`], qui porte seul la logique (Story 25-3-a-1). ⛔ **Une seule requête** : les sept causes se calculent par
-/// sous-requêtes corrélées, jamais par sept allers-retours.
+/// [`reversal_blockers`], qui porte seul la logique (Story 25-3-a-1) : deux
+/// lectures, un instantané dès que l'appelant tient une transaction (cf.
+/// [`reversal_blockers`]).
 ///
-/// ⚠️ La **précédence** est celle de l'ordre des tests ci-dessous, et elle est
-/// figée : les causes se cumulent, et le champ exposé à l'écran est scalaire.
+/// ⚠️ La **précédence** est l'ordre des motifs de [`reversal_blockers`], et elle
+/// est figée : les causes se cumulent, et le champ exposé à l'écran est scalaire.
 ///
 /// ⚠️ **Le compte archivé EST évalué ici**, en dernier de la précédence — parce
 /// que l'AC 11 exige que l'écran masque le bouton **avant** le clic. Ne le
@@ -2061,15 +2329,12 @@ pub type ReversalBlockerHit = (ReversalBlocker, Option<i64>, Option<String>);
 ///
 /// Son refus à l'ÉCRITURE reste un **400** qui NOMME les comptes à réactiver
 /// ([`DbError::ReversalAccountsArchived`]) ; ce code-ci ne sert que la lecture.
-pub async fn reversal_blocker<'e, E>(
-    executor: E,
+pub async fn reversal_blocker(
+    conn: &mut sqlx::MySqlConnection,
     company_id: i64,
     id: i64,
-) -> Result<Option<ReversalBlockerHit>, DbError>
-where
-    E: sqlx::Executor<'e, Database = sqlx::MySql>,
-{
-    Ok(reversal_blockers(executor, company_id, id)
+) -> Result<Option<ReversalBlockerHit>, DbError> {
+    Ok(reversal_blockers(conn, company_id, id)
         .await?
         .into_iter()
         .next())
@@ -2086,32 +2351,27 @@ where
 /// premier ferait contre-passer en silence un paiement que la banque dit
 /// rapproché.
 ///
+/// **Deux lectures** (Story 15-1b-0, D2) : la sienne pour les rangs 1, 2 et 8
+/// (contre-passation, contre-passée, compte archivé), et [`document_owners`]
+/// pour les rangs 3 à 7 — la propriété n'est écrite qu'une fois. Elles lisent
+/// **un instantané** dès que l'appelant tient une transaction : en `REPEATABLE
+/// READ`, l'instantané se fige à la première lecture et vaut pour la seconde.
+/// ⚠️ Cette propriété repose sur le **niveau d'isolation par défaut**
+/// d'InnoDB, que Kesh ne configure pas. Sur une connexion nue (autocommit),
+/// chaque lecture a le sien.
+///
 /// Écriture introuvable (ou d'une autre société) → [`DbError::NotFound`].
-pub async fn reversal_blockers<'e, E>(
-    executor: E,
+pub async fn reversal_blockers(
+    conn: &mut sqlx::MySqlConnection,
     company_id: i64,
     id: i64,
-) -> Result<Vec<ReversalBlockerHit>, DbError>
-where
-    E: sqlx::Executor<'e, Database = sqlx::MySql>,
-{
-    /// Les sept causes de blocage, telles que la requête les rend.
-    ///
-    /// ⚠️ Une struct nommée plutôt qu'un 7-uplet : `clippy::type_complexity`
-    /// refuse le second, et il avait surtout l'inconvénient de rendre l'ordre
-    /// des colonnes muet — sept `Option<i64>` d'affilée ne se relisent pas.
+) -> Result<Vec<ReversalBlockerHit>, DbError> {
+    /// Les trois causes que la propriété ne couvre pas, telles que la requête
+    /// les rend.
     #[derive(sqlx::FromRow)]
     struct BlockerRow {
         reverses_entry_id: Option<i64>,
         reversed_by: Option<i64>,
-        invoice_id: Option<i64>,
-        invoice_number: Option<String>,
-        credit_note_id: Option<i64>,
-        credit_note_number: Option<String>,
-        supplier_invoice_id: Option<i64>,
-        supplier_invoice_number: Option<String>,
-        settlement_id: Option<i64>,
-        bank_transaction_id: Option<i64>,
         archived_account_number: Option<String>,
     }
 
@@ -2120,18 +2380,6 @@ where
            je.reverses_entry_id, \
            (SELECT r.id FROM journal_entries r \
              WHERE r.reverses_entry_id = je.id AND r.company_id = je.company_id LIMIT 1) AS reversed_by, \
-           (SELECT i.id FROM invoices i WHERE i.journal_entry_id = je.id LIMIT 1) AS invoice_id, \
-           (SELECT i.invoice_number FROM invoices i WHERE i.journal_entry_id = je.id LIMIT 1) AS invoice_number, \
-           (SELECT c.id FROM credit_notes c WHERE c.journal_entry_id = je.id LIMIT 1) AS credit_note_id, \
-           (SELECT c.credit_note_number FROM credit_notes c WHERE c.journal_entry_id = je.id LIMIT 1) AS credit_note_number, \
-           (SELECT s.id FROM supplier_invoices s \
-             WHERE s.purchase_journal_entry_id = je.id OR s.settlement_journal_entry_id = je.id \
-             LIMIT 1) AS supplier_invoice_id, \
-           (SELECT s.supplier_invoice_number FROM supplier_invoices s \
-             WHERE s.purchase_journal_entry_id = je.id OR s.settlement_journal_entry_id = je.id \
-             LIMIT 1) AS supplier_invoice_number, \
-           (SELECT st.id FROM invoice_settlements st WHERE st.journal_entry_id = je.id LIMIT 1) AS settlement_id, \
-           (SELECT bt.id FROM bank_transactions bt WHERE bt.matched_entry_id = je.id LIMIT 1) AS bank_transaction_id, \
            (SELECT a.number FROM journal_entry_lines jel \
              JOIN accounts a ON a.id = jel.account_id \
              WHERE jel.entry_id = je.id AND a.active = FALSE \
@@ -2141,7 +2389,7 @@ where
     )
     .bind(id)
     .bind(company_id)
-    .fetch_optional(executor)
+    .fetch_optional(&mut *conn)
     .await
     .map_err(map_db_error)?;
 
@@ -2159,36 +2407,14 @@ where
     if row.reversed_by.is_some() {
         blockers.push((ReversalBlocker::AlreadyReversed, row.reversed_by, None));
     }
-    if row.invoice_id.is_some() {
-        blockers.push((
-            ReversalBlocker::OwnedByInvoice,
-            row.invoice_id,
-            row.invoice_number,
-        ));
-    }
-    if row.credit_note_id.is_some() {
-        blockers.push((
-            ReversalBlocker::OwnedByCreditNote,
-            row.credit_note_id,
-            row.credit_note_number,
-        ));
-    }
-    if row.supplier_invoice_id.is_some() {
-        blockers.push((
-            ReversalBlocker::OwnedBySupplierInvoice,
-            row.supplier_invoice_id,
-            row.supplier_invoice_number,
-        ));
-    }
-    if row.settlement_id.is_some() {
-        blockers.push((ReversalBlocker::OwnedBySettlement, row.settlement_id, None));
-    }
-    if row.bank_transaction_id.is_some() {
-        blockers.push((
-            ReversalBlocker::MatchedBankTransaction,
-            row.bank_transaction_id,
-            None,
-        ));
+    // Rangs 3 à 7 — dans l'ordre de `DocumentKind`, que `document_owners` trie.
+    if let Some(owners) = document_owners(&mut *conn, company_id, &[id])
+        .await?
+        .remove(&id)
+    {
+        for owner in owners {
+            blockers.push((owner.kind.reversal_blocker(), Some(owner.id), owner.number));
+        }
     }
     if row.archived_account_number.is_some() {
         // ⛔ En dernier : c'est le seul motif que l'utilisateur peut lever
@@ -2435,7 +2661,7 @@ async fn reverse_in_tx_inner(
     // motif restant est opposé — `AccountArchived` étant le dernier de la
     // précédence, le sauter revient exactement à l'ancien `match` sur le
     // premier motif quand aucune autorité n'est donnée.
-    let refused = reversal_blockers(&mut **tx, company_id, id)
+    let refused = reversal_blockers(tx, company_id, id)
         .await?
         .into_iter()
         .find(|(blocker, document_id, _)| {

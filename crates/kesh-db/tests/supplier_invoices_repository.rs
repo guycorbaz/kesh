@@ -300,7 +300,7 @@ async fn cancel_reverses_purchase_entry(pool: MySqlPool) {
     .unwrap();
     assert_eq!(reverses, Some(purchase));
     let blocker = kesh_db::repositories::journal_entries::reversal_blocker(
-        &pool,
+        &mut pool.acquire().await.unwrap(),
         ctx.seeded.company_id,
         purchase,
     )
@@ -725,9 +725,10 @@ async fn cancel_paid_invoice_detaches_its_settlement(pool: MySqlPool) {
 
     // ⛔ La preuve du détachement : plus de propriétaire, et la
     // contre-passation à la main passe.
-    let motifs = journal_entries::reversal_blockers(&pool, c, settlement)
-        .await
-        .unwrap();
+    let motifs =
+        journal_entries::reversal_blockers(&mut pool.acquire().await.unwrap(), c, settlement)
+            .await
+            .unwrap();
     assert!(
         !motifs
             .iter()
@@ -1301,7 +1302,7 @@ async fn two_full_cycles_pay_cancel_pay_cancel(pool: MySqlPool) {
         .await
         .expect("seconde annulation");
 
-    let blocker = journal_entries::reversal_blocker(&pool, c, first)
+    let blocker = journal_entries::reversal_blocker(&mut pool.acquire().await.unwrap(), c, first)
         .await
         .unwrap();
     assert_eq!(blocker.map(|h| h.0), Some(ReversalBlocker::AlreadyReversed));

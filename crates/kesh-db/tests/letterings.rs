@@ -588,7 +588,7 @@ async fn a_bank_matched_entry_is_not_a_document(pool: MySqlPool) {
     // Le montage a bien produit le motif `MatchedBankTransaction`.
     let mut conn = pool.acquire().await.unwrap();
     let motifs =
-        kesh_db::repositories::journal_entries::reversal_blockers(&mut *conn, m.company(), entry)
+        kesh_db::repositories::journal_entries::reversal_blockers(&mut conn, m.company(), entry)
             .await
             .unwrap();
     assert!(
@@ -600,6 +600,231 @@ async fn a_bank_matched_entry_is_not_a_document(pool: MySqlPool) {
     lettrer(&pool, &m, &[a, b])
         .await
         .expect("une écriture rapprochée se lettre à la main");
+}
+
+// ---------------------------------------------------------------------------
+// Story 15-1b-0 (D4 (3), AC3) — `first_document_owner`, un test par type de R5
+// ---------------------------------------------------------------------------
+
+/// Le contact de la société — repris s'il existe (`seed_contact_and_product`
+/// pose un produit au nom fixe, qu'un second appel refuserait).
+async fn contact_de(pool: &MySqlPool, m: &Monde) -> i64 {
+    let existant: Option<i64> =
+        sqlx::query_scalar("SELECT MIN(id) FROM contacts WHERE company_id = ?")
+            .bind(m.company())
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    match existant {
+        Some(id) => id,
+        None => {
+            seed_contact_and_product(pool, m.company())
+                .await
+                .expect("contact")
+                .0
+        }
+    }
+}
+
+/// Rattache l'écriture `entry` à un avoir (sur une facture brouillon neuve,
+/// `uq_credit_notes_invoice`) — pièce : `OwnedByCreditNote`.
+async fn faire_avoir(pool: &MySqlPool, m: &Monde, entry: i64, numero: &str) -> i64 {
+    let contact = contact_de(pool, m).await;
+    let facture: i64 = sqlx::query(
+        "INSERT INTO invoices (company_id, contact_id, date) VALUES (?, ?, '2026-02-01')",
+    )
+    .bind(m.company())
+    .bind(contact)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO credit_notes (company_id, contact_id, invoice_id, status, date, \
+         credit_note_number, journal_entry_id) VALUES (?, ?, ?, 'issued', '2026-02-01', ?, ?)",
+    )
+    .bind(m.company())
+    .bind(contact)
+    .bind(facture)
+    .bind(numero)
+    .bind(entry)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+/// Rattache l'écriture `entry` (achat) à une facture fournisseur — pièce :
+/// `OwnedBySupplierInvoice`.
+async fn faire_facture_fournisseur(pool: &MySqlPool, m: &Monde, entry: i64, numero: &str) -> i64 {
+    let contact = contact_de(pool, m).await;
+    sqlx::query(
+        "INSERT INTO supplier_invoices (company_id, contact_id, invoice_date, \
+         supplier_invoice_number, purchase_journal_entry_id) VALUES (?, ?, '2026-02-01', ?, ?)",
+    )
+    .bind(m.company())
+    .bind(contact)
+    .bind(numero)
+    .bind(entry)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+/// Rattache l'écriture `entry` à un règlement de facture client — pièce :
+/// `OwnedBySettlement`, sans numéro.
+async fn faire_reglement(pool: &MySqlPool, m: &Monde, entry: i64) -> i64 {
+    let contact = contact_de(pool, m).await;
+    let facture: i64 = sqlx::query(
+        "INSERT INTO invoices (company_id, contact_id, date) VALUES (?, ?, '2026-02-01')",
+    )
+    .bind(m.company())
+    .bind(contact)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    sqlx::query(
+        "INSERT INTO invoice_settlements (company_id, invoice_id, journal_entry_id, amount, \
+         settled_on, settlement_type, settlement_account_id) \
+         VALUES (?, ?, ?, 100, '2026-02-01', 'internal_account', ?)",
+    )
+    .bind(m.company())
+    .bind(facture)
+    .bind(entry)
+    .bind(m.s.accounts["1000"])
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+/// Lettre `[a, b]` à la main et rend le refus R5 `(motif, pièce, étiquette)`.
+async fn refus_r5(
+    pool: &MySqlPool,
+    m: &Monde,
+    ids: &[i64],
+) -> (ReversalBlocker, Option<i64>, Option<String>) {
+    match lettrer(pool, m, ids).await {
+        Err(DbError::LetteringLineOwnedByDocument {
+            blocker,
+            document_id,
+            document_label,
+        }) => (blocker, document_id, document_label),
+        other => panic!("attendu LetteringLineOwnedByDocument, obtenu {other:?}"),
+    }
+}
+
+/// Une ligne de pièce (montant +100) et sa contrepartie libre (-100) sur le
+/// compte lettrable ; rend `(écriture de la ligne de pièce, [a, b])`.
+async fn ligne_de_piece(pool: &MySqlPool, m: &Monde) -> (i64, [i64; 2]) {
+    let (entry, a) = ligne(pool, m, m.lettrable(), m.fy26, d(2026, 2, 1), dec!(100)).await;
+    let (_, b) = ligne(pool, m, m.lettrable(), m.fy26, d(2026, 2, 2), dec!(-100)).await;
+    (entry, [a, b])
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn first_document_owner_names_an_invoice(pool: MySqlPool) {
+    let m = monde(&pool).await;
+    let (entry, ids) = ligne_de_piece(&pool, &m).await;
+    let facture = faire_facture(&pool, &m, entry, "F-2026-031").await;
+    assert_eq!(
+        refus_r5(&pool, &m, &ids).await,
+        (
+            ReversalBlocker::OwnedByInvoice,
+            Some(facture),
+            Some("F-2026-031".into())
+        )
+    );
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn first_document_owner_names_a_credit_note(pool: MySqlPool) {
+    let m = monde(&pool).await;
+    let (entry, ids) = ligne_de_piece(&pool, &m).await;
+    let avoir = faire_avoir(&pool, &m, entry, "AV-2026-004").await;
+    assert_eq!(
+        refus_r5(&pool, &m, &ids).await,
+        (
+            ReversalBlocker::OwnedByCreditNote,
+            Some(avoir),
+            Some("AV-2026-004".into())
+        )
+    );
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn first_document_owner_names_a_supplier_invoice(pool: MySqlPool) {
+    let m = monde(&pool).await;
+    let (entry, ids) = ligne_de_piece(&pool, &m).await;
+    let fournisseur = faire_facture_fournisseur(&pool, &m, entry, "FF-2026-9").await;
+    assert_eq!(
+        refus_r5(&pool, &m, &ids).await,
+        (
+            ReversalBlocker::OwnedBySupplierInvoice,
+            Some(fournisseur),
+            Some("FF-2026-9".into())
+        )
+    );
+}
+
+#[sqlx::test(migrations = "./test-schema")]
+async fn first_document_owner_names_a_settlement(pool: MySqlPool) {
+    let m = monde(&pool).await;
+    let (entry, ids) = ligne_de_piece(&pool, &m).await;
+    let reglement = faire_reglement(&pool, &m, entry).await;
+    assert_eq!(
+        refus_r5(&pool, &m, &ids).await,
+        (ReversalBlocker::OwnedBySettlement, Some(reglement), None)
+    );
+}
+
+/// Deux écritures possédées dans le groupe : la PREMIÈRE LIGNE (ordre des
+/// lignes) gagne — ni la précédence des types, ni l'ordre des écritures. Les
+/// deux ordres sont décorrélés (revue P1, A-3 = E3) : l'écriture ANCIENNE (plus
+/// petit id) reçoit sa ligne lettrable APRÈS celle de l'écriture récente. La
+/// récente porte un avoir (rang 4), l'ancienne une facture (rang 3) : c'est
+/// l'avoir, première ligne, qui est nommé.
+#[sqlx::test(migrations = "./test-schema")]
+async fn first_document_owner_takes_the_first_line(pool: MySqlPool) {
+    let m = monde(&pool).await;
+    let contrepartie = m.s.accounts["2000"];
+    // L'écriture ancienne, d'abord sans sa ligne lettrable.
+    let (ancienne, _) = ecriture(
+        &pool,
+        m.company(),
+        m.fy26,
+        d(2026, 2, 1),
+        &[(contrepartie, dec!(100), dec!(0))],
+    )
+    .await;
+    let (recente, a) = ligne(&pool, &m, m.lettrable(), m.fy26, d(2026, 2, 2), dec!(100)).await;
+    let b = sqlx::query(
+        "INSERT INTO journal_entry_lines (entry_id, account_id, line_order, debit, credit) \
+         VALUES (?, ?, 2, 0, 100)",
+    )
+    .bind(ancienne)
+    .bind(m.lettrable())
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    assert!(
+        ancienne < recente && a < b,
+        "montage : ordre des écritures et ordre des lignes opposés"
+    );
+    // La facture d'abord : `faire_facture` pose le contact, que l'avoir reprend.
+    faire_facture(&pool, &m, ancienne, "F-2026-032").await;
+    let avoir = faire_avoir(&pool, &m, recente, "AV-2026-007").await;
+    assert_eq!(
+        refus_r5(&pool, &m, &[b, a]).await,
+        (
+            ReversalBlocker::OwnedByCreditNote,
+            Some(avoir),
+            Some("AV-2026-007".into())
+        )
+    );
 }
 
 /// Rang 6 avant rang 7 : une ligne déjà lettrée, et une somme non nulle. Le
