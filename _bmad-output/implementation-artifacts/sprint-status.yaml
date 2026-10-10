@@ -1,3 +1,4 @@
+# last_updated: 2026-10-11 (89) (26-2a — revue de code close (P1 Sonnet 0M/11L, P2 ciblée Haiku 0M/2L) ; done ; dernier commit de code fd7624a5 ; rebase sur la 26-1 à faire)
 # last_updated: 2026-10-11 (88) (26-2a — bmad-dev-story terminé, statut review ; dernier commit de code 1ea3c98b ; revue de code P1 Sonnet due)
 # last_updated: 2026-10-10 (87) (26-2a — validation close : P3 ciblée Haiku 0 MEDIUM / 5 LOW appliqués ; 26-2a in-progress)
 # last_updated: 2026-10-10 (86) (26-2a/26-2b — validation P2 (Opus ×2 : R 2M/13L, F 2M/11L ; 3 MEDIUM distincts) remédiée : onboarding inatteignable (phrase du manuel retirée), D7 garde « UBS (CH…) » sans description, compte de la QR-facture corrigé au manuel (26-2b), BankAccountPutFields, find_by_id_in_tx scopé ; C-26-2-26 à 30 ; passe P3 ciblée (Haiku) due)
@@ -558,7 +559,7 @@ development_status:
   epic-26: in-progress  # 2026-10-10 KICKOFF — recette de la v0.13.0 sur le NAS (compta perso de Guy). Cible v0.13.1. Fichier : planning-artifacts/epic-26-recette-v0-13.md. Issues : #620 (P1) #621 #622 #616 #617 #619. Reportés : #618 (MT940), #503 (sauvegarde avec fichiers), lecture du préambule UBS (#621 reste ouverte).
   26-1-import-csv-ubs-natif: backlog  # [#620] [#621] réglage du sens des montants + plafond des lignes à ignorer relevé ; fixture UBS anonymisée. PR closes #620, refs #621.
   26-2-description-compte-bancaire: split  # 2026-10-10 fiche créée (14 AC), découpée (C-26-2-15) : voir 26-2a (PR refs #622) et 26-2b (PR closes #622). [#622] description facultative, inventaire clos des sites d'affichage. — 2026-10-10 DÉCOUPÉE (orchestrateur, > 5 modules) en 26-2a (socle, AC1-8, refs #622) / 26-2b (rollout, AC9-12, closes #622) ; fiche unique en deux parties.
-  26-2a-description-socle: review  # AC1-8 + E2E (a). PR refs #622. 2026-10-11 bmad-dev-story terminé (Opus 5.5) : dernier commit de code 1ea3c98b ; gate 3369/3369, Vitest 1308/1308, E2E 256/8 attendus ; mutations 13/13 ; branche NON rebasée sur la 26-1 (79/45, à refaire au rebase). Revue de code P1 (Sonnet) due.
+  26-2a-description-socle: done  # AC1-8 + E2E (a). PR refs #622 (jamais closes). 2026-10-11 dev (Opus 5.5) + revue close : P1 Sonnet ×3 0M/11L → P2 ciblée Haiku 0M/2L. Dernier commit de code fd7624a5 : gate 3369/3369, E2E 256/8 attendus, Vitest 1308/1308 (1ea3c98b, frontend inchangé depuis). Mutations 13/13. ⚠️ Branche NON rebasée sur la 26-1 (79/45) : rebase et recomptes par l'orchestrateur.
   26-2b-description-ecrans: ready-for-dev  # AC9-12 + E2E (b). PR closes #622.
   26-3-manuel-et-restauration-synology: backlog  # [#616] [#617] [#619] manuels + garde de kesh-restore.sh. PR closes #616 #617 #619.
   epic-26-retrospective: optional

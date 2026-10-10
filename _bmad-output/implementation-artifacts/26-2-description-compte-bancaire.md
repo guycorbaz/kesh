@@ -6,9 +6,9 @@
 de l'Epic 26), branche `story/26-2` ; **découpée** par l'orchestrateur le même jour (registre **C-26-2-15**) ;
 validation **P1** (Sonnet, lentilles R et F : 0 HIGH, 8 MEDIUM, 15 LOW) puis **P2** (Opus, R et F : 0 HIGH,
 4 MEDIUM dont 3 distincts, 24 LOW) **remédiées** le 2026-10-10 — passe **P3 ciblée** (Haiku, une lentille, sur le
-seul commit de la remédiation P2) : 0 MEDIUM, 5 LOW appliqués — **validation close**. **26-2a : review**
-(`bmad-dev-story` terminé le 2026-10-11, dernier commit de code `1ea3c98b` ; boucle `bmad-code-review` à suivre) ;
-26-2b : ready-for-dev.
+seul commit de la remédiation P2) : 0 MEDIUM, 5 LOW appliqués — **validation close**. **26-2a : done**
+(`bmad-dev-story` le 2026-10-11 ; revue de code **close** en deux passes ; dernier commit de code **`fd7624a5`** ;
+PR `refs #622`, **non rebasée sur la 26-1**) ; 26-2b : ready-for-dev.
 
 ⛔ **Deux stories, une fiche, deux PR successives** (C-26-2-15, qui remplace la proposition C-26-2-1) :
 
@@ -1033,5 +1033,31 @@ verte à 62 au gate ; PDF du manuel (B, E, A) — la 26-2a n'y change rien, aucu
 | E2 — angle mort nommé incomplet (U+180B-180D, U+2065, U+17B4-17B5, U+1D173-1D17A) | L | Doc-comment de `is_forbidden_in_description` complétée, dite non exhaustive ; **l'ensemble refusé ne change pas** (fermé par C-26-2-28). |
 | A2 — commande de contrôle « schéma antérieur » muette (BRE) | L | Refaite en ERE au Dev Agent Record ; même conclusion. |
 | A3 — journal de mutations sans diff ni preuve de restauration | L | Le script exécuté (remplacements exacts, restauration, `touch`, contrôle `git diff --quiet` final) est versé à côté du journal : `kesh-gate-logs/26-2a-mutations.py`. |
-| A4 — la fiche demande `description: None` aux l. 659 **et** 845 d'`invoice_pdf_service.rs` | L | Imprécision de la fiche : le littéral l. 845 hérite par `..primary_bank()` ; code correct, rien à changer. |
+| A4 — la fiche demande `description: None` aux l. 659 **et** 845 de `crates/kesh-api/src/routes/invoice_pdf_service.rs` (numéros sur `9b724027`) | L | Imprécision de la fiche : le second littéral (`qr_bank()`, l. 846 après la 26-2a) hérite par `..primary_bank()` ; code correct, rien à changer. *(Chemin et numéros précisés après H1 de la P2.)* |
+
+### Revue de code P2 ciblée — bilan et clôture
+
+| Date | Étape | Résumé |
+|---|---|---|
+| 2026-10-11 | `bmad-code-review` P2 ciblée (Haiku, une lentille, commit `fd7624a5`) — **revue close** | 0 CRITICAL, 0 HIGH, 0 MEDIUM, 2 LOW. Rapport `kesh-gate-logs/26-2a-review-p2-H.md` ; prompt `26-2a-review-prompt-p2-ciblee.md`. |
+
+| Finding | Traitement |
+|---|---|
+| H1 — chemin et numéros du bilan A4 imprécis | Précisés (ligne A4 ci-dessus). |
+| H2 — « fermé » et « non exhaustive » juxtaposés dans la doc de `is_forbidden_in_description` | Accepté sans changement : « fermé » qualifie l'ensemble **refusé**, « non exhaustive » la liste de l'angle mort — la phrase le dit ; la retoucher toucherait un fichier de production pour une nuance de style, et rouvrirait la boucle. |
+
+La remédiation `fd7624a5` ne touche **aucune ligne de code de production** hors commentaire (vérifié par la lentille
+H : diff de production limité à `mod tests` et à une doc-comment) ; la passe H n'a trouvé que des LOW de
+compte rendu. Critère d'arrêt du `CLAUDE.md` atteint.
+
+**Trend** : P1 (Sonnet ×3, B/E/A) 0 CRITICAL / 0 HIGH / 0 MEDIUM / 11 LOW → P2 ciblée (Haiku ×1) 0 / 0 / 0 / 2 LOW.
+Aucun finding reclassé en dette ; aucun réfuté ; un LOW accepté sans changement (B3 = E3), un autre (H2).
+
+**Gates au dernier commit de code `fd7624a5`** (exécutés) : base `kesh_262a` remise à zéro, `scripts/test-fast.sh
+--ci` **3369 exécutés, 3369 passés, 5 ignorés** (`kesh-gate-logs/26-2a-gate-fd7624a5.log`) ; **E2E complet**
+(`kesh_e2e_262a` recréée, backend reconstruit, frontend rebuildé) **256 passés, 8 échoués, 19 ignorés** — les huit
+mêmes que sur `1ea3c98b`, tous à la liste attendue (KF-029 ×7, KF-046) (`26-2a-e2e-fd7624a5.log`). Frontend :
+`fd7624a5` ne touche aucun fichier de `frontend/` (`git diff 1ea3c98b fd7624a5 --stat -- frontend` → vide) ; les
+gates frontend de `1ea3c98b` (check 0 erreur, lint PASS, Vitest 124 fichiers / 1308 tests, build 0) valent pour cet
+arbre et n'ont pas été relancés.
 
