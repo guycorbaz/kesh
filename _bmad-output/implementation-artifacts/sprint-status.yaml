@@ -1,3 +1,4 @@
+# last_updated: 2026-10-10 (87) (26-2a — validation close : P3 ciblée Haiku 0 MEDIUM / 5 LOW appliqués ; 26-2a in-progress)
 # last_updated: 2026-10-10 (86) (26-2a/26-2b — validation P2 (Opus ×2 : R 2M/13L, F 2M/11L ; 3 MEDIUM distincts) remédiée : onboarding inatteignable (phrase du manuel retirée), D7 garde « UBS (CH…) » sans description, compte de la QR-facture corrigé au manuel (26-2b), BankAccountPutFields, find_by_id_in_tx scopé ; C-26-2-26 à 30 ; passe P3 ciblée (Haiku) due)
 # last_updated: 2026-10-10 (85) (26-2a/26-2b — validation P1 (Sonnet ×2 : R 4M/7L, F 4M/8L) remédiée : garde AC11 par décompte du jeton, un test par site, PUT documenté (api-external, CHANGELOG Modifié), démotion du principal, macro de colonnes, migration 20261011000002 après la 26-1 + migrations.sha384 ; C-26-2-16 à 25 ; validation P2 (Opus) due)
 # last_updated: 2026-10-10 (84) (26-2 fiche créée, ready-for-dev — description facultative d’un compte bancaire (#622) ; 14 AC ; inventaire clos : 10 sites d’affichage, 3 angles morts assumés ; découpage 26-2a/26-2b PROPOSÉ (C-26-2-1) ; C-26-2-1 à 14)
@@ -556,7 +557,7 @@ development_status:
   epic-26: in-progress  # 2026-10-10 KICKOFF — recette de la v0.13.0 sur le NAS (compta perso de Guy). Cible v0.13.1. Fichier : planning-artifacts/epic-26-recette-v0-13.md. Issues : #620 (P1) #621 #622 #616 #617 #619. Reportés : #618 (MT940), #503 (sauvegarde avec fichiers), lecture du préambule UBS (#621 reste ouverte).
   26-1-import-csv-ubs-natif: backlog  # [#620] [#621] réglage du sens des montants + plafond des lignes à ignorer relevé ; fixture UBS anonymisée. PR closes #620, refs #621.
   26-2-description-compte-bancaire: split  # 2026-10-10 fiche créée (14 AC), découpée (C-26-2-15) : voir 26-2a (PR refs #622) et 26-2b (PR closes #622). [#622] description facultative, inventaire clos des sites d'affichage. — 2026-10-10 DÉCOUPÉE (orchestrateur, > 5 modules) en 26-2a (socle, AC1-8, refs #622) / 26-2b (rollout, AC9-12, closes #622) ; fiche unique en deux parties.
-  26-2a-description-socle: ready-for-dev  # AC1-8 + E2E (a). PR refs #622.
+  26-2a-description-socle: in-progress  # AC1-8 + E2E (a). PR refs #622. 2026-10-10 validation close (P3 ciblée Haiku : 0 MEDIUM, 5 LOW appliqués) ; bmad-dev-story en cours.
   26-2b-description-ecrans: ready-for-dev  # AC9-12 + E2E (b). PR closes #622.
   26-3-manuel-et-restauration-synology: backlog  # [#616] [#617] [#619] manuels + garde de kesh-restore.sh. PR closes #616 #617 #619.
   epic-26-retrospective: optional

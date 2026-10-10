@@ -6,7 +6,8 @@
 de l'Epic 26), branche `story/26-2` ; **découpée** par l'orchestrateur le même jour (registre **C-26-2-15**) ;
 validation **P1** (Sonnet, lentilles R et F : 0 HIGH, 8 MEDIUM, 15 LOW) puis **P2** (Opus, R et F : 0 HIGH,
 4 MEDIUM dont 3 distincts, 24 LOW) **remédiées** le 2026-10-10 — passe **P3 ciblée** (Haiku, une lentille, sur le
-seul commit de la remédiation P2) due.
+seul commit de la remédiation P2) : 0 MEDIUM, 5 LOW appliqués — **validation close**. **26-2a : in-progress**
+(`bmad-dev-story`, 2026-10-10) ; 26-2b : ready-for-dev.
 
 ⛔ **Deux stories, une fiche, deux PR successives** (C-26-2-15, qui remplace la proposition C-26-2-1) :
 
@@ -23,7 +24,7 @@ PR, le champ se saisit sans que manuel ni CHANGELOG le disent — à écrire au 
 ## Story
 
 **As a** indépendant ou PME qui tient plusieurs comptes dans la même banque,
-**I want** donner à chaque compte bancaire une courte description facultative (« Personnel », « Épargne ») et la
+**I want** donner à chaque compte bancaire une courte description optionnelle (« Personnel », « Épargne ») et la
 voir partout où Kesh me montre ou me propose un compte (« UBS — Personnel »),
 **so that** je distingue mes comptes sans lire l'IBAN.
 
@@ -102,7 +103,7 @@ comptes existants n'ont rien à saisir. Epic : `_bmad-output/planning-artifacts/
 **AC2 — Entité et dépôt : une seule liste de colonnes, et cinq chemins qui ne touchent pas la description.**
 
 - `BankAccount` (`crates/kesh-db/src/entities/bank_account.rs`) gagne `pub description: Option<String>` (doc
-  `///` : facultative, normalisée par la route, `None` = absente), sérialisée `description`.
+  `///` : optionnelle, normalisée par la route, `None` = absente), sérialisée `description`.
   `NewBankAccount` **ne change pas** (C-26-2-7).
 - Les **onze** `SELECT` qui énumèrent les colonnes vers `BankAccount` (dix dans
   `crates/kesh-db/src/repositories/bank_accounts.rs` : `FIND_BY_ID_SQL` l. 25, `find_primary` l. 77,
@@ -132,11 +133,15 @@ comptes existants n'ont rien à saisir. Epic : `_bmad-output/planning-artifacts/
   qui **remplace** le paramètre `new_journal_account_id` (sept paramètres, inchangé en nombre). `NewBankAccount`
   ne change toujours pas (C-26-2-7). Appelants : la route et les tests de
   `crates/kesh-db/tests/bank_accounts_repository.rs`. Sa doc-comment énumère le champ.
-- **Ne touchent pas** la colonne — les **cinq** autres écrivains de `bank_accounts` (recomptés par
-  `grep -rnE "UPDATE bank_accounts|INSERT INTO bank_accounts" crates/*/src`, qui rend exactement les écritures :
-  dépôt l. 33 `create`, 243 et 273 `upsert_primary_in_tx`, 399 `set_journal_account_id_for_company`, 499
-  `update_for_company`, 561 `archive_for_company`, 621 `flip_primary_off_for_company`, et route l. 504 (création) ;
-  `invoices.rs:4353` et `4862` sont des tests ; seuls `update_for_company` et l'`INSERT` de la route l'écrivent) :
+- **Ne touchent pas** la colonne — les **cinq** autres **fonctions du dépôt** qui écrivent `bank_accounts`
+  (périmètre : fonctions de `repositories/bank_accounts.rs` ; s'y ajoute l'`INSERT` de la route, qui l'écrit —
+  six sites d'écriture hors `update_for_company`). Recomptées par
+  `grep -rnE "UPDATE bank_accounts|INSERT INTO bank_accounts" crates/*/src`, qui rend, **hors** le commentaire de
+  `bank_accounts.rs:706` et **hors** le test `invoices.rs:4353`, les écritures suivantes : dépôt l. 33 `create`,
+  243 et 273 `upsert_primary_in_tx`, 399 `set_journal_account_id_for_company`, 499 `update_for_company`, 561
+  `archive_for_company`, 621 `flip_primary_off_for_company`, et route l. 504 (création) ; seuls
+  `update_for_company` et l'`INSERT` de la route l'écrivent (le `DELETE FROM bank_accounts` de test,
+  `invoices.rs:4862`, est hors du grep et n'est pas une écriture de la colonne) :
   `upsert_primary_in_tx` (ni l'`INSERT`, ni l'`UPDATE`, ni `is_no_op_change`), `set_journal_account_id_for_company`
   (PATCH), `archive_for_company` (DELETE), `bank_accounts::create`, et **`flip_primary_off_for_company`** —
   l'ancien principal démoté quand un autre compte est promu, **typiquement un compte décrit**. Chacun a un test
@@ -265,7 +270,7 @@ forme normalisée :
   `openEditFull` (`ba.description ?? ''`) ; envoyé `description: formDescription.trim() === '' ? null :
   formDescription` dans les **deux** payloads — `UpdateBankAccountPayload` gagne `description: string | null`
   **obligatoire** (l'omettre efface, C-26-2-19 : `npm run check` doit refuser un appel qui l'oublie) ;
-  `NewBankAccountPayload` gagne `description?: string | null` (facultatif : l'omettre ne détruit rien) ;
+  `NewBankAccountPayload` gagne `description?: string | null` (optionnel : l'omettre ne détruit rien) ;
 - tableau : la cellule « Banque » (l. 413) affiche `bankAccountName(ba)` dans un
   `<span data-testid="bank-account-name-{ba.id}">` — badges *Principal* et *Archivé* inchangés, hors du `span` ;
 - `frontend/src/lib/features/bank-accounts/BankAccountJournalLinkForm.svelte` l. 142 : l'en-tête
@@ -403,7 +408,7 @@ Définition **unique**, sans numéros de ligne (C-26-2-18) — un inventaire des
 
 - `docs/manual/fr/user-manual.tex` : nouvelle `\section{Comptes bancaires}\label{sec:comptes-bancaires}` **juste
   avant** `\section{Import bancaire}` (C-26-2-13), qui dit : où se gèrent les comptes (*Administration → Comptes
-  bancaires*) ; leurs champs (banque, **description facultative** de 60 caractères au plus, IBAN, QR-IBAN
+  bancaires*) ; leurs champs (banque, **description optionnelle** de 60 caractères au plus, IBAN, QR-IBAN
   éventuel, compte comptable lié, compte principal) ; ce que fait la description — « UBS — Personnel » dans
   **les listes de comptes** (la page elle-même, l'accueil, *Paramètres*) et **dans les sélecteurs** (import
   bancaire, réconciliation, règlement d'une facture, règlement d'une facture fournisseur, lot de paiement), où
@@ -432,13 +437,13 @@ Définition **unique**, sans numéros de ligne (C-26-2-18) — un inventaire des
   sans rapport). La 26-3 retouche d'autres lignes du même fichier : hunks distincts, PDF régénéré par la seconde
   qui fusionne.
 - PDF régénéré (`make fr` dans `docs/manual/`) et **contrôlé aplati** :
-  `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o "description facultative[^.]*"`
+  `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o "description optionnelle[^.]*"`
   — et `… | grep -c "compte bancaire de réception"` → **0**.
 - Le manuel d'administration n'est pas touché (sa phrase « le message nomme le compte bancaire », l. 2472, reste
   vraie). Manuels DE/IT/EN : inexistants (README seuls) — rien.
 - `CHANGELOG.md` : section `## [0.13.1] — Non publié` (créée si absente, **fusion par union** avec la 26-1 et la
   26-3) :
-  - `### Ajouté` : la description facultative, où elle s'affiche, lien #622 ;
+  - `### Ajouté` : la description optionnelle, où elle s'affiche, lien #622 ;
   - `### Ajouté` encore (F-9 de la P2) : `bank_accounts.csv` de l'export global gagne la colonne `description`
     **juste après `bank_name`** (les colonnes suivantes se décalent pour un lecteur positionnel) ; les réponses des
     routes des comptes bancaires et de `GET /companies/current` portent `description` (champ additif) ;
@@ -448,7 +453,7 @@ Définition **unique**, sans numéros de ligne (C-26-2-18) — un inventaire des
     porte désormais le nom complet du compte (« UBS — Personnel »).
   `README.md` « Feuille de route » : vérifié, a priori inchangé.
 - `docs/api-external.md` (C-26-2-19) : à la ligne des comptes bancaires (l. 218) ou dans une note qui la suit,
-  « *Depuis la v0.13.1* : les comptes bancaires portent un champ `description` (facultatif, 60 caractères au
+  « *Depuis la v0.13.1* : les comptes bancaires portent un champ `description` (optionnel, 60 caractères au
   plus) ; `PUT /bank-accounts/{id}` le remplace comme les autres champs — **l'omettre l'efface** ; `PATCH` (lien
   au grand livre) ne le touche pas. » — sous forme d'une **note ⁷** appelée sur la ligne 218 (celle de
   `PUT /bank-accounts/{id}`), patron des notes ⁴ à ⁶ « Depuis la v0.13.0 » du même fichier (l. 222-226).
@@ -863,3 +868,21 @@ prompt versionné `26-2-validate-prompt-p3.md`.
 
 Décomptes après remédiation P2 (recomptés) : **14 AC** ; **20 mutations** (M1-M18, M8-bis, M16-bis) ; **10 sites**
 (D1-D10) ; choix **C-26-2-1 à 30**.
+
+### Validation P3 ciblée et clôture
+
+| Date | Étape | Résumé |
+|---|---|---|
+| 2026-10-10 | validation P3 ciblée (Haiku, une lentille, commit `2746da61`) — **validation close** | 0 CRITICAL, 0 HIGH, 0 MEDIUM, 5 LOW, tous appliqués (ci-dessous). Rapport : `kesh-gate-logs/26-2-validate-p3-ciblee.md` ; prompt `26-2-validate-prompt-p3.md`. |
+
+| Finding | Traitement |
+|---|---|
+| L1 — corps de C-26-2-5 : exception de D7 encore annoncée | « Constat » réécrit (« sans exception », `'parens'`), « Écarté » annoté (renversé par C-26-2-26), titre allégé. |
+| L2 — C-26-2-22 « dit au manuel », « rare » | « Retenu » réécrit : non dit au manuel, cas inatteignable. |
+| L3 — titre de C-26-2-22 « survit à un changement de banque » | Titre : « La préservation de la description par l'upsert d'onboarding (défense en profondeur) ». |
+| L4 — recompte des écrivains : commentaire l. 706, `invoices.rs:4862`, périmètre du « cinq » | AC2 : grep rendu « hors commentaire l. 706 et hors test `invoices.rs:4353` » ; `4862` dit `DELETE`, hors grep ; périmètre déclaré (cinq fonctions du dépôt + l'`INSERT` de la route). |
+| L5 — « facultative » au manuel et au CHANGELOG contre « (optionnelle) » à l'écran | « optionnelle » / « optionnel » partout dans la fiche (Story, AC2, AC7, AC12 manuel, contrôle `pdftotext`, CHANGELOG, `api-external.md`) ; seules restent les citations de la décision du Project Lead (« **facultative** », l. 31) et le bilan historique R2-9. |
+
+**Trend de la validation** : P1 (Sonnet ×2, R et F) 0 HIGH / 8 MEDIUM / 15 LOW → P2 (Opus ×2, R et F) 0 HIGH /
+3 MEDIUM distincts / 24 LOW → P3 ciblée (Haiku ×1) 0 MEDIUM / 5 LOW. Critère d'arrêt atteint (seulement des LOW) ;
+la remédiation P2 ne touchait aucune ligne de code de production. Aucun finding reclassé en dette.

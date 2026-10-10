@@ -61,7 +61,7 @@ numéro en double se renumérote, il ne s'écrase pas.
 - **Écarté** : une unicité par société — elle refuserait un cas légitime (deux comptes « Épargne » dans
   deux banques) et ajouterait un index et un code d'erreur pour rien.
 
-### C-26-2-5 — Forme du libellé, et l'unique changement visible sans description *(amendé par C-26-2-26 : aucun changement sans description)*
+### C-26-2-5 — Forme du libellé *(amendé par C-26-2-26 : aucun changement visible sans description)*
 
 - **Retenu** : deux fonctions, et elles seules :
   - **nom du compte** : `UBS — Personnel` avec description, `UBS` sans — pour les listes qui montrent
@@ -72,10 +72,11 @@ numéro en double se renumérote, il ne s'écrase pas.
 - **Constat** : l'affichage d'aujourd'hui est **la banque et l'IBAN complet** dans les sélecteurs, la
   banque seule dans les listes (l'IBAN complet ou raccourci en dessous) — et non « la fin de l'IBAN »
   comme le dit le commentaire de #622. Sans description, ces affichages sont conservés au caractère près,
-  **à une exception** : le sélecteur de l'import bancaire écrivait `UBS (CH93…)`, seul de son espèce ; il
-  passe à `UBS — CH93…` pour que tous les sélecteurs sortent de la même fonction.
-- **Écarté** : garder la parenthèse (une variante de la fonction pour un seul site, ce que la règle DRY
-  du `CLAUDE.md` interdit) ; retirer l'IBAN des sélecteurs quand une description existe (deux homonymes
+  **sans exception** : le sélecteur de l'import bancaire, qui écrit `UBS (CH93…)`, garde sa parenthèse
+  (paramètre `ibanStyle = 'parens'` de la fonction de libellé d'option, C-26-2-26). *(Corps réécrit en P3 de
+  validation, L1 : la version d'origine annonçait une exception que C-26-2-26 a retirée.)*
+- **Écarté** *(à l'origine ; renversé par C-26-2-26, qui garde la parenthèse par un paramètre de la même fonction)* :
+  garder la parenthèse (une variante de la fonction pour un seul site) ; retirer l'IBAN des sélecteurs quand une description existe (deux homonymes
   redeviendraient indiscernables, C-26-2-4).
 - **Réversibilité** : une ligne dans chaque fonction.
 
@@ -224,11 +225,11 @@ séparées (précédent 15-1c) — écartée, la fiche est déjà partagée et l
   lettres dans la migration, les FTL, le manuel, le CHANGELOG et `api-external.md` — greper `\b60\b`.
 - **Écarté** : générer la constante TS depuis Rust (outillage neuf pour un entier).
 
-### C-26-2-22 — La description survit à un changement de banque à l'onboarding *(amendé en P2 : cas inatteignable — défense en profondeur seulement)*
+### C-26-2-22 — La préservation de la description par l'upsert d'onboarding (défense en profondeur) *(titre et corps réécrits en P3 de validation, L2-L3)*
 
 - **Contexte** : F11 (P1) — `upsert_primary_in_tx` réécrit banque, IBAN et QR-IBAN sans toucher la description.
-- **Retenu** : assumé (conséquence de C-26-2-2 : l'onboarding ne connaît pas la description) ; dit au manuel. Le
-  cas suppose de refaire l'étape 6 de l'onboarding, rare.
+- **Retenu** : `upsert_primary_in_tx` ne touche pas la description (conséquence de C-26-2-2 : l'onboarding ne
+  la connaît pas) ; **non dit au manuel** (phrase retirée en P2) — le cas est inatteignable, voir l'amendement.
 - **Amendement P2** (R2-1 = F-1, arbitrage de l'orchestrateur) : le cas n'est pas rare, il est **inatteignable** —
   l'étape 6 exige `step_completed == 6` hors démo (`routes/onboarding.rs:581`, l. 1060), la description ne se
   saisit qu'à partir de l'étape 7 (`routes/bank_accounts.rs:222`), une restauration force l'étape à 8
