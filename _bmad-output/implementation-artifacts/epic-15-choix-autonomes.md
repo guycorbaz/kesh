@@ -7862,3 +7862,15 @@ l'import (#458–#461).
 - **Retenu** : (2)→(3) dans un `describe.serial` qui partage le code rendu par le `POST` ; (1), (4), (5), (6) indépendants, chacun avec son compte (`T` + 5 chiffres + compteur, ≤ 10 caractères). (6) lettre par l'API pour avoir un groupe, puis le délettre en administrateur à la fin.
 - **Écartées** : un test unique (2)+(3) (un échec en (3) masquerait l'état de (2)).
 - **Réversible** : oui.
+
+## C-15-1c-i-7 — 15-1c-i (revue de code P1, A-3, A-1) : la phrase « N autres rapprochements » sans pluriel ; la ligne du menu au manuel confiée à la 15-1c-ii
+- **Contexte** : AC5 écrit « N autres rapprochements apparaîtront quand ceux-ci seront lettrés » ; la garde
+  `no_new_select_expression_reaches_the_frontend_dictionary` interdit une expression de sélection Fluent, et « 1 autres
+  rapprochements » serait faux. Le manuel énumère le groupe Mensuel sans la nouvelle entrée ; le manuel appartient à la
+  15-1c-ii (pas de tag entre les deux, C124 étendue par C-15-1c-1).
+- **Retenu** : « Rapprochements non affichés : { $count } — ils apparaîtront quand ceux-ci seront lettrés. » (même sens,
+  aucun accord à faire). La phrase du manuel est inscrite au « Reçu de la 15-1c-i » de la fiche 15-1c-ii, avec sa
+  commande de repérage.
+- **Écartées** : un sélecteur Fluent de pluriel (interdit par la garde) ; corriger le manuel ici (PDF régénéré dans
+  une story qui ne touche pas le manuel, et deux stories qui écriraient le même fichier).
+- **Réversible** : oui (texte).

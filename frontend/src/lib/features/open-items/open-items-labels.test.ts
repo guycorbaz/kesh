@@ -139,3 +139,13 @@ describe('AC8 — le pied, en valeur absolue suivie du sens (test 10)', () => {
 		expect(amountWithSideLabel('0.0000')).toBe('0.00');
 	});
 });
+
+describe('revue P1, E-7 — une fraction de centime ne s’affiche pas « 0.00 »', () => {
+	it('l’écart d’une sélection à 0.0040 se lit aux quatre décimales', () => {
+		expect(letterBlockerLabel({ kind: 'unbalanced', difference: new Big('0.004') })).toBe(
+			"La sélection ne s'équilibre pas : écart 0.0040.",
+		);
+		expect(amountWithSideLabel('-0.0040')).toBe('0.0040 créditeur');
+		expect(amountWithSideLabel('-500.0000')).toBe('500.00 créditeur');
+	});
+});

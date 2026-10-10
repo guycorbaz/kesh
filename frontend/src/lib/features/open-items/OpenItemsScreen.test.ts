@@ -409,3 +409,116 @@ describe('AC7, AC10 — bandeau et rôle Consultation (tests 10 et 11)', () => {
 		expect(r.queryByTestId('lettering-group-dissolve')).toBeNull();
 	});
 });
+
+/** Une promesse dont la résolution se commande depuis le test (réponse « en vol »). */
+function deferred<T>() {
+	let resolve!: (v: T) => void;
+	const promise = new Promise<T>((r) => (resolve = r));
+	return { promise, resolve };
+}
+
+describe('revue P1 — réponses tardives, pages, messages (B-1, E-1 à E-9)', () => {
+	it('E-1 : un groupe fermé pendant sa lecture ne revient pas (mutation : numéro non avancé)', async () => {
+		const late = deferred<ReturnType<typeof group>>();
+		api.fetchLettering.mockReturnValueOnce(late.promise);
+		const r = mount('?accountId=7&asOf=2026-03-31&group=AA');
+		await waitFor(() => expect(r.getByTestId('lettering-group-close')).toBeTruthy());
+		await fireEvent.click(r.getByTestId('lettering-group-close'));
+		await waitFor(() => expect(r.queryByTestId('lettering-group-panel')).toBeNull());
+		late.resolve(group());
+		await new Promise((res) => setTimeout(res, 20));
+		expect(r.queryByTestId('lettering-group-panel')).toBeNull();
+	});
+
+	it('E-3 : la liste d’un compte quitté, arrivée en retard, est ignorée (mutation : gardes `seq` retirées)', async () => {
+		const late = deferred<ReturnType<typeof view>>();
+		api.fetchOpenItems.mockReturnValueOnce(late.promise);
+		api.fetchOpenItems.mockResolvedValueOnce(view({ accountId: 8, items: [item({ lineId: 80 })] }));
+		const r = mount('?accountId=7&asOf=2026-03-31');
+		await waitFor(() => expect(api.fetchOpenItems).toHaveBeenCalledWith(7, '2026-03-31', 0, 50));
+		await fireEvent.change(r.getByTestId('open-items-account'), { target: { value: '8' } });
+		await waitFor(() => expect(r.getByTestId('open-item-row-80')).toBeTruthy());
+		late.resolve(view({ items: [item({ lineId: 70 })] }));
+		await new Promise((res) => setTimeout(res, 20));
+		expect(r.queryByTestId('open-item-row-70')).toBeNull();
+		expect(r.getByTestId('open-item-row-80')).toBeTruthy();
+	});
+
+	it('E-3 : changer de compte depuis la page 2 repart en page 1 (mutation : `offset = 0` retiré)', async () => {
+		api.fetchOpenItems.mockResolvedValueOnce(view({ total: 60 }));
+		const r = mount('?accountId=7&asOf=2026-03-31');
+		await waitFor(() => expect(r.getByTestId('open-items-next')).toBeTruthy());
+		api.fetchOpenItems.mockResolvedValueOnce(view({ offset: 50, total: 60 }));
+		await fireEvent.click(r.getByTestId('open-items-next'));
+		await waitFor(() => expect(api.fetchOpenItems).toHaveBeenLastCalledWith(7, '2026-03-31', 50, 50));
+		await fireEvent.change(r.getByTestId('open-items-account'), { target: { value: '8' } });
+		await waitFor(() => expect(api.fetchOpenItems).toHaveBeenLastCalledWith(8, '2026-03-31', 0, 50));
+	});
+
+	it('B-1 : une dernière page vidée par un lettrage se rabat sur la dernière page non vide', async () => {
+		api.fetchOpenItems.mockResolvedValueOnce(view({ total: 52 }));
+		const r = mount('?accountId=7&asOf=2026-03-31');
+		await waitFor(() => expect(r.getByTestId('open-items-next')).toBeTruthy());
+		api.fetchOpenItems.mockResolvedValueOnce(
+			view({
+				offset: 50,
+				total: 52,
+				items: [
+					item({ lineId: 51, debit: '10.0000', credit: '0.0000' }),
+					item({ lineId: 52, debit: '0.0000', credit: '10.0000' }),
+				],
+			}),
+		);
+		await fireEvent.click(r.getByTestId('open-items-next'));
+		await waitFor(() => expect(r.getByTestId('open-item-select-51')).toBeTruthy());
+		await fireEvent.click(r.getByTestId('open-item-select-51'));
+		await fireEvent.click(r.getByTestId('open-item-select-52'));
+		// Après le lettrage : la page 2 est vide (total 50), la vue relit la page 1.
+		api.fetchOpenItems.mockResolvedValueOnce(view({ offset: 50, total: 50, items: [] }));
+		api.fetchOpenItems.mockResolvedValueOnce(view({ offset: 0, total: 50, items: [item({ lineId: 1 })] }));
+		await fireEvent.click(r.getByTestId('open-items-letter'));
+		await waitFor(() => expect(api.fetchOpenItems).toHaveBeenLastCalledWith(7, '2026-03-31', 0, 50));
+		await waitFor(() => expect(r.getByTestId('open-item-row-1')).toBeTruthy());
+	});
+
+	it('E-5 : le message d’un lettrage disparaît au changement de compte', async () => {
+		const r = mount('?accountId=7&asOf=2026-03-31');
+		await waitFor(() => expect(r.getByTestId('open-item-select-1')).toBeTruthy());
+		await fireEvent.click(r.getByTestId('open-item-select-1'));
+		await fireEvent.click(r.getByTestId('open-item-select-2'));
+		await fireEvent.click(r.getByTestId('open-items-letter'));
+		await waitFor(() => expect(r.getByTestId('open-items-message')).toBeTruthy());
+		await fireEvent.change(r.getByTestId('open-items-account'), { target: { value: '8' } });
+		await waitFor(() => expect(r.queryByTestId('open-items-message')).toBeNull());
+	});
+
+	it('E-9 : le même code ressaisi après un échec relit le groupe', async () => {
+		api.fetchLettering.mockRejectedValueOnce(new Error('réseau'));
+		const r = mount('?asOf=2026-03-31&group=AA');
+		await waitFor(() => expect(r.getByTestId('lettering-group-error')).toBeTruthy());
+		await fireEvent.input(r.getByTestId('open-items-code'), { target: { value: 'AA' } });
+		await fireEvent.click(r.getByTestId('open-items-code-open'));
+		await waitFor(() => expect(r.getByTestId('lettering-group-origin')).toBeTruthy());
+		expect(api.fetchLettering).toHaveBeenCalledTimes(2);
+	});
+
+	it('E-4 : un champ date vidé retrouve la date de la vue, sans rien recharger', async () => {
+		const r = mount('?accountId=7&asOf=2026-03-31');
+		await waitFor(() => expect(api.fetchOpenItems).toHaveBeenCalled());
+		const calls = api.fetchOpenItems.mock.calls.length;
+		const input = r.getByTestId('open-items-as-of') as HTMLInputElement;
+		await fireEvent.change(input, { target: { value: '' } });
+		expect(input.value).toBe('2026-03-31');
+		expect(api.fetchOpenItems.mock.calls.length).toBe(calls);
+	});
+
+	it('E-6 : échec des comptes, ou aucun compte lettrable — dit à l’écran', async () => {
+		fetchAccountsMock.mockRejectedValueOnce(new Error('réseau'));
+		const a = mount('?asOf=2026-03-31');
+		await waitFor(() => expect(a.getByTestId('open-items-accounts-error')).toBeTruthy());
+		a.unmount();
+		fetchAccountsMock.mockResolvedValueOnce([account({ letterable: false })]);
+		const b = mount('?asOf=2026-03-31');
+		await waitFor(() => expect(b.getByTestId('open-items-no-account')).toBeTruthy());
+	});
+});

@@ -75,6 +75,7 @@
 	const today = todayLocal();
 
 	let accounts = $state<AccountResponse[]>([]);
+	let accountsStatus = $state<'loading' | 'ready' | 'error'>('loading');
 	let accountId = $state<number | null>(null);
 	let asOf = $state<string>('');
 	let groupCode = $state<string | null>(null);
@@ -116,20 +117,31 @@
 		try {
 			// Archivés compris : un compte archivé reste lettrable (C96).
 			accounts = (await fetchAccounts(true)).filter((a) => a.letterable);
+			accountsStatus = 'ready';
 		} catch {
 			accounts = [];
+			accountsStatus = 'error';
 		}
 	}
 
 	async function loadList() {
+		// Le numéro avance AUSSI quand rien n'est demandé : une réponse encore en vol
+		// pour l'état précédent ne doit pas réapparaître (revue P1, E-1).
+		const seq = ++listSeq;
 		if (accountId === null) {
 			list = { status: 'idle' };
 			return;
 		}
-		const seq = ++listSeq;
 		list = { status: 'loading' };
 		try {
-			const data = await fetchOpenItems(accountId, asOf, offset, OPEN_ITEMS_PAGE_SIZE);
+			let data = await fetchOpenItems(accountId, asOf, offset, OPEN_ITEMS_PAGE_SIZE);
+			// Une page devenue vide (sa dernière ligne lettrée, une écriture supprimée) :
+			// la vue se rabat sur la dernière page non vide — le serveur ne borne pas
+			// l'offset (revue P1, B-1 = E-2).
+			if (seq === listSeq && data.items.length === 0 && data.total > 0 && offset > 0) {
+				offset = Math.floor((data.total - 1) / OPEN_ITEMS_PAGE_SIZE) * OPEN_ITEMS_PAGE_SIZE;
+				data = await fetchOpenItems(accountId, asOf, offset, OPEN_ITEMS_PAGE_SIZE);
+			}
 			if (seq === listSeq) list = { status: 'ready', data };
 		} catch (err) {
 			if (seq !== listSeq) return;
@@ -140,11 +152,11 @@
 	}
 
 	async function loadProposals() {
+		const seq = ++proposalsSeq;
 		if (accountId === null) {
 			proposals = null;
 			return;
 		}
-		const seq = ++proposalsSeq;
 		proposals = { status: 'loading' };
 		try {
 			const data = await fetchProposals(accountId);
@@ -166,11 +178,11 @@
 
 	async function loadGroup() {
 		const code = groupCode;
+		const seq = ++groupSeq;
 		if (code === null) {
 			group = null;
 			return;
 		}
-		const seq = ++groupSeq;
 		group = { status: 'loading', code };
 		try {
 			const data = await fetchLettering(code);
@@ -210,6 +222,8 @@
 		if (accountChanged || dateChanged) {
 			offset = 0;
 			selection.clear();
+			// Un message (et le lien de code qu'il porte) parle de la vue précédente.
+			message = null;
 			void loadList();
 		}
 		// Les propositions ne suivent pas la date (calculées aujourd'hui, AC5).
@@ -240,6 +254,8 @@
 	function onDateChange(e: Event) {
 		const v = (e.currentTarget as HTMLInputElement).value;
 		if (isIsoDate(v)) navigate(screenUrl(url, { ...current(), asOf: v }));
+		// Champ vidé ou incomplet : il retrouve la date de la vue, jamais un état fantôme.
+		else (e.currentTarget as HTMLInputElement).value = asOf;
 	}
 
 	function onPage(next: number) {
@@ -261,7 +277,11 @@
 	function openCode(e: SubmitEvent) {
 		e.preventDefault();
 		const code = codeInput.trim();
-		if (code !== '') navigate(screenUrl(url, { ...current(), group: code }));
+		if (code === '') return;
+		// Le même code ressaisi (après un échec, ou pour relire) : l'URL ne change pas,
+		// la lecture se refait ici (revue P1, E-9).
+		if (code === groupCode) void loadGroup();
+		else navigate(screenUrl(url, { ...current(), group: code }));
 	}
 
 	function closeGroup() {
@@ -396,6 +416,19 @@
 			>
 		</form>
 	</div>
+
+	{#if accountsStatus === 'error'}
+		<p class="rounded bg-red-50 p-3 text-sm text-red-800" role="alert" data-testid="open-items-accounts-error">
+			{i18nMsg('open-items-accounts-error', "La liste des comptes n'a pas pu être chargée.")}
+		</p>
+	{:else if accountsStatus === 'ready' && accounts.length === 0}
+		<p class="text-sm text-gray-600" data-testid="open-items-no-account">
+			{i18nMsg(
+				'open-items-no-account',
+				"Aucun compte ne se lettre : seuls les comptes d'actif et de passif qui ne sont pas des comptes bancaires se lettrent.",
+			)}
+		</p>
+	{/if}
 
 	{#if message}
 		{#if message.kind === 'error'}

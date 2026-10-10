@@ -247,6 +247,22 @@ livre, s'il les compte).
   cette story.
 - **Après merge** : vérifier `gh issue view 518 --json state` (le mot-clé `closes #518` est sur la PR, squash).
 
+## Reçu de la 15-1c-i (revue de code P1, 2026-10-10)
+
+*Section ajoutée par la remédiation de la revue de code P1 de la 15-1c-i (finding A-1). Elle ne réécrit pas cette
+fiche : elle liste ce que l'écran a changé et que **cette** story doit intégrer à son T0.*
+
+1. **Le menu a une entrée neuve** — « Postes ouverts » (`nav-open-items`), groupe **Mensuel**, entre
+   « Réconciliation » et « Rapports » (`routes/(app)/+layout.svelte`). La phrase du manuel qui énumère ce groupe —
+   `docs/manual/fr/user-manual.tex`, « \emph{Mensuel} (écritures, réconciliation, rapports) », dans l'item
+   « Barre latérale gauche » de l'interface — est **fausse** depuis la 15-1c-i et n'est atteinte par aucun des
+   `grep` d'inventaire d'AC12 (`lettr`, `par l.API`, `viendra`). À corriger dans T4 avec le reste du manuel (PDF
+   régénéré, contrôle aplati) : « écritures, réconciliation, postes ouverts, rapports ». Repérage :
+   `grep -nF 'réconciliation, rapports' docs/manual/fr/*.tex`.
+2. **Textes de l'écran à reprendre au manuel tels quels** (catalogue fr-CH, clés `open-items-*`) : le bandeau de
+   frontière (`open-items-boundary`), la phrase du pied (`open-items-balance-equal`), les motifs et états
+   (`open-items-reason-*`, `open-items-state-*`).
+
 ## Dérogation règle de splitting
 
 Au grain des crates et paquets, la story est à 2, sous le seuil. Au grain fin, 11 : **trois** modules de logique —

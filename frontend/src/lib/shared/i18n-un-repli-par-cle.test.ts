@@ -141,8 +141,11 @@ const PREFIXES = [
  * clés `error-lettering-*` que le panneau du groupe lit en prévision du délettrage
  * (`-is-document`, `-line-owned-by-document`, `-all-lines-in-closed-periods`) ; les huit
  * autres clés `error-lettering-*` n'ont aucun site frontend.
+ *
+ * ⚠️ **289 → 291, +2 nommées** (revue de code P1 de la 15-1c-i) : `open-items-accounts-error` et
+ * `open-items-no-account` (74 clés `open-items-*` au FTL fr-CH, recompté par `grep -c`).
  */
-const CLES_RELEVEES = 289;
+const CLES_RELEVEES = 291;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

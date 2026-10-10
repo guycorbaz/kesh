@@ -19,9 +19,11 @@ import type {
 	OpenItemReason,
 } from './open-items.types';
 
-/** Un montant décimal en notation suisse, deux décimales. */
+/** Un montant décimal en notation suisse, deux décimales (quatre s'il porte une fraction de centime). */
 export function formatAmount(v: Big): string {
-	return formatSwissAmount(v);
+	// Une fraction de centime (les montants sont à quatre décimales) s'affiche à
+	// quatre : « 0.00 » dirait nul un écart qui ne l'est pas (revue P1, E-7).
+	return formatSwissAmount(v, v.eq(v.round(2)) ? 2 : 4);
 }
 
 /** `Exercice 2026 n° 12` — le numéro repart à 1 à chaque exercice (C127). */

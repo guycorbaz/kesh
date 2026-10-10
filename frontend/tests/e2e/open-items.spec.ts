@@ -255,27 +255,30 @@ test.describe('Postes ouverts', () => {
 		// Une seconde paire reste ouverte : la liste a des lignes, et des propositions.
 		const second = await monter(page);
 		await clearAuthStorage(page);
-		await login(page, username, 'MotDePasse12345');
-
-		await page.goto(`/open-items?accountId=${second.accountId}&group=${groupCode}`);
-		// Présence avant absence.
-		await expect(page.getByTestId(`open-item-row-${second.debitLine}`)).toBeVisible();
-		await expect(page.getByTestId(`proposal-${second.debitLine}-${second.creditLine}`)).toBeVisible();
-		await expect(page.getByTestId('lettering-group-origin')).toBeVisible();
-		await expect(page.locator('[data-testid^="open-item-select-"]')).toHaveCount(0);
-		await expect(page.getByTestId('open-items-letter')).toHaveCount(0);
-		await expect(page.locator('[data-testid^="proposal-letter-"]')).toHaveCount(0);
-		await expect(page.getByTestId('lettering-group-dissolve')).toHaveCount(0);
-		await expect(page.getByTestId('lettering-group-blocked')).toHaveCount(0);
-
-		// Le groupe lettré pour ce test reste en base, figé : un administrateur le délettre.
-		await clearAuthStorage(page);
-		await login(page);
-		const admin = await authedApiContext(page);
 		try {
-			expect((await admin.delete(`/api/v1/letterings/${groupCode}`)).status()).toBe(204);
+			await login(page, username, 'MotDePasse12345');
+
+			await page.goto(`/open-items?accountId=${second.accountId}&group=${groupCode}`);
+			// Présence avant absence.
+			await expect(page.getByTestId(`open-item-row-${second.debitLine}`)).toBeVisible();
+			await expect(page.getByTestId(`proposal-${second.debitLine}-${second.creditLine}`)).toBeVisible();
+			await expect(page.getByTestId('lettering-group-origin')).toBeVisible();
+			await expect(page.locator('[data-testid^="open-item-select-"]')).toHaveCount(0);
+			await expect(page.getByTestId('open-items-letter')).toHaveCount(0);
+			await expect(page.locator('[data-testid^="proposal-letter-"]')).toHaveCount(0);
+			await expect(page.getByTestId('lettering-group-dissolve')).toHaveCount(0);
+			await expect(page.getByTestId('lettering-group-blocked')).toHaveCount(0);
 		} finally {
-			await disposeContextSafe(admin);
+			// Le groupe lettré pour ce test resterait en base, figé, même sur un échec
+			// (revue P1, A-8) : un administrateur le délettre.
+			await clearAuthStorage(page);
+			await login(page);
+			const admin = await authedApiContext(page);
+			try {
+				expect((await admin.delete(`/api/v1/letterings/${groupCode}`)).status()).toBe(204);
+			} finally {
+				await disposeContextSafe(admin);
+			}
 		}
 	});
 });

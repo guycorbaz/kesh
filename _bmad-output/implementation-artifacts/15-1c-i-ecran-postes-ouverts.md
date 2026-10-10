@@ -483,6 +483,42 @@ Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
 
 ## Change Log
 
+### Revue de code P1 — 2026-10-10 (Sonnet 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
+
+**Prompt** : `15-1c-i-review-prompt-p1.md` (diff `4d5fd06c..be6afc26`, après rebase sur `main` — 15-1c-0 fusionnée,
+arbre de base identique à `230a635d`). **Rapports** : `kesh-gate-logs/15-1c-i-review-p1-{B,E,A}.md` — B **0 C / 0 H / 1 M /
+6 L**, E **0 / 0 / 3 M / 6 L**, A **0 / 0 / 1 M / 7 L**. Axes déclarés : B axes 1–5, E axes 1–4 et 5 en partie, A axe 6 et
+la conformité ; non exercée par les trois : toute exécution (reprise ici : mutations, gates). Les MEDIUM vérifiés par
+`grep -nF` avant correction (`Seq` : trois branches nulles sans avance du numéro ; `offset = 0` seul site ; manuel ligne 133).
+
+| finding | verdict |
+|---|---|
+| B-1 = E-2 (= A-2 LOW) MEDIUM — dernière page vidée par un lettrage : « 51–50 sur 50 », « Aucun poste ouvert » | **corrigé** : `loadList` se rabat sur la dernière page non vide ; test et mutation R4 rouge |
+| E-1 (= B-2 LOW) MEDIUM — un groupe fermé en cours de lecture revient | **corrigé** : les trois numéros de requête avancent aussi sur la branche « rien à lire » ; test (réponse différée) et mutation R1bis rouge |
+| E-3 MEDIUM — `offset = 0` et gardes `seq` retirables sans rougir | **corrigé** : deux tests (page 2 → autre compte ; liste tardive d'un compte quitté), mutations R3 et R2 rouges |
+| A-1 MEDIUM — le manuel énumère le groupe Mensuel sans « Postes ouverts » | **reclassé en dette suivie** (règle d'exception) : propriétaire la 15-1c-ii (le manuel est à elle, pas de tag entre les deux) — « Reçu de la 15-1c-i » ajouté à sa fiche avec la commande de repérage ; choix C-15-1c-i-7 |
+| E-4 = B-5 LOW — champ date vidé | **corrigé** (le champ retrouve la date de la vue) ; test |
+| E-5 = B-7 LOW — message et lien de code d'une vue quittée | **corrigé** (message vidé au changement de compte ou de date) ; test, mutation R5bis rouge |
+| E-6 = B-4 LOW — échec des comptes muet, aucun compte lettrable muet | **corrigé** : deux messages (`open-items-accounts-error`, `open-items-no-account`, ×4 locales) ; test |
+| E-7 LOW — fraction de centime affichée « 0.00 » | **corrigé** : quatre décimales quand le montant porte une fraction de centime ; test, mutation R7 rouge |
+| E-9 LOW — même code ressaisi après un échec | **corrigé** ; test, mutation R6 rouge |
+| E LOW — `asOf` omis à l'API sans rougir | **corrigé** : `open-items.api.test.ts` ; mutation R8 rouge |
+| A-8 LOW — nettoyage E2E du scénario (6) hors `finally` | **corrigé** |
+| A-3 LOW — phrase « N autres » | **consigné** C-15-1c-i-7 (sans pluriel, garde des sélecteurs Fluent) |
+| B-3 LOW — sélection vidée après une proposition | **accepté** : C-15-1c-i-3 |
+| B-6 = E-8 = A-5 LOW — `today` figé au montage | **accepté** : la date par défaut est lue au chargement, comme l'URL qu'elle écrit ; un rechargement la relit |
+| A-4 LOW — aide en `title` | **accepté** : C-15-1c-i-5 |
+| A-6 LOW — infobulle vide hors des trois causes | **accepté** : aucune cause n'est à inventer ; la fiche n'en prescrit que trois |
+| A-7 LOW — « par l'API » et « l'écran viendra » | **sans objet ici** : déjà à la 15-1c-ii |
+
+Décomptes après remédiation (recomptés) : **97** tests Vitest de l'écran (86 + 11 : 8 à l'écran, 1 aux libellés, 2 à
+l'API — nouveau fichier), `test:unit` complet **122 fichiers / 1264 tests** ; **74** clés `open-items-*` par locale ;
+`sitesTotal` 2015 → **2017** ; garde « un repli par clé » 289 → **291** ; garde « libellé en dur » inchangée (60).
+**Gate backend complet au commit de développement `be6afc26`** (base `kesh_1ci` remise à zéro, sans redémarrer MariaDB) :
+`scripts/test-fast.sh` **3338 passés, 5 ignorés** (`kesh-gate-logs/15-1c-i-gate-dev.log`). La remédiation **touche du code
+de production** (l'écran) : une passe P2 complète suit. Signal D5 : levé au sens strict (P1 : trois MEDIUM), mais ce sont des
+défauts **d'origine**, distincts, aucun né d'une remédiation — pas de découpage (D5 amendé).
+
 ### Développement — 2026-10-10 (Opus 5.5, en autonomie)
 
 T0 à T8 faits sur la tête de la 15-1c-0 (`230a635d`). 86 tests Vitest neufs, 6 scénarios E2E verts sur la branche,

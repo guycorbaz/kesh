@@ -539,7 +539,10 @@ const ATTENDU = {
 	// (`routes/(app)/+layout.svelte`) est une ligne de table `navGroups`, pas un site.
 	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (que des littéraux : les
 	// motifs et les états passent par des `switch`, jamais par une clé fabriquée).
-	sitesTotal: 2015,
+	// Revue de code P1 de la 15-1c-i : **2015 → 2017** (+2) — `OpenItemsScreen.svelte`
+	// (24 → 26) : l'échec du chargement des comptes et l'absence de compte lettrable
+	// (`open-items-accounts-error`, `open-items-no-account`). Deux littéraux.
+	sitesTotal: 2017,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,
