@@ -59,4 +59,16 @@ finale de Guy. Chacun : contexte, option retenue, alternatives, réversibilité.
     rendent 404 tant que le tag `v0.13.0` n'est pas posé ; rien à corriger dans les fichiers.
   - B2, B3 (LOW) : antérieurs à la branche (intertitres de la brochure, ordre d'une ligne
     du README), laissés.
-- **P2** : passe ciblée Haiku sur la remédiation (un MEDIUM corrigé).
+- **P2** (passe ciblée Haiku, prompt `release-0.13.0-review-prompt-p2-ciblee.md`, rapport
+  `kesh-gate-logs/release-0.13.0-review-p2-F.md`) : 2 MEDIUM, 2 LOW, vérifiés par
+  `git show v0.12.1:docker-compose.yml` — régressions de la remédiation A3.
+  - F1 (MEDIUM, confirmé) : le `docker-compose.yml` de la 0.12.1 n'a pas de ligne `image:` pour
+    Kesh (seulement `build:`) — la consigne « image `:0.12.1` au lieu de `:latest` » n'y était pas
+    suivable. F2 (MEDIUM, confirmé) : il republie le port 3306. Remède : garder le compose de la
+    0.13.0 et n'y changer que la ligne `image:` (présente dans les deux compose de la 0.13.0).
+  - F3 (LOW) appliqué : « year-end » rétabli sur le site.
+  - F4 (LOW) non traité : antérieur à la branche — le gabarit `.env` du manuel écrit les
+    `MARIADB_*` décommentés avec chevrons, `.env.example` les commente. À ouvrir en issue P3.
+- Trend : P1 1 MEDIUM → P2 2 MEDIUM (nés de la remédiation P1) → remédiation P2 texte du manuel
+  seul, sans code de production. Boucle laissée à l'arbitrage de l'orchestrateur (une passe ciblée
+  P3 sur cette dernière remédiation est possible).
