@@ -2,11 +2,9 @@
 
 ## Status
 
-**ready-for-dev** — fiche créée le 2026-10-10 en autonomie (skill `bmad-create-story`) ; **validation P1 (Sonnet
-R/F : 1 HIGH, 7 MEDIUM, 12 LOW, après dédoublonnage) remédiée** le 2026-10-10 ; **validation P2 (Opus R/F : 5 MEDIUM,
-14 LOW distincts) remédiée** le 2026-10-10 ; **validation P3 (Sonnet R/F : 2 MEDIUM, 18 LOW distincts) remédiée** le
-2026-10-11 ; passe **ciblée** P4 (Haiku, une lentille, sur le commit de remédiation P3) à suivre (prompt
-`26-1-validate-prompt-p4-ciblee.md`). Choix tranchés : **C-26-1-1 à C-26-1-27**, registre
+**in-progress** — fiche créée le 2026-10-10 en autonomie (skill `bmad-create-story`) ; validation **close** le
+2026-10-11 après quatre passes (P1 Sonnet, P2 Opus, P3 Sonnet, P4 ciblée Haiku — bilan au Change Log) ; développement
+(`bmad-dev-story`) en cours. Choix tranchés : **C-26-1-1 à C-26-1-27** (et suivants), registre
 `_bmad-output/implementation-artifacts/epic-26-choix-autonomes.md`.
 
 **Issues** : [#620](https://github.com/guycorbaz/kesh/issues/620) (P1, erreur comptable) et
@@ -139,7 +137,7 @@ de Guy n'en contient aucune au 2026-10-10 (structure relevée, sans chiffre). Si
   (`parser.rs` l. ≈ 1064-1067), suit : `parse_row(…).result`. `parse_csv` (wrapper) rend la même `Err`. La décision
   vit dans `kesh-import`, pas dans la route : tout appelant en hérite.
 - **Préséances** (R2-9, F2-11, R3-10) : (0) les erreurs d'avant la boucle des lignes l'emportent toutes, dans
-  l'ordre du code : profil invalide (`validate`), encodage non supporté, `EncodingMismatch` (ci-dessous), en-têtes
+  l'ordre du code : profil invalide (`validate`), encodage non supporté, `EncodingMismatch` (traité en (1)), en-têtes
   manquants (`MissingHeader`), **garde de surcomptage** (`HeaderSkipsData`, AC5), fichier vide (`EmptyFile`), indices
   hors bornes du premier enregistrement (et, au décodage, `DecodingFailed`) ; (1) `EncodingMismatch` — il sort avant toute lecture de ligne
   (`parser.rs` l. ≈ 137-146) ; en import sans `confirmEncodingMismatch` il l'emporte, et le refus de signe n'apparaît
@@ -152,7 +150,7 @@ de Guy n'en contient aucune au 2026-10-10 (structure relevée, sans chiffre). Si
   truncated, wholeDebitColumn }` (même forme de ligne que `details.lines` de `BANK_CSV_PARTIAL_FAILURE` — variant
   `AppError::BankCsvParsePartialFailure` —, via `csv_line_error_to_payload`). **Deux messages** (C-26-1-23) :
   - `wholeDebitColumn = true` → `bank-import-csv-errors-amount-sign-refused-profile` (sans argument) : « Tous les
-    débits du fichier ont un signe contraire au réglage du profil. Réglez le sens des débits du profil (Administration
+    débits lus dans le fichier ont un signe contraire au réglage du profil. Réglez le sens des débits du profil (Administration
     → Profils bancaires), puis redéposez le fichier. » (arbitrage (1) de la P3 : « redéposez », la procédure d'import
     appartenant à la 26-3) ;
   - sinon → `bank-import-csv-errors-amount-sign-refused-lines`, `{ $count }` : « { $count } ligne(s) portent un
@@ -460,7 +458,7 @@ verts) :
 | `bank-import-profile-labels-debit-sign-negative` | neuve |
 | `bank-import-profile-errors-debit-sign-single-column` | neuve, si l'écran l'affiche (sinon ne pas la créer) |
 | `bank-import-csv-errors-amount-sign-mismatch` | neuve (AC3, message **par ligne**, affiché par AC3-bis) : « Montant de signe contraire à sa colonne — vérifier le réglage du sens des débits du profil. » |
-| `bank-import-csv-errors-amount-sign-refused-profile` | neuve (AC3, refus global quand **tous** les débits sont en défaut : « réglez le sens des débits du profil »), sans argument |
+| `bank-import-csv-errors-amount-sign-refused-profile` | neuve (AC3, refus global quand **tous** les débits lus — au moins deux — sont en défaut, `whole_debit_column` : « réglez le sens des débits du profil »), sans argument |
 | `bank-import-csv-errors-amount-sign-refused-lines` | neuve (AC3, refus global d'une ou de quelques lignes — extourne —, `{ $count }`, renvoie à la liste des lignes) |
 | `bank-import-csv-errors-header-skips-data` | neuve (AC5), avec `{ $line }` : la ligne N, ignorée, porte déjà une date ; le nombre de lignes à ignorer est trop grand |
 
@@ -939,6 +937,7 @@ structure relevé.
 | 2026-10-10 | Opus 5.5 (remédiation validation P1) | Validation P1 (Sonnet, lentilles R et F, contexte frais) : **R 0C/0H/4M/8L** (R-1 à R-12 ; le bilan du rapport disait 3M/7L, ses titres comptent 4 MEDIUM et 8 LOW — corrigé en P2, R2-7), **F 0C/1H/5M/8L** (F1 à F14). Après dédoublonnage : **1 HIGH, 7 MEDIUM, 12 LOW distincts** (MEDIUM : F2, F3=R-1, F4, F5, F6=R-4, R-3, R-5=F8). Bilan finding par finding ci-dessous. Nouvel AC3-bis (21 AC) ; choix C-26-1-14 à C-26-1-22. |
 | 2026-10-10 | Opus 5.5 (remédiation validation P2) | Validation P2 (Opus R/F) : 5 MEDIUM, 14 LOW distincts, plus l'arbitrage (0) sur les données réelles (commit à part). Bilan finding par finding ci-dessous. Choix C-26-1-23, 24. |
 | 2026-10-11 | Opus 5.5 (remédiation validation P3) | Validation P3 (Sonnet R/F) : 2 MEDIUM, 18 LOW distincts. Bilan finding par finding ci-dessous. Choix C-26-1-25 à 27. |
+| 2026-10-11 | Opus 5.5 (clôture de la validation) | Validation P4 **ciblée** (Haiku, une lentille, sur le commit de remédiation P3) : 1 MEDIUM, 2 LOW, appliqués. **Validation close.** Statut → in-progress. Bilan ci-dessous. |
 
 ### Validation P1 — bilan finding par finding
 
@@ -1047,3 +1046,21 @@ c'est elle que la P4 vise.
 Reclassement P3 : aucun. Symptômes grepés après patch (valeurs) : `importez à nouveau`, `index_of_migration`,
 `relais`, `Import avec un profil existant` (hors bilans), `M1-M16`, `lignes vides non comptées` (CHANGELOG), et les
 valeurs du relevé réel (par script, sans affichage) — résidus corrigés.
+
+### Validation P4 ciblée et clôture de la validation
+
+Passe ciblée (Haiku 4.5, une lentille « chasseur de régression », contexte frais, prompt versionné
+`26-1-validate-prompt-p4-ciblee.md`, rapport `/home/gcorbaz/devel/kesh-gate-logs/26-1-validate-p4-ciblee.md`) sur le
+seul commit de remédiation P3 : **0C/0H/1M/2L**.
+
+| Finding | Sév. | Traitement |
+|---|---|---|
+| F4-1 | M | **Corrigé** — corps de C-26-1-23 au registre aligné sur C-26-1-25 (`d ≥ 2` et `e = d` ; un seul débit en défaut → message « lignes listées »). Le MEDIUM, vérifié par lecture (le `grep -F` du rapport ratait la l. 323 à cause du gras `**toutes**`), est un résidu de propagation de la P3. |
+| F4-2 | L | **Corrigé** — message AC3 : « Tous les débits **lus** dans le fichier… » ; table AC13 alignée (« au moins deux »). |
+| F4-3 | L | **Corrigé** — `EncodingMismatch` n'est plus classé deux fois dans les préséances (renvoi à (1)). |
+
+**Trend de la validation** : P1 **1 HIGH / 7 MEDIUM** (Sonnet R/F) → P2 **0 HIGH / 5 MEDIUM** (Opus R/F) → P3 **0 HIGH /
+2 MEDIUM** (Sonnet R/F) → P4 ciblée **0 HIGH / 1 MEDIUM** (Haiku, une lentille). Reclassement : aucun. La remédiation
+finale ne touche **que du texte** (fiche, registre) — **aucune ligne de production** : la boucle se clôt (règle de la
+passe ciblée). Symptômes regrepés sur `_bmad-output/` : `toutes les valeurs non nulles` (seul reste : le contexte
+historique de C-26-1-25 et le prompt P3, légitimes), `Tous les débits du fichier` (0), `(ci-dessous), en-têtes` (0).

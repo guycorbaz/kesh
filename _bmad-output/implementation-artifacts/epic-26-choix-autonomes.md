@@ -320,9 +320,11 @@ l'orchestrateur repris tels quels.
 - **Retenu** (arbitrage de l'orchestrateur : sécurité d'abord) : le refus reste **bloquant** même pour une ligne
   isolée. La conséquence est **écrite** (fiche, manuel, CHANGELOG) : un tel relevé ne s'importe pas tel quel dans cette
   version. Le relevé réel de Guy n'en contient aucune (structure relevée le 2026-10-10, sans chiffre). Le refus porte
-  `whole_debit_column` : si **toutes** les valeurs non nulles de la colonne Débit sont en défaut, le message dit
-  « réglez le sens des débits du profil » ; sinon il dit qu'il s'agit d'une ou de quelques lignes (une extourne, par
-  exemple) et l'écran **liste** les lignes en cause (arbitrage (2)).
+  `whole_debit_column` (définition fermée par C-26-1-25 : au moins **deux** débits lus et non nuls, **tous** en
+  défaut de signe — `d ≥ 2` et `e = d`) : s'il est vrai, le message dit « réglez le sens des débits du profil » ;
+  sinon (dont le cas d'un seul débit, en défaut) il dit qu'il s'agit d'une ou de quelques lignes (une extourne, par
+  exemple) et l'écran **liste** les lignes en cause (arbitrage (2)). *(Corps aligné sur C-26-1-25 le 2026-10-11,
+  finding F4-1 de la validation P4 ciblée.)*
 - **Écarté** : rendre l'extourne isolée confirmable, ou bloquer seulement au-delà d'une majorité (seuil arbitraire ;
   une ligne de mauvais signe peut aussi être un mauvais réglage sur un fichier à un seul débit).
 - **Réversible** : oui — un assouplissement ultérieur (story dédiée, issue si le cas se présente) n'enlève rien.
