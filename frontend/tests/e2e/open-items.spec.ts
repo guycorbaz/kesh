@@ -255,6 +255,7 @@ test.describe('Postes ouverts', () => {
 		// Une seconde paire reste ouverte : la liste a des lignes, et des propositions.
 		const second = await monter(page);
 		await clearAuthStorage(page);
+		let corpsVert = false;
 		try {
 			await login(page, username, 'MotDePasse12345');
 
@@ -268,16 +269,20 @@ test.describe('Postes ouverts', () => {
 			await expect(page.locator('[data-testid^="proposal-letter-"]')).toHaveCount(0);
 			await expect(page.getByTestId('lettering-group-dissolve')).toHaveCount(0);
 			await expect(page.getByTestId('lettering-group-blocked')).toHaveCount(0);
+			corpsVert = true;
 		} finally {
 			// Le groupe lettré pour ce test resterait en base, figé, même sur un échec
 			// (revue P1, A-8) : un administrateur le délettre.
 			await clearAuthStorage(page);
 			await login(page);
-			// Sans `expect` ici : un échec du nettoyage ne doit pas masquer celui du test
-			// (revue P2, B2-6).
+			// Le nettoyage n'affirme rien quand le corps a échoué — il ne masquerait pas
+			// l'échec d'origine (revue P2, B2-6) —, mais un nettoyage refusé après un corps
+			// vert fait rougir le test : sinon un groupe figé resterait en base sans signal
+			// (revue P3, P3-B1).
 			const admin = await authedApiContext(page);
 			try {
-				await admin.delete(`/api/v1/letterings/${groupCode}`);
+				const res = await admin.delete(`/api/v1/letterings/${groupCode}`);
+				if (corpsVert) expect(res.status(), 'nettoyage du groupe').toBe(204);
 			} finally {
 				await disposeContextSafe(admin);
 			}

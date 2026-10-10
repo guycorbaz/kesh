@@ -484,6 +484,26 @@ Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
 
 ## Change Log
 
+### Revue de code P3 ciblée — 2026-10-10 (Haiku 4.5, une lentille, commit `60e045a8`) — REVUE CLOSE
+
+**Prompt** : `15-1c-i-review-prompt-p3-ciblee.md`. **Rapport** : `kesh-gate-logs/15-1c-i-review-p3-B.md` — **0 C / 0 H / 1 M /
+2 L**, sept axes déclarés exercés (relus sur le fichier final par `grep -nF`) ; non exercés : toute exécution, le comportement
+réel de Chromium et d'`APIRequestContext.delete`.
+
+| finding | verdict |
+|---|---|
+| P3-B1 MEDIUM — le nettoyage de l'E2E (6) ne signale plus un `DELETE` refusé (né de la remédiation P2, B2-6) | **confirmé** (`grep -nF "await admin.delete"` → l. 280, sans assertion) et **corrigé** : le nettoyage affirme le 204 quand le corps du test est vert, et seulement alors — il ne masque pas un échec d'origine. Signal D5 : second défaut né d'une remédiation, **dans un fichier de test** ; déclaré, sans découpage |
+| P3-B2 LOW — date valide saisie puis quittée non testée | **corrigé** : test neuf |
+| P3-B3 LOW — retirer `onblur` ne ferait rougir aucun test | **réfuté par mutation** : sans `onblur={onDateBlur}`, « E-4, B2-1 » rougit (`1 failed / 101 passed`) |
+
+**La remédiation ne touche aucune ligne de code de production** (`OpenItemsScreen.test.ts`, `open-items.spec.ts`) — la boucle
+se **clôt** (§ « La passe ciblée », critère de clôture). **Trend** : P1 (Sonnet ×3, complète) **5 MEDIUM** (4 distincts,
+d'origine) → remédiation avec code de production → P2 (Opus ×3, complète) **4 MEDIUM** (dont 1 né de P1) → remédiation avec
+code de production → P3 ciblée (Haiku) **1 MEDIUM** (né de P2, dans un test) → remédiation sans code de production → close.
+**Modèles** : Opus 5.5 (développement, remédiations, orchestration), Sonnet 5.5 (P1), Opus 5.5 (P2), Haiku 4.5 (P3 ciblée).
+Choix : **C-15-1c-i-1 à 7**. Signal D5 : déclaré deux fois (P2, P3), recyclage d'un correctif chaque fois borné à une
+fonction ou à un test — pas de découpage, rendu à l'orchestrateur. Tests Vitest de l'écran : **103**.
+
 ### Revue de code P2 — 2026-10-10 (Opus 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
 
 **Prompt** : `15-1c-i-review-prompt-p2.md` (diff `4d5fd06c..13439ad8`, remédiation P1 relue d'abord). **Rapports** :

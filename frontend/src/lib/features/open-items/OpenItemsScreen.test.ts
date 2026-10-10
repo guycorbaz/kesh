@@ -520,6 +520,16 @@ describe('revue P1 — réponses tardives, pages, messages (B-1, E-1 à E-9)', (
 		expect(api.fetchOpenItems.mock.calls.length).toBe(calls);
 	});
 
+	it('P3-B2 : une date valide saisie puis quittée n’est pas réécrite', async () => {
+		const r = mount('?accountId=7&asOf=2026-03-31');
+		await waitFor(() => expect(api.fetchOpenItems).toHaveBeenCalled());
+		const input = r.getByTestId('open-items-as-of') as HTMLInputElement;
+		await fireEvent.change(input, { target: { value: '2026-02-28' } });
+		await fireEvent.blur(input);
+		expect(input.value).toBe('2026-02-28');
+		await waitFor(() => expect(api.fetchOpenItems).toHaveBeenCalledWith(7, '2026-02-28', 0, 50));
+	});
+
 	it('E2-2 : le rabattement vise la DERNIÈRE page non vide, pas la première (mutation : `offset = 0`)', async () => {
 		api.fetchOpenItems.mockResolvedValueOnce(view({ total: 160 }));
 		const r = mount('?accountId=7&asOf=2026-03-31');
