@@ -18,6 +18,7 @@
 	import type { SupplierInvoiceListItemResponse } from '$lib/features/supplier-invoices/supplier-invoices.types';
 	import { listBankAccounts } from '$lib/features/bank-accounts/bank-accounts.api';
 	import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
+	import { bankAccountOptionLabel } from '$lib/features/bank-accounts/format';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 
@@ -130,7 +131,7 @@
 				<select class="mt-1 w-full rounded border px-2 py-1" bind:value={fBankAccountId}>
 					<option value={null}>—</option>
 					{#each bankAccounts as b (b.id)}
-						<option value={b.id}>{b.bankName} — {b.iban}</option>
+						<option value={b.id}>{bankAccountOptionLabel(b)}</option>
 					{/each}
 				</select>
 			</label>

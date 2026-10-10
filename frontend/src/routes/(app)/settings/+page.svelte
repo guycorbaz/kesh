@@ -11,6 +11,7 @@
 		updateCompanyEmail
 	} from '$lib/features/settings/settings.api';
 	import type { CompanyCurrentResponse } from '$lib/features/settings/settings.types';
+	import { bankAccountName } from '$lib/features/bank-accounts/format';
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { isPlausibleEmail } from '$lib/shared/utils/email';
@@ -467,7 +468,7 @@
 			{#if data.bankAccounts.length > 0}
 				{#each data.bankAccounts as account}
 					<div class="mt-3 text-sm">
-						<p class="font-medium">{account.bankName}</p>
+						<p class="font-medium" data-testid="settings-bank-name-{account.id}">{bankAccountName(account)}</p>
 						<p class="text-text-muted">{account.iban}</p>
 						{#if account.qrIban}
 							<p class="text-text-muted">QR-IBAN: {account.qrIban}</p>

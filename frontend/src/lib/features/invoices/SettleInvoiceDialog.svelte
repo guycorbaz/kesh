@@ -20,6 +20,7 @@
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
+	import { bankAccountOptionLabel } from '$lib/features/bank-accounts/format';
 	import { dueToCentime } from './invoice-helpers';
 	import {
 		accountIdsWithRole,
@@ -247,7 +248,7 @@
 					data-testid="settle-bank"
 				>
 					{#each eligibleBankAccounts as b (b.id)}
-						<option value={b.id}>{b.bankName} — {b.iban}</option>
+						<option value={b.id}>{bankAccountOptionLabel(b)}</option>
 					{/each}
 				</select>
 				{#if noEligibleBankAccount}
