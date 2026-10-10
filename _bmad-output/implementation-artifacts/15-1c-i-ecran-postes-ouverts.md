@@ -2,7 +2,7 @@
 
 ## Status
 
-review — développée le 2026-10-10 (Opus 5.5, en autonomie). *Historique :* ready-for-dev **après la livraison de la 15-1c-0** *(et donc de la 15-1b, de la 15-1b-0, des 15-1a2-0, -i, -ii)*
+done — développée et revue le 2026-10-10 (Opus 5.5, en autonomie) ; **REVUE CLOSE** à la P3 ciblée. *Historique :* ready-for-dev **après la livraison de la 15-1c-0** *(et donc de la 15-1b, de la 15-1b-0, des 15-1a2-0, -i, -ii)*
 — créée le 2026-10-09 par le découpage de la 15-1c à la remédiation de sa validation P1 (registre **C-15-1c-1**) ;
 sa partie serveur (AC15, AC16 et leurs tests) extraite en **15-1c-0** à la remédiation de la validation P2
 (**C-15-1c-14**) ; **VALIDATION CLOSE** (P3 Sonnet ×2 : 0 au-dessus de LOW ; P4 ciblée Haiku : 0 au-dessus de LOW, LOW appliqués).
@@ -483,6 +483,24 @@ Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
   `sprint-status.yaml`, `epic-15-choix-autonomes.md` (C-15-1c-i-1 à 7), `15-1c-ii-lettrage-dans-kesh.md` (« Reçu de la 15-1c-i »)
 
 ## Change Log
+
+### Clôture — 2026-10-10 (Opus 5.5) — **REVUE CLOSE, story `done`**
+
+**Commits** (sur `origin/main` `4d5fd06c`, la 15-1c-0 fusionnée — rebase par `git rebase --onto origin/main 230a635d`, sans
+conflit, arbres de base identiques) : développement **`be6afc26`**, prompt P1 `dd30031a`, remédiation P1 **`13439ad8`**, prompt
+P2 `89e9b621`, remédiation P2 **`60e045a8`**, reçu 15-1c-ii `21572715`, prompt P3 `4eef3ad1`, remédiation P3 (tests seuls)
+**`b3329c44` = dernier commit de code**.
+
+**Gates au dernier commit de code `b3329c44`** (exécutés) : `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest ;
+base `kesh_1ci` remise à zéro avant, sans redémarrer MariaDB) **3338 passés, 5 ignorés** (`kesh-gate-logs/15-1c-i-gate-final.log`
+— même total qu'au commit de développement, la story n'ajoute aucun test Rust ; les gardes des catalogues y sont) ; frontend
+— `npm run check` **0 erreur** (27 avertissements préexistants, aucun dans `open-items`), `lint-i18n-ownership` vert,
+`test:unit` **122 fichiers / 1270 tests** (1167 à la base : +103), `build` vert (`15-1c-i-frontend.log`) ; **E2E complet**
+(port 3027, base `kesh_e2e_1ci` neuve migrée, binaire et build de `b3329c44`, montage de `docs/testing.md`, `/health` :
+`smtpConfigured: true`) : **251 passés, 9 échoués, 19 ignorés** (279) — jugés fichier par fichier contre `docs/testing.md`
+§ « Les échecs attendus » : sept KF-029 (#97) (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`,
+`:77`, `:150`) et deux KF-045 (#421) (`invoices:415`, `:439`, suite terminée à 07:17 UTC, avant 12:00) ; **aucun hors
+liste** ; les six scénarios d'`open-items.spec.ts` verts (`15-1c-i-e2e.log`).
 
 ### Revue de code P3 ciblée — 2026-10-10 (Haiku 4.5, une lentille, commit `60e045a8`) — REVUE CLOSE
 
