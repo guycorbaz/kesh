@@ -1676,7 +1676,7 @@ SAUVEGARDE_BASE=<nom> bash /volume1/docker/kesh/kesh-dump.sh
 
 \keshpath{kesh-restore.sh} lit les mêmes réglages, plus \texttt{SAUVEGARDE\_SERVICE} (\keshcommand{kesh-api}), le nom du service de Kesh dans votre compose, qu'il est seul à lire (sa garde, ci-dessous). \texttt{SAUVEGARDE\_RESEAU} désigne un réseau Docker \textbf{existant}, non \texttt{internal}, depuis lequel l'adresse de la base --- le \texttt{host} du fichier d'options --- est routable : sur Synology, la base est le paquet MariaDB~10 de DSM, \textbf{hors Docker}, jointe par l'adresse IP LAN du NAS. Ce qui fait échouer \keshcommand{frontend}, c'est son inexistence sur un NAS qui ne l'a pas créé, non la position de la base. Le plus simple : le réseau de \keshcommand{kesh-api}, qui atteint déjà la base.
 
-\textbf{Compose adapté} (reverse proxy, service renommé). Le réseau et le service suivent le compose \textbf{réellement déployé}, pas celui de ce manuel. Pour connaître les réseaux de votre conteneur Kesh --- \keshcommand{kesh-api} est le \texttt{container\_name} du compose livré ; un compose adapté peut en porter un autre, que \keshcommand{docker ps -{}-format '\{\{.Names\}\}'} liste :
+\textbf{Compose adapté} (reverse proxy, service renommé). Le réseau et le service suivent le compose \textbf{réellement déployé}, pas celui de ce manuel. Pour connaître les réseaux de votre conteneur Kesh --- \keshcommand{kesh-api} est le \texttt{container\_name} du compose livré ; un compose adapté peut en porter un autre, que \keshcommand{docker ps -a -{}-format '\{\{.Names\}\}'} liste, arrêtés compris :
 
 \begin{lstlisting}[language=bash]
 docker inspect -f '{{range $n, $_ := .NetworkSettings.Networks}}{{$n}} {{end}}' <conteneur>

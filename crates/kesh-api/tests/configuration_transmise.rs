@@ -2667,7 +2667,9 @@ const EXEC_SYNOLOGY_ATTENDUS: usize = 0;
 /// **Formes non lues** (angle mort écrit) : `docker-compose` (v1),
 /// `docker compose -p <projet> …` (le `-p` n'est pas reconnu comme option de
 /// la commande), une option à valeur (`stop -t 30 kesh-api` : `30` serait lu
-/// comme service ; avec `--timeout=30`, la commande entière n'est pas lue), `down`, `docker exec <conteneur>` — aucune dans le manuel au
+/// comme service ; de même une option longue à valeur, `logs --tail 50 kesh-api` — faux
+/// positif **bruyant** : G14 rougirait, elle ne se tairait pas ; avec `--timeout=30`, la
+/// commande entière n'est pas lue), `down`, `docker exec <conteneur>` — aucune dans le manuel au
 /// 2026-10-11 (vérifié par `grep`). Les scripts Synology ne sont pas lus ici :
 /// G16 garde leur réseau et leur service.
 #[test]
@@ -2894,7 +2896,9 @@ fn defaut_script(texte: &str, var: &str) -> Option<String> {
 ///   compose prod ; le `--format` sépare ses champs par `|` et la boucle les lit par
 ///   `IFS='|'` (un séparateur blanc avalerait une étiquette vide) ; **filet** : tout
 ///   conteneur d'image `gcorbaz/kesh` est gardé de même, quel que soit son service ;
-///   **sortie fermée** : aucun conteneur du service → `exit 1` ; verrou du dump
+///   **sortie fermée** : aucun conteneur du service → `exit 1` ; la comparaison du
+///   service au réglage et le compteur `N=$((N+1))` sont exigés, comme le refus d'une
+///   ligne illisible (champ vide, cinquième champ, trois `|` exactement) ; verrou du dump
 ///   (`dump/.verrou`), libéré par une `trap … EXIT`, **avant** de lire le dump ;
 ///   `sha256sum -c` ; `gzip -t "$SOURCE/…"` ; nom de la base lu dans le dump
 ///   (`CREATE DATABASE`) et refus s'il diffère de `SAUVEGARDE_BASE` ; sonde en
@@ -3191,6 +3195,14 @@ fn synology_sauvegarde_la_base_par_le_dump() {
         (
             "zéro conteneur du service SAUVEGARDE_SERVICE ne fait pas sortir (26-3, AC 5.4)",
             r#"\[ "\$N" -gt 0 \] \|\| \{[^\n]*aucun conteneur du service[^\n]*exit 1;"#,
+        ),
+        (
+            "la garde ne compare pas le service au réglage SAUVEGARDE_SERVICE, ou n'en compte pas les conteneurs (26-3, revue P1)",
+            r#"if \[ "\$SERVICE" = "\$SAUVEGARDE_SERVICE" \]; then\s+N=\$\(\(N\+1\)\)"#,
+        ),
+        (
+            "une ligne de docker ps illisible ne fait pas sortir (26-3, AC 5.2, revue P1)",
+            r#"if \[ -z "\$ETAT" \] \|\| \[ -z "\$IMAGE" \] \|\| \[ -z "\$NOM" \] \|\| \[ -n "\$RESTE" \] \|\| \[ "\$\{#SEPARATEURS\}" -ne 3 \]; then\s+echo "kesh-restore : ligne de docker ps illisible[^\n]*exit 1"#,
         ),
         (
             "le filet par l'image gcorbaz/kesh manque (26-3, AC 5.3)",

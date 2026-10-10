@@ -288,7 +288,7 @@ erreurs vers `/dev/null`), s'exécutent avant toute section :
    `trap nettoyer EXIT` (qui remplace la trap minimale et efface `$W` comme aujourd'hui), puis la mise en
    place et les sections 1 à 9, inchangées.
 **Prérequis exacts de ce mode** : `bash` ; coreutils (`mktemp`, `rm`, `cat`, `printf` interne, `dirname`,
-`sha256sum`, `wc`) ; `gzip` ; `grep` ; `awk` (étape 3 de `kesh-restore.sh`). **Ni `docker`, ni `openssl`,
+`sha256sum`, `wc`, `head`, `seq`, `tr`, `tail`, `cut` — complété en revue de code P1) ; `gzip` ; `grep` ; `awk` (étape 3 de `kesh-restore.sh`). **Ni `docker`, ni `openssl`,
 ni `sqlx`, ni `python3`, ni réseau** — et c'est vérifiable : en mode 0, aucun appel au vrai `docker` n'est
 possible, puisque la seule trap posée est la trap minimale. Sans la variable, la recette entière tourne
 comme aujourd'hui, section 0 en tête. C'est ce mode qui sert aux preuves de mutation.
@@ -800,6 +800,14 @@ exactement — la forme littérale de l'AC 5.2 laissait passer `|||` et `a|b|c|d
 « RECETTE VERTE ». **Mutations de `kesh-restore.sh`**, chacune jouée en section 0, script restauré et
 touché après chaque, cas rouges relevés par `grep -oE 'ÉCHEC S[0-9]+'` :
 
+⚠️ **Corrigé en revue de code P1** : au premier relevé, le faux `docker` lisait le service de la forme
+d'origine dans `$3` (`--filter`) au lieu de `$4` : sous (O), la garde d'origine ne voyait **aucun**
+conteneur, et les 13 rouges venaient d'une garde qui ne refusait rien — même ensemble par coïncidence.
+Rejoué après correction (`${4#…}`) : mêmes 13 rouges, et cette fois S4, S7, S8, S13 refusés **avec
+l'ancien libellé** (« un conteneur kesh-api est « running » / « restarting » / « paused » »), S1 passant
+(motif PASSE) — le déroulé de l'AC 6 est observé, non plus supposé. Les sept autres mutations, rejouées
+au même moment, rendent les mêmes ensembles.
+
 | Mutation | Rouges observés | Attendu (AC 6) |
 |---|---|---|
 | (O) garde d'origine `fe162504:75-79` | S1 S2 S3 S4 S5 S7 S8 S11 S12 S13 S14 S22 S23 (13) | idem |
@@ -867,7 +875,7 @@ l'écran d'import lus par clé) — compteur mis à jour, recompté par `grep -o
 (`BankImportUpload.svelte` 21 → 22, `bank-import/+page.svelte` 2 → 3).
 
 **Gates au commit de code `94f7e854` + compteur Vitest** (aucun code modifié depuis, hors fiche) :
-`cargo fmt --check` vert ; `clippy -D warnings` vert ; `scripts/test-fast.sh --ci` sur `kesh_263` remise à
+`cargo fmt --check` vert ; `clippy -D warnings` vert ; `scripts/test-fast.sh --ci` sur `kesh_263` (nom attribué par l'orchestrateur ; l'AC 12 écrivait `kesh_26_3`) remise à
 zéro : **3341 passés, 0 échec, 5 ignorés** (210 s) ; `npm run check` 0 erreur (27 avertissements
 préexistants) ; `lint-i18n-ownership` PASS ; `npm run test:unit` 1287 tests, **1 échec** au premier run
 (compteur ci-dessus), `i18n-keys.test.ts` 11/11 après correction — *la suite Vitest complète est à
@@ -882,8 +890,6 @@ mettrait dans le gate (observation P3 R-L9).
 - Spécification : analyse de contexte complète (issues, epic, scripts, gardes G14/G16/G19, écrans,
   catalogues, manuels) — fiche prête pour la validation.
 
-- Spécification : analyse de contexte complète (issues, epic, scripts, gardes G14/G16/G19, écrans,
-  catalogues, manuels) — fiche prête pour la validation.
 
 ### File List
 
@@ -1057,4 +1063,27 @@ mettrait dans le gate (observation P3 R-L9).
     Log ; `grep -nF 'cinq messages'` → seule cette entrée ; `grep -nF '17 lignes'` → l'AC 4 (« 17 lignes
     au grep brut », juste) et les entrées qui corrigent ; `grep -nF "plus, s'ils"` → 0.
   - Story passée à `in-progress`.
-
+- 2026-10-11 — **Développement** (Opus, `bmad-dev-story`) : commits `055d429d` à `cf1316b3` ; gates au
+  Dev Agent Record.
+- 2026-10-11 — **Revue de code P1 remédiée** (Sonnet, contexte frais, trois lentilles B/E/A ; prompt
+  `26-3-review-prompt-p1.md`, rapports `kesh-gate-logs/26-3-review-p1-{B,E,A}.md`, diff `f00aa6c0..cf1316b3`).
+  **Bilan : B 0H/2M/6L ; E 0H/1M/5L ; A 0H/1M/5L.** Après dédoublonnage : **2 MEDIUM distincts**, tous deux
+  vérifiés par l'orchestrateur (`grep -nF 'local s=${3#' scripts/synology/recette.sh` → `:61`).
+  - **B-M1 = E-M1 = A-M1** (le faux `docker` lisait `$3` = `--filter` : la mutation (O) ne prouvait rien)
+    → `${4#…}` ; (O) rejouée, ancien libellé observé sur S4/S7/S8/S13 ; huit mutations rejouées, ensembles
+    inchangés.
+  - **B-M2** (G16 ne tenait ni la comparaison au réglage, ni le compteur, ni le refus « illisible ») → deux
+    clauses (c) neuves ; mutations (R) et (I) appliquées à `kesh-restore.sh` : chacune rougit G16 sur sa
+    seule clause neuve.
+  - **LOW traités** : prérequis du mode 0 (`seq`, `tr`, `tail`, `cut` : script, `docs/testing.md`, fiche) ;
+    « section 0 seule » affiché avant le verdict du mode 0 ; `docker ps -a` au manuel (Kesh est arrêté à ce
+    moment) ; bouton crayon : compte actif, rôles Comptable et Administrateur ; message de réconciliation
+    cité en entier, apostrophe du catalogue ; G14 : option longue à valeur écrite en angle mort (faux
+    positif bruyant) ; Dev Agent Record : puce dupliquée retirée, nom de base expliqué.
+  - **LOW non traités, motivés** : URL `v0.13.0` des listings (le bump est celui de la release, G19) ; G20
+    insensible aux minuscules (« propre compte de banque » est juste : choix C-26-3-9) ; état `removing`
+    refusé avec « arrêtez-le d'abord » (fermé, message approximatif) ; E-L1 (états du filet non exercés par
+    la section 0) : **réfuté en partie** — la clause « filet » de G16 exige `exited|created|dead) ;;` juste
+    après l'`elif`, un état ajouté la rougit ; E-L5 (regex `docker compose` antérieure à la story) ; A-L1
+    (Vitest complète à rejouer : fait au dernier commit de code).
+  - Pas de signal de recyclage : les deux MEDIUM sont des défauts du développement, distincts.

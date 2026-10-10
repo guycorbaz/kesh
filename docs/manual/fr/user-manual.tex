@@ -355,8 +355,8 @@ l'exige (\S\ref{sec:import-dans-kesh}).
 
 \subsection{Modification d'un compte}
 
-On modifie un compte par le bouton crayon de sa ligne (\emph{Modifier le compte}) ; aucune ligne
-du plan ne s'ouvre d'un clic. Vous pouvez modifier le \textbf{nom}, le \textbf{rôle} et
+On modifie un compte actif par le bouton crayon de sa ligne (\emph{Modifier le compte}), présent pour
+les rôles Comptable et Administrateur ; aucune ligne du plan ne s'ouvre d'un clic. Vous pouvez modifier le \textbf{nom}, le \textbf{rôle} et
 l'indicateur \textbf{postable}. Le \textbf{numéro} n'est jamais modifiable après la création
 (pour préserver le journal d'audit), et le \textbf{compte parent} non plus. Le \textbf{type} se modifie librement tant que le compte ne porte aucune écriture ; au-delà, Kesh vous avertit avant de le laisser faire (voir ci-dessous).
 
@@ -1678,8 +1678,8 @@ banque à l'autre. Si l'e-banking ne le propose pas, exportez le relevé en CSV
 
 L'import n'exige pas que le compte bancaire soit lié au plan comptable ; la
 \textbf{réconciliation}, si : une transaction d'un compte bancaire sans \textbf{Compte comptable
-lié} y est refusée, avec le message « Le compte bancaire n'est lié à aucun compte comptable
-actif ».
+lié} y est refusée, avec le message « Le compte bancaire n’est lié à aucun compte comptable
+actif : liez-en un dans Administration → Comptes bancaires. »
 
 La prévisualisation montre le relevé lu --- IBAN, période, devise, soldes d'ouverture et de
 clôture (un CSV n'en a pas), nombre et liste des transactions --- avant tout enregistrement.

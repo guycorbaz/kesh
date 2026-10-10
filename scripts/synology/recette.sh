@@ -15,7 +15,8 @@
 # Section 0 seule (Story 26-3, #619) : RECETTE_SECTION=0 bash scripts/synology/recette.sh
 # joue la garde de kesh-restore.sh contre un FAUX docker (fonction bash exportée dans le
 # sous-shell de chaque cas), puis sort, avant toute mise en place. Prérequis de ce mode :
-# bash, coreutils (mktemp, rm, cat, dirname, sha256sum, wc, head), gzip, grep, awk — ni
+# bash, coreutils (mktemp, rm, cat, dirname, sha256sum, wc, head, seq, tr, tail, cut), gzip,
+# grep, awk — ni
 # docker, ni openssl, ni sqlx, ni python3, ni réseau : la seule trap posée avant la
 # section 0 efface le dossier de travail, sans appeler docker. C'est le mode des preuves
 # de mutation de la garde.
@@ -58,7 +59,7 @@ faux_docker_installer() {
             # première colonne des lignes dont la troisième vaut le service demandé.
             "ps --all --filter label=com.docker.compose.service="*" --format {{.State}}")
                 if [ "$FAUX_CODE" -ne 0 ]; then echo "Cannot connect to the Docker daemon (faux docker)" >&2; return "$FAUX_CODE"; fi
-                local s=${3#label=com.docker.compose.service=}
+                local s=${4#label=com.docker.compose.service=}
                 awk -F'|' -v s="$s" '$3 == s { print $1 }' "$FAUX_SORTIE" ;;
             *)
                 echo "FAUX DOCKER : appel inattendu : $*" >&2
@@ -144,7 +145,7 @@ cas S20 "image Kesh d'un autre service, à l'arrêt"         PASSE     "exited|g
 cas S21 "dead, image nue"                                  PASSE     "dead|gcorbaz/kesh|kesh-api|kesh-api"
 cas S22 "#619 seul, non réglé, en marche"                  FILET     "running|gcorbaz/kesh:latest|kesh|kesh-kesh-1"
 cas S23 "image nue d'un autre service, en marche"          FILET     "running|gcorbaz/kesh|autre|z\n$ARRETE"
-[ "${RECETTE_SECTION:-}" = 0 ] && verdict
+if [ "${RECETTE_SECTION:-}" = 0 ]; then echo "  (section 0 seule : les sections réelles, 1 à 9, n'ont pas été jouées)"; verdict; fi
 verifier "le vrai docker répond après la section 0" "$(type -t docker)" file
 
 ROOTPW=$(openssl rand -hex 16)
