@@ -69,6 +69,11 @@ finale de Guy. Chacun : contexte, option retenue, alternatives, réversibilité.
   - F3 (LOW) appliqué : « year-end » rétabli sur le site.
   - F4 (LOW) non traité : antérieur à la branche — le gabarit `.env` du manuel écrit les
     `MARIADB_*` décommentés avec chevrons, `.env.example` les commente. À ouvrir en issue P3.
-- Trend : P1 1 MEDIUM → P2 2 MEDIUM (nés de la remédiation P1) → remédiation P2 texte du manuel
-  seul, sans code de production. Boucle laissée à l'arbitrage de l'orchestrateur (une passe ciblée
-  P3 sur cette dernière remédiation est possible).
+- Trend : P1 1 MEDIUM → P2 2 MEDIUM (nés de la remédiation P1) → remédiation P2 : texte du
+  manuel seul, aucune ligne de code de production — **boucle close** (critère de la passe ciblée du
+  `CLAUDE.md`). Vérification de l'orchestrateur sur cette dernière remédiation, au lieu d'une P3 :
+  les deux compose de la 0.13.0 portent `image: gcorbaz/kesh:latest` (`docker-compose.yml:46`,
+  `docker-compose.prod.yml:62`) ; un binaire 0.12.1 lancé par le compose de la 0.13.0 reçoit des
+  variables vides que sa configuration tolère (`git show v0.12.1:crates/kesh-api/src/config.rs` :
+  `parse_strict_bool` rend le défaut sur `""`, `KESH_ADMIN_PASSWORD` vide vaut absent, les entiers
+  invalides retombent au défaut avec un avertissement) — raisonné, **non exécuté**.
