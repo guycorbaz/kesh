@@ -3340,7 +3340,9 @@ fn synology_sauvegarde_la_base_par_le_dump() {
 
     // (f)
     for exige in [
-        "DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/main".to_string(),
+        // Le tag exact (`v<\keshVersion>`) est tenu par G19 (`textes_coherents.rs`) :
+        // ici, seul le préfixe d'un tag de version — jamais `main` (release 0.13.0).
+        "DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v".to_string(),
         format!("curl -fsSLO \"$DEPOT/{SCRIPT_DUMP}\""),
         format!("curl -fsSLO \"$DEPOT/{SCRIPT_RECHARGEMENT}\""),
         format!("bash {DOSSIER_SYNOLOGY}/kesh-dump.sh"),
