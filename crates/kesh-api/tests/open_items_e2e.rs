@@ -815,4 +815,53 @@ async fn letterable_flag_on_accounts(pool: MySqlPool) {
     assert_eq!(resp.status(), 200);
     let banque_modifiee: Value = resp.json().await.unwrap();
     assert_eq!(banque_modifiee["letterable"], false, "{banque_modifiee}");
+
+    // Le cas opposé de chaque réponse unitaire (revue P2, E2-2) : création d'une
+    // charge → faux ; archivage du compte bancaire → faux ; réactivation d'un
+    // passif → vrai.
+    let resp = m
+        .app
+        .client
+        .post(format!("{}/api/v1/accounts", m.app.base_url))
+        .bearer_auth(&m.token)
+        .json(&json!({ "number": "4100", "name": "Charges bis", "accountType": "Expense" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+    let charge: Value = resp.json().await.unwrap();
+    assert_eq!(charge["letterable"], false, "{charge}");
+    let resp = m
+        .app
+        .client
+        .put(format!(
+            "{}/api/v1/accounts/{banque}/archive",
+            m.app.base_url
+        ))
+        .bearer_auth(&m.token)
+        .json(&json!({ "version": banque_modifiee["version"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let banque_archivee_rep: Value = resp.json().await.unwrap();
+    assert_eq!(
+        banque_archivee_rep["letterable"], false,
+        "{banque_archivee_rep}"
+    );
+    let resp = m
+        .app
+        .client
+        .put(format!(
+            "{}/api/v1/accounts/{passif}/reactivate",
+            m.app.base_url
+        ))
+        .bearer_auth(&m.token)
+        .json(&json!({ "version": archive["version"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let passif_reactive: Value = resp.json().await.unwrap();
+    assert_eq!(passif_reactive["letterable"], true, "{passif_reactive}");
 }

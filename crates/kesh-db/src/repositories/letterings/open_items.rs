@@ -611,67 +611,104 @@ pub async fn lettering_proposals(
 mod tests {
     use super::*;
 
+    /// Les tables du schéma, lues dans le squash de test (`test-schema/`, tenu égal
+    /// au schéma réel par `test_schema_guard.rs`) — un inventaire, non une liste
+    /// recopiée (revue P2, B2-1 = E2-1 = A2-1).
+    fn tables_du_schema() -> Vec<String> {
+        let squash = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/test-schema/0001_schema_squash.sql"
+        ))
+        .expect("squash de test");
+        squash
+            .lines()
+            .filter_map(|l| l.strip_prefix("CREATE TABLE `"))
+            .filter_map(|l| l.split('`').next())
+            .map(str::to_lowercase)
+            .collect()
+    }
+
+    /// Les tables du schéma, hors liste blanche, que `sql` nomme comme MOT —
+    /// sous quelque forme que ce soit (après `FROM`/`JOIN`, jointure à virgule,
+    /// `FROM(` accolé, sous-requête), casse ignorée.
+    fn tables_hors_liste(sql: &str, schema: &[String], admises: &[&str]) -> Vec<String> {
+        let normalise: String = sql
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '_' {
+                    c.to_ascii_lowercase()
+                } else {
+                    ' '
+                }
+            })
+            .collect();
+        let mots: std::collections::BTreeSet<&str> = normalise.split_whitespace().collect();
+        schema
+            .iter()
+            .filter(|t| !admises.contains(&t.as_str()) && mots.contains(t.as_str()))
+            .cloned()
+            .collect()
+    }
+
     /// Test 3 (AC2) — garde **lexicale** en liste blanche sur les constantes de
-    /// la requête A : tout nom de table qui suit `FROM` ou `JOIN` est l'un de
-    /// `journal_entry_lines`, `journal_entries`, `fiscal_years` — une table
-    /// dérivée (`(SELECT …`) est parcourue pour ses propres `FROM`/`JOIN` —, et
-    /// `paid_at` n'y figure pas. Une pièce réintroduite dans A rougit ici.
+    /// la requête A : de toutes les tables du schéma, seules
+    /// `journal_entry_lines`, `journal_entries` et `fiscal_years` y sont nommées
+    /// — sous quelque forme que ce soit —, et `paid_at` n'y figure pas. Une pièce
+    /// réintroduite dans A rougit ici. Témoins : la garde rougit sur une jointure
+    /// à virgule vers `credit_note_lines`, sur `FROM(` accolé et sur `INVOICES`.
     #[test]
     fn selection_query_reads_no_document() {
         const ADMISES: [&str; 3] = ["journal_entry_lines", "journal_entries", "fiscal_years"];
+        let schema = tables_du_schema();
+        assert!(
+            schema.len() >= 40,
+            "montage : tables du schéma lues ({})",
+            schema.len()
+        );
+        for t in ADMISES {
+            assert!(schema.iter().any(|s| s == t), "montage : {t} au schéma");
+        }
+        // Témoins : la garde voit les formes que la P1 voulait fermer.
+        for (temoin, attendue) in [
+            (
+                "SELECT 1 FROM journal_entry_lines jel, credit_note_lines cl",
+                "credit_note_lines",
+            ),
+            ("SELECT 1 FROM(invoices) i", "invoices"),
+            (
+                "SELECT 1 FROM journal_entries JOIN INVOICES i ON 1",
+                "invoices",
+            ),
+            (
+                "SELECT EXISTS (SELECT 1 FROM supplier_invoice_lines) FROM journal_entries",
+                "supplier_invoice_lines",
+            ),
+        ] {
+            assert_eq!(
+                tables_hors_liste(temoin, &schema, &ADMISES),
+                vec![attendue.to_string()],
+                "témoin : {temoin}"
+            );
+        }
         let requetes = [
             ("balance", OPEN_ITEMS_BALANCE_SQL),
             ("totaux", OPEN_ITEMS_TOTALS_SQL),
             ("page", OPEN_ITEMS_PAGE_SQL),
         ];
-        // Défense complémentaire de la liste blanche (revue P1, A) : aucun nom
-        // de table de pièce n'apparaît comme mot, sous quelque forme que ce soit
-        // (jointure à virgule, `FROM(` accolé, sous-requête `EXISTS`).
-        const PIECES: [&str; 6] = [
-            "invoices",
-            "invoice_lines",
-            "credit_notes",
-            "supplier_invoices",
-            "invoice_settlements",
-            "bank_transactions",
-        ];
         for (nom, sql) in requetes {
-            let normalise: String = sql
-                .chars()
-                .map(|c| {
-                    if c.is_alphanumeric() || c == '_' {
-                        c
-                    } else {
-                        ' '
-                    }
-                })
-                .collect();
-            for mot in normalise.split_whitespace() {
-                assert!(
-                    !PIECES.contains(&mot),
-                    "requête A ({nom}) : la table de pièce « {mot} » est nommée"
-                );
-            }
-            let mots: Vec<&str> = sql.split_whitespace().collect();
-            let mut tables = 0;
-            for w in mots.windows(2) {
-                if w[0].eq_ignore_ascii_case("FROM") || w[0].eq_ignore_ascii_case("JOIN") {
-                    if w[1].starts_with('(') {
-                        continue; // table dérivée : ses FROM/JOIN sont lus à leur tour
-                    }
-                    assert!(
-                        ADMISES.contains(&w[1]),
-                        "requête A ({nom}) : la table « {} » n'est pas admise",
-                        w[1]
-                    );
-                    tables += 1;
-                }
-            }
+            let hors = tables_hors_liste(sql, &schema, &ADMISES);
             assert!(
-                tables >= 2,
-                "montage : la requête {nom} doit nommer ses tables"
+                hors.is_empty(),
+                "requête A ({nom}) : tables non admises {hors:?}"
             );
-            assert!(!sql.contains("paid_at"), "requête A ({nom}) : paid_at lu");
+            assert!(
+                tables_hors_liste(sql, &schema, &[]).len() >= 2,
+                "montage : la requête {nom} nomme ses tables"
+            );
+            assert!(
+                !sql.to_ascii_lowercase().contains("paid_at"),
+                "requête A ({nom}) : paid_at lu"
+            );
         }
     }
 

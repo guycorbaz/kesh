@@ -391,7 +391,7 @@ Paramètre : `limit` (défaut 100, ramené entre 1 et 500) ; **pas d'`offset`** 
                            "document": null, "inOpenPeriod": true } } ] }
 ```
 
-`candidateCount` : les lignes candidates (ouvertes et lettrables à la main) ; `total` : les paires retenues avant `limit`. Chaque ligne d'une paire porte les champs de même nom de la liste des postes ouverts. Refus : ceux des postes ouverts (`404`, `409`), puis, au-delà de **2 000** lignes candidates, `422 LETTERING_PROPOSALS_TOO_MANY_LINES` — jamais une liste tronquée en silence ; les lignes des pièces ne comptent pas.
+`candidateCount` : les lignes candidates (ouvertes et lettrables à la main) ; `total` : les paires retenues avant `limit`. Chaque ligne d'une paire porte les champs de même nom de la liste des postes ouverts. Un paramètre `offset` est ignoré (la première page est toujours rendue). Refus : ceux des postes ouverts (`400` pour un `limit` non numérique, `404`, `409`), puis, au-delà de **2 000** lignes candidates, `422 LETTERING_PROPOSALS_TOO_MANY_LINES` — jamais une liste tronquée en silence ; les lignes des pièces ne comptent pas.
 
 ### Dévalider une facture — `POST /api/v1/invoices/{id}/unvalidate`
 

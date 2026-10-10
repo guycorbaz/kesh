@@ -769,7 +769,8 @@ Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
   `kesh-i18n`), au seuil sans le franchir ; au grain des modules métier, **9** — les huit de la fiche, plus
   `kesh-db/repositories/invoice_settlements` (une fonction extraite d'`amount_due`, C-15-1b-16), mécanique. Aucun
   recyclage : pas de découpage.
-- **Tests neufs** (recomptés, périmètre : `5cf0ed9a` → commit de développement) : **28** attributs de test —
+- **Tests neufs** (recomptés, périmètre : `7ba3781c` — arbre identique à `5cf0ed9a`, base d'origine avant le rebase — →
+  commit de développement `8dd84606` ; revue P2, A2-6) : **28** attributs de test —
   4 (`kesh-core`, moteur : tests 11 ×2, AC5 montants, 14), 2 (`kesh-db`, unitaires : test 3, précédence de
   `documentState`), 14 (`kesh-db/tests/open_items.rs`, dont 1 ignoré — l'`EXPLAIN`), 1 (`kesh-report`, tests 1-2),
   7 (`kesh-api`, tests 5, 6 à HTTP, 13 à HTTP, 15/20, 16, 17, 18) ; plus une entrée à la table des codes du lettrage
@@ -802,12 +803,39 @@ Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
 
 ## Change Log
 
+### Revue de code P2 — 2026-10-10 (Opus 5.5 ×3, lentilles B, E, A, complète ; remédiation Opus 5.5) — REVUE CLOSE
+
+**Prompt** : `15-1b-review-prompt-p2.md` (diff `7ba3781c..82c7d787`, axe prioritaire la remédiation P1). **Rapports** :
+`kesh-gate-logs/15-1b-review-p2-{B,E,A}.md` — B **0 C / 0 H / 0 M / 2 L**, E **0 / 0 / 0 / 3 L**, A **0 / 0 / 0 / 6 L** (dont 2
+hors diff). Recoupements : B2-1 = E2-1 = A2-1, E2-3 = A2-5 → **0 au-dessus de LOW, 8 LOW distincts**. Axes non exercés
+déclarés : toute exécution — reprise par l'orchestrateur (garde vérifiée au sol, `grep -nF "credit_note_lines"` sur
+`open_items.rs` : aucune sortie avant correction ; mutation ci-dessous ; gate complet au dernier commit de code).
+
+| finding | verdict |
+|---|---|
+| B2-1 = E2-1 = A2-1 — la garde élargie en P1 est une liste fermée de six tables : `FROM jel, credit_note_lines` passe, `INVOICES` aussi ; « quelle que soit la forme » faux | **corrigé** : inventaire des tables du **schéma** (lu dans le squash de test, 40 tables), toute table hors liste blanche nommée comme mot (casse ignorée) rougit ; quatre **témoins** (virgule vers `credit_note_lines`, `FROM(invoices)`, `INVOICES`, sous-requête vers `supplier_invoice_lines`) ; mutation « `, credit_note_lines` dans la page » **rouge** |
+| E2-2 — test 18 : création et archivage vus vrais seulement, réactivation fausse seulement | **corrigé** (charge créée → faux, compte bancaire archivé → faux, passif réactivé → vrai) |
+| E2-3 = A2-5 — refus des propositions sans le `400` du `limit`, `offset` ignoré non dit | **corrigé** (`api-external.md`) |
+| A2-2 — « 12 LOW distincts » en P1 | **corrigé** : 11 |
+| A2-6 — borne du recompte `5cf0ed9a`, hors de l'ascendance après rebase | **corrigé** (`7ba3781c`, arbre identique ; total inchangé) |
+| B2-2 — mémoire au plafond « ≈ 50 Mo » | **corrigé** au texte (≈ 80 Mo, pic ≈ 126 Mo) ; `with_capacity` non posé (code de production, gain marginal sous un plafond déjà tenu) |
+| A2-3 (hors diff) — `dateFrom`/`dateTo` de la liste des écritures, autres `NaiveDate` de requête : même absence de borne d'années que B-1 | **hors périmètre** (antérieur) : issue demandée à l'orchestrateur |
+| A2-4 (hors diff) — `user-manual.tex:1240`, `:1494` « le grand livre la montre soldée » : aucun écran du Grand livre n'affiche le lettrage | **hors périmètre** (texte des 15-1a2-i/ii ; la 15-1c affichera `letteringCode`) : signalé à l'orchestrateur avec `admin-manual.tex:2426` (P1) |
+
+**La remédiation ne touche aucune ligne de code de production** : `open_items.rs` modifié dans son seul `mod tests` (blocs
+après la ligne 610, `git diff -U0`), `open_items_e2e.rs` (test), `api-external.md`, la fiche — la boucle se **clôt**
+(§ « La passe ciblée », critère de clôture). **Trend** : P1 (Sonnet ×3) **3 MEDIUM distincts, 11 LOW** → P2 (Opus ×3,
+complète) **0 au-dessus de LOW, 8 LOW** → close. Signal D5 : non levé (sévérité en baisse, aucun recyclage au-dessus de
+LOW ; la garde lexicale de P2 est le reste d'un LOW de P1, déclaré). **Modèles** : Opus 5.5 (développement, remédiations,
+orchestration), Sonnet 5.5 (P1), Opus 5.5 (P2).
+
 ### Revue de code P1 — 2026-10-10 (Sonnet 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
 
 **Prompt** : `15-1b-review-prompt-p1.md` (diff `7ba3781c..8dd84606`, après rebase sur la 15-1b-0 fusionnée — arbres de
 base identiques). **Rapports** : `kesh-gate-logs/15-1b-review-p1-{B,E,A}.md` — B **0 C / 0 H / 1 M / 3 L**, E **0 / 0 /
 2 M / 5 L**, A **0 / 0 / 1 M / 6 L** (+ un constat hors diff). Recoupements : B-1 = E-1, B-2 = E-3, B-3 = E-4, B-4 = E-7 →
-**3 MEDIUM distincts** (B-1 = E-1, E-2, A-1) et **12 LOW distincts**. Axes non exercés déclarés par les trois lentilles :
+**3 MEDIUM distincts** (B-1 = E-1, E-2, A-1) et **11 LOW distincts** (3 + 5 + 6 = 14 bruts, moins trois doublons ;
+« 12 » écrit d'abord, recompté en P2, A2-2). Axes non exercés déclarés par les trois lentilles :
 toute exécution (cargo, SQL, mutations, `EXPLAIN`) — repris par l'orchestrateur (mutations ci-dessous, gate complet).
 
 | finding | sévérité | verdict |
@@ -822,7 +850,7 @@ toute exécution (cargo, SQL, mutations, `EXPLAIN`) — repris par l'orchestrate
 | A — test 18 : deux réponses unitaires sur quatre | LOW | **corrigé** (modification et archivage ; compte bancaire modifié → faux) |
 | A — AC4 nomme encore `amount_due_derived_joins` | LOW | **écrit** : AC8 tranche sur mesure, C-15-1b-16 ; AC non réécrit (section non modifiable au développement) — idem « aucune borne » d'AC1, précisé ici : la plage MariaDB est exigée |
 | B-2 = E-3 — toutes les lignes ouvertes chargées avant le plafond | LOW | **accepté** : écrit au doc-comment et à la fiche (AC5 « sans plafond propre »), mesuré au test 13 |
-| B-3 = E-4 — 10⁶ paires en mémoire au plafond | LOW | **réfuté en partie** : le test 14 mesure exactement 1 000 × 1 000 (537 ms, débogage) ; la mémoire (≈ 50 Mo) reste bornée par le plafond |
+| B-3 = E-4 — 10⁶ paires en mémoire au plafond | LOW | **réfuté en partie** : le test 14 mesure exactement 1 000 × 1 000 (537 ms, débogage) ; la mémoire reste bornée par le plafond — ≈ 80 Mo (80 octets par paire), pic transitoire ≈ 126 Mo à la croissance du vecteur (chiffre « ≈ 50 Mo » corrigé en P2, B2-2) |
 | B-4 = E-7 — `letterable` relu après l'écriture d'un compte : un échec rendrait 500 | LOW | **accepté** : lecture simple après un geste réussi, comme les autres relectures de réponse du dépôt |
 | E-5 — une paire peut réunir deux lignes d'une même écriture | LOW | **accepté** : un débit et un crédit égaux sur le même compte se soldent ; les lettrer est légitime |
 | (hors diff) `admin-manual.tex:2426` « le grand livre n'existe pas encore » | — | **antérieur à la story**, hors périmètre : signalé à l'orchestrateur (issue à ouvrir) |
