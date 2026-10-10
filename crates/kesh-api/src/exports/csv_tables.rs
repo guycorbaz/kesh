@@ -1741,15 +1741,8 @@ mod tests {
         }
     }
 
-    // ----- #262 — invoices serializer : complétude des colonnes souveraineté -----
+    // ----- Story 26-2a — bank_accounts : la description -----
 
-    /// Garde anti-dérive (#262) : le header DOIT lister les colonnes de la struct
-    /// `Invoice`, dans l'ordre — **toutes sauf une** : `pdf_storage_path`
-    /// (Story 25-6-b), exemptée parce qu'elle se dérive de `pdf_sha256` et ne
-    /// désigne qu'un fichier du serveur. 23 colonnes sur 24. Tout `ADD COLUMN` répercuté dans la
-    /// struct force la mise à jour de l'export ET de ce test — symétrique de la
-    /// discipline P5 (audit idempotence). Empêche qu'un champ (comme `emailed_*` /
-    /// `dunning_paused_*`, jadis oubliés) manque silencieusement de l'export.
     /// Story 26-2a (#622, AC5) — la colonne `description` suit `bank_name` ;
     /// vide sans description ; une valeur de formule est neutralisée par
     /// `csv_sanitize`.
@@ -1787,12 +1780,11 @@ mod tests {
         serialize_bank_accounts_csv(&[base, sans, formule], &mut buf).expect("serialize ok");
         let text = String::from_utf8(buf[3..].to_vec()).expect("utf8");
         let mut lines = text.lines();
-        assert!(
-            lines
-                .next()
-                .unwrap()
-                .starts_with("id;company_id;bank_name;description;iban;"),
-            "en-tête : {text}"
+        assert_eq!(
+            lines.next().unwrap(),
+            "id;company_id;bank_name;description;iban;qr_iban;is_primary;\
+             journal_account_id;archived;version;created_at;updated_at",
+            "en-tête complet"
         );
         assert!(
             lines
@@ -1814,6 +1806,15 @@ mod tests {
         assert!(ligne_formule.contains("=1+1"), "{ligne_formule}");
     }
 
+    // ----- #262 — invoices serializer : complétude des colonnes souveraineté -----
+
+    /// Garde anti-dérive (#262) : le header DOIT lister les colonnes de la struct
+    /// `Invoice`, dans l'ordre — **toutes sauf une** : `pdf_storage_path`
+    /// (Story 25-6-b), exemptée parce qu'elle se dérive de `pdf_sha256` et ne
+    /// désigne qu'un fichier du serveur. 23 colonnes sur 24. Tout `ADD COLUMN` répercuté dans la
+    /// struct force la mise à jour de l'export ET de ce test — symétrique de la
+    /// discipline P5 (audit idempotence). Empêche qu'un champ (comme `emailed_*` /
+    /// `dunning_paused_*`, jadis oubliés) manque silencieusement de l'export.
     #[test]
     fn serialize_invoices_csv_header_exhaustif() {
         let mut buf = Vec::new();

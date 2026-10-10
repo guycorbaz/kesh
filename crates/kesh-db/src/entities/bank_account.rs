@@ -127,13 +127,10 @@ mod tests {
 
     #[test]
     fn display_name_avec_description() {
+        // Séparateur : tiret cadratin U+2014 entouré d'espaces.
         assert_eq!(
             bank_account_display_name("UBS", Some("Personnel")),
             "UBS \u{2014} Personnel"
-        );
-        assert_eq!(
-            bank_account_display_name("UBS", Some("Personnel")),
-            "UBS — Personnel"
         );
     }
 

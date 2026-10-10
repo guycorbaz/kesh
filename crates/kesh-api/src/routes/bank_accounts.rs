@@ -253,8 +253,11 @@ struct ValidatedBankInput {
 /// Ensemble **fermé et nommé** : `char::is_control` (catégorie Cc, dont `\n`,
 /// `\r`, `\t`), plus les caractères de mise en page invisibles ou de contrôle
 /// bidirectionnel listés ci-dessous. **Angle mort assumé** : d'autres
-/// invisibles hors de cette liste (U+115F, U+1160, U+FFA0, sélecteurs de
-/// variante supplémentaires U+E0100 à U+E01EF…) passent.
+/// invisibles hors de cette liste passent — notamment U+115F, U+1160, U+FFA0,
+/// U+17B4 et U+17B5, les sélecteurs de variante mongols U+180B à U+180D, U+2065
+/// (non attribué), les contrôles de format musicaux U+1D173 à U+1D17A et les
+/// sélecteurs de variante supplémentaires U+E0100 à U+E01EF. Liste non exhaustive :
+/// l'ensemble refusé, lui, est fermé (revue de code P1 de la 26-2a, E2).
 fn is_forbidden_in_description(c: char) -> bool {
     c.is_control()
         || matches!(

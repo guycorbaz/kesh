@@ -820,8 +820,10 @@ valides : elle est nullable.
   schéma **arrêté avant** `20261010000001` (`migrations_before`) ; le dépôt relisant désormais `description`,
   quatre tests de `lettering_documents_backfill` ont rougi (`1054 Unknown column 'description'`). Corrigé par un
   `INSERT … RETURNING id` qui ne nomme que des colonnes anciennes. Le même motif ne se retrouve dans aucun autre
-  fichier (`grep -rln "bank_accounts::(create|upsert_primary|find|list)" crates/*/tests | xargs grep -ln
-  apply_migrations_up_to` → aucune sortie). Mode d'échec du § P6 du `CLAUDE.md` : né de l'**interaction** avec un
+  fichier : `grep -rlnE "bank_accounts::(create|upsert_primary|find|list)" crates/*/tests | xargs grep -ln
+  "apply_migrations_up_to\|migrations_before"` → `crates/kesh-db/tests/support/lettering_documents.rs` seul (par
+  son commentaire, une fois corrigé). *(La version d'abord écrite ici, en `grep` sans `-E`, était muette : l'alternance
+  `|` n'y est pas un opérateur — relevé A2 de la revue P1, refaite en ERE.)* Mode d'échec du § P6 du `CLAUDE.md` : né de l'**interaction** avec un
   test que la fiche ne touchait pas.
 - **Garde `i18n-libelle-en-dur.test.ts`** (non prévue par la fiche) : `bankAccountOptionLabel` porte le suffixe
   `Label` → candidates **61 → 62**, `conforme` **47 → 48**, généalogie nommée dans le test.
@@ -1012,4 +1014,24 @@ la remédiation P2 ne touchait aucune ligne de code de production. Aucun finding
 | Date | Étape | Résumé |
 |---|---|---|
 | 2026-10-11 | `bmad-dev-story` 26-2a (Opus 5.5) | T1-T6 faits ; migration `20261011000002` (branche non rebasée : 79 / 45), dépôt à macro de colonnes, validation, exports, écran et libellés, i18n ×4, E2E (a). 29 tests Rust, 21 Vitest, 1 Playwright ; mutations 13/13 tuées ; gate complet 3369/3369, Vitest 1308/1308, E2E 256 passés / 8 échecs attendus. Dernier commit de code `1ea3c98b`. Statut `review`. |
+| 2026-10-11 | `bmad-code-review` P1 (Sonnet ×3, B/E/A) | **0 CRITICAL, 0 HIGH, 0 MEDIUM, 11 LOW** (B 4, E 3, A 4), dont deux paires convergentes (B1 = E1 = A1 ; B3 = E3). Bilan ci-dessous ; remédiation des LOW, puis passe ciblée (Haiku). |
+
+### Revue de code P1 — bilan
+
+Rapports : `kesh-gate-logs/26-2a-review-p1-B.md`, `…-E.md`, `…-A.md` ; prompt `26-2a-review-prompt-p1.md`. Les trois
+lentilles déclarent leurs axes non exercés ; l'orchestrateur a repris les siens : ordre des `afterEach` (A) — vérifié
+à l'exécution, le compte créé par l'E2E (a) est retrouvé archivé en base ; `CANDIDATES_ATTENDUES` (E) — la garde est
+verte à 62 au gate ; PDF du manuel (B, E, A) — la 26-2a n'y change rien, aucun passage ne cite les colonnes de
+`bank_accounts`.
+
+| Finding | Sév. | Traitement |
+|---|---|---|
+| B1 / E1 / A1 — test CSV inséré entre la doc de la garde #262 et son test | L | Test déplacé avant le séparateur `#262`, sous son propre séparateur ; la doc retrouve `serialize_invoices_csv_header_exhaustif`. |
+| B2 — en-tête CSV épinglé jusqu'à `iban;` seulement | L | `assert_eq!` sur l'en-tête complet. |
+| B3 / E3 — `maxlength` en UTF-16, serveur en caractères | L | Accepté, sans changement : le navigateur est plus strict, jamais plus laxiste ; le serveur fait foi. |
+| B4 — deux `assert_eq!` redondants | L | Un seul, commenté. |
+| E2 — angle mort nommé incomplet (U+180B-180D, U+2065, U+17B4-17B5, U+1D173-1D17A) | L | Doc-comment de `is_forbidden_in_description` complétée, dite non exhaustive ; **l'ensemble refusé ne change pas** (fermé par C-26-2-28). |
+| A2 — commande de contrôle « schéma antérieur » muette (BRE) | L | Refaite en ERE au Dev Agent Record ; même conclusion. |
+| A3 — journal de mutations sans diff ni preuve de restauration | L | Le script exécuté (remplacements exacts, restauration, `touch`, contrôle `git diff --quiet` final) est versé à côté du journal : `kesh-gate-logs/26-2a-mutations.py`. |
+| A4 — la fiche demande `description: None` aux l. 659 **et** 845 d'`invoice_pdf_service.rs` | L | Imprécision de la fiche : le littéral l. 845 hérite par `..primary_bank()` ; code correct, rien à changer. |
 
