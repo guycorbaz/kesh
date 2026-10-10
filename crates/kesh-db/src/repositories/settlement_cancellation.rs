@@ -77,9 +77,9 @@ pub type SettlementCancelHit = (SettlementCancelBlocker, Option<i64>, Option<Str
 /// dé-rapprochement de la transaction `unlinking` défait **ce** lien-là —
 /// il ne peut donc pas en être empêché. Le rang 3 ne tient alors que si une
 /// **autre** transaction pointe la même écriture, lue par une requête dédiée :
-/// l'identifiant que rend `reversal_blockers` sort d'un `LIMIT 1` **sans
-/// `ORDER BY`**, et « c'est celui qu'on défait » ne prouverait pas qu'il n'y en
-/// a pas d'autre. Les annulations de règlement passent `None` : leur
+/// l'identifiant que rend `reversal_blockers` est le **plus petit** des
+/// transactions qui pointent l'écriture (un seul par type, Story 15-1b-0), et
+/// « c'est celui qu'on défait » ne prouverait pas qu'il n'y en a pas d'autre. Les annulations de règlement passent `None` : leur
 /// comportement est inchangé.
 ///
 /// Écriture introuvable (ou d'une autre société) → [`DbError::NotFound`].

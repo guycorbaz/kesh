@@ -7772,3 +7772,21 @@ l'import (#458–#461).
 - **Retenu** : les deux restent (défense en profondeur dans un SQL figé) ; la mutation éprouvée retire les deux (tuée par `post_restore_class_a.rs` et AC16 c), et la redondance est écrite ici.
 - **Écartées** : n'en garder qu'une (la garde de groupe est celle de la fiche ; la garde de ligne protège d'un futur candidat partiellement lettré).
 - **Réversible** : non après publication (P8).
+
+## C-15-1b-0-5 — 15-1b-0 (développement, T1) : `kind` transporté par un rang entier privé ; colonnes de l'`UNION ALL` typées par `CAST`
+- **Contexte** : la requête de `document_owners` doit dire le type de chaque ligne ; D1 fixe trois méthodes publiques de `DocumentKind` et rien d'autre. Les cinq blocs d'un `UNION ALL` mêlent `NULL` et colonnes typées.
+- **Retenu** : deux fonctions **privées** `rank` / `from_rank` (rang 0 à 4, dans l'ordre des variants) — le littéral SQL est produit par `rank()`, jamais écrit à la main ; un rang inconnu rend `DbError::Invariant`. Toutes les colonnes sont typées par `CAST(… AS SIGNED|CHAR)` pour que le type du résultat ne dépende pas du premier bloc.
+- **Écartées** : transporter `as_str()` en chaîne (une comparaison de chaînes de plus pour décoder) ; une méthode publique de plus (la surface fixée par D1 est de trois).
+- **Réversible** : oui.
+
+## C-15-1b-0-6 — 15-1b-0 (développement, T2/T3) : `tx` passé tel quel ; `letterings.rs:591` touché malgré « compile sans changement »
+- **Contexte** : `reversal_blockers` et `document_owners` prennent désormais un `&mut MySqlConnection` concret ; `clippy::explicit_auto_deref` (`-D warnings`) refuse alors `&mut **tx`, `&mut *tx` et `&mut *conn` là où l'auto-déréférencement suffit. La fiche (R7) annonçait `kesh-db/tests/letterings.rs:588` « déjà conforme ».
+- **Retenu** : `reversal_blockers(tx, …)` dans `reverse_owned_in_tx`, `document_owners(tx, …)` dans `first_document_owner`, `reversal_blocker(&mut tx, …)` dans la route, `&mut conn` / `&mut pool.acquire().await.unwrap()` dans les tests. L'appel de `letterings.rs:591` (relevé `:588` sur `056997b0`) **compile** sans changement mais ne passe pas `clippy` : il est adapté — **six** appels de test adaptés dans **cinq** fonctions et **trois** fichiers (la fiche en annonçait cinq, quatre, deux).
+- **Écartées** : `#[allow(clippy::explicit_auto_deref)]` (une exception pour garder une graphie).
+- **Réversible** : oui.
+
+## C-15-1b-0-7 — 15-1b-0 (développement, D5 (e)) : la branche « jointure sur l'écriture » rendue observable
+- **Contexte** : la validation P3 ciblée (P3C-4) prévoyait que la mutation (e), branche « jointure de retour sur l'écriture au lieu de `id` », pouvait rester verte : la fixture de l'oracle ne pose jamais deux pièces d'un même type sur une écriture. Constaté au développement : verte.
+- **Retenu** : l'écriture doublée de `owners_match_handwritten_expectations` (hors oracle) porte aussi **deux avoirs et deux factures fournisseurs** — une jointure sur l'écriture y rend deux lignes. Les trois branches (facture, avoir, fournisseur) rougissent alors ce test. La branche `CASE` exigée rougit, elle, la comparaison **par lot** à l'oracle (vérifié aussi l'assertion de montage du lot neutralisée).
+- **Écartées** : laisser la branche verte comme la fiche le tolérait (une mutation verte est un finding).
+- **Réversible** : oui (test seulement).

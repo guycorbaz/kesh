@@ -38,7 +38,8 @@ use sqlx::MySqlPool;
 // ---------------------------------------------------------------------------
 
 /// Les références vers `journal_entries`, triées : chacune est soit l'enfant
-/// réécrit par la modification, soit un motif de `reversal_blockers` (gel).
+/// réécrit par la modification, soit un motif de `reversal_blockers` (gel) —
+/// propriété lue par `document_owners` (rangs 3 à 7, Story 15-1b-0).
 const REFERENCES_TRIEES: &[(&str, &str, &str)] = &[
     (
         "journal_entry_lines",
@@ -101,8 +102,12 @@ const COLONNES_SANS_CLE_DECLAREES: &[(&str, &str, &str)] = &[(
     "gabarit de libellé, pas une référence",
 )];
 
-const QUOI_FAIRE: &str = "trier la référence dans `reversal_blockers` (gel) ou la déclarer ici \
-                          avec sa justification";
+/// Story 15-1b-0 (T3) : un type de pièce propriétaire neuf s'ajoute à
+/// `DocumentKind` / `document_owners` (rangs 3 à 7), non plus à la requête de
+/// `reversal_blockers`, réduite aux rangs 1, 2 et 8.
+const QUOI_FAIRE: &str = "trier la référence dans `DocumentKind` / `document_owners` (propriété) \
+                          ou dans `reversal_blockers` (rangs 1, 2, 8), ou la déclarer ici avec sa \
+                          justification";
 
 async fn cles_vers(pool: &MySqlPool, table: &str) -> BTreeSet<(String, String)> {
     sqlx::query_as::<_, (String, String)>(

@@ -136,7 +136,8 @@ use sqlx::{MySql, MySqlConnection, Transaction};
 use kesh_core::lettering::{self as core_lettering, LetteringRefusal};
 
 use crate::entities::audit_log::NewAuditLogEntry;
-use crate::errors::{DbError, ReversalBlocker, map_db_error};
+use crate::errors::{DbError, map_db_error};
+use crate::repositories::journal_entries::DocumentKind;
 use crate::repositories::{audit_log, fiscal_years, journal_entries};
 
 /// Origine d'un groupe de lettrage (colonne `lettering_origin`, contrainte
@@ -742,41 +743,34 @@ pub async fn document_group_frozen_by_periods(
     Ok(None)
 }
 
-/// R5 — la première ligne dont l'écriture appartient à une **pièce** (motifs
-/// `OwnedByInvoice`, `OwnedByCreditNote`, `OwnedBySupplierInvoice`,
-/// `OwnedBySettlement` de `reversal_blockers`, rangs 3 à 6 — réutilisés, jamais
-/// une seconde liste), dans l'ordre des lignes.
+/// R5 — la première ligne (dans l'ordre des lignes) dont l'écriture appartient
+/// à une **pièce** : un propriétaire dont le type
+/// [`DocumentKind::blocks_manual_lettering`] — la liste R5 écrite une fois, sur
+/// [`DocumentKind`], jamais une seconde ici —, rendu avec le motif
+/// [`DocumentKind::reversal_blocker`], l'identifiant et le numéro de la pièce.
+///
+/// **Un** appel à [`journal_entries::document_owners`] pour tout le groupe
+/// (Story 15-1b-0, D3). Une écriture absente ou d'une autre société n'a pas de
+/// propriétaire — inatteignable : les lignes viennent de l'acte 1, borné par
+/// société.
 async fn first_document_owner(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,
     lines: &[LineRow],
 ) -> Result<Option<DbError>, DbError> {
-    let mut vues = BTreeSet::new();
-    for line in lines {
-        if !vues.insert(line.entry_id) {
-            continue;
-        }
-        let motifs =
-            journal_entries::reversal_blockers(&mut **tx, company_id, line.entry_id).await?;
-        if let Some((blocker, document_id, document_label)) =
-            motifs.into_iter().find(|(b, _, _)| {
-                matches!(
-                    b,
-                    ReversalBlocker::OwnedByInvoice
-                        | ReversalBlocker::OwnedByCreditNote
-                        | ReversalBlocker::OwnedBySupplierInvoice
-                        | ReversalBlocker::OwnedBySettlement
-                )
+    let entries: Vec<i64> = lines.iter().map(|l| l.entry_id).collect();
+    let owners = journal_entries::document_owners(tx, company_id, &entries).await?;
+    Ok(lines.iter().find_map(|line| {
+        owners
+            .get(&line.entry_id)?
+            .iter()
+            .find(|o| o.kind.blocks_manual_lettering())
+            .map(|o| DbError::LetteringLineOwnedByDocument {
+                blocker: o.kind.reversal_blocker(),
+                document_id: Some(o.id),
+                document_label: o.number.clone(),
             })
-        {
-            return Ok(Some(DbError::LetteringLineOwnedByDocument {
-                blocker,
-                document_id,
-                document_label,
-            }));
-        }
-    }
-    Ok(None)
+    }))
 }
 
 /// Vérifie qu'une ligne du groupe porte l'exercice que l'appelant tient (mode
@@ -846,13 +840,12 @@ fn build_group(
 /// 15-1a2-ii (factures fournisseurs) le consomme tel quel.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocumentRef {
-    /// `"invoice"` (facture client) ou `"supplierInvoice"` (facture
-    /// fournisseur, Story 15-1a2-ii) — les valeurs mêmes
-    /// de `document.type` de la vue des postes ouverts (15-1b). ⚠️ Littéral
-    /// **provisoire** : la 15-1b-0, mergée après, type ce champ en
-    /// `DocumentKind` et le sérialise par `DocumentKind::as_str` (sa T2,
-    /// C-15-1b-0-3).
-    pub document_type: &'static str,
+    /// [`DocumentKind::Invoice`] (facture client) ou
+    /// [`DocumentKind::SupplierInvoice`] (facture fournisseur, Story
+    /// 15-1a2-ii), sérialisé par [`DocumentKind::as_str`] — la valeur même de
+    /// `document.type` de la vue des postes ouverts (15-1b). Typé (Story
+    /// 15-1b-0, D1 bis ; C-15-1b-0-3) : aucun littéral ne peut plus y entrer.
+    pub document_type: DocumentKind,
     pub id: i64,
     /// Le numéro de la pièce ; `None` quand elle n'en a pas (facture
     /// fournisseur sans numéro, 15-1a2-ii) — la clé `documentNumber` est alors
@@ -883,7 +876,7 @@ fn audit_details(group: &LetteringGroup, document: Option<&DocumentRef>) -> serd
         })).collect::<Vec<_>>(),
     });
     if let (Some(doc), Some(objet)) = (document, details.as_object_mut()) {
-        objet.insert("documentType".into(), doc.document_type.into());
+        objet.insert("documentType".into(), doc.document_type.as_str().into());
         objet.insert("documentId".into(), doc.id.into());
         objet.insert(
             "documentNumber".into(),
@@ -1347,7 +1340,7 @@ async fn discover_invoice_document(
         account_id,
         lines,
         document: DocumentRef {
-            document_type: "invoice",
+            document_type: DocumentKind::Invoice,
             id: invoice_id,
             number,
         },
@@ -1706,7 +1699,7 @@ async fn discover_supplier_invoice_document(
         account_id,
         lines,
         document: DocumentRef {
-            document_type: "supplierInvoice",
+            document_type: DocumentKind::SupplierInvoice,
             id: supplier_invoice_id,
             number,
         },
@@ -1831,7 +1824,7 @@ mod tests {
             assert!(sans.get(cle).is_none(), "{cle} sans pièce");
         }
         let doc = DocumentRef {
-            document_type: "invoice",
+            document_type: DocumentKind::Invoice,
             id: 9,
             number: None,
         };

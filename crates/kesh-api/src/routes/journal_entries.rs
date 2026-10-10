@@ -27,6 +27,7 @@ use kesh_db::entities::{
     Journal as DbJournal, JournalEntry, JournalEntryLine, JournalEntryWithLines, NewJournalEntry,
     NewJournalEntryLine,
 };
+use kesh_db::errors::map_db_error;
 use kesh_db::repositories::journal_entries::{JournalEntryListQuery, JournalEntryListResult};
 use kesh_db::repositories::{fiscal_years, journal_entries};
 
@@ -469,9 +470,17 @@ pub async fn get_journal_entry(
         .await?
         .ok_or(AppError::Database(kesh_db::errors::DbError::NotFound))?;
 
-    let blocker = journal_entries::reversal_blocker(&state.pool, company.id, id).await?;
-    let reversed_by_entry_id = journal_entries::reversed_by(&state.pool, company.id, id).await?;
-    let modification = journal_entries::modification_blocker(&state.pool, company.id, id).await?;
+    // Story 15-1b-0 (D2, C-15-1b-0-1) — ce que l'écran peut faire se lit dans
+    // UNE transaction de lecture : un instantané (`REPEATABLE READ`, défaut
+    // d'InnoDB), sans quoi un motif pourrait s'afficher contre un état
+    // qu'aucun instant n'a connu. ⚠️ `find_by_id` reste hors de cette
+    // transaction — écart assumé : l'en-tête n'est pas un motif. Garde :
+    // `get_journal_entry_reads_in_one_transaction`.
+    let mut tx = state.pool.begin().await.map_err(map_db_error)?;
+    let blocker = journal_entries::reversal_blocker(&mut tx, company.id, id).await?;
+    let reversed_by_entry_id = journal_entries::reversed_by(&mut *tx, company.id, id).await?;
+    let modification = journal_entries::modification_blocker(&mut tx, company.id, id).await?;
+    tx.rollback().await.map_err(map_db_error)?;
 
     Ok(Json(JournalEntryDetailResponse {
         entry: JournalEntryResponse::from(entry),
@@ -920,5 +929,65 @@ mod tests {
         let (status, body) = body_json(resp).await;
         assert_eq!(status, StatusCode::CONFLICT);
         assert_eq!(body["error"]["code"], "ILLEGAL_STATE_TRANSITION");
+    }
+
+    /// Story 15-1b-0 (AC4, D2 ; C-15-1b-0-4) — garde LEXICALE de la
+    /// transaction de lecture de `get_journal_entry`. Le compilateur garde
+    /// `modification_blocker` (il exige une `Transaction`) mais ne voit pas une
+    /// connexion acquise à côté : `reversal_blocker` et `reversed_by` prennent
+    /// une connexion, que `state.pool.acquire()` fournirait aussi. Lit ce
+    /// fichier, tronqué à la première ligne `#[cfg(test)]`, commentaires `//`
+    /// écartés (patron `admin.rs`, test 20) ; le corps va de la signature à la
+    /// fonction suivante ; une instruction court jusqu'au `;` (rustfmt peut la
+    /// couper). Écart assumé : `find_by_id` reste sur `&state.pool`.
+    #[test]
+    fn get_journal_entry_reads_in_one_transaction() {
+        let code: String = include_str!("journal_entries.rs")
+            .lines()
+            .take_while(|l| l.trim() != "#[cfg(test)]")
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let debut = code
+            .find("pub async fn get_journal_entry(")
+            .expect("get_journal_entry introuvable");
+        let fin = code[debut + 1..]
+            .find("\npub async fn ")
+            .map_or(code.len(), |i| debut + 1 + i);
+        let corps = &code[debut..fin];
+        assert_eq!(
+            corps.matches("pool.begin()").count(),
+            1,
+            "une transaction de lecture, ouverte une fois : {corps}"
+        );
+        assert_eq!(
+            corps.matches("acquire()").count(),
+            0,
+            "aucune connexion acquise à côté de la transaction : {corps}"
+        );
+        for lecteur in ["reversal_blocker", "reversed_by", "modification_blocker"] {
+            let motif = format!("journal_entries::{lecteur}(");
+            let appels: Vec<&str> = corps
+                .match_indices(&motif)
+                .map(|(pos, _)| {
+                    let fin = corps[pos..].find(';').map_or(corps.len(), |i| pos + i);
+                    &corps[pos..fin]
+                })
+                .collect();
+            assert_eq!(
+                appels.len(),
+                1,
+                "assertion de montage : un appel de {lecteur}"
+            );
+            assert!(
+                !appels[0].contains("state.pool") && appels[0].contains("tx,"),
+                "{lecteur} doit lire dans la transaction, non sur le pool : {}",
+                appels[0]
+            );
+        }
+        assert!(
+            corps.contains("journal_entries::find_by_id(&state.pool"),
+            "écart assumé (D2) : find_by_id hors transaction — s'il change, relire la garde"
+        );
     }
 }

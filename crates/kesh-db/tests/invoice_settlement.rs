@@ -580,14 +580,21 @@ async fn annuler_l_unique_reglement_remet_la_facture_a_regler(pool: MySqlPool) {
         "la créance renaît"
     );
 
-    let origine = journal_entries::reversal_blocker(&pool, seeded.company_id, entry_id)
-        .await
-        .unwrap();
+    let origine = journal_entries::reversal_blocker(
+        &mut pool.acquire().await.unwrap(),
+        seeded.company_id,
+        entry_id,
+    )
+    .await
+    .unwrap();
     assert_eq!(origine.map(|h| h.0), Some(ReversalBlocker::AlreadyReversed));
-    let inverse =
-        journal_entries::reversal_blocker(&pool, seeded.company_id, done.reversal_journal_entry_id)
-            .await
-            .unwrap();
+    let inverse = journal_entries::reversal_blocker(
+        &mut pool.acquire().await.unwrap(),
+        seeded.company_id,
+        done.reversal_journal_entry_id,
+    )
+    .await
+    .unwrap();
     assert_eq!(inverse.map(|h| h.0), Some(ReversalBlocker::IsAReversal));
 
     assert_eq!(

@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev *(extraite de la 15-1b le 2026-10-09 à la remédiation de sa validation P2 — signal D5 levé
+review *(développée le 2026-10-10 — Dev Agent Record ci-dessous ; avant :* ready-for-dev *extraite de la 15-1b le 2026-10-09 à la remédiation de sa validation P2 — signal D5 levé
 par un HIGH né d'une remédiation, C-15-1b-9 ; validation P1 remédiée le 2026-10-09 — la lecture de la
 route en une transaction, la forme et la mesure du lot fixées, l'oracle durci, les prédicats de
 `DocumentKind` publiés ; validation P2 remédiée le 2026-10-09 — `DocumentRef` typé en `DocumentKind`
@@ -383,16 +383,16 @@ est un `DocumentKind`, sérialisé par `as_str()` dans `audit_details` ; plus au
 
 ## Tasks
 
-- [ ] **T0** — Re-greper l'inventaire des appelants **et transitifs** (`modification_guard`,
+- [x] **T0** — Re-greper l'inventaire des appelants **et transitifs** (`modification_guard`,
       `modification_blocker`) sur la base réelle du développement (le tableau est relevé sur `056997b0` ; la
       15-1a2 aura pu en ajouter, par exemple dans la file commune) ; tout site neuf entre au tableau et à AC4.
       Re-greper les appelants de `first_document_owner` (`grep -n "first_document_owner" crates/kesh-db/src` ;
       deux sur `056997b0`, `:711` et `:818` ; la 15-1a2-i retouche la dissolution, `dissolve_group_inner`) et
       les littéraux de `DocumentRef` (`git grep -nE '"(invoice|supplierInvoice)"' -- crates/kesh-db/src`, D1
       bis). Étalonner `Com_stmt_execute` (AC1), lecture par `sqlx::raw_sql` — deux mesures, surcoût additif.
-- [ ] **T1** (D1, AC1) — `DocumentKind` et ses trois méthodes, `DocumentOwner`, `document_owners` (forme de
+- [x] **T1** (D1, AC1) — `DocumentKind` et ses trois méthodes, `DocumentOwner`, `document_owners` (forme de
       D1), doc-comments.
-- [ ] **T2** (D1 bis, D2, D3, AC2, AC3, AC7) — `reversal_blockers` / `reversal_blocker` réécrits ;
+- [x] **T2** (D1 bis, D2, D3, AC2, AC3, AC7) — `reversal_blockers` / `reversal_blocker` réécrits ;
       `first_document_owner` en un lot, sur les méthodes de `DocumentKind` ; `DocumentRef.document_type` typé
       `DocumentKind`, sites de construction rebranchés (D1 bis). Doc-comments qui vieillissent avec la refonte
       (validation P1, F-7 ; P2, R2-3 = F2-4), greppés **par la valeur** (`git grep -nE "Une seule requête|exécuteur
@@ -407,7 +407,7 @@ est un `DocumentKind`, sérialisé par `as_str()` dans `audit_details` ; plus au
       `letterings.rs:507-510`. Chaque site du grep est trié au Dev Agent Record (sur `056997b0`, « Une seule
       requête » rend aussi `email_templates.rs:137`, `accounts.rs:445`, `invoices.rs:563`, qui parlent d'autre
       chose).
-- [ ] **T3** (AC4) — Les appelants : route en **une** transaction de lecture pour trois lectures,
+- [x] **T3** (AC4) — Les appelants : route en **une** transaction de lecture pour trois lectures,
       `modification_blocker` sur `&mut Transaction<'_, MySql>`, garde lexicale de la route
       (`get_journal_entry_reads_in_one_transaction`), tests sur connexion acquise. Mentions : la constante
       `QUOI_FAIRE` de `journal_entries_modification.rs:104` (« trier la référence dans `reversal_blockers` (gel) ou
@@ -416,7 +416,7 @@ est un `DocumentKind`, sérialisé par `as_str()` dans `audit_details` ; plus au
       aux rangs 1, 2 et 8 : « trier la référence dans `DocumentKind` / `document_owners` (propriété) ou dans
       `reversal_blockers` (rangs 1, 2, 8), ou la déclarer ici » (validation P2, R2-6) ;
       `journal_entry_reversal_e2e.rs:1061` (commentaire) relu.
-- [ ] **T4** (D4, D5, AC5) — Module gelé, fixture SQL directe (dont l'écriture aux cinq types, et l'achat et le
+- [x] **T4** (D4, D5, AC5) — Module gelé, fixture SQL directe (dont l'écriture aux cinq types, et l'achat et le
       règlement d'une même facture fournisseur), comparaison par écriture **et par lot**, valeurs écrites, tests
       de `first_document_owner` dans `letterings.rs`, **six** mutations et leur procès-verbal.
 
@@ -467,9 +467,60 @@ touchées n'est pas celui des **appels**.)*
 
 ### Agent Model Used
 
+Opus 5.5 (développement, en autonomie — consignes de l'Epic 15).
+
 ### Completion Notes List
 
+**T0 — relevés sur `f8888750`** (base réelle du développement ; la fiche citait `056997b0`).
+
+- **Appelants de `reversal_blockers` / `reversal_blocker`** (`grep -rn "reversal_blockers\|reversal_blocker(\|modification_blocker\|modification_guard(" crates --include=*.rs`) : **aucun site neuf** — les six sites de production directs et le transitif de route du tableau, aux lignes de `f8888750` : route `routes/journal_entries.rs:472`, `:474` ; `modification_guard` `journal_entries.rs:1068` (appelée par `update` `:1529`, `delete_in_tx` `:1877`, `modification_blocker` `:1233`) ; enveloppe `:2072` ; `reverse_owned_in_tx` `:2438` ; `settlement_cancellation.rs:133` ; `letterings.rs:760` (`first_document_owner`). Tests : `invoice_settlement.rs:583`, `:588` ; `supplier_invoices_repository.rs:302`, `:728`, `:1304` ; `letterings.rs:591` ; transitif `supplier_invoices_repository.rs:750` (inchangé). Mentions : `journal_entries_modification.rs:41`, `:104` ; `journal_entry_reversal_e2e.rs:2262` (commentaire, relu : toujours vrai) ; `errors.rs:131`, `:135`, `:199`, `:1165` (« motif de `reversal_blockers` » — toujours vrai, la liste rend les mêmes motifs).
+- **Appelants de `first_document_owner`** : deux, `letterings.rs:1002` (création, `create_group_inner`) et `:1126` (dissolution) — les mêmes que `:711` / `:818` sur `056997b0`.
+- **Littéraux de `DocumentRef`** (P3C-5 : `git grep -n DocumentRef crates`, puis `git grep -nE '"(invoice|supplierInvoice)"' -- crates/kesh-db/src`) : **trois** sites de construction rebranchés — `letterings.rs:1350` (`"invoice"` → `DocumentKind::Invoice`), `:1709` (`"supplierInvoice"` → `DocumentKind::SupplierInvoice`), et le test unitaire `audit_details_carry_the_document_or_nothing` (`:1834`, construction seule ; son assertion `documentType == "invoice"` inchangée). Les autres sites du grep parlent d'autre chose : types d'entité d'audit (`invoices.rs` ×13, `invoice_settlements_write.rs` ×3, `credit_notes.rs:831`, `audit_log.rs:798`), clé de sauvegarde (`backup.rs:1061`), clé d'instantané (`supplier_invoices.rs:584`), doc-comment (`letterings.rs:1733`, inchangé : la valeur publiée l'est aussi). Après la story, `git grep -n "document_type:" crates` ne rend que le champ typé et les trois constructions par `DocumentKind::…`.
+- **Étalonnage de `Com_stmt_execute`** (lecture par `sqlx::raw_sql`, même connexion), asserté en tête de `owners_are_read_by_batches_of_500` : (i) deux lectures successives → delta **0** (aucun surcoût, attendu `3 + 0`) ; (ii) un `sqlx::query("SELECT ?").bind(1)` entre deux lectures → delta **1**. Stable : le test, qui asserte les deux mesures et le delta de 3, a été exécuté **cinq fois** (développement, mutations, gate) sans écart.
+
+**T1 / T2 (D1, D1 bis, D2, D3)** — `DocumentKind` (cinq variants, `Ord` = précédence) et ses trois méthodes publiques, `DocumentOwner`, `document_owners` dans `journal_entries.rs` : une instruction par tranche de 500, `UNION ALL` de cinq blocs, dérivée `GROUP BY entry_id` / `MIN(id)` jointe en retour sur `id`, bloc fournisseur en `UNION ALL` des deux colonnes, bloc règlement joint à `invoices` ; liste vide sans requête ; doublons dédupliqués et triés (`BTreeSet`) ; vecteurs triés par `kind`. Le type est transporté par un rang privé (C-15-1b-0-5). `reversal_blockers` / `reversal_blocker` sur `&mut MySqlConnection` : la requête réduite aux rangs 1, 2, 8 puis `document_owners(conn, c, &[id])`. `modification_blocker(tx: &mut Transaction<'_, MySql>)`. `first_document_owner` : **un** appel `document_owners` pour le groupe, puis la première ligne (ordre des lignes) dont un propriétaire `blocks_manual_lettering()` — **contrôlé à la relecture** : plus aucune boucle d'appels, plus aucune liste de motifs dans le corps (AC3). `DocumentRef.document_type: DocumentKind`, sérialisé par `as_str()`.
+
+**Doc-comments (T2)** — grep de la valeur `git grep -nE "Une seule requête|exécuteur par|LIMIT 1. \*\*sans|rangs 3 à 6|hors transaction|connexion du pool|connexion acquise|sans .ORDER BY" -- crates/kesh-db/src crates/kesh-api/src` **après** réécriture : réécrits `reversal_blocker`, `reversal_blockers` (deux requêtes, un instantané, dépendance au niveau d'isolation par défaut), `modification_guard`, `Lecture::Conseil`, `modification_blocker`, `settlement_cancellation.rs` (« le plus petit »), `letterings.rs` (`first_document_owner`, renvoi aux méthodes de `DocumentKind`). Restent, triés hors sujet : `accounts.rs:445`, `email_templates.rs:137`, `invoices.rs:563` (« une seule requête » d'autres lectures), `letterings.rs:731` (deux instantanés d'une autre lecture), et dans `kesh-api` des « hors transaction » / « connexion du pool » d'autres routes (`bootstrap.rs:309`, `admin.rs:184`, `bank_accounts.rs:433`, `products.rs:324`, `:437`, `reconciliation.rs:3510`, `setup.rs:12`, `:127`, `users.rs:441`) ; `companies.rs:509`, `projects.rs:42`, `retry.rs:132` parlent d'autre chose.
+
+**T3 (AC4)** — la route ouvre **une** transaction de lecture (`state.pool.begin()`), y lit `reversal_blocker`, `reversed_by`, `modification_blocker`, puis `rollback` ; `find_by_id` reste sur `&state.pool` (écart assumé, D2). Garde lexicale `get_journal_entry_reads_in_one_transaction` (patron `admin.rs`, P3C-3 : code tronqué au premier `#[cfg(test)]`, commentaires `//` écartés, corps jusqu'au `pub async fn` suivant, `== 1` pour `pool.begin()`, `== 0` pour `acquire()`, un appel de chaque lecteur, sans `state.pool`, sur `tx`). `QUOI_FAIRE` réécrit selon T3 (et la doc de `REFERENCES_TRIEES`). Appels de test adaptés : **six** dans **cinq** fonctions et **trois** fichiers — `invoice_settlement.rs` ×2 (une fonction), `supplier_invoices_repository.rs` ×3, `letterings.rs:591` (C-15-1b-0-6 : compile mais `clippy::explicit_auto_deref`) ; tous sans changement d'assertion. **Le workspace compile** (`cargo build --workspace --all-targets`) et `clippy -D warnings` est vert.
+
+**T4 (D4, AC5)** — module gelé `crates/kesh-db/tests/document_owners/reversal_blockers_frozen.rs` : la fonction copiée de `056997b0` (identique à `f8888750`, vérifié par `diff`), seul le nom changé. Fixture SQL directe des huit rangs, seuls et cumulés (règlement rapproché ; achat **et** règlement d'une même facture fournisseur ; contre-passation et contre-passée ; compte archivé ; une écriture aux **huit** rangs, dont les cinq types), autre société, identifiant inexistant ; assertion de montage : les huit motifs sont vus.
+
+**Mutations (D5)** — chacune appliquée par script puis restaurée (`cp` + `touch`, empreinte `md5sum -c` du fichier de production vérifiée après chaque série) :
+
+| mutation | tests rouges |
+|---|---|
+| (a) `CreditNote` avant `Invoice` (ordre des variants) | `document_kind_table_is_closed`, `owners_match_handwritten_expectations`, `owners_match_the_frozen_reversal_blockers` |
+| (b) jointure de la facture d'un règlement retirée (`invoice_number` à `NULL`) | `owners_match_handwritten_expectations` |
+| (c) filtre `je.company_id` neutralisé (`OR TRUE`) dans les **cinq** blocs | `owners_are_scoped_by_company`, `owners_match_the_frozen_reversal_blockers` (lot : `e_autre` présente) |
+| (d1) `Settlement` retiré de `blocks_manual_lettering` | `document_kind_table_is_closed`, `first_document_owner_names_a_settlement` |
+| (d2) `BankTransaction` ajouté à `blocks_manual_lettering` | `document_kind_table_is_closed`, `a_bank_matched_entry_is_not_a_document` |
+| (e) bloc fournisseur à **une** colonne (`CASE`, marqueurs en nombre constant) | `owners_match_the_frozen_reversal_blockers` (comparaison **par lot**, `:600` — rougit aussi l'assertion de montage du lot neutralisée), `owners_match_handwritten_expectations` |
+| (e) jointure de retour sur l'**écriture** (fournisseur ; idem avoir, facture) | `owners_match_handwritten_expectations` (écriture doublée, C-15-1b-0-7) — verte avant ce durcissement, comme P3C-4 le prévoyait |
+| (f) `reversal_blocker` de la route sur `state.pool.acquire()` | `get_journal_entry_reads_in_one_transaction` |
+
+⚠️ Un premier essai de (e) `CASE` rougissait **pour une mauvaise raison** (trois listes de marqueurs pour deux liaisons : erreur de liaison, quatre tests rouges) ; refait à marqueurs constants. **Aucune mutation verte.**
+
+**AC6** — `git diff --stat f8888750 -- docs CHANGELOG.md crates/kesh-i18n frontend` : **vide**. Aucune route, aucun code d'erreur, aucun texte.
+
+**AC7** — `audit_details_carry_the_invoice`, `supplier_audit_details_carry_the_invoice` (`kesh-db/tests/lettering_documents.rs`) et `document_kind_table_is_closed` verts **sans modification de leurs assertions** (gate).
+
+**Tests neufs** (recomptés : `grep -cE '#\[(sqlx::)?test' crates/kesh-db/tests/document_owners.rs` = 5 ; `git diff f8888750 -- crates/kesh-db/tests/letterings.rs | grep -cE '^\+.*#\[sqlx::test'` = 5 ; route = 1) : **11**, de `f8888750` au commit de développement.
+
+**Gate au commit de développement** (exécuté ; base `kesh_1b0` remise à zéro avant — base supprimée, recréée, migrée, seedée — sans redémarrer MariaDB) : `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) **3296 passés, 4 ignorés** — 3285 à la clôture de la 15-1a2-ii, + 11. Journal : `kesh-gate-logs/15-1b-0-gate-dev.log`. Frontend et E2E : au dernier commit de code (aucun fichier frontend touché).
+
 ### File List
+
+- `crates/kesh-db/src/repositories/journal_entries.rs` — `DocumentKind`, `DocumentOwner`, `document_owners` ; `reversal_blockers` / `reversal_blocker` réécrits ; `modification_blocker` sur transaction ; doc-comments.
+- `crates/kesh-db/src/repositories/letterings.rs` — `first_document_owner` en un lot ; `DocumentRef.document_type: DocumentKind`.
+- `crates/kesh-db/src/repositories/settlement_cancellation.rs` — doc-comment.
+- `crates/kesh-api/src/routes/journal_entries.rs` — `get_journal_entry` en une transaction de lecture ; garde lexicale.
+- `crates/kesh-db/tests/document_owners.rs` (neuf), `crates/kesh-db/tests/document_owners/reversal_blockers_frozen.rs` (neuf, oracle).
+- `crates/kesh-db/tests/letterings.rs` — cinq tests de `first_document_owner`, aides locales ; un appel adapté.
+- `crates/kesh-db/tests/invoice_settlement.rs`, `crates/kesh-db/tests/supplier_invoices_repository.rs` — appels sur connexion acquise.
+- `crates/kesh-db/tests/journal_entries_modification.rs` — `QUOI_FAIRE`.
+- `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md` — C-15-1b-0-5 à 7.
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`.
 
 ## Change Log
 
