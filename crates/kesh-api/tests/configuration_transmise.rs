@@ -2651,7 +2651,7 @@ fn ligne_de(source: &str, pos: usize) -> usize {
 const EXEC_SYNOLOGY_ATTENDUS: usize = 0;
 
 /// **G14** (#575) — chaque service nommé par une commande `docker compose
-/// <exec|stop|start|restart|logs|pull|rm> [options] <service>` du manuel
+/// <exec|stop|start|restart|logs|pull|rm|up> [options] <service>` du manuel
 /// d'administration existe : dans les sections Synology, un service de
 /// `docker-compose.prod.yml` ; ailleurs, un service de `docker-compose.yml`. Au
 /// moins une commande dans chaque groupe (anti-test-muet) ; et, à part, aucun
@@ -2659,11 +2659,16 @@ const EXEC_SYNOLOGY_ATTENDUS: usize = 0;
 /// est pas un service du compose. Le défaut fermé : le pré-script Synology
 /// faisait `exec -T mariadb` sur un compose sans `mariadb`.
 ///
+/// `up` est lu depuis la Story 26-3 (#619, C-26-3-19) : `docker compose up
+/// --no-start kesh-api` y devient la voie de recréation du conteneur, et les options
+/// longues (`--no-start`, `--force-recreate`) sont admises entre le verbe et le
+/// service. Un `up -d` **sans** service n'est pas lu (aucun nom après les options).
+///
 /// **Formes non lues** (angle mort écrit) : `docker-compose` (v1),
 /// `docker compose -p <projet> …` (le `-p` n'est pas reconnu comme option de
 /// la commande), une option à valeur (`stop -t 30 kesh-api` : `30` serait lu
-/// comme service), `up`/`down`, `docker exec <conteneur>` — aucune dans le manuel au
-/// 2026-10-09 (vérifié par `grep`). Les scripts Synology ne sont pas lus ici :
+/// comme service ; avec `--timeout=30`, la commande entière n'est pas lue), `down`, `docker exec <conteneur>` — aucune dans le manuel au
+/// 2026-10-11 (vérifié par `grep`). Les scripts Synology ne sont pas lus ici :
 /// G16 garde leur réseau et leur service.
 #[test]
 fn les_services_cites_existent() {
@@ -2681,7 +2686,7 @@ fn les_services_cites_existent() {
     // `[ \t]` et non `\s` : une commande sans service (`docker compose ps`) ne
     // doit pas prendre le premier mot de la ligne suivante pour un service.
     let commande = Regex::new(
-        r"docker compose(?:[ \t]+-f[ \t]+\S+)?[ \t]+(exec|stop|start|restart|logs|pull|rm)((?:[ \t]+-[A-Za-z]+)*)[ \t]+([A-Za-z0-9_][A-Za-z0-9_.-]*)",
+        r"docker compose(?:[ \t]+-f[ \t]+\S+)?[ \t]+(exec|stop|start|restart|logs|pull|rm|up)((?:[ \t]+-{1,2}[A-Za-z][A-Za-z-]*)*)[ \t]+([A-Za-z0-9_][A-Za-z0-9_.-]*)",
     )
     .unwrap();
     let mut erreurs = Vec::new();
@@ -2882,9 +2887,14 @@ fn defaut_script(texte: &str, var: &str) -> Option<String> {
 ///   empreinte calculée sur le `.tmp` avant le renommage ; un seul
 ///   `--defaults-extra-file`, monté par `-v` ; compte par défaut `kesh-dump.cnf` ;
 /// - **(c)** `kesh-restore.sh`, dans cet ordre : refus si un conteneur du service
-///   `kesh-api` est dans un autre état que `exited`, `created` ou `dead`
-///   (`docker ps --all --filter label=com.docker.compose.service=…`, sans
-///   dépendre du projet ; le service existe au compose prod) ; verrou du dump
+///   `SAUVEGARDE_SERVICE` est dans un autre état que `exited`, `created` ou `dead`
+///   — une seule lecture de l'hôte, `docker ps --all --format` portant `{{.State}}`,
+///   `{{.Image}}` et l'étiquette `com.docker.compose.service`, sans dépendre du
+///   projet (Story 26-3, #619) : le défaut de `SAUVEGARDE_SERVICE` est un service du
+///   compose prod ; le `--format` sépare ses champs par `|` et la boucle les lit par
+///   `IFS='|'` (un séparateur blanc avalerait une étiquette vide) ; **filet** : tout
+///   conteneur d'image `gcorbaz/kesh` est gardé de même, quel que soit son service ;
+///   **sortie fermée** : aucun conteneur du service → `exit 1` ; verrou du dump
 ///   (`dump/.verrou`), libéré par une `trap … EXIT`, **avant** de lire le dump ;
 ///   `sha256sum -c` ; `gzip -t "$SOURCE/…"` ; nom de la base lu dans le dump
 ///   (`CREATE DATABASE`) et refus s'il diffère de `SAUVEGARDE_BASE` ; sonde en
@@ -2915,7 +2925,8 @@ fn defaut_script(texte: &str, var: &str) -> Option<String> {
 ///   `lstlisting` qui porte `mariadb-dump` ou `gunzip -c`) ; ni « post-script »
 ///   ni `→ Pré-script` (Hyper Backup n'en a pas, constaté sur DSM le 2026-10-09) ;
 /// - **(g)** mêmes réglages `SAUVEGARDE_*` au manuel et dans les scripts, **mêmes
-///   défauts dans les deux scripts**, et chaque défaut cité au manuel sous la
+///   défauts dans les deux scripts** (hors `SAUVEGARDE_SERVICE`, que seul
+///   `kesh-restore.sh` lit), et chaque défaut cité au manuel sous la
 ///   forme `<réglage> (<défaut>` suivi d'une virgule ou d'une parenthèse ; tâche
 ///   de dump planifiée entre 15 minutes et 12 heures avant Hyper Backup (modulo
 ///   24 h) ; aucune routine, déclencheur, événement ni vue dans les migrations.
@@ -2924,7 +2935,14 @@ fn defaut_script(texte: &str, var: &str) -> Option<String> {
 /// `: > <cible>`, `mv <cible> …`, `unlink`, `find -delete` ; [`code_shell`] ne
 /// retire que les lignes **entières** de commentaire (aucun commentaire de fin
 /// de ligne dans les scripts, vérifié) ; (c) exige `gunzip -c` et la forme
-/// `docker ps --filter label=…` — une écriture équivalente rougirait (couplage) ;
+/// `docker ps --all --format '{{.State}}|{{.Image}}|{{.Label …}}|{{.Names}}'` lue
+/// par `IFS='|'` — une écriture équivalente rougirait (couplage) ; le **filet** par
+/// l'image ne voit pas une image affichée par son identifiant (étiquette déplacée
+/// par un `docker compose pull`, conteneur non recréé), référencée par
+/// `index.docker.io/…` ou un miroir, ni construite localement sous un autre nom —
+/// angles morts écrits dans le script et au manuel, fixés par le cas S15 de la
+/// section 0 de la recette ; (c) ne prouve pas le **comportement** de la garde :
+/// c'est la section 0 de la recette, contre un faux `docker`, qui le fait ;
 /// (g) ne lit que le premier horaire de la tâche de dump (l'horaire « h50 » du
 /// paragraphe Snapshot n'est pas contrôlé) ;
 /// la normalisation du manuel ne déplie pas `\'E`, `\^o`, `\"e`, `\c{c}`, `\-`
@@ -3096,10 +3114,11 @@ fn synology_sauvegarde_la_base_par_le_dump() {
     if premier(&restore, r"(?m)(?:^\s*|[;&|]\s*)docker compose\b").is_some() {
         erreurs.push("(c) kesh-restore.sh appelle `docker compose` : il ne doit toucher ni à l'arrêt ni au démarrage de Kesh".into());
     }
-    if !services_prod.contains("kesh-api") {
-        erreurs.push(format!(
-            "(c) service `kesh-api` absent de docker-compose.prod.yml {services_prod:?}"
-        ));
+    match defaut_script(&restore, "SAUVEGARDE_SERVICE") {
+        Some(s) if services_prod.contains(&s) => {}
+        autre => erreurs.push(format!(
+            "(c) défaut de SAUVEGARDE_SERVICE {autre:?} absent de docker-compose.prod.yml {services_prod:?}"
+        )),
     }
     match premier(&restore, r#"(?m)^SOURCE=\$\(cd "\$1" && pwd -P\)\s*$"#) {
         None => erreurs.push(
@@ -3119,8 +3138,10 @@ fn synology_sauvegarde_la_base_par_le_dump() {
     }
     let etapes = [
         (
-            "refus « Kesh actif » (`docker ps --all --filter label=…kesh-api`)",
-            r"docker ps --all\b[^\n]*--filter label=com\.docker\.compose\.service=kesh-api\b[^\n]*\{\{\.State\}\}",
+            // Indifférente au séparateur : c'est la clause « lecture à séparateur | »
+            // qui le tient (Story 26-3, AC 7.1).
+            "refus « Kesh actif » (`docker ps --all --format` : état, image, service)",
+            r#"docker ps --all\b[^\n]*\{\{\.State\}\}[^\n]*\{\{\.Image\}\}[^\n]*\{\{\.Label "com\.docker\.compose\.service"\}\}"#,
         ),
         (
             "verrou du dump (`dump/.verrou`)",
@@ -3162,6 +3183,18 @@ fn synology_sauvegarde_la_base_par_le_dump() {
             // Sur une ou plusieurs lignes (revue P6, LOW-4) : la branche `*)` doit sortir
             // en 1 avant le `;;` qui la ferme et le `esac`.
             r#"(?s)case "\$ETAT" in\s+exited\|created\|dead\)\s*;;\s*\*\)[^`]*?\bexit 1\s*;;\s*esac\b"#,
+        ),
+        (
+            "lecture à séparateur `|` : `--format` à champs séparés par `|`, boucle `IFS='|'` (26-3, AC 7.5)",
+            r#"(?s)--format '\{\{\.State\}\}\|\{\{\.Image\}\}\|\{\{\.Label "com\.docker\.compose\.service"\}\}\|\{\{\.Names\}\}'.*IFS='\|' read -r ETAT IMAGE SERVICE NOM RESTE\b"#,
+        ),
+        (
+            "zéro conteneur du service SAUVEGARDE_SERVICE ne fait pas sortir (26-3, AC 5.4)",
+            r#"\[ "\$N" -gt 0 \] \|\| \{[^\n]*aucun conteneur du service[^\n]*exit 1;"#,
+        ),
+        (
+            "le filet par l'image gcorbaz/kesh manque (26-3, AC 5.3)",
+            r#"(?s)IMAGE_KESH='\^\(docker\\\.io/\)\?gcorbaz/kesh\(\[:@\]\.\*\)\?\$'.*elif \[\[ "\$IMAGE" =~ \$IMAGE_KESH \]\]; then\s+case "\$ETAT" in exited\|created\|dead\) ;; \*\)[^\n]*image Kesh[^\n]*exit 1;; esac"#,
         ),
         (
             "l'échec du rechargement ne liste pas les dossiers de avant-restauration/ (revue P6)",
@@ -3404,6 +3437,9 @@ fn synology_sauvegarde_la_base_par_le_dump() {
             "(g) réglages du manuel {du_manuel:?} ≠ réglages lus par les scripts {des_scripts:?}"
         ));
     }
+    // `SAUVEGARDE_SERVICE` n'est PAS dans cette boucle : `kesh-dump.sh` ne le lit pas
+    // (il n'a pas de garde) — son défaut et sa citation au manuel sont contrôlés à part,
+    // juste après.
     for var in [
         "SAUVEGARDE_DOSSIER",
         "SAUVEGARDE_BASE",
@@ -3426,6 +3462,16 @@ fn synology_sauvegarde_la_base_par_le_dump() {
                 "(g) le manuel ne cite pas « {var} (<défaut>) » avec le défaut des scripts {d_dump:?}"
             ));
         }
+    }
+    let service_cite = defaut_script(&restore, "SAUVEGARDE_SERVICE").is_some_and(|v| {
+        Regex::new(&format!(r"SAUVEGARDE_SERVICE \({}[,)]", regex::escape(&v)))
+            .unwrap()
+            .is_match(&normees[1])
+    });
+    if !service_cite {
+        erreurs.push(
+            "(g) le manuel ne cite pas « SAUVEGARDE_SERVICE (<défaut>) » avec le défaut de kesh-restore.sh".into(),
+        );
     }
     let heure = |re: &str| -> Option<i32> {
         Regex::new(re).unwrap().captures(&normees[1]).map(|c| {

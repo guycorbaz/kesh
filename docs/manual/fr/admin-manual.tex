@@ -569,7 +569,7 @@ sudo nano .env
 sudo docker network create frontend
 \end{lstlisting}
 
-C'est aussi par lui que les conteneurs de sauvegarde atteignent la base (\S\ref{sec:backup-dsm}).
+Les conteneurs de sauvegarde (\S\ref{sec:backup-dsm}) s'y rattachent pour joindre l'adresse de la base --- le paquet MariaDB~10 de DSM, hors Docker, joint par l'adresse IP LAN du NAS. Si \keshcommand{kesh-api} vit sur un autre réseau (compose adapté, reverse proxy), ils se rattachent à celui-là : réglage \texttt{SAUVEGARDE\_RESEAU} (\S\ref{sec:backup-dsm}).
 
 \begin{keshwarning}
 \textbf{Sécurité} : ne jamais laisser les valeurs par défaut \keshcommand{changeme} ou \keshcommand{change-me-32-bytes-...}, le placeholder \keshcommand{<GENERATE\_ME: ...>} du gabarit, ni aucune valeur entre chevrons \texttt{<…>} dans \keshpath{.env} pour \texttt{KESH\_JWT\_SECRET} et \texttt{KESH\_ADMIN\_PASSWORD}. Kesh fait fail-fast au boot si ces placeholders restent — c'est intentionnel pour protéger les utilisateurs débutants qui oublient cette étape.
@@ -1666,12 +1666,28 @@ curl -fsSLO "$DEPOT/scripts/synology/kesh-restore.sh"
 chmod 700 kesh-dump.sh kesh-restore.sh
 \end{lstlisting}
 
-\keshpath{main} désigne la version courante du dépôt, comme pour le compose (étape 2) ; pour figer les scripts sur votre version de Kesh, remplacez \keshpath{main} par son étiquette, \texttt{v} suivi du numéro de version (par exemple \keshpath{v0.13.0}), une fois cette version publiée.
+L'URL désigne l'étiquette d'une version publiée (\keshpath{v0.13.0} ici) : prenez celle de la version que vous installez, la même que l'image de votre compose --- les scripts d'une autre version peuvent attendre d'autres réglages. Ne prenez pas \keshpath{main}, qui peut être en avance sur l'image publiée.
 
 \keshpath{kesh-dump.sh} écrit dans \keshpath{dump/} (forcé en 700) le dump et son empreinte (\keshpath{.sha256}), lisibles de root seul. Il s'arrête à la première erreur ; le dump s'écrit d'abord dans un fichier \keshpath{.tmp}, vérifié (archive intègre, au moins une table, dump complet), puis renommé : un dump raté ou vide ne remplace pas celui de la veille et ne laisse aucun fichier. Un verrou (\keshpath{dump/.verrou}) empêche deux dumps simultanés ; laissé par un arrêt brutal, il se supprime à la main (\keshcommand{rmdir}). Ses réglages, par variables d'environnement, ont pour défauts ceux de ce manuel : \texttt{SAUVEGARDE\_DOSSIER} (\keshpath{/volume1/docker/kesh}), \texttt{SAUVEGARDE\_BASE} (\texttt{kesh}, la base de \texttt{DATABASE\_URL}), \texttt{SAUVEGARDE\_RESEAU} (\keshcommand{frontend}), \texttt{SAUVEGARDE\_IMAGE} (\keshcommand{mariadb:10.11}) ; si votre base porte un autre nom, la commande de la tâche devient :
 
 \begin{lstlisting}[language=bash]
 SAUVEGARDE_BASE=<nom> bash /volume1/docker/kesh/kesh-dump.sh
+\end{lstlisting}
+
+\keshpath{kesh-restore.sh} lit les mêmes réglages, plus \texttt{SAUVEGARDE\_SERVICE} (\keshcommand{kesh-api}), le nom du service de Kesh dans votre compose, qu'il est seul à lire (sa garde, ci-dessous). \texttt{SAUVEGARDE\_RESEAU} désigne un réseau Docker \textbf{existant}, non \texttt{internal}, depuis lequel l'adresse de la base --- le \texttt{host} du fichier d'options --- est routable : sur Synology, la base est le paquet MariaDB~10 de DSM, \textbf{hors Docker}, jointe par l'adresse IP LAN du NAS. Ce qui fait échouer \keshcommand{frontend}, c'est son inexistence sur un NAS qui ne l'a pas créé, non la position de la base. Le plus simple : le réseau de \keshcommand{kesh-api}, qui atteint déjà la base.
+
+\textbf{Compose adapté} (reverse proxy, service renommé). Le réseau et le service suivent le compose \textbf{réellement déployé}, pas celui de ce manuel. Pour connaître les réseaux de votre conteneur Kesh --- \keshcommand{kesh-api} est le \texttt{container\_name} du compose livré ; un compose adapté peut en porter un autre, que \keshcommand{docker ps -{}-format '\{\{.Names\}\}'} liste :
+
+\begin{lstlisting}[language=bash]
+docker inspect -f '{{range $n, $_ := .NetworkSettings.Networks}}{{$n}} {{end}}' <conteneur>
+\end{lstlisting}
+
+Un réseau \textbf{déclaré dans le compose} (et non \texttt{external}) porte le préfixe du projet : \texttt{<projet>\_kesh-internal} pour la recette Traefik de ce manuel (\S\ref{sec:traefik}). Exemple d'un Kesh derrière un reverse proxy, sur le réseau \keshcommand{proxy}, dont le service s'appelle \keshcommand{kesh} --- pour la tâche planifiée, puis pour le rechargement :
+
+\begin{lstlisting}[language=bash]
+SAUVEGARDE_RESEAU=proxy bash /volume1/docker/kesh/kesh-dump.sh
+SAUVEGARDE_RESEAU=proxy SAUVEGARDE_SERVICE=kesh SAUVEGARDE_BASE=kesh \
+    bash /volume1/docker/kesh/kesh-restore.sh <dossier dump restauré>
 \end{lstlisting}
 
 
@@ -1720,10 +1736,14 @@ Le snapshot rend le dossier du compose, dump de la base compris ; il ne rend pas
     \item Snapshot Replication → \textbf{Snapshots} → sélectionner le dossier \keshcommand{docker}.
     \item Choisir le snapshot avec le timestamp pre-incident.
     \item \textbf{Actions} → \textbf{Restaurer} → \emph{Restaurer dans un nouveau dossier} (recommandé : l'état actuel, dump compris, reste intact pour comparaison) OU \emph{Écraser le dossier original} (si certain). Ne copiez pas le dump restauré sur celui de \keshpath{dump/} : le script le lit là où il est. Si le dossier restauré contient un \keshpath{dump/.verrou} (snapshot pris pendant un dump), supprimez-le : \keshcommand{rmdir dump/.verrou}.
-    \item En session root (\keshcommand{sudo -i}), dans \keshpath{/volume1/docker/kesh}, arrêter Kesh --- le script refuse de travailler tant que le service \keshcommand{kesh-api} tourne :
+    \item En session root (\keshcommand{sudo -i}), dans \keshpath{/volume1/docker/kesh}, arrêter le service de Kesh (\keshcommand{kesh-api} dans le compose livré ; le vôtre si vous l'avez renommé, \texttt{SAUVEGARDE\_SERVICE}) --- le script refuse de travailler tant qu'il tourne :
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
 docker compose stop kesh-api
+\end{lstlisting}
+    Si \keshcommand{docker compose ps -a} ne montre plus son conteneur (après un \keshcommand{docker compose down}, ou sur un NAS neuf), le script refuse aussi : recréez-le \textbf{sans le démarrer}, par la même commande que son message --- elle lit le compose entier, \keshpath{.env} doit donc être en place :
+\begin{lstlisting}[language=bash]
+docker compose up --no-start kesh-api
 \end{lstlisting}
     \item La tâche planifiée de dump n'a pas à être suspendue : pendant le rechargement, le script tient le verrou du dump, et un dump lancé à ce moment échoue (signalé par e-mail).
     \item Recharger le dump en donnant au script le dossier \keshpath{dump/} restauré (chemin absolu ou relatif) et la base de \texttt{DATABASE\_URL} (\texttt{SAUVEGARDE\_BASE}, \texttt{kesh} par défaut) :
@@ -1741,7 +1761,7 @@ docker compose start kesh-api
 \keshpath{kesh-restore.sh} recharge par le compte Kesh (\keshpath{kesh-restore.cnf}) --- non par \keshpath{kesh-dump.cnf}, dont le compte ne peut que lire. Il ne touche pas à Kesh, et s'arrête à la première erreur, dans cet ordre ; il ne touche à la base qu'à l'étape 6, n'écrit aucun dump avant l'étape 5, et avant cela n'écrit que son verrou :
 
 \begin{enumerate}
-    \item il refuse si un conteneur du service \keshcommand{kesh-api} est actif sur le NAS --- en marche, en boucle de redémarrage, en pause ---, quel que soit le nom du projet ;
+    \item il refuse si un conteneur du service \texttt{SAUVEGARDE\_SERVICE} est actif sur le NAS --- en marche, en boucle de redémarrage, en pause ---, quel que soit le nom du projet ; il refuse de même pour tout conteneur actif d'image \keshcommand{gcorbaz/kesh}, quel que soit son service (un service renommé sans réglage, un orphelin d'un ancien nom) ; et il refuse s'il ne trouve \textbf{aucun} conteneur du service \texttt{SAUVEGARDE\_SERVICE} --- nom de service faux, ou conteneur supprimé : son message dit lequel régler ou recréer. Ce filet par l'image ne voit pas un conteneur dont l'image n'est plus affichée que par son identifiant (après un \keshcommand{docker compose pull}, un conteneur non recréé perd l'étiquette de son image), ni une image tirée par \keshpath{index.docker.io/} ou par un miroir, ni une image construite localement sous un autre nom : réglez \texttt{SAUVEGARDE\_SERVICE} sur votre service, c'est lui qui fait foi. La garde est lue une fois, avant l'étape 2 : un Kesh démarré pendant le rechargement n'est pas vu ;
     \item il prend le verrou du dump : pas de dump nocturne, ni d'autre restauration, pendant la sienne ;
     \item il vérifie l'empreinte et l'intégrité du dump, puis lit dans le dump le nom de la base qu'il recrée, et refuse s'il diffère de \texttt{SAUVEGARDE\_BASE} ;
     \item il demande au serveur si la base existe et combien de tables elle porte ; si la sonde échoue (serveur injoignable, compte refusé), il s'arrête ;
@@ -1761,7 +1781,7 @@ bash /volume1/docker/kesh/kesh-restore.sh \
     /volume1/docker/kesh/avant-restauration/<horodatage>
 \end{lstlisting}
 
-\textbf{Base présente mais illisible} (le dump de sécurité échoue sur une erreur de la base : table endommagée, vue invalide) : le script ne la remplace pas sans copie, et n'a pas d'option pour passer outre. La seule issue est délibérée --- conservez d'abord ce qui peut l'être (copie du répertoire de données si la base est la vôtre), puis supprimez la base vous-même, par le compte Kesh, en remplaçant \texttt{<base>} par la valeur de \texttt{SAUVEGARDE\_BASE}, et relancez le rechargement, qui la recrée :
+\textbf{Base présente mais illisible} (le dump de sécurité échoue sur une erreur de la base : table endommagée, vue invalide) : le script ne la remplace pas sans copie, et n'a pas d'option pour passer outre. La seule issue est délibérée --- conservez d'abord ce qui peut l'être (copie du répertoire de données si la base est la vôtre), puis supprimez la base vous-même, par le compte Kesh, en remplaçant \texttt{<base>} par la valeur de \texttt{SAUVEGARDE\_BASE} et \keshcommand{frontend} par celle de \texttt{SAUVEGARDE\_RESEAU}, et relancez le rechargement, qui la recrée :
 
 \begin{lstlisting}[language=bash]
 docker run --rm --network frontend \
@@ -1785,7 +1805,7 @@ Combiner les outils pour atteindre la règle \textbf{3-2-1} (3 copies des donné
     \item \textbf{Archivage long terme (OLICo 10 ans)} : 1 dump annuel par year exporté manuellement sur média WORM (CD-R ou DVD-R inscriptible une fois) ou archivage tape LTO si volume.
 \end{itemize}
 
-Les copies 2 et 3 ont le périmètre de la copie 1. Après restauration du dossier du compose par Hyper Backup, la base se recharge par la même procédure : arrêt de \keshcommand{kesh-api}, \keshpath{kesh-restore.sh}, redémarrage (\S\ref{sec:backup-dsm-recovery}, \emph{Recovery depuis Snapshot}). Sur un NAS ou un serveur MariaDB neuf, recréez d'abord le compte Kesh et le compte de sauvegarde (ci-dessus) ; le rechargement recrée la base.
+Les copies 2 et 3 ont le périmètre de la copie 1. Après restauration du dossier du compose par Hyper Backup, la base se recharge par la même procédure : arrêt de \keshcommand{kesh-api} --- ou, si son conteneur n'existe pas encore, sa création sans démarrage, étape 4 ---, \keshpath{kesh-restore.sh}, redémarrage (\S\ref{sec:backup-dsm-recovery}, \emph{Recovery depuis Snapshot}). Sur un NAS ou un serveur MariaDB neuf, recréez d'abord le compte Kesh et le compte de sauvegarde (ci-dessus) ; le rechargement recrée la base.
 
 \begin{keshwarning}
 \textbf{Test de restauration annuel obligatoire} (cf. sous-section précédente OLICo Art. 10 al. 1) : applicable aux backups DSM aussi. Inclure dans le procès-verbal annuel la mention explicite de la méthode utilisée (Hyper Backup, Snapshot Replication) et le temps de recovery mesuré (RTO).
