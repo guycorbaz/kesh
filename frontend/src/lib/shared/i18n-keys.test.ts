@@ -550,7 +550,13 @@ const ATTENDU = {
 	// `journal-entries-column-lettering`. Recompté par `grep -o "i18nMsg("` aux deux bornes
 	// (`011ea618` et la branche). `sitesNonResolus`, `relais`, `sitesGabarit` inchangés
 	// (que des littéraux).
-	sitesTotal: 2020,
+	// Story 26-3 (#617) : **2020 → 2022** (+2) — l'écran d'import lit ses deux textes en
+	// dur par clé : `features/bank-import/BankImportUpload.svelte`, l'`aria-label` de la zone
+	// de dépôt (`bank-import-labels-drop-zone`), et `routes/(app)/bank-import/+page.svelte`,
+	// le `<title>` (`bank-import-labels-page-title`). Recompté par `grep -o "i18nMsg("` aux
+	// deux bornes (`fe162504` et la branche). `sitesNonResolus`, `relais`, `sitesGabarit`
+	// inchangés (deux littéraux).
+	sitesTotal: 2022,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

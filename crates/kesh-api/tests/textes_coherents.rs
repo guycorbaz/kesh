@@ -22,7 +22,7 @@
 //! | G18-ter | #127 | les textes d'écran « toutes les sociétés » (sauvegarde d'installation) sont une liste fermée assumée |
 //! | G18-bis | #127 | le manuel utilisateur dit comment on entre : compte créé par l'administrateur, connexion par identifiant |
 //! | G19 | release 0.13.0 | toute URL `raw.githubusercontent.com` du dépôt (manuels, README, site) pointe sur le tag `v<\keshVersion>`, jamais sur `main` |
-//! | G20 | #616, #617, #619 | ni case « Compte de banque » au plan comptable, ni CAMT.053 « de toutes les banques suisses » ; l'écran d'import dit « CAMT.053 ou CSV » dans les quatre langues |
+//! | G20 | #616, #617, #619 | ni case « Compte de banque » au plan comptable, ni CAMT.053 présenté comme universel ; l'écran d'import dit « CAMT.053 ou CSV » dans les quatre langues |
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -1192,7 +1192,7 @@ fn le_manuel_et_l_ecran_d_import_disent_vrai() {
         ),
         (
             r"[Tt]outes[\s~]+les[\s~]+banques[\s~]+suisses",
-            "le CAMT.053 n'est pas proposé par toutes les banques suisses (#617)",
+            "le CAMT.053 présenté comme universel (#617)",
         ),
     ];
     let mut erreurs = Vec::new();
@@ -1205,19 +1205,34 @@ fn le_manuel_et_l_ecran_d_import_disent_vrai() {
         }
     }
     let positives: [(&str, &str); 4] = [
-        ("docs/manual/fr/user-manual.tex", r"propre[\s~]+compte[\s~]+de[\s~]+banque"),
-        ("docs/manual/fr/user-manual.tex", r"Compte[\s~]+comptable[\s~]+lié"),
-        ("docs/manual/fr/admin-manual.tex", r"SAUVEGARDE_RESEAU=proxy"),
+        (
+            "docs/manual/fr/user-manual.tex",
+            r"propre[\s~]+compte[\s~]+de[\s~]+banque",
+        ),
+        (
+            "docs/manual/fr/user-manual.tex",
+            r"Compte[\s~]+comptable[\s~]+lié",
+        ),
+        (
+            "docs/manual/fr/admin-manual.tex",
+            r"SAUVEGARDE_RESEAU=proxy",
+        ),
         ("docs/manual/fr/admin-manual.tex", r"SAUVEGARDE_SERVICE="),
     ];
     for (fichier, re) in positives {
         if !Regex::new(re).unwrap().is_match(&lire(fichier)) {
-            erreurs.push(format!("{fichier} : « {re} » absent (lecture à vide, ou phrase retirée)"));
+            erreurs.push(format!(
+                "{fichier} : « {re} » absent (lecture à vide, ou phrase retirée)"
+            ));
         }
     }
     for locale in ["fr-CH", "de-CH", "en-CH", "it-CH"] {
         let c = catalogue(locale);
-        assert!(c.len() > 1000, "catalogue {locale} : {} clés, lu à vide ?", c.len());
+        assert!(
+            c.len() > 1000,
+            "catalogue {locale} : {} clés, lu à vide ?",
+            c.len()
+        );
         match c.get("bank-import-labels-drop-zone") {
             Some(v) if v.contains("CSV") => {}
             autre => erreurs.push(format!(
