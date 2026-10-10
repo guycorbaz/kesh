@@ -781,17 +781,42 @@ async fn first_document_owner_names_a_settlement(pool: MySqlPool) {
 }
 
 /// Deux écritures possédées dans le groupe : la PREMIÈRE LIGNE (ordre des
-/// lignes) gagne — non la précédence des types. La première porte un avoir
-/// (rang 4), la seconde une facture (rang 3) : c'est l'avoir qui est nommé.
+/// lignes) gagne — ni la précédence des types, ni l'ordre des écritures. Les
+/// deux ordres sont décorrélés (revue P1, A-3 = E3) : l'écriture ANCIENNE (plus
+/// petit id) reçoit sa ligne lettrable APRÈS celle de l'écriture récente. La
+/// récente porte un avoir (rang 4), l'ancienne une facture (rang 3) : c'est
+/// l'avoir, première ligne, qui est nommé.
 #[sqlx::test(migrations = "./test-schema")]
 async fn first_document_owner_takes_the_first_line(pool: MySqlPool) {
     let m = monde(&pool).await;
-    let (premiere, a) = ligne(&pool, &m, m.lettrable(), m.fy26, d(2026, 2, 1), dec!(100)).await;
-    let (seconde, b) = ligne(&pool, &m, m.lettrable(), m.fy26, d(2026, 2, 2), dec!(-100)).await;
-    assert!(a < b, "montage : ordre des lignes");
+    let contrepartie = m.s.accounts["2000"];
+    // L'écriture ancienne, d'abord sans sa ligne lettrable.
+    let (ancienne, _) = ecriture(
+        &pool,
+        m.company(),
+        m.fy26,
+        d(2026, 2, 1),
+        &[(contrepartie, dec!(100), dec!(0))],
+    )
+    .await;
+    let (recente, a) = ligne(&pool, &m, m.lettrable(), m.fy26, d(2026, 2, 2), dec!(100)).await;
+    let b = sqlx::query(
+        "INSERT INTO journal_entry_lines (entry_id, account_id, line_order, debit, credit) \
+         VALUES (?, ?, 2, 0, 100)",
+    )
+    .bind(ancienne)
+    .bind(m.lettrable())
+    .execute(&pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    assert!(
+        ancienne < recente && a < b,
+        "montage : ordre des écritures et ordre des lignes opposés"
+    );
     // La facture d'abord : `faire_facture` pose le contact, que l'avoir reprend.
-    faire_facture(&pool, &m, seconde, "F-2026-032").await;
-    let avoir = faire_avoir(&pool, &m, premiere, "AV-2026-007").await;
+    faire_facture(&pool, &m, ancienne, "F-2026-032").await;
+    let avoir = faire_avoir(&pool, &m, recente, "AV-2026-007").await;
     assert_eq!(
         refus_r5(&pool, &m, &[b, a]).await,
         (

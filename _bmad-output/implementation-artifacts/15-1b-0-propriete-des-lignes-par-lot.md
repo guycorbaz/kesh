@@ -524,6 +524,35 @@ Opus 5.5 (développement, en autonomie — consignes de l'Epic 15).
 
 ## Change Log
 
+### Revue de code P1 — 2026-10-10 (Sonnet 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
+
+**Prompt** : `15-1b-0-review-prompt-p1.md` (diff `f8888750..2e86ab4d`). **Rapports** : `kesh-gate-logs/15-1b-0-review-p1-{B,E,A}.md`
+— B **0 C / 0 H / 1 M / 4 L**, E **0 / 0 / 2 M / 5 L**, A **0 / 0 / 1 M / 4 L**. Recoupements : A-1 = B-1 = E1 ; A-2 = E4 ; A-3 =
+E3 ; A-4 = B-2 = E5 ; A-5 = B-5 → **2 MEDIUM distincts** (A-1, E2) et **8 LOW distincts** (A-2, A-3, A-4, A-5, B-3, B-4, E6,
+E7). **Aucun défaut du code de production** : tous sont des trous de preuve ou de la documentation. Axes non exercés
+déclarés par les trois lentilles : toute exécution (cargo, SQL, mutations) — reprise par l'orchestrateur ci-dessous.
+Vérifications au sol : `grep -nF "e_autre"` (une seule pièce, une facture, `document_owners.rs:438-439`) ; `supplier_invoice_number
+varchar(64) DEFAULT NULL` (squash) ; `grep -nF "l'ordre des tests ci-dessous"` → `journal_entries.rs:2317`.
+
+| finding | sévérité | verdict |
+|---|---|---|
+| A-1 = B-1 = E1 — portée par société éprouvée sur le seul bloc facture | MEDIUM | **corrigé** : l'écriture de l'autre société porte les **cinq** types de l'autre société ; assertion de montage (cinq chez elle) ; mutation `OR TRUE` rejouée **bloc par bloc** : les cinq rougissent `owners_are_scoped_by_company` et `owners_match_the_frozen_reversal_blockers` |
+| E2 — aucune pièce sans numéro montée | MEDIUM | **corrigé** : écriture `e_sans_numero` dans la fixture de l'oracle (facture, avoir brouillon, facture fournisseur sans numéro, règlement d'une facture sans numéro, transaction) et aux valeurs écrites ; mutations `COALESCE(…, '')` sur le numéro fournisseur (rouge : valeurs écrites et oracle) et sur le numéro de la facture réglée (rouge : valeurs écrites) |
+| A-2 = E4 — taille de tranche non épinglée | LOW | **corrigé** : bornes 500 → 1, 501 → 2, 1 000 → 2, 1 001 → 3 instructions ; mutations 400 et 600 rouges |
+| A-3 = E3 — ordre des lignes = ordre des écritures | LOW | **corrigé** : l'écriture ancienne reçoit sa ligne lettrable après la récente ; mutation « itérer la table » rouge |
+| A-4 = B-2 = E5 — tri final non éprouvé | LOW | **écrit** : garde défensive non testable (un `UNION ALL` sans `ORDER BY` ne garantit rien), commentée au site |
+| A-5 = B-5 — doc-comment de `settlement_cancellation.rs` non replié | LOW | **corrigé** |
+| B-3 — l'exemption étroite dépend de `MIN(id)` | LOW | **sans changement** : sur données héritées seulement (deux transactions sur une écriture) ; l'ancien code était indéterminé ; le rang 3 lit déjà l'« autre » transaction par une requête dédiée |
+| B-4 — « l'ordre des tests ci-dessous » ; « rang » à deux sens | LOW | **corrigé** (renvoi à `reversal_blockers` ; `rank()` dit « code de transport ») |
+| E6 — achat de S1 et règlement de S2 sur une écriture non monté | LOW | **corrigé** (valeurs écrites : la plus petite) |
+| E7 — un `rollback` en échec rend un 500 après une lecture réussie | LOW | **sans changement** : un `rollback` qui échoue signale une connexion rompue ; la taire rendrait au pool une connexion douteuse |
+| (note A) — garde lexicale `contains("tx,")` trop large | — | **corrigé** : formes exactes `lecteur(&mut tx,` / `lecteur(&mut *tx,` |
+
+**Gate** (base `kesh_1b0` remise à zéro, sans redémarrer MariaDB) : `scripts/test-fast.sh` **3296 passés, 4 ignorés** (aucun
+test neuf : les compléments sont dans les tests existants). La remédiation touche des **doc-comments** de production et le
+`mod tests` de la route, aucune ligne exécutable de production. **Trend** : P1 **2 MEDIUM distincts** → P2 à mener
+(ciblée sur ce commit). Signal D5 : sans objet (P1).
+
 ### Validation P2 — 2026-10-09 (Opus 5.5 ×2, lentilles R et F ; remédiation Opus 5.5, seul remédiateur des fiches de la suite du lettrage, en autonomie)
 
 **Rapports** : `kesh-gate-logs/15-1b-0-validate-p2-R.md` (**0 CRITICAL, 0 HIGH, 2 MEDIUM, 6 LOW**) et `…-F.md`

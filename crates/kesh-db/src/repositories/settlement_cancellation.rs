@@ -79,8 +79,9 @@ pub type SettlementCancelHit = (SettlementCancelBlocker, Option<i64>, Option<Str
 /// **autre** transaction pointe la même écriture, lue par une requête dédiée :
 /// l'identifiant que rend `reversal_blockers` est le **plus petit** des
 /// transactions qui pointent l'écriture (un seul par type, Story 15-1b-0), et
-/// « c'est celui qu'on défait » ne prouverait pas qu'il n'y en a pas d'autre. Les annulations de règlement passent `None` : leur
-/// comportement est inchangé.
+/// « c'est celui qu'on défait » ne prouverait pas qu'il n'y en a pas
+/// d'autre. Les annulations de règlement passent `None` : leur comportement
+/// est inchangé.
 ///
 /// Écriture introuvable (ou d'une autre société) → [`DbError::NotFound`].
 pub async fn settlement_entry_cancel_blocker(

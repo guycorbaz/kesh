@@ -980,7 +980,13 @@ mod tests {
                 "assertion de montage : un appel de {lecteur}"
             );
             assert!(
-                !appels[0].contains("state.pool") && appels[0].contains("tx,"),
+                !appels[0].contains("state.pool")
+                    && [
+                        format!("{lecteur}(&mut tx,"),
+                        format!("{lecteur}(&mut *tx,")
+                    ]
+                    .iter()
+                    .any(|forme| appels[0].contains(forme.as_str())),
                 "{lecteur} doit lire dans la transaction, non sur le pool : {}",
                 appels[0]
             );

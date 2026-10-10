@@ -2126,8 +2126,10 @@ impl DocumentKind {
         }
     }
 
-    /// Le rang de ce type dans la colonne `kind` de la requête de
-    /// [`document_owners`] — l'inverse de [`DocumentKind::from_rank`].
+    /// Le code de ce type dans la colonne `kind` de la requête de
+    /// [`document_owners`] (0 à 4) — l'inverse de [`DocumentKind::from_rank`].
+    /// ⚠️ Rien à voir avec les « rangs 3 à 7 » de la précédence de
+    /// [`reversal_blockers`] : ce n'est qu'un identifiant de transport.
     const fn rank(self) -> i64 {
         match self {
             Self::Invoice => 0,
@@ -2300,6 +2302,10 @@ pub async fn document_owners(
             });
         }
     }
+    // ⛔ Le tri est la SEULE garantie de l'ordre de précédence : un `UNION ALL`
+    // sans `ORDER BY` ne garantit pas l'ordre de ses blocs, même si MariaDB les
+    // rend en pratique dans l'ordre d'écriture. Garde défensive, que les tests
+    // ne peuvent pas faire rougir (revue P1, A-4 = B-2 = E5).
     for vecteur in owners.values_mut() {
         vecteur.sort_by_key(|o| o.kind);
     }
@@ -2314,8 +2320,8 @@ pub async fn document_owners(
 /// lectures, un instantané dès que l'appelant tient une transaction (cf.
 /// [`reversal_blockers`]).
 ///
-/// ⚠️ La **précédence** est celle de l'ordre des tests ci-dessous, et elle est
-/// figée : les causes se cumulent, et le champ exposé à l'écran est scalaire.
+/// ⚠️ La **précédence** est l'ordre des motifs de [`reversal_blockers`], et elle
+/// est figée : les causes se cumulent, et le champ exposé à l'écran est scalaire.
 ///
 /// ⚠️ **Le compte archivé EST évalué ici**, en dernier de la précédence — parce
 /// que l'AC 11 exige que l'écran masque le bouton **avant** le clic. Ne le

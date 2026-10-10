@@ -130,6 +130,44 @@ impl Societe {
         .last_insert_id() as i64
     }
 
+    async fn facture_sans_numero(&self, pool: &MySqlPool, entry: Option<i64>) -> i64 {
+        inserer(
+            pool,
+            "INSERT INTO invoices (company_id, contact_id, date, journal_entry_id) \
+             VALUES (?, ?, '2026-02-01', ?)",
+            &[Some(self.company), Some(self.contact), entry],
+        )
+        .await
+    }
+
+    /// Un avoir BROUILLON, sans numéro (`chk_credit_notes_issued_has_je` ne
+    /// l'exige qu'à l'émission).
+    async fn avoir_brouillon(&self, pool: &MySqlPool, entry: i64) -> i64 {
+        let facture = self.facture_sans_numero(pool, None).await;
+        inserer(
+            pool,
+            "INSERT INTO credit_notes (company_id, contact_id, invoice_id, status, date, \
+             journal_entry_id) VALUES (?, ?, ?, 'draft', '2026-02-01', ?)",
+            &[
+                Some(self.company),
+                Some(self.contact),
+                Some(facture),
+                Some(entry),
+            ],
+        )
+        .await
+    }
+
+    async fn facture_fournisseur_sans_numero(&self, pool: &MySqlPool, achat: i64) -> i64 {
+        inserer(
+            pool,
+            "INSERT INTO supplier_invoices (company_id, contact_id, invoice_date, \
+             purchase_journal_entry_id) VALUES (?, ?, '2026-02-01', ?)",
+            &[Some(self.company), Some(self.contact), Some(achat)],
+        )
+        .await
+    }
+
     /// Un avoir (sur une facture brouillon neuve, `uq_credit_notes_invoice`).
     async fn avoir(&self, pool: &MySqlPool, entry: i64, numero: &str) -> i64 {
         let facture = self.facture(pool, None, &format!("{numero}-src")).await;
@@ -349,9 +387,19 @@ struct Fixture {
     tout_transaction: i64,
     /// Sans propriétaire.
     e_libre: i64,
-    /// Écriture de l'autre société, possédée par une facture de l'autre société.
+    /// Pièces SANS numéro (facture, avoir brouillon, facture fournisseur,
+    /// règlement d'une facture sans numéro) : étiquettes `None`.
+    e_sans_numero: i64,
+    sans_numero_facture: i64,
+    sans_numero_avoir: i64,
+    sans_numero_fournisseur: i64,
+    sans_numero_reglement: i64,
+    sans_numero_facture_reglee: i64,
+    sans_numero_transaction: i64,
+    /// Écriture de l'autre société, possédée par les CINQ types de pièces de
+    /// l'autre société — chaque bloc de l'`UNION ALL` a sa portée éprouvée.
     e_autre: i64,
-    autre_facture: i64,
+    autre_proprietaires: Vec<DocumentOwner>,
     /// Identifiant qu'aucune écriture ne porte.
     inexistante: i64,
 }
@@ -370,6 +418,7 @@ impl Fixture {
             self.e_inverse,
             self.e_archivee,
             self.e_tout,
+            self.e_sans_numero,
             self.e_libre,
         ]
     }
@@ -435,8 +484,40 @@ async fn fixture(pool: &MySqlPool) -> Fixture {
 
     let e_libre = s.ecriture(pool).await;
 
+    // Une pièce de chaque type, sans numéro (le schéma l'admet pour les quatre
+    // types numérotés) ; le règlement l'est d'une facture sans numéro.
+    let e_sans_numero = s.ecriture(pool).await;
+    let sans_numero_facture = s.facture_sans_numero(pool, Some(e_sans_numero)).await;
+    let sans_numero_avoir = s.avoir_brouillon(pool, e_sans_numero).await;
+    let sans_numero_fournisseur = s.facture_fournisseur_sans_numero(pool, e_sans_numero).await;
+    let sans_numero_facture_reglee = s.facture_sans_numero(pool, None).await;
+    let sans_numero_reglement = s
+        .reglement(pool, sans_numero_facture_reglee, e_sans_numero)
+        .await;
+    let sans_numero_transaction = s.transaction(pool, e_sans_numero).await;
+
     let e_autre = autre.ecriture(pool).await;
     let autre_facture = autre.facture(pool, Some(e_autre), "F-AUTRE-1").await;
+    let autre_avoir = autre.avoir(pool, e_autre, "AV-AUTRE-1").await;
+    let autre_fournisseur = autre
+        .facture_fournisseur(pool, e_autre, None, "FF-AUTRE-1")
+        .await;
+    let autre_facture_reglee = autre.facture(pool, None, "F-AUTRE-2").await;
+    let autre_reglement = autre.reglement(pool, autre_facture_reglee, e_autre).await;
+    let autre_transaction = autre.transaction(pool, e_autre).await;
+    use DocumentKind::*;
+    let autre_proprietaires = vec![
+        possede(Invoice, autre_facture, Some("F-AUTRE-1"), None),
+        possede(CreditNote, autre_avoir, Some("AV-AUTRE-1"), None),
+        possede(SupplierInvoice, autre_fournisseur, Some("FF-AUTRE-1"), None),
+        possede(
+            Settlement,
+            autre_reglement,
+            None,
+            Some((autre_facture_reglee, Some("F-AUTRE-2"))),
+        ),
+        possede(BankTransaction, autre_transaction, None, None),
+    ];
 
     let inexistante: i64 = sqlx::query_scalar("SELECT MAX(id) + 1000 FROM journal_entries")
         .fetch_one(pool)
@@ -470,8 +551,15 @@ async fn fixture(pool: &MySqlPool) -> Fixture {
         tout_facture_reglee,
         tout_transaction,
         e_libre,
+        e_sans_numero,
+        sans_numero_facture,
+        sans_numero_avoir,
+        sans_numero_fournisseur,
+        sans_numero_reglement,
+        sans_numero_facture_reglee,
+        sans_numero_transaction,
         e_autre,
-        autre_facture,
+        autre_proprietaires,
         inexistante,
     }
 }
@@ -650,9 +738,19 @@ async fn owners_match_handwritten_expectations(pool: MySqlPool) {
         "montage"
     );
 
+    // Écriture croisée : achat de la facture fournisseur S1 ET règlement de S2
+    // (données héritées) — une seule ligne fournisseur, la plus petite.
+    let e_croise = s.ecriture(&pool).await;
+    let autre_achat = s.ecriture(&pool).await;
+    let s1 = s.facture_fournisseur(&pool, e_croise, None, "FF-S1").await;
+    let s2 = s
+        .facture_fournisseur(&pool, autre_achat, Some(e_croise), "FF-S2")
+        .await;
+    assert!(s1 < s2, "montage");
+
     let mut conn = pool.acquire().await.unwrap();
     let mut lot = f.ecritures();
-    lot.push(e_double);
+    lot.extend([e_double, e_croise, autre_achat]);
     let owners = journal_entries::document_owners(&mut conn, s.company, &lot)
         .await
         .unwrap();
@@ -705,6 +803,29 @@ async fn owners_match_handwritten_expectations(pool: MySqlPool) {
                 ),
                 possede(BankTransaction, f.tout_transaction, None, None),
             ],
+        ),
+        (
+            f.e_sans_numero,
+            vec![
+                possede(Invoice, f.sans_numero_facture, None, None),
+                possede(CreditNote, f.sans_numero_avoir, None, None),
+                possede(SupplierInvoice, f.sans_numero_fournisseur, None, None),
+                possede(
+                    Settlement,
+                    f.sans_numero_reglement,
+                    None,
+                    Some((f.sans_numero_facture_reglee, None)),
+                ),
+                possede(BankTransaction, f.sans_numero_transaction, None, None),
+            ],
+        ),
+        (
+            e_croise,
+            vec![possede(SupplierInvoice, s1, Some("FF-S1"), None)],
+        ),
+        (
+            autre_achat,
+            vec![possede(SupplierInvoice, s2, Some("FF-S2"), None)],
         ),
         (
             e_double,
@@ -867,6 +988,20 @@ async fn owners_are_read_by_batches_of_500(pool: MySqlPool) {
     assert!(vide.is_empty());
     assert_eq!(executions(&mut conn).await - avant, 0, "liste vide");
 
+    // Les bornes de la tranche (revue P1, A-2 = E4) : 500 → une instruction,
+    // 501 → deux, 1 000 → deux, 1 001 → trois.
+    for (n, attendu) in [(500_usize, 1_i64), (501, 2), (1000, 2), (1001, 3)] {
+        let avant = executions(&mut conn).await;
+        journal_entries::document_owners(&mut conn, s.company, &ids[..n])
+            .await
+            .unwrap();
+        assert_eq!(
+            executions(&mut conn).await - avant,
+            attendu + surcout,
+            "{n} écritures"
+        );
+    }
+
     // 1 200 écritures, dans le désordre : trois tranches, trois instructions.
     let mut desordre = ids.clone();
     desordre.reverse();
@@ -906,9 +1041,9 @@ async fn owners_are_read_by_batches_of_500(pool: MySqlPool) {
     assert_eq!(avec_doublons, owners, "doublons : même résultat");
 }
 
-/// AC1, D4 (4) — la portée par société : l'écriture d'une autre société n'a
-/// aucun propriétaire, seule ou dans un lot ; lue sous sa propre société, elle
-/// a le sien.
+/// AC1, D4 (4) — la portée par société : l'écriture d'une autre société, que
+/// visent les cinq types de pièces de cette société, n'a aucun propriétaire,
+/// seule ou dans un lot ; lue sous sa propre société, elle a les cinq.
 #[sqlx::test(migrations = "./test-schema")]
 async fn owners_are_scoped_by_company(pool: MySqlPool) {
     let f = fixture(&pool).await;
@@ -921,22 +1056,18 @@ async fn owners_are_scoped_by_company(pool: MySqlPool) {
         .await
         .unwrap();
     assert_eq!(lot.keys().copied().collect::<Vec<_>>(), vec![f.e_facture]);
+    // Assertion de montage : chez elle, l'écriture porte les CINQ types — la
+    // table vide ci-dessus n'est donc pas une fixture creuse, et chaque bloc de
+    // l'`UNION ALL` voit sa portée éprouvée (revue P1, A-1 = B-1 = E1).
     let chez_elle =
         journal_entries::document_owners(&mut conn, f.autre.company, &[f.e_autre, f.e_facture])
             .await
             .unwrap();
+    assert_eq!(f.autre_proprietaires.len(), 5, "montage : cinq types");
     assert_eq!(
         chez_elle,
-        [(
-            f.e_autre,
-            vec![possede(
-                DocumentKind::Invoice,
-                f.autre_facture,
-                Some("F-AUTRE-1"),
-                None
-            )]
-        )]
-        .into_iter()
-        .collect()
+        [(f.e_autre, f.autre_proprietaires.clone())]
+            .into_iter()
+            .collect()
     );
 }
