@@ -1499,13 +1499,13 @@ fn assert_linked_refusal(
             account_number,
             claim,
             bank_account_id: b,
-            bank_name,
+            bank_label,
         }) => {
             assert_eq!(*account_id, x);
             assert_eq!(account_number.as_deref(), Some("1020"));
             assert_eq!(*claim, kesh_db::errors::ClaimSide::Receivable);
             assert_eq!(*b, bank_account_id);
-            assert_eq!(bank_name, "Banque X");
+            assert_eq!(bank_label, "Banque X");
         }
         other => panic!(
             "attendu ClaimAccountLinkedToBankAccount, obtenu {:?}",

@@ -1074,8 +1074,10 @@ pub enum DbError {
         claim: ClaimSide,
         /// Le premier compte bancaire non archivé lié à ce compte, par `id`.
         bank_account_id: i64,
-        /// Son nom, tel que le rend `bank_accounts::first_active_bank_account_linked_to`.
-        bank_name: String,
+        /// Son **nom d'affichage** (`bank_account_display_name` : « UBS — Personnel »,
+        /// ou la banque seule sans description), tel que le rend
+        /// `bank_accounts::first_active_bank_account_linked_to` — Story 26-2b (#622).
+        bank_label: String,
     },
 
     /// L'écriture a été contre-passée : on ne la modifie ni ne la supprime
@@ -1575,7 +1577,7 @@ mod tests {
             account_number: None,
             claim: ClaimSide::Payable,
             bank_account_id: 7,
-            bank_name: "UBS".into(),
+            bank_label: "UBS".into(),
         };
         assert_eq!(linked.error_code(), "CLAIM_ACCOUNT_LINKED_TO_BANK_ACCOUNT");
     }

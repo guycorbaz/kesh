@@ -19,7 +19,7 @@
 use sqlx::mysql::MySqlPool;
 use sqlx::{MySql, Transaction};
 
-use crate::entities::bank_account::{BankAccount, NewBankAccount};
+use crate::entities::bank_account::{BankAccount, NewBankAccount, bank_account_display_name};
 use crate::errors::{DbError, map_db_error};
 
 /// Colonnes de `bank_accounts` sélectionnées pour hydrater [`BankAccount`], sous
@@ -772,8 +772,10 @@ pub async fn count_other_active_for_company(
 }
 
 /// Le **premier compte bancaire non archivé** (par `id`) lié au compte du grand
-/// livre `account_id`, lu **sous verrou partagé** — `(id, bank_name)`, ou `None`
-/// (Story 15-6c, AC2 ; choix C-15-6-13, C-15-6-21, C-15-6-27).
+/// livre `account_id`, lu **sous verrou partagé** — `(id, nom d'affichage)`, ou
+/// `None` (Story 15-6c, AC2 ; choix C-15-6-13, C-15-6-21, C-15-6-27). Story 26-2b
+/// (#622, C-26-2-9) : le nom est celui de [`bank_account_display_name`]
+/// (« UBS — Personnel »), pour que le refus de désignation nomme le compte.
 ///
 /// ⛔ **Ordre des verrous** : appelé par `company_invoice_settings::update`
 /// **après** le `FOR UPDATE` de la ligne des réglages — ordre global
@@ -807,14 +809,20 @@ pub async fn first_active_bank_account_linked_to(
     company_id: i64,
     account_id: i64,
 ) -> Result<Option<(i64, String)>, DbError> {
-    sqlx::query_as(
-        "SELECT id, bank_name FROM bank_accounts WHERE company_id = ? AND journal_account_id = ? AND archived = FALSE ORDER BY id LIMIT 1 LOCK IN SHARE MODE",
+    let row: Option<(i64, String, Option<String>)> = sqlx::query_as(
+        "SELECT id, bank_name, description FROM bank_accounts WHERE company_id = ? AND journal_account_id = ? AND archived = FALSE ORDER BY id LIMIT 1 LOCK IN SHARE MODE",
     )
     .bind(company_id)
     .bind(account_id)
     .fetch_optional(&mut **tx)
     .await
-    .map_err(map_db_error)
+    .map_err(map_db_error)?;
+    Ok(row.map(|(id, bank_name, description)| {
+        (
+            id,
+            bank_account_display_name(&bank_name, description.as_deref()),
+        )
+    }))
 }
 
 /// Refuse de lier un compte bancaire au compte `account_id` s'il est l'un des
