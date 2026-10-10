@@ -22,8 +22,24 @@ use sqlx::{MySql, Transaction};
 use crate::entities::bank_account::{BankAccount, NewBankAccount};
 use crate::errors::{DbError, map_db_error};
 
-const FIND_BY_ID_SQL: &str = "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, version, archived, created_at, updated_at \
-     FROM bank_accounts WHERE id = ?";
+/// Colonnes de `bank_accounts` sélectionnées pour hydrater [`BankAccount`], sous
+/// forme de littéral — un `macro_rules!` plutôt qu'un `const` pour rester
+/// utilisable dans `concat!`, qui n'accepte que des littéraux (précédent :
+/// `repositories/accounts.rs`).
+///
+/// Story 26-2a (#622, C-26-2-20) — **source unique** : chaque `SELECT` qui
+/// hydrate un [`BankAccount`] s'écrit `concat!("SELECT ", columns!(), " FROM
+/// bank_accounts …")`. Une colonne ajoutée à l'entité s'ajoute ici une fois ; un
+/// `SELECT` qui l'oublierait ferait échouer `FromRow` à l'exécution. Aucune
+/// liste de colonnes ne sort de ce module : la route relit par
+/// [`find_by_id_in_tx`].
+macro_rules! columns {
+    () => {
+        "id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, version, archived, description, created_at, updated_at"
+    };
+}
+
+const FIND_BY_ID_SQL: &str = concat!("SELECT ", columns!(), " FROM bank_accounts WHERE id = ?");
 
 /// Crée un nouveau compte bancaire et retourne l'entité persistée.
 pub async fn create(pool: &MySqlPool, new: NewBankAccount) -> Result<BankAccount, DbError> {
@@ -74,8 +90,11 @@ pub async fn find_primary(
     company_id: i64,
 ) -> Result<Option<BankAccount>, DbError> {
     sqlx::query_as::<_, BankAccount>(
-        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, version, archived, created_at, updated_at \
-         FROM bank_accounts WHERE company_id = ? AND is_primary = TRUE AND archived = FALSE LIMIT 1",
+        concat!(
+            "SELECT ",
+            columns!(),
+            " FROM bank_accounts WHERE company_id = ? AND is_primary = TRUE AND archived = FALSE LIMIT 1",
+        ),
     )
     .bind(company_id)
     .fetch_optional(pool)
@@ -103,15 +122,45 @@ pub async fn find_by_id_for_company(
     company_id: i64,
     id: i64,
 ) -> Result<Option<BankAccount>, DbError> {
-    sqlx::query_as::<_, BankAccount>(
-        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, version, archived, created_at, updated_at \
-         FROM bank_accounts WHERE company_id = ? AND id = ? LIMIT 1",
-    )
+    sqlx::query_as::<_, BankAccount>(concat!(
+        "SELECT ",
+        columns!(),
+        " FROM bank_accounts WHERE company_id = ? AND id = ? LIMIT 1",
+    ))
     .bind(company_id)
     .bind(id)
     .fetch_optional(pool)
     .await
     .map_err(map_db_error)
+}
+
+/// Relecture d'un compte bancaire **scopée par société**, dans la transaction
+/// de l'appelant — Story 26-2a (#622, C-26-2-20).
+///
+/// Sert à la route de création à relire la ligne qu'elle vient d'insérer, sans
+/// qu'aucune liste de colonnes ne sorte de ce module (macro [`columns!`]). Ne
+/// filtre pas `archived` (comme [`find_by_id_for_company`]).
+///
+/// # Erreurs
+///
+/// [`DbError::NotFound`] si le compte n'existe pas ou appartient à une autre
+/// société.
+pub async fn find_by_id_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    id: i64,
+) -> Result<BankAccount, DbError> {
+    sqlx::query_as::<_, BankAccount>(concat!(
+        "SELECT ",
+        columns!(),
+        " FROM bank_accounts WHERE company_id = ? AND id = ?"
+    ))
+    .bind(company_id)
+    .bind(id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?
+    .ok_or(DbError::NotFound)
 }
 
 /// Liste les comptes bancaires d'une company.
@@ -126,11 +175,17 @@ pub async fn list_by_company(
     include_archived: bool,
 ) -> Result<Vec<BankAccount>, DbError> {
     let sql = if include_archived {
-        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, version, archived, created_at, updated_at \
-         FROM bank_accounts WHERE company_id = ? ORDER BY is_primary DESC, id"
+        concat!(
+            "SELECT ",
+            columns!(),
+            " FROM bank_accounts WHERE company_id = ? ORDER BY is_primary DESC, id",
+        )
     } else {
-        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, version, archived, created_at, updated_at \
-         FROM bank_accounts WHERE company_id = ? AND archived = FALSE ORDER BY is_primary DESC, id"
+        concat!(
+            "SELECT ",
+            columns!(),
+            " FROM bank_accounts WHERE company_id = ? AND archived = FALSE ORDER BY is_primary DESC, id",
+        )
     };
     sqlx::query_as::<_, BankAccount>(sql)
         .bind(company_id)
@@ -224,8 +279,11 @@ pub async fn upsert_primary_in_tx(
     new: NewBankAccount,
 ) -> Result<UpsertPrimaryOutcome, DbError> {
     let existing = sqlx::query_as::<_, BankAccount>(
-        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, version, archived, created_at, updated_at \
-         FROM bank_accounts WHERE company_id = ? AND is_primary = TRUE AND archived = FALSE LIMIT 1 FOR UPDATE",
+        concat!(
+            "SELECT ",
+            columns!(),
+            " FROM bank_accounts WHERE company_id = ? AND is_primary = TRUE AND archived = FALSE LIMIT 1 FOR UPDATE",
+        ),
     )
     .bind(new.company_id)
     .fetch_optional(&mut **tx)
@@ -349,11 +407,11 @@ pub async fn set_journal_account_id_for_company(
     // Le `existing` retourné sert également de source `before` pour
     // l'audit_log côté handler (P-C1 : pas de SELECT séparé qui ouvrirait
     // une fenêtre TOCTOU).
-    let existing = sqlx::query_as::<_, BankAccount>(
-        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, \
-         version, archived, created_at, updated_at FROM bank_accounts \
-         WHERE company_id = ? AND id = ? AND archived = FALSE FOR UPDATE",
-    )
+    let existing = sqlx::query_as::<_, BankAccount>(concat!(
+        "SELECT ",
+        columns!(),
+        " FROM bank_accounts WHERE company_id = ? AND id = ? AND archived = FALSE FOR UPDATE",
+    ))
     .bind(company_id)
     .bind(id)
     .fetch_optional(&mut **tx)
@@ -423,11 +481,30 @@ pub async fn set_journal_account_id_for_company(
     Ok((updated, existing))
 }
 
+/// Les champs que le `PUT` écrit **hors** de [`NewBankAccount`] — Story 26-2a
+/// (#622, C-26-2-27).
+///
+/// Regroupés pour que [`update_for_company`] garde sept paramètres
+/// (`clippy::too_many_arguments`) sans élargir `NewBankAccount`, que
+/// l'onboarding et la création par le dépôt partagent et qui ne connaissent
+/// pas la description (C-26-2-7).
+#[derive(Debug, Clone, Copy, Default)]
+pub struct BankAccountPutFields<'a> {
+    /// Compte du plan comptable lié (`None` = délier).
+    pub journal_account_id: Option<i64>,
+    /// Description **déjà normalisée** par la route (`None` = effacée :
+    /// remplacement complet, comme `qr_iban`).
+    pub description: Option<&'a str>,
+}
+
 /// Met à jour TOUS les champs métier d'un bank_account (PUT v014-1).
 ///
 /// Différent de [`set_journal_account_id_for_company`] qui ne touche que
 /// `journal_account_id` (PATCH legacy 8-5a-zero) : ce helper écrit
-/// `bank_name`, `iban`, `qr_iban`, `is_primary`, `journal_account_id`.
+/// `bank_name`, `iban`, `qr_iban`, `is_primary`, et, depuis `fields`
+/// ([`BankAccountPutFields`]), `journal_account_id` et `description` (Story
+/// 26-2a). **Remplacement complet** : une description `None` efface celle en
+/// base.
 ///
 /// La transition `is_primary` (un compte devient primary alors qu'un autre
 /// l'était) est **déléguée au caller** : ce repo flippe simplement
@@ -460,15 +537,16 @@ pub async fn update_for_company(
     company_id: i64,
     id: i64,
     new: &NewBankAccount,
-    new_journal_account_id: Option<i64>,
+    fields: BankAccountPutFields<'_>,
     expected_version: i32,
     claims: &super::company_invoice_settings::ClaimAccounts,
 ) -> Result<(BankAccount, BankAccount), DbError> {
-    let existing = sqlx::query_as::<_, BankAccount>(
-        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, \
-         version, archived, created_at, updated_at FROM bank_accounts \
-         WHERE company_id = ? AND id = ? AND archived = FALSE FOR UPDATE",
-    )
+    let new_journal_account_id = fields.journal_account_id;
+    let existing = sqlx::query_as::<_, BankAccount>(concat!(
+        "SELECT ",
+        columns!(),
+        " FROM bank_accounts WHERE company_id = ? AND id = ? AND archived = FALSE FOR UPDATE",
+    ))
     .bind(company_id)
     .bind(id)
     .fetch_optional(&mut **tx)
@@ -496,7 +574,7 @@ pub async fn update_for_company(
     }
 
     let rows = sqlx::query(
-        "UPDATE bank_accounts SET bank_name = ?, iban = ?, qr_iban = ?, is_primary = ?, journal_account_id = ?, version = version + 1 \
+        "UPDATE bank_accounts SET bank_name = ?, iban = ?, qr_iban = ?, is_primary = ?, journal_account_id = ?, description = ?, version = version + 1 \
          WHERE id = ? AND company_id = ? AND version = ?",
     )
     .bind(&new.bank_name)
@@ -504,6 +582,7 @@ pub async fn update_for_company(
     .bind(&new.qr_iban)
     .bind(new.is_primary)
     .bind(new_journal_account_id)
+    .bind(fields.description)
     .bind(id)
     .bind(company_id)
     .bind(expected_version)
@@ -537,11 +616,11 @@ pub async fn archive_for_company(
     id: i64,
     expected_version: i32,
 ) -> Result<(BankAccount, BankAccount), DbError> {
-    let existing = sqlx::query_as::<_, BankAccount>(
-        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, \
-         version, archived, created_at, updated_at FROM bank_accounts \
-         WHERE company_id = ? AND id = ? AND archived = FALSE FOR UPDATE",
-    )
+    let existing = sqlx::query_as::<_, BankAccount>(concat!(
+        "SELECT ",
+        columns!(),
+        " FROM bank_accounts WHERE company_id = ? AND id = ? AND archived = FALSE FOR UPDATE",
+    ))
     .bind(company_id)
     .bind(id)
     .fetch_optional(&mut **tx)
@@ -603,9 +682,11 @@ pub async fn flip_primary_off_for_company(
     excluded_id: i64,
 ) -> Result<Option<(BankAccount, BankAccount)>, DbError> {
     let existing = sqlx::query_as::<_, BankAccount>(
-        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, \
-         version, archived, created_at, updated_at FROM bank_accounts \
-         WHERE company_id = ? AND is_primary = TRUE AND archived = FALSE AND id != ? FOR UPDATE",
+        concat!(
+            "SELECT ",
+            columns!(),
+            " FROM bank_accounts WHERE company_id = ? AND is_primary = TRUE AND archived = FALSE AND id != ? FOR UPDATE",
+        ),
     )
     .bind(company_id)
     .bind(excluded_id)

@@ -4,6 +4,7 @@ use kesh_db::entities::account::AccountType;
 use kesh_db::entities::address::StructuredAddress;
 use kesh_db::entities::{Language, NewAccount, NewBankAccount, NewCompany, OrgType};
 use kesh_db::errors::DbError;
+use kesh_db::repositories::bank_accounts::BankAccountPutFields;
 use kesh_db::repositories::company_invoice_settings::ClaimAccounts;
 use kesh_db::repositories::{accounts, bank_accounts, companies};
 use sqlx::MySqlPool;
@@ -914,7 +915,10 @@ async fn archived_invariants_update_for_company_on_archived_returns_not_found(po
         company_id,
         archived_id,
         &new,
-        None,
+        BankAccountPutFields {
+            journal_account_id: None,
+            description: None,
+        },
         1,
         &ClaimAccounts::default(),
     )
@@ -1082,7 +1086,10 @@ async fn update_for_company_guards_only_a_changed_account(pool: MySqlPool) {
         company_id,
         bank_account_id,
         &bank_payload(company_id),
-        Some(linked),
+        BankAccountPutFields {
+            journal_account_id: Some(linked),
+            description: None,
+        },
         1,
         &ClaimAccounts::default(),
     )
@@ -1099,7 +1106,10 @@ async fn update_for_company_guards_only_a_changed_account(pool: MySqlPool) {
         company_id,
         bank_account_id,
         &bank_payload(company_id),
-        Some(target),
+        BankAccountPutFields {
+            journal_account_id: Some(target),
+            description: None,
+        },
         after.version + 7,
         &ClaimAccounts::default(),
     )
@@ -1116,7 +1126,10 @@ async fn update_for_company_guards_only_a_changed_account(pool: MySqlPool) {
         company_id,
         bank_account_id,
         &bank_payload(company_id),
-        Some(target),
+        BankAccountPutFields {
+            journal_account_id: Some(target),
+            description: None,
+        },
         after.version,
         &ClaimAccounts::default(),
     )
@@ -1130,7 +1143,10 @@ async fn update_for_company_guards_only_a_changed_account(pool: MySqlPool) {
         company_id,
         bank_account_id,
         &bank_payload(company_id),
-        Some(linked),
+        BankAccountPutFields {
+            journal_account_id: Some(linked),
+            description: None,
+        },
         after.version,
         &ClaimAccounts::default(),
     )
@@ -1438,7 +1454,10 @@ async fn already_linked_claim_account_is_exempt_in_the_repository(pool: MySqlPoo
         company_id,
         bank_account_id,
         &payload,
-        Some(receivable),
+        BankAccountPutFields {
+            journal_account_id: Some(receivable),
+            description: None,
+        },
         2,
         &claims,
     )
@@ -1553,4 +1572,274 @@ async fn bank_link_waits_for_a_concurrent_receivable_designation(pool: MySqlPool
         ),
         "le lien devait attendre la désignation puis refuser — reçu {result:?}"
     );
+}
+
+// ===========================================================================
+// Story 26-2a (#622) — description optionnelle du compte bancaire.
+// ===========================================================================
+
+/// Pose une description **par SQL**, hors de tout chemin du dépôt.
+async fn set_description_sql(pool: &MySqlPool, id: i64, description: &str) {
+    sqlx::query("UPDATE bank_accounts SET description = ? WHERE id = ?")
+        .bind(description)
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+async fn description_of(pool: &MySqlPool, id: i64) -> Option<String> {
+    sqlx::query_scalar("SELECT description FROM bank_accounts WHERE id = ?")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// AC2 — toutes les lectures hydratent la description (une seule liste de
+/// colonnes, macro `columns!`) : `find_primary`, `find_by_id_for_company`,
+/// `list_by_company` (deux variantes), `find_by_id_in_tx`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn description_hydratee_par_toutes_les_lectures(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+    let id = create_bank_account(&pool, company_id).await;
+    set_description_sql(&pool, id, "Personnel").await;
+    let attendu = Some("Personnel".to_string());
+
+    let primary = bank_accounts::find_primary(&pool, company_id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(primary.description, attendu);
+    let by_id = bank_accounts::find_by_id_for_company(&pool, company_id, id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(by_id.description, attendu);
+    for include_archived in [false, true] {
+        let list = bank_accounts::list_by_company(&pool, company_id, include_archived)
+            .await
+            .unwrap();
+        assert_eq!(list[0].description, attendu);
+    }
+    let mut tx = pool.begin().await.unwrap();
+    let in_tx = bank_accounts::find_by_id_in_tx(&mut tx, company_id, id)
+        .await
+        .unwrap();
+    assert_eq!(in_tx.description, attendu);
+    assert_eq!(in_tx.display_name(), "UBS — Personnel");
+}
+
+/// AC2 (C-26-2-20) — `find_by_id_in_tx` est scopée par société : un id d'une
+/// autre société → `NotFound`, comme un id inconnu.
+#[sqlx::test(migrations = "./test-schema")]
+async fn find_by_id_in_tx_est_scopee_par_societe(pool: MySqlPool) {
+    let company_a = create_test_company(&pool).await;
+    let company_b = create_test_company(&pool).await;
+    let id_a = create_bank_account(&pool, company_a).await;
+
+    let mut tx = pool.begin().await.unwrap();
+    let res = bank_accounts::find_by_id_in_tx(&mut tx, company_b, id_a).await;
+    assert!(matches!(res, Err(DbError::NotFound)), "obtenu {res:?}");
+    let res = bank_accounts::find_by_id_in_tx(&mut tx, company_a, id_a + 10_000).await;
+    assert!(matches!(res, Err(DbError::NotFound)), "obtenu {res:?}");
+    assert!(
+        bank_accounts::find_by_id_in_tx(&mut tx, company_a, id_a)
+            .await
+            .is_ok()
+    );
+}
+
+/// AC2/AC4 — `update_for_company` écrit la description (`PUT`), et une
+/// description `None` l'**efface** (remplacement complet, C-26-2-8).
+#[sqlx::test(migrations = "./test-schema")]
+async fn update_for_company_ecrit_puis_efface_la_description(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+    let id = create_bank_account(&pool, company_id).await;
+
+    let mut tx = pool.begin().await.unwrap();
+    let (after, before) = bank_accounts::update_for_company(
+        &mut tx,
+        company_id,
+        id,
+        &bank_payload(company_id),
+        BankAccountPutFields {
+            journal_account_id: None,
+            description: Some("Épargne"),
+        },
+        1,
+        &ClaimAccounts::default(),
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(before.description, None);
+    assert_eq!(after.description.as_deref(), Some("Épargne"));
+    assert_eq!(description_of(&pool, id).await.as_deref(), Some("Épargne"));
+
+    let mut tx = pool.begin().await.unwrap();
+    let (after, _) = bank_accounts::update_for_company(
+        &mut tx,
+        company_id,
+        id,
+        &bank_payload(company_id),
+        BankAccountPutFields {
+            journal_account_id: None,
+            description: None,
+        },
+        after.version,
+        &ClaimAccounts::default(),
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(after.description, None);
+    assert_eq!(description_of(&pool, id).await, None);
+}
+
+/// AC2 — l'upsert de l'onboarding (défense en profondeur, C-26-2-22) : un
+/// changement de banque rend `Updated` et **conserve** la description (cible
+/// de M5).
+#[sqlx::test(migrations = "./test-schema")]
+async fn upsert_primary_conserve_la_description(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+    let id = create_bank_account(&pool, company_id).await;
+    set_description_sql(&pool, id, "Personnel").await;
+
+    let mut tx = pool.begin().await.unwrap();
+    let outcome = bank_accounts::upsert_primary_in_tx(
+        &mut tx,
+        NewBankAccount {
+            company_id,
+            bank_name: "PostFinance".into(),
+            iban: "CH9300762011623852957".into(),
+            qr_iban: None,
+            is_primary: true,
+        },
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    let bank_accounts::UpsertPrimaryOutcome::Updated { before, after } = outcome else {
+        panic!("attendu Updated, obtenu {outcome:?}");
+    };
+    assert_eq!(before.description.as_deref(), Some("Personnel"));
+    assert_eq!(after.bank_name, "PostFinance");
+    assert_eq!(after.description.as_deref(), Some("Personnel"));
+    assert_eq!(
+        description_of(&pool, id).await.as_deref(),
+        Some("Personnel")
+    );
+}
+
+/// AC2 — le `PATCH` (lien au grand livre) ne touche pas la description.
+#[sqlx::test(migrations = "./test-schema")]
+async fn set_journal_account_id_conserve_la_description(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+    let user_id = create_test_user(&pool, company_id, "u26").await;
+    let ledger = create_account(
+        &pool,
+        company_id,
+        user_id,
+        "1020",
+        "Banque",
+        AccountType::Asset,
+    )
+    .await;
+    let id = create_bank_account(&pool, company_id).await;
+    set_description_sql(&pool, id, "Personnel").await;
+
+    let mut tx = pool.begin().await.unwrap();
+    let (after, _) = bank_accounts::set_journal_account_id_for_company(
+        &mut tx,
+        company_id,
+        id,
+        Some(ledger),
+        1,
+        &ClaimAccounts::default(),
+    )
+    .await
+    .unwrap();
+    tx.commit().await.unwrap();
+    assert_eq!(after.journal_account_id, Some(ledger));
+    assert_eq!(after.description.as_deref(), Some("Personnel"));
+    assert_eq!(
+        description_of(&pool, id).await.as_deref(),
+        Some("Personnel")
+    );
+}
+
+/// AC2 — l'archivage (`DELETE`) ne touche pas la description.
+#[sqlx::test(migrations = "./test-schema")]
+async fn archive_for_company_conserve_la_description(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+    let id = create_bank_account(&pool, company_id).await;
+    set_description_sql(&pool, id, "Personnel").await;
+
+    let mut tx = pool.begin().await.unwrap();
+    let (after, _) = bank_accounts::archive_for_company(&mut tx, company_id, id, 1)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+    assert!(after.archived);
+    assert_eq!(after.description.as_deref(), Some("Personnel"));
+    assert_eq!(
+        description_of(&pool, id).await.as_deref(),
+        Some("Personnel")
+    );
+}
+
+/// AC2 — `bank_accounts::create` (création par le dépôt) ne connaît pas la
+/// description : le compte créé n'en a pas, et un compte décrit voisin garde
+/// la sienne.
+#[sqlx::test(migrations = "./test-schema")]
+async fn create_ne_touche_pas_la_description(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+    let voisin = create_bank_account(&pool, company_id).await;
+    set_description_sql(&pool, voisin, "Personnel").await;
+
+    let cree = bank_accounts::create(
+        &pool,
+        NewBankAccount {
+            company_id,
+            bank_name: "UBS".into(),
+            iban: "CH5604835012345678009".into(),
+            qr_iban: None,
+            is_primary: false,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(cree.description, None);
+    assert_eq!(description_of(&pool, cree.id).await, None);
+    assert_eq!(
+        description_of(&pool, voisin).await.as_deref(),
+        Some("Personnel")
+    );
+}
+
+/// AC2 — la démotion de l'ancien principal, par appel **direct** de
+/// `flip_primary_off_for_company` (cible de M12) : relu `is_primary = false`,
+/// description intacte.
+#[sqlx::test(migrations = "./test-schema")]
+async fn flip_primary_off_conserve_la_description(pool: MySqlPool) {
+    let company_id = create_test_company(&pool).await;
+    let ancien = create_bank_account(&pool, company_id).await;
+    set_description_sql(&pool, ancien, "Personnel").await;
+
+    let mut tx = pool.begin().await.unwrap();
+    let (updated, before) = bank_accounts::flip_primary_off_for_company(&mut tx, company_id, -1)
+        .await
+        .unwrap()
+        .expect("un principal à démoter");
+    tx.commit().await.unwrap();
+    assert_eq!(before.id, ancien);
+    assert!(!updated.is_primary);
+    assert_eq!(updated.description.as_deref(), Some("Personnel"));
+    let relu = bank_accounts::find_by_id_for_company(&pool, company_id, ancien)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(!relu.is_primary);
+    assert_eq!(relu.description.as_deref(), Some("Personnel"));
 }

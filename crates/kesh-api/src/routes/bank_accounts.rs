@@ -34,8 +34,11 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use kesh_db::entities::account::AccountType;
 use kesh_db::entities::audit_log::NewAuditLogEntry;
-use kesh_db::entities::bank_account::{BankAccount, NewBankAccount};
+use kesh_db::entities::bank_account::{
+    BANK_ACCOUNT_DESCRIPTION_MAX_CHARS, BankAccount, NewBankAccount,
+};
 use kesh_db::errors::{DbError, NonPostableAccount};
+use kesh_db::repositories::bank_accounts::BankAccountPutFields;
 use kesh_db::repositories::company_invoice_settings::{self, ClaimAccounts};
 use kesh_db::repositories::{accounts, audit_log, bank_accounts, onboarding};
 use rust_decimal::Decimal;
@@ -67,6 +70,10 @@ pub struct PatchJournalLinkBody {
 #[serde(rename_all = "camelCase")]
 pub struct CreateBankAccountBody {
     pub bank_name: String,
+    /// Story 26-2a (#622) — description optionnelle ; absente ou `null` →
+    /// pas de description.
+    #[serde(default)]
+    pub description: Option<String>,
     pub iban: String,
     #[serde(default)]
     pub qr_iban: Option<String>,
@@ -77,10 +84,16 @@ pub struct CreateBankAccountBody {
 }
 
 /// Body du PUT `/bank-accounts/{id}` — édition complète v014-1.
+///
+/// **Remplacement complet** : un champ optionnel absent est effacé — `qrIban`
+/// comme `description` (Story 26-2a, C-26-2-8, C-26-2-19).
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UpdateBankAccountBody {
     pub bank_name: String,
+    /// Story 26-2a (#622) — description optionnelle ; **absente ⇒ effacée**.
+    #[serde(default)]
+    pub description: Option<String>,
     pub iban: String,
     #[serde(default)]
     pub qr_iban: Option<String>,
@@ -190,12 +203,12 @@ impl_validation_extractor!(
 impl_validation_extractor!(
     CreateBankAccountBodyExtractor,
     CreateBankAccountBody,
-    "`bankName` str, `iban` str, `qrIban?` str, `isPrimary?` bool, `journalAccountId?` i64"
+    "`bankName` str, `description?` str, `iban` str, `qrIban?` str, `isPrimary?` bool, `journalAccountId?` i64"
 );
 impl_validation_extractor!(
     UpdateBankAccountBodyExtractor,
     UpdateBankAccountBody,
-    "`bankName` str, `iban` str, `qrIban?` str, `isPrimary?` bool, `journalAccountId?` i64, `version` i32"
+    "`bankName` str, `description?` str, `iban` str, `qrIban?` str, `isPrimary?` bool, `journalAccountId?` i64, `version` i32"
 );
 impl_validation_extractor!(
     ArchiveBankAccountBodyExtractor,
@@ -224,20 +237,90 @@ async fn assert_onboarding_complete(pool: &sqlx::MySqlPool) -> Result<(), AppErr
     }
 }
 
+/// Champs métier d'un payload create/update, **normalisés** par
+/// [`validate_bank_input`].
+struct ValidatedBankInput {
+    bank_name: String,
+    /// Story 26-2a — `None` si absente, vide ou faite d'espaces.
+    description: Option<String>,
+    iban: String,
+    qr_iban: Option<String>,
+}
+
+/// Caractères refusés dans une description de compte bancaire — Story 26-2a
+/// (#622, C-26-2-17, C-26-2-28).
+///
+/// Ensemble **fermé et nommé** : `char::is_control` (catégorie Cc, dont `\n`,
+/// `\r`, `\t`), plus les caractères de mise en page invisibles ou de contrôle
+/// bidirectionnel listés ci-dessous. **Angle mort assumé** : d'autres
+/// invisibles hors de cette liste (U+115F, U+1160, U+FFA0, sélecteurs de
+/// variante supplémentaires U+E0100 à U+E01EF…) passent.
+fn is_forbidden_in_description(c: char) -> bool {
+    c.is_control()
+        || matches!(
+            c,
+            '\u{00AD}'                    // tiret conditionnel
+            | '\u{034F}'                  // combining grapheme joiner
+            | '\u{061C}'                  // marque arabe (contrôle bidi)
+            | '\u{180E}'                  // séparateur de voyelles mongol
+            | '\u{2028}'..='\u{2029}'     // séparateurs de ligne et de paragraphe
+            | '\u{200B}'..='\u{200F}'     // espaces de largeur nulle, LRM, RLM
+            | '\u{202A}'..='\u{202E}'     // enchâssements et forçages bidi
+            | '\u{2060}'..='\u{2064}'     // gluon de mots, opérateurs invisibles
+            | '\u{2066}'..='\u{2069}'     // isolats bidi
+            | '\u{206A}'..='\u{206F}'     // contrôles de mise en forme désuets
+            | '\u{3164}'                  // remplissage hangûl
+            | '\u{FE00}'..='\u{FE0F}'     // sélecteurs de variante
+            | '\u{FEFF}'                  // indicateur d'ordre des octets
+            | '\u{FFF9}'..='\u{FFFB}'     // annotations interlinéaires
+            | '\u{E0000}'..='\u{E007F}' // étiquettes
+        )
+}
+
+/// Normalise et valide la description d'un compte bancaire — Story 26-2a
+/// (#622, AC3).
+///
+/// Absente, vide ou faite d'espaces → `None`. Sinon `trim()` **puis** contrôles
+/// (C-26-2-28 : `str::trim` retire tout `White_Space` des bords, donc
+/// `"Épargne\n"` est accepté et stocké `"Épargne"`) : au plus
+/// [`BANK_ACCOUNT_DESCRIPTION_MAX_CHARS`] caractères Unicode, aucun caractère
+/// de [`is_forbidden_in_description`].
+fn normalize_description(description: Option<&str>) -> Result<Option<String>, AppError> {
+    let Some(trimmed) = description.map(str::trim).filter(|d| !d.is_empty()) else {
+        return Ok(None);
+    };
+    if trimmed.chars().count() > BANK_ACCOUNT_DESCRIPTION_MAX_CHARS {
+        return Err(AppError::Validation(format!(
+            "La description ne peut pas dépasser {BANK_ACCOUNT_DESCRIPTION_MAX_CHARS} caractères"
+        )));
+    }
+    if trimmed.chars().any(is_forbidden_in_description) {
+        return Err(AppError::Validation(
+            "La description ne peut pas contenir de saut de ligne ni de caractère de contrôle ou de mise en page"
+                .into(),
+        ));
+    }
+    Ok(Some(trimmed.to_string()))
+}
+
 /// Valide et normalise les champs métier d'un payload create/update.
 ///
-/// Retourne `(bank_name normalisé, iban normalisé, qr_iban normalisé)`.
+/// **Ordre des refus de forme** (Story 26-2a, AC3) : banque vide → description
+/// → IBAN → QR-IBAN.
 fn validate_bank_input(
     bank_name: &str,
+    description: Option<&str>,
     iban: &str,
     qr_iban: Option<&str>,
-) -> Result<(String, String, Option<String>), AppError> {
+) -> Result<ValidatedBankInput, AppError> {
     let bank_name = bank_name.trim().to_string();
     if bank_name.is_empty() {
         return Err(AppError::Validation(
             "Le nom de la banque ne peut pas être vide".into(),
         ));
     }
+
+    let description = normalize_description(description)?;
 
     let iban_normalized = kesh_core::types::Iban::new(iban)
         .map_err(|e| AppError::Validation(format!("IBAN invalide : {e}")))?
@@ -253,7 +336,12 @@ fn validate_bank_input(
         _ => None,
     };
 
-    Ok((bank_name, iban_normalized, qr_iban_normalized))
+    Ok(ValidatedBankInput {
+        bank_name,
+        description,
+        iban: iban_normalized,
+        qr_iban: qr_iban_normalized,
+    })
 }
 
 /// Validation pré-flight du `journalAccountId` (compte existe + actif +
@@ -441,8 +529,17 @@ pub async fn create_bank_account(
 ) -> Result<(StatusCode, Json<BankAccount>), AppError> {
     assert_onboarding_complete(&state.pool).await?;
 
-    let (bank_name, iban, qr_iban) =
-        validate_bank_input(&body.bank_name, &body.iban, body.qr_iban.as_deref())?;
+    let ValidatedBankInput {
+        bank_name,
+        description,
+        iban,
+        qr_iban,
+    } = validate_bank_input(
+        &body.bank_name,
+        body.description.as_deref(),
+        &body.iban,
+        body.qr_iban.as_deref(),
+    )?;
     validate_journal_account_id(
         &state.pool,
         current_user.company_id,
@@ -501,11 +598,12 @@ pub async fn create_bank_account(
     };
 
     let result = sqlx::query(
-        "INSERT INTO bank_accounts (company_id, bank_name, iban, qr_iban, is_primary, journal_account_id) \
-         VALUES (?, ?, ?, ?, ?, ?)",
+        "INSERT INTO bank_accounts (company_id, bank_name, description, iban, qr_iban, is_primary, journal_account_id) \
+         VALUES (?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(new.company_id)
     .bind(&new.bank_name)
+    .bind(&description)
     .bind(&new.iban)
     .bind(&new.qr_iban)
     .bind(new.is_primary)
@@ -517,14 +615,9 @@ pub async fn create_bank_account(
     let new_id = i64::try_from(result.last_insert_id())
         .map_err(|_| AppError::Internal("last_insert_id overflow".into()))?;
 
-    let inserted = sqlx::query_as::<_, BankAccount>(
-        "SELECT id, company_id, bank_name, iban, qr_iban, is_primary, journal_account_id, version, archived, created_at, updated_at \
-         FROM bank_accounts WHERE id = ?",
-    )
-    .bind(new_id)
-    .fetch_one(&mut *tx)
-    .await
-    .map_err(|e| AppError::Database(kesh_db::errors::map_db_error(e)))?;
+    let inserted = bank_accounts::find_by_id_in_tx(&mut tx, current_user.company_id, new_id)
+        .await
+        .map_err(AppError::Database)?;
 
     // Audit log primary_transition sur l'ancien primary démoté, puis création.
     if let Some((updated_old, before_old)) = demoted_primary.as_ref() {
@@ -541,6 +634,7 @@ pub async fn create_bank_account(
 
     let details = serde_json::json!({
         "bank_account_id": new_id,
+        "description": inserted.description,
         "is_primary": inserted.is_primary,
         "iban_present": true,
         "qr_iban_present": inserted.qr_iban.is_some(),
@@ -568,6 +662,11 @@ pub async fn create_bank_account(
 /// Handler `PUT /api/v1/bank-accounts/{id}` — édition complète v014-1
 /// (Comptable+).
 ///
+/// **Remplacement complet** (Story 26-2a, C-26-2-8, C-26-2-19) : un champ
+/// optionnel absent du corps est **effacé** — `qrIban` comme `description`.
+/// Changement de contrat pour une intégration par clé d'API écrite pour la
+/// 0.13.0 : un corps sans `description` efface celle saisie à l'écran.
+///
 /// **Ordre des erreurs** (Story 15-5b, AC12 ; Story 15-6c, AC6) : forme (400)
 /// → 404 / 400 type du compte lié (`validate_journal_account_id`, hors
 /// transaction) → 404 compte bancaire → 409 version → 400
@@ -588,8 +687,17 @@ pub async fn update_bank_account(
         return Err(AppError::Validation("version doit être >= 1".to_string()));
     }
 
-    let (bank_name, iban, qr_iban) =
-        validate_bank_input(&body.bank_name, &body.iban, body.qr_iban.as_deref())?;
+    let ValidatedBankInput {
+        bank_name,
+        description,
+        iban,
+        qr_iban,
+    } = validate_bank_input(
+        &body.bank_name,
+        body.description.as_deref(),
+        &body.iban,
+        body.qr_iban.as_deref(),
+    )?;
     validate_journal_account_id(
         &state.pool,
         current_user.company_id,
@@ -636,7 +744,10 @@ pub async fn update_bank_account(
         current_user.company_id,
         id,
         &new,
-        body.journal_account_id,
+        BankAccountPutFields {
+            journal_account_id: body.journal_account_id,
+            description: description.as_deref(),
+        },
         body.version,
         &claims,
     )
@@ -664,6 +775,7 @@ pub async fn update_bank_account(
         "trigger": "full_update",
         "before": {
             "bank_name": before.bank_name,
+            "description": before.description,
             "iban_present": true,
             "qr_iban_present": before.qr_iban.is_some(),
             "is_primary": before.is_primary,
@@ -672,6 +784,7 @@ pub async fn update_bank_account(
         },
         "after": {
             "bank_name": updated.bank_name,
+            "description": updated.description,
             "iban_present": true,
             "qr_iban_present": updated.qr_iban.is_some(),
             "is_primary": updated.is_primary,
@@ -887,4 +1000,99 @@ pub async fn patch_bank_account_journal_link(
         .map_err(|e| AppError::Internal(format!("commit tx: {e}")))?;
 
     Ok(Json(updated))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// AC3 (C-26-2-28) — chaque plage de l'ensemble refusé, par ses deux bornes,
+    /// et un voisin immédiat accepté de part et d'autre (quand il n'est ni
+    /// contrôle ni dans une autre plage).
+    #[test]
+    fn ensemble_refuse_borne_par_borne() {
+        let plages: &[(u32, u32)] = &[
+            (0x00AD, 0x00AD),
+            (0x034F, 0x034F),
+            (0x061C, 0x061C),
+            (0x180E, 0x180E),
+            (0x2028, 0x2029),
+            (0x200B, 0x200F),
+            (0x202A, 0x202E),
+            (0x2060, 0x2064),
+            (0x2066, 0x2069),
+            (0x206A, 0x206F),
+            (0x3164, 0x3164),
+            (0xFE00, 0xFE0F),
+            (0xFEFF, 0xFEFF),
+            (0xFFF9, 0xFFFB),
+            (0xE0000, 0xE007F),
+        ];
+        let dans_une_plage = |cp: u32| plages.iter().any(|&(a, b)| (a..=b).contains(&cp));
+        for &(debut, fin) in plages {
+            for cp in [debut, fin] {
+                let c = char::from_u32(cp).unwrap();
+                assert!(
+                    is_forbidden_in_description(c),
+                    "U+{cp:04X} doit être refusé"
+                );
+            }
+            for cp in [debut - 1, fin + 1] {
+                if dans_une_plage(cp) {
+                    continue;
+                }
+                let Some(c) = char::from_u32(cp) else {
+                    continue;
+                };
+                if c.is_control() {
+                    continue;
+                }
+                assert!(
+                    !is_forbidden_in_description(c),
+                    "U+{cp:04X}, voisin d'une plage, doit être accepté"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn controles_cc_refuses() {
+        for c in [
+            '\n', '\r', '\t', '\u{0000}', '\u{001F}', '\u{007F}', '\u{0085}', '\u{009F}',
+        ] {
+            assert!(is_forbidden_in_description(c), "{:?} doit être refusé", c);
+        }
+    }
+
+    #[test]
+    fn lettres_et_espaces_ordinaires_acceptes() {
+        for c in ['a', 'É', 'é', ' ', '-', '\u{00A0}', '’', '«', '»', '—'] {
+            assert!(!is_forbidden_in_description(c), "{:?} doit être accepté", c);
+        }
+    }
+
+    #[test]
+    fn normalisation_de_la_description() {
+        assert_eq!(normalize_description(None).unwrap(), None);
+        assert_eq!(normalize_description(Some("")).unwrap(), None);
+        assert_eq!(normalize_description(Some("   ")).unwrap(), None);
+        assert_eq!(
+            normalize_description(Some("  Épargne  "))
+                .unwrap()
+                .as_deref(),
+            Some("Épargne")
+        );
+        // Contrôle APRÈS trim (C-26-2-28) : `\n` de bord retiré, accepté.
+        assert_eq!(
+            normalize_description(Some("Épargne\n")).unwrap().as_deref(),
+            Some("Épargne")
+        );
+        assert!(normalize_description(Some("Épar\ngne")).is_err());
+        // Bornes écrites en littéraux (M4, M15) — jamais la constante.
+        assert!(normalize_description(Some(&"a".repeat(60))).is_ok());
+        assert!(normalize_description(Some(&"a".repeat(61))).is_err());
+        // Caractères, pas octets : 60 « é » précomposés (120 octets) acceptés.
+        assert!(normalize_description(Some(&"\u{e9}".repeat(60))).is_ok());
+        assert!(normalize_description(Some(&"\u{e9}".repeat(61))).is_err());
+    }
 }

@@ -1772,3 +1772,433 @@ async fn stale_version_precedes_claim_refusal_and_null_setting_allows_link(pool:
         .unwrap();
     assert_eq!(resp.status(), 200, "{}", resp.text().await.unwrap());
 }
+
+// ===========================================================================
+// Story 26-2a (#622) — description optionnelle du compte bancaire.
+// ===========================================================================
+
+async fn db_description(pool: &MySqlPool, id: i64) -> Option<String> {
+    sqlx::query_scalar("SELECT description FROM bank_accounts WHERE id = ?")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+async fn post_bank(app: &TestApp, ctx: &Ctx, body: Value) -> (u16, Value) {
+    let resp = app
+        .client
+        .post(app.url("/api/v1/bank-accounts"))
+        .bearer_auth(&ctx.jwt)
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    (status, resp.json().await.unwrap())
+}
+
+async fn put_bank(app: &TestApp, ctx: &Ctx, id: i64, body: Value) -> (u16, Value) {
+    let resp = app
+        .client
+        .put(app.url(&format!("/api/v1/bank-accounts/{id}")))
+        .bearer_auth(&ctx.jwt)
+        .json(&body)
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    (status, resp.json().await.unwrap())
+}
+
+async fn list_banks(app: &TestApp, ctx: &Ctx) -> Vec<Value> {
+    let resp = app
+        .client
+        .get(app.url("/api/v1/bank-accounts"))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    resp.json().await.unwrap()
+}
+
+/// AC4 — `POST` : la description est normalisée (`trim`), stockée, rendue en
+/// `201` et portée par l'audit `bank_account.created` ; sans elle → `null`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_bank_account_avec_et_sans_description(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+
+    let (status, body) = post_bank(
+        &app,
+        &ctx,
+        json!({ "bankName": "UBS", "description": "  Épargne  ", "iban": "CH3908704016075473007" }),
+    )
+    .await;
+    assert_eq!(status, 201, "body: {body}");
+    assert_eq!(body["description"], "Épargne");
+    let id = body["id"].as_i64().unwrap();
+    assert_eq!(db_description(&pool, id).await.as_deref(), Some("Épargne"));
+    let audit: Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'bank_account.created' AND entity_id = ?",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(audit["description"], "Épargne");
+
+    let (status, body) = post_bank(
+        &app,
+        &ctx,
+        json!({ "bankName": "UBS", "iban": "CH9300762011623852957" }),
+    )
+    .await;
+    assert_eq!(status, 201, "body: {body}");
+    assert_eq!(body["description"], Value::Null);
+    let id = body["id"].as_i64().unwrap();
+    assert_eq!(db_description(&pool, id).await, None);
+    let audit: Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'bank_account.created' AND entity_id = ?",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(audit["description"], Value::Null);
+}
+
+/// AC3 — bornes (60 et 61 en **littéraux**, jamais la constante : M4, M15),
+/// caractères et non octets, normalisation, caractères refusés, ordre
+/// trim / contrôle.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_bank_account_validation_de_la_description(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+
+    let acceptes: Vec<(String, Option<&str>)> = vec![
+        ("a".repeat(60), None),
+        ("\u{e9}".repeat(60), None),
+        ("  Épargne  ".into(), Some("Épargne")),
+        ("Épargne\n".into(), Some("Épargne")),
+        ("   ".into(), Some("")),
+    ];
+    for (saisie, attendu) in acceptes {
+        let (status, body) = post_bank(
+            &app,
+            &ctx,
+            json!({ "bankName": "UBS", "description": saisie, "iban": "CH3908704016075473007" }),
+        )
+        .await;
+        assert_eq!(status, 201, "{saisie:?} doit être accepté — body: {body}");
+        let id = body["id"].as_i64().unwrap();
+        let stocke = db_description(&pool, id).await;
+        match attendu {
+            None => assert_eq!(stocke.as_deref(), Some(saisie.as_str())),
+            Some("") => assert_eq!(stocke, None, "{saisie:?} doit être stocké NULL"),
+            Some(a) => assert_eq!(stocke.as_deref(), Some(a)),
+        }
+    }
+
+    let trop_longs = ["a".repeat(61), "\u{e9}".repeat(61)];
+    for saisie in trop_longs {
+        let (status, body) = post_bank(
+            &app,
+            &ctx,
+            json!({ "bankName": "UBS", "description": saisie, "iban": "CH3908704016075473007" }),
+        )
+        .await;
+        assert_eq!(status, 400, "61 caractères doivent être refusés");
+        assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+        assert_eq!(
+            body["error"]["message"],
+            "La description ne peut pas dépasser 60 caractères"
+        );
+    }
+
+    for saisie in [
+        "a\nb",
+        "Épar\ngne",
+        "a\u{2028}b",
+        "a\u{202E}b",
+        "a\tb",
+        "a\u{200B}b",
+    ] {
+        let (status, body) = post_bank(
+            &app,
+            &ctx,
+            json!({ "bankName": "UBS", "description": saisie, "iban": "CH3908704016075473007" }),
+        )
+        .await;
+        assert_eq!(status, 400, "{saisie:?} doit être refusé");
+        assert_eq!(
+            body["error"]["message"],
+            "La description ne peut pas contenir de saut de ligne ni de caractère de contrôle ou de mise en page"
+        );
+    }
+}
+
+/// AC3 — ordre des refus de forme épinglé : banque → description → IBAN →
+/// QR-IBAN, sur un corps qui les viole tous puis les corrige un à un.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ordre_des_refus_de_forme(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let trop_long = "a".repeat(61);
+
+    let cas = [
+        (
+            json!({ "bankName": "  ", "description": trop_long, "iban": "BAD", "qrIban": "BAD" }),
+            "Le nom de la banque ne peut pas être vide",
+        ),
+        (
+            json!({ "bankName": "UBS", "description": trop_long, "iban": "BAD", "qrIban": "BAD" }),
+            "La description ne peut pas dépasser 60 caractères",
+        ),
+        (
+            json!({ "bankName": "UBS", "description": "Épargne", "iban": "BAD", "qrIban": "BAD" }),
+            "IBAN invalide",
+        ),
+        (
+            json!({ "bankName": "UBS", "description": "Épargne", "iban": "CH3908704016075473007", "qrIban": "BAD" }),
+            "QR-IBAN invalide",
+        ),
+    ];
+    for (corps, debut) in cas {
+        let (status, body) = post_bank(&app, &ctx, corps.clone()).await;
+        assert_eq!(status, 400, "corps {corps}");
+        let message = body["error"]["message"].as_str().unwrap();
+        assert!(
+            message.starts_with(debut),
+            "corps {corps} : attendu « {debut}… », obtenu « {message} »"
+        );
+    }
+}
+
+/// AC3 (C-26-2-4) — pas d'unicité : deux comptes de la même société, même
+/// banque, même description → `201` et `201`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn description_non_unique(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    for iban in ["CH3908704016075473007", "CH9300762011623852957"] {
+        let (status, body) = post_bank(
+            &app,
+            &ctx,
+            json!({ "bankName": "UBS", "description": "Épargne", "iban": iban }),
+        )
+        .await;
+        assert_eq!(status, 201, "body: {body}");
+    }
+}
+
+/// AC4 — `PUT` écrit la description (audit `before`/`after`), puis un `PUT`
+/// dont le corps **omet** `description` l'**efface** (remplacement complet,
+/// C-26-2-19 — cible de M13) : `200`, `null` en réponse et en base.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn put_ecrit_puis_efface_la_description_absente(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let id = ctx.bank_account_id;
+
+    let version = read_bank_account_version(&pool, id).await;
+    let (status, body) = put_bank(
+        &app,
+        &ctx,
+        id,
+        json!({ "bankName": "UBS", "description": "Personnel", "iban": "CH4431999123000889012", "isPrimary": true, "version": version }),
+    )
+    .await;
+    assert_eq!(status, 200, "body: {body}");
+    assert_eq!(body["description"], "Personnel");
+    assert_eq!(
+        db_description(&pool, id).await.as_deref(),
+        Some("Personnel")
+    );
+    let audit: Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'bank_account.updated' AND entity_id = ? \
+         AND JSON_EXTRACT(details_json, '$.trigger') = 'full_update' ORDER BY id DESC LIMIT 1",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(audit["before"]["description"], Value::Null);
+    assert_eq!(audit["after"]["description"], "Personnel");
+
+    // Corps écrit pour la 0.13.0 : sans le champ.
+    let (status, body) = put_bank(
+        &app,
+        &ctx,
+        id,
+        json!({ "bankName": "UBS", "iban": "CH4431999123000889012", "isPrimary": true, "version": version + 1 }),
+    )
+    .await;
+    assert_eq!(status, 200, "body: {body}");
+    assert_eq!(body["description"], Value::Null);
+    assert_eq!(db_description(&pool, id).await, None);
+    let audit: Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'bank_account.updated' AND entity_id = ? \
+         AND JSON_EXTRACT(details_json, '$.trigger') = 'full_update' ORDER BY id DESC LIMIT 1",
+    )
+    .bind(id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(audit["before"]["description"], "Personnel");
+    assert_eq!(audit["after"]["description"], Value::Null);
+}
+
+/// AC4 — `GET` porte `description` sur chaque élément, `null` si absente.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn get_liste_porte_la_description(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let (_, body) = post_bank(
+        &app,
+        &ctx,
+        json!({ "bankName": "UBS", "description": "Épargne", "iban": "CH3908704016075473007" }),
+    )
+    .await;
+    let decrit = body["id"].as_i64().unwrap();
+
+    let list = list_banks(&app, &ctx).await;
+    assert_eq!(list.len(), 2);
+    for item in &list {
+        assert!(
+            item.as_object().unwrap().contains_key("description"),
+            "clé description absente : {item}"
+        );
+        if item["id"].as_i64() == Some(decrit) {
+            assert_eq!(item["description"], "Épargne");
+        } else {
+            assert_eq!(item["description"], Value::Null);
+        }
+    }
+}
+
+/// AC4 — `PATCH` (lien au grand livre) et `DELETE` (archivage) rendent la
+/// description inchangée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn patch_et_delete_rendent_la_description_inchangee(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let id = ctx.bank_account_id;
+    sqlx::query("UPDATE bank_accounts SET description = 'Personnel' WHERE id = ?")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let version = read_bank_account_version(&pool, id).await;
+    let resp = app
+        .client
+        .patch(app.url(&format!("/api/v1/bank-accounts/{id}")))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "journalAccountId": ctx.asset_account_id, "version": version }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["description"], "Personnel");
+
+    let resp = app
+        .client
+        .delete(app.url(&format!("/api/v1/bank-accounts/{id}")))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "version": version + 1 }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["archived"], true);
+    assert_eq!(body["description"], "Personnel");
+    assert_eq!(
+        db_description(&pool, id).await.as_deref(),
+        Some("Personnel")
+    );
+}
+
+/// AC2 — démotion de bout en bout : un `PUT isPrimary=true` sur un second
+/// compte démote l'ancien principal, qui garde sa description au `GET`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn demotion_du_principal_conserve_sa_description(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let ancien = ctx.bank_account_id;
+    sqlx::query("UPDATE bank_accounts SET description = 'Personnel' WHERE id = ?")
+        .bind(ancien)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (_, body) = post_bank(
+        &app,
+        &ctx,
+        json!({ "bankName": "PostFinance", "iban": "CH3908704016075473007", "isPrimary": false }),
+    )
+    .await;
+    let second = body["id"].as_i64().unwrap();
+
+    let (status, body) = put_bank(
+        &app,
+        &ctx,
+        second,
+        json!({ "bankName": "PostFinance", "iban": "CH3908704016075473007", "isPrimary": true, "version": 1 }),
+    )
+    .await;
+    assert_eq!(status, 200, "body: {body}");
+
+    let list = list_banks(&app, &ctx).await;
+    let ancien_json = list
+        .iter()
+        .find(|b| b["id"].as_i64() == Some(ancien))
+        .expect("ancien principal listé");
+    assert_eq!(ancien_json["isPrimary"], false);
+    assert_eq!(ancien_json["description"], "Personnel");
+}
+
+/// AC4 — les messages de forme des deux extracteurs nomment `description?`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn messages_des_extracteurs_nomment_la_description(pool: MySqlPool) {
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+
+    let (status, body) = post_bank(
+        &app,
+        &ctx,
+        json!({ "bankName": "UBS", "description": 42, "iban": "CH3908704016075473007" }),
+    )
+    .await;
+    assert_eq!(status, 400);
+    let message = body["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("`description?` str"),
+        "message : {message}"
+    );
+
+    let (status, body) = put_bank(
+        &app,
+        &ctx,
+        ctx.bank_account_id,
+        json!({ "bankName": "UBS", "description": 42, "iban": "CH3908704016075473007", "version": 1 }),
+    )
+    .await;
+    assert_eq!(status, 400);
+    let message = body["error"]["message"].as_str().unwrap();
+    assert!(
+        message.contains("`description?` str"),
+        "message : {message}"
+    );
+}

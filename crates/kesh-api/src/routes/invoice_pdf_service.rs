@@ -660,6 +660,7 @@ mod tests {
             id: 1,
             company_id: 1,
             bank_name: "Banque Démo".into(),
+            description: None,
             iban: "CH9300762011623852957".into(),
             qr_iban: None,
             is_primary: true,
