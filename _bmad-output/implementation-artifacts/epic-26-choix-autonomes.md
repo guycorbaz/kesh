@@ -89,7 +89,8 @@ le contexte, l'option retenue, les options écartées et la réversibilité. **M
   `SAUVEGARDE_SERVICE (kesh-api`), la sortie sur zéro conteneur et le filet par l'image. Une garde de
   texte neuve, **G20** dans `textes_coherents.rs`, interdit « Compte de banque » (**forme du défaut,
   sensible à la casse — amendé par C-26-3-9**) et « toutes les
-  banques suisses » dans les manuels français et les catalogues, chaque négative adossée à une
+  banques suisses » dans les manuels français (les catalogues : valeurs de la zone de dépôt et du titre
+  d'import — précisé en validation P2, R-L12), chaque négative adossée à une
   positive sur le même fichier.
 - **Écarté** : ne compter que sur la recette — elle n'est pas dans le gate ; seule G16 l'est.
 - ⚠️ **Numéro à vérifier au merge** : les Stories 26-1 et 26-2, spécifiées en parallèle, peuvent
@@ -121,7 +122,7 @@ le contexte, l'option retenue, les options écartées et la réversibilité. **M
 
 - **Retenu** : la story crée la section si elle n'existe pas (les 26-1 et 26-2 y écrivent aussi ;
   fusion par union au merge), entrées sous `### Corrigé`, plus une ligne « Action requise » pour
-  l'exploitant Synology : re-télécharger `kesh-restore.sh` au tag `v0.13.1`, poser
+  l'exploitant Synology : re-télécharger `kesh-restore.sh` au tag de la version (`v0.13.1`), poser
   `SAUVEGARDE_SERVICE` si son service ne s'appelle pas `kesh-api`.
 - **Amendé en validation P1 (R-9)** : au rebase, les entrées des trois stories se fusionnent par
   union sous **une seule** section `[0.13.1]` (`prepare-release.sh` refuse plus d'une section) ;
@@ -144,6 +145,8 @@ le contexte, l'option retenue, les options écartées et la réversibilité. **M
 - **Réversible** : oui.
 
 ## C-26-3-10 — 26-3 (validation P1, R-2 = HIGH-1, R-4, R-7, MEDIUM-5) : la recette ne recharge jamais dans 4-bis
+
+> ⛔ **Remplacé par C-26-3-13** (validation P2) : la section 4-bis à vrais conteneurs est abandonnée.
 
 - **Contexte** : R5/R6 laissaient le script recharger ; les oracles `$C` des sections 5, 5-bis, 7
   rougissaient, et une mutation faisait rougir tous les cas suivants. Le garde-fou d'étiquette cité
@@ -174,10 +177,80 @@ le contexte, l'option retenue, les options écartées et la réversibilité. **M
 - **Retenu** : l'inventaire des renvois au chemin de l'écran d'import est fermé par un grep
   (`emph{Importer}`, `emph{Import bancaire}`, `Quotidien → Importer**`, `Nouvel import` : 7 lignes, 0
   attendu) — `user-manual.tex:1756`, `:1826`, `docs/user-guide/fr/getting-started.md:74` ajoutés —, et
-  `docs/i18n-glossaire.md:151` suit la valeur d'écran. La sous-section « Récupération du fichier
+  `docs/i18n-glossaire.md:151` suit la valeur d'écran (**amendé par C-26-3-16** : c'est la colonne
+  « précédent » qui change, vers `audit-log-entity-bank-imports`). La sous-section « Récupération du fichier
   CAMT.053 » perd ses chemins de menus d'e-banking tiers (Multibanking/Klippa, PostFinance Yellownet),
   invérifiables, au profit d'une consigne générale.
 - **Écarté** : garder les chemins tiers « à titre indicatif » — c'est la forme exacte de #617.
 - **Hors inventaire, assumés** : `\section{Import bancaire}` (titre de chapitre), noms de fonctionnalité
   (manuel admin, brochure, README), type d'entité du journal d'audit, `docs/kesh-specifications.txt`.
 - **Réversible** : oui.
+
+## C-26-3-13 — 26-3 (validation P2, signal D5) : la garde se prouve contre un faux `docker`, sans conteneur
+
+- **Contexte** : P2 (Opus, R 5M/12L, F 9M/8L) — presque tout né de la remédiation P1 (`f5c4a958`) et
+  porté par la section 4-bis à vrais conteneurs ; **recyclage** : P1 MEDIUM-5 revient en P2 M1/M5 — la
+  garde lit l'état Docker de **tout l'hôte**, que la recette ne maîtrise pas (`kesh-dev`, `kesh-api`
+  d'autres compose du dépôt). Signal D5 déclaré.
+- **Retenu** (décision de l'orchestrateur, **sans découpage, par simplification**) : la section neuve
+  (« 0 », avant la mise en place) n'emploie **aucun** vrai conteneur. Un faux `docker` rend des sorties
+  `docker ps --format` fabriquées (G1-G17 : service renommé, orphelin arrêté, `created`, `restarting`,
+  `paused`, hors compose, ligne vide, ligne incomplète, cinq champs, deux projets, aucun conteneur, image
+  Kesh sous un autre service, image par identifiant, image voisine, démon injoignable), journalise ses
+  appels et **refuse** (code 97) toute autre sous-commande : aucune action sur une base n'est possible.
+  `SAUVEGARDE_BASE=autre` reste, pour que « la garde passe » soit un message du script. Mutations aux
+  cas rouges **exacts** (O, F, Z, I, R).
+- **Écarté** : corriger 4-bis (pré-vol élargi, nom de service propre à la recette, `ecrire_compose`,
+  `arreter_service`, nettoyage du hors-compose) — chaque correctif ajoutait une dépendance à l'hôte ;
+  découper la story.
+- **Conséquences** : plus de pré-vol, d'étiquette d'image, de `compose_factice` paramétré, d'`up
+  --no-start` ni de nettoyage pour ces cas ; les sections réelles 1-9 inchangées ; leur dépendance à
+  l'hôte (déjà vraie pour `kesh-api` avec la garde d'origine) est écrite en **prérequis** dans
+  `docs/testing.md` — le message de la garde nomme le conteneur en cause.
+- **Réversible** : oui.
+
+## C-26-3-14 — 26-3 (remédiation P2) : le faux `docker` est une fonction exportée, pas un exécutable du PATH
+
+- **Contexte** : la consigne « faux `docker` en tête de PATH » ne marche pas : `kesh-restore.sh:54`
+  préfixe `PATH` par `/usr/local/bin:/usr/bin:/bin`, si bien que `/usr/bin/docker` passerait devant.
+- **Retenu** : `docker() { … }; export -f docker` dans le **sous-shell de chaque cas** ; bash importe la
+  fonction et la cherche **avant** le `PATH`. Anti-test-muet : chaque cas exige une ligne au journal du
+  faux (journal vide = le vrai `docker` a répondu = rouge).
+- **Écarté** : modifier `kesh-restore.sh` pour ne plus préfixer `PATH` (le préfixe protège la tâche
+  planifiée DSM, au `PATH` minimal) ; un faux à chemin absolu (le script ne l'appellerait pas).
+- **Réversible** : oui.
+
+## C-26-3-15 — 26-3 (validation P2, F-M6) : la procédure d'import ne fait jamais changer le profil après l'aperçu
+
+- **Contexte** : vérifié au code — l'aperçu est calculé au dépôt avec le profil alors choisi ; changer de
+  profil ensuite ne le recalcule pas, et « Confirmer l'import » envoie le nouveau profil avec l'aperçu de
+  l'ancien (`BankImportUpload.svelte:106`-`:116`, `:222`, `:73`-`:82`).
+- **Retenu** : le manuel dit de choisir le profil **avant** de déposer ; sinon **Annuler**, choisir,
+  **redéposer** (`reset()` garde le profil). Le défaut d'écran n'est **pas** corrigé ici (hors périmètre
+  documentaire de la story) : **issue P2 à ouvrir par l'orchestrateur** (« l'aperçu d'import n'est pas
+  recalculé quand on change de profil après le dépôt ; la confirmation importe avec un mapping non
+  prévisualisé »).
+- **Écarté** : corriger l'écran dans la 26-3 (change le comportement, demande ses propres tests) ;
+  décrire « changer le profil puis confirmer » (chemin trompeur).
+- **Réversible** : oui.
+
+## C-26-3-16 — 26-3 (validation P2, F-M8) : glossaire — la colonne « précédent » suit une clé qui atteste encore
+
+- **Retenu** : `docs/i18n-glossaire.md:151`, colonne « précédent » : `Import bancaire CAMT.053` →
+  `audit-log-entity-bank-imports` (Import bancaire / Bankimport / Importazione bancaria / Bank import) ;
+  les quatre termes ne changent pas. La colonne n'est pas une « valeur d'écran » mais l'attestation.
+- **Écarté** : y écrire la nouvelle valeur du titre (« Import de relevés bancaires »), qui n'atteste pas
+  « import bancaire » — une attestation fausse dans le document qui sert à n'en pas avoir.
+- **Réversible** : oui.
+
+## C-26-3-17 — 26-3 (validation P2, L6/L7) : cibles DE/EN/IT fixées ; titre et `aria-label` lus par i18n
+
+- **Retenu** : sur le terme attesté `relevé (bancaire)` (glossaire `:105`, figé par `nav-bank-import`) —
+  titre : `Import von Kontoauszügen` / `Bank statement import` / `Importazione di estratti conto` ; zone :
+  `CAMT.053- oder CSV-Datei hier ablegen oder klicken zum Durchsuchen` / `Drop your CAMT.053 or CSV file
+  here or click to browse` / `Trascinare il file CAMT.053 o CSV qui o fare clic per sfogliare`. Le
+  `<title>` lit `bank-import-labels-page-title` et l'`aria-label` lit `bank-import-labels-drop-zone` (clés
+  existantes, coût nul, tenus par G20).
+- **Écarté** : « traductions de même sens » (à deviner) ; garder les deux textes en dur « assumés ».
+- **Réversible** : oui.
+

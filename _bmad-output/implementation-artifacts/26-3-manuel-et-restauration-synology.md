@@ -8,7 +8,8 @@ Status: ready-for-dev
      fe162504 ; les 26-1 et 26-2, développées en parallèle, touchent les mêmes fichiers (voir
      « Conflits attendus ») — le T0 relève les sites de nouveau, par les commandes, jamais de confiance.
      Validation P1 (Sonnet, lentilles R et F, sur 33002beb) remédiée : choix C-26-3-9 à 12 ; bilan au
-     Change Log. -->
+     Change Log. Validation P2 (Opus, R et F, sur 15422ee4) remédiée : signal D5 (recyclage), AC 6
+     refondue par simplification (faux docker) ; choix C-26-3-13 à 17. -->
 
 ## Story
 
@@ -50,8 +51,9 @@ commits intermédiaires en `refs #616 #617 #619`.
 > (`git show fe162504:docs/manual/fr/<f>.pdf > "$TMPDIR/avant.pdf"`), qui doit rendre ≥ 1. Relevé à la
 > spécification sur les PDF de `fe162504` : `Compte de banque` → **2**, `marqué « Compte de banque »` →
 > **1**, `fourni par toutes les banques suisses` → **1**, `Nouvel import CSV` → **1** (user) ;
-> `SAUVEGARDE_RESEAU (frontend` → **1**, `quel que soit le nom du projet` → **1**,
-> `SAUVEGARDE_SERVICE` → **0** (admin). Et pour le contrôle visuel, la forme aplatie demandée par le
+> `quel que soit le nom du projet` → **1**, `SAUVEGARDE_SERVICE` → **0** (admin). La liste complète des
+> contrôles est à l'AC 10.2 ; `SAUVEGARDE_RESEAU (frontend` n'y est **pas** un « ancien absent » : G16 (g)
+> l'exige au manuel (validation P1 LOW-1, P2 F-L4). Et pour le contrôle visuel, la forme aplatie demandée par le
 > `CLAUDE.md` : `pdftotext f.pdf - | tr '\n' ' ' | tr -s ' '`.
 
 ### AC 1 — Le plan comptable : la liste des champs est celle du formulaire (#616, C-26-3-1)
@@ -72,7 +74,9 @@ Exigences :
    « Compte de banque », « Devise », « Libellé » (→ « Nom »), les types « Bilan / Résultat ».
 2. La liste est suivie d'une phrase qui dit **comment un compte devient compte bancaire** : on ne le
    marque pas dans le plan comptable ; on déclare le compte bancaire dans *Administration → Comptes
-   bancaires* (*Nouveau compte bancaire* : Banque, IBAN, QR-IBAN facultatif, Compte principal) et on le lie par
+   bancaires* (*Nouveau compte bancaire* : Banque, IBAN, QR-IBAN (optionnel), Compte principal — libellés d'écran,
+   `messages.ftl:1229`-`:1259` ; si la 26-2 est mergée avant, renvoyer à sa § *Comptes bancaires* au lieu
+   de relister les champs) et on le lie par
    **« Compte comptable lié »** (ou, pour un compte bancaire existant, le bouton **« Lier au plan
    comptable »**). Seuls y sont proposés les comptes **actifs, postables, de type Actif ou Passif**,
    hors compte débiteurs et compte créanciers désignés (`bank-accounts/+page.svelte:105`-`:115`). Renvoi
@@ -106,10 +110,21 @@ dépôt ; **prévisualisation** avec ses avertissements à confirmer ; bouton **
    bancaires* (renvoi à l'AC 1, point 2) ; **l'import n'exige pas le lien au plan comptable**, la
    **réconciliation** l'exige (un compte bancaire sans compte lié y est refusé,
    `BANK_ACCOUNT_NOT_CONFIGURED`). Vérifier les deux affirmations au code avant de les écrire.
-3. Le profil CSV : l'écran le **présélectionne** quand un profil correspond au fichier
-   (`bank-import-info-bank-csv-profile-auto-matched`, `BankImportUpload.svelte:110`-`:116`) ; la
-   procédure dit « vérifier le profil proposé, ou en choisir un », non « sélectionner le profil »
-   avant le compte (validation P1, R-13).
+3. Le profil CSV (validation P1 R-13, **réécrit en P2, F-M6**, vérifié au code à la remédiation P2) :
+   l'aperçu est calculé **au dépôt du fichier** avec le profil alors choisi (`previewBankImport(file, …,
+   { bankProfileId })`, `BankImportUpload.svelte:106`-`:108`) ; s'il n'y en a pas, l'écran présélectionne
+   le profil reconnu **après** l'aperçu (`:110`-`:116`). Changer de profil **après** l'aperçu ne le
+   recalcule pas (`onChange={(id) => (bankProfileId = id)}`, `:222`), et « Confirmer l'import » envoie le
+   **nouveau** profil (`buildFlags()`, `:73`-`:82`) avec l'aperçu de l'ancien. La procédure écrite est donc :
+   **choisir le profil avant de déposer le fichier** quand on le connaît ; sinon, après l'aperçu, si le
+   profil proposé n'est pas le bon : **Annuler** (`bank-import-cancel`, `:592`), choisir le profil,
+   **redéposer** le fichier — `reset()` (`:61`-`:71`) ne remet pas `bankProfileId` à zéro, le choix tient.
+   Le manuel ne décrit **jamais** « changer le profil puis confirmer ». Le défaut d'écran lui-même
+   (aperçu non recalculé) n'est **pas** corrigé ici : issue P2 à ouvrir par l'orchestrateur (C-26-3-15).
+3-bis. Le rapport d'import (`user-manual.tex:1657`-`:1663`, « Nombre de doublons détectés (ignorés) ») est
+   vérifié contre l'écran : les doublons sont ignorés **par défaut**, importés si l'utilisateur choisit
+   « Importer quand même » (`bank-import-labels-confirm-duplicate-lines-import`,
+   `BankImportUpload.svelte:390`-`:402`) ; le texte le dit (validation P2, R-L12).
 4. **Renvois au chemin de l'écran, inventaire clos** (validation P1, R-8 = MEDIUM-3) — relevé par
    `git grep -nIE "emph\{Importer\}|emph\{Import bancaire\}|Quotidien → Importer\*\*|Nouvel import" -- docs`
    (**7** lignes sur `fe162504` : `user-manual.tex:1651`, `:1654`, `:1686`, `:1690` — couvertes par
@@ -120,12 +135,13 @@ dépôt ; **prévisualisation** avec ses avertissements à confirmer ; bouton **
    | `user-manual.tex:1756` | détail de son import (*Import bancaire*, puis l'import) | *Quotidien → Importer des relevés*, liste *Imports précédents*, nom du fichier (`BankImportList.svelte:34`, `/bank-import/{id}`) |
    | `user-manual.tex:1826` | détail de l'import bancaire (*Import bancaire*, puis l'import concerné) | idem |
    | `docs/user-guide/fr/getting-started.md:74` | Menu **Quotidien → Importer** | **Quotidien → Importer des relevés** |
-   | `docs/i18n-glossaire.md:151` | valeur d'écran `Import bancaire CAMT.053` | `Import de relevés bancaires` (colonne « valeur d'écran » ; le terme « import bancaire » reste) |
+   | `docs/i18n-glossaire.md:151` | colonne **« précédent »** : `Import bancaire CAMT.053` (valeur de `bank-import-labels-page-title`, que l'AC 4 change) | **`audit-log-entity-bank-imports`** — la clé qui atteste encore les quatre formes : `Import bancaire` / `Bankimport` / `Importazione bancaria` / `Bank import` (`messages.ftl` fr `:2266`, de `:2212`, it `:2213`, en `:2218`) ; les quatre termes de la ligne ne changent pas (validation P2, F-M8, C-26-3-16) |
    Hors inventaire, justes : `\section{Import bancaire}` (`:1628`, titre de chapitre du manuel, non un
    chemin d'écran) ; `admin-manual.tex:81`, `:774`, brochure `:162`, `:262`, `:388`, README `:41`
    (nom de fonctionnalité) ; `audit-log-entity-bank-imports = Import bancaire` (type d'entité du
    journal d'audit, non l'écran) ; `docs/kesh-specifications.txt` (spécification historique, non
-   corrigée).
+   corrigée) ; commentaires de story `errors.rs:644`, `:2032`, `routes/bank_imports.rs:1`,
+   `messages.ftl:1043` (« Story 8-1b — Import bancaire CAMT.053 », généalogie).
 5. **« Récupération du fichier CAMT.053 »** (`:1640`-`:1646`, C-26-3-12) : trois affirmations sur des
    e-banking tiers que rien ne vérifie (libellés « Téléchargement / Extraits », « Multibanking ou
    Klippa », chemin *PostFinance Yellownet*), de la même famille que #617. Réécrire en consigne
@@ -155,32 +171,39 @@ dépôt ; **prévisualisation** avec ses avertissements à confirmer ; bouton **
    ```sh
    git grep -nIiE "toutes les banques|all (swiss )?banks|alle (schweizer )?banken|tutte le banche|banques? suisses?|swiss banks?" -- docs website README.md frontend/src crates/kesh-i18n
    ```
-   Sur `fe162504` : **3** lignes — `user-manual.tex:1638` (le site), `user-manual.tex:817` (« exigé
-   par les banques suisses sur les QR-factures », juste) et `website/about.html:116` (« format expected
-   by Swiss banks », pain.001, juste). Brochure, README, site : aucune promesse d'universalité
+   Sur `fe162504` : **4** lignes (recompté en remédiation P2, R-L7 = F-L5) — `user-manual.tex:1638` (le
+   site), `user-manual.tex:817` (« exigé par les banques suisses sur les QR-factures », juste),
+   `website/about.html:116` (« format expected by Swiss banks », pain.001, juste) et
+   `docs/kesh-prd-v0.2.md:252` (« scannable par une banque suisse », juste). Brochure, README, site : aucune promesse d'universalité
    (`git grep -niI camt -- website README.md docs/manual/fr/marketing-brochure.tex` relu ligne à ligne).
 
 [#618]: https://github.com/guycorbaz/kesh/issues/618
 
-### AC 4 — L'écran d'import ne dit plus « CAMT.053 » seul (#617, C-26-3-2)
+### AC 4 — L'écran d'import ne dit plus « CAMT.053 » seul (#617, C-26-3-2, C-26-3-17)
 
 Sites, **inventaire clos** relevé par `git grep -n "bank-import-labels-drop-zone\|bank-import-labels-page-title" -- frontend/src crates/kesh-i18n` et `grep -n 'aria-label="Glisser' frontend/src/lib/features/bank-import/BankImportUpload.svelte` :
 
 | Site | Aujourd'hui | Cible (`fr-CH`) |
 |---|---|---|
 | `bank-import-labels-drop-zone`, 4 catalogues (`fr-CH:1077`, `de-CH`/`en-CH`/`it-CH:1018`) | « Glissez votre fichier CAMT.053 ici… » | « Glissez votre fichier CAMT.053 ou CSV ici ou cliquez pour parcourir » (= repli actuel, `BankImportUpload.svelte:258`) |
-| `aria-label` en dur, `BankImportUpload.svelte:232` | « …un fichier CAMT.053 ou cliquer… » | « Glisser-déposer un fichier CAMT.053 ou CSV, ou cliquer pour parcourir » |
+| `aria-label` en dur, `BankImportUpload.svelte:232` | « …un fichier CAMT.053 ou cliquer… » | **lu par `i18nMsg('bank-import-labels-drop-zone', …)`** (même texte que la zone, traduit, tenu par G20 — validation P2, F-L7) |
 | `bank-import-labels-page-title`, 4 catalogues (`fr-CH:1075`, autres `:1016`) + repli `bank-import/+page.svelte:52` | « Import bancaire CAMT.053 » | « Import de relevés bancaires » |
-| `<title>` en dur, `bank-import/+page.svelte:48` | « Import bancaire - Kesh » | aligné sur le titre de page |
-| `docs/i18n-glossaire.md:151` (colonne valeur d'écran) | `Import bancaire CAMT.053` | `Import de relevés bancaires` (AC 2.4) |
+| `<title>` en dur, `bank-import/+page.svelte:48` | « Import bancaire - Kesh » | **`{i18nMsg('bank-import-labels-page-title', …)} - Kesh`** — clé existante, forme déjà employée (`credit-notes/+page.svelte:30`, `open-items/+page.svelte:16`) |
+| `docs/i18n-glossaire.md:151`, colonne « précédent » | `Import bancaire CAMT.053` | `audit-log-entity-bank-imports` (AC 2.4) |
 
-**Couverture** (validation P1, R-10) : `bank-import-labels-drop-zone` et `bank-import-labels-page-title`
-sont tenus par G20 (AC 9) dans les quatre catalogues. L'`aria-label` et le `<title>`, en dur, ne sont
-gardés par aucun test : **assumé et écrit** au Dev Agent Record (ils ne sont pas des clés i18n ; les
-passer en clés est hors périmètre).
+**Cibles des quatre locales, fixées** (validation P2, R-L6 = F-L6 ; terme attesté `relevé (bancaire)` =
+`Kontoauszug` / `estratto conto` / `statement`, `i18n-glossaire.md:105`, figé par `nav-bank-import`) :
 
-DE/EN/IT : traductions de même sens (pas de « CAMT.053 » seul). Repli Svelte = valeur `fr-CH`
-(`i18n-un-repli-par-cle.test.ts`). Aucun test ne dépend de ces textes (E2E par `data-testid`,
+| Clé | fr-CH | de-CH | en-CH | it-CH |
+|---|---|---|---|---|
+| `bank-import-labels-page-title` | Import de relevés bancaires | Import von Kontoauszügen | Bank statement import | Importazione di estratti conto |
+| `bank-import-labels-drop-zone` | Glissez votre fichier CAMT.053 ou CSV ici ou cliquez pour parcourir | CAMT.053- oder CSV-Datei hier ablegen oder klicken zum Durchsuchen | Drop your CAMT.053 or CSV file here or click to browse | Trascinare il file CAMT.053 o CSV qui o fare clic per sfogliare |
+
+**Couverture** (validation P1 R-10, P2 F-L7) : les deux clés sont tenues par G20 (AC 9) dans les quatre
+catalogues ; l'`aria-label` et le `<title>` les lisent désormais, si bien qu'aucun texte de l'écran d'import
+ne reste en dur. Les replis Svelte valent la valeur `fr-CH` — **non gardé par un test** :
+`i18n-un-repli-par-cle.test.ts` ne couvre que d'autres préfixes (`:51`-`:60` ; validation P2, R-L9), à
+vérifier à la main. Aucun test ne dépend de ces textes (E2E par `data-testid`,
 `bank-import-page-title`, relevé : `grep -rn "Import bancaire\|Glissez" frontend/tests frontend/src --include=*.ts` → 0).
 
 ### AC 5 — La garde de `kesh-restore.sh` échoue fermée (#619, C-26-3-3)
@@ -214,9 +237,13 @@ Dans `scripts/synology/kesh-restore.sh`, étape 1 (`:75`-`:79`), **toujours avan
      (le fragment `est « <ETAT> »` reste **littéral** : la section 4 de la recette le grepe, `recette.sh:159`) ;
    - filet, conteneur d'un autre service : `kesh-restore : le conteneur <NOM> (image Kesh <IMAGE>, service « <SERVICE> ») est « <ETAT> » — …`
      (le fragment `image Kesh` n'apparaît que dans ce message).
-   Angles morts du filet, écrits dans l'en-tête et dans G16 : image référencée par identifiant
-   (étiquette retirée), par `index.docker.io/…` ou par un miroir privé, image construite localement
-   sous un autre nom (validation P1, LOW-5).
+   Angles morts du filet, écrits dans l'en-tête, dans G16 et au manuel : **image affichée par son
+   identifiant** — cas courant : après un `docker compose pull`, l'étiquette est **déplacée** vers la
+   nouvelle image et le conteneur non recréé n'affiche plus que l'identifiant (relevé au poste,
+   `407fccb51e71` ; validation P2, F-L1) —, image référencée par `index.docker.io/…` ou un miroir privé,
+   image construite localement sous un autre nom (validation P1, LOW-5). Le cas G15 de la recette le fixe.
+   Compteur des conteneurs du service : `N=$((N+1))`, **jamais** `((N++))`, qui rend 1 quand `N` vaut 0
+   et tue le script sans message sous `set -e` (validation P2, R-L11 = F-L2).
 4. **Aucun** conteneur du service `$SAUVEGARDE_SERVICE` sur l'hôte → refus, `exit 1`, libellé
    **sur une seule ligne de code** (G16 (c) refuse une ligne qui commence par `docker compose`,
    validation P1, LOW-4) :
@@ -230,74 +257,126 @@ Dans `scripts/synology/kesh-restore.sh`, étape 1 (`:75`-`:79`), **toujours avan
 6. `kesh-dump.sh` n'a pas de garde et ne lit pas `SAUVEGARDE_SERVICE` ; il n'est pas modifié, sauf son
    en-tête si une phrase y décrit la garde (vérifier).
 
-### AC 6 — La recette rejoue le service renommé (#619)
+### AC 6 — La garde se prouve contre un faux `docker` (#619, C-26-3-13, C-26-3-14)
 
-`scripts/synology/recette.sh` (Story 15-14b) gagne une section **« 4-bis. Service renommé »**, placée
-**après la fin de la section 4** (après `recette.sh:178`, verrou libéré ; base = état C, `kesh-api`
-factice arrêté) et **avant la section 5**.
+> **Refondue en remédiation P2** (signal D5, recyclage P1 MEDIUM-5 → P2 M1/M5 : la garde lit l'état
+> Docker de **tout l'hôte**, que la recette ne maîtrise pas). Décision de l'orchestrateur, **par
+> simplification, sans découpage** (C-26-3-13) : la nouvelle section de la recette **n'emploie aucun
+> vrai conteneur**. Plus de pré-vol de l'hôte, d'étiquette d'image, de `compose_factice` paramétré,
+> d'`up --no-start`, de conteneur hors compose ni de nettoyage pour ces cas ; plus aucune dépendance aux
+> conteneurs `kesh-dev`/`kesh-api` du poste. **Les sections existantes de la recette, réelles, restent
+> inchangées.**
 
-**Principe (validation P1, R-2 = HIGH-1, C-26-3-10) : aucun cas ne recharge la base.** Chaque cas
-lance `kesh-restore.sh` avec **`SAUVEGARDE_BASE=autre`** : si la garde refuse, le script sort à
-l'étape 1 avec le libellé de la garde ; si elle **passe**, il s'arrête à l'étape 3, avant toute
-écriture dans la base, sur « le dump recrée la base « kesh », non « autre » » (`kesh-restore.sh:93`,
-déjà employé `recette.sh:168`). Le verdict se lit au **message** ; la base reste C quelle que soit la
-garde — **y compris sous mutation**, si bien qu'une mutation ne fait rougir que le cas qu'elle vise.
-Le cas « le rechargement aboutit avec un service renommé » n'est pas rejoué ici : le rechargement est
-couvert par les sections 6 à 9, et la garde n'y joue qu'à l'étape 1.
+`scripts/synology/recette.sh` gagne une section **« 0. Garde de kesh-restore.sh contre un faux
+docker »**, placée **avant** la mise en place (`recette.sh:92`) : elle ne lit ni ne crée aucun
+conteneur, et rougit vite.
 
-**Montage** (validation P1, R-4 = MEDIUM-2) : `compose_factice` reçoit **le service**, **l'image** et
-la commande (aujourd'hui `kesh-api` et `$IMG` en dur, `recette.sh:68`-`:71`) ; elle écrit le compose et
-fait `up -d --force-recreate` **sans** `--remove-orphans` (pour fabriquer l'orphelin) ; une fonction
-distincte retire les orphelins (`up -d --remove-orphans`) ou tout le projet (`down`), selon le cas.
-`etat_kesh_api` et `kesh_api` restent sur `kesh-api`. Pour lire l'état d'un autre service, une
-fonction `etat_service <service>` sur le même filtre de projet.
+**Le faux `docker` est une fonction bash exportée, pas un exécutable en tête de PATH** (C-26-3-14).
+`kesh-restore.sh:54` fait `export PATH="/usr/local/bin:/usr/bin:/bin:${PATH:-}"` : un faux `docker` placé
+en tête du `PATH` de l'appelant serait **masqué par `/usr/bin/docker`**, et la section interrogerait le
+vrai démon — le défaut même qu'on retire. Une fonction exportée (`export -f docker`) est importée par le
+`bash` qui exécute le script et **précède toute recherche dans le `PATH`**. Elle n'est exportée **que dans
+le sous-shell de chaque cas** (`( export -f docker; … bash "$SCRIPTS/kesh-restore.sh" … )`), jamais dans
+le shell de la recette, dont les sections réelles appellent le vrai `docker`.
 
-**Étiquette d'image Kesh, construite et non supposée** (validation P1, R-7, C-26-3-10) :
-`KESH_TAG="gcorbaz/kesh:recette-synology-$(openssl rand -hex 4)"` ; la recette **refuse** de continuer
-si `KESH_TAG` ne correspond pas à `^gcorbaz/kesh:recette-synology-[0-9a-f]{8}$`, ou si
-`docker image inspect "$KESH_TAG"` réussit **avant** le `docker tag "$IMG" "$KESH_TAG"` (étiquette
-préexistante). `nettoyer()` fait `docker rmi "$KESH_TAG"` **seulement** si la variable est posée et
-satisfait la même expression (un `rmi` d'étiquette ne supprime pas l'image `mariadb:10.11`, encore
-étiquetée).
+Comportement de la fonction (variables `FAUX_SORTIE`, `FAUX_JOURNAL`, `FAUX_CODE`, propres au cas) :
+- elle **journalise** chaque appel (`printf '%s\n' "$*" >> "$FAUX_JOURNAL"`) ;
+- pour les deux formes de `ps` ci-dessous, si `FAUX_CODE` ≠ 0 : écrit « Cannot connect to the Docker
+  daemon » sur la sortie d'erreur et rend `FAUX_CODE` ;
+- `ps --all --format {{.State}}|{{.Image}}|{{.Label "com.docker.compose.service"}}|{{.Names}}` (forme
+  exacte de l'AC 5.2) : rend le contenu de `FAUX_SORTIE` tel quel ;
+- `ps --all --filter label=com.docker.compose.service=<S> --format {{.State}}` (forme **d'origine**,
+  `fe162504:kesh-restore.sh:76`, pour la seule preuve de mutation « garde d'origine ») : rend la
+  **première colonne** des lignes de `FAUX_SORTIE` dont la **troisième** vaut `<S>` (découpage `|`) ;
+- **tout autre appel** — `run`, `exec`, `compose`, `rm`, une autre forme de `ps` — : écrit
+  `FAUX DOCKER : appel inattendu : <args>` sur la sortie d'erreur **et** `INATTENDU <args>` au journal,
+  rend **97**. Le rechargement, la sonde et le dump de sécurité passant tous par `docker run`, **aucune
+  action sur une base n'est possible** sous le faux : c'est la preuve que le script s'arrête avant.
 
-**Pré-vol** (validation P1, MEDIUM-5) : en tête de recette, avant la mise en place, refus si un
-conteneur **actif** d'image `^(docker\.io/)?gcorbaz/kesh([:@]|$)` tourne sur l'hôte (« recette
-refusée : un Kesh tourne sur cet hôte — le filet de la garde refuserait les sections 4 à 9 sans
-cause ») ; `docs/testing.md` le dit dans les prérequis.
+**Montage commun**, sous `$W/garde/` (aucun fichier de `$W/kesh`) : un dossier `SAUVEGARDE_DOSSIER`
+portant un `kesh-restore.cnf` factice (contenu indifférent : le script n'en teste que la présence,
+`kesh-restore.sh:65`) ; un dossier source portant un dump **fabriqué** — `printf 'CREATE DATABASE
+\x60kesh\x60;\n' | gzip > kesh_pre_backup.sql.gz` et son `.sha256` —, sans base ni conteneur. Chaque cas
+lance `SAUVEGARDE_DOSSIER=$W/garde/dossier SAUVEGARDE_BASE=autre [SAUVEGARDE_SERVICE=…] bash
+"$SCRIPTS/kesh-restore.sh" "$W/garde/source"` dans le sous-shell ci-dessus. **`SAUVEGARDE_BASE=autre`
+est gardé** : quand la garde passe, le script s'arrête de lui-même à l'étape 3 sur son propre message
+(« le dump recrée la base « kesh », non « autre » », `kesh-restore.sh:93`), sans même atteindre la sonde ;
+l'oracle « la garde passe » est ainsi un message **du script**, non un refus du faux.
 
-| Cas | Montage | Lancement | Motif grepé (oracle) |
+**Classes de verdict, et leur motif** (validation P2 R-L3 = F-M4 : on exige le motif de **sa** classe et
+l'**absence des motifs des autres classes**, jamais « le motif d'aucun autre cas ») :
+
+| Classe | Motif grepé (`grep -F`, sauf mention) |
+|---|---|
+| ZÉRO | `aucun conteneur du service « <S> »` |
+| SERVICE | `(service « <S> ») est « <ETAT> »` |
+| FILET | `image Kesh` |
+| ILLISIBLE | `ligne de docker ps illisible` |
+| PASSE | `recrée la base` |
+| ERREUR | aucun des cinq motifs ; code non nul |
+
+**Les cas** (lignes de `FAUX_SORTIE` séparées par ` ⏎ `, écrites telles quelles par `printf` ; `<S>` =
+`kesh-api` sauf réglage) :
+
+| Cas | `FAUX_SORTIE` | Réglage | Classe |
 |---|---|---|---|
-| R1 | `down` du projet ; compose sur le service `kesh`, image `$IMG`, en marche ; aucun `kesh-api` | sans `SAUVEGARDE_SERVICE` | `aucun conteneur du service « kesh-api »` |
-| R2 | idem R1 | `SAUVEGARDE_SERVICE=kesh` | `(service « kesh ») est « running »` |
-| R3 | compose `kesh-api`, image `$KESH_TAG`, en marche ; puis compose `kesh`, image `$IMG`, sans `--remove-orphans` → `kesh-api` orphelin en marche ; `kesh` arrêté | `SAUVEGARDE_SERVICE=kesh` | `image Kesh gcorbaz/kesh:recette-synology-` |
-| R4 | compose `kesh-api`, image `$IMG`, arrêté ; puis compose `kesh`, image `$KESH_TAG`, en marche, sans `--remove-orphans` → `kesh-api` orphelin **arrêté** | sans `SAUVEGARDE_SERVICE` | `image Kesh gcorbaz/kesh:recette-synology-` |
-| R5 | `down` du projet (aucun conteneur `kesh-api`) | sans `SAUVEGARDE_SERVICE` | `aucun conteneur du service « kesh-api »` **et** `docker compose up --no-start` dans le message |
-| R5-bis | compose `kesh-api`, image `$IMG` ; `docker compose up --no-start kesh-api` (état `created`, vérifié par `etat_kesh_api`) | sans `SAUVEGARDE_SERVICE` | `recrée la base` (la garde passe) |
-| R6 | orphelins retirés ; compose `kesh`, image `$IMG`, arrêté | `SAUVEGARDE_SERVICE=kesh` | `recrée la base` (la garde passe) |
-| R7 | compose `kesh-api` arrêté ; **conteneur hors compose** `kesh-recette-synology-hors-compose` (`docker run -d "$IMG" sleep infinity`, étiquette de service vide) en marche | sans `SAUVEGARDE_SERVICE` | `recrée la base` (un conteneur à étiquette vide n'est ni du service ni du filet ; les champs ne glissent pas — MEDIUM-1) |
+| G1 service renommé, image locale | `running\|kesh-local:dev\|kesh\|kesh-kesh-1` | — | ZÉRO |
+| G2 idem, réglé | idem | `SAUVEGARDE_SERVICE=kesh` | SERVICE (`kesh`, `running`) |
+| G3 orphelin arrêté, renommé Kesh en marche | `exited\|gcorbaz/kesh:0.12.1\|kesh-api\|kesh-api` ⏎ `running\|gcorbaz/kesh:0.13.0\|kesh\|kesh-kesh-1` | — | FILET |
+| G4 réglé, orphelin `kesh-api` en marche | `exited\|gcorbaz/kesh:0.13.0\|kesh\|kesh-kesh-1` ⏎ `running\|gcorbaz/kesh:0.12.1\|kesh-api\|kesh-api` | `SAUVEGARDE_SERVICE=kesh` | FILET |
+| G5 aucun conteneur | *(vide)* | — | ZÉRO, et `up --no-start` dans le message |
+| G6 `created` | `created\|gcorbaz/kesh:0.13.0\|kesh-api\|kesh-api` | — | PASSE |
+| G7 `restarting` | `restarting\|gcorbaz/kesh:0.13.0\|kesh-api\|kesh-api` | — | SERVICE |
+| G8 `paused` | `paused\|gcorbaz/kesh:0.13.0\|kesh-api\|kesh-api` | — | SERVICE |
+| G9 hors compose (étiquette vide) | `running\|mariadb:10.11\|\|kesh-recette-db` ⏎ `exited\|gcorbaz/kesh:0.13.0\|kesh-api\|kesh-api` | — | PASSE |
+| G10 ligne vide intercalée | `exited\|gcorbaz/kesh:0.13.0\|kesh-api\|kesh-api` ⏎ *(vide)* ⏎ `running\|mariadb:10.11\|\|x` | — | PASSE |
+| G11 ligne incomplète | `exited\|gcorbaz/kesh:0.13.0\|kesh-api\|kesh-api` ⏎ `running\|mariadb:10.11` | — | ILLISIBLE |
+| G12 cinq champs | `exited\|gcorbaz/kesh:0.13.0\|kesh-api\|kesh-api` ⏎ `running\|mariadb:10.11\|a\|b\|c` | — | ILLISIBLE |
+| G13 deux projets, même service | `exited\|gcorbaz/kesh:0.13.0\|kesh-api\|p1-kesh-api` ⏎ `running\|gcorbaz/kesh:0.13.0\|kesh-api\|p2-kesh-api` | — | SERVICE |
+| G14 image par empreinte, autre service | `running\|docker.io/gcorbaz/kesh@sha256:<64 hex>\|autre\|x` ⏎ `exited\|gcorbaz/kesh:0.13.0\|kesh-api\|kesh-api` | — | FILET |
+| G15 image affichée par identifiant (**angle mort assumé**) | `running\|407fccb51e71\|kesh\|kesh-kesh-1` ⏎ `exited\|gcorbaz/kesh:0.13.0\|kesh-api\|kesh-api` | — | PASSE |
+| G16 image voisine non Kesh | `running\|gcorbaz/kesh-autre:1\|autre\|y` ⏎ `exited\|gcorbaz/kesh:0.13.0\|kesh-api\|kesh-api` | — | PASSE |
+| G17 démon injoignable | *(sans objet)*, `FAUX_CODE=1` | — | ERREUR |
 
-Chaque cas vérifie en outre : code de sortie **non nul** ; le motif d'**aucun autre** cas absent de la
-sortie (discrimination : un refus de la garde ne contient pas `recrée la base`, et inversement) ;
-après le dernier cas, `empreinte` = `$C`, aucun dossier `avant-restauration/`, verrou libéré.
+**Oracles de chaque cas** : code de sortie **non nul** ; motif de sa classe présent, motifs des autres
+classes absents ; journal = **exactement une ligne**, qui commence par `ps --all` (forme de l'AC 5.2 ; ou forme d'origine
+sous la seule mutation (O) — la forme exacte est tenue par G16, AC 7), **sans** `INATTENDU`
+(anti-test-muet : un journal vide prouverait que le vrai `docker` a répondu — rouge) ;
+`$W/garde/dossier/dump/.verrou` absent après le cas ; aucun `avant-restauration/` sous `$W/garde/dossier`.
+G15 fixe l'angle mort au lieu de le taire : si un jour le filet lit les identifiants, ce cas change de
+classe **délibérément**.
 
-**État de sortie, vérifié avant la section 5** : compose factice réécrit sur `kesh-api`, image `$IMG`,
-`sleep infinity`, `restart: "no"` ; orphelins et conteneur hors compose retirés ; `arreter` ;
-`verifier "état de sortie de 4-bis" "$(etat_kesh_api)" exited` ; nombre de conteneurs du projet = 1.
-Les sections 5 à 9 (`arreter`, `demarrer`, `kesh_api`, `:285`) retrouvent ainsi l'état qu'elles
-supposent.
+**Preuves de mutation** — chacune jouée sur la seule section 0, sortie au Dev Agent Record, script
+restauré **et** touché après chaque ; **la liste des cas rouges est exacte, non « au moins »** (validation
+P2 R-M2 = F-M3) :
 
-**Preuves de mutation**, chacune jouée sur la seule section 4-bis (un `RECETTE_DEPUIS=4-bis` ou une
-copie tronquée de la recette, au choix du dev, consigné), sortie au Dev Agent Record, script restauré
-**et** touché après chaque :
-- garde d'origine (`git show fe162504:scripts/synology/kesh-restore.sh`) : R1, R3, R4, R5 rouges
-  (R1/R4/R5 : `recrée la base` au lieu du refus ; R3 : refus « est « running » » sans `image Kesh`) ;
-- filet retiré seul : R3 et R4 rouges, les autres verts ;
-- sortie sur zéro conteneur retirée seule : R1 et R5 rouges, les autres verts.
+| Mutation de `kesh-restore.sh` | Cas rouges | Cas verts |
+|---|---|---|
+| (O) garde d'origine (`git show fe162504:scripts/synology/kesh-restore.sh`, lignes 75-79) | G1, G2, G3, G4, G5, G7, G8, G11, G12, G13, G14 | G6, G9, G10, G15, G16, G17 |
+| (F) filet retiré (seul le service est gardé) | G3, G4, G14 | les 14 autres |
+| (Z) sortie sur zéro conteneur retirée | G1, G5 | les 15 autres |
+| (I) contrôle « illisible » retiré | G11, G12 | les 15 autres |
+| (R) `SAUVEGARDE_SERVICE` ignoré (`kesh-api` en dur) | G2, G4 | les 15 autres |
 
-Autres contraintes : la section 4 existante reste inchangée dans son sens ; `docs/testing.md`
-§ *Recette des scripts de sauvegarde Synology* (`:459`-) liste 4-bis, le pré-vol et l'étiquette ; la
-recette se lance depuis le worktree, **hors gate** (≈ 2 min), ne touche à aucun autre conteneur —
-jamais `kesh-mariadb-dev` ; tout conteneur qu'elle crée porte le préfixe `kesh-recette-synology`.
+Déroulé de (O), qui sert de contrôle : la garde d'origine ignore le réglage et ne lit que l'étiquette
+`kesh-api` ; elle passe sur G1, G2, G3, G5, G11, G12, G14 (motif PASSE au lieu de celui attendu) et refuse
+G4, G7, G8, G13 avec son ancien libellé « un conteneur kesh-api est « … » », qui ne porte ni `(service «`
+ni `image Kesh`.
+
+**Ce que la section ne prouve pas, écrit** : le comportement du **vrai** `docker ps --format` (séparateur,
+`{{.Label …}}` sur un conteneur sans étiquette) — relevé au poste à la remédiation P1
+(`running|407fccb51e71|mariadb|kesh-mariadb-dev`) et rejoué par la section 4 existante, qui fait tourner la
+garde nouvelle contre de vrais conteneurs (`running`, `restarting`, `paused`) ; les sections 5 à 9 la font
+passer sur un `kesh-api` arrêté.
+
+**Prérequis de la recette réelle, écrit dans `docs/testing.md`** (pas de pré-vol, décision C-26-3-13) :
+les sections 4 à 9 font tourner la garde nouvelle sur **tout l'hôte** ; un conteneur **actif** d'image
+`gcorbaz/kesh`, ou du service `kesh-api`, hors du projet de recette les fait refuser — le message de la
+garde **nomme** le conteneur en cause, si bien que le rouge se diagnostique seul. C'était déjà vrai pour
+le service `kesh-api` avec la garde d'origine.
+
+Autres contraintes : `docs/testing.md` § *Recette des scripts de sauvegarde Synology* (`:459`-) décrit la
+section 0, le faux `docker` et ses limites ; la recette se lance depuis le worktree, **hors gate**.
 
 ### AC 7 — G16 lit la garde nouvelle (#619, C-26-3-5)
 
@@ -305,7 +384,9 @@ jamais `kesh-mariadb-dev` ; tout conteneur qu'elle crée porte le préfixe `kesh
 
 1. la regex de l'étape « refus Kesh actif » (`:3121`-`:3124`, qui exige aujourd'hui
    `--filter label=com.docker.compose.service=kesh-api`) suit la forme nouvelle : `docker ps --all`
-   avec `{{.State}}`, `{{.Image}}` et l'étiquette de service ; l'**ordre** des étapes reste contrôlé ;
+   avec `{{.State}}`, `{{.Image}}` et l'étiquette de service, **indifférente au séparateur** (elle
+   n'encode pas le `|` : c'est la clause 7.5 qui le tient, pour que la mutation (e) ne touche qu'elle —
+   validation P2, F-M5) ; l'**ordre** des étapes reste contrôlé ;
 2. clauses neuves : défaut de `SAUVEGARDE_SERVICE` = un service de `docker-compose.prod.yml`
    (`services_prod`) ; sortie sur zéro conteneur du service (`exit 1` sous la condition) ; filet par
    l'image `gcorbaz/kesh` présent ;
@@ -317,14 +398,21 @@ jamais `kesh-mariadb-dev` ; tout conteneur qu'elle crée porte le préfixe `kesh
    de l'image construite localement) ;
 5. clause neuve sur la lecture : le `--format` porte le séparateur `|` et la boucle `IFS='|'` (AC 5.2) ;
    un séparateur blanc (`\t`, espace) rougit ;
-6. **preuve de mutation**, chacune rejouée et consignée **avec la clause qui doit rougir, et elle
-   seule** (validation P1, LOW-3) : (a) remettre la **seule ligne** `docker ps` d'origine (le réglage
-   restant déclaré, pour que (g) ne rougisse pas) → la regex « refus Kesh actif » ; (b) retirer la
-   sortie sur zéro conteneur → la clause « zéro conteneur » ; (c) retirer le filet par l'image → la
-   clause « filet » ; (d) retirer `SAUVEGARDE_SERVICE` du manuel → (g), ensembles de réglages ;
-   (e) remplacer `|` par une tabulation → la clause de l'AC 7.5. Le message d'échec de G16 liste ses
-   erreurs (`echouer_si`) : copier la ligne qui nomme la clause. Restaurer et `touch` après chaque
-   mutation (cargo garde sinon le binaire muté).
+6. **preuve de mutation**, chacune rejouée et consignée avec **l'ensemble exact** des clauses qui
+   doivent rougir — « elle seule » est abandonné, deux mutations touchant légitimement deux clauses
+   (validation P2, R-M3 = F-M5) :
+
+   | Mutation | Clauses rouges attendues (et aucune autre) |
+   |---|---|
+   | (a) remettre la **seule ligne** `docker ps` d'origine (réglage `SAUVEGARDE_SERVICE` toujours déclaré) | étape « refus Kesh actif » (7.1) ; lecture à séparateur `|` (7.5) |
+   | (b) retirer la sortie sur zéro conteneur | « zéro conteneur » (7.2) |
+   | (c) retirer le filet par l'image | « filet » (7.2) |
+   | (d) retirer `SAUVEGARDE_SERVICE` du manuel | (g) égalité des ensembles ; (g) citation `SAUVEGARDE_SERVICE (kesh-api` (7.3) |
+   | (e) remplacer `|` par une tabulation dans le `--format` et l'`IFS` | lecture à séparateur `|` (7.5) seule |
+
+   G16 agrège ses erreurs (`echouer_si`, `configuration_transmise.rs:3466`) : copier **toutes** les
+   lignes d'erreur de chaque run et constater qu'elles sont exactement celles du tableau. Restaurer et
+   `touch` après chaque mutation (cargo garde sinon le binaire muté).
 7. La clause existante « aucune commande `docker compose` » (`(?m)(?:^\s*|[;&|]\s*)docker compose\b`)
    doit rester verte : les libellés qui citent `docker compose up --no-start` sont des chaînes sur une
    seule ligne de code, jamais en tête de ligne ni après `;`, `&`, `|` hors guillemets — **attention**
@@ -391,8 +479,10 @@ insensible à la casse rougirait sur du code correct, et serait « réparée » 
 
 - **négatives**, sur la source `.tex` **brute** (pas de `normaliser`, qui ne garantit pas les
   guillemets) des trois manuels français, recherche de sous-chaîne **sensible à la casse** :
-  `\textbf{Compte de banque}`, `« Compte de banque »` (guillemets, espaces fines ou non : écrire
-  l'expression régulière `«\s*~?\s*Compte de banque\s*~?\s*»`), `toutes les banques suisses` ;
+  expressions régulières, `\s+` entre les mots pour qu'un **retour à la ligne de source** ne les
+  contourne pas (validation P2, R-L5 = F-L3) : `\\(?:textbf|emph)\{Compte\s+de\s+banque\}`,
+  `«\s*~?\s*Compte\s+de\s+banque\s*~?\s*»` (`\s` Unicode couvre U+00A0 et U+202F ; le manuel
+  n'emploie ni `\og` ni `\enquote`, relevé P2), `[Tt]outes\s+les\s+banques\s+suisses` ;
 - **négatives sur les catalogues** : dans **chacun des quatre** (`fr-CH`, `de-CH`, `en-CH`, `it-CH`),
   la valeur de `bank-import-labels-drop-zone` contient `CSV`, et celle de
   `bank-import-labels-page-title` ne contient pas `CAMT.053` (validation P1, R-10). `catalogue_fr()`
@@ -400,13 +490,15 @@ insensible à la casse rougirait sur du code correct, et serait « réparée » 
   `catalogue(locale)` (même lecteur, continuation de lignes comprise) ou en écrit un second, et
   **asserte que chaque catalogue lu porte plus de 1000 clés** (anti-test-muet) ;
 - **positives adossées, même fichier** : `user-manual.tex` porte `propre compte de banque` (la forme
-  juste existe : la négative n'est pas muette par lecture vide), `Comptes bancaires` et
-  `Compte comptable lié` ; `admin-manual.tex` porte `SAUVEGARDE_RESEAU=proxy` et
+  juste existe : la négative n'est pas muette par lecture vide) et `Compte comptable lié` — **c'est
+  elle qui tient la phrase de l'AC 1.2** (absente aujourd'hui) ; `Comptes bancaires`, déjà présente
+  (`:208`, `:229`, `:2577`), ne prouve que la lecture (R-L5 iii) ; `admin-manual.tex` porte `SAUVEGARDE_RESEAU=proxy` et
   `SAUVEGARDE_SERVICE` (R-10 : le paragraphe « Compose adapté » est tenu) ; chaque catalogue porte les
   deux clés ;
-- preuves de mutation, une par négative : réintroduire `\textbf{Compte de banque}`, puis
-  `marqué « Compte de banque »`, puis `toutes les banques suisses`, puis la valeur `de-CH` d'origine de
-  la zone de dépôt → rouge chaque fois ; et vérifier qu'écrire « son propre compte de banque » une fois
+- preuves de mutation, une par négative : réintroduire `\textbf{Compte de banque}`, puis la même
+  coupée par un retour à la ligne (`\textbf{Compte de⏎banque}`), puis `marqué « Compte de banque »`,
+  puis `Toutes les banques suisses`, puis la valeur `de-CH` d'origine de la zone de dépôt, puis la valeur
+  `en-CH` d'origine du titre (`CAMT.053 bank import`) → rouge chaque fois ; et vérifier qu'écrire « son propre compte de banque » une fois
   de plus **ne** rougit **pas**. Restaurer, `touch`.
 
 ### AC 10 — PDF régénérés et contrôlés (C-26-3-6)
@@ -415,7 +507,8 @@ insensible à la casse rougirait sur du code correct, et serait « réparée » 
    brochure n'est pas régénérée (non touchée).
 2. Par `occ` (en tête des AC ; `occ` est sensible à la casse), PDF d'avant ≥ 1 — valeurs relevées
    en remédiation P1 sur `fe162504` entre parenthèses — puis PDF neuf = **0** :
-   user : `Compte de banque` (2), `fourni par toutes les banques suisses` (1), `Nouvel import CSV` (1),
+   user : `Compte de banque` (2), `marqué « Compte de banque »` (1),
+   `fourni par toutes les banques suisses` (1), `Nouvel import CSV` (1),
    `Importer → Nouvel import` (2), `Cliquer sur un compte ouvre son détail` (1), `Bilan / Résultat`
    (1), `Devise : CHF par défaut` (1), `une fois des écritures saisies` (1),
    `Import bancaire, puis l'import` (2), `Multibanking ou Klippa` (1) ;
@@ -443,15 +536,20 @@ insensible à la casse rougirait sur du code correct, et serait « réparée » 
    la release dès qu'il en compte plus d'une (`NB_SECTIONS -gt 1`, `:237`-`:246`). Contrôle après
    chaque rebase et au dernier commit : `grep -c '^## \[0\.13\.1\] — ' CHANGELOG.md` → **1**, et
    `grep -c '^### ' ` dans cette section sans titre en double.
-2. Grep du symptôme **par valeur** après chaque patch, sur tout le dépôt suivi :
-   `git grep -nIF "Compte de banque"` (sensible à la casse : 0 attendu dans `docs/`),
-   `git grep -nIi "toutes les banques"`, `git grep -nI "Import bancaire CAMT.053"` (0 hors
-   `docs/kesh-specifications.txt`, historique),
-   `git grep -nIE "emph\{Importer\}|emph\{Import bancaire\}|Quotidien → Importer\*\*|Nouvel import" -- docs` (0),
-   `git grep -nI "service=kesh-api"`, `git grep -nI "SAUVEGARDE_SERVICE"`, `git grep -nI "compose create"`
-   (0 : une seule commande, `up --no-start`) — sites attendus pour `SAUVEGARDE_SERVICE` : script,
-   manuel, G16, G20, recette, testing.md, CHANGELOG ; liste au Dev Agent Record. Les artefacts BMAD
-   (`_bmad-output/`) et les rétrospectives ne se corrigent pas.
+2. Grep du symptôme **par valeur** après chaque patch, **chaque commande bornée** et avec son résultat
+   **attendu**, sites restants nommés (validation P2, R-M4 = F-M7, R-L8) — `B` désigne le périmètre
+   `-- . ':!_bmad-output'` (artefacts BMAD et rétrospectives : ne se corrigent pas) :
+   | Commande | Attendu après la story |
+   |---|---|
+   | `git grep -nIF "Compte de banque" -- docs` | 0 |
+   | `git grep -nIi "toutes les banques" B` | 0 |
+   | `git grep -nI "Import bancaire CAMT.053" -- crates/kesh-i18n/locales frontend/src docs/i18n-glossaire.md docs/manual/fr/user-manual.tex docs/manual/fr/admin-manual.tex` | seulement `messages.ftl:1043` (commentaire de story) |
+   | `git grep -nI "Import bancaire CAMT.053" B` | les sites ci-dessus **plus**, assumés (AC 2.4) : `README.md:41`, `marketing-brochure.tex:388` (noms de fonctionnalité), `errors.rs:644`, `:2032`, `routes/bank_imports.rs:1` (commentaires de story), `docs/kesh-specifications.txt:1534`, `:2458` (historique) |
+   | commande de l'AC 2.4 (`emph{Importer}`, `emph{Import bancaire}`, `Quotidien → Importer**`, `Nouvel import`, sur `docs`) | 0 |
+   | `git grep -nI "compose create" B` | 0 (une seule commande, `up --no-start`) |
+   | `git grep -nI "service=kesh-api" B` | 0 hors la mutation (O) **documentée** dans `docs/testing.md` s'il la cite |
+   | `git grep -nI "SAUVEGARDE_SERVICE" B` | script, manuel d'administration (+ PDF), G16, G20, recette, `docs/testing.md`, CHANGELOG — liste au Dev Agent Record |
+   La colonne « attendu » se **recompte** au dernier commit ; un écart s'explique ou se corrige.
 3. `README.md:50` (puce *Exploitation sur NAS Synology*) : relire ; ne modifier que si une phrase y
    devient fausse. `website/` : rien à modifier (AC 3, grep relevé) — à rejouer.
 
@@ -481,8 +579,9 @@ insensible à la casse rougirait sur du code correct, et serait « réparée » 
   - [ ] `:1638` reformulé (plupart, CSV, contrôle de solde à la main, MT940 non lu).
 - [ ] **T2 — Écran d'import** (AC 4) : 4 catalogues, `aria-label`, titre et `<title>`, replis.
 - [ ] **T3 — `kesh-restore.sh`** (AC 5) : réglage, lecture unique, filet image, sortie fermée, en-tête.
-- [ ] **T4 — Recette** (AC 6) : pré-vol, étiquette construite, section 4-bis (R1-R7, R5-bis) en
-      `SAUVEGARDE_BASE=autre`, état de sortie vérifié, trois mutations, `docs/testing.md`.
+- [ ] **T4 — Recette** (AC 6) : section 0 contre le faux `docker` (fonction exportée), cas G1-G17,
+      cinq mutations (O, F, Z, I, R) aux cas rouges exacts, `docs/testing.md` (section 0, prérequis
+      de la recette réelle).
 - [ ] **T5 — G16** (AC 7) et **G20** (AC 9), avec leurs mutations.
 - [ ] **T6 — Manuel d'administration** (AC 8).
 - [ ] **T7 — PDF** (AC 10), **CHANGELOG** et propagation (AC 11).
@@ -513,9 +612,10 @@ insensible à la casse rougirait sur du code correct, et serait « réparée » 
   du `--format` (avec `{{.Label "…"}}`) est donc valide sur le poste (Docker Compose 2.40.3).
 - **G16 est un couplage écrit** : sa doc-comment le dit (« une écriture équivalente rougirait »). La
   modifier fait partie de la story, pas d'un écart.
-- **La recette** réécrit le compose factice à chaque `compose_factice` avec `--force-recreate` ; un
-  changement de **nom** de service laisse l'ancien conteneur orphelin — c'est le cas R3/R4 qu'on veut,
-  et c'est aussi ce qu'il faut retirer (`--remove-orphans`) entre les cas qui ne le veulent pas.
+- **La recette** : la section 0 (AC 6) n'appelle jamais le vrai `docker` ; ses cas ne dépendent ni de
+  l'hôte ni des sections réelles. Piège à ne pas retomber dedans : un faux exécutable en tête de `PATH`
+  est **masqué** par `kesh-restore.sh:54` (`export PATH="/usr/local/bin:/usr/bin:/bin:…"`) — d'où la
+  fonction exportée (C-26-3-14). Les sections 1 à 9, réelles, ne changent pas.
 
 ### Conflits attendus avec les Stories 26-1 et 26-2 (développées en parallèle)
 
@@ -555,8 +655,9 @@ Aucun ne touche `scripts/synology/` depuis la 15-14b.
 
 Pas de bibliothèque neuve. `docker ps --format` avec `{{.Label "…"}}` vérifié sur le poste (Docker
 Compose 2.40.3, sortie relevée plus haut). **Une seule commande pour recréer un conteneur sans le
-démarrer : `docker compose up --no-start <service>`** (C-26-3-11), dans le script, le manuel et la
-recette — `docker compose create` n'est employé nulle part (grep de l'AC 11.2 : 0).
+démarrer : `docker compose up --no-start <service>`** (C-26-3-11), dans le message du script et au
+manuel — `docker compose create` n'est employé nulle part hors `_bmad-output/` (grep borné de
+l'AC 11.2 : 0). `export -f` est propre à bash : les deux scripts et la recette sont lancés par `bash`.
 
 ### Project Structure Notes
 
@@ -639,3 +740,52 @@ recette — `docker compose create` n'est employé nulle part (grep de l'AC 11.2
     R5/R6 qui rechargent, ni de `recette.sh:31` comme garde-fou d'étiquette.
   - Nombre d'AC inchangé : **12**. Prochaine étape : validation P2 (Opus, R/F, complète),
     `26-3-validate-prompt-p2.md`.
+- 2026-10-10 — **Validation P2 remédiée** (Opus, contexte frais, lentilles R et F ; prompt
+  `26-3-validate-prompt-p2.md`, rapports `kesh-gate-logs/26-3-validate-p2-{R,F}.md`, relecture de
+  `f5c4a958`). **Bilan : R 0 HIGH / 5 MEDIUM / 12 LOW ; F 0 HIGH / 9 MEDIUM / 8 LOW.** Après
+  dédoublonnage : **10 MEDIUM distincts** — R-M1 ≈ F-M2 (montage de 4-bis), R-M2 = F-M3 (mutation « garde
+  d'origine »), R-M3 = F-M5 (mutations de G16), R-M4 = F-M7 (greps de l'AC 11.2), R-M5 = F-M1 (hôte
+  entier), F-M4 (classes de motifs), F-M6 (profil après aperçu), F-M8 (glossaire), F-M9 (nettoyage
+  hors compose) ; LOW distincts traités ou rendus sans objet (ci-dessous). **Origine** : 8 MEDIUM sur 10
+  introduits par `f5c4a958` ; R-M5 = F-M1 est un **recyclage** de P1 MEDIUM-5 → **signal D5 déclaré**.
+  **Décision de l'orchestrateur** : pas de découpage, **simplification** — l'AC 6 est refondue
+  (C-26-3-13, C-26-3-14).
+  - **Trend** : P1 2 HIGH / 8 MEDIUM distincts (tous d'origine) → P2 0 HIGH / 10 MEDIUM distincts (8
+    introduits par la remédiation, 1 recyclé). La sévérité baisse (plus de HIGH) mais se déplace vers ce
+    que la remédiation a écrit, sur un seul site (la recette à vrais conteneurs) : c'est ce site qui est
+    retiré.
+  - **R-M5 = F-M1, R-M1 ≈ F-M2, F-M9, R-L1, R-L2, R-L4, R-L10, F-L8** (4-bis : hôte, montage, nettoyage,
+    étiquette, pré-vol) → **sans objet** : la section neuve n'emploie aucun conteneur (AC 6 refondue,
+    C-26-3-13) ; dépendance des sections réelles à l'hôte écrite en prérequis de `docs/testing.md`.
+  - **R-M2 = F-M3** (R2 rougit aussi sous la garde d'origine) → mutations de l'AC 6 en tableau, **cas
+    rouges exacts** par mutation, déroulés à la remédiation (O : 11 rouges / 6 verts ; F : 3 ; Z : 2 ;
+    I : 2 ; R : 2).
+  - **F-M4 = R-L3** (« motif d'aucun autre cas ») → **classes** de verdict (ZÉRO, SERVICE, FILET,
+    ILLISIBLE, PASSE, ERREUR), motif de sa classe présent, motifs des autres classes absents.
+  - **R-M3 = F-M5** (« elle seule » intenable) → AC 7.6 : ensemble exact des clauses rouges par mutation ;
+    regex 7.1 indifférente au séparateur pour que (e) ne touche que 7.5.
+  - **R-M4 = F-M7, R-L8** (greps non bornés, Change Log P1 faux) → AC 11.2 en tableau : périmètre borné
+    (`':!_bmad-output'`), attendu chiffré, sites restants nommés (README:41, brochure:388, commentaires
+    `errors.rs`, `bank_imports.rs:1`, `messages.ftl:1043`, spécification) ; AC 2.4 complétée. **La phrase du
+    Change Log P1** « glossaire et catalogues seulement, hors spécification historique » est **fausse** :
+    `git grep -nI "Import bancaire CAMT.053"` rend aussi README:41, brochure:388 et quatre commentaires de
+    code — corrigée ici, laissée telle quelle plus haut pour la généalogie.
+  - **F-M6** (changer le profil après l'aperçu) → AC 2.3 réécrite, vérifiée au code ; défaut d'écran :
+    issue P2 à ouvrir par l'orchestrateur (C-26-3-15).
+  - **F-M8** (glossaire) → colonne « précédent » = `audit-log-entity-bank-imports` (C-26-3-16).
+  - **LOW traités** : R-L5 = F-L3 (G20 à `\s+`, `[Tt]outes`, mutations retour à la ligne et titre
+    `en-CH`, positive `Compte comptable lié`) ; R-L6 = F-L6 (cibles DE/EN/IT fixées, C-26-3-17) ; F-L7
+    (`<title>` et `aria-label` lus par i18n) ; R-L7 = F-L5 (AC 3.2 : 4 lignes, `kesh-prd-v0.2.md:252`) ;
+    R-L9 (test de replis cité à tort) ; R-L11 = F-L2 (`N=$((N+1))`) ; R-L12 (registre C-26-3-5/8 ; rapport
+    d'import `:1657`-`:1663` ; « QR-IBAN (optionnel) ») ; F-L1 (angle mort : étiquette déplacée après
+    `pull`, fixé par G15) ; F-L4 (encadré des AC aligné sur l'AC 10.2).
+  - **Écart à la consigne, consigné** : le faux `docker` « en tête de PATH » serait masqué par
+    `kesh-restore.sh:54` — fonction bash exportée à la place (C-26-3-14).
+  - Grep de la valeur après remédiation : dans la fiche, plus aucune prescription de 4-bis, de pré-vol,
+    de `KESH_TAG`, de `compose_factice` paramétré, de « elle seule », de « motif d'aucun autre cas », de
+    « valeur d'écran » ni de « traductions de même sens » (`grep -nE` sur la fiche hors Change Log :
+    seul « « elle seule » est abandonné », qui le dit) ; registre : C-26-3-10 marqué remplacé,
+    C-26-3-5/8/12 amendés.
+  - Nombre d'AC inchangé : **12**. Prochaine étape : validation P3 (Sonnet, R/F, complète — la
+    remédiation change une règle de test), `26-3-validate-prompt-p3.md`.
+
