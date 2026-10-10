@@ -550,7 +550,12 @@ const ATTENDU = {
 	// `journal-entries-column-lettering`. Recompté par `grep -o "i18nMsg("` aux deux bornes
 	// (`011ea618` et la branche). `sitesNonResolus`, `relais`, `sitesGabarit` inchangés
 	// (que des littéraux).
-	sitesTotal: 2020,
+	// Story 26-2a (#622) : **2020 → 2024** (+4) — `routes/(app)/bank-accounts/+page.svelte`
+	// (47 → 51) : libellé et aide de la description, dans les formulaires de création et
+	// de modification (`bank-accounts-labels-description`, `bank-accounts-help-description`).
+	// Recompté par `grep -o "i18nMsg("` aux deux bornes (`9b724027` et la branche).
+	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (que des littéraux).
+	sitesTotal: 2024,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

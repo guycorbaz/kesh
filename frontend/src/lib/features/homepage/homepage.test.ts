@@ -9,6 +9,7 @@ function account(over: Partial<BankAccountSummary> = {}): BankAccountSummary {
 	return {
 		id: 1,
 		bankName: 'UBS',
+		description: null,
 		iban: 'CH4431999123000889012',
 		qrIban: null,
 		isPrimary: true,

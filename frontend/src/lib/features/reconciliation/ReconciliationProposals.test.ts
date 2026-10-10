@@ -534,6 +534,7 @@ describe('ReconciliationProposals — compte de la banque passé à la modale (S
 		return {
 			id,
 			bankName: 'UBS',
+			description: null,
 			iban: `CH00${id}`,
 			qrIban: null,
 			isPrimary: id === 17,

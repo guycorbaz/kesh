@@ -2,6 +2,8 @@
   Story 8-5a-zero — Page de configuration des comptes bancaires.
   Story v014-1 — CRUD complet post-onboarding (création, édition complète,
   archivage, toggle archivés, affichage solde).
+  Story 26-2a (#622) — description optionnelle : saisie (création, édition),
+  nom du compte dans le tableau par `bankAccountName`.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -24,7 +26,11 @@
 		type NewBankAccountPayload,
 		type UpdateBankAccountPayload,
 	} from '$lib/features/bank-accounts/bank-accounts.api';
-	import { formatChfBalance } from '$lib/features/bank-accounts/format';
+	import {
+		BANK_ACCOUNT_DESCRIPTION_MAX,
+		bankAccountName,
+		formatChfBalance,
+	} from '$lib/features/bank-accounts/format';
 
 	let bankAccounts = $state<BankAccountSummary[]>([]);
 	let accounts = $state<AccountResponse[]>([]);
@@ -49,6 +55,7 @@
 
 	// Form state — partagé create/edit-full.
 	let formBankName = $state('');
+	let formDescription = $state('');
 	let formIban = $state('');
 	let formQrIban = $state('');
 	let formIsPrimary = $state(false);
@@ -135,6 +142,7 @@
 
 	function resetForm() {
 		formBankName = '';
+		formDescription = '';
 		formIban = '';
 		formQrIban = '';
 		formIsPrimary = false;
@@ -150,6 +158,7 @@
 
 	function openEditFull(ba: BankAccountSummary) {
 		formBankName = ba.bankName;
+		formDescription = ba.description ?? '';
 		formIban = ba.iban;
 		formQrIban = ba.qrIban ?? '';
 		formIsPrimary = ba.isPrimary;
@@ -186,6 +195,15 @@
 		return Number.isInteger(iid) && iid >= 30000 && iid <= 31999;
 	}
 
+	/**
+	 * Story 26-2a — la description envoyée : `null` si le champ est vide ou fait
+	 * d'espaces. Toujours présente dans les deux payloads : au `PUT`, l'omettre
+	 * l'effacerait (C-26-2-19). La normalisation fait foi côté serveur.
+	 */
+	function descriptionPayload(): string | null {
+		return formDescription.trim() === '' ? null : formDescription;
+	}
+
 	/** Retourne false (et positionne `formError`) si le QR-IBAN saisi n'en est pas un. */
 	function validateQrIbanField(): boolean {
 		const qrIban = formQrIban.trim();
@@ -207,6 +225,7 @@
 		try {
 			const payload: NewBankAccountPayload = {
 				bankName: formBankName,
+				description: descriptionPayload(),
 				iban: formIban,
 				qrIban: formQrIban.trim() === '' ? null : formQrIban,
 				isPrimary: formIsPrimary,
@@ -231,6 +250,7 @@
 		try {
 			const payload: UpdateBankAccountPayload = {
 				bankName: formBankName,
+				description: descriptionPayload(),
 				iban: formIban,
 				qrIban: formQrIban.trim() === '' ? null : formQrIban,
 				isPrimary: formIsPrimary,
@@ -338,6 +358,11 @@
 						<Input id="form-bank-name" bind:value={formBankName} required data-testid="form-bank-name" />
 					</div>
 					<div>
+						<label for="form-description" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-description', 'Description (optionnelle)')}</label>
+						<Input id="form-description" bind:value={formDescription} maxlength={BANK_ACCOUNT_DESCRIPTION_MAX} data-testid="form-description" />
+						<p class="mt-1 text-xs text-text-muted" data-testid="form-description-help">{i18nMsg('bank-accounts-help-description', 'Par exemple « Personnel » ou « Épargne » : pour distinguer deux comptes de la même banque. 60 caractères au plus.')}</p>
+					</div>
+					<div>
 						<label for="form-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-iban', 'IBAN')}</label>
 						<Input id="form-iban" bind:value={formIban} required placeholder="CH..." data-testid="form-iban" />
 					</div>
@@ -410,7 +435,7 @@
 					{#each bankAccounts as ba (ba.id)}
 						<tr class="border-b border-border {ba.archived ? 'opacity-50' : ''}" data-testid="bank-account-row-{ba.id}">
 							<td class="py-2 pr-4">
-								{ba.bankName}
+								<span data-testid="bank-account-name-{ba.id}">{bankAccountName(ba)}</span>
 								{#if ba.isPrimary}
 									<span class="ml-2 rounded bg-primary-light/20 px-1.5 py-0.5 text-xs text-primary" data-testid="primary-badge-{ba.id}">
 										{i18nMsg('bank-accounts-labels-primary-badge', 'Principal')}
@@ -488,6 +513,11 @@
 											<div>
 												<label for="edit-bank-name" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-bank-name', 'Banque')}</label>
 												<Input id="edit-bank-name" bind:value={formBankName} required data-testid="edit-bank-name" />
+											</div>
+											<div>
+												<label for="edit-description" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-description', 'Description (optionnelle)')}</label>
+												<Input id="edit-description" bind:value={formDescription} maxlength={BANK_ACCOUNT_DESCRIPTION_MAX} data-testid="edit-description" />
+												<p class="mt-1 text-xs text-text-muted" data-testid="edit-description-help">{i18nMsg('bank-accounts-help-description', 'Par exemple « Personnel » ou « Épargne » : pour distinguer deux comptes de la même banque. 60 caractères au plus.')}</p>
 											</div>
 											<div>
 												<label for="edit-iban" class="block text-sm font-medium text-text mb-1">{i18nMsg('bank-accounts-labels-iban', 'IBAN')}</label>

@@ -47,6 +47,7 @@ function makeBankAccount(journalAccountId: number | null): BankAccountSummary {
 	return {
 		id: 17,
 		bankName: 'UBS',
+		description: null,
 		iban: 'CH4431999123000889012',
 		qrIban: null,
 		isPrimary: true,
@@ -208,5 +209,37 @@ describe('BankAccountJournalLinkForm', () => {
 		) as HTMLSelectElement;
 		await waitFor(() => expect(select.selectedIndex).toBeGreaterThan(-1));
 		expect(select.selectedOptions[0].textContent).toContain('1100');
+	});
+});
+
+describe('BankAccountJournalLinkForm — en-tête (Story 26-2a, D2)', () => {
+	it('nomme le compte avec sa description, suivi de l’IBAN', () => {
+		const { getByTestId } = render(BankAccountJournalLinkForm, {
+			props: {
+				bankAccount: { ...makeBankAccount(null), description: 'Personnel' },
+				accounts: [],
+				claimAccountIds: new Set<number>(),
+				onSuccess: () => {},
+				onCancel: () => {},
+			},
+		});
+		expect(getByTestId('bank-account-journal-link-heading').textContent?.trim()).toBe(
+			'UBS — Personnel — CH4431999123000889012',
+		);
+	});
+
+	it('sans description, garde l’affichage d’avant : « banque — IBAN »', () => {
+		const { getByTestId } = render(BankAccountJournalLinkForm, {
+			props: {
+				bankAccount: makeBankAccount(null),
+				accounts: [],
+				claimAccountIds: new Set<number>(),
+				onSuccess: () => {},
+				onCancel: () => {},
+			},
+		});
+		expect(getByTestId('bank-account-journal-link-heading').textContent?.trim()).toBe(
+			'UBS — CH4431999123000889012',
+		);
 	});
 });

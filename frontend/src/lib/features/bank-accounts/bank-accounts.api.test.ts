@@ -31,6 +31,7 @@ describe('bank-accounts.api', () => {
 				Promise.resolve({
 					id: 17,
 					bankName: 'UBS',
+					description: null,
 					iban: 'CH4431999123000889012',
 					qrIban: null,
 					isPrimary: true,
@@ -114,6 +115,7 @@ describe('bank-accounts.api — champs du dernier relevé (25-6-a)', () => {
 			{
 				id: 1,
 				bankName: 'UBS',
+				description: null,
 				iban: 'CH4431999123000889012',
 				qrIban: null,
 				isPrimary: true,
@@ -138,6 +140,7 @@ describe('bank-accounts.api — champs du dernier relevé (25-6-a)', () => {
 		stubJson({
 			id: 1,
 			bankName: 'UBS',
+			description: null,
 			iban: 'CH4431999123000889012',
 			qrIban: null,
 			isPrimary: true,
@@ -149,5 +152,40 @@ describe('bank-accounts.api — champs du dernier relevé (25-6-a)', () => {
 		expect(a.statementClosingBalance).toBeNull();
 		expect(a.statementDate).toBeNull();
 		expect(a.ledgerBalanceAtStatement).toBeNull();
+	});
+
+	// Story 26-2a (#622) — la description est mappée telle quelle ; absente
+	// d'une réponse (serveur antérieur), elle vaut `null`.
+	it('mappe la description, et la rend à null si la réponse l’omet', async () => {
+		stubJson([
+			{
+				id: 1,
+				bankName: 'UBS',
+				description: 'Personnel',
+				iban: 'CH4431999123000889012',
+				qrIban: null,
+				isPrimary: true,
+				journalAccountId: null,
+				version: 1,
+				archived: false,
+				currentBalance: null,
+				lastTransactionDate: null,
+			},
+			{
+				id: 2,
+				bankName: 'UBS',
+				iban: 'CH9300762011623852957',
+				qrIban: null,
+				isPrimary: false,
+				journalAccountId: null,
+				version: 1,
+				archived: false,
+				currentBalance: null,
+				lastTransactionDate: null,
+			},
+		]);
+		const [a, b] = await listBankAccounts();
+		expect(a.description).toBe('Personnel');
+		expect(b.description).toBeNull();
 	});
 });

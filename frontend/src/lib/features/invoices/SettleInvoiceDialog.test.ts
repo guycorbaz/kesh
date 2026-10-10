@@ -18,6 +18,7 @@ import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 const banque = {
 	id: 1,
 	bankName: 'Banque',
+	description: null,
 	iban: 'CH00',
 	qrIban: null,
 	isPrimary: true,

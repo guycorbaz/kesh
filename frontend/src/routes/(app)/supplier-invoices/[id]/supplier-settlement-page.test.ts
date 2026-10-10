@@ -342,6 +342,7 @@ describe("fiche facture fournisseur — la contrepartie n’est pas le compte cr
     return {
       id,
       bankName: `Banque ${id}`,
+      description: null,
       iban: "CH00",
       qrIban: null,
       isPrimary: id === 1,
