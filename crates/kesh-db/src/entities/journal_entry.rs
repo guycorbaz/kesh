@@ -163,7 +163,9 @@ pub struct JournalEntryLine {
     /// ⛔ Écrite dans `letterings::create_group_inner` et effacée dans
     /// `letterings::dissolve_group_inner`, atteints par les deux primitives
     /// (`create_group_in_tx`, `dissolve_group_in_tx`) et par la synchronisation
-    /// des pièces (Story 15-1a2-i) **seules** (R3).
+    /// des pièces (Stories 15-1a2-i et 15-1a2-ii, clientes et fournisseurs)
+    /// **seules** (R3) — hors les exceptions nommées au module `letterings`
+    /// (rattrapage par migration et son rejeu à l'import, restauration).
     pub lettering_key: Option<i64>,
     /// Origine du groupe : `document`, `reversal` ou `manual` ; `None` si et
     /// seulement si `lettering_key` est `None` (contrainte `chk_jel_lettering_pair`).

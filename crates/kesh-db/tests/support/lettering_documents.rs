@@ -12,7 +12,10 @@
 //! `crates/kesh-db/tests/lettering_documents.rs`,
 //! `crates/kesh-db/tests/letterings.rs` (AC9, `lettering_invariants`),
 //! `crates/kesh-api/tests/rejeu_interblocage_e2e.rs` (AC15 c) et, à la
-//! 15-1a2-ii, dans le binaire de son rattrapage (son AC6).
+//! 15-1a2-ii, dans le binaire de son rattrapage
+//! (`crates/kesh-db/tests/lettering_documents_backfill.rs`, son AC6). La
+//! 15-1a2-ii y ajoute les **factures fournisseurs** (section en fin de
+//! fichier).
 //!
 //! ⚠️ Chaque binaire n'en emploie qu'une partie — d'où l'`allow` ci-dessous :
 //! un fichier d'appui partagé par plusieurs binaires, chacun sur un
@@ -21,10 +24,12 @@
 
 use chrono::NaiveDate;
 use kesh_db::entities::{
-    NewCreditNote, NewInvoice, NewInvoiceLine, SettlementChoice, SettlementWriteOffNature,
+    NewBankAccount, NewCreditNote, NewInvoice, NewInvoiceLine, NewPaymentBatch, NewSupplierInvoice,
+    NewSupplierInvoiceLine, SettlementChoice, SettlementWriteOffNature,
 };
 use kesh_db::repositories::{
-    companies, credit_notes, invoice_settlements, invoice_settlements_write, invoices, letterings,
+    bank_accounts, companies, credit_notes, invoice_settlements, invoice_settlements_write,
+    invoices, letterings, payment_batches, supplier_invoices,
 };
 use kesh_db::test_fixtures::{SeededCompany, designate_rounding_account, seed_accounting_company};
 use rust_decimal::Decimal;
@@ -602,4 +607,301 @@ pub async fn divergences_ac5(
         }
     }
     fautes
+}
+
+// ---------------------------------------------------------------------------
+// Story 15-1a2-ii — les factures fournisseurs
+// ---------------------------------------------------------------------------
+
+/// Ce qu'il faut pour acheter et payer : un fournisseur, une dette `B` dédiée
+/// (`2010`, pour ne croiser aucune ligne des factures clientes), et un compte
+/// bancaire source dont le compte du grand livre (`1020`) est donc **non
+/// lettrable** (R4).
+pub struct Achats {
+    pub supplier_id: i64,
+    /// La dette `B` désignée (`2010`).
+    pub payable: i64,
+    /// Le compte bancaire source des virements et des lots.
+    pub bank_account_id: i64,
+    /// Son compte du grand livre (`1020`), non lettrable.
+    pub bank_ledger: i64,
+}
+
+/// Insère un compte (montage) et rend son id.
+pub async fn compte(pool: &MySqlPool, company_id: i64, numero: &str, type_: &str) -> i64 {
+    sqlx::query("INSERT INTO accounts (company_id, number, name, account_type) VALUES (?, ?, ?, ?)")
+        .bind(company_id)
+        .bind(numero)
+        .bind(format!("Compte {numero}"))
+        .bind(type_)
+        .execute(pool)
+        .await
+        .expect("compte")
+        .last_insert_id() as i64
+}
+
+/// Désigne `account_id` comme dette fournisseurs par défaut (montage) : les
+/// factures fournisseurs créées ensuite la créditent.
+pub async fn designer_dette(pool: &MySqlPool, company_id: i64, account_id: i64) {
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_payable_account_id = ? WHERE company_id = ?",
+    )
+    .bind(account_id)
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .expect("désigner la dette");
+}
+
+/// Prépare les achats de la société seedée (cf. [`Achats`]).
+pub async fn achats(pool: &MySqlPool, seeded: &SeededCompany) -> Achats {
+    let payable = compte(pool, seeded.company_id, "2010", "Liability").await;
+    let recuperable = compte(pool, seeded.company_id, "1170", "Asset").await;
+    sqlx::query(
+        "UPDATE company_invoice_settings SET default_payable_account_id = ?, \
+         default_vat_recoverable_account_id = ? WHERE company_id = ?",
+    )
+    .bind(payable)
+    .bind(recuperable)
+    .bind(seeded.company_id)
+    .execute(pool)
+    .await
+    .expect("réglages d'achat");
+    let supplier_id: i64 = sqlx::query_scalar(
+        "INSERT INTO contacts (company_id, contact_type, name, is_supplier) \
+         VALUES (?, 'Entreprise', 'Fournisseur lettrage', TRUE) RETURNING id",
+    )
+    .bind(seeded.company_id)
+    .fetch_one(pool)
+    .await
+    .expect("fournisseur");
+    let bank_ledger = compte(pool, seeded.company_id, "1020", "Asset").await;
+    let bank = bank_accounts::create(
+        pool,
+        NewBankAccount {
+            company_id: seeded.company_id,
+            bank_name: "Banque des achats".into(),
+            iban: "CH9300762011623852957".into(),
+            qr_iban: None,
+            is_primary: false,
+        },
+    )
+    .await
+    .expect("compte bancaire source");
+    sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+        .bind(bank_ledger)
+        .bind(bank.id)
+        .execute(pool)
+        .await
+        .expect("compte du grand livre de la banque");
+    Achats {
+        supplier_id,
+        payable,
+        bank_account_id: bank.id,
+        bank_ledger,
+    }
+}
+
+/// Une facture fournisseur `open` de `ttc` (une ligne à 0 % sur la charge
+/// `4000`), avec coordonnées de paiement (pour les lots) et le numéro `numero`.
+pub async fn facture_fournisseur(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    achats: &Achats,
+    ttc: Decimal,
+    date: NaiveDate,
+    numero: Option<&str>,
+) -> i64 {
+    supplier_invoices::create(
+        pool,
+        NewSupplierInvoice {
+            company_id: seeded.company_id,
+            contact_id: achats.supplier_id,
+            supplier_invoice_number: numero.map(String::from),
+            invoice_date: date,
+            due_date: None,
+            creditor_iban: Some("CH5604835012345678009".into()),
+            creditor_qr_iban: None,
+            payment_reference: Some("Lettrage".into()),
+            expected_payment_amount: None,
+            project_id: None,
+            lines: vec![NewSupplierInvoiceLine {
+                description: "Achat".into(),
+                quantity: dec!(1),
+                unit_price: ttc,
+                vat_rate: dec!(0),
+                expense_account_id: seeded.accounts["4000"],
+            }],
+        },
+        seeded.admin_user_id,
+    )
+    .await
+    .expect("facture fournisseur")
+    .invoice
+    .id
+}
+
+/// Paie la facture fournisseur par le mode `choix` et rend l'écriture de
+/// règlement.
+pub async fn payer_par(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    id: i64,
+    choix: SettlementChoice,
+    le: NaiveDate,
+) -> i64 {
+    supplier_invoices::pay(pool, seeded.company_id, id, choix, le, seeded.admin_user_id)
+        .await
+        .expect("paiement fournisseur")
+        .invoice
+        .settlement_journal_entry_id
+        .expect("écriture de règlement")
+}
+
+/// Paie par virement depuis le compte bancaire des [`Achats`].
+pub async fn payer(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    achats: &Achats,
+    id: i64,
+    le: NaiveDate,
+) -> i64 {
+    payer_par(
+        pool,
+        seeded,
+        id,
+        SettlementChoice::BankTransfer {
+            bank_account_id: achats.bank_account_id,
+        },
+        le,
+    )
+    .await
+}
+
+/// Paie les factures par un lot pain.001 **confirmé** (`confirm_batch`).
+pub async fn payer_par_lot(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    achats: &Achats,
+    ids: Vec<i64>,
+    le: NaiveDate,
+) {
+    let lot = payment_batches::create_batch(
+        pool,
+        NewPaymentBatch {
+            company_id: seeded.company_id,
+            bank_account_id: achats.bank_account_id,
+            requested_execution_date: le,
+            supplier_invoice_ids: ids,
+        },
+        seeded.admin_user_id,
+    )
+    .await
+    .expect("lot créé");
+    assert!(lot.failed.is_empty(), "montage : lot sans refus");
+    let lot_id = lot.batch.expect("lot").batch.id;
+    payment_batches::confirm_batch(pool, seeded.company_id, lot_id, le, seeded.admin_user_id)
+        .await
+        .expect("lot confirmé");
+}
+
+/// L'écriture d'achat d'une facture fournisseur.
+pub async fn achat(pool: &MySqlPool, id: i64) -> i64 {
+    sqlx::query_scalar("SELECT purchase_journal_entry_id FROM supplier_invoices WHERE id = ?")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .expect("écriture d'achat")
+}
+
+/// `C(S)`, **recalculé ici sans le code de production** : l'ancre (première
+/// ligne au crédit de l'écriture d'achat) puis la ligne sur son compte de
+/// l'écriture de règlement **en vigueur** — triées par `id`. Même forme que
+/// [`LigneDePiece`].
+pub async fn lignes_de_piece_fournisseur(pool: &MySqlPool, id: i64) -> Vec<LigneDePiece> {
+    sqlx::query_as(
+        "WITH ancre AS ( \
+             SELECT jel.id, jel.account_id FROM journal_entry_lines jel \
+             JOIN supplier_invoices s ON s.purchase_journal_entry_id = jel.entry_id \
+             WHERE s.id = ? AND jel.credit > 0 ORDER BY jel.id LIMIT 1) \
+         SELECT jel.id, jel.entry_id, jel.lettering_key, jel.lettering_origin, \
+                je.fiscal_year_id, je.entry_date \
+         FROM journal_entry_lines jel JOIN journal_entries je ON je.id = jel.entry_id \
+         JOIN ancre a ON jel.account_id = a.account_id \
+         WHERE jel.id = a.id \
+            OR jel.entry_id = (SELECT settlement_journal_entry_id FROM supplier_invoices \
+                               WHERE id = ?) \
+         ORDER BY jel.id",
+    )
+    .bind(id)
+    .bind(id)
+    .fetch_all(pool)
+    .await
+    .expect("lignes de la pièce fournisseur")
+}
+
+/// Le prédicat « lettrée `document` » d'une facture fournisseur, **écrit dans
+/// le test** : `C(S)` est exactement un groupe d'origine `document`.
+pub async fn fournisseur_lettree_document(pool: &MySqlPool, id: i64) -> bool {
+    let lignes = lignes_de_piece_fournisseur(pool, id).await;
+    if lignes.len() < 2 {
+        return false;
+    }
+    let Some(cle) = lignes[0].2 else {
+        return false;
+    };
+    let toutes = lignes
+        .iter()
+        .all(|l| l.2 == Some(cle) && l.3.as_deref() == Some("document"));
+    let dans_le_groupe: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM journal_entry_lines WHERE lettering_key = ?")
+            .bind(cle)
+            .fetch_one(pool)
+            .await
+            .expect("taille du groupe");
+    toutes && dans_le_groupe == lignes.len() as i64
+}
+
+/// Écriture manuelle `D debit_account / C credit_account` de `montant` (montage
+/// des contre-passations libres) ; rend `(écriture, ligne au débit, ligne au
+/// crédit)`.
+pub async fn ecriture_manuelle(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    debit_account: i64,
+    credit_account: i64,
+    montant: Decimal,
+    le: NaiveDate,
+) -> (i64, i64, i64) {
+    use kesh_db::entities::{Journal, NewJournalEntry, NewJournalEntryLine};
+    let je = kesh_db::repositories::journal_entries::create(
+        pool,
+        seeded.fiscal_year_id,
+        seeded.admin_user_id,
+        NewJournalEntry {
+            company_id: seeded.company_id,
+            entry_date: le,
+            journal: Journal::OD,
+            description: "Écriture manuelle lettrage".into(),
+            project_id: None,
+            lines: vec![
+                NewJournalEntryLine {
+                    account_id: debit_account,
+                    debit: montant,
+                    credit: Decimal::ZERO,
+                    project_id: None,
+                },
+                NewJournalEntryLine {
+                    account_id: credit_account,
+                    debit: Decimal::ZERO,
+                    credit: montant,
+                    project_id: None,
+                },
+            ],
+        },
+    )
+    .await
+    .expect("écriture manuelle");
+    let ligne = |i: usize| je.lines[i].id;
+    (je.entry.id, ligne(0), ligne(1))
 }

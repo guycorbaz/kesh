@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev *(découpée de la 15-1a2 le 2026-10-09 à la remédiation de sa validation P1 — C-15-1a2-1 ;
+done *(revue close à la P1 le 2026-10-10 — 0 au-dessus de LOW ; développée le 2026-10-10 ; découpée de la 15-1a2 le 2026-10-09 à la remédiation de sa validation P1 — C-15-1a2-1 ;
 validation P2 remédiée le 2026-10-09 — refus au délettrage (C-15-1a2-10), découverte par statut,
 classe A justifiée honnêtement ; validation P3 remédiée le 2026-10-09 — les refus fournisseurs du rang 2 bis
 partis à la **15-1a2-0** (C-15-1a2-19), un test existant de plus à modifier, la définition de la classe A
@@ -419,14 +419,14 @@ l'en-tête du fichier, `:35-39`).
 
 ## Tasks
 
-- [ ] **T0** — Relevés : faisabilité et `EXPLAIN` sur MariaDB 10.11 de la forme `UPDATE … JOIN (dérivée)`
+- [x] **T0** — Relevés : faisabilité et `EXPLAIN` sur MariaDB 10.11 de la forme `UPDATE … JOIN (dérivée)`
       de M1/M2 sur une base de gate peuplée ; re-greper les ancres de P4 ; routes `Rejouee` :
       `POST /supplier-invoices/{id}/pay`, `…/cancel`, `…/settlement/cancel`, `POST /payment-batches/{id}/confirm`.
-- [ ] **T1** (P3 part ii) — `sync_supplier_invoice_in_tx`, `dissolve_supplier_invoice_document_group_in_tx`,
+- [x] **T1** (P3 part ii) — `sync_supplier_invoice_in_tx`, `dissolve_supplier_invoice_document_group_in_tx`,
       sur l'algorithme factorisé de la part i.
-- [ ] **T2** (P4 part ii) — Les trois appels, exercices tenus gardés ; découverte par statut (P2). *(Le rang
+- [x] **T2** (P4 part ii) — Les trois appels, exercices tenus gardés ; découverte par statut (P2). *(Le rang
       2 bis aux refus des deux annulations est livré par la 15-1a2-0, D3.)*
-- [ ] **T3** (P6, AC11) — M1, M2, registre, exemption, squash, sha384, audit d'idempotence, P6, compteurs.
+- [x] **T3** (P6, AC11) — M1, M2, registre, exemption, squash, sha384, audit d'idempotence, P6, compteurs.
       Les en-têtes qui parlent de « la migration de rattrapage de la 15-1a2 » au singulier —
       `letterings.rs:15` et `letterings_lexical.rs:15` — nomment les deux fichiers, **et** l'exception R3
       de `letterings.rs` gagne le **rejeu à l'import** (`replay_post_restore_backfills`, entrée M1 de
@@ -452,11 +452,11 @@ l'en-tête du fichier, `:35-39`).
       chaque site trié (hors registre : `invoices.rs:5501`, `accounts.rs:2685`,
       `invoice_lines_revenue_account_backfill.rs:1151` parlent d'autre chose). `admin_full_import_e2e.rs` :
       `full_import_report_mirrors_the_production_registry` modifié (ci-dessous).
-- [ ] **T4** (AC8 part ii) — Test lexical fournisseur.
-- [ ] **T5** — Tests (liste ci-dessous) ; extension de la fixture partagée — dans
+- [x] **T4** (AC8 part ii) — Test lexical fournisseur.
+- [x] **T5** — Tests (liste ci-dessous) ; extension de la fixture partagée — dans
       `crates/kesh-db/tests/support/lettering_documents.rs` (15-1a2-i T5, C-15-1a2-28 : hors de `src/`, états
       hérités en SQL brut), incluse par `#[path]` dans `lettering_documents_backfill.rs`.
-- [ ] **T6** (AC12 part ii) — CHANGELOG, `api-external.md`, manuels FR (utilisateur, administrateur) +
+- [x] **T6** (AC12 part ii) — CHANGELOG, `api-external.md`, manuels FR (utilisateur, administrateur) +
       `make fr` + PDF aplati, README.
 
 **Tests prévus** (18 neufs, 5 modifiés) :
@@ -540,11 +540,140 @@ reprennent matière sans être écrits, AC11. Parti à la 15-1a2-0 : `supplier_s
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), en autonomie, worktree `kesh-15-1a2-ii`, base `c148034b` (tête de la 15-1a2-i).
+
 ### Completion Notes List
+
+**Reçu A2-1 de la 15-1a2-i — traité.** Valeur grepée (`git grep -nE "déjà soldée avant la mise à jour|au geste qui solde|au
+moment du geste qui la solde|pas lettrée par cette version" -- CHANGELOG.md docs README.md crates/kesh-i18n frontend/src
+website`) : trois sites, ceux du reçu — `CHANGELOG.md` (entrée « Une facture client soldée est lettrée d'office »),
+`docs/api-external.md` (§ « Lettrer des lignes »), `user-manual.tex` (§ `sec:reglement-client`, *Lettrage*) — réécrits :
+l'existant est lettré par la mise à jour, **sauf une pièce dont toutes les lignes sont en période close**. Le manuel porte
+désormais une note « Mise à jour vers la version 0.13 » (période close, pas d'audit). PDF aplati : « n'est pas lettrée par
+cette version » → **0**.
+
+**T0 — relevés.** (a) Faisabilité de `UPDATE … JOIN (dérivée de la même table)` sur MariaDB 10.11.16 : appliqué sur
+`kesh_1a2ii` sans erreur 1093 (dérivées matérialisées par les fonctions de fenêtre). `EXPLAIN` des quatre statements sur
+la base de la fixture d'AC6 : `kesh-gate-logs/15-1a2-ii-t0-explain.txt` — parcours complets de `journal_entry_lines`
+comme table externe, sous-requêtes corrélées par `idx_jel_entry` et clé primaire, aucune forme quadratique ; accepté
+sans index forcé (C-15-1a2-ii-5). (b) Ancres de P4 re-grepées par le nom (`pay_in_tx`, `cancel_in_tx`,
+`cancel_settlement_in_tx`, `confirm_batch` → `pay_in_tx`) : conformes. (c) Routes `Rejouee` : `pay`, `cancel`,
+`settlement/cancel`, `payment-batches/{id}/confirm` — vérifiées à `audit_route_registry.rs` (gate vert).
+
+**T1** — `letterings.rs` : la découverte devient `PieceDocument` (client ou fournisseur) ; les étapes 2 à 6 et la
+dissolution vivent dans **un** corps privé chacune (`sync_document_in_tx`, `dissolve_document_in_tx`), qui prennent la
+découverte en paramètre — les fonctions clientes y délèguent, aucune seconde copie. `discover_supplier_invoice_document`
+(découverte par statut, P2 ; C-15-1a2-ii-4), `sync_supplier_invoice_in_tx`, `dissolve_supplier_invoice_document_group_in_tx`.
+Doc du module (R3 : les deux migrations **et** le rejeu à l'import, écrivain sans audit), `SyncOutcome`, `DocumentRef`,
+`entities/journal_entry.rs` réécrits. **T2** — `supplier_invoices.rs` : appel après l'`UPDATE … 'paid'` de `pay_in_tx`
+(exercice du règlement), dissolution après les refus et avant `reverse_owned_in_tx` dans les deux annulations (exercice
+de l'achat, du règlement — valeurs désormais gardées). **T3** — M1 `20261010000001_lettering_documents_backfill.sql`
+(trois `UPDATE`), M2 `20261010000002_lettering_reversal_pairs_backfill.sql` (un `UPDATE`, exclusion explicite des achats) ;
+registre (M1, classe A, justification honnête), exemption (M2, `Durable`, compteur 16 → 17) ; définition de la classe A
+réécrite aux trois sites ; commentaire du registre réécrit avec le décompte 3/2 ; squash régénéré
+(`scripts/regen-test-schema.sh`, 78 migrations, rejeu vérifié) ; `migrations.sha384` (+2) ; audit d'idempotence (+2,
+recomptés : `ls … | wc -l` = 78 = lignes du tableau ; `yes` 10 + `tracked-by-sqlx` 68 + `no` 0) ; P6 :
+`migrations_upgrade_path.rs` 76 → 78, `- 42` → `- 44`, frontière 34 ; les autres sites (`grep -rn
+"migrations.len()\|apply_migrations_up_to" crates/`) résolvent par version ; P8 : `git diff c148034b --
+crates/kesh-db/migrations/20261009000001_journal_entry_lines_lettering.sql` vide. `post_restore_class_a.rs` : fixture
+avec pièces soldées en SQL brut, comptes **par entrée**, paragraphe et message réécrits (`CLIENT_FOUND_ROWS`). **T4** —
+`supplier_settlement_writers_sync_or_dissolve`. **T5** — fixture partagée étendue (`achats`, `facture_fournisseur`,
+`payer*`, `lignes_de_piece_fournisseur`, `fournisseur_lettree_document`, `ecriture_manuelle`). **T6** — CHANGELOG (entrée
+client réécrite, deux entrées neuves), `api-external.md`, manuels FR (utilisateur : note de mise à jour, *Lettrage* des
+factures fournisseurs, annulation, lots, glossaire ; administration : rejeu, nuance de la classe A), README (feuille de
+route), `make -B fr`, PDF aplatis contrôlés (phrases neuves présentes, 0 référence non définie dans les logs finaux).
+
+**Tests** (périmètre `240deef8` → commit de développement `c2619dff`) : **19 neufs** — `git diff 240deef8 c2619dff -- crates
+| grep -cE '^\+\s*#\[(sqlx::test|tokio::test|test)'` = 19 (fichier neuf compris ; revue P1, A : le « 15 + 4 » écrit
+avant le commit comptait le fichier neuf à part) — soit `lettering_documents.rs` 10, `lettering_documents_backfill.rs` **4** (les 3 prévus + `backfill_abstains_on_closed_years_without_lock`,
+ajouté après la survie de MU8 et MU9), `letterings_lexical.rs` 1, `admin_full_import_e2e.rs` 4 ; **5 modifiés**
+(`lettering_invariants`, `full_import_report_mirrors_the_production_registry`, les deux de `post_restore_class_a.rs`,
+`upgrade_path_preserves_data`) ; les tests unitaires de `post_restore.rs` qui reprennent matière sur M1 passent.
+
+**Mutations** (une à une, fichier restauré et retouché ; empreintes des migrations vérifiées identiques après) —
+**17 essayées, 15 tuées au premier passage, 2 survivantes puis tuées** *(revue P1, A-1 : « 18 / 16 » comptait une MU16 jamais exécutée — numéro sauté, non une mutation)* : MU1 pas de synchronisation au paiement (7
+rouges), MU2 pas de dissolution à l'annulation du paiement (5), MU3 pas de dissolution à l'annulation de la facture (5),
+MU4 facture annulée découverte comme ouverte (1), MU5 règlement absent de la découverte (7), MU6 `documentType`
+`"invoice"` (1), MU7 M1 sans règle des périodes (1), **MU8** M1 sans « exercice postérieur clos » et **MU9** M1 sans
+« exercice `Open` » — **survivantes** (les pièces de 2019 et 2022 étaient aussi sous la borne) → montage sans borne et
+test `backfill_abstains_on_closed_years_without_lock` ajouté → tuées (1 rouge chacune), MU10 / MU10b M1 / M2 sans la borne (1 / 1), MU11 M1 sans lettrabilité (1), MU12 M2
+appariement sans la position (1), MU13 M1 étape 3 sans le filtre « achat » (1), MU14 M1 sans ses deux gardes `lettering_key IS NULL` (2 : `class_a_entries_are_no_ops_on_a_nominal_up_to_date_base`, `full_import_of_an_up_to_date_base_is_a_noop` ; la redondance des deux gardes est écrite en C-15-1a2-ii-8), MU15 M1 sans somme nulle (1), MU17 M2 sans règle des
+périodes (1). ⚠️ MU1 à MU3 neutralisent l'appel par `if id < 0` : le détecteur lexical, qui garde l'inventaire, ne
+rougit pas (le texte reste) — les tests de dépôt gardent le comportement (même remarque qu'à la 15-1a2-i). Non
+mutée, faute de discriminant constructible : l'ancre de M1 étape 2 (`l.id = ancre.id`) — une écriture d'achat n'a qu'une
+ligne sur `B`.
+
+**Angles morts assumés du SQL de M1 étape 3 et M2** (revue P1, B-1, B-2 = E-1, E-2 ; inatteignables par un geste, écrits
+plutôt que corrigés dans un SQL que P8 figera) : (1) une paire de **longueurs différentes** (donnée héritée anormale) est
+appariée sur les rangs communs, le reste laissé ouvert — là où le geste rend `Invariant` ; aucun faux rattachement
+(même compte, montants croisés exigés) ; (2) une écriture à la fois **miroir et origine** (contre-passation d'une
+contre-passation, interdite par `IsAReversal` depuis la 24-4a) rendrait une ligne candidate deux fois ; (3) aucune
+**égalité de société** entre l'origine et son miroir — le socle crée toujours le miroir dans la société de l'origine ;
+(4) une paire dont **les deux** lignes sont aujourd'hui en période close n'est pas lettrée, là où R6 vivant l'avait
+lettrée sans règle des périodes — c'est le régime (d-ii) d'AC6, dit au manuel.
+
+**Choix consignés** : C-15-1a2-ii-1 à C-15-1a2-ii-8.
 
 ### File List
 
+- `crates/kesh-db/src/repositories/letterings.rs` — découverte `PieceDocument`, corps communs, synchronisation fournisseur, doc R3
+- `crates/kesh-db/src/repositories/supplier_invoices.rs` — trois appels, exercices tenus gardés
+- `crates/kesh-db/src/entities/journal_entry.rs` — doc de `lettering_key`
+- `crates/kesh-db/src/post_restore.rs` — M1 au registre, M2 exemptée, définition de la classe A
+- `crates/kesh-db/migrations/20261010000001_lettering_documents_backfill.sql` — **neuf** (M1)
+- `crates/kesh-db/migrations/20261010000002_lettering_reversal_pairs_backfill.sql` — **neuf** (M2)
+- `crates/kesh-db/migrations.sha384`, `crates/kesh-db/test-schema/0001_schema_squash.sql`
+- `crates/kesh-db/tests/lettering_documents_backfill.rs` — **neuf**
+- `crates/kesh-db/tests/lettering_documents.rs`, `crates/kesh-db/tests/support/lettering_documents.rs`,
+  `crates/kesh-db/tests/letterings.rs`, `crates/kesh-db/tests/letterings_lexical.rs`,
+  `crates/kesh-db/tests/post_restore_class_a.rs`, `crates/kesh-db/tests/migrations_upgrade_path.rs`,
+  `crates/kesh-db/tests/test_schema_guard.rs`
+- `crates/kesh-api/tests/admin_full_import_e2e.rs`
+- `CHANGELOG.md`, `README.md`, `docs/api-external.md`, `docs/migrations-idempotence-audit.md`
+- `docs/manual/fr/user-manual.tex`, `admin-manual.tex` et les trois PDF
+- `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md`, `sprint-status.yaml`
+
 ## Change Log
+
+### Clôture — 2026-10-10 (Opus 5.5) — **REVUE CLOSE, story `done`**
+
+**Gates au dernier commit de code `46cda370`** (exécutés ; base `kesh_1a2ii` remise à zéro avant, sans redémarrer
+MariaDB) : `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) **3285 passés, 4 ignorés** ; frontend (inchangé
+depuis `main`, `git diff --stat 240deef8 HEAD -- frontend` vide) — `npm run check` **0 erreur** (27 avertissements
+préexistants), `lint-i18n-ownership` vert, `test:unit` **116 fichiers / 1167 tests**, `build` vert ; **E2E complet**
+(port 3023, base `kesh_e2e_1a2ii` neuve migrée par `sqlx migrate run`, binaire construit sur `46cda370`, montage de
+`docs/testing.md` ; **démarrage réel** contre cette base persistante : checksums de M1/M2 acceptés, P8) : **245 passés,
+9 échoués, 19 ignorés** — jugés fichier par fichier : sept KF-029 (#97) (`mode-expert:26`, `:41`, `onboarding-path-b:65`,
+`:92`, `onboarding:57`, `:77`, `:150`) et deux KF-045 (#421) (`invoices:415`, `:439`, matinaux — suite lancée vers
+02:00 UTC) ; **aucun hors liste**. Trend de la revue : P1 (Sonnet ×3) **0 au-dessus de LOW** → close. Modèles : Opus 5.5
+(développement, remédiation, orchestration), Sonnet 5.5 (P1).
+
+### Revue de code P1 — 2026-10-10 (Sonnet 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5) — REVUE CLOSE
+
+**Prompt** : `15-1a2-ii-review-prompt-p1.md` (diff `240deef8..c2619dff`). **Rapports** :
+`kesh-gate-logs/15-1a2-ii-review-p1-{B,E,A}.md` — B **0 C / 0 H / 0 M / 3 L**, E **0 / 0 / 0 / 2 L** (+ 3 notes), A **0 / 0 /
+0 / 5 L** ; recoupement B-2 ≈ E-1 (société origine ↔ miroir) → **9 LOW distincts, 0 au-dessus de LOW**. Axes non exercés
+déclarés par les trois lentilles : toute exécution — reprise par l'orchestrateur (gate complet au commit de
+développement, 3285/3285 ; mutations au Dev Agent Record). Affirmations vérifiées (`grep -nF` : liste
+`EXEMPT_MIGRATIONS` déjà non chronologique avant la story — `20260828000001` précède `20260722000001` ; phrase
+`audit:13` présente ; MU16 absente des relevés ; décompte `git diff 240deef8 c2619dff -- crates | grep -cE …` = 19).
+
+| finding | verdict |
+|---|---|
+| A-1 — 18 mutations annoncées, 17 nommées | **corrigé** : 17 essayées, 15 tuées au premier passage, 2 survivantes puis tuées (Dev Agent Record, `sprint-status.yaml`) |
+| A-2 — l'exemption M2 rangée avant `20261009000001` | **réfuté** : la liste n'est pas chronologique (`20260828000001` avant `20260722000001`), aucun invariant d'ordre ; laissé |
+| A-3 — « seule migration du dépôt dans ce cas » (`migrations-idempotence-audit.md:13`) | **corrigé** |
+| A-4 — `payable_not_letterable_is_skipped` : `.all()` sur un vecteur possiblement vide | **corrigé** (assertion de montage : deux lignes) |
+| A-5 — § de l'annulation du règlement fournisseur muet sur le délettrage | **corrigé** (`api-external.md`) |
+| A (décompte) — « 15 + 4 » | **corrigé** (19, périmètre `240deef8..c2619dff`) |
+| B-1 — paires de longueurs différentes | **angle mort assumé**, écrit au Dev Agent Record (donnée héritée anormale, aucun faux rattachement) |
+| B-2 = E-1 — miroir-et-origine, société origine ↔ miroir | **angle mort assumé**, écrit (inatteignable : `IsAReversal`, socle) ; corriger toucherait le SQL de deux migrations pour un état qu'aucun geste ne produit |
+| B-3 — plans à balayages complets | **accepté** (C-15-1a2-ii-5) |
+| E-2 — paire entièrement close non lettrée, R6 l'avait lettrée | **conforme** au régime (d-ii) d'AC6 ; écrit au Dev Agent Record |
+
+**Trend** : P1 **0 au-dessus de LOW** — critère d'arrêt atteint dès la première passe. La remédiation ne touche **aucune
+ligne de code de production** (un test, deux documents, la fiche) : la boucle est **close** sans passe ciblée.
+Signal D5 : sans objet. Modèles : Opus 5.5 (développement, remédiation), Sonnet 5.5 (P1).
 
 ### Validation P4 ciblée — 2026-10-09 (une lentille, chasseur de régressions de `76e7893a` ; remédiation Opus 5.5, seul remédiateur des fiches de la suite du lettrage, en autonomie) — VALIDATION CLOSE
 

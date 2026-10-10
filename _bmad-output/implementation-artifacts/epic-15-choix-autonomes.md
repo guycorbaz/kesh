@@ -7724,3 +7724,51 @@ l'import (#458–#461).
 - **Retenu** : 15-1a2-0 et 15-1a2-i passent dans « Livré sur `main` » (vrai au merge de la PR qui les porte), la 15-1a2-ii reste « À venir ».
 - **Écartées** : attendre la 15-1a2-ii (la règle du dépôt veut la mise à jour dans le même commit que ce qui la déclenche).
 - **Réversible** : oui.
+
+## C-15-1a2-ii-1 — 15-1a2-ii (développement) : versions de M1 et M2, `20261010000001` et `20261010000002`
+- **Contexte** : la fiche veut M1 strictement après `20261009000001` et M2 juste après M1 ; le développement a lieu le 2026-10-10, et aucune branche de l'epic ne porte de migration datée de ce jour (relevé `git ls-tree` sur toutes les branches `story/15-*`).
+- **Retenu** : `20261010000001_lettering_documents_backfill.sql` (M1) et `20261010000002_lettering_reversal_pairs_backfill.sql` (M2).
+- **Écartées** : `20261009000002` (date du jour de la 15-1a-i, possible mais trompeuse sur la chronologie).
+- **Réversible** : oui tant que la branche n'est pas fusionnée ; non après (P8).
+
+## C-15-1a2-ii-2 — 15-1a2-ii (développement, AC6) : les états figés fabriqués pour le test d'accord
+- **Contexte** : AC6 (d-ii) veut des pièces et des paires lettrées par le geste PUIS figées, classées par construction. Une contre-passation est datée du jour, et le verrou refuse une borne `>= aujourd'hui` : une paire entièrement sous la borne ne se fabrique pas par les gestes. Les trois branches du prédicat de période du SQL (exercice `Open`, exercice postérieur clos, borne) doivent chacune être exercées, sans quoi une mutation de l'une survivrait.
+- **Retenu** : (1) le miroir d'une paire est **antidaté en SQL brut** avant la pose du verrou ; (2) l'exercice seedé est ramené à 2024–2030, deux exercices antérieurs sont posés en SQL — `2018-2019` resté ouvert, `2020-2023` **clos en SQL brut, hors de l'ordre de la clôture** (état hérité d'avant la 15-12a, seul moyen d'avoir « ouvert sous un postérieur clos ») ; une pièce dans chacun, plus une pièce client et une pièce fournisseur sous la borne. Cinq ensembles figés, nommés.
+- **Écartées** : une seule branche (la borne) — mutations des deux autres non tuées ; clôturer par `fiscal_years::close` (refuse l'ordre inverse, à juste titre).
+- **Réversible** : oui (test seulement).
+
+## C-15-1a2-ii-3 — 15-1a2-ii (développement, AC6 e) : le cas C104 rendu non lettrable APRÈS le rattrapage
+- **Contexte** : AC6 (e) veut éprouver une pièce dont le groupe `document` a survécu au passage de son compte en non lettrable. Si le compte devient non lettrable AVANT l'effacement (b), M1 — qui juge la lettrabilité à son exécution — ne repose pas le groupe : une troisième différence en (d), étrangère à la fiche (« il n'y a pas d'autre différence »). En production cette divergence n'existe pas : avant la mise à jour aucune marque n'existe, et à l'import une marque restaurée n'est jamais touchée (garde).
+- **Retenu** : la pièce C104 a sa propre dette (`2011`), lettrable pendant (a)–(d) ; elle est rattachée à un compte bancaire juste avant (e), où la synchronisation doit rendre `AccountNotLetterable` sans rien écrire, groupe présent.
+- **Écartées** : classer la pièce dans un troisième régime de (d) (élargit la fiche).
+- **Réversible** : oui (test seulement).
+
+## C-15-1a2-ii-4 — 15-1a2-ii (développement, P2) : découverte d'une facture ouverte et statut inattendu
+- **Contexte** : P2 définit `C(S)` = l'ancre seule pour une facture `open`, vide pour `cancelled`. Une facture `paid` sans écriture de règlement est interdite par `chk_supplier_invoices_paid_has_settlement`.
+- **Retenu** : `open` lit (et verrouille) les lignes de l'achat sur `B`, comme `paid` — l'étape 2 y vérifie l'absence de marque étrangère ; `cancelled` → `None` sans lecture des lignes ; tout autre état (`paid` sans règlement) → `Invariant`.
+- **Écartées** : `open` → `None` (sauterait le contrôle de l'étape 2 sur l'ancre).
+- **Réversible** : oui.
+
+## C-15-1a2-ii-5 — 15-1a2-ii (développement, T0) : plans de M1 et M2 acceptés tels quels
+- **Contexte** : l'`EXPLAIN` sur la base de la fixture (`kesh-gate-logs/15-1a2-ii-t0-explain.txt`) montre des parcours complets de `journal_entry_lines` (table externe de l'`UPDATE`, dérivées matérialisées) et des jointures par tampon ; aucune forme quadratique (les sous-requêtes corrélées passent par `idx_jel_entry` et la clé primaire).
+- **Retenu** : pas d'index forcé dans les migrations — exécution unique à la mise à jour, puis une fois par import ; coût linéaire en nombre de lignes. Faisabilité MariaDB 10.11 de `UPDATE … JOIN (dérivée de la même table)` établie (pas d'erreur 1093 : dérivées matérialisées par les fonctions de fenêtre).
+- **Écartées** : `FORCE INDEX` (plans figés dans une migration immuable, P8).
+- **Réversible** : non après publication (P8) ; un correctif passerait par une migration suivante.
+
+## C-15-1a2-ii-6 — 15-1a2-ii (développement, AC16) : sauvegarde « sans lettrage » fabriquée en effaçant avant l'export
+- **Contexte** : AC16 (a) veut une sauvegarde dont les marques sont à `NULL` dans l'archive. Réécrire le NDJSON imposerait de recalculer empreintes et décomptes du manifeste.
+- **Retenu** : effacer les marques en SQL brut **avant** l'export — l'archive porte alors des marques nulles, état identique à une sauvegarde d'avant la 15-1a2. AC16 (d) suit la variante « borne posée après le règlement, puis `unlock_books` » que la fiche autorise. AC16 (b) délettre par la route `DELETE /api/v1/letterings/{key}`.
+- **Écartées** : édition de l'archive (outillage plus lourd, même état).
+- **Réversible** : oui (test seulement).
+
+## C-15-1a2-ii-7 — 15-1a2-ii (développement, AC12) : « Trois propriétés » devient « Ce qu'il faut en savoir »
+- **Contexte** : le § « Reprises de données rejouées à l'import » du manuel d'administration annonçait « trois propriétés » pour quatre puces (écart antérieur) ; la story y ajoute la cinquième (lettrage rejoué, paires libres non rejouées, nuance de la classe A).
+- **Retenu** : l'annonce ne compte plus (« Ce qu'il faut en savoir ») ; la puce neuve suit « Vos données ne sont jamais écrasées », qu'elle nuance sans la démentir.
+- **Écartées** : « Cinq propriétés » (un décompte de plus à tenir).
+- **Réversible** : oui.
+
+## C-15-1a2-ii-8 — 15-1a2-ii (développement) : double garde `lettering_key IS NULL` dans M1/M2
+- **Contexte** : chaque statement porte deux gardes — sur le groupe candidat (`deja = 0`, toutes les lignes libres) et sur la ligne écrite (`WHERE jel.lettering_key IS NULL`). La seconde est redondante tant que la première tient : une mutation qui ne retire qu'une des deux survit.
+- **Retenu** : les deux restent (défense en profondeur dans un SQL figé) ; la mutation éprouvée retire les deux (tuée par `post_restore_class_a.rs` et AC16 c), et la redondance est écrite ici.
+- **Écartées** : n'en garder qu'une (la garde de groupe est celle de la fiche ; la garde de ligne protège d'un futur candidat partiellement lettré).
+- **Réversible** : non après publication (P8).

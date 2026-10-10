@@ -39,8 +39,12 @@
 //! # Deux classes d'entrées, et le déclencheur n'est pas le même
 //!
 //! **Classe A — auto-gardée, rejeu inconditionnel.** Tous ses statements sont
-//! gardés contre l'écrasement d'une valeur posée par l'utilisateur ; le rejeu
-//! est un no-op strict sur une base à jour, il n'y a donc rien à conditionner.
+//! gardés contre l'écrasement d'une valeur posée par l'utilisateur ; sur une
+//! base à jour, le rejeu ne délettre ni ne réécrit rien — il n'y a donc rien à
+//! conditionner. ⚠️ Il **peut poser** ce que la base aurait posé aujourd'hui
+//! (une pièce rendue lettrable depuis, un exercice rouvert depuis : Story
+//! 15-1a2-ii, M1) : « no-op » ne vaut que pour une base **nominale**, sans ces
+//! états — l'entrée qui le peut le dit dans sa justification.
 //!
 //! **Classe B — sentinelle, rejeu conditionné.** L'entrée contient au moins un
 //! statement non gardé. Elle n'est rejouée que si l'une de ses **colonnes
@@ -117,8 +121,10 @@ use crate::errors::{DbError, map_db_error};
 /// s'est effectivement passé.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackfillTrigger {
-    /// **Classe A** : tous les statements sont gardés contre l'intention
-    /// utilisateur, le rejeu est un no-op strict sur une base à jour.
+    /// **Classe A** : tous les statements sont gardés contre l'écrasement d'une
+    /// valeur posée par l'utilisateur ; sur une base à jour, le rejeu ne
+    /// délettre ni ne réécrit rien, mais **peut poser** ce que la base aurait
+    /// posé aujourd'hui (pièce rendue lettrable depuis — Story 15-1a2-ii).
     Unconditional,
     /// **Classe B** : rejeu si **au moins une** des colonnes `(table, colonne)`
     /// manque aux `column_names` du manifeste source.
@@ -202,21 +208,50 @@ pub struct ReplayedBackfill {
 /// système, et sont énumérées avec leur justification dans
 /// [`EXEMPT_MIGRATIONS`].
 pub const POST_RESTORE_BACKFILLS: &[PostRestoreBackfill] = &[
-    // ⛔ **VIDE depuis la Story 25-2-c (#381), et ce n'est pas un oubli** — c'est
-    // le mécanisme qui refonctionne. `journal_entry_number_sequences`
-    // (20260917000001) est une table applicative : sa création a **refermé la
-    // fenêtre d'importabilité** au-delà des deux entrées que ce registre portait
-    // (`20260828000001` et `20260910000001`), désormais dans [`RETIRED_BACKFILLS`].
+    // ⚠️ **VIDE de la Story 25-2-c (#381) à la Story 15-1a2-ii (#518)** — la
+    // création de `journal_entry_number_sequences` (20260917000001) avait refermé
+    // la fenêtre d'importabilité au-delà des deux entrées qu'il portait
+    // (`20260828000001`, `20260910000001`, désormais dans [`RETIRED_BACKFILLS`]).
+    // Il n'était pas mort, il attendait : M1 ci-dessous le remplit de nouveau.
     //
-    // ⚠️ **Conséquence à connaître, pas à découvrir au gate** : les cinq tests
-    // unitaires qui ne parcourent QUE ce registre — extraction verbatim,
-    // couverture des statements d'écriture, sentinelle de classe B, absence de
-    // DDL, littéraux dangereux — tournent désormais **à vide**. Les tests de la
-    // machinerie de rejeu, eux, gardent leur matière : `post_restore_class_a.rs`
-    // enchaîne les deux registres (`.chain(RETIRED_BACKFILLS.iter())`).
-    //
-    // Le registre l'a déjà été entre les Stories 24-2 et 24-3, et la suivante l'a
-    // rempli de nouveau : il n'est pas mort, il attend.
+    // ⚠️ **Ce que M1 rend aux tests unitaires qui ne parcourent QUE ce registre**
+    // (décompte de la 15-1a2-ii) : TROIS reprennent matière — couverture des
+    // statements d'écriture, absence de DDL, littéraux dangereux ; DEUX restent
+    // sans prise sur M1 — `class_b_sentinel_column_is_added_by_its_own_migration`
+    // saute toute entrée qui n'est pas `Sentinels`, et l'extraction verbatim
+    // compare, pour un `include_str!` de la migration entière, la source à
+    // elle-même. Les tests de la machinerie de rejeu gardent leur matière par
+    // `post_restore_class_a.rs` (`.chain(RETIRED_BACKFILLS.iter())`).
+    PostRestoreBackfill {
+        version: 20261010000001,
+        label: "20261010000001_lettering_documents_backfill.sql",
+        // CLASSE A. Les trois `UPDATE` (groupes `document` des factures clientes,
+        // des factures fournisseurs payées, paires `reversal` des achats annulés)
+        // sont gardés `lettering_key IS NULL` sur TOUTES les lignes du groupe
+        // candidat : le rejeu ne délettre jamais et ne réécrit jamais une marque
+        // posée. Aucune des lignes visées ne peut porter un `NULL` CHOISI : un
+        // groupe `document` ne se dissout pas à la main (`LETTERING_IS_DOCUMENT`)
+        // et se recalcule depuis les pièces — un groupe dissous à bon droit
+        // (règlement annulé) ne se reforme pas, la pièce ayant changé ; une paire
+        // `reversal` dont une ligne est celle d'une pièce ne se dissout pas à la
+        // main non plus (C106).
+        //
+        // ⚠️ **Ce que la classe A ne garantit PAS ici** (C-15-1a2-16) : ce n'est
+        // pas un « no-op strict ». Le rejeu PEUT LETTRER ce que la base à jour
+        // avait laissé ouvert à bon droit — (1) une pièce historique entièrement
+        // close à la mise à jour, dont un administrateur a depuis rouvert
+        // l'exercice ou reculé la borne (rien ne la resynchronise en vivant) ;
+        // (2) une pièce dont le compte n'était pas lettrable au geste et l'est
+        // devenu. Le groupe posé est celui que la synchronisation poserait
+        // aujourd'hui, et aucun geste de l'utilisateur ne l'avait défait (une
+        // ligne de pièce n'est jamais délettrable à la main) — ce n'est pas
+        // écraser un choix. Le manuel d'administration le dit.
+        //
+        // Hors fenêtre ? Non : aucune table applicative n'est créée depuis
+        // `20260917000001` (`registry_entries_are_within_import_window`).
+        trigger: BackfillTrigger::Unconditional,
+        sql: include_str!("../migrations/20261010000001_lettering_documents_backfill.sql"),
+    },
 ];
 
 // ⚠️ **Le registre a été VIDE entre les Stories 24-2 et 24-3, et ce n'était pas
@@ -522,6 +557,15 @@ pub const EXEMPT_MIGRATIONS: &[(i64, ExemptionBasis, &str)] = &[
          restaurée. Le reste de la migration est du DDL pur ; le remplissage du parc vit HORS \
          migration (backfill_client_number_canonical, appelée au boot et en fin d'import — D6 \
          Story 22-1), ce qui tient l'esprit de P7 sans entrée au registre.",
+    ),
+    (
+        20261010000002,
+        ExemptionBasis::Durable,
+        "Rejeu exclu à dessein : un groupe reversal sans ligne de pièce se délettre à la main \
+         (DELETE /letterings) ; un NULL peut y être un choix de l'utilisateur, qu'un rejeu à \
+         chaque import réécrirait en silence. Coût assumé : une sauvegarde d'avant la 15-1a2-ii \
+         importée laisse ces paires ouvertes, lettrables à la main. Les paires des écritures \
+         d'achat, elles, sont portées par 20261010000001, au registre (Story 15-1a2-ii, #518).",
     ),
     (
         20261009000001,
@@ -1144,9 +1188,12 @@ mod tests {
         // ⚠️ **15 → 16 (Story 15-1a-i, #518)** : `20261009000001`, le bump
         // `kesh_version_min_required` à 0.13.0 — `Durable`, patron des deux bumps
         // précédents (table système jamais restaurée, DDL pur sinon).
+        // ⚠️ **16 → 17 (Story 15-1a2-ii, #518)** : `20261010000002`, les paires
+        // de contre-passation libres — `Durable`, rejeu exclu parce qu'un `NULL`
+        // y peut être un choix de l'utilisateur (`DELETE /letterings`).
         assert_eq!(
             EXEMPT_MIGRATIONS.len(),
-            16,
+            17,
             "le registre d'exemptions a changé de taille : déclarer le fondement de l'entrée \
              neuve (Durable, ou PerishableSince(<borne>) si elle argumente sur un fait daté), \
              puis bumper ce nombre."

@@ -49,6 +49,8 @@ const ALLOWED_REAL_MIGRATOR_FILES: &[&str] = &[
     "crates/kesh-db/tests/invoice_lines_revenue_account_backfill.rs",
     // Story 25-2-c : l'amorçage du compteur d'écritures, même montage à fenêtre.
     "crates/kesh-db/tests/journal_entry_number_sequences_bootstrap.rs",
+    // Story 15-1a2-ii : le rattrapage du lettrage (M1, M2), même montage à fenêtre.
+    "crates/kesh-db/tests/lettering_documents_backfill.rs",
     // Triage P7 — rejeu des backfills après restauration.
     "crates/kesh-db/tests/post_restore_class_a.rs",
     "crates/kesh-db/tests/post_restore_transactionality.rs",

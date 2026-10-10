@@ -11,14 +11,21 @@
 //! retire dans UNE autre — `dissolve_group_inner`** (R3), atteintes par les
 //! deux primitives ([`create_group_in_tx`], [`dissolve_group_in_tx`]) et par la
 //! synchronisation des pièces ([`sync_invoice_in_tx`],
-//! [`dissolve_invoice_document_group_in_tx`], Story 15-1a2-i) **seules** — la
-//! synchronisation **appelle** ces corps, elle n'écrit pas la marque. Aucun
-//! autre `UPDATE` ni `INSERT` du code de production ne nomme `lettering_key` ou
-//! `lettering_origin` : le test lexical
+//! [`dissolve_invoice_document_group_in_tx`], Story 15-1a2-i ;
+//! [`sync_supplier_invoice_in_tx`],
+//! [`dissolve_supplier_invoice_document_group_in_tx`], Story 15-1a2-ii)
+//! **seules** — la synchronisation **appelle** ces corps, elle n'écrit pas la
+//! marque. Aucun autre `UPDATE` ni `INSERT` du code de production ne nomme
+//! `lettering_key` ou `lettering_origin` : le test lexical
 //! `crates/kesh-db/tests/letterings_lexical.rs` le vérifie. Exceptions,
-//! nommées : la migration de rattrapage de la 15-1a2 (SQL de migration), la
+//! nommées : les **deux migrations de rattrapage** de la 15-1a2-ii
+//! (`20261010000001_lettering_documents_backfill.sql`,
+//! `20261010000002_lettering_reversal_pairs_backfill.sql` — SQL de migration) ;
+//! le **rejeu à l'import** de la première (`post_restore::replay_post_restore_backfills`,
+//! entrée de classe A de `POST_RESTORE_BACKFILLS`) — un écrivain de production
+//! de la marque, hors des deux corps et **sans audit**, à chaque import ; la
 //! **restauration d'une sauvegarde** (`backup.rs`, colonnes lues
-//! dynamiquement — un groupe restauré est celui qui existait), et les
+//! dynamiquement — un groupe restauré est celui qui existait) ; et les
 //! suppressions en bloc qui emportent les lignes **avec** leurs marques
 //! (`journal_entries::delete_all_by_company`, `reset_demo` de `kesh-seed`).
 //!
@@ -839,7 +846,8 @@ fn build_group(
 /// 15-1a2-ii (factures fournisseurs) le consomme tel quel.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DocumentRef {
-    /// `"invoice"` ici ; `"supplierInvoice"` à la 15-1a2-ii — les valeurs mêmes
+    /// `"invoice"` (facture client) ou `"supplierInvoice"` (facture
+    /// fournisseur, Story 15-1a2-ii) — les valeurs mêmes
     /// de `document.type` de la vue des postes ouverts (15-1b). ⚠️ Littéral
     /// **provisoire** : la 15-1b-0, mergée après, type ce champ en
     /// `DocumentKind` et le sérialise par `DocumentKind::as_str` (sa T2,
@@ -1172,8 +1180,9 @@ async fn dissolve_group_inner(
 
 /// Issue d'une synchronisation de pièce (Story 15-1a2-i, P3).
 ///
-/// ⛔ Aucune de ces issues n'est une erreur : **un règlement, un solde, un avoir
-/// ou un rapprochement n'est jamais refusé à cause du lettrage**. Seul un état
+/// ⛔ Aucune de ces issues n'est une erreur : **un règlement, un solde, un avoir,
+/// un rapprochement ou un paiement fournisseur n'est jamais refusé à cause du
+/// lettrage**. Seul un état
 /// que les gestes ne produisent pas sort en [`DbError::Invariant`] — et la
 /// tolérance nommée à [`sync_invoice_in_tx`] (un exercice créé pendant le geste).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1241,11 +1250,15 @@ const GROUP_LINE_IDS_SQL: &str = "SELECT jel.id \
      FROM journal_entry_lines jel JOIN journal_entries je ON je.id = jel.entry_id \
      WHERE jel.lettering_key = ? AND je.company_id = ? ORDER BY jel.id";
 
-/// Ce que l'étape 1 découvre d'une facture : `C(I)`, son compte `A`, la pièce.
-struct InvoiceDocument {
+/// Ce que l'étape 1 découvre d'une pièce — facture client ou fournisseur : `C`,
+/// son compte (`A` créance, `B` dette), la pièce pour l'audit. Le **seul** point
+/// où les deux familles diffèrent (Story 15-1a2-ii, P3 part ii) : la suite de
+/// l'algorithme ([`sync_document_in_tx`], [`dissolve_document_in_tx`]) est
+/// commune, jamais recopiée.
+struct PieceDocument {
     account_id: i64,
-    /// `C(I)` : l'ancre d'abord dans l'ordre `id`, puis les lignes sur `A` des
-    /// règlements en vigueur et de l'avoir émis — triées par `id`.
+    /// `C` : l'ancre et les lignes sur le compte de la pièce des écritures qui
+    /// la soldent (règlements, avoir) — triées par `id`.
     lines: Vec<LineRow>,
     document: DocumentRef,
 }
@@ -1263,7 +1276,7 @@ async fn discover_invoice_document(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,
     invoice_id: i64,
-) -> Result<Option<InvoiceDocument>, DbError> {
+) -> Result<Option<PieceDocument>, DbError> {
     let (status, sale_entry_id, number): (String, Option<i64>, Option<String>) =
         sqlx::query_as(SYNC_INVOICE_SQL)
             .bind(invoice_id)
@@ -1330,7 +1343,7 @@ async fn discover_invoice_document(
         .into_iter()
         .filter(|l| l.entry_id != sale_entry_id || l.id == ancre)
         .collect();
-    Ok(Some(InvoiceDocument {
+    Ok(Some(PieceDocument {
         account_id,
         lines,
         document: DocumentRef {
@@ -1406,8 +1419,10 @@ fn line_periods(lines: &[LineRow]) -> Vec<(i64, NaiveDate)> {
 ///    du groupe `k` en période ouverte → `AbstainedClosedPeriods`, rien d'écrit ;
 ///    sinon dissolution puis, s'il y a une cible, création. ⚠️ La dissolution est
 ///    en mode `System` sur l'exercice tenu : si aucune ligne de `k` n'y est,
-///    elle rend [`DbError::Invariant`] (revue P2, B2-3) — un état que la
-///    15-1a2-ii (rattrapage) devra traiter s'il le rencontre ;
+///    elle rend [`DbError::Invariant`] (revue P2, B2-3). Le rattrapage de la
+///    15-1a2-ii ne mène pas ici : il ne pose de groupe que sur des lignes
+///    toutes libres, le groupe qu'aurait posé le geste — la synchronisation
+///    rejouée après lui rend `Unchanged` (test d'accord, AC6 e) ;
 /// 6. `E = ∅` : cible → création ; sinon `Unchanged`, ou
 ///    `AbstainedClosedPeriods` si la règle des périodes est la seule raison.
 ///
@@ -1438,8 +1453,25 @@ pub async fn sync_invoice_in_tx(
     held_open_fiscal_year_id: i64,
     actor: Actor,
 ) -> Result<SyncOutcome, DbError> {
-    // (1) Découverte.
-    let Some(piece) = discover_invoice_document(tx, company_id, invoice_id).await? else {
+    // (1) Découverte — la seule étape propre aux factures clientes.
+    let piece = discover_invoice_document(tx, company_id, invoice_id).await?;
+    sync_document_in_tx(tx, company_id, piece, held_open_fiscal_year_id, actor).await
+}
+
+/// Étapes 2 à 6 de la synchronisation, **communes** aux factures clientes et
+/// fournisseurs (Story 15-1a2-ii, P3 part ii) : la découverte (étape 1) est
+/// faite par l'appelant et passée en paramètre — `None` → `Unchanged` (brouillon
+/// client, facture fournisseur annulée). ⛔ Pas de seconde copie de
+/// l'algorithme : le contrat, les étapes et leur précédence sont ceux de
+/// [`sync_invoice_in_tx`].
+async fn sync_document_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    piece: Option<PieceDocument>,
+    held_open_fiscal_year_id: i64,
+    actor: Actor,
+) -> Result<SyncOutcome, DbError> {
+    let Some(piece) = piece else {
         return Ok(SyncOutcome::Unchanged);
     };
     // (2) Le groupe existant.
@@ -1543,7 +1575,22 @@ pub async fn dissolve_invoice_document_group_in_tx(
     held_open_fiscal_year_id: i64,
     actor: Actor,
 ) -> Result<SyncOutcome, DbError> {
-    let Some(piece) = discover_invoice_document(tx, company_id, invoice_id).await? else {
+    let piece = discover_invoice_document(tx, company_id, invoice_id).await?;
+    dissolve_document_in_tx(tx, company_id, piece, held_open_fiscal_year_id, actor).await
+}
+
+/// Le corps de la dissolution, **commun** aux deux familles de pièces (Story
+/// 15-1a2-ii, P3 part ii) : étape 2 de la synchronisation sur la découverte
+/// passée en paramètre, puis dissolution en mode `System`. Aucune découverte
+/// (`None`) ou aucun groupe → `Unchanged`.
+async fn dissolve_document_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    piece: Option<PieceDocument>,
+    held_open_fiscal_year_id: i64,
+    actor: Actor,
+) -> Result<SyncOutcome, DbError> {
+    let Some(piece) = piece else {
         return Ok(SyncOutcome::Unchanged);
     };
     let Some(k) = existing_document_group(&piece.lines)? else {
@@ -1561,6 +1608,159 @@ pub async fn dissolve_invoice_document_group_in_tx(
     )
     .await?;
     Ok(SyncOutcome::Dissolved { key: k })
+}
+
+// ---------------------------------------------------------------------------
+// Story 15-1a2-ii (#518) — le lettrage des pièces fournisseurs
+// ---------------------------------------------------------------------------
+
+/// La facture fournisseur, **verrouillée** (l'appelant la tient déjà : la
+/// relecture `FOR UPDATE` ne prend aucun verrou neuf et lit la ligne courante —
+/// après l'`UPDATE` du paiement, le statut `paid` et l'écriture de règlement).
+const SYNC_SUPPLIER_INVOICE_SQL: &str = "SELECT status, purchase_journal_entry_id, \
+     settlement_journal_entry_id, supplier_invoice_number FROM supplier_invoices \
+     WHERE id = ? AND company_id = ? FOR UPDATE";
+
+/// P2 — la découverte d'une facture fournisseur, **par statut** (C-15-1a2-15) :
+///
+/// | statut | `C(S)` |
+/// |---|---|
+/// | `paid` | l'ancre et la ligne sur `B` du règlement |
+/// | `open` | l'ancre **seule** — jamais de cible |
+/// | `cancelled` | **aucune** (`None`) — sans lecture verrouillante des lignes |
+///
+/// L'**ancre** est la ligne d'achat sur la dette `B` : la première ligne au
+/// crédit de l'écriture d'achat ([`super::supplier_invoices::purchase_payable_line`],
+/// le lecteur de `pay_in_tx`). Une autre ligne de l'achat sur `B` n'est pas
+/// dans `C(S)`.
+///
+/// ⛔ `cancelled` → `None` : l'achat d'une facture annulée reste **possédé** et
+/// la contre-passation l'a lettré `reversal` avec son miroir (15-1a-ii R6) ; le
+/// soumettre à l'étape 2 rendrait [`DbError::Invariant`] sur un état légitime.
+async fn discover_supplier_invoice_document(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    supplier_invoice_id: i64,
+) -> Result<Option<PieceDocument>, DbError> {
+    let (status, purchase_entry_id, settlement_entry_id, number): (
+        String,
+        i64,
+        Option<i64>,
+        Option<String>,
+    ) = sqlx::query_as(SYNC_SUPPLIER_INVOICE_SQL)
+        .bind(supplier_invoice_id)
+        .bind(company_id)
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(map_db_error)?
+        .ok_or(DbError::NotFound)?;
+    let mut entries = vec![purchase_entry_id];
+    match (status.as_str(), settlement_entry_id) {
+        ("cancelled", _) => return Ok(None),
+        ("open", _) => {}
+        ("paid", Some(reglement)) => entries.push(reglement),
+        (autre, _) => {
+            return Err(DbError::Invariant(format!(
+                "lettrage de pièce : la facture fournisseur {supplier_invoice_id} ({autre}) n'a \
+                 pas d'écriture de règlement"
+            )));
+        }
+    }
+    // Comme `pay_in_tx` sur le même cas.
+    let (account_id, _) =
+        super::supplier_invoices::purchase_payable_line(tx, company_id, purchase_entry_id)
+            .await?
+            .ok_or_else(|| {
+                DbError::Invariant("écriture d'achat sans ligne de crédit créanciers".into())
+            })?;
+
+    let sql = with_placeholders(SYNC_DOCUMENT_LINES_SQL, entries.len());
+    let mut q = sqlx::query_as::<_, LineRow>(&sql);
+    for e in &entries {
+        q = q.bind(*e);
+    }
+    let lues = q
+        .bind(account_id)
+        .bind(company_id)
+        .fetch_all(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+
+    // L'ancre : la PREMIÈRE ligne au crédit de l'écriture d'achat (lignes triées
+    // par `id`) — celle que lit `purchase_payable_line`.
+    let ancre = lues
+        .iter()
+        .find(|l| l.entry_id == purchase_entry_id && l.credit > Decimal::ZERO)
+        .map(|l| l.id)
+        .ok_or_else(|| {
+            DbError::Invariant(format!(
+                "lettrage de pièce : l'ancre de la facture fournisseur {supplier_invoice_id} est \
+                 introuvable"
+            ))
+        })?;
+    let lines = lues
+        .into_iter()
+        .filter(|l| l.entry_id != purchase_entry_id || l.id == ancre)
+        .collect();
+    Ok(Some(PieceDocument {
+        account_id,
+        lines,
+        document: DocumentRef {
+            document_type: "supplierInvoice",
+            id: supplier_invoice_id,
+            number,
+        },
+    }))
+}
+
+/// **Synchronise le lettrage `document` d'une facture fournisseur** avec son
+/// règlement (Story 15-1a2-ii, P2, P3 part ii) — idempotente, dans la
+/// transaction de l'appelant.
+///
+/// Le groupe d'une facture **payée** `S` est `C(S)` : l'ancre (sa ligne d'achat
+/// sur la dette `B`) et la ligne sur `B` de son règlement. Il existe **si et
+/// seulement si** `|C(S)| ≥ 2`, la somme est nulle, `B` est lettrable et au
+/// moins une ligne est en période ouverte. La découverte dépend du **statut**
+/// (`discover_supplier_invoice_document`) ; le reste — étapes 2 à 6, précédence
+/// des issues, mode `System`, tolérances nommées — est celui de
+/// [`sync_invoice_in_tx`], **le même code** (`sync_document_in_tx`).
+///
+/// ⛔ Un paiement n'est **jamais refusé** à cause du lettrage : `B` non lettrable
+/// → [`SyncOutcome::AccountNotLetterable`]. Une erreur **structurelle**
+/// ([`DbError::Invariant`]) se propage, et annule le paiement avec sa transaction
+/// — dans `confirm_batch`, le lot entier.
+///
+/// Audit : `documentType = "supplierInvoice"`, `documentNumber` nul quand la
+/// facture n'a pas de numéro (C-15-1a2-17).
+pub async fn sync_supplier_invoice_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    supplier_invoice_id: i64,
+    held_open_fiscal_year_id: i64,
+    actor: Actor,
+) -> Result<SyncOutcome, DbError> {
+    let piece = discover_supplier_invoice_document(tx, company_id, supplier_invoice_id).await?;
+    sync_document_in_tx(tx, company_id, piece, held_open_fiscal_year_id, actor).await
+}
+
+/// **Défait le groupe `document` d'une facture fournisseur** (Story 15-1a2-ii,
+/// P4 part ii) — appelée par l'annulation du règlement (`cancel_settlement_in_tx`)
+/// et par l'annulation d'une facture (`cancel_in_tx`), **après** leurs refus
+/// (dont le rang 2 bis, Story 15-1a2-0) et **avant** la contre-passation, qui
+/// lettre ensuite ce qui est libre avec son miroir (15-1a-ii R6).
+///
+/// Mêmes règles que [`dissolve_invoice_document_group_in_tx`] (même corps) :
+/// ne s'abstient jamais, n'exige pas la lettrabilité ; aucun groupe → no-op
+/// (facture ouverte : elle n'en a jamais, P2).
+pub async fn dissolve_supplier_invoice_document_group_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    supplier_invoice_id: i64,
+    held_open_fiscal_year_id: i64,
+    actor: Actor,
+) -> Result<SyncOutcome, DbError> {
+    let piece = discover_supplier_invoice_document(tx, company_id, supplier_invoice_id).await?;
+    dissolve_document_in_tx(tx, company_id, piece, held_open_fiscal_year_id, actor).await
 }
 
 /// Lit un groupe **sans verrou** (`GET /letterings/{key}`). `None` si aucune
