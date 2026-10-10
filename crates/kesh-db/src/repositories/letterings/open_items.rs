@@ -624,7 +624,34 @@ mod tests {
             ("totaux", OPEN_ITEMS_TOTALS_SQL),
             ("page", OPEN_ITEMS_PAGE_SQL),
         ];
+        // Défense complémentaire de la liste blanche (revue P1, A) : aucun nom
+        // de table de pièce n'apparaît comme mot, sous quelque forme que ce soit
+        // (jointure à virgule, `FROM(` accolé, sous-requête `EXISTS`).
+        const PIECES: [&str; 6] = [
+            "invoices",
+            "invoice_lines",
+            "credit_notes",
+            "supplier_invoices",
+            "invoice_settlements",
+            "bank_transactions",
+        ];
         for (nom, sql) in requetes {
+            let normalise: String = sql
+                .chars()
+                .map(|c| {
+                    if c.is_alphanumeric() || c == '_' {
+                        c
+                    } else {
+                        ' '
+                    }
+                })
+                .collect();
+            for mot in normalise.split_whitespace() {
+                assert!(
+                    !PIECES.contains(&mot),
+                    "requête A ({nom}) : la table de pièce « {mot} » est nommée"
+                );
+            }
             let mots: Vec<&str> = sql.split_whitespace().collect();
             let mut tables = 0;
             for w in mots.windows(2) {
@@ -646,6 +673,18 @@ mod tests {
             );
             assert!(!sql.contains("paid_at"), "requête A ({nom}) : paid_at lu");
         }
+    }
+
+    /// Revue P1, E-6 (réfuté) — un reste brut de −0,004 s'affiche « 0.00 » :
+    /// l'arrondi au centime ne garde pas de zéro négatif (mutation « redressement
+    /// retiré » verte : aucun redressement n'est nécessaire). Un trop-perçu réel
+    /// reste négatif.
+    #[test]
+    fn rounded_due_has_no_negative_zero() {
+        use rust_decimal_macros::dec;
+        assert_eq!(amount_due_to_centime(dec!(-0.004)).to_string(), "0.00");
+        assert_eq!(amount_due_to_centime(dec!(-5.004)).to_string(), "-5.00");
+        assert_eq!(amount_due_to_centime(dec!(10.005)).to_string(), "10.01");
     }
 
     /// AC4 — la précédence de `documentState`, sur le reste au centime.

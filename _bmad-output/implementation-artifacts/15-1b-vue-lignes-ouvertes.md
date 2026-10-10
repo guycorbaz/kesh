@@ -9,7 +9,10 @@ refonte de la propriété des lignes **extraite** en 15-1b-0, C-15-1b-9 ; **vali
 2026-10-09 — Sonnet ×2, 0 au-dessus de LOW, LOW appliqués, alignée sur la 15-1a2-0 et sur les méthodes de
 `DocumentKind` de la 15-1b-0)*.
 
-⛔ **Ce qui dépend de la 15-1a2, non livrée** (sur `056997b0`, la dernière migration est
+✅ *(Développement, 2026-10-10 — revue P1, A : les dépendances ci-dessous sont **livrées** — 15-1a2-0, 15-1a2-i, 15-1a2-ii et
+15-1b-0 fusionnées sur `main` ; la story est rebasée sur `7ba3781c`. Le paragraphe est gardé pour l'histoire de la fiche.)*
+
+⛔ **Ce qui dépendait de la 15-1a2, alors non livrée** (sur `056997b0`, la dernière migration est
 `20261009000001_journal_entry_lines_lettering.sql` — la marque et ses gardes seulement), découpée en
 **15-1a2-i** (pièces clientes) et **15-1a2-ii** (fournisseurs et rattrapage) : la fixture d'AC2 en tant
 qu'elle contient des factures client **soldées** lettrées `document` (15-1a2-i) et des factures
@@ -798,6 +801,38 @@ Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
 - `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md` (C-15-1b-14 à 16)
 
 ## Change Log
+
+### Revue de code P1 — 2026-10-10 (Sonnet 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
+
+**Prompt** : `15-1b-review-prompt-p1.md` (diff `7ba3781c..8dd84606`, après rebase sur la 15-1b-0 fusionnée — arbres de
+base identiques). **Rapports** : `kesh-gate-logs/15-1b-review-p1-{B,E,A}.md` — B **0 C / 0 H / 1 M / 3 L**, E **0 / 0 /
+2 M / 5 L**, A **0 / 0 / 1 M / 6 L** (+ un constat hors diff). Recoupements : B-1 = E-1, B-2 = E-3, B-3 = E-4, B-4 = E-7 →
+**3 MEDIUM distincts** (B-1 = E-1, E-2, A-1) et **12 LOW distincts**. Axes non exercés déclarés par les trois lentilles :
+toute exécution (cargo, SQL, mutations, `EXPLAIN`) — repris par l'orchestrateur (mutations ci-dessous, gate complet).
+
+| finding | sévérité | verdict |
+|---|---|---|
+| B-1 = E-1 — `asOf` hors de la plage MariaDB (`+10000-01-01`, année négative) : 500 ou date invalide | MEDIUM | **confirmé au code** (`sqlx-mysql` `encode_date`, `u16::try_from(year)`) et **corrigé** : années 1000 à 9999, sinon `400 VALIDATION_ERROR` ; test 5 complété (trois valeurs hors plage, `9999-12-31` admis, `asOf=` vide) ; mutation « borne retirée » rouge |
+| E-2 — bords corrects mais non établis (page vide, compte sans ligne, `X` avant toute écriture, trop-perçu, compte archivé) | MEDIUM | **corrigé** : test `view_edges` (requête B sur listes vides, `amountDue = -5.00`) |
+| A-1 — `documentState`/`amountDue` d'une ligne de règlement jamais assertés | MEDIUM | **corrigé** : test 10 lit la ligne de règlement (`partiallySettled`, 60.00) ; mutation `Settlement => None` rouge |
+| E-6 — « −0.00 » possible | LOW | **réfuté à l'exécution** : redressement ajouté, puis mutation « redressement retiré » **verte** — `amount_due_to_centime(-0.004)` rend « 0.00 » ; redressement retiré, test `rounded_due_has_no_negative_zero` garde le fait |
+| A — garde lexicale : jointure à virgule, `FROM(` accolé | LOW | **corrigé** : la garde refuse aussi tout nom de table de pièce comme mot, quelle que soit la forme |
+| A — `api-external.md` : « ne lit ni le statut ni la date de paiement » ; trois omissions | LOW | **corrigé** (la sélection seule ; `number` nul d'une facture fournisseur sans numéro ; `asOf=` vide ; deux décimales, négatif si trop-perçu ; plage d'années) |
+| A — § Status de la fiche périmé | LOW | **corrigé** (dépendances livrées, paragraphe gardé pour l'histoire) |
+| A — test 18 : deux réponses unitaires sur quatre | LOW | **corrigé** (modification et archivage ; compte bancaire modifié → faux) |
+| A — AC4 nomme encore `amount_due_derived_joins` | LOW | **écrit** : AC8 tranche sur mesure, C-15-1b-16 ; AC non réécrit (section non modifiable au développement) — idem « aucune borne » d'AC1, précisé ici : la plage MariaDB est exigée |
+| B-2 = E-3 — toutes les lignes ouvertes chargées avant le plafond | LOW | **accepté** : écrit au doc-comment et à la fiche (AC5 « sans plafond propre »), mesuré au test 13 |
+| B-3 = E-4 — 10⁶ paires en mémoire au plafond | LOW | **réfuté en partie** : le test 14 mesure exactement 1 000 × 1 000 (537 ms, débogage) ; la mémoire (≈ 50 Mo) reste bornée par le plafond |
+| B-4 = E-7 — `letterable` relu après l'écriture d'un compte : un échec rendrait 500 | LOW | **accepté** : lecture simple après un geste réussi, comme les autres relectures de réponse du dépôt |
+| E-5 — une paire peut réunir deux lignes d'une même écriture | LOW | **accepté** : un débit et un crédit égaux sur le même compte se soldent ; les lettrer est légitime |
+| (hors diff) `admin-manual.tex:2426` « le grand livre n'existe pas encore » | — | **antérieur à la story**, hors périmètre : signalé à l'orchestrateur (issue à ouvrir) |
+
+**Propagation** : « aucune borne » grepé (`crates`, `docs`, `CHANGELOG.md`, fiche) — `api-external.md:345` et le doc-comment
+de `parse_as_of` précisés ; AC1 de la fiche porte encore la formule (ci-dessus). **Signal D5** : la P1 n'a pas de passe
+antérieure de revue de code ; aucun recyclage. La remédiation touche du code de production (`routes/letterings.rs`, garde
+lexicale du dépôt) : **P2 due**, complète (Opus). **Gate** (base `kesh_1b` remise à zéro) : `scripts/test-fast.sh`
+**3325 passés, 5 ignorés** (`kesh-gate-logs/15-1b-gate-p1.log`) — 3323 + 2 tests neufs (`view_edges`,
+`rounded_due_has_no_negative_zero`).
 
 ### Développement — 2026-10-10 (Opus 5.5, en autonomie)
 

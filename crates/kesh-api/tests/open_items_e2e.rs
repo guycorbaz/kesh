@@ -304,6 +304,20 @@ async fn inputs_defaults_bounds_and_refusal_order(pool: MySqlPool) {
     assert_eq!(status, 400, "{body}");
     assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
 
+    // Hors de la plage des dates de MariaDB (revue P1, B-1 = E-1) : 400, jamais
+    // un 500 ni un solde faux.
+    for hors in ["%2B10000-01-01", "-0001-01-01", "0999-12-31"] {
+        let (status, body) = get(&m, &m.token, &format!("{base}?asOf={hors}")).await;
+        assert_eq!(status, 400, "asOf={hors} : {body}");
+        assert_eq!(body["error"]["code"], "VALIDATION_ERROR");
+    }
+    let (status, body) = get(&m, &m.token, &format!("{base}?asOf=9999-12-31")).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["total"], 1);
+    let (status, body) = get(&m, &m.token, &format!("{base}?asOf=")).await;
+    assert_eq!(status, 200, "asOf vide = absent : {body}");
+    assert_eq!(body["asOf"], aujourdhui().to_string());
+
     let (_, body) = get(&m, &m.token, &format!("{base}?limit=999999")).await;
     assert_eq!(body["limit"], 500);
     let (_, body) = get(&m, &m.token, &format!("{base}?limit=0&offset=-3")).await;
@@ -739,4 +753,66 @@ async fn letterable_flag_on_accounts(pool: MySqlPool) {
     let reactive: Value = resp.json().await.unwrap();
     assert_eq!(reactive["letterable"], false, "{reactive}");
     assert_eq!(reactive["active"], true);
+
+    // Modification (passif → passif) et archivage du 2000 : vrai (revue P1, A).
+    let version: i32 = sqlx::query_scalar("SELECT version FROM accounts WHERE id = ?")
+        .bind(passif)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let resp = m
+        .app
+        .client
+        .put(format!("{}/api/v1/accounts/{passif}", m.app.base_url))
+        .bearer_auth(&m.token)
+        .json(
+            &json!({ "name": "Passif modifié", "accountType": "Liability", "role": null,
+                       "postable": true, "version": version }),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let modifie: Value = resp.json().await.unwrap();
+    assert_eq!(modifie["letterable"], true, "{modifie}");
+    let resp = m
+        .app
+        .client
+        .put(format!(
+            "{}/api/v1/accounts/{passif}/archive",
+            m.app.base_url
+        ))
+        .bearer_auth(&m.token)
+        .json(&json!({ "version": modifie["version"] }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let archive: Value = resp.json().await.unwrap();
+    assert_eq!(
+        archive["letterable"], true,
+        "archivé, toujours lettrable : {archive}"
+    );
+    assert_eq!(archive["active"], false);
+    // Et le compte bancaire, modifié : faux.
+    let version: i32 = sqlx::query_scalar("SELECT version FROM accounts WHERE id = ?")
+        .bind(banque)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let resp = m
+        .app
+        .client
+        .put(format!("{}/api/v1/accounts/{banque}", m.app.base_url))
+        .bearer_auth(&m.token)
+        .json(
+            &json!({ "name": "Banque modifiée", "accountType": "Asset", "role": null,
+                       "postable": true, "version": version }),
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let banque_modifiee: Value = resp.json().await.unwrap();
+    assert_eq!(banque_modifiee["letterable"], false, "{banque_modifiee}");
 }

@@ -632,6 +632,22 @@ async fn document_state_each_value(pool: MySqlPool) {
     // Ligne d'avoir : documentState nul — l'avoir est daté de `r`, après X : on
     // le lit à aujourd'hui.
     let auj = vue(&pool, &m, aujourdhui()).await;
+    invariant(&pool, &m, &auj).await;
+    // Ligne de RÈGLEMENT (`settlement` → sa facture, revue P1, A-1) : l'état et
+    // le reste de la facture réglée.
+    let l_regl_partiel = auj
+        .items
+        .iter()
+        .find(|i| {
+            i.document.as_ref().is_some_and(|o| {
+                o.kind == DocumentKind::Settlement && o.invoice_id == Some(partielle)
+            })
+        })
+        .expect("ligne de règlement de la facture partielle");
+    assert_eq!(
+        (l_regl_partiel.document_state, l_regl_partiel.amount_due),
+        (Some(DocumentState::PartiallySettled), Some(dec!(60.00)))
+    );
     let la = item(&auj, ligne_creance(&pool, &m, e_avoir).await);
     assert_eq!(
         la.document.as_ref().map(|o| o.kind),
@@ -1477,4 +1493,61 @@ async fn explain_plans(pool: MySqlPool) {
         debut.elapsed(),
         lus.len()
     );
+}
+
+/// Revue P1, E-2 — les bords de la vue : compte sans aucune ligne, `X`
+/// antérieur à toute écriture, page au-delà du total (la requête B s'exécute sur
+/// des listes vides), trop-perçu (`amountDue` négatif, `nothingDue`), compte
+/// archivé encore lettrable.
+#[sqlx::test(migrations = "./test-schema")]
+async fn view_edges(pool: MySqlPool) {
+    let m = monde(&pool).await;
+    // Compte lettrable sans ligne.
+    let vide = compte(&pool, m.company(), "1150", "Asset").await;
+    let v = vue_page(&pool, &m, vide, aujourdhui(), 50, 0).await;
+    assert_eq!(
+        (v.total, v.items.len(), v.balance, v.open_total),
+        (0, 0, Decimal::ZERO, Decimal::ZERO)
+    );
+
+    // Trop-perçu : réglée en entier, puis le règlement porté à 55 en SQL brut
+    // (aucun geste ne l'écrit — un import ou une correction l'a pu).
+    let inv = facture(&pool, &m.s, dec!(50.00), jours_avant(30)).await;
+    let (sid, _) = regler(&pool, &m.s, inv, dec!(50.00), jours_avant(20)).await;
+    sqlx::query("UPDATE invoice_settlements SET amount = 55 WHERE id = ?")
+        .bind(sid)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let l_vente = ligne_creance(&pool, &m, vente(&pool, inv).await).await;
+    let x = jours_avant(25);
+    let v = vue(&pool, &m, x).await;
+    invariant(&pool, &m, &v).await;
+    let i = item(&v, l_vente);
+    assert_eq!(i.document_state, Some(DocumentState::NothingDue));
+    assert_eq!(i.amount_due.map(|d| d.to_string()), Some("-5.00".into()));
+
+    // X antérieur à toute écriture : vide, solde nul.
+    let v = vue(&pool, &m, ymd(2019, 1, 1)).await;
+    assert_eq!((v.total, v.items.len(), v.balance), (0, 0, Decimal::ZERO));
+
+    // Page au-delà du total : vide, agrégats intacts.
+    ligne(&pool, &m, m.fy, jours_avant(3), dec!(4)).await;
+    let tout = vue(&pool, &m, aujourdhui()).await;
+    assert!(tout.total >= 1, "montage : des lignes ouvertes");
+    let loin = vue_page(&pool, &m, m.creance(), aujourdhui(), 50, 1000).await;
+    assert!(loin.items.is_empty());
+    assert_eq!(
+        (loin.total, loin.balance, loin.open_total),
+        (tout.total, tout.balance, tout.open_total)
+    );
+
+    // Compte archivé : toujours lettrable, toujours lisible.
+    sqlx::query("UPDATE accounts SET active = FALSE WHERE id = ?")
+        .bind(m.creance())
+        .execute(&pool)
+        .await
+        .unwrap();
+    let archive = vue(&pool, &m, aujourdhui()).await;
+    assert_eq!(archive.total, tout.total);
 }

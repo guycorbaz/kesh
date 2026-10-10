@@ -427,12 +427,25 @@ impl From<LetteringProposals> for ProposalsResponse {
 /// `asOf` : lu en chaîne, parsé comme `dateFrom` de la liste des écritures ;
 /// mal formé → 400 `VALIDATION_ERROR` ; absent ou vide → aujourd'hui, selon la
 /// convention de la balance âgée (`Utc::now().naive_utc().date()` — l'écart
-/// UTC/heure suisse la nuit est hérité). Aucune borne.
+/// UTC/heure suisse la nuit est hérité). Aucune borne métier ; seule la plage
+/// des dates de MariaDB (années 1000 à 9999) est exigée : chrono lit aussi
+/// `+10000-01-01` ou une année négative, que sqlx refuse d'encoder ou que la
+/// base lirait comme une date invalide (revue P1, B-1 = E-1) — un 400, jamais
+/// un 500 ni un solde faux.
 fn parse_as_of(as_of: Option<&str>) -> Result<NaiveDate, AppError> {
+    use chrono::Datelike;
     match as_of {
-        Some(s) if !s.is_empty() => s
-            .parse::<NaiveDate>()
-            .map_err(|e| AppError::Validation(format!("asOf invalide ({e})"))),
+        Some(s) if !s.is_empty() => {
+            let date = s
+                .parse::<NaiveDate>()
+                .map_err(|e| AppError::Validation(format!("asOf invalide ({e})")))?;
+            if !(1000..=9999).contains(&date.year()) {
+                return Err(AppError::Validation(
+                    "asOf invalide (année hors de 1000 à 9999)".into(),
+                ));
+            }
+            Ok(date)
+        }
         _ => Ok(chrono::Utc::now().naive_utc().date()),
     }
 }
