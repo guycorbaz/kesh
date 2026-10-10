@@ -2,7 +2,11 @@
 //!
 //! - `POST /api/v1/letterings` — lettre un groupe de lignes (Comptable, Admin) ;
 //! - `GET /api/v1/letterings/{key}` — lit un groupe (tout rôle authentifié) ;
-//! - `DELETE /api/v1/letterings/{key}` — délettre un groupe (Comptable, Admin).
+//! - `DELETE /api/v1/letterings/{key}` — délettre un groupe (Comptable, Admin) ;
+//! - `GET /api/v1/accounts/{id}/open-items` — les postes ouverts d'un compte à
+//!   une date (tout rôle, Story 15-1b) ;
+//! - `GET /api/v1/accounts/{id}/lettering-proposals` — les rapprochements que
+//!   Kesh propose (tout rôle, Story 15-1b) ; Kesh n'écrit rien.
 //!
 //! `{key}` accepte la **clé numérique** ou le **code** (`27` ou `AA`) ; une
 //! valeur invalide rend 404 ([`kesh_core::lettering::parse_group_reference`]).
@@ -24,7 +28,7 @@
 //! qu'une ligne ou une clé inexistante ; aucun message ne nomme une ligne
 //! étrangère.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
 use axum::{Extension, Json};
 use chrono::NaiveDate;
@@ -32,7 +36,10 @@ use serde::{Deserialize, Serialize};
 
 use kesh_core::lettering as core_lettering;
 use kesh_db::errors::DbError;
-use kesh_db::repositories::letterings::{self, Actor, LetteringGroup, Mode, Origin};
+use kesh_db::repositories::journal_entries::DocumentOwner;
+use kesh_db::repositories::letterings::{
+    self, Actor, LetteringGroup, LetteringProposals, Mode, OpenItems, Origin, ProposalLine,
+};
 
 use crate::AppState;
 use crate::errors::AppError;
@@ -193,4 +200,298 @@ pub async fn delete_lettering(
     })
     .await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+// ---------------------------------------------------------------------------
+// Story 15-1b — les postes ouverts et les propositions (lecture seule)
+// ---------------------------------------------------------------------------
+
+/// Défaut et plafond de la page des postes ouverts (patron de la liste des
+/// écritures).
+const OPEN_ITEMS_DEFAULT_LIMIT: i64 = 50;
+/// Défaut des propositions.
+const PROPOSALS_DEFAULT_LIMIT: i64 = 100;
+/// Plafond commun des deux routes.
+const MAX_LIMIT: i64 = 500;
+
+fn default_open_items_limit() -> i64 {
+    OPEN_ITEMS_DEFAULT_LIMIT
+}
+
+fn default_proposals_limit() -> i64 {
+    PROPOSALS_DEFAULT_LIMIT
+}
+
+/// Paramètres de `GET /accounts/{id}/open-items`. `limit`/`offset` non
+/// numériques : rejetés par l'extracteur `Query` d'Axum (sa réponse propre).
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenItemsQuery {
+    /// `AAAA-MM-JJ` ; absent (ou vide) → aujourd'hui.
+    pub as_of: Option<String>,
+    #[serde(default = "default_open_items_limit")]
+    pub limit: i64,
+    #[serde(default)]
+    pub offset: i64,
+}
+
+/// Paramètres de `GET /accounts/{id}/lettering-proposals` — **pas d'`offset`**.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProposalsQuery {
+    #[serde(default = "default_proposals_limit")]
+    pub limit: i64,
+}
+
+/// La pièce qui possède l'écriture d'une ligne. `type` par
+/// `DocumentKind::as_str()` — la table écrite une fois, dans `kesh-db`.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DocumentResponse {
+    #[serde(rename = "type")]
+    pub kind: &'static str,
+    pub id: i64,
+    pub number: Option<String>,
+    /// Pour `settlement` : la facture réglée ; `null` sinon.
+    pub invoice_id: Option<i64>,
+    pub invoice_number: Option<String>,
+}
+
+impl From<DocumentOwner> for DocumentResponse {
+    fn from(o: DocumentOwner) -> Self {
+        Self {
+            kind: o.kind.as_str(),
+            id: o.id,
+            number: o.number,
+            invoice_id: o.invoice_id,
+            invoice_number: o.invoice_number,
+        }
+    }
+}
+
+/// Une ligne ouverte à `asOf` (AC1).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenItemResponse {
+    pub line_id: i64,
+    pub entry_id: i64,
+    pub entry_number: i64,
+    pub fiscal_year_name: String,
+    pub date: NaiveDate,
+    pub journal: String,
+    pub description: String,
+    pub debit: String,
+    pub credit: String,
+    pub document: Option<DocumentResponse>,
+    pub lettering_code: Option<String>,
+    pub lettering_origin: Option<&'static str>,
+    pub lettered_on: Option<NaiveDate>,
+    pub reason: &'static str,
+    pub document_state: Option<&'static str>,
+    pub amount_due: Option<String>,
+    pub manually_letterable: bool,
+    pub in_open_period: bool,
+}
+
+/// Réponse de `GET /accounts/{id}/open-items` (AC1). `balance`, `openTotal` et
+/// `total` portent sur tout l'ensemble, non sur la page.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OpenItemsResponse {
+    pub account_id: i64,
+    pub account_number: String,
+    pub as_of: NaiveDate,
+    pub balance: String,
+    pub open_total: String,
+    pub total: i64,
+    pub offset: i64,
+    pub limit: i64,
+    pub items: Vec<OpenItemResponse>,
+}
+
+impl From<OpenItems> for OpenItemsResponse {
+    fn from(v: OpenItems) -> Self {
+        Self {
+            account_id: v.account_id,
+            account_number: v.account_number,
+            as_of: v.as_of,
+            balance: v.balance.to_string(),
+            open_total: v.open_total.to_string(),
+            total: v.total,
+            offset: v.offset,
+            limit: v.limit,
+            items: v
+                .items
+                .into_iter()
+                .map(|i| OpenItemResponse {
+                    line_id: i.line_id,
+                    entry_id: i.entry_id,
+                    entry_number: i.entry_number,
+                    fiscal_year_name: i.fiscal_year_name,
+                    date: i.date,
+                    journal: i.journal,
+                    description: i.description,
+                    debit: i.debit.to_string(),
+                    credit: i.credit.to_string(),
+                    document: i.document.map(DocumentResponse::from),
+                    lettering_code: i.lettering_code,
+                    lettering_origin: i.lettering_origin.map(Origin::as_str),
+                    lettered_on: i.lettered_on,
+                    reason: i.reason.as_str(),
+                    document_state: i.document_state.map(|s| s.as_str()),
+                    amount_due: i.amount_due.map(|d| d.to_string()),
+                    manually_letterable: i.manually_letterable,
+                    in_open_period: i.in_open_period,
+                })
+                .collect(),
+        }
+    }
+}
+
+/// Une ligne d'une paire proposée — sous-ensemble d'[`OpenItemResponse`], même
+/// sérialisation.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProposalLineResponse {
+    pub line_id: i64,
+    pub entry_id: i64,
+    pub entry_number: i64,
+    pub fiscal_year_name: String,
+    pub date: NaiveDate,
+    pub journal: String,
+    pub description: String,
+    pub document: Option<DocumentResponse>,
+    pub in_open_period: bool,
+}
+
+impl From<ProposalLine> for ProposalLineResponse {
+    fn from(l: ProposalLine) -> Self {
+        Self {
+            line_id: l.line_id,
+            entry_id: l.entry_id,
+            entry_number: l.entry_number,
+            fiscal_year_name: l.fiscal_year_name,
+            date: l.date,
+            journal: l.journal,
+            description: l.description,
+            document: l.document.map(DocumentResponse::from),
+            in_open_period: l.in_open_period,
+        }
+    }
+}
+
+/// Une paire proposée (AC5).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProposalResponse {
+    pub amount: String,
+    pub days_apart: i64,
+    pub reversal_pair: bool,
+    pub debit: ProposalLineResponse,
+    pub credit: ProposalLineResponse,
+}
+
+/// Réponse de `GET /accounts/{id}/lettering-proposals` (AC5).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProposalsResponse {
+    pub account_id: i64,
+    pub candidate_count: usize,
+    pub total: usize,
+    pub limit: usize,
+    pub items: Vec<ProposalResponse>,
+}
+
+impl From<LetteringProposals> for ProposalsResponse {
+    fn from(p: LetteringProposals) -> Self {
+        Self {
+            account_id: p.account_id,
+            candidate_count: p.candidate_count,
+            total: p.total,
+            limit: p.limit,
+            items: p
+                .items
+                .into_iter()
+                .map(|i| ProposalResponse {
+                    amount: i.amount.to_string(),
+                    days_apart: i.days_apart,
+                    reversal_pair: i.reversal_pair,
+                    debit: ProposalLineResponse::from(i.debit),
+                    credit: ProposalLineResponse::from(i.credit),
+                })
+                .collect(),
+        }
+    }
+}
+
+/// `asOf` : lu en chaîne, parsé comme `dateFrom` de la liste des écritures ;
+/// mal formé → 400 `VALIDATION_ERROR` ; absent ou vide → aujourd'hui, selon la
+/// convention de la balance âgée (`Utc::now().naive_utc().date()` — l'écart
+/// UTC/heure suisse la nuit est hérité). Aucune borne métier ; seule la plage
+/// des dates de MariaDB (années 1000 à 9999) est exigée : chrono lit aussi
+/// `+10000-01-01` ou une année négative, que sqlx refuse d'encoder ou que la
+/// base lirait comme une date invalide (revue P1, B-1 = E-1) — un 400, jamais
+/// un 500 ni un solde faux.
+fn parse_as_of(as_of: Option<&str>) -> Result<NaiveDate, AppError> {
+    use chrono::Datelike;
+    match as_of {
+        Some(s) if !s.is_empty() => {
+            let date = s
+                .parse::<NaiveDate>()
+                .map_err(|e| AppError::Validation(format!("asOf invalide ({e})")))?;
+            if !(1000..=9999).contains(&date.year()) {
+                return Err(AppError::Validation(
+                    "asOf invalide (année hors de 1000 à 9999)".into(),
+                ));
+            }
+            Ok(date)
+        }
+        _ => Ok(chrono::Utc::now().naive_utc().date()),
+    }
+}
+
+/// GET /api/v1/accounts/{id}/open-items — les postes ouverts du compte à
+/// `asOf` (AC1). Ordre des refus (AC7) : paramètres (`Query` d'Axum, puis
+/// `asOf` → 400 avant toute lecture), compte introuvable ou d'une autre société
+/// (404), compte non lettrable (409 `LETTERING_ACCOUNT_NOT_LETTERABLE`).
+pub async fn get_open_items(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(account_id): Path<i64>,
+    Query(params): Query<OpenItemsQuery>,
+) -> Result<Json<OpenItemsResponse>, AppError> {
+    let as_of = parse_as_of(params.as_of.as_deref())?;
+    let limit = params.limit.clamp(1, MAX_LIMIT);
+    let offset = params.offset.max(0);
+    let company = get_company_for(&current_user, &state.pool).await?;
+    let mut conn = state
+        .pool
+        .acquire()
+        .await
+        .map_err(kesh_db::errors::map_db_error)?;
+    let vue =
+        letterings::open_items(&mut conn, company.id, account_id, as_of, limit, offset).await?;
+    Ok(Json(OpenItemsResponse::from(vue)))
+}
+
+/// GET /api/v1/accounts/{id}/lettering-proposals — les paires que Kesh propose
+/// (AC5) ; 422 `LETTERING_PROPOSALS_TOO_MANY_LINES` au-delà du plafond de
+/// candidates. Mêmes refus du compte que les postes ouverts.
+pub async fn get_lettering_proposals(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(account_id): Path<i64>,
+    Query(params): Query<ProposalsQuery>,
+) -> Result<Json<ProposalsResponse>, AppError> {
+    // `clamp(1, 500)` : la valeur est positive, la conversion ne perd rien.
+    let limit = params.limit.clamp(1, MAX_LIMIT) as usize;
+    let company = get_company_for(&current_user, &state.pool).await?;
+    let mut conn = state
+        .pool
+        .acquire()
+        .await
+        .map_err(kesh_db::errors::map_db_error)?;
+    let propositions =
+        letterings::lettering_proposals(&mut conn, company.id, account_id, limit).await?;
+    Ok(Json(ProposalsResponse::from(propositions)))
 }

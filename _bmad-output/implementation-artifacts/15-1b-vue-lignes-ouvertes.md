@@ -2,13 +2,17 @@
 
 ## Status
 
+**done** (2026-10-10 — développée, revue close à la P2 ; gates et E2E complets au dernier commit de code `88e7d54e`) — était
 ready-for-dev **après la livraison de la 15-1a2-0, de la 15-1a2-i, de la 15-1a2-ii et de la 15-1b-0**
 *(réécrite le 2026-10-08 ; validation P1 remédiée le 2026-10-09 ; validation P2 remédiée le 2026-10-09 — la
 refonte de la propriété des lignes **extraite** en 15-1b-0, C-15-1b-9 ; **validation P3 close** le
 2026-10-09 — Sonnet ×2, 0 au-dessus de LOW, LOW appliqués, alignée sur la 15-1a2-0 et sur les méthodes de
 `DocumentKind` de la 15-1b-0)*.
 
-⛔ **Ce qui dépend de la 15-1a2, non livrée** (sur `056997b0`, la dernière migration est
+✅ *(Développement, 2026-10-10 — revue P1, A : les dépendances ci-dessous sont **livrées** — 15-1a2-0, 15-1a2-i, 15-1a2-ii et
+15-1b-0 fusionnées sur `main` ; la story est rebasée sur `7ba3781c`. Le paragraphe est gardé pour l'histoire de la fiche.)*
+
+⛔ **Ce qui dépendait de la 15-1a2, alors non livrée** (sur `056997b0`, la dernière migration est
 `20261009000001_journal_entry_lines_lettering.sql` — la marque et ses gardes seulement), découpée en
 **15-1a2-i** (pièces clientes) et **15-1a2-ii** (fournisseurs et rattrapage) : la fixture d'AC2 en tant
 qu'elle contient des factures client **soldées** lettrées `document` (15-1a2-i) et des factures
@@ -496,7 +500,7 @@ voir Status.)*
 
 ## Tasks
 
-- [ ] **T1** (AC1, AC2, AC4, AC8) — `kesh-db`, `repositories/letterings.rs` (tranché : **pas**
+- [x] **T1** (AC1, AC2, AC4, AC8) — `kesh-db`, `repositories/letterings.rs` (tranché : **pas**
       `kesh-report`, qui ne voit ni la lettrabilité ni la propriété — C-15-1b-8) :
       `open_items(conn, company, account, as_of, limit, offset)` en **une transaction qu'elle ouvre** : requête A
       (constante SQL, sans pièce : page, `balance`, `openTotal`, `total`, `letteredOn`), puis
@@ -504,23 +508,23 @@ voir Status.)*
 - ~~**T2**~~ — **déplacée à la 15-1b-0** (C-15-1b-9) : `document_owners`, `reversal_blockers` et
       `first_document_owner` réécrits dessus, parité par oracle indépendant, mutations éprouvées. Le
       numéro est gardé pour que les renvois restent justes.
-- [ ] **T3** (AC5, AC3) — `kesh-core::lettering` : moteur **pur** (entrée : lignes candidates avec
+- [x] **T3** (AC5, AC3) — `kesh-core::lettering` : moteur **pur** (entrée : lignes candidates avec
       `line_id`, `entry_id`, `reverses_entry_id`, date, débit, crédit, `in_open_period` ; sortie :
       paires classées ; R7 filtrée **avant** le glouton) ; `kesh-db` : chargement des candidates (filtres
       ouverte + R5 par `document_owners` et `DocumentKind::blocks_manual_lettering` de la 15-1b-0, plafond,
       `in_open_period` par `open_period_rule` de la 15-1a2-0 — **aucun** prédicat de période neuf : validation
       P2, R-3, C-15-1b-4 révisée).
-- [ ] **T4** (AC1, AC3, AC5, AC7) — `kesh-api` : deux routes dans `routes/letterings.rs`, montées avec
+- [x] **T4** (AC1, AC3, AC5, AC7) — `kesh-api` : deux routes dans `routes/letterings.rs`, montées avec
       les lectures ; DTO de `document` sérialisé par `DocumentKind::as_str()` ; `DbError::LetteringProposalsTooManyLines { max }` (`kesh-db/src/errors.rs`, entrée
       dans `error_code()`) → 422 dans `kesh-api/src/errors.rs` (message interpolé, repli mot pour mot),
       ajoutée à la table de test des codes du lettrage (`errors.rs:4294` : `cas.len()` 10 → **11** ; la
       15-1a2-i n'ajoute aucun code de lettrage — elle **réemploie** `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`
       pour son refus, C-15-1a2-11 —, le compte part donc bien de 10).
-- [ ] **T5** (AC6, AC11) — `LedgerLine.lettering_code` (+ constructeurs de test `csv.rs:1303`,
+- [x] **T5** (AC6, AC11) — `LedgerLine.lettering_code` (+ constructeurs de test `csv.rs:1303`,
       `pdf.rs:2447`) ; `is_letterable`, `letterable_account_ids`, `AccountResponse::new` et les cinq
       handlers.
-- [ ] **T6** — Tests (voir la liste ci-dessous).
-- [ ] **T7** (AC10) — `api-external.md`, `CHANGELOG.md`, i18n (**une** clé `error-*`, quatre
+- [x] **T6** — Tests (voir la liste ci-dessous).
+- [x] **T7** (AC10) — `api-external.md`, `CHANGELOG.md`, i18n (**une** clé `error-*`, quatre
       locales).
 
 **Tests de T6** — un par ligne, chacun rattaché à son critère :
@@ -679,11 +683,215 @@ que la 15-1c lit. La fiche 15-1c n'est pas modifiée ici ; sa propre validation 
 
 ### Agent Model Used
 
+Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
+
+### Implementation Plan
+
+- **Moteur pur** (`kesh-core::lettering::proposals`, C-15-1b-14) : groupement par montant (`BTreeMap<Decimal, …>`,
+  égalité numérique), toutes les paires débit × crédit **acceptables** (R7 filtrée avant le classement), tri global
+  par `(non contre-passation, écart de dates, lineId débit, lineId crédit)`, glouton. Plafond
+  `MAX_PROPOSAL_CANDIDATES = 2 000` porté par le module pur, lu par la variante d'erreur.
+- **Dépôt** (`kesh-db/src/repositories/letterings/open_items.rs`, module enfant ré-exporté par `letterings`,
+  C-15-1b-14) : `open_items` ouvre **sa** transaction (`conn.begin()` … `rollback`) ; requête A en trois constantes
+  publiques (`OPEN_ITEMS_BALANCE_SQL`, `OPEN_ITEMS_TOTALS_SQL`, `OPEN_ITEMS_PAGE_SQL`) partageant une fin commune
+  (macro `open_items_tail!`, dérivée `GROUP BY lettering_key` bornée au compte et à la société, sans filtre `≤ X`) ;
+  requête B : `document_owners` sur les écritures de la page, `open_period_rule` une fois pour leurs exercices, états
+  des factures client nommées. `lettering_proposals` : lignes non lettrées du compte, filtre R5 par le même lot et la
+  même méthode (`free_of_document` → `DocumentKind::blocks_manual_lettering`), plafond **après** filtre, R7 par
+  `open_period_rule`, moteur pur. Refus du compte (404 / 409) dans les deux, avant toute autre lecture de données.
+- **Lettrabilité** (AC11) : `is_letterable(&str, bool)` pur ; `BANK_LINKED_SQL` partagé ; `letterable_account`
+  l'appelle ; `letterable_account_ids` en une requête ; `AccountResponse::new(account, letterable)` ; liste par lot,
+  quatre réponses unitaires par `is_letterable_account`.
+- **Grand livre** (AC6) : `RawLine.lettering_key` lu par `fetch_lines`, `LedgerLine.lettering_code` par `code_of` ;
+  CSV et PDF inchangés (constructeurs de test complétés : `csv.rs` porte `Some("AB")`, ce qui montre que le CSV n'en
+  écrit rien, `pdf.rs` `None`).
+- **API** : deux routes `GET` montées avec les lectures (tout rôle) ; `asOf` parsé avant toute lecture ; `limit`
+  `clamp(1, 500)`, `offset` `max(0)` ; DTO `document.type` par `DocumentKind::as_str()` ;
+  `DbError::LetteringProposalsTooManyLines { max }` → 422, repli interpolé égal au FTL fr-CH ; clé neuve dans les
+  quatre locales.
+
+### Debug Log References
+
+- **AC8 — `EXPLAIN` mesuré, deux plans corrigés (C-15-1b-16).** Test ignoré `explain_plans`
+  (`crates/kesh-db/tests/open_items.rs`), lancé à la main : `cargo nextest run -p kesh-db -E 'binary(open_items)'
+  --run-ignored only --no-capture`. Volume : 20 000 factures avec ligne, règlement et avoir (copies), 20 000
+  écritures hors du compte, 5 000 écritures d'une ligne sur le compte vu dont 2 500 lettrées par paires.
+  - *Premier plan, requête A* : départ par `journal_entries` (`idx_journal_entries_company_date`, 12 551 lignes de
+    la société), dérivée par `idx_jel_lettering` **toutes sociétés** filtrée par `idx_jel_account` — non l'index du
+    compte. Page de 50 : 159 ms (binaire de débogage).
+  - *Premier plan, requête B* (`amount_due_derived_joins`) : `invoice_lines`, `invoice_settlements`, `credit_notes`
+    en `LATERAL DERIVED` indexées, **mais `credit_note_lines` en `ALL` (20 066 lignes, `Using temporary; Using
+    filesort`)** pour 50 factures : 403 ms. AC8 prescrit alors la forme scalaire.
+  - *Plan retenu, requête A* (`FORCE INDEX (idx_jel_account_lettering)` sur `jel` et `jel2`) : `jel` en `ref` par
+    `idx_jel_account_lettering` (compte), `je` et `fy` en `eq_ref` par clé primaire ; dérivée `DERIVED`, `jel2` en
+    `range` sur `idx_jel_account_lettering`, **2 502 lignes** (celles du compte, lettrées), `je2` en `eq_ref`.
+    La condition `g.lettered_on IS NULL OR g.lettered_on > ?` n'a pas dégradé le plan (filtre `Using where` sur la
+    dérivée matérialisée, accès `ref` par `key0`). Page de 50 : **70 ms** (débogage).
+  - *Plan retenu, requête B* (`invoice_settlements::amount_due_scalar_sql()`, extraite d'`amount_due`) : `invoices`
+    en `range` sur la clé primaire (50), six sous-requêtes dépendantes, toutes indexées (`idx_invoice_settlements_invoice`,
+    `uq_credit_notes_invoice`, `uq_credit_note_lines_position`, `uq_invoice_lines_position`), 1 ligne chacune :
+    **2,8 ms** pour 50 factures parmi 20 002.
+- **Test 13 — coût du filtre R5** : 3 000 lignes de pièces (une écriture par facture, 6 lots de
+  `document_owners`) + 10 candidates : 108 ms (débogage, journal du test, `--no-capture`). Linéaire en lignes
+  ouvertes, sans plafond propre, comme la fiche le dit.
+- **Test 14 — moteur pur au plafond** : 1 000 × 1 000 d'un même montant, 10⁶ paires classées, 1 000 retenues :
+  **537 ms** (débogage).
+
 ### Completion Notes List
+
+- **Mutations** (toutes rouges ; fichier restauré puis `touch`é après chacune) :
+  | # | mutation | rougit |
+  |---|---|---|
+  | M1 | `OR g.lettered_on > ?` neutralisée | 6 tests de `open_items` (9, 19 a/b, 20, 6-7, 10) |
+  | M2 | `> ?` → `>= ?` | test 9 (cas « X = dernière ligne du groupe », ajouté pour cela) |
+  | M4 | `manuallyLetterable` sans R5 (`owners.is_none()`) | tests 6-7 et propositions (ligne bancaire) |
+  | M5 | filtre R7 déplacé **après** le glouton (`retain` sur les retenues) | test 11 (`closed_period_pairs_are_filtered_before_greedy_matching`) ; filtre retiré : idem |
+  | M6 | plafond `>` → `>=` | test 13 |
+  | M8 | `amountDue` sans arrondi au centime | test 10 |
+  | M10 | tri sans `line_order` | test 4 |
+  | M12 | propositions sans filtre R5 | tests 12 et 13 |
+  | M13 | `document` = **dernier** propriétaire | test 6 (précédence règlement + transaction) |
+  | M14 | `letterable_account_ids` ignore le compte bancaire | test 18 |
+  | M15 | solde sans borne de date | tests 1-2 (`open_items_invariant`) |
+  | M16 | dérivée filtrée sur la date (groupe vu comme acquis) | 4 tests (19 a/b/c, 20) |
+  Non mutable en valeur : la borne au compte de la dérivée (un groupe est mono-compte) — elle n'a d'effet que sur le
+  plan, tenu par l'`EXPLAIN` ci-dessus.
+- **Écarts à la fiche, écrits** : test 12 « même date » inmontable au dépôt (C-15-1b-15) ; requête B en forme
+  scalaire et `FORCE INDEX` sur A (C-15-1b-16) — la fiche nommait `amount_due_derived_joins` (AC4) et laissait AC8
+  trancher sur mesure ; `amountDue` d'un héritage `paid_at` = la formule inchangée (`TTC − avoir − réglé`), soit le
+  TTC entier pour une facture sans avoir (test 10) — non réécrite pour un « TTC » distinct (#416).
+- **Rejet du `limit` non numérique** : l'extracteur `Query` d'Axum rend `400` en texte brut (sans `code`), comme
+  partout ailleurs ; écrit tel quel dans `api-external.md`.
+- **Manuel inchangé** (AC10) : vérifié au `.tex` et aux trois PDF aplatis (`pdftotext … | tr '\n' ' '`) — aucun ne
+  décrit la vue, les propositions ni le JSON du Grand livre ; le glossaire (`user-manual.tex:2518-2521`, « le
+  lettrage manuel et le délettrage se font par l'API ; l'écran viendra ») reste vrai.
+- **Modules** (signal D5, déclaré) : au grain des crates, **5** (`kesh-core`, `kesh-db`, `kesh-api`, `kesh-report`,
+  `kesh-i18n`), au seuil sans le franchir ; au grain des modules métier, **9** — les huit de la fiche, plus
+  `kesh-db/repositories/invoice_settlements` (une fonction extraite d'`amount_due`, C-15-1b-16), mécanique. Aucun
+  recyclage : pas de découpage.
+- **Tests neufs** (recomptés, périmètre : `7ba3781c` — arbre identique à `5cf0ed9a`, base d'origine avant le rebase — →
+  commit de développement `8dd84606` ; revue P2, A2-6) : **28** attributs de test —
+  4 (`kesh-core`, moteur : tests 11 ×2, AC5 montants, 14), 2 (`kesh-db`, unitaires : test 3, précédence de
+  `documentState`), 14 (`kesh-db/tests/open_items.rs`, dont 1 ignoré — l'`EXPLAIN`), 1 (`kesh-report`, tests 1-2),
+  7 (`kesh-api`, tests 5, 6 à HTTP, 13 à HTTP, 15/20, 16, 17, 18) ; plus une entrée à la table des codes du lettrage
+  (`errors.rs`, `cas.len()` 10 → 11).
 
 ### File List
 
+- `CHANGELOG.md`
+- `docs/api-external.md`
+- `crates/kesh-core/src/lettering.rs`
+- `crates/kesh-core/src/lettering/proposals.rs` (neuf)
+- `crates/kesh-db/src/errors.rs`
+- `crates/kesh-db/src/repositories/letterings.rs`
+- `crates/kesh-db/src/repositories/letterings/open_items.rs` (neuf)
+- `crates/kesh-db/src/repositories/invoice_settlements.rs`
+- `crates/kesh-db/tests/open_items.rs` (neuf)
+- `crates/kesh-report/src/general_ledger.rs`
+- `crates/kesh-report/src/csv.rs`
+- `crates/kesh-report/src/pdf.rs`
+- `crates/kesh-report/tests/open_items_invariant.rs` (neuf)
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/src/lib.rs`
+- `crates/kesh-api/src/routes/accounts.rs`
+- `crates/kesh-api/src/routes/letterings.rs`
+- `crates/kesh-api/tests/open_items_e2e.rs` (neuf)
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `_bmad-output/implementation-artifacts/15-1b-vue-lignes-ouvertes.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md` (C-15-1b-14 à 16)
+
 ## Change Log
+
+### Clôture — 2026-10-10 (Opus 5.5) — **REVUE CLOSE, story `done`**
+
+**Commits** (sur `origin/main` `7ba3781c`, la 15-1b-0 fusionnée — rebase de `5cf0ed9a`, arbres identiques, sans conflit) :
+développement **`8dd84606`**, prompt P1 `e7ea5981`, remédiation P1 **`82c7d787`**, prompt P2 `78c4cc17`, remédiation P2 (tests
+et documentation seuls) **`88e7d54e` = dernier commit de code**.
+
+**Gates au dernier commit de code `88e7d54e`** (exécutés ; base `kesh_1b` remise à zéro avant, sans redémarrer MariaDB) :
+`scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) **3325 passés, 5 ignorés** (`kesh-gate-logs/15-1b-gate-final.log`) ;
+frontend (arbre `frontend/` identique à `origin/main`, exécuté sur ce même arbre) — `npm run check` **0 erreur** (27
+avertissements préexistants), `lint-i18n-ownership` vert, `test:unit` **116 fichiers / 1167 tests**, `build` vert
+(`15-1b-frontend.log`) ; **E2E complet** (port 3025, base `kesh_e2e_1b` neuve migrée, binaire construit sur `88e7d54e`, montage
+de `docs/testing.md`, `/health` : `smtpConfigured: true`) : **245 passés, 9 échoués, 19 ignorés** — jugés fichier par fichier
+contre `docs/testing.md` § « Les échecs attendus » : sept KF-029 (#97) (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`,
+`onboarding:57`, `:77`, `:150`) et deux KF-045 (#421) (`invoices:415`, `:439`, suite terminée vers 04:39 UTC, avant 12:00) ;
+**aucun hors liste** (`15-1b-e2e.log`).
+
+**Trend de la revue** : P1 (Sonnet ×3) **3 MEDIUM distincts, 11 LOW** → P2 (Opus ×3, complète) **0 au-dessus de LOW, 8 LOW**,
+remédiation sans code de production → close. **Modèles** : Opus 5.5 (développement, remédiations, orchestration), Sonnet 5.5
+(P1), Opus 5.5 (P2). Choix : **C-15-1b-14 à 16**. Signal D5 : déclaré (5 crates, 9 modules métier), jamais levé par une
+remontée de sévérité ; pas de découpage.
+
+### Revue de code P2 — 2026-10-10 (Opus 5.5 ×3, lentilles B, E, A, complète ; remédiation Opus 5.5) — REVUE CLOSE
+
+**Prompt** : `15-1b-review-prompt-p2.md` (diff `7ba3781c..82c7d787`, axe prioritaire la remédiation P1). **Rapports** :
+`kesh-gate-logs/15-1b-review-p2-{B,E,A}.md` — B **0 C / 0 H / 0 M / 2 L**, E **0 / 0 / 0 / 3 L**, A **0 / 0 / 0 / 6 L** (dont 2
+hors diff). Recoupements : B2-1 = E2-1 = A2-1, E2-3 = A2-5 → **0 au-dessus de LOW, 8 LOW distincts**. Axes non exercés
+déclarés : toute exécution — reprise par l'orchestrateur (garde vérifiée au sol, `grep -nF "credit_note_lines"` sur
+`open_items.rs` : aucune sortie avant correction ; mutation ci-dessous ; gate complet au dernier commit de code).
+
+| finding | verdict |
+|---|---|
+| B2-1 = E2-1 = A2-1 — la garde élargie en P1 est une liste fermée de six tables : `FROM jel, credit_note_lines` passe, `INVOICES` aussi ; « quelle que soit la forme » faux | **corrigé** : inventaire des tables du **schéma** (lu dans le squash de test, 40 tables), toute table hors liste blanche nommée comme mot (casse ignorée) rougit ; quatre **témoins** (virgule vers `credit_note_lines`, `FROM(invoices)`, `INVOICES`, sous-requête vers `supplier_invoice_lines`) ; mutation « `, credit_note_lines` dans la page » **rouge** |
+| E2-2 — test 18 : création et archivage vus vrais seulement, réactivation fausse seulement | **corrigé** (charge créée → faux, compte bancaire archivé → faux, passif réactivé → vrai) |
+| E2-3 = A2-5 — refus des propositions sans le `400` du `limit`, `offset` ignoré non dit | **corrigé** (`api-external.md`) |
+| A2-2 — « 12 LOW distincts » en P1 | **corrigé** : 11 |
+| A2-6 — borne du recompte `5cf0ed9a`, hors de l'ascendance après rebase | **corrigé** (`7ba3781c`, arbre identique ; total inchangé) |
+| B2-2 — mémoire au plafond « ≈ 50 Mo » | **corrigé** au texte (≈ 80 Mo, pic ≈ 126 Mo) ; `with_capacity` non posé (code de production, gain marginal sous un plafond déjà tenu) |
+| A2-3 (hors diff) — `dateFrom`/`dateTo` de la liste des écritures, autres `NaiveDate` de requête : même absence de borne d'années que B-1 | **hors périmètre** (antérieur) : issue demandée à l'orchestrateur |
+| A2-4 (hors diff) — `user-manual.tex:1240`, `:1494` « le grand livre la montre soldée » : aucun écran du Grand livre n'affiche le lettrage | **hors périmètre** (texte des 15-1a2-i/ii ; la 15-1c affichera `letteringCode`) : signalé à l'orchestrateur avec `admin-manual.tex:2426` (P1) |
+
+**La remédiation ne touche aucune ligne de code de production** : `open_items.rs` modifié dans son seul `mod tests` (blocs
+après la ligne 610, `git diff -U0`), `open_items_e2e.rs` (test), `api-external.md`, la fiche — la boucle se **clôt**
+(§ « La passe ciblée », critère de clôture). **Trend** : P1 (Sonnet ×3) **3 MEDIUM distincts, 11 LOW** → P2 (Opus ×3,
+complète) **0 au-dessus de LOW, 8 LOW** → close. Signal D5 : non levé (sévérité en baisse, aucun recyclage au-dessus de
+LOW ; la garde lexicale de P2 est le reste d'un LOW de P1, déclaré). **Modèles** : Opus 5.5 (développement, remédiations,
+orchestration), Sonnet 5.5 (P1), Opus 5.5 (P2).
+
+### Revue de code P1 — 2026-10-10 (Sonnet 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
+
+**Prompt** : `15-1b-review-prompt-p1.md` (diff `7ba3781c..8dd84606`, après rebase sur la 15-1b-0 fusionnée — arbres de
+base identiques). **Rapports** : `kesh-gate-logs/15-1b-review-p1-{B,E,A}.md` — B **0 C / 0 H / 1 M / 3 L**, E **0 / 0 /
+2 M / 5 L**, A **0 / 0 / 1 M / 6 L** (+ un constat hors diff). Recoupements : B-1 = E-1, B-2 = E-3, B-3 = E-4, B-4 = E-7 →
+**3 MEDIUM distincts** (B-1 = E-1, E-2, A-1) et **11 LOW distincts** (3 + 5 + 6 = 14 bruts, moins trois doublons ;
+« 12 » écrit d'abord, recompté en P2, A2-2). Axes non exercés déclarés par les trois lentilles :
+toute exécution (cargo, SQL, mutations, `EXPLAIN`) — repris par l'orchestrateur (mutations ci-dessous, gate complet).
+
+| finding | sévérité | verdict |
+|---|---|---|
+| B-1 = E-1 — `asOf` hors de la plage MariaDB (`+10000-01-01`, année négative) : 500 ou date invalide | MEDIUM | **confirmé au code** (`sqlx-mysql` `encode_date`, `u16::try_from(year)`) et **corrigé** : années 1000 à 9999, sinon `400 VALIDATION_ERROR` ; test 5 complété (trois valeurs hors plage, `9999-12-31` admis, `asOf=` vide) ; mutation « borne retirée » rouge |
+| E-2 — bords corrects mais non établis (page vide, compte sans ligne, `X` avant toute écriture, trop-perçu, compte archivé) | MEDIUM | **corrigé** : test `view_edges` (requête B sur listes vides, `amountDue = -5.00`) |
+| A-1 — `documentState`/`amountDue` d'une ligne de règlement jamais assertés | MEDIUM | **corrigé** : test 10 lit la ligne de règlement (`partiallySettled`, 60.00) ; mutation `Settlement => None` rouge |
+| E-6 — « −0.00 » possible | LOW | **réfuté à l'exécution** : redressement ajouté, puis mutation « redressement retiré » **verte** — `amount_due_to_centime(-0.004)` rend « 0.00 » ; redressement retiré, test `rounded_due_has_no_negative_zero` garde le fait |
+| A — garde lexicale : jointure à virgule, `FROM(` accolé | LOW | **corrigé** : la garde refuse aussi tout nom de table de pièce comme mot, quelle que soit la forme |
+| A — `api-external.md` : « ne lit ni le statut ni la date de paiement » ; trois omissions | LOW | **corrigé** (la sélection seule ; `number` nul d'une facture fournisseur sans numéro ; `asOf=` vide ; deux décimales, négatif si trop-perçu ; plage d'années) |
+| A — § Status de la fiche périmé | LOW | **corrigé** (dépendances livrées, paragraphe gardé pour l'histoire) |
+| A — test 18 : deux réponses unitaires sur quatre | LOW | **corrigé** (modification et archivage ; compte bancaire modifié → faux) |
+| A — AC4 nomme encore `amount_due_derived_joins` | LOW | **écrit** : AC8 tranche sur mesure, C-15-1b-16 ; AC non réécrit (section non modifiable au développement) — idem « aucune borne » d'AC1, précisé ici : la plage MariaDB est exigée |
+| B-2 = E-3 — toutes les lignes ouvertes chargées avant le plafond | LOW | **accepté** : écrit au doc-comment et à la fiche (AC5 « sans plafond propre »), mesuré au test 13 |
+| B-3 = E-4 — 10⁶ paires en mémoire au plafond | LOW | **réfuté en partie** : le test 14 mesure exactement 1 000 × 1 000 (537 ms, débogage) ; la mémoire reste bornée par le plafond — ≈ 80 Mo (80 octets par paire), pic transitoire ≈ 126 Mo à la croissance du vecteur (chiffre « ≈ 50 Mo » corrigé en P2, B2-2) |
+| B-4 = E-7 — `letterable` relu après l'écriture d'un compte : un échec rendrait 500 | LOW | **accepté** : lecture simple après un geste réussi, comme les autres relectures de réponse du dépôt |
+| E-5 — une paire peut réunir deux lignes d'une même écriture | LOW | **accepté** : un débit et un crédit égaux sur le même compte se soldent ; les lettrer est légitime |
+| (hors diff) `admin-manual.tex:2426` « le grand livre n'existe pas encore » | — | **antérieur à la story**, hors périmètre : signalé à l'orchestrateur (issue à ouvrir) |
+
+**Propagation** : « aucune borne » grepé (`crates`, `docs`, `CHANGELOG.md`, fiche) — `api-external.md:345` et le doc-comment
+de `parse_as_of` précisés ; AC1 de la fiche porte encore la formule (ci-dessus). **Signal D5** : la P1 n'a pas de passe
+antérieure de revue de code ; aucun recyclage. La remédiation touche du code de production (`routes/letterings.rs`, garde
+lexicale du dépôt) : **P2 due**, complète (Opus). **Gate** (base `kesh_1b` remise à zéro) : `scripts/test-fast.sh`
+**3325 passés, 5 ignorés** (`kesh-gate-logs/15-1b-gate-p1.log`) — 3323 + 2 tests neufs (`view_edges`,
+`rounded_due_has_no_negative_zero`).
+
+### Développement — 2026-10-10 (Opus 5.5, en autonomie)
+
+T1, T3 à T7 faits (T2 à la 15-1b-0). **28** tests neufs (27 exécutés + l'`EXPLAIN` ignoré, lancé à la main), table des
+codes du lettrage 10 → 11 ; douze mutations, toutes rouges (Dev Agent Record). AC8 mesuré : deux plans corrigés — requête
+B en forme scalaire, requête A épinglée sur `idx_jel_account_lettering` (C-15-1b-16). Choix : **C-15-1b-14 à 16**. Signal
+D5 (déclaré) : 5 crates, **9** modules métier (+ `invoice_settlements`, une fonction extraite), aucun recyclage — pas de
+découpage. **Gate** (base `kesh_1b` remise à zéro, sans redémarrer MariaDB) : `scripts/test-fast.sh` **3323 passés, 5
+ignorés** (`kesh-gate-logs/15-1b-gate-dev.log`) — 3296 de la 15-1b-0 + 27. Frontend non touché ; frontend et E2E complets
+au dernier commit de code, après le rebase sur la 15-1b-0 fusionnée.
 
 ### Validation P3 — 2026-10-09 (Sonnet 5.5 ×2, lentilles R et F ; LOW appliqués par le remédiateur des fiches de la suite du lettrage, Opus 5.5, en autonomie) — VALIDATION CLOSE
 

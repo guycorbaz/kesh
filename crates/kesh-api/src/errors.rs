@@ -2986,6 +2986,21 @@ impl IntoResponse for AppError {
                         &t_args("error-lettering-too-many-lines", &fallback, &args),
                     )
                 }
+                // Story 15-1b — les propositions refusent au-delà du plafond de
+                // candidates, jamais une troncature muette ; le plafond voyage
+                // dans la variante (patron du plafond d'un groupe ci-dessus).
+                DbError::LetteringProposalsTooManyLines { max } => {
+                    let fallback = format!(
+                        "Trop de lignes ouvertes sur ce compte pour proposer des rapprochements : au plus {max} lignes lettrables à la main."
+                    );
+                    let mut args = FluentArgs::new();
+                    args.set("max", max as i64);
+                    build_response(
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        "LETTERING_PROPOSALS_TOO_MANY_LINES",
+                        &t_args("error-lettering-proposals-too-many-lines", &fallback, &args),
+                    )
+                }
                 DbError::LetteringAccountsDiffer => build_response(
                     StatusCode::CONFLICT,
                     "LETTERING_ACCOUNTS_DIFFER",
@@ -4312,8 +4327,17 @@ mod tests {
                 "error-lettering-concurrent-change",
                 sans(),
             ),
+            (
+                // Story 15-1b (AC5) — un plafond autre que 2 000 : le message
+                // doit le lire.
+                DbError::LetteringProposalsTooManyLines { max: 9 },
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "LETTERING_PROPOSALS_TOO_MANY_LINES",
+                "error-lettering-proposals-too-many-lines",
+                "9".into(),
+            ),
         ];
-        assert_eq!(cas.len(), 10, "les dix codes du lettrage (T10)");
+        assert_eq!(cas.len(), 11, "les onze codes du lettrage (T10 ; 15-1b T4)");
         for (err, statut, code, cle, valeur) in cas {
             assert_eq!(err.error_code(), code, "repli de error_code()");
             let (status, body) = response_body(AppError::Database(err).into_response()).await;

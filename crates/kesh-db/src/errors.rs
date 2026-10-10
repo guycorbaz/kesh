@@ -1195,6 +1195,16 @@ pub enum DbError {
     #[error("Le lettrage a changé entre-temps")]
     LetteringConcurrentChange,
 
+    /// Propositions de lettrage refusées (Story 15-1b, AC5) : le compte porte
+    /// plus de lignes **candidates** — ouvertes et lettrables à la main — que le
+    /// plafond du moteur ([`kesh_core::lettering::proposals::MAX_PROPOSAL_CANDIDATES`]).
+    /// Jamais une troncature muette. Le plafond voyage dans `max` (patron de
+    /// [`DbError::LetteringTooManyLines`]). → 422.
+    #[error(
+        "Trop de lignes ouvertes sur ce compte pour proposer des rapprochements (plus de {max})"
+    )]
+    LetteringProposalsTooManyLines { max: usize },
+
     /// Complément des soldes de départ refusé (Story 25-7, #445).
     ///
     /// Le statut HTTP et le code se dérivent de la raison côté API ;
@@ -1404,6 +1414,7 @@ impl DbError {
             Self::LetteringUnbalanced { .. } => "LETTERING_UNBALANCED",
             Self::LetteringIsDocument => "LETTERING_IS_DOCUMENT",
             Self::LetteringConcurrentChange => "LETTERING_CONCURRENT_CHANGE",
+            Self::LetteringProposalsTooManyLines { .. } => "LETTERING_PROPOSALS_TOO_MANY_LINES",
             Self::FiscalYearInvalid => "FISCAL_YEAR_INVALID",
             Self::OpeningComplementRefused { reason, .. } => reason.code(),
             Self::ConfigurationRequired(_) => "CONFIGURATION_REQUIRED",

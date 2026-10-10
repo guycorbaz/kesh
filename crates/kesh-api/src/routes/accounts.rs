@@ -6,8 +6,8 @@ use chrono::NaiveDateTime;
 use serde::{Deserialize, Serialize};
 
 use kesh_db::entities::account::{Account, AccountRole, AccountType, AccountUpdate, NewAccount};
-use kesh_db::errors::DbError;
-use kesh_db::repositories::accounts;
+use kesh_db::errors::{DbError, map_db_error};
+use kesh_db::repositories::{accounts, letterings};
 
 use crate::AppState;
 use crate::errors::AppError;
@@ -138,13 +138,20 @@ pub struct AccountResponse {
     pub role: Option<AccountRole>,
     /// Postabilité — **indicatif en 14-3a**, appliqué à la saisie par 14-3b.
     pub postable: bool,
+    /// Le compte se lettre-t-il (R4 du lettrage, Story 15-1b AC11) : actif ou
+    /// passif, et désigné par aucun compte bancaire — archivé compris. Calculé
+    /// par la seule règle `letterings::is_letterable`.
+    pub letterable: bool,
     pub version: i32,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
 
-impl From<Account> for AccountResponse {
-    fn from(a: Account) -> Self {
+impl AccountResponse {
+    /// `letterable` ne se déduit pas de l'entité seule (un compte bancaire peut
+    /// le désigner) : l'appelant le lit par `letterings::is_letterable_account`
+    /// (une réponse) ou `letterings::letterable_account_ids` (la liste).
+    pub fn new(a: Account, letterable: bool) -> Self {
         Self {
             id: a.id,
             company_id: a.company_id,
@@ -155,6 +162,7 @@ impl From<Account> for AccountResponse {
             active: a.active,
             role: a.role,
             postable: a.postable,
+            letterable,
             version: a.version,
             created_at: a.created_at,
             updated_at: a.updated_at,
@@ -165,6 +173,15 @@ impl From<Account> for AccountResponse {
 // ---------------------------------------------------------------------------
 // Handlers
 // ---------------------------------------------------------------------------
+
+/// La réponse d'un compte unique : sa lettrabilité en une requête
+/// (`letterings::is_letterable_account`, Story 15-1b AC11).
+async fn response(state: &AppState, account: Account) -> Result<AccountResponse, AppError> {
+    let mut conn = state.pool.acquire().await.map_err(map_db_error)?;
+    let letterable =
+        letterings::is_letterable_account(&mut conn, account.company_id, account.id).await?;
+    Ok(AccountResponse::new(account, letterable))
+}
 
 /// GET /api/v1/accounts — liste les comptes de la company courante.
 /// Story 6.2: Scoped by current_user.company_id.
@@ -182,7 +199,17 @@ pub async fn list_accounts(
         params.include_archived,
     )
     .await?;
-    Ok(Json(list.into_iter().map(AccountResponse::from).collect()))
+    // Story 15-1b (AC11) : la lettrabilité de tout le plan en UNE requête.
+    let mut conn = state.pool.acquire().await.map_err(map_db_error)?;
+    let lettrables = letterings::letterable_account_ids(&mut conn, current_user.company_id).await?;
+    Ok(Json(
+        list.into_iter()
+            .map(|a| {
+                let letterable = lettrables.contains(&a.id);
+                AccountResponse::new(a, letterable)
+            })
+            .collect(),
+    ))
 }
 
 /// POST /api/v1/accounts — crée un compte.
@@ -242,7 +269,7 @@ pub async fn create_account(
     let account = accounts::create(&state.pool, current_user.user_id, new).await?;
     Ok((
         axum::http::StatusCode::CREATED,
-        Json(AccountResponse::from(account)),
+        Json(response(&state, account).await?),
     ))
 }
 
@@ -306,7 +333,7 @@ pub async fn update_account(
         req.confirm_account_retype,
     )
     .await?;
-    Ok(Json(AccountResponse::from(account)))
+    Ok(Json(response(&state, account).await?))
 }
 
 /// PUT /api/v1/accounts/{id}/archive — archive un compte.
@@ -323,7 +350,7 @@ pub async fn archive_account(
         .ok_or(AppError::Database(DbError::NotFound))?;
 
     let account = accounts::archive(&state.pool, id, req.version, current_user.user_id).await?;
-    Ok(Json(AccountResponse::from(account)))
+    Ok(Json(response(&state, account).await?))
 }
 
 /// PUT /api/v1/accounts/{id}/reactivate — réactive un compte archivé (#269).
@@ -353,5 +380,5 @@ pub async fn reactivate_account(
         req.clear_role,
     )
     .await?;
-    Ok(Json(AccountResponse::from(account)))
+    Ok(Json(response(&state, account).await?))
 }

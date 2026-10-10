@@ -213,6 +213,7 @@ Les principales ressources accessibles via l'API (liste non exhaustive — toute
 | Factures | `GET /invoices`, `GET /invoices/{id}` | `POST /invoices`, `PUT /invoices/{id}`, … ² |
 | Écritures comptables | `GET /journal-entries`, `GET /journal-entries/{id}` | `POST /journal-entries`, `PUT /journal-entries/{id}` ⁴, `DELETE /journal-entries/{id}` ⁴, … |
 | Lettrages | `GET /letterings/{key}` ⁵ | `POST /letterings` ⁵, `DELETE /letterings/{key}` ⁵ |
+| Postes ouverts et rapprochements proposés | `GET /accounts/{id}/open-items` ⁶, `GET /accounts/{id}/lettering-proposals` ⁶ | — (accepter une proposition : `POST /letterings`) |
 | Taux de TVA | `GET /vat-rates` | — ¹ |
 | Comptes bancaires | `GET /bank-accounts` | `POST /bank-accounts`, `PUT /bank-accounts/{id}`, `PATCH /bank-accounts/{id}` (lien au grand livre), `DELETE /bank-accounts/{id}` (archivage) |
 
@@ -221,6 +222,10 @@ Les principales ressources accessibles via l'API (liste non exhaustive — toute
 ⁴ Depuis la v0.13.0 — voir « Modifier une écriture » et « Supprimer une écriture » ci-dessous.
 
 ⁵ Depuis la v0.13.0 — voir « Lettrer des lignes » ci-dessous.
+
+⁶ Depuis la v0.13.0 — voir « Les postes ouverts d'un compte » ci-dessous.
+
+**Le plan comptable dit quels comptes se lettrent** *(depuis la v0.13.0)* : chaque compte de `GET /accounts` — archivés compris — et des réponses de `POST /accounts`, `PUT /accounts/{id}`, `PUT /accounts/{id}/archive` et `PUT /accounts/{id}/reactivate` porte `letterable` (booléen) : vrai pour un compte d'actif ou de passif qu'aucun compte bancaire — archivé compris — ne désigne. Le **Grand livre**, `GET /reports/general-ledger`, porte depuis la v0.13.0 `letteringCode` par ligne (le code du groupe de lettrage, `null` si la ligne est ouverte) ; ses exports CSV et PDF sont inchangés.
 
 **Les lignes d'une écriture portent leur lettrage** *(depuis la v0.13.0)* : dans toute réponse qui expose les lignes (`GET /journal-entries`, `GET /journal-entries/{id}`, et les réponses de `POST`, `PUT` et de la contre-passation), chaque ligne porte trois champs, **toujours présents** : `letteringKey` (la clé du groupe de lettrage), `letteringCode` (son code affiché, `AA` pour la clé 27) et `letteringOrigin` (`manual`, posé par les routes du lettrage, ou `reversal`, posé par la contre-passation, ou `document`, posé par Kesh sur les lignes d'une facture client soldée — il suit ses règlements et son avoir, voir « Lettrer des lignes ») — tous trois `null` quand la ligne est **ouverte**.
 
@@ -328,6 +333,65 @@ Refus du `DELETE`, dans l'ordre :
 | Toutes les lignes en période close | `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` | `409` |
 
 Le délettrage n'exige pas que le compte soit encore lettrable : un groupe dont le compte a été retypé ou rattaché depuis à un compte bancaire se délettre. ⚠️ `LETTERING_CONCURRENT_CHANGE` (`409`) signale qu'un groupe a changé entre la lecture et l'écriture : réessayez. ⚠️ Un interblocage est rejoué par le serveur ; s'il persiste, la réponse est un `500` — réessayez.
+
+### Les postes ouverts d'un compte — `GET /api/v1/accounts/{id}/open-items`
+
+*(Depuis la v0.13.0 ; l'écran viendra.)* Lecture (`read` suffit, tout rôle). La liste de ce qui reste **ouvert** sur un compte lettrable à une date — de quoi justifier son solde ligne à ligne, aujourd'hui ou à la date de clôture d'un exercice.
+
+**Une ligne est ouverte à la date `X`** si son écriture est datée au plus tard de `X`, et qu'elle n'est pas lettrée, **ou** que son groupe de lettrage contient une ligne datée **après** `X` (le lettrage n'était pas acquis à `X`). « Ouvert » veut dire « non lettré » : **ce qui est listé** ne dépend ni du statut des factures ni de leur date de paiement — ces données ne servent qu'à décrire les lignes listées (`documentState`, ci-dessous). **Invariant** : la somme `débit − crédit` des lignes ouvertes à `X` égale le solde du compte à `X` — toutes ses lignes datées au plus tard de `X`, tous exercices confondus, c'est-à-dire, pour `X` en fin d'exercice, la clôture du compte dans la Balance de cet exercice (au signe près : la Balance donne le solde du côté naturel du compte, cette route `débit − crédit`).
+
+⚠️ **« Au X » n'est pas un instantané** : la vue se calcule sur le lettrage d'**aujourd'hui**. Pour un `X` en période close — dans un exercice clôturé ou suivi d'un exercice clôturé, ou au plus tard à la date de la période verrouillée —, la liste ne change plus, **tant qu'aucun administrateur ne déverrouille la période, ne rouvre un exercice ni ne restaure une sauvegarde**. Au-dessus, elle peut changer : un délettrage, ou l'annulation d'un règlement, fait réapparaître des lignes « au X » ; l'invariant, lui, tient toujours.
+
+Paramètres : `asOf` (`AAAA-MM-JJ`, défaut — y compris `asOf=` vide : la date du jour, en UTC ; aucune borne métier — une date future rend aussi les écritures datées dans le futur —, mais l'année doit être comprise entre 1000 et 9999), `limit` (défaut 50, ramené entre 1 et 500), `offset` (défaut 0, ramené à 0 s'il est négatif). Réponse `200` :
+
+```json
+{ "accountId": 7, "accountNumber": "1100", "asOf": "2026-12-31",
+  "balance": "1234.5000", "openTotal": "1234.5000", "total": 42, "offset": 0, "limit": 50,
+  "items": [ { "lineId": 1, "entryId": 3, "entryNumber": 12, "fiscalYearName": "2026",
+               "date": "2026-03-01", "journal": "Ventes", "description": "…",
+               "debit": "100.0000", "credit": "0.0000",
+               "document": { "type": "invoice", "id": 9, "number": "F-2026-0009",
+                             "invoiceId": null, "invoiceNumber": null },
+               "letteringCode": null, "letteringOrigin": null, "letteredOn": null,
+               "reason": "unlettered", "documentState": "unpaid", "amountDue": "100.00",
+               "manuallyLetterable": false, "inOpenPeriod": true } ] }
+```
+
+- `balance` (le solde du compte à `X`), `openTotal` (la somme des lignes ouvertes, égale à `balance`) et `total` (le nombre de lignes ouvertes) portent sur **tout** l'ensemble, non sur la page, et sont lus avec elle dans une même lecture. Les lignes suivent l'ordre du Grand livre : date, exercice, numéro d'écriture, rang de la ligne. ⚠️ Le numéro d'écriture repart à 1 à chaque exercice : il se lit avec `fiscalYearName`.
+- `document` : la pièce qui possède l'écriture — `type` parmi `invoice`, `creditNote`, `supplierInvoice`, `settlement` (règlement d'une facture client : `invoiceId` et `invoiceNumber` nomment la facture réglée), `bankTransaction` ; `number` nul pour un règlement, une transaction, et une facture fournisseur saisie sans numéro. Une écriture qui en porte plusieurs (un règlement rapproché) montre la première dans cet ordre. `null` sans pièce. Ces valeurs sont celles de `documentType` au journal d'audit du lettrage.
+- `letteringCode`, `letteringOrigin` (`document`, `reversal`, `manual`) et `letteredOn` décrivent le lettrage d'**aujourd'hui** — nuls si la ligne est ouverte aujourd'hui ; `letteredOn` est la date de la ligne la plus tardive du groupe, celle où le lettrage est acquis.
+- **Deux champs, deux dates** : `reason` dit pourquoi la ligne est ouverte **à `X`** — `unlettered`, ou `letteredAfterAsOf` (lettrée, mais par un groupe acquis après `X`) ; `documentState` dit où en est **aujourd'hui** la facture client d'une ligne (sa ligne de vente ou un de ses règlements ; `null` pour tout autre ligne, avoir compris) — `paidWithoutSettlementEntry` (marquée payée avant la v0.12.0 sans règlement enregistré : le grand livre porte encore la créance), `nothingDue` (rien à encaisser : réglée, créditée ou soldée), `partiallySettled`, `unpaid`, dans cet ordre de précédence. `amountDue` est son reste dû d'aujourd'hui, **au centime** — deux décimales, quand les montants des lignes en portent quatre — (`null` hors facture client ; négatif en cas de trop-perçu). ⚠️ Pour un `X` passé, `documentState` peut décrire un règlement postérieur à `X` : c'est voulu, l'état de la pièce sert à savoir quoi faire ; le motif **à `X`** est `reason`. Ces deux champs ne filtrent rien.
+- `manuallyLetterable` : la ligne est ouverte aujourd'hui et n'est pas celle d'une pièce (facture, avoir, facture fournisseur, règlement) — elle se lettre par `POST /letterings`. Une ligne seulement rapprochée d'une transaction bancaire se lettre. `inOpenPeriod` : la ligne est en période ouverte (exercice ouvert, aucun exercice postérieur clôturé, date postérieure à la période verrouillée) — indicatif, lu sans verrou : un lettrage dont **toutes** les lignes sont hors période ouverte sera refusé.
+
+Refus, **dans l'ordre où ils parlent** :
+
+| Refus | Code | Statut |
+|---|---|---|
+| `limit` ou `offset` non numérique | (réponse du serveur HTTP, sans `code`) | `400` |
+| `asOf` mal formé — rendu avant toute lecture, même pour le compte d'une autre company | `VALIDATION_ERROR` | `400` |
+| Compte inconnu ou d'une autre company (indiscernables) | `NOT_FOUND` | `404` |
+| Compte non lettrable (charge, produit, compte lié à un compte bancaire) — y compris **devenu** non lettrable : ses groupes restent consultables par `GET /letterings/{key}` | `LETTERING_ACCOUNT_NOT_LETTERABLE` | `409` |
+
+### Les rapprochements proposés — `GET /api/v1/accounts/{id}/lettering-proposals`
+
+*(Depuis la v0.13.0.)* Lecture (`read` suffit, tout rôle). Des **paires** de lignes du compte que Kesh propose de lettrer : ouvertes aujourd'hui, lettrables à la main (`manuallyLetterable`), l'une au débit et l'autre au crédit, **de montants exactement égaux** (aucune tolérance : un règlement amputé de frais bancaires n'est pas une paire), et dont une au moins est en période ouverte (une paire tout entière en période close serait refusée). ⛔ **Kesh n'écrit rien** : accepter une proposition, c'est `POST /letterings` avec ses deux lignes, une à une.
+
+Classement : les paires d'une écriture et de sa **contre-passation** d'abord (`reversalPair`), puis par écart de dates croissant, puis par identifiant de ligne ; **chaque ligne n'apparaît que dans sa meilleure paire**. Pas de proposition à plus de deux lignes.
+
+Paramètre : `limit` (défaut 100, ramené entre 1 et 500) ; **pas d'`offset`** — les paires suivantes se lisent après avoir accepté les premières. Réponse `200` :
+
+```json
+{ "accountId": 7, "candidateCount": 340, "total": 12, "limit": 100,
+  "items": [ { "amount": "100.0000", "daysApart": 3, "reversalPair": false,
+               "debit":  { "lineId": 1, "entryId": 3, "entryNumber": 12, "fiscalYearName": "2026",
+                           "date": "2026-03-01", "journal": "Ventes", "description": "…",
+                           "document": null, "inOpenPeriod": true },
+               "credit": { "lineId": 8, "entryId": 5, "entryNumber": 15, "fiscalYearName": "2026",
+                           "date": "2026-03-04", "journal": "Banque", "description": "…",
+                           "document": null, "inOpenPeriod": true } } ] }
+```
+
+`candidateCount` : les lignes candidates (ouvertes et lettrables à la main) ; `total` : les paires retenues avant `limit`. Chaque ligne d'une paire porte les champs de même nom de la liste des postes ouverts. Un paramètre `offset` est ignoré (la première page est toujours rendue). Refus : ceux des postes ouverts (`400` pour un `limit` non numérique, `404`, `409`), puis, au-delà de **2 000** lignes candidates, `422 LETTERING_PROPOSALS_TOO_MANY_LINES` — jamais une liste tronquée en silence ; les lignes des pièces ne comptent pas.
 
 ### Dévalider une facture — `POST /api/v1/invoices/{id}/unvalidate`
 
@@ -567,7 +631,8 @@ Les erreurs sont renvoyées en JSON avec ce format :
 | `409` | `ENTRY_LETTERED` | `PUT` et `DELETE /journal-entries/{id}` : une ligne de l'écriture est lettrée — délettrez-la d'abord (`DELETE /letterings/{key}`). `details.letteringCode` porte le code du premier groupe (ni `documentId` ni `documentNumber`). Rendu en dernier : quand il parle, le délettrage suffit. *(Depuis la v0.13.0.)* |
 | `409` | `DETACHED_SUPPLIER_SETTLEMENT` | `PUT` et `DELETE /journal-entries/{id}` : l'écriture est le paiement d'une facture fournisseur annulée — une sortie de banque réelle, qui se corrige par contre-passation. `details.documentId` est l'identifiant de la facture. *(Depuis la v0.13.0.)* |
 | `400` | `LETTERING_TOO_FEW_LINES`, `LETTERING_TOO_MANY_LINES` | `POST /letterings` : moins de deux lignes distinctes, ou plus de 200. *(Depuis la v0.13.0.)* |
-| `409` | `LETTERING_ACCOUNTS_DIFFER`, `LETTERING_ACCOUNT_NOT_LETTERABLE`, `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`, `LETTERING_LINE_OWNED_BY_DOCUMENT`, `LETTERING_LINE_ALREADY_LETTERED`, `LETTERING_UNBALANCED`, `LETTERING_IS_DOCUMENT`, `LETTERING_CONCURRENT_CHANGE` | `POST` et `DELETE /letterings` : refus du lettrage — voir « Lettrer des lignes ». `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` est aussi le refus de l'annulation d'un règlement, d'un solde, d'un rapprochement, d'un paiement ou d'une facture fournisseur dont le lettrage est figé par une période close (§ des annulations) ; le texte rendu diffère selon la route — celui du lettrage, ou celui de la famille d'annulation. *(Depuis la v0.13.0.)* |
+| `409` | `LETTERING_ACCOUNTS_DIFFER`, `LETTERING_ACCOUNT_NOT_LETTERABLE`, `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`, `LETTERING_LINE_OWNED_BY_DOCUMENT`, `LETTERING_LINE_ALREADY_LETTERED`, `LETTERING_UNBALANCED`, `LETTERING_IS_DOCUMENT`, `LETTERING_CONCURRENT_CHANGE` | `POST` et `DELETE /letterings` : refus du lettrage — voir « Lettrer des lignes ». `LETTERING_ACCOUNT_NOT_LETTERABLE` est aussi le refus de `GET /accounts/{id}/open-items` et `GET /accounts/{id}/lettering-proposals` sur un compte non lettrable. `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` est aussi le refus de l'annulation d'un règlement, d'un solde, d'un rapprochement, d'un paiement ou d'une facture fournisseur dont le lettrage est figé par une période close (§ des annulations) ; le texte rendu diffère selon la route — celui du lettrage, ou celui de la famille d'annulation. *(Depuis la v0.13.0.)* |
+| `422` | `LETTERING_PROPOSALS_TOO_MANY_LINES` | `GET /accounts/{id}/lettering-proposals` : plus de 2 000 lignes candidates (ouvertes et lettrables à la main) sur le compte — Kesh ne propose rien plutôt qu'une liste tronquée. Lettrer d'abord une partie à la main (`POST /letterings`). *(Depuis la v0.13.0.)* |
 | `404` | `NOT_FOUND` | Ressource absente ou appartenant à une autre company (anti-énumération). Certaines ressources renvoient un code spécifique (ex. `ACCOUNT_NOT_FOUND`). |
 
 **Interblocages : les écritures au journal sont rejouées.** Toute route qui écrit au journal comptable rejoue d'elle-même un interblocage transitoire avec une autre opération, sans le montrer. Ouvertes aux clés `read-write`, ce sont : `POST /journal-entries`, `PUT` et `DELETE /journal-entries/{id}`, `POST /journal-entries/{id}/reverse`, `POST /opening-balances`, `POST /opening-balances/complete`, `POST /invoices/{id}/validate`, `POST /invoices/{id}/unvalidate`, `POST /invoices/{id}/settlements`, `POST /invoices/{id}/settlements/{settlementId}/cancel`, `POST /invoices/{id}/write-off`, `POST /credit-notes`, `POST /supplier-invoices`, `POST /supplier-invoices/{id}/pay`, `POST /supplier-invoices/{id}/cancel`, `POST /supplier-invoices/{id}/settlement/cancel`, `POST /imported-supplier-invoices/{id}/complete`, `POST /payment-batches/{id}/confirm`, `POST /reconciliation/accept`, `POST /reconciliation/manual`, `POST /reconciliation/split`, `POST /reconciliation/transactions/{id}/cancel`, `POST /letterings` et `DELETE /letterings/{key}` — ainsi que la création et la clôture d'un exercice, `POST /fiscal-years` et `POST /fiscal-years/{id}/close`, qui n'écrivent pas au journal mais forment des interblocages avec la contre-passation (depuis la v0.13.0) (la restauration d'une sauvegarde, réservée à l'interface d'administration, ne rejoue pas ; l'effacement des données de démonstration, réservé lui aussi à l'interface d'administration, rejoue depuis la v0.13.0). Si l'interblocage persiste après trois tentatives, la requête finit en `500 INTERNAL_ERROR` ; rien n'a été écrit, et elle peut être renvoyée telle quelle.
