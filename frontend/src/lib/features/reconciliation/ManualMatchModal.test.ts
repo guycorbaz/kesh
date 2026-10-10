@@ -63,6 +63,7 @@ function makeAccount(
 		active: true,
 		role: null,
 		postable: true,
+		letterable: false,
 		version: 1,
 		createdAt: '2026-01-01T00:00:00Z',
 		updatedAt: '2026-01-01T00:00:00Z',

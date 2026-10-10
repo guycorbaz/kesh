@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev **après la livraison de la 15-1c-0** *(et donc de la 15-1b, de la 15-1b-0, des 15-1a2-0, -i, -ii)*
+done — développée et revue le 2026-10-10 (Opus 5.5, en autonomie) ; **REVUE CLOSE** à la P3 ciblée. *Historique :* ready-for-dev **après la livraison de la 15-1c-0** *(et donc de la 15-1b, de la 15-1b-0, des 15-1a2-0, -i, -ii)*
 — créée le 2026-10-09 par le découpage de la 15-1c à la remédiation de sa validation P1 (registre **C-15-1c-1**) ;
 sa partie serveur (AC15, AC16 et leurs tests) extraite en **15-1c-0** à la remédiation de la validation P2
 (**C-15-1c-14**) ; **VALIDATION CLOSE** (P3 Sonnet ×2 : 0 au-dessus de LOW ; P4 ciblée Haiku : 0 au-dessus de LOW, LOW appliqués).
@@ -15,7 +15,8 @@ enrichie d'un groupe (15-1c-0) n'existent pas avant elles. Le scénario E2E (1) 
 
 ⛔ **Pas de tag v0.13.0 entre la 15-1c-i et la 15-1c-ii** (règle de publication de C124, étendue par C-15-1c-1) :
 entre les deux, le manuel dit encore « le délettrage se fait par l'API dans cette version » et le CHANGELOG
-« l'écran viendra », alors que l'écran existe.
+« l'écran viendra », alors que l'écran existe — et le manuel énumère le groupe *Mensuel* du menu sans « Postes ouverts »
+(`user-manual.tex`, revue de code P1, A-1 ; inscrit au « Reçu de la 15-1c-i » de la 15-1c-ii).
 
 ## Story
 
@@ -295,24 +296,24 @@ lettrage, écran compris, est écrite par la 15-1c-ii (AC14) — pas de tag entr
 
 ## Tasks
 
-- [ ] **T0** — Rebaser sur `main` après le merge de la 15-1c-0 ; relever au code livré les noms réels (types
+- [x] **T0** — Rebaser sur `main` après le merge de la 15-1c-0 ; relever au code livré les noms réels (types
       TypeScript de la vue s'ils ont été écrits, `fetchAccounts`, la forme de la réponse du `GET` enrichi), les
       valeurs fr-CH des trois clés `error-lettering-*` d'AC6 (replis), les clés réemployables d'AC8 et d'AC4, les
       bornes de `i18n-keys.test.ts`, le compte de créance du preset E2E ; écrire au Dev Agent Record ce qui diffère
       de la fiche.
-- [ ] **T1** (AC1, AC2, AC3, AC8) — `frontend/src/lib/features/open-items/` : `open-items.api.ts`,
+- [x] **T1** (AC1, AC2, AC3, AC8) — `frontend/src/lib/features/open-items/` : `open-items.api.ts`,
       `open-items.types.ts` (types de la vue, des propositions et du groupe enrichi, s'ils ne sont pas écrits),
       composants de liste, de motifs et de pied (montant et sens) ; route
       `frontend/src/routes/(app)/open-items/+page.svelte` (état d'URL) ; `accounts.types.ts` (`letterable`) ;
       entrée de menu.
-- [ ] **T2** (AC4) — sélection multi-pages, somme `big.js`, état du bouton, `POST`, refus (tout 404/409 :
+- [x] **T2** (AC4) — sélection multi-pages, somme `big.js`, état du bouton, `POST`, refus (tout 404/409 :
       rechargement, sélection effacée) et succès.
-- [ ] **T3** (AC5) — panneau des propositions.
-- [ ] **T4** (AC6, AC11) — panneau du groupe, `DELETE`, champ « Code » ; composant de lien de code.
-- [ ] **T5** (AC7, AC10) — bandeau de frontière ; rôles.
-- [ ] **T6** (AC11 part i) — clés ×4 locales, bornes de `i18n-keys.test.ts`, gardes nommées.
-- [ ] **T7** (AC19) — `README.md`, ligne v0.13.0.
-- [ ] **T8** — Tests (liste ci-dessous) ; E2E `open-items.spec.ts` (AC13 part i) ; gate backend complet et gate
+- [x] **T3** (AC5) — panneau des propositions.
+- [x] **T4** (AC6, AC11) — panneau du groupe, `DELETE`, champ « Code » ; composant de lien de code.
+- [x] **T5** (AC7, AC10) — bandeau de frontière ; rôles.
+- [x] **T6** (AC11 part i) — clés ×4 locales, bornes de `i18n-keys.test.ts`, gardes nommées.
+- [x] **T7** (AC19) — `README.md`, ligne v0.13.0.
+- [x] **T8** — Tests (liste ci-dessous) ; E2E `open-items.spec.ts` (AC13 part i) ; gate backend complet et gate
       frontend au dernier commit de code.
 
 **Tests de T8** — un par ligne, rattaché à son critère *(Vitest, `features/open-items/*.test.ts` ; les tests
@@ -394,11 +395,213 @@ part entière.
 
 ### Agent Model Used
 
+Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
+
 ### Completion Notes List
+
+- **T0 — relevé du code livré** (tête de la 15-1c-0, `230a635d`) :
+  - contrats lus dans `crates/kesh-api/src/routes/letterings.rs` : `OpenItemsResponse` porte en plus `accountId`,
+    `accountNumber`, `asOf` (non lus, sauf `accountId`/`asOf` pour les liens de code) ; les lignes des propositions
+    n'ont **ni débit ni crédit** (le montant est sur la paire) ; `GET /letterings/{key}` accepte la clé ou le code,
+    minuscules comprises (`parse_group_reference`) ; le `POST` rend `LetteringResponse` (forme de la 15-1a-i) dont
+    l'écran ne lit que `code`. **Aucun type TypeScript** de la vue n'existait : tous écrits ici
+    (`open-items.types.ts`). `fetchAccounts(includeArchived)` existe ; `AccountResponse` n'avait pas `letterable` :
+    ajouté, et les sept fabriques de test qui construisent un `AccountResponse` complet le gagnent
+    (`letterable: false`).
+  - replis des trois clés d'AC6, valeurs `fr-CH` entières (une ligne chacune) : `error-lettering-is-document`
+    (« Ce lettrage est celui d'une pièce : il suit la pièce et ses règlements, et ne se défait pas à la main. »),
+    `error-lettering-line-owned-by-document`, `error-lettering-all-lines-in-closed-periods` — repris au caractère près.
+  - clés réemployables (AC4, AC8) : aucune « débiteur / créditeur » ni texte du 404 dans un espace global ; les clés
+    de `features/` voisines sont interdites par `lint-i18n-ownership` → `open-items-*` neuves. Réemployées :
+    `common-loading`, `common-previous`, `common-next` (valeurs du catalogue).
+  - bornes de `i18n-keys.test.ts` à la base : `sitesTotal` 1923, `sitesNonResolus` 31, `relais` 6, `sitesGabarit` 10.
+  - preset E2E `with-company` (relevé sur l'API d'un backend de test) : comptes `1000 Caisse CI`, `1100 Banque CI`,
+    `2000 Capital CI` lettrables (aucun compte bancaire) ; `defaultReceivableAccountId` = `1100`. Le scénario (1) le
+    vérifie à l'exécution (`letterable` vrai) au lieu de le configurer.
+- **T1–T5** — `features/open-items/` : `open-items.types.ts`, `open-items.api.ts`, `open-items.ts` (logique pure, sans
+  clé), `open-items-labels.ts` (tous les textes, `switch` exhaustifs), `OpenItemsScreen.svelte` (l'écran ; l'URL est
+  la source de vérité, C-15-1c-i-1), `OpenItemsTable.svelte`, `ProposalsPanel.svelte`, `LetteringGroupPanel.svelte`,
+  `DocumentCell.svelte`, `LetteringCodeLink.svelte` (aucune clé i18n) ; route `routes/(app)/open-items/+page.svelte`
+  (passe-plat) ; entrée `nav-open-items` au groupe Mensuel, entre Réconciliation et Rapports.
+- **T6** — 73 clés neuves ×4 locales (72 `open-items-*` + `nav-open-items`), vocabulaire C-15-1a-i-4 (de *Ausgleich*,
+  en *matching*, it *abbinamento*, vouvoiement pluriel) ; *Abstimmung / Reconciliation / Riconciliazione* n'apparaissent
+  que pour nommer le menu de la réconciliation (bandeau d'AC7). Aucune expression de sélection Fluent (pluriels évités
+  par la tournure). Bornes recomptées aux deux bornes (`grep -o "i18nMsg("` fichier par fichier ; aucun fichier
+  n'existait à `230a635d`) : `sitesTotal` **1923 → 2015** (+92 : labels 26, écran 24, liste 19, groupe 12,
+  propositions 10, route 1) ; `sitesNonResolus`, `relais`, `sitesGabarit` inchangés ; garde « libellé en dur »
+  **47 → 60** candidates (`ecartee` 7 → 14, `conforme` 40 → 46, les treize nommées au commentaire) ; garde « un
+  repli par clé » étendue à `open-items-` et `error-lettering-` (C-15-1c-i-5), **214 → 289** clés relevées.
+- **T7** — README, ligne v0.13.0 : l'écran (15-1c-i) passe sous « Livré sur `main` » ; seule la 15-1c-ii reste « À
+  venir ». Relu : `sed -n 223p README.md` → « … (15-1c-0) ; l'écran des postes ouverts — consulter un compte à une
+  date, lettrer à la main ou sur proposition, ouvrir et délettrer un groupe (15-1c-i). **À venir** : le lettrage
+  montré sur la fiche d'écriture, au Grand livre et au manuel (15-1c-ii) … ».
+- **T8 — tests** : **86** tests Vitest neufs (recompté : 116 → 121 fichiers, 1167 → 1253 tests au `test:unit`
+  complet, base `230a635d` → commit de développement), en cinq fichiers : `open-items.test.ts` (16), 
+  `open-items-labels.test.ts` (11), `OpenItemsTable.test.ts` (13), `panels.test.ts` (13), `OpenItemsScreen.test.ts`
+  (33, dont sept engendrés par la boucle des codes 409) — tests 1 à 12 de la fiche couverts (renvois dans les titres). E2E `open-items.spec.ts` : **6 scénarios**, 6/6
+  verts sur la branche (backend port 3027, base `kesh_e2e_1ci`) ; `sidebar-navigation.spec.ts` rejoué, 4/4.
+  Gardes Rust des catalogues (`kesh-i18n` + `textes_coherents`) : 51/51.
+- **Mutations** (fichier restauré puis `touch`é après chacune ; filtre `src/lib/features/open-items`) — **toutes
+  rouges** :
+  | # | mutation | rougit |
+  |---|---|---|
+  | M1 | prévision « toutes closes » retirée | état du bouton, période close |
+  | M2 | `CONCURRENT_CHANGE` exclu des refus périmés | `isStaleRefusal` ; 409 `CONCURRENT_CHANGE` au `POST` ; refus au clic 409 |
+  | M3 | somme en `parseFloat` | zéro exact `0.1 + 0.2 − 0.3` |
+  | M4 | lien vers une transaction bancaire | table des cinq liens (pure et rendue) |
+  | M5 | sens ignorant le signe | sens pur ; pied « créditeur » ; libellé du pied |
+  | M6 | propositions rechargées au changement de date | « changer de date … ne recharge pas les propositions » |
+  | M7 | case sur `document == null` au lieu de `manuallyLetterable` | case ssi `manuallyLetterable` |
+  | M8 | « Délettrer » toujours offert | groupe `document` ; deux autres motifs |
+  | M9 | numéro de pièce = premier document quelconque | facture + avoir (pur et rendu) |
+  | M10 | sélection gardée sur un refus périmé | les sept 409 et le 404 au `POST` |
+  | M11 | date UTC (mal formée) écrite dans l'URL | `asOf` absent ; `asOf` mal formé |
+  | M12 | `group` laissé dans l'URL après un délettrage | 204 → `group` retiré |
+- **Modules** (signal D5, déclaré) : 2 crates/paquets (`frontend`, `kesh-i18n`) ; au grain fin les 8 annoncés —
+  pas de découpage.
 
 ### File List
 
+- `frontend/src/lib/features/open-items/` (neuf) : `open-items.api.test.ts` (revue P1), `open-items.types.ts`, `open-items.api.ts`, `open-items.ts`,
+  `open-items-labels.ts`, `OpenItemsScreen.svelte`, `OpenItemsTable.svelte`, `ProposalsPanel.svelte`,
+  `LetteringGroupPanel.svelte`, `DocumentCell.svelte`, `LetteringCodeLink.svelte`, `open-items.test.fixtures.ts`,
+  `open-items.test.ts`, `open-items-labels.test.ts`, `OpenItemsTable.test.ts`, `panels.test.ts`,
+  `OpenItemsScreen.test.ts`
+- `frontend/src/routes/(app)/open-items/+page.svelte` (neuf)
+- `frontend/src/routes/(app)/+layout.svelte`
+- `frontend/src/lib/features/accounts/accounts.types.ts`
+- fabriques de test (`letterable`) : `features/bank-accounts/BankAccountJournalLinkForm.test.ts`,
+  `features/opening-balances/opening-balances-totals.test.ts`, `features/reconciliation/ManualMatchModal.test.ts`,
+  `features/reconciliation/TransactionSplitModal.test.ts`, `routes/(app)/accounts/accounts-page.test.ts`,
+  `routes/(app)/bank-accounts/bank-accounts-page.test.ts`,
+  `routes/(app)/settings/opening-balances/opening-balances-page.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`, `i18n-libelle-en-dur.test.ts`, `i18n-un-repli-par-cle.test.ts`
+- `frontend/tests/e2e/open-items.spec.ts` (neuf)
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`
+- `README.md`
+- `_bmad-output/implementation-artifacts/15-1c-i-ecran-postes-ouverts.md`,
+  `sprint-status.yaml`, `epic-15-choix-autonomes.md` (C-15-1c-i-1 à 7), `15-1c-ii-lettrage-dans-kesh.md` (« Reçu de la 15-1c-i »)
+
 ## Change Log
+
+### Clôture — 2026-10-10 (Opus 5.5) — **REVUE CLOSE, story `done`**
+
+**Commits** (sur `origin/main` `4d5fd06c`, la 15-1c-0 fusionnée — rebase par `git rebase --onto origin/main 230a635d`, sans
+conflit, arbres de base identiques) : développement **`be6afc26`**, prompt P1 `dd30031a`, remédiation P1 **`13439ad8`**, prompt
+P2 `89e9b621`, remédiation P2 **`60e045a8`**, reçu 15-1c-ii `21572715`, prompt P3 `4eef3ad1`, remédiation P3 (tests seuls)
+**`b3329c44` = dernier commit de code**.
+
+**Gates au dernier commit de code `b3329c44`** (exécutés) : `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest ;
+base `kesh_1ci` remise à zéro avant, sans redémarrer MariaDB) **3338 passés, 5 ignorés** (`kesh-gate-logs/15-1c-i-gate-final.log`
+— même total qu'au commit de développement, la story n'ajoute aucun test Rust ; les gardes des catalogues y sont) ; frontend
+— `npm run check` **0 erreur** (27 avertissements préexistants, aucun dans `open-items`), `lint-i18n-ownership` vert,
+`test:unit` **122 fichiers / 1270 tests** (1167 à la base : +103), `build` vert (`15-1c-i-frontend.log`) ; **E2E complet**
+(port 3027, base `kesh_e2e_1ci` neuve migrée, binaire et build de `b3329c44`, montage de `docs/testing.md`, `/health` :
+`smtpConfigured: true`) : **251 passés, 9 échoués, 19 ignorés** (279) — jugés fichier par fichier contre `docs/testing.md`
+§ « Les échecs attendus » : sept KF-029 (#97) (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`,
+`:77`, `:150`) et deux KF-045 (#421) (`invoices:415`, `:439`, suite terminée à 07:17 UTC, avant 12:00) ; **aucun hors
+liste** ; les six scénarios d'`open-items.spec.ts` verts (`15-1c-i-e2e.log`).
+
+### Revue de code P3 ciblée — 2026-10-10 (Haiku 4.5, une lentille, commit `60e045a8`) — REVUE CLOSE
+
+**Prompt** : `15-1c-i-review-prompt-p3-ciblee.md`. **Rapport** : `kesh-gate-logs/15-1c-i-review-p3-B.md` — **0 C / 0 H / 1 M /
+2 L**, sept axes déclarés exercés (relus sur le fichier final par `grep -nF`) ; non exercés : toute exécution, le comportement
+réel de Chromium et d'`APIRequestContext.delete`.
+
+| finding | verdict |
+|---|---|
+| P3-B1 MEDIUM — le nettoyage de l'E2E (6) ne signale plus un `DELETE` refusé (né de la remédiation P2, B2-6) | **confirmé** (`grep -nF "await admin.delete"` → l. 280, sans assertion) et **corrigé** : le nettoyage affirme le 204 quand le corps du test est vert, et seulement alors — il ne masque pas un échec d'origine. Signal D5 : second défaut né d'une remédiation, **dans un fichier de test** ; déclaré, sans découpage |
+| P3-B2 LOW — date valide saisie puis quittée non testée | **corrigé** : test neuf |
+| P3-B3 LOW — retirer `onblur` ne ferait rougir aucun test | **réfuté par mutation** : sans `onblur={onDateBlur}`, « E-4, B2-1 » rougit (`1 failed / 101 passed`) |
+
+**La remédiation ne touche aucune ligne de code de production** (`OpenItemsScreen.test.ts`, `open-items.spec.ts`) — la boucle
+se **clôt** (§ « La passe ciblée », critère de clôture). **Trend** : P1 (Sonnet ×3, complète) **5 MEDIUM** (4 distincts,
+d'origine) → remédiation avec code de production → P2 (Opus ×3, complète) **4 MEDIUM** (dont 1 né de P1) → remédiation avec
+code de production → P3 ciblée (Haiku) **1 MEDIUM** (né de P2, dans un test) → remédiation sans code de production → close.
+**Modèles** : Opus 5.5 (développement, remédiations, orchestration), Sonnet 5.5 (P1), Opus 5.5 (P2), Haiku 4.5 (P3 ciblée).
+Choix : **C-15-1c-i-1 à 7**. Signal D5 : déclaré deux fois (P2, P3), recyclage d'un correctif chaque fois borné à une
+fonction ou à un test — pas de découpage, rendu à l'orchestrateur. Tests Vitest de l'écran : **103**.
+
+### Revue de code P2 — 2026-10-10 (Opus 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
+
+**Prompt** : `15-1c-i-review-prompt-p2.md` (diff `4d5fd06c..13439ad8`, remédiation P1 relue d'abord). **Rapports** :
+`kesh-gate-logs/15-1c-i-review-p2-{B,E,A}.md` — B **0 C / 0 H / 1 M / 5 L**, E **0 / 0 / 3 M / 5 L**, A **0 / 0 / 0 / 8 L**.
+Axes déclarés : 1 à 4 exercés par B et E, 5 et 6 en partie (B, E), les six par A ; non exercée : toute exécution (reprise
+ici). Écarts aux interdits déclarés par deux lentilles : fichiers de travail hors dépôt (scratchpad, et `kesh-gate-logs/`
+aussitôt supprimés) — rien d'écrit dans le dépôt (`git status` propre avant la remédiation). MEDIUM vérifiés par `grep -nF`
+(`value = asOf` l. 258, `y < 1000` l. 41, condition du rabattement l. 141).
+
+⚠️ **Signal D5 déclaré** : B2-1 = E2-1 est **né de la remédiation P1** (la restauration du champ date, correctif d'E-4) —
+le motif de recyclage du `CLAUDE.md`. Pas de découpage : un correctif d'une fonction, aucun module de plus ; consigné ici
+et rendu à l'orchestrateur.
+
+| finding | verdict |
+|---|---|
+| B2-1 = E2-1 MEDIUM — la restauration à chaque `change` casse la frappe de l'année (`0002`, `0020`…) | **corrigé** : `change` ignore une valeur intermédiaire, `blur` restaure ; test, mutation P1 (restauration au `change`) rouge |
+| E2-2 MEDIUM — rabattement : `offset = 0` et garde `seq` retirables sans rougir | **corrigé** : test « dernière page » (160 → 120 lignes, page 4 → page 3) et test « page vide tardive d'un compte quitté, nouveau compte en page 2 » ; mutations P2, P3 rouges |
+| E2-3 MEDIUM — chemin périmé du `DELETE` prouvé en partie | **corrigé** : sélection vidée et propositions relues sur 409 et 404, liste relue sur 204 ; mutation P4 rouge |
+| B2-2 = E2-4 LOW — geste en vol et changement de compte | **corrigé** : sélecteur et date désactivés pendant `busy` ; test, mutation P5 rouge |
+| E2-5 LOW — ensemble vidé à `total = 0` | **corrigé** (page 1) ; test, mutation P6 rouge |
+| B2-5 LOW — code ressaisi : message non vidé | **corrigé** |
+| B2-4 = A2-5 LOW — `open-items-no-account` recopie R4 | **corrigé** : « Aucun compte de ce plan comptable ne se lettre. » (×4, terme du menu de chaque locale) |
+| B2-6 LOW — `expect` dans le `finally` de l'E2E (6) | **corrigé** (nettoyage sans assertion) |
+| A2-1 LOW — File List et décomptes périmés | **corrigé** (C-15-1c-i-1 à 7, fichier de test API) |
+| A2-2 LOW — Status sans la phrase du menu | **corrigé** |
+| A2-3 LOW — T0 de la 15-1c-ii sans renvoi au reçu | **corrigé** (renvoi dans son T0) |
+| A2-6 LOW — 404 du `POST` sans preuve du rechargement de la liste | **corrigé** |
+| B2-3 LOW — deux et quatre décimales dans une colonne | **accepté** : une fraction de centime est rare et doit se voir (E-7) |
+| E2-6 LOW — lien vers le groupe déjà ouvert sans relecture | **accepté** : le champ « Code » relit (E-9) ; un lien identique ne change pas l'URL |
+| E2-7, A2-4 LOW — absences E2E avant preuve de présence | **acceptés** : (2) vérifie après le message et après le rechargement ; (1) après `open-items-list` visible |
+| E2-8 LOW — collision de numéro de compte entre runs | **accepté** : chaque spec repart du preset (`seedTestState`) |
+| A2-7 LOW — entrée de menu sans test | **accepté** : l'E2E atteint l'écran par l'URL ; `sidebar-navigation.spec.ts` rejoué vert |
+| A2-8 LOW — « Rapprochements proposés » près du « rapprochement des relevés » | **accepté** : deux libellés prescrits ; signalé à la 15-1c-ii (manuel) |
+
+Décomptes après remédiation (recomptés) : **102** tests Vitest de l'écran (97 + 5), `test:unit` complet **122 fichiers /
+1269 tests** ; clés inchangées (74 `open-items-*`). La remédiation **touche du code de production** (`OpenItemsScreen.svelte`)
+mais une seule fonction de saisie et la condition du rabattement : passe **P3 ciblée** (Haiku, une lentille) sur ce commit.
+
+### Revue de code P1 — 2026-10-10 (Sonnet 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
+
+**Prompt** : `15-1c-i-review-prompt-p1.md` (diff `4d5fd06c..be6afc26`, après rebase sur `main` — 15-1c-0 fusionnée,
+arbre de base identique à `230a635d`). **Rapports** : `kesh-gate-logs/15-1c-i-review-p1-{B,E,A}.md` — B **0 C / 0 H / 1 M /
+6 L**, E **0 / 0 / 3 M / 6 L**, A **0 / 0 / 1 M / 7 L**. Axes déclarés : B axes 1–5, E axes 1–4 et 5 en partie, A axe 6 et
+la conformité ; non exercée par les trois : toute exécution (reprise ici : mutations, gates). Les MEDIUM vérifiés par
+`grep -nF` avant correction (`Seq` : trois branches nulles sans avance du numéro ; `offset = 0` seul site ; manuel ligne 133).
+
+| finding | verdict |
+|---|---|
+| B-1 = E-2 (= A-2 LOW) MEDIUM — dernière page vidée par un lettrage : « 51–50 sur 50 », « Aucun poste ouvert » | **corrigé** : `loadList` se rabat sur la dernière page non vide ; test et mutation R4 rouge |
+| E-1 (= B-2 LOW) MEDIUM — un groupe fermé en cours de lecture revient | **corrigé** : les trois numéros de requête avancent aussi sur la branche « rien à lire » ; test (réponse différée) et mutation R1bis rouge |
+| E-3 MEDIUM — `offset = 0` et gardes `seq` retirables sans rougir | **corrigé** : deux tests (page 2 → autre compte ; liste tardive d'un compte quitté), mutations R3 et R2 rouges |
+| A-1 MEDIUM — le manuel énumère le groupe Mensuel sans « Postes ouverts » | **reclassé en dette suivie** (règle d'exception) : propriétaire la 15-1c-ii (le manuel est à elle, pas de tag entre les deux) — « Reçu de la 15-1c-i » ajouté à sa fiche avec la commande de repérage ; choix C-15-1c-i-7 |
+| E-4 = B-5 LOW — champ date vidé | **corrigé** (le champ retrouve la date de la vue) ; test |
+| E-5 = B-7 LOW — message et lien de code d'une vue quittée | **corrigé** (message vidé au changement de compte ou de date) ; test, mutation R5bis rouge |
+| E-6 = B-4 LOW — échec des comptes muet, aucun compte lettrable muet | **corrigé** : deux messages (`open-items-accounts-error`, `open-items-no-account`, ×4 locales) ; test |
+| E-7 LOW — fraction de centime affichée « 0.00 » | **corrigé** : quatre décimales quand le montant porte une fraction de centime ; test, mutation R7 rouge |
+| E-9 LOW — même code ressaisi après un échec | **corrigé** ; test, mutation R6 rouge |
+| E LOW — `asOf` omis à l'API sans rougir | **corrigé** : `open-items.api.test.ts` ; mutation R8 rouge |
+| A-8 LOW — nettoyage E2E du scénario (6) hors `finally` | **corrigé** |
+| A-3 LOW — phrase « N autres » | **consigné** C-15-1c-i-7 (sans pluriel, garde des sélecteurs Fluent) |
+| B-3 LOW — sélection vidée après une proposition | **accepté** : C-15-1c-i-3 |
+| B-6 = E-8 = A-5 LOW — `today` figé au montage | **accepté** : la date par défaut est lue au chargement, comme l'URL qu'elle écrit ; un rechargement la relit |
+| A-4 LOW — aide en `title` | **accepté** : C-15-1c-i-5 |
+| A-6 LOW — infobulle vide hors des trois causes | **accepté** : aucune cause n'est à inventer ; la fiche n'en prescrit que trois |
+| A-7 LOW — « par l'API » et « l'écran viendra » | **sans objet ici** : déjà à la 15-1c-ii |
+
+Décomptes après remédiation (recomptés) : **97** tests Vitest de l'écran (86 + 11 : 8 à l'écran, 1 aux libellés, 2 à
+l'API — nouveau fichier), `test:unit` complet **122 fichiers / 1264 tests** ; **74** clés `open-items-*` par locale ;
+`sitesTotal` 2015 → **2017** ; garde « un repli par clé » 289 → **291** ; garde « libellé en dur » inchangée (60).
+**Gate backend complet au commit de développement `be6afc26`** (base `kesh_1ci` remise à zéro, sans redémarrer MariaDB) :
+`scripts/test-fast.sh` **3338 passés, 5 ignorés** (`kesh-gate-logs/15-1c-i-gate-dev.log`). La remédiation **touche du code
+de production** (l'écran) : une passe P2 complète suit. Signal D5 : levé au sens strict (P1 : trois MEDIUM), mais ce sont des
+défauts **d'origine**, distincts, aucun né d'une remédiation — pas de découpage (D5 amendé).
+
+### Développement — 2026-10-10 (Opus 5.5, en autonomie)
+
+T0 à T8 faits sur la tête de la 15-1c-0 (`230a635d`). 86 tests Vitest neufs, 6 scénarios E2E verts sur la branche,
+douze mutations toutes rouges. Choix **C-15-1c-i-1 à 6**. Tests ciblés exécutés (Vitest complet 1253/1253, gardes
+Rust des catalogues 51/51, `npm run check` 0 erreur, `lint-i18n-ownership` vert) ; gate complet, frontend et E2E
+complet au dernier commit de code, après le rebase sur `main` (15-1c-0 fusionnée).
 
 ### Création — 2026-10-09 (Opus 5.5, remédiation de la validation P1 de la 15-1c, en autonomie)
 

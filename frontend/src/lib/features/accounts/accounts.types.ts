@@ -54,6 +54,12 @@ export interface AccountResponse {
 	role: AccountRole | null;
 	/** Postabilité — indicatif en 14-3a, appliqué à la saisie par 14-3b. */
 	postable: boolean;
+	/**
+	 * Lettrable (Story 15-1b AC11) — calculé par le serveur
+	 * (`letterings::is_letterable`, comptes bancaires exclus) : aucune règle de
+	 * lettrabilité n'est recopiée côté client (Story 15-1c-i, AC1).
+	 */
+	letterable: boolean;
 	version: number;
 	createdAt: string;
 	updatedAt: string;

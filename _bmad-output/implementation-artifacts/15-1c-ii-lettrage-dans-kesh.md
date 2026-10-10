@@ -194,6 +194,7 @@ contre `docs/testing.md` § « Les échecs attendus ».
 
 - [ ] **T0** — Rebaser sur `main` après le merge de la 15-1c-i ; inventaires d'AC12 (manuels), d'AC14
       (CHANGELOG), d'AC17 (`api-external.md`) ; bornes de `i18n-keys.test.ts` ; écrire au Dev Agent Record.
+      *(Reçu de la 15-1c-i : lire la section « Reçu de la 15-1c-i » plus bas — la phrase du menu au manuel.)*
 - [ ] **T1** (AC9) — fiche d'écriture : colonne, lien du motif `ENTRY_LETTERED`.
 - [ ] **T2** (AC9) — Grand livre : type `LedgerLine.letteringCode`, colonne, `colspan` calculés, lien « Postes
       ouverts de ce compte » (comptes lettrables passés par la page des rapports).
@@ -246,6 +247,22 @@ livre, s'il les compte).
 - `\keshVersion` et les macros de version des manuels relèvent de la **release** (`CLAUDE.md`, point 4-bis), pas de
   cette story.
 - **Après merge** : vérifier `gh issue view 518 --json state` (le mot-clé `closes #518` est sur la PR, squash).
+
+## Reçu de la 15-1c-i (revue de code P1, 2026-10-10)
+
+*Section ajoutée par la remédiation de la revue de code P1 de la 15-1c-i (finding A-1). Elle ne réécrit pas cette
+fiche : elle liste ce que l'écran a changé et que **cette** story doit intégrer à son T0.*
+
+1. **Le menu a une entrée neuve** — « Postes ouverts » (`nav-open-items`), groupe **Mensuel**, entre
+   « Réconciliation » et « Rapports » (`routes/(app)/+layout.svelte`). La phrase du manuel qui énumère ce groupe —
+   `docs/manual/fr/user-manual.tex`, « \emph{Mensuel} (écritures, réconciliation, rapports) », dans l'item
+   « Barre latérale gauche » de l'interface — est **fausse** depuis la 15-1c-i et n'est atteinte par aucun des
+   `grep` d'inventaire d'AC12 (`lettr`, `par l.API`, `viendra`). À corriger dans T4 avec le reste du manuel (PDF
+   régénéré, contrôle aplati) : « écritures, réconciliation, postes ouverts, rapports ». Repérage :
+   `grep -nF 'réconciliation, rapports' docs/manual/fr/*.tex`.
+2. **Textes de l'écran à reprendre au manuel tels quels** (catalogue fr-CH, clés `open-items-*`) : le bandeau de
+   frontière (`open-items-boundary`), la phrase du pied (`open-items-balance-equal`), les motifs et états
+   (`open-items-reason-*`, `open-items-state-*`).
 
 ## Dérogation règle de splitting
 
