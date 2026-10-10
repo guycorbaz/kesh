@@ -10,21 +10,39 @@
 //! 4. Lit le **premier record** post header skip → early-reject
 //!    `CsvError::ProfileMisconfigured` si indices `column_mapping`
 //!    hors-borne (Pass 2 M'1 + Pass 3 M''2).
+//!
+//!    **Lignes à ignorer** (Story 26-1, #621) : `header_row_count` compte
+//!    les lignes **non vides** avant les données, ligne de titres
+//!    comprise — une ligne vide (aucun caractère) est avalée par le
+//!    lecteur `csv` et n'entre pas dans le compte (relevé UBS : 9).
+//!    **Garde de surcomptage** : juste après le saut, avant de lire le
+//!    premier enregistrement de données, la dernière ligne ignorée est
+//!    examinée ; si sa cellule date se lit au format du profil, le parseur
+//!    refuse par [`CsvError::HeaderSkipsData`] (une transaction aurait
+//!    disparu). La garde ne voit qu'une ligne **datée**.
 //! 5. Itère sur tous les records (incluant le 1er) : pour chaque
 //!    ligne, mappe les cellules via `column_mapping` → soit
 //!    `ImportedTransaction` valide, soit `CsvLineError` collecté.
+//!    En mode débit/crédit séparés, le **sens des débits** est le réglage
+//!    [`DebitSign`] du profil, jamais une déduction : `Positive` → montant
+//!    `-débit`, `Negative` → montant `débit` ; un montant de signe
+//!    contraire à sa colonne est une erreur `AMOUNT_SIGN_MISMATCH`.
 //! 6. Cap collection à `MAX_CSV_LINE_ERRORS = 100` (Pass 2 H'1)
-//!    avec `total_errors` + `truncated` flag.
+//!    avec `total_errors` + `truncated` flag. Les erreurs de signe ont
+//!    leur **propre** compteur et leur propre vecteur, indépendants de ce
+//!    plafond général.
 //! 7. Si `transactions.is_empty()` → `CsvError::EmptyFile`
 //!    (Pass 2 M'2 header-only file).
-//! 8. Si `errors` non-vide → `CsvError::PartialFailure { ... }`
-//!    (strict reject FR51 v0.1).
+//! 8. Si au moins une erreur de signe → `CsvError::AmountSignMismatch`
+//!    (refus entier, **non confirmable** — Story 26-1) ; sinon, si
+//!    `errors` non-vide → `CsvError::PartialFailure { ... }`
+//!    (strict reject FR51 v0.1, ou import des valides sur confirmation).
 //! 9. Sinon retourne `ImportedStatement` avec
 //!    `period_from = min(booking_dates)` et
 //!    `period_to = max(booking_dates)` (Pass 1 H2).
 
 use crate::csv::encoding::{decode_bytes, detect_encoding};
-use crate::csv::profile::CsvProfile;
+use crate::csv::profile::{CsvProfile, DebitSign};
 use crate::error::{CsvError, CsvLineError, CsvLineErrorCode, MAX_CSV_LINE_ERRORS};
 use crate::types::{ImportedStatement, ImportedTransaction, SourceFormat};
 use chrono::NaiveDate;
@@ -176,18 +194,39 @@ fn parse_csv_collect_inner(
         .flexible(true) // tolère lignes de longueur variable, on gère l'erreur RowTooShort manuellement
         .from_reader(decoded.as_bytes());
 
-    // 5. Skip extra header rows (Pass 1 H4 saturating_sub anti-underflow)
+    // 5. Dernière ligne ignorée, pour la garde de surcomptage (Story 26-1,
+    //    AC5). Avec `header_row_count == 1`, c'est l'enregistrement
+    //    d'en-têtes, que `records()` ne rend pas : le lire ici, AVANT
+    //    d'emprunter le lecteur pour itérer. Sa position est celle qu'il
+    //    porte lui-même (`headers()?.position()`), pas `reader.position()`
+    //    après lecture, qui vaut déjà la ligne suivante.
+    let mut last_skipped: Option<csv::StringRecord> = None;
+    if profile.header_row_count == 1 {
+        let headers = reader
+            .headers()
+            .map_err(|e| CsvError::Io(format!("header row : {}", e)))?;
+        last_skipped = Some(headers.clone());
+    }
+
+    // 5.b Skip extra header rows (Pass 1 H4 saturating_sub anti-underflow)
     let extra_skip = profile.header_row_count.saturating_sub(1) as usize;
     let mut iter = reader.records();
     for _ in 0..extra_skip {
         match iter.next() {
-            Some(Ok(_)) => continue,
+            Some(Ok(rec)) => last_skipped = Some(rec),
             Some(Err(e)) => return Err(CsvError::Io(format!("skip header row : {}", e))),
             None => {
                 // Pas assez de lignes pour le header → MissingHeader.
                 return Err(CsvError::MissingHeader);
             }
         }
+    }
+
+    // 5.c Garde de surcomptage — juste après le saut, AVANT de lire le
+    //     premier enregistrement de données : sur un fichier dont la seule
+    //     transaction est avalée, `EmptyFile` répondrait sinon avant elle.
+    if let Some(ref rec) = last_skipped {
+        guard_header_skips_data(rec, profile)?;
     }
 
     // 6. Lire 1er record de données pour early-reject indices OOB
@@ -229,49 +268,18 @@ fn parse_csv_collect_inner(
     }
 
     // 7. Itérer sur tous les records (1er + suite)
-    let mut transactions: Vec<ImportedTransaction> = Vec::new();
-    let mut errors: Vec<CsvLineError> = Vec::new();
-    let mut total_errors: usize = 0;
-
-    let process = |record: &csv::StringRecord,
-                   line: usize,
-                   transactions: &mut Vec<ImportedTransaction>,
-                   errors: &mut Vec<CsvLineError>,
-                   total_errors: &mut usize| {
-        match parse_row(record, line, profile) {
-            Ok(tx) => transactions.push(tx),
-            Err(line_err) => {
-                *total_errors += 1;
-                if errors.len() < MAX_CSV_LINE_ERRORS {
-                    errors.push(line_err);
-                }
-            }
-        }
-    };
+    let mut acc = RowAccumulator::default();
 
     let first_line = first_record.position().map(|p| p.line()).unwrap_or(0) as usize;
-    process(
-        &first_record,
-        first_line,
-        &mut transactions,
-        &mut errors,
-        &mut total_errors,
-    );
+    acc.push(parse_row(&first_record, first_line, profile));
 
     for result in iter {
         match result {
             Ok(record) => {
                 let line = record.position().map(|p| p.line()).unwrap_or(0) as usize;
-                process(
-                    &record,
-                    line,
-                    &mut transactions,
-                    &mut errors,
-                    &mut total_errors,
-                );
+                acc.push(parse_row(&record, line, profile));
             }
             Err(e) => {
-                total_errors += 1;
                 // Pass 1 review G1 H2 : extraire la position depuis l'erreur
                 // csv (champ quoted mal formé, NUL byte, etc.) plutôt que
                 // hardcoder line=0. Le crate csv 1.3 expose `position()`
@@ -283,16 +291,34 @@ fn parse_csv_collect_inner(
                     csv::ErrorKind::UnequalLengths { pos: Some(p), .. } => p.line() as usize,
                     _ => 0,
                 };
-                if errors.len() < MAX_CSV_LINE_ERRORS {
-                    errors.push(CsvLineError::new(
-                        line,
-                        CsvLineErrorCode::RowTooShort,
-                        Some(e.to_string()),
-                    ));
-                }
+                acc.push_general(CsvLineError::new(
+                    line,
+                    CsvLineErrorCode::RowTooShort,
+                    Some(e.to_string()),
+                ));
             }
         }
     }
+
+    // 7.b Refus de signe (Story 26-1, #620) : décidé sur le compteur PROPRE
+    //     au signe, jamais sur le vecteur général écrêté (qui peut avoir été
+    //     rempli par 100 erreurs d'une autre nature avant la première de
+    //     signe). Il l'emporte sur les autres erreurs de ligne, non
+    //     rapportées : régler le profil d'abord.
+    if acc.sign_total > 0 {
+        return Err(CsvError::AmountSignMismatch {
+            truncated: acc.sign_total > MAX_CSV_LINE_ERRORS,
+            whole_debit_column: acc.whole_debit_column(),
+            errors: acc.sign_errors,
+            total_errors: acc.sign_total,
+        });
+    }
+    let RowAccumulator {
+        transactions,
+        errors,
+        total_errors,
+        ..
+    } = acc;
 
     // 8. Construit l'`ImportedStatement` candidat (avec les transactions
     //    valides, possiblement vide si toutes ont échoué). Story 8-3 T4 :
@@ -365,12 +391,132 @@ fn parse_csv_collect_inner(
     Ok(ParseCsvOutcome::AllValid(stmt))
 }
 
-/// Parse une ligne CSV en `ImportedTransaction` ou `CsvLineError`.
-fn parse_row(
+/// Garde de surcomptage (Story 26-1, AC5) : refuse si la dernière ligne
+/// ignorée porte, dans la colonne date, une valeur qui se lit au format
+/// du profil. Une ligne trop courte pour porter la colonne date, ou dont
+/// la date est vide ou illisible, passe (angle mort assumé, cf.
+/// [`CsvError::HeaderSkipsData`]).
+fn guard_header_skips_data(
     record: &csv::StringRecord,
-    line: usize,
     profile: &CsvProfile,
-) -> Result<ImportedTransaction, CsvLineError> {
+) -> Result<(), CsvError> {
+    let Some(cell) = record.get(profile.column_mapping.date) else {
+        return Ok(());
+    };
+    if NaiveDate::parse_from_str(cell.trim(), &profile.date_format).is_ok() {
+        let line = record.position().map(|p| p.line()).unwrap_or(0) as usize;
+        return Err(CsvError::HeaderSkipsData { line });
+    }
+    Ok(())
+}
+
+/// Ce que `parse_row` a constaté sur la colonne **Débit** d'une ligne
+/// (Story 26-1, C-26-1-25) — sert à calculer `whole_debit_column` sans
+/// rien ajouter au type public [`CsvLineError`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum DebitObservation {
+    /// Aucun débit lu : colonne unique, ligne de crédit, échec avant le
+    /// montant (date, ligne trop courte, ambiguïté, cellules vides) ou
+    /// débit illisible.
+    NotRead,
+    /// Débit lu, égal à zéro (`0.00`, `-0.00`) : hors des deux comptes.
+    Zero,
+    /// Débit lu, non nul, de signe conforme au réglage.
+    Consistent,
+    /// Débit lu, non nul, de signe contraire au réglage.
+    SignMismatch,
+}
+
+/// Issue de [`parse_row`] : la ligne (transaction ou erreur) et
+/// l'observation sur sa colonne Débit.
+#[derive(Debug)]
+struct RowParse {
+    result: Result<ImportedTransaction, CsvLineError>,
+    debit: DebitObservation,
+}
+
+impl RowParse {
+    fn err(e: CsvLineError) -> Self {
+        Self {
+            result: Err(e),
+            debit: DebitObservation::NotRead,
+        }
+    }
+}
+
+/// Accumulateur de la boucle des lignes : transactions valides, erreurs
+/// générales plafonnées, erreurs de signe (compteur et vecteur propres,
+/// Story 26-1, R2-1) et comptes `d`/`e` de `whole_debit_column`.
+#[derive(Default)]
+struct RowAccumulator {
+    transactions: Vec<ImportedTransaction>,
+    errors: Vec<CsvLineError>,
+    total_errors: usize,
+    sign_errors: Vec<CsvLineError>,
+    sign_total: usize,
+    /// `d` : débits lus non nuls.
+    debits_read: usize,
+    /// `e` : débits lus non nuls, en défaut de signe.
+    debits_mismatched: usize,
+}
+
+impl RowAccumulator {
+    fn push(&mut self, row: RowParse) {
+        match row.debit {
+            DebitObservation::Consistent => self.debits_read += 1,
+            DebitObservation::SignMismatch => {
+                self.debits_read += 1;
+                self.debits_mismatched += 1;
+            }
+            DebitObservation::NotRead | DebitObservation::Zero => {}
+        }
+        match row.result {
+            Ok(tx) => self.transactions.push(tx),
+            Err(e) if e.code == CsvLineErrorCode::AmountSignMismatch => {
+                // Compteur et vecteur propres, alimentés quel que soit
+                // l'état du plafond général.
+                self.sign_total += 1;
+                if self.sign_errors.len() < MAX_CSV_LINE_ERRORS {
+                    self.sign_errors.push(e);
+                }
+            }
+            Err(e) => self.push_general(e),
+        }
+    }
+
+    fn push_general(&mut self, e: CsvLineError) {
+        self.total_errors += 1;
+        if self.errors.len() < MAX_CSV_LINE_ERRORS {
+            self.errors.push(e);
+        }
+    }
+
+    /// `whole_debit_column ⇔ d ≥ 2 et e = d` (C-26-1-25) : jamais vrai
+    /// pour un seul débit, qui peut être un remboursement — le conseil de
+    /// changer le réglage l'importerait comme une dépense, en silence.
+    fn whole_debit_column(&self) -> bool {
+        self.debits_read >= 2 && self.debits_mismatched == self.debits_read
+    }
+}
+
+/// Parse une ligne CSV en `ImportedTransaction` ou `CsvLineError`, et
+/// rapporte ce qu'elle a constaté sur la colonne Débit.
+///
+/// Ordre des contrôles : longueur de la ligne, **date**, puis montant —
+/// une date illisible rend `INVALID_DATE` et le signe de la ligne n'est
+/// pas examiné.
+///
+/// Montant en mode débit/crédit séparés (Story 26-1, #620) :
+///
+/// | Réglage `debit_sign` | Colonne Débit `d` | Colonne Crédit `c` |
+/// |---|---|---|
+/// | `Positive` (défaut) | `-d` ; `d < 0` → `AMOUNT_SIGN_MISMATCH` | `c` ; `c < 0` → `AMOUNT_SIGN_MISMATCH` |
+/// | `Negative` | `d` ; `d > 0` → `AMOUNT_SIGN_MISMATCH` | idem |
+///
+/// Zéro (`0.00`, `-0.00`) est accepté partout : la comparaison est
+/// stricte à `Decimal::ZERO`, jamais sur le bit de signe. En colonne
+/// unique (`amount`), le signe du fichier est gardé tel quel.
+fn parse_row(record: &csv::StringRecord, line: usize, profile: &CsvProfile) -> RowParse {
     let cm = &profile.column_mapping;
 
     // Helper : récupère cellule trim ou None si Optional + empty.
@@ -380,30 +526,44 @@ fn parse_row(
     // plus courts (csv flexible mode). Vérifier une dernière fois.
     let max_idx = profile.column_mapping.max_index();
     if record.len() <= max_idx {
-        return Err(CsvLineError::new(line, CsvLineErrorCode::RowTooShort, None));
+        return RowParse::err(CsvLineError::new(line, CsvLineErrorCode::RowTooShort, None));
     }
 
     // Date (obligatoire)
     let date_raw = match get_cell(cm.date) {
         Some(s) if !s.is_empty() => s,
         _ => {
-            return Err(CsvLineError::new(
+            return RowParse::err(CsvLineError::new(
                 line,
                 CsvLineErrorCode::EmptyMandatoryField,
                 Some("date".to_string()),
             ));
         }
     };
-    let booking_date = NaiveDate::parse_from_str(date_raw, &profile.date_format).map_err(|_| {
+    let booking_date = match NaiveDate::parse_from_str(date_raw, &profile.date_format) {
+        Ok(d) => d,
+        Err(_) => {
+            return RowParse::err(CsvLineError::new(
+                line,
+                CsvLineErrorCode::InvalidDate,
+                Some(date_raw.to_string()),
+            ));
+        }
+    };
+
+    let sign_mismatch = |raw: &str| {
         CsvLineError::new(
             line,
-            CsvLineErrorCode::InvalidDate,
-            Some(date_raw.to_string()),
+            CsvLineErrorCode::AmountSignMismatch,
+            Some(raw.to_string()),
         )
-    })?;
+    };
+    let invalid_amount =
+        |raw: &str| CsvLineError::new(line, CsvLineErrorCode::InvalidAmount, Some(raw.to_string()));
 
     // Amount : XOR amount vs debit_credit_split. Priorité parse au
     // debit_credit_split (Pass 1 M16 — DB corrompue protection).
+    let mut debit = DebitObservation::NotRead;
     let amount = if let Some((debit_idx, credit_idx)) = cm.debit_credit_split {
         let debit_raw = get_cell(debit_idx).unwrap_or("");
         let credit_raw = get_cell(credit_idx).unwrap_or("");
@@ -411,62 +571,74 @@ fn parse_row(
         let credit_empty = credit_raw.is_empty();
         match (debit_empty, credit_empty) {
             (true, true) => {
-                return Err(CsvLineError::new(
+                return RowParse::err(CsvLineError::new(
                     line,
                     CsvLineErrorCode::EmptyMandatoryField,
                     Some("amount (debit+credit empty)".to_string()),
                 ));
             }
             (false, false) => {
-                return Err(CsvLineError::new(
+                return RowParse::err(CsvLineError::new(
                     line,
                     CsvLineErrorCode::AmbiguousDebitCredit,
                     None,
                 ));
             }
             (false, true) => {
-                // débit non-vide → amount négatif
-                let parsed = parse_amount(debit_raw, profile.decimal_separator).map_err(|_| {
-                    CsvLineError::new(
-                        line,
-                        CsvLineErrorCode::InvalidAmount,
-                        Some(debit_raw.to_string()),
-                    )
-                })?;
-                -parsed
+                // Débit : le sens est le réglage du profil, jamais une
+                // déduction (décision du Project Lead, #620).
+                let Ok(parsed) = parse_amount(debit_raw, profile.decimal_separator) else {
+                    return RowParse::err(invalid_amount(debit_raw));
+                };
+                let mismatched = match profile.debit_sign {
+                    DebitSign::Positive => parsed < Decimal::ZERO,
+                    DebitSign::Negative => parsed > Decimal::ZERO,
+                };
+                if mismatched {
+                    return RowParse {
+                        result: Err(sign_mismatch(debit_raw)),
+                        debit: DebitObservation::SignMismatch,
+                    };
+                }
+                debit = if parsed == Decimal::ZERO {
+                    DebitObservation::Zero
+                } else {
+                    DebitObservation::Consistent
+                };
+                match profile.debit_sign {
+                    DebitSign::Positive => -parsed,
+                    DebitSign::Negative => parsed,
+                }
             }
             (true, false) => {
-                // crédit non-vide → amount positif
-                parse_amount(credit_raw, profile.decimal_separator).map_err(|_| {
-                    CsvLineError::new(
-                        line,
-                        CsvLineErrorCode::InvalidAmount,
-                        Some(credit_raw.to_string()),
-                    )
-                })?
+                // Crédit : positif, quel que soit le réglage.
+                let Ok(parsed) = parse_amount(credit_raw, profile.decimal_separator) else {
+                    return RowParse::err(invalid_amount(credit_raw));
+                };
+                if parsed < Decimal::ZERO {
+                    return RowParse::err(sign_mismatch(credit_raw));
+                }
+                parsed
             }
         }
     } else if let Some(amount_idx) = cm.amount {
         let amount_raw = match get_cell(amount_idx) {
             Some(s) if !s.is_empty() => s,
             _ => {
-                return Err(CsvLineError::new(
+                return RowParse::err(CsvLineError::new(
                     line,
                     CsvLineErrorCode::EmptyMandatoryField,
                     Some("amount".to_string()),
                 ));
             }
         };
-        parse_amount(amount_raw, profile.decimal_separator).map_err(|_| {
-            CsvLineError::new(
-                line,
-                CsvLineErrorCode::InvalidAmount,
-                Some(amount_raw.to_string()),
-            )
-        })?
+        match parse_amount(amount_raw, profile.decimal_separator) {
+            Ok(a) => a,
+            Err(()) => return RowParse::err(invalid_amount(amount_raw)),
+        }
     } else {
         // validate() bloque déjà ce cas, mais defense in depth
-        return Err(CsvLineError::new(
+        return RowParse::err(CsvLineError::new(
             line,
             CsvLineErrorCode::InvalidAmount,
             Some("profil invalide : ni amount ni debit_credit_split".to_string()),
@@ -490,18 +662,21 @@ fn parse_row(
         .counterparty
         .and_then(|i| get_cell(i).filter(|s| !s.is_empty()).map(String::from));
 
-    Ok(ImportedTransaction {
-        booking_date,
-        value_date: Some(booking_date),
-        amount,
-        currency: "CHF".to_string(),
-        reference,
-        details,
-        end_to_end_id: None,
-        transaction_id: None,
-        counterparty_iban: None,
-        counterparty_name,
-    })
+    RowParse {
+        result: Ok(ImportedTransaction {
+            booking_date,
+            value_date: Some(booking_date),
+            amount,
+            currency: "CHF".to_string(),
+            reference,
+            details,
+            end_to_end_id: None,
+            transaction_id: None,
+            counterparty_iban: None,
+            counterparty_name,
+        }),
+        debit,
+    }
 }
 
 /// Parse un montant string vers `Decimal`, en gérant :
@@ -581,6 +756,7 @@ mod tests {
             field_separator: field_sep,
             encoding: None,
             header_row_count: header_count,
+            debit_sign: DebitSign::Positive,
         }
     }
 
@@ -1053,6 +1229,7 @@ mod tests {
             field_separator: ';',
             encoding: None,
             header_row_count: 1,
+            debit_sign: DebitSign::Positive,
         };
         // validate() rejette ce cas — vérifions :
         assert!(profile.validate().is_err());
@@ -1062,7 +1239,7 @@ mod tests {
         // On teste via une version contournée : construire un parse_row
         // directement avec un record et le profil corrompu.
         let record = csv::StringRecord::from(vec!["2026-01-15", "100.00", ""]);
-        let result = super::parse_row(&record, 1, &profile);
+        let result = super::parse_row(&record, 1, &profile).result;
         // Avec debit=100, credit=empty → amount = -100.
         let tx = result.expect("parse_row corrupt profile prefers split");
         assert_eq!(tx.amount, dec!(-100));
@@ -1271,5 +1448,495 @@ mod tests {
             }
             other => panic!("expected PartialFailure (legacy), got {:?}", other),
         }
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // Story 26-1 — sens des débits (#620), lignes à ignorer (#621)
+    // ─────────────────────────────────────────────────────────────
+
+    /// Fixture synthétique de structure UBS (cf. `tests/fixtures/README.md`).
+    const UBS_FIXTURE: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/csv/ubs_synthetique.csv"
+    ));
+
+    /// Profil UBS recommandé (C-26-1-13) : date de comptabilisation (2),
+    /// débit/crédit (5, 6), référence (9), détails (10), 9 lignes ignorées.
+    fn ubs_profile(sign: DebitSign, header_rows: u8) -> CsvProfile {
+        let mut p = make_profile(
+            ';',
+            '.',
+            header_rows,
+            ColumnMapping {
+                date: 2,
+                amount: None,
+                debit_credit_split: Some((5, 6)),
+                reference: Some(9),
+                details: Some(10),
+                counterparty: None,
+            },
+        );
+        p.debit_sign = sign;
+        p
+    }
+
+    /// Profil `date;debit;credit` à une ligne de titres.
+    fn split_profile(sign: DebitSign) -> CsvProfile {
+        let mut p = make_profile(
+            ';',
+            '.',
+            1,
+            ColumnMapping {
+                date: 0,
+                amount: None,
+                debit_credit_split: Some((1, 2)),
+                reference: None,
+                details: None,
+                counterparty: None,
+            },
+        );
+        p.debit_sign = sign;
+        p
+    }
+
+    /// Valeur d'une clé du préambule de la fixture (`Clé:;valeur;`).
+    fn preamble_value(key: &str) -> Decimal {
+        let text = std::str::from_utf8(&UBS_FIXTURE[3..]).unwrap();
+        let line = text
+            .lines()
+            .find(|l| l.starts_with(key))
+            .unwrap_or_else(|| panic!("clé {key} absente du préambule"));
+        line.split(';').nth(1).unwrap().parse().unwrap()
+    }
+
+    /// Déstructure un refus de signe.
+    fn sign_refusal(outcome: ParseCsvOutcome) -> (Vec<CsvLineError>, usize, bool, bool) {
+        match outcome {
+            ParseCsvOutcome::HardFailure(CsvError::AmountSignMismatch {
+                errors,
+                total_errors,
+                truncated,
+                whole_debit_column,
+            }) => (errors, total_errors, truncated, whole_debit_column),
+            other => panic!("expected HardFailure(AmountSignMismatch), got {other:?}"),
+        }
+    }
+
+    /// AC14-1 : la fixture sous `Negative` → 11 transactions, 9 sorties,
+    /// 2 entrées, somme = solde final − solde initial **lus dans le
+    /// préambule** par le test.
+    #[test]
+    fn ubs_fixture_negative_imports_signs_and_sum() {
+        let outcome = parse_csv_collect(UBS_FIXTURE, &ubs_profile(DebitSign::Negative, 9));
+        let ParseCsvOutcome::AllValid(stmt) = outcome else {
+            panic!("expected AllValid, got {outcome:?}");
+        };
+        assert_eq!(stmt.transactions.len(), 11);
+        assert_eq!(
+            stmt.transactions
+                .iter()
+                .filter(|t| t.amount < Decimal::ZERO)
+                .count(),
+            9
+        );
+        assert_eq!(
+            stmt.transactions
+                .iter()
+                .filter(|t| t.amount > Decimal::ZERO)
+                .count(),
+            2
+        );
+        let sum: Decimal = stmt.transactions.iter().map(|t| t.amount).sum();
+        assert_eq!(sum, dec!(-236.25));
+        assert_eq!(
+            sum,
+            preamble_value("Solde final:") - preamble_value("Solde initial:")
+        );
+        assert_eq!(
+            stmt.transactions.len(),
+            preamble_value("Nombre de transactions")
+                .to_string()
+                .parse::<usize>()
+                .unwrap()
+        );
+        // Référence et détails : colonnes 9 et 10.
+        assert_eq!(
+            stmt.transactions[0].reference.as_deref(),
+            Some("9900111ZZ0000011")
+        );
+        assert_eq!(stmt.transactions[0].details, "Électricité Fictive SA");
+    }
+
+    /// AC14-2 : la période vient de la colonne 2 (date de comptabilisation).
+    #[test]
+    fn ubs_fixture_period_uses_booking_date_column() {
+        let stmt = parse_csv(UBS_FIXTURE, &ubs_profile(DebitSign::Negative, 9)).unwrap();
+        assert_eq!(
+            stmt.period_from,
+            NaiveDate::from_ymd_opt(2026, 1, 6).unwrap()
+        );
+        assert_eq!(stmt.period_to, NaiveDate::from_ymd_opt(2026, 3, 2).unwrap());
+    }
+
+    /// AC14-3 : la même fixture sous `Positive` → refus de signe entier,
+    /// aucune transaction rendue (#620 ne passe plus, ni en silence ni par
+    /// l'import partiel) ; `parse_csv` rend la même `Err`.
+    #[test]
+    fn ubs_fixture_positive_refuses_whole_file() {
+        let (errors, total, truncated, whole) = sign_refusal(parse_csv_collect(
+            UBS_FIXTURE,
+            &ubs_profile(DebitSign::Positive, 9),
+        ));
+        assert_eq!(total, 9);
+        assert!(!truncated);
+        assert!(whole);
+        assert_eq!(errors.len(), 9);
+        assert!(
+            errors
+                .iter()
+                .all(|e| e.code == CsvLineErrorCode::AmountSignMismatch)
+        );
+        assert_eq!(errors[0].line, 11);
+        assert_eq!(errors[0].value.as_deref(), Some("-199.95"));
+        assert!(matches!(
+            parse_csv(UBS_FIXTURE, &ubs_profile(DebitSign::Positive, 9)),
+            Err(CsvError::AmountSignMismatch {
+                total_errors: 9,
+                ..
+            })
+        ));
+    }
+
+    /// AC14-3 (suite) : une erreur de signe et une `INVALID_DATE` sur deux
+    /// lignes → le signe domine ; l'autre erreur n'est pas rapportée.
+    #[test]
+    fn sign_mismatch_dominates_other_line_errors() {
+        let csv = "date;debit;credit\nNOT_A_DATE;10.00;\n2026-01-02;-5.00;\n2026-01-03;7.00;\n";
+        let (errors, total, _, _) = sign_refusal(parse_csv_collect(
+            csv.as_bytes(),
+            &split_profile(DebitSign::Positive),
+        ));
+        assert_eq!(total, 1);
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].line, 3);
+    }
+
+    /// AC14-4 : `header_row_count = 8` → la ligne de titres arrive en
+    /// données ; son erreur est rapportée à la **ligne 9** (la ligne vide
+    /// qui la précède : le lecteur pose la position avant de l'avaler),
+    /// non à sa ligne physique 10.
+    #[test]
+    fn ubs_fixture_header_8_reports_title_row_at_blank_line() {
+        match parse_csv_collect(UBS_FIXTURE, &ubs_profile(DebitSign::Negative, 8)) {
+            ParseCsvOutcome::PartialFailure { valid, errors, .. } => {
+                assert_eq!(valid.transactions.len(), 11);
+                assert_eq!(errors.len(), 1);
+                assert_eq!(errors[0].code, CsvLineErrorCode::InvalidDate);
+                assert_eq!(errors[0].line, 9);
+            }
+            other => panic!("expected PartialFailure, got {other:?}"),
+        }
+    }
+
+    /// AC14-4 (suite) : sans ligne vide devant, le numéro est la ligne
+    /// physique exacte.
+    #[test]
+    fn line_number_is_physical_without_blank_line() {
+        let csv = "a;b;c\nd;e;f\nTitre;Debit;Credit\n2026-01-01;-1.00;\nXX;-2.00;\n";
+        let mut profile = split_profile(DebitSign::Negative);
+        profile.header_row_count = 3;
+        match parse_csv_collect(csv.as_bytes(), &profile) {
+            ParseCsvOutcome::PartialFailure { errors, .. } => {
+                assert_eq!(errors[0].code, CsvLineErrorCode::InvalidDate);
+                assert_eq!(errors[0].line, 5);
+            }
+            other => panic!("expected PartialFailure, got {other:?}"),
+        }
+    }
+
+    /// AC14-5 : `header_row_count = 10` → la première transaction serait
+    /// avalée : refus nommant sa ligne (11, aucune ligne vide devant).
+    #[test]
+    fn ubs_fixture_header_10_refuses_header_skips_data() {
+        assert_eq!(
+            parse_csv_collect(UBS_FIXTURE, &ubs_profile(DebitSign::Negative, 10)),
+            ParseCsvOutcome::HardFailure(CsvError::HeaderSkipsData { line: 11 })
+        );
+    }
+
+    /// AC14-6 : garde muette quand la dernière ligne ignorée est un titre
+    /// (9 lignes, en ligne) ; `header_row_count = 0` n'examine rien.
+    #[test]
+    fn header_guard_silent_on_title_row_and_zero() {
+        let csv = "k1:;v;\nk2:;v;\nk3:;v;\nk4:;v;\nk5:;v;\nk6:;v;\nk7:;v;\nk8:;v;\n\
+                   date;debit;credit\n2026-01-01;-1.00;\n";
+        let mut profile = split_profile(DebitSign::Negative);
+        profile.header_row_count = 9;
+        assert!(matches!(
+            parse_csv_collect(csv.as_bytes(), &profile),
+            ParseCsvOutcome::AllValid(_)
+        ));
+
+        let csv0 = "2026-01-01;-1.00;\n2026-01-02;;3.00\n";
+        profile.header_row_count = 0;
+        match parse_csv_collect(csv0.as_bytes(), &profile) {
+            ParseCsvOutcome::AllValid(stmt) => assert_eq!(stmt.transactions.len(), 2),
+            other => panic!("expected AllValid, got {other:?}"),
+        }
+    }
+
+    /// AC14-6 (F12, M20) : `header_row_count = 1` sur un CSV sans titres →
+    /// refus nommant la **ligne 1** — lue par `headers()?.position()`, pas
+    /// par `reader.position()` après lecture (qui vaudrait 2).
+    #[test]
+    fn header_guard_one_row_reports_line_1() {
+        let csv = "2026-01-01;-1.00;\n2026-01-02;-2.00;\n";
+        assert_eq!(
+            parse_csv_collect(csv.as_bytes(), &split_profile(DebitSign::Negative)),
+            ParseCsvOutcome::HardFailure(CsvError::HeaderSkipsData { line: 1 })
+        );
+    }
+
+    /// AC14-6 (M13) : limite de longueur — la dernière ligne ignorée à
+    /// exactement `date` champs (trop courte pour porter la colonne date)
+    /// laisse la garde muette ; à `date + 1` champs et datée, refus.
+    #[test]
+    fn header_guard_length_boundary() {
+        let mut profile = ubs_profile(DebitSign::Negative, 2);
+        profile.column_mapping = ColumnMapping {
+            date: 2,
+            amount: None,
+            debit_credit_split: Some((0, 1)),
+            reference: None,
+            details: None,
+            counterparty: None,
+        };
+        // Ligne 2 à 2 champs (= date) : muette, même si ses cellules sont datées.
+        let short = "titre\n2026-01-01;2026-01-01\n-1.00;;2026-01-05\n";
+        match parse_csv_collect(short.as_bytes(), &profile) {
+            ParseCsvOutcome::AllValid(stmt) => assert_eq!(stmt.transactions.len(), 1),
+            other => panic!("expected AllValid, got {other:?}"),
+        }
+        // Ligne 2 à 3 champs (= date + 1), datée : refus.
+        let exact = "titre\nx;y;2026-01-01\n-1.00;;2026-01-05\n";
+        assert_eq!(
+            parse_csv_collect(exact.as_bytes(), &profile),
+            ParseCsvOutcome::HardFailure(CsvError::HeaderSkipsData { line: 2 })
+        );
+    }
+
+    /// AC14-6-bis — **angle mort** de la garde (R-12) : un nombre trop grand
+    /// d'une unité qui avale une transaction à date **vide** ne produit
+    /// aucune erreur ; la transaction manque. Ce test documente, il ne
+    /// promet pas.
+    #[test]
+    fn header_guard_blind_spot_on_undated_row() {
+        let csv = "date;debit;credit\n;-9.00;\n2026-01-02;-1.00;\n2026-01-03;;2.00\n";
+        let mut profile = split_profile(DebitSign::Negative);
+        profile.header_row_count = 2;
+        match parse_csv_collect(csv.as_bytes(), &profile) {
+            ParseCsvOutcome::AllValid(stmt) => assert_eq!(stmt.transactions.len(), 2),
+            other => panic!("expected AllValid (angle mort), got {other:?}"),
+        }
+    }
+
+    /// AC14-7 : les trois formes de signe contraire, sous les deux réglages.
+    #[test]
+    fn sign_checks_per_column_and_setting() {
+        let cases: &[(DebitSign, &str, &str)] = &[
+            (DebitSign::Positive, "2026-01-01;-5.00;\n", "-5.00"),
+            (DebitSign::Negative, "2026-01-01;5.00;\n", "5.00"),
+            (DebitSign::Positive, "2026-01-01;;-5.00\n", "-5.00"),
+            (DebitSign::Negative, "2026-01-01;;-5.00\n", "-5.00"),
+        ];
+        for (sign, row, value) in cases {
+            let csv = format!("date;debit;credit\n{row}");
+            let (errors, total, _, _) =
+                sign_refusal(parse_csv_collect(csv.as_bytes(), &split_profile(*sign)));
+            assert_eq!(total, 1, "{sign:?} {row}");
+            assert_eq!(errors[0].code, CsvLineErrorCode::AmountSignMismatch);
+            assert_eq!(errors[0].value.as_deref(), Some(*value));
+            assert_eq!(errors[0].line, 2);
+        }
+    }
+
+    /// AC14-7 (M19) : zéro accepté partout (`0.00`, `-0.00`) — comparaison
+    /// stricte à zéro, jamais le bit de signe ; un crédit `+500.00` est lu
+    /// `500.00` et accepté.
+    #[test]
+    fn zeros_and_explicit_plus_are_accepted() {
+        for sign in [DebitSign::Positive, DebitSign::Negative] {
+            let csv = "date;debit;credit\n2026-01-01;0.00;\n2026-01-02;-0.00;\n\
+                       2026-01-03;;0.00\n2026-01-04;;-0.00\n2026-01-05;;+500.00\n";
+            match parse_csv_collect(csv.as_bytes(), &split_profile(sign)) {
+                ParseCsvOutcome::AllValid(stmt) => {
+                    assert_eq!(stmt.transactions.len(), 5, "{sign:?}");
+                    for t in &stmt.transactions[..4] {
+                        assert_eq!(t.amount, Decimal::ZERO);
+                    }
+                    assert_eq!(stmt.transactions[4].amount, dec!(500.00));
+                }
+                other => panic!("expected AllValid under {sign:?}, got {other:?}"),
+            }
+        }
+    }
+
+    /// AC2 : `Positive` rend `-d`, `Negative` garde `d` ; le crédit est
+    /// inchangé.
+    #[test]
+    fn debit_sign_setting_drives_amount() {
+        let csv_pos = "date;debit;credit\n2026-01-01;12.50;\n2026-01-02;;3.00\n";
+        let stmt = parse_csv(csv_pos.as_bytes(), &split_profile(DebitSign::Positive)).unwrap();
+        assert_eq!(stmt.transactions[0].amount, dec!(-12.50));
+        assert_eq!(stmt.transactions[1].amount, dec!(3.00));
+        let csv_neg = "date;debit;credit\n2026-01-01;-12.50;\n2026-01-02;;3.00\n";
+        let stmt = parse_csv(csv_neg.as_bytes(), &split_profile(DebitSign::Negative)).unwrap();
+        assert_eq!(stmt.transactions[0].amount, dec!(-12.50));
+        assert_eq!(stmt.transactions[1].amount, dec!(3.00));
+    }
+
+    /// AC14-7-bis (a) (M17) : 101 erreurs `INVALID_AMOUNT` puis une erreur
+    /// de signe → refus de signe : la décision porte sur le compteur
+    /// propre au signe, pas sur le vecteur général plein.
+    #[test]
+    fn sign_counter_is_independent_of_general_cap() {
+        let mut csv = String::from("date;debit;credit\n");
+        for _ in 0..101 {
+            csv.push_str("2026-01-01;abc;\n");
+        }
+        csv.push_str("2026-01-02;;-1.00\n");
+        let (errors, total, truncated, _) = sign_refusal(parse_csv_collect(
+            csv.as_bytes(),
+            &split_profile(DebitSign::Positive),
+        ));
+        assert_eq!(total, 1);
+        assert!(!truncated);
+        assert_eq!(errors.len(), 1);
+    }
+
+    /// AC14-7-bis (b) : 150 débits négatifs sous `Positive` → 150, tronqué
+    /// à 100.
+    #[test]
+    fn sign_errors_are_capped_with_full_count() {
+        let mut csv = String::from("date;debit;credit\n");
+        for _ in 0..150 {
+            csv.push_str("2026-01-01;-1.00;\n");
+        }
+        let (errors, total, truncated, whole) = sign_refusal(parse_csv_collect(
+            csv.as_bytes(),
+            &split_profile(DebitSign::Positive),
+        ));
+        assert_eq!(total, 150);
+        assert!(truncated);
+        assert_eq!(errors.len(), 100);
+        assert!(whole);
+    }
+
+    /// AC14-7-ter (M21, M23) : `whole_debit_column ⇔ d ≥ 2 et e = d`, sur
+    /// les seuls débits lus.
+    #[test]
+    fn whole_debit_column_definition() {
+        let whole = |sign: DebitSign, rows: &str| -> bool {
+            let csv = format!("date;debit;credit\n{rows}");
+            sign_refusal(parse_csv_collect(csv.as_bytes(), &split_profile(sign))).3
+        };
+        let pos = DebitSign::Positive;
+        // Débits justes + un crédit négatif (extourne) → false, refus quand même.
+        let csv = "date;debit;credit\n2026-01-01;5.00;\n2026-01-02;6.00;\n2026-01-03;;-7.00\n";
+        let (_, total, _, w) = sign_refusal(parse_csv_collect(csv.as_bytes(), &split_profile(pos)));
+        assert_eq!(total, 1);
+        assert!(!w);
+        // Une partie seulement des débits en défaut → false.
+        assert!(!whole(
+            pos,
+            "2026-01-01;-5.00;\n2026-01-02;6.00;\n2026-01-03;-7.00;\n"
+        ));
+        // Aucun débit (crédits seulement, un crédit négatif) → false.
+        assert!(!whole(pos, "2026-01-01;;5.00\n2026-01-02;;-6.00\n"));
+        // Débits tous à 0.00 + un crédit négatif → false.
+        assert!(!whole(
+            pos,
+            "2026-01-01;0.00;\n2026-01-02;0.00;\n2026-01-03;;-6.00\n"
+        ));
+        // Un seul débit, en défaut (d = 1) → false (message « lignes listées »).
+        assert!(!whole(pos, "2026-01-01;-5.00;\n2026-01-02;;6.00\n"));
+        // Deux débits, tous deux en défaut → true.
+        assert!(whole(pos, "2026-01-01;-5.00;\n2026-01-02;-6.00;\n"));
+        // Profil Negative dont tous les débits (≥ 2) sont positifs → true.
+        assert!(whole(
+            DebitSign::Negative,
+            "2026-01-01;5.00;\n2026-01-02;6.00;\n2026-01-03;;1.00\n"
+        ));
+        // Débit illisible + deux débits en défaut → true (hors dénominateur).
+        assert!(whole(
+            pos,
+            "2026-01-01;abc;\n2026-01-02;-5.00;\n2026-01-03;-6.00;\n"
+        ));
+        // Débit de mauvais signe à date illisible + deux débits justes →
+        // pas de refus de signe (la ligne n'entre pas au dénominateur).
+        let csv = "date;debit;credit\nXX;-5.00;\n2026-01-02;5.00;\n2026-01-03;6.00;\n";
+        match parse_csv_collect(csv.as_bytes(), &split_profile(pos)) {
+            ParseCsvOutcome::PartialFailure { errors, .. } => {
+                assert_eq!(errors.len(), 1);
+                assert_eq!(errors[0].code, CsvLineErrorCode::InvalidDate);
+            }
+            other => panic!("expected PartialFailure, got {other:?}"),
+        }
+    }
+
+    /// AC14-7-quater (M24) : sur une même ligne, la date est lue avant le
+    /// montant — date illisible et débit de mauvais signe → `INVALID_DATE`,
+    /// pas de refus de signe ; sur deux lignes distinctes → refus de signe.
+    #[test]
+    fn date_is_checked_before_sign_on_the_same_row() {
+        let pos = split_profile(DebitSign::Positive);
+        let same = "date;debit;credit\nXX;-5.00;\n2026-01-02;5.00;\n";
+        match parse_csv_collect(same.as_bytes(), &pos) {
+            ParseCsvOutcome::PartialFailure { errors, .. } => {
+                assert_eq!(errors[0].code, CsvLineErrorCode::InvalidDate);
+            }
+            other => panic!("expected PartialFailure, got {other:?}"),
+        }
+        let two = "date;debit;credit\nXX;5.00;\n2026-01-02;-5.00;\n";
+        let (errors, total, _, _) = sign_refusal(parse_csv_collect(two.as_bytes(), &pos));
+        assert_eq!(total, 1);
+        assert_eq!(errors[0].line, 3);
+    }
+
+    /// AC2 : la colonne unique garde le signe du fichier, quel que soit le
+    /// contenu (aucun contrôle de signe).
+    #[test]
+    fn single_column_keeps_file_sign() {
+        let csv = "date;amount\n2026-01-01;-5.00\n2026-01-02;5.00\n";
+        let profile = make_profile(
+            ';',
+            '.',
+            1,
+            ColumnMapping {
+                date: 0,
+                amount: Some(1),
+                debit_credit_split: None,
+                reference: None,
+                details: None,
+                counterparty: None,
+            },
+        );
+        let stmt = parse_csv(csv.as_bytes(), &profile).unwrap();
+        assert_eq!(stmt.transactions[0].amount, dec!(-5.00));
+        assert_eq!(stmt.transactions[1].amount, dec!(5.00));
+    }
+
+    /// AC14-10 (R3-11, M28) : la fixture garde la forme du relevé UBS —
+    /// BOM, pas de LF final, aucun `\r`, 21 lignes dont la 9ᵉ vide.
+    #[test]
+    fn ubs_fixture_has_the_documented_shape() {
+        assert_eq!(&UBS_FIXTURE[..3], b"\xEF\xBB\xBF");
+        assert_ne!(*UBS_FIXTURE.last().unwrap(), b'\n');
+        assert!(!UBS_FIXTURE.contains(&b'\r'));
+        let text = std::str::from_utf8(&UBS_FIXTURE[3..]).unwrap();
+        let lines: Vec<&str> = text.split('\n').collect();
+        assert_eq!(lines.len(), 21);
+        assert_eq!(lines[8], "");
+        assert!(lines.iter().skip(9).all(|l| l.split(';').count() >= 15));
     }
 }

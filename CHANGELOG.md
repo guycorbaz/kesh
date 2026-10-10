@@ -8,6 +8,31 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.13.1] — Non publié
+
+⚠️ **À faire en passant à la 0.13.1** :
+
+1. **Sauvegarder la base avant la mise à jour.** La 0.13.1 porte la base à `kesh_version_min_required = 0.13.1` : une 0.13.0 refuse ensuite de démarrer contre elle, et refuse d'importer une sauvegarde d'installation prise après la mise à jour. Une 0.13.0 ignorerait le réglage du sens des débits ci-dessous et inverserait à nouveau chaque débit d'un profil UBS, en silence.
+2. **Régler les profils CSV en débit/crédit séparés** dont la banque écrit déjà ses débits avec un signe moins (UBS, notamment) : *Administration → Profils bancaires*, « Débits écrits avec un signe moins ». Sans ce réglage, l'import de leurs relevés est désormais **refusé** — il n'y a plus d'inversion muette. Les profils existants gardent exactement leur comportement d'avant (« débits écrits sans signe »).
+
+### Corrigé
+
+- **Import CSV : chaque dépense d'un relevé UBS devenait un encaissement ([#620](https://github.com/guycorbaz/kesh/issues/620)).** En mode « Colonnes débit/crédit séparées », Kesh inversait toujours la colonne Débit ; UBS y écrivant des montants déjà négatifs, `-(-500.00)` donnait `+500.00`, sans erreur ni avertissement. **Le sens des débits devient un réglage explicite du profil** — « écrits sans signe (500.00) », Kesh les rend négatifs, ou « écrits avec un signe moins (−500.00) », Kesh les garde —, jamais une déduction. Et **un fichier dont un montant a un signe contraire à sa colonne est refusé en entier**, sans import partiel possible : un crédit négatif, un débit négatif sous « sans signe », un débit positif sous « avec un signe moins ». Si tous les débits lus sont en cause (au moins deux), le message invite à régler le sens des débits du profil ; sinon, il liste les lignes. ⚠️ Conséquence assumée : un relevé qui porte une **extourne** écrite ainsi (encaissement contre-passé, paiement remboursé) ne s'importe pas tel quel dans cette version. L'écran d'import liste désormais les lignes en cause, avec un message traduit par ligne — et le tableau des lignes invalides de l'aperçu affiche lui aussi ce message à côté du code.
+
+### Modifié
+
+- **Import CSV : jusqu'à 20 lignes à ignorer avant les données ([#621](https://github.com/guycorbaz/kesh/issues/621)).** Le plafond passe de 5 à 20 : le relevé CSV d'UBS en demande 9 (huit lignes de présentation et la ligne de titres). **Un nombre trop grand est refusé** quand la dernière ligne ignorée porte déjà une date : une transaction aurait disparu sans un mot. La garde ne voit qu'une ligne datée. Le relevé CSV d'UBS s'importe donc **tel quel** ; le manuel utilisateur en donne le profil complet (*Le relevé CSV d'UBS*). La lecture de l'IBAN et des soldes de son préambule reste à faire (#621 reste ouverte pour elle).
+- **API des profils bancaires** : `POST` et `PUT /api/v1/bank-profiles` **exigent** `debitSign` (`"positive"` ou `"negative"` ; sans lui, `422`), refusent `"negative"` en colonne unique et un `headerRowCount` au-delà de 20 (`422 BANK_CSV_PROFILE_INVALID`) ; `GET /api/v1/bank-profiles` et `GET …/{id}` renvoient `debitSign`. L'import CSV gagne deux refus `422` : `BANK_CSV_AMOUNT_SIGN_MISMATCH` (non confirmable — `confirmPartialImport` ne s'y applique pas ; `details` : `lines`, `totalErrors`, `truncated`, `wholeDebitColumn`) et `BANK_CSV_HEADER_SKIPS_DATA` (`details.line`).
+- **Graphie des codes d'erreur de ligne de l'import CSV** (`warnings.invalidLines.lines[].code`, `details.lines[].code`) — changement visible d'un client d'API : `INVALIDDATE` → `INVALID_DATE`, `INVALIDAMOUNT` → `INVALID_AMOUNT`, `AMBIGUOUSDEBITCREDIT` → `AMBIGUOUS_DEBIT_CREDIT`, `EMPTYMANDATORYFIELD` → `EMPTY_MANDATORY_FIELD`, `ROWTOOSHORT` → `ROW_TOO_SHORT` ; le code neuf s'écrit `AMOUNT_SIGN_MISMATCH`.
+- **Export CSV des tables** : `bank_profiles.csv` gagne la colonne `debit_sign`, juste après `header_row_count` — un lecteur par position voit se décaler `created_at` et `updated_at`. Une **sauvegarde 0.13.0** s'importe dans la 0.13.1 (ses profils reprennent « débits écrits sans signe », leur comportement d'avant) ; une sauvegarde 0.13.1 est refusée par une 0.13.0.
+
+### Précisé
+
+- **Les lignes vides ne comptent pas** dans les lignes à ignorer d'un profil CSV, **comme avant** : c'est le comportement existant, désormais écrit (formulaire, manuel), non un changement. Un numéro de ligne annoncé pour une ligne qui suit une ligne vide peut être celui de cette ligne vide. La colonne Devise d'un CSV n'est pas lue : tout import CSV est en CHF.
+- Manuel utilisateur : *Profils banque* décrit le formulaire réel, *Détection des doublons* l'empreinte réelle (date, montant, référence, compte — pas le libellé) et le choix offert à l'aperçu, *Rejet partiel* l'import des lignes valides **sur confirmation**.
+
+---
+
 ## [0.13.0] — 2026-10-10
 
 ⚠️ **Cette version n'est pas encore destinée à tenir une comptabilité réelle.** Elle apporte le lettrage — ce qui reste ouvert sur un compte, ligne à ligne —, la modification et la suppression d'une écriture tant que son exercice est ouvert, la clôture des exercices dans l'ordre, et ferme une série de défauts d'écriture, d'audit et d'exploitation. Mais deux fonctions nécessaires à un exercice complet manquent encore : le **bouclement d'exercice** — écritures de clôture, report à nouveau, transitoires ([#232](https://github.com/guycorbaz/kesh/issues/232)) — et les **pièces justificatives** rattachées aux écritures ([#235](https://github.com/guycorbaz/kesh/issues/235)). Elle s'installe et s'exerce ; elle ne remplace pas encore votre comptabilité.

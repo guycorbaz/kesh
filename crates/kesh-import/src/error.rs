@@ -139,6 +139,59 @@ pub enum CsvError {
         truncated: bool,
     },
 
+    /// Au moins une ligne porte un montant de **signe contraire à sa
+    /// colonne** (Story 26-1, #620) : un débit négatif sous
+    /// [`DebitSign::Positive`](crate::csv::DebitSign::Positive), un débit
+    /// positif sous [`DebitSign::Negative`](crate::csv::DebitSign::Negative),
+    /// ou un crédit négatif quel que soit le réglage.
+    ///
+    /// **Refus de l'import entier, non confirmable** : contrairement à
+    /// [`CsvError::PartialFailure`], aucune option « importer les lignes
+    /// valides quand même » ne s'applique. Sous un mauvais réglage du sens,
+    /// les seules lignes « valides » sont celles de l'autre colonne ; les
+    /// importer seules reproduirait #620 (des dépenses absentes, un solde
+    /// faux, sans un mot). Avant la 0.13.1, un débit déjà négatif était
+    /// inversé en silence : ce refus rend visible le défaut à qui n'a pas
+    /// réglé son profil.
+    ///
+    /// - `errors` : les lignes en cause, **propres au signe** (plafonnées
+    ///   à [`MAX_CSV_LINE_ERRORS`], indépendamment des autres erreurs de
+    ///   ligne du fichier, qui ne sont pas rapportées — régler le profil
+    ///   d'abord) ;
+    /// - `total_errors` : nombre total de lignes en défaut de signe ;
+    /// - `truncated` : `total_errors > MAX_CSV_LINE_ERRORS` ;
+    /// - `whole_debit_column` : parmi les lignes dont le montant Débit a été
+    ///   lu, au moins **deux** débits non nuls et **tous** en défaut de
+    ///   signe. Vrai, il désigne un mauvais réglage du profil ; faux (dont
+    ///   le cas d'un seul débit en défaut, qui peut être un remboursement),
+    ///   il désigne une ou quelques lignes — une extourne, par exemple —
+    ///   qu'aucun réglage ne rend importables dans cette version.
+    #[error("Montant de signe contraire à sa colonne : {total_errors} ligne(s)")]
+    AmountSignMismatch {
+        errors: Vec<CsvLineError>,
+        total_errors: usize,
+        truncated: bool,
+        whole_debit_column: bool,
+    },
+
+    /// La **dernière ligne ignorée** (`header_row_count` du profil) porte
+    /// déjà une date lisible au format du profil dans la colonne date : le
+    /// nombre de lignes à ignorer est trop grand, et une transaction
+    /// aurait disparu sans un mot (Story 26-1, #621).
+    ///
+    /// `line` suit la sémantique des numéros de ligne du lecteur
+    /// (cf. [`CsvLineError::line`]).
+    ///
+    /// ⚠️ **Angle mort assumé** : la garde ne voit qu'une ligne avalée dont
+    /// la cellule date **se lit**. Une ligne avalée à date vide, illisible,
+    /// ou trop courte pour porter la colonne date, reste muette — ce n'est
+    /// pas une détection de la ligne de titres, le nombre reste celui du
+    /// profil.
+    #[error(
+        "La ligne {line}, ignorée, porte déjà une date : le nombre de lignes à ignorer est trop grand"
+    )]
+    HeaderSkipsData { line: usize },
+
     /// Erreur I/O sous-jacente (lecture buffer, etc.).
     #[error("I/O CSV : {0}")]
     Io(String),
@@ -154,9 +207,47 @@ pub enum CsvLineErrorCode {
     AmbiguousDebitCredit,
     EmptyMandatoryField,
     RowTooShort,
+    /// Montant de signe contraire à sa colonne (Story 26-1, #620) : débit
+    /// négatif sous `DebitSign::Positive`, débit positif sous
+    /// `DebitSign::Negative`, crédit négatif. Jamais rapporté dans un
+    /// [`CsvError::PartialFailure`] : il refuse l'import entier par
+    /// [`CsvError::AmountSignMismatch`] (pourquoi : cf. ce variant).
+    AmountSignMismatch,
 }
 
 impl CsvLineErrorCode {
+    /// Tous les variants, dans l'ordre de déclaration. La complétude est
+    /// gardée par le `match` exhaustif de [`Self::as_str`] : un variant
+    /// neuf oublié ici ferait échouer le test d'égalité avec serde, qui
+    /// itère sur cette liste, et le `match` de `all_is_complete` (tests)
+    /// refuse de compiler sans lui.
+    pub fn all() -> &'static [Self] {
+        &[
+            CsvLineErrorCode::InvalidDate,
+            CsvLineErrorCode::InvalidAmount,
+            CsvLineErrorCode::AmbiguousDebitCredit,
+            CsvLineErrorCode::EmptyMandatoryField,
+            CsvLineErrorCode::RowTooShort,
+            CsvLineErrorCode::AmountSignMismatch,
+        ]
+    }
+
+    /// Graphie canonique `SCREAMING_SNAKE_CASE` du code, identique à sa
+    /// sérialisation serde (`INVALID_DATE`, `AMOUNT_SIGN_MISMATCH`…). C'est
+    /// elle qui sort sur le fil (`details.lines[].code`,
+    /// `warnings.invalidLines.lines[].code`) — Story 26-1, AC3-bis : avant,
+    /// l'API émettait `format!("{:?}").to_uppercase()` (`INVALIDDATE`).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CsvLineErrorCode::InvalidDate => "INVALID_DATE",
+            CsvLineErrorCode::InvalidAmount => "INVALID_AMOUNT",
+            CsvLineErrorCode::AmbiguousDebitCredit => "AMBIGUOUS_DEBIT_CREDIT",
+            CsvLineErrorCode::EmptyMandatoryField => "EMPTY_MANDATORY_FIELD",
+            CsvLineErrorCode::RowTooShort => "ROW_TOO_SHORT",
+            CsvLineErrorCode::AmountSignMismatch => "AMOUNT_SIGN_MISMATCH",
+        }
+    }
+
     /// Clé i18n associée au code (préfixe `bank-import-csv-errors-`).
     pub fn i18n_key(&self) -> &'static str {
         match self {
@@ -167,6 +258,7 @@ impl CsvLineErrorCode {
             }
             CsvLineErrorCode::EmptyMandatoryField => "bank-import-csv-errors-empty-mandatory-field",
             CsvLineErrorCode::RowTooShort => "bank-import-csv-errors-row-too-short",
+            CsvLineErrorCode::AmountSignMismatch => "bank-import-csv-errors-amount-sign-mismatch",
         }
     }
 }
@@ -179,6 +271,14 @@ impl CsvLineErrorCode {
 pub struct CsvLineError {
     /// Numéro de ligne absolu dans le fichier (1-based, incluant header
     /// et lignes embarquées dans des champs quoted multi-lignes).
+    ///
+    /// C'est la ligne **où commence la lecture** de l'enregistrement (le
+    /// lecteur `csv` pose la position avant de lire) : un enregistrement
+    /// **précédé d'une ou de plusieurs lignes vides** est rapporté au
+    /// numéro de la **première** de ces lignes vides, le lecteur ne les
+    /// avalant qu'en lisant l'enregistrement suivant. Tout autre
+    /// enregistrement porte son numéro physique, celui d'un éditeur
+    /// (Story 26-1, AC4 — fixé par test, non corrigé).
     pub line: usize,
     /// Code d'erreur stable (clé i18n via `i18n_key()`).
     pub code: CsvLineErrorCode,
@@ -228,4 +328,52 @@ pub enum ImportError {
     /// Erreur du parser CSV.
     #[error(transparent)]
     Csv(#[from] CsvError),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Garde de complétude de [`CsvLineErrorCode::all`] : ce `match` sans
+    /// bras par défaut ne compile plus si un variant est ajouté, et force
+    /// à le reporter dans `all()` (dont la longueur est comparée ici).
+    #[test]
+    fn all_is_complete() {
+        let mut expected = 0usize;
+        for code in CsvLineErrorCode::all() {
+            match code {
+                CsvLineErrorCode::InvalidDate
+                | CsvLineErrorCode::InvalidAmount
+                | CsvLineErrorCode::AmbiguousDebitCredit
+                | CsvLineErrorCode::EmptyMandatoryField
+                | CsvLineErrorCode::RowTooShort
+                | CsvLineErrorCode::AmountSignMismatch => expected += 1,
+            }
+        }
+        // Nombre de bras du `match` ci-dessus : à tenir avec lui.
+        assert_eq!(expected, 6);
+        assert_eq!(CsvLineErrorCode::all().len(), 6);
+    }
+
+    /// AC3-bis : pour chaque variant, la graphie `as_str()` est celle de
+    /// serde — les deux ne peuvent plus diverger.
+    #[test]
+    fn as_str_matches_serde_for_every_variant() {
+        for code in CsvLineErrorCode::all() {
+            let json = serde_json::to_value(code).unwrap();
+            assert_eq!(
+                json,
+                serde_json::Value::String(code.as_str().to_string()),
+                "{code:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn amount_sign_mismatch_i18n_key() {
+        assert_eq!(
+            CsvLineErrorCode::AmountSignMismatch.i18n_key(),
+            "bank-import-csv-errors-amount-sign-mismatch"
+        );
+    }
 }

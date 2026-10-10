@@ -1051,6 +1051,8 @@ pub fn serialize_bank_profiles_csv<W: Write>(
         "field_separator",
         "encoding",
         "header_row_count",
+        // Story 26-1 (#620) : juste après `header_row_count`, ordre du schéma.
+        "debit_sign",
         "created_at",
         "updated_at",
     ])
@@ -1067,6 +1069,7 @@ pub fn serialize_bank_profiles_csv<W: Write>(
             txt(bp.field_separator.clone()),
             fmt_opt_str(&bp.encoding),
             bp.header_row_count.to_string(),
+            txt(bp.debit_sign.clone()),
             fmt_dt(bp.created_at),
             fmt_dt(bp.updated_at),
         ])
@@ -1622,6 +1625,46 @@ pub fn serialize_imported_supplier_invoices_csv<W: Write>(
 mod tests {
     use super::*;
     use chrono::NaiveTime;
+
+    /// Story 26-1, AC11 (M11) : `debit_sign` est exporté, en-tête et
+    /// valeur, juste après `header_row_count`.
+    #[test]
+    fn bank_profiles_csv_exports_debit_sign() {
+        let ts = NaiveDate::from_ymd_opt(2026, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        let bp = BankProfile {
+            id: 1,
+            company_id: 1,
+            bank_name: "UBS".to_string(),
+            filename_pattern: None,
+            column_mapping_json: r#"{"date":2,"debit_credit_split":[5,6]}"#.to_string(),
+            date_format: "%Y-%m-%d".to_string(),
+            decimal_separator: ".".to_string(),
+            field_separator: ";".to_string(),
+            encoding: None,
+            header_row_count: 9,
+            debit_sign: "negative".to_string(),
+            created_at: ts,
+            updated_at: ts,
+        };
+        let mut buf = Vec::new();
+        serialize_bank_profiles_csv(&[bp], &mut buf).unwrap();
+        let text = std::str::from_utf8(&buf[3..]).unwrap();
+        let mut rdr = csv::ReaderBuilder::new()
+            .delimiter(b';')
+            .from_reader(text.as_bytes());
+        let headers: Vec<String> = rdr.headers().unwrap().iter().map(String::from).collect();
+        let pos = headers
+            .iter()
+            .position(|h| h == "debit_sign")
+            .expect("en-tête debit_sign");
+        assert_eq!(headers[pos - 1], "header_row_count");
+        let row = rdr.records().next().unwrap().unwrap();
+        assert_eq!(&row[pos], "negative");
+        assert_eq!(&row[pos - 1], "9");
+    }
     use kesh_db::entities::{AccountRole, AccountType, Journal as JournalEnum};
     use rust_decimal_macros::dec;
 

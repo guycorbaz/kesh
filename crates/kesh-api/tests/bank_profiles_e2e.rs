@@ -169,7 +169,29 @@ fn valid_profile_payload(bank_name: &str) -> Value {
         "decimalSeparator": ".",
         "fieldSeparator": ";",
         "encoding": null,
-        "headerRowCount": 1
+        "headerRowCount": 1,
+        "debitSign": "positive"
+    })
+}
+
+/// Profil UBS recommandé (Story 26-1, C-26-1-13) : date de comptabilisation,
+/// débit/crédit séparés, 9 lignes à ignorer, débits « avec un signe moins ».
+fn ubs_profile_payload(bank_name: &str) -> Value {
+    json!({
+        "bankName": bank_name,
+        "filenamePattern": r"^ubs_synthetique\.csv$",
+        "columnMapping": {
+            "date": 2,
+            "debit_credit_split": [5, 6],
+            "reference": 9,
+            "details": 10
+        },
+        "dateFormat": "%Y-%m-%d",
+        "decimalSeparator": ".",
+        "fieldSeparator": ";",
+        "encoding": null,
+        "headerRowCount": 9,
+        "debitSign": "negative"
     })
 }
 
@@ -525,6 +547,9 @@ async fn put_bank_profile_full_replacement_writes_audit_log(pool: MySqlPool) {
     let mut updated = valid_profile_payload("UBS");
     updated["dateFormat"] = json!("%d.%m.%Y");
     updated["headerRowCount"] = json!(2);
+    // Story 26-1 (#620), M7 : le sens des débits se modifie et se relit.
+    updated["columnMapping"] = json!({"date": 0, "debit_credit_split": [1, 2]});
+    updated["debitSign"] = json!("negative");
 
     let res = app
         .client
@@ -538,6 +563,18 @@ async fn put_bank_profile_full_replacement_writes_audit_log(pool: MySqlPool) {
     let body: Value = res.json().await.unwrap();
     assert_eq!(body["dateFormat"].as_str().unwrap(), "%d.%m.%Y");
     assert_eq!(body["headerRowCount"].as_i64().unwrap(), 2);
+    assert_eq!(body["debitSign"], "negative");
+    let reread: Value = app
+        .client
+        .get(app.url(&format!("/api/v1/bank-profiles/{}", id)))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(reread["debitSign"], "negative");
 
     let audit_count: i64 = sqlx::query_scalar(
         "SELECT COUNT(*) FROM audit_log \
@@ -596,4 +633,117 @@ async fn delete_bank_profile_writes_audit_log_with_snapshot(pool: MySqlPool) {
         .await
         .unwrap();
     assert_eq!(res.status(), 404);
+}
+
+// ---------------------------------------------------------------------------
+// Story 26-1 (#620, #621) — sens des débits, lignes à ignorer
+// ---------------------------------------------------------------------------
+
+/// POST d'un profil ; rend (statut, corps brut).
+async fn post_profile(app: &TestApp, token: &str, payload: &Value) -> (u16, String) {
+    let res = app
+        .client
+        .post(app.url("/api/v1/bank-profiles"))
+        .bearer_auth(token)
+        .json(payload)
+        .send()
+        .await
+        .unwrap();
+    let status = res.status().as_u16();
+    (status, res.text().await.unwrap())
+}
+
+async fn profile_count(pool: &MySqlPool) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM bank_profiles")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// AC15 : le profil UBS (9 lignes, débits négatifs) s'enregistre et se relit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_ubs_profile_with_negative_debits_and_nine_rows(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let company_id = create_company(&pool, "C1").await;
+    let user_id = create_user(&pool, "comp", Role::Comptable, company_id).await;
+    let token = forge_jwt(user_id, "Comptable", company_id);
+
+    let (status, body) = post_profile(&app, &token, &ubs_profile_payload("UBS")).await;
+    assert_eq!(status, 201, "{body}");
+    let body: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(body["debitSign"], "negative");
+    assert_eq!(body["headerRowCount"], 9);
+
+    let listed: Value = app
+        .client
+        .get(app.url("/api/v1/bank-profiles"))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(listed["items"][0]["debitSign"], "negative");
+}
+
+/// AC10/AC15 (M27) : `debitSign` est obligatoire — sans lui, ou avec une
+/// valeur hors domaine, l'extracteur `Json` d'axum rejette en 422 (corps
+/// texte brut, non asserté) et rien n'est écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_profile_without_or_with_unknown_debit_sign_is_rejected(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let company_id = create_company(&pool, "C1").await;
+    let user_id = create_user(&pool, "comp", Role::Comptable, company_id).await;
+    let token = forge_jwt(user_id, "Comptable", company_id);
+
+    let mut missing = valid_profile_payload("Sans");
+    missing.as_object_mut().unwrap().remove("debitSign");
+    let (status, _) = post_profile(&app, &token, &missing).await;
+    assert_eq!(status, 422);
+
+    let mut unknown = valid_profile_payload("Autre");
+    unknown["debitSign"] = json!("autre");
+    let (status, _) = post_profile(&app, &token, &unknown).await;
+    assert_eq!(status, 422);
+
+    assert_eq!(profile_count(&pool).await, 0, "rien en base");
+}
+
+/// AC1/AC10 (M9) : `negative` en colonne unique → 422 BANK_CSV_PROFILE_INVALID.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_profile_negative_in_single_column_is_invalid(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let company_id = create_company(&pool, "C1").await;
+    let user_id = create_user(&pool, "comp", Role::Comptable, company_id).await;
+    let token = forge_jwt(user_id, "Comptable", company_id);
+
+    let mut payload = valid_profile_payload("Unique");
+    payload["debitSign"] = json!("negative");
+    let (status, body) = post_profile(&app, &token, &payload).await;
+    assert_eq!(status, 422, "{body}");
+    let body: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(body["error"]["code"], "BANK_CSV_PROFILE_INVALID");
+    assert_eq!(profile_count(&pool).await, 0);
+}
+
+/// AC4/AC10 (M4) : 21 lignes à ignorer → 422 BANK_CSV_PROFILE_INVALID ; 20 passe.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_profile_header_row_count_bound_is_20(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let company_id = create_company(&pool, "C1").await;
+    let user_id = create_user(&pool, "comp", Role::Comptable, company_id).await;
+    let token = forge_jwt(user_id, "Comptable", company_id);
+
+    let mut too_many = valid_profile_payload("Trop");
+    too_many["headerRowCount"] = json!(21);
+    let (status, body) = post_profile(&app, &token, &too_many).await;
+    assert_eq!(status, 422, "{body}");
+    let body: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(body["error"]["code"], "BANK_CSV_PROFILE_INVALID");
+
+    let mut twenty = valid_profile_payload("Vingt");
+    twenty["headerRowCount"] = json!(20);
+    let (status, body) = post_profile(&app, &token, &twenty).await;
+    assert_eq!(status, 201, "{body}");
 }

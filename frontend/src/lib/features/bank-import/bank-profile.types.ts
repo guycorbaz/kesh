@@ -9,6 +9,13 @@ export type ColumnMapping = {
 	counterparty?: number;
 };
 
+/**
+ * Sens des montants de la colonne Débit en mode débit/crédit séparés
+ * (Story 26-1, #620) : `positive` = débits écrits sans signe, Kesh les rend
+ * négatifs ; `negative` = débits déjà négatifs (UBS), Kesh les garde.
+ */
+export type DebitSign = 'positive' | 'negative';
+
 export type BankProfile = {
 	id: number;
 	bankName: string;
@@ -19,6 +26,7 @@ export type BankProfile = {
 	fieldSeparator: string;
 	encoding: string | null;
 	headerRowCount: number;
+	debitSign: DebitSign;
 	createdAt: string;
 	updatedAt: string;
 };

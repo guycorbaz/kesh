@@ -17,4 +17,4 @@ pub mod profile;
 
 pub use encoding::{DetectedEncoding, detect_encoding};
 pub use parser::{ParseCsvOutcome, empty_valid_sentinel_date, parse_csv, parse_csv_collect};
-pub use profile::{ColumnMapping, CsvProfile};
+pub use profile::{ColumnMapping, CsvProfile, DebitSign, MAX_HEADER_ROW_COUNT};

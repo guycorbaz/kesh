@@ -376,3 +376,60 @@ l'orchestrateur repris tels quels.
   lecture dans sa branche le 2026-10-11). Le refus de signe dit « réglez le sens des débits du profil, puis redéposez le
   fichier », et la sous-section UBS renvoie à la procédure de la 26-3.
 - **Réversible** : oui.
+
+### Développement de la 26-1 (2026-10-11) — choix de l'implémentation
+
+### C-26-1-28 — Le plafond des lignes à ignorer est une constante publique
+
+- **Retenu** : `kesh_import::MAX_HEADER_ROW_COUNT = 20`, lue par `CsvProfile::validate` et par son message
+  (`header_row_count 21 > 20`) ; le `CHECK` de la base porte la même borne, écrite en dur (SQL).
+- **Écarté** : un `20` littéral dans `validate` (deux sites à tenir alignés dans le même fichier).
+- **Réversible** : oui.
+
+### C-26-1-29 — Garde de surcomptage : la longueur se lit par `record.get(date)`
+
+- **Contexte** : AC5 écrit « au moins `date + 1` champs » ; `rec.len() >= date + 1` déclenche `clippy::int_plus_one`.
+- **Retenu** : `record.get(date)` rend `None` pour une ligne trop courte — même sémantique, sans comparaison. La
+  mutation M13 (« `> date + 1` ») s'exécute en **insérant** la comparaison fautive ; le test de limite la voit.
+- **Réversible** : oui.
+
+### C-26-1-30 — Les erreurs de signe ne passent pas par le vecteur général
+
+- **Retenu** : une erreur `AMOUNT_SIGN_MISMATCH` alimente seulement `sign_total`/`sign_errors` (AC3), jamais le
+  vecteur général ni `total_errors` ; quand `sign_total > 0`, ce dernier n'est de toute façon pas rapporté.
+  Accumulateur interne `RowAccumulator` (transactions, deux vecteurs, `d`, `e`).
+- **Écarté** : alimenter les deux (une erreur de signe compterait deux fois et occuperait le plafond général).
+- **Réversible** : oui.
+
+### C-26-1-31 — Textes allemands, italiens et anglais rédigés par l'agent
+
+- **Retenu** : les sept clés neuves et la clé modifiée sont traduites dans les trois autres locales (registre suisse :
+  « gross », « Belastungen », « Administration → Bankprofile »…). À relire par un locuteur à la recette.
+- **Réversible** : oui (texte seul).
+
+### C-26-1-32 — CHANGELOG : rubrique « Précisé »
+
+- **Retenu** : la fiche (AC18, R3-9) demande que les lignes vides soient consignées « en *Précisé* » : la rubrique
+  `### Précisé` est créée dans la section `0.13.1`, à côté de `Corrigé` et `Modifié` (pas de rubrique de Keep a
+  Changelog pour une clarification sans changement).
+- **Réversible** : oui (prepare-release ne lit que l'en-tête de section).
+
+### C-26-1-33 — Sous-section « Le relevé CSV d'UBS » placée juste après « Profils banque »
+
+- **Retenu** : `\subsubsection` à la suite de « Profils banque », donc **immédiatement avant** « Import avec un
+  profil existant » (à la 26-3). Le conflit textuel au rebase est probable sur la ligne frontière : **union**.
+- **Écarté** : la placer après « Rejet partiel » (hors de la sous-section CSV, lecture moins naturelle).
+- **Réversible** : oui.
+
+### C-26-1-34 — E2E : « aucun import de plus » mesuré sur le total de la société
+
+- **Retenu** : `GET /api/v1/bank-imports?limit=1` (champ `total`, sans filtre de compte) avant et après le dépôt
+  refusé — plus strict qu'un compte par compte bancaire, et sans dépendre de l'identifiant du compte.
+- **Réversible** : oui.
+
+### C-26-1-35 — AC17 : la répartition débit/crédit se relit par le lecteur `csv`
+
+- **Retenu** : pour savoir de quelle colonne vient chaque transaction, le test relit les lignes de données avec le
+  crate `csv` (mêmes réglages que le parseur, 9 enregistrements sautés) et les apparie dans l'ordre ; aucun nombre en
+  dur, aucune valeur imprimée.
+- **Réversible** : oui.

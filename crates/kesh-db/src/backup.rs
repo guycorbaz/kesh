@@ -982,6 +982,26 @@ mod tests {
         assert!(!ide.is_required());
     }
 
+    /// Story 26-1 (#620), AC11 : `bank_profiles.debit_sign` est `NOT NULL`
+    /// **avec** `DEFAULT 'positive'` → non requise. C'est ce qui rend
+    /// importable une sauvegarde 0.13.0 (sans la colonne) : elle est
+    /// restaurée à `positive`, la sémantique des profils d'avant.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn bank_profiles_debit_sign_is_not_required(pool: MySqlPool) {
+        let cols = column_constraints(&pool, "bank_profiles")
+            .await
+            .expect("constraints bank_profiles");
+        let debit_sign = cols
+            .iter()
+            .find(|c| c.name == "debit_sign")
+            .expect("debit_sign column");
+        assert!(!debit_sign.is_nullable, "debit_sign est NOT NULL");
+        assert!(
+            !debit_sign.is_required(),
+            "debit_sign porte un DEFAULT : jamais requise"
+        );
+    }
+
     /// `reconciliation_rules.active_uniq` (GENERATED VIRTUAL) est marquée
     /// générée → jamais requise (cohérent avec son exclusion de l'export).
     #[sqlx::test(migrations = "./test-schema")]

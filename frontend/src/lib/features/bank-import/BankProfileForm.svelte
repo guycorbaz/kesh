@@ -15,6 +15,7 @@
 	import type {
 		BankProfile,
 		CreateOrUpdateBankProfileRequest,
+		DebitSign,
 	} from './bank-profile.types';
 
 	type Props = {
@@ -41,6 +42,9 @@
 	let creditIdx = $state(existing?.columnMapping.debit_credit_split?.[1] ?? 2);
 	let referenceIdx = $state<number | null>(existing?.columnMapping.reference ?? null);
 	let detailsIdx = $state<number | null>(existing?.columnMapping.details ?? null);
+	// Story 26-1 (#620) : sens des débits, réglage explicite du mode séparé.
+	// État local : décocher puis recocher le mode séparé garde le choix fait.
+	let debitSign = $state<DebitSign>(existing?.debitSign ?? 'positive');
 
 	let isLoading = $state(false);
 	let errorMessage = $state<string | null>(null);
@@ -73,6 +77,9 @@
 			fieldSeparator,
 			encoding: encoding || null,
 			headerRowCount,
+			// En colonne unique, le serveur refuse `negative` : on envoie
+			// toujours `positive`, quel que soit le choix resté en mémoire.
+			debitSign: useDebitCreditSplit ? debitSign : 'positive',
 		};
 
 		try {
@@ -184,7 +191,7 @@
 	</select>
 
 	<label class="mt-4 block text-sm font-medium" for="header-row-count-input">
-		{i18nMsg('bank-import-profile-labels-header-row-count', 'Nb lignes header (0-5)')}
+		{i18nMsg('bank-import-profile-labels-header-row-count', 'Lignes à ignorer avant les données (0-20)')}
 	</label>
 	<input
 		id="header-row-count-input"
@@ -192,9 +199,16 @@
 		type="number"
 		bind:value={headerRowCount}
 		min="0"
-		max="5"
+		max="20"
+		aria-describedby="header-row-count-help"
 		class="mt-1 block w-full rounded border-border bg-surface p-2 text-text"
 	/>
+	<p id="header-row-count-help" class="mt-1 text-xs text-text-muted">
+		{i18nMsg(
+			'bank-import-profile-labels-header-row-count-help',
+			'Ligne de titres comprise ; les lignes vides ne comptent pas. Relevé CSV d’UBS : 9.',
+		)}
+	</p>
 
 	<fieldset class="mt-6 border border-border p-4">
 		<legend class="text-sm font-medium">
@@ -208,6 +222,37 @@
 			/>
 			{i18nMsg('bank-import-profile-labels-use-debit-credit-split', 'Colonnes débit/crédit séparées')}
 		</label>
+
+		{#if useDebitCreditSplit}
+			<fieldset class="mt-2 border border-border p-2" data-testid="debit-sign-group">
+				<legend class="text-sm font-medium">
+					{i18nMsg('bank-import-profile-labels-debit-sign', 'Sens des montants de la colonne Débit')}
+				</legend>
+				<label class="flex items-center gap-2 text-sm">
+					<input
+						type="radio"
+						name="debit-sign"
+						value="positive"
+						data-testid="debit-sign-positive"
+						bind:group={debitSign}
+					/>
+					{i18nMsg('bank-import-profile-labels-debit-sign-positive', 'Débits écrits sans signe (500.00)')}
+				</label>
+				<label class="flex items-center gap-2 text-sm">
+					<input
+						type="radio"
+						name="debit-sign"
+						value="negative"
+						data-testid="debit-sign-negative"
+						bind:group={debitSign}
+					/>
+					{i18nMsg(
+						'bank-import-profile-labels-debit-sign-negative',
+						'Débits écrits avec un signe moins (−500.00), comme UBS',
+					)}
+				</label>
+			</fieldset>
+		{/if}
 
 		<div class="mt-2 grid grid-cols-2 gap-2">
 			<div>

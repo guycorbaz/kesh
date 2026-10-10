@@ -765,23 +765,23 @@ Une mutation qui ne fait rien rougir est un **trou de test** : écrire le test m
 
 ## Tâches
 
-- [ ] **T1 — `kesh-import`** (AC1-5, AC3-bis, AC14 tests 1-9 dont 6-bis, 7-bis, 7-ter, 7-quater) : compteur et vecteur
+- [x] **T1 — `kesh-import`** (AC1-5, AC3-bis, AC14 tests 1-9 dont 6-bis, 7-bis, 7-ter, 7-quater) : compteur et vecteur
   propres au signe, `whole_debit_column`, `DebitSign`, champ, `validate`, `parse_row`, garde
   AC5, variants `CsvLineErrorCode::AmountSignMismatch`, `CsvError::AmountSignMismatch` / `HeaderSkipsData`,
   `CsvLineErrorCode::as_str()`, mise à jour des **tous** les littéraux `CsvProfile { … }` des tests
   (`profile.rs` ≈ l. 244, `parser.rs` ≈ l. 575 et 1040), fixture + README des fixtures.
-- [ ] **T2 — Migration et base** (AC6, AC7, AC9) : migration, squash régénéré, ligne de `migrations.sha384`,
+- [x] **T2 — Migration et base** (AC6, AC7, AC9) : migration, squash régénéré, ligne de `migrations.sha384`,
   P5/P6 (`total` 78 → 79 **et** `total - 44` → `total - 45`)/P7, assertions de version, test de migration dans
   `migrations_upgrade_path.rs` ; bump des dix `Cargo.toml` + `Cargo.lock` dans le **même commit** que la migration (P2-bis).
-- [ ] **T3 — Entité, dépôt** (AC8) : dont le helper `make_new_profile` et le test `debit_sign_enum` → `Invariant`.
-- [ ] **T4 — API** (AC3, AC3-bis, AC5 côté API, AC10, AC11, AC15) : DTO, réponse, conversion,
+- [x] **T3 — Entité, dépôt** (AC8) : dont le helper `make_new_profile` et le test `debit_sign_enum` → `Invariant`.
+- [x] **T4 — API** (AC3, AC3-bis, AC5 côté API, AC10, AC11, AC15) : DTO, réponse, conversion,
   `AppError::BankCsvHeaderSkipsData` et `AppError::BankCsvAmountSignMismatch` (bras explicites de `map_csv_error`),
   `csv_line_error_to_payload` par `as_str()`, export CSV, test `is_required`, tests d'intégration.
-- [ ] **T5 — Frontend et i18n** (AC3, AC3-bis, AC12, AC13) : types, formulaire, module `csv-line-error-label.ts` et sa
+- [x] **T5 — Frontend et i18n** (AC3, AC3-bis, AC12, AC13) : types, formulaire, module `csv-line-error-label.ts` et sa
   déclaration dans `i18n-keys.test.ts` (`MOTIFS_DYNAMIQUES`, `CARDINALITES`, relais, recompte d'`ATTENDU`), panneau
   d'erreur qui liste les lignes du refus de signe (sans case de confirmation), Vitest, quatre locales.
-- [ ] **T6 — E2E** (AC16).
-- [ ] **T7 — Documentation** (AC18) : manuel (Profils banque, sous-section UBS, Rejet partiel, Détection des doublons ;
+- [x] **T6 — E2E** (AC16).
+- [x] **T7 — Documentation** (AC18) : manuel (Profils banque, sous-section UBS, Rejet partiel, Détection des doublons ;
   **pas** « Import avec un profil existant », à la 26-3) + PDF contrôlé aplati, CHANGELOG (graphie des codes, `debitSign` obligatoire, deux 422, extourne) ; grep de la valeur « 5 »
   / « 0-5 », et des graphies `INVALIDDATE` & co.
 - [ ] **T8 — Contrôle sur le vrai fichier** (AC17), mutations (AC19), gates (AC20), Dev Agent Record.
@@ -912,7 +912,17 @@ structure relevé.
 
 ### Agent Model Used
 
+Opus 5.5 (`bmad-dev-story`, autonomie), 2026-10-11.
+
 ### Debug Log References
+
+- Gate complet backend `scripts/test-fast.sh` sur `kesh_261` remise à zéro : premier passage rouge sur `cargo fmt`
+  (trois fichiers neufs), corrigé ; second passage **3383/3383**, 6 ignorés, fmt + clippy `-D warnings` verts.
+- Vitest complet : premier passage rouge sur `i18n-libelle-en-dur.test.ts` (déclaration candidate neuve
+  `csvLineErrorLabel`, 61 → 62, conforme 47 → 48 — recompte avec sa ligne d'historique) ; second passage
+  **1295/1295**, 125 fichiers.
+- E2E ciblé `bank-csv-import.spec.ts` (backend :3031, base `kesh_e2e_261` migrée par le worktree) : **12/12**, dont les
+  trois scénarios neufs et le scan axe du formulaire (zéro violation, aucune exclusion).
 
 ### Completion Notes List
 
@@ -923,11 +933,35 @@ structure relevé.
   liste des lignes à l'écran, table littérale des libellés, manuel (Rejet partiel, Import avec un profil existant —
   ce dernier retiré en P3, C-26-1-27) ;
   C-26-1-23, 24 ; bilan au Change Log.
+- Développement le 2026-10-11 (Opus 5.5) : T1 à T7 livrés ; choix C-26-1-28 à 35 au registre. Contrôle AC17 du
+  relevé réel : **conforme**. Contrôle du diff contre le relevé réel, sans affichage : aucun nombre non rond ; les
+  seules coïncidences sont onze dates calendaires, toutes déjà présentes dans le dépôt avant la story (fixture de la
+  fiche validée).
 - Validation P3 remédiée le 2026-10-11 (Opus 5.5) : `whole_debit_column` défini (d ≥ 2 et e = d, `RowParse`), manuel
   recentré (Détection des doublons ajoutée, Import avec un profil existant laissé à la 26-3), DRY `common`, mutations
   M23-M28 ; C-26-1-25 à 27 ; bilan au Change Log.
 
 ### File List
+
+- `crates/kesh-import/src/csv/profile.rs`, `csv/parser.rs`, `csv/mod.rs`, `error.rs`, `lib.rs`
+- `crates/kesh-import/tests/fixtures/csv/ubs_synthetique.csv` (neuf), `tests/fixtures/README.md`,
+  `tests/ubs_fichier_reel.rs` (neuf, `#[ignore]`)
+- `crates/kesh-db/migrations/20261011000001_bank_profiles_debit_sign.sql` (neuf), `migrations.sha384`,
+  `test-schema/0001_schema_squash.sql`, `src/entities/bank_profile.rs`, `src/repositories/bank_profiles.rs`,
+  `src/post_restore.rs`, `src/backup.rs`, `tests/migrations_upgrade_path.rs`, `tests/migrations_fresh_install.rs`
+- `crates/kesh-api/src/errors.rs`, `src/routes/bank_profiles.rs`, `src/routes/bank_imports.rs`,
+  `src/exports/csv_tables.rs`, `tests/bank_profiles_e2e.rs`, `tests/bank_imports_e2e.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `crates/*/Cargo.toml` (dix crates → 0.13.1), `Cargo.lock`
+- `frontend/src/lib/features/bank-import/BankProfileForm.svelte`, `BankProfileForm.test.ts` (neuf),
+  `BankImportUpload.svelte`, `bank-profile.types.ts`, `csv-line-error-label.ts` (neuf),
+  `csv-line-error-label.test.ts` (neuf)
+- `frontend/src/lib/shared/i18n-keys.test.ts`, `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts`
+- `frontend/tests/e2e/bank-csv-import.spec.ts`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`, `docs/migrations-idempotence-audit.md`,
+  `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/26-1-import-csv-ubs-natif.md`, `epic-26-choix-autonomes.md`,
+  `sprint-status.yaml`
 
 ## Change Log
 
@@ -938,6 +972,7 @@ structure relevé.
 | 2026-10-10 | Opus 5.5 (remédiation validation P2) | Validation P2 (Opus R/F) : 5 MEDIUM, 14 LOW distincts, plus l'arbitrage (0) sur les données réelles (commit à part). Bilan finding par finding ci-dessous. Choix C-26-1-23, 24. |
 | 2026-10-11 | Opus 5.5 (remédiation validation P3) | Validation P3 (Sonnet R/F) : 2 MEDIUM, 18 LOW distincts. Bilan finding par finding ci-dessous. Choix C-26-1-25 à 27. |
 | 2026-10-11 | Opus 5.5 (clôture de la validation) | Validation P4 **ciblée** (Haiku, une lentille, sur le commit de remédiation P3) : 1 MEDIUM, 2 LOW, appliqués. **Validation close.** Statut → in-progress. Bilan ci-dessous. |
+| 2026-10-11 | Opus 5.5 (dev-story) | Implémentation T1-T7 (migration `20261011000001`, bump 0.13.1, `DebitSign`, refus de signe non confirmable, garde de surcomptage, graphie des codes, formulaire, panneau, manuel, CHANGELOG). Gate complet 3383/3383, Vitest 1295/1295, E2E ciblé 12/12 ; mutations et E2E complet à suivre (T8). |
 
 ### Validation P1 — bilan finding par finding
 
