@@ -2,7 +2,7 @@
 
 ## Status
 
-review — développée le 2026-10-10 (Opus 5.5, en autonomie) ; revue de code due. *Historique :* ready-for-dev **après la livraison de la 15-1b** *(et donc de la 15-1b-0, des 15-1a2-0, -i, -ii)* — créée le
+done — développée et revue le 2026-10-10 (Opus 5.5, en autonomie) ; **REVUE CLOSE** à la P2 ciblée. *Historique :* ready-for-dev **après la livraison de la 15-1b** *(et donc de la 15-1b-0, des 15-1a2-0, -i, -ii)* — créée le
 2026-10-09 par extraction de la partie serveur de la 15-1c-i, à la remédiation de la validation P2 de la 15-1c
 (registre **C-15-1c-14**) ; sa **première** passe de validation a été tenue en **P3 de l'ensemble 15-1c** (avec la
 15-1c-i et la 15-1c-ii : 0 au-dessus de LOW, LOW appliqués), puis la P4 ciblée (Haiku : 0 au-dessus de
@@ -341,6 +341,44 @@ Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
 - `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md` (C-15-1c-0-1 à 3)
 
 ## Change Log
+
+### Clôture — 2026-10-10 (Opus 5.5) — **REVUE CLOSE, story `done`**
+
+**Commits** (sur `origin/main` `a602e1ab`, la 15-1b fusionnée — rebase par `git rebase --onto origin/main 05de0c7f`, sans
+conflit) : développement **`732a8495`**, prompt P1 `115bf64a`, remédiation P1 **`1d62ab3f`**, prompt P2 `4512ab26`, remédiation
+P2 (tests seuls) **`a6537d44` = dernier commit de code**.
+
+**Gates au dernier commit de code `a6537d44`** (exécutés ; bases `kesh_1c0` et `kesh_e2e_1c0` remises à zéro avant, sans
+redémarrer MariaDB) : `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) **3338 passés, 5 ignorés**
+(`kesh-gate-logs/15-1c-0-gate-final.log`) = 3325 de la 15-1b + 13 ; frontend (arbre `frontend/` identique à `main`, exécuté) —
+`npm run check` **0 erreur** (27 avertissements préexistants), `lint-i18n-ownership` vert, `test:unit` **116 fichiers / 1167
+tests**, `build` vert (`15-1c-0-frontend.log`) ; **E2E complet** (port 3026, base `kesh_e2e_1c0` neuve migrée, binaire construit
+sur `a6537d44`, montage de `docs/testing.md`, `/health` : `smtpConfigured: true`) : **245 passés, 9 échoués, 19 ignorés** —
+jugés fichier par fichier contre `docs/testing.md` § « Les échecs attendus » : sept KF-029 (#97) (`mode-expert:26`, `:41`,
+`onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) et deux KF-045 (#421) (`invoices:415`, `:439`, suite terminée
+vers 06:05 UTC, avant 12:00) ; **aucun hors liste** (`15-1c-0-e2e.log`).
+
+### Revue de code P2 ciblée — 2026-10-10 (Haiku 4.5, une lentille, commit `1d62ab3f`) — REVUE CLOSE
+
+**Prompt** : `15-1c-0-review-prompt-p2-ciblee.md`. **Rapport** : `kesh-gate-logs/15-1c-0-review-p2-B.md` — **0 C / 0 H / 1 M /
+3 L + 1 INFO**, hunks et axes examinés et non examinés déclarés (non exercée : toute exécution). Vérifié par la lentille et
+recoupé : négation de `owned_by_document` juste aux deux sites de la vue, absente du détail ; prédicat écrit nulle part
+ailleurs ; montages des tests ajoutés ; exemple et décomptes.
+
+| finding | verdict |
+|---|---|
+| F1 MEDIUM — aucun gate `kesh-db` complet établi sur `1d62ab3f` | **reclassé (processus, non un défaut du commit)** : le gate tournait pendant la lecture de la lentille ; exécuté (base remise à zéro) — **3338 passés, 5 ignorés** (`kesh-gate-logs/15-1c-0-gate-p1.log`) = 3337 + 1 test neuf de la P1 ; même motif que les « MEDIUM » Haiku de livrables encore en cours (consignes, point 5) |
+| F2 LOW — doc-comment de 125 colonnes (test 5 HTTP) | **corrigé** |
+| F3 LOW — deux tests libellés « Test 4 » | **corrigé** (« Test 4 bis ») |
+| F4 LOW — liaison redondante `let cle = cle_achat;` | **corrigé** |
+| F5 INFO — « tout clos » vrai à vide sur une liste vide | **accepté** : la liste est celle d'un groupe lu (≥ 2 lignes) |
+
+**La remédiation ne touche aucune ligne de code de production** (`a6537d44` : `kesh-db/tests/letterings.rs`,
+`kesh-api/tests/letterings_e2e.rs`) — la boucle se **clôt** (§ « La passe ciblée », critère de clôture). **Trend** : P1
+(Sonnet ×3, complète) **0 au-dessus de LOW, 9 LOW** → remédiation avec code de production (`owned_by_document`) → P2 ciblée
+(Haiku) **1 MEDIUM de processus, reclassé ; 3 LOW** → remédiation sans code de production → close. **Modèles** : Opus 5.5
+(développement, remédiations, orchestration), Sonnet 5.5 (P1), Haiku 4.5 (P2 ciblée). Choix : **C-15-1c-0-1 à 3**. Signal
+D5 : non levé.
 
 ### Revue de code P1 — 2026-10-10 (Sonnet 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
 
