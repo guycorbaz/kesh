@@ -9,6 +9,10 @@
 //! code de production, et c'est juste — un groupe posé ainsi ne prétend à rien
 //! d'atteignable.
 //!
+//! ⚠️ **Depuis la Story 15-1a2-i**, le geste qui solde une facture client pose
+//! lui-même ce groupe : [`poser_groupe_document`] le **trouve** alors au lieu de
+//! le poser, sous les mêmes contrôles de montage (choix C-15-1a2-i-1).
+//!
 //! Ce fichier n'appartient à aucune crate ; il est **inclus par `#[path]`** là
 //! où on l'emploie : `crates/kesh-db/tests/{invoice_settlement,
 //! invoice_write_off, supplier_invoices_repository}.rs` et
@@ -45,6 +49,32 @@ pub async fn poser_groupe_document(pool: &MySqlPool, account_id: i64, entry_ids:
     );
     let cle = lignes[0];
 
+    // ⚠️ Depuis la Story 15-1a2-i, le GESTE pose lui-même le groupe d'une
+    // facture client soldée (synchronisation des pièces) : si les lignes le
+    // portent déjà — exactement elles, sous la clé attendue, d'origine
+    // `document` —, il n'y a rien à poser. Les contrôles de montage ci-dessous
+    // s'appliquent au groupe ainsi trouvé comme à un groupe posé ici. Tout
+    // autre état (marques partielles, autre clé) fait échouer le montage.
+    let marqueurs = vec!["?"; lignes.len()].join(", ");
+    let sql = format!(
+        "SELECT COUNT(*) FROM journal_entry_lines WHERE id IN ({marqueurs}) \
+         AND lettering_key IS NOT NULL"
+    );
+    let mut q = sqlx::query_scalar::<_, i64>(&sql);
+    for l in &lignes {
+        q = q.bind(*l);
+    }
+    let deja = q.fetch_one(pool).await.expect("marques existantes");
+    if deja != 0 {
+        assert_eq!(
+            deja,
+            lignes.len() as i64,
+            "montage : groupe partiellement posé sur {lignes:?}"
+        );
+        controler_groupe(pool, cle, lignes.len()).await;
+        return cle;
+    }
+
     let marqueurs = vec!["?"; lignes.len()].join(", ");
     let sql = format!(
         "UPDATE journal_entry_lines SET lettering_key = ?, lettering_origin = 'document' \
@@ -60,7 +90,13 @@ pub async fn poser_groupe_document(pool: &MySqlPool, account_id: i64, entry_ids:
         .expect("pose du groupe")
         .rows_affected();
     assert_eq!(marquees, lignes.len() as u64, "montage : lignes marquées");
+    controler_groupe(pool, cle, lignes.len()).await;
+    cle
+}
 
+/// Contrôle de montage d'un groupe `document` : somme nulle, clé = plus petite
+/// ligne, taille attendue (D4 point 2).
+async fn controler_groupe(pool: &MySqlPool, cle: i64, taille: usize) {
     let (somme, min, n): (Decimal, i64, i64) = sqlx::query_as(
         "SELECT COALESCE(SUM(debit - credit), 0), MIN(id), COUNT(*) FROM journal_entry_lines \
          WHERE lettering_key = ? AND lettering_origin = 'document'",
@@ -71,8 +107,7 @@ pub async fn poser_groupe_document(pool: &MySqlPool, account_id: i64, entry_ids:
     .expect("contrôle du groupe");
     assert_eq!(somme, Decimal::ZERO, "montage : groupe à somme nulle");
     assert_eq!(min, cle, "montage : clé = plus petite ligne");
-    assert_eq!(n, lignes.len() as i64, "montage : taille du groupe");
-    cle
+    assert_eq!(n, taille as i64, "montage : taille du groupe");
 }
 
 /// Nombre de lignes marquées sous la clé `cle` (« les marques sont intactes »).

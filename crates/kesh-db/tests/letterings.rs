@@ -28,6 +28,9 @@ use rust_decimal::Decimal;
 use rust_decimal_macros::dec;
 use sqlx::MySqlPool;
 
+#[path = "support/lettering_documents.rs"]
+mod lettering_support;
+
 // ---------------------------------------------------------------------------
 // Montage
 // ---------------------------------------------------------------------------
@@ -1080,6 +1083,31 @@ async fn violations_des_groupes(pool: &MySqlPool) -> Vec<i64> {
     .unwrap()
 }
 
+/// AC9 (Story 15-1a2-i, part i) — les lignes qui violent l'invariant des
+/// pièces clientes : (1) une ligne d'origine `document` hors de l'écriture de
+/// vente d'une facture, d'un règlement **en vigueur** ou d'un avoir émis ; (2)
+/// une ligne d'une de ces écritures lettrée `manual` ou `reversal`. Une ligne
+/// d'un règlement ANNULÉ (sa ligne `invoice_settlements` retirée) sort de
+/// l'ensemble : elle n'est jamais `document`. ⛔ Aucune exception de période.
+async fn violations_des_pieces(pool: &MySqlPool) -> Vec<i64> {
+    sqlx::query_scalar(
+        "WITH pieces AS ( \
+             SELECT journal_entry_id AS entry_id FROM invoices \
+                 WHERE journal_entry_id IS NOT NULL \
+             UNION SELECT journal_entry_id FROM invoice_settlements \
+             UNION SELECT journal_entry_id FROM credit_notes \
+                 WHERE status = 'issued' AND journal_entry_id IS NOT NULL) \
+         SELECT jel.id FROM journal_entry_lines jel \
+         LEFT JOIN pieces p ON p.entry_id = jel.entry_id \
+         WHERE (jel.lettering_origin = 'document' AND p.entry_id IS NULL) \
+            OR (jel.lettering_origin IN ('manual', 'reversal') AND p.entry_id IS NOT NULL) \
+         ORDER BY jel.id",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
 /// Tout groupe a ≥ 2 lignes, un seul compte, une seule origine, une seule
 /// société, une somme nulle, et `lettering_key = MIN(id)`. ⛔ La lettrabilité
 /// n'est PAS contrôlée, par décision (C104). La Story 15-1a-ii y ajoute des
@@ -1088,7 +1116,9 @@ async fn violations_des_groupes(pool: &MySqlPool) -> Vec<i64> {
 /// son miroir reste ouvert) ; un groupe `reversal`
 /// posé en mode `System` et un groupe d'une seconde société y figurent aussi,
 /// et deux contrôles négatifs prouvent que les clauses « une origine » et
-/// « une société » rougissent (revue P1, E-6).
+/// « une société » rougissent (revue P1, E-6). La Story 15-1a2-i (AC9 part i)
+/// y ajoute l'invariant des pièces clientes ([`violations_des_pieces`]), sur des
+/// pièces posées par les gestes, et ses deux contrôles négatifs.
 #[sqlx::test(migrations = "./test-schema")]
 async fn lettering_invariants(pool: MySqlPool) {
     let m = monde(&pool).await;
@@ -1347,6 +1377,100 @@ async fn lettering_invariants(pool: MySqlPool) {
     .await
     .unwrap();
     assert_eq!(demi, 0);
+
+    // AC9 (Story 15-1a2-i, part i) — les pièces clientes, par les GESTES :
+    // facture soldée, soldée puis un règlement annulé, créditée, partielle.
+    use lettering_support::{crediter, facture, regler};
+    assert!(
+        violations_des_pieces(&pool).await.is_empty(),
+        "avant les pièces"
+    );
+    let le = d(2026, 7, 2);
+    let soldee = facture(&pool, &m.s, dec!(100), d(2026, 7, 1)).await;
+    regler(&pool, &m.s, soldee, dec!(100), le).await;
+    let annulee = facture(&pool, &m.s, dec!(100), d(2026, 7, 1)).await;
+    regler(&pool, &m.s, annulee, dec!(60), le).await;
+    let (sid, _) = regler(&pool, &m.s, annulee, dec!(40), le).await;
+    kesh_db::repositories::invoice_settlements_write::cancel_settlement(
+        &pool,
+        m.s.admin_user_id,
+        m.company(),
+        annulee,
+        sid,
+    )
+    .await
+    .expect("annulation d'un règlement d'une facture soldée");
+    let creditee = facture(&pool, &m.s, dec!(30), d(2026, 7, 1)).await;
+    crediter(&pool, &m.s, creditee, le).await;
+    let partielle = facture(&pool, &m.s, dec!(80), d(2026, 7, 1)).await;
+    regler(&pool, &m.s, partielle, dec!(20), le).await;
+    let documents: i64 = sqlx::query_scalar(
+        "SELECT COUNT(DISTINCT lettering_key) FROM journal_entry_lines \
+         WHERE lettering_origin = 'document'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(documents, 2, "montage : la soldée et la créditée");
+    assert!(
+        violations_des_groupes(&pool).await.is_empty(),
+        "groupes invalides : {:?}",
+        violations_des_groupes(&pool).await
+    );
+    assert!(
+        violations_des_pieces(&pool).await.is_empty(),
+        "pièces : {:?}",
+        violations_des_pieces(&pool).await
+    );
+    // Contrôles négatifs, posés en SQL puis défaits : (1) une ligne `document`
+    // hors d'une pièce — la ligne `c`, d'une écriture ordinaire ; (2) une ligne
+    // d'une écriture de vente lettrée `manual`.
+    let (cle_c, origine_c) = marque(&pool, c).await;
+    sqlx::query("UPDATE journal_entry_lines SET lettering_origin = 'document' WHERE id = ?")
+        .bind(c)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(violations_des_pieces(&pool).await, vec![c], "clause (1)");
+    sqlx::query(
+        "UPDATE journal_entry_lines SET lettering_origin = ? WHERE id = ? AND lettering_key = ?",
+    )
+    .bind(origine_c)
+    .bind(c)
+    .bind(cle_c)
+    .execute(&pool)
+    .await
+    .unwrap();
+    let ligne_de_vente: i64 = sqlx::query_scalar(
+        "SELECT jel.id FROM journal_entry_lines jel JOIN invoices i \
+         ON i.journal_entry_id = jel.entry_id WHERE i.id = ? AND jel.credit > 0 LIMIT 1",
+    )
+    .bind(partielle)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE journal_entry_lines SET lettering_key = id, lettering_origin = 'manual' \
+         WHERE id = ?",
+    )
+    .bind(ligne_de_vente)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        violations_des_pieces(&pool).await,
+        vec![ligne_de_vente],
+        "clause (2)"
+    );
+    sqlx::query(
+        "UPDATE journal_entry_lines SET lettering_key = NULL, lettering_origin = NULL \
+         WHERE id = ?",
+    )
+    .bind(ligne_de_vente)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert!(violations_des_pieces(&pool).await.is_empty());
 }
 
 // ---------------------------------------------------------------------------

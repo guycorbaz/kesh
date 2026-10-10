@@ -2,13 +2,13 @@
 
 ## Status
 
-ready-for-dev *(découpée de la 15-1a2 le 2026-10-09 à la remédiation de sa validation P1 — C-15-1a2-1 ;
+done *(2026-10-10 — revue de code close à la P3 ciblée ; gates au dernier commit de code `87f367df`)* — ready-for-dev *(découpée de la 15-1a2 le 2026-10-09 à la remédiation de sa validation P1 — C-15-1a2-1 ;
 validation P2 remédiée le 2026-10-09 — **refus** plutôt qu'abstention au délettrage, C-15-1a2-10 ;
 validation P3 remédiée le 2026-10-09 — le refus **extrait** dans la story préalable **15-1a2-0**,
 C-15-1a2-19, la dérogation C-15-1a2-13 retirée ; validation P4 remédiée le 2026-10-09 — fixture partagée sortie
 du code de production (`tests/support/`, C-15-1a2-28), étape 3 **terminale** (C-15-1a2-29), documentation
 publique du refus du rang 2 bis reçue de la 15-1a2-0 (**AC18**, C-15-1a2-24) ; **validation P5 à mener avant
-tout développement**)*
+tout développement** — faite : P5 ciblée close, cf. Change Log)*
 
 ## Story
 
@@ -639,13 +639,13 @@ par la 15-1a2-0 (code, textes, écran) ; il ne devient **atteignable** qu'ici. P
 
 ## Tasks
 
-- [ ] **T0** — Relevés au sol sur la base du gate : (a) `EXPLAIN` de la requête de découverte de P3 (accès
+- [x] **T0** — Relevés au sol sur la base du gate : (a) `EXPLAIN` de la requête de découverte de P3 (accès
       par clé primaire / `idx` des écritures, pas de balayage de `journal_entry_lines`) ; (b) re-greper les
       ancres de P4 par le nom (`grep -nF "pub async fn settle_invoice"`, etc.) sur la base réelle du
       développement ; (c) vérifier que les routes appelantes restent `Rejouee` (`audit_route_registry.rs`) :
       `POST /invoices/{id}/settlements`, `…/settlements/{settlementId}/cancel`, `…/write-off`,
       `POST /credit-notes`, `POST /reconciliation/accept`, `POST /reconciliation/transactions/{id}/cancel`.
-- [ ] **T1** (P3) — `letterings.rs` : `SyncOutcome`, `DocumentRef` (défini en P3, champs et sérialisation
+- [x] **T1** (P3) — `letterings.rs` : `SyncOutcome`, `DocumentRef` (défini en P3, champs et sérialisation
       écrits), `create_group_inner` / `dissolve_group_inner` (+ `document`), extension de
       `audit_details`, `sync_invoice_in_tx`, `dissolve_invoice_document_group_in_tx` — sur la règle des
       périodes de la 15-1a2-0 (`open_period_rule`, `lines_in_open_period`), sans seconde factorisation ;
@@ -659,14 +659,14 @@ par la 15-1a2-0 (code, textes, écran) ; il ne devient **atteignable** qu'ici. P
       message d'échec `:291` suivent (T4) ; `kesh-core/src/lettering.rs:14` (« les fonctions de refus que la
       primitive appelle à son rang ») **reste vrai** — la primitive les appelle par son corps — : trié, non
       réécrit. Le décompte « exactement deux écritures de la marque » (`letterings_lexical.rs:299-303`) tient.
-- [ ] **T2** (P4) — Les cinq appels du tableau, chacun à la place indiquée, avec l'exercice tenu et
+- [x] **T2** (P4) — Les cinq appels du tableau, chacun à la place indiquée, avec l'exercice tenu et
       l'acteur ; `cancel_settlement_in_tx` client garde l'`id` d'exercice de l'étape (2-bis).
-- [ ] **T3** (P4, AC15) — `accept_one_invoice` : appel après (g), mappage per-proposal (fonction pure
+- [x] **T3** (P4, AC15) — `accept_one_invoice` : appel après (g), mappage per-proposal (fonction pure
       `lettering_error_to_failed_proposal`, signature d'AC15 (d), à côté de `claim_account_failed_proposal`,
       testée).
-- [ ] **T4** (AC8 part i) — Tests lexicaux dans `letterings_lexical.rs` ; réalignement de
+- [x] **T4** (AC8 part i) — Tests lexicaux dans `letterings_lexical.rs` ; réalignement de
       `each_primitive_checks_the_rows_its_update_found` sur `*_inner`.
-- [ ] **T5** — Tests (liste ci-dessous) ; la **fixture partagée** d'AC5 vit **hors de `src/`**, dans
+- [x] **T5** — Tests (liste ci-dessous) ; la **fixture partagée** d'AC5 vit **hors de `src/`**, dans
       **`crates/kesh-db/tests/support/lettering_documents.rs`**, fonction `seed_lettering_documents` et prédicat
       d'AC5 (validation P4, M-1 = F4-1 ; C-15-1a2-28). Elle est incluse par `#[path = "support/lettering_documents.rs"]
       mod lettering_support;` dans `lettering_documents.rs`, dans le binaire de rattrapage de la 15-1a2-ii (son
@@ -710,7 +710,7 @@ par la 15-1a2-0 (code, textes, écran) ; il ne devient **atteignable** qu'ici. P
         lui-même est couvert côté `kesh-api` (AC15 a, c).
       La fixture contient **les deux exceptions d'AC5** (validation P4, L-6) — sans elles, le filtre d'exceptions
       du test d'accord ne serait exercé par aucune facture, et une exception trop large resterait verte.
-- [ ] **T6** (AC12, AC18) — CHANGELOG, `api-external.md` (`:223`, `:291`, `:299`, `:324` ; et, pour AC18, `:379`,
+- [x] **T6** (AC12, AC18) — CHANGELOG, `api-external.md` (`:223`, `:291`, `:299`, `:324` ; et, pour AC18, `:379`,
       `:426`, `:434`, `:462`, `:566`), manuels FR (utilisateur : AC12 et les sites d'AC18, encadré `:588-594` et
       note `:626-631` compris ; administration `:2101`) + `make fr` + PDF aplati, greps de propagation
       (AC12, AC18).
@@ -835,11 +835,201 @@ modules au grain le plus fin (ci-dessus) et n'a plus de dérogation.
 
 ### Agent Model Used
 
+Opus 5.5 (`claude-opus-5-5`), en autonomie, worktree `kesh-15-1a2-i`, base `46b08cde` (tête de la 15-1a2-0).
+
 ### Completion Notes List
+
+**T0 — relevés au sol** (base du gate `kesh_1a2i`). (a) `EXPLAIN` de la découverte : sur table peu peuplée,
+l'optimiseur prenait `idx_jel_account` pour les lignes (le `FOR UPDATE` aurait verrouillé toutes les lignes du
+compte de créance), `idx_journal_entries_company_date` pour l'en-tête et `idx_credit_notes_company_status` pour
+l'avoir → index **forcés** (`idx_jel_entry`, `STRAIGHT_JOIN … FORCE INDEX (PRIMARY)`, `uq_credit_notes_invoice`,
+`idx_invoice_settlements_company_invoice`), plans relus : `range idx_jel_entry` puis `eq_ref PRIMARY`
+(C-15-1a2-i-2). ⚠️ Observation **hors périmètre** : l'acte 1 de la primitive (`LOCK_LINES_BY_ID_SQL`, 15-1a-i)
+présente la même dégénérescence de plan sur base vide (`ref idx_journal_entries_company_date`) ; non touché,
+signalé. (b) ancres de P4 re-grepées par le nom (`settle_invoice`, `write_off_invoice`, `cancel_settlement_in_tx`,
+`create_credit_note`, `accept_one_invoice`, `claim_account_failed_proposal`) : présentes, conformes. (c) les six
+routes appelantes sont `Rejouee` (`audit_route_registry.rs` : `credit_notes::create_credit_note`,
+`invoices::settle_invoice_handler`, `write_off_invoice_handler`, `cancel_invoice_settlement_handler`,
+`reconciliation::post_accept`, `post_cancel_reconciliation`).
+
+**T1** — `letterings.rs` : `SyncOutcome`, `DocumentRef`, corps privés `create_group_inner` / `dissolve_group_inner`
+(les primitives publiques y délèguent avec `None`), `audit_details(group, document)` (trois clés, `documentNumber`
+présent et `null` sans numéro), `sync_invoice_in_tx` (étapes 1 à 6, étape 3 terminale), 
+`dissolve_invoice_document_group_in_tx`, sur `lines_in_open_period` de la 15-1a2-0 (aucune seconde
+factorisation). Énoncés R3 réécrits : en-tête du module, `entities/journal_entry.rs` (doc de `lettering_key`),
+`letterings_lexical.rs` (en-tête, message d'échec). Triés **vrais, non réécrits** (ils parlent de la primitive
+vue par les routes) : `kesh-core/src/lettering.rs:14`, `kesh-db/src/errors.rs:1129`,
+`kesh-db/tests/letterings.rs:2`, `kesh-api/tests/audit_route_registry.rs:248`, `journal_entries.rs:2364`.
+Brouillon → `Unchanged` (C-15-1a2-i-3). « Exactement deux écritures de la marque » : tient (`letterings_lexical`).
+
+**T2** — cinq appels : `settle_invoice` et `write_off_invoice` après l'`UPDATE invoices` (exercice `fy`),
+`create_credit_note` après la bascule (11) (exercice de l'avoir), `cancel_settlement_in_tx` après les refus de
+l'étape (3), avant `reverse_owned_in_tx` (l'`id` d'exercice de l'étape (2-bis) est gardé). **T3** — `accept_one_invoice`
+après (g), `lettering_error_to_failed_proposal` à côté de `claim_account_failed_proposal`. **T4** — trois tests
+lexicaux neufs, `each_primitive_checks_the_rows_its_update_found` réaligné sur `*_inner`. **T5** — fixture
+`tests/support/lettering_documents.rs` (C-15-1a2-28 ; incluse par `lettering_documents.rs`, `letterings.rs` (AC9)
+et `rejeu_interblocage_e2e.rs`) ; `support/document_group.rs` de la 15-1a2-0 trouve désormais le groupe posé par
+le geste (C-15-1a2-i-1). **T6** — CHANGELOG (deux entrées, AC12 et AC18), `api-external.md`, manuels FR, README
+(feuille de route, C-15-1a2-i-4), `make fr`.
+
+**Reçu B-2 de la 15-1a2-0** (texte `reconciliation-cancel-blocked-lettering-closed` pour un lien `Entry` hérité
+qui pointe la vente) : le texte reste vrai sur le fond — la vente est dans le groupe de sa facture —, mais son
+remède ne lève que le rang 2 bis ; le socle refuse ensuite par `OWNED_BY_INVOICE`. L'état est **inexistant**, et pour une
+raison plus solide que celle qu'écrit `reconciliation_cancel.rs:26-31` (« Kesh n'est pas en production » — périmée :
+la v0.12.1 est en fonction sur le NAS depuis le 2026-10-08 ; revue P2, E2-3) : l'instance a été installée **à neuf**
+en v0.12.1, qui contient déjà la 24-2, et un lien d'avant la 24-2 ne naît plus d'aucun geste. Trié, texte **non
+réécrit** ; le commentaire de `reconciliation_cancel.rs`, antérieur à la story, est signalé à l'orchestrateur.
+
+**Tests** (périmètre `46b08cde` → commit de développement ; `git diff 46b08cde -- crates | grep -cE
+'^\+\s*#\[(sqlx::test|tokio::test|test)'` = **28**) : `lettering_documents.rs` **21** (les 20 prévus +
+`only_the_anchor_of_the_sale_is_in_the_group`, ajouté après la survie de la mutation M12), `letterings_lexical.rs` 3,
+`reconciliation_e2e.rs` 2, `rejeu_interblocage_e2e.rs` 1, `routes/reconciliation.rs` 1 ; **1 étendu**
+(`lettering_invariants`, AC9 : `violations_des_pieces` et deux contrôles négatifs). AC15 (c) porte un **témoin**
+(rapprochement seul, accepté et lettré) pour ne pas être vert à vide.
+
+**Mutations** (exécutées une à une, restaurées, fichier retouché ; filtre : binaires `lettering_documents`,
+`letterings_lexical`, `letterings`, ou les tests `kesh-api` visés) — **12 tuées sur 12** : M1 sans synchronisation au
+règlement (16 rouges), M2 au solde (5), M3 sans dissolution à l'annulation (8), M4 sans synchronisation à l'avoir (4),
+M5 étape 3 non terminale (1 : `receivable_not_letterable_is_skipped`), M6 somme ignorée (11), M7 périodes ignorées
+(2), M8 audit sans pièce (1), M9 `LETTERING_CONCURRENT_CHANGE` mappé hors `INTERNAL_ERROR` (1), M10 sans
+synchronisation au rapprochement (2), M11 marque étrangère acceptée (1), M12 ancre élargie à toute ligne de vente
+(survivante au premier passage → test ajouté → 1). ⚠️ Les mutations « appel neutralisé par `if false` » (M3, M4)
+ne font pas rougir les détecteurs lexicaux (le texte de l'appel reste) : c'est voulu, ils gardent l'inventaire,
+les tests de dépôt gardent le comportement.
+
+**Gates au commit de développement** : `scripts/test-fast.sh --no-lint` (avant les tests de dépôt et `kesh-api`
+neufs — les 3 tests lexicaux neufs y étaient déjà ; revue P2, A2-6) **3233 passés, 4 ignorés** ; après le rebase,
+`scripts/test-fast.sh` complet **3258 passés, 4 ignorés** (3233 + 25 tests neufs restants) ; binaires ciblés verts (`lettering_documents` 21/21, `letterings` 33/33, `letterings_lexical` 6/6,
+`rejeu_interblocage_e2e` 11/11, trois tests `kesh-api` ciblés). **Gate complet, frontend et E2E : au dernier commit
+de code, après le rebase sur `main`.** Frontend non touché (`git diff --stat 46b08cde -- frontend` vide).
+
+**Contrôles de documentation.** PDF aplati : `(ne se lettrent pas encore|Kesh ne lettre pas encore)` → 0 ; l'item du
+motif dans les quatre listes du manuel utilisateur, la liste des exceptions, le § du verrou (deux causes),
+l'encadré, la note et le glossaire, la phrase du manuel d'administration — chacun présent. Grep d'AC12 : un seul
+résidu, `CHANGELOG.md:15` « ne se lettrent pas à la main » (énoncé vrai du lettrage manuel, trié légitime). Grep
+de la valeur `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` (`docs`, `CHANGELOG.md`) : 3 sites d'origine
+(`api-external.md` lettrage `POST`, `DELETE`, table § 10 — cette dernière complétée) + **6** neufs (CHANGELOG,
+`api-external.md:293`, 2 tableaux et 2 listes en prose des annulations) = **9** *(corrigé en revue P1, A-3 : « 5 neufs »
+oubliait `:293`)* — chacun le refus du 2 bis ou celui du lettrage manuel. Remède :
+aucun site ne prescrit « ou » seul.
+
+**Choix consignés** : C-15-1a2-i-1 à C-15-1a2-i-4.
 
 ### File List
 
+- `crates/kesh-db/src/repositories/letterings.rs` — synchronisation, `DocumentRef`, `SyncOutcome`, corps `*_inner`, audit
+- `crates/kesh-db/src/repositories/invoice_settlements_write.rs` — trois appels (règlement, solde, annulation)
+- `crates/kesh-db/src/repositories/credit_notes.rs` — un appel (avoir)
+- `crates/kesh-db/src/entities/journal_entry.rs` — doc-comment R3
+- `crates/kesh-api/src/routes/reconciliation.rs` — appel, `lettering_error_to_failed_proposal`, test
+- `crates/kesh-db/tests/lettering_documents.rs` — **neuf**
+- `crates/kesh-db/tests/support/lettering_documents.rs` — **neuf**
+- `crates/kesh-db/tests/support/document_group.rs`, `crates/kesh-db/tests/letterings.rs`, `crates/kesh-db/tests/letterings_lexical.rs`
+- `crates/kesh-api/tests/reconciliation_e2e.rs`, `crates/kesh-api/tests/rejeu_interblocage_e2e.rs`
+- `CHANGELOG.md`, `README.md`, `docs/api-external.md`
+- `docs/manual/fr/user-manual.tex`, `admin-manual.tex` et les trois PDF
+- `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md`, `sprint-status.yaml`
+
 ## Change Log
+
+### Clôture — 2026-10-10 (Opus 5.5) — **REVUE CLOSE, story `done`**
+
+**Revue P3 ciblée** (Haiku 4.5, une lentille, prompt `15-1a2-i-review-prompt-p3-ciblee.md`, diff `7b27bf99..87f367df`,
+rapport `kesh-gate-logs/15-1a2-i-review-p3-ciblee.md`) : 1 MEDIUM et 2 LOW annoncés, vérifiés par l'orchestrateur :
+
+| finding | sév. annoncée | verdict |
+|---|---|---|
+| P3-1 — « n'est jamais refusé à cause du lettrage » sans la réserve de l'`Invariant` d'E2-1 (`CHANGELOG.md:19`, commentaires de `settle_invoice`, `create_credit_note`) | MEDIUM | **reclassé LOW, réfuté sur le fond** (erreur de catégorie) : la formulation est celle que proposait A2-8 précisément pour distinguer un **refus** (motif métier rendu à l'utilisateur) d'un **échec** ; l'`Invariant` d'E2-1 est un échec, nommé comme tolérance au doc de `sync_invoice_in_tx` et de `SyncOutcome` ; l'énoncé est vrai du code |
+| P3-2 — `lettering_documents.rs:5` « pièce historique … n'est pas lettrée après coup » | LOW | **laissé** : en-tête d'un binaire de test, qui décrit la propriété éprouvée par `historical_closed_history_abstains` (l'abstention de la synchronisation) — non un énoncé public ; hors du reçu de la 15-1a2-ii, à dessein |
+| P3-3 — un `INSERT` hors fonction est rapporté sous `<hors fonction>` | LOW | **accepté** : le test rougit toujours, en nommant le fichier |
+
+**0 au-dessus de LOW ; aucune remédiation** — la boucle se clôt (aucune ligne de production touchée après la P3).
+**Trend** : P1 (Sonnet ×3) **1 M / 12 L** → P2 (Opus ×3, complète) **1 M / 13 L** (D5 déclaré, non découpé) → P3 (Haiku,
+ciblée) **0 M / 3 L** (après vérification). Modèles : Opus 5.5 (développement, remédiations, orchestration), Sonnet 5.5
+(P1), Opus 5.5 (P2), Haiku 4.5 (P3 ciblée).
+
+**Gates au dernier commit de code `87f367df`** (exécutés ; base `kesh_1a2i` remise à zéro avant, sans redémarrer
+MariaDB) : `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) **3259 passés, 4 ignorés** ; frontend
+inchangé depuis `main` (`git diff --stat a06e1927 87f367df -- frontend` vide) — `npm run check` **0 erreur** (27
+avertissements préexistants), `lint-i18n-ownership` vert, `test:unit` **116 fichiers / 1167 tests**, `build` vert ;
+**E2E complet** (port 3022, base `kesh_e2e_1a2i` neuve, montage de `docs/testing.md`, binaire construit sur
+`87f367df`) : **247 passés, 7 échoués, 19 ignorés** — jugés fichier par fichier : les **sept** sont la KF-029 (#97) de
+la liste attendue (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) ; **aucun
+hors liste**, aucun à rejouer.
+
+### Revue de code P2 — 2026-10-09 (Opus 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
+
+**Prompt** : `15-1a2-i-review-prompt-p2.md` (complète, axe prioritaire : la remédiation P1). **Rapports** :
+`kesh-gate-logs/15-1a2-i-review-p2-{B,E,A}.md` — B **0 C / 0 H / 0 M / 4 L**, E **0 / 0 / 0 / 4 L**, A **0 / 0 / 1 M / 8 L** ;
+recoupements A2-3 = B2-2 = E2-2, B2-1 ≈ E2-4 → **1 MEDIUM, 13 LOW distincts**. Affirmations vérifiées (`grep -nF` : bras
+`LetteringLineOwnedByDocument` présent au mappage, absent du test ; registre `:5858`, C-15-1a-i-7 ; `:1246` réécrite).
+**Trend** : P1 **1 M / 12 L** → P2 **1 M / 13 L**.
+
+⚠️ **Signal D5 levé, déclaré, non découpé.** MEDIUM → MEDIUM, et le MEDIUM est **recyclé** : A2-1 conteste le verdict
+P1 d'A-1 (point 3) — la remédiation P1 avait renvoyé à la 15-1a2-ii, au motif « aucun tag entre les deux » (C124),
+l'énoncé « une facture déjà soldée n'est pas lettrée », argument que C-15-1a-i-7 a déjà écarté (« un texte faux entre
+deux merges est un texte faux »). Pas de découpage : défaut **local** (trois phrases de documentation), sans dispersion
+— aucun module gagné, la remédiation ne touche le code de production que par des commentaires.
+
+| finding | sév. | verdict |
+|---|---|---|
+| A2-1 — la documentation suppose le rattrapage de la 15-1a2-ii (« pièce historique close pas lettrée après coup », inatteignable par un geste ; rien ne dit que l'existant n'est pas lettré) | MEDIUM | **corrigé, option (a)** : CHANGELOG, `api-external.md:293`, paragraphe *Lettrage* du manuel disent que le lettrage se pose **au geste** et qu'une facture déjà soldée avant la mise à jour n'est pas lettrée par cette version ; le cas « période close » retiré ; **reçu** écrit dans la fiche 15-1a2-ii (sites nommés, grep de la valeur, réécriture à son T0) |
+| A2-2 — détecteur (c) recopié entre test réel et synthétique | LOW | **corrigé** : `ecritures_et_suite` partagée |
+| A2-3 = B2-2 = E2-2 — bras `LetteringLineOwnedByDocument` non éprouvé | LOW | **corrigé** (test étendu ; mutation M13 « bras retiré » : rouge) |
+| A2-4 — paragraphe *Lettrage* : survivant C104, « donc », versions, dé-rapprochement | LOW | **corrigé** (paragraphe réécrit en deux) |
+| A2-5 — AC15 (b) n'asserte pas le code | LOW | **corrigé** (`RECONCILIATION_INVOICE_NOT_ELIGIBLE`) |
+| A2-6 — 3233 contenait déjà les 3 tests lexicaux ; 3258 non déclaré | LOW | **corrigé** (Dev Agent Record) |
+| A2-7 — la partie déterministe d'AC15 (c) ne dissout rien | LOW | **corrigé** : le témoin, lettré par le rapprochement, voit son règlement de 60.— annulé → dissolution tracée |
+| A2-8 — « n'échoue jamais » | LOW | **corrigé** : « n'est jamais refusé » (CHANGELOG, doc de `SyncOutcome`, commentaires de `settle_invoice` et `create_credit_note`) |
+| A2-9 — en-tête du fichier d'appui sans `letterings.rs` | LOW | **corrigé** |
+| B2-1 ≈ E2-4 — « cycle neuf » inexact ; verrous de toutes les lignes parcourues et de clé suivante non décrits | LOW | **corrigé** : § « Interblocages résiduels » réécrit (attentes nommées, montée S → X du rapprochement antérieure) ; C-15-1a2-i-2 nuancé |
+| B2-3 — étape 5 : `Invariant` si l'exercice tenu ne couvre pas `k` | LOW | **nommé** (doc de l'étape 5) : branche défensive, inatteignable par un geste ; à traiter par la 15-1a2-ii si son rattrapage la rencontre |
+| B2-4 — dé-rapprochement sous clé : `lettering.removed` sans clé | LOW | **conforme à l'écart nommé d'AC10** (`cancel_settlement_in_tx` ne reçoit que l'utilisateur) ; `api-external.md` le dit désormais (« dé-rapprochement compris ») |
+| E2-1 — exercice créé pendant le geste, absent de l'instantané → `Invariant` | LOW | **tolérance nommée** (doc de `sync_invoice_in_tx`, `SyncOutcome`) : fenêtre de la seule création d'exercice, déjà partagée par le lettrage `reversal` (15-1a-ii) ; verrouiller les exercices romprait l'ordre de la clôture |
+| E2-3 — prémisse du verdict B-2 périmée | LOW | **corrigé** (raison réelle : installation à neuf en v0.12.1) ; commentaire de `reconciliation_cancel.rs` signalé à l'orchestrateur |
+
+**Gate au commit de remédiation** (base remise à zéro) : `scripts/test-fast.sh` **3259 passés, 4 ignorés** ; `make fr`,
+PDF aplati contrôlé. La remédiation touche des fichiers de production par leurs **commentaires** seulement
+(`letterings.rs`, `invoice_settlements_write.rs`, `credit_notes.rs`) et un `mod tests` (`routes/reconciliation.rs`) :
+passe **P3 ciblée** (Haiku) sur ce commit.
+
+### Revue de code P1 — 2026-10-09 (Sonnet 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
+
+**Prompt** : `15-1a2-i-review-prompt-p1.md`. **Rapports** : `kesh-gate-logs/15-1a2-i-review-p1-{B,E,A}.md` — B **0 C / 0 H /
+0 M / 4 L**, E **0 / 0 / 0 / 3 L**, A **0 / 0 / 1 M / 6 L** ; recoupement B-2 = E-1 → **1 MEDIUM, 12 LOW distincts**.
+Affirmations vérifiées par `grep -nF` (A-1 : `user-manual.tex:1246` « jusqu'à ce qu'un administrateur rouvre la
+période » ; `sync_invoice_in_tx(` appelé aux quatre seuls sites de geste ; A-2 : `letterings.rs:878`, `:1028`).
+Axes non exercés des trois lentilles : toute exécution — reprise par l'orchestrateur (gate complet, ci-dessous ;
+mutations au Dev Agent Record).
+
+| finding | sév. | verdict |
+|---|---|---|
+| A-1 — paragraphe *Lettrage* du manuel : « deux cas » (il y en a plus) et « jusqu'à ce qu'un administrateur rouvre la période » (rien ne relettre à la réouverture) | MEDIUM | **corrigé** : critère du grand livre, cas listés (période close, créance non lettrable, deux états hérités), « rouvrir la période ne la lettre pas d'elle-même », « au moment du geste qui la solde » ; `make fr`, PDF aplati contrôlé. Les factures soldées **avant** la mise à jour relèvent du rattrapage de la 15-1a2-ii, qui le documente (C124 : aucun tag entre les deux) |
+| A-2 — « la seule fonction qui écrit / efface la marque » sur les primitives publiques | LOW | **corrigé** (doc-comments renvoient aux corps `*_inner`) |
+| A-3 — décompte des sites de la valeur (5 neufs → 6, total 9) | LOW | **corrigé** (Dev Agent Record) |
+| A-4 — `documentNumber: null` non exercé | LOW | **corrigé** : test unitaire `audit_details_carry_the_document_or_nothing` (`letterings.rs`, `mod tests`) |
+| A-5 — volets (c), (d) d'AC8 non éprouvés sur source synthétique | LOW | **corrigé** : `appelle_avant` extraite, (c) et (d) éprouvés dans `the_function_body_detector_sees_calls_and_order` |
+| A-6 — `UPDATE` du test d'avoir hérité sans assertion de montage | LOW | **corrigé** (`rows_affected == 1`) |
+| A-7 — Status : « validation P5 à mener » | LOW | **corrigé** |
+| B-1 — cycles *rapprochement ‖ rapprochement* et *‖ avoir* non nommés | LOW | **corrigé** (doc du module) |
+| B-2 = E-1 — verrous d'intervalle des lectures `FOR UPDATE` de `invoice_settlements` / `credit_notes` | LOW | **nommé** au module (attente d'une facture voisine, au pire interblocage rejoué) ; non mesuré |
+| B-3 — refus du mode `Manual` mappés `DATABASE_ERROR` | LOW | **corrigé** : `INTERNAL_ERROR` (inatteignables en `System`), test étendu |
+| B-4 — un règlement sans ligne sur `A` ferait sortir `Invariant` de la dissolution | LOW | **réfuté** : `create_in_tx` des trois écrivains crédite toujours `A` (`settlement_journal_lines`, `write_off_journal_lines`) ; un règlement hérité sans ligne sur `A` ne laisse pas la facture soldée sur `A` (reste dû négatif, trop-perçu refusé) — aucun groupe ne le contient |
+| E-2 — lectures ordinaires (étapes 4, 5, lettrabilité, périodes) sur l'instantané d'`accept_batch` | LOW | **accepté** : le groupe `k` d'une facture ne change que sous le verrou de la facture, tenu par l'`UPDATE` de (g) avant la synchronisation ; pire cas une abstention ou une recréation superflue, jamais un échec du geste |
+| E-3 — bords sans test dédié (arrondi négatif réel, règlement daté la veille, restauration, règlements concurrents, `ENTRY_LETTERED` sur une ligne `document`) | LOW | **accepté** : le filtre de l'ancre est tenu par `only_the_anchor_of_the_sale_is_in_the_group` ; la garde `ENTRY_LETTERED` est indépendante de l'origine (15-1a-ii) ; la restauration et son rejeu sont la 15-1a2-ii |
+
+**Gate au commit de remédiation** (base `kesh_1a2i` remise à zéro, sans redémarrer MariaDB) : `scripts/test-fast.sh`
+**3259 passés, 4 ignorés** (+1 : le test unitaire d'A-4). Signal D5 : sans objet (sévérité en baisse). La remédiation
+touche du code de production (`letterings.rs` : doc-comments et `mod tests` ; `routes/reconciliation.rs` : quatre bras
+du mappage) et deux modules : passe **P2 complète, Opus**.
+
+### Développement — 2026-10-09 (Opus 5.5, `bmad-dev-story`, en autonomie)
+
+T0–T6 livrées : synchronisation idempotente des factures clientes (règlement, solde, avoir, rapprochement),
+dissolution à l'annulation, audit avec la pièce, inventaire fermé tenu par trois tests lexicaux, documentation
+publique du lettrage et du refus du rang 2 bis (AC12, AC18). 28 tests neufs + 1 étendu, 12 mutations tuées.
+Choix C-15-1a2-i-1 à 4. Détail au Dev Agent Record. Prochaine étape : rebase sur `main` (15-1a2-0 fusionnée,
+`a06e1927`), puis `bmad-code-review` P1.
 
 ### Validation P4 — 2026-10-09 (Opus 5.5 ×2, lentilles R et F ; remédiation Opus 5.5, seul remédiateur des fiches de la suite du lettrage, en autonomie)
 

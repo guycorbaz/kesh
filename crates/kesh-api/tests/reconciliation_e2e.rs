@@ -5875,3 +5875,226 @@ async fn unreconcile_of_a_closed_lettering_is_refused_in_its_family(pool: MySqlP
     assert_eq!(apres, ecritures, "rien d'écrit");
     assert_eq!(document_group::lignes_du_groupe(&pool, cle).await, 2);
 }
+
+// ============================================================
+// Story 15-1a2-i (#518) — le rapprochement lettre la facture qu'il solde
+// ============================================================
+
+/// Les lettrages `document` de la facture : `(clé, nombre de lignes)`.
+async fn groupes_document(pool: &MySqlPool, inv_id: i64) -> Vec<(i64, i64)> {
+    sqlx::query_as(
+        "SELECT jel.lettering_key, COUNT(*) FROM journal_entry_lines jel \
+         WHERE jel.lettering_origin = 'document' AND jel.entry_id IN ( \
+             SELECT journal_entry_id FROM invoices WHERE id = ? \
+             UNION SELECT journal_entry_id FROM invoice_settlements WHERE invoice_id = ?) \
+         GROUP BY jel.lettering_key",
+    )
+    .bind(inv_id)
+    .bind(inv_id)
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// AC15 (a) — une proposition qui solde la facture la lettre `document`, par
+/// l'API et SOUS UNE CLÉ D'API : l'entrée `lettering.created` porte la clé —
+/// le seul geste qui la porte (AC10).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_letters_a_fully_settled_invoice(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Lettre", "CH4431999123000889012", Role::Comptable).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let (inv_id, je_id) = seed_validated_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-LETTRE-1",
+        NaiveDate::from_ymd_opt(2026, 4, 20).unwrap(),
+        dec!(100.00),
+    )
+    .await;
+    let tx_id = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("accept_letters"),
+        day,
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            Some(day),
+            dec!(100.00),
+            "CHF",
+            "INV-LETTRE-1",
+            Some("Lettre Client"),
+        )],
+    )
+    .await[0];
+    let app = spawn_app(pool.clone()).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/settings/api-keys"))
+        .bearer_auth(&ctx.jwt)
+        .json(&serde_json::json!({ "name": "rw", "scope": "read-write" }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+    let body: Value = resp.json().await.unwrap();
+    let (key_id, key) = (
+        body["id"].as_i64().unwrap(),
+        body["key"].as_str().unwrap().to_string(),
+    );
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/accept"))
+        .bearer_auth(&key)
+        .json(&serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "proposals": [{ "type": "invoice", "bankTransactionId": tx_id, "invoiceId": inv_id }],
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["accepted"].as_array().map(Vec::len), Some(1), "{body}");
+
+    let groupes = groupes_document(&pool, inv_id).await;
+    assert_eq!(groupes.len(), 1, "un groupe : {groupes:?}");
+    assert_eq!(groupes[0].1, 2, "vente + encaissement");
+    let cle_vente: Option<i64> = sqlx::query_scalar(
+        "SELECT lettering_key FROM journal_entry_lines WHERE entry_id = ? AND debit > 0",
+    )
+    .bind(je_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(cle_vente, Some(groupes[0].0), "l'ancre est dans le groupe");
+
+    let (actor_type, actor_key, details): (String, Option<i64>, Value) = sqlx::query_as(
+        "SELECT actor_type, actor_api_key_id, details_json FROM audit_log \
+         WHERE action = 'lettering.created'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!((actor_type.as_str(), actor_key), ("api_key", Some(key_id)));
+    assert_eq!(details["origin"], "document");
+    assert_eq!(details["documentType"], "invoice");
+    assert_eq!(details["documentId"], inv_id);
+    assert_eq!(details["documentNumber"], "INV-LETTRE-1");
+}
+
+/// AC15 (b) — une modification concurrente de la facture entre l'instantané et
+/// l'étape (g) (ici, un règlement manuel qui la SOLDE pendant que
+/// l'acceptation attend) rend `race_during_update` sans qu'aucune marque ne soit
+/// posée par l'acceptation : le seul lettrage est celui du règlement manuel.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn accept_race_refuses_before_any_lettering(pool: MySqlPool) {
+    use kesh_db::entities::SettlementChoice;
+    use kesh_db::repositories::invoice_settlements_write;
+    let ctx = setup_company(&pool, "CourseL", "CH4431999123000889012", Role::Comptable).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let (inv_id, _) = seed_validated_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-RACE-L",
+        NaiveDate::from_ymd_opt(2026, 4, 20).unwrap(),
+        dec!(1000.00),
+    )
+    .await;
+    let tx_id = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("race_lettering"),
+        day,
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            Some(day),
+            dec!(1000.00),
+            "CHF",
+            "INV-RACE-L",
+            Some("CourseL Client"),
+        )],
+    )
+    .await[0];
+    let app = spawn_app(pool.clone()).await;
+
+    let mut verrou = pool.acquire().await.unwrap().detach();
+    sqlx::query("LOCK TABLES contacts WRITE")
+        .execute(&mut verrou)
+        .await
+        .unwrap();
+    let acceptation = accept_in_background(&app, &ctx, tx_id, inv_id);
+    let bloquee =
+        kesh_db::test_fixtures::attendre_une_requete_en_cours(&pool, &["FROM contacts"], || {
+            acceptation.is_finished()
+        })
+        .await;
+    assert!(bloquee, "l'acceptation devait attendre sur `contacts`");
+
+    // Le règlement manuel qui SOLDE la facture, pendant l'attente : il la lettre.
+    let manuel = invoice_settlements_write::settle_invoice(
+        &pool,
+        ctx.user_id,
+        ctx.company_id,
+        inv_id,
+        SettlementChoice::BankTransfer {
+            bank_account_id: ctx.bank_account_id,
+        },
+        dec!(1000.00),
+        day,
+    )
+    .await
+    .expect("règlement manuel");
+    assert!(manuel.fully_settled);
+    let avant = groupes_document(&pool, inv_id).await;
+    assert_eq!(avant.len(), 1, "montage : le règlement manuel a lettré");
+
+    sqlx::query("UNLOCK TABLES")
+        .execute(&mut verrou)
+        .await
+        .unwrap();
+    drop(verrou);
+    let (status, body) = acceptation.await.unwrap();
+    assert_eq!(status, 200, "{body}");
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(
+        failed[0]["errorCode"], "RECONCILIATION_INVOICE_NOT_ELIGIBLE",
+        "le refus du contrôle de version (g), non celui de la transaction"
+    );
+    assert_eq!(failed[0]["details"]["reason"], "race_during_update");
+
+    assert_eq!(
+        groupes_document(&pool, inv_id).await,
+        avant,
+        "aucune marque neuve"
+    );
+    let lettrages: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'lettering.created'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(
+        lettrages, 1,
+        "le seul lettrage est celui du règlement manuel"
+    );
+    let reglements: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM invoice_settlements WHERE invoice_id = ?")
+            .bind(inv_id)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(reglements, 1, "l'acceptation n'a rien laissé");
+}
