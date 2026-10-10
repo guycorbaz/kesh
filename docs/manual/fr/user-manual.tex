@@ -1445,7 +1445,7 @@ ni réglée, ni créditée, ni partie chez le client.
 \end{keshtip}
 
 %%─────────────────────────────────────────────────────────────────────────────
-\section{Factures fournisseurs et paiements}
+\section{Factures fournisseurs et paiements}\label{sec:factures-fournisseurs}
 \label{sec:fournisseurs}
 
 Le pendant « achats » de la facturation : enregistrer les factures reçues de vos
@@ -1534,8 +1534,8 @@ reviennent à zéro, et la facture passe à \emph{annulée}. Le journal d'audit 
 bien sorti. Il est \textbf{détaché} de la facture et devient un \emph{paiement sans facture}~---
 au compte fournisseurs (2000), il laisse un solde débiteur, une somme que le fournisseur vous
 doit ou qui attend d'être rattachée à la bonne facture. Ces paiements se retrouvent parmi les
-\textbf{postes ouverts} du compte fournisseurs (\emph{Mensuel} → \emph{Postes ouverts},
-\S\ref{sec:lettrage}), à son grand livre, et dans le journal d'audit, qui garde le lien vers
+\textbf{postes ouverts} du compte fournisseurs, s'il est lettrable (\emph{Mensuel} →
+\emph{Postes ouverts}, \S\ref{sec:lettrage}), à son grand livre, et dans le journal d'audit, qui garde le lien vers
 la facture annulée. La fiche de ce paiement n'offre ni «~Modifier~» ni «~Supprimer~»~: elle affiche le motif, et la contre-passation reste disponible. Si le paiement lui-même était une erreur, le plus simple est d'\textbf{annuler le
 règlement d'abord}, puis la facture~: le lien avec la facture reste lisible au grand livre.
 
@@ -1923,7 +1923,7 @@ deux lignes~:
 
 \begin{itemize}
     \item \textbf{à la date choisie}~: «~non lettrée~», ou «~lettrée après cette date~», suivi
-          du jour du lettrage et de son code~;
+          du code du groupe, en lien, et du jour du lettrage~;
     \item \textbf{aujourd'hui}, l'état de la facture client qu'elle porte~: «~facture non
           réglée~» ou «~facture partiellement réglée~», avec le reste dû~; «~marquée payée avant
           la v0.12.0, sans écriture d'encaissement~: le compte porte encore cette créance~»~;
@@ -1992,8 +1992,8 @@ Un groupe s'ouvre par son \textbf{code}, de partout où il s'affiche~: le messag
 lettrage, le motif «~lettrée après cette date~» de la liste, la colonne \textbf{Lettrage} de la
 fiche d'une écriture et du Grand livre (\S\ref{sec:grand-livre}), et le motif d'une écriture
 que son lettrage empêche de modifier. La vue du groupe dit son compte, son origine et ses
-lignes, avec leur pièce~; le lien \emph{Afficher les postes ouverts de ce compte} ramène à la
-liste.
+lignes, avec leur pièce~; ouvert seul (depuis un lien), il offre le bouton \emph{Afficher les
+postes ouverts de ce compte}, qui ramène à la liste.
 
 Le bouton \textbf{Délettrer} rouvre toutes les lignes du groupe. Il n'est pas offert, et la vue
 dit pourquoi, dans trois cas~:
@@ -2003,10 +2003,10 @@ dit pourquoi, dans trois cas~:
           et ne se défait pas à la main~»}. Il se défait par les gestes de la pièce elle-même,
           que décrivent «~Enregistrer et annuler un règlement~» (\S\ref{sec:reglement-client}),
           «~Avoirs et notes de crédit~» (\S\ref{sec:avoirs}) et «~Factures fournisseurs et
-          paiements~» (\S\ref{sec:regler-facture-fournisseur})~;
+          paiements~» (\S\ref{sec:factures-fournisseurs}~: règlement et annulation)~;
     \item \textbf{une de ses lignes appartient encore à une pièce}~: c'est la paire que forme
-          l'annulation d'une facture fournisseur \textbf{non payée} --- l'achat et sa
-          contre-passation~;
+          l'annulation d'une facture fournisseur, \textbf{payée ou non} --- l'achat, qui reste la
+          ligne de la facture, et sa contre-passation (\S\ref{sec:annuler-facture-fournisseur})~;
     \item \textbf{toutes ses lignes sont en période close}~: le lettrage n'y change plus
           (ci-dessous).
 \end{itemize}
@@ -2036,15 +2036,17 @@ de ces gestes.
           \textbf{sur la facture} (règlement, ou rapprochement bancaire), qui la solde et la
           lettre --- et corrigez l'écriture manuelle, qui ferait sinon double emploi.
     \item \textbf{Le code n'est pas dans les exports CSV et PDF du Grand livre}~: il ne s'y
-          lit qu'à l'écran. L'export comptable complet, lui, porte pour chaque ligne d'écriture
+          lit qu'à l'écran. L'export global (\S\ref{sec:exports}), lui, porte pour chaque ligne d'écriture
           la clé et l'origine de son groupe (colonnes \texttt{lettering\_key} et
           \texttt{lettering\_origin} de \texttt{journal\_entry\_lines.csv}).
     \item \textbf{Une écriture lettrée est figée}~: elle ne se modifie ni ne se supprime tant
           qu'une de ses lignes est lettrée. Quand le lettrage est ce qui la retient --- une
           écriture saisie à la main, d'un exercice ouvert ---, le motif de sa fiche porte le code
           du groupe, en lien~: délettrez-la là, puis modifiez (\S\ref{sec:modifier-ecriture}).
-          Une écriture qu'une autre cause fige (pièce, contre-passation, période close) affiche
-          d'abord ce motif-là.
+          Si ses lignes sont dans plusieurs groupes, le motif nomme le premier~: une fois celui-ci
+          délettré, la fiche nomme le suivant. Une écriture qu'une autre cause fige (pièce,
+          rapprochement bancaire, paiement détaché d'une facture fournisseur annulée,
+          contre-passation, période close) affiche d'abord ce motif-là.
 \end{itemize}
 
 \subsubsection{La frontière avec la réconciliation, et les rôles}\label{sec:lettrage-frontiere}
@@ -2323,7 +2325,7 @@ distincte : le montant affiché correspond alors au décaissement réel.
 \end{keshtip}
 
 %%─────────────────────────────────────────────────────────────────────────────
-\section{Exports de souveraineté}
+\section{Exports de souveraineté}\label{sec:exports}
 
 \subsection{Concept}
 

@@ -371,6 +371,7 @@ test.describe('Postes ouverts', () => {
 			await expect(page.getByTestId('open-items-list')).toBeVisible();
 			// Lettrées, les deux lignes ne sont pas ouvertes à cette date.
 			await expect(page.getByTestId(`open-item-row-${m.debitLine}`)).toHaveCount(0);
+			await expect(page.getByTestId(`open-item-row-${m.creditLine}`)).toHaveCount(0);
 		});
 	});
 

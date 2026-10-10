@@ -184,7 +184,11 @@ describe('fiche d’écriture — motif `ENTRY_LETTERED` (15-1c-ii, test 2)', ()
 	it('le code du motif est un lien vers le groupe', async () => {
 		await renderEntry(lettered());
 		const reason = screen.getByTestId('modification-blocked-reason');
-		expect(reason.textContent).toContain('Cette écriture est lettrée');
+		// Texte exact : le code n'apparaît qu'une fois, dans le lien — jamais
+		// suffixé par `modificationMessage` en plus (« (AB) (AB) »).
+		expect(reason.textContent?.replace(/\s+/g, ' ').trim()).toBe(
+			'Cette écriture est lettrée : délettrez-la d’abord. (AB)'
+		);
 		const a = reason.querySelector('a');
 		expect(a?.textContent).toBe('AB');
 		expect(a?.getAttribute('href')).toBe('/open-items?group=AB');
