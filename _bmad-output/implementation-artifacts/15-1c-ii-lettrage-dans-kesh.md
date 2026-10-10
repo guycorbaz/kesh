@@ -2,9 +2,10 @@
 
 ## Status
 
-ready-for-dev **après la livraison de la 15-1c-i** — créée le 2026-10-09 par le découpage de la 15-1c à la
+**done** — revue de code close le 2026-10-10 (P3 ciblée, remédiation sans code). Développée le 2026-10-10 sur la tête de la 15-1c-i (`011ea618`), rebasée sur `origin/main` `66935feb` (la 15-1c-i fusionnée, PR #609 ; arbres identiques), en autonomie.
+*(Avant : ready-for-dev **après la livraison de la 15-1c-i** — créée le 2026-10-09 par le découpage de la 15-1c à la
 remédiation de sa validation P1 (registre **C-15-1c-1**) ; validation P2 remédiée le 2026-10-09 ;
-**VALIDATION CLOSE** (P3 Sonnet ×2 : 0 au-dessus de LOW ; P4 ciblée Haiku : 0 au-dessus de LOW, LOW appliqués).
+**VALIDATION CLOSE** (P3 Sonnet ×2 : 0 au-dessus de LOW ; P4 ciblée Haiku : 0 au-dessus de LOW, LOW appliqués).)*
 
 ⛔ **Ordre** : **… → 15-1b-0 → 15-1b → 15-1c-0 → 15-1c-i → 15-1c-ii**. Cette story suppose la 15-1c-i mergée : l'écran
 `/open-items`, l'état d'URL `?group=` (cible de tous les liens ci-dessous), le champ `letterable` du type
@@ -104,7 +105,7 @@ complet** au dernier commit de code (les FTL sont dans `kesh-i18n`).
      livre) ; refusé pour un groupe d'une pièce — **il suit la pièce et ses règlements** (texte de la 15-1a2-0 D5 ;
      renvoi aux sections du règlement, de l'avoir et de la facture fournisseur, jamais « annulez le règlement »,
      faux pour un groupe facture + avoir : validation P2, R M-4, C-15-1c-18) — et pour une paire de
-     contre-passation dont une ligne reste celle d'une pièce (l'annulation d'une facture fournisseur non payée) ;
+     contre-passation dont une ligne reste celle d'une pièce (l'annulation d'une facture fournisseur non payée — *payée ou non* : rectifié à la revue de code P2, A2-1, l'annulation d'une facture payée formant la même paire achat + contre-passation) ;
    - **ce que le lettrage ne fait pas** — pas de lettrage partiel, pas de tolérance de montant (le solde du reste
      pour une facture, une écriture d'ajustement sinon) ; une facture payée par écriture manuelle se règle **sur la
      facture** ; le code n'est **pas** dans les exports CSV/PDF du Grand livre ;
@@ -192,18 +193,18 @@ contre `docs/testing.md` § « Les échecs attendus ».
 
 ## Tasks
 
-- [ ] **T0** — Rebaser sur `main` après le merge de la 15-1c-i ; inventaires d'AC12 (manuels), d'AC14
+- [x] **T0** — Rebaser sur `main` après le merge de la 15-1c-i ; inventaires d'AC12 (manuels), d'AC14
       (CHANGELOG), d'AC17 (`api-external.md`) ; bornes de `i18n-keys.test.ts` ; écrire au Dev Agent Record.
       *(Reçu de la 15-1c-i : lire la section « Reçu de la 15-1c-i » plus bas — la phrase du menu au manuel.)*
-- [ ] **T1** (AC9) — fiche d'écriture : colonne, lien du motif `ENTRY_LETTERED`.
-- [ ] **T2** (AC9) — Grand livre : type `LedgerLine.letteringCode`, colonne, `colspan` calculés, lien « Postes
+- [x] **T1** (AC9) — fiche d'écriture : colonne, lien du motif `ENTRY_LETTERED`.
+- [x] **T2** (AC9) — Grand livre : type `LedgerLine.letteringCode`, colonne, `colspan` calculés, lien « Postes
       ouverts de ce compte » (comptes lettrables passés par la page des rapports).
-- [ ] **T3** (AC11 part ii) — clés ×4 locales, gardes.
-- [ ] **T4** (AC12) — manuel FR, propagation par inventaire sur `docs/manual/fr/*.tex`, preuve négative sur les
+- [x] **T3** (AC11 part ii) — clés ×4 locales, gardes.
+- [x] **T4** (AC12) — manuel FR, propagation par inventaire sur `docs/manual/fr/*.tex`, preuve négative sur les
       sources, PDF régénérés et contrôlés aplatis.
-- [ ] **T5** (AC14, AC17) — CHANGELOG (*Ajouté* fondu, *Modifié* relus), `api-external.md`, README, site, brochure
+- [x] **T5** (AC14, AC17) — CHANGELOG (*Ajouté* fondu, *Modifié* relus), `api-external.md`, README, site, brochure
       (`marketing-brochure.tex` et son PDF).
-- [ ] **T6** — Tests (liste ci-dessous) ; E2E (AC13 part ii).
+- [x] **T6** — Tests (liste ci-dessous) ; E2E (AC13 part ii).
 
 **Tests de T6** — un par ligne, rattaché à son critère :
 
@@ -278,9 +279,131 @@ risk : une passe de revue relit la propagation des textes, **et le PDF**, comme 
 
 ### Agent Model Used
 
+Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
+
 ### Completion Notes List
 
+- **T0 — base** : tête de la 15-1c-i, `011ea618` (PR #609 non fusionnée au moment du développement ; rebasée
+  ensuite par `git rebase --onto origin/main 011ea618` sur `66935feb`, sans conflit, arbre de base identique). Bornes de `i18n-keys.test.ts` à la base :
+  `sitesTotal` 2017, `sitesNonResolus` 31, `relais` 6, `sitesGabarit` 10 ; garde « libellé en dur » 60 candidates
+  (`ecartee` 14, `conforme` 46).
+- **T0 — inventaire AC12, sur les sources à `011ea618`** (`grep -n -i 'lettr' docs/manual/fr/*.tex`) : **75** lignes
+  (user 67, admin 7, brochure 1 — les 15-1a2-* et la 15-1c-i en ont ajouté 45 aux 30 de `f9b6b199`). Classées en
+  comparant chaque ligne de `011ea618` au fichier livré (ligne gardée telle quelle = juste) :
+  - **réécrites, 18** — user `:474` (renvoi à la section neuve), `:499-501` (sixième condition : « par l'API dans
+    cette version » retiré, le délettrage se fait depuis le lien du motif), `:1240-1241` et `:1494` (#607 point 2 :
+    « le grand livre la montre soldée » devient « la colonne Lettrage du grand livre porte son code… et la facture
+    quitte les postes ouverts »), `:1539-1540` (paiement détaché : « par l'API dans cette version » → l'écran),
+    `:2416` (FAQ : où se délettre), `:2520-2522` (glossaire : phrase provisoire retirée, renvoi ; `:2522` re-coupée) ;
+    admin `:2211`, `:2253`, `:2392`, `:2427` (où se fait le délettrage : écran, ou `DELETE` pour la clé d'API) ;
+    brochure `:420` (le lettrage sort du backlog) ;
+  - **justes en l'état, 57** — user `:391`, `:508`, `:557`, `:579-583`, `:603`, `:618`, `:620`, `:640`, `:647` (verrou,
+    contre-passation : règle C105 déjà écrite), `:726`, `:737`, `:777`, `:791` (exercices, soldes de départ : « se
+    lettrent d'eux-mêmes avec leur facture » est vrai depuis la 15-1a2-i), `:1222-1224`, `:1237-1238`, `:1242`,
+    `:1244`, `:1248`, `:1251-1252`, `:1255`, `:1258-1262`, `:1308`, `:1313`, `:1492`, `:1495-1496`, `:1498-1499`,
+    `:1513`, `:1515`, `:1537`, `:1545`, `:1547`, `:1567`, `:1851-1853`, `:2435`, `:2518`, `:2526`, `:2528` (pièces,
+    refus du rang 2 bis, glossaire : vrais sur l'état livré), `:1936` (« toutes lettres », faux positif) ; admin
+    `:1241` (« lettres », faux positif), `:1861` (rejeu à l'import, vrai), `:2252` (vrai). **75 = 18 + 57.**
+  - **second `grep`** (`par l.API\|viendra\|ne lettre pas encore\|ne lettre rien\|pas encore de lui-même\|backlog`),
+    avant : user `:500`, `:1539`, `:2521` (les trois textes provisoires, réécrits), `:721` (« Kesh refuse de même
+    la clôture demandée par l'API », juste), `:1241` (« un règlement partiel ne lettre rien », juste) ; admin `:1615`
+    (« conviendrait », faux positif de `viendra`), `:2255` (« par l'API », suppression d'une écriture, juste) ; brochure
+    `:415` (titre du bloc backlog, qui reste pour justificatifs et journaux). Après : `:500`, `:1539`, `:2521` disparus ; les justes restent.
+  - **hors `lettr`, réécrits** : user `:133` (menu *Mensuel*, reçu A-1 de la 15-1c-i : « écritures,
+    réconciliation, postes ouverts, rapports ») ; user, paiement fournisseur détaché (« Kesh n'a pas encore d'écran
+    qui liste ces paiements » — l'écran des postes ouverts les liste) ; admin `:2426` (#607 point 1 : « le grand livre
+    n'existe pas encore », faux depuis la Story 24-1, v0.12.0). C-15-1c-ii-5.
+- **T0 — CHANGELOG** : `grep -n '518' CHANGELOG.md` → 12 lignes : cinq *Ajouté* (`:15` lettrage manuel « par
+  l'API », `:19` factures clientes, `:21` fournisseurs, `:23` rattrapage, `:25` postes ouverts « par l'API » —
+  « L'écran viendra » aux deux), six *Modifié* (`:31` lignes d'écriture, `:33` plan comptable et Grand livre, `:35`
+  contre-passation, `:37` groupe enrichi de la 15-1c-0, `:39` annulation refusée, `:41` motif d'une facture
+  créditée), plus `:45` (#532, la modification d'une écriture — « se délettre d'abord (`DELETE /api/v1/letterings/{key}`) » : **non relue au T0**, rattrapée à la revue P2, A2-2). **Aucune entrée pour l'écran de la 15-1c-i.**
+- **T0 — `api-external.md`** : `grep -n -i "viendra\|pas encore"` → `:298`, `:361` « l'écran viendra » (réécrits) ;
+  rien d'autre. Un `grep -n -i "encore"` plus large rend en outre `:269`, `:357`, `:385` (« non encore lettrée », « encore
+  lettrable », « encore la créance » : justes). La mention
+  « aucun groupe `document` n'existe encore » est absente (retirée par la 15-1a2-i, C-15-1a2-24).
+- **T1 — fiche d'écriture** : colonne « Lettrage » en dernier (`journal-entries-column-lettering`), code en lien par
+  `LetteringCodeLink` (15-1c-i), cellule vide sur une ligne ouverte ; le pied *Total* gagne sa cellule. Le motif
+  `ENTRY_LETTERED` rend `modificationBlockerLabel(…)` puis le code en lien ; tout autre motif reste `modificationMessage`
+  (texte). Le toast d'un refus `PUT`/`DELETE` est inchangé (C-15-1c-9). C-15-1c-ii-2.
+- **T2 — Grand livre** : `LedgerLine.letteringCode` ; colonnes décrites une fois (`COLUMNS`), en-têtes et `colspan`
+  calculés (C-15-1c-ii-1) ; colonne « Lettrage » en dernier ; lien « Postes ouverts de ce compte »
+  (`reports-ledger-open-items-link`) ssi `letterableAccountIds.has(accountId)`, ensemble calculé par la page des
+  rapports dans la liste `fetchAccounts(true)` qu'elle chargeait déjà (vide en cas d'échec → aucun lien) ; cible
+  `openItemsHref(accountId, dto.period.to)` (C-15-1c-ii-3). Exports inchangés.
+- **T3 — i18n** : 3 clés ×4 locales — `journal-entries-column-lettering`, `reports-ledger-column-lettering`
+  (Lettrage / Ausgleich / Matching / Abbinamento, les mots de `audit-log-entity-lettering`),
+  `reports-ledger-open-items-link` (Postes ouverts de ce compte / Offene Posten dieses Kontos / Open items of this
+  account / Partite aperte di questo conto). Bornes recomptées aux deux bornes (`grep -o "i18nMsg("`) :
+  `sitesTotal` **2017 → 2020** (`GeneralLedgerView.svelte` 19 → 21, fiche 19 → 20, page des rapports 31 → 31) ;
+  « libellé en dur » **60 → 61** (`columnLabel`, `conforme` 46 → 47). `lint-i18n-ownership` vert.
+- **T4 — manuel** : section neuve **« Lettrage et postes ouverts »** (`\label{sec:lettrage}`, après « Réconciliation
+  bancaire ») — ce qu'est un lettrage, qui lettre quoi, l'écran (frontière, motifs, pied et sens), « au X » n'est pas
+  un instantané, lettrer à la main, propositions (jamais lettrées sans clic, contre-passation en tête, règlement
+  annulé puis délettré), délettrage et ses trois refus (« il suit la pièce et ses règlements », renvoi aux sections
+  du règlement, de l'avoir et de la facture fournisseur), règle des périodes (C105), ce que le lettrage ne fait pas
+  (partiel, tolérance, facture payée par écriture manuelle, exports, écriture figée), frontière avec la
+  réconciliation et rôles. Section *Grand livre* : la colonne, le lien, les exports. Glossaire : *Lettrage*
+  réécrit, *Postes ouverts* ajouté. Étiquettes neuves : `sec:modifier-ecriture`, `sec:contre-passation`,
+  `sec:regler-facture-fournisseur`, `sec:reconciliation`, `sec:lettrage-frontiere`. Aucun numéro de compte cité
+  dans la section neuve. Inventaire après (`grep -ci lettr`, user + admin + brochure), par commit : **143** au développement `2fc1c784` (132 + 8 + 3) ; **143** après la revue P1 `d4524a7d` (131 + 9 + 3 — le lettrage ajouté au tableau des rôles du manuel d'administration, une ligne utilisateur re-coupée) ; **145** après la revue P2 `3ceae727` (133 + 9 + 3 — deux lignes neuves au manuel utilisateur) ; inchangé ensuite. *(La ventilation « 131 + 9 + 3 » écrite à la remédiation P2 valait pour `d4524a7d`, pas pour le commit qui l'écrivait : revue P3, M1.)*
+- **T4 — preuves** : preuve négative sur les sources (`grep -n -i "l.écran viendra\|par l.API dans cette
+  version\|ne se lettrent pas encore\|pas encore de lui-même" docs/manual/fr/*.tex`) → **vide**. PDF régénérés par
+  `make -B fr` deux fois (la première laissait « Label(s) may have changed » : étiquettes neuves) — 0 avertissement
+  de référence à la seconde. Aplatis (`pdftotext … | tr '\n' ' ' | tr -s ' '`) : « Lettrage et postes ouverts »
+  ×6 dans le manuel utilisateur, « écritures, réconciliation, postes ouverts, rapports » ×1 ; aucune occurrence de
+  « l'écran viendra », « par l'API dans cette version », « la montre soldée », « n'existe pas encore » dans les
+  trois PDF ; brochure : « Backlog (Epic 13 à 15) • Report automatique… • Budgets annuels + suivi. • Justificatifs,
+  journaux personnalisables. » et un bloc « Lettrage et postes ouverts (Epic 15, v0.13) ».
+- **T5 — CHANGELOG** : une entrée *Ajouté* fondue (C-15-1c-ii-4) ; `grep -c '518'` **12 → 8** (une *Ajouté*, six
+  *Modifié* et l'entrée #532 de la modification d'une écriture, `:45` — 1 + 6 + 1 = 8 ; à la base, 5 + 6 + 1 = 12) ; *Modifié* relus,
+  inchangés (titres cohérents : `letterable`/`letteringCode`, groupe enrichi). `grep -n -i "viendra\|par
+  l.API\|pas encore" CHANGELOG.md` après : `:23` (« **Par l'API.** », paragraphe des routes — juste), `:122`, `:130`,
+  `:248`, `:403`, `:556` (versions antérieures, hors lettrage — justes). **`api-external.md`** : les deux « l'écran
+  viendra » → « à l'écran : Mensuel → Postes ouverts ». **README** : ligne *Lettrage et postes ouverts* aux
+  fonctionnalités ; ligne v0.13.0 : la 15-1c-ii passe au livré, plus de « À venir ». **Site** : bloc E15 de
+  `roadmap.html` réécrit (postes ouverts, lettrage manuel avec propositions — Kesh propose —, pièces lettrées au
+  règlement, code sur la fiche et au Grand livre ; justificatifs et journaux « still to come ») ; `index.html`, carte
+  *Double-entry bookkeeping* : une mention. **Brochure** : C-15-1c-ii-5.
+- **T6 — tests** : Vitest **+14** — `GeneralLedgerView.test.ts` 8 → 15 (+7 : dernière colonne, somme des `colspan` de
+  chaque rangée avec et sans mouvement, solde sous « Solde progressif » à l'ouverture, à la rupture et à la clôture,
+  total sous « Débit »/« Crédit », lien de code et cellule vide, lien « Postes ouverts » ssi lettrable avec `asOf` =
+  fin de période, aucun lien sans liste), `journal-entry-page.test.ts` neuf (7 : lien et cellule vide, en-tête
+  dernier, somme des `colspan` avec et sans projets ×2, motif en lien, autres motifs en texte, Consultation sans
+  motif). Suite complète : **123 fichiers / 1284 tests** (1270 à la base). E2E `open-items.spec.ts` : scénarios
+  (7), (8), (9), chacun avec son lettrage posé par `POST /letterings` et délettré à la fin (nettoyage qui rougit
+  après un corps vert, comme le (6)) ; `monter()` rend aussi le numéro du compte et les deux écritures.
+- **Mutations** (fichier restauré puis `touch`é ; filtre : les deux fichiers de test) :
+  | # | mutation | rougit |
+  |---|---|---|
+  | M1 | libellé de solde fixé à 7 | **survit — mutant équivalent** (7 = `indexOf('running')`) |
+  | M1b | libellé de solde fixé à 8 | « le solde tombe sous Solde progressif » (test ajouté pour lui : la somme des `colspan` restait juste) |
+  | M2 | cellule de lettrage retirée de l'ouverture | somme des `colspan` |
+  | M3 | lien offert à tout compte | lien ssi lettrable ; aucun lien sans liste |
+  | M4 | `asOf` = début de période | lien ssi lettrable |
+  | M5 | « Lettrage » avant « Solde progressif » | dernière colonne |
+  | M6 | une cellule de moins au total des mouvements | somme des `colspan` |
+  | M7 | pied *Total* de la fiche sans sa cellule | somme des `colspan`, avec et sans projets |
+  | M8 | motif sans lien | le code du motif est un lien |
+  | M9 | tout motif étiqueté en lien | les autres motifs restent du texte |
+  | M10 | ligne ouverte : lien vide | lien et cellule vide |
+- **Modules** (signal D5) : 2 crates/paquets (`frontend`, `kesh-i18n`) ; au grain fin les 11 annoncés (trois de
+  logique — fiche, vue du Grand livre, page des rapports —, l'E2E, sept supports de texte) ; plus
+  `features/open-items/open-items.ts` (un constructeur de lien, C-15-1c-ii-3). Pas de découpage.
+
 ### File List
+
+- `frontend/src/routes/(app)/journal-entries/[id]/+page.svelte`, `journal-entry-page.test.ts` (neuf)
+- `frontend/src/lib/features/reports/GeneralLedgerView.svelte`, `GeneralLedgerView.test.ts`, `reports.types.ts`
+- `frontend/src/routes/(app)/reports/+page.svelte`
+- `frontend/src/lib/features/open-items/open-items.ts`, `open-items.test.ts` (revue P1)
+- `frontend/src/lib/shared/i18n-keys.test.ts`, `i18n-libelle-en-dur.test.ts`
+- `frontend/tests/e2e/open-items.spec.ts`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`
+- `docs/manual/fr/user-manual.tex`, `admin-manual.tex`, `marketing-brochure.tex` et leurs trois PDF
+- `docs/api-external.md`, `CHANGELOG.md`, `README.md`, `website/roadmap.html`, `website/index.html`
+- `_bmad-output/implementation-artifacts/15-1c-ii-lettrage-dans-kesh.md`, `epic-15-choix-autonomes.md`
+  (C-15-1c-ii-1 à 5)
 
 ## Change Log
 
@@ -316,3 +439,104 @@ Rapport `/home/gcorbaz/devel/kesh-gate-logs/15-1c-validate-p4-F.md`. **0 MEDIUM 
 **réfuté** : F-3 (« sept : 11 au grain fin » non reproductible) — l'énumération des Dev Notes compte trois modules de
 logique, l'E2E et sept supports de texte (`kesh-i18n`, `docs/manual/fr` — brochure comprise —, `api-external.md`,
 `CHANGELOG.md`, `README.md`, `website/`, `i18n-keys.test.ts`) : 3 + 1 + 7 = 11. Aucun changement.
+
+### Revue de code P1 — 2026-10-10 (Sonnet 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
+
+**Prompt** : `15-1c-ii-review-prompt-p1.md` (diff `011ea618..d7437b38`). **Rapports** :
+`kesh-gate-logs/15-1c-ii-review-p1-{B,E,A}.md` — B **0 C / 0 H / 0 M / 3 L**, E **0 / 0 / 2 M / 4 L**, A **0 / 0 / 0 / 7 L**.
+Les trois déclarent leurs axes exercés et non exercés (non exercée : toute exécution, reprise ici). MEDIUM vérifiés au code :
+
+| finding | verdict |
+|---|---|
+| E-1 MEDIUM — le calcul de l'ensemble des comptes lettrables de la page des rapports n'est prouvé par rien (M3 tué à la vue seulement) | **confirmé et corrigé** : extrait en `letterableAccountIds` (`open-items.ts`), testé (archivé compris, liste vide) ; `openItemsHref` testé contre `parseScreenState`. Reste non prouvé : l'appel `fetchAccounts(true)` de la page, antérieur à la story |
+| E-2 MEDIUM = A-2 LOW — le manuel dit qu'une ligne « d'une pièce » n'a pas de case, transaction bancaire comprise ; le code lui en donne une (`blocks_manual_lettering` : `BankTransaction => false`, `open-items-labels.ts:114`) | **confirmé** (`grep -nF "Self::BankTransaction => false"`) et **corrigé** : pièces énumérées, et la ligne rapprochée d'une transaction bancaire a une case |
+| E-3 LOW — « le motif de sa fiche porte le code » : vrai seulement quand le lettrage est le motif | corrigé (manuel) |
+| A-3 LOW — codes « AA, AB… » | corrigé (« par exemple AB », manuel et CHANGELOG) |
+| A-4 LOW — l'export complet porte la clé et l'origine, pas le code | corrigé (`lettering_key`, `lettering_origin`) |
+| A-5 LOW — trois membres de phrase perdus à la fusion du CHANGELOG | rétablis (grand livre / fiche / balance âgée / relances ; `"supplierInvoice"` ; Balance en fin d'exercice) |
+| A-6 = B LOW-1 — JSDoc de `showModificationReason` détaché | corrigé (bloc `letteredBy` déplacé avant) |
+| A-7 LOW — l'en-tête « traduit » ne prouvait pas la clé | corrigé : le mock enregistre les clés, le test exige `journal-entries-column-lettering` |
+| B LOW-2 — tableau des rôles du manuel d'administration sans le lettrage | corrigé (ligne Comptable) |
+| B LOW-3 = E-4 (part) — `ENTRY_LETTERED` à libellé nul | test ajouté (texte, aucun lien vide) |
+| E-5 LOW — colonnes des totaux de la fiche non vérifiées | test étendu (Débit, Crédit, libellé, cellule vide de fin) |
+| E-4 (part) — compte archivé lettrable au Grand livre | couvert par `letterableAccountIds` (l'ensemble ne lit pas `active`) |
+| E-6 LOW — liens « Postes ouverts » au même nom accessible sur un Grand livre multi-comptes | **accepté** : chaque lien est dans l'en-tête de sa section, après le numéro et le nom du compte ; un `aria-label` à variable ajouterait une clé ×4 pour un gain faible |
+
+Grep du symptôme après patch (`AA}, \texttt{AB`, `porte le lettrage de chaque`, `ligne d'une pièce`, `motif de … fiche porte`) :
+`user-manual.tex:500` (sixième condition — les autres conditions y sont réunies, juste) et `:2044` (corrigé). Vitest
+**1284 → 1287** ; PDF utilisateur et administration régénérés (deux passes, 0 avertissement de référence). La remédiation
+touche du code de production (fiche, page des rapports, `open-items.ts`) : passe P2 complète due (Opus).
+
+### Revue de code P2 — 2026-10-10 (Opus 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
+
+**Prompt** : `15-1c-ii-review-prompt-p2.md` (diff `66935feb..d4524a7d`, après rebase ; remédiation P1 relue d'abord).
+**Rapports** : `kesh-gate-logs/15-1c-ii-review-p2-{B,E,A}.md` — B **0 C / 0 H / 0 M / 4 L**, E **0 / 0 / 0 / 6 L**, A **0 / 0 /
+2 M / 7 L**. Axes déclarés : les six communs par les trois ; non exercée : toute exécution. Aucune régression de la
+remédiation P1. Écart d'une lentille (B) : un fichier inerte écrit par erreur dans `/tmp`, hors dépôt, supprimé ici.
+
+| finding | verdict |
+|---|---|
+| A2-1 MEDIUM — le manuel borne le refus « une ligne appartient encore à une pièce » à la facture fournisseur **non payée** ; l'annulation d'une facture payée forme la même paire | **confirmé** (la propriété par l'achat se lit sans condition de statut, `journal_entries.rs` : `purchase_journal_entry_id`) et **corrigé** : « payée ou non », renvoi à l'annulation ; l'erreur venait du texte d'AC12, annoté |
+| A2-2 MEDIUM — ventilation du CHANGELOG fausse (la douzième ligne est `:45`, #532) et cette entrée jamais relue : « se délettre d'abord (`DELETE …`) » seulement | **confirmé** et **corrigé** : l'entrée #532 dit l'écran ; ventilations rectifiées (Dev Agent Record T0, T5 ; C-15-1c-ii-4) |
+| A2-3, B-1 = E2-5 LOW — autres causes qui figent ; un seul groupe nommé par le motif | corrigés (manuel : rapprochement, paiement détaché ; « le motif nomme le premier ») |
+| A2-4 LOW — nuance E-3 absente du CHANGELOG | corrigé (« écriture saisie à la main ») |
+| A2-5 LOW — énoncés périmés du Dev Agent Record | corrigés (131 + 9 + 3, commande `api-external`, File List, Status et T0 après rebase) |
+| A2-6 LOW — « export comptable complet » sans renvoi | « export global » avec `\ref{sec:exports}` (étiquette neuve) ; le site préexistant de la contre-passation garde son nom |
+| A2-7 LOW — « le lien *Afficher les postes ouverts…* » est un bouton, offert au groupe ouvert seul | corrigé |
+| A2-8 LOW — « livré depuis longtemps » sans source | sourcé (v0.8.0, E14 ; #232 garde le reste du bouclement) |
+| A2-9 LOW — `{code}` au manuel d'administration | aligné sur `{key}` |
+| B-2 LOW — postes ouverts du compte fournisseurs sans réserve | « s'il est lettrable » |
+| E2-1 LOW — le code pouvait s'afficher deux fois | test au texte exact ; mutation M11 (`modificationMessage` + lien) **rouge** |
+| E2-3 LOW — titre de section et renvoi d'une autre sous-section | renvoi à la section (`sec:factures-fournisseurs`, étiquette neuve) |
+| E2-4 LOW — ordre du motif « lettrée après cette date » | corrigé (code en lien, puis jour) |
+| E2-6 LOW — E2E (8) ne vérifiait qu'une ligne | les deux |
+| E2-2 LOW — la page ne prouve pas qu'elle charge les comptes archivés | **accepté** : `fetchAccounts(true)` est antérieur à la story (Story 24-1, pour le sélecteur du Grand livre) et inchangé ; un test de la page des rapports, qui n'en a aucun, dépasse la remédiation |
+| B-3, B-4 LOW — cellules de la rangée de mouvement écrites à la main ; `data-testid` du lien répété sur une page | **acceptés** : B-3 est une remarque de robustesse (trois dérives simulées par la lentille, toutes rouges) ; B-4, les E2E cherchent dans un conteneur |
+| B (hors lentille) — `website/index.html` au présent pour une fonction de la v0.13.0 non publiée | **accepté** : le site se publie depuis `main`, où la fonction est ; même usage que le README et les stories précédentes |
+
+**La remédiation ne touche aucune ligne de code de production** (manuels et PDF, CHANGELOG, deux fichiers de test, fiche,
+registre) : la passe suivante peut être **ciblée** (Haiku), sur le seul commit de remédiation. **Signal D5** : les deux
+MEDIUM sont distincts de ceux de P1 et ne viennent pas d'une remédiation (texte d'AC12, inventaire du T0) — pas de
+recyclage, pas de découpage. Vitest 1287 (8 tests à la fiche, inchangé en nombre). PDF utilisateur et administration
+régénérés, 0 avertissement de référence ; preuve négative vide.
+
+### Revue de code P3 ciblée — 2026-10-10 (Haiku 4.5, une lentille, commit `3ceae727`) — REVUE CLOSE, story `done`
+
+**Prompt** : `15-1c-ii-review-prompt-p3-ciblee.md`. **Rapport** : `kesh-gate-logs/15-1c-ii-review-p3-R.md` — **0 C / 0 H / 1 M /
+2 L**, points 1 à 5 déclarés exercés (hunks non examinés : corps de la fiche hors Change Log P2, brochure, registre au-delà
+de ses deux lignes). Le fond du texte neuf est vérifié au code par la lentille (« payée ou non », « le motif nomme le
+premier », ordre des causes, entrée #532, `{key}`).
+
+| finding | verdict |
+|---|---|
+| M1 MEDIUM — la ventilation « 131 + 9 + 3 » écrite à la remédiation P2 est fausse au commit qui l'écrit (133 + 9 + 3 = 145) | **confirmé** (`git show <c>:… \| grep -ci lettr` aux trois commits : 132/8, 131/9, 133/9) et **corrigé** : décompte par commit, avec son périmètre. Le défaut est dans un compte rendu, pas dans le code (§ « Recompter ses propres comptes rendus ») |
+| L1 — « suivi du code… et du jour » ne vaut que pour le second motif | corrigé |
+| L2 — « ouvert seul » simplifie la condition (`group.data.accountId !== accountId`) | corrigé (« hors de la liste de son compte ») |
+| « export comptable complet » (`user-manual.tex:625`, préexistant) | laissé : nom antérieur à la story, hors inventaire |
+
+**La remédiation ne touche aucune ligne de code** (manuel utilisateur et son PDF, fiche) : la boucle se **clôt**
+(`CLAUDE.md` § « La passe ciblée », critère de clôture). **Trend** : P1 (Sonnet ×3, complète) **2 MEDIUM** (E-1, E-2,
+d'origine) → remédiation avec code de production → P2 (Opus ×3, complète) **2 MEDIUM** (A2-1, A2-2, d'origine — texte
+d'AC12, inventaire du T0) → remédiation sans code de production → P3 ciblée (Haiku) **1 MEDIUM** (né de P2, dans un compte
+rendu) → remédiation documentaire → close. **Modèles** : Opus 5.5 (développement, remédiations, orchestration), Sonnet 5.5
+(P1), Opus 5.5 (P2), Haiku 4.5 (P3 ciblée). **Signal D5** : P2 au même niveau que P1 (2 MEDIUM), défauts distincts et
+d'origine — pas de recyclage (D5 de la rétrospective de l'Epic 25) ; P3, un défaut de compte rendu né de P2 — déclaré, sans
+découpage. Choix : **C-15-1c-ii-1 à 5**.
+
+**Gates au dernier commit de code `3ceae727`** (le commit P3 ne touche que le manuel et la fiche ; exécutés sur
+`d509f014`, même code) : `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest ; base `kesh_1cii` remise à zéro avant,
+sans redémarrer MariaDB) **3338 passés, 5 ignorés** (`kesh-gate-logs/15-1c-ii-gate-final.log` ; la story n'ajoute aucun test
+Rust — les gardes des catalogues y sont) ; frontend — `npm run check` **0 erreur** (27 avertissements préexistants, aucun
+dans les fichiers de la story), `lint-i18n-ownership` vert, `test:unit` **123 fichiers / 1287 tests** (1270 à la base :
++17), `build` vert (`15-1c-ii-frontend-final.log`) ; **E2E complet** (port 3028, base `kesh_e2e_1cii` neuve migrée, binaire
+et build de ce code, montage de `docs/testing.md`, `/health` : `smtpConfigured: true`) : **253 passés, 10 échoués, 19
+ignorés** (282) — jugés fichier par fichier contre `docs/testing.md` § « Les échecs attendus » : sept KF-029 (#97)
+(`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`), deux KF-045 (#421)
+(`invoices:415`, `:439`, suite terminée à 08:16 UTC, avant 12:00) et `sidebar-navigation:75` (KF-046, #424) ; **aucun hors
+liste** ; les neuf scénarios d'`open-items.spec.ts` verts, dont (7), (8), (9) (`15-1c-ii-e2e-final.log`). PDF utilisateur
+régénéré (deux passes, 0 avertissement de référence) ; preuve négative vide.
+
+**Commits** (sur `origin/main` `66935feb`) : développement **`2fc1c784`**, prompt P1 `317c6777`, remédiation P1 **`d4524a7d`**,
+prompt P2 `a82c028e`, remédiation P2 **`3ceae727` = dernier commit de code**, prompt P3 `d509f014`, remédiation P3 et clôture
+(ce commit). **Après merge** : `gh issue view 518 --json state` et `gh issue view 607 --json state` (mots-clés `closes` sur la
+PR, squash).

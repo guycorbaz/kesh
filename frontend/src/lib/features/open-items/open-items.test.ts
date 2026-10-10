@@ -10,6 +10,8 @@ import {
 	isIsoDate,
 	isStaleRefusal,
 	letterBlocker,
+	letterableAccountIds,
+	openItemsHref,
 	parseScreenState,
 	sameAmount,
 	screenUrl,
@@ -182,5 +184,26 @@ describe('AC8 — le sens, lu sur le seul signe (test 10)', () => {
 	it('sameAmount compare des NOMBRES, non des chaînes', () => {
 		expect(sameAmount('-500.0000', '-500')).toBe(true);
 		expect(sameAmount('500.0000', '-500.0000')).toBe(false);
+	});
+});
+
+describe('15-1c-ii (AC9) — le lien « Postes ouverts de ce compte » du Grand livre', () => {
+	it('letterableAccountIds : les seuls comptes lettrables, archivés compris', () => {
+		// Le compte 3 est archivé (`active: false`) : il reste dans l'ensemble.
+		const accounts = [
+			{ id: 1, letterable: true, active: true },
+			{ id: 2, letterable: false, active: true },
+			{ id: 3, letterable: true, active: false },
+		];
+		const ids = letterableAccountIds(accounts);
+		expect([...ids].sort()).toEqual([1, 3]);
+		expect(letterableAccountIds([]).size).toBe(0);
+	});
+
+	it('openItemsHref : compte et date, dans les paramètres que lit l’écran', () => {
+		const href = openItemsHref(7, '2026-06-30');
+		expect(href).toBe('/open-items?accountId=7&asOf=2026-06-30');
+		const state = parseScreenState(new URL(href, 'http://x').searchParams);
+		expect(state).toEqual({ accountId: 7, asOf: '2026-06-30', group: null });
 	});
 });

@@ -542,7 +542,15 @@ const ATTENDU = {
 	// Revue de code P1 de la 15-1c-i : **2015 → 2017** (+2) — `OpenItemsScreen.svelte`
 	// (24 → 26) : l'échec du chargement des comptes et l'absence de compte lettrable
 	// (`open-items-accounts-error`, `open-items-no-account`). Deux littéraux.
-	sitesTotal: 2017,
+	// Story 15-1c-ii (#518) : **2017 → 2020** (+3) — `features/reports/GeneralLedgerView.svelte`
+	// (19 → 21) : les huit en-têtes passent du gabarit à `columnLabel` (un `switch`, un
+	// littéral par clé : 8 → 9 avec `reports-ledger-column-lettering`) et le lien
+	// « Postes ouverts de ce compte » (`reports-ledger-open-items-link`) ;
+	// `routes/(app)/journal-entries/[id]/+page.svelte` (19 → 20) : l'en-tête
+	// `journal-entries-column-lettering`. Recompté par `grep -o "i18nMsg("` aux deux bornes
+	// (`011ea618` et la branche). `sitesNonResolus`, `relais`, `sitesGabarit` inchangés
+	// (que des littéraux).
+	sitesTotal: 2020,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

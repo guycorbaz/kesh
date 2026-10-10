@@ -194,8 +194,18 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * `entryRefLabel`, `letteredOnLabel`, `nothingDueLabel`, `sideLabel`, `amountWithSideLabel`,
  * `refusalText` (`conforme` **40 → 46**). *Identifiées en cherchant les suffixes `Label`,
  * `Text`, `Display` dans les fichiers de la story.*
+ *
+ * ⚠️ **60 → 61, et la déclaration est NOMMÉE** : `columnLabel`
+ * (`lib/features/reports/GeneralLedgerView.svelte`), née avec la colonne « Lettrage » du
+ * Grand livre (Story 15-1c-ii, #518) : les en-têtes sont désormais rendus depuis une seule
+ * table de colonnes, d'où se calculent les `colspan`. Ses neuf branches délèguent à
+ * `i18nMsg` (les huit clés d'en-tête existantes et `reports-ledger-column-lettering`) :
+ * aucun littéral, donc `conforme` **46 → 47** ; `ecartee` ne bouge pas. *Identifiée en
+ * cherchant les suffixes `Label`, `Text`, `Display` dans les fichiers de la story — la
+ * seule déclaration neuve qui en porte un (`letteredBy`, sur la fiche d'écriture, n'en
+ * porte pas).*
  */
-const CANDIDATES_ATTENDUES = 60;
+const CANDIDATES_ATTENDUES = 61;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -712,7 +722,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 46 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 47 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

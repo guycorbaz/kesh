@@ -28,6 +28,7 @@
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import { formatSwissAmount } from '$lib/features/journal-entries/balance';
 	import { isApiError } from '$lib/shared/utils/api-client';
+	import LetteringCodeLink from '$lib/features/open-items/LetteringCodeLink.svelte';
 
 	let entry = $state<JournalEntryDetailResponse | null>(null);
 	/** Story 24-4a (#380) — contre-passation. */
@@ -170,6 +171,17 @@
 	 */
 	let canWrite = $derived(
 		authState.currentUser?.role === 'Admin' || authState.currentUser?.role === 'Comptable'
+	);
+
+	/**
+	 * Story 15-1c-ii (AC9, C-15-1c-9) — le code du groupe qui fige l'écriture,
+	 * quand c'est le motif : il devient un lien vers le groupe, où se fait le
+	 * délettrage. Nulle part ailleurs — un refus `ENTRY_LETTERED` d'un `PUT` ou
+	 * d'un `DELETE` reste un toast, puis la fiche se relit et c'est ce motif qui
+	 * porte le lien.
+	 */
+	let letteredBy = $derived(
+		entry?.modificationBlockedBy === 'ENTRY_LETTERED' ? entry.modificationBlockedLabel : null
 	);
 
 	/**
@@ -327,7 +339,12 @@
 			</div>
 			{#if showModificationReason}
 				<p class="text-sm text-text-muted" data-testid="modification-blocked-reason">
-					{modificationMessage(entry)}
+					{#if letteredBy}
+						{modificationBlockerLabel('ENTRY_LETTERED', letteredBy)}
+						(<LetteringCodeLink code={letteredBy} />)
+					{:else}
+						{modificationMessage(entry)}
+					{/if}
 				</p>
 			{/if}
 			{#if !entry.reversable && entry.reversalBlockedBy}
@@ -430,6 +447,9 @@
 				{/if}
 				<th class="py-2 pr-2 w-36 text-right">Débit</th>
 				<th class="py-2 pr-2 w-36 text-right">Crédit</th>
+				<!-- Story 15-1c-ii (AC9) — la dernière colonne : le code d'une ligne
+				     lettrée, en lien vers son groupe ; rien pour une ligne ouverte. -->
+				<th class="py-2 pl-2">{i18nMsg('journal-entries-column-lettering', 'Lettrage')}</th>
 			</tr>
 		</thead>
 		<tbody>
@@ -443,6 +463,9 @@
 					{/if}
 					<td class="py-2 pr-2 text-right font-mono">{fmtAmount(line.debit)}</td>
 					<td class="py-2 pr-2 text-right font-mono">{fmtAmount(line.credit)}</td>
+					<td class="py-2 pl-2" data-testid="entry-line-lettering-{line.id}">
+						{#if line.letteringCode}<LetteringCodeLink code={line.letteringCode} />{/if}
+					</td>
 				</tr>
 			{/each}
 		</tbody>
@@ -451,6 +474,7 @@
 				<td class="py-3 text-right" colspan={hasProjects ? 2 : 1}>Total</td>
 				<td class="py-3 pr-2 text-right font-mono">{formatSwissAmount(totalDebit)}</td>
 				<td class="py-3 pr-2 text-right font-mono">{formatSwissAmount(totalCredit)}</td>
+				<td class="py-3"></td>
 			</tr>
 		</tfoot>
 	</table>

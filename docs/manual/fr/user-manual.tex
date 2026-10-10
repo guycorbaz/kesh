@@ -130,7 +130,7 @@ L'interface Kesh est organisée comme suit :
     \item \textbf{Barre latérale gauche} : navigation principale, organisée en trois
     groupes dépliables — \emph{Quotidien} (accueil, carnet d'adresses, catalogue,
     facturation, échéancier, avoirs, factures et paiements fournisseurs, import de
-    factures, import bancaire), \emph{Mensuel} (écritures, réconciliation, rapports)
+    factures, import bancaire), \emph{Mensuel} (écritures, réconciliation, postes ouverts, rapports)
     et \emph{Administration} (plan comptable, exercices, comptes et profils
     bancaires, règles d'affectation, export global, paramètres ; et, pour les
     administrateurs, utilisateurs, facturation, sauvegarde et restauration).
@@ -471,9 +471,9 @@ Une écriture enregistrée est \textbf{immédiatement comptabilisée}. Kesh ne c
 d'état « brouillon » : il n'y a rien à valider, et une écriture apparaît dans les rapports
 dès son enregistrement. Elle reste \textbf{modifiable} --- et \textbf{supprimable} ---
 tant que son exercice est ouvert, dans le cadre décrit ci-dessous --- sauf si l'une de ses
-lignes est \textbf{lettrée}~: délettrez-la d'abord.
+lignes est \textbf{lettrée}~: délettrez-la d'abord (\S\ref{sec:lettrage}).
 
-\subsection{Modifier ou supprimer une écriture}
+\subsection{Modifier ou supprimer une écriture}\label{sec:modifier-ecriture}
 
 Une erreur de saisie --- débit et crédit inversés, un mauvais compte, une date ou un libellé
 faux --- se corrige \textbf{là où elle est}. Sur la fiche d'une écriture (depuis la liste des
@@ -496,9 +496,10 @@ Le bouton n'est offert que si \textbf{toutes} ces conditions tiennent~:
           facture fournisseur, d'un règlement ou d'un solde, d'un rapprochement bancaire se
           corrige par le chemin de sa pièce~;
     \item elle n'est \textbf{ni contre-passée, ni elle-même une contre-passation}~;
-    \item \textbf{aucune de ses lignes n'est lettrée} --- sinon, délettrez-la d'abord (le
-          délettrage se fait par l'API dans cette version), puis modifiez~; quand c'est le
-          seul motif, le délettrage aboutit, sauf geste concurrent sur les mêmes lignes.
+    \item \textbf{aucune de ses lignes n'est lettrée} --- sinon, délettrez-la d'abord~: le
+          motif de la fiche porte le code du groupe, en lien vers le groupe, où se fait le
+          délettrage (\S\ref{sec:lettrage}), puis modifiez~; quand c'est le seul motif, le
+          délettrage aboutit, sauf geste concurrent sur les mêmes lignes.
 \end{itemize}
 
 En pratique, ce sont les écritures \textbf{saisies à la main}, l'\textbf{écriture
@@ -608,7 +609,7 @@ Le verrou et la clôture d'exercice sont \textbf{indépendants}~: clôturer ne t
 et la borne n'empêche ni la clôture ni la réouverture. Le premier est un état d'exercice, le
 second une borne mobile à l'intérieur d'un exercice ouvert.
 
-\subsection{Corriger une écriture : la contre-passation}
+\subsection{Corriger une écriture : la contre-passation}\label{sec:contre-passation}
 
 Sur la fiche d'une écriture, le bouton \textbf{Contre-passer} crée l'\textbf{écriture
 inverse} --- mêmes comptes, débit et crédit échangés --- à la date du jour, dans l'exercice
@@ -1237,8 +1238,9 @@ Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~:
 \textbf{Lettrage.} Une facture \textbf{soldée} --- par ses règlements, par le solde de son reste
 ou par son avoir --- est \textbf{lettrée} d'office, au moment du geste qui la solde~: sa ligne au
 compte débiteurs et celles de ses règlements, de son solde ou de son avoir sur ce compte forment
-un groupe de lettrage («~pièce~»), et le grand livre la montre soldée, comme la fiche, l'échéancier
-et les rappels. Un règlement partiel ne lettre rien. L'\textbf{annulation} d'un règlement --- ou du
+un groupe de lettrage («~pièce~»)~: la colonne «~Lettrage~» du grand livre porte son code sur
+chacune de ces lignes, et la facture quitte les postes ouverts du compte (\S\ref{sec:lettrage}) ---
+ce que disent aussi la fiche, l'échéancier et les rappels. Un règlement partiel ne lettre rien. L'\textbf{annulation} d'un règlement --- ou du
 solde, ou le dé-rapprochement (\S\ref{sec:annuler-rapprochement}) --- \textbf{délettre} la
 facture~: sa créance et ses autres règlements redeviennent ouverts, et le règlement annulé est
 lettré avec sa contre-passation.
@@ -1443,7 +1445,7 @@ ni réglée, ni créditée, ni partie chez le client.
 \end{keshtip}
 
 %%─────────────────────────────────────────────────────────────────────────────
-\section{Factures fournisseurs et paiements}
+\section{Factures fournisseurs et paiements}\label{sec:factures-fournisseurs}
 \label{sec:fournisseurs}
 
 Le pendant « achats » de la facturation : enregistrer les factures reçues de vos
@@ -1470,7 +1472,7 @@ récupérable --- n'est pas imputable, la saisie est refusée avec un message qu
 nomme le compte et renvoie à ces paramètres, où un administrateur doit le
 remplacer~; rien n'est enregistré.
 
-\subsection{Régler une facture fournisseur}
+\subsection{Régler une facture fournisseur}\label{sec:regler-facture-fournisseur}
 
 Sur la fiche d'une facture ouverte, le \textbf{règlement} est « binaire » — deux
 cas selon le moyen de paiement :
@@ -1491,7 +1493,9 @@ Choisissez un autre compte, ou reliez le compte bancaire à son propre compte de
 
 \textbf{Lettrage.} Une facture fournisseur \textbf{payée} est \textbf{lettrée} d'office~: sa
 ligne d'achat au compte créanciers et celle du paiement sur ce compte forment un groupe de
-lettrage («~pièce~»), et le grand livre la montre soldée, comme sa fiche. L'annulation du
+lettrage («~pièce~»)~: la colonne «~Lettrage~» du grand livre porte son code sur ces deux lignes,
+et la dette quitte les postes ouverts du compte créanciers (\S\ref{sec:lettrage}) --- ce que dit
+aussi sa fiche. L'annulation du
 règlement (ci-dessous) la \textbf{délettre}~: la dette redevient ouverte, et le paiement est
 lettré avec sa contre-passation. Un compte créanciers \textbf{non lettrable} (relié à un compte
 bancaire) ne forme aucun groupe --- le paiement n'en est pas moins enregistré. Une annulation qui
@@ -1529,15 +1533,16 @@ reviennent à zéro, et la facture passe à \emph{annulée}. Le journal d'audit 
 \textbf{Si la facture était payée}, son règlement \textbf{reste au grand livre}~: l'argent est
 bien sorti. Il est \textbf{détaché} de la facture et devient un \emph{paiement sans facture}~---
 au compte fournisseurs (2000), il laisse un solde débiteur, une somme que le fournisseur vous
-doit ou qui attend d'être rattachée à la bonne facture. Kesh n'a pas encore d'écran qui liste
-ces paiements~: ils se retrouvent au grand livre du compte 2000 et dans le journal d'audit, qui
-garde le lien vers la facture annulée. La fiche de ce paiement n'offre ni «~Modifier~» ni «~Supprimer~»~: elle affiche le motif, et la contre-passation reste disponible. Si le paiement lui-même était une erreur, le plus simple est d'\textbf{annuler le
+doit ou qui attend d'être rattachée à la bonne facture. Ces paiements se retrouvent parmi les
+\textbf{postes ouverts} du compte fournisseurs, s'il est lettrable (\emph{Mensuel} →
+\emph{Postes ouverts}, \S\ref{sec:lettrage}), à son grand livre, et dans le journal d'audit, qui garde le lien vers
+la facture annulée. La fiche de ce paiement n'offre ni «~Modifier~» ni «~Supprimer~»~: elle affiche le motif, et la contre-passation reste disponible. Si le paiement lui-même était une erreur, le plus simple est d'\textbf{annuler le
 règlement d'abord}, puis la facture~: le lien avec la facture reste lisible au grand livre.
 
 \textbf{Lettrage.} L'annulation d'une facture payée la \textbf{délettre}, et lettre l'achat avec
 sa contre-passation. Le paiement détaché reste \textbf{ouvert} au compte créanciers~: il se
-lettre à la main avec la ligne qui le solde --- par l'API dans cette version
-(\texttt{/api/v1/letterings}) ---, ou, contre-passé depuis sa fiche d'écriture, il est lettré
+lettre à la main avec la ligne qui le solde, à l'écran \emph{Postes ouverts}
+(\S\ref{sec:lettrage}), ou, contre-passé depuis sa fiche d'écriture, il est lettré
 avec sa contre-passation.
 
 Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~: l'exercice de
@@ -1710,7 +1715,7 @@ Importez vos relevés bancaires \textbf{au moins une fois par semaine} pour faci
 \end{keshtip}
 
 %%─────────────────────────────────────────────────────────────────────────────
-\section{Réconciliation bancaire}
+\section{Réconciliation bancaire}\label{sec:reconciliation}
 
 La réconciliation consiste à passer en comptabilité les transactions bancaires importées. Kesh ne rapproche pas une transaction d'une écriture qui existerait déjà~: il \textbf{crée} l'écriture, soit en réglant une facture client, soit en imputant la transaction à un compte de contrepartie --- par une règle d'affectation, manuellement ou en l'éclatant sur plusieurs comptes.
 
@@ -1861,6 +1866,201 @@ raison~:
 \end{itemize}
 
 %%─────────────────────────────────────────────────────────────────────────────
+\section{Lettrage et postes ouverts}\label{sec:lettrage}
+
+Le solde d'un compte de tiers dit \emph{combien}~; il ne dit pas \emph{quoi}. Le
+\textbf{lettrage} répond à la question~: il marque les lignes qui se soldent entre elles ---
+une facture et son règlement, un acompte et sa reprise, une écriture et sa contre-passation
+---, si bien que ce qui \textbf{reste ouvert} se lit ligne à ligne, et justifie le solde.
+
+\subsection{Ce qu'est un lettrage}
+
+Un lettrage est un \textbf{groupe de lignes d'un même compte}, dont la somme est
+\textbf{exactement nulle}~: les débits égalent les crédits, au centime. Il réunit
+\textbf{de 2 à 200 lignes}, et chaque ligne appartient à un groupe au plus. Kesh donne au
+groupe un \textbf{code} de lettres (par exemple \texttt{AB}), qui s'affiche sur chacune
+de ses lignes.
+
+Seuls se lettrent les comptes d'\textbf{actif} et de \textbf{passif} qu'\textbf{aucun compte
+bancaire ne désigne} --- typiquement les débiteurs, les créanciers, les comptes de passage et
+d'acomptes. Les comptes de charges et de produits ne se lettrent pas, ni les comptes de banque~:
+ceux-ci se rapprochent de leurs relevés (\S\ref{sec:lettrage-frontiere}).
+
+\subsection{Qui lettre quoi}
+
+Un groupe a l'une de trois origines, que sa vue nomme~:
+
+\begin{itemize}
+    \item \textbf{La pièce} («~lettrage de la pièce~\ldots~»). Kesh lettre \textbf{d'office} une
+          facture client \textbf{soldée} --- par ses règlements, le solde de son reste ou son
+          avoir (\S\ref{sec:reglement-client}) --- et une facture fournisseur
+          \textbf{payée} (\S\ref{sec:regler-facture-fournisseur}). Un règlement partiel ne
+          lettre rien~: la facture et son règlement restent ouverts côte à côte.
+    \item \textbf{La contre-passation} («~contre-passation~»). Contre-passer une écriture lettre
+          d'office chacune de ses lignes encore ouvertes sur un compte lettrable avec sa ligne
+          miroir (\S\ref{sec:contre-passation}).
+    \item \textbf{La main} («~lettrage manuel~»)~: tout le reste --- un acompte et sa reprise,
+          une avance et son remboursement, un paiement fournisseur détaché de sa facture
+          annulée et la ligne qui le solde --- se lettre à l'écran \emph{Postes ouverts},
+          ci-dessous.
+\end{itemize}
+
+\subsection{L'écran \emph{Postes ouverts}}
+
+\emph{Mensuel} → \emph{Postes ouverts}. Choisissez un \textbf{compte} --- seuls les comptes
+lettrables sont proposés, archivés compris, signalés comme tels --- et une \textbf{date},
+aujourd'hui par défaut. L'adresse de la page garde le compte, la date et le groupe ouvert~: un
+signet, ou un rechargement, retrouve la même vue.
+
+L'écran rappelle sa frontière en tête~: \emph{«~Cet écran solde entre elles les lignes des
+comptes de tiers et de passage. Le rapprochement des relevés bancaires se fait dans Mensuel →
+Réconciliation~; les comptes bancaires n'apparaissent pas ici.~»}
+
+Chaque ligne ouverte dit sa date, son écriture (exercice et numéro), son journal, son libellé,
+sa \textbf{pièce} --- facture, avoir, facture fournisseur, règlement, transaction bancaire, en
+lien vers sa fiche quand elle en a une ---, son débit ou son crédit, et son \textbf{motif}, sur
+deux lignes~:
+
+\begin{itemize}
+    \item \textbf{à la date choisie}~: «~non lettrée~», ou «~lettrée après cette date~» --- ce
+          second motif suivi du code du groupe, en lien, et du jour du lettrage~;
+    \item \textbf{aujourd'hui}, l'état de la facture client qu'elle porte~: «~facture non
+          réglée~» ou «~facture partiellement réglée~», avec le reste dû~; «~marquée payée avant
+          la v0.12.0, sans écriture d'encaissement~: le compte porte encore cette créance~»~;
+          ou «~pièce soldée, lettrage non posé~: période close ou avoir hérité --- rien à faire
+          ici~» --- une pièce soldée dont le lettrage n'a pas été posé, parce que toutes ses
+          lignes étaient en période close à la mise à jour, ou parce qu'un avoir antérieur à la
+          version 0.13 a crédité un autre compte. Cette ligne n'a pas de case, et aucun geste de
+          cet écran ne l'en sort.
+\end{itemize}
+
+\subsubsection{Les postes ouverts à une date}
+
+Au pied de la liste, le \textbf{total des postes ouverts} et le \textbf{solde du compte} à la
+date choisie --- et l'écran le dit~: \emph{«~Le total des postes ouverts au \ldots{} égale le
+solde du compte au \ldots{} --- celui que la Balance montre pour ce compte à cette date, du côté
+naturel du compte (solde cumulé depuis l'ouverture des livres).~»} Les deux montants
+s'affichent en valeur absolue, suivie de leur sens, «~débiteur~» ou «~créditeur~»~; la Balance
+et le Grand livre montrent le même nombre signé selon la nature du compte (positif au crédit
+pour un passif). Une ligne lettrée \emph{après} la date choisie y figure encore~: à cette date,
+elle était ouverte.
+
+\begin{keshwarning}[title={\faExclamationTriangle\ «~Au 31 décembre~» n'est pas un instantané}]
+La liste d'une date se calcule sur le lettrage \textbf{d'aujourd'hui}. Pour une date \textbf{en
+période close} --- dans un exercice clôturé, ou au plus tard à la borne du verrou de période
+(\S\ref{sec:verrou-periode}) ---, elle se reproduit à l'identique \textbf{tant qu'aucun
+administrateur ne déverrouille la période, ne rouvre un exercice ni ne restaure une
+sauvegarde}~: rien ne s'y lettre ni ne s'y délettre. Au-dessus de cette borne, un délettrage
+ou l'annulation d'un règlement peut y faire \textbf{réapparaître} des lignes. Pour justifier un
+solde de clôture, tirez la liste une fois l'exercice clôturé.
+\end{keshwarning}
+
+\subsubsection{Lettrer à la main}
+
+Cochez les lignes qui se soldent~: l'écran affiche leur nombre et leur somme, et le bouton
+\textbf{Lettrer} s'active quand la sélection réunit au moins deux lignes, au plus 200, de somme
+nulle, dont \textbf{une au moins en période ouverte}~; sinon, il dit ce qui manque (l'écart, par
+exemple). La sélection survit au changement de page. Seules les lignes lettrables à la main
+ont une case~: une ligne déjà lettrée (son code est indiqué) ou une ligne d'une
+\textbf{pièce} --- facture, avoir, facture fournisseur, règlement ---, dont le lettrage suit la
+pièce et ses règlements, n'en ont pas. Une ligne seulement \textbf{rapprochée d'une transaction
+bancaire}, elle, en a une~: la transaction ne la possède pas. Une fois le
+groupe posé, son code s'affiche, en lien vers le groupe, et ses lignes quittent la liste. Si
+une ligne a changé entre-temps (lettrée par quelqu'un d'autre, écriture modifiée ou
+supprimée), Kesh refuse, le dit, et recharge la liste~: rien n'a été lettré.
+
+\subsubsection{Les rapprochements proposés}
+
+À côté de la liste, Kesh \textbf{propose} des paires évidentes~: une ligne au débit, une au
+crédit, \textbf{du même montant exact}. Les contre-passations et leur origine viennent en tête,
+puis les paires aux dates les plus proches (l'écart de jours est indiqué). Les propositions se
+calculent sur les lignes ouvertes \textbf{aujourd'hui}, quelle que soit la date choisie.
+\textbf{Kesh ne lettre jamais une proposition de lui-même}~: le bouton \emph{Lettrer} de la
+paire le fait, à votre demande --- deux sociétés d'un même groupe, deux factures du même
+montant, se ressemblent trop pour qu'un logiciel tranche seul. Une proposition devenue
+périmée (une de ses lignes a été lettrée entre-temps) est refusée, et la liste se recharge.
+Au-delà d'un certain nombre de lignes ouvertes sur le compte, Kesh ne propose rien et le dit~:
+lettrez à la main.
+
+Les lignes d'un règlement \textbf{annulé}, dont vous auriez ensuite délettré la paire de
+contre-passation, reviennent ouvertes \textbf{sans pièce} --- le règlement n'est plus rattaché
+à sa facture --- et sont de nouveau proposées en tête, comme toute contre-passation.
+
+\subsubsection{Voir et défaire un groupe~: le délettrage}
+
+Un groupe s'ouvre par son \textbf{code}, de partout où il s'affiche~: le message qui suit un
+lettrage, le motif «~lettrée après cette date~» de la liste, la colonne \textbf{Lettrage} de la
+fiche d'une écriture et du Grand livre (\S\ref{sec:grand-livre}), et le motif d'une écriture
+que son lettrage empêche de modifier. La vue du groupe dit son compte, son origine et ses
+lignes, avec leur pièce~; ouvert hors de la liste de son compte (depuis un lien), il offre le bouton \emph{Afficher les
+postes ouverts de ce compte}, qui ramène à la liste.
+
+Le bouton \textbf{Délettrer} rouvre toutes les lignes du groupe. Il n'est pas offert, et la vue
+dit pourquoi, dans trois cas~:
+
+\begin{itemize}
+    \item \textbf{le groupe est celui d'une pièce}~: \emph{«~il suit la pièce et ses règlements,
+          et ne se défait pas à la main~»}. Il se défait par les gestes de la pièce elle-même,
+          que décrivent «~Enregistrer et annuler un règlement~» (\S\ref{sec:reglement-client}),
+          «~Avoirs et notes de crédit~» (\S\ref{sec:avoirs}) et «~Factures fournisseurs et
+          paiements~» (\S\ref{sec:factures-fournisseurs}~: règlement et annulation)~;
+    \item \textbf{une de ses lignes appartient encore à une pièce}~: c'est la paire que forme
+          l'annulation d'une facture fournisseur, \textbf{payée ou non} --- l'achat, qui reste la
+          ligne de la facture, et sa contre-passation (\S\ref{sec:annuler-facture-fournisseur})~;
+    \item \textbf{toutes ses lignes sont en période close}~: le lettrage n'y change plus
+          (ci-dessous).
+\end{itemize}
+
+\subsubsection{La règle des périodes}
+
+\textbf{Lettrer comme délettrer} exigent qu'\textbf{au moins une} ligne du groupe soit en
+période ouverte~: dans un exercice ouvert, qu'aucun exercice postérieur clôturé ne suit, et
+datée après le verrou de période. Un groupe dont \textbf{toutes} les lignes sont en période
+close ne se crée ni ne se défait --- il se fige avec la période. Ce qui en découle pour
+l'annulation d'un règlement, d'un solde, d'un rapprochement, d'un paiement ou d'une facture
+fournisseur est décrit avec le verrou de période (\S\ref{sec:verrou-periode}) et avec chacun
+de ces gestes.
+
+\subsubsection{Ce que le lettrage ne fait pas}
+
+\begin{itemize}
+    \item \textbf{Pas de lettrage partiel.} Un groupe se solde exactement~: un acompte de 500
+          repris pour 480 ne se lettre pas tel quel.
+    \item \textbf{Pas de tolérance de montant.} Un écart de quelques centimes ne s'absorbe pas~:
+          pour une facture client, \textbf{soldez son reste} depuis sa fiche
+          (\S\ref{sec:reglement-client}) --- la facture se lettre alors d'office~; ailleurs,
+          passez une écriture d'ajustement qui porte l'écart sur le compte, puis lettrez les trois
+          lignes.
+    \item \textbf{Une facture payée par une écriture saisie à la main ne se lettre pas avec
+          elle}~: la ligne de la facture appartient à sa pièce. Enregistrez le paiement
+          \textbf{sur la facture} (règlement, ou rapprochement bancaire), qui la solde et la
+          lettre --- et corrigez l'écriture manuelle, qui ferait sinon double emploi.
+    \item \textbf{Le code n'est pas dans les exports CSV et PDF du Grand livre}~: il ne s'y
+          lit qu'à l'écran. L'export global (\S\ref{sec:exports}), lui, porte pour chaque ligne d'écriture
+          la clé et l'origine de son groupe (colonnes \texttt{lettering\_key} et
+          \texttt{lettering\_origin} de \texttt{journal\_entry\_lines.csv}).
+    \item \textbf{Une écriture lettrée est figée}~: elle ne se modifie ni ne se supprime tant
+          qu'une de ses lignes est lettrée. Quand le lettrage est ce qui la retient --- une
+          écriture saisie à la main, d'un exercice ouvert ---, le motif de sa fiche porte le code
+          du groupe, en lien~: délettrez-la là, puis modifiez (\S\ref{sec:modifier-ecriture}).
+          Si ses lignes sont dans plusieurs groupes, le motif nomme le premier~: une fois celui-ci
+          délettré, la fiche nomme le suivant. Une écriture qu'une autre cause fige (pièce,
+          rapprochement bancaire, paiement détaché d'une facture fournisseur annulée,
+          contre-passation, période close) affiche d'abord ce motif-là.
+\end{itemize}
+
+\subsubsection{La frontière avec la réconciliation, et les rôles}\label{sec:lettrage-frontiere}
+
+Les \textbf{comptes bancaires ne se lettrent pas}~: le rapprochement des relevés se fait dans
+\emph{Mensuel} → \emph{Réconciliation} (\S\ref{sec:reconciliation}), qui passe l'écriture d'une
+transaction et, pour une facture, son règlement --- lequel lettre alors la facture d'office.
+
+Tous les rôles lisent l'écran --- la liste, les propositions, les groupes. Le rôle
+\textbf{Consultation} ne lettre ni ne délettre~: ni case, ni bouton. Les rôles
+\textbf{Comptable} et \textbf{Administrateur} lettrent et délettrent, et chaque geste est inscrit
+au journal d'audit (\S\ref{sec:tracabilite}), avec son auteur.
+
+%%─────────────────────────────────────────────────────────────────────────────
 \section{Rapports comptables}
 
 \subsection{Bilan}
@@ -1953,8 +2153,8 @@ est-il fait ?}
 Chaque compte y est encadré par trois lignes sans lesquelles ce n'est pas un extrait : le
 \textbf{solde d'ouverture}, le \textbf{total des mouvements} (débit et crédit), le \textbf{solde
 de clôture}. Entre les deux, une ligne par écriture, avec sa date, sa pièce, son journal, son
-libellé, sa \textbf{contrepartie} — les autres comptes de la même écriture — et le \textbf{solde
-progressif} après chaque mouvement.
+libellé, sa \textbf{contrepartie} — les autres comptes de la même écriture —, le \textbf{solde
+progressif} après chaque mouvement et, en dernière colonne, son \textbf{lettrage}.
 
 \begin{itemize}
     \item \textbf{Période libre, sans exercice.} C'est le seul rapport qui ne demande pas de
@@ -1970,6 +2170,14 @@ progressif} après chaque mouvement.
           une erreur : elle mérite un regard.
     \item \textbf{Accès direct depuis le bilan et la balance} : le numéro de compte y est un
           lien qui ouvre son grand livre sur la même période.
+    \item \textbf{Lettrage.} La colonne \emph{Lettrage} porte le \textbf{code} du groupe d'une
+          ligne lettrée, en lien vers ce groupe~; une ligne ouverte l'a vide
+          (\S\ref{sec:lettrage}). L'en-tête d'un compte lettrable porte le lien
+          \emph{Postes ouverts de ce compte}, qui ouvre l'écran des postes ouverts \textbf{au
+          dernier jour de la période}~: leur total y égale le solde de clôture de l'extrait, au
+          signe près --- l'extrait le donne du côté naturel du compte, l'écran en valeur absolue
+          suivie de «~débiteur~» ou «~créditeur~». Le code ne figure \textbf{pas} dans les
+          exports CSV et PDF du grand livre.
     \item \textbf{Exports PDF et CSV.} Le PDF répète l'en-tête du compte sur chaque page et
           porte « À reporter » au bas d'une page, « Report » en haut de la suivante, selon
           l'usage suisse. Le CSV écrit l'ouverture et la clôture comme des \textbf{lignes du
@@ -2117,7 +2325,7 @@ distincte : le montant affiché correspond alors au décaissement réel.
 \end{keshtip}
 
 %%─────────────────────────────────────────────────────────────────────────────
-\section{Exports de souveraineté}
+\section{Exports de souveraineté}\label{sec:exports}
 
 \subsection{Concept}
 
@@ -2413,7 +2621,8 @@ Selon l'action :
 \begin{itemize}
     \item Écriture saisie à la main, d'un exercice ouvert~: le bouton «~Modifier~» de sa
           fiche --- chaque modification est tracée, avant et après~; une écriture dont une
-          ligne est lettrée se délettre d'abord. Sinon, le bouton
+          ligne est lettrée se délettre d'abord, depuis le lien du code que porte son motif
+          (\S\ref{sec:lettrage}). Sinon, le bouton
           «~Contre-passer~»~: Kesh crée l'écriture inverse, garde l'origine, et lie les deux
           --- la correction reste visible. Une écriture saisie par erreur se
           \textbf{supprime} depuis la même fiche, dans le même cadre que la modification~:
@@ -2517,9 +2726,9 @@ Le journal d'audit garde toujours la trace de l'action originale ET de l'action 
     \item[Journal d'audit (angl. audit log)] Registre des modifications comptables (qui, quand, quelle valeur), exigé par le CO Art. 957a. ⚠️ \emph{La couverture n'est pas totale --- voir la section «~Traçabilité~» pour la famille d'opérations qui n'y figure pas encore (les gestes de session).} Il se consulte à l'écran, \emph{Administration} → \emph{Journal d'audit} (\S\ref{sec:tracabilite}). À ne pas confondre avec le \emph{journal} des écritures, ci-dessus. Aucune entrée ne peut y être modifiée, ni supprimée sur une installation en service.
     \item[Lettrage] Marque posée sur des lignes d'un même compte d'actif ou de passif dont la
           somme est nulle, pour dire qu'elles se soldent entre elles (une écriture et sa
-          contre-passation, un acompte et sa reprise\ldots). Dans cette version, le lettrage
-          manuel et le délettrage se font par l'API (\texttt{/api/v1/letterings})~; l'écran viendra.
-          La contre-passation lettre d'elle-même une ligne et sa correction~; Kesh lettre de
+          contre-passation, un acompte et sa reprise\ldots). Le lettrage manuel, les
+          rapprochements proposés et le délettrage se font à l'écran \emph{Postes ouverts}
+          (\S\ref{sec:lettrage}). La contre-passation lettre d'elle-même une ligne et sa correction~; Kesh lettre de
           lui-même une facture client soldée avec ses règlements, son solde ou son avoir, et une
           facture fournisseur payée avec son paiement --- y compris, à la mise à jour vers la
           version 0.13, celles qui l'étaient déjà, sauf en période close~; un
@@ -2530,6 +2739,7 @@ Le journal d'audit garde toujours la trace de l'action originale ET de l'action 
     \item[Partie double] Principe selon lequel toute opération est enregistrée sur au moins deux comptes, débit = crédit.
     \item[Passif] Origine des ressources de l'entreprise (dettes + capitaux propres). Classe 2.
     \item[Plan comptable] Liste structurée et hiérarchisée des comptes utilisés.
+    \item[Postes ouverts] Lignes d'un compte lettrable qui ne sont pas lettrées à une date~: leur total égale le solde du compte à cette date (\S\ref{sec:lettrage}).
     \item[Produit] Revenu généré par l'activité (ventes, honoraires, cotisations). Classe 3.
     \item[Provision] Charge estimée et comptabilisée d'avance pour un risque ou une dépense future probable.
     \item[QR Bill] Standard suisse 2020+ de facture avec QR code (SIX Group).

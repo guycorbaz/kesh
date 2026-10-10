@@ -39,6 +39,7 @@
 	import ProjectReturnView from '$lib/features/reports/ProjectReturnView.svelte';
 	import { listProjects } from '$lib/features/projects/projects.api';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
+	import { letterableAccountIds as letterableIdsOf } from '$lib/features/open-items/open-items';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import type { ProjectResponse } from '$lib/features/projects/projects.types';
 	import type {
@@ -128,6 +129,10 @@
 			.then((a) => (accounts = a))
 			.catch(() => (accounts = []));
 	});
+	// Story 15-1c-ii (AC9, C-15-1c-8) — les comptes lettrables, lus dans la même
+	// liste : le Grand livre n'offre « Postes ouverts de ce compte » que pour eux.
+	// Liste en échec → ensemble vide → aucun lien.
+	const letterableAccountIds = $derived(letterableIdsOf(accounts));
 	// Story 9-2a — flag dédié pour l'export (PAS partagé avec `loading` qui contrôle
 	// uniquement `generate()`). Pass 1 ECH-H2 + AC #36 + Pass 2 AA2-C1.
 	let exporting = $state(false);
@@ -855,7 +860,7 @@
 		{:else if activeTab === 'aged-receivables' && agedReceivables}
 			<AgedReceivablesView dto={agedReceivables} />
 		{:else if activeTab === 'general-ledger' && generalLedger}
-			<GeneralLedgerView dto={generalLedger} />
+			<GeneralLedgerView dto={generalLedger} {letterableAccountIds} />
 		{:else if isLedgerTab}
 			<p class="text-sm italic text-gray-500">
 				{i18nMsg(

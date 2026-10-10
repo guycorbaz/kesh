@@ -55,6 +55,11 @@ let compteur = 0;
 
 interface Montage {
 	accountId: number;
+	/** Numéro du compte créé (`data-testid` de sa section au Grand livre). */
+	accountNumber: string;
+	/** Les écritures A (débit du compte) et B (crédit du compte) — Story 15-1c-ii. */
+	debitEntry: number;
+	creditEntry: number;
 	/** La ligne au débit du compte créé (écriture A). */
 	debitLine: number;
 	/** La ligne au crédit du compte créé (écriture B). */
@@ -98,13 +103,21 @@ async function monter(page: Page, amount = uniqueAmount(), extra?: string): Prom
 				},
 			});
 			expect(res.ok(), `create entry: ${res.status()}`).toBeTruthy();
-			const entry = (await res.json()) as { lines: { id: number; accountId: number }[] };
-			return entry.lines.find((l) => l.accountId === account.id)!.id;
+			const entry = (await res.json()) as { id: number; lines: { id: number; accountId: number }[] };
+			return { entry: entry.id, line: entry.lines.find((l) => l.accountId === account.id)!.id };
 		};
-		const debitLine = await ecrire(account.id, caisse!.id, amount, `Avance ${number}`);
-		const creditLine = await ecrire(caisse!.id, account.id, amount, `Remboursement ${number}`);
-		const extraLine = extra ? await ecrire(caisse!.id, account.id, extra, `Partiel ${number}`) : undefined;
-		return { accountId: account.id, debitLine, creditLine, extraLine };
+		const a = await ecrire(account.id, caisse!.id, amount, `Avance ${number}`);
+		const b = await ecrire(caisse!.id, account.id, amount, `Remboursement ${number}`);
+		const extraLine = extra ? (await ecrire(caisse!.id, account.id, extra, `Partiel ${number}`)).line : undefined;
+		return {
+			accountId: account.id,
+			accountNumber: number,
+			debitEntry: a.entry,
+			creditEntry: b.entry,
+			debitLine: a.line,
+			creditLine: b.line,
+			extraLine,
+		};
 	} finally {
 		await disposeContextSafe(ctx);
 	}
@@ -287,5 +300,90 @@ test.describe('Postes ouverts', () => {
 				await disposeContextSafe(admin);
 			}
 		}
+	});
+
+	/**
+	 * Story 15-1c-ii (AC13 part ii) — le lettrage vu hors de l'écran. ⚠️ Le scénario (3)
+	 * délettre le groupe du (2) : chacun des (7) à (9) **pose son propre lettrage**
+	 * (deux écritures opposées à montant unique sur un compte créé, lettrées par
+	 * `POST /letterings`) et le délettre à la fin — aucun ne dépend d'un autre.
+	 */
+	async function avecLettrage(
+		page: Page,
+		corps: (m: Montage, code: string) => Promise<void>,
+	): Promise<void> {
+		await login(page);
+		const m = await monter(page);
+		const ctx = await authedApiContext(page);
+		let code: string;
+		try {
+			const res = await ctx.post('/api/v1/letterings', { data: { lineIds: [m.debitLine, m.creditLine] } });
+			expect(res.status(), 'lettrage du montage').toBe(201);
+			code = ((await res.json()) as { code: string }).code;
+		} finally {
+			await disposeContextSafe(ctx);
+		}
+		let corpsVert = false;
+		try {
+			await corps(m, code);
+			corpsVert = true;
+		} finally {
+			// Même nettoyage que (6) : il n'affirme rien quand le corps a échoué, et fait
+			// rougir le test si le délettrage est refusé après un corps vert.
+			const admin = await authedApiContext(page);
+			try {
+				const res = await admin.delete(`/api/v1/letterings/${code}`);
+				if (corpsVert) expect(res.status(), 'nettoyage du groupe').toBe(204);
+			} finally {
+				await disposeContextSafe(admin);
+			}
+		}
+	}
+
+	test('(7) la fiche d’écriture montre le code dans la colonne « Lettrage », et le lien ouvre le groupe', async ({ page }) => {
+		await avecLettrage(page, async (m, code) => {
+			await page.goto(`/journal-entries/${m.debitEntry}`);
+			const cell = page.getByTestId(`entry-line-lettering-${m.debitLine}`);
+			await expect(cell.getByTestId(`lettering-code-link-${code}`)).toBeVisible();
+			await cell.getByTestId(`lettering-code-link-${code}`).click();
+			await expect(page).toHaveURL(new RegExp(`/open-items\\?.*group=${code}`));
+			await expect(page.getByTestId(`lettering-group-line-${m.debitLine}`)).toBeVisible();
+			await expect(page.getByTestId(`lettering-group-line-${m.creditLine}`)).toBeVisible();
+		});
+	});
+
+	test('(8) au Grand livre, la colonne porte le code, et « Postes ouverts de ce compte » ouvre l’écran à la fin de la période', async ({ page }) => {
+		await avecLettrage(page, async (m, code) => {
+			const year = todayZurich().slice(0, 4);
+			const to = `${year}-12-31`;
+			await page.goto(`/reports?tab=general-ledger&from=${year}-01-01&to=${to}&accountId=${m.accountId}`);
+			const section = page.getByTestId(`ledger-section-${m.accountNumber}`);
+			await expect(section).toBeVisible();
+			await expect(
+				section.getByTestId(`ledger-lettering-${m.debitLine}`).getByTestId(`lettering-code-link-${code}`),
+			).toBeVisible();
+			await expect(
+				section.getByTestId(`ledger-lettering-${m.creditLine}`).getByTestId(`lettering-code-link-${code}`),
+			).toBeVisible();
+			await section.getByTestId(`ledger-open-items-${m.accountNumber}`).click();
+			await expect(page).toHaveURL(new RegExp(`/open-items\\?accountId=${m.accountId}&asOf=${to}`));
+			await expect(page.getByTestId('open-items-account')).toHaveValue(String(m.accountId));
+			await expect(page.getByTestId('open-items-list')).toBeVisible();
+			// Lettrées, les deux lignes ne sont pas ouvertes à cette date.
+			await expect(page.getByTestId(`open-item-row-${m.debitLine}`)).toHaveCount(0);
+			await expect(page.getByTestId(`open-item-row-${m.creditLine}`)).toHaveCount(0);
+		});
+	});
+
+	test('(9) la fiche d’une écriture lettrée montre le motif `ENTRY_LETTERED` avec le lien vers le groupe', async ({ page }) => {
+		await avecLettrage(page, async (m, code) => {
+			await page.goto(`/journal-entries/${m.creditEntry}`);
+			const reason = page.getByTestId('modification-blocked-reason');
+			await expect(reason).toBeVisible();
+			await expect(page.getByTestId('edit-entry')).toHaveCount(0);
+			await reason.getByTestId(`lettering-code-link-${code}`).click();
+			await expect(page).toHaveURL(new RegExp(`/open-items\\?.*group=${code}`));
+			await expect(page.getByTestId('lettering-group-dissolve')).toBeVisible();
+		});
 	});
 });
