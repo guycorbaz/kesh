@@ -4510,6 +4510,8 @@ l'import (#458–#461).
   perishable_exemptions`, puis la recherche de tag dans l'intervalle). ⚠️ À trancher hors story (chore) :
   apprendre au script le cas « déjà bumpé » (sauter l'étape 1, garder le pré-vol), ou écrire la
   procédure manuelle dans la checklist de release.
+  ⇒ **Levé par #566 (C-566-1)** : le script saute le bump et exécute pré-vol et datation sur crates déjà
+  bumpés ; la procédure manuelle ci-dessus n'a plus lieu d'être.
 - **Écartées** : maintenir « pas de bump » (contraire au précédent et à la définition P1) ; bumper dans la
   15-1a2 seulement (la 15-1a aurait livré des colonnes qu'un ancien binaire ignore, et la 15-1a2 écrit déjà
   des données, P7 classe A) ; risque accepté sans bump (faux rattachement muet).
@@ -7874,3 +7876,20 @@ l'import (#458–#461).
 - **Écartées** : un sélecteur Fluent de pluriel (interdit par la garde) ; corriger le manuel ici (PDF régénéré dans
   une story qui ne touche pas le manuel, et deux stories qui écriraient le même fichier).
 - **Réversible** : oui (texte).
+
+## C-566-1 — #566 (correctif) : « déjà bumpé » ne saute plus que le bump ; refus durcis autour
+- **Contexte** : option 1 de l'issue retenue par l'orchestrateur — le script saute le bump quand les crates portent
+  déjà la version cible et exécute le pré-vol et la datation. Restaient à trancher les cas voisins.
+- **Retenu** : (a) une version cible inférieure à la version courante est refusée (comparaison `sort -V`, donc
+  numérique : 0.9.0 < 0.13.0) — l'ancien script ne la refusait pas, il ne refusait que l'égalité ; (b) « déjà bumpé »
+  exige que **tous** les `crates/*/Cargo.toml` portent la version cible, sinon refus (bump partiel, contraire à
+  P2-bis) ; (c) la régénération de `Cargo.lock` (`cargo check --offline`) tourne aussi quand le bump est sauté —
+  idempotente ; (d) une section du CHANGELOG déjà datée n'est pas redatée et n'est pas un refus ; deux sections
+  `[X.Y.Z]` sont un refus, une date suivie d'un suffixe vaut datée ; (d-bis) une version dont le tag `vX.Y.Z`
+  existe est refusée — l'ancien refus de l'égalité tenait lieu de cette garde (revue P1, P1-E-1) ; (e) le test est un script shell (`scripts/tests/prepare-release.test.sh`) sur dépôts
+  jetables avec un `cargo` factice en tête du PATH — aucune porte dérobée dans le script —, enveloppé par
+  `crates/kesh-db/tests/prepare_release_script.rs` pour tourner au gate et en CI.
+- **Écartées** : option 2 de l'issue (procédure manuelle au CLAUDE.md : un filet qu'on peut sauter sans le savoir) ;
+  une variable d'environnement de test pour substituer l'inventaire (porte dérobée au seul contrôle des exemptions) ;
+  compléter un bump partiel au lieu de le refuser (le script n'a pas à deviner l'intention).
+- **Réversible** : oui (outillage, aucun effet sur les données).

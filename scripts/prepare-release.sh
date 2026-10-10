@@ -9,6 +9,12 @@
 #   3. CHANGELOG.md : remplacer `## [X.Y.Z] — Non publié` par
 #      `## [X.Y.Z] — YYYY-MM-DD` (date du jour).
 #
+# Si les crates portent DÉJÀ la version cible (bump fait avec la migration qui
+# l'impose, CLAUDE.md P2-bis), l'étape 1 est sautée et tout le reste tourne —
+# pré-vol compris. Relancé après un premier passage commité, le script ne redate
+# pas le CHANGELOG et refait le pré-vol (#566). Il refuse, avant toute écriture,
+# une version cible inférieure à l'actuelle ou dont le tag `vX.Y.Z` existe déjà.
+#
 # **N'automatise PAS** la mise à jour du README roadmap (dépend du scope précis
 # de chaque release — l'auteur doit la rédiger manuellement avant ou après).
 # Le script affiche un rappel.
@@ -67,11 +73,51 @@ echo
 
 # --- Détection version actuelle ---
 
-CURRENT_VERSION=$(grep -m1 '^version = ' crates/kesh-api/Cargo.toml | sed -E 's/^version = "([^"]+)".*/\1/')
+CURRENT_VERSION=$(grep -m1 '^version = ' crates/kesh-api/Cargo.toml | sed -E 's/^version = "([^"]+)".*/\1/' || true)
+if [ -z "$CURRENT_VERSION" ]; then
+    echo "ERREUR: aucune ligne 'version = \"…\"' lisible dans crates/kesh-api/Cargo.toml." >&2
+    exit 1
+fi
 echo "Version actuelle (crates/kesh-api/Cargo.toml) : $CURRENT_VERSION"
 
+# ⛔ « Déjà à la version cible » N'EST PAS un motif d'arrêt (#566).
+# La règle P2-bis du CLAUDE.md impose de bumper les crates DANS LE COMMIT de la
+# migration qui relève `kesh_version_min_required` — donc AVANT la release. Ce
+# script s'arrêtait alors sur « version cible identique », et sautait avec le
+# bump le pré-vol (seul contrôle des exemptions périssables) et la datation du
+# CHANGELOG : un filet qu'on peut sauter sans le savoir n'en est pas un. Le cas
+# s'est produit à la v0.10.0 (`a80a36c1`, étapes refaites à la main) et se
+# reproduisait à la v0.13.0. Seule l'étape (1) est sautée ; tout le reste tourne.
+ALREADY_BUMPED=0
 if [ "$CURRENT_VERSION" = "$NEW_VERSION" ]; then
-    echo "ERREUR: version cible identique à la version actuelle. Rien à bumper." >&2
+    # Déjà bumpé, mais ENTIÈREMENT ? Un bump partiel laisserait un crate plus
+    # ancien que la base qu'il sert (P2-bis) : refusé, rien ne le répare ici.
+    RETARDATAIRES=""
+    for f in crates/*/Cargo.toml; do
+        v=$(grep -m1 '^version = ' "$f" | sed -E 's/^version = "([^"]+)".*/\1/' || true)
+        [ "$v" = "$NEW_VERSION" ] || RETARDATAIRES="$RETARDATAIRES $f($v)"
+    done
+    if [ -n "$RETARDATAIRES" ]; then
+        echo "ERREUR: kesh-api porte déjà $NEW_VERSION, mais pas ces crates :$RETARDATAIRES" >&2
+        echo "Bump partiel : aligner tous les crates/*/Cargo.toml sur $NEW_VERSION, puis relancer." >&2
+        echo "⇒ Refusé AVANT toute modification : le dépôt est intact." >&2
+        exit 1
+    fi
+    ALREADY_BUMPED=1
+    echo "Les crates sont déjà à $NEW_VERSION : bump sauté, pré-vol exécuté (ci-dessous)."
+elif [ "$(printf '%s\n%s\n' "$CURRENT_VERSION" "$NEW_VERSION" | sort -V | head -1)" = "$NEW_VERSION" ]; then
+    echo "ERREUR: version cible $NEW_VERSION INFÉRIEURE à la version actuelle $CURRENT_VERSION." >&2
+    echo "Une release ne fait pas reculer le workspace. Refusé, le dépôt est intact." >&2
+    exit 1
+fi
+
+# ⛔ Une version déjà TAGUÉE est publiée : la repréparer n'a pas de sens. L'ancien
+# refus « version cible identique » faisait aussi, sans le dire, office de cette
+# garde ; l'avoir levé pour le cas « déjà bumpé » (#566) imposait de l'écrire
+# (revue P1, finding P1-E-1).
+if git rev-parse -q --verify "refs/tags/v$NEW_VERSION" >/dev/null; then
+    echo "ERREUR: le tag v$NEW_VERSION existe déjà — cette version est publiée." >&2
+    echo "Préparer la suivante (ex. un correctif). Refusé, le dépôt est intact." >&2
     exit 1
 fi
 
@@ -172,8 +218,8 @@ check_perishable_exemptions() {
 # ⛔ Ce script MUTE PUIS VALIDE, et cela a un coût réel : à l'abandon il laisse
 # les dix `Cargo.toml` bumpés et le dépôt sale, dans un état d'où il n'est même
 # pas rejouable — la garde « working tree clean » refuse, et si on la contourne,
-# `CURRENT_VERSION` relu depuis un Cargo.toml déjà bumpé déclenche « version
-# cible identique ». C'est exactement ce qui est arrivé le 2026-09-09 : dix
+# `CURRENT_VERSION` relu depuis un Cargo.toml déjà bumpé déclenchait (avant #566)
+# « version cible identique ». C'est exactement ce qui est arrivé le 2026-09-09 : dix
 # crates bumpés `0.11.1 → 0.12.0`, `CHANGELOG.md` intact, parce que l'étape 3
 # ne trouvait pas son motif.
 #
@@ -185,16 +231,38 @@ check_perishable_exemptions() {
 echo
 echo "[0/3] Pré-vol"
 
-# (0a) La section du CHANGELOG que l'étape 3 finalisera doit exister.
+# (0a) La section du CHANGELOG que l'étape 3 finalisera doit exister — ou être
+# DÉJÀ datée : relancé après un premier passage commité, le script ne date pas
+# deux fois et ne refuse pas pour autant ; il refait le pré-vol (#566).
 PATTERN="## [$NEW_VERSION] — Non publié"
-if ! grep -qF "$PATTERN" CHANGELOG.md; then
+# Toute section de cette version, quelle que soit sa date : une seule admise.
+# Version échappée pour `grep -E` (les `.` y sont des métacaractères).
+ESC_VERSION=$(printf '%s' "$NEW_VERSION" | sed 's/\./\\./g')
+NB_SECTIONS=$(grep -cE "^## \[$ESC_VERSION\] — " CHANGELOG.md || true)
+ALREADY_DATED=0
+if [ "$NB_SECTIONS" -gt 1 ]; then
+    echo "ERREUR: CHANGELOG.md porte $NB_SECTIONS sections '## [$NEW_VERSION] — …' ; une seule est admise :" >&2
+    grep -nE "^## \[$ESC_VERSION\] — " CHANGELOG.md >&2
+    echo "⇒ Refusé AVANT toute modification : le dépôt est intact." >&2
+    exit 1
+elif grep -qE "^## \[$ESC_VERSION\] — Non publié" CHANGELOG.md; then
+    echo "  ✓ CHANGELOG.md porte la section à finaliser."
+# Daté = une date en tête, quel que soit ce qui la suit (« (hotfix) », espace…).
+elif grep -qE "^## \[$ESC_VERSION\] — [0-9]{4}-[0-9]{2}-[0-9]{2}" CHANGELOG.md; then
+    ALREADY_DATED=1
+    echo "  ✓ CHANGELOG.md : la section [$NEW_VERSION] est déjà datée ($(grep -m1 -E "^## \[$ESC_VERSION\] — " CHANGELOG.md | sed 's/^## //')) — datation sautée."
+elif [ "$NB_SECTIONS" -eq 1 ]; then
+    echo "ERREUR: la section [$NEW_VERSION] du CHANGELOG n'est ni « Non publié » ni datée (AAAA-MM-JJ) :" >&2
+    grep -nE "^## \[$ESC_VERSION\] — " CHANGELOG.md >&2
+    echo "⇒ Refusé AVANT toute modification : le dépôt est intact." >&2
+    exit 1
+else
     echo "ERREUR: pattern '$PATTERN' introuvable dans CHANGELOG.md." >&2
     echo "Le CHANGELOG doit contenir une section '$PATTERN' à finaliser." >&2
     echo "Vérifie que la section existe et que le texte exact match (espaces, tirets longs, etc.)." >&2
     echo "⇒ Refusé AVANT toute modification : le dépôt est intact." >&2
     exit 1
 fi
-echo "  ✓ CHANGELOG.md porte la section à finaliser."
 
 # (0b) Exemptions du registre de rejeu dont le fondement SE PÉRIME.
 check_perishable_exemptions
@@ -203,31 +271,37 @@ echo
 # --- (1) Bump des 10 crates Cargo.toml ---
 
 echo
-echo "[1/3] Bump des Cargo.toml workspace : $CURRENT_VERSION → $NEW_VERSION"
+if [ "$ALREADY_BUMPED" -eq 1 ]; then
+    echo "[1/3] Bump sauté : les crates portent déjà $NEW_VERSION (vérifié pour chacun)."
+else
+    echo "[1/3] Bump des Cargo.toml workspace : $CURRENT_VERSION → $NEW_VERSION"
 
-BUMPED=0
-for f in crates/*/Cargo.toml; do
-    if grep -q "^version = \"$CURRENT_VERSION\"" "$f"; then
-        # `sed -i` portable : on cible la 1ère occurrence `version = "X.Y.Z"`
-        # (les Cargo.toml ont la ligne version en position fixe ligne 3).
-        sed -i "0,/^version = \"$CURRENT_VERSION\"/s//version = \"$NEW_VERSION\"/" "$f"
-        echo "  ✓ $f"
-        BUMPED=$((BUMPED + 1))
+    BUMPED=0
+    for f in crates/*/Cargo.toml; do
+        if grep -q "^version = \"$CURRENT_VERSION\"" "$f"; then
+            # `sed -i` portable : on cible la 1ère occurrence `version = "X.Y.Z"`
+            # (les Cargo.toml ont la ligne version en position fixe ligne 3).
+            sed -i "0,/^version = \"$CURRENT_VERSION\"/s//version = \"$NEW_VERSION\"/" "$f"
+            echo "  ✓ $f"
+            BUMPED=$((BUMPED + 1))
+        fi
+    done
+
+    if [ "$BUMPED" -eq 0 ]; then
+        echo "ERREUR: aucun crate Cargo.toml ne portait la version $CURRENT_VERSION. Anomalie." >&2
+        exit 1
     fi
-done
 
-if [ "$BUMPED" -eq 0 ]; then
-    echo "ERREUR: aucun crate Cargo.toml ne portait la version $CURRENT_VERSION. Anomalie." >&2
-    exit 1
+    echo "  $BUMPED crates bumpés."
 fi
-
-echo "  $BUMPED crates bumpés."
 
 # --- (2) Régénérer Cargo.lock ---
 
 echo
 echo "[2/3] Régénération de Cargo.lock"
 
+# Exécutée même quand le bump est sauté : idempotente, elle rattrape un
+# Cargo.lock que le commit du bump aurait laissé en arrière.
 # `cargo check --workspace` est le moyen le plus rapide de mettre à jour
 # Cargo.lock avec les nouvelles versions. `--offline` évite tout download
 # inattendu — la résolution doit se faire en local uniquement (workspace deps).
@@ -241,23 +315,36 @@ fi
 echo
 echo "[3/3] CHANGELOG.md : finaliser la date pour [$NEW_VERSION]"
 
-TODAY=$(date +%Y-%m-%d)
-# `$PATTERN` a été posé ET vérifié en pré-vol (0a) : rien à revalider ici, et
-# surtout rien qui puisse encore refuser après que les Cargo.toml ont bougé.
-REPLACEMENT="## [$NEW_VERSION] — $TODAY"
+if [ "$ALREADY_DATED" -eq 1 ]; then
+    echo "  ✓ déjà datée en pré-vol : rien à écrire."
+else
+    TODAY=$(date +%Y-%m-%d)
+    # La section « Non publié » a été vérifiée en pré-vol (0a), ancrée en début de
+    # ligne sur `$ESC_VERSION` : rien à revalider ici, et
+    # surtout rien qui puisse encore refuser après que les Cargo.toml ont bougé.
+    REPLACEMENT="## [$NEW_VERSION] — $TODAY"
 
-# Pour sed BRE, échapper les `[` `]` (signification regex caractère class).
-sed -i "s|## \\[$NEW_VERSION\\] — Non publié|$REPLACEMENT|" CHANGELOG.md
-echo "  ✓ CHANGELOG.md : '$PATTERN' → '$REPLACEMENT'"
+    # Pour sed BRE, échapper les `[` `]` (signification regex caractère class).
+    # Ancré en début de ligne : une citation du titre dans le texte reste intacte.
+    sed -i "s|^## \\[$ESC_VERSION\\] — Non publié|$REPLACEMENT|" CHANGELOG.md
+    echo "  ✓ CHANGELOG.md : '$PATTERN' → '$REPLACEMENT'"
+fi
 
 # --- Récap + invite commit ---
 
 echo
 echo "════════════════════════════════════════════════════════════════════════"
 echo "✅ Release prep terminée."
+if [ "$ALREADY_BUMPED" -eq 1 ]; then
+    echo "   (crates déjà à $NEW_VERSION : bump sauté, pré-vol exécuté)"
+fi
 echo
-echo "Fichiers modifiés :"
-git diff --stat | tail -15
+if [ -z "$(git status --porcelain --untracked-files=no)" ]; then
+    echo "Aucun fichier modifié : bump et datation étaient déjà faits, seul le pré-vol a tourné."
+else
+    echo "Fichiers modifiés :"
+    git diff --stat | tail -15
+fi
 echo
 echo "Étapes restantes (manuelles) :"
 echo "  1. Vérifier README.md (Feuille de route) reflète v$NEW_VERSION done"
