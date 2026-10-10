@@ -15,7 +15,8 @@ enrichie d'un groupe (15-1c-0) n'existent pas avant elles. Le scénario E2E (1) 
 
 ⛔ **Pas de tag v0.13.0 entre la 15-1c-i et la 15-1c-ii** (règle de publication de C124, étendue par C-15-1c-1) :
 entre les deux, le manuel dit encore « le délettrage se fait par l'API dans cette version » et le CHANGELOG
-« l'écran viendra », alors que l'écran existe.
+« l'écran viendra », alors que l'écran existe — et le manuel énumère le groupe *Mensuel* du menu sans « Postes ouverts »
+(`user-manual.tex`, revue de code P1, A-1 ; inscrit au « Reçu de la 15-1c-i » de la 15-1c-ii).
 
 ## Story
 
@@ -461,7 +462,7 @@ Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
 
 ### File List
 
-- `frontend/src/lib/features/open-items/` (neuf) : `open-items.types.ts`, `open-items.api.ts`, `open-items.ts`,
+- `frontend/src/lib/features/open-items/` (neuf) : `open-items.api.test.ts` (revue P1), `open-items.types.ts`, `open-items.api.ts`, `open-items.ts`,
   `open-items-labels.ts`, `OpenItemsScreen.svelte`, `OpenItemsTable.svelte`, `ProposalsPanel.svelte`,
   `LetteringGroupPanel.svelte`, `DocumentCell.svelte`, `LetteringCodeLink.svelte`, `open-items.test.fixtures.ts`,
   `open-items.test.ts`, `open-items-labels.test.ts`, `OpenItemsTable.test.ts`, `panels.test.ts`,
@@ -479,9 +480,47 @@ Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
 - `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`
 - `README.md`
 - `_bmad-output/implementation-artifacts/15-1c-i-ecran-postes-ouverts.md`,
-  `sprint-status.yaml`, `epic-15-choix-autonomes.md` (C-15-1c-i-1 à 6)
+  `sprint-status.yaml`, `epic-15-choix-autonomes.md` (C-15-1c-i-1 à 7), `15-1c-ii-lettrage-dans-kesh.md` (« Reçu de la 15-1c-i »)
 
 ## Change Log
+
+### Revue de code P2 — 2026-10-10 (Opus 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
+
+**Prompt** : `15-1c-i-review-prompt-p2.md` (diff `4d5fd06c..13439ad8`, remédiation P1 relue d'abord). **Rapports** :
+`kesh-gate-logs/15-1c-i-review-p2-{B,E,A}.md` — B **0 C / 0 H / 1 M / 5 L**, E **0 / 0 / 3 M / 5 L**, A **0 / 0 / 0 / 8 L**.
+Axes déclarés : 1 à 4 exercés par B et E, 5 et 6 en partie (B, E), les six par A ; non exercée : toute exécution (reprise
+ici). Écarts aux interdits déclarés par deux lentilles : fichiers de travail hors dépôt (scratchpad, et `kesh-gate-logs/`
+aussitôt supprimés) — rien d'écrit dans le dépôt (`git status` propre avant la remédiation). MEDIUM vérifiés par `grep -nF`
+(`value = asOf` l. 258, `y < 1000` l. 41, condition du rabattement l. 141).
+
+⚠️ **Signal D5 déclaré** : B2-1 = E2-1 est **né de la remédiation P1** (la restauration du champ date, correctif d'E-4) —
+le motif de recyclage du `CLAUDE.md`. Pas de découpage : un correctif d'une fonction, aucun module de plus ; consigné ici
+et rendu à l'orchestrateur.
+
+| finding | verdict |
+|---|---|
+| B2-1 = E2-1 MEDIUM — la restauration à chaque `change` casse la frappe de l'année (`0002`, `0020`…) | **corrigé** : `change` ignore une valeur intermédiaire, `blur` restaure ; test, mutation P1 (restauration au `change`) rouge |
+| E2-2 MEDIUM — rabattement : `offset = 0` et garde `seq` retirables sans rougir | **corrigé** : test « dernière page » (160 → 120 lignes, page 4 → page 3) et test « page vide tardive d'un compte quitté, nouveau compte en page 2 » ; mutations P2, P3 rouges |
+| E2-3 MEDIUM — chemin périmé du `DELETE` prouvé en partie | **corrigé** : sélection vidée et propositions relues sur 409 et 404, liste relue sur 204 ; mutation P4 rouge |
+| B2-2 = E2-4 LOW — geste en vol et changement de compte | **corrigé** : sélecteur et date désactivés pendant `busy` ; test, mutation P5 rouge |
+| E2-5 LOW — ensemble vidé à `total = 0` | **corrigé** (page 1) ; test, mutation P6 rouge |
+| B2-5 LOW — code ressaisi : message non vidé | **corrigé** |
+| B2-4 = A2-5 LOW — `open-items-no-account` recopie R4 | **corrigé** : « Aucun compte de ce plan comptable ne se lettre. » (×4, terme du menu de chaque locale) |
+| B2-6 LOW — `expect` dans le `finally` de l'E2E (6) | **corrigé** (nettoyage sans assertion) |
+| A2-1 LOW — File List et décomptes périmés | **corrigé** (C-15-1c-i-1 à 7, fichier de test API) |
+| A2-2 LOW — Status sans la phrase du menu | **corrigé** |
+| A2-3 LOW — T0 de la 15-1c-ii sans renvoi au reçu | **corrigé** (renvoi dans son T0) |
+| A2-6 LOW — 404 du `POST` sans preuve du rechargement de la liste | **corrigé** |
+| B2-3 LOW — deux et quatre décimales dans une colonne | **accepté** : une fraction de centime est rare et doit se voir (E-7) |
+| E2-6 LOW — lien vers le groupe déjà ouvert sans relecture | **accepté** : le champ « Code » relit (E-9) ; un lien identique ne change pas l'URL |
+| E2-7, A2-4 LOW — absences E2E avant preuve de présence | **acceptés** : (2) vérifie après le message et après le rechargement ; (1) après `open-items-list` visible |
+| E2-8 LOW — collision de numéro de compte entre runs | **accepté** : chaque spec repart du preset (`seedTestState`) |
+| A2-7 LOW — entrée de menu sans test | **accepté** : l'E2E atteint l'écran par l'URL ; `sidebar-navigation.spec.ts` rejoué vert |
+| A2-8 LOW — « Rapprochements proposés » près du « rapprochement des relevés » | **accepté** : deux libellés prescrits ; signalé à la 15-1c-ii (manuel) |
+
+Décomptes après remédiation (recomptés) : **102** tests Vitest de l'écran (97 + 5), `test:unit` complet **122 fichiers /
+1269 tests** ; clés inchangées (74 `open-items-*`). La remédiation **touche du code de production** (`OpenItemsScreen.svelte`)
+mais une seule fonction de saisie et la condition du rabattement : passe **P3 ciblée** (Haiku, une lentille) sur ce commit.
 
 ### Revue de code P1 — 2026-10-10 (Sonnet 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
 

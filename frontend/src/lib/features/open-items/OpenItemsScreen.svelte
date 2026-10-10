@@ -138,8 +138,12 @@
 			// Une page devenue vide (sa dernière ligne lettrée, une écriture supprimée) :
 			// la vue se rabat sur la dernière page non vide — le serveur ne borne pas
 			// l'offset (revue P1, B-1 = E-2).
-			if (seq === listSeq && data.items.length === 0 && data.total > 0 && offset > 0) {
-				offset = Math.floor((data.total - 1) / OPEN_ITEMS_PAGE_SIZE) * OPEN_ITEMS_PAGE_SIZE;
+			if (seq === listSeq && data.items.length === 0 && offset > 0) {
+				// Ensemble devenu vide : la page 1 (revue P2, E2-5).
+				offset =
+					data.total > 0
+						? Math.floor((data.total - 1) / OPEN_ITEMS_PAGE_SIZE) * OPEN_ITEMS_PAGE_SIZE
+						: 0;
 				data = await fetchOpenItems(accountId, asOf, offset, OPEN_ITEMS_PAGE_SIZE);
 			}
 			if (seq === listSeq) list = { status: 'ready', data };
@@ -253,9 +257,15 @@
 
 	function onDateChange(e: Event) {
 		const v = (e.currentTarget as HTMLInputElement).value;
+		// Une valeur intermédiaire de la frappe (année `0002`, `0020`…) est ignorée ici,
+		// jamais réécrite : la restaurer interromprait la saisie (revue P2, B2-1 = E2-1).
 		if (isIsoDate(v)) navigate(screenUrl(url, { ...current(), asOf: v }));
-		// Champ vidé ou incomplet : il retrouve la date de la vue, jamais un état fantôme.
-		else (e.currentTarget as HTMLInputElement).value = asOf;
+	}
+
+	/** À la sortie du champ, une date vide ou incomplète retrouve celle de la vue (revue P1, E-4). */
+	function onDateBlur(e: FocusEvent) {
+		const input = e.currentTarget as HTMLInputElement;
+		if (!isIsoDate(input.value)) input.value = asOf;
 	}
 
 	function onPage(next: number) {
@@ -280,7 +290,10 @@
 		if (code === '') return;
 		// Le même code ressaisi (après un échec, ou pour relire) : l'URL ne change pas,
 		// la lecture se refait ici (revue P1, E-9).
-		if (code === groupCode) void loadGroup();
+		if (code === groupCode) {
+			message = null;
+			void loadGroup();
+		}
 		else navigate(screenUrl(url, { ...current(), group: code }));
 	}
 
@@ -380,6 +393,7 @@
 				class="rounded border px-2 py-1"
 				value={accountId === null ? '' : String(accountId)}
 				onchange={onAccountChange}
+				disabled={busy}
 				data-testid="open-items-account"
 			>
 				<option value="">{i18nMsg('open-items-account-placeholder', 'Choisissez un compte')}</option>
@@ -398,6 +412,8 @@
 				class="rounded border px-2 py-1"
 				value={asOf}
 				onchange={onDateChange}
+				onblur={onDateBlur}
+				disabled={busy}
 				data-testid="open-items-as-of"
 			/>
 		</label>
@@ -425,7 +441,7 @@
 		<p class="text-sm text-gray-600" data-testid="open-items-no-account">
 			{i18nMsg(
 				'open-items-no-account',
-				"Aucun compte ne se lettre : seuls les comptes d'actif et de passif qui ne sont pas des comptes bancaires se lettrent.",
+				"Aucun compte de ce plan comptable ne se lettre.",
 			)}
 		</p>
 	{/if}

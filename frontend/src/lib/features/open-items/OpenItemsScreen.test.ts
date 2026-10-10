@@ -247,6 +247,7 @@ describe('AC4 — sélection et lettrage manuel (tests 6 et 7)', () => {
 		await fireEvent.click(r.getByTestId('open-item-select-1'));
 		await fireEvent.click(r.getByTestId('open-item-select-2'));
 		const props = api.fetchProposals.mock.calls.length;
+		const lists = api.fetchOpenItems.mock.calls.length;
 		await fireEvent.click(r.getByTestId('open-items-letter'));
 		await waitFor(() =>
 			expect(r.getByTestId('open-items-message').textContent).toContain(
@@ -254,6 +255,8 @@ describe('AC4 — sélection et lettrage manuel (tests 6 et 7)', () => {
 			),
 		);
 		expect(api.fetchProposals.mock.calls.length).toBe(props + 1);
+		// Revue P2, A2-6 : la liste aussi est relue.
+		expect(api.fetchOpenItems.mock.calls.length).toBe(lists + 1);
 		await waitFor(() => expect(r.getByTestId('open-items-selection-count').textContent).toContain(': 0'));
 	});
 
@@ -502,14 +505,111 @@ describe('revue P1 — réponses tardives, pages, messages (B-1, E-1 à E-9)', (
 		expect(api.fetchLettering).toHaveBeenCalledTimes(2);
 	});
 
-	it('E-4 : un champ date vidé retrouve la date de la vue, sans rien recharger', async () => {
+	it('E-4, B2-1 : une valeur intermédiaire de la frappe n’est ni réécrite ni chargée ; la sortie du champ restaure', async () => {
 		const r = mount('?accountId=7&asOf=2026-03-31');
 		await waitFor(() => expect(api.fetchOpenItems).toHaveBeenCalled());
 		const calls = api.fetchOpenItems.mock.calls.length;
 		const input = r.getByTestId('open-items-as-of') as HTMLInputElement;
+		// Chromium émet `change` à chaque segment : l'année tapée passe par 0002, 0020…
+		await fireEvent.change(input, { target: { value: '0020-03-31' } });
+		expect(input.value).toBe('0020-03-31');
+		expect(api.fetchOpenItems.mock.calls.length).toBe(calls);
 		await fireEvent.change(input, { target: { value: '' } });
+		await fireEvent.blur(input);
 		expect(input.value).toBe('2026-03-31');
 		expect(api.fetchOpenItems.mock.calls.length).toBe(calls);
+	});
+
+	it('E2-2 : le rabattement vise la DERNIÈRE page non vide, pas la première (mutation : `offset = 0`)', async () => {
+		api.fetchOpenItems.mockResolvedValueOnce(view({ total: 160 }));
+		const r = mount('?accountId=7&asOf=2026-03-31');
+		await waitFor(() => expect(r.getByTestId('open-items-next')).toBeTruthy());
+		api.fetchOpenItems.mockResolvedValueOnce(view({ offset: 50, total: 160 }));
+		await fireEvent.click(r.getByTestId('open-items-next'));
+		api.fetchOpenItems.mockResolvedValueOnce(view({ offset: 100, total: 160 }));
+		await fireEvent.click(r.getByTestId('open-items-next'));
+		api.fetchOpenItems.mockResolvedValueOnce(
+			view({ offset: 150, total: 160, items: [item({ lineId: 151 }), item({ lineId: 152, debit: '0.0000', credit: '100.0000' })] }),
+		);
+		await fireEvent.click(r.getByTestId('open-items-next'));
+		await waitFor(() => expect(r.getByTestId('open-item-select-151')).toBeTruthy());
+		await fireEvent.click(r.getByTestId('open-item-select-151'));
+		await fireEvent.click(r.getByTestId('open-item-select-152'));
+		api.fetchOpenItems.mockResolvedValueOnce(view({ offset: 150, total: 120, items: [] }));
+		api.fetchOpenItems.mockResolvedValueOnce(view({ offset: 100, total: 120, items: [item({ lineId: 101 })] }));
+		await fireEvent.click(r.getByTestId('open-items-letter'));
+		await waitFor(() => expect(api.fetchOpenItems).toHaveBeenLastCalledWith(7, '2026-03-31', 100, 50));
+		await waitFor(() => expect(r.getByTestId('open-item-row-101')).toBeTruthy());
+	});
+
+	it('E2-2 : une page vide arrivée en retard d’un compte quitté ne déplace pas la page du nouveau (mutation : garde `seq` du rabattement)', async () => {
+		api.fetchOpenItems.mockResolvedValueOnce(view({ total: 60 }));
+		const r = mount('?accountId=7&asOf=2026-03-31');
+		await waitFor(() => expect(r.getByTestId('open-items-next')).toBeTruthy());
+		const late = deferred<ReturnType<typeof view>>();
+		api.fetchOpenItems.mockReturnValueOnce(late.promise);
+		await fireEvent.click(r.getByTestId('open-items-next'));
+		api.fetchOpenItems.mockResolvedValueOnce(view({ accountId: 8, total: 60, items: [item({ lineId: 80 })] }));
+		await fireEvent.change(r.getByTestId('open-items-account'), { target: { value: '8' } });
+		await waitFor(() => expect(r.getByTestId('open-item-row-80')).toBeTruthy());
+		// Le nouveau compte passe en page 2 (offset 50)…
+		api.fetchOpenItems.mockResolvedValueOnce(view({ accountId: 8, offset: 50, total: 60, items: [item({ lineId: 85 })] }));
+		await fireEvent.click(r.getByTestId('open-items-next'));
+		await waitFor(() => expect(r.getByTestId('open-item-row-85')).toBeTruthy());
+		const calls = api.fetchOpenItems.mock.calls.length;
+		// …puis arrive la page vide de l'ancien compte : elle ne rabat rien.
+		late.resolve(view({ offset: 50, total: 40, items: [] }));
+		await new Promise((res) => setTimeout(res, 20));
+		expect(api.fetchOpenItems.mock.calls.length).toBe(calls);
+		expect(r.getByTestId('open-item-row-85')).toBeTruthy();
+	});
+
+	it('E2-5 : un ensemble devenu vide se rabat sur la page 1', async () => {
+		api.fetchOpenItems.mockResolvedValueOnce(view({ total: 60 }));
+		const r = mount('?accountId=7&asOf=2026-03-31');
+		await waitFor(() => expect(r.getByTestId('open-items-next')).toBeTruthy());
+		api.fetchOpenItems.mockResolvedValueOnce(view({ offset: 50, total: 0, items: [] }));
+		api.fetchOpenItems.mockResolvedValueOnce(view({ offset: 0, total: 0, items: [] }));
+		await fireEvent.click(r.getByTestId('open-items-next'));
+		await waitFor(() => expect(api.fetchOpenItems).toHaveBeenLastCalledWith(7, '2026-03-31', 0, 50));
+	});
+
+	it('E2-3 : refus au clic du `DELETE` (409, 404) — sélection vidée, propositions relues ; 204 — liste relue', async () => {
+		for (const err of [refusal(409, 'LETTERING_ALL_LINES_IN_CLOSED_PERIODS'), refusal(404, 'NOT_FOUND')]) {
+			api.deleteLettering.mockRejectedValueOnce(err);
+			const r = mount('?accountId=7&asOf=2026-03-31&group=AA');
+			await waitFor(() => expect(r.getByTestId('lettering-group-dissolve')).toBeTruthy());
+			await waitFor(() => expect(r.getByTestId('open-item-select-1')).toBeTruthy());
+			await fireEvent.click(r.getByTestId('open-item-select-1'));
+			const props = api.fetchProposals.mock.calls.length;
+			await fireEvent.click(r.getByTestId('lettering-group-dissolve'));
+			await waitFor(() => expect(r.getByTestId('open-items-message')).toBeTruthy());
+			expect(api.fetchProposals.mock.calls.length).toBe(props + 1);
+			await waitFor(() => expect(r.getByTestId('open-items-selection-count').textContent).toContain(': 0'));
+			r.unmount();
+		}
+		const r = mount('?accountId=7&asOf=2026-03-31&group=AA');
+		await waitFor(() => expect(r.getByTestId('lettering-group-dissolve')).toBeTruthy());
+		await waitFor(() => expect(api.fetchOpenItems).toHaveBeenCalled());
+		const lists = api.fetchOpenItems.mock.calls.length;
+		await fireEvent.click(r.getByTestId('lettering-group-dissolve'));
+		await waitFor(() => expect(api.fetchOpenItems.mock.calls.length).toBeGreaterThan(lists));
+	});
+
+	it('B2-2 : pendant un geste, compte et date sont figés', async () => {
+		const pending = deferred<{ key: number; code: string; origin: 'manual'; accountId: number }>();
+		api.createLettering.mockReturnValueOnce(pending.promise);
+		const r = mount('?accountId=7&asOf=2026-03-31');
+		await waitFor(() => expect(r.getByTestId('open-item-select-1')).toBeTruthy());
+		await fireEvent.click(r.getByTestId('open-item-select-1'));
+		await fireEvent.click(r.getByTestId('open-item-select-2'));
+		await fireEvent.click(r.getByTestId('open-items-letter'));
+		expect((r.getByTestId('open-items-account') as HTMLSelectElement).disabled).toBe(true);
+		expect((r.getByTestId('open-items-as-of') as HTMLInputElement).disabled).toBe(true);
+		pending.resolve({ key: 28, code: 'AB', origin: 'manual', accountId: 7 });
+		await waitFor(() =>
+			expect((r.getByTestId('open-items-account') as HTMLSelectElement).disabled).toBe(false),
+		);
 	});
 
 	it('E-6 : échec des comptes, ou aucun compte lettrable — dit à l’écran', async () => {

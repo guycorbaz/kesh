@@ -273,9 +273,11 @@ test.describe('Postes ouverts', () => {
 			// (revue P1, A-8) : un administrateur le délettre.
 			await clearAuthStorage(page);
 			await login(page);
+			// Sans `expect` ici : un échec du nettoyage ne doit pas masquer celui du test
+			// (revue P2, B2-6).
 			const admin = await authedApiContext(page);
 			try {
-				expect((await admin.delete(`/api/v1/letterings/${groupCode}`)).status()).toBe(204);
+				await admin.delete(`/api/v1/letterings/${groupCode}`);
 			} finally {
 				await disposeContextSafe(admin);
 			}

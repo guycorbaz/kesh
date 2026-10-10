@@ -193,6 +193,7 @@ contre `docs/testing.md` § « Les échecs attendus ».
 ## Tasks
 
 - [ ] **T0** — Rebaser sur `main` après le merge de la 15-1c-i ; inventaires d'AC12 (manuels), d'AC14
+      *(Reçu de la 15-1c-i : lire la section « Reçu de la 15-1c-i » plus bas — la phrase du menu au manuel.)*
       (CHANGELOG), d'AC17 (`api-external.md`) ; bornes de `i18n-keys.test.ts` ; écrire au Dev Agent Record.
 - [ ] **T1** (AC9) — fiche d'écriture : colonne, lien du motif `ENTRY_LETTERED`.
 - [ ] **T2** (AC9) — Grand livre : type `LedgerLine.letteringCode`, colonne, `colspan` calculés, lien « Postes
