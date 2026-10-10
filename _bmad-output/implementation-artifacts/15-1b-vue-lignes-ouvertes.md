@@ -2,7 +2,7 @@
 
 ## Status
 
-**review** (développée le 2026-10-10 ; gate au commit de développement : 3323 passés, 5 ignorés) — était
+**done** (2026-10-10 — développée, revue close à la P2 ; gates et E2E complets au dernier commit de code `88e7d54e`) — était
 ready-for-dev **après la livraison de la 15-1a2-0, de la 15-1a2-i, de la 15-1a2-ii et de la 15-1b-0**
 *(réécrite le 2026-10-08 ; validation P1 remédiée le 2026-10-09 ; validation P2 remédiée le 2026-10-09 — la
 refonte de la propriété des lignes **extraite** en 15-1b-0, C-15-1b-9 ; **validation P3 close** le
@@ -802,6 +802,27 @@ Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
 - `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md` (C-15-1b-14 à 16)
 
 ## Change Log
+
+### Clôture — 2026-10-10 (Opus 5.5) — **REVUE CLOSE, story `done`**
+
+**Commits** (sur `origin/main` `7ba3781c`, la 15-1b-0 fusionnée — rebase de `5cf0ed9a`, arbres identiques, sans conflit) :
+développement **`8dd84606`**, prompt P1 `e7ea5981`, remédiation P1 **`82c7d787`**, prompt P2 `78c4cc17`, remédiation P2 (tests
+et documentation seuls) **`88e7d54e` = dernier commit de code**.
+
+**Gates au dernier commit de code `88e7d54e`** (exécutés ; base `kesh_1b` remise à zéro avant, sans redémarrer MariaDB) :
+`scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) **3325 passés, 5 ignorés** (`kesh-gate-logs/15-1b-gate-final.log`) ;
+frontend (arbre `frontend/` identique à `origin/main`, exécuté sur ce même arbre) — `npm run check` **0 erreur** (27
+avertissements préexistants), `lint-i18n-ownership` vert, `test:unit` **116 fichiers / 1167 tests**, `build` vert
+(`15-1b-frontend.log`) ; **E2E complet** (port 3025, base `kesh_e2e_1b` neuve migrée, binaire construit sur `88e7d54e`, montage
+de `docs/testing.md`, `/health` : `smtpConfigured: true`) : **245 passés, 9 échoués, 19 ignorés** — jugés fichier par fichier
+contre `docs/testing.md` § « Les échecs attendus » : sept KF-029 (#97) (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`,
+`onboarding:57`, `:77`, `:150`) et deux KF-045 (#421) (`invoices:415`, `:439`, suite terminée vers 04:39 UTC, avant 12:00) ;
+**aucun hors liste** (`15-1b-e2e.log`).
+
+**Trend de la revue** : P1 (Sonnet ×3) **3 MEDIUM distincts, 11 LOW** → P2 (Opus ×3, complète) **0 au-dessus de LOW, 8 LOW**,
+remédiation sans code de production → close. **Modèles** : Opus 5.5 (développement, remédiations, orchestration), Sonnet 5.5
+(P1), Opus 5.5 (P2). Choix : **C-15-1b-14 à 16**. Signal D5 : déclaré (5 crates, 9 modules métier), jamais levé par une
+remontée de sévérité ; pas de découpage.
 
 ### Revue de code P2 — 2026-10-10 (Opus 5.5 ×3, lentilles B, E, A, complète ; remédiation Opus 5.5) — REVUE CLOSE
 
