@@ -26,9 +26,12 @@
 //!   « ouvert » = « non lettré », un point c'est tout (arbitrage du 2026-08-26).
 //!   Garanti en valeur (l'invariant) et lexicalement (liste blanche de tables).
 //! - **B — l'enrichissement**, sur les seules écritures de la **page** : la
-//!   pièce propriétaire ([`journal_entries::document_owners`], un lot), l'état
-//!   de la facture client et son reste dû, la règle des périodes
-//!   ([`super::open_period_rule`], une fois pour les exercices de la page).
+//!   pièce propriétaire ([`journal_entries::document_owners`], un lot) et la
+//!   règle des périodes ([`super::open_period_rule`], une fois pour les
+//!   exercices de la page) — cette part « pièce et période » est
+//!   [`super::lines_documents_and_periods`], partagée avec la lecture détaillée
+//!   d'un groupe (Story 15-1c-0) —, puis l'état de la facture client et son
+//!   reste dû.
 //!
 //! Les deux, et les trois agrégats, sont lus dans **une** transaction ouverte
 //! par [`open_items`] elle-même (`begin`, lectures, `rollback`), pour qu'un
@@ -43,7 +46,10 @@ use kesh_core::lettering::proposals::{self, Candidate, MAX_PROPOSAL_CANDIDATES};
 use rust_decimal::Decimal;
 use sqlx::{Connection, MySqlConnection};
 
-use super::{Origin, code_of, letterable_account, open_period_rule, with_placeholders};
+use super::{
+    DocumentsAndPeriods, Origin, code_of, letterable_account, lines_documents_and_periods,
+    open_period_rule, with_placeholders,
+};
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::invoice_settlements::{amount_due_scalar_sql, amount_due_to_centime};
 use crate::repositories::journal_entries::{self, DocumentKind, DocumentOwner};
@@ -388,11 +394,17 @@ pub async fn open_items(
         .await
         .map_err(map_db_error)?;
 
-    // Requête B — sur les seules écritures de la page.
-    let entry_ids: Vec<i64> = rows.iter().map(|r| r.entry_id).collect();
-    let owners = journal_entries::document_owners(&mut tx, company_id, &entry_ids).await?;
-    let fiscal_years: Vec<i64> = rows.iter().map(|r| r.fiscal_year_id).collect();
-    let regle = open_period_rule(&mut tx, company_id, &fiscal_years).await?;
+    // Requête B — sur les seules écritures de la page. Sa part « pièce et
+    // période » est celle de la lecture détaillée d'un groupe (Story 15-1c-0,
+    // AC15) : une fonction, une source.
+    let lots: Vec<(i64, i64, i64, NaiveDate)> = rows
+        .iter()
+        .map(|r| (r.id, r.entry_id, r.fiscal_year_id, r.entry_date))
+        .collect();
+    let DocumentsAndPeriods {
+        owners,
+        in_open_period: periodes,
+    } = lines_documents_and_periods(&mut tx, company_id, &lots).await?;
     let invoice_ids: BTreeSet<i64> = rows
         .iter()
         .filter_map(|r| owners.get(&r.entry_id)?.first())
@@ -439,7 +451,12 @@ pub async fn open_items(
                 OpenReason::Unlettered
             },
             manually_letterable: r.lettering_key.is_none() && free_of_document(entry_owners),
-            in_open_period: regle.line_in_open_period(r.fiscal_year_id, r.entry_date)?,
+            in_open_period: *periodes.get(&r.id).ok_or_else(|| {
+                DbError::Invariant(format!(
+                    "postes ouverts : période de la ligne {} non lue",
+                    r.id
+                ))
+            })?,
             document,
             lettering_code: r.lettering_key.map(code_of),
             lettering_key: r.lettering_key,

@@ -1,7 +1,8 @@
 //! Routes HTTP du lettrage manuel (Story 15-1a-i, #518).
 //!
 //! - `POST /api/v1/letterings` — lettre un groupe de lignes (Comptable, Admin) ;
-//! - `GET /api/v1/letterings/{key}` — lit un groupe (tout rôle authentifié) ;
+//! - `GET /api/v1/letterings/{key}` — lit un groupe en détail (tout rôle
+//!   authentifié ; Story 15-1c-0) ;
 //! - `DELETE /api/v1/letterings/{key}` — délettre un groupe (Comptable, Admin) ;
 //! - `GET /api/v1/accounts/{id}/open-items` — les postes ouverts d'un compte à
 //!   une date (tout rôle, Story 15-1b) ;
@@ -38,7 +39,8 @@ use kesh_core::lettering as core_lettering;
 use kesh_db::errors::DbError;
 use kesh_db::repositories::journal_entries::DocumentOwner;
 use kesh_db::repositories::letterings::{
-    self, Actor, LetteringGroup, LetteringProposals, Mode, OpenItems, Origin, ProposalLine,
+    self, Actor, LetteringGroup, LetteringGroupDetail, LetteringLine, LetteringProposals, Mode,
+    OpenItems, Origin, ProposalLine,
 };
 
 use crate::AppState;
@@ -72,7 +74,8 @@ pub struct LetteringLineResponse {
     pub credit: String,
 }
 
-/// Réponse d'un groupe (`POST` → 201, `GET` → 200).
+/// Réponse d'un groupe au `POST` (→ 201). Le `GET` rend
+/// [`LetteringDetailResponse`] (Story 15-1c-0).
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LetteringResponse {
@@ -81,6 +84,21 @@ pub struct LetteringResponse {
     pub origin: &'static str,
     pub account_id: i64,
     pub lines: Vec<LetteringLineResponse>,
+}
+
+impl From<LetteringLine> for LetteringLineResponse {
+    fn from(l: LetteringLine) -> Self {
+        Self {
+            id: l.id,
+            entry_id: l.entry_id,
+            entry_number: l.entry_number,
+            fiscal_year_id: l.fiscal_year_id,
+            fiscal_year_name: l.fiscal_year_name,
+            date: l.date,
+            debit: l.debit.to_string(),
+            credit: l.credit.to_string(),
+        }
+    }
 }
 
 impl From<LetteringGroup> for LetteringResponse {
@@ -93,15 +111,71 @@ impl From<LetteringGroup> for LetteringResponse {
             lines: g
                 .lines
                 .into_iter()
-                .map(|l| LetteringLineResponse {
-                    id: l.id,
-                    entry_id: l.entry_id,
-                    entry_number: l.entry_number,
-                    fiscal_year_id: l.fiscal_year_id,
-                    fiscal_year_name: l.fiscal_year_name,
-                    date: l.date,
-                    debit: l.debit.to_string(),
-                    credit: l.credit.to_string(),
+                .map(LetteringLineResponse::from)
+                .collect(),
+        }
+    }
+}
+
+/// Une ligne d'un groupe **lu en détail** (`GET`, Story 15-1c-0, AC15) : les
+/// champs de [`LetteringLineResponse`] (aplatis — mêmes clés que le `POST`),
+/// plus le journal, le libellé, la pièce, la possession et la période.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LetteringDetailLineResponse {
+    #[serde(flatten)]
+    pub line: LetteringLineResponse,
+    pub journal: String,
+    pub description: String,
+    /// Même sous-objet que `document` des postes ouverts
+    /// ([`DocumentResponse`], construit une fois).
+    pub document: Option<DocumentResponse>,
+    pub owned_by_document: bool,
+    pub in_open_period: bool,
+}
+
+/// Réponse du **seul** `GET /api/v1/letterings/{key}` (Story 15-1c-0, AC15).
+///
+/// ⛔ Composée par les **champs communs** avec [`LetteringResponse`] (`key`,
+/// `code`, `origin`, `accountId`), `lines` **propre** — jamais un
+/// `#[serde(flatten)]` de `LetteringResponse`, qui produirait deux clés
+/// `lines`. Le `POST` garde [`LetteringResponse`] (l'enrichissement n'y est pas
+/// calculé).
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LetteringDetailResponse {
+    pub key: i64,
+    pub code: String,
+    pub origin: &'static str,
+    pub account_id: i64,
+    pub account_number: String,
+    pub account_name: String,
+    /// Le code du premier refus que rendrait le `DELETE` — **indicatif** (lu
+    /// sans verrou) ; `null` s'il aboutirait.
+    pub manual_dissolution_blocked_by: Option<&'static str>,
+    pub lines: Vec<LetteringDetailLineResponse>,
+}
+
+impl From<LetteringGroupDetail> for LetteringDetailResponse {
+    fn from(g: LetteringGroupDetail) -> Self {
+        Self {
+            key: g.key,
+            code: g.code,
+            origin: g.origin.as_str(),
+            account_id: g.account_id,
+            account_number: g.account_number,
+            account_name: g.account_name,
+            manual_dissolution_blocked_by: g.manual_dissolution_blocked_by.map(|b| b.code()),
+            lines: g
+                .lines
+                .into_iter()
+                .map(|l| LetteringDetailLineResponse {
+                    line: LetteringLineResponse::from(l.line),
+                    journal: l.journal,
+                    description: l.description,
+                    document: l.document.map(DocumentResponse::from),
+                    owned_by_document: l.owned_by_document,
+                    in_open_period: l.in_open_period,
                 })
                 .collect(),
         }
@@ -155,12 +229,15 @@ pub async fn create_lettering(
     Ok((StatusCode::CREATED, Json(LetteringResponse::from(group))))
 }
 
-/// GET /api/v1/letterings/{key} — lit un groupe, sans verrou.
+/// GET /api/v1/letterings/{key} — lit un groupe **en détail**, sans verrou
+/// (Story 15-1c-0, AC15) : journal, libellé, pièce, possession et période par
+/// ligne ; nom du compte ; `manualDissolutionBlockedBy`, prévision indicative du
+/// `DELETE`.
 pub async fn get_lettering(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
     Path(reference): Path<String>,
-) -> Result<Json<LetteringResponse>, AppError> {
+) -> Result<Json<LetteringDetailResponse>, AppError> {
     let key = parse_reference(&reference)?;
     let company = get_company_for(&current_user, &state.pool).await?;
     let mut conn = state
@@ -168,10 +245,10 @@ pub async fn get_lettering(
         .acquire()
         .await
         .map_err(kesh_db::errors::map_db_error)?;
-    let group = letterings::find_group(&mut conn, company.id, key)
+    let group = letterings::find_group_detail(&mut conn, company.id, key)
         .await?
         .ok_or(AppError::Database(DbError::NotFound))?;
-    Ok(Json(LetteringResponse::from(group)))
+    Ok(Json(LetteringDetailResponse::from(group)))
 }
 
 /// DELETE /api/v1/letterings/{key} — délettre un groupe (mode `Manual` : un

@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev **après la livraison de la 15-1b** *(et donc de la 15-1b-0, des 15-1a2-0, -i, -ii)* — créée le
+review — développée le 2026-10-10 (Opus 5.5, en autonomie) ; revue de code due. *Historique :* ready-for-dev **après la livraison de la 15-1b** *(et donc de la 15-1b-0, des 15-1a2-0, -i, -ii)* — créée le
 2026-10-09 par extraction de la partie serveur de la 15-1c-i, à la remédiation de la validation P2 de la 15-1c
 (registre **C-15-1c-14**) ; sa **première** passe de validation a été tenue en **P3 de l'ensemble 15-1c** (avec la
 15-1c-i et la 15-1c-ii : 0 au-dessus de LOW, LOW appliqués), puis la P4 ciblée (Haiku : 0 au-dessus de
@@ -165,21 +165,21 @@ compte cité en exemple existe dans un plan livré (G4-bis).
 
 ## Tasks
 
-- [ ] **T0** — Rebaser sur `main` après le merge de la 15-1b ; relever au code livré : le nom et la forme de la
+- [x] **T0** — Rebaser sur `main` après le merge de la 15-1b ; relever au code livré : le nom et la forme de la
       requête B et de sa part « pièce et période », le corps de la dissolution (`dissolve_group_inner` de la
       15-1a2-i, où vivent les refus 1 à 3 — validation P2, F2-L6), `first_document_owner` réécrite par la 15-1b-0,
       `FIND_GROUP_SQL` ; **inventaire des tests qui appellent la dissolution** (validation P2, R L-8) :
       `grep -rln "dissolve_group_in_tx\|dissolve_group_inner\|/letterings/" crates --include=*.rs` — chaque fichier
       noté au Dev Agent Record, il doit rester vert **sans modification**.
-- [ ] **T1** (AC15) — `kesh-db` `repositories/letterings.rs` : part « pièce et période » factorisée et réemployée
+- [x] **T1** (AC15) — `kesh-db` `repositories/letterings.rs` : part « pièce et période » factorisée et réemployée
       par `open_items` ; `ManualDissolutionBlocker`, `DissolutionStep`, `manual_dissolution_step` ; la dissolution
       réécrite sur l'étape (lectures paresseuses, détails inchangés) ; lecture détaillée d'un groupe
       (`find_group_detail`, ou nom relevé au T0 ; sa constante SQL, son `struct` de ligne et sa transaction de lecture
       propres ; `find_group`, `letterable_account`, `group_account_number` inchangées). `kesh-api` `routes/letterings.rs` : `LetteringDetailResponse` pour
       le seul `GET` ; le `POST` inchangé.
-- [ ] **T2** (AC16) — `docs/api-external.md`, paragraphe du `GET`.
-- [ ] **T3** (AC18) — `CHANGELOG.md` (*Modifié*), `README.md` (ligne v0.13.0).
-- [ ] **T4** — Tests (liste ci-dessous) ; gate backend **complet** à chaque passe (`letterings.rs` est un
+- [x] **T2** (AC16) — `docs/api-external.md`, paragraphe du `GET`.
+- [x] **T3** (AC18) — `CHANGELOG.md` (*Modifié*), `README.md` (ligne v0.13.0).
+- [x] **T4** — Tests (liste ci-dessous) ; gate backend **complet** à chaque passe (`letterings.rs` est un
       repository, § « Exception `kesh-db` ») ; E2E complet au dernier commit de code (D7 — aucun écran neuf, mais la
       suite tourne : `CLAUDE.md` § « E2E »).
 
@@ -250,11 +250,96 @@ modification après la factorisation) ; `letterings_lexical.rs` (il ne contraint
 
 ### Agent Model Used
 
+Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
+
 ### Completion Notes List
+
+- **T0 — relevé du code livré** (tête de la 15-1b, `05de0c7f`, puis `main` après la fusion de la 15-1b) :
+  - requête B d'`open_items` (`letterings/open_items.rs`) : `document_owners` sur les écritures de la page,
+    `open_period_rule` une fois, puis l'état des factures par `invoice_settlements::amount_due_scalar_sql()` ; requête A
+    sous `FORCE INDEX (idx_jel_account_lettering)` (C-15-1b-16). **Écart avec la fiche** : la « requête B » n'existait pas
+    comme fonction ; sa part « pièce et période » est **extraite** en `letterings::lines_documents_and_periods` (rendue
+    par `DocumentsAndPeriods { owners, in_open_period }`), le reste dû et la requête A **non touchés**.
+    `lettering_proposals` garde ses deux appels (filtre R5 entre les deux lectures, plafond avant la règle des
+    périodes) — **C-15-1c-0-1**.
+  - dissolution : refus 1 à 3 dans `dissolve_group_inner` (mode `Manual`, après `lock_fiscal_years_of_group`) ;
+    `first_document_owner` (un appel `document_owners`, 15-1b-0 D3) ; `FIND_GROUP_SQL` → `LineRow`, partagé avec
+    `LOCK_LINES_BY_KEY_SQL`.
+  - **Inventaire des tests qui appellent la dissolution**
+    (`grep -rln "dissolve_group_in_tx\|dissolve_group_inner\|/letterings/" crates --include=*.rs`) — fichiers de test :
+    `kesh-api/tests/{audit_route_registry,admin_full_import_e2e,letterings_e2e,journal_entry_reversal_e2e}.rs`,
+    `kesh-db/tests/{letterings,letterings_lexical,open_items,supplier_invoices_repository}.rs` (les autres sorties sont
+    du code de production : `kesh-api/src/{lib,routes/letterings}.rs`, `kesh-db/src/{entities/journal_entry,errors,
+    repositories/letterings}.rs`). **Aucun test existant modifié** : `letterings_e2e.rs` et `tests/letterings.rs`
+    reçoivent des tests **ajoutés** en fin de fichier, sans toucher aux précédents (`git diff -U0` : ajouts seuls).
+- **T1** — `kesh-db` : `ManualDissolutionBlocker` (avec `code()` lu sur `DbError::error_code()`), `DissolutionStep`,
+  `manual_dissolution_step` (pure) ; la dissolution réécrite en boucle sur l'étape — possession lue seulement sur
+  `NeedOwnership`, borne seulement sur `NeedPeriod`, refus 2 = l'erreur construite par `first_document_owner`,
+  une étape qui redemanderait un fait connu → `DbError::Invariant` ; `lines_documents_and_periods` (appelée par
+  `open_items` et `find_group_detail`) ; `find_group_detail` → `LetteringGroupDetail` / `LetteringDetailLine`
+  (constante `FIND_GROUP_DETAIL_SQL`, `struct DetailLineRow`, requête `GROUP_DETAIL_ACCOUNT_SQL`, transaction de
+  lecture propre, `rollback`). `find_group`, `LineRow`, `LOCK_LINES_BY_KEY_SQL`, `letterable_account`,
+  `group_account_number`, `LetteringGroup`, `LetteringLine` : **inchangés** (doc-comments seuls). `kesh-api` :
+  `LetteringDetailResponse` / `LetteringDetailLineResponse` (composition, `flatten` de la **ligne** seule —
+  C-15-1c-0-2), `From<LetteringLine> for LetteringLineResponse` partagé par le `POST` et le `GET`, sous-objet
+  `document` par `DocumentResponse::from` (déjà partagé par la vue et les propositions). Le `POST` rend toujours
+  `LetteringResponse`.
+- **Unicité du code** (`grep -rn "document_owners(\|open_period_rule(" crates/kesh-db/src crates/kesh-api/src`, sans
+  les doc-comments) : `journal_entries.rs:2208` (définition), `:2411` (antérieur) ; `letterings.rs:656` (définition),
+  `:733` (`lines_in_open_period`, antérieur), `:808` (`first_document_owner`, la dissolution), **`:941`, `:943` — la
+  fonction partagée, seul site de la vue et du groupe** ; `open_items.rs:563`, `:574` — les propositions (C-15-1c-0-1).
+- **T2, T3** — `docs/api-external.md` (paragraphe du `GET` réécrit, exemple sur le compte `2000 Créanciers` du plan PME,
+  G4-bis), `CHANGELOG.md` (*Modifié*, patron « ⚠️ Changement de contrat … »), `README.md` (15-1c-0 **et** 15-1b sous
+  « Livré » — C-15-1c-0-3).
+- **Tests neufs** — **12** attributs, recomptés (`grep -cE '#\[(sqlx::)?test'`, de `05de0c7f` au commit de
+  développement) : `letterings.rs` (unitaires) 4 → 7 (test 5 : douze combinaisons, étapes `Need*`, `code()`) ;
+  `kesh-db/tests/letterings.rs` 38 → 44 (tests 1, 2, 3, 4, 6, 7 — chacun passe aussi par
+  `prevision_egale_dissolution`, la part dépôt du test 5) ; `kesh-api/tests/letterings_e2e.rs` 8 → 11 (tests 1 et 8 —
+  ensembles exacts —, 5 — table à HTTP, `details` et message suffixé du cas possédé —, 6 à HTTP). Test 8, partie
+  « 404 d'une autre société et d'un code inexistant, clé d'API en lecture, Consultation » : tenue par les tests
+  livrés `invalid_references_are_not_found`, `foreign_lines_and_groups_are_not_found`,
+  `a_read_only_key_reads_but_cannot_letter`, `consultation_reads_but_cannot_letter`, verts sans modification. Test 3 :
+  monté par les gestes réels (`supplier_invoices::cancel`, `invoice_settlements_write::cancel_settlement`) via
+  `tests/support/lettering_documents.rs`, dans le binaire `letterings` (non dans `supplier_invoices_repository.rs`, dont
+  l'aide `monter_achat` est locale).
+- **Mutations** (fichier restauré puis `touch`é après chacune ; filtres : tests du lettrage de `kesh-db` et binaires
+  `letterings_e2e`, `open_items_e2e`) — **toutes rouges** :
+  | # | mutation | rougit |
+  |---|---|---|
+  | M1 | étape : possession ignorée (`Some(true) => {}`) | unitaire douze combinaisons ; `dissolution_of_a_reversal_pair_with_a_document_line_is_refused` ; `group_detail_of_reversal_pairs` ; HTTP `forecast_equals_delete_over_http` |
+  | M2 | `Manual` demande la possession | unitaire `…asks_for_facts_in_order` |
+  | M3 | possession = tout propriétaire (transaction bancaire comprise) | `group_detail_of_a_manual_group` |
+  | M4 | `document` = dernier propriétaire | `group_detail_of_a_document_group` |
+  | M5 | période toujours ouverte dans la fonction partagée | `group_detail_agrees_with_open_items`, `group_detail_in_closed_periods`, deux tests `open_items` de la 15-1b ; HTTP tests 5 et 6 |
+  | M6 | lecture : possession jamais vue | `group_detail_of_reversal_pairs` ; HTTP test 5 |
+  | M7 | `code()` permuté | unitaire `blocker_code_is_the_error_code` ; `group_detail_of_a_document_group` ; HTTP test 5 |
+  | M8 | refus 2 rendu sans ses champs | `dissolution_of_a_reversal_pair_with_a_document_line_is_refused`, `group_detail_of_reversal_pairs` ; HTTP test 5 |
+- **Modules** (signal D5, déclaré) : 2 crates (`kesh-db`, `kesh-api`) ; au grain fin 5 — deux de logique
+  (`kesh-db/repositories/letterings` dont son enfant `open_items`, `kesh-api/routes/letterings`) et trois supports de
+  texte — comme la fiche l'annonçait. Pas de découpage.
 
 ### File List
 
+- `crates/kesh-db/src/repositories/letterings.rs`
+- `crates/kesh-db/src/repositories/letterings/open_items.rs`
+- `crates/kesh-db/tests/letterings.rs`
+- `crates/kesh-api/src/routes/letterings.rs`
+- `crates/kesh-api/tests/letterings_e2e.rs`
+- `docs/api-external.md`
+- `CHANGELOG.md`
+- `README.md`
+- `_bmad-output/implementation-artifacts/15-1c-0-groupe-de-lettrage-enrichi.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
+- `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md` (C-15-1c-0-1 à 3)
+
 ## Change Log
+
+### Développement — 2026-10-10 (Opus 5.5, en autonomie)
+
+T0 à T4 faits. **12** tests neufs (3 unitaires, 6 de dépôt, 3 HTTP), huit mutations, toutes rouges. Choix
+**C-15-1c-0-1 à 3**. Tests ciblés exécutés : `kesh-db` (tests du lettrage, `open_items`) et `kesh-api`
+(`letterings_e2e`, `open_items_e2e`) verts ; gate complet, frontend et E2E au dernier commit de code, après le
+rebase sur `main` (15-1b fusionnée, `a602e1ab`).
 
 ### Création — 2026-10-09 (Opus 5.5, remédiation de la validation P2 de la 15-1c, en autonomie)
 

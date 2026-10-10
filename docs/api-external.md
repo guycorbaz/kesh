@@ -299,7 +299,25 @@ Les `details` sont ceux du `PUT` (`documentId`, `documentNumber` ; `fiscalYearId
 
 **`POST /api/v1/letterings`** — écriture (`read-write`). Corps : `{ "lineIds": [ … ] }`. Réponse `201` : `{ key, code, origin: "manual", accountId, lines: [ { id, entryId, entryNumber, fiscalYearId, fiscalYearName, date, debit, credit } ] }`. ⚠️ Le numéro d'écriture repart à 1 à chaque exercice : il se lit avec `fiscalYearId` / `fiscalYearName`.
 
-**`GET /api/v1/letterings/{key}`** — lecture (`read` suffit). `{key}` est la clé numérique **ou** le code (`27` ou `AA`, minuscules acceptées) ; toute autre valeur rend `404`. Réponse `200`, même forme, `origin` réel.
+**`GET /api/v1/letterings/{key}`** — lecture (`read` suffit, tout rôle). `{key}` est la clé numérique **ou** le code (`27` ou `AA`, minuscules acceptées) ; toute autre valeur, comme un groupe inconnu ou d'une autre company, rend `404`. Réponse `200` — les champs du `POST`, avec l'`origin` réel, plus de quoi **afficher** le groupe et savoir d'avance si `DELETE` aboutira :
+
+```json
+{ "key": 27, "code": "AA", "origin": "reversal", "accountId": 7,
+  "accountNumber": "2000", "accountName": "Créanciers",
+  "manualDissolutionBlockedBy": "LETTERING_LINE_OWNED_BY_DOCUMENT",
+  "lines": [ { "id": 27, "entryId": 3, "entryNumber": 12, "fiscalYearId": 1, "fiscalYearName": "2026",
+               "date": "2026-03-01", "debit": "0.0000", "credit": "100.0000",
+               "journal": "Achats", "description": "…",
+               "document": { "type": "supplierInvoice", "id": 9, "number": "FF-12",
+                             "invoiceId": null, "invoiceNumber": null },
+               "ownedByDocument": true, "inOpenPeriod": true } ] }
+```
+
+- `accountNumber`, `accountName` : le compte du groupe.
+- Par ligne, `journal` et `description` : ceux de l'écriture. `document` : la pièce qui possède l'écriture, **même objet et même valeur** que `document` des postes ouverts (ci-dessous) — `null` sans pièce. `ownedByDocument` : la ligne appartient à une pièce — facture, avoir, facture fournisseur, règlement ou solde ; une transaction bancaire seule ne la rend pas possédée (`document` la nomme, `ownedByDocument` reste `false`). `inOpenPeriod` : la ligne est en période ouverte, au sens de la règle des périodes ci-dessous — même valeur que dans les postes ouverts.
+- `manualDissolutionBlockedBy` : le code du **premier** refus que rendrait `DELETE`, dans l'ordre du tableau des refus du `DELETE` ci-dessous — `LETTERING_IS_DOCUMENT`, `LETTERING_LINE_OWNED_BY_DOCUMENT` ou `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` —, `null` si le délettrage aboutirait. ⚠️ **Indicatif** : il est lu sans verrou, et `DELETE` fait autorité — un geste concurrent (une clôture, un verrou de période, une pièce annulée) peut le démentir. Comme le délettrage, il ne tient pas compte de la lettrabilité du compte : un groupe dont le compte a été retypé depuis se délettre.
+
+Le `POST` garde sa réponse : ces champs n'y figurent pas.
 
 **`DELETE /api/v1/letterings/{key}`** — écriture (`read-write`). Délettre le groupe : ses lignes redeviennent ouvertes. Réponse `204`.
 

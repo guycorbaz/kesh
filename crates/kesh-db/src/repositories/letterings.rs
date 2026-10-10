@@ -137,7 +137,7 @@ use kesh_core::lettering::{self as core_lettering, LetteringRefusal};
 
 use crate::entities::audit_log::NewAuditLogEntry;
 use crate::errors::{DbError, map_db_error};
-use crate::repositories::journal_entries::DocumentKind;
+use crate::repositories::journal_entries::{DocumentKind, DocumentOwner};
 use crate::repositories::{audit_log, fiscal_years, journal_entries};
 
 /// La vue des postes ouverts et les propositions (Story 15-1b) — lecture
@@ -250,7 +250,8 @@ const LOCK_LINES_BY_KEY_SQL: &str = "SELECT jel.id, jel.entry_id, jel.account_id
      FROM journal_entry_lines jel JOIN journal_entries je ON je.id = jel.entry_id \
      WHERE jel.lettering_key = ? AND je.company_id = ? ORDER BY jel.id FOR UPDATE";
 
-/// Lecture d'un groupe **sans verrou** (`GET`).
+/// Lecture d'un groupe **sans verrou** ([`find_group`] ; le `GET` lit
+/// [`FIND_GROUP_DETAIL_SQL`] depuis la Story 15-1c-0).
 const FIND_GROUP_SQL: &str = "SELECT jel.id, jel.entry_id, jel.account_id, jel.debit, \
      jel.credit, jel.lettering_key, jel.lettering_origin, je.fiscal_year_id, je.entry_date, \
      je.entry_number \
@@ -527,7 +528,7 @@ async fn lock_fiscal_years_of_group(
 }
 
 /// Le nom des exercices du groupe, lu sans verrou — mode `System` (R7 point 3)
-/// et lecture d'un groupe ([`find_group`]).
+/// et lecture d'un groupe ([`find_group`], [`find_group_detail`]).
 ///
 /// Un exercice manquant est un [`DbError::Invariant`], comme en mode `Manual`
 /// ([`lock_fiscal_years_of_group`]) : l'exercice d'une ligne lue ne peut
@@ -818,6 +819,139 @@ async fn first_document_owner(
     }))
 }
 
+/// Le motif d'un refus de délettrage **manuel** (Story 15-1c-0, AC15) — les
+/// refus 1, 2 et 3 de [`dissolve_group_in_tx`] en mode `Manual`. Son code est
+/// celui de [`DbError::error_code`] de la variante correspondante
+/// ([`Self::code`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManualDissolutionBlocker {
+    /// Refus 1 — [`DbError::LetteringIsDocument`].
+    IsDocument,
+    /// Refus 2 — [`DbError::LetteringLineOwnedByDocument`].
+    LineOwnedByDocument,
+    /// Refus 3 — [`DbError::LetteringAllLinesInClosedPeriods`].
+    AllLinesInClosedPeriods,
+}
+
+impl ManualDissolutionBlocker {
+    /// Le code d'erreur que le `DELETE` rendrait — lu sur la variante de
+    /// [`DbError`] elle-même, jamais recopié : la table des codes reste
+    /// [`DbError::error_code`]. Les champs de `LetteringLineOwnedByDocument`
+    /// n'entrent pas dans le code (valeurs de remplissage).
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::IsDocument => DbError::LetteringIsDocument.error_code(),
+            Self::LineOwnedByDocument => DbError::LetteringLineOwnedByDocument {
+                blocker: crate::errors::ReversalBlocker::OwnedByInvoice,
+                document_id: None,
+                document_label: None,
+            }
+            .error_code(),
+            Self::AllLinesInClosedPeriods => DbError::LetteringAllLinesInClosedPeriods.error_code(),
+        }
+    }
+}
+
+/// Une étape de la décision du délettrage manuel, dans l'ordre des refus 1, 2,
+/// 3 (Story 15-1c-0, AC15 ; C-15-1c-15).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DissolutionStep {
+    /// Le premier refus que rendrait la dissolution.
+    Refuse(ManualDissolutionBlocker),
+    /// La possession d'une ligne par une pièce (R5) est à lire.
+    NeedOwnership,
+    /// La règle des périodes est à lire.
+    NeedPeriod,
+    /// Aucun refus : la dissolution manuelle aboutirait.
+    Allowed,
+}
+
+/// **L'ordre des refus du délettrage manuel, écrit une fois** (Story 15-1c-0,
+/// AC15 ; C-15-1c-15) — fonction pure, appelée par la dissolution
+/// ([`dissolve_group_in_tx`], mode `Manual`) et par la lecture détaillée
+/// ([`find_group_detail`]).
+///
+/// `any_owned` : une ligne du groupe appartient-elle à une pièce
+/// ([`DocumentKind::blocks_manual_lettering`]) ? `any_in_open_period` : une
+/// ligne est-elle en période ouverte (R7) ? `None` = fait encore **inconnu** —
+/// l'étape dit alors lequel lire, dans l'ordre, ce qui garde l'évaluation
+/// **paresseuse** de la dissolution :
+///
+/// 1. `Document` → refus 1, sans rien demander ;
+/// 2. `Reversal` : possession inconnue → [`DissolutionStep::NeedOwnership`] ;
+///    possédée → refus 2 ;
+/// 3. période inconnue → [`DissolutionStep::NeedPeriod`] ; aucune ligne en
+///    période ouverte → refus 3 ; sinon [`DissolutionStep::Allowed`].
+///
+/// `Manual` ne demande **jamais** la possession (son `any_owned` est ignoré).
+/// ⛔ La lettrabilité du compte n'y entre pas (C104).
+pub fn manual_dissolution_step(
+    origin: Origin,
+    any_owned: Option<bool>,
+    any_in_open_period: Option<bool>,
+) -> DissolutionStep {
+    use ManualDissolutionBlocker as B;
+    match origin {
+        Origin::Document => return DissolutionStep::Refuse(B::IsDocument),
+        Origin::Reversal => match any_owned {
+            None => return DissolutionStep::NeedOwnership,
+            Some(true) => return DissolutionStep::Refuse(B::LineOwnedByDocument),
+            Some(false) => {}
+        },
+        Origin::Manual => {}
+    }
+    match any_in_open_period {
+        None => DissolutionStep::NeedPeriod,
+        Some(false) => DissolutionStep::Refuse(B::AllLinesInClosedPeriods),
+        Some(true) => DissolutionStep::Allowed,
+    }
+}
+
+/// La part « pièce et période » d'un lot de lignes (Story 15-1c-0, AC15) —
+/// rendue par [`lines_documents_and_periods`].
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct DocumentsAndPeriods {
+    /// `écriture → propriétaires`, tel que [`journal_entries::document_owners`]
+    /// le rend (ordre de précédence ; écriture sans propriétaire absente).
+    pub owners: BTreeMap<i64, Vec<DocumentOwner>>,
+    /// `ligne → « en période ouverte »` (R7), lu sans verrou.
+    pub in_open_period: BTreeMap<i64, bool>,
+}
+
+/// **La part « pièce et période » d'un lot de lignes, écrite une fois**
+/// (Story 15-1c-0, AC15) : **un** appel à [`journal_entries::document_owners`]
+/// sur les écritures distinctes, [`open_period_rule`] chargée **une** fois pour
+/// les exercices distincts, puis [`OpenPeriodRule::line_in_open_period`] par
+/// ligne. Appelée par la vue des postes ouverts ([`open_items`], requête B) et
+/// par la lecture détaillée d'un groupe ([`find_group_detail`]) — même source,
+/// mêmes valeurs.
+///
+/// `lines` : `(id de la ligne, id de l'écriture, id de l'exercice, date)`.
+/// Lecture **sans verrou** (tolérance de [`OpenPeriodRule`]). Un exercice de
+/// ligne introuvable dans la société → [`DbError::Invariant`] (C-15-1a2-25).
+/// Le **reste dû** n'en fait pas partie (15-1b AC8, propre à la vue).
+pub async fn lines_documents_and_periods(
+    conn: &mut MySqlConnection,
+    company_id: i64,
+    lines: &[(i64, i64, i64, NaiveDate)],
+) -> Result<DocumentsAndPeriods, DbError> {
+    let entry_ids: Vec<i64> = lines.iter().map(|l| l.1).collect();
+    let owners = journal_entries::document_owners(&mut *conn, company_id, &entry_ids).await?;
+    let fiscal_year_ids: Vec<i64> = lines.iter().map(|l| l.2).collect();
+    let regle = open_period_rule(conn, company_id, &fiscal_year_ids).await?;
+    let mut in_open_period = BTreeMap::new();
+    for (line_id, _, fiscal_year_id, entry_date) in lines {
+        in_open_period.insert(
+            *line_id,
+            regle.line_in_open_period(*fiscal_year_id, *entry_date)?,
+        );
+    }
+    Ok(DocumentsAndPeriods {
+        owners,
+        in_open_period,
+    })
+}
+
 /// Vérifie qu'une ligne du groupe porte l'exercice que l'appelant tient (mode
 /// `System`, R7 point 3) — sans requête, sur les lignes de l'acte 1.
 fn check_held_fiscal_year(lines: &[LineRow], held_open_fiscal_year_id: i64) -> Result<(), DbError> {
@@ -1097,6 +1231,12 @@ async fn create_group_inner(
 ///    resterait ouverte pour toujours, R5 interdisant de la relettrer) ;
 /// 3. aucune ligne en période ouverte → [`DbError::LetteringAllLinesInClosedPeriods`].
 ///
+/// L'ordre est celui de [`manual_dissolution_step`] (Story 15-1c-0, AC15), la
+/// fonction que la lecture détaillée ([`find_group_detail`]) appelle aussi pour
+/// prévoir le refus ; les faits ne se lisent qu'à sa demande — la possession
+/// seulement pour un groupe `reversal`, la borne seulement après les refus 1 et
+/// 2 —, après la prise des verrous d'exercice.
+///
 /// ⛔ **La dissolution n'exige jamais la lettrabilité** (C104) : un groupe dont
 /// le compte a été retypé ou rattaché à un compte bancaire depuis se dissout.
 ///
@@ -1154,21 +1294,56 @@ async fn dissolve_group_inner(
         Mode::Manual => {
             let exercices =
                 lock_fiscal_years_of_group(tx, company_id, &exercices_du_groupe).await?;
-            // Refus 1 — le lettrage d'une pièce suit la pièce.
-            if origin == Origin::Document {
-                return Err(DbError::LetteringIsDocument);
-            }
-            // Refus 2 — une paire de contre-passation dont une ligne est celle
-            // d'une pièce resterait ouverte pour toujours.
-            if origin == Origin::Reversal
-                && let Some(refus) = first_document_owner(tx, company_id, &lines).await?
-            {
-                return Err(refus);
-            }
-            // Refus 3 — règle des périodes.
-            let borne = books_locked_through(tx, company_id).await?;
-            if !any_line_in_open_period(&lines, &exercices, borne) {
-                return Err(DbError::LetteringAllLinesInClosedPeriods);
+            // Refus 1 à 3 — l'ordre est celui de `manual_dissolution_step`
+            // (Story 15-1c-0, AC15), partagé avec la lecture détaillée ; les
+            // faits ne se lisent qu'à la demande de l'étape, dans l'ordre
+            // d'avant la refonte : rien pour un groupe `document` (refus 1 :
+            // le lettrage d'une pièce suit la pièce) ; la possession pour un
+            // groupe `reversal` (refus 2 : une paire dont une ligne est celle
+            // d'une pièce resterait ouverte pour toujours) ; puis la borne
+            // (refus 3, règle des périodes).
+            let mut refus_proprietaire: Option<DbError> = None;
+            let mut any_owned = None;
+            let mut any_in_open_period = None;
+            loop {
+                match manual_dissolution_step(origin, any_owned, any_in_open_period) {
+                    DissolutionStep::Refuse(motif) => {
+                        return Err(match motif {
+                            ManualDissolutionBlocker::IsDocument => DbError::LetteringIsDocument,
+                            // L'erreur construite par `first_document_owner` :
+                            // `blocker`, `document_id`, `document_label` inchangés.
+                            ManualDissolutionBlocker::LineOwnedByDocument => {
+                                refus_proprietaire.take().ok_or_else(|| {
+                                    DbError::Invariant(format!(
+                                        "lettrage : refus de possession sans pièce lue (groupe \
+                                         {key})"
+                                    ))
+                                })?
+                            }
+                            ManualDissolutionBlocker::AllLinesInClosedPeriods => {
+                                DbError::LetteringAllLinesInClosedPeriods
+                            }
+                        });
+                    }
+                    // Les gardes `is_none()` : une étape qui redemanderait un
+                    // fait connu bouclerait — défaut de la fonction d'ordre,
+                    // jamais une réponse (« Garde-fou défensif »).
+                    DissolutionStep::NeedOwnership if any_owned.is_none() => {
+                        refus_proprietaire = first_document_owner(tx, company_id, &lines).await?;
+                        any_owned = Some(refus_proprietaire.is_some());
+                    }
+                    DissolutionStep::NeedPeriod if any_in_open_period.is_none() => {
+                        let borne = books_locked_through(tx, company_id).await?;
+                        any_in_open_period =
+                            Some(any_line_in_open_period(&lines, &exercices, borne));
+                    }
+                    DissolutionStep::Allowed => break,
+                    etape @ (DissolutionStep::NeedOwnership | DissolutionStep::NeedPeriod) => {
+                        return Err(DbError::Invariant(format!(
+                            "lettrage : l'étape {etape:?} redemande un fait connu (groupe {key})"
+                        )));
+                    }
+                }
             }
             exercices.into_iter().map(|(id, e)| (id, e.name)).collect()
         }
@@ -1801,7 +1976,9 @@ pub async fn dissolve_supplier_invoice_document_group_in_tx(
     dissolve_document_in_tx(tx, company_id, piece, held_open_fiscal_year_id, actor).await
 }
 
-/// Lit un groupe **sans verrou** (`GET /letterings/{key}`). `None` si aucune
+/// Lit un groupe **sans verrou**, sous la forme de la réponse du lettrage
+/// ([`LetteringGroup`]). Depuis la Story 15-1c-0, le `GET /letterings/{key}`
+/// lit [`find_group_detail`] ; celle-ci reste, inchangée. `None` si aucune
 /// ligne de la société ne porte cette clé — une clé d'une autre société est
 /// indiscernable d'une clé inexistante (AC11).
 pub async fn find_group(
@@ -1830,6 +2007,198 @@ pub async fn find_group(
     let names = fiscal_year_names(&mut *conn, company_id, &exercices).await?;
     let account_number = group_account_number(conn, company_id, account_id).await?;
     build_group(key, origin, account_id, account_number, &lines, &names).map(Some)
+}
+
+// ---------------------------------------------------------------------------
+// Story 15-1c-0 (#518) — la lecture détaillée d'un groupe
+// ---------------------------------------------------------------------------
+
+/// Lecture détaillée d'un groupe, **sans verrou** : les colonnes de
+/// [`FIND_GROUP_SQL`] plus le journal et le libellé de l'écriture, lus dans la
+/// même requête (la jointure existe déjà ; aucun N+1). Constante **propre** :
+/// [`FIND_GROUP_SQL`] et [`LOCK_LINES_BY_KEY_SQL`] alimentent [`LineRow`], qui
+/// reste inchangé.
+const FIND_GROUP_DETAIL_SQL: &str = "SELECT jel.id, jel.entry_id, jel.account_id, jel.debit, \
+     jel.credit, jel.lettering_origin, je.fiscal_year_id, je.entry_date, je.entry_number, \
+     je.journal, je.description \
+     FROM journal_entry_lines jel JOIN journal_entries je ON je.id = jel.entry_id \
+     WHERE jel.lettering_key = ? AND je.company_id = ? ORDER BY jel.id";
+
+/// Numéro et nom du compte d'un groupe, lus **ensemble** — requête propre à la
+/// lecture détaillée ([`letterable_account`] et [`group_account_number`] ne
+/// lisent pas le nom et restent inchangées).
+const GROUP_DETAIL_ACCOUNT_SQL: &str =
+    "SELECT number, name FROM accounts WHERE id = ? AND company_id = ?";
+
+/// Une ligne lue par [`FIND_GROUP_DETAIL_SQL`].
+#[derive(Debug, Clone, sqlx::FromRow)]
+struct DetailLineRow {
+    id: i64,
+    entry_id: i64,
+    account_id: i64,
+    debit: Decimal,
+    credit: Decimal,
+    lettering_origin: Option<String>,
+    fiscal_year_id: i64,
+    entry_date: NaiveDate,
+    entry_number: i64,
+    journal: String,
+    description: String,
+}
+
+/// Une ligne d'un groupe **lu en détail** (`GET /letterings/{key}`, Story
+/// 15-1c-0, AC15) : la ligne de la réponse du lettrage, plus de quoi
+/// l'afficher et prévoir le délettrage.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LetteringDetailLine {
+    /// Les champs communs avec la réponse du `POST` (type inchangé).
+    pub line: LetteringLine,
+    /// Journal et libellé de l'écriture.
+    pub journal: String,
+    pub description: String,
+    /// La pièce qui possède l'écriture — la **première** dans l'ordre de
+    /// [`DocumentKind`], comme `document` de la vue des postes ouverts.
+    pub document: Option<DocumentOwner>,
+    /// Un propriétaire de l'écriture a [`DocumentKind::blocks_manual_lettering`]
+    /// — la possession au sens de R5 (une transaction bancaire seule ne la
+    /// donne pas) ; le prédicat de `first_document_owner`.
+    pub owned_by_document: bool,
+    /// « En période ouverte » (R7), lu sans verrou — indicatif.
+    pub in_open_period: bool,
+}
+
+/// Un groupe **lu en détail** (Story 15-1c-0, AC15).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LetteringGroupDetail {
+    pub key: i64,
+    pub code: String,
+    pub origin: Origin,
+    pub account_id: i64,
+    pub account_number: String,
+    pub account_name: String,
+    /// Le premier refus que rendrait la dissolution manuelle (`DELETE`), par
+    /// [`manual_dissolution_step`] ; `None` si elle aboutirait. ⚠️
+    /// **Indicatif** : lu sans verrou, le `DELETE` fait autorité ; la
+    /// lettrabilité du compte n'y entre pas (C104).
+    pub manual_dissolution_blocked_by: Option<ManualDissolutionBlocker>,
+    /// Triées par `id` croissant.
+    pub lines: Vec<LetteringDetailLine>,
+}
+
+/// **Lit un groupe en détail, sans verrou** (`GET /letterings/{key}`, Story
+/// 15-1c-0, AC15). `None` si aucune ligne de la société ne porte cette clé —
+/// indiscernable d'une clé inexistante (AC11), comme [`find_group`].
+///
+/// Ouvre **sa** transaction de lecture sur la connexion prêtée (`begin`,
+/// lectures, `rollback`) : lignes, compte, noms d'exercice, propriétaires et
+/// règle des périodes sont lus dans un seul instantané — sous l'isolation par
+/// défaut d'InnoDB (`REPEATABLE READ`), que Kesh ne configure pas (même
+/// réserve qu'[`open_items`]). La pièce et la période viennent de
+/// [`lines_documents_and_periods`], la source de la vue ; la prévision, de
+/// [`manual_dissolution_step`], l'ordre de la dissolution. Elle reste
+/// **indicative** au regard du `DELETE` (lu sans verrou), mais cohérente en
+/// elle-même.
+pub async fn find_group_detail(
+    conn: &mut MySqlConnection,
+    company_id: i64,
+    key: i64,
+) -> Result<Option<LetteringGroupDetail>, DbError> {
+    use sqlx::Connection;
+    let mut tx = conn.begin().await.map_err(map_db_error)?;
+    let rows = sqlx::query_as::<_, DetailLineRow>(FIND_GROUP_DETAIL_SQL)
+        .bind(key)
+        .bind(company_id)
+        .fetch_all(&mut *tx)
+        .await
+        .map_err(map_db_error)?;
+    let Some(premiere) = rows.first() else {
+        tx.rollback().await.map_err(map_db_error)?;
+        return Ok(None);
+    };
+    let origin = premiere
+        .lettering_origin
+        .as_deref()
+        .and_then(Origin::parse)
+        .ok_or_else(|| {
+            DbError::Invariant(format!("lettrage : origine illisible pour le groupe {key}"))
+        })?;
+    let account_id = premiere.account_id;
+    let (account_number, account_name): (String, String) = sqlx::query_as(GROUP_DETAIL_ACCOUNT_SQL)
+        .bind(account_id)
+        .bind(company_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(map_db_error)?
+        .ok_or_else(|| {
+            DbError::Invariant(format!(
+                "lettrage : le compte {account_id} d'un groupe est hors de la société"
+            ))
+        })?;
+    let exercices: BTreeSet<i64> = rows.iter().map(|r| r.fiscal_year_id).collect();
+    let names = fiscal_year_names(&mut tx, company_id, &exercices).await?;
+    let lots: Vec<(i64, i64, i64, NaiveDate)> = rows
+        .iter()
+        .map(|r| (r.id, r.entry_id, r.fiscal_year_id, r.entry_date))
+        .collect();
+    let faits = lines_documents_and_periods(&mut tx, company_id, &lots).await?;
+    tx.rollback().await.map_err(map_db_error)?;
+
+    let mut lines = Vec::with_capacity(rows.len());
+    for r in rows {
+        let fiscal_year_name = names.get(&r.fiscal_year_id).cloned().ok_or_else(|| {
+            DbError::Invariant(format!(
+                "lettrage : nom de l'exercice {} de la ligne {} non lu",
+                r.fiscal_year_id, r.id
+            ))
+        })?;
+        let in_open_period = *faits.in_open_period.get(&r.id).ok_or_else(|| {
+            DbError::Invariant(format!("lettrage : période de la ligne {} non lue", r.id))
+        })?;
+        let proprietaires = faits.owners.get(&r.entry_id);
+        lines.push(LetteringDetailLine {
+            line: LetteringLine {
+                id: r.id,
+                entry_id: r.entry_id,
+                entry_number: r.entry_number,
+                fiscal_year_id: r.fiscal_year_id,
+                fiscal_year_name,
+                date: r.entry_date,
+                debit: r.debit,
+                credit: r.credit,
+            },
+            journal: r.journal,
+            description: r.description,
+            document: proprietaires.and_then(|v| v.first()).cloned(),
+            owned_by_document: proprietaires
+                .is_some_and(|v| v.iter().any(|o| o.kind.blocks_manual_lettering())),
+            in_open_period,
+        });
+    }
+
+    let any_owned = lines.iter().any(|l| l.owned_by_document);
+    let any_in_open_period = lines.iter().any(|l| l.in_open_period);
+    let manual_dissolution_blocked_by =
+        match manual_dissolution_step(origin, Some(any_owned), Some(any_in_open_period)) {
+            DissolutionStep::Refuse(motif) => Some(motif),
+            DissolutionStep::Allowed => None,
+            etape @ (DissolutionStep::NeedOwnership | DissolutionStep::NeedPeriod) => {
+                return Err(DbError::Invariant(format!(
+                    "lettrage : l'étape {etape:?} demande un fait que la lecture a lu (groupe \
+                     {key})"
+                )));
+            }
+        };
+
+    Ok(Some(LetteringGroupDetail {
+        key,
+        code: code_of(key),
+        origin,
+        account_id,
+        account_number,
+        account_name,
+        manual_dissolution_blocked_by,
+        lines,
+    }))
 }
 
 #[cfg(test)]
@@ -1890,6 +2259,115 @@ mod tests {
             "F-1"
         );
         assert_eq!(avec["code"], "AA", "les clés d'origine restent");
+    }
+
+    /// Story 15-1c-0, test 5 — les **douze** combinaisons à faits connus (3
+    /// origines × possession × période), contre une table écrite ici.
+    #[test]
+    fn manual_dissolution_step_with_known_facts() {
+        use DissolutionStep::{Allowed, Refuse};
+        use ManualDissolutionBlocker::*;
+        let attendu = |origin: Origin, possedee: bool, ouverte: bool| match origin {
+            Origin::Document => Refuse(IsDocument),
+            Origin::Reversal if possedee => Refuse(LineOwnedByDocument),
+            _ if !ouverte => Refuse(AllLinesInClosedPeriods),
+            _ => Allowed,
+        };
+        let mut vus = 0;
+        for origin in [Origin::Document, Origin::Reversal, Origin::Manual] {
+            for possedee in [false, true] {
+                for ouverte in [false, true] {
+                    assert_eq!(
+                        manual_dissolution_step(origin, Some(possedee), Some(ouverte)),
+                        attendu(origin, possedee, ouverte),
+                        "{origin:?}, possédée {possedee}, ouverte {ouverte}"
+                    );
+                    vus += 1;
+                }
+            }
+        }
+        assert_eq!(vus, 12);
+        // Les cas qui disent l'ordre, écrits en clair : une paire `reversal`
+        // possédée ET toute close rend le refus 2, pas le 3 ; un groupe
+        // `manual` « possédé » n'est jamais refusé pour cela.
+        assert_eq!(
+            manual_dissolution_step(Origin::Reversal, Some(true), Some(false)),
+            Refuse(LineOwnedByDocument)
+        );
+        assert_eq!(
+            manual_dissolution_step(Origin::Manual, Some(true), Some(true)),
+            Allowed
+        );
+    }
+
+    /// Story 15-1c-0, test 5 — les étapes `Need*` : `Document` n'en demande
+    /// aucune ; `Reversal` demande la possession AVANT la période ; `Manual` ne
+    /// demande jamais la possession.
+    #[test]
+    fn manual_dissolution_step_asks_for_facts_in_order() {
+        use DissolutionStep::*;
+        use ManualDissolutionBlocker::*;
+        for possession in [None, Some(false), Some(true)] {
+            for periode in [None, Some(false), Some(true)] {
+                assert_eq!(
+                    manual_dissolution_step(Origin::Document, possession, periode),
+                    Refuse(IsDocument),
+                    "document : rien à lire ({possession:?}, {periode:?})"
+                );
+                assert_ne!(
+                    manual_dissolution_step(Origin::Manual, possession, periode),
+                    NeedOwnership,
+                    "manual : jamais la possession"
+                );
+            }
+            for periode in [None, Some(false), Some(true)] {
+                assert_eq!(
+                    manual_dissolution_step(Origin::Reversal, None, periode),
+                    NeedOwnership,
+                    "reversal : la possession d'abord, période {periode:?}"
+                );
+            }
+        }
+        assert_eq!(
+            manual_dissolution_step(Origin::Reversal, Some(false), None),
+            NeedPeriod
+        );
+        assert_eq!(
+            manual_dissolution_step(Origin::Manual, None, None),
+            NeedPeriod
+        );
+    }
+
+    /// Story 15-1c-0, test 5 — `code()` égale `DbError::error_code()` de la
+    /// variante, pour les trois motifs (littéraux de l'API écrits ici).
+    #[test]
+    fn blocker_code_is_the_error_code() {
+        use ManualDissolutionBlocker::*;
+        let cas = [
+            (
+                IsDocument,
+                DbError::LetteringIsDocument,
+                "LETTERING_IS_DOCUMENT",
+            ),
+            (
+                LineOwnedByDocument,
+                DbError::LetteringLineOwnedByDocument {
+                    blocker: crate::errors::ReversalBlocker::OwnedBySupplierInvoice,
+                    document_id: Some(9),
+                    document_label: Some("FF-1".into()),
+                },
+                "LETTERING_LINE_OWNED_BY_DOCUMENT",
+            ),
+            (
+                AllLinesInClosedPeriods,
+                DbError::LetteringAllLinesInClosedPeriods,
+                "LETTERING_ALL_LINES_IN_CLOSED_PERIODS",
+            ),
+        ];
+        for (motif, erreur, litteral) in cas {
+            assert_eq!(motif.code(), erreur.error_code(), "{motif:?}");
+            assert_eq!(motif.code(), litteral, "{motif:?}");
+        }
     }
 
     #[test]
