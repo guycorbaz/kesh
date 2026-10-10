@@ -219,10 +219,10 @@ cd /opt/kesh
 
 \subsubsection{Étape 2 — Récupérer le \texttt{docker-compose.yml}}
 
-Télécharger le fichier de référence depuis le dépôt officiel :
+Télécharger le fichier de référence depuis le dépôt officiel, \textbf{au tag de la version que décrit ce manuel} (\texttt{v\keshVersion}) --- non à la branche \texttt{main}, qui peut être en avance sur l'image publiée ; pour une autre version, remplacez le tag dans l'adresse :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/main/docker-compose.yml \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.0/docker-compose.yml \
     -o docker-compose.yml
 \end{lstlisting}
 
@@ -233,7 +233,7 @@ Ce fichier désigne l'image publiée \texttt{gcorbaz/kesh:latest} : \keshcommand
 Copier le fichier d'exemple et l'adapter :
 
 \begin{lstlisting}[language=bash]
-curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/main/.env.example \
+curl -fsSL https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.0/.env.example \
     -o .env
 \end{lstlisting}
 
@@ -542,11 +542,11 @@ sudo chown -R $(id -u):$(id -g) /volume1/docker/kesh
 
 \subsubsection{Étape 2 — Récupérer docker-compose.yml et .env}
 
-Télécharger le \keshpath{docker-compose.yml} canonique depuis le dépôt Kesh et créer le fichier \keshpath{.env} à partir du template (voir section \ref{sec:env-vars} pour la liste complète) :
+Télécharger le \keshpath{docker-compose.yml} canonique depuis le dépôt Kesh, au tag de la version que décrit ce manuel (\texttt{v\keshVersion}, non \texttt{main}), et créer le fichier \keshpath{.env} à partir du template (voir section \ref{sec:env-vars} pour la liste complète) :
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/main
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.0
 curl -fsSL "$DEPOT/docker-compose.prod.yml" -o docker-compose.yml
 curl -fsSL "$DEPOT/.env.example" -o .env
 
@@ -1660,7 +1660,7 @@ Les deux scripts sont des fichiers du dépôt Kesh, \keshpath{scripts/synology/k
 
 \begin{lstlisting}[language=bash]
 cd /volume1/docker/kesh
-DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/main
+DEPOT=https://raw.githubusercontent.com/guycorbaz/kesh/v0.13.0
 curl -fsSLO "$DEPOT/scripts/synology/kesh-dump.sh"
 curl -fsSLO "$DEPOT/scripts/synology/kesh-restore.sh"
 chmod 700 kesh-dump.sh kesh-restore.sh
@@ -1920,7 +1920,7 @@ Les versions de Kesh sont publiées sur GitHub avec un tag \texttt{vX.Y.Z} (vers
 \subsection{Procédure de mise à jour standard}
 
 \begin{enumerate}
-    \item \textbf{Sauvegarder} la base de données --- avec \keshpath{docker-compose.yml}, le volume \texttt{<projet>\_kesh-mariadb-data} ; sur Synology avec \keshpath{docker-compose.prod.yml}, un dump par \keshpath{kesh-dump.sh} (\S\ref{sec:backup-dsm}) --- (cf. section précédente).
+    \item \textbf{Sauvegarder} la base de données --- avec \keshpath{docker-compose.yml}, le volume \texttt{<projet>\_kesh-mariadb-data} ; sur Synology avec \keshpath{docker-compose.prod.yml}, un dump par \keshpath{kesh-dump.sh} (\S\ref{sec:backup-dsm}) --- (cf. section précédente). \textbf{Pour passer à la 0.13.0, cette sauvegarde est le seul retour en arrière possible} : une fois migrée, la base refuse tout binaire 0.12.x (\S\ref{sec:maj-0-13-sans-retour}).
     \item \textbf{Lire le changelog} de la nouvelle version pour identifier les breaking changes éventuels et les migrations nécessaires.
     \item \textbf{Mettre à jour le fichier compose} --- \textbf{obligatoire pour passer à la 0.13.0} (\S\ref{sec:maj-0-13}) : re-télécharger le compose et y reporter ses adaptations locales, puis vérifier les placeholders de \keshpath{.env} --- dont les lignes \texttt{MARIADB\_ROOT\_PASSWORD} et \texttt{MARIADB\_PASSWORD} : une valeur entre chevrons y est acceptée par Compose, et pour root rien d'autre ne la signale. Sur une base déjà créée, \textbf{ne remplacez pas} ces deux valeurs dans \keshpath{.env} --- ni des chevrons, ni \texttt{kesh\_dev} : la base a gardé celles de sa création, et une valeur neuve n'y change rien (1045 pour Kesh, sauvegarde en échec pour root) ; changez-les par le \S\ref{sec:mariadb-mdp}, \texttt{ALTER USER} d'abord. Pour les versions suivantes : selon le changelog (nouvelles variables, changement d'image).
     \item \textbf{Tirer la nouvelle image} : \keshcommand{docker compose pull kesh-api}.
@@ -1950,6 +1950,18 @@ La session ouverte doit être \textbf{rouverte} --- reconnexion, ou au plus la d
 \textbf{Limite} : les données de démonstration laissées par une réinitialisation antérieure (taux de TVA, réglages de facturation, contacts, articles, factures, avoirs) qui désignent la société effacée restent en base, invisibles et inertes (\#546).
 
 \subsubsection{Passer à la 0.13.0 : le compose et le fichier \texttt{.env}}\label{sec:maj-0-13}
+
+\paragraph{Sans retour en arrière : la base migrée refuse les versions 0.12.x.}\label{sec:maj-0-13-sans-retour}\mbox{}\\
+\begin{sloppypar}
+La 0.13.0 relève la version minimale de Kesh qu'exige la base (\texttt{kesh\_version\_min\_required}, table \texttt{\_kesh\_version}) à \texttt{0.13.0} : les versions antérieures ignorent le lettrage et pourraient, par exemple, annuler une pièce dont l'écriture est lettrée sans dissoudre son groupe. Dès le premier démarrage de la 0.13.0, la migration de la base est faite, et elle a deux conséquences :
+\end{sloppypar}
+\begin{itemize}
+    \item \textbf{Kesh 0.12.x ne démarre plus sur cette base.} Remettre l'image \texttt{gcorbaz/kesh:0.12.1} fait arrêter Kesh au démarrage, avant toute migration, avec au journal (\keshcommand{docker compose logs kesh-api}) : \texttt{FATAL : La base a été migrée par Kesh v0.13.0, le binaire courant v0.12.1 ne peut pas la downgrader sans risque. Restaurer un backup antérieur à Kesh v0.13.0, ou mettre à jour le binaire vers au moins v0.13.0.}
+    \item \textbf{Une sauvegarde d'installation (\keshpath{.keshbackup}) prise après la mise à jour ne s'importe pas dans une 0.12.x} : son manifeste porte la même exigence, et l'import est refusé avant d'avoir rien effacé (\texttt{409 IMPORT\_VERSION\_INCOMPATIBLE}, « Ce backup requiert une version de Kesh plus récente (0.13.0) que celle installée (0.12.1). Mettez à jour Kesh avant de réimporter. »).
+\end{itemize}
+\begin{keshwarning}
+\textbf{Le seul retour en arrière est la restauration de la sauvegarde de la base prise \emph{avant} la mise à jour} (étape 1 de la procédure, \S\ref{sec:mise-a-jour}) --- dump par le script de sauvegarde (\S\ref{sec:script-sauvegarde}) ou copie du volume \texttt{<projet>\_kesh-mariadb-data}, ou, sur Synology, dump par \keshpath{kesh-dump.sh} (\S\ref{sec:backup-dsm}) --- avec l'image 0.12.1 : elle rend la base telle qu'elle était, exigence de version comprise. \textbf{Prenez-la donc} : sans elle, il n'y a pas de retour à la 0.12.x. Une installation \textbf{à neuf}, sur une base vide, n'est pas concernée.
+\end{keshwarning}
 
 Jusqu'à la 0.12, les compose fournis ne transmettaient pas à Kesh seize variables que \keshpath{.env} proposait de régler (e-mails, mot de passe oublié, sortie de la démonstration, langue, plafonds…) : les modifier restait sans effet, sans aucun message. Le défaut est dans le \textbf{fichier compose que vous détenez} : la nouvelle image seule ne corrige rien, et le compose de la 0.13.0 s'emploie avec l'image 0.13.0.
 

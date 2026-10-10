@@ -21,6 +21,7 @@
 //! | G18 | #127 | une installation porte une société (Story 15-14b) |
 //! | G18-ter | #127 | les textes d'écran « toutes les sociétés » (sauvegarde d'installation) sont une liste fermée assumée |
 //! | G18-bis | #127 | le manuel utilisateur dit comment on entre : compte créé par l'administrateur, connexion par identifiant |
+//! | G19 | release 0.13.0 | toute URL `raw.githubusercontent.com` du dépôt (manuels, README, site) pointe sur le tag `v<\keshVersion>`, jamais sur `main` |
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -1073,6 +1074,71 @@ fn les_ecrans_multi_societe_sont_assumes() {
     assert!(
         erreurs.is_empty(),
         "G18-ter — {} écart(s) :\n  - {}",
+        erreurs.len(),
+        erreurs.join("\n  - ")
+    );
+}
+
+/// Version publiée que portent les manuels : argument de `\providecommand{\keshVersion}`
+/// dans `docs/manual/shared/kesh-style.sty` (point 4-bis du `CLAUDE.md`).
+fn version_des_manuels() -> String {
+    let sty = lire("docs/manual/shared/kesh-style.sty");
+    let re = Regex::new(r"\\providecommand\{\\keshVersion\}\{([^}]+)\}").unwrap();
+    let version = re
+        .captures(&sty)
+        .unwrap_or_else(|| panic!("\\keshVersion introuvable dans kesh-style.sty"))[1]
+        .to_string();
+    // Positif : une version X.Y.Z, non un gabarit.
+    assert!(
+        Regex::new(r"^\d+\.\d+\.\d+$").unwrap().is_match(&version),
+        "\\keshVersion n'est pas une version X.Y.Z : {version:?}"
+    );
+    version
+}
+
+/// **G19** (release 0.13.0) — une URL `raw.githubusercontent.com/guycorbaz/kesh/<réf>/…`
+/// que le lecteur recopie (compose, `.env.example`, scripts Synology) désigne le **tag de
+/// la version publiée**, `v<\keshVersion>`, jamais `main` ni une autre réf.
+///
+/// Pourquoi : `main` peut être en avance sur l'image publiée — un compose ou un gabarit
+/// `.env` de `main` s'emploierait alors avec une image qui ne le comprend pas. Les URL
+/// vivent dans des `lstlisting`, où la macro `\keshVersion` ne s'étend pas : la version
+/// y est écrite en dur, et ce test la tient égale à la macro. Au bump de `\keshVersion`
+/// (point 4-bis), il rougit tant que les URL n'ont pas suivi.
+#[test]
+fn les_url_raw_du_depot_pointent_sur_la_version_publiee() {
+    let attendue = format!("v{}", version_des_manuels());
+    let re = Regex::new(r"raw\.githubusercontent\.com/guycorbaz/kesh/([^/\s\x22'`)]+)").unwrap();
+    let mut sources = fichiers_sous("docs/manual", &|n| n.ends_with(".tex"));
+    sources.push(racine().join("README.md"));
+    sources.extend(fichiers_sous("website", &|n| {
+        n.ends_with(".html") || n.ends_with(".md")
+    }));
+    let mut vues = 0;
+    let mut erreurs = Vec::new();
+    for chemin in &sources {
+        let texte = std::fs::read_to_string(chemin)
+            .unwrap_or_else(|e| panic!("lecture de {}: {e}", chemin.display()));
+        for (n, ligne) in texte.lines().enumerate() {
+            for c in re.captures_iter(ligne) {
+                vues += 1;
+                if c[1] != attendue {
+                    erreurs.push(format!(
+                        "{}:{} — réf « {} », attendu « {attendue} »",
+                        chemin.display(),
+                        n + 1,
+                        &c[1]
+                    ));
+                }
+            }
+        }
+    }
+    // Positif : les quatre URL du manuel d'administration (compose, `.env.example`,
+    // et les deux `DEPOT=` de Synology) ont bien été lues.
+    assert!(vues >= 4, "URL raw du dépôt lues : {vues}");
+    assert!(
+        erreurs.is_empty(),
+        "G19 — {} URL hors du tag {attendue} :\n  - {}",
         erreurs.len(),
         erreurs.join("\n  - ")
     );
