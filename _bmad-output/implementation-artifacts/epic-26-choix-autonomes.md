@@ -49,7 +49,10 @@ numéro en double se renumérote, il ne s'écrase pas.
 - **Écarté** : 255 comme `bank_name` (la demande dit « courte » ; une description longue casse les
   `<select>`) ; 30 (trop court pour « Compte épargne logement ») ; un `CHECK` (la normalisation vit
   dans `validate_bank_input`, comme celle de `bank_name` ; un `CHECK` interdirait `ALGORITHM=INSTANT`).
-- **Réversibilité** : élargir est une migration `MODIFY COLUMN` vers un type plus large — non breaking.
+- **Réversibilité** : élargir est une migration `MODIFY COLUMN` vers un type plus large. *(Rectifié en validation P1,
+  R8 : `CLAUDE.md` P3 range tout `MODIFY COLUMN <type>` parmi les opérations breaking — un élargissement exige donc
+  le bump `min_required` **ou** un `-- breaking-skip-bump` justifié et confirmé en revue (P4) ; « non breaking » était
+  une affirmation, pas la règle.)*
 
 ### C-26-2-4 — Pas d'unicité
 
@@ -76,7 +79,7 @@ numéro en double se renumérote, il ne s'écrase pas.
   redeviendraient indiscernables, C-26-2-4).
 - **Réversibilité** : une ligne dans chaque fonction.
 
-### C-26-2-6 — Place de la colonne
+### C-26-2-6 — Place de la colonne *(complété par C-26-2-16)*
 
 - **Retenu** : `AFTER bank_name` en base ; colonne `description` juste après `bank_name` dans
   `bank_accounts.csv` de l'export global.
@@ -145,7 +148,7 @@ numéro en double se renumérote, il ne s'écrase pas.
   stories qui fusionne la seconde régénère le PDF et peut renvoyer à `\S\ref{sec:comptes-bancaires}`.
 - **Écarté** : une sous-section de l'onboarding (la description ne s'y saisit pas, C-26-2-2).
 
-### C-26-2-14 — Migration neuve, et la course avec la 26-1
+### C-26-2-14 — Migration neuve, et la course avec la 26-1 *(remplacé par C-26-2-25)*
 
 - **Retenu** : `crates/kesh-db/migrations/20261011000001_bank_accounts_description.sql`, version à
   confirmer au développement contre `origin/main` : la 26-1 (#620, #621) peut elle aussi ajouter une
@@ -163,3 +166,90 @@ fiche unique en deux parties, deux PR successives (`refs #622` puis `closes #622
 séparées (précédent 15-1c) — écartée, la fiche est déjà partagée et l'inventaire clos doit rester d'un seul tenant.
 **Réversibilité** : totale (registre). Le changement de libellé du menu d'import sans description (C-26-2-5, « UBS (CH…) »
 → « UBS — CH… ») est accepté : il aligne ce menu sur les autres.
+
+## Story 26-2 — validation P1 remédiée (2026-10-10)
+
+### C-26-2-16 — La colonne en fin de table
+
+- **Contexte** : F6 (P1) — `AFTER bank_name` + `ALGORITHM=INSTANT`. Le précédent existe
+  (`20260507200001_bank_account_journal_link.sql`, `AFTER qr_iban`), mais la position n'apporte rien.
+- **Retenu** : `ADD COLUMN description VARCHAR(60) NULL, ALGORITHM=INSTANT, LOCK=NONE` en fin de table ; dans le
+  CSV, la colonne reste juste après `bank_name` (C-26-2-6), c'est le sérialiseur qui fixe l'ordre.
+- **Écarté** : garder `AFTER` (rien à gagner, un mode d'échec de plus à surveiller).
+- **Réversibilité** : sans objet (position physique invisible).
+
+### C-26-2-17 — L'ensemble des caractères refusés, fermé et nommé
+
+- **Retenu** : `char::is_control` (Cc) plus U+2028, U+2029, U+200B à U+200F, U+202A à U+202E, U+2060 à U+2064,
+  U+2066 à U+2069, U+FEFF — une fonction `is_forbidden_in_description`, testée par plage. Pas de normalisation
+  NFC : un accent décomposé compte pour deux caractères (angle mort assumé ; les navigateurs saisissent en
+  précomposé).
+- **Écarté** : une dépendance de catégories Unicode (toute la catégorie Cf) — une crate pour un champ ; NFC à
+  l'enregistrement — modifierait silencieusement la saisie.
+
+### C-26-2-18 — La garde d'inventaire compte un jeton par fichier
+
+- **Contexte** : R3/F1 (P1) — la garde « expressions de gabarit » était ambiguë et sa liste d'exclusions citait des
+  lignes de script.
+- **Retenu** : décompte du jeton `bankName` dans **tout** fichier `.svelte` et `.ts` non-test de `frontend/src`,
+  contre une table fermée `{fichier → nombre, motif}` sans numéro de ligne ; cas synthétiques par forme ; types en
+  ligne remplacés par `BankAccountOptionSource & { id: number }` exporté de `format.ts` (tranché, plus « au choix »).
+  Angle mort nommé : un libellé construit sans le jeton.
+- **Écarté** : une analyse syntaxique Svelte (lourde, fragile aux versions) ; une liste par ligne (se périme à
+  chaque retouche).
+
+### C-26-2-19 — Le changement de contrat du `PUT` est figé et documenté
+
+- **Contexte** : R4/F2 (P1) — `PUT /bank-accounts/{id}` est ouvert aux clés d'API ; un corps 0.13.0 efface la
+  description.
+- **Retenu** : C-26-2-8 maintenu (remplacement complet), mais figé par un test et la mutation M13, annoncé au
+  CHANGELOG `### Modifié` (« Changement de contrat pour une intégration par clé d'API ») et dans
+  `docs/api-external.md` (« Depuis la v0.13.1 »).
+- **Écarté** : conserver une description absente (`COALESCE`) — rendrait impossible l'effacement par un `PUT`
+  qui omet le champ et romprait la symétrie avec `qrIban` ; c'est précisément M13.
+
+### C-26-2-20 — La liste des colonnes est une macro du dépôt
+
+- **Retenu** : `macro_rules! columns` privé à `repositories/bank_accounts.rs`, `concat!` à chaque `SELECT`, sur
+  le précédent de `repositories/accounts.rs:21-42` ; la route de `kesh-api` relit par `find_by_id_in_tx` (fonction
+  publique neuve). Contrôles : `grep -rnE "SELECT id, company_id, bank_name" crates/*/src` vide ;
+  `grep -rnF "id, company_id, bank_name, iban" crates/*/src` → la seule ligne de la macro.
+- **Écarté** : `const &str` + `format!` à chaque appel (une allocation par requête, ce que le code review 14-3a a
+  retiré d'`accounts.rs`) ; `#[macro_export]` (exporterait la liste hors de `kesh-db`).
+
+### C-26-2-21 — La borne 60 a une source par langage, et le squash la vérifie
+
+- **Retenu** : `BANK_ACCOUNT_DESCRIPTION_MAX_CHARS` (Rust, entité) et `BANK_ACCOUNT_DESCRIPTION_MAX` (TS,
+  `format.ts`) ; un test de `kesh-db` confronte la constante au `varchar(…)` du squash. Le nombre reste en toutes
+  lettres dans la migration, les FTL, le manuel, le CHANGELOG et `api-external.md` — greper `\b60\b`.
+- **Écarté** : générer la constante TS depuis Rust (outillage neuf pour un entier).
+
+### C-26-2-22 — La description survit à un changement de banque à l'onboarding
+
+- **Contexte** : F11 (P1) — `upsert_primary_in_tx` réécrit banque, IBAN et QR-IBAN sans toucher la description.
+- **Retenu** : assumé (conséquence de C-26-2-2 : l'onboarding ne connaît pas la description) ; dit au manuel. Le
+  cas suppose de refaire l'étape 6 de l'onboarding, rare.
+- **Écarté** : effacer la description dans l'upsert — perdrait une saisie sur une simple correction d'IBAN.
+
+### C-26-2-23 — `details.bankName` porte le nom complet, et le CHANGELOG le dit
+
+- **Retenu** : la clé JSON reste `bankName` (C-26-2-9) ; sa valeur devient « UBS — Personnel » ; annoncé au
+  CHANGELOG `### Modifié`. Aucun lecteur dans le dépôt ; route fermée aux clés d'API.
+
+### C-26-2-24 — Une sauvegarde 0.13.1 refusée par une 0.13.0 : attendu
+
+- **Contexte** : F7 (P1) — `check_schema_compat` refuse une colonne source inconnue.
+- **Retenu** : écrit en AC1 comme comportement attendu ; il l'est doublement, la 26-1 portant
+  `kesh_version_min_required` à `0.13.1`. Le retour arrière passe par la sauvegarde de la base prise avant la mise
+  à jour (consigne déjà au CHANGELOG 0.13.0).
+
+### C-26-2-25 — Version de migration `20261011000002`, après la 26-1 (arbitrage de l'orchestrateur)
+
+- **Contexte** : la 26-1 réservait aussi `20261011000001` — collision sqlx.
+- **Retenu** (orchestrateur, 2026-10-10) : la 26-1 garde `20261011000001` et fusionne la première ; la 26-2a prend
+  `20261011000002` et se développe (ou se rebase avant son gate final) sur `origin/main` contenant la 26-1. Elle
+  recompte alors les cinq compteurs P5 (80 / 80 / 10 / 70 / 0 attendus, la commande fait foi), porte
+  `migrations_upgrade_path.rs` à `total` 80 / soustracteur 46 (frontière 34) avec sa ligne de généalogie,
+  régénère le squash, et **ajoute** sa ligne à `crates/kesh-db/migrations.sha384` (registre des checksums, garde
+  P8 outillé par `published_migrations_keep_their_checksums`) — fichier que la fiche ne nommait pas avant cette
+  remédiation. Remplace C-26-2-14.
