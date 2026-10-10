@@ -1781,6 +1781,20 @@ mod tests {
         }
     }
 
+    /// M19 — constat sur `rust_decimal`, figé : `-0.00` lu par
+    /// `parse_amount` ne porte **pas** le bit de signe. La mutation « comparer
+    /// par `is_sign_negative()` » est donc aujourd'hui **équivalente** à la
+    /// comparaison stricte (elle ne peut pas rougir), alors que sa forme
+    /// « `<= ZERO` » rougit sur `zeros_and_explicit_plus_are_accepted`. Si la
+    /// bibliothèque se mettait à garder le signe d'un zéro, ce test rougirait
+    /// et rappellerait que la comparaison doit rester stricte à `ZERO`.
+    #[test]
+    fn negative_zero_has_no_sign_bit_after_parse() {
+        let z = parse_amount("-0.00", '.').unwrap();
+        assert_eq!(z, Decimal::ZERO);
+        assert!(!z.is_sign_negative());
+    }
+
     /// AC2 : `Positive` rend `-d`, `Negative` garde `d` ; le crédit est
     /// inchangé.
     #[test]
