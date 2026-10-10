@@ -45,6 +45,7 @@ error-invoice-must-be-unvalidated-first = Cette facture est validée : dévalide
 # Lettrage (Story 15-1a-i, #518)
 error-lettering-too-few-lines = Un lettrage réunit au moins deux lignes distinctes.
 error-lettering-too-many-lines = Un lettrage réunit au plus { $max } lignes.
+error-lettering-proposals-too-many-lines = Trop de lignes ouvertes sur ce compte pour proposer des rapprochements : au plus { $max } lignes lettrables à la main.
 error-lettering-accounts-differ = Les lignes d'un lettrage doivent toutes porter sur le même compte.
 error-lettering-account-not-letterable = Ce compte ne se lettre pas : seuls les comptes d'actif et de passif qui ne sont pas des comptes bancaires se lettrent.
 error-lettering-line-owned-by-document = Une de ces lignes appartient à une pièce : elle ne se lettre ni ne se délettre à la main.

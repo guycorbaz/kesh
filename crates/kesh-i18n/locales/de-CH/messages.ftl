@@ -45,6 +45,7 @@ error-invoice-must-be-unvalidated-first = Diese Rechnung ist validiert: entvalid
 # Lettrage (Story 15-1a-i, #518)
 error-lettering-too-few-lines = Ein Ausgleich umfasst mindestens zwei verschiedene Zeilen.
 error-lettering-too-many-lines = Ein Ausgleich umfasst höchstens { $max } Zeilen.
+error-lettering-proposals-too-many-lines = Zu viele offene Posten auf diesem Konto, um Ausgleiche vorzuschlagen: höchstens { $max } von Hand ausgleichbare Zeilen.
 error-lettering-accounts-differ = Die Zeilen eines Ausgleichs müssen alle dasselbe Konto betreffen.
 error-lettering-account-not-letterable = Dieses Konto lässt sich nicht ausgleichen: Nur Aktiv- und Passivkonten, die keine Bankkonten sind, werden ausgeglichen.
 error-lettering-line-owned-by-document = Eine dieser Zeilen gehört zu einem Beleg: Sie wird nicht von Hand ausgeglichen und ihr Ausgleich nicht von Hand aufgehoben.

@@ -462,6 +462,21 @@ where
     .map_err(map_db_error)
 }
 
+/// L'expression **scalaire par facture** du reste dû — `TTC − avoir émis −
+/// Σ règlements`, trois sous-requêtes corrélées, **prérequis : alias `i` sur
+/// `invoices`**. Celle d'[`amount_due`], écrite une fois ; la vue des postes
+/// ouverts (Story 15-1b, AC8) l'emploie pour les factures d'une page, où les
+/// tables dérivées de [`amount_due_derived_joins`] agrégeraient des tables
+/// entières (`EXPLAIN` mesuré : `credit_note_lines` lue en entier). Miroir de
+/// [`INVOICE_AMOUNT_DUE_DERIVED_SQL`], tenu d'accord par
+/// `tests/invoice_amount_due_parity.rs` (par [`amount_due`]).
+pub fn amount_due_scalar_sql() -> String {
+    format!(
+        "({} - {INVOICE_CREDITED_SUBQUERY_SQL} - {INVOICE_SETTLED_SUBQUERY_SQL})",
+        crate::repositories::invoices::INVOICE_TTC_SUBQUERY_SQL
+    )
+}
+
 /// Ce qui reste dû sur une facture : `TTC − avoir émis − Σ règlements`.
 ///
 /// ⛔ **Trois termes TTC.** Le TTC de la facture et celui de l'avoir sont
@@ -480,10 +495,9 @@ pub async fn amount_due<'e, E>(executor: E, invoice_id: i64) -> Result<Decimal, 
 where
     E: sqlx::Executor<'e, Database = sqlx::MySql>,
 {
-    let ttc = crate::repositories::invoices::INVOICE_TTC_SUBQUERY_SQL;
     sqlx::query_scalar::<_, Decimal>(&format!(
-        "SELECT {ttc} - {INVOICE_CREDITED_SUBQUERY_SQL} - {INVOICE_SETTLED_SUBQUERY_SQL} \
-         FROM invoices i WHERE i.id = ?"
+        "SELECT {} FROM invoices i WHERE i.id = ?",
+        amount_due_scalar_sql()
     ))
     .bind(invoice_id)
     .fetch_one(executor)

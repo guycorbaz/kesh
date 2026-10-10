@@ -7790,3 +7790,21 @@ l'import (#458–#461).
 - **Retenu** : l'écriture doublée de `owners_match_handwritten_expectations` (hors oracle) porte aussi **deux avoirs et deux factures fournisseurs** — une jointure sur l'écriture y rend deux lignes. Les trois branches (facture, avoir, fournisseur) rougissent alors ce test. La branche `CASE` exigée rougit, elle, la comparaison **par lot** à l'oracle (vérifié aussi l'assertion de montage du lot neutralisée).
 - **Écartées** : laisser la branche verte comme la fiche le tolérait (une mutation verte est un finding).
 - **Réversible** : oui (test seulement).
+
+## C-15-1b-14 — 15-1b (développement, T1/T3) : la vue dans un module enfant de `letterings`
+- **Contexte** : T1 place `open_items` dans `kesh-db/src/repositories/letterings.rs`, déjà long de 1 860 lignes ; la vue et le chargement des propositions en ajoutent environ 600, et emploient les fonctions privées du module (règle des périodes, lettrabilité, `with_placeholders`, `code_of`).
+- **Retenu** : un module enfant `letterings/open_items.rs` (`mod open_items;` dans `letterings.rs`, ses types et fonctions ré-exportés : `letterings::open_items`, `letterings::lettering_proposals`, …). Il voit les items privés du parent sans les rendre publics ; le chemin public est celui que la fiche nomme. Le moteur pur suit le même patron : `kesh_core::lettering::proposals`.
+- **Écartées** : tout écrire dans `letterings.rs` (lisibilité) ; un module `repositories/open_items.rs` frère (il faudrait publier les aides privées du lettrage).
+- **Réversible** : oui (déplacement de code, aucun contrat).
+
+## C-15-1b-15 — 15-1b (développement, test 12) : « même date » non montable pour deux périodes au dépôt
+- **Contexte** : le test 12 prescrit trois lignes « de même montant et de même date » — `A` et `B` en période close, `C` en période ouverte. Au dépôt, deux lignes de même date ont le même statut de période (même exercice, même position face à la borne) : la consigne est inmontable sans données incohérentes (date hors de l'exercice de l'écriture).
+- **Retenu** : `A` et `B` le même jour dans l'exercice 2024 clos, `C` en période ouverte plus tard. `A–B` (écart nul) précède `A–C` au classement : un filtre APRÈS le glouton ne rendrait rien, le test exige `A–C` seule — la propriété reste observable. La preuve à dates égales est au test 11 (moteur pur), comme la fiche le dit déjà (« la preuve de l'ordre est au test 11 »).
+- **Écartées** : fabriquer une écriture datée hors de son exercice (état que rien ne produit).
+- **Réversible** : oui (test seulement).
+
+## C-15-1b-16 — 15-1b (développement, AC8) : requête B en forme scalaire, requête A épinglée sur `idx_jel_account_lettering`
+- **Contexte** : `EXPLAIN` mesuré (test ignoré `explain_plans`, 20 000 factures avec lignes, règlements et avoirs ; 5 000 lignes sur le compte vu). (1) Requête B par `amount_due_derived_joins()` : la dérivée des lignes d'avoir est lue en entier (`ALL`, 20 066 lignes, `Using temporary; Using filesort`) pour une page de 50 factures — 403 ms. (2) Requête A : l'optimiseur part de `journal_entries` par `idx_journal_entries_company_date` (12 551 lignes de la société) et la dérivée parcourt `idx_jel_lettering` (toutes sociétés) filtré par `idx_jel_account` — non l'index du compte que la fiche exige.
+- **Retenu** : (1) la forme **scalaire** par facture, qu'AC8 prévoit dans ce cas : `invoice_settlements::amount_due_scalar_sql()`, extraite d'`amount_due` (même formule, écrite une fois, tenue par `invoice_amount_due_parity.rs`) — 2,8 ms, toutes sous-requêtes indexées ; (2) `FORCE INDEX (idx_jel_account_lettering)` sur `jel` et `jel2` (précédent : `company_invoice_settings.rs:905`) — accès `ref` par le compte, dérivée `range` de 2 502 lignes (celles du compte), page lue en 70 ms au lieu de 159 ms (débogage).
+- **Écartées** : garder les jointures dérivées (AC8 l'interdit quand elles agrègent des tables entières) ; un index neuf (aucun ne manque : le plan choisi était seulement mauvais) ; laisser l'optimiseur choisir (la fiche exige l'accès par l'index du compte).
+- **Réversible** : oui (formes de requêtes, aucun contrat ; un module de plus touché — `kesh-db/repositories/invoice_settlements`, une fonction extraite).

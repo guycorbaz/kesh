@@ -755,6 +755,15 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             "/api/v1/letterings/{key}",
             get(routes::letterings::get_lettering),
         )
+        // Story 15-1b (#518) — postes ouverts et propositions (tout rôle, lecture).
+        .route(
+            "/api/v1/accounts/{id}/open-items",
+            get(routes::letterings::get_open_items),
+        )
+        .route(
+            "/api/v1/accounts/{id}/lettering-proposals",
+            get(routes::letterings::get_lettering_proposals),
+        )
         // Story 4.1 : lecture carnet d'adresses (tout rôle authentifié)
         .route("/api/v1/contacts", get(routes::contacts::list_contacts))
         .route("/api/v1/contacts/{id}", get(routes::contacts::get_contact))

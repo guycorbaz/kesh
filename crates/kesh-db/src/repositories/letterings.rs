@@ -140,6 +140,16 @@ use crate::errors::{DbError, map_db_error};
 use crate::repositories::journal_entries::DocumentKind;
 use crate::repositories::{audit_log, fiscal_years, journal_entries};
 
+/// La vue des postes ouverts et les propositions (Story 15-1b) — lecture
+/// seule, sur les fonctions de ce module (lettrabilité, règle des périodes,
+/// code d'un groupe).
+mod open_items;
+pub use open_items::{
+    DocumentState, LetteringProposal, LetteringProposals, OPEN_ITEMS_BALANCE_SQL,
+    OPEN_ITEMS_PAGE_SQL, OPEN_ITEMS_TOTALS_SQL, OpenItem, OpenItems, OpenReason, ProposalLine,
+    lettering_proposals, open_items, open_items_invoice_states_sql,
+};
+
 /// Origine d'un groupe de lettrage (colonne `lettering_origin`, contrainte
 /// `chk_jel_lettering_origin`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -336,12 +346,27 @@ pub fn check_manual_line_count(line_ids: &[i64]) -> Result<(), DbError> {
     Ok(())
 }
 
+/// R4, la condition « un compte bancaire le désigne » — **archivé ou non**
+/// (C127) — écrite UNE fois, sur l'alias `a` de `accounts` : lue par
+/// [`letterable_account`] (une ligne) et [`letterable_account_ids`] (en lot).
+const BANK_LINKED_SQL: &str =
+    "EXISTS (SELECT 1 FROM bank_accounts b WHERE b.journal_account_id = a.id)";
+
+/// R4, le prédicat **pur** (Story 15-1b, AC11 ; C-15-1b-7) : un compte est
+/// lettrable s'il est de type `Asset` ou `Liability` (`account_type` tel que la
+/// base le lit — l'entité passe `AccountType::as_str()`) et qu'aucun compte
+/// bancaire ne le désigne. La seule écriture de la règle, appelée par
+/// [`letterable_account`] et [`letterable_account_ids`].
+pub fn is_letterable(account_type: &str, bank_linked: bool) -> bool {
+    matches!(account_type, "Asset" | "Liability") && !bank_linked
+}
+
 /// Un compte est **lettrable** (R4) s'il appartient à la société, est de type
 /// `Asset` ou `Liability`, et qu'aucun `bank_accounts.journal_account_id` ne le
 /// désigne — **archivé ou non** (C127 : un compte qui a été celui d'un compte
 /// bancaire relève de la réconciliation, et ne redevient pas lettrable à
 /// l'archivage). Un compte archivé (`accounts.active = FALSE`) reste lettrable :
-/// ses lignes existent et se soldent.
+/// ses lignes existent et se soldent. La règle est [`is_letterable`].
 ///
 /// Rend aussi le **numéro** du compte (pour l'audit), `None` si le compte est
 /// introuvable dans la société.
@@ -352,20 +377,40 @@ pub async fn letterable_account(
     company_id: i64,
     account_id: i64,
 ) -> Result<Option<(bool, String)>, DbError> {
-    let row: Option<(String, String, bool)> = sqlx::query_as(
-        "SELECT a.account_type, a.number, \
-                EXISTS (SELECT 1 FROM bank_accounts b WHERE b.journal_account_id = a.id) \
-         FROM accounts a WHERE a.id = ? AND a.company_id = ?",
-    )
-    .bind(account_id)
-    .bind(company_id)
-    .fetch_optional(conn)
-    .await
-    .map_err(map_db_error)?;
-    Ok(row.map(|(account_type, number, banque)| {
-        let lettrable = matches!(account_type.as_str(), "Asset" | "Liability") && !banque;
-        (lettrable, number)
-    }))
+    let sql = format!(
+        "SELECT a.account_type, a.number, {BANK_LINKED_SQL} \
+         FROM accounts a WHERE a.id = ? AND a.company_id = ?"
+    );
+    let row: Option<(String, String, bool)> = sqlx::query_as(&sql)
+        .bind(account_id)
+        .bind(company_id)
+        .fetch_optional(conn)
+        .await
+        .map_err(map_db_error)?;
+    Ok(row.map(|(account_type, number, banque)| (is_letterable(&account_type, banque), number)))
+}
+
+/// Les comptes **lettrables** de la société, archivés compris, en **une**
+/// requête (Story 15-1b, AC11) — pour `GET /accounts`, sans N+1 sur le plan
+/// comptable. Même prédicat ([`is_letterable`]) et même condition SQL
+/// ([`BANK_LINKED_SQL`]) que [`letterable_account`].
+pub async fn letterable_account_ids(
+    conn: &mut MySqlConnection,
+    company_id: i64,
+) -> Result<BTreeSet<i64>, DbError> {
+    let sql = format!(
+        "SELECT a.id, a.account_type, {BANK_LINKED_SQL} FROM accounts a WHERE a.company_id = ?"
+    );
+    let rows: Vec<(i64, String, bool)> = sqlx::query_as(&sql)
+        .bind(company_id)
+        .fetch_all(conn)
+        .await
+        .map_err(map_db_error)?;
+    Ok(rows
+        .into_iter()
+        .filter(|(_, account_type, banque)| is_letterable(account_type, *banque))
+        .map(|(id, _, _)| id)
+        .collect())
 }
 
 /// Raccourci booléen de [`letterable_account`] : `false` aussi pour un compte

@@ -17,10 +17,14 @@
 //!   ⛔ Pas de `validate_group` unique : appelé d'un bloc, il rendrait les
 //!   rangs 6 et 7 avant les contrôles en base des rangs 4, 4 bis et 5 ;
 //! - [`check_rows_affected`], la comparaison du nombre de lignes **trouvées**
-//!   par l'`UPDATE` final de chacune des deux primitives (R7 point 4).
+//!   par l'`UPDATE` final de chacune des deux primitives (R7 point 4) ;
+//! - le **moteur des propositions** ([`proposals`], Story 15-1b) : des paires
+//!   débit/crédit de montants égaux parmi les lignes candidates d'un compte.
 
 use rust_decimal::Decimal;
 use std::collections::BTreeSet;
+
+pub mod proposals;
 
 /// Plafond de lignes d'un groupe posé par la route manuelle (AC6) : il borne
 /// le corps de la requête et l'`IN (…)` de la lecture verrouillante.

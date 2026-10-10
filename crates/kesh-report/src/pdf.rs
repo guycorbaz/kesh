@@ -2457,6 +2457,7 @@ mod tests {
             debit: dec!(120.00),
             credit: dec!(0),
             running_balance: Decimal::from(i) * dec!(120.00),
+            lettering_code: None,
         }
     }
 

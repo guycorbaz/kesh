@@ -156,6 +156,11 @@ pub struct LedgerLine {
     pub debit: Decimal,
     pub credit: Decimal,
     pub running_balance: Decimal,
+    /// Code du groupe de lettrage d'**aujourd'hui** (`AA`), `None` si la ligne
+    /// est ouverte (Story 15-1b, AC6) — par `letterings::code_of`. Le JSON seul
+    /// le porte : l'export CSV et le PDF écrivent leurs colonnes une à une, et
+    /// restent tels quels (C-15-1b-6).
+    pub lettering_code: Option<String>,
 }
 
 /// Ligne brute, telle que la lit SQL.
@@ -171,6 +176,7 @@ struct RawLine {
     description: String,
     debit: Decimal,
     credit: Decimal,
+    lettering_key: Option<i64>,
 }
 
 #[derive(Debug, sqlx::FromRow)]
@@ -297,7 +303,8 @@ async fn fetch_lines(
     let sql = "
         SELECT jel.id AS line_id, je.id AS entry_id, je.entry_date, je.fiscal_year_id,
                fy.name AS fiscal_year_name,
-               je.entry_number, je.journal, je.description, jel.debit, jel.credit
+               je.entry_number, je.journal, je.description, jel.debit, jel.credit,
+               jel.lettering_key
         FROM journal_entry_lines jel
         INNER JOIN journal_entries je ON je.id = jel.entry_id
         INNER JOIN fiscal_years fy ON fy.id = je.fiscal_year_id
@@ -496,6 +503,9 @@ pub async fn generate(
                 debit: r.debit,
                 credit: r.credit,
                 running_balance: running,
+                lettering_code: r
+                    .lettering_key
+                    .map(kesh_db::repositories::letterings::code_of),
             });
         }
 

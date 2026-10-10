@@ -1313,6 +1313,9 @@ mod tests {
                     debit: dec!(1200.00),
                     credit: dec!(0),
                     running_balance: dec!(1700.00),
+                    // Lettrée : l'export CSV n'en écrit pas la colonne (AC6 de
+                    // la 15-1b) — les colonnes restent celles d'avant.
+                    lettering_code: Some("AB".into()),
                 }],
                 total_debit: dec!(1200.00),
                 total_credit: dec!(0),
