@@ -1,6 +1,6 @@
 # Story 26-3 : Le manuel décrit les écrans réels, et la garde de `kesh-restore.sh` échoue fermée
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Spécifiée le 2026-10-10 sur fe162504 (branche story/26-3, worktree kesh-26-3), en autonomie
      (consignes communes des agents, memory/consignes-agents-epic15.md). Choix C-26-3-1 à 8 au registre
@@ -190,7 +190,7 @@ Sites, **inventaire clos** relevé par `git grep -n "bank-import-labels-drop-zon
 | `bank-import-labels-drop-zone`, 4 catalogues (`fr-CH:1077`, `de-CH`/`en-CH`/`it-CH:1018`) | « Glissez votre fichier CAMT.053 ici… » | « Glissez votre fichier CAMT.053 ou CSV ici ou cliquez pour parcourir » (= repli actuel, `BankImportUpload.svelte:258`) |
 | `aria-label` en dur, `BankImportUpload.svelte:232` | « …un fichier CAMT.053 ou cliquer… » | **lu par `i18nMsg('bank-import-labels-drop-zone', …)`** (même texte que la zone, traduit, tenu par G20 — validation P2, F-L7) |
 | `bank-import-labels-page-title`, 4 catalogues (`fr-CH:1075`, autres `:1016`) + repli `bank-import/+page.svelte:52` | « Import bancaire CAMT.053 » | « Import de relevés bancaires » |
-| `<title>` en dur, `bank-import/+page.svelte:48` | « Import bancaire - Kesh » | **`{i18nMsg('bank-import-labels-page-title', …)} — Kesh`** (tiret long) — clé existante ; la forme lue par clé et le tiret long sont ceux de la majorité des titres i18n (`} — Kesh` : 16 occurrences sous `frontend/src/routes`, contre 8 `} - Kesh`, relevé P3 ; précédents `credit-notes/+page.svelte:30`, `open-items/+page.svelte:16`) — validation P3, F-12 |
+| `<title>` en dur, `bank-import/+page.svelte:48` | « Import bancaire - Kesh » | **`{i18nMsg('bank-import-labels-page-title', …)} — Kesh`** (tiret long) — clé existante ; la forme lue par clé et le tiret long sont ceux de la majorité des titres i18n (`} — Kesh` : 16 occurrences **dans un `<title>`** sous `frontend/src/routes` — 17 lignes au grep brut, la 17e, `reconciliation/rules/+page.svelte:65`, n'étant pas un `<title>` (P4 ciblée, L3) —, contre 8 `} - Kesh`, relevé P3 ; précédents `credit-notes/+page.svelte:30`, `open-items/+page.svelte:16`) — validation P3, F-12 |
 | `docs/i18n-glossaire.md:151`, colonne « précédent » | `Import bancaire CAMT.053` | `Import bancaire` (`audit-log-entity-bank-imports`) (AC 2.4) |
 
 **Cibles des quatre locales, fixées** (validation P2, R-L6 = F-L6 ; terme attesté `relevé (bancaire)` =
@@ -275,11 +275,23 @@ docker »**, placée **avant** la mise en place (`recette.sh:92`) : elle ne lit 
 conteneur. Elle compte ses échecs dans `ECHECS` par `ok`/`ko` (`recette.sh:38`-`:39`) **sans
 interrompre** la recette.
 
-**Sélecteur** (validation P3, R-L4 = F-7) : `RECETTE_SECTION=0 bash scripts/synology/recette.sh` joue la
-section 0 **seule** et sort aussitôt après elle sur « RECETTE VERTE » ou « RECETTE ROUGE (n échec(s)) »,
-avant toute mise en place Docker. Prérequis de ce mode : `bash`, `gzip`, `sha256sum` — ni Docker, ni
-`sqlx`, ni réseau. Sans la variable, la recette entière tourne comme aujourd'hui, section 0 en tête.
-C'est ce mode qui sert aux preuves de mutation.
+**Sélecteur** (validation P3, R-L4 = F-7 ; **réécrit en P4 ciblée, M1**) : `RECETTE_SECTION=0 bash
+scripts/synology/recette.sh` joue la section 0 **seule** et sort aussitôt après elle sur « RECETTE VERTE »
+ou « RECETTE ROUGE (n échec(s)) ». **Ordre imposé dans `recette.sh`** — aujourd'hui `mktemp` (`:25`),
+`openssl` (`:26`, `:28`) et surtout `trap nettoyer EXIT` (`:37`), dont la fonction appelle le **vrai**
+`docker` (`docker rm -f`, `docker network rm`, `docker run … mariadb:10.11`, image tirée si absente,
+erreurs vers `/dev/null`), s'exécutent avant toute section :
+1. réglages sans effet (`RACINE`, `SCRIPTS`, noms), fonctions `ok`/`ko`/`verifier`, puis
+   `W=$(mktemp -d …)` et une trap **minimale** `trap 'rm -rf "$W"' EXIT`, qui n'appelle pas `docker` ;
+2. la section 0 ; en `RECETTE_SECTION=0`, verdict et `exit` **ici** ;
+3. ensuite seulement : `openssl` (mots de passe), garde `kesh-mariadb-dev` (`:31`), `nettoyer` et
+   `trap nettoyer EXIT` (qui remplace la trap minimale et efface `$W` comme aujourd'hui), puis la mise en
+   place et les sections 1 à 9, inchangées.
+**Prérequis exacts de ce mode** : `bash` ; coreutils (`mktemp`, `rm`, `cat`, `printf` interne, `dirname`,
+`sha256sum`, `wc`) ; `gzip` ; `grep` ; `awk` (étape 3 de `kesh-restore.sh`). **Ni `docker`, ni `openssl`,
+ni `sqlx`, ni `python3`, ni réseau** — et c'est vérifiable : en mode 0, aucun appel au vrai `docker` n'est
+possible, puisque la seule trap posée est la trap minimale. Sans la variable, la recette entière tourne
+comme aujourd'hui, section 0 en tête. C'est ce mode qui sert aux preuves de mutation.
 
 **Le faux `docker` est une fonction bash, pas un exécutable du PATH** (C-26-3-14) : `kesh-restore.sh:54`
 fait `export PATH="/usr/local/bin:/usr/bin:/bin:${PATH:-}"`, si bien qu'un faux placé en tête du `PATH`
@@ -541,8 +553,8 @@ tableau d'en-tête :
 
 **Ciblée sur la forme du défaut, sensible à la casse** (validation P1, R-1 = HIGH-2, C-26-3-9) :
 l'expression « son propre compte de banque » est **juste** et figure à six endroits des manuels
-(`user-manual.tex:245`, `:1166`, `:1492`, `:1580`, `:1755`, `admin-manual.tex:2472`) et dans cinq
-messages du catalogue (`messages.ftl:30`, `:34`, `:35`, `:791`, `:2035` et suivants) ; une garde
+(`user-manual.tex:245`, `:1166`, `:1492`, `:1580`, `:1755`, `admin-manual.tex:2472`) et dans six
+messages du catalogue `fr-CH` (`messages.ftl:30`, `:34`, `:35`, `:791`, `:1178`, `:2035` — recompté en P4 ciblée, L4) ; une garde
 insensible à la casse rougirait sur du code correct, et serait « réparée » en devenant muette.
 
 - **négatives**, sur la source `.tex` **brute** (pas de `normaliser`, qui ne garantit pas les
@@ -625,7 +637,7 @@ insensible à la casse rougirait sur du code correct, et serait « réparée » 
    | `git grep -nI "Import bancaire CAMT.053" B` | les sites ci-dessus **plus**, assumés (AC 2.4) : `README.md:41`, `marketing-brochure.tex:388` (noms de fonctionnalité), `errors.rs:644`, `:2032`, `routes/bank_imports.rs:1` (commentaires de story), `docs/kesh-specifications.txt:1534`, `:2458` (historique) |
    | commande de l'AC 2.4 (`emph{Importer}`, `emph{Import bancaire}`, `Quotidien → Importer**`, `Nouvel import`, sur `docs`) | 0 |
    | `git grep -nI "compose create" B` | 0 (une seule commande, `up --no-start`) |
-   | `git grep -nI "service=kesh-api" B` | **1** : `scripts/synology/recette.sh:67` (`etat_kesh_api`, section 4 réelle, filtrée sur le projet de recette — reste) ; `kesh-restore.sh:76` et `configuration_transmise.rs:3123` disparaissent (AC 5.2, AC 7.1) ; plus, s'ils l'écrivent littéralement, le faux `docker` de la section 0 (émulation de la forme d'origine) et `docs/testing.md` — à lister (validation P3, R-M1 = F-2) |
+   | `git grep -nI "service=kesh-api" B` | **1** : `scripts/synology/recette.sh:67` (`etat_kesh_api`, section 4 réelle, filtrée sur le projet de recette — reste) ; `kesh-restore.sh:76` et `configuration_transmise.rs:3123` disparaissent (AC 5.2, AC 7.1). **1 exactement** : le faux `docker` de la section 0 compare au service `<S>` passé en argument, jamais au littéral `service=kesh-api`, et `docs/testing.md` ne l'écrit pas non plus (validation P3, R-M1 = F-2 ; attendu rendu inconditionnel en P4 ciblée, L2) |
    | `git grep -nI "SAUVEGARDE_SERVICE" B` | script, manuel d'administration (+ PDF), G16, G20, recette, `docs/testing.md`, CHANGELOG — liste au Dev Agent Record |
    La colonne « attendu » se **recompte** au dernier commit ; un écart s'explique ou se corrige.
 3. `README.md:50` (puce *Exploitation sur NAS Synology*) : relire ; ne modifier que si une phrase y
@@ -903,8 +915,35 @@ l'AC 11.2 : 0). `export -f` est propre à bash : les deux scripts et la recette 
     Annuler, AC 2.3). Aucun reclassé en dette, aucun écarté.
   - Grep de la valeur après remédiation : dans la fiche, plus de `':!_bmad-output'` hors Change Log, plus
     de cas `G1`-`G17` hors Change Log et registre historique, plus d'attendu « 0 » pour `service=kesh-api`,
-    plus de `\s+` seul entre les mots de G20 ; commande d'inventaire `up` de l'AC 7.8 rejouée (17 lignes,
+    plus de `\s+` seul entre les mots de G20 ; commande d'inventaire `up` de l'AC 7.8 rejouée (*corrigé en P4
+    ciblée, L5 :* **26** lignes et non 17 ; « 17 lignes, » du relevé d'origine était faux ;
     6 nomment `kesh-api`).
   - Nombre d'AC inchangé : **12**. Prochaine étape : passe **ciblée** P4 (Haiku, une lentille) sur le seul
     commit de remédiation P3, `26-3-validate-prompt-p4-ciblee.md`.
+- 2026-10-11 — **Validation P4 ciblée remédiée — validation close** (Haiku 5.5, une lentille « chasseur de
+  régression de la remédiation P3 », contexte frais, sur le seul commit `e591b066` aplati ; prompt
+  `26-3-validate-prompt-p4-ciblee.md`, rapport `kesh-gate-logs/26-3-validate-p4-ciblee.md`). **Bilan :
+  0 HIGH / 1 MEDIUM / 5 LOW**, axes exercés et non exercés déclarés ; 23 cas et 8 ensembles de mutation
+  redéroulés, conformes. Le MEDIUM a été **vérifié par l'orchestrateur** (`recette.sh:25`-`:37`).
+  - **M1** (né de la remédiation P3 : `RECETTE_SECTION=0` « sans Docker », alors que `mktemp`, `openssl`
+    et `trap nettoyer EXIT` — qui appelle le vrai `docker` — s'exécutent avant la section 0) → AC 6,
+    « Sélecteur » : ordre de `recette.sh` imposé (trap minimale `rm -rf "$W"`, section 0 et sortie en mode
+    0, puis `openssl`, `nettoyer` et sa trap), prérequis du mode 0 écrits exactement (C-26-3-21).
+  - **L1** (prérequis `mktemp`/`openssl`) → fondu dans M1 : `mktemp` listé, `openssl` déplacé après.
+  - **L2** (attendu conditionnel de `service=kesh-api`) → AC 11.2 : **1 exactement**, le faux compare au
+    service `<S>` passé en argument, jamais au littéral.
+  - **L3** (« 16 `} — Kesh` ») → AC 4 et C-26-3-20 : 16 **dans un `<title>`**, 17 lignes au grep brut.
+  - **L4** (« cinq messages ») → AC 9 : six messages `fr-CH`, `:1178` ajouté.
+  - **L5** (« 17 lignes ») → Change Log P3 corrigé en place : 26 lignes.
+  - Signal D5 déclaré par la lentille pour M1 (né de la remédiation) : **pas de découpage** — la
+    remédiation finale ne porte que sur le **texte de la fiche** et du registre, **aucune ligne de code de
+    production** (la story n'est pas développée) : la boucle se clôt selon la § *La passe ciblée*.
+  - **Trend de la validation** : P1 (Sonnet) 2 HIGH / 8 MEDIUM distincts → P2 (Opus) 0 HIGH / 9 MEDIUM →
+    P3 (Sonnet) 0 HIGH / 4 MEDIUM → P4 ciblée (Haiku) 0 HIGH / 1 MEDIUM / 5 LOW, remédiés au texte.
+    Modèles : Sonnet ↔ Opus pour les passes complètes, Haiku pour la seule passe ciblée (D6). Aucun
+    finding reclassé en dette.
+  - Grep de la valeur après remédiation (fiche) : `grep -nF 'ni Docker'` → seule cette entrée du Change
+    Log ; `grep -nF 'cinq messages'` → seule cette entrée ; `grep -nF '17 lignes'` → l'AC 4 (« 17 lignes
+    au grep brut », juste) et les entrées qui corrigent ; `grep -nF "plus, s'ils"` → 0.
+  - Story passée à `in-progress`.
 

@@ -270,7 +270,7 @@ le contexte, l'option retenue, les options écartées et la réversibilité. **M
 - **Retenu** : fonction **définie et exportée dans le sous-shell de chaque cas**, `FAUX_*` exportées dans
   ce sous-shell, `FAUX_SORTIE` toujours un fichier (vide pour S5), `SAUVEGARDE_*` désarmées puis posées par
   cas, `2>&1` ; assertion `type -t docker` = `file` après la section 0 ; `RECETTE_SECTION=0` joue la
-  section 0 seule (ni Docker ni `sqlx`) ; cas renommés **S1-S23**, dont six neufs : S18 (#619 réussi), S19
+  section 0 seule (ni Docker ni `sqlx` — **amendé par C-26-3-21** : ordre de `recette.sh` imposé pour que ce soit vrai) ; cas renommés **S1-S23**, dont six neufs : S18 (#619 réussi), S19
   (+ orphelin arrêté), S20 (image Kesh d'un autre service à l'arrêt), S21 (`dead`, image nue), S22 (#619
   seul, en marche → FILET avant la sortie sur zéro), S23 (image nue d'un autre service → FILET) ; huit
   mutations (O, F, F′, Z, I, R, D, T) aux cas rouges recomptés sur 23 cas ; motifs `est « running »` et
@@ -294,7 +294,21 @@ le contexte, l'option retenue, les options écartées et la réversibilité. **M
 ## C-26-3-20 — 26-3 (validation P3, F-12) : `<title>` au tiret long
 
 - **Retenu** : `{i18nMsg('bank-import-labels-page-title', …)} — Kesh` — majorité des titres lus par clé
-  (16 `} — Kesh` contre 8 `} - Kesh` sous `frontend/src/routes`, relevé P3).
+  (16 `} — Kesh` **dans un `<title>`** — 17 lignes au grep brut, dont une hors `<title>` — contre 8 `} - Kesh`
+  sous `frontend/src/routes`, relevé P3, précisé en P4 ciblée, L3).
 - **Écarté** : garder le tiret court d'origine (minorité, et sans la lecture par clé).
 - **Réversible** : oui.
 
+## C-26-3-21 — 26-3 (validation P4 ciblée, M1) : la section 0 tourne avant `openssl` et la trap qui appelle `docker`
+
+- **Contexte** : P4 ciblée (Haiku) — `recette.sh:25`-`:37` exécute `mktemp`, `openssl` et pose
+  `trap nettoyer EXIT` avant toute section ; `nettoyer` appelle le **vrai** `docker` (`rm -f`, `network rm`,
+  `run mariadb:10.11`, image tirée si absente), erreurs vers `/dev/null`. « `RECETTE_SECTION=0` sans
+  Docker » était vrai en résultat, faux en exécution. Vérifié par l'orchestrateur.
+- **Retenu** : ordre imposé — `mktemp` et une trap **minimale** `rm -rf "$W"`, puis la section 0 (sortie
+  en mode 0), puis `openssl`, garde `kesh-mariadb-dev`, `nettoyer` et `trap nettoyer EXIT`. Prérequis du
+  mode 0 écrits exactement (bash, coreutils, gzip, grep, awk ; ni docker, ni openssl, ni sqlx, ni python3).
+- **Écarté** : écrire le prérequis « tel quel » (docker appelé à la sortie) — la section 0 perdrait la
+  propriété qui la justifie (aucune dépendance à l'hôte) ; conditionner la trap par
+  `[ "${RECETTE_SECTION:-}" = 0 ] || trap …` — laisse `openssl` avant la section 0 et duplique le test.
+- **Réversible** : oui.
