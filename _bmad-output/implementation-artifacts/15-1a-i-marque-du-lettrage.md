@@ -180,6 +180,7 @@ recherche d'un tag publié dans l'intervalle telle que le script la fait). ⛔ �
 l'orchestrateur** : soit le script apprend le cas « déjà bumpé » (sauter l'étape 1, garder le
 pré-vol), soit la procédure manuelle est écrite dans la checklist de release — décision hors de
 cette story (C101).
+*(Levé par #566, C-566-1 : le script saute désormais le bump et exécute pré-vol et datation sur crates déjà bumpés — la procédure manuelle ci-dessus n'a plus lieu d'être.)*
 
 **Triage P7** : la dernière instruction est un `UPDATE` → le détecteur la voit
 (`post_restore.rs`, classement sur le premier mot-clé). Entrée **`EXEMPT_MIGRATIONS`**,

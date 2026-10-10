@@ -4510,6 +4510,8 @@ l'import (#458–#461).
   perishable_exemptions`, puis la recherche de tag dans l'intervalle). ⚠️ À trancher hors story (chore) :
   apprendre au script le cas « déjà bumpé » (sauter l'étape 1, garder le pré-vol), ou écrire la
   procédure manuelle dans la checklist de release.
+  ⇒ **Levé par #566 (C-566-1)** : le script saute le bump et exécute pré-vol et datation sur crates déjà
+  bumpés ; la procédure manuelle ci-dessus n'a plus lieu d'être.
 - **Écartées** : maintenir « pas de bump » (contraire au précédent et à la définition P1) ; bumper dans la
   15-1a2 seulement (la 15-1a aurait livré des colonnes qu'un ancien binaire ignore, et la 15-1a2 écrit déjà
   des données, P7 classe A) ; risque accepté sans bump (faux rattachement muet).
@@ -7883,7 +7885,8 @@ l'import (#458–#461).
   exige que **tous** les `crates/*/Cargo.toml` portent la version cible, sinon refus (bump partiel, contraire à
   P2-bis) ; (c) la régénération de `Cargo.lock` (`cargo check --offline`) tourne aussi quand le bump est sauté —
   idempotente ; (d) une section du CHANGELOG déjà datée n'est pas redatée et n'est pas un refus ; deux sections
-  `[X.Y.Z]` sont un refus ; (e) le test est un script shell (`scripts/tests/prepare-release.test.sh`) sur dépôts
+  `[X.Y.Z]` sont un refus, une date suivie d'un suffixe vaut datée ; (d-bis) une version dont le tag `vX.Y.Z`
+  existe est refusée — l'ancien refus de l'égalité tenait lieu de cette garde (revue P1, P1-E-1) ; (e) le test est un script shell (`scripts/tests/prepare-release.test.sh`) sur dépôts
   jetables avec un `cargo` factice en tête du PATH — aucune porte dérobée dans le script —, enveloppé par
   `crates/kesh-db/tests/prepare_release_script.rs` pour tourner au gate et en CI.
 - **Écartées** : option 2 de l'issue (procédure manuelle au CLAUDE.md : un filet qu'on peut sauter sans le savoir) ;

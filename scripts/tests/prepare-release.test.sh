@@ -33,7 +33,6 @@ export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.invalid
 
 BORNE=20260101000001
 EXEMPTEE=20260201000001
-TODAY=$(date +%Y-%m-%d)
 
 ECHECS=0
 CAS=0
@@ -96,10 +95,14 @@ run() {
     case "$dir" in "$WORK"/*) ;; *) echo "refus : $dir hors de $WORK" >&2; exit 2 ;; esac
     export STUB_LOG="$dir.cargo.log"
     : > "$STUB_LOG"
+    # La date se relève de part et d'autre de l'exécution : un passage à minuit
+    # en plein cas ne fait pas rougir le test (revue P1, P1-B-4 / P1-E-7).
+    DATE_AVANT=$(date +%Y-%m-%d)
     set +e
     OUT=$(PATH="$STUB_BIN:$PATH" bash "$dir/scripts/prepare-release.sh" "$version" 2>&1)
     RC=$?
     set -e
+    DATE_APRES=$(date +%Y-%m-%d)
 }
 
 expect_rc()       { [ "$RC" -eq "$1" ] && ok "code de sortie $1" || fail "code de sortie $RC, attendu $1"; }
@@ -113,6 +116,17 @@ expect_changelog() { # <dir> <version> <suffixe attendu> <nombre de sections att
     [ "$n" -eq "$4" ] && ok "$n section(s) [$2]" || fail "$n section(s) [$2], attendu $4"
     grep -qxF "## [$2] — $3" "$1/CHANGELOG.md" && ok "CHANGELOG : [$2] — $3" \
         || fail "CHANGELOG sans « ## [$2] — $3 »"
+}
+expect_dated_today() { # <dir> <version> — datée du jour de l'exécution, une seule section
+    if grep -qxF "## [$2] — $DATE_AVANT" "$1/CHANGELOG.md" \
+       || grep -qxF "## [$2] — $DATE_APRES" "$1/CHANGELOG.md"; then
+        ok "CHANGELOG : [$2] datée du jour"
+    else
+        fail "CHANGELOG : [$2] non datée du jour"
+    fi
+    local n
+    n=$(grep -cF "## [$2] — " "$1/CHANGELOG.md" || true)
+    [ "$n" -eq 1 ] && ok "1 section [$2]" || fail "$n sections [$2], attendu 1"
 }
 expect_version() { # <dir> <crate> <version>
     grep -qxF "version = \"$3\"" "$1/crates/$2/Cargo.toml" && ok "$2 à $3" \
@@ -140,7 +154,7 @@ expect_out "2 crates bumpés."
 expect_no_out "bump sauté"
 expect_version "$R" kesh-api 0.13.0
 expect_version "$R" kesh-core 0.13.0
-expect_changelog "$R" 0.13.0 "$TODAY" 1
+expect_dated_today "$R" 0.13.0
 grep -qF "cargo check --workspace --offline" "$STUB_LOG" && ok "Cargo.lock régénéré" || fail "cargo check non lancé"
 
 cas "déjà bumpé : bump sauté, pré-vol exécuté, CHANGELOG daté"
@@ -155,7 +169,7 @@ expect_out "aucun tag publié dans l'intervalle"
 expect_out "[1/3] Bump sauté"
 expect_version "$R" kesh-api 0.13.0
 expect_version "$R" kesh-core 0.13.0
-expect_changelog "$R" 0.13.0 "$TODAY" 1
+expect_dated_today "$R" 0.13.0
 grep -qF "cargo check --workspace --offline" "$STUB_LOG" && ok "Cargo.lock vérifié" || fail "cargo check non lancé"
 
 cas "relance après commit : idempotent (ne date pas deux fois, refait le pré-vol)"
@@ -214,6 +228,60 @@ new_repo "$R" 0.13.0 0.13.0 "## [0.9.0] — Non publié"
 run "$R" 0.9.0
 expect_rc 1
 expect_out "INFÉRIEURE"
+
+cas "version déjà TAGUÉE (déjà bumpée et datée) : refus, la version est publiée"
+R="$WORK/publiee"
+new_repo "$R" 0.13.0 0.13.0 "## [0.13.0] — 2026-10-01"
+git -C "$R" tag v0.13.0
+run "$R" 0.13.0
+expect_rc 1
+expect_out "le tag v0.13.0 existe déjà"
+expect_no_out "Release prep terminée"
+expect_clean "$R"
+
+cas "déjà bumpé, aucune exemption périssable : le pré-vol le dit"
+R="$WORK/sans-exemption"
+new_repo "$R" 0.13.0 0.13.0 "## [0.13.0] — Non publié"
+STUB_PERISSABLES="" run "$R" 0.13.0
+expect_rc 0
+expect_preflight
+expect_out "aucune exemption à fondement périssable au registre"
+expect_dated_today "$R" 0.13.0
+
+cas "section déjà datée avec suffixe : reconnue datée, non redatée"
+R="$WORK/suffixe"
+new_repo "$R" 0.13.0 0.13.0 "## [0.13.0] — 2026-10-01 (correctif)"
+run "$R" 0.13.0
+expect_rc 0
+expect_preflight
+expect_out "déjà datée en pré-vol : rien à écrire."
+expect_changelog "$R" 0.13.0 "2026-10-01 (correctif)" 1
+expect_clean "$R"
+
+cas "section ni « Non publié » ni datée : refus nommé"
+R="$WORK/indatee"
+new_repo "$R" 0.13.0 0.13.0 "## [0.13.0] — bientôt"
+run "$R" 0.13.0
+expect_rc 1
+expect_out "ni « Non publié » ni datée"
+expect_clean "$R"
+
+cas "aucune section [0.13.0] : refus"
+R="$WORK/absente"
+new_repo "$R" 0.13.0 0.13.0 "## [0.12.0] — Non publié"
+run "$R" 0.13.0
+expect_rc 1
+expect_out "introuvable dans CHANGELOG.md"
+expect_clean "$R"
+
+cas "sur main : refus"
+R="$WORK/main"
+new_repo "$R" 0.13.0 0.13.0 "## [0.13.0] — Non publié"
+git -C "$R" checkout -q main
+run "$R" 0.13.0
+expect_rc 1
+expect_out "tu es sur la branche 'main'"
+expect_clean "$R"
 
 cas "bump partiel (kesh-api à 0.13.0, kesh-core à 0.12.1) : refus"
 R="$WORK/partiel"
