@@ -123,7 +123,9 @@ le contexte, l'option retenue, les options écartées et la réversibilité. **M
 - **Retenu** : la story crée la section si elle n'existe pas (les 26-1 et 26-2 y écrivent aussi ;
   fusion par union au merge), entrées sous `### Corrigé`, plus une ligne « Action requise » pour
   l'exploitant Synology : re-télécharger `kesh-restore.sh` au tag de la version (`v0.13.1`), poser
-  `SAUVEGARDE_SERVICE` si son service ne s'appelle pas `kesh-api`.
+  `SAUVEGARDE_SERVICE` si son service ne s'appelle pas `kesh-api`, `SAUVEGARDE_RESEAU` s'il n'est pas sur
+  `frontend`, recréer le conteneur par `docker compose up --no-start` s'il a été supprimé (aligné sur
+  l'AC 11.1 en validation P3, R-L7).
 - **Amendé en validation P1 (R-9)** : au rebase, les entrées des trois stories se fusionnent par
   union sous **une seule** section `[0.13.1]` (`prepare-release.sh` refuse plus d'une section) ;
   contrôle `grep -c '^## \[0\.13\.1\] — ' CHANGELOG.md` = 1.
@@ -194,7 +196,7 @@ le contexte, l'option retenue, les options écartées et la réversibilité. **M
   d'autres compose du dépôt). Signal D5 déclaré.
 - **Retenu** (décision de l'orchestrateur, **sans découpage, par simplification**) : la section neuve
   (« 0 », avant la mise en place) n'emploie **aucun** vrai conteneur. Un faux `docker` rend des sorties
-  `docker ps --format` fabriquées (G1-G17 : service renommé, orphelin arrêté, `created`, `restarting`,
+  `docker ps --format` fabriquées (cas renommés **S1-S23** et complétés par C-26-3-18 ; à l'origine G1-G17 : service renommé, orphelin arrêté, `created`, `restarting`,
   `paused`, hors compose, ligne vide, ligne incomplète, cinq champs, deux projets, aucun conteneur, image
   Kesh sous un autre service, image par identifiant, image voisine, démon injoignable), journalise ses
   appels et **refuse** (code 97) toute autre sous-commande : aucune action sur une base n'est possible.
@@ -238,7 +240,10 @@ le contexte, l'option retenue, les options écartées et la réversibilité. **M
 
 - **Retenu** : `docs/i18n-glossaire.md:151`, colonne « précédent » : `Import bancaire CAMT.053` →
   `audit-log-entity-bank-imports` (Import bancaire / Bankimport / Importazione bancaria / Bank import) ;
-  les quatre termes ne changent pas. La colonne n'est pas une « valeur d'écran » mais l'attestation.
+  les quatre termes ne changent pas. **Justification corrigée en validation P3 (R-L3)** : l'en-tête du
+  glossaire dit que la colonne nomme la clé, mais ce bloc de lignes y porte des **valeurs d'écran**
+  (`Carnet d'adresses`, `Réconciliation`…). On écrit donc, dans le style des voisines, la valeur **et** la
+  clé : `Import bancaire` (`audit-log-entity-bank-imports`).
 - **Écarté** : y écrire la nouvelle valeur du titre (« Import de relevés bancaires »), qui n'atteste pas
   « import bancaire » — une attestation fausse dans le document qui sert à n'en pas avoir.
 - **Réversible** : oui.
@@ -252,5 +257,44 @@ le contexte, l'option retenue, les options écartées et la réversibilité. **M
   `<title>` lit `bank-import-labels-page-title` et l'`aria-label` lit `bank-import-labels-drop-zone` (clés
   existantes, coût nul, tenus par G20).
 - **Écarté** : « traductions de même sens » (à deviner) ; garder les deux textes en dur « assumés ».
+- **Réversible** : oui.
+
+## C-26-3-18 — 26-3 (validation P3, R-M2 = F-5/F-6, R-L1, R-L4 = F-7, F-4, R-L5) : le faux `docker` précisé, six cas neufs
+
+- **Contexte** : P3 (Sonnet, R 2M/9L, F 4M/8L) — la simplification tient (17 cas, 5 mutations exacts),
+  mais la fiche ne disait ni **où** la fonction est définie (définie au niveau du script, elle masquerait
+  le vrai `docker` pour la mise en place et la `trap nettoyer`, muette), ni que `FAUX_*` doivent être
+  exportées (sinon « unbound variable » sous `set -u`), ni comment jouer la section 0 seule ; aucun cas
+  PASSE n'exerçait le scénario #619 réussi (service renommé, réglé, arrêté) ; les noms `G14`-`G17` des cas
+  heurtaient ceux de gardes existantes.
+- **Retenu** : fonction **définie et exportée dans le sous-shell de chaque cas**, `FAUX_*` exportées dans
+  ce sous-shell, `FAUX_SORTIE` toujours un fichier (vide pour S5), `SAUVEGARDE_*` désarmées puis posées par
+  cas, `2>&1` ; assertion `type -t docker` = `file` après la section 0 ; `RECETTE_SECTION=0` joue la
+  section 0 seule (ni Docker ni `sqlx`) ; cas renommés **S1-S23**, dont six neufs : S18 (#619 réussi), S19
+  (+ orphelin arrêté), S20 (image Kesh d'un autre service à l'arrêt), S21 (`dead`, image nue), S22 (#619
+  seul, en marche → FILET avant la sortie sur zéro), S23 (image nue d'un autre service → FILET) ; huit
+  mutations (O, F, F′, Z, I, R, D, T) aux cas rouges recomptés sur 23 cas ; motifs `est « running »` et
+  `est « paused »` ajoutés aux lignes 153 et 162 de la section 4 réelle (R-L6), seule retouche des sections
+  réelles.
+- **Écarté** : faire du faux un exécutable (masqué par `kesh-restore.sh:54`, C-26-3-14) ; porter la section
+  0 dans le gate par un test Rust (R-L9) — non requis par les issues, **signalé au Project Lead**.
+- **Réversible** : oui.
+
+## C-26-3-19 — 26-3 (validation P3, F-9) : G14 lit `up`
+
+- **Contexte** : `docker compose up --no-start kesh-api` devient la voie unique de recréation ; G14 ne lit
+  pas `up` (verbes `exec|stop|start|restart|logs|pull|rm`).
+- **Retenu** : `up` ajouté aux verbes de G14, options longues admises ; inventaire préalable (6 lignes
+  nomment `kesh-api`, toutes hors sections Synology : vertes) ; mutation `up --no-start kesh` en section
+  Synology → rouge.
+- **Écarté** : une exigence textuelle dans G16 (f) seule — elle tiendrait la présence de la commande, pas
+  l'existence du service nommé.
+- **Réversible** : oui.
+
+## C-26-3-20 — 26-3 (validation P3, F-12) : `<title>` au tiret long
+
+- **Retenu** : `{i18nMsg('bank-import-labels-page-title', …)} — Kesh` — majorité des titres lus par clé
+  (16 `} — Kesh` contre 8 `} - Kesh` sous `frontend/src/routes`, relevé P3).
+- **Écarté** : garder le tiret court d'origine (minorité, et sans la lecture par clé).
 - **Réversible** : oui.
 
