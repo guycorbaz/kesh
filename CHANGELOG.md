@@ -20,7 +20,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 4. **Relire `.env`** : des lignes jusqu'ici sans effet en prennent un ([#550](https://github.com/guycorbaz/kesh/issues/550)), et le secret JWT ou le mot de passe administrateur laissés au gabarit font refuser le démarrage ([#557](https://github.com/guycorbaz/kesh/issues/557)).
 5. Sur Synology, mettre en place la sauvegarde par `kesh-dump.sh` (voir *Exploitation* ci-dessous).
 
-Une **installation à neuf**, base vide, n'est concernée que par les points 3 et 4 : choisir deux mots de passe MariaDB neufs et un secret JWT.
+Une **installation à neuf**, base vide, n'a ni retour en arrière à préserver ni `.env` antérieur à relire : elle prend le compose et `.env.example` au tag `v0.13.0` (point 2) ; avec `docker-compose.yml`, elle choisit deux mots de passe MariaDB neufs (point 3) et un secret JWT ; sur Synology (`docker-compose.prod.yml`, base désignée par `DATABASE_URL`), elle met en place la sauvegarde par `kesh-dump.sh` (point 5).
 
 ### Ajouté
 
