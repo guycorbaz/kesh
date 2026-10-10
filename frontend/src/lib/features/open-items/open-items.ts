@@ -90,6 +90,17 @@ export function openItemsHref(accountId: number, asOf: string): string {
 	return openItemsPath(accountId, asOf, null);
 }
 
+/**
+ * Story 15-1c-ii (AC9, C-15-1c-8) — les identifiants des comptes lettrables
+ * d'une liste de comptes, archivés compris : le Grand livre n'offre « Postes
+ * ouverts de ce compte » qu'à eux (un compte non lettrable rendrait 409).
+ */
+export function letterableAccountIds(
+	accounts: ReadonlyArray<{ id: number; letterable: boolean }>
+): Set<number> {
+	return new Set(accounts.filter((a) => a.letterable).map((a) => a.id));
+}
+
 /** Un seul constructeur des liens vers l'écran, dans l'ordre que lit `parseScreenState`. */
 function openItemsPath(accountId: number | null, asOf: string | null, group: string | null): string {
 	const q = new URLSearchParams();

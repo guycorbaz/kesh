@@ -174,10 +174,6 @@
 	);
 
 	/**
-	 * Le motif de modification n'est affiché que s'il dit autre chose que celui de
-	 * la contre-passation — deux fois la même phrase n'apprend rien.
-	 */
-	/**
 	 * Story 15-1c-ii (AC9, C-15-1c-9) — le code du groupe qui fige l'écriture,
 	 * quand c'est le motif : il devient un lien vers le groupe, où se fait le
 	 * délettrage. Nulle part ailleurs — un refus `ENTRY_LETTERED` d'un `PUT` ou
@@ -188,6 +184,10 @@
 		entry?.modificationBlockedBy === 'ENTRY_LETTERED' ? entry.modificationBlockedLabel : null
 	);
 
+	/**
+	 * Le motif de modification n'est affiché que s'il dit autre chose que celui de
+	 * la contre-passation — deux fois la même phrase n'apprend rien.
+	 */
 	let showModificationReason = $derived(
 		!!entry &&
 			!entry.modifiable &&

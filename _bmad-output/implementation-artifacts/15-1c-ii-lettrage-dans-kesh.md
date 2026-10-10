@@ -438,3 +438,30 @@ Rapport `/home/gcorbaz/devel/kesh-gate-logs/15-1c-validate-p4-F.md`. **0 MEDIUM 
 **réfuté** : F-3 (« sept : 11 au grain fin » non reproductible) — l'énumération des Dev Notes compte trois modules de
 logique, l'E2E et sept supports de texte (`kesh-i18n`, `docs/manual/fr` — brochure comprise —, `api-external.md`,
 `CHANGELOG.md`, `README.md`, `website/`, `i18n-keys.test.ts`) : 3 + 1 + 7 = 11. Aucun changement.
+
+### Revue de code P1 — 2026-10-10 (Sonnet 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
+
+**Prompt** : `15-1c-ii-review-prompt-p1.md` (diff `011ea618..d7437b38`). **Rapports** :
+`kesh-gate-logs/15-1c-ii-review-p1-{B,E,A}.md` — B **0 C / 0 H / 0 M / 3 L**, E **0 / 0 / 2 M / 4 L**, A **0 / 0 / 0 / 7 L**.
+Les trois déclarent leurs axes exercés et non exercés (non exercée : toute exécution, reprise ici). MEDIUM vérifiés au code :
+
+| finding | verdict |
+|---|---|
+| E-1 MEDIUM — le calcul de l'ensemble des comptes lettrables de la page des rapports n'est prouvé par rien (M3 tué à la vue seulement) | **confirmé et corrigé** : extrait en `letterableAccountIds` (`open-items.ts`), testé (archivé compris, liste vide) ; `openItemsHref` testé contre `parseScreenState`. Reste non prouvé : l'appel `fetchAccounts(true)` de la page, antérieur à la story |
+| E-2 MEDIUM = A-2 LOW — le manuel dit qu'une ligne « d'une pièce » n'a pas de case, transaction bancaire comprise ; le code lui en donne une (`blocks_manual_lettering` : `BankTransaction => false`, `open-items-labels.ts:114`) | **confirmé** (`grep -nF "Self::BankTransaction => false"`) et **corrigé** : pièces énumérées, et la ligne rapprochée d'une transaction bancaire a une case |
+| E-3 LOW — « le motif de sa fiche porte le code » : vrai seulement quand le lettrage est le motif | corrigé (manuel) |
+| A-3 LOW — codes « AA, AB… » | corrigé (« par exemple AB », manuel et CHANGELOG) |
+| A-4 LOW — l'export complet porte la clé et l'origine, pas le code | corrigé (`lettering_key`, `lettering_origin`) |
+| A-5 LOW — trois membres de phrase perdus à la fusion du CHANGELOG | rétablis (grand livre / fiche / balance âgée / relances ; `"supplierInvoice"` ; Balance en fin d'exercice) |
+| A-6 = B LOW-1 — JSDoc de `showModificationReason` détaché | corrigé (bloc `letteredBy` déplacé avant) |
+| A-7 LOW — l'en-tête « traduit » ne prouvait pas la clé | corrigé : le mock enregistre les clés, le test exige `journal-entries-column-lettering` |
+| B LOW-2 — tableau des rôles du manuel d'administration sans le lettrage | corrigé (ligne Comptable) |
+| B LOW-3 = E-4 (part) — `ENTRY_LETTERED` à libellé nul | test ajouté (texte, aucun lien vide) |
+| E-5 LOW — colonnes des totaux de la fiche non vérifiées | test étendu (Débit, Crédit, libellé, cellule vide de fin) |
+| E-4 (part) — compte archivé lettrable au Grand livre | couvert par `letterableAccountIds` (l'ensemble ne lit pas `active`) |
+| E-6 LOW — liens « Postes ouverts » au même nom accessible sur un Grand livre multi-comptes | **accepté** : chaque lien est dans l'en-tête de sa section, après le numéro et le nom du compte ; un `aria-label` à variable ajouterait une clé ×4 pour un gain faible |
+
+Grep du symptôme après patch (`AA}, \texttt{AB`, `porte le lettrage de chaque`, `ligne d'une pièce`, `motif de … fiche porte`) :
+`user-manual.tex:500` (sixième condition — les autres conditions y sont réunies, juste) et `:2044` (corrigé). Vitest
+**1284 → 1287** ; PDF utilisateur et administration régénérés (deux passes, 0 avertissement de référence). La remédiation
+touche du code de production (fiche, page des rapports, `open-items.ts`) : passe P2 complète due (Opus).

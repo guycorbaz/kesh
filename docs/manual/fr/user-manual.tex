@@ -1878,7 +1878,7 @@ une facture et son règlement, un acompte et sa reprise, une écriture et sa con
 Un lettrage est un \textbf{groupe de lignes d'un même compte}, dont la somme est
 \textbf{exactement nulle}~: les débits égalent les crédits, au centime. Il réunit
 \textbf{de 2 à 200 lignes}, et chaque ligne appartient à un groupe au plus. Kesh donne au
-groupe un \textbf{code} de lettres (\texttt{AA}, \texttt{AB}\ldots), qui s'affiche sur chacune
+groupe un \textbf{code} de lettres (par exemple \texttt{AB}), qui s'affiche sur chacune
 de ses lignes.
 
 Seuls se lettrent les comptes d'\textbf{actif} et de \textbf{passif} qu'\textbf{aucun compte
@@ -1962,7 +1962,9 @@ Cochez les lignes qui se soldent~: l'écran affiche leur nombre et leur somme, e
 nulle, dont \textbf{une au moins en période ouverte}~; sinon, il dit ce qui manque (l'écart, par
 exemple). La sélection survit au changement de page. Seules les lignes lettrables à la main
 ont une case~: une ligne déjà lettrée (son code est indiqué) ou une ligne d'une
-\textbf{pièce}, dont le lettrage suit la pièce et ses règlements, n'en ont pas. Une fois le
+\textbf{pièce} --- facture, avoir, facture fournisseur, règlement ---, dont le lettrage suit la
+pièce et ses règlements, n'en ont pas. Une ligne seulement \textbf{rapprochée d'une transaction
+bancaire}, elle, en a une~: la transaction ne la possède pas. Une fois le
 groupe posé, son code s'affiche, en lien vers le groupe, et ses lignes quittent la liste. Si
 une ligne a changé entre-temps (lettrée par quelqu'un d'autre, écriture modifiée ou
 supprimée), Kesh refuse, le dit, et recharge la liste~: rien n'a été lettré.
@@ -2034,11 +2036,15 @@ de ces gestes.
           \textbf{sur la facture} (règlement, ou rapprochement bancaire), qui la solde et la
           lettre --- et corrigez l'écriture manuelle, qui ferait sinon double emploi.
     \item \textbf{Le code n'est pas dans les exports CSV et PDF du Grand livre}~: il ne s'y
-          lit qu'à l'écran. L'export comptable complet, lui, porte le lettrage de chaque ligne
-          d'écriture (\texttt{journal\_entry\_lines.csv}).
+          lit qu'à l'écran. L'export comptable complet, lui, porte pour chaque ligne d'écriture
+          la clé et l'origine de son groupe (colonnes \texttt{lettering\_key} et
+          \texttt{lettering\_origin} de \texttt{journal\_entry\_lines.csv}).
     \item \textbf{Une écriture lettrée est figée}~: elle ne se modifie ni ne se supprime tant
-          qu'une de ses lignes est lettrée. Le motif de sa fiche porte le code du groupe, en
-          lien~: délettrez-la là, puis modifiez (\S\ref{sec:modifier-ecriture}).
+          qu'une de ses lignes est lettrée. Quand le lettrage est ce qui la retient --- une
+          écriture saisie à la main, d'un exercice ouvert ---, le motif de sa fiche porte le code
+          du groupe, en lien~: délettrez-la là, puis modifiez (\S\ref{sec:modifier-ecriture}).
+          Une écriture qu'une autre cause fige (pièce, contre-passation, période close) affiche
+          d'abord ce motif-là.
 \end{itemize}
 
 \subsubsection{La frontière avec la réconciliation, et les rôles}\label{sec:lettrage-frontiere}

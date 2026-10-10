@@ -20,8 +20,13 @@ vi.mock('$app/state', () => ({ page: { params: { id: '7' } } }));
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
 	i18nMsg: (_key: string, fallback: string) => fallback
 }));
+/** Les clés demandées par la page, pour prouver la clé et non le seul repli. */
+const keysAsked = vi.hoisted(() => new Set<string>());
 vi.mock('$lib/features/onboarding/onboarding.svelte', () => ({
-	i18nMsg: (_key: string, fallback: string) => fallback
+	i18nMsg: (key: string, fallback: string) => {
+		keysAsked.add(key);
+		return fallback;
+	}
 }));
 vi.mock('svelte-sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
@@ -135,6 +140,7 @@ describe('fiche d’écriture — colonne « Lettrage » (15-1c-ii, test 1)', ()
 			th.textContent?.trim()
 		);
 		expect(ths.at(-1)).toBe('Lettrage');
+		expect(keysAsked.has('journal-entries-column-lettering')).toBe(true);
 		// La cellule lettrée est la dernière de sa rangée.
 		const cell = screen.getByTestId('entry-line-lettering-1');
 		expect(cell.parentElement?.lastElementChild).toBe(cell);
@@ -150,6 +156,19 @@ describe('fiche d’écriture — colonne « Lettrage » (15-1c-ii, test 1)', ()
 			const rows = container.querySelectorAll('table tbody tr, table tfoot tr');
 			expect(rows.length).toBe(3);
 			for (const tr of rows) expect(span(tr)).toBe(headers);
+			// Les totaux tombent sous « Débit » et « Crédit », le libellé avant.
+			const ths = Array.from(container.querySelectorAll('table thead th')).map((th) =>
+				th.textContent?.trim()
+			);
+			const cols: string[] = [];
+			for (const td of Array.from(container.querySelector('table tfoot tr')!.children)) {
+				const n = Number(td.getAttribute('colspan') ?? '1');
+				for (let i = 0; i < n; i++) cols.push(td.textContent?.trim() ?? '');
+			}
+			expect(cols[ths.indexOf('Débit')]).toBe('100.00');
+			expect(cols[ths.indexOf('Crédit')]).toBe('100.00');
+			expect(cols[ths.indexOf('Débit') - 1]).toBe('Total');
+			expect(cols.at(-1)).toBe('');
 		});
 	}
 });
@@ -169,6 +188,19 @@ describe('fiche d’écriture — motif `ENTRY_LETTERED` (15-1c-ii, test 2)', ()
 		const a = reason.querySelector('a');
 		expect(a?.textContent).toBe('AB');
 		expect(a?.getAttribute('href')).toBe('/open-items?group=AB');
+	});
+
+	it('`ENTRY_LETTERED` sans code (libellé nul) : le motif reste du texte, sans lien vide', async () => {
+		await renderEntry(
+			entry({
+				modifiable: false,
+				modificationBlockedBy: 'ENTRY_LETTERED',
+				modificationBlockedLabel: null
+			})
+		);
+		const reason = screen.getByTestId('modification-blocked-reason');
+		expect(reason.textContent).toContain('Cette écriture est lettrée');
+		expect(reason.querySelector('a')).toBeNull();
 	});
 
 	it('les autres motifs restent du texte (pièce, exercice)', async () => {
