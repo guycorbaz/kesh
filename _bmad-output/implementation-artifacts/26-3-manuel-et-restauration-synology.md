@@ -1120,3 +1120,16 @@ mettrait dans le gate (observation P3 R-L9).
     découpage : le site est une regex de test, la remédiation ne touche aucune ligne de production
     (`kesh-restore.sh`, écrans, catalogues inchangés depuis `cf1316b3`). Suite : passe **ciblée** P3 (Haiku)
     sur le seul commit de remédiation P2.
+- 2026-10-11 — **Passe ciblée P3 remédiée** (Haiku, une lentille sur le seul commit `dfa821af` ; prompt
+  `26-3-review-prompt-p3-ciblee.md`, rapport `kesh-gate-logs/26-3-review-p3-ciblee.md`). **Bilan : 0H / 1M /
+  4L** ; aucune régression MEDIUM+ introduite par `dfa821af` (4 LOW). Le MEDIUM, **préexistant**, vérifié par
+  l'orchestrateur (`grep -nF 'done <<< "$LISTE"' kesh-restore.sh` → `:113`) :
+  - **P3-1** (G16 ne tenait pas l'alimentation de la boucle : `done < /dev/null` laissait G16 verte, la garde
+    refusant alors tout avec un message faux — fermée, mais morte) → la clause 7.5 exige
+    `LISTE=$(docker ps --all --format '…|…')` … `IFS='|' read` … `done <<< "$LISTE"`. Mutations :
+    `done < /dev/null` → 7.5 seule rouge ; (a) → 7.1 + 7.5 ; (e) → 7.5 seule (ensembles de l'AC 7.6 tenus).
+  - **LOW traités** : doc-comment de G14 (`down` présent au manuel sans service, `--tail=100` et `--since=1h`
+    nommés exactement) ; manuel : le rapprochement manuel et l'éclatement refusent « avec leur propre
+    message ». **Non traité** : P3-5 (prérequis du mode 0 de la fiche rangés autrement, même contenu).
+  - Remédiation : `configuration_transmise.rs` (test) et `user-manual.tex` (+ PDF) — **aucune ligne de code de
+    production**. Suite : passe ciblée P4 (Haiku) sur ce commit.

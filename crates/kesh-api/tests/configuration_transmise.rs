@@ -2668,10 +2668,11 @@ const EXEC_SYNOLOGY_ATTENDUS: usize = 0;
 /// `docker compose -p <projet> …` (le `-p` n'est pas reconnu comme option de
 /// la commande), une option à valeur (`stop -t 30 kesh-api` : `30` serait lu
 /// comme service ; de même une option longue à valeur séparée par une espace, `logs --tail
-/// 50 kesh-api` — faux positif **bruyant** : G14 rougirait, elle ne se tairait pas ; la forme
-/// `--tail=100` est lue depuis la revue de code P2 de la 26-3, deux lignes du manuel
-/// l'employant), `down`, `docker exec <conteneur>` — aucune dans le manuel au
-/// 2026-10-11 (vérifié par `grep -nE "docker compose [a-z]+ -"`). Les scripts Synology ne sont pas lus ici :
+/// 50 kesh-api` — faux positif **bruyant** : G14 rougirait, elle ne se tairait pas ; les
+/// formes `--tail=100` et `--since=1h`, qu'emploient deux lignes du manuel, sont lues depuis
+/// la revue de code P2 de la 26-3), `down` (le manuel l'écrit sans nom de service, deux
+/// fois au 2026-10-11 : rien à lire), `docker exec <conteneur>` — aucune autre forme non
+/// lue dans le manuel au 2026-10-11 (vérifié par `grep -nE "docker compose"`). Les scripts Synology ne sont pas lus ici :
 /// G16 garde leur réseau et leur service.
 #[test]
 fn les_services_cites_existent() {
@@ -3195,8 +3196,10 @@ fn synology_sauvegarde_la_base_par_le_dump() {
             r#"(?s)case "\$ETAT" in\s+exited\|created\|dead\)\s*;;\s*\*\)[^`]*?\bexit 1\s*;;\s*esac\b"#,
         ),
         (
-            "lecture à séparateur `|` : `--format` à champs séparés par `|`, boucle `IFS='|'` (26-3, AC 7.5)",
-            r#"(?s)--format '\{\{\.State\}\}\|\{\{\.Image\}\}\|\{\{\.Label "com\.docker\.compose\.service"\}\}\|\{\{\.Names\}\}'.*IFS='\|' read -r ETAT IMAGE SERVICE NOM RESTE\b"#,
+            "lecture à séparateur `|` : `LISTE=$(docker ps --all --format …|…)`, boucle `IFS='|'` alimentée par `<<< \"$LISTE\"` (26-3, AC 7.5)",
+            // La lecture alimente la boucle : `LISTE=$(docker ps …)` puis `done <<< "$LISTE"`
+            // (revue de code P3, P3-1 : une boucle alimentée par autre chose refuserait tout).
+            r#"(?s)LISTE=\$\(docker ps --all --format '\{\{\.State\}\}\|\{\{\.Image\}\}\|\{\{\.Label "com\.docker\.compose\.service"\}\}\|\{\{\.Names\}\}'\).*IFS='\|' read -r ETAT IMAGE SERVICE NOM RESTE\b.*done <<< "\$LISTE""#,
         ),
         (
             "la branche « service » de la garde ne compare pas au réglage SAUVEGARDE_SERVICE, n'en compte pas les conteneurs, ou ne refuse pas un état actif (26-3, revues P1 et P2)",
