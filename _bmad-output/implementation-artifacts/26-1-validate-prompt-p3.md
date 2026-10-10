@@ -62,7 +62,7 @@ dans un script qui n'imprime que `fichier:ligne: <catégorie>`, jamais la valeur
 
 - **R — Auditeur d'acceptation** : `.claude/skills/bmad-create-story/checklist.md` ; chaque phrase des deux issues,
   des décisions du Project Lead **et des arbitrages de l'orchestrateur** couverte par un AC testable ; chaque AC par une
-  tâche, chaque tâche par un test, chaque garde par une mutation (AC19, M1-M16) ; faits cités revérifiés au code ;
+  tâche, chaque tâche par un test, chaque garde par une mutation (AC19, M1-M16 *[sic — lire M1-M22 ; corrigé après la passe, R3-7, sans changer le reste du prompt exécuté]*) ; faits cités revérifiés au code ;
   décomptes de la fiche recomptés (21 AC, 22 mutations, bilan P1 de 20 lignes, bilan P2 de 20 lignes).
 - **F — Full-scope adversary** : la conception remédiée elle-même ; ce que le parseur ou la route laisse encore passer
   en silence ; ce que le manuel affirmerait de faux ; tests existants qui changent de sens ; ce que la remédiation a

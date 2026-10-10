@@ -108,10 +108,10 @@ Fiche : `26-1-import-csv-ubs-natif.md`. Choix faits à la création de la fiche 
   `bank-import-csv-errors-amount-sign-mismatch`), levé en mode séparé quand : la colonne Débit
   porte une valeur **négative** sous `positive`, ou **positive** sous `negative` ; la colonne
   Crédit porte une valeur **négative** (quel que soit le réglage). Zéro est accepté partout
-  (comportement existant `explicit_zero_debit_or_credit_accepted`). L'erreur suit le chemin des
-  autres erreurs de ligne (`PartialFailure`, import partiel sur confirmation).
+  (comportement existant `explicit_zero_debit_or_credit_accepted`). Une seule erreur de ce code
+  refuse **tout** le fichier, sans import partiel possible (C-26-1-15, *corps réécrit en P3*).
 - **Effet sur les profils existants** : un débit négatif sous le défaut, aujourd'hui inversé en
-  silence en encaissement, devient une erreur de ligne. C'est voulu : c'est précisément le
+  silence en encaissement, refuse désormais l'import. C'est voulu : c'est précisément le
   défaut #620 qui devient visible pour qui n'a pas réglé son profil.
 - **Écarté** : un simple avertissement (l'import passerait faux) ; accepter les deux signes en
   colonne Débit (retour à la déduction, contre la décision du PL).
@@ -234,7 +234,9 @@ l'orchestrateur repris tels quels ; les autres tranchés à la remédiation.
 - **Retenu** (arbitrage de l'orchestrateur, forme tranchée ici) : une méthode `CsvLineErrorCode::as_str()` à `match`
   exhaustif, testée égale à la sérialisation serde pour chaque variant ; plutôt que `serde_json::to_value` au site
   d'appel, parce qu'une `&'static str` ne peut pas échouer et qu'un variant neuf sans graphie ne compile pas. Les
-  panneaux affichent `i18nMsg(messageI18nKey, code)`. Changement de graphie des cinq codes existants au CHANGELOG
+  panneaux affichent le message traduit par une **table TS littérale** `CSV_LINE_ERROR_LABELS` (code → clé), famille
+  déclarée dans `MOTIFS_DYNAMIQUES` et site de gabarit dans `SITES_GABARIT_ATTENDUS` — jamais par
+  `messageI18nKey` lu à l'exécution, site non résolu pour `i18n-keys.test.ts` (*corps réécrit en P3*). Changement de graphie des cinq codes existants au CHANGELOG
   (`### Modifié`) ; `docs/api-external.md` ne les documente pas.
 - **Écarté** : garder le `Debug` et documenter `AMOUNTSIGNMISMATCH` (code illisible, divergent du serde déjà déclaré).
 - **Réversible** : non une fois publié (graphie d'API) ; aucun consommateur connu aujourd'hui.
@@ -248,10 +250,12 @@ l'orchestrateur repris tels quels ; les autres tranchés à la remédiation.
 - **Contexte** (F4) : en erreur de ligne confirmable, un fichier UBS sous le mauvais réglage s'importerait par la case
   « lignes valides quand même » réduit à ses crédits — dépenses absentes, solde faux, en silence : #620 par une autre
   porte.
-- **Retenu** (arbitrage de l'orchestrateur) : la décision vit dans `kesh-import` — `parse_csv_collect` collecte, puis
-  rend `HardFailure(CsvError::AmountSignMismatch { errors, total_errors, truncated })` dès qu'une ligne porte ce code ;
-  `kesh-api` → `422 BANK_CSV_AMOUNT_SIGN_MISMATCH`, message qui dit de régler le sens des débits, preview et import,
-  `confirmPartialImport` sans effet ; l'écran n'offre pas la case.
+- **Retenu** (arbitrage de l'orchestrateur ; *corps réécrit en P3*) : la décision vit dans `kesh-import` —
+  `parse_csv_collect` tient un compteur `sign_total` et un vecteur `sign_errors` **propres au signe**, indépendants
+  du plafond général, et rend `HardFailure(CsvError::AmountSignMismatch { errors, total_errors, truncated,
+  whole_debit_column })` dès que `sign_total > 0` ; `kesh-api` → `422 BANK_CSV_AMOUNT_SIGN_MISMATCH`, en preview et en
+  import, `confirmPartialImport` sans effet ; deux messages selon `whole_debit_column` (C-26-1-23, C-26-1-25) ; l'écran
+  liste les lignes en cause et n'offre pas la case.
 - **Écarté** : refus dans la route seulement (un autre appelant de `kesh-import` hériterait de l'erreur confirmable) ;
   avertissement « majorité des lignes » (seuil arbitraire, une seule ligne inversée est déjà une erreur comptable).
 - **Réversible** : oui.
@@ -331,3 +335,42 @@ l'orchestrateur repris tels quels.
   worktree reconstruites, P8), la ligne `sha384` est recalculée **dans le même commit**, et le Change Log le dit.
   L'immuabilité vaut à partir de la publication (merge, puis release).
 - **Réversible** : sans objet.
+
+### Validation P3 de la 26-1 (2026-10-11) — choix de la remédiation
+
+Rapports : `/home/gcorbaz/devel/kesh-gate-logs/26-1-validate-p3-{R,F}.md` (Sonnet). Arbitrages (1) et (2) de
+l'orchestrateur repris tels quels.
+
+### C-26-1-25 — `whole_debit_column` : définition fermée, et jamais vrai pour un seul débit
+
+- **Contexte** (R3-2 = F3-2, F3-4) : la définition « toutes les valeurs non nulles de la colonne Débit » ne disait ni
+  quelles lignes comptent, ni d'où l'information sort de `parse_row` ; et un fichier à un seul débit en défaut recevait
+  le conseil de changer le réglage — qui, suivi, importerait un remboursement comme une dépense, en silence.
+- **Retenu** (arbitrage de l'orchestrateur) : parmi les lignes dont le montant Débit a été **lu**, `d` = débits non
+  nuls, `e` = ceux en défaut de signe ; `whole_debit_column ⇔ d ≥ 2 et e = d`. Les lignes en échec avant le montant et
+  un débit illisible sont hors des deux comptes ; une erreur de signe de la colonne Crédit compte dans `sign_total`
+  seulement. L'information sort de `parse_row` par un type de retour interne `RowParse { result, debit:
+  DebitObservation }` — rien n'est ajouté à `CsvLineError` (public, sérialisé). Cas limites fixés par test.
+- **Écarté** : un champ « colonne » dans `CsvLineError` (changement d'API) ; relire les cellules dans la boucle
+  (duplication de `parse_row`) ; `d ≥ 1` (le cas du remboursement isolé).
+- **Réversible** : oui.
+
+### C-26-1-26 — `migrations_upgrade_path.rs` réutilise `common::migrations_before`
+
+- **Contexte** (R3-5) : la remédiation P2 faisait écrire une fonction locale `index_of_migration`, doublon de
+  `common::migrations_before` (règle DRY du dépôt).
+- **Retenu** : `#[allow(dead_code)] mod common;` (l'attribut, sur la seule déclaration, couvre
+  `common::apply_migrations_up_to`, inutilisée dans ce fichier) et appel qualifié `common::migrations_before(…)` ; la
+  fonction locale `apply_migrations_up_to`, qui porte la garde de frontière, reste.
+- **Écarté** : la fonction locale (doublon) ; supprimer la locale au profit de celle de `common` (perte de la garde de
+  frontière et de son message).
+
+### C-26-1-27 — Le manuel : quatre sections à la 26-1, la procédure d'import à la 26-3
+
+- **Contexte** (R3-1 = F3-1) : la remédiation P2 (arbitrage (4), F2-13) faisait réécrire par la 26-1 la § « Import avec
+  un profil existant », que la 26-3 réécrit déjà (AC 2.1 de sa fiche) d'après l'écran réel, autrement.
+- **Retenu** (arbitrage de l'orchestrateur) : la 26-1 ne la touche pas ; elle tient « Profils banque », la sous-section
+  « Le relevé CSV d'UBS », « Rejet partiel » et « Détection des doublons » (que la 26-3 ne touche pas — vérifié en
+  lecture dans sa branche le 2026-10-11). Le refus de signe dit « réglez le sens des débits du profil, puis redéposez le
+  fichier », et la sous-section UBS renvoie à la procédure de la 26-3.
+- **Réversible** : oui.
