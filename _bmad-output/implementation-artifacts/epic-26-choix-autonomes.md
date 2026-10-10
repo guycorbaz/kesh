@@ -136,12 +136,13 @@ Fiche : `26-1-import-csv-ubs-natif.md`. Choix faits à la création de la fiche 
 - **Contexte** : le lecteur `csv` (csv-core 0.1.13, `reader.rs` l. 94) ignore les lignes **vides**
   (sans espace) avant de produire un enregistrement ; le saut d'en-tête compte des
   **enregistrements**. Les numéros de ligne rapportés (`Position::line`) comptent, eux, chaque
-  `\n` : ils sont **physiques**, lignes vides comprises.
+  `\n` — mais la position est posée **avant** la lecture (cf. C-26-1-16).
 - **Retenu** : le réglage compte les **lignes non vides avant les données, ligne de titres
   comprise** — c'est le comportement actuel, documenté au lieu d'être changé. Fichier UBS :
   **9** (huit lignes d'informations + les titres ; la ligne vide ne compte pas). Le libellé, le
-  texte d'aide et le manuel le disent. Les numéros de ligne des erreurs restent physiques (ceux
-  d'un éditeur de texte), et un test le fixe sur la fixture.
+  texte d'aide et le manuel le disent. Les numéros de ligne des erreurs : sémantique du lecteur,
+  fixée par test et documentée (C-26-1-16 — un enregistrement qui suit une ligne vide est rapporté
+  au numéro de cette ligne vide).
 - **Écarté** : compter les lignes physiques (il faudrait lire le fichier deux fois ou
   renoncer au saut par le lecteur, et la ligne vide d'UBS serait comptée par les uns et pas par
   les autres) ; détecter la ligne de titres (écarté par le PL).
@@ -150,6 +151,9 @@ Fiche : `26-1-import-csv-ubs-natif.md`. Choix faits à la création de la fiche 
 
 ### C-26-1-8 — Garde contre le surcomptage : une ligne ignorée qui porte une date est refusée
 
+> ⚠️ **Amendé par C-26-1-16** (validation P2, R2-6/F2-8) : le numéro donné par `HeaderSkipsData { line }` suit la
+> sémantique du lecteur, non le numéro physique ; et par **C-26-1-17** : angle mort d'une ligne avalée non datée.
+
 - **Contexte** : compter **trop peu** de lignes est bruyant (la ligne de titres arrive en
   données et rend une erreur `INVALID_DATE`). Compter **trop** est muet : la ou les premières
   transactions disparaissent sans un mot. Avec un préambule de neuf lignes et une ligne vide
@@ -157,7 +161,7 @@ Fiche : `26-1-import-csv-ubs-natif.md`. Choix faits à la création de la fiche 
 - **Retenu** : quand `header_row_count ≥ 1`, si la **dernière ligne ignorée** porte, à l'index
   `column_mapping.date`, une valeur que `date_format` lit comme une date, le parseur refuse
   l'import : nouvelle variante `CsvError::HeaderSkipsData { line }` → `422
-  BANK_CSV_HEADER_SKIPS_DATA`, message traduit qui donne le numéro de ligne physique. Ce
+  BANK_CSV_HEADER_SKIPS_DATA`, message traduit qui donne le numéro de la ligne (sémantique C-26-1-16). Ce
   n'est **pas** une détection de la ligne de titres : le nombre reste celui du profil, la garde
   ne fait que refuser un nombre manifestement trop grand.
 - **Écarté** : rien faire (perte muette) ; avertir sans refuser (l'import passe amputé).
@@ -221,6 +225,10 @@ l'orchestrateur repris tels quels ; les autres tranchés à la remédiation.
 
 ### C-26-1-14 — Le code d'erreur de ligne sort sous sa graphie canonique, et l'écran en affiche le message
 
+> ⚠️ **Amendé en validation P2** (F2-2, arbitrage (5)) : l'écran ne lit pas `messageI18nKey` (site non résolu pour
+> `i18n-keys.test.ts`) mais une table TS littérale code → clé, `CSV_LINE_ERROR_LABELS`, famille déclarée dans
+> `MOTIFS_DYNAMIQUES`.
+
 - **Contexte** (F1 HIGH, R-2) : `csv_line_error_to_payload` émet `format!("{:?}").to_uppercase()` (`INVALIDDATE`) ;
   le panneau n'affiche que ce code, `messageI18nKey` n'est lu nulle part — le signalement de #620 serait illisible.
 - **Retenu** (arbitrage de l'orchestrateur, forme tranchée ici) : une méthode `CsvLineErrorCode::as_str()` à `match`
@@ -232,6 +240,10 @@ l'orchestrateur repris tels quels ; les autres tranchés à la remédiation.
 - **Réversible** : non une fois publié (graphie d'API) ; aucun consommateur connu aujourd'hui.
 
 ### C-26-1-15 — `AMOUNT_SIGN_MISMATCH` refuse l'import entier, sans confirmation possible
+
+> ⚠️ **Précisé en validation P2** (R2-1 = F2-1, arbitrage (1)) : la décision porte sur un compteur **propre au signe**
+> (`sign_total`), indépendant du plafond de 100 erreurs collectées ; et par **C-26-1-23** (extourne, deux messages,
+> liste des lignes à l'écran).
 
 - **Contexte** (F4) : en erreur de ligne confirmable, un fichier UBS sous le mauvais réglage s'importerait par la case
   « lignes valides quand même » réduit à ses crédits — dépenses absentes, solde faux, en silence : #620 par une autre
@@ -291,3 +303,31 @@ l'orchestrateur repris tels quels ; les autres tranchés à la remédiation.
 
 - **Retenu** (R-5, F8) : noms et motifs de nom de fichier distincts ; la même fixture téléversée sous un autre nom par
   `setInputFiles({ name, mimeType, buffer })` — aucune copie versionnée, aucune dépendance d'ordre.
+
+### Validation P2 de la 26-1 (2026-10-10) — choix de la remédiation
+
+Rapports : `/home/gcorbaz/devel/kesh-gate-logs/26-1-validate-p2-{R,F}.md` (Opus). Arbitrages (0) à (5) de
+l'orchestrateur repris tels quels.
+
+### C-26-1-23 — L'extourne isolée bloque aussi ; le message dit quoi faire selon le cas
+
+- **Contexte** (F2-5) : un crédit écrit en négatif (encaissement contre-passé) ou, sous `negative`, un débit écrit en
+  positif a un sens non ambigu ; le refus non confirmable de C-26-1-15 bloque pourtant tout le relevé.
+- **Retenu** (arbitrage de l'orchestrateur : sécurité d'abord) : le refus reste **bloquant** même pour une ligne
+  isolée. La conséquence est **écrite** (fiche, manuel, CHANGELOG) : un tel relevé ne s'importe pas tel quel dans cette
+  version. Le relevé réel de Guy n'en contient aucune (structure relevée le 2026-10-10, sans chiffre). Le refus porte
+  `whole_debit_column` : si **toutes** les valeurs non nulles de la colonne Débit sont en défaut, le message dit
+  « réglez le sens des débits du profil » ; sinon il dit qu'il s'agit d'une ou de quelques lignes (une extourne, par
+  exemple) et l'écran **liste** les lignes en cause (arbitrage (2)).
+- **Écarté** : rendre l'extourne isolée confirmable, ou bloquer seulement au-delà d'une majorité (seuil arbitraire ;
+  une ligne de mauvais signe peut aussi être un mauvais réglage sur un fichier à un seul débit).
+- **Réversible** : oui — un assouplissement ultérieur (story dédiée, issue si le cas se présente) n'enlève rien.
+
+### C-26-1-24 — La ligne `migrations.sha384` suit le fichier jusqu'au merge
+
+- **Contexte** (F2-12) : le registre des checksums dit qu'une migration inscrite « ne se modifie jamais » ; la boucle
+  de revue de code peut pourtant demander de retoucher la migration avant le merge.
+- **Retenu** : tant que la branche n'est pas fusionnée, une retouche de la migration est **délibérée** (bases du
+  worktree reconstruites, P8), la ligne `sha384` est recalculée **dans le même commit**, et le Change Log le dit.
+  L'immuabilité vaut à partir de la publication (merge, puis release).
+- **Réversible** : sans objet.

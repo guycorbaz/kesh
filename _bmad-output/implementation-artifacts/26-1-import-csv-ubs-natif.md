@@ -3,8 +3,9 @@
 ## Status
 
 **ready-for-dev** — fiche créée le 2026-10-10 en autonomie (skill `bmad-create-story`) ; **validation P1 (Sonnet
-R/F : 1 HIGH, 7 MEDIUM, 12 LOW, après dédoublonnage) remédiée** le 2026-10-10 ; validation P2 (Opus R/F) à suivre
-(prompt `26-1-validate-prompt-p2.md`). Choix tranchés : **C-26-1-1 à C-26-1-22**, registre
+R/F : 1 HIGH, 7 MEDIUM, 12 LOW, après dédoublonnage) remédiée** le 2026-10-10 ; **validation P2 (Opus R/F : 5 MEDIUM,
+14 LOW distincts) remédiée** le 2026-10-10 ; validation P3 (Sonnet R/F, passe complète) à suivre (prompt
+`26-1-validate-prompt-p3.md`). Choix tranchés : **C-26-1-1 à C-26-1-24**, registre
 `_bmad-output/implementation-artifacts/epic-26-choix-autonomes.md`.
 
 **Issues** : [#620](https://github.com/guycorbaz/kesh/issues/620) (P1, erreur comptable) et
@@ -105,23 +106,49 @@ code, l'import **entier** est refusé — la case « importer les lignes valides
 s'applique pas** à cette erreur. Motif : sous le mauvais réglage, les seuls montants « valides » sont ceux de l'autre
 colonne ; les importer seuls reproduirait #620 (des dépenses absentes, un solde faux, en silence).
 
-- `kesh-import` : `parse_csv_collect` continue de **collecter** toutes les erreurs de ligne (plafond
-  `MAX_CSV_LINE_ERRORS`), puis, si au moins une est `AmountSignMismatch`, rend
-  `ParseCsvOutcome::HardFailure(CsvError::AmountSignMismatch { errors, total_errors, truncated })` — nouvelle variante
-  documentée, où `errors` ne garde **que** les erreurs de signe (les autres erreurs de ligne du même fichier ne sont
-  pas rapportées : régler le profil d'abord) et `total_errors` les compte toutes (de signe). `parse_csv` (wrapper) rend
-  la même `Err`. La décision vit dans `kesh-import`, pas dans la route : tout appelant en hérite.
+⛔ **Bloquante aussi pour une extourne isolée** (F2-5, arbitrage de l'orchestrateur, C-26-1-23) : un crédit négatif
+(encaissement contre-passé) ou, sous `Negative`, un débit positif (paiement remboursé) a pourtant un sens non ambigu.
+Il bloque quand même le relevé entier — sécurité d'abord. **Conséquence assumée et écrite** (fiche, manuel,
+CHANGELOG) : un relevé qui porte une seule telle ligne **ne s'importe pas tel quel** dans cette version. Le relevé réel
+de Guy n'en contient aucune au 2026-10-10 (structure relevée, sans chiffre). Si le cas se présente, une issue suivra.
+
+- `kesh-import` — **compteur et vecteur propres au signe** (R2-1 = F2-1, arbitrage (1)) : `parse_csv_collect` tient,
+  **indépendamment** du vecteur général plafonné et de son compteur, `sign_total: usize` (toutes les erreurs de signe
+  du fichier) et `sign_errors: Vec<CsvLineError>` plafonné à `MAX_CSV_LINE_ERRORS`, alimentés à chaque erreur de
+  signe **avant** et **quel que soit** l'état du plafond général. La décision porte sur **`sign_total > 0`**, jamais
+  sur le vecteur général écrêté (qui peut avoir été rempli par 100 erreurs d'une autre nature avant la première de
+  signe). Si `sign_total > 0`, `parse_csv_collect` rend
+  `ParseCsvOutcome::HardFailure(CsvError::AmountSignMismatch { errors: sign_errors, total_errors: sign_total,
+  truncated: sign_total > MAX_CSV_LINE_ERRORS, whole_debit_column })` — nouvelle variante documentée : les autres
+  erreurs de ligne du même fichier ne sont pas rapportées (régler le profil d'abord) ; `whole_debit_column` vaut
+  `true` si **toutes** les valeurs non nulles de la colonne Débit du fichier sont en défaut de signe (au moins une) —
+  le symptôme d'un mauvais réglage, le seul que le profil corrige. `parse_csv` (wrapper) rend la même `Err`. La décision
+  vit dans `kesh-import`, pas dans la route : tout appelant en hérite.
+- **Préséances** (R2-9, F2-11) : (1) `EncodingMismatch` d'abord — il sort avant toute lecture de ligne
+  (`parser.rs` l. ≈ 137-146) ; en import sans `confirmEncodingMismatch` il l'emporte, et le refus de signe n'apparaît
+  qu'au passage suivant ; en aperçu, la nouvelle tentative forcée (`bank_imports.rs` l. ≈ 1644-1661) rend le refus de
+  signe et l'avertissement d'encodage n'est plus montré — comportement accepté, écrit ici ; (2) puis le signe ;
+  (3) puis les autres erreurs de ligne. Sur **une même** ligne, `parse_row` lit la date avant le montant : une date
+  illisible rend `INVALID_DATE` et le signe de cette ligne n'est pas examiné.
 - `kesh-api` : bras **explicite** dans `map_csv_error` → `AppError::BankCsvAmountSignMismatch { lines, total_errors,
-  truncated }` → **`422 BANK_CSV_AMOUNT_SIGN_MISMATCH`**, message traduit `bank-import-csv-errors-amount-sign-refused`
-  (argument `{ $count }` : « { $count } ligne(s) portent un montant de signe contraire à leur colonne. Réglez le sens
-  des débits du profil (Administration → Profils bancaires), puis importez à nouveau. »), `details: { lines: [ … ],
-  totalErrors, truncated }` (même forme de ligne que `BANK_CSV_PARSE_PARTIAL_FAILURE`, via
-  `csv_line_error_to_payload`). Rendu **en preview comme en import**, que `confirmPartialImport` vaille `true` ou
-  `false` — les deux chemins testés (AC15).
-- Écran (`BankImportUpload.svelte`) : le panneau d'erreur existant (`data-testid="bank-import-error"`,
-  `data-error-code`) montre le message ; **aucune case de confirmation** n'est offerte pour ce code (vérifier que le
-  panneau ne la dérive pas de la présence de `details.lines`). Si le panneau d'erreur liste déjà `details.lines` pour
-  `BANK_CSV_PARSE_PARTIAL_FAILURE`, il les liste aussi ici avec leur message traduit (AC3-bis).
+  truncated, whole_debit_column }` → **`422 BANK_CSV_AMOUNT_SIGN_MISMATCH`**, `details: { lines: [ … ], totalErrors,
+  truncated, wholeDebitColumn }` (même forme de ligne que `details.lines` de `BANK_CSV_PARTIAL_FAILURE` — variant
+  `AppError::BankCsvParsePartialFailure` —, via `csv_line_error_to_payload`). **Deux messages** (C-26-1-23) :
+  - `wholeDebitColumn = true` → `bank-import-csv-errors-amount-sign-refused-profile` (sans argument) : « Tous les
+    débits du fichier ont un signe contraire au réglage du profil. Réglez le sens des débits du profil (Administration
+    → Profils bancaires), puis importez à nouveau. » ;
+  - sinon → `bank-import-csv-errors-amount-sign-refused-lines`, `{ $count }` : « { $count } ligne(s) portent un
+    montant de signe contraire à leur colonne (une extourne, par exemple) : ce relevé ne peut pas être importé tel
+    quel dans cette version. Les lignes en cause sont listées ci-dessous. »
+  Rendu **en preview comme en import**, que `confirmPartialImport` vaille `true` ou `false` — les deux chemins testés
+  (AC15).
+- Écran (`BankImportUpload.svelte`, R2-2 = F2-4, arbitrage (2)) : aujourd'hui le panneau d'erreur
+  (`data-testid="bank-import-error"`, l. ≈ 273-282) n'affiche que `errorMessage` et ne lit pas `details` (porté par
+  `api-client.ts` l. ≈ 243). Pour `errorCode === 'BANK_CSV_AMOUNT_SIGN_MISMATCH'`, il garde `details` dans l'état du
+  composant et **liste les lignes en cause** — numéro et message traduit par ligne (AC3-bis), valeur — sous le message
+  global, avec la mention de troncature si `truncated` (`data-testid="bank-import-error-line"` par ligne). **Aucune
+  case de confirmation** n'est offerte pour ce code (la case actuelle dépend de `preview.warnings.invalidLines`,
+  l. ≈ 190, 409-456, jamais d'un 422 — le garder ainsi).
 
 ⚠️ **Changement de comportement assumé** : sous le défaut `Positive`, un débit négatif — aujourd'hui inversé en
 silence — refuse désormais l'import. C'est #620 rendu visible à qui n'a pas réglé son profil. Le doc-comment de
@@ -138,9 +165,23 @@ C-26-1-14).** Aujourd'hui `csv_line_error_to_payload` (`routes/bank_imports.rs` 
   `ROW_TOO_SHORT`, `AMOUNT_SIGN_MISMATCH`) ; `csv_line_error_to_payload` l'emploie. Un test unitaire vérifie, **pour
   chaque variant**, que `as_str()` égale `serde_json::to_value(code)` (les deux graphies ne peuvent plus diverger) ;
   un test d'intégration (AC15) asserte la valeur exacte `details.lines[0].code` sur le fil.
-- Le panneau des lignes invalides (aperçu, `warnings.invalidLines`) **et** celui d'AC3 affichent, pour chaque ligne,
-  `i18nMsg(line.messageI18nKey, line.code)` à côté du code. Les en-têtes en dur du tableau (« Ligne », « Code »,
-  « Valeur ») restent hors périmètre.
+- Le panneau des lignes invalides (aperçu, `warnings.invalidLines`) **et** la liste du refus de signe (AC3)
+  affichent, pour chaque ligne, le **message traduit** à côté du code — **par une table TS littérale**, pas par
+  `i18nMsg(line.messageI18nKey, …)` (F2-2, arbitrage (5)) : un `i18nMsg(` dont la clé n'est pas littérale est un
+  **site non résolu** pour `frontend/src/lib/shared/i18n-keys.test.ts` (l. ≈ 797, 942-950), qui interdit de
+  simplement le recompter. Nouveau module `frontend/src/lib/features/bank-import/csv-line-error-label.ts`, patron de
+  `imported-supplier-invoices/error-label.ts` : `export const CSV_LINE_ERROR_LABELS: Record<string, [string,
+  string]>` (code → `[suffixe, repli français]`, six entrées : `invalid-date`, `invalid-amount`,
+  `ambiguous-debit-credit`, `empty-mandatory-field`, `row-too-short`, `amount-sign-mismatch`) et
+  `csvLineErrorLabel(code)` → `i18nMsg(\`bank-import-csv-errors-${suffixe}\`, repli)`, repli sur le code brut pour un
+  code inconnu. Dans `i18n-keys.test.ts` : la famille `bank-import-csv-errors-` déclarée dans `MOTIFS_DYNAMIQUES`
+  (l. ≈ 580) avec ses six suffixes, `CARDINALITES` (l. ≈ 639) à **6**, et le site relais dans la liste des relais
+  (patron l. ≈ 718) ; puis **recompte honnête** de `ATTENDU` (`sitesTotal`, `sitesNonResolus`, `relais`,
+  `sitesGabarit`, l. ≈ 553-554) mesuré au test, **chaque** nombre changé avec sa ligne d'historique « Story 26-1 :
+  … » (patron des lignes l. ≈ 393-540) — jamais un nombre ajusté pour faire passer. `messageI18nKey` reste sur le
+  fil (champ de l'API), il n'est simplement pas lu par l'écran. Un Vitest `csv-line-error-label.test.ts` (patron
+  `reminder-error-label.test.ts`) : chaque code rend sa clé ; code inconnu → code brut. Les en-têtes en dur du
+  tableau (« Ligne », « Code », « Valeur ») restent hors périmètre.
 - **Changement d'API visible** : les cinq codes existants changent de graphie dans `warnings.invalidLines.lines[].code`
   et `details.lines[].code`. Vérifié le 2026-10-10 : aucun consommateur dans le dépôt
   (`grep -rnE "INVALIDDATE|INVALIDAMOUNT|AMBIGUOUSDEBIT|EMPTYMANDATORY|ROWTOOSHORT" crates frontend docs` → 0 hors
@@ -245,18 +286,25 @@ Garde-fous de la § *Migration breaking policy*, tous à exécuter :
   la 26-2 recomptera à son rebase (R-11, F13).
 - **Registre des checksums `crates/kesh-db/migrations.sha384`** (R-3) : ajouter la ligne
   `20261011000001 <sha384sum du fichier>` (format des lignes existantes ; calcul : `sha384sum <fichier> | cut -d' '
-  -f1`), **après la dernière modification du fichier** — l'y inscrire, c'est le déclarer publié (P8) ; le test
+  -f1`), **après la dernière modification du fichier** — l'y inscrire, c'est le déclarer publié (P8) ; ⚠️ **jusqu'au
+  merge, la ligne suit le fichier** (F2-12, C-26-1-24) : si la boucle de revue de code retouche la migration, la
+  retouche est **délibérée** (bases du worktree reconstruites, P8), la ligne `sha384` est **recalculée dans le même
+  commit**, et le Change Log le dit — l'en-tête du registre (« ne se MODIFIE jamais ») vaut pour une migration publiée,
+  pas pour une branche non fusionnée ; le test
   `published_migrations_keep_their_checksums` (`test_schema_guard.rs` ≈ l. 562, 648-654) rougit sinon. Au rebase de la
   26-2 : deux lignes, union.
 - **P6** : `grep -rn "migrations.len()\|apply_migrations_up_to" crates/` et inspection de chaque site
   (`crates/kesh-db/tests/migrations_upgrade_path.rs`, `lettering_documents_backfill.rs`,
   `audit_log_company_id_backfill.rs`, `common/mod.rs`) ; un site positionnel sans garde fail-loud est un MEDIUM.
+  **Inventaire complet** (R2-5, F2-7) : `grep -nE "\b(44|78)\b" crates/kesh-db/tests/migrations_upgrade_path.rs`
+  et **trier chaque occurrence** (au 2026-10-10 : l. ≈ 38, 40, 57-58, 107, 110-111, 115, 123, 130, 133, 185, 192, 195,
+  264 — commentaires, doc-comment, message d'`assert!` et code) ; `common/mod.rs` n'en contient **aucune**.
   **Deux littéraux nommés, à bouger du même pas** (F6/R-4) dans `crates/kesh-db/tests/migrations_upgrade_path.rs` :
   `assert_eq!(total, 78, …)` (l. ≈ 110, et son message « 78 migrations attendues … ») → **79**, et
   `let n_before_upgrade_window = total - 44;` (l. ≈ 194, et `.expect("apply_migrations_up_to(total - 44) failed")`)
   → **`total - 45`**, frontière **inchangée** (79 − 45 = 34) ; une ligne d'historique au commentaire (« Story 26-1 :
-  44 → 45, frontière inchangée (79 - 45 = 34) ») et le texte du `assert!` de `common/mod.rs` (l. ≈ 36-46 : `total -
-  44`, `total == 78`) suivent. Bumper `total` seul ferait glisser la frontière et rougir sur `COUNT(accounts)`, échec
+  44 → 45, frontière inchangée (79 - 45 = 34) ») et le texte de l'`assert!` de la fonction **locale**
+  `apply_migrations_up_to` de `migrations_upgrade_path.rs` (l. ≈ 34-46 : `total - 44`, `total == 78`) suivent. Bumper `total` seul ferait glisser la frontière et rougir sur `COUNT(accounts)`, échec
   sans rapport apparent avec sa cause (le fichier le consigne). Après union avec la 26-2 : 80 et 46, à la 26-2.
 - **P7** : le seul statement d'écriture est le bump `_kesh_version` → entrée `EXEMPT_MIGRATIONS`
   (`crates/kesh-db/src/post_restore.rs`), `ExemptionBasis::Durable`, justification sur le patron de `20261009000001`
@@ -292,8 +340,12 @@ test l'exige.
 
 **AC9 — Le profil d'avant reste ce qu'il était (preuve par la migration).** Un test **dans
 `crates/kesh-db/tests/migrations_upgrade_path.rs`** — fichier déjà inscrit à `ALLOWED_REAL_MIGRATOR_FILES`
-(`test_schema_guard.rs` l. ≈ 38-62), ce qui évite d'élargir cette liste (F7, C-26-1-20) — applique les migrations **jusqu'à la précédente** (`apply_migrations_up_to(&pool, migrations_before(<version>,
-"bank_profiles_debit_sign"))`, résolution **par version**, P6), insère un profil `header_row_count = 5` en mode
+(`test_schema_guard.rs` l. ≈ 38-62), ce qui évite d'élargir cette liste (F7, C-26-1-20). ⚠️ Ce fichier **ne déclare
+pas** `mod common;` et définit sa **propre** `apply_migrations_up_to` (R2-5, F2-7) : y résoudre l'index **par version**
+avec une fonction locale `index_of_migration(version) -> usize` (`.position(|m| m.version == …)`, échec explicite si
+absente), appelée avec la fonction locale existante — **ne pas** importer `common` (collision de nom, et
+`common::apply_migrations_up_to` inutilisée rougirait en `dead_code` sous `clippy -D warnings`). Le test applique les migrations **jusqu'à la précédente**
+(`apply_migrations_up_to(&pool, index_of_migration(20261011000001))`, résolution **par version**, P6), insère un profil `header_row_count = 5` en mode
 séparé, applique le reste, et vérifie : `debit_sign = 'positive'`, `header_row_count = 5`, `column_mapping` intact, et
 `kesh_version_min_required = '0.13.1'`. Une assertion de montage vérifie que la colonne **n'existe pas** avant
 (`information_schema.COLUMNS`) — sans quoi le test passerait à vide (précédent 16-1a).
@@ -349,7 +401,8 @@ coder, à écrire au CHANGELOG (AC18).
   le suivre) : (a) mode séparé + « signe moins » → la requête porte `debitSign: 'negative'` et
   `debit_credit_split` ; (b) mode colonne unique → `debitSign: 'positive'` même après avoir choisi « signe moins » puis
   décoché ; (c) un profil existant `negative` s'ouvre avec le bon bouton coché ; (d) le champ des lignes porte
-  `max="20"`.
+  `max="20"` ; (e) « signe moins », décocher, **recocher** → `debit-sign-negative` coché et requête `'negative'`
+  (R2-14).
 
 **AC13 — Textes, quatre locales** (`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`), clés présentes
 dans les **quatre** fichiers (le test `frontend/src/lib/shared/i18n-keys.test.ts` et `npm run lint-i18n-ownership`
@@ -364,7 +417,8 @@ verts) :
 | `bank-import-profile-labels-debit-sign-negative` | neuve |
 | `bank-import-profile-errors-debit-sign-single-column` | neuve, si l'écran l'affiche (sinon ne pas la créer) |
 | `bank-import-csv-errors-amount-sign-mismatch` | neuve (AC3, message **par ligne**, affiché par AC3-bis) : « Montant de signe contraire à sa colonne — vérifier le réglage du sens des débits du profil. » |
-| `bank-import-csv-errors-amount-sign-refused` | neuve (AC3, message **du refus global** `422 BANK_CSV_AMOUNT_SIGN_MISMATCH`), avec `{ $count }` |
+| `bank-import-csv-errors-amount-sign-refused-profile` | neuve (AC3, refus global quand **tous** les débits sont en défaut : « réglez le sens des débits du profil »), sans argument |
+| `bank-import-csv-errors-amount-sign-refused-lines` | neuve (AC3, refus global d'une ou de quelques lignes — extourne —, `{ $count }`, renvoie à la liste des lignes) |
 | `bank-import-csv-errors-header-skips-data` | neuve (AC5), avec `{ $line }` : la ligne N, ignorée, porte déjà une date ; le nombre de lignes à ignorer est trop grand |
 
 Les **valeurs de repli** françaises passées à `i18nMsg(…, '<repli>')` dans le Svelte sont identiques aux textes
@@ -435,7 +489,16 @@ discrimine le mapping `date = 2` (C-26-1-13). `crates/kesh-import/tests/fixtures
 6-bis. **angle mort d'AC5** fixé : `header_row_count` trop grand d'une unité qui avale une transaction à **date vide**
    → pas d'erreur, une transaction de moins (le test documente, il ne promet pas — R-12) ;
 7. AC3 en ligne : débit négatif sous `Positive`, débit positif sous `Negative`, crédit négatif sous les deux, zéros
-   acceptés (`0.00`, `-0.00`) ;
+   acceptés (`0.00`, `-0.00`) ; un crédit écrit **`+500.00`** est lu `500.00` et accepté (phrase de #620, R2-13) ;
+7-bis. **Compteur propre au signe** (R2-1 = F2-1) : (a) 101 lignes `INVALID_AMOUNT` **puis** une ligne de signe
+   contraire → `HardFailure(AmountSignMismatch { total_errors: 1, truncated: false, .. })`, `errors.len() == 1` ;
+   (b) 150 débits négatifs sous `Positive` → `total_errors: 150`, `truncated: true`, `errors.len() == 100` ;
+7-ter. **`whole_debit_column`** (C-26-1-23) : fixture sous `Positive` → `true` ; un CSV en ligne aux débits justes
+   et à **un** crédit négatif (extourne) → `HardFailure(AmountSignMismatch { whole_debit_column: false, total_errors:
+   1, .. })` — bloquant quand même ; un CSV où une partie seulement des débits est de mauvais signe → `false` ;
+7-quater. **Préséance sur une même ligne** (F2-11) : date illisible **et** débit de mauvais signe sur la même ligne →
+   `INVALID_DATE` pour cette ligne, pas de refus de signe (si c'est la seule) ; sur **deux** lignes distinctes → refus
+   de signe ;
 8. AC1 : `validate` refuse `Negative` en colonne unique, accepte `Positive` ; `DebitSign` serde : `"positive"` /
    `"negative"` acceptés, `"Negative"` et `"autre"` refusés ;
 9. AC3-bis (`error.rs`) : pour **chaque** variant de `CsvLineErrorCode`, `as_str()` ==
@@ -451,8 +514,10 @@ réels, AC10) : une requête sans `debitSign` → **422** (rejet `Json` d'axum),
 unique → **422 `BANK_CSV_PROFILE_INVALID`** ; `headerRowCount: 21` → **422 `BANK_CSV_PROFILE_INVALID`** ; le profil UBS
 avec `headerRowCount: 10` → **422 `BANK_CSV_HEADER_SKIPS_DATA`**, `details.line == 11`, en preview **et** en import ;
 le profil UBS réglé `positive` → **422 `BANK_CSV_AMOUNT_SIGN_MISMATCH`**, `details.totalErrors == 9`,
-`details.lines[0].code == "AMOUNT_SIGN_MISMATCH"` (graphie exacte sur le fil, AC3-bis), en preview **et** en import
-avec `confirmPartialImport=true` — **aucune** transaction écrite (`COUNT(*) = 0`) ; et un CSV à `INVALID_DATE`
+`details.wholeDebitColumn == true`, message `…-refused-profile`, `details.lines[0].code == "AMOUNT_SIGN_MISMATCH"`
+(graphie exacte sur le fil, AC3-bis), en preview **et** en import avec `confirmPartialImport=true` — **aucune**
+transaction écrite (`COUNT(*) = 0`) ; un CSV à extourne isolée → même code, `wholeDebitColumn == false`, message
+`…-refused-lines`, rien d'écrit ; et un CSV à `INVALID_DATE`
 existant rend `warnings.invalidLines.lines[0].code == "INVALID_DATE"` (la graphie corrigée des codes existants). `valid_profile_payload` (`bank_profiles_e2e.rs` ≈ l. 158) et le
 `NewBankProfile` de `create_test_bank_profile_csv` (`bank_imports_e2e.rs` ≈ l. 691) gagnent le champ ; le test de
 `PUT` (≈ l. 527) vérifie que `debitSign` se modifie et se relit.
@@ -470,13 +535,20 @@ fixture (chemin relatif vers `crates/kesh-import/tests/fixtures/csv/ubs_syntheti
 (`setInputFiles({ name: 'ubs_sans_signe.csv', mimeType: 'text/csv', buffer })`, contenu lu depuis le chemin de la
 fixture — toujours sans copie versionnée). Ainsi aucun des deux fichiers n'est reconnu par les deux profils, l'ordre et
 le rejeu d'un scénario n'influent pas sur l'autre. Attendu : le panneau d'erreur (`bank-import-error`) porte
-`data-error-code="BANK_CSV_AMOUNT_SIGN_MISMATCH"` et le **message traduit** (« … réglez le sens des débits … ») ;
-**aucune** case « importer les lignes valides quand même » n'est offerte ; aucun import n'apparaît dans la liste.
+`data-error-code="BANK_CSV_AMOUNT_SIGN_MISMATCH"` et le **message traduit** — assertion **insensible à la casse** sur
+« sens des débits » (`toContainText(/sens des débits/i)`, F2-9 : le message commence par « Réglez ») ; **au moins une
+ligne listée** (`bank-import-error-line`) avec son numéro et son message par ligne traduit (R2-2 = F2-4, arbitrage
+(2)) ; **aucune** case « importer les lignes valides quand même » n'est offerte ; **aucun import de plus** : le nombre
+de lignes `bank-import-list-row` (ou le compte rendu par l'API) est relevé **avant** le téléversement et comparé
+**après** — la spec partage sa base (`seedTestState` en `beforeAll`, une fois par fichier ; `workers: 1`) avec des
+scénarios qui importent, la liste n'est donc pas vide (F2-9).
 Un troisième contrôle, dans un scénario existant ou neuf à `INVALID_DATE` : le tableau des lignes invalides affiche le
 message traduit à côté du code (AC3-bis).
 
-**Accessibilité** (R-6) : aucune spec existante ne scanne le formulaire de profil (le seul `AxeBuilder` du domaine
-porte sur `/bank-import`, `bank-import.spec.ts` l. ≈ 225-231). Un test axe **neuf** sur `/bank-import/profiles/new`,
+**Accessibilité** (R-6, R2-11, F2-10) : aucune spec existante ne scanne le **formulaire** de profil. Deux scans existent
+dans le domaine : `/bank-import` (`bank-import.spec.ts` l. ≈ 225-231) et la **liste** `/bank-import/profiles`
+(`bank-csv-import.spec.ts` l. ≈ 145-152, test « accessibility — profile pages axe scan zero violations ») ; le scan
+neuf se place **à côté de ce dernier**, dans le même fichier. Un test axe **neuf** sur `/bank-import/profiles/new`,
 **mode séparé coché** (groupe radio visible), zéro violation. Les specs existantes qui remplissent le formulaire (mode
 colonne unique) passent sans retouche.
 
@@ -526,7 +598,25 @@ KESH_UBS_REAL_CSV=/home/gcorbaz/kesh-test/transactions.csv \
   colonne unique serait importée à l'envers) ; **un fichier dont une seule ligne a un signe contraire à sa colonne
   est refusé en entier** (régler le sens des débits, puis réimporter) ; le numéro de ligne annoncé pour une ligne qui
   suit une ligne vide peut être celui de la ligne vide ; la garde contre un nombre trop grand ne voit qu'une ligne
-  **datée** ; **la colonne Devise n'est pas lue** : tout import CSV est en CHF.
+  **datée** ; **la colonne Devise n'est pas lue** : tout import CSV est en CHF ; **une extourne** (crédit écrit en
+  négatif, ou débit écrit en positif quand le profil attend des débits négatifs) **bloque le relevé entier** : il ne
+  peut pas être importé tel quel dans cette version (C-26-1-23).
+- **§ « Rejet partiel »** (l. ≈ 1709-1711, R2-3 = F2-3, arbitrage (4)) : la phrase « Kesh importe les valides » est
+  fausse deux fois — l'import des lignes valides se fait **sur confirmation** (case « importer les lignes valides quand
+  même », `confirm-partial-import`), et **pas du tout** pour un montant de signe contraire à sa colonne, qui refuse le
+  fichier entier (renvoi à la sous-section UBS). La réécrire en ce sens ; garder le renvoi à la détection de doublons
+  s'il reste vrai (le vérifier au code). La brochure (« gestion du rejet partiel », `marketing-brochure.tex` l. ≈ 165)
+  reste vraie en général : n'y pas toucher.
+- **§ « Import avec un profil existant »** (l. ≈ 1683-1691, F2-13, arbitrage (4)) : la procédure décrit un écran qui
+  n'existe pas (« Nouvel import CSV », profil choisi **avant** le compte, bouton « Importer »). La réécrire d'après
+  l'écran réel, **vérifié au code le 2026-10-10 et à revérifier au patch** : *Quotidien* → *Importer des relevés*
+  (`nav-bank-import`, `/bank-import`) ; choisir le **compte bancaire** (`bank-account-select`) ; le **profil** est
+  facultatif — détection automatique par le motif de nom de fichier, ou choix explicite (`BankProfileSelector`) ;
+  déposer ou choisir le fichier (`bank-import-drop-zone`, `bank-import-file-input`) ; lire l'**aperçu**
+  (`bank-import-preview`, nombre de transactions, avertissements) ; **confirmer** (`bank-import-confirm`).
+- Contrôle du **PDF** aplati sur les **trois** passages : « Le relevé CSV d'UBS », la phrase neuve de « Rejet
+  partiel » et la procédure « Import avec un profil existant » (`pdftotext docs/manual/fr/user-manual.pdf - | tr '\n'
+  ' ' | tr -s ' ' | grep -o "<début de phrase>.\{0,200\}"`).
 - `CHANGELOG.md` : section **`## [0.13.1] — Non publié`** (forme exacte attendue par `scripts/prepare-release.sh`
   l. 237 ; à créer si absente, à **compléter par union** si la 26-2 ou la 26-3 l'a créée entre-temps) : *Corrigé* —
   #620 (le sens des débits devient un réglage ; un fichier dont un montant a un signe contraire à sa colonne est
@@ -534,7 +624,11 @@ KESH_UBS_REAL_CSV=/home/gcorbaz/kesh-test/transactions.csv \
   refus d'un nombre qui avalerait une transaction datée) ; *Modifié* — **graphie des codes d'erreur de ligne** de
   l'import CSV (`warnings.invalidLines.lines[].code`, `details.lines[].code`) : `INVALIDDATE` → `INVALID_DATE`,
   `INVALIDAMOUNT` → `INVALID_AMOUNT`, `AMBIGUOUSDEBITCREDIT` → `AMBIGUOUS_DEBIT_CREDIT`, `EMPTYMANDATORYFIELD` →
-  `EMPTY_MANDATORY_FIELD`, `ROWTOOSHORT` → `ROW_TOO_SHORT` (changement visible d'un client d'API) ; un encadré **« À faire en passant à la 0.13.1 »** : sauvegarder avant ; la base passe à
+  `EMPTY_MANDATORY_FIELD`, `ROWTOOSHORT` → `ROW_TOO_SHORT` (changement visible d'un client d'API) ; *Modifié* —
+  **API des profils bancaires** : `POST` et `PUT /api/v1/bank-profiles` **exigent** `debitSign` (`"positive"` ou
+  `"negative"` ; sans lui, `422`), et l'import CSV gagne deux refus `422` : `BANK_CSV_AMOUNT_SIGN_MISMATCH` (non
+  confirmable) et `BANK_CSV_HEADER_SKIPS_DATA` (R2-10) ; la conséquence de l'extourne (un relevé qui en porte une ne
+  s'importe pas tel quel) écrite en toutes lettres ; un encadré **« À faire en passant à la 0.13.1 »** : sauvegarder avant ; la base passe à
   `kesh_version_min_required = 0.13.1` (une 0.13.0 refuse ensuite de démarrer et d'importer une sauvegarde 0.13.1) ;
   un profil en débit/crédit séparés dont la banque écrit déjà ses débits en négatif doit être **réglé** (sinon : import
   refusé, plus d'inversion muette).
@@ -566,7 +660,13 @@ après restauration, cargo gardant sinon le binaire muté) :
 | M13 | garde AC5 : `>= date + 1` champs remplacé par `> date + 1` (ou retiré) | AC14-6 (limite de longueur) |
 | M14 | `parse_csv_collect` rend `PartialFailure` au lieu de `HardFailure` sur `AmountSignMismatch` (erreur redevenue confirmable) | AC14-3, AC15 (`confirmPartialImport=true` → 0 écrit), AC16 (2e scénario) |
 | M15 | `csv_line_error_to_payload` revient à `format!("{:?}").to_uppercase()` | AC15 (`"INVALID_DATE"`, `"AMOUNT_SIGN_MISMATCH"`) |
-| M16 | le panneau n'affiche plus `messageI18nKey` | AC16 (message traduit) — et un Vitest si le composant en a un |
+| M16 | `csvLineErrorLabel` rend le code brut au lieu de la clé (ou le panneau ne l'appelle plus) | Vitest `csv-line-error-label.test.ts`, AC16 (message par ligne) |
+| M17 | décision du refus de signe prise sur le vecteur **général** écrêté au lieu de `sign_total` | AC14-7-bis (a) |
+| M18 | contrôle « débit **positif** sous `Negative` » retiré | AC14-7, AC14-7-ter |
+| M19 | comparaison au zéro rendue non stricte (`<= ZERO`) ou par `is_sign_negative()` | AC14-7 (`-0.00`, `0.00`) |
+| M20 | ligne d'en-têtes lue par `reader.position()` au lieu de `headers()?.position()` | AC14-6 (`header_row_count = 1` → ligne 1) |
+| M21 | `whole_debit_column` toujours `true` (ou toujours `false`) | AC14-7-ter, AC15 (deux messages) |
+| M22 | le panneau d'erreur ne liste plus les lignes du refus de signe | AC16 (`bank-import-error-line`) |
 
 Une mutation qui ne fait rien rougir est un **trou de test** : écrire le test manquant, pas reclasser.
 
@@ -581,12 +681,13 @@ Une mutation qui ne fait rien rougir est un **trou de test** : écrire le test m
   worktree (c'est le seul gate qui verrait une violation de P8) ;
 - `cargo publish --dry-run -p kesh-import` (job CI ; le crate gagne un variant public et un champ public, cf. Dev
   Notes) ;
-- le contrôle AC17 sur le vrai fichier ;
+- le contrôle AC17 sur le vrai fichier (résultat au Dev Agent Record : « conforme » ou « non conforme », rien d'autre) ;
 - **ne déclarer que ce qui a tourné**, avec ses chiffres et son périmètre ; recompter tout décompte écrit.
 
 ## Tâches
 
-- [ ] **T1 — `kesh-import`** (AC1-5, AC3-bis, AC14 tests 1-9) : `DebitSign`, champ, `validate`, `parse_row`, garde
+- [ ] **T1 — `kesh-import`** (AC1-5, AC3-bis, AC14 tests 1-9 dont 6-bis, 7-bis, 7-ter, 7-quater) : compteur et vecteur
+  propres au signe, `whole_debit_column`, `DebitSign`, champ, `validate`, `parse_row`, garde
   AC5, variants `CsvLineErrorCode::AmountSignMismatch`, `CsvError::AmountSignMismatch` / `HeaderSkipsData`,
   `CsvLineErrorCode::as_str()`, mise à jour des **tous** les littéraux `CsvProfile { … }` des tests
   (`profile.rs` ≈ l. 244, `parser.rs` ≈ l. 575 et 1040), fixture + README des fixtures.
@@ -597,10 +698,12 @@ Une mutation qui ne fait rien rougir est un **trou de test** : écrire le test m
 - [ ] **T4 — API** (AC3, AC3-bis, AC5 côté API, AC10, AC11, AC15) : DTO, réponse, conversion,
   `AppError::BankCsvHeaderSkipsData` et `AppError::BankCsvAmountSignMismatch` (bras explicites de `map_csv_error`),
   `csv_line_error_to_payload` par `as_str()`, export CSV, test `is_required`, tests d'intégration.
-- [ ] **T5 — Frontend et i18n** (AC3, AC3-bis, AC12, AC13) : types, formulaire, panneaux d'erreur (message traduit,
-  pas de case de confirmation pour `BANK_CSV_AMOUNT_SIGN_MISMATCH`), Vitest, quatre locales.
+- [ ] **T5 — Frontend et i18n** (AC3, AC3-bis, AC12, AC13) : types, formulaire, module `csv-line-error-label.ts` et sa
+  déclaration dans `i18n-keys.test.ts` (`MOTIFS_DYNAMIQUES`, `CARDINALITES`, relais, recompte d'`ATTENDU`), panneau
+  d'erreur qui liste les lignes du refus de signe (sans case de confirmation), Vitest, quatre locales.
 - [ ] **T6 — E2E** (AC16).
-- [ ] **T7 — Documentation** (AC18) : manuel + PDF, CHANGELOG (dont la graphie des codes) ; grep de la valeur « 5 »
+- [ ] **T7 — Documentation** (AC18) : manuel (Profils banque, sous-section UBS, Rejet partiel, Import avec un profil
+  existant) + PDF contrôlé aplati, CHANGELOG (graphie des codes, `debitSign` obligatoire, deux 422, extourne) ; grep de la valeur « 5 »
   / « 0-5 », et des graphies `INVALIDDATE` & co.
 - [ ] **T8 — Contrôle sur le vrai fichier** (AC17), mutations (AC19), gates (AC20), Dev Agent Record.
 
@@ -638,6 +741,9 @@ Ordre conseillé : T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8. Un commi
 
 ### Ce qui reste hors périmètre
 
+**L'import d'un relevé qui porte une extourne** (C-26-1-23) : bloqué en entier dans cette version, par choix de
+sécurité ; une issue suivra si le cas se présente.
+
 **La devise forcée à CHF** (F10) : `parse_row` écrit `currency: "CHF"` pour toute ligne CSV, la colonne `Devise`
 d'UBS (col. 4) et la clé `Évaluation en:` ne sont pas lues — un compte en devise étrangère s'importerait en CHF sans un
 mot. Défaut **préexistant**, de la même famille que #620 mais hors de #620/#621 : l'orchestrateur ouvre une issue ; la
@@ -647,17 +753,17 @@ story se borne à l'écrire au manuel (AC18). Lecture du préambule (IBAN, solde
 
 ### Points de vigilance
 
-- **Clés i18n dynamiques** (AC3-bis) : le panneau lit `line.messageI18nKey` à l'exécution ; `npm run
-  lint-i18n-ownership` et `i18n-keys.test.ts` ne voient que des clés littérales. Vérifier que les six clés
-  `bank-import-csv-errors-*` des codes de ligne sont bien livrées au frontend par le mécanisme de chargement des
-  messages (et pas seulement utilisées côté serveur) ; si le lint exige une déclaration de propriété pour une clé lue
-  dynamiquement, la faire, ne pas contourner.
+- **Clés i18n des codes de ligne** (AC3-bis, F2-2) : l'écran passe par la table littérale
+  `CSV_LINE_ERROR_LABELS`, jamais par `messageI18nKey` — un `i18nMsg(` à clé non littérale est un site **non résolu**
+  que `i18n-keys.test.ts` relève (l. ≈ 797) et interdit de recompter (l. ≈ 942-950). Les messages arrivent au frontend
+  en bloc (`GET /api/v1/i18n/messages`, `all_messages`) : aucune clé à « livrer » en plus. `lint-i18n-ownership` ne
+  relève que les littéraux.
 
-- **`kesh-import` est « publiable »** (CI : `cargo publish --dry-run -p kesh-import`). Ajouter un champ à la struct
+- **`kesh-import` n'est pas publié** sur crates.io (constaté le 2026-10-10 par la P2 : l'API de crates.io répond
+  « crate `kesh-import` does not exist ») : la rupture semver ci-dessous est **sans objet** aujourd'hui (R2-12) ; le
+  `cargo publish --dry-run` de la CI reste à passer. Pour mémoire : ajouter un champ à la struct
   publique `CsvProfile` et des variants aux enums publics est une **rupture d'API** au sens semver, sous un bump
-  0.13.0 → 0.13.1. Vérifier si le crate est réellement publié sur crates.io (`cargo search kesh-import`, lecture
-  seule) : s'il ne l'est pas, le noter au Dev Agent Record et passer ; s'il l'est, le **signaler** à l'orchestrateur
-  (question de version propre au crate, hors de cette story). Ne **pas** ajouter `#[non_exhaustive]` de son propre chef
+  0.13.0 → 0.13.1 — sans conséquence tant que le crate n'est pas publié. Ne **pas** ajouter `#[non_exhaustive]` de son propre chef
   (il casserait les littéraux de `kesh-api`).
 - **Un montant `-0.00`** : `Decimal` le lit comme zéro négatif ; `is_sign_negative()` peut être vrai sur un zéro —
   tester `< Decimal::ZERO` (strict), pas le bit de signe.
@@ -709,7 +815,7 @@ structure relevé.
 
 - Plan de l'epic : `_bmad-output/planning-artifacts/epic-26-recette-v0-13.md` § 26-1 et « Décisions du Project Lead ».
 - Issues : #620 (description + décision du PL), #621 (description + deux décisions du PL).
-- Registre : `_bmad-output/implementation-artifacts/epic-26-choix-autonomes.md`, C-26-1-1 à C-26-1-22.
+- Registre : `_bmad-output/implementation-artifacts/epic-26-choix-autonomes.md`, C-26-1-1 à C-26-1-24.
 - CLAUDE.md : § *Migration breaking policy* (P1-P8), § *Test Locally First*, § *Review Iteration Rule*, § *Règle de
   commit et push* (CHANGELOG, manuels).
 - Précédent de bump avec version Cargo dans la story : `0724904c` (Story 15-1a-i), migration
@@ -728,6 +834,9 @@ structure relevé.
 - Fiche créée le 2026-10-10 (Opus 5.5, `bmad-create-story`, autonomie) : analyse des sources, structure du fichier UBS
   relevée **en formes** (aucune donnée copiée), choix C-26-1-1 à 13 consignés au registre.
 - Validation P1 remédiée le 2026-10-10 (Opus 5.5) : AC3-bis ajouté (21 AC), choix C-26-1-14 à 22 ; bilan au Change Log.
+- Validation P2 remédiée le 2026-10-10 (Opus 5.5) : chiffres réels retirés ; compteur de signe propre, deux messages,
+  liste des lignes à l'écran, table littérale des libellés, manuel (Rejet partiel, Import avec un profil existant) ;
+  C-26-1-23, 24 ; bilan au Change Log.
 
 ### File List
 
@@ -736,7 +845,8 @@ structure relevé.
 | Date | Auteur | Changement |
 |---|---|---|
 | 2026-10-10 | Opus 5.5 (create-story) | Création de la fiche ; 20 AC ; statut ready-for-dev ; validation à suivre. |
-| 2026-10-10 | Opus 5.5 (remédiation validation P1) | Validation P1 (Sonnet, lentilles R et F, contexte frais) : **R 0C/0H/3M/7L** (R-1 à R-12 ; R-5 classé MEDIUM dans son corps), **F 0C/1H/5M/8L** (F1 à F14). Après dédoublonnage : **1 HIGH, 7 MEDIUM, 12 LOW distincts** (MEDIUM : F2, F3=R-1, F4, F5, F6=R-4, R-3, R-5=F8). Bilan finding par finding ci-dessous. Nouvel AC3-bis (21 AC) ; choix C-26-1-14 à C-26-1-22. |
+| 2026-10-10 | Opus 5.5 (remédiation validation P1) | Validation P1 (Sonnet, lentilles R et F, contexte frais) : **R 0C/0H/4M/8L** (R-1 à R-12 ; le bilan du rapport disait 3M/7L, ses titres comptent 4 MEDIUM et 8 LOW — corrigé en P2, R2-7), **F 0C/1H/5M/8L** (F1 à F14). Après dédoublonnage : **1 HIGH, 7 MEDIUM, 12 LOW distincts** (MEDIUM : F2, F3=R-1, F4, F5, F6=R-4, R-3, R-5=F8). Bilan finding par finding ci-dessous. Nouvel AC3-bis (21 AC) ; choix C-26-1-14 à C-26-1-22. |
+| 2026-10-10 | Opus 5.5 (remédiation validation P2) | Validation P2 (Opus R/F) : 5 MEDIUM, 14 LOW distincts, plus l'arbitrage (0) sur les données réelles (commit à part). Bilan finding par finding ci-dessous. Choix C-26-1-23, 24. |
 
 ### Validation P1 — bilan finding par finding
 
@@ -766,3 +876,42 @@ structure relevé.
 Reclassement : aucun finding MEDIUM+ reclassé en dette. Symptômes grepés après patch dans la fiche et le registre
 (`ligne 10`, `erreur de ligne`, `400`, `BANK_CSV_PROFILE_VALIDATION`, `79 attendus`, `INVALIDDATE`) : résidus
 corrigés.
+
+
+### Validation P2 — bilan finding par finding
+
+Validation P2 (Opus, lentilles R et F, contexte frais) : **R 0C/0H/3M/11L** (R2-1 à R2-14), **F 0C/0H/5M/8L** (F2-1 à
+F2-13). Après dédoublonnage : **5 MEDIUM, 14 LOW distincts** (19). Douze des treize findings F et les trois MEDIUM de R
+sont **nés de la remédiation P1** (refus bloquant, AC3-bis) ; un seul est d'origine (F2-13). Défauts **distincts** de
+ceux de la P1 : signal D5 déclaré par l'orchestrateur, **pas de découpage**. S'y ajoute l'arbitrage **(0)** de
+l'orchestrateur (données personnelles), traité en premier, dans un commit à part.
+
+**Trend** : P1 **1 HIGH / 7 MEDIUM** → P2 **0 HIGH / 5 MEDIUM** (Sonnet → Opus). La remédiation P2 change encore une
+règle métier (compteur de signe, deux messages) : P3 complète (Sonnet R/F), pas une passe ciblée.
+
+| Finding | Sév. | Traitement |
+|---|---|---|
+| (0) orchestrateur | — | **Corrigé** (commit `deec289e`) — somme, nombres de mouvements, de sorties, d'entrées et de lignes du fichier réel retirés de la fiche, du registre et du prompt P2 ; le contrôle du vrai fichier ne rend que « conforme / non conforme » ; date de début de la fixture décalée (coïncidait avec une valeur réelle). Contrôle sans affichage par un script lisant le vrai fichier : 0 valeur réelle restante. ⚠️ L'**historique** de la branche (commits antérieurs à `deec289e`) porte encore ces chiffres : signalé à l'orchestrateur. |
+| R2-1 = F2-1 | M | **Corrigé** — AC3 : `sign_total` et `sign_errors` propres au signe, indépendants du plafond général ; décision sur `sign_total > 0` ; AC14-7-bis (a) et (b) ; M17. Arbitrage (1). |
+| R2-2 = F2-4 | M | **Corrigé** — AC3 : le panneau d'erreur garde `details` et liste les lignes du refus (numéro, message traduit, valeur) ; AC16 l'asserte ; M22. Arbitrage (2). |
+| R2-3 = F2-3 | M | **Corrigé** — AC18 réécrit § « Rejet partiel » (sur confirmation ; exception du signe), contrôle PDF. Arbitrage (4). |
+| F2-2 | M | **Corrigé** — AC3-bis : table littérale `CSV_LINE_ERROR_LABELS` (`csv-line-error-label.ts`), famille `bank-import-csv-errors-` déclarée dans `MOTIFS_DYNAMIQUES`/`CARDINALITES` (6), recompte honnête d'`ATTENDU` avec lignes d'historique ; Dev Note fausse corrigée. Arbitrage (5). |
+| F2-5 | M | **Corrigé** — bloquant même pour une extourne isolée (arbitrage (3)) ; conséquence écrite (AC3, manuel, CHANGELOG, hors périmètre) ; deux messages selon `whole_debit_column` ; AC14-7-ter, AC15 ; M21. C-26-1-23. |
+| R2-4 = F2-6 | L | **Corrigé** — `BANK_CSV_PARTIAL_FAILURE` (code) / `AppError::BankCsvParsePartialFailure` (variant). |
+| R2-5 = F2-7 | L | **Corrigé** — attribution à la fonction locale de `migrations_upgrade_path.rs` ; inventaire `(44|78)` complet ; AC9 résout l'index par une fonction locale `index_of_migration`, sans `mod common`. |
+| R2-6 = F2-8 | L | **Corrigé** — bandeau « Amendé par C-26-1-16 » sur C-26-1-8 ; corps de C-26-1-7 reformulé. |
+| R2-7 | L | **Corrigé** — « R 0C/0H/4M/8L » au bilan P1. |
+| R2-8 | L | **Corrigé** — M18 (débit positif sous `Negative`), M19 (zéro strict), M20 (`headers()?.position()`). |
+| R2-9 = F2-11 | L | **Corrigé** — préséances écrites en AC3 (encodage, puis signe, puis autres ; même ligne : la date d'abord) ; AC14-7-quater. |
+| R2-10 | L | **Corrigé** — CHANGELOG : `debitSign` obligatoire, deux 422 neufs. |
+| R2-11 = F2-10 | L | **Corrigé** — AC16 cite le scan axe existant de la liste et place le neuf à côté. |
+| R2-12 | L | **Corrigé** — `kesh-import` non publié : semver sans objet (Dev Notes). |
+| R2-13 | L | **Corrigé** — AC17 asserte la répartition (débits < 0, crédits > 0) sans nombre ; AC14-7 fixe `+500.00`. |
+| R2-14 | L | **Corrigé** — Vitest (e) décocher / recocher. |
+| F2-9 | L | **Corrigé** — AC16 : « aucun import de plus » (compte avant/après), assertion insensible à la casse. |
+| F2-12 | L | **Corrigé** — AC6 : jusqu'au merge, la ligne `sha384` suit le fichier, recalculée dans le même commit. C-26-1-24. |
+| F2-13 | L | **Corrigé** (arbitrage (4)) — AC18 réécrit « Import avec un profil existant » d'après l'écran réel, vérifié au code. |
+
+Reclassement P2 : aucun. Symptômes grepés après patch (valeurs) : `BANK_CSV_PARSE_PARTIAL_FAILURE`, `common/mod.rs`,
+`physique`, `messageI18nKey`, `amount-sign-refused\b`, `aucun import n'apparaît`, `cargo search`, et les valeurs du relevé réel
+(par script, sans affichage) — résidus corrigés ; le script de contrôle des données réelles rend 0.
