@@ -6,8 +6,9 @@
 de l'Epic 26), branche `story/26-2` ; **découpée** par l'orchestrateur le même jour (registre **C-26-2-15**) ;
 validation **P1** (Sonnet, lentilles R et F : 0 HIGH, 8 MEDIUM, 15 LOW) puis **P2** (Opus, R et F : 0 HIGH,
 4 MEDIUM dont 3 distincts, 24 LOW) **remédiées** le 2026-10-10 — passe **P3 ciblée** (Haiku, une lentille, sur le
-seul commit de la remédiation P2) : 0 MEDIUM, 5 LOW appliqués — **validation close**. **26-2a : in-progress**
-(`bmad-dev-story`, 2026-10-10) ; 26-2b : ready-for-dev.
+seul commit de la remédiation P2) : 0 MEDIUM, 5 LOW appliqués — **validation close**. **26-2a : review**
+(`bmad-dev-story` terminé le 2026-10-11, dernier commit de code `1ea3c98b` ; boucle `bmad-code-review` à suivre) ;
+26-2b : ready-for-dev.
 
 ⛔ **Deux stories, une fiche, deux PR successives** (C-26-2-15, qui remplace la proposition C-26-2-1) :
 
@@ -522,31 +523,32 @@ E2E complet (AC13). Le Dev Agent Record n'affirme que ce qui a tourné, avec ses
 
 ## Tasks / Subtasks
 
-- [ ] **T1 — Migration et garde-fous** (AC1) — partie a
-  - [ ] T1.1 Rebaser sur `origin/main` **avec la 26-1 fusionnée** ; vérifier que `20261011000001` est la sienne ;
-    écrire `20261011000002_bank_accounts_description.sql`.
-  - [ ] T1.2 `scripts/regen-test-schema.sh` sur une base jetable (jamais `kesh-mariadb-dev` à redémarrer).
-  - [ ] T1.3 Ligne P5 + recompte des cinq compteurs (80 / 80 / 10 / 70 / 0 attendus, la commande fait foi) ; P6
-    `migrations_upgrade_path.rs` (80 / 46, généalogie, grep par jeton `\b(79|45)\b`) ; ligne ajoutée à
+- [x] **T1 — Migration et garde-fous** (AC1) — partie a
+  - [x] T1.1 ~~Rebaser sur `origin/main` avec la 26-1 fusionnée~~ — **cas « commencée avant »** : la 26-1 n'était pas
+    fusionnée (`origin/main` = `9b724027`) ; la branche porte 78 → 79 et 44 → 45, **rebase et recomptes laissés à
+    l'orchestrateur** (Dev Notes § Coordination, cas 2). `20261011000002_bank_accounts_description.sql` écrite.
+  - [x] T1.2 `scripts/regen-test-schema.sh` sur une base jetable (`_sqlx_test_262a_squash`).
+  - [x] T1.3 Ligne P5 + recompte des cinq compteurs (**79 / 79 / 10 / 69 / 0** sur la branche non rebasée) ; P6
+    `migrations_upgrade_path.rs` (**79 / 45**, généalogie, grep par jeton) ; ligne ajoutée à
     `crates/kesh-db/migrations.sha384`.
-- [ ] **T2 — Entité et dépôt** (AC2)
-  - [ ] T2.1 Champ `description`, macro `columns!` (onze `SELECT`), `find_by_id_in_tx(tx, company_id, id)`,
+- [x] **T2 — Entité et dépôt** (AC2)
+  - [x] T2.1 Champ `description`, macro `columns!` (onze `SELECT`), `find_by_id_in_tx(tx, company_id, id)`,
     `BankAccountPutFields` et `update_for_company`, `BANK_ACCOUNT_DESCRIPTION_MAX_CHARS` + test contre le squash.
-  - [ ] T2.2 `bank_account_display_name` + `display_name()` + tests unitaires.
-  - [ ] T2.3 Tests de préservation **au niveau du dépôt** (upsert, PATCH, archive, création par le dépôt,
+  - [x] T2.2 `bank_account_display_name` + `display_name()` + tests unitaires.
+  - [x] T2.3 Tests de préservation **au niveau du dépôt** (upsert, PATCH, archive, création par le dépôt,
     **démotion par appel direct de `flip_primary_off_for_company`**) dans `bank_accounts_repository.rs`.
-- [ ] **T3 — Route** (AC3, AC4)
-  - [ ] T3.1 `validate_bank_input` étendu (`is_forbidden_in_description`) ; bodies POST/PUT ; INSERT ; audit.
-  - [ ] T3.2 Tests `crates/kesh-api/tests/bank_accounts_e2e.rs` : POST/PUT/GET/PATCH/DELETE ; bornes ; caractères
+- [x] **T3 — Route** (AC3, AC4)
+  - [x] T3.1 `validate_bank_input` étendu (`is_forbidden_in_description`) ; bodies POST/PUT ; INSERT ; audit.
+  - [x] T3.2 Tests `crates/kesh-api/tests/bank_accounts_e2e.rs` : POST/PUT/GET/PATCH/DELETE ; bornes ; caractères
     invisibles ; `"Épargne\n"` accepté ; ordre des refus ; non-unicité ; **`PUT` sans le champ efface** ; démotion
     de bout en bout (`PUT isPrimary=true` puis `GET`) ; audit ; messages des extracteurs.
-- [ ] **T4 — Exports** (AC5) : CSV + test de valeur ; deux tests `admin_full_import_e2e.rs`.
-- [ ] **T5 — Frontend socle** (AC6, AC7, AC8)
-  - [ ] T5.1 `format.ts` (types, fonctions, `BANK_ACCOUNT_DESCRIPTION_MAX`) + `format.test.ts`.
-  - [ ] T5.2 Types et `parseBankAccount` ; fixtures des huit fichiers de test.
-  - [ ] T5.3 Écran *Comptes bancaires* + `BankAccountJournalLinkForm` + tests.
-  - [ ] T5.4 Clés i18n ×4, recompte `ATTENDU`.
-- [ ] **T6 — E2E (a)** (AC13 a, isolement) ; mutations M1-M7, M11-M15, M18 (AC14) ; gates complets. *Fin de
+- [x] **T4 — Exports** (AC5) : CSV + test de valeur ; deux tests `admin_full_import_e2e.rs`.
+- [x] **T5 — Frontend socle** (AC6, AC7, AC8)
+  - [x] T5.1 `format.ts` (types, fonctions, `BANK_ACCOUNT_DESCRIPTION_MAX`) + `format.test.ts`.
+  - [x] T5.2 Types et `parseBankAccount` ; fixtures des huit fichiers de test.
+  - [x] T5.3 Écran *Comptes bancaires* + `BankAccountJournalLinkForm` + tests.
+  - [x] T5.4 Clés i18n ×4, recompte `ATTENDU`.
+- [x] **T6 — E2E (a)** (AC13 a, isolement) ; mutations M1-M7, M11-M15, M18 (AC14) ; gates complets. *Fin de
   26-2a — PR `refs #622`.*
 - [ ] **T7 — Rollout** (AC9) : D3 à D9, types partagés, `data-testid`, tests Vitest (dont les deux neufs D4,
   D9). — partie b, partie de `origin/main` après la fusion de la 26-2a
@@ -767,9 +769,13 @@ valides : elle est nullable.
 
 ### Agent Model Used
 
-(à remplir par le développeur)
+26-2a : Claude Opus 5.5 (`bmad-dev-story`, autonome, 2026-10-10/11).
 
 ### Debug Log References
+
+- Gate backend : `kesh-gate-logs/26-2a-gate-c9e12142.log` (rouge, voir Completion Notes) puis
+  `26-2a-gate-1ea3c98b.log` (vert). Frontend : `26-2a-frontend-c9e12142.log`, `26-2a-frontend-1ea3c98b.log`. E2E :
+  `26-2a-e2e-1ea3c98b.log`. Mutations : `26-2a-mutations.log`.
 
 ### Completion Notes List
 
@@ -777,8 +783,122 @@ valides : elle est nullable.
   inventaire clos des sites, choix C-26-2-1 à 14 au registre de l'epic.
 - Validation P1 remédiée le 2026-10-10 (même auteur que la fiche) : choix C-26-2-16 à 25 ; bilan au Change Log.
 - Validation P2 remédiée le 2026-10-10 : choix C-26-2-26 à 30 ; bilan et trend au Change Log.
+- Validation P3 ciblée (Haiku) : 5 LOW appliqués, validation close (commit `972bc6f1`).
+
+#### 26-2a — `bmad-dev-story` (2026-10-10/11, Opus 5.5)
+
+**Ce qui est livré** (dernier commit de code : **`1ea3c98b`**) :
+
+- **Migration** `20261011000002_bank_accounts_description.sql` — `ADD COLUMN description VARCHAR(60) NULL,
+  ALGORITHM=INSTANT, LOCK=NONE`, en fin de table, en-tête en `--`, non breaking, n'écrit rien. Audit P5 (ligne
+  `tracked-by-sqlx`, compteurs recomptés), P6 (`migrations_upgrade_path.rs`), squash régénéré, `migrations.sha384`.
+- **Dépôt** : macro `columns!` (les dix `SELECT` du dépôt + `FIND_BY_ID_SQL`) ; `find_by_id_in_tx(tx, company_id, id)`
+  remplace le `SELECT` inline de la route ; `BankAccountPutFields<'a>` (sept paramètres, pas de `#[allow]`) ; seul
+  `update_for_company` écrit la description. **Entité** : champ, `BANK_ACCOUNT_DESCRIPTION_MAX_CHARS = 60`,
+  `bank_account_display_name` et `BankAccount::display_name()` (sans appelant hors tests en 26-2a, attendu).
+- **Route** : `normalize_description` (trim puis contrôles), `is_forbidden_in_description` (ensemble fermé de la
+  fiche), ordre banque → description → IBAN → QR-IBAN, bodies POST/PUT (`#[serde(default)]`), `INSERT` étendu,
+  audit `created` et `updated` (`before`/`after`), messages des extracteurs, doc du `PUT` (remplacement complet).
+- **Exports** : colonne CSV `description` après `bank_name` (`fmt_opt_str` → `csv_sanitize`) ; `.keshbackup` générique.
+- **Frontend** : `format.ts` (`BankAccountLabelSource`, `BankAccountOptionSource`, `bankAccountName`,
+  `bankAccountOptionLabel(a, 'dash' | 'parens')`, `BANK_ACCOUNT_DESCRIPTION_MAX`) ; types de l'API (`description`
+  obligatoire dans `BankAccountSummary` et `UpdateBankAccountPayload`, optionnel dans `NewBankAccountPayload`) ; écran
+  *Comptes bancaires* (champ après « Banque », `maxlength`, aide, payloads, cellule `bank-account-name-{id}`) ;
+  en-tête de `BankAccountJournalLinkForm` (`bank-account-journal-link-heading`). i18n ×4 (deux clés, repli = fr-CH).
+
+**Écart à la fiche, consigné** :
+
+- **T1.1 — la 26-1 n'était pas fusionnée** : cas « commencée avant » (Dev Notes § Coordination, 2). Valeurs de la
+  branche **non rebasée**, recomptées : `ls crates/kesh-db/migrations/*.sql | wc -l` → **79** ; lignes du tableau
+  d'audit **79** ; `yes` **10** ; `tracked-by-sqlx` **69** ; `no` **0** ; `grep -c '^20' migrations.sha384` → **79** ;
+  `migrations_upgrade_path.rs` : `total` **79**, soustracteur **45** (frontière 34). Après rebase sur la 26-1, les
+  conflits de ces fichiers se résolvent en **refaisant** les recomptes (attendus 80 / 80 / 10 / 70 / 0, 80 / 46),
+  squash **régénéré**, `migrations.sha384` par union, `ATTENDU.sitesTotal` recompté si la 26-1 ajoute des
+  `i18nMsg(` ; puis reconstruire `kesh_262a` et `kesh_e2e_262a` (P8). **C'est l'orchestrateur qui rebase.**
+- **Montage d'un test sur schéma antérieur** (trouvé au gate, non prévu par la fiche) :
+  `crates/kesh-db/tests/support/lettering_documents.rs` créait un compte bancaire par `bank_accounts::create` sur un
+  schéma **arrêté avant** `20261010000001` (`migrations_before`) ; le dépôt relisant désormais `description`,
+  quatre tests de `lettering_documents_backfill` ont rougi (`1054 Unknown column 'description'`). Corrigé par un
+  `INSERT … RETURNING id` qui ne nomme que des colonnes anciennes. Le même motif ne se retrouve dans aucun autre
+  fichier (`grep -rln "bank_accounts::(create|upsert_primary|find|list)" crates/*/tests | xargs grep -ln
+  apply_migrations_up_to` → aucune sortie). Mode d'échec du § P6 du `CLAUDE.md` : né de l'**interaction** avec un
+  test que la fiche ne touchait pas.
+- **Garde `i18n-libelle-en-dur.test.ts`** (non prévue par la fiche) : `bankAccountOptionLabel` porte le suffixe
+  `Label` → candidates **61 → 62**, `conforme` **47 → 48**, généalogie nommée dans le test.
+- `find_by_id_in_tx` rend `Result<BankAccount, DbError>` (`NotFound` si absent), selon AC2, et non `Option` comme son
+  homonyme de `projects.rs`.
+
+**Contrôles AC2, exécutés** : `grep -rnE "SELECT id, company_id, bank_name" crates/*/src` → aucune sortie ;
+`grep -rnF "id, company_id, bank_name, iban" crates/*/src` → `crates/kesh-db/src/repositories/bank_accounts.rs:38`
+(le corps de la macro), seule ligne.
+
+**Tests ajoutés** (périmètre : `9b724027` → `1ea3c98b`, recomptés par `grep -cE '#\[(test|sqlx::test)'` et
+`grep -cE "^\s*(it|test)(\.each)?\("` aux deux bornes) — Rust **29** : `entities/bank_account.rs` 0 → 5,
+`bank_accounts_repository.rs` 29 → 37, `routes/bank_accounts.rs` 0 → 4, `bank_accounts_e2e.rs` 31 → 40,
+`admin_full_import_e2e.rs` 41 → 43, `csv_tables.rs` 17 → 18 ; Vitest **21** : `format.test.ts` 0 → 11,
+`bank-accounts-page.test.ts` 6 → 13, `BankAccountJournalLinkForm.test.ts` 5 → 7, `bank-accounts.api.test.ts` 5 → 6 ;
+Playwright **1** : `bank-accounts-crud.spec.ts` 7 → 8.
+
+**Mutations (AC14, partie a) — 13 sur 13 tuées**, chacune appliquée, test lancé, fichier restauré puis `touch` ;
+sortie complète dans `kesh-gate-logs/26-2a-mutations.log` : M1 (macro sans `description` → 6+ tests du dépôt, `FromRow`),
+M2 (`update_for_company` sans la colonne → test du dépôt et `put_ecrit_puis_efface_la_description_absente`), M3
+(sans `trim` → `normalisation_de_la_description`, `post_bank_account_validation_de_la_description`), M4 (`> 61`), M5
+(upsert écrit `NULL` → `upsert_primary_conserve_la_description`), M6 et M7 (`format.test.ts` : 4 et 2 échecs), M11
+(colonne CSV retirée → `chaque_colonne_du_schema_est_exportee_ou_ecartee`), M12 (démotion écrit `NULL` → dépôt et
+route), M13 (`COALESCE(?, description)` → `put_ecrit_puis_efface_la_description_absente`), M14 (U+202E retiré →
+`ensemble_refuse_borne_par_borne` et le test HTTP), M15 (constante à 61 → test du squash, des deux tests de bornes),
+M18 (contrôle avant `trim` → `"Épargne\n"` refusé, deux tests). Aucun mutant survivant ; worktree propre après la série.
+
+**Gates au dernier commit de code `1ea3c98b`** (ne sont déclarés que ceux qui ont tourné) :
+
+- base `kesh_262a` **remise à zéro avant** (DROP, migrations, seed) ;
+- `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest profil `ci`) : **3369 exécutés, 3369 passés,
+  5 ignorés**, exit 0. *(Le premier gate complet, sur `c9e12142`, avait rendu 4 échecs —
+  `lettering_documents_backfill`, cf. ci-dessus — et 656 tests non lancés : corrigé, puis gate refait.)*
+- frontend : `npm run check` **0 erreur** (27 avertissements, préexistants : même nombre sur `main`),
+  `lint-i18n-ownership` PASS, `test:unit` **124 fichiers, 1308 tests passés**, `build` exit 0 ;
+- **E2E complet** (`kesh_e2e_262a` recréée et migrée, backend sur le port 3032, montage complet de
+  `docs/testing.md`) : **256 passés, 8 échoués, 19 ignorés**. Les 8, jugés fichier par fichier contre
+  `docs/testing.md` § *Les échecs attendus* : les sept KF-029 (#97) — `mode-expert.spec.ts:26`, `:41`,
+  `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` — et KF-046 (#424)
+  `sidebar-navigation.spec.ts:75`. Aucun hors liste ; KF-045 ne s'est pas montrée (run après 12:00 UTC).
+  `bank-accounts-crud.spec.ts` a aussi été lancé **seul** : 8/8 ; le compte créé est retrouvé archivé en base.
+
+**Entre les deux PR** (C-26-2-15) : après la fusion de la 26-2a, le champ se saisit à l'écran sans que le manuel ni
+le CHANGELOG le disent, les autres sélecteurs n'affichent pas encore la description, et `details.bankName` du refus
+de désignation reste la banque seule — **aucune release ne doit partir avant la 26-2b**.
 
 ### File List
+
+26-2a (relatifs à la racine) :
+
+- `crates/kesh-db/migrations/20261011000002_bank_accounts_description.sql` (neuf)
+- `crates/kesh-db/migrations.sha384`
+- `crates/kesh-db/test-schema/0001_schema_squash.sql` (régénéré)
+- `crates/kesh-db/src/entities/bank_account.rs`
+- `crates/kesh-db/src/repositories/bank_accounts.rs`
+- `crates/kesh-db/tests/bank_accounts_repository.rs`
+- `crates/kesh-db/tests/migrations_upgrade_path.rs`
+- `crates/kesh-db/tests/support/lettering_documents.rs`
+- `crates/kesh-api/src/routes/bank_accounts.rs`
+- `crates/kesh-api/src/routes/invoice_pdf_service.rs`
+- `crates/kesh-api/src/exports/csv_tables.rs`
+- `crates/kesh-api/tests/bank_accounts_e2e.rs`
+- `crates/kesh-api/tests/admin_full_import_e2e.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`
+- `docs/migrations-idempotence-audit.md`
+- `frontend/src/lib/features/bank-accounts/format.ts`, `format.test.ts` (neuf)
+- `frontend/src/lib/features/bank-accounts/bank-accounts.api.ts`, `bank-accounts.api.test.ts`
+- `frontend/src/lib/features/bank-accounts/BankAccountJournalLinkForm.svelte`, `BankAccountJournalLinkForm.test.ts`
+- `frontend/src/routes/(app)/bank-accounts/+page.svelte`, `bank-accounts-page.test.ts`
+- fixtures `description: null` : `frontend/src/routes/(app)/supplier-invoices/[id]/supplier-settlement-page.test.ts`,
+  `frontend/src/lib/features/reconciliation/ReconciliationProposals.test.ts`,
+  `frontend/src/lib/features/homepage/HomepageCards.test.ts`, `frontend/src/lib/features/homepage/homepage.test.ts`,
+  `frontend/src/lib/features/invoices/SettleInvoiceDialog.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`, `frontend/src/lib/shared/i18n-libelle-en-dur.test.ts`
+- `frontend/tests/e2e/bank-accounts-crud.spec.ts`
+- `_bmad-output/implementation-artifacts/26-2-description-compte-bancaire.md`, `epic-26-choix-autonomes.md`,
+  `sprint-status.yaml`, `26-2a-review-prompt-p1.md` (neuf)
 
 ## Change Log
 
@@ -886,3 +1006,10 @@ Décomptes après remédiation P2 (recomptés) : **14 AC** ; **20 mutations** (M
 **Trend de la validation** : P1 (Sonnet ×2, R et F) 0 HIGH / 8 MEDIUM / 15 LOW → P2 (Opus ×2, R et F) 0 HIGH /
 3 MEDIUM distincts / 24 LOW → P3 ciblée (Haiku ×1) 0 MEDIUM / 5 LOW. Critère d'arrêt atteint (seulement des LOW) ;
 la remédiation P2 ne touchait aucune ligne de code de production. Aucun finding reclassé en dette.
+
+### 26-2a — développement
+
+| Date | Étape | Résumé |
+|---|---|---|
+| 2026-10-11 | `bmad-dev-story` 26-2a (Opus 5.5) | T1-T6 faits ; migration `20261011000002` (branche non rebasée : 79 / 45), dépôt à macro de colonnes, validation, exports, écran et libellés, i18n ×4, E2E (a). 29 tests Rust, 21 Vitest, 1 Playwright ; mutations 13/13 tuées ; gate complet 3369/3369, Vitest 1308/1308, E2E 256 passés / 8 échecs attendus. Dernier commit de code `1ea3c98b`. Statut `review`. |
+

@@ -307,3 +307,37 @@ séparées (précédent 15-1c) — écartée, la fiche est déjà partagée et l
 - **Retenu** (arbitrage de l'orchestrateur) : la 26-2b (AC12) corrige les l. 911, 921, 933 et 1033, PDF régénéré
   et contrôlé aplati.
 - **Écarté** : une issue P3 séparée — la section neuve parlerait de la QR-facture à côté d'un texte faux.
+
+### C-26-2-31 — 26-2a développée avant la fusion de la 26-1 (cas « commencée avant »)
+
+- **Contexte** : au démarrage de `bmad-dev-story` (2026-10-10), `origin/main` = `9b724027`, sans la 26-1.
+- **Retenu** : migration `20261011000002` écrite sur la branche seule ; compteurs portés 78 → 79, soustracteur
+  44 → 45, sha384 à 79 lignes ; le rebase et la réfection des recomptes (80 / 46, squash régénéré, union des sha384,
+  bases de dev reconstruites) reviennent à l'orchestrateur, procédure de la fiche (Dev Notes § Coordination, cas 2).
+- **Écarté** : attendre la fusion de la 26-1 (bloquait le développement) ; écrire d'avance 80 / 46 (faux sur l'arbre
+  testé, le gate aurait rougi).
+- **Réversibilité** : totale — les fichiers en conflit se refont au rebase.
+
+### C-26-2-32 — Le montage du rattrapage de lettrage crée son compte bancaire par SQL
+
+- **Contexte** : gate complet sur `c9e12142` — `tests/support/lettering_documents.rs` appelait `bank_accounts::create`
+  sur un schéma arrêté avant `20261010000001` ; le dépôt relit `description` → `1054 Unknown column`, 4 échecs.
+- **Retenu** : `INSERT … RETURNING id` ne nommant que des colonnes anciennes (valide à toute borne de migration).
+- **Écarté** : faire tolérer au dépôt l'absence de colonne (code de production plié pour un test) ; monter le
+  montage sur le schéma complet (le test perdrait son objet : rejouer M1 sur des données antérieures).
+- **Réversibilité** : une fonction de test.
+
+### C-26-2-33 — `find_by_id_in_tx` rend `Result<BankAccount, DbError>`
+
+- **Contexte** : AC2 prescrit « même nom, même contrat » que `projects.rs:59` (qui rend `Option`) **et** la signature
+  `-> Result<BankAccount, DbError>`, `NotFound` si absente.
+- **Retenu** : la signature explicite de l'AC (l'appelant unique, la relecture après `INSERT`, n'a pas de cas
+  « absent » légitime). Testé : scope par société et id inconnu → `NotFound`.
+- **Réversibilité** : une fonction, un appelant.
+
+### C-26-2-34 — Garde des libellés en dur recomptée (61 → 62)
+
+- **Contexte** : `bankAccountOptionLabel` porte le suffixe `Label` ; `i18n-libelle-en-dur.test.ts` le relève.
+- **Retenu** : candidate **conforme** (gabarits interpolés de données, aucun mot d'interface) ; borne 61 → 62,
+  `conforme` 47 → 48, généalogie nommée. **Écarté** : renommer la fonction pour échapper à la garde (le nom est celui
+  de la fiche, et contourner une garde par le nom est le défaut qu'elle combat).
