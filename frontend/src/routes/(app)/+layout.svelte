@@ -107,6 +107,8 @@
 			items: [
 				{ i18nKey: 'nav-journal-entries', fallback: 'Écritures', href: '/journal-entries' },
 				{ i18nKey: 'nav-reconciliation', fallback: 'Réconciliation', href: '/reconciliation' },
+				// Story 15-1c-i (#518) — l'écran des postes ouverts (lettrage).
+				{ i18nKey: 'nav-open-items', fallback: 'Postes ouverts', href: '/open-items' },
 				{ i18nKey: 'nav-reports', fallback: 'Rapports', href: '/reports' },
 			],
 		},

@@ -530,7 +530,16 @@ const ATTENDU = {
 	// `features/supplier-invoices/invoice-cancel.ts` (6 → 7). Recompté par
 	// `grep -o "i18nMsg("` aux deux bornes (`f9b6b199` et la branche).
 	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (trois littéraux).
-	sitesTotal: 1923,
+	// Story 15-1c-i (#518) : **1923 → 2015** (+92) — l'écran des postes ouverts, recompté
+	// par `grep -o "i18nMsg("` fichier par fichier aux deux bornes (aucun de ces fichiers
+	// n'existait à `230a635d`) : `features/open-items/open-items-labels.ts` (26),
+	// `OpenItemsScreen.svelte` (24), `OpenItemsTable.svelte` (19),
+	// `LetteringGroupPanel.svelte` (12), `ProposalsPanel.svelte` (10) et
+	// `routes/(app)/open-items/+page.svelte` (1, le titre) ; l'entrée de menu
+	// (`routes/(app)/+layout.svelte`) est une ligne de table `navGroups`, pas un site.
+	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (que des littéraux : les
+	// motifs et les états passent par des `switch`, jamais par une clé fabriquée).
+	sitesTotal: 2015,
 	sitesNonResolus: 31,
 	relais: 6,
 	sitesGabarit: 10,

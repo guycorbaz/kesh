@@ -62,7 +62,13 @@ const PREFIXES = [
 	// pouvait PAS le voir** : il ne relève que les clés ABSENTES des catalogues. Sur un domaine
 	// partiellement traduit, c'est CETTE garde le relevé de référence — elle lit les sources sans
 	// filtrer sur le catalogue. (Passe 3 de `validate` de la 23-4.)
-	'onboarding-'
+	'onboarding-',
+	// Story 15-1c-i (#518) — l'écran des postes ouverts : plusieurs composants partagent
+	// des clés (`open-items-letter`, `open-items-col-*`, `open-items-group-not-found`), et
+	// les trois motifs du délettrage reprennent en repli la valeur ENTIÈRE de leur clé
+	// `error-lettering-*` (G13) — un second site qui l'abrégerait doit rougir ici.
+	'open-items-',
+	'error-lettering-'
 ];
 
 /**
@@ -128,8 +134,15 @@ const PREFIXES = [
  * `settlement-cancel-blocked-lettering-closed` et `reconciliation-cancel-blocked-lettering-closed`,
  * ne portent aucun des quatre préfixes et n'entrent pas — recompté : `git diff` du FTL fr-CH,
  * préfixes du domaine.
+ *
+ * ⚠️ **214 → 289, +75 nommées par préfixe** (Story 15-1c-i, #518) — les deux préfixes
+ * ajoutés au domaine : les **72** clés `open-items-*` de l'écran des postes ouverts (toutes
+ * neuves, toutes demandées — recompté : `grep -c '^open-items-'` du FTL fr-CH) et les **3**
+ * clés `error-lettering-*` que le panneau du groupe lit en prévision du délettrage
+ * (`-is-document`, `-line-owned-by-document`, `-all-lines-in-closed-periods`) ; les huit
+ * autres clés `error-lettering-*` n'ont aucun site frontend.
  */
-const CLES_RELEVEES = 214;
+const CLES_RELEVEES = 289;
 
 
 /** Relève, pour chaque clé du domaine, l'ensemble de ses replis littéraux distincts. */

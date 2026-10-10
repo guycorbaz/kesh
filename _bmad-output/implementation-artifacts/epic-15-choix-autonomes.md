@@ -7826,3 +7826,39 @@ l'import (#458–#461).
 - **Retenu** : les deux passent sous « Livré sur `main` » dans la même phrase — la 15-1b est un prérequis de cette branche, et la règle « synchroniser le planning du README à chaque commit » interdit de laisser une ligne fausse. Au rebase sur `main`, l'union garde ce texte.
 - **Écartées** : ne déplacer que la 15-1c-0 (le README mentirait sur la 15-1b après le merge) ; laisser la 15-1b à sa propre PR (déjà close côté revue, fusion en attente).
 - **Réversible** : oui (texte).
+
+## C-15-1c-i-1 — 15-1c-i (développement, AC1, AC6) : l'URL est la source de vérité ; l'écran vit dans `features/open-items`
+- **Contexte** : un code de groupe se clique **dans** l'écran (`?group=`) et ailleurs (15-1c-ii) ; SvelteKit ne remonte pas une route dont seule la requête change. Les gardes i18n (`lint-i18n-ownership`) ne relèvent que `features/`.
+- **Retenu** : `OpenItemsScreen.svelte` reçoit `url` et `navigate` ; un effet relit l'URL et charge ce qui a changé (compte ou date → liste en page 1, sélection vidée ; compte → propositions ; `group` → groupe). Les gestes ne font qu'**écrire** l'URL, toujours par remplacement d'historique (patron de `journal-entries`). La route n'est qu'un passe-plat (`page.url`, `goto`). Un lien de code dans l'écran garde `accountId` et `asOf` ; hors de l'écran, `group` seul.
+- **Écartées** : charger dans les gestes et écrire l'URL en plus (deux chemins, le lien cliqué ne passerait par aucun) ; une entrée d'historique par changement (non prescrite, et `?asOf` réécrit d'office polluerait l'historique).
+- **Réversible** : oui (écran seul).
+
+## C-15-1c-i-2 — 15-1c-i (développement, AC4, AC6) : messages en ligne, et le 404 du `DELETE` au texte de l'écran
+- **Contexte** : la fiche dit « affiché par son message » sans dire où ; elle prescrit le texte de l'écran pour le 404 du `POST`, pas pour celui du `DELETE`, dont le message serveur (`NOT_FOUND`) n'est pas plus utile.
+- **Retenu** : un seul encart (`open-items-message`, `role="alert"` pour un refus, `role="status"` pour un succès) au-dessus de la liste — refus, « lettrage posé » avec le code en lien, « groupe délettré ». Le 404 du `DELETE` affiche « Aucun groupe ne porte ce code. » (la clé du 404 à l'ouverture, AC6). Après un délettrage réussi, `group` quitte l'URL et le panneau se ferme : c'est l'encart qui dit « délettré ». Un geste qui n'est pas un `ApiError` (réseau) affiche « L'opération a échoué. » et garde la sélection.
+- **Écartées** : un toast (fugace, et hors du flux lu par un lecteur d'écran) ; le message générique du serveur au 404 du `DELETE`.
+- **Réversible** : oui.
+
+## C-15-1c-i-3 — 15-1c-i (développement, AC4, AC5) : la sélection se vide aussi après un lettrage sur proposition ; le panneau des propositions se tait quand la vue refuse le compte
+- **Contexte** : C-15-1c-4 vide la sélection « après un lettrage réussi » ; une proposition acceptée peut lettrer une ligne sélectionnée. Sur un compte refusé (409/404), le panneau rendrait un second échec sans information.
+- **Retenu** : tout `POST` réussi vide la sélection ; le panneau n'est pas affiché quand la liste est refusée (409) ou introuvable (404) — le message de la vue suffit.
+- **Écartées** : garder la sélection après une proposition (elle pourrait retenir une ligne désormais lettrée, que le serveur refuserait).
+- **Réversible** : oui.
+
+## C-15-1c-i-4 — 15-1c-i (développement, AC6) : une facture sans numéro ne donne pas le numéro d'un groupe `document`
+- **Contexte** : C-15-1c-25 prend le `number` de la première ligne `invoice` ou `supplierInvoice` ; une facture fournisseur peut n'avoir aucun numéro (C-15-1a2-17).
+- **Retenu** : une telle ligne est passée ; on retombe sur l'`invoiceNumber` du premier règlement, sinon « lettrage d'une pièce ».
+- **Écartées** : afficher « lettrage de la pièce » suivi de rien.
+- **Réversible** : oui.
+
+## C-15-1c-i-5 — 15-1c-i (développement, AC3, AC11) : une aide par colonne de motif ; la garde « un repli par clé » couvre `open-items-` et `error-lettering-`
+- **Contexte** : AC3 demande « un libellé et une aide » par dimension ; AC11 demande un seul repli par clé dans tout le frontend, mais `i18n-un-repli-par-cle.test.ts` ne couvre que les préfixes qu'il énumère.
+- **Retenu** : l'aide est le `title` de l'en-tête « Motif » (`open-items-reason-help`, qui nomme les deux dimensions) et la note « état d'aujourd'hui » pour une date passée ; les libellés sont par valeur. La garde gagne les préfixes `open-items-` et `error-lettering-` (borne 214 → 289, recomptée).
+- **Écartées** : une infobulle par cellule (72 clés de plus pour un texte répété à chaque ligne).
+- **Réversible** : oui.
+
+## C-15-1c-i-6 — 15-1c-i (développement, AC13) : le spec E2E enchaîne (2) et (3) en série et nettoie le groupe de (6)
+- **Contexte** : la fiche veut que (3) délettre ce que (2) a lettré ; Playwright tourne à un seul worker, mais un test n'est indépendant que s'il crée ses données.
+- **Retenu** : (2)→(3) dans un `describe.serial` qui partage le code rendu par le `POST` ; (1), (4), (5), (6) indépendants, chacun avec son compte (`T` + 5 chiffres + compteur, ≤ 10 caractères). (6) lettre par l'API pour avoir un groupe, puis le délettre en administrateur à la fin.
+- **Écartées** : un test unique (2)+(3) (un échec en (3) masquerait l'état de (2)).
+- **Réversible** : oui.

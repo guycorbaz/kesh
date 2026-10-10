@@ -183,8 +183,19 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * déléguait à `i18nMsg` (les deux autres rendent un numéro de compte) : `conforme`
  * **41 → 40** ; `ecartee` ne bouge pas. La même fonction vit encore, inchangée, dans
  * `routes/(app)/bank-accounts/+page.svelte`, toujours relevée.
+ *
+ * ⚠️ **47 → 60, et les treize déclarations sont NOMMÉES** (Story 15-1c-i, #518, l'écran des
+ * postes ouverts). Douze dans `lib/features/open-items/open-items-labels.ts`, une dans
+ * `lib/features/open-items/OpenItemsScreen.svelte` (`refusalText`). **Sept `ecartee`** — leur
+ * `default` exhaustif rend `''`, et `documentLabel` rend aussi `'—'` pour une pièce sans
+ * numéro : `reasonLabel`, `documentStateLabel`, `noCheckboxLabel`, `letterBlockerLabel`,
+ * `documentLabel`, `dissolutionBlockerLabel`, `originLabel` (`ecartee` **7 → 14**). **Six
+ * `conforme`** — toutes leurs branches délèguent à `i18nMsg` ou rendent un gabarit :
+ * `entryRefLabel`, `letteredOnLabel`, `nothingDueLabel`, `sideLabel`, `amountWithSideLabel`,
+ * `refusalText` (`conforme` **40 → 46**). *Identifiées en cherchant les suffixes `Label`,
+ * `Text`, `Display` dans les fichiers de la story.*
  */
-const CANDIDATES_ATTENDUES = 47;
+const CANDIDATES_ATTENDUES = 60;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -701,7 +712,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 7, conforme: 40 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 46 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

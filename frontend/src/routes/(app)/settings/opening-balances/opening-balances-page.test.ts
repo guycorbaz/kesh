@@ -71,6 +71,7 @@ function acc(overrides: Partial<AccountResponse>): AccountResponse {
 		active: true,
 		role: null,
 		postable: true,
+		letterable: false,
 		version: 1,
 		createdAt: '2026-01-01T00:00:00',
 		updatedAt: '2026-01-01T00:00:00',

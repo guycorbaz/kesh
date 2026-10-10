@@ -2,7 +2,7 @@
 
 ## Status
 
-ready-for-dev **après la livraison de la 15-1c-0** *(et donc de la 15-1b, de la 15-1b-0, des 15-1a2-0, -i, -ii)*
+review — développée le 2026-10-10 (Opus 5.5, en autonomie). *Historique :* ready-for-dev **après la livraison de la 15-1c-0** *(et donc de la 15-1b, de la 15-1b-0, des 15-1a2-0, -i, -ii)*
 — créée le 2026-10-09 par le découpage de la 15-1c à la remédiation de sa validation P1 (registre **C-15-1c-1**) ;
 sa partie serveur (AC15, AC16 et leurs tests) extraite en **15-1c-0** à la remédiation de la validation P2
 (**C-15-1c-14**) ; **VALIDATION CLOSE** (P3 Sonnet ×2 : 0 au-dessus de LOW ; P4 ciblée Haiku : 0 au-dessus de LOW, LOW appliqués).
@@ -295,24 +295,24 @@ lettrage, écran compris, est écrite par la 15-1c-ii (AC14) — pas de tag entr
 
 ## Tasks
 
-- [ ] **T0** — Rebaser sur `main` après le merge de la 15-1c-0 ; relever au code livré les noms réels (types
+- [x] **T0** — Rebaser sur `main` après le merge de la 15-1c-0 ; relever au code livré les noms réels (types
       TypeScript de la vue s'ils ont été écrits, `fetchAccounts`, la forme de la réponse du `GET` enrichi), les
       valeurs fr-CH des trois clés `error-lettering-*` d'AC6 (replis), les clés réemployables d'AC8 et d'AC4, les
       bornes de `i18n-keys.test.ts`, le compte de créance du preset E2E ; écrire au Dev Agent Record ce qui diffère
       de la fiche.
-- [ ] **T1** (AC1, AC2, AC3, AC8) — `frontend/src/lib/features/open-items/` : `open-items.api.ts`,
+- [x] **T1** (AC1, AC2, AC3, AC8) — `frontend/src/lib/features/open-items/` : `open-items.api.ts`,
       `open-items.types.ts` (types de la vue, des propositions et du groupe enrichi, s'ils ne sont pas écrits),
       composants de liste, de motifs et de pied (montant et sens) ; route
       `frontend/src/routes/(app)/open-items/+page.svelte` (état d'URL) ; `accounts.types.ts` (`letterable`) ;
       entrée de menu.
-- [ ] **T2** (AC4) — sélection multi-pages, somme `big.js`, état du bouton, `POST`, refus (tout 404/409 :
+- [x] **T2** (AC4) — sélection multi-pages, somme `big.js`, état du bouton, `POST`, refus (tout 404/409 :
       rechargement, sélection effacée) et succès.
-- [ ] **T3** (AC5) — panneau des propositions.
-- [ ] **T4** (AC6, AC11) — panneau du groupe, `DELETE`, champ « Code » ; composant de lien de code.
-- [ ] **T5** (AC7, AC10) — bandeau de frontière ; rôles.
-- [ ] **T6** (AC11 part i) — clés ×4 locales, bornes de `i18n-keys.test.ts`, gardes nommées.
-- [ ] **T7** (AC19) — `README.md`, ligne v0.13.0.
-- [ ] **T8** — Tests (liste ci-dessous) ; E2E `open-items.spec.ts` (AC13 part i) ; gate backend complet et gate
+- [x] **T3** (AC5) — panneau des propositions.
+- [x] **T4** (AC6, AC11) — panneau du groupe, `DELETE`, champ « Code » ; composant de lien de code.
+- [x] **T5** (AC7, AC10) — bandeau de frontière ; rôles.
+- [x] **T6** (AC11 part i) — clés ×4 locales, bornes de `i18n-keys.test.ts`, gardes nommées.
+- [x] **T7** (AC19) — `README.md`, ligne v0.13.0.
+- [x] **T8** — Tests (liste ci-dessous) ; E2E `open-items.spec.ts` (AC13 part i) ; gate backend complet et gate
       frontend au dernier commit de code.
 
 **Tests de T8** — un par ligne, rattaché à son critère *(Vitest, `features/open-items/*.test.ts` ; les tests
@@ -394,11 +394,101 @@ part entière.
 
 ### Agent Model Used
 
+Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
+
 ### Completion Notes List
+
+- **T0 — relevé du code livré** (tête de la 15-1c-0, `230a635d`) :
+  - contrats lus dans `crates/kesh-api/src/routes/letterings.rs` : `OpenItemsResponse` porte en plus `accountId`,
+    `accountNumber`, `asOf` (non lus, sauf `accountId`/`asOf` pour les liens de code) ; les lignes des propositions
+    n'ont **ni débit ni crédit** (le montant est sur la paire) ; `GET /letterings/{key}` accepte la clé ou le code,
+    minuscules comprises (`parse_group_reference`) ; le `POST` rend `LetteringResponse` (forme de la 15-1a-i) dont
+    l'écran ne lit que `code`. **Aucun type TypeScript** de la vue n'existait : tous écrits ici
+    (`open-items.types.ts`). `fetchAccounts(includeArchived)` existe ; `AccountResponse` n'avait pas `letterable` :
+    ajouté, et les sept fabriques de test qui construisent un `AccountResponse` complet le gagnent
+    (`letterable: false`).
+  - replis des trois clés d'AC6, valeurs `fr-CH` entières (une ligne chacune) : `error-lettering-is-document`
+    (« Ce lettrage est celui d'une pièce : il suit la pièce et ses règlements, et ne se défait pas à la main. »),
+    `error-lettering-line-owned-by-document`, `error-lettering-all-lines-in-closed-periods` — repris au caractère près.
+  - clés réemployables (AC4, AC8) : aucune « débiteur / créditeur » ni texte du 404 dans un espace global ; les clés
+    de `features/` voisines sont interdites par `lint-i18n-ownership` → `open-items-*` neuves. Réemployées :
+    `common-loading`, `common-previous`, `common-next` (valeurs du catalogue).
+  - bornes de `i18n-keys.test.ts` à la base : `sitesTotal` 1923, `sitesNonResolus` 31, `relais` 6, `sitesGabarit` 10.
+  - preset E2E `with-company` (relevé sur l'API d'un backend de test) : comptes `1000 Caisse CI`, `1100 Banque CI`,
+    `2000 Capital CI` lettrables (aucun compte bancaire) ; `defaultReceivableAccountId` = `1100`. Le scénario (1) le
+    vérifie à l'exécution (`letterable` vrai) au lieu de le configurer.
+- **T1–T5** — `features/open-items/` : `open-items.types.ts`, `open-items.api.ts`, `open-items.ts` (logique pure, sans
+  clé), `open-items-labels.ts` (tous les textes, `switch` exhaustifs), `OpenItemsScreen.svelte` (l'écran ; l'URL est
+  la source de vérité, C-15-1c-i-1), `OpenItemsTable.svelte`, `ProposalsPanel.svelte`, `LetteringGroupPanel.svelte`,
+  `DocumentCell.svelte`, `LetteringCodeLink.svelte` (aucune clé i18n) ; route `routes/(app)/open-items/+page.svelte`
+  (passe-plat) ; entrée `nav-open-items` au groupe Mensuel, entre Réconciliation et Rapports.
+- **T6** — 73 clés neuves ×4 locales (72 `open-items-*` + `nav-open-items`), vocabulaire C-15-1a-i-4 (de *Ausgleich*,
+  en *matching*, it *abbinamento*, vouvoiement pluriel) ; *Abstimmung / Reconciliation / Riconciliazione* n'apparaissent
+  que pour nommer le menu de la réconciliation (bandeau d'AC7). Aucune expression de sélection Fluent (pluriels évités
+  par la tournure). Bornes recomptées aux deux bornes (`grep -o "i18nMsg("` fichier par fichier ; aucun fichier
+  n'existait à `230a635d`) : `sitesTotal` **1923 → 2015** (+92 : labels 26, écran 24, liste 19, groupe 12,
+  propositions 10, route 1) ; `sitesNonResolus`, `relais`, `sitesGabarit` inchangés ; garde « libellé en dur »
+  **47 → 60** candidates (`ecartee` 7 → 14, `conforme` 40 → 46, les treize nommées au commentaire) ; garde « un
+  repli par clé » étendue à `open-items-` et `error-lettering-` (C-15-1c-i-5), **214 → 289** clés relevées.
+- **T7** — README, ligne v0.13.0 : l'écran (15-1c-i) passe sous « Livré sur `main` » ; seule la 15-1c-ii reste « À
+  venir ». Relu : `sed -n 223p README.md` → « … (15-1c-0) ; l'écran des postes ouverts — consulter un compte à une
+  date, lettrer à la main ou sur proposition, ouvrir et délettrer un groupe (15-1c-i). **À venir** : le lettrage
+  montré sur la fiche d'écriture, au Grand livre et au manuel (15-1c-ii) … ».
+- **T8 — tests** : **86** tests Vitest neufs (recompté : 116 → 121 fichiers, 1167 → 1253 tests au `test:unit`
+  complet, base `230a635d` → commit de développement), en cinq fichiers : `open-items.test.ts` (16), 
+  `open-items-labels.test.ts` (11), `OpenItemsTable.test.ts` (13), `panels.test.ts` (13), `OpenItemsScreen.test.ts`
+  (33, dont sept engendrés par la boucle des codes 409) — tests 1 à 12 de la fiche couverts (renvois dans les titres). E2E `open-items.spec.ts` : **6 scénarios**, 6/6
+  verts sur la branche (backend port 3027, base `kesh_e2e_1ci`) ; `sidebar-navigation.spec.ts` rejoué, 4/4.
+  Gardes Rust des catalogues (`kesh-i18n` + `textes_coherents`) : 51/51.
+- **Mutations** (fichier restauré puis `touch`é après chacune ; filtre `src/lib/features/open-items`) — **toutes
+  rouges** :
+  | # | mutation | rougit |
+  |---|---|---|
+  | M1 | prévision « toutes closes » retirée | état du bouton, période close |
+  | M2 | `CONCURRENT_CHANGE` exclu des refus périmés | `isStaleRefusal` ; 409 `CONCURRENT_CHANGE` au `POST` ; refus au clic 409 |
+  | M3 | somme en `parseFloat` | zéro exact `0.1 + 0.2 − 0.3` |
+  | M4 | lien vers une transaction bancaire | table des cinq liens (pure et rendue) |
+  | M5 | sens ignorant le signe | sens pur ; pied « créditeur » ; libellé du pied |
+  | M6 | propositions rechargées au changement de date | « changer de date … ne recharge pas les propositions » |
+  | M7 | case sur `document == null` au lieu de `manuallyLetterable` | case ssi `manuallyLetterable` |
+  | M8 | « Délettrer » toujours offert | groupe `document` ; deux autres motifs |
+  | M9 | numéro de pièce = premier document quelconque | facture + avoir (pur et rendu) |
+  | M10 | sélection gardée sur un refus périmé | les sept 409 et le 404 au `POST` |
+  | M11 | date UTC (mal formée) écrite dans l'URL | `asOf` absent ; `asOf` mal formé |
+  | M12 | `group` laissé dans l'URL après un délettrage | 204 → `group` retiré |
+- **Modules** (signal D5, déclaré) : 2 crates/paquets (`frontend`, `kesh-i18n`) ; au grain fin les 8 annoncés —
+  pas de découpage.
 
 ### File List
 
+- `frontend/src/lib/features/open-items/` (neuf) : `open-items.types.ts`, `open-items.api.ts`, `open-items.ts`,
+  `open-items-labels.ts`, `OpenItemsScreen.svelte`, `OpenItemsTable.svelte`, `ProposalsPanel.svelte`,
+  `LetteringGroupPanel.svelte`, `DocumentCell.svelte`, `LetteringCodeLink.svelte`, `open-items.test.fixtures.ts`,
+  `open-items.test.ts`, `open-items-labels.test.ts`, `OpenItemsTable.test.ts`, `panels.test.ts`,
+  `OpenItemsScreen.test.ts`
+- `frontend/src/routes/(app)/open-items/+page.svelte` (neuf)
+- `frontend/src/routes/(app)/+layout.svelte`
+- `frontend/src/lib/features/accounts/accounts.types.ts`
+- fabriques de test (`letterable`) : `features/bank-accounts/BankAccountJournalLinkForm.test.ts`,
+  `features/opening-balances/opening-balances-totals.test.ts`, `features/reconciliation/ManualMatchModal.test.ts`,
+  `features/reconciliation/TransactionSplitModal.test.ts`, `routes/(app)/accounts/accounts-page.test.ts`,
+  `routes/(app)/bank-accounts/bank-accounts-page.test.ts`,
+  `routes/(app)/settings/opening-balances/opening-balances-page.test.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`, `i18n-libelle-en-dur.test.ts`, `i18n-un-repli-par-cle.test.ts`
+- `frontend/tests/e2e/open-items.spec.ts` (neuf)
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`
+- `README.md`
+- `_bmad-output/implementation-artifacts/15-1c-i-ecran-postes-ouverts.md`,
+  `sprint-status.yaml`, `epic-15-choix-autonomes.md` (C-15-1c-i-1 à 6)
+
 ## Change Log
+
+### Développement — 2026-10-10 (Opus 5.5, en autonomie)
+
+T0 à T8 faits sur la tête de la 15-1c-0 (`230a635d`). 86 tests Vitest neufs, 6 scénarios E2E verts sur la branche,
+douze mutations toutes rouges. Choix **C-15-1c-i-1 à 6**. Tests ciblés exécutés (Vitest complet 1253/1253, gardes
+Rust des catalogues 51/51, `npm run check` 0 erreur, `lint-i18n-ownership` vert) ; gate complet, frontend et E2E
+complet au dernier commit de code, après le rebase sur `main` (15-1c-0 fusionnée).
 
 ### Création — 2026-10-09 (Opus 5.5, remédiation de la validation P1 de la 15-1c, en autonomie)
 
