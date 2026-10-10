@@ -1,6 +1,6 @@
 # Story 26-3 : Le manuel décrit les écrans réels, et la garde de `kesh-restore.sh` échoue fermée
 
-Status: in-progress
+Status: review
 
 <!-- Spécifiée le 2026-10-10 sur fe162504 (branche story/26-3, worktree kesh-26-3), en autonomie
      (consignes communes des agents, memory/consignes-agents-epic15.md). Choix C-26-3-1 à 8 au registre
@@ -658,25 +658,25 @@ insensible à la casse rougirait sur du code correct, et serait « réparée » 
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Relevé** (AC tous)
-  - [ ] Relancer chaque commande d'inventaire des AC sur l'état courant (`git log --oneline -1`), noter
+- [x] **T0 — Relevé** (AC tous)
+  - [x] Relancer chaque commande d'inventaire des AC sur l'état courant (`git log --oneline -1`), noter
         les écarts avec `fe162504` (les 26-1/26-2 mergées entre-temps décalent les lignes).
-  - [ ] `occ` sur les PDF d'avant, valeurs ≥ 1 consignées (AC 10).
-  - [ ] Créer la base du worktree et le port attribué par l'orchestrateur (consignes, points 6 et 8).
-- [ ] **T1 — Manuel utilisateur** (AC 1, 2, 3)
-  - [ ] § Ajout / Modification d'un compte sur l'inventaire des dialogues ; phrase « compte bancaire ».
-  - [ ] § Import dans Kesh, § Import avec un profil existant ; `\label{sec:import-csv}`.
-  - [ ] `:1638` reformulé (plupart, CSV, contrôle de solde à la main, MT940 non lu).
-- [ ] **T2 — Écran d'import** (AC 4) : 4 catalogues, `aria-label`, titre et `<title>`, replis.
-- [ ] **T3 — `kesh-restore.sh`** (AC 5) : réglage, lecture unique, filet image, sortie fermée, en-tête.
-- [ ] **T4 — Recette** (AC 6) : section 0 contre le faux `docker` (fonction définie et exportée dans
+  - [x] `occ` sur les PDF d'avant, valeurs ≥ 1 consignées (AC 10).
+  - [x] Créer la base du worktree et le port attribué par l'orchestrateur (consignes, points 6 et 8).
+- [x] **T1 — Manuel utilisateur** (AC 1, 2, 3)
+  - [x] § Ajout / Modification d'un compte sur l'inventaire des dialogues ; phrase « compte bancaire ».
+  - [x] § Import dans Kesh, § Import avec un profil existant ; `\label{sec:import-csv}`.
+  - [x] `:1638` reformulé (plupart, CSV, contrôle de solde à la main, MT940 non lu).
+- [x] **T2 — Écran d'import** (AC 4) : 4 catalogues, `aria-label`, titre et `<title>`, replis.
+- [x] **T3 — `kesh-restore.sh`** (AC 5) : réglage, lecture unique, filet image, sortie fermée, en-tête.
+- [x] **T4 — Recette** (AC 6) : section 0 contre le faux `docker` (fonction définie et exportée dans
       le sous-shell de chaque cas), `RECETTE_SECTION=0`, cas S1-S23, huit mutations (O, F, F′, Z, I, R, D,
       T) aux cas rouges exacts, assertion `type -t docker` = `file`, motifs `est « running »` /
       `est « paused »` aux lignes 153/162, `docs/testing.md` (section 0, prérequis de la recette réelle).
-- [ ] **T5 — G16** (AC 7), **G14 lit `up`** (AC 7.8) et **G20** (AC 9), avec leurs mutations.
-- [ ] **T6 — Manuel d'administration** (AC 8).
-- [ ] **T7 — PDF** (AC 10), **CHANGELOG** et propagation (AC 11).
-- [ ] **T8 — Gates** (AC 12), commit par étape BMAD, messages `refs #616 #617 #619`.
+- [x] **T5 — G16** (AC 7), **G14 lit `up`** (AC 7.8) et **G20** (AC 9), avec leurs mutations.
+- [x] **T6 — Manuel d'administration** (AC 8).
+- [x] **T7 — PDF** (AC 10), **CHANGELOG** et propagation (AC 11).
+- [x] **T8 — Gates** (AC 12), commit par étape BMAD, messages `refs #616 #617 #619`.
 
 ## Dev Notes
 
@@ -775,14 +775,125 @@ l'AC 11.2 : 0). `export -f` est propre à bash : les deux scripts et la recette 
 
 ### Agent Model Used
 
+Claude Opus 5.5 (développement, en autonomie).
+
 ### Debug Log References
 
+- Gate backend : `kesh-gate-logs/26-3-gate-dev.log` ; E2E : `kesh-gate-logs/26-3-e2e-dev.log` ;
+  recette Synology complète : `kesh-gate-logs/26-3-recette-dev.log`.
+- Premier gate backend rouge (27 échecs `Unknown database '_sqlx_test_…'`) : le gate de la 26-2 tournait
+  au même moment sur le même serveur MariaDB, et le ménage des bases `_sqlx_test_*` de `sqlx::test`
+  efface celles de l'autre run. Relancé seul, après la fin du sien : vert. **À signaler** : deux gates
+  complets simultanés sur `kesh-mariadb-dev` se détruisent mutuellement.
+
 ### Completion Notes List
+
+**Relevé T0** (sur `f00aa6c0`, `main` = `9b724027`) : les numéros de ligne des AC sont ceux de
+`fe162504` (aucune des 26-1, 26-2 n'est mergée). Commande de l'AC 2.4 : 7 lignes, comme prévu. **26-1
+non mergée** : § *Profils banque* non touchée, non vérifiée (AC 2.7, à signaler). **26-2 non mergée** :
+renvois au texte, pas à `sec:comptes-bancaires` (AC 2.6, C-26-3-23).
+
+**Écart à la fiche, consigné** : C-26-3-22 (la boucle lit la ligne entière puis la découpe, trois `|`
+exactement — la forme littérale de l'AC 5.2 laissait passer `|||` et `a|b|c|d|`).
+
+**Recette, section 0** (`RECETTE_SECTION=0 bash scripts/synology/recette.sh`) : 23 cas S1-S23 verts,
+« RECETTE VERTE ». **Mutations de `kesh-restore.sh`**, chacune jouée en section 0, script restauré et
+touché après chaque, cas rouges relevés par `grep -oE 'ÉCHEC S[0-9]+'` :
+
+| Mutation | Rouges observés | Attendu (AC 6) |
+|---|---|---|
+| (O) garde d'origine `fe162504:75-79` | S1 S2 S3 S4 S5 S7 S8 S11 S12 S13 S14 S22 S23 (13) | idem |
+| (F) filet retiré | S3 S4 S14 S22 S23 (5) | idem |
+| (F′) filet sans `case` d'état | S19 S20 (2) | idem |
+| (Z) sortie sur zéro retirée | S1 S5 (2) | idem |
+| (I) contrôle « illisible » retiré | S11 S12 (2) | idem |
+| (R) `kesh-api` en dur | S2 S4 S18 (3) | idem |
+| (D) `dead` retiré (deux `case`) | S21 (1) | idem |
+| (T) filet à étiquette obligatoire | S23 (1) | idem |
+
+**Recette complète** (vrai Docker, poste de dev, au commit `94f7e854`) : « RECETTE VERTE », 111 lignes
+`OK`, 0 `ÉCHEC` ; sections 4 : refus `est « running »`, `est « restarting »`, `est « paused »` nommant
+`kesh-recette-synology-kesh-api-1` ; l'hôte portait 21 conteneurs dont plusieurs hors compose à étiquette
+vide (`created|debian:bookworm-slim||kesh1513b-t0-probe`) : lus sans refus. Assertion `type -t docker` =
+`file` verte après la section 0 et en tête de la section 1.
+
+**Mutations des gardes Rust** (binaires `configuration_transmise` et `textes_coherents`, restauration et
+`touch` après chaque ; lignes d'erreur copiées) :
+
+- (a) ligne `docker ps` d'origine → G16 : « sans refus « Kesh actif » » + « lecture à séparateur `|` » (2) ;
+- (b) sortie sur zéro retirée → G16 : « zéro conteneur … ne fait pas sortir » (1) ;
+- (c) filet retiré → G16 : « le filet par l'image gcorbaz/kesh manque » (1) ;
+- (d) `SAUVEGARDE_SERVICE` retiré du manuel → G16 : (g) égalité des ensembles + (g) citation ; G20 :
+  positive `SAUVEGARDE_SERVICE=` (3, deux binaires) ;
+- (e) `|` → tabulation dans le `--format` et l'`IFS` → G16 : « lecture à séparateur `|` » seule ;
+- G14 : `docker compose up --no-start kesh` en section Synology → « :1746 (section Synology) : `up kesh`,
+  service absent de docker-compose.prod.yml » ;
+- G20 : `\textbf{Compte de banque}` (:338), la même coupée par un retour à la ligne (:338), `marqué
+  « Compte de banque »` (:346), `Toutes les banques suisses` (:1649), valeur `de-CH` d'origine de la zone
+  de dépôt, valeur `en-CH` d'origine du titre → rouge chaque fois, sur le seul G20 ; « son propre compte
+  de banque » ajouté une fois de plus → **vert** (aucun faux positif).
+
+**G14** — inventaire `grep -nE "docker compose.* up\b"` avant modification : 7 lignes nomment un service
+(`kesh-api` : 1289, 1296, 1348, 1746 — neuve, Synology —, 1947, 2585, 2592) ; G14 verte.
+
+**PDF** (`scripts/mem-guard.sh make -B -C docs/manual admin user`, puis `occ` sous `LC_ALL=C.UTF-8`) :
+avant (`fe162504`) → après : `Compte de banque` 2 → 0 ; `marqué « Compte de banque »` 1 → 0 ;
+`fourni par toutes les banques suisses` 1 → 0 ; `Nouvel import CSV` 1 → 0 ; `Importer → Nouvel import`
+2 → 0 ; `Cliquer sur un compte ouvre son détail` 1 → 0 ; `Bilan / Résultat` 1 → 0 ; `Devise : CHF par
+défaut` 1 → 0 ; `une fois des écritures saisies` 1 → 0 ; `Import bancaire, puis l'import` 2 → 0 ;
+`Multibanking ou Klippa` 1 → 0 ; admin `quel que soit le nom du projet` 1 → 0 ; `SAUVEGARDE_SERVICE`
+0 → 6. Présents au neuf : `Compte comptable lié` 2, `Confirmer l'import` 4, `Importer des relevés` 4,
+`La plupart des banques suisses le proposent, pas toutes` 1, `MT940 n'est pas lu` 1, `contrôle du solde
+se fait alors à la main` 1, `SAUVEGARDE_RESEAU=proxy` 2, `up --no-start` 1, `SAUVEGARDE_RESEAU
+(frontend` 1 (exigé par G16 (g)). `??` : 0 et 0 sur les deux PDF, avant et après. `Overfull \hbox` dans
+les lignes touchées : un (user, `Récupération du fichier CAMT.053`, 5,3 pt) corrigé par `sloppypar` ;
+zéro ensuite (deux `Underfull` admin, sans effet). Contrôle visuel aplati : listings `docker inspect` et
+compose adapté rendus avec leurs accolades.
+
+**AC 11.2, rejoué au commit `94f7e854` avec code de sortie** : `Compte de banque` (docs) 0 ligne, code 1 ;
+`toutes les banques` (B) 0, code 1 (après reformulation du CHANGELOG et de G20, qui la citaient) ;
+`Import bancaire CAMT.053` (périmètre restreint) : `messages.ftl:1043` seul, code 0 ; (B) : README:41,
+`errors.rs:644`, `:2032`, `bank_imports.rs:1`, `messages.ftl:1043`, `kesh-specifications.txt:1534`,
+`:2458`, brochure:388 — les sites assumés, code 0 ; AC 2.4 : 0, code 1 ; `compose create` : 0, code 1 ;
+`service=kesh-api` : **1** (`recette.sh:186`, `etat_kesh_api` — décalé de :67 par la section 0), code 0 ;
+`SAUVEGARDE_SERVICE` : CHANGELOG, `configuration_transmise.rs`, `textes_coherents.rs`, `admin-manual.tex`,
+`kesh-restore.sh`, `recette.sh` (et `docs/testing.md` ne l'écrit pas), code 0. AC 3.2 : 4 lignes,
+`user-manual.tex:1650` (la phrase neuve, « la plupart ») remplaçant `:1638`. README:50 relu : juste.
+`website/` : rien d'universel (relu). `CHANGELOG.md` : `grep -c '^## \[0\.13\.1\] — '` → 1, un seul
+`### Corrigé`.
+
+**Vitest** : `i18n-keys.test.ts` rougissait (`sitesTotal` 2020 → 2022 : l'`aria-label` et le `<title>` de
+l'écran d'import lus par clé) — compteur mis à jour, recompté par `grep -o "i18nMsg("` aux deux bornes
+(`BankImportUpload.svelte` 21 → 22, `bank-import/+page.svelte` 2 → 3).
+
+**Gates au commit de code `94f7e854` + compteur Vitest** (aucun code modifié depuis, hors fiche) :
+`cargo fmt --check` vert ; `clippy -D warnings` vert ; `scripts/test-fast.sh --ci` sur `kesh_263` remise à
+zéro : **3341 passés, 0 échec, 5 ignorés** (210 s) ; `npm run check` 0 erreur (27 avertissements
+préexistants) ; `lint-i18n-ownership` PASS ; `npm run test:unit` 1287 tests, **1 échec** au premier run
+(compteur ci-dessus), `i18n-keys.test.ts` 11/11 après correction — *la suite Vitest complète est à
+rejouer au dernier commit* ; `npm run build` vert ; **E2E complet** (port 3033, `kesh_e2e_263`
+reconstruite, montage complet de `docs/testing.md`) : **256 passés, 7 échoués, 19 ignorés** — les 7 sont
+exactement les KF-029 (#97) de la liste attendue (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`,
+`onboarding:57`, `:77`, `:150`).
+
+**Signalé, non prescrit** : la section 0 n'a plus besoin de Docker ; un test Rust qui la lancerait la
+mettrait dans le gate (observation P3 R-L9).
+
+- Spécification : analyse de contexte complète (issues, epic, scripts, gardes G14/G16/G19, écrans,
+  catalogues, manuels) — fiche prête pour la validation.
 
 - Spécification : analyse de contexte complète (issues, epic, scripts, gardes G14/G16/G19, écrans,
   catalogues, manuels) — fiche prête pour la validation.
 
 ### File List
+
+- `scripts/synology/kesh-restore.sh`, `scripts/synology/recette.sh`
+- `crates/kesh-api/tests/configuration_transmise.rs` (G14, G16), `crates/kesh-api/tests/textes_coherents.rs` (G20)
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`
+- `frontend/src/lib/features/bank-import/BankImportUpload.svelte`, `frontend/src/routes/(app)/bank-import/+page.svelte`, `frontend/src/lib/shared/i18n-keys.test.ts`
+- `docs/manual/fr/user-manual.tex` (+ `.pdf`), `docs/manual/fr/admin-manual.tex` (+ `.pdf`)
+- `docs/user-guide/fr/getting-started.md`, `docs/i18n-glossaire.md`, `docs/testing.md`, `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/epic-26-choix-autonomes.md` (C-26-3-21 à 23), `sprint-status.yaml`
 
 ## Change Log
 

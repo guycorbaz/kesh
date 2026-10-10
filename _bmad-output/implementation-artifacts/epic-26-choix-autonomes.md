@@ -312,3 +312,28 @@ le contexte, l'option retenue, les options écartées et la réversibilité. **M
   propriété qui la justifie (aucune dépendance à l'hôte) ; conditionner la trap par
   `[ "${RECETTE_SECTION:-}" = 0 ] || trap …` — laisse `openssl` avant la section 0 et duplique le test.
 - **Réversible** : oui.
+
+## C-26-3-22 — 26-3 (dev) : la boucle lit la ligne entière, puis la découpe ; trois séparateurs exactement
+
+- **Contexte** : l'AC 5.2 prescrit `while IFS='|' read -r ETAT IMAGE SERVICE NOM RESTE`. Mesuré au
+  poste : sous cette forme, une ligne `|||` (quatre champs vides) est indiscernable d'une ligne vide
+  — elle serait ignorée au lieu d'être refusée —, et une ligne `a|b|c|d|` (séparateur final) laisse
+  `RESTE` vide : elle passerait pour lisible.
+- **Retenu** : `while IFS= read -r LIGNE` (ligne vide → ignorée), puis
+  `IFS='|' read -r ETAT IMAGE SERVICE NOM RESTE <<< "$LIGNE"` et un contrôle de **trois `|`
+  exactement** (`SEPARATEURS=${LIGNE//[^|]/}`), en plus des champs `ETAT`, `IMAGE`, `NOM` non vides
+  et de `RESTE` vide. Toujours dans le shell courant (`done <<< "$LISTE"`). La clause de G16 (AC 7.5)
+  lit le `--format` à `|` et `IFS='|' read -r ETAT IMAGE SERVICE NOM RESTE` — elle tient cette forme.
+- **Écarté** : la forme littérale de l'AC 5.2 (les deux trous ci-dessus).
+- **Réversible** : oui.
+
+## C-26-3-23 — 26-3 (dev) : renvois du manuel utilisateur par `\label` neufs ; la 26-2 non mergée
+
+- **Contexte** : AC 1.2, 2.2 et 2.6 — la 26-2 (`sec:comptes-bancaires`) n'est pas mergée au
+  développement (`main` = `9b724027`).
+- **Retenu** : renvois au texte (*Administration → Comptes bancaires*) et `\label` neufs, posés sur
+  des titres existants : `sec:ajout-compte`, `sec:solde-comptable`, `sec:import-dans-kesh`,
+  `sec:import-csv` (AC 3.1), `sec:import-csv-profil`. À la fusion avec la 26-2, les renvois de
+  l'AC 1.2 pourront porter `\S\ref{sec:comptes-bancaires}` — signalé à l'orchestrateur.
+- **Écarté** : citer `sec:comptes-bancaires` avant qu'il existe (`??` au PDF).
+- **Réversible** : oui.
