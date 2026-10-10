@@ -4,8 +4,8 @@
 25) : le développeur était Opus → **P1 Sonnet** (passe complète), P2 Opus, Haiku réservé à la passe ciblée de fin de
 boucle.*
 
-Dépôt `/home/gcorbaz/devel/kesh-26-2`, branche `story/26-2`. **Diff à relire : `git diff 9b724027..{{HEAD}} --
-crates frontend docs/migrations-idempotence-audit.md`** (`9b724027` = `origin/main` au départ ; `{{HEAD}}` = dernier
+Dépôt `/home/gcorbaz/devel/kesh-26-2`, branche `story/26-2`. **Diff à relire : `git diff 9b724027..1ea3c98b --
+crates frontend docs/migrations-idempotence-audit.md`** (`9b724027` = `origin/main` au départ ; `1ea3c98b` = dernier
 commit de code de la 26-2a). Fiche : `_bmad-output/implementation-artifacts/26-2-description-compte-bancaire.md` —
 **partie a seulement** (AC1 à AC8, AC13 (a), AC14 partie a : M1-M7, M11-M15, M18). La partie b (AC9-12 : autres
 écrans, `GET /companies/current`, refus de désignation, garde d'inventaire, manuel, CHANGELOG) n'est **pas** dans ce
