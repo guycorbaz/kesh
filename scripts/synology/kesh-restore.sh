@@ -2,12 +2,26 @@
 # kesh-restore.sh <dossier> — recharge la base de Kesh depuis un dump de kesh-dump.sh
 # (manuel d'administration, « Recovery depuis Snapshot »).
 #
-# Ce script ne touche PAS à Kesh : arrêtez kesh-api AVANT, redémarrez-le APRÈS
-# (dans le dossier du compose : docker compose stop kesh-api / docker compose start
-# kesh-api). Il REFUSE de démarrer si un conteneur du service kesh-api est dans un
-# autre état que exited, created ou dead — en marche, en boucle de redémarrage
-# (restarting), en pause… —, sur tout l'hôte (label com.docker.compose.service,
-# quel que soit le projet).
+# Ce script ne touche PAS à Kesh : arrêtez le service de Kesh AVANT, redémarrez-le
+# APRÈS (dans le dossier du compose : docker compose stop kesh-api / docker compose
+# start kesh-api — kesh-api est le service du compose livré ; un compose adapté peut
+# le nommer autrement, réglage SAUVEGARDE_SERVICE). La garde est FERMÉE et lue une
+# fois, avant le verrou, sur tout l'hôte (docker ps --all, quel que soit le projet) :
+#   - il REFUSE si un conteneur du service SAUVEGARDE_SERVICE (étiquette
+#     com.docker.compose.service) est dans un autre état que exited, created ou dead
+#     — en marche, en boucle de redémarrage (restarting), en pause… ;
+#   - filet : il refuse de même pour tout conteneur d'image gcorbaz/kesh (nue,
+#     étiquetée ou par empreinte, préfixe docker.io/ admis), quel que soit son
+#     service — un service renommé sans réglage, un orphelin d'un ancien nom ;
+#   - il REFUSE s'il ne trouve AUCUN conteneur du service SAUVEGARDE_SERVICE (nom
+#     de service faux, ou conteneur supprimé : docker compose up --no-start <service>
+#     le recrée sans le démarrer) ;
+#   - il REFUSE si une ligne de docker ps est illisible, et si docker échoue.
+# Angles morts du filet : image affichée par son identifiant (après un docker
+# compose pull, le conteneur non recréé perd l'étiquette), image référencée par
+# index.docker.io/… ou un miroir privé, image construite localement sous un autre
+# nom. Un Kesh démarré PENDANT le rechargement n'est pas vu : la garde est lue une
+# fois, avant l'étape 2.
 #
 # <dossier> contient kesh_pre_backup.sql.gz et kesh_pre_backup.sql.gz.sha256 : le
 # dossier dump/ d'un snapshot ou d'une restauration Hyper Backup, ou un dossier
@@ -17,7 +31,8 @@
 # Dans cet ordre, en s'arrêtant à la première erreur. La base n'est touchée qu'à
 # l'étape 6, aucun dump n'est écrit avant l'étape 5 ; avant, le script n'écrit que
 # son verrou (dump/.verrou) :
-#   1. refus si un conteneur kesh-api est actif ;
+#   1. refus si un conteneur de Kesh est actif, ou si aucun conteneur du service
+#      SAUVEGARDE_SERVICE n'existe (garde ci-dessus) ;
 #   2. verrou du dump (dump/.verrou, celui de kesh-dump.sh) : pas de dump nocturne
 #      pendant la restauration, ni deux restaurations à la fois ;
 #   3. empreinte (sha256sum -c) et intégrité (gzip -t) du dump, puis nom de la base
@@ -48,7 +63,9 @@
 #
 # Réglages : SAUVEGARDE_DOSSIER, SAUVEGARDE_BASE, SAUVEGARDE_RESEAU,
 # SAUVEGARDE_IMAGE, comme kesh-dump.sh (qui doit être dans le même dossier que ce
-# script). SAUVEGARDE_DOSSIER contient kesh-restore.cnf (compte Kesh, 600, root).
+# script) ; SAUVEGARDE_SERVICE (kesh-api), le service de Kesh dans votre compose,
+# lu par ce script seul. SAUVEGARDE_DOSSIER contient kesh-restore.cnf (compte Kesh,
+# 600, root).
 set -euo pipefail
 umask 077
 export PATH="/usr/local/bin:/usr/bin:/bin:${PATH:-}"
@@ -61,6 +78,7 @@ SAUVEGARDE_DOSSIER=${SAUVEGARDE_DOSSIER:-/volume1/docker/kesh}
 SAUVEGARDE_BASE=${SAUVEGARDE_BASE:-kesh}
 SAUVEGARDE_RESEAU=${SAUVEGARDE_RESEAU:-frontend}
 SAUVEGARDE_IMAGE=${SAUVEGARDE_IMAGE:-mariadb:10.11}
+SAUVEGARDE_SERVICE=${SAUVEGARDE_SERVICE:-kesh-api}
 SAUVEGARDE_DOSSIER=$(cd "$SAUVEGARDE_DOSSIER" && pwd -P)
 [ -f "$SAUVEGARDE_DOSSIER/kesh-restore.cnf" ] || { echo "kesh-restore : $SAUVEGARDE_DOSSIER/kesh-restore.cnf absent" >&2; exit 1; }
 [ -f "$ICI/kesh-dump.sh" ] || { echo "kesh-restore : $ICI/kesh-dump.sh absent (les deux scripts vont ensemble)" >&2; exit 1; }
@@ -72,11 +90,28 @@ client() {
         "$SAUVEGARDE_IMAGE" "$@"
 }
 
-# 1. Aucun conteneur kesh-api actif — une erreur de docker vaut refus (set -e).
-ETATS=$(docker ps --all --filter label=com.docker.compose.service=kesh-api --format '{{.State}}')
-for ETAT in $ETATS; do
-    case "$ETAT" in exited|created|dead) ;; *) echo "kesh-restore : un conteneur kesh-api est « $ETAT » — arrêtez-le d'abord (docker compose stop kesh-api) ; rien n'a été touché" >&2; exit 1;; esac
-done
+# 1. Aucun Kesh actif — une seule lecture de l'hôte, en affectation nue : une erreur de
+#    docker vaut refus (set -e). Séparateur | : une étiquette de service vide (conteneur
+#    hors compose) reste un champ vide. Boucle alimentée par <<< : elle tourne dans le
+#    shell courant, son exit 1 sort bien du script.
+LISTE=$(docker ps --all --format '{{.State}}|{{.Image}}|{{.Label "com.docker.compose.service"}}|{{.Names}}')
+IMAGE_KESH='^(docker\.io/)?gcorbaz/kesh([:@].*)?$'
+N=0
+while IFS= read -r LIGNE; do
+    [ -n "$LIGNE" ] || continue
+    IFS='|' read -r ETAT IMAGE SERVICE NOM RESTE <<< "$LIGNE"
+    SEPARATEURS=${LIGNE//[^|]/}
+    if [ -z "$ETAT" ] || [ -z "$IMAGE" ] || [ -z "$NOM" ] || [ -n "$RESTE" ] || [ "${#SEPARATEURS}" -ne 3 ]; then
+        echo "kesh-restore : ligne de docker ps illisible (« $LIGNE ») — rien n'a été touché" >&2; exit 1
+    fi
+    if [ "$SERVICE" = "$SAUVEGARDE_SERVICE" ]; then
+        N=$((N+1))
+        case "$ETAT" in exited|created|dead) ;; *) echo "kesh-restore : le conteneur $NOM (service « $SERVICE ») est « $ETAT » — arrêtez-le d'abord ; rien n'a été touché" >&2; exit 1;; esac
+    elif [[ "$IMAGE" =~ $IMAGE_KESH ]]; then
+        case "$ETAT" in exited|created|dead) ;; *) echo "kesh-restore : le conteneur $NOM (image Kesh $IMAGE, service « $SERVICE ») est « $ETAT » — arrêtez-le d'abord ; rien n'a été touché" >&2; exit 1;; esac
+    fi
+done <<< "$LISTE"
+[ "$N" -gt 0 ] || { echo "kesh-restore : aucun conteneur du service « $SAUVEGARDE_SERVICE » sur cet hôte (réglage SAUVEGARDE_SERVICE) — si le service de Kesh porte un autre nom dans votre compose, posez SAUVEGARDE_SERVICE=<nom> ; si son conteneur a été supprimé (docker compose down) ou n'a jamais été créé, créez-le sans le démarrer : docker compose up --no-start <service> ; rien n'a été touché" >&2; exit 1; }
 
 # 2. Verrou du dump, avant de lire le dump : le dossier donné peut être le dump/ vivant.
 mkdir -p "$SAUVEGARDE_DOSSIER/dump"
@@ -124,4 +159,4 @@ if ! gunzip -c "$SOURCE/kesh_pre_backup.sql.gz" \
     echo "    pour information, ce passage : ${SECURITE:-aucun dump de sécurité (base absente ou vide)} ; si le premier passage n'en a pas pris, il n'y a pas d'état d'avant à retrouver" >&2
     exit 1
 fi
-echo "kesh-restore : base $SAUVEGARDE_BASE rechargée depuis $SOURCE — redémarrez Kesh (docker compose start kesh-api)"
+echo "kesh-restore : base $SAUVEGARDE_BASE rechargée depuis $SOURCE — redémarrez Kesh (docker compose start $SAUVEGARDE_SERVICE)"

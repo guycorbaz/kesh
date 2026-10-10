@@ -45,11 +45,11 @@
 </script>
 
 <svelte:head>
-	<title>Import bancaire - Kesh</title>
+	<title>{i18nMsg('bank-import-labels-page-title', 'Import de relevés bancaires')} — Kesh</title>
 </svelte:head>
 
 <h1 class="text-2xl font-semibold text-text" data-testid="bank-import-page-title">
-	{i18nMsg('bank-import-labels-page-title', 'Import bancaire CAMT.053')}
+	{i18nMsg('bank-import-labels-page-title', 'Import de relevés bancaires')}
 </h1>
 
 {#if loading}
