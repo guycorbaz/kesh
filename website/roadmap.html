@@ -40,7 +40,7 @@
 		<div class="relative max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-20">
 			<p class="text-emerald-400 text-sm font-mono mb-3">// Roadmap</p>
 			<h1 class="text-4xl sm:text-5xl font-extrabold tracking-tight mb-6">From foundations to Swiss VAT.</h1>
-			<p class="text-lg text-slate-300 leading-relaxed">Kesh is delivered as a sequence of <strong class="text-white">epics</strong>, each composed of small, independently reviewable stories. The release plan below tracks the path from MVP (v0.1) through sovereignty tooling (v0.2), Swiss VAT (v0.3), supplier invoices, payments & project analytics (v0.4), structured QR-bill addresses (v0.5), invoice emailing with multilingual templates (v0.6), receivables &amp; multi-level dunning (v0.7), and year-end closing with automatic balance carry-forward (v0.8, current release) — toward a feature-complete production release.</p>
+			<p class="text-lg text-slate-300 leading-relaxed">Kesh is delivered as a sequence of <strong class="text-white">epics</strong>, each composed of small, independently reviewable stories. The release plan below tracks the path from MVP (v0.1) through sovereignty tooling (v0.2), Swiss VAT (v0.3), supplier invoices, payments & project analytics (v0.4), structured QR-bill addresses (v0.5), invoice emailing with multilingual templates (v0.6), receivables &amp; multi-level dunning (v0.7), year-end closing with automatic balance carry-forward (v0.8), advanced invoicing (v0.9), duplicate prevention (v0.10), translation debt (v0.11), the correction wave that made the books right (v0.12), and open items &amp; matching (v0.13, current release) — toward a feature-complete production release. <strong class="text-white">Kesh is not yet meant for keeping real books</strong>: year-end closing entries (#232) and document attachments (#235) are still missing.</p>
 			<div class="flex gap-4 mt-8 text-sm">
 				<div class="flex items-center gap-2">
 					<span class="w-3 h-3 rounded-full bg-emerald-400"></span>
@@ -220,7 +220,7 @@
 				<h2 class="text-3xl font-bold tracking-tight">v0.2 – v0.3 — Sovereignty & Swiss VAT</h2>
 				<span class="text-sm text-slate-500 font-mono">and beyond</span>
 			</div>
-			<p class="text-slate-400 mb-10">Growing from a working ledger toward everything an SME needs to run a full fiscal year: sovereignty tooling (v0.2), Swiss VAT (v0.3), supplier invoices, payments & project analytics (v0.4), structured addresses (v0.5), invoice emailing (v0.6), receivables &amp; dunning (v0.7), year-end closing &amp; balance carry-forward (v0.8, current release), then budgets.</p>
+			<p class="text-slate-400 mb-10">Growing from a working ledger toward everything an SME needs to run a full fiscal year: sovereignty tooling (v0.2), Swiss VAT (v0.3), supplier invoices, payments & project analytics (v0.4), structured addresses (v0.5), invoice emailing (v0.6), receivables &amp; dunning (v0.7), year-end closing &amp; balance carry-forward (v0.8), advanced invoicing (v0.9), hardening (v0.10), translations (v0.11), the correction wave (v0.12), open items &amp; matching (v0.13, current release), then budgets.</p>
 
 			<div class="grid sm:grid-cols-2 gap-4">
 				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
@@ -293,13 +293,30 @@
 					</div>
 					<p class="text-sm text-slate-400">Kesh advertises four languages, and on part of its screens it was <strong class="text-slate-200">serving French to everyone</strong> — not raw keys or error messages, but <strong class="text-slate-200">correct French</strong>, indistinguishable from a deliberate translation, with every check green. A missing label simply fell back to the French text embedded in the code. <strong class="text-slate-200">1600 messages have been written</strong>: 358 new French labels and 414 in each of the three other languages, so all four catalogues now hold <strong class="text-slate-200">the same 1630 keys</strong>. Six guards keep the gap from reopening silently — a label requested but missing, a language losing a key the others have, text hard-coded past the translation layer, one label drifting into two meanings — each proven by recreating the very defect it claims to catch. <strong class="text-slate-200">Translations have not been reviewed by native speakers</strong>: a glossary fixes the Swiss accounting terminology and systematic checks ruled out clashes of meaning, but nothing guarantees the language sounds natural.</p>
 				</div>
+				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
+					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
+						<h3 class="font-semibold">E24 — Getting the books right <span class="text-slate-500 font-mono text-xs">v0.12.0</span></h3>
+						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
+					</div>
+					<p class="text-sm text-slate-400">A review of the whole product by three experts — accountant, tax adviser, finance director — found the founding defect: <strong class="text-slate-200">collecting a customer payment wrote no accounting entry</strong>, while the balance sheet stayed balanced and no check turned red. This wave adds the <strong class="text-slate-200">payment entry</strong>, the <strong class="text-slate-200">general ledger</strong>, <strong class="text-slate-200">reversal</strong> of an entry — correcting without erasing, the original left intact (CO art. 958f) —, and a <strong class="text-slate-200">period lock</strong> so that a quarter already declared no longer moves.</p>
+				</div>
+				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
+					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
+						<h3 class="font-semibold">E25 — The correction wave, completed <span class="text-slate-500 font-mono text-xs">v0.12.1</span></h3>
+						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Done</span>
+					</div>
+					<p class="text-sm text-slate-400">The <em>Wave 1</em> milestone closed at zero open issues: an <strong class="text-slate-200">audit trail that holds</strong> and can be read on screen; entries never renumbered; a validated invoice <strong class="text-slate-200">un-validated</strong> instead of deleted, and payments, reconciliations and supplier payments <strong class="text-slate-200">cancelled by reversal</strong>; the <strong class="text-slate-200">amount still due</strong> right everywhere, including write-offs; a trial balance that agrees with the balance sheet; and a sovereignty export that carries the whole of the books.</p>
+				</div>
 				<div class="p-5 rounded-xl bg-slate-900 border border-slate-800">
 					<h3 class="font-semibold mb-1">E13 — Budgets</h3>
 					<p class="text-sm text-slate-400">Annual budgets per account, variance reports, cash-flow forecasting.</p>
 				</div>
-				<div class="p-5 rounded-xl bg-slate-900 border border-slate-800 sm:col-span-2">
-					<h3 class="font-semibold mb-1">E15 — Open items &amp; matching, receipts, custom journals</h3>
-					<p class="text-sm text-slate-400"><strong class="text-slate-200">On <code>main</code>, for v0.13.0:</strong> the <strong class="text-slate-200">open items</strong> of a third-party account at any date — what remains open, line by line, totalling the account balance; <strong class="text-slate-200">manual matching with suggested pairs</strong> — Kesh suggests, you confirm, it never matches a suggestion on its own; a settled customer invoice and a paid supplier invoice are matched with their payments as soon as they are settled, a reversal with the entry it corrects; the matching code shown on journal entries and in the general ledger. <strong class="text-slate-200">Still to come:</strong> document attachments, user-definable journal types.</p>
+				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
+					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
+						<h3 class="font-semibold">E15 — Open items &amp; matching, receipts, custom journals <span class="text-slate-500 font-mono text-xs">v0.13.0</span></h3>
+						<span class="text-xs font-mono px-2 py-0.5 rounded bg-amber-400/10 text-amber-300 border border-amber-400/30">Matching released — epic open</span>
+					</div>
+					<p class="text-sm text-slate-400"><strong class="text-slate-200">Released in v0.13.0:</strong> the <strong class="text-slate-200">open items</strong> of a balance-sheet account at any date — what remains open, line by line, totalling the account balance; <strong class="text-slate-200">manual matching with suggested pairs</strong> — Kesh suggests, you confirm, it never matches a suggestion on its own — and unmatching; a settled customer invoice and a paid supplier invoice are matched with their payments, a reversal with the entry it corrects, existing data included at upgrade; the matching code shown on journal entries and in the general ledger. Also: an entry can be <strong class="text-slate-200">edited or deleted while its fiscal year is open</strong>, fiscal years close in order, and the <code>.env</code> configuration finally reaches Kesh. ⚠️ <strong class="text-slate-200">No way back to v0.12.x</strong> once the database is upgraded — back it up first. <strong class="text-slate-200">Still to come:</strong> document attachments, versioned parsers and templates, user-definable journal types.</p>
 				</div>
 			</div>
 		</div>

@@ -8,7 +8,19 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [0.13.0] — Non publié
+## [0.13.0] — 2026-10-10
+
+⚠️ **Cette version n'est pas encore destinée à tenir une comptabilité réelle.** Elle apporte le lettrage — ce qui reste ouvert sur un compte, ligne à ligne —, la modification et la suppression d'une écriture tant que son exercice est ouvert, la clôture des exercices dans l'ordre, et ferme une série de défauts d'écriture, d'audit et d'exploitation. Mais deux fonctions nécessaires à un exercice complet manquent encore : le **bouclement d'exercice** — écritures de clôture, report à nouveau, transitoires ([#232](https://github.com/guycorbaz/kesh/issues/232)) — et les **pièces justificatives** rattachées aux écritures ([#235](https://github.com/guycorbaz/kesh/issues/235)). Elle s'installe et s'exerce ; elle ne remplace pas encore votre comptabilité.
+
+⚠️ **À faire en passant d'une 0.12.x à la 0.13.0** — le détail est au manuel d'administration, *Passer à la 0.13.0 : le compose et le fichier `.env`* :
+
+1. **Sauvegarder la base avant la mise à jour : il n'y a pas d'autre retour en arrière.** La 0.13.0 porte la base à `kesh_version_min_required = 0.13.0` : une 0.12.x refuse ensuite de démarrer contre elle, et refuse d'importer une sauvegarde d'installation prise après la mise à jour (voir *Lettrage* ci-dessous). Seule la sauvegarde de la base prise avant rend une base que la 0.12.x accepte.
+2. **Re-télécharger le compose** — au tag `v0.13.0`, plus à `main` — et y reporter ses adaptations locales : il transmet enfin la configuration de `.env` ([#550](https://github.com/guycorbaz/kesh/issues/550)), ne publie plus le port 3306 de MariaDB ([#551](https://github.com/guycorbaz/kesh/issues/551)) et monte `./backup` ([#552](https://github.com/guycorbaz/kesh/issues/552)).
+3. **Poser `MARIADB_ROOT_PASSWORD` et `MARIADB_PASSWORD` dans `.env`** (`docker-compose.yml`) : sans eux, Compose refuse de démarrer. Sur une base déjà créée, les valeurs **de sa création** — pour qui n'en avait jamais posé, les anciens défauts `kesh_dev_root` et `kesh_dev` —, jamais des neuves ; puis les changer par `ALTER USER` ([#551](https://github.com/guycorbaz/kesh/issues/551)).
+4. **Relire `.env`** : des lignes jusqu'ici sans effet en prennent un ([#550](https://github.com/guycorbaz/kesh/issues/550)), et le secret JWT ou le mot de passe administrateur laissés au gabarit font refuser le démarrage ([#557](https://github.com/guycorbaz/kesh/issues/557)).
+5. Sur Synology, mettre en place la sauvegarde par `kesh-dump.sh` (voir *Exploitation* ci-dessous).
+
+Une **installation à neuf**, base vide, n'a ni retour en arrière à préserver ni `.env` antérieur à relire : elle prend le compose et `.env.example` au tag `v0.13.0` (point 2) ; avec `docker-compose.yml`, elle choisit deux mots de passe MariaDB neufs (point 3) et un secret JWT ; sur Synology (`docker-compose.prod.yml`, base désignée par `DATABASE_URL`), elle met en place la sauvegarde par `kesh-dump.sh` (point 5).
 
 ### Ajouté
 
