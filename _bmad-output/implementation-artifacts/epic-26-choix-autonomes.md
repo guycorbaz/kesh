@@ -154,3 +154,12 @@ numéro en double se renumérote, il ne s'écrase pas.
   tant que rien n'est publié — reconstruire alors les bases de dev), régénère le squash, recompte la
   ligne d'audit P5 et les cinq compteurs, et reporte le `total`/`N` de `migrations_upgrade_path.rs`.
 - **Écarté** : une version lointaine pour éviter la collision (elle ne dispense d'aucun recompte).
+
+## C-26-2-15 — Découpage matérialisé (orchestrateur, 2026-10-10)
+
+**Contexte** : la fiche dépasse cinq modules (§ Règle de splitting préventif) ; C-26-2-1 proposait le découpage sans le
+matérialiser. **Option retenue** : deux clés au registre (`26-2a-description-socle`, `26-2b-description-ecrans`), une
+fiche unique en deux parties, deux PR successives (`refs #622` puis `closes #622`). **Alternatives** : deux fiches
+séparées (précédent 15-1c) — écartée, la fiche est déjà partagée et l'inventaire clos doit rester d'un seul tenant.
+**Réversibilité** : totale (registre). Le changement de libellé du menu d'import sans description (C-26-2-5, « UBS (CH…) »
+→ « UBS — CH… ») est accepté : il aligne ce menu sur les autres.
