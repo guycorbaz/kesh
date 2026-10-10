@@ -3,8 +3,8 @@
 Story : `_bmad-output/implementation-artifacts/26-3-manuel-et-restauration-synology.md` (worktree
 `/home/gcorbaz/devel/kesh-26-3`, branche `story/26-3`). Issues #616, #617, #619. Langue : **français**.
 
-**Périmètre** : le diff aplati `git -C /home/gcorbaz/devel/kesh-26-3 diff {BASE}..{HEAD}` — `{BASE}` est
-le commit de clôture de la validation, `{HEAD}` le dernier commit du développement. Les PDF du diff se lisent
+**Périmètre** : le diff aplati `git -C /home/gcorbaz/devel/kesh-26-3 diff f00aa6c0..cf1316b3` — `f00aa6c0` est
+le commit de clôture de la validation, `cf1316b3` le dernier commit du développement. Les PDF du diff se lisent
 par `pdftotext <f> - | tr '\n' ' ' | tr -s ' '` (forme **aplatie** : `pdftotext` coupe les lignes, un
 `grep` naïf sur une phrase rend un faux négatif). Pour les comptages sensibles aux apostrophes et
 ligatures, la fonction `occ` de l'encadré en tête des AC de la fiche.
