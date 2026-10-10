@@ -405,7 +405,8 @@ struct Fixture {
 }
 
 impl Fixture {
-    /// Les écritures de la société, dans l'ordre de leur pose.
+    /// Les écritures de la société (l'ordre est sans portée : chaque écriture
+    /// est comparée seule, et le lot est dédupliqué et trié).
     fn ecritures(&self) -> Vec<i64> {
         vec![
             self.e_facture,
@@ -1063,7 +1064,15 @@ async fn owners_are_scoped_by_company(pool: MySqlPool) {
         journal_entries::document_owners(&mut conn, f.autre.company, &[f.e_autre, f.e_facture])
             .await
             .unwrap();
-    assert_eq!(f.autre_proprietaires.len(), 5, "montage : cinq types");
+    let types: std::collections::BTreeSet<DocumentKind> = chez_elle
+        .get(&f.e_autre)
+        .map(|v| v.iter().map(|o| o.kind).collect())
+        .unwrap_or_default();
+    assert_eq!(
+        types.len(),
+        5,
+        "montage, lu en base : les cinq types chez elle"
+    );
     assert_eq!(
         chez_elle,
         [(f.e_autre, f.autre_proprietaires.clone())]
