@@ -1083,12 +1083,17 @@ async fn violations_des_groupes(pool: &MySqlPool) -> Vec<i64> {
     .unwrap()
 }
 
-/// AC9 (Story 15-1a2-i, part i) — les lignes qui violent l'invariant des
-/// pièces clientes : (1) une ligne d'origine `document` hors de l'écriture de
-/// vente d'une facture, d'un règlement **en vigueur** ou d'un avoir émis ; (2)
-/// une ligne d'une de ces écritures lettrée `manual` ou `reversal`. Une ligne
-/// d'un règlement ANNULÉ (sa ligne `invoice_settlements` retirée) sort de
-/// l'ensemble : elle n'est jamais `document`. ⛔ Aucune exception de période.
+/// AC9 (Story 15-1a2-i, part i ; Story 15-1a2-ii, part ii) — les lignes qui
+/// violent l'invariant des pièces : (1) une ligne d'origine `document` hors de
+/// l'écriture de vente d'une facture, d'un règlement **en vigueur** ou d'un
+/// avoir émis — ou, part ii, hors de l'achat ou du règlement en vigueur d'une
+/// facture fournisseur **`paid`** (jamais `open` ni `cancelled`) ; (2) une
+/// ligne d'une de ces écritures lettrée `manual` ou `reversal`. Une ligne d'un
+/// règlement ANNULÉ, ou DÉTACHÉ par l'annulation d'une facture fournisseur, sort
+/// de l'ensemble : elle n'est jamais `document` (et
+/// [`violations_des_anciens_reglements`] le vérifie par la trace d'audit) ;
+/// l'achat d'une facture fournisseur annulée en sort aussi — il est `reversal`,
+/// avec son miroir. ⛔ Aucune exception de période.
 async fn violations_des_pieces(pool: &MySqlPool) -> Vec<i64> {
     sqlx::query_scalar(
         "WITH pieces AS ( \
@@ -1096,11 +1101,37 @@ async fn violations_des_pieces(pool: &MySqlPool) -> Vec<i64> {
                  WHERE journal_entry_id IS NOT NULL \
              UNION SELECT journal_entry_id FROM invoice_settlements \
              UNION SELECT journal_entry_id FROM credit_notes \
-                 WHERE status = 'issued' AND journal_entry_id IS NOT NULL) \
+                 WHERE status = 'issued' AND journal_entry_id IS NOT NULL \
+             UNION SELECT purchase_journal_entry_id FROM supplier_invoices \
+                 WHERE status = 'paid' \
+             UNION SELECT settlement_journal_entry_id FROM supplier_invoices \
+                 WHERE status = 'paid' AND settlement_journal_entry_id IS NOT NULL) \
          SELECT jel.id FROM journal_entry_lines jel \
          LEFT JOIN pieces p ON p.entry_id = jel.entry_id \
          WHERE (jel.lettering_origin = 'document' AND p.entry_id IS NULL) \
             OR (jel.lettering_origin IN ('manual', 'reversal') AND p.entry_id IS NOT NULL) \
+         ORDER BY jel.id",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap()
+}
+
+/// AC9 (Story 15-1a2-ii, part ii) — les lignes d'origine `document` portées par
+/// un **ancien règlement fournisseur** : détaché par l'annulation de la facture
+/// (`supplier_invoice.cancelled`) ou annulé (`supplier_invoice.settlement_cancelled`).
+/// Plus aucune colonne ne les rattache à leur facture : elles se reconnaissent
+/// par la **trace d'audit** (patron `modification_guard`,
+/// `$.settlementJournalEntryId`). Un ancien règlement est libre, `manual` ou
+/// `reversal` — jamais `document`.
+async fn violations_des_anciens_reglements(pool: &MySqlPool) -> Vec<i64> {
+    sqlx::query_scalar(
+        "SELECT jel.id FROM journal_entry_lines jel \
+         WHERE jel.lettering_origin = 'document' AND jel.entry_id IN ( \
+             SELECT CAST(JSON_VALUE(details_json, '$.settlementJournalEntryId') AS SIGNED) \
+             FROM audit_log WHERE action IN ('supplier_invoice.cancelled', \
+                                             'supplier_invoice.settlement_cancelled') \
+               AND JSON_VALUE(details_json, '$.settlementJournalEntryId') IS NOT NULL) \
          ORDER BY jel.id",
     )
     .fetch_all(pool)
@@ -1118,7 +1149,10 @@ async fn violations_des_pieces(pool: &MySqlPool) -> Vec<i64> {
 /// et deux contrôles négatifs prouvent que les clauses « une origine » et
 /// « une société » rougissent (revue P1, E-6). La Story 15-1a2-i (AC9 part i)
 /// y ajoute l'invariant des pièces clientes ([`violations_des_pieces`]), sur des
-/// pièces posées par les gestes, et ses deux contrôles négatifs.
+/// pièces posées par les gestes, et ses deux contrôles négatifs ; la Story
+/// 15-1a2-ii (AC9 part ii), les pièces fournisseurs — payée, paiement annulé,
+/// facture payée annulée (règlement détaché, puis contre-passé), ouverte — et
+/// trois contrôles négatifs (achat d'une facture ouverte, ancien règlement).
 #[sqlx::test(migrations = "./test-schema")]
 async fn lettering_invariants(pool: MySqlPool) {
     let m = monde(&pool).await;
@@ -1470,6 +1504,127 @@ async fn lettering_invariants(pool: MySqlPool) {
     .execute(&pool)
     .await
     .unwrap();
+    assert!(violations_des_pieces(&pool).await.is_empty());
+
+    // AC9 (Story 15-1a2-ii, part ii) — les pièces FOURNISSEURS, par les gestes.
+    use kesh_db::repositories::{journal_entries, supplier_invoices};
+    use lettering_support::{achat, achats, facture_fournisseur, payer};
+    let ach = achats(&pool, &m.s).await;
+    let payee = facture_fournisseur(&pool, &m.s, &ach, dec!(50), d(2026, 7, 1), Some("P-1")).await;
+    payer(&pool, &m.s, &ach, payee, le).await;
+    let reglement_annule =
+        facture_fournisseur(&pool, &m.s, &ach, dec!(60), d(2026, 7, 1), Some("P-2")).await;
+    let ancien = payer(&pool, &m.s, &ach, reglement_annule, le).await;
+    supplier_invoices::cancel_settlement(&pool, m.company(), reglement_annule, m.s.admin_user_id)
+        .await
+        .expect("paiement annulé");
+    let annulee_payee =
+        facture_fournisseur(&pool, &m.s, &ach, dec!(70), d(2026, 7, 1), Some("P-3")).await;
+    let detache = payer(&pool, &m.s, &ach, annulee_payee, le).await;
+    supplier_invoices::cancel(&pool, m.company(), annulee_payee, m.s.admin_user_id)
+        .await
+        .expect("facture payée annulée");
+    let detache_contre_passe =
+        facture_fournisseur(&pool, &m.s, &ach, dec!(80), d(2026, 7, 1), Some("P-4")).await;
+    let detache2 = payer(&pool, &m.s, &ach, detache_contre_passe, le).await;
+    supplier_invoices::cancel(&pool, m.company(), detache_contre_passe, m.s.admin_user_id)
+        .await
+        .expect("facture payée annulée");
+    journal_entries::reverse(&pool, m.company(), detache2, m.s.admin_user_id)
+        .await
+        .expect("règlement détaché contre-passé");
+    let ouverte =
+        facture_fournisseur(&pool, &m.s, &ach, dec!(90), d(2026, 7, 1), Some("P-5")).await;
+    let documents: i64 = sqlx::query_scalar(
+        "SELECT COUNT(DISTINCT lettering_key) FROM journal_entry_lines \
+         WHERE lettering_origin = 'document'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(documents, 3, "montage : la soldée, la créditée, la payée");
+    let reversal_achat: Option<String> = sqlx::query_scalar(
+        "SELECT lettering_origin FROM journal_entry_lines WHERE entry_id = ? AND account_id = ?",
+    )
+    .bind(achat(&pool, annulee_payee).await)
+    .bind(ach.payable)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(
+        reversal_achat.as_deref(),
+        Some("reversal"),
+        "montage : l'achat annulé"
+    );
+    assert!(violations_des_groupes(&pool).await.is_empty());
+    assert!(
+        violations_des_pieces(&pool).await.is_empty(),
+        "pièces fournisseurs : {:?}",
+        violations_des_pieces(&pool).await
+    );
+    assert!(violations_des_anciens_reglements(&pool).await.is_empty());
+
+    // Contrôles négatifs (part ii), posés en SQL puis défaits.
+    let ligne_sur_b = |entry: i64| {
+        let pool = pool.clone();
+        let b = ach.payable;
+        async move {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT id FROM journal_entry_lines WHERE entry_id = ? AND account_id = ?",
+            )
+            .bind(entry)
+            .bind(b)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        }
+    };
+    let poser = |id: i64, origine: Option<&'static str>| {
+        let pool = pool.clone();
+        async move {
+            sqlx::query(
+                "UPDATE journal_entry_lines SET lettering_key = IF(? IS NULL, NULL, id), \
+                 lettering_origin = ? WHERE id = ?",
+            )
+            .bind(origine)
+            .bind(origine)
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        }
+    };
+    // (1) une ligne `document` sur l'achat d'une facture OUVERTE.
+    let achat_ouvert = ligne_sur_b(achat(&pool, ouverte).await).await;
+    poser(achat_ouvert, Some("document")).await;
+    assert_eq!(
+        violations_des_pieces(&pool).await,
+        vec![achat_ouvert],
+        "facture ouverte"
+    );
+    poser(achat_ouvert, None).await;
+    // (2) une ligne `document` sur un ANCIEN règlement — annulé, puis détaché :
+    // reconnue par la trace d'audit.
+    for (entry, libelle) in [(ancien, "règlement annulé"), (detache, "règlement détaché")] {
+        let ligne = ligne_sur_b(entry).await;
+        let (cle, origine) = marque(&pool, ligne).await;
+        poser(ligne, Some("document")).await;
+        assert_eq!(
+            violations_des_anciens_reglements(&pool).await,
+            vec![ligne],
+            "{libelle}"
+        );
+        sqlx::query(
+            "UPDATE journal_entry_lines SET lettering_key = ?, lettering_origin = ? WHERE id = ?",
+        )
+        .bind(cle)
+        .bind(origine)
+        .bind(ligne)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    assert!(violations_des_anciens_reglements(&pool).await.is_empty());
     assert!(violations_des_pieces(&pool).await.is_empty());
 }
 

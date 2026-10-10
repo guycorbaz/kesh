@@ -1241,8 +1241,16 @@ un groupe de lettrage («~pièce~»), et le grand livre la montre soldée, comme
 et les rappels. Un règlement partiel ne lettre rien. L'\textbf{annulation} d'un règlement --- ou du
 solde, ou le dé-rapprochement (\S\ref{sec:annuler-rapprochement}) --- \textbf{délettre} la
 facture~: sa créance et ses autres règlements redeviennent ouverts, et le règlement annulé est
-lettré avec sa contre-passation. ⚠️ Une facture \textbf{déjà soldée avant la mise à jour} vers la
-version 0.13 n'est pas lettrée par cette version~: elle reste ouverte au compte débiteurs.
+lettré avec sa contre-passation.
+
+\begin{keshnote}
+\textbf{Mise à jour vers la version 0.13.} Les pièces déjà soldées --- factures clientes soldées,
+factures fournisseurs payées --- et les contre-passations déjà passées sont \textbf{lettrées par
+la mise à jour elle-même}, comme les gestes l'auraient fait. Deux réserves. Une pièce ou une
+contre-passation dont \textbf{toutes les lignes sont en période close} (exercices clôturés,
+période verrouillée) n'est pas lettrée~: elle reste ouverte, et ne se lettre pas à la main. Et ce
+lettrage n'a \textbf{pas d'entrée au journal d'audit}~: une mise à jour n'a pas d'auteur.
+\end{keshnote}
 
 Kesh ne lettre une facture que si ses lignes sur le compte débiteurs se soldent \textbf{au grand
 livre}~: un \textbf{avoir} émis avant la version 0.13 et porté sur un autre compte que le compte
@@ -1481,6 +1489,16 @@ même qu'un compte bancaire lié au compte créanciers~--- et ne le propose pas 
 fournisseurs~: un compte qui l'a perdu reste proposé, et c'est l'enregistrement qui est refusé.
 Choisissez un autre compte, ou reliez le compte bancaire à son propre compte de banque.
 
+\textbf{Lettrage.} Une facture fournisseur \textbf{payée} est \textbf{lettrée} d'office~: sa
+ligne d'achat au compte créanciers et celle du paiement sur ce compte forment un groupe de
+lettrage («~pièce~»), et le grand livre la montre soldée, comme sa fiche. L'annulation du
+règlement (ci-dessous) la \textbf{délettre}~: la dette redevient ouverte, et le paiement est
+lettré avec sa contre-passation. Un compte créanciers \textbf{non lettrable} (relié à un compte
+bancaire) ne forme aucun groupe --- le paiement n'en est pas moins enregistré. Une annulation qui
+défairait un lettrage figé par une période close est refusée (motif ci-dessous). Les factures
+déjà payées avant la mise à jour vers la version 0.13 sont lettrées par la mise à jour
+(\S\ref{sec:reglement-client}, note).
+
 \textbf{Annuler le règlement.} Un règlement enregistré par erreur ne se supprime pas~: sur la
 fiche d'une facture payée, \emph{Annuler le règlement} (comptable ou administrateur) passe une
 écriture inverse \textbf{datée du jour} et ramène la facture à \emph{ouverte}, à payer --- c'est
@@ -1516,6 +1534,12 @@ ces paiements~: ils se retrouvent au grand livre du compte 2000 et dans le journ
 garde le lien vers la facture annulée. La fiche de ce paiement n'offre ni «~Modifier~» ni «~Supprimer~»~: elle affiche le motif, et la contre-passation reste disponible. Si le paiement lui-même était une erreur, le plus simple est d'\textbf{annuler le
 règlement d'abord}, puis la facture~: le lien avec la facture reste lisible au grand livre.
 
+\textbf{Lettrage.} L'annulation d'une facture payée la \textbf{délettre}, et lettre l'achat avec
+sa contre-passation. Le paiement détaché reste \textbf{ouvert} au compte créanciers~: il se
+lettre à la main avec la ligne qui le solde --- par l'API dans cette version
+(\texttt{/api/v1/letterings}) ---, ou, contre-passé depuis sa fiche d'écriture, il est lettré
+avec sa contre-passation.
+
 Quand l'annulation n'est pas possible, le bouton est remplacé par la raison~: l'exercice de
 l'\textbf{achat} est clôturé (un administrateur doit d'abord rouvrir les exercices clôturés
 jusqu'à celui-ci, en commençant par le plus récent), le \textbf{lettrage} de la facture avec
@@ -1539,8 +1563,9 @@ dans l'e-banking. Le flux est en \textbf{deux temps} :
     sélectionnant les factures à payer, puis télécharger le fichier
     \texttt{pain.001} généré et le déposer dans votre e-banking.
     \item Une fois le paiement exécuté par la banque, \textbf{confirmer} le lot
-    dans Kesh : les écritures de règlement sont alors passées (un lot peut aussi
-    être \textbf{annulé} tant qu'il n'est pas confirmé).
+    dans Kesh : les écritures de règlement sont alors passées, et chaque facture
+    payée est \textbf{lettrée} avec son achat, comme un paiement depuis sa fiche
+    (un lot peut aussi être \textbf{annulé} tant qu'il n'est pas confirmé).
 \end{enumerate}
 
 Une facture dont le compte créanciers est le compte lié au compte bancaire du lot
@@ -2495,7 +2520,9 @@ Le journal d'audit garde toujours la trace de l'action originale ET de l'action 
           contre-passation, un acompte et sa reprise\ldots). Dans cette version, le lettrage
           manuel et le délettrage se font par l'API (\texttt{/api/v1/letterings})~; l'écran viendra.
           La contre-passation lettre d'elle-même une ligne et sa correction~; Kesh lettre de
-          lui-même une facture client soldée avec ses règlements, son solde ou son avoir~; un
+          lui-même une facture client soldée avec ses règlements, son solde ou son avoir, et une
+          facture fournisseur payée avec son paiement --- y compris, à la mise à jour vers la
+          version 0.13, celles qui l'étaient déjà, sauf en période close~; un
           lettrage de pièce figé par une période close ne se défait pas~: l'annulation qui le
           défairait est refusée (\S\ref{sec:verrou-periode}). Une écriture dont une
           ligne est lettrée ne se modifie ni ne se supprime~: elle se délettre d'abord.

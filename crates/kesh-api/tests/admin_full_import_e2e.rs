@@ -1569,15 +1569,448 @@ async fn full_import_report_mirrors_the_production_registry(pool: MySqlPool) {
         "le rapport doit porter une entrée par entrée du registre, dans l'ordre"
     );
 
-    // ⚠️ Le backup vient du binaire COURANT : il porte donc la colonne
-    // sentinelle, et l'entrée de classe B doit être SAUTÉE. Un `REPLAYED_*` ici
-    // signalerait une sentinelle qui ne détecte plus rien.
-    for e in &report {
+    // ⚠️ L'issue attendue se DÉDUIT de la classe déclarée, jamais écrite en dur
+    // (Story 15-1a2-ii, R3-1 = F3-1). Le backup vient du binaire COURANT : il
+    // porte donc toute colonne sentinelle, et une entrée de classe B doit être
+    // SAUTÉE — un `REPLAYED_*` signalerait une sentinelle qui ne détecte plus
+    // rien. Une entrée de classe A est rejouée à chaque import, et sur cette
+    // base à jour (une facture validée, non soldée) elle ne touche rien.
+    // Première fois depuis la 25-2-c que ce test exerce une entrée : la boucle
+    // était vacuement verte tant que le registre était vide.
+    assert!(
+        !report.is_empty(),
+        "montage : le registre de production porte au moins une entrée (M1, Story 15-1a2-ii)"
+    );
+    for (e, entree) in report
+        .iter()
+        .zip(kesh_db::post_restore::POST_RESTORE_BACKFILLS.iter())
+    {
+        let attendue = match entree.trigger {
+            kesh_db::post_restore::BackfillTrigger::Unconditional => "REPLAYED_UNCONDITIONAL",
+            kesh_db::post_restore::BackfillTrigger::Sentinels(_) => "SKIPPED",
+        };
         assert_eq!(
-            e["outcome"], "SKIPPED",
-            "sentinelle présente au manifeste ⇒ skip strict, got {e:?}"
+            e["outcome"], attendue,
+            "entrée {} : got {e:?}",
+            entree.label
+        );
+        assert_eq!(
+            e["rows_affected"], 0,
+            "entrée {} : base à jour ⇒ aucune ligne touchée, got {e:?}",
+            entree.label
         );
     }
+}
+
+// ============================================================================
+// Story 15-1a2-ii (#518) — AC16 : le rattrapage du lettrage rejoué à l'import
+// ============================================================================
+
+/// Version de M1, au registre (classe A).
+const LETTERING_BACKFILL: i64 = 20261010000001;
+
+/// Les marques de toutes les lignes, triées par ligne.
+async fn lettering_marks(pool: &MySqlPool) -> Vec<(i64, Option<i64>, Option<String>)> {
+    sqlx::query_as(
+        "SELECT id, lettering_key, lettering_origin FROM journal_entry_lines ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await
+    .expect("marques")
+}
+
+/// Les marques des lignes de l'écriture `entry_id`, dans l'ordre des positions.
+async fn entry_marks(pool: &MySqlPool, entry_id: i64) -> Vec<(Option<i64>, Option<String>)> {
+    sqlx::query_as(
+        "SELECT lettering_key, lettering_origin FROM journal_entry_lines WHERE entry_id = ? \
+         ORDER BY line_order",
+    )
+    .bind(entry_id)
+    .fetch_all(pool)
+    .await
+    .expect("marques de l'écriture")
+}
+
+/// La marque de la ligne de l'écriture `entry_id` sur le compte `account_id`.
+async fn line_mark(
+    pool: &MySqlPool,
+    entry_id: i64,
+    account_id: i64,
+) -> (Option<i64>, Option<String>) {
+    sqlx::query_as(
+        "SELECT lettering_key, lettering_origin FROM journal_entry_lines \
+         WHERE entry_id = ? AND account_id = ?",
+    )
+    .bind(entry_id)
+    .bind(account_id)
+    .fetch_one(pool)
+    .await
+    .expect("marque de la ligne")
+}
+
+/// L'entrée M1 du rapport de rejeu.
+fn lettering_entry(report: &[Value]) -> &Value {
+    report
+        .iter()
+        .find(|e| e["version"].as_i64() == Some(LETTERING_BACKFILL))
+        .expect("M1 au rapport de rejeu")
+}
+
+/// Les pièces du lettrage, posées par les GESTES (qui lettrent) : une facture
+/// client soldée, une facture fournisseur payée, une facture fournisseur
+/// annulée (achat contre-passé), une écriture manuelle contre-passée.
+struct LetteringPieces {
+    sale_entry: i64,
+    settlement_entry: i64,
+    purchase_entry: i64,
+    payment_entry: i64,
+    cancelled_purchase_entry: i64,
+    manual_entry: i64,
+    receivable: i64,
+    payable: i64,
+}
+
+async fn lettering_pieces(pool: &MySqlPool, biz: &Business) -> LetteringPieces {
+    use kesh_db::entities::{
+        Journal, NewJournalEntry, NewJournalEntryLine, NewSupplierInvoice, NewSupplierInvoiceLine,
+        SettlementChoice,
+    };
+    use kesh_db::repositories::{
+        invoice_settlements, invoice_settlements_write, journal_entries, supplier_invoices,
+    };
+    let company = biz.ctx.company_id;
+    let user = biz.ctx.user_id;
+    let caisse = biz.accounts["1000"];
+    let receivable = biz.accounts["1100"];
+    let payable = biz.accounts["2000"];
+    let le = chrono::NaiveDate::from_ymd_opt(2026, 3, 15).unwrap();
+
+    let invoice = validated_invoice(pool, biz).await;
+    let due = invoice_settlements::amount_due(pool, invoice)
+        .await
+        .expect("reste dû");
+    let settlement_entry = invoice_settlements_write::settle_invoice(
+        pool,
+        user,
+        company,
+        invoice,
+        SettlementChoice::InternalAccount { account_id: caisse },
+        due,
+        le,
+    )
+    .await
+    .expect("règlement complet")
+    .journal_entry_id;
+    let sale_entry: i64 = sqlx::query_scalar("SELECT journal_entry_id FROM invoices WHERE id = ?")
+        .bind(invoice)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+
+    let supplier: i64 = sqlx::query_scalar(
+        "INSERT INTO contacts (company_id, contact_type, name, is_supplier) \
+         VALUES (?, 'Entreprise', 'Fournisseur 15-1a2-ii', TRUE) RETURNING id",
+    )
+    .bind(company)
+    .fetch_one(pool)
+    .await
+    .expect("fournisseur");
+    let supplier_invoice = |numero: &'static str| async move {
+        supplier_invoices::create(
+            pool,
+            NewSupplierInvoice {
+                company_id: company,
+                contact_id: supplier,
+                supplier_invoice_number: Some(numero.into()),
+                invoice_date: le,
+                due_date: None,
+                creditor_iban: None,
+                creditor_qr_iban: None,
+                payment_reference: None,
+                expected_payment_amount: None,
+                project_id: None,
+                lines: vec![NewSupplierInvoiceLine {
+                    description: "Achat".into(),
+                    quantity: dec!(1),
+                    unit_price: dec!(50),
+                    vat_rate: dec!(0),
+                    expense_account_id: biz.accounts["4000"],
+                }],
+            },
+            user,
+        )
+        .await
+        .expect("facture fournisseur")
+        .invoice
+    };
+    let paid = supplier_invoice("FF-PAYEE").await;
+    let payment_entry = supplier_invoices::pay(
+        pool,
+        company,
+        paid.id,
+        SettlementChoice::InternalAccount { account_id: caisse },
+        le,
+        user,
+    )
+    .await
+    .expect("paiement")
+    .invoice
+    .settlement_journal_entry_id
+    .expect("écriture de paiement");
+    let cancelled = supplier_invoice("FF-ANNULEE").await;
+    supplier_invoices::cancel(pool, company, cancelled.id, user)
+        .await
+        .expect("annulation");
+
+    let fy: i64 = sqlx::query_scalar("SELECT id FROM fiscal_years WHERE company_id = ?")
+        .bind(company)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let manual = journal_entries::create(
+        pool,
+        fy,
+        user,
+        NewJournalEntry {
+            company_id: company,
+            entry_date: le,
+            journal: Journal::OD,
+            description: "Écriture manuelle 15-1a2-ii".into(),
+            project_id: None,
+            lines: vec![
+                NewJournalEntryLine {
+                    account_id: caisse,
+                    debit: dec!(20),
+                    credit: dec!(0),
+                    project_id: None,
+                },
+                NewJournalEntryLine {
+                    account_id: payable,
+                    debit: dec!(0),
+                    credit: dec!(20),
+                    project_id: None,
+                },
+            ],
+        },
+    )
+    .await
+    .expect("écriture manuelle");
+    journal_entries::reverse(pool, company, manual.entry.id, user)
+        .await
+        .expect("contre-passation");
+
+    let pieces = LetteringPieces {
+        sale_entry,
+        settlement_entry,
+        purchase_entry: paid.purchase_journal_entry_id,
+        payment_entry,
+        cancelled_purchase_entry: cancelled.purchase_journal_entry_id,
+        manual_entry: manual.entry.id,
+        receivable,
+        payable,
+    };
+    // Montage : les gestes ont lettré.
+    let (k, o) = line_mark(pool, pieces.sale_entry, receivable).await;
+    assert!(
+        k.is_some() && o.as_deref() == Some("document"),
+        "montage : vente lettrée"
+    );
+    let (k, o) = line_mark(pool, pieces.purchase_entry, payable).await;
+    assert!(
+        k.is_some() && o.as_deref() == Some("document"),
+        "montage : achat lettré"
+    );
+    let (k, o) = line_mark(pool, pieces.cancelled_purchase_entry, payable).await;
+    assert!(
+        k.is_some() && o.as_deref() == Some("reversal"),
+        "montage : achat annulé"
+    );
+    assert!(
+        entry_marks(pool, pieces.manual_entry)
+            .await
+            .iter()
+            .all(|m| m.1.as_deref() == Some("reversal")),
+        "montage : paire manuelle"
+    );
+    pieces
+}
+
+/// Efface toutes les marques en SQL brut — une base « d'avant la 15-1a2 ».
+async fn erase_marks(pool: &MySqlPool) -> u64 {
+    sqlx::query(
+        "UPDATE journal_entry_lines SET lettering_key = NULL, lettering_origin = NULL \
+         WHERE lettering_key IS NOT NULL",
+    )
+    .execute(pool)
+    .await
+    .expect("effacement")
+    .rows_affected()
+}
+
+/// AC16 (a) — une sauvegarde **sans** lettrage (marques à `NULL` dans l'archive)
+/// importée : les groupes `document` et la paire `reversal` de l'achat annulé
+/// sont posés, le rapport nomme M1 `REPLAYED_UNCONDITIONAL` ; la paire de la
+/// contre-passation manuelle reste **ouverte** (M2 n'est pas rejouée).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_replays_document_lettering(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "LA").await;
+    let p = lettering_pieces(&pool, &biz).await;
+    assert!(erase_marks(&pool).await > 0, "montage : marques effacées");
+
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+    let (manifest, data) = unzip(&backup);
+    import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
+
+    let report = backfill_report(&pool).await;
+    let m1 = lettering_entry(&report);
+    assert_eq!(m1["outcome"], "REPLAYED_UNCONDITIONAL", "{m1:?}");
+    assert!(m1["rows_affected"].as_u64() > Some(0), "{m1:?}");
+
+    let vente = line_mark(&pool, p.sale_entry, p.receivable).await;
+    assert_eq!(vente.1.as_deref(), Some("document"), "vente lettrée");
+    assert_eq!(
+        line_mark(&pool, p.settlement_entry, p.receivable).await,
+        vente
+    );
+    let achat = line_mark(&pool, p.purchase_entry, p.payable).await;
+    assert_eq!(achat.1.as_deref(), Some("document"), "achat lettré");
+    assert_eq!(line_mark(&pool, p.payment_entry, p.payable).await, achat);
+    let annule = line_mark(&pool, p.cancelled_purchase_entry, p.payable).await;
+    assert_eq!(annule.1.as_deref(), Some("reversal"), "achat annulé lettré");
+    assert!(
+        entry_marks(&pool, p.manual_entry)
+            .await
+            .iter()
+            .all(|m| m.0.is_none()),
+        "la paire manuelle reste ouverte : M2 n'est pas rejouée"
+    );
+}
+
+/// AC16 (b) — une paire `reversal` **libre** délettrée à la main (`DELETE
+/// /letterings`), sauvegardée puis réimportée, **reste délettrée** : son `NULL`
+/// est un choix de l'utilisateur, que le rejeu ne réécrit pas.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_keeps_a_dissolved_free_reversal_pair(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "LB").await;
+    let p = lettering_pieces(&pool, &biz).await;
+    let cles: std::collections::BTreeSet<i64> = entry_marks(&pool, p.manual_entry)
+        .await
+        .into_iter()
+        .filter_map(|m| m.0)
+        .collect();
+    assert!(!cles.is_empty(), "montage : la paire manuelle est lettrée");
+    for cle in cles {
+        let resp = app
+            .client
+            .delete(app.url(&format!("/api/v1/letterings/{cle}")))
+            .header("Authorization", format!("Bearer {}", biz.ctx.jwt))
+            .send()
+            .await
+            .unwrap();
+        assert!(
+            resp.status().is_success(),
+            "délettrage à la main : {}",
+            resp.status()
+        );
+    }
+
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+    let (manifest, data) = unzip(&backup);
+    import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
+
+    assert_eq!(
+        lettering_entry(&backfill_report(&pool).await)["outcome"],
+        "REPLAYED_UNCONDITIONAL"
+    );
+    assert!(
+        entry_marks(&pool, p.manual_entry)
+            .await
+            .iter()
+            .all(|m| m.0.is_none()),
+        "la paire délettrée à la main reste délettrée"
+    );
+}
+
+/// AC16 (c) — une base **à jour**, portant des pièces lettrées par les gestes
+/// (facture client soldée, facture fournisseur payée, facture fournisseur
+/// annulée — les trois étapes de M1), sans pièce rendue lettrable depuis,
+/// réimportée : marques inchangées **et** `rows_affected == 0` pour M1. sqlx pose
+/// `CLIENT_FOUND_ROWS` : un M1 privé de sa garde `lettering_key IS NULL`
+/// trouverait les lignes déjà lettrées et compterait > 0 en les réécrivant à
+/// l'identique, là où « marques inchangées » resterait vert.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_of_an_up_to_date_base_is_a_noop(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "LC").await;
+    lettering_pieces(&pool, &biz).await;
+    let avant = lettering_marks(&pool).await;
+
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+    let (manifest, data) = unzip(&backup);
+    import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
+
+    let m1 = lettering_entry(&backfill_report(&pool).await).clone();
+    assert_eq!(m1["outcome"], "REPLAYED_UNCONDITIONAL", "{m1:?}");
+    assert_eq!(
+        m1["rows_affected"], 0,
+        "M1 ne touche rien sur une base à jour : {m1:?}"
+    );
+    assert_eq!(lettering_marks(&pool).await, avant, "marques inchangées");
+}
+
+/// AC16 (d) — une facture historique **entièrement close**, restée non lettrée
+/// (abstention), dont un administrateur lève ensuite la borne : la pièce reste
+/// ouverte en vivant (rien ne la resynchronise) ; exportée puis réimportée, M1
+/// **la lettre**. C'est l'état 1 de la justification de classe A — le rejeu n'y
+/// est pas un no-op strict, et ce test le nomme.
+///
+/// Recette (validation P3, F3-3 — un geste vivant lettre toujours) : facture
+/// validée et réglée en période ouverte ; marques effacées en SQL brut ; borne
+/// posée après le règlement ; puis `unlock_books`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_letters_a_reopened_historical_piece(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let biz = seed_business(&pool, "LD").await;
+    let p = lettering_pieces(&pool, &biz).await;
+    erase_marks(&pool).await;
+    let borne = chrono::NaiveDate::from_ymd_opt(2026, 3, 31).unwrap();
+    assert!(borne < Utc::now().date_naive(), "montage : borne passée");
+    companies::lock_books(&pool, biz.ctx.user_id, biz.ctx.company_id, borne)
+        .await
+        .expect("borne posée après le règlement");
+    companies::unlock_books(
+        &pool,
+        biz.ctx.user_id,
+        biz.ctx.company_id,
+        None,
+        "réouverture".into(),
+    )
+    .await
+    .expect("borne levée");
+    assert_eq!(
+        line_mark(&pool, p.sale_entry, p.receivable).await,
+        (None, None),
+        "en vivant, la pièce rouverte reste ouverte"
+    );
+
+    let backup = export_backup(&app, &biz.ctx.jwt).await;
+    let (manifest, data) = unzip(&backup);
+    import_ok(&app, &biz.ctx.jwt, &manifest, &data).await;
+
+    let m1 = lettering_entry(&backfill_report(&pool).await).clone();
+    assert!(m1["rows_affected"].as_u64() > Some(0), "{m1:?}");
+    let vente = line_mark(&pool, p.sale_entry, p.receivable).await;
+    assert_eq!(
+        vente.1.as_deref(),
+        Some("document"),
+        "M1 lettre la pièce rouverte"
+    );
+    assert_eq!(
+        line_mark(&pool, p.settlement_entry, p.receivable).await,
+        vente
+    );
 }
 
 // ============================================================================

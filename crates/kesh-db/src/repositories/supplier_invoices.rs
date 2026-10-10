@@ -24,9 +24,9 @@ use crate::entities::{
     SupplierInvoiceLine,
 };
 use crate::errors::{ClaimSide, DbError, NonPostableAccount, map_db_error};
-use crate::repositories::audit_log;
 use crate::repositories::company_invoice_settings::{DesignatedRole, GeneratedLines};
 use crate::repositories::invoice_settlements::{self, ClaimSubject};
+use crate::repositories::{audit_log, letterings};
 
 /// SELECT scopé multi-tenant (anti-IDOR — toujours `AND company_id = ?`).
 const FIND_SCOPED_SQL: &str = "SELECT id, company_id, contact_id, supplier_invoice_number, status, \
@@ -912,6 +912,24 @@ pub async fn pay_in_tx(
         return Err(DbError::OptimisticLockConflict);
     }
 
+    // (6 bis) Le lettrage de la pièce (Story 15-1a2-ii, P4) : une facture payée
+    //     est lettrée `document` — l'achat et le paiement, sur la dette `B`.
+    //     L'exercice tenu est celui du règlement, verrouillé en (4). ⛔ Un
+    //     paiement n'est jamais refusé à cause du lettrage (compte non lettrable,
+    //     périodes closes : abstention) ; une erreur structurelle se propage et
+    //     annule le paiement — dans `confirm_batch`, le lot entier.
+    letterings::sync_supplier_invoice_in_tx(
+        tx,
+        company_id,
+        id,
+        fy.id,
+        letterings::Actor {
+            user_id,
+            api_key_id: None,
+        },
+    )
+    .await?;
+
     // (7) Relire + audit.
     let updated = sqlx::query_as::<_, SupplierInvoice>(FIND_SCOPED_SQL)
         .bind(id)
@@ -1047,7 +1065,9 @@ pub async fn cancel_in_tx(
         .await
         .map_err(map_db_error)?
         .ok_or(DbError::NotFound)?;
-    sqlx::query(
+    //     Sa valeur est GARDÉE (Story 15-1a2-ii) : c'est l'exercice tenu de la
+    //     dissolution de l'étape (2 bis).
+    let purchase_fiscal_year_id: i64 = sqlx::query_scalar(
         "SELECT fy.id FROM journal_entries je \
          JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
          WHERE je.id = ? AND je.company_id = ? FOR UPDATE",
@@ -1074,6 +1094,26 @@ pub async fn cancel_in_tx(
     {
         return Err(DbError::SupplierInvoiceNotCancellable { blocker });
     }
+
+    // (2 bis) Le lettrage de la pièce se défait AVANT la contre-passation
+    //     (Story 15-1a2-ii, P4) — après les refus, pour que la cause rendue
+    //     reste celle du refus. Facture payée : le groupe {achat, règlement} est
+    //     dissous ; la contre-passation lettre ensuite l'achat avec son miroir,
+    //     et le règlement DÉTACHÉ reste ouvert, lettrable à la main. Facture
+    //     ouverte : aucun groupe, no-op. L'exercice tenu est celui de l'achat,
+    //     verrouillé en (1) et ouvert (refus « exercice clos ») ; le rang 2 bis
+    //     garantit qu'une ligne du groupe est en période ouverte.
+    letterings::dissolve_supplier_invoice_document_group_in_tx(
+        tx,
+        company_id,
+        id,
+        purchase_fiscal_year_id,
+        letterings::Actor {
+            user_id,
+            api_key_id: None,
+        },
+    )
+    .await?;
 
     // (3) La contre-passation de l'achat, au titre de cette facture.
     let reversal = journal_entries::reverse_owned_in_tx(
@@ -1253,8 +1293,11 @@ pub async fn cancel_settlement_in_tx(
     // l'exercice de l'origine qu'APRÈS ; une clôture concurrente passerait
     // entre les deux. Une facture non `paid` n'a pas d'écriture : le rang 1
     // la refuse juste après.
+    //     Sa valeur est GARDÉE (Story 15-1a2-ii) : c'est l'exercice tenu de la
+    //     dissolution de l'étape (2 bis).
+    let mut settlement_fiscal_year_id = None;
     if let (true, Some(entry_id)) = (inv.status == "paid", inv.settlement_journal_entry_id) {
-        sqlx::query(
+        let fy_id: i64 = sqlx::query_scalar(
             "SELECT fy.id FROM journal_entries je \
              JOIN fiscal_years fy ON fy.id = je.fiscal_year_id \
              WHERE je.id = ? AND je.company_id = ? FOR UPDATE",
@@ -1265,6 +1308,7 @@ pub async fn cancel_settlement_in_tx(
         .await
         .map_err(map_db_error)?
         .ok_or(DbError::NotFound)?;
+        settlement_fiscal_year_id = Some(fy_id);
     }
 
     // (2) Les motifs. Rang 1, « exercice clos » et lettrage figé par la
@@ -1283,6 +1327,27 @@ pub async fn cancel_settlement_in_tx(
     let entry_id = inv
         .settlement_journal_entry_id
         .ok_or_else(|| DbError::Invariant("facture payée sans écriture de règlement".into()))?;
+    let settlement_fiscal_year_id = settlement_fiscal_year_id.ok_or_else(|| {
+        DbError::Invariant("facture payée : exercice du règlement non verrouillé".into())
+    })?;
+
+    // (2 bis) Le lettrage de la pièce se défait AVANT la contre-passation
+    //     (Story 15-1a2-ii, P4) — après les refus : la contre-passation lettre
+    //     ensuite le règlement avec son miroir (15-1a-ii R6), et la dette
+    //     redevient ouverte. L'exercice tenu est celui du règlement, verrouillé
+    //     en (1-bis) et ouvert (rang « exercice clos ») ; le rang 2 bis garantit
+    //     qu'une ligne du groupe est en période ouverte.
+    letterings::dissolve_supplier_invoice_document_group_in_tx(
+        tx,
+        company_id,
+        id,
+        settlement_fiscal_year_id,
+        letterings::Actor {
+            user_id,
+            api_key_id: None,
+        },
+    )
+    .await?;
 
     // (3) La contre-passation, au titre de cette facture. ⚠️ AVANT l'UPDATE qui
     //     vide la colonne : le socle y vérifie que l'écriture est bien celle du

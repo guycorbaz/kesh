@@ -1,4 +1,5 @@
-//! Le lettrage des pièces clientes — Story 15-1a2-i (#518).
+//! Le lettrage des pièces clientes — Story 15-1a2-i (#518) — et fournisseurs —
+//! Story 15-1a2-ii (section en fin de fichier).
 //!
 //! Une facture client **soldée** — par ses règlements, son solde ou son avoir —
 //! est lettrée `document` d'office ; l'annulation d'un règlement la délettre ;
@@ -17,7 +18,8 @@ use kesh_db::entities::{SettlementChoice, SettlementWriteOffNature as Nature};
 use kesh_db::errors::{DbError, SettlementCancelBlocker};
 use kesh_db::repositories::letterings::{self, Actor, SyncOutcome};
 use kesh_db::repositories::{
-    companies, fiscal_years, invoice_settlements_write, reconciliation_cancel,
+    companies, fiscal_years, invoice_settlements_write, journal_entries, reconciliation_cancel,
+    supplier_invoices,
 };
 use kesh_db::test_fixtures::{SeededCompany, disable_rounding_to_5_centimes};
 use rust_decimal::Decimal;
@@ -1108,4 +1110,583 @@ async fn only_the_anchor_of_the_sale_is_in_the_group(pool: MySqlPool) {
         (None, None),
         "la seconde ligne de la vente sur A reste ouverte"
     );
+}
+
+// ===========================================================================
+// Story 15-1a2-ii — les pièces FOURNISSEURS
+// ===========================================================================
+
+/// La synchronisation d'une facture fournisseur, dans une transaction qui tient
+/// l'exercice `fy` `FOR UPDATE` ; valide si elle réussit.
+async fn synchroniser_fournisseur(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    id: i64,
+    fy: i64,
+) -> Result<SyncOutcome, DbError> {
+    let mut tx = pool.begin().await.expect("tx");
+    sqlx::query("SELECT id FROM fiscal_years WHERE id = ? FOR UPDATE")
+        .bind(fy)
+        .execute(&mut *tx)
+        .await
+        .expect("exercice tenu");
+    let issue = letterings::sync_supplier_invoice_in_tx(
+        &mut tx,
+        seeded.company_id,
+        id,
+        fy,
+        Actor {
+            user_id: seeded.admin_user_id,
+            api_key_id: None,
+        },
+    )
+    .await;
+    if issue.is_ok() {
+        tx.commit().await.expect("commit");
+    }
+    issue
+}
+
+/// Le statut d'une facture fournisseur.
+async fn statut_fournisseur(pool: &MySqlPool, id: i64) -> String {
+    sqlx::query_scalar("SELECT status FROM supplier_invoices WHERE id = ?")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .expect("statut")
+}
+
+/// AC7 — un paiement direct lettre `document` l'achat et le paiement sur la
+/// dette `B` ; la clé est la ligne d'achat ; la ligne bancaire (compte non
+/// lettrable) reste ouverte ; la synchronisation rejouée ne change rien.
+#[sqlx::test(migrations = "./test-schema")]
+async fn supplier_payment_letters_purchase_and_payment(pool: MySqlPool) {
+    let seeded = societe(&pool).await;
+    let a = achats(&pool, &seeded).await;
+    let s = facture_fournisseur(
+        &pool,
+        &seeded,
+        &a,
+        dec!(120.00),
+        jours_avant(100),
+        Some("FF-1"),
+    )
+    .await;
+    let reglement = payer(&pool, &seeded, &a, s, jours_avant(90)).await;
+
+    assert!(
+        fournisseur_lettree_document(&pool, s).await,
+        "achat et paiement lettrés"
+    );
+    let lignes = lignes_de_piece_fournisseur(&pool, s).await;
+    assert_eq!(lignes.len(), 2, "l'ancre et la ligne du règlement");
+    assert_eq!(
+        lignes[0].1,
+        achat(&pool, s).await,
+        "l'ancre est sur l'achat"
+    );
+    assert_eq!(lignes[0].2, Some(lignes[0].0), "clé = plus petite ligne");
+    assert_eq!(
+        marque(&pool, reglement, a.bank_ledger).await,
+        (None, None),
+        "compte bancaire : non lettrable"
+    );
+    let marques = toutes_les_marques(&pool, seeded.company_id).await;
+    assert_eq!(
+        synchroniser_fournisseur(&pool, &seeded, s, seeded.fiscal_year_id)
+            .await
+            .expect("synchronisation"),
+        SyncOutcome::Unchanged,
+        "idempotente"
+    );
+    assert_eq!(toutes_les_marques(&pool, seeded.company_id).await, marques);
+}
+
+/// AC7 — la confirmation d'un lot pain.001 (`confirm_batch`, N paiements dans
+/// une transaction) lettre chaque facture, chacune sous sa propre clé.
+#[sqlx::test(migrations = "./test-schema")]
+async fn batch_confirm_letters(pool: MySqlPool) {
+    let seeded = societe(&pool).await;
+    let a = achats(&pool, &seeded).await;
+    let s1 = facture_fournisseur(
+        &pool,
+        &seeded,
+        &a,
+        dec!(100.00),
+        jours_avant(100),
+        Some("L-1"),
+    )
+    .await;
+    let s2 = facture_fournisseur(
+        &pool,
+        &seeded,
+        &a,
+        dec!(200.00),
+        jours_avant(100),
+        Some("L-2"),
+    )
+    .await;
+    payer_par_lot(&pool, &seeded, &a, vec![s1, s2], jours_avant(80)).await;
+
+    for s in [s1, s2] {
+        assert_eq!(statut_fournisseur(&pool, s).await, "paid");
+        assert!(
+            fournisseur_lettree_document(&pool, s).await,
+            "facture {s} lettrée"
+        );
+    }
+    let k1 = lignes_de_piece_fournisseur(&pool, s1).await[0].2;
+    let k2 = lignes_de_piece_fournisseur(&pool, s2).await[0].2;
+    assert_ne!(k1, k2, "un groupe par facture");
+}
+
+/// AC7 — l'annulation du règlement dissout le groupe, lettre règlement et
+/// miroir `reversal`, et laisse l'achat ouvert ; la facture redevient `open`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn supplier_settlement_cancel_dissolves_and_pairs(pool: MySqlPool) {
+    let seeded = societe(&pool).await;
+    let a = achats(&pool, &seeded).await;
+    let s = facture_fournisseur(
+        &pool,
+        &seeded,
+        &a,
+        dec!(75.00),
+        jours_avant(100),
+        Some("FF-2"),
+    )
+    .await;
+    let reglement = payer(&pool, &seeded, &a, s, jours_avant(90)).await;
+    assert!(fournisseur_lettree_document(&pool, s).await);
+
+    supplier_invoices::cancel_settlement(&pool, seeded.company_id, s, seeded.admin_user_id)
+        .await
+        .expect("annulation du règlement");
+    assert_eq!(statut_fournisseur(&pool, s).await, "open");
+    assert_eq!(
+        marque(&pool, achat(&pool, s).await, a.payable).await,
+        (None, None),
+        "l'achat est ouvert"
+    );
+    assert_paire_reversal(&pool, reglement, a.payable).await;
+    let miroir = contre_passation(&pool, reglement).await;
+    assert_eq!(
+        marque(&pool, miroir, a.bank_ledger).await,
+        (None, None),
+        "banque : non lettrable, son miroir reste ouvert"
+    );
+}
+
+/// AC7 — l'annulation d'une facture PAYÉE dissout le groupe, lettre l'achat et
+/// son miroir `reversal`, et laisse le règlement DÉTACHÉ ouvert — lettrable à la
+/// main avec une ligne de même compte qui le solde (il n'est plus possédé).
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancel_paid_supplier_invoice_detaches_an_open_payment(pool: MySqlPool) {
+    let seeded = societe(&pool).await;
+    let a = achats(&pool, &seeded).await;
+    let s = facture_fournisseur(
+        &pool,
+        &seeded,
+        &a,
+        dec!(60.00),
+        jours_avant(100),
+        Some("FF-3"),
+    )
+    .await;
+    let reglement = payer(&pool, &seeded, &a, s, jours_avant(90)).await;
+    let purchase = achat(&pool, s).await;
+
+    supplier_invoices::cancel(&pool, seeded.company_id, s, seeded.admin_user_id)
+        .await
+        .expect("annulation de la facture payée");
+    assert_eq!(statut_fournisseur(&pool, s).await, "cancelled");
+    assert_paire_reversal(&pool, purchase, a.payable).await;
+    assert_eq!(
+        marque(&pool, reglement, a.payable).await,
+        (None, None),
+        "le règlement détaché est ouvert"
+    );
+
+    // Lettrable à la main : une écriture qui crédite `B` du même montant.
+    let (_, _, credit) = ecriture_manuelle(
+        &pool,
+        &seeded,
+        seeded.accounts["4000"],
+        a.payable,
+        dec!(60.00),
+        jours_avant(50),
+    )
+    .await;
+    let detache: i64 = sqlx::query_scalar(
+        "SELECT id FROM journal_entry_lines WHERE entry_id = ? AND account_id = ?",
+    )
+    .bind(reglement)
+    .bind(a.payable)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let mut tx = pool.begin().await.unwrap();
+    let groupe = letterings::create_group_in_tx(
+        &mut tx,
+        seeded.company_id,
+        &[detache, credit],
+        letterings::Origin::Manual,
+        letterings::Mode::Manual,
+        Actor {
+            user_id: seeded.admin_user_id,
+            api_key_id: None,
+        },
+    )
+    .await
+    .expect("le règlement détaché se lettre à la main");
+    tx.commit().await.unwrap();
+    assert_eq!(groupe.key, detache);
+}
+
+/// AC7 (second volet), AC9 — le règlement détaché, CONTRE-PASSÉ par sa fiche
+/// d'écriture, est lettré `reversal` avec son miroir ; il n'est jamais `document`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn detached_payment_reversed_is_lettered_reversal(pool: MySqlPool) {
+    let seeded = societe(&pool).await;
+    let a = achats(&pool, &seeded).await;
+    let s = facture_fournisseur(
+        &pool,
+        &seeded,
+        &a,
+        dec!(45.00),
+        jours_avant(100),
+        Some("FF-4"),
+    )
+    .await;
+    let reglement = payer(&pool, &seeded, &a, s, jours_avant(90)).await;
+    supplier_invoices::cancel(&pool, seeded.company_id, s, seeded.admin_user_id)
+        .await
+        .expect("annulation de la facture payée");
+
+    journal_entries::reverse(&pool, seeded.company_id, reglement, seeded.admin_user_id)
+        .await
+        .expect("le règlement détaché se contre-passe");
+    assert_paire_reversal(&pool, reglement, a.payable).await;
+    assert_paire_reversal(&pool, achat(&pool, s).await, a.payable).await;
+    assert_eq!(
+        compter(
+            &pool,
+            "SELECT COUNT(*) FROM journal_entry_lines WHERE lettering_origin = 'document'"
+        )
+        .await,
+        0,
+        "plus aucune ligne `document`"
+    );
+}
+
+/// AC7 — paiement par COMPTE INTERNE lettrable (`1000`), puis annulation : la
+/// ligne de contrepartie et son miroir sont aussi lettrés `reversal` (R6).
+#[sqlx::test(migrations = "./test-schema")]
+async fn internal_account_payment_pairs_its_counterpart_on_cancel(pool: MySqlPool) {
+    let seeded = societe(&pool).await;
+    let a = achats(&pool, &seeded).await;
+    let s = facture_fournisseur(
+        &pool,
+        &seeded,
+        &a,
+        dec!(33.00),
+        jours_avant(100),
+        Some("FF-5"),
+    )
+    .await;
+    let reglement = payer_par(
+        &pool,
+        &seeded,
+        s,
+        SettlementChoice::InternalAccount {
+            account_id: seeded.accounts["1000"],
+        },
+        jours_avant(90),
+    )
+    .await;
+    assert!(fournisseur_lettree_document(&pool, s).await);
+    assert_eq!(
+        marque(&pool, reglement, seeded.accounts["1000"]).await,
+        (None, None),
+        "la contrepartie n'est pas dans le groupe de la pièce"
+    );
+
+    supplier_invoices::cancel_settlement(&pool, seeded.company_id, s, seeded.admin_user_id)
+        .await
+        .expect("annulation du règlement");
+    assert_paire_reversal(&pool, reglement, a.payable).await;
+    assert_paire_reversal(&pool, reglement, seeded.accounts["1000"]).await;
+}
+
+/// AC7 — dette `B` non lettrable (rattachée à un compte bancaire) : le paiement
+/// réussit, aucun groupe, aucune entrée d'audit de lettrage.
+#[sqlx::test(migrations = "./test-schema")]
+async fn payable_not_letterable_is_skipped(pool: MySqlPool) {
+    let seeded = societe(&pool).await;
+    let a = achats(&pool, &seeded).await;
+    rattacher_a_un_compte_bancaire(&pool, seeded.company_id, a.payable).await;
+    let s = facture_fournisseur(
+        &pool,
+        &seeded,
+        &a,
+        dec!(25.00),
+        jours_avant(100),
+        Some("FF-6"),
+    )
+    .await;
+    payer(&pool, &seeded, &a, s, jours_avant(90)).await;
+
+    assert_eq!(
+        statut_fournisseur(&pool, s).await,
+        "paid",
+        "paiement réussi"
+    );
+    assert!(
+        lignes_de_piece_fournisseur(&pool, s)
+            .await
+            .iter()
+            .all(|l| l.2.is_none()),
+        "aucune marque"
+    );
+    assert_eq!(audits_de_lettrage(&pool).await, 0);
+    assert_eq!(
+        synchroniser_fournisseur(&pool, &seeded, s, seeded.fiscal_year_id)
+            .await
+            .expect("synchronisation"),
+        SyncOutcome::AccountNotLetterable
+    );
+}
+
+/// AC7 (périodes closes) — groupe posé PAR LE PAIEMENT, verrou posé ensuite :
+/// au dépôt, l'annulation du paiement et celle de la facture sont refusées
+/// (`DocumentLetteringInClosedPeriods`), rien n'est écrit, le groupe est intact,
+/// la facture reste `paid`, et les deux prédicteurs rendent le motif. Après
+/// déverrouillage (borne avant la date la plus récente du groupe), les deux
+/// passent — dissolution et paires `reversal`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn locked_period_supplier_cancels_are_refused_until_unlocked(pool: MySqlPool) {
+    let seeded = societe(&pool).await;
+    let a = achats(&pool, &seeded).await;
+    let le = jours_avant(90);
+    let s1 = facture_fournisseur(
+        &pool,
+        &seeded,
+        &a,
+        dec!(40.00),
+        jours_avant(100),
+        Some("V-1"),
+    )
+    .await;
+    let r1 = payer(&pool, &seeded, &a, s1, le).await;
+    let s2 = facture_fournisseur(
+        &pool,
+        &seeded,
+        &a,
+        dec!(50.00),
+        jours_avant(100),
+        Some("V-2"),
+    )
+    .await;
+    let r2 = payer(&pool, &seeded, &a, s2, le).await;
+    assert!(fournisseur_lettree_document(&pool, s1).await);
+    assert!(fournisseur_lettree_document(&pool, s2).await);
+    companies::lock_books(&pool, seeded.admin_user_id, seeded.company_id, le)
+        .await
+        .expect("verrou");
+
+    let traces = |pool: MySqlPool| async move {
+        [
+            compter(&pool, "SELECT COUNT(*) FROM journal_entries").await,
+            compter(&pool, "SELECT COUNT(*) FROM audit_log").await,
+        ]
+    };
+    let avant = traces(pool.clone()).await;
+    let marques = toutes_les_marques(&pool, seeded.company_id).await;
+
+    let err =
+        supplier_invoices::cancel_settlement(&pool, seeded.company_id, s1, seeded.admin_user_id)
+            .await
+            .expect_err("annulation du paiement refusée");
+    assert!(
+        matches!(
+            err,
+            DbError::SettlementNotCancellable {
+                blocker: SettlementCancelBlocker::DocumentLetteringInClosedPeriods
+            }
+        ),
+        "{err:?}"
+    );
+    let err = supplier_invoices::cancel(&pool, seeded.company_id, s2, seeded.admin_user_id)
+        .await
+        .expect_err("annulation de la facture refusée");
+    assert!(
+        matches!(
+            err,
+            DbError::SupplierInvoiceNotCancellable {
+                blocker: SettlementCancelBlocker::DocumentLetteringInClosedPeriods
+            }
+        ),
+        "{err:?}"
+    );
+    assert_eq!(traces(pool.clone()).await, avant, "rien d'écrit");
+    assert_eq!(
+        toutes_les_marques(&pool, seeded.company_id).await,
+        marques,
+        "groupes intacts"
+    );
+    assert_eq!(statut_fournisseur(&pool, s1).await, "paid");
+    assert_eq!(statut_fournisseur(&pool, s2).await, "paid");
+
+    let mut conn = pool.acquire().await.unwrap();
+    let p1 =
+        supplier_invoices::supplier_settlement_cancel_blocker(&mut conn, seeded.company_id, s1)
+            .await
+            .unwrap()
+            .map(|h| h.0);
+    let p2 = supplier_invoices::supplier_invoice_cancel_blocker(&mut conn, seeded.company_id, s2)
+        .await
+        .unwrap()
+        .map(|h| h.0);
+    drop(conn);
+    assert_eq!(
+        p1,
+        Some(SettlementCancelBlocker::DocumentLetteringInClosedPeriods)
+    );
+    assert_eq!(
+        p2,
+        Some(SettlementCancelBlocker::DocumentLetteringInClosedPeriods)
+    );
+
+    companies::unlock_books(
+        &pool,
+        seeded.admin_user_id,
+        seeded.company_id,
+        Some(le - chrono::Duration::days(1)),
+        "annuler des paiements".into(),
+    )
+    .await
+    .expect("déverrouillage");
+    supplier_invoices::cancel_settlement(&pool, seeded.company_id, s1, seeded.admin_user_id)
+        .await
+        .expect("paiement annulé après déverrouillage");
+    assert_paire_reversal(&pool, r1, a.payable).await;
+    assert_eq!(
+        marque(&pool, achat(&pool, s1).await, a.payable).await,
+        (None, None)
+    );
+    supplier_invoices::cancel(&pool, seeded.company_id, s2, seeded.admin_user_id)
+        .await
+        .expect("facture annulée après déverrouillage");
+    assert_paire_reversal(&pool, achat(&pool, s2).await, a.payable).await;
+    assert_eq!(
+        marque(&pool, r2, a.payable).await,
+        (None, None),
+        "règlement détaché ouvert"
+    );
+}
+
+/// P2 (découverte par statut), AC6 (e) — une facture fournisseur ANNULÉE (son
+/// achat lettré `reversal`) et une facture OUVERTE : la synchronisation rend
+/// `Unchanged`, sans écriture ni audit — jamais `Invariant`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn cancelled_supplier_invoice_sync_is_unchanged(pool: MySqlPool) {
+    let seeded = societe(&pool).await;
+    let a = achats(&pool, &seeded).await;
+    let annulee = facture_fournisseur(
+        &pool,
+        &seeded,
+        &a,
+        dec!(10.00),
+        jours_avant(100),
+        Some("A-1"),
+    )
+    .await;
+    payer(&pool, &seeded, &a, annulee, jours_avant(90)).await;
+    supplier_invoices::cancel(&pool, seeded.company_id, annulee, seeded.admin_user_id)
+        .await
+        .expect("annulation");
+    assert_paire_reversal(&pool, achat(&pool, annulee).await, a.payable).await;
+    let ouverte = facture_fournisseur(
+        &pool,
+        &seeded,
+        &a,
+        dec!(11.00),
+        jours_avant(100),
+        Some("A-2"),
+    )
+    .await;
+
+    let marques = toutes_les_marques(&pool, seeded.company_id).await;
+    let audits = audits_de_lettrage(&pool).await;
+    for s in [annulee, ouverte] {
+        assert_eq!(
+            synchroniser_fournisseur(&pool, &seeded, s, seeded.fiscal_year_id)
+                .await
+                .expect("synchronisation"),
+            SyncOutcome::Unchanged,
+            "facture {s}"
+        );
+    }
+    assert_eq!(toutes_les_marques(&pool, seeded.company_id).await, marques);
+    assert_eq!(audits_de_lettrage(&pool).await, audits);
+}
+
+/// AC10 (part ii) — `lettering.created` (paiement) et `lettering.removed`
+/// (annulation) portent la facture fournisseur : `documentType =
+/// "supplierInvoice"`, `documentId`, `documentNumber` — présent et `null` pour
+/// une facture SANS numéro ; acteur : l'auteur du geste, sans clé d'API.
+#[sqlx::test(migrations = "./test-schema")]
+async fn supplier_audit_details_carry_the_invoice(pool: MySqlPool) {
+    let seeded = societe(&pool).await;
+    let a = achats(&pool, &seeded).await;
+    let numerotee = facture_fournisseur(
+        &pool,
+        &seeded,
+        &a,
+        dec!(70.00),
+        jours_avant(100),
+        Some("FF-77"),
+    )
+    .await;
+    let anonyme =
+        facture_fournisseur(&pool, &seeded, &a, dec!(80.00), jours_avant(100), None).await;
+    for s in [numerotee, anonyme] {
+        payer(&pool, &seeded, &a, s, jours_avant(90)).await;
+        supplier_invoices::cancel_settlement(&pool, seeded.company_id, s, seeded.admin_user_id)
+            .await
+            .expect("annulation du règlement");
+    }
+
+    for (s, numero) in [
+        (numerotee, serde_json::json!("FF-77")),
+        (anonyme, serde_json::Value::Null),
+    ] {
+        for action in ["lettering.created", "lettering.removed"] {
+            let (user_id, api_key_id, details): (i64, Option<i64>, serde_json::Value) =
+                sqlx::query_as(
+                    "SELECT user_id, actor_api_key_id, details_json FROM audit_log \
+                     WHERE action = ? AND JSON_EXTRACT(details_json, '$.origin') = 'document' \
+                       AND JSON_EXTRACT(details_json, '$.documentId') = ?",
+                )
+                .bind(action)
+                .bind(s)
+                .fetch_one(&pool)
+                .await
+                .unwrap_or_else(|e| panic!("{action} / {s} : {e}"));
+            assert_eq!(user_id, seeded.admin_user_id, "{action}");
+            assert_eq!(api_key_id, None, "{action}");
+            assert_eq!(details["documentType"], "supplierInvoice", "{action}");
+            assert_eq!(details["documentId"], s, "{action}");
+            let objet = details.as_object().expect("objet");
+            assert!(
+                objet.contains_key("documentNumber"),
+                "{action} : clé présente"
+            );
+            assert_eq!(details["documentNumber"], numero, "{action}");
+            assert_eq!(
+                details["lines"].as_array().map(Vec::len),
+                Some(2),
+                "{action}"
+            );
+        }
+    }
 }

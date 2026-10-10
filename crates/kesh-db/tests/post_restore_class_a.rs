@@ -39,6 +39,18 @@
 //! test de non-vacuité passerait **à vide**. D'où l'`UPDATE … SET
 //! revenue_account_id = NULL` posé explicitement, sur le patron de
 //! `invoice_lines_revenue_account_backfill.rs`.
+//!
+//! ⚠️ **Compté PAR ENTRÉE, depuis la Story 15-1a2-ii (#518).** Le rattrapage du
+//! lettrage (`20261010000001`, M1) entre au registre en classe A, à côté de
+//! l'entrée retirée `20260729000001`. Une somme sur toutes les entrées laisserait
+//! l'une tourner à vide sans que rien ne rougisse : chaque entrée doit toucher
+//! au moins une ligne sur la base d'avant, et aucune sur la base à jour. La
+//! fixture porte donc aussi une facture client **soldée** et une facture
+//! fournisseur **payée**, fabriquées en SQL brut — marques à `NULL` sur la base
+//! d'avant, posées par un `UPDATE` brut et explicite sur la base à jour (le
+//! groupe que la synchronisation aurait posé), **jamais** par M1 elle-même : le
+//! test deviendrait tautologique sur l'accord rattrapage ↔ vivant, que tient
+//! `lettering_documents_backfill.rs`.
 
 use std::collections::BTreeMap;
 
@@ -110,6 +122,21 @@ async fn insert_canonical_entry(
     seeded: &SeededCompany,
     entry_number: i64,
 ) -> i64 {
+    let lines: [(i64, &str, &str); 3] = [
+        (seeded.accounts["1100"], TTC, ZERO), // créance
+        (seeded.accounts["3000"], ZERO, HT),  // produit — le candidat attendu
+        (seeded.accounts["2000"], ZERO, VAT), // TVA due
+    ];
+    insert_entry(pool, seeded, entry_number, &lines).await.0
+}
+
+/// Écriture quelconque en SQL brut ; rend `(écriture, lignes dans l'ordre)`.
+async fn insert_entry(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    entry_number: i64,
+    lines: &[(i64, &str, &str)],
+) -> (i64, Vec<i64>) {
     let entry_id = sqlx::query(
         "INSERT INTO journal_entries \
          (company_id, fiscal_year_id, entry_number, entry_date, journal, description) \
@@ -123,13 +150,9 @@ async fn insert_canonical_entry(
     .expect("insert journal_entry")
     .last_insert_id() as i64;
 
-    let lines: [(i64, &str, &str); 3] = [
-        (seeded.accounts["1100"], TTC, ZERO), // créance
-        (seeded.accounts["3000"], ZERO, HT),  // produit — le candidat attendu
-        (seeded.accounts["2000"], ZERO, VAT), // TVA due
-    ];
+    let mut ids = Vec::new();
     for (order, (account_id, debit, credit)) in lines.iter().enumerate() {
-        sqlx::query(
+        let id = sqlx::query(
             "INSERT INTO journal_entry_lines (entry_id, account_id, line_order, debit, credit) \
              VALUES (?, ?, ?, ?, ?)",
         )
@@ -140,10 +163,111 @@ async fn insert_canonical_entry(
         .bind(credit)
         .execute(pool)
         .await
-        .expect("insert journal_entry_line");
+        .expect("insert journal_entry_line")
+        .last_insert_id() as i64;
+        ids.push(id);
     }
 
-    entry_id
+    (entry_id, ids)
+}
+
+/// Les pièces SOLDÉES de la fixture (Story 15-1a2-ii), en SQL brut : un
+/// règlement complet de la facture `invoice_id` (écriture de vente
+/// `sale_entry`) et une facture fournisseur payée. Rend les deux groupes
+/// `document` que la synchronisation poserait — `[vente, règlement]` sur la
+/// créance `1100`, `[achat, paiement]` sur la dette `2000` — **sans** les poser.
+async fn insert_settled_pieces(
+    pool: &MySqlPool,
+    seeded: &SeededCompany,
+    contact_id: i64,
+    invoice_id: i64,
+    sale_entry: i64,
+) -> Vec<Vec<i64>> {
+    let (creance, caisse, dette, charge) = (
+        seeded.accounts["1100"],
+        seeded.accounts["1000"],
+        seeded.accounts["2000"],
+        seeded.accounts["4000"],
+    );
+    let vente: i64 = sqlx::query_scalar(
+        "SELECT id FROM journal_entry_lines WHERE entry_id = ? AND account_id = ?",
+    )
+    .bind(sale_entry)
+    .bind(creance)
+    .fetch_one(pool)
+    .await
+    .expect("ligne de vente sur la créance");
+    let (reglement, l_reglement) = insert_entry(
+        pool,
+        seeded,
+        2,
+        &[(caisse, TTC, ZERO), (creance, ZERO, TTC)],
+    )
+    .await;
+    sqlx::query(
+        "INSERT INTO invoice_settlements (company_id, invoice_id, journal_entry_id, amount, \
+         settled_on, settlement_type, settlement_account_id) \
+         VALUES (?, ?, ?, ?, '2026-03-01', 'internal_account', ?)",
+    )
+    .bind(seeded.company_id)
+    .bind(invoice_id)
+    .bind(reglement)
+    .bind(TTC)
+    .bind(caisse)
+    .execute(pool)
+    .await
+    .expect("insert invoice_settlements");
+
+    const ACHAT: &str = "500.0000";
+    let (achat, l_achat) = insert_entry(
+        pool,
+        seeded,
+        3,
+        &[(charge, ACHAT, ZERO), (dette, ZERO, ACHAT)],
+    )
+    .await;
+    let (paiement, l_paiement) = insert_entry(
+        pool,
+        seeded,
+        4,
+        &[(dette, ACHAT, ZERO), (caisse, ZERO, ACHAT)],
+    )
+    .await;
+    sqlx::query(
+        "INSERT INTO supplier_invoices (company_id, contact_id, supplier_invoice_number, status, \
+         invoice_date, total_amount, purchase_journal_entry_id, settlement_type, \
+         settlement_account_id, settlement_journal_entry_id, paid_at) \
+         VALUES (?, ?, 'FF-16-1c', 'paid', '2026-03-01', ?, ?, 'internal_account', ?, ?, \
+                 '2026-03-01 00:00:00')",
+    )
+    .bind(seeded.company_id)
+    .bind(contact_id)
+    .bind(ACHAT)
+    .bind(achat)
+    .bind(caisse)
+    .bind(paiement)
+    .execute(pool)
+    .await
+    .expect("insert supplier_invoices");
+
+    vec![vec![vente, l_reglement[1]], vec![l_achat[1], l_paiement[0]]]
+}
+
+/// Les marques des lignes données.
+async fn marks(pool: &MySqlPool, lines: &[i64]) -> Vec<(Option<i64>, Option<String>)> {
+    let mut out = Vec::new();
+    for id in lines {
+        out.push(
+            sqlx::query_as(
+                "SELECT lettering_key, lettering_origin FROM journal_entry_lines WHERE id = ?",
+            )
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .expect("marque"),
+        );
+    }
+    out
 }
 
 /// Facture à **deux** lignes — le backfill pose le compte sur *toutes* les
@@ -217,12 +341,15 @@ async fn line_accounts(pool: &MySqlPool, invoice_id: i64) -> Vec<Option<i64>> {
     .expect("select invoice_lines.revenue_account_id")
 }
 
-/// Rejoue les entrées de classe A dans une transaction **committée**, et rend le
-/// total des lignes touchées.
+/// Rejoue les entrées de classe A dans une transaction **committée**, et rend les
+/// lignes touchées **par entrée** : `(label, rows_affected)`.
 ///
 /// Le manifeste passé est vide : il n'entre pas dans la décision d'une entrée
 /// inconditionnelle, et c'est précisément la propriété testée.
-async fn replay_class_a(pool: &MySqlPool, entries: &[PostRestoreBackfill]) -> u64 {
+async fn replay_class_a(
+    pool: &MySqlPool,
+    entries: &[PostRestoreBackfill],
+) -> Vec<(&'static str, u64)> {
     let mut tx = pool.begin().await.expect("begin");
     let report = replay_with_registry(&mut tx, &BTreeMap::new(), entries)
         .await
@@ -242,7 +369,7 @@ async fn replay_class_a(pool: &MySqlPool, entries: &[PostRestoreBackfill]) -> u6
             r.label
         );
     }
-    report.iter().map(|r| r.rows_affected).sum()
+    report.iter().map(|r| (r.label, r.rows_affected)).collect()
 }
 
 /// **AC-C6.4 — non-vacuité.** Sur une base reconstituée dans son état
@@ -278,15 +405,32 @@ async fn class_a_entries_are_not_vacuous_on_a_pre_migration_base(pool: MySqlPool
         vec![None, None],
         "pré-condition : la fixture reconstitue bien l'état pré-migration"
     );
+    // L'état d'avant la 15-1a2-ii : pièces soldées, marques à `NULL`.
+    let groupes = insert_settled_pieces(&pool, &seeded, contact_id, invoice_id, entry).await;
+    let toutes: Vec<i64> = groupes.iter().flatten().copied().collect();
+    assert!(
+        marks(&pool, &toutes).await.iter().all(|m| m.0.is_none()),
+        "pré-condition : les pièces soldées ne sont pas lettrées"
+    );
 
     let touched = replay_class_a(&pool, &entries).await;
 
-    assert!(
-        touched > 0,
-        "le rejeu de classe A n'a touché AUCUNE ligne alors que la base est dans l'état que son \
-         SQL vise. Le registre embarque du SQL qui n'agit jamais — et le test de no-op qui \
-         l'accompagne est alors vrai à vide."
-    );
+    for (label, rows) in &touched {
+        assert!(
+            *rows > 0,
+            "l'entrée de classe A {label} n'a touché AUCUNE ligne alors que la base est dans \
+             l'état que son SQL vise. Le registre embarque du SQL qui n'agit jamais — et le test \
+             de no-op qui l'accompagne est alors vrai à vide."
+        );
+    }
+    for groupe in &groupes {
+        let k = groupe.iter().min().copied();
+        assert_eq!(
+            marks(&pool, groupe).await,
+            vec![(k, Some("document".to_string())); groupe.len()],
+            "M1 pose le groupe `document` de la pièce soldée"
+        );
+    }
     assert_eq!(
         line_accounts(&pool, invoice_id).await,
         vec![Some(revenue), Some(revenue)],
@@ -297,19 +441,27 @@ async fn class_a_entries_are_not_vacuous_on_a_pre_migration_base(pool: MySqlPool
 /// **AC-C6.3 — no-op sur une base nominale à jour.** Le rejeu inconditionnel ne
 /// doit toucher **aucune** ligne d'une installation en usage courant.
 ///
-/// # ⚠️ Le montage qui rend ce test DISCRIMINANT, et le piège qu'il évite
+/// # Le montage `3200` ≠ `3000` : valide, mais plus le seul discriminant
 ///
 /// La facture validée porte sur ses lignes un compte **différent** de celui que
 /// son écriture crédite : lignes sur `3200`, écriture sur `3000`. C'est un état
 /// nominal — la divergence entre le compte d'une ligne et celui de l'écriture est
 /// documentée et légitime (défaut société changé depuis, ou compte corrigé à la
-/// main) — et c'est surtout le **seul** montage qui teste quelque chose.
+/// main) — et il distingue un rejeu qui **écraserait** une valeur posée : privé
+/// de sa garde `revenue_account_id IS NULL`, il écrirait `3000` sur `3200`.
 ///
-/// Monté avec des lignes portant `3000`, soit la valeur même que le backfill
-/// écrirait, le test serait **muet** : MariaDB ne compte dans `rows_affected` que
-/// les lignes réellement **modifiées**, donc un rejeu ayant perdu sa garde
-/// `revenue_account_id IS NULL` réécrirait `3000` sur `3000` et rapporterait
-/// quand même `0`. Le test aurait alors la forme d'une preuve sans en être une.
+/// Ce n'est plus le seul discriminant. sqlx pose `CLIENT_FOUND_ROWS`
+/// (`sqlx-mysql`, `connection/stream.rs` ; `letterings.rs` s'y appuie) :
+/// `rows_affected` compte les lignes **trouvées**, non les lignes modifiées. Un
+/// rejeu privé de sa garde qui réécrirait une valeur à l'identique compterait
+/// donc aussi la ligne — c'est ce qui rend discriminant le volet du lettrage
+/// (Story 15-1a2-ii) : les groupes `document` posés à l'identique de ce que M1
+/// écrirait ferait compter à M1 privée de sa garde `lettering_key IS NULL` les
+/// lignes qu'elle réécrit.
+///
+/// « Nominale » s'entend **sans** les deux états où M1 peut légitimement poser
+/// une marque sur une base à jour (pièce historique dont l'exercice a été rouvert,
+/// compte devenu lettrable — cf. sa justification au registre).
 ///
 /// S'y ajoute une facture **brouillon** aux lignes `NULL` — état nominal, la
 /// liaison du compte étant *tardive* par conception — qui borne la population
@@ -350,15 +502,45 @@ async fn class_a_entries_are_no_ops_on_a_nominal_up_to_date_base(pool: MySqlPool
     )
     .await;
 
+    // Les pièces soldées, et LEURS marques posées par un `UPDATE` brut : le
+    // groupe que la synchronisation aurait posé (clé = plus petite ligne,
+    // origine `document`) — jamais par M1 elle-même.
+    let groupes = insert_settled_pieces(&pool, &seeded, contact_id, validated, entry).await;
+    for groupe in &groupes {
+        let k = *groupe.iter().min().expect("groupe");
+        let posees = sqlx::query(
+            "UPDATE journal_entry_lines SET lettering_key = ?, lettering_origin = 'document' \
+             WHERE id IN (?, ?)",
+        )
+        .bind(k)
+        .bind(groupe[0])
+        .bind(groupe[1])
+        .execute(&pool)
+        .await
+        .expect("marques posées")
+        .rows_affected();
+        assert_eq!(posees, 2, "montage : les deux lignes du groupe trouvées");
+    }
+    let toutes: Vec<i64> = groupes.iter().flatten().copied().collect();
+    let marques_avant = marks(&pool, &toutes).await;
+
     let touched = replay_class_a(&pool, &entries).await;
 
+    for (label, rows) in &touched {
+        assert_eq!(
+            *rows, 0,
+            "l'entrée de classe A {label} a touché {rows} ligne(s) sur une base NOMINALE À JOUR \
+             (sans pièce rendue lettrable depuis). Une entrée inconditionnelle rejouée à chaque \
+             import n'y délettre ni n'y réécrit rien : sinon elle réécrit une donnée établie. \
+             ⚠️ `rows_affected` compte les lignes TROUVÉES (`CLIENT_FOUND_ROWS`) : une réécriture \
+             à l'identique compte aussi. Ce n'est PAS la propriété « idempotent au second \
+             passage » — 20260628000001 satisfaisait la seconde et violait celle-ci."
+        );
+    }
     assert_eq!(
-        touched, 0,
-        "le rejeu de classe A a touché {touched} ligne(s) sur une base NOMINALE À JOUR. Une \
-         entrée inconditionnelle rejouée à chaque import doit y être un no-op STRICT : sinon \
-         elle réécrit une donnée que l'utilisateur a établie. ⚠️ Ce n'est PAS la propriété \
-         « idempotent au second passage » — 20260628000001 satisfaisait la seconde et violait \
-         celle-ci."
+        marks(&pool, &toutes).await,
+        marques_avant,
+        "les marques des pièces lettrées restent inchangées"
     );
     assert_eq!(
         line_accounts(&pool, validated).await,

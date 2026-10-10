@@ -12,8 +12,12 @@
 //! qui nomme `lettering_key` ou `lettering_origin`, ou qui interpole
 //! `LINE_COLUMNS` (la liste de colonnes des lignes, qui les porte).
 //!
-//! Les **exceptions** de R3 n'apparaissent pas ici, et c'est voulu : la
-//! migration de rattrapage de la 15-1a2 est un fichier `.sql` ; la
+//! Les **exceptions** de R3 n'apparaissent pas ici, et c'est voulu : les deux
+//! migrations de rattrapage de la 15-1a2-ii
+//! (`20261010000001_lettering_documents_backfill.sql`,
+//! `20261010000002_lettering_reversal_pairs_backfill.sql`) sont des fichiers
+//! `.sql` — et la première, rejouée à l'import (`post_restore.rs`), y est
+//! embarquée par `include_str!`, sans littéral Rust ; la
 //! restauration d'une sauvegarde (`backup.rs`) nomme ses colonnes
 //! **dynamiquement** — aucun littéral ne les porte — et rétablit les marques
 //! telles qu'exportées ; les suppressions en bloc (`delete_all_by_company`,
@@ -38,6 +42,11 @@
 //! ⚠️ Ce que ce volet ne voit pas : un appel par un chemin importé
 //! (`use invoice_settlements::create_in_tx;` puis `create_in_tx(`) — le volet
 //! (a), qui borne l'`INSERT` à son module, en limite la portée.
+//!
+//! Quatrième volet (Story 15-1a2-ii, AC8 part ii) : les trois `UPDATE
+//! supplier_invoices … settlement_journal_entry_id` de production — le paiement
+//! synchronise **après** son `UPDATE`, les deux annulations dissolvent **avant**
+//! de contre-passer ; un site neuf rougit en se nommant.
 
 use std::path::{Path, PathBuf};
 
@@ -761,4 +770,123 @@ fn the_function_body_detector_sees_calls_and_order() {
         "absente du code : chaîne et commentaire masqués"
     );
     assert!(ordre("inconnue").is_err());
+}
+
+// ===========================================================================
+// Story 15-1a2-ii (#518) — AC8 part ii : les écrivains du règlement fournisseur.
+// ===========================================================================
+
+/// Pour chaque `UPDATE supplier_invoices` de production qui nomme
+/// `settlement_journal_entry_id` : la fonction qui le porte, si elle appelle
+/// `sync_supplier_invoice_in_tx(` **après** lui, et si elle appelle
+/// `dissolve_supplier_invoice_document_group_in_tx(` **avant**
+/// `reverse_owned_in_tx(` — `(nom, synchronise_après, dissout_avant)`.
+fn ecrivains_du_reglement_fournisseur(source: &str) -> Vec<(String, bool, bool)> {
+    let (litteraux, masque) = decouper(source);
+    let fns = fonctions(&masque);
+    ecritures_de_table(source, &["UPDATE"], "supplier_invoices")
+        .into_iter()
+        .filter(|(p, _)| {
+            litteraux
+                .iter()
+                .any(|l| l.debut == *p && l.texte.contains("settlement_journal_entry_id"))
+        })
+        .map(|(p, _)| match fonction_englobante(&fns, p) {
+            Some((nom, de, fin)) => {
+                let corps = &masque[*de..=*fin];
+                let synchronise = masque[p..*fin].contains("sync_supplier_invoice_in_tx(");
+                let dissout = matches!(
+                    (
+                        corps.find("dissolve_supplier_invoice_document_group_in_tx("),
+                        corps.find("reverse_owned_in_tx("),
+                    ),
+                    (Some(d), Some(r)) if d < r
+                );
+                (nom.clone(), synchronise, dissout)
+            }
+            None => ("<hors fonction>".to_string(), false, false),
+        })
+        .collect()
+}
+
+/// AC8 (part ii) — chacun des trois `UPDATE supplier_invoices …
+/// settlement_journal_entry_id` de production est dans une fonction qui
+/// synchronise le lettrage après lui (`pay_in_tx`) ou qui le dissout avant de
+/// contre-passer (les deux annulations). Un site neuf rougit en se nommant.
+#[test]
+fn supplier_settlement_writers_sync_or_dissolve() {
+    let mut fautes = Vec::new();
+    let mut ecrivains = Vec::new();
+    for (fichier, source) in sources_de_production() {
+        for (nom, synchronise, dissout) in ecrivains_du_reglement_fournisseur(&source) {
+            let attendu = if nom == "pay_in_tx" {
+                synchronise
+            } else {
+                dissout
+            };
+            if !attendu {
+                fautes.push(format!(
+                    "{fichier}, fonction `{nom}` : écrit settlement_journal_entry_id sans \
+                     `sync_supplier_invoice_in_tx(` après (paiement) ni \
+                     `dissolve_supplier_invoice_document_group_in_tx(` avant \
+                     `reverse_owned_in_tx(` (annulation)"
+                ));
+            }
+            ecrivains.push(format!("{fichier}::{nom}"));
+        }
+    }
+    assert!(
+        fautes.is_empty(),
+        "⛔ écrivains du règlement fournisseur (Story 15-1a2-ii, AC8) :\n{}",
+        fautes.join("\n")
+    );
+    ecrivains.sort();
+    assert_eq!(
+        ecrivains,
+        [
+            "kesh-db/src/repositories/supplier_invoices.rs::cancel_in_tx",
+            "kesh-db/src/repositories/supplier_invoices.rs::cancel_settlement_in_tx",
+            "kesh-db/src/repositories/supplier_invoices.rs::pay_in_tx",
+        ],
+        "les trois écrivains connus — un site neuf se nomme ici"
+    );
+
+    // Le détecteur, éprouvé sur un source synthétique (anti-muet).
+    let synthetique = r##"
+        async fn pay_in_tx() {
+            sqlx::query("UPDATE supplier_invoices SET settlement_journal_entry_id = ?").execute(t).await?;
+            letterings::sync_supplier_invoice_in_tx(t).await?;
+        }
+        async fn sync_avant() {
+            letterings::sync_supplier_invoice_in_tx(t).await?;
+            sqlx::query("UPDATE supplier_invoices SET settlement_journal_entry_id = ?").execute(t).await?;
+        }
+        async fn annule_bien() {
+            dissolve_supplier_invoice_document_group_in_tx(t).await?;
+            reverse_owned_in_tx(t).await?;
+            sqlx::query("update supplier_invoices set settlement_journal_entry_id = NULL").execute(t).await?;
+        }
+        async fn annule_mal() {
+            reverse_owned_in_tx(t).await?;
+            dissolve_supplier_invoice_document_group_in_tx(t).await?;
+            sqlx::query("UPDATE supplier_invoices SET settlement_journal_entry_id = NULL").execute(t).await?;
+        }
+        async fn autre_colonne() {
+            sqlx::query("UPDATE supplier_invoices SET version = version + 1").execute(t).await?;
+        }
+        #[cfg(test)]
+        mod tests {
+            const F: &str = "UPDATE supplier_invoices SET settlement_journal_entry_id = 1";
+        }
+    "##;
+    assert_eq!(
+        ecrivains_du_reglement_fournisseur(synthetique),
+        vec![
+            ("pay_in_tx".to_string(), true, false),
+            ("sync_avant".to_string(), false, false),
+            ("annule_bien".to_string(), false, true),
+            ("annule_mal".to_string(), false, false),
+        ],
+        "écrivains vus, ordre exigé, autre colonne et bloc de test ignorés"
+    );
 }
