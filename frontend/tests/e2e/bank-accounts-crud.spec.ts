@@ -23,6 +23,9 @@ const NEW_IBAN_2 = 'CH3908704016075473007'; // PostFinance test IBAN (MOD-97 val
 const INVALID_IBAN = 'CH00INVALID0000';
 // Story 26-2a — IBAN distinct de ceux des tests voisins (isolement, AC13).
 const DESCRIBED_IBAN = 'CH5604835012345678009';
+// Story 26-2b — deux comptes de la même banque, IBAN propres à ce test (MOD-97 valides).
+const TWIN_IBAN_DESCRIBED = 'CH7600483526202000001';
+const TWIN_IBAN_PLAIN = 'CH4900483526202000002';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -193,7 +196,7 @@ test.describe('Bank accounts CRUD', () => {
  * test par l'API — d'autres specs choisissent un compte bancaire par position
  * ou comptent les comptes.
  */
-test.describe('Bank accounts — description (Story 26-2a)', () => {
+test.describe('Bank accounts — description (Story 26-2)', () => {
 	const createdIds: number[] = [];
 
 	test.afterEach(async ({ page }) => {
@@ -249,5 +252,71 @@ test.describe('Bank accounts — description (Story 26-2a)', () => {
 		});
 		await expect(name).toHaveText('UBS E2E');
 	});
-});
 
+	/**
+	 * Story 26-2b (#622, AC13 (b)) — deux comptes de la même banque, l'un décrit,
+	 * l'autre non : chaque écran les distingue, et le compte sans description
+	 * garde exactement l'affichage d'avant (C-26-2-26). Comptes créés par l'API,
+	 * non principaux, archivés en `afterEach`.
+	 */
+	test('import bancaire, réconciliation et accueil nomment les comptes avec leur description', async ({
+		page,
+	}) => {
+		await loginAsAdmin(page);
+		const api = await authedApiContext(page);
+		const ids: Record<string, number> = {};
+		try {
+			for (const [cle, iban, description] of [
+				['decrit', TWIN_IBAN_DESCRIBED, 'Épargne E2E'],
+				['simple', TWIN_IBAN_PLAIN, null],
+			] as const) {
+				const resp = await api.post('/api/v1/bank-accounts', {
+					data: { bankName: 'UBS E2E', description, iban, isPrimary: false },
+				});
+				expect(resp.status(), `création du compte ${cle}`).toBe(201);
+				ids[cle] = (await resp.json()).id as number;
+				createdIds.push(ids[cle]);
+			}
+		} finally {
+			await api.dispose();
+		}
+
+		const optionTexts = async () =>
+			(await page.locator('[data-testid="bank-account-select"] option').allTextContents()).map(
+				(t) => t.trim(),
+			);
+
+		// Import bancaire : la forme d'aujourd'hui de ce site, parenthèse comprise.
+		await page.goto('/bank-import');
+		await expect(page.locator('[data-testid="bank-account-select"]')).toBeVisible();
+		await expect
+			.poll(optionTexts)
+			.toEqual(
+				expect.arrayContaining([
+					`UBS E2E — Épargne E2E (${TWIN_IBAN_DESCRIBED})`,
+					`UBS E2E (${TWIN_IBAN_PLAIN})`,
+				]),
+			);
+
+		// Réconciliation : « nom — IBAN ».
+		await page.goto('/reconciliation');
+		await expect(page.locator('[data-testid="bank-account-select"]')).toBeVisible();
+		await expect
+			.poll(optionTexts)
+			.toEqual(
+				expect.arrayContaining([
+					`UBS E2E — Épargne E2E — ${TWIN_IBAN_DESCRIBED}`,
+					`UBS E2E — ${TWIN_IBAN_PLAIN}`,
+				]),
+			);
+
+		// Accueil : le nom du compte décrit, la banque seule pour l'autre.
+		await page.goto('/');
+		await expect(page.locator(`[data-testid="homepage-bank-name-${ids.decrit}"]`)).toHaveText(
+			'UBS E2E — Épargne E2E',
+		);
+		await expect(page.locator(`[data-testid="homepage-bank-name-${ids.simple}"]`)).toHaveText(
+			'UBS E2E',
+		);
+	});
+});
