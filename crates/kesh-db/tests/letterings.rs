@@ -2076,3 +2076,442 @@ async fn open_period_rule_refuses_an_unnamed_fiscal_year(pool: MySqlPool) {
         Err(DbError::Invariant(_))
     ));
 }
+
+// ---------------------------------------------------------------------------
+// Story 15-1c-0 (#518, AC15) — la lecture détaillée d'un groupe
+// ---------------------------------------------------------------------------
+
+use kesh_db::repositories::journal_entries::DocumentKind;
+use kesh_db::repositories::letterings::{LetteringGroupDetail, ManualDissolutionBlocker};
+
+/// La lecture détaillée du groupe `key` dans la société `company_id`.
+async fn detail(pool: &MySqlPool, company_id: i64, key: i64) -> Option<LetteringGroupDetail> {
+    let mut conn = pool.acquire().await.unwrap();
+    letterings::find_group_detail(&mut conn, company_id, key)
+        .await
+        .expect("lecture détaillée")
+}
+
+/// Test 5 — **la prévision égale la dissolution** : la dissolution manuelle du
+/// groupe (dans une transaction annulée — rien n'est écrit) rend exactement le
+/// code prévu, ou aboutit quand la prévision est nulle. Rend l'issue, pour les
+/// tests qui en vérifient les champs.
+async fn prevision_egale_dissolution(
+    pool: &MySqlPool,
+    company_id: i64,
+    user_id: i64,
+    key: i64,
+) -> Result<LetteringGroup, DbError> {
+    let prevu = detail(pool, company_id, key)
+        .await
+        .expect("groupe présent")
+        .manual_dissolution_blocked_by;
+    let mut tx = pool.begin().await.unwrap();
+    let issue = letterings::dissolve_group_in_tx(
+        &mut tx,
+        company_id,
+        key,
+        Mode::Manual,
+        Actor {
+            user_id,
+            api_key_id: None,
+        },
+    )
+    .await;
+    tx.rollback().await.unwrap();
+    match (&prevu, &issue) {
+        (None, Ok(_)) => {}
+        (Some(motif), Err(e)) => assert_eq!(motif.code(), e.error_code(), "groupe {key}"),
+        _ => panic!("groupe {key} : prévision {prevu:?}, dissolution {issue:?}"),
+    }
+    issue
+}
+
+/// Test 1 (AC15) — groupe `manual` : chaque ligne porte journal, libellé, pas
+/// de possession, et sa période ; les champs communs sont ceux de la réponse
+/// du lettrage ; le compte porte son nom ; prévision nulle. La seconde ligne
+/// est **rapprochée** d'une transaction bancaire : elle porte ce `document`,
+/// qui ne la rend pas possédée (R5). Une clé inconnue, ou celle d'une autre
+/// société, se lit `None`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn group_detail_of_a_manual_group(pool: MySqlPool) {
+    let m = monde(&pool).await;
+    let (a, b) = paire(&pool, &m, (m.fy26, d(2026, 2, 1)), (m.fy26, d(2026, 2, 2))).await;
+    let entree_b: i64 = sqlx::query_scalar("SELECT entry_id FROM journal_entry_lines WHERE id = ?")
+        .bind(b)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    let transaction =
+        lettering_support::rapprocher(&pool, &m.s, entree_b, dec!(100), d(2026, 2, 2)).await;
+    let g = lettrer(&pool, &m, &[b, a]).await.unwrap();
+
+    let det = detail(&pool, m.company(), g.key).await.expect("groupe");
+    assert_eq!(
+        (det.key, det.code.as_str(), det.origin, det.account_id),
+        (g.key, g.code.as_str(), Origin::Manual, m.lettrable())
+    );
+    assert_eq!(det.account_number, g.account_number);
+    let nom: String = sqlx::query_scalar("SELECT name FROM accounts WHERE id = ?")
+        .bind(m.lettrable())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(det.account_name, nom);
+    assert_eq!(det.manual_dissolution_blocked_by, None);
+    assert_eq!(det.lines.len(), 2);
+    for (l, base) in det.lines.iter().zip(&g.lines) {
+        assert_eq!(&l.line, base, "champs communs avec la réponse du lettrage");
+        assert_eq!(l.journal, "OD");
+        assert_eq!(l.description, "lettrage");
+        assert!(!l.owned_by_document, "ligne {}", l.line.id);
+        assert!(l.in_open_period);
+    }
+    assert_eq!(det.lines[0].document, None);
+    let rapprochee = det.lines[1]
+        .document
+        .as_ref()
+        .expect("transaction bancaire");
+    assert_eq!(
+        (rapprochee.kind, rapprochee.id),
+        (DocumentKind::BankTransaction, transaction)
+    );
+
+    assert!(
+        detail(&pool, m.company(), g.key + 1_000_000)
+            .await
+            .is_none()
+    );
+    let (x, y) = autre_societe(&pool, &m).await;
+    let autre: i64 = sqlx::query_scalar("SELECT id FROM companies WHERE id <> ?")
+        .bind(m.company())
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert!(detail(&pool, autre, g.key).await.is_none(), "autre société");
+    assert!(detail(&pool, m.company(), x.min(y)).await.is_none());
+
+    prevision_egale_dissolution(&pool, m.company(), m.s.admin_user_id, g.key)
+        .await
+        .expect("204");
+}
+
+/// Test 2 (AC15) — groupe `document` posé par le geste réel (facture réglée en
+/// entier) : la ligne de vente porte la facture, celle du règlement la ligne
+/// `invoice_settlements` et le numéro de la facture (non la transaction
+/// bancaire qui la rapproche aussi) ; les deux sont possédées ; prévision
+/// `LETTERING_IS_DOCUMENT`.
+#[sqlx::test(migrations = "./test-schema")]
+async fn group_detail_of_a_document_group(pool: MySqlPool) {
+    use lettering_support::{cle_de, facture, jours_avant, rapprocher, regler, societe, vente};
+    let s = societe(&pool).await;
+    let inv = facture(&pool, &s, dec!(100.00), jours_avant(100)).await;
+    let (sid, ecriture_reglement) = regler(&pool, &s, inv, dec!(100.00), jours_avant(90)).await;
+    // Le règlement est aussi rapproché : deux propriétaires, le premier dans
+    // l'ordre de `DocumentKind` (le règlement) est la pièce montrée.
+    rapprocher(&pool, &s, ecriture_reglement, dec!(100.00), jours_avant(90)).await;
+    let key = cle_de(&pool, inv).await.expect("montage : lettrée");
+    let numero: Option<String> =
+        sqlx::query_scalar("SELECT invoice_number FROM invoices WHERE id = ?")
+            .bind(inv)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert!(numero.is_some(), "montage : facture numérotée");
+
+    let det = detail(&pool, s.company_id, key).await.expect("groupe");
+    assert_eq!(det.origin, Origin::Document);
+    assert_eq!(
+        det.manual_dissolution_blocked_by,
+        Some(ManualDissolutionBlocker::IsDocument)
+    );
+    let vente = vente(&pool, inv).await;
+    let l_vente = det.lines.iter().find(|l| l.line.entry_id == vente).unwrap();
+    let doc = l_vente.document.as_ref().expect("pièce de la vente");
+    assert_eq!(
+        (doc.kind, doc.id, doc.number.clone(), doc.invoice_id),
+        (DocumentKind::Invoice, inv, numero.clone(), None)
+    );
+    let l_regl = det
+        .lines
+        .iter()
+        .find(|l| l.line.entry_id == ecriture_reglement)
+        .unwrap();
+    let doc = l_regl.document.as_ref().expect("pièce du règlement");
+    assert_eq!(
+        (doc.kind, doc.id, doc.invoice_id, doc.invoice_number.clone()),
+        (DocumentKind::Settlement, sid, Some(inv), numero)
+    );
+    assert!(det.lines.iter().all(|l| l.owned_by_document));
+    assert!(det.lines.iter().all(|l| l.in_open_period));
+
+    prevision_egale_dissolution(&pool, s.company_id, s.admin_user_id, key)
+        .await
+        .expect_err("409");
+}
+
+/// Test 3 (AC15) — groupes `reversal` posés par les gestes réels. L'annulation
+/// d'une facture fournisseur validée non payée lettre l'achat et son miroir :
+/// l'achat reste possédé par la facture → `LETTERING_LINE_OWNED_BY_DOCUMENT`,
+/// et la dissolution rend l'erreur construite par `first_document_owner`,
+/// champs compris (test 5). L'annulation d'un règlement client retire sa ligne
+/// `invoice_settlements` : la paire n'est plus possédée, prévision nulle.
+#[sqlx::test(migrations = "./test-schema")]
+async fn group_detail_of_reversal_pairs(pool: MySqlPool) {
+    use kesh_db::repositories::{invoice_settlements_write, supplier_invoices};
+    use lettering_support::{
+        achat, achats, facture, facture_fournisseur, jours_avant, regler, societe,
+    };
+    let s = societe(&pool).await;
+    let a = achats(&pool, &s).await;
+    let si = facture_fournisseur(&pool, &s, &a, dec!(60.00), jours_avant(100), Some("FF-12")).await;
+    supplier_invoices::cancel(&pool, s.company_id, si, s.admin_user_id)
+        .await
+        .expect("annulation de la facture fournisseur");
+    let achat = achat(&pool, si).await;
+    let (ligne_achat, cle): (i64, Option<i64>) = sqlx::query_as(
+        "SELECT id, lettering_key FROM journal_entry_lines WHERE entry_id = ? AND account_id = ?",
+    )
+    .bind(achat)
+    .bind(a.payable)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let cle_achat = cle.expect("montage : l'achat est lettré");
+
+    let det = detail(&pool, s.company_id, cle_achat)
+        .await
+        .expect("groupe");
+    assert_eq!(det.origin, Origin::Reversal);
+    assert_eq!(
+        det.manual_dissolution_blocked_by,
+        Some(ManualDissolutionBlocker::LineOwnedByDocument)
+    );
+    let l = det.lines.iter().find(|l| l.line.id == ligne_achat).unwrap();
+    assert!(l.owned_by_document, "la ligne d'achat est possédée");
+    let doc = l.document.as_ref().unwrap();
+    assert_eq!(
+        (doc.kind, doc.id, doc.number.as_deref()),
+        (DocumentKind::SupplierInvoice, si, Some("FF-12"))
+    );
+    let issue = prevision_egale_dissolution(&pool, s.company_id, s.admin_user_id, cle_achat).await;
+    match issue {
+        Err(DbError::LetteringLineOwnedByDocument {
+            blocker,
+            document_id,
+            document_label,
+        }) => assert_eq!(
+            (blocker, document_id, document_label.as_deref()),
+            (
+                ReversalBlocker::OwnedBySupplierInvoice,
+                Some(si),
+                Some("FF-12")
+            )
+        ),
+        other => panic!("attendu LetteringLineOwnedByDocument, obtenu {other:?}"),
+    }
+
+    // Le cas contraire : l'annulation d'un règlement client.
+    let inv = facture(&pool, &s, dec!(100.00), jours_avant(80)).await;
+    let (sid, reglement) = regler(&pool, &s, inv, dec!(100.00), jours_avant(70)).await;
+    invoice_settlements_write::cancel_settlement(&pool, s.admin_user_id, s.company_id, inv, sid)
+        .await
+        .expect("annulation du règlement");
+    let cle: Option<i64> = sqlx::query_scalar(
+        "SELECT lettering_key FROM journal_entry_lines WHERE entry_id = ? AND account_id = ?",
+    )
+    .bind(reglement)
+    .bind(s.accounts["1100"])
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    let cle = cle.expect("montage : le règlement annulé est lettré");
+    let det = detail(&pool, s.company_id, cle).await.expect("groupe");
+    assert_eq!(det.origin, Origin::Reversal);
+    assert!(det.lines.iter().all(|l| !l.owned_by_document));
+    let l = det
+        .lines
+        .iter()
+        .find(|l| l.line.entry_id == reglement)
+        .unwrap();
+    assert_eq!(l.document, None, "sa ligne invoice_settlements est retirée");
+    assert_eq!(det.manual_dissolution_blocked_by, None);
+    prevision_egale_dissolution(&pool, s.company_id, s.admin_user_id, cle)
+        .await
+        .expect("204");
+
+    // Paire possédée ET toute close (revue P1, E LOW-2) : le refus 2 parle
+    // avant le 3, à la lecture comme à la dissolution.
+    // La contre-passation de l'annulation est datée du jour : la borne (seuil
+    // inclusif, posée en SQL de montage) la couvre.
+    poser_borne(&pool, s.company_id, chrono::Utc::now().date_naive()).await;
+    let det = detail(&pool, s.company_id, cle_achat).await.unwrap();
+    assert!(
+        det.lines.iter().all(|l| !l.in_open_period),
+        "montage : tout clos"
+    );
+    assert_eq!(
+        det.manual_dissolution_blocked_by,
+        Some(ManualDissolutionBlocker::LineOwnedByDocument)
+    );
+    prevision_egale_dissolution(&pool, s.company_id, s.admin_user_id, cle_achat)
+        .await
+        .expect_err("409");
+}
+
+/// Test 4 bis (revue P1, E LOW-1) — « un exercice postérieur est clos » : le groupe
+/// d'un exercice **ouvert** suivi d'un exercice clôturé est tout entier en
+/// période close, à la lecture comme à la dissolution — chacune calcule
+/// `later_closed` de son côté (sans verrou ; sous verrou d'exercice).
+#[sqlx::test(migrations = "./test-schema")]
+async fn group_detail_under_a_later_closed_year(pool: MySqlPool) {
+    let m = monde(&pool).await;
+    let (a, b) = paire(&pool, &m, (m.fy25, d(2025, 2, 1)), (m.fy25, d(2025, 3, 1))).await;
+    let key = lettrer(&pool, &m, &[a, b]).await.unwrap().key;
+    set_status(&pool, m.fy26, "Closed").await;
+    let det = detail(&pool, m.company(), key).await.unwrap();
+    assert!(det.lines.iter().all(|l| !l.in_open_period));
+    assert_eq!(
+        det.manual_dissolution_blocked_by,
+        Some(ManualDissolutionBlocker::AllLinesInClosedPeriods)
+    );
+    prevision_egale_dissolution(&pool, m.company(), m.s.admin_user_id, key)
+        .await
+        .expect_err("409");
+}
+
+/// Test 4 (AC15) — toutes les lignes en période close (exercice clôturé, puis
+/// verrou de période) → `LETTERING_ALL_LINES_IN_CLOSED_PERIODS` ; un groupe à
+/// cheval → nulle, avec `inOpenPeriod` ligne par ligne.
+#[sqlx::test(migrations = "./test-schema")]
+async fn group_detail_in_closed_periods(pool: MySqlPool) {
+    let m = monde(&pool).await;
+    let (a, b) = paire(&pool, &m, (m.fy25, d(2025, 2, 1)), (m.fy25, d(2025, 3, 1))).await;
+    let (c, e) = paire(&pool, &m, (m.fy25, d(2025, 4, 1)), (m.fy26, d(2026, 4, 1))).await;
+    let (f, h) = paire(&pool, &m, (m.fy26, d(2026, 2, 1)), (m.fy26, d(2026, 2, 28))).await;
+    let clos = lettrer(&pool, &m, &[a, b]).await.unwrap().key;
+    let cheval = lettrer(&pool, &m, &[c, e]).await.unwrap().key;
+    let verrouille = lettrer(&pool, &m, &[f, h]).await.unwrap().key;
+    set_status(&pool, m.fy25, "Closed").await;
+    poser_borne(&pool, m.company(), d(2026, 2, 28)).await;
+
+    let det = detail(&pool, m.company(), clos).await.unwrap();
+    assert!(det.lines.iter().all(|l| !l.in_open_period));
+    assert_eq!(
+        det.manual_dissolution_blocked_by,
+        Some(ManualDissolutionBlocker::AllLinesInClosedPeriods)
+    );
+    let det = detail(&pool, m.company(), verrouille).await.unwrap();
+    assert_eq!(
+        det.manual_dissolution_blocked_by,
+        Some(ManualDissolutionBlocker::AllLinesInClosedPeriods),
+        "verrou de période, borne incluse"
+    );
+    let det = detail(&pool, m.company(), cheval).await.unwrap();
+    let periodes: Vec<(i64, bool)> = det
+        .lines
+        .iter()
+        .map(|l| (l.line.id, l.in_open_period))
+        .collect();
+    assert_eq!(periodes, vec![(c, false), (e, true)]);
+    assert_eq!(det.manual_dissolution_blocked_by, None);
+
+    for key in [clos, verrouille, cheval] {
+        let _ = prevision_egale_dissolution(&pool, m.company(), m.s.admin_user_id, key).await;
+    }
+}
+
+/// Test 6 (AC15) — **même source que la vue** : pour une ligne lettrée après
+/// `X`, présente dans la vue à `X` et dans son groupe, `document`,
+/// `inOpenPeriod`, `journal` et `description` sont égaux — avec une pièce (vente
+/// d'une facture réglée après `X`) et une période close (verrou posé entre la
+/// vente et le règlement).
+#[sqlx::test(migrations = "./test-schema")]
+async fn group_detail_agrees_with_open_items(pool: MySqlPool) {
+    use lettering_support::{cle_de, facture, jours_avant, regler, societe, vente};
+    let s = societe(&pool).await;
+    let inv = facture(&pool, &s, dec!(100.00), jours_avant(100)).await;
+    regler(&pool, &s, inv, dec!(100.00), jours_avant(50)).await;
+    let key = cle_de(&pool, inv).await.expect("montage : lettrée");
+    let vente = vente(&pool, inv).await;
+    let creance = s.accounts["1100"];
+
+    for borne in [None, Some(jours_avant(60))] {
+        if let Some(borne) = borne {
+            poser_borne(&pool, s.company_id, borne).await;
+        }
+        let mut conn = pool.acquire().await.unwrap();
+        let vue = letterings::open_items(&mut conn, s.company_id, creance, jours_avant(70), 500, 0)
+            .await
+            .expect("vue");
+        let item = vue
+            .items
+            .iter()
+            .find(|i| i.entry_id == vente)
+            .expect("la vente est ouverte à X");
+        assert_eq!(item.lettering_key, Some(key), "montage : lettrée après X");
+        let det = detail(&pool, s.company_id, key).await.unwrap();
+        let l = det
+            .lines
+            .iter()
+            .find(|l| l.line.id == item.line_id)
+            .unwrap();
+        assert_eq!(
+            (&l.document, l.in_open_period, &l.journal, &l.description),
+            (
+                &item.document,
+                item.in_open_period,
+                &item.journal,
+                &item.description
+            ),
+            "borne {borne:?}"
+        );
+        assert!(l.document.is_some(), "montage : une pièce");
+        assert_eq!(l.in_open_period, borne.is_none(), "montage : période");
+    }
+}
+
+/// Test 7 (AC15, C104) — compte du groupe **devenu non lettrable** par le geste
+/// réel (retypage d'un compte mouvementé, `confirm_retype`) : la lecture
+/// aboutit, la prévision est nulle (la lettrabilité n'y entre pas), et la
+/// dissolution aboutit.
+#[sqlx::test(migrations = "./test-schema")]
+async fn group_detail_of_an_account_no_longer_letterable(pool: MySqlPool) {
+    use kesh_db::entities::{AccountType, AccountUpdate};
+    use kesh_db::repositories::accounts;
+    let m = monde(&pool).await;
+    let (a, b) = paire(&pool, &m, (m.fy26, d(2026, 2, 1)), (m.fy26, d(2026, 2, 2))).await;
+    let g = lettrer(&pool, &m, &[a, b]).await.unwrap();
+    let compte = accounts::find_by_id(&pool, m.lettrable())
+        .await
+        .unwrap()
+        .unwrap();
+    accounts::update(
+        &pool,
+        compte.id,
+        compte.version,
+        m.s.admin_user_id,
+        AccountUpdate {
+            name: compte.name.clone(),
+            account_type: AccountType::Expense,
+            role: None,
+            postable: compte.postable,
+        },
+        true,
+    )
+    .await
+    .expect("retypage confirmé");
+    let mut conn = pool.acquire().await.unwrap();
+    assert!(
+        !letterings::is_letterable_account(&mut conn, m.company(), m.lettrable())
+            .await
+            .unwrap(),
+        "montage : devenu non lettrable"
+    );
+
+    let det = detail(&pool, m.company(), g.key).await.expect("lu");
+    assert_eq!(det.manual_dissolution_blocked_by, None);
+    prevision_egale_dissolution(&pool, m.company(), m.s.admin_user_id, g.key)
+        .await
+        .expect("204");
+}

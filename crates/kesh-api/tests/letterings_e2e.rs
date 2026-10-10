@@ -675,3 +675,337 @@ async fn two_simultaneous_posts_sharing_a_line(pool: MySqlPool) {
         assert_eq!(refus["error"]["code"], "LETTERING_LINE_ALREADY_LETTERED");
     }
 }
+
+// ---------------------------------------------------------------------------
+// Story 15-1c-0 (#518, AC15) — le `GET` enrichi
+// ---------------------------------------------------------------------------
+
+#[path = "../../kesh-db/tests/support/lettering_documents.rs"]
+mod lettering_support;
+
+use std::collections::BTreeSet;
+
+fn cles(v: &Value) -> BTreeSet<String> {
+    v.as_object()
+        .unwrap_or_else(|| panic!("objet attendu : {v}"))
+        .keys()
+        .cloned()
+        .collect()
+}
+
+fn ensemble(noms: &[&str]) -> BTreeSet<String> {
+    noms.iter().map(|s| s.to_string()).collect()
+}
+
+/// Les clés d'une ligne de la réponse du `POST` (15-1a-i) — communes au `GET`.
+const CLES_LIGNE_POST: [&str; 8] = [
+    "id",
+    "entryId",
+    "entryNumber",
+    "fiscalYearId",
+    "fiscalYearName",
+    "date",
+    "debit",
+    "credit",
+];
+
+/// Tests 1 et 8 (AC15) — **ensembles exacts** des clés : le `POST` garde sa
+/// forme (aucune fuite de l'enrichissement), le `GET` porte les champs d'AC15 ;
+/// valeurs d'un groupe `manual` (journal, libellé, pas de pièce, en période
+/// ouverte, compte nommé, prévision nulle).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_keeps_its_shape_and_get_carries_the_detail(pool: MySqlPool) {
+    let m = setup(&pool).await;
+    let (a, b) = paire(&pool, &m).await;
+
+    let (status, cree) = post(&m.app, &m.token, &[a, b]).await;
+    assert_eq!(status, 201);
+    assert_eq!(
+        cles(&cree),
+        ensemble(&["key", "code", "origin", "accountId", "lines"])
+    );
+    for l in cree["lines"].as_array().unwrap() {
+        assert_eq!(cles(l), ensemble(&CLES_LIGNE_POST), "ligne du POST : {l}");
+    }
+
+    let code = cree["code"].as_str().unwrap();
+    let (status, lu) = get(&m.app, &m.token, code).await;
+    assert_eq!(status, 200);
+    assert_eq!(
+        cles(&lu),
+        ensemble(&[
+            "key",
+            "code",
+            "origin",
+            "accountId",
+            "accountNumber",
+            "accountName",
+            "manualDissolutionBlockedBy",
+            "lines",
+        ])
+    );
+    let mut cles_ligne: Vec<&str> = CLES_LIGNE_POST.to_vec();
+    cles_ligne.extend([
+        "journal",
+        "description",
+        "document",
+        "ownedByDocument",
+        "inOpenPeriod",
+    ]);
+    for (l, base) in lu["lines"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .zip(cree["lines"].as_array().unwrap())
+    {
+        assert_eq!(cles(l), ensemble(&cles_ligne), "ligne du GET : {l}");
+        for champ in CLES_LIGNE_POST {
+            assert_eq!(l[champ], base[champ], "{champ} commun au POST");
+        }
+        assert_eq!(l["journal"], "OD");
+        assert_eq!(l["description"], "Lettrage");
+        assert!(l["document"].is_null());
+        assert_eq!(l["ownedByDocument"], false);
+        assert_eq!(l["inOpenPeriod"], true);
+    }
+    assert_eq!(
+        (&lu["key"], &lu["origin"], &lu["accountId"]),
+        (&cree["key"], &json!("manual"), &json!(m.lettrable))
+    );
+    assert_eq!(lu["accountNumber"], "1100");
+    assert_eq!(lu["accountName"], "Compte 1100");
+    assert!(lu["manualDissolutionBlockedBy"].is_null());
+}
+
+/// Le monde des pièces : une société de `seed_accounting_company` (prête à
+/// régler et à acheter), son serveur et un JWT `Admin` forgé.
+struct MondePieces {
+    app: TestApp,
+    jwt: String,
+    s: kesh_db::test_fixtures::SeededCompany,
+}
+
+async fn monde_pieces(pool: &MySqlPool) -> MondePieces {
+    let s = lettering_support::societe(pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let now = Utc::now().timestamp();
+    let jwt = jsonwebtoken::encode(
+        &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256),
+        &kesh_api::auth::jwt::Claims {
+            sub: s.admin_user_id.to_string(),
+            role: "Admin".into(),
+            company_id: s.company_id,
+            iat: now,
+            exp: now + 3600,
+        },
+        &jsonwebtoken::EncodingKey::from_secret(TEST_JWT_SECRET),
+    )
+    .unwrap();
+    MondePieces { app, jwt, s }
+}
+
+/// La clé portée par la ligne de `entry_id` sur `account_id`.
+async fn cle_de_ligne(pool: &MySqlPool, entry_id: i64, account_id: i64) -> i64 {
+    let cle: Option<i64> = sqlx::query_scalar(
+        "SELECT lettering_key FROM journal_entry_lines WHERE entry_id = ? AND account_id = ?",
+    )
+    .bind(entry_id)
+    .bind(account_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    cle.expect("montage : ligne lettrée")
+}
+
+/// Test 5 (AC15) à HTTP — **la prévision égale le `DELETE`**, par une table :
+/// groupe `manual` (204), `document` (409 `LETTERING_IS_DOCUMENT`), paire
+/// `reversal` possédée par une facture fournisseur (409
+/// `LETTERING_LINE_OWNED_BY_DOCUMENT`, mêmes `details` et même message suffixé
+/// qu'avant la refonte — et sans suffixe pour une facture sans numéro), paire
+/// d'un règlement client annulé (204), groupe tout
+/// en période verrouillée (409 `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn forecast_equals_delete_over_http(pool: MySqlPool) {
+    use kesh_db::repositories::{invoice_settlements_write, supplier_invoices};
+    use lettering_support::*;
+    let mp = monde_pieces(&pool).await;
+    let s = &mp.s;
+    let creance = s.accounts["1100"];
+    let passif = s.accounts["2000"];
+
+    // Groupe `document` : facture réglée en entier.
+    let inv = facture(&pool, s, dec!(100.00), jours_avant(100)).await;
+    regler(&pool, s, inv, dec!(100.00), jours_avant(90)).await;
+    let document = cle_de(&pool, inv).await.expect("lettrée");
+    // Paire `reversal` possédée : facture fournisseur validée puis annulée.
+    let achats = achats(&pool, s).await;
+    let si = facture_fournisseur(
+        &pool,
+        s,
+        &achats,
+        dec!(60.00),
+        jours_avant(80),
+        Some("FF-12"),
+    )
+    .await;
+    supplier_invoices::cancel(&pool, s.company_id, si, s.admin_user_id)
+        .await
+        .expect("annulation");
+    let possedee = cle_de_ligne(&pool, achat(&pool, si).await, achats.payable).await;
+    // La même, sans numéro de facture (revue P1, E LOW-3) : message sans suffixe.
+    let si_sans = facture_fournisseur(&pool, s, &achats, dec!(30.00), jours_avant(80), None).await;
+    supplier_invoices::cancel(&pool, s.company_id, si_sans, s.admin_user_id)
+        .await
+        .expect("annulation");
+    let possedee_sans = cle_de_ligne(&pool, achat(&pool, si_sans).await, achats.payable).await;
+    // Paire `reversal` libre : règlement client annulé.
+    let inv2 = facture(&pool, s, dec!(40.00), jours_avant(70)).await;
+    let (sid, reglement) = regler(&pool, s, inv2, dec!(40.00), jours_avant(60)).await;
+    invoice_settlements_write::cancel_settlement(&pool, s.admin_user_id, s.company_id, inv2, sid)
+        .await
+        .expect("annulation du règlement");
+    let libre = cle_de_ligne(&pool, reglement, creance).await;
+    // Deux groupes `manual` sur la créance, l'un ouvert, l'autre à verrouiller.
+    let mut manuels = Vec::new();
+    for (d1, d2) in [(30, 29), (20, 19)] {
+        let (_, l1, _) =
+            ecriture_manuelle(&pool, s, creance, passif, dec!(7), jours_avant(d1)).await;
+        let (_, _, l2) =
+            ecriture_manuelle(&pool, s, passif, creance, dec!(7), jours_avant(d2)).await;
+        let (status, g) = post(&mp.app, &mp.jwt, &[l1, l2]).await;
+        assert_eq!(status, 201, "{g}");
+        manuels.push(g["key"].as_i64().unwrap());
+    }
+
+    let cas = [
+        (manuels[0], None),
+        (document, Some("LETTERING_IS_DOCUMENT")),
+        (possedee, Some("LETTERING_LINE_OWNED_BY_DOCUMENT")),
+        (possedee_sans, Some("LETTERING_LINE_OWNED_BY_DOCUMENT")),
+        (libre, None),
+    ];
+    for (key, attendu) in cas {
+        let (status, lu) = get(&mp.app, &mp.jwt, &key.to_string()).await;
+        assert_eq!(status, 200);
+        assert_eq!(
+            lu["manualDissolutionBlockedBy"].as_str(),
+            attendu,
+            "prévision du groupe {key} : {lu}"
+        );
+        let (status, refus) = delete(&mp.app, &mp.jwt, &key.to_string()).await;
+        match attendu {
+            None => assert_eq!(status, 204, "groupe {key} : {refus}"),
+            Some(code) => {
+                assert_eq!(status, 409, "groupe {key}");
+                assert_eq!(refus["error"]["code"], code, "groupe {key}");
+            }
+        }
+        if key == possedee {
+            assert_eq!(
+                refus["error"]["details"],
+                json!({ "documentId": si, "documentNumber": "FF-12" })
+            );
+            assert_eq!(
+                refus["error"]["message"],
+                "Une de ces lignes appartient à une pièce : elle ne se lettre ni ne se délettre \
+                 à la main. (FF-12)"
+            );
+        }
+        if key == possedee_sans {
+            assert_eq!(
+                refus["error"]["details"],
+                json!({ "documentId": si_sans, "documentNumber": null })
+            );
+            assert_eq!(
+                refus["error"]["message"],
+                "Une de ces lignes appartient à une pièce : elle ne se lettre ni ne se délettre \
+                 à la main."
+            );
+        }
+    }
+
+    // Le verrou de période couvre le second groupe manuel (et tout le reste).
+    sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
+        .bind(jours_avant(1))
+        .bind(s.company_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let (_, lu) = get(&mp.app, &mp.jwt, &manuels[1].to_string()).await;
+    assert_eq!(
+        lu["manualDissolutionBlockedBy"],
+        "LETTERING_ALL_LINES_IN_CLOSED_PERIODS"
+    );
+    assert!(
+        lu["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|l| l["inOpenPeriod"] == false)
+    );
+    let (status, refus) = delete(&mp.app, &mp.jwt, &manuels[1].to_string()).await;
+    assert_eq!(status, 409);
+    assert_eq!(
+        refus["error"]["code"],
+        "LETTERING_ALL_LINES_IN_CLOSED_PERIODS"
+    );
+}
+
+/// Test 6 (AC15) à HTTP — **même source que la vue** : la vente d'une facture
+/// réglée après `X` est ouverte à `X` ; dans la vue et dans son groupe, ses
+/// `document`, `inOpenPeriod`, `journal` et `description` sont égaux — avant et
+/// après un verrou posé entre la vente et le règlement.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn detail_agrees_with_open_items_over_http(pool: MySqlPool) {
+    use lettering_support::{facture, jours_avant, regler};
+    let mp = monde_pieces(&pool).await;
+    let s = &mp.s;
+    let inv = facture(&pool, s, dec!(100.00), jours_avant(100)).await;
+    regler(&pool, s, inv, dec!(100.00), jours_avant(50)).await;
+    let x = jours_avant(70);
+
+    for verrou in [false, true] {
+        if verrou {
+            sqlx::query("UPDATE companies SET books_locked_through = ? WHERE id = ?")
+                .bind(jours_avant(60))
+                .bind(s.company_id)
+                .execute(&pool)
+                .await
+                .unwrap();
+        }
+        let resp = mp
+            .app
+            .client
+            .get(mp.app.url(&format!(
+                "/api/v1/accounts/{}/open-items?asOf={x}",
+                s.accounts["1100"]
+            )))
+            .bearer_auth(&mp.jwt)
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), 200);
+        let vue: Value = resp.json().await.unwrap();
+        let item = vue["items"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|i| i["document"]["type"] == "invoice")
+            .unwrap_or_else(|| panic!("la vente est ouverte à X : {vue}"))
+            .clone();
+        assert_eq!(item["reason"], "letteredAfterAsOf");
+        let code = item["letteringCode"].as_str().unwrap();
+        let (status, groupe) = get(&mp.app, &mp.jwt, code).await;
+        assert_eq!(status, 200);
+        let ligne = groupe["lines"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|l| l["id"] == item["lineId"])
+            .expect("la ligne est dans son groupe");
+        for champ in ["document", "inOpenPeriod", "journal", "description"] {
+            assert_eq!(ligne[champ], item[champ], "{champ}, verrou {verrou}");
+        }
+        assert_eq!(ligne["inOpenPeriod"], !verrou, "montage : période");
+    }
+}
