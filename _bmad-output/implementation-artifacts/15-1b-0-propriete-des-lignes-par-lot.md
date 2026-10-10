@@ -2,7 +2,7 @@
 
 ## Status
 
-review *(développée le 2026-10-10 — Dev Agent Record ci-dessous ; avant :* ready-for-dev *extraite de la 15-1b le 2026-10-09 à la remédiation de sa validation P2 — signal D5 levé
+done *(revue close le 2026-10-10 à la P2 ciblée ; développée le 2026-10-10 — Dev Agent Record ci-dessous ; avant :* ready-for-dev *extraite de la 15-1b le 2026-10-09 à la remédiation de sa validation P2 — signal D5 levé
 par un HIGH né d'une remédiation, C-15-1b-9 ; validation P1 remédiée le 2026-10-09 — la lecture de la
 route en une transaction, la forme et la mesure du lot fixées, l'oracle durci, les prédicats de
 `DocumentKind` publiés ; validation P2 remédiée le 2026-10-09 — `DocumentRef` typé en `DocumentKind`
@@ -523,6 +523,43 @@ Opus 5.5 (développement, en autonomie — consignes de l'Epic 15).
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`.
 
 ## Change Log
+
+### Clôture — 2026-10-10 (Opus 5.5) — **REVUE CLOSE, story `done`**
+
+**Rebase** sur `origin/main` `56380066` (la 15-1a2-ii fusionnée en squash, PR #603) par `git rebase --onto origin/main
+f8888750` : **sans conflit**, et `git diff --stat f8888750 origin/main` est **vide** (arbres identiques). Les SHA cités plus bas
+avant le rebase deviennent : développement `2e86ab4d` → **`b51e0426`**, prompt P1 `50793166` → `4114cf21`, remédiation P1
+`7e16630b` → **`83b3a026`** ; prompt P2 `7e411eeb` ; remédiation P2 (tests seuls) **`cf693711` = dernier commit de code**.
+
+**Gates au dernier commit de code `cf693711`** (exécutés, après le rebase ; bases `kesh_1b0` et `kesh_e2e_1b0` supprimées,
+recréées et migrées avant, sans redémarrer MariaDB) : `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) **3296
+passés, 4 ignorés** (`kesh-gate-logs/15-1b-0-gate-final.log`) ; frontend (aucun fichier touché depuis `main`) — `npm run check`
+**0 erreur** (27 avertissements préexistants), `lint-i18n-ownership` vert, `test:unit` **116 fichiers / 1167 tests**, `build`
+vert (`15-1b-0-frontend.log`) ; **E2E complet** (port 3024, base `kesh_e2e_1b0` neuve, binaire construit sur `cf693711`,
+montage de `docs/testing.md`, `/health` : `smtpConfigured: true`) : **245 passés, 9 échoués, 19 ignorés** — jugés fichier par
+fichier contre `docs/testing.md` § « Les échecs attendus » : sept KF-029 (#97) (`mode-expert:26`, `:41`,
+`onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`) et deux KF-045 (#421) (`invoices:415`, `:439`, suite lancée vers
+02:50 UTC, avant 12:00) ; **aucun hors liste** (`15-1b-0-e2e.log`).
+
+### Revue de code P2 ciblée — 2026-10-10 (Haiku 4.5, une lentille ; remédiation Opus 5.5) — REVUE CLOSE
+
+**Prompt** : `15-1b-0-review-prompt-p2-ciblee.md` (seul diff : `git show 83b3a026`). **Rapport** :
+`kesh-gate-logs/15-1b-0-review-p2-ciblee.md` — **0 C / 0 H / 0 M / 2 L**. Axes non exercés déclarés : toute exécution
+(compilation, tests, mutations, SQL) — **repris par l'orchestrateur** : gate complet après la remédiation P1 (3296/3296) et les
+mutations rejouées de la P1 (filtre de société bloc par bloc ×5, `COALESCE` ×2, taille de tranche 400 et 600, itération sur
+la table) **toutes rouges**. Vérifiés par `grep -nF` : L1 (`document_owners.rs:408`, « dans l'ordre de leur pose ») et L2
+(`:1066`, `len() == 5` sur le `Vec` Rust) **réels** ; « ordre des tests ci-dessous » absent de `crates/` (0).
+
+| finding | verdict |
+|---|---|
+| L1 — la doc de `Fixture::ecritures` dit un ordre que la liste ne suit pas | **corrigé** (l'ordre est sans portée, écrit) |
+| L2 — l'assertion de montage « cinq types » lit le `Vec` Rust, non la base | **corrigé** (les cinq types lus dans le résultat de `document_owners`) |
+| O1 à O3 (observations hors décompte) | O1 : déjà écrit au site (« garde défensive ») ; O2 : le bras règlement du bloc fournisseur est couvert par `e_paiement` à l'oracle par lot ; O3 : sans objet |
+
+La remédiation (`cf693711`) ne touche **aucune ligne de code de production** — un fichier de test : la boucle est **close**
+(§ « La passe ciblée »). **Trend** : P1 (Sonnet ×3) **2 MEDIUM distincts, 8 LOW** → P2 ciblée (Haiku) **0 au-dessus de LOW,
+2 LOW** → close. Signal D5 : non levé (P2 < P1). **Modèles** : Opus 5.5 (développement, remédiations, orchestration), Sonnet 5.5
+(P1, trois lentilles), Haiku 4.5 (P2 ciblée). Choix : C-15-1b-0-5 à 7 (registre).
 
 ### Revue de code P1 — 2026-10-10 (Sonnet 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
 
