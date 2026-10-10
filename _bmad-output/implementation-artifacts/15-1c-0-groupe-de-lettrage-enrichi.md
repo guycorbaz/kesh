@@ -291,9 +291,10 @@ Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
 - **T2, T3** — `docs/api-external.md` (paragraphe du `GET` réécrit, exemple sur le compte `2000 Créanciers` du plan PME,
   G4-bis), `CHANGELOG.md` (*Modifié*, patron « ⚠️ Changement de contrat … »), `README.md` (15-1c-0 **et** 15-1b sous
   « Livré » — C-15-1c-0-3).
-- **Tests neufs** — **12** attributs, recomptés (`grep -cE '#\[(sqlx::)?test'`, de `05de0c7f` au commit de
-  développement) : `letterings.rs` (unitaires) 4 → 7 (test 5 : douze combinaisons, étapes `Need*`, `code()`) ;
-  `kesh-db/tests/letterings.rs` 38 → 44 (tests 1, 2, 3, 4, 6, 7 — chacun passe aussi par
+- **Tests neufs** — **13** attributs, recomptés (`grep -cE '#\[(sqlx::)?test'`, de `a602e1ab` — `main`, arbre de base
+  identique à `05de0c7f` — à la remédiation P1 ; **12** au commit de développement, `+1` en P1 :
+  `group_detail_under_a_later_closed_year`) : `letterings.rs` (unitaires) 4 → 7 (test 5 : douze combinaisons, étapes `Need*`, `code()`) ;
+  `kesh-db/tests/letterings.rs` 38 → 45 (tests 1, 2, 3, 4 ×2, 6, 7 — chacun passe aussi par
   `prevision_egale_dissolution`, la part dépôt du test 5) ; `kesh-api/tests/letterings_e2e.rs` 8 → 11 (tests 1 et 8 —
   ensembles exacts —, 5 — table à HTTP, `details` et message suffixé du cas possédé —, 6 à HTTP). Test 8, partie
   « 404 d'une autre société et d'un code inexistant, clé d'API en lecture, Consultation » : tenue par les tests
@@ -302,6 +303,12 @@ Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
   monté par les gestes réels (`supplier_invoices::cancel`, `invoice_settlements_write::cancel_settlement`) via
   `tests/support/lettering_documents.rs`, dans le binaire `letterings` (non dans `supplier_invoices_repository.rs`, dont
   l'aide `monter_achat` est locale).
+- **Test 9 — contrôles documentaires exécutés** (revue P1, A-1) :
+  `grep -n "manualDissolutionBlockedBy" docs/api-external.md CHANGELOG.md` → `CHANGELOG.md:37`, `docs/api-external.md:307`,
+  `:322` ; `grep -nF 'GET /api/v1/letterings/{key}' docs/api-external.md` → `302` (la ligne qui ouvre le paragraphe) ;
+  `sed -n 302,325p docs/api-external.md | grep -c 'même forme'` → `0` ; README ligne 223 relue : « … les postes ouverts et
+  les rapprochements proposés, par l'API (15-1b) ; le groupe de lettrage lu avec ses pièces, et ce qui en empêcherait le
+  délettrage (15-1c-0). **À venir** : l'écran des postes ouverts … ».
 - **Mutations** (fichier restauré puis `touch`é après chacune ; filtres : tests du lettrage de `kesh-db` et binaires
   `letterings_e2e`, `open_items_e2e`) — **toutes rouges** :
   | # | mutation | rougit |
@@ -313,6 +320,7 @@ Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
   | M5 | période toujours ouverte dans la fonction partagée | `group_detail_agrees_with_open_items`, `group_detail_in_closed_periods`, deux tests `open_items` de la 15-1b ; HTTP tests 5 et 6 |
   | M6 | lecture : possession jamais vue | `group_detail_of_reversal_pairs` ; HTTP test 5 |
   | M7 | `code()` permuté | unitaire `blocker_code_is_the_error_code` ; `group_detail_of_a_document_group` ; HTTP test 5 |
+  | M9 *(revue P1)* | `owned_by_document` = tout propriétaire | `group_detail_of_a_manual_group` ; `open_items` `proposals_keep_bank_lines_and_rank_reversal_pairs_first`, `document_types_and_manual_letterability` ; HTTP `document_object_shape` |
   | M8 | refus 2 rendu sans ses champs | `dissolution_of_a_reversal_pair_with_a_document_line_is_refused`, `group_detail_of_reversal_pairs` ; HTTP test 5 |
 - **Modules** (signal D5, déclaré) : 2 crates (`kesh-db`, `kesh-api`) ; au grain fin 5 — deux de logique
   (`kesh-db/repositories/letterings` dont son enfant `open_items`, `kesh-api/routes/letterings`) et trois supports de
@@ -333,6 +341,32 @@ Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
 - `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md` (C-15-1c-0-1 à 3)
 
 ## Change Log
+
+### Revue de code P1 — 2026-10-10 (Sonnet 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5)
+
+**Prompt** : `15-1c-0-review-prompt-p1.md` (diff `a602e1ab..732a8495`). **Rapports** :
+`kesh-gate-logs/15-1c-0-review-p1-{B,E,A}.md` — B **0 C / 0 H / 0 M / 2 L**, E **0 / 0 / 0 / 3 L + 1 INFO**, A **0 / 0 / 0 / 4 L**
+→ **0 au-dessus de LOW, 9 LOW distincts** (aucun recoupement). Les trois lentilles déclarent l'axe de sécurité (la
+dissolution réécrite) exercé — ordre des refus, séquence de lectures, verrous avant le refus 1, champs du refus 2,
+terminaison, mode `System` : aucun écart — et, non exercée, toute exécution (reprise ici : mutations, gate).
+
+| finding | verdict |
+|---|---|
+| B LOW-1 — `ok_or_else` sur la période d'une ligne dans `open_items` devenu inatteignable | **accepté** : garde défensive écrite (« Garde-fou défensif »), sans coût |
+| B LOW-2 — compte et origine pris sur la première ligne | **accepté** : comportement de `find_group`, un groupe est mono-compte (R3) |
+| E LOW-1 — « exercice postérieur clos » jamais passé par la comparaison prévision / dissolution | **corrigé** : test `group_detail_under_a_later_closed_year` |
+| E LOW-2 — paire `reversal` possédée **et** toute close prouvée au seul niveau pur | **corrigé** : test 3 complété (borne posée au jour de la contre-passation ; refus 2 aux deux) |
+| E LOW-3 — facture fournisseur sans numéro : message sans suffixe non prouvé de bout en bout | **corrigé** : test 5 HTTP complété (`documentNumber` nul, message sans suffixe) |
+| E INFO-1 — la séquence de lectures n'est figée par aucun test | **accepté** : sans effet observable (même résultat) ; tenue par l'unitaire de l'ordre des étapes et la relecture des trois lentilles |
+| A-1 — sortie du test 9 absente du Dev Agent Record | **corrigé** (ci-dessus) |
+| A-2 — exemple JSON d'un groupe à une ligne | **corrigé** : deux lignes, l'achat et sa contre-passation (libellé réel « Contre-passation écriture n° 12 ») |
+| A-3 — prédicat de possession écrit trois fois (`free_of_document`, lecture détaillée, `first_document_owner`) | **confirmé** (`grep -nF 'blocks_manual_lettering()'` : `open_items.rs:313`, `letterings.rs:813`, `:2173`) et **corrigé** : `letterings::owned_by_document`, seul prédicat booléen (vue, filtre des candidates, lecture détaillée) ; `free_of_document` retiré ; `first_document_owner` garde son `find` pour **désigner** la pièce ; mutation M9 rouge |
+| A-4 — gate complet et E2E dus avant le push | **rappel** : gate au commit de développement rebasé (ci-dessous) ; E2E au dernier commit de code |
+
+**Gate au commit de développement rebasé `732a8495`** (base `kesh_1c0` remise à zéro, sans redémarrer MariaDB) :
+`scripts/test-fast.sh` **3337 passés, 5 ignorés** = 3325 de la 15-1b + 12 (`kesh-gate-logs/15-1c-0-gate-dev.log`).
+**La remédiation touche du code de production** (`owned_by_document`) : passe ciblée due sur ce commit. Signal D5 :
+non levé (aucune sévérité au-dessus de LOW).
 
 ### Développement — 2026-10-10 (Opus 5.5, en autonomie)
 

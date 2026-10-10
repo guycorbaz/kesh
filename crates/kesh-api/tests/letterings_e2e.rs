@@ -821,7 +821,7 @@ async fn cle_de_ligne(pool: &MySqlPool, entry_id: i64, account_id: i64) -> i64 {
 /// groupe `manual` (204), `document` (409 `LETTERING_IS_DOCUMENT`), paire
 /// `reversal` possédée par une facture fournisseur (409
 /// `LETTERING_LINE_OWNED_BY_DOCUMENT`, mêmes `details` et même message suffixé
-/// qu'avant la refonte), paire d'un règlement client annulé (204), groupe tout
+/// qu'avant la refonte — et sans suffixe pour une facture sans numéro), paire d'un règlement client annulé (204), groupe tout
 /// en période verrouillée (409 `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn forecast_equals_delete_over_http(pool: MySqlPool) {
@@ -851,6 +851,12 @@ async fn forecast_equals_delete_over_http(pool: MySqlPool) {
         .await
         .expect("annulation");
     let possedee = cle_de_ligne(&pool, achat(&pool, si).await, achats.payable).await;
+    // La même, sans numéro de facture (revue P1, E LOW-3) : message sans suffixe.
+    let si_sans = facture_fournisseur(&pool, s, &achats, dec!(30.00), jours_avant(80), None).await;
+    supplier_invoices::cancel(&pool, s.company_id, si_sans, s.admin_user_id)
+        .await
+        .expect("annulation");
+    let possedee_sans = cle_de_ligne(&pool, achat(&pool, si_sans).await, achats.payable).await;
     // Paire `reversal` libre : règlement client annulé.
     let inv2 = facture(&pool, s, dec!(40.00), jours_avant(70)).await;
     let (sid, reglement) = regler(&pool, s, inv2, dec!(40.00), jours_avant(60)).await;
@@ -874,6 +880,7 @@ async fn forecast_equals_delete_over_http(pool: MySqlPool) {
         (manuels[0], None),
         (document, Some("LETTERING_IS_DOCUMENT")),
         (possedee, Some("LETTERING_LINE_OWNED_BY_DOCUMENT")),
+        (possedee_sans, Some("LETTERING_LINE_OWNED_BY_DOCUMENT")),
         (libre, None),
     ];
     for (key, attendu) in cas {
@@ -901,6 +908,17 @@ async fn forecast_equals_delete_over_http(pool: MySqlPool) {
                 refus["error"]["message"],
                 "Une de ces lignes appartient à une pièce : elle ne se lettre ni ne se délettre \
                  à la main. (FF-12)"
+            );
+        }
+        if key == possedee_sans {
+            assert_eq!(
+                refus["error"]["details"],
+                json!({ "documentId": si_sans, "documentNumber": null })
+            );
+            assert_eq!(
+                refus["error"]["message"],
+                "Une de ces lignes appartient à une pièce : elle ne se lettre ni ne se délettre \
+                 à la main."
             );
         }
     }

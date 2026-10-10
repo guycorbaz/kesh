@@ -907,6 +907,18 @@ pub fn manual_dissolution_step(
     }
 }
 
+/// R5 sur le lot de [`journal_entries::document_owners`] : l'écriture est-elle
+/// **possédée** par une pièce — un de ses propriétaires a
+/// [`DocumentKind::blocks_manual_lettering`] ? ⚠️ Une transaction bancaire
+/// seule ne la possède pas. Le prédicat booléen, écrit **une** fois (revue P1
+/// de la 15-1c-0, A-3) : `manuallyLetterable` et le filtre des candidates de
+/// la vue des postes ouverts, `ownedByDocument` de la lecture détaillée ;
+/// [`first_document_owner`] applique le même `blocks_manual_lettering` pour
+/// **désigner** la pièce qui refuse.
+pub(crate) fn owned_by_document(owners: Option<&Vec<DocumentOwner>>) -> bool {
+    owners.is_some_and(|v| v.iter().any(|o| o.kind.blocks_manual_lettering()))
+}
+
 /// La part « pièce et période » d'un lot de lignes (Story 15-1c-0, AC15) —
 /// rendue par [`lines_documents_and_periods`].
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -2169,8 +2181,7 @@ pub async fn find_group_detail(
             journal: r.journal,
             description: r.description,
             document: proprietaires.and_then(|v| v.first()).cloned(),
-            owned_by_document: proprietaires
-                .is_some_and(|v| v.iter().any(|o| o.kind.blocks_manual_lettering())),
+            owned_by_document: owned_by_document(proprietaires),
             in_open_period,
         });
     }

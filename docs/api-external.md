@@ -310,7 +310,11 @@ Les `details` sont ceux du `PUT` (`documentId`, `documentNumber` ; `fiscalYearId
                "journal": "Achats", "description": "…",
                "document": { "type": "supplierInvoice", "id": 9, "number": "FF-12",
                              "invoiceId": null, "invoiceNumber": null },
-               "ownedByDocument": true, "inOpenPeriod": true } ] }
+               "ownedByDocument": true, "inOpenPeriod": true },
+             { "id": 31, "entryId": 5, "entryNumber": 14, "fiscalYearId": 1, "fiscalYearName": "2026",
+               "date": "2026-03-20", "debit": "100.0000", "credit": "0.0000",
+               "journal": "Achats", "description": "Contre-passation écriture n° 12",
+               "document": null, "ownedByDocument": false, "inOpenPeriod": true } ] }
 ```
 
 - `accountNumber`, `accountName` : le compte du groupe.

@@ -2277,7 +2277,8 @@ async fn group_detail_of_reversal_pairs(pool: MySqlPool) {
     .fetch_one(&pool)
     .await
     .unwrap();
-    let cle = cle.expect("montage : l'achat est lettré");
+    let cle_achat = cle.expect("montage : l'achat est lettré");
+    let cle = cle_achat;
 
     let det = detail(&pool, s.company_id, cle).await.expect("groupe");
     assert_eq!(det.origin, Origin::Reversal);
@@ -2337,6 +2338,45 @@ async fn group_detail_of_reversal_pairs(pool: MySqlPool) {
     prevision_egale_dissolution(&pool, s.company_id, s.admin_user_id, cle)
         .await
         .expect("204");
+
+    // Paire possédée ET toute close (revue P1, E LOW-2) : le refus 2 parle
+    // avant le 3, à la lecture comme à la dissolution.
+    // La contre-passation de l'annulation est datée du jour : la borne (seuil
+    // inclusif, posée en SQL de montage) la couvre.
+    poser_borne(&pool, s.company_id, chrono::Utc::now().date_naive()).await;
+    let det = detail(&pool, s.company_id, cle_achat).await.unwrap();
+    assert!(
+        det.lines.iter().all(|l| !l.in_open_period),
+        "montage : tout clos"
+    );
+    assert_eq!(
+        det.manual_dissolution_blocked_by,
+        Some(ManualDissolutionBlocker::LineOwnedByDocument)
+    );
+    prevision_egale_dissolution(&pool, s.company_id, s.admin_user_id, cle_achat)
+        .await
+        .expect_err("409");
+}
+
+/// Test 4 (revue P1, E LOW-1) — « un exercice postérieur est clos » : le groupe
+/// d'un exercice **ouvert** suivi d'un exercice clôturé est tout entier en
+/// période close, à la lecture comme à la dissolution — chacune calcule
+/// `later_closed` de son côté (sans verrou ; sous verrou d'exercice).
+#[sqlx::test(migrations = "./test-schema")]
+async fn group_detail_under_a_later_closed_year(pool: MySqlPool) {
+    let m = monde(&pool).await;
+    let (a, b) = paire(&pool, &m, (m.fy25, d(2025, 2, 1)), (m.fy25, d(2025, 3, 1))).await;
+    let key = lettrer(&pool, &m, &[a, b]).await.unwrap().key;
+    set_status(&pool, m.fy26, "Closed").await;
+    let det = detail(&pool, m.company(), key).await.unwrap();
+    assert!(det.lines.iter().all(|l| !l.in_open_period));
+    assert_eq!(
+        det.manual_dissolution_blocked_by,
+        Some(ManualDissolutionBlocker::AllLinesInClosedPeriods)
+    );
+    prevision_egale_dissolution(&pool, m.company(), m.s.admin_user_id, key)
+        .await
+        .expect_err("409");
 }
 
 /// Test 4 (AC15) — toutes les lignes en période close (exercice clôturé, puis

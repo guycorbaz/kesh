@@ -48,7 +48,7 @@ use sqlx::{Connection, MySqlConnection};
 
 use super::{
     DocumentsAndPeriods, Origin, code_of, letterable_account, lines_documents_and_periods,
-    open_period_rule, with_placeholders,
+    open_period_rule, owned_by_document, with_placeholders,
 };
 use crate::errors::{DbError, map_db_error};
 use crate::repositories::invoice_settlements::{amount_due_scalar_sql, amount_due_to_centime};
@@ -304,15 +304,6 @@ async fn require_viewable_account(
     }
 }
 
-/// R5 sur le lot de [`journal_entries::document_owners`] : une ligne **ouverte**
-/// est lettrable à la main si aucun propriétaire de son écriture n'a
-/// [`DocumentKind::blocks_manual_lettering`] — la liste écrite une fois, celle
-/// de `first_document_owner`. ⚠️ Une transaction bancaire seule n'ôte pas la
-/// lettrabilité.
-fn free_of_document(owners: Option<&Vec<DocumentOwner>>) -> bool {
-    !owners.is_some_and(|v| v.iter().any(|o| o.kind.blocks_manual_lettering()))
-}
-
 /// La facture client que décrit `documentState` : celle d'un propriétaire
 /// `invoice`, ou la facture réglée d'un `settlement` ; `None` pour tout autre
 /// type, avoir compris (C-15-1b-12).
@@ -450,7 +441,7 @@ pub async fn open_items(
             } else {
                 OpenReason::Unlettered
             },
-            manually_letterable: r.lettering_key.is_none() && free_of_document(entry_owners),
+            manually_letterable: r.lettering_key.is_none() && !owned_by_document(entry_owners),
             in_open_period: *periodes.get(&r.id).ok_or_else(|| {
                 DbError::Invariant(format!(
                     "postes ouverts : période de la ligne {} non lue",
@@ -566,7 +557,7 @@ pub async fn lettering_proposals(
     let owners = journal_entries::document_owners(&mut tx, company_id, &entry_ids).await?;
     let rows: Vec<CandidateRow> = rows
         .into_iter()
-        .filter(|r| free_of_document(owners.get(&r.entry_id)))
+        .filter(|r| !owned_by_document(owners.get(&r.entry_id)))
         .collect();
     if rows.len() > MAX_PROPOSAL_CANDIDATES {
         return Err(DbError::LetteringProposalsTooManyLines {
