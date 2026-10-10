@@ -286,8 +286,8 @@ Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
   `LetteringResponse`.
 - **Unicité du code** (`grep -rn "document_owners(\|open_period_rule(" crates/kesh-db/src crates/kesh-api/src`, sans
   les doc-comments) : `journal_entries.rs:2208` (définition), `:2411` (antérieur) ; `letterings.rs:656` (définition),
-  `:733` (`lines_in_open_period`, antérieur), `:808` (`first_document_owner`, la dissolution), **`:941`, `:943` — la
-  fonction partagée, seul site de la vue et du groupe** ; `open_items.rs:563`, `:574` — les propositions (C-15-1c-0-1).
+  `:733` (`lines_in_open_period`, antérieur), `:808` (`first_document_owner`, la dissolution), **`:939`, `:941` — la
+  fonction partagée, seul site de la vue et du groupe** ; `open_items.rs:566`, `:577` — les propositions (C-15-1c-0-1).
 - **T2, T3** — `docs/api-external.md` (paragraphe du `GET` réécrit, exemple sur le compte `2000 Créanciers` du plan PME,
   G4-bis), `CHANGELOG.md` (*Modifié*, patron « ⚠️ Changement de contrat … »), `README.md` (15-1c-0 **et** 15-1b sous
   « Livré » — C-15-1c-0-3).
