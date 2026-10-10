@@ -27,6 +27,9 @@ WORK=$(mktemp -d "${TMPDIR:-/tmp}/prepare-release-test.XXXXXX")
 trap 'rm -rf "$WORK"' EXIT
 
 # Aucune configuration git de la station ne doit s'en mêler (hooks, signature).
+# Ni un dépôt hérité de l'appelant : lancé depuis un hook ou un `rebase -x`,
+# `GIT_DIR` & cie feraient écrire `new_repo` dans le dépôt réel (revue P2, P2-5).
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_OBJECT_DIRECTORY GIT_COMMON_DIR GIT_PREFIX
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.invalid
 export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.invalid
@@ -112,7 +115,7 @@ expect_preflight() { grep -qF -- "--example perishable_exemptions" "$STUB_LOG" \
                        && ok "pré-vol exécuté (inventaire lu)" || fail "pré-vol NON exécuté"; }
 expect_changelog() { # <dir> <version> <suffixe attendu> <nombre de sections attendu>
     local n
-    n=$(grep -cF "## [$2] — " "$1/CHANGELOG.md" || true)
+    n=$(grep -c "^## \\[$2\\] — " "$1/CHANGELOG.md" || true)
     [ "$n" -eq "$4" ] && ok "$n section(s) [$2]" || fail "$n section(s) [$2], attendu $4"
     grep -qxF "## [$2] — $3" "$1/CHANGELOG.md" && ok "CHANGELOG : [$2] — $3" \
         || fail "CHANGELOG sans « ## [$2] — $3 »"
@@ -125,7 +128,7 @@ expect_dated_today() { # <dir> <version> — datée du jour de l'exécution, une
         fail "CHANGELOG : [$2] non datée du jour"
     fi
     local n
-    n=$(grep -cF "## [$2] — " "$1/CHANGELOG.md" || true)
+    n=$(grep -c "^## \\[$2\\] — " "$1/CHANGELOG.md" || true)
     [ "$n" -eq 1 ] && ok "1 section [$2]" || fail "$n sections [$2], attendu 1"
 }
 expect_version() { # <dir> <crate> <version>
@@ -257,6 +260,16 @@ expect_preflight
 expect_out "déjà datée en pré-vol : rien à écrire."
 expect_changelog "$R" 0.13.0 "2026-10-01 (correctif)" 1
 expect_clean "$R"
+
+cas "titre « Non publié » cité dans le texte d'une autre section : la citation reste intacte"
+R="$WORK/citation"
+new_repo "$R" 0.13.0 0.13.0 "## [0.13.0] — Non publié
+
+Ne pas confondre avec le titre ## [0.13.0] — Non publié cité ici."
+run "$R" 0.13.0
+expect_rc 0
+expect_dated_today "$R" 0.13.0
+grep -qF "titre ## [0.13.0] — Non publié cité ici." "$R/CHANGELOG.md" && ok "citation intacte" || fail "citation réécrite"
 
 cas "section ni « Non publié » ni datée : refus nommé"
 R="$WORK/indatee"

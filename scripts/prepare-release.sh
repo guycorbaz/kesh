@@ -12,7 +12,8 @@
 # Si les crates portent DÉJÀ la version cible (bump fait avec la migration qui
 # l'impose, CLAUDE.md P2-bis), l'étape 1 est sautée et tout le reste tourne —
 # pré-vol compris. Relancé après un premier passage commité, le script ne redate
-# pas le CHANGELOG et refait le pré-vol (#566).
+# pas le CHANGELOG et refait le pré-vol (#566). Il refuse, avant toute écriture,
+# une version cible inférieure à l'actuelle ou dont le tag `vX.Y.Z` existe déjà.
 #
 # **N'automatise PAS** la mise à jour du README roadmap (dépend du scope précis
 # de chaque release — l'auteur doit la rédiger manuellement avant ou après).
@@ -72,7 +73,11 @@ echo
 
 # --- Détection version actuelle ---
 
-CURRENT_VERSION=$(grep -m1 '^version = ' crates/kesh-api/Cargo.toml | sed -E 's/^version = "([^"]+)".*/\1/')
+CURRENT_VERSION=$(grep -m1 '^version = ' crates/kesh-api/Cargo.toml | sed -E 's/^version = "([^"]+)".*/\1/' || true)
+if [ -z "$CURRENT_VERSION" ]; then
+    echo "ERREUR: aucune ligne 'version = \"…\"' lisible dans crates/kesh-api/Cargo.toml." >&2
+    exit 1
+fi
 echo "Version actuelle (crates/kesh-api/Cargo.toml) : $CURRENT_VERSION"
 
 # ⛔ « Déjà à la version cible » N'EST PAS un motif d'arrêt (#566).
@@ -240,7 +245,7 @@ if [ "$NB_SECTIONS" -gt 1 ]; then
     grep -nE "^## \[$ESC_VERSION\] — " CHANGELOG.md >&2
     echo "⇒ Refusé AVANT toute modification : le dépôt est intact." >&2
     exit 1
-elif grep -qF "$PATTERN" CHANGELOG.md; then
+elif grep -qE "^## \[$ESC_VERSION\] — Non publié" CHANGELOG.md; then
     echo "  ✓ CHANGELOG.md porte la section à finaliser."
 # Daté = une date en tête, quel que soit ce qui la suit (« (hotfix) », espace…).
 elif grep -qE "^## \[$ESC_VERSION\] — [0-9]{4}-[0-9]{2}-[0-9]{2}" CHANGELOG.md; then
@@ -285,9 +290,9 @@ else
     if [ "$BUMPED" -eq 0 ]; then
         echo "ERREUR: aucun crate Cargo.toml ne portait la version $CURRENT_VERSION. Anomalie." >&2
         exit 1
-fi
+    fi
 
-echo "  $BUMPED crates bumpés."
+    echo "  $BUMPED crates bumpés."
 fi
 
 # --- (2) Régénérer Cargo.lock ---
@@ -319,7 +324,8 @@ else
     REPLACEMENT="## [$NEW_VERSION] — $TODAY"
 
     # Pour sed BRE, échapper les `[` `]` (signification regex caractère class).
-    sed -i "s|## \\[$NEW_VERSION\\] — Non publié|$REPLACEMENT|" CHANGELOG.md
+    # Ancré en début de ligne : une citation du titre dans le texte reste intacte.
+    sed -i "s|^## \\[$ESC_VERSION\\] — Non publié|$REPLACEMENT|" CHANGELOG.md
     echo "  ✓ CHANGELOG.md : '$PATTERN' → '$REPLACEMENT'"
 fi
 
