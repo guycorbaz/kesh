@@ -2,7 +2,7 @@
 
 ## Status
 
-review *(développée le 2026-10-10 ; découpée de la 15-1a2 le 2026-10-09 à la remédiation de sa validation P1 — C-15-1a2-1 ;
+done *(revue close à la P1 le 2026-10-10 — 0 au-dessus de LOW ; développée le 2026-10-10 ; découpée de la 15-1a2 le 2026-10-09 à la remédiation de sa validation P1 — C-15-1a2-1 ;
 validation P2 remédiée le 2026-10-09 — refus au délettrage (C-15-1a2-10), découverte par statut,
 classe A justifiée honnêtement ; validation P3 remédiée le 2026-10-09 — les refus fournisseurs du rang 2 bis
 partis à la **15-1a2-0** (C-15-1a2-19), un test existant de plus à modifier, la définition de la classe A
@@ -634,6 +634,19 @@ lettrée sans règle des périodes — c'est le régime (d-ii) d'AC6, dit au man
 - `_bmad-output/implementation-artifacts/epic-15-choix-autonomes.md`, `sprint-status.yaml`
 
 ## Change Log
+
+### Clôture — 2026-10-10 (Opus 5.5) — **REVUE CLOSE, story `done`**
+
+**Gates au dernier commit de code `46cda370`** (exécutés ; base `kesh_1a2ii` remise à zéro avant, sans redémarrer
+MariaDB) : `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest) **3285 passés, 4 ignorés** ; frontend (inchangé
+depuis `main`, `git diff --stat 240deef8 HEAD -- frontend` vide) — `npm run check` **0 erreur** (27 avertissements
+préexistants), `lint-i18n-ownership` vert, `test:unit` **116 fichiers / 1167 tests**, `build` vert ; **E2E complet**
+(port 3023, base `kesh_e2e_1a2ii` neuve migrée par `sqlx migrate run`, binaire construit sur `46cda370`, montage de
+`docs/testing.md` ; **démarrage réel** contre cette base persistante : checksums de M1/M2 acceptés, P8) : **245 passés,
+9 échoués, 19 ignorés** — jugés fichier par fichier : sept KF-029 (#97) (`mode-expert:26`, `:41`, `onboarding-path-b:65`,
+`:92`, `onboarding:57`, `:77`, `:150`) et deux KF-045 (#421) (`invoices:415`, `:439`, matinaux — suite lancée vers
+02:00 UTC) ; **aucun hors liste**. Trend de la revue : P1 (Sonnet ×3) **0 au-dessus de LOW** → close. Modèles : Opus 5.5
+(développement, remédiation, orchestration), Sonnet 5.5 (P1).
 
 ### Revue de code P1 — 2026-10-10 (Sonnet 5.5 ×3, lentilles B, E, A ; remédiation Opus 5.5) — REVUE CLOSE
 
