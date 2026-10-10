@@ -16,11 +16,13 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
-import { seedTestState, clearAuthStorage } from './helpers/test-state';
+import { seedTestState, clearAuthStorage, authedApiContext } from './helpers/test-state';
 
 const NEW_IBAN_1 = 'CH9300762011623852957'; // UBS test IBAN (MOD-97 valide)
 const NEW_IBAN_2 = 'CH3908704016075473007'; // PostFinance test IBAN (MOD-97 valide)
 const INVALID_IBAN = 'CH00INVALID0000';
+// Story 26-2a — IBAN distinct de ceux des tests voisins (isolement, AC13).
+const DESCRIBED_IBAN = 'CH5604835012345678009';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -181,3 +183,71 @@ test.describe('Bank accounts CRUD', () => {
 		await expect(page.locator('[data-testid="bank-accounts-page-title"]')).toBeVisible();
 	});
 });
+
+/**
+ * Story 26-2a (#622, AC13 (a)) — la description d'un compte bancaire, saisie
+ * puis effacée sur l'écran *Comptes bancaires*.
+ *
+ * Isolement (base E2E partagée entre specs) : le compte créé est **non
+ * principal**, d'IBAN distinct des tests voisins, et **archivé** en fin de
+ * test par l'API — d'autres specs choisissent un compte bancaire par position
+ * ou comptent les comptes.
+ */
+test.describe('Bank accounts — description (Story 26-2a)', () => {
+	const createdIds: number[] = [];
+
+	test.afterEach(async ({ page }) => {
+		if (createdIds.length === 0) return;
+		const api = await authedApiContext(page);
+		try {
+			const list = await (await api.get('/api/v1/bank-accounts')).json();
+			for (const id of createdIds.splice(0)) {
+				const ba = (list as Array<{ id: number; version: number }>).find((b) => b.id === id);
+				if (!ba) continue;
+				const resp = await api.delete(`/api/v1/bank-accounts/${id}`, {
+					data: { version: ba.version },
+				});
+				expect(resp.status(), `archivage du compte ${id}`).toBe(200);
+			}
+		} finally {
+			await api.dispose();
+		}
+	});
+
+	test('saisir puis effacer la description d’un compte', async ({ page }) => {
+		await goToBankAccounts(page);
+
+		await page.click('[data-testid="create-bank-account-button"]');
+		const description = page.locator('[data-testid="form-description"]');
+		await expect(description).toHaveAttribute('maxlength', '60');
+		await page.fill('[data-testid="form-bank-name"]', 'UBS E2E');
+		await description.fill('Épargne E2E');
+		await page.fill('[data-testid="form-iban"]', DESCRIBED_IBAN);
+		await expect(page.locator('[data-testid="form-is-primary"]')).not.toBeChecked();
+
+		const created = page.waitForResponse(
+			(r) => r.url().endsWith('/api/v1/bank-accounts') && r.request().method() === 'POST',
+		);
+		await page.click('[data-testid="form-submit"]');
+		const createdResp = await created;
+		expect(createdResp.status()).toBe(201);
+		const id = (await createdResp.json()).id as number;
+		createdIds.push(id);
+
+		const name = page.locator(`[data-testid="bank-account-name-${id}"]`);
+		await expect(name).toHaveText('UBS E2E — Épargne E2E', { timeout: 5000 });
+
+		// Modifier en effaçant la description → la banque seule.
+		await page.click(`[data-testid="edit-button-${id}"]`);
+		const editDescription = page.locator('[data-testid="edit-description"]');
+		await expect(editDescription).toHaveValue('Épargne E2E');
+		await expect(editDescription).toHaveAttribute('maxlength', '60');
+		await editDescription.fill('');
+		await page.click('[data-testid="edit-form-submit"]');
+		await expect(page.locator('[data-testid="edit-bank-account-form"]')).toHaveCount(0, {
+			timeout: 5000,
+		});
+		await expect(name).toHaveText('UBS E2E');
+	});
+});
+
