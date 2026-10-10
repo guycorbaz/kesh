@@ -29,6 +29,7 @@ function line(over: Partial<LedgerLine> = {}): LedgerLine {
 		debit: '1200.00',
 		credit: '0.00',
 		runningBalance: '1200.00',
+		letteringCode: null,
 		...over,
 	};
 }
@@ -145,5 +146,137 @@ describe('GeneralLedgerView', () => {
 	it('affiche l’empty-state quand aucun compte n’est retenu', () => {
 		const { container } = render(GeneralLedgerView, { dto: dto({ sections: [] }) });
 		expect(container.textContent).toContain('Aucun compte à afficher');
+	});
+
+	// ---------------------------------------------------------------------
+	// Story 15-1c-ii (AC9, test 3) — la colonne « Lettrage », les `colspan`
+	// calculés, le lien « Postes ouverts de ce compte ».
+	// ---------------------------------------------------------------------
+
+	/** La somme des `colspan` d'une rangée (1 par cellule sans attribut). */
+	function span(tr: Element): number {
+		return Array.from(tr.children).reduce(
+			(acc, td) => acc + Number(td.getAttribute('colspan') ?? '1'),
+			0,
+		);
+	}
+
+	/** Une section qui porte TOUTES les formes de rangée : rupture, lettrée, ouverte. */
+	function fullSection() {
+		return section({
+			lines: [
+				line({ lineId: 1, fiscalYearId: 1, letteringCode: 'AB' }),
+				line({ lineId: 2, fiscalYearId: 2, letteringCode: null }),
+			],
+			fiscalYearBreaks: [
+				{ date: '2025-12-31', closingFiscalYearId: 1, closingBalance: '1700.00' },
+			],
+			lineCount: 2,
+		});
+	}
+
+	it('15-1c-ii test 3 — « Lettrage » est la DERNIÈRE colonne, après « Solde progressif »', () => {
+		const { getByTestId } = render(GeneralLedgerView, { dto: dto() });
+		const ths = Array.from(getByTestId('ledger-section-1020').querySelectorAll('thead th')).map(
+			(th) => th.textContent?.trim(),
+		);
+		expect(ths).toHaveLength(9);
+		expect(ths.at(-1)).toBe('Lettrage');
+		expect(ths.at(-2)).toBe('Solde progressif');
+	});
+
+	it('15-1c-ii test 3 — chaque rangée du corps et du pied couvre exactement les en-têtes', () => {
+		for (const s of [fullSection(), section({ lines: [], lineCount: 0 })]) {
+			const { getByTestId, unmount } = render(GeneralLedgerView, { dto: dto({ sections: [s] }) });
+			const table = getByTestId('ledger-section-1020').querySelector('table')!;
+			const headers = table.querySelectorAll('thead th').length;
+			const rows = table.querySelectorAll('tbody tr, tfoot tr');
+			// ouverture, (rupture, deux mouvements | ligne vide), total, clôture
+			expect(rows.length).toBe(s.lines.length === 0 ? 4 : 6);
+			for (const tr of rows) expect(span(tr)).toBe(headers);
+			unmount();
+		}
+	});
+
+	/** Le texte de chaque colonne d'une rangée, `colspan` déplié. */
+	function byColumn(tr: Element): string[] {
+		const out: string[] = [];
+		for (const td of Array.from(tr.children)) {
+			const n = Number(td.getAttribute('colspan') ?? '1');
+			for (let i = 0; i < n; i++) out.push(td.textContent?.trim() ?? '');
+		}
+		return out;
+	}
+
+	it('15-1c-ii test 3 — ouverture, rupture et clôture : le solde tombe sous « Solde progressif »', () => {
+		const { getByTestId } = render(GeneralLedgerView, { dto: dto({ sections: [fullSection()] }) });
+		const table = getByTestId('ledger-section-1020').querySelector('table')!;
+		const ths = Array.from(table.querySelectorAll('thead th')).map((th) => th.textContent?.trim());
+		const running = ths.indexOf('Solde progressif');
+		const opening = getByTestId('ledger-opening').parentElement!;
+		const closing = getByTestId('ledger-closing').parentElement!;
+		const brk = table.querySelectorAll('tbody tr')[2]; // ouverture, ligne 1, rupture
+		expect(brk.textContent).toContain('le solde repart de zéro');
+		for (const tr of [opening, brk, closing]) {
+			const cols = byColumn(tr);
+			// La cellule du solde est seule de son contenu à cet index : le
+			// libellé s'étend jusqu'à la colonne qui précède.
+			expect(cols[running]).toMatch(/^-?[\d’.]+$/);
+			expect(cols[running - 1]).not.toMatch(/^-?[\d’.]+$/);
+			expect(cols.at(-1)).toBe('');
+		}
+	});
+
+	it('15-1c-ii test 3 — le total des mouvements tombe sous « Débit » et « Crédit »', () => {
+		const { getByTestId } = render(GeneralLedgerView, {
+			dto: dto({ sections: [section({ totalDebit: '1234.00', totalCredit: '567.00' })] }),
+		});
+		const table = getByTestId('ledger-section-1020').querySelector('table')!;
+		const ths = Array.from(table.querySelectorAll('thead th')).map((th) => th.textContent?.trim());
+		const cols = byColumn(table.querySelectorAll('tfoot tr')[0]);
+		expect(cols[ths.indexOf('Débit')]).toBe('1’234.00');
+		expect(cols[ths.indexOf('Crédit')]).toBe('567.00');
+	});
+
+	it('15-1c-ii test 3 — le code d’une ligne lettrée est un lien vers son groupe ; une ligne ouverte, rien', () => {
+		const { getByTestId } = render(GeneralLedgerView, { dto: dto({ sections: [fullSection()] }) });
+		const lettered = getByTestId('ledger-lettering-1');
+		const a = lettered.querySelector('a');
+		expect(a?.textContent).toBe('AB');
+		expect(a?.getAttribute('href')).toBe('/open-items?group=AB');
+		expect(getByTestId('ledger-lettering-2').textContent?.trim()).toBe('');
+		expect(getByTestId('ledger-lettering-2').querySelector('a')).toBeNull();
+		// La cellule est bien dans la dernière colonne de sa rangée.
+		expect(lettered.parentElement?.lastElementChild).toBe(lettered);
+	});
+
+	it('15-1c-ii test 3 — « Postes ouverts de ce compte » ssi le compte est lettrable, à la fin de la période', () => {
+		const two = dto({
+			period: { from: '2026-01-01', to: '2026-06-30' },
+			sections: [
+				section({ accountId: 7, accountNumber: '1100' }),
+				section({ accountId: 8, accountNumber: '6000' }),
+			],
+		});
+		const { getByTestId, queryByTestId } = render(GeneralLedgerView, {
+			dto: two,
+			letterableAccountIds: new Set([7]),
+		});
+		expect(getByTestId('ledger-open-items-1100').getAttribute('href')).toBe(
+			'/open-items?accountId=7&asOf=2026-06-30',
+		);
+		expect(getByTestId('ledger-open-items-1100').textContent).toBe('Postes ouverts de ce compte');
+		expect(queryByTestId('ledger-open-items-6000')).toBeNull();
+	});
+
+	it('15-1c-ii test 3 — aucun lien si la liste des comptes est vide (non chargée)', () => {
+		const { queryByTestId } = render(GeneralLedgerView, {
+			dto: dto(),
+			letterableAccountIds: new Set<number>(),
+		});
+		expect(queryByTestId('ledger-open-items-1020')).toBeNull();
+		// … ni sans la prop du tout.
+		const bare = render(GeneralLedgerView, { dto: dto() });
+		expect(bare.queryByTestId('ledger-open-items-1020')).toBeNull();
 	});
 });

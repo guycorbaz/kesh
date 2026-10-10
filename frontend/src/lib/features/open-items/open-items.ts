@@ -77,10 +77,25 @@ export function screenUrl(base: URL, s: ScreenState): URL {
  * quand on les connaît (C-15-1c-3 — sans eux, le groupe s'ouvre seul).
  */
 export function groupHref(code: string, accountId?: number | null, asOf?: string | null): string {
+	return openItemsPath(accountId ?? null, asOf ?? null, code);
+}
+
+/**
+ * Story 15-1c-ii (AC9) — les postes ouverts d'un compte à une date :
+ * `/open-items?accountId=<id>&asOf=<date>`. Le Grand livre y renvoie, avec la
+ * fin de sa période pour date : la liste dont le total égale la clôture de la
+ * section, au signe près.
+ */
+export function openItemsHref(accountId: number, asOf: string): string {
+	return openItemsPath(accountId, asOf, null);
+}
+
+/** Un seul constructeur des liens vers l'écran, dans l'ordre que lit `parseScreenState`. */
+function openItemsPath(accountId: number | null, asOf: string | null, group: string | null): string {
 	const q = new URLSearchParams();
-	if (accountId != null) q.set('accountId', String(accountId));
+	if (accountId !== null) q.set('accountId', String(accountId));
 	if (asOf) q.set('asOf', asOf);
-	q.set('group', code);
+	if (group !== null) q.set('group', group);
 	return `/open-items?${q}`;
 }
 

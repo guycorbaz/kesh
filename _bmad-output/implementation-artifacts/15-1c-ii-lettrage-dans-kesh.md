@@ -2,9 +2,10 @@
 
 ## Status
 
-ready-for-dev **après la livraison de la 15-1c-i** — créée le 2026-10-09 par le découpage de la 15-1c à la
+review — développée le 2026-10-10 sur la tête de la 15-1c-i (`011ea618`, PR #609 non fusionnée), en autonomie.
+*(Avant : ready-for-dev **après la livraison de la 15-1c-i** — créée le 2026-10-09 par le découpage de la 15-1c à la
 remédiation de sa validation P1 (registre **C-15-1c-1**) ; validation P2 remédiée le 2026-10-09 ;
-**VALIDATION CLOSE** (P3 Sonnet ×2 : 0 au-dessus de LOW ; P4 ciblée Haiku : 0 au-dessus de LOW, LOW appliqués).
+**VALIDATION CLOSE** (P3 Sonnet ×2 : 0 au-dessus de LOW ; P4 ciblée Haiku : 0 au-dessus de LOW, LOW appliqués).)*
 
 ⛔ **Ordre** : **… → 15-1b-0 → 15-1b → 15-1c-0 → 15-1c-i → 15-1c-ii**. Cette story suppose la 15-1c-i mergée : l'écran
 `/open-items`, l'état d'URL `?group=` (cible de tous les liens ci-dessous), le champ `letterable` du type
@@ -192,18 +193,18 @@ contre `docs/testing.md` § « Les échecs attendus ».
 
 ## Tasks
 
-- [ ] **T0** — Rebaser sur `main` après le merge de la 15-1c-i ; inventaires d'AC12 (manuels), d'AC14
+- [x] **T0** — Rebaser sur `main` après le merge de la 15-1c-i ; inventaires d'AC12 (manuels), d'AC14
       (CHANGELOG), d'AC17 (`api-external.md`) ; bornes de `i18n-keys.test.ts` ; écrire au Dev Agent Record.
       *(Reçu de la 15-1c-i : lire la section « Reçu de la 15-1c-i » plus bas — la phrase du menu au manuel.)*
-- [ ] **T1** (AC9) — fiche d'écriture : colonne, lien du motif `ENTRY_LETTERED`.
-- [ ] **T2** (AC9) — Grand livre : type `LedgerLine.letteringCode`, colonne, `colspan` calculés, lien « Postes
+- [x] **T1** (AC9) — fiche d'écriture : colonne, lien du motif `ENTRY_LETTERED`.
+- [x] **T2** (AC9) — Grand livre : type `LedgerLine.letteringCode`, colonne, `colspan` calculés, lien « Postes
       ouverts de ce compte » (comptes lettrables passés par la page des rapports).
-- [ ] **T3** (AC11 part ii) — clés ×4 locales, gardes.
-- [ ] **T4** (AC12) — manuel FR, propagation par inventaire sur `docs/manual/fr/*.tex`, preuve négative sur les
+- [x] **T3** (AC11 part ii) — clés ×4 locales, gardes.
+- [x] **T4** (AC12) — manuel FR, propagation par inventaire sur `docs/manual/fr/*.tex`, preuve négative sur les
       sources, PDF régénérés et contrôlés aplatis.
-- [ ] **T5** (AC14, AC17) — CHANGELOG (*Ajouté* fondu, *Modifié* relus), `api-external.md`, README, site, brochure
+- [x] **T5** (AC14, AC17) — CHANGELOG (*Ajouté* fondu, *Modifié* relus), `api-external.md`, README, site, brochure
       (`marketing-brochure.tex` et son PDF).
-- [ ] **T6** — Tests (liste ci-dessous) ; E2E (AC13 part ii).
+- [x] **T6** — Tests (liste ci-dessous) ; E2E (AC13 part ii).
 
 **Tests de T6** — un par ligne, rattaché à son critère :
 
@@ -278,9 +279,130 @@ risk : une passe de revue relit la propagation des textes, **et le PDF**, comme 
 
 ### Agent Model Used
 
+Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
+
 ### Completion Notes List
 
+- **T0 — base** : tête de la 15-1c-i, `011ea618` (PR #609 non fusionnée au moment du développement ; rebase
+  `--onto origin/main 011ea618` à faire quand elle le sera). Bornes de `i18n-keys.test.ts` à la base :
+  `sitesTotal` 2017, `sitesNonResolus` 31, `relais` 6, `sitesGabarit` 10 ; garde « libellé en dur » 60 candidates
+  (`ecartee` 14, `conforme` 46).
+- **T0 — inventaire AC12, sur les sources à `011ea618`** (`grep -n -i 'lettr' docs/manual/fr/*.tex`) : **75** lignes
+  (user 67, admin 7, brochure 1 — les 15-1a2-* et la 15-1c-i en ont ajouté 45 aux 30 de `f9b6b199`). Classées en
+  comparant chaque ligne de `011ea618` au fichier livré (ligne gardée telle quelle = juste) :
+  - **réécrites, 18** — user `:474` (renvoi à la section neuve), `:499-501` (sixième condition : « par l'API dans
+    cette version » retiré, le délettrage se fait depuis le lien du motif), `:1240-1241` et `:1494` (#607 point 2 :
+    « le grand livre la montre soldée » devient « la colonne Lettrage du grand livre porte son code… et la facture
+    quitte les postes ouverts »), `:1539-1540` (paiement détaché : « par l'API dans cette version » → l'écran),
+    `:2416` (FAQ : où se délettre), `:2520-2522` (glossaire : phrase provisoire retirée, renvoi ; `:2522` re-coupée) ;
+    admin `:2211`, `:2253`, `:2392`, `:2427` (où se fait le délettrage : écran, ou `DELETE` pour la clé d'API) ;
+    brochure `:420` (le lettrage sort du backlog) ;
+  - **justes en l'état, 57** — user `:391`, `:508`, `:557`, `:579-583`, `:603`, `:618`, `:620`, `:640`, `:647` (verrou,
+    contre-passation : règle C105 déjà écrite), `:726`, `:737`, `:777`, `:791` (exercices, soldes de départ : « se
+    lettrent d'eux-mêmes avec leur facture » est vrai depuis la 15-1a2-i), `:1222-1224`, `:1237-1238`, `:1242`,
+    `:1244`, `:1248`, `:1251-1252`, `:1255`, `:1258-1262`, `:1308`, `:1313`, `:1492`, `:1495-1496`, `:1498-1499`,
+    `:1513`, `:1515`, `:1537`, `:1545`, `:1547`, `:1567`, `:1851-1853`, `:2435`, `:2518`, `:2526`, `:2528` (pièces,
+    refus du rang 2 bis, glossaire : vrais sur l'état livré), `:1936` (« toutes lettres », faux positif) ; admin
+    `:1241` (« lettres », faux positif), `:1861` (rejeu à l'import, vrai), `:2252` (vrai). **75 = 18 + 57.**
+  - **second `grep`** (`par l.API\|viendra\|ne lettre pas encore\|ne lettre rien\|pas encore de lui-même\|backlog`),
+    avant : user `:500`, `:1539`, `:2521` (les trois textes provisoires, réécrits), `:721` (« Kesh refuse de même
+    la clôture demandée par l'API », juste), `:1241` (« un règlement partiel ne lettre rien », juste) ; admin `:1615`
+    (« conviendrait », faux positif de `viendra`), `:2255` (« par l'API », suppression d'une écriture, juste) ; brochure
+    `:415` (titre du bloc backlog, qui reste pour justificatifs et journaux). Après : `:500`, `:1539`, `:2521` disparus ; les justes restent.
+  - **hors `lettr`, réécrits** : user `:133` (menu *Mensuel*, reçu A-1 de la 15-1c-i : « écritures,
+    réconciliation, postes ouverts, rapports ») ; user, paiement fournisseur détaché (« Kesh n'a pas encore d'écran
+    qui liste ces paiements » — l'écran des postes ouverts les liste) ; admin `:2426` (#607 point 1 : « le grand livre
+    n'existe pas encore », faux depuis la Story 24-1, v0.12.0). C-15-1c-ii-5.
+- **T0 — CHANGELOG** : `grep -n '518' CHANGELOG.md` → 12 lignes : cinq *Ajouté* (`:15` lettrage manuel « par
+  l'API », `:19` factures clientes, `:21` fournisseurs, `:23` rattrapage, `:25` postes ouverts « par l'API » —
+  « L'écran viendra » aux deux), six *Modifié* (`:31` lignes d'écriture, `:33` plan comptable et Grand livre, `:35`
+  contre-passation, `:37` groupe enrichi de la 15-1c-0, `:39` annulation refusée, `:41` motif d'une facture
+  créditée), plus `:17` (« pas de retour », rattaché à `:15`). **Aucune entrée pour l'écran de la 15-1c-i.**
+- **T0 — `api-external.md`** : `grep -n -i "viendra\|pas encore"` → `:298`, `:361` « l'écran viendra » (réécrits) ;
+  `:269`, `:357`, `:385` (« non encore lettrée », « encore lettrable », « encore la créance » : justes). La mention
+  « aucun groupe `document` n'existe encore » est absente (retirée par la 15-1a2-i, C-15-1a2-24).
+- **T1 — fiche d'écriture** : colonne « Lettrage » en dernier (`journal-entries-column-lettering`), code en lien par
+  `LetteringCodeLink` (15-1c-i), cellule vide sur une ligne ouverte ; le pied *Total* gagne sa cellule. Le motif
+  `ENTRY_LETTERED` rend `modificationBlockerLabel(…)` puis le code en lien ; tout autre motif reste `modificationMessage`
+  (texte). Le toast d'un refus `PUT`/`DELETE` est inchangé (C-15-1c-9). C-15-1c-ii-2.
+- **T2 — Grand livre** : `LedgerLine.letteringCode` ; colonnes décrites une fois (`COLUMNS`), en-têtes et `colspan`
+  calculés (C-15-1c-ii-1) ; colonne « Lettrage » en dernier ; lien « Postes ouverts de ce compte »
+  (`reports-ledger-open-items-link`) ssi `letterableAccountIds.has(accountId)`, ensemble calculé par la page des
+  rapports dans la liste `fetchAccounts(true)` qu'elle chargeait déjà (vide en cas d'échec → aucun lien) ; cible
+  `openItemsHref(accountId, dto.period.to)` (C-15-1c-ii-3). Exports inchangés.
+- **T3 — i18n** : 3 clés ×4 locales — `journal-entries-column-lettering`, `reports-ledger-column-lettering`
+  (Lettrage / Ausgleich / Matching / Abbinamento, les mots de `audit-log-entity-lettering`),
+  `reports-ledger-open-items-link` (Postes ouverts de ce compte / Offene Posten dieses Kontos / Open items of this
+  account / Partite aperte di questo conto). Bornes recomptées aux deux bornes (`grep -o "i18nMsg("`) :
+  `sitesTotal` **2017 → 2020** (`GeneralLedgerView.svelte` 19 → 21, fiche 19 → 20, page des rapports 31 → 31) ;
+  « libellé en dur » **60 → 61** (`columnLabel`, `conforme` 46 → 47). `lint-i18n-ownership` vert.
+- **T4 — manuel** : section neuve **« Lettrage et postes ouverts »** (`\label{sec:lettrage}`, après « Réconciliation
+  bancaire ») — ce qu'est un lettrage, qui lettre quoi, l'écran (frontière, motifs, pied et sens), « au X » n'est pas
+  un instantané, lettrer à la main, propositions (jamais lettrées sans clic, contre-passation en tête, règlement
+  annulé puis délettré), délettrage et ses trois refus (« il suit la pièce et ses règlements », renvoi aux sections
+  du règlement, de l'avoir et de la facture fournisseur), règle des périodes (C105), ce que le lettrage ne fait pas
+  (partiel, tolérance, facture payée par écriture manuelle, exports, écriture figée), frontière avec la
+  réconciliation et rôles. Section *Grand livre* : la colonne, le lien, les exports. Glossaire : *Lettrage*
+  réécrit, *Postes ouverts* ajouté. Étiquettes neuves : `sec:modifier-ecriture`, `sec:contre-passation`,
+  `sec:regler-facture-fournisseur`, `sec:reconciliation`, `sec:lettrage-frontiere`. Aucun numéro de compte cité
+  dans la section neuve. Inventaire après : 143 lignes « lettr » (132 + 8 + 3).
+- **T4 — preuves** : preuve négative sur les sources (`grep -n -i "l.écran viendra\|par l.API dans cette
+  version\|ne se lettrent pas encore\|pas encore de lui-même" docs/manual/fr/*.tex`) → **vide**. PDF régénérés par
+  `make -B fr` deux fois (la première laissait « Label(s) may have changed » : étiquettes neuves) — 0 avertissement
+  de référence à la seconde. Aplatis (`pdftotext … | tr '\n' ' ' | tr -s ' '`) : « Lettrage et postes ouverts »
+  ×6 dans le manuel utilisateur, « écritures, réconciliation, postes ouverts, rapports » ×1 ; aucune occurrence de
+  « l'écran viendra », « par l'API dans cette version », « la montre soldée », « n'existe pas encore » dans les
+  trois PDF ; brochure : « Backlog (Epic 13 à 15) • Report automatique… • Budgets annuels + suivi. • Justificatifs,
+  journaux personnalisables. » et un bloc « Lettrage et postes ouverts (Epic 15, v0.13) ».
+- **T5 — CHANGELOG** : une entrée *Ajouté* fondue (C-15-1c-ii-4) ; `grep -c '518'` **12 → 8** (une *Ajouté*, six
+  *Modifié*, la ligne « pas de retour » devenue paragraphe de l'entrée fondue n'en porte pas) ; *Modifié* relus,
+  inchangés (titres cohérents : `letterable`/`letteringCode`, groupe enrichi). `grep -n -i "viendra\|par
+  l.API\|pas encore" CHANGELOG.md` après : `:23` (« **Par l'API.** », paragraphe des routes — juste), `:122`, `:130`,
+  `:248`, `:403`, `:556` (versions antérieures, hors lettrage — justes). **`api-external.md`** : les deux « l'écran
+  viendra » → « à l'écran : Mensuel → Postes ouverts ». **README** : ligne *Lettrage et postes ouverts* aux
+  fonctionnalités ; ligne v0.13.0 : la 15-1c-ii passe au livré, plus de « À venir ». **Site** : bloc E15 de
+  `roadmap.html` réécrit (postes ouverts, lettrage manuel avec propositions — Kesh propose —, pièces lettrées au
+  règlement, code sur la fiche et au Grand livre ; justificatifs et journaux « still to come ») ; `index.html`, carte
+  *Double-entry bookkeeping* : une mention. **Brochure** : C-15-1c-ii-5.
+- **T6 — tests** : Vitest **+14** — `GeneralLedgerView.test.ts` 8 → 15 (+7 : dernière colonne, somme des `colspan` de
+  chaque rangée avec et sans mouvement, solde sous « Solde progressif » à l'ouverture, à la rupture et à la clôture,
+  total sous « Débit »/« Crédit », lien de code et cellule vide, lien « Postes ouverts » ssi lettrable avec `asOf` =
+  fin de période, aucun lien sans liste), `journal-entry-page.test.ts` neuf (7 : lien et cellule vide, en-tête
+  dernier, somme des `colspan` avec et sans projets ×2, motif en lien, autres motifs en texte, Consultation sans
+  motif). Suite complète : **123 fichiers / 1284 tests** (1270 à la base). E2E `open-items.spec.ts` : scénarios
+  (7), (8), (9), chacun avec son lettrage posé par `POST /letterings` et délettré à la fin (nettoyage qui rougit
+  après un corps vert, comme le (6)) ; `monter()` rend aussi le numéro du compte et les deux écritures.
+- **Mutations** (fichier restauré puis `touch`é ; filtre : les deux fichiers de test) :
+  | # | mutation | rougit |
+  |---|---|---|
+  | M1 | libellé de solde fixé à 7 | **survit — mutant équivalent** (7 = `indexOf('running')`) |
+  | M1b | libellé de solde fixé à 8 | « le solde tombe sous Solde progressif » (test ajouté pour lui : la somme des `colspan` restait juste) |
+  | M2 | cellule de lettrage retirée de l'ouverture | somme des `colspan` |
+  | M3 | lien offert à tout compte | lien ssi lettrable ; aucun lien sans liste |
+  | M4 | `asOf` = début de période | lien ssi lettrable |
+  | M5 | « Lettrage » avant « Solde progressif » | dernière colonne |
+  | M6 | une cellule de moins au total des mouvements | somme des `colspan` |
+  | M7 | pied *Total* de la fiche sans sa cellule | somme des `colspan`, avec et sans projets |
+  | M8 | motif sans lien | le code du motif est un lien |
+  | M9 | tout motif étiqueté en lien | les autres motifs restent du texte |
+  | M10 | ligne ouverte : lien vide | lien et cellule vide |
+- **Modules** (signal D5) : 2 crates/paquets (`frontend`, `kesh-i18n`) ; au grain fin les 11 annoncés (trois de
+  logique — fiche, vue du Grand livre, page des rapports —, l'E2E, sept supports de texte) ; plus
+  `features/open-items/open-items.ts` (un constructeur de lien, C-15-1c-ii-3). Pas de découpage.
+
 ### File List
+
+- `frontend/src/routes/(app)/journal-entries/[id]/+page.svelte`, `journal-entry-page.test.ts` (neuf)
+- `frontend/src/lib/features/reports/GeneralLedgerView.svelte`, `GeneralLedgerView.test.ts`, `reports.types.ts`
+- `frontend/src/routes/(app)/reports/+page.svelte`
+- `frontend/src/lib/features/open-items/open-items.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`, `i18n-libelle-en-dur.test.ts`
+- `frontend/tests/e2e/open-items.spec.ts`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,en-CH,it-CH}/messages.ftl`
+- `docs/manual/fr/user-manual.tex`, `admin-manual.tex`, `marketing-brochure.tex` et leurs trois PDF
+- `docs/api-external.md`, `CHANGELOG.md`, `README.md`, `website/roadmap.html`, `website/index.html`
+- `_bmad-output/implementation-artifacts/15-1c-ii-lettrage-dans-kesh.md`, `epic-15-choix-autonomes.md`
+  (C-15-1c-ii-1 à 5)
 
 ## Change Log
 

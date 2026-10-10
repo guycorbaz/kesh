@@ -7893,3 +7893,33 @@ l'import (#458–#461).
   une variable d'environnement de test pour substituer l'inventaire (porte dérobée au seul contrôle des exemptions) ;
   compléter un bump partiel au lieu de le refuser (le script n'a pas à deviner l'intention).
 - **Réversible** : oui (outillage, aucun effet sur les données).
+
+## C-15-1c-ii-1 — 15-1c-ii (développement, AC9) : les colonnes du Grand livre décrites une fois, chaque `colspan` en dérive
+- **Contexte** : AC9 veut des `colspan` « calculés depuis une seule constante (le nombre de colonnes) » ; les huit en-têtes étaient écrits un à un dans le gabarit.
+- **Retenu** : une table `COLUMNS` (identifiant et alignement) d'où sortent les en-têtes (`{#each}`), `COLUMN_COUNT`, le libellé des lignes de solde (tout ce qui précède « Solde progressif ») et celui du total des mouvements (tout ce qui précède « Débit ») ; les cellules vides de fin se calculent par différence. Les libellés passent par un `switch` à un `i18nMsg` littéral par clé (`columnLabel`), que lisent les gardes i18n.
+- **Écartées** : garder les en-têtes en dur et ne calculer que les `colspan` (deux sources de vérité, celle que la story devait supprimer) ; stocker la clé et le repli dans la table (appel `i18nMsg` dynamique, que les gardes comptent comme site non résolu).
+- **Réversible** : oui.
+
+## C-15-1c-ii-2 — 15-1c-ii (développement, AC9, tests 1 et 2) : la fiche d'écriture testée comme page, sans extraction de composant
+- **Contexte** : la fiche d'écriture (`routes/(app)/journal-entries/[id]/+page.svelte`) n'avait aucun test Vitest ; la colonne et le motif y vivent.
+- **Retenu** : un test de page (`journal-entry-page.test.ts`) au harnais des pages voisines (`$app/state` mocké, `authState.login`) ; le lien du motif est rendu par la page avec le composant de la 15-1c-i, sur `modificationBlockedBy === 'ENTRY_LETTERED'` seulement (C-15-1c-9).
+- **Écartées** : extraire un composant « tableau des lignes » dans `features/journal-entries` (un module de plus pour une colonne).
+- **Réversible** : oui.
+
+## C-15-1c-ii-3 — 15-1c-ii (développement, AC9) : un seul constructeur des liens vers l'écran des postes ouverts
+- **Contexte** : le lien « Postes ouverts de ce compte » (`accountId`, `asOf`) et le lien d'un groupe (`group`, avec ou sans compte et date) écrivent la même URL.
+- **Retenu** : `openItemsHref(accountId, asOf)` dans `features/open-items/open-items.ts`, et `groupHref` réécrit sur le même constructeur privé — les noms de paramètres sont ceux que lit `parseScreenState`.
+- **Écartées** : une chaîne écrite à la main dans la vue du Grand livre.
+- **Réversible** : oui.
+
+## C-15-1c-ii-4 — 15-1c-ii (développement, AC14) : une seule entrée *Ajouté* pour le lettrage, en paragraphes
+- **Contexte** : quatre entrées *Ajouté* séparées (lettrage manuel « par l'API », pièces clientes, pièces fournisseurs, rattrapage) et une cinquième (postes ouverts « par l'API ») ; AC14 veut une entrée cohérente qui dise l'écran.
+- **Retenu** : un point « Le lettrage — savoir ce qui reste ouvert sur un compte (#518) » dont le premier paragraphe dit l'écran, la fiche d'écriture et le Grand livre, suivi de paragraphes en retrait — pièces lettrées d'office, règles, mise à jour, **API** (les routes, sans « par l'API seulement »), et l'avertissement « pas de retour » conservé mot pour mot. Aucun fait des cinq entrées n'est perdu ; les entrées *Modifié* ne bougent pas. `grep -c '518' CHANGELOG.md` : 12 → 8.
+- **Écartées** : garder les cinq entrées en retirant seulement les phrases provisoires (fragments, contraire à AC14).
+- **Réversible** : oui (texte).
+
+## C-15-1c-ii-5 — 15-1c-ii (développement, AC12, AC17) : sites voisins corrigés au passage, et ce qui est laissé
+- **Contexte** : l'inventaire par `lettr` ne voit pas trois phrases fausses voisines : le menu *Mensuel* (reçu A-1 de la 15-1c-i), « Kesh n'a pas encore d'écran qui liste ces paiements » (paiement fournisseur détaché, que l'écran des postes ouverts liste désormais) et, au manuel d'administration, « le grand livre n'existe pas encore » (#607, point 1, faux depuis la Story 24-1). La brochure range aussi au backlog le « report automatique des soldes de bilan », livré depuis longtemps.
+- **Retenu** : les trois premières sont réécrites (PR `closes #607`). La brochure ne perd que le lettrage de son backlog et gagne un bloc « Lettrage et postes ouverts (Epic 15, v0.13) » ; le report des soldes est laissé tel quel, hors périmètre, et signalé au rapport.
+- **Écartées** : réviser toute la feuille de route de la brochure (hors story, sans inventaire).
+- **Réversible** : oui (texte).

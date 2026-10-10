@@ -311,6 +311,12 @@ export interface LedgerLine {
 	debit: string;
 	credit: string;
 	runningBalance: string;
+	/**
+	 * Story 15-1b (AC6) — le code du groupe de lettrage de la ligne, `null` si
+	 * elle est ouverte. Montré à l'écran (15-1c-ii) ; **absent** des exports CSV
+	 * et PDF (C-15-1b-6).
+	 */
+	letteringCode: string | null;
 }
 
 export interface LedgerSection {
