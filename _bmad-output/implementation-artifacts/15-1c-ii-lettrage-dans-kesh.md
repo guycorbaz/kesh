@@ -2,7 +2,7 @@
 
 ## Status
 
-review — développée le 2026-10-10 sur la tête de la 15-1c-i (`011ea618`), rebasée sur `origin/main` `66935feb` (la 15-1c-i fusionnée, PR #609 ; arbres identiques), en autonomie.
+**done** — revue de code close le 2026-10-10 (P3 ciblée, remédiation sans code). Développée le 2026-10-10 sur la tête de la 15-1c-i (`011ea618`), rebasée sur `origin/main` `66935feb` (la 15-1c-i fusionnée, PR #609 ; arbres identiques), en autonomie.
 *(Avant : ready-for-dev **après la livraison de la 15-1c-i** — créée le 2026-10-09 par le découpage de la 15-1c à la
 remédiation de sa validation P1 (registre **C-15-1c-1**) ; validation P2 remédiée le 2026-10-09 ;
 **VALIDATION CLOSE** (P3 Sonnet ×2 : 0 au-dessus de LOW ; P4 ciblée Haiku : 0 au-dessus de LOW, LOW appliqués).)*
@@ -346,7 +346,7 @@ Opus 5.5 (Claude Code), en autonomie (consignes de l'Epic 15).
   réconciliation et rôles. Section *Grand livre* : la colonne, le lien, les exports. Glossaire : *Lettrage*
   réécrit, *Postes ouverts* ajouté. Étiquettes neuves : `sec:modifier-ecriture`, `sec:contre-passation`,
   `sec:regler-facture-fournisseur`, `sec:reconciliation`, `sec:lettrage-frontiere`. Aucun numéro de compte cité
-  dans la section neuve. Inventaire après : 143 lignes « lettr » (132 + 8 + 3 au commit de développement ; 131 + 9 + 3 après la revue P1, qui a ajouté le lettrage au tableau des rôles du manuel d'administration).
+  dans la section neuve. Inventaire après (`grep -ci lettr`, user + admin + brochure), par commit : **143** au développement `2fc1c784` (132 + 8 + 3) ; **143** après la revue P1 `d4524a7d` (131 + 9 + 3 — le lettrage ajouté au tableau des rôles du manuel d'administration, une ligne utilisateur re-coupée) ; **145** après la revue P2 `3ceae727` (133 + 9 + 3 — deux lignes neuves au manuel utilisateur) ; inchangé ensuite. *(La ventilation « 131 + 9 + 3 » écrite à la remédiation P2 valait pour `d4524a7d`, pas pour le commit qui l'écrivait : revue P3, M1.)*
 - **T4 — preuves** : preuve négative sur les sources (`grep -n -i "l.écran viendra\|par l.API dans cette
   version\|ne se lettrent pas encore\|pas encore de lui-même" docs/manual/fr/*.tex`) → **vide**. PDF régénérés par
   `make -B fr` deux fois (la première laissait « Label(s) may have changed » : étiquettes neuves) — 0 avertissement
@@ -499,3 +499,44 @@ registre) : la passe suivante peut être **ciblée** (Haiku), sur le seul commit
 MEDIUM sont distincts de ceux de P1 et ne viennent pas d'une remédiation (texte d'AC12, inventaire du T0) — pas de
 recyclage, pas de découpage. Vitest 1287 (8 tests à la fiche, inchangé en nombre). PDF utilisateur et administration
 régénérés, 0 avertissement de référence ; preuve négative vide.
+
+### Revue de code P3 ciblée — 2026-10-10 (Haiku 4.5, une lentille, commit `3ceae727`) — REVUE CLOSE, story `done`
+
+**Prompt** : `15-1c-ii-review-prompt-p3-ciblee.md`. **Rapport** : `kesh-gate-logs/15-1c-ii-review-p3-R.md` — **0 C / 0 H / 1 M /
+2 L**, points 1 à 5 déclarés exercés (hunks non examinés : corps de la fiche hors Change Log P2, brochure, registre au-delà
+de ses deux lignes). Le fond du texte neuf est vérifié au code par la lentille (« payée ou non », « le motif nomme le
+premier », ordre des causes, entrée #532, `{key}`).
+
+| finding | verdict |
+|---|---|
+| M1 MEDIUM — la ventilation « 131 + 9 + 3 » écrite à la remédiation P2 est fausse au commit qui l'écrit (133 + 9 + 3 = 145) | **confirmé** (`git show <c>:… \| grep -ci lettr` aux trois commits : 132/8, 131/9, 133/9) et **corrigé** : décompte par commit, avec son périmètre. Le défaut est dans un compte rendu, pas dans le code (§ « Recompter ses propres comptes rendus ») |
+| L1 — « suivi du code… et du jour » ne vaut que pour le second motif | corrigé |
+| L2 — « ouvert seul » simplifie la condition (`group.data.accountId !== accountId`) | corrigé (« hors de la liste de son compte ») |
+| « export comptable complet » (`user-manual.tex:625`, préexistant) | laissé : nom antérieur à la story, hors inventaire |
+
+**La remédiation ne touche aucune ligne de code** (manuel utilisateur et son PDF, fiche) : la boucle se **clôt**
+(`CLAUDE.md` § « La passe ciblée », critère de clôture). **Trend** : P1 (Sonnet ×3, complète) **2 MEDIUM** (E-1, E-2,
+d'origine) → remédiation avec code de production → P2 (Opus ×3, complète) **2 MEDIUM** (A2-1, A2-2, d'origine — texte
+d'AC12, inventaire du T0) → remédiation sans code de production → P3 ciblée (Haiku) **1 MEDIUM** (né de P2, dans un compte
+rendu) → remédiation documentaire → close. **Modèles** : Opus 5.5 (développement, remédiations, orchestration), Sonnet 5.5
+(P1), Opus 5.5 (P2), Haiku 4.5 (P3 ciblée). **Signal D5** : P2 au même niveau que P1 (2 MEDIUM), défauts distincts et
+d'origine — pas de recyclage (D5 de la rétrospective de l'Epic 25) ; P3, un défaut de compte rendu né de P2 — déclaré, sans
+découpage. Choix : **C-15-1c-ii-1 à 5**.
+
+**Gates au dernier commit de code `3ceae727`** (le commit P3 ne touche que le manuel et la fiche ; exécutés sur
+`d509f014`, même code) : `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest ; base `kesh_1cii` remise à zéro avant,
+sans redémarrer MariaDB) **3338 passés, 5 ignorés** (`kesh-gate-logs/15-1c-ii-gate-final.log` ; la story n'ajoute aucun test
+Rust — les gardes des catalogues y sont) ; frontend — `npm run check` **0 erreur** (27 avertissements préexistants, aucun
+dans les fichiers de la story), `lint-i18n-ownership` vert, `test:unit` **123 fichiers / 1287 tests** (1270 à la base :
++17), `build` vert (`15-1c-ii-frontend-final.log`) ; **E2E complet** (port 3028, base `kesh_e2e_1cii` neuve migrée, binaire
+et build de ce code, montage de `docs/testing.md`, `/health` : `smtpConfigured: true`) : **253 passés, 10 échoués, 19
+ignorés** (282) — jugés fichier par fichier contre `docs/testing.md` § « Les échecs attendus » : sept KF-029 (#97)
+(`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`), deux KF-045 (#421)
+(`invoices:415`, `:439`, suite terminée à 08:16 UTC, avant 12:00) et `sidebar-navigation:75` (KF-046, #424) ; **aucun hors
+liste** ; les neuf scénarios d'`open-items.spec.ts` verts, dont (7), (8), (9) (`15-1c-ii-e2e-final.log`). PDF utilisateur
+régénéré (deux passes, 0 avertissement de référence) ; preuve négative vide.
+
+**Commits** (sur `origin/main` `66935feb`) : développement **`2fc1c784`**, prompt P1 `317c6777`, remédiation P1 **`d4524a7d`**,
+prompt P2 `a82c028e`, remédiation P2 **`3ceae727` = dernier commit de code**, prompt P3 `d509f014`, remédiation P3 et clôture
+(ce commit). **Après merge** : `gh issue view 518 --json state` et `gh issue view 607 --json state` (mots-clés `closes` sur la
+PR, squash).
