@@ -4,8 +4,9 @@
 
 **ready-for-dev** (deux clés) — fiche créée le 2026-10-10 en autonomie (`bmad-create-story`), sur `fe162504` (kickoff
 de l'Epic 26), branche `story/26-2` ; **découpée** par l'orchestrateur le même jour (registre **C-26-2-15**) ;
-validation **P1** (Sonnet, lentilles R et F : 0 HIGH, 8 MEDIUM, 15 LOW) **remédiée** le 2026-10-10 — validation P2
-(Opus) due.
+validation **P1** (Sonnet, lentilles R et F : 0 HIGH, 8 MEDIUM, 15 LOW) puis **P2** (Opus, R et F : 0 HIGH,
+4 MEDIUM dont 3 distincts, 24 LOW) **remédiées** le 2026-10-10 — passe **P3 ciblée** (Haiku, une lentille, sur le
+seul commit de la remédiation P2) due.
 
 ⛔ **Deux stories, une fiche, deux PR successives** (C-26-2-15, qui remplace la proposition C-26-2-1) :
 
@@ -44,7 +45,8 @@ comptes existants n'ont rien à saisir. Epic : `_bmad-output/planning-artifacts/
   `ALTER TABLE bank_accounts ADD COLUMN description VARCHAR(60) NULL, ALGORITHM=INSTANT, LOCK=NONE;` — **en fin de
   table, sans `AFTER`** (C-26-2-16 : patron de `20260531000001_bank_accounts_archived.sql` ; `AFTER` + `INSTANT` a
   aussi un précédent, `20260507200001_bank_account_journal_link.sql` (`AFTER qr_iban`, l. 21-22), mais la position
-  n'apporte rien — l'ordre de lecture du CSV est fixé par le sérialiseur, pas par la table), précédée d'un en-tête de commentaires (story, #622, non-breaking, pourquoi 60). Aucune contrainte, aucun
+  n'apporte rien — l'ordre de lecture du CSV est fixé par le sérialiseur, pas par la table), précédée d'un en-tête de commentaires **en `--` uniquement** (jamais `/* … */` : `split_statements` de
+  `post_restore.rs` ne retire que les `--`, et `migrations_contain_no_block_comment` refuse les blocs) — story, #622, non-breaking, pourquoi 60). Aucune contrainte, aucun
   index (C-26-2-3, C-26-2-4).
 - **P1/P3** : `ADD COLUMN` nullable → **non breaking** ; aucun `UPDATE _kesh_version`, aucun bump Cargo **par
   cette migration**. Une 0.13.0 qui lirait la base l'ignore (ses `SELECT` nomment leurs colonnes). En revanche
@@ -74,7 +76,8 @@ comptes existants n'ont rien à saisir. Epic : `_bmad-output/planning-artifacts/
   mentions de la valeur
   dans le fichier (sur `fe162504` : commentaires l. 38, 40, 57-58, 107, 111, 115, 123, 130, 133, 185, 195, 264),
   greppées **par jeton** : `grep -nE "\b(79|45)\b" crates/kesh-db/tests/migrations_upgrade_path.rs` (les valeurs
-  laissées par la 26-1) doit ne plus rendre que des généalogies historiques. Le bloc de généalogie du fichier (l. 185 sur `fe162504` : « Story 15-1a2-ii : 42 → 44,
+  laissées par la 26-1) doit ne plus rendre que des généalogies historiques — **et** le message d'assertion de la
+  l. 111 (« 79 précédentes + … » après la 26-2a), occurrence légitime qui n'est pas un résidu. Le bloc de généalogie du fichier (l. 185 sur `fe162504` : « Story 15-1a2-ii : 42 → 44,
   frontière inchangée (78 - 44 = 34) », suivie de celle de la 26-1) gagne sa ligne **« Story 26-2a : 45 → 46,
   frontière inchangée (80 - 46 = 34) »**. Les autres sites (`lettering_documents_backfill.rs`, `audit_log_company_id_backfill.rs`,
   `journal_entry_number_sequences_bootstrap.rs`, `accounts_role_backfill.rs`,
@@ -112,7 +115,9 @@ comptes existants n'ont rien à saisir. Epic : `_bmad-output/planning-artifacts/
   utilisable dans `concat!`, qui n'accepte que des littéraux ») ; chaque `SELECT` s'écrit
   `concat!("SELECT ", columns!(), " FROM bank_accounts WHERE …")`, `FIND_BY_ID_SQL` compris. **Aucune** liste de
   colonnes ne sort de `kesh-db` : le `SELECT` inline de la route (relecture après `INSERT`) est remplacé par une
-  fonction publique neuve du dépôt, `pub async fn find_by_id_in_tx(tx, id) -> Result<BankAccount, DbError>`.
+  fonction publique neuve du dépôt, **scopée par société** (patron `repositories/projects.rs:59`, même nom, même
+  contrat) : `pub async fn find_by_id_in_tx(tx, company_id, id) -> Result<BankAccount, DbError>`
+  (`WHERE company_id = ? AND id = ?` ; absente → `DbError::NotFound`).
   Contrôles, à exécuter et recopier :
   ```sh
   grep -rnE "SELECT id, company_id, bank_name" crates/*/src          # → aucune sortie
@@ -120,21 +125,33 @@ comptes existants n'ont rien à saisir. Epic : `_bmad-output/planning-artifacts/
   ```
   (les `INSERT INTO bank_accounts (company_id, bank_name, …)` ne commencent pas par `id,` et ne sont pas visés ;
   l'`INSERT` de la route est étendu à part, AC4.)
-- `update_for_company` reçoit `new_description: Option<&str>` (paramètre séparé, patron de
-  `new_journal_account_id`) et l'écrit ; ses appelants (route, et les tests de
-  `crates/kesh-db/tests/bank_accounts_repository.rs`) suivent. Sa doc-comment énumère le champ.
-- **Ne touchent pas** la colonne — les **cinq** autres écrivains de `bank_accounts` (recomptés :
-  `grep -n "^pub async fn" crates/kesh-db/src/repositories/bank_accounts.rs` → `create` l. 29,
-  `upsert_primary_in_tx` l. 222, `set_journal_account_id_for_company` l. 340, `update_for_company` l. 458,
-  `archive_for_company` l. 534, `flip_primary_off_for_company` l. 600 ; seul `update_for_company` l'écrit) :
+- `update_for_company` a déjà **sept** paramètres (`bank_accounts.rs:458-466`) ; un huitième ferait échouer
+  `clippy::too_many_arguments` sous `-D warnings`. **Tranché** (C-26-2-27) : pas de `#[allow]` — les deux champs
+  que le `PUT` écrit hors de `NewBankAccount` se regroupent dans une petite structure du dépôt,
+  `pub struct BankAccountPutFields<'a> { pub journal_account_id: Option<i64>, pub description: Option<&'a str> }`,
+  qui **remplace** le paramètre `new_journal_account_id` (sept paramètres, inchangé en nombre). `NewBankAccount`
+  ne change toujours pas (C-26-2-7). Appelants : la route et les tests de
+  `crates/kesh-db/tests/bank_accounts_repository.rs`. Sa doc-comment énumère le champ.
+- **Ne touchent pas** la colonne — les **cinq** autres écrivains de `bank_accounts` (recomptés par
+  `grep -rnE "UPDATE bank_accounts|INSERT INTO bank_accounts" crates/*/src`, qui rend exactement les écritures :
+  dépôt l. 33 `create`, 243 et 273 `upsert_primary_in_tx`, 399 `set_journal_account_id_for_company`, 499
+  `update_for_company`, 561 `archive_for_company`, 621 `flip_primary_off_for_company`, et route l. 504 (création) ;
+  `invoices.rs:4353` et `4862` sont des tests ; seuls `update_for_company` et l'`INSERT` de la route l'écrivent) :
   `upsert_primary_in_tx` (ni l'`INSERT`, ni l'`UPDATE`, ni `is_no_op_change`), `set_journal_account_id_for_company`
   (PATCH), `archive_for_company` (DELETE), `bank_accounts::create`, et **`flip_primary_off_for_company`** —
   l'ancien principal démoté quand un autre compte est promu, **typiquement un compte décrit**. Chacun a un test
-  qui pose une description (par SQL) puis exerce le chemin et la retrouve intacte (l'upsert : changement de
-  `bank_name` → `Updated`, description conservée ; la démotion : `PUT isPrimary=true` sur un second compte, l'ancien
-  principal relu `isPrimary=false`, description intacte).
-- **Onboarding** (C-26-2-22) : refaire l'étape « Compte bancaire » avec une **autre** banque garde la description
-  du compte principal (« UBS2 — Personnel ») — conséquence assumée de C-26-2-2, dite au manuel (AC12).
+  qui pose une description (par SQL) puis exerce le chemin et la retrouve intacte, **au niveau du dépôt**
+  (`crates/kesh-db/tests/bank_accounts_repository.rs`) : l'upsert — changement de `bank_name` → `Updated`,
+  description conservée ; la démotion — appel **direct** de `flip_primary_off_for_company` (cible de M12),
+  l'ancien principal relu `is_primary = false`, description intacte. **Au niveau de la route**
+  (`crates/kesh-api/tests/bank_accounts_e2e.rs`) : un `PUT isPrimary=true` sur un second compte, puis `GET` —
+  l'ancien principal garde sa description (bout en bout ; ne remplace pas le test du dépôt).
+- **Onboarding** (C-26-2-22, amendé) : la préservation par `upsert_primary_in_tx` est une **défense en profondeur
+  du dépôt**, pas un comportement de l'utilisateur — aucun chemin du produit ne rejoue l'étape 6 sur un compte
+  décrit : la garde `lock_state_at_step(&mut tx, 6, true)` exige `step_completed == 6` hors démo
+  (`routes/onboarding.rs:581`, l. 1060) ; la description ne se saisit qu'à partir de l'étape 7
+  (`assert_onboarding_complete`, `routes/bank_accounts.rs:222`) ; une restauration force l'étape à 8
+  (`backup.rs:644`). Le manuel n'en dit **rien**. M5 et son test restent.
 - `crates/kesh-api/src/routes/invoice_pdf_service.rs` (l. 659 et 845, littéraux de test) gagne `description: None` ; le PDF et le QR-Bill
   **n'affichent pas** le nom de la banque (`grep -rn "bank_name" crates/kesh-qrbill crates/kesh-payment
   crates/kesh-report` → aucun résultat sur `fe162504`) : rien à y changer.
@@ -148,15 +165,22 @@ forme normalisée :
 - sinon `trim()` ; plus de **`BANK_ACCOUNT_DESCRIPTION_MAX_CHARS`** caractères (`chars().count()`) →
   `400 VALIDATION_ERROR`, message en dur « La description ne peut pas dépasser 60 caractères » (le nombre du
   message est formaté depuis la constante) ;
-- un caractère **invisible ou de mise en page** → `400`, « La description ne peut pas contenir de saut de ligne ni
-  de caractère invisible » — l'ensemble refusé est **fermé et nommé** (C-26-2-17) : `char::is_control` (catégorie
-  Cc, dont `\n`, `\r`, `\t`), **plus** U+2028 et U+2029 (séparateurs de ligne et de paragraphe), U+200B à U+200F
-  (largeur nulle, marques LRM/RLM), U+202A à U+202E (enchâssements et inversion bidi), U+2060 à U+2064, U+2066 à
-  U+2069 (isolats bidi) et U+FEFF — une fonction `is_forbidden_in_description(c: char) -> bool`, testée sur chaque
-  plage (une borne de chaque plage, et un caractère voisin accepté) ;
+- un caractère **de contrôle ou de mise en page** → `400`, « La description ne peut pas contenir de saut de ligne
+  ni de caractère de contrôle ou de mise en page » — l'ensemble refusé est **fermé et nommé** (C-26-2-17, élargi
+  en P2 par C-26-2-28) : `char::is_control` (catégorie Cc, dont `\n`, `\r`, `\t`), **plus** U+00AD (tiret
+  conditionnel), U+034F, U+061C (marque arabe, contrôle bidi), U+180E, U+2028 et U+2029, U+200B à U+200F, U+202A à
+  U+202E, U+2060 à U+2064, U+2066 à U+2069, U+206A à U+206F, U+3164, U+FE00 à U+FE0F (sélecteurs de variante),
+  U+FEFF, U+FFF9 à U+FFFB, U+E0000 à U+E007F (étiquettes) — une fonction `is_forbidden_in_description(c: char) ->
+  bool`, testée sur **chaque** plage (une borne de chaque plage, et un caractère voisin accepté). **Angle mort
+  nommé** : les autres caractères invisibles hors de cette liste (p. ex. U+115F, U+1160, U+FFA0, sélecteurs de
+  variante supplémentaires U+E0100 à U+E01EF) passent ;
+- **ordre trim / contrôle fixé** : le contrôle porte sur la valeur **après** `trim()` — `str::trim` retire tout
+  `White_Space` des bords (dont `\n`, `\t`, U+2028) : `"Épargne\n"` est **accepté** et stocké `"Épargne"` (test),
+  `"Épar\ngne"` refusé (test) ;
 - **ordre** des refus de forme : banque vide → description → IBAN → QR-IBAN — **épinglé par un test** (corps
   qui viole les quatre : le refus nomme la banque ; puis banque valide : la description ; etc.).
-- Tests aux bornes : 60 caractères acceptés, 61 refusés ; 60 caractères **accentués précomposés** (`é` U+00E9
+- Tests aux bornes, **60 et 61 écrits en littéraux** (jamais `MAX` / `MAX + 1` : ils doivent pouvoir contredire
+  la constante, cf. M4, M15) : 60 caractères acceptés, 61 refusés ; 60 caractères **accentués précomposés** (`é` U+00E9
   ×60) acceptés — `chars`, pas octets ; `"  Épargne  "` stocké `"Épargne"` ; `"   "` stocké `NULL` ; `"a\nb"`,
   `"a\u{2028}b"`, `"a\u{202E}b"` refusés. **Angle mort assumé** (C-26-2-17) : un accent **décomposé** (`e` +
   U+0301) compte pour deux caractères — Kesh ne normalise pas en NFC ; les champs de saisie des navigateurs
@@ -174,7 +198,8 @@ forme normalisée :
 **AC4 — L'API.**
 
 - `POST /api/v1/bank-accounts` : `CreateBankAccountBody` gagne `#[serde(default)] description: Option<String>` ;
-  l'`INSERT` de la route la nomme. Réponse `201` avec `description`.
+  l'`INSERT` de la route la nomme. Réponse `201` avec `description`. Les messages de forme des deux extracteurs
+  (`impl_validation_extractor!`, `routes/bank_accounts.rs:190-199`) gagnent « `description?` str ».
 - `PUT /api/v1/bank-accounts/{id}` : `UpdateBankAccountBody` idem ; **remplacement complet** — absente ⇒ effacée,
   comme `qrIban` (C-26-2-8). La doc-comment du handler le dit. **C'est un changement de contrat** pour une
   intégration par clé d'API (`PUT` est ouvert aux clés `read-write`, `docs/api-external.md:218`) : un corps écrit
@@ -215,11 +240,15 @@ forme normalisée :
   - `bankAccountName(a: BankAccountLabelSource): string` → `"UBS — Personnel"` ou
     `"UBS"` ; une description `null`, `undefined`, vide ou d'espaces vaut absente ; séparateur `" — "` (tiret
     cadratin U+2014 entouré d'espaces, celui des sélecteurs actuels) ;
-  - `bankAccountOptionLabel(a: BankAccountOptionSource): string` →
-    `` `${bankAccountName(a)} — ${a.iban}` ``.
+  - `bankAccountOptionLabel(a: BankAccountOptionSource, ibanStyle: 'dash' | 'parens' = 'dash'): string` →
+    `` `${bankAccountName(a)} — ${a.iban}` `` (`'dash'`) ou `` `${bankAccountName(a)} (${a.iban})` `` (`'parens'`).
+    Le paramètre existe pour **un seul** site, D7, qui affiche aujourd'hui « UBS (CH…) » (C-26-2-26) : **sans
+    description, chaque site garde exactement son affichage d'aujourd'hui** (décision 4 du Project Lead, à la
+    lettre) ; le **nom** vient toujours de `bankAccountName`, seule la présentation de l'IBAN diffère.
   - la constante `BANK_ACCOUNT_DESCRIPTION_MAX = 60` (AC3, C-26-2-21) ;
   - Tests Vitest (`format.test.ts`, neuf) : avec, sans, `null`, `"  "` ; sans
-    description, le libellé d'option est **identique** à l'ancien `` `${bankName} — ${iban}` ``.
+    description, le libellé d'option est **identique** à l'ancien `` `${bankName} — ${iban}` `` (`'dash'`) et à
+    l'ancien `` `${bankName} (${iban})` `` (`'parens'`) ; avec description, « UBS — Personnel (CH…) » en `'parens'`.
 - **Serveur** — `kesh_db::entities::bank_account` exporte `pub fn bank_account_display_name(bank_name: &str,
   description: Option<&str>) -> String` et `impl BankAccount { pub fn display_name(&self) -> String }`, mêmes
   règles, mêmes exemples en test unitaire (`#[cfg(test)]` du module). Elle sert à AC10 (26-2b) : en 26-2a, elle
@@ -229,13 +258,14 @@ forme normalisée :
 
 `frontend/src/routes/(app)/bank-accounts/+page.svelte` :
 
-- formulaires de **création** et de **modification** : un champ « Description (facultative) » placé **juste après
+- formulaires de **création** et de **modification** : un champ « Description (optionnelle) » placé **juste après
   « Banque »**, `data-testid="form-description"` / `"edit-description"`,
   `maxlength={BANK_ACCOUNT_DESCRIPTION_MAX}`, aide sous le champ
   (`bank-accounts-help-description`) ; état `formDescription` remis à zéro par `resetForm`, prérempli par
   `openEditFull` (`ba.description ?? ''`) ; envoyé `description: formDescription.trim() === '' ? null :
-  formDescription` dans les **deux** payloads (`NewBankAccountPayload`, `UpdateBankAccountPayload` gagnent
-  `description?: string | null`) ;
+  formDescription` dans les **deux** payloads — `UpdateBankAccountPayload` gagne `description: string | null`
+  **obligatoire** (l'omettre efface, C-26-2-19 : `npm run check` doit refuser un appel qui l'oublie) ;
+  `NewBankAccountPayload` gagne `description?: string | null` (facultatif : l'omettre ne détruit rien) ;
 - tableau : la cellule « Banque » (l. 413) affiche `bankAccountName(ba)` dans un
   `<span data-testid="bank-account-name-{ba.id}">` — badges *Principal* et *Archivé* inchangés, hors du `span` ;
 - `frontend/src/lib/features/bank-accounts/BankAccountJournalLinkForm.svelte` l. 142 : l'en-tête
@@ -251,11 +281,16 @@ forme normalisée :
 **AC8 — i18n, quatre locales.**
 
 - Clés neuves dans `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`, à côté des
-  `bank-accounts-labels-*` : `bank-accounts-labels-description` (« Description (facultative) » /
-  « Beschreibung (optional) » / « Descrizione (facoltativa) » / « Description (optional) ») et
-  `bank-accounts-help-description` (« Par exemple « Personnel » ou « Épargne » : pour distinguer deux comptes de la
-  même banque. 60 caractères au plus. » et ses traductions). Le repli de chaque `i18nMsg` est **identique** au
-  texte fr-CH.
+  `bank-accounts-labels-*` — vocabulaire du voisin `bank-accounts-labels-qr-iban` (« QR-IBAN (optionnel) » /
+  « (optional) » / « (opzionale) » / « (optional) »), harmonisé (C-26-2-29) :
+  - `bank-accounts-labels-description` : fr-CH « Description (optionnelle) » ; de-CH « Beschreibung (optional) » ;
+    it-CH « Descrizione (opzionale) » ; en-CH « Description (optional) » ;
+  - `bank-accounts-help-description` : fr-CH « Par exemple « Personnel » ou « Épargne » : pour distinguer deux
+    comptes de la même banque. 60 caractères au plus. » ; de-CH « Zum Beispiel „Privat“ oder „Sparkonto“: um zwei
+    Konten derselben Bank zu unterscheiden. Höchstens 60 Zeichen. » ; it-CH « Ad esempio « Personale » o
+    « Risparmio »: per distinguere due conti della stessa banca. Al massimo 60 caratteri. » ; en-CH « For example
+    “Personal” or “Savings”: to tell apart two accounts at the same bank. 60 characters at most. »
+  Le repli de chaque `i18nMsg` est **identique** au texte fr-CH.
 - Gardes : `npm run lint-i18n-ownership` ; `frontend/src/lib/shared/i18n-keys.test.ts` — `ATTENDU.sitesTotal` et
   bornes associées **recomptés depuis la source** (`grep -o "i18nMsg("` sur `main` contre l'arbre, aux deux bornes),
   avec le commentaire de généalogie d'usage ; `parity_between_locales` (kesh-i18n) vert → **gate backend complet**
@@ -272,7 +307,7 @@ forme normalisée :
 | D4 `routes/(app)/payment-batches/+page.svelte:133` | `{b.bankName} — {b.iban}` | `bankAccountOptionLabel(b)` |
 | D5 `routes/(app)/supplier-invoices/[id]/+page.svelte:344` | `{b.bankName} — {b.iban}` | `bankAccountOptionLabel(b)` |
 | D6 `lib/features/invoices/SettleInvoiceDialog.svelte:250` | `{b.bankName} — {b.iban}` | `bankAccountOptionLabel(b)` |
-| D7 `lib/features/bank-import/BankImportUpload.svelte:212` | `{account.bankName} ({account.iban})` | `bankAccountOptionLabel(account)` — **seul changement visible sans description** (C-26-2-5) |
+| D7 `lib/features/bank-import/BankImportUpload.svelte:212` | `{account.bankName} ({account.iban})` | `bankAccountOptionLabel(account, 'parens')` — inchangé sans description (C-26-2-26) |
 | D8 `lib/features/homepage/BankAccountsCard.svelte:38` | `{account.bankName}` (+ `shortIban` dessous, inchangé) | `bankAccountName(account)` |
 | D9 `routes/(app)/settings/+page.svelte:470` | `{account.bankName}` (+ IBAN dessous, inchangé) | `bankAccountName(account)` |
 
@@ -283,7 +318,9 @@ forme normalisée :
 `BankImportUpload.svelte:24`, **disparaissent** au profit de `BankAccountOptionSource & { id: number }` (AC6) —
 ils ne contiennent plus le jeton `bankName`. `BankAccountJson` de `lib/features/settings/settings.types.ts:44`
 gagne `description: string | null` (**obligatoire**) ; c'est le type de la réponse de `GET /companies/current`
-(`settings.api.ts:10`), source de D3, D7 et D9.
+(`CompanyCurrentResponse`, `settings.api.ts:10`), source de D9. Les pages de D3 et D7 lisent la même réponse par
+leurs **propres** types en ligne `CompanyResponse` (`reconciliation/+page.svelte:19`, `bank-import/+page.svelte:30-33`) :
+ils sont **remplacés** par `CompanyCurrentResponse` (C-26-2-18), pour que `description` y soit obligatoire aussi.
 
 Dans D8 (`BankAccountsCard`) et D9 (*Paramètres*), le nom passe dans un élément à `data-testid`
 (`homepage-bank-name-{id}`, `settings-bank-name-{id}`), pour l'E2E et les tests.
@@ -319,9 +356,10 @@ serveur de `BankAccountJson` (AC10) et ce test Vitest, dont la réponse simulée
   (`crates/kesh-db/src/errors.rs` l. 1078) devient `bank_label`, propagé à `company_invoice_settings.rs` l. 217-229,
   `crates/kesh-api/src/errors.rs` l. 3260-3270 et 3994-4023, et aux tests (`crates/kesh-db/src/errors.rs` l. 1578,
   `crates/kesh-api/src/errors.rs` l. 4834, `crates/kesh-db/tests/company_invoice_settings_repository.rs` l. 1497).
-  Le message (`$bank` des quatre locales, textes FTL **inchangés**) et `details.bankName` (clé conservée, C-26-2-23)
-  portent « UBS — Personnel ». Lire le message une fois à l'écran (« … au compte bancaire UBS — Personnel : il ne
-  peut pas … ») ; s'il se lit mal, guillemets « » autour de `{ $bank }` dans les **quatre** FTL, consigné.
+  Le message (`$bank` des quatre locales, textes FTL **inchangés**, ainsi que les deux replis `format!` en dur de
+  `crates/kesh-api/src/errors.rs` l. 4000 et 4010) et `details.bankName` (clé conservée, C-26-2-23) portent
+  « UBS — Personnel » : « … est lié au compte bancaire UBS — Personnel : il ne peut pas … ». **Pas de guillemets
+  ajoutés** (tranché, C-26-2-29).
 - Tests : le refus nomme « UBS — Personnel » quand le compte lié a une description, « UBS » sans (route
   `PUT /api/v1/company/invoice-settings` ; test e2e existant de la 15-6c,
   `crates/kesh-api/tests/company_invoice_settings_postable_e2e.rs`, étendu).
@@ -330,8 +368,10 @@ serveur de `BankAccountJson` (AC10) et ce test Vitest, dont la réponse simulée
 
 Définition **unique**, sans numéros de ligne (C-26-2-18) — un inventaire des **non-résolus** par décompte :
 
-- **Collecte** : tous les fichiers `.svelte` et `.ts` de `frontend/src`, **hors** `*.test.ts` et `*.spec.ts`,
-  lus en entier (`<script>`, balisage, attributs, `{@const}`, `.ts` — aucune distinction de zone) ; dans chacun,
+- **Fichier** : `frontend/src/lib/features/bank-accounts/bank-name-inventory.test.ts`, collecte par `node:fs`
+  (`readdirSync` récursif), patron de `frontend/src/lib/shared/i18n-keys.test.ts`.
+- **Collecte** : tous les fichiers `.svelte`, `.ts` et `.js` de `frontend/src`, **hors** tout fichier dont le
+  nom contient `.test.` ou `.spec.` (`*.test.ts`, `*.test.svelte`, `*.test.fixtures.ts`…), lus en entier (`<script>`, balisage, attributs, `{@const}`, `.ts` — aucune distinction de zone) ; dans chacun,
   le nombre d'occurrences du **jeton** `bankName` (expression `/\bbankName\b/g` — `formBankName` n'est pas
   compté, la casse diffère).
 - **Attendu** : une table **fermée** `{ fichier → nombre d'occurrences, motif }` écrite dans le test. Sur l'arbre
@@ -340,13 +380,14 @@ Définition **unique**, sans numéros de ligne (C-26-2-18) — un inventaire des
   `routes/(app)/bank-accounts/+page.svelte` (E1 : préremplissage et payloads du formulaire — la cellule D1 n'y
   contribue plus), les trois fichiers de l'onboarding (E2), les quatre fichiers des profils d'import (E3,
   homonymes). Les nombres sont **mesurés sur l'arbre final** et recopiés au Dev Agent Record avec la commande
-  `grep -row bankName frontend/src --include=*.svelte --include=*.ts | grep -v "\.test\.ts:\|\.spec\.ts:" | cut -d: -f1 | sort | uniq -c`
+  `grep -row bankName frontend/src --include=*.svelte --include=*.ts --include=*.js | grep -v "\.test\.\|\.spec\." | cut -d: -f1 | sort | uniq -c`
   (occurrences et non lignes : `grep -c` compterait 5 et non 6 pour `bank-accounts.api.ts`, dont la l. 75 porte
   deux jetons).
 - **Rougit** : un fichier hors table avec ≥ 1 occurrence (nommé, avec ses lignes) ; un fichier de la table dont
   le nombre diffère ; une entrée de la table dont le fichier n'existe plus ou compte 0 (table périmée).
 - **Anti-test-muet** : nombre de fichiers lus ≥ un minimum mesuré (posé à la valeur mesurée, pas « moins une
-  marge ») ; **somme** des occurrences égale à la somme de la table ; et un **cas synthétique par forme**, sur la
+  marge » ; son message d'échec dit qu'une **suppression de fichier sans rapport** le fait rougir et qu'il suffit
+  alors d'abaisser le minimum à la nouvelle mesure) ; **somme** des occurrences égale à la somme de la table ; et un **cas synthétique par forme**, sur la
   fonction de décompte elle-même : balisage `<p>{a.bankName}</p>`, attribut `title={a.bankName}`,
   `{@const l = `${a.bankName}`}`, libellé construit en script `items.map((a) => ({ label: a.bankName }))`,
   déstructuration `const { bankName } = a`, et un `.ts` — chacun compté 1 ; `formBankName` compté 0.
@@ -366,21 +407,42 @@ Définition **unique**, sans numéros de ligne (C-26-2-18) — un inventaire des
   éventuel, compte comptable lié, compte principal) ; ce que fait la description — « UBS — Personnel » dans
   **les listes de comptes** (la page elle-même, l'accueil, *Paramètres*) et **dans les sélecteurs** (import
   bancaire, réconciliation, règlement d'une facture, règlement d'une facture fournisseur, lot de paiement), où
-  l'IBAN reste affiché à la suite ; qu'elle n'est pas unique ; qu'un compte sans description s'affiche comme
-  avant ; qu'elle ne se saisit pas à l'onboarding mais ensuite, et qu'elle **survit** à un changement de banque
-  refait à l'onboarding (C-26-2-22) ; qu'elle ne figure **ni sur la QR-facture ni dans le fichier de paiement** ;
+  l'IBAN reste affiché à la suite ; qu'elle n'est pas unique ; qu'un compte sans description s'affiche **exactement**
+  comme avant ; qu'elle ne se saisit pas à l'onboarding mais ensuite ; qu'elle ne figure **ni sur la QR-facture ni
+  dans le fichier de paiement** — la QR-facture prend le **compte principal** ;
   qu'elle est dans l'export CSV et la sauvegarde ; et, pour qui modifie un compte par l'API, qu'un `PUT` sans la
   description l'efface. L'item « Compte bancaire » de
   l'onboarding (l. 202) renvoie à cette section (`\S\ref{sec:comptes-bancaires}`).
+- **Le compte de la QR-facture, corrigé** (C-26-2-30 ; le manuel décrit aujourd'hui un champ qui n'existe pas, et la
+  section neuve le contredirait) : le formulaire *Nouvelle facture* n'a **aucun** sélecteur de compte bancaire
+  (`frontend/src/routes/(app)/invoices/new` : aucun `bankAccount`/`bankName`) ; le PDF prend le **compte principal**
+  (`invoice_pdf_service.rs:222`, `bank_accounts::find_primary`) et, s'il porte un QR-IBAN, l'utilise avec une
+  référence **QRR** ; sinon son IBAN **sans référence structurée** (`invoice_pdf_service.rs:321-331`,
+  `Reference::None` — et non une référence ISO 11649). Dans `docs/manual/fr/user-manual.tex` (lignes sur
+  `fe162504`) :
+  - l. 911 (légende de la capture) : « … avec sélection du client » — retirer « et du compte bancaire de réception » ;
+  - l. 921 : l'item « Compte bancaire de réception » est **remplacé** par une phrase hors liste : la QR-facture
+    porte le **compte bancaire principal** (*Administration → Comptes bancaires*, case *Compte principal* ;
+    `\S\ref{sec:comptes-bancaires}`) ;
+  - l. 933 (exemple de l'agence) : « Compte de réception : le compte bancaire QR-IBAN de l'agence » → « Paiement
+    attendu sur le compte principal de l'agence, qui porte un QR-IBAN » ;
+  - l. 1033 (*keshtip*) : « Le choix du format dépend du compte bancaire principal : s'il porte un QR-IBAN, la
+    QR-facture utilise ce QR-IBAN et une référence QRR ; sinon, son IBAN, sans référence structurée. »
+  Puis `grep -n "réception" docs/manual/fr/user-manual.tex` ne rend plus que l. 1086 (« accusé de réception »,
+  sans rapport). La 26-3 retouche d'autres lignes du même fichier : hunks distincts, PDF régénéré par la seconde
+  qui fusionne.
 - PDF régénéré (`make fr` dans `docs/manual/`) et **contrôlé aplati** :
-  `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o "description facultative[^.]*"`.
+  `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -o "description facultative[^.]*"`
+  — et `… | grep -c "compte bancaire de réception"` → **0**.
 - Le manuel d'administration n'est pas touché (sa phrase « le message nomme le compte bancaire », l. 2472, reste
   vraie). Manuels DE/IT/EN : inexistants (README seuls) — rien.
 - `CHANGELOG.md` : section `## [0.13.1] — Non publié` (créée si absente, **fusion par union** avec la 26-1 et la
   26-3) :
   - `### Ajouté` : la description facultative, où elle s'affiche, lien #622 ;
-  - `### Modifié` (C-26-2-19, C-26-2-23) : le sélecteur de l'import (« UBS — CH… » au lieu de « UBS (CH…) »,
-    seul changement visible sans description) ; **« Changement de contrat pour une intégration par clé d'API »**
+  - `### Ajouté` encore (F-9 de la P2) : `bank_accounts.csv` de l'export global gagne la colonne `description`
+    **juste après `bank_name`** (les colonnes suivantes se décalent pour un lecteur positionnel) ; les réponses des
+    routes des comptes bancaires et de `GET /companies/current` portent `description` (champ additif) ;
+  - `### Modifié` (C-26-2-19, C-26-2-23) : **« Changement de contrat pour une intégration par clé d'API »**
     (formule du précédent de la 0.13.0) : `PUT /bank-accounts/{id}` remplace aussi `description` — l'omettre
     l'efface ; `PATCH` ne la touche pas ; et `details.bankName` du refus `CLAIM_ACCOUNT_LINKED_TO_BANK_ACCOUNT`
     porte désormais le nom complet du compte (« UBS — Personnel »).
@@ -388,7 +450,8 @@ Définition **unique**, sans numéros de ligne (C-26-2-18) — un inventaire des
 - `docs/api-external.md` (C-26-2-19) : à la ligne des comptes bancaires (l. 218) ou dans une note qui la suit,
   « *Depuis la v0.13.1* : les comptes bancaires portent un champ `description` (facultatif, 60 caractères au
   plus) ; `PUT /bank-accounts/{id}` le remplace comme les autres champs — **l'omettre l'efface** ; `PATCH` (lien
-  au grand livre) ne le touche pas. » Patron des annotations « Depuis la v0.13.0 » du même fichier (l. 649-650).
+  au grand livre) ne le touche pas. » — sous forme d'une **note ⁷** appelée sur la ligne 218 (celle de
+  `PUT /bank-accounts/{id}`), patron des notes ⁴ à ⁶ « Depuis la v0.13.0 » du même fichier (l. 222-226).
 
 ### Les deux parties
 
@@ -401,9 +464,10 @@ Définition **unique**, sans numéros de ligne (C-26-2-18) — un inventaire des
   `maxlength="60"` (attribut vérifié ; le refus serveur de 61 caractères est couvert par AC3, pas par l'E2E —
   `fill()` ne garantit pas l'effet de `maxlength`).
 - **(b)** deux comptes de la même banque, l'un décrit, l'autre non → sur `/bank-import`, le sélecteur
-  `[data-testid="bank-account-select"]` propose « UBS E2E — Épargne E2E — CH… » et « UBS E2E — CH… » (texte des
-  `<option>`, sélecteurs par `data-testid`, jamais par libellé traduit) ; sur `/reconciliation`, même
-  sélecteur, même constat ; sur l'accueil `/`, `[data-testid="homepage-bank-name-{id}"]` montre
+  `[data-testid="bank-account-select"]` propose « UBS E2E — Épargne E2E (CH…) » et « UBS E2E (CH…) » — la forme
+  d'aujourd'hui de ce site, parenthèse comprise (C-26-2-26) ; texte des `<option>`, sélecteurs par `data-testid`,
+  jamais par libellé traduit ; sur `/reconciliation`, même sélecteur : « UBS E2E — Épargne E2E — CH… » et
+  « UBS E2E — CH… » ; sur l'accueil `/`, `[data-testid="homepage-bank-name-{id}"]` montre
   « UBS E2E — Épargne E2E ».
 - **Isolement** (base `kesh_e2e` partagée entre specs) : d'autres specs choisissent le compte bancaire **par
   position** (`selectOption({ index: 1 })` dans `bank-import*.spec.ts`, `bank-csv-import.spec.ts`,
@@ -422,7 +486,7 @@ fichier touché** (`touch`) pour que cargo ne garde pas le binaire muté :
 
 | # | Mutation | Doit rougir |
 |---|---|---|
-| M1 | retirer `description` de la constante de colonnes du dépôt | tests de dépôt / route (`FromRow`) |
+| M1 | retirer `description` du corps de la macro `columns!` du dépôt | tests de dépôt / route (`FromRow`) |
 | M2 | `update_for_company` ne lie plus la description | test `PUT` qui modifie la description |
 | M3 | supprimer le `trim()` | test `"  Épargne  "` |
 | M4 | borne `> 61` au lieu de `> 60` | test des 61 caractères |
@@ -437,10 +501,14 @@ fichier touché** (`touch`) pour que cargo ne garde pas le binaire muté :
 | M13 | le `PUT` conserve la description absente (`COALESCE(?, description)`) | test « `PUT` sans le champ l'efface » (AC4) |
 | M14 | retirer U+202E de l'ensemble refusé | test des caractères invisibles (AC3) |
 | M15 | `BANK_ACCOUNT_DESCRIPTION_MAX_CHARS = 61` | test de la borne contre le squash (AC3) et test des 61 caractères |
-| M16 | retirer `description` de `BankAccountJson` **du frontend** (`settings.types.ts`) et de la simulation | `npm run check` ou `settings-page.test.ts` (AC9, D9) |
+| M16 | retirer `description` du **type seul** `BankAccountJson` du frontend (`settings.types.ts`), simulation intacte | `npm run check` (propriété en excès, `BankAccountLabelSource` incomplet) |
+| M16-bis | dans `settings/+page.svelte`, rendre `{account.bankName}` au lieu de `bankAccountName(account)` | `settings-page.test.ts` (D9) **et** garde AC11 |
+| M17 | D7 appelé en `'dash'` au lieu de `'parens'` | E2E (b) sur `/bank-import` (« UBS E2E (CH…) » attendu pour le compte sans description) |
+| M18 | contrôle des caractères sur la valeur **avant** `trim()` | test `"Épargne\n"` accepté (AC3) |
 | M8-bis | `title={b.bankName}` ajouté dans `SettleInvoiceDialog.svelte` | garde AC11 |
 
-**Partie a** : M1-M7, M11-M15. **Partie b** : M8, M8-bis, M9, M10, M16. (M8 vise désormais D4, site sans E2E.)
+**Partie a** : M1-M7, M11-M15, M18. **Partie b** : M8, M8-bis, M9, M10, M16, M16-bis, M17. (M8 vise D4, site sans
+E2E.) **20 mutations** (M1-M18, M8-bis, M16-bis).
 
 Gates (CLAUDE.md § *Test Locally First*, consignes de l'epic) : `cargo fmt --check`, `clippy -D warnings`,
 **gate backend complet** (story `kesh-db` : migration et dépôt — **pas** de gate ciblé, même en boucle de revue),
@@ -457,29 +525,31 @@ E2E complet (AC13). Le Dev Agent Record n'affirme que ce qui a tourné, avec ses
     `migrations_upgrade_path.rs` (80 / 46, généalogie, grep par jeton `\b(79|45)\b`) ; ligne ajoutée à
     `crates/kesh-db/migrations.sha384`.
 - [ ] **T2 — Entité et dépôt** (AC2)
-  - [ ] T2.1 Champ `description`, macro `columns!` (onze `SELECT`), `find_by_id_in_tx`, `update_for_company`,
-    `BANK_ACCOUNT_DESCRIPTION_MAX_CHARS` + test contre le squash.
+  - [ ] T2.1 Champ `description`, macro `columns!` (onze `SELECT`), `find_by_id_in_tx(tx, company_id, id)`,
+    `BankAccountPutFields` et `update_for_company`, `BANK_ACCOUNT_DESCRIPTION_MAX_CHARS` + test contre le squash.
   - [ ] T2.2 `bank_account_display_name` + `display_name()` + tests unitaires.
-  - [ ] T2.3 Tests de préservation (upsert, PATCH, archive, création par le dépôt, **démotion du principal**) dans
-    `bank_accounts_repository.rs`.
+  - [ ] T2.3 Tests de préservation **au niveau du dépôt** (upsert, PATCH, archive, création par le dépôt,
+    **démotion par appel direct de `flip_primary_off_for_company`**) dans `bank_accounts_repository.rs`.
 - [ ] **T3 — Route** (AC3, AC4)
   - [ ] T3.1 `validate_bank_input` étendu (`is_forbidden_in_description`) ; bodies POST/PUT ; INSERT ; audit.
   - [ ] T3.2 Tests `crates/kesh-api/tests/bank_accounts_e2e.rs` : POST/PUT/GET/PATCH/DELETE ; bornes ; caractères
-    invisibles ; ordre des refus ; non-unicité ; **`PUT` sans le champ efface** ; démotion ; audit.
+    invisibles ; `"Épargne\n"` accepté ; ordre des refus ; non-unicité ; **`PUT` sans le champ efface** ; démotion
+    de bout en bout (`PUT isPrimary=true` puis `GET`) ; audit ; messages des extracteurs.
 - [ ] **T4 — Exports** (AC5) : CSV + test de valeur ; deux tests `admin_full_import_e2e.rs`.
 - [ ] **T5 — Frontend socle** (AC6, AC7, AC8)
   - [ ] T5.1 `format.ts` (types, fonctions, `BANK_ACCOUNT_DESCRIPTION_MAX`) + `format.test.ts`.
   - [ ] T5.2 Types et `parseBankAccount` ; fixtures des huit fichiers de test.
   - [ ] T5.3 Écran *Comptes bancaires* + `BankAccountJournalLinkForm` + tests.
   - [ ] T5.4 Clés i18n ×4, recompte `ATTENDU`.
-- [ ] **T6 — E2E (a)** (AC13 a, isolement) ; mutations M1-M7, M11-M15 (AC14) ; gates complets. *Fin de
+- [ ] **T6 — E2E (a)** (AC13 a, isolement) ; mutations M1-M7, M11-M15, M18 (AC14) ; gates complets. *Fin de
   26-2a — PR `refs #622`.*
 - [ ] **T7 — Rollout** (AC9) : D3 à D9, types partagés, `data-testid`, tests Vitest (dont les deux neufs D4,
   D9). — partie b, partie de `origin/main` après la fusion de la 26-2a
 - [ ] **T8 — Serveur** (AC10) : `BankAccountJson` ; refus de désignation (renommage `bank_label`) + tests.
-- [ ] **T9 — Garde d'inventaire** (AC11).
-- [ ] **T10 — Manuel, PDF, CHANGELOG (`### Ajouté` et `### Modifié`), `docs/api-external.md`** (AC12).
-- [ ] **T11 — E2E (b)** (AC13 b) ; mutations M8, M8-bis, M9, M10, M16 ; gates complets ; E2E complet au dernier
+- [ ] **T9 — Garde d'inventaire** (AC11) : `frontend/src/lib/features/bank-accounts/bank-name-inventory.test.ts`.
+- [ ] **T10 — Manuel** (section neuve **et** correction du compte de la QR-facture, l. 911, 921, 933, 1033), **PDF**
+  aplati, **CHANGELOG** (`### Ajouté` et `### Modifié`), **`docs/api-external.md`** (note ⁷) (AC12).
+- [ ] **T11 — E2E (b)** (AC13 b) ; mutations M8, M8-bis, M9, M10, M16, M16-bis, M17 ; gates complets ; E2E complet au dernier
   commit de code. *PR `closes #622`.*
 
 ## Dev Notes
@@ -487,7 +557,7 @@ E2E complet (AC13). Le Dev Agent Record n'affirme que ce qui a tourné, avec ses
 ### Inventaire clos — les sites qui affichent ou proposent un compte bancaire
 
 Méthode (CLAUDE.md § *Inventorier les sites NON RÉSOLUS* ; mémoire « un détecteur part du symptôme ») : le
-symptôme est **un compte bancaire montré à un humain sans sa description**. Trois détecteurs, chacun relancé par
+symptôme est **un compte bancaire montré à un humain sans sa description**. Quatre détecteurs, chacun relancé par
 le développeur sur sa base et comparé à ce relevé de `fe162504` :
 
 1. **le champ** — `grep -rn "bankName" frontend/src --include=*.svelte --include=*.ts | grep -v "\.test\.ts"` ;
@@ -554,7 +624,7 @@ fichier de test ; avec les tests, 27 — aucun site d'affichage n'est dans un fi
 | D4 | `routes/(app)/payment-batches/+page.svelte:133` | idem | b |
 | D5 | `routes/(app)/supplier-invoices/[id]/+page.svelte:344` | idem | b |
 | D6 | `lib/features/invoices/SettleInvoiceDialog.svelte:250` (aussi monté par `invoices/[id]` et `invoices/due-dates`) | idem | b |
-| D7 | `lib/features/bank-import/BankImportUpload.svelte:212` | idem, format harmonisé (C-26-2-5) | b |
+| D7 | `lib/features/bank-import/BankImportUpload.svelte:212` | `bankAccountOptionLabel(…, 'parens')`, forme d'aujourd'hui gardée (C-26-2-26) | b |
 | D8 | `lib/features/homepage/BankAccountsCard.svelte:38` | `bankAccountName` (AC9) | b |
 | D9 | `routes/(app)/settings/+page.svelte:470` | `bankAccountName` (AC9) | b |
 | D10 | serveur : message de `CLAIM_ACCOUNT_LINKED_TO_BANK_ACCOUNT` (`crates/kesh-api/src/errors.rs:3994-4023`, alimenté par `repositories/bank_accounts.rs:730`) | `bank_account_display_name` (AC10) | b |
@@ -631,11 +701,22 @@ valides : elle est nullable.
 
 ### Coordination avec les autres stories de l'epic
 
-- **26-1** (#620, #621) ajoute la migration `20261011000001` et **fusionne la première** (C-26-2-25). La 26-2a
-  part de — ou se rebase sur — `origin/main` qui la contient, puis **recompte** : cinq compteurs P5, `total` et
-  soustracteur de `migrations_upgrade_path.rs` (et sa généalogie), squash régénéré, ligne de
-  `migrations.sha384` ajoutée **après** celle de la 26-1. Jamais en additionnant de confiance. La 26-1 retouche
-  aussi les profils d'import (E3) : la table de la garde AC11 (26-2b) se mesure sur l'arbre final.
+- **26-1** (#620, #621) ajoute la migration `20261011000001` et **fusionne la première** (C-26-2-25). **Procédure**
+  (P2, F-13) :
+  1. **Cas normal** — la 26-2a part de `origin/main` **contenant** la 26-1 : elle lit les valeurs laissées par la
+     26-1 (attendues : 79 migrations, `total` 79 / soustracteur 45, `tracked-by-sqlx` 69 ou `no` 1 selon le verdict
+     de la 26-1) et les porte à 80 / 46 / +1.
+  2. **Si elle commence avant** : sur sa branche seule, elle porte 78 → 79 et 44 → 45 (les **mêmes** nombres que la
+     26-1) ; au rebase, ces fichiers **entrent en conflit** et se résolvent en **refaisant** les recomptes du cas
+     normal, jamais en gardant l'un des deux côtés : `docs/migrations-idempotence-audit.md` (deux lignes, cinq
+     compteurs), `migrations_upgrade_path.rs` (total, soustracteur, généalogie, message l. 111),
+     `crates/kesh-db/test-schema/0001_schema_squash.sql` (**régénéré**, jamais fusionné à la main),
+     `crates/kesh-db/migrations.sha384` (union : les **deux** lignes, `…0001` puis `…0002`),
+     `frontend/src/lib/shared/i18n-keys.test.ts` (`ATTENDU.sitesTotal` recompté si la 26-1 a ajouté des
+     `i18nMsg(`), `CHANGELOG.md` et `sprint-status.yaml` (union). Puis **reconstruire** les bases de dev
+     persistantes du worktree (`kesh_<clé>`, `kesh_e2e_<clé>`) : elles ont appliqué `…0002` sans `…0001`, et la
+     26-1 porte `min_required` à 0.13.1 (P8, P2-bis).
+  La 26-1 retouche aussi les profils d'import (E3) : la table de la garde AC11 (26-2b) se mesure sur l'arbre final.
 - **26-3** (#616, #617, #619) réécrit deux lignes de la section *Import bancaire* du manuel, voisine de la section
   neuve (C-26-2-13) ; les deux régénèrent `user-manual.pdf` (conflit binaire : régénérer après rebase).
 - **CHANGELOG** : les trois stories écrivent dans `## [0.13.1] — Non publié` — union.
@@ -670,10 +751,12 @@ valides : elle est nullable.
 - `crates/kesh-db/src/backup.rs` (export générique, `is_required`), `crates/kesh-db/test-schema/README.md`.
 - `CLAUDE.md` § *Migration breaking policy* (P1-P8), § *Inventorier les sites NON RÉSOLUS*, § *Règle de splitting
   préventif*, § *Test Locally First*.
-- Registre : `_bmad-output/implementation-artifacts/epic-26-choix-autonomes.md`, C-26-2-1 à C-26-2-25 (C-26-2-1 et
-  C-26-2-14 remplacés par C-26-2-15 et C-26-2-25 ; C-26-2-6 complété par C-26-2-16).
+- Registre : `_bmad-output/implementation-artifacts/epic-26-choix-autonomes.md`, C-26-2-1 à C-26-2-30 (C-26-2-1 et
+  C-26-2-14 remplacés par C-26-2-15 et C-26-2-25 ; C-26-2-6 remplacé pour la base par C-26-2-16 ; C-26-2-5 et
+  C-26-2-15 amendés par C-26-2-26 ; C-26-2-22 amendé en P2).
 - Rapports de validation : `/home/gcorbaz/devel/kesh-gate-logs/26-2-validate-p1-R.md`, `…-p1-F.md` ; prompts
-  versionnés `26-2-validate-prompt-p1.md`, `26-2-validate-prompt-p2.md`.
+  versionnés `26-2-validate-prompt-p1.md`, `26-2-validate-prompt-p2.md`, `26-2-validate-prompt-p3.md` ; rapports P2
+  `…-p2-R.md`, `…-p2-F.md`.
 
 ## Dev Agent Record
 
@@ -688,6 +771,7 @@ valides : elle est nullable.
 - Fiche créée le 2026-10-10 (`bmad-create-story`, autonome) : analyse exhaustive du code sur `fe162504` —
   inventaire clos des sites, choix C-26-2-1 à 14 au registre de l'epic.
 - Validation P1 remédiée le 2026-10-10 (même auteur que la fiche) : choix C-26-2-16 à 25 ; bilan au Change Log.
+- Validation P2 remédiée le 2026-10-10 : choix C-26-2-26 à 30 ; bilan et trend au Change Log.
 
 ### File List
 
@@ -725,7 +809,7 @@ reclassé en dette ; un **fait** réfuté (F6 : le précédent existe), sa concl
 | F7 — sauvegarde 0.13.1 refusée par une 0.13.0 | L | Dit en AC1 — attendu de toute façon, la 26-1 bumpe `min_required` à 0.13.1 (C-26-2-24). |
 | F8 — pollution inter-specs E2E, assertion de ligne | L | AC13 : archivage des comptes créés, comptes non principaux, `toContainText` / `data-testid`. |
 | F10 — 60 écrit en six endroits | L | Constantes Rust et TS, test du squash contre la constante, M15 (C-26-2-21). |
-| F11 — description qui survit à un changement de banque à l'onboarding | L | AC2 et manuel ; C-26-2-22. |
+| F11 — description qui survit à un changement de banque à l'onboarding | L | AC2 et manuel ; C-26-2-22. *(Corrigé en P2, R2-1 = F-1 : le chemin est inatteignable — la phrase du manuel est retirée, le test reste en défense en profondeur.)* |
 | F12 — `details.bankName` change de sens | L | CHANGELOG `### Modifié` ; lecture du message à l'écran (AC10) ; C-26-2-23. |
 
 Décomptes après remédiation (recomptés) : **14 AC** ; mutations **M1-M16 + M8-bis = 17** ; sites d'affichage
@@ -735,3 +819,47 @@ Propagation (grep de la valeur après correction) : `20261011000001` → ne rest
 `\b78\b`/`\b44\b` → seulement l'état de `fe162504` et la généalogie citée ; `AFTER` → seulement la phrase qui
 l'écarte ; `C-26-2-14` → seulement « remplacé par C-26-2-25 » ; `maxlength="60"` → seulement l'attribut **rendu**
 vérifié par l'E2E.
+
+### Validation P2 — bilan finding par finding
+
+| Date | Étape | Résumé |
+|---|---|---|
+| 2026-10-10 | validation P2 (Opus ×2, R et F) remédiée | Bilan ci-dessous ; arbitrages de l'orchestrateur sur R2-1/F-1, R2-2/F-5, F-2, F-3/F-4. |
+
+Rapports : `kesh-gate-logs/26-2-validate-p2-R.md` (0 HIGH, 2 MEDIUM, 13 LOW) et `…-p2-F.md` (0 HIGH, 2 MEDIUM,
+11 LOW) — **4 MEDIUM dont 3 distincts, 24 LOW**. Paires convergentes : R2-1 = F-1, R2-2 = F-5, R2-3 ⊂ F-12,
+R2-6 ≈ F-8, R2-8 = F-10. Tous traités ; aucun reclassé en dette ; aucun réfuté.
+
+| Finding | Sév. | Origine | Traitement |
+|---|---|---|---|
+| R2-1 / F-1 — « survit à un changement de banque refait à l'onboarding » : chemin inatteignable | M / M | remédiation P1 | Phrase retirée d'AC12 ; AC2 : le test de l'upsert devient une défense en profondeur, preuves citées (garde d'étape, `step ≥ 7`, restauration à 8) ; M5 gardée ; C-26-2-22 amendé. |
+| R2-2 / F-5 — D7 change d'affichage sans description, contre la décision 4 | M / L | fiche d'origine | Arbitrage : la lettre de la décision. `bankAccountOptionLabel(a, ibanStyle)` ; D7 en `'parens'` ; E2E (b) attend « UBS E2E (CH…) » ; M17 ; ligne CHANGELOG `### Modifié` retirée ; C-26-2-26 (amende C-26-2-5 et C-26-2-15). |
+| F-2 — le manuel décrit un « Compte bancaire de réception » inexistant | M | fiche d'origine | AC12 : l. 911, 921, 933, 1033 corrigées en 26-2b — QR-facture = compte principal ; QRR si QR-IBAN, sinon IBAN **sans référence** (le manuel disait aussi « ISO 11649 », faux : `Reference::None`) ; contrôle aplati ; C-26-2-30. |
+| F-3 — huitième paramètre de `update_for_company` (clippy) | L | fiche d'origine | `BankAccountPutFields<'a>` remplace `new_journal_account_id` ; sept paramètres ; C-26-2-27. |
+| F-4 — `find_by_id_in_tx` non scopé | L | remédiation P1 | `(tx, company_id, id)`, patron `projects.rs:59` ; C-26-2-20 amendé. |
+| R2-3 / F-12 — M1 dit « constante » ; renvois du registre | L | remédiation P1 | M1 → « corps de la macro `columns!` » ; renvois C-26-2-3, C-26-2-11 → C-26-2-17, C-26-2-8 → C-26-2-19. |
+| R2-4 — patron de `api-external.md` mal cité | L | remédiation P1 | Note ⁷ sur la l. 218, patron des notes ⁴-⁶ (l. 222-226). |
+| R2-5 — C-26-2-6 « complété » alors qu'inversé | L | remédiation P1 | « remplacé pour la base par C-26-2-16 ». |
+| R2-6 / F-8 — invisibles non refusés ; ordre trim/contrôle | L / L | remédiation P1 | Ensemble élargi (U+00AD, U+034F, U+061C, U+180E, U+206A-206F, U+3164, U+FE00-FE0F, U+FFF9-FFFB, étiquettes) ; reste nommé en angle mort ; message adouci ; contrôle **après** `trim()`, tests `"Épargne\n"` / `"Épar\ngne"`, M18 ; C-26-2-28. |
+| R2-7 — M15 tautologique si tests en `MAX` | L | remédiation P1 | Bornes 60 et 61 **en littéraux** (AC3). |
+| R2-8 / F-10 — payload `PUT` à `description?` | L / L | remédiation P1 | `UpdateBankAccountPayload.description: string \| null` obligatoire. |
+| R2-9 — aide d'AC8 en français seul ; « facultative » contre « optionnel » | L | fiche d'origine | Quatre traductions données ; libellé « Description (optionnelle) » harmonisé sur le QR-IBAN ; C-26-2-29. |
+| R2-10 — fichier de la garde non nommé | L | remédiation P1 | `bank-name-inventory.test.ts`, patron `i18n-keys.test.ts`. |
+| R2-11 — test de démotion à deux endroits incompatibles | L | remédiation P1 | Dépôt : appel direct (cible de M12) ; route : `PUT` puis `GET` de bout en bout. |
+| R2-12 — commande de recompte des écrivains fausse | L | remédiation P1 | `grep -rnE "UPDATE bank_accounts\|INSERT INTO bank_accounts" crates/*/src`, sortie attendue citée. |
+| R2-13 — `BankAccountJson` dit source de D3/D7 | L | remédiation P1 | Phrase corrigée ; `CompanyResponse` en ligne de D3 et D7 remplacés par `CompanyCurrentResponse`. |
+| R2-14 — restes d'avant le découpage (sprint-status, epic) | L | remédiation P1 | Commentaire `sprint-status.yaml` de la clé mère et ligne « PR » de l'epic corrigés. |
+| R2-15 — « Trois détecteurs » ; en-tête `/* */` ; FTL et replis ; ligne 111 | L | fiche d'origine | « Quatre » ; en-tête en `--` ; pas de guillemets, replis `format!` nommés ; message l. 111 déclaré légitime. |
+| F-6 — garde : `.test.svelte`, fixtures, `.js` | L | remédiation P1 | Exclusion par `.test.` / `.spec.` ; `.js` collectés ; message d'échec du minimum de fichiers. |
+| F-7 — M16 tautologique | L | remédiation P1 | M16 = type seul → `npm run check` ; M16-bis = rendu muté → Vitest et garde. |
+| F-9 — colonne CSV et champ additif non annoncés | L | fiche d'origine | CHANGELOG `### Ajouté`. |
+| F-11 — messages des extracteurs | L | fiche d'origine | « `description?` str » aux deux (AC4). |
+| F-13 — procédure de rebase incomplète | L | remédiation P1 | Coordination : cas normal et cas « commencée avant », fichiers en conflit nommés, bases de dev à reconstruire. |
+
+**Trend** : P1 (Sonnet ×2) 0 HIGH / 8 MEDIUM / 15 LOW → P2 (Opus ×2) 0 HIGH / 3 MEDIUM distincts / 24 LOW — dont
+1 MEDIUM né de la remédiation P1 (R2-1/F-1), 2 de la fiche d'origine (R2-2, F-2). La remédiation P2 touche des AC et
+une règle d'affichage (D7) : **passe P3 ciblée** (Haiku, une lentille, sur le seul commit de cette remédiation),
+prompt versionné `26-2-validate-prompt-p3.md`.
+
+Décomptes après remédiation P2 (recomptés) : **14 AC** ; **20 mutations** (M1-M18, M8-bis, M16-bis) ; **10 sites**
+(D1-D10) ; choix **C-26-2-1 à 30**.

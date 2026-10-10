@@ -71,9 +71,10 @@ compte bancaire (import, réconciliation, règlement de facture, lots de paiemen
 spec en dresse l'inventaire **clos** — sites qui affichent `bankName` sans la description — et
 centralise le libellé dans une seule fonction. Elle tranche longueur, unicité, présence dans
 l'export et le `.keshbackup`, et la migration (`ADD COLUMN` nullable : non breaking, triage P5/P7).
-Candidate au découpage si l'inventaire dépasse cinq modules.
+Candidate au découpage si l'inventaire dépasse cinq modules — **découpée** le 2026-10-10 (C-26-2-15) en
+26-2a (socle) et 26-2b (écrans).
 
-PR : `closes #622`.
+PR : 26-2a `refs #622`, puis 26-2b `closes #622`.
 
 ### 26-3 — Le manuel et la restauration Synology ([#616], [#617], [#619])
 

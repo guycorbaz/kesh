@@ -40,7 +40,7 @@ numéro en double se renumérote, il ne s'écrase pas.
   qui n'a encore rien à distinguer.
 - **Réversibilité** : ajout ultérieur possible sans migration.
 
-### C-26-2-3 — 60 caractères, espaces retirés, vide = absente, caractères de contrôle refusés
+### C-26-2-3 — 60 caractères, espaces retirés, vide = absente, caractères de contrôle refusés *(ensemble refusé élargi par C-26-2-17 et C-26-2-28)*
 
 - **Retenu** : colonne `VARCHAR(60) NULL`. Le serveur retire les espaces de tête et de queue ; une valeur
   vide après ce retrait est enregistrée `NULL` ; plus de 60 caractères (comptés en caractères Unicode,
@@ -61,7 +61,7 @@ numéro en double se renumérote, il ne s'écrase pas.
 - **Écarté** : une unicité par société — elle refuserait un cas légitime (deux comptes « Épargne » dans
   deux banques) et ajouterait un index et un code d'erreur pour rien.
 
-### C-26-2-5 — Forme du libellé, et l'unique changement visible sans description
+### C-26-2-5 — Forme du libellé, et l'unique changement visible sans description *(amendé par C-26-2-26 : aucun changement sans description)*
 
 - **Retenu** : deux fonctions, et elles seules :
   - **nom du compte** : `UBS — Personnel` avec description, `UBS` sans — pour les listes qui montrent
@@ -79,7 +79,7 @@ numéro en double se renumérote, il ne s'écrase pas.
   redeviendraient indiscernables, C-26-2-4).
 - **Réversibilité** : une ligne dans chaque fonction.
 
-### C-26-2-6 — Place de la colonne *(complété par C-26-2-16)*
+### C-26-2-6 — Place de la colonne *(remplacé pour la base par C-26-2-16 — colonne en fin de table ; la place dans le CSV reste)*
 
 - **Retenu** : `AFTER bank_name` en base ; colonne `description` juste après `bank_name` dans
   `bank_accounts.csv` de l'export global.
@@ -94,7 +94,7 @@ numéro en double se renumérote, il ne s'écrase pas.
 - **Écarté** : un champ de `NewBankAccount` — une soixantaine de littéraux de struct dans 25 fichiers de
   tests à retoucher, et l'upsert de l'onboarding forcé de choisir entre écraser et relire.
 
-### C-26-2-8 — `PUT` en remplacement complet
+### C-26-2-8 — `PUT` en remplacement complet *(figé et documenté par C-26-2-19)*
 
 - **Retenu** : `PUT /bank-accounts/{id}` sans `description` l'efface, comme il efface `qrIban` : la route
   est une édition complète depuis la v014-1. `PATCH` (lien au plan comptable) et `DELETE` (archivage) la
@@ -121,7 +121,7 @@ numéro en double se renumérote, il ne s'écrase pas.
   qu'il est une donnée bancaire ; une description choisie par l'utilisateur ne l'est pas, et un booléen
   ne dirait pas ce qui a changé.
 
-### C-26-2-11 — Messages de validation serveur en français, comme leurs voisins
+### C-26-2-11 — Messages de validation serveur en français, comme leurs voisins *(le refus « caractère » couvre l'ensemble de C-26-2-17 / C-26-2-28)*
 
 - **Retenu** : les deux refus neufs (trop longue, caractère de contrôle) suivent le patron de
   `validate_bank_input` — `AppError::Validation` en dur, en français. Le champ du formulaire porte
@@ -165,7 +165,7 @@ matérialiser. **Option retenue** : deux clés au registre (`26-2a-description-s
 fiche unique en deux parties, deux PR successives (`refs #622` puis `closes #622`). **Alternatives** : deux fiches
 séparées (précédent 15-1c) — écartée, la fiche est déjà partagée et l'inventaire clos doit rester d'un seul tenant.
 **Réversibilité** : totale (registre). Le changement de libellé du menu d'import sans description (C-26-2-5, « UBS (CH…) »
-→ « UBS — CH… ») est accepté : il aligne ce menu sur les autres.
+→ « UBS — CH… ») est accepté : il aligne ce menu sur les autres. *(Amendé par C-26-2-26, sur P2 R2-2/F-5 : la décision 4 du Project Lead s'applique à la lettre — le menu d'import garde « UBS (CH…) » sans description.)*
 
 ## Story 26-2 — validation P1 remédiée (2026-10-10)
 
@@ -208,7 +208,7 @@ séparées (précédent 15-1c) — écartée, la fiche est déjà partagée et l
 - **Écarté** : conserver une description absente (`COALESCE`) — rendrait impossible l'effacement par un `PUT`
   qui omet le champ et romprait la symétrie avec `qrIban` ; c'est précisément M13.
 
-### C-26-2-20 — La liste des colonnes est une macro du dépôt
+### C-26-2-20 — La liste des colonnes est une macro du dépôt *(amendé en P2 : `find_by_id_in_tx(tx, company_id, id)`, scopé par société, patron `projects.rs:59`)*
 
 - **Retenu** : `macro_rules! columns` privé à `repositories/bank_accounts.rs`, `concat!` à chaque `SELECT`, sur
   le précédent de `repositories/accounts.rs:21-42` ; la route de `kesh-api` relit par `find_by_id_in_tx` (fonction
@@ -224,11 +224,16 @@ séparées (précédent 15-1c) — écartée, la fiche est déjà partagée et l
   lettres dans la migration, les FTL, le manuel, le CHANGELOG et `api-external.md` — greper `\b60\b`.
 - **Écarté** : générer la constante TS depuis Rust (outillage neuf pour un entier).
 
-### C-26-2-22 — La description survit à un changement de banque à l'onboarding
+### C-26-2-22 — La description survit à un changement de banque à l'onboarding *(amendé en P2 : cas inatteignable — défense en profondeur seulement)*
 
 - **Contexte** : F11 (P1) — `upsert_primary_in_tx` réécrit banque, IBAN et QR-IBAN sans toucher la description.
 - **Retenu** : assumé (conséquence de C-26-2-2 : l'onboarding ne connaît pas la description) ; dit au manuel. Le
   cas suppose de refaire l'étape 6 de l'onboarding, rare.
+- **Amendement P2** (R2-1 = F-1, arbitrage de l'orchestrateur) : le cas n'est pas rare, il est **inatteignable** —
+  l'étape 6 exige `step_completed == 6` hors démo (`routes/onboarding.rs:581`, l. 1060), la description ne se
+  saisit qu'à partir de l'étape 7 (`routes/bank_accounts.rs:222`), une restauration force l'étape à 8
+  (`backup.rs:644`). La phrase du manuel est **retirée** ; le test de l'upsert et M5 restent comme défense en
+  profondeur du dépôt.
 - **Écarté** : effacer la description dans l'upsert — perdrait une saisie sur une simple correction d'IBAN.
 
 ### C-26-2-23 — `details.bankName` porte le nom complet, et le CHANGELOG le dit
@@ -253,3 +258,51 @@ séparées (précédent 15-1c) — écartée, la fiche est déjà partagée et l
   régénère le squash, et **ajoute** sa ligne à `crates/kesh-db/migrations.sha384` (registre des checksums, garde
   P8 outillé par `published_migrations_keep_their_checksums`) — fichier que la fiche ne nommait pas avant cette
   remédiation. Remplace C-26-2-14.
+
+## Story 26-2 — validation P2 remédiée (2026-10-10)
+
+### C-26-2-26 — Sans description, chaque site garde exactement son affichage (arbitrage de l'orchestrateur)
+
+- **Contexte** : P2 R2-2 (MEDIUM) = F-5 — le menu de l'import passait de « UBS (CH…) » à « UBS — CH… » sans
+  description, contre la décision 4 du Project Lead (« sans elle, l'affichage reste celui d'aujourd'hui »).
+- **Retenu** : la lettre de la décision. `bankAccountOptionLabel(a, ibanStyle: 'dash' | 'parens' = 'dash')` : le
+  **nom** vient toujours de `bankAccountName` (source unique), seule la présentation de l'IBAN suit la forme du
+  site ; D7 en `'parens'` (« UBS — Personnel (CH…) » avec description, « UBS (CH…) » sans). Amende C-26-2-5 et
+  C-26-2-15 ; la ligne CHANGELOG `### Modifié` sur ce menu disparaît.
+- **Écarté** : harmoniser (C-26-2-5 d'origine) — c'est revenir sur une décision écrite du Project Lead ; un libellé
+  propre à D7 hors de `format.ts` — duplication.
+
+### C-26-2-27 — `BankAccountPutFields` plutôt qu'un huitième paramètre
+
+- **Contexte** : P2 F-3 — `update_for_company` a déjà sept paramètres ; un huitième déclenche
+  `clippy::too_many_arguments`.
+- **Retenu** : `pub struct BankAccountPutFields<'a> { journal_account_id: Option<i64>, description: Option<&'a str> }`
+  remplace `new_journal_account_id` ; `NewBankAccount` inchangé (C-26-2-7).
+- **Écarté** : `#[allow(clippy::too_many_arguments)]` (arbitrage de l'orchestrateur).
+
+### C-26-2-28 — Ensemble refusé élargi, contrôle après `trim()`
+
+- **Contexte** : P2 R2-6 / F-8 — U+061C, U+00AD et d'autres invisibles passaient ; l'ordre trim / contrôle n'était
+  pas fixé.
+- **Retenu** : ajout de U+00AD, U+034F, U+061C, U+180E, U+206A à U+206F, U+3164, U+FE00 à U+FE0F, U+FFF9 à U+FFFB,
+  U+E0000 à U+E007F ; angle mort nommé (U+115F, U+1160, U+FFA0, U+E0100 à U+E01EF…) ; message « de contrôle ou de
+  mise en page » ; contrôle sur la valeur **après** `trim()` (« Épargne\n » accepté, « Épar\ngne » refusé).
+- **Écarté** : toute la catégorie Cf par une crate (dépendance pour un champ).
+
+### C-26-2-29 — Libellé « optionnelle », pas de guillemets autour du nom dans le refus
+
+- **Retenu** : « Description (optionnelle) » / « (optional) » / « (opzionale) » / « (optional) », vocabulaire du
+  voisin « QR-IBAN (optionnel) » ; aide traduite dans les quatre locales dans la fiche. Le message du refus de
+  désignation reste sans guillemets autour de `{ $bank }` (FTL et replis `format!` inchangés).
+- **Écarté** : « facultative » (rompt avec le voisin) ; des guillemets (quatre FTL et deux replis à changer pour un
+  gain de lecture incertain).
+
+### C-26-2-30 — La 26-2b corrige le compte de la QR-facture au manuel
+
+- **Contexte** : P2 F-2 (MEDIUM) — le manuel utilisateur décrit un champ « Compte bancaire de réception » à la
+  création de facture, qui n'existe pas ; la section neuve le contredirait. Vérifié au code : le PDF prend
+  `bank_accounts::find_primary` (`invoice_pdf_service.rs:222`) ; QR-IBAN → référence QRR, sinon IBAN **sans
+  référence** (`Reference::None`, l. 321-331) — le manuel disait aussi, à tort, ISO 11649.
+- **Retenu** (arbitrage de l'orchestrateur) : la 26-2b (AC12) corrige les l. 911, 921, 933 et 1033, PDF régénéré
+  et contrôlé aplati.
+- **Écarté** : une issue P3 séparée — la section neuve parlerait de la QR-facture à côté d'un texte faux.
