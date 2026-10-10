@@ -821,7 +821,8 @@ async fn cle_de_ligne(pool: &MySqlPool, entry_id: i64, account_id: i64) -> i64 {
 /// groupe `manual` (204), `document` (409 `LETTERING_IS_DOCUMENT`), paire
 /// `reversal` possédée par une facture fournisseur (409
 /// `LETTERING_LINE_OWNED_BY_DOCUMENT`, mêmes `details` et même message suffixé
-/// qu'avant la refonte — et sans suffixe pour une facture sans numéro), paire d'un règlement client annulé (204), groupe tout
+/// qu'avant la refonte — et sans suffixe pour une facture sans numéro), paire
+/// d'un règlement client annulé (204), groupe tout
 /// en période verrouillée (409 `LETTERING_ALL_LINES_IN_CLOSED_PERIODS`).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn forecast_equals_delete_over_http(pool: MySqlPool) {

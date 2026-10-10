@@ -2278,9 +2278,10 @@ async fn group_detail_of_reversal_pairs(pool: MySqlPool) {
     .await
     .unwrap();
     let cle_achat = cle.expect("montage : l'achat est lettré");
-    let cle = cle_achat;
 
-    let det = detail(&pool, s.company_id, cle).await.expect("groupe");
+    let det = detail(&pool, s.company_id, cle_achat)
+        .await
+        .expect("groupe");
     assert_eq!(det.origin, Origin::Reversal);
     assert_eq!(
         det.manual_dissolution_blocked_by,
@@ -2293,7 +2294,7 @@ async fn group_detail_of_reversal_pairs(pool: MySqlPool) {
         (doc.kind, doc.id, doc.number.as_deref()),
         (DocumentKind::SupplierInvoice, si, Some("FF-12"))
     );
-    let issue = prevision_egale_dissolution(&pool, s.company_id, s.admin_user_id, cle).await;
+    let issue = prevision_egale_dissolution(&pool, s.company_id, s.admin_user_id, cle_achat).await;
     match issue {
         Err(DbError::LetteringLineOwnedByDocument {
             blocker,
@@ -2358,7 +2359,7 @@ async fn group_detail_of_reversal_pairs(pool: MySqlPool) {
         .expect_err("409");
 }
 
-/// Test 4 (revue P1, E LOW-1) — « un exercice postérieur est clos » : le groupe
+/// Test 4 bis (revue P1, E LOW-1) — « un exercice postérieur est clos » : le groupe
 /// d'un exercice **ouvert** suivi d'un exercice clôturé est tout entier en
 /// période close, à la lecture comme à la dissolution — chacune calcule
 /// `later_closed` de son côté (sans verrou ; sous verrou d'exercice).
