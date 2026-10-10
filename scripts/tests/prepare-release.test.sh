@@ -287,6 +287,16 @@ expect_rc 1
 expect_out "introuvable dans CHANGELOG.md"
 expect_clean "$R"
 
+cas "version de kesh-api illisible : refus nommé"
+R="$WORK/sans-version"
+new_repo "$R" 0.13.0 0.13.0 "## [0.13.0] — Non publié"
+sed -i '/^version = /d' "$R/crates/kesh-api/Cargo.toml"
+git -C "$R" commit -qam "kesh-api sans version"
+run "$R" 0.13.0
+expect_rc 1
+expect_out "lisible dans crates/kesh-api/Cargo.toml"
+expect_clean "$R"
+
 cas "sur main : refus"
 R="$WORK/main"
 new_repo "$R" 0.13.0 0.13.0 "## [0.13.0] — Non publié"

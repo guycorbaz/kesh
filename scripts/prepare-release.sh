@@ -319,7 +319,8 @@ if [ "$ALREADY_DATED" -eq 1 ]; then
     echo "  ✓ déjà datée en pré-vol : rien à écrire."
 else
     TODAY=$(date +%Y-%m-%d)
-    # `$PATTERN` a été posé ET vérifié en pré-vol (0a) : rien à revalider ici, et
+    # La section « Non publié » a été vérifiée en pré-vol (0a), ancrée en début de
+    # ligne sur `$ESC_VERSION` : rien à revalider ici, et
     # surtout rien qui puisse encore refuser après que les Cargo.toml ont bougé.
     REPLACEMENT="## [$NEW_VERSION] — $TODAY"
 
