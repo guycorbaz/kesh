@@ -460,7 +460,9 @@ lance depuis le worktree, **hors gate**.
 4. la doc-comment de G16 (`:2866`-`:2934`) et ses angles morts sont mis à jour (C-26-3-3, angle mort
    de l'image construite localement) ;
 5. clause neuve sur la lecture : le `--format` porte le séparateur `|` et la boucle `IFS='|'` (AC 5.2) ;
-   un séparateur blanc (`\t`, espace) rougit ;
+   un séparateur blanc (`\t`, espace) rougit ; la ligne qui **ferme** la boucle `while IFS= read -r
+   LIGNE; do` — le `done` de même profondeur, non un texte quelconque — est `done <<< "$LISTE"`
+   (revues de code P3, P3-1, et P4, P4-1 : fonction `boucle_lit_la_liste`) ;
 6. **preuve de mutation**, chacune rejouée et consignée avec **l'ensemble exact** des clauses qui
    doivent rougir — « elle seule » est abandonné, deux mutations touchant légitimement deux clauses
    (validation P2, R-M3 = F-M5) :
@@ -472,6 +474,7 @@ lance depuis le worktree, **hors gate**.
    | (c) retirer le filet par l'image | « filet » (7.2) |
    | (d) retirer `SAUVEGARDE_SERVICE` du manuel | binaire `configuration_transmise` : (g) égalité des ensembles ; (g) citation `SAUVEGARDE_SERVICE (kesh-api` (7.3) — et, dans le binaire `textes_coherents`, la positive de G20 sur `admin-manual.tex` (AC 9 ; validation P3, F-10) |
    | (e) remplacer `|` par une tabulation dans le `--format` et l'`IFS` | lecture à séparateur `|` (7.5) seule |
+   | (f) `done < /dev/null` sur la boucle, `# done <<< "$LISTE"` en fin de ligne ou une seconde boucle morte alimentée par `LISTE` (revue P4) | lecture à séparateur `|` (7.5) seule |
 
    G16 agrège ses erreurs (`echouer_si`, `configuration_transmise.rs:3466`) : copier **toutes** les
    lignes d'erreur de chaque run et constater qu'elles sont exactement celles du tableau. Restaurer et
@@ -884,6 +887,16 @@ reconstruite, montage complet de `docs/testing.md`) : **256 passés, 7 échoués
 exactement les KF-029 (#97) de la liste attendue (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`,
 `onboarding:57`, `:77`, `:150`).
 
+**Gates au commit de remédiation P4** (revue de code P4 ciblée ; seul `configuration_transmise.rs` touché
+côté code, un test) : `cargo fmt --check` vert ; `clippy --workspace --all-targets -D warnings` vert ; gate
+ciblé `binary(configuration_transmise)` **30/30** ; `scripts/test-fast.sh` sur `kesh_263` recréée
+(migrations + seed), sous verrou : **3341 passés, 0 échec, 5 ignorés** (journal
+`kesh-gate-logs/26-3-gate-p4.log`) ; frontend rebuildé puis **E2E complet** (port 3033, `kesh_e2e_263`
+recréée et migrée, montage complet, `smtpConfigured:true`) : **256 passés, 7 échoués, 19 ignorés** — les 7
+KF-029 (#97) de la liste attendue (`mode-expert:26`, `:41`, `onboarding-path-b:65`, `:92`, `onboarding:57`,
+`:77`, `:150`). **Non rejoués** : Vitest, `npm run check`, `lint-i18n-ownership` (aucun fichier `frontend/`
+touché depuis leur dernier passage) ; recette Synology (aucun fichier `scripts/synology/` touché).
+
 **Signalé, non prescrit** : la section 0 n'a plus besoin de Docker ; un test Rust qui la lancerait la
 mettrait dans le gate (observation P3 R-L9).
 
@@ -1133,3 +1146,29 @@ mettrait dans le gate (observation P3 R-L9).
     message ». **Non traité** : P3-5 (prérequis du mode 0 de la fiche rangés autrement, même contenu).
   - Remédiation : `configuration_transmise.rs` (test) et `user-manual.tex` (+ PDF) — **aucune ligne de code de
     production**. Suite : passe ciblée P4 (Haiku) sur ce commit.
+- 2026-10-11 — **Passe ciblée P4 remédiée** (Haiku, une lentille sur le seul commit `8ed247fa` ; prompt
+  `26-3-review-prompt-p4-ciblee.md`, rapport `kesh-gate-logs/26-3-review-p4-ciblee.md`). **Bilan : 0H / 1M /
+  2L** (P4-1 MEDIUM et P4-2 LOW introduits par `8ed247fa`, P4-3 LOW préexistant).
+  - **P4-1 vérifié par mutation réelle, à moitié réfuté** (journal `kesh-gate-logs/26-3-mutations-p4.log`) : la
+    forme simulée par Haiku (`done < /dev/null` + ligne `# done <<< "$LISTE"` en fin de fichier) **rougit
+    déjà** à `a591da75` — G16 lit le code par `code_shell`, qui blanchit les lignes de commentaire, ce que la
+    simulation `grep -Pz` sur le fichier brut ignorait. Mais la forme **commentaire de fin de ligne**
+    (`done < /dev/null  # done <<< "$LISTE"`) restait **verte** : le défaut est réel. → la clause 7.5 sort
+    du tableau de regex et devient la fonction `boucle_lit_la_liste` : la ligne `LISTE=$(docker ps …|…)`,
+    puis `while IFS= read -r LIGNE; do`, dont le corps (profondeur 1) lit `IFS='|' read -r ETAT … RESTE`
+    et dont le `done` **de fermeture**, trouvé par profondeur (boucles imbriquées comptées), est exactement
+    `done <<< "$LISTE"`. Mutations après correction : commentaire de fin de ligne, ligne commentée, seconde
+    boucle morte alimentée par `LISTE`, `done < /dev/null`, lecture sortie de la boucle → **7.5 seule**
+    rouge ; (a) → 7.1 + 7.5 ; (e) → 7.5 seule ; `done <<<"$LISTE"` (sans blanc) → vert. Ensembles de l'AC
+    7.6 tenus ; mutation (f) ajoutée à la table.
+  - **P4-2** (rigidité) → blancs autour de `<<<` admis ; `printf … | while` reste refusé, **à dessein** (le
+    sous-shell avalerait l'`exit 1`), écrit dans le commentaire de la clause.
+  - **P4-3** → le commentaire de la clause 7.1 renvoie à l'AC 7.5.
+  - Grep du symptôme (`git grep -nF 'done <<< "$LISTE"'`, `alimentée`) : AC 7.5 de la fiche et registre
+    (C-26-3-22) amendés ; le reste (script, AC 5.2, Change Log, prompt P4) est juste ou historique.
+  - Trend des passes de revue de code : P1 4 MEDIUM bruts (2 distincts) → P2 3 distincts → P3 1 (préexistant)
+    → P4 1 (né de la remédiation P3) — la sévérité se déplace vers le dernier patch, comme prévu. Modèles :
+    Sonnet (P1), Opus (P2), Haiku (P3, P4 ciblées). Aucun finding reclassé en dette.
+  - Remédiation : `configuration_transmise.rs` (test) seul côté code — **aucune ligne de code de production**.
+    Gates : Dev Agent Record, *Gates au commit de remédiation P4*. Suite : passe ciblée P5 (Sonnet) sur ce
+    commit (`26-3-review-prompt-p5-ciblee.md`).

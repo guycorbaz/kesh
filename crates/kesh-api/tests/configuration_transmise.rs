@@ -2835,6 +2835,50 @@ fn code_shell(texte: &str) -> String {
         .join("\n")
 }
 
+/// Clause 7.5 de G16 (Story 26-3) sur le code de `kesh-restore.sh` (commentaires
+/// de ligne retirés, [`code_shell`]) : `LISTE=$(docker ps --all --format …)` aux
+/// champs séparés par `|`, **puis** la boucle `while IFS= read -r LIGNE; do`, dont
+/// le corps lit `IFS='|' read -r ETAT IMAGE SERVICE NOM RESTE` et dont la ligne de
+/// **fermeture** — le `done` de même profondeur, boucles imbriquées comptées — est
+/// exactement `done <<< "$LISTE"` (blancs autour de `<<<` admis). Un texte
+/// `done <<< "$LISTE"` ailleurs (fin de ligne commentée, seconde boucle, chaîne)
+/// ne compte pas : c'est la boucle visée qui doit être alimentée (revue de code P4,
+/// P4-1).
+fn boucle_lit_la_liste(code: &str) -> bool {
+    let lignes: Vec<&str> = code.lines().map(str::trim).collect();
+    let format = r#"LISTE=$(docker ps --all --format '{{.State}}|{{.Image}}|{{.Label "com.docker.compose.service"}}|{{.Names}}')"#;
+    let Some(l_liste) = lignes.iter().position(|l| *l == format) else {
+        return false;
+    };
+    let Some(l_while) = lignes
+        .iter()
+        .skip(l_liste + 1)
+        .position(|l| *l == "while IFS= read -r LIGNE; do")
+        .map(|i| i + l_liste + 1)
+    else {
+        return false;
+    };
+    let ouvre = Regex::new(r"(?:^|;)\s*do$").unwrap();
+    let ferme = Regex::new(r"^done\b").unwrap();
+    let lecture = Regex::new(r"^IFS='\|' read -r ETAT IMAGE SERVICE NOM RESTE\b").unwrap();
+    let alimentee = Regex::new(r#"^done\s*<<<\s*"\$LISTE"$"#).unwrap();
+    let mut profondeur = 1usize;
+    let mut lue = false;
+    for l in &lignes[l_while + 1..] {
+        if ferme.is_match(l) {
+            profondeur -= 1;
+            if profondeur == 0 {
+                return lue && alimentee.is_match(l);
+            }
+        } else if ouvre.is_match(l) {
+            profondeur += 1;
+        } else if profondeur == 1 && lecture.is_match(l) {
+            lue = true;
+        }
+    }
+    false
+}
+
 /// Chaque commande `rm` d'un script shell (non `--rm`), avec ses arguments :
 /// après un guillemet (`trap 'rm …'`, `sh -c "rm …"`), jusqu'au même guillemet ;
 /// sinon jusqu'à la fin de la commande (`;`, `&`, `|`, `)`, accent grave, fin
@@ -2896,7 +2940,8 @@ fn defaut_script(texte: &str, var: &str) -> Option<String> {
 ///   `{{.Image}}` et l'étiquette `com.docker.compose.service`, sans dépendre du
 ///   projet (Story 26-3, #619) : le défaut de `SAUVEGARDE_SERVICE` est un service du
 ///   compose prod ; le `--format` sépare ses champs par `|` et la boucle les lit par
-///   `IFS='|'` (un séparateur blanc avalerait une étiquette vide) ; **filet** : tout
+///   `IFS='|'` (un séparateur blanc avalerait une étiquette vide), boucle dont le
+///   `done` de fermeture est `done <<< "$LISTE"` ([`boucle_lit_la_liste`]) ; **filet** : tout
 ///   conteneur d'image `gcorbaz/kesh` est gardé de même, quel que soit son service ;
 ///   **sortie fermée** : aucun conteneur du service → `exit 1` ; la comparaison du
 ///   service au réglage et le compteur `N=$((N+1))` sont exigés, comme le refus d'une
@@ -3145,7 +3190,7 @@ fn synology_sauvegarde_la_base_par_le_dump() {
     let etapes = [
         (
             // Indifférente au séparateur : c'est la clause « lecture à séparateur | »
-            // qui le tient (Story 26-3, AC 7.1).
+            // qui le tient (Story 26-3, AC 7.5).
             "refus « Kesh actif » (`docker ps --all --format` : état, image, service)",
             r#"docker ps --all\b[^\n]*\{\{\.State\}\}[^\n]*\{\{\.Image\}\}[^\n]*\{\{\.Label "com\.docker\.compose\.service"\}\}"#,
         ),
@@ -3194,12 +3239,6 @@ fn synology_sauvegarde_la_base_par_le_dump() {
             // Sur une ou plusieurs lignes (revue P6, LOW-4) : la branche `*)` doit sortir
             // en 1 avant le `;;` qui la ferme et le `esac`.
             r#"(?s)case "\$ETAT" in\s+exited\|created\|dead\)\s*;;\s*\*\)[^`]*?\bexit 1\s*;;\s*esac\b"#,
-        ),
-        (
-            "lecture à séparateur `|` : `LISTE=$(docker ps --all --format …|…)`, boucle `IFS='|'` alimentée par `<<< \"$LISTE\"` (26-3, AC 7.5)",
-            // La lecture alimente la boucle : `LISTE=$(docker ps …)` puis `done <<< "$LISTE"`
-            // (revue de code P3, P3-1 : une boucle alimentée par autre chose refuserait tout).
-            r#"(?s)LISTE=\$\(docker ps --all --format '\{\{\.State\}\}\|\{\{\.Image\}\}\|\{\{\.Label "com\.docker\.compose\.service"\}\}\|\{\{\.Names\}\}'\).*IFS='\|' read -r ETAT IMAGE SERVICE NOM RESTE\b.*done <<< "\$LISTE""#,
         ),
         (
             "la branche « service » de la garde ne compare pas au réglage SAUVEGARDE_SERVICE, n'en compte pas les conteneurs, ou ne refuse pas un état actif (26-3, revues P1 et P2)",
@@ -3251,6 +3290,19 @@ fn synology_sauvegarde_la_base_par_le_dump() {
         if premier(&restore, re).is_none() {
             erreurs.push(format!("(c) {quoi}"));
         }
+    }
+    // Lecture à séparateur `|`, et la boucle qui la lit est bien CELLE que `LISTE`
+    // alimente (revue de code P3, P3-1 ; P4, P4-1) : le `done` qui ferme la boucle
+    // `while IFS= read -r LIGNE; do` — trouvé par profondeur, pas par proximité — doit
+    // être exactement `done <<< "$LISTE"`. Un commentaire de fin de ligne
+    // (`done < /dev/null  # done <<< "$LISTE"`) ou une autre boucle ne le satisfont
+    // plus. Forme imposée (P4-2, LOW consigné) : `printf … | while` ferait tourner la
+    // boucle dans un sous-shell, dont l'`exit 1` ne sortirait pas du script.
+    if !boucle_lit_la_liste(&restore) {
+        erreurs.push(
+            "(c) lecture à séparateur `|` : `LISTE=$(docker ps --all --format …|…)`, boucle `IFS='|'` alimentée par `<<< \"$LISTE\"` (26-3, AC 7.5)"
+                .into(),
+        );
     }
     // « revenir » ne désigne pas le dump de sécurité du passage en cours : au second
     // passage, c'est celui d'une base à moitié rechargée (revue P6, MEDIUM-1).

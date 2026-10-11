@@ -324,6 +324,8 @@ le contexte, l'option retenue, les options écartées et la réversibilité. **M
   exactement** (`SEPARATEURS=${LIGNE//[^|]/}`), en plus des champs `ETAT`, `IMAGE`, `NOM` non vides
   et de `RESTE` vide. Toujours dans le shell courant (`done <<< "$LISTE"`). La clause de G16 (AC 7.5)
   lit le `--format` à `|` et `IFS='|' read -r ETAT IMAGE SERVICE NOM RESTE` — elle tient cette forme.
+  *(Revue de code P4, 2026-10-11 : elle exige aussi que le `done` fermant cette boucle soit
+  `done <<< "$LISTE"`, lu par profondeur — un commentaire ou une autre boucle ne la satisfont pas.)*
 - **Écarté** : la forme littérale de l'AC 5.2 (les deux trous ci-dessus).
 - **Réversible** : oui.
 
