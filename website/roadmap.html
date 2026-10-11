@@ -318,6 +318,13 @@
 					</div>
 					<p class="text-sm text-slate-400"><strong class="text-slate-200">Released in v0.13.0:</strong> the <strong class="text-slate-200">open items</strong> of a balance-sheet account at any date — what remains open, line by line, totalling the account balance; <strong class="text-slate-200">manual matching with suggested pairs</strong> — Kesh suggests, you confirm, it never matches a suggestion on its own — and unmatching; a settled customer invoice and a paid supplier invoice are matched with their payments, a reversal with the entry it corrects, existing data included at upgrade; the matching code shown on journal entries and in the general ledger. Also: an entry can be <strong class="text-slate-200">edited or deleted while its fiscal year is open</strong>, fiscal years close in order, and the <code>.env</code> configuration finally reaches Kesh. ⚠️ <strong class="text-slate-200">No way back to v0.12.x</strong> once the database is upgraded — back it up first. <strong class="text-slate-200">Still to come:</strong> document attachments, versioned parsers and templates, user-definable journal types.</p>
 				</div>
+				<div class="p-5 rounded-xl bg-slate-900 border border-emerald-500/30 sm:col-span-2">
+					<div class="flex items-center justify-between mb-1 flex-wrap gap-2">
+						<h3 class="font-semibold">E26 — Acceptance testing of v0.13.0 <span class="text-slate-500 font-mono text-xs">v0.13.1</span></h3>
+						<span class="text-xs font-mono px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">Released</span>
+					</div>
+					<p class="text-sm text-slate-400">Found by importing a real statement: in debit/credit CSV profiles, <strong class="text-slate-200">every UBS expense became a receipt</strong>, silently. The <strong class="text-slate-200">sign of debits is now a profile setting</strong>, never a guess, and a statement whose amount contradicts its column is refused as a whole; up to 20 header lines let the UBS CSV import as it is. Bank accounts get an optional <strong class="text-slate-200">short description</strong> (“UBS — Personal”) shown in every list and picker; the Synology restore script <strong class="text-slate-200">fails closed</strong> while Kesh may be running; the manual describes the actual chart-of-accounts and import screens. ⚠️ <strong class="text-slate-200">No way back to v0.13.0</strong> once the database is upgraded — back it up first.</p>
+				</div>
 			</div>
 		</div>
 	</section>
