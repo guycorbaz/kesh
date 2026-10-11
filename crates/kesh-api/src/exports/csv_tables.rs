@@ -1625,6 +1625,8 @@ pub fn serialize_imported_supplier_invoices_csv<W: Write>(
 mod tests {
     use super::*;
     use chrono::NaiveTime;
+    use kesh_db::entities::{AccountRole, AccountType, Journal as JournalEnum};
+    use rust_decimal_macros::dec;
 
     /// Story 26-1, AC11 (M11) : `debit_sign` est exporté, en-tête et
     /// valeur, juste après `header_row_count`.
@@ -1665,8 +1667,6 @@ mod tests {
         assert_eq!(&row[pos], "negative");
         assert_eq!(&row[pos - 1], "9");
     }
-    use kesh_db::entities::{AccountRole, AccountType, Journal as JournalEnum};
-    use rust_decimal_macros::dec;
 
     fn naive_dt(y: i32, m: u32, d: u32, h: u32, mi: u32, s: u32) -> NaiveDateTime {
         NaiveDate::from_ymd_opt(y, m, d)

@@ -607,7 +607,6 @@ fn detect_import_format(
     Err(AppError::BankImportUnsupportedFormat)
 }
 
-/// Convertit un `kesh_import::CsvLineError` vers payload sérialisable.
 /// Convertit une erreur de ligne du parseur en charge utile du fil. Le code
 /// sort sous sa graphie canonique `SCREAMING_SNAKE_CASE` (`INVALID_DATE`),
 /// celle de serde, par [`kesh_import::CsvLineErrorCode::as_str`] — Story

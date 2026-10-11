@@ -605,9 +605,16 @@ fn parse_row(record: &csv::StringRecord, line: usize, profile: &CsvProfile) -> R
                 } else {
                     DebitObservation::Consistent
                 };
-                match profile.debit_sign {
-                    DebitSign::Positive => -parsed,
-                    DebitSign::Negative => parsed,
+                if parsed == Decimal::ZERO {
+                    // `-parsed` sur un zéro porterait le bit de signe (`Neg`
+                    // de `rust_decimal`) et s'afficherait « -0.00 » : un
+                    // débit nul rend le zéro sans signe (revue P1, E-4).
+                    Decimal::ZERO
+                } else {
+                    match profile.debit_sign {
+                        DebitSign::Positive => -parsed,
+                        DebitSign::Negative => parsed,
+                    }
                 }
             }
             (true, false) => {
@@ -1697,6 +1704,31 @@ mod tests {
         );
     }
 
+    /// AC14-6 (revue P1, E-1) : la garde passe **avant** la lecture du
+    /// premier enregistrement de données. Sur un fichier dont la seule
+    /// transaction est avalée par le saut, il ne reste aucune donnée :
+    /// une garde placée après `iter.next()` laisserait répondre
+    /// `EmptyFile`, qui ne dit pas que le nombre de lignes est trop grand.
+    #[test]
+    fn header_guard_runs_before_first_data_record() {
+        // `header_row_count = 1` : l'unique ligne est l'en-tête lu par
+        // `headers()`.
+        let csv = "2026-01-01;-1.00;\n";
+        assert_eq!(
+            parse_csv_collect(csv.as_bytes(), &split_profile(DebitSign::Negative)),
+            ParseCsvOutcome::HardFailure(CsvError::HeaderSkipsData { line: 1 })
+        );
+        // `header_row_count = 2` : titre, puis l'unique transaction avalée
+        // par la boucle de saut.
+        let mut profile = split_profile(DebitSign::Negative);
+        profile.header_row_count = 2;
+        let csv2 = "date;debit;credit\n2026-01-01;-1.00;\n";
+        assert_eq!(
+            parse_csv_collect(csv2.as_bytes(), &profile),
+            ParseCsvOutcome::HardFailure(CsvError::HeaderSkipsData { line: 2 })
+        );
+    }
+
     /// AC14-6 (M13) : limite de longueur — la dernière ligne ignorée à
     /// exactement `date` champs (trop courte pour porter la colonne date)
     /// laisse la garde muette ; à `date + 1` champs et datée, refus.
@@ -1773,6 +1805,9 @@ mod tests {
                     assert_eq!(stmt.transactions.len(), 5, "{sign:?}");
                     for t in &stmt.transactions[..4] {
                         assert_eq!(t.amount, Decimal::ZERO);
+                        // Revue P1, E-4 : `==` ignore le bit de signe ; le
+                        // montant produit n'en porte pas (« -0.00 » sinon).
+                        assert!(!t.amount.is_sign_negative(), "{sign:?} {t:?}");
                     }
                     assert_eq!(stmt.transactions[4].amount, dec!(500.00));
                 }
@@ -1872,6 +1907,17 @@ mod tests {
             pos,
             "2026-01-01;0.00;\n2026-01-02;0.00;\n2026-01-03;;-6.00\n"
         ));
+        // Revue P1, E-2 : un débit à zéro est hors dénominateur — deux
+        // débits en défaut + un débit 0.00 → true (compté comme lu, d = 3,
+        // e = 2, il rendrait false).
+        assert!(whole(
+            pos,
+            "2026-01-01;-5.00;\n2026-01-02;-6.00;\n2026-01-03;0.00;\n"
+        ));
+        // Revue P1, E-2 : un crédit négatif n'est pas une observation de
+        // débit — deux crédits négatifs, aucun débit → false (compté comme
+        // débit en défaut, d = e = 2, il rendrait true).
+        assert!(!whole(pos, "2026-01-01;;-5.00\n2026-01-02;;-6.00\n"));
         // Un seul débit, en défaut (d = 1) → false (message « lignes listées »).
         assert!(!whole(pos, "2026-01-01;-5.00;\n2026-01-02;;6.00\n"));
         // Deux débits, tous deux en défaut → true.

@@ -388,7 +388,9 @@ test('refuses the UBS CSV entirely under a « no sign » profile, lines listed (
 	await expect(error).toContainText(/sens des débits/i);
 	const lines = page.getByTestId('bank-import-error-line');
 	await expect(lines.first()).toBeVisible();
-	await expect(lines.first()).toContainText('11');
+	// Cellule du numéro, texte exact : `toContainText('11')` passait aussi
+	// pour une ligne 111 ou un montant -199.11 (revue P1, E-7).
+	await expect(lines.first().locator('td').first()).toHaveText('11');
 	await expect(page.getByTestId('bank-import-error-line-message').first()).toContainText(
 		/signe contraire/i,
 	);

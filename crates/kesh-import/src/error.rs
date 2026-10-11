@@ -216,11 +216,12 @@ pub enum CsvLineErrorCode {
 }
 
 impl CsvLineErrorCode {
-    /// Tous les variants, dans l'ordre de déclaration. La complétude est
-    /// gardée par le `match` exhaustif de [`Self::as_str`] : un variant
-    /// neuf oublié ici ferait échouer le test d'égalité avec serde, qui
-    /// itère sur cette liste, et le `match` de `all_is_complete` (tests)
-    /// refuse de compiler sans lui.
+    /// Tous les variants, dans l'ordre de déclaration. La liste est tenue
+    /// à la main ; sa complétude est gardée par le test `all_is_complete`,
+    /// qui la compare à la liste des variants que la dérivation serde tire
+    /// **de l'enum lui-même** (`deserialize_enum`) : un variant neuf oublié
+    /// ici fait rougir ce test. (Le `match` exhaustif de [`Self::as_str`]
+    /// ne garde que `as_str`, pas cette liste.)
     pub fn all() -> &'static [Self] {
         &[
             CsvLineErrorCode::InvalidDate,
@@ -334,25 +335,53 @@ pub enum ImportError {
 mod tests {
     use super::*;
 
-    /// Garde de complétude de [`CsvLineErrorCode::all`] : ce `match` sans
-    /// bras par défaut ne compile plus si un variant est ajouté, et force
-    /// à le reporter dans `all()` (dont la longueur est comparée ici).
-    #[test]
-    fn all_is_complete() {
-        let mut expected = 0usize;
-        for code in CsvLineErrorCode::all() {
-            match code {
-                CsvLineErrorCode::InvalidDate
-                | CsvLineErrorCode::InvalidAmount
-                | CsvLineErrorCode::AmbiguousDebitCredit
-                | CsvLineErrorCode::EmptyMandatoryField
-                | CsvLineErrorCode::RowTooShort
-                | CsvLineErrorCode::AmountSignMismatch => expected += 1,
+    /// Noms de variants que la dérivation `serde::Deserialize` tire de
+    /// l'enum lui-même : elle les passe à `Deserializer::deserialize_enum`,
+    /// que ce désérialiseur intercepte. Aucune liste tenue à la main.
+    fn serde_variant_names() -> &'static [&'static str] {
+        use serde::de::{self, Deserialize, Deserializer, Visitor};
+        use std::cell::Cell;
+
+        struct Capture<'a>(&'a Cell<Option<&'static [&'static str]>>);
+        impl<'de> Deserializer<'de> for Capture<'_> {
+            type Error = de::value::Error;
+            fn deserialize_any<V: Visitor<'de>>(self, _: V) -> Result<V::Value, Self::Error> {
+                Err(de::Error::custom("seul deserialize_enum est attendu"))
+            }
+            fn deserialize_enum<V: Visitor<'de>>(
+                self,
+                _name: &'static str,
+                variants: &'static [&'static str],
+                _visitor: V,
+            ) -> Result<V::Value, Self::Error> {
+                self.0.set(Some(variants));
+                Err(de::Error::custom("variants capturés"))
+            }
+            serde::forward_to_deserialize_any! {
+                bool i8 i16 i32 i64 i128 u8 u16 u32 u64 u128 f32 f64 char str string
+                bytes byte_buf option unit unit_struct newtype_struct seq tuple
+                tuple_struct map struct identifier ignored_any
             }
         }
-        // Nombre de bras du `match` ci-dessus : à tenir avec lui.
-        assert_eq!(expected, 6);
-        assert_eq!(CsvLineErrorCode::all().len(), 6);
+
+        let cell = Cell::new(None);
+        let _ = CsvLineErrorCode::deserialize(Capture(&cell));
+        cell.get()
+            .expect("la dérivation serde de CsvLineErrorCode passe par deserialize_enum")
+    }
+
+    /// Garde de complétude de [`CsvLineErrorCode::all`] (AC14-9, revue P1
+    /// F1/E-3) : `all()`, rendue par `as_str`, doit égaler, dans l'ordre,
+    /// la liste des variants que serde tire de l'enum. Un variant ajouté à
+    /// l'enum et oublié dans `all()` fait rougir ce test — l'ancienne
+    /// version comptait les éléments de `all()` elle-même et restait verte.
+    #[test]
+    fn all_is_complete() {
+        let from_all: Vec<&str> = CsvLineErrorCode::all()
+            .iter()
+            .map(CsvLineErrorCode::as_str)
+            .collect();
+        assert_eq!(from_all, serde_variant_names());
     }
 
     /// AC3-bis : pour chaque variant, la graphie `as_str()` est celle de

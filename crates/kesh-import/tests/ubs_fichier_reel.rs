@@ -136,10 +136,12 @@ fn ubs_real_statement_is_conform() {
     );
     for (row, tx) in rows.iter().zip(&stmt.transactions) {
         let from_debit = !row.get(5).unwrap_or("").trim().is_empty();
+        // Non strict : un montant nul est accepté sous les deux colonnes
+        // (AC2) et ne doit pas faire rougir un relevé conforme (revue P1, E-6).
         if from_debit {
-            assert!(tx.amount < Decimal::ZERO, "un débit n'est pas négatif");
+            assert!(tx.amount <= Decimal::ZERO, "un débit est positif");
         } else {
-            assert!(tx.amount > Decimal::ZERO, "un crédit n'est pas positif");
+            assert!(tx.amount >= Decimal::ZERO, "un crédit est négatif");
         }
     }
 

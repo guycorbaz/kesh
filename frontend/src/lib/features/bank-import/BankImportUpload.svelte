@@ -104,6 +104,7 @@
 		if (!selectedAccountId) {
 			errorCode = 'BANK_ACCOUNT_REQUIRED';
 			errorMessage = "Sélectionnez d'abord un compte bancaire.";
+			errorDetails = null;
 			return;
 		}
 		// F1 (Pass 3 review) — réinitialise les confirm flags quand un
