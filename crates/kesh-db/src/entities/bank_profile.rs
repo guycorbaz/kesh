@@ -11,7 +11,7 @@
 //! `audit_log.details_json` avec snapshot `bank_profile_name` (Pass 2 M'3).
 
 use chrono::NaiveDateTime;
-use kesh_import::ColumnMapping;
+use kesh_import::{ColumnMapping, DebitSign};
 use serde::{Deserialize, Serialize};
 
 use crate::errors::DbError;
@@ -36,6 +36,11 @@ pub struct BankProfile {
     pub field_separator: String,   // CHAR(1) MariaDB → String
     pub encoding: Option<String>,
     pub header_row_count: u8,
+    /// Sens des montants de la colonne Débit en mode débit/crédit séparés
+    /// (Story 26-1, #620) : `"positive"` ou `"negative"` — `VARCHAR(10)` +
+    /// `CHECK` en base, lu en `String` comme `decimal_separator`. Utiliser
+    /// [`Self::debit_sign_enum`] pour le type.
+    pub debit_sign: String,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
 }
@@ -46,6 +51,19 @@ impl BankProfile {
         serde_json::from_str(&self.column_mapping_json).map_err(|e| {
             DbError::Invariant(format!(
                 "bank_profile.column_mapping_json invalide (id={}) : {}",
+                self.id, e
+            ))
+        })
+    }
+
+    /// Lit `debit_sign` en [`DebitSign`]. Une valeur hors domaine rend
+    /// [`DbError::Invariant`] — **jamais** de repli sur `Positive` : un
+    /// repli inverserait en silence chaque débit d'un profil UBS sur une
+    /// base corrompue, c'est-à-dire rouvrirait #620.
+    pub fn debit_sign_enum(&self) -> Result<DebitSign, DbError> {
+        self.debit_sign.parse().map_err(|e: String| {
+            DbError::Invariant(format!(
+                "bank_profile.debit_sign invalide (id={}) : {}",
                 self.id, e
             ))
         })
@@ -95,4 +113,56 @@ pub struct NewBankProfile {
     pub field_separator: String,
     pub encoding: Option<String>,
     pub header_row_count: u8,
+    /// `"positive"` ou `"negative"` (cf. [`BankProfile::debit_sign`]).
+    pub debit_sign: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entity(debit_sign: &str) -> BankProfile {
+        let ts = chrono::NaiveDate::from_ymd_opt(2026, 1, 1)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap();
+        BankProfile {
+            id: 7,
+            company_id: 1,
+            bank_name: "UBS".to_string(),
+            filename_pattern: None,
+            column_mapping_json: r#"{"date":2,"debit_credit_split":[5,6]}"#.to_string(),
+            date_format: "%Y-%m-%d".to_string(),
+            decimal_separator: ".".to_string(),
+            field_separator: ";".to_string(),
+            encoding: None,
+            header_row_count: 9,
+            debit_sign: debit_sign.to_string(),
+            created_at: ts,
+            updated_at: ts,
+        }
+    }
+
+    #[test]
+    fn debit_sign_enum_reads_both_values() {
+        assert_eq!(
+            entity("positive").debit_sign_enum().unwrap(),
+            DebitSign::Positive
+        );
+        assert_eq!(
+            entity("negative").debit_sign_enum().unwrap(),
+            DebitSign::Negative
+        );
+    }
+
+    /// Story 26-1, AC8 (M10) : une valeur hors domaine — que la base
+    /// interdit par son `CHECK`, d'où l'entité construite à la main — rend
+    /// `Invariant`, jamais un repli sur `Positive`.
+    #[test]
+    fn debit_sign_enum_rejects_out_of_domain_value() {
+        match entity("autre").debit_sign_enum() {
+            Err(DbError::Invariant(msg)) => assert!(msg.contains("id=7"), "{msg}"),
+            other => panic!("expected Invariant, got {other:?}"),
+        }
+    }
 }

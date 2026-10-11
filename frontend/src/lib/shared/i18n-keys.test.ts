@@ -24,6 +24,7 @@
 import { describe, it, expect } from 'vitest';
 
 import { IMPORT_ERROR_LABELS } from '$lib/features/imported-supplier-invoices/error-label';
+import { CSV_LINE_ERROR_LABELS } from '$lib/features/bank-import/csv-line-error-label';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 // Seul import de production autorisé (AC7 / D1-bis) : un utilitaire de lecture, sans
@@ -550,21 +551,43 @@ const ATTENDU = {
 	// `journal-entries-column-lettering`. Recompté par `grep -o "i18nMsg("` aux deux bornes
 	// (`011ea618` et la branche). `sitesNonResolus`, `relais`, `sitesGabarit` inchangés
 	// (que des littéraux).
+	// Story 26-3 (#617) : **2020 → 2022** (+2) — l'écran d'import lit ses deux textes en
+	// dur par clé : `features/bank-import/BankImportUpload.svelte`, l'`aria-label` de la zone
+	// de dépôt (`bank-import-labels-drop-zone`), et `routes/(app)/bank-import/+page.svelte`,
+	// le `<title>` (`bank-import-labels-page-title`). Recompté par `grep -o "i18nMsg("` aux
+	// deux bornes (`fe162504` et la branche). `sitesNonResolus`, `relais`, `sitesGabarit`
+	// inchangés (deux littéraux).
+	// Story 26-1 (#620, #621) : **2020 → 2026** (+6), recompté par `grep -o "i18nMsg("` aux
+	// deux bornes (`91426149` et la branche), commentaires masqués :
+	// `features/bank-import/BankProfileForm.svelte` (11 → 15 : aide des lignes à ignorer,
+	// légende et deux boutons du sens des débits) ; `BankImportUpload.svelte` (21 → 22 : la
+	// troncature de la liste du refus de signe, clé existante) ; `csv-line-error-label.ts`
+	// (neuf, 1 site de gabarit — le second `i18nMsg(` du fichier est dans un commentaire).
+	// `sitesNonResolus` (31) et `relais` (6) inchangés, mesurés.
+	// Fusion 26-3 + 26-1 (2026-10-11) : 2020 + 2 + 6 = **2028**.
 	// Story 26-2a (#622) : **2020 → 2024** (+4) — `routes/(app)/bank-accounts/+page.svelte`
 	// (47 → 51) : libellé et aide de la description, dans les formulaires de création et
 	// de modification (`bank-accounts-labels-description`, `bank-accounts-help-description`).
 	// Recompté par `grep -o "i18nMsg("` aux deux bornes (`9b724027` et la branche).
 	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (que des littéraux).
-	sitesTotal: 2024,
+	// Fusion de la 26-2a dans la 26-1 (2026-10-11), deltas additionnés depuis la base
+	// commune `fe162504` (2020) : 26-3 +2, 26-1 +6, 26-2a +4 = **2032**.
+	sitesTotal: 2032,
 	sitesNonResolus: 31,
 	relais: 6,
-	sitesGabarit: 10,
+	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
+	// csv-line-error-label.ts` (`bank-import-csv-errors-`), table littérale des codes
+	// d'erreur de ligne CSV, patron d'`imported-supplier-invoices/error-label.ts`.
+	sitesGabarit: 11,
 	litterauxMin: 1050,
 	clesDepuisTsMin: 5
 } as const;
 
 /**
- * Les 8 préfixes dynamiques et leurs valeurs, **écrites en dur**.
+ * Les 9 préfixes dynamiques et leurs valeurs, **écrites en dur**.
+ *
+ * (Story 26-1 : 8 → 9, avec `bank-import-csv-errors-` — les six codes d'erreur de ligne
+ * de l'import CSV, dont `amount-sign-mismatch`.)
  *
  * ⚠️ Les lire depuis le code de production ferait qu'une carte vidée par erreur rendrait
  * le test vert à vide — le mode d'échec du test muet. La contrepartie est l'assertion de
@@ -602,7 +625,12 @@ const MOTIFS_DYNAMIQUES: Record<string, readonly string[]> = {
 	],
 	// ⚠️ angle mort assumé — valeurs produites par le backend Rust, déclarées APRÈS
 	// transformation (`info.replace(/_/g, '-')`), donc en tirets et non en snake_case.
-	'bank-import-info-': ['bank-csv-profile-auto-matched', 'bank-csv-multiple-profile-matches']
+	'bank-import-info-': ['bank-csv-profile-auto-matched', 'bank-csv-multiple-profile-matches'],
+	// Story 26-1 (#620, AC3-bis) — `lib/features/bank-import/csv-line-error-label.ts`.
+	'bank-import-csv-errors-': [
+		'invalid-date', 'invalid-amount', 'ambiguous-debit-credit', 'empty-mandatory-field',
+		'row-too-short', 'amount-sign-mismatch'
+	]
 };
 
 /**
@@ -649,7 +677,9 @@ const CARDINALITES: Record<string, number> = {
 	'vat-category-': 5,
 	'reminders-error-': 15,
 	'imported-supplier-invoices-error-': Object.keys(IMPORT_ERROR_LABELS).length,
-	'bank-import-info-': 2
+	'bank-import-info-': 2,
+	// Story 26-1 : LUE depuis la production, comme la carte des erreurs d'import.
+	'bank-import-csv-errors-': Object.keys(CSV_LINE_ERROR_LABELS).length
 };
 
 /**
@@ -710,7 +740,9 @@ const FAMILLES_RESOLUES: Record<string, readonly string[]> = {
 };
 
 /**
- * Les 10 sites de gabarit, **confrontés et non produits**.
+ * Les 11 sites de gabarit, **confrontés et non produits**.
+ *
+ * (Story 26-1 : 10 → 11, `csv-line-error-label.ts`.)
  *
  * ⚠️ Le développeur ne doit pas *fabriquer* cette liste par l'extraction — c'est elle
  * qui a déjà échoué cinq fois. Il la *compare*. Un simple compte laisserait d'ailleurs
@@ -726,7 +758,8 @@ const SITES_GABARIT_ATTENDUS: readonly string[] = [
 	'routes/(app)/invoices/due-dates/+page.svelte  due-dates-filter-',
 	'routes/(app)/journal-entries/+page.svelte  journal-',
 	'routes/(app)/settings/vat-rates/+page.svelte  vat-category-',
-	'lib/features/imported-supplier-invoices/error-label.ts  imported-supplier-invoices-error-'
+	'lib/features/imported-supplier-invoices/error-label.ts  imported-supplier-invoices-error-',
+	'lib/features/bank-import/csv-line-error-label.ts  bank-import-csv-errors-'
 ];
 
 /**
@@ -927,7 +960,7 @@ describe('garde i18n — les clés demandées existent au catalogue', () => {
 		}
 	});
 
-	it('les 8 préfixes dynamiques sont déclarés, et leurs 10 sites confrontés', () => {
+	it('les 9 préfixes dynamiques sont déclarés, et leurs 11 sites confrontés', () => {
 		expect([...new Set(releve.gabarits)].sort()).toEqual([...SITES_GABARIT_ATTENDUS].sort());
 		expect(releve.gabarits.length).toBe(ATTENDU.sitesGabarit);
 		const prefixesVus = new Set(releve.gabarits.map((g) => g.split('  ')[1]));

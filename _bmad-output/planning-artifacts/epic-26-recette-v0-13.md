@@ -58,8 +58,8 @@ policy* :
 - `ColumnMapping` est sérialisé en JSON avec `deny_unknown_fields` : y loger le nouveau réglage
   rendrait le profil **illisible par une 0.13.0**. Colonne dédiée ou champ JSON, la spec choisit et
   justifie au regard de P1 à P8, de l'export `.keshbackup` et de l'export CSV des tables ;
-- **critère d'acceptation sur le fichier d'UBS réel, anonymisé**, versionné comme fixture : 196
-  transactions, somme des montants égale au solde final moins le solde initial (−22 458.62).
+- **critère d'acceptation sur le fichier d'UBS réel**, contrôlé en local (le dépôt est public : fixture synthétique) :
+  somme des montants égale au solde final moins le solde initial.
 
 PR : `closes #620`, `refs #621` (#621 reste ouverte pour le préambule).
 

@@ -607,11 +607,14 @@ fn detect_import_format(
     Err(AppError::BankImportUnsupportedFormat)
 }
 
-/// Convertit un `kesh_import::CsvLineError` vers payload sérialisable.
+/// Convertit une erreur de ligne du parseur en charge utile du fil. Le code
+/// sort sous sa graphie canonique `SCREAMING_SNAKE_CASE` (`INVALID_DATE`),
+/// celle de serde, par [`kesh_import::CsvLineErrorCode::as_str`] — Story
+/// 26-1, AC3-bis (avant : `format!("{:?}").to_uppercase()`, `INVALIDDATE`).
 fn csv_line_error_to_payload(e: CsvLineError) -> crate::errors::CsvLineErrorPayload {
     crate::errors::CsvLineErrorPayload {
         line: e.line,
-        code: format!("{:?}", e.code).to_uppercase(),
+        code: e.code.as_str().to_string(),
         value: e.value,
         message_i18n_key: e.message_i18n_key,
     }
@@ -648,6 +651,20 @@ fn map_csv_error(err: CsvError) -> AppError {
             truncated,
             reason: None,
         },
+        // Story 26-1 (#620, #621) : bras EXPLICITES — le repli `other =>`
+        // rendrait un 500 au message masqué.
+        CsvError::AmountSignMismatch {
+            errors,
+            total_errors,
+            truncated,
+            whole_debit_column,
+        } => AppError::BankCsvAmountSignMismatch {
+            lines: errors.into_iter().map(csv_line_error_to_payload).collect(),
+            total_errors,
+            truncated,
+            whole_debit_column,
+        },
+        CsvError::HeaderSkipsData { line } => AppError::BankCsvHeaderSkipsData { line },
         // Pour les variantes non-PartialFailure inline (InvalidDate etc.)
         // — ne devraient pas apparaître au top-level (collectées dans
         // PartialFailure), mais defense-in-depth.
@@ -1583,6 +1600,9 @@ fn db_profile_to_csv_profile(
         field_separator: profile.field_separator_char(),
         encoding: profile.encoding.clone(),
         header_row_count: profile.header_row_count,
+        // Story 26-1 (#620) : c'est ICI que le réglage du formulaire atteint
+        // l'import. Valeur hors domaine → 500 `Invariant`, jamais un repli.
+        debit_sign: profile.debit_sign_enum().map_err(AppError::Database)?,
     })
 }
 

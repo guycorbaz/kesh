@@ -71,7 +71,7 @@ Menu **Mensuel → Écritures**. Saisie en partie double avec validation balance
 
 ## 5. Importer des relevés bancaires
 
-Menu **Quotidien → Importer**. Glisser-déposer un fichier CAMT.053 ou CSV. Profils CSV réutilisables : **Administration → Profils bancaires**.
+Menu **Quotidien → Importer des relevés**. Glisser-déposer un fichier CAMT.053 ou CSV. Profils CSV réutilisables : **Administration → Profils bancaires**.
 
 ## 6. Réconcilier les transactions importées
 

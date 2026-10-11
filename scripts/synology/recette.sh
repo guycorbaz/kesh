@@ -12,6 +12,16 @@
 # documentée dans docs/testing.md. Sortie : un compte rendu par étape, puis
 # « RECETTE VERTE » (code 0) ou « RECETTE ROUGE » (code 1).
 #
+# Section 0 seule (Story 26-3, #619) : RECETTE_SECTION=0 bash scripts/synology/recette.sh
+# joue la garde de kesh-restore.sh contre un FAUX docker (fonction bash exportée dans le
+# sous-shell de chaque cas), puis sort, avant toute mise en place. Prérequis de ce mode :
+# bash, coreutils (mktemp, mkdir, rm, rmdir, cat, dirname, sha256sum, wc, head, seq, tr, tail,
+# cut), gzip,
+# grep, awk — ni
+# docker, ni openssl, ni sqlx, ni python3, ni réseau : la seule trap posée avant la
+# section 0 efface le dossier de travail, sans appeler docker. C'est le mode des preuves
+# de mutation de la garde.
+#
 # Ce qui n'est PAS rejoué : DSM (Planificateur de tâches, Hyper Backup, Snapshot
 # Replication, paquet MariaDB 10) ; root (les scripts tournent ici sous
 # l'utilisateur courant ; chown/chmod des .cnf passent par un conteneur root).
@@ -22,12 +32,127 @@ MANUEL=$RACINE/docs/manual/fr/admin-manual.tex
 NOM=kesh-recette-synology
 NET=$NOM-reseau; DB=$NOM-db; export COMPOSE_PROJECT_NAME=$NOM
 IMG=mariadb:10.11
+ECHECS=0
+case "${RECETTE_SECTION:-}" in ''|0) ;; *) echo "RECETTE_SECTION : seule la valeur 0 est reconnue (« ${RECETTE_SECTION} »)"; exit 2;; esac
+ok()  { echo "  OK    $*"; }
+ko()  { echo "  ÉCHEC $*"; ECHECS=$((ECHECS+1)); }
+verifier() { if [ "$2" = "$3" ]; then ok "$1 ($2)"; else ko "$1 : $2, attendu $3"; fi; }
+verdict() { echo; if [ "$ECHECS" -eq 0 ]; then echo "RECETTE VERTE"; exit 0; else echo "RECETTE ROUGE ($ECHECS échec(s))"; exit 1; fi; }
 W=$(mktemp -d "${TMPDIR:-/tmp}/$NOM.XXXXXX")
+# Trap MINIMALE jusqu'après la section 0 : elle n'appelle pas docker (C-26-3-21).
+trap 'rm -rf "$W"' EXIT
+
+# Section 0 — la garde de kesh-restore.sh (étape 1) contre un FAUX docker. Aucun vrai
+# conteneur n'est lu ni créé. Le faux est une FONCTION bash exportée, non un exécutable
+# du PATH : kesh-restore.sh réécrit son PATH (/usr/local/bin:/usr/bin:/bin en tête), qui
+# masquerait un faux placé devant ; une fonction exportée est importée par le bash du
+# script et précède toute recherche dans le PATH. Elle n'est DÉFINIE et EXPORTÉE que dans
+# le sous-shell d'un cas (faux_docker_installer n'est appelé que là) : jamais au niveau de
+# ce script, où elle masquerait le vrai docker pour la mise en place et la trap nettoyer.
+faux_docker_installer() {
+    docker() {
+        printf '%s\n' "$*" >> "$FAUX_JOURNAL"
+        case "$*" in
+            "ps --all --format {{.State}}|{{.Image}}|{{.Label \"com.docker.compose.service\"}}|{{.Names}}")
+                if [ "$FAUX_CODE" -ne 0 ]; then echo "Cannot connect to the Docker daemon (faux docker)" >&2; return "$FAUX_CODE"; fi
+                cat "$FAUX_SORTIE" ;;
+            # Forme d'origine de la garde (fe162504), pour la seule preuve de mutation (O) :
+            # première colonne des lignes dont la troisième vaut le service demandé.
+            "ps --all --filter label=com.docker.compose.service="*" --format {{.State}}")
+                if [ "$FAUX_CODE" -ne 0 ]; then echo "Cannot connect to the Docker daemon (faux docker)" >&2; return "$FAUX_CODE"; fi
+                local s=${4#label=com.docker.compose.service=}
+                awk -F'|' -v s="$s" '$3 == s { print $1 }' "$FAUX_SORTIE" ;;
+            *)
+                echo "FAUX DOCKER : appel inattendu : $*" >&2
+                printf 'INATTENDU %s\n' "$*" >> "$FAUX_JOURNAL"
+                return 97 ;;
+        esac
+    }
+    export -f docker
+}
+# Motif présent dans la sortie de la garde pour chaque classe de verdict (AC 6).
+motif_de_classe() {
+    case "$1" in
+        ZERO) grep -qF 'aucun conteneur du service' ;;
+        SERVICE) grep -qE '\(service « [^»]* »\) est « ' ;;
+        FILET) grep -qF 'image Kesh' ;;
+        ILLISIBLE) grep -qF 'ligne de docker ps illisible' ;;
+        PASSE) grep -qF 'recrée la base' ;;
+    esac
+}
+# cas <id> <libellé> <classe> <sortie du faux, lignes séparées par \n> [service réglé] [code du faux] [état refusé]
+cas() {
+    local id=$1 libelle=$2 classe=$3 contenu=$4 service=${5:-} code=${6:-0} etat=${7:-}
+    local s=${service:-kesh-api} d="$W/garde/$id" sortie rc pb="" attendu="" m
+    mkdir -p "$d"
+    if [ -n "$contenu" ]; then printf '%b\n' "$contenu" > "$d/sortie"; else : > "$d/sortie"; fi
+    : > "$d/journal"
+    sortie=$(
+        unset SAUVEGARDE_DOSSIER SAUVEGARDE_BASE SAUVEGARDE_RESEAU SAUVEGARDE_IMAGE SAUVEGARDE_SERVICE
+        faux_docker_installer
+        export FAUX_SORTIE="$d/sortie" FAUX_JOURNAL="$d/journal" FAUX_CODE="$code"
+        if [ -n "$service" ]; then export SAUVEGARDE_SERVICE="$service"; fi
+        SAUVEGARDE_DOSSIER="$W/garde/dossier" SAUVEGARDE_BASE=autre bash "$SCRIPTS/kesh-restore.sh" "$W/garde/source" 2>&1
+    ); rc=$?
+    [ "$rc" -ne 0 ] || pb="$pb code 0 ;"
+    case "$classe" in
+        ZERO) attendu="aucun conteneur du service « $s »" ;;
+        SERVICE) attendu="(service « $s ») est « $etat »" ;;
+        FILET) attendu="image Kesh" ;;
+        ILLISIBLE) attendu="ligne de docker ps illisible" ;;
+        PASSE) attendu="recrée la base" ;;
+    esac
+    if [ -n "$attendu" ] && ! grep -qF -- "$attendu" <<< "$sortie"; then pb="$pb motif « $attendu » absent ;"; fi
+    for m in ZERO SERVICE FILET ILLISIBLE PASSE; do
+        [ "$m" = "$classe" ] && continue
+        if motif_de_classe "$m" <<< "$sortie"; then pb="$pb motif de la classe $m présent ;"; fi
+    done
+    if [ "$id" = S5 ] && ! grep -qF 'docker compose up --no-start' <<< "$sortie"; then pb="$pb « up --no-start » absent du message ;"; fi
+    if [ "$classe" = ERREUR ] && ! grep -qF 'Cannot connect to the Docker daemon' <<< "$sortie"; then pb="$pb erreur du démon absente de la sortie ;"; fi
+    if [ "$(wc -l < "$d/journal")" -ne 1 ] || [ "$(head -c 7 "$d/journal")" != "ps --al" ] || grep -q INATTENDU "$d/journal"; then
+        pb="$pb journal du faux ≠ un seul « ps --all » ($(tr '\n' '/' < "$d/journal")) ;"
+    fi
+    [ ! -e "$W/garde/dossier/dump/.verrou" ] || pb="$pb verrou laissé ;"
+    [ ! -e "$W/garde/dossier/avant-restauration" ] || pb="$pb avant-restauration/ créé ;"
+    if [ -z "$pb" ]; then ok "$id $libelle → $classe"; else ko "$id $libelle → $classe :$pb sortie : $(tail -1 <<< "$sortie" | cut -c1-160)"; fi
+}
+
+echo "== 0. Garde de kesh-restore.sh contre un faux docker (aucun conteneur)"
+mkdir -p "$W/garde/dossier" "$W/garde/source"
+echo "fichier factice : le script n'en teste que la présence" > "$W/garde/dossier/kesh-restore.cnf"
+printf 'CREATE DATABASE \x60kesh\x60;\n' | gzip > "$W/garde/source/kesh_pre_backup.sql.gz"
+( cd "$W/garde/source" && sha256sum kesh_pre_backup.sql.gz > kesh_pre_backup.sql.gz.sha256 )
+K='gcorbaz/kesh:0.13.0'; ARRETE="exited|$K|kesh-api|kesh-api"
+EMPREINTE=$(printf 'a%.0s' $(seq 64))
+cas S1  "service renommé, image locale"                    ZERO      "running|kesh-local:dev|kesh|kesh-kesh-1"
+cas S2  "idem, réglé"                                      SERVICE   "running|kesh-local:dev|kesh|kesh-kesh-1" kesh 0 running
+cas S3  "orphelin arrêté, renommé Kesh en marche"          FILET     "exited|gcorbaz/kesh:0.12.1|kesh-api|kesh-api\nrunning|$K|kesh|kesh-kesh-1"
+cas S4  "réglé, orphelin kesh-api en marche"               FILET     "exited|$K|kesh|kesh-kesh-1\nrunning|gcorbaz/kesh:0.12.1|kesh-api|kesh-api" kesh
+cas S5  "aucun conteneur"                                  ZERO      ""
+cas S6  "created"                                          PASSE     "created|$K|kesh-api|kesh-api"
+cas S7  "restarting"                                       SERVICE   "restarting|$K|kesh-api|kesh-api" "" 0 restarting
+cas S8  "paused"                                           SERVICE   "paused|$K|kesh-api|kesh-api" "" 0 paused
+cas S9  "hors compose (étiquette vide)"                    PASSE     "running|mariadb:10.11||kesh-recette-db\n$ARRETE"
+cas S10 "ligne vide intercalée"                            PASSE     "$ARRETE\n\nrunning|mariadb:10.11||x"
+cas S11 "ligne incomplète"                                 ILLISIBLE "$ARRETE\nrunning|mariadb:10.11"
+cas S12 "cinq champs"                                      ILLISIBLE "$ARRETE\nrunning|mariadb:10.11|a|b|c"
+cas S13 "deux projets, même service"                       SERVICE   "exited|$K|kesh-api|p1-kesh-api\nrunning|$K|kesh-api|p2-kesh-api" "" 0 running
+cas S14 "image par empreinte, autre service"               FILET     "running|docker.io/gcorbaz/kesh@sha256:$EMPREINTE|autre|x\n$ARRETE"
+cas S15 "image affichée par identifiant (angle mort)"      PASSE     "running|407fccb51e71|kesh|kesh-kesh-1\n$ARRETE"
+cas S16 "image voisine non Kesh"                           PASSE     "running|gcorbaz/kesh-autre:1|autre|y\n$ARRETE"
+cas S17 "démon injoignable"                                ERREUR    "" "" 1
+cas S18 "#619 réussi : renommé, arrêté, réglé"             PASSE     "exited|$K|kesh|kesh-kesh-1" kesh
+cas S19 "idem, orphelin kesh-api arrêté"                   PASSE     "exited|$K|kesh|kesh-kesh-1\nexited|gcorbaz/kesh:0.12.1|kesh-api|kesh-api" kesh
+cas S20 "image Kesh d'un autre service, à l'arrêt"         PASSE     "exited|gcorbaz/kesh:0.12.1|ancien|ancien\n$ARRETE"
+cas S21 "dead, image nue"                                  PASSE     "dead|gcorbaz/kesh|kesh-api|kesh-api"
+cas S22 "#619 seul, non réglé, en marche"                  FILET     "running|gcorbaz/kesh:latest|kesh|kesh-kesh-1"
+cas S23 "image nue d'un autre service, en marche"          FILET     "running|gcorbaz/kesh|autre|z\n$ARRETE"
+if [ "${RECETTE_SECTION:-}" = 0 ]; then echo "  (section 0 seule : les sections réelles, 1 à 9, n'ont pas été jouées)"; verdict; fi
+verifier "le vrai docker répond après la section 0" "$(type -t docker)" file
+
 ROOTPW=$(openssl rand -hex 16)
 KESHPW='Pa@ss#;w"0rd\x/ %q'          # @ # ; " \ / espace : guillemets, échappements
 BKPPW=$(openssl rand -hex 32)
-ECHECS=0
-
 for n in "$NET" "$DB"; do case "$n" in *kesh-mariadb-dev*) echo "refus : $n"; exit 1;; esac; done
 nettoyer() {
     ( cd "$W/kesh" 2>/dev/null && docker compose down --remove-orphans >/dev/null 2>&1 )
@@ -35,9 +160,6 @@ nettoyer() {
     docker run --rm -v "$W:/w" "$IMG" rm -rf /w/kesh /w/restaure >/dev/null 2>&1; rm -rf "$W"
 }
 trap nettoyer EXIT
-ok()  { echo "  OK    $*"; }
-ko()  { echo "  ÉCHEC $*"; ECHECS=$((ECHECS+1)); }
-verifier() { if [ "$2" = "$3" ]; then ok "$1 ($2)"; else ko "$1 : $2, attendu $3"; fi; }
 sql()  { docker exec -i "$DB" mariadb -uroot -p"$ROOTPW" --default-character-set=utf8mb4 -N "$@"; }
 # Empreinte de la base, par son CONTENU : schéma (CREATE TABLE : colonnes, index, clés étrangères, jeu de
 # caractères) et lignes de toutes les tables de base, par mariadb-dump trié par clé primaire, sans date ni
@@ -114,6 +236,7 @@ verifier "ligne non ASCII écrite telle quelle (« $NONASCII »)" "$(hex_nonasci
 A=$(empreinte); detail > "$W/A.detail"; NA=$(compter); NT=$(tables); echo "  état A : $NT tables, empreinte $A, $NA comptes"
 
 echo "== 1. Dump"
+verifier "le vrai docker répond (montage de la section 1)" "$(type -t docker)" file
 lancer "$SCRIPTS/kesh-dump.sh" && ok "kesh-dump.sh sort en 0" || ko "kesh-dump.sh"
 ( cd "$W/kesh/dump" && sha256sum -c --quiet kesh_pre_backup.sql.gz.sha256 ) && ok "empreinte vérifiée" || ko "empreinte"
 verifier "droits de dump/" "$(stat -c %a "$W/kesh/dump")" 700
@@ -150,16 +273,16 @@ sql -e "SET FOREIGN_KEY_CHECKS=0; DELETE FROM kesh.accounts WHERE number <> '999
 C=$(empreinte); echo "  état C : $(compter) comptes, empreinte $C"
 
 echo "== 4. Refus avant toute écriture"
-SORTIE=$(lancer "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" 2>&1) && ko "Kesh en marche : sorti en 0" || ok "Kesh en marche → refus ($(echo "$SORTIE" | tail -1 | cut -c1-80)…)"
+SORTIE=$(lancer "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" 2>&1) && ko "Kesh en marche : sorti en 0" || { echo "$SORTIE" | grep -qF "(service « kesh-api ») est « running »" && ok "Kesh en marche → refus ($(echo "$SORTIE" | tail -1 | cut -c1-80)…)" || ko "refus, mais pas sur l'état running : $(echo "$SORTIE" | tail -1)"; }
 compose_factice '["sh", "-c", "exit 1"]' "always"
 # L'état alterne running / restarting à chaque redémarrage ; le délai entre deux redémarrages double à
 # chaque fois : attendre trois lectures « restarting » consécutives (0,5 s d'écart) avant de lancer.
 STABLE=0; for i in $(seq 80); do if [ "$(etat_kesh_api)" = restarting ]; then STABLE=$((STABLE+1)); [ $STABLE -ge 3 ] && break; else STABLE=0; fi; sleep 0.5; done
 verifier "kesh-api factice en boucle de redémarrage (3 lectures stables)" "$STABLE" 3
-SORTIE=$(lancer "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" 2>&1) && ko "Kesh « restarting » : sorti en 0" || { echo "$SORTIE" | grep -q "est « restarting »" && ok "Kesh « restarting » → refus ($(echo "$SORTIE" | tail -1 | cut -c1-70)…)" || ko "refus, mais pas sur l'état restarting : $(echo "$SORTIE" | tail -1)"; }
+SORTIE=$(lancer "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" 2>&1) && ko "Kesh « restarting » : sorti en 0" || { echo "$SORTIE" | grep -qF "(service « kesh-api ») est « restarting »" && ok "Kesh « restarting » → refus ($(echo "$SORTIE" | tail -1 | cut -c1-70)…)" || ko "refus, mais pas sur l'état restarting : $(echo "$SORTIE" | tail -1)"; }
 compose_factice '["sleep", "infinity"]' "no"; ( cd "$W/kesh" && docker compose pause kesh-api >/dev/null 2>&1 )
 verifier "kesh-api factice en pause" "$(etat_kesh_api)" paused
-SORTIE=$(lancer "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" 2>&1) && ko "Kesh « paused » : sorti en 0" || ok "Kesh « paused » → refus ($(echo "$SORTIE" | tail -1 | cut -c1-70)…)"
+SORTIE=$(lancer "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" 2>&1) && ko "Kesh « paused » : sorti en 0" || { echo "$SORTIE" | grep -qF "(service « kesh-api ») est « paused »" && ok "Kesh « paused » → refus ($(echo "$SORTIE" | tail -1 | cut -c1-70)…)" || ko "refus, mais pas sur l'état paused : $(echo "$SORTIE" | tail -1)"; }
 ( cd "$W/kesh" && docker compose unpause kesh-api >/dev/null 2>&1 )
 arreter; verifier "kesh-api arrêté par l'exploitant (factice)" "$(etat_kesh_api)" exited
 mkdir "$W/kesh/dump/.verrou"
@@ -284,5 +407,4 @@ lancer "$SCRIPTS/kesh-restore.sh" "$W/restaure/dump" >/dev/null 2>&1; verifier "
 verifier "base rechargée (A)" "$(empreinte)" "$A"
 demarrer; verifier "kesh-api redémarré par l'exploitant (factice)" "$(kesh_api)" 1
 
-echo
-if [ "$ECHECS" -eq 0 ]; then echo "RECETTE VERTE"; exit 0; else echo "RECETTE ROUGE ($ECHECS échec(s))"; exit 1; fi
+verdict

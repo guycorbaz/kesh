@@ -1,6 +1,6 @@
 -- SQUASH DU SCHÉMA DE TEST — Story 22-5 (#251). GÉNÉRÉ, NE PAS ÉDITER.
 -- Régénérer : scripts/regen-test-schema.sh
--- Équivalent des 79 migrations de crates/kesh-db/migrations/,
+-- Équivalent des 80 migrations de crates/kesh-db/migrations/,
 -- rejouées en UN batch DDL par base éphémère de test.
 --
 -- Le garde-fou crates/kesh-db/tests/test_schema_guard.rs compare ce schéma
@@ -178,6 +178,7 @@ CREATE TABLE `bank_profiles` (
   `field_separator` char(1) NOT NULL,
   `encoding` varchar(20) DEFAULT NULL,
   `header_row_count` tinyint(3) unsigned NOT NULL DEFAULT 1,
+  `debit_sign` varchar(10) NOT NULL DEFAULT 'positive' COMMENT 'Colonne Débit en mode séparé. positive = sans signe, Kesh inverse. negative = déjà négatif, Kesh garde',
   `created_at` datetime(6) NOT NULL DEFAULT current_timestamp(6),
   `updated_at` datetime(6) NOT NULL DEFAULT current_timestamp(6) ON UPDATE current_timestamp(6),
   PRIMARY KEY (`id`),
@@ -188,11 +189,12 @@ CREATE TABLE `bank_profiles` (
   CONSTRAINT `chk_bank_profiles_field_separator` CHECK (`field_separator` in (',',';','	')),
   CONSTRAINT `chk_bank_profiles_decimal_separator` CHECK (`decimal_separator` in ('.',',')),
   CONSTRAINT `chk_bank_profiles_separators_distinct` CHECK (`field_separator` <> `decimal_separator`),
-  CONSTRAINT `chk_bank_profiles_header_row_count` CHECK (`header_row_count` <= 5),
   CONSTRAINT `chk_bank_profiles_bank_name_len` CHECK (char_length(`bank_name`) between 1 and 100),
   CONSTRAINT `chk_bank_profiles_column_mapping_valid` CHECK (json_valid(`column_mapping`)),
   CONSTRAINT `chk_bank_profiles_date_format_len` CHECK (char_length(`date_format`) between 1 and 50),
-  CONSTRAINT `chk_bank_profiles_filename_pattern_len` CHECK (`filename_pattern` is null or char_length(`filename_pattern`) between 1 and 200)
+  CONSTRAINT `chk_bank_profiles_filename_pattern_len` CHECK (`filename_pattern` is null or char_length(`filename_pattern`) between 1 and 200),
+  CONSTRAINT `chk_bank_profiles_debit_sign` CHECK (`debit_sign` in ('positive','negative')),
+  CONSTRAINT `chk_bank_profiles_header_row_count` CHECK (`header_row_count` <= 20)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 DROP TABLE IF EXISTS `bank_transactions`;
@@ -1160,4 +1162,4 @@ CREATE TABLE `vat_rates` (
 -- Ligne d'installation, RELEVÉE dans la base migrée (jamais codée en dur :
 -- chaque bump P2 de kesh_version_min_required la déplace).
 INSERT INTO `_kesh_version` (`id`, `kesh_version_min_required`, `kesh_version_last_applied`)
-VALUES (1, '0.13.0', '0.1.0');
+VALUES (1, '0.13.1', '0.1.0');

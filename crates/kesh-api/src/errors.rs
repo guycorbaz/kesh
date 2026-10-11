@@ -782,6 +782,29 @@ pub enum AppError {
     #[error("Fichier CSV vide : {reason}")]
     BankCsvEmptyFile { reason: String },
 
+    /// Au moins une ligne porte un montant de signe contraire à sa colonne
+    /// (Story 26-1, #620) → `422 BANK_CSV_AMOUNT_SIGN_MISMATCH`. **Refus
+    /// entier, non confirmable** : `confirmPartialImport` ne s'y applique
+    /// pas (importer les seules lignes « valides » reproduirait #620). Rendu
+    /// en preview comme en import.
+    ///
+    /// `whole_debit_column` choisit le message : vrai (au moins deux débits
+    /// lus, tous en défaut) → « réglez le sens des débits du profil » ; faux
+    /// → une ou quelques lignes (une extourne, par exemple), listées.
+    #[error("Montant de signe contraire à sa colonne")]
+    BankCsvAmountSignMismatch {
+        lines: Vec<CsvLineErrorPayload>,
+        total_errors: usize,
+        truncated: bool,
+        whole_debit_column: bool,
+    },
+
+    /// La dernière ligne ignorée du profil porte déjà une date : le nombre
+    /// de lignes à ignorer est trop grand (Story 26-1, #621) →
+    /// `422 BANK_CSV_HEADER_SKIPS_DATA`, `details.line`.
+    #[error("Ligne {line} ignorée mais datée : trop de lignes à ignorer")]
+    BankCsvHeaderSkipsData { line: usize },
+
     /// Format de fichier non supporté (ni CAMT ni CSV) → `415`.
     #[error("Format de fichier non supporté")]
     BankImportUnsupportedFormat,
@@ -2327,6 +2350,62 @@ impl IntoResponse for AppError {
                             "Fichier CSV vide ou aucune ligne de données.",
                         ),
                         "details": { "reason": reason }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+
+            AppError::BankCsvAmountSignMismatch {
+                lines,
+                total_errors,
+                truncated,
+                whole_debit_column,
+            } => {
+                let message = if whole_debit_column {
+                    t(
+                        "bank-import-csv-errors-amount-sign-refused-profile",
+                        "Tous les débits lus dans le fichier ont un signe contraire au réglage du profil. Réglez le sens des débits du profil (Administration → Profils bancaires), puis redéposez le fichier.",
+                    )
+                } else {
+                    let mut args = FluentArgs::new();
+                    args.set("count", total_errors);
+                    t_args(
+                        "bank-import-csv-errors-amount-sign-refused-lines",
+                        &format!(
+                            "{total_errors} ligne(s) portent un montant de signe contraire à leur colonne (une extourne, par exemple) : ce relevé ne peut pas être importé tel quel dans cette version. Les lignes en cause sont listées ci-dessous."
+                        ),
+                        &args,
+                    )
+                };
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_CSV_AMOUNT_SIGN_MISMATCH",
+                        "message": message,
+                        "details": {
+                            "lines": lines,
+                            "totalErrors": total_errors,
+                            "truncated": truncated,
+                            "wholeDebitColumn": whole_debit_column,
+                        }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+
+            AppError::BankCsvHeaderSkipsData { line } => {
+                let mut args = FluentArgs::new();
+                args.set("line", line);
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_CSV_HEADER_SKIPS_DATA",
+                        "message": t_args(
+                            "bank-import-csv-errors-header-skips-data",
+                            &format!(
+                                "La ligne {line}, qui devrait être ignorée, porte déjà une date : le nombre de lignes à ignorer du profil est trop grand, une transaction aurait disparu."
+                            ),
+                            &args,
+                        ),
+                        "details": { "line": line }
                     }
                 });
                 (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()

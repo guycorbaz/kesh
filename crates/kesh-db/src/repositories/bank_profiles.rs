@@ -21,7 +21,7 @@ use crate::repositories::audit_log;
 const COLUMNS: &str = "id, company_id, bank_name, filename_pattern, \
      CAST(column_mapping AS CHAR) AS column_mapping_json, \
      date_format, decimal_separator, field_separator, encoding, \
-     header_row_count, created_at, updated_at";
+     header_row_count, debit_sign, created_at, updated_at";
 
 /// Crée un profil dans la transaction `tx` + écrit l'entrée audit_log
 /// associée. Le caller commit la transaction.
@@ -42,8 +42,8 @@ pub async fn create(
     let result = sqlx::query(
         "INSERT INTO bank_profiles \
          (company_id, bank_name, filename_pattern, column_mapping, date_format, \
-          decimal_separator, field_separator, encoding, header_row_count) \
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+          decimal_separator, field_separator, encoding, header_row_count, debit_sign) \
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(company_id)
     .bind(&new_profile.bank_name)
@@ -54,6 +54,7 @@ pub async fn create(
     .bind(&new_profile.field_separator)
     .bind(&new_profile.encoding)
     .bind(new_profile.header_row_count)
+    .bind(&new_profile.debit_sign)
     .execute(&mut **tx)
     .await
     .map_err(map_db_error)?;
@@ -230,7 +231,7 @@ pub async fn update(
         "UPDATE bank_profiles SET \
          bank_name = ?, filename_pattern = ?, column_mapping = ?, \
          date_format = ?, decimal_separator = ?, field_separator = ?, \
-         encoding = ?, header_row_count = ? \
+         encoding = ?, header_row_count = ?, debit_sign = ? \
          WHERE id = ? AND company_id = ?",
     )
     .bind(&new_profile.bank_name)
@@ -241,6 +242,7 @@ pub async fn update(
     .bind(&new_profile.field_separator)
     .bind(&new_profile.encoding)
     .bind(new_profile.header_row_count)
+    .bind(&new_profile.debit_sign)
     .bind(id)
     .bind(company_id)
     .execute(&mut **tx)
@@ -276,6 +278,9 @@ pub async fn update(
     }
     if existing.header_row_count != new_profile.header_row_count {
         fields_changed.push("header_row_count");
+    }
+    if existing.debit_sign != new_profile.debit_sign {
+        fields_changed.push("debit_sign");
     }
 
     audit_log::insert_in_tx(
@@ -365,6 +370,7 @@ mod tests {
             field_separator: ";".to_string(),
             encoding: None,
             header_row_count: 1,
+            debit_sign: "positive".to_string(),
         }
     }
 
@@ -519,6 +525,7 @@ mod tests {
         let mut updated_profile = make_new_profile("UBS");
         updated_profile.date_format = "%d.%m.%Y".to_string();
         updated_profile.header_row_count = 2;
+        updated_profile.debit_sign = "negative".to_string();
 
         let mut tx = pool.begin().await.unwrap();
         let result = update(&mut tx, company_id, original.id, &updated_profile, user_id)
@@ -541,6 +548,70 @@ mod tests {
         let names: Vec<&str> = fields.iter().filter_map(|v| v.as_str()).collect();
         assert!(names.contains(&"date_format"));
         assert!(names.contains(&"header_row_count"));
+        // Story 26-1 (#620), M7/M12 : le réglage du sens est écrit et audité.
+        assert_eq!(result.debit_sign, "negative");
+        assert!(names.contains(&"debit_sign"));
+    }
+
+    /// Story 26-1, AC8 : un profil UBS (`header_row_count = 9`,
+    /// `debit_sign = "negative"`) se relit à l'identique — la borne de la
+    /// base est passée de 5 à 20 (M26).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn ubs_profile_round_trips(pool: MySqlPool) {
+        let company_id = seed_company(&pool).await;
+        let user_id = seed_user(&pool, company_id).await;
+        let mut new = make_new_profile("UBS");
+        new.column_mapping_json =
+            serde_json::json!({"date": 2, "debit_credit_split": [5, 6], "reference": 9})
+                .to_string();
+        new.header_row_count = 9;
+        new.debit_sign = "negative".to_string();
+
+        let mut tx = pool.begin().await.unwrap();
+        let created = create(&mut tx, company_id, &new, user_id).await.unwrap();
+        tx.commit().await.unwrap();
+
+        let read = find_by_id_for_company(&pool, company_id, created.id)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(read.header_row_count, 9);
+        assert_eq!(read.debit_sign, "negative");
+        assert_eq!(
+            read.debit_sign_enum().unwrap(),
+            kesh_import::DebitSign::Negative
+        );
+    }
+
+    /// Story 26-1, AC8 : la base refuse `header_row_count = 21` et
+    /// `debit_sign = 'autre'` par ses `CHECK`.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn db_checks_reject_out_of_range_profiles(pool: MySqlPool) {
+        let company_id = seed_company(&pool).await;
+        let user_id = seed_user(&pool, company_id).await;
+
+        let mut too_many = make_new_profile("Trop");
+        too_many.header_row_count = 21;
+        let mut tx = pool.begin().await.unwrap();
+        let err = create(&mut tx, company_id, &too_many, user_id)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, DbError::CheckConstraintViolation(_)),
+            "{err:?}"
+        );
+        drop(tx);
+
+        let mut bad_sign = make_new_profile("Autre");
+        bad_sign.debit_sign = "autre".to_string();
+        let mut tx = pool.begin().await.unwrap();
+        let err = create(&mut tx, company_id, &bad_sign, user_id)
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(err, DbError::CheckConstraintViolation(_)),
+            "{err:?}"
+        );
     }
 
     #[sqlx::test(migrations = "./test-schema")]

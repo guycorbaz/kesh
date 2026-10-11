@@ -148,7 +148,7 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | rappel / relance | **Mahnung** | **sollecito** | reminder | `Rappels` / `Mahnungen` |
 | paiement | Zahlung | pagamento | payment | `Paiements fournisseurs` |
 | réconciliation | **Abstimmung** (manuelle : Abgleich) | riconciliazione | reconciliation | `Réconciliation` |
-| import bancaire | Bankimport | importazione bancaria | bank import | `Import bancaire CAMT.053` |
+| import bancaire | Bankimport | importazione bancaria | bank import | `Import bancaire` (`audit-log-entity-bank-imports`) |
 | sauvegarde | Sicherung | backup | backup | `Sauvegarde complète` |
 | archiver / archivé | archivieren / archiviert | archiviare / archiviato | archive / archived | `Archiver` / `Archivé` |
 | invalide | ungültig | non valido | invalid | `Valeur invalide` |

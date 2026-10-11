@@ -574,6 +574,14 @@ pub const EXEMPT_MIGRATIONS: &[(i64, ExemptionBasis, &str)] = &[
          restaurée. Le reste de la migration est du DDL pur (colonnes de lettrage, Story \
          15-1a-i) : une sauvegarde antérieure les restaure à NULL, aucun groupe n'existait.",
     ),
+    (
+        20261011000001,
+        ExemptionBasis::Durable,
+        "UPDATE sur _kesh_version (bump kesh_version_min_required), table système jamais \
+         restaurée. Le reste de la migration est du DDL pur (colonne debit_sign, plafond de \
+         header_row_count, Story 26-1) : une sauvegarde antérieure restaure la colonne à son \
+         DEFAULT 'positive', qui est la sémantique des profils d'avant.",
+    ),
 ];
 
 /// Rejoue les backfills du registre canonique dans la transaction de restore.
@@ -1191,9 +1199,12 @@ mod tests {
         // ⚠️ **16 → 17 (Story 15-1a2-ii, #518)** : `20261010000002`, les paires
         // de contre-passation libres — `Durable`, rejeu exclu parce qu'un `NULL`
         // y peut être un choix de l'utilisateur (`DELETE /letterings`).
+        // ⚠️ **17 → 18 (Story 26-1, #620)** : `20261011000001`, le bump
+        // `kesh_version_min_required` à 0.13.1 — `Durable`, patron de
+        // `20261009000001` (table système jamais restaurée, DDL pur sinon).
         assert_eq!(
             EXEMPT_MIGRATIONS.len(),
-            17,
+            18,
             "le registre d'exemptions a changé de taille : déclarer le fondement de l'entrée \
              neuve (Durable, ou PerishableSince(<borne>) si elle argumente sur un fait daté), \
              puis bumper ce nombre."
