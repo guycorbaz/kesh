@@ -16,11 +16,16 @@
  */
 
 import { expect, test, type Page } from '@playwright/test';
-import { seedTestState, clearAuthStorage } from './helpers/test-state';
+import { seedTestState, clearAuthStorage, authedApiContext } from './helpers/test-state';
 
 const NEW_IBAN_1 = 'CH9300762011623852957'; // UBS test IBAN (MOD-97 valide)
 const NEW_IBAN_2 = 'CH3908704016075473007'; // PostFinance test IBAN (MOD-97 valide)
 const INVALID_IBAN = 'CH00INVALID0000';
+// Story 26-2a — IBAN distinct de ceux des tests voisins (isolement, AC13).
+const DESCRIBED_IBAN = 'CH5604835012345678009';
+// Story 26-2b — deux comptes de la même banque, IBAN propres à ce test (MOD-97 valides).
+const TWIN_IBAN_DESCRIBED = 'CH7600483526202000001';
+const TWIN_IBAN_PLAIN = 'CH4900483526202000002';
 
 test.beforeAll(async () => {
 	await seedTestState('with-company');
@@ -179,5 +184,139 @@ test.describe('Bank accounts CRUD', () => {
 
 		await expect(page).toHaveURL('/bank-accounts');
 		await expect(page.locator('[data-testid="bank-accounts-page-title"]')).toBeVisible();
+	});
+});
+
+/**
+ * Story 26-2a (#622, AC13 (a)) — la description d'un compte bancaire, saisie
+ * puis effacée sur l'écran *Comptes bancaires*.
+ *
+ * Isolement (base E2E partagée entre specs) : le compte créé est **non
+ * principal**, d'IBAN distinct des tests voisins, et **archivé** en fin de
+ * test par l'API — d'autres specs choisissent un compte bancaire par position
+ * ou comptent les comptes.
+ */
+test.describe('Bank accounts — description (Story 26-2)', () => {
+	const createdIds: number[] = [];
+
+	test.afterEach(async ({ page }) => {
+		if (createdIds.length === 0) return;
+		const api = await authedApiContext(page);
+		try {
+			const list = await (await api.get('/api/v1/bank-accounts')).json();
+			for (const id of createdIds.splice(0)) {
+				const ba = (list as Array<{ id: number; version: number }>).find((b) => b.id === id);
+				if (!ba) continue;
+				const resp = await api.delete(`/api/v1/bank-accounts/${id}`, {
+					data: { version: ba.version },
+				});
+				expect(resp.status(), `archivage du compte ${id}`).toBe(200);
+			}
+		} finally {
+			await api.dispose();
+		}
+	});
+
+	test('saisir puis effacer la description d’un compte', async ({ page }) => {
+		await goToBankAccounts(page);
+
+		await page.click('[data-testid="create-bank-account-button"]');
+		const description = page.locator('[data-testid="form-description"]');
+		await expect(description).toHaveAttribute('maxlength', '60');
+		await page.fill('[data-testid="form-bank-name"]', 'UBS E2E');
+		await description.fill('Épargne E2E');
+		await page.fill('[data-testid="form-iban"]', DESCRIBED_IBAN);
+		await expect(page.locator('[data-testid="form-is-primary"]')).not.toBeChecked();
+
+		const created = page.waitForResponse(
+			(r) => r.url().endsWith('/api/v1/bank-accounts') && r.request().method() === 'POST',
+		);
+		await page.click('[data-testid="form-submit"]');
+		const createdResp = await created;
+		expect(createdResp.status()).toBe(201);
+		const id = (await createdResp.json()).id as number;
+		createdIds.push(id);
+
+		const name = page.locator(`[data-testid="bank-account-name-${id}"]`);
+		await expect(name).toHaveText('UBS E2E — Épargne E2E', { timeout: 5000 });
+
+		// Modifier en effaçant la description → la banque seule.
+		await page.click(`[data-testid="edit-button-${id}"]`);
+		const editDescription = page.locator('[data-testid="edit-description"]');
+		await expect(editDescription).toHaveValue('Épargne E2E');
+		await expect(editDescription).toHaveAttribute('maxlength', '60');
+		await editDescription.fill('');
+		await page.click('[data-testid="edit-form-submit"]');
+		await expect(page.locator('[data-testid="edit-bank-account-form"]')).toHaveCount(0, {
+			timeout: 5000,
+		});
+		await expect(name).toHaveText('UBS E2E');
+	});
+
+	/**
+	 * Story 26-2b (#622, AC13 (b)) — deux comptes de la même banque, l'un décrit,
+	 * l'autre non : chaque écran les distingue, et le compte sans description
+	 * garde exactement l'affichage d'avant (C-26-2-26). Comptes créés par l'API,
+	 * non principaux, archivés en `afterEach`.
+	 */
+	test('import bancaire, réconciliation et accueil nomment les comptes avec leur description', async ({
+		page,
+	}) => {
+		await loginAsAdmin(page);
+		const api = await authedApiContext(page);
+		const ids: Record<string, number> = {};
+		try {
+			for (const [cle, iban, description] of [
+				['decrit', TWIN_IBAN_DESCRIBED, 'Épargne E2E'],
+				['simple', TWIN_IBAN_PLAIN, null],
+			] as const) {
+				const resp = await api.post('/api/v1/bank-accounts', {
+					data: { bankName: 'UBS E2E', description, iban, isPrimary: false },
+				});
+				expect(resp.status(), `création du compte ${cle}`).toBe(201);
+				ids[cle] = (await resp.json()).id as number;
+				createdIds.push(ids[cle]);
+			}
+		} finally {
+			await api.dispose();
+		}
+
+		const optionTexts = async () =>
+			(await page.locator('[data-testid="bank-account-select"] option').allTextContents()).map(
+				(t) => t.trim(),
+			);
+
+		// Import bancaire : la forme d'aujourd'hui de ce site, parenthèse comprise.
+		await page.goto('/bank-import');
+		await expect(page.locator('[data-testid="bank-account-select"]')).toBeVisible();
+		await expect
+			.poll(optionTexts)
+			.toEqual(
+				expect.arrayContaining([
+					`UBS E2E — Épargne E2E (${TWIN_IBAN_DESCRIBED})`,
+					`UBS E2E (${TWIN_IBAN_PLAIN})`,
+				]),
+			);
+
+		// Réconciliation : « nom — IBAN ».
+		await page.goto('/reconciliation');
+		await expect(page.locator('[data-testid="bank-account-select"]')).toBeVisible();
+		await expect
+			.poll(optionTexts)
+			.toEqual(
+				expect.arrayContaining([
+					`UBS E2E — Épargne E2E — ${TWIN_IBAN_DESCRIBED}`,
+					`UBS E2E — ${TWIN_IBAN_PLAIN}`,
+				]),
+			);
+
+		// Accueil : le nom du compte décrit, la banque seule pour l'autre.
+		await page.goto('/');
+		await expect(page.locator(`[data-testid="homepage-bank-name-${ids.decrit}"]`)).toHaveText(
+			'UBS E2E — Épargne E2E',
+		);
+		await expect(page.locator(`[data-testid="homepage-bank-name-${ids.simple}"]`)).toHaveText(
+			'UBS E2E',
+		);
 	});
 });

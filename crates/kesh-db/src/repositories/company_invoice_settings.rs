@@ -214,7 +214,7 @@ async fn refuse_if_linked_to_bank_account(
     if requested == current {
         return Ok(());
     }
-    let Some((bank_account_id, bank_name)) =
+    let Some((bank_account_id, bank_label)) =
         super::bank_accounts::first_active_bank_account_linked_to(tx, company_id, account_id)
             .await?
     else {
@@ -226,7 +226,7 @@ async fn refuse_if_linked_to_bank_account(
         account_number,
         claim,
         bank_account_id,
-        bank_name,
+        bank_label,
     })
 }
 

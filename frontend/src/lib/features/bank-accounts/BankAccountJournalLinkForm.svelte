@@ -12,6 +12,7 @@
 	import { notifySuccess } from '$lib/shared/utils/notify';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import { withCurrentAccount, withoutAccountIds } from '$lib/features/accounts/account-options';
+	import { bankAccountOptionLabel } from '$lib/features/bank-accounts/format';
 	import {
 		updateBankAccountJournalLink,
 		type BankAccountSummary,
@@ -138,8 +139,8 @@
 	aria-label={i18nMsg('bank-accounts-actions-link-account', 'Lier au plan comptable')}
 >
 	<div class="mb-3">
-		<div class="text-sm font-medium text-text">
-			{bankAccount.bankName} — {bankAccount.iban}
+		<div class="text-sm font-medium text-text" data-testid="bank-account-journal-link-heading">
+			{bankAccountOptionLabel(bankAccount)}
 		</div>
 	</div>
 

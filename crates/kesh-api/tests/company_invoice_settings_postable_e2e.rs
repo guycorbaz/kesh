@@ -824,3 +824,45 @@ async fn linked_claim_refusal_message_is_french(pool: MySqlPool) {
         "Le compte 1101 est lié au compte bancaire UBS : il ne peut pas servir de compte débiteurs."
     );
 }
+
+/// Story 26-2b (#622, AC10, C-26-2-9) — le refus nomme le compte bancaire par
+/// son **nom d'affichage** : « UBS — Personnel » quand il porte une
+/// description, dans le message **et** dans `details.bankName` (clé conservée,
+/// C-26-2-23) ; sans description, la banque seule (test ci-dessus).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn linked_claim_refusal_names_the_described_bank_account(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = setup(&pool, &app).await;
+    let target = ctx.accounts[0].1;
+    let bank = bank_linked_to(
+        &pool,
+        ctx.company_id,
+        "UBS",
+        "CH9300762011623852957",
+        target,
+        false,
+    )
+    .await;
+    sqlx::query("UPDATE bank_accounts SET description = 'Personnel' WHERE id = ?")
+        .bind(bank)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let mut body = current_body(&app, &ctx).await;
+    body["defaultReceivableAccountId"] = json!(target);
+    let resp = put(&app, &ctx, &body).await;
+    let err = assert_linked_refusal(
+        resp,
+        target,
+        "1101",
+        "receivable",
+        bank,
+        "UBS \u{2014} Personnel",
+    )
+    .await;
+    assert_eq!(
+        err["error"]["message"],
+        "Le compte 1101 est lié au compte bancaire UBS — Personnel : il ne peut pas servir de compte débiteurs."
+    );
+}

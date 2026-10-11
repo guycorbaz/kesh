@@ -14,6 +14,12 @@ import { apiClient } from '$lib/shared/utils/api-client';
 export interface BankAccountSummary {
 	id: number;
 	bankName: string;
+	/**
+	 * Story 26-2a (#622) — description optionnelle (« Personnel »), `null` si
+	 * absente. **Obligatoire** dans le type : `npm run check` signale tout objet
+	 * qui l'oublierait. S'affiche par `bankAccountName` (`format.ts`).
+	 */
+	description: string | null;
 	iban: string;
 	qrIban: string | null;
 	isPrimary: boolean;
@@ -55,6 +61,7 @@ export interface BankAccountSummary {
 interface BankAccountSummaryRaw {
 	id: number;
 	bankName: string;
+	description: string | null;
 	iban: string;
 	qrIban: string | null;
 	isPrimary: boolean;
@@ -73,6 +80,7 @@ function parseBankAccount(raw: BankAccountSummaryRaw): BankAccountSummary {
 	return {
 		id: raw.id,
 		bankName: raw.bankName,
+		description: raw.description ?? null,
 		iban: raw.iban,
 		qrIban: raw.qrIban,
 		isPrimary: raw.isPrimary,
@@ -122,6 +130,8 @@ export async function updateBankAccountJournalLink(
  */
 export interface NewBankAccountPayload {
 	bankName: string;
+	/** Story 26-2a — optionnel : l'omettre crée un compte sans description. */
+	description?: string | null;
 	iban: string;
 	qrIban?: string | null;
 	isPrimary?: boolean;
@@ -146,6 +156,11 @@ export async function createBankAccount(
  */
 export interface UpdateBankAccountPayload {
 	bankName: string;
+	/**
+	 * Story 26-2a — **obligatoire** : le `PUT` remplace tout, l'omettre
+	 * **efface** la description (C-26-2-19). `null` pour l'effacer exprès.
+	 */
+	description: string | null;
 	iban: string;
 	qrIban?: string | null;
 	isPrimary?: boolean;

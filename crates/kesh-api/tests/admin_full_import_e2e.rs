@@ -3512,3 +3512,80 @@ async fn full_import_is_undone_when_the_repair_fails(pool: MySqlPool) {
     .unwrap();
     assert_eq!(entries, 0);
 }
+
+// ===========================================================================
+// Story 26-2a (#622, AC5) — la description d'un compte bancaire dans la
+// sauvegarde d'installation : l'export est générique (colonnes lues dans
+// `information_schema`), elle y entre seule.
+// ===========================================================================
+
+async fn seed_described_bank_account(pool: &MySqlPool, company_id: i64) -> i64 {
+    sqlx::query(
+        "INSERT INTO bank_accounts (company_id, bank_name, description, iban, is_primary) \
+         VALUES (?, 'UBS', 'Épargne', 'CH9300762011623852957', TRUE)",
+    )
+    .bind(company_id)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64
+}
+
+async fn bank_name_and_description(pool: &MySqlPool, id: i64) -> (String, Option<String>) {
+    sqlx::query_as("SELECT bank_name, description FROM bank_accounts WHERE id = ?")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// Aller-retour : un compte décrit, export, modification en base, import → la
+/// description de la sauvegarde est restituée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_restitue_la_description_des_comptes_bancaires(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = seed_admin(&pool, "Desc").await;
+    let id = seed_described_bank_account(&pool, ctx.company_id).await;
+
+    let backup = export_backup(&app, &ctx.jwt).await;
+    let (manifest, data) = unzip(&backup);
+    assert!(
+        manifest["tables"]["bank_accounts"]["columnNames"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|c| c == "description"),
+        "la colonne doit être au manifeste"
+    );
+    sqlx::query("UPDATE bank_accounts SET description = 'Modifiée' WHERE id = ?")
+        .bind(id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    import_ok(&app, &ctx.jwt, &manifest, &data).await;
+    assert_eq!(
+        bank_name_and_description(&pool, id).await,
+        ("UBS".to_string(), Some("Épargne".to_string()))
+    );
+}
+
+/// Sauvegarde **antérieure** à la colonne (forgée par `strip_column`) : import
+/// → `200`, compte restauré, description `NULL` (colonne nullable, donc pas
+/// requise par le contrôle de schéma).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn full_import_d_une_sauvegarde_sans_description(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let ctx = seed_admin(&pool, "DescOld").await;
+    let id = seed_described_bank_account(&pool, ctx.company_id).await;
+
+    let backup = export_backup(&app, &ctx.jwt).await;
+    let (mut manifest, data) = unzip(&backup);
+    strip_column(&mut manifest, "bank_accounts", "description");
+
+    import_ok(&app, &ctx.jwt, &manifest, &data).await;
+    assert_eq!(
+        bank_name_and_description(&pool, id).await,
+        ("UBS".to_string(), None)
+    );
+}

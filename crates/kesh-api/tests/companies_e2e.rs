@@ -573,3 +573,58 @@ async fn an_omitted_field_clears_it_just_like_null(pool: MySqlPool) {
         "la route contact-details ne journalise pas l'e-mail, qu'elle ne touche pas"
     );
 }
+
+/// Story 26-2b (#622, AC10) — `GET /companies/current` porte la description de
+/// chaque compte bancaire (`null` si absente) : source du nom des comptes de
+/// *Paramètres*, de l'import bancaire et de la réconciliation (cible de M9).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn companies_current_porte_la_description_des_comptes(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    create_test_company(&pool).await;
+    let company_id: i64 = sqlx::query_scalar("SELECT id FROM companies LIMIT 1")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    ensure_admin_user(&pool, &test_config()).await.unwrap();
+    for (iban, description) in [
+        ("CH9300762011623852957", Some("Personnel")),
+        ("CH3908704016075473007", None),
+    ] {
+        sqlx::query(
+            "INSERT INTO bank_accounts (company_id, bank_name, description, iban, is_primary) \
+             VALUES (?, 'UBS', ?, ?, FALSE)",
+        )
+        .bind(company_id)
+        .bind(description)
+        .bind(iban)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    let token = login(&app).await;
+
+    let resp = app
+        .client
+        .get(app.url("/api/v1/companies/current"))
+        .header("Authorization", format!("Bearer {token}"))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: serde_json::Value = resp.json().await.unwrap();
+    let accounts = body["bankAccounts"].as_array().unwrap();
+    assert_eq!(accounts.len(), 2);
+    let by_iban = |iban: &str| {
+        accounts
+            .iter()
+            .find(|a| a["iban"] == iban)
+            .unwrap_or_else(|| panic!("compte {iban} absent : {body}"))
+    };
+    assert_eq!(by_iban("CH9300762011623852957")["description"], "Personnel");
+    let sans = by_iban("CH3908704016075473007");
+    assert!(
+        sans.as_object().unwrap().contains_key("description"),
+        "clé description absente : {sans}"
+    );
+    assert_eq!(sans["description"], serde_json::Value::Null);
+}

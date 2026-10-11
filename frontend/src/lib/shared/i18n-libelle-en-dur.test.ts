@@ -205,13 +205,24 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * seule déclaration neuve qui en porte un (`letteredBy`, sur la fiche d'écriture, n'en
  * porte pas).*
  *
- * ⚠️ **61 → 62, et la déclaration est NOMMÉE** : `csvLineErrorLabel`
+ * ⚠️ **61 → 62, et la déclaration est NOMMÉE** : `bankAccountOptionLabel`
+ * (`lib/features/bank-accounts/format.ts`, Story 26-2a, #622) — le libellé d'option d'un
+ * sélecteur de compte bancaire, banque, description et IBAN. Il ne rend que des **gabarits
+ * interpolés** (données de l'utilisateur, aucun mot de l'interface) : `conforme` **47 → 48** ;
+ * `ecartee` ne bouge pas. *Identifiée en cherchant les suffixes dans les fichiers de la
+ * story ; sa voisine `bankAccountName` n'en porte pas.*
+ *
+ * ⚠️ **62 → 63, et la déclaration est NOMMÉE** : `csvLineErrorLabel`
  * (`lib/features/bank-import/csv-line-error-label.ts`, Story 26-1, #620) — le libellé
  * traduit des codes d'erreur de ligne de l'import CSV. Sa branche connue délègue à
  * `i18nMsg` par la table `CSV_LINE_ERROR_LABELS`, l'autre rend le code brut : aucun
- * littéral, donc `conforme` **47 → 48** ; `ecartee` ne bouge pas.
+ * littéral, donc `conforme` **48 → 49** ; `ecartee` ne bouge pas.
+ *
+ * *(Fusion du 2026-10-11 : les deux déclarations — `bankAccountOptionLabel` de la 26-2a et
+ * `csvLineErrorLabel` de la 26-1 — ont été ajoutées chacune sur 61 ; elles s'additionnent :
+ * 63 candidates, `conforme` 49.)*
  */
-const CANDIDATES_ATTENDUES = 62;
+const CANDIDATES_ATTENDUES = 63;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -728,7 +739,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 48 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 49 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

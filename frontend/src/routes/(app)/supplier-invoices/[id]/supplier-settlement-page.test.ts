@@ -342,6 +342,7 @@ describe("fiche facture fournisseur — la contrepartie n’est pas le compte cr
     return {
       id,
       bankName: `Banque ${id}`,
+      description: null,
       iban: "CH00",
       qrIban: null,
       isPrimary: id === 1,
@@ -382,6 +383,22 @@ describe("fiche facture fournisseur — la contrepartie n’est pas le compte cr
     await waitFor(() => expect(options("pay-bank-account")).toContain("2"));
     expect(options("pay-bank-account")).not.toContain("1");
     expect(queryByTestId("pay-no-eligible-bank")).toBeNull();
+  });
+
+  // Story 26-2b (#622, AC9, site D5) — l'option nomme le compte décrit.
+  it("l’option du compte bancaire porte sa description, et garde « banque — IBAN » sans", async () => {
+    const { findByTestId } = await monter([
+      { ...banque(2, 1020), description: "Personnel" },
+      banque(3, 1021),
+    ]);
+    await findByTestId("pay-bank-account");
+    const labels = () =>
+      Array.from(
+        (document.querySelector('[data-testid="pay-bank-account"]') as HTMLSelectElement)
+          .options,
+      ).map((o) => o.textContent?.trim() ?? "");
+    await waitFor(() => expect(labels()).toContain("Banque 2 — Personnel — CH00"));
+    expect(labels()).toContain("Banque 3 — CH00");
   });
 
   it("2000 est absent du menu « Compte interne »", async () => {

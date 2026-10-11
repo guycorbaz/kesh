@@ -24,12 +24,12 @@
 
 use chrono::NaiveDate;
 use kesh_db::entities::{
-    NewBankAccount, NewCreditNote, NewInvoice, NewInvoiceLine, NewPaymentBatch, NewSupplierInvoice,
+    NewCreditNote, NewInvoice, NewInvoiceLine, NewPaymentBatch, NewSupplierInvoice,
     NewSupplierInvoiceLine, SettlementChoice, SettlementWriteOffNature,
 };
 use kesh_db::repositories::{
-    bank_accounts, companies, credit_notes, invoice_settlements, invoice_settlements_write,
-    invoices, letterings, payment_batches, supplier_invoices,
+    companies, credit_notes, invoice_settlements, invoice_settlements_write, invoices, letterings,
+    payment_batches, supplier_invoices,
 };
 use kesh_db::test_fixtures::{SeededCompany, designate_rounding_account, seed_accounting_company};
 use rust_decimal::Decimal;
@@ -676,28 +676,24 @@ pub async fn achats(pool: &MySqlPool, seeded: &SeededCompany) -> Achats {
     .await
     .expect("fournisseur");
     let bank_ledger = compte(pool, seeded.company_id, "1020", "Asset").await;
-    let bank = bank_accounts::create(
-        pool,
-        NewBankAccount {
-            company_id: seeded.company_id,
-            bank_name: "Banque des achats".into(),
-            iban: "CH9300762011623852957".into(),
-            qr_iban: None,
-            is_primary: false,
-        },
+    // ⚠️ Story 26-2a (#622) — par SQL, et non par `bank_accounts::create` : ce
+    // montage tourne sur un schéma ANTÉRIEUR à la dernière migration (fenêtre
+    // `migrations_before`), alors que le dépôt relit avec les colonnes du schéma
+    // courant (`columns!`, `description` comprise) — `1054 Unknown column`. Un
+    // INSERT qui ne nomme que des colonnes anciennes reste valide à toute borne.
+    let bank_id: i64 = sqlx::query_scalar(
+        "INSERT INTO bank_accounts (company_id, bank_name, iban, is_primary, journal_account_id) \
+         VALUES (?, 'Banque des achats', 'CH9300762011623852957', FALSE, ?) RETURNING id",
     )
+    .bind(seeded.company_id)
+    .bind(bank_ledger)
+    .fetch_one(pool)
     .await
     .expect("compte bancaire source");
-    sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
-        .bind(bank_ledger)
-        .bind(bank.id)
-        .execute(pool)
-        .await
-        .expect("compte du grand livre de la banque");
     Achats {
         supplier_id,
         payable,
-        bank_account_id: bank.id,
+        bank_account_id: bank_id,
         bank_ledger,
     }
 }

@@ -7,17 +7,20 @@
 	import ReconciliationProposals from '$lib/features/reconciliation/ReconciliationProposals.svelte';
 	import { apiClient } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import {
+		bankAccountOptionLabel,
+		type BankAccountOptionSource,
+	} from '$lib/features/bank-accounts/format';
+	import type { CompanyCurrentResponse } from '$lib/features/settings/settings.types';
 
-	type BankAccountListItem = { id: number; bankName: string; iban: string };
-
-	let bankAccounts = $state<BankAccountListItem[]>([]);
+	// Story 26-2b (#622, C-26-2-18) — type partagé : `description` obligatoire.
+	let bankAccounts = $state<Array<BankAccountOptionSource & { id: number }>>([]);
 	let selectedId = $state<number | null>(null);
 	let loading = $state(true);
 
 	onMount(async () => {
 		try {
-			type CompanyResponse = { bankAccounts?: BankAccountListItem[] };
-			const company = await apiClient.get<CompanyResponse>('/api/v1/companies/current');
+			const company = await apiClient.get<CompanyCurrentResponse>('/api/v1/companies/current');
 			bankAccounts = company.bankAccounts ?? [];
 			if (bankAccounts.length > 0) selectedId = bankAccounts[0].id;
 		} catch {
@@ -62,7 +65,7 @@
 			data-testid="bank-account-select"
 		>
 			{#each bankAccounts as ba (ba.id)}
-				<option value={ba.id}>{ba.bankName} — {ba.iban}</option>
+				<option value={ba.id}>{bankAccountOptionLabel(ba)}</option>
 			{/each}
 		</select>
 	</div>

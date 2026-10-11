@@ -126,6 +126,7 @@ function account(over: Partial<BankAccountSummary> = {}): BankAccountSummary {
 	return {
 		id: 1,
 		bankName: 'UBS',
+		description: null,
 		iban: 'CH4431999123000889012',
 		qrIban: null,
 		isPrimary: true,
@@ -140,6 +141,18 @@ function account(over: Partial<BankAccountSummary> = {}): BankAccountSummary {
 		...over,
 	};
 }
+
+describe('BankAccountsCard — nom du compte (Story 26-2b, D8)', () => {
+	it('avec description : « UBS — Personnel »', () => {
+		render(BankAccountsCard, { accounts: [account({ description: 'Personnel' })] });
+		expect(screen.getByTestId('homepage-bank-name-1').textContent).toBe('UBS — Personnel');
+	});
+
+	it('sans description : la banque seule', () => {
+		render(BankAccountsCard, { accounts: [account()] });
+		expect(screen.getByTestId('homepage-bank-name-1').textContent).toBe('UBS');
+	});
+});
 
 describe('BankAccountsCard', () => {
 	it('nomme le solde « solde comptable » et le total « Total (solde comptable) »', () => {

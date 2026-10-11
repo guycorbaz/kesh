@@ -18,6 +18,7 @@
 	import type { SupplierInvoiceResponse } from '$lib/features/supplier-invoices/supplier-invoices.types';
 	import { listBankAccounts } from '$lib/features/bank-accounts/bank-accounts.api';
 	import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accounts.api';
+	import { bankAccountOptionLabel } from '$lib/features/bank-accounts/format';
 	import { fetchAccounts } from '$lib/features/accounts/accounts.api';
 	import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 	import {
@@ -341,7 +342,7 @@
 				>
 					<option value={null}>{i18nMsg('supplier-invoices-pay-bank-ph', 'Compte bancaire source')}</option>
 					{#each bankAccounts as b (b.id)}
-						<option value={b.id}>{b.bankName} — {b.iban}</option>
+						<option value={b.id}>{bankAccountOptionLabel(b)}</option>
 					{/each}
 				</select>
 				{#if noEligibleBankAccount}

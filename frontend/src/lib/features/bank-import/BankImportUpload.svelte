@@ -19,11 +19,15 @@
 	import BankProfileSelector from './BankProfileSelector.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import {
+		bankAccountOptionLabel,
+		type BankAccountOptionSource,
+	} from '$lib/features/bank-accounts/format';
 	import { csvLineErrorLabel } from './csv-line-error-label';
 	import type { InvalidLinesPayload } from './bank-import.types';
 
 	type Props = {
-		bankAccounts: Array<{ id: number; bankName: string; iban: string }>;
+		bankAccounts: Array<BankAccountOptionSource & { id: number }>;
 		onSuccess?: (imported: BankImportResponse) => void;
 	};
 	let { bankAccounts, onSuccess }: Props = $props();
@@ -236,7 +240,8 @@
 	>
 		<option value={null}>— Sélectionner un compte —</option>
 		{#each bankAccounts as account (account.id)}
-			<option value={account.id}>{account.bankName} ({account.iban})</option>
+			<!-- Story 26-2b (C-26-2-26) : « UBS (CH…) » sans description, comme avant. -->
+			<option value={account.id}>{bankAccountOptionLabel(account, 'parens')}</option>
 		{/each}
 	</select>
 

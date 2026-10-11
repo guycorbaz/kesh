@@ -3341,12 +3341,12 @@ impl IntoResponse for AppError {
                     account_number,
                     claim,
                     bank_account_id,
-                    bank_name,
+                    bank_label,
                 } => claim_configuration_response(
                     account_id,
                     account_number.as_deref(),
                     claim,
-                    Some((bank_account_id, &bank_name)),
+                    Some((bank_account_id, &bank_label)),
                 ),
                 // Story 25-3-a-1 (#414) — l'annulation d'un règlement refusée.
                 //
@@ -4070,23 +4070,23 @@ fn claim_configuration_response(
                 "Le compte {account} est le compte créanciers désigné dans Paramètres → Facturation : un compte bancaire doit être lié à son propre compte de banque."
             ),
         ),
-        (Some((_, bank_name)), ClaimSide::Receivable) => {
-            args.set("bank", bank_name.to_string());
+        (Some((_, bank_label)), ClaimSide::Receivable) => {
+            args.set("bank", bank_label.to_string());
             (
                 "CLAIM_ACCOUNT_LINKED_TO_BANK_ACCOUNT",
                 "error-claim-account-linked-to-bank-account-receivable",
                 format!(
-                    "Le compte {account} est lié au compte bancaire {bank_name} : il ne peut pas servir de compte débiteurs."
+                    "Le compte {account} est lié au compte bancaire {bank_label} : il ne peut pas servir de compte débiteurs."
                 ),
             )
         }
-        (Some((_, bank_name)), ClaimSide::Payable) => {
-            args.set("bank", bank_name.to_string());
+        (Some((_, bank_label)), ClaimSide::Payable) => {
+            args.set("bank", bank_label.to_string());
             (
                 "CLAIM_ACCOUNT_LINKED_TO_BANK_ACCOUNT",
                 "error-claim-account-linked-to-bank-account-payable",
                 format!(
-                    "Le compte {account} est lié au compte bancaire {bank_name} : il ne peut pas servir de compte créanciers."
+                    "Le compte {account} est lié au compte bancaire {bank_label} : il ne peut pas servir de compte créanciers."
                 ),
             )
         }
@@ -4097,9 +4097,11 @@ fn claim_configuration_response(
         "accountNumber": account_number,
         "claim": claim.as_str(),
     });
-    if let Some((bank_account_id, bank_name)) = bank {
+    if let Some((bank_account_id, bank_label)) = bank {
         details["bankAccountId"] = serde_json::json!(bank_account_id);
-        details["bankName"] = serde_json::json!(bank_name);
+        // Story 26-2b (C-26-2-23) — la clé reste `bankName`, sa valeur est le
+        // nom d'affichage du compte (« UBS — Personnel »).
+        details["bankName"] = serde_json::json!(bank_label);
     }
     let body = serde_json::json!({
         "error": {
@@ -4910,7 +4912,7 @@ mod tests {
             account_number: None,
             claim: ClaimSide::Payable,
             bank_account_id: 4,
-            bank_name: "UBS".into(),
+            bank_label: "UBS".into(),
         })
         .into_response();
         let (status, body) = response_body(resp).await;

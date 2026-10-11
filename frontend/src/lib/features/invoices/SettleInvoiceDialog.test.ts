@@ -18,6 +18,7 @@ import type { AccountResponse } from '$lib/features/accounts/accounts.types';
 const banque = {
 	id: 1,
 	bankName: 'Banque',
+	description: null,
 	iban: 'CH00',
 	qrIban: null,
 	isPrimary: true,
@@ -142,6 +143,17 @@ describe('SettleInvoiceDialog — la contrepartie n’est pas le compte débiteu
 		Array.from(
 			(document.querySelector(`[data-testid="${testId}"]`) as HTMLSelectElement).options,
 		).map((o) => o.value);
+
+	// Story 26-2b (#622, AC9, site D6) — l'option nomme le compte décrit.
+	it('l’option du compte bancaire porte sa description, et garde « banque — IBAN » sans', async () => {
+		monter([CAISSE], [{ ...compte(2, 1020, true), description: 'Personnel' }, compte(3, 1021)]);
+		const labels = () =>
+			Array.from(
+				(document.querySelector('[data-testid="settle-bank"]') as HTMLSelectElement).options,
+			).map((o) => o.textContent?.trim() ?? '');
+		await waitFor(() => expect(labels()).toContain('Banque 2 — Personnel — CH00'));
+		expect(labels()).toContain('Banque 3 — CH00');
+	});
 
 	it('1100 (rôle Receivable) est absent du menu « Compte interne » (mutation : filtre retiré)', async () => {
 		const { getByTestId } = monter([CAISSE, DEBITEURS], []);

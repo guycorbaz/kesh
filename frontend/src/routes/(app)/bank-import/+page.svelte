@@ -6,10 +6,11 @@
 	import { apiClient } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import type { BankImportResponse } from '$lib/features/bank-import/bank-import.types';
+	import type { BankAccountOptionSource } from '$lib/features/bank-accounts/format';
+	import type { CompanyCurrentResponse } from '$lib/features/settings/settings.types';
 
-	type BankAccountListItem = { id: number; bankName: string; iban: string };
-
-	let bankAccounts = $state<BankAccountListItem[]>([]);
+	// Story 26-2b (#622, C-26-2-18) — type partagé : `description` obligatoire.
+	let bankAccounts = $state<Array<BankAccountOptionSource & { id: number }>>([]);
 	let imports = $state<BankImportResponse[]>([]);
 	let loading = $state(true);
 
@@ -27,10 +28,7 @@
 			// bank_account configuré côté onboarding (Path B production).
 			// Pas d'endpoint dédié `GET /api/v1/bank-accounts` v0.1 →
 			// fallback : liste vide si non disponible. À étendre si besoin.
-			type CompanyResponse = {
-				bankAccounts?: BankAccountListItem[];
-			};
-			const company = await apiClient.get<CompanyResponse>('/api/v1/companies/current');
+			const company = await apiClient.get<CompanyCurrentResponse>('/api/v1/companies/current');
 			bankAccounts = company.bankAccounts ?? [];
 		} catch {
 			bankAccounts = [];

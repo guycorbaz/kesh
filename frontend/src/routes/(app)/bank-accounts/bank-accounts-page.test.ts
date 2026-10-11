@@ -31,10 +31,13 @@ vi.mock('$lib/features/accounts/accounts.api', () => ({
 }));
 
 const listBankAccountsMock = vi.fn<() => Promise<BankAccountSummary[]>>();
+// Story 26-2a — les payloads de création et de modification sont inspectés.
+const createBankAccountMock = vi.fn<(payload: unknown) => Promise<unknown>>();
+const updateBankAccountMock = vi.fn<(id: number, payload: unknown) => Promise<unknown>>();
 vi.mock('$lib/features/bank-accounts/bank-accounts.api', () => ({
 	listBankAccounts: () => listBankAccountsMock(),
-	createBankAccount: vi.fn(),
-	updateBankAccount: vi.fn(),
+	createBankAccount: (payload: unknown) => createBankAccountMock(payload),
+	updateBankAccount: (id: number, payload: unknown) => updateBankAccountMock(id, payload),
 	archiveBankAccount: vi.fn(),
 	updateBankAccountJournalLink: vi.fn(),
 }));
@@ -78,6 +81,7 @@ const accounts: AccountResponse[] = [
 const bankAccount: BankAccountSummary = {
 	id: 5,
 	bankName: 'BCV',
+	description: null,
 	iban: 'CH9300762011623852957',
 	qrIban: null,
 	isPrimary: true,
@@ -184,5 +188,91 @@ describe('page des comptes bancaires — comptes de créance désignés (Story 1
 		const labels = labelsOf(await openSelect('edit-button-5', 'edit-journal-account'));
 		expect(labels.some((l) => l.includes('1100'))).toBe(true);
 		expect(labels.some((l) => l.includes('2000'))).toBe(true);
+	});
+});
+
+describe('page des comptes bancaires — description (Story 26-2a, AC7)', () => {
+	beforeEach(() => {
+		vi.clearAllMocks();
+		fetchAccountsMock.mockResolvedValue(accounts);
+		listBankAccountsMock.mockResolvedValue([bankAccount]);
+		getInvoiceSettingsMock.mockResolvedValue({
+			defaultReceivableAccountId: null,
+			defaultPayableAccountId: null,
+		});
+		createBankAccountMock.mockResolvedValue({});
+		updateBankAccountMock.mockResolvedValue({});
+	});
+
+	async function fill(el: HTMLElement, value: string) {
+		await fireEvent.input(el, { target: { value } });
+	}
+
+	async function openCreateAndFill(description: string) {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('create-bank-account-button'));
+		await fill(await r.findByTestId('form-bank-name'), 'UBS');
+		await fill(await r.findByTestId('form-description'), description);
+		await fill(await r.findByTestId('form-iban'), 'CH3908704016075473007');
+		await fireEvent.click(await r.findByTestId('form-submit'));
+		await waitFor(() => expect(createBankAccountMock).toHaveBeenCalledTimes(1));
+		return createBankAccountMock.mock.calls[0][0] as Record<string, unknown>;
+	}
+
+	it('création avec description : le payload la porte', async () => {
+		const payload = await openCreateAndFill('Épargne');
+		expect(payload.description).toBe('Épargne');
+	});
+
+	it('création sans description : le champ est présent, à null', async () => {
+		const payload = await openCreateAndFill('   ');
+		expect('description' in payload).toBe(true);
+		expect(payload.description).toBeNull();
+	});
+
+	it('le champ de création borne la saisie à 60 caractères et porte son aide', async () => {
+		const { findByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('create-bank-account-button'));
+		expect((await findByTestId('form-description')).getAttribute('maxlength')).toBe('60');
+		expect((await findByTestId('form-description-help')).textContent).toContain(
+			'60 caractères au plus',
+		);
+	});
+
+	it('édition : préremplit la description, puis l’efface (payload null)', async () => {
+		listBankAccountsMock.mockResolvedValue([{ ...bankAccount, description: 'Personnel' }]);
+		const { findByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('edit-button-5'));
+		const input = (await findByTestId('edit-description')) as HTMLInputElement;
+		expect(input.value).toBe('Personnel');
+		expect(input.getAttribute('maxlength')).toBe('60');
+		await fill(input, '');
+		await fireEvent.click(await findByTestId('edit-form-submit'));
+		await waitFor(() => expect(updateBankAccountMock).toHaveBeenCalledTimes(1));
+		const [id, payload] = updateBankAccountMock.mock.calls[0] as [number, Record<string, unknown>];
+		expect(id).toBe(5);
+		expect('description' in payload).toBe(true);
+		expect(payload.description).toBeNull();
+	});
+
+	it('édition qui garde la description : le payload la renvoie', async () => {
+		listBankAccountsMock.mockResolvedValue([{ ...bankAccount, description: 'Personnel' }]);
+		const { findByTestId } = render(Page);
+		await fireEvent.click(await findByTestId('edit-button-5'));
+		await fireEvent.click(await findByTestId('edit-form-submit'));
+		await waitFor(() => expect(updateBankAccountMock).toHaveBeenCalledTimes(1));
+		const [, payload] = updateBankAccountMock.mock.calls[0] as [number, Record<string, unknown>];
+		expect(payload.description).toBe('Personnel');
+	});
+
+	it('la cellule « Banque » nomme le compte avec sa description', async () => {
+		listBankAccountsMock.mockResolvedValue([{ ...bankAccount, description: 'Personnel' }]);
+		const { findByTestId } = render(Page);
+		expect((await findByTestId('bank-account-name-5')).textContent).toBe('BCV — Personnel');
+	});
+
+	it('sans description, la cellule affiche la banque seule', async () => {
+		const { findByTestId } = render(Page);
+		expect((await findByTestId('bank-account-name-5')).textContent).toBe('BCV');
 	});
 });

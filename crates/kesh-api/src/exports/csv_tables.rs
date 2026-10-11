@@ -620,6 +620,9 @@ pub fn serialize_invoice_lines_csv<W: Write>(
 }
 
 /// Sérialise les `BankAccount` en CSV.
+///
+/// Story 26-2a (#622, C-26-2-6) — `description` **juste après** `bank_name`
+/// (texte libre : passe par `csv_sanitize`), vide si absente.
 pub fn serialize_bank_accounts_csv<W: Write>(
     rows: &[BankAccount],
     writer: W,
@@ -631,6 +634,7 @@ pub fn serialize_bank_accounts_csv<W: Write>(
         "id",
         "company_id",
         "bank_name",
+        "description",
         "iban",
         "qr_iban",
         "is_primary",
@@ -646,6 +650,7 @@ pub fn serialize_bank_accounts_csv<W: Write>(
             b.id.to_string(),
             b.company_id.to_string(),
             txt(b.bank_name.clone()),
+            fmt_opt_str(&b.description),
             txt(b.iban.clone()),
             fmt_opt_str(&b.qr_iban),
             fmt_bool(b.is_primary),
@@ -1777,6 +1782,71 @@ mod tests {
             created_at: naive_dt(2026, 6, 1, 8, 0, 0),
             updated_at: naive_dt(2026, 6, 15, 14, 0, 0),
         }
+    }
+
+    // ----- Story 26-2a — bank_accounts : la description -----
+
+    /// Story 26-2a (#622, AC5) — la colonne `description` suit `bank_name` ;
+    /// vide sans description ; une valeur de formule est neutralisée par
+    /// `csv_sanitize`.
+    #[test]
+    fn serialize_bank_accounts_csv_porte_la_description() {
+        let now = chrono::NaiveDate::from_ymd_opt(2026, 10, 10)
+            .unwrap()
+            .and_hms_opt(8, 0, 0)
+            .unwrap();
+        let base = BankAccount {
+            id: 7,
+            company_id: 1,
+            bank_name: "UBS".into(),
+            description: Some("Épargne".into()),
+            iban: "CH9300762011623852957".into(),
+            qr_iban: None,
+            is_primary: false,
+            journal_account_id: None,
+            version: 1,
+            archived: false,
+            created_at: now,
+            updated_at: now,
+        };
+        let sans = BankAccount {
+            id: 8,
+            description: None,
+            ..base.clone()
+        };
+        let formule = BankAccount {
+            id: 9,
+            description: Some("=1+1".into()),
+            ..base.clone()
+        };
+        let mut buf = Vec::new();
+        serialize_bank_accounts_csv(&[base, sans, formule], &mut buf).expect("serialize ok");
+        let text = String::from_utf8(buf[3..].to_vec()).expect("utf8");
+        let mut lines = text.lines();
+        assert_eq!(
+            lines.next().unwrap(),
+            "id;company_id;bank_name;description;iban;qr_iban;is_primary;\
+             journal_account_id;archived;version;created_at;updated_at",
+            "en-tête complet"
+        );
+        assert!(
+            lines
+                .next()
+                .unwrap()
+                .starts_with("7;1;UBS;Épargne;CH9300762011623852957;")
+        );
+        assert!(
+            lines
+                .next()
+                .unwrap()
+                .starts_with("8;1;UBS;;CH9300762011623852957;")
+        );
+        let ligne_formule = lines.next().unwrap();
+        assert!(
+            !ligne_formule.starts_with("9;1;UBS;=1+1;"),
+            "formule non neutralisée : {ligne_formule}"
+        );
+        assert!(ligne_formule.contains("=1+1"), "{ligne_formule}");
     }
 
     // ----- #262 — invoices serializer : complétude des colonnes souveraineté -----

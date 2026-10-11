@@ -42,6 +42,11 @@ export interface UpdateCompanyContactDetailsRequest {
 export interface BankAccountJson {
 	id: number;
 	bankName: string;
+	/**
+	 * Story 26-2b (#622) — description optionnelle, `null` si absente.
+	 * **Obligatoire** : `npm run check` refuse une réponse simulée qui l'omet.
+	 */
+	description: string | null;
 	iban: string;
 	qrIban: string | null;
 	isPrimary: boolean;

@@ -565,7 +565,14 @@ const ATTENDU = {
 	// (neuf, 1 site de gabarit — le second `i18nMsg(` du fichier est dans un commentaire).
 	// `sitesNonResolus` (31) et `relais` (6) inchangés, mesurés.
 	// Fusion 26-3 + 26-1 (2026-10-11) : 2020 + 2 + 6 = **2028**.
-	sitesTotal: 2028,
+	// Story 26-2a (#622) : **2020 → 2024** (+4) — `routes/(app)/bank-accounts/+page.svelte`
+	// (47 → 51) : libellé et aide de la description, dans les formulaires de création et
+	// de modification (`bank-accounts-labels-description`, `bank-accounts-help-description`).
+	// Recompté par `grep -o "i18nMsg("` aux deux bornes (`9b724027` et la branche).
+	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (que des littéraux).
+	// Fusion de la 26-2a dans la 26-1 (2026-10-11), deltas additionnés depuis la base
+	// commune `fe162504` (2020) : 26-3 +2, 26-1 +6, 26-2a +4 = **2032**.
+	sitesTotal: 2032,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

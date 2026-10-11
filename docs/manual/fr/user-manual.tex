@@ -199,7 +199,7 @@ Si vous souhaitez \textbf{tenir votre comptabilité réelle}, choisissez le mode
     \item \textbf{Type d'organisation} : indépendant, association ou PME. Ce choix détermine le plan comptable que Kesh met en place (voir ci-dessous) ; il ne se modifie plus après l'onboarding.
     \item \textbf{Langue comptable} : langue des comptes et des rapports, indépendante de la langue de l'interface (utile si vous travaillez en français mais produisez des rapports en allemand, par exemple).
     \item \textbf{Coordonnées légales} : raison sociale (ou nom pour un indépendant), adresse, et IDE (CHE-XXX.XXX.XXX), facultatif quel que soit le type d'organisation --- une entité inscrite au registre du commerce a intérêt à le renseigner.
-    \item \textbf{Compte bancaire} : nom de la banque, IBAN et QR-IBAN éventuel (cette étape peut être passée et complétée plus tard).
+    \item \textbf{Compte bancaire} : nom de la banque, IBAN et QR-IBAN éventuel (cette étape peut être passée et complétée plus tard ; les autres champs d'un compte, dont sa description, se règlent ensuite, cf. \S\ref{sec:comptes-bancaires}).
 \end{enumerate}
 
 Dès que vous avez choisi la langue comptable, Kesh met en place le plan comptable de votre type d'organisation, libellé dans cette langue. À la finalisation, il crée votre premier exercice, l'année civile en cours. Vous êtes alors prêt à saisir vos premières écritures.
@@ -345,7 +345,8 @@ Le plan comptable est la colonne vertébrale de votre comptabilité. Kesh fourni
 
 Aucune case du plan comptable ne fait d'un compte un compte bancaire. Le compte bancaire se
 déclare dans \emph{Administration} → \emph{Comptes bancaires} → \emph{Nouveau compte bancaire}
-(\textbf{Banque}, \textbf{IBAN}, \textbf{QR-IBAN (optionnel)}, \textbf{Compte principal}), et on
+(\textbf{Banque}, \textbf{Description (optionnelle)}, \textbf{IBAN}, \textbf{QR-IBAN (optionnel)},
+\textbf{Compte principal} ; cf. \S\ref{sec:comptes-bancaires}), et on
 lui donne son compte du plan comptable dans le champ \textbf{Compte comptable lié} --- ou, pour un
 compte bancaire déjà déclaré, par le bouton \emph{Lier au plan comptable} de sa ligne. Seuls y
 sont proposés les comptes actifs et postables de type Actif ou Passif, hors compte débiteurs et
@@ -919,7 +920,7 @@ dans la recherche. La forme imprimée sur les documents officiels,
 
 \emph{Factures} → \emph{Nouvelle facture}. Renseigner :
 
-\keshscreenshot{facture-nouvelle.png}{Création d'une facture multi-lignes avec sélection du client et du compte bancaire de réception.}  % TODO capture: form nouvelle facture
+\keshscreenshot{facture-nouvelle.png}{Création d'une facture multi-lignes avec sélection du client.}  % TODO capture: form nouvelle facture
 
 \begin{itemize}
     \item \textbf{Client} : sélection dans le carnet d'adresses (ou création à la volée).
@@ -929,8 +930,9 @@ dans la recherche. La forme imprimée sur les documents officiels,
     \item \textbf{Lignes de facture} : un ou plusieurs produits avec quantité, prix, TVA, et \textbf{compte de produit}.
     \item \textbf{Compte de produit (par ligne)} : le compte du plan comptable sur lequel le chiffre d'affaires de cette ligne sera crédité. Quand vous ajoutez une ligne \textbf{depuis le catalogue}, Kesh y \textbf{recopie} le compte de produit de l'article, s'il en porte un ; vous restez libre de le changer ensuite. Laissé vide, le champ suit le \textbf{compte de produit par défaut de la société} (\emph{Paramètres} → \emph{Facturation}) — il affiche alors ce compte entre parenthèses, pour que vous voyiez d'un coup d'œil où ira le produit. \textbf{Attention} : la recopie a lieu \textbf{une seule fois}, au moment où vous choisissez l'article ; la ligne ne reste pas liée à lui. Vider le champ d'une ligne venue du catalogue la ramène donc au compte par défaut de la société, \textbf{pas} au compte de l'article. Renseigné, il permet de \textbf{ventiler une même facture sur plusieurs comptes} : honoraires, marchandises, prestations, etc. Le compte reste \textbf{modifiable tant que la facture est un brouillon} ; il est figé à la validation.
     \item \textbf{Remarques} : texte libre apparaissant en bas de facture (mention de remerciement, conditions particulières, etc.).
-    \item \textbf{Compte bancaire de réception} : le compte sur lequel vous attendez le paiement (utilisé pour générer la référence QR Bill).
 \end{itemize}
+
+Le formulaire ne demande pas de compte bancaire : la QR-facture porte toujours le \textbf{compte bancaire principal} de la société (\emph{Administration} → \emph{Comptes bancaires}, case \emph{Compte principal} ; cf. \S\ref{sec:comptes-bancaires}).
 
 \subsubsection{Exemple : facture d'une agence web}
 
@@ -941,7 +943,7 @@ dans la recherche. La forme imprimée sur les documents officiels,
     \item Ligne 1 : « Refonte site web » — 1 × CHF 4'500.00.
     \item Ligne 2 : « Maintenance mensuelle » — 3 × CHF 150.00 = CHF 450.00.
     \item Total : CHF 4'950.00. Échéance calculée à 30 jours.
-    \item Compte de réception : le compte bancaire QR-IBAN de l'agence.
+    \item Paiement attendu sur le compte principal de l'agence, qui porte un QR-IBAN.
 \end{itemize}
 
 À la validation, Kesh attribue le numéro \texttt{F-2026-0042} et crée l'écriture comptable automatique (Débit 1100 Débiteurs / Crédit 3200 Prestations de services, désigné par l'agence comme compte de produit par défaut). Le PDF QR Bill est produit et \textbf{figé} au premier téléchargement ou au premier envoi (cf. \S\ref{sec:pdf-fige}).
@@ -1041,7 +1043,7 @@ Le PDF d'une facture validée est conforme au standard \href{https://www.six-gro
 Le PDF est téléchargeable depuis la facture validée — pour l'imprimer (envoi postal) ou l'archiver. Il est \textbf{identique d'un téléchargement à l'autre} : c'est le document émis, figé (cf. \S\ref{sec:pdf-fige}). Depuis la version v0.6, Kesh peut aussi l'\textbf{envoyer directement par e-mail} à votre client, sans passer par votre messagerie : voir la sous-section suivante.
 
 \begin{keshtip}
-La référence structurée du QR Bill est calculée selon la norme ISO 11649 (RF Reference) ou le format suisse QRR (Référence Kesh). Le choix du format dépend du compte bancaire de réception : les comptes IBAN suisses standard utilisent IS0 11649, les comptes QR-IBAN utilisent QRR.
+Le choix du format dépend du compte bancaire principal : s'il porte un QR-IBAN, la QR-facture utilise ce QR-IBAN et une référence QRR ; sinon, son IBAN, sans référence structurée.
 \end{keshtip}
 
 \subsubsection{Le PDF émis est figé}\label{sec:pdf-fige}
@@ -1633,6 +1635,29 @@ depuis la fiche de la facture (« Voir la facture d'origine »).
 Seules les factures en \textbf{CHF} sont acceptées à la complétion dans cette
 version. Le justificatif importé reste consultable même après création de la
 facture.
+\end{keshnote}
+
+%%─────────────────────────────────────────────────────────────────────────────
+\section{Comptes bancaires}\label{sec:comptes-bancaires}
+
+Les comptes bancaires de la société se gèrent dans \emph{Administration} → \emph{Comptes bancaires} : on y crée, modifie et archive un compte, et on le lie au plan comptable. Chaque compte porte :
+
+\begin{itemize}
+    \item la \textbf{banque} ;
+    \item une \textbf{description optionnelle}, de 60 caractères au plus --- « Personnel », « Épargne » --- pour distinguer deux comptes de la même banque ;
+    \item l'\textbf{IBAN}, et un \textbf{QR-IBAN} éventuel ;
+    \item le \textbf{compte comptable lié} (typiquement 1020 Banque) ;
+    \item la case \textbf{compte principal} : c'est ce compte que porte la QR-facture.
+\end{itemize}
+
+\subsection{La description d'un compte}
+
+Avec une description, Kesh nomme le compte « UBS --- Personnel » partout où il le montre : dans \textbf{les listes de comptes} (cette page, la tuile des comptes de l'accueil, \emph{Paramètres}) et dans \textbf{les sélecteurs} --- import bancaire, réconciliation, règlement d'une facture, règlement d'une facture fournisseur, lot de paiement ---, où l'IBAN reste affiché à la suite. Un compte \textbf{sans description} s'affiche exactement comme avant. Deux comptes peuvent porter la même description : l'IBAN les distingue.
+
+La description ne se saisit pas à l'onboarding, mais ensuite, sur cette page. Elle ne figure \textbf{ni sur la QR-facture ni dans le fichier de paiement} : la QR-facture porte le compte principal, et le fichier de paiement l'IBAN. Elle est dans l'export CSV (\texttt{bank\_accounts.csv}, juste après la banque) et dans la sauvegarde d'installation.
+
+\begin{keshnote}
+Pour qui modifie un compte par l'API : \texttt{PUT /bank-accounts/\{id\}} remplace tous les champs du compte --- un corps qui omet la description l'\textbf{efface}. Le lien au grand livre (\texttt{PATCH}) ne la touche pas.
 \end{keshnote}
 
 %%─────────────────────────────────────────────────────────────────────────────
@@ -2837,7 +2862,7 @@ Le journal d'audit garde toujours la trace de l'action originale ET de l'action 
     \item[QR Bill] Standard suisse 2020+ de facture avec QR code (SIX Group).
     \item[QR-IBAN] IBAN spécial pour les paiements QR Bill avec référence structurée.
     \item[Réconciliation bancaire] Passage en comptabilité des transactions du relevé bancaire~: Kesh crée l'écriture, en réglant une facture client ou en imputant un compte de contrepartie.
-    \item[Référence structurée] Référence numérique unique attachée à un paiement (ISO 11649 ou QRR).
+    \item[Référence structurée] Référence numérique unique attachée à un paiement (QRR ou ISO 11649). Kesh produit une référence QRR quand le compte principal porte un QR-IBAN, et aucune sinon.
     \item[Report à nouveau] Solde d'un compte de bilan reporté d'un exercice sur le suivant à la clôture.
     \item[Sous-compte (auxiliaire)] Compte de détail rattaché à un compte principal (ex. 1100.1 pour un client important).
     \item[TVA] Taxe sur la valeur ajoutée (Loi LTVA, RS 641.20).

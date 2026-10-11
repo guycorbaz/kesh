@@ -316,6 +316,10 @@ pub async fn update_company_contact_details(
 pub struct BankAccountJson {
     pub id: i64,
     pub bank_name: String,
+    /// Story 26-2b (#622) — description optionnelle (`null` si absente) : source
+    /// du nom des comptes de *Paramètres*, de l'import bancaire et de la
+    /// réconciliation.
+    pub description: Option<String>,
     pub iban: String,
     pub qr_iban: Option<String>,
     pub is_primary: bool,
@@ -328,6 +332,7 @@ impl From<BankAccount> for BankAccountJson {
         Self {
             id: b.id,
             bank_name: b.bank_name,
+            description: b.description,
             iban: b.iban,
             qr_iban: b.qr_iban,
             is_primary: b.is_primary,
