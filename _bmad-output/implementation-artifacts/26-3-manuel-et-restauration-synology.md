@@ -1,6 +1,6 @@
 # Story 26-3 : Le manuel décrit les écrans réels, et la garde de `kesh-restore.sh` échoue fermée
 
-Status: review
+Status: done
 
 <!-- Spécifiée le 2026-10-10 sur fe162504 (branche story/26-3, worktree kesh-26-3), en autonomie
      (consignes communes des agents, memory/consignes-agents-epic15.md). Choix C-26-3-1 à 8 au registre
@@ -1172,3 +1172,15 @@ mettrait dans le gate (observation P3 R-L9).
   - Remédiation : `configuration_transmise.rs` (test) seul côté code — **aucune ligne de code de production**.
     Gates : Dev Agent Record, *Gates au commit de remédiation P4*. Suite : passe ciblée P5 (Sonnet) sur ce
     commit (`26-3-review-prompt-p5-ciblee.md`).
+- **2026-10-11 — revue de code P5 ciblée (Sonnet, une lentille, sur le seul commit `21dac14f` ; prompt
+  `26-3-review-prompt-p5-ciblee.md`, rapport `kesh-gate-logs/26-3-review-p5-ciblee.md`) : 0 CRITICAL, 0 HIGH,
+  0 MEDIUM, 3 LOW.** P5-1 (angles morts de `boucle_lit_la_liste` non écrits : commentaire de fin de ligne sur une
+  ligne `while … do`, réaffectation de `LISTE`, alimentation de la lecture interne — faux rouges le plus souvent,
+  sens sûr), P5-2 (préexistant : l'AC 5.2 décrit `while IFS='|' read`, le script lit `IFS= read -r LIGNE` puis
+  `IFS='|' read` dans le corps), P5-3 (la rangée (f) de l'AC 7.6 regroupe M1-M4 du journal ; collision de lettre
+  avec « G16 (f) »). Axes exercés et non exercés déclarés au rapport. Les trois LOW sont acceptés sans changement :
+  aucun n'affecte le code ni la garde, et un correctif de texte rouvrirait une passe pour rien.
+  - **Boucle close** : la remédiation P4 ne touchait aucune ligne de code de production (test seul), et la passe
+    ciblée qui la relit ne trouve rien au-dessus de LOW. Trend final : P1 2 MEDIUM distincts → P2 3 → P3 1 →
+    P4 1 → **P5 0**. Modèles : Sonnet (P1), Opus (P2), Haiku (P3, P4 ciblées), Sonnet (P5 ciblée). Statut
+    **done** ; dernier commit de code **`21dac14f`** (gate 3341/3341, E2E 256 / 7 KF-029).
