@@ -457,3 +457,29 @@ l'orchestrateur repris tels quels.
 - **Écarté** : un test d'AC8 de plus sur le vrai `MIGRATOR` (il entrerait dans la liste fermée de
   `test_schema_guard.rs` pour un défaut déjà détecté).
 - **Réversible** : oui.
+
+### C-26-1-38 — Garde de complétude de `CsvLineErrorCode::all()` : comparée aux variants que serde tire de l'enum
+
+- **Contexte** (revue de code P1, F1 = E-3) : la garde `all_is_complete` itérait sur `all()` elle-même ; un variant
+  ajouté à l'enum, à `as_str()` et au `match` du test mais oublié dans `all()` la laissait verte. AC14-9 annonçait
+  « ne compile pas ».
+- **Retenu** : le test intercepte `Deserializer::deserialize_enum`, auquel la dérivation `serde::Deserialize` passe la
+  liste des noms de variants **tirée de l'enum** (aucune liste à la main), et exige `all()` (par `as_str`) égale à
+  cette liste, dans l'ordre. Éprouvé par mutation (`MutantVariant` ajouté à l'enum, à `as_str` et à `i18n_key`,
+  oublié dans `all()` → `all_is_complete` rouge).
+- **Écarté** : une garde **à la compilation** — sans macro procédurale (`strum`), Rust n'énumère pas les variants hors
+  d'un `match`, et un `match` exhaustif ne contraint que la fonction qui le porte ; une fonction de rang à `match`
+  exhaustif (proposée par la lentille A) se tient elle aussi à la main ; analyser le message d'erreur de serde
+  (`expected one of …`), qui dépend d'un texte et non d'une API. AC14-9 récrit en conséquence (« fait rougir le
+  test »), sans changer son intention.
+- **Réversible** : oui.
+
+### C-26-1-39 — Un débit nul rend le zéro sans signe
+
+- **Contexte** (revue de code P1, E-4, LOW) : sous `Positive`, `-parsed` sur `0.00` produit un zéro à bit de signe
+  (`Neg` de `rust_decimal`), égal à `ZERO` mais affichable « -0.00 » ; comportement antérieur à la story.
+- **Retenu** : `parse_row` rend `Decimal::ZERO` pour un débit nul ; `zeros_and_explicit_plus_are_accepted` asserte
+  l'absence de bit de signe sous les deux réglages ; mutation (normalisation retirée) rouge.
+- **Écarté** : laisser tel quel (correctif d'une ligne, dans le code que la story réécrit) ; normaliser aussi le
+  `-amount` de CAMT (`camt053/mod.rs`, hors périmètre de la story — recensé au Change Log).
+- **Réversible** : oui.

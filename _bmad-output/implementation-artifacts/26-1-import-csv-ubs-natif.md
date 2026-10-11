@@ -5,7 +5,9 @@
 **review** — fiche créée le 2026-10-10 en autonomie (skill `bmad-create-story`) ; validation **close** le
 2026-10-11 après quatre passes (P1 Sonnet, P2 Opus, P3 Sonnet, P4 ciblée Haiku — bilan au Change Log) ; développement
 (`bmad-dev-story`) terminé le 2026-10-11, mutations 28/28 et gates complets au dernier commit de code `f23ad162`
-(Dev Agent Record) ; revue de code à suivre. Choix tranchés : **C-26-1-1 à C-26-1-37**, registre
+(Dev Agent Record) ; revue de code P1 (Sonnet, B/E/A) remédiée le 2026-10-11, gates complets et E2E complet au
+dernier commit de code `8639c786` ; revue de code P2 (Opus, protocole complet) à suivre, prompt
+`26-1-review-prompt-p2.md`. Choix tranchés : **C-26-1-1 à C-26-1-39**, registre
 `_bmad-output/implementation-artifacts/epic-26-choix-autonomes.md`.
 
 **Issues** : [#620](https://github.com/guycorbaz/kesh/issues/620) (P1, erreur comptable) et
@@ -551,8 +553,10 @@ discrimine le mapping `date = 2` (C-26-1-13). `crates/kesh-import/tests/fixtures
    `"negative"` acceptés, `"Negative"` et `"autre"` refusés ;
 9. AC3-bis (`error.rs`) : pour **chaque** variant de `CsvLineErrorCode`, `as_str()` ==
    `serde_json::to_value(code)` ; la liste des variants est produite par la **source** — une fonction
-   `CsvLineErrorCode::all() -> &'static [Self]` dont la complétude est gardée par un `match` exhaustif sans bras par
-   défaut (un variant neuf oublié de `all()` ne compile pas), et non énumérée à la main dans le test (R3-12) ;
+   `CsvLineErrorCode::all() -> &'static [Self]` dont la complétude est gardée par un test qui la compare à la liste des
+   variants que la dérivation serde tire de l'enum lui-même (un variant neuf oublié de `all()` fait rougir le test), et
+   non énumérée à la main dans le test (R3-12) ; *(rédaction d'origine : « gardée par un `match` exhaustif […] ne
+   compile pas » — la garde écrite ainsi était tautologique, refaite en revue de code P1, F1 = E-3)* ;
 10. **Forme de la fixture** (R3-11) : `ubs_fixture_has_the_documented_shape` — trois premiers octets `EF BB BF`,
    dernier octet ≠ `\n`, aucun `\r`, 21 éléments au sens de `split('\n')`, le 9ᵉ vide.
 
@@ -926,6 +930,38 @@ Opus 5.5 (`bmad-dev-story`, autonomie), 2026-10-11.
   trois scénarios neufs et le scan axe du formulaire (zéro violation, aucune exclusion).
 
 ### Completion Notes List
+- **Remédiation de la revue de code P1** (2026-10-11, Opus 5.5) — deux commits de code : `a2b281fb` (remédiation) puis
+  `8639c786` (propagation de F6, deux lignes de `BankImportUpload.svelte`). Tous les gates ci-dessous ont tourné **sur
+  `8639c786`, dernier commit de code**, sous le verrou `flock` (pilote `26-1-p1b-gate-driver.log`) :
+  - **Gate complet backend** `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest workspace) sur `kesh_261`
+    remise à zéro (DROP/CREATE, migrations du worktree, seed) : **3385/3385**, 6 ignorés — 3384 de `f23ad162` + le
+    test neuf `header_guard_runs_before_first_data_record` (`#[test]` de `parser.rs` : 49 → 50 de `f23ad162` à
+    `a2b281fb` ; `error.rs` : 3 → 3, `all_is_complete` refait en place). Journal `26-1-p1b-gate-backend.log`.
+  - `cargo publish --dry-run -p kesh-import` (sur `a2b281fb` ; `8639c786` ne touche pas `kesh-import`) : **vert**
+    (`exit=0`, « aborting upload due to dry run »), journal `26-1-publish-dry-run.log` (F3 : la déclaration antérieure
+    n'avait pas de trace).
+  - **Frontend** : `npm run check`, `npm run lint-i18n-ownership`, `npm run build` verts ; `npm run test:unit`
+    **1295/1295**, 125 fichiers (journaux `26-1-p1b-front-*.log`).
+  - **E2E COMPLET** (backend :3031 sur `kesh_e2e_261` reconstruite et migrée, montage complet de `docs/testing.md`,
+    `/health` `smtpConfigured:true`, run de 15:58 CEST, après 12:00 UTC) : **260 passés, 7 échoués, 19 ignorés**
+    (10,6 min ; journal `26-1-p1b-e2e-full.log`). Les 7 sont, fichier par fichier, les 7 KF-029 (#97) de
+    `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et
+    `:92`, `onboarding.spec.ts:57`, `:77`, `:150`. Aucun hors liste ; `bank-csv-import.spec.ts` 12/12 dans la suite
+    (dont l'assertion resserrée d'E-7).
+  - Premier passage complet sur `a2b281fb` (avant la propagation de F6) : backend 3385/3385, Vitest 1295/1295,
+    check/lint/build verts, E2E **259 / 8 / 19** — les 7 KF-029 et `sidebar-navigation.spec.ts:75`, **rejoué seul :
+    échoue encore** (`26-1-p1-e2e-rejeu-sidebar.log`), donc la **KF-046 (#424)** déterministe, dépendante de l'état,
+    absente du run suivant (journaux `26-1-p1-*.log`).
+  - **Mutations neuves** (journal `26-1-mutations-p1-nouvelles.log`, arbre suivi propre avant et après chacune) :
+    **5/5 rouges** — P1-N1 garde déplacée après la lecture du premier enregistrement →
+    `header_guard_runs_before_first_data_record` ; P1-N2 débit zéro compté comme lu et P1-N3 crédit négatif compté
+    comme débit en défaut → `whole_debit_column_definition` ; P1-N4 variant `MutantVariant` ajouté à l'enum, à
+    `as_str` et à `i18n_key`, oublié dans `all()` → `all_is_complete` ; P1-N5 normalisation du débit nul retirée →
+    `zeros_and_explicit_plus_are_accepted`.
+  - **Rejeu des douze mutations « arbre non propre »** (F2 ; journal `26-1-mutations-p1-rejeu.log`) : M9, M10, M11,
+    M12, M14, M15, M21, M25, M5, M1, M27, M26, chacune sur un arbre où `git diff --quiet && git diff --cached --quiet`
+    était vrai avant application, gate ciblé du binaire concerné, restauration `git checkout --` + `touch`, contrôle
+    après : **12/12 rouges, chaque fois sur les tests désignés**, `git status --porcelain` vide avant et après chacune.
 - **Reprise après le crash du 2026-10-11 (01:40, systemd-oomd)** — bases `kesh_261` et `kesh_e2e_261` recréées
   (migrations du worktree ; seed `scripts/seed-dev-db.sql` sur `kesh_261` ; `kesh_e2e_261` seulement migrée, l'E2E se
   seede par `POST /_test/seed`). Tous les gates ci-dessous ont tourné **sur `f23ad162`, dernier commit de code**, sous
@@ -940,8 +976,7 @@ Opus 5.5 (`bmad-dev-story`, autonomie), 2026-10-11.
   Les 7 sont, fichier par fichier, les 7 KF-029 (#97) de `docs/testing.md` § *Les échecs attendus* :
   `mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77`, `:150`.
   Aucun hors liste, aucune pollution ce run-ci ; `bank-csv-import.spec.ts` vert dans la suite.
-- **Mutations (AC19) : 28/28 rougissent**, chacune appliquée seule puis restaurée (`git checkout --` + `touch`), arbre
-  vérifié propre après chaque (`git status`) — journaux `26-1-mutations-import.log`, `26-1-mutations-api.log`
+- **Mutations (AC19) : 28/28 rougissent**, chacune appliquée seule puis restaurée (`git checkout --` + `touch`) — journaux `26-1-mutations-import.log`, `26-1-mutations-api.log`
   (avant le crash) et `26-1-mutations-reprise.log`, `26-1-e2e-M22.log` (reprise) :
   - `kesh-import` (nextest du crate) : M1, M2, M3, M4, M5, M9, M13, M14, M17, M18, M20, M21, M23, M24, M28 ;
   - API / `kesh-db` (binaires ciblés) : M1, M4, M5, M6, M7, M9, M10, M11, M12, M14, M15, M21, M25, M27 ; **M26** par
@@ -954,6 +989,17 @@ Opus 5.5 (`bmad-dev-story`, autonomie), 2026-10-11.
   - E2E ciblé, frontend rebuildé muté : **M22** rouge (`bank-csv-import.spec.ts:358`, refus UBS sous profil « sans
     signe », lignes listées) ; frontend restauré et rebuildé ensuite.
   Décompte recompté sur la table d'AC19 : M1 à M28, 28 lignes, toutes rouges sous au moins un test désigné.
+  ⚠️ **Rectifié en revue de code P1 (F2)** : cette ligne disait l'arbre « vérifié propre après chaque (`git status`) ».
+  Le journal `26-1-mutations-api.log` porte au contraire `!! arbre non propre` **12 fois**, après M9, M10, M11, M12,
+  M14, M15, M21, M25, M5, M1, M27 et M26. **Cause établie** : le script de campagne (`run.sh`, conservé dans le
+  scratchpad de la session) restaurait par `git checkout -- $(git diff --name-only)` — tout fichier **suivi** modifié —
+  puis testait `git status --porcelain`, qui compte aussi les fichiers **non suivis** ; or
+  `26-1-review-prompt-p1.md` a été créé à 01:33:31 dans le worktree et n'a été commité qu'à 14:56:57 (`d20d235b`) ; le
+  pilote E2E de 14:55 l'affiche encore (`?? …/26-1-review-prompt-p1.md`). Aucun résidu de mutation ne pouvait survivre
+  à la restauration d'un fichier suivi. **Preuve par l'exécution** : les douze mutations ont été **rejouées** le
+  2026-10-11 sur `a2b281fb`, chacune sur un arbre où `git diff --quiet && git diff --cached --quiet` était vrai avant
+  application et après restauration, base `kesh_261` remise à zéro : **12/12 rouges**, chaque fois sur les tests
+  désignés (journal `26-1-mutations-p1-rejeu.log`).
 
 
 - Fiche créée le 2026-10-10 (Opus 5.5, `bmad-create-story`, autonomie) : analyse des sources, structure du fichier UBS
@@ -991,7 +1037,7 @@ Opus 5.5 (`bmad-dev-story`, autonomie), 2026-10-11.
 - `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`, `docs/migrations-idempotence-audit.md`,
   `CHANGELOG.md`
 - `_bmad-output/implementation-artifacts/26-1-import-csv-ubs-natif.md`, `epic-26-choix-autonomes.md`,
-  `sprint-status.yaml`
+  `sprint-status.yaml`, `26-1-review-prompt-p1.md`, `26-1-review-prompt-p2.md` (prompts versionnés des revues de code)
 
 ## Change Log
 
@@ -1004,6 +1050,7 @@ Opus 5.5 (`bmad-dev-story`, autonomie), 2026-10-11.
 | 2026-10-11 | Opus 5.5 (clôture de la validation) | Validation P4 **ciblée** (Haiku, une lentille, sur le commit de remédiation P3) : 1 MEDIUM, 2 LOW, appliqués. **Validation close.** Statut → in-progress. Bilan ci-dessous. |
 | 2026-10-11 | Opus 5.5 (dev-story) | Implémentation T1-T7 (migration `20261011000001`, bump 0.13.1, `DebitSign`, refus de signe non confirmable, garde de surcomptage, graphie des codes, formulaire, panneau, manuel, CHANGELOG). Gate complet 3383/3383, Vitest 1295/1295, E2E ciblé 12/12 ; mutations et E2E complet à suivre (T8). |
 | 2026-10-11 | Opus 5.5 (dev-story, reprise après crash) | T8 : mutations M8, M16, M19 (forme non stricte), M22 jouées — **28/28 rouges** ; gate complet 3384/3384, `publish --dry-run` vert, Vitest 1295/1295, check/lint/build verts, **E2E complet 260 passés / 7 échoués (les 7 KF-029)** au dernier commit de code `f23ad162`. C-26-1-36, 37. Statut → review. |
+| 2026-10-11 | Opus 5.5 (remédiation revue de code P1) | Revue P1 (Sonnet, lentilles B/E/A) : 4 MEDIUM, 13 LOW distincts. Remédiation `a2b281fb` + propagation `8639c786`. Mutations neuves 5/5 rouges, douze mutations rejouées sur arbre propre 12/12 rouges ; au dernier commit de code `8639c786` : gate complet 3385/3385, Vitest 1295/1295, check/lint/build verts, **E2E complet 260 / 7 (les 7 KF-029) / 19**. C-26-1-38, 39. Bilan ci-dessous. Revue P2 (Opus, protocole complet) à suivre. |
 
 ### Validation P1 — bilan finding par finding
 
@@ -1099,7 +1146,7 @@ c'est elle que la P4 vise.
 | R3-9 | L | **Corrigé** — CHANGELOG : lignes vides en *Précisé* (comportement inchangé) ; colonne `debit_sign` de l'export ; `debitSign` dans les `GET`. |
 | R3-10 | L | **Corrigé** — préséances complètes (erreurs d'avant la boucle) ; garde AC5 placée avant le premier `iter.next()`. |
 | R3-11 | L | **Corrigé** — test de forme de la fixture (AC14-10) ; M28. |
-| R3-12 | L | **Corrigé** — `CsvLineErrorCode::all()` gardée par un `match` exhaustif ; le test n'énumère plus à la main. |
+| R3-12 | L | **Corrigé** — `CsvLineErrorCode::all()` gardée par un `match` exhaustif ; le test n'énumère plus à la main. *(Garde tautologique, refaite en revue de code P1 — F1 = E-3.)* |
 | R3-13 | L | **Corrigé** — `errorDetails` posé aux deux `catch`, remis à zéro aux trois sites ; clé de troncature existante réutilisée. Patrons Vitest nommés en AC12 (aucun test de composant dans `features/bank-import/`). |
 | R3-14 | L | **Corrigé** — `.` pour toute apostrophe dans les motifs `grep` du PDF. |
 | R3-15 = F3-7 | L | **Corrigé** — liste complète des conflits attendus ; `sitesTotal` recompté au rebase, jamais additionné. |
@@ -1130,3 +1177,42 @@ seul commit de remédiation P3 : **0C/0H/1M/2L**.
 finale ne touche **que du texte** (fiche, registre) — **aucune ligne de production** : la boucle se clôt (règle de la
 passe ciblée). Symptômes regrepés sur `_bmad-output/` : `toutes les valeurs non nulles` (seul reste : le contexte
 historique de C-26-1-25 et le prompt P3, légitimes), `Tous les débits du fichier` (0), `(ci-dessous), en-têtes` (0).
+
+### Revue de code P1 — bilan finding par finding
+
+Revue P1 (Sonnet, trois lentilles, contexte frais, prompt `26-1-review-prompt-p1.md`, sur `91426149..f23ad162`) :
+**B 0C/0H/0M/3L** (LOW-1 à LOW-3), **E 0C/0H/2M/7L** (E-1 à E-9), **A 0C/0H/2M/5L** (F1 à F7). Après dédoublonnage
+(F1 = E-3, F6 = B LOW-1) : **4 MEDIUM, 13 LOW distincts** (17). Aucun n'est né d'une remédiation : ce sont deux trous de
+test d'origine (E-1, E-2), une garde écrite tautologique dès le développement (F1 = E-3 — classée LOW par E, MEDIUM
+par A, retenue MEDIUM : elle contredisait un AC) et un compte rendu faux (F2).
+
+**Trend** : revue P1 **0 HIGH / 4 MEDIUM** (Sonnet). La remédiation touche le code de production (`parser.rs`,
+`error.rs`, `bank_imports.rs`, `BankImportUpload.svelte`) dans plusieurs modules et ajoute une règle (débit nul,
+C-26-1-39) : **P2 complète** (Opus, trois lentilles), pas une passe ciblée.
+
+| Finding | Sév. | Traitement |
+|---|---|---|
+| E-1 | M | **Corrigé** — `header_guard_runs_before_first_data_record` : seule transaction avalée, `header_row_count` 1 (ligne 1) et 2 (ligne 2) → `HeaderSkipsData`, pas `EmptyFile`. Mutation P1-N1 (garde déplacée après le premier `iter.next()`) : rouge. |
+| E-2 | M | **Corrigé** — deux cas à `whole_debit_column_definition` : deux débits en défaut + un débit `0.00` → `true` ; deux crédits négatifs sans débit → `false`. Mutations P1-N2 (zéro compté comme lu) et P1-N3 (crédit négatif compté comme débit) : rouges. |
+| F1 = E-3 | M / L | **Corrigé** — `all_is_complete` compare `all()` (par `as_str`) à la liste des variants que serde passe à `deserialize_enum`, tirée de l'enum ; doc-comment de `all()` récrit ; AC14-9 récrit (« fait rougir le test » au lieu de « ne compile pas », intention inchangée) ; R3-12 annoté. Mutation P1-N4 (variant oublié dans `all()`) : rouge. C-26-1-38. |
+| F2 | M | **Corrigé** — cause **établie** : le script de campagne restaurait tout fichier suivi modifié puis testait `git status --porcelain`, qui compte les non suivis ; `26-1-review-prompt-p1.md`, créé à 01:33:31, n'a été commité qu'à 14:56:57 (le pilote E2E de 14:55 le liste encore en `??`). Les douze mutations **rejouées** sur arbre suivi propre : 12/12 rouges sur les tests désignés. Phrase du Dev Agent Record rectifiée. |
+| B LOW-1 = F6 | L | **Corrigé** — `errorDetails = null` au site `BANK_ACCOUNT_REQUIRED` (`a2b281fb`) ; symptôme grepé dans le composant : les deux branches `UNKNOWN_ERROR` des `catch` posaient aussi `errorCode` sans toucher `errorDetails` (nul depuis l'entrée de la fonction, donc latent) — corrigées (`8639c786`). Les huit sites où `errorCode` est posé ou remis à zéro touchent désormais `errorDetails` (`grep -n` de `errorCode = ` et `errorDetails = `). |
+| B LOW-2 | L | **Accepté** — DDL non atomique entre `DROP` et `ADD CONSTRAINT` : la migration est déjà appliquée sur les bases de dev et du gate ; la modifier violerait P8 (checksum) pour un risque pratique négligeable (base de Guy vide, valeurs existantes ≤ 5). |
+| B LOW-3 | L | **Accepté** — conforme à la définition fermée C-26-1-25 : un fichier dont tous les débits sont en défaut **et** qui porte un crédit négatif reçoit d'abord le conseil de régler le sens, puis, réglé, la liste des lignes. Conseil incomplet dans un cas rare, non faux. |
+| E-4 | L | **Corrigé** — un débit nul rend `Decimal::ZERO` (plus de zéro à bit de signe sous `Positive`), asserté sous les deux réglages ; mutation P1-N5 rouge. Pas de ligne au CHANGELOG : comportement antérieur, effet visible non établi. C-26-1-39. Même forme recensée hors périmètre : `CdtDbtSign::apply` (`camt053/mod.rs`, `-amount`), non traitée. |
+| E-5 | L | **Accepté** — la nouvelle tentative forcée après `EncodingMismatch` passe, dans les deux handlers, par le même bras `HardFailure(e) => map_csv_error(e)` que le chemin direct (relu, l. 1640-1685 et 1810-1862) ; AC15 ne l'exige pas. Un test de plus coûterait un profil ISO-8859-1 par chemin pour une conversion déjà commune. |
+| E-6 | L | **Corrigé** — `ubs_fichier_reel.rs` : `<= ZERO` / `>= ZERO` (un montant nul est accepté, AC2). Test `#[ignore]` : non rejoué sur le relevé réel dans cette remédiation. |
+| E-7 | L | **Corrigé** — `toHaveText('11')` sur la première cellule de la ligne (le numéro, `BankImportUpload.svelte`). Les autres `toContainText('<nombre>')` du dépôt (`reminders.spec.ts`, `dunning-roundtrip.spec.ts`, `bank-account-journal-link.spec.ts`) sont hors story, non touchés. |
+| E-8 | L | **Réfuté** — les CHECK sont exercés : `db_checks_reject_out_of_range_profiles` (`kesh-db/src/repositories/bank_profiles.rs`, `header_row_count = 21` et `debit_sign = 'autre'` → `CheckConstraintViolation`) et `post_profile_header_row_count_bound_is_20` (20 → 201, base comprise) ; le `grep` de la lentille cherchait le nom de la contrainte, que ces tests ne citent pas. Retirer le CHECK du squash ferait rougir le premier. |
+| E-9 | L | **Accepté** — aucun test de composant Svelte dans `features/bank-import/` (constat R3-13) ; le panneau est couvert par l'E2E (scénarios du refus de signe, M22) ; le seul site sans remise à zéro (F6) est corrigé. |
+| F3 | L | **Corrigé** — `cargo publish --dry-run -p kesh-import` rejoué, `exit=0`, journal `26-1-publish-dry-run.log`. |
+| F4 | L | **Corrigé** — première ligne du doc-comment dupliqué de `csv_line_error_to_payload` retirée. |
+| F5 | L | **Corrigé** — `use kesh_db::entities::…` et `use rust_decimal_macros::dec` remontés avec les autres imports du module de tests de `csv_tables.rs`. |
+| F7 | L | **Corrigé** — ligne « Encodage : auto-détection (le fichier est en UTF-8) » au tableau « Le relevé CSV d'UBS » ; PDF régénéré (`make user`), contrôlé aplati (« Séparateur décimal point Encodage auto-détection (le fichier est en UTF-8) Lignes à ignorer 9 »). |
+
+Reclassement P1 : aucun MEDIUM+ reclassé en dette. Symptômes grepés après patch (valeurs) : `ne compile pas` /
+`refuse de compiler` (fiche AC14-9 corrigée ; registre l. 236 légitime : il parle d'`as_str`), `vers payload
+sérialisable` (0), `-parsed` / `-amount` (un site CAMT hors périmètre, recensé), `toContainText('11')` (0 hors
+commentaire), `errorCode = ` sans `errorDetails` (0), `arbre non propre` / `vérifié propre` (rectifié ; seuls restent
+les journaux et ce bilan).
+
