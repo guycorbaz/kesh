@@ -2,9 +2,10 @@
 
 ## Status
 
-**in-progress** — fiche créée le 2026-10-10 en autonomie (skill `bmad-create-story`) ; validation **close** le
+**review** — fiche créée le 2026-10-10 en autonomie (skill `bmad-create-story`) ; validation **close** le
 2026-10-11 après quatre passes (P1 Sonnet, P2 Opus, P3 Sonnet, P4 ciblée Haiku — bilan au Change Log) ; développement
-(`bmad-dev-story`) en cours. Choix tranchés : **C-26-1-1 à C-26-1-27** (et suivants), registre
+(`bmad-dev-story`) terminé le 2026-10-11, mutations 28/28 et gates complets au dernier commit de code `f23ad162`
+(Dev Agent Record) ; revue de code à suivre. Choix tranchés : **C-26-1-1 à C-26-1-37**, registre
 `_bmad-output/implementation-artifacts/epic-26-choix-autonomes.md`.
 
 **Issues** : [#620](https://github.com/guycorbaz/kesh/issues/620) (P1, erreur comptable) et
@@ -784,7 +785,7 @@ Une mutation qui ne fait rien rougir est un **trou de test** : écrire le test m
 - [x] **T7 — Documentation** (AC18) : manuel (Profils banque, sous-section UBS, Rejet partiel, Détection des doublons ;
   **pas** « Import avec un profil existant », à la 26-3) + PDF contrôlé aplati, CHANGELOG (graphie des codes, `debitSign` obligatoire, deux 422, extourne) ; grep de la valeur « 5 »
   / « 0-5 », et des graphies `INVALIDDATE` & co.
-- [ ] **T8 — Contrôle sur le vrai fichier** (AC17), mutations (AC19), gates (AC20), Dev Agent Record.
+- [x] **T8 — Contrôle sur le vrai fichier** (AC17), mutations (AC19), gates (AC20), Dev Agent Record.
 
 Ordre conseillé : T1 → T2 → T3 → T4 → T5 → T6 → T7 → T8. Un commit par étape BMAD (CLAUDE.md), messages en
 `refs #620 #621`.
@@ -925,6 +926,35 @@ Opus 5.5 (`bmad-dev-story`, autonomie), 2026-10-11.
   trois scénarios neufs et le scan axe du formulaire (zéro violation, aucune exclusion).
 
 ### Completion Notes List
+- **Reprise après le crash du 2026-10-11 (01:40, systemd-oomd)** — bases `kesh_261` et `kesh_e2e_261` recréées
+  (migrations du worktree ; seed `scripts/seed-dev-db.sql` sur `kesh_261` ; `kesh_e2e_261` seulement migrée, l'E2E se
+  seede par `POST /_test/seed`). Tous les gates ci-dessous ont tourné **sur `f23ad162`, dernier commit de code**, sous
+  le verrou `flock` ; journaux dans `/home/gcorbaz/devel/kesh-gate-logs/26-1-*`.
+- **Gate complet backend** `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest workspace) sur `kesh_261`
+  fraîchement recréée : **3384/3384**, 6 ignorés (3383 de la ligne précédente + le test M19 de `f23ad162`).
+- `cargo publish --dry-run -p kesh-import` (job CI) : vert.
+- **Frontend** : `npm run check` vert, `npm run lint-i18n-ownership` vert, `npm run test:unit` **1295/1295**
+  (125 fichiers), `npm run build` vert.
+- **E2E COMPLET** (backend :3031, `kesh_e2e_261` reconstruite et migrée, montage complet de `docs/testing.md`,
+  `/health` `smtpConfigured:true`, run postérieur à 12:00 UTC, donc sans les deux KF-045) : **260 passés, 7 échoués, 19 ignorés** (10,6 min).
+  Les 7 sont, fichier par fichier, les 7 KF-029 (#97) de `docs/testing.md` § *Les échecs attendus* :
+  `mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77`, `:150`.
+  Aucun hors liste, aucune pollution ce run-ci ; `bank-csv-import.spec.ts` vert dans la suite.
+- **Mutations (AC19) : 28/28 rougissent**, chacune appliquée seule puis restaurée (`git checkout --` + `touch`), arbre
+  vérifié propre après chaque (`git status`) — journaux `26-1-mutations-import.log`, `26-1-mutations-api.log`
+  (avant le crash) et `26-1-mutations-reprise.log`, `26-1-e2e-M22.log` (reprise) :
+  - `kesh-import` (nextest du crate) : M1, M2, M3, M4, M5, M9, M13, M14, M17, M18, M20, M21, M23, M24, M28 ;
+  - API / `kesh-db` (binaires ciblés) : M1, M4, M5, M6, M7, M9, M10, M11, M12, M14, M15, M21, M25, M27 ; **M26** par
+    `test_schema_guard` (squash divergent du schéma réel, checksum) — C-26-1-37 ;
+  - **M19** : forme `is_sign_negative()` **équivalente** (verte ; `rust_decimal` ne garde pas le signe de `-0.00`),
+    figée par `negative_zero_has_no_sign_bit_after_parse` ; forme non stricte jouée sur les trois comparaisons
+    (`<= ZERO` débit `Positive`, `<= ZERO` crédit, `>= ZERO` débit `Negative`) : **rouges** — C-26-1-36 ;
+  - Vitest ciblé : **M8** rouge (`BankProfileForm.test.ts` (a) et (e)), **M16** rouge
+    (`csv-line-error-label.test.ts`) ;
+  - E2E ciblé, frontend rebuildé muté : **M22** rouge (`bank-csv-import.spec.ts:358`, refus UBS sous profil « sans
+    signe », lignes listées) ; frontend restauré et rebuildé ensuite.
+  Décompte recompté sur la table d'AC19 : M1 à M28, 28 lignes, toutes rouges sous au moins un test désigné.
+
 
 - Fiche créée le 2026-10-10 (Opus 5.5, `bmad-create-story`, autonomie) : analyse des sources, structure du fichier UBS
   relevée **en formes** (aucune donnée copiée), choix C-26-1-1 à 13 consignés au registre.
@@ -973,6 +1003,7 @@ Opus 5.5 (`bmad-dev-story`, autonomie), 2026-10-11.
 | 2026-10-11 | Opus 5.5 (remédiation validation P3) | Validation P3 (Sonnet R/F) : 2 MEDIUM, 18 LOW distincts. Bilan finding par finding ci-dessous. Choix C-26-1-25 à 27. |
 | 2026-10-11 | Opus 5.5 (clôture de la validation) | Validation P4 **ciblée** (Haiku, une lentille, sur le commit de remédiation P3) : 1 MEDIUM, 2 LOW, appliqués. **Validation close.** Statut → in-progress. Bilan ci-dessous. |
 | 2026-10-11 | Opus 5.5 (dev-story) | Implémentation T1-T7 (migration `20261011000001`, bump 0.13.1, `DebitSign`, refus de signe non confirmable, garde de surcomptage, graphie des codes, formulaire, panneau, manuel, CHANGELOG). Gate complet 3383/3383, Vitest 1295/1295, E2E ciblé 12/12 ; mutations et E2E complet à suivre (T8). |
+| 2026-10-11 | Opus 5.5 (dev-story, reprise après crash) | T8 : mutations M8, M16, M19 (forme non stricte), M22 jouées — **28/28 rouges** ; gate complet 3384/3384, `publish --dry-run` vert, Vitest 1295/1295, check/lint/build verts, **E2E complet 260 passés / 7 échoués (les 7 KF-029)** au dernier commit de code `f23ad162`. C-26-1-36, 37. Statut → review. |
 
 ### Validation P1 — bilan finding par finding
 

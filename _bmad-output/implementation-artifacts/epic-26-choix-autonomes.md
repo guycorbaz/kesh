@@ -433,3 +433,27 @@ l'orchestrateur repris tels quels.
   crate `csv` (mêmes réglages que le parseur, 9 enregistrements sautés) et les apparie dans l'ordre ; aucun nombre en
   dur, aucune valeur imprimée.
 - **Réversible** : oui.
+
+### C-26-1-36 — M19 jouée sous ses deux formes ; la forme `is_sign_negative()` est équivalente
+
+- **Contexte** : AC19 prescrit M19 sous « `<= ZERO` **ou** `is_sign_negative()` ». La seconde forme est restée verte :
+  `rust_decimal` ne garde pas le bit de signe de `-0.00` lu par `parse_amount`, si bien que la mutation ne change
+  aucun comportement.
+- **Retenu** : mutation **équivalente**, figée par le test `negative_zero_has_no_sign_bit_after_parse` (commit
+  `f23ad162`), qui rougirait si la bibliothèque se mettait à garder ce signe ; la forme `<= ZERO` (et `>= ZERO` sous
+  `Negative`) est jouée sur les trois comparaisons et **rougit** chaque fois (`zeros_and_explicit_plus_are_accepted`,
+  `explicit_zero_debit_or_credit_accepted`, `whole_debit_column_definition`).
+- **Écarté** : reclasser M19 sans test, ou réécrire la comparaison pour rendre la mutation détectable (aucun
+  comportement à protéger).
+- **Réversible** : oui.
+
+### C-26-1-37 — M26 attrapée par le garde-fou du squash, non par le test d'AC8
+
+- **Contexte** : les tests d'AC8 montent le **squash** (`test-schema/`), que la mutation de la migration ne touche
+  pas ; ce n'est donc pas eux qui peuvent la voir.
+- **Retenu** : la mutation rougit sur `test_schema_guard::squash_matches_real_schema_structure` (le squash diverge du
+  schéma réel : la contrainte relâchée n'y est plus) et sur `published_migrations_keep_their_checksums` ; c'est le
+  canal prévu par la Story 22-5 pour toute dérive migration/squash. Compté comme « rougit ».
+- **Écarté** : un test d'AC8 de plus sur le vrai `MIGRATOR` (il entrerait dans la liste fermée de
+  `test_schema_guard.rs` pour un défaut déjà détecté).
+- **Réversible** : oui.
