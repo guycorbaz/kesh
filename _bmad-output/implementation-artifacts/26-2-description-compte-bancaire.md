@@ -8,7 +8,7 @@ validation **P1** (Sonnet, lentilles R et F : 0 HIGH, 8 MEDIUM, 15 LOW) puis **P
 4 MEDIUM dont 3 distincts, 24 LOW) **remédiées** le 2026-10-10 — passe **P3 ciblée** (Haiku, une lentille, sur le
 seul commit de la remédiation P2) : 0 MEDIUM, 5 LOW appliqués — **validation close**. **26-2a : done**
 (`bmad-dev-story` le 2026-10-11 ; revue de code **close** en deux passes ; dernier commit de code **`fd7624a5`** ;
-PR `refs #622`, **non rebasée sur la 26-1**) ; **26-2b : review** (`bmad-dev-story` le 2026-10-11, dernier commit de
+PR `refs #622`, **non rebasée sur la 26-1**) ; **26-2b : done** (revue de code **close** à la P1 : Sonnet ×3 B/E/A, 0 au-dessus de LOW, 6 LOW ; cf. Change Log) (`bmad-dev-story` le 2026-10-11, dernier commit de
 code **`60a101a8`**, gates complets et E2E complet à ce commit ; revue de code P1 due, prompt
 `26-2b-review-prompt-p1.md`).
 
@@ -1173,3 +1173,9 @@ arbre et n'ont pas été relancés.
 | Date | Étape | Résumé |
 |---|---|---|
 | 2026-10-11 | `bmad-dev-story` 26-2b (Opus 5.5, repris après le crash OOM de 01:40) | T7-T11 faits : sites D3-D9, `GET /companies/current`, refus de désignation (`bank_label`), garde d'inventaire (11 fichiers, 28 occurrences), manuel + PDF, brochure, CHANGELOG 0.13.1, api-external note ⁷, E2E (b). 2 tests Rust, 18 Vitest, 1 Playwright ; mutations 7/7 tuées ; gate complet 3371/3371, Vitest 1326/1326, E2E 258 passés / 7 échecs attendus (KF-029). Dernier commit de code `60a101a8`. Statut `review` ; prompt de revue P1 `26-2b-review-prompt-p1.md`. |
+
+### 26-2b — revue de code
+
+| Date | Passe | Résumé |
+|---|---|---|
+| 2026-10-11 | P1 (Sonnet ×3 : B, E, A ; prompt `26-2b-review-prompt-p1.md`, diff `22004175..60a101a8`) | **0 CRITICAL, 0 HIGH, 0 MEDIUM, 6 LOW** — B1 = E2 (plancher `FICHIERS_LUS_MIN = 316` égal à la mesure), B2 = E1 (la garde ne compte que le jeton `bankName`, à nombre constant par fichier ; angle mort déclaré, aucun site réel), A1 (doc-comment `claim_configuration_response`, `errors.rs:3961` : « nom » est désormais le nom d'affichage), A2 (« partout où il le montre », phrase qui énumère ensuite les écrans exacts). Chaque lentille a déclaré ses axes exercés et non exercés (rapports `kesh-gate-logs/26-2b-review-p1-{B,E,A}.md`). **Boucle close** : aucun finding au-dessus de LOW dès la première passe. Les LOW sont acceptés sans changement — A1 toucherait un fichier de production après le dernier gate pour un doc-comment, coût d'un gate complet sans gain ; il est noté ici. Trend : P1 0 > LOW. Statut **done** ; dernier commit de code inchangé **`60a101a8`**. |
