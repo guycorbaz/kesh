@@ -21,8 +21,9 @@
 //! erreur avec le profil UBS recommandé (C-26-1-13) ; nombre de transactions
 //! = « Nombre de transactions dans cette période » ; somme des montants
 //! signés = solde final − solde initial, au centime ; chaque transaction
-//! issue de la colonne Débit est négative, chaque transaction issue de la
-//! colonne Crédit positive.
+//! issue de la colonne Débit est `≤ 0` (n'est pas positive), chaque
+//! transaction issue de la colonne Crédit `≥ 0` (n'est pas négative) — un
+//! montant nul est accepté sous les deux colonnes (revue P1, E-6).
 
 use kesh_import::{ColumnMapping, CsvProfile, DebitSign, ParseCsvOutcome, parse_csv_collect};
 use rust_decimal::Decimal;

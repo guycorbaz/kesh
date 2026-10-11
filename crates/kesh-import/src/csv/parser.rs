@@ -609,7 +609,10 @@ fn parse_row(record: &csv::StringRecord, line: usize, profile: &CsvProfile) -> R
                     // `-parsed` sur un zéro porterait le bit de signe (`Neg`
                     // de `rust_decimal`) et s'afficherait « -0.00 » : un
                     // débit nul rend le zéro sans signe (revue P1, E-4).
-                    Decimal::ZERO
+                    // `abs()` efface le bit de signe en gardant l'échelle
+                    // lue — `Decimal::ZERO`, d'échelle 0, s'afficherait
+                    // « 0 » à l'aperçu au lieu de « 0.00 » (revue P2, E2-2).
+                    parsed.abs()
                 } else {
                     match profile.debit_sign {
                         DebitSign::Positive => -parsed,
@@ -1729,6 +1732,31 @@ mod tests {
         );
     }
 
+    /// AC5 (revue P2, E2-1) : la garde lit la cellule date **trimée**, au
+    /// **format du profil** — pas au format ISO codé en dur. (a) Profil
+    /// `%d.%m.%Y` : une transaction `05.01.2026` avalée par le saut est
+    /// vue ; (b) profil ISO : une date entourée de blancs ` 2026-01-05 `
+    /// est vue (`parse_row` la trime et l'aurait importée).
+    #[test]
+    fn header_guard_uses_profile_format_on_trimmed_cell() {
+        let mut swiss = split_profile(DebitSign::Negative);
+        swiss.date_format = "%d.%m.%Y".to_string();
+        swiss.header_row_count = 2;
+        let csv = "date;debit;credit\n05.01.2026;-1.00;\n06.01.2026;-2.00;\n";
+        assert_eq!(
+            parse_csv_collect(csv.as_bytes(), &swiss),
+            ParseCsvOutcome::HardFailure(CsvError::HeaderSkipsData { line: 2 })
+        );
+
+        let mut iso = split_profile(DebitSign::Negative);
+        iso.header_row_count = 2;
+        let csv = "date;debit;credit\n 2026-01-05 ;-1.00;\n2026-01-06;-2.00;\n";
+        assert_eq!(
+            parse_csv_collect(csv.as_bytes(), &iso),
+            ParseCsvOutcome::HardFailure(CsvError::HeaderSkipsData { line: 2 })
+        );
+    }
+
     /// AC14-6 (M13) : limite de longueur — la dernière ligne ignorée à
     /// exactement `date` champs (trop courte pour porter la colonne date)
     /// laisse la garde muette ; à `date + 1` champs et datée, refus.
@@ -1808,6 +1836,9 @@ mod tests {
                         // Revue P1, E-4 : `==` ignore le bit de signe ; le
                         // montant produit n'en porte pas (« -0.00 » sinon).
                         assert!(!t.amount.is_sign_negative(), "{sign:?} {t:?}");
+                        // Revue P2, E2-2 : `==` ignore aussi l'échelle ; le
+                        // montant garde celle du fichier (« 0 » sinon).
+                        assert_eq!(t.amount.to_string(), "0.00", "{sign:?} {t:?}");
                     }
                     assert_eq!(stmt.transactions[4].amount, dec!(500.00));
                 }
@@ -1879,6 +1910,29 @@ mod tests {
         assert!(truncated);
         assert_eq!(errors.len(), 100);
         assert!(whole);
+    }
+
+    /// Revue P2, E2-3 : borne exacte de `truncated` du refus de signe —
+    /// à exactement `MAX_CSV_LINE_ERRORS` (100) lignes en cause, toutes
+    /// sont rendues et rien n'est tronqué ; à 101, tronqué à 100.
+    #[test]
+    fn sign_errors_truncation_boundary() {
+        for (n, expect_truncated) in [
+            (MAX_CSV_LINE_ERRORS, false),
+            (MAX_CSV_LINE_ERRORS + 1, true),
+        ] {
+            let mut csv = String::from("date;debit;credit\n");
+            for _ in 0..n {
+                csv.push_str("2026-01-01;-1.00;\n");
+            }
+            let (errors, total, truncated, _) = sign_refusal(parse_csv_collect(
+                csv.as_bytes(),
+                &split_profile(DebitSign::Positive),
+            ));
+            assert_eq!(total, n, "n = {n}");
+            assert_eq!(errors.len(), MAX_CSV_LINE_ERRORS, "n = {n}");
+            assert_eq!(truncated, expect_truncated, "n = {n}");
+        }
     }
 
     /// AC14-7-ter (M21, M23) : `whole_debit_column ⇔ d ≥ 2 et e = d`, sur
