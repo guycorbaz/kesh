@@ -144,6 +144,7 @@
 			} else {
 				errorCode = 'UNKNOWN_ERROR';
 				errorMessage = 'Erreur inattendue.';
+				errorDetails = null;
 			}
 			preview = null;
 		} finally {
@@ -178,6 +179,7 @@
 			} else {
 				errorCode = 'UNKNOWN_ERROR';
 				errorMessage = 'Erreur inattendue.';
+				errorDetails = null;
 			}
 		} finally {
 			isLoading = false;
