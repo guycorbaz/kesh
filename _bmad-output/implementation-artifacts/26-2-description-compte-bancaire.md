@@ -8,7 +8,9 @@ validation **P1** (Sonnet, lentilles R et F : 0 HIGH, 8 MEDIUM, 15 LOW) puis **P
 4 MEDIUM dont 3 distincts, 24 LOW) **remédiées** le 2026-10-10 — passe **P3 ciblée** (Haiku, une lentille, sur le
 seul commit de la remédiation P2) : 0 MEDIUM, 5 LOW appliqués — **validation close**. **26-2a : done**
 (`bmad-dev-story` le 2026-10-11 ; revue de code **close** en deux passes ; dernier commit de code **`fd7624a5`** ;
-PR `refs #622`, **non rebasée sur la 26-1**) ; 26-2b : ready-for-dev.
+PR `refs #622`, **non rebasée sur la 26-1**) ; **26-2b : review** (`bmad-dev-story` le 2026-10-11, dernier commit de
+code **`60a101a8`**, gates complets et E2E complet à ce commit ; revue de code P1 due, prompt
+`26-2b-review-prompt-p1.md`).
 
 ⛔ **Deux stories, une fiche, deux PR successives** (C-26-2-15, qui remplace la proposition C-26-2-1) :
 
@@ -550,13 +552,13 @@ E2E complet (AC13). Le Dev Agent Record n'affirme que ce qui a tourné, avec ses
   - [x] T5.4 Clés i18n ×4, recompte `ATTENDU`.
 - [x] **T6 — E2E (a)** (AC13 a, isolement) ; mutations M1-M7, M11-M15, M18 (AC14) ; gates complets. *Fin de
   26-2a — PR `refs #622`.*
-- [ ] **T7 — Rollout** (AC9) : D3 à D9, types partagés, `data-testid`, tests Vitest (dont les deux neufs D4,
+- [x] **T7 — Rollout** (AC9) : D3 à D9, types partagés, `data-testid`, tests Vitest (dont les deux neufs D4,
   D9). — partie b, partie de `origin/main` après la fusion de la 26-2a
-- [ ] **T8 — Serveur** (AC10) : `BankAccountJson` ; refus de désignation (renommage `bank_label`) + tests.
-- [ ] **T9 — Garde d'inventaire** (AC11) : `frontend/src/lib/features/bank-accounts/bank-name-inventory.test.ts`.
-- [ ] **T10 — Manuel** (section neuve **et** correction du compte de la QR-facture, l. 911, 921, 933, 1033), **PDF**
+- [x] **T8 — Serveur** (AC10) : `BankAccountJson` ; refus de désignation (renommage `bank_label`) + tests.
+- [x] **T9 — Garde d'inventaire** (AC11) : `frontend/src/lib/features/bank-accounts/bank-name-inventory.test.ts`.
+- [x] **T10 — Manuel** (section neuve **et** correction du compte de la QR-facture, l. 911, 921, 933, 1033), **PDF**
   aplati, **CHANGELOG** (`### Ajouté` et `### Modifié`), **`docs/api-external.md`** (note ⁷) (AC12).
-- [ ] **T11 — E2E (b)** (AC13 b) ; mutations M8, M8-bis, M9, M10, M16, M16-bis, M17 ; gates complets ; E2E complet au dernier
+- [x] **T11 — E2E (b)** (AC13 b) ; mutations M8, M8-bis, M9, M10, M16, M16-bis, M17 ; gates complets ; E2E complet au dernier
   commit de code. *PR `closes #622`.*
 
 ## Dev Notes
@@ -770,12 +772,15 @@ valides : elle est nullable.
 ### Agent Model Used
 
 26-2a : Claude Opus 5.5 (`bmad-dev-story`, autonome, 2026-10-10/11).
+26-2b : Claude Opus 5.5 (`bmad-dev-story`, autonome, 2026-10-11 ; repris après le crash OOM de la nuit).
 
 ### Debug Log References
 
 - Gate backend : `kesh-gate-logs/26-2a-gate-c9e12142.log` (rouge, voir Completion Notes) puis
   `26-2a-gate-1ea3c98b.log` (vert). Frontend : `26-2a-frontend-c9e12142.log`, `26-2a-frontend-1ea3c98b.log`. E2E :
   `26-2a-e2e-1ea3c98b.log`. Mutations : `26-2a-mutations.log`.
+- 26-2b : gate `kesh-gate-logs/26-2b-gate-60a101a8.log`, frontend `26-2b-frontend-60a101a8.log`, E2E
+  `26-2b-e2e-60a101a8.log` (log backend `26-2b-backend-e2e-60a101a8.log`), mutations `26-2b-mutations.log`.
 
 ### Completion Notes List
 
@@ -870,6 +875,87 @@ M18 (contrôle avant `trim` → `"Épargne\n"` refusé, deux tests). Aucun mutan
 le CHANGELOG le disent, les autres sélecteurs n'affichent pas encore la description, et `details.bankName` du refus
 de désignation reste la banque seule — **aucune release ne doit partir avant la 26-2b**.
 
+#### 26-2b — `bmad-dev-story` (2026-10-11, Opus 5.5)
+
+**Ce qui est livré** (base : `22004175`, clôture de la revue de la 26-2a ; dernier commit de code : **`60a101a8`**) :
+
+- **Serveur** (`0a76c74e`, AC10) : `BankAccountJson` de `GET /companies/current` porte `description` ;
+  `first_active_bank_account_linked_to` lit `bank_name, description` (verrou `LOCK IN SHARE MODE` et texte
+  `FROM bank_accounts` inchangés) et rend `bank_account_display_name(..)` ; le champ de
+  `DbError::ClaimAccountLinkedToBankAccount` devient `bank_label`, propagé au dépôt des réglages, à
+  `kesh-api/src/errors.rs` (message, deux replis `format!`, `details.bankName` — clé conservée) et aux tests ; textes
+  FTL inchangés.
+- **Écrans** (`50ce1a37`, AC9) : D3 (`reconciliation`), D4 (`payment-batches`), D5 (`supplier-invoices/[id]`), D6
+  (`SettleInvoiceDialog`) par `bankAccountOptionLabel` ; D7 (`BankImportUpload`) par `bankAccountOptionLabel(.., 'parens')` ;
+  D8 (`BankAccountsCard`, `homepage-bank-name-{id}`) et D9 (*Paramètres*, `settings-bank-name-{id}`) par
+  `bankAccountName`. Types en ligne `BankAccountListItem` et `CompanyResponse` retirés au profit de
+  `BankAccountOptionSource & { id }` et `CompanyCurrentResponse` ; `BankAccountJson` (frontend) gagne
+  `description: string | null`.
+- **Garde d'inventaire** (AC11) : `frontend/src/lib/features/bank-accounts/bank-name-inventory.test.ts` — 11 fichiers,
+  28 occurrences, minimum de fichiers lus **316** (mesuré : `find frontend/src -type f \( -name '*.svelte' -o -name
+  '*.ts' -o -name '*.js' \) | grep -v '\.test\.\|\.spec\.' | wc -l` → 316). Mesure de la table, refaite sur l'arbre
+  final par la commande de la fiche : `bank-accounts.api.ts` 6, `format.ts` 3, `BankProfileForm.svelte` 4,
+  `BankProfileList.svelte` 1, `BankProfileSelector.svelte` 1, `bank-profile.types.ts` 1, `onboarding.api.ts` 2,
+  `onboarding.svelte.ts` 2, `settings.types.ts` 1, `routes/(app)/bank-accounts/+page.svelte` 3,
+  `routes/onboarding/+page.svelte` 4 — aucun fichier hors table.
+- **Documentation** (`f8cfd76c`, AC12) : manuel utilisateur — `\section{Comptes bancaires}` avant *Import bancaire*,
+  renvoi de l'onboarding, compte de la QR-facture corrigé (compte principal, QRR si QR-IBAN, sinon sans référence
+  structurée) ; PDF régénéré ; brochure (« ISO 11649 » retiré) et son PDF ; `CHANGELOG.md` `## [0.13.1] — Non
+  publié` (`### Ajouté` ×2, `### Modifié` ×3) ; `docs/api-external.md` note ⁷. Manuel d'administration et README
+  inchangés (vérifiés).
+- **E2E (b)** (`60a101a8`, AC13 b) : `bank-accounts-crud.spec.ts:262` — deux comptes UBS E2E non principaux, l'un
+  décrit ; `/bank-import` (forme `(CH…)`), `/reconciliation` (forme `— CH…`), accueil ; comptes archivés en fin de test.
+
+**Contrôles AC12, exécutés sur le PDF aplati** (`pdftotext … | tr '\n' ' ' | tr -s ' '`) : `grep -o "description
+optionnelle[^.]*"` rend la phrase de la section neuve ; `grep -c "compte bancaire de réception"` → **0** ;
+`grep -n "réception" docs/manual/fr/user-manual.tex` → l. 1087 seule (« accusé de réception »). Symptômes grepés sur
+le dépôt (`.tex`, `.md`, `.html`, `.ftl`, `.svelte`, hors `_bmad-output` et CHANGELOG) : « ISO 11649 » ne reste qu'au
+glossaire du manuel (l. 2772, qui dit désormais que Kesh ne produit que la QRR) et dans un README de fixtures de
+`kesh-import` (sans rapport) ; « compte bancaire de réception » : aucune occurrence.
+
+**Tests ajoutés** (périmètre : `22004175` → `60a101a8`, recomptés aux deux bornes par `grep -cE '#\[(test|sqlx::test|tokio::test)'`
+et `grep -cE "^\s*(it|test)(\.each)?\("`, plus les cas de `it.each` comptés à l'exécution) — Rust **2** :
+`companies_e2e.rs` 7 → 8, `company_invoice_settings_postable_e2e.rs` 11 → 12 ; Vitest **18** :
+`bank-name-inventory.test.ts` 0 → 11 (dont 6 cas d'un `it.each`), `HomepageCards.test.ts` 14 → 16,
+`SettleInvoiceDialog.test.ts` 15 → 16, `supplier-settlement-page.test.ts` 17 → 18, `payment-batches-page.test.ts`
+0 → 1, `settings-page.test.ts` 0 → 2 ; Playwright **1** : `bank-accounts-crud.spec.ts` 8 → 9. Cohérent avec les
+gates : nextest 3369 → **3371**, Vitest 1308 → **1326** (124 → 127 fichiers), E2E 256 + 8 → 258 + 7 (284 tests
+au total, 283 + 1).
+
+**Mutations (AC14, partie b) — 7 sur 7 tuées** (`kesh-gate-logs/26-2b-mutations.log`, jouées le 2026-10-11 de 01:33 à 01:54 par la
+session d'avant la reprise) : M8 (D4 rétabli en `{b.bankName} —
+{b.iban}` → garde AC11, 2 échecs, **et** `payment-batches-page.test.ts`), M8-bis (`title={b.bankName}` dans
+`SettleInvoiceDialog` → garde AC11), M16 (`description` retirée du type `BankAccountJson` → `npm run check`, 4 erreurs
+dont la simulation de `settings-page.test.ts` et `BankAccountLabelSource` incomplet), M16-bis (`{account.bankName}` dans
+*Paramètres* → garde AC11 **et** `settings-page.test.ts`), M10 (`bank_name` seul → `linked_claim_refusal_names_the_described_bank_account`),
+M9 (`description` retirée de `BankAccountJson` serveur → `companies_current_porte_la_description_des_comptes` **et**
+E2E (b)), M17 (D7 en `'dash'` → E2E (b) sur `/bank-import`). À la reprise (2026-10-11 après-midi) : le journal porte
+les sept mutations de la partie b, aucune ne restait à jouer ; arbre vérifié restauré (`git status` propre, aucun
+`.bak`), puis `touch` des sept fichiers mutés avant le gate.
+
+**Gates au dernier commit de code `60a101a8`** (ne sont déclarés que ceux qui ont tourné ; tout le lourd sous le
+verrou `flock` de l'epic) :
+
+- bases `kesh_262a` et `kesh_e2e_262a` **recréées** (effacées par le redémarrage de MariaDB après le crash) :
+  `DROP`/`CREATE`, migrations du worktree, seed `scripts/seed-dev-db.sql` sur `kesh_262a` ;
+- `scripts/test-fast.sh --ci` (fmt, clippy `-D warnings`, nextest profil `ci`) : **3371 exécutés, 3371 passés,
+  5 ignorés**, exit 0 ;
+- frontend : `npm run check` **0 erreur** (27 avertissements, même nombre qu'en 26-2a), `lint-i18n-ownership` PASS,
+  `test:unit` **127 fichiers, 1326 tests passés**, `build` exit 0 ;
+- **E2E complet** (`kesh_e2e_262a` recréée et migrée, backend `target/debug/kesh-api` reconstruit, port **3032**,
+  montage complet de `docs/testing.md`, `/health` `smtpConfigured:true`) : **258 passés, 7 échoués, 19 ignorés**. Les
+  7, jugés fichier par fichier contre `docs/testing.md` § *Les échecs attendus* : les sept KF-029 (#97) —
+  `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`.
+  Aucun hors liste ; KF-045 absente (run après 12:00 UTC) ; aucune pollution ce run.
+  `bank-accounts-crud.spec.ts` : 9/9 dans la suite complète.
+
+**Choix** : aucun choix neuf en 26-2b — la fiche tranchait tout (C-26-2-9, 18, 19, 23, 26, 29, 30).
+
+**Branche non rebasée** sur la 26-1 (consigne de l'orchestrateur) : au rebase, `CHANGELOG.md` `## [0.13.1]` se fusionne
+par union ; si la 26-1 retouche un profil d'import (`BankProfile*`, `bank-profile.types.ts`), la table de la garde AC11
+se met à jour **motivée** ; recomptes de la 26-2a (migrations, squash, `migrations.sha384`) à refaire comme écrit
+plus haut ; PDF du manuel à régénérer par la dernière story qui fusionne (la 26-3 touche le même fichier).
+
 ### File List
 
 26-2a (relatifs à la racine) :
@@ -901,6 +987,27 @@ de désignation reste la banque seule — **aucune release ne doit partir avant 
 - `frontend/tests/e2e/bank-accounts-crud.spec.ts`
 - `_bmad-output/implementation-artifacts/26-2-description-compte-bancaire.md`, `epic-26-choix-autonomes.md`,
   `sprint-status.yaml`, `26-2a-review-prompt-p1.md` (neuf)
+
+26-2b (relatifs à la racine) :
+
+- `crates/kesh-api/src/routes/companies.rs`, `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/tests/companies_e2e.rs`, `crates/kesh-api/tests/company_invoice_settings_postable_e2e.rs`
+- `crates/kesh-db/src/errors.rs`, `crates/kesh-db/src/repositories/bank_accounts.rs`,
+  `crates/kesh-db/src/repositories/company_invoice_settings.rs`, `crates/kesh-db/tests/company_invoice_settings_repository.rs`
+- `frontend/src/lib/features/bank-accounts/bank-name-inventory.test.ts` (neuf)
+- `frontend/src/lib/features/bank-import/BankImportUpload.svelte`, `frontend/src/routes/(app)/bank-import/+page.svelte`
+- `frontend/src/lib/features/homepage/BankAccountsCard.svelte`, `HomepageCards.test.ts`
+- `frontend/src/lib/features/invoices/SettleInvoiceDialog.svelte`, `SettleInvoiceDialog.test.ts`
+- `frontend/src/lib/features/settings/settings.types.ts`
+- `frontend/src/routes/(app)/payment-batches/+page.svelte`, `payment-batches-page.test.ts` (neuf)
+- `frontend/src/routes/(app)/reconciliation/+page.svelte`
+- `frontend/src/routes/(app)/settings/+page.svelte`, `settings-page.test.ts` (neuf)
+- `frontend/src/routes/(app)/supplier-invoices/[id]/+page.svelte`, `supplier-settlement-page.test.ts`
+- `frontend/tests/e2e/bank-accounts-crud.spec.ts`
+- `docs/manual/fr/user-manual.tex` + `.pdf`, `docs/manual/fr/marketing-brochure.tex` + `.pdf`, `docs/api-external.md`,
+  `CHANGELOG.md`
+- `_bmad-output/implementation-artifacts/26-2-description-compte-bancaire.md`, `sprint-status.yaml`,
+  `26-2b-review-prompt-p1.md` (neuf)
 
 ## Change Log
 
@@ -1061,3 +1168,8 @@ mêmes que sur `1ea3c98b`, tous à la liste attendue (KF-029 ×7, KF-046) (`26-2
 gates frontend de `1ea3c98b` (check 0 erreur, lint PASS, Vitest 124 fichiers / 1308 tests, build 0) valent pour cet
 arbre et n'ont pas été relancés.
 
+### 26-2b — développement
+
+| Date | Étape | Résumé |
+|---|---|---|
+| 2026-10-11 | `bmad-dev-story` 26-2b (Opus 5.5, repris après le crash OOM de 01:40) | T7-T11 faits : sites D3-D9, `GET /companies/current`, refus de désignation (`bank_label`), garde d'inventaire (11 fichiers, 28 occurrences), manuel + PDF, brochure, CHANGELOG 0.13.1, api-external note ⁷, E2E (b). 2 tests Rust, 18 Vitest, 1 Playwright ; mutations 7/7 tuées ; gate complet 3371/3371, Vitest 1326/1326, E2E 258 passés / 7 échecs attendus (KF-029). Dernier commit de code `60a101a8`. Statut `review` ; prompt de revue P1 `26-2b-review-prompt-p1.md`. |
