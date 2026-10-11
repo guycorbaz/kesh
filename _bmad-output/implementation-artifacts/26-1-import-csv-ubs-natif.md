@@ -621,8 +621,10 @@ colonne unique) passent sans retouche.
 test **échoue** avec un message clair, il ne passe pas à vide quand on le lance explicitement) ; il parse le fichier
 avec le profil UBS (C-26-1-13), puis **lit lui-même le préambule** (`Solde initial:`, `Solde final:`, `Nombre de
 transactions…:`) et vérifie : `AllValid` ; nombre = « Nombre de transactions » ; somme = solde final − solde initial,
-au centime ; aucune erreur de ligne ; **répartition** : chaque transaction issue de la colonne Débit est `< 0` et
-chaque transaction issue de la colonne Crédit `> 0` (assertion structurelle, aucun nombre en dur — R2-13). Il
+au centime ; aucune erreur de ligne ; **répartition** : chaque transaction issue de la colonne Débit est `≤ 0` et
+chaque transaction issue de la colonne Crédit `≥ 0` — un montant nul est accepté sous les deux colonnes, AC2
+(assertion structurelle, aucun nombre en dur — R2-13) ; *(rédaction d'origine : « `< 0` » et « `> 0` », assouplie en
+revue de code P1, E-6, et alignée sur le test en revue P2, A-1)*. Il
 n'imprime **que** « conforme » ou le nom de l'assertion qui a échoué — jamais un nombre, une somme, une ligne, un
 libellé, l'IBAN, ni un solde. **Aucun chiffre du fichier réel n'est écrit dans le test.** ⛔ **Même en
 échec** (R-9) : pas d'`assert_eq!` sur une valeur lue (il imprimerait gauche et droite, donc un solde) —
@@ -930,6 +932,33 @@ Opus 5.5 (`bmad-dev-story`, autonomie), 2026-10-11.
   trois scénarios neufs et le scan axe du formulaire (zéro violation, aucune exclusion).
 
 ### Completion Notes List
+- **Remédiation de la revue de code P2** (2026-10-11, Opus 5.5) — un commit de code, `4507f4e3`. Tous les gates
+  ci-dessous ont tourné **sur `4507f4e3`, dernier commit de code**, sous le verrou `flock` (pilote
+  `26-1-p2-gate-driver.log`) :
+  - **Gate complet backend** `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest workspace) sur `kesh_261`
+    remise à zéro (DROP/CREATE, migrations du worktree, seed) : **3387/3387**, 6 ignorés — 3385 de `8639c786` + les
+    deux tests neufs `header_guard_uses_profile_format_on_trimmed_cell` et `sign_errors_truncation_boundary`
+    (`#[test]` de `parser.rs` : 50 sur `8639c786` → 52 sur `4507f4e3`). Journal `26-1-p2-gate-backend.log`.
+  - `cargo publish --dry-run -p kesh-import` : vert (`exit=0`, « aborting upload due to dry run »), journal
+    `26-1-p2-publish-dry-run.log`.
+  - **Frontend** : `npm run check`, `npm run lint-i18n-ownership`, `npm run build` verts ; `npm run test:unit`
+    **1295/1295**, 125 fichiers (journaux `26-1-p2-front-*.log`).
+  - **E2E COMPLET** (backend :3031 sur `kesh_e2e_261` reconstruite et migrée, montage complet de `docs/testing.md`,
+    `/health` `smtpConfigured:true`, run de 16:29 CEST, après 12:00 UTC) : **260 passés, 7 échoués, 19 ignorés**
+    (10,5 min ; journal `26-1-p2-e2e-full.log`). Les 7 sont, fichier par fichier, les 7 KF-029 (#97) :
+    `mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77`,
+    `:150`. Aucun hors liste ; `bank-csv-import.spec.ts` 12/12 dans la suite.
+  - **Mutations neuves** (journal `26-1-mutations-p2-nouvelles.log`, `parser.rs` propre avant et après chacune,
+    restauration `git checkout --` + `touch`, nextest du crate) : **4/4 rouges**, chacune sur le seul test visé —
+    P2-N1 format ISO codé en dur dans la garde et P2-N2 `trim` retiré de la garde →
+    `header_guard_uses_profile_format_on_trimmed_cell` ; P2-N3 retour à `Decimal::ZERO` →
+    `zeros_and_explicit_plus_are_accepted` ; P2-N4 `>` → `>=` au `truncated` du refus de signe →
+    `sign_errors_truncation_boundary`.
+  - **Contrôle AC17 sur le vrai relevé** (A-2), rejoué sur `4507f4e3` selon la recette du doc-comment
+    (`KESH_UBS_REAL_CSV`, `--ignored`) : **conforme** (1 test passé). Rien de sa sortie n'a été conservé.
+  - Manuel : `make` dans `docs/manual/` (seul `user-manual.pdf` régénéré), PDF aplati contrôlé : « Un montant nul
+    (0.00, -0.00) est accepté dans les deux colonnes, quel que soit le réglage. Si tous les débits non nuls sont dans ce
+    cas » s'y lit.
 - **Remédiation de la revue de code P1** (2026-10-11, Opus 5.5) — deux commits de code : `a2b281fb` (remédiation) puis
   `8639c786` (propagation de F6, deux lignes de `BankImportUpload.svelte`). Tous les gates ci-dessous ont tourné **sur
   `8639c786`, dernier commit de code**, sous le verrou `flock` (pilote `26-1-p1b-gate-driver.log`) :
@@ -1037,7 +1066,7 @@ Opus 5.5 (`bmad-dev-story`, autonomie), 2026-10-11.
 - `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`, `docs/migrations-idempotence-audit.md`,
   `CHANGELOG.md`
 - `_bmad-output/implementation-artifacts/26-1-import-csv-ubs-natif.md`, `epic-26-choix-autonomes.md`,
-  `sprint-status.yaml`, `26-1-review-prompt-p1.md`, `26-1-review-prompt-p2.md` (prompts versionnés des revues de code)
+  `sprint-status.yaml`, `26-1-review-prompt-p1.md`, `26-1-review-prompt-p2.md`, `26-1-review-prompt-p3-ciblee.md` (prompts versionnés des revues de code)
 
 ## Change Log
 
@@ -1051,6 +1080,7 @@ Opus 5.5 (`bmad-dev-story`, autonomie), 2026-10-11.
 | 2026-10-11 | Opus 5.5 (dev-story) | Implémentation T1-T7 (migration `20261011000001`, bump 0.13.1, `DebitSign`, refus de signe non confirmable, garde de surcomptage, graphie des codes, formulaire, panneau, manuel, CHANGELOG). Gate complet 3383/3383, Vitest 1295/1295, E2E ciblé 12/12 ; mutations et E2E complet à suivre (T8). |
 | 2026-10-11 | Opus 5.5 (dev-story, reprise après crash) | T8 : mutations M8, M16, M19 (forme non stricte), M22 jouées — **28/28 rouges** ; gate complet 3384/3384, `publish --dry-run` vert, Vitest 1295/1295, check/lint/build verts, **E2E complet 260 passés / 7 échoués (les 7 KF-029)** au dernier commit de code `f23ad162`. C-26-1-36, 37. Statut → review. |
 | 2026-10-11 | Opus 5.5 (remédiation revue de code P1) | Revue P1 (Sonnet, lentilles B/E/A) : 4 MEDIUM, 13 LOW distincts. Remédiation `a2b281fb` + propagation `8639c786`. Mutations neuves 5/5 rouges, douze mutations rejouées sur arbre propre 12/12 rouges ; au dernier commit de code `8639c786` : gate complet 3385/3385, Vitest 1295/1295, check/lint/build verts, **E2E complet 260 / 7 (les 7 KF-029) / 19**. C-26-1-38, 39. Bilan ci-dessous. Revue P2 (Opus, protocole complet) à suivre. |
+| 2026-10-11 | Opus 5.5 (remédiation revue de code P2) | Revue P2 (Opus, lentilles B/E/A) : **1 MEDIUM, 5 LOW distincts**. Remédiation `4507f4e3`. Mutations neuves 4/4 rouges ; contrôle AC17 sur le relevé réel : conforme ; au dernier commit de code `4507f4e3` : gate complet 3387/3387, `publish --dry-run` vert, Vitest 1295/1295, check/lint/build verts, **E2E complet 260 / 7 (les 7 KF-029) / 19**. C-26-1-39 amendé. Bilan ci-dessous. Revue P3 **ciblée** (Haiku) à suivre, prompt `26-1-review-prompt-p3-ciblee.md`. |
 
 ### Validation P1 — bilan finding par finding
 
@@ -1197,7 +1227,7 @@ C-26-1-39) : **P2 complète** (Opus, trois lentilles), pas une passe ciblée.
 | F1 = E-3 | M / L | **Corrigé** — `all_is_complete` compare `all()` (par `as_str`) à la liste des variants que serde passe à `deserialize_enum`, tirée de l'enum ; doc-comment de `all()` récrit ; AC14-9 récrit (« fait rougir le test » au lieu de « ne compile pas », intention inchangée) ; R3-12 annoté. Mutation P1-N4 (variant oublié dans `all()`) : rouge. C-26-1-38. |
 | F2 | M | **Corrigé** — cause **établie** : le script de campagne restaurait tout fichier suivi modifié puis testait `git status --porcelain`, qui compte les non suivis ; `26-1-review-prompt-p1.md`, créé à 01:33:31, n'a été commité qu'à 14:56:57 (le pilote E2E de 14:55 le liste encore en `??`). Les douze mutations **rejouées** sur arbre suivi propre : 12/12 rouges sur les tests désignés. Phrase du Dev Agent Record rectifiée. |
 | B LOW-1 = F6 | L | **Corrigé** — `errorDetails = null` au site `BANK_ACCOUNT_REQUIRED` (`a2b281fb`) ; symptôme grepé dans le composant : les deux branches `UNKNOWN_ERROR` des `catch` posaient aussi `errorCode` sans toucher `errorDetails` (nul depuis l'entrée de la fonction, donc latent) — corrigées (`8639c786`). Les huit sites où `errorCode` est posé ou remis à zéro touchent désormais `errorDetails` (`grep -n` de `errorCode = ` et `errorDetails = `). |
-| B LOW-2 | L | **Accepté** — DDL non atomique entre `DROP` et `ADD CONSTRAINT` : la migration est déjà appliquée sur les bases de dev et du gate ; la modifier violerait P8 (checksum) pour un risque pratique négligeable (base de Guy vide, valeurs existantes ≤ 5). |
+| B LOW-2 | L | **Accepté** — DDL non atomique entre `DROP` et `ADD CONSTRAINT` : retouche possible avant le merge (C-26-1-24 : migration non publiée, bases du worktree reconstruites et ligne `sha384` recalculée dans le même commit), non retenue : risque pratique négligeable (base de Guy vide, valeurs existantes ≤ 5) au regard de la reconstruction des bases. *(Motif rectifié en revue P2, A-3 : ce bilan disait « la modifier violerait P8 », faux avant publication.)* |
 | B LOW-3 | L | **Accepté** — conforme à la définition fermée C-26-1-25 : un fichier dont tous les débits sont en défaut **et** qui porte un crédit négatif reçoit d'abord le conseil de régler le sens, puis, réglé, la liste des lignes. Conseil incomplet dans un cas rare, non faux. |
 | E-4 | L | **Corrigé** — un débit nul rend `Decimal::ZERO` (plus de zéro à bit de signe sous `Positive`), asserté sous les deux réglages ; mutation P1-N5 rouge. Pas de ligne au CHANGELOG : comportement antérieur, effet visible non établi. C-26-1-39. Même forme recensée hors périmètre : `CdtDbtSign::apply` (`camt053/mod.rs`, `-amount`), non traitée. |
 | E-5 | L | **Accepté** — la nouvelle tentative forcée après `EncodingMismatch` passe, dans les deux handlers, par le même bras `HardFailure(e) => map_csv_error(e)` que le chemin direct (relu, l. 1640-1685 et 1810-1862) ; AC15 ne l'exige pas. Un test de plus coûterait un profil ISO-8859-1 par chemin pour une conversion déjà commune. |
@@ -1215,4 +1245,36 @@ Reclassement P1 : aucun MEDIUM+ reclassé en dette. Symptômes grepés après pa
 sérialisable` (0), `-parsed` / `-amount` (un site CAMT hors périmètre, recensé), `toContainText('11')` (0 hors
 commentaire), `errorCode = ` sans `errorDetails` (0), `arbre non propre` / `vérifié propre` (rectifié ; seuls restent
 les journaux et ce bilan).
+
+### Revue de code P2 — bilan finding par finding
+
+Revue P2 (Opus, trois lentilles, contexte frais, prompt `26-1-review-prompt-p2.md`, sur `91426149..8639c786`) :
+**B 0C/0H/0M/3L** (B-P2-1 à 3), **E 0C/0H/1M/2L** (E2-1 à 3), **A 0C/0H/0M/4L** (A-1 à 4). Après dédoublonnage
+(E2-2 = B-P2-1 = A-4, convergent) : **1 MEDIUM, 7 LOW distincts** (8). Le MEDIUM (E2-1) est un trou de preuve du code
+d'origine ; la remédiation P1 a produit quatre LOW (E2-2 et ses deux doublons, A-1, A-2, A-3), aucun MEDIUM.
+
+**Trend** : revue P1 **4 MEDIUM** (Sonnet) → revue P2 **1 MEDIUM** (Opus). La remédiation P2 ne touche qu'une ligne de
+production (`parse_row`, un seul module) ; le reste est tests, manuel, CHANGELOG, doc-comment : **P3 ciblée** (Haiku,
+une lentille, sur `8639c786..4507f4e3`), prompt `26-1-review-prompt-p3-ciblee.md`.
+
+⚠️ **Note d'outillage** : le prompt P2 (comme le P1) écrivait le pathspec `':!_bmad-output'`, que le git de la station
+refuse (« Spécificateur magique '_' non implémenté ») ; les lentilles ont employé `':(exclude)_bmad-output'`,
+équivalent. Les prompts versionnés ne sont pas réécrits ; le prompt P3 emploie la forme qui marche.
+
+| Finding | Sév. | Traitement |
+|---|---|---|
+| E2-1 | M | **Corrigé** — `header_guard_uses_profile_format_on_trimmed_cell` : (a) profil `%d.%m.%Y`, transaction `05.01.2026` avalée par le saut → `HeaderSkipsData { line: 2 }` ; (b) profil ISO, date ` 2026-01-05 ` entourée de blancs → idem (le lecteur CSV ne trime pas les champs ; `chrono` refuse le blanc final). Mutations P2-N1 (format ISO codé en dur) et P2-N2 (`trim` retiré) : rouges. |
+| E2-2 = B-P2-1 = A-4 | L | **Corrigé** — `parse_row` rend `parsed.abs()` pour un débit nul (bit de signe effacé, échelle du fichier gardée) au lieu de `Decimal::ZERO` (échelle 0, « 0 CHF » à l'aperçu) ; `zeros_and_explicit_plus_are_accepted` asserte `to_string() == "0.00"` sur les quatre zéros, sous les deux réglages. Mutation P2-N3 (retour à `Decimal::ZERO`) : rouge. C-26-1-39 amendé au registre (par ajout). |
+| E2-3 | L | **Corrigé** — `sign_errors_truncation_boundary` : 100 lignes en cause → 100 rendues, `truncated = false` ; 101 → 100 rendues, `truncated = true`. Mutation P2-N4 (`>` → `>=`) : rouge. Le plafond **général** (`truncated = total_errors > MAX_CSV_LINE_ERRORS`, préexistant, tests à 150 et 500) reste non éprouvé à la borne : hors périmètre de la story, non traité. |
+| B-P2-2 | L | **Corrigé** — manuel (`.tex` et PDF régénéré, contrôlé aplati) et CHANGELOG : « tous les débits **non nuls** », et « un montant nul (0.00, -0.00) est accepté dans les deux colonnes ». Même formule dans le message i18n `bank-import-csv-errors-amount-sign-refused-profile` (« Tous les débits lus… », quatre locales et repli de `errors.rs`) : **recensé, non modifié** — un débit nul n'y est ni compté ni contredit, le message n'est pas faux ; le reformuler toucherait quatre catalogues pour une nuance. |
+| B-P2-3 | L | **Corrigé** — CHANGELOG § 0.13.1 « À faire » point 2 : les profils gardent leur réglage « débits écrits sans signe », mais un relevé qui porte un débit ou un crédit négatif, importé jusqu'ici, est désormais refusé ; même précision au § Export (« leur comportement d'avant » retiré). Migration **non touchée** (`git diff 8639c786 4507f4e3 -- crates/kesh-db` vide). Les mentions « comportement d'avant » restantes (commentaire de la migration, `profile.rs`, `migrations_upgrade_path.rs`, audit P5, AC6 de la fiche) parlent de la **valeur** reprise par le `DEFAULT`, ce qui est vrai : laissées. |
+| A-1 | L | **Corrigé** — doc-comment de `ubs_fichier_reel.rs` (« `≤ 0` / `≥ 0`, un montant nul est accepté ») et AC17 de la fiche (même règle, note « rédaction d'origine »). |
+| A-2 | L | **Corrigé** — contrôle AC17 rejoué sur `4507f4e3` : **conforme** (1 test passé). |
+| A-3 | L | **Corrigé** — motif du bilan P1 de B LOW-2 rectifié : la retouche restait possible avant le merge (C-26-1-24) ; la décision tient par le risque négligeable, non par P8. |
+
+Reclassement P2 : aucun MEDIUM+ reclassé en dette. Symptômes grepés après patch (valeurs) : `Decimal::ZERO` rendu pour
+un débit (0 site restant ; les autres `Decimal::ZERO` de `parser.rs` sont des comparaisons), `débits lus` (message i18n
+recensé ci-dessus ; fiche et registre : la définition fermée C-26-1-25 dit déjà « lus et non nuls »), `comportement
+d'avant` (voir B-P2-3), `violerait P8` (seule reste la note de rectification), `< 0` / `> 0` de la répartition d'AC17
+(0 hors note « rédaction d'origine »).
 

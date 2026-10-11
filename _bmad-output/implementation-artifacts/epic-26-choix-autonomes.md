@@ -483,3 +483,10 @@ l'orchestrateur repris tels quels.
 - **Écarté** : laisser tel quel (correctif d'une ligne, dans le code que la story réécrit) ; normaliser aussi le
   `-amount` de CAMT (`camt053/mod.rs`, hors périmètre de la story — recensé au Change Log).
 - **Réversible** : oui.
+- **Amendé en revue de code P2** (E2-2 = B-P2-1 = A-4, LOW, convergent) : `Decimal::ZERO` est d'échelle 0 — un débit
+  `0.00` s'affichait « 0 CHF » à l'aperçu (sérialisation `serde-str`), alors qu'un crédit nul s'affiche « 0.00 », et
+  sous `Negative` le code d'avant rendait déjà « 0.00 ». **Retenu** : `parsed.abs()` — bit de signe effacé, échelle
+  du fichier gardée ; `zeros_and_explicit_plus_are_accepted` asserte en plus `to_string() == "0.00"` sous les deux
+  réglages ; mutation (retour à `Decimal::ZERO`) rouge. **Écarté** : `parsed` seul (sans bit de signe aujourd'hui par
+  le constat M19, mais sans garantie si la bibliothèque changeait) ; `Decimal::new(0, parsed.scale())` (équivalent,
+  moins lisible). Le premier « Retenu » ci-dessus reste pour l'historique.
