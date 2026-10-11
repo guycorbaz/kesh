@@ -235,7 +235,7 @@ Un rôle \emph{Consultation} voit les mêmes chiffres, sans les boutons de saisi
 tuile ne peut pas se charger, elle le dit — elle n'affiche jamais « Aucune écriture » sur
 une comptabilité qui en contient.
 
-\subsection{Solde comptable, relevé et écart}
+\subsection{Solde comptable, relevé et écart}\label{sec:solde-comptable}
 
 Le chiffre affiché sous chaque compte bancaire est le \textbf{solde comptable} : il vient
 du compte du grand livre lié au compte bancaire (\emph{Administration} → \emph{Comptes
@@ -330,24 +330,35 @@ Le plan comptable est la colonne vertébrale de votre comptabilité. Kesh fourni
     \item Classe 7 : Résultat hors exploitation et impôts.
 \end{itemize}
 
-\subsection{Ajout d'un compte}
+\subsection{Ajout d'un compte}\label{sec:ajout-compte}
 
 \emph{Administration} → \emph{Plan comptable} → \emph{Nouveau compte}. Saisir :
 
 \begin{itemize}
     \item \textbf{Numéro} : par exemple 1020.1 pour un sous-compte de la banque.
-    \item \textbf{Libellé} : par exemple « UBS compte courant ».
-    \item \textbf{Compte parent} : compte de niveau supérieur (1020 dans l'exemple).
-    \item \textbf{Type} : Actif / Passif / Produit / Charge / Bilan / Résultat.
+    \item \textbf{Nom} : par exemple « UBS compte courant ».
+    \item \textbf{Type} : Actif, Passif, Produit ou Charge.
+    \item \textbf{Compte parent (optionnel)} : compte de niveau supérieur (1020 dans l'exemple). Il ne se choisit qu'à la création.
     \item \textbf{Rôle} : fonction du compte dans l'application (\emph{Créances clients}, \emph{TVA due}, \emph{Capital}, \emph{Résultat de l'exercice}\ldots) ou \emph{Aucun}. Voir la section \emph{Rôles des comptes} ci-dessous.
     \item \textbf{Postable} : décocher pour un compte de regroupement (compte titre) sur lequel on ne saisit pas d'écriture.
-    \item \textbf{Devise} : CHF par défaut.
-    \item \textbf{Compte de banque} : cocher si ce compte représente un compte bancaire (active la liaison avec l'import CAMT.053).
 \end{itemize}
+
+Aucune case du plan comptable ne fait d'un compte un compte bancaire. Le compte bancaire se
+déclare dans \emph{Administration} → \emph{Comptes bancaires} → \emph{Nouveau compte bancaire}
+(\textbf{Banque}, \textbf{IBAN}, \textbf{QR-IBAN (optionnel)}, \textbf{Compte principal}), et on
+lui donne son compte du plan comptable dans le champ \textbf{Compte comptable lié} --- ou, pour un
+compte bancaire déjà déclaré, par le bouton \emph{Lier au plan comptable} de sa ligne. Seuls y
+sont proposés les comptes actifs et postables de type Actif ou Passif, hors compte débiteurs et
+compte créanciers désignés dans \emph{Paramètres} → \emph{Facturation}. Ce lien donne au compte
+bancaire son solde comptable (\S\ref{sec:solde-comptable}) ; la réconciliation des relevés
+l'exige (\S\ref{sec:import-dans-kesh}).
 
 \subsection{Modification d'un compte}
 
-Cliquer sur un compte ouvre son détail. Vous pouvez modifier le libellé, le compte parent, le \textbf{rôle} et l'indicateur \textbf{postable}. Le numéro n'est pas modifiable une fois des écritures saisies (pour préserver le journal d'audit). Le \textbf{type} se modifie librement tant que le compte ne porte aucune écriture ; au-delà, Kesh vous avertit avant de le laisser faire (voir ci-dessous).
+On modifie un compte actif par le bouton crayon de sa ligne (\emph{Modifier le compte}), présent pour
+les rôles Comptable et Administrateur ; aucune ligne du plan ne s'ouvre d'un clic. Vous pouvez modifier le \textbf{nom}, le \textbf{rôle} et
+l'indicateur \textbf{postable}. Le \textbf{numéro} n'est jamais modifiable après la création
+(pour préserver le journal d'audit), et le \textbf{compte parent} non plus. Le \textbf{type} se modifie librement tant que le compte ne porte aucune écriture ; au-delà, Kesh vous avertit avant de le laisser faire (voir ci-dessous).
 
 \begin{keshwarning}
 \textbf{Changer le type d'un compte qui porte des écritures reclasse tout son historique.} Le type — Actif, Passif, Produit, Charge — ne décrit pas seulement le compte : c'est lui qui décide dans quel état ses montants apparaissent. Les rapports le lisent \textbf{au moment où vous les demandez}, jamais au moment où l'écriture a été passée.
@@ -1635,34 +1646,54 @@ au solde comptable ; un import CSV n'en a pas :
 
 \keshscreenshot{import-camt.png}{Prévisualisation d'un import de relevé bancaire CAMT.053 avant validation.}  % TODO capture: ecran import CAMT preview
 
-Le format CAMT.053 est le standard suisse officiel pour les extraits de compte bancaire. Il est fourni par toutes les banques suisses en complément ou remplacement du format CSV propriétaire.
+Le format CAMT.053 (ISO 20022) est le standard suisse des extraits de compte électroniques. La
+plupart des banques suisses le proposent, pas toutes : certaines offres d'e-banking ne proposent
+que le CSV ou le MT940. À défaut de CAMT.053, importez le relevé en \textbf{CSV avec un profil
+banque} (\S\ref{sec:import-csv}). Le CSV ne porte pas le solde de clôture : le \textbf{contrôle du
+solde se fait alors à la main} après l'import, en rapprochant le solde comptable du compte du
+solde de l'extrait. Le format \textbf{MT940 n'est pas lu} par Kesh.
 
 \subsubsection{Récupération du fichier CAMT.053}
 
-\begin{itemize}
-    \item \textbf{e-banking} : section « Téléchargement » ou « Extraits » → format CAMT.053 / ISO 20022 XML.
-    \item \textbf{Multibanking} : si vous utilisez un agrégateur comme Multibanking ou Klippa, exportez en CAMT.053.
-    \item \textbf{PostFinance Yellownet} : Menu Documents → Type de document : CAMT.053.
-\end{itemize}
+\begin{sloppypar}
+Dans l'e-banking de votre banque, cherchez l'export des extraits de compte au format CAMT.053
+(parfois présenté comme « ISO 20022 » ou « XML ») ; son libellé et son emplacement varient d'une
+banque à l'autre. Si l'e-banking ne le propose pas, exportez le relevé en CSV
+(\S\ref{sec:import-csv}).
+\end{sloppypar}
 
-\subsubsection{Import dans Kesh}
+\subsubsection{Import dans Kesh}\label{sec:import-dans-kesh}
 
 \begin{enumerate}
-    \item \emph{Quotidien} → \emph{Importer} → \emph{Nouvel import}.
-    \item Sélectionner le compte bancaire cible (préalablement créé dans le plan comptable, marqué « Compte de banque »).
-    \item Glisser-déposer le fichier XML CAMT.053 ou cliquer sur \emph{Parcourir}.
-    \item Cliquer sur \emph{Importer}.
+    \item \emph{Quotidien} → \emph{Importer des relevés}.
+    \item Choisir le compte du relevé dans \textbf{Compte bancaire cible}. La liste propose les
+    comptes bancaires non archivés déclarés dans \emph{Administration} → \emph{Comptes
+    bancaires} (\S\ref{sec:ajout-compte}).
+    \item Pour un fichier CSV, si des profils existent, choisir le \textbf{Profil bancaire CSV}
+    \emph{avant} de déposer le fichier (\S\ref{sec:import-csv-profil}).
+    \item Glisser-déposer le fichier dans la zone de dépôt, ou cliquer dessus pour le choisir.
+    \item Vérifier la \textbf{Prévisualisation} et confirmer ses avertissements (ci-dessous).
+    \item Cliquer sur \emph{Confirmer l'import}.
 \end{enumerate}
 
-Kesh parse le fichier, extrait les transactions, détecte les doublons (si le fichier contient des transactions déjà importées) et affiche un rapport :
+L'import n'exige pas que le compte bancaire soit lié au plan comptable ; la
+\textbf{réconciliation}, si : une transaction d'un compte bancaire sans \textbf{Compte comptable
+lié} y est refusée : à l'acceptation d'une proposition, avec le message « Le compte bancaire n’est
+lié à aucun compte comptable actif : liez-en un dans Administration → Comptes bancaires. » ; le
+rapprochement manuel et l'éclatement d'une transaction le refusent aussi, avec leur propre message.
 
-\begin{itemize}
-    \item Nombre de transactions importées.
-    \item Nombre de doublons détectés (ignorés).
-    \item Nombre de transactions rejetées (anomalies de format, montants invalides, etc.).
-\end{itemize}
+La prévisualisation montre le relevé lu --- IBAN, période, devise, soldes d'ouverture et de
+clôture (un CSV n'en a pas), nombre et liste des transactions --- avant tout enregistrement.
+Chacun de ses avertissements se confirme avant que \emph{Confirmer l'import} devienne actif :
+fichier déjà importé ; lignes invalides d'un CSV (\emph{Importer les lignes valides quand
+même}) ; encodage différent de celui du profil ; solde de clôture incohérent. Les transactions
+qui \textbf{chevauchent un import précédent} sont \textbf{ignorées par défaut}
+(\emph{Ignorer les doublons (par défaut)}), et importées si vous choisissez \emph{Importer quand
+même}. Une devise non supportée bloque l'import. \emph{Annuler} abandonne sans rien enregistrer.
+L'import confirmé rejoint la liste \emph{Imports précédents} de la même page (date, fichier,
+période, nombre de transactions) ; le nom du fichier ouvre le détail de l'import.
 
-\subsection{Import CSV multi-encodage}
+\subsection{Import CSV multi-encodage}\label{sec:import-csv}
 
 \keshscreenshot{import-csv.png}{Configuration d'un profil d'import CSV (mapping des colonnes, encodage, séparateur).}  % TODO capture: ecran profil CSV
 
@@ -1680,15 +1711,25 @@ Le format CSV n'étant pas standardisé, chaque banque propose son propre format
     \item Sauvegarder.
 \end{enumerate}
 
-\subsubsection{Import avec un profil existant}
+\subsubsection{Import avec un profil existant}\label{sec:import-csv-profil}
 
 \begin{enumerate}
-    \item \emph{Quotidien} → \emph{Importer} → \emph{Nouvel import CSV}.
-    \item Sélectionner le profil banque adéquat.
-    \item Sélectionner le compte bancaire cible.
-    \item Uploader le fichier CSV.
-    \item Cliquer sur \emph{Importer}.
+    \item \emph{Quotidien} → \emph{Importer des relevés}.
+    \item Choisir le \textbf{Compte bancaire cible}.
+    \item Choisir le profil dans \textbf{Profil bancaire CSV}, \emph{avant} de déposer le fichier.
+    Laissé sur \emph{Auto-détection}, Kesh présélectionne après la prévisualisation le profil
+    qu'il reconnaît (mention « auto-détecté »).
+    \item Déposer le fichier CSV, vérifier la prévisualisation et confirmer ses avertissements.
+    \item Cliquer sur \emph{Confirmer l'import}.
 \end{enumerate}
+
+\begin{keshwarning}
+La prévisualisation est calculée au dépôt du fichier, avec le profil alors choisi. Changer de
+profil ensuite ne la recalcule pas, et \emph{Confirmer l'import} enverrait le nouveau profil avec
+l'aperçu de l'ancien. Si le profil proposé n'est pas le bon : cliquer sur \emph{Annuler}, choisir
+le bon profil, puis redéposer le fichier. Après \emph{Annuler}, le profil choisi ou présélectionné
+reste choisi pour le fichier suivant.
+\end{keshwarning}
 
 \subsection{Détection des doublons}
 
@@ -1753,7 +1794,7 @@ Cochez les transactions à traiter, puis cliquez sur l'un des deux boutons plac�
 
 \begin{itemize}
     \item \emph{Accepter (N)} --- N est le nombre de lignes cochées --- accepte, pour chaque ligne, \textbf{la candidate affichée}. Pour une facture, l'écriture de règlement est créée (Débit banque / Crédit débiteurs). Si la transaction solde une facture dont le reste porte plus de deux décimales, l'écart d'arrondi passe en troisième ligne, comme pour un règlement manuel (\S\ref{sec:reglement-client}) ; sans compte de différences d'arrondi, la ligne apparaît dans les \emph{Échecs partiels} avec le message «~aucun compte de différences d'arrondi utilisable n'est désigné~» --- désignez-en un dans \emph{Paramètres} → \emph{Facturation}. La proposition échoue aussi, avec son libellé, si le compte bancaire est lié au \textbf{compte débiteurs} de la facture (reliez-le à son propre compte de banque) ou si le compte de différences d'arrondi désigné \textbf{est} le compte débiteurs (un administrateur doit en désigner un autre dans \emph{Paramètres} → \emph{Facturation})~: l'écriture serait nulle. Pour une règle, l'écriture est passée entre la banque et le compte de contrepartie de la règle.
-    \item \emph{Rejeter} écarte la proposition~: la transaction est marquée comme revue et \textbf{quitte la liste} de la réconciliation. Elle reste visible dans le \textbf{détail de son import} (\emph{Import bancaire}, puis l'import), avec le statut «~pending~», mais \textbf{sans aucune action}~: aucun geste de l'interface ne permet ensuite de la passer en comptabilité. Ne rejetez donc une transaction que si vous ne comptez pas la comptabiliser par ce chemin.
+    \item \emph{Rejeter} écarte la proposition~: la transaction est marquée comme revue et \textbf{quitte la liste} de la réconciliation. Elle reste visible dans le \textbf{détail de son import} (\emph{Quotidien} → \emph{Importer des relevés}, liste \emph{Imports précédents}, puis le nom du fichier), avec le statut «~pending~», mais \textbf{sans aucune action}~: aucun geste de l'interface ne permet ensuite de la passer en comptabilité. Ne rejetez donc une transaction que si vous ne comptez pas la comptabiliser par ce chemin.
 \end{itemize}
 
 Pour imputer une transaction autrement qu'à la candidate affichée, utilisez les boutons de sa ligne~: \emph{Affecter manuellement} ou \emph{Éclater} (ci-dessous).
@@ -1823,8 +1864,8 @@ Une règle dont le \textbf{compte de contrepartie} a été archivé, ou est deve
 \subsection{Annuler un rapprochement}\label{sec:annuler-rapprochement}
 
 Un rapprochement accepté par erreur --- mauvaise facture, mauvais compte de contrepartie ---
-s'annule. On le fait depuis le \textbf{détail de l'import bancaire} (\emph{Import bancaire},
-puis l'import concerné)~: chaque transaction rapprochée y porte un lien vers son écriture et un
+s'annule. On le fait depuis le \textbf{détail de l'import bancaire} (\emph{Quotidien} → \emph{Importer des relevés}, liste
+\emph{Imports précédents}, puis le nom du fichier)~: chaque transaction rapprochée y porte un lien vers son écriture et un
 bouton \emph{Annuler le rapprochement}. Quand le rapprochement a réglé une \textbf{facture
 client}, le même bouton apparaît aussi sur la fiche de la facture, à côté du règlement qui ne
 peut pas s'annuler seul.

@@ -1072,9 +1072,9 @@ bank-import-warnings-invalid-lines-truncated = Premières 100 erreurs affichées
 bank-import-warnings-encoding-mismatch = L'encodage détecté diffère du profil.
 
 # Labels UI
-bank-import-labels-page-title = Import bancaire CAMT.053
+bank-import-labels-page-title = Import de relevés bancaires
 bank-import-labels-bank-account-selector = Compte bancaire cible
-bank-import-labels-drop-zone = Glissez votre fichier CAMT.053 ici ou cliquez pour parcourir
+bank-import-labels-drop-zone = Glissez votre fichier CAMT.053 ou CSV ici ou cliquez pour parcourir
 bank-import-labels-preview-title = Prévisualisation
 bank-import-labels-confirm-import = Confirmer l'import
 bank-import-labels-cancel = Annuler
