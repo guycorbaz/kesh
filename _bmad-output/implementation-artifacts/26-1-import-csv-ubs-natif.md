@@ -2,7 +2,7 @@
 
 ## Status
 
-**review** — fiche créée le 2026-10-10 en autonomie (skill `bmad-create-story`) ; validation **close** le
+**done** — revue de code close le 2026-10-11 (P1 → P3 ciblée) ; fiche créée le 2026-10-10 en autonomie (skill `bmad-create-story`) ; validation **close** le
 2026-10-11 après quatre passes (P1 Sonnet, P2 Opus, P3 Sonnet, P4 ciblée Haiku — bilan au Change Log) ; développement
 (`bmad-dev-story`) terminé le 2026-10-11, mutations 28/28 et gates complets au dernier commit de code `f23ad162`
 (Dev Agent Record) ; revue de code P1 (Sonnet, B/E/A) remédiée le 2026-10-11, gates complets et E2E complet au
