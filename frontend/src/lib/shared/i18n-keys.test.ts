@@ -551,6 +551,12 @@ const ATTENDU = {
 	// `journal-entries-column-lettering`. Recompté par `grep -o "i18nMsg("` aux deux bornes
 	// (`011ea618` et la branche). `sitesNonResolus`, `relais`, `sitesGabarit` inchangés
 	// (que des littéraux).
+	// Story 26-3 (#617) : **2020 → 2022** (+2) — l'écran d'import lit ses deux textes en
+	// dur par clé : `features/bank-import/BankImportUpload.svelte`, l'`aria-label` de la zone
+	// de dépôt (`bank-import-labels-drop-zone`), et `routes/(app)/bank-import/+page.svelte`,
+	// le `<title>` (`bank-import-labels-page-title`). Recompté par `grep -o "i18nMsg("` aux
+	// deux bornes (`fe162504` et la branche). `sitesNonResolus`, `relais`, `sitesGabarit`
+	// inchangés (deux littéraux).
 	// Story 26-1 (#620, #621) : **2020 → 2026** (+6), recompté par `grep -o "i18nMsg("` aux
 	// deux bornes (`91426149` et la branche), commentaires masqués :
 	// `features/bank-import/BankProfileForm.svelte` (11 → 15 : aide des lignes à ignorer,
@@ -558,7 +564,8 @@ const ATTENDU = {
 	// troncature de la liste du refus de signe, clé existante) ; `csv-line-error-label.ts`
 	// (neuf, 1 site de gabarit — le second `i18nMsg(` du fichier est dans un commentaire).
 	// `sitesNonResolus` (31) et `relais` (6) inchangés, mesurés.
-	sitesTotal: 2026,
+	// Fusion 26-3 + 26-1 (2026-10-11) : 2020 + 2 + 6 = **2028**.
+	sitesTotal: 2028,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

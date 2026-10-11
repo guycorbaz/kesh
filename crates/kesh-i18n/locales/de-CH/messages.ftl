@@ -1013,9 +1013,9 @@ bank-import-warnings-invalid-lines-summary = ungültige Zeilen in der CSV-Datei 
 bank-import-warnings-invalid-lines-truncated = Erste 100 Fehler angezeigt (Limit erreicht).
 bank-import-warnings-encoding-mismatch = Das erkannte Encoding weicht vom Profil ab.
 
-bank-import-labels-page-title = CAMT.053-Bankimport
+bank-import-labels-page-title = Import von Kontoauszügen
 bank-import-labels-bank-account-selector = Ziel-Bankkonto
-bank-import-labels-drop-zone = CAMT.053-Datei hier ablegen oder klicken zum Durchsuchen
+bank-import-labels-drop-zone = CAMT.053- oder CSV-Datei hier ablegen oder klicken zum Durchsuchen
 bank-import-labels-preview-title = Vorschau
 bank-import-labels-confirm-import = Import bestätigen
 bank-import-labels-cancel = Abbrechen

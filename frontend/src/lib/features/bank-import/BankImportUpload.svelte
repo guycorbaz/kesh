@@ -256,7 +256,10 @@
 			data-testid="bank-import-drop-zone"
 			role="button"
 			tabindex="0"
-			aria-label="Glisser-déposer un fichier CAMT.053 ou cliquer pour parcourir"
+			aria-label={i18nMsg(
+				'bank-import-labels-drop-zone',
+				'Glissez votre fichier CAMT.053 ou CSV ici ou cliquez pour parcourir',
+			)}
 			class="mt-4 flex h-48 cursor-pointer items-center justify-center rounded border-2 border-dashed p-4 transition-colors"
 			class:border-border={!dragActive}
 			class:border-primary={dragActive}

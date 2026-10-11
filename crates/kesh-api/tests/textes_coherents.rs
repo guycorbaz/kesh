@@ -22,6 +22,7 @@
 //! | G18-ter | #127 | les textes d'écran « toutes les sociétés » (sauvegarde d'installation) sont une liste fermée assumée |
 //! | G18-bis | #127 | le manuel utilisateur dit comment on entre : compte créé par l'administrateur, connexion par identifiant |
 //! | G19 | release 0.13.0 | toute URL `raw.githubusercontent.com` du dépôt (manuels, README, site) pointe sur le tag `v<\keshVersion>`, jamais sur `main` |
+//! | G20 | #616, #617, #619 | ni case « Compte de banque » au plan comptable, ni CAMT.053 présenté comme universel ; l'écran d'import dit « CAMT.053 ou CSV » dans les quatre langues |
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -96,8 +97,14 @@ fn manuels_fr() -> Vec<(&'static str, String)> {
 /// (`error-account-not-postable`). La règle n'est pas toute la syntaxe Fluent (termes
 /// `-x`, attributs `.x` ne sont pas lus) : aucune clé gardée ne les emploie.
 fn catalogue_fr() -> HashMap<String, String> {
+    catalogue("fr-CH")
+}
+
+/// Le catalogue d'une locale (`fr-CH`, `de-CH`, `en-CH`, `it-CH`), lu par la même
+/// règle que [`catalogue_fr`], qui n'en est que le cas `fr-CH` (Story 26-3, G20).
+fn catalogue(locale: &str) -> HashMap<String, String> {
     let tete = Regex::new(r"^([a-zA-Z][\w-]*) = ?(.*)$").unwrap();
-    let texte = lire("crates/kesh-i18n/locales/fr-CH/messages.ftl");
+    let texte = lire(&format!("crates/kesh-i18n/locales/{locale}/messages.ftl"));
     let mut out: HashMap<String, String> = HashMap::new();
     let mut courante: Option<String> = None;
     for ligne in texte.lines() {
@@ -117,7 +124,7 @@ fn catalogue_fr() -> HashMap<String, String> {
             courante = None;
         }
     }
-    assert!(out.len() > 100, "catalogue fr-CH lu à vide");
+    assert!(out.len() > 100, "catalogue {locale} lu à vide");
     out
 }
 
@@ -1139,6 +1146,109 @@ fn les_url_raw_du_depot_pointent_sur_la_version_publiee() {
     assert!(
         erreurs.is_empty(),
         "G19 — {} URL hors du tag {attendue} :\n  - {}",
+        erreurs.len(),
+        erreurs.join("\n  - ")
+    );
+}
+
+/// **G20** (#616, #617, #619 — Story 26-3) — le manuel ne fait plus chercher une case
+/// « Compte de banque » au plan comptable ni ne promet le CAMT.053 de « toutes les
+/// banques suisses », et l'écran d'import dit « CAMT.053 ou CSV ».
+///
+/// **Négatives ciblées sur la forme du défaut, sensibles à la casse**, sur la source
+/// `.tex` **brute** des trois manuels français : « son propre compte de banque » est
+/// juste (six sites des manuels, six messages `fr-CH`) et ne doit pas rougir — une
+/// garde insensible à la casse frapperait du texte correct et serait « réparée » en
+/// devenant muette. `[\s~]+` entre les mots : ni un retour à la ligne de source ni
+/// l'espace insécable LaTeX `~` ne contournent la garde (`\s` couvre U+00A0 et
+/// U+202F). La forme `[Tt]outes les banques suisses` interdit aussi « toutes les
+/// banques suisses ne le proposent pas » : le manuel écrit « la plupart … pas
+/// toutes ».
+///
+/// **Catalogues** : dans chacun des quatre, `bank-import-labels-drop-zone` contient
+/// `CSV` et `bank-import-labels-page-title` ne contient pas `CAMT.053` ; l'écran lit
+/// aussi ces deux clés pour son `aria-label` et son `<title>`.
+///
+/// **Positives adossées** : `propre compte de banque` et `Compte comptable lié`
+/// (la phrase « comment un compte devient compte bancaire ») au manuel utilisateur ;
+/// `SAUVEGARDE_RESEAU=proxy` et `SAUVEGARDE_SERVICE=` (listings du compose adapté) au
+/// manuel d'administration — la prose `SAUVEGARDE_SERVICE (kesh-api)` est tenue par
+/// G16 (g) ; chaque catalogue lu porte plus de 1000 clés.
+///
+/// **Angles morts écrits** : `\textit{…}`, `\keshpath{…}`, `\enquote{…}` autour de
+/// « Compte de banque » (aucun employé par les manuels) ; les replis Svelte des deux
+/// clés (non lus ici, égaux à la valeur `fr-CH` au 2026-10-11) ; le PDF (contrôles
+/// `occ` journalisés au Dev Agent Record de la story).
+#[test]
+fn le_manuel_et_l_ecran_d_import_disent_vrai() {
+    let negatives: [(&str, &str); 3] = [
+        (
+            r"\\(?:textbf|emph)\{Compte[\s~]+de[\s~]+banque\}",
+            "case « Compte de banque » du plan comptable, inexistante (#616)",
+        ),
+        (
+            r"«[\s~]*Compte[\s~]+de[\s~]+banque[\s~]*»",
+            "case « Compte de banque » du plan comptable, inexistante (#616)",
+        ),
+        (
+            r"[Tt]outes[\s~]+les[\s~]+banques[\s~]+suisses",
+            "le CAMT.053 présenté comme universel (#617)",
+        ),
+    ];
+    let mut erreurs = Vec::new();
+    for (nom, texte) in manuels_fr() {
+        for (re, quoi) in &negatives {
+            for m in Regex::new(re).unwrap().find_iter(&texte) {
+                let ligne = texte[..m.start()].matches('\n').count() + 1;
+                erreurs.push(format!("{nom}:{ligne} — {quoi} : « {} »", m.as_str()));
+            }
+        }
+    }
+    let positives: [(&str, &str); 4] = [
+        (
+            "docs/manual/fr/user-manual.tex",
+            r"propre[\s~]+compte[\s~]+de[\s~]+banque",
+        ),
+        (
+            "docs/manual/fr/user-manual.tex",
+            r"Compte[\s~]+comptable[\s~]+lié",
+        ),
+        (
+            "docs/manual/fr/admin-manual.tex",
+            r"SAUVEGARDE_RESEAU=proxy",
+        ),
+        ("docs/manual/fr/admin-manual.tex", r"SAUVEGARDE_SERVICE="),
+    ];
+    for (fichier, re) in positives {
+        if !Regex::new(re).unwrap().is_match(&lire(fichier)) {
+            erreurs.push(format!(
+                "{fichier} : « {re} » absent (lecture à vide, ou phrase retirée)"
+            ));
+        }
+    }
+    for locale in ["fr-CH", "de-CH", "en-CH", "it-CH"] {
+        let c = catalogue(locale);
+        assert!(
+            c.len() > 1000,
+            "catalogue {locale} : {} clés, lu à vide ?",
+            c.len()
+        );
+        match c.get("bank-import-labels-drop-zone") {
+            Some(v) if v.contains("CSV") => {}
+            autre => erreurs.push(format!(
+                "{locale} : bank-import-labels-drop-zone ne dit pas « CSV » ({autre:?}) (#617)"
+            )),
+        }
+        match c.get("bank-import-labels-page-title") {
+            Some(v) if !v.contains("CAMT.053") => {}
+            autre => erreurs.push(format!(
+                "{locale} : bank-import-labels-page-title dit « CAMT.053 » ou manque ({autre:?}) (#617)"
+            )),
+        }
+    }
+    assert!(
+        erreurs.is_empty(),
+        "G20 — {} écart(s) :\n  - {}",
         erreurs.len(),
         erreurs.join("\n  - ")
     );

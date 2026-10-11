@@ -479,8 +479,9 @@ la même table rechargée) et une ligne `Compte é € 😀` octet par octet :
 - **dump** : empreinte, droits 700/600, aucun `.tmp`, toutes les tables ; `--defaults-extra-file` refusé hors de la
   première place ; dump raté (réseau, mot de passe), vide ou sous verrou refusé, sans perte du précédent ni fichier
   vide ;
+- **garde de `kesh-restore.sh`** contre un faux `docker` (section 0, ci-dessous) ;
 - **rechargement refusé avant toute écriture dans la base** : Kesh actif (en marche, en boucle de redémarrage
-  `restarting`, en pause), verrou déjà pris par une autre restauration, nom de base du dump ≠ `SAUVEGARDE_BASE`,
+  `restarting`, en pause — chacun reconnu à son état dans le message), verrou déjà pris par une autre restauration, nom de base du dump ≠ `SAUVEGARDE_BASE`,
   empreinte fausse, archive tronquée, dossier inexistant, serveur injoignable ; refus `ERROR 1044` du compte de
   sauvegarde ; base avec tables mais illisible (vue invalide) → dump de sécurité impossible, base intacte ;
 - **rechargement** par un chemin relatif (c'est le dump donné qui est rechargé, non le dump vivant), un dump nocturne
@@ -488,6 +489,48 @@ la même table rechargée) et une ligne `Compte é € 😀` octet par octet :
   « terminer » (même dossier) et « revenir » (dump de sécurité) ; deux passages qui échouent au rechargement (dump
   intègre qui casse au milieu) → le message du second liste le dossier de sécurité du **premier** avant le sien, et
   « revenir » ne désigne pas celui du passage en cours ; base absente ; base présente **vide** (rien à protéger) ; base illisible traitée par la commande `DROP DATABASE <base>` du manuel puis rechargée.
+
+### Section 0 — la garde de `kesh-restore.sh` contre un faux `docker` (Story 26-3, #619)
+
+```sh
+RECETTE_SECTION=0 bash scripts/synology/recette.sh   # la section 0 seule, quelques secondes, sans Docker
+```
+
+La garde de `kesh-restore.sh` (étape 1) lit l'état Docker de **tout l'hôte** (`docker ps --all --format
+'{{.State}}|{{.Image}}|{{.Label "com.docker.compose.service"}}|{{.Names}}'`), que la recette ne maîtrise pas. La
+section 0 la fait donc tourner contre un **faux `docker`** : 23 cas, `S1`-`S23`, chacun une sortie de `docker ps`
+fabriquée (service renommé, réglé ou non ; orphelin d'un ancien nom ; `created`, `restarting`, `paused`, `dead` ;
+conteneur hors compose à étiquette vide ; ligne vide, incomplète ou à cinq champs ; deux projets ; image par
+empreinte, par identifiant — l'angle mort assumé, S15 —, voisine non Kesh, nue ; démon injoignable). Chaque cas
+exige le motif de **sa** classe de verdict (zéro conteneur du service, refus du service, refus du filet par l'image,
+ligne illisible, garde franchie) et l'**absence** des motifs des autres, un code non nul, un journal du faux réduit
+à **un** `ps --all` (un journal vide prouverait que le vrai `docker` a répondu), ni verrou ni `avant-restauration/`
+laissés. Quand la garde passe, le script s'arrête de lui-même à l'étape 3 (`SAUVEGARDE_BASE=autre`, « le dump
+recrée la base « kesh », non « autre » ») : aucune base n'est touchée, et tout autre appel du faux (`run`, `exec`…)
+rend 97 avec `FAUX DOCKER : appel inattendu`.
+
+- **Le faux est une fonction bash exportée, non un exécutable du `PATH`** : `kesh-restore.sh` réécrit son `PATH`
+  (`/usr/local/bin:/usr/bin:/bin` en tête), qui masquerait un faux placé devant ; une fonction exportée est importée
+  par le `bash` du script et précède toute recherche dans le `PATH`. Elle n'est définie et exportée **que dans le
+  sous-shell de chaque cas**, avec ses variables `FAUX_*` ; les `SAUVEGARDE_*` du shell appelant y sont désarmées.
+  Une assertion vérifie, après la section 0 et en tête de la section 1, que `docker` redevient le vrai
+  (`type -t docker` = `file`).
+- **Prérequis du mode 0** : `bash`, coreutils (`mktemp`, `mkdir`, `rm`, `rmdir`, `cat`, `dirname`, `sha256sum`,
+  `wc`, `head`, `seq`, `tr`, `tail`, `cut`), `gzip`,
+  `grep`, `awk` — ni `docker`, ni `openssl`, ni `sqlx`, ni `python3`, ni réseau. La recette pose d'abord une trap
+  minimale qui n'efface que son dossier de travail ; `openssl` et la trap qui appelle `docker` (`nettoyer`) ne
+  viennent qu'**après** la section 0.
+- **Ce que la section 0 ne prouve pas** : le comportement du **vrai** `docker ps --format` (séparateur, étiquette
+  absente d'un conteneur hors compose). Les sections 4 à 9, réelles, font tourner la garde nouvelle sur de vrais
+  conteneurs — dont `kesh-recette-synology-db`, lancé hors compose, à étiquette de service vide.
+- **Prérequis de la recette réelle (sections 4 à 9)** : la garde lit **tout l'hôte**. Elles refusent donc si l'hôte
+  porte, hors du projet de recette, un conteneur **actif** (`running`, `restarting`, `paused`…) du service
+  `kesh-api` — dépendance déjà vraie avec la garde d'origine — **ou**, dépendance neuve du filet, un conteneur actif
+  d'image `gcorbaz/kesh`, quel que soit son service. Le message de la garde **nomme** le conteneur en cause : le rouge
+  se diagnostique seul. Arrêtez ce conteneur, ou jouez la recette sur un autre hôte.
+- Les preuves de mutation de la garde (garde d'origine, filet retiré, filet sans `case` d'état, sortie sur zéro
+  retirée, contrôle « illisible » retiré, réglage ignoré, `dead` retiré, filet à étiquette obligatoire) se jouent en
+  `RECETTE_SECTION=0` ; leurs cas rouges exacts sont à la fiche de la Story 26-3 (AC 6).
 
 Elle ne rejoue pas DSM (Planificateur, Hyper Backup, Snapshot Replication, paquet MariaDB 10) ni root ; la fenêtre
 entre la lecture du dump et la prise du verrou, que le script ferme en prenant le verrou d'abord, n'est pas
