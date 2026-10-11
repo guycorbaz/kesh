@@ -19,6 +19,7 @@
 
 import { expect, test, type Page } from '@playwright/test';
 import AxeBuilder from '@axe-core/playwright';
+import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import {
@@ -151,6 +152,20 @@ test('accessibility — profile pages axe scan zero violations', async ({ page }
 	expect(results.violations).toEqual([]);
 });
 
+// Story 26-1 (#620) — le FORMULAIRE de profil, mode séparé coché (groupe radio
+// du sens des débits visible), n'avait aucun scan.
+test('accessibility — profile form with debit sign group, axe scan zero violations', async ({
+	page,
+}) => {
+	await login(page);
+	await page.goto('/bank-import/profiles/new');
+	await page.getByTestId('use-debit-credit-split').check();
+	await expect(page.getByTestId('debit-sign-negative')).toBeVisible();
+
+	const results = await new AxeBuilder({ page }).analyze();
+	expect(results.violations).toEqual([]);
+});
+
 // Pass 1 review G3 H11+H12 : 2 scénarios CSV ajoutés en bonus.
 
 test('shows BANK_CSV_NO_PROFILE_MATCH on CSV upload without profile', async ({ page }) => {
@@ -232,4 +247,187 @@ test('uploads CSV with matching profile end-to-end', async ({ page }) => {
 
 	// La liste affiche au moins 1 import.
 	await expect(page.getByTestId('bank-import-list-row').first()).toBeVisible();
+});
+
+// ===========================================================================
+// Story 26-1 (#620, #621) — le relevé CSV d'UBS importé tel quel
+// ===========================================================================
+
+/**
+ * Fixture synthétique de structure UBS, lue **sans copie** depuis le crate
+ * `kesh-import` (cf. `crates/kesh-import/tests/fixtures/README.md`).
+ */
+const UBS_FIXTURE = path.join(
+	path.dirname(fileURLToPath(import.meta.url)),
+	'../../../crates/kesh-import/tests/fixtures/csv/ubs_synthetique.csv',
+);
+
+type ProfileOptions = {
+	name: string;
+	pattern: string;
+	debitSign?: 'positive' | 'negative';
+	split: boolean;
+	headerRows: string;
+	dateFormat: string;
+	columns: Record<string, string>;
+};
+
+/** Crée un profil **par l'écran** et attend la redirection vers sa fiche. */
+async function createProfileViaUi(page: Page, o: ProfileOptions): Promise<void> {
+	await page.goto('/bank-import/profiles/new');
+	await page.getByTestId('bank-name-input').fill(o.name);
+	await page.getByTestId('filename-pattern-input').fill(o.pattern);
+	await page.getByTestId('date-format-input').fill(o.dateFormat);
+	await page.getByTestId('field-separator-select').selectOption(';');
+	await page.getByTestId('decimal-separator-select').selectOption('.');
+	await page.getByTestId('header-row-count-input').fill(o.headerRows);
+	if (o.split) {
+		await page.getByTestId('use-debit-credit-split').check();
+		await page.getByTestId(`debit-sign-${o.debitSign ?? 'positive'}`).check();
+	}
+	for (const [testid, value] of Object.entries(o.columns)) {
+		await page.getByTestId(testid).fill(value);
+	}
+	await page.getByTestId('bank-import-profile-submit').click();
+	await expect(page).toHaveURL(/\/bank-import\/profiles\/\d+/);
+}
+
+const UBS_COLUMNS = {
+	'col-date-input': '2',
+	'col-debit-input': '5',
+	'col-credit-input': '6',
+	'col-reference-input': '9',
+	'col-details-input': '10',
+};
+
+/** Nombre total d'imports de la société, lu par l'API (pas par la liste, plafonnée à 20). */
+async function importTotal(page: Page): Promise<number> {
+	const ctx = await authedApiContext(page);
+	try {
+		const res = await ctx.get('/api/v1/bank-imports?limit=1&offset=0');
+		expect(res.ok()).toBeTruthy();
+		return (await res.json()).total as number;
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+}
+
+test('imports the UBS CSV as is with a « minus sign » profile (Story 26-1)', async ({ page }) => {
+	await login(page);
+	await ensureBankAccount(page);
+	await createProfileViaUi(page, {
+		name: 'UBS synthétique — moins',
+		pattern: '^ubs_synthetique\\.csv$',
+		debitSign: 'negative',
+		split: true,
+		headerRows: '9',
+		dateFormat: '%Y-%m-%d',
+		columns: UBS_COLUMNS,
+	});
+
+	await page.goto('/bank-import');
+	await expect(page.getByTestId('bank-import-page-title')).toBeVisible();
+	await page.getByTestId('bank-account-select').selectOption({ index: 1 });
+	await page.getByTestId('bank-import-file-input').setInputFiles(UBS_FIXTURE);
+	await expect(page.getByTestId('bank-import-preview')).toBeVisible();
+	await expect(page.getByTestId('preview-tx-count')).toHaveText('11');
+	await page.getByTestId('bank-import-confirm').click();
+	await expect(page.getByTestId('bank-import-preview')).toBeHidden();
+
+	// Par l'API : les transactions de cet import — 11, dont 9 négatives,
+	// somme −236.25 (en centimes, pour ne rien arrondir).
+	const ctx = await authedApiContext(page);
+	try {
+		const list = await (await ctx.get('/api/v1/bank-imports?limit=50&offset=0')).json();
+		const imp = (list.items as Array<{ id: number; filename: string }>).find(
+			(i) => i.filename === 'ubs_synthetique.csv',
+		);
+		expect(imp, 'import ubs_synthetique.csv introuvable').toBeTruthy();
+		const detail = await (await ctx.get(`/api/v1/bank-imports/${imp!.id}`)).json();
+		const amounts = (detail.transactions as Array<{ amount: string }>).map((t) =>
+			Math.round(Number(t.amount) * 100),
+		);
+		expect(amounts).toHaveLength(11);
+		expect(amounts.filter((a) => a < 0)).toHaveLength(9);
+		expect(amounts.reduce((a, b) => a + b, 0)).toBe(-23625);
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+});
+
+test('refuses the UBS CSV entirely under a « no sign » profile, lines listed (Story 26-1)', async ({
+	page,
+}) => {
+	await login(page);
+	await ensureBankAccount(page);
+	await createProfileViaUi(page, {
+		name: 'UBS synthétique — sans signe',
+		pattern: '^ubs_sans_signe\\.csv$',
+		debitSign: 'positive',
+		split: true,
+		headerRows: '9',
+		dateFormat: '%Y-%m-%d',
+		columns: UBS_COLUMNS,
+	});
+	const before = await importTotal(page);
+
+	await page.goto('/bank-import');
+	await expect(page.getByTestId('bank-import-page-title')).toBeVisible();
+	await page.getByTestId('bank-account-select').selectOption({ index: 1 });
+	// La MÊME fixture, téléversée sous un autre nom : aucun des deux fichiers
+	// n'est reconnu par les deux profils (scénarios indépendants).
+	await page.getByTestId('bank-import-file-input').setInputFiles({
+		name: 'ubs_sans_signe.csv',
+		mimeType: 'text/csv',
+		buffer: fs.readFileSync(UBS_FIXTURE),
+	});
+
+	const error = page.getByTestId('bank-import-error');
+	await expect(error).toBeVisible();
+	await expect(error).toHaveAttribute('data-error-code', 'BANK_CSV_AMOUNT_SIGN_MISMATCH');
+	await expect(error).toContainText(/sens des débits/i);
+	const lines = page.getByTestId('bank-import-error-line');
+	await expect(lines.first()).toBeVisible();
+	// Cellule du numéro, texte exact : `toContainText('11')` passait aussi
+	// pour une ligne 111 ou un montant -199.11 (revue P1, E-7).
+	await expect(lines.first().locator('td').first()).toHaveText('11');
+	await expect(page.getByTestId('bank-import-error-line-message').first()).toContainText(
+		/signe contraire/i,
+	);
+	// Refus non confirmable : aucune case « importer les lignes valides ».
+	await expect(page.getByTestId('confirm-partial-import')).toHaveCount(0);
+	await expect(page.getByTestId('bank-import-preview')).toHaveCount(0);
+
+	expect(await importTotal(page)).toBe(before);
+});
+
+test('shows the translated message next to the code of an invalid CSV line (Story 26-1)', async ({
+	page,
+}) => {
+	await login(page);
+	await ensureBankAccount(page);
+	await createProfileViaUi(page, {
+		name: 'Profil lignes invalides 26-1',
+		pattern: '^lignes_invalides_261\\.csv$',
+		split: false,
+		headerRows: '1',
+		dateFormat: '%Y-%m-%d',
+		columns: { 'col-date-input': '0', 'col-amount-input': '1' },
+	});
+
+	await page.goto('/bank-import');
+	await expect(page.getByTestId('bank-import-page-title')).toBeVisible();
+	await page.getByTestId('bank-account-select').selectOption({ index: 1 });
+	await page.getByTestId('bank-import-file-input').setInputFiles({
+		name: 'lignes_invalides_261.csv',
+		mimeType: 'text/csv',
+		buffer: Buffer.from('date;amount\n2026-01-15;100.00\nPAS_UNE_DATE;50.00\n'),
+	});
+
+	await expect(page.getByTestId('warning-invalid-lines')).toBeVisible();
+	const row = page.getByTestId('warning-invalid-lines-row').first();
+	await expect(row).toContainText('INVALID_DATE');
+	await expect(page.getByTestId('warning-invalid-lines-message').first()).toContainText(
+		/date invalide/i,
+	);
 });

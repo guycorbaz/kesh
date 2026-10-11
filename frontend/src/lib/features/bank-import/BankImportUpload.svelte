@@ -19,6 +19,8 @@
 	import BankProfileSelector from './BankProfileSelector.svelte';
 	import { isApiError } from '$lib/shared/utils/api-client';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
+	import { csvLineErrorLabel } from './csv-line-error-label';
+	import type { InvalidLinesPayload } from './bank-import.types';
 
 	type Props = {
 		bankAccounts: Array<{ id: number; bankName: string; iban: string }>;
@@ -39,7 +41,23 @@
 	let isLoading = $state(false);
 	let errorCode = $state<string | null>(null);
 	let errorMessage = $state<string | null>(null);
+	// Story 26-1 (#620) — lignes du refus `BANK_CSV_AMOUNT_SIGN_MISMATCH`
+	// (même forme que `warnings.invalidLines`). Posé aux deux `catch` qui
+	// posent `errorCode`, remis à `null` partout où `errorCode` l'est.
+	let errorDetails = $state<InvalidLinesPayload | null>(null);
 	let dragActive = $state(false);
+
+	/** Lignes du refus de signe, si `details` en porte (sinon `null`). */
+	function signRefusalDetails(err: { code: string; details?: Record<string, unknown> }): InvalidLinesPayload | null {
+		if (err.code !== 'BANK_CSV_AMOUNT_SIGN_MISMATCH' || !err.details) return null;
+		const d = err.details;
+		if (!Array.isArray(d.lines)) return null;
+		return {
+			lines: d.lines as InvalidLinesPayload['lines'],
+			totalErrors: typeof d.totalErrors === 'number' ? d.totalErrors : d.lines.length,
+			truncated: d.truncated === true,
+		};
+	}
 
 	onMount(async () => {
 		try {
@@ -68,6 +86,7 @@
 		confirmEncodingMismatch = false;
 		errorCode = null;
 		errorMessage = null;
+		errorDetails = null;
 	}
 
 	function buildFlags() {
@@ -85,6 +104,7 @@
 		if (!selectedAccountId) {
 			errorCode = 'BANK_ACCOUNT_REQUIRED';
 			errorMessage = "Sélectionnez d'abord un compte bancaire.";
+			errorDetails = null;
 			return;
 		}
 		// F1 (Pass 3 review) — réinitialise les confirm flags quand un
@@ -102,6 +122,7 @@
 		selectedFile = file;
 		errorCode = null;
 		errorMessage = null;
+		errorDetails = null;
 		isLoading = true;
 		try {
 			preview = await previewBankImport(file, selectedAccountId, {
@@ -119,9 +140,11 @@
 			if (isApiError(err)) {
 				errorCode = err.code;
 				errorMessage = err.message;
+				errorDetails = signRefusalDetails(err);
 			} else {
 				errorCode = 'UNKNOWN_ERROR';
 				errorMessage = 'Erreur inattendue.';
+				errorDetails = null;
 			}
 			preview = null;
 		} finally {
@@ -142,6 +165,7 @@
 		isLoading = true;
 		errorCode = null;
 		errorMessage = null;
+		errorDetails = null;
 		try {
 			const result = await createBankImport(selectedFile, selectedAccountId, buildFlags());
 			onSuccess?.(result);
@@ -150,9 +174,12 @@
 			if (isApiError(err)) {
 				errorCode = err.code;
 				errorMessage = err.message;
+				// Le refus de signe peut aussi arriver à la confirmation.
+				errorDetails = signRefusalDetails(err);
 			} else {
 				errorCode = 'UNKNOWN_ERROR';
 				errorMessage = 'Erreur inattendue.';
+				errorDetails = null;
 			}
 		} finally {
 			isLoading = false;
@@ -281,6 +308,41 @@
 			role="alert"
 		>
 			<p class="text-error">{errorMessage}</p>
+			{#if errorDetails}
+				<!-- Story 26-1 (#620) : les lignes du refus de signe. Aucune case
+				     de confirmation : ce refus n'est pas confirmable. -->
+				{#if errorDetails.truncated}
+					<p class="mt-2 text-sm text-text-muted">
+						{i18nMsg(
+							'bank-import-warnings-invalid-lines-truncated',
+							'Premières 100 erreurs affichées (cap atteint).',
+						)}
+					</p>
+				{/if}
+				<div class="mt-2 max-h-64 overflow-y-auto">
+					<table class="w-full table-auto text-sm">
+						<thead>
+							<tr>
+								<th class="text-left">Ligne</th>
+								<th class="text-left">Code</th>
+								<th class="text-left">Valeur</th>
+							</tr>
+						</thead>
+						<tbody>
+							{#each errorDetails.lines as line, i (i)}
+								<tr data-testid="bank-import-error-line">
+									<td>{line.line}</td>
+									<td>
+										<code>{line.code}</code>
+										<span data-testid="bank-import-error-line-message">{csvLineErrorLabel(line.code)}</span>
+									</td>
+									<td>{line.value ?? '—'}</td>
+								</tr>
+							{/each}
+						</tbody>
+					</table>
+				</div>
+			{/if}
 		</div>
 	{/if}
 
@@ -442,7 +504,10 @@
 								{#each preview.warnings.invalidLines.lines as line, i (i)}
 									<tr data-testid="warning-invalid-lines-row">
 										<td>{line.line}</td>
-										<td><code>{line.code}</code></td>
+										<td>
+											<code>{line.code}</code>
+											<span data-testid="warning-invalid-lines-message">{csvLineErrorLabel(line.code)}</span>
+										</td>
 										<td>{line.value ?? '—'}</td>
 									</tr>
 								{/each}

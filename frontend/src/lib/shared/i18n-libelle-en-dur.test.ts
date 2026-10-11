@@ -204,8 +204,14 @@ const SUFFIXES = ['Label', 'Text', 'Display'];
  * cherchant les suffixes `Label`, `Text`, `Display` dans les fichiers de la story — la
  * seule déclaration neuve qui en porte un (`letteredBy`, sur la fiche d'écriture, n'en
  * porte pas).*
+ *
+ * ⚠️ **61 → 62, et la déclaration est NOMMÉE** : `csvLineErrorLabel`
+ * (`lib/features/bank-import/csv-line-error-label.ts`, Story 26-1, #620) — le libellé
+ * traduit des codes d'erreur de ligne de l'import CSV. Sa branche connue délègue à
+ * `i18nMsg` par la table `CSV_LINE_ERROR_LABELS`, l'autre rend le code brut : aucun
+ * littéral, donc `conforme` **47 → 48** ; `ecartee` ne bouge pas.
  */
-const CANDIDATES_ATTENDUES = 61;
+const CANDIDATES_ATTENDUES = 62;
 
 /** Les trois délimiteurs de littéral en JS/TS. */
 const QUOTES = ["'", '"', '`'];
@@ -722,7 +728,7 @@ describe('libellés en dur — l’angle mort #255', () => {
 			else if (c.retours.length > 0) classes.ecartee += 1;
 			else classes.conforme += 1;
 		}
-		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 47 });
+		expect(classes).toEqual({ nonAnalysee: 0, enViolation: 0, ecartee: 14, conforme: 48 });
 		// La somme est recalculée depuis les classes, jamais depuis le total qu'elle contrôle.
 		const somme = Object.values(classes).reduce((a, b) => a + b, 0);
 		expect(somme).toBe(CANDIDATES_ATTENDUES);

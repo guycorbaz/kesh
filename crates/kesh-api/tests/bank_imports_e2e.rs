@@ -697,6 +697,7 @@ async fn create_test_bank_profile_csv(pool: &MySqlPool, company_id: i64, user_id
         field_separator: ";".into(),
         encoding: None,
         header_row_count: 1,
+        debit_sign: "positive".into(),
     };
     let mut tx = pool.begin().await.unwrap();
     let p =
@@ -1117,6 +1118,10 @@ async fn post_preview_csv_returns_invalid_lines_warning(pool: MySqlPool) {
     assert_eq!(lines.len(), 3);
     assert_eq!(inv["totalErrors"].as_u64().unwrap(), 3);
     assert!(!inv["truncated"].as_bool().unwrap());
+    // Story 26-1, AC3-bis (M15) : graphie canonique du code sur le fil
+    // (`INVALID_DATE`, plus `INVALIDDATE`).
+    assert_eq!(lines[0]["code"], "INVALID_DATE");
+    assert_eq!(lines[1]["code"], "INVALID_AMOUNT");
     // Les transactions valides sont aussi listées.
     let txs = body["transactions"].as_array().unwrap();
     assert_eq!(txs.len(), 3);
@@ -1549,4 +1554,272 @@ async fn post_import_returns_duplicate_file_first_when_no_flags(pool: MySqlPool)
         body["error"]["code"], "BANK_IMPORT_DUPLICATE_FILE",
         "duplicate_file détecté AVANT le parse partial"
     );
+}
+
+// =========================================================================
+// Story 26-1 (#620, #621) — le relevé CSV d'UBS importé tel quel
+// =========================================================================
+
+/// Fixture synthétique de structure UBS (`kesh-import/tests/fixtures/csv`).
+fn ubs_fixture() -> Vec<u8> {
+    std::fs::read(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../kesh-import/tests/fixtures/csv/ubs_synthetique.csv"),
+    )
+    .expect("fixture UBS")
+}
+
+/// Crée le profil UBS **par la route** (`POST /api/v1/bank-profiles`) : c'est
+/// le chemin DTO → base → `db_profile_to_csv_profile` qu'on veut traverser.
+async fn post_ubs_profile(
+    app: &TestApp,
+    jwt: &str,
+    name: &str,
+    debit_sign: &str,
+    header_rows: u8,
+) -> i64 {
+    let res = app
+        .client
+        .post(app.url("/api/v1/bank-profiles"))
+        .bearer_auth(jwt)
+        .json(&serde_json::json!({
+            "bankName": name,
+            "filenamePattern": null,
+            "columnMapping": {"date": 2, "debit_credit_split": [5, 6], "reference": 9, "details": 10},
+            "dateFormat": "%Y-%m-%d",
+            "decimalSeparator": ".",
+            "fieldSeparator": ";",
+            "encoding": null,
+            "headerRowCount": header_rows,
+            "debitSign": debit_sign
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 201);
+    let body: Value = res.json().await.unwrap();
+    assert_eq!(body["debitSign"], debit_sign);
+    assert_eq!(body["headerRowCount"], header_rows);
+    body["id"].as_i64().unwrap()
+}
+
+/// Envoie la fixture (ou `bytes`) en preview ou en import ; rend (statut, corps).
+async fn send_csv(
+    app: &TestApp,
+    jwt: &str,
+    preview: bool,
+    bytes: Vec<u8>,
+    bank_account_id: i64,
+    profile_id: i64,
+    extra: &[(&str, String)],
+) -> (u16, Value) {
+    let path = if preview {
+        "/api/v1/bank-imports/preview"
+    } else {
+        "/api/v1/bank-imports"
+    };
+    let r = app
+        .client
+        .post(app.url(path))
+        .bearer_auth(jwt)
+        .multipart(build_csv_multipart(
+            bytes,
+            "ubs_synthetique.csv",
+            bank_account_id,
+            profile_id,
+            extra,
+        ))
+        .send()
+        .await
+        .unwrap();
+    let status = r.status().as_u16();
+    (status, r.json().await.unwrap())
+}
+
+async fn tx_count(pool: &MySqlPool) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM bank_transactions")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// AC15 (M1, M6) : profil UBS réglé « débits négatifs », créé par la route,
+/// puis import de la fixture : 11 transactions, somme −236.25, 9 sorties.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ubs_fixture_imports_with_negative_debit_profile(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let profile_id = post_ubs_profile(&app, &s.jwt, "UBS négatif", "negative", 9).await;
+
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        true,
+        ubs_fixture(),
+        s.bank_account_id,
+        profile_id,
+        &[],
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["transactions"].as_array().unwrap().len(), 11);
+
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        false,
+        ubs_fixture(),
+        s.bank_account_id,
+        profile_id,
+        &[],
+    )
+    .await;
+    assert_eq!(status, 201, "{body}");
+    let import_id = body["id"].as_i64().unwrap();
+    let (count, sum, debits): (i64, rust_decimal::Decimal, rust_decimal::Decimal) = sqlx::query_as(
+        "SELECT COUNT(*), SUM(amount), SUM(amount < 0) FROM bank_transactions WHERE import_id = ?",
+    )
+    .bind(import_id)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(count, 11);
+    assert_eq!(sum, rust_decimal_macros::dec!(-236.25));
+    assert_eq!(debits, rust_decimal::Decimal::from(9));
+}
+
+/// AC15 (M3, M14, M21) : même fixture sous un profil « sans signe » → 422
+/// `BANK_CSV_AMOUNT_SIGN_MISMATCH`, en preview ET en import avec
+/// `confirmPartialImport=true` ; rien n'est écrit (#620 ne passe plus, ni en
+/// silence ni par l'import partiel).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ubs_fixture_with_positive_profile_is_refused_entirely(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let profile_id = post_ubs_profile(&app, &s.jwt, "UBS sans signe", "positive", 9).await;
+
+    for (preview, extra) in [
+        (true, vec![]),
+        (false, vec![("confirmPartialImport", "true".to_string())]),
+        (false, vec![]),
+    ] {
+        let (status, body) = send_csv(
+            &app,
+            &s.jwt,
+            preview,
+            ubs_fixture(),
+            s.bank_account_id,
+            profile_id,
+            &extra,
+        )
+        .await;
+        assert_eq!(status, 422, "preview={preview} {body}");
+        let err = &body["error"];
+        assert_eq!(err["code"], "BANK_CSV_AMOUNT_SIGN_MISMATCH");
+        assert_eq!(err["details"]["totalErrors"], 9);
+        assert_eq!(err["details"]["truncated"], false);
+        assert_eq!(err["details"]["wholeDebitColumn"], true);
+        assert_eq!(err["details"]["lines"].as_array().unwrap().len(), 9);
+        assert_eq!(err["details"]["lines"][0]["code"], "AMOUNT_SIGN_MISMATCH");
+        assert_eq!(err["details"]["lines"][0]["line"], 11);
+        assert_eq!(
+            err["details"]["lines"][0]["messageI18nKey"],
+            "bank-import-csv-errors-amount-sign-mismatch"
+        );
+        assert!(
+            err["message"]
+                .as_str()
+                .unwrap()
+                .contains("Réglez le sens des débits du profil"),
+            "{}",
+            err["message"]
+        );
+    }
+    assert_eq!(tx_count(&pool).await, 0, "aucune transaction écrite");
+    let imports: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bank_imports")
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+    assert_eq!(imports, 0, "aucun import écrit");
+}
+
+/// AC15 (M21) : une extourne isolée (un crédit négatif) bloque aussi, avec
+/// le message « lignes listées » (`wholeDebitColumn = false`).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ubs_statement_with_isolated_reversal_is_refused_with_lines_message(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let profile_id = post_ubs_profile(&app, &s.jwt, "UBS négatif", "negative", 9).await;
+    let text = String::from_utf8(ubs_fixture()).unwrap();
+    let reversal = text.replacen("CHF;;150.25;", "CHF;;-150.25;", 1);
+    assert_ne!(
+        reversal, text,
+        "montage : la ligne de crédit a été modifiée"
+    );
+
+    for (preview, extra) in [
+        (true, vec![]),
+        (false, vec![("confirmPartialImport", "true".to_string())]),
+    ] {
+        let (status, body) = send_csv(
+            &app,
+            &s.jwt,
+            preview,
+            reversal.clone().into_bytes(),
+            s.bank_account_id,
+            profile_id,
+            &extra,
+        )
+        .await;
+        assert_eq!(status, 422, "{body}");
+        let err = &body["error"];
+        assert_eq!(err["code"], "BANK_CSV_AMOUNT_SIGN_MISMATCH");
+        assert_eq!(err["details"]["totalErrors"], 1);
+        assert_eq!(err["details"]["wholeDebitColumn"], false);
+        assert_eq!(err["details"]["lines"][0]["value"], "-150.25");
+        assert!(
+            err["message"]
+                .as_str()
+                .unwrap()
+                .starts_with("1 ligne(s) portent"),
+            "{}",
+            err["message"]
+        );
+    }
+    assert_eq!(tx_count(&pool).await, 0);
+}
+
+/// AC15 (M5, M25) : 10 lignes à ignorer avaleraient la première transaction
+/// → 422 `BANK_CSV_HEADER_SKIPS_DATA`, `details.line == 11`, en preview et en
+/// import.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn ubs_fixture_with_ten_skipped_rows_is_refused(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let profile_id = post_ubs_profile(&app, &s.jwt, "UBS dix", "negative", 10).await;
+
+    for preview in [true, false] {
+        let (status, body) = send_csv(
+            &app,
+            &s.jwt,
+            preview,
+            ubs_fixture(),
+            s.bank_account_id,
+            profile_id,
+            &[],
+        )
+        .await;
+        assert_eq!(status, 422, "preview={preview} {body}");
+        assert_eq!(body["error"]["code"], "BANK_CSV_HEADER_SKIPS_DATA");
+        assert_eq!(body["error"]["details"]["line"], 11);
+        assert!(
+            body["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("La ligne 11"),
+            "{}",
+            body["error"]["message"]
+        );
+    }
+    assert_eq!(tx_count(&pool).await, 0);
 }

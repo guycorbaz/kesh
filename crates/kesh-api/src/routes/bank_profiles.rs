@@ -13,7 +13,16 @@
 //! **Validation** : avant repo, le payload est validé via
 //! `kesh_import::CsvProfile::validate()` (Pass 2 + Pass 3 patches —
 //! XOR amount/debit_credit, séparateurs distincts, regex compilable,
-//! chrono format, longueurs, encoding ∈ {UTF-8, ISO-8859-1}).
+//! chrono format, longueurs, encoding ∈ {UTF-8, ISO-8859-1}) — et, depuis
+//! la Story 26-1 (#620, #621) : `headerRowCount` ≤ 20 (lignes non vides
+//! avant les données, ligne de titres comprise), `debitSign = "negative"`
+//! refusé en colonne unique. Ces refus rendent `422
+//! BANK_CSV_PROFILE_INVALID`.
+//!
+//! `debitSign` (`"positive"` / `"negative"`) est **obligatoire** dans la
+//! requête : sans lui, ou avec une autre valeur, l'extracteur `Json`
+//! d'axum rejette en `422` (corps texte brut, comme toute erreur de
+//! désérialisation de cette route).
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;
@@ -23,7 +32,7 @@ use serde::{Deserialize, Serialize};
 use kesh_db::entities::bank_profile::{BankProfile, NewBankProfile};
 use kesh_db::errors::DbError;
 use kesh_db::repositories::bank_profiles;
-use kesh_import::{ColumnMapping, CsvError, CsvProfile};
+use kesh_import::{ColumnMapping, CsvError, CsvProfile, DebitSign};
 
 use crate::AppState;
 use crate::errors::AppError;
@@ -46,6 +55,8 @@ pub struct BankProfileResponse {
     pub field_separator: String,
     pub encoding: Option<String>,
     pub header_row_count: u8,
+    /// Sens des débits en mode débit/crédit séparés (Story 26-1, #620).
+    pub debit_sign: DebitSign,
     pub created_at: chrono::NaiveDateTime,
     pub updated_at: chrono::NaiveDateTime,
 }
@@ -53,6 +64,8 @@ pub struct BankProfileResponse {
 impl BankProfileResponse {
     fn try_from_db(profile: BankProfile) -> Result<Self, AppError> {
         let column_mapping = profile.parse_column_mapping().map_err(AppError::Database)?;
+        // Valeur hors domaine en base → 500 `Invariant`, jamais un repli.
+        let debit_sign = profile.debit_sign_enum().map_err(AppError::Database)?;
         Ok(Self {
             id: profile.id,
             bank_name: profile.bank_name,
@@ -63,6 +76,7 @@ impl BankProfileResponse {
             field_separator: profile.field_separator,
             encoding: profile.encoding,
             header_row_count: profile.header_row_count,
+            debit_sign,
             created_at: profile.created_at,
             updated_at: profile.updated_at,
         })
@@ -80,6 +94,9 @@ pub struct CreateOrUpdateBankProfileRequest {
     pub field_separator: String,
     pub encoding: Option<String>,
     pub header_row_count: u8,
+    /// Sens des débits (Story 26-1, #620) — **sans `#[serde(default)]`** :
+    /// le réglage est explicite, un client qui l'omet est refusé (422).
+    pub debit_sign: DebitSign,
 }
 
 impl CreateOrUpdateBankProfileRequest {
@@ -101,6 +118,7 @@ impl CreateOrUpdateBankProfileRequest {
             field_separator,
             encoding: self.encoding.clone(),
             header_row_count: self.header_row_count,
+            debit_sign: self.debit_sign,
         })
     }
 
@@ -117,6 +135,7 @@ impl CreateOrUpdateBankProfileRequest {
             field_separator: self.field_separator.clone(),
             encoding: self.encoding.clone(),
             header_row_count: self.header_row_count,
+            debit_sign: self.debit_sign.as_str().to_string(),
         })
     }
 }

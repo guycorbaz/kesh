@@ -14,7 +14,10 @@
 //! - `field_separator` ∈ {',', ';', '\t'}
 //! - `decimal_separator` ∈ {'.', ','}
 //! - Séparateurs distincts (Pass 2 M'6 anti-ambiguïté)
-//! - `header_row_count` ≤ 5
+//! - `header_row_count` ≤ 20 (Story 26-1, #621 ; 5 auparavant)
+//! - `debit_sign = Negative` seulement en mode `debit_credit_split`
+//!   (Story 26-1, #620 : en colonne unique, le signe du fichier est gardé
+//!   tel quel et le réglage n'a pas de sens)
 //! - `filename_pattern` regex compilable + ≤ 200 chars
 //! - `bank_name` 1..=100 chars
 
@@ -22,6 +25,11 @@ use crate::error::CsvError;
 use chrono::format::Item as ChronoItem;
 use chrono::format::strftime::StrftimeItems;
 use serde::{Deserialize, Serialize};
+
+/// Plafond de [`CsvProfile::header_row_count`] (Story 26-1, #621 : le
+/// relevé UBS en demande 9 ; 5 auparavant). Le `CHECK` de la colonne
+/// `bank_profiles.header_row_count` porte la même borne.
+pub const MAX_HEADER_ROW_COUNT: u8 = 20;
 
 /// Mapping colonnes vers les champs `ImportedTransaction`. Indices
 /// 0-based sur les colonnes du CSV (post header skip).
@@ -86,6 +94,63 @@ impl ColumnMapping {
     }
 }
 
+/// Comment la banque écrit les montants de la colonne **Débit**, en mode
+/// débit/crédit séparés (Story 26-1, #620) :
+///
+/// - [`DebitSign::Positive`] — sans signe (`500.00`) : Kesh les rend
+///   négatifs (comportement d'avant la 0.13.1, valeur par défaut) ;
+/// - [`DebitSign::Negative`] — déjà précédés d'un signe moins (`-500.00`,
+///   UBS) : Kesh les garde tels quels.
+///
+/// C'est un **réglage explicite** du profil, jamais une déduction de Kesh
+/// (décision du Project Lead). Un montant de signe contraire au réglage
+/// refuse l'import entier ([`CsvError::AmountSignMismatch`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DebitSign {
+    /// Débits écrits sans signe ; Kesh les rend négatifs.
+    #[default]
+    Positive,
+    /// Débits écrits avec un signe moins ; Kesh les garde.
+    Negative,
+}
+
+impl DebitSign {
+    /// Graphie stockée en base et échangée sur le fil : `"positive"` /
+    /// `"negative"` (identique à serde).
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DebitSign::Positive => "positive",
+            DebitSign::Negative => "negative",
+        }
+    }
+}
+
+impl std::str::FromStr for DebitSign {
+    type Err = String;
+
+    /// Accepte exactement `"positive"` ou `"negative"` (casse comprise) ;
+    /// toute autre chaîne est refusée — jamais de repli silencieux, qui
+    /// rouvrirait #620.
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "positive" => Ok(DebitSign::Positive),
+            "negative" => Ok(DebitSign::Negative),
+            other => Err(format!(
+                "debit_sign \"{other}\" invalide (attendu \"positive\" ou \"negative\")"
+            )),
+        }
+    }
+}
+
+impl TryFrom<&str> for DebitSign {
+    type Error = String;
+
+    fn try_from(s: &str) -> Result<Self, Self::Error> {
+        s.parse()
+    }
+}
+
 /// Profil de format CSV par banque. Type autonome `kesh-import`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CsvProfile {
@@ -107,8 +172,17 @@ pub struct CsvProfile {
     /// Pass 1 H5 + Pass 3 anti-bypass : si non-null et diverge de la
     /// détection auto → mismatch handling spec §encoding-detection.
     pub encoding: Option<String>,
-    /// Nombre de lignes de header à skipper (0..=5).
+    /// Nombre de lignes à ignorer avant les données (0..=20), **ligne de
+    /// titres comprise**. Seules les lignes **non vides** comptent : une
+    /// ligne vide (aucun caractère) est ignorée par le lecteur `csv` et
+    /// n'entre pas dans le compte — une ligne faite d'espaces ou de `;`
+    /// n'est pas vide, et compte. Relevé UBS : 9 (8 lignes de préambule et
+    /// la ligne de titres ; la ligne vide qui les sépare ne compte pas).
     pub header_row_count: u8,
+    /// Sens des montants de la colonne Débit en mode débit/crédit séparés
+    /// (cf. [`DebitSign`]). Doit valoir [`DebitSign::Positive`] en mode
+    /// colonne unique (`amount`), où le signe du fichier est gardé tel quel.
+    pub debit_sign: DebitSign,
 }
 
 impl CsvProfile {
@@ -198,12 +272,20 @@ impl CsvProfile {
             )));
         }
 
-        // header_row_count
-        if self.header_row_count > 5 {
+        // header_row_count (Story 26-1, #621 : plafond 5 → 20)
+        if self.header_row_count > MAX_HEADER_ROW_COUNT {
             return Err(CsvError::ProfileMisconfigured(format!(
-                "header_row_count {} > 5",
-                self.header_row_count
+                "header_row_count {} > {}",
+                self.header_row_count, MAX_HEADER_ROW_COUNT
             )));
+        }
+
+        // debit_sign (Story 26-1, #620) : `negative` n'a de sens qu'en
+        // mode débit/crédit séparés.
+        if self.debit_sign == DebitSign::Negative && self.column_mapping.amount.is_some() {
+            return Err(CsvError::ProfileMisconfigured(
+                "debit_sign = negative ne s'applique qu'en mode débit/crédit séparés".to_string(),
+            ));
         }
 
         // filename_pattern : regex compilable + length ≤ 200
@@ -257,6 +339,7 @@ mod tests {
             field_separator: ';',
             encoding: None,
             header_row_count: 1,
+            debit_sign: DebitSign::Positive,
         }
     }
 
@@ -335,11 +418,78 @@ mod tests {
     }
 
     #[test]
-    fn rejects_header_row_count_over_5() {
+    fn rejects_header_row_count_over_20() {
         let mut p = valid_profile();
-        p.header_row_count = 6;
+        p.header_row_count = 21;
         let err = p.validate().unwrap_err();
-        assert!(matches!(err, CsvError::ProfileMisconfigured(_)));
+        match err {
+            CsvError::ProfileMisconfigured(msg) => assert_eq!(msg, "header_row_count 21 > 20"),
+            other => panic!("expected ProfileMisconfigured, got {other:?}"),
+        }
+    }
+
+    /// Story 26-1 (#621) : 20 (la borne) et 9 (le relevé UBS) passent.
+    #[test]
+    fn accepts_header_row_count_20_and_9() {
+        for n in [9u8, 20] {
+            let mut p = valid_profile();
+            p.header_row_count = n;
+            p.validate().unwrap();
+        }
+    }
+
+    /// Story 26-1 (#620), AC1 : `negative` refusé en colonne unique.
+    #[test]
+    fn rejects_negative_debit_sign_in_single_column_mode() {
+        let mut p = valid_profile();
+        p.debit_sign = DebitSign::Negative;
+        match p.validate().unwrap_err() {
+            CsvError::ProfileMisconfigured(msg) => assert_eq!(
+                msg,
+                "debit_sign = negative ne s'applique qu'en mode débit/crédit séparés"
+            ),
+            other => panic!("expected ProfileMisconfigured, got {other:?}"),
+        }
+    }
+
+    /// AC1 : `positive` en colonne unique, `negative` et `positive` en mode
+    /// séparé sont acceptés.
+    #[test]
+    fn accepts_debit_sign_where_meaningful() {
+        valid_profile().validate().unwrap();
+        for sign in [DebitSign::Positive, DebitSign::Negative] {
+            let mut p = valid_profile();
+            p.column_mapping.amount = None;
+            p.column_mapping.debit_credit_split = Some((1, 4));
+            p.debit_sign = sign;
+            p.validate().unwrap();
+        }
+    }
+
+    /// AC1 : serde `"positive"` / `"negative"` ; toute autre graphie refusée.
+    #[test]
+    fn debit_sign_serde_and_from_str() {
+        assert_eq!(
+            serde_json::from_str::<DebitSign>("\"positive\"").unwrap(),
+            DebitSign::Positive
+        );
+        assert_eq!(
+            serde_json::from_str::<DebitSign>("\"negative\"").unwrap(),
+            DebitSign::Negative
+        );
+        assert!(serde_json::from_str::<DebitSign>("\"Negative\"").is_err());
+        assert!(serde_json::from_str::<DebitSign>("\"autre\"").is_err());
+        assert_eq!(
+            serde_json::to_string(&DebitSign::Negative).unwrap(),
+            "\"negative\""
+        );
+        assert_eq!(DebitSign::default(), DebitSign::Positive);
+        for sign in [DebitSign::Positive, DebitSign::Negative] {
+            assert_eq!(sign.as_str().parse::<DebitSign>().unwrap(), sign);
+            assert_eq!(DebitSign::try_from(sign.as_str()).unwrap(), sign);
+        }
+        assert!("Negative".parse::<DebitSign>().is_err());
+        assert!(DebitSign::try_from("autre").is_err());
     }
 
     #[test]

@@ -37,3 +37,33 @@ parseur (AC #5, #9 de la story 8-1a) :
 | `v04_invalid_iban.xml` | IBAN counterparty checksum cassé conservé brut (§iban-tolerant) |
 | `v04_eur_currency.xml` | `<Acct><Ccy>EUR</Ccy>` — devise extraite, rejet côté `kesh-core` |
 | `v04_credit_debit_indicator.xml` | 1 DBIT + 1 CRDT → signe appliqué au montant |
+
+## CSV (Story 26-1)
+
+`csv/ubs_synthetique.csv` reproduit **la structure** du relevé CSV que
+produit l'e-banking d'UBS, sans aucune de ses valeurs : le fichier est
+**inventé de toutes pièces** (le relevé réel qui a servi à relever la
+structure n'est jamais copié dans le dépôt, ni en entier, ni en extrait).
+
+Structure reproduite :
+
+- octets `EF BB BF` (BOM UTF-8) en tête, fins de ligne **LF**, **aucun LF
+  après la dernière ligne** ;
+- lignes 1 à 8 : préambule clé/valeur à 3 champs (`Clé:;valeur;`) ;
+- ligne 9 : **vide** (aucun caractère) — elle ne compte pas dans les
+  « lignes à ignorer », d'où le réglage **9** et non 10 ;
+- ligne 10 : 14 titres et un `;` final (15 champs) ;
+- lignes 11 à 21 : 11 transactions, dates **décroissantes**, débits
+  (colonne 5) écrits **avec un signe moins**, crédits (colonne 6) positifs,
+  jamais les deux sur une ligne ; descriptions parfois entre guillemets et
+  contenant des `;`.
+
+Invariants (re-vérifiés par les tests, pas à croire) : 11 transactions,
+9 sorties et 2 entrées ; somme des montants signés **−236.25** = solde
+final (4763.75) − solde initial (5000.00) du préambule ; la colonne Solde
+est le solde courant après chaque ligne. Les paiements par carte ont une
+date de transaction (colonne 0) antérieure à la date de comptabilisation
+(colonne 2), ce qui discrimine le mapping recommandé `date = 2`. L'IBAN est
+l'exemple public des documentations bancaires suisses
+(`CH9300762011623852957`), aucun compte réel ; noms, montants et numéros
+de transaction sont fictifs.

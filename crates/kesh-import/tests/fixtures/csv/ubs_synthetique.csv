@@ -1,0 +1,21 @@
+﻿Numéro de compte:;0000 00000000.0;
+IBAN:;CH93 0076 2011 6238 5295 7;
+Du:;2026-01-06;
+Au:;2026-03-02;
+Solde initial:;5000.00;
+Solde final:;4763.75;
+Évaluation en:;CHF;
+Nombre de transactions dans cette période:;11;
+
+Date de transaction;Heure de transaction;Date de comptabilisation;Date de valeur;Devise;Débit;Crédit;Sous-montant;Solde;No de transaction;Description1;Description2;Description3;Notes de bas de page;
+2026-03-02;;2026-03-02;2026-03-02;CHF;-199.95;;;4763.75;9900111ZZ0000011;Électricité Fictive SA;Décompte annuel;eBill;;
+2026-02-22;;2026-02-24;2026-02-24;CHF;-22.80;;;4963.70;9900110ZZ0000010;Pharmacie Exemple;;Paiement carte;;
+2026-02-20;;2026-02-20;2026-02-20;CHF;-980.00;;;4986.50;9900109ZZ0000009;Garage Imaginaire;Facture 2026-014;"Paiement QR; référence fictive";;
+2026-02-16;;2026-02-16;2026-02-16;CHF;;150.25;;5966.50;9900108ZZ0000008;Assurance Fictive;Remboursement;Virement entrant;;
+2026-02-07;;2026-02-09;2026-02-09;CHF;-15.00;;;5816.25;9900107ZZ0000007;Transports Publics Exemple;;Paiement carte;;
+2026-01-31;;2026-02-02;2026-02-02;CHF;-64.35;;;5831.25;9900106ZZ0000006;"Café du Marché; Sàrl";;Paiement carte;;
+2026-01-26;;2026-01-26;2026-01-26;CHF;-300.00;;;5895.60;9900105ZZ0000005;Caisse maladie Exemple;Prime janvier;eBill;;
+2026-01-17;;2026-01-19;2026-01-19;CHF;-8.90;;;6195.60;9900104ZZ0000004;Kiosque de la Gare;;Paiement carte;;
+2026-01-12;;2026-01-12;2026-01-12;CHF;-1250.00;;;6204.50;9900103ZZ0000003;Régie Fictive SA;Loyer janvier;Ordre permanent;;
+2026-01-08;;2026-01-08;2026-01-08;CHF;;2500.00;;7454.50;9900102ZZ0000002;Exemple SA;Salaire janvier;Virement entrant;;
+2026-01-04;;2026-01-06;2026-01-06;CHF;-45.50;;;4954.50;9900101ZZ0000001;Boulangerie du Lac;;Paiement carte;;
