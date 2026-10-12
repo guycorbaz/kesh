@@ -925,7 +925,7 @@ Code et tests : `crates/kesh-import/src/{lib.rs,error.rs,csv/mod.rs,csv/parser.r
 `frontend/src/lib/features/bank-import/{BankProfileForm.svelte,BankProfileForm.test.ts,BankImportUpload.svelte,bank-profile.types.ts,csv-line-error-label.ts,csv-line-error-label.test.ts}`,
 `frontend/src/lib/shared/i18n-keys.test.ts`, `frontend/tests/e2e/bank-csv-import.spec.ts`.
 Textes : `docs/manual/fr/{user-manual,admin-manual}.{tex,pdf}`, `docs/i18n-glossaire.md`, `CHANGELOG.md`.
-Artefacts : cette fiche, `epic-27-choix-autonomes-27-2.md`, `sprint-status.yaml`, `27-2-review-prompt-p1.md` (neuf).
+Artefacts : cette fiche, `epic-27-choix-autonomes-27-2.md` (versé par union dans `epic-27-choix-autonomes.md` au rebase sur la 27-1, puis supprimé), `sprint-status.yaml`, `27-2-review-prompt-p1.md` (neuf).
 
 ## Change Log
 
