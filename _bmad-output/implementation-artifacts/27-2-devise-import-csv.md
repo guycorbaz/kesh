@@ -2,12 +2,14 @@
 
 ## Status
 
-**in-progress** — fiche créée le 2026-10-12 en autonomie (skill `bmad-create-story`), sur `a2743fd4`
+**review** — fiche créée le 2026-10-12 en autonomie (skill `bmad-create-story`), sur `a2743fd4`
 (`origin/main`, rétrospective de l'Epic 26). Validation P1 faite (Sonnet, lentilles R et F : 3 MEDIUM, 14 LOW),
 remédiée le 2026-10-12 — périmètre élargi par l'orchestrateur au formulaire qui perd la contrepartie (AC8-bis) et à
 la devise des transactions CAMT.053 (AC19). Validation P2 faite (Opus, lentilles R et F : 3 MEDIUM, 18 LOW), remédiée
 le 2026-10-12. Validation P3 faite (Sonnet, lentilles R et F : 1 MEDIUM distinct, 13 LOW distincts), remédiée le
-2026-10-12 ; validation P4 **ciblée** faite (Haiku, une lentille : 0 MEDIUM, 5 LOW, remédiés) — **validation close**, développement en cours.
+2026-10-12 ; validation P4 **ciblée** faite (Haiku, une lentille : 0 MEDIUM, 5 LOW, remédiés) — **validation close**. Développement fait le
+2026-10-12 (`bmad-dev-story`, Opus 5.5), gates complets verts au dernier commit de code `d6502211` ; revue de code P1 à
+lancer : prompt `27-2-review-prompt-p1.md` (Sonnet, lentilles B, E, A).
 Choix tranchés : **C-27-2-1 à C-27-2-28**, registre `_bmad-output/implementation-artifacts/epic-27-choix-autonomes-27-2.md`
 (à fusionner par union dans `epic-27-choix-autonomes.md`, qui vit sur la branche de la 27-1).
 
@@ -679,23 +681,23 @@ eux, ne contrôlent pas la devise et l'admettent (validation P3, F1 = R1 ; inven
 
 ## Tâches
 
-- [ ] **T0** — Brancher dans le worktree `/home/gcorbaz/devel/kesh-27-2` (fait : `story/27-2-devise-import-csv`) ;
+- [x] **T0** — Brancher dans le worktree `/home/gcorbaz/devel/kesh-27-2` (fait : `story/27-2-devise-import-csv`) ;
   `node_modules` par `cp -al` depuis le dépôt principal ; `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-27-2/target` ;
   bases `kesh_272` / `kesh_e2e_272` créées, migrées, seedées.
-- [ ] **T1** — `kesh-import` : AC1, AC2, AC3, AC4, AC19 ; tests AC1, AC13 et AC19 (AC19-1/2 rouges d'abord) ; mutations
+- [x] **T1** — `kesh-import` : AC1, AC2, AC3, AC4, AC19 ; tests AC1, AC13 et AC19 (AC19-1/2 rouges d'abord) ; mutations
   M1, M2, M6-M12, M17-M20, M23, M25 ; catalogue `tests/fixtures/README.md` (AC19).
-- [ ] **T2** — `kesh-api` : AC5, AC6, AC7 (helper de contrôle factorisé, variant d'erreur, bras explicite) ; tests
+- [x] **T2** — `kesh-api` : AC5, AC6, AC7 (helper de contrôle factorisé, variant d'erreur, bras explicite) ; tests
   AC14 (dont AC14-8, CAMT) ; mutations M3-M5, M13, M16 ; textes « v0.1 » de `errors.rs` et de `kesh-core`, parenthèse fausse de `reconciliation_e2e.rs:2253-2254` (AC10) ;
   garde G9 de `textes_coherents.rs` (AC10).
-- [ ] **T3** — i18n : AC10 (quatre locales, gardes Vitest et lint).
-- [ ] **T4** — Frontend : AC8, AC8-bis, AC9 ; Vitest (dont `csv-line-error-label.test.ts`) ; mutations M14, M15,
+- [x] **T3** — i18n : AC10 (quatre locales, gardes Vitest et lint).
+- [x] **T4** — Frontend : AC8, AC8-bis, AC9 ; Vitest (dont `csv-line-error-label.test.ts`) ; mutations M14, M15,
   M21, M22, M24.
-- [ ] **T5** — E2E : AC15.
-- [ ] **T6** — `ubs_fichier_reel.rs` : AC16 (compilé, **non lancé** par l'agent).
-- [ ] **T7** — Manuel utilisateur (AC11) et manuel d'administration (AC12-bis), PDF régénérés + contrôles aplatis ;
+- [x] **T5** — E2E : AC15.
+- [x] **T6** — `ubs_fichier_reel.rs` : AC16 (compilé, **non lancé** par l'agent).
+- [x] **T7** — Manuel utilisateur (AC11) et manuel d'administration (AC12-bis), PDF régénérés + contrôles aplatis ;
   `docs/i18n-glossaire.md` (AC10) ; CHANGELOG (AC12) ; `README.md` « Feuille de route » vérifié
   (aucun changement attendu) ; `website/` vérifié (aucune promesse sur la devise CSV attendue : `grep -rni "devise\|currency" website/`).
-- [ ] **T8** — Propagation : `grep -rnF '"CHF"' crates/kesh-import/src` (AC4) ; `grep -rnE "n.est pas lue" docs/manual/fr
+- [x] **T8** — Propagation : `grep -rnF '"CHF"' crates/kesh-import/src` (AC4) ; `grep -rnE "n.est pas lue" docs/manual/fr
   CHANGELOG.md` (la phrase de 0.13.1 dans le CHANGELOG **reste** : c'est l'histoire) ; `grep -rnF "v0.1"` sur les
   clés et sites modifiés (AC10) ; `grep -rn "counterparty" frontend/src/lib/features/bank-import` (AC8-bis) ; gates
   AC18 ; mutations M1-M25 ; sortie du grep « v0.1 » recopiée (liste fermée, AC10) ; Dev Agent Record.
@@ -811,15 +813,119 @@ Aucun fichier neuf hors tests et artefacts BMAD ; aucune migration ; **une** fix
 
 ### Agent Model Used
 
-*(à remplir par `bmad-dev-story`)*
+Claude Opus 5.5 (`claude-opus-5-5`), `bmad-dev-story` en autonomie, le 2026-10-12 — worktree
+`/home/gcorbaz/devel/kesh-27-2`, `CARGO_TARGET_DIR` propre, bases `kesh_272` / `kesh_e2e_272`, port 3035, gates lourds
+sous `flock kesh-gate-logs/.gate.lock`.
 
 ### Debug Log References
+
+Journaux (hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/`) : `27-2-ac19-rouge.log` (AC19 rouge avant correction),
+`27-2-mutations.log` et `27-2-mut/` (campagne), `27-2-gate-testfast.log`, `27-2-gate-publish.log`,
+`27-2-gate-{check,lint,vitest,build}.log`, `27-2-gate-e2e.log`, `27-2-e2e-backend.log`, `27-2-make-{1,2}.log`.
 
 ### Completion Notes List
 
 - Fiche créée le 2026-10-12 (Opus 5.5, `bmad-create-story`, autonomie) — analyse du code au sol sur `a2743fd4`.
+- **Commits** (de `80699a89`, validation close, à la fin) : `6bef3e98` T1 (`kesh-import`, AC19 compris) ; `8c11f86a` T2
+  et T3 côté serveur (`kesh-api`, `kesh-core`, quatre catalogues, gardes) ; `45488d81` T4 (formulaire, Vitest, gardes
+  i18n) ; `d6502211` T5 et T7 (E2E, manuels et PDF, CHANGELOG, glossaire — **dernier commit de code**) ; `8fe6e231`
+  sprint-status ; le commit de ce Dev Agent Record.
+- **AC19, rouge d'abord** : les trois tests (1), (1-bis), (2) et la fixture écrits avant la correction, lancés sur le
+  code d'avant : **3 rouges sur 15** (`left: "EUR"`, `right: "CHF"` chacun ; journal `27-2-ac19-rouge.log`), puis verts
+  après l'ancrage sur `path.last()`.
+- **AC16, vrai relevé** : `ubs_fichier_reel.rs` (profil à colonne Devise 4) lancé en local par l'agent, sur
+  autorisation de l'orchestrateur, avec `KESH_UBS_REAL_CSV` pointant sous `~/kesh-test/` — **conforme**. Aucune
+  valeur lue n'est écrite ici ni ailleurs.
+- **AC11, PDF aplatis** (`pdftotext … | tr '\n' ' ' | tr -s ' '`) — manuel utilisateur : `colonne Devise n.est pas
+  lue` **1 avant, 0 après** ; `le relevé est supposé en CHF` **0 avant, 1 après**. Manuel d'administration :
+  `Passer à la 0.13.2` 0 → 2, `colonne Devise` 0 → 9, `supprimer l.import` 0 → 1. PDF régénérés par `make user admin`
+  sous verrou, deux tours (le premier laissait 2 « Rerun » / « Label(s) may have changed », le second aucun).
+- **AC4** : `grep -nF '"CHF"' crates/kesh-import/src/csv/parser.rs` rend la définition de `DEFAULT_CSV_CURRENCY`
+  (l. 65) et sept lignes de `mod tests` (l. 907 et suivantes) — la constante vit dans `parser.rs`, comme l'AC le permet.
+- **AC1-bis** : `git diff --stat a2743fd4 -- crates/kesh-db/ Cargo.toml crates/*/Cargo.toml` vide.
+- **AC10, liste fermée recopiée** (`grep -rnF "v0.1" crates --include=*.rs | grep -i "devise\|currency\|chf"` au
+  `HEAD`) — 11 lignes, les 11 sites de la liste fermée, dont deux ont glissé de numéro avec les lignes ajoutées au-dessus
+  (`bank_imports.rs:1125` → `:1138`, `kesh-core/src/bank_imports.rs:725` → `:726`) :
+
+  ```text
+  crates/kesh-api/src/routes/bank_imports.rs:1138:    // Validation devise (always blocking — pas de bypass v0.1).
+  crates/kesh-api/src/routes/reconciliation.rs:628:        // A6-2 Pass 6 — currency tx-side guard (mono-CHF v0.1, cf. L38).
+  crates/kesh-api/tests/bank_imports_e2e.rs:443:    // AC #15 — devise v0.1 CHF only
+  crates/kesh-api/tests/reconciliation_e2e.rs:15://! - `post_accept_filters_currency_mismatch` (#67) — v0.1 mono-CHF, cf.
+  crates/kesh-api/tests/reconciliation_e2e.rs:1974:/// AC #67 — currency mismatch (v0.1 mono-CHF, see L38 / Story 11).
+  crates/kesh-api/tests/reconciliation_e2e.rs:1975:#[ignore = "v0.1 mono-CHF, see spec L38 / Story 11 dependency"]
+  crates/kesh-api/tests/reconciliation_e2e.rs:1981:    // inexistante). v0.1 garantit mono-CHF par convention.
+  crates/kesh-api/tests/reconciliation_e2e.rs:2253:/// Sévérité : **MEDIUM** — risque limité v0.1 mono-CHF (le parseur CSV
+  crates/kesh-db/src/repositories/reconciliation.rs:9://!   Pass 4 revert : colonne `invoices.currency` n'existe pas v0.1
+  crates/kesh-db/src/repositories/reconciliation.rs:104:/// **Pas de filtre currency v0.1** — colonne inexistante (cf. L38 + S4-1 Pass 4).
+  crates/kesh-core/src/bank_imports.rs:726:        let err = validate_currency_supported_v0_1(&stmt).expect_err("EUR rejeté v0.1");
+  ```
+
+  `grep -rniF "non supportée v0.1"` sur `crates`, `frontend/src`, `docs/*.md` : aucune sortie.
+- **Mutations (AC17)** : **25/25 tuées**, 32 variantes jouées une à une sur arbre propre (M9 en cinq — a `Fr.`, b
+  alphabétique Unicode, c longueur en octets + Unicode, d alphanumérique, e `≤ 3` ; M13 en deux — toujours / jamais ;
+  M17 en deux — plafond retiré / 10 premières rencontrées ; M24 en deux — sans `debit_credit_split` / sans `amount`),
+  chaque motif vérifié appliqué le nombre exact de fois, restauration `git checkout --` puis `touch`. Test qui rougit :
+  M1, M2 `ubs_currency_column_reads_eur` ; M6 `one_eur_row_is_mixed_currencies` ; M7 `lowercase_currency_is_uppercased` ;
+  M8 `empty_currency_cell_is_a_line_error` ; M9a-e `malformed_currency_cells_are_invalid_currency` ; M10
+  `rejects_collision_currency_date_same_index` et `currency_column_out_of_bounds_is_misconfigured` ; M11
+  `mapping_without_currency_serializes_without_the_key` ; M12 `sign_mismatch_dominates_mixed_currencies` ; M17a-b
+  `mixed_currencies_reports_first_ten_sorted` ; M18 `currency_error_keeps_debit_observation` ; M19
+  `txdtls_currency_is_that_of_its_amount_not_of_amtdtls_or_charges` ; M20 `ntry_currency_is_that_of_its_amount_not_of_amtdtls` ;
+  M23 `unknown_key_is_rejected_so_older_binaries_refuse_loudly` ; M25 **seul**
+  `txdtls_without_amount_takes_entry_currency_not_amtdtls` (la (1) reste verte, vérifié) ; M3, M4
+  `csv_eur_statement_is_warned_in_preview_and_refused_on_import` ; M5 `csv_eur_statement_with_line_errors_is_refused_before_partial_check`,
+  à l'assertion **(3b)** (`BANK_CSV_PARTIAL_FAILURE` reçu) ; M13a `csv_chf_statement_with_currency_column_imports` ; M13b
+  `csv_without_currency_column_says_currency_is_assumed` ; M16 `csv_mixed_currencies_is_refused_in_preview_and_import` ;
+  M14 (v1)(v2) ; M15 (v4) ; M21 (v6) ; M22 (v7)(v8) ; M24a (v8) ; M24b (v7). Aucune survivante. Les quatre mutants
+  équivalents de l'AC17 ne sont pas joués (déclarés). Playwright non rejoué sous mutation (C-27-2-31).
+- **Gates au dernier commit de code `d6502211`**, bases recréées (`kesh_272` : drop, migrations, seed ; `kesh_e2e_272` :
+  drop, migrations) :
+  - `scripts/test-fast.sh` complet (fmt, clippy `-D warnings`, nextest) : **3447 exécutés, 3447 verts, 6 ignorés**
+    (143,9 s). Delta contre les 3419 de la v0.13.1 : +28, soit les tests neufs ci-dessous (21 + 7).
+  - `cargo publish --dry-run -p kesh-import` : vert (`--allow-dirty` : le registre et ce prompt n'étaient pas encore
+    commités, aucun fichier du crate).
+  - Frontend : `npm run check` **0 erreur**, 29 avertissements (le formulaire en porte un de plus, du même motif
+    `state_referenced_locally` que ses quinze voisins initialisés depuis `existing`) ; `lint-i18n-ownership` vert ;
+    `npm run test:unit` **129 fichiers, 1343 tests verts** (+9 contre 1334) ; `npm run build` vert.
+  - **E2E complet** (port 3035, recette de `docs/testing.md`, `/health` `smtpConfigured:true`) : **263 verts, 7 échecs,
+    19 ignorés** (10,7 min). Les 7 échecs sont **exactement** ceux de la KF-029 (#97) : `mode-expert.spec.ts:26`, `:41`,
+    `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`. Aucun hors liste ; run du soir (après
+    12:00 UTC), KF-045 sans objet ; aucune pollution ce run. `bank-csv-import.spec.ts:315` (AC15-3) et `:405`
+    (AC15-1 et -2) verts.
+- **Décomptes, recomptés aux deux bornes `a2743fd4` → `HEAD`** (`grep -c '#\[test\]'`, `'#\[sqlx::test'`, `it(`,
+  `test(`) : `parser.rs` 52 → 64 (+12, AC13-1 à 12) ; `profile.rs` 20 → 25 (+5, AC1) ; `error.rs` 3 → 4 (+1,
+  `invalid_currency_i18n_key`) ; `camt053_tests.rs` 12 → 15 (+3, AC19) — soit **21** tests `kesh-import` ;
+  `bank_imports_e2e.rs` 33 → 39 (+6, AC14-1/2, -3, -4, -5, -6, -8) ; `bank_profiles_e2e.rs` 18 → 19 (+1, AC7) — **7**
+  d'intégration ; `BankProfileForm.test.ts` 6 → 15 (+9, (v1)-(v9)) ; `csv-line-error-label.test.ts` 2 → 2 (une ligne
+  de table) ; `bank-csv-import.spec.ts` 12 → 13 (+1, et un test existant complété). i18n : par catalogue, **5 clés
+  neuves et 1 modifiée** (6 lignes ajoutées, 1 retirée, × 4). `sitesTotal` 2032 → 2034 (`grep -o "i18nMsg("` sur
+  `BankProfileForm.svelte` : 15 → 17).
+- **Choix neufs** : C-27-2-29 (helper commun aux quatre sites, CAMT compris), C-27-2-30 (AC15-1 et -2 dans un test),
+  C-27-2-31 (mutations tuées hors E2E).
+- **Écarts à la fiche** : (1) AC16 « lancé par l'orchestrateur seulement » — lancé par l'agent, sur consigne de
+  l'orchestrateur, seule lecture faite sous `~/kesh-test/`, rapporté « conforme » ; (2) AC4 — le grep rend aussi la
+  ligne de la constante ; (3) AC13 — la variante CRLF/espaces du helper n'a pas de test (règle écrite au doc-comment,
+  comme la fiche le dit) ; (4) le refus `MixedCurrencies` côté `kesh-import` porte un message `thiserror` français qui
+  ne passe pas par le catalogue (journal seulement ; la réponse HTTP est traduite) ; (5) l'import CAMT passe par le
+  même helper (C-27-2-29), une variante inattendue y devient `500` ; (6) un avertissement `svelte-check` de plus.
+- **Restent à l'orchestrateur** : C-27-2-18 (hypothèse R9, issue à décider) ; C-27-2-20 (garde de devise de la
+  réconciliation partielle, issue à vérifier ou ouvrir) ; doc-comment périmé de `reconciliation_e2e.rs:2241-2262`
+  (P4-5) ; fusion avec la 27-1 et la 27-3 (CHANGELOG, registre, `sprint-status.yaml`, `sitesTotal`, catalogues,
+  manuels).
 
 ### File List
+
+Code et tests : `crates/kesh-import/src/{lib.rs,error.rs,csv/mod.rs,csv/parser.rs,csv/profile.rs,camt053/mod.rs}`,
+`crates/kesh-import/tests/{camt053_tests.rs,ubs_fichier_reel.rs,fixtures/README.md}`,
+`crates/kesh-import/tests/fixtures/camt053/v04_amtdtls_foreign_currency.xml` (neuf, synthétique),
+`crates/kesh-core/src/{errors.rs,bank_imports.rs}`, `crates/kesh-api/src/{errors.rs,routes/bank_imports.rs,routes/bank_profiles.rs}`,
+`crates/kesh-api/tests/{bank_imports_e2e.rs,bank_profiles_e2e.rs,reconciliation_e2e.rs,textes_coherents.rs}`,
+`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`,
+`frontend/src/lib/features/bank-import/{BankProfileForm.svelte,BankProfileForm.test.ts,BankImportUpload.svelte,bank-profile.types.ts,csv-line-error-label.ts,csv-line-error-label.test.ts}`,
+`frontend/src/lib/shared/i18n-keys.test.ts`, `frontend/tests/e2e/bank-csv-import.spec.ts`.
+Textes : `docs/manual/fr/{user-manual,admin-manual}.{tex,pdf}`, `docs/i18n-glossaire.md`, `CHANGELOG.md`.
+Artefacts : cette fiche, `epic-27-choix-autonomes-27-2.md`, `sprint-status.yaml`, `27-2-review-prompt-p1.md` (neuf).
 
 ## Change Log
 
@@ -995,3 +1101,10 @@ recyclage (défauts distincts, aucun ne revient sous une autre forme) ; en P3, l
 ni dans AC8-bis ni dans AC19 (critère de bascule non atteint) ; en P4, cinq LOW nés de la remédiation P3, tous textuels.
 Pas de découpage. Dispersion inchangée (`kesh-import`, `kesh-api`, `kesh-core` pour des textes, `kesh-i18n`,
 `frontend/…/bank-import`, manuels).
+
+### Développement
+
+2026-10-12 — `bmad-dev-story` (Opus 5.5, autonomie) : T0 à T8 faites ; AC19 vu rouge avant correction ; 25/25
+mutations tuées (32 variantes) ; gates complets verts au dernier commit de code `d6502211` (nextest 3447/3447, Vitest
+1343, E2E 263 verts et les 7 échecs de la KF-029) ; AC16 conforme ; choix C-27-2-29 à 31 ; statut **review**. Revue de
+code P1 à lancer : `27-2-review-prompt-p1.md` (Sonnet, lentilles B, E, A).

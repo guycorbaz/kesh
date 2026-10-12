@@ -466,3 +466,35 @@ Fiche : `27-2-devise-import-csv.md`. Choix faits à la création de la fiche (20
   avant le contrôle de devise ; CAMT — avant `DUPLICATE_FILE` (asymétrie de la 27-3, C-27-3-24), sans effet sur le
   contrôle de devise CAMT. Repris de la fiche 27-3 (AC8), lue sur sa branche.
 - **Réversible** : oui (ordre écrit ; la fusion le tient).
+
+### C-27-2-29 — Le helper `unsupported_currency` sert aussi l'import CAMT (développement)
+
+- **Contexte** : AC5 prescrit de factoriser le bloc de contrôle (aperçu CAMT, `:961-971`) pour le chemin CSV. L'import
+  CAMT (`create`, `:1126-1130`) avait sa propre forme, `if let Err(BankImportUnsupportedCurrency(c)) = …`, qui
+  **ignorait** toute autre variante de `CoreError`.
+- **Retenu** : un seul helper (`routes/bank_imports.rs`, `unsupported_currency(&stmt) -> Result<Option<String>,
+  AppError>`) pour les **quatre** sites — aperçu et import, CAMT et CSV. Effet de bord sur l'import CAMT : une variante
+  inattendue de `CoreError` rend désormais `500 Internal` (journalisée) au lieu d'être ignorée. Aujourd'hui
+  `validate_currency_supported_v0_1` ne rend aucune autre variante : sans effet observable.
+- **Écartée** : laisser la forme CAMT d'origine (deux formes du même contrôle, contraire à la règle DRY que l'AC cite).
+- **Réversible** : oui.
+
+### C-27-2-30 — AC15-1 et AC15-2 dans un seul test E2E (développement)
+
+- **Contexte** : AC15-2 emploie « même profil » et « le buffer de (1) ».
+- **Retenu** : un seul `test(...)` — le profil créé à l'écran, l'import CHF (AC15-1), puis l'aperçu EUR du même nom de
+  fichier (AC15-2) ; les deux parties sont commentées. Deux tests auraient dû recréer le profil (nom unique, `409`
+  sinon) ou dépendre de l'ordre d'exécution.
+- **Écartée** : deux tests à profils distincts (plus lent, et le second ne vérifierait plus « le même profil »).
+- **Réversible** : oui.
+
+### C-27-2-31 — Les mutations sont tuées par les tests Rust et Vitest ; l'E2E n'est pas muté (développement)
+
+- **Contexte** : le tableau de l'AC17 cite, pour M1, M3, M13 et M14, des tests E2E (AC15) parmi les tests qui doivent
+  rougir ; l'AC demande qu'**au moins un** test nommé rougisse.
+- **Retenu** : chaque mutation est jouée contre le binaire de tests le plus proche (`kesh-import`, `bank_imports_e2e`,
+  Vitest du formulaire) et tuée par un test nommé du tableau ; la suite Playwright n'est pas rejouée sous mutation
+  (≈ 10 min par rejeu, sous verrou partagé). L'E2E reste la preuve que la valeur traverse la frontière HTTP (AC15),
+  exercée au gate sur le code non muté.
+- **Écartée** : rejouer Playwright sous M1, M3, M13, M14 (huit rejeux complets pour des mutations déjà tuées).
+- **Réversible** : oui (une passe de revue peut demander le rejeu).
