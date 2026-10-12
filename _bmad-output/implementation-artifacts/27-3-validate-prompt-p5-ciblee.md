@@ -3,7 +3,7 @@
 *Versionné le 2026-10-12, par l'orchestrateur.*
 
 Worktree `/home/gcorbaz/devel/kesh-27-3`, branche `story/27-3-profil-apres-apercu`. **Le seul diff à relire** :
-`git show 6d9c5509` (remédiation de la validation P4 ciblée). Fiche :
+`git diff 34de94b7 ac2c7e4c -- _bmad-output/implementation-artifacts/27-3-profil-apres-apercu.md _bmad-output/implementation-artifacts/epic-27-choix-autonomes-27-3.md` (remédiation de la validation P4 ciblée, commits 6d9c5509 et ac2c7e4c). Fiche :
 `_bmad-output/implementation-artifacts/27-3-profil-apres-apercu.md` ; registre `epic-27-choix-autonomes-27-3.md`.
 Code de référence : `frontend/src/lib/features/bank-import/BankImportUpload.svelte` (ou le chemin réel du composant,
 à trouver par `git ls-files | grep BankImportUpload`).
