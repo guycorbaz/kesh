@@ -1735,6 +1735,16 @@ async fn post_reject_processes_the_batch_by_increasing_id(pool: MySqlPool) {
 /// en `400` tout lot portant une ligne non `pending`, si bien que `failed[]`
 /// n'est atteignable que par une course entre ce pré-vol et le verrou du
 /// compte — son ordre suit celui de la boucle, que ce test tient.
+///
+/// ⚠️ **Angle mort assumé** (revue de code P2, A2-3) : la sonde lit
+/// `information_schema.PROCESSLIST`, qui montre une requête **en cours**, non
+/// une requête **en attente de verrou**. Sous la variante fautive (ordre reçu),
+/// si la sonde surprend l'`UPDATE` de `hi` en vol et que la sonde `NOWAIT` part
+/// avant que cet `UPDATE` n'ait posé son verrou, `hi` paraît libre et la
+/// mutation survit. La fenêtre est de l'ordre de la microseconde (M26 a rougi
+/// au journal) ; elle repose sur un minutage, faute d'un trait textuel du seul
+/// état bloqué. Le code juste ne peut, lui, rendre aucun faux rouge : seul
+/// l'`UPDATE` de `lo`, bloqué, porte le motif cherché.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_reject_locks_the_batch_by_increasing_id(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;

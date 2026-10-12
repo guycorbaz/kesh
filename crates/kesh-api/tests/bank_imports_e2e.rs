@@ -1877,6 +1877,28 @@ async fn import_rows(pool: &MySqlPool, id: i64) -> (i64, i64) {
     (h, l)
 }
 
+/// Ajoute `k` lignes à l'import `id`, copies de sa première ligne, **sans**
+/// toucher à l'entête : `bank_imports.transaction_count` garde le nombre du
+/// fichier. Sert à rendre distincts le nombre de l'entête, le nombre de lignes
+/// et les sous-comptes (rapprochées, rejetées) — revue de code P2, E-P2-1 et
+/// E-P2-2 : avec la seule ligne de `v04_minimal.xml`, tous valaient 1, et une
+/// inversion de champs restait verte.
+async fn add_lines(pool: &MySqlPool, id: i64, k: usize) {
+    for _ in 0..k {
+        sqlx::query(
+            "INSERT INTO bank_transactions (company_id, import_id, bank_account_id, \
+             booking_date, value_date, amount, currency, reference, details) \
+             SELECT company_id, import_id, bank_account_id, booking_date, value_date, \
+             amount, currency, reference, details FROM bank_transactions \
+             WHERE import_id = ? ORDER BY id LIMIT 1",
+        )
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+}
+
 async fn deleted_traces(pool: &MySqlPool) -> i64 {
     sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'bank_import.deleted'")
         .fetch_one(pool)
@@ -1886,12 +1908,26 @@ async fn deleted_traces(pool: &MySqlPool) -> i64 {
 
 /// H1 — suppression, trace, puis réimport du même fichier sans
 /// `confirmDuplicateFile` (AC6, AC7).
+///
+/// Trois nombres distincts (revue de code P2, E-P2-2) : l'entête dit `n` (1,
+/// le fichier), l'import porte `n + 2` lignes, dont **une** rejetée. La trace
+/// doit compter les lignes lues sous verrou (`n + 2`), non l'entête (`n`), et
+/// la rejetée (`1`) à part : une inversion des deux champs, ou un
+/// `transaction_count` pris à l'entête, rougit.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn delete_import_removes_it_traces_it_and_allows_reimport(pool: MySqlPool) {
     let s = setup(&pool).await;
     let app = spawn_app(pool.clone()).await;
     let (id, n) = import_minimal(&app, &s).await;
     assert!(n > 0);
+    add_lines(&pool, id, 2).await;
+    let lines = n + 2;
+    assert_eq!(
+        import_rows(&pool, id).await,
+        (1, lines),
+        "montage : n + 2 lignes"
+    );
+    assert_ne!(lines, 1, "montage : lignes ≠ rejetées");
     // Une transaction rejetée par l'utilisateur : elle part avec l'import, et
     // la trace la compte (`rejected_count` propagé du dépôt jusqu'au journal).
     sqlx::query(
@@ -1952,7 +1988,11 @@ async fn delete_import_removes_it_traces_it_and_allows_reimport(pool: MySqlPool)
         ],
         "les huit clés de l'AC6"
     );
-    assert_eq!(obj["transaction_count"].as_i64().unwrap(), n);
+    assert_eq!(
+        obj["transaction_count"].as_i64().unwrap(),
+        lines,
+        "les lignes comptées sous verrou, non l'entête ({n})"
+    );
     assert_eq!(
         obj["rejected_count"].as_i64().unwrap(),
         1,
@@ -2000,7 +2040,11 @@ async fn delete_import_removes_it_traces_it_and_allows_reimport(pool: MySqlPool)
     assert_eq!(n2, n, "le réimport compte les mêmes transactions");
 }
 
-/// H2 — une transaction `reconciled` (sans lien) : `409`, rien n'est écrit.
+/// H2 — une transaction `reconciled` (sans lien) sur deux : `409`, rien n'est
+/// écrit. Deux lignes, une rapprochée (revue de code P2, E-P2-1) :
+/// `reconciledCount` (1) et `transactionCount` (2) diffèrent, une inversion
+/// des deux champs — dans `delete_once`, dans `details` ou à l'argument
+/// `count` du message — rougit.
 ///
 /// Le message passe par le catalogue `fr-CH` (revue de code P1, E4) : sans
 /// `init_error_i18n`, ce binaire lirait le **repli** Rust, et une clé fautive
@@ -2009,8 +2053,10 @@ async fn delete_import_removes_it_traces_it_and_allows_reimport(pool: MySqlPool)
 /// un texte sans le nombre : l'égalité exacte rougit dans les deux cas. La
 /// langue est globale au processus ; sous `cargo test`, les tests suivants de
 /// ce binaire liront le catalogue `fr-CH` — l'égalité des replis et du
-/// catalogue est tenue, pour les trois messages de la story, par la garde G9
-/// (`textes_coherents.rs`).
+/// catalogue est tenue par la garde G9 (`textes_coherents.rs`) pour les trois
+/// messages de la story **et** pour les trois messages de la 26-1 qu'assertent
+/// les tests `ubs_*` de ce binaire (revue de code P2, E-P2-3) : ceux-ci lisent
+/// le catalogue sous `cargo test` et le repli sous nextest.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn delete_import_refuses_when_a_transaction_is_reconciled(pool: MySqlPool) {
     let bundle = Arc::new(
@@ -2027,6 +2073,8 @@ async fn delete_import_refuses_when_a_transaction_is_reconciled(pool: MySqlPool)
     let s = setup(&pool).await;
     let app = spawn_app(pool.clone()).await;
     let (id, n) = import_minimal(&app, &s).await;
+    add_lines(&pool, id, 1).await;
+    let lines = n + 1;
     sqlx::query(
         "UPDATE bank_transactions SET status = 'reconciled' WHERE import_id = ? ORDER BY id LIMIT 1",
     )
@@ -2052,7 +2100,7 @@ async fn delete_import_refuses_when_a_transaction_is_reconciled(pool: MySqlPool)
         body["error"]["details"]["transactionCount"]
             .as_i64()
             .unwrap(),
-        n
+        lines
     );
     assert_eq!(
         body["error"]["message"],
@@ -2060,7 +2108,7 @@ async fn delete_import_refuses_when_a_transaction_is_reconciled(pool: MySqlPool)
          rapprochement pour pouvoir le supprimer.",
         "message du catalogue fr-CH, nombre interpolé, sans marques d'isolation"
     );
-    assert_eq!(import_rows(&pool, id).await, (1, n), "import intact");
+    assert_eq!(import_rows(&pool, id).await, (1, lines), "import intact");
     assert_eq!(deleted_traces(&pool).await, 0, "aucune trace");
 }
 
@@ -2119,6 +2167,10 @@ async fn delete_import_twice_is_404_the_second_time(pool: MySqlPool) {
 /// H8 (C-27-1-16) — aucune clé d'API ne supprime un import : `read-write` ⇒
 /// `403 API_KEY_OPERATION_FORBIDDEN`, `read` ⇒ `403 API_KEY_READ_ONLY` (arrêtée
 /// avant, par le middleware). Rien n'est supprimé, rien n'est tracé.
+///
+/// L'ordre de l'AC5 est tenu sur un identifiant **inconnu** (revue de code
+/// P2, E-P2-4) : la clé est refusée **avant** la recherche de l'import, elle
+/// ne reçoit jamais `404`.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn delete_import_is_refused_to_every_api_key(pool: MySqlPool) {
     let s = setup(&pool).await;
@@ -2143,10 +2195,12 @@ async fn delete_import_is_refused_to_every_api_key(pool: MySqlPool) {
             .unwrap()
             .to_string();
 
-        let resp = delete_import(&app, &key, id).await;
-        assert_eq!(resp.status(), 403, "clé {scope}");
-        let body: Value = resp.json().await.unwrap();
-        assert_eq!(body["error"]["code"], code, "clé {scope}");
+        for target in [id, id + 10_000] {
+            let resp = delete_import(&app, &key, target).await;
+            assert_eq!(resp.status(), 403, "clé {scope}, cible {target}");
+            let body: Value = resp.json().await.unwrap();
+            assert_eq!(body["error"]["code"], code, "clé {scope}, cible {target}");
+        }
     }
     assert_eq!(import_rows(&pool, id).await, (1, n), "import intact");
     assert_eq!(deleted_traces(&pool).await, 0, "aucune trace");

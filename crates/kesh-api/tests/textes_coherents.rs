@@ -708,6 +708,22 @@ fn les_replis_rust_suivent_le_catalogue() {
                     &[("{ $count }", "{reconciled_count}")],
                 ),
                 ("bank-accounts-errors-has-transactions", 1, &[]),
+                // Story 27-1 — revue de code P2, E-P2-3 : les trois messages de
+                // la 26-1 qu'assertent les tests `ubs_*` de `bank_imports_e2e`.
+                // H2 y charge le catalogue `fr-CH` pour tout le processus : sous
+                // `cargo test` ces tests lisent le catalogue, sous nextest le
+                // repli — les deux doivent rester égaux.
+                ("bank-import-csv-errors-amount-sign-refused-profile", 1, &[]),
+                (
+                    "bank-import-csv-errors-amount-sign-refused-lines",
+                    1,
+                    &[("{ $count }", "{total_errors}")],
+                ),
+                (
+                    "bank-import-csv-errors-header-skips-data",
+                    1,
+                    &[("{ $line }", "{line}")],
+                ),
             ],
         ),
         (
