@@ -1,7 +1,7 @@
 <script lang="ts">
 	// Story 25-6-a (#389) — la tuile « Comptes bancaires » dit ce qu'est son
 	// chiffre : le SOLDE COMPTABLE (le grand livre), pas l'argent en banque. Le
-	// relevé de plus grande période (et non le dernier importé) et l'écart, corrigé des dates de valeur côté
+	// relevé dont la période se termine le plus tard (et non le dernier importé) et l'écart, corrigé des dates de valeur côté
 	// serveur, le confrontent à la banque.
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import { bankAccountName, shortIban, formatChfBalance } from '$lib/features/bank-accounts/format';

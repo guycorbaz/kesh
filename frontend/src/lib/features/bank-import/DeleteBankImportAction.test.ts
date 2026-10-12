@@ -137,7 +137,7 @@ describe('DeleteBankImportAction', () => {
 		expect(mockApi.deleteBankImport).toHaveBeenCalledTimes(1);
 	});
 
-	it('409 ⇒ message « rapprochée entre-temps » avec reconciledCount, onDeleted non appelé', async () => {
+	it('409 ⇒ message « rapprochées entre-temps » avec reconciledCount, onDeleted non appelé', async () => {
 		mockApi.deleteBankImport.mockRejectedValue({
 			code: 'BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS',
 			message: 'serveur',
@@ -149,8 +149,43 @@ describe('DeleteBankImportAction', () => {
 		await fireEvent.click(getByTestId('bank-import-delete-button'));
 		await fireEvent.click(await findByTestId('bank-import-delete-submit'));
 		const err = (await findByTestId('bank-import-delete-error')).textContent ?? '';
-		expect(err).toContain('rapprochée entre-temps (2)');
+		expect(err).toContain('2 transaction(s) de cet import ont été rapprochées entre-temps');
 		expect(onDeleted).not.toHaveBeenCalled();
+	});
+
+	it('pendant l’envoi, ni Échap ni croix ne ferment ; le 409 s’affiche (mutation : garde de fermeture retirée — B2-1)', async () => {
+		let reject: (e: unknown) => void = () => {};
+		mockApi.deleteBankImport.mockReturnValue(new Promise<void>((_r, j) => (reject = j)));
+		const { getByTestId, findByTestId, queryByTestId, queryByText } = monter(detail([tx(1)]));
+		await fireEvent.click(getByTestId('bank-import-delete-button'));
+		await fireEvent.click(await findByTestId('bank-import-delete-submit'));
+		await waitFor(() => expect(mockApi.deleteBankImport).toHaveBeenCalled());
+		// L'envoi est en attente : la croix a disparu, Échap est ignoré.
+		expect(queryByText('Close')).toBeNull();
+		await fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+		await new Promise((r) => setTimeout(r, 50));
+		expect(queryByTestId('bank-import-delete-dialog')).not.toBeNull();
+		reject({
+			code: 'BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS',
+			message: 'serveur',
+			status: 409,
+			details: { reconciledCount: 1, transactionCount: 1 },
+		});
+		expect((await findByTestId('bank-import-delete-error')).textContent).toContain(
+			'rapprochées entre-temps',
+		);
+		// L'envoi fini, la croix revient.
+		await waitFor(() => expect(queryByText('Close')).not.toBeNull());
+	});
+
+	it('fermé par Échap, le dialogue se rouvre au clic suivant (mutation : `{open}` à sens unique — B2-1)', async () => {
+		const { getByTestId, findByTestId, queryByTestId } = monter(detail([tx(1)]));
+		await fireEvent.click(getByTestId('bank-import-delete-button'));
+		await findByTestId('bank-import-delete-dialog');
+		await fireEvent.keyDown(document.activeElement ?? document.body, { key: 'Escape' });
+		await waitFor(() => expect(queryByTestId('bank-import-delete-dialog')).toBeNull());
+		await fireEvent.click(getByTestId('bank-import-delete-button'));
+		expect(await findByTestId('bank-import-delete-dialog')).not.toBeNull();
 	});
 
 	it('404 ⇒ message « n’existe plus »', async () => {

@@ -94,7 +94,7 @@ test('supprimer un import non rapproché puis réimporter le même fichier', asy
 	await expect(page.getByTestId('bank-import-preview')).toBeHidden();
 	const row = page.getByTestId('bank-import-list-row').filter({ hasText: FILENAME });
 	await expect(row).toHaveCount(1);
-	await row.getByRole('link', { name: FILENAME }).click();
+	await row.getByTestId('bank-import-list-link').click();
 	await expect(page).toHaveURL(/\/bank-import\/\d+$/);
 
 	// (3) Suppression depuis le détail.
@@ -118,6 +118,6 @@ test('supprimer un import non rapproché puis réimporter le même fichier', asy
 	await expect(page.getByTestId('bank-import-preview')).toBeHidden();
 	const again = page.getByTestId('bank-import-list-row').filter({ hasText: FILENAME });
 	await expect(again).toHaveCount(1);
-	await again.getByRole('link', { name: FILENAME }).click();
+	await again.getByTestId('bank-import-list-link').click();
 	await expect(page.getByTestId('detail-tx-row')).toHaveCount(3);
 });

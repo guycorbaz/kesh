@@ -50,7 +50,7 @@
 			if (isApiError(err) && err.code === 'BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS') {
 				errorMsg = i18nMsg(
 					'bank-import-delete-error-reconciled',
-					'Une transaction de cet import a été rapprochée entre-temps ({ $count }) : rechargez la page.',
+					'{ $count } transaction(s) de cet import ont été rapprochées entre-temps : rechargez la page.',
 					{ count: Number(err.details?.reconciledCount ?? 0) },
 				);
 			} else if (isApiError(err) && err.status === 404) {
@@ -88,8 +88,20 @@
 		{/if}
 	</div>
 
-	<Dialog.Root {open} onOpenChange={(v) => !v && !submitting && (open = false)}>
-		<Dialog.Content data-testid="bank-import-delete-dialog">
+	<!-- Revue de code P2 (B2-1) : pendant l'envoi, ni Échap, ni clic extérieur,
+	     ni croix — l'erreur éventuelle ne serait plus montrée nulle part. Le
+	     wrapper `Dialog` du projet tient sa propre copie d'`open` : la garde vit
+	     donc dans `Dialog.Content` (patron de `WriteOffDialog`), et `open` est
+	     LIÉ (`bind:open`) pour qu'il n'existe qu'un état — un `{open}` à sens
+	     unique laissait le parent à `true` après une fermeture, et le bouton ne
+	     rouvrait plus le dialogue. -->
+	<Dialog.Root bind:open>
+		<Dialog.Content
+			escapeKeydownBehavior={submitting ? 'ignore' : 'close'}
+			interactOutsideBehavior={submitting ? 'ignore' : 'close'}
+			showCloseButton={!submitting}
+			data-testid="bank-import-delete-dialog"
+		>
 			<Dialog.Header>
 				<Dialog.Title>
 					{i18nMsg('bank-import-delete-dialog-title', 'Supprimer cet import ?')}

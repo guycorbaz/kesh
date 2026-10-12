@@ -31,7 +31,7 @@
 				{#each imports as imp (imp.id)}
 					<tr data-testid="bank-import-list-row" data-import-id={imp.id}>
 						<td>{imp.importedAt}</td>
-						<td><a class="text-primary underline" href="/bank-import/{imp.id}">{imp.filename}</a></td>
+						<td><a class="text-primary underline" data-testid="bank-import-list-link" href="/bank-import/{imp.id}">{imp.filename}</a></td>
 						<td>{imp.periodFrom} → {imp.periodTo}</td>
 						<td class="text-right">{imp.transactionCount}</td>
 					</tr>

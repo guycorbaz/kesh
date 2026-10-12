@@ -7,8 +7,8 @@
 // - `BankAccountSummary` étendu avec `currentBalance` et `archived: boolean`.
 //
 // Story 25-6-a (#389) — les montants restent des chaînes décimales (`big.js`
-// pour tout calcul) ; trois champs du relevé CAMT.053 de plus grande période
-// portant un solde de clôture (et non du dernier importé).
+// pour tout calcul) ; trois champs du relevé CAMT.053 portant un solde de
+// clôture dont la période se termine le plus tard (`period_to`) (et non du dernier importé).
 
 import { apiClient } from '$lib/shared/utils/api-client';
 
@@ -43,7 +43,7 @@ export interface BankAccountSummary {
 	 * `null` si journal_account_id NULL ou aucune écriture.
 	 */
 	lastTransactionDate: string | null;
-	/** Story 25-6-a — solde de clôture du relevé de plus grande période (chaîne décimale). */
+	/** Story 25-6-a — solde de clôture du relevé dont la période se termine le plus tard (chaîne décimale). */
 	statementClosingBalance: string | null;
 	/** Story 25-6-a — date de ce relevé (`YYYY-MM-DD`). */
 	statementDate: string | null;

@@ -88,7 +88,7 @@ describe('bank-accounts.api', () => {
 
 // Story 25-6-a (#389) — les trois champs du relevé traversent le mappage TS ; une
 // faute de frappe dans une clé `Raw` les rendrait toujours `null`, tous gates verts.
-describe('bank-accounts.api — champs du relevé de plus grande période (25-6-a)', () => {
+describe('bank-accounts.api — champs du relevé dont la période se termine le plus tard (25-6-a)', () => {
 	beforeEach(() => {
 		authState.clearSession();
 		authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
