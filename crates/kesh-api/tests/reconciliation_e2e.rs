@@ -2449,8 +2449,9 @@ async fn post_accept_emits_dual_audit_invoice_paid(pool: MySqlPool) {
 /// matchent, l'opération **réussit silencieusement** — c'est exactement
 /// l'angle mort que A6-2 Pass 6 voulait combler.
 ///
-/// Sévérité : **MEDIUM** — risque limité v0.1 mono-CHF (le parser CSV
-/// rejette EUR/USD, cf. AC bank_imports `BANK_IMPORT_UNSUPPORTED_CURRENCY`).
+/// Sévérité : **MEDIUM** — risque limité v0.1 mono-CHF (le parseur CSV
+/// refuse un relevé non CHF quand le profil lit la colonne Devise — Story
+/// 27-2 ; sans elle, CHF supposé).
 /// Mais théoriquement exploitable via custom CSV profile pre-Story 11.
 /// À fixer en code review Pass 5+ ou en début de Story 11 (un-`#[ignore]`
 /// AC #67 + ajout guard symétrique).

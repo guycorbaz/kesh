@@ -1006,7 +1006,7 @@ bank-import-errors-bank-account-not-found = Conto bancario non trovato.
 bank-import-errors-parse-failed = Il file CAMT.053 non ha potuto essere analizzato.
 
 bank-import-warnings-balance-mismatch = Saldo finale incoerente.
-bank-import-warnings-unsupported-currency = Valuta non supportata in v0.1.
+bank-import-warnings-unsupported-currency = Valuta non supportata: è supportato solo il franco svizzero (CHF). Valuta dell'estratto:
 bank-import-warnings-ignored-statements = Alcuni estratti del file non corrispondono al conto selezionato e saranno ignorati.
 # Story 8-3 — rilevamento duplicati + accettazione parziale
 bank-import-warnings-duplicate-file = Questo file è già stato importato.
@@ -1044,6 +1044,7 @@ bank-import-labels-bank-profile-auto-matched = rilevato automaticamente
 bank-import-labels-bank-profile-auto-detect-placeholder = Rilevamento automatico
 bank-import-info-bank-csv-profile-auto-matched = Profilo bancario rilevato automaticamente dal nome del file.
 bank-import-info-bank-csv-multiple-profile-matches = Più profili corrispondono al nome del file ; è stato selezionato il primo.
+bank-import-info-bank-csv-currency-assumed = Il profilo non legge alcuna colonna Valuta: l'estratto è considerato in franchi svizzeri (CHF).
 bank-import-errors-no-valid-lines-to-commit = Nessuna riga valida da importare nel CSV.
 bank-import-labels-list-title = Importazioni precedenti
 bank-import-labels-import-success = Importazione riuscita.
@@ -1065,9 +1066,11 @@ bank-import-csv-errors-empty-mandatory-field = Campo obbligatorio vuoto.
 bank-import-csv-errors-row-too-short = Riga troppo corta (colonne mancanti).
 # Story 26-1 (#620, #621) — sens des débits, lignes à ignorer
 bank-import-csv-errors-amount-sign-mismatch = Importo di segno contrario alla sua colonna — verificare l’impostazione del segno degli addebiti del profilo.
+bank-import-csv-errors-invalid-currency = Valuta illeggibile in una riga CSV (tre lettere attese, ad esempio CHF).
 bank-import-csv-errors-amount-sign-refused-profile = Tutti gli addebiti letti nel file hanno un segno contrario all’impostazione del profilo. Impostate il segno degli addebiti del profilo (Amministrazione → Profili bancari), poi caricate di nuovo il file.
 bank-import-csv-errors-amount-sign-refused-lines = { $count } riga/righe riportano un importo di segno contrario alla loro colonna (uno storno, per esempio): questo estratto non può essere importato così com’è in questa versione. Le righe interessate sono elencate qui sotto.
 bank-import-csv-errors-header-skips-data = La riga { $line }, che dovrebbe essere ignorata, riporta già una data: il numero di righe da ignorare del profilo è troppo grande, una transazione sarebbe andata persa.
+bank-import-csv-errors-mixed-currencies = L'estratto riporta più valute ({ $currencies }): un estratto CSV deve essere in un'unica valuta. Non è stato importato nulla.
 bank-import-csv-warnings-profile-auto-matched = Profilo applicato automaticamente da auto-match.
 bank-import-csv-warnings-multiple-profile-matches = Più profili corrispondono a questo nome file, è stato usato il più recente.
 bank-import-csv-warnings-encoding-mismatch = La codifica rilevata differisce dal profilo.
@@ -1090,6 +1093,8 @@ bank-import-profile-labels-debit-sign-positive = Addebiti scritti senza segno (5
 bank-import-profile-labels-debit-sign-negative = Addebiti scritti con il segno meno (−500.00), come UBS
 bank-import-profile-labels-column-mapping = Mapping colonne (0-indicizzato)
 bank-import-profile-labels-use-debit-credit-split = Colonne Dare/Avere separate
+bank-import-profile-labels-col-currency = valuta (facoltativa)
+bank-import-profile-labels-col-currency-help = Colonna che riporta la valuta di ogni riga. Senza di essa, l'estratto è considerato in franchi svizzeri (CHF). Estratto CSV di UBS: 4.
 bank-import-profile-labels-create = Crea
 bank-import-profile-labels-update = Aggiorna
 bank-import-profile-labels-edit = Modifica

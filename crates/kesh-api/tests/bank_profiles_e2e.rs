@@ -747,3 +747,50 @@ async fn post_profile_header_row_count_bound_is_20(pool: MySqlPool) {
     let (status, body) = post_profile(&app, &token, &twenty).await;
     assert_eq!(status, 201, "{body}");
 }
+
+/// Story 27-2 (#624), AC7 : la colonne Devise traverse `POST`/`GET` sans code
+/// neuf ; une collision avec la date est refusée en 422
+/// `BANK_CSV_PROFILE_INVALID`, rien n'est écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn profile_currency_column_round_trips_and_collision_is_refused(pool: MySqlPool) {
+    let app = spawn_app(pool.clone()).await;
+    let company_id = create_company(&pool, "C1").await;
+    let user_id = create_user(&pool, "comp", Role::Comptable, company_id).await;
+    let token = forge_jwt(user_id, "Comptable", company_id);
+
+    let mut payload = ubs_profile_payload("UBS devise");
+    payload["columnMapping"]["currency"] = json!(4);
+    let (status, body) = post_profile(&app, &token, &payload).await;
+    assert_eq!(status, 201, "{body}");
+    let id = serde_json::from_str::<Value>(&body).unwrap()["id"]
+        .as_i64()
+        .unwrap();
+    let got: Value = app
+        .client
+        .get(app.url(&format!("/api/v1/bank-profiles/{id}")))
+        .bearer_auth(&token)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(got["columnMapping"]["currency"], 4);
+
+    let before = profile_count(&pool).await;
+    let mut collision = ubs_profile_payload("UBS collision");
+    collision["columnMapping"]["currency"] = json!(2);
+    let (status, body) = post_profile(&app, &token, &collision).await;
+    assert_eq!(status, 422, "{body}");
+    let body: Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(body["error"]["code"], "BANK_CSV_PROFILE_INVALID");
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("currency")
+            || body["error"]["details"].to_string().contains("currency"),
+        "{body}"
+    );
+    assert_eq!(profile_count(&pool).await, before);
+}

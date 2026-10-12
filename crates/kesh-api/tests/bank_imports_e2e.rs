@@ -2217,3 +2217,378 @@ async fn delete_import_is_refused_to_every_api_key(pool: MySqlPool) {
     assert_eq!(import_rows(&pool, id).await, (1, n), "import intact");
     assert_eq!(deleted_traces(&pool).await, 0, "aucune trace");
 }
+
+// =========================================================================
+// Story 27-2 (#624) — la devise d'un relevé CSV est lue, le contrôle joue
+// =========================================================================
+
+/// Crée le profil UBS « débits négatifs » **par la route**, avec ou sans la
+/// colonne Devise (4).
+async fn post_ubs_currency_profile(
+    app: &TestApp,
+    jwt: &str,
+    name: &str,
+    currency: Option<u8>,
+) -> i64 {
+    let mut mapping = serde_json::json!(
+        {"date": 2, "debit_credit_split": [5, 6], "reference": 9, "details": 10}
+    );
+    if let Some(c) = currency {
+        mapping["currency"] = serde_json::json!(c);
+    }
+    let res = app
+        .client
+        .post(app.url("/api/v1/bank-profiles"))
+        .bearer_auth(jwt)
+        .json(&serde_json::json!({
+            "bankName": name,
+            "filenamePattern": null,
+            "columnMapping": mapping,
+            "dateFormat": "%Y-%m-%d",
+            "decimalSeparator": ".",
+            "fieldSeparator": ";",
+            "encoding": null,
+            "headerRowCount": 9,
+            "debitSign": "negative"
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(res.status(), 201);
+    let body: Value = res.json().await.unwrap();
+    assert_eq!(
+        body["columnMapping"]["currency"],
+        currency.map_or(Value::Null, |c| serde_json::json!(c))
+    );
+    body["id"].as_i64().unwrap()
+}
+
+/// Dérive la fixture UBS en modifiant ses seules lignes de données (après la
+/// ligne de titres) : `edit(i, cellules)` rend `true` s'il en a modifié une.
+/// Rend les octets et le nombre de lignes modifiées.
+fn derive_ubs_fixture(mut edit: impl FnMut(usize, &mut Vec<String>) -> bool) -> (Vec<u8>, usize) {
+    let raw = ubs_fixture();
+    let text = std::str::from_utf8(&raw[3..]).unwrap();
+    let mut in_data = false;
+    let mut i = 0usize;
+    let mut modified = 0usize;
+    let mut out = Vec::new();
+    for line in text.split('\n') {
+        if !in_data {
+            in_data = line.starts_with("Date de transaction;");
+            out.push(line.to_string());
+            continue;
+        }
+        let mut f: Vec<String> = line.split(';').map(String::from).collect();
+        if edit(i, &mut f) {
+            modified += 1;
+        }
+        i += 1;
+        out.push(f.join(";"));
+    }
+    assert_eq!(i, 11);
+    let mut bytes = raw[..3].to_vec();
+    bytes.extend_from_slice(out.join("\n").as_bytes());
+    (bytes, modified)
+}
+
+/// Fixture dont la devise des lignes que `pick` désigne est remplacée.
+fn ubs_with_currency(mut pick: impl FnMut(usize) -> Option<&'static str>) -> Vec<u8> {
+    let mut expected = 0;
+    let (bytes, n) = derive_ubs_fixture(|i, f| match pick(i) {
+        Some(c) => {
+            assert_eq!(f[4], "CHF");
+            f[4] = c.to_string();
+            expected += 1;
+            true
+        }
+        None => false,
+    });
+    assert_eq!(n, expected);
+    bytes
+}
+
+/// Codes de `warnings.informational` d'un aperçu (absent = aucun).
+fn informational(body: &Value) -> Vec<String> {
+    body["warnings"]["informational"]
+        .as_array()
+        .map(|a| a.iter().map(|v| v.as_str().unwrap().to_string()).collect())
+        .unwrap_or_default()
+}
+
+/// (imports, transactions, audit) — comptés pour vérifier qu'un refus
+/// n'écrit rien.
+async fn write_counts(pool: &MySqlPool) -> (i64, i64, i64) {
+    let mut out = [0i64; 3];
+    for (k, table) in ["bank_imports", "bank_transactions", "audit_log"]
+        .iter()
+        .enumerate()
+    {
+        out[k] = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM {table}"))
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    }
+    (out[0], out[1], out[2])
+}
+
+/// AC14-1 et AC14-2 : profil à colonne Devise, fichier EUR → aperçu 200 avec
+/// l'avertissement de devise ; import 422 `BANK_IMPORT_UNSUPPORTED_CURRENCY`,
+/// rien d'écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn csv_eur_statement_is_warned_in_preview_and_refused_on_import(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let profile_id = post_ubs_currency_profile(&app, &s.jwt, "UBS devise", Some(4)).await;
+    let eur = ubs_with_currency(|_| Some("EUR"));
+
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        true,
+        eur.clone(),
+        s.bank_account_id,
+        profile_id,
+        &[],
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["warnings"]["unsupportedCurrency"]["currency"], "EUR");
+    assert_eq!(body["selectedStatement"]["currency"], "EUR");
+
+    let before = write_counts(&pool).await;
+    let (status, body) =
+        send_csv(&app, &s.jwt, false, eur, s.bank_account_id, profile_id, &[]).await;
+    assert_eq!(status, 422, "{body}");
+    assert_eq!(body["error"]["code"], "BANK_IMPORT_UNSUPPORTED_CURRENCY");
+    assert_eq!(body["error"]["details"]["currency"], "EUR");
+    assert_eq!(write_counts(&pool).await, before, "rien d'écrit");
+}
+
+/// AC14-3 : fichier EUR AVEC une erreur de ligne. (3a) confirmé en partiel →
+/// même refus de devise ; (3b) non confirmé → refus de devise, et NON
+/// `BANK_CSV_PARTIAL_FAILURE` : le contrôle précède `confirmPartialImport`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn csv_eur_statement_with_line_errors_is_refused_before_partial_check(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let profile_id = post_ubs_currency_profile(&app, &s.jwt, "UBS devise", Some(4)).await;
+    let (bytes, n) = derive_ubs_fixture(|i, f| {
+        f[4] = "EUR".into();
+        if i == 4 {
+            f[2] = "pas-une-date".into();
+        }
+        true
+    });
+    assert_eq!(n, 11);
+
+    let before = write_counts(&pool).await;
+    // (3a)
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        false,
+        bytes.clone(),
+        s.bank_account_id,
+        profile_id,
+        &[("confirmPartialImport", "true".to_string())],
+    )
+    .await;
+    assert_eq!(status, 422, "(3a) {body}");
+    assert_eq!(
+        body["error"]["code"], "BANK_IMPORT_UNSUPPORTED_CURRENCY",
+        "(3a)"
+    );
+    // (3b)
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        false,
+        bytes,
+        s.bank_account_id,
+        profile_id,
+        &[],
+    )
+    .await;
+    assert_eq!(status, 422, "(3b) {body}");
+    assert_eq!(
+        body["error"]["code"], "BANK_IMPORT_UNSUPPORTED_CURRENCY",
+        "(3b)"
+    );
+    assert_ne!(body["error"]["code"], "BANK_CSV_PARTIAL_FAILURE", "(3b)");
+    assert_eq!(write_counts(&pool).await, before, "rien d'écrit");
+}
+
+/// AC14-4 : relevé à deux devises → aperçu ET import 422
+/// `BANK_CSV_MIXED_CURRENCIES`, `details.currencies`, rien d'écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn csv_mixed_currencies_is_refused_in_preview_and_import(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let profile_id = post_ubs_currency_profile(&app, &s.jwt, "UBS devise", Some(4)).await;
+    let mixed = ubs_with_currency(|i| (i == 7).then_some("EUR"));
+
+    let before = write_counts(&pool).await;
+    for preview in [true, false] {
+        let (status, body) = send_csv(
+            &app,
+            &s.jwt,
+            preview,
+            mixed.clone(),
+            s.bank_account_id,
+            profile_id,
+            &[("confirmPartialImport", "true".to_string())],
+        )
+        .await;
+        assert_eq!(status, 422, "preview={preview} {body}");
+        assert_eq!(body["error"]["code"], "BANK_CSV_MIXED_CURRENCIES");
+        assert_eq!(
+            body["error"]["details"]["currencies"],
+            serde_json::json!(["CHF", "EUR"])
+        );
+        assert!(
+            body["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("(CHF, EUR)"),
+            "{}",
+            body["error"]["message"]
+        );
+    }
+    assert_eq!(write_counts(&pool).await, before, "rien d'écrit");
+}
+
+/// AC14-5 : profil à colonne Devise, fichier CHF → 201, transactions en base
+/// en CHF ; l'aperçu ne dit pas la devise supposée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn csv_chf_statement_with_currency_column_imports(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let profile_id = post_ubs_currency_profile(&app, &s.jwt, "UBS devise", Some(4)).await;
+
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        true,
+        ubs_fixture(),
+        s.bank_account_id,
+        profile_id,
+        &[],
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert!(body["warnings"]["unsupportedCurrency"].is_null());
+    let info = informational(&body);
+    assert!(
+        !info.iter().any(|c| c == "bank_csv_currency_assumed"),
+        "{info:?}"
+    );
+
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        false,
+        ubs_fixture(),
+        s.bank_account_id,
+        profile_id,
+        &[],
+    )
+    .await;
+    assert_eq!(status, 201, "{body}");
+    let currencies: Vec<String> =
+        sqlx::query_scalar("SELECT currency FROM bank_transactions WHERE import_id = ?")
+            .bind(body["id"].as_i64().unwrap())
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(currencies.len(), 11);
+    assert!(currencies.iter().all(|c| c == "CHF"), "{currencies:?}");
+}
+
+/// AC14-6 : profil SANS colonne Devise → l'aperçu dit la devise supposée ;
+/// l'import réussit comme avant (non-régression).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn csv_without_currency_column_says_currency_is_assumed(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let profile_id = post_ubs_currency_profile(&app, &s.jwt, "UBS sans devise", None).await;
+
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        true,
+        ubs_fixture(),
+        s.bank_account_id,
+        profile_id,
+        &[],
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    let info = informational(&body);
+    assert!(
+        info.iter().any(|c| c == "bank_csv_currency_assumed"),
+        "{info:?}"
+    );
+    assert_eq!(body["selectedStatement"]["currency"], "CHF");
+
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        false,
+        ubs_fixture(),
+        s.bank_account_id,
+        profile_id,
+        &[],
+    )
+    .await;
+    assert_eq!(status, 201, "{body}");
+    assert_eq!(tx_count(&pool).await, 11);
+}
+
+/// AC14-8 (AC19) : CAMT.053 à montants d'information en EUR sur un compte
+/// CHF → aperçu sans avertissement de devise, import 201, trois
+/// transactions en base, chacune en CHF — la valeur traverse HTTP et base.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn camt_information_amounts_do_not_change_transaction_currency(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let name = "v04_amtdtls_foreign_currency.xml";
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/bank-imports/preview"))
+        .bearer_auth(&s.jwt)
+        .multipart(build_multipart(read_fixture(name), name, s.bank_account_id))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["warnings"]["unsupportedCurrency"].is_null(), "{body}");
+    let preview_currencies: Vec<&str> = body["transactions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|t| t["currency"].as_str().unwrap())
+        .collect();
+    assert_eq!(preview_currencies, ["CHF", "CHF", "CHF"]);
+
+    let resp = app
+        .client
+        .post(app.url("/api/v1/bank-imports"))
+        .bearer_auth(&s.jwt)
+        .multipart(build_multipart(read_fixture(name), name, s.bank_account_id))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201);
+    let body: Value = resp.json().await.unwrap();
+    let currencies: Vec<String> =
+        sqlx::query_scalar("SELECT currency FROM bank_transactions WHERE import_id = ?")
+            .bind(body["id"].as_i64().unwrap())
+            .fetch_all(&pool)
+            .await
+            .unwrap();
+    assert_eq!(currencies.len(), 3, "une transaction par entrée");
+    assert!(currencies.iter().all(|c| c == "CHF"), "{currencies:?}");
+}

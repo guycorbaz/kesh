@@ -1006,7 +1006,7 @@ bank-import-errors-bank-account-not-found = Bankkonto nicht gefunden.
 bank-import-errors-parse-failed = Die CAMT.053-Datei konnte nicht verarbeitet werden.
 
 bank-import-warnings-balance-mismatch = Schlusssaldo inkonsistent.
-bank-import-warnings-unsupported-currency = Währung in v0.1 nicht unterstützt.
+bank-import-warnings-unsupported-currency = Währung nicht unterstützt: Nur der Schweizer Franken (CHF) wird unterstützt. Währung des Auszugs:
 bank-import-warnings-ignored-statements = Einige Auszüge der Datei entsprechen nicht dem ausgewählten Konto und werden ignoriert.
 # Story 8-3 — Duplikat-Erkennung + partielle Annahme
 bank-import-warnings-duplicate-file = Diese Datei wurde bereits importiert.
@@ -1044,6 +1044,7 @@ bank-import-labels-bank-profile-auto-matched = automatisch erkannt
 bank-import-labels-bank-profile-auto-detect-placeholder = Automatische Erkennung
 bank-import-info-bank-csv-profile-auto-matched = Bankprofil anhand des Dateinamens automatisch erkannt.
 bank-import-info-bank-csv-multiple-profile-matches = Mehrere Profile passen zum Dateinamen ; das erste wurde übernommen.
+bank-import-info-bank-csv-currency-assumed = Das Profil liest keine Währungsspalte: Der Auszug wird in Schweizer Franken (CHF) angenommen.
 bank-import-errors-no-valid-lines-to-commit = Keine gültige Zeile zum Importieren in der CSV-Datei.
 bank-import-labels-list-title = Frühere Importe
 bank-import-labels-import-success = Import erfolgreich.
@@ -1065,9 +1066,11 @@ bank-import-csv-errors-empty-mandatory-field = Pflichtfeld leer.
 bank-import-csv-errors-row-too-short = Zeile zu kurz (fehlende Spalten).
 # Story 26-1 (#620, #621) — sens des débits, lignes à ignorer
 bank-import-csv-errors-amount-sign-mismatch = Betrag mit einem Vorzeichen, das seiner Spalte widerspricht — Einstellung des Vorzeichens der Belastungen im Profil prüfen.
+bank-import-csv-errors-invalid-currency = Unlesbare Währung in einer CSV-Zeile (drei Buchstaben erwartet, zum Beispiel CHF).
 bank-import-csv-errors-amount-sign-refused-profile = Alle gelesenen Belastungen der Datei haben ein Vorzeichen, das der Einstellung des Profils widerspricht. Stellen Sie das Vorzeichen der Belastungen im Profil ein (Administration → Bankprofile) und laden Sie die Datei erneut hoch.
 bank-import-csv-errors-amount-sign-refused-lines = { $count } Zeile(n) enthalten einen Betrag mit einem Vorzeichen, das ihrer Spalte widerspricht (zum Beispiel eine Stornobuchung): Dieser Auszug kann in dieser Version nicht unverändert importiert werden. Die betroffenen Zeilen sind unten aufgeführt.
 bank-import-csv-errors-header-skips-data = Die Zeile { $line }, die übersprungen werden sollte, enthält bereits ein Datum: Die Anzahl zu überspringender Zeilen im Profil ist zu gross, eine Transaktion wäre verloren gegangen.
+bank-import-csv-errors-mixed-currencies = Der Auszug enthält mehrere Währungen ({ $currencies }): Ein CSV-Auszug muss in einer einzigen Währung sein. Es wurde nichts importiert.
 bank-import-csv-warnings-profile-auto-matched = Profil automatisch durch Auto-Match angewendet.
 bank-import-csv-warnings-multiple-profile-matches = Mehrere Profile passen zu diesem Dateinamen, das neueste wurde verwendet.
 bank-import-csv-warnings-encoding-mismatch = Erkanntes Encoding weicht vom Profil ab.
@@ -1090,6 +1093,8 @@ bank-import-profile-labels-debit-sign-positive = Belastungen ohne Vorzeichen (50
 bank-import-profile-labels-debit-sign-negative = Belastungen mit Minuszeichen (−500.00), wie bei der UBS
 bank-import-profile-labels-column-mapping = Spaltenzuordnung (0-indiziert)
 bank-import-profile-labels-use-debit-credit-split = Getrennte Soll-/Haben-Spalten
+bank-import-profile-labels-col-currency = Währung (optional)
+bank-import-profile-labels-col-currency-help = Spalte mit der Währung jeder Zeile. Ohne sie wird der Auszug in Schweizer Franken (CHF) angenommen. CSV-Auszug der UBS: 4.
 bank-import-profile-labels-create = Erstellen
 bank-import-profile-labels-update = Aktualisieren
 bank-import-profile-labels-edit = Bearbeiten

@@ -687,8 +687,9 @@ pub enum AppError {
         diff: String,
     },
 
-    /// Devise non supportée v0.1 (autre que CHF) → `422`.
-    #[error("Devise non supportée v0.1 : {0}")]
+    /// Devise non supportée (autre que CHF) → `422` — CAMT.053, et CSV
+    /// dont le profil lit la colonne Devise (Story 27-2, #624).
+    #[error("Devise non supportée : {0}")]
     BankImportUnsupportedCurrency(String),
 
     /// Aucun `<Stmt>` du fichier ne matche l'IBAN du `bankAccountId`
@@ -832,6 +833,12 @@ pub enum AppError {
     /// `422 BANK_CSV_HEADER_SKIPS_DATA`, `details.line`.
     #[error("Ligne {line} ignorée mais datée : trop de lignes à ignorer")]
     BankCsvHeaderSkipsData { line: usize },
+
+    /// Le relevé CSV porte plusieurs devises parmi ses lignes valides
+    /// (Story 27-2, #624) → `422 BANK_CSV_MIXED_CURRENCIES`,
+    /// `details.currencies` (triées, au plus 10). Non confirmable.
+    #[error("Relevé CSV à plusieurs devises : {}", currencies.join(", "))]
+    BankCsvMixedCurrencies { currencies: Vec<String> },
 
     /// Format de fichier non supporté (ni CAMT ni CSV) → `415`.
     #[error("Format de fichier non supporté")]
@@ -2176,7 +2183,7 @@ impl IntoResponse for AppError {
                         "code": "BANK_IMPORT_UNSUPPORTED_CURRENCY",
                         "message": t(
                             "bank-import-errors-unsupported-currency",
-                            "Devise non supportée v0.1 (CHF uniquement).",
+                            "Devise non supportée. Seul le franc suisse (CHF) est pris en charge dans cette version.",
                         ),
                         "details": { "currency": currency }
                     }
@@ -2471,6 +2478,28 @@ impl IntoResponse for AppError {
                             &args,
                         ),
                         "details": { "line": line }
+                    }
+                });
+                (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
+            }
+
+            AppError::BankCsvMixedCurrencies { currencies: list } => {
+                // La variable du repli s'appelle comme celle du catalogue
+                // (`{ $currencies }`) : la garde G9 compare octet pour octet.
+                let currencies = list.join(", ");
+                let mut args = FluentArgs::new();
+                args.set("currencies", currencies.clone());
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_CSV_MIXED_CURRENCIES",
+                        "message": t_args(
+                            "bank-import-csv-errors-mixed-currencies",
+                            &format!(
+                                "Le relevé porte plusieurs devises ({currencies}) : un relevé CSV doit être dans une seule devise. Rien n'a été importé."
+                            ),
+                            &args,
+                        ),
+                        "details": { "currencies": list }
                     }
                 });
                 (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()

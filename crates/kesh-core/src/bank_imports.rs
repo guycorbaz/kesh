@@ -22,8 +22,9 @@
 //! - [`validate_balance`] : check de cohérence
 //!   `opening + Σ transactions ≈ closing` à 0.01 près (CR-010 #62). Skip
 //!   silencieux si les soldes sont absents.
-//! - [`validate_currency_supported_v0_1`] : enforce le périmètre v0.1
-//!   limité à CHF.
+//! - [`validate_currency_supported_v0_1`] : enforce le périmètre de cette
+//!   version, limité à CHF (relevés CAMT.053, et CSV dont le profil lit la
+//!   colonne Devise — Story 27-2).
 
 use std::fmt;
 
@@ -454,7 +455,7 @@ pub fn detect_duplicate_lines(
 }
 
 /// Vérifie que la devise du relevé importé est supportée par le
-/// périmètre v0.1 (CHF uniquement).
+/// périmètre de cette version (CHF uniquement).
 ///
 /// Le rejet vit côté `kesh-core` plutôt que côté `kesh-import` pour
 /// conserver le parseur agnostique du périmètre fonctionnel (un autre

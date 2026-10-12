@@ -678,6 +678,7 @@ fn references_d_issues_du_readme_sont_des_liens() {
 #[test]
 fn les_replis_rust_suivent_le_catalogue() {
     const NOM: &[(&str, &str)] = &[("{ $name }", "{fiscal_year_name}")];
+    const DEVISES: &[(&str, &str)] = &[("{ $currencies }", "{currencies}")];
     type Cles = &'static [(&'static str, usize, &'static [(&'static str, &'static str)])];
     const TABLE: [(&str, Cles); 3] = [
         (
@@ -724,6 +725,9 @@ fn les_replis_rust_suivent_le_catalogue() {
                     1,
                     &[("{ $line }", "{line}")],
                 ),
+                // Story 27-2 (#624) — le refus de devise, chemin CSV compris.
+                ("bank-import-errors-unsupported-currency", 1, &[]),
+                ("bank-import-csv-errors-mixed-currencies", 1, DEVISES),
             ],
         ),
         (
