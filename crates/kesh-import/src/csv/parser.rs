@@ -27,6 +27,11 @@
 //!    [`DebitSign`] du profil, jamais une déduction : `Positive` → montant
 //!    `-débit`, `Negative` → montant `débit` ; un montant de signe
 //!    contraire à sa colonne est une erreur `AMOUNT_SIGN_MISMATCH`.
+//!    **Devise** (Story 27-2, #624) : si le profil règle la colonne Devise
+//!    (`ColumnMapping::currency`), sa cellule est lue **après** le montant —
+//!    vide → `EMPTY_MANDATORY_FIELD` (`currency`), autre chose que trois
+//!    lettres ASCII → `INVALID_CURRENCY`, casse normalisée (`chf` → `CHF`) ;
+//!    sinon, la devise est [`DEFAULT_CSV_CURRENCY`], supposée et nommée.
 //! 6. Cap collection à `MAX_CSV_LINE_ERRORS = 100` (Pass 2 H'1)
 //!    avec `total_errors` + `truncated` flag. Les erreurs de signe ont
 //!    leur **propre** compteur et leur propre vecteur, indépendants de ce
@@ -34,10 +39,14 @@
 //! 7. Si `transactions.is_empty()` → `CsvError::EmptyFile`
 //!    (Pass 2 M'2 header-only file).
 //! 8. Si au moins une erreur de signe → `CsvError::AmountSignMismatch`
-//!    (refus entier, **non confirmable** — Story 26-1) ; sinon, si
-//!    `errors` non-vide → `CsvError::PartialFailure { ... }`
-//!    (strict reject FR51 v0.1, ou import des valides sur confirmation).
-//! 9. Sinon retourne `ImportedStatement` avec
+//!    (refus entier, **non confirmable** — Story 26-1) ; sinon, si la
+//!    colonne Devise est réglée et que les lignes **valides** portent plus
+//!    d'une devise → `CsvError::MixedCurrencies` (refus entier, non
+//!    confirmable — Story 27-2) ; sinon, si `errors` non-vide →
+//!    `CsvError::PartialFailure { ... }` (strict reject FR51 v0.1, ou
+//!    import des valides sur confirmation).
+//! 9. Sinon retourne `ImportedStatement` (devise : celle, unique, des
+//!    lignes valides, ou [`DEFAULT_CSV_CURRENCY`]) avec
 //!    `period_from = min(booking_dates)` et
 //!    `period_to = max(booking_dates)` (Pass 1 H2).
 
@@ -47,6 +56,19 @@ use crate::error::{CsvError, CsvLineError, CsvLineErrorCode, MAX_CSV_LINE_ERRORS
 use crate::types::{ImportedStatement, ImportedTransaction, SourceFormat};
 use chrono::NaiveDate;
 use rust_decimal::Decimal;
+use std::collections::BTreeSet;
+
+/// Devise supposée d'un relevé dont le profil ne lit aucune colonne Devise
+/// (Story 27-2, #624). C'est la **seule** supposition de devise du
+/// parseur CSV, et l'API la dit à l'aperçu (`bank_csv_currency_assumed`) ;
+/// une cellule Devise vide n'est jamais remplacée par elle.
+pub const DEFAULT_CSV_CURRENCY: &str = "CHF";
+
+/// Nombre maximal de devises rapportées par
+/// [`CsvError::MixedCurrencies`] : les premières de l'ensemble **trié**
+/// des devises distinctes (Story 27-2, C-27-2-13). Un relevé de compte qui
+/// en porterait davantage n'en est pas un ; le message reste vrai tronqué.
+pub const MAX_REPORTED_CURRENCIES: usize = 10;
 
 /// Sentinel publique pour `period_from`/`period_to` quand
 /// `parse_csv_collect` retourne `PartialFailure { valid: stmt, ... }`
@@ -320,6 +342,35 @@ fn parse_csv_collect_inner(
         ..
     } = acc;
 
+    // 7.c Un relevé, une devise (Story 27-2, #624) — APRÈS le refus de
+    //     signe, qui reste prioritaire, et AVANT le rejet partiel : refus
+    //     non confirmable, même s'il y a aussi des erreurs de ligne.
+    //     ⚠️ Seules les lignes VALIDES révèlent leur devise : une ligne
+    //     écartée pour sa date ou son montant n'est pas lue jusqu'à sa
+    //     devise (C-27-2-14) — un fichier CHF dont les lignes EUR sont
+    //     toutes invalides pour une autre raison n'est donc pas refusé ici.
+    let statement_currency = if profile.column_mapping.currency.is_some() {
+        let distinct: BTreeSet<&str> = transactions.iter().map(|t| t.currency.as_str()).collect();
+        if distinct.len() > 1 {
+            return Err(CsvError::MixedCurrencies {
+                currencies: distinct
+                    .into_iter()
+                    .take(MAX_REPORTED_CURRENCIES)
+                    .map(String::from)
+                    .collect(),
+            });
+        }
+        // Aucune ligne valide : supposée (l'import est de toute façon
+        // refusé, `no_valid_lines_to_commit`).
+        distinct
+            .into_iter()
+            .next()
+            .unwrap_or(DEFAULT_CSV_CURRENCY)
+            .to_string()
+    } else {
+        DEFAULT_CSV_CURRENCY.to_string()
+    };
+
     // 8. Construit l'`ImportedStatement` candidat (avec les transactions
     //    valides, possiblement vide si toutes ont échoué). Story 8-3 T4 :
     //    `parse_csv_collect` retourne toujours un `ImportedStatement` —
@@ -354,6 +405,11 @@ fn parse_csv_collect_inner(
         "empty_valid_sentinel_date invariant: sentinel iff transactions.is_empty()"
     );
 
+    // Invariant : chaque transaction valide porte `statement_currency`
+    // (lue unique ci-dessus, ou la même constante pour chaque ligne quand
+    // la colonne n'est pas réglée). Vérifié par les tests AC13-1, -2, -5 et
+    // -9, qui assertent chaque `tx.currency` — pas de `debug_assert!`,
+    // absent en release.
     let stmt = ImportedStatement {
         source_format: SourceFormat::Csv {
             encoding: detected_encoding.as_str().to_string(),
@@ -361,7 +417,7 @@ fn parse_csv_collect_inner(
         },
         statement_id: None,
         account_iban: String::new(),
-        currency: "CHF".to_string(),
+        currency: statement_currency,
         period_from,
         period_to,
         opening_balance: None,
@@ -502,9 +558,13 @@ impl RowAccumulator {
 /// Parse une ligne CSV en `ImportedTransaction` ou `CsvLineError`, et
 /// rapporte ce qu'elle a constaté sur la colonne Débit.
 ///
-/// Ordre des contrôles : longueur de la ligne, **date**, puis montant —
-/// une date illisible rend `INVALID_DATE` et le signe de la ligne n'est
-/// pas examiné.
+/// Ordre des contrôles : longueur de la ligne, **date**, montant, puis
+/// **devise** (Story 27-2) — une date illisible rend `INVALID_DATE` et le
+/// signe de la ligne n'est pas examiné ; un montant illisible ou de signe
+/// contraire masque la devise de la ligne. Une erreur de devise garde
+/// l'observation de débit faite au stade du montant (jamais
+/// [`RowParse::err`]), sans quoi un débit cohérent sortirait du
+/// dénominateur de `whole_debit_column`.
 ///
 /// Montant en mode débit/crédit séparés (Story 26-1, #620) :
 ///
@@ -655,6 +715,40 @@ fn parse_row(record: &csv::StringRecord, line: usize, profile: &CsvProfile) -> R
         ));
     };
 
+    // Devise (Story 27-2, #624) : lue APRÈS le montant. ⛔ Une erreur de
+    // devise rend `debit` tel qu'observé au stade du montant, jamais
+    // `RowParse::err` (qui le remettrait à `NotRead`).
+    let currency = match cm.currency {
+        None => DEFAULT_CSV_CURRENCY.to_string(),
+        Some(idx) => match get_cell(idx) {
+            Some(s) if !s.is_empty() => match normalize_currency(s) {
+                Some(c) => c,
+                None => {
+                    // Valeur rapportée : la cellule **rognée** par `get_cell`
+                    // (revue de code P1, A-4), tronquée comme toute valeur.
+                    return RowParse {
+                        result: Err(CsvLineError::new(
+                            line,
+                            CsvLineErrorCode::InvalidCurrency,
+                            Some(s.to_string()),
+                        )),
+                        debit,
+                    };
+                }
+            },
+            _ => {
+                return RowParse {
+                    result: Err(CsvLineError::new(
+                        line,
+                        CsvLineErrorCode::EmptyMandatoryField,
+                        Some("currency".to_string()),
+                    )),
+                    debit,
+                };
+            }
+        },
+    };
+
     // Reference (optionnel) : trim, empty → None.
     let reference = cm
         .reference
@@ -677,7 +771,7 @@ fn parse_row(record: &csv::StringRecord, line: usize, profile: &CsvProfile) -> R
             booking_date,
             value_date: Some(booking_date),
             amount,
-            currency: "CHF".to_string(),
+            currency,
             reference,
             details,
             end_to_end_id: None,
@@ -686,6 +780,19 @@ fn parse_row(record: &csv::StringRecord, line: usize, profile: &CsvProfile) -> R
             counterparty_name,
         }),
         debit,
+    }
+}
+
+/// Forme d'une cellule Devise (Story 27-2, C-27-2-5) : exactement trois
+/// lettres **ASCII** (`s.len() == 3` compte des octets, et trois octets
+/// ASCII font trois caractères), mises en majuscules. Pas de contrôle
+/// contre la liste ISO 4217 : la forme suffit au parseur, le périmètre
+/// des devises acceptées est décidé hors de `kesh-import`.
+fn normalize_currency(s: &str) -> Option<String> {
+    if s.len() == 3 && s.bytes().all(|b| b.is_ascii_alphabetic()) {
+        Some(s.to_ascii_uppercase())
+    } else {
+        None
     }
 }
 
@@ -784,6 +891,7 @@ mod tests {
                 reference: Some(2),
                 details: Some(3),
                 counterparty: None,
+                currency: None,
             },
         );
         let stmt = parse_csv(csv.as_bytes(), &profile).unwrap();
@@ -816,6 +924,7 @@ mod tests {
                 reference: None,
                 details: None,
                 counterparty: None,
+                currency: None,
             },
         );
         let stmt = parse_csv(csv.as_bytes(), &profile).unwrap();
@@ -837,6 +946,7 @@ mod tests {
                 reference: None,
                 details: None,
                 counterparty: None,
+                currency: None,
             },
         );
         let stmt = parse_csv(csv.as_bytes(), &profile).unwrap();
@@ -857,6 +967,7 @@ mod tests {
                 reference: None,
                 details: None,
                 counterparty: None,
+                currency: None,
             },
         );
         let stmt = parse_csv(csv.as_bytes(), &profile).unwrap();
@@ -879,6 +990,7 @@ mod tests {
                 reference: None,
                 details: None,
                 counterparty: None,
+                currency: None,
             },
         );
         let err = parse_csv(csv.as_bytes(), &profile).unwrap_err();
@@ -905,6 +1017,7 @@ mod tests {
                 reference: None,
                 details: None,
                 counterparty: None,
+                currency: None,
             },
         );
         let err = parse_csv(csv.as_bytes(), &profile).unwrap_err();
@@ -931,6 +1044,7 @@ mod tests {
                 reference: None,
                 details: None,
                 counterparty: None,
+                currency: None,
             },
         );
         // Note : ici decimal_separator = ',' donc "0.00" devient "0.00" → "0.00" (pas de remplacement),
@@ -959,6 +1073,7 @@ mod tests {
                 reference: None,
                 details: None,
                 counterparty: None,
+                currency: None,
             },
         );
         let err = parse_csv(csv.as_bytes(), &profile).unwrap_err();
@@ -991,6 +1106,7 @@ mod tests {
                 reference: None,
                 details: None,
                 counterparty: None,
+                currency: None,
             },
         );
         let err = parse_csv(csv.as_bytes(), &profile).unwrap_err();
@@ -1019,6 +1135,7 @@ mod tests {
                 reference: None,
                 details: None,
                 counterparty: None,
+                currency: None,
             },
         );
         let err = parse_csv(csv.as_bytes(), &profile).unwrap_err();
@@ -1045,6 +1162,7 @@ mod tests {
                 reference: None,
                 details: None,
                 counterparty: None,
+                currency: None,
             },
         );
         let stmt = parse_csv(csv.as_bytes(), &profile).unwrap();
@@ -1073,6 +1191,7 @@ mod tests {
                 reference: None,
                 details: None,
                 counterparty: None,
+                currency: None,
             },
         );
         profile.encoding = Some("ISO-8859-1".to_string());
@@ -1112,6 +1231,7 @@ mod tests {
                 reference: None,
                 details: None,
                 counterparty: None,
+                currency: None,
             },
         );
         let err = parse_csv(csv.as_bytes(), &profile).unwrap_err();
@@ -1139,6 +1259,7 @@ mod tests {
                 reference: None,
                 details: Some(2),
                 counterparty: None,
+                currency: None,
             },
         );
         let stmt = parse_csv(csv.as_bytes(), &profile).unwrap();
@@ -1186,6 +1307,7 @@ mod tests {
                 reference: None,
                 details: None,
                 counterparty: None,
+                currency: None,
             },
         );
         let stmt = parse_csv(csv.as_bytes(), &profile).unwrap();
@@ -1208,6 +1330,7 @@ mod tests {
                 reference: None,
                 details: None,
                 counterparty: None,
+                currency: None,
             },
         );
         let stmt = parse_csv(csv.as_bytes(), &profile).unwrap();
@@ -1233,6 +1356,7 @@ mod tests {
                 reference: None,
                 details: None,
                 counterparty: None,
+                currency: None,
             },
             date_format: "%Y-%m-%d".to_string(),
             decimal_separator: '.',
@@ -1273,6 +1397,7 @@ mod tests {
                 reference: None,
                 details: None,
                 counterparty: None,
+                currency: None,
             },
         );
         let err = parse_csv(csv.as_bytes(), &profile).unwrap_err();
@@ -1303,6 +1428,7 @@ mod tests {
                 reference: Some(2),
                 details: Some(3),
                 counterparty: None,
+                currency: None,
             },
         )
     }
@@ -1484,6 +1610,7 @@ mod tests {
                 reference: Some(9),
                 details: Some(10),
                 counterparty: None,
+                currency: None,
             },
         );
         p.debit_sign = sign;
@@ -1503,6 +1630,7 @@ mod tests {
                 reference: None,
                 details: None,
                 counterparty: None,
+                currency: None,
             },
         );
         p.debit_sign = sign;
@@ -1770,6 +1898,7 @@ mod tests {
             reference: None,
             details: None,
             counterparty: None,
+            currency: None,
         };
         // Ligne 2 à 2 champs (= date) : muette, même si ses cellules sont datées.
         let short = "titre\n2026-01-01;2026-01-01\n-1.00;;2026-01-05\n";
@@ -2033,6 +2162,7 @@ mod tests {
                 reference: None,
                 details: None,
                 counterparty: None,
+                currency: None,
             },
         );
         let stmt = parse_csv(csv.as_bytes(), &profile).unwrap();
@@ -2052,5 +2182,334 @@ mod tests {
         assert_eq!(lines.len(), 21);
         assert_eq!(lines[8], "");
         assert!(lines.iter().skip(9).all(|l| l.split(';').count() >= 15));
+    }
+
+    // ── Story 27-2 (#624) : la colonne Devise ──────────────────────────
+
+    /// Profil UBS recommandé (26-1, `Negative`, 9 lignes ignorées) qui lit
+    /// la colonne Devise (4) — AC13.
+    fn ubs_currency_profile(currency: Option<usize>) -> CsvProfile {
+        let mut p = ubs_profile(DebitSign::Negative, 9);
+        p.column_mapping.currency = currency;
+        p
+    }
+
+    /// Dérive une variante de `UBS_FIXTURE` en modifiant ses **seules lignes
+    /// de données** (C-27-2-9) : `edit(i, champs)` reçoit l'indice 0-based
+    /// de la ligne de données et ses cellules, et rend `true` s'il en a
+    /// modifié une. Rend les octets (BOM compris) et le nombre de lignes
+    /// modifiées, que chaque test asserte.
+    ///
+    /// Le saut suit la règle du lecteur `csv` : `header_row_count` (9)
+    /// lignes **non vides** — préambule et ligne de titres —, une ligne
+    /// « vide » étant une ligne de **zéro caractère** une fois le
+    /// terminateur retiré (`line.is_empty()`, jamais `trim()` : une ligne
+    /// d'espaces ou de seuls `;` est un enregistrement et compte ;
+    /// C-27-2-23). La fixture a 10 lignes physiques avant la première
+    /// donnée, dont une vide.
+    fn derive_ubs(mut edit: impl FnMut(usize, &mut Vec<String>) -> bool) -> (Vec<u8>, usize) {
+        let text = std::str::from_utf8(&UBS_FIXTURE[3..]).unwrap();
+        let mut skipped = 0usize;
+        let mut data_index = 0usize;
+        let mut modified = 0usize;
+        let mut out: Vec<String> = Vec::new();
+        for line in text.split('\n') {
+            if skipped < 9 {
+                if !line.is_empty() {
+                    skipped += 1;
+                }
+                out.push(line.to_string());
+                continue;
+            }
+            let mut fields: Vec<String> = line.split(';').map(String::from).collect();
+            if edit(data_index, &mut fields) {
+                modified += 1;
+            }
+            data_index += 1;
+            out.push(fields.join(";"));
+        }
+        assert_eq!(data_index, 11, "la fixture porte 11 lignes de données");
+        let mut bytes = b"\xEF\xBB\xBF".to_vec();
+        bytes.extend_from_slice(out.join("\n").as_bytes());
+        (bytes, modified)
+    }
+
+    /// Remplace la devise (colonne 4, `CHF` dans la fixture) des lignes de
+    /// données que `pick` désigne.
+    fn derive_currency(mut pick: impl FnMut(usize) -> Option<String>) -> (Vec<u8>, usize) {
+        derive_ubs(|i, f| match pick(i) {
+            Some(c) => {
+                assert_eq!(f[4], "CHF", "ligne de données {i}");
+                f[4] = c;
+                true
+            }
+            None => false,
+        })
+    }
+
+    fn all_valid(outcome: ParseCsvOutcome) -> ImportedStatement {
+        match outcome {
+            ParseCsvOutcome::AllValid(stmt) => stmt,
+            other => panic!("expected AllValid, got {other:?}"),
+        }
+    }
+
+    /// AC13-1 : la fixture telle quelle, colonne Devise réglée → CHF lu.
+    #[test]
+    fn ubs_currency_column_reads_chf() {
+        let stmt = all_valid(parse_csv_collect(
+            UBS_FIXTURE,
+            &ubs_currency_profile(Some(4)),
+        ));
+        assert_eq!(stmt.currency, "CHF");
+        assert_eq!(stmt.transactions.len(), 11);
+        assert!(stmt.transactions.iter().all(|t| t.currency == "CHF"));
+    }
+
+    /// AC13-2 : toutes les lignes en EUR → relevé EUR (le parseur reste
+    /// agnostique ; le refus est côté API).
+    #[test]
+    fn ubs_currency_column_reads_eur() {
+        let (bytes, n) = derive_currency(|_| Some("EUR".into()));
+        assert_eq!(n, 11);
+        let stmt = all_valid(parse_csv_collect(&bytes, &ubs_currency_profile(Some(4))));
+        assert_eq!(stmt.currency, "EUR");
+        assert_eq!(stmt.transactions.len(), 11);
+        assert!(stmt.transactions.iter().all(|t| t.currency == "EUR"));
+    }
+
+    /// AC13-3 : une seule ligne en EUR → refus du mélange.
+    #[test]
+    fn one_eur_row_is_mixed_currencies() {
+        let (bytes, n) = derive_currency(|i| (i == 3).then(|| "EUR".into()));
+        assert_eq!(n, 1);
+        assert_eq!(
+            parse_csv_collect(&bytes, &ubs_currency_profile(Some(4))),
+            ParseCsvOutcome::HardFailure(CsvError::MixedCurrencies {
+                currencies: vec!["CHF".into(), "EUR".into()]
+            })
+        );
+    }
+
+    /// AC13-4 : `eur` partout → `EUR` (casse normalisée).
+    #[test]
+    fn lowercase_currency_is_uppercased() {
+        let (bytes, n) = derive_currency(|_| Some("eur".into()));
+        assert_eq!(n, 11);
+        let stmt = all_valid(parse_csv_collect(&bytes, &ubs_currency_profile(Some(4))));
+        assert_eq!(stmt.currency, "EUR");
+        assert!(stmt.transactions.iter().all(|t| t.currency == "EUR"));
+    }
+
+    /// Revue de code P1 (E-3) : la cellule Devise est rognée avant d'être
+    /// lue — ` chf ` vaut `CHF`, jamais `INVALID_CURRENCY`.
+    #[test]
+    fn padded_currency_cell_is_trimmed() {
+        let (bytes, n) = derive_currency(|_| Some(" chf ".into()));
+        assert_eq!(n, 11);
+        let stmt = all_valid(parse_csv_collect(&bytes, &ubs_currency_profile(Some(4))));
+        assert_eq!(stmt.currency, "CHF");
+        assert_eq!(stmt.transactions.len(), 11);
+        assert!(stmt.transactions.iter().all(|t| t.currency == "CHF"));
+    }
+
+    /// Revue de code P1 (E-1) : colonne Devise réglée, **aucune** ligne
+    /// valide (toutes les cellules Devise vides) → la devise du relevé est
+    /// `DEFAULT_CSV_CURRENCY`, et non une valeur tirée d'ailleurs : l'aperçu
+    /// d'un tel fichier n'annonce pas de devise non supportée.
+    #[test]
+    fn currency_column_without_valid_line_gives_default_currency() {
+        let (bytes, n) = derive_currency(|_| Some(String::new()));
+        assert_eq!(n, 11);
+        match parse_csv_collect(&bytes, &ubs_currency_profile(Some(4))) {
+            ParseCsvOutcome::PartialFailure {
+                valid,
+                total_errors,
+                ..
+            } => {
+                assert_eq!(total_errors, 11);
+                assert!(valid.transactions.is_empty());
+                assert_eq!(valid.currency, DEFAULT_CSV_CURRENCY);
+                assert_eq!(valid.currency, "CHF");
+            }
+            other => panic!("expected PartialFailure, got {other:?}"),
+        }
+    }
+
+    /// AC13-5 : une cellule vide → erreur de ligne `EMPTY_MANDATORY_FIELD`
+    /// (`currency`), jamais CHF supposé ; les 10 autres lignes en CHF.
+    #[test]
+    fn empty_currency_cell_is_a_line_error() {
+        let (bytes, n) = derive_currency(|i| (i == 5).then(String::new));
+        assert_eq!(n, 1);
+        match parse_csv_collect(&bytes, &ubs_currency_profile(Some(4))) {
+            ParseCsvOutcome::PartialFailure {
+                valid,
+                errors,
+                total_errors,
+                ..
+            } => {
+                assert_eq!(total_errors, 1);
+                assert_eq!(errors[0].code, CsvLineErrorCode::EmptyMandatoryField);
+                assert_eq!(errors[0].value.as_deref(), Some("currency"));
+                assert_eq!(valid.currency, "CHF");
+                assert_eq!(valid.transactions.len(), 10);
+                assert!(valid.transactions.iter().all(|t| t.currency == "CHF"));
+            }
+            other => panic!("expected PartialFailure, got {other:?}"),
+        }
+    }
+
+    /// AC13-6 : formes illisibles → `INVALID_CURRENCY`. `ÉUR` (trois
+    /// caractères, quatre octets) tue un contrôle alphabétique Unicode,
+    /// `ÉU` (trois octets) un contrôle sur la longueur en octets, `CH1` un
+    /// contrôle alphanumérique, `CH` une borne « au plus trois ».
+    #[test]
+    fn malformed_currency_cells_are_invalid_currency() {
+        for bad in ["Fr.", "€", "CHF1", "ÉUR", "ÉU", "CH1", "CH"] {
+            let (bytes, n) = derive_currency(|i| (i == 2).then(|| bad.to_string()));
+            assert_eq!(n, 1);
+            match parse_csv_collect(&bytes, &ubs_currency_profile(Some(4))) {
+                ParseCsvOutcome::PartialFailure {
+                    valid,
+                    errors,
+                    total_errors,
+                    ..
+                } => {
+                    assert_eq!(total_errors, 1, "{bad}");
+                    assert_eq!(errors[0].code, CsvLineErrorCode::InvalidCurrency, "{bad}");
+                    assert_eq!(errors[0].value.as_deref(), Some(bad));
+                    assert_eq!(valid.transactions.len(), 10, "{bad}");
+                }
+                other => panic!("{bad} : expected PartialFailure, got {other:?}"),
+            }
+        }
+    }
+
+    /// AC13-7 : mélange ET erreur de ligne → le mélange l'emporte (refus
+    /// non confirmable).
+    #[test]
+    fn mixed_currencies_dominates_line_errors() {
+        let (bytes, n) = derive_ubs(|i, f| match i {
+            1 => {
+                f[4] = "EUR".into();
+                true
+            }
+            6 => {
+                f[2] = "pas-une-date".into();
+                true
+            }
+            _ => false,
+        });
+        assert_eq!(n, 2);
+        assert!(matches!(
+            parse_csv_collect(&bytes, &ubs_currency_profile(Some(4))),
+            ParseCsvOutcome::HardFailure(CsvError::MixedCurrencies { .. })
+        ));
+    }
+
+    /// AC13-8 : un débit de signe contraire ET une AUTRE ligne, valide, en
+    /// EUR → le refus de signe l'emporte (ordre de l'AC3). Pas la même
+    /// ligne : une ligne de signe contraire sort avant la lecture de sa
+    /// devise.
+    #[test]
+    fn sign_mismatch_dominates_mixed_currencies() {
+        let mut debit_flipped = false;
+        let (bytes, n) = derive_ubs(|i, f| {
+            if !debit_flipped && f[5].starts_with('-') {
+                f[5] = f[5].trim_start_matches('-').to_string();
+                debit_flipped = true;
+                return true;
+            }
+            if i == 10 {
+                assert!(f[5].is_empty() || f[5].starts_with('-'));
+                f[4] = "EUR".into();
+                return true;
+            }
+            false
+        });
+        assert_eq!(n, 2);
+        let (_, total, _, _) =
+            sign_refusal(parse_csv_collect(&bytes, &ubs_currency_profile(Some(4))));
+        assert_eq!(total, 1);
+    }
+
+    /// AC13-9 : sans colonne Devise → la constante nommée, pour le relevé
+    /// et pour chaque ligne (comportement d'avant).
+    #[test]
+    fn without_currency_column_default_is_assumed() {
+        let (bytes, _) = derive_currency(|_| Some("EUR".into()));
+        let stmt = all_valid(parse_csv_collect(&bytes, &ubs_currency_profile(None)));
+        assert_eq!(stmt.currency, DEFAULT_CSV_CURRENCY);
+        assert!(
+            stmt.transactions
+                .iter()
+                .all(|t| t.currency == DEFAULT_CSV_CURRENCY)
+        );
+    }
+
+    /// AC13-10 : colonne Devise hors borne → profil mal configuré.
+    #[test]
+    fn currency_column_out_of_bounds_is_misconfigured() {
+        match parse_csv_collect(UBS_FIXTURE, &ubs_currency_profile(Some(40))) {
+            ParseCsvOutcome::HardFailure(CsvError::ProfileMisconfigured(msg)) => {
+                assert!(msg.contains("column_mapping.currency"), "{msg}");
+            }
+            other => panic!("expected ProfileMisconfigured, got {other:?}"),
+        }
+    }
+
+    /// AC13-11 : 11 devises distinctes → les 10 PREMIÈRES DU TRI. Le code
+    /// qui se trie en dernier (`ZZZ`) est sur la PREMIÈRE ligne : une
+    /// troncature « 10 premières rencontrées » le garderait.
+    #[test]
+    fn mixed_currencies_reports_first_ten_sorted() {
+        let codes = [
+            "ZZZ", "AAA", "AAB", "AAC", "AAD", "AAE", "AAF", "AAG", "AAH", "AAI", "AAJ",
+        ];
+        let (bytes, n) = derive_currency(|i| Some(codes[i].to_string()));
+        assert_eq!(n, 11);
+        let mut expected: Vec<String> = codes.iter().map(|c| c.to_string()).collect();
+        expected.sort();
+        expected.truncate(MAX_REPORTED_CURRENCIES);
+        assert_eq!(expected.len(), 10);
+        assert!(!expected.contains(&"ZZZ".to_string()));
+        assert_eq!(
+            parse_csv_collect(&bytes, &ubs_currency_profile(Some(4))),
+            ParseCsvOutcome::HardFailure(CsvError::MixedCurrencies {
+                currencies: expected
+            })
+        );
+    }
+
+    /// AC13-12 : l'erreur de devise GARDE l'observation de débit (AC2). Un
+    /// débit négatif (cohérent sous `Negative`) a sa cellule Devise vidée,
+    /// les huit autres débits passent en positif : `d` = 9, `e` = 8, donc
+    /// `whole_debit_column = false`. Sous `RowParse::err` sur l'erreur de
+    /// devise, `d` = 8 = `e` et le conseil de régler le profil serait donné
+    /// à tort (C-26-1-25).
+    #[test]
+    fn currency_error_keeps_debit_observation() {
+        let mut kept_one = false;
+        let mut debits = 0usize;
+        let (bytes, n) = derive_ubs(|_, f| {
+            if !f[5].starts_with('-') {
+                return false;
+            }
+            debits += 1;
+            if !kept_one {
+                kept_one = true;
+                f[4] = String::new();
+            } else {
+                f[5] = f[5].trim_start_matches('-').to_string();
+            }
+            true
+        });
+        assert_eq!(debits, 9, "la fixture porte neuf débits");
+        assert_eq!(n, 9);
+        let (_, total, _, whole) =
+            sign_refusal(parse_csv_collect(&bytes, &ubs_currency_profile(Some(4))));
+        assert_eq!(total, 8);
+        assert!(!whole, "d = 9, e = 8 : pas toute la colonne");
     }
 }

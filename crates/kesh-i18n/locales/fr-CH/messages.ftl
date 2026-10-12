@@ -1064,7 +1064,7 @@ bank-import-errors-parse-failed = Le fichier CAMT.053 n'a pas pu être analysé.
 
 # Warnings (preview 200 OK)
 bank-import-warnings-balance-mismatch = Solde de clôture incohérent.
-bank-import-warnings-unsupported-currency = Devise non supportée v0.1.
+bank-import-warnings-unsupported-currency = Devise non supportée : seul le franc suisse (CHF) est pris en charge. Devise du relevé :
 bank-import-warnings-ignored-statements = Certains statements du fichier ne correspondent pas au compte sélectionné et seront ignorés.
 # Story 8-3 — détection doublons + rejet partiel
 bank-import-warnings-duplicate-file = Ce fichier a déjà été importé.
@@ -1107,6 +1107,7 @@ bank-import-labels-bank-profile-auto-detect-placeholder = Auto-détection
 # via `warnings.informational[]` (snake_case → kebab-case côté frontend).
 bank-import-info-bank-csv-profile-auto-matched = Profil bancaire détecté automatiquement par le nom du fichier.
 bank-import-info-bank-csv-multiple-profile-matches = Plusieurs profils correspondent au nom du fichier ; le premier a été retenu.
+bank-import-info-bank-csv-currency-assumed = Le profil ne lit aucune colonne Devise : le relevé est supposé en francs suisses (CHF).
 bank-import-errors-no-valid-lines-to-commit = Aucune ligne valide à importer dans le CSV.
 bank-import-labels-list-title = Imports précédents
 bank-import-labels-import-success = Import réussi.
@@ -1128,9 +1129,11 @@ bank-import-csv-errors-empty-mandatory-field = Champ obligatoire vide.
 bank-import-csv-errors-row-too-short = Ligne trop courte (colonnes manquantes).
 # Story 26-1 (#620, #621) — sens des débits, lignes à ignorer
 bank-import-csv-errors-amount-sign-mismatch = Montant de signe contraire à sa colonne — vérifier le réglage du sens des débits du profil.
+bank-import-csv-errors-invalid-currency = Devise illisible dans une ligne CSV (trois lettres attendues, par exemple CHF).
 bank-import-csv-errors-amount-sign-refused-profile = Tous les débits lus dans le fichier ont un signe contraire au réglage du profil. Réglez le sens des débits du profil (Administration → Profils bancaires), puis redéposez le fichier.
 bank-import-csv-errors-amount-sign-refused-lines = { $count } ligne(s) portent un montant de signe contraire à leur colonne (une extourne, par exemple) : ce relevé ne peut pas être importé tel quel dans cette version. Les lignes en cause sont listées ci-dessous.
 bank-import-csv-errors-header-skips-data = La ligne { $line }, qui devrait être ignorée, porte déjà une date : le nombre de lignes à ignorer du profil est trop grand, une transaction aurait disparu.
+bank-import-csv-errors-mixed-currencies = Le relevé porte plusieurs devises ({ $currencies }) : un relevé CSV doit être dans une seule devise. Rien n'a été importé.
 bank-import-csv-warnings-profile-auto-matched = Profil appliqué automatiquement par auto-match.
 bank-import-csv-warnings-multiple-profile-matches = Plusieurs profils matchent ce filename, le plus récent a été utilisé.
 bank-import-csv-warnings-encoding-mismatch = L'encoding détecté diffère du profil.
@@ -1153,6 +1156,8 @@ bank-import-profile-labels-debit-sign-positive = Débits écrits sans signe (500
 bank-import-profile-labels-debit-sign-negative = Débits écrits avec un signe moins (−500.00), comme UBS
 bank-import-profile-labels-column-mapping = Mapping colonnes (0-indexed)
 bank-import-profile-labels-use-debit-credit-split = Colonnes débit/crédit séparées
+bank-import-profile-labels-col-currency = devise (facultative)
+bank-import-profile-labels-col-currency-help = Colonne qui porte la devise de chaque ligne. Sans elle, le relevé est supposé en francs suisses (CHF). Relevé CSV d'UBS : 4.
 bank-import-profile-labels-create = Créer
 bank-import-profile-labels-update = Mettre à jour
 bank-import-profile-labels-edit = Éditer

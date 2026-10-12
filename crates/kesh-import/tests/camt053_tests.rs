@@ -1,6 +1,6 @@
 //! Tests d'intégration du parseur CAMT.053 (Story 8-1a, AC #5 et #9).
 //!
-//! Les 10 fixtures couvrent :
+//! Les 14 fixtures (`ls tests/fixtures/camt053/ | wc -l`) couvrent :
 //! - v04 namespace par défaut + namespace préfixé (régression H4)
 //! - v08 namespace
 //! - Sous-transactions (FR49)
@@ -10,6 +10,12 @@
 //! - IBAN counterparty cassé conservé brut (§iban-tolerant)
 //! - Devise EUR préservée par le parseur (rejet côté `kesh-core`)
 //! - `CdtDbtInd` qui signe le montant
+//! - Signe absent de la `Ntry`, repris de chaque `TxDtls`
+//! - XML tronqué après la fermeture d'un `Stmt` (garde de fin de fichier)
+//! - Chevauchement avec `v04_minimal.xml` (doublon de ligne, pas de fichier ;
+//!   exercé côté API)
+//! - Montants d'information en devise étrangère (`AmtDtls`, `Chrgs`) : la
+//!   devise de la transaction reste celle de son montant (Story 27-2, AC19)
 
 use kesh_import::{CamtError, SourceFormat, parse_camt053};
 use rust_decimal_macros::dec;
@@ -318,4 +324,46 @@ fn parse_ntry_without_sign_falls_back_to_txdtls_signs() {
     );
     assert_eq!(dbit.end_to_end_id.as_deref(), Some("E2E-FALLBACK-DBIT"));
     assert_eq!(dbit.counterparty_name.as_deref(), Some("Fournisseur"));
+}
+
+// ── Story 27-2 (#624), AC19 : la devise d'une transaction est celle de
+//    l'élément qui porte son montant, jamais celle d'un montant
+//    d'information (`<AmtDtls>`, `<Chrgs>`). Écrits et vus ROUGES sur le
+//    code d'avant (cf. Dev Agent Record de la story).
+
+fn amtdtls_statement() -> kesh_import::ImportedStatement {
+    let mut stmts = parse_camt053(&load("v04_amtdtls_foreign_currency.xml")).expect("parse OK");
+    assert_eq!(stmts.len(), 1);
+    let s = stmts.remove(0);
+    assert_eq!(s.currency, "CHF");
+    assert_eq!(s.transactions.len(), 3, "une transaction par entrée");
+    s
+}
+
+/// AC19-(1) : entrée 1, `TxDtls/Amt` CHF suivi d'`AmtDtls` et de `Chrgs`
+/// en EUR → CHF, montant de `TxDtls/Amt`.
+#[test]
+fn txdtls_currency_is_that_of_its_amount_not_of_amtdtls_or_charges() {
+    let tx = &amtdtls_statement().transactions[0];
+    assert_eq!(tx.currency, "CHF");
+    assert_eq!(tx.amount, dec!(-54.20));
+}
+
+/// AC19-(1-bis) : entrée 3, un `<TxDtls>` sans `Amt` propre et un
+/// `AmtDtls` en EUR → devise et montant de l'entrée. Seule à tuer la
+/// mutation « la première devise rencontrée gagne » (M25).
+#[test]
+fn txdtls_without_amount_takes_entry_currency_not_amtdtls() {
+    let tx = &amtdtls_statement().transactions[2];
+    assert_eq!(tx.currency, "CHF");
+    assert_eq!(tx.amount, dec!(-20.00));
+}
+
+/// AC19-(2) : entrée 2, sans `<TxDtls>`, `Ntry/Amt` CHF suivi d'un
+/// `AmtDtls` en EUR → CHF, montant de `Ntry/Amt`.
+#[test]
+fn ntry_currency_is_that_of_its_amount_not_of_amtdtls() {
+    let tx = &amtdtls_statement().transactions[1];
+    assert_eq!(tx.currency, "CHF");
+    assert_eq!(tx.amount, dec!(-30.00));
 }

@@ -626,8 +626,9 @@ pub async fn get_proposals(
     let amount_tolerance = Decimal::new(AMOUNT_TOLERANCE_HUNDREDTHS, 2);
     for tx in transactions {
         // A6-2 Pass 6 — currency tx-side guard (mono-CHF v0.1, cf. L38).
-        // Skip transactions non-CHF (parser CSV peut techniquement insérer
-        // EUR/USD via custom profile pre-Story 11 multi-currency).
+        // Skip transactions non-CHF. Défense en profondeur : depuis la
+        // Story 27-2, aucun import n'enregistre de transaction non CHF
+        // (CAMT et CSV à colonne Devise refusés, CSV sans colonne en CHF).
         if tx.currency != "CHF" {
             tx_candidates.push((tx, Vec::new()));
             continue;

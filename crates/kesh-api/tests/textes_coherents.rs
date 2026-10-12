@@ -678,6 +678,7 @@ fn references_d_issues_du_readme_sont_des_liens() {
 #[test]
 fn les_replis_rust_suivent_le_catalogue() {
     const NOM: &[(&str, &str)] = &[("{ $name }", "{fiscal_year_name}")];
+    const DEVISES: &[(&str, &str)] = &[("{ $currencies }", "{currencies}")];
     type Cles = &'static [(&'static str, usize, &'static [(&'static str, &'static str)])];
     const TABLE: [(&str, Cles); 3] = [
         (
@@ -724,6 +725,9 @@ fn les_replis_rust_suivent_le_catalogue() {
                     1,
                     &[("{ $line }", "{line}")],
                 ),
+                // Story 27-2 (#624) — le refus de devise, chemin CSV compris.
+                ("bank-import-errors-unsupported-currency", 1, &[]),
+                ("bank-import-csv-errors-mixed-currencies", 1, DEVISES),
             ],
         ),
         (
@@ -737,6 +741,13 @@ fn les_replis_rust_suivent_le_catalogue() {
     ];
     let continuation = Regex::new(r"\\\n\s*").unwrap();
     let fr = catalogue_fr();
+    // Revue de code P1 de la 27-2 (E-4) : une variable Fluent renommée dans une
+    // seule locale laisserait l'utilisateur de cette langue sans la valeur —
+    // chaque paramètre se contrôle donc dans les QUATRE catalogues.
+    let autres: Vec<(&str, HashMap<String, String>)> = ["de-CH", "en-CH", "it-CH"]
+        .into_iter()
+        .map(|l| (l, catalogue(l)))
+        .collect();
     for (fichier, cles) in TABLE {
         let source = continuation.replace_all(&lire(fichier), "").into_owned();
         for (cle, sites, parametres) in cles {
@@ -746,6 +757,12 @@ fn les_replis_rust_suivent_le_catalogue() {
                 .clone();
             for (fluent, rust) in *parametres {
                 assert!(valeur.contains(fluent), "fr-CH : {cle} sans {fluent}");
+                for (locale, cat) in &autres {
+                    let v = cat
+                        .get(*cle)
+                        .unwrap_or_else(|| panic!("{locale} : {cle} absente"));
+                    assert!(v.contains(fluent), "{locale} : {cle} sans {fluent}");
+                }
                 valeur = valeur.replace(fluent, rust);
             }
             let litteral = format!("\"{valeur}\"");

@@ -87,10 +87,10 @@ pub enum CoreError {
         diff: Money,
     },
 
-    /// La devise du relevé bancaire importé n'est pas supportée par la
-    /// version v0.1 (seul CHF est accepté). Le rejet vit côté `kesh-core`
+    /// La devise du relevé bancaire importé n'est pas supportée par
+    /// cette version (seul CHF est accepté). Le rejet vit côté `kesh-core`
     /// pour conserver `kesh-import` agnostique du périmètre fonctionnel.
-    #[error("devise non supportée v0.1 : {0} (seul CHF est accepté)")]
+    #[error("devise non supportée : {0} (seul CHF est accepté)")]
     BankImportUnsupportedCurrency(String),
 
     /// Le suffixe de version `SourceFormat::Camt053 { version }` ne

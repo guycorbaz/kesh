@@ -1,0 +1,144 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Fixture SYNTHÉTIQUE (Story 27-2, AC19 ; valeurs inventées) : compte en CHF
+  dont trois paiements par carte portent des montants d'INFORMATION en EUR
+  (montant d'origine <AmtDtls><InstdAmt>, frais <Chrgs>). La devise de chaque
+  transaction doit être celle de l'élément qui porte son montant
+  (TxDtls/Amt ou Ntry/Amt), jamais celle d'un montant d'information.
+  Entrée 1 : TxDtls à Amt CHF direct, suivi d'AmtDtls et de Chrgs en EUR.
+  Entrée 2 : sans TxDtls, Ntry/Amt CHF, suivi d'AmtDtls en EUR.
+  Entrée 3 : un TxDtls SANS Amt propre (forme dominante), AmtDtls en EUR :
+  montant et devise repris de l'entrée.
+  Ordre des éléments : celui du XSD 001.08 versionné au dépôt.
+-->
+<Document xmlns="urn:iso:std:iso:20022:tech:xsd:camt.053.001.04">
+  <BkToCstmrStmt>
+    <GrpHdr>
+      <MsgId>STMT-AMTDTLS-001</MsgId>
+      <CreDtTm>2026-06-30T23:59:00</CreDtTm>
+    </GrpHdr>
+    <Stmt>
+      <Id>STMT-AMTDTLS</Id>
+      <CreDtTm>2026-06-30T23:59:00</CreDtTm>
+      <FrToDt>
+        <FrDtTm>2026-06-01T00:00:00</FrDtTm>
+        <ToDtTm>2026-06-30T23:59:59</ToDtTm>
+      </FrToDt>
+      <Acct>
+        <Id>
+          <IBAN>CH4431999123000889012</IBAN>
+        </Id>
+        <Ccy>CHF</Ccy>
+      </Acct>
+      <Bal>
+        <Tp>
+          <CdOrPrtry>
+            <Cd>OPBD</Cd>
+          </CdOrPrtry>
+        </Tp>
+        <Amt Ccy="CHF">5000.00</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt>
+          <Dt>2026-06-01</Dt>
+        </Dt>
+      </Bal>
+      <Bal>
+        <Tp>
+          <CdOrPrtry>
+            <Cd>CLBD</Cd>
+          </CdOrPrtry>
+        </Tp>
+        <Amt Ccy="CHF">4895.80</Amt>
+        <CdtDbtInd>CRDT</CdtDbtInd>
+        <Dt>
+          <Dt>2026-06-30</Dt>
+        </Dt>
+      </Bal>
+      <Ntry>
+        <Amt Ccy="CHF">54.20</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2026-06-10</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2026-06-10</Dt>
+        </ValDt>
+        <AcctSvcrRef>BANK-CARD-001</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <Refs>
+              <AcctSvcrRef>BANK-CARD-001-TX</AcctSvcrRef>
+            </Refs>
+            <Amt Ccy="CHF">54.20</Amt>
+            <CdtDbtInd>DBIT</CdtDbtInd>
+            <AmtDtls>
+              <InstdAmt>
+                <Amt Ccy="EUR">56.00</Amt>
+                <CcyXchg>
+                  <SrcCcy>EUR</SrcCcy>
+                  <TrgtCcy>CHF</TrgtCcy>
+                  <XchgRate>0.9411</XchgRate>
+                </CcyXchg>
+              </InstdAmt>
+            </AmtDtls>
+            <Chrgs>
+              <Rcrd>
+                <Amt Ccy="EUR">1.50</Amt>
+                <CdtDbtInd>DBIT</CdtDbtInd>
+              </Rcrd>
+            </Chrgs>
+            <RmtInf>
+              <Ustrd>Carte - Librairie Fictive, Annecy</Ustrd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">30.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2026-06-12</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2026-06-12</Dt>
+        </ValDt>
+        <AcctSvcrRef>BANK-CARD-002</AcctSvcrRef>
+        <AmtDtls>
+          <InstdAmt>
+            <Amt Ccy="EUR">31.00</Amt>
+          </InstdAmt>
+        </AmtDtls>
+        <AddtlNtryInf>Carte - Boulangerie Exemple, Lyon</AddtlNtryInf>
+      </Ntry>
+      <Ntry>
+        <Amt Ccy="CHF">20.00</Amt>
+        <CdtDbtInd>DBIT</CdtDbtInd>
+        <Sts>BOOK</Sts>
+        <BookgDt>
+          <Dt>2026-06-14</Dt>
+        </BookgDt>
+        <ValDt>
+          <Dt>2026-06-14</Dt>
+        </ValDt>
+        <AcctSvcrRef>BANK-CARD-003</AcctSvcrRef>
+        <NtryDtls>
+          <TxDtls>
+            <Refs>
+              <AcctSvcrRef>BANK-CARD-003-TX</AcctSvcrRef>
+            </Refs>
+            <AmtDtls>
+              <InstdAmt>
+                <Amt Ccy="EUR">21.00</Amt>
+              </InstdAmt>
+            </AmtDtls>
+            <RmtInf>
+              <Ustrd>Carte - Musée Imaginaire, Turin</Ustrd>
+            </RmtInf>
+          </TxDtls>
+        </NtryDtls>
+      </Ntry>
+    </Stmt>
+  </BkToCstmrStmt>
+</Document>

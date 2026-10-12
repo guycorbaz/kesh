@@ -331,6 +331,11 @@ test('imports the UBS CSV as is with a « minus sign » profile (Story 26-1)', a
 	await page.getByTestId('bank-import-file-input').setInputFiles(UBS_FIXTURE);
 	await expect(page.getByTestId('bank-import-preview')).toBeVisible();
 	await expect(page.getByTestId('preview-tx-count')).toHaveText('11');
+	// Story 27-2 (#624, AC15-3) : profil sans colonne Devise → l'aperçu dit
+	// que le relevé est SUPPOSÉ en CHF.
+	await expect(
+		page.getByTestId('warning-informational').locator('[data-info-code="bank_csv_currency_assumed"]'),
+	).toBeVisible();
 	await page.getByTestId('bank-import-confirm').click();
 	await expect(page.getByTestId('bank-import-preview')).toBeHidden();
 
@@ -353,6 +358,115 @@ test('imports the UBS CSV as is with a « minus sign » profile (Story 26-1)', a
 	} finally {
 		await disposeContextSafe(ctx);
 	}
+});
+
+// ===========================================================================
+// Story 27-2 (#624) — la colonne Devise du relevé UBS
+// ===========================================================================
+
+/**
+ * Dérive la fixture UBS **en mémoire** en modifiant ses seules lignes de
+ * données (après la ligne de titres) ; asserte que les 11 ont été vues.
+ */
+function deriveUbsDataRows(buf: Buffer, edit: (cells: string[]) => void): Buffer {
+	const lines = buf.toString('utf8').split('\n');
+	const title = lines.findIndex((l) => l.startsWith('Date de transaction;'));
+	expect(title, 'ligne de titres introuvable').toBeGreaterThan(0);
+	let seen = 0;
+	for (let i = title + 1; i < lines.length; i++) {
+		const cells = lines[i].split(';');
+		edit(cells);
+		lines[i] = cells.join(';');
+		seen++;
+	}
+	expect(seen).toBe(11);
+	return Buffer.from(lines.join('\n'), 'utf8');
+}
+
+/**
+ * `ubs_synthetique_devise.csv` : la fixture dont les TROIS colonnes de date
+ * (transaction, comptabilisation, valeur ; la colonne 1 est une heure) sont
+ * décalées d'une année. Le test voisin importe déjà `ubs_synthetique.csv` dans
+ * la même base et sur le même compte : mêmes octets → fichier en doublon,
+ * mêmes lignes → doublons ignorés et import à zéro transaction. L'empreinte de
+ * ligne porte la date (C-27-2-25).
+ */
+function ubsDeviseBuffer(): Buffer {
+	return deriveUbsDataRows(fs.readFileSync(UBS_FIXTURE), (c) => {
+		for (const k of [0, 2, 3]) {
+			expect(c[k].startsWith('2026-'), `colonne ${k} : ${c[k]}`).toBeTruthy();
+			c[k] = c[k].replace(/^2026-/, '2025-');
+		}
+	});
+}
+
+const UBS_DEVISE_NAME = 'ubs_synthetique_devise.csv';
+
+test('reads the currency column of the UBS CSV, set on screen (Story 27-2)', async ({ page }) => {
+	await login(page);
+	await ensureBankAccount(page);
+	await createProfileViaUi(page, {
+		name: 'UBS synthétique — devise',
+		pattern: '^ubs_synthetique_devise\\.csv$',
+		debitSign: 'negative',
+		split: true,
+		headerRows: '9',
+		dateFormat: '%Y-%m-%d',
+		columns: { ...UBS_COLUMNS, 'col-currency-input': '4' },
+	});
+
+	// AC15-1 — fichier CHF : importé, chaque transaction en CHF, et l'aperçu
+	// ne dit PAS la devise supposée.
+	await page.goto('/bank-import');
+	await expect(page.getByTestId('bank-import-page-title')).toBeVisible();
+	await page.getByTestId('bank-account-select').selectOption({ index: 1 });
+	await page.getByTestId('bank-import-file-input').setInputFiles({
+		name: UBS_DEVISE_NAME,
+		mimeType: 'text/csv',
+		buffer: ubsDeviseBuffer(),
+	});
+	await expect(page.getByTestId('bank-import-preview')).toBeVisible();
+	await expect(page.getByTestId('preview-tx-count')).toHaveText('11');
+	await expect(page.getByTestId('warning-unsupported-currency')).toHaveCount(0);
+	await expect(page.locator('[data-info-code="bank_csv_currency_assumed"]')).toHaveCount(0);
+	await page.getByTestId('bank-import-confirm').click();
+	await expect(page.getByTestId('bank-import-preview')).toBeHidden();
+
+	const ctx = await authedApiContext(page);
+	try {
+		const list = await (await ctx.get('/api/v1/bank-imports?limit=50&offset=0')).json();
+		const imp = (list.items as Array<{ id: number; filename: string }>).find(
+			(i) => i.filename === UBS_DEVISE_NAME,
+		);
+		expect(imp, `import ${UBS_DEVISE_NAME} introuvable`).toBeTruthy();
+		const detail = await (await ctx.get(`/api/v1/bank-imports/${imp!.id}`)).json();
+		const transactions = detail.transactions as Array<{ currency: string }>;
+		expect(transactions).toHaveLength(11);
+		expect(transactions.every((t) => t.currency === 'CHF')).toBe(true);
+	} finally {
+		await disposeContextSafe(ctx);
+	}
+
+	// AC15-2 — le même fichier en EUR : aperçu seul, avertissement de devise,
+	// *Confirmer* grisé, rien d'importé.
+	const before = await importTotal(page);
+	const eur = deriveUbsDataRows(ubsDeviseBuffer(), (c) => {
+		expect(c[4]).toBe('CHF');
+		c[4] = 'EUR';
+	});
+	await page.goto('/bank-import');
+	await expect(page.getByTestId('bank-import-page-title')).toBeVisible();
+	await page.getByTestId('bank-account-select').selectOption({ index: 1 });
+	await page.getByTestId('bank-import-file-input').setInputFiles({
+		name: UBS_DEVISE_NAME,
+		mimeType: 'text/csv',
+		buffer: eur,
+	});
+	await expect(page.getByTestId('bank-import-preview')).toBeVisible();
+	await expect(page.getByTestId('warning-unsupported-currency')).toBeVisible();
+	await expect(page.getByTestId('warning-unsupported-currency')).toContainText('EUR');
+	await expect(page.getByTestId('bank-import-confirm')).toBeDisabled();
+	expect(await importTotal(page)).toBe(before);
 });
 
 test('refuses the UBS CSV entirely under a « no sign » profile, lines listed (Story 26-1)', async ({

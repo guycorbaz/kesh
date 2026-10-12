@@ -601,7 +601,7 @@
 					<p>
 						{i18nMsg(
 							'bank-import-warnings-unsupported-currency',
-							'Devise non supportée v0.1.',
+							'Devise non supportée : seul le franc suisse (CHF) est pris en charge. Devise du relevé :',
 						)}
 						{preview.warnings.unsupportedCurrency.currency}
 					</p>

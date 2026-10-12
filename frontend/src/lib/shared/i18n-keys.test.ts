@@ -577,7 +577,12 @@ const ATTENDU = {
 	// (neuf, 8 : bouton, motif, titre, corps, *Annuler*, confirmation, deux erreurs) et
 	// `routes/(app)/bank-import/[id]/+page.svelte` (3 → 4 : la notification de succès).
 	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (que des littéraux).
-	sitesTotal: 2041,
+	// Story 27-2 (#624) : **2041 → 2043** (+2) — `lib/features/bank-import/BankProfileForm.svelte`
+	// (15 → 17) : libellé et aide de la colonne Devise (`bank-import-profile-labels-col-currency`,
+	// `-col-currency-help`). Recompté par `grep -o "i18nMsg("` aux deux bornes (`a2743fd4` et la
+	// branche), puis à la fusion sur la 27-1. `sitesNonResolus`, `relais`, `sitesGabarit`
+	// inchangés (que des littéraux).
+	sitesTotal: 2043,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/
@@ -630,11 +635,17 @@ const MOTIFS_DYNAMIQUES: Record<string, readonly string[]> = {
 	],
 	// ⚠️ angle mort assumé — valeurs produites par le backend Rust, déclarées APRÈS
 	// transformation (`info.replace(/_/g, '-')`), donc en tirets et non en snake_case.
-	'bank-import-info-': ['bank-csv-profile-auto-matched', 'bank-csv-multiple-profile-matches'],
+	// Story 27-2 (#624) : + `bank-csv-currency-assumed` (profil sans colonne Devise).
+	'bank-import-info-': [
+		'bank-csv-profile-auto-matched', 'bank-csv-multiple-profile-matches',
+		'bank-csv-currency-assumed'
+	],
 	// Story 26-1 (#620, AC3-bis) — `lib/features/bank-import/csv-line-error-label.ts`.
 	'bank-import-csv-errors-': [
 		'invalid-date', 'invalid-amount', 'ambiguous-debit-credit', 'empty-mandatory-field',
-		'row-too-short', 'amount-sign-mismatch'
+		'row-too-short', 'amount-sign-mismatch',
+		// Story 27-2 (#624) — cellule Devise illisible.
+		'invalid-currency'
 	]
 };
 
@@ -682,7 +693,7 @@ const CARDINALITES: Record<string, number> = {
 	'vat-category-': 5,
 	'reminders-error-': 15,
 	'imported-supplier-invoices-error-': Object.keys(IMPORT_ERROR_LABELS).length,
-	'bank-import-info-': 2,
+	'bank-import-info-': 3,
 	// Story 26-1 : LUE depuis la production, comme la carte des erreurs d'import.
 	'bank-import-csv-errors-': Object.keys(CSV_LINE_ERROR_LABELS).length
 };

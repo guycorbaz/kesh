@@ -23,6 +23,13 @@
 //! requête : sans lui, ou avec une autre valeur, l'extracteur `Json`
 //! d'axum rejette en `422` (corps texte brut, comme toute erreur de
 //! désérialisation de cette route).
+//!
+//! `columnMapping.currency` (Story 27-2, #624) : index **facultatif** de la
+//! colonne Devise. Réglé, l'import lit la devise de chaque ligne et refuse un
+//! relevé non CHF ou à plusieurs devises ; absent, le relevé est supposé en
+//! CHF et l'aperçu le dit. Il traverse la requête et la réponse sans code
+//! propre (`ColumnMapping`) ; une collision avec une autre colonne rend
+//! `422 BANK_CSV_PROFILE_INVALID`.
 
 use axum::extract::{Path, Query, State};
 use axum::http::StatusCode;

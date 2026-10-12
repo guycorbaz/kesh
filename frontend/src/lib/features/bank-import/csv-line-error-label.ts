@@ -30,6 +30,11 @@ export const CSV_LINE_ERROR_LABELS: Record<string, [string, string]> = {
 		'amount-sign-mismatch',
 		'Montant de signe contraire à sa colonne — vérifier le réglage du sens des débits du profil.',
 	],
+	// Story 27-2 (#624) — cellule Devise illisible.
+	INVALID_CURRENCY: [
+		'invalid-currency',
+		'Devise illisible dans une ligne CSV (trois lettres attendues, par exemple CHF).',
+	],
 };
 
 /** Libellé traduit d'un code d'erreur de ligne CSV ; code brut si inconnu. */

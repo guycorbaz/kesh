@@ -22,12 +22,12 @@ aucune donnée personnelle ni transactionnelle réelle :
 
 ## Catalogue (Story 8-1a)
 
-Les 10 fichiers `camt053/*.xml` couvrent les variations attendues par le
+Les 14 fichiers `camt053/*.xml` (recompté par `ls camt053/ | wc -l`, Story 27-2) couvrent les variations attendues par le
 parseur (AC #5, #9 de la story 8-1a) :
 
 | Fichier | Cas couvert |
 |---|---|
-| `v04_minimal.xml` | namespace par défaut, 1 stmt, 1 Ntry sans TxDtls |
+| `v04_minimal.xml` | namespace par défaut, 1 stmt, 1 Ntry à 1 TxDtls |
 | `v04_prefixed_namespace.xml` | namespace préfixé `<ns:Document xmlns:ns="...">` (régression H4) |
 | `v08_minimal.xml` | namespace v08 avec dispatcher |
 | `v04_with_subtxs.xml` | 1 Ntry agrégée + 3 TxDtls → 3 transactions distinctes (FR49) |
@@ -37,6 +37,10 @@ parseur (AC #5, #9 de la story 8-1a) :
 | `v04_invalid_iban.xml` | IBAN counterparty checksum cassé conservé brut (§iban-tolerant) |
 | `v04_eur_currency.xml` | `<Acct><Ccy>EUR</Ccy>` — devise extraite, rejet côté `kesh-core` |
 | `v04_credit_debit_indicator.xml` | 1 DBIT + 1 CRDT → signe appliqué au montant |
+| `v04_ntry_sign_fallback.xml` | `Ntry` sans `CdtDbtInd`, 2 TxDtls signés → signe repris de chaque TxDtls |
+| `v04_overlap.xml` | `MsgId` distinct de `v04_minimal.xml`, une transaction identique en clé composite → doublon de ligne, pas de fichier (Story 8-3) |
+| `v04_truncated_after_stmt_close.xml` | XML coupé après la fermeture d'un `Stmt` — `MalformedXml` par la garde de fin de fichier |
+| `v04_amtdtls_foreign_currency.xml` | compte CHF, montants d'information en EUR (`AmtDtls/InstdAmt`, `Chrgs`) sur 3 entrées (TxDtls à `Amt` direct, sans TxDtls, TxDtls sans `Amt`) → chaque transaction en CHF (Story 27-2, AC19) |
 
 ## CSV (Story 26-1)
 

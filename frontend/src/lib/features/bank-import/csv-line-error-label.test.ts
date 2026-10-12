@@ -17,6 +17,7 @@ describe('csvLineErrorLabel', () => {
 			EMPTY_MANDATORY_FIELD: 'bank-import-csv-errors-empty-mandatory-field',
 			ROW_TOO_SHORT: 'bank-import-csv-errors-row-too-short',
 			AMOUNT_SIGN_MISMATCH: 'bank-import-csv-errors-amount-sign-mismatch',
+			INVALID_CURRENCY: 'bank-import-csv-errors-invalid-currency',
 		};
 		expect(Object.keys(CSV_LINE_ERROR_LABELS).sort()).toEqual(Object.keys(attendu).sort());
 		for (const [code, cle] of Object.entries(attendu)) {

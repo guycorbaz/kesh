@@ -626,6 +626,26 @@ fn csv_line_error_to_payload(e: CsvLineError) -> crate::errors::CsvLineErrorPayl
     }
 }
 
+/// Contrôle de devise d'un relevé importé, **commun aux chemins CAMT.053 et
+/// CSV** (Story 27-2, #624 — le chemin CSV ne l'appelait pas). Rend la
+/// devise refusée (`Some`) ou `None` si elle est prise en charge ; toute
+/// autre variante de `CoreError` est un bug structurel → `Internal`.
+/// L'aperçu en fait un avertissement, l'import un refus `422`.
+fn unsupported_currency(stmt: &ImportedStatement) -> Result<Option<String>, AppError> {
+    match core_bank_imports::validate_currency_supported_v0_1(stmt) {
+        Ok(()) => Ok(None),
+        Err(kesh_core::errors::CoreError::BankImportUnsupportedCurrency(currency)) => {
+            Ok(Some(currency))
+        }
+        Err(other) => {
+            tracing::warn!("validate_currency unexpected CoreError: {other}");
+            Err(AppError::Internal(format!(
+                "validate_currency retourne une variante inattendue : {other}"
+            )))
+        }
+    }
+}
+
 /// Mappe `CsvError` vers `AppError`.
 fn map_csv_error(err: CsvError) -> AppError {
     match err {
@@ -671,6 +691,8 @@ fn map_csv_error(err: CsvError) -> AppError {
             whole_debit_column,
         },
         CsvError::HeaderSkipsData { line } => AppError::BankCsvHeaderSkipsData { line },
+        // Story 27-2 (#624) : bras EXPLICITE, même raison.
+        CsvError::MixedCurrencies { currencies } => AppError::BankCsvMixedCurrencies { currencies },
         // Pour les variantes non-PartialFailure inline (InvalidDate etc.)
         // — ne devraient pas apparaître au top-level (collectées dans
         // PartialFailure), mais defense-in-depth.
@@ -964,17 +986,8 @@ pub async fn preview(
             )));
         }
     }
-    match core_bank_imports::validate_currency_supported_v0_1(&stmt) {
-        Ok(()) => {}
-        Err(kesh_core::errors::CoreError::BankImportUnsupportedCurrency(currency)) => {
-            warnings.unsupported_currency = Some(UnsupportedCurrencyPayload { currency });
-        }
-        Err(other) => {
-            tracing::warn!("validate_currency unexpected CoreError: {other}");
-            return Err(AppError::Internal(format!(
-                "validate_currency retourne une variante inattendue : {other}"
-            )));
-        }
+    if let Some(currency) = unsupported_currency(&stmt)? {
+        warnings.unsupported_currency = Some(UnsupportedCurrencyPayload { currency });
     }
 
     // Story 8-3 — détection fichier déjà importé (FR43 partie 1).
@@ -1129,9 +1142,7 @@ pub async fn create(
     let stmt = selection.selected;
 
     // Validation devise (always blocking — pas de bypass v0.1).
-    if let Err(kesh_core::errors::CoreError::BankImportUnsupportedCurrency(c)) =
-        core_bank_imports::validate_currency_supported_v0_1(&stmt)
-    {
+    if let Some(c) = unsupported_currency(&stmt)? {
         return Err(AppError::BankImportUnsupportedCurrency(c));
     }
 
@@ -1802,6 +1813,20 @@ async fn preview_csv(
     };
     warnings.invalid_lines = invalid_lines_payload;
 
+    // Story 27-2 (#624) : le contrôle de devise joue enfin sur le chemin
+    // CSV, sur le relevé obtenu (après le second essai `EncodingMismatch`).
+    // L'écran grise *Confirmer* sur cet avertissement.
+    if let Some(currency) = unsupported_currency(&stmt)? {
+        warnings.unsupported_currency = Some(UnsupportedCurrencyPayload { currency });
+    }
+    // Sans colonne Devise au profil, la devise est SUPPOSÉE
+    // (`DEFAULT_CSV_CURRENCY`) : l'aperçu le dit, chaque fois (C-27-2-4).
+    if csv_profile.column_mapping.currency.is_none() {
+        warnings
+            .informational
+            .push("bank_csv_currency_assumed".to_string());
+    }
+
     let auto_matched = fields.bank_profile_id.is_none();
     let csv_profile_match = Some(CsvProfileMatch {
         profile_id: profile.id,
@@ -1937,14 +1962,25 @@ async fn create_csv(
         other => other,
     };
 
+    // Story 27-2 (#624) : contrôle de devise dans CHACUN des deux bras,
+    // et dans le bras partiel AVANT `confirm_partial_import` — on ne demande
+    // pas de confirmer des lignes pour refuser ensuite le fichier.
     let stmt = match outcome {
-        ParseCsvOutcome::AllValid(s) => s,
+        ParseCsvOutcome::AllValid(s) => {
+            if let Some(c) = unsupported_currency(&s)? {
+                return Err(AppError::BankImportUnsupportedCurrency(c));
+            }
+            s
+        }
         ParseCsvOutcome::PartialFailure {
             valid,
             errors,
             total_errors,
             truncated,
         } => {
+            if let Some(c) = unsupported_currency(&valid)? {
+                return Err(AppError::BankImportUnsupportedCurrency(c));
+            }
             if !fields.confirm_partial_import {
                 return Err(AppError::BankCsvParsePartialFailure {
                     lines: errors.into_iter().map(csv_line_error_to_payload).collect(),

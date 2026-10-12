@@ -158,7 +158,7 @@ passage des rollouts qui touchent ces domaines, pas ici.
 | paramètres | **Einstellungen** | **impostazioni** | settings | `Paramètres` |
 | rapport | Bericht | rapporto | report | `Rapports comptables` |
 | banque | Bank | banca | bank | `Banque` |
-| devise | Währung | valuta | currency | `Devise non supportée v0.1.` |
+| devise | Währung | valuta | currency | `Devise non supportée : seul le franc suisse (CHF) est pris en charge. Devise du relevé :` |
 | projet | Projekt | progetto | project | `supplier-invoices-detail-project` |
 | **projet analytique** | **Projekt** | **progetto** | **project** | arbitrage de Guy, 2026-08-19 — cf. la note ci-dessous |
 | dépenses | Ausgaben | spese | expenses | `reports-filename-project-expenses` ⚠️ *slug de nom de fichier, pas un libellé* |

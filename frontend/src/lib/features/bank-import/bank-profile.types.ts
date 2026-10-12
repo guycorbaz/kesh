@@ -7,6 +7,9 @@ export type ColumnMapping = {
 	reference?: number;
 	details?: number;
 	counterparty?: number;
+	/** Index de la colonne Devise (facultatif) ; sans elle, le relevé est supposé
+	 *  en CHF et l'aperçu le dit (Story 27-2, #624). */
+	currency?: number;
 };
 
 /**
