@@ -21,10 +21,10 @@
 		<table class="w-full table-auto text-sm">
 			<thead>
 				<tr>
-					<th class="text-left">Date import</th>
-					<th class="text-left">Fichier</th>
-					<th class="text-left">Période</th>
-					<th class="text-right">Transactions</th>
+					<th class="text-left">{i18nMsg('bank-import-labels-list-col-imported-at', 'Date import')}</th>
+					<th class="text-left">{i18nMsg('bank-import-labels-list-col-filename', 'Fichier')}</th>
+					<th class="text-left">{i18nMsg('bank-import-labels-period', 'Période')}</th>
+					<th class="text-right">{i18nMsg('bank-import-labels-list-col-transactions', 'Transactions')}</th>
 				</tr>
 			</thead>
 			<tbody>

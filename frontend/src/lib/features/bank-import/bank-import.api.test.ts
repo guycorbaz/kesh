@@ -145,4 +145,17 @@ describe('bank-import.api', () => {
 		expect(url).toContain('/api/v1/bank-imports/42');
 		expect(init.method).toBe('DELETE');
 	});
+
+	// Story 27-3 (V11) — l'empreinte d'aperçu part en champ multipart, et seulement
+	// si elle est fournie (M9).
+	it('createBankImport transmet previewFingerprint quand il est fourni, pas sinon', async () => {
+		const fp = 'ab'.repeat(32);
+		await createBankImport(FAKE_FILE, 42, { previewFingerprint: fp });
+		const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+		expect((init.body as FormData).get('previewFingerprint')).toBe(fp);
+
+		await createBankImport(FAKE_FILE, 42, {});
+		const [, init2] = mockFetch.mock.calls[1] as [string, RequestInit];
+		expect((init2.body as FormData).get('previewFingerprint')).toBeNull();
+	});
 });

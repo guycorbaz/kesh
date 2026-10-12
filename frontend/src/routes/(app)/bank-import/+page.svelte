@@ -51,7 +51,7 @@
 </h1>
 
 {#if loading}
-	<p class="mt-4 text-text-muted">Chargement…</p>
+	<p class="mt-4 text-text-muted">{i18nMsg('common-loading', 'Chargement…')}</p>
 {:else}
 	<div class="mt-6">
 		<BankImportUpload {bankAccounts} {onSuccess} />

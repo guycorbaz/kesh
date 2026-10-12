@@ -1,11 +1,26 @@
 <!--
-  Story 8-1b — Upload + preview + confirm dans un seul composant
-  (state machine inline : idle → file-selected → previewing → preview-shown → confirming → success/error).
+  Story 8-1b — Upload + preview + confirm dans un seul composant.
 
-  Story 8-3 — extension :
-  - 4 nouveaux panneaux warnings : duplicateFile, duplicateLines, invalidLines, encodingMismatch
-  - 3 nouveaux flags confirm : confirmDuplicateFile, confirmDuplicateLines (skip|import), confirmPartialImport
-  - KF #70 closure : BankProfileSelector + confirmEncodingMismatch wiring
+  Machine d'état (Story 27-3, #626) :
+  - repos : aucun fichier retenu (`selectedFile` nul), zone de dépôt affichée ;
+  - aperçu en cours (`isPreviewing`) : demandé par un dépôt (`previewReason`
+    = 'drop'), un changement de profil ('profile') ou un refus 409 de la
+    confirmation ('stale'). Pendant ce temps ni l'ancien aperçu, ni la zone de
+    dépôt ne sont affichés ; les cases de confirmation sont remises à zéro. Chaque
+    demande porte un numéro de séquence (`seq`, variable ordinaire) : seule la
+    dernière pose son résultat, son erreur ou éteint l'indicateur ;
+  - aperçu affiché (`preview`) : un INSTANTANÉ (fichier, compte, profil résolu,
+    empreinte) est pris à sa réception ; la confirmation part de lui, jamais de
+    l'état courant des sélecteurs ;
+  - confirmation en cours (`isConfirming`) : sélecteurs et Annuler désactivés.
+    Sur 409 BANK_IMPORT_PREVIEW_STALE, l'aperçu est recalculé depuis l'instantané
+    et un avis neutre l'annonce ; l'utilisateur reconfirme ;
+  - `reset()` (changement de compte, Annuler, succès) invalide la séquence et
+    revient au repos.
+
+  Story 8-3 — panneaux d'avertissement (duplicateFile, duplicateLines,
+  invalidLines, encodingMismatch) et cases confirm associées ; KF #70 :
+  BankProfileSelector, présélection du profil auto-détecté.
 -->
 <script lang="ts">
 	import { onMount } from 'svelte';
@@ -32,6 +47,21 @@
 	};
 	let { bankAccounts, onSuccess }: Props = $props();
 
+	/** Raison d'un aperçu : elle choisit le texte de l'indicateur (AC2). */
+	type PreviewReason = 'drop' | 'profile' | 'stale';
+
+	/**
+	 * Ce que la confirmation envoie : l'aperçu AFFICHÉ, pas l'état des
+	 * sélecteurs (Story 27-3, AC5). `bankProfileId` est le profil RÉSOLU par
+	 * l'aperçu (absent pour un CAMT, dont l'aperçu ignore le profil).
+	 */
+	type PreviewSnapshot = {
+		file: File;
+		accountId: number;
+		bankProfileId: number | undefined;
+		fingerprint: string;
+	};
+
 	let selectedAccountId = $state<number | null>(null);
 	let selectedFile = $state<File | null>(null);
 	let preview = $state<BankImportPreviewResponse | null>(null);
@@ -42,14 +72,25 @@
 	let confirmEncodingMismatch = $state(false);
 	let bankProfileId = $state<number | null>(null);
 	let availableProfiles = $state<BankProfile[]>([]);
-	let isLoading = $state(false);
+	let isPreviewing = $state(false);
+	let isConfirming = $state(false);
+	let previewReason = $state<PreviewReason>('drop');
+	// Avis « le profil, le fichier ou le compte a changé » (AC9). Effacé en
+	// trois sites : `reset()`, `runPreview` hors 'stale', `handleConfirm`.
+	let showRecomputedNotice = $state(false);
 	let errorCode = $state<string | null>(null);
 	let errorMessage = $state<string | null>(null);
 	// Story 26-1 (#620) — lignes du refus `BANK_CSV_AMOUNT_SIGN_MISMATCH`
-	// (même forme que `warnings.invalidLines`). Posé aux deux `catch` qui
-	// posent `errorCode`, remis à `null` partout où `errorCode` l'est.
+	// (même forme que `warnings.invalidLines`). Posé et effacé avec `errorCode`.
 	let errorDetails = $state<InvalidLinesPayload | null>(null);
 	let dragActive = $state(false);
+	// Instantané de l'aperçu affiché — lu par la seule confirmation, jamais
+	// rendu : variable ordinaire.
+	let snapshot: PreviewSnapshot | null = null;
+	// Numéro de la dernière demande d'aperçu. Variable ORDINAIRE, jamais un
+	// `$state` : `reset()` l'incrémente depuis le `$effect` du compte, qui
+	// dépendrait sinon de lui (AC3).
+	let seq = 0;
 
 	/** Lignes du refus de signe, si `details` en porte (sinon `null`). */
 	function signRefusalDetails(err: { code: string; details?: Record<string, unknown> }): InvalidLinesPayload | null {
@@ -80,113 +121,168 @@
 		lastSeenAccountId = selectedAccountId;
 	});
 
-	function reset(): void {
-		selectedFile = null;
-		preview = null;
+	/**
+	 * Remet les cases et le choix des doublons à leur état initial. Les
+	 * avertissements d'un nouvel aperçu ne sont pas ceux de l'ancien (F1 Pass 3,
+	 * étendu au recalcul par la Story 27-3) : une case cochée sur l'ancien
+	 * n'autorise rien sur le nouveau.
+	 */
+	function resetConfirmations(): void {
 		confirmBalanceMismatch = false;
 		confirmDuplicateFile = false;
 		confirmDuplicateLines = 'skip';
 		confirmPartialImport = false;
 		confirmEncodingMismatch = false;
+	}
+
+	function clearError(): void {
 		errorCode = null;
 		errorMessage = null;
 		errorDetails = null;
 	}
 
-	function buildFlags() {
-		return {
-			confirmBalanceMismatch,
-			bankProfileId: bankProfileId ?? undefined,
-			confirmEncodingMismatch,
-			confirmDuplicateFile,
-			confirmDuplicateLines,
-			confirmPartialImport,
-		};
+	/** Pose l'erreur d'une requête (aperçu ou confirmation). */
+	function setError(err: unknown): void {
+		if (isApiError(err)) {
+			errorCode = err.code;
+			errorMessage = err.message;
+			// Le refus de signe peut arriver à l'aperçu comme à la confirmation.
+			errorDetails = signRefusalDetails(err);
+		} else {
+			errorCode = 'UNKNOWN_ERROR';
+			errorMessage = i18nMsg('error-unexpected', 'Erreur inattendue.');
+			errorDetails = null;
+		}
+	}
+
+	function reset(): void {
+		// Invalide l'aperçu en vol : sa réponse ne pourra plus éteindre
+		// l'indicateur, c'est donc ici qu'il s'éteint (AC3).
+		seq += 1;
+		selectedFile = null;
+		preview = null;
+		snapshot = null;
+		resetConfirmations();
+		clearError();
+		isPreviewing = false;
+		// Défensif : pendant une confirmation, compte et Annuler sont désactivés,
+		// et le succès éteint déjà `isConfirming` dans son `finally` (C-27-3-38).
+		isConfirming = false;
+		showRecomputedNotice = false;
+	}
+
+	/**
+	 * Calcule l'aperçu de `file` sur `accountId` avec `profileId` (null =
+	 * auto-détection). Seule la dernière demande pose son résultat (AC3).
+	 */
+	async function runPreview(
+		file: File,
+		accountId: number,
+		profileId: number | null,
+		reason: PreviewReason,
+	): Promise<void> {
+		const mySeq = ++seq;
+		previewReason = reason;
+		if (reason !== 'stale') showRecomputedNotice = false;
+		resetConfirmations();
+		selectedFile = file;
+		preview = null;
+		snapshot = null;
+		clearError();
+		isPreviewing = true;
+		try {
+			const result = await previewBankImport(file, accountId, {
+				bankProfileId: profileId ?? undefined,
+			});
+			if (mySeq !== seq) return;
+			preview = result;
+			snapshot = {
+				file,
+				accountId,
+				bankProfileId: result.csvProfileMatch?.profileId ?? undefined,
+				fingerprint: result.previewFingerprint,
+			};
+			// Présélectionne le profil auto-détecté (KF #70) — affectation
+			// programmatique : elle ne relance pas l'aperçu (AC4).
+			if (
+				profileId === null &&
+				result.csvProfileMatch?.autoMatched &&
+				result.csvProfileMatch?.profileId
+			) {
+				bankProfileId = result.csvProfileMatch.profileId;
+			}
+		} catch (err) {
+			if (mySeq !== seq) return;
+			setError(err);
+			preview = null;
+		} finally {
+			if (mySeq === seq) isPreviewing = false;
+		}
 	}
 
 	async function handleFileSelect(file: File): Promise<void> {
 		if (!selectedAccountId) {
 			errorCode = 'BANK_ACCOUNT_REQUIRED';
-			errorMessage = "Sélectionnez d'abord un compte bancaire.";
+			errorMessage = i18nMsg(
+				'bank-import-errors-bank-account-required',
+				"Sélectionnez d'abord un compte bancaire.",
+			);
 			errorDetails = null;
 			return;
 		}
-		// F1 (Pass 3 review) — réinitialise les confirm flags quand un
-		// nouveau fichier est sélectionné sur le MÊME compte (le `$effect`
-		// au-dessus ne déclenche `reset()` que sur changement de
-		// `selectedAccountId`). Sans ça, un user qui aurait coché
-		// `confirmDuplicateLines=import` sur un fichier #1 se retrouverait
-		// silencieusement avec `import` actif sur un fichier #2 où il ne
-		// l'a pas explicitement choisi → bug data-integrity latent.
-		confirmBalanceMismatch = false;
-		confirmDuplicateFile = false;
-		confirmDuplicateLines = 'skip';
-		confirmPartialImport = false;
-		confirmEncodingMismatch = false;
-		selectedFile = file;
-		errorCode = null;
-		errorMessage = null;
-		errorDetails = null;
-		isLoading = true;
-		try {
-			preview = await previewBankImport(file, selectedAccountId, {
-				bankProfileId: bankProfileId ?? undefined,
-			});
-			// Pré-sélectionne l'auto-matched profile (KF #70).
-			if (
-				bankProfileId === null &&
-				preview.csvProfileMatch?.autoMatched &&
-				preview.csvProfileMatch?.profileId
-			) {
-				bankProfileId = preview.csvProfileMatch.profileId;
-			}
-		} catch (err) {
-			if (isApiError(err)) {
-				errorCode = err.code;
-				errorMessage = err.message;
-				errorDetails = signRefusalDetails(err);
-			} else {
-				errorCode = 'UNKNOWN_ERROR';
-				errorMessage = 'Erreur inattendue.';
-				errorDetails = null;
-			}
-			preview = null;
-		} finally {
-			isLoading = false;
+		await runPreview(file, selectedAccountId, bankProfileId, 'drop');
+	}
+
+	/**
+	 * Geste de l'utilisateur sur le sélecteur de profil (AC1, AC1-bis) : avec un
+	 * fichier retenu, l'aperçu est recalculé — aussi après un aperçu en échec.
+	 * Jamais un `$effect` sur `bankProfileId` : la présélection (AC4) n'est pas
+	 * un geste.
+	 */
+	function handleProfileChange(id: number | null): void {
+		bankProfileId = id;
+		if (selectedFile && selectedAccountId) {
+			void runPreview(selectedFile, selectedAccountId, id, 'profile');
 		}
 	}
 
 	async function handleConfirm(): Promise<void> {
-		// L3 (Pass 1 review) — la garde anti-IDOR `matchingAccount` qui
-		// vérifiait `preview.selectedStatement.accountIban === selectedIban`
-		// (ajoutée en review code Pass 1 8-1b M8) a été retirée en 8-3 :
-		// désormais le `$effect` reset détaille les changements
-		// `selectedAccountId` (cf. ligne ~50) et purge `preview` avant
-		// que l'utilisateur puisse cliquer Confirmer. La garde devient
-		// redondante, mais on documente la raison ici pour qu'un
-		// futur reviewer ne la restaure pas par réflexe.
-		if (!selectedFile || !selectedAccountId || !preview) return;
-		isLoading = true;
-		errorCode = null;
-		errorMessage = null;
-		errorDetails = null;
+		// L3 (Pass 1 review 8-3) — la garde anti-IDOR qui comparait l'IBAN de
+		// l'aperçu au compte choisi n'a pas lieu d'être : la confirmation part de
+		// l'instantané de l'aperçu affiché (Story 27-3), et le serveur compare
+		// l'empreinte de cet aperçu à ses propres entrées. Ne pas la restaurer
+		// par réflexe.
+		if (!snapshot || !preview) return;
+		const snap = snapshot;
+		showRecomputedNotice = false;
+		isConfirming = true;
+		clearError();
 		try {
-			const result = await createBankImport(selectedFile, selectedAccountId, buildFlags());
+			const result = await createBankImport(snap.file, snap.accountId, {
+				confirmBalanceMismatch,
+				bankProfileId: snap.bankProfileId,
+				confirmEncodingMismatch,
+				confirmDuplicateFile,
+				confirmDuplicateLines,
+				confirmPartialImport,
+				previewFingerprint: snap.fingerprint,
+			});
 			onSuccess?.(result);
 			reset();
 		} catch (err) {
-			if (isApiError(err)) {
-				errorCode = err.code;
-				errorMessage = err.message;
-				// Le refus de signe peut aussi arriver à la confirmation.
-				errorDetails = signRefusalDetails(err);
+			if (isApiError(err) && err.code === 'BANK_IMPORT_PREVIEW_STALE') {
+				// Le profil, le fichier ou le compte a changé : recalcul depuis
+				// l'instantané, sans nouvelle confirmation automatique (AC9).
+				// `isConfirming` s'éteint AVANT la relance, non attendue : pendant
+				// le recalcul, les sélecteurs sont actifs (C-27-3-33).
+				isConfirming = false;
+				showRecomputedNotice = true;
+				void runPreview(snap.file, snap.accountId, snap.bankProfileId ?? null, 'stale');
 			} else {
-				errorCode = 'UNKNOWN_ERROR';
-				errorMessage = 'Erreur inattendue.';
-				errorDetails = null;
+				setError(err);
 			}
 		} finally {
-			isLoading = false;
+			isConfirming = false;
 		}
 	}
 
@@ -208,6 +304,9 @@
 	function handleFileInput(event: Event): void {
 		const input = event.currentTarget as HTMLInputElement;
 		const file = input.files?.[0];
+		// Story 27-3 (AC16) : vider la valeur, sans quoi re-choisir le même
+		// fichier n'émet pas `change` (le `File` est déjà capturé).
+		input.value = '';
 		if (file) {
 			void handleFileSelect(file);
 		}
@@ -236,9 +335,10 @@
 		id="bank-account-select"
 		data-testid="bank-account-select"
 		bind:value={selectedAccountId}
+		disabled={isConfirming}
 		class="mt-1 block w-full rounded border-border bg-surface p-2 text-text"
 	>
-		<option value={null}>— Sélectionner un compte —</option>
+		<option value={null}>— {i18nMsg('bank-import-labels-bank-account-placeholder', 'Sélectionner un compte')} —</option>
 		{#each bankAccounts as account (account.id)}
 			<!-- Story 26-2b (C-26-2-26) : « UBS (CH…) » sans description, comme avant. -->
 			<option value={account.id}>{bankAccountOptionLabel(account, 'parens')}</option>
@@ -249,14 +349,17 @@
 		<div class="mt-4">
 			<BankProfileSelector
 				profiles={availableProfiles}
-				autoMatchedId={preview?.csvProfileMatch?.profileId ?? null}
+				autoMatchedId={preview?.csvProfileMatch?.autoMatched
+					? preview.csvProfileMatch.profileId
+					: null}
 				value={bankProfileId}
-				onChange={(id) => (bankProfileId = id)}
+				disabled={isConfirming}
+				onChange={handleProfileChange}
 			/>
 		</div>
 	{/if}
 
-	{#if !preview}
+	{#if !preview && !isPreviewing}
 		<div
 			data-testid="bank-import-drop-zone"
 			role="button"
@@ -301,8 +404,29 @@
 		</p>
 	{/if}
 
-	{#if isLoading}
-		<p class="mt-4 text-text-muted" data-testid="bank-import-loading">Chargement…</p>
+	{#if isPreviewing || isConfirming}
+		<!-- Story 27-3 (AC2) : la confirmation d'abord, puis la raison de l'aperçu
+		     (`previewReason` garde sa valeur après l'aperçu, C-27-3-45). -->
+		<p class="mt-4 text-text-muted" data-testid="bank-import-loading" role="status">
+			{isConfirming || previewReason === 'drop'
+				? i18nMsg('common-loading', 'Chargement…')
+				: i18nMsg('bank-import-labels-preview-recomputing', 'Recalcul de la prévisualisation…')}
+		</p>
+	{/if}
+
+	{#if showRecomputedNotice}
+		<!-- Story 27-3 (AC9) : hors du bloc de l'aperçu, pour rester visible si le
+		     recalcul échoue. Neutre : l'écran ne sait pas ce qui a changé. -->
+		<p
+			class="mt-4 rounded border border-warning bg-warning-soft p-3"
+			data-testid="bank-import-preview-recomputed"
+			role="status"
+		>
+			{i18nMsg(
+				'bank-import-labels-preview-recomputed',
+				'Le profil, le fichier ou le compte a changé depuis la prévisualisation : Kesh la recalcule. Vérifiez le résultat avant de confirmer.',
+			)}
+		</p>
 	{/if}
 
 	{#if errorMessage}
@@ -328,9 +452,9 @@
 					<table class="w-full table-auto text-sm">
 						<thead>
 							<tr>
-								<th class="text-left">Ligne</th>
-								<th class="text-left">Code</th>
-								<th class="text-left">Valeur</th>
+								<th class="text-left">{i18nMsg('bank-import-labels-col-line', 'Ligne')}</th>
+								<th class="text-left">{i18nMsg('bank-import-labels-col-code', 'Code')}</th>
+								<th class="text-left">{i18nMsg('bank-import-labels-col-value', 'Valeur')}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -357,17 +481,17 @@
 				{i18nMsg('bank-import-labels-preview-title', 'Prévisualisation')}
 			</h2>
 			<dl class="mt-2 grid grid-cols-2 gap-2 text-sm">
-				<dt>IBAN</dt>
+				<dt>{i18nMsg('bank-import-labels-iban', 'IBAN')}</dt>
 				<dd data-testid="preview-iban">{preview.selectedStatement.accountIban}</dd>
-				<dt>Période</dt>
+				<dt>{i18nMsg('bank-import-labels-period', 'Période')}</dt>
 				<dd>{preview.selectedStatement.periodFrom} → {preview.selectedStatement.periodTo}</dd>
-				<dt>Devise</dt>
+				<dt>{i18nMsg('bank-import-labels-currency', 'Devise')}</dt>
 				<dd>{preview.selectedStatement.currency}</dd>
-				<dt>Solde ouverture</dt>
+				<dt>{i18nMsg('bank-import-labels-opening-balance', 'Solde ouverture')}</dt>
 				<dd>{preview.selectedStatement.openingBalance ?? '—'}</dd>
-				<dt>Solde clôture</dt>
+				<dt>{i18nMsg('bank-import-labels-closing-balance', 'Solde clôture')}</dt>
 				<dd>{preview.selectedStatement.closingBalance ?? '—'}</dd>
-				<dt>Nombre de transactions</dt>
+				<dt>{i18nMsg('bank-import-labels-transaction-count', 'Nombre de transactions')}</dt>
 				<dd data-testid="preview-tx-count">{preview.transactions.length}</dd>
 			</dl>
 
@@ -423,9 +547,9 @@
 					<table class="mt-2 w-full table-auto text-sm">
 						<thead>
 							<tr>
-								<th class="text-left">Index</th>
-								<th class="text-left">ID existant</th>
-								<th class="text-left">Clé</th>
+								<th class="text-left">{i18nMsg('bank-import-labels-duplicate-col-index', 'Index')}</th>
+								<th class="text-left">{i18nMsg('bank-import-labels-duplicate-col-existing-id', 'ID existant')}</th>
+								<th class="text-left">{i18nMsg('bank-import-labels-duplicate-col-key', 'Clé')}</th>
 							</tr>
 						</thead>
 						<tbody>
@@ -500,9 +624,9 @@
 						<table class="w-full table-auto text-sm">
 							<thead>
 								<tr>
-									<th class="text-left">Ligne</th>
-									<th class="text-left">Code</th>
-									<th class="text-left">Valeur</th>
+									<th class="text-left">{i18nMsg('bank-import-labels-col-line', 'Ligne')}</th>
+									<th class="text-left">{i18nMsg('bank-import-labels-col-code', 'Code')}</th>
+									<th class="text-left">{i18nMsg('bank-import-labels-col-value', 'Valeur')}</th>
 								</tr>
 							</thead>
 							<tbody>
@@ -626,7 +750,11 @@
 			{#if preview.ignoredStatements.length > 0}
 				<div class="mt-4" data-testid="preview-ignored-statements">
 					<p class="text-sm text-text-muted">
-						{preview.ignoredStatements.length} statement(s) ignoré(s) (autres IBAN dans le fichier).
+						{preview.ignoredStatements.length}
+						{i18nMsg(
+							'bank-import-labels-ignored-statements-summary',
+							'statement(s) ignoré(s) (autres IBAN dans le fichier).',
+						)}
 					</p>
 				</div>
 			{/if}
@@ -634,9 +762,9 @@
 			<table class="mt-4 w-full table-auto text-sm" data-testid="preview-tx-table">
 				<thead>
 					<tr>
-						<th class="text-left">Date</th>
-						<th class="text-right">Montant</th>
-						<th class="text-left">Détails</th>
+						<th class="text-left">{i18nMsg('bank-import-labels-tx-col-date', 'Date')}</th>
+						<th class="text-right">{i18nMsg('bank-import-labels-tx-col-amount', 'Montant')}</th>
+						<th class="text-left">{i18nMsg('bank-import-labels-tx-col-details', 'Détails')}</th>
 					</tr>
 				</thead>
 				<tbody>
@@ -655,15 +783,18 @@
 					type="button"
 					data-testid="bank-import-confirm"
 					class="rounded bg-primary px-4 py-2 text-white disabled:opacity-50"
-					disabled={isLoading || buttonDisabled(preview)}
+					disabled={isConfirming || buttonDisabled(preview)}
 					onclick={handleConfirm}
 				>
 					{i18nMsg('bank-import-labels-confirm-import', "Confirmer l'import")}
 				</button>
+				<!-- Story 27-3 (D15) : désactivé pendant la confirmation — Annuler
+				     suivi d'un 409 aurait fait réapparaître l'aperçu. -->
 				<button
 					type="button"
 					data-testid="bank-import-cancel"
-					class="rounded border border-border px-4 py-2"
+					class="rounded border border-border px-4 py-2 disabled:opacity-50"
+					disabled={isConfirming}
 					onclick={reset}
 				>
 					{i18nMsg('bank-import-labels-cancel', 'Annuler')}

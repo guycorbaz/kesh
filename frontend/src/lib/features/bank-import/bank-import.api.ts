@@ -23,6 +23,10 @@ export interface BankImportFlags {
 	confirmDuplicateLines?: 'skip' | 'import';
 	/// 8-3 — confirmPartialImport.
 	confirmPartialImport?: boolean;
+	/// 27-3 (#626) — empreinte rendue par l'aperçu (`previewFingerprint`), à
+	/// renvoyer à la création : le serveur refuse (409) si le profil, le compte
+	/// ou le fichier a changé depuis.
+	previewFingerprint?: string;
 }
 
 function appendFlags(form: FormData, flags?: BankImportFlags): void {
@@ -43,6 +47,7 @@ function appendFlags(form: FormData, flags?: BankImportFlags): void {
 		form.append('confirmDuplicateLines', flags.confirmDuplicateLines);
 	}
 	if (flags.confirmPartialImport) form.append('confirmPartialImport', 'true');
+	if (flags.previewFingerprint) form.append('previewFingerprint', flags.previewFingerprint);
 }
 
 export async function previewBankImport(

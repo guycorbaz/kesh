@@ -37,6 +37,9 @@ export interface BankImportPreviewResponse {
 	transactions: PreviewTransaction[];
 	/// Story 8-3 KF #70 — métadonnées CSV profile (absent pour CAMT).
 	csvProfileMatch?: CsvProfileMatch;
+	/// Story 27-3 (#626) — empreinte des entrées de l'aperçu (64 hex), à renvoyer
+	/// à la création en `previewFingerprint`.
+	previewFingerprint: string;
 }
 
 export interface PreviewWarnings {
