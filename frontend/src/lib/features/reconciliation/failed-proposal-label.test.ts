@@ -2,10 +2,11 @@
 //
 // ⚠️ La liste des codes est ÉCRITE EN DUR, et non lue depuis le module : un test qui
 // itérerait sur la table de production serait vert par construction (fiche, § « Tests — ce qui
-// rendrait un test vert sans rien prouver »). Relevé : les 26 littéraux de
+// rendrait un test vert sans rien prouver »). Relevé : les 27 littéraux de
 // `crates/kesh-api/src/routes/reconciliation.rs` + les deux codes de `DbError::error_code()` :
-// `ACCOUNT_NOT_POSTABLE` et `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` (Story 15-6b) — 28 codes.
-// Story 15-12b : `LATER_FISCAL_YEAR_CLOSED` est l'un des 26 littéraux.
+// `ACCOUNT_NOT_POSTABLE` et `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` (Story 15-6b) — 29 codes.
+// Story 15-12b : `LATER_FISCAL_YEAR_CLOSED` est l'un des 27 littéraux ; Story 27-4 :
+// `RECONCILIATION_ALREADY_REJECTED` aussi.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
@@ -43,6 +44,7 @@ const EXPECTED_KEYS: Record<string, string> = {
 	PROJECT_ARCHIVED: 'reconciliation-failed-project-archived',
 	PROJECT_NOT_FOUND: 'reconciliation-failed-project-not-found',
 	RECONCILIATION_ALREADY_RECONCILED: 'reconciliation-errors-already-reconciled',
+	RECONCILIATION_ALREADY_REJECTED: 'reconciliation-failed-already-rejected',
 	RECONCILIATION_CURRENCY_MISMATCH: 'reconciliation-failed-currency-mismatch',
 	RECONCILIATION_FISCAL_YEAR_CLOSED: 'error-fiscal-year-invalid',
 	RECONCILIATION_INVOICE_NOT_ELIGIBLE: 'reconciliation-errors-invoice-not-eligible',
@@ -63,8 +65,30 @@ describe('failedProposalLabel', () => {
 		calls.length = 0;
 	});
 
-	it('couvre les 28 codes relevés', () => {
-		expect(Object.keys(EXPECTED_KEYS)).toHaveLength(28);
+	it('couvre les 29 codes relevés', () => {
+		expect(Object.keys(EXPECTED_KEYS)).toHaveLength(29);
+	});
+
+	// Story 27-4 (#634, C-27-4-8) — `race_during_update` : la transaction a changé pendant le
+	// traitement, peut-être supprimée ; le libellé ne dit plus « déjà réconciliée ».
+	it('RECONCILIATION_ALREADY_RECONCILED + race_during_update → libellé « modifiée pendant le traitement »', () => {
+		const label = failedProposalLabel('RECONCILIATION_ALREADY_RECONCILED', {
+			reason: 'race_during_update',
+		});
+		expect(calls).toEqual(['reconciliation-failed-changed-during-batch']);
+		expect(label).toContain('modifiée pendant le traitement');
+		expect(label).not.toContain('déjà réconciliée');
+	});
+
+	it('RECONCILIATION_ALREADY_RECONCILED avec une autre raison → libellé générique', () => {
+		failedProposalLabel('RECONCILIATION_ALREADY_RECONCILED', { reason: 'other_reason' });
+		expect(calls).toEqual(['reconciliation-errors-already-reconciled']);
+	});
+
+	it('RECONCILIATION_ALREADY_RECONCILED sans details → libellé générique', () => {
+		const label = failedProposalLabel('RECONCILIATION_ALREADY_RECONCILED');
+		expect(calls).toEqual(['reconciliation-errors-already-reconciled']);
+		expect(label).toContain('déjà réconciliée');
 	});
 
 	for (const [code, key] of Object.entries(EXPECTED_KEYS)) {

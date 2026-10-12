@@ -593,7 +593,12 @@ const ATTENDU = {
 	// (3 → 4, +1 : `common-loading`). La fiche prévoyait +31 : l'écart d'un site est la
 	// fusion des deux `catch`. `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (que des
 	// littéraux), mesurés. À la fusion sur la 27-2, la garde a confirmé 2073.
-	sitesTotal: 2073,
+	// Story 27-4 (#634) : **+2** (2041 → 2043 sur sa branche, 2073 → 2075 rebasée sur la 27-3),
+	// recompté par la collecte de ce test à `f9725c29` puis sur la branche :
+	// `features/reconciliation/failed-proposal-label.ts` gagne deux appels
+	// (`reconciliation-failed-changed-during-batch`, `reconciliation-failed-already-rejected`).
+	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (que des littéraux).
+	sitesTotal: 2075,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -473,8 +473,55 @@ describe('ReconciliationProposals — refus par lot lisibles (Story 15-5c, AC3)'
 
 		const item = await findByTestId('reconciliation-failed-item');
 		expect(item.textContent).toContain('TX #99');
-		expect(item.textContent).toContain('Transaction bancaire introuvable.');
+		expect(item.textContent).toContain(
+			'Transaction introuvable : elle a été supprimée avec son import, ou n’appartient pas à ce compte bancaire.'
+		);
 		expect(item.textContent).not.toContain('ACME GMBH');
+	});
+
+	// Story 27-4 (AC8, #634) — l'import d'une transaction cochée a été supprimé avant le lot : le
+	// serveur rend `200`, la transaction supprimée sort en `failed[]` et l'autre est acceptée.
+	// L'écran le dit ligne par ligne, par la date et le montant RELEVÉS avant le lot, sans
+	// bandeau d'erreur.
+	it('désigne par sa date et son montant relevés une transaction supprimée avec son import', async () => {
+		const kept = makeProposalWithCandidate(1, 101, 1.0);
+		const base = makeProposalWithCandidate(2, 102, 1.0);
+		const deleted = {
+			...base,
+			transaction: { ...base.transaction, bookingDate: '2026-05-20', amount: '250.00' },
+		};
+		mockApi.getProposals
+			.mockResolvedValueOnce({ proposals: [kept, deleted], hasMore: false } satisfies GetProposalsResponse)
+			.mockResolvedValueOnce({ proposals: [], hasMore: false } satisfies GetProposalsResponse);
+		mockApi.acceptProposals.mockResolvedValue({
+			accepted: [
+				{
+					bankTransactionId: 1,
+					invoiceId: 101,
+					journalEntryId: 9,
+					score: { total: 1.0, amountScore: 1.0, referenceScore: 1.0, contactScore: 0.0 },
+				},
+			],
+			failed: [{ bankTransactionId: 2, errorCode: 'BANK_TRANSACTION_NOT_FOUND', details: null }],
+		} satisfies AcceptResponse);
+
+		const { findAllByTestId, findByTestId, getByTestId, queryByTestId } = render(
+			ReconciliationProposals,
+			{ bankAccountId: 17 }
+		);
+		for (const cb of await findAllByTestId('tx-checkbox')) await fireEvent.click(cb);
+		await fireEvent.click(getByTestId('reconciliation-accept-btn'));
+
+		expect((await findByTestId('reconciliation-success')).textContent).toContain('1');
+		const item = await findByTestId('reconciliation-failed-item');
+		expect(item.getAttribute('data-tx-id')).toBe('2');
+		expect(item.getAttribute('data-error-code')).toBe('BANK_TRANSACTION_NOT_FOUND');
+		const text = item.textContent ?? '';
+		expect(text).toContain('2026-05-20');
+		expect(text).toContain('250.00 CHF');
+		expect(text).not.toContain('TX #');
+		expect(text).toContain('supprimée avec son import');
+		expect(queryByTestId('reconciliation-error')).toBeNull();
 	});
 
 	// Revue de code P1 (B1, E3) : une affectation manuelle ou un éclatement réussi ouvre un
