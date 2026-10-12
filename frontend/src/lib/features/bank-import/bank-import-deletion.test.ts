@@ -31,7 +31,7 @@ describe('isReconciled', () => {
 	it('vrai pour `pending` avec lien (mutation : branche matchedEntryId retirée — M11)', () => {
 		expect(isReconciled(tx('pending', 7))).toBe(true);
 	});
-	it('faux pour `pending` sans lien, rejetée ou non (mutation : prédicat toujours vrai)', () => {
+	it('faux pour `pending` sans lien (mutation : prédicat toujours vrai) — une rejetée a le même état à l’écran, le DTO ne porte pas le rejet', () => {
 		expect(isReconciled(tx('pending', null))).toBe(false);
 	});
 });

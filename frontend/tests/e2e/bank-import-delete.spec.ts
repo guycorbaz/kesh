@@ -102,7 +102,8 @@ test('supprimer un import non rapproché puis réimporter le même fichier', asy
 	await expect(page.getByTestId('bank-import-delete-dialog')).toBeVisible();
 	const body = page.getByTestId('bank-import-delete-dialog-body');
 	await expect(body).toContainText(FILENAME);
-	await expect(body).toContainText('3');
+	// Le nombre de transactions, pas un « 3 » de la période (2026-03-…).
+	await expect(body).toContainText(/ses 3 transaction\(s\)/);
 	await page.getByTestId('bank-import-delete-submit').click();
 	await expect(page).toHaveURL(/\/bank-import$/);
 	await expect(page.getByTestId('bank-import-list')).toBeVisible();

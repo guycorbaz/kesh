@@ -38,7 +38,15 @@ function tx(id: number, status = 'pending', matchedEntryId: number | null = null
 	};
 }
 
-function detail(transactions: BankTransactionDto[]): BankImportDetailResponse {
+/**
+ * Le détail d'un import. `transactionCount` (le nombre de l'entête) vaut par
+ * défaut la longueur de la liste ; il peut en différer — l'entête n'est pas
+ * relu après coup —, et le dialogue doit compter les LIGNES.
+ */
+function detail(
+	transactions: BankTransactionDto[],
+	transactionCount: number = transactions.length,
+): BankImportDetailResponse {
 	return {
 		id: 77,
 		bankAccountId: 3,
@@ -50,7 +58,7 @@ function detail(transactions: BankTransactionDto[]): BankImportDetailResponse {
 		periodTo: '2026-03-04',
 		openingBalance: null,
 		closingBalance: null,
-		transactionCount: transactions.length,
+		transactionCount,
 		importedAt: '2026-03-05T10:00:00',
 		transactions,
 	};
@@ -93,6 +101,14 @@ describe('DeleteBankImportAction', () => {
 		expect(body).toContain('releve-mars.csv');
 		expect(body).toContain('du 2026-03-02 au 2026-03-04');
 		expect(body).toContain('ses 3 transaction(s)');
+	});
+
+	it('le dialogue compte les lignes, pas le nombre de l’entête (mutation : detail.transactionCount)', async () => {
+		const { getByTestId, findByTestId } = monter(detail([tx(1), tx(2), tx(3)], 9));
+		await fireEvent.click(getByTestId('bank-import-delete-button'));
+		const body = (await findByTestId('bank-import-delete-dialog-body')).textContent ?? '';
+		expect(body).toContain('ses 3 transaction(s)');
+		expect(body).not.toContain('ses 9');
 	});
 
 	it('Supprimer définitivement ⇒ deleteBankImport(id de l’import) puis onDeleted(filename) (mutation : autre identifiant — M12)', async () => {
