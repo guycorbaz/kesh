@@ -2000,8 +2000,29 @@ async fn delete_import_removes_it_traces_it_and_allows_reimport(pool: MySqlPool)
 }
 
 /// H2 — une transaction `reconciled` (sans lien) : `409`, rien n'est écrit.
+///
+/// Le message passe par le catalogue `fr-CH` (revue de code P1, E4) : sans
+/// `init_error_i18n`, ce binaire lirait le **repli** Rust, et une clé fautive
+/// dans `t_args` ou un `{ $count }` mal nommé au catalogue resteraient verts.
+/// Catalogue chargé, une clé absente rend la clé brute, un argument mal nommé
+/// un texte sans le nombre : l'égalité exacte rougit dans les deux cas. La
+/// langue est globale au processus ; sous `cargo test`, les tests suivants de
+/// ce binaire liront le catalogue `fr-CH` — l'égalité des replis et du
+/// catalogue est tenue, pour les trois messages de la story, par la garde G9
+/// (`textes_coherents.rs`).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn delete_import_refuses_when_a_transaction_is_reconciled(pool: MySqlPool) {
+    let bundle = Arc::new(
+        kesh_i18n::I18nBundle::load(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("kesh-i18n/locales")
+                .as_path(),
+        )
+        .expect("load test i18n"),
+    );
+    kesh_api::errors::init_error_i18n(bundle, kesh_i18n::Locale::FrCh);
     let s = setup(&pool).await;
     let app = spawn_app(pool.clone()).await;
     let (id, n) = import_minimal(&app, &s).await;
@@ -2032,12 +2053,11 @@ async fn delete_import_refuses_when_a_transaction_is_reconciled(pool: MySqlPool)
             .unwrap(),
         n
     );
-    assert!(
-        body["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("rapproch"),
-        "message localisé : {body}"
+    assert_eq!(
+        body["error"]["message"],
+        "1 transaction(s) de cet import sont rapprochées : annulez d'abord leur \
+         rapprochement pour pouvoir le supprimer.",
+        "message du catalogue fr-CH, nombre interpolé, sans marques d'isolation"
     );
     assert_eq!(import_rows(&pool, id).await, (1, n), "import intact");
     assert_eq!(deleted_traces(&pool).await, 0, "aucune trace");

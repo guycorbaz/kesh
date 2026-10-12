@@ -2284,8 +2284,12 @@ async fn archive(app: &TestApp, pool: &MySqlPool, ctx: &Ctx) -> reqwest::Respons
 /// catalogue pourrait disparaître sans que rien ne rougisse (mutation M20,
 /// survivante au premier passage de la campagne). D'où le catalogue `fr-CH`
 /// posé ici. La langue est globale au processus : sous `cargo test` (un
-/// processus par binaire), les tests suivants liront le catalogue `fr-CH`,
-/// que la garde G9 tient égal aux replis.
+/// processus par binaire), les tests suivants liront le catalogue `fr-CH`.
+/// La garde G9 (`textes_coherents.rs`) tient égal au catalogue le repli de
+/// ce message et ceux des deux autres messages de la story — depuis la revue
+/// de code P1 (E4) seulement : elle ne couvre pas tous les replis de ce
+/// binaire, et un test qui lirait un repli différent de son catalogue y
+/// changerait de résultat selon l'ordre d'exécution.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn deleting_the_imports_lifts_the_archive_guard(pool: MySqlPool) {
     let bundle = Arc::new(

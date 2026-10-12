@@ -699,6 +699,15 @@ fn les_replis_rust_suivent_le_catalogue() {
                 ("error-lettering-is-document", 1, &[]),
                 ("error-fiscal-year-create-later-closed", 1, NOM),
                 ("error-later-fiscal-year-closed", 1, NOM),
+                // Story 27-1 (#632) — revue de code P1, E4 : les trois
+                // replis neufs ou modifiés de la suppression d'import.
+                ("error-api-key-operation-forbidden", 1, &[]),
+                (
+                    "bank-import-errors-has-reconciled-transactions",
+                    1,
+                    &[("{ $count }", "{reconciled_count}")],
+                ),
+                ("bank-accounts-errors-has-transactions", 1, &[]),
             ],
         ),
         (
