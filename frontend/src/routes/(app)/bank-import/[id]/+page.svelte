@@ -13,6 +13,9 @@
 	import { authState } from '$lib/app/stores/auth.svelte';
 	import { i18nMsg } from '$lib/shared/utils/i18n.svelte';
 	import CancelReconciliationDialog from '$lib/features/reconciliation/CancelReconciliationDialog.svelte';
+	import DeleteBankImportAction from '$lib/features/bank-import/DeleteBankImportAction.svelte';
+	import { notifySuccess } from '$lib/shared/utils/notify';
+	import { goto } from '$app/navigation';
 
 	// Story 25-3-b (#418) — annuler un rapprochement depuis le détail d'import,
 	// le seul écran qui montre une transaction rapprochée. Le bouton est masqué
@@ -21,6 +24,13 @@
 		authState.currentUser?.role === 'Admin' || authState.currentUser?.role === 'Comptable',
 	);
 	let cancelTxId = $state<number | null>(null);
+
+	// Story 27-1 (#632) — après une suppression, retour à la liste, qui se
+	// recharge à son montage.
+	function onImportDeleted(filename: string) {
+		notifySuccess(i18nMsg('bank-import-delete-success', 'Import { $filename } supprimé.', { filename }));
+		void goto('/bank-import');
+	}
 
 	let detail = $state<BankImportDetailResponse | null>(null);
 	let errorMessage = $state<string | null>(null);
@@ -92,6 +102,8 @@
 			<dt>Nombre de transactions</dt>
 			<dd data-testid="detail-tx-count">{detail.transactionCount}</dd>
 		</dl>
+
+		<DeleteBankImportAction {detail} {canManage} onDeleted={onImportDeleted} />
 
 		<h2 class="mt-6 text-lg font-semibold">Transactions</h2>
 		<table class="mt-2 w-full table-auto text-sm" data-testid="detail-tx-table">
