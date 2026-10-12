@@ -244,7 +244,7 @@ Fiche : `27-3-profil-apres-apercu.md`. Issue #626 (P2).
   non-résolus assumés (symboles, codes bruts, gabarit `bank-import-info-*`) ; textes fr-CH repris à l'identique ; deux
   clés globales réutilisées (`common-loading`, `error-unexpected`, autorisées par `lint-i18n-ownership`), 21 clés
   neuves, une clé partagée entre l'aperçu et la liste (`bank-import-labels-period`) ; `sitesTotal` 2032 → 2063, 2072
-  à la fusion avec la 27-1.
+  à la fusion avec la 27-1 — **livré : 2062, et 2071 à la fusion** (C-27-3-46 ; propagé en revue de code P1, A2).
 - **Écarté** : traduire aussi la fiche d'import `/bank-import/{id}` (une quinzaine de libellés en dur) — autre écran,
   modifié par la 27-1 au bloc adjacent : conflit certain. **Signalé à l'orchestrateur**, qui décide (après la fusion
   de la 27-1 : une story ou une issue). Reformuler les textes fr (« Solde d'ouverture », « relevé(s) ») — hors du
@@ -522,3 +522,45 @@ Fiche : `27-3-profil-apres-apercu.md`. Issue #626 (P2).
 - **Retenu** : la course part d'*Auto-détection* (le premier des trois), puis B, puis C, réponses dans l'ordre premier, C, B — l'ordre exigé par C-27-3-30 (une réponse périmée arrivant pendant qu'une plus récente est en vol). Trois profils au mock (A, B, C).
 - **Écarté** : un montage propre à V3 sans aperçu initial (il n'exercerait pas le remplacement d'un aperçu affiché).
 - **Réversible** : oui (test seul).
+
+### C-27-3-51 — Après un `409`, le sélecteur relit la liste des profils ; l'avis reste avec l'erreur
+
+- **Contexte** : revue de code P1, B-1 (LOW) — la liste des profils n'était chargée qu'au montage : un profil renommé, supprimé ou créé ailleurs gardait son ancien état dans le sélecteur, précisément dans le cas que vise le `409`. Deux corrections proposées : effacer l'avis quand le recalcul `'stale'` échoue, ou relire les profils à la branche `409`.
+- **Retenu** : la relecture — `loadProfiles()`, partagée par `onMount` et la branche `409` (non attendue, comme le recalcul). Un échec de la relecture **garde** la liste en place (au montage, elle est vide : comportement inchangé), pour qu'un rafraîchissement raté ne fasse pas disparaître le sélecteur. Tenu par V6-ter et sa variante, mutations M30 et M31. Le manuel le dit (« relit la liste des profils »), avec le cas du recalcul en échec (« le message d'erreur s'affiche avec l'avis : choisissez un autre profil »).
+- **Écarté** : effacer l'avis quand le recalcul échoue — contraire à l'AC9 et à C-27-3-36 (l'avis est vrai dans les trois états, recalcul en échec compris), et V6 (variante) l'interdit ; relire les profils à **tout** recalcul (requête de plus à chaque geste, sans cas d'usage : hors `409`, rien ne signale un changement ailleurs).
+- **Réversible** : oui.
+
+### C-27-3-52 — « L'IBAN du compte » au manuel et au CHANGELOG ; l'avis de l'écran inchangé
+
+- **Contexte** : revue de code P1, E-8 = A4 (LOW) — le manuel promettait un refus pour « le compte bancaire modifié ailleurs », alors que l'empreinte ne voit du compte que son id et son IBAN normalisé (U3 : nom de banque, description, version sans effet). Le CHANGELOG disait de même « un compte … modifié ».
+- **Retenu** : manuel et CHANGELOG nomment l'IBAN ; le manuel ajoute que les autres changements du compte (nom de la banque, description) ne bloquent pas l'import. L'avis `bank-import-labels-preview-recomputed` et le message `bank-import-errors-preview-stale` (« le compte a changé ») ne sont **pas** retouchés : ils décrivent un `409` qui a eu lieu, et pour ce `409` « le compte a changé » est vrai ; ils ne promettent rien. `docs/api-external.md` disait déjà « que l'IBAN du compte a changé ».
+- **Écarté** : réécrire les deux clés dans les quatre locales (huit textes, replis Svelte et Rust, `TABLE` de `textes_coherents.rs`) pour une précision qu'aucun lecteur de l'avis n'exploite.
+- **Réversible** : oui.
+
+### C-27-3-53 — E1 et E2 rejouables : suffixe de passage et année propre à E1
+
+- **Contexte** : revue de code P1, E-6 (LOW) — noms de profils fixes sous `UNIQUE (company_id, bank_name)` et fichiers fixes : un second passage sur la même base échouait à la création du profil, et E1, qui importe, aurait rencontré son propre fichier en doublon. Même défaut chez les voisines 26-1, que la doctrine « base neuve » couvre.
+- **Retenu** : `RUN = Date.now().toString(36)` suffixe les noms de profils et de fichiers d'E1 et d'E2 ; E1 déplace les dates de la fixture en `E1_YEAR` = 2100 + (`Date.now()` mod 7000), jamais 2026-2028 (années des autres tests d'import). E2 n'importe rien : son année 2028 reste fixe. Les voisines 26-1 ne sont pas touchées (hors périmètre de la story).
+- **Écarté** : déclarer seulement (la correction coûte six lignes) ; un nettoyage en fin de test (un test interrompu le laisserait de toute façon).
+- **Réversible** : oui (test seul).
+
+### C-27-3-54 — Un test de page pour `common-loading` de la page d'import
+
+- **Contexte** : revue de code P1, E-7 (LOW) — le site H11 (`+page.svelte`, « Chargement… ») n'était rendu par aucun test ; seule la borne `sitesTotal` le gardait.
+- **Retenu** : `routes/(app)/bank-import/bank-import-page.test.ts` (patron des tests de page, nom sans `+`), mock i18n en mode clé : pendant le chargement, `common-loading` et aucun « Chargement » ; ensuite l'écran d'import. Mutation M32.
+- **Écarté** : l'ajouter à V13 (V13 rend des composants, pas la page, dont l'`onMount` appelle `apiClient`).
+- **Réversible** : oui (test seul).
+
+### C-27-3-55 — `api-external.md` : un titre pour les notes du tableau
+
+- **Contexte** : revue de code P1, A6 (LOW) — la nouvelle sous-section, placée où la fiche le prescrit, s'insère juste avant les notes ², ³, ¹ du tableau du § 7, qui se lisaient alors sous « l'empreinte d'aperçu » (elles pendaient déjà sous « Annuler un rapprochement bancaire »).
+- **Retenu** : un titre `### Notes du tableau des ressources`, et une phrase qui renvoie au tableau en tête du § 7. L'ordre des notes (², ³, ¹) n'est pas touché.
+- **Écarté** : déplacer les notes sous le tableau (diff large dans un fichier que la 27-1 touche aussi au § 10) ; déplacer la sous-section neuve (l'emplacement est prescrit).
+- **Réversible** : oui.
+
+### C-27-3-56 — B-2 (`onSuccess` qui lève) : signalé, non traité
+
+- **Contexte** : revue de code P1, B-2 (LOW) — si `onSuccess` levait, l'aperçu resterait confirmable après un import réussi.
+- **Retenu** : ne rien changer. L'ordre `onSuccess` puis `reset()` est celui de la base, et le seul appelant (`+page.svelte`, `void refresh()`) ne peut pas lever. Héritage, hors du défaut de la story.
+- **Écarté** : appeler `reset()` avant `onSuccess` (change l'ordre que l'appelant observe, sans cas réel).
+- **Réversible** : oui.

@@ -277,6 +277,11 @@ refactor de `BankImportUpload.svelte` (T3) peut fusionner ou dédoubler des site
 **recompter au dernier commit et ventiler l'écart**, ne pas recopier ces chiffres. `sitesNonResolus`, `relais`,
 `sitesGabarit` inchangés (que des littéraux), à mesurer.
 
+> ⚠️ **Livré : 2062, et non 2063 — 2071 à la fusion, et non 2072** (C-27-3-46, propagé en revue de code P1, A2).
+> `BankImportUpload.svelte` passe de 23 à **48** (+25, et non +26) : les deux sites H3 (`error-unexpected`) n'en font
+> qu'un, les deux `catch` partageant `setError`. Total **+30** : 2032 → **2062** ; à la fusion avec la 27-1,
+> 2032 + 30 + 9 = **2071**. La table et le paragraphe ci-dessus gardent la prévision de la validation.
+
 **AC12 — Manuel utilisateur (FR, `.tex` **et** PDF régénéré).** `docs/manual/fr/user-manual.tex` :
 
 - `:1697-1698` (§ *Import dans Kesh*, étape 3) : retirer « \emph{avant} de déposer le fichier » — le profil se
@@ -287,7 +292,8 @@ refactor de `BankImportUpload.svelte` (T3) peut fusionner ou dédoubler des site
 - l'encadré `keshwarning` `:1801-1807` est **remplacé** par un texte vrai au code livré :
   la prévisualisation est toujours celle du profil choisi ; changer de profil après le dépôt la **recalcule**
   aussitôt (« Recalcul de la prévisualisation… »), y compris après un refus — inutile de redéposer ; les
-  avertissements déjà confirmés sont **à confirmer de nouveau** ; si le profil ou le compte bancaire est modifié
+  avertissements déjà confirmés sont **à confirmer de nouveau** ; si le profil ou **l'IBAN** du compte bancaire est
+  modifié (revue de code P1, E-8 = A4 : l'empreinte ne voit du compte que son id et son IBAN, C-27-3-52)
   ailleurs (autre onglet, autre utilisateur) entre la prévisualisation et la confirmation, Kesh **n'importe pas** :
   il recalcule la prévisualisation et l'annonce — l'avis ne dit pas ce qui a changé, l'écran ne le sait pas
   (C-27-3-28) ; vérifier le résultat, puis confirmer de nouveau. Si c'est le **fichier** qui est modifié sur le disque
@@ -442,7 +448,7 @@ fr-CH, y compris l'apostrophe droite de « d'abord » (texte actuel du site).
   - [x] `BankProfileSelector.svelte` : prop `disabled` (défaut `false`) ; le `<select>` de compte reçoit `disabled={isConfirming}`.
   - [x] Mettre à jour le commentaire d'en-tête (machine d'état) et le commentaire L3 de `handleConfirm` (`:160-167`).
   - [x] Nouveau `BankImportUpload.test.ts` (V1-V10, V6-bis, V12, V13), patron `BankProfileForm.test.ts` (mocks avant import).
-- [x] **T4 — i18n** (AC10, AC11, AC17) : 24 clés × quatre locales (3 de l'AC10, 21 de l'AC17) ; sites H1-H11 de l'AC17 dans `BankImportUpload.svelte`, `BankImportList.svelte`, `routes/(app)/bank-import/+page.svelte` (deux clés globales réutilisées) ; `sitesTotal` 2032 → 2063 recompté commentaires masqués et ventilé ; gardes engagées nommées à l'AC10 (`parity_between_locales`, `i18n-repli-divergent-actif`, `lint-i18n-ownership`).
+- [x] **T4 — i18n** (AC10, AC11, AC17) : 24 clés × quatre locales (3 de l'AC10, 21 de l'AC17) ; sites H1-H11 de l'AC17 dans `BankImportUpload.svelte`, `BankImportList.svelte`, `routes/(app)/bank-import/+page.svelte` (deux clés globales réutilisées) ; `sitesTotal` 2032 → 2063 prévu, **2062 livré** (C-27-3-46), recompté commentaires masqués et ventilé ; gardes engagées nommées à l'AC10 (`parity_between_locales`, `i18n-repli-divergent-actif`, `lint-i18n-ownership`).
 - [x] **T5 — E2E** (AC1, AC6, AC9) : deux tests dans `frontend/tests/e2e/bank-csv-import.spec.ts` (E1, E2).
 - [x] **T6 — Manuel** (AC12) : `.tex`, `make user` (sous `flock`), seul `user-manual.pdf` committé, PDF aplati contrôlé (table des matières comprise : Makefile de la base à deux passes fixes, C-27-3-42).
 - [x] **T7 — CHANGELOG, `docs/api-external.md`** (AC13).
@@ -669,7 +675,7 @@ menace est le client **périmé**, pas le client malveillant (qui a le rôle d'i
 | `docs/manual/fr/admin-manual.tex` + `.pdf`, `marketing-brochure.pdf` | modifiés | **non committés** : `make user`, pas `make fr` (AC12, C-27-3-42) | aucun, si seul `user-manual.pdf` est committé |
 | `CHANGELOG.md` | crée `## [0.13.2] — Non publié` | idem | conflit certain → union |
 | `docs/api-external.md` | +11 / −1 : § 4 (note, `@@ -84,0 +85,2 @@`), § 7 (phrase d'intro « trois exceptions », `@@ -205 +207 @@` ; ligne « Imports bancaires » du tableau et note ⁸, `@@ -218,0 +221 @@` et `@@ -229,0 +233,2 @@` ; rejet en lot, `@@ -542,0 +548,2 @@`), § 9 (deux lignes, `@@ -622,0 +630,2 @@`), § 10 (ligne `403 API_KEY_OPERATION_FORBIDDEN`, `@@ -648,0 +658 @@`) | sous-section § 7 après *Annuler un rapprochement bancaire* ; ligne `409` au § 10 (AC13) | § 7 : faible (hunks distincts) ; **§ 10 : conflit probable** (deux lignes ajoutées au même tableau) → union |
-| `frontend/src/lib/shared/i18n-keys.test.ts` | `sitesTotal` 2032 → 2041 | 2032 → 2063 | conflit certain → **2072**, commentaires des deux |
+| `frontend/src/lib/shared/i18n-keys.test.ts` | `sitesTotal` 2032 → 2041 | 2032 → 2062 (prévu 2063, C-27-3-46) | conflit certain → **2071** (prévu 2072), commentaires des deux |
 | `frontend/src/lib/features/bank-import/bank-import.api.ts` (+ `.test.ts`) | `deleteBankImport` | `previewFingerprint` | faible |
 | `crates/kesh-api/tests/bank_imports_e2e.rs` | +384 / −2 (`@@ -550,2 +550,3 @@`, et ajout de 381 lignes en fin de fichier, `@@ -1825,0 +1827,381 @@`) | I1-I12 | ajout en fin de fichier des deux côtés → conflit probable, union |
 | `_bmad-output/implementation-artifacts/sprint-status.yaml` | section `epic-27` | section `epic-27` créée ici aussi | conflit certain → union |
@@ -761,7 +767,9 @@ préfixe par `awk`), diff relu hunk par hunk.
 - **T4** — 24 clés × 4 locales après `bank-import-labels-bank-profile-auto-detect-placeholder` ; sites H1-H11 ;
   `sitesTotal` **2032 → 2062**, ventilé au commentaire de `i18n-keys.test.ts`.
 - **T5** — E1 et E2 dans `bank-csv-import.spec.ts` (fixture UBS dérivée en mémoire, années 2027 / 2028, profils à motif
-  vide, ids lus dans l'URL de la fiche du profil).
+  vide, ids lus dans l'URL de la fiche du profil). *Revue de code P1, E-6* : noms de profils et de fichiers suffixés
+  par passage, année d'E1 propre au passage (2100 à 9099) — E1 et E2 sont rejouables sur une base non remise à zéro
+  (C-27-3-53).
 - **T6** — manuel : étapes 3 des deux procédures (« avant ou après le dépôt du fichier ») ; encadré réécrit (recalcul
   aussitôt, y compris après un refus ; cases à reconfirmer ; profil ou compte modifié ailleurs : refus, recalcul, avis
   neutre ; fichier modifié sur le disque : « selon le navigateur », recalcul ou erreur de connexion répétée, *Annuler*
@@ -797,7 +805,7 @@ préfixe par `awk`), diff relu hunk par hunk.
 `27-3-mut/`. Exécutées sur `444ea236`. Frontend : `vitest run` du fichier de test ; serveur : `cargo nextest run -p kesh-api
 --lib --test bank_imports_e2e -E 'test(bank_import_fingerprint) | binary(bank_imports_e2e)'`.
 
-| # | Rouges constatés (au moins le test nommé par la fiche) |
+| # | Rouges constatés, Vitest et nextest seulement (revue de code P1, A1 : E1, que la fiche nomme pour M1, et E2, qu'elle nomme pour M7 et M10a, n'ont **pas** été rejoués sous mutation ; ces trois mutations sont tuées par les autres tests ci-dessous) |
 |---|---|
 | M1 | V1, V2, V3, V5, V7, V6-bis (a) |
 | M2 (`$effect` sur `bankProfileId`) | V4 (deux appels) et 15 autres |
@@ -890,9 +898,16 @@ cette story (sa branche n'a pas été lue).
 - `frontend/src/lib/features/bank-import/bank-import.types.ts`
 - `frontend/src/lib/shared/i18n-keys.test.ts`
 - `frontend/src/routes/(app)/bank-import/+page.svelte`
+- `frontend/src/routes/(app)/bank-import/bank-import-page.test.ts` (neuf, revue de code P1)
 - `frontend/tests/e2e/bank-csv-import.spec.ts`
 - `_bmad-output/implementation-artifacts/27-3-profil-apres-apercu.md`
+- `_bmad-output/implementation-artifacts/27-3-validate-prompt-p1.md` (neuf, validation)
+- `_bmad-output/implementation-artifacts/27-3-validate-prompt-p2.md` (neuf, validation)
+- `_bmad-output/implementation-artifacts/27-3-validate-prompt-p3.md` (neuf, validation)
+- `_bmad-output/implementation-artifacts/27-3-validate-prompt-p4-ciblee.md` (neuf, validation)
+- `_bmad-output/implementation-artifacts/27-3-validate-prompt-p5-ciblee.md` (neuf, validation)
 - `_bmad-output/implementation-artifacts/27-3-review-prompt-p1.md` (neuf)
+- `_bmad-output/implementation-artifacts/27-3-review-prompt-p2-ciblee.md` (neuf, revue de code P1)
 - `_bmad-output/implementation-artifacts/epic-27-choix-autonomes-27-3.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
@@ -1090,3 +1105,66 @@ P3, déclaré à Guy : « ne pas découper » (2026-10-12).
   `444ea236` (nextest 3436/3436, Vitest 1353/1353, E2E 263 verts et les 8 rouges attendus) ; choix C-27-3-46 à 50 ;
   huit écarts déclarés au Dev Agent Record. Statut `review`. Prompt de la revue de code P1 :
   `27-3-review-prompt-p1.md` (Sonnet, lentilles B, E, A).
+
+### Revue de code P1 (2026-10-12) — Sonnet, lentilles B, E, A ; remédiation Opus 5.5
+
+**Trend** : P1 = 0 CRITICAL, 0 HIGH, **3 MEDIUM** (E-1, E-2, E-3, tous de la lentille E), **13 LOW** (B : 2 ; E : 5 ;
+A : 6), soit 12 LOW distincts (E-8 = A4). Diff revu : `1127c2a1..9bd5d039`. Rapports :
+`kesh-gate-logs/27-3-review-p1-{B,E,A}.md`. Remédiation : `3800e4d0..8c53cf80` (code et tests), `75e35552` (manuel,
+PDF, CHANGELOG, `api-external.md`), puis ce Change Log, la fiche, le registre et le prompt de la P2.
+
+**Traitement, finding par finding.**
+
+| Finding | Sév. | Traitement |
+|---|---|---|
+| E-1 — `finally { isConfirming = false }` sans test | MEDIUM | **V14** (confirmation rejetée en `422` : sélecteurs, *Annuler*, *Confirmer* actifs, indicateur éteint, aucun recalcul) ; **M28** (sans `finally`) tuée par V14 |
+| E-2 — profil **résolu** de l'instantané sans test | MEDIUM | **V4** prolongé : confirmation après l'aperçu auto-détecté, `bankProfileId === B` ; **M33** (« profil demandé ») tuée par V4 — et aussi par V10, que la lentille n'avait pas compté (cas CAMT : profil demandé A, résolu aucun) |
+| E-3 — *Confirmer* désactivé pendant la confirmation non asserté | MEDIUM | **V9** + `bank-import-confirm.disabled` ; **M29** (`isConfirming ||` retiré) tuée par V9 |
+| B-1 — liste des profils jamais relue ; avis avec l'erreur | LOW | **Code de production** : `loadProfiles()` partagée par `onMount` et la branche `409` ; un échec garde la liste. **V6-ter** et sa variante ; **M30** (relecture retirée) et **M31** (échec qui vide la liste) tuées. L'avis reste avec l'erreur (AC9, C-27-3-36), désormais écrit au manuel (C-27-3-51) |
+| B-2 — `onSuccess` qui lève | LOW | Non traité, héritage (C-27-3-56) |
+| E-4 — profil choisi avant le dépôt, vu par l'E2E seul | LOW | `previewWithA` asserte `profileFlag(calls) === A` ; **M34** (affectation retirée de `handleProfileChange`) et **M34b** (dépôt sans profil) tuées par quinze tests, par cette assertion |
+| E-5 — empreinte vide non testée en HTTP | LOW | I8, cinquième cas « vide » ; **M35** (vide traité comme absent) tuée par I8 (import en `201`) |
+| E-6 — E1/E2 non rejouables | LOW | Suffixe de passage (`RUN`), année propre à E1 (2100-9099) ; rejoués une seconde fois sur la même base après la suite complète : 2/2 verts (C-27-3-53) |
+| E-7 — `common-loading` de la page non rendu | LOW | `bank-import-page.test.ts` (neuf) ; **M32** (autre clé, même nombre de sites) tuée (C-27-3-54) |
+| E-8 = A4 — « le compte bancaire modifié » trop large | LOW | Manuel et CHANGELOG : « l'IBAN du compte » ; l'avis et le message serveur inchangés (C-27-3-52) |
+| A1 — en-tête du tableau T8 trop large | LOW | Réécrit : rouges Vitest et nextest seulement ; E1/E2 non rejoués sous mutation |
+| A2 — 2063/2072 non propagés | LOW | AC11 (encadré « livré : 2062, 2071 »), T4, table des fichiers communs, registre (C-27-3-25, l. 246). Les Change Logs de validation gardent les chiffres de leur date |
+| A3 — File List incomplète | LOW | Cinq prompts de validation ajoutés, plus le test de page et le prompt de la P2 |
+| A5 — « avant toute lecture du fichier » | LOW | « avant tout parse du fichier (ses octets sont déjà lus : le hash en est tiré) » |
+| A6 — notes ² ³ ¹ sous la mauvaise sous-section | LOW | Titre `### Notes du tableau des ressources` (C-27-3-55) |
+
+**Propagation** : `grep -rnE "compte bancaire est modifi|profil ou le compte bancaire|avant toute lecture du fichier"`
+hors `node_modules`, `target`, `.git` et PDF → un seul site, l'AC12 de cette fiche, corrigé ; « un compte … modifié »
+du CHANGELOG corrigé de même ; PDF aplati : « compte bancaire est modifi » 0, « IBAN du compte bancaire, est modifi »
+1, « relit la liste des profils » 1. Les anciens noms fixes d'E1/E2 (« 27-3 moins », `ubs_273_e1.csv`) ne subsistent
+qu'aux AC et tests prescrits de la fiche, qui décrivent le scénario.
+
+**Mutations neuves** (journal `kesh-gate-logs/27-3-mutations.log`, diffs `27-3-mut/M28.diff` à `M35.diff`, sur
+`8c53cf80`, restauration `git checkout --` puis `touch`, sous `flock`) : **9 jouées, 9 tuées** (M28 à M35, M34 en deux
+variantes). Avec la campagne du développement : **38/38**.
+
+**Gates, au dernier commit de code `8c53cf80`** (arbre de `75e35552`, qui n'ajoute que des textes ; bases `kesh_273` et
+`kesh_e2e_273` recréées, migrées — 80 — et `kesh_273` seedée juste avant ; conteneur non touché) :
+
+- `scripts/test-fast.sh` (fmt, clippy `-D warnings`, nextest, sous `flock`) : vert — **3436 exécutés, 3436 verts,
+  6 ignorés** (inchangé : E-5 est un cas ajouté à un test existant).
+- Frontend : `npm run check` 0 erreur, 28 avertissements (aucun sur un fichier de la story) ; `lint-i18n-ownership`
+  PASS ; `npm run test:unit` **1357 verts sur 131 fichiers** (+4 depuis `3800e4d0` : V14, V6-ter, sa variante dans
+  `BankImportUpload.test.ts`, 18 → 21 `it(` ; 1 dans `bank-import-page.test.ts`, neuf) ; `npm run build` vert.
+  `sitesTotal` inchangé (2062) : la remédiation n'ajoute aucun `i18nMsg(`.
+- **E2E complet** (port 3036, recette `docs/testing.md` intégrale, `smtpConfigured: true`) : **264 verts, 7 rouges,
+  19 ignorés** — les sept de la KF-029 (`mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150`), aucun huitième ce passage ; les deux de la KF-045 passés (run du soir). E1 et
+  E2 verts, puis **rejoués seuls sur la même base** : 2/2 verts (E-6).
+- Manuel : `make user` sous `flock`, deux passes (la première « Label(s) may have changed. Rerun », la seconde sans) ; seul `user-manual.pdf`
+  committé. Table des matières inchangée (*Import dans Kesh* 58, *Import avec un profil existant* 61, *Détection des
+  doublons* 62, *Rejet partiel* 63), titres sur les mêmes pages physiques (59, 62, 63, 64).
+
+**La remédiation touche du code de production** : oui, un seul fichier,
+`frontend/src/lib/features/bank-import/BankImportUpload.svelte` (`loadProfiles`, B-1). La boucle n'est donc pas close :
+passe **P2 ciblée** (Haiku, une lentille, diff aplati `3800e4d0..8c53cf80`) — prompt versionné
+`27-3-review-prompt-p2-ciblee.md`, rapport attendu `kesh-gate-logs/27-3-review-p2-ciblee.md`. Choix C-27-3-51 à 56.
+
+Incident d'outillage : les ajouts de `BankImportUpload.test.ts` ont été faits par un script de remplacement
+(`python3`, chaque motif vérifié unique avant écriture) au lieu de l'outil d'édition demandé ; le diff a été relu hunk
+par hunk avant commit, sans défaut.
