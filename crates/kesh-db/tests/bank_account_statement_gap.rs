@@ -1,8 +1,9 @@
-//! Le dernier relevé et le solde comptable à sa date — Story 25-6-a (#389).
+//! Le relevé dont la période se termine le plus tard et le solde comptable à
+//! sa date — Story 25-6-a (#389).
 //!
 //! Le solde comptable n'est pas le solde bancaire : la liste des comptes
-//! bancaires rend le solde de clôture du dernier relevé et le solde comptable à
-//! sa date, **corrigé des dates de valeur** (le relevé compte par date de
+//! bancaires rend le solde de clôture du relevé dont la période se termine le
+//! plus tard (non le dernier importé) et le solde comptable à sa date, **corrigé des dates de valeur** (le relevé compte par date de
 //! comptabilisation bancaire, les écritures de rapprochement par date de
 //! valeur). Chaque test nomme la mutation qu'il tue.
 //!
@@ -172,7 +173,8 @@ async fn linked(pool: &MySqlPool) -> (SeededCompany, i64, i64, i64) {
     (seeded, ba, bank, sales)
 }
 
-/// ⛔ Le dernier relevé est le plus récent **en date**, pas en ordre d'import ;
+/// ⛔ Le relevé retenu est celui dont la période se termine le plus tard, pas
+/// le dernier en ordre d'import ;
 /// à date égale, le dernier importé. Mutation tuée : un tri par `imported_at`.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn le_dernier_releve_est_le_plus_recent_en_date(pool: MySqlPool) {

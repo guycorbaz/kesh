@@ -888,9 +888,10 @@ pub struct BankAccountBalances {
     pub current_balance: Option<rust_decimal::Decimal>,
     /// `MAX(entry_date)` des lignes du compte lié.
     pub last_transaction_date: Option<chrono::NaiveDate>,
-    /// Solde de clôture du **dernier relevé** importé qui en porte un (CAMT ;
-    /// un import CSV n'en a jamais) — `period_to` le plus récent, départagé par
-    /// `imported_at` puis `id`.
+    /// Solde de clôture du **relevé dont la période se termine le plus tard**
+    /// parmi ceux qui en portent un (CAMT ; un import CSV n'en a jamais) —
+    /// `period_to` le plus récent, départagé par `imported_at` puis `id`.
+    /// Ce n'est pas forcément le dernier importé.
     pub statement_closing_balance: Option<rust_decimal::Decimal>,
     /// `period_to` de ce relevé.
     pub statement_date: Option<chrono::NaiveDate>,
@@ -917,7 +918,8 @@ struct BalancesRow {
 }
 
 /// Liste les comptes bancaires avec leurs soldes calculés + date dernière
-/// transaction depuis `journal_entry_lines`, et le dernier relevé.
+/// transaction depuis `journal_entry_lines`, et le relevé dont la période se
+/// termine le plus tard.
 ///
 /// Story v014-1 T5 (FINDING-10 Pass 3 Opus — périmètre du calcul) :
 /// - **Pas de filtre de status** : `journal_entries` n'a pas de colonne
@@ -927,10 +929,11 @@ struct BalancesRow {
 /// - Pas de rollup hiérarchique (uniquement sur `journal_account_id` exact).
 /// - `last_transaction_date` = `MAX(je.entry_date)` sur le compte lié.
 ///
-/// # Le dernier relevé et l'écart (Story 25-6-a, #389)
+/// # Le relevé de référence et l'écart (Story 25-6-a, #389)
 ///
 /// Le solde comptable n'est **pas** le solde bancaire. Pour les confronter, la
-/// liste rend le solde de clôture du dernier relevé portant un solde, et le
+/// liste rend le solde de clôture du relevé portant un solde dont la période
+/// se termine le plus tard (non le dernier importé), et le
 /// solde comptable **à sa date**. ⚠️ Le relevé reflète les mouvements par date
 /// de **comptabilisation bancaire** (`booking_date`), alors que les écritures de
 /// rapprochement sont datées à la date de **valeur** : le solde à la date du

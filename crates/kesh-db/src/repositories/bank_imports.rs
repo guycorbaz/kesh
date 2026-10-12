@@ -255,8 +255,9 @@ pub async fn count_by_company_id(
 /// dedup pre-insert), `None` sinon.
 ///
 /// **Multi-tenant safety** : un même hash peut exister sur plusieurs
-/// companies sans conflit (l'unique `(company_id, file_hash)` ne porte
-/// pas sur le hash seul).
+/// companies sans conflit. `(company_id, file_hash)` n'est pas unique non
+/// plus (contrainte relâchée en simple index, Story 8-3) : un même hash peut
+/// exister plusieurs fois dans une company, et la fonction rend l'un d'eux.
 ///
 /// **Executor générique (M1, Pass 1 review)** : accepte `&MySqlPool`
 /// (preview) ou `&mut Transaction<MySql>` (handler create dans une tx

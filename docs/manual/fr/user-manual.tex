@@ -1849,6 +1849,10 @@ le bon profil, puis redéposer le fichier. Après \emph{Annuler}, le profil choi
 reste choisi pour le fichier suivant.
 \end{keshwarning}
 
+Un import CSV déjà confirmé avec un mauvais profil se supprime comme un import CAMT.053, tant
+qu'aucune de ses transactions n'est rapprochée, puis se réimporte avec le bon profil
+(\S\ref{sec:supprimer-import}).
+
 \subsection{Détection des doublons}
 
 \keshscreenshot{import-doublons.png}{Avertissement de détection de doublons lors d'un ré-import de fichier bancaire.}  % TODO capture: ecran doublons
