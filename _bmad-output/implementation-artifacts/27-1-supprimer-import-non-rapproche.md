@@ -2,7 +2,7 @@
 
 ## Status
 
-**in-progress** — validation close (P4 ciblée : 0 MEDIUM, 2 LOW appliqués). Fiche créée le 2026-10-12 en autonomie (`bmad-create-story`), sur `aadace40` (kickoff de
+**review** — développement terminé le 2026-10-12 (`bmad-dev-story`, dernier commit de code `6e305767`, gate complet et E2E complet verts à ce commit) ; revue de code P1 à lancer (`27-1-review-prompt-p1.md`). Validation close (P4 ciblée : 0 MEDIUM, 2 LOW appliqués). Fiche créée le 2026-10-12 en autonomie (`bmad-create-story`), sur `aadace40` (kickoff de
 l'Epic 27), branche `story/27-1-supprimer-import`. Validation **P1** (Sonnet, lentilles R et F : 0 HIGH,
 10 MEDIUM dont 7 distincts, 14 LOW) **remédiée** ; validation **P2** (Opus, R et F : 0 HIGH, 4 MEDIUM distincts,
 16 LOW) **remédiée** le 2026-10-12, avec la **décision du Project Lead** de fermer la suppression aux clés d'API
@@ -640,41 +640,41 @@ binaire périmé »), résultat consigné au Dev Agent Record (test qui rougit, 
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Montage** (consignes communes des agents) : base `kesh_27_1` et `kesh_e2e_27_1` créées par l'agent
+- [x] **T0 — Montage** (consignes communes des agents) : base `kesh_27_1` et `kesh_e2e_27_1` créées par l'agent
   (migrations du worktree, seed `scripts/seed-dev-db.sql`), `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-27-1/target`,
   `node_modules` par `cp -al` depuis le dépôt principal, port attribué par l'orchestrateur ; gates lourds sous
   `flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock`.
-- [ ] **T1 — Dépôt** (AC1, AC2)
-  - [ ] T1.1 `DeleteBankImportOutcome`, `DeletedBankImport`, `delete_unreconciled_in_tx` dans
+- [x] **T1 — Dépôt** (AC1, AC2)
+  - [x] T1.1 `DeleteBankImportOutcome`, `DeletedBankImport`, `delete_unreconciled_in_tx` dans
     `crates/kesh-db/src/repositories/bank_imports.rs`, doc-comments (définition, ordre des verrous, cascade, angles
     morts) ; corriger au passage le doc-comment de module (l. 10-12), faux deux fois : il annonce la contrainte
     UNIQUE retirée en 8-3, et un refus `409` qui est un `422`.
-  - [ ] T1.2 Tests D1-D6 et AC3 (a)(b)(c) dans `crates/kesh-db/tests/bank_import_delete.rs`.
-- [ ] **T2 — Route** (AC4, AC5, AC6)
-  - [ ] T2.1 `AppError::BankImportHasReconciledTransactions` et sa réponse dans `errors.rs`.
-  - [ ] T2.2 `delete` (refus des clés d'API en tête, C-27-1-16) + `delete_once` dans `routes/bank_imports.rs`
+  - [x] T1.2 Tests D1-D6 et AC3 (a)(b)(c) dans `crates/kesh-db/tests/bank_import_delete.rs`.
+- [x] **T2 — Route** (AC4, AC5, AC6)
+  - [x] T2.1 `AppError::BankImportHasReconciledTransactions` et sa réponse dans `errors.rs`.
+  - [x] T2.2 `delete` (refus des clés d'API en tête, C-27-1-16) + `delete_once` dans `routes/bank_imports.rs`
     (doc-comment de module l. 1-11 complété) ; `AppError::ApiKeyOperationForbidden` et sa réponse dans `errors.rs`.
-  - [ ] T2.3 Montage `lib.rs` (comptable_routes, après l. 633).
-  - [ ] T2.4 `audit_labels.rs` (`ACTIONS`).
-  - [ ] T2.5 `audit_route_registry.rs` : ligne et recomptes (AC4).
-  - [ ] T2.6 Tests H1-H6 et H8 (H6 dans `bank_accounts_e2e.rs`) ; doc-comment de `count_transactions_for_bank_account`
+  - [x] T2.3 Montage `lib.rs` (comptable_routes, après l. 633).
+  - [x] T2.4 `audit_labels.rs` (`ACTIONS`).
+  - [x] T2.5 `audit_route_registry.rs` : ligne et recomptes (AC4).
+  - [x] T2.6 Tests H1-H6 et H8 (H6 dans `bank_accounts_e2e.rs`) ; doc-comment de `count_transactions_for_bank_account`
     et phrase du message `bank-accounts-errors-has-transactions` (repli `errors.rs:2467-2470`).
-  - [ ] T2.7 AC4-bis : tri de `post_reject`, test H7, message du test existant, point (iv) du registre,
+  - [x] T2.7 AC4-bis : tri de `post_reject`, test H7, message du test existant, point (iv) du registre,
     `api-external.md:662`.
-- [ ] **T3 — i18n serveur et frontend** (AC10) : onze clés neuves et une modifiée × quatre catalogues.
-- [ ] **T4 — Écran** (AC9)
-  - [ ] T4.1 `bank-import-deletion.ts` + tests.
-  - [ ] T4.2 `deleteBankImport` + test.
-  - [ ] T4.3 `DeleteBankImportAction.svelte` + tests.
-  - [ ] T4.4 Page détail : insertion, notification, retour à la liste.
-  - [ ] T4.5 `sitesTotal` recompté (AC10), `lint-i18n-ownership`.
-- [ ] **T5 — E2E** (AC12) : fixture, spec.
-- [ ] **T6 — Documentation** (AC13, AC14) : manuels utilisateur **et d'administration**, `.tex` + PDF (sous
+- [x] **T3 — i18n serveur et frontend** (AC10) : onze clés neuves et une modifiée × quatre catalogues.
+- [x] **T4 — Écran** (AC9)
+  - [x] T4.1 `bank-import-deletion.ts` + tests.
+  - [x] T4.2 `deleteBankImport` + test.
+  - [x] T4.3 `DeleteBankImportAction.svelte` + tests.
+  - [x] T4.4 Page détail : insertion, notification, retour à la liste.
+  - [x] T4.5 `sitesTotal` recompté (AC10), `lint-i18n-ownership`.
+- [x] **T5 — E2E** (AC12) : fixture, spec.
+- [x] **T6 — Documentation** (AC13, AC14) : manuels utilisateur **et d'administration**, `.tex` + PDF (sous
   `flock`), `api-external.md` (§ 4, § 7 l. 205, § 10), `CHANGELOG.md`, `README.md` ; symptômes grepés dans tout le
   dépôt (paragraphe *Rejeter* ; `grep -rn "fermées aux clés\|exceptions près\|en est exclue\|de même que le journal"
   docs/ crates/kesh-api/src frontend/src` — chaque phrase qui énumère les fermetures aux clés).
-- [ ] **T7 — Mutations** (AC16), sous `flock`.
-- [ ] **T8 — Gates au dernier commit de code** : base de gate remise à zéro **sans toucher au conteneur**
+- [x] **T7 — Mutations** (AC16), sous `flock`.
+- [x] **T8 — Gates au dernier commit de code** : base de gate remise à zéro **sans toucher au conteneur**
   (⛔ pas de `docker restart` de `kesh-mariadb-dev` : recréer `kesh_27_1` par `DROP/CREATE DATABASE`, migrations,
   seed) ; `scripts/test-fast.sh` complet ; frontend `npm run check`, `npm run lint-i18n-ownership`,
   `npm run test:unit`, `npm run build` ; E2E complet. N'écrire au Dev Agent Record **que ce qui a tourné**, avec
@@ -957,11 +957,126 @@ signal est **déclaré au Project Lead** par l'orchestrateur. **Repli** si une p
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), en autonomie, worktree `/home/gcorbaz/devel/kesh-27-1`.
+
 ### Debug Log References
+
+Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/` : `27-1-explain.log` (F10), `27-1-mutations.log` et
+`27-1-mut/*.out` (campagne), `27-1-gate-summary.log`, `27-1-gate-backend.log`, `27-1-gate-front-*.log`,
+`27-1-gate-e2e.log` (+ `.backend`), `27-1-make-manuals.log`. Bases `kesh_271` (gate) et `kesh_e2e_271` (E2E), port 3034.
+
+**F10 — plan constaté** (`EXPLAIN` sur `kesh_271`, MariaDB 10.11, 500 transactions dont 450 pour un import,
+`ANALYZE TABLE` fait) :
+
+```
+sans FORCE INDEX, import minoritaire : type=ref   key=idx_bank_transactions_import rows=50  Using where
+sans FORCE INDEX, import majoritaire : type=index key=PRIMARY                      rows=500 Using where
+avec FORCE INDEX, import majoritaire : type=ref   key=idx_bank_transactions_import rows=450 Using where
+```
+
+L'optimiseur bascule sur l'index primaire dès qu'un import porte l'essentiel des lignes : `FORCE INDEX
+(idx_bank_transactions_import)` posé (C-27-1-21).
 
 ### Completion Notes List
 
+**Ce qui a tourné, au dernier commit de code `6e305767`** (base `kesh_271` recréée — `DROP`/`CREATE`, migrations,
+seed — et `kesh_e2e_271` recréée, sans toucher au conteneur ; tout sous `flock`) :
+
+- `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest, profil par défaut) : **3438 exécutés, 3438 passés,
+  6 ignorés**. Delta depuis la v0.13.1 (3419 au `CLAUDE.md`) : **+19**, tous neufs — 9 dans `bank_import_delete.rs`
+  (D1-D6, AC3 (a)(b)(c)), 6 dans `bank_imports_e2e.rs` (H1-H5, H8), 2 dans `bank_accounts_e2e.rs` (H6, H9), 1 dans
+  `reconciliation_e2e.rs` (H7), 1 dans `loader.rs` (test de message). `kesh-import` non touché : pas de
+  `cargo publish --dry-run`.
+- En plus, `bank_accounts_e2e` en mode CI (`cargo test -p kesh-api --test bank_accounts_e2e -- --test-threads=1`,
+  un seul processus) : **42 passés** — H6 pose la langue des erreurs, globale au processus, et les autres tests du
+  binaire n'en sont pas affectés.
+- Frontend : `npm run check` 0 erreur, 28 avertissements (préexistants, aucun sur un fichier de la story) ;
+  `npm run lint-i18n-ownership` PASS ; `npm run test:unit` **131 fichiers, 1347 tests passés** (1334 + 13 neufs :
+  `bank-import-deletion.test.ts` 4, `bank-import.api.test.ts` +1, `DeleteBankImportAction.test.ts` 8) ;
+  `npm run build` vert.
+- **E2E complet** (backend sur 3034, `kesh_e2e_271`, recette de `docs/testing.md`, `/health` `smtpConfigured:true`,
+  run à 16:47 UTC) : **263 passés, 7 échecs, 19 ignorés**. Les sept échecs sont exactement la KF-029 (#97) :
+  `mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77`, `:150`.
+  Aucun échec hors liste ; la KF-045 (rappels datés avant 12:00 UTC) n'a pas joué. La spec neuve
+  `bank-import-delete.spec.ts:87` passe (elle était aussi passée seule, avant le gate).
+- Manuels : `make -C docs/manual user admin` sous `flock` (0 référence indéfinie au passage final), PDF contrôlés
+  aplatis (`pdftotext … | tr '\n' ' ' | tr -s ' '`) : « Supprimer un import », « de plus grande période » (deux
+  sites), « sauf à supprimer son import », « une clé d'API ne peut pas supprimer un import » (utilisateur) ; puce
+  « Suppression d'un import bancaire » et puce *Portée* (administration) — toutes présentes.
+
+**Campagne de mutations (AC16)** — 20 jouées une par une sur arbre propre, chacune restaurée par `git checkout --`
+puis `touch` (journal `27-1-mutations.log`, HEAD `36de9980`, puis M20 rejouée sur `6e305767`) :
+
+| # | Résultat observé |
+|---|---|
+| M1 | rouge : D4 (D2 vert) et H2 |
+| M2 | rouge : D3 |
+| M3 | rouge : AC3 (a), **panique de la sonde à 10,155 s** — détection par absence du motif, déterministe |
+| M4 | rouge : D5 et H3 |
+| M5 | rouge : H1 |
+| M7 | rouge : H2 |
+| M8 | rouge : H4 |
+| M9 | rouge : `audit_label_registry` (`les_actions_de_la_liste_sont_exactement_celles_que_le_code_ecrit`) |
+| M10 | rouge : `audit_route_registry` (3 tests) |
+| M11 | rouge : `bank-import-deletion.test.ts` (2 tests) |
+| M12 | rouge : `DeleteBankImportAction.test.ts` (identifiant) |
+| M13 | rouge : `DeleteBankImportAction.test.ts` (double clic, deux clics sans attendre le DOM) |
+| M14 | **équivalente constatée** : AC3 (c) vert |
+| M15 | **équivalente constatée** : AC3 (c) vert |
+| M14+M15 | rouge : AC3 (c), par l'assertion |
+| M16 | rouge : `DeleteBankImportAction.test.ts` (`canManage: false`) |
+| M17 | rouge : H7 |
+| M18 | rouge : H8 |
+| M19 | rouge : test de message de `loader.rs` |
+| M20 | **survivante au premier passage** — H6 lisait le **repli** Rust (le montage de `bank_accounts_e2e.rs` n'initialise pas la langue des erreurs), qui porte la même phrase. Test renforcé (`init_error_i18n` fr-CH dans H6, commit `6e305767`) ; rejouée : **rouge** (H6) |
+
+Bilan : **18 rouges sur 18 mutations non équivalentes** (dont M20 après renforcement), **2 équivalentes constatées**
+(M14, M15), comme la fiche l'annonçait.
+
+**Recontrôles de fermeture** : AC15 — `git diff --stat aadace40` vide sur `migrations/`, `test-schema/`,
+`post_restore.rs`, les `Cargo.toml` et `kesh-import`. AC8 — le `grep` de l'inventaire (b) rend 14 sites hors
+commentaires, les 13 de la fiche plus le `DELETE FROM bank_imports` de `delete_unreconciled_in_tx`. Registre des
+routes : 115 / 109 / 118 / 91, « sept » au point (vi), confirmés par la garde. `sitesTotal` 2041 confirmé par la garde
+(+8 `DeleteBankImportAction.svelte`, +1 page détail, comptés `grep -o "i18nMsg("` aux deux bornes). Clés i18n : 11
+neuves par locale (`grep -c`), une modifiée.
+
+**Écarts à la fiche, et pourquoi** :
+
+- La fiche nomme les bases `kesh_27_1` / `kesh_e2e_27_1` (T0) ; l'orchestrateur a attribué `kesh_271` /
+  `kesh_e2e_271` — ce sont elles qui ont servi.
+- H6 pose la langue des erreurs (`init_error_i18n` fr-CH) : sans cela, il ne prouvait que le repli (M20 survivante).
+- Second site « dernier relevé » du manuel (l. 274) corrigé au même titre que l. 250-251 (C-27-1-22) ; quatre
+  commentaires frontend qui disent « dernier relevé » laissés hors périmètre.
+- Le paragraphe *Rejeter* nomme l'API sans les routes (« le rapprochement manuel et l'éclatement l'acceptent
+  encore ; l'acceptation d'une proposition la refuse »), le manuel utilisateur ne citant pas de chemins d'API à cet
+  endroit.
+
 ### File List
+
+Neufs :
+
+- `crates/kesh-db/tests/bank_import_delete.rs`
+- `frontend/src/lib/features/bank-import/bank-import-deletion.ts`
+- `frontend/src/lib/features/bank-import/bank-import-deletion.test.ts`
+- `frontend/src/lib/features/bank-import/DeleteBankImportAction.svelte`
+- `frontend/src/lib/features/bank-import/DeleteBankImportAction.test.ts`
+- `frontend/tests/e2e/bank-import-delete.spec.ts`
+- `frontend/tests/e2e/fixtures/csv_e2e_delete_import.csv`
+
+Modifiés :
+
+- `crates/kesh-db/src/repositories/bank_imports.rs`, `crates/kesh-db/src/repositories/bank_accounts.rs` (doc-comment)
+- `crates/kesh-api/src/errors.rs`, `crates/kesh-api/src/lib.rs`, `crates/kesh-api/src/audit_labels.rs`,
+  `crates/kesh-api/src/routes/bank_imports.rs`, `crates/kesh-api/src/routes/reconciliation.rs`
+- `crates/kesh-api/tests/audit_route_registry.rs`, `crates/kesh-api/tests/bank_imports_e2e.rs`,
+  `crates/kesh-api/tests/bank_accounts_e2e.rs`, `crates/kesh-api/tests/reconciliation_e2e.rs`
+- `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`, `crates/kesh-i18n/src/loader.rs`
+- `frontend/src/lib/features/bank-import/bank-import.api.ts`, `frontend/src/lib/features/bank-import/bank-import.api.test.ts`,
+  `frontend/src/routes/(app)/bank-import/[id]/+page.svelte`, `frontend/src/lib/shared/i18n-keys.test.ts`
+- `docs/manual/fr/user-manual.tex`, `docs/manual/fr/user-manual.pdf`, `docs/manual/fr/admin-manual.tex`,
+  `docs/manual/fr/admin-manual.pdf`, `docs/api-external.md`, `CHANGELOG.md`, `README.md`
+- `_bmad-output/implementation-artifacts/{27-1-supprimer-import-non-rapproche.md, epic-27-choix-autonomes.md,
+  sprint-status.yaml, 27-1-review-prompt-p1.md}`
 
 ## Change Log
 
@@ -1083,3 +1198,10 @@ dont toute exécution, interdite par le prompt).
 Sonnet (P1, complète), Opus (P2, complète), Sonnet (P3, complète), Haiku (P4, ciblée sur la remédiation P3).
 Reclassements : aucun. Décision du Project Lead intégrée en P2 (C-27-1-16). La remédiation P4 ne touche aucune
 ligne de code (fiche seule) : la boucle se clôt.
+
+### Développement — 2026-10-12
+
+`bmad-dev-story` (Opus 5.5, autonomie), T0 à T8 dans l'ordre. Commits : `0af5b5ec` (dépôt et tests de dépôt),
+`4e47602e` (route, erreurs, trace, tri du rejet, i18n, tests HTTP), `b32b05f6` (écran, Vitest), `e27cce8a` (E2E),
+`c4511d2f` (manuels, API externe, CHANGELOG, README), `36de9980` (choix C-27-1-21 et 22), `6e305767` (H6 renforcé
+après M20 survivante — dernier commit de code). Gates et campagne : Dev Agent Record. Statut → `review`.
