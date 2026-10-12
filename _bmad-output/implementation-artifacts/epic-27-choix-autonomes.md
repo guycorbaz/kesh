@@ -328,3 +328,74 @@ en autonomie, sur `aadace40` (kickoff de l'Epic 27).
 - **Écartée** : réécrire les commentaires frontend — un diff hors périmètre, dans des fichiers que la story ne touche
   pas.
 - **Réversible** : oui.
+
+### Complément à C-27-1-22 — les commentaires frontend corrigés à la revue de code P1 (E7)
+
+- La lentille E (P1) a relevé que ces commentaires contredisaient désormais le manuel. Ils disent « relevé de plus
+  grande période » (`bank-accounts.api.ts:10, 45`, `BankAccountsCard.svelte:4`, nom du `describe` de
+  `bank-accounts.api.test.ts`), de même que le doc-comment du champ dans `routes/bank_accounts.rs`. Commentaires
+  seulement, aucun comportement touché.
+
+### C-27-1-23 — Le plan de l'étape 2 gardé par `EXPLAIN` sur la constante exécutée, avec un témoin (revue de code P1, E1)
+
+- **Contexte** : retirer le `FORCE INDEX` de C-27-1-21 ne faisait rougir aucun test (E1, MEDIUM) — le résultat de la
+  suppression ne dépend pas du plan, seule la portée des verrous en dépend.
+- **Retenu** : le SQL de l'étape 2 devient `bank_imports::LOCK_IMPORT_TRANSACTIONS_SQL` (`#[doc(hidden)] pub`), exécuté
+  par `delete_unreconciled_in_tx` et passé à `EXPLAIN` par `lock_query_uses_the_import_index`
+  (`kesh-db/tests/bank_import_delete.rs`) sur la forme de `27-1-explain.log` : 500 lignes, un import de 450 et un de
+  50, `ANALYZE TABLE`. Asserté : `key = idx_bank_transactions_import`, `type = ref`. **Témoin** : la même requête
+  privée de l'indication doit, sur ce montage, ne pas passer par l'index de l'import — sinon le test ne prouverait
+  plus rien et le dit. Mutation M21 (indication retirée) : rouge (`PRIMARY`, `type index`).
+- **Écartées** : un test de portée de verrou (une ligne d'un autre import, `NOWAIT`) — il prouve l'effet plutôt que le
+  plan, mais dépend du verrou de trou et de la distribution d'`id` entre imports, plus fragile ; un angle mort
+  assumé — la voie `EXPLAIN` était praticable.
+- **Risque assumé** : le témoin rougira si une autre version de MariaDB choisit d'elle-même le bon index ; c'est le
+  signal voulu (l'indication serait alors à réexaminer), pas un faux positif silencieux.
+- **Réversible** : oui.
+
+### C-27-1-24 — AC4-bis : l'ordre des verrous tenu par une sonde `NOWAIT` ; `failed[]` non asserté (revue de code P1, E5)
+
+- **Contexte** : H7 lit les sorties triées ; une variante « ordre reçu, sorties triées après coup » y restait verte.
+  E5 proposait aussi d'asserter l'ordre de `failed[]`.
+- **Retenu** : H7-bis (`post_reject_locks_the_batch_by_increasing_id`) — une transaction de test tient `lo`, le lot
+  `[hi, lo]` part en tâche, et pendant son attente une sonde `FOR UPDATE NOWAIT` sur `hi` doit réussir. Mutation M26
+  (tri retiré, `rejected[]` trié avant la trace) : H7-bis rouge, H7 vert — ce que le finding annonçait.
+  `failed[]` n'est **pas** asserté : le pré-vol `find_pending_by_ids` (filtre `status = 'pending'` et
+  `auto_match_rejected_at IS NULL`) refuse en `400` tout lot portant une ligne non éligible — comportement déjà
+  figé par `post_reject_after_accept_returns_already_reconciled_failed` —, si bien que `failed[]` n'est atteignable
+  que par une course entre ce pré-vol et le verrou du compte ; son ordre est celui de la boucle, que H7-bis tient.
+- **Écartée** : monter cette course pour lire `failed[]` — deux sondes de plus pour une sortie dont l'ordre découle
+  déjà de ce qui est testé.
+- **Réversible** : oui.
+
+### C-27-1-25 — Le message du 409 lu par le catalogue fr-CH, langue globale posée dans H2 (revue de code P1, E4)
+
+- **Contexte** : `bank_imports_e2e` ne chargeait pas la langue des erreurs : H2 lisait le repli Rust.
+- **Retenu** : H2 pose `init_error_i18n(fr-CH)` et asserte le texte exact. Catalogue chargé, une clé absente rend la
+  clé brute (M24 : rouge) et un `{ $count }` mal nommé un texte sans le nombre. La garde G9 compare désormais au
+  catalogue les trois replis de la story (M25 : rouge) ; le doc-comment de H6, qui l'affirmait à tort, est corrigé.
+  La langue étant globale au processus, le binaire entier a été rejoué en un seul processus
+  (`cargo test --test bank_imports_e2e -- --test-threads=1`) : 39/39.
+- **Écartée** : poser `de-CH` pour distinguer catalogue et repli — sous `cargo test`, les autres tests du binaire,
+  qui lisent des textes français, changeraient de résultat selon l'ordre.
+- **Réversible** : oui.
+
+### C-27-1-26 — Laissés de la revue de code P1 : B-2 et E6 (revue de code P1)
+
+- **B-2** (le 409 de course afficherait « (0) » si `details` manquait) : laissé. Le serveur envoie toujours
+  `reconciledCount` (bras `BankImportHasReconciledTransactions` d'`errors.rs`) ; un repli conditionnel exigerait une
+  clé de plus dans les quatre catalogues pour un cas inatteignable.
+- **E6** (rejeu sur interblocage et `rollback` explicite de `delete_once` sans mutation rouge) : angle mort assumé,
+  déjà écrit au doc-comment de la route ; mutations « rejeu retiré » et « rollback retiré » non jouées : vertes par
+  construction (aucun test ne provoque de 1213 sur cette route ; le `Drop` de la transaction annule de toute façon).
+- **Réversible** : oui.
+
+### C-27-1-27 — Table des matières des PDF : passes supplémentaires, Makefile inchangé (revue de code P1, observation TOC)
+
+- **Contexte** : la TOC de `user-manual.pdf` était décalée (deux passes seulement au `make`).
+- **Retenu** : `xelatex` relancé jusqu'à disparition de « Rerun » (admin : 2 passes, utilisateur : 1, sur les `.aux`
+  existants), puis contrôle de chaque entrée de la TOC contre le pied de page de sa page (`pdftotext -layout`) :
+  95 entrées (utilisateur) et 122 (administration), 0 écart.
+- **Écartée** : changer le Makefile (passes ou `latexmk`) — défaut antérieur à la story, hors périmètre ; à signaler
+  à l'orchestrateur (une issue P3 vaudrait).
+- **Réversible** : oui.

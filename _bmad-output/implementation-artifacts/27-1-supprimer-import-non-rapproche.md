@@ -2,14 +2,14 @@
 
 ## Status
 
-**review** — développement terminé le 2026-10-12 (`bmad-dev-story`, dernier commit de code `6e305767`, gate complet et E2E complet verts à ce commit) ; revue de code P1 à lancer (`27-1-review-prompt-p1.md`). Validation close (P4 ciblée : 0 MEDIUM, 2 LOW appliqués). Fiche créée le 2026-10-12 en autonomie (`bmad-create-story`), sur `aadace40` (kickoff de
+**review** — développement terminé le 2026-10-12 (`bmad-dev-story`, dernier commit de code `6e305767`) ; revue de code **P1** (Sonnet, B/E/A : 0 HIGH, 1 MEDIUM, 14 LOW) **remédiée** — dernier commit hors fiche `5881450b`, gate complet et E2E complet verts à ce commit ; revue de code **P2** à lancer (`27-1-review-prompt-p2.md`, Opus, complète). Validation close (P4 ciblée : 0 MEDIUM, 2 LOW appliqués). Fiche créée le 2026-10-12 en autonomie (`bmad-create-story`), sur `aadace40` (kickoff de
 l'Epic 27), branche `story/27-1-supprimer-import`. Validation **P1** (Sonnet, lentilles R et F : 0 HIGH,
 10 MEDIUM dont 7 distincts, 14 LOW) **remédiée** ; validation **P2** (Opus, R et F : 0 HIGH, 4 MEDIUM distincts,
 16 LOW) **remédiée** le 2026-10-12, avec la **décision du Project Lead** de fermer la suppression aux clés d'API
 (C-27-1-16) ; validation **P3** (Sonnet, complète, R et F : 0 HIGH, 2 MEDIUM distincts, 13 LOW) **remédiée** — dont
 une sortie par **retrait** sur un angle mort recyclé (C-27-1-20) ; passe **P4 ciblée** (Haiku, une lentille,
 prompt `27-1-validate-prompt-p4-ciblee.md`) **rendue : 0 MEDIUM, 2 LOW appliqués — validation close**. Choix consignés au registre `epic-27-choix-autonomes.md`, **C-27-1-1 à
-C-27-1-20** (C-27-1-7 remplacé par C-27-1-12 ; C-27-1-3 et C-27-1-13 révisés ; C-27-1-16 complété). 17 AC (AC1-AC16 et AC4-bis). PR : **`closes #632`**.
+C-27-1-27** (C-27-1-7 remplacé par C-27-1-12 ; C-27-1-3 et C-27-1-13 révisés ; C-27-1-16 complété). 17 AC (AC1-AC16 et AC4-bis). PR : **`closes #632`**.
 
 ## Story
 
@@ -949,7 +949,7 @@ signal est **déclaré au Project Lead** par l'orchestrateur. **Repli** si une p
 - `CLAUDE.md` : § *Test Locally First*, § *Review Iteration Rule* (et ses sous-sections : manuel, axes déclarés,
   sites non résolus, propagation post-patch, recompte), § *Pattern batch* (non applicable : route unitaire),
   § *Migration breaking policy* (non applicable, AC15), § *Issue Tracking Rule*.
-- Registre `epic-15-choix-autonomes.md` : C54-C59 (rejeu) ; registre `epic-27-choix-autonomes.md` : C-27-1-1 à 20.
+- Registre `epic-15-choix-autonomes.md` : C54-C59 (rejeu) ; registre `epic-27-choix-autonomes.md` : C-27-1-1 à 27.
 - Code : `kesh-reconciliation/src/mutex.rs` ; `kesh-api/src/retry.rs` ; `kesh-db/src/retry.rs:100-160` ;
   `kesh-db/src/test_fixtures.rs:561-605` ; `kesh-db/tests/reconciliation_cancel.rs:127-185` (patron de course).
 
@@ -1205,3 +1205,49 @@ ligne de code (fiche seule) : la boucle se clôt.
 `4e47602e` (route, erreurs, trace, tri du rejet, i18n, tests HTTP), `b32b05f6` (écran, Vitest), `e27cce8a` (E2E),
 `c4511d2f` (manuels, API externe, CHANGELOG, README), `36de9980` (choix C-27-1-21 et 22), `6e305767` (H6 renforcé
 après M20 survivante — dernier commit de code). Gates et campagne : Dev Agent Record. Statut → `review`.
+
+### Revue de code P1 — bilan finding par finding
+
+Passe P1 (Sonnet, **complète**, trois lentilles B, E, A en contexte frais, lecture seule, sur
+`git diff fc45574c 6e305767 -- . ':(exclude)_bmad-output'` ; prompt `27-1-review-prompt-p1.md`, rapports
+`kesh-gate-logs/27-1-review-p1-{B,E,A}.md`, axes exercés et non exercés déclarés par chacune) :
+**0 CRITICAL / 0 HIGH / 1 MEDIUM / 14 LOW** (B : 3 LOW ; E : 1 MEDIUM, 6 LOW, 1 INFO ; A : 5 LOW, plus une
+observation hors périmètre non comptée).
+
+| Finding | Sév. | Traitement |
+|---|---|---|
+| E1 — retirer le `FORCE INDEX` ne fait rougir aucun test | **MEDIUM** | **corrigé** (C-27-1-23) : SQL de l'étape 2 extrait en `LOCK_IMPORT_TRANSACTIONS_SQL`, test `lock_query_uses_the_import_index` (`EXPLAIN` de la constante exécutée sur 500 lignes / 450 / 50 après `ANALYZE` : `key = idx_bank_transactions_import`, `type = ref`, plus un témoin sans l'indication). **M21** (indication retirée) : rouge, `PRIMARY` / `index` |
+| E2 — H1 ne tient pas toutes les valeurs de la trace | LOW | **corrigé** : une transaction rejetée dans l'import supprimé (`rejected_count = 1`), `file_hash`, `source_format`, `period_from`, `period_to` comparés à l'entête en base, format `AAAA-MM-JJ`. **M22** (`rejected_count` à 0 dans le handler) et **M23** (`%d.%m.%Y`) : rouges |
+| E3 + A-2 — nombre du dialogue : Vitest et E2E trop larges | LOW | **corrigé** : `detail(transactions, transactionCount)` et un Vitest où l'entête dit 9 pour trois lignes (« ses 3 transaction(s) », jamais « ses 9 ») ; E2E `toContainText(/ses 3 transaction\(s\)/)`. **M27** (le composant compte `detail.transactionCount`) : rouge |
+| E4 — le 409 ne passe jamais par le catalogue ; G9 ne tient pas les replis neufs ; doc-comment de H6 faux | LOW | **corrigé** (C-27-1-25) : H2 pose `init_error_i18n(fr-CH)` et asserte le texte exact ; G9 étendue aux trois replis (`error-api-key-operation-forbidden`, `bank-import-errors-has-reconciled-transactions` avec `{ $count }` → `{reconciled_count}`, `bank-accounts-errors-has-transactions`) ; doc-comment de H6 corrigé. **M24** (clé mal orthographiée) et **M25** (repli divergent) : rouges. Binaire `bank_imports_e2e` rejoué en un seul processus : 39/39 |
+| E5 — H7 observe les sorties, pas l'ordre des verrous ; `failed[]` non asserté | LOW | **corrigé** (C-27-1-24) : H7-bis, sonde `NOWAIT` sur `hi` pendant que le lot `[hi, lo]` attend `lo`. **M26** (ordre reçu, sorties triées après coup) : H7-bis rouge, H7 vert. `failed[]` : inatteignable hors course (pré-vol en `400`), écrit au doc-comment de H7-bis |
+| E6 — rejeu sur interblocage et `rollback` sans mutation rouge | LOW | **laissé, angle mort assumé** (C-27-1-26) — déjà écrit au doc-comment de la route |
+| E7 + B-3 — commentaires « dernier relevé », § 9 de l'API, renvoi au remède | LOW | **corrigé** : quatre commentaires frontend et le doc-comment de `routes/bank_accounts.rs` disent « de plus grande période » (C-27-1-22 révisé : ils ne sont plus laissés) ; § 9 de `api-external.md` : lignes « journal d'audit » et « suppression d'un import bancaire » ; `admin-manual.tex` (« Transactions déjà importées ») renvoie à *Supprimer un import* |
+| E8 — campagne M1-M20 | INFO | rien à faire |
+| B-1 — conservation dite sans réserve | LOW | **corrigé** : les deux puces (journal d'audit, CO 958f al. 1) disent qu'un import non rapproché peut être supprimé avec ses transactions et que `bank_import.deleted` reste — sans « seule exception » (la suppression d'une écriture existe aussi) |
+| B-2 — « (0) » si `details` manque au 409 de course | LOW | **laissé** (C-27-1-26) : inatteignable, le serveur envoie toujours `reconciledCount` |
+| A-1 — `entities/bank_import.rs` annonce l'UNIQUE et un 409 | LOW | **corrigé**, symptôme grepé (`UNIQUE…file_hash`, `uq_bank_imports_company_hash`, `409…DUPLICATE_FILE`) hors migrations et artefacts BMAD : trois copies fausses corrigées — l'entité, le doc-comment d'erreurs de `create_with_transactions` (`repositories/bank_imports.rs`), un commentaire de `bank_imports_e2e.rs` ; restent justes `inbox_import.rs:551` et `imported_supplier_invoices_repository.rs:5` (autre table) et `migrations-idempotence-audit.md:45` (historique) |
+| A-3 — « C-27-1-1 à 20 » périmé | LOW | **corrigé** : « C-27-1-1 à C-27-1-27 » (Status, References, `sprint-status.yaml`) ; le registre en porte 27 (`grep -oE "^### C-27-1-[0-9]+"` : 27, aucun doublon) |
+| A-4 — CHANGELOG : archivage sans condition | LOW | **corrigé** : « il ne lui reste alors aucune transaction — peut s'archiver, sous les autres conditions de l'archivage (un compte principal ne s'archive toujours pas) » |
+| A-5 — titre du Vitest d'`isReconciled` | LOW | **corrigé** : « faux pour `pending` sans lien … une rejetée a le même état à l'écran, le DTO ne porte pas le rejet » |
+| Observation — TOC des PDF décalée | — | **corrigé** (C-27-1-27) : PDF régénérés jusqu'à disparition de « Rerun » ; chaque entrée de TOC contrôlée contre son pied de page (95 entrées utilisateur, 122 administration, 0 écart). Makefile non touché |
+
+**Commits de remédiation** : `1bee08b0` (E1), `e75e3d79` (E2), `d74cb9d8` (E4), `4f03693e` (E5), `25f17318` (E3,
+A-2, A-5), `94326a24` (A-1, E7 côté code), `5881450b` (B-1, B-3, E7 § 9, A-4, PDF — dernier commit hors fiche).
+
+**Mutations M21 à M27** (journal `27-1-mutations.log`, une par une sur arbre propre, `git checkout --` + `touch`) :
+**7 jouées, 7 rouges**, chacune pour la raison attendue (motif d'échec relu dans `27-1-mut/M2x-0.out`). Campagne
+complète de la story : M1 à M27 moins M6 (retirée par la fiche), soit 26 lignes jouées + M14+M15 ; 25 rouges non
+équivalentes, M14 et M15 seules équivalentes.
+
+**Gate complet au HEAD `5881450b`** (bases `kesh_271` et `kesh_e2e_271` recréées, sans toucher au conteneur, tout
+sous `flock`) : `scripts/test-fast.sh` **3440 exécutés, 3440 passés, 6 ignorés** (+2 depuis `6e305767` :
+`lock_query_uses_the_import_index`, `post_reject_locks_the_batch_by_increasing_id`) ; `npm run check` 0 erreur,
+28 avertissements préexistants ; `lint-i18n-ownership` PASS ; `npm run test:unit` **131 fichiers, 1348 tests**
+(+1) ; `npm run build` vert ; **E2E complet** : **263 passés, 7 échecs, 19 ignorés** — les sept de la KF-029 (#97),
+`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ;
+`bank-import-delete.spec.ts:87` passe.
+
+**Trend** : P1 **1 MEDIUM** (0 HIGH). La remédiation touche du code de production (`bank_imports.rs`, doc-comments)
+et ajoute des tests : la boucle **n'est pas close** — passe **P2 complète (Opus)**, prompt versionné
+`27-1-review-prompt-p2.md`, axe 9 braqué sur la remédiation P1. Reclassements : aucun.

@@ -1,0 +1,140 @@
+# Prompt — revue de code P2, Story 27-1 (supprimer un import bancaire dont aucune transaction n'est rapprochée)
+
+*Versionné le 2026-10-12. Passe **complète**, trois lentilles (**Opus**), contexte frais chacune, lecture seule.
+Rotation : P1 Sonnet → P2 Opus (CLAUDE.md, décision D6).*
+
+Dépôt (worktree) `/home/gcorbaz/devel/kesh-27-1`, branche `story/27-1-supprimer-import`. **Le diff à revoir** :
+`git diff fc45574c 5881450b -- . ':(exclude)_bmad-output'` (`fc45574c` = validation close de la fiche ; `5881450b` =
+dernier commit hors fiche — remédiation P1 comprise ; les commits suivants ne portent que la fiche, le registre et ce
+prompt). **La remédiation P1 seule** : `git diff 6e305767 5881450b -- . ':(exclude)_bmad-output'` (sept commits de
+remédiation, `1bee08b0` à `5881450b`, plus deux commits de fiche : `git log --oneline 6e305767..5881450b`). ⚠️ Pathspec
+`':(exclude)…'` et **non** `':!…'`, que le shell peut interpréter. Fiche :
+`_bmad-output/implementation-artifacts/27-1-supprimer-import-non-rapproche.md` — AC1 à AC16 (dont AC4-bis), Tâches,
+Dev Notes (inventaires (a) et (b), concurrence, angles morts), et le **Dev Agent Record** (choix C-27-1-1 à 27 au
+registre `epic-27-choix-autonomes.md`, `EXPLAIN` de F10, mutations M1 à M27, décomptes, gates) et la section
+**« Revue de code P1 »** du Change Log (findings, traitements, reclassements). Rapports P1 :
+`/home/gcorbaz/devel/kesh-gate-logs/27-1-review-p1-{B,E,A}.md`. Règles : `CLAUDE.md`
+du dépôt — § « Recompter ses propres comptes rendus », § « Propagation post-patch », § « Le prompt d'une passe doit
+NOMMER le manuel », § « Une passe qui ne déclare pas ses axes exercés ne compte pas », § « Migration breaking policy »
+(aucune migration attendue, AC15). Issues : #632 (la PR la fermera) ; #633, #634, #465 (référencées : angles morts
+assumés, non corrigés ici).
+
+⛔ **DONNÉES PERSONNELLES — DÉPÔT PUBLIC.** N'ouvre aucun fichier hors du dépôt ; la fixture E2E
+`frontend/tests/e2e/fixtures/csv_e2e_delete_import.csv` est synthétique.
+
+**Contexte** : story **pleine pile**. `kesh-db` : `bank_imports::{is_reconciled, DeleteBankImportOutcome,
+DeletedBankImport, delete_unreconciled_in_tx}` (verrous entête puis transactions, `FORCE INDEX
+(idx_bank_transactions_import)`, cascade), doc-comment de module corrigé, doc-comment de
+`count_transactions_for_bank_account` ; tests `crates/kesh-db/tests/bank_import_delete.rs` (D1-D6, AC3 (a)(b)(c)).
+`kesh-api` : `AppError::{ApiKeyOperationForbidden, BankImportHasReconciledTransactions}` et leurs réponses, message du
+`412 BANK_ACCOUNT_HAS_TRANSACTIONS` ; `routes/bank_imports::{delete, delete_once}` (refus des clés, rejeu, rollback
+explicite, trace `bank_import.deleted`) ; montage `lib.rs` (`comptable_routes`) ; `audit_labels.rs` ; registre
+`audit_route_registry.rs` (115/109/118/91, point (iv) et (vi)) ; tri de `post_reject` (`reconciliation.rs`, AC4-bis) ;
+tests H1-H5, H8 (`bank_imports_e2e.rs`), H6, H9 (`bank_accounts_e2e.rs`), H7 (`reconciliation_e2e.rs`). `kesh-i18n` :
+onze clés neuves et une modifiée × quatre catalogues ; test de message (`loader.rs`). Frontend :
+`bank-import-deletion.ts`, `deleteBankImport`, `DeleteBankImportAction.svelte`, page `bank-import/[id]`, Vitest,
+`i18n-keys.test.ts` (`sitesTotal` 2032 → 2041), E2E `bank-import-delete.spec.ts`. Textes : manuels utilisateur et
+d'administration FR (`.tex` **et PDF**), `docs/api-external.md` (§ 4, § 7, note ⁸, § 10, rejet trié), `CHANGELOG.md`
+(`## [0.13.2] — Non publié`), `README.md`.
+
+⛔ **Axes communs aux trois lentilles** (chacune les déclare exercés ou non — l'axe 9 compris) :
+1. **La garde et ses verrous.** Aucune lecture ordinaire avant le premier `FOR UPDATE` (ni dans le dépôt, ni dans
+   `delete_once`, ni dans le handler) ; comptage des rapprochées sur le résultat de la lecture verrouillante ;
+   `rows_affected() != 1` ; aucune écriture sur `NotFound` / `HasReconciled` ; `rollback` explicite avant chaque
+   erreur ; erreurs sqlx par `map_db_error` (1213 reconnu par `retry_app_on_deadlock`). Le plan de l'étape 2 et le
+   `FORCE INDEX` (C-27-1-21) : justifié ? un effet de bord (motif de la sonde de l'AC3 (a)) ?
+2. **« Rapprochée », deux fois et seulement deux** : `is_reconciled` (Rust) et `isReconciled` (TS) disent-ils la même
+   chose ? Un troisième site qui décide de la même question ailleurs (`grep -rn "matched_entry_id\|matchedEntryId"
+   crates frontend/src`) ? L'inventaire (b) des écrivains de `bank_transactions` est-il toujours clos au `HEAD` ?
+3. **Refus et ordre** : rôle (`403`), clé `read` (`403 API_KEY_READ_ONLY`), clé `read-write`
+   (`403 API_KEY_OPERATION_FORBIDDEN`, avant l'enveloppe), `id <= 0` et autre société (`404 NOT_FOUND`), rapprochée
+   (`409`, `details.reconciledCount` / `transactionCount`). Rien d'écrit sur chacun. Doctrine D2 respectée (code neuf,
+   message distinct) ; `require_not_pat` non employé.
+4. **Trace d'audit** : action littérale à l'index 2 de `for_actor`, huit clés de `details_json` (snake_case, dates
+   `AAAA-MM-JJ`), écrite après le `DELETE` et avant le `commit` ; `ACTIONS` trié ; libellé dans les quatre catalogues.
+5. **AC4-bis** : `post_reject` trié avant le verrou, effets écrits (`rejected[]`, `failed[]`, `entity_id`,
+   `details_json`), commentaires corrigés, test existant et H7. Un consommateur qui dépendait de l'ordre reçu ?
+6. **i18n** : onze clés neuves × 4, une modifiée × 4 (chemin de menu = libellés réels de `nav-quotidien` /
+   `nav-bank-import` dans chaque langue), replis Svelte et Rust = texte fr-CH, arguments Fluent présents partout,
+   terminologie du glossaire (`docs/i18n-glossaire.md`), `sitesTotal` recompté aux deux bornes, `lint-i18n-ownership`.
+7. ⛔ **LES MANUELS — `docs/manual/fr/user-manual.tex`, `admin-manual.tex` ET leurs PDF.** La section « Supprimer un
+   import », le paragraphe *Rejeter*, la tuile *Relevé du …* (deux sites), le renvoi du § *Comptes bancaires*, la puce
+   *Suppression d'un import bancaire* et la puce *Portée* du § *Clés API* du manuel d'administration disent-ils
+   **vrai** sur le code (relire `DeleteBankImportAction.svelte`, `+page.svelte`, `routes/bank_imports.rs`,
+   `routes/bank_accounts.rs` (archivage), `repositories/bank_accounts.rs` (tuile), `reconciliation.rs`) ? Chaque
+   affirmation : chemin de menu, libellés, rôles, rejetées comprises, trace, réimport sans avertissement, tuile,
+   archivage « s'il ne reste aucune transaction », motifs d'annulation et leurs remèdes, lot refusé en entier.
+   **Cherche une phrase des manuels, de `api-external.md`, du README ou du site, hors des sections touchées, que la
+   story rend fausse** (ex. : une phrase qui énumère les fermetures aux clés ; « aucun geste » ; une mention de
+   l'irréversibilité d'un import ; l'archivage d'un compte bancaire). Contrôle les **PDF aplatis**
+   (`pdftotext docs/manual/fr/<manuel>.pdf - | tr '\n' ' ' | tr -s ' '` vers `/home/gcorbaz/devel/kesh-gate-logs/`) —
+   l'apostrophe y est typographique, écrire `.` à sa place dans un motif.
+8. **CHANGELOG, `api-external.md`, README** : une seule section `## [0.13.2] — Non publié` ; rien qui promette
+   au-delà du code ; « depuis la v0.13.2 » et jamais « Unreleased » ni « à venir » ; paragraphe *Interblocages*
+   inchangé (AC4) ; références `#N` du README en liens.
+
+9. ⛔ **La remédiation P1 — régressions du patch** (`git diff 6e305767 5881450b`). Le motif mesuré du dépôt : *la
+   sévérité se déplace vers ce qu'on vient d'écrire*. Relis chaque commit de la remédiation comme du code neuf :
+   - `LOCK_IMPORT_TRANSACTIONS_SQL` (E1) : le texte exécuté est-il **identique** à l'ancien (motif de la sonde de
+     l'AC3 (a), `ORDER BY id FOR UPDATE`, ordre des paramètres `company_id`, `import_id`) ? `#[doc(hidden)] pub` : une
+     surface publique de trop ? Le test `lock_query_uses_the_import_index` prouve-t-il ce qu'il nomme — `EXPLAIN` sur la
+     constante exécutée, lecture des colonnes `type`/`key` (types de colonnes sous sqlx), témoin sans l'indication,
+     montage comparable à `27-1-explain.log` ? Passe-t-il à vide dans un cas (le `replace` du témoin ne trouvant rien) ?
+   - H1 (E2) : la transaction rejetée change-t-elle ce que le test prouvait avant (réimport, `transactionCount`) ?
+   - H2 et G9 (E4) : la langue globale posée dans H2 change-t-elle le résultat d'un autre test du binaire selon
+     l'ordre (sous `cargo test` un processus par binaire, sous nextest un processus par test) ? La table de G9 :
+     paramètre `{ $count }` → `{reconciled_count}` juste ? doc-comment de H6 désormais exact ?
+   - H7-bis (E5) : synchronisation par la sonde seulement ; la sonde `NOWAIT` ne peut-elle réussir pour une autre
+     raison que l'ordre (ligne pas encore lue, autre verrou) ? Le raisonnement « `failed[]` inatteignable hors course »
+     (C-27-1-24) est-il vrai au code ?
+   - Vitest et E2E (E3, A-2, A-5) : le nouveau motif `/ses 3 transaction\(s\)/` correspond-il au texte fr-CH réel
+     **rendu** (marques d'isolation Fluent retirées par `i18nMsg` ?) ; `detail(…, transactionCount)` utilisé à bon
+     escient ?
+   - Textes (A-1, A-4, B-1, B-3/E7) : chaque phrase neuve dit-elle vrai (« depuis la v0.13.2 », conservation et
+     `bank_import.deleted`, renvoi « Supprimer un import », limitations de l'API § 9, archivage conditionné du
+     CHANGELOG, doc-comments de l'unicité du hash et de `create_with_transactions`) ? Le grep du symptôme a-t-il laissé
+     une copie (`UNIQUE`, `409 BANK_IMPORT_DUPLICATE_FILE`, `dernier relevé`) ? PDF régénérés : la table des matières
+     correspond-elle aux pieds de page ?
+   - Campagne M21 à M27 (`kesh-gate-logs/27-1-mutations.log`) : chaque mutation a-t-elle rougi pour la bonne raison
+     (`kesh-gate-logs/27-1-mut/M2x-0.out`) ? Une mutation plausible du code **remédié** reste-t-elle verte ?
+
+## Lentilles
+
+- **B — Blind Hunter : bugs et états**, sans présupposer que la fiche a raison. Le dépôt (chaque étape, import vide,
+  `transaction_count` de l'entête ≠ lignes réelles, conversion `usize → i64`), le handler (enveloppe rejouée :
+  l'erreur `ApiKeyOperationForbidden` hors de l'enveloppe ; `delete_once` rejoué après un commit partiel ?), la
+  réponse `409` (`t_args`, repli `format!`), le composant (état du dialogue après erreur, fermeture pendant l'envoi,
+  `details` mal formé, `count` du corps = `detail.transactions.length`), la page (notification, `goto`), le client API
+  sur `204`, les types TS contre les DTO Rust.
+- **E — Edge Case Hunter : bords, et les tests prouvent-ils ce qu'ils nomment.** Rejoue mentalement les mutations
+  M1 à M27 du Dev Agent Record et du Change Log (dont M14 et M15, déclarées équivalentes, et M3, rouge par la sonde) et cherche une
+  **mutation plausible qui resterait verte** (ex. : rapprochées comptées par une seconde requête non verrouillante ;
+  trace écrite avec un mauvais `entity_id` ; `rejected_count` compté sur les rapprochées ; `FORCE INDEX` retiré ; tri
+  de `post_reject` appliqué après le verrou ; le composant comptant `detail.transactionCount` au lieu des lignes).
+  Tests qui passent à vide ? Les courses : synchronisation par la sonde seulement, jamais par `sleep` ; motifs
+  suffisamment étroits. L'E2E : indépendance, rejouabilité (deuxième passage sur la même base : profil en `409`,
+  import déjà présent ?), `data-testid` seuls.
+- **A — Acceptance Auditor : conformité, décomptes, documentation.** Chaque AC (1 à 16, et 4-bis) contre le code :
+  satisfait, partiel, absent. Les tests nommés (D1-D6, AC3 (a)(b)(c), H1-H9, test de message, Vitest, E2E) existent-ils
+  et prouvent-ils ce qu'ils nomment ? AC15 (`git diff --stat` : ni `migrations/`, ni `test-schema/`, ni
+  `post_restore.rs`, ni `Cargo.toml`). AC16 (chaque mutation exécutée, résultat rapporté, journal
+  `kesh-gate-logs/27-1-mutations.log`). **Décomptes recomptés depuis la source** (clés i18n, `sitesTotal`, registre
+  des routes, tests ajoutés, nextest / Vitest / E2E déclarés) et périmètre de chaque décompte. Les choix C-27-1-21 à
+  27 : justifiés, ou défaut ? Les findings P1 laissés (B-2, E6) : l'argument tient-il ?
+
+## Ce que tu rends
+
+Ton rapport dans `/home/gcorbaz/devel/kesh-gate-logs/27-1-review-p2-<B|E|A>.md` (ta lettre). Findings avec sévérité
+(CRITICAL/HIGH/MEDIUM/LOW), `fichier:ligne`, **preuve** (commande et sortie, ou code relu), correction proposée. Pour
+tout finding affirmant qu'un code ou un texte est absent ou présent : la sortie d'un `grep -nF` copiée.
+⛔ **La liste des axes exercés ET non exercés** (les neuf axes communs et ceux de ta lentille) — un « 0 finding » sans
+elle ne compte pas.
+
+## Interdits
+
+⛔ N'écris aucun fichier hors de ton rapport dans `/home/gcorbaz/devel/kesh-gate-logs/` (et le texte aplati des PDF au
+même endroit) ; aucune commande qui écrit dans le dépôt ou dans une base, ni qui compile ou exécute : `scripts/*` (dont
+`scripts/prepare-release.sh`, `scripts/test-fast.sh`, `scripts/mem-guard.sh`), `make`, `latexmk`, `xelatex`,
+`git commit`/`add`/`checkout`/`switch`/`stash`/`reset`/`rebase`, `sqlx`, `cargo` (aucune sous-commande), `npm`, `npx`,
+`node`, `docker`, `gh` en écriture, aucune requête SQL ni HTTP. Aucun fichier hors du dépôt. Autorisés : lecture,
+`grep`, `sed -n`, `wc`, `git log`/`show`/`diff`, `gh issue view`, `pdftotext` vers `/home/gcorbaz/devel/kesh-gate-logs/`.
