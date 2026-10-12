@@ -2439,27 +2439,26 @@ async fn post_accept_emits_dual_audit_invoice_paid(pool: MySqlPool) {
 
 /// AC #72 — currency tx-side guard.
 ///
-/// **Finding résiduel détecté pendant l'écriture du test** : le guard
-/// A6-2 `tx.currency != "CHF"` est implémenté côté `GET /proposals`
-/// (handler ligne 233-236) mais **PAS côté `POST /accept`**. Le handler
-/// POST accept ne court-circuite pas les tx EUR avant d'appeler
-/// `propose_matches`, et le helper de scoring n'a pas non plus de check
-/// currency. Le test vérifie le comportement réel : avec tx EUR + invoice
-/// (sans colonne currency, défaut implicite CHF), si amount/ref/contact
-/// matchent, l'opération **réussit silencieusement** — c'est exactement
-/// l'angle mort que A6-2 Pass 6 voulait combler.
+/// **Angle mort documenté** : le contrôle `tx.currency != "CHF"` de
+/// `reconciliation.rs` joue dans `get_proposals` (la transaction non CHF ne
+/// reçoit aucune proposition) et dans le rapprochement par règle
+/// (`RECONCILIATION_CURRENCY_MISMATCH`), mais **PAS** dans le rapprochement
+/// d'une facture par `POST /accept` (`accept_one_invoice`) : avec une
+/// transaction EUR et une facture dont montant, référence et contact
+/// concordent, l'opération réussit.
 ///
-/// Sévérité : **MEDIUM** — risque limité v0.1 mono-CHF (le parseur CSV
-/// refuse un relevé non CHF quand le profil lit la colonne Devise — Story
-/// 27-2 ; sans elle, CHF supposé).
-/// Mais théoriquement exploitable via custom CSV profile pre-Story 11.
-/// À fixer en code review Pass 5+ ou en début de Story 11 (un-`#[ignore]`
-/// AC #67 + ajout guard symétrique).
+/// Sévérité : **MEDIUM** en principe, sans prise aujourd'hui : aucun chemin
+/// d'import n'enregistre une transaction non CHF. Le CAMT.053 la refuse
+/// (`BANK_IMPORT_UNSUPPORTED_CURRENCY`) ; le CSV aussi depuis la Story 27-2
+/// quand le profil lit la colonne Devise, et suppose CHF sans elle. Ce test
+/// pose la transaction EUR **directement en base** pour l'exercer.
+/// À fermer avec le multi-devise (garde symétrique dans `accept_one_invoice`,
+/// un-`#[ignore]` de l'AC #67).
 ///
-/// Pour ce test : on documente le comportement réel (success silencieux)
+/// Pour ce test : on documente le comportement réel (succès silencieux)
 /// pour empêcher une régression future qui changerait silencieusement
-/// la sémantique. Le jour où le guard symétrique POST sera ajouté, ce
-/// test devra être inversé pour vérifier `failed[]` non-vide.
+/// la sémantique. Le jour où la garde symétrique sera ajoutée, ce test
+/// devra être inversé pour vérifier `failed[]` non vide.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_accept_skips_non_chf_transaction(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;

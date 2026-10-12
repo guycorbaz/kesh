@@ -724,6 +724,8 @@ fn parse_row(record: &csv::StringRecord, line: usize, profile: &CsvProfile) -> R
             Some(s) if !s.is_empty() => match normalize_currency(s) {
                 Some(c) => c,
                 None => {
+                    // Valeur rapportée : la cellule **rognée** par `get_cell`
+                    // (revue de code P1, A-4), tronquée comme toute valeur.
                     return RowParse {
                         result: Err(CsvLineError::new(
                             line,
@@ -2297,6 +2299,41 @@ mod tests {
         let stmt = all_valid(parse_csv_collect(&bytes, &ubs_currency_profile(Some(4))));
         assert_eq!(stmt.currency, "EUR");
         assert!(stmt.transactions.iter().all(|t| t.currency == "EUR"));
+    }
+
+    /// Revue de code P1 (E-3) : la cellule Devise est rognée avant d'être
+    /// lue — ` chf ` vaut `CHF`, jamais `INVALID_CURRENCY`.
+    #[test]
+    fn padded_currency_cell_is_trimmed() {
+        let (bytes, n) = derive_currency(|_| Some(" chf ".into()));
+        assert_eq!(n, 11);
+        let stmt = all_valid(parse_csv_collect(&bytes, &ubs_currency_profile(Some(4))));
+        assert_eq!(stmt.currency, "CHF");
+        assert_eq!(stmt.transactions.len(), 11);
+        assert!(stmt.transactions.iter().all(|t| t.currency == "CHF"));
+    }
+
+    /// Revue de code P1 (E-1) : colonne Devise réglée, **aucune** ligne
+    /// valide (toutes les cellules Devise vides) → la devise du relevé est
+    /// `DEFAULT_CSV_CURRENCY`, et non une valeur tirée d'ailleurs : l'aperçu
+    /// d'un tel fichier n'annonce pas de devise non supportée.
+    #[test]
+    fn currency_column_without_valid_line_gives_default_currency() {
+        let (bytes, n) = derive_currency(|_| Some(String::new()));
+        assert_eq!(n, 11);
+        match parse_csv_collect(&bytes, &ubs_currency_profile(Some(4))) {
+            ParseCsvOutcome::PartialFailure {
+                valid,
+                total_errors,
+                ..
+            } => {
+                assert_eq!(total_errors, 11);
+                assert!(valid.transactions.is_empty());
+                assert_eq!(valid.currency, DEFAULT_CSV_CURRENCY);
+                assert_eq!(valid.currency, "CHF");
+            }
+            other => panic!("expected PartialFailure, got {other:?}"),
+        }
     }
 
     /// AC13-5 : une cellule vide → erreur de ligne `EMPTY_MANDATORY_FIELD`

@@ -2230,6 +2230,18 @@ async fn post_ubs_currency_profile(
     name: &str,
     currency: Option<u8>,
 ) -> i64 {
+    post_ubs_currency_profile_encoded(app, jwt, name, currency, None).await
+}
+
+/// [`post_ubs_currency_profile`] avec un encodage de profil — `ISO-8859-1`
+/// sur la fixture UTF-8 provoque `EncodingMismatch` (revue de code P1, E-2).
+async fn post_ubs_currency_profile_encoded(
+    app: &TestApp,
+    jwt: &str,
+    name: &str,
+    currency: Option<u8>,
+    encoding: Option<&str>,
+) -> i64 {
     let mut mapping = serde_json::json!(
         {"date": 2, "debit_credit_split": [5, 6], "reference": 9, "details": 10}
     );
@@ -2247,7 +2259,7 @@ async fn post_ubs_currency_profile(
             "dateFormat": "%Y-%m-%d",
             "decimalSeparator": ".",
             "fieldSeparator": ";",
-            "encoding": null,
+            "encoding": encoding,
             "headerRowCount": 9,
             "debitSign": "negative"
         }))
@@ -2416,6 +2428,83 @@ async fn csv_eur_statement_with_line_errors_is_refused_before_partial_check(pool
         "(3b)"
     );
     assert_ne!(body["error"]["code"], "BANK_CSV_PARTIAL_FAILURE", "(3b)");
+    assert_eq!(write_counts(&pool).await, before, "rien d'écrit");
+}
+
+/// Revue de code P1 (E-2, B-3) : le contrôle de devise de l'aperçu porte sur
+/// le relevé obtenu QUELLE QUE SOIT l'issue du parseur — fichier EUR avec une
+/// ligne invalide, (a) au premier essai, (b) au second essai qui suit
+/// `EncodingMismatch` ; (c) l'import repris par `confirmEncodingMismatch` et
+/// `confirmPartialImport` est refusé pour sa devise, rien d'écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn csv_eur_preview_is_warned_with_line_errors_and_after_encoding_retry(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let utf8_id = post_ubs_currency_profile(&app, &s.jwt, "UBS devise", Some(4)).await;
+    let latin1_id = post_ubs_currency_profile_encoded(
+        &app,
+        &s.jwt,
+        "UBS devise latin1",
+        Some(4),
+        Some("ISO-8859-1"),
+    )
+    .await;
+    let (bytes, n) = derive_ubs_fixture(|i, f| {
+        f[4] = "EUR".into();
+        if i == 4 {
+            f[2] = "pas-une-date".into();
+        }
+        true
+    });
+    assert_eq!(n, 11);
+
+    for (label, profile_id, mismatch) in [("(a)", utf8_id, false), ("(b)", latin1_id, true)] {
+        let (status, body) = send_csv(
+            &app,
+            &s.jwt,
+            true,
+            bytes.clone(),
+            s.bank_account_id,
+            profile_id,
+            &[],
+        )
+        .await;
+        assert_eq!(status, 200, "{label} {body}");
+        assert_eq!(
+            body["warnings"]["encodingMismatch"].is_object(),
+            mismatch,
+            "{label} {body}"
+        );
+        assert_eq!(
+            body["warnings"]["invalidLines"]["totalErrors"], 1,
+            "{label} {body}"
+        );
+        assert_eq!(
+            body["warnings"]["unsupportedCurrency"]["currency"], "EUR",
+            "{label} {body}"
+        );
+    }
+
+    // (c)
+    let before = write_counts(&pool).await;
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        false,
+        bytes,
+        s.bank_account_id,
+        latin1_id,
+        &[
+            ("confirmEncodingMismatch", "true".to_string()),
+            ("confirmPartialImport", "true".to_string()),
+        ],
+    )
+    .await;
+    assert_eq!(status, 422, "(c) {body}");
+    assert_eq!(
+        body["error"]["code"], "BANK_IMPORT_UNSUPPORTED_CURRENCY",
+        "(c)"
+    );
     assert_eq!(write_counts(&pool).await, before, "rien d'écrit");
 }
 

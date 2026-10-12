@@ -122,7 +122,7 @@ date, montant, devise — C-27-2-5) :
 - vide → `CsvLineError` `EMPTY_MANDATORY_FIELD`, valeur `"currency"` ;
 - exactement trois caractères ASCII alphabétiques → `to_ascii_uppercase()` (`"chf"` → `"CHF"`) ;
 - autre chose → `CsvLineError` du **nouveau** code `INVALID_CURRENCY` (`CsvLineErrorCode::InvalidCurrency`), valeur
-  = la cellule brute (tronquée par le mécanisme existant `MAX_CSV_LINE_ERROR_VALUE_CHARS`).
+  = la cellule rognée par `get_cell` — revue de code P1, A-4 — (tronquée par le mécanisme existant `MAX_CSV_LINE_ERROR_VALUE_CHARS`).
 - `ImportedTransaction.currency` = la devise lue. Ces erreurs sont des erreurs de ligne **ordinaires** (rejet partiel,
   confirmable par `confirmPartialImport`).
 - ⛔ **Une erreur de devise garde l'observation de débit déjà faite** (validation P1, R1-1). La devise est lue après le

@@ -244,6 +244,17 @@ describe('BankProfileForm — colonne Devise et clés non montrées (Story 27-2)
 		expect(JSON.stringify(req)).not.toContain('debit_credit_split');
 	});
 
+	it('(v10) le champ Devise est nommé par son libellé et décrit par son aide', () => {
+		const { container } = render(BankProfileForm, { props: {} });
+		const input = currencyInput(container);
+		const label = container.querySelector(`label[for="${input.id}"]`);
+		expect(label?.textContent).toContain('devise (facultative)');
+		const helpId = input.getAttribute('aria-describedby');
+		expect(helpId).toBeTruthy();
+		const help = container.querySelector(`#${helpId}`);
+		expect(help?.textContent).toContain('francs suisses (CHF)');
+	});
+
 	it('(v9) création → la requête ne porte que les clés du formulaire', async () => {
 		const { container } = render(BankProfileForm, { props: {} });
 		await submit(container);
