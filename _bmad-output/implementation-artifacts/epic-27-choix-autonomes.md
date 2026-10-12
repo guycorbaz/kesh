@@ -1594,6 +1594,9 @@ aux revues de code P1, P2 ciblée et P3 ciblée. Tenus d'abord dans un fichier s
 - **Écarté** : la formulation proposée par la lentille, fausse dans le cas même qu'elle visait ; relancer d'office
   le recalcul sans profil (déjà écarté par C-27-3-57).
 - **Réversible** : oui (manuel seul).
+
+---
+
 ## Story 27-4 — Un lot de réconciliation qui contient une transaction disparue (#634)
 
 Fiche : `27-4-lot-reconciliation-transaction-disparue.md`. Choix faits à la création de la fiche (2026-10-12),
@@ -1993,3 +1996,73 @@ Consigne de l'orchestrateur : simplifier, ne pas ajouter de mécanisme fragile.
 - **Retenu** : `error_code: String::from("TEST")`, commenté ; le décompte rend 27 (`grep -ohE 'error_code: "[A-Z_]+"' …
   | sort -u | wc -l`).
 - **Réversible** : oui.
+
+### C-27-4-40 — Revue de code P1, E1 : un AC6-5 (c), « rapprochée sans lien » pendant l'attente du verrou
+
+- **Contexte** : la garde `status = 'pending'` de l'`UPDATE` de `reject_batch` pouvait être retirée sans qu'aucun
+  test ne rougisse : les montages de course du rejet couvraient la suppression, le rejet concurrent et le changement
+  de compte, pas l'acceptation terminée pendant l'attente. Or `matched_entry_id` est `ON DELETE SET NULL` : l'état
+  `reconciled` **sans** lien est atteignable, et seule la garde de statut l'écarte.
+- **Retenu** : test `post_reject_does_not_reject_a_transaction_reconciled_meanwhile`, sur le patron de l'AC6-5 (a) :
+  `status = 'reconciled'` posé **sans** lien pendant l'attente (le montage l'asserte), refus
+  `RECONCILIATION_ALREADY_RECONCILED`, `details` nul, ligne inchangée, trace du seul rejet de l'autre transaction.
+  Mutation **M20** (garde retirée) jouée : rouge sur ce seul test.
+- **Écartée** : poser aussi un lien (`matched_entry_id`) — la garde `matched_entry_id IS NULL` aurait alors refusé à
+  la place de la garde de statut, et M20 survivait.
+- **Réversible** : oui (test seul).
+
+### C-27-4-41 — Revue de code P1, E4 / B LOW-1 : les deux imports nettoyés en `finally`, compteur exact
+
+- **Retenu** : `importA` suivi comme `importB` et supprimé en `finally` (un `404` y est sans effet, A étant supprimé
+  dans le corps du test) ; le compteur de succès asserté par `toHaveText(/^\s*1\s+\D/)` (« 1 opération(s)… »), qui
+  refuse « 10 » ou « 11 », au lieu de `toContainText('1')`.
+- **Réversible** : oui (test seul).
+
+### C-27-4-42 — Revue de code P1, E2 : `company_id` retiré des lectures scopées par compte, mutations équivalentes
+
+- **Contexte** : le filtre `company_id = ?` de `find_by_ids_for_account` et du texte SQL partagé
+  `bank_tx_by_id_for_account_sql` (lecture par identifiant, avec ou sans `FOR UPDATE`) n'est tué par aucun test.
+- **Retenu** : déclarées **équivalentes**, après exécution : **M21** (`company_id` neutralisé dans
+  `find_by_ids_for_account`) et **M22** (idem dans `bank_tx_by_id_for_account_sql`) survivent (100 tests verts sur
+  `reconciliation_e2e`, `reconciliation_repository` et la classification). Un compte bancaire n'appartient qu'à une
+  société et le filtre `bank_account_id` écarte déjà les lignes de l'autre société : aucun état produit par un
+  écrivain du dépôt ne les distingue. Le filtre reste, en défense en profondeur (règle de scoping multi-tenant).
+- **Écartée** : un test qui fabrique une transaction dont `company_id` contredit celui de son compte — un état
+  qu'aucun chemin ne produit, qui prouverait la clause sans rien dire du produit.
+- **Réversible** : sans objet.
+
+### C-27-4-43 — Revue de code P1, E5 : le libellé « rapprochée, rejetée ou supprimée » reste générique
+
+- **Contexte** : pour l'acceptation, la cause « rejetée » n'est pas atteignable sous verrou (le rejet partage le
+  verrou du compte, et l'`UPDATE` d'acceptation ne filtre pas `auto_match_rejected_at`).
+- **Retenu** : texte inchangé (catalogues, `failed-proposal-label.ts`, contrat) : il sert aussi le repli du rejet, où
+  la cause est juste, et un libellé générique ne trompe pas (C-27-4-8). Surcharge de précision sans effet.
+- **Réversible** : oui.
+
+### C-27-4-44 — Revue de code P1, A-5 : « Sie » majuscule après deux-points, gardé en allemand
+
+- **Retenu** : inchangé. En allemand, une phrase complète qui suit un deux-points prend la majuscule ; le catalogue
+  `de-CH` emploie déjà cette forme pour une chose désignée par « sie » (`error-lettering-line-owned-by-document`,
+  `journal-entries-reverse-blocked-supplier-invoice`, `reconciliation-failed-rule-no-longer-matches`). Le contexte
+  (« Transaktion … : Sie wurde … gelöscht ») ne laisse pas lire la forme de politesse.
+- **Écartée** : reformuler sans pronom les deux seules clés de la story — elles divergeraient de leurs voisines.
+- **Réversible** : oui.
+
+### C-27-4-45 — Revue de code P1, A-1 : l'ancien message cité au contrat d'API, résidu légitime
+
+- **Retenu** : `docs/api-external.md` cite toujours « bankTransactions […] n'appartiennent pas au bankAccountId » —
+  dans l'avertissement de **changement de contrat**, pour qu'un client reconnaisse le `400` qu'il traitait. Le
+  critère « vide » de l'AC2 vise le code et les textes servis, pas cette citation ; trié au Dev Agent Record.
+- **Réversible** : oui.
+
+### C-27-4-46 — Rebase sur `origin/main` (27-2, 27-3) avant les LOW de la revue
+
+- **Contexte** : la branche partait de `f9725c29` (27-1) ; `main` porte depuis la 27-2 (`e04122dc`) et la 27-3
+  (`f2b03df9`).
+- **Retenu** : rebase **d'abord**, LOW ensuite, pour que les numéros de ligne de l'inventaire (E3) soient ceux du
+  `HEAD` final. Conflits réunis : registre et `sprint-status.yaml` par union ; `CHANGELOG.md`, une seule section
+  `[0.13.2]`, un seul `### Modifié`, un seul `### Corrigé` ; `sitesTotal` **2075** (2073 de `main` + 2, vérifié par
+  la garde) ; PDF du manuel utilisateur **régénéré** par le Makefile de `main` (jamais fusionné en binaire).
+  `reconciliation.rs`, `reconciliation_e2e.rs`, les catalogues et `api-external.md` ont fusionné sans conflit.
+- **Écartée** : merger `main` dans la branche (historique moins lisible, la PR étant squashée de toute façon).
+- **Réversible** : oui (avant push).

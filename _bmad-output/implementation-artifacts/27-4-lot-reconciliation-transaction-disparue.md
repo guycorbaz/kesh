@@ -524,6 +524,16 @@ Méthode : tout site de `reconciliation.rs` qui **rend un refus lié à l'état 
 `grep -nE 'BANK_TRANSACTION_NOT_FOUND|RECONCILIATION_ALREADY_RECONCILED|RECONCILIATION_TRANSACTION_NOT_PENDING|race_during_update|find_pending_by_ids|find_pending_by_id_for_account|find_strictly_pending'`
 — est soit résolu, soit écrit ici comme angle mort assumé.
 
+⚠️ **Numéros de ligne** (revue de code P1, E3) : ceux du tableau sont ceux de la fiche, relevés **avant** le code.
+Au `HEAD` rebasé sur `f2b03df9` (`grep -nE` ci-dessus, hors commentaires), les sites sont : classification
+`:877`/`:882` ; `accept_one_invoice`, recharge sous verrou `:1563`, refus `:1575`, étape 4 « sur `status` seul »
+`:1589-1592`, `UPDATE` à 0 ligne `:2058-2059` ; `accept_one_split`, recharge `:2421`/`:2433`, `UPDATE` `:2559-2560` ;
+`accept_one_rule`, recharge `:2822`/`:2834`, `UPDATE` `:3011-3012` ; repli de `reject_batch` `:3386-3387` ;
+routes unitaires `:3644`, `:3730`, `:4097`, `:4211` ; tests unitaires `:4817-4874`. **Exclu par écrit** : `:2114`,
+`RECONCILIATION_INVOICE_NOT_ELIGIBLE` + `race_during_update` — l'`UPDATE` de la **facture** à 0 ligne, une course sur
+la facture et non sur l'état de la transaction : hors de la classe inventoriée, documenté au contrat
+(`docs/api-external.md:538`, « Si la facture change **pendant** l'acceptation ») et inchangé par la story.
+
 | Site | Ce qui reste | Pourquoi assumé |
 |---|---|---|
 | `accept_one_invoice`, `UPDATE bank_transactions` à 0 ligne (`:1934-1940`) | `RECONCILIATION_ALREADY_RECONCILED` + `race_during_update` pour une suppression **entre** la recharge sous verrou et l'`UPDATE` | fenêtre de quelques millisecondes ; libellé honnête à l'écran (AC7) ; une reprise par relecture, comme au rejet, toucherait le flux d'acceptation de facture (lettrage, audit) — hors du gain de l'issue (C-27-4-8) |
@@ -616,6 +626,10 @@ Modules touchés : `kesh-db/repositories/reconciliation`, `kesh-api/routes/recon
 de la règle de *splitting préventif* (C-27-4-13).
 
 ### Fichiers communs avec les branches non mergées 27-2 et 27-3 (lecture seule)
+
+⚠️ **Table périmée, gardée pour l'historique** (revue de code P1, A-3) : relevée à la validation P2, avant les
+merges de la 27-2 (`e04122dc`) et de la 27-3 (`f2b03df9`). La fusion réelle est décrite au Dev Agent Record,
+§ *Rebase sur `origin/main`* : `sitesTotal` y vaut **2075** (2073 de `main` + 2), non 2043.
 
 | Fichier | 27-2 | 27-3 | 27-4 |
 |---|---|---|---|

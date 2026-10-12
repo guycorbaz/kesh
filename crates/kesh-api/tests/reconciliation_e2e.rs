@@ -7042,6 +7042,76 @@ async fn post_reject_does_not_reject_a_transaction_moved_to_another_account(pool
     assert_eq!(rejected_traces_274(&pool).await, vec![vec![t_b]]);
 }
 
+/// AC6-5 (c) — la transaction passe à `reconciled` pendant l'attente du verrou
+/// (ce que laisse une acceptation terminée, puis la suppression de son écriture
+/// — `matched_entry_id` est `ON DELETE SET NULL`) : **sans** lien, seule la
+/// garde `status = 'pending'` de l'`UPDATE` la protège, et la reprise sous
+/// verrou la reclasse en `RECONCILIATION_ALREADY_RECONCILED`, `details` nul
+/// (revue de code P1, E1 ; tue M20).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_reject_does_not_reject_a_transaction_reconciled_meanwhile(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let t_a = seed_one_tx_274(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        "reco_a",
+        dec!(110.00),
+        "R-A",
+    )
+    .await;
+    let t_b = seed_one_tx_274(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        "reco_b",
+        dec!(220.00),
+        "R-B",
+    )
+    .await;
+    let app = spawn_app(pool.clone()).await;
+
+    let (mut conn, lock) = hold_account_lock_274(&pool, &ctx).await;
+    let task = spawn_post_274(
+        &app,
+        &ctx.jwt,
+        "/api/v1/reconciliation/reject",
+        serde_json::json!({ "bankAccountId": ctx.bank_account_id, "bankTransactionIds": [t_a, t_b] }),
+    );
+    wait_blocked_on_account_lock_274(&pool, &task).await;
+    sqlx::query("UPDATE bank_transactions SET status = 'reconciled' WHERE id = ?")
+        .bind(t_a)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let before = tx_row_274(&pool, t_a).await.unwrap();
+    assert_eq!(
+        (before.0.as_str(), before.1),
+        ("reconciled", None),
+        "montage : rapprochée sans lien"
+    );
+    release_account_lock_274(&mut conn, &lock).await;
+
+    let (st, body) = task.await.unwrap();
+    assert_eq!(st, 200, "{body}");
+    assert_eq!(ids_274(&body, "rejected"), vec![t_b], "{body}");
+    assert_eq!(
+        failed_274(&body),
+        vec![(
+            t_a,
+            "RECONCILIATION_ALREADY_RECONCILED".to_string(),
+            Value::Null
+        )],
+        "{body}"
+    );
+    assert_eq!(
+        tx_row_274(&pool, t_a).await.unwrap(),
+        before,
+        "la transaction rapprochée n'est ni horodatée ni versionnée"
+    );
+    assert_eq!(rejected_traces_274(&pool).await, vec![vec![t_b]]);
+}
+
 /// AC6-6 — l'acceptation d'une transaction rejetée la refuse en
 /// `RECONCILIATION_ALREADY_REJECTED` (tue M4 au niveau route).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]

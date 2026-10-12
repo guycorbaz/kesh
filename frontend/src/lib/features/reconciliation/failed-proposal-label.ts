@@ -22,7 +22,8 @@
  * ⚠️ **Les clés sont écrites en toutes lettres, jamais construites par gabarit** : une clé
  * statique est vue par `i18n-keys.test.ts` dès qu'elle manque d'un catalogue.
  *
- * Depuis la Story 27-4 (#634), le 27ᵉ littéral est `RECONCILIATION_ALREADY_REJECTED` : une
+ * Depuis la Story 27-4 (#634), le littéral ajouté en dernier (ce qui porte le compte à 27) est
+ * `RECONCILIATION_ALREADY_REJECTED` : une
  * transaction rejetée refusée par le pré-vol d'un lot (auparavant, le lot entier était refusé
  * en `400`).
  *

@@ -12,7 +12,7 @@
  * références, montants et contrepartie réécrits. La **règle d'affectation** qui rend les deux
  * transactions sélectionnables porte une contrepartie unique à l'exécution, pour ne rendre
  * sélectionnable aucune transaction d'un autre spec ; elle est supprimée en `finally`, avec
- * l'import restant (choix C-27-4-24).
+ * les deux imports (choix C-27-4-24, C-27-4-41).
  *
  * Pré-requis : MariaDB up + KESH_TEST_MODE=true (cf. docs/testing.md).
  */
@@ -119,6 +119,9 @@ test('un lot de rejet dont un import a été supprimé entre-temps traite l’au
 
 	const ctx = await authedApiContext(page);
 	let ruleId: number | null = null;
+	// Les deux imports sont suivis pour le `finally` (revue de code P1, E4 / B LOW-1) : un échec
+	// entre l'import de A et sa suppression ne laisse rien en base ; un 404 y est sans effet.
+	let importA: number | null = null;
 	let importB: number | null = null;
 	try {
 		const baId = await bankAccountId(ctx);
@@ -130,6 +133,7 @@ test('un lot de rejet dont un import a été supprimé entre-temps traite l’au
 		expect(revenue, 'compte 3000 du préréglage').toBeTruthy();
 
 		const a = await importOne(ctx, baId, unique, 'A', base, counterparty);
+		importA = a.importId;
 		const b = await importOne(ctx, baId, unique, 'B', base + 1, counterparty);
 		importB = b.importId;
 
@@ -159,7 +163,8 @@ test('un lot de rejet dont un import a été supprimé entre-temps traite l’au
 
 		await page.getByTestId('reconciliation-reject-btn').click();
 
-		await expect(page.getByTestId('reconciliation-success')).toContainText('1');
+		// Exactement une opération réussie : « 1 opération(s)… », et non « 10 » ni « 11 ».
+		await expect(page.getByTestId('reconciliation-success')).toHaveText(/^\s*1\s+\D/);
 		const item = page.locator(
 			`[data-testid="reconciliation-failed-item"][data-tx-id="${a.txId}"]`,
 		);
@@ -181,7 +186,9 @@ test('un lot de rejet dont un import a été supprimé entre-temps traite l’au
 		expect(((await txB.json()) as { status: string }).status).toBe('pending');
 	} finally {
 		if (ruleId !== null) await ctx.delete(`/api/v1/reconciliation/rules/${ruleId}`);
-		if (importB !== null) await ctx.delete(`/api/v1/bank-imports/${importB}`);
+		for (const id of [importA, importB]) {
+			if (id !== null) await ctx.delete(`/api/v1/bank-imports/${id}`);
+		}
 		await disposeContextSafe(ctx);
 	}
 });
