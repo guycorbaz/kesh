@@ -1969,6 +1969,22 @@ La session ouverte doit être \textbf{rouverte} --- reconnexion, ou au plus la d
 
 \textbf{Limite} : les données de démonstration laissées par une réinitialisation antérieure (taux de TVA, réglages de facturation, contacts, articles, factures, avoirs) qui désignent la société effacée restent en base, invisibles et inertes (\#546).
 
+\subsubsection{Passer à la 0.13.2 : la colonne Devise des profils CSV}\label{sec:maj-0-13-2}
+
+La 0.13.2 ne demande ni nouveau compose ni nouvelle variable de \keshpath{.env} : on tire l'image et on redémarre (\S\ref{sec:mise-a-jour}). Depuis une version antérieure à la 0.13.1, appliquez d'abord la section suivante (\S\ref{sec:maj-0-13-1}).
+
+\paragraph{Ajouter la colonne Devise aux profils CSV.}\mbox{}\\
+\begin{sloppypar}
+Un profil CSV peut désormais désigner la \textbf{colonne Devise} de son fichier : Kesh lit alors la devise de chaque ligne et refuse un relevé qui n'est pas en francs suisses (\texttt{422 BANK\_IMPORT\_UNSUPPORTED\_CURRENCY}) ou qui mélange plusieurs devises (\texttt{422 BANK\_CSV\_MIXED\_CURRENCIES}). \textbf{Les profils existants n'ont pas cette colonne} : leur relevé reste \textbf{supposé en CHF}, comme avant, et la prévisualisation le dit à chaque dépôt. Pour tout profil dont le fichier porte une colonne Devise --- \textbf{le profil UBS, colonne 4} ---, ouvrez \emph{Administration → Profils bancaires} et réglez-la. Le détail est au manuel utilisateur, \emph{Profils banque} et \emph{Le relevé CSV d'UBS}. Modifier un profil à l'écran garde désormais sa colonne contrepartie, que seule l'API règle et que le formulaire supprimait au premier enregistrement.
+\end{sloppypar}
+
+\textbf{Transactions déjà importées} : la mise à jour ne corrige rien, et réimporter le même fichier ne remplace rien --- le fichier est signalé en doublon, et ses lignes aussi (l'empreinte d'une ligne ignore la devise). Deux cas ont pu écrire une devise fausse : un relevé CSV d'un compte en devise étrangère, enregistré en CHF au montant du fichier ; un paiement CAMT.053 dont un montant d'information (montant d'origine d'un paiement par carte, frais) était en devise étrangère, enregistré « en EUR » au montant en francs. Le remède : \textbf{supprimer l'import}, permis tant qu'aucune de ses transactions n'est rapprochée, puis le réimporter. Si l'import a des transactions rapprochées, la suppression est refusée (\texttt{409 BANK\_IMPORT\_HAS\_RECONCILED\_TRANSACTIONS}) : annulez d'abord leur rapprochement (manuel utilisateur, \emph{Annuler le rapprochement}), puis supprimez et réimportez. Une transaction CAMT restée « en EUR » n'était proposée ni au rapprochement automatique ni par une règle, mais le rapprochement manuel, l'éclatement et l'acceptation d'une facture l'admettaient : rapprochée ainsi, elle suit la même règle. Un relevé CSV d'un compte en devise, réimporté avec la colonne Devise réglée, est \textbf{refusé} : Kesh ne tient que des comptes en CHF.
+
+\paragraph{Retour à la 0.13.1.}\label{sec:maj-0-13-2-retour}\mbox{}\\
+\begin{sloppypar}
+Aucune migration de la 0.13.2 ne relève la version minimale exigée : le retour à la 0.13.1 reste possible. Mais \textbf{un seul profil qui lit la colonne Devise} fait échouer, sous la 0.13.1, la liste des profils bancaires de \textbf{toute la société} (\texttt{GET /api/v1/bank-profiles}, erreur 500) : l'écran \emph{Profils bancaires} est inutilisable, et l'écran d'import affiche un sélecteur de profil \textbf{vide, sans message} ; les imports par ce profil sont refusés --- rien n'est importé à tort. \textbf{Retirez la colonne Devise de tous les profils avant le retour}, sous la 0.13.2. Oubliée, elle se retire encore \textbf{par l'API} de la 0.13.1 : un \texttt{PUT /api/v1/bank-profiles/\{id\}} complet sans \texttt{columnMapping.currency}, ou un \texttt{DELETE} ; l'identifiant et les réglages du profil, que la 0.13.1 ne rend plus, se lisent dans \textbf{l'export global} de la 0.13.1 (\keshpath{bank\_profiles.csv}, colonnes \texttt{id} et \texttt{column\_mapping\_json}). Le SQL reste le dernier recours. Une sauvegarde d'installation prise sous la 0.13.2 s'importe dans une 0.13.1, avec la même conséquence.
+\end{sloppypar}
+
 \subsubsection{Passer à la 0.13.1 : sens des débits CSV et \keshpath{kesh-restore.sh}}\label{sec:maj-0-13-1}
 
 La 0.13.1 ne demande ni nouveau compose ni nouvelle variable de \keshpath{.env} : on tire l'image et on redémarre (\S\ref{sec:mise-a-jour}). Depuis une \textbf{0.12.x}, appliquez d'abord la section suivante (\S\ref{sec:maj-0-13}) --- compose, \keshpath{.env}, mots de passe MariaDB ---, qui vaut pour la 0.13.1 comme pour la 0.13.0.
@@ -2220,7 +2236,7 @@ docker compose up -d
 # la sauvegarde DB d'avant la mise a jour (cf. section Restauration).
 \end{lstlisting}
 
-Revenir à l'image précédente \textbf{ne défait pas} la réparation de l'installation faite au premier démarrage (\S\ref{sec:reparation-installation}) : les clés révoquées restent révoquées --- aucune ne se réactive ---, et les sociétés provisoires supprimées ne reviennent pas ; seule la restauration de la sauvegarde d'avant la mise à jour les rend. La réparation n'impose elle-même aucune version minimale ; le retour à la version précédente n'est possible que si \textbf{aucune autre} migration de la release ne relève la version minimale exigée --- vérifiez-le au CHANGELOG.
+Revenir à l'image précédente \textbf{ne défait pas} la réparation de l'installation faite au premier démarrage (\S\ref{sec:reparation-installation}) : les clés révoquées restent révoquées --- aucune ne se réactive ---, et les sociétés provisoires supprimées ne reviennent pas ; seule la restauration de la sauvegarde d'avant la mise à jour les rend. La réparation n'impose elle-même aucune version minimale ; le retour à la version précédente n'est possible que si \textbf{aucune autre} migration de la release ne relève la version minimale exigée --- vérifiez-le au CHANGELOG. Pour la 0.13.2, le retour exige en plus que les profils CSV ne lisent plus la colonne Devise (\S\ref{sec:maj-0-13-2}).
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Sécurité}

@@ -1715,7 +1715,9 @@ fichier déjà importé ; lignes invalides d'un CSV (\emph{Importer les lignes v
 même}) ; encodage différent de celui du profil ; solde de clôture incohérent. Les transactions
 qui \textbf{chevauchent un import précédent} sont \textbf{ignorées par défaut}
 (\emph{Ignorer les doublons (par défaut)}), et importées si vous choisissez \emph{Importer quand
-même}. Une devise non supportée bloque l'import. \emph{Annuler} abandonne sans rien enregistrer.
+même}. Une devise non supportée bloque l'import — relevé CAMT.053, ou CSV dont le profil lit la
+colonne Devise ; un CSV dont le profil ne la lit pas est supposé en CHF, et la prévisualisation le
+dit (\S\ref{sec:import-csv}). \emph{Annuler} abandonne sans rien enregistrer.
 L'import confirmé rejoint la liste \emph{Imports précédents} de la même page (date, fichier,
 période, nombre de transactions) ; le nom du fichier ouvre le détail de l'import.
 
@@ -1776,7 +1778,7 @@ Le format CSV n'étant pas standardisé, chaque banque propose son propre format
     \item les \textbf{séparateurs} de champs (point-virgule, virgule, tabulation) et de décimales (point ou virgule) ;
     \item l'\textbf{encodage} : UTF-8, ISO-8859-1, ou détection automatique ;
     \item les \textbf{lignes à ignorer avant les données}, de 0 à 20, \textbf{ligne de titres comprise}. Seules les lignes \emph{non vides} comptent : une ligne vide (aucun caractère) est sautée par le lecteur et n'entre pas dans le compte, alors qu'une ligne faite d'espaces ou de points-virgules compte ;
-    \item le \textbf{mapping des colonnes}, numérotées depuis 0 : date, montant (ou débit et crédit), référence, détails ;
+    \item le \textbf{mapping des colonnes}, numérotées depuis 0 : date, montant (ou débit et crédit), référence, détails, et la \textbf{colonne devise}, facultative ;
     \item le mode \textbf{« Colonnes débit/crédit séparées »} et, dans ce mode seulement, le \textbf{sens des débits} : « Débits écrits sans signe (500.00) » — Kesh les rend négatifs — ou « Débits écrits avec un signe moins (−500.00) » — Kesh les garde tels quels.
 \end{itemize}
 
@@ -1793,7 +1795,9 @@ En \textbf{colonne unique} (un seul montant signé), le signe du fichier est gar
 
 \textbf{Numéros de ligne} : Kesh annonce le numéro de la ligne où commence la lecture d'un enregistrement. Une ligne qui suit une ligne vide peut donc être annoncée au numéro de cette ligne vide.
 
-\textbf{La colonne Devise n'est pas lue} : tout import CSV est enregistré en CHF.
+\textbf{La colonne Devise} : quand le profil la règle, Kesh lit la devise de chaque ligne (trois lettres, par exemple CHF ; la casse est indifférente) et refuse un relevé qui n'est pas en francs suisses, ou qui mélange plusieurs devises — sans possibilité d'en importer une partie. Une cellule Devise vide ou illisible rend la ligne invalide (cf. « Rejet partiel »). Le mélange de devises n'est contrôlé que sur les lignes retenues : une ligne écartée pour sa date ou son montant ne révèle pas sa devise.
+
+\textbf{Sans colonne Devise, le relevé est supposé en CHF} : la prévisualisation le dit à chaque dépôt (« Le profil ne lit aucune colonne Devise »). Un relevé d'un compte en euros importé par un tel profil serait enregistré en francs, au montant du fichier : si votre fichier porte une colonne Devise, réglez-la.
 \end{keshnote}
 
 \subsubsection{Le relevé CSV d'UBS}
@@ -1816,6 +1820,7 @@ Colonne date & 2 (« Date de comptabilisation ») \\
 Colonnes débit / crédit & 5 / 6 \\
 Colonne référence & 9 (« No de transaction ») \\
 Colonne détails & 10 (« Description1 ») \\
+Colonne devise & \textbf{4} (« Devise ») \\
 \bottomrule
 \end{tabular}
 \end{center}
@@ -1826,6 +1831,7 @@ Colonne détails & 10 (« Description1 ») \\
     \item \textbf{La référence} (« No de transaction ») \textbf{nourrit la détection des doublons} : sans elle, deux paiements par carte du même jour et du même montant seraient pris l'un pour l'autre.
     \item \textbf{Un débit de signe contraire} (profil réglé « sans signe », par exemple) fait refuser tout le fichier : réglez le sens des débits du profil, puis redéposez le fichier (cf. « Import avec un profil existant »).
     \item \textbf{Un nombre de lignes à ignorer trop grand} (10, par exemple) est refusé en nommant la ligne qui aurait été avalée.
+    \item \textbf{La colonne devise} (4) fait refuser un relevé qui ne serait pas en CHF. \textbf{Les profils UBS créés avant la 0.13.2 ne l'ont pas} : ajoutez-la (\emph{Administration} → \emph{Profils bancaires}, puis le profil), sans quoi le relevé est seulement supposé en CHF.
     \item \textbf{Le préambule n'est pas lu} dans cette version : ni l'IBAN, ni les soldes initial et final. Un import CSV ne porte donc toujours pas de solde de clôture (\S\ref{sec:import-bancaire}).
 \end{itemize}
 
@@ -1872,7 +1878,7 @@ Le libellé n'en fait pas partie. Les doublons ne sont pas écartés en silence 
 
 Si un fichier contient un mélange de lignes valides et invalides (date ou montant illisible, par exemple), l'aperçu liste les lignes invalides — leur numéro, leur code et un message — et rien n'est importé tant que vous ne cochez pas \textbf{« Importer les lignes valides quand même »}. Vous pouvez aussi corriger le fichier source et le redéposer : les lignes déjà importées seront alors signalées comme doublons.
 
-\textbf{Exception} : un montant de signe contraire à sa colonne n'est jamais importé partiellement — le fichier entier est refusé, sans case à cocher (cf. « Profils banque » et « Le relevé CSV d'UBS »).
+\textbf{Exception} : un montant de signe contraire à sa colonne, un relevé à plusieurs devises et un relevé dont la devise n'est pas le CHF (profil qui lit la colonne Devise) ne sont jamais importés partiellement — le fichier entier est refusé, même la case cochée (cf. « Profils banque » et « Le relevé CSV d'UBS »).
 
 \begin{keshtip}
 Importez vos relevés bancaires \textbf{au moins une fois par semaine} pour faciliter la réconciliation. Plus le délai entre la transaction et l'import est court, plus il est facile de se souvenir du contexte et donc de rapprocher rapidement.
