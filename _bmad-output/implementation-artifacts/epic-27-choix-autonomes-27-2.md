@@ -50,7 +50,8 @@ Fiche : `27-2-devise-import-csv.md`. Choix faits à la création de la fiche (20
   sous la 0.13.2 — oubliée, elle se retire encore **par l'API** de la 0.13.1 (`PUT` complet sans
   `columnMapping.currency`, ou `DELETE` : ni l'un ni l'autre ne désérialise le profil enregistré, `git show
   v0.13.1:crates/kesh-db/src/repositories/bank_profiles.rs` l. 264 compare la chaîne brute ; amendé en validation P2,
-  F7), le SQL restant le dernier recours. Une sauvegarde d'installation 0.13.2 s'importe dans une 0.13.1 (pas de bump au
+  F7) — l'identifiant et les réglages qu'exige un `PUT` complet se lisant dans l'export global de la 0.13.1, que le
+  `GET` ne rend plus (C-27-2-22) —, le SQL restant le dernier recours. Une sauvegarde d'installation 0.13.2 s'importe dans une 0.13.1 (pas de bump au
   manifeste), avec la même conséquence. Rien n'est importé à tort, aucune écriture : bruyant. ⚠️ Tout cela suppose
   qu'aucune migration de la 0.13.2 ne relève `kesh_version_min_required` (vrai pour 27-1, 27-2, 27-3 au 2026-10-12 ;
   validation P2, F10).
@@ -194,7 +195,9 @@ Fiche : `27-2-devise-import-csv.md`. Choix faits à la création de la fiche (20
   `<Amt Ccy>`, `camt053/mod.rs:168-178` écrase la devise de la transaction (sous `<TxDtls>`) ou de l'entrée (sinon),
   le dernier rencontré gagnant, alors que le montant ne se lit que sur `TxDtls/Amt` (`:427`) et `Ntry/Amt` (`:372`). Un
   `<AmtDtls><InstdAmt><Amt Ccy="EUR">`, des frais `<Chrgs>` ou des intérêts `<Intrst>` en devise étrangère donnent à
-  une transaction d'un compte CHF la devise EUR, au montant en francs ; la réconciliation l'écarte ensuite. Aucune
+  une transaction d'un compte CHF la devise EUR, au montant en francs ; les propositions automatiques et l'acceptation
+  d'une règle l'écartent ensuite, le rapprochement manuel, l'éclatement et l'acceptation d'une facture l'admettent
+  (amendé en validation P3, F1 = R1 ; C-27-2-20). Aucune
   fixture du dépôt ne porte `<AmtDtls>` ni `<Chrgs>` (`grep -n "Chrgs\|AmtDtls" crates/kesh-import/tests/fixtures/camt053/*.xml`
   → aucune sortie), d'où l'absence de test qui l'aurait montré.
 - **Retenu** (périmètre élargi par l'orchestrateur, même sujet que #624 : la devise des imports ; pas d'issue neuve) :
@@ -268,8 +271,9 @@ Fiche : `27-2-devise-import-csv.md`. Choix faits à la création de la fiche (20
 ### C-27-2-16 — Les transactions déjà importées avec une devise fausse : remède écrit, rien de corrigé d'office (validation P2, F2)
 
 - **Contexte** : les deux défauts corrigés ont pu écrire des données fausses — un CSV d'un compte en devise importé en
-  `CHF` au montant du fichier (#624), un paiement CAMT par carte resté « en EUR » au montant en francs (AC19), que la
-  réconciliation écarte (`reconciliation.rs:631`, `:2728`). La mise à jour ne les touche pas ; le réimport seul ne les
+  `CHF` au montant du fichier (#624), un paiement CAMT par carte resté « en EUR » au montant en francs (AC19), que les
+  propositions automatiques et l'acceptation d'une règle écartent (`reconciliation.rs:631`, `:780`, `:2728`), mais que
+  le rapprochement manuel, l'éclatement et l'acceptation d'une facture admettent (C-27-2-20). La mise à jour ne les touche pas ; le réimport seul ne les
   remplace pas (fichier en doublon, `BANK_IMPORT_DUPLICATE_FILE` ; empreinte de ligne sans la devise,
   `routes/bank_imports.rs:1532-1539`).
 - **Retenu** : écrire le remède au CHANGELOG (AC12) et au manuel d'administration (AC12-bis, paragraphe
@@ -277,8 +281,9 @@ Fiche : `27-2-devise-import-csv.md`. Choix faits à la création de la fiche (20
   même release) puis le réimporter ; s'il a des transactions rapprochées, la suppression est refusée
   (`409 BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS`, fiche 27-1, AC5) — annuler d'abord leur rapprochement (*Annuler le
   rapprochement* contre-passe l'écriture propre ou annule le règlement, `reconciliation_cancel.rs`, doc-module), puis
-  supprimer et réimporter. Les transactions CAMT restées « en EUR » ne sont pas rapprochables : leur import est
-  supprimable, sauf si une autre de ses transactions est rapprochée. Un CSV d'un compte en devise réimporté avec la
+  supprimer et réimporter. Une transaction CAMT restée « en EUR » a pu être rapprochée à la main, par éclatement ou par
+  l'acceptation d'une facture : elle suit alors la même règle (annuler d'abord son rapprochement). *(La validation P2
+  avait écrit qu'elles n'étaient pas rapprochables : faux, corrigé en validation P3, F1 = R1.)* Un CSV d'un compte en devise réimporté avec la
   colonne Devise est refusé : il n'a pas sa place dans Kesh (C-27-2-4).
 - **Écartées** : une migration de correction (impossible : rien en base ne dit quelle transaction CSV venait d'un compte
   en devise, et une transaction CAMT ne garde pas son XML) ; un outil de réparation dédié (hors périmètre ; la
@@ -296,7 +301,11 @@ Fiche : `27-2-devise-import-csv.md`. Choix faits à la création de la fiche (20
   (non compilé, déduit par les deux lentilles).
 - **Retenu** : `OWNED_COLUMN_MAPPING_KEYS = [...] as const satisfies readonly (keyof ColumnMapping)[]` et
   `keepUnownedKeys(existing?: ColumnMapping): Partial<ColumnMapping>` qui copie le mapping puis `delete` chaque clé
-  possédée — sans `any` ni cast ; `satisfies` est déjà employé au dépôt (TypeScript 5.9.3). Mutations M22 (tout
+  possédée — sans `any` ni cast ; `satisfies` n'est employé au dépôt que dans des `.test.ts`, jamais dans un `.svelte`
+  de production, mais le compilateur Svelte 5.55.1 le retire (`remove_typescript_nodes.js:89`, `TSSatisfiesExpression`)
+  — admis par lecture, sans précédent, `npm run check` et `npm run build` tranchent en T4 (corrigé en validation P3,
+  R9 : « déjà employé au dépôt » était inexact pour ce contexte). `ColumnMapping` s'ajoute à l'`import type` existant
+  (`verbatimModuleSyntax`, validation P3, F6). Mutations M22 (tout
   recopier) et M24 (constante privée d'une clé) tuées par (v7)/(v8).
 - **Écartées** : la déstructuration seule (pas de constante, liste dans le motif, typage incertain) ; un filtre
   `Object.fromEntries(Object.entries(…))` (perd le typage, cast nécessaire).
@@ -311,7 +320,8 @@ Fiche : `27-2-devise-import-csv.md`. Choix faits à la création de la fiche (20
   l'entrée, quelle que soit la version (`v04.rs` et `v08.rs` ne font que dispatcher vers le même parseur). Avec **un**
   `<TxDtls>`, c'est juste ; avec **deux ou plus** dont l'un n'a pas d'`Amt` direct, la somme des transactions dépasse le
   montant de l'entrée. Le contrôle de solde le signale (`BankImportBalanceMismatch`), mais il est **confirmable**
-  (`confirmBalanceMismatch`, `routes/bank_imports.rs:433`) : bruyant, pas bloquant.
+  (`confirmBalanceMismatch`, contrôle à `routes/bank_imports.rs:1141`, `if !fields.confirm_balance_mismatch` ; `:433`
+  n'est que la lecture du champ multipart — ligne corrigée en validation P3, F5) : bruyant, pas bloquant.
 - **Ce que le schéma établit** : dans le seul XSD versionné (001.08,
   `docs/six-references/ig-cash-managment-xml-schemas-v2.0.2-en/camt.053.001.08.xsd:705`), `EntryTransaction10/Amt` est
   `minOccurs="0"` — l'absence est donc **conforme** en 001.08 aussi. Aucun XSD 001.04 au dépôt : l'affirmation
@@ -320,7 +330,7 @@ Fiche : `27-2-devise-import-csv.md`. Choix faits à la création de la fiche (20
   mais une connaissance non sourcée n'est pas une preuve).
 - **Ce que les fixtures établissent** (comptage par `<Ntry>`, `awk` sur les 13 fichiers) : deux fixtures portent
   plusieurs `<TxDtls>` par entrée — `v04_with_subtxs.xml` (3, tous avec `Amt` direct) et `v04_ntry_sign_fallback.xml`
-  (2, tous avec `Amt` direct) ; les treize autres entrées
+  (**3**, tous avec `Amt` direct — « 2 » corrigé en validation P3, R6) ; les treize autres entrées
   à `<TxDtls>` (dont celle de `v04_prefixed_namespace.xml`, comptée à part, ses balises étant préfixées ;
   `v04_truncated.xml`, coupé, exclu) en ont **un seul**, sans `Amt` direct (repli juste).
   **Aucune fixture n'exerce le cas litigieux** (≥ 2 `<TxDtls>` dont un sans `Amt` direct) : aucun test ne le couvre, ni
@@ -346,3 +356,113 @@ Fiche : `27-2-devise-import-csv.md`. Choix faits à la création de la fiche (20
   une convention toujours vraie.
 - **Écartée** : renommer la fonction (bruit de diff sans gain ; C-27-2-3).
 - **Réversible** : oui.
+
+### C-27-2-20 — La garde de devise de la réconciliation est partielle : les textes le disent, la garde n'est pas ajoutée (validation P3, F1 = R1)
+
+- **Contexte** : la remédiation P2 avait écrit, au CHANGELOG prescrit (AC12), à C-27-2-16 et par renvoi à AC12-bis,
+  que « les transactions CAMT restées en EUR ne sont pas rapprochables ». Les deux lentilles de P3 l'ont réfuté au
+  code : seules les propositions automatiques (`reconciliation.rs:631`, `:780`) et l'acceptation d'une règle (`:2728`)
+  écartent une transaction non CHF ; `accept_one_invoice` (`:1428`), `accept_one_split` (`:2119`), `post_manual_once`
+  (`:3532`) et `post_split_once` (`:3984`) ne lisent pas la devise. Le dépôt le documente déjà
+  (`crates/kesh-api/tests/reconciliation_e2e.rs:2241-2262`, « l'opération réussit silencieusement » ; test `#[ignore]`
+  `post_accept_filters_currency_mismatch`, l. 1975), et le catalogue dit « avec une facture ou une règle »
+  (`reconciliation-failed-currency-mismatch`, `fr-CH:1185`).
+- **Retenu** : corriger le **texte** partout où il paraît (AC12 bloc 2 et puce CAMT, AC12-bis, AC19, inventaire (i),
+  C-27-2-11, C-27-2-16) : une transaction CAMT restée « en EUR » a pu être rapprochée à la main, par éclatement ou par
+  acceptation d'une facture, et suit alors la règle commune — annuler d'abord son rapprochement, puis supprimer
+  l'import. **Aucune garde n'est ajoutée** aux quatre chemins.
+- **Écartée** : ajouter la garde dans la 27-2 (hors sujet — la 27-2 corrige l'**entrée** de la devise ; la garde de
+  réconciliation est un défaut distinct, connu du dépôt depuis l'Epic 8, et elle changerait le comportement de quatre
+  chemins de `reconciliation.rs` sans AC ni E2E prévus). Rapporté à l'orchestrateur, qui vérifie qu'une issue la
+  suit, ou en ouvre une.
+- **Pourquoi MEDIUM et non HIGH** (rappel des rapports) : le remède reste juste — le `409` de la 27-1 nomme le geste
+  (annuler d'abord) ; c'était une cause affirmée fausse, pas un piège.
+- **Réversible** : oui (texte).
+
+### C-27-2-21 — Textes du refus de devise : liste fermée des « v0.1 » gardés, parenthèse fausse de `reconciliation_e2e.rs` récrite, apostrophe droite (validation P3, R2, R7)
+
+- **Contexte** : AC10 promettait que le grep `"v0.1"` des crates « ne rend plus que les sites gardés ci-dessus » ; il
+  en rend trois de plus, non nommés (`kesh-db/src/repositories/reconciliation.rs:9`, `:104`,
+  `kesh-core/src/bank_imports.rs:725`). En les relisant, `reconciliation_e2e.rs:2253-2254` affirme « le parser CSV
+  rejette EUR/USD » — faux aujourd'hui (c'est #624), vrai après la 27-2 pour un profil qui lit la colonne Devise
+  seulement. Et la fiche ne choisissait pas l'apostrophe des textes `fr-CH` neufs (le catalogue mêle `'` et `’`), alors
+  que G9 compare octet pour octet.
+- **Retenu** : AC10 donne la **liste fermée** des sites gardés, et le dev recopie la sortie du grep au Dev Agent
+  Record (inventaire des non-résolus plutôt qu'énumération, `CLAUDE.md`) ; la parenthèse de
+  `reconciliation_e2e.rs:2253-2254` est récrite, « v0.1 mono-CHF » gardé ; apostrophe **droite**, comme les clés
+  voisines `bank-import-csv-errors-*` ; la garde `i18n-repli-divergent-actif.test.ts` est nommée.
+- **Écartées** : réécrire les trois sites non nommés (ils décrivent des conventions vraies ou un message de test) ;
+  l'apostrophe typographique (minoritaire dans la famille, et rien ne l'impose).
+- **Réversible** : oui.
+
+### C-27-2-22 — Réparer un profil sous la 0.13.1 : identifiant et réglages lus dans l'export global (validation P3, F2)
+
+- **Contexte** : le `PUT` complet que prescrivait la P2 exige l'identifiant et tous les champs du profil ; or sous la
+  0.13.1, `GET /bank-profiles` et `GET /bank-profiles/{id}` rendent 500 pour un profil à colonne Devise.
+- **Retenu** : nommer la source — l'**export global** de la 0.13.1, `bank_profiles.csv` (colonnes `id`,
+  `column_mapping_json`…), qui recopie la chaîne brute sans désérialiser : `git show
+  v0.13.1:crates/kesh-api/src/exports/csv_tables.rs` l. 1041-1075 et `exports/global.rs:320`
+  (`bank_profiles::list_all_by_company`) — **lus**, non exécutés. Le `DELETE` reste le geste simple (il perd le
+  profil) ; le SQL, le dernier recours.
+- **Écartée** : renvoyer seulement au SQL (le recours existe sans lui).
+- **Réversible** : oui (texte).
+
+### C-27-2-23 — Le helper de dérivation d'AC13 : « ligne vide » = zéro caractère (validation P3, R4)
+
+- **Contexte** : la P2 a prescrit de sauter `header_row_count` lignes « non vides » sans définir le mot ; le lecteur
+  `csv` n'avale qu'une ligne **sans aucun caractère**, une ligne d'espaces ou de `;` est un enregistrement.
+- **Retenu** : `line.is_empty()` une fois le terminateur retiré, jamais `trim()` ; écrit au doc-comment du helper.
+  Aucun test ne rougirait (la fixture n'a pas de telle ligne) : c'est une règle de rédaction, pas une preuve.
+- **Réversible** : oui.
+
+### C-27-2-24 — Le CHANGELOG prescrit : texte à publier séparé des notes de traçabilité, rangé dans les rubriques de la 0.13.1 (validation P3, R8)
+
+- **Contexte** : le texte prescrit portait des renvois « (validation P2, F2 ; C-27-2-16…) » **dans** les puces à
+  publier, et trois puces (« À faire », « Retour à une 0.13.1 », « API ») n'appartenaient à aucune rubrique.
+- **Retenu** : bloc « ⚠️ À faire en passant à la 0.13.2 » numéroté en tête de section (ajout de la colonne,
+  transactions déjà importées, retour à une 0.13.1), `### Modifié` (API), `### Corrigé` (trois entrées) — patron de la
+  0.13.1 ; renvois, preuves et réserve de fusion dans des *Notes pour le dev*, non publiées ; lien d'issue écrit en
+  ligne (le CHANGELOG n'a aucune définition de lien de référence).
+- **Réversible** : oui.
+
+### C-27-2-25 — L'E2E AC15-1 importe un fichier propre, dérivé en mémoire, et asserte le nombre de transactions (validation P3, R5)
+
+- **Contexte** : AC15-1 réimportait `ubs_synthetique.csv`, déjà importé dans la même base et sur le même compte par le
+  test voisin de la 26-1 : fichier en doublon (*Confirmer* grisé), lignes en doublon (import à zéro transaction), motif
+  de profil partagé. « Chaque transaction en CHF » serait passé **à vide**.
+- **Retenu** : `ubs_synthetique_devise.csv`, dérivé en mémoire en décalant d'une année les dates des seules lignes de
+  données (l'empreinte de ligne porte la date), banque et motif propres, `toHaveLength(11)` asserté avant les devises ;
+  AC15-2 dérive son EUR du même buffer. Aucune fixture neuve sur disque.
+- **Écartées** : un second compte bancaire (montage plus lourd, IBAN de test à inventer) ; une remise à zéro de la base
+  entre tests (`seedTestState` par test : coût et couplage aux autres specs).
+- **Réversible** : oui.
+
+### C-27-2-26 — `OWNED_COLUMN_MAPPING_KEYS` : la constante garde ses six clés, le doc-comment dit pourquoi, quatre mutants sont déclarés équivalents (validation P3, F6 = R3)
+
+- **Contexte** : le doc-comment prescrit en P2 justifiait chaque clé par un risque qui ne vaut que pour `amount` et
+  `debit_credit_split` (écrites dans un seul mode) ; pour `date`, `reference`, `details`, `currency`, écrites dans les
+  deux modes, le spread du formulaire écrase la valeur recopiée — omettre ces clés de la constante est sans effet.
+- **Retenu** : la constante garde les six clés (sûre si le formulaire cesse un jour d'écrire une clé dans un mode) ;
+  doc-comment reformulé ; AC17 déclare **équivalents** les quatre mutants d'omission, pour qu'aucune lentille ne les
+  compte comme survivants.
+- **Écartée** : réduire la constante à deux clés (exact aujourd'hui, fragile demain : la sûreté reposerait sur une
+  propriété du formulaire que rien ne teste).
+- **Réversible** : oui.
+
+### C-27-2-27 — AC19 : une troisième entrée de fixture, la forme dominante, et la mutation « première devise gagne » (validation P3, F3)
+
+- **Contexte** : les deux entrées prescrites ont un `Amt` direct (entrée 1) ou pas de `<TxDtls>` (entrée 2) ; la forme
+  la plus répandue au dépôt — un `<TxDtls>` **sans** `Amt` propre — n'était pas exercée, et un mutant « la première
+  devise rencontrée gagne » passait les tests (1) et (2) tout en laissant le défaut sur cette forme.
+- **Retenu** : entrée 3 (`<Ntry>` à `Amt` CHF direct, un `<TxDtls>` sans `Amt` mais avec `AmtDtls/InstdAmt/Amt` EUR),
+  test (1-bis) — devise CHF, montant de l'entrée —, mutation M25 qu'elle seule tue ; AC14-8 asserte trois
+  transactions.
+- **Réversible** : oui.
+
+### C-27-2-28 — La place du `409 BANK_IMPORT_PREVIEW_STALE` de la 27-3 dans l'ordre des refus (validation P3, F4)
+
+- **Contexte** : la fiche demandait de l'« insérer dans l'ordre des refus » sans dire où.
+- **Retenu** : CSV — après la résolution du profil (et son `404 BANK_CSV_NO_PROFILE_MATCH`), avant tout parse, donc
+  avant le contrôle de devise ; CAMT — avant `DUPLICATE_FILE` (asymétrie de la 27-3, C-27-3-24), sans effet sur le
+  contrôle de devise CAMT. Repris de la fiche 27-3 (AC8), lue sur sa branche.
+- **Réversible** : oui (ordre écrit ; la fusion le tient).
