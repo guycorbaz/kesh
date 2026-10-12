@@ -1756,9 +1756,9 @@ même fichier peut ensuite être réimporté.
           imports peut le rendre archivable \textbf{s'il ne lui reste aucune transaction}, sous
           les autres conditions de l'archivage (dont celle du compte principal).
     \item \textbf{Une page \emph{Réconciliation} ouverte avant la suppression}~: si elle coche
-          encore une transaction supprimée, son lot est refusé \textbf{en entier}, et aucune
-          autre proposition du lot n'est traitée. Rechargez la page \emph{Réconciliation} avant
-          de recommencer.
+          encore une transaction supprimée, cette transaction est refusée et apparaît sous
+          \emph{Échecs partiels} avec son motif, et les autres propositions du lot sont traitées.
+          La liste, rechargée après le lot, ne la propose plus~: il n'y a rien à refaire.
 \end{itemize}
 
 La suppression \textbf{ne peut pas être annulée}.
@@ -1949,7 +1949,7 @@ Cochez les transactions à traiter, puis cliquez sur l'un des deux boutons plac�
 
 Pour imputer une transaction autrement qu'à la candidate affichée, utilisez les boutons de sa ligne~: \emph{Affecter manuellement} ou \emph{Éclater} (ci-dessous).
 
-\paragraph{Un refus n'empêche pas les autres.} Chaque ligne cochée est traitée pour elle-même~: les transactions acceptées le sont, même si d'autres sont refusées. Kesh affiche le nombre d'opérations réussies puis, sous le titre \emph{Échecs partiels}, chaque transaction refusée --- désignée par sa date, son montant et sa contrepartie --- avec le motif du refus en clair~: période verrouillée, exercice fermé, facture déjà réglée entre-temps, compte non imputable, etc. Il en va de même pour \emph{Rejeter}. Ce bilan reste affiché même quand le lot a vidé la liste.
+\paragraph{Un refus n'empêche pas les autres.} Chaque ligne cochée est traitée pour elle-même~: les transactions acceptées le sont, même si d'autres sont refusées. Kesh affiche le nombre d'opérations réussies puis, sous le titre \emph{Échecs partiels}, chaque transaction refusée --- désignée par sa date, son montant et sa contrepartie --- avec le motif du refus en clair~: période verrouillée, exercice fermé, facture déjà réglée entre-temps, compte non imputable, transaction supprimée avec son import, rapprochée ou rejetée entre-temps (dans un autre onglet, par exemple), etc. Il en va de même pour \emph{Rejeter}. Ce bilan reste affiché même quand le lot a vidé la liste.
 
 \subsection{Réconciliation manuelle}
 
