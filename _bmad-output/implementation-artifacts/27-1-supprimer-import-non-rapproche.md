@@ -4,9 +4,11 @@
 
 **ready-for-dev** — fiche créée le 2026-10-12 en autonomie (`bmad-create-story`), sur `aadace40` (kickoff de
 l'Epic 27), branche `story/27-1-supprimer-import`. Validation **P1** (Sonnet, lentilles R et F : 0 HIGH,
-10 MEDIUM dont 7 distincts, 14 LOW) **remédiée** le 2026-10-12 ; validation **P2** à lancer (Opus, prompt
-`27-1-validate-prompt-p2.md`). Choix consignés au registre `epic-27-choix-autonomes.md`, **C-27-1-1 à
-C-27-1-15** (C-27-1-7 remplacé par C-27-1-12). 17 AC (AC1-AC16 et AC4-bis). PR : **`closes #632`**.
+10 MEDIUM dont 7 distincts, 14 LOW) **remédiée** ; validation **P2** (Opus, R et F : 0 HIGH, 4 MEDIUM distincts,
+16 LOW) **remédiée** le 2026-10-12, avec la **décision du Project Lead** de fermer la suppression aux clés d'API
+(C-27-1-16) ; validation **P3** à lancer (Sonnet, complète, prompt `27-1-validate-prompt-p3.md`). Choix consignés
+au registre `epic-27-choix-autonomes.md`, **C-27-1-1 à C-27-1-19** (C-27-1-7 remplacé par C-27-1-12 ; C-27-1-3 et
+C-27-1-13 révisés). 17 AC (AC1-AC16 et AC4-bis). PR : **`closes #632`**.
 
 ## Story
 
@@ -88,9 +90,10 @@ concurrente) :
    sous REPEATABLE READ, un plan qui parcourrait l'index `company_id` verrouillerait toutes les lignes de la société
    examinées. Le dev **constate** le plan (`EXPLAIN` de la requête sur sa base de dev, sortie copiée au Dev Agent
    Record : `key = idx_bank_transactions_import`) ; si l'optimiseur en choisit un autre, `FORCE INDEX
-   (idx_bank_transactions_import)`. Conséquence connue, sans cycle : le verrou de clé suivante sur `import_id`
-   retient brièvement les insertions de l'import le plus récent (intervalle jusqu'au supremum) — une création
-   concurrente attend la fin de la suppression.
+   (idx_bank_transactions_import)`. Conséquence connue, sans cycle : quand l'import supprimé est **le plus récent
+   de l'installation**, le verrou de trou sur `import_id` va jusqu'au supremum d'un index **non scopé par
+   société** — toute création d'import, **toutes sociétés confondues**, attend alors la fin de la suppression ;
+   sinon aucune n'attend (revue P2, F2-5).
 3. Compter, **sur le résultat de cette lecture verrouillante** (pas par une seconde requête), les lignes
    rapprochées au sens de l'AC1. Si > 0 ⇒ `Ok(HasReconciled { reconciled_count, transaction_count })`, **sans
    rien écrire**.
@@ -103,7 +106,10 @@ La fonction **ne commit pas** (comme `create_with_transactions`) : l'appelant y 
 conclut. Toutes les erreurs sqlx passent par `map_db_error`, qui garde l'interblocage 1213 en `DbError::Sqlx`
 (`crates/kesh-db/src/errors.rs:1481`), ce que reconnaît `kesh_db::retry::is_deadlock_error`. Doc-comment : la
 définition de l'AC1, l'ordre des verrous et sa raison, la cascade, et ce que la garde **ne** couvre **pas** (§
-Angles morts).
+Angles morts) ; et une phrase : le raisonnement sur les lectures verrouillantes vaut sous **MariaDB 10.11**
+(`docker-compose.yml`, CI) ; avec `innodb_snapshot_isolation` (actif par défaut depuis 11.6), une lecture
+verrouillante qui rencontre une version postérieure à une vue ouverte rend `ER_CHECKREAD` (1020) — sans effet sur
+le code nominal (aucune vue ouverte avant les verrous), à revoir à la montée de version (revue P2, F2-7).
 
 **AC3 — La course avec une acceptation est fermée, et un test le prouve dans les deux sens (C-27-1-2).**
 
@@ -126,10 +132,24 @@ Trois tests de dépôt à deux connexions, dans un fichier neuf `crates/kesh-db/
   trop tôt, et M3 survivrait (revue P1, F1).
 - **(b) la suppression d'abord** : une transaction B appelle `delete_unreconciled_in_tx` et ne commit pas ; une
   tâche exécute le même `UPDATE` (version lue avant) ; on attend de la voir en cours (motif
-  `["UPDATE bank_transactions"]`) ; B commit ; l'`UPDATE` rend `rows_affected() == 0` — c'est ce que les flux
-  d'acceptation traduisent déjà en refus (`RECONCILIATION_ALREADY_RECONCILED` dans `failed[]`,
-  `reconciliation.rs:1935-1941` ; `OptimisticLockConflict` pour le rapprochement manuel, `:3656-3660`).
-- **(c) deux suppressions** : B supprime sans commit ; une seconde suppression est lancée, vue en cours (motif
+  `["UPDATE bank_transactions"]`) ; B commit ; l'`UPDATE` rend `rows_affected() == 0`. ⚠️ Ce que les flux en font
+  dépend du **moment** (revue P2, F2-1, R2-5 ; issue [#634](https://github.com/guycorbaz/kesh/issues/634)) :
+  - suppression validée **entre** le pré-vol des lots (`find_pending_by_ids`, sur le pool, hors verrou :
+    `post_accept`, `reconciliation.rs:950-963` ; `post_reject`, `:3049-3064`) **et** l'`UPDATE` — fenêtre de
+    quelques millisecondes : la proposition sort en `failed[]`, sous le code `RECONCILIATION_ALREADY_RECONCILED`
+    (`:1935-1941`, `:3218-3225`), qui dit « déjà rapprochée » pour une ligne **supprimée** ;
+    `OptimisticLockConflict` (`409`) pour le rapprochement manuel (`:3656-3660`) ;
+  - suppression validée **avant** le pré-vol — le cas courant, une page *Réconciliation* restée ouverte : le lot
+    **entier** rend `400 VALIDATION_ERROR` (« bankTransactions […] n'appartiennent pas au bankAccountId ») et
+    **aucune** proposition du lot n'est traitée. Préexistant pour une transaction rapprochée entre-temps
+    (`reconciliation_e2e.rs:1686-1693`), la story en ajoute une cause. **Non corrigé ici** (#634) ; dit à l'AC8,
+    aux angles morts et au manuel.
+  Le test (b) n'établit que la première trajectoire, au niveau du dépôt.
+- **(c) deux suppressions** — l'import du montage porte **au moins une transaction** (revue P2, R2-2/F2-2) : sous
+  M14, la seconde suppression doit attendre sur la lecture verrouillante de ses **lignes**, tenues en X par la
+  cascade de B ; avec un import vide, elle ne bloquerait qu'à l'étape 4 (`DELETE FROM bank_imports …`, sans
+  `FOR UPDATE`), la sonde paniquerait au bout de 10 s, et M14 comme M14+M15 rougiraient par délai, non comme
+  annoncé. B supprime sans commit ; une seconde suppression est lancée, vue en cours (motif
   **`["FOR UPDATE"]`** : il voit la seconde suppression bloquée, qu'elle attende sur l'entête — code nominal — ou,
   sous M14, sur les transactions ; B ne fait tourner aucune requête pendant l'attente) ; B commit ; la seconde
   rend `NotFound`. Ce que ce test établit : le **résultat** `NotFound`, tenu par **l'un ou l'autre** des deux
@@ -138,7 +158,7 @@ Trois tests de dépôt à deux connexions, dans un fichier neuf `crates/kesh-db/
   interblocages. D'où M14 et M15 chacune **équivalente**, et **M14 + M15 ensemble rouge** par l'assertion (la
   seconde suppression rendrait `Deleted { transaction_count: 0 }`).
 
-**AC4 — La route `DELETE /api/v1/bank-imports/{id}` : montée avec le `POST`, rejouée, inscrite au registre (C-27-1-2, C-27-1-3).**
+**AC4 — La route `DELETE /api/v1/bank-imports/{id}` : montée avec le `POST`, fermée aux clés d'API, rejouée, inscrite au registre (C-27-1-2, C-27-1-3, C-27-1-16).**
 
 - Handler `pub async fn delete` dans `crates/kesh-api/src/routes/bank_imports.rs` (nom aligné sur
   `bank_profiles::delete`), `Path(id): Path<i64>`, rend `Result<StatusCode, AppError>` — **`204 No Content`** en
@@ -154,8 +174,21 @@ Trois tests de dépôt à deux connexions, dans un fichier neuf `crates/kesh-db/
   `authenticated_routes` (`lib.rs:922-925`) — même partage que `/api/v1/bank-profiles/{id}`. Rôle : Comptable et
   Admin (`require_comptable_role`, `middleware/rbac.rs:36-38`) ; Consultation ⇒ `403`. Le commentaire du bloc
   d'import (`lib.rs:618-621`) est complété : « Story 27-1 : suppression d'un import non rapproché (Comptable+) ».
-- **Clés d'API** : ouverte aux clés `read-write` comme le `POST` ; une clé `read` reçoit `403
-  API_KEY_READ_ONLY` par `middleware/auth.rs:141-142` (aucun code à écrire). La trace nomme la clé (`for_actor`).
+- **Clés d'API : refusées, toutes** (décision du Project Lead du 2026-10-12, C-27-1-16 — « les api n'ont pas
+  besoin de supprimer un import, du moins pour le moment »). Première instruction du handler, **avant** l'enveloppe
+  de rejeu : `if current_user.api_key_id.is_some() { return Err(AppError::ApiKeyOperationForbidden); }` — contrôle
+  du précédent `ensure_not_pat` (`routes/api_keys.rs:95-100`), mais avec une **variante neuve**
+  `AppError::ApiKeyOperationForbidden` ⇒ `403`, code **`API_KEY_OPERATION_FORBIDDEN`**, message
+  `error-api-key-operation-forbidden` (« Cette opération n'est pas accessible via une clé API. Utilisez
+  l'interface web. »), déclarée à côté d'`ApiKeyAdminForbidden` (`errors.rs:204-217`) et rendue à côté
+  (`errors.rs:1478-1497`). Pourquoi pas un code existant : la doctrine D2 de la 22-4a (`errors.rs:208-210`)
+  interdit de réutiliser `API_KEY_MANAGEMENT_FORBIDDEN`, dont le message parle de gestion de clés, et
+  `API_KEY_ADMIN_FORBIDDEN` dirait « route d'administration » pour une route Comptable. Pas de `require_not_pat`
+  (la garde d'`admin_pat_denied_e2e` en interdit un second consommateur). Une clé `read` est arrêtée **avant**, par
+  le middleware (`403 API_KEY_READ_ONLY`, `middleware/auth.rs:141-142`) ; une clé `read-write` atteint le handler et
+  reçoit `403 API_KEY_OPERATION_FORBIDDEN` — **aucune suppression, aucune trace**. La trace d'un succès est donc
+  toujours d'une session ; `for_actor(user_id, current_user.api_key_id, …)` reste la forme d'appel (l'extracteur
+  de `audit_label_registry.rs` la lit), son `api_key_id` vaut toujours `None`.
 - **Registre des routes** `crates/kesh-api/tests/audit_route_registry.rs` : ligne
   `("delete", "bank_imports::delete", Traced, SansEcritureAuJournal),` après `bank_imports::create` (l. 304).
   Recomptes **à recopier depuis les assertions qui rougissent**, et toutes les mentions de la valeur grepées
@@ -170,9 +203,9 @@ Trois tests de dépôt à deux connexions, dans un fichier neuf `crates/kesh-db/
   de contrôle : `grep -nE "\b(108|109|114|115|117|118|89|90|91|six|sept)\b" crates/kesh-api/tests/audit_route_registry.rs`.
   Le point (iv) du même doc-comment gagne une phrase : le lot de **rejet** (`post_reject`, non rejoué) verrouille
   désormais ses transactions par identifiant croissant (AC4-bis), ce qui ferme son cycle avec la suppression.
-- **`docs/api-external.md:662`** (paragraphe *Interblocages* du § 10, liste **exhaustive** des routes rejouées) :
-  y ajouter `DELETE /bank-imports/{id}`, parmi celles « qui n'écrivent pas au journal mais forment des
-  interblocages » (revue P1, F7 ; précédent : Story 15-7b2). Aucune garde ne contrôle cette énumération.
+- **`docs/api-external.md:662`** (paragraphe *Interblocages* du § 10) : **inchangé**. Il énumère les routes rejouées
+  « ouvertes aux clés `read-write` » ; la suppression ne l'est plus (C-27-1-16). Le correctif P1 (F7) est donc
+  **retiré**, au motif écrit au Change Log.
 
 **AC4-bis — Le lot de rejet verrouille par identifiant croissant (C-27-1-14).**
 
@@ -184,8 +217,12 @@ cycle ; la victime probable est le rejet (le plus léger), qui rendrait `500`. C
 (les doublons sont déjà refusés en `400` plus haut, l. 3023-3030, donc le tri ne change pas l'ensemble traité).
 Avec la suppression, qui verrouille aussi ses transactions par identifiant croissant, et le rejet qui ne touche pas
 `bank_imports`, plus de cycle entre les deux. Effets visibles, à écrire : `rejected[]` et `failed[]` de la réponse
-sortent par identifiant croissant, et la trace `reconciliation.rejected` prend pour `entity_id` le plus petit
-identifiant rejeté (aujourd'hui : le premier du lot). Le lot de rejet et l'acceptation restent sérialisés entre eux
+sortent par identifiant croissant ; la trace `reconciliation.rejected` prend pour `entity_id` le plus petit
+identifiant rejeté (aujourd'hui : le premier du lot), et son `details_json.bank_transaction_ids` sort lui aussi
+trié (`success_ids`, `reconciliation.rs:3259`). Commentaires à corriger dans le même patch (revue P2, R2-4/F2-6) :
+`reconciliation.rs:3257` (« entity_id = first id » → « plus petit identifiant, le lot étant trié ») et
+`reconciliation_e2e.rs:1625` (« entity_id = tx_ids[0] »). L'écran n'en dépend pas
+(`ReconciliationProposals.svelte:246` ne lit que `r.rejected.length`). Le lot de rejet et l'acceptation restent sérialisés entre eux
 par le verrou nommé du compte (inchangé). Test **H7** (`crates/kesh-api/tests/reconciliation_e2e.rs`, à côté du test
 du rejet en lot, `post_reject_marks_transactions_as_manually_reviewed`, l. 1558-1640) : rejet de `[hi, lo]` ⇒ `rejected[].bankTransactionId == [lo, hi]` et
 `entity_id == lo`. Le test existant (l. 1635, « `entity_id = 1er ID du batch` », lot déjà croissant) reste vert ;
@@ -208,8 +245,9 @@ son message est corrigé en « plus petit ID du lot ».
   `bank-import-errors-has-reconciled-transactions` (AC10), argument `count`. Repli français :
   « { $count } transaction(s) de cet import sont rapprochées : annulez d'abord leur rapprochement pour pouvoir le
   supprimer. »
-- Ordre : le rôle (`403`) précède tout ; puis `404` ; puis `409`. Sur `404` et `409` : **aucune écriture**, ni
-  suppression ni trace.
+- Ordre : le rôle et la portée de clé (`403`, middlewares) précèdent tout ; puis le refus des clés
+  `read-write` (`403 API_KEY_OPERATION_FORBIDDEN`, handler) ; puis `404` ; puis `409`. Sur chacun de ces refus :
+  **aucune écriture**, ni suppression ni trace.
 
 **AC6 — La trace `bank_import.deleted`, dans la transaction de la suppression (C-27-1-5).**
 
@@ -244,12 +282,16 @@ fermer la story :
   `DELETE /api/v1/bank-accounts/{id}` refuse en `412 BANK_ACCOUNT_HAS_TRANSACTIONS` dès qu'une ligne de
   `bank_transactions` existe pour le compte (`bank_accounts.rs:729-751`, « comptage inconditionnel (auditabilité
   CO Art. 958f) » ; `routes/bank_accounts.rs:860-868`). Supprimer les imports non rapprochés d'un compte peut
-  donc le rendre archivable. **Accepté** : des transactions jamais rapprochées ne sont pas des écritures (aucune
+  donc le rendre archivable — **seulement s'il ne lui reste plus aucune transaction** (une transaction rapprochée
+  garde son import, et la garde compte toutes les lignes), et **sous les autres gardes de l'archivage**, dont celle
+  du compte principal (`412`, `BankAccountCannotArchivePrimary`, `routes/bank_accounts.rs:870-876`). **Accepté** : des transactions jamais rapprochées ne sont pas des écritures (aucune
   pièce au journal), et la suppression laisse sa propre trace `bank_import.deleted` (fichier, empreinte, période,
   nombres) — l'auditabilité passe par la trace, non par la conservation des lignes. Test **H6** (AC11), une
   phrase au manuel (AC13), une ligne à `api-external.md` (AC14). Le doc-comment de
   `count_transactions_for_bank_account` gagne une phrase qui le dit (la garde compte les lignes **présentes** ;
-  une suppression d'import non rapproché en retire, tracée).
+  une suppression d'import non rapproché en retire, tracée). Le message du refus (`bank-accounts-errors-has-transactions`,
+  4 catalogues, et son repli `errors.rs:2467-2470`) gagne **une phrase** qui nomme le remède, sans toucher au code
+  d'erreur (AC10, revue P2, R2-10).
 
 - aucune table ne référence `bank_imports` ou `bank_transactions` hors `fk_bank_transactions_import` ; aucune
   colonne d'une autre table n'y pointe sans clé (`audit_log.entity_id` est un pointeur logique documenté
@@ -262,14 +304,22 @@ fermer la story :
   **pendant** un export peut produire une sauvegarde portant les transactions d'un import absent, que la
   restauration (sous `FOREIGN_KEY_CHECKS = 0`) recréerait orphelines. La fiche ne promet donc rien d'une
   sauvegarde prise **pendant** une suppression ; défaut suivi par
+  [#633](https://github.com/guycorbaz/kesh/issues/633) (sauvegarde `.keshbackup` sans instantané commun). L'export
+  global CSV (`exports/global.rs`) a le même défaut, suivi par
   [#465](https://github.com/guycorbaz/kesh/issues/465) (« L'export de souveraineté lit ses trente tables sans
-  instantané commun ») ;
+  instantané commun ») — un export pris pendant une suppression peut lister des transactions d'un import absent ;
 - la tuile **Relevé du …** de *Comptes bancaires* (`bank_accounts.rs:1011-1017` : parmi les imports du compte
   portant un **solde de clôture** — un CAMT.053 ; un CSV n'en porte pas —, celui de plus grande `period_to`) se
   recalcule sur **le relevé restant de plus grande période portant un solde de clôture**, ou disparaît s'il n'en
   reste aucun, même quand d'autres imports (CSV) existent — dit au manuel (AC13) ;
 - les propositions de réconciliation ne montrent plus les transactions supprimées (elles lisent
-  `bank_transactions`, `repositories/reconciliation.rs:178-381`).
+  `bank_transactions`, `repositories/reconciliation.rs:178-381`) — **une fois la page rechargée** ;
+- ⚠️ **effet non corrigé** (revue P2, F2-1 ; [#634](https://github.com/guycorbaz/kesh/issues/634)) : un lot
+  d'acceptation ou de rejet préparé **avant** une suppression, et qui coche encore une transaction supprimée, est
+  refusé **en entier** (`400 VALIDATION_ERROR`, message « … n'appartiennent pas au bankAccountId ») — aucune autre
+  proposition du lot n'est traitée, contrairement à la règle « un refus n'empêche pas les autres »
+  (`user-manual.tex:1878`). Remède à l'écran : recharger la page *Réconciliation*. Dit au manuel (AC13) ; le
+  correctif (ranger les absents en `failed[]`) appartient à #634.
 
 **AC9 — L'écran : l'action dans le détail d'un import (C-27-1-6).**
 
@@ -315,12 +365,13 @@ fermer la story :
 
 **AC10 — Les textes, dans les quatre langues, et les gardes qui les comptent.**
 
-Dix clés neuves, dans `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` :
+**Onze** clés neuves et **une** clé modifiée, dans `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` :
 
 | Clé | Lieu | Français |
 |---|---|---|
 | `bank-import-errors-has-reconciled-transactions` | serveur, bloc `bank-import-errors-*` (fr l. 1050-1061) | { $count } transaction(s) de cet import sont rapprochées : annulez d'abord leur rapprochement pour pouvoir le supprimer. |
 | `audit-log-action-bank-import-deleted` | après `audit-log-action-bank-import-created` (fr 2364, de 2310, it 2311, en 2316) | Import bancaire supprimé |
+| `error-api-key-operation-forbidden` | serveur, après `error-api-key-admin-forbidden` (l. 13 des quatre catalogues) | Cette opération n'est pas accessible via une clé API. Utilisez l'interface web. |
 | `bank-import-delete-button` | frontend | Supprimer l'import |
 | `bank-import-delete-blocked` | frontend | (texte de l'AC9) |
 | `bank-import-delete-dialog-title` | frontend | Supprimer cet import ? |
@@ -329,6 +380,7 @@ Dix clés neuves, dans `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messa
 | `bank-import-delete-error-reconciled` | frontend | (texte de l'AC9) |
 | `bank-import-delete-error-not-found` | frontend | (texte de l'AC9) |
 | `bank-import-delete-success` | frontend | Import { $filename } supprimé. |
+| `bank-accounts-errors-has-transactions` (**modifiée**, fr l. 1251) | serveur | Le compte bancaire contient des transactions — archivage refusé pour préserver l'audit comptable. Les imports dont aucune transaction n'est rapprochée peuvent être supprimés (Quotidien → Importer des relevés). |
 
 - Traductions DE/IT/EN écrites par le dev, terminologie de `docs/i18n-glossaire.md` (l. 151 : *Bankimport* /
   *importazione bancaria* / *bank import* ; l. 105 : relevé = *Kontoauszug* / *estratto conto* / *statement*).
@@ -374,7 +426,7 @@ Intégration HTTP, dans `crates/kesh-api/tests/bank_imports_e2e.rs` (helpers exi
   BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS`, `details.reconciledCount = 1`, `details.transactionCount` = le
   nombre importé ; l'import et ses transactions intacts ; **aucune** trace `bank_import.deleted`.
 - **H3** l'import de la société A supprimé par un Comptable de B ⇒ `404` `NOT_FOUND`, l'import de A intact ;
-  identifiant inconnu ⇒ `404`.
+  identifiant inconnu ⇒ `404` ; identifiant `0` ⇒ `404` (revue P2, R2-12).
 - **H4** rôle Consultation ⇒ `403`, import intact.
 - **H5** second `DELETE` du même identifiant ⇒ `404`.
 - **H6** (C-27-1-12, dans `crates/kesh-api/tests/bank_accounts_e2e.rs`, helpers de ce fichier : onboarding
@@ -382,6 +434,10 @@ Intégration HTTP, dans `crates/kesh-api/tests/bank_imports_e2e.rs` (helpers exi
   BANK_ACCOUNT_HAS_TRANSACTIONS` ; suppression de l'import ⇒ `204` ; archivage ⇒ `200`. Le test fige le
   comportement accepté, dans les deux sens.
 - **H7** (AC4-bis, `reconciliation_e2e.rs`) : le lot de rejet sort et trace par identifiant croissant.
+- **H8** (C-27-1-16) : une clé `read-write` créée par l'Admin (`POST /api/v1/settings/api-keys`, patron
+  `fiscal_years_e2e.rs:2011-2030`) ⇒ `DELETE` en `403`, `error.code = API_KEY_OPERATION_FORBIDDEN` ; l'import et ses
+  transactions intacts ; **aucune** trace `bank_import.deleted`. Une clé `read` ⇒ `403 API_KEY_READ_ONLY` (même
+  vérification d'intégrité).
 - Registre des routes (AC4) et garde des libellés d'audit (AC6) verts.
 
 Vitest :
@@ -442,9 +498,17 @@ Gate : la suite E2E **complète** au dernier commit de code, jugée fichier par 
   fichier se réimporte sans l'avertissement « fichier déjà importé » ; la tuile *Relevé du …* de *Comptes
   bancaires* reprend le relevé restant de plus grande période **portant un solde de clôture** (un CAMT.053), ou
   disparaît s'il n'en reste aucun, renvoi `\S\ref{sec:solde-comptable}`) ; l'irréversibilité ; **en une phrase**,
-  qu'un compte bancaire dont des transactions ont été importées ne s'archive pas, et que supprimer ses imports non
-  rapprochés le rend archivable (C-27-1-12) ; et que l'annulation d'un rapprochement peut elle-même être refusée
-  (renvoi `\S\ref{sec:annuler-rapprochement}`) — l'import reste alors indélébile.
+  qu'un compte bancaire qui porte des transactions importées ne s'archive pas, et que supprimer ses imports peut le
+  rendre archivable **s'il ne lui reste aucune transaction**, sous les autres conditions de l'archivage (dont celle
+  du compte principal) (C-27-1-12) ; et que l'annulation d'un rapprochement peut elle-même être refusée : **tant
+  qu'elle l'est, l'import ne peut pas être supprimé** — les remèdes sont ceux que le
+  `\S\ref{sec:annuler-rapprochement}` donne pour chaque motif (l. 1964-1983 : rouvrir des exercices, faire reculer
+  le verrou de période, réactiver un compte, créer l'exercice du jour), et la phrase y renvoie sans les recopier ;
+  un seul motif n'en a pas, la facture créditée par un avoir (cas hérité d'avant la 0.12.1) ; et qu'un lot de
+  réconciliation préparé **avant** la suppression est refusé en entier : recharger la page *Réconciliation*
+  (#634).
+- **Renvoi** dans le § *Comptes bancaires* (l. 1643, « on y crée, modifie et archive un compte ») vers
+  `\S\ref{sec:supprimer-import}` pour l'archivage d'un compte qui porte des transactions (revue P2, R2-11).
 - **Correction** du paragraphe *Rejeter* (l. 1873) : « aucun geste de l'interface ne permet ensuite de la passer
   en comptabilité » est faux après cette story. Le remplacer par : aucun geste **de l'interface** ne la remet
   dans la liste de la réconciliation (l'API l'accepte encore par son identifiant, `find_pending_by_id_for_account`
@@ -459,21 +523,30 @@ Gate : la suite E2E **complète** au dernier commit de code, jugée fichier par 
 
 **AC14 — API externe, CHANGELOG, README (C-27-1-11).**
 
-- `docs/api-external.md` : ligne neuve du tableau § 7 (l. 207-218) — *Imports bancaires* | `GET /bank-imports`,
-  `GET /bank-imports/{id}` | `POST /bank-imports`, `DELETE /bank-imports/{id}` ⁸ ; note ⁸ et sous-section
-  `### Supprimer un import bancaire — DELETE /api/v1/bank-imports/{id}` (près de *Annuler un rapprochement
-  bancaire*, l. 543) : écriture (`read-write`), rôle Comptable, `204`, définition de « rapprochée » (AC1), `409
-  BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS` et ses `details`, `404 NOT_FOUND` pour un import inconnu ou d'une autre
-  société, trace `bank_import.deleted` nommant la clé, rejeu d'un interblocage transitoire, réimport du même
-  fichier sans `confirmDuplicateFile`, et la conséquence sur l'archivage (`412 BANK_ACCOUNT_HAS_TRANSACTIONS`
-  levé une fois les imports supprimés, C-27-1-12). Ligne neuve au tableau § 10 (l. 643 et suivantes) pour le
-  `409`. Paragraphe *Interblocages* (l. 662) : voir AC4. Mentions
-  « *depuis la v0.13.2* ». ⛔ Ni « Unreleased » ni « à venir » (garde G6, `textes_coherents.rs:619-640`).
+- `docs/api-external.md` (C-27-1-16 : la route **n'est pas ouverte aux clés**) :
+  - § 4, liste des opérations qui se font **dans l'interface web** : ajouter une note — la **suppression d'un
+    import bancaire** (`DELETE /bank-imports/{id}`) refuse toute clé, `403 API_KEY_OPERATION_FORBIDDEN` pour une clé
+    `read-write` (`API_KEY_READ_ONLY` pour une clé `read`, arrêtée avant) ;
+  - § 7, ligne neuve du tableau (l. 207-218) — *Imports bancaires* | `GET /bank-imports`, `GET /bank-imports/{id}`
+    | `POST /bank-imports` ⁸ ; note ⁸ : la suppression d'un import existe à l'interface web et n'est **pas**
+    ouverte aux clés (§ 4) ; un import supprimé disparaît des lectures, et une fois **tous** ses imports supprimés
+    — s'il ne lui reste aucune transaction —, un compte bancaire peut s'archiver par `DELETE /bank-accounts/{id}`,
+    sous ses autres conditions (C-27-1-12) ;
+  - § 10, tableau (l. 643 et suivantes) : ligne `403 API_KEY_OPERATION_FORBIDDEN` (« opération réservée à
+    l'interface web ; aujourd'hui, la suppression d'un import bancaire »). Pas de ligne pour le `409`, que les clés
+    n'atteignent pas ;
+  - le paragraphe *Interblocages* (l. 662) reste inchangé (AC4) ; la ligne du rejet (AC4-bis) va sous *Accepter
+    des propositions de rapprochement* (l. 529) ou à côté : `POST /reconciliation/reject` traite et rend ses
+    transactions par identifiant croissant, *depuis la v0.13.2*.
+  Mentions « *depuis la v0.13.2* ». ⛔ Ni « Unreleased » (garde G6, `textes_coherents.rs:619-640`), ni « à venir »
+  (règle de documentation du `CLAUDE.md` : ne décrire que ce qui est livré — aucune garde ne tient ce second
+  interdit, revue P2, R2-6).
 - `CHANGELOG.md` : section **`## [0.13.2] — Non publié`** créée au-dessus de `## [0.13.1] — 2026-10-11`
   (l. 11), forme exacte attendue par `scripts/prepare-release.sh:237` ; `### Ajouté` : une entrée « **Supprimer un
   import bancaire dont aucune transaction n'est rapprochée
   ([#632](https://github.com/guycorbaz/kesh/issues/632)).** … » qui dit où, la condition, le réimport, la trace,
-  et la route d'API (`DELETE /api/v1/bank-imports/{id}`, `409 BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS`) ; sous
+  et la route (`DELETE /api/v1/bank-imports/{id}`, réservée à l'interface web : refusée aux clés d'API en `403
+  API_KEY_OPERATION_FORBIDDEN`) ; sous
   `### Modifié`, une ligne : `POST /api/v1/reconciliation/reject` traite et rend ses transactions par identifiant
   croissant (AC4-bis).
 - `README.md` § *Fonctionnalités*, ligne *Import bancaire* (l. 41) : ajouter « **suppression d'un import non
@@ -513,6 +586,7 @@ binaire périmé »), résultat consigné au Dev Agent Record (test qui rougit, 
 | M14+M15 | les deux ensemble | AC3 (c), par l'assertion (`Deleted { transaction_count: 0 }` au lieu de `NotFound`) |
 | M16 | `canManage` ignoré par le composant | `DeleteBankImportAction.test.ts` (`canManage: false`) |
 | M17 | tri de `post_reject` retiré | H7 |
+| M18 | refus des clés d'API retiré du handler | H8 |
 
 ## Tasks / Subtasks
 
@@ -528,14 +602,16 @@ binaire périmé »), résultat consigné au Dev Agent Record (test qui rougit, 
   - [ ] T1.2 Tests D1-D6 et AC3 (a)(b)(c) dans `crates/kesh-db/tests/bank_import_delete.rs`.
 - [ ] **T2 — Route** (AC4, AC5, AC6)
   - [ ] T2.1 `AppError::BankImportHasReconciledTransactions` et sa réponse dans `errors.rs`.
-  - [ ] T2.2 `delete` + `delete_once` dans `routes/bank_imports.rs` (doc-comment de module l. 1-11 complété).
+  - [ ] T2.2 `delete` (refus des clés d'API en tête, C-27-1-16) + `delete_once` dans `routes/bank_imports.rs`
+    (doc-comment de module l. 1-11 complété) ; `AppError::ApiKeyOperationForbidden` et sa réponse dans `errors.rs`.
   - [ ] T2.3 Montage `lib.rs` (comptable_routes, après l. 633).
   - [ ] T2.4 `audit_labels.rs` (`ACTIONS`).
   - [ ] T2.5 `audit_route_registry.rs` : ligne et recomptes (AC4).
-  - [ ] T2.6 Tests H1-H6 (H6 dans `bank_accounts_e2e.rs`) ; doc-comment de `count_transactions_for_bank_account`.
+  - [ ] T2.6 Tests H1-H6 et H8 (H6 dans `bank_accounts_e2e.rs`) ; doc-comment de `count_transactions_for_bank_account`
+    et phrase du message `bank-accounts-errors-has-transactions` (repli `errors.rs:2467-2470`).
   - [ ] T2.7 AC4-bis : tri de `post_reject`, test H7, message du test existant, point (iv) du registre,
     `api-external.md:662`.
-- [ ] **T3 — i18n serveur et frontend** (AC10) : dix clés × quatre catalogues.
+- [ ] **T3 — i18n serveur et frontend** (AC10) : onze clés neuves et une modifiée × quatre catalogues.
 - [ ] **T4 — Écran** (AC9)
   - [ ] T4.1 `bank-import-deletion.ts` + tests.
   - [ ] T4.2 `deleteBankImport` + test.
@@ -620,7 +696,9 @@ crates/kesh-db/src/repositories/bank_imports.rs:56:        "INSERT INTO bank_imp
 crates/kesh-db/src/repositories/bank_imports.rs:100:            "INSERT INTO bank_transactions \
 ```
 
-(Les quatre lignes de `invoices.rs` au-delà de la l. 2984 sont dans son `mod tests` — `#[cfg(test)]` l. 2984-2985.)
+(Six lignes de **commentaire** de `reconciliation.rs` que la commande rend aussi — l. 1615, 2414, 2867, 3351, 3630,
+4088, « Step … — UPDATE bank_transactions … » — sont retirées de la transcription ; revue P2, R2-8. Les quatre lignes
+de `invoices.rs` au-delà de la l. 2984 sont dans son `mod tests` — `#[cfg(test)]` l. 2984-2985.)
 Et le relevé des affectations de colonnes, qui confirme la table :
 
 | Site (fonction) | Écrit | Condition |
@@ -690,25 +768,40 @@ de `journal_entries::delete`, `journal_entries.rs:1775-1780` ; `pending` avec li
 - **Un import créé pendant la suppression** n'est pas concerné (autre identifiant) ; **deux imports du même
   fichier** (créés avec `confirmDuplicateFile`) se suppriment un par un — la story ne supprime pas « le fichier »,
   elle supprime **un** import.
-- **Le rejet concurrent** d'une transaction (`reject_batch`) contre la suppression : l'un attend l'autre (plus de
-  cycle depuis l'AC4-bis) ; si la suppression passe d'abord, l'`UPDATE` du rejet ne trouve plus la ligne. Son
-  traitement de `rows_affected() == 0` est celui du code existant (`reconciliation.rs:3218-3225`, `failed[]` en
-  `RECONCILIATION_ALREADY_RECONCILED`), non modifié par la story.
+- **Un lot d'acceptation ou de rejet** contre la suppression (plus de cycle avec le rejet depuis l'AC4-bis) —
+  deux trajectoires (revue P2, F2-1, R2-5, [#634](https://github.com/guycorbaz/kesh/issues/634)) : suppression
+  validée **avant** le pré-vol `find_pending_by_ids` ⇒ le lot **entier** en `400 VALIDATION_ERROR` (« …
+  n'appartiennent pas au bankAccountId »), aucune proposition traitée ; validée **entre** le pré-vol et
+  l'`UPDATE` ⇒ la ligne sort en `failed[]` sous `RECONCILIATION_ALREADY_RECONCILED` (`reconciliation.rs:1935-1941`,
+  `:3218-3225`), code trompeur pour une ligne supprimée. Ni l'un ni l'autre n'est corrigé ici.
 - **Une création concurrente du même compte** (`create` / `create_csv`, avec `confirmDuplicateFile=true` pour le
   même fichier, ou un relevé qui chevauche la période) fixe sa vue cohérente à `find_by_company_and_hash` puis lit
   `find_in_dedup_window` sur cette vue (`routes/bank_imports.rs:1108-1119, 1173`) : une suppression validée entre
   les deux lui fait juger « doublons » — et **ignorer** par défaut — des lignes qui n'existent plus. L'import
   persisté compte alors moins de lignes que le fichier. Deux gestes simultanés du même utilisateur, fenêtre de
   quelques millisecondes ; la story ne le ferme pas (revue P1, R11/F13).
-- **La restauration d'installation contre la suppression** : la restauration tient les lignes de
-  `bank_transactions` puis l'entête, la suppression l'entête puis les lignes ; un cycle est possible. La
-  suppression, plus légère, en serait la victime, et elle est rejouée ; la restauration ne rejoue pas
-  (`docs/api-external.md:662`) et rendrait une erreur après la sauvegarde pré-import. Rare, jamais observé
-  (revue P1, F4).
-- **Une sauvegarde prise pendant une suppression** peut porter des transactions orphelines (AC8, #465).
-- **L'état `pending` avec lien** (D3), qu'aucun chemin ne produit, rendrait un import **indélébile** par l'écran :
-  la page n'offre *Annuler le rapprochement* qu'aux lignes `reconciled` (revue P1, F12). De même, une annulation
-  de rapprochement **refusée** (exercice clos, lettrage…) laisse l'import indélébile — dit au manuel (AC13).
+- **La restauration d'installation contre la suppression** (revue P2, F2-3, R2-9) : la restauration vide ses
+  tables dans l'ordre de `TABLES_TO_TRUNCATE`, où `journal_entries` et **`audit_log`** précèdent
+  `bank_transactions` puis `bank_imports` (`backup.rs:60-68`, `DELETE FROM` par table, `:492-497`). Son `DELETE FROM
+  audit_log` fait attendre l'insertion de la trace `bank_import.deleted` dès que les deux se chevauchent, et le
+  cycle se ferme quand la restauration atteint une ligne tenue par la suppression : probable **une fois le
+  chevauchement acquis**, rare parce que le chevauchement l'est. La suppression, plus légère, est la victime et
+  elle est rejouée ; la restauration ne rejoue pas et rendrait une erreur après la sauvegarde pré-import. Et la
+  tentative rejouée — ou simplement mise en attente — s'exécute sur l'installation **restaurée** : l'identifiant
+  peut y désigner un **autre** import, qu'elle supprimera s'il n'est pas rapproché ; la trace `bank_import.deleted`
+  (fichier, empreinte) le rend visible. C'est le sort de toute route « par identifiant » après une restauration
+  (« restauration en vol », angle mort assumé de la 15-12b).
+- **Une sauvegarde prise pendant une suppression** peut porter des transactions orphelines (AC8,
+  [#633](https://github.com/guycorbaz/kesh/issues/633) ; l'export global CSV, #465).
+- **Imports que l'écran ne peut pas supprimer** — énumération exacte, au lieu d'« indélébile » (revue P2, R2-3,
+  F2-4) : (i) une transaction rapprochée dont l'annulation est **refusée** : le remède est celui du motif (cinq
+  motifs au manuel, `\S\ref{sec:annuler-rapprochement}`, l. 1964-1983 — rouvrir des exercices, faire reculer le
+  verrou de période, réactiver un compte, créer l'exercice du jour) ; **aucun** pour une facture créditée par un
+  avoir (cas hérité d'avant la 0.12.1) ; (ii) l'état
+  `pending` **avec** lien (D3), qu'aucun chemin ne produit : la page n'offre *Annuler le rapprochement* qu'aux lignes
+  `reconciled` ; (iii) l'état `reconciled` **sans** lien (D4) : le bouton s'affiche, mais `cancel_in_tx` exige le
+  lien (`reconciliation_cancel.rs:98-104`, `DbError::Invariant`) et l'annulation échoue. (ii) et (iii) n'ont aucun
+  remède à l'écran ; ils ne naissent que de données anciennes ou d'une intervention en base.
 - **Le prédicat est dupliqué** Rust/TypeScript (une requête SQL et un helper d'écran) : l'écran n'est qu'une
   commodité, le serveur seul décide (`409`). Chaque site renvoie à l'autre dans son doc-comment.
 
@@ -733,7 +826,8 @@ de `journal_entries::delete`, `journal_entries.rs:1775-1780` ; `pending` avec li
 
 - `.keshbackup` : `parse_and_verify` compare l'inventaire des **tables**, pas leurs lignes ; aucune table ne
   change → une sauvegarde prise **avant** ou **après** une suppression s'importe comme toute autre. Rien n'est
-  promis d'une sauvegarde prise **pendant** (export sans instantané commun, #465, AC8).
+  promis d'une sauvegarde prise **pendant** (sauvegarde sans instantané commun,
+  [#633](https://github.com/guycorbaz/kesh/issues/633) ; export global CSV, #465 ; AC8).
 - Archivage d'un compte bancaire : la garde `412 BANK_ACCOUNT_HAS_TRANSACTIONS` se lève une fois les imports
   supprimés (AC8, H6).
 - Export global : `exports/global.rs:131-132` liste `bank_imports` et `bank_transactions` ; les lignes supprimées
@@ -762,11 +856,20 @@ Modules touchés : `kesh-db` (un dépôt, un fichier de test), `kesh-api` (une r
 `audit_labels.rs`, deux fichiers de test), `kesh-i18n` (quatre catalogues), frontend (`features/bank-import`, une
 page, une spec E2E), documentation — plus, depuis la remédiation P1, **une ligne** dans
 `routes/reconciliation.rs` (AC4-bis, tri du lot de rejet) et un test dans `reconciliation_e2e.rs` et
-`bank_accounts_e2e.rs`. **Cinq ensembles, un seul domaine** (l'import bancaire et sa réconciliation), sans changement de
-règle transverse : pas au-delà du seuil « plus de 5 modules », et la story est une tranche verticale qu'un
-découpage laisserait sans écran entre deux fusions. **Repli** si la validation recycle un défaut : **27-1a**
-(T1, T2, i18n serveur, `api-external.md` — `refs #632`) puis **27-1b** (T4, T5, T6 hors `api-external.md`, i18n
-frontend — `closes #632`). Signal déclaré à l'orchestrateur.
+`bank_accounts_e2e.rs`. **Deux décomptes** (revue P2, R2-7, F2-8) : au grain des **crates et ensembles**, cinq ; au
+grain des « modules métier de premier niveau » de la règle (`kesh-db/repositories/bank_imports`,
+`…/bank_accounts` pour un doc-comment, `kesh-api/routes/bank_imports`, `kesh-api/routes/reconciliation`, socle
+`kesh-api` — `errors`, `lib`, `audit_labels` —, `kesh-i18n`, `frontend/features/bank-import`, la page
+`frontend/routes/bank-import`) : **plus de cinq** — le seuil est franchi à ce grain. Un seul domaine (l'import
+bancaire et sa réconciliation), sans changement de règle transverse, et la story est une tranche verticale qu'un
+découpage laisserait sans écran entre deux fusions.
+
+**Décision de l'orchestrateur après la P2 (2026-10-12) : pas de découpage.** Constat : les défauts de la P2 sont
+**distincts** de ceux de la P1 et aucun n'est un recyclage (amendement D5 du `CLAUDE.md`, rétrospective de
+l'Epic 25) ; la sévérité baisse (P1 : 7 MEDIUM distincts, P2 : 4, 0 HIGH aux deux) ; le domaine reste unique. Le
+signal est **déclaré au Project Lead** par l'orchestrateur. **Repli** si une passe ultérieure recycle un défaut :
+**27-1a** (T1, T2, i18n serveur, `api-external.md` — `refs #632`) puis **27-1b** (T4, T5, T6 hors
+`api-external.md`, i18n frontend — `closes #632`).
 
 ### Project Structure Notes
 
@@ -789,7 +892,7 @@ frontend — `closes #632`). Signal déclaré à l'orchestrateur.
 - `CLAUDE.md` : § *Test Locally First*, § *Review Iteration Rule* (et ses sous-sections : manuel, axes déclarés,
   sites non résolus, propagation post-patch, recompte), § *Pattern batch* (non applicable : route unitaire),
   § *Migration breaking policy* (non applicable, AC15), § *Issue Tracking Rule*.
-- Registre `epic-15-choix-autonomes.md` : C54-C59 (rejeu) ; registre `epic-27-choix-autonomes.md` : C-27-1-1 à 15.
+- Registre `epic-15-choix-autonomes.md` : C54-C59 (rejeu) ; registre `epic-27-choix-autonomes.md` : C-27-1-1 à 19.
 - Code : `kesh-reconciliation/src/mutex.rs` ; `kesh-api/src/retry.rs` ; `kesh-db/src/retry.rs:100-160` ;
   `kesh-db/src/test_fixtures.rs:561-605` ; `kesh-db/tests/reconciliation_cancel.rs:127-185` (patron de course).
 
@@ -840,3 +943,36 @@ M14+M15 : **17 à jouer** ; dix clés i18n, `sitesTotal` +9 inchangé (aucun sit
 114→115, 117→118, 90→91, 108→109, « six » → « sept ». Symptômes grepés dans la fiche et le registre (`["bank_transactions"]`,
 « équivalente probable », « import précédent », « à l'identique », « exclusive des autres écrivains », « de la
 ligne », `108`, `six`) : seules restent les mentions historiques voulues.
+
+### Validation P2 — bilan finding par finding
+
+Passe P2 (Opus, contexte frais, lecture seule) : lentille **R** 0 HIGH / 3 MEDIUM / 9 LOW, lentille **F** 0 HIGH /
+1 MEDIUM / 7 LOW (`kesh-gate-logs/27-1-validate-p2-{R,F}.md`). Doublons : R2-2 = F2-2 (MEDIUM chez R, LOW chez F),
+R2-4 = F2-6, R2-7 = F2-8, R2-5 ⊂ F2-1. **4 MEDIUM distincts** (F2-1, R2-1, R2-2/F2-2, R2-3), recomptés ; tous nés de
+phrases écrites par la remédiation P1 sauf F2-1 (d'origine, non vu en P1). **Trend : P1 7 MEDIUM distincts → P2 4,
+0 HIGH aux deux.** S'y ajoute la **décision du Project Lead** du 2026-10-12 (C-27-1-16).
+
+| Finding | Sév. | Traitement |
+|---|---|---|
+| Décision PL — clés d'API | — | route **fermée à toute clé** : `403 API_KEY_OPERATION_FORBIDDEN` (code neuf, doctrine D2) en tête du handler ; H8, M18 ; `api-external.md` § 4/§ 7/§ 10 réécrits ; paragraphe *Interblocages* laissé inchangé (le correctif P1 F7 est **retiré** : il n'énumère que les routes ouvertes aux clés) ; C-27-1-3 révisé |
+| F2-1 / R2-5 — lot refusé en entier (`400`) quand une transaction a disparu | MEDIUM / LOW | **non corrigé** (orchestrateur, #634) : AC3 (b) réécrit en deux trajectoires, puce AC8, angle mort, phrase au manuel (recharger la page) ; C-27-1-17 |
+| R2-1 — #465 ne suit pas la sauvegarde | MEDIUM | renvoi à **#633** (ouverte par l'orchestrateur) pour la sauvegarde, #465 gardée pour l'export global CSV (AC8, § Effets, angles morts) ; C-27-1-13 révisé |
+| R2-2 / F2-2 — montage de l'AC3 (c) | MEDIUM | l'import porte au moins une transaction, raison écrite |
+| R2-3 — « rend archivable », « indélébile » | MEDIUM | AC13 : archivable **s'il ne reste aucune transaction**, sous les autres gardes (compte principal) ; « indélébile » remplacé par « tant que l'annulation est refusée, l'import ne peut pas être supprimé » et renvoi aux remèdes du § *Annuler un rapprochement* (cinq motifs, un sans remède) ; même retouche à l'AC8, aux angles morts, à `api-external.md` |
+| R2-4 / F2-6 — effets du tri non écrits | LOW | `details_json.bank_transaction_ids`, commentaires `reconciliation.rs:3257` et `reconciliation_e2e.rs:1625` ajoutés à l'AC4-bis |
+| R2-6 — G6 n'interdit pas « à venir » | LOW | attribution corrigée (règle de documentation, sans garde) |
+| R2-7 / F2-8 — décompte du découpage | LOW | deux décomptes écrits ; seuil franchi au grain fin ; **pas de découpage**, décision de l'orchestrateur (C-27-1-18), signal déclaré au Project Lead |
+| R2-8 — sortie de commande retouchée | LOW | six lignes de commentaire nommées |
+| R2-9 / F2-3 — restauration | LOW | angle mort réécrit : ordre `TABLES_TO_TRUNCATE` (`audit_log` avant), cycle probable une fois le chevauchement acquis, tentative rejouée sur l'installation restaurée |
+| R2-10 — message du `412` | LOW | une phrase de remède ajoutée au message (quatre catalogues et repli), code inchangé (C-27-1-19) ; arbitrage CO 958f signalé à Guy par l'orchestrateur |
+| R2-11 — § *Comptes bancaires* muet | LOW | renvoi vers `sec:supprimer-import` |
+| R2-12 — promesses sans test | LOW | `id = 0` dans H3 ; clés : H8 (décision PL) |
+| F2-4 — état D4 sans remède | LOW | ajouté à l'énumération des imports que l'écran ne peut pas supprimer |
+| F2-5 — verrou de trou toutes sociétés | LOW | AC2 reformulé |
+| F2-7 — `innodb_snapshot_isolation` | LOW | phrase au doc-comment prescrit (MariaDB 10.11) |
+
+Recomptes après remédiation : 17 AC ; T0-T8 ; mutations M1-M18, M6 retirée, plus M14+M15 : **18 à jouer** ;
+i18n : **onze clés neuves et une modifiée** (`sitesTotal` +9 inchangé : aucun site frontend ajouté) ; tests H1-H8,
+D1-D6, AC3 (a)(b)(c). Symptômes grepés (valeurs et formules) dans la fiche et le registre : « ouverte aux clés »,
+« nomme la clé », `#465`, « dix clés », « indélébile », « rend archivable », « Signal déclaré à l'orchestrateur » —
+ne restent que les mentions voulues (historique du bilan P1, négations).

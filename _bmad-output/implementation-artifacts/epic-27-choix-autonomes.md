@@ -212,3 +212,68 @@ en autonomie, sur `aadace40` (kickoff de l'Epic 27).
   contrôle suffit à `NotFound`), M14+M15 rouge par l'assertion ; M6 retirée du tableau avec sa raison ; M1 → D4,
   H2 (H2 pose `reconciled` sans lien). Nouvelles mutations M16 (`canManage`), M17 (tri du rejet).
 - **Réversible** : oui (fiche).
+
+### C-27-1-16 — La suppression d'un import est fermée aux clés d'API (décision du Project Lead, révise C-27-1-3)
+
+- **Décision** (Guy, 2026-10-12, transmise par l'orchestrateur après la validation P2) : « **les api n'ont pas besoin
+  de supprimer un import, du moins pour le moment** ».
+- **Retenu** : `DELETE /api/v1/bank-imports/{id}` refuse **toute** clé d'API. Une clé `read` est arrêtée par le
+  middleware (`403 API_KEY_READ_ONLY`, inchangé) ; une clé `read-write` atteint le handler, dont la première
+  instruction — avant l'enveloppe de rejeu — est `if current_user.api_key_id.is_some()` ⇒ `403`, sans suppression
+  ni trace. **Code neuf** `API_KEY_OPERATION_FORBIDDEN` (variante `AppError::ApiKeyOperationForbidden`, message
+  « Cette opération n'est pas accessible via une clé API. Utilisez l'interface web. », quatre catalogues).
+- **Pourquoi un code neuf** : la doctrine D2 de la Story 22-4a (`errors.rs:208-210`) interdit de réutiliser un code
+  dont le message mentirait : `API_KEY_MANAGEMENT_FORBIDDEN` parle de gestion de clés (sa réutilisation pour le
+  journal d'audit est documentée comme un héritage, `api-external.md` § 4), `API_KEY_ADMIN_FORBIDDEN` de routes
+  d'administration — la route est Comptable. Le libellé neuf est générique (« cette opération »), réutilisable pour
+  une prochaine route fermée aux clés sans mentir. Pas de `require_not_pat` : `admin_pat_denied_e2e` en interdit un
+  second consommateur.
+- **Conséquences** : `api-external.md` décrit la route comme **non ouverte aux clés** (§ 4, § 7, § 10) ; le
+  paragraphe *Interblocages* (l. 662), qui n'énumère que les routes ouvertes aux clés, reste inchangé (le correctif
+  P1 F7 est retiré) ; test H8 (clé `read-write` ⇒ `403`, rien supprimé, aucune trace ; clé `read` ⇒ `403
+  API_KEY_READ_ONLY`) ; mutation M18. La route reste Comptable+ pour une session.
+- **Réversible** : oui — ouvrir la route aux clés revient à retirer le contrôle et à documenter.
+
+### Révision de C-27-1-3 (validation P2, 2026-10-12)
+
+- La puce « ouverte aux clés `read-write` comme le `POST` ; une clé `read` reçoit `403 API_KEY_READ_ONLY` ; la trace
+  nomme la clé » est **remplacée par C-27-1-16**. Le reste de C-27-1-3 (montage dans `comptable_routes`, `204`,
+  `404 NOT_FOUND`, `409 BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS`) tient.
+
+### Révision de C-27-1-13 (validation P2, 2026-10-12)
+
+- **Constat** (revue P2, R2-1) : #465 suit l'export de souveraineté CSV (`exports/global.rs`), pas la sauvegarde
+  `.keshbackup` (`admin_backup/export.rs`, `backup.rs::export_table`). L'orchestrateur a ouvert
+  [#633](https://github.com/guycorbaz/kesh/issues/633) (« La sauvegarde .keshbackup lit ses tables sans instantané
+  commun — une écriture concurrente peut y laisser des lignes orphelines »).
+- **Retenu** : la fiche renvoie à **#633** pour la sauvegarde et garde **#465** pour l'export global CSV, qui a le
+  même défaut.
+
+### C-27-1-17 — Un lot de réconciliation préparé avant une suppression est refusé en entier : écrit, renvoyé à #634 (arbitrage de l'orchestrateur)
+
+- **Contexte** (revue P2, F2-1, R2-5) : le pré-vol `find_pending_by_ids` de `post_accept` et `post_reject`
+  (`reconciliation.rs:950-963`, `:3049-3064`), lu sur le pool, refuse le lot **entier** en `400 VALIDATION_ERROR`
+  dès qu'une transaction cochée n'existe plus — le cas courant après une suppression, page *Réconciliation* restée
+  ouverte. La fiche disait « `failed[]` », vrai seulement dans la fenêtre pré-vol → `UPDATE`.
+- **Retenu** : pas de correction de code dans la story ; l'orchestrateur a ouvert
+  [#634](https://github.com/guycorbaz/kesh/issues/634). AC3 (b) réécrit (deux trajectoires), puce à l'AC8, angle
+  mort, phrase au manuel (recharger la page *Réconciliation* après une suppression), renvoi #634.
+- **Réversible** : sans objet.
+
+### C-27-1-18 — Pas de découpage après la P2 (décision de l'orchestrateur)
+
+- **Contexte** (revue P2, R2-7, F2-8) : au grain des « modules métier de premier niveau » du `CLAUDE.md`, la story en
+  touche plus de cinq depuis l'AC4-bis ; au grain des crates, cinq.
+- **Retenu** : pas de découpage. Les défauts de la P2 sont distincts de ceux de la P1 et aucun n'est un recyclage
+  (amendement D5 du `CLAUDE.md`, 2026-10-06) ; la sévérité baisse (7 → 4 MEDIUM distincts, 0 HIGH) ; le domaine
+  reste unique. Signal déclaré au Project Lead par l'orchestrateur. Repli 27-1a/27-1b de C-27-1-9 inchangé.
+- **Réversible** : oui.
+
+### C-27-1-19 — Le message du refus d'archivage nomme le remède (revue P2, R2-10)
+
+- **Retenu** : une phrase ajoutée au message `bank-accounts-errors-has-transactions` (quatre catalogues et repli
+  `errors.rs:2467-2470`) : « Les imports dont aucune transaction n'est rapprochée peuvent être supprimés (Quotidien →
+  Importer des relevés). » — vraie dans tous les cas (elle ne promet pas l'archivage), sans toucher au code
+  d'erreur `BANK_ACCOUNT_HAS_TRANSACTIONS`. L'arbitrage de fond de C-27-1-12 (CO 958f) est signalé à Guy par
+  l'orchestrateur.
+- **Réversible** : oui.
