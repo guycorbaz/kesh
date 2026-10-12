@@ -1,7 +1,7 @@
 # Epic 27 — choix autonomes de la Story 27-3 (à fusionner dans `epic-27-choix-autonomes.md`)
 
 *Écrit le 2026-10-12 par l'agent de spécification (Opus 5.5), en autonomie ; C-27-3-20 à 27 ajoutés le même jour
-par l'agent de remédiation de la validation P1, C-27-3-28 à 34 par celui de la validation P2, C-27-3-35 à 44 par celui de la validation P3. Le registre de l'epic vit sur la branche
+par l'agent de remédiation de la validation P1, C-27-3-28 à 34 par celui de la validation P2, C-27-3-35 à 44 par celui de la validation P3, C-27-3-45 par l’orchestrateur à la validation P4 ciblée. Le registre de l'epic vit sur la branche
 de la 27-1 (`story/27-1-supprimer-import`, non mergée) : l'orchestrateur fusionne ce fichier par **union**, sans
 renuméroter (préfixe `C-27-3-`, propre à cette story). Chaque choix : contexte, retenu, écarté, réversibilité.*
 
@@ -440,7 +440,7 @@ Fiche : `27-3-profil-apres-apercu.md`. Issue #626 (P2).
 - **Contexte** : validation P3, F6 — le texte de l'indicateur dépend de la raison (recalcul ou dépôt), que le gabarit
   ne peut lire que dans un `$state`, que T3 ne nommait pas.
 - **Retenu** : `previewReason` (`'drop' | 'profile' | 'stale'`), posé par chaque appel de `runPreview` avant son
-  premier `await` ; jamais lu périmé, donc `reset()` n'y touche pas. Texte tenu par V2 et V13 (b).
+  premier `await` ; jamais lu périmé, donc `reset()` n'y touche pas. Texte tenu par V2 et V13 (b). *(Amendé par C-27-3-45 : `isConfirming` prime sur `previewReason` ; V9 tient la confirmation.)*
 - **Écarté** : le remettre à zéro dans `reset()` (une écriture de plus sans effet observable — c'est l'appel suivant
   qui le pose).
 - **Réversible** : oui.
@@ -462,7 +462,7 @@ Fiche : `27-3-profil-apres-apercu.md`. Issue #626 (P2).
 
 - **Contexte** : validation P3, F9 — M10 « comparaison retirée » n'était affectée qu'à des tests CSV ; retirer la
   seule comparaison de `create` (CAMT) n'était tuée que par I10, non cité.
-- **Retenu** : M10a (CSV → I4, I5, I7, E2), M10b (CAMT → I10). Vingt-huit mutations en tout (avec M25, M26).
+- **Retenu** : M10a (CSV → I4, I5, I7, E2), M10b (CAMT → I10). Vingt-huit mutations en tout (avec M25, M26) — vingt-neuf depuis M27 (C-27-3-45).
 - **Écarté** : une ligne M10 citant aussi I10 (une mutation qui retire les deux comparaisons à la fois ne dit pas
   laquelle des deux un test tient).
 - **Réversible** : oui (tests).

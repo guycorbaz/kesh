@@ -3,7 +3,7 @@
 Status: ready-for-dev
 
 <!-- Fiche créée le 2026-10-12 par bmad-create-story, en autonomie (aucune question). Choix au registre
-`epic-27-choix-autonomes-27-3.md` (C-27-3-1 à C-27-3-44), à fusionner par l'orchestrateur dans
+`epic-27-choix-autonomes-27-3.md` (C-27-3-1 à C-27-3-45), à fusionner par l'orchestrateur dans
 `epic-27-choix-autonomes.md` (branche de la 27-1). Validation P1 : `27-3-validate-prompt-p1.md` ;
 P2 : `27-3-validate-prompt-p2.md` ; P3 : `27-3-validate-prompt-p3.md` ; P4 ciblée : `27-3-validate-prompt-p4-ciblee.md`. -->
 
@@ -529,7 +529,7 @@ profils), `$lib/shared/utils/i18n.svelte` (repli), et un `File` synthétique.
 - **V6-bis** (AC9, disparition de l'avis) — après l'avis de V6, recalcul résolu, **trois `it` distincts**, un rendu
   chacun (`@testing-library/svelte` ne démonte qu'en `afterEach` : deux `render` dans un même `it` laisseraient deux
   `bank-import-preview-recomputed` dans `document.body`) : (a) changer de profil → avis absent dès le geste ;
-  (b) cliquer *Confirmer* (promesse retenue) → avis absent **dès le clic** ; (c) changer de compte → avis absent. Un
+  (b) cliquer *Confirmer* (promesse retenue) → avis absent **dès le clic**, et `bank-import-loading` porte `common-loading` (aperçu de raison `'stale'` : variante de M27, C-27-3-45) ; (c) changer de compte → avis absent. Un
   site par geste : `runPreview` hors `'stale'` (M20), `handleConfirm` (M20), `reset()` (M25) (C-27-3-31, C-27-3-38).
 - **V7** case `confirm-duplicate-file` cochée, puis changement de profil → la case du nouvel aperçu est **décochée**
   et *Confirmer* désactivé.
@@ -618,9 +618,9 @@ profils propres (`bank_name` unique par société), **motif vide** (`pattern: ''
 | M24 | branche `409` : `await runPreview(…, 'stale')` avant le `finally` — `isConfirming` reste vrai pendant le recalcul | V6 (sélecteurs désactivés pendant le recalcul retenu) |
 | M25 | `reset()` n'efface plus l'avis de l'AC9 (les deux autres sites restent) | V6-bis (c) (avis encore visible après le changement de compte, C-27-3-38) |
 | M26 | `runPreview` ne remet pas les cases à zéro pour `reason === 'stale'` (les autres raisons restent) | V6, variante « cases » (case `confirm-duplicate-file` encore cochée après le recalcul, C-27-3-37) |
-| M27 | le texte de l'indicateur ne donne pas la priorité à `isConfirming` (lit `previewReason` seul) | V9 (confirmation après un recalcul : « Recalcul de la prévisualisation… » au lieu de `common-loading`, C-27-3-45) |
+| M27 | le texte de l'indicateur ne donne pas la priorité à `isConfirming` (lit `previewReason` seul) | V9 (raison `'profile'`) et V6-bis (b) (raison `'stale'`) : « Recalcul de la prévisualisation… » au lieu de `common-loading` (C-27-3-45) |
 
-Vingt-huit mutations (M1-M9, M10a, M10b, M11-M15, M16a, M16b, M17-M26). ⚠️ **Non comptée, et écrite comme telle** : la variante « profil
+Vingt-neuf mutations (M1-M9, M10a, M10b, M11-M15, M16a, M16b, M17-M27). ⚠️ **Non comptée, et écrite comme telle** : la variante « profil
 comparé relu **hors** transaction mais présent » est **équivalente** dans tout scénario déterministe — même valeur
 lue —, et la fenêtre qu'elle ouvrirait n'est observable que par une course ; elle est tenue par construction (une
 seule variable `profile`, comparée puis parsée, AC8, C-27-3-23).
@@ -890,10 +890,21 @@ Rapport : `kesh-gate-logs/27-3-validate-p4-ciblee.md` — 2 MEDIUM, 2 LOW. Véri
 | Finding | Sév. | Décision |
 |---|---|---|
 | P4-1 — l'indicateur lit `previewReason` seul : « Recalcul… » pendant une confirmation qui suit un recalcul | MEDIUM | **Appliqué** : priorité à `isConfirming` (AC2), V9 après un recalcul, mutation M27 ; C-27-3-45 |
-| P4-2 — le contrôle « ne contient plus « avant de déposer » » resterait rouge | MEDIUM | **Réfuté** : l'AC12 prescrit le retrait des deux occurrences (`:1697-1698`, `:1794-1796`, fiche l. 279 et 281) — erreur de catégorie (livrable prescrit, pas encore écrit) |
+| P4-2 — le contrôle « ne contient plus « avant de déposer » » resterait rouge | MEDIUM | **Réfuté** : l'AC12 prescrit le retrait des deux occurrences (`:1697-1698`, `:1794-1796`, fiche l. 282 et 284) — erreur de catégorie (livrable prescrit, pas encore écrit) |
 | P4-3 — « selon le navigateur » non exhaustif (un navigateur qui renverrait les octets de l'aperçu importerait sans erreur) | LOW | Laissé : le serveur reste fermé (l'empreinte couvre le hash), seule la phrase de l'écran serait incomplète ; le dev la nuance s'il le juge utile |
 | P4-4 — `fetchWithRetry` passe l'API en mode dégradé sur toute erreur réseau, POST compris | LOW | Noté : comportement préexistant, hors périmètre |
 
 Trend de la validation : P1 1 HIGH + 3 MEDIUM → P2 4 MEDIUM → P3 1 MEDIUM → P4 ciblée 1 MEDIUM réel (1 réfuté). Décision
 de Guy (2026-10-12) sur le signal D5 : **ne pas découper**. La remédiation P4 ne touche que la fiche et le registre ;
 une passe ciblée P5 (Haiku) la relit avant le développement.
+
+### Validation P5 ciblée (Haiku, sur `34de94b7..ac2c7e4c`) — 2026-10-12
+
+Rapport : `kesh-gate-logs/27-3-validate-p5-ciblee.md` — 1 MEDIUM, 6 LOW, tous appliqués par l'orchestrateur : note du
+tableau des mutations (« vingt-neuf, M17-M27 ») ; en-tête, provenance du registre, C-27-3-41 et C-27-3-43 annotés
+(45 choix, 29 mutations) ; V6-bis (b) tient la variante `'stale'` de M27 ; renvoi « l. 282 et 284 » ; `sprint-status`.
+La remédiation ne touche que la fiche, le registre et le registre de sprint : **validation close**.
+
+**Trend complet de la validation** : P1 (Sonnet) 1 HIGH + 3 MEDIUM → P2 (Opus) 4 MEDIUM → P3 (Sonnet) 1 MEDIUM →
+P4 ciblée (Haiku) 1 MEDIUM réel, 1 réfuté → P5 ciblée (Haiku) 1 MEDIUM de décompte → close. Signal D5 levé en P2 et
+P3, déclaré à Guy : « ne pas découper » (2026-10-12).
