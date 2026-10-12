@@ -487,3 +487,38 @@ Fiche : `27-3-profil-apres-apercu.md`. Issue #626 (P2).
 - **Écarté** : une quatrième valeur `'confirm'` dans `previewReason` (deux états diraient la même chose, et
   `reset()` devrait la remettre à zéro).
 - **Réversible** : oui.
+
+### C-27-3-46 — Les deux `catch` partagent `setError` : un site `error-unexpected` au lieu de deux
+
+- **Contexte** : développement, AC17 (H3) et AC11 — la fiche comptait deux sites pour `Erreur inattendue.` (`:150`, `:185`), un par `catch`. Le refactor de T3 sépare `runPreview` de `handleConfirm`, et les deux posaient l'erreur de la même façon (code, message, lignes du refus de signe).
+- **Retenu** : une fonction `setError(err)` appelée par les deux `catch` (DRY, CLAUDE.md) ; `sitesTotal` 2032 → **2062** (+30, et non +31), écart ventilé au commentaire de `i18n-keys.test.ts`. V13 (c) tient toujours les deux chemins (aperçu et confirmation rejetés par une erreur qui n'est pas une `ApiError`).
+- **Écarté** : garder deux blocs identiques pour retrouver le nombre de la fiche (duplication pour un compteur).
+- **Réversible** : oui. À la fusion avec la 27-1 : 2032 + 30 + 9 = **2071** (et non 2072).
+
+### C-27-3-47 — Le recalcul d'un `409` demande le profil de l'instantané, explicitement
+
+- **Contexte** : développement, AC9 — « même fichier, même compte, profil de l'instantané ». Pour un CSV, l'instantané porte le profil **résolu** (`csvProfileMatch.profileId`), même si l'aperçu avait été demandé sur *Auto-détection*.
+- **Retenu** : `runPreview(snap.file, snap.accountId, snap.bankProfileId ?? null, 'stale')` — l'id résolu est envoyé explicitement. Conséquence assumée : la réponse n'est plus `autoMatched`, et l'annotation « (auto-détecté) » ne réapparaît pas après un tel recalcul (le profil reste sélectionné). Pour un CAMT, aucun profil (l'aperçu l'ignore).
+- **Écarté** : relancer avec `bankProfileId` du sélecteur (égal pour un CSV pendant une confirmation, puisque les sélecteurs sont désactivés, mais contraire à la lettre de l'AC9 et dépendant de l'état de l'écran) ; relancer sur *Auto-détection* quand l'aperçu l'était (un autre profil concordant pourrait passer en tête, D17).
+- **Réversible** : oui.
+
+### C-27-3-48 — `parse_fingerprint_field` ne tolère aucun blanc
+
+- **Contexte** : développement, AC6 — les autres champs multipart sont lus après `trim()` (`bankAccountId`, drapeaux). L'empreinte est produite par le serveur et renvoyée telle quelle.
+- **Retenu** : forme stricte (64 caractères `[0-9a-f]`, sans `trim`) : un blanc autour est un défaut du client, signalé en `400`. U4 le tient (cas « espace de tête »).
+- **Écarté** : `trim()` par parité avec les autres champs (une empreinte n'est jamais saisie à la main).
+- **Réversible** : oui.
+
+### C-27-3-49 — Une troisième fonction au module : `check_preview_fingerprint`
+
+- **Contexte** : développement, T1 — la fiche prescrit `preview_fingerprint` et `parse_fingerprint_field`. La comparaison (« absente → accepter ; différente → 409 ») s'écrit aux deux créations (CSV, CAMT).
+- **Retenu** : `check_preview_fingerprint(sent, recomputed)` dans le module neuf, appelée par `create` et `create_csv` ; un test unitaire la couvre. Les sites de `bank_imports.rs` restent des appels à chemin complet (`crate::routes::bank_import_fingerprint::…`), sans toucher au bloc `use` que modifie la 27-1.
+- **Écarté** : deux `match` écrits en place (la même règle deux fois) ; un `use` en tête de `bank_imports.rs` (hunk dans le bloc d'imports de la 27-1).
+- **Réversible** : oui.
+
+### C-27-3-50 — V3 joue la course sur *Auto-détection*, B, C
+
+- **Contexte** : développement, V3 — « A → B → C rapides ». Le montage commun des tests affiche d'abord l'aperçu du profil A ; re-choisir A n'émettrait pas `change`.
+- **Retenu** : la course part d'*Auto-détection* (le premier des trois), puis B, puis C, réponses dans l'ordre premier, C, B — l'ordre exigé par C-27-3-30 (une réponse périmée arrivant pendant qu'une plus récente est en vol). Trois profils au mock (A, B, C).
+- **Écarté** : un montage propre à V3 sans aperçu initial (il n'exercerait pas le remplacement d'un aperçu affiché).
+- **Réversible** : oui (test seul).

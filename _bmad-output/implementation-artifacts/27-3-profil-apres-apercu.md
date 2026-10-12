@@ -1,6 +1,6 @@
 # Story 27.3 : changer de profil après l'aperçu recalcule l'aperçu — et le serveur refuse un import dont le profil, le compte ou le fichier a changé depuis l'aperçu
 
-Status: in-progress
+Status: review
 
 <!-- Fiche créée le 2026-10-12 par bmad-create-story, en autonomie (aucune question). Choix au registre
 `epic-27-choix-autonomes-27-3.md` (C-27-3-1 à C-27-3-45), à fusionner par l'orchestrateur dans
@@ -424,30 +424,30 @@ fr-CH, y compris l'apostrophe droite de « d'abord » (texte actuel du site).
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Préalables** (AC15)
-  - [ ] Bases `kesh_273` / `kesh_e2e_273` (migrations du worktree, seed `scripts/seed-dev-db.sql`) ; `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-27-3/target` ; `node_modules` par `cp -al` depuis le dépôt principal (consignes 6, 8, 11).
-- [ ] **T1 — Empreinte serveur** (AC6, AC7, AC8)
-  - [ ] Nouveau module `crates/kesh-api/src/routes/bank_import_fingerprint.rs` (déclaré dans `routes/mod.rs`) — **hors** de `bank_imports.rs` pour limiter le recouvrement avec la 27-1 : `pub(crate) fn preview_fingerprint(company_id, &BankAccount, file_hash: &str, format: FingerprintFormat, profile: Option<&BankProfile>) -> String`, déstructuration exhaustive de `BankProfile` ; `pub(crate) fn parse_fingerprint_field(&str) -> Result<String, AppError>` (64 hex minuscules). Doc-comments `///` (ce que couvre l'empreinte, ce qu'elle ne couvre pas, pourquoi pas de secret). `normalize_iban` (`bank_imports.rs:815`, privée) passe **`pub(crate)`** pour être appelée du module neuf — ni copie (DRY), ni déplacement (hunk plus large dans un fichier que touche la 27-1).
-  - [ ] `BankImportPreviewResponse` (`bank_imports.rs:54`) : champ `preview_fingerprint: String` ; rempli par `preview` (CAMT, `:1024`) et `preview_csv` (`:1738`).
-  - [ ] `MultipartFields` + `parse_multipart` : `preview_fingerprint: Option<String>`, garde de doublon, validation de forme.
-  - [ ] `create` (CAMT) et `create_csv` (après `resolve_csv_profile`) : comparaison → `AppError::BankImportPreviewStale`.
-  - [ ] `errors.rs` : variante `BankImportPreviewStale` (placée près de `BankCsvProfileNotFound`, `:740`, **pas** après `BankImportDuplicateFile` où la 27-1 insère) ; mapping `409`, code `BANK_IMPORT_PREVIEW_STALE`, `t("bank-import-errors-preview-stale", …)` (placé près de `:2237`).
-  - [ ] `crates/kesh-api/tests/textes_coherents.rs` : entrée `("bank-import-errors-preview-stale", 1, &[])` dans la `TABLE` de `les_replis_rust_suivent_le_catalogue`, groupe `errors.rs` (AC10).
-  - [ ] Tests unitaires dans le module neuf (U1-U4) ; tests d'intégration dans `crates/kesh-api/tests/bank_imports_e2e.rs` (I1-I12, I6-bis), avec le helper **existant** `build_multipart_with_text_fields` (`:677`) pour I6, I6-bis et les créations CAMT à empreinte (multipart **sans** `bankProfileId`, nom de fichier choisi, champs texte en plus) — sans modifier la signature de `send_csv` / `build_csv_multipart`, que la 27-1 emploie aussi.
-- [ ] **T2 — Client API et types** (AC5, AC6)
-  - [ ] `bank-import.types.ts` : `previewFingerprint: string` dans `BankImportPreviewResponse`.
-  - [ ] `bank-import.api.ts` : `BankImportFlags.previewFingerprint?: string`, ajouté par `appendFlags` ; test dans `bank-import.api.test.ts` (V11).
-- [ ] **T3 — Écran** (AC1-AC5, AC9)
-  - [ ] `BankImportUpload.svelte` : séparer `runPreview(file, reason)` (séquence, retrait de l'ancien aperçu, remise à zéro des cases, instantané à la réception, présélection AC4) des gestes `handleFileSelect` (dépôt) et `handleProfileChange(id)` (sélecteur) ; états `isPreviewing` / `isConfirming` (l'indicateur et le `disabled` du bouton en dérivent) et `previewReason` (`$state`, posé par chaque `runPreview` avant son premier `await`, lu par le texte de l'indicateur, AC2, C-27-3-41) ; `runPreview` remet les cases à zéro pour **toute** raison, `'stale'` comprise (AC2, AC9, M26) ; compteur de séquence en variable ordinaire (`let seq = 0`, pas `$state`) ; `reset()` invalide la séquence **et** remet `isPreviewing`, `isConfirming` et l'avis à leur état initial (AC3 ; l'extinction d'`isConfirming` y est défensive, non éprouvée, C-27-3-38) ; une réponse périmée — succès **ou** erreur — ne touche ni `preview`, ni l'erreur, ni `isPreviewing` (le `finally` n'éteint l'indicateur que si sa séquence est la dernière) ; `handleConfirm` depuis l'instantané, **efface l'avis dès le clic**, branche `BANK_IMPORT_PREVIEW_STALE` → `isConfirming = false` **puis** `void runPreview(…, 'stale')` (pas d'`await` avant le `finally`, AC9, C-27-3-33) + avis rendu hors du bloc `{#if preview}` (AC9) ; `runPreview` **efface l'avis** pour toute raison autre que `'stale'` (dépôt, profil) — l'avis a donc trois sites d'effacement : `reset()`, `runPreview` hors `'stale'`, `handleConfirm` (C-27-3-31) ; *Annuler* `disabled={isConfirming}` ; `handleFileInput` vide `input.value` (AC16) ; `autoMatchedId` ne vaut l'id du profil que si `csvProfileMatch.autoMatched` (AC4, C-27-3-32).
-  - [ ] `BankProfileSelector.svelte` : prop `disabled` (défaut `false`) ; le `<select>` de compte reçoit `disabled={isConfirming}`.
-  - [ ] Mettre à jour le commentaire d'en-tête (machine d'état) et le commentaire L3 de `handleConfirm` (`:160-167`).
-  - [ ] Nouveau `BankImportUpload.test.ts` (V1-V10, V6-bis, V12, V13), patron `BankProfileForm.test.ts` (mocks avant import).
-- [ ] **T4 — i18n** (AC10, AC11, AC17) : 24 clés × quatre locales (3 de l'AC10, 21 de l'AC17) ; sites H1-H11 de l'AC17 dans `BankImportUpload.svelte`, `BankImportList.svelte`, `routes/(app)/bank-import/+page.svelte` (deux clés globales réutilisées) ; `sitesTotal` 2032 → 2063 recompté commentaires masqués et ventilé ; gardes engagées nommées à l'AC10 (`parity_between_locales`, `i18n-repli-divergent-actif`, `lint-i18n-ownership`).
-- [ ] **T5 — E2E** (AC1, AC6, AC9) : deux tests dans `frontend/tests/e2e/bank-csv-import.spec.ts` (E1, E2).
-- [ ] **T6 — Manuel** (AC12) : `.tex`, `make user` (sous `flock`), seul `user-manual.pdf` committé, PDF aplati contrôlé (table des matières comprise : Makefile de la base à deux passes fixes, C-27-3-42).
-- [ ] **T7 — CHANGELOG, `docs/api-external.md`** (AC13).
-- [ ] **T8 — Mutations** M1-M27 (vingt-neuf, M10 et M16 en deux) : chacune appliquée, test rouge constaté, restaurée (et le fichier **touché** après restauration : cargo garde sinon le binaire muté) ; tableau au Dev Agent Record.
-- [ ] **T9 — Gates** au dernier commit de code : `scripts/test-fast.sh` (sous `flock`), `npm run check`, `npm run lint-i18n-ownership`, `npm run test:unit`, `npm run build`, **E2E complet** (8 échecs attendus de `docs/testing.md`, jugés fichier par fichier). Base remise à zéro avant le gate complet. Les gardes de l'AC10 (`parity_between_locales` dans le gate Rust, `i18n-repli-divergent-actif` et `i18n-keys` dans Vitest) y passent.
+- [x] **T0 — Préalables** (AC15)
+  - [x] Bases `kesh_273` / `kesh_e2e_273` (migrations du worktree, seed `scripts/seed-dev-db.sql`) ; `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-27-3/target` ; `node_modules` par `cp -al` depuis le dépôt principal (consignes 6, 8, 11).
+- [x] **T1 — Empreinte serveur** (AC6, AC7, AC8)
+  - [x] Nouveau module `crates/kesh-api/src/routes/bank_import_fingerprint.rs` (déclaré dans `routes/mod.rs`) — **hors** de `bank_imports.rs` pour limiter le recouvrement avec la 27-1 : `pub(crate) fn preview_fingerprint(company_id, &BankAccount, file_hash: &str, format: FingerprintFormat, profile: Option<&BankProfile>) -> String`, déstructuration exhaustive de `BankProfile` ; `pub(crate) fn parse_fingerprint_field(&str) -> Result<String, AppError>` (64 hex minuscules). Doc-comments `///` (ce que couvre l'empreinte, ce qu'elle ne couvre pas, pourquoi pas de secret). `normalize_iban` (`bank_imports.rs:815`, privée) passe **`pub(crate)`** pour être appelée du module neuf — ni copie (DRY), ni déplacement (hunk plus large dans un fichier que touche la 27-1).
+  - [x] `BankImportPreviewResponse` (`bank_imports.rs:54`) : champ `preview_fingerprint: String` ; rempli par `preview` (CAMT, `:1024`) et `preview_csv` (`:1738`).
+  - [x] `MultipartFields` + `parse_multipart` : `preview_fingerprint: Option<String>`, garde de doublon, validation de forme.
+  - [x] `create` (CAMT) et `create_csv` (après `resolve_csv_profile`) : comparaison → `AppError::BankImportPreviewStale`.
+  - [x] `errors.rs` : variante `BankImportPreviewStale` (placée près de `BankCsvProfileNotFound`, `:740`, **pas** après `BankImportDuplicateFile` où la 27-1 insère) ; mapping `409`, code `BANK_IMPORT_PREVIEW_STALE`, `t("bank-import-errors-preview-stale", …)` (placé près de `:2237`).
+  - [x] `crates/kesh-api/tests/textes_coherents.rs` : entrée `("bank-import-errors-preview-stale", 1, &[])` dans la `TABLE` de `les_replis_rust_suivent_le_catalogue`, groupe `errors.rs` (AC10).
+  - [x] Tests unitaires dans le module neuf (U1-U4) ; tests d'intégration dans `crates/kesh-api/tests/bank_imports_e2e.rs` (I1-I12, I6-bis), avec le helper **existant** `build_multipart_with_text_fields` (`:677`) pour I6, I6-bis et les créations CAMT à empreinte (multipart **sans** `bankProfileId`, nom de fichier choisi, champs texte en plus) — sans modifier la signature de `send_csv` / `build_csv_multipart`, que la 27-1 emploie aussi.
+- [x] **T2 — Client API et types** (AC5, AC6)
+  - [x] `bank-import.types.ts` : `previewFingerprint: string` dans `BankImportPreviewResponse`.
+  - [x] `bank-import.api.ts` : `BankImportFlags.previewFingerprint?: string`, ajouté par `appendFlags` ; test dans `bank-import.api.test.ts` (V11).
+- [x] **T3 — Écran** (AC1-AC5, AC9)
+  - [x] `BankImportUpload.svelte` : séparer `runPreview(file, reason)` (séquence, retrait de l'ancien aperçu, remise à zéro des cases, instantané à la réception, présélection AC4) des gestes `handleFileSelect` (dépôt) et `handleProfileChange(id)` (sélecteur) ; états `isPreviewing` / `isConfirming` (l'indicateur et le `disabled` du bouton en dérivent) et `previewReason` (`$state`, posé par chaque `runPreview` avant son premier `await`, lu par le texte de l'indicateur, AC2, C-27-3-41) ; `runPreview` remet les cases à zéro pour **toute** raison, `'stale'` comprise (AC2, AC9, M26) ; compteur de séquence en variable ordinaire (`let seq = 0`, pas `$state`) ; `reset()` invalide la séquence **et** remet `isPreviewing`, `isConfirming` et l'avis à leur état initial (AC3 ; l'extinction d'`isConfirming` y est défensive, non éprouvée, C-27-3-38) ; une réponse périmée — succès **ou** erreur — ne touche ni `preview`, ni l'erreur, ni `isPreviewing` (le `finally` n'éteint l'indicateur que si sa séquence est la dernière) ; `handleConfirm` depuis l'instantané, **efface l'avis dès le clic**, branche `BANK_IMPORT_PREVIEW_STALE` → `isConfirming = false` **puis** `void runPreview(…, 'stale')` (pas d'`await` avant le `finally`, AC9, C-27-3-33) + avis rendu hors du bloc `{#if preview}` (AC9) ; `runPreview` **efface l'avis** pour toute raison autre que `'stale'` (dépôt, profil) — l'avis a donc trois sites d'effacement : `reset()`, `runPreview` hors `'stale'`, `handleConfirm` (C-27-3-31) ; *Annuler* `disabled={isConfirming}` ; `handleFileInput` vide `input.value` (AC16) ; `autoMatchedId` ne vaut l'id du profil que si `csvProfileMatch.autoMatched` (AC4, C-27-3-32).
+  - [x] `BankProfileSelector.svelte` : prop `disabled` (défaut `false`) ; le `<select>` de compte reçoit `disabled={isConfirming}`.
+  - [x] Mettre à jour le commentaire d'en-tête (machine d'état) et le commentaire L3 de `handleConfirm` (`:160-167`).
+  - [x] Nouveau `BankImportUpload.test.ts` (V1-V10, V6-bis, V12, V13), patron `BankProfileForm.test.ts` (mocks avant import).
+- [x] **T4 — i18n** (AC10, AC11, AC17) : 24 clés × quatre locales (3 de l'AC10, 21 de l'AC17) ; sites H1-H11 de l'AC17 dans `BankImportUpload.svelte`, `BankImportList.svelte`, `routes/(app)/bank-import/+page.svelte` (deux clés globales réutilisées) ; `sitesTotal` 2032 → 2063 recompté commentaires masqués et ventilé ; gardes engagées nommées à l'AC10 (`parity_between_locales`, `i18n-repli-divergent-actif`, `lint-i18n-ownership`).
+- [x] **T5 — E2E** (AC1, AC6, AC9) : deux tests dans `frontend/tests/e2e/bank-csv-import.spec.ts` (E1, E2).
+- [x] **T6 — Manuel** (AC12) : `.tex`, `make user` (sous `flock`), seul `user-manual.pdf` committé, PDF aplati contrôlé (table des matières comprise : Makefile de la base à deux passes fixes, C-27-3-42).
+- [x] **T7 — CHANGELOG, `docs/api-external.md`** (AC13).
+- [x] **T8 — Mutations** M1-M27 (vingt-neuf, M10 et M16 en deux) : chacune appliquée, test rouge constaté, restaurée (et le fichier **touché** après restauration : cargo garde sinon le binaire muté) ; tableau au Dev Agent Record.
+- [x] **T9 — Gates** au dernier commit de code : `scripts/test-fast.sh` (sous `flock`), `npm run check`, `npm run lint-i18n-ownership`, `npm run test:unit`, `npm run build`, **E2E complet** (8 échecs attendus de `docs/testing.md`, jugés fichier par fichier). Base remise à zéro avant le gate complet. Les gardes de l'AC10 (`parity_between_locales` dans le gate Rust, `i18n-repli-divergent-actif` et `i18n-keys` dans Vitest) y passent.
 
 ## Tests prescrits
 
@@ -716,11 +716,185 @@ composant (patron du dossier). Aucune dépendance neuve (`sha2`, `serde_json` d�
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), skill `bmad-dev-story`, en autonomie, le 2026-10-12. Worktree
+`/home/gcorbaz/devel/kesh-27-3`, port 3036, bases `kesh_273` / `kesh_e2e_273`.
+
 ### Debug Log References
+
+Journaux hors dépôt, sous `/home/gcorbaz/devel/kesh-gate-logs/` : `27-3-test-fast.log` (gate backend),
+`27-3-front-{check,lint,unit,build}.log`, `27-3-e2e-full.log` (E2E complet), `27-3-e2e-rejeu-sidebar.log` (rejeu seul),
+`27-3-e2e-test-results/` (copie de `test-results/` avant le rejeu), `27-3-mutations.log` et `27-3-mut/<id>.{diff,log}`
+(campagne de mutations), `27-3-make-user-{1,2}.log` (manuel).
+
+Deux incidents d'outillage, sans effet sur le livré : deux substitutions `perl` à délimiteur `|` dont le motif contenait
+`\|` (pris pour une alternance vide) ont inséré du texte en tête de lignes — `post_ubs_profile` de `bank_imports_e2e.rs`,
+puis chaque ligne de `BankImportUpload.svelte` ; les deux réparés avant tout commit (édition ciblée, puis retrait du
+préfixe par `awk`), diff relu hunk par hunk.
 
 ### Completion Notes List
 
+**Livré, par tâche.**
+
+- **T0** — bases `kesh_273` / `kesh_e2e_273` créées (migrations du worktree, seed sur `kesh_273`), recréées avant le
+  gate complet ; `CARGO_TARGET_DIR` du worktree ; `node_modules` déjà en place.
+- **T1** — `routes/bank_import_fingerprint.rs` : `preview_fingerprint` (tableau JSON ordonné : balise
+  `kesh-bank-import-preview/v1`, société, id du compte, IBAN normalisé, hash du fichier, format, profil résolu par
+  déstructuration exhaustive, horodatages liés à `_`), `parse_fingerprint_field` (64 hex minuscules, strict),
+  `check_preview_fingerprint` (absente → accepter ; différente → `409`) ; `normalize_iban` passée `pub(crate)`.
+  `BankImportPreviewResponse.preview_fingerprint` rempli par `preview` (CAMT) et `preview_csv` ; champ multipart
+  `previewFingerprint` avec garde de doublon ; comparaison dans `create` (CAMT, avant la transaction) et `create_csv`
+  (après `resolve_csv_profile`, sur la variable `profile` qui sert au parse, avant le parse). `AppError::BankImportPreviewStale`
+  placée après `BankCsvProfileNotFound`, réponse `409 BANK_IMPORT_PREVIEW_STALE` après celle de `BANK_CSV_NO_PROFILE_MATCH`.
+  Entrée `("bank-import-errors-preview-stale", 1, &[])` à la `TABLE` de `textes_coherents.rs`. Les sites de
+  `bank_imports.rs` appellent le module par son chemin complet : le bloc `use` (touché par la 27-1) est intact.
+- **T2** — `previewFingerprint` au type de réponse ; `BankImportFlags.previewFingerprint`, ajouté par `appendFlags`.
+- **T3** — `BankImportUpload.svelte` : `runPreview(file, accountId, profileId, reason)` (séquence `seq` en variable
+  ordinaire ; `previewReason` posé avant le premier `await` ; avis effacé hors `'stale'` ; cases remises à zéro pour toute
+  raison ; ancien aperçu et instantané retirés ; réponse périmée — succès ou erreur — sans effet, `finally` conditionné) ;
+  instantané `{ file, accountId, bankProfileId résolu, fingerprint }` à la réception ; présélection KF #70 sans relance ;
+  `handleFileSelect` (dépôt), `handleProfileChange` (geste, aussi après un échec) ; `handleConfirm` depuis l'instantané,
+  avis effacé au clic, branche `409` : `isConfirming = false`, avis, `void runPreview(…, 'stale')` ; `reset()` (séquence,
+  `isPreviewing`, `isConfirming`, avis) ; `setError` commun aux deux `catch` ; indicateur `role="status"`, priorité à
+  `isConfirming` ; avis rendu hors du bloc de l'aperçu ; zone de dépôt masquée pendant tout aperçu ; compte, profil et
+  *Annuler* désactivés pendant la confirmation ; `input.value = ''` ; `autoMatchedId` conditionné à `autoMatched`.
+  `BankProfileSelector.svelte` : prop `disabled`. Commentaires d'en-tête (machine d'état) et L3 réécrits.
+- **T4** — 24 clés × 4 locales après `bank-import-labels-bank-profile-auto-detect-placeholder` ; sites H1-H11 ;
+  `sitesTotal` **2032 → 2062**, ventilé au commentaire de `i18n-keys.test.ts`.
+- **T5** — E1 et E2 dans `bank-csv-import.spec.ts` (fixture UBS dérivée en mémoire, années 2027 / 2028, profils à motif
+  vide, ids lus dans l'URL de la fiche du profil).
+- **T6** — manuel : étapes 3 des deux procédures (« avant ou après le dépôt du fichier ») ; encadré réécrit (recalcul
+  aussitôt, y compris après un refus ; cases à reconfirmer ; profil ou compte modifié ailleurs : refus, recalcul, avis
+  neutre ; fichier modifié sur le disque : « selon le navigateur », recalcul ou erreur de connexion répétée, *Annuler*
+  puis redéposer ; *Annuler* garde le profil). `:1743`, `:1784`, `:1826` laissés tels quels. `make user` sous `flock`,
+  deux invocations (la première laissait « Rerun to get » au journal, la seconde aucun) ; seul `user-manual.pdf` committé.
+  PDF aplati : « ne la recalcule pas » 0, « avant de déposer » 0, « Recalcul de la prévisualisation » 1, « selon le
+  navigateur » 1, « avant ou après le dépôt » 2. Table des matières : *Import dans Kesh* 58, *Import avec un profil
+  existant* 61, *Détection des doublons* 62, *Rejet partiel* 63 — chacun égal au numéro imprimé de la page qui porte le
+  titre (pages physiques 59, 62, 63, 64).
+- **T7** — `CHANGELOG.md` : section `## [0.13.2] — Non publié` créée, `### Corrigé`. `docs/api-external.md` : § 7,
+  sous-section *Importer un relevé — l'empreinte d'aperçu* après *Annuler un rapprochement bancaire* (champ, `409`, `400`,
+  angle mort D12, cas D17, ordre des refus et asymétrie) ; § 10, ligne `409 BANK_IMPORT_PREVIEW_STALE` avant `404 NOT_FOUND`.
+- **T8** — 29 mutations sur 29 tuées (tableau ci-dessous). **T9** — gates au dernier commit de code (ci-dessous).
+
+**Écarts à la fiche, déclarés.**
+
+1. `sitesTotal` **2062** et non 2063 : les deux sites H3 (`error-unexpected`) n'en font qu'un, les deux `catch` partageant
+   `setError` (C-27-3-46). V13 (c) tient toujours les deux chemins. **À la fusion avec la 27-1 : 2032 + 30 + 9 = 2071**
+   (la fiche disait 2072).
+2. Une troisième fonction au module, `check_preview_fingerprint` (C-27-3-49), avec son test unitaire.
+3. Le recalcul d'un `409` envoie l'id **résolu** de l'instantané : après un aperçu auto-détecté, la mention
+   « (auto-détecté) » ne réapparaît pas au recalcul (C-27-3-47).
+4. `parse_fingerprint_field` ne tolère aucun blanc (C-27-3-48).
+5. V3 joue la course sur *Auto-détection*, B, C (C-27-3-50) ; trois profils au mock.
+6. I2 et I3 sont **un seul** test (`create_accepts_matching_fingerprint_and_absent_fingerprint`), qui couvre en plus la
+   création CAMT avec l'empreinte de son aperçu : 13 identifiants (I1-I12, I6-bis), **12** tests.
+7. M8 (« sélecteurs **ou** *Annuler* non désactivés ») jouée en trois variantes (compte, profil, *Annuler*), chacune
+   tuée par V9 : comptée une fois.
+8. L'avis du `409` porte le style d'avertissement (`border-warning bg-warning-soft`) — cosmétique, non prescrit.
+
+**Mutations (T8, AC14)** — une par une, arbre propre, motif vérifié unique avant écriture, restauration par
+`git checkout --` puis `touch`, sous `flock` ; journal `kesh-gate-logs/27-3-mutations.log`, diffs et sorties sous
+`27-3-mut/`. Exécutées sur `444ea236`. Frontend : `vitest run` du fichier de test ; serveur : `cargo nextest run -p kesh-api
+--lib --test bank_imports_e2e -E 'test(bank_import_fingerprint) | binary(bank_imports_e2e)'`.
+
+| # | Rouges constatés (au moins le test nommé par la fiche) |
+|---|---|
+| M1 | V1, V2, V3, V5, V7, V6-bis (a) |
+| M2 (`$effect` sur `bankProfileId`) | V4 (deux appels) et 15 autres |
+| M3 | V3, V8, V8 (variante) |
+| M4 | V2, V3 |
+| M5 | V7, V6 « cases » |
+| M6 | V10 |
+| M7 | V6, ses deux variantes, V6-bis (a)(b)(c) |
+| M8a / M8b / M8c | V9 (chacune) |
+| M9 | V11 |
+| M10a | I4, I5, I7 |
+| M10b | I10 |
+| M11 | U2, I4 |
+| M12 | U2, I4 |
+| M13 | U2, I7, I10 |
+| M14 | U2, I7 |
+| M15 | U3, I9 |
+| M16a | I11 (et I6-bis) |
+| M16b | I6-bis |
+| M17 | V12 |
+| M18 | V13, `i18n-keys` (« la collecte ne passe pas à vide », `sitesTotal`) |
+| M19 | V8, V8 (variante) |
+| M20 | V6-bis (a), (b) |
+| M21 | V3 |
+| M22 | V8 (variante) |
+| M23 | V1 |
+| M24 | V6 |
+| M25 | V6-bis (c) |
+| M26 | V6 « cases » |
+| M27 | V9, V6-bis (b) |
+
+**29/29 tuées, aucune survivante, aucune déclarée équivalente.** La variante « profil relu hors transaction mais
+présent », non comptée par la fiche (C-27-3-23), n'a pas été jouée.
+
+**Gates, au dernier commit de code `444ea236`** (les commits suivants — manuel, CHANGELOG, `api-external.md`, fiche,
+registre, prompt — ne touchent aucun code), bases `kesh_273` et `kesh_e2e_273` recréées juste avant :
+
+- `scripts/test-fast.sh` (fmt + clippy `-D warnings` + nextest, sous `flock`) : vert — **3436 exécutés, 3436 verts,
+  6 ignorés** (base `a2743fd4` : 3419 exécutés, chiffre du `CLAUDE.md` ; +17 = 5 tests unitaires du module, 12 tests
+  d'intégration — `#[sqlx::test]` de `bank_imports_e2e.rs` 33 → 45).
+- Frontend : `npm run check` 0 erreur, 28 avertissements, aucun sur un fichier touché par la story ;
+  `npm run lint-i18n-ownership` vert ; `npm run test:unit` **1353 verts sur 130 fichiers** (base 1334 / 129 : +19 = 18
+  dans `BankImportUpload.test.ts`, 1 dans `bank-import.api.test.ts`) ; `npm run build` vert.
+- **E2E complet** (port 3036, recette `docs/testing.md` intégrale, `smtpConfigured: true`) : **263 verts, 8 rouges,
+  19 ignorés**. Les 8, fichier par fichier : les sept de la KF-029 (`mode-expert.spec.ts:26` et `:41`,
+  `onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) et `sidebar-navigation.spec.ts:75`
+  — pollution d'état répertoriée, **verte rejouée seule** (1/1). Les deux de la KF-045 sont passés (run après 12:00 UTC).
+  Avant la campagne, E1, E2 et les specs d'import existantes (`bank-csv-import`, `bank-import`, `bank-import-confirms`)
+  avaient tourné ensemble : 23 verts, 2 ignorés — elles passent par l'aperçu et envoient donc l'empreinte.
+
+**Décomptes, recomptés depuis la source** (périmètre `a2743fd4..HEAD`) : 24 clés neuves par locale
+(`git diff a2743fd4 -- …/messages.ftl | grep -cE '^\+bank-import-'` → 24 × 4) ; `i18nMsg(` : `BankImportUpload.svelte`
+23 → 48, `BankImportList.svelte` 1 → 5, `+page.svelte` 3 → 4 ; tests : 5 `#[test]` dans le module neuf, 12
+`#[sqlx::test]`, 18 `it(` dans `BankImportUpload.test.ts`, 1 dans `bank-import.api.test.ts`, 2 E2E ; choix au registre
+C-27-3-1 à 50 (`grep -c "^### C-27-3-"` → 50). AC15 : aucun fichier sous `migrations/` ni `test-schema/`, ni
+`post_restore.rs`, ni `Cargo.toml` au diff ; 80 migrations, inchangé.
+
+**Fichiers communs avec la 27-1 — conflits attendus à la fusion** : `bank_imports.rs` (hunks distincts, bloc `use`
+intact), `errors.rs` (variante et réponse près de `BankCsvProfileNotFound`), les quatre `.ftl` (bloc après
+l'auto-détection), `textes_coherents.rs` (**même `TABLE`** : union), `bank_imports_e2e.rs` (ajouts en fin de fichier
+des deux côtés : union), `i18n-keys.test.ts` (**2071**, commentaires des deux), `bank-import.api.ts` (+ test),
+`BankImportList.svelte` (en-têtes contre `data-testid` du lien, six lignes d'écart), `CHANGELOG.md` (section 0.13.2 des
+deux côtés : union), `docs/api-external.md` (§ 10 : union des deux lignes), `user-manual.tex` (faible) et
+**`user-manual.pdf` (conflit binaire certain : régénérer après fusion par `make user`)**, `sprint-status.yaml` (section
+`epic-27` : union), registre des choix (à fusionner dans `epic-27-choix-autonomes.md`). Avec la 27-2 : non relevé par
+cette story (sa branche n'a pas été lue).
+
 ### File List
+
+- `CHANGELOG.md`
+- `crates/kesh-api/src/errors.rs`
+- `crates/kesh-api/src/routes/bank_import_fingerprint.rs` (neuf)
+- `crates/kesh-api/src/routes/bank_imports.rs`
+- `crates/kesh-api/src/routes/mod.rs`
+- `crates/kesh-api/tests/bank_imports_e2e.rs`
+- `crates/kesh-api/tests/textes_coherents.rs`
+- `crates/kesh-i18n/locales/de-CH/messages.ftl`
+- `crates/kesh-i18n/locales/en-CH/messages.ftl`
+- `crates/kesh-i18n/locales/fr-CH/messages.ftl`
+- `crates/kesh-i18n/locales/it-CH/messages.ftl`
+- `docs/api-external.md`
+- `docs/manual/fr/user-manual.pdf`
+- `docs/manual/fr/user-manual.tex`
+- `frontend/src/lib/features/bank-import/BankImportList.svelte`
+- `frontend/src/lib/features/bank-import/BankImportUpload.svelte`
+- `frontend/src/lib/features/bank-import/BankImportUpload.test.ts` (neuf)
+- `frontend/src/lib/features/bank-import/BankProfileSelector.svelte`
+- `frontend/src/lib/features/bank-import/bank-import.api.test.ts`
+- `frontend/src/lib/features/bank-import/bank-import.api.ts`
+- `frontend/src/lib/features/bank-import/bank-import.types.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/src/routes/(app)/bank-import/+page.svelte`
+- `frontend/tests/e2e/bank-csv-import.spec.ts`
+- `_bmad-output/implementation-artifacts/27-3-profil-apres-apercu.md`
+- `_bmad-output/implementation-artifacts/27-3-review-prompt-p1.md` (neuf)
+- `_bmad-output/implementation-artifacts/epic-27-choix-autonomes-27-3.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
@@ -908,3 +1082,11 @@ La remédiation ne touche que la fiche, le registre et le registre de sprint : *
 **Trend complet de la validation** : P1 (Sonnet) 1 HIGH + 3 MEDIUM → P2 (Opus) 4 MEDIUM → P3 (Sonnet) 1 MEDIUM →
 P4 ciblée (Haiku) 1 MEDIUM réel, 1 réfuté → P5 ciblée (Haiku) 1 MEDIUM de décompte → close. Signal D5 levé en P2 et
 P3, déclaré à Guy : « ne pas découper » (2026-10-12).
+
+### Développement (2026-10-12)
+
+- 2026-10-12 — Développement (bmad-dev-story, Opus 5.5, autonomie) : T0-T9 faites, 18 AC ; empreinte d'aperçu serveur,
+  écran réécrit, 24 clés × 4, manuel, CHANGELOG, doc d'API ; 29/29 mutations tuées ; gates au dernier commit de code
+  `444ea236` (nextest 3436/3436, Vitest 1353/1353, E2E 263 verts et les 8 rouges attendus) ; choix C-27-3-46 à 50 ;
+  huit écarts déclarés au Dev Agent Record. Statut `review`. Prompt de la revue de code P1 :
+  `27-3-review-prompt-p1.md` (Sonnet, lentilles B, E, A).
