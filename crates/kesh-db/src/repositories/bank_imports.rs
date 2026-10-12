@@ -7,12 +7,21 @@
 //! caller supprime l'entête `bank_imports` ET toutes les transactions
 //! déjà insérées (test AC #17 `create_with_transactions_rolls_back_on_constraint_violation`).
 //!
-//! La contrainte UNIQUE `(company_id, file_hash)` bloque le réimport
-//! silencieux d'un même fichier (mappée `409 BANK_IMPORT_DUPLICATE_FILE`
-//! côté API via `map_db_error` → `DbError::UniqueConstraintViolation`).
+//! Le réimport d'un même fichier n'est **pas** bloqué par une contrainte de
+//! base : l'unicité `(company_id, file_hash)` a été retirée par la Story 8-3
+//! (`20260507000001_bank_imports_relax_hash_unique.sql`, index non unique
+//! `idx_bank_imports_company_hash`). Le blocage est **applicatif** : la route
+//! cherche l'empreinte par [`find_by_company_and_hash`] et refuse en
+//! `422 BANK_IMPORT_DUPLICATE_FILE` sans `confirmDuplicateFile=true`.
+//!
+//! Story 27-1 (#632) : [`delete_unreconciled_in_tx`] supprime un import entier,
+//! avec ses transactions, tant qu'aucune n'est rapprochée — ce qui lève aussi ce
+//! blocage applicatif pour le même fichier.
 
 use sqlx::mysql::MySqlPool;
 use sqlx::{MySql, QueryBuilder, Transaction};
+
+use chrono::NaiveDateTime;
 
 use crate::entities::bank_import::{BankImport, NewBankImport};
 use crate::entities::bank_transaction::{BankTransaction, NewBankTransaction};
@@ -291,4 +300,184 @@ pub async fn find_by_id_for_company(
     .fetch_optional(pool)
     .await
     .map_err(map_db_error)
+}
+
+/// Issue de [`delete_unreconciled_in_tx`] (Story 27-1, #632).
+#[derive(Debug)]
+pub enum DeleteBankImportOutcome {
+    /// L'import et ses transactions sont supprimés.
+    Deleted(DeletedBankImport),
+    /// Import inconnu, ou d'une autre société.
+    NotFound,
+    /// Au moins une transaction est rapprochée : rien n'est supprimé.
+    HasReconciled {
+        /// Transactions rapprochées au sens de [`is_reconciled`].
+        reconciled_count: i64,
+        /// Transactions de l'import, comptées sous verrou.
+        transaction_count: i64,
+    },
+}
+
+/// Ce qu'une suppression réussie a retiré, lu sous verrou.
+#[derive(Debug)]
+pub struct DeletedBankImport {
+    /// L'entête tel qu'il était, lu sous verrou.
+    pub import: BankImport,
+    /// Lignes supprimées (par la cascade), comptées sous verrou.
+    pub transaction_count: i64,
+    /// Dont rejetées (`auto_match_rejected_at` non nul).
+    pub rejected_count: i64,
+}
+
+/// **« Rapprochée »** — la définition fermée de la Story 27-1 (AC1) : une
+/// transaction bancaire est rapprochée si et seulement si `status <> 'pending'`
+/// **ou** `matched_entry_id IS NOT NULL`.
+///
+/// Elle s'appuie sur l'inventaire clos des écrivains de `bank_transactions` :
+/// les cinq chemins qui rapprochent posent les deux colonnes ensemble, le seul
+/// qui les retire (`reconciliation_cancel::cancel_in_tx`) les retire ensemble,
+/// et le **rejet** (`reject_batch`) ne touche aucune des deux — une transaction
+/// rejetée n'est donc **pas** rapprochée. La disjonction couvre en plus deux
+/// états qu'aucun chemin vivant ne produit (`reconciled` sans lien, `pending`
+/// avec lien).
+///
+/// ⚠️ **Écrite deux fois, et seulement deux** : ici, et côté écran dans
+/// `frontend/src/lib/features/bank-import/bank-import-deletion.ts`
+/// (`isReconciled`). L'écran n'est qu'une commodité : le serveur seul décide.
+pub fn is_reconciled(status: &str, matched_entry_id: Option<i64>) -> bool {
+    status != "pending" || matched_entry_id.is_some()
+}
+
+/// Supprime l'import `import_id` de la société `company_id` **avec toutes ses
+/// transactions**, à condition qu'**aucune** ne soit rapprochée (au sens de
+/// [`is_reconciled`]) — Story 27-1, #632. Un import sans transaction est donc
+/// toujours supprimable.
+///
+/// **Ne commit pas** (comme [`create_with_transactions`]) : l'appelant y ajoute
+/// la trace d'audit `bank_import.deleted` et conclut. Sur `NotFound` et
+/// `HasReconciled`, rien n'a été écrit ; l'appelant doit `rollback` sans
+/// tarder, la transaction tenant l'entête et les lignes sous `FOR UPDATE`.
+///
+/// # Ordre des verrous, et pourquoi
+///
+/// Aucune lecture ordinaire avant le premier verrou (règle de la 15-8a : elle
+/// ouvrirait la vue cohérente avant l'attente, et la suite ne verrait pas le
+/// commit d'une acceptation concurrente) :
+///
+/// 1. l'entête, `FOR UPDATE` (scopé société) — absent ⇒ `NotFound` ;
+/// 2. les transactions de l'import, `FOR UPDATE`, **par identifiant
+///    croissant**, par l'index `idx_bank_transactions_import` (sous
+///    REPEATABLE READ, un plan par l'index `company_id` verrouillerait toutes
+///    les lignes de la société examinées). Une lecture **verrouillante** lit la
+///    version validée la plus récente : si une acceptation a écrit avant, on
+///    attend son commit puis on la voit rapprochée ;
+/// 3. le comptage des rapprochées se fait **sur ce résultat**, pas par une
+///    seconde requête — > 0 ⇒ `HasReconciled`, sans rien écrire ;
+/// 4. `DELETE` de l'entête (`rows_affected() != 1` ⇒ `NotFound`) ; les
+///    transactions partent par `fk_bank_transactions_import … ON DELETE
+///    CASCADE`, sans `DELETE` explicite.
+///
+/// Le verrou de l'entête n'est pas nécessaire à la correction (le contrôle de
+/// `rows_affected()` suffit contre une seconde suppression) : il fixe l'ordre
+/// import → transactions et réduit la fréquence des interblocages. Un
+/// interblocage (1213) reste possible contre un lot d'acceptation, qui
+/// verrouille ses transactions dans l'ordre des propositions : `map_db_error`
+/// le garde en `DbError::Sqlx`, que reconnaît `crate::retry::is_deadlock_error`,
+/// et la route le rejoue. Le lot de rejet, lui, verrouille par identifiant
+/// croissant (Story 27-1, AC4-bis) : pas de cycle avec lui.
+///
+/// Conséquence connue, sans cycle : quand l'import supprimé est le plus récent
+/// de l'installation, le verrou de trou de l'étape 2 sur `import_id` va
+/// jusqu'au supremum d'un index non scopé par société — toute création
+/// d'import, toutes sociétés confondues, attend alors la fin de la suppression.
+///
+/// Ce raisonnement sur les lectures verrouillantes vaut sous **MariaDB 10.11**
+/// (`docker-compose.yml`, CI). Avec `innodb_snapshot_isolation` (actif par
+/// défaut depuis 11.6), une lecture verrouillante qui rencontre une version
+/// postérieure à une vue ouverte rend `ER_CHECKREAD` (1020) — sans effet sur le
+/// code nominal (aucune vue n'est ouverte avant les verrous), à revoir à la
+/// montée de version.
+///
+/// # Angles morts assumés
+///
+/// - Un import créé pendant la suppression n'est pas concerné (autre
+///   identifiant) ; deux imports du même fichier se suppriment un par un.
+/// - Un lot d'acceptation ou de rejet préparé avant la suppression : validée
+///   avant son pré-vol, le lot entier rend `400 VALIDATION_ERROR` ; validée
+///   après, la ligne sort en `failed[]` (`BANK_TRANSACTION_NOT_FOUND` ou
+///   `RECONCILIATION_ALREADY_RECONCILED`). Non corrigé ici (#634).
+/// - Une création concurrente du même compte juge sa détection de doublons sur
+///   une vue fixée avant la suppression : elle peut ignorer des lignes qui
+///   n'existent plus. Fenêtre de quelques millisecondes, non fermée.
+/// - La restauration supprime les lignes de `bank_transactions` puis celles de
+///   `bank_imports` (`backup.rs`, boucle sur `TABLES_TO_TRUNCATE`), la
+///   suppression verrouille l'entête puis les lignes : un interblocage est
+///   possible, rejoué côté suppression par `retry_app_on_deadlock`. La
+///   restauration n'étant exclusive que des autres imports (Story 15-12b), une
+///   suppression concurrente d'une restauration n'est pas gardée au-delà.
+/// - Une sauvegarde prise pendant une suppression peut porter des transactions
+///   orphelines (#633 ; export global CSV, #465).
+pub async fn delete_unreconciled_in_tx(
+    tx: &mut Transaction<'_, MySql>,
+    company_id: i64,
+    import_id: i64,
+) -> Result<DeleteBankImportOutcome, DbError> {
+    // Étape 1 — l'entête, sous verrou : première instruction de la transaction.
+    let import = sqlx::query_as::<_, BankImport>(&format!(
+        "SELECT {COLUMNS} FROM bank_imports WHERE id = ? AND company_id = ? FOR UPDATE"
+    ))
+    .bind(import_id)
+    .bind(company_id)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+    let Some(import) = import else {
+        return Ok(DeleteBankImportOutcome::NotFound);
+    };
+
+    // Étape 2 — les transactions, sous verrou, par identifiant croissant.
+    let rows: Vec<(i64, String, Option<i64>, Option<NaiveDateTime>)> = sqlx::query_as(
+        "SELECT id, status, matched_entry_id, auto_match_rejected_at \
+         FROM bank_transactions FORCE INDEX (idx_bank_transactions_import) \
+         WHERE company_id = ? AND import_id = ? ORDER BY id FOR UPDATE",
+    )
+    .bind(company_id)
+    .bind(import_id)
+    .fetch_all(&mut **tx)
+    .await
+    .map_err(map_db_error)?;
+
+    // Étape 3 — comptage sur le résultat de la lecture verrouillante.
+    let transaction_count = rows.len() as i64;
+    let reconciled_count = rows
+        .iter()
+        .filter(|(_, status, matched, _)| is_reconciled(status, *matched))
+        .count() as i64;
+    if reconciled_count > 0 {
+        return Ok(DeleteBankImportOutcome::HasReconciled {
+            reconciled_count,
+            transaction_count,
+        });
+    }
+    let rejected_count = rows
+        .iter()
+        .filter(|(_, _, _, rejected)| rejected.is_some())
+        .count() as i64;
+
+    // Étape 4 — l'entête ; les transactions suivent par la cascade.
+    let deleted = sqlx::query("DELETE FROM bank_imports WHERE id = ? AND company_id = ?")
+        .bind(import_id)
+        .bind(company_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(map_db_error)?;
+    if deleted.rows_affected() != 1 {
+        return Ok(DeleteBankImportOutcome::NotFound);
+    }
+
+    Ok(DeleteBankImportOutcome::Deleted(DeletedBankImport {
+        import,
+        transaction_count,
+        rejected_count,
+    }))
 }
