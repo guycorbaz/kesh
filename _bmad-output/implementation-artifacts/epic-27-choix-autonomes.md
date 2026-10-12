@@ -152,3 +152,63 @@ en autonomie, sur `aadace40` (kickoff de l'Epic 27).
   sous `### Ajouté`. La ligne de feuille de route v0.13.2 du README reste à la release (orchestrateur) ; la
   story met à jour la ligne *Import bancaire* de la section *Fonctionnalités*.
 - **Réversible** : oui.
+
+### Révision de C-27-1-7 (remédiation P1, 2026-10-12)
+
+- **Constat** (revue P1, R3/F6) : la prémisse est quasi vide. Un compte bancaire ne s'archive pas tant qu'il porte
+  **une** transaction (`412 BANK_ACCOUNT_HAS_TRANSACTIONS`) : un compte archivé n'a donc que des imports à zéro
+  transaction, ou des données antérieures à la garde. Le cas réel est l'inverse — supprimer rend archivable.
+- **Retenu** : C-27-1-7 est **remplacé par C-27-1-12** ; la phrase du manuel sur le compte archivé est retirée de
+  l'AC13. La suppression continue de ne pas regarder l'archivage (rien ne change au code).
+
+### C-27-1-12 — La suppression lève la garde d'archivage d'un compte bancaire, et c'est accepté (arbitrage de l'orchestrateur)
+
+- **Contexte** : `count_transactions_for_bank_account` (`repositories/bank_accounts.rs:729-751`, « comptage
+  inconditionnel (auditabilité CO Art. 958f) ») fait refuser l'archivage en `412` dès qu'une ligne de
+  `bank_transactions` existe. Jusqu'ici aucune ligne ne disparaissait ; la story en supprime.
+- **Retenu** : on accepte que supprimer les imports non rapprochés d'un compte le rende archivable. Des
+  transactions jamais rapprochées ne sont pas des écritures (aucune pièce au journal) ; la suppression laisse sa
+  propre trace `bank_import.deleted` (fichier, empreinte, période, nombres) : l'auditabilité passe par la trace, non
+  par la conservation des lignes. AC8 le dit, test H6 (archivage refusé avant, permis après), une phrase au manuel,
+  une ligne à `api-external.md`, une phrase au doc-comment de la garde.
+- **Écartées** : faire compter à la garde les imports supprimés (exigerait de conserver une trace en table, donc
+  une migration) ; refuser la suppression sur un compte dont c'est le dernier import (contredit la décision du
+  Project Lead).
+- **Réversible** : oui.
+
+### C-27-1-13 — Sauvegarde prise pendant une suppression : angle mort préexistant, renvoyé à #465 (arbitrage de l'orchestrateur)
+
+- **Contexte** (revue P1, F5) : l'export `.keshbackup` lit ses tables une à une, sans instantané commun
+  (`admin_backup/export.rs:59-62`) ; `bank_transactions` est lue avant `bank_imports`. Une suppression validée
+  entre les deux donne une sauvegarde aux transactions orphelines, que la restauration (sous
+  `FOREIGN_KEY_CHECKS = 0`) recréerait.
+- **Retenu** : pas de correctif ici ; l'AC8 ne promet plus rien d'une sauvegarde prise **pendant** une
+  suppression, et l'angle mort renvoie à [#465](https://github.com/guycorbaz/kesh/issues/465), ouverte pour ce
+  défaut général.
+- **Réversible** : sans objet.
+
+### C-27-1-14 — Le lot de rejet verrouille par identifiant croissant (traité dans la story)
+
+- **Contexte** (revue P1, F3) : `reject_batch` pose ses `UPDATE` dans l'ordre reçu et `post_reject` n'est pas
+  rejouée ; contre la suppression (verrous par identifiant croissant), un lot `[7, 3]` forme un cycle dont le rejet
+  serait la victime probable, en `500`.
+- **Retenu** : le correctif est borné — **trier** les identifiants avant `reject_batch`
+  (`routes/reconciliation.rs:3079`) ; les doublons étant déjà refusés en `400`, l'ensemble traité ne change pas.
+  Deux ordres croissants ne forment pas de cycle, et le rejet ne touche pas `bank_imports`. Effets visibles écrits
+  (ordre de `rejected[]`/`failed[]`, `entity_id` de la trace = plus petit identifiant rejeté), test H7,
+  mutation M17, ligne `### Modifié` au CHANGELOG. AC4-bis.
+- **Écartées** : envelopper `post_reject` du rejeu (extraction d'une fonction « une tentative » sous verrou nommé,
+  patron `post_manual` : plus lourd, et le rejet resterait la victime d'un cycle qu'on sait fermer) ; écrire
+  l'angle mort et ouvrir une issue (le correctif tient en une ligne).
+- **Réversible** : oui.
+
+### C-27-1-15 — La preuve de la course : motifs de synchronisation et statut des mutations corrigés
+
+- **Contexte** (revue P1, R1/F1/F2, R2/F9) : le motif `["bank_transactions"]` de l'AC3 (a) ne voyait pas le
+  `DELETE FROM bank_imports` bloqué sous M3 et pouvait attraper en vol le `SELECT` muté ; le motif de l'AC3 (c) ne
+  voyait pas la seconde suppression bloquée sous M14 ; M6 était équivalente par `rollback`, M1 mal attribuée à D2.
+- **Retenu** : (a) `["bank_transactions", "FOR UPDATE"]`, M3 rouge par **absence du motif** (panique à 10 s,
+  déterministe), écrit comme tel ; (c) `["FOR UPDATE"]`, M14 et M15 **équivalentes** chacune (l'un ou l'autre
+  contrôle suffit à `NotFound`), M14+M15 rouge par l'assertion ; M6 retirée du tableau avec sa raison ; M1 → D4,
+  H2 (H2 pose `reconciled` sans lien). Nouvelles mutations M16 (`canManage`), M17 (tri du rejet).
+- **Réversible** : oui (fiche).
