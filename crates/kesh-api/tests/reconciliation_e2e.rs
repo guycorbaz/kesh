@@ -1721,6 +1721,112 @@ async fn post_reject_processes_the_batch_by_increasing_id(pool: MySqlPool) {
     assert_eq!(traced, vec![lo, hi], "details_json trié");
 }
 
+/// Story 27-1 (AC4-bis, H7-bis — revue de code P1, E5) — ce que H7 ne voit
+/// pas : l'**ordre des verrous**. H7 lit les sorties ; une variante qui
+/// traiterait le lot dans l'ordre reçu puis trierait ses sorties y resterait
+/// verte, en rouvrant le cycle avec la suppression d'un import.
+///
+/// Montage : une transaction de test tient `lo` ; le lot `[hi, lo]` part en
+/// tâche. Traité par identifiant croissant, il bute sur `lo` **avant** d'avoir
+/// touché `hi` : une sonde `NOWAIT` sur `hi` doit donc réussir. Traité dans
+/// l'ordre reçu, il aurait déjà écrit `hi` et la sonde échouerait.
+///
+/// `failed[]` n'est pas asserté : le pré-vol (`find_pending_by_ids`) refuse
+/// en `400` tout lot portant une ligne non `pending`, si bien que `failed[]`
+/// n'est atteignable que par une course entre ce pré-vol et le verrou du
+/// compte — son ordre suit celui de la boucle, que ce test tient.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_reject_locks_the_batch_by_increasing_id(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("reject_lock_order"),
+        day,
+        day,
+        vec![
+            make_new_tx(
+                ctx.company_id,
+                ctx.bank_account_id,
+                day,
+                Some(day),
+                dec!(100.00),
+                "CHF",
+                "REF-1",
+                None,
+            ),
+            make_new_tx(
+                ctx.company_id,
+                ctx.bank_account_id,
+                day,
+                Some(day),
+                dec!(200.00),
+                "CHF",
+                "REF-2",
+                None,
+            ),
+        ],
+    )
+    .await;
+    let (lo, hi) = (tx_ids[0].min(tx_ids[1]), tx_ids[0].max(tx_ids[1]));
+    let app = spawn_app(pool.clone()).await;
+
+    let mut hold = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM bank_transactions WHERE id = ? FOR UPDATE")
+        .bind(lo)
+        .fetch_one(&mut *hold)
+        .await
+        .unwrap();
+
+    let client = app.client.clone();
+    let url = app.url("/api/v1/reconciliation/reject");
+    let jwt = ctx.jwt.clone();
+    let body = serde_json::json!({
+        "bankAccountId": ctx.bank_account_id,
+        "bankTransactionIds": [hi, lo],
+    });
+    let reject = tokio::spawn(async move {
+        let resp = client
+            .post(url)
+            .bearer_auth(jwt)
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        let status = resp.status().as_u16();
+        (status, resp.json::<Value>().await.unwrap_or(Value::Null))
+    });
+
+    let bloque = kesh_db::test_fixtures::attendre_une_requete_en_cours(
+        &pool,
+        &["UPDATE bank_transactions", "auto_match_rejected_at"],
+        || reject.is_finished(),
+    )
+    .await;
+    assert!(
+        bloque,
+        "le lot devait attendre la ligne tenue — le montage ne prouve rien sinon"
+    );
+    let hi_libre = kesh_db::test_fixtures::sonde_verrou_nowait(
+        &pool,
+        "SELECT id FROM bank_transactions WHERE id = ? FOR UPDATE NOWAIT",
+        hi,
+    )
+    .await;
+
+    hold.rollback().await.unwrap();
+    let (status, body) = reject.await.unwrap();
+    assert!(
+        hi_libre,
+        "le lot [hi, lo] a verrouillé hi avant lo : il n'est pas traité par identifiant croissant"
+    );
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["rejected"].as_array().unwrap().len(), 2, "{body}");
+}
+
 /// AC #54 — POST reject sur tx déjà reconciled → failed +
 /// auto_match_rejected_at intact.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
