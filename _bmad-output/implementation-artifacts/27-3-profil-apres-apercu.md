@@ -1,6 +1,6 @@
 # Story 27.3 : changer de profil après l'aperçu recalcule l'aperçu — et le serveur refuse un import dont le profil, le compte ou le fichier a changé depuis l'aperçu
 
-Status: review
+Status: done
 
 <!-- Fiche créée le 2026-10-12 par bmad-create-story, en autonomie (aucune question). Choix au registre
 `epic-27-choix-autonomes.md`, § *Story 27-3* (C-27-3-1 à C-27-3-59) — tenus d'abord dans
@@ -873,6 +873,14 @@ deux côtés : union), `docs/api-external.md` (§ 10 : union des deux lignes), `
 `epic-27` : union), registre des choix (à fusionner dans `epic-27-choix-autonomes.md`). Avec la 27-2 : non relevé par
 cette story (sa branche n'a pas été lue).
 
+**Clôture (2026-10-12, agent de finalisation, Opus 5.5).** Remédiation de la revue de code P3 ciblée (MEDIUM-1 et
+MEDIUM-2 : `BankImportUpload.test.ts` ; MEDIUM-3 : manuel ; LOW-1 et LOW-2 : angles morts C-27-3-58), mutations
+M41-M43 (survivantes avant, tuées après ; cumul 46/46), rebase sur la 27-1 et la 27-2 avec conflits réunis, registre
+versé par union, `user-manual.pdf` régénéré. Gates au dernier commit de code, arbre rebasé : nextest **3488/3488**
+(6 ignorés) ; Vitest **1390 sur 134 fichiers** ; check 0 erreur ; build vert ; E2E **266 verts, 7 rouges = KF-029**.
+Journaux : `kesh-gate-logs/27-3-final-{test-fast,front-check,front-lint,front-unit,front-build,e2e-full,e2e-backend}.log`.
+Détail au Change Log (*Revue de code P3 ciblée*, *Rebase*, *Synthèse*).
+
 ### File List
 
 - `CHANGELOG.md`
@@ -1212,3 +1220,82 @@ CHANGELOG ne décrit pas le cas d'un profil supprimé. PDF aplati : la phrase ne
 `frontend/src/lib/features/bank-import/BankImportUpload.svelte` (`loadProfiles`, `profilesSeq`). La boucle n'est donc
 pas close : passe **P3 ciblée** (Haiku, une lentille, diff aplati `f8241d38..5632a2bf`) — prompt versionné
 `27-3-review-prompt-p3-ciblee.md`, rapport attendu `kesh-gate-logs/27-3-review-p3-ciblee.md`. Choix C-27-3-57.
+
+### Revue de code P3 ciblée (2026-10-12) — Haiku, une lentille ; remédiation Opus 5.5
+
+**Trend** : P2 ciblée = 1 MEDIUM, 4 LOW → **P3 ciblée = 0 CRITICAL, 0 HIGH, 3 MEDIUM, 2 LOW**. Diff relu :
+`f8241d38..5632a2bf`, aplati. Rapport : `kesh-gate-logs/27-3-review-p3-ciblee.md`. **Aucun des cinq ne porte sur une
+ligne de production** : deux MEDIUM de test, un MEDIUM de manuel, deux LOW écrits en angles morts.
+
+| Finding | Sév. | Traitement |
+|---|---|---|
+| MEDIUM-1 — V6-quater (séquence) : la relecture périmée contient A, donc une remise à `null` placée avant la garde de séquence survit | MEDIUM | La relecture périmée rend `[C]` seul, la récente `[A]` ; assertion `select.value === String(A)`. **M41** (remise à `null` avant la garde) tuée |
+| MEDIUM-2 — aucun test ne lit la valeur du sélecteur après une relecture où le profil survit | MEDIUM | V6-ter asserte `select.value === String(A)` après la relecture `[A renommé, B]`. **M42** (remise à `null` inconditionnelle) et **M43** (comparaison contre un id chaîne) tuées par V6-ter et V6-quater (séquence) |
+| MEDIUM-3 — manuel : « pour l'auto-détection, redéposez le fichier » contredit l'encadré | MEDIUM | **Constat juste à moitié, correction proposée fausse.** Profil encore présent : *Auto-détection* se choisit au sélecteur, sans redépôt. Profil supprimé : le sélecteur est **déjà** revenu sur *Auto-détection* et re-choisir l'option sélectionnée n'émet pas `change` (`BankProfileSelector.svelte`, `onchange`) — la formulation de la lentille y aurait promis un geste sans effet. Le manuel distingue les deux cas (C-27-3-59) ; cohérent avec l'encadré (« inutile de redéposer le fichier pour essayer un autre profil ») |
+| LOW-1 — une relecture réussie peut être écartée au profit d'une plus récente qui échoue | LOW | **Angle mort assumé**, sans code (C-27-3-58) |
+| LOW-2 — `listBankProfiles(1, 50)` contre un plafond serveur de 200 | LOW | **Angle mort assumé**, sans code (C-27-3-58) : défaut d'affichage au-delà de 50 profils, l'envoi reste fidèle à l'instantané. `per_page` 200 non fait — ce serait du code de production, donc une P4 ciblée de plus |
+
+**Contre-épreuve** : M41, M42 et M43 jouées aussi contre les tests d'**avant** la remédiation — 3/3 **survivantes**
+(24/24 verts) : les constats MEDIUM-1 et MEDIUM-2, lus par la lentille sans exécution, sont confirmés. Après : 3/3
+tuées. Journal : `kesh-gate-logs/27-3-mutations.log` (restauration `git checkout --` puis `touch`, sous `flock`).
+Cumul de la story : **46/46**.
+
+**Propagation** : `grep -rnF -i "redéposez"` sur le dépôt → le `.tex` (corrigé) ; les autres occurrences sont celles du
+refus de signe (`:1784`, catalogue), sans rapport, et les prompts archivés.
+
+**La remédiation ne touche aucune ligne de production** (un fichier de test, le manuel, le registre) : selon la règle
+de la passe ciblée, **la boucle de revue est close**.
+
+### Rebase sur `origin/main` — 27-1 (`f9725c29`) et 27-2 (`e04122dc`) (2026-10-12)
+
+27 commits rejoués, conflits **réunis** :
+
+- `sprint-status.yaml` : en-têtes `last_updated` par union ; section `epic-27` de main (27-1, 27-2 `done`, 27-4) avec
+  la ligne 27-3 de la branche.
+- `CHANGELOG.md` : une seule section `[0.13.2] — Non publié`, un seul bloc « ⚠️ À faire » (celui de la 27-2), une
+  rubrique par type ; la puce #626 rejoint *Corrigé*.
+- `bank_imports_e2e.rs` : ajouts des deux côtés en fin de fichier, réunis. **Collision** : `write_counts` défini par la
+  27-2 et par la 27-3, même sémantique (imports, transactions, audit) — celui de la 27-3 retiré (DRY).
+- `textes_coherents.rs` : union de G9 (27-1, 27-2, puis la ligne `bank-import-errors-preview-stale`).
+- `bank-import.api.test.ts` : les deux tests gardés. `i18n-keys.test.ts` : commentaires réunis, `sitesTotal`
+  2043 + 30 = **2073**, **confirmé par la garde** (vert sur l'arbre rebasé).
+- `routes/bank_imports.rs`, `errors.rs`, les quatre `.ftl`, `BankImportUpload.svelte`, `BankImportList.svelte` :
+  fusion automatique, relue. Ordre des refus : l'empreinte (`409`) est comparée avant le parse, donc **avant** les
+  `422 BANK_IMPORT_UNSUPPORTED_CURRENCY` et `422 BANK_CSV_MIXED_CURRENCIES` de la 27-2 — écrit au § 7
+  d'`api-external.md` (la 27-2 n'y avait rien écrit). Les apports de main aux deux composants (`data-testid` du lien,
+  message de devise) sont présents.
+- Registre : `epic-27-choix-autonomes-27-3.md` versé **par union** dans `epic-27-choix-autonomes.md` (§ *Story 27-3*,
+  59 choix ; les 65 de main intacts, `diff` de l'en-tête vide), puis supprimé ; renvois vivants (fiche, ce registre)
+  mis à jour, prompts archivés laissés tels quels (précédent de la 27-2). Les SHA cités plus haut sont ceux d'avant le
+  rebase.
+- Manuels : `user-manual.tex` fusionné sans conflit ; `user-manual.pdf` régénéré par `make user` (Makefile de main,
+  2 passes, stable, 97 pages) ; contrôle du PDF aplati : *Supprimer l’import* (27-1), *colonne Devise* (27-2),
+  « Recalcul de la prévisualisation », « la choisir de nouveau ne relance rien », « plus aucun profil n’existe »
+  présents. `admin-manual.tex` identique à main : son PDF n'est pas touché.
+- Aucune migration dans la branche ; `kesh_version_min_required` n'apparaît pas au diff.
+
+**Gates au dernier commit de code** (arbre rebasé, bases `kesh_273` et `kesh_e2e_273` recréées et migrées — 80 —,
+`kesh_273` seedée, conteneur non touché ; tout sous `flock`) :
+
+- `scripts/test-fast.sh` : vert — **3488 exécutés, 3488 verts, 6 ignorés** (3471 de main + 17 de la story).
+- Frontend : `npm run check` 0 erreur, 29 avertissements, aucun sur un fichier de la story (le 29e est dans
+  `BankProfileForm.svelte`, touché par la 27-2) ; `lint-i18n-ownership` PASS ; `npm run test:unit` **1390 verts sur
+  134 fichiers** (1364 / 132 de main + 26 / 2 de la story) ; `npm run build` vert.
+- **E2E complet** (port 3036, recette `docs/testing.md`, `smtpConfigured: true`) : **266 verts, 7 rouges, 19 ignorés**
+  — les sept de la KF-029 (`mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150`), aucun huitième ; les deux de la KF-045 passés (run du soir).
+
+### Synthèse (Change Log final)
+
+- **Validation** : P1 (Sonnet, R + F) 1 HIGH + 3 MEDIUM → P2 (Opus) 4 MEDIUM → P3 (Sonnet) 1 MEDIUM → P4 ciblée
+  (Haiku) 1 MEDIUM réel, 1 réfuté (erreur de catégorie) → P5 ciblée (Haiku) 1 MEDIUM de décompte → **close**.
+- **Signal de découpage D5** : levé en P2 et en P3 (recyclage reconnu à la lettre en P3 : M16 revenue, D18 née du
+  correctif), déclaré au Project Lead ; **décision de Guy, 2026-10-12 : ne pas découper**.
+- **Revue de code** : P1 (Sonnet, B + E + A) 3 MEDIUM, 13 LOW → P2 ciblée (Haiku) 1 MEDIUM, 4 LOW (né de la
+  remédiation P1) → P3 ciblée (Haiku) 3 MEDIUM (tests et manuel), 2 LOW → remédiation sans ligne de production :
+  **close**. Remédiations par Opus 5.5.
+- **Mutations** : 46 jouées, 46 tuées (29 au développement, 9 en revue P1, 5 en P2 ciblée, 3 en P3 ciblée).
+- **Choix** : C-27-3-1 à 59. **Angles morts assumés** : création sans empreinte non contrôlée (D12, clés d'API) ;
+  fichier modifié sur le disque, selon le navigateur (D18) ; `isConfirming` dans `reset()` non éprouvé (C-27-3-38) ;
+  LOW-1 et LOW-2 de la P3 ciblée (C-27-3-58) ; `onSuccess` qui lève (C-27-3-56).
+- Statut : **done**.
