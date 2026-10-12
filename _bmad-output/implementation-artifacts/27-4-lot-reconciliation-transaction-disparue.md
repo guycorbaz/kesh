@@ -2,11 +2,11 @@
 
 ## Status
 
-**ready-for-dev** — fiche créée le 2026-10-12 en autonomie (`bmad-create-story`), sur `f9725c29` (merge de la
+**in-progress** — fiche créée le 2026-10-12 en autonomie (`bmad-create-story`), sur `f9725c29` (merge de la
 Story 27-1, #635), branche `story/27-4-lot-reconciliation-transaction-disparue`, worktree
 `/home/gcorbaz/devel/kesh-27-4`. Choix consignés au registre `epic-27-choix-autonomes.md`, **C-27-4-1 à C-27-4-32**.
-13 AC (AC1 à AC13). Validations P1 (Sonnet) et P2 (Opus), lentilles R et F, remédiées ; prompt de la P3 :
-`27-4-validate-prompt-p3.md`.
+13 AC (AC1 à AC13). Validation **close** en trois passes (P1 Sonnet 4 MEDIUM → P2 Opus 5 MEDIUM → P3 Sonnet
+0 MEDIUM), LOW de la P3 appliqués ; développement en cours.
 PR : **`closes #634`**.
 
 ## Story
@@ -128,8 +128,10 @@ Si le pré-vol ne laisse **aucune** proposition éligible, `post_accept` et `pos
 `with_account_lock`. Test, **pour chacune des deux routes** (deux tests, ou un test qui appelle `/accept` puis
 `/reject` sous le même verrou tenu) : le verrou nommé du compte est tenu par une connexion du test (montage de
 `reconciliation_e2e.rs:1486-1511`, nom `reconcile:{base}:{company}:{account}`) ; un lot dont toutes les transactions
-sont absentes répond `200` en **moins de 2 s** (`LOCK_TIMEOUT_SECS` = 5, l. 65) — sous la mutation qui retire le
-court-circuit **d'une seule** des deux routes (M7a, M7b), celle-ci rendrait `409` au bout de 5 s.
+sont absentes répond `200` — sous la mutation qui retire le court-circuit **d'une seule** des deux routes (M7a,
+M7b), celle-ci attendrait `LOCK_TIMEOUT_SECS` = 5 (l. 65) et rendrait `409` : l'assertion du statut suffit, aucune
+borne de temps n'est posée (elle n'ajouterait rien et risquerait un faux rouge sur un poste chargé — F3-4 de la
+validation P3).
 
 **AC4 — `POST /api/v1/reconciliation/reject` : même classification ; reprise exacte d'une course sous verrou
 (C-27-4-5, C-27-4-7).**
@@ -252,10 +254,12 @@ du fichier ; route `DELETE /api/v1/bank-imports/{id}` appelée avec le JWT du Co
    avant la première lecture ordinaire du lot, si bien que même une relecture ordinaire la voit (F1 de la
    validation P1).
 
-   ⚠️ **Angle mort assumé, à écrire au doc-comment du test** (comme A2-3 de la 27-1, `reconciliation_e2e.rs:1738-1746`) :
+   ⚠️ **Angle mort assumé, à écrire au doc-comment du test** (comme A2-3 de la 27-1, `reconciliation_e2e.rs:1739-1747`) :
    la sonde lit une requête **en cours**, non une requête **en attente de verrou** — le seul trait propre à
    l'attente (`information_schema.INNODB_TRX`, `trx_state = 'LOCK WAIT'`) exige le privilège `PROCESS`, que
-   l'utilisateur des tests n'a pas (`test_fixtures.rs:547-550`). Sous M11, la mutation ne survit que si l'`UPDATE`
+   l'utilisateur de **dev** n'a pas (`kesh`, droits par base, `scripts/mariadb-init/01-dev-grants.sql` ;
+   `test_fixtures.rs:547-550`) — la CI, elle, tourne en `root` ; le test doit passer sur le poste de dev, où il
+   tourne d'abord. Sous M11, la mutation ne survit que si l'`UPDATE`
    de `tB`, par clé primaire, dure **plus de 500 ms**. Le code juste ne peut rendre aucun faux rouge : quel que soit
    l'`UPDATE` observé, la suppression est validée avant ou pendant le blocage de `tA`, et la lecture courante la
    voit. Si M11 survit à la campagne, rejouer le test avant de la déclarer survivante.
@@ -312,11 +316,15 @@ structure n'est attendu ; si le développement en trouve un nécessaire, il le c
 - **Vitest** (`ReconciliationProposals.test.ts`) : un lot d'acceptation à deux lignes dont une sort en
   `BANK_TRANSACTION_NOT_FOUND` → compteur `1`, l'*Échec partiel* désigne la transaction supprimée par sa **date et
   son montant relevés** (pas `TX #…`) avec le libellé récrit, `reconciliation-error` **absent** ; le test existant
-  `:450-476` (« TX #99 », texte asserté l. 476) est mis à jour au texte récrit.
+  `:455-478` (« TX #99 », texte asserté l. 476) est mis à jour au texte récrit.
 - **E2E Playwright** (spec neuf `frontend/tests/e2e/reconciliation-deleted-import.spec.ts`, ou ajout motivé à un
   spec existant) : deux imports CAMT par l'API (relevé réécrit à chaque exécution — montants et références uniques,
   patron de `reconciliation-cancel.spec.ts:86-110`), une **règle d'affectation** créée par l'API qui rend les deux
-  transactions sélectionnables (patron de `reconciliation-rules.spec.ts`) — sa valeur de correspondance est **unique
+  transactions sélectionnables — `POST /api/v1/reconciliation/rules`, corps `CreateRuleRequest`
+  (`crates/kesh-api/src/routes/reconciliation_rules.rs:99`, `matchType`, `matchValue`, `counterpartyAccountId`, …) ;
+  la correspondance se lit dans `kesh-reconciliation/src/rules.rs:46` (`rule_matches`, `CounterpartyContains` sur
+  `counterparty_name`) ; `reconciliation-rules.spec.ts` crée sa règle **par le formulaire** et n'est pas un patron
+  d'appel d'API (R3-6 de la validation P3) — sa valeur de correspondance est **unique
   à l'exécution** (contrepartie réécrite dans le relevé, comme les montants), pour qu'elle ne rende sélectionnable
   aucune transaction d'un autre spec, et la règle comme l'import B sont **supprimés en `finally`** (C-27-4-24) ; la page *Réconciliation* est ouverte,
   les deux lignes cochées ; **puis** l'import A est supprimé par `DELETE /api/v1/bank-imports/{id}`
@@ -349,8 +357,9 @@ structure n'est attendu ; si le développement en trouve un nécessaire, il le c
   `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | sed "s/’/'/g; s/ﬀ/ff/g; s/ﬁ/fi/g; s/ﬂ/fl/g; s/ﬃ/ffi/g; s/ﬄ/ffl/g"`.
   Attendus **chiffrés** : « refusé en entier » passe de **2 à 1** occurrence (reste la phrase homonyme de l'import
   CSV, l. 1786, légitime) ; les phrases neuves sont présentes (témoins choisis sans ligature ni apostrophe :
-  « les autres propositions du lot sont traitées » pour la l. 1756, « rapprochée ou rejetée entre-temps » pour la
-  l. 1925 — rédiger les phrases pour qu'elles les contiennent mot pour mot).
+  « les autres propositions du lot sont traitées » pour la l. 1756, « rapprochée ou rejetée » pour la l. 1925 —
+  rédiger les phrases pour qu'elles les contiennent mot pour mot ; le témoin évite « entre-temps », dont
+  `pdftotext` retire le tiret quand LaTeX coupe la ligne sur « entre- », R3-1 de la validation P3).
 
 **AC10 — L'API publique et le CHANGELOG (C-27-4-10).**
 
@@ -391,8 +400,10 @@ structure n'est attendu ; si le développement en trouve un nécessaire, il le c
   dépôt (aucune fonction n'y fait aujourd'hui de `SELECT … FOR UPDATE` par identifiant), sur la transaction passée
   par l'appelant, même scope `company_id` **et** `bank_account_id`, sans filtre de statut. C'est la requête de
   `find_pending_by_id_for_account` (`:337-356`, même scope, aucun filtre de statut malgré son nom — « Naming
-  caveat ») **plus** `FOR UPDATE` : le texte SQL est **partagé** (une constante, suffixée de ` FOR UPDATE` pour la
-  lecture verrouillante), pas recopié, pour que les deux lectures ne divergent pas (C-27-4-32, R2-9). Doc-comment : lecture
+  caveat ») **plus** `FOR UPDATE` : le texte SQL est **partagé** — une **fonction privée** qui construit le texte
+  (`format!` sur `BANK_TX_COLUMNS`), appelée par les deux lectures, la verrouillante y ajoutant ` FOR UPDATE` ; une
+  constante n'est pas réalisable sans `const_format`, absente du workspace (F3-3 / R3-2 de la validation P3) —, pas
+  recopié, pour que les deux lectures ne divergent pas (C-27-4-32, R2-9). Doc-comment : lecture
   **courante**, pourquoi (vue cohérente d'un lot déjà ouvert), seul appelant `reject_batch`. Test de dépôt : rend la
   ligne `pending`, `reconciled`, rejetée ; `None` pour un identifiant absent, d'un autre compte, d'une autre société.
   Le caractère **courant** de la lecture est prouvé côté route par l'AC6-8, pas ici.
@@ -411,13 +422,19 @@ structure n'est attendu ; si le développement en trouve un nécessaire, il le c
   `find_pending_by_id_for_account`), qui citent `find_pending_by_ids` : au nom neuf.
 - `crates/kesh-api/tests/reconciliation_e2e.rs:1734-1737` (« `failed[]` n'est pas asserté : le pré-vol refuse en
   `400` … ») : corrigé ; le test `post_reject_locks_the_batch_by_increasing_id` reste vert tel quel.
-- `post_reject_skips_reconciled_transactions` (`:1843`, assertion `:1894`) et
+- Deux commentaires de test qui décrivent l'ancien `400` sans aucun des jetons du grep ci-dessous (F3-1 de la
+  validation P3) : `reconciliation_e2e.rs:1195-1196` (« filtre `status='pending'` et exclurait la tx → 400 ») et
+  `:4325-4326` (« contrôle préalable (400, vérifié au développement) ») — réécrits au comportement neuf ; et
+  `:2106` (doc de `post_accept_filters_signed_amount`, « `find_pending_by_ids` ne filtre pas par sign », R3-8) — au
+  nom neuf.
+- `post_reject_skips_reconciled_transactions` (`:1843`, assertion `:1892`) et
   `post_reject_after_accept_returns_already_reconciled_failed` (`:1968`, assertion `:2035`) : passent à `200`,
   `failed[0].errorCode = "RECONCILIATION_ALREADY_RECONCILED"`, la ligne inchangée en base ; leurs commentaires de
   « déviation » sont retirés.
 - Doc-comments de `post_accept` (étape 0ter, `:944`, et le commentaire « fail-fast 400 », `:969-973`), de
   `post_reject`, de `accept_batch` et du module (l. 1-16) : au comportement neuf.
-- Recherche de propagation, **valeurs** et non formulations : `grep -rnE "appartiennent pas|find_pending_by_ids|fail-fast 400|en entier" crates frontend/src docs`
+- Recherche de propagation, **valeurs** et non formulations : `grep -rnE "appartiennent pas|find_pending_by_ids|fail-fast 400|en entier" crates frontend/src docs`,
+  plus `grep -nE "→ 400|\(400|batch-level 400" crates/kesh-api/tests/reconciliation_e2e.rs`
   — chaque site résiduel trié (légitime ou corrigé) et nommé au Change Log.
 
 **AC13 — Mutations : chacune fait rougir au moins un test nommé.**
@@ -430,7 +447,7 @@ structure n'est attendu ; si le développement en trouve un nécessaire, il le c
 | M4 | une ligne rejetée classée éligible | AC1 unitaire ; AC6-6 |
 | M5 | priorité inversée (rejetée avant rapprochée) | AC1 unitaire « rapprochée et rejetée » |
 | M6 | `details` d'un `BANK_TRANSACTION_NOT_FOUND` porte `bankAccountId` | assertion `details: null` d'AC6-1 et d'AC6-3 — **pas** la comparaison des deux corps de l'AC6-3, qui resterait verte si la valeur venait du corps de la requête |
-| M7a | court-circuit de l'AC3 retiré de `post_accept` seul | AC3, route `/accept` (`200` en < 2 s sous verrou tenu) |
+| M7a | court-circuit de l'AC3 retiré de `post_accept` seul | AC3, route `/accept` (`200` sous verrou tenu, au lieu de `409`) |
 | M7b | court-circuit de l'AC3 retiré de `post_reject` seul | AC3, route `/reject` |
 | M8 | `failed[]` d'`accept` non remis dans l'ordre reçu (refus du pré-vol ajoutés en tête ou en fin) | AC2 (a) |
 | M9 | `failed[]` de `reject` non trié en entier (refus du pré-vol et refus sous verrou concaténés, chacun trié, **dans l'un ou l'autre ordre**) | **AC6-7** (refus sous verrou d'id milieu entre deux refus du pré-vol : les deux ordres de concaténation rougissent, C-27-4-29) ; AC6-4 (lot envoyé non trié) pour la variante « aucun tri » |
@@ -460,10 +477,11 @@ sinon le binaire muté.
 - [ ] **T2 — Classification** (AC1) : fonction pure appelant `is_reconciled` (C-27-4-19) + tests unitaires ;
   doc-comment d'`is_reconciled` complété.
 - [ ] **T3 — `post_accept`** (AC2, AC3, AC5) : pré-vol classant, sous-lot éligible, `batch_size` explicite,
-  fusion de `failed[]` dans l'ordre reçu, court-circuit, plafond.
+  fusion de `failed[]` dans l'ordre reçu, court-circuit, plafond — **avec leurs tests** : AC2 (a) ordre, AC2 (b)
+  `batch_size`, AC3 route `/accept` (verrou tenu), AC5 route `/accept` (500 passe, 501 → `400`).
 - [ ] **T4 — `post_reject`** (AC4, AC3, AC5) : pré-vol classant, `reject_batch` sans `tx_map` et avec
   `bank_account_id`, garde de l'`UPDATE`, relecture verrouillante (fonction de dépôt de T1) et reclassement,
-  `failed[]` trié en entier.
+  `failed[]` trié en entier — **avec leurs tests** : AC3 route `/reject`, AC5 route `/reject`.
 - [ ] **T5 — Tests d'intégration** (AC6, AC12) : huit scénarios (AC6-1 à AC6-8, le 5. en deux cas (a) et (b)),
   trois tests existants réécrits,
   commentaire `:1734-1737`.
@@ -515,7 +533,7 @@ Méthode : tout site de `reconciliation.rs` qui **rend un refus lié à l'état 
 | Vue cohérente d'`accept_batch` : la recharge de la 2ᵉ proposition et des suivantes lit la vue ouverte par la 1ʳᵉ | une suppression validée pendant le lot n'est vue qu'à l'`UPDATE` (0 ligne → ligne 1 de ce tableau) | conséquence de REPEATABLE READ ; même issue, même libellé |
 | `/manual`, `/split` (routes unitaires) | `404` / `409` | hors § *Pattern batch* : une requête, une transaction |
 | `accept_one_invoice`, étape 4 sous verrou sur `status` seul (`:1467-1468`) ; `accept_one_split` et `accept_one_rule`, recharge par `find_strictly_pending_by_id_for_account` (`:2300`, `:2701`), qui filtre `status = 'pending'` sans regarder `matched_entry_id` | une transaction `pending` **avec** `matched_entry_id` passerait la recharge sous verrou (le pré-vol, lui, la refuse désormais par `is_reconciled`, AC1) | état qu'aucun chemin vivant ne produit (inventaire clos des écrivains, doc-comment d'`is_reconciled`) ; le pré-vol suffit à le refuser pour toute liste. Le site jumeau du **rejet** est, lui, résolu : son `UPDATE` porte `matched_entry_id IS NULL` (AC4, C-27-4-30) |
-| Restauration d'une installation concurrente d'un lot (toutes routes) | la restauration vide et recharge `bank_transactions` **avec ses identifiants**, sans prendre le verrou nommé de réconciliation : un identifiant du lot peut désigner, sous verrou, une autre ligne | préexistant, même angle mort que la suppression d'import (`bank_imports.rs`, « La restauration n'étant exclusive que des autres imports ») ; les recharges sous verrou de l'acceptation sont scopées par compte, l'`UPDATE` du rejet l'est désormais (AC4, M17 tuée par l'AC6-5 (b)) ; au-delà, non gardé |
+| Restauration d'une installation, ou remise à zéro de l'installation (`backup.rs:111-122`, `reset_cleared_tables`, appelée par `kesh-seed/src/lib.rs:584`), concurrente d'un lot (toutes routes) | la restauration vide et recharge `bank_transactions` **avec ses identifiants**, sans prendre le verrou nommé de réconciliation : un identifiant du lot peut désigner, sous verrou, une autre ligne ; la remise à zéro vide sans réinsérer, d'effet identique à une suppression d'import (déjà traité par la story) | préexistant, même angle mort que la suppression d'import (`bank_imports.rs`, « La restauration n'étant exclusive que des autres imports ») ; l'`UPDATE` du rejet est désormais scopé par compte (AC4, M17 tuée par l'AC6-5 (b)) ; les **trois `UPDATE` d'acceptation** (`:1919`, `:2417`, `:2869`) ne sont scopés que par `company_id` et `version` (leurs recharges sous verrou, lectures ordinaires, le sont par compte mais ne bloquent pas derrière une restauration) : non gardés (F3-5 de la validation P3) |
 | `reject_batch`, repli « relue éligible » (AC4) | `RECONCILIATION_ALREADY_RECONCILED` + `race_during_update` | non atteignable sous la lecture courante (M18, équivalente) ; garde défensive, tracée par `warn!` |
 
 **Triage de chaque angle mort (C-27-4-25)** — tous relèvent de la **catégorie C** (choix de conception), aucun d'un
@@ -565,8 +583,12 @@ Résolus par la story : pré-vol d'`accept` (`:944-967`), pré-vol de `reject` (
   **postérieure** à la vue déjà ouverte par la relecture de `tB`. C'est le comportement de **MariaDB 10.11**
   (`docker-compose.yml`, CI). Avec `innodb_snapshot_isolation` (actif par défaut depuis **11.6**), cette lecture
   rend `ER_CHECKREAD` (1020), que le `?` de `reject_batch` ferait sortir en `500` pour **tout le lot** — contraire
-  au § *Pattern batch*. À revoir à la montée de version, comme le dit déjà `bank_imports.rs:400-405` pour la 27-1 ;
+  au § *Pattern batch*. À revoir à la montée de version, comme le dit déjà `bank_imports.rs:413-418` pour la 27-1 ;
   l'AC6-8 est le test qui la signalera.
+- **Motif `GET_LOCK` sans précédent** (R3-9 de la validation P3) : aucun test du dépôt n'observe encore un lot
+  bloqué dans `with_account_lock` par `attendre_une_requete_en_cours(&["GET_LOCK"])` (`mutex.rs:90`, `SELECT
+  GET_LOCK(?, ?)`). Vérifier le motif sur une exécution avant de bâtir l'AC3, l'AC6-2, l'AC6-5 et l'AC6-7 dessus ; à
+  défaut, le panic de dix secondes de l'aide le signale au premier lancement.
 - **Verrou nommé global au serveur** (KF-038, #228) : son nom porte la base courante — reconstruire
   `reconcile:{DATABASE()}:{company}:{account}` dans les tests (`reconciliation_e2e.rs:1492-1503`).
 - **Test muet** : un test d'ordre qui ne contient que des identifiants déjà triés ne prouve rien (M8, M9) — envoyer
@@ -697,3 +719,24 @@ sans conflit textuel attendu.
     mutations M1-M19, **20 lignes** (`grep -cE '^\| M[0-9]+[ab]? \|'`), M18 et M19 équivalentes d'emblée ; 9 tâches
     T0-T8 ; **32 choix** C-27-4 au registre (`grep -c '^### C-27-4-'`). Prompt de la P3 :
     `27-4-validate-prompt-p3.md` (Sonnet).
+- 2026-10-12 — **validation P3** (Sonnet, lentilles R et F, prompt `27-4-validate-prompt-p3.md`) : F = 0 CRITICAL,
+  0 HIGH, **0 MEDIUM**, 6 LOW ; R = 0 CRITICAL, 0 HIGH, **0 MEDIUM**, 10 LOW. Aucun recyclage au-dessus de LOW (R3-4,
+  seul recyclage relevé, est un numéro de ligne). **La validation est close** (critère d'arrêt : uniquement des LOW).
+  LOW appliqués (agent de dev, Opus) : F3-1 + R3-8 (trois commentaires de test ajoutés à l'AC12, grep élargi à
+  `→ 400|\(400|batch-level 400`) ; F3-2 (`PROCESS` absent **en dev** seulement, CI en `root`, AC6-8 et C-27-4-26) ;
+  F3-3 = R3-2 (texte SQL partagé par une **fonction** privée, AC11 et C-27-4-32) ; F3-4 (borne « moins de 2 s » de
+  l'AC3 retirée : l'assertion `200` contre `409` suffit) ; F3-5 + R3-10 (ligne « restauration » : remise à zéro
+  d'installation ajoutée, trois `UPDATE` d'acceptation non scopés par compte) ; F3-6 (`:1892`, `:1739-1747`, titre de
+  C-27-4-7 marqué complété par C-27-4-30) ; R3-1 (témoin PDF « rapprochée ou rejetée », sans « entre-temps ») ; R3-3
+  (`bank_imports.rs:413-418`) ; R3-4 (`:455-478`) ; R3-5 (T3 et T4 nomment les tests de l'AC2, de l'AC3 et de
+  l'AC5) ; R3-6 (règle E2E par `POST /api/v1/reconciliation/rules`, `CreateRuleRequest`, route vérifiée
+  `crates/kesh-api/src/lib.rs:695`) ; R3-7 (`sprint-status.yaml` à jour) ; R3-9 (motif `GET_LOCK` à vérifier sur
+  une exécution, Pièges connus).
+  - **Trend** : P1 4 MEDIUM (Sonnet) → P2 5 MEDIUM (Opus) → P3 **0 MEDIUM** (Sonnet). Modèles : Sonnet, Opus, Sonnet
+    (passes complètes) ; remédiations Opus.
+  - **D5** : signal levé en P2 (sévérité égale ou supérieure, recyclage au sens du patch) ; décision de
+    l'orchestrateur : pas de découpage, simplification (C-27-4-31). La P3 confirme : aucun MEDIUM, aucun recyclage.
+  - Symptômes grepés après patch (valeurs) : `2 s`, `< 2`, `1894`, `1738`, `une constante`, `400-405`, `450-476`,
+    `rejetée entre-temps`, `utilisateur des tests` — résidus : l'entrée P2 de ce Change Log (historique) et la
+    phrase du manuel prescrite à l'AC9 (« rapprochée ou rejetée entre-temps », qui contient le témoin).
+  - Statut : `in-progress`.

@@ -1656,7 +1656,7 @@ en autonomie, sur `f9725c29` (merge de la 27-1).
 - **Écartée** : taille du sous-lot éligible (changerait en silence la lecture des traces existantes).
 - **Réversible** : oui.
 
-### C-27-4-7 — Rejet : garde de l'`UPDATE` élargie et reprise exacte par lecture verrouillante
+### C-27-4-7 — Rejet : garde de l'`UPDATE` élargie et reprise exacte par lecture verrouillante — (complété : `AND matched_entry_id IS NULL`, voir C-27-4-30)
 
 - **Contexte** : `reject_batch` ne recharge pas la transaction sous verrou ; une suppression ou un rejet concurrent
   entre le pré-vol et l'`UPDATE` sortait en `RECONCILIATION_ALREADY_RECONCILED` (« déjà réconciliée ») ou, pour un
@@ -1855,7 +1855,8 @@ Consigne de l'orchestrateur : simplifier, ne pas ajouter de mécanisme fragile.
   doc-comment du test, comme A2-3 de la 27-1 : M11 ne survit que si un `UPDATE` par clé primaire dure plus de 500 ms ;
   le code juste ne peut rendre aucun faux rouge ; une survivante se rejoue avant d'être déclarée.
 - **Écartées** : `information_schema.INNODB_TRX` (`trx_state = 'LOCK WAIT'`, le seul trait propre à l'attente) — exige
-  le privilège `PROCESS`, que l'utilisateur des tests n'a pas ; un filtre `TIME_MS` (même minutage, sémantique de la
+  le privilège `PROCESS`, que l'utilisateur de dev n'a pas (`kesh`, droits par base, `01-dev-grants.sql` ; la CI
+  tourne en `root` — précision F3-2 de la validation P3) ; un filtre `TIME_MS` (même minutage, sémantique de la
   colonne pendant une attente de verrou non vérifiée) ; retirer le montage et déclarer M11 non tuée (la seule preuve
   du `FOR UPDATE` disparaîtrait, alors qu'un observateur simple suffit).
 - **Réversible** : oui (test seul).
@@ -1918,7 +1919,10 @@ Consigne de l'orchestrateur : simplifier, ne pas ajouter de mécanisme fragile.
 
 - **Contexte** : `find_by_id_for_account_for_update` est la requête de `find_pending_by_id_for_account` plus
   `FOR UPDATE` ; la recopier ferait deux lectures qui peuvent diverger.
-- **Retenu** : une constante de texte SQL partagée, suffixée de ` FOR UPDATE` pour la lecture verrouillante.
+- **Retenu** : un texte SQL partagé par une **fonction privée** qui le construit (`format!` sur `BANK_TX_COLUMNS`),
+  appelée par les deux lectures, la verrouillante y ajoutant ` FOR UPDATE`. *(Précisé en validation P3, F3-3 /
+  R3-2 : la « constante » de la première rédaction n'est pas réalisable — Rust ne concatène pas deux `const &str`
+  sans `const_format`, absente du workspace.)*
 - **Écartée** : un paramètre booléen « verrouillante » sur la fonction existante (change la signature d'une
   fonction générique sur l'exécuteur, appelée par `accept_one_invoice` et par un test de dépôt, pour un seul besoin).
 - **Réversible** : oui.
