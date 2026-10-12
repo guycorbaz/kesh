@@ -2,12 +2,12 @@
 
 ## Status
 
-**ready-for-dev** — fiche créée le 2026-10-12 en autonomie (skill `bmad-create-story`), sur `a2743fd4`
+**in-progress** — fiche créée le 2026-10-12 en autonomie (skill `bmad-create-story`), sur `a2743fd4`
 (`origin/main`, rétrospective de l'Epic 26). Validation P1 faite (Sonnet, lentilles R et F : 3 MEDIUM, 14 LOW),
 remédiée le 2026-10-12 — périmètre élargi par l'orchestrateur au formulaire qui perd la contrepartie (AC8-bis) et à
 la devise des transactions CAMT.053 (AC19). Validation P2 faite (Opus, lentilles R et F : 3 MEDIUM, 18 LOW), remédiée
 le 2026-10-12. Validation P3 faite (Sonnet, lentilles R et F : 1 MEDIUM distinct, 13 LOW distincts), remédiée le
-2026-10-12 ; validation P4 **ciblée** à lancer : prompt `27-2-validate-prompt-p4-ciblee.md` (Haiku, une lentille).
+2026-10-12 ; validation P4 **ciblée** faite (Haiku, une lentille : 0 MEDIUM, 5 LOW, remédiés) — **validation close**, développement en cours.
 Choix tranchés : **C-27-2-1 à C-27-2-28**, registre `_bmad-output/implementation-artifacts/epic-27-choix-autonomes-27-2.md`
 (à fusionner par union dans `epic-27-choix-autonomes.md`, qui vit sur la branche de la 27-1).
 
@@ -71,7 +71,7 @@ crates/kesh-api/src/routes/bank_imports.rs:1966:  currency: d.currency,      ←
 | (f) | `BankProfileForm.svelte:56-69` — reconstruit `columnMapping` de ses seuls champs | **perte à l'édition** | résolu : `currency` porté (AC8), et toute clé que le formulaire ne montre pas — `counterparty` aujourd'hui — recopiée du profil existant (AC8-bis, C-27-2-12) |
 | (g) | `bank_accounts` — aucune colonne devise (`entities/bank_account.rs:24-53`) | **supposition structurelle** (tous les comptes en CHF) | **non résolu, assumé** (C-27-2-4) : le manuel l'écrit (AC11) |
 | (h) | `camt053/mod.rs:168-178` — devise de transaction prise sur **tout** `<Amt Ccy>` sous `<TxDtls>` (et, hors `<TxDtls>`, sur tout `<Amt Ccy>` sous `<Ntry>`) ; le dernier rencontré gagne | **supposition** (hors chemin CSV, même sujet) | résolu : AC19 (C-27-2-11) — confirmé au code par les deux lentilles de P1 |
-| (i) | `reconciliation.rs:631`, `:780`, `:2728` — garde « transaction non CHF » des **propositions automatiques** et de l'**acceptation d'une règle** seulement ; le rapprochement manuel (`post_manual_once`, `:3532`), l'éclatement (`post_split_once`, `:3984`, `accept_one_split`, `:2119`) et l'acceptation d'une proposition de facture (`accept_one_invoice`, `:1428`) ne contrôlent pas la devise (`reconciliation_e2e.rs:2241-2262` le documente ; validation P3, F1 = R1) | défense en aval, **partielle** | inchangé (C-27-2-20) ; devient effective pour le CSV dont le profil lit la colonne Devise (une ligne non CHF n'atteint plus la base) |
+| (i) | `reconciliation.rs:631`, `:780`, `:2728` — garde « transaction non CHF » des **propositions automatiques** et de l'**acceptation d'une règle** seulement ; le rapprochement manuel (`post_manual_once`, `:3532`), l'éclatement (`post_split_once`, `:3984`, `accept_one_split`, `:2119`) et l'acceptation d'une proposition de facture (`accept_one_invoice`, `:1428`) ne contrôlent pas la devise (constaté au `grep` ; `reconciliation_e2e.rs:2241-2262` n'en couvre que l'acceptation d'une facture — validation P3, F1 = R1, et P4, P4-5) | défense en aval, **partielle** | inchangé (C-27-2-20) ; devient effective pour le CSV dont le profil lit la colonne Devise (une ligne non CHF n'atteint plus la base) |
 
 Les sites de **recopie** (`from_imported`, DTO d'aperçu, `NewBankTransaction`) ne décident rien : ils transportent la
 valeur que (a)/(b) produisent. Aucun autre lieu du chemin CSV ne fixe de devise. *(Validation P1 : inventaire refait et
@@ -336,7 +336,8 @@ croise chaque repli `i18nMsg` avec `fr-CH` et rougit à la moindre divergence �
 `bank-import-warnings-unsupported-currency` (`BankImportUpload.svelte:604`) et ceux des clés neuves du formulaire ; il
 reste vert sans entrée neuve à son allowlist `TOLEREES`. **Apostrophe** : les textes `fr-CH` neufs ou modifiés et leurs
 replis (Rust et Svelte) emploient l'apostrophe **droite** `'`, comme les clés voisines
-(`bank-import-csv-errors-encoding-mismatch`, `-partial-failure`, `-header-skips-data`) ; G9 compare octet pour octet.
+(`bank-import-csv-errors-encoding-mismatch`, `-partial-failure`) ; la convention du catalogue est mixte (79 apostrophes
+typographiques ailleurs dans `fr-CH`), les textes neufs suivent ces voisines (validation P4, P4-4) ; G9 compare octet pour octet.
 
 ### La documentation
 
@@ -549,12 +550,12 @@ remplacements reste :
 1. profil UBS avec devise 4 créé **par l'écran** — nom de banque **propre** `UBS synthétique — devise`, motif **propre**
    `^ubs_synthetique_devise\.csv$` —, fichier **propre** importé : `ubs_synthetique_devise.csv`, **dérivé en mémoire**
    (`setInputFiles({ name, mimeType, buffer })`) de `ubs_synthetique.csv` en décalant d'une année les dates des **seules
-   lignes de données** (`2026-` → `2025-` dans les quatre colonnes de date) → aperçu `preview-tx-count` = `11`, succès,
+   lignes de données** (`2026-` → `2025-` dans les trois colonnes de date : Date de transaction, Date de comptabilisation, Date de valeur — la colonne 2 est une heure ; validation P4, P4-2) → aperçu `preview-tx-count` = `11`, succès,
    puis par l'API, l'import retrouvé **par ce nom de fichier** : `expect(transactions).toHaveLength(11)` **et** chaque
    `currency === "CHF"` ; `warning-informational` ne porte **pas** `data-info-code="bank_csv_currency_assumed"`.
    ⚠️ **Pourquoi pas `ubs_synthetique.csv` tel quel** (validation P3, R5 ; C-27-2-25) : le test voisin « imports the UBS
    CSV as is » (`bank-csv-import.spec.ts:315-356`) l'importe déjà, sur le même compte (`ensureBankAccount`) et dans la
-   même base (`seedTestState` une fois, `beforeAll`, l. 28) — mêmes octets → avertissement de fichier en doublon,
+   même base (`seedTestState` une fois, `beforeAll`, l. 32-33) — mêmes octets → avertissement de fichier en doublon,
    *Confirmer* grisé tant que la case n'est pas cochée ; mêmes lignes → doublons ignorés, import à **0** transaction, et
    une assertion « chaque `currency == "CHF"` » sur une liste vide passe **à vide** ; même motif de profil → deux
    profils candidats, le plus récent gagne. Décaler les dates change l'empreinte de chaque ligne
@@ -935,7 +936,7 @@ l'orchestrateur) :
 
 | Finding | Sév. | Décision |
 |---|---|---|
-| F1 = R1 | MEDIUM | **Appliqué** : « les transactions CAMT restées en EUR ne sont pas rapprochables » est faux — seules les propositions automatiques (`reconciliation.rs:631`, `:780`) et l'acceptation d'une règle (`:2728`) filtrent la devise ; le rapprochement manuel, l'éclatement et l'acceptation d'une facture ne la contrôlent pas (constaté au `grep`, et documenté par `reconciliation_e2e.rs:2241-2262`). Corrigé à AC12 (bloc 2 et puce CAMT, « la réconciliation ne le proposait plus d'elle-même »), AC12-bis, AC19 (contexte), inventaire (i), C-27-2-11, C-27-2-16 ; garde non ajoutée, hors périmètre (C-27-2-20). |
+| F1 = R1 | MEDIUM | **Appliqué** : « les transactions CAMT restées en EUR ne sont pas rapprochables » est faux — seules les propositions automatiques (`reconciliation.rs:631`, `:780`) et l'acceptation d'une règle (`:2728`) filtrent la devise ; le rapprochement manuel, l'éclatement et l'acceptation d'une facture ne la contrôlent pas (constaté au `grep` ; le test `reconciliation_e2e.rs:2241-2262` n'en couvre que l'acceptation d'une facture, et son doc-comment, qui dit la garde absente « côté POST /accept » en général, est périmé — `accept_one_rule` la porte, `:2728` ; validation P4, P4-5). Corrigé à AC12 (bloc 2 et puce CAMT, « la réconciliation ne le proposait plus d'elle-même »), AC12-bis, AC19 (contexte), inventaire (i), C-27-2-11, C-27-2-16 ; garde non ajoutée, hors périmètre (C-27-2-20). |
 | R5 | LOW | **Appliqué** : AC15-1 importe `ubs_synthetique_devise.csv`, dérivé en mémoire (dates des lignes de données décalées d'un an), banque et motif propres, `toHaveLength(11)` avant les devises ; AC15-2 dérive du même buffer (C-27-2-25). |
 | F2 | LOW | **Appliqué** : AC12 bloc 3, AC12-bis, C-27-2-1 — identifiant et réglages lus dans l'export global de la 0.13.1 (`bank_profiles.csv`, chaîne brute ; `csv_tables.rs` l. 1041-1075 et `global.rs:320` de `v0.13.1`, lus) ; C-27-2-22. |
 | F3 | LOW | **Appliqué** : AC19 — entrée 3 (`<TxDtls>` sans `Amt` propre, `AmtDtls` en EUR), test (1-bis), mutation **M25** « première devise gagne », qu'elle seule tue ; AC14-8 asserte trois transactions ; C-27-2-27. |
@@ -944,7 +945,7 @@ l'orchestrateur) :
 | F6 = R3 | LOW | **Appliqué** : doc-comment de `OWNED_COLUMN_MAPPING_KEYS` reformulé (nécessaire pour les clés d'un seul mode) ; AC17 déclare équivalents les mutants d'omission de `date`, `reference`, `details`, `currency` ; `ColumnMapping` ajouté à l'`import type` existant (`verbatimModuleSyntax`) ; C-27-2-26. |
 | R2 | LOW | **Appliqué** : AC10 — liste fermée des « v0.1 » gardés (les trois sites non nommés y entrent), sortie du grep recopiée au Dev Agent Record ; la parenthèse fausse de `reconciliation_e2e.rs:2253-2254` (« le parser CSV rejette EUR/USD ») est récrite, T2 ; C-27-2-21. |
 | R4 | LOW | **Appliqué** : AC13 — « vide » = zéro caractère (`line.is_empty()`, jamais `trim()`) ; C-27-2-23. |
-| R6 | LOW | **Appliqué** : C-27-2-18 — `v04_ntry_sign_fallback.xml` porte 3 `<TxDtls>` (`grep -c` → 3), non 2 ; AC19 — la ligne de `v04_minimal.xml` du catalogue (« sans TxDtls ») est corrigée. |
+| R6 | LOW | **Appliqué** : C-27-2-18 — `v04_ntry_sign_fallback.xml` porte 3 `<TxDtls>` (`grep -c` → 3), non 2 *(faux : 2 éléments, la 3e occurrence est une mention en commentaire, l. 48 — corrigé en validation P4, P4-1)* ; AC19 — la ligne de `v04_minimal.xml` du catalogue (« sans TxDtls ») est corrigée. |
 | R7 | LOW | **Appliqué** : AC10 — `i18n-repli-divergent-actif.test.ts` nommé ; apostrophe **droite** pour les textes neufs et leurs replis (C-27-2-21). |
 | R8 | LOW | **Appliqué** : AC12 — texte à publier rangé dans les rubriques de la 0.13.1 (bloc « À faire » numéroté, `### Modifié`, `### Corrigé`), sans renvoi de traçabilité ; *Notes pour le dev* séparées ; lien d'issue en ligne (aucune définition de lien de référence au CHANGELOG) ; C-27-2-24. |
 | R9 | LOW | **Appliqué** : AC8-bis et C-27-2-17 — `satisfies` n'existe au dépôt que dans des `.test.ts` ; admis par lecture du compilateur Svelte (`remove_typescript_nodes.js:89`), `npm run check` **et** `npm run build` tranchent en T4. |
@@ -969,3 +970,28 @@ choix **C-27-2-1 à C-27-2-28** (28 titres au registre). Symptômes grepés apr�
 `insérer dans`, `ne rend plus que les sites` — ne subsistent que dans les tableaux historiques et dans les choix qui
 racontent la correction. Validation P4 **ciblée** à lancer : `27-2-validate-prompt-p4-ciblee.md` (**Haiku**, une
 lentille, le seul commit de cette remédiation).
+
+### Validation P4 (ciblée) — clôture de la validation
+
+2026-10-12. Passe **ciblée**, **Haiku**, une lentille en contexte frais et en lecture seule, braquée sur le seul commit
+de la remédiation P3 (`eb3f4932` ; prompt `27-2-validate-prompt-p4-ciblee.md`, rapport
+`kesh-gate-logs/27-2-validate-p4-ciblee.md`) : 0 CRITICAL, 0 HIGH, **0 MEDIUM**, **5 LOW**, tous des régressions de la
+remédiation P3 dans le texte, aucune dans le code prescrit. Remédiation (Opus 5.5) :
+
+| Finding | Sév. | Décision |
+|---|---|---|
+| P4-1 | LOW | **Appliqué**, vérifié par l'orchestrateur : `v04_ntry_sign_fallback.xml` porte **2** éléments `<TxDtls>` (la 3e occurrence de `grep -c`, l. 48, est dans un commentaire) — C-27-2-18 rétabli, ligne R6 de P3 annotée. |
+| P4-2 | LOW | **Appliqué** : AC15-1 — **trois** colonnes de date (la colonne 2 est une heure). |
+| P4-3 | LOW | **Appliqué** : AC15-1 — `beforeAll` aux l. 32-33. |
+| P4-4 | LOW | **Appliqué** : AC10 — `-header-skips-data` retiré de l'énumération (aucune apostrophe) ; convention dite mixte. |
+| P4-5 | LOW | **Appliqué** : inventaire (i), ligne F1 = R1 de P3, C-27-2-20 — le test `reconciliation_e2e.rs:2241-2262` ne couvre que l'acceptation d'une facture ; son doc-comment périmé est signalé (hors périmètre). |
+
+**Trend de la validation** : P1 **3 MEDIUM** (Sonnet) → P2 **3 MEDIUM** (Opus) → P3 **1 MEDIUM** (Sonnet) → P4 ciblée
+**0 MEDIUM, 5 LOW** (Haiku). 0 CRITICAL et 0 HIGH à chaque passe. Critère d'arrêt atteint (seulement des LOW) ; la
+remédiation P4 ne touche que la fiche et le registre — aucune ligne de code prescrit —, la boucle est **close**.
+
+**Constats D5** : le signal « sévérité égale » levé en P2 (3 → 3) a été instruit et déclaré au Project Lead : pas de
+recyclage (défauts distincts, aucun ne revient sous une autre forme) ; en P3, le MEDIUM né de la remédiation P2 ne siège
+ni dans AC8-bis ni dans AC19 (critère de bascule non atteint) ; en P4, cinq LOW nés de la remédiation P3, tous textuels.
+Pas de découpage. Dispersion inchangée (`kesh-import`, `kesh-api`, `kesh-core` pour des textes, `kesh-i18n`,
+`frontend/…/bank-import`, manuels).

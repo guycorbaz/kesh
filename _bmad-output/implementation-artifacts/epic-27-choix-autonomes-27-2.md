@@ -330,7 +330,7 @@ Fiche : `27-2-devise-import-csv.md`. Choix faits à la création de la fiche (20
   mais une connaissance non sourcée n'est pas une preuve).
 - **Ce que les fixtures établissent** (comptage par `<Ntry>`, `awk` sur les 13 fichiers) : deux fixtures portent
   plusieurs `<TxDtls>` par entrée — `v04_with_subtxs.xml` (3, tous avec `Amt` direct) et `v04_ntry_sign_fallback.xml`
-  (**3**, tous avec `Amt` direct — « 2 » corrigé en validation P3, R6) ; les treize autres entrées
+  (**2** éléments `<TxDtls>`, tous avec `Amt` direct ; `grep -c` → 3, la troisième occurrence étant une mention en commentaire, l. 48 — la P3, R6, avait écrit 3 en comptant ce texte, rétabli en validation P4, P4-1) ; les treize autres entrées
   à `<TxDtls>` (dont celle de `v04_prefixed_namespace.xml`, comptée à part, ses balises étant préfixées ;
   `v04_truncated.xml`, coupé, exclu) en ont **un seul**, sans `Amt` direct (repli juste).
   **Aucune fixture n'exerce le cas litigieux** (≥ 2 `<TxDtls>` dont un sans `Amt` direct) : aucun test ne le couvre, ni
@@ -363,7 +363,7 @@ Fiche : `27-2-devise-import-csv.md`. Choix faits à la création de la fiche (20
   que « les transactions CAMT restées en EUR ne sont pas rapprochables ». Les deux lentilles de P3 l'ont réfuté au
   code : seules les propositions automatiques (`reconciliation.rs:631`, `:780`) et l'acceptation d'une règle (`:2728`)
   écartent une transaction non CHF ; `accept_one_invoice` (`:1428`), `accept_one_split` (`:2119`), `post_manual_once`
-  (`:3532`) et `post_split_once` (`:3984`) ne lisent pas la devise. Le dépôt le documente déjà
+  (`:3532`) et `post_split_once` (`:3984`) ne lisent pas la devise. Le dépôt le documente en partie — pour la seule acceptation d'une facture (validation P4, P4-5)
   (`crates/kesh-api/tests/reconciliation_e2e.rs:2241-2262`, « l'opération réussit silencieusement » ; test `#[ignore]`
   `post_accept_filters_currency_mismatch`, l. 1975), et le catalogue dit « avec une facture ou une règle »
   (`reconciliation-failed-currency-mismatch`, `fr-CH:1185`).
