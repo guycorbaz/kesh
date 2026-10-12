@@ -579,7 +579,11 @@ Le rejet en lot (**`POST /api/v1/reconciliation/reject`**) traite et rend ses tr
 
 ⚠️ **Envoyez aussi l'id du profil résolu.** Une empreinte envoyée **sans** `bankProfileId` laisse la création résoudre le profil par le nom du fichier : si un **autre** profil à motif concordant a été modifié ou créé entre-temps (il passe en tête, le plus récent l'emportant), ou si l'aperçu portait un `bankProfileId` explicite que la création n'envoie pas, le profil résolu peut différer — `409`, à juste titre — ou manquer — `404 BANK_CSV_NO_PROFILE_MATCH`. Renvoyer `csvProfileMatch.profileId`, l'id que l'aperçu a résolu, l'évite.
 
-**Ordre des refus.** Les refus qui précèdent la résolution du profil restent prioritaires : `400` du multipart, `404 BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND`, et pour un CSV le `422 BANK_IMPORT_DUPLICATE_FILE` non confirmé puis le `404 BANK_CSV_NO_PROFILE_MATCH`. Le `409` vient ensuite, avant toute lecture du fichier. ⚠️ **Asymétrie CSV / CAMT** : pour un CAMT.053, le `409` **précède** le `422 BANK_IMPORT_DUPLICATE_FILE` ; pour un CSV, il le **suit**. Les deux refusent sans importer.
+**Ordre des refus.** Les refus qui précèdent la résolution du profil restent prioritaires : `400` du multipart, `404 BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND`, et pour un CSV le `422 BANK_IMPORT_DUPLICATE_FILE` non confirmé puis le `404 BANK_CSV_NO_PROFILE_MATCH`. Le `409` vient ensuite, avant tout parse du fichier (ses octets sont déjà lus : le hash en est tiré). ⚠️ **Asymétrie CSV / CAMT** : pour un CAMT.053, le `409` **précède** le `422 BANK_IMPORT_DUPLICATE_FILE` ; pour un CSV, il le **suit**. Les deux refusent sans importer.
+
+### Notes du tableau des ressources
+
+Renvois ¹, ² et ³ du tableau en tête de ce § 7.
 
 ² **Deux opérations sur les factures sont réservées à l'interface web** : `DELETE /invoices/{id}` et `POST /invoices/{id}/reminders/{reminderId}/cancel` (annulation d'un rappel) sont des routes d'administration, donc fermées aux clés (`403 API_KEY_ADMIN_FORBIDDEN`, cf. §4). Tout le reste du cycle de facturation reste ouvert.
 

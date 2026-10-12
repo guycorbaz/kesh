@@ -1853,11 +1853,14 @@ la recalcule aussitôt (« Recalcul de la prévisualisation… »), y compris ap
 redéposer le fichier pour essayer un autre profil. Les avertissements déjà confirmés sont alors
 \emph{à confirmer de nouveau} : les cases cochées sur l'ancienne prévisualisation sont décochées.
 
-Si le profil ou le compte bancaire est modifié ailleurs (dans un autre onglet, par un autre
-utilisateur) entre la prévisualisation et la confirmation, Kesh \textbf{n'importe pas} : il
-recalcule la prévisualisation et l'annonce (« Le profil, le fichier ou le compte a changé depuis la
-prévisualisation… »). L'avis ne dit pas ce qui a changé : l'écran ne le sait pas. Vérifiez le
-résultat, puis confirmez de nouveau.
+Si le profil, ou l'IBAN du compte bancaire, est modifié ailleurs (dans un autre onglet, par un
+autre utilisateur) entre la prévisualisation et la confirmation, Kesh \textbf{n'importe pas} : il
+relit la liste des profils, recalcule la prévisualisation et l'annonce (« Le profil, le fichier ou
+le compte a changé depuis la prévisualisation… »). L'avis ne dit pas ce qui a changé : l'écran ne
+le sait pas. Vérifiez le résultat, puis confirmez de nouveau. Si le recalcul échoue --- le profil a
+été supprimé, ou ne convient plus au fichier ---, le message d'erreur s'affiche avec l'avis :
+choisissez un autre profil. Les autres changements du compte (nom de la banque, description) ne
+bloquent pas l'import.
 
 Si c'est le \emph{fichier} qui est modifié sur le disque après la prévisualisation, Kesh n'importe
 pas non plus, mais la suite dépend du navigateur : selon le navigateur, il recalcule la
