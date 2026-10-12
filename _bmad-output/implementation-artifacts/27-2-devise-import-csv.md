@@ -2,16 +2,15 @@
 
 ## Status
 
-**review** — fiche créée le 2026-10-12 en autonomie (skill `bmad-create-story`), sur `a2743fd4`
-(`origin/main`, rétrospective de l'Epic 26). Validation P1 faite (Sonnet, lentilles R et F : 3 MEDIUM, 14 LOW),
-remédiée le 2026-10-12 — périmètre élargi par l'orchestrateur au formulaire qui perd la contrepartie (AC8-bis) et à
-la devise des transactions CAMT.053 (AC19). Validation P2 faite (Opus, lentilles R et F : 3 MEDIUM, 18 LOW), remédiée
-le 2026-10-12. Validation P3 faite (Sonnet, lentilles R et F : 1 MEDIUM distinct, 13 LOW distincts), remédiée le
-2026-10-12 ; validation P4 **ciblée** faite (Haiku, une lentille : 0 MEDIUM, 5 LOW, remédiés) — **validation close**. Développement fait le
-2026-10-12 (`bmad-dev-story`, Opus 5.5), gates complets verts au dernier commit de code `d6502211` ; revue de code P1 à
-lancer : prompt `27-2-review-prompt-p1.md` (Sonnet, lentilles B, E, A).
-Choix tranchés : **C-27-2-1 à C-27-2-28**, registre `_bmad-output/implementation-artifacts/epic-27-choix-autonomes-27-2.md`
-(à fusionner par union dans `epic-27-choix-autonomes.md`, qui vit sur la branche de la 27-1).
+**done** — fiche créée le 2026-10-12 en autonomie (skill `bmad-create-story`), sur `a2743fd4`
+(`origin/main`, rétrospective de l'Epic 26). Validation close en quatre passes (P1 Sonnet 3 MEDIUM, P2 Opus 3 MEDIUM,
+P3 Sonnet 1 MEDIUM, P4 ciblée Haiku 0 MEDIUM). Développement fait le 2026-10-12 (`bmad-dev-story`, Opus 5.5). Revue de
+code P1 (Sonnet, lentilles B, E, A) : **0 MEDIUM**, 17 LOW — **revue close** ; LOW utiles appliqués, branche rebasée sur
+`origin/main` (Story 27-1 mergée, `f9725c29`), gates complets au dernier commit de code après le rebase (voir *Change
+Log*, § *Revue de code P1 et clôture*).
+Choix tranchés : **C-27-2-1 à C-27-2-32**, versés par union dans le registre de l'epic
+`_bmad-output/implementation-artifacts/epic-27-choix-autonomes.md` (le registre propre à la branche,
+`epic-27-choix-autonomes-27-2.md`, a été supprimé après la fusion).
 
 **Issue** : [#624](https://github.com/guycorbaz/kesh/issues/624) (**P1**, `bug` — montant faux en comptabilité).
 **PR : `closes #624`** — texte prescrit au § *Pour la PR* (AC12). Epic 27 (recette de la v0.13.1, cible v0.13.2) : le Project Lead a décidé le 2026-10-12 que la
@@ -821,7 +820,7 @@ sous `flock kesh-gate-logs/.gate.lock`.
 
 Journaux (hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/`) : `27-2-ac19-rouge.log` (AC19 rouge avant correction),
 `27-2-mutations.log` et `27-2-mut/` (campagne), `27-2-gate-testfast.log`, `27-2-gate-publish.log`,
-`27-2-gate-{check,lint,vitest,build}.log`, `27-2-gate-e2e.log`, `27-2-e2e-backend.log`, `27-2-make-{1,2}.log`.
+`27-2-gate-{check,lint,vitest,build}.log`, `27-2-gate-e2e.log`, `27-2-e2e-backend.log`, `27-2-make-{1,2}.log`. Clôture (revue de code P1, rebase) : `27-2-mutations-p1.py` et `27-2-mut/M26…M31.*`, `27-2-gate-*-rebase.log`, `27-2-e2e-backend-rebase.log`, `27-2-make-rebase.log`, `27-2-rebase-{admin,user}-manual.flat.txt`.
 
 ### Completion Notes List
 
@@ -910,9 +909,66 @@ Journaux (hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/`) : `27-2-ac19-roug
   ne passe pas par le catalogue (journal seulement ; la réponse HTTP est traduite) ; (5) l'import CAMT passe par le
   même helper (C-27-2-29), une variante inattendue y devient `500` ; (6) un avertissement `svelte-check` de plus.
 - **Restent à l'orchestrateur** : C-27-2-18 (hypothèse R9, issue à décider) ; C-27-2-20 (garde de devise de la
-  réconciliation partielle, issue à vérifier ou ouvrir) ; doc-comment périmé de `reconciliation_e2e.rs:2241-2262`
-  (P4-5) ; fusion avec la 27-1 et la 27-3 (CHANGELOG, registre, `sprint-status.yaml`, `sitesTotal`, catalogues,
-  manuels).
+  réconciliation partielle, issue à vérifier ou ouvrir) ; fusion avec la 27-3 (CHANGELOG, registre, `sprint-status.yaml`,
+  `sitesTotal`, catalogues, manuels). *(Le doc-comment de `reconciliation_e2e.rs` (P4-5) et la fusion avec la 27-1 sont
+  faits à la clôture, ci-dessous.)*
+
+- **Clôture — revue de code P1 et rebase sur la 27-1** (2026-10-12, Opus 5.5) :
+  - **Remédiation** (`de978e1c` après rebase) : E-1 `currency_column_without_valid_line_gives_default_currency` ;
+    E-3 `padded_currency_cell_is_trimmed` ; E-2 = B-3 `csv_eur_preview_is_warned_with_line_errors_and_after_encoding_retry`
+    (aperçu EUR à ligne invalide au premier essai et au second essai `EncodingMismatch`, import repris par
+    `confirmEncodingMismatch` + `confirmPartialImport` refusé, rien d'écrit ; helper `post_ubs_currency_profile_encoded`) ;
+    E-4 G9 contrôle chaque variable Fluent des replis dans les **quatre** catalogues (les clés de la 27-1 comprises) ;
+    E-5 Vitest (v10), libellé et `aria-describedby` du champ Devise ; E-6 et B-1 commentaires de `reconciliation.rs`
+    (garde tx-side) et doc-comment de `post_accept_skips_non_chf_transaction` récrits (ce qui retire un « v0.1 » de la
+    liste fermée, voir ci-dessous) ; A-3 = E-8 apostrophes en-CH et it-CH (C-27-2-32) ; A-4 « cellule rognée » (code et
+    AC2) ; A-1 bloc *Status* et `sprint-status.yaml`. B-2 : liste recopiée au HEAD ci-dessous. B-4 : constat sans
+    correction (la majuscule allemande est de règle). A-2 = E-7 : sans objet après le rebase — la 27-1 est sur `main`.
+    A-5 : constat (fusions déclarées), sans correction.
+  - **Mutations neuves M26-M31** (journal `27-2-mutations.log`, une à la fois, `git checkout --` puis `touch`) :
+    **6/6 tuées** (7 variantes) — M26 `unwrap_or("EUR")` → `currency_column_without_valid_line_gives_default_currency` ;
+    M27 lecture sans `trim` → `padded_currency_cell_is_trimmed` ; M28a contrôle d'aperçu limité au relevé sans erreur de
+    ligne, M28b contrôle d'aperçu sauté après `EncodingMismatch`, M29 contrôle d'import sauté sur la reprise
+    `confirmEncodingMismatch` → tous trois `csv_eur_preview_is_warned_with_line_errors_and_after_encoding_retry`, par
+    assertion (`left: Null right: "EUR"` ; `left: 201 right: 422`) ; M30 `{ $currencies }` renommé en de-CH →
+    `les_replis_rust_suivent_le_catalogue` ; M31 `aria-describedby` retiré → (v10). Campagne totale : 31 mutations,
+    39 variantes, aucune survivante.
+  - **Rebase** sur `origin/main` (`f9725c29`, Story 27-1) : conflits résolus par union — `sprint-status.yaml`,
+    `bank_imports_e2e.rs` (sections 27-1 puis 27-2), `textes_coherents.rs` (G9 : entrées des deux stories),
+    `i18n-keys.test.ts` (`sitesTotal` **2043** = 2041 + 2, accepté par la garde), `CHANGELOG.md` (une section
+    `## [0.13.2] — Non publié` : *À faire* de la 27-2, *Ajouté* de la 27-1, *Modifié* des deux, *Corrigé* de la 27-2).
+    Catalogues et `.tex` fusionnés sans conflit. Registre versé par union dans `epic-27-choix-autonomes.md` (32 titres
+    C-27-2), fichier séparé supprimé. Le remède « supprimer l'import » du CHANGELOG et du manuel d'administration nomme
+    désormais le bouton *Supprimer l'import* du détail de l'import, renvoie au § *Supprimer un import* du manuel
+    utilisateur, et dit le bouton grisé (le `409` reste celui de l'API). PDF régénérés par le Makefile de `main`
+    (stabilisés en 2 et 3 passes) ; brochure inchangée, non régénérée. Aplatis : admin `Passer à la 0.13.2` 2,
+    `bouton Supprimer l.import du détail` 1, `Retour à la 0.13.1` 1 ; user `le relevé est supposé en CHF` 1,
+    `Supprimer un import` 2 ; `??` 0 et `n.est pas lue` 0 dans les deux.
+  - **Version minimale** : `git diff --name-status v0.13.1 HEAD -- crates/kesh-db/migrations/` vide (80 migrations,
+    aucune neuve ni sur la branche ni sur `main` depuis la v0.13.1) : les paragraphes « Retour à la 0.13.1 » tiennent.
+  - **Liste fermée des « v0.1 », au HEAD** (même commande) — **10 lignes** : le doc-comment récrit (E-6) ne porte plus
+    la mention ; les autres ont glissé avec la 27-1 :
+
+    ```text
+    crates/kesh-api/src/routes/reconciliation.rs:628
+    crates/kesh-api/src/routes/bank_imports.rs:1144
+    crates/kesh-api/tests/bank_imports_e2e.rs:443
+    crates/kesh-api/tests/reconciliation_e2e.rs:15
+    crates/kesh-api/tests/reconciliation_e2e.rs:2173
+    crates/kesh-api/tests/reconciliation_e2e.rs:2174
+    crates/kesh-api/tests/reconciliation_e2e.rs:2180
+    crates/kesh-db/src/repositories/reconciliation.rs:9
+    crates/kesh-db/src/repositories/reconciliation.rs:104
+    crates/kesh-core/src/bank_imports.rs:726
+    ```
+  - **Gates au HEAD `7513cdde`** (dernier commit de code et de texte avant ce compte rendu), bases recréées
+    (`kesh_272` : drop, migrations, seed ; `kesh_e2e_272` : drop, migrations) : `scripts/test-fast.sh` complet
+    **3471 exécutés, 3471 verts, 6 ignorés** (147,0 s ; 3440 de `main` + 31 de la 27-2 : 28 du développement, 3 de la
+    remédiation) ; `cargo publish --dry-run -p kesh-import` vert ; `npm run check` 0 erreur, 29 avertissements ;
+    `lint-i18n-ownership` vert ; `npm run test:unit` **132 fichiers, 1364 tests verts** (1354 de `main` + 10) ;
+    `npm run build` vert ; **E2E complet** (port 3035, `/health` `smtpConfigured:true`) **264 verts, 7 échecs,
+    19 ignorés** (10,5 min) — les 7 sont exactement ceux de la KF-029 (#97) : `mode-expert.spec.ts:26`, `:41`,
+    `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`.
 
 ### File List
 
@@ -1108,3 +1164,15 @@ Pas de découpage. Dispersion inchangée (`kesh-import`, `kesh-api`, `kesh-core`
 mutations tuées (32 variantes) ; gates complets verts au dernier commit de code `d6502211` (nextest 3447/3447, Vitest
 1343, E2E 263 verts et les 7 échecs de la KF-029) ; AC16 conforme ; choix C-27-2-29 à 31 ; statut **review**. Revue de
 code P1 à lancer : `27-2-review-prompt-p1.md` (Sonnet, lentilles B, E, A).
+
+### Revue de code P1 et clôture
+
+2026-10-12 — **Trend** : validation P1 3 MEDIUM (Sonnet) → P2 3 MEDIUM (Opus, défauts distincts, aucun recyclage) →
+P3 1 MEDIUM (Sonnet) → P4 ciblée 0 MEDIUM (Haiku, une lentille) ; revue de code P1 (Sonnet, lentilles B, E, A)
+**0 CRITICAL, 0 HIGH, 0 MEDIUM, 17 LOW** (B 4, E 8, A 5) — boucle close au critère « que des LOW ». Reclassements :
+E-1, noté « frontière MEDIUM » par sa lentille, gardé LOW (branche d'aperçu d'un fichier déjà refusé à l'import) et
+corrigé quand même. LOW appliqués : E-1 à E-6, E-8 = A-3, B-1, B-2, B-3 = E-2, A-1, A-4 ; sans objet après rebase :
+A-2 = E-7 ; constats sans correction : B-4, A-5. Mutations neuves M26-M31 6/6 tuées. Rebase sur la 27-1, conflits
+réunis (détail au *Dev Agent Record*). Gates complets au HEAD `7513cdde` : nextest 3471/3471, Vitest 1364, E2E 264 et
+les 7 échecs de la KF-029. Choix C-27-2-32. Statut **done**.
+
