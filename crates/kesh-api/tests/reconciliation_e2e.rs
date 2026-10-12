@@ -1192,8 +1192,10 @@ async fn post_accept_handles_partial_failure(pool: MySqlPool) {
     // Marquer la 3e tx comme déjà `reconciled` directement en DB pour
     // simuler un état caduc entre le pré-flight ownership et le step 4
     // status check.
-    // NOTE : on ne peut PAS pré-marquer status='reconciled' avant le pré-flight 0ter,
-    // car celui-ci filtre `status='pending'` et exclurait la tx → 400.
+    // NOTE : pré-marquer status='reconciled' avant le pré-flight 0ter ne
+    // simulerait pas l'état caduc visé ici : le pré-vol la refuserait lui-même
+    // (`RECONCILIATION_ALREADY_RECONCILED`, Story 27-4 — un `400` du lot entier
+    // auparavant), sans atteindre le step 4.
     // À la place : on garde tx[2] pending mais on lie l'invoice à la tx[1] (déjà
     // utilisée au step 1) — pas applicable.
     // Approche réelle : on simule en pointant tx[2]+invoice qui ne match pas
@@ -1731,10 +1733,11 @@ async fn post_reject_processes_the_batch_by_increasing_id(pool: MySqlPool) {
 /// touché `hi` : une sonde `NOWAIT` sur `hi` doit donc réussir. Traité dans
 /// l'ordre reçu, il aurait déjà écrit `hi` et la sonde échouerait.
 ///
-/// `failed[]` n'est pas asserté : le pré-vol (`find_pending_by_ids`) refuse
-/// en `400` tout lot portant une ligne non `pending`, si bien que `failed[]`
-/// n'est atteignable que par une course entre ce pré-vol et le verrou du
-/// compte — son ordre suit celui de la boucle, que ce test tient.
+/// `failed[]` n'est pas asserté ici : les deux lignes sont éligibles. Depuis
+/// la Story 27-4, le pré-vol (`find_by_ids_for_account`) refuse par
+/// proposition, et l'ordre de `failed[]` — trié en entier, refus du pré-vol
+/// et refus sous verrou mêlés — est tenu par
+/// `post_reject_failed_merges_preflight_and_locked_refusals_by_id`.
 ///
 /// ⚠️ **Angle mort assumé** (revue de code P2, A2-3) : la sonde lit
 /// `information_schema.PROCESSLIST`, qui montre une requête **en cours**, non
@@ -1883,15 +1886,19 @@ async fn post_reject_skips_reconciled_transactions(pool: MySqlPool) {
         .send()
         .await
         .unwrap();
-    // Comportement réel : `find_pending_by_ids` filtre `status='pending'`
-    // donc la tx reconciled est absente du tx_map. Le caller détecte
-    // mismatch length et retourne `400 Validation`. C'est la trajectoire
-    // batch-level (avant lock acquisition) — pas le `failed[]` de batch
-    // partiel attendu par l'AC #54 textuel. Cette divergence est
-    // documentée comme déviation comportement vs spec verbose.
-    assert_eq!(resp.status(), 400);
+    // Story 27-4 (#634) — refus par proposition, `200` : le pré-vol classe la
+    // transaction rapprochée (au sens d'`is_reconciled`).
+    assert_eq!(resp.status(), 200);
     let body: Value = resp.json().await.unwrap();
-    assert_eq!(body["error"]["code"].as_str().unwrap(), "VALIDATION_ERROR");
+    assert!(body["rejected"].as_array().unwrap().is_empty(), "{body}");
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(failed[0]["bankTransactionId"].as_i64().unwrap(), tx_ids[0]);
+    assert_eq!(
+        failed[0]["errorCode"].as_str().unwrap(),
+        "RECONCILIATION_ALREADY_RECONCILED"
+    );
+    assert!(failed[0]["details"].is_null(), "{body}");
 
     // auto_match_rejected_at reste NULL.
     let rejected_at: Option<NaiveDateTime> =
@@ -1962,8 +1969,9 @@ async fn reconciliation_routes_require_comptable_role(pool: MySqlPool) {
 // ============================================================
 
 /// AC #64 — accept+reject race : flow A accepte tx pending puis flow B
-/// POST reject sur la même tx → batch-level 400 (la tx reconciled n'est
-/// plus dans `find_pending_by_ids`). auto_match_rejected_at reste NULL.
+/// POST reject sur la même tx → `200`, refus par proposition
+/// `RECONCILIATION_ALREADY_RECONCILED` (Story 27-4 — auparavant un `400` du
+/// lot entier). auto_match_rejected_at reste NULL.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_reject_after_accept_returns_already_reconciled_failed(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
@@ -2030,9 +2038,19 @@ async fn post_reject_after_accept_returns_already_reconciled_failed(pool: MySqlP
         .send()
         .await
         .unwrap();
-    // Trajectoire : `find_pending_by_ids` filtre `status='pending'`,
-    // donc la tx reconciled est absente → batch-level 400 Validation.
-    assert_eq!(resp.status(), 400);
+    // Story 27-4 (#634) — refus par proposition, `200`.
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    assert!(body["rejected"].as_array().unwrap().is_empty(), "{body}");
+    assert_eq!(
+        body["failed"][0]["errorCode"].as_str().unwrap(),
+        "RECONCILIATION_ALREADY_RECONCILED",
+        "{body}"
+    );
+    assert_eq!(
+        body["failed"][0]["bankTransactionId"].as_i64().unwrap(),
+        tx_id
+    );
 
     // auto_match_rejected_at reste NULL.
     let rejected_at: Option<NaiveDateTime> =
@@ -2103,8 +2121,8 @@ async fn get_proposals_paginates_at_100_default(pool: MySqlPool) {
 /// le scoring serveur-side trouve `amount_score=0.0` (signed mismatch).
 ///
 /// Note déviation spec : la spec dit « POST accept retourne 404
-/// BANK_TRANSACTION_NOT_FOUND ». En pratique, `find_pending_by_ids` ne
-/// filtre pas par sign et la tx débit traverse jusqu'à `accept_one` qui
+/// BANK_TRANSACTION_NOT_FOUND ». En pratique, le pré-vol
+/// (`find_by_ids_for_account`, Story 27-4) ne filtre pas par sign et la tx débit traverse jusqu'à `accept_one` qui
 /// score 0.0 → step 7bis P3-H4 min-score guard. Le brief autorise
 /// d'ajuster l'attendu selon le comportement réel.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
@@ -2216,42 +2234,33 @@ async fn post_accept_returns_404_on_cross_tenant_bank_account(pool: MySqlPool) {
     );
 }
 
-/// AC #69 — cross-account proposal : bankAccountId=17 mais tx.bank_account_id=18
-/// → 400 Validation AVANT lock acquisition.
-#[sqlx::test(migrations = "../kesh-db/test-schema")]
-async fn post_accept_returns_400_on_cross_account_proposal(pool: MySqlPool) {
-    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
-    // 2e bank_account de la même company.
-    let bank_account_2 = create_bank_account(&pool, ctx.company_id, "CH5604835012345678009").await;
-    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
-    // Tx insérée sur bank_account_2 mais on requestera avec bank_account_1.
-    let tx_ids = seed_bank_transactions(
-        &pool,
-        ctx.company_id,
-        bank_account_2,
-        ctx.user_id,
-        &unique_hash("cross_account"),
-        day,
-        day,
-        vec![make_new_tx(
-            ctx.company_id,
-            bank_account_2,
-            day,
-            Some(day),
-            dec!(100.00),
-            "CHF",
-            "REF",
-            None,
-        )],
+/// Story 27-4, AC6-3 — commun aux deux tests d'anti-énumération : accepte la
+/// transaction `tx_id` (étrangère au compte `ctx.bank_account_id`) contre la
+/// facture `inv_id` de `ctx`, et rend `(statut, corps)`. Vérifie au passage
+/// que rien n'est écrit : aucune écriture créée, facture non réglée,
+/// transaction inchangée.
+async fn accept_foreign_tx_and_assert_nothing_written(
+    pool: &MySqlPool,
+    ctx: &CompanyCtx,
+    tx_id: i64,
+    inv_id: i64,
+) -> (u16, Value) {
+    let entries_before: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let tx_before: (String, Option<i64>, i32) = sqlx::query_as(
+        "SELECT status, matched_entry_id, version FROM bank_transactions WHERE id = ?",
     )
-    .await;
-
-    let app = spawn_app(pool).await;
+    .bind(tx_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let app = spawn_app(pool.clone()).await;
     let body = serde_json::json!({
-        "bankAccountId": ctx.bank_account_id,  // ≠ bank_account_2
-        "proposals": [{ "type": "invoice", "bankTransactionId": tx_ids[0], "invoiceId": 1 }],
+        "bankAccountId": ctx.bank_account_id,
+        "proposals": [{ "type": "invoice", "bankTransactionId": tx_id, "invoiceId": inv_id }],
     });
-    let start = std::time::Instant::now();
     let resp = app
         .client
         .post(app.url("/api/v1/reconciliation/accept"))
@@ -2260,20 +2269,125 @@ async fn post_accept_returns_400_on_cross_account_proposal(pool: MySqlPool) {
         .send()
         .await
         .unwrap();
-    let elapsed = start.elapsed();
-    assert_eq!(resp.status(), 400);
+    let status = resp.status().as_u16();
     let body: Value = resp.json().await.unwrap();
-    assert_eq!(body["error"]["code"].as_str().unwrap(), "VALIDATION_ERROR");
-    assert!(
-        body["error"]["message"]
-            .as_str()
-            .unwrap()
-            .contains("n'appartiennent pas"),
-        "message doit indiquer le mismatch"
+
+    let entries_after: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM journal_entries")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_eq!(entries_after, entries_before, "aucune écriture créée");
+    let paid_at: Option<NaiveDateTime> =
+        sqlx::query_scalar("SELECT paid_at FROM invoices WHERE id = ?")
+            .bind(inv_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    assert!(paid_at.is_none(), "facture non réglée");
+    let tx_after: (String, Option<i64>, i32) = sqlx::query_as(
+        "SELECT status, matched_entry_id, version FROM bank_transactions WHERE id = ?",
+    )
+    .bind(tx_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    assert_eq!(tx_after, tx_before, "transaction étrangère inchangée");
+    (status, body)
+}
+
+/// Remplace dans `body` tout identifiant de transaction égal à `id` par `0`,
+/// pour comparer deux corps « identifiant mis à part » (AC6-3).
+fn without_tx_id(mut body: Value, id: i64) -> Value {
+    if let Some(failed) = body["failed"].as_array_mut() {
+        for f in failed {
+            if f["bankTransactionId"].as_i64() == Some(id) {
+                f["bankTransactionId"] = Value::from(0);
+            }
+        }
+    }
+    body
+}
+
+/// AC #69 — cross-account proposal : bankAccountId=17 mais tx.bank_account_id=18.
+///
+/// **Story 27-4 (AC6-3, #634)** : auparavant un `400` du lot entier, dont le
+/// message affirmait que la transaction « n'appartient pas » au compte ;
+/// désormais `200`, refus par proposition `BANK_TRANSACTION_NOT_FOUND`, sans
+/// `details`, rien d'écrit. Le jumeau « autre société » rend **exactement**
+/// le même corps, identifiant mis à part (anti-énumération, AC1).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_accept_refuses_cross_account_and_cross_company_transactions_identically(
+    pool: MySqlPool,
+) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let other = setup_company(&pool, "Other", "CH9300762011623852957", Role::Comptable).await;
+    // 2e bank_account de la même company.
+    let bank_account_2 = create_bank_account(&pool, ctx.company_id, "CH5604835012345678009").await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let (inv_id, _) = seed_validated_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-XACC",
+        day,
+        dec!(100.00),
+    )
+    .await;
+    let seed_one = |company_id: i64, bank_id: i64, user_id: i64, seed: &'static str| {
+        let pool = pool.clone();
+        async move {
+            seed_bank_transactions(
+                &pool,
+                company_id,
+                bank_id,
+                user_id,
+                &unique_hash(seed),
+                day,
+                day,
+                vec![make_new_tx(
+                    company_id,
+                    bank_id,
+                    day,
+                    Some(day),
+                    dec!(100.00),
+                    "CHF",
+                    "INV-XACC",
+                    Some("Acme Client"),
+                )],
+            )
+            .await[0]
+        }
+    };
+    let tx_other_account = seed_one(ctx.company_id, bank_account_2, ctx.user_id, "xacc").await;
+    let tx_other_company = seed_one(
+        other.company_id,
+        other.bank_account_id,
+        other.user_id,
+        "xco",
+    )
+    .await;
+
+    let (st_acc, body_acc) =
+        accept_foreign_tx_and_assert_nothing_written(&pool, &ctx, tx_other_account, inv_id).await;
+    assert_eq!(st_acc, 200, "{body_acc}");
+    assert!(body_acc["accepted"].as_array().unwrap().is_empty());
+    let failed = body_acc["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "{body_acc}");
+    assert_eq!(
+        failed[0]["bankTransactionId"].as_i64().unwrap(),
+        tx_other_account
     );
-    assert!(
-        elapsed < std::time::Duration::from_secs(1),
-        "400 doit retourner avant lock"
+    assert_eq!(failed[0]["errorCode"], "BANK_TRANSACTION_NOT_FOUND");
+    assert!(failed[0]["details"].is_null(), "details nul : {body_acc}");
+
+    let (st_co, body_co) =
+        accept_foreign_tx_and_assert_nothing_written(&pool, &ctx, tx_other_company, inv_id).await;
+    assert_eq!(st_co, 200, "{body_co}");
+    assert!(body_co["failed"][0]["details"].is_null(), "{body_co}");
+    assert_eq!(
+        without_tx_id(body_acc, tx_other_account),
+        without_tx_id(body_co, tx_other_company),
+        "autre compte et autre société : même réponse, identifiant mis à part"
     );
 }
 
@@ -4323,7 +4437,8 @@ async fn cancel_reconciliation_roles_scope_and_head(pool: MySqlPool) {
 /// ⚠️ **État FORGÉ, et dit tel** : aucun chemin réel ne laisse le marqueur sur
 /// une transaction rapprochée — quatre chemins le remettent à zéro, et le
 /// chemin « facture » refuse une transaction rejetée dès son contrôle
-/// préalable (400, vérifié au développement). La remise à zéro du geste est
+/// préalable (`failed[]`, `RECONCILIATION_ALREADY_REJECTED` depuis la Story
+/// 27-4 ; un `400` du lot entier auparavant). La remise à zéro du geste est
 /// donc une **défense** ; sans ce test, l'oublier ne rougirait nulle part.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn a_previously_rejected_transaction_comes_back_to_the_proposals(pool: MySqlPool) {
@@ -6296,4 +6411,1116 @@ async fn accept_race_refuses_before_any_lettering(pool: MySqlPool) {
             .await
             .unwrap();
     assert_eq!(reglements, 1, "l'acceptation n'a rien laissé");
+}
+
+// ============================================================
+// Story 27-4 (#634) — un lot qui contient une transaction disparue est
+// traité proposition par proposition
+// ============================================================
+
+/// Une transaction de `amount`, référence `reference`, contrepartie
+/// « Acme Client », dans un import qui lui est propre ; rend son identifiant.
+async fn seed_one_tx_274(
+    pool: &MySqlPool,
+    ctx: &CompanyCtx,
+    bank_account_id: i64,
+    seed: &str,
+    amount: Decimal,
+    reference: &str,
+) -> i64 {
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    seed_bank_transactions(
+        pool,
+        ctx.company_id,
+        bank_account_id,
+        ctx.user_id,
+        &unique_hash(seed),
+        day,
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            bank_account_id,
+            day,
+            Some(day),
+            amount,
+            "CHF",
+            reference,
+            Some("Acme Client"),
+        )],
+    )
+    .await[0]
+}
+
+/// Une facture validée de `amount`, numéro `number`, datée du 2026-05-01 :
+/// rapprochable d'une transaction du 2026-05-15 de même montant et de même
+/// référence. Rend son identifiant.
+async fn seed_invoice_274(
+    pool: &MySqlPool,
+    ctx: &CompanyCtx,
+    number: &str,
+    amount: Decimal,
+) -> i64 {
+    let inv_date = NaiveDate::from_ymd_opt(2026, 5, 1).unwrap();
+    seed_validated_invoice(
+        pool,
+        ctx.company_id,
+        ctx.contact_id,
+        number,
+        inv_date,
+        amount,
+    )
+    .await
+    .0
+}
+
+/// `DELETE /api/v1/bank-imports/{id}` de l'import qui porte `tx_id`
+/// (Story 27-1), avec le JWT du Comptable ; asserte `204`.
+async fn delete_import_of_274(app: &TestApp, pool: &MySqlPool, jwt: &str, tx_id: i64) {
+    let import_id: i64 = sqlx::query_scalar("SELECT import_id FROM bank_transactions WHERE id = ?")
+        .bind(tx_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let resp = app
+        .client
+        .delete(app.url(&format!("/api/v1/bank-imports/{import_id}")))
+        .bearer_auth(jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 204, "suppression de l'import {import_id}");
+}
+
+/// Tient le verrou nommé du compte (`reconcile:{base}:{company}:{account}`,
+/// KF-038) sur une connexion dédiée, comme
+/// `post_accept_returns_409_on_account_lock_contention`.
+async fn hold_account_lock_274(
+    pool: &MySqlPool,
+    ctx: &CompanyCtx,
+) -> (sqlx::pool::PoolConnection<sqlx::MySql>, String) {
+    let db_name: String = sqlx::query_scalar("SELECT COALESCE(DATABASE(), '')")
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let lock_name = format!(
+        "reconcile:{}:{}:{}",
+        db_name, ctx.company_id, ctx.bank_account_id
+    );
+    let mut conn = pool.acquire().await.unwrap();
+    let acquired: Option<i32> = sqlx::query_scalar("SELECT GET_LOCK(?, ?)")
+        .bind(&lock_name)
+        .bind(60)
+        .fetch_one(&mut *conn)
+        .await
+        .unwrap();
+    assert_eq!(acquired, Some(1), "verrou du compte tenu par le test");
+    (conn, lock_name)
+}
+
+async fn release_account_lock_274(
+    conn: &mut sqlx::pool::PoolConnection<sqlx::MySql>,
+    lock_name: &str,
+) {
+    let _: Option<i32> = sqlx::query_scalar("SELECT RELEASE_LOCK(?)")
+        .bind(lock_name)
+        .fetch_one(&mut **conn)
+        .await
+        .unwrap();
+}
+
+/// `POST` JSON synchrone ; rend `(statut, corps)`.
+async fn post_274(app: &TestApp, jwt: &str, path: &str, body: &Value) -> (u16, Value) {
+    let resp = app
+        .client
+        .post(app.url(path))
+        .bearer_auth(jwt)
+        .json(body)
+        .send()
+        .await
+        .unwrap();
+    let status = resp.status().as_u16();
+    (status, resp.json::<Value>().await.unwrap_or(Value::Null))
+}
+
+/// `POST` JSON en tâche, pour un lot qui doit se bloquer sur un verrou.
+fn spawn_post_274(
+    app: &TestApp,
+    jwt: &str,
+    path: &str,
+    body: Value,
+) -> tokio::task::JoinHandle<(u16, Value)> {
+    let client = app.client.clone();
+    let url = app.url(path);
+    let jwt = jwt.to_string();
+    tokio::spawn(async move {
+        let resp = client
+            .post(url)
+            .bearer_auth(jwt)
+            .json(&body)
+            .send()
+            .await
+            .unwrap();
+        let status = resp.status().as_u16();
+        (status, resp.json::<Value>().await.unwrap_or(Value::Null))
+    })
+}
+
+/// Le lot en tâche est vu bloqué dans `with_account_lock` (`SELECT
+/// GET_LOCK(?, ?)`, `kesh-reconciliation/src/mutex.rs`) — sinon le montage
+/// ne prouve rien.
+async fn wait_blocked_on_account_lock_274(
+    pool: &MySqlPool,
+    task: &tokio::task::JoinHandle<(u16, Value)>,
+) {
+    let bloque = kesh_db::test_fixtures::attendre_une_requete_en_cours(pool, &["GET_LOCK"], || {
+        task.is_finished()
+    })
+    .await;
+    assert!(
+        bloque,
+        "le lot devait attendre le verrou du compte — le montage ne prouve rien sinon"
+    );
+}
+
+/// `(bankTransactionId, errorCode, details)` de chaque refus, dans l'ordre.
+fn failed_274(body: &Value) -> Vec<(i64, String, Value)> {
+    body["failed"]
+        .as_array()
+        .unwrap_or_else(|| panic!("pas de failed[] : {body}"))
+        .iter()
+        .map(|f| {
+            (
+                f["bankTransactionId"].as_i64().unwrap(),
+                f["errorCode"].as_str().unwrap().to_string(),
+                f["details"].clone(),
+            )
+        })
+        .collect()
+}
+
+/// Les `bankTransactionId` d'un tableau de succès (`accepted` / `rejected`).
+fn ids_274(body: &Value, key: &str) -> Vec<i64> {
+    body[key]
+        .as_array()
+        .unwrap_or_else(|| panic!("pas de {key}[] : {body}"))
+        .iter()
+        .map(|r| r["bankTransactionId"].as_i64().unwrap())
+        .collect()
+}
+
+/// `(status, matched_entry_id, auto_match_rejected_at, version)` d'une ligne.
+async fn tx_row_274(
+    pool: &MySqlPool,
+    id: i64,
+) -> Option<(String, Option<i64>, Option<NaiveDateTime>, i32)> {
+    sqlx::query_as(
+        "SELECT status, matched_entry_id, auto_match_rejected_at, version \
+         FROM bank_transactions WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .unwrap()
+}
+
+/// Tous les identifiants cités par les traces `reconciliation.rejected`.
+async fn rejected_traces_274(pool: &MySqlPool) -> Vec<Vec<i64>> {
+    let rows: Vec<Value> = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'reconciliation.rejected' ORDER BY id",
+    )
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    rows.iter()
+        .map(|d| {
+            d["bank_transaction_ids"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| v.as_i64().unwrap())
+                .collect()
+        })
+        .collect()
+}
+
+async fn invoice_paid_274(pool: &MySqlPool, inv_id: i64) -> bool {
+    let paid_at: Option<NaiveDateTime> =
+        sqlx::query_scalar("SELECT paid_at FROM invoices WHERE id = ?")
+            .bind(inv_id)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+    paid_at.is_some()
+}
+
+fn not_found_274(id: i64) -> (i64, String, Value) {
+    (id, "BANK_TRANSACTION_NOT_FOUND".to_string(), Value::Null)
+}
+
+/// AC6-1 (acceptation) — l'import A est supprimé **avant** le lot : `tA` sort
+/// en `BANK_TRANSACTION_NOT_FOUND` sans `details`, `tB` est acceptée.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_accept_refuses_a_transaction_deleted_with_its_import_and_accepts_the_rest(
+    pool: MySqlPool,
+) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let inv_a = seed_invoice_274(&pool, &ctx, "INV-DEL-A", dec!(110.00)).await;
+    let inv_b = seed_invoice_274(&pool, &ctx, "INV-DEL-B", dec!(220.00)).await;
+    let t_a = seed_one_tx_274(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        "del_a",
+        dec!(110.00),
+        "INV-DEL-A",
+    )
+    .await;
+    let t_b = seed_one_tx_274(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        "del_b",
+        dec!(220.00),
+        "INV-DEL-B",
+    )
+    .await;
+    let app = spawn_app(pool.clone()).await;
+
+    delete_import_of_274(&app, &pool, &ctx.jwt, t_a).await;
+    let (st, body) = post_274(
+        &app,
+        &ctx.jwt,
+        "/api/v1/reconciliation/accept",
+        &serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "proposals": [
+                { "type": "invoice", "bankTransactionId": t_a, "invoiceId": inv_a },
+                { "type": "invoice", "bankTransactionId": t_b, "invoiceId": inv_b },
+            ],
+        }),
+    )
+    .await;
+    assert_eq!(st, 200, "{body}");
+    assert_eq!(ids_274(&body, "accepted"), vec![t_b], "{body}");
+    assert_eq!(failed_274(&body), vec![not_found_274(t_a)], "{body}");
+    assert!(
+        invoice_paid_274(&pool, inv_b).await,
+        "la facture B est réglée"
+    );
+    assert!(
+        !invoice_paid_274(&pool, inv_a).await,
+        "la facture A ne l'est pas"
+    );
+    assert_eq!(tx_row_274(&pool, t_b).await.unwrap().0, "reconciled");
+}
+
+/// AC6-1 (rejet) — même montage : `tA` refusée, `tB` rejetée, la trace ne
+/// cite que `tB`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_reject_refuses_a_transaction_deleted_with_its_import_and_rejects_the_rest(
+    pool: MySqlPool,
+) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let t_a = seed_one_tx_274(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        "rdel_a",
+        dec!(110.00),
+        "R-A",
+    )
+    .await;
+    let t_b = seed_one_tx_274(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        "rdel_b",
+        dec!(220.00),
+        "R-B",
+    )
+    .await;
+    let app = spawn_app(pool.clone()).await;
+
+    delete_import_of_274(&app, &pool, &ctx.jwt, t_a).await;
+    let (st, body) = post_274(
+        &app,
+        &ctx.jwt,
+        "/api/v1/reconciliation/reject",
+        &serde_json::json!({ "bankAccountId": ctx.bank_account_id, "bankTransactionIds": [t_a, t_b] }),
+    )
+    .await;
+    assert_eq!(st, 200, "{body}");
+    assert_eq!(ids_274(&body, "rejected"), vec![t_b], "{body}");
+    assert_eq!(failed_274(&body), vec![not_found_274(t_a)], "{body}");
+    assert!(tx_row_274(&pool, t_b).await.unwrap().2.is_some());
+    assert_eq!(rejected_traces_274(&pool).await, vec![vec![t_b]]);
+}
+
+/// AC6-2 (acceptation) — l'import A est supprimé **pendant** que le lot attend
+/// le verrou du compte (après le pré-vol) : la recharge sous verrou
+/// d'`accept_one_invoice` le voit absent.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_accept_refuses_a_transaction_deleted_while_the_batch_waits_for_the_lock(
+    pool: MySqlPool,
+) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let inv_a = seed_invoice_274(&pool, &ctx, "INV-WAIT-A", dec!(110.00)).await;
+    let inv_b = seed_invoice_274(&pool, &ctx, "INV-WAIT-B", dec!(220.00)).await;
+    let t_a = seed_one_tx_274(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        "wait_a",
+        dec!(110.00),
+        "INV-WAIT-A",
+    )
+    .await;
+    let t_b = seed_one_tx_274(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        "wait_b",
+        dec!(220.00),
+        "INV-WAIT-B",
+    )
+    .await;
+    let app = spawn_app(pool.clone()).await;
+
+    let (mut conn, lock) = hold_account_lock_274(&pool, &ctx).await;
+    let task = spawn_post_274(
+        &app,
+        &ctx.jwt,
+        "/api/v1/reconciliation/accept",
+        serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "proposals": [
+                { "type": "invoice", "bankTransactionId": t_a, "invoiceId": inv_a },
+                { "type": "invoice", "bankTransactionId": t_b, "invoiceId": inv_b },
+            ],
+        }),
+    );
+    wait_blocked_on_account_lock_274(&pool, &task).await;
+    delete_import_of_274(&app, &pool, &ctx.jwt, t_a).await;
+    release_account_lock_274(&mut conn, &lock).await;
+
+    let (st, body) = task.await.unwrap();
+    assert_eq!(st, 200, "{body}");
+    assert_eq!(ids_274(&body, "accepted"), vec![t_b], "{body}");
+    assert_eq!(failed_274(&body), vec![not_found_274(t_a)], "{body}");
+    assert!(!invoice_paid_274(&pool, inv_a).await);
+    assert!(invoice_paid_274(&pool, inv_b).await);
+}
+
+/// AC6-2 (rejet) — même montage : la reprise de l'AC4 (relecture
+/// verrouillante) rend `BANK_TRANSACTION_NOT_FOUND`, et non plus
+/// `RECONCILIATION_ALREADY_RECONCILED` + `race_during_update`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_reject_refuses_a_transaction_deleted_while_the_batch_waits_for_the_lock(
+    pool: MySqlPool,
+) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let t_a = seed_one_tx_274(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        "rwait_a",
+        dec!(110.00),
+        "R-A",
+    )
+    .await;
+    let t_b = seed_one_tx_274(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        "rwait_b",
+        dec!(220.00),
+        "R-B",
+    )
+    .await;
+    let app = spawn_app(pool.clone()).await;
+
+    let (mut conn, lock) = hold_account_lock_274(&pool, &ctx).await;
+    let task = spawn_post_274(
+        &app,
+        &ctx.jwt,
+        "/api/v1/reconciliation/reject",
+        serde_json::json!({ "bankAccountId": ctx.bank_account_id, "bankTransactionIds": [t_a, t_b] }),
+    );
+    wait_blocked_on_account_lock_274(&pool, &task).await;
+    delete_import_of_274(&app, &pool, &ctx.jwt, t_a).await;
+    release_account_lock_274(&mut conn, &lock).await;
+
+    let (st, body) = task.await.unwrap();
+    assert_eq!(st, 200, "{body}");
+    assert_eq!(ids_274(&body, "rejected"), vec![t_b], "{body}");
+    assert_eq!(failed_274(&body), vec![not_found_274(t_a)], "{body}");
+    assert_eq!(rejected_traces_274(&pool).await, vec![vec![t_b]]);
+}
+
+/// AC6-4 — un lot de rejet des quatre classes, envoyé dans un ordre non
+/// croissant : `rejected` = l'éligible ; `failed` = les trois autres dans
+/// l'ordre croissant, codes de l'AC1, `details` nul sur chacun (tue M3 au
+/// niveau route : sous M3 la rapprochée ressortirait par le repli
+/// `race_during_update`, `details` non nul).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_reject_mixed_batch_of_the_four_classes(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let mut ids = [
+        seed_one_tx_274(&pool, &ctx, ctx.bank_account_id, "mix1", dec!(10.00), "M1").await,
+        seed_one_tx_274(&pool, &ctx, ctx.bank_account_id, "mix2", dec!(20.00), "M2").await,
+        seed_one_tx_274(&pool, &ctx, ctx.bank_account_id, "mix3", dec!(30.00), "M3").await,
+    ];
+    ids.sort_unstable();
+    let (reconciled, rejected, eligible) = (ids[0], ids[1], ids[2]);
+    let missing = eligible + 1_000_000;
+    sqlx::query("UPDATE bank_transactions SET status = 'reconciled' WHERE id = ?")
+        .bind(reconciled)
+        .execute(&pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE bank_transactions SET auto_match_rejected_at = NOW(3) WHERE id = ?")
+        .bind(rejected)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let before_reconciled = tx_row_274(&pool, reconciled).await;
+    let before_rejected = tx_row_274(&pool, rejected).await;
+    let app = spawn_app(pool.clone()).await;
+
+    let (st, body) = post_274(
+        &app,
+        &ctx.jwt,
+        "/api/v1/reconciliation/reject",
+        &serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "bankTransactionIds": [missing, rejected, eligible, reconciled],
+        }),
+    )
+    .await;
+    assert_eq!(st, 200, "{body}");
+    assert_eq!(ids_274(&body, "rejected"), vec![eligible], "{body}");
+    assert_eq!(
+        failed_274(&body),
+        vec![
+            (
+                reconciled,
+                "RECONCILIATION_ALREADY_RECONCILED".to_string(),
+                Value::Null
+            ),
+            (
+                rejected,
+                "RECONCILIATION_ALREADY_REJECTED".to_string(),
+                Value::Null
+            ),
+            not_found_274(missing),
+        ],
+        "{body}"
+    );
+    assert_eq!(tx_row_274(&pool, reconciled).await, before_reconciled);
+    assert_eq!(tx_row_274(&pool, rejected).await, before_rejected);
+    assert_eq!(rejected_traces_274(&pool).await, vec![vec![eligible]]);
+}
+
+/// AC6-5 (a) — rejet concurrent de la même transaction pendant que le lot
+/// attend le verrou (`UPDATE` direct, qui n'écrit aucune trace) : la garde
+/// `auto_match_rejected_at IS NULL` empêche de la ré-horodater et de la tracer
+/// deux fois (tue M10).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_reject_does_not_reject_twice_a_transaction_rejected_meanwhile(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let t_a = seed_one_tx_274(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        "conc_a",
+        dec!(110.00),
+        "R-A",
+    )
+    .await;
+    let t_b = seed_one_tx_274(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        "conc_b",
+        dec!(220.00),
+        "R-B",
+    )
+    .await;
+    let app = spawn_app(pool.clone()).await;
+
+    let (mut conn, lock) = hold_account_lock_274(&pool, &ctx).await;
+    let task = spawn_post_274(
+        &app,
+        &ctx.jwt,
+        "/api/v1/reconciliation/reject",
+        serde_json::json!({ "bankAccountId": ctx.bank_account_id, "bankTransactionIds": [t_a, t_b] }),
+    );
+    wait_blocked_on_account_lock_274(&pool, &task).await;
+    let sentinel = NaiveDate::from_ymd_opt(2026, 1, 1)
+        .unwrap()
+        .and_hms_opt(0, 0, 0)
+        .unwrap();
+    sqlx::query("UPDATE bank_transactions SET auto_match_rejected_at = ? WHERE id = ?")
+        .bind(sentinel)
+        .bind(t_a)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let v0 = tx_row_274(&pool, t_a).await.unwrap().3;
+    release_account_lock_274(&mut conn, &lock).await;
+
+    let (st, body) = task.await.unwrap();
+    assert_eq!(st, 200, "{body}");
+    assert_eq!(ids_274(&body, "rejected"), vec![t_b], "{body}");
+    assert_eq!(
+        failed_274(&body),
+        vec![(
+            t_a,
+            "RECONCILIATION_ALREADY_REJECTED".to_string(),
+            Value::Null
+        )],
+        "{body}"
+    );
+    let row = tx_row_274(&pool, t_a).await.unwrap();
+    assert_eq!(row.2, Some(sentinel), "horodatage concurrent conservé");
+    assert_eq!(row.3, v0, "version inchangée");
+    assert_eq!(rejected_traces_274(&pool).await, vec![vec![t_b]]);
+}
+
+/// AC6-5 (b) — la transaction passe sur un autre compte de la même société
+/// pendant l'attente du verrou (ce que produit, au même identifiant, une
+/// restauration concurrente) : la garde `bank_account_id = ?` de l'`UPDATE`
+/// empêche de rejeter la transaction d'un autre compte (tue M17).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_reject_does_not_reject_a_transaction_moved_to_another_account(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let second_account = create_bank_account(&pool, ctx.company_id, "CH5604835012345678009").await;
+    let t_a = seed_one_tx_274(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        "move_a",
+        dec!(110.00),
+        "R-A",
+    )
+    .await;
+    let t_b = seed_one_tx_274(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        "move_b",
+        dec!(220.00),
+        "R-B",
+    )
+    .await;
+    let app = spawn_app(pool.clone()).await;
+
+    let (mut conn, lock) = hold_account_lock_274(&pool, &ctx).await;
+    let task = spawn_post_274(
+        &app,
+        &ctx.jwt,
+        "/api/v1/reconciliation/reject",
+        serde_json::json!({ "bankAccountId": ctx.bank_account_id, "bankTransactionIds": [t_a, t_b] }),
+    );
+    wait_blocked_on_account_lock_274(&pool, &task).await;
+    sqlx::query("UPDATE bank_transactions SET bank_account_id = ? WHERE id = ?")
+        .bind(second_account)
+        .bind(t_a)
+        .execute(&pool)
+        .await
+        .unwrap();
+    release_account_lock_274(&mut conn, &lock).await;
+
+    let (st, body) = task.await.unwrap();
+    assert_eq!(st, 200, "{body}");
+    assert_eq!(ids_274(&body, "rejected"), vec![t_b], "{body}");
+    assert_eq!(failed_274(&body), vec![not_found_274(t_a)], "{body}");
+    assert!(
+        tx_row_274(&pool, t_a).await.unwrap().2.is_none(),
+        "la transaction de l'autre compte n'est pas rejetée"
+    );
+    assert_eq!(rejected_traces_274(&pool).await, vec![vec![t_b]]);
+}
+
+/// AC6-5 (c) — la transaction passe à `reconciled` pendant l'attente du verrou
+/// (ce que laisse une acceptation terminée, puis la suppression de son écriture
+/// — `matched_entry_id` est `ON DELETE SET NULL`) : **sans** lien, seule la
+/// garde `status = 'pending'` de l'`UPDATE` la protège, et la reprise sous
+/// verrou la reclasse en `RECONCILIATION_ALREADY_RECONCILED`, `details` nul
+/// (revue de code P1, E1 ; tue M20).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_reject_does_not_reject_a_transaction_reconciled_meanwhile(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let t_a = seed_one_tx_274(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        "reco_a",
+        dec!(110.00),
+        "R-A",
+    )
+    .await;
+    let t_b = seed_one_tx_274(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        "reco_b",
+        dec!(220.00),
+        "R-B",
+    )
+    .await;
+    let app = spawn_app(pool.clone()).await;
+
+    let (mut conn, lock) = hold_account_lock_274(&pool, &ctx).await;
+    let task = spawn_post_274(
+        &app,
+        &ctx.jwt,
+        "/api/v1/reconciliation/reject",
+        serde_json::json!({ "bankAccountId": ctx.bank_account_id, "bankTransactionIds": [t_a, t_b] }),
+    );
+    wait_blocked_on_account_lock_274(&pool, &task).await;
+    sqlx::query("UPDATE bank_transactions SET status = 'reconciled' WHERE id = ?")
+        .bind(t_a)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let before = tx_row_274(&pool, t_a).await.unwrap();
+    assert_eq!(
+        (before.0.as_str(), before.1),
+        ("reconciled", None),
+        "montage : rapprochée sans lien"
+    );
+    release_account_lock_274(&mut conn, &lock).await;
+
+    let (st, body) = task.await.unwrap();
+    assert_eq!(st, 200, "{body}");
+    assert_eq!(ids_274(&body, "rejected"), vec![t_b], "{body}");
+    assert_eq!(
+        failed_274(&body),
+        vec![(
+            t_a,
+            "RECONCILIATION_ALREADY_RECONCILED".to_string(),
+            Value::Null
+        )],
+        "{body}"
+    );
+    assert_eq!(
+        tx_row_274(&pool, t_a).await.unwrap(),
+        before,
+        "la transaction rapprochée n'est ni horodatée ni versionnée"
+    );
+    assert_eq!(rejected_traces_274(&pool).await, vec![vec![t_b]]);
+}
+
+/// AC6-6 — l'acceptation d'une transaction rejetée la refuse en
+/// `RECONCILIATION_ALREADY_REJECTED` (tue M4 au niveau route).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_accept_refuses_a_rejected_transaction(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let inv = seed_invoice_274(&pool, &ctx, "INV-REJ", dec!(110.00)).await;
+    let t = seed_one_tx_274(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        "acc_rej",
+        dec!(110.00),
+        "INV-REJ",
+    )
+    .await;
+    sqlx::query("UPDATE bank_transactions SET auto_match_rejected_at = NOW(3) WHERE id = ?")
+        .bind(t)
+        .execute(&pool)
+        .await
+        .unwrap();
+    let before = tx_row_274(&pool, t).await;
+    let app = spawn_app(pool.clone()).await;
+    let (st, body) = post_274(
+        &app,
+        &ctx.jwt,
+        "/api/v1/reconciliation/accept",
+        &serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "proposals": [{ "type": "invoice", "bankTransactionId": t, "invoiceId": inv }],
+        }),
+    )
+    .await;
+    assert_eq!(st, 200, "{body}");
+    assert!(ids_274(&body, "accepted").is_empty(), "{body}");
+    assert_eq!(
+        failed_274(&body),
+        vec![(
+            t,
+            "RECONCILIATION_ALREADY_REJECTED".to_string(),
+            Value::Null
+        )],
+        "{body}"
+    );
+    assert_eq!(tx_row_274(&pool, t).await, before);
+    assert!(!invoice_paid_274(&pool, inv).await);
+}
+
+/// AC6-7 — refus du pré-vol et refus sous verrou mêlés, lot non trié : le
+/// seul refus sous verrou (`tMil`, import B supprimé pendant l'attente) sort
+/// **entre** les deux refus du pré-vol (`tBas`, `tHaut`, rejetées avant) —
+/// tue M9 dans ses deux ordres de concaténation.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_reject_failed_merges_preflight_and_locked_refusals_by_id(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let t_bas = seed_one_tx_274(&pool, &ctx, ctx.bank_account_id, "m9_a", dec!(10.00), "A").await;
+    let t_mil = seed_one_tx_274(&pool, &ctx, ctx.bank_account_id, "m9_b", dec!(20.00), "B").await;
+    let t_haut = seed_one_tx_274(&pool, &ctx, ctx.bank_account_id, "m9_c", dec!(30.00), "C").await;
+    assert!(
+        t_bas < t_mil && t_mil < t_haut,
+        "montage : identifiants croissants"
+    );
+    for id in [t_bas, t_haut] {
+        sqlx::query("UPDATE bank_transactions SET auto_match_rejected_at = NOW(3) WHERE id = ?")
+            .bind(id)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+    let app = spawn_app(pool.clone()).await;
+
+    let (mut conn, lock) = hold_account_lock_274(&pool, &ctx).await;
+    let task = spawn_post_274(
+        &app,
+        &ctx.jwt,
+        "/api/v1/reconciliation/reject",
+        serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "bankTransactionIds": [t_haut, t_mil, t_bas],
+        }),
+    );
+    wait_blocked_on_account_lock_274(&pool, &task).await;
+    delete_import_of_274(&app, &pool, &ctx.jwt, t_mil).await;
+    release_account_lock_274(&mut conn, &lock).await;
+
+    let (st, body) = task.await.unwrap();
+    assert_eq!(st, 200, "{body}");
+    assert!(ids_274(&body, "rejected").is_empty(), "{body}");
+    assert_eq!(
+        failed_274(&body),
+        vec![
+            (
+                t_bas,
+                "RECONCILIATION_ALREADY_REJECTED".to_string(),
+                Value::Null
+            ),
+            not_found_274(t_mil),
+            (
+                t_haut,
+                "RECONCILIATION_ALREADY_REJECTED".to_string(),
+                Value::Null
+            ),
+        ],
+        "{body}"
+    );
+    assert!(
+        rejected_traces_274(&pool).await.is_empty(),
+        "rien de rejeté, aucune trace"
+    );
+}
+
+/// AC6-8 — la relecture de l'AC4 est une **lecture courante** (tue M11).
+///
+/// Deux transactions `tB < tA` du même import. Le test supprime `tA` dans une
+/// transaction SQL **non validée** (verrou X). Le lot `reject [tA, tB]` part :
+/// le pré-vol (lecture non verrouillante) voit encore `tA` éligible ; sous
+/// verrou, `tB` est rejetée — sa relecture `SELECT auto_match_rejected_at`
+/// **ouvre la vue cohérente** de la transaction du lot, qui voit `tA` —, puis
+/// l'`UPDATE` de `tA` se bloque sur le verrou X. Le test valide alors la
+/// suppression : l'`UPDATE` touche 0 ligne, la relecture `FOR UPDATE` voit
+/// `tA` absente. Sous M11 (relecture ordinaire), la vue cohérente la verrait
+/// éligible → repli `race_during_update`.
+///
+/// Observation **durable** (C-27-4-26) : l'aide est appelée deux fois, à
+/// 500 ms d'écart. Le motif désigne aussi l'`UPDATE` de `tB`, de même texte
+/// (PROCESSLIST montre l'instruction, non les valeurs) : le premier appel peut
+/// le surprendre en vol ; 500 ms plus tard, le seul `UPDATE` encore en cours
+/// est celui de `tA`, bloqué.
+///
+/// ⚠️ **Angle mort assumé** : la sonde lit une requête **en cours**, non une
+/// requête **en attente de verrou** — le seul trait propre à l'attente
+/// (`information_schema.INNODB_TRX`, `trx_state = 'LOCK WAIT'`) exige le
+/// privilège `PROCESS`, que l'utilisateur de dev (`kesh`, droits par base,
+/// `scripts/mariadb-init/01-dev-grants.sql`) n'a pas ; la CI tourne en
+/// `root`, mais le test doit passer sur le poste de dev. Sous M11, la mutation
+/// ne survit que si l'`UPDATE` de `tB`, par clé primaire, dure plus de 500 ms.
+/// Le code juste ne peut rendre aucun faux rouge : quel que soit l'`UPDATE`
+/// observé, la suppression est validée avant ou pendant le blocage de `tA`, et
+/// la lecture courante la voit. Si M11 survit à une campagne, rejouer le test
+/// avant de la déclarer survivante.
+///
+/// ⚠️ Repose sur MariaDB 10.11 : avec `innodb_snapshot_isolation` (défaut
+/// depuis 11.6), la lecture verrouillante rendrait `ER_CHECKREAD` — ce test
+/// est celui qui le signalera à la montée de version.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_reject_locking_reread_sees_a_deletion_committed_after_the_snapshot(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let mut ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("m11"),
+        day,
+        day,
+        vec![
+            make_new_tx(
+                ctx.company_id,
+                ctx.bank_account_id,
+                day,
+                Some(day),
+                dec!(10.00),
+                "CHF",
+                "R1",
+                None,
+            ),
+            make_new_tx(
+                ctx.company_id,
+                ctx.bank_account_id,
+                day,
+                Some(day),
+                dec!(20.00),
+                "CHF",
+                "R2",
+                None,
+            ),
+        ],
+    )
+    .await;
+    ids.sort_unstable();
+    let (t_b, t_a) = (ids[0], ids[1]);
+    let app = spawn_app(pool.clone()).await;
+
+    let mut deleting = pool.begin().await.unwrap();
+    let deleted = sqlx::query("DELETE FROM bank_transactions WHERE id = ?")
+        .bind(t_a)
+        .execute(&mut *deleting)
+        .await
+        .unwrap();
+    assert_eq!(
+        deleted.rows_affected(),
+        1,
+        "montage : tA supprimée, non validée"
+    );
+
+    let task = spawn_post_274(
+        &app,
+        &ctx.jwt,
+        "/api/v1/reconciliation/reject",
+        serde_json::json!({ "bankAccountId": ctx.bank_account_id, "bankTransactionIds": [t_a, t_b] }),
+    );
+    let motifs = ["UPDATE bank_transactions", "auto_match_rejected_at"];
+    for _ in 0..2 {
+        let bloque = kesh_db::test_fixtures::attendre_une_requete_en_cours(&pool, &motifs, || {
+            task.is_finished()
+        })
+        .await;
+        assert!(
+            bloque,
+            "l'UPDATE de tA devait attendre la suppression non validée — le montage ne prouve rien sinon"
+        );
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    deleting.commit().await.unwrap();
+
+    let (st, body) = task.await.unwrap();
+    assert_eq!(st, 200, "{body}");
+    assert_eq!(ids_274(&body, "rejected"), vec![t_b], "{body}");
+    assert_eq!(failed_274(&body), vec![not_found_274(t_a)], "{body}");
+    assert!(tx_row_274(&pool, t_a).await.is_none());
+}
+
+/// AC2 (a) — `failed[]` d'`accept` suit l'**ordre des propositions reçues**,
+/// refus du pré-vol et refus sous verrou mêlés, dans un lot non trié par
+/// identifiant (tue M8).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_accept_failed_follows_the_received_order(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let other_account = create_bank_account(&pool, ctx.company_id, "CH5604835012345678009").await;
+    // id bas, absent du compte du lot (autre compte de la même société).
+    let low_absent = seed_one_tx_274(&pool, &ctx, other_account, "ord_low", dec!(10.00), "L").await;
+    // éligible au pré-vol, refusée sous verrou : facture non validée.
+    let inv_draft = insert_invoice(
+        &pool,
+        ctx.company_id,
+        ctx.contact_id,
+        "INV-DRAFT-ORD",
+        NaiveDate::from_ymd_opt(2026, 5, 1).unwrap(),
+        dec!(50.00),
+        "draft",
+        None,
+        None,
+    )
+    .await;
+    let mid = seed_one_tx_274(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        "ord_mid",
+        dec!(50.00),
+        "INV-DRAFT-ORD",
+    )
+    .await;
+    let high_absent = mid + 1_000_000;
+    assert!(low_absent < mid);
+    let app = spawn_app(pool.clone()).await;
+
+    let (st, body) = post_274(
+        &app,
+        &ctx.jwt,
+        "/api/v1/reconciliation/accept",
+        &serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "proposals": [
+                { "type": "invoice", "bankTransactionId": high_absent, "invoiceId": inv_draft },
+                { "type": "invoice", "bankTransactionId": mid, "invoiceId": inv_draft },
+                { "type": "invoice", "bankTransactionId": low_absent, "invoiceId": inv_draft },
+            ],
+        }),
+    )
+    .await;
+    assert_eq!(st, 200, "{body}");
+    assert!(ids_274(&body, "accepted").is_empty(), "{body}");
+    let failed = failed_274(&body);
+    let got: Vec<i64> = failed.iter().map(|f| f.0).collect();
+    assert_eq!(
+        got,
+        vec![high_absent, mid, low_absent],
+        "ordre reçu : {body}"
+    );
+    assert_eq!(failed[0], not_found_274(high_absent));
+    assert_eq!(failed[1].1, "RECONCILIATION_INVOICE_NOT_ELIGIBLE", "{body}");
+    assert_eq!(failed[2], not_found_274(low_absent));
+}
+
+/// AC2 (b) — la trace `reconciliation.accepted` porte la taille du lot
+/// **reçu** (`batch_size = 2`), pas celle du sous-lot éligible (tue M12).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_accept_trace_batch_size_is_the_received_batch(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let inv = seed_invoice_274(&pool, &ctx, "INV-BS", dec!(110.00)).await;
+    let t = seed_one_tx_274(
+        &pool,
+        &ctx,
+        ctx.bank_account_id,
+        "bs",
+        dec!(110.00),
+        "INV-BS",
+    )
+    .await;
+    let app = spawn_app(pool.clone()).await;
+    let (st, body) = post_274(
+        &app,
+        &ctx.jwt,
+        "/api/v1/reconciliation/accept",
+        &serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "proposals": [
+                { "type": "invoice", "bankTransactionId": t + 1_000_000, "invoiceId": inv },
+                { "type": "invoice", "bankTransactionId": t, "invoiceId": inv },
+            ],
+        }),
+    )
+    .await;
+    assert_eq!(st, 200, "{body}");
+    assert_eq!(ids_274(&body, "accepted"), vec![t], "{body}");
+    let details: Value = sqlx::query_scalar(
+        "SELECT details_json FROM audit_log WHERE action = 'reconciliation.accepted' AND entity_id = ?",
+    )
+    .bind(t)
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(details["batch_size"].as_i64(), Some(2), "{details}");
+}
+
+/// AC3 — un lot sans aucune proposition éligible répond `200` sans
+/// transaction ni verrou, sur les deux routes : le verrou du compte est tenu
+/// par le test ; sans le court-circuit, la route attendrait 5 s et rendrait
+/// `409` (tue M7a et M7b). Aucune borne de temps : le statut suffit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn batches_without_eligible_transaction_take_no_lock(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let (mut conn, lock) = hold_account_lock_274(&pool, &ctx).await;
+
+    let (st, body) = post_274(
+        &app,
+        &ctx.jwt,
+        "/api/v1/reconciliation/accept",
+        &serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "proposals": [
+                { "type": "invoice", "bankTransactionId": 99_999_991, "invoiceId": 1 },
+                { "type": "invoice", "bankTransactionId": 99_999_990, "invoiceId": 1 },
+            ],
+        }),
+    )
+    .await;
+    assert_eq!(st, 200, "accept sous verrou tenu : {body}");
+    assert_eq!(
+        failed_274(&body),
+        vec![not_found_274(99_999_991), not_found_274(99_999_990)]
+    );
+
+    let (st, body) = post_274(
+        &app,
+        &ctx.jwt,
+        "/api/v1/reconciliation/reject",
+        &serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "bankTransactionIds": [99_999_991, 99_999_990],
+        }),
+    )
+    .await;
+    assert_eq!(st, 200, "reject sous verrou tenu : {body}");
+    assert_eq!(
+        failed_274(&body),
+        vec![not_found_274(99_999_990), not_found_274(99_999_991)]
+    );
+    release_account_lock_274(&mut conn, &lock).await;
+}
+
+/// AC5 — plus de 500 identifiants : `400` avant toute lecture, sur les deux
+/// routes ; 500 passent le contrôle (tue M13).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn batches_over_500_transactions_are_refused_in_400(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    for n in [500_i64, 501] {
+        let ids: Vec<i64> = (1..=n).map(|i| 90_000_000 + i).collect();
+        let proposals: Vec<Value> = ids
+            .iter()
+            .map(|id| serde_json::json!({ "type": "invoice", "bankTransactionId": id, "invoiceId": 1 }))
+            .collect();
+        let (st_acc, body_acc) = post_274(
+            &app,
+            &ctx.jwt,
+            "/api/v1/reconciliation/accept",
+            &serde_json::json!({ "bankAccountId": ctx.bank_account_id, "proposals": proposals }),
+        )
+        .await;
+        let (st_rej, body_rej) = post_274(
+            &app,
+            &ctx.jwt,
+            "/api/v1/reconciliation/reject",
+            &serde_json::json!({ "bankAccountId": ctx.bank_account_id, "bankTransactionIds": ids }),
+        )
+        .await;
+        if n == 500 {
+            assert_eq!(st_acc, 200, "accept 500 : {body_acc}");
+            assert_eq!(body_acc["failed"].as_array().unwrap().len(), 500);
+            assert_eq!(st_rej, 200, "reject 500 : {body_rej}");
+            assert_eq!(body_rej["failed"].as_array().unwrap().len(), 500);
+        } else {
+            assert_eq!(st_acc, 400, "accept 501 : {body_acc}");
+            assert_eq!(body_acc["error"]["code"], "VALIDATION_ERROR");
+            assert_eq!(st_rej, 400, "reject 501 : {body_rej}");
+            assert_eq!(body_rej["error"]["code"], "VALIDATION_ERROR");
+        }
+    }
 }

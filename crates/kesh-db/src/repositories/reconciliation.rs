@@ -15,14 +15,14 @@
 //! - [`find_contacts_by_ids`] : batch-load Contacts par liste d'IDs
 //!   (M5 Pass 1 + MP4-3 Pass 4 — évite N×M queries dans le handler
 //!   GET proposals 4-pass architecture).
-//! - [`find_pending_by_ids`] : pré-flight ownership check batch
-//!   pour POST /accept et POST /reject (HP3-4 + MP3-3 Pass 3 —
-//!   1 SELECT IN avant lock acquisition, valide que tous les IDs
-//!   appartiennent au compte fourni). **H4 Pass 1 code review** :
-//!   le helper filtre désormais `status='pending' AND
-//!   auto_match_rejected_at IS NULL` côté SQL, donc une transaction
-//!   `reconciled` ou rejetée n'est plus retournée → le caller voit
-//!   un mismatch length et retourne 400.
+//! - [`find_by_ids_for_account`] : pré-vol par lot de POST /accept et
+//!   POST /reject (1 SELECT IN avant le verrou). **Story 27-4** : sans
+//!   filtre de statut ni de rejet (remplace `find_pending_by_ids`, qui
+//!   filtrait et faisait refuser tout le lot en 400) — l'appelant classe
+//!   chaque ligne et refuse par proposition dans `failed[]`.
+//! - [`find_by_id_for_account_for_update`] : relecture **verrouillante**
+//!   (lecture courante) d'une transaction par le rejet, quand son
+//!   `UPDATE` n'a touché aucune ligne (Story 27-4, AC4).
 //! - [`find_pending_by_id_for_account`] : recharge UNE
 //!   `BankTransaction` pending par id (C2 Pass 1 — TOCTOU fix : appelé
 //!   inside lock dans `accept_one` pour fermer la fenêtre entre le
@@ -260,23 +260,37 @@ where
 /// (M9 Pass 1 code review). MariaDB tolère des IN larges mais le
 /// chemin nominal de réconciliation traite des batches < 100 ; cap
 /// défensif à 500 pour éviter un payload abusif.
-const MAX_IN_CLAUSE_IDS: usize = 500;
+///
+/// **Publique depuis la Story 27-4** (C-27-4-20) : les routes
+/// `POST /reconciliation/accept` et `/reject` refusent en `400` un lot
+/// de plus de `MAX_IN_CLAUSE_IDS` identifiants **avant** toute lecture,
+/// en lisant cette constante — une seule borne, pas de second littéral.
+/// Elle borne aussi [`find_contacts_by_ids`], d'où son nom générique.
+pub const MAX_IN_CLAUSE_IDS: usize = 500;
 
-/// Pré-flight ownership + activation check batch (HP3-4 + MP3-3
-/// Pass 3 + H4 Pass 1) : vérifie que tous les `bank_transaction_id`
-/// fournis appartiennent au `(company_id, bank_account_id)` donné
-/// **ET** sont encore actifs pour la réconciliation
-/// (`status = 'pending' AND auto_match_rejected_at IS NULL`).
+/// Lecture par lot des transactions d'un compte, **sans filtre de
+/// statut ni de rejet** (Story 27-4, AC11 — remplace
+/// `find_pending_by_ids`).
 ///
-/// Retourne `HashMap<id, BankTransaction>` keyed par `tx.id`. Les IDs
-/// non-trouvés (ou déjà réconciliés/rejetés) sont absents de la
-/// HashMap — le caller compare `result.len() == ids.len()` pour
-/// détecter le mismatch et retourne `400 Validation` (« n'appartiennent
-/// pas au bankAccountId fourni — ou ne sont plus actifs »).
+/// Scopée `company_id` **et** `bank_account_id` : un identifiant
+/// supprimé, d'une autre société ou d'un autre compte est simplement
+/// absent de la `HashMap` rendue, par le **même** chemin — c'est ce qui
+/// garantit l'anti-énumération du refus `BANK_TRANSACTION_NOT_FOUND`.
 ///
-/// **M9 Pass 1** : retourne `Err(DbError::Sqlx(Protocol))` si
-/// `ids.len() > MAX_IN_CLAUSE_IDS` (cap défensif anti-DoS).
-pub async fn find_pending_by_ids<'e, E>(
+/// Pourquoi aucun filtre : la **classification** (éligible, rapprochée,
+/// rejetée, introuvable) est faite par l'appelant, une seule fois, par
+/// la fonction pure des routes de réconciliation, qui appelle
+/// [`super::bank_imports::is_reconciled`]. Filtrer ici ferait de toute
+/// transaction non éligible une « introuvable ».
+///
+/// Appelants : le pré-vol de `post_accept` et celui de `post_reject`
+/// (`kesh-api/src/routes/reconciliation.rs`), hors transaction et hors
+/// verrou.
+///
+/// Retourne `Err(DbError::Sqlx(Protocol))` si
+/// `ids.len() > MAX_IN_CLAUSE_IDS` (les routes refusent le lot en `400`
+/// avant d'arriver ici).
+pub async fn find_by_ids_for_account<'e, E>(
     executor: E,
     company_id: i64,
     bank_account_id: i64,
@@ -290,7 +304,7 @@ where
     }
     if ids.len() > MAX_IN_CLAUSE_IDS {
         return Err(DbError::Sqlx(sqlx::Error::Protocol(format!(
-            "find_pending_by_ids: ids.len()={} exceeds MAX_IN_CLAUSE_IDS={MAX_IN_CLAUSE_IDS}",
+            "find_by_ids_for_account: ids.len()={} exceeds MAX_IN_CLAUSE_IDS={MAX_IN_CLAUSE_IDS}",
             ids.len()
         ))));
     }
@@ -300,7 +314,6 @@ where
     let sql = format!(
         "SELECT {BANK_TX_COLUMNS} FROM bank_transactions \
          WHERE company_id = ? AND bank_account_id = ? \
-           AND status = 'pending' AND auto_match_rejected_at IS NULL \
            AND id IN ({placeholders})"
     );
     let mut q = sqlx::query_as::<_, BankTransaction>(&sql)
@@ -319,7 +332,8 @@ where
 /// pour rafraîchir l'état dans le lock après le pré-flight batch
 /// hors-lock.
 ///
-/// **Différence avec `find_pending_by_ids`** : ce helper ne filtre
+/// **Comme [`find_by_ids_for_account`]** (qui a remplacé
+/// `find_pending_by_ids` à la Story 27-4), ce helper ne filtre
 /// PAS `auto_match_rejected_at IS NULL`. Une transaction rejetée
 /// manuellement entre le pré-flight et le lock peut encore être
 /// acceptée (pattern « j'ai rejeté trop vite, je rétracte ») — le
@@ -343,16 +357,63 @@ pub async fn find_pending_by_id_for_account<'e, E>(
 where
     E: sqlx::Executor<'e, Database = MySql>,
 {
-    sqlx::query_as::<_, BankTransaction>(&format!(
+    sqlx::query_as::<_, BankTransaction>(&bank_tx_by_id_for_account_sql(""))
+        .bind(company_id)
+        .bind(bank_account_id)
+        .bind(id)
+        .fetch_optional(executor)
+        .await
+        .map_err(map_db_error)
+}
+
+/// Texte SQL de la lecture d'une transaction par identifiant, scopée
+/// `(company_id, bank_account_id)`, sans filtre de statut — partagé par
+/// [`find_pending_by_id_for_account`] (`suffix` vide) et
+/// [`find_by_id_for_account_for_update`] (`suffix` = `" FOR UPDATE"`),
+/// pour que les deux lectures ne divergent pas (Story 27-4, C-27-4-32).
+fn bank_tx_by_id_for_account_sql(suffix: &str) -> String {
+    format!(
         "SELECT {BANK_TX_COLUMNS} FROM bank_transactions \
-         WHERE company_id = ? AND bank_account_id = ? AND id = ?"
-    ))
-    .bind(company_id)
-    .bind(bank_account_id)
-    .bind(id)
-    .fetch_optional(executor)
-    .await
-    .map_err(map_db_error)
+         WHERE company_id = ? AND bank_account_id = ? AND id = ?{suffix}"
+    )
+}
+
+/// Relit UNE transaction par identifiant, scopée `(company_id,
+/// bank_account_id)`, sans filtre de statut, par une **lecture
+/// verrouillante** (`FOR UPDATE`) — Story 27-4, AC4 (C-27-4-21).
+///
+/// **Lecture courante, et c'est tout son objet.** Sous REPEATABLE READ,
+/// une `SELECT` ordinaire dans la transaction d'un lot lit la vue
+/// cohérente ouverte par la première lecture du lot ; une transaction
+/// supprimée (avec son import) **après** cette ouverture y apparaîtrait
+/// encore. `FOR UPDATE` lit la dernière version validée et la verrouille
+/// jusqu'à la fin de la transaction (verrou d'intervalle si la ligne est
+/// absente) : l'appelant sait ce que la ligne est **maintenant**.
+///
+/// Seul appelant : `reject_batch` (`kesh-api/src/routes/reconciliation.rs`),
+/// quand l'`UPDATE` du rejet n'a touché aucune ligne — la ligne relue est
+/// reclassée (introuvable, rapprochée, rejetée). Le verrou porte sur une
+/// ligne que l'`UPDATE` qui précède visait déjà : même ordre, aucun
+/// cycle neuf.
+///
+/// ⚠️ Appelée **hors** transaction (autocommit), elle ne verrouille rien
+/// au-delà de l'instruction : réservée à un exécuteur transactionnel.
+pub async fn find_by_id_for_account_for_update<'e, E>(
+    executor: E,
+    company_id: i64,
+    bank_account_id: i64,
+    id: i64,
+) -> Result<Option<BankTransaction>, DbError>
+where
+    E: sqlx::Executor<'e, Database = MySql>,
+{
+    sqlx::query_as::<_, BankTransaction>(&bank_tx_by_id_for_account_sql(" FOR UPDATE"))
+        .bind(company_id)
+        .bind(bank_account_id)
+        .bind(id)
+        .fetch_optional(executor)
+        .await
+        .map_err(map_db_error)
 }
 
 /// Charge UNE `BankTransaction` **strictement** `status='pending'` par

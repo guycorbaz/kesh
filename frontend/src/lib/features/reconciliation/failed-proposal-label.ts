@@ -6,8 +6,8 @@
  * FailedProposal per-proposal* du `CLAUDE.md` ; seul leur affichage est traduit. Patron :
  * `failedItemLabel` (`payment-batches/payment-batch-helpers.ts`).
  *
- * **Les 28 codes** sont ceux que `crates/kesh-api/src/routes/reconciliation.rs` peut poser dans
- * `failed[]` : les 26 littéraux relevés par
+ * **Les 29 codes** sont ceux que `crates/kesh-api/src/routes/reconciliation.rs` peut poser dans
+ * `failed[]` : les 27 littéraux relevés par
  * `grep -ohE 'error_code: "[A-Z_]+"' crates/kesh-api/src/routes/reconciliation.rs | sort -u`,
  * plus les deux codes posés par `DbError::error_code()` (seules formes non littérales du
  * fichier) : `ACCOUNT_NOT_POSTABLE` et, depuis la Story 15-6b (#474),
@@ -22,7 +22,12 @@
  * ⚠️ **Les clés sont écrites en toutes lettres, jamais construites par gabarit** : une clé
  * statique est vue par `i18n-keys.test.ts` dès qu'elle manque d'un catalogue.
  *
- * ⚠️ **Quatre codes seulement lisent leur `details`** : `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`
+ * Depuis la Story 27-4 (#634), le littéral ajouté en dernier (ce qui porte le compte à 27) est
+ * `RECONCILIATION_ALREADY_REJECTED` : une
+ * transaction rejetée refusée par le pré-vol d'un lot (auparavant, le lot entier était refusé
+ * en `400`).
+ *
+ * ⚠️ **Cinq codes seulement lisent leur `details`** : `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`
  * (Story 15-6b), pour son `role` — le compte de banque lié au compte débiteurs et le compte
  * d'arrondi désigné qui l'est n'appellent pas le même remède ; `ACCOUNT_NOT_POSTABLE` (AC2), pour
  * nommer les comptes ; `LATER_FISCAL_YEAR_CLOSED` (Story 15-12b, #543), pour nommer l'exercice
@@ -32,7 +37,10 @@
  * est la seule qu'un utilisateur rencontre sans avoir rien fait de travers : la proposition
  * retient les factures datées de 30 jours avant à 30 jours après la transaction, alors que
  * l'acceptation refuse un paiement antérieur de plus d'un jour à la facture (#548). Les
- * autres raisons gardent le libellé générique.
+ * autres raisons gardent le libellé générique. Enfin, depuis la Story 27-4 (#634, choix
+ * C-27-4-8), `RECONCILIATION_ALREADY_RECONCILED`, pour la seule raison `race_during_update` : la
+ * transaction a changé entre la relecture et l'écriture — rapprochée, rejetée **ou supprimée** —,
+ * et « déjà réconciliée » serait faux pour une suppression.
  *
  * ⚠️ **Plusieurs causes sous un libellé unique — limite assumée (choix C32, C37)** :
  * - `PERIOD_LOCKED` porte `lockedThrough` et `attempted`, que le libellé ne lit pas ;
@@ -103,8 +111,9 @@ export function fiscalYearName(details: unknown): string | null {
 
 /**
  * Libellé traduit d'un `errorCode` de `failed[]`. `details` n'est lu que pour
- * `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, `ACCOUNT_NOT_POSTABLE`, `LATER_FISCAL_YEAR_CLOSED`
- * et `RECONCILIATION_INVOICE_NOT_ELIGIBLE` ; un code inconnu rend un repli qui cite le code.
+ * `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`, `ACCOUNT_NOT_POSTABLE`, `LATER_FISCAL_YEAR_CLOSED`,
+ * `RECONCILIATION_INVOICE_NOT_ELIGIBLE` et `RECONCILIATION_ALREADY_RECONCILED` ; un code inconnu
+ * rend un repli qui cite le code.
  */
 export function failedProposalLabel(code: string, details?: unknown): string {
 	switch (code) {
@@ -137,7 +146,7 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 		case 'BANK_TRANSACTION_NOT_FOUND':
 			return i18nMsg(
 				'reconciliation-failed-bank-transaction-not-found',
-				'Transaction bancaire introuvable.'
+				'Transaction introuvable : elle a été supprimée avec son import, ou n’appartient pas à ce compte bancaire.'
 			);
 		case 'DATABASE_ERROR':
 			return i18nMsg(
@@ -186,9 +195,22 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 		case 'PROJECT_NOT_FOUND':
 			return i18nMsg('reconciliation-failed-project-not-found', 'Projet analytique introuvable.');
 		case 'RECONCILIATION_ALREADY_RECONCILED':
+			// Story 27-4 (C-27-4-8) — `race_during_update` : changée pendant le traitement, peut-être
+			// supprimée ; « déjà réconciliée » serait faux.
+			if (failureReason(details) === 'race_during_update') {
+				return i18nMsg(
+					'reconciliation-failed-changed-during-batch',
+					'La transaction a été modifiée pendant le traitement — rapprochée, rejetée ou supprimée par une autre opération.'
+				);
+			}
 			return i18nMsg(
 				'reconciliation-errors-already-reconciled',
 				'Cette transaction est déjà réconciliée.'
+			);
+		case 'RECONCILIATION_ALREADY_REJECTED':
+			return i18nMsg(
+				'reconciliation-failed-already-rejected',
+				'Cette transaction a déjà été rejetée : elle n’est plus proposée.'
 			);
 		case 'RECONCILIATION_CURRENCY_MISMATCH':
 			return i18nMsg(

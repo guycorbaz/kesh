@@ -11,7 +11,8 @@ import type { BankTransactionDto } from './bank-import.types';
  *
  * ⚠️ **Écrite deux fois, et seulement deux** : ici, et côté serveur dans
  * `crates/kesh-db/src/repositories/bank_imports.rs` (`is_reconciled`, appelée
- * par `delete_unreconciled_in_tx`). L'écran n'est qu'une commodité : le serveur
+ * par `delete_unreconciled_in_tx` et, depuis la Story 27-4, par la classification
+ * des lots de réconciliation). L'écran n'est qu'une commodité : le serveur
  * seul décide (`409 BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS`).
  */
 export function isReconciled(tx: BankTransactionDto): boolean {
