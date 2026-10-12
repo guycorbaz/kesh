@@ -1,6 +1,6 @@
 # Story 27.3 : changer de profil après l'aperçu recalcule l'aperçu — et le serveur refuse un import dont le profil, le compte ou le fichier a changé depuis l'aperçu
 
-Status: ready-for-dev
+Status: in-progress
 
 <!-- Fiche créée le 2026-10-12 par bmad-create-story, en autonomie (aucune question). Choix au registre
 `epic-27-choix-autonomes-27-3.md` (C-27-3-1 à C-27-3-45), à fusionner par l'orchestrateur dans
