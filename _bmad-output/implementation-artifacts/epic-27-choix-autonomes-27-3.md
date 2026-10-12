@@ -571,3 +571,39 @@ Fiche : `27-3-profil-apres-apercu.md`. Issue #626 (P2).
 - **Retenu** : dans `loadProfiles()`, après une relecture réussie, un `bankProfileId` absent de la liste revient à `null`. Le recalcul déjà en vol garde son profil (pris dans l'instantané), échoue, et son erreur s'affiche avec l'avis : l'utilisateur choisit un autre profil, ou redépose le fichier pour l'auto-détection — seule issue quand la liste est vide. Le manuel le dit. Garde de séquence ajoutée à `loadProfiles()` (L4) : seule la dernière relecture pose la liste. Tenu par V6-quater (trois cas) ; mutations M36, M37.
 - **Écarté** : relancer d'office le recalcul sans profil quand le profil a disparu — l'auto-détection choisirait un profil que personne n'a demandé, et le manuel ne pourrait plus dire « si le recalcul échoue … le profil a été supprimé » ; un recalcul en double en course avec celui du `409`.
 - **Réversible** : oui.
+
+### C-27-3-58 — Revue de code P3 ciblée, LOW-1 et LOW-2 : deux angles morts assumés de `loadProfiles()`, sans code
+
+- **Contexte** : la passe P3 ciblée (Haiku, une lentille) relève deux défauts résiduels LOW dans `loadProfiles()`
+  (`BankImportUpload.svelte`), hors régression de la remédiation P2.
+  - **LOW-1** — « la plus récente gagne » : une relecture réussie est écartée dès qu'une relecture plus récente
+    existe, même si celle-ci échoue ensuite ; la liste en place reste alors celle d'avant (vide au montage, ce qui
+    masque le sélecteur jusqu'au rechargement). Fenêtre : la relecture du montage encore en vol quand un `409`
+    survient **et** que la relecture du `409` échoue.
+  - **LOW-2** — `listBankProfiles(1, 50)` ne lit que la première page, quand le serveur plafonne à 200
+    (`bank_profiles.rs`, `per_page.clamp(1, 200)`). Au-delà de 50 profils, un profil hors de la page 1 est remis
+    à `null` à chaque relecture : le sélecteur affiche « Auto-détection » pendant que l'instantané porte l'id.
+    L'envoi reste fidèle à l'aperçu affiché (l'instantané) : défaut d'**affichage**, aucun mauvais rattachement.
+    La même borne de 50 vaut déjà pour la liste du montage, antérieure à la story.
+- **Retenu** : **angles morts écrits, aucun code**. Une correction toucherait du code de production, ce qui
+  rouvrirait la boucle (une passe ciblée P4 de plus) pour deux défauts LOW, l'un à fenêtre très étroite, l'autre
+  à partir de 51 profils — l'unique utilisateur réel en a un.
+- **Écarté** : pour LOW-1, un indicateur `lastAppliedSeq` (n'écarter qu'au profit d'une relecture **réussie**) ;
+  pour LOW-2, `per_page` porté à 200, ou ne remettre à `null` que si la liste est complète
+  (`list.total <= list.items.length`). Les trois restent de bons correctifs pour une story ultérieure.
+- **Réversible** : oui (écran seul).
+
+### C-27-3-59 — Revue de code P3 ciblée, MEDIUM-3 : le manuel distingue les deux cas du retour à l'auto-détection
+
+- **Contexte** : le manuel disait « pour l'auto-détection, redéposez le fichier » après tout recalcul en échec ; la
+  lentille relève que l'option *Auto-détection* du sélecteur relance l'aperçu sans redépôt (`handleProfileChange`).
+  Sa correction proposée (« choisissez-la dans le sélecteur ») était **elle-même inexacte** dans le cas du profil
+  supprimé : le sélecteur y est **déjà** revenu sur *Auto-détection* (C-27-3-57), et choisir l'option déjà
+  sélectionnée n'émet pas `change` (`BankProfileSelector.svelte`, `onchange={handleChange}`) — rien ne se relance.
+- **Retenu** : deux cas écrits. Recalcul en échec avec un profil encore présent : choisir un autre profil **ou**
+  *Auto-détection* dans le sélecteur, sans redépôt (cohérent avec l'encadré, « inutile de redéposer le fichier
+  pour essayer un autre profil »). Profil supprimé : le sélecteur est déjà sur *Auto-détection* ; choisir un autre
+  profil, ou redéposer pour l'auto-détection ; redéposer encore quand plus aucun profil n'existe.
+- **Écarté** : la formulation proposée par la lentille, fausse dans le cas même qu'elle visait ; relancer d'office
+  le recalcul sans profil (déjà écarté par C-27-3-57).
+- **Réversible** : oui (manuel seul).

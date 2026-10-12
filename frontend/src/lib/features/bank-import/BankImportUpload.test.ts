@@ -580,6 +580,8 @@ describe('BankImportUpload — refus 409 BANK_IMPORT_PREVIEW_STALE (Story 27-3, 
 		const select = get<HTMLSelectElement>(c, 'bank-profile-select');
 		expect(select.querySelector(`option[value="${A}"]`)?.textContent).toContain('Profil A renommé');
 		expect(select.querySelector(`option[value="${C}"]`)).toBeNull();
+		// Revue de code P3, MEDIUM-2 : A survit à la relecture, le choix reste A.
+		expect(select.value, 'A présent dans la liste relue : choix gardé').toBe(String(A));
 	});
 
 	it('V6-ter (variante) — la relecture échoue : la liste en place est gardée', async () => {
@@ -640,7 +642,9 @@ describe('BankImportUpload — refus 409 BANK_IMPORT_PREVIEW_STALE (Story 27-3, 
 	});
 
 	it('V6-quater (séquence) — deux relectures croisées : seule la dernière demandée pose la liste', async () => {
-		// Revue de code P2, L4.
+		// Revue de code P2, L4. Revue de code P3, MEDIUM-1 : la relecture périmée
+		// ne contient pas A, la récente oui — une remise à `null` placée avant la
+		// garde de séquence viderait le choix.
 		const { c } = await mount();
 		const first = deferred<unknown>();
 		const second = deferred<unknown>();
@@ -656,8 +660,8 @@ describe('BankImportUpload — refus 409 BANK_IMPORT_PREVIEW_STALE (Story 27-3, 
 		second.resolve({ items: [profile(A, 'Profil A récent')], total: 1, page: 1, perPage: 50 });
 		await flush();
 		first.resolve({
-			items: [profile(A, 'Profil A ancien'), profile(C, 'Profil C')],
-			total: 2,
+			items: [profile(C, 'Profil C')],
+			total: 1,
 			page: 1,
 			perPage: 50,
 		});
@@ -665,6 +669,7 @@ describe('BankImportUpload — refus 409 BANK_IMPORT_PREVIEW_STALE (Story 27-3, 
 		const select = get<HTMLSelectElement>(c, 'bank-profile-select');
 		expect(select.querySelector(`option[value="${A}"]`)?.textContent).toContain('Profil A récent');
 		expect(select.querySelector(`option[value="${C}"]`)).toBeNull();
+		expect(select.value, 'la relecture périmée ne vide pas le choix').toBe(String(A));
 	});
 
 	it('V6-bis (a) — changer de profil efface l’avis dès le geste', async () => {
