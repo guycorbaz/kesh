@@ -1909,11 +1909,12 @@ async fn deleted_traces(pool: &MySqlPool) -> i64 {
 /// H1 — suppression, trace, puis réimport du même fichier sans
 /// `confirmDuplicateFile` (AC6, AC7).
 ///
-/// Trois nombres distincts (revue de code P2, E-P2-2) : l'entête dit `n` (1,
-/// le fichier), l'import porte `n + 2` lignes, dont **une** rejetée. La trace
-/// doit compter les lignes lues sous verrou (`n + 2`), non l'entête (`n`), et
-/// la rejetée (`1`) à part : une inversion des deux champs, ou un
-/// `transaction_count` pris à l'entête, rougit.
+/// Trois nombres distincts (revue de code P2, E-P2-2 ; P3, E3-1) : l'entête
+/// dit `n` (1, le fichier), l'import porte `n + 2` lignes, dont **deux**
+/// rejetées. La trace doit compter les lignes lues sous verrou (`n + 2`), non
+/// l'entête (`n`), et les rejetées (`2`) à part : une inversion des deux
+/// champs, un `transaction_count` ou un `rejected_count` pris à l'entête,
+/// rougit (mutations M31 à M33, M40).
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn delete_import_removes_it_traces_it_and_allows_reimport(pool: MySqlPool) {
     let s = setup(&pool).await;
@@ -1927,12 +1928,17 @@ async fn delete_import_removes_it_traces_it_and_allows_reimport(pool: MySqlPool)
         (1, lines),
         "montage : n + 2 lignes"
     );
-    assert_ne!(lines, 1, "montage : lignes ≠ rejetées");
-    // Une transaction rejetée par l'utilisateur : elle part avec l'import, et
-    // la trace la compte (`rejected_count` propagé du dépôt jusqu'au journal).
+    let rejected = 2;
+    assert!(
+        rejected != lines && rejected != n,
+        "montage : rejetées ≠ lignes ≠ entête"
+    );
+    // Deux transactions rejetées par l'utilisateur : elles partent avec
+    // l'import, et la trace les compte (`rejected_count` propagé du dépôt
+    // jusqu'au journal).
     sqlx::query(
         "UPDATE bank_transactions SET auto_match_rejected_at = NOW(3) \
-         WHERE import_id = ? ORDER BY id LIMIT 1",
+         WHERE import_id = ? ORDER BY id LIMIT 2",
     )
     .bind(id)
     .execute(&pool)
@@ -1995,8 +2001,8 @@ async fn delete_import_removes_it_traces_it_and_allows_reimport(pool: MySqlPool)
     );
     assert_eq!(
         obj["rejected_count"].as_i64().unwrap(),
-        1,
-        "la rejetée est comptée"
+        rejected,
+        "les rejetées sont comptées, non l'entête ({n})"
     );
     assert_eq!(obj["filename"], "v04_minimal.xml");
     assert_eq!(obj["bank_account_id"].as_i64().unwrap(), s.bank_account_id);
@@ -2040,11 +2046,12 @@ async fn delete_import_removes_it_traces_it_and_allows_reimport(pool: MySqlPool)
     assert_eq!(n2, n, "le réimport compte les mêmes transactions");
 }
 
-/// H2 — une transaction `reconciled` (sans lien) sur deux : `409`, rien n'est
-/// écrit. Deux lignes, une rapprochée (revue de code P2, E-P2-1) :
-/// `reconciledCount` (1) et `transactionCount` (2) diffèrent, une inversion
-/// des deux champs — dans `delete_once`, dans `details` ou à l'argument
-/// `count` du message — rougit.
+/// H2 — deux transactions `reconciled` (sans lien) sur trois : `409`, rien
+/// n'est écrit. Trois lignes, deux rapprochées, un entête qui dit 1 (revue de
+/// code P2, E-P2-1 ; P3, E3-1) : `reconciledCount` (2), `transactionCount` (3)
+/// et l'entête diffèrent deux à deux. Une inversion des deux champs — dans
+/// `delete_once`, dans `details` ou à l'argument `count` du message —, ou un
+/// `reconciled_count` pris à l'entête, rougit (mutations M29, M30, M41).
 ///
 /// Le message passe par le catalogue `fr-CH` (revue de code P1, E4) : sans
 /// `init_error_i18n`, ce binaire lirait le **repli** Rust, et une clé fautive
@@ -2073,10 +2080,15 @@ async fn delete_import_refuses_when_a_transaction_is_reconciled(pool: MySqlPool)
     let s = setup(&pool).await;
     let app = spawn_app(pool.clone()).await;
     let (id, n) = import_minimal(&app, &s).await;
-    add_lines(&pool, id, 1).await;
-    let lines = n + 1;
+    add_lines(&pool, id, 2).await;
+    let lines = n + 2;
+    let reconciled = 2;
+    assert!(
+        reconciled != lines && reconciled != n,
+        "montage : rapprochées ≠ lignes ≠ entête"
+    );
     sqlx::query(
-        "UPDATE bank_transactions SET status = 'reconciled' WHERE import_id = ? ORDER BY id LIMIT 1",
+        "UPDATE bank_transactions SET status = 'reconciled' WHERE import_id = ? ORDER BY id LIMIT 2",
     )
     .bind(id)
     .execute(&pool)
@@ -2094,7 +2106,7 @@ async fn delete_import_refuses_when_a_transaction_is_reconciled(pool: MySqlPool)
         body["error"]["details"]["reconciledCount"]
             .as_i64()
             .unwrap(),
-        1
+        reconciled
     );
     assert_eq!(
         body["error"]["details"]["transactionCount"]
@@ -2104,7 +2116,7 @@ async fn delete_import_refuses_when_a_transaction_is_reconciled(pool: MySqlPool)
     );
     assert_eq!(
         body["error"]["message"],
-        "1 transaction(s) de cet import sont rapprochées : annulez d'abord leur \
+        "2 transaction(s) de cet import sont rapprochées : annulez d'abord leur \
          rapprochement pour pouvoir le supprimer.",
         "message du catalogue fr-CH, nombre interpolé, sans marques d'isolation"
     );

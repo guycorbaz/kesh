@@ -178,6 +178,32 @@ describe('DeleteBankImportAction', () => {
 		await waitFor(() => expect(queryByText('Close')).not.toBeNull());
 	});
 
+	it('pendant l’envoi, « Annuler » est désactivé et ne ferme pas (mutation : `disabled` retiré — M42, E3-2)', async () => {
+		let reject: (e: unknown) => void = () => {};
+		mockApi.deleteBankImport.mockReturnValue(new Promise<void>((_r, j) => (reject = j)));
+		const { getByTestId, findByTestId, getByText, queryByTestId } = monter(detail([tx(1)]));
+		await fireEvent.click(getByTestId('bank-import-delete-button'));
+		await fireEvent.click(await findByTestId('bank-import-delete-submit'));
+		await waitFor(() => expect(mockApi.deleteBankImport).toHaveBeenCalled());
+		const annuler = getByText('Annuler').closest('button') as HTMLButtonElement;
+		expect(annuler.disabled).toBe(true);
+		// `click()` et non `fireEvent.click` : comme un navigateur, jsdom n'active
+		// pas un contrôle désactivé par `click()`, alors que `fireEvent` livre
+		// l'événement à l'écouteur quel que soit `disabled`.
+		annuler.click();
+		await new Promise((r) => setTimeout(r, 0));
+		expect(queryByTestId('bank-import-delete-dialog')).not.toBeNull();
+		reject({
+			code: 'BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS',
+			message: 'serveur',
+			status: 409,
+			details: { reconciledCount: 1, transactionCount: 1 },
+		});
+		await findByTestId('bank-import-delete-error');
+		// L'envoi fini, « Annuler » redevient actif.
+		await waitFor(() => expect(annuler.disabled).toBe(false));
+	});
+
 	it('fermé par Échap, le dialogue se rouvre au clic suivant (mutation : `{open}` à sens unique — B2-1)', async () => {
 		const { getByTestId, findByTestId, queryByTestId } = monter(detail([tx(1)]));
 		await fireEvent.click(getByTestId('bank-import-delete-button'));
