@@ -2,14 +2,14 @@
 
 ## Status
 
-**review** — développement terminé le 2026-10-12 (`bmad-dev-story`, dernier commit de code `6e305767`) ; revue de code **P1** (Sonnet, B/E/A : 0 HIGH, 1 MEDIUM, 14 LOW) **remédiée** — dernier commit hors fiche `5881450b`, gate complet et E2E complet verts à ce commit ; revue de code **P2** à lancer (`27-1-review-prompt-p2.md`, Opus, complète). Validation close (P4 ciblée : 0 MEDIUM, 2 LOW appliqués). Fiche créée le 2026-10-12 en autonomie (`bmad-create-story`), sur `aadace40` (kickoff de
+**review** — développement terminé le 2026-10-12 (`bmad-dev-story`, dernier commit de code `6e305767`) ; revue de code **P1** (Sonnet, B/E/A : 0 HIGH, 1 MEDIUM, 14 LOW) **remédiée** — dernier commit hors fiche `5881450b`, gate complet et E2E complet verts à ce commit ; revue de code **P2** (Opus, B/E/A : 0 HIGH, 4 MEDIUM, 10 LOW) **remédiée** — dernier commit de code `1c9e4ea0`, gate complet et E2E complet verts à ce commit (E2E : les sept échecs de la KF-029) ; revue de code **P3** à lancer (`27-1-review-prompt-p3.md`, Sonnet, complète). Validation close (P4 ciblée : 0 MEDIUM, 2 LOW appliqués). Fiche créée le 2026-10-12 en autonomie (`bmad-create-story`), sur `aadace40` (kickoff de
 l'Epic 27), branche `story/27-1-supprimer-import`. Validation **P1** (Sonnet, lentilles R et F : 0 HIGH,
 10 MEDIUM dont 7 distincts, 14 LOW) **remédiée** ; validation **P2** (Opus, R et F : 0 HIGH, 4 MEDIUM distincts,
 16 LOW) **remédiée** le 2026-10-12, avec la **décision du Project Lead** de fermer la suppression aux clés d'API
 (C-27-1-16) ; validation **P3** (Sonnet, complète, R et F : 0 HIGH, 2 MEDIUM distincts, 13 LOW) **remédiée** — dont
 une sortie par **retrait** sur un angle mort recyclé (C-27-1-20) ; passe **P4 ciblée** (Haiku, une lentille,
 prompt `27-1-validate-prompt-p4-ciblee.md`) **rendue : 0 MEDIUM, 2 LOW appliqués — validation close**. Choix consignés au registre `epic-27-choix-autonomes.md`, **C-27-1-1 à
-C-27-1-27** (C-27-1-7 remplacé par C-27-1-12 ; C-27-1-3 et C-27-1-13 révisés ; C-27-1-16 complété). 17 AC (AC1-AC16 et AC4-bis). PR : **`closes #632`**.
+C-27-1-31** (C-27-1-7 remplacé par C-27-1-12 ; C-27-1-3 et C-27-1-13 révisés ; C-27-1-16 complété). 17 AC (AC1-AC16 et AC4-bis). PR : **`closes #632`**.
 
 ## Story
 
@@ -941,6 +941,13 @@ signal est **déclaré au Project Lead** par l'orchestrateur. **Repli** si une p
   `frontend/src/lib/shared/i18n-keys.test.ts` ; `docs/manual/fr/{user-manual,admin-manual}.{tex,pdf}` ; `docs/api-external.md` ; `kesh-i18n/src/loader.rs` (test de message) ;
   `_bmad-output/planning-artifacts/epic-27-recette-v0-13-1.md` (note rectificative, déjà posée par la fiche) ;
   `CHANGELOG.md` ; `README.md`.
+- Ajoutés par les remédiations de revue de code (revue de code P2, A2-1) : neuf —
+  `frontend/src/routes/(app)/bank-import/[id]/bank-import-detail-page.test.ts` (P2) ; modifiés —
+  `crates/kesh-db/src/entities/bank_import.rs` (P1), `crates/kesh-api/src/routes/bank_accounts.rs` (P1, P2),
+  `crates/kesh-api/tests/textes_coherents.rs` (P1, P2), `frontend/src/lib/features/bank-accounts/{bank-accounts.api.ts,
+  bank-accounts.api.test.ts}` (P1, P2), `frontend/src/lib/features/homepage/BankAccountsCard.svelte` (P1, P2),
+  `frontend/src/lib/features/bank-import/BankImportList.svelte` (P2), `docs/manual/Makefile` (P2),
+  `docs/manual/fr/marketing-brochure.pdf` (P2, régénéré par le Makefile).
 - Aucun fichier de `crates/kesh-db/migrations/`, `test-schema/`, `post_restore.rs` (AC15).
 
 ### References
@@ -949,7 +956,7 @@ signal est **déclaré au Project Lead** par l'orchestrateur. **Repli** si une p
 - `CLAUDE.md` : § *Test Locally First*, § *Review Iteration Rule* (et ses sous-sections : manuel, axes déclarés,
   sites non résolus, propagation post-patch, recompte), § *Pattern batch* (non applicable : route unitaire),
   § *Migration breaking policy* (non applicable, AC15), § *Issue Tracking Rule*.
-- Registre `epic-15-choix-autonomes.md` : C54-C59 (rejeu) ; registre `epic-27-choix-autonomes.md` : C-27-1-1 à 27.
+- Registre `epic-15-choix-autonomes.md` : C54-C59 (rejeu) ; registre `epic-27-choix-autonomes.md` : C-27-1-1 à 31.
 - Code : `kesh-reconciliation/src/mutex.rs` ; `kesh-api/src/retry.rs` ; `kesh-db/src/retry.rs:100-160` ;
   `kesh-db/src/test_fixtures.rs:561-605` ; `kesh-db/tests/reconciliation_cancel.rs:127-185` (patron de course).
 
@@ -1047,6 +1054,13 @@ neuves par locale (`grep -c`), une modifiée.
 - H6 pose la langue des erreurs (`init_error_i18n` fr-CH) : sans cela, il ne prouvait que le repli (M20 survivante).
 - Second site « dernier relevé » du manuel (l. 274) corrigé au même titre que l. 250-251 (C-27-1-22) ; quatre
   commentaires frontend qui disent « dernier relevé » laissés hors périmètre.
+- AC1 (revue de code P2, A2-2) : la définition Rust de « rapprochée » est la **fonction** `is_reconciled`
+  (`repositories/bank_imports.rs`), appliquée aux lignes de la lecture verrouillante de l'AC2, et non une clause SQL
+  de cette requête comme l'écrit la lettre de l'AC1 ; un seul site Rust, comme prescrit, et l'intention de l'AC2
+  (compter sur le résultat verrouillé, pas par une seconde requête) est tenue.
+- AC9 (revue de code P2, B2-4) : le message du `409` de course n'est plus « Une transaction de cet import a été
+  rapprochée entre-temps ({ $count }) » mais « { $count } transaction(s) de cet import ont été rapprochées
+  entre-temps : rechargez la page. » (C-27-1-29).
 - Le paragraphe *Rejeter* nomme l'API sans les routes (« le rapprochement manuel et l'éclatement l'acceptent
   encore ; l'acceptation d'une proposition la refuse »), le manuel utilisateur ne citant pas de chemins d'API à cet
   endroit.
@@ -1077,6 +1091,20 @@ Modifiés :
   `docs/manual/fr/admin-manual.pdf`, `docs/api-external.md`, `CHANGELOG.md`, `README.md`
 - `_bmad-output/implementation-artifacts/{27-1-supprimer-import-non-rapproche.md, epic-27-choix-autonomes.md,
   sprint-status.yaml, 27-1-review-prompt-p1.md}`
+
+Ajoutés par les remédiations de revue de code (revue de code P2, A2-1 — la liste ci-dessus s'arrêtait au
+développement ; recompte : `git diff --name-only fc45574c 1c9e4ea0 -- . ':(exclude)_bmad-output' | wc -l` → **44**,
+soit les 34 ci-dessus et les 10 suivants) :
+
+- Neuf : `frontend/src/routes/(app)/bank-import/[id]/bank-import-detail-page.test.ts` (P2, E-P2-5)
+- Modifiés en P1 (et retouchés en P2 pour certains) : `crates/kesh-db/src/entities/bank_import.rs`,
+  `crates/kesh-api/src/routes/bank_accounts.rs`, `crates/kesh-api/tests/textes_coherents.rs`,
+  `frontend/src/lib/features/bank-accounts/bank-accounts.api.ts`,
+  `frontend/src/lib/features/bank-accounts/bank-accounts.api.test.ts`,
+  `frontend/src/lib/features/homepage/BankAccountsCard.svelte`
+- Modifiés en P2 : `frontend/src/lib/features/bank-import/BankImportList.svelte` (E-P2-6), `docs/manual/Makefile`
+  (C-27-1-30), `docs/manual/fr/marketing-brochure.pdf` (régénéré)
+- Artefacts : `27-1-review-prompt-p2.md`, `27-1-review-prompt-p3.md`
 
 ## Change Log
 
@@ -1251,3 +1279,64 @@ sous `flock`) : `scripts/test-fast.sh` **3440 exécutés, 3440 passés, 6 ignor�
 **Trend** : P1 **1 MEDIUM** (0 HIGH). La remédiation touche du code de production (`bank_imports.rs`, doc-comments)
 et ajoute des tests : la boucle **n'est pas close** — passe **P2 complète (Opus)**, prompt versionné
 `27-1-review-prompt-p2.md`, axe 9 braqué sur la remédiation P1. Reclassements : aucun.
+
+### Revue de code P2 — bilan finding par finding
+
+Passe P2 (Opus, **complète**, trois lentilles B, E, A en contexte frais, lecture seule, sur
+`git diff fc45574c 5881450b -- . ':(exclude)_bmad-output'`, axe 9 sur la remédiation P1 ; prompt
+`27-1-review-prompt-p2.md`, rapports `kesh-gate-logs/27-1-review-p2-{B,E,A}.md`, axes exercés et non exercés
+déclarés par chacune) : **0 CRITICAL / 0 HIGH / 4 MEDIUM / 10 LOW** (B : 2 MEDIUM, 3 LOW ; E : 2 MEDIUM, 4 LOW,
+4 INFO non comptées ; A : 3 LOW). Trois des quatre MEDIUM portent sur la **remédiation P1** (E-P2-2, B2-2) ou sur
+un test qu'elle a laissé faible (E-P2-1) : le motif « la sévérité se déplace vers ce qu'on vient d'écrire ».
+
+| Finding | Sév. | Traitement |
+|---|---|---|
+| E-P2-1 — H2 ne distingue pas `reconciledCount` de `transactionCount` (une seule ligne) | **MEDIUM** | **corrigé** : helper `add_lines` (copies de la première ligne, entête inchangé) ; H2 sur deux lignes dont une rapprochée — `reconciledCount == 1`, `transactionCount == 2`, message « 1 transaction(s)… », import intact à 2 lignes. **M28** (champs inversés dans `details`), **M29** (`count` = `transaction_count`), **M30** (champs inversés au mappage de `delete_once`) : rouges |
+| E-P2-2 — H1 : `transaction_count` et `rejected_count` valent 1 tous deux (régression de preuve née de la remédiation E2) | **MEDIUM** | **corrigé** : H1 sur `n + 2 = 3` lignes, l'entête disant `n = 1`, une rejetée ; la trace doit dire 3 (lignes sous verrou) et 1. **M31** (`rejected_count` = `transaction_count`), **M32** (inverse), **M33** (`transaction_count` pris à l'entête) : rouges |
+| B2-1 — dialogue fermable pendant l'envoi ; `open` non lié, le bouton ne le rouvre plus | **MEDIUM** | **corrigé** (C-27-1-28) : garde dans `Dialog.Content` (Échap, clic extérieur, croix) pendant `submitting`, patron de `WriteOffDialog`, et `bind:open`. Deux Vitest. **M36** (Échap), **M37** (croix), **M38** (`{open}` à sens unique) : rouges. `interactOutsideBehavior` non tenu par un test (angle mort écrit au registre) |
+| B2-2 — « le relevé de plus grande période » est faux (le code retient la période qui **se termine le plus tard**) ; introduit par la remédiation P1 | **MEDIUM** | **corrigé** : « dont la période se termine le plus tard » aux trois sites du manuel utilisateur (PDF régénéré), au doc-comment de `routes/bank_accounts.rs`, au commentaire de H9, aux deux commentaires de `bank-accounts.api.ts`, à `BankAccountsCard.svelte`, au titre du `describe` de `bank-accounts.api.test.ts`. Valeur grepée sur tout le dépôt (« plus grande période » et variantes `plus longue période`, `greatest/largest period`, `längste`, `periodo più`) : ne restent que les artefacts BMAD (historique) ; PDF aplati : 0 occurrence |
+| E-P2-3 — langue globale de H2 : les trois tests `ubs_*` lisent le catalogue ou le repli selon le lanceur, clés hors G9 | LOW | **corrigé** : les trois clés de la 26-1 inscrites à G9 (paramètres `{ $count }` → `{total_errors}`, `{ $line }` → `{line}`), doc-comment de H2 complété. **M35** (repli ubs divergent) : rouge |
+| E-P2-4 — l'ordre « clé avant `404` » n'est tenu par aucun test | LOW | **corrigé** : H8 frappe aussi `id + 10_000` avec chaque clé ⇒ `403`. **M34** (refus déplacé après la recherche) : rouge (`404` sur l'id inconnu) |
+| E-P2-5 — masquage Consultation prouvé au composant seulement | LOW | **corrigé** (C-27-1-31) : Vitest de page `bank-import-detail-page.test.ts` (Admin, Comptable : bouton ; Consultation : aucun, détail chargé). **M39** (`canManage={true}` passé par la page) : rouge |
+| E-P2-6 — l'E2E clique le lien par son rôle | LOW | **corrigé** : `data-testid="bank-import-list-link"` sur le lien de `BankImportList.svelte`, E2E sur ce testid (les deux sites). Les lignes restent filtrées par `hasText: FILENAME` sur le testid de ligne |
+| A2-1 — File List et *Project Structure Notes* sans les fichiers de la remédiation | LOW | **corrigé** : dix fichiers ajoutés (34 + 10 = 44, recompté par `git diff --name-only`) |
+| A2-2 — AC1 : définition Rust dans une fonction, non dans la requête ; écart non déclaré | LOW | **corrigé** : ligne aux *Écarts à la fiche* |
+| A2-3 — H7-bis : la sonde voit une requête en cours, non bloquée | LOW | **corrigé** comme angle mort écrit au doc-comment de H7-bis (fenêtre de l'ordre de la microseconde, aucun faux rouge possible sur le code juste) |
+| B2-3 — « se réimporte sans l'avertissement » absolu | LOW | **corrigé** : « s'il n'en reste aucun autre import » au manuel (avec la raison) et au CHANGELOG |
+| B2-4 — « Une transaction … ({ $count }) » | LOW | **corrigé** (C-27-1-29) : « { $count } transaction(s) de cet import ont été rapprochées entre-temps : rechargez la page. » dans les quatre locales et au repli Svelte ; Vitest du `409` mis à jour |
+| B2-5 — `POST /bank-imports/preview` absent du § 7 | LOW | **corrigé** |
+| Makefile (C-27-1-27, demande de l'orchestrateur) | — | **corrigé** (C-27-1-30) : passes jusqu'à stabilisation de `.aux`/`.toc`/`.out` et absence d'avertissement « Rerun to get / Rerun LaTeX / Please rerun / Label(s) may have changed », 2 à 6 passes. `make -B fr` sous `flock` : 2 passes stables chacun ; depuis zéro (copie au scratchpad) : 3 passes, `.toc` identiques octet pour octet ; aucun avertissement de nouvelle passe ni référence indéfinie aux journaux. Sondage de toutes les entrées de TOC contre les pieds de page : utilisateur 116/121, administration 93/94 — les six écarts sont des titres orphelins en bas de page (la TOC pointe vers la page où commence leur texte), identiques dans les PDF de `5881450b` : préexistants, non traités. Le « 0 écart » sur 95 et 122 entrées déclaré en P1 (C-27-1-27) ne se retrouve pas par ce sondage, qui lit 121 et 94 entrées dans les `.toc` (sections, sous-sections, chapitres) : le périmètre de la P1 n'est pas écrit, l'écart n'est pas élucidé ici |
+
+**Commits de remédiation** : `a5387405` (E-P2-1, -2, -3, -4, A2-3), `7ab16821` (B2-1, B2-4, E-P2-5, E-P2-6),
+`1c9e4ea0` (B2-2, B2-3, B2-5, Makefile, PDF — **dernier commit de code**).
+
+**Mutations M28 à M39** (journal `27-1-mutations.log`, campagne à `1c9e4ea0`, une par une sur arbre propre,
+`git checkout --` + `touch` ; motif d'échec relu dans `27-1-mut/M28-0.out` à `M39-0.out`) : **12 jouées, 12
+rouges**, chacune pour la raison attendue — M28 et M30 sur `reconciledCount` (2 ≠ 1), M29 sur le message
+(« 2 transaction(s) »), M31 sur « la rejetée est comptée » (3 ≠ 1), M32 et M33 sur « les lignes comptées sous verrou,
+non l'entête » (1 ≠ 3), M34 sur « clé read-write, cible 10001 » (404 ≠ 403), M35 sur G9
+(`…amount-sign-refused-profile`), M36 et M37 sur le Vitest « pendant l'envoi », M38 sur « se rouvre », M39 sur
+« Consultation ». Le script de campagne vérifie désormais tous les motifs avant la première écriture (un premier
+lancement de M28, motif ambigu, avait sali `errors.rs` : restauré par `git checkout --` puis `touch` avant toute
+compilation). Campagne complète de la story : M1 à M39 moins M6, soit 38 lignes jouées + M14+M15 ; **37 rouges non
+équivalentes**, M14 et M15 seules équivalentes.
+
+**Gate complet au HEAD `1c9e4ea0`** (dernier commit de code ; bases `kesh_271` et `kesh_e2e_271` recréées — `DROP`/
+`CREATE`, migrations, seed — sans toucher au conteneur, tout sous `flock`, 20:09-20:25) : `scripts/test-fast.sh`
+(fmt + clippy `-D warnings` + nextest) **3440 exécutés, 3440 passés, 6 ignorés** (inchangé : la P2 modifie H1, H2, H8
+et G9 sans ajouter de test Rust) ; `npm run check` 0 erreur, 28 avertissements préexistants (aucun sur un fichier de
+la story) ; `lint-i18n-ownership` PASS ; `npm run test:unit` **132 fichiers, 1353 tests** (+1 fichier, +5 tests depuis
+`5881450b` : 2 dans `DeleteBankImportAction.test.ts`, 3 dans `bank-import-detail-page.test.ts`) ; `npm run build`
+vert ; **E2E complet** (`/health` `smtpConfigured:true`, aucun `Permission denied` au journal du backend) : **263
+passés, 7 échecs, 19 ignorés** — les sept de la KF-029 (#97), `mode-expert.spec.ts:26`, `:41`,
+`onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ; aucun échec hors liste ;
+`bank-import-delete.spec.ts:87` passe (sur le nouveau `data-testid`). Avant le gate, gate ciblé
+`binary(bank_imports_e2e) or binary(textes_coherents) or binary(bank_accounts_e2e)` : 96/96.
+
+**Trend** : P1 **1 MEDIUM** → P2 **4 MEDIUM** (0 HIGH aux deux). La hausse n'est pas un recyclage au sens du
+§ *Règle de splitting* : trois MEDIUM sur quatre viennent de la remédiation P1 (régression de preuve E-P2-2, texte
+B2-2) ou d'un test qu'elle laissait faible (E-P2-1), le quatrième (B2-1) est un défaut d'origine neuf. Signal
+déclaré au Project Lead, sans découpage (décision D5). La remédiation P2 touche du code de production
+(`DeleteBankImportAction.svelte`, `BankImportList.svelte`, quatre catalogues) : la boucle **n'est pas close** —
+passe **P3 complète (Sonnet)**, prompt versionné `27-1-review-prompt-p3.md`, axe 9 braqué sur la remédiation P2.
+Reclassements : aucun.

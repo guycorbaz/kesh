@@ -399,3 +399,56 @@ en autonomie, sur `aadace40` (kickoff de l'Epic 27).
 - **Écartée** : changer le Makefile (passes ou `latexmk`) — défaut antérieur à la story, hors périmètre ; à signaler
   à l'orchestrateur (une issue P3 vaudrait).
 - **Réversible** : oui.
+
+- **Révision (revue de code P2, 2026-10-12)** : l'orchestrateur a demandé de corriger le Makefile dans la story —
+  voir C-27-1-30, qui remplace la partie « Écartée » ci-dessus.
+
+### C-27-1-28 — Le dialogue de suppression ne se ferme pas pendant l'envoi, `open` lié (revue de code P2, B2-1)
+
+- **Contexte** : le wrapper `Dialog` tient sa propre copie d'`open` ; le composant la passait à sens unique
+  (`{open}`). Fermé par Échap, la croix ou un clic extérieur pendant l'envoi, le dialogue disparaissait, l'erreur
+  du `409` s'affichait dans un dialogue invisible, et le bouton ne le rouvrait plus.
+- **Retenu** : les deux remèdes ensemble — garde dans `Dialog.Content` (`escapeKeydownBehavior`,
+  `interactOutsideBehavior` à `'ignore'`, `showCloseButton={!submitting}`), patron de `WriteOffDialog.svelte`, et
+  `bind:open` (un seul état). Deux Vitest : fermeture refusée pendant l'envoi puis erreur visible ; fermé par Échap,
+  rouvert au clic suivant. M36, M37, M38 rouges.
+- **Écartée** : `bind:open` seul (le dialogue se fermerait encore pendant l'envoi, l'erreur n'aurait plus de
+  place) ; garde seule (le `{open}` à sens unique reste un piège pour toute autre fermeture).
+- **Angle mort** : `interactOutsideBehavior` n'est exercé par aucun test — un clic extérieur ne se simule pas
+  fidèlement sous jsdom ; la garde suit le même opérateur que celle d'Échap, qui est tenue.
+- **Réversible** : oui.
+
+### C-27-1-29 — Message du 409 de course : formule neutre « { $count } transaction(s) … ont été », non un sélecteur Fluent (revue de code P2, B2-4)
+
+- **Contexte** : « Une transaction de cet import a été rapprochée entre-temps ({ $count }) » rendait « Une
+  transaction … (3) ».
+- **Retenu** : la formule à marque de pluriel que portent déjà les deux messages voisins de la story
+  (`bank-import-delete-blocked`, `bank-import-errors-has-reconciled-transactions`), dans les quatre locales et au
+  repli Svelte.
+- **Écartée** : un sélecteur `[one] … *[other]` — aucune clé du dépôt n'en emploie pour ces messages, et le
+  repli Svelte (`i18nMsg`) ne l'interprète pas.
+- **Réversible** : oui.
+
+### C-27-1-30 — Makefile des manuels : passes jusqu'à stabilisation (revue de code P2, demande de l'orchestrateur)
+
+- **Contexte** : deux passes fixes laissaient des TOC périmées (C-27-1-27). LaTeX ne signale pas une `.toc`
+  changée ; « Rerun » ne couvre que certaines références.
+- **Retenu** : la règle `%.pdf` relance `xelatex` tant que l'empreinte de `.aux` + `.toc` + `.out` diffère de la
+  passe précédente ou que le journal porte `Rerun to get`, `Rerun LaTeX`, `Please rerun` ou `Label(s) may have
+  changed` ; au moins 2 passes, au plus 6, échec bruyant au-delà. Le motif nu `Rerun` est écarté : la bannière du
+  paquet `rerunfilecheck` le porte à chaque passe (premier essai : « instable après 6 passes »). Contrôle : depuis
+  zéro (`make clean`, copie dans le scratchpad), 3 passes pour les deux manuels, `.toc` identiques octet pour octet
+  à celles du dépôt ; une passe stable est un point fixe, la TOC imprimée est celle que la passe a recalculée.
+- **Écartée** : `latexmk` — non employé ailleurs dans le Makefile, dépendance de plus pour le même résultat.
+- **Observation, non traitée** : six titres de section restent orphelins en bas de page (utilisateur : § 3, 5, 6,
+  9, 15 ; administration : § 5) ; la TOC pointe vers la page suivante, où commence leur texte. Préexistant
+  (identique dans les PDF de `5881450b`), affaire de mise en page et non de TOC.
+- **Réversible** : oui.
+
+### C-27-1-31 — Consultation : Vitest de page plutôt qu'E2E (revue de code P2, E-P2-5)
+
+- **Retenu** : `src/routes/(app)/bank-import/[id]/bank-import-detail-page.test.ts` (patron des tests de page du
+  dépôt, mocks hoistés) : Admin et Comptable voient le bouton, Consultation non, détail chargé. M39
+  (`canManage={true}` passé par la page) rouge.
+- **Écartée** : un E2E Consultation — demanderait un second utilisateur au seed E2E pour la même preuve.
+- **Réversible** : oui.
