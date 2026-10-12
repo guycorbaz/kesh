@@ -346,6 +346,13 @@ pub struct DeletedBankImport {
 /// ⚠️ **Écrite deux fois, et seulement deux** : ici, et côté écran dans
 /// `frontend/src/lib/features/bank-import/bank-import-deletion.ts`
 /// (`isReconciled`). L'écran n'est qu'une commodité : le serveur seul décide.
+///
+/// **Appelée** par deux chemins du serveur : la suppression d'import
+/// ([`delete_unreconciled_in_tx`]) et, depuis la Story 27-4 (C-27-4-19), la
+/// classification des lots de réconciliation (`classify_batch_transaction`,
+/// `kesh-api/src/routes/reconciliation.rs`), qui refuse une transaction
+/// rapprochée en `RECONCILIATION_ALREADY_RECONCILED` sans écrire de second test
+/// de statut.
 pub fn is_reconciled(status: &str, matched_entry_id: Option<i64>) -> bool {
     status != "pending" || matched_entry_id.is_some()
 }
@@ -421,10 +428,13 @@ pub const LOCK_IMPORT_TRANSACTIONS_SQL: &str = "SELECT id, status, matched_entry
 ///
 /// - Un import créé pendant la suppression n'est pas concerné (autre
 ///   identifiant) ; deux imports du même fichier se suppriment un par un.
-/// - Un lot d'acceptation ou de rejet préparé avant la suppression : validée
-///   avant son pré-vol, le lot entier rend `400 VALIDATION_ERROR` ; validée
-///   après, la ligne sort en `failed[]` (`BANK_TRANSACTION_NOT_FOUND` ou
-///   `RECONCILIATION_ALREADY_RECONCILED`). Non corrigé ici (#634).
+/// - Un lot d'acceptation ou de rejet préparé avant la suppression : depuis la
+///   Story 27-4 (#634), la transaction supprimée sort **par proposition** dans
+///   `failed[]` (`BANK_TRANSACTION_NOT_FOUND`, ou, pour une suppression entre
+///   la relecture et l'écriture d'une acceptation, `RECONCILIATION_ALREADY_RECONCILED`
+///   avec `details.reason = "race_during_update"` ; `RECONCILIATION_TRANSACTION_NOT_PENDING`
+///   pour une proposition ventilée ou règle) ; les autres propositions du lot
+///   sont traitées.
 /// - Une création concurrente du même compte juge sa détection de doublons sur
 ///   une vue fixée avant la suppression : elle peut ignorer des lignes qui
 ///   n'existent plus. Fenêtre de quelques millisecondes, non fermée.

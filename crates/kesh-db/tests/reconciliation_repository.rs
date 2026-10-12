@@ -928,3 +928,193 @@ async fn find_unpaid_matches_on_amount_due_of_partially_settled_invoice(pool: My
         "le TTC 1 000.00 ne doit plus matcher une facture dont il reste 600.00"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Story 27-4 (#634) — lectures sans filtre de statut des lots de réconciliation
+// ---------------------------------------------------------------------------
+
+/// Montage commun aux tests de la Story 27-4 : société A avec deux comptes
+/// (`bank_a`, `bank_a2`), société B avec un compte ; sur `bank_a`, trois
+/// transactions — `pending`, `reconciled` (sans lien, posé en base) et
+/// rejetée ; une transaction sur `bank_a2` et une sur la société B.
+struct Seed274 {
+    company_a: i64,
+    bank_a: i64,
+    pending: i64,
+    reconciled: i64,
+    rejected: i64,
+    other_account: i64,
+    other_company: i64,
+}
+
+async fn seed_one_import(
+    pool: &MySqlPool,
+    company_id: i64,
+    bank_id: i64,
+    user_id: i64,
+    hash: &str,
+    refs: &[&str],
+) -> Vec<i64> {
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let mut nbi = make_new_import(company_id, bank_id, user_id, hash);
+    nbi.transaction_count = refs.len() as i32;
+    let mut tx = pool.begin().await.unwrap();
+    let (_, txs) = bank_imports::create_with_transactions(
+        &mut tx,
+        nbi,
+        refs.iter()
+            .map(|r| make_new_tx(company_id, bank_id, day, dec!(10.00), r))
+            .collect(),
+    )
+    .await
+    .expect("create_with_transactions");
+    tx.commit().await.unwrap();
+    txs.iter().map(|t| t.id).collect()
+}
+
+async fn seed_27_4(pool: &MySqlPool) -> Seed274 {
+    let company_a = create_test_company(pool, "Acme274A").await;
+    let user_a = create_test_user(pool, "alice274", company_a).await;
+    let bank_a = create_test_bank_account(pool, company_a, "CH4431999123000889012").await;
+    let bank_a2 = bank_accounts::create(
+        pool,
+        NewBankAccount {
+            company_id: company_a,
+            bank_name: "PostFinance".into(),
+            iban: "CH9300762011623852957".into(),
+            qr_iban: None,
+            is_primary: false,
+        },
+    )
+    .await
+    .expect("second bank_account")
+    .id;
+    let company_b = create_test_company(pool, "Acme274B").await;
+    let user_b = create_test_user(pool, "bob274", company_b).await;
+    let bank_b = create_test_bank_account(pool, company_b, "CH4431999123000889012").await;
+
+    let ids = seed_one_import(pool, company_a, bank_a, user_a, HASH_X, &["P", "R", "J"]).await;
+    let (pending, reconciled, rejected) = (ids[0], ids[1], ids[2]);
+    sqlx::query("UPDATE bank_transactions SET status = 'reconciled' WHERE id = ?")
+        .bind(reconciled)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("UPDATE bank_transactions SET auto_match_rejected_at = NOW(3) WHERE id = ?")
+        .bind(rejected)
+        .execute(pool)
+        .await
+        .unwrap();
+    let other_account = seed_one_import(
+        pool,
+        company_a,
+        bank_a2,
+        user_a,
+        "1111111111111111111111111111111111111111111111111111111111111111",
+        &["A2"],
+    )
+    .await[0];
+    let other_company = seed_one_import(
+        pool,
+        company_b,
+        bank_b,
+        user_b,
+        "2222222222222222222222222222222222222222222222222222222222222222",
+        &["B"],
+    )
+    .await[0];
+    Seed274 {
+        company_a,
+        bank_a,
+        pending,
+        reconciled,
+        rejected,
+        other_account,
+        other_company,
+    }
+}
+
+/// Story 27-4, AC11 — `find_by_ids_for_account` rend les lignes du compte
+/// **quel que soit leur statut** (pending, reconciled, rejetée), aucune d'un
+/// autre compte ni d'une autre société ; liste vide → vide ; 501 → erreur.
+#[sqlx::test(migrations = "./test-schema")]
+async fn find_by_ids_for_account_returns_every_status_and_nothing_out_of_scope(pool: MySqlPool) {
+    let s = seed_27_4(&pool).await;
+
+    let found = reconciliation_repo::find_by_ids_for_account(
+        &pool,
+        s.company_a,
+        s.bank_a,
+        &[
+            s.pending,
+            s.reconciled,
+            s.rejected,
+            s.other_account,
+            s.other_company,
+            i64::MAX,
+        ],
+    )
+    .await
+    .expect("find_by_ids_for_account");
+    let mut keys: Vec<i64> = found.keys().copied().collect();
+    keys.sort_unstable();
+    let mut expected = vec![s.pending, s.reconciled, s.rejected];
+    expected.sort_unstable();
+    assert_eq!(
+        keys, expected,
+        "les trois lignes du compte, et elles seules"
+    );
+    assert_eq!(found[&s.reconciled].status.as_str(), "reconciled");
+    assert!(found[&s.rejected].auto_match_rejected_at.is_some());
+
+    let empty = reconciliation_repo::find_by_ids_for_account(&pool, s.company_a, s.bank_a, &[])
+        .await
+        .expect("liste vide");
+    assert!(empty.is_empty());
+
+    let ids_501: Vec<i64> = (1..=501).collect();
+    let too_many =
+        reconciliation_repo::find_by_ids_for_account(&pool, s.company_a, s.bank_a, &ids_501).await;
+    assert!(too_many.is_err(), "501 identifiants doivent être refusés");
+    let ids_500: Vec<i64> = (1..=500).collect();
+    assert!(
+        reconciliation_repo::find_by_ids_for_account(&pool, s.company_a, s.bank_a, &ids_500)
+            .await
+            .is_ok(),
+        "500 identifiants passent"
+    );
+    assert_eq!(reconciliation_repo::MAX_IN_CLAUSE_IDS, 500);
+}
+
+/// Story 27-4, AC11 — `find_by_id_for_account_for_update`, dans une
+/// transaction : rend la ligne pending, reconciled, rejetée ; `None` pour un
+/// identifiant absent, d'un autre compte, d'une autre société. Le caractère
+/// **courant** de la lecture est prouvé côté route (AC6-8).
+#[sqlx::test(migrations = "./test-schema")]
+async fn find_by_id_for_account_for_update_scopes_without_status_filter(pool: MySqlPool) {
+    let s = seed_27_4(&pool).await;
+    let mut tx = pool.begin().await.unwrap();
+    for id in [s.pending, s.reconciled, s.rejected] {
+        let row = reconciliation_repo::find_by_id_for_account_for_update(
+            &mut *tx,
+            s.company_a,
+            s.bank_a,
+            id,
+        )
+        .await
+        .expect("for update");
+        assert_eq!(row.map(|r| r.id), Some(id), "ligne {id} du compte attendue");
+    }
+    for id in [s.other_account, s.other_company, i64::MAX] {
+        let row = reconciliation_repo::find_by_id_for_account_for_update(
+            &mut *tx,
+            s.company_a,
+            s.bank_a,
+            id,
+        )
+        .await
+        .expect("for update");
+        assert!(row.is_none(), "{id} hors du compte : None attendu");
+    }
+    tx.rollback().await.unwrap();
+}

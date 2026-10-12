@@ -12,6 +12,14 @@
 //!   comme manuellement revues (`auto_match_rejected_at = NOW()`)
 //!   sous mutex. Body : `{ bankAccountId, bankTransactionIds }`.
 //!
+//! **Lots, Story 27-4 (#634)** : une transaction du lot introuvable
+//! (supprimée avec son import, d'un autre compte ou d'une autre société),
+//! rapprochée ou rejetée est refusée **par proposition** dans `failed[]`
+//! (`200`), jamais en refusant le lot entier — § *Pattern batch* du
+//! `CLAUDE.md`. Seuls restent globaux le corps invalide (dont plus de
+//! `MAX_IN_CLAUSE_IDS` identifiants), le compte bancaire inconnu ou archivé
+//! (`404`) et le verrou non obtenu (`409`).
+//!
 //! **Sub-router** : monté sous `comptable_routes` (lib.rs:90 pattern
 //! 8-1b — RBAC `Comptable` requis).
 
@@ -831,12 +839,102 @@ pub async fn get_proposals(
 }
 
 // ============================================================
+// Story 27-4 — classification d'une transaction d'un lot
+// ============================================================
+
+/// Classe une transaction d'un lot de réconciliation (`accept` ou `reject`)
+/// à partir de la ligne lue pour `(company_id, bank_account_id, id)`, ou de
+/// son absence — Story 27-4, AC1 (#634). Fonction **pure**, partagée par les
+/// pré-vols des deux lots et par la reprise sous verrou du rejet.
+///
+/// Rend `None` si la transaction est **éligible**, sinon le refus à placer
+/// dans `failed[]`. L'ordre des bras est la **priorité** :
+///
+/// | ligne lue | refus |
+/// |---|---|
+/// | absente — supprimée, d'une autre société, d'un autre compte | `BANK_TRANSACTION_NOT_FOUND` |
+/// | rapprochée au sens d'[`is_reconciled`] | `RECONCILIATION_ALREADY_RECONCILED` |
+/// | non rapprochée, `auto_match_rejected_at` non nul | `RECONCILIATION_ALREADY_REJECTED` |
+/// | sinon | éligible |
+///
+/// - ⛔ **Anti-énumération** : les trois causes d'absence rendent le même
+///   code, sans `details`, et l'appelant les obtient par la même requête
+///   scopée société **et** compte.
+/// - ⛔ **Une seule définition de « rapprochée »** : la fonction appelle
+///   [`is_reconciled`] de la Story 27-1 et n'écrit aucun second test de
+///   statut ; un statut ajouté plus tard (≠ `pending`) est refusé — la
+///   classification échoue fermée.
+/// - Chaque code est écrit **au site de construction**
+///   (`error_code: "…".to_string()`), forme que recompte le doc-comment de
+///   `failed-proposal-label.ts`.
+///
+/// [`is_reconciled`]: kesh_db::repositories::bank_imports::is_reconciled
+fn classify_batch_transaction(id: i64, row: Option<&BankTransaction>) -> Option<FailedProposal> {
+    use kesh_db::repositories::bank_imports::is_reconciled;
+    match row {
+        None => Some(FailedProposal {
+            bank_transaction_id: id,
+            error_code: "BANK_TRANSACTION_NOT_FOUND".to_string(),
+            details: None,
+        }),
+        Some(t) if is_reconciled(t.status.as_str(), t.matched_entry_id) => Some(FailedProposal {
+            bank_transaction_id: id,
+            error_code: "RECONCILIATION_ALREADY_RECONCILED".to_string(),
+            details: None,
+        }),
+        Some(t) if t.auto_match_rejected_at.is_some() => Some(FailedProposal {
+            bank_transaction_id: id,
+            error_code: "RECONCILIATION_ALREADY_REJECTED".to_string(),
+            details: None,
+        }),
+        Some(_) => None,
+    }
+}
+
+/// Refuse en `400` un lot de plus de [`MAX_IN_CLAUSE_IDS`] identifiants,
+/// **avant** toute lecture (Story 27-4, AC5) — la borne est celle du dépôt,
+/// qui rendait sinon une erreur de protocole sortie en `500`.
+///
+/// [`MAX_IN_CLAUSE_IDS`]: reconciliation_repo::MAX_IN_CLAUSE_IDS
+fn check_batch_size(len: usize) -> Result<(), AppError> {
+    if len > reconciliation_repo::MAX_IN_CLAUSE_IDS {
+        return Err(AppError::Validation(format!(
+            "un lot ne peut pas dépasser {} transactions",
+            reconciliation_repo::MAX_IN_CLAUSE_IDS
+        )));
+    }
+    Ok(())
+}
+
+/// Réunit les refus du pré-vol et ceux du traitement sous verrou dans
+/// l'ordre de `ids` (Story 27-4, AC2 et AC4) : l'ordre des propositions
+/// reçues pour `accept`, l'ordre croissant pour `reject`. Les doublons étant
+/// refusés en `400` avant, chaque identifiant n'a qu'une source.
+fn merge_failed_in_order(
+    ids: &[i64],
+    mut preflight: HashMap<i64, FailedProposal>,
+    locked: Vec<FailedProposal>,
+) -> Vec<FailedProposal> {
+    for f in locked {
+        preflight.insert(f.bank_transaction_id, f);
+    }
+    ids.iter().filter_map(|id| preflight.remove(id)).collect()
+}
+
+// ============================================================
 // POST /accept
 // ============================================================
 
 /// Handler `POST /api/v1/reconciliation/accept`. Acquiert UN seul lock
 /// pour tout le batch (H5 Pass 1 patch), itère per-proposal avec
 /// savepoints MariaDB pour partial success.
+///
+/// **Story 27-4 (#634)** : le pré-vol (étape 0ter) **classe** chaque
+/// transaction du lot (`classify_batch_transaction`) au lieu de refuser le
+/// lot entier en `400` ; seules les propositions éligibles passent sous
+/// verrou, et `failed[]` réunit les deux sources **dans l'ordre des
+/// propositions reçues**. Un lot sans proposition éligible répond `200`
+/// sans transaction ni verrou.
 pub async fn post_accept(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -846,6 +944,7 @@ pub async fn post_accept(
     if body.proposals.is_empty() {
         return Err(AppError::Validation("proposals vide".into()));
     }
+    check_batch_size(body.proposals.len())?;
     if body.bank_account_id <= 0 {
         return Err(AppError::Validation(
             "bankAccountId doit être strictement positif".into(),
@@ -942,37 +1041,47 @@ pub async fn post_accept(
         return Err(AppError::BankAccountNotFound);
     }
 
-    // Step 0ter — bank_transactions ownership pré-flight batch (MP3-3).
+    // Step 0ter — pré-vol par lot, hors transaction et hors verrou (MP3-3 ;
+    // Story 27-4, AC2). Lecture SANS filtre de statut, puis classification de
+    // chaque transaction : les refus vont dans `failed[]`, par proposition ;
+    // seules les éligibles passent sous verrou.
     let tx_ids: Vec<i64> = body
         .proposals
         .iter()
         .map(|p| p.bank_transaction_id())
         .collect();
-    let tx_map = reconciliation_repo::find_pending_by_ids(
+    let tx_map = reconciliation_repo::find_by_ids_for_account(
         &state.pool,
         current_user.company_id,
         body.bank_account_id,
         &tx_ids,
     )
     .await?;
-    if tx_map.len() != tx_ids.len() {
-        let missing: Vec<i64> = tx_ids
-            .iter()
-            .copied()
-            .filter(|id| !tx_map.contains_key(id))
-            .collect();
-        return Err(AppError::Validation(format!(
-            "bankTransactions [{:?}] n'appartiennent pas au bankAccountId={}",
-            missing, body.bank_account_id
-        )));
+    let mut preflight_failed: HashMap<i64, FailedProposal> = HashMap::new();
+    let mut eligible: Vec<AcceptProposalInput> = Vec::with_capacity(body.proposals.len());
+    for p in &body.proposals {
+        let id = p.bank_transaction_id();
+        match classify_batch_transaction(id, tx_map.get(&id)) {
+            Some(refusal) => {
+                preflight_failed.insert(id, refusal);
+            }
+            None => eligible.push(p.clone()),
+        }
     }
-
-    // C2 Pass 1 — `tx_map` (snapshot pré-flight 0ter) n'est plus passé
-    // dans le lock : `accept_one` recharge la BankTransaction inside
-    // lock pour fermer la fenêtre TOCTOU entre le pré-flight (hors-lock)
-    // et l'UPDATE step 8. Le pré-flight 0ter reste utile pour valider
-    // le batch ownership avant d'acquérir le lock (fail-fast 400).
+    // C2 Pass 1 — `tx_map` (instantané du pré-vol) n'est pas passé dans le
+    // verrou : `accept_one` recharge la transaction sous verrou (TOCTOU).
     drop(tx_map);
+
+    // Story 27-4, AC3 — rien d'éligible : ni transaction, ni verrou.
+    if eligible.is_empty() {
+        return Ok(Json(AcceptResponse {
+            accepted: Vec::new(),
+            failed: merge_failed_in_order(&tx_ids, preflight_failed, Vec::new()),
+        }));
+    }
+    // AC2 — `batch_size` de la trace `reconciliation.accepted` = taille du
+    // lot REÇU, pas du sous-lot éligible.
+    let batch_size = body.proposals.len() as i64;
 
     // Step 1 — UN seul lock pour tout le batch (H5), dans une tentative que
     // `retry_with` rejoue en entier sur interblocage (Story 25-4-c2, #480).
@@ -997,7 +1106,7 @@ pub async fn post_accept(
     // Story 17-2a (DC5 cat ii) — attribution PAT propagée dans les helpers/closures.
     let actor_api_key_id = current_user.api_key_id;
     let bank_account_id = body.bank_account_id;
-    retry_with(
+    let locked = retry_with(
         "reconciliation::accept",
         DEFAULT_MAX_DEADLOCK_ATTEMPTS,
         |err: &AppError| {
@@ -1006,7 +1115,7 @@ pub async fn post_accept(
         },
         || {
             let pool = state.pool.clone();
-            let proposals = body.proposals.clone();
+            let proposals = eligible.clone();
             async move {
                 accept_once(
                     &pool,
@@ -1015,13 +1124,17 @@ pub async fn post_accept(
                     user_id,
                     actor_api_key_id,
                     proposals,
+                    batch_size,
                 )
                 .await
             }
         },
     )
-    .await
-    .map(Json)
+    .await?;
+    Ok(Json(AcceptResponse {
+        accepted: locked.accepted,
+        failed: merge_failed_in_order(&tx_ids, preflight_failed, locked.failed),
+    }))
 }
 
 /// Une tentative de `POST /accept` : transaction neuve, verrou du compte
@@ -1034,6 +1147,7 @@ async fn accept_once(
     user_id: i64,
     actor_api_key_id: Option<i64>,
     proposals: Vec<AcceptProposalInput>,
+    batch_size: i64,
 ) -> Result<AcceptResponse, AppError> {
     let mut tx_outer = pool
         .begin()
@@ -1053,6 +1167,7 @@ async fn accept_once(
                 user_id,
                 actor_api_key_id,
                 &proposals,
+                batch_size,
             )
             .await
         },
@@ -1161,6 +1276,11 @@ async fn accept_once(
 /// `_pool` ni `tx_map`. `accept_one` recharge la `BankTransaction`
 /// inside lock via `find_pending_by_id_for_account` (TOCTOU fix),
 /// et reçoit `bank_account_id` pour scope le SELECT.
+///
+/// **Story 27-4** : `proposals` n'est plus le lot reçu mais son sous-lot
+/// **éligible** (le pré-vol de `post_accept` a déjà refusé les autres) ;
+/// `batch_size` est donc passé explicitement — la taille du lot **reçu**,
+/// que porte la trace `reconciliation.accepted` (AC2).
 async fn accept_batch(
     tx_outer: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
@@ -1168,10 +1288,10 @@ async fn accept_batch(
     user_id: i64,
     actor_api_key_id: Option<i64>,
     proposals: &[AcceptProposalInput],
+    batch_size: i64,
 ) -> Result<AcceptResponse, ReconciliationError> {
     let mut accepted: Vec<AcceptedProposal> = Vec::new();
     let mut failed: Vec<FailedProposal> = Vec::new();
-    let batch_size = proposals.len() as i64;
 
     for proposal in proposals {
         let savepoint = format!("sp_{}", proposal.bank_transaction_id());
@@ -3008,6 +3128,13 @@ async fn accept_one_rule(
 /// Handler `POST /api/v1/reconciliation/reject`. Marque les
 /// transactions comme manuellement revues (`auto_match_rejected_at`),
 /// sous mutex partagé avec accept (M2 Pass 1).
+///
+/// **Story 27-4 (#634)** : le pré-vol **classe** chaque transaction
+/// (`classify_batch_transaction`) au lieu de refuser le lot entier en
+/// `400` ; seuls les identifiants éligibles passent sous verrou, triés par
+/// identifiant croissant ; `failed[]` réunit les deux sources, **trié en
+/// entier**. Un lot sans transaction éligible répond `200` sans transaction
+/// ni verrou.
 pub async fn post_reject(
     State(state): State<AppState>,
     Extension(current_user): Extension<CurrentUser>,
@@ -3016,6 +3143,7 @@ pub async fn post_reject(
     if body.bank_transaction_ids.is_empty() {
         return Err(AppError::Validation("bankTransactionIds vide".into()));
     }
+    check_batch_size(body.bank_transaction_ids.len())?;
     if body.bank_account_id <= 0 {
         return Err(AppError::Validation(
             "bankAccountId doit être strictement positif".into(),
@@ -3047,24 +3175,43 @@ pub async fn post_reject(
         return Err(AppError::BankAccountNotFound);
     }
 
-    let tx_map = reconciliation_repo::find_pending_by_ids(
+    // Story 27-1 (AC4-bis, #632) — verrouiller par identifiant CROISSANT, comme
+    // la suppression d'un import (`bank_imports::delete_unreconciled_in_tx`) :
+    // un lot `[7, 3]` contre une suppression qui tient 3 et attend 7 formerait
+    // un cycle, et cette route n'est pas rejouée (une 1213 rendrait 500). Les
+    // doublons sont refusés plus haut : le tri ne change pas l'ensemble traité.
+    // Effets : `rejected[]`, `failed[]` et la trace sortent triés.
+    let mut sorted_ids = body.bank_transaction_ids.clone();
+    sorted_ids.sort_unstable();
+
+    // Story 27-4 (AC4) — pré-vol hors transaction et hors verrou, sans filtre
+    // de statut : chaque identifiant est classé, les refus vont dans
+    // `failed[]`, seuls les éligibles passent sous verrou.
+    let tx_map = reconciliation_repo::find_by_ids_for_account(
         &state.pool,
         current_user.company_id,
         body.bank_account_id,
-        &body.bank_transaction_ids,
+        &sorted_ids,
     )
     .await?;
-    if tx_map.len() != body.bank_transaction_ids.len() {
-        let missing: Vec<i64> = body
-            .bank_transaction_ids
-            .iter()
-            .copied()
-            .filter(|id| !tx_map.contains_key(id))
-            .collect();
-        return Err(AppError::Validation(format!(
-            "bankTransactions [{:?}] n'appartiennent pas au bankAccountId={}",
-            missing, body.bank_account_id
-        )));
+    let mut preflight_failed: HashMap<i64, FailedProposal> = HashMap::new();
+    let mut ids: Vec<i64> = Vec::with_capacity(sorted_ids.len());
+    for &id in &sorted_ids {
+        match classify_batch_transaction(id, tx_map.get(&id)) {
+            Some(refusal) => {
+                preflight_failed.insert(id, refusal);
+            }
+            None => ids.push(id),
+        }
+    }
+    drop(tx_map);
+
+    // Story 27-4, AC3 — rien d'éligible : ni transaction, ni verrou.
+    if ids.is_empty() {
+        return Ok(Json(RejectResponse {
+            rejected: Vec::new(),
+            failed: merge_failed_in_order(&sorted_ids, preflight_failed, Vec::new()),
+        }));
     }
 
     let mut tx_outer = state
@@ -3077,14 +3224,6 @@ pub async fn post_reject(
     // Story 17-2a (DC5 cat ii) — attribution PAT propagée dans les helpers/closures.
     let actor_api_key_id = current_user.api_key_id;
     let company_id = current_user.company_id;
-    // Story 27-1 (AC4-bis, #632) — verrouiller par identifiant CROISSANT, comme
-    // la suppression d'un import (`bank_imports::delete_unreconciled_in_tx`) :
-    // un lot `[7, 3]` contre une suppression qui tient 3 et attend 7 formerait
-    // un cycle, et cette route n'est pas rejouée (une 1213 rendrait 500). Les
-    // doublons sont refusés plus haut : le tri ne change pas l'ensemble traité.
-    // Effets : `rejected[]`, `failed[]` et la trace sortent triés.
-    let mut ids = body.bank_transaction_ids.clone();
-    ids.sort_unstable();
 
     let lock_result = with_account_lock(
         &mut tx_outer,
@@ -3095,10 +3234,10 @@ pub async fn post_reject(
             reject_batch(
                 tx_inner,
                 company_id,
+                bank_account_id,
                 user_id,
                 actor_api_key_id,
                 &ids,
-                &tx_map,
             )
             .await
         },
@@ -3111,7 +3250,10 @@ pub async fn post_reject(
                 .commit()
                 .await
                 .map_err(|e| AppError::Database(DbError::Sqlx(e)))?;
-            Ok(Json(response))
+            Ok(Json(RejectResponse {
+                rejected: response.rejected,
+                failed: merge_failed_in_order(&sorted_ids, preflight_failed, response.failed),
+            }))
         }
         Err(ReconciliationError::AccountLocked {
             bank_account_id,
@@ -3181,55 +3323,71 @@ pub async fn post_reject(
     }
 }
 
+/// Rejette, sous le verrou du compte, les identifiants **éligibles** au
+/// pré-vol (triés par identifiant croissant, Story 27-1 AC4-bis).
+///
+/// **Story 27-4 (AC4)** : l'`UPDATE` ne touche la ligne que si elle est
+/// encore du compte, `pending`, sans lien et non rejetée. S'il ne touche
+/// rien, la ligne est **relue par une lecture verrouillante**
+/// ([`reconciliation_repo::find_by_id_for_account_for_update`] — lecture
+/// courante, jamais la vue cohérente du lot, qui pourrait dater d'avant une
+/// suppression) et **reclassée** par `classify_batch_transaction`. Une
+/// relecture éligible n'est pas atteignable (l'`UPDATE` à 0 ligne et la
+/// relecture lisent la même version validée sous le même verrou) : repli
+/// défensif tracé, `race_during_update`.
 async fn reject_batch(
     tx_outer: &mut sqlx::Transaction<'_, sqlx::MySql>,
     company_id: i64,
+    bank_account_id: i64,
     user_id: i64,
     actor_api_key_id: Option<i64>,
     ids: &[i64],
-    tx_map: &HashMap<i64, BankTransaction>,
 ) -> Result<RejectResponse, ReconciliationError> {
     let mut rejected: Vec<RejectedProposal> = Vec::new();
     let mut failed: Vec<FailedProposal> = Vec::new();
 
     for &id in ids {
-        let bank_tx = match tx_map.get(&id) {
-            Some(t) => t,
-            None => {
-                failed.push(FailedProposal {
-                    bank_transaction_id: id,
-                    error_code: "BANK_TRANSACTION_NOT_FOUND".to_string(),
-                    details: None,
-                });
-                continue;
-            }
-        };
-        if bank_tx.status != BankTransactionStatus::Pending {
-            failed.push(FailedProposal {
-                bank_transaction_id: id,
-                error_code: "RECONCILIATION_ALREADY_RECONCILED".to_string(),
-                details: None,
-            });
-            continue;
-        }
-
-        // MP4-5 Pass 4 — rows_affected check.
+        // MP4-5 Pass 4 — rows_affected check. Story 27-4 (AC4) : gardes
+        // `bank_account_id` (une restauration concurrente réinsère les mêmes
+        // identifiants, C-27-4-27), `matched_entry_id IS NULL` (« rapprochée »
+        // au sens d'`is_reconciled`, C-27-4-30) et `auto_match_rejected_at IS
+        // NULL` (un rejet concurrent ne ré-horodate pas la ligne, C-27-4-16).
         let result = sqlx::query(
             "UPDATE bank_transactions \
              SET auto_match_rejected_at = NOW(3), updated_at = NOW(3), version = version + 1 \
-             WHERE id = ? AND company_id = ? AND status = 'pending'",
+             WHERE id = ? AND company_id = ? AND bank_account_id = ? AND status = 'pending' \
+               AND matched_entry_id IS NULL AND auto_match_rejected_at IS NULL",
         )
         .bind(id)
         .bind(company_id)
+        .bind(bank_account_id)
         .execute(&mut **tx_outer)
         .await?;
 
         if result.rows_affected() != 1 {
-            failed.push(FailedProposal {
-                bank_transaction_id: id,
-                error_code: "RECONCILIATION_ALREADY_RECONCILED".to_string(),
-                details: Some(serde_json::json!({ "reason": "race_during_update" })),
-            });
+            let current = reconciliation_repo::find_by_id_for_account_for_update(
+                &mut **tx_outer,
+                company_id,
+                bank_account_id,
+                id,
+            )
+            .await
+            .map_err(ReconciliationError::Db)?;
+            match classify_batch_transaction(id, current.as_ref()) {
+                Some(refusal) => failed.push(refusal),
+                None => {
+                    tracing::warn!(
+                        bank_transaction_id = id,
+                        "reconciliation reject: UPDATE touched no row but the locking re-read \
+                         finds the transaction eligible — defensive refusal"
+                    );
+                    failed.push(FailedProposal {
+                        bank_transaction_id: id,
+                        error_code: "RECONCILIATION_ALREADY_RECONCILED".to_string(),
+                        details: Some(serde_json::json!({ "reason": "race_during_update" })),
+                    });
+                }
+            }
             continue;
         }
 
@@ -4605,5 +4763,142 @@ mod period_lock_tests {
             "{:?}",
             f.details
         );
+    }
+}
+
+#[cfg(test)]
+mod batch_classification_tests {
+    //! Story 27-4, AC1 (#634) — la classification d'une transaction d'un lot.
+    //! Codes écrits **en dur**, jamais relus d'une constante de production.
+    use super::*;
+
+    fn tx(
+        status: BankTransactionStatus,
+        matched_entry_id: Option<i64>,
+        rejected: bool,
+    ) -> BankTransaction {
+        let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+        let at = day.and_hms_opt(12, 0, 0).unwrap();
+        BankTransaction {
+            id: 7,
+            company_id: 1,
+            import_id: 1,
+            bank_account_id: 1,
+            booking_date: day,
+            value_date: Some(day),
+            amount: Decimal::new(1000, 2),
+            currency: "CHF".into(),
+            reference: None,
+            details: String::new(),
+            end_to_end_id: None,
+            transaction_id: None,
+            counterparty_iban: None,
+            counterparty_name: None,
+            status,
+            matched_entry_id,
+            auto_match_rejected_at: rejected.then_some(at),
+            version: 1,
+            created_at: at,
+            updated_at: at,
+        }
+    }
+
+    fn code(row: Option<&BankTransaction>) -> Option<(String, Option<serde_json::Value>)> {
+        classify_batch_transaction(7, row).map(|f| {
+            assert_eq!(f.bank_transaction_id, 7);
+            (f.error_code, f.details)
+        })
+    }
+
+    #[test]
+    fn absent_row_is_not_found_without_details() {
+        assert_eq!(
+            code(None),
+            Some(("BANK_TRANSACTION_NOT_FOUND".to_string(), None))
+        );
+    }
+
+    #[test]
+    fn reconciled_row_is_already_reconciled() {
+        let t = tx(BankTransactionStatus::Reconciled, Some(3), false);
+        assert_eq!(
+            code(Some(&t)),
+            Some(("RECONCILIATION_ALREADY_RECONCILED".to_string(), None))
+        );
+    }
+
+    #[test]
+    fn rejected_pending_row_is_already_rejected() {
+        let t = tx(BankTransactionStatus::Pending, None, true);
+        assert_eq!(
+            code(Some(&t)),
+            Some(("RECONCILIATION_ALREADY_REJECTED".to_string(), None))
+        );
+    }
+
+    #[test]
+    fn pending_unrejected_row_is_eligible() {
+        let t = tx(BankTransactionStatus::Pending, None, false);
+        assert_eq!(code(Some(&t)), None);
+    }
+
+    /// Priorité : rapprochée **et** rejetée → rapprochée (tue M5).
+    #[test]
+    fn reconciled_and_rejected_row_is_already_reconciled() {
+        let t = tx(BankTransactionStatus::Reconciled, Some(3), true);
+        assert_eq!(
+            code(Some(&t)),
+            Some(("RECONCILIATION_ALREADY_RECONCILED".to_string(), None))
+        );
+    }
+
+    /// `pending` avec `matched_entry_id` : rapprochée au sens
+    /// d'`is_reconciled` (tue M16 — classification sur `status` seul). État
+    /// qu'aucun chemin vivant ne produit, que la suppression d'import refuse
+    /// aussi.
+    #[test]
+    fn pending_row_with_matched_entry_is_already_reconciled() {
+        let t = tx(BankTransactionStatus::Pending, Some(3), false);
+        assert_eq!(
+            code(Some(&t)),
+            Some(("RECONCILIATION_ALREADY_RECONCILED".to_string(), None))
+        );
+    }
+
+    /// `reconciled` sans lien : rapprochée aussi (`status <> 'pending'`).
+    #[test]
+    fn reconciled_row_without_link_is_already_reconciled() {
+        let t = tx(BankTransactionStatus::Reconciled, None, false);
+        assert_eq!(
+            code(Some(&t)),
+            Some(("RECONCILIATION_ALREADY_RECONCILED".to_string(), None))
+        );
+    }
+
+    /// AC5 — la borne de taille de lot : 500 passent, 501 sont refusés.
+    #[test]
+    fn batch_size_cap_is_500() {
+        assert!(check_batch_size(500).is_ok());
+        assert!(matches!(
+            check_batch_size(501),
+            Err(AppError::Validation(_))
+        ));
+    }
+
+    /// AC2/AC4 — la fusion suit l'ordre donné, quelle que soit la source.
+    #[test]
+    fn merge_follows_the_given_order() {
+        let f = |id: i64| FailedProposal {
+            bank_transaction_id: id,
+            // `String::from` : hors du décompte `error_code: "…"` de l'AC7.
+            error_code: String::from("TEST"),
+            details: None,
+        };
+        let mut pre = HashMap::new();
+        pre.insert(9, f(9));
+        pre.insert(1, f(1));
+        let merged = merge_failed_in_order(&[9, 5, 1, 3], pre, vec![f(5)]);
+        let ids: Vec<i64> = merged.iter().map(|x| x.bank_transaction_id).collect();
+        assert_eq!(ids, vec![9, 5, 1]);
     }
 }
