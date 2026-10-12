@@ -74,7 +74,8 @@ fermés, ne pas les recopier. Epic : `_bmad-output/planning-artifacts/epic-27-re
   d'erreur avant le prédicat), et le classement `SansEcritureAuJournal` + « rejouée quand même » est-il
   compatible avec les volets (c), (c bis) et (d) du registre ? La route dans `comptable_routes` partage-t-elle
   son chemin avec le `GET` d'`authenticated_routes` sans conflit Axum (précédent `bank-profiles/{id}`) ? Les clés
-  d'API : la décision C-27-1-3 tient-elle contre § 4 et § 7 de `docs/api-external.md` ?
+  d'API : la fermeture de la route (C-27-1-16) est-elle cohérente avec § 4, § 7 et § 10 de
+  `docs/api-external.md`, et le test H8 ferait-il rougir M18 ?
 
 ## Ce que tu rends
 
