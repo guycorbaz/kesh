@@ -2,12 +2,12 @@
 
 ## Status
 
-**review** — fiche créée le 2026-10-12 en autonomie (`bmad-create-story`), sur `f9725c29` (merge de la
+**done** — fiche créée le 2026-10-12 en autonomie (`bmad-create-story`), sur `f9725c29` (merge de la
 Story 27-1, #635), branche `story/27-4-lot-reconciliation-transaction-disparue`, worktree
-`/home/gcorbaz/devel/kesh-27-4`. Choix consignés au registre `epic-27-choix-autonomes.md`, **C-27-4-1 à C-27-4-39**.
-13 AC (AC1 à AC13). Validation **close** en trois passes (P1 Sonnet 4 MEDIUM → P2 Opus 5 MEDIUM → P3 Sonnet
-0 MEDIUM), LOW de la P3 appliqués. Développement fait le 2026-10-12/13 (Opus) ; gates complets verts au dernier
-commit de code ; prompt de la revue de code P1 : `27-4-review-prompt-p1.md`.
+`/home/gcorbaz/devel/kesh-27-4`, **rebasée sur `f2b03df9`** (27-2 et 27-3). Choix consignés au registre
+`epic-27-choix-autonomes.md`, **C-27-4-1 à C-27-4-46**. 13 AC (AC1 à AC13). Validation **close** en trois passes
+(P1 Sonnet 4 MEDIUM → P2 Opus 5 MEDIUM → P3 Sonnet 0 MEDIUM) ; revue de code **close** à la P1 (Sonnet B/E/A,
+0 MEDIUM, 12 LOW, utiles appliqués). Gates complets verts au dernier commit de code `5f562acc`.
 PR : **`closes #634`**.
 
 ## Story
@@ -816,6 +816,56 @@ de +2 s'ajoutent), registre et `sprint-status.yaml`. 27-3 (`59abbe1f`) — `CHAN
 plus 2062 comme l'écrit le § *Fichiers communs*), `sprint-status.yaml`, registre (le sien est propre à la 27-3,
 mais elle touche aussi `epic-27-choix-autonomes.md`).
 
+**Revue de code P1 — LOW appliqués** (commit `5f562acc`, après le rebase, pour que les numéros de l'inventaire
+soient ceux du `HEAD` final ; C-27-4-40 à C-27-4-46) :
+
+- **E1** → test AC6-5 (c) `post_reject_does_not_reject_a_transaction_reconciled_meanwhile` (rapprochée **sans** lien
+  pendant l'attente du verrou → `RECONCILIATION_ALREADY_RECONCILED`, `details` nul) ; **M20** (garde
+  `status = 'pending'` retirée de l'`UPDATE` du rejet) jouée : **rouge**, sur ce seul test (C-27-4-40).
+- **E2** → **M21** (`company_id` neutralisé dans `find_by_ids_for_account`) et **M22** (idem dans
+  `bank_tx_by_id_for_account_sql`) jouées : **survivent**, 100 tests verts — déclarées équivalentes (C-27-4-42).
+- **E3** → numéros de ligne relevés au `HEAD` rebasé en tête de l'inventaire, site `:2114`
+  (`RECONCILIATION_INVOICE_NOT_ELIGIBLE`) exclu par écrit ; **A-3** → table des fichiers communs marquée périmée.
+- **E4 = B LOW-1** → `importA` nettoyé en `finally`, compteur exact `toHaveText(/^\s*1\s+\D/)` (C-27-4-41).
+- **A-2** → `api-external.md` : le rejet reclasse sous verrou et rend les trois codes du pré-vol, `details` nul.
+- **A-4** → « le littéral ajouté en dernier » au lieu de « le 27ᵉ littéral » (`failed-proposal-label.ts`).
+- Sans changement, avec choix écrit : **E5** (libellé générique, C-27-4-43), **A-5** (« Sie » après deux-points,
+  convention du catalogue `de-CH`, C-27-4-44), **A-1** (C-27-4-45, ci-dessous) ; **B LOW-2** déjà documenté
+  (doc-comment de `find_by_id_for_account_for_update`, § *État actuel*).
+- **Résidu trié (A-1)** : `docs/api-external.md:540` cite encore « bankTransactions […] n'appartiennent pas au
+  bankAccountId », dans l'avertissement de changement de contrat — citation voulue de l'ancien `400` ; le critère
+  « vide » de l'AC2 vise le code et les textes servis (`grep -rnF` vide sur `crates` et `frontend/src`).
+
+Campagne de mutations au total : **18 tuées sur 22 numérotées** (M1-M17, M20) ; **M18, M19, M21, M22 équivalentes**.
+
+**Rebase sur `origin/main`** (`f2b03df9` : 27-1, 27-2, 27-3) — conflits et résolution :
+
+- `epic-27-choix-autonomes.md` et `sprint-status.yaml` : **union** à chaque commit rejoué (sections 27-2, 27-3 de
+  `main` conservées, section 27-4 ajoutée ; clés 27-2/27-3 `done` de `main`, clé 27-4 de la branche) ; séparateur
+  `---` rétabli avant la section 27-4.
+- `CHANGELOG.md` : une seule section `## [0.13.2] — Non publié`, un seul `### Modifié` (27-1, 27-2, 27-4), un seul
+  `### Corrigé` (quatre entrées de `main` + celle de la 27-4).
+- `i18n-keys.test.ts` : `sitesTotal` **2075** (2073 de `main` + 2), confirmé par la garde (Vitest vert).
+- `user-manual.pdf` : **régénéré** par le Makefile de `main` (`make user`, 2 passes, stable), jamais fusionné en
+  binaire ; PDF aplati : « rechargée après le lot » 1, « les autres propositions du lot sont traitées » 1,
+  « Rechargez la page » 0.
+- Fusion automatique, sans conflit : `reconciliation.rs` (hunk de la 27-2 dans `get_proposals`, disjoint),
+  `reconciliation_e2e.rs`, les quatre `messages.ftl` (aucune clé dupliquée), `api-external.md`, `user-manual.tex`.
+- Aucune migration depuis `v0.13.1` (`git diff --name-only v0.13.1 HEAD -- crates/kesh-db/migrations/` vide) :
+  `kesh_version_min_required` n'est relevé par personne.
+
+**Gates au dernier commit de code `5f562acc`** (après rebase), bases `kesh_274` et `kesh_e2e_274` recréées avant :
+
+- `scripts/test-fast.sh` complet (fmt, clippy `-D warnings`, nextest) : **3514 passés, 6 ignorés**, 0 échec.
+- Frontend : `npm run check` 0 erreur, 29 avertissements (aucun sur un fichier de la story) ;
+  `lint-i18n-ownership` PASS ; `npm run test:unit` **134 fichiers, 1395 tests** ; `npm run build` vert.
+- E2E complet (port 3034, `smtpConfigured: true`) : **267 passés, 7 échecs, 19 ignorés** ; les 7 sont exactement la
+  KF-029 (#97) — `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`,
+  `:77`, `:150` ; aucun hors liste ; `reconciliation-deleted-import.spec.ts` vert.
+
+Décomptes de `origin/main` (`f2b03df9`) à `HEAD` : `reconciliation_e2e.rs` `sqlx::test` 66 → 81 (+15),
+`reconciliation_repository.rs` 12 → 14, `#[test]` de `reconciliation.rs` 5 → 14 ; littéraux `error_code` 27.
+
 ### File List
 
 - `CHANGELOG.md`
@@ -919,3 +969,17 @@ mais elle touche aussi `epic-27-choix-autonomes.md`).
   commit de code, bases recréées : backend 3465/3465 (6 ignorés), Vitest 1359/1359, `check` 0 erreur, `build` vert,
   E2E 264 passés et 7 échecs, tous KF-029. Détail au Dev Agent Record. Prompt de la revue de code P1 :
   `27-4-review-prompt-p1.md` (trois lentilles Sonnet B/E/A). Statut : `review`.
+- 2026-10-13 — **revue de code P1** (Sonnet, lentilles B, E, A ; prompt `27-4-review-prompt-p1.md` ; rapports
+  `kesh-gate-logs/27-4-review-p1-{B,E,A}.md`) : B = 0 MEDIUM, 2 LOW ; E = 0 MEDIUM, 5 LOW ; A = 0 MEDIUM, 5 LOW —
+  **12 LOW, 0 MEDIUM : revue close** (critère d'arrêt). Rebase sur `origin/main` (`f2b03df9`), puis LOW utiles
+  appliqués (`5f562acc`, choix **C-27-4-40 à C-27-4-46**) : E1 (AC6-5 (c), M20 tuée), E2 (M21, M22 équivalentes,
+  jouées), E3 et A-3 (inventaire au `HEAD`, site `:2114` exclu, table périmée signalée), E4 = B LOW-1, A-2, A-4 ;
+  E5, A-1, A-5 tranchés sans changement, B LOW-2 déjà écrit. Gates au dernier commit de code : nextest 3514/3514
+  (6 ignorés), Vitest 134 fichiers / 1395, `check` 0 erreur, `build` vert, E2E 267 passés + 7 échecs KF-029.
+  Statut : **`done`**.
+  - **Trend final** : validation P1 4 MEDIUM (Sonnet) → P2 5 MEDIUM (Opus ; D5 levé, recyclage du patch, pas de
+    découpage, remédiation par simplification, C-27-4-31) → P3 **0 MEDIUM** (Sonnet) ; revue de code P1 **0 MEDIUM**
+    (Sonnet ×3). Remédiations et développement : Opus.
+  - Symptômes grepés après patch (valeurs) : `27ᵉ littéral` (0 résidu), `sitesTotal` (seule valeur active 2075 ;
+    2043 ne subsiste que dans les commentaires historiques des 27-2, 27-3, 27-4), `appartiennent pas au bankAccountId`
+    (seul `api-external.md:540`, trié, A-1), `### Corrigé` dans `[0.13.2]` (1).
