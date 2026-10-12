@@ -1,7 +1,7 @@
 # Epic 27 — choix autonomes de la Story 27-3 (à fusionner dans `epic-27-choix-autonomes.md`)
 
 *Écrit le 2026-10-12 par l'agent de spécification (Opus 5.5), en autonomie ; C-27-3-20 à 27 ajoutés le même jour
-par l'agent de remédiation de la validation P1, C-27-3-28 à 34 par celui de la validation P2. Le registre de l'epic vit sur la branche
+par l'agent de remédiation de la validation P1, C-27-3-28 à 34 par celui de la validation P2, C-27-3-35 à 44 par celui de la validation P3. Le registre de l'epic vit sur la branche
 de la 27-1 (`story/27-1-supprimer-import`, non mergée) : l'orchestrateur fusionne ce fichier par **union**, sans
 renuméroter (préfixe `C-27-3-`, propre à cette story). Chaque choix : contexte, retenu, écarté, réversibilité.*
 
@@ -73,8 +73,8 @@ Fiche : `27-3-profil-apres-apercu.md`. Issue #626 (P2).
 - **Retenu** : l'aperçu rend `previewFingerprint`, la création la recalcule sur ses propres entrées et compare
   (AC6-AC8). Pas de migration, pas d'expiration, pas de nettoyage.
 - **Écarté** : jeton stocké (migration, expiration, ne ferme rien de plus) ; HMAC (la menace est le client périmé,
-  pas le client malveillant, qui a le droit d'importer) ; `updated_at` du profil (résolution à la seconde : deux
-  modifications dans la même seconde passent).
+  pas le client malveillant, qui a le droit d'importer) ; `updated_at` du profil (il ne couvre ni le compte ni le fichier ;
+  la première rédaction invoquait une « résolution à la seconde », fausse : la colonne est un `DATETIME(6)`, validation P3, F2 = R3, C-27-3-39).
 - **Réversible** : oui (champ ajouté, facultatif).
 
 ### C-27-3-8 — Contenu de l'empreinte : domaine versionné, société, compte (id + IBAN normalisé), hash du fichier, format, profil résolu complet hors horodatages
@@ -268,7 +268,7 @@ Fiche : `27-3-profil-apres-apercu.md`. Issue #626 (P2).
   importe (D12).
 - **Retenu** : titre « … refuse un import dont le profil a changé depuis l'aperçu » ; CHANGELOG « depuis l'écran » et
   « facultatif pour un client d'API ». Le nom du fichier de la fiche ne change pas.
-- **Réversible** : oui.
+- **Réversible** : oui. *(Titre, énoncé et CHANGELOG élargis au compte et au fichier à la validation P3 : C-27-3-44.)*
 
 ### C-27-3-28 — L'avis du `409` est neutre : « Le profil, le fichier ou le compte a changé »
 
@@ -283,7 +283,7 @@ Fiche : `27-3-profil-apres-apercu.md`. Issue #626 (P2).
 - **Écarté** : un avis par cause (l'écran ne sait pas laquelle des entrées a changé — il faudrait que le serveur
   rende le détail de l'empreinte, ce qui la rendrait structurée pour un gain d'affichage) ; un avis « profil » pour
   un CSV et « compte » pour un CAMT (plus de code, et faux pour le fichier modifié).
-- **Réversible** : oui (textes seuls).
+- **Réversible** : oui (textes seuls). *(Validation P3 : le texte de l'avis est réécrit pour rester vrai pendant et après un recalcul en échec — C-27-3-36 ; le « fichier modifié » n'est un `409` que sous un navigateur qui relit le fichier — C-27-3-35.)*
 
 ### C-27-3-29 — M16b est tuée par I6-bis, création sans `bankProfileId`
 
@@ -354,4 +354,125 @@ Fiche : `27-3-profil-apres-apercu.md`. Issue #626 (P2).
   écriture —, sans garde de démontage ; D13 nomme la suppression d'un import.
 - **Écarté** : une garde de démontage (`onDestroy` qui invalide la séquence) — un site de plus à tester pour une
   requête sans écriture ; relire le fichier avant la confirmation pour comparer côté client (le serveur le fait déjà).
+- **Réversible** : oui. *(Validation P3, F1 = R1 : « D18 fermé » ne valait que côté serveur ; sous un navigateur qui échoue l'envoi, aucun `409`, aucun recalcul — révisé par C-27-3-35.)*
+
+### C-27-3-35 — D18 : le recalcul n'est promis que pour le profil et le compte ; pour le fichier, le comportement dépend du navigateur
+
+- **Contexte** : validation P3, F1 = R1 (MEDIUM, régression de la remédiation P2) — l'AC12 promettait au manuel que
+  Kesh « recalcule la prévisualisation et l'annonce » quand le fichier est modifié sur le disque, et C-27-3-34
+  déclarait D18 « fermé par l'empreinte ». Or la ligne D18 elle-même écrit que Chrome échoue l'envoi en
+  `ERR_UPLOAD_FILE_CHANGED` : la requête ne part pas, `toFetchApiError` rend `NETWORK_ERROR`
+  (`api-client.ts:287-296`), il n'y a ni `409`, ni recalcul, ni avis ; *Confirmer* redevient actif et chaque clic
+  échoue de même, l'objet `File` de l'instantané restant celui de l'aperçu.
+- **Retenu** : l'AC12 ne promet le recalcul que pour le profil et le compte modifiés ailleurs ; pour le fichier, il
+  écrit « selon le navigateur » les deux issues — recalcul, ou erreur de connexion répétée — et la sortie (*Annuler*,
+  puis redéposer). D18 distingue « serveur : fermé » (rien n'est importé dans les deux cas) et « écran : non fermé,
+  assumé ». L'AC9 cite D18 comme source de `409` seulement pour un navigateur qui relit le fichier, et nomme
+  l'erreur réseau. Le comportement des navigateurs reste un constat **raisonné, non reproduit** : le texte prescrit
+  est vrai quel que soit celui des deux qu'adopte un navigateur donné.
+- **Écarté** : un message dédié à l'erreur réseau pendant une confirmation (« le fichier a peut-être changé ») — il
+  faudrait distinguer `ERR_UPLOAD_FILE_CHANGED` d'une vraie panne, ce que `fetch` ne permet pas (le `TypeError` ne
+  porte pas la cause) ; relire le fichier avant d'envoyer pour comparer son hash à celui de l'aperçu (lecture complète
+  côté client, jusqu'à 10 Mio, pour un cas rare et sans risque de données) ; retirer « le fichier » de l'avis neutre
+  (faux sous Firefox, qui produit bien un `409`).
+- **Réversible** : oui (textes ; un message dédié peut s'ajouter plus tard).
+
+### C-27-3-36 — L'avis du `409` dit « Kesh la recalcule. Vérifiez le résultat » : vrai pendant, après et en cas d'échec
+
+- **Contexte** : validation P3, R2 = F3 — « elle a été recalculée. Vérifiez-la avant de confirmer » est affiché dès
+  la réception du `409`, donc pendant le recalcul (à côté de « Recalcul de la prévisualisation… »), et reste affiché
+  quand le recalcul échoue (E2), où il n'y a aucune prévisualisation à vérifier.
+- **Retenu** : « … a changé depuis la prévisualisation : Kesh la recalcule. Vérifiez le résultat avant de
+  confirmer. » (présent, et « le résultat » couvre le nouvel aperçu comme l'erreur), dans les quatre locales et le
+  repli (AC9, AC10).
+- **Écarté** : afficher l'avis seulement après le succès du recalcul — il disparaîtrait justement dans le cas E2, où
+  l'utilisateur a le plus besoin de savoir pourquoi l'écran a changé ; deux clés (constat / suite) — un site et une
+  garde de plus pour le même effet.
+- **Réversible** : oui (texte).
+
+### C-27-3-37 — La remise à zéro des cases sur la voie `409` est tenue par une variante de V6 et par M26
+
+- **Contexte** : validation P3, R6 — l'AC2 remet les cases à zéro « au dépôt initial ou au recalcul », mais seul le
+  changement de profil était éprouvé (V7) ; une mutation qui épargne la raison `'stale'` survivait, et le paramètre
+  `reason` rend précisément cette divergence plausible.
+- **Retenu** : variante « cases » de V6 (`duplicateFile`, case cochée, `409`, case décochée après le recalcul) ;
+  mutation M26 ; T3 écrit « pour toute raison, `'stale'` comprise ».
+- **Écarté** : un test neuf numéroté (la variante tient dans le montage de V6).
+- **Réversible** : oui (tests).
+
+### C-27-3-38 — Le troisième site d'effacement de l'avis a sa mutation ; `isConfirming` dans `reset()` est un angle mort déclaré
+
+- **Contexte** : validation P3, R5 = F7 — M20 ne rougit que V6-bis (a) et (b) ; rien n'éprouvait que V6-bis (c)
+  rougirait si `reset()` n'effaçait plus l'avis. Et `reset()` remet `isConfirming` à faux alors qu'elle n'est
+  appelable pendant une confirmation que par le succès, dont le `finally` le fait déjà.
+- **Retenu** : mutation M25 (`reset()` n'efface plus l'avis) → V6-bis (c) ; l'extinction d'`isConfirming` reste dans
+  `reset()`, écrite **défensive, non éprouvée** (AC3, T3) — angle mort assumé, aucune mutation ne la vise.
+- **Écarté** : retirer l'assignation (une future voie d'appel de `reset()` pendant une confirmation — un nouveau bouton,
+  un raccourci — laisserait l'écran figé) ; un test qui appellerait `reset()` de l'extérieur (le composant ne
+  l'expose pas, l'ouvrir pour un test changerait son interface).
+- **Réversible** : oui.
+
+### C-27-3-39 — D17 sans « précision à la seconde » : `updated_at` est un `DATETIME(6)`
+
+- **Contexte** : validation P3, F2 = R3 — `bank_profiles.updated_at` est `DATETIME(6) … ON UPDATE
+  CURRENT_TIMESTAMP(6)` (`20260505000001_bank_profiles.sql:34`, aucune migration ultérieure ne la touche) ; le sous-cas
+  « deux profils concordants de même `updated_at` » de D17 et l'argument d'écart de C-27-3-7 reposaient sur une
+  résolution à la seconde, fausse. F2 relève aussi un cas voisin non nommé : aperçu sur un profil explicite B,
+  création avec l'empreinte mais sans `bankProfileId`.
+- **Retenu** : D17 et AC13 retirent le sous-cas (non retenu, écrit comme tel), nomment le cas « aperçu explicite,
+  création sans id » (`409` ou `404`) ; C-27-3-7 corrigé (l'écart d'`updated_at` tient : il ne couvre ni le compte ni
+  le fichier).
+- **Écarté** : garder le sous-cas « à la microseconde » dans la doc d'API publique (une phrase sur un cas
+  inatteignable hors `UPDATE` multi-lignes y ferait plus de bruit que de bien).
+- **Réversible** : oui (textes).
+
+### C-27-3-40 — Pour un CAMT, changer de profil relance quand même l'aperçu
+
+- **Contexte** : validation P3, F8 — l'aperçu d'un CAMT ignore le profil ; le relancer au changement de profil
+  produit un aperçu identique et remet les cases à zéro.
+- **Retenu** : assumé, écrit à l'AC1. Aucun risque de données ; une requête et des cases à recocher pour rien.
+- **Écarté** : ne pas relancer quand l'aperçu affiché n'a pas de `csvProfileMatch` — une branche de plus dans le
+  geste, à tester et à muter, et qui devrait ménager l'AC1-bis (aperçu en échec, format inconnu de l'écran).
+- **Réversible** : oui (écran seul).
+
+### C-27-3-41 — La raison du dernier aperçu vit dans un état `previewReason`, posé par chaque `runPreview`
+
+- **Contexte** : validation P3, F6 — le texte de l'indicateur dépend de la raison (recalcul ou dépôt), que le gabarit
+  ne peut lire que dans un `$state`, que T3 ne nommait pas.
+- **Retenu** : `previewReason` (`'drop' | 'profile' | 'stale'`), posé par chaque appel de `runPreview` avant son
+  premier `await` ; jamais lu périmé, donc `reset()` n'y touche pas. Texte tenu par V2 et V13 (b).
+- **Écarté** : le remettre à zéro dans `reset()` (une écriture de plus sans effet observable — c'est l'appel suivant
+  qui le pose).
+- **Réversible** : oui.
+
+### C-27-3-42 — Manuel : `make user`, et seul `user-manual.pdf` est committé
+
+- **Contexte** : validation P3, R7 = F10 — `make fr` reconstruit les trois PDF (`Makefile:44`) ; la 27-1 modifie
+  `admin-manual.pdf` et `marketing-brochure.pdf` et remplace les deux passes fixes du `Makefile` par des passes
+  jusqu'à stabilisation (C-27-1-27). Le tableau des fichiers communs omettait le `Makefile` et portait des chiffres
+  périmés.
+- **Retenu** : `make user` (cible existante, `Makefile:48`), seul `user-manual.pdf` committé ; table des matières du
+  PDF contrôlée (ancien `Makefile`) ; régénération après la fusion. Tableau des fichiers communs relevé au commit
+  `3c36f721` de la 27-1, à recompter à la fusion.
+- **Écarté** : porter ici le `Makefile` de la 27-1 (deux branches qui modifient le même fichier pour le même effet :
+  conflit garanti) ; `make fr` puis `git checkout` des deux autres PDF (geste de plus, facile à oublier).
+- **Réversible** : oui.
+
+### C-27-3-43 — M10 en deux : la comparaison CAMT a sa propre mutation
+
+- **Contexte** : validation P3, F9 — M10 « comparaison retirée » n'était affectée qu'à des tests CSV ; retirer la
+  seule comparaison de `create` (CAMT) n'était tuée que par I10, non cité.
+- **Retenu** : M10a (CSV → I4, I5, I7, E2), M10b (CAMT → I10). Vingt-huit mutations en tout (avec M25, M26).
+- **Écarté** : une ligne M10 citant aussi I10 (une mutation qui retire les deux comparaisons à la fois ne dit pas
+  laquelle des deux un test tient).
+- **Réversible** : oui (tests).
+
+### C-27-3-44 — Titre, énoncé et CHANGELOG nomment le profil, le compte et le fichier
+
+- **Contexte** : validation P3, F4 — l'avis, le message serveur et le manuel sont neutres (C-27-3-28), mais le titre
+  (repris dans la PR), l'énoncé et le CHANGELOG prescrit imputaient encore le refus au seul profil.
+- **Retenu** : « … refuse un import dont le profil, le compte ou le fichier a changé depuis l'aperçu » ; énoncé et
+  CHANGELOG idem. C-27-3-27 (« depuis l'écran ») reste.
+- **Écarté** : laisser le titre sur le seul profil au motif qu'il énonce le défaut de l'issue (la PR le reprend tel
+  quel, et il promettrait moins que ce qui est livré).
 - **Réversible** : oui.
