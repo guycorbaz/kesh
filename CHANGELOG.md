@@ -8,7 +8,7 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
-## [0.13.2] — Non publié
+## [0.13.2] — 2026-10-13
 
 ⚠️ **À faire en passant à la 0.13.2** — le détail est au manuel d'administration, *Passer à la 0.13.2 : la colonne Devise des profils CSV* :
 
