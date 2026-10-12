@@ -1,0 +1,4 @@
+date;amount;reference;details
+2026-03-02;120.00;E2E-DEL-1;Versement test suppression
+2026-03-03;-45.50;E2E-DEL-2;Achat test suppression
+2026-03-04;10.00;E2E-DEL-3;Remboursement test suppression
