@@ -1,7 +1,7 @@
 # Epic 27 — choix autonomes de la Story 27-3 (à fusionner dans `epic-27-choix-autonomes.md`)
 
 *Écrit le 2026-10-12 par l'agent de spécification (Opus 5.5), en autonomie ; C-27-3-20 à 27 ajoutés le même jour
-par l'agent de remédiation de la validation P1. Le registre de l'epic vit sur la branche
+par l'agent de remédiation de la validation P1, C-27-3-28 à 34 par celui de la validation P2. Le registre de l'epic vit sur la branche
 de la 27-1 (`story/27-1-supprimer-import`, non mergée) : l'orchestrateur fusionne ce fichier par **union**, sans
 renuméroter (préfixe `C-27-3-`, propre à cette story). Chaque choix : contexte, retenu, écarté, réversibilité.*
 
@@ -65,8 +65,11 @@ Fiche : `27-3-profil-apres-apercu.md`. Issue #626 (P2).
 
 ### C-27-3-7 — Défense serveur par **empreinte sans état** (SHA-256), ni table, ni jeton signé
 
-- **Contexte** : l'issue demande si la confirmation peut porter une empreinte pour qu'un client périmé n'importe pas
-  avec un mapping jamais vu.
+- **Contexte** : l'issue #626 demande un écran juste (« changer de profil relance l'aperçu, ou rend la confirmation
+  impossible tant que l'aperçu n'a pas été recalculé ») ; elle ne parle pas du serveur. La story **ajoute** une
+  défense serveur, parce qu'un écran corrigé reste exposé à un profil modifié dans un autre onglet (D3) et qu'un client
+  périmé ne doit pas importer avec un mapping jamais vu. *(Contexte reformulé à la validation P2, R13 : la première
+  rédaction attribuait cette demande à l'issue, qui ne la contient pas.)*
 - **Retenu** : l'aperçu rend `previewFingerprint`, la création la recalcule sur ses propres entrées et compare
   (AC6-AC8). Pas de migration, pas d'expiration, pas de nettoyage.
 - **Écarté** : jeton stocké (migration, expiration, ne ferme rien de plus) ; HMAC (la menace est le client périmé,
@@ -195,8 +198,10 @@ Fiche : `27-3-profil-apres-apercu.md`. Issue #626 (P2).
   sélecteurs (AC3, D15, V9, M8).
 - **Écarté** : rendre un *Annuler* dans l'état de chargement (un site d'invalidation de plus à tester, pour un
   aperçu qui dure une requête sans écriture) ; garder *Annuler* actif et garder la relance `409` par un jeton de
-  séquence capturé au début de la confirmation (deux mécanismes là où un `disabled` suffit, et plus aucun geste ne
-  peut invalider la confirmation une fois les trois contrôles désactivés).
+  séquence capturé au début de la confirmation (deux mécanismes là où un `disabled` suffit : une fois les trois
+  contrôles désactivés, aucun geste **sur l'écran** n'invalide plus la confirmation).
+- **Précisé à la validation P2** (R14) : la première rédaction disait « plus aucun geste ne peut invalider la
+  confirmation » ; **quitter la page** en reste un (démontage du composant, D19) — inoffensif, assumé (C-27-3-34).
 - **Réversible** : oui.
 
 ### C-27-3-22 — M6 est tuée par un test CAMT, et non par un test serveur
@@ -214,7 +219,8 @@ Fiche : `27-3-profil-apres-apercu.md`. Issue #626 (P2).
 - **Contexte** : F4 / R4 — la première forme de M16 (comparaison avant la résolution, profil relu hors transaction)
   n'était tuée par aucun test, et la précédence de l'AC8 n'était testée qu'à moitié.
 - **Retenu** : I11 (profil supprimé → `404`, non `409`) et I12 (compte inconnu → `404`) ; M16a (comparaison déplacée
-  avant la résolution, un profil supprimé rend `409`) → I11 ; M16b (empreinte sur l'id demandé) → I6. La variante
+  avant la résolution, un profil supprimé rend `409`) → I11 ; M16b (empreinte sur l'id demandé) → I6 — **faux, corrigé à
+  la validation P2** : I6 ne tue pas M16b, M16b → I6-bis (C-27-3-29). La variante
   « relu hors transaction mais présent » est écrite **équivalente** en test déterministe, non comptée, tenue par
   construction (une seule variable `profile` comparée puis parsée).
 - **Écarté** : un test de concurrence (injection d'un `UPDATE` entre lecture et parse : outillage absent, test
@@ -262,4 +268,90 @@ Fiche : `27-3-profil-apres-apercu.md`. Issue #626 (P2).
   importe (D12).
 - **Retenu** : titre « … refuse un import dont le profil a changé depuis l'aperçu » ; CHANGELOG « depuis l'écran » et
   « facultatif pour un client d'API ». Le nom du fichier de la fiche ne change pas.
+- **Réversible** : oui.
+
+### C-27-3-28 — L'avis du `409` est neutre : « Le profil, le fichier ou le compte a changé »
+
+- **Contexte** : validation P2, F1 = R2 — l'avis prescrit (« Le profil a été modifié depuis la prévisualisation… »)
+  imputait tout `409` au profil. Or, depuis l'écran, l'instantané fige l'objet `File` et l'id du compte, et un `409`
+  peut venir du contenu du profil (D3), de l'IBAN du compte modifié ailleurs (D7) ou des octets du fichier modifié sur
+  le disque (D18) ; pour un CAMT, le profil n'est pas dans l'empreinte, l'avis y était faux à chaque fois. Le message
+  serveur, lui, disait déjà « Le profil, le fichier ou le compte a changé ».
+- **Retenu** : avis aligné sur le message serveur, dans les quatre locales et le repli (AC9, AC10) ; le texte de
+  recalcul perd « avec le profil choisi » (« Recalcul de la prévisualisation… »), faux lui aussi après un `409` sur un
+  CAMT ; le manuel (AC12) cite le profil, le compte et le fichier.
+- **Écarté** : un avis par cause (l'écran ne sait pas laquelle des entrées a changé — il faudrait que le serveur
+  rende le détail de l'empreinte, ce qui la rendrait structurée pour un gain d'affichage) ; un avis « profil » pour
+  un CSV et « compte » pour un CAMT (plus de code, et faux pour le fichier modifié).
+- **Réversible** : oui (textes seuls).
+
+### C-27-3-29 — M16b est tuée par I6-bis, création sans `bankProfileId`
+
+- **Contexte** : validation P2, F2 = R1 (régression de la remédiation P1) — M16b (« empreinte sur l'id demandé au
+  lieu du profil résolu ») était affectée à I6, où la création envoie l'id résolu : demandé et résolu y sont le même
+  profil, la mutation est équivalente dans I6, qui reste vert.
+- **Retenu** : I6-bis — aperçu et création sur *Auto-détection*, aucun id des deux côtés, un seul profil concordant,
+  empreinte de l'aperçu → `201` ; sous la mutation, l'empreinte de la création porte `null` à la place du profil →
+  `409`. M16b réécrite précisément (`fields.bank_profile_id.and_then(<relecture>)`, `null` sans id). I6 reste, pour
+  l'AC8 (auto-détection puis explicite). Helper existant `build_multipart_with_text_fields` (F8).
+- **Écarté** : muter aussi l'aperçu (la mutation ne porterait plus sur le site de création qu'elle doit éprouver).
+- **Réversible** : oui (tests).
+
+### C-27-3-30 — La garde de séquence est éprouvée sur une réponse périmée en vol, et sur une réponse en erreur
+
+- **Contexte** : validation P2, R3 (régression de la remédiation P1, V3 réécrit) — dans l'ordre C, A, B, la réponse
+  la plus récente arrive la première : aucune réponse périmée n'arrive pendant qu'un aperçu plus récent est en vol, si
+  bien qu'un `finally` qui éteint l'indicateur sans condition survit ; et V3 / V8 n'employaient que des réponses
+  réussies, si bien qu'une garde posée sur la seule branche de succès survivait aussi.
+- **Retenu** : V3 dans l'ordre A, C, B (indicateur présent et aucun aperçu après A) ; variante rejetée de V8 (ni
+  erreur, ni indicateur) ; mutations M21 et M22 ; T3 écrit qu'une réponse périmée, succès ou erreur, ne touche ni
+  `preview`, ni l'erreur, ni `isPreviewing`.
+- **Écarté** : un test par permutation des trois réponses (six ordres) — A, C, B est le seul qui fasse arriver une
+  réponse périmée avant la plus récente **et** une autre après.
+- **Réversible** : oui (tests).
+
+### C-27-3-31 — L'avis s'efface en trois sites, chacun tenu par un test
+
+- **Contexte** : validation P2, R4 — l'AC9 promet que l'avis disparaît au geste suivant, mais la branche `409` ne
+  passe pas par `reset()` et T3 ne prescrivait que l'effacement par `reset()` ; aucun test ni mutation ne tenait la
+  disparition.
+- **Retenu** : trois sites prescrits (T3) — `reset()` (compte, *Annuler*), `runPreview` pour toute raison autre que
+  `'stale'` (dépôt, profil), `handleConfirm` dès le clic ; V6-bis (un rendu par geste) ; mutation M20.
+- **Écarté** : un `$effect` qui efface l'avis à tout changement de `preview` (effacerait l'avis à l'arrivée même du
+  recalcul qu'il annonce) ; un délai d'expiration (arbitraire, l'utilisateur peut ne pas l'avoir lu).
+- **Réversible** : oui.
+
+### C-27-3-32 — L'annotation « (auto-détecté) » n'apparaît que pour un aperçu `autoMatched`
+
+- **Contexte** : validation P2, F9 — `BankImportUpload.svelte:252` alimente l'annotation par
+  `csvProfileMatch.profileId`, que `preview_csv` pose toujours pour un CSV : un profil choisi avant le dépôt est déjà
+  annoté « (auto-détecté) » à tort, et l'AC1, qui relance l'aperçu à chaque choix, rendrait l'erreur systématique.
+- **Retenu** : `autoMatchedId` vaut l'id seulement si `csvProfileMatch.autoMatched` (AC4) ; V1 (pas d'annotation sur
+  B), V4 (annotation sur le présélectionné) ; mutation M23. La phrase du manuel (« mention « auto-détecté » » sous
+  *Auto-détection*) reste vraie et devient exacte.
+- **Écarté** : laisser tel quel (défaut préexistant, mais que la story aggrave) ; une issue séparée (correctif d'une
+  ligne dans un fichier que la story réécrit).
+- **Réversible** : oui.
+
+### C-27-3-33 — Sur `409`, `isConfirming` s'éteint avant le recalcul
+
+- **Contexte** : validation P2, F5 — si la branche `409` attend le recalcul (`await runPreview(…)`) avant le
+  `finally` qui éteint `isConfirming`, les sélecteurs restent désactivés pendant tout le recalcul, contre l'AC3
+  (« pendant un aperçu, les sélecteurs restent actifs »), et un recalcul qui traîne fige l'écran.
+- **Retenu** : `isConfirming = false` puis `void runPreview(…, 'stale')` (AC9, T3) ; assertion dans V6 (sélecteurs
+  actifs pendant le recalcul retenu) ; mutation M24.
+- **Écarté** : garder l'`await` et désactiver délibérément pendant le recalcul (aucune raison : le recalcul est un
+  aperçu comme un autre, protégé par la séquence).
+- **Réversible** : oui.
+
+### C-27-3-34 — D18 (fichier modifié sur le disque) et D19 (navigation pendant la confirmation) : écrits, sans code neuf
+
+- **Contexte** : validation P2, F3 et R14 — l'inventaire D1-D17 se disait clos sans le fichier source modifié entre
+  l'aperçu et la confirmation (l'objet `File` est lu paresseusement) ni le démontage du composant pendant une
+  confirmation ; F3 relève aussi la suppression d'un import par la 27-1, de la classe D13.
+- **Retenu** : D18 fermé par l'empreinte existante (hash du fichier, AC7-4 → `409`, recalcul, avis neutre
+  C-27-3-28) ; D19 inoffensif et assumé — une requête d'aperçu sur un composant démonté, sans effet visible ni
+  écriture —, sans garde de démontage ; D13 nomme la suppression d'un import.
+- **Écarté** : une garde de démontage (`onDestroy` qui invalide la séquence) — un site de plus à tester pour une
+  requête sans écriture ; relire le fichier avant la confirmation pour comparer côté client (le serveur le fait déjà).
 - **Réversible** : oui.
