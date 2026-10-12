@@ -506,3 +506,110 @@ async fn ac3c_second_concurrent_deletion_is_not_found(pool: MySqlPool) {
     );
     assert_eq!(count_import(&pool, import_id).await, (0, 0));
 }
+
+/// Le plan de `EXPLAIN <sql>` pour `(company_id, import_id)` : `(type, key)`.
+async fn plan_of(pool: &MySqlPool, sql: &str, company_id: i64, import_id: i64) -> (String, String) {
+    use sqlx::Row;
+    let row = sqlx::query(&format!("EXPLAIN {sql}"))
+        .bind(company_id)
+        .bind(import_id)
+        .fetch_one(pool)
+        .await
+        .expect("EXPLAIN");
+    let col = |name: &str| -> String {
+        row.try_get::<Option<String>, _>(name)
+            .or_else(|_| {
+                row.try_get::<Option<Vec<u8>>, _>(name)
+                    .map(|b| b.map(|b| String::from_utf8_lossy(&b).into_owned()))
+            })
+            .expect("colonne d'EXPLAIN")
+            .unwrap_or_default()
+    };
+    (col("type"), col("key"))
+}
+
+/// C-27-1-21 — la lecture verrouillante de l'étape 2 passe par
+/// `idx_bank_transactions_import`, même quand l'import porte la majorité des
+/// lignes de la société (forme mesurée au dossier, `27-1-explain.log` :
+/// 500 transactions, un import de 450 et un de 50, `ANALYZE TABLE` fait).
+///
+/// Le test exécute `EXPLAIN` sur **la constante que le code exécute**
+/// ([`bank_imports::LOCK_IMPORT_TRANSACTIONS_SQL`]) : retirer le
+/// `FORCE INDEX` le fait rougir (mutation M21). Le témoin — la même requête
+/// sans l'indication — prouve que le montage reproduit bien le plan dangereux ;
+/// s'il cesse de passer par `PRIMARY` (autre version de MariaDB, autre
+/// statistique), ce test le dit au lieu de passer à vide.
+#[sqlx::test(migrations = "./test-schema")]
+async fn lock_query_uses_the_import_index(pool: MySqlPool) {
+    let seeded = seed_accounting_company(&pool).await.unwrap();
+    let ba = bank_account(&pool, seeded.company_id).await;
+    let mut imports = Vec::new();
+    for (k, n) in [(0, 450usize), (1, 50usize)] {
+        let import_id = sqlx::query(
+            "INSERT INTO bank_imports \
+             (company_id, bank_account_id, filename, file_hash, source_format, period_from, \
+              period_to, transaction_count, imported_by_user_id) \
+             VALUES (?, ?, ?, REPEAT('e', 64), 'CAMT053_V04', '2026-01-01', '2026-01-31', ?, ?)",
+        )
+        .bind(seeded.company_id)
+        .bind(ba)
+        .bind(format!("releve-{k}.xml"))
+        .bind(n as i32)
+        .bind(seeded.admin_user_id)
+        .execute(&pool)
+        .await
+        .unwrap()
+        .last_insert_id() as i64;
+        let values = (0..n)
+            .map(|j| {
+                format!(
+                    "({}, {import_id}, {ba}, '2026-01-{:02}', {}, 'CHF', 'test')",
+                    seeded.company_id,
+                    1 + j % 28,
+                    10 + j
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        sqlx::query(&format!(
+            "INSERT INTO bank_transactions \
+             (company_id, import_id, bank_account_id, booking_date, amount, currency, details) \
+             VALUES {values}"
+        ))
+        .execute(&pool)
+        .await
+        .unwrap();
+        imports.push(import_id);
+    }
+    sqlx::query("ANALYZE TABLE bank_transactions")
+        .execute(&pool)
+        .await
+        .unwrap();
+    let majority = imports[0];
+
+    let (kind, key) = plan_of(
+        &pool,
+        bank_imports::LOCK_IMPORT_TRANSACTIONS_SQL,
+        seeded.company_id,
+        majority,
+    )
+    .await;
+    assert_eq!(
+        key, "idx_bank_transactions_import",
+        "la lecture verrouillante doit passer par l'index de l'import (type {kind})"
+    );
+    assert_eq!(
+        kind, "ref",
+        "accès par l'index, pas un parcours (clé {key})"
+    );
+
+    let unforced = bank_imports::LOCK_IMPORT_TRANSACTIONS_SQL
+        .replace(" FORCE INDEX (idx_bank_transactions_import)", "");
+    assert_ne!(unforced, bank_imports::LOCK_IMPORT_TRANSACTIONS_SQL);
+    let (kind, key) = plan_of(&pool, &unforced, seeded.company_id, majority).await;
+    assert_ne!(
+        key, "idx_bank_transactions_import",
+        "témoin : sans l'indication, ce montage doit reproduire le plan par PRIMARY \
+         mesuré au dossier (type {kind}) — sinon le test ne prouve plus rien"
+    );
+}

@@ -348,6 +348,23 @@ pub fn is_reconciled(status: &str, matched_entry_id: Option<i64>) -> bool {
     status != "pending" || matched_entry_id.is_some()
 }
 
+/// Étape 2 de [`delete_unreconciled_in_tx`] : les transactions d'un import,
+/// sous verrou, par identifiant croissant (paramètres : `company_id`,
+/// `import_id`).
+///
+/// Le `FORCE INDEX (idx_bank_transactions_import)` est mesuré, non décoratif
+/// (choix C-27-1-21) : sans lui, MariaDB 10.11 choisit `type=index` sur
+/// `PRIMARY` dès que l'import porte la majorité des lignes de la société, et la
+/// lecture verrouillante pose alors ses verrous sur **toutes** les lignes
+/// examinées — rapprochements et acceptations des autres imports attendraient
+/// la fin de la suppression. Exposée pour que le test
+/// `lock_query_uses_the_import_index` (`tests/bank_import_delete.rs`) exécute
+/// `EXPLAIN` sur **ce** texte, et non sur une copie qui pourrait diverger.
+#[doc(hidden)]
+pub const LOCK_IMPORT_TRANSACTIONS_SQL: &str = "SELECT id, status, matched_entry_id, auto_match_rejected_at \
+     FROM bank_transactions FORCE INDEX (idx_bank_transactions_import) \
+     WHERE company_id = ? AND import_id = ? ORDER BY id FOR UPDATE";
+
 /// Supprime l'import `import_id` de la société `company_id` **avec toutes ses
 /// transactions**, à condition qu'**aucune** ne soit rapprochée (au sens de
 /// [`is_reconciled`]) — Story 27-1, #632. Un import sans transaction est donc
@@ -436,16 +453,13 @@ pub async fn delete_unreconciled_in_tx(
     };
 
     // Étape 2 — les transactions, sous verrou, par identifiant croissant.
-    let rows: Vec<(i64, String, Option<i64>, Option<NaiveDateTime>)> = sqlx::query_as(
-        "SELECT id, status, matched_entry_id, auto_match_rejected_at \
-         FROM bank_transactions FORCE INDEX (idx_bank_transactions_import) \
-         WHERE company_id = ? AND import_id = ? ORDER BY id FOR UPDATE",
-    )
-    .bind(company_id)
-    .bind(import_id)
-    .fetch_all(&mut **tx)
-    .await
-    .map_err(map_db_error)?;
+    let rows: Vec<(i64, String, Option<i64>, Option<NaiveDateTime>)> =
+        sqlx::query_as(LOCK_IMPORT_TRANSACTIONS_SQL)
+            .bind(company_id)
+            .bind(import_id)
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(map_db_error)?;
 
     // Étape 3 — comptage sur le résultat de la lecture verrouillante.
     let transaction_count = rows.len() as i64;
