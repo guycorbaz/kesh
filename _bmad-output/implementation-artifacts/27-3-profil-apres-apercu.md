@@ -877,9 +877,9 @@ touche aucune ligne de production — est ici sans objet (la story est en spéci
 prescriptions comme du comportement, pas comme du texte.
 
 **Nouveaux décomptes**, recomptés depuis la fiche (mêmes commandes que la P2) : **18 AC** ; tests **U1-U4 / I1-I12 +
-I6-bis / V1-V13 + V6-bis / E1-E2** (**33** — la variante « cases » vit dans V6, sans numéro neuf) ; **29 mutations**
+I6-bis / V1-V13 + V6-bis / E1-E2** (**33** — la variante « cases » vit dans V6, sans numéro neuf) ; **28 mutations**
 (M1-M9, M10a, M10b, M11-M15, M16a, M16b, M17-M26 ; `grep -cE "^\| M[0-9]+[ab]? \|"` → 28) ; inventaire **D1-D19** ;
-choix **C-27-3-1 à 45** (`grep -c "^### C-27-3-"` du registre → 45) ; **24 clés** neuves (`grep -cE "^\| \`bank-import-"`
+choix **C-27-3-1 à 44** (`grep -c "^### C-27-3-"` du registre → 44) ; **24 clés** neuves (`grep -cE "^\| \`bank-import-"`
 → 24) ; aucun site `i18nMsg(` neuf ni retiré par la P3 (textes et prescriptions seuls), donc `sitesTotal`
 **2032 → 2063** inchangé, **2072** à la fusion. Prompt de la P4 : `27-3-validate-prompt-p4-ciblee.md` (Haiku, une lentille).
 
