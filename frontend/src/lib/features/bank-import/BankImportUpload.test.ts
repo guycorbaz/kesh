@@ -260,6 +260,8 @@ describe('BankImportUpload — changer de profil recalcule l’aperçu (Story 27
 		expect(account).toBe(1);
 		expect(flags?.bankProfileId).toBe(B);
 		expect(flags?.previewFingerprint).toBe(fp('b'));
+		// Revue de code P2, L1 : ni le changement de profil ni le succès ne relisent la liste.
+		expect(mockProfileApi.listBankProfiles, 'aucune relecture hors 409').toHaveBeenCalledTimes(1);
 	});
 
 	it('V2 — pendant le recalcul : ni aperçu, ni Confirmer, ni zone de dépôt ; indicateur de recalcul ; sélecteurs actifs', async () => {
@@ -457,6 +459,8 @@ describe('BankImportUpload — séquence, compte et confirmation (Story 27-3)', 
 		expect(get<HTMLButtonElement>(c, 'bank-import-confirm').disabled).toBe(false);
 		expect(get(c, 'bank-import-preview').textContent).toContain('tx-A');
 		expect(mockApi.previewBankImport, 'aucun recalcul hors 409').toHaveBeenCalledTimes(1);
+		// Revue de code P2, L1 : la liste des profils n'est relue qu'après un 409.
+		expect(mockProfileApi.listBankProfiles, 'aucune relecture hors 409').toHaveBeenCalledTimes(1);
 		expect(onSuccess).not.toHaveBeenCalled();
 	});
 
@@ -588,6 +592,79 @@ describe('BankImportUpload — refus 409 BANK_IMPORT_PREVIEW_STALE (Story 27-3, 
 		const select = get<HTMLSelectElement>(c, 'bank-profile-select');
 		expect(select.querySelector(`option[value="${C}"]`)?.textContent).toContain('Profil C');
 		expect(get(c, 'bank-import-preview').textContent).toContain('tx-A2');
+	});
+
+	/** Liste relue au 409 ; `items` remplace la liste du montage. */
+	function relistWith(items: BankProfile[]): void {
+		mockProfileApi.listBankProfiles.mockResolvedValueOnce({
+			items,
+			total: items.length,
+			page: 1,
+			perPage: 50,
+		} as never);
+	}
+
+	const NO_MATCH = apiError('BANK_CSV_NO_PROFILE_MATCH', 404);
+
+	it('V6-quater — le profil choisi a été supprimé : retour à l’auto-détection, erreur affichée, redépôt sans profil', async () => {
+		// Revue de code P2, M1 (C-27-3-57).
+		const { c } = await mount();
+		relistWith([profile(B, 'Profil B')]);
+		await staleConfirm(c, () => mockApi.previewBankImport.mockRejectedValueOnce(NO_MATCH));
+		expect(profileFlag(1), 'le recalcul en vol garde son profil').toBe(A);
+		const select = get<HTMLSelectElement>(c, 'bank-profile-select');
+		expect(select.querySelector(`option[value="${A}"]`)).toBeNull();
+		expect(select.value).toBe('');
+		expect(q(c, 'bank-import-preview-recomputed')).not.toBeNull();
+		expect(get(c, 'bank-import-error').getAttribute('data-error-code')).toBe(
+			'BANK_CSV_NO_PROFILE_MATCH',
+		);
+		mockApi.previewBankImport.mockResolvedValueOnce(previewResp({ tag: 'X', profileId: B }));
+		await chooseFile(c);
+		expect(mockApi.previewBankImport).toHaveBeenCalledTimes(3);
+		expect(profileFlag(2), 'redépôt : auto-détection').toBeUndefined();
+	});
+
+	it('V6-quater (liste vide) — plus aucun profil : sélecteur absent, redépôt sans profil', async () => {
+		const { c } = await mount();
+		relistWith([]);
+		await staleConfirm(c, () => mockApi.previewBankImport.mockRejectedValueOnce(NO_MATCH));
+		expect(q(c, 'bank-profile-select')).toBeNull();
+		expect(get(c, 'bank-import-error').getAttribute('data-error-code')).toBe(
+			'BANK_CSV_NO_PROFILE_MATCH',
+		);
+		mockApi.previewBankImport.mockResolvedValueOnce(previewResp({ tag: 'X', profileId: null }));
+		await chooseFile(c);
+		expect(mockApi.previewBankImport).toHaveBeenCalledTimes(3);
+		expect(profileFlag(2), 'redépôt : auto-détection').toBeUndefined();
+	});
+
+	it('V6-quater (séquence) — deux relectures croisées : seule la dernière demandée pose la liste', async () => {
+		// Revue de code P2, L4.
+		const { c } = await mount();
+		const first = deferred<unknown>();
+		const second = deferred<unknown>();
+		mockProfileApi.listBankProfiles.mockReturnValueOnce(first.promise as never);
+		await staleConfirm(c, () =>
+			mockApi.previewBankImport.mockResolvedValueOnce(previewResp({ tag: 'A2' })),
+		);
+		mockProfileApi.listBankProfiles.mockReturnValueOnce(second.promise as never);
+		mockApi.createBankImport.mockRejectedValueOnce(STALE);
+		mockApi.previewBankImport.mockResolvedValueOnce(previewResp({ tag: 'A3' }));
+		await confirm(c);
+		expect(mockProfileApi.listBankProfiles).toHaveBeenCalledTimes(3);
+		second.resolve({ items: [profile(A, 'Profil A récent')], total: 1, page: 1, perPage: 50 });
+		await flush();
+		first.resolve({
+			items: [profile(A, 'Profil A ancien'), profile(C, 'Profil C')],
+			total: 2,
+			page: 1,
+			perPage: 50,
+		});
+		await flush();
+		const select = get<HTMLSelectElement>(c, 'bank-profile-select');
+		expect(select.querySelector(`option[value="${A}"]`)?.textContent).toContain('Profil A récent');
+		expect(select.querySelector(`option[value="${C}"]`)).toBeNull();
 	});
 
 	it('V6-bis (a) — changer de profil efface l’avis dès le geste', async () => {

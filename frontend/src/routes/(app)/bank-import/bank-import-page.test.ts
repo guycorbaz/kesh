@@ -63,7 +63,9 @@ describe('Page d’import bancaire — chargement (Story 27-3, AC17 H11)', () =>
 		const { container } = render(Page);
 		await flush();
 
-		expect(container.textContent).toContain('common-loading');
+		// Revue de code P2, L2 : le texte EXACT d'un paragraphe, pas une sous-chaîne.
+		const paragraphs = Array.from(container.querySelectorAll('p')).map((p) => p.textContent?.trim());
+		expect(paragraphs).toContain('common-loading');
 		expect(container.textContent).not.toContain('Chargement');
 		expect(container.querySelector('[data-testid="bank-import-upload"]')).toBeNull();
 

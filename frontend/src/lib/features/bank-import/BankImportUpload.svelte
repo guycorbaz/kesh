@@ -91,6 +91,8 @@
 	// `$state` : `reset()` l'incrémente depuis le `$effect` du compte, qui
 	// dépendrait sinon de lui (AC3).
 	let seq = 0;
+	// Numéro de la dernière relecture des profils (variable ordinaire, cf. `seq`).
+	let profilesSeq = 0;
 
 	/** Lignes du refus de signe, si `details` en porte (sinon `null`). */
 	function signRefusalDetails(err: { code: string; details?: Record<string, unknown> }): InvalidLinesPayload | null {
@@ -110,11 +112,23 @@
 	 * profil a pu être renommé, supprimé ou créé ailleurs. En cas d'échec, la
 	 * liste en place est gardée (vide au montage) : un rafraîchissement raté ne
 	 * doit pas faire disparaître le sélecteur.
+	 *
+	 * Si le profil choisi n'est plus dans la liste relue (supprimé ailleurs), le
+	 * choix revient à l'auto-détection (revue de code P2, M1, C-27-3-57) : sans
+	 * quoi le sélecteur afficherait « Auto-détection » pendant qu'un nouveau
+	 * dépôt partirait avec l'id supprimé (404), et une liste vide masquerait le
+	 * sélecteur sans issue. Le recalcul déjà en vol garde son propre profil, et
+	 * son erreur s'affiche. Seule la dernière relecture pose son résultat (L4).
 	 */
 	async function loadProfiles(): Promise<void> {
+		const mySeq = ++profilesSeq;
 		try {
 			const list = await listBankProfiles(1, 50);
+			if (mySeq !== profilesSeq) return;
 			availableProfiles = list.items;
+			if (bankProfileId !== null && !list.items.some((p) => p.id === bankProfileId)) {
+				bankProfileId = null;
+			}
 		} catch {
 			// liste en place gardée
 		}

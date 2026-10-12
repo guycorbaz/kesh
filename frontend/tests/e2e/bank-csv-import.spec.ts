@@ -555,14 +555,18 @@ test('shows the translated message next to the code of an invalid CSV line (Stor
 /**
  * La fixture UBS, dates déplacées en `year` : elle a déjà été importée par les
  * tests 26-1 (doublon de fichier) et ses lignes 2026 seraient des doublons. Le
- * seul « 2026- » hors date est un libellé libre (`Facture 2026-014`).
+ * seul « 2026- » hors date est un libellé libre (`Facture 2026-014`), qui
+ * reçoit en outre la marque du passage (`RUN`) : le contenu, donc son hash, est
+ * propre au passage même si deux passages tirent la même année (revue de code
+ * P2, L3).
  */
 function ubsFixtureIn(year: string, name: string) {
-	return {
-		name,
-		mimeType: 'text/csv',
-		buffer: Buffer.from(fs.readFileSync(UBS_FIXTURE, 'utf8').replaceAll('2026-', `${year}-`)),
-	};
+	const csv = fs
+		.readFileSync(UBS_FIXTURE, 'utf8')
+		.replaceAll('2026-', `${year}-`)
+		.replace(`Facture ${year}-014`, `Facture ${year}-014-${RUN}`);
+	if (!csv.includes(RUN)) throw new Error('fixture UBS : libellé « Facture 2026-014 » introuvable');
+	return { name, mimeType: 'text/csv', buffer: Buffer.from(csv) };
 }
 
 /**
