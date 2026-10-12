@@ -1605,7 +1605,7 @@ en autonomie, sur `f9725c29` (merge de la 27-1).
   traitement sous verrou de l'acceptation a ses propres codes, le rejet n'en a pas d'exacts.
 - **Retenu** : une fonction pure classe la ligne lue (ou son absence) : absente → `BANK_TRANSACTION_NOT_FOUND` ;
   rapprochée → `RECONCILIATION_ALREADY_RECONCILED` ; rejetée → `RECONCILIATION_ALREADY_REJECTED` ; sinon éligible.
-  `match` exhaustif sur le statut. Elle sert aux deux pré-vols et à la reprise du rejet (AC4).
+  `match` exhaustif sur le statut *(clause remplacée par C-27-4-19 : appel d'`is_reconciled`, échec fermé)*. Elle sert aux deux pré-vols et à la reprise du rejet (AC4).
 - **Écartées** : garder la lecture filtrée et rendre `BANK_TRANSACTION_NOT_FOUND` pour toute absence (un utilisateur
   lirait « introuvable » pour une transaction qu'il vient de rapprocher dans un autre onglet) ; une fonction par
   route (deux copies divergent).
@@ -1728,7 +1728,7 @@ en autonomie, sur `f9725c29` (merge de la 27-1).
 
 Rapports : `kesh-gate-logs/27-4-validate-p1-F.md` (1 MEDIUM, 6 LOW) et `27-4-validate-p1-R.md` (3 MEDIUM, 11 LOW).
 
-### C-27-4-15 — M11 tuée par un montage dédié (AC6-8), non déclarée équivalente (validation P1, F1 / R1-9 (d))
+### C-27-4-15 — M11 tuée par un montage dédié (AC6-8), non déclarée équivalente (validation P1, F1 / R1-9 (d)) — (complété : observation durable, voir C-27-4-26)
 
 - **Contexte** : sous le montage de l'AC6-2, la suppression est validée avant la première lecture ordinaire du lot :
   une relecture sans `FOR UPDATE` la voit aussi, et la pièce centrale de l'AC4 n'est prouvée par aucun test.
@@ -1749,7 +1749,7 @@ Rapports : `kesh-gate-logs/27-4-validate-p1-F.md` (1 MEDIUM, 6 LOW) et `27-4-val
 - **Écartée** : un second `POST /reject` concurrent (il bloquerait lui aussi sur le verrou nommé que tient le test).
 - **Réversible** : oui.
 
-### C-27-4-17 — Un cas de rejet qui mêle refus du pré-vol et refus sous verrou, lot non trié (validation P1, R1-2)
+### C-27-4-17 — Un cas de rejet qui mêle refus du pré-vol et refus sous verrou, lot non trié (validation P1, R1-2) — (révisé : trois transactions, voir C-27-4-29)
 
 - **Contexte** : aucun test ne mêlait les deux sources de refus du rejet ; une fusion « pré-vol puis verrou »,
   chacune triée, survivait.
@@ -1801,7 +1801,7 @@ Rapports : `kesh-gate-logs/27-4-validate-p1-F.md` (1 MEDIUM, 6 LOW) et `27-4-val
 - **Écartée** : SQL en ligne dans la route (lecture de `bank_transactions` hors du dépôt, sans test propre).
 - **Réversible** : oui.
 
-### C-27-4-22 — Table des mutations : M7 scindée, M6 rattachée, M17 et M18 déclarées équivalentes d'emblée (validation P1, R1-9 / F3)
+### C-27-4-22 — Table des mutations : M7 scindée, M6 rattachée, M17 et M18 déclarées équivalentes d'emblée (validation P1, R1-9 / F3) — (révisé pour M17 : tuée, voir C-27-4-27)
 
 - **Retenu** : M7a / M7b (le court-circuit vit dans deux handlers ; l'AC3 se teste sur les deux routes) ; M6
   rattachée à l'assertion `details: null` d'AC6-1 et AC6-3 (la comparaison des deux corps ne la tue pas si la
@@ -1811,7 +1811,7 @@ Rapports : `kesh-gate-logs/27-4-validate-p1-F.md` (1 MEDIUM, 6 LOW) et `27-4-val
   courante.
 - **Réversible** : oui.
 
-### C-27-4-23 — Manuel : la puce *Supprimer un import* nomme les deux motifs ; la l. 1920 n'est pas touchée (validation P1, F7 / R1-10)
+### C-27-4-23 — Manuel : la puce *Supprimer un import* nomme les deux motifs ; la l. 1920 n'est pas touchée (validation P1, F7 / R1-10) — (révisé pour la puce : la conduite, non les motifs, voir C-27-4-28)
 
 - **Contexte** : une suppression qui tombe pendant le traitement d'une acceptation sort en « modifiée pendant le
   traitement », non en « introuvable » ; une transaction rejetée pendant qu'un lot d'acceptation attend le verrou
@@ -1839,4 +1839,86 @@ Rapports : `kesh-gate-logs/27-4-validate-p1-F.md` (1 MEDIUM, 6 LOW) et `27-4-val
   recharge d'`accept_one_invoice` sans filtre de rejet (voulue, sans effet comptable) ; `pending` avec lien sous
   verrou et repli éligible du rejet (non atteignables) ; `/manual`, `/split` (hors § *Pattern batch*). Aucun n'est un
   comportement défaillant : aucune issue, et la fiche le dit. Si l'orchestrateur en juge autrement, la liste est là.
+- **Réversible** : oui.
+
+### Remédiation de la validation P2 (2026-10-12, Opus)
+
+Rapports : `kesh-gate-logs/27-4-validate-p2-F.md` (4 MEDIUM, 4 LOW) et `27-4-validate-p2-R.md` (3 MEDIUM, 7 LOW).
+Consigne de l'orchestrateur : simplifier, ne pas ajouter de mécanisme fragile.
+
+### C-27-4-26 — AC6-8 : le blocage de `tA` observé durablement, l'angle mort écrit (validation P2, R2-1 / F2-5)
+
+- **Contexte** : les motifs de l'observateur désignent aussi l'`UPDATE` de `tB`, de même texte ; s'il est surpris en
+  vol, la suppression est validée avant l'ouverture de la vue cohérente et M11 survit. « Pas de confusion » ne visait
+  que la relecture `FOR UPDATE`.
+- **Retenu** : l'aide existante appelée deux fois, séparées de 500 ms — aucun mécanisme neuf. Angle mort écrit au
+  doc-comment du test, comme A2-3 de la 27-1 : M11 ne survit que si un `UPDATE` par clé primaire dure plus de 500 ms ;
+  le code juste ne peut rendre aucun faux rouge ; une survivante se rejoue avant d'être déclarée.
+- **Écartées** : `information_schema.INNODB_TRX` (`trx_state = 'LOCK WAIT'`, le seul trait propre à l'attente) — exige
+  le privilège `PROCESS`, que l'utilisateur des tests n'a pas ; un filtre `TIME_MS` (même minutage, sémantique de la
+  colonne pendant une attente de verrou non vérifiée) ; retirer le montage et déclarer M11 non tuée (la seule preuve
+  du `FOR UPDATE` disparaîtrait, alors qu'un observateur simple suffit).
+- **Réversible** : oui (test seul).
+
+### C-27-4-27 — M17 tuée : la garde `bank_account_id` défend la réutilisation des identifiants par la restauration (validation P2, R2-2 / F2-3)
+
+- **Contexte** : M17 avait été déclarée équivalente parce qu'« aucun chemin ne change le compte d'une transaction ».
+  C'est faux : `restore_tables_in_tx` vide `bank_transactions` puis la recharge avec ses identifiants, sans prendre le
+  verrou nommé de réconciliation ; un identifiant vu sur le compte X par le pré-vol peut désigner, sous verrou, une
+  ligne du compte Y.
+- **Retenu** : la raison réécrite à l'AC4 ; M17 tuée par l'AC6-5 (b), montage de l'AC6-5 : pendant l'attente du
+  verrou, `UPDATE bank_transactions SET bank_account_id = <second compte de la même société> WHERE id = tA` ; attendu
+  `BANK_TRANSACTION_NOT_FOUND`, `tA` non rejetée, aucune trace ne la cite. Ligne « restauration concurrente » ajoutée
+  aux sites non résolus, catégorie C (angle mort préexistant de la restauration).
+- **Écartée** : garder M17 non tuée, angle mort assumé (le montage ne coûte qu'une variante d'un test existant).
+- **Réversible** : oui.
+
+### C-27-4-28 — Manuel : la puce *Supprimer un import* décrit la conduite, non les motifs (validation P2, R2-3 / F2-1 / F2-8)
+
+- **Contexte** : la puce réécrite en P1 promettait « Transaction introuvable » ou « modifiée pendant le traitement ».
+  Une proposition **règle** ou **ventilée** rend `RECONCILIATION_TRANSACTION_NOT_PENDING` (« n’est plus en
+  attente »), et pour une facture la suppression pendant l'attente du verrou sort le plus souvent en « introuvable » :
+  le « Contexte » de C-27-4-23 se trompait de motif.
+- **Retenu** : la puce dit que la transaction est refusée avec son motif sous *Échecs partiels*, que les autres
+  propositions sont traitées et que la liste rechargée ne la propose plus — rien à refaire ; aucun libellé cité.
+  Témoin du PDF : « les autres propositions du lot sont traitées ». La décision sur la l. 1920 (C-27-4-23) tient.
+- **Écartée** : nommer les trois motifs (liste close qui se périme au premier code ajouté).
+- **Réversible** : oui (texte).
+
+### C-27-4-29 — AC6-7 à trois transactions : un refus sous verrou entre deux refus du pré-vol (validation P2, F2-2)
+
+- **Contexte** : avec deux transactions, la concaténation « verrou puis pré-vol », chacune triée, rendait l'ordre
+  attendu : M9 n'était tuée que dans un ordre.
+- **Retenu** : l'AC6-7 **remplacé** (pas de cas ajouté) : `tBas` et `tHaut` rejetées avant le lot, `tMil` supprimée
+  pendant ; lot `[tHaut, tMil, tBas]`, attendu `[tBas, tMil, tHaut]`. Les deux ordres rougissent.
+- **Réversible** : oui (test seul).
+
+### C-27-4-30 — L'`UPDATE` du rejet porte `matched_entry_id IS NULL` (validation P2, F2-4)
+
+- **Contexte** : le pré-vol dit « rapprochée » au sens d'`is_reconciled`, l'`UPDATE` du rejet sur `status` seul ; le
+  site manquait à l'inventaire des sites non résolus.
+- **Retenu** : une clause de plus ; la relecture reclasse alors l'état `pending` avec lien par la fonction de l'AC1.
+  M18 reste équivalente ; M19 (clause retirée) déclarée équivalente — état qu'aucun chemin vivant ne produit.
+- **Écartée** : inscrire le site au tableau sans le résoudre (une clause coûte moins qu'un angle mort).
+- **Réversible** : oui.
+
+### C-27-4-31 — Pas de découpage après la P2 (décision de l'orchestrateur, constat D5)
+
+- **Contexte** : P1 4 MEDIUM → P2 5 MEDIUM distincts, dont 4 nés de la remédiation P1 : le signal de la règle de
+  *splitting préventif* est levé, et c'est un **recyclage** au sens de l'amendement D5 (défauts nés du correctif
+  précédent), non des défauts d'origine neufs.
+- **Retenu** : pas de découpage — décision de l'orchestrateur, dans l'autonomie que Guy lui a déléguée le
+  2026-10-12, sur le précédent de la 27-3 (« ne pas découper »). Remède : simplifier — réutiliser l'aide existante
+  (AC6-8), une variante d'un montage existant (AC6-5 (b)), remplacer un cas plutôt qu'en ajouter (AC6-7), une clause
+  SQL (AC4), la conduite plutôt qu'une liste au manuel (AC9). Le périmètre reste sous cinq modules.
+- **Écartée** : découper (un test, un texte, une clause par finding : rien qu'une sous-story tiendrait mieux).
+- **Réversible** : oui — si la P3 recycle encore, le signal sera redéclaré.
+
+### C-27-4-32 — La relecture verrouillante partage le texte SQL de `find_pending_by_id_for_account` (validation P2, R2-9)
+
+- **Contexte** : `find_by_id_for_account_for_update` est la requête de `find_pending_by_id_for_account` plus
+  `FOR UPDATE` ; la recopier ferait deux lectures qui peuvent diverger.
+- **Retenu** : une constante de texte SQL partagée, suffixée de ` FOR UPDATE` pour la lecture verrouillante.
+- **Écartée** : un paramètre booléen « verrouillante » sur la fonction existante (change la signature d'une
+  fonction générique sur l'exécuteur, appelée par `accept_one_invoice` et par un test de dépôt, pour un seul besoin).
 - **Réversible** : oui.

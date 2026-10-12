@@ -4,8 +4,9 @@
 
 **ready-for-dev** — fiche créée le 2026-10-12 en autonomie (`bmad-create-story`), sur `f9725c29` (merge de la
 Story 27-1, #635), branche `story/27-4-lot-reconciliation-transaction-disparue`, worktree
-`/home/gcorbaz/devel/kesh-27-4`. Choix consignés au registre `epic-27-choix-autonomes.md`, **C-27-4-1 à C-27-4-25**.
-13 AC (AC1 à AC13). Validation P1 (Sonnet, lentilles R et F) remédiée ; prompt de la P2 : `27-4-validate-prompt-p2.md`.
+`/home/gcorbaz/devel/kesh-27-4`. Choix consignés au registre `epic-27-choix-autonomes.md`, **C-27-4-1 à C-27-4-32**.
+13 AC (AC1 à AC13). Validations P1 (Sonnet) et P2 (Opus), lentilles R et F, remédiées ; prompt de la P3 :
+`27-4-validate-prompt-p3.md`.
 PR : **`closes #634`**.
 
 ## Story
@@ -83,6 +84,10 @@ Une fonction **pure** (sans I/O) classe chaque identifiant du lot à partir de l
   garde « `match` exhaustif » de la première rédaction. Le doc-comment d'`is_reconciled` (l. 346-347, « Écrite deux
   fois, et seulement deux ») est complété : toujours écrite deux fois, **appelée** par la suppression d'import et par
   la classification des lots de réconciliation.
+- Chaque code est écrit **au site de construction**, sous la forme `error_code: "…".to_string()` — la forme que
+  compte la méthode de l'AC7 (`grep -ohE 'error_code: "[A-Z_]+"'`). Une fonction qui rendrait un `&'static str`
+  repris par `error_code: code.to_string()` cacherait `RECONCILIATION_ALREADY_REJECTED` à ce décompte (R2-8 de la
+  validation P2).
 - Tests unitaires de la fonction (module `#[cfg(test)]` de `reconciliation.rs`, à côté des tests existants l. 4445
   et suivantes) : les quatre lignes du tableau, plus « rapprochée et rejetée », plus **« `pending` avec
   `matched_entry_id` »** (→ `RECONCILIATION_ALREADY_RECONCILED`, état qu'aucun chemin vivant ne produit mais que la
@@ -137,10 +142,19 @@ court-circuit **d'une seule** des deux routes (M7a, M7b), celle-ci rendrait `409
   croissant** — le contrat publié par la 27-1 (« `rejected[]` et `failed[]` sortent triés », `api-external.md:548`)
   vaut désormais pour tout le `failed[]`.
 - L'`UPDATE` du rejet (`:3216-3224`) garde ses conditions et **ajoute** `AND bank_account_id = ? AND
-  auto_match_rejected_at IS NULL` : un rejet concurrent de la même transaction ne la ré-horodate plus en silence (la
-  trace d'audit la comptait deux fois). La clause `bank_account_id` est défensive : aucun chemin ne change le compte
-  d'une transaction (M17, équivalente). `reject_batch` reçoit donc `bank_account_id` (sa signature, l. 3182-3189,
-  ne le porte pas aujourd'hui) à la place du `tx_map`.
+  matched_entry_id IS NULL AND auto_match_rejected_at IS NULL` :
+  - `auto_match_rejected_at IS NULL` : un rejet concurrent de la même transaction ne la ré-horodate plus en silence
+    (la trace d'audit la comptait deux fois) — M10 ;
+  - `bank_account_id = ?` (C-27-4-27) : la **restauration** d'une installation vide `bank_transactions` puis la
+    recharge **avec ses identifiants** (`backup.rs`, `restore_tables_in_tx`), et elle n'est exclusive que des autres
+    imports (`bank_imports.rs`, angle mort « restauration ») : un identifiant vu par le pré-vol sur le compte X peut,
+    au moment de l'`UPDATE`, désigner une ligne du compte Y. La clause empêche de rejeter la transaction d'un autre
+    compte — M17, **tuée** par l'AC6-5 (b) ;
+  - `matched_entry_id IS NULL` (C-27-4-30) : la reprise sous verrou dit « rapprochée » comme le pré-vol, au sens
+    d'`is_reconciled` (AC1) — M19, équivalente (état `pending` avec lien qu'aucun chemin vivant ne produit).
+
+  `reject_batch` reçoit donc `bank_account_id` (sa signature, l. 3183-3190, ne le porte pas aujourd'hui) à la place
+  du `tx_map`.
 - Si l'`UPDATE` ne touche aucune ligne, la ligne est **relue par une lecture verrouillante** — fonction de dépôt
   neuve `find_by_id_for_account_for_update(tx, company_id, bank_account_id, id) -> Option<BankTransaction>`
   (`crates/kesh-db/src/repositories/reconciliation.rs`, testée à l'AC11 ; C-27-4-21), `SELECT … WHERE id = ? AND
@@ -189,39 +203,62 @@ du fichier ; route `DELETE /api/v1/bank-imports/{id}` appelée avec le JWT du Co
 4. **Lot mixte des quatre classes** — un lot `reject` portant une éligible, une rapprochée, une rejetée et un
    identifiant inexistant, **envoyé dans un ordre non croissant** (ex. `[inexistant (id le plus haut), rejetée,
    éligible, rapprochée (id le plus bas)]`) → `rejected` = l'éligible ; `failed` = les trois autres **dans l'ordre
-   croissant**, codes du tableau de l'AC1.
-5. **Rejet concurrent de la même transaction** (AC4, garde `auto_match_rejected_at IS NULL` ; C-27-4-16) — montage
-   du 2., lot `reject [tA, tB]` ; au lieu de supprimer, le test pose sur `tA`, par `UPDATE` direct (qui n'écrit
+   croissant**, codes du tableau de l'AC1, et **`details: null` sur chacun** — c'est ce qui tue M3 au niveau de la
+   route : sous M3, la rapprochée passe le pré-vol et ressort par le repli `race_during_update`, au même code mais
+   avec `details` non nul (R2-7 de la validation P2).
+5. **Rejet : la ligne change sous le lot sans disparaître** — deux cas, même montage (celui du 2. : le test tient le
+   verrou nommé, attend `GET_LOCK`, agit par `UPDATE` direct, relâche), lot `reject [tA, tB]`.
+
+   **(a) Rejet concurrent de la même transaction** (AC4, garde `auto_match_rejected_at IS NULL` ; C-27-4-16) — au
+   lieu de supprimer, le test pose sur `tA`, par `UPDATE` direct (qui n'écrit
    aucune trace), une **valeur sentinelle** `auto_match_rejected_at = '2026-01-01 00:00:00.000'`, relit sa
    `version` (`v0`), puis relâche le verrou. Assertions : (a) `failed` = `[{ tA, RECONCILIATION_ALREADY_REJECTED,
    details: null }]` et `rejected` = `[tB]` — **sans `tA`** ; (b) en base, `tA` garde `auto_match_rejected_at` =
    la sentinelle et `version = v0` ; (c) **aucune** trace `reconciliation.rejected` ne liste `tA`, et l'unique trace
    du lot porte `details.bank_transaction_ids = [tB]`. Sous M10 (garde retirée), `tA` entre dans `rejected[]`, son
    horodatage et sa `version` changent, et la trace la cite : (a), (b) et (c) rougissent.
+
+   **(b) La transaction passe sur un autre compte** (AC4, garde `bank_account_id = ?` ; C-27-4-27, tue M17) — le test
+   crée un **second compte bancaire de la même société** ; pendant l'attente, il exécute `UPDATE bank_transactions
+   SET bank_account_id = <second compte> WHERE id = tA` — ce que produit, au même identifiant, une restauration
+   concurrente. Attendus : `failed` = `[{ tA, BANK_TRANSACTION_NOT_FOUND, details: null }]`, `rejected` = `[tB]` ; en
+   base, `tA` garde `auto_match_rejected_at` nul ; aucune trace `reconciliation.rejected` ne la cite. Sous M17,
+   l'`UPDATE` du lot touche la ligne du second compte : `tA` entre dans `rejected[]`.
 6. **Acceptation d'une transaction rejetée** — `POST /accept` sur une transaction rejetée → `200`,
    `failed[0].errorCode = "RECONCILIATION_ALREADY_REJECTED"` ; le manuel continue de dire vrai (« l'acceptation
    d'une proposition la refuse », `user-manual.tex:1920` — cf. AC9 pour la course étroite assumée).
-7. **Rejet : refus du pré-vol et refus sous verrou mêlés** (C-27-4-17, tue M9) — deux imports A et B du même
-   compte ; `tBas` dans A, `tHaut` dans B, `tBas < tHaut` ; `tHaut` est rejetée **avant** le lot (`POST /reject`
-   seul, ou `UPDATE` direct). Lot `reject` envoyé **`[tHaut, tBas]`** (non trié), montage du 2. : le test tient le
-   verrou, attend `GET_LOCK`, supprime A (`204`), relâche. → `rejected` = `[]`, `failed` = `[{ tBas,
-   BANK_TRANSACTION_NOT_FOUND }, { tHaut, RECONCILIATION_ALREADY_REJECTED }]` **dans cet ordre** : le refus sous
-   verrou (`tBas`) précède le refus du pré-vol (`tHaut`). Une fusion « pré-vol puis verrou » sans tri final rendrait
-   `[tHaut, tBas]`.
+7. **Rejet : refus du pré-vol et refus sous verrou mêlés** (C-27-4-17, C-27-4-29, tue M9 dans ses deux ordres) —
+   trois imports A, B, C du même compte, créés dans cet ordre, une transaction chacun : `tBas` (A) `< tMil` (B)
+   `< tHaut` (C). `tBas` et `tHaut` sont rejetées **avant** le lot (`UPDATE` direct). Lot `reject` envoyé
+   **`[tHaut, tMil, tBas]`** (non trié), montage du 2. : le test tient le verrou, attend `GET_LOCK`, supprime B
+   (`204`), relâche. → `rejected` = `[]`, `failed` = `[{ tBas, RECONCILIATION_ALREADY_REJECTED }, { tMil,
+   BANK_TRANSACTION_NOT_FOUND }, { tHaut, RECONCILIATION_ALREADY_REJECTED }]` **dans cet ordre** : le seul refus
+   sous verrou (`tMil`) est **entre** les deux refus du pré-vol. Une concaténation « pré-vol puis verrou », chacun
+   trié, rendrait `[tBas, tHaut, tMil]` ; « verrou puis pré-vol », `[tMil, tBas, tHaut]` : les deux rougissent.
 8. **Rejet : la relecture de l'AC4 est une lecture courante** (C-27-4-15, tue M11) — deux transactions `tB < tA` du
    **même** import, éligibles. Le test ouvre une transaction SQL sur sa propre connexion et y exécute `DELETE FROM
    bank_transactions WHERE id = tA` **sans la valider** (verrou X tenu sur `tA`). Le lot `reject [tA, tB]` part en
    tâche : le pré-vol (lecture non verrouillante) voit encore `tA` éligible ; sous verrou, `tB` est rejetée — sa
    relecture `SELECT auto_match_rejected_at` **ouvre la vue cohérente** de la transaction du lot, qui voit `tA` —,
-   puis l'`UPDATE` de `tA` se bloque sur le verrou X. Le test l'observe par
-   `attendre_une_requete_en_cours(&["UPDATE bank_transactions", "auto_match_rejected_at"])` (le texte de la
-   relecture `… FOR UPDATE` ne contient pas `UPDATE bank_transactions` : pas de confusion), puis **valide** la
-   suppression. L'`UPDATE` de `tA` touche 0 ligne ; la relecture `FOR UPDATE` la voit **absente** →
+   puis l'`UPDATE` de `tA` se bloque sur le verrou X. Le test observe ce blocage **durablement** (C-27-4-26) :
+   `attendre_une_requete_en_cours(&["UPDATE bank_transactions", "auto_match_rejected_at"])`, puis une pause de
+   **500 ms**, puis le même appel une seconde fois — l'aide existante, appelée deux fois, sans mécanisme neuf. Le
+   motif désigne **aussi** l'`UPDATE` de `tB`, de même texte (PROCESSLIST montre l'instruction, non les valeurs
+   liées) : le premier appel peut le surprendre en vol, avant que la vue cohérente soit ouverte ; 500 ms plus tard,
+   le seul `UPDATE` encore en cours est celui de `tA`, bloqué. Puis le test **valide** la suppression. L'`UPDATE` de `tA` touche 0 ligne ; la relecture `FOR UPDATE` la voit **absente** →
    `failed` = `[{ tA, BANK_TRANSACTION_NOT_FOUND, details: null }]`, `rejected` = `[tB]`. Sous M11 (relecture
    ordinaire), la vue cohérente montrerait `tA` éligible → repli `RECONCILIATION_ALREADY_RECONCILED` +
    `race_during_update` : le test rougit. ⚠️ Le montage de l'AC6-2 ne tue **pas** M11 : la suppression y est validée
    avant la première lecture ordinaire du lot, si bien que même une relecture ordinaire la voit (F1 de la
    validation P1).
+
+   ⚠️ **Angle mort assumé, à écrire au doc-comment du test** (comme A2-3 de la 27-1, `reconciliation_e2e.rs:1738-1746`) :
+   la sonde lit une requête **en cours**, non une requête **en attente de verrou** — le seul trait propre à
+   l'attente (`information_schema.INNODB_TRX`, `trx_state = 'LOCK WAIT'`) exige le privilège `PROCESS`, que
+   l'utilisateur des tests n'a pas (`test_fixtures.rs:547-550`). Sous M11, la mutation ne survit que si l'`UPDATE`
+   de `tB`, par clé primaire, dure **plus de 500 ms**. Le code juste ne peut rendre aucun faux rouge : quel que soit
+   l'`UPDATE` observé, la suppression est validée avant ou pendant le blocage de `tA`, et la lecture courante la
+   voit. Si M11 survit à la campagne, rejouer le test avant de la déclarer survivante.
 
 Chaque test vérifie aussi l'**état en base** (ligne non modifiée, aucune écriture, aucune trace d'audit
 superflue), pas seulement le corps de la réponse.
@@ -241,7 +278,10 @@ Dans `frontend/src/lib/features/reconciliation/failed-proposal-label.ts` :
   gardent `reconciliation-errors-already-reconciled`. *(Ce code, avec `details.reason = "race_during_update"`, reste
   émis par trois sites de l'acceptation — `:1934-1940`, `:2435-2440`, `:2887-2892` — que la story ne modifie pas
   côté serveur, et par le repli non atteignable du rejet (AC4) ; le libellé cesse d'affirmer « déjà réconciliée »
-  quand la cause peut être une suppression. Le contrat publié le dit aussi (AC10).)*
+  quand la cause peut être une suppression. Le contrat publié le dit aussi (AC10). Pour une proposition **règle**
+  ou **ventilée**, la cause la plus fréquente d'un refus sous verrou n'est d'ailleurs pas ce code mais
+  `RECONCILIATION_TRANSACTION_NOT_PENDING` (« n’est plus en attente », libellé inchangé, C-27-4-11) : c'est pourquoi
+  le manuel décrit la conduite, non la liste des motifs (AC9, C-27-4-28).)*
 - Les quatre catalogues `crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl` portent les deux clés
   neuves et le texte récrit (FR l. 1187, autres l. 1124) ; les replis en dur du `.ts` sont **identiques au FR**.
   Proposition DE / IT / EN dans les Dev Notes, à confronter à `docs/i18n-glossaire.md`.
@@ -250,14 +290,18 @@ Dans `frontend/src/lib/features/reconciliation/failed-proposal-label.ts` :
   `DbError::error_code()` = **29 codes** ; et nomme le cinquième code qui lit ses `details`
   (`RECONCILIATION_ALREADY_RECONCILED`, pour `race_during_update`) — la phrase `failed-proposal-label.ts:25`,
   « **Quatre codes** seulement lisent leur `details` », devient « **Cinq codes** » (grep de la valeur :
-  `grep -nF "Quatre codes" frontend/src/lib/features/reconciliation/`).
+  `grep -nF "Quatre codes" frontend/src/lib/features/reconciliation/`) ; le doc-comment de `failedProposalLabel`
+  (`failed-proposal-label.ts:105-107`), qui **énumère** les quatre codes sans écrire « Quatre » — ce grep ne le voit
+  pas —, nomme le cinquième.
 - Filets déjà en place, qui tournent dans `npm run test:unit` et doivent rester verts : `i18n-repli-divergent-actif.test.ts`
   et `i18n-un-repli-par-cle.test.ts` (replis identiques au FR, un repli par clé).
 - `failed-proposal-label.test.ts` : `EXPECTED_KEYS` gagne `RECONCILIATION_ALREADY_REJECTED`, le décompte passe de
-  28 à **29** (l. 67) et le commentaire d'en-tête (l. 1-8) avec lui ; un test pour `race_during_update` (clé neuve
+  28 à **29** (l. 67), avec le **titre** du test (l. 66, « couvre les 28 codes relevés ») et le commentaire
+  d'en-tête (l. 1-8) — grep de la valeur : `grep -nwE "2[68]" frontend/src/lib/features/reconciliation/failed-proposal-label*.ts` ; un test pour `race_during_update` (clé neuve
   lue), un pour une autre raison (clé générique), un pour `details` absent.
-- `frontend/src/lib/shared/i18n-keys.test.ts:580` : `sitesTotal` **2041 → 2043** (deux appels `i18nMsg(` ajoutés ;
-  recompter, ne pas ajuster) ; `npm run lint-i18n-ownership` vert.
+- `frontend/src/lib/shared/i18n-keys.test.ts:580` : `sitesTotal` **2041 → 2043** sur la base `f9725c29` (deux appels
+  `i18nMsg(` ajoutés ; recompter, ne pas ajuster — la valeur finale dépend des branches mergées avant, cf.
+  § *Fichiers communs*) ; `npm run lint-i18n-ownership` vert.
 
 **AC8 — L'écran : rien à restructurer, un comportement à prouver (C-27-4-12, C-27-4-14).**
 
@@ -268,7 +312,7 @@ structure n'est attendu ; si le développement en trouve un nécessaire, il le c
 - **Vitest** (`ReconciliationProposals.test.ts`) : un lot d'acceptation à deux lignes dont une sort en
   `BANK_TRANSACTION_NOT_FOUND` → compteur `1`, l'*Échec partiel* désigne la transaction supprimée par sa **date et
   son montant relevés** (pas `TX #…`) avec le libellé récrit, `reconciliation-error` **absent** ; le test existant
-  `:450-474` (« TX #99 ») est mis à jour au texte récrit.
+  `:450-476` (« TX #99 », texte asserté l. 476) est mis à jour au texte récrit.
 - **E2E Playwright** (spec neuf `frontend/tests/e2e/reconciliation-deleted-import.spec.ts`, ou ajout motivé à un
   spec existant) : deux imports CAMT par l'API (relevé réécrit à chaque exécution — montants et références uniques,
   patron de `reconciliation-cancel.spec.ts:86-110`), une **règle d'affectation** créée par l'API qui rend les deux
@@ -286,10 +330,12 @@ structure n'est attendu ; si le développement en trouve un nécessaire, il le c
 `docs/manual/fr/user-manual.tex` :
 
 - **l. 1756-1759** (§ *Supprimer un import*, puce « Une page *Réconciliation* ouverte avant la suppression ») :
-  réécrite — la transaction supprimée apparaît dans les *Échecs partiels* avec le motif « Transaction introuvable »
-  (ou, si la suppression tombe **pendant** le traitement du lot, « modifiée pendant le traitement » — sites non
-  résolus de l'acceptation, AC7), les autres propositions du lot sont traitées ; plus de « refusé **en entier** »,
-  plus de consigne de recharger avant de recommencer.
+  réécrite **par la conduite, non par une liste de libellés** (C-27-4-28) — la transaction supprimée est refusée et
+  apparaît dans les *Échecs partiels* avec son motif ; les autres propositions du lot sont traitées ; la liste,
+  rechargée après le lot (`ReconciliationProposals.svelte:229`, `:248`), ne la propose plus — il n'y a rien à
+  refaire. Aucun libellé n'est cité : selon l'instant de la suppression et le type de la proposition, le motif est
+  « introuvable », « n’est plus en attente » ou « modifiée pendant le traitement » (AC7, AC10), et une liste close
+  serait fausse pour l'un d'eux. Plus de « refusé **en entier** », plus de consigne de recharger avant de recommencer.
 - **l. 1925** (§ *Un refus n'empêche pas les autres*) : la liste des motifs gagne « transaction supprimée avec son
   import, rapprochée ou rejetée entre-temps (dans un autre onglet, par exemple) ».
 - l. 1920 (« l'acceptation d'une proposition la refuse ») : **reste vrai pour une liste périmée** (le pré-vol refuse
@@ -302,8 +348,9 @@ structure n'est attendu ; si le développement en trouve un nécessaire, il le c
   typographique (« n’est ») :
   `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | sed "s/’/'/g; s/ﬀ/ff/g; s/ﬁ/fi/g; s/ﬂ/fl/g; s/ﬃ/ffi/g; s/ﬄ/ffl/g"`.
   Attendus **chiffrés** : « refusé en entier » passe de **2 à 1** occurrence (reste la phrase homonyme de l'import
-  CSV, l. 1786, légitime) ; les phrases neuves sont présentes (témoins choisis sans ligature ni apostrophe, ex.
-  « Transaction introuvable » et « rapprochée ou rejetée entre-temps »).
+  CSV, l. 1786, légitime) ; les phrases neuves sont présentes (témoins choisis sans ligature ni apostrophe :
+  « les autres propositions du lot sont traitées » pour la l. 1756, « rapprochée ou rejetée entre-temps » pour la
+  l. 1925 — rédiger les phrases pour qu'elles les contiennent mot pour mot).
 
 **AC10 — L'API publique et le CHANGELOG (C-27-4-10).**
 
@@ -316,13 +363,17 @@ structure n'est attendu ; si le développement en trouve un nécessaire, il le c
   rend `RECONCILIATION_TRANSACTION_NOT_PENDING` (inchangé, C-27-4-11), et `RECONCILIATION_ALREADY_RECONCILED` peut
   porter **`details.reason = "race_during_update"`** quand la transaction est rapprochée, rejetée ou supprimée entre
   la relecture et l'écriture (acceptation ; repli du rejet). **Tous ces refus signifient la même conduite** : relire
-  `GET /api/v1/reconciliation/proposals`. Puis : le plafond de 500 identifiants (`400`, auparavant `500`) ; le
+  `GET /api/v1/reconciliation/proposals`. Puis : le plafond de 500 identifiants (`400`, auparavant `500`), en
+  précisant que le **corps** reste borné par la limite par défaut d'Axum (2 Mo) — un lot `accept` de propositions
+  ventilées, jusqu'à `MAX_SPLIT_LINES` = 50 lignes chacune, peut être refusé avant 500 propositions en
+  `400 VALIDATION_ERROR` « requête invalide (corps non-parsable) » (`reconciliation.rs:542-550`) (F2-7) ; le
   paragraphe du rejet (l. 548) dit que `failed[]` est trié en entier. ⚠️ **Changement de contrat** à écrire comme
   tel : un client qui traitait le `400` reçoit désormais un `200` à lire ligne par ligne, et un client qui teste
   `details == null` sur `RECONCILIATION_ALREADY_RECONCILED` se trompe.
-- `CHANGELOG.md`, section **`## [0.13.2] — Non publié`** (existante, l. 11) : sous un **`### Corrigé`** (à créer
-  entre *Modifié* et le séparateur `---`, l. 21) — le lot de réconciliation qui contient une transaction disparue
-  n'est plus refusé en entier ([#634](https://github.com/guycorbaz/kesh/issues/634)) ; sous *Modifié* — le contrat
+- `CHANGELOG.md`, section **`## [0.13.2] — Non publié`** (existante, l. 11) : sous un **`### Corrigé`** — à créer
+  entre *Modifié* et le séparateur `---` (l. 21) **s'il n'existe pas encore à la fusion** : les 27-2 et 27-3 en
+  créent chacune un, et la section ne doit en porter qu'un : le lot de réconciliation qui contient une transaction
+  disparue n'est plus refusé en entier ([#634](https://github.com/guycorbaz/kesh/issues/634)) ; sous *Modifié* — le contrat
   API (`200` + `failed[]`, code neuf, `details.reason = "race_during_update"` possible sur
   `RECONCILIATION_ALREADY_RECONCILED`, plafond `400`). Lignes **ajoutées**, sans réécrire celles de la 27-1 (ni
   celles des 27-2 / 27-3 si elles ont été mergées avant : fusion par union).
@@ -338,7 +389,10 @@ structure n'est attendu ; si le développement en trouve un nécessaire, il le c
   une rejetée ; n'en rend aucune d'un autre compte ni d'une autre société ; liste vide → vide ; 501 → erreur.
 - **Relecture verrouillante de l'AC4** (C-27-4-21) : `find_by_id_for_account_for_update` dans le même fichier de
   dépôt (aucune fonction n'y fait aujourd'hui de `SELECT … FOR UPDATE` par identifiant), sur la transaction passée
-  par l'appelant, même scope `company_id` **et** `bank_account_id`, sans filtre de statut. Doc-comment : lecture
+  par l'appelant, même scope `company_id` **et** `bank_account_id`, sans filtre de statut. C'est la requête de
+  `find_pending_by_id_for_account` (`:337-356`, même scope, aucun filtre de statut malgré son nom — « Naming
+  caveat ») **plus** `FOR UPDATE` : le texte SQL est **partagé** (une constante, suffixée de ` FOR UPDATE` pour la
+  lecture verrouillante), pas recopié, pour que les deux lectures ne divergent pas (C-27-4-32, R2-9). Doc-comment : lecture
   **courante**, pourquoi (vue cohérente d'un lot déjà ouvert), seul appelant `reject_batch`. Test de dépôt : rend la
   ligne `pending`, `reconciled`, rejetée ; `None` pour un identifiant absent, d'un autre compte, d'une autre société.
   Le caractère **courant** de la lecture est prouvé côté route par l'AC6-8, pas ici.
@@ -350,7 +404,11 @@ structure n'est attendu ; si le développement en trouve un nécessaire, il le c
 - `crates/kesh-db/src/repositories/bank_imports.rs:424-427` (angle mort « lot préparé avant la suppression … le lot
   entier rend `400 VALIDATION_ERROR` … Non corrigé ici (#634) ») : réécrit au comportement neuf.
 - `crates/kesh-db/src/repositories/bank_imports.rs:346-347`, doc-comment d'`is_reconciled` : complété du second
-  appelant (AC1, C-27-4-19) — la phrase « Écrite deux fois, et seulement deux » reste vraie.
+  appelant (AC1, C-27-4-19) — la phrase « Écrite deux fois, et seulement deux » reste vraie. Son jumeau côté écran,
+  `frontend/src/lib/features/bank-import/bank-import-deletion.ts:12-14` (« `is_reconciled`, appelée par
+  `delete_unreconciled_in_tx` »), nomme lui aussi le second appelant.
+- `crates/kesh-db/src/repositories/reconciliation.rs:18` (doc du module) et `:322` (doc de
+  `find_pending_by_id_for_account`), qui citent `find_pending_by_ids` : au nom neuf.
 - `crates/kesh-api/tests/reconciliation_e2e.rs:1734-1737` (« `failed[]` n'est pas asserté : le pré-vol refuse en
   `400` … ») : corrigé ; le test `post_reject_locks_the_batch_by_increasing_id` reste vert tel quel.
 - `post_reject_skips_reconciled_transactions` (`:1843`, assertion `:1894`) et
@@ -368,26 +426,27 @@ structure n'est attendu ; si le développement en trouve un nécessaire, il le c
 |---|---|---|
 | M1 | le pré-vol d'`accept` rétablit le `400` global sur absence | AC6-1 (accept), AC6-3 |
 | M2 | idem pour `reject` | AC6-1 (reject), AC6-4 |
-| M3 | une ligne `reconciled` classée éligible | AC1 unitaire ; AC6-4 |
+| M3 | une ligne `reconciled` classée éligible | AC1 unitaire ; AC6-4 (assertion `details: null` : sous M3, la rapprochée ressort par le repli `race_during_update`) |
 | M4 | une ligne rejetée classée éligible | AC1 unitaire ; AC6-6 |
 | M5 | priorité inversée (rejetée avant rapprochée) | AC1 unitaire « rapprochée et rejetée » |
 | M6 | `details` d'un `BANK_TRANSACTION_NOT_FOUND` porte `bankAccountId` | assertion `details: null` d'AC6-1 et d'AC6-3 — **pas** la comparaison des deux corps de l'AC6-3, qui resterait verte si la valeur venait du corps de la requête |
 | M7a | court-circuit de l'AC3 retiré de `post_accept` seul | AC3, route `/accept` (`200` en < 2 s sous verrou tenu) |
 | M7b | court-circuit de l'AC3 retiré de `post_reject` seul | AC3, route `/reject` |
 | M8 | `failed[]` d'`accept` non remis dans l'ordre reçu (refus du pré-vol ajoutés en tête ou en fin) | AC2 (a) |
-| M9 | `failed[]` de `reject` non trié en entier (refus du pré-vol et refus sous verrou concaténés, chacun trié) | **AC6-7** (refus sous verrou d'id bas avant refus du pré-vol d'id haut) ; AC6-4 (lot envoyé non trié) pour la variante « aucun tri » |
-| M10 | `AND auto_match_rejected_at IS NULL` retiré de l'`UPDATE` du rejet | AC6-5 (`tA` absente de `rejected[]`, sentinelle et `version` inchangées, aucune trace ne la cite) |
-| M11 | relecture de l'AC4 non verrouillante (`FOR UPDATE` retiré) | **AC6-8** — l'AC6-2 ne la tue pas (C-27-4-15) |
+| M9 | `failed[]` de `reject` non trié en entier (refus du pré-vol et refus sous verrou concaténés, chacun trié, **dans l'un ou l'autre ordre**) | **AC6-7** (refus sous verrou d'id milieu entre deux refus du pré-vol : les deux ordres de concaténation rougissent, C-27-4-29) ; AC6-4 (lot envoyé non trié) pour la variante « aucun tri » |
+| M10 | `AND auto_match_rejected_at IS NULL` retiré de l'`UPDATE` du rejet | AC6-5 (a) (`tA` absente de `rejected[]`, sentinelle et `version` inchangées, aucune trace ne la cite) |
+| M11 | relecture de l'AC4 non verrouillante (`FOR UPDATE` retiré) | **AC6-8** — l'AC6-2 ne la tue pas (C-27-4-15) ; observation durable, angle mort écrit (survit seulement si l'`UPDATE` de `tB` dure plus de 500 ms ; rejouer avant de conclure, C-27-4-26) |
 | M12 | `batch_size` = taille du sous-lot éligible | AC2 (b) |
 | M13 | plafond de l'AC5 relevé à 501 | test AC5 (501 → `400`) |
 | M14 | libellé `race_during_update` non lu (clé générique) | Vitest AC7 |
 | M15 | `RECONCILIATION_ALREADY_REJECTED` absent de `failedProposalLabel` | Vitest AC7 (`EXPECTED_KEYS`) |
 | M16 | classification sur `status` seul (`is_reconciled` non appelé, `matched_entry_id` ignoré) | AC1 unitaire « `pending` avec `matched_entry_id` » |
-| M17 | `AND bank_account_id = ?` retiré de l'`UPDATE` du rejet | **équivalente, déclarée d'emblée** (C-27-4-22) : aucun chemin ne change le compte d'une transaction — `grep -rnE "SET[^;]*bank_account_id *=" crates --include=*.rs --include=*.sql` ne rend que `settlement_bank_account_id` (migration `20260828000001`) |
+| M17 | `AND bank_account_id = ?` retiré de l'`UPDATE` du rejet | **AC6-5 (b)** (`tA` passée sur un autre compte pendant l'attente du verrou : sous M17, elle entre dans `rejected[]`) — l'équivalence déclarée en P1 reposait sur un fait faux : la restauration réinsère les mêmes identifiants (C-27-4-27) |
 | M18 | branche « relue éligible » (warn + repli `race_during_update`) remplacée par un autre refus | **équivalente, déclarée d'emblée** (C-27-4-22) : non atteignable sous la lecture courante (l'`UPDATE` à 0 ligne et la relecture `FOR UPDATE` lisent la même version validée de la ligne, sous le même verrou) ; elle ne le devient que sous M11 |
+| M19 | `AND matched_entry_id IS NULL` retiré de l'`UPDATE` du rejet | **équivalente, déclarée d'emblée** (C-27-4-30) : la clause ne refuse que l'état `pending` avec lien, qu'aucun chemin vivant ne produit (AC1 ; les seuls `UPDATE` qui le posent sont dans des tests de `kesh-db`) et que le pré-vol refuse déjà |
 
 Toute mutation restée verte est soit corrigée par un test, soit déclarée **équivalente** avec sa raison au Change
-Log ; M17 et M18 le sont d'emblée. ⚠️ Après chaque mutation restaurée, **toucher** le fichier (`touch`) : cargo garde
+Log ; M18 et M19 le sont d'emblée. ⚠️ Après chaque mutation restaurée, **toucher** le fichier (`touch`) : cargo garde
 sinon le binaire muté.
 
 ## Tasks / Subtasks
@@ -405,14 +464,16 @@ sinon le binaire muté.
 - [ ] **T4 — `post_reject`** (AC4, AC3, AC5) : pré-vol classant, `reject_batch` sans `tx_map` et avec
   `bank_account_id`, garde de l'`UPDATE`, relecture verrouillante (fonction de dépôt de T1) et reclassement,
   `failed[]` trié en entier.
-- [ ] **T5 — Tests d'intégration** (AC6, AC12) : huit scénarios (AC6-1 à AC6-8), trois tests existants réécrits,
+- [ ] **T5 — Tests d'intégration** (AC6, AC12) : huit scénarios (AC6-1 à AC6-8, le 5. en deux cas (a) et (b)),
+  trois tests existants réécrits,
   commentaire `:1734-1737`.
 - [ ] **T6 — Frontend** (AC7, AC8) : libellés, quatre catalogues, `sitesTotal`, doc-comment « Cinq codes »,
   Vitest (filets `i18n-repli-divergent-actif` et `i18n-un-repli-par-cle` verts), E2E à valeur de règle unique et
   nettoyage en `finally`.
 - [ ] **T7 — Documentation** (AC9, AC10, AC12) : manuel + PDF aplati et normalisé (« refusé en entier » 2 → 1),
   `api-external.md`, CHANGELOG, doc-comments ; grep de propagation.
-- [ ] **T8 — Mutations et gates** (AC13) : campagne M1-M18 (M7a et M7b ; M17 et M18 déclarées équivalentes) ; gate complet (`scripts/test-fast.sh`), Vitest
+- [ ] **T8 — Mutations et gates** (AC13) : campagne M1-M19 (M7a et M7b ; M18 et M19 déclarées équivalentes ; M11 rejouée
+  avant d'être déclarée survivante) ; gate complet (`scripts/test-fast.sh`), Vitest
   complet, `npm run check`, `npm run lint-i18n-ownership`, `npm run build`, **E2E complet au dernier commit de
   code** ; la base remise à zéro avant le gate complet.
 
@@ -453,7 +514,8 @@ Méthode : tout site de `reconciliation.rs` qui **rend un refus lié à l'état 
 | `accept_one_invoice`, recharge sous verrou sans filtre de rejet (`:1442-1472`) ; ventilé et règle, qui remettent `auto_match_rejected_at` à `NULL` | une transaction rejetée **entre** le pré-vol et le verrou est encore acceptée | préexistant, voulu par le doc-comment de `find_pending_by_id_for_account` (« j'ai rejeté trop vite, je rétracte ») ; le pré-vol couvre le cas courant (liste périmée) |
 | Vue cohérente d'`accept_batch` : la recharge de la 2ᵉ proposition et des suivantes lit la vue ouverte par la 1ʳᵉ | une suppression validée pendant le lot n'est vue qu'à l'`UPDATE` (0 ligne → ligne 1 de ce tableau) | conséquence de REPEATABLE READ ; même issue, même libellé |
 | `/manual`, `/split` (routes unitaires) | `404` / `409` | hors § *Pattern batch* : une requête, une transaction |
-| `accept_one_invoice`, étape 4 sous verrou sur `status` seul (`:1464`) | une transaction `pending` **avec** `matched_entry_id` passerait la recharge sous verrou (le pré-vol, lui, la refuse désormais par `is_reconciled`, AC1) | état qu'aucun chemin vivant ne produit (inventaire clos des écrivains, doc-comment d'`is_reconciled`) ; le pré-vol suffit à le refuser pour toute liste |
+| `accept_one_invoice`, étape 4 sous verrou sur `status` seul (`:1467-1468`) ; `accept_one_split` et `accept_one_rule`, recharge par `find_strictly_pending_by_id_for_account` (`:2300`, `:2701`), qui filtre `status = 'pending'` sans regarder `matched_entry_id` | une transaction `pending` **avec** `matched_entry_id` passerait la recharge sous verrou (le pré-vol, lui, la refuse désormais par `is_reconciled`, AC1) | état qu'aucun chemin vivant ne produit (inventaire clos des écrivains, doc-comment d'`is_reconciled`) ; le pré-vol suffit à le refuser pour toute liste. Le site jumeau du **rejet** est, lui, résolu : son `UPDATE` porte `matched_entry_id IS NULL` (AC4, C-27-4-30) |
+| Restauration d'une installation concurrente d'un lot (toutes routes) | la restauration vide et recharge `bank_transactions` **avec ses identifiants**, sans prendre le verrou nommé de réconciliation : un identifiant du lot peut désigner, sous verrou, une autre ligne | préexistant, même angle mort que la suppression d'import (`bank_imports.rs`, « La restauration n'étant exclusive que des autres imports ») ; les recharges sous verrou de l'acceptation sont scopées par compte, l'`UPDATE` du rejet l'est désormais (AC4, M17 tuée par l'AC6-5 (b)) ; au-delà, non gardé |
 | `reject_batch`, repli « relue éligible » (AC4) | `RECONCILIATION_ALREADY_RECONCILED` + `race_during_update` | non atteignable sous la lecture courante (M18, équivalente) ; garde défensive, tracée par `warn!` |
 
 **Triage de chaque angle mort (C-27-4-25)** — tous relèvent de la **catégorie C** (choix de conception), aucun d'un
@@ -468,6 +530,8 @@ oubli :
 - la recharge sous verrou d'`accept_one_invoice` sans filtre de rejet : voulue (« je rétracte »), sans effet
   comptable — accepter est un geste légitime de l'utilisateur, le rejet n'est qu'un « ne plus proposer » ;
 - `pending` avec lien sous verrou, repli éligible du rejet : états non atteignables ;
+- restauration concurrente d'un lot : angle mort préexistant de la restauration, déjà écrit par la 27-1 ; la story
+  ne l'aggrave pas et en ferme la conséquence la plus grave (rejeter la transaction d'un autre compte) ;
 - `/manual`, `/split` : hors § *Pattern batch*.
 
 Résolus par la story : pré-vol d'`accept` (`:944-967`), pré-vol de `reject` (`:3049-3064`), branches mortes de
@@ -496,6 +560,13 @@ Résolus par la story : pré-vol d'`accept` (`:944-967`), pré-vol de `reject` (
 - **Vue cohérente** (REPEATABLE READ) : une `SELECT` ordinaire sous la transaction du lot lit l'instantané ouvert à
   la première lecture ; pour savoir si une ligne a disparu **maintenant**, il faut une lecture **courante**
   (`FOR UPDATE`). C'est la règle de la 15-8a, citée par `delete_unreconciled_in_tx` (`bank_imports.rs:383-385`).
+- **`innodb_snapshot_isolation`** (F2-6 de la validation P2) : la reprise de l'AC4 et le montage de l'AC6-8 reposent
+  sur une lecture verrouillante (l'`UPDATE` de `tA`, puis le `FOR UPDATE`) qui lit une version validée
+  **postérieure** à la vue déjà ouverte par la relecture de `tB`. C'est le comportement de **MariaDB 10.11**
+  (`docker-compose.yml`, CI). Avec `innodb_snapshot_isolation` (actif par défaut depuis **11.6**), cette lecture
+  rend `ER_CHECKREAD` (1020), que le `?` de `reject_batch` ferait sortir en `500` pour **tout le lot** — contraire
+  au § *Pattern batch*. À revoir à la montée de version, comme le dit déjà `bank_imports.rs:400-405` pour la 27-1 ;
+  l'AC6-8 est le test qui la signalera.
 - **Verrou nommé global au serveur** (KF-038, #228) : son nom porte la base courante — reconstruire
   `reconcile:{DATABASE()}:{company}:{account}` dans les tests (`reconciliation_e2e.rs:1492-1503`).
 - **Test muet** : un test d'ordre qui ne contient que des identifiants déjà triés ne prouve rien (M8, M9) — envoyer
@@ -525,22 +596,26 @@ de la règle de *splitting préventif* (C-27-4-13).
 
 | Fichier | 27-2 | 27-3 | 27-4 |
 |---|---|---|---|
-| `CHANGELOG.md` (`[0.13.2]`) | oui | oui | oui — union |
+| `CHANGELOG.md` (`[0.13.2]`) | oui (crée un `### Corrigé`) | oui (crée un `### Corrigé`) | oui — union, **un seul** `### Corrigé` (AC10) |
 | `docs/manual/fr/user-manual.tex` + `.pdf` | oui | oui | oui — PDF à **régénérer** après fusion, jamais fusionné en binaire |
 | `docs/api-external.md` | — | oui | oui |
 | `crates/kesh-i18n/locales/*/messages.ftl` (×4) | oui | oui | oui |
-| `frontend/src/lib/shared/i18n-keys.test.ts` (`sitesTotal`) | oui (2032 → 2034) | oui (2032 → 2062) | oui (2041 → 2043) — **conflit certain** : recompter après fusion |
-| `crates/kesh-api/tests/reconciliation_e2e.rs` | oui (commentaire l. ~2253 de la base de la 27-2, `a2743fd4` ; l. 2440 dans la base de la 27-4) | — | oui (autres régions) |
-| `crates/kesh-api/src/routes/reconciliation.rs` | oui (hunk de 3 lignes, commentaire de `get_proposals` vers la l. 629) | — | oui (`post_accept`, `accept_batch`, `post_reject`, `reject_batch`, tests unitaires) — régions disjointes |
+| `frontend/src/lib/shared/i18n-keys.test.ts` (`sitesTotal`) | oui, **+2** (2041 → 2043 sur `f9725c29`) | oui, **+30** (2032 → 2062 sur `a2743fd4`, non rebasée sur la 27-1) | oui, **+2** (2041 → 2043 sur `f9725c29`) — conflit **possible**, non certain : deux branches écrivent la même ligne `2043` et Git peut fusionner sans conflit sur une valeur fausse. La valeur finale se **recalcule à chaque merge** (recompter, ne pas additionner de confiance) ; le Vitest, à égalité stricte, est le garde-fou |
+| `crates/kesh-api/tests/reconciliation_e2e.rs` | oui (un bloc à partir de la l. 2439 de `f9725c29`, dans `post_accept_emits_dual_audit_invoice_paid`) | — | oui (autres régions) |
+| `crates/kesh-api/src/routes/reconciliation.rs` | oui (hunk de 3 lignes, commentaire de `get_proposals` vers la l. 626) | — | oui (`post_accept`, `accept_batch`, `post_reject`, `reject_batch`, tests unitaires) — régions disjointes |
+| `_bmad-output/implementation-artifacts/epic-27-choix-autonomes.md` | oui | non (registre propre, `epic-27-choix-autonomes-27-3.md`) | oui — **union** (consignes des agents, 7) |
 | `docs/i18n-glossaire.md` | oui | — | non (lecture seule, confrontation des traductions) |
 | `crates/kesh-api/tests/textes_coherents.rs` | oui | oui | non |
 | `_bmad-output/implementation-artifacts/sprint-status.yaml` | oui | oui | oui |
 
-Relevé par `git diff --name-only origin/main...story/27-2-devise-import-csv` et `…story/27-3-profil-apres-apercu`
-(validation P1, R1-7). `crates/kesh-api/src/routes/bank_imports.rs` et `errors.rs`, touchés par 27-2 et 27-3, ne le
-sont **pas** ici. La 27-2 a relevé que `reconciliation.rs` ne contrôle pas la devise sur certains chemins
-(C-27-2-20) : **hors périmètre**, non touché par la 27-4 — mais la 27-2 **modifie** ce fichier (commentaire
-ci-dessus) : fusion à refaire sans conflit textuel attendu.
+Relevé à la validation P2 (R2-5) sur les branches **actuelles** : `git diff origin/main...story/27-2-devise-import-csv
+--stat` (base `f9725c29`, la 27-2 ayant été rebasée sur la 27-1) et `git diff origin/main...story/27-3-profil-apres-apercu
+--stat` (base `a2743fd4`), plus `git diff … -- frontend/src/lib/shared/i18n-keys.test.ts | grep -E "^[-+]\s*sitesTotal"`
+et `git diff … -- CHANGELOG.md | grep '^+###'`. À refaire à chaque rebase d'une de ces branches.
+`crates/kesh-api/src/routes/bank_imports.rs` et `errors.rs`, touchés par 27-2 et 27-3, ne le sont **pas** ici. La
+27-2 a relevé que `reconciliation.rs` ne contrôle pas la devise sur certains chemins (C-27-2-20) : **hors
+périmètre**, non touché par la 27-4 — mais la 27-2 **modifie** ce fichier (commentaire ci-dessus) : fusion à refaire
+sans conflit textuel attendu.
 
 ### Project Structure Notes
 
@@ -586,3 +661,39 @@ ci-dessus) : fusion à refaire sans conflit textuel attendu.
   R1-12 → E2E (C-27-4-24) ; R1-13 → triage catégorie C, aucune issue (C-27-4-25) ; R1-4, R1-7, R1-11, R1-14 sans
   choix (corrections de faits). Après remédiation : 13 AC, AC6 à huit scénarios, mutations M1-M18 (19 lignes, M7
   scindée), T0-T8, 25 choix. Prompt de la P2 : `27-4-validate-prompt-p2.md` (Opus).
+- 2026-10-12 — **validation P2** (Opus, lentilles R et F, prompt `27-4-validate-prompt-p2.md`) : F = 0 CRITICAL,
+  0 HIGH, 4 MEDIUM, 4 LOW ; R = 0 CRITICAL, 0 HIGH, 3 MEDIUM, 7 LOW. Convergences : R2-1 = F2-5 (observateur de
+  l'AC6-8, MEDIUM chez R, LOW chez F), R2-2 = F2-3 (M17), R2-3 = F2-1 + F2-8 (manuel, AC9). Soit **5 MEDIUM
+  distincts** : R2-1/F2-5, R2-2/F2-3, R2-3/F2-1, F2-2, F2-4. Remédiation (Opus), choix **C-27-4-26 à C-27-4-32** :
+  - R2-1 / F2-5 → AC6-8 : l'aide existante appelée deux fois à 500 ms d'écart, angle mort écrit comme A2-3 de la
+    27-1, M11 rejouée avant d'être déclarée survivante (C-27-4-26) ;
+  - R2-2 / F2-3 → raison de la garde `bank_account_id` réécrite (restauration concurrente, mêmes identifiants) ;
+    M17 **tuée** par l'AC6-5 (b) ; ligne « restauration » aux sites non résolus (C-27-4-27) ;
+  - R2-3 / F2-1 / F2-8 → AC9 : la puce du manuel décrit la conduite, aucun libellé ; témoin « les autres
+    propositions du lot sont traitées » ; demi-phrase sur `…_NOT_PENDING` à l'AC7 (C-27-4-28) ;
+  - F2-2 → AC6-7 **remplacé** par un cas à trois transactions qui tue M9 dans ses deux ordres (C-27-4-29) ;
+  - F2-4 → `AND matched_entry_id IS NULL` dans l'`UPDATE` du rejet, M19 équivalente, site jumeau marqué résolu
+    (C-27-4-30) ;
+  - LOW : F2-6 (réserve `innodb_snapshot_isolation`, MariaDB ≥ 11.6, aux Pièges connus) ; F2-7 (limite de corps
+    d'Axum à l'AC10) ; R2-4 (résidus nommés : `failed-proposal-label.ts:105-107`, titre du test l. 66,
+    `bank-import-deletion.ts:12-14`, doc du dépôt l. 18 et l. 322, clause « `match` exhaustif » de C-27-4-1 marquée
+    remplacée au registre) ; R2-5 (table des fichiers communs recalculée sur les branches actuelles : 27-2 sur
+    `f9725c29`, `sitesTotal` +2 ; 27-3 sur `a2743fd4`, +30 ; conflit possible et non certain, Vitest garde-fou ; un
+    seul `### Corrigé` au CHANGELOG ; registre en union) ; R2-6 (l. 3183-3190, 1467-1468, 450-476) ; R2-7
+    (`details: null` à l'AC6-4, qui tue M3 au niveau route) ; R2-8 (codes écrits `error_code: "…"` au site, AC1) ;
+    R2-9 (texte SQL partagé, C-27-4-32) ; R2-10 (sites split et règle ajoutés à la ligne « `pending` avec lien »).
+  - **Constat D5** (§ *Règle de splitting préventif*, amendement du 2026-10-06) : P1 = 4 MEDIUM → P2 = 5 MEDIUM
+    distincts, dont **4 nés de la remédiation P1** (montages ajoutés à l'AC6-7 et à l'AC6-8, équivalence de M17,
+    puce du manuel) ; seul F2-4 est préexistant, rendu visible par C-27-4-19. Le signal est levé, et c'est un
+    **recyclage** au sens du patch, non des défauts d'origine neufs. Décision de l'orchestrateur, dans l'autonomie
+    déléguée par Guy le 2026-10-12 et sur le précédent de la 27-3 (« ne pas découper ») : **pas de découpage**,
+    remédiation par **simplification** — aucune aide de test neuve, un cas remplacé plutôt qu'ajouté, une clause SQL,
+    la conduite plutôt qu'une liste au manuel (C-27-4-31). Signal déclaré au Project Lead par le rapport de la
+    remédiation.
+  - Symptômes grepés après patch (valeurs) : `pas de confusion`, `M1-M18`, `M17 et M18`, `aucun chemin ne change`,
+    `1464`, `3182-3189`, `450-474`, `2032 → 2034`, `conflit certain`, `deux motifs` — résidus restants : l'entrée P1 du
+    Change Log, et au registre C-27-4-22 et C-27-4-23, historiques et marquées révisées dans leur titre.
+  - Recompte après remédiation : 13 AC (`grep -cE '^\*\*AC[0-9]+ —'`) ; AC6 à huit scénarios, le 5. en deux cas ;
+    mutations M1-M19, **20 lignes** (`grep -cE '^\| M[0-9]+[ab]? \|'`), M18 et M19 équivalentes d'emblée ; 9 tâches
+    T0-T8 ; **32 choix** C-27-4 au registre (`grep -c '^### C-27-4-'`). Prompt de la P3 :
+    `27-4-validate-prompt-p3.md` (Sonnet).
