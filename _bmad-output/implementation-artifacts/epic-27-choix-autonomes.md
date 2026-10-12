@@ -303,3 +303,28 @@ en autonomie, sur `aadace40` (kickoff de l'Epic 27).
 - **Écartée** : une quatrième réécriture détaillée (victime, attente, installation restaurée) — chaque réécriture a
   introduit une erreur, et aucune n'était exigée par une garde ni par le code.
 - **Réversible** : oui. Le constat est déclaré au Project Lead par l'orchestrateur.
+
+### C-27-1-21 — `FORCE INDEX (idx_bank_transactions_import)` sur la lecture verrouillante (dev, F10)
+
+- **Contexte** : l'AC2 demande de constater le plan et de forcer l'index si l'optimiseur en choisit un autre.
+  `EXPLAIN` sur `kesh_271` (MariaDB 10.11, 500 transactions dont 450 pour un import, `ANALYZE TABLE` fait) : pour
+  l'import minoritaire, `key = idx_bank_transactions_import` (`ref`, 50 lignes) ; pour l'import **majoritaire**,
+  `key = PRIMARY` (`type = index`, 500 lignes) — un balayage de l'index primaire qui, sous `FOR UPDATE`, verrouillerait
+  toutes les lignes examinées, toutes sociétés confondues. Avec `FORCE INDEX`, `ref` sur
+  `idx_bank_transactions_import` dans les deux cas. Sortie : `kesh-gate-logs/27-1-explain.log`.
+- **Retenu** : `FORCE INDEX (idx_bank_transactions_import)` dans la requête de l'étape 2.
+- **Écartée** : se fier à l'optimiseur — le plan dépend de la distribution, et c'est le cas le plus fréquent (un
+  import qui porte l'essentiel des lignes d'une petite installation) qui le fait basculer.
+- **Réversible** : oui (un mot-clé). Le motif de synchronisation de l'AC3 (a) (`bank_transactions`, `FOR UPDATE`)
+  reste porté par le texte.
+
+### C-27-1-22 — Second « dernier relevé » du manuel corrigé ; commentaires frontend laissés (dev, grep du symptôme)
+
+- **Contexte** : l'AC13 prescrit de corriger `user-manual.tex:250-251`. Le grep du symptôme (`dernier relevé`) rend
+  aussi `user-manual.tex:274` (« la tuile affiche tout de même son dernier relevé ») et quatre commentaires ou noms
+  de test du frontend (`BankAccountsCard.svelte:4`, `bank-accounts.api.ts:10, 45`, `bank-accounts.api.test.ts:91`).
+- **Retenu** : la phrase du manuel l. 274 suit l'AC13 (« son relevé de plus grande période »), PDF compris ; les
+  commentaires du frontend, hors du périmètre de la fiche et sans effet visible, ne sont pas touchés.
+- **Écartée** : réécrire les commentaires frontend — un diff hors périmètre, dans des fichiers que la story ne touche
+  pas.
+- **Réversible** : oui.
