@@ -452,3 +452,24 @@ en autonomie, sur `aadace40` (kickoff de l'Epic 27).
   (`canManage={true}` passé par la page) rouge.
 - **Écartée** : un E2E Consultation — demanderait un second utilisateur au seed E2E pour la même preuve.
 - **Réversible** : oui.
+
+### C-27-1-32 — « Supprimer un import » : renvoi depuis la sous-section CSV plutôt que déplacement (revue de code P3, A3-4)
+
+- **Contexte** : la sous-sous-section *Supprimer un import* (`sec:supprimer-import`) est rangée sous *Import
+  CAMT.053*, alors qu'elle vaut pour tout import — le cas d'usage de #632 est un CSV mal réglé.
+- **Retenu** : le moindre changement — une phrase de renvoi à la fin de *Import avec un profil existant* (« Un
+  import CSV déjà confirmé avec un mauvais profil se supprime comme un import CAMT.053 … (§ 13.1.3) »). La
+  numérotation et les trois renvois existants restent inchangés. PDF régénéré par `make user` (2 passes, stable),
+  contrôlé aplati.
+- **Écartée** : déplacer la section sous `\section{Import bancaire}` avant les deux sous-sections — renumérote
+  la TOC et les renvois pour un gain de rangement seul.
+- **Réversible** : oui.
+
+### C-27-1-33 — Vitest « Annuler » : `click()` natif et non `fireEvent.click` (revue de code P3, E3-2)
+
+- **Contexte** : `fireEvent.click` livre l'événement à l'écouteur Svelte même sur un bouton `disabled` ; le
+  dialogue se fermait dans le test alors qu'un navigateur n'active pas un contrôle désactivé.
+- **Retenu** : `HTMLElement.click()`, que jsdom n'active pas sur un contrôle désactivé, comme un navigateur ; le
+  test asserte `disabled` puis l'absence de fermeture, puis le retour à l'état actif après le `409`. M42
+  (`disabled` retiré) rouge.
+- **Réversible** : oui.

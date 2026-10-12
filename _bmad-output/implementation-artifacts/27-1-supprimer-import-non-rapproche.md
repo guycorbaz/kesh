@@ -2,14 +2,14 @@
 
 ## Status
 
-**review** — développement terminé le 2026-10-12 (`bmad-dev-story`, dernier commit de code `6e305767`) ; revue de code **P1** (Sonnet, B/E/A : 0 HIGH, 1 MEDIUM, 14 LOW) **remédiée** — dernier commit hors fiche `5881450b`, gate complet et E2E complet verts à ce commit ; revue de code **P2** (Opus, B/E/A : 0 HIGH, 4 MEDIUM, 10 LOW) **remédiée** — dernier commit de code `1c9e4ea0`, gate complet et E2E complet verts à ce commit (E2E : les sept échecs de la KF-029) ; revue de code **P3** à lancer (`27-1-review-prompt-p3.md`, Sonnet, complète). Validation close (P4 ciblée : 0 MEDIUM, 2 LOW appliqués). Fiche créée le 2026-10-12 en autonomie (`bmad-create-story`), sur `aadace40` (kickoff de
+**done** — revue de code close le 2026-10-12 en trois passes (P1 Sonnet : 1 MEDIUM → P2 Opus : 4 MEDIUM → P3 Sonnet : **0 MEDIUM**, 9 LOW appliqués) ; dernier commit de code `cb3c9397`, gate complet et E2E complet verts au HEAD `50ad37d8` qui le contient (E2E : les sept échecs de la KF-029). Développement terminé le 2026-10-12 (`bmad-dev-story`, `6e305767`). Validation close (P4 ciblée : 0 MEDIUM, 2 LOW appliqués). Fiche créée le 2026-10-12 en autonomie (`bmad-create-story`), sur `aadace40` (kickoff de
 l'Epic 27), branche `story/27-1-supprimer-import`. Validation **P1** (Sonnet, lentilles R et F : 0 HIGH,
 10 MEDIUM dont 7 distincts, 14 LOW) **remédiée** ; validation **P2** (Opus, R et F : 0 HIGH, 4 MEDIUM distincts,
 16 LOW) **remédiée** le 2026-10-12, avec la **décision du Project Lead** de fermer la suppression aux clés d'API
 (C-27-1-16) ; validation **P3** (Sonnet, complète, R et F : 0 HIGH, 2 MEDIUM distincts, 13 LOW) **remédiée** — dont
 une sortie par **retrait** sur un angle mort recyclé (C-27-1-20) ; passe **P4 ciblée** (Haiku, une lentille,
 prompt `27-1-validate-prompt-p4-ciblee.md`) **rendue : 0 MEDIUM, 2 LOW appliqués — validation close**. Choix consignés au registre `epic-27-choix-autonomes.md`, **C-27-1-1 à
-C-27-1-31** (C-27-1-7 remplacé par C-27-1-12 ; C-27-1-3 et C-27-1-13 révisés ; C-27-1-16 complété). 17 AC (AC1-AC16 et AC4-bis). PR : **`closes #632`**.
+C-27-1-33** (C-27-1-7 remplacé par C-27-1-12 ; C-27-1-3 et C-27-1-13 révisés ; C-27-1-16 complété). 17 AC (AC1-AC16 et AC4-bis). PR : **`closes #632`**.
 
 ## Story
 
@@ -956,7 +956,7 @@ signal est **déclaré au Project Lead** par l'orchestrateur. **Repli** si une p
 - `CLAUDE.md` : § *Test Locally First*, § *Review Iteration Rule* (et ses sous-sections : manuel, axes déclarés,
   sites non résolus, propagation post-patch, recompte), § *Pattern batch* (non applicable : route unitaire),
   § *Migration breaking policy* (non applicable, AC15), § *Issue Tracking Rule*.
-- Registre `epic-15-choix-autonomes.md` : C54-C59 (rejeu) ; registre `epic-27-choix-autonomes.md` : C-27-1-1 à 31.
+- Registre `epic-15-choix-autonomes.md` : C54-C59 (rejeu) ; registre `epic-27-choix-autonomes.md` : C-27-1-1 à 33.
 - Code : `kesh-reconciliation/src/mutex.rs` ; `kesh-api/src/retry.rs` ; `kesh-db/src/retry.rs:100-160` ;
   `kesh-db/src/test_fixtures.rs:561-605` ; `kesh-db/tests/reconciliation_cancel.rs:127-185` (patron de course).
 
@@ -985,6 +985,17 @@ L'optimiseur bascule sur l'index primaire dès qu'un import porte l'essentiel de
 (idx_bank_transactions_import)` posé (C-27-1-21).
 
 ### Completion Notes List
+
+**État final — au HEAD `50ad37d8`, qui contient le dernier commit de code `cb3c9397`** (bases `kesh_271` et
+`kesh_e2e_271` recréées — `DROP`/`CREATE`, migrations, seed — sans toucher au conteneur, tout sous `flock`,
+20:39-20:56) : `scripts/test-fast.sh` **3440 exécutés, 3440 passés, 6 ignorés** (+21 depuis la v0.13.1) ;
+`npm run check` 0 erreur, 28 avertissements préexistants ; `lint-i18n-ownership` PASS ; `npm run test:unit`
+**132 fichiers, 1354 tests** (+20 depuis la v0.13.1) ; `npm run build` vert ; **E2E complet** (port 3034,
+`smtpConfigured:true`, aucun `Permission denied`) : **263 passés, 7 échecs, 19 ignorés**, les sept de la KF-029
+(#97) — `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`,
+`:150` ; `bank-import-delete.spec.ts:87` passe. Campagne de mutations de la story : M1 à M42 moins M6 —
+**40 rouges non équivalentes**, M14 et M15 seules équivalentes (détail au Change Log). Les sections ci-dessous
+gardent l'état de chaque étape.
 
 **Ce qui a tourné, au dernier commit de code `6e305767`** (base `kesh_271` recréée — `DROP`/`CREATE`, migrations,
 seed — et `kesh_e2e_271` recréée, sans toucher au conteneur ; tout sous `flock`) :
@@ -1103,8 +1114,13 @@ soit les 34 ci-dessus et les 10 suivants) :
   `frontend/src/lib/features/bank-accounts/bank-accounts.api.test.ts`,
   `frontend/src/lib/features/homepage/BankAccountsCard.svelte`
 - Modifiés en P2 : `frontend/src/lib/features/bank-import/BankImportList.svelte` (E-P2-6), `docs/manual/Makefile`
-  (C-27-1-30), `docs/manual/fr/marketing-brochure.pdf` (régénéré)
-- Artefacts : `27-1-review-prompt-p2.md`, `27-1-review-prompt-p3.md`
+  (C-27-1-30) ; `docs/manual/fr/marketing-brochure.pdf`, régénéré en P2, **rendu à `main` en P3** (A3-3) : il
+  ne figure plus au diff
+- Modifié en P3 : `crates/kesh-db/tests/bank_account_statement_gap.rs` (en-tête, A3-1) ; retouchés :
+  `repositories/bank_imports.rs`, `repositories/bank_accounts.rs` (doc-comments), `bank_imports_e2e.rs` (H1, H2),
+  `DeleteBankImportAction.test.ts`, `user-manual.tex` et `.pdf`, `CHANGELOG.md`
+- Artefacts : `27-1-review-prompt-p2.md`, `27-1-review-prompt-p3.md`,
+  `_bmad-output/planning-artifacts/epic-27-recette-v0-13-1.md` (amendement du 2026-10-12)
 
 ## Change Log
 
@@ -1340,3 +1356,43 @@ déclaré au Project Lead, sans découpage (décision D5). La remédiation P2 to
 (`DeleteBankImportAction.svelte`, `BankImportList.svelte`, quatre catalogues) : la boucle **n'est pas close** —
 passe **P3 complète (Sonnet)**, prompt versionné `27-1-review-prompt-p3.md`, axe 9 braqué sur la remédiation P2.
 Reclassements : aucun.
+
+### Revue de code P3 — revue close
+
+Passe P3 (Sonnet, **complète**, trois lentilles B, E, A en contexte frais, lecture seule, sur
+`git diff fc45574c 1c9e4ea0 -- . ':(exclude)_bmad-output'`, axe 9 sur la remédiation P2 ; prompt
+`27-1-review-prompt-p3.md`, rapports `kesh-gate-logs/27-1-review-p3-{B,E,A}.md`, axes exercés et non exercés
+déclarés par chacune) : **0 CRITICAL / 0 HIGH / 0 MEDIUM / 9 LOW** (B : 2 LOW, 2 INFO ; E : 3 LOW ; A : 4 LOW,
+3 INFO ; B3-2 et A3-1 sont le même constat, soit 8 distincts). Tous appliqués :
+
+| Finding | Sév. | Traitement |
+|---|---|---|
+| E3-1 — H1 et H2 : rejetées et rapprochées valent 1, comme l'entête | LOW | **corrigé** : H1 rejette deux lignes sur trois, H2 en rapproche deux sur trois (entête : 1) ; asserts de montage « ≠ lignes ≠ entête ». **M40** (`rejected_count` pris à l'entête dans le dépôt) et **M41** (`reconciled_count` pris à l'entête dans `HasReconciled`) : rouges, `left: 1, right: 2` |
+| E3-2 — `disabled` d'*Annuler* non tenu | LOW | **corrigé** (C-27-1-33) : Vitest — *Annuler* désactivé pendant l'envoi, `click()` natif sans effet, actif de nouveau après le `409`. **M42** (`disabled` retiré) : rouge |
+| E3-3 — « l'unique `(company_id, file_hash)` » (`repositories/bank_imports.rs`) | LOW | **corrigé** : la paire n'est pas unique (index simple depuis la Story 8-3), la fonction rend l'un des imports |
+| A3-1 = B3-2 — « dernier relevé » dans `repositories/bank_accounts.rs` et `bank_account_statement_gap.rs` | LOW | **corrigé** : « le relevé dont la période se termine le plus tard (non le dernier importé) » aux quatre sites du dépôt et à l'en-tête du test ; valeur grepée sur le dépôt (`dernier[s]? relev`, et `last/latest statement`, `letzte … auszug`, `ultimo estratto`) hors `_bmad-output` : ne reste que `CHANGELOG.md:260` (section 0.12.1 publiée, historique) ; nom de la fonction de test inchangé |
+| B3-1 — CHANGELOG : « un compte principal ne s'archive toujours pas » | LOW | **corrigé**, aligné sur `routes/bank_accounts.rs:872-877` : « un compte principal ne s'archive que s'il ne reste aucun autre compte bancaire actif » |
+| A3-2 — ligne 1 de `sprint-status.yaml` périmée | LOW | **corrigé** |
+| A3-3 — `marketing-brochure.pdf` régénéré sans changement de contenu | LOW | **corrigé** : rendu à `origin/main`, hors du diff |
+| A3-4 — *Supprimer un import* rangé sous *Import CAMT.053* | LOW | **corrigé** (C-27-1-32) : renvoi depuis *Import avec un profil existant* (§ 13.1.3) ; `make user` sous `flock` (2 passes, stable), PDF aplati contrôlé |
+| B3-3, B3-4, INFO de A | INFO | rien à faire (B3-3 noté : `bank_accounts.rs:990, 1002` tranchent une question voisine par conjonction) |
+
+**Commits** : `cb3c9397` (E3-1, E3-2 — dernier commit de code), `1497b39a` (E3-3, A3-1, B3-1, A3-3, A3-4, PDF),
+`50ad37d8` (amendement de l'epic, clés 27-2 à 27-4). Gate ciblé avant commit :
+`binary(bank_imports_e2e) or binary(bank_account_statement_gap)` 51/51, `DeleteBankImportAction.test.ts` 12/12.
+**Mutations M40 à M42** (campagne sur arbre propre, `git checkout --` + `touch`) : **3 jouées, 3 rouges**, motif
+relu dans `27-1-mut/M4x-0.out`. Gate complet et E2E complet : Dev Agent Record, *État final*.
+
+### Bilan de la story
+
+- **Validation** : MEDIUM distincts **P1 7 → P2 4 → P3 2 → P4 ciblée 0**, 0 HIGH partout ; Sonnet, Opus, Sonnet
+  (complètes), Haiku (ciblée).
+- **Revue de code** : MEDIUM **P1 1 → P2 4 → P3 0**, 0 HIGH partout ; Sonnet, Opus, Sonnet, trois lentilles
+  complètes chaque fois. La hausse de P2 n'était pas un recyclage (trois MEDIUM nés de la remédiation P1, un défaut
+  d'origine neuf) : signal déclaré, sans découpage (décision D5). La remédiation P3 touche des tests, des
+  doc-comments et la documentation, **aucune ligne de code de production exécutable** : la boucle se clôt.
+- **Reclassements** : aucun. Angles morts assumés : C-27-1-26 (rejeu sur interblocage, `rollback`),
+  C-27-1-28 (`interactOutsideBehavior` sans test), H7-bis (sonde sur requête en cours, A2-3).
+- **Mutations** : M1 à M42 moins M6, 41 lignes jouées + M14+M15 ; **40 rouges**, M14 et M15 équivalentes.
+- Statut → **done**.
+
