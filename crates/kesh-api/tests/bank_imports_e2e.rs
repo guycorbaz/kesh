@@ -547,8 +547,9 @@ async fn get_imports_lists_only_own_company(pool: MySqlPool) {
     let jwt_b = forge_jwt(user_b, "Comptable", company_b);
     let app = spawn_app(pool).await;
 
-    // Les deux companies importent la même fixture (hashes distincts par
-    // tenant car uq_bank_imports_company_hash est composite).
+    // Les deux companies importent la même fixture, même empreinte : la
+    // détection du doublon de fichier (`find_by_company_and_hash`) est scopée
+    // par société.
     let xml = read_fixture("v04_minimal.xml");
     for (jwt, bank_id) in [(&jwt_a, bank_a), (&jwt_b, bank_b)] {
         let form = build_multipart(xml.clone(), "v04_minimal.xml", bank_id);

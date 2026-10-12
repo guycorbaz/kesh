@@ -51,8 +51,9 @@ const TX_COLUMNS: &str = "id, company_id, import_id, bank_account_id, booking_da
 ///
 /// # Erreurs
 ///
-/// - [`DbError::UniqueConstraintViolation`] si `(company_id, file_hash)`
-///   existe déjà → caller mappe vers `409 BANK_IMPORT_DUPLICATE_FILE`.
+/// - Aucune sur une empreinte déjà importée : `(company_id, file_hash)` n'est
+///   plus unique depuis la Story 8-3 ; le doublon de fichier est refusé par la
+///   route, **avant** cet appel (`422 BANK_IMPORT_DUPLICATE_FILE`).
 /// - [`DbError::ForeignKeyViolation`] si `bank_account_id` ou
 ///   `imported_by_user_id` n'existe pas / appartient à une autre company.
 pub async fn create_with_transactions(
