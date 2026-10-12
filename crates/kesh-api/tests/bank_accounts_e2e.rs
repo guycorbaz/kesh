@@ -2278,8 +2278,27 @@ async fn archive(app: &TestApp, pool: &MySqlPool, ctx: &Ctx) -> reqwest::Respons
 /// H6 (C-27-1-12) — la garde d'archivage se lève une fois les imports
 /// supprimés, et son message nomme ce remède. Le test fige le comportement
 /// accepté, dans les deux sens.
+///
+/// ⚠️ Le montage de ce fichier n'initialise pas la langue des erreurs : sans
+/// `init_error_i18n`, le message lu serait le **repli** Rust, et la phrase du
+/// catalogue pourrait disparaître sans que rien ne rougisse (mutation M20,
+/// survivante au premier passage de la campagne). D'où le catalogue `fr-CH`
+/// posé ici. La langue est globale au processus : sous `cargo test` (un
+/// processus par binaire), les tests suivants liront le catalogue `fr-CH`,
+/// que la garde G9 tient égal aux replis.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn deleting_the_imports_lifts_the_archive_guard(pool: MySqlPool) {
+    let bundle = Arc::new(
+        kesh_i18n::I18nBundle::load(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("kesh-i18n/locales")
+                .as_path(),
+        )
+        .expect("load test i18n"),
+    );
+    kesh_api::errors::init_error_i18n(bundle, kesh_i18n::Locale::FrCh);
     complete_onboarding(&pool).await;
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
     let app = spawn_app(pool.clone()).await;
