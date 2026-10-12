@@ -14,9 +14,28 @@
 	} from './bank-profile.api';
 	import type {
 		BankProfile,
+		ColumnMapping,
 		CreateOrUpdateBankProfileRequest,
 		DebitSign,
 	} from './bank-profile.types';
+
+	/** Clés de `columnMapping` que ce formulaire écrit ; toute autre clé du profil existant est gardée telle quelle
+	 *  (Story 27-2, AC8-bis). Indispensable pour les clés que le formulaire n'écrit que dans l'un de ses deux modes
+	 *  (`amount`, `debit_credit_split`) : absentes d'ici, la valeur de l'ancien profil survivrait au changement de mode
+	 *  (refus `422`). Les clés écrites dans les deux modes y figurent aussi, par sûreté : le formulaire les écrase
+	 *  aujourd'hui, mais ne plus les écrire dans un mode les ferait survivre. Une clé neuve montrée par le formulaire
+	 *  s'ajoute ICI. */
+	const OWNED_COLUMN_MAPPING_KEYS = [
+		'date', 'amount', 'debit_credit_split', 'reference', 'details', 'currency',
+	] as const satisfies readonly (keyof ColumnMapping)[];
+
+	/** Le mapping existant privé des clés que le formulaire possède : ce qui reste (aujourd'hui `counterparty`,
+	 *  réglable par l'API seulement) est recopié tel quel, le `PUT` étant un remplacement complet. */
+	function keepUnownedKeys(existing?: ColumnMapping): Partial<ColumnMapping> {
+		const rest: Partial<ColumnMapping> = { ...existing };
+		for (const key of OWNED_COLUMN_MAPPING_KEYS) delete rest[key];
+		return rest;
+	}
 
 	type Props = {
 		existing?: BankProfile;
@@ -42,6 +61,9 @@
 	let creditIdx = $state(existing?.columnMapping.debit_credit_split?.[1] ?? 2);
 	let referenceIdx = $state<number | null>(existing?.columnMapping.reference ?? null);
 	let detailsIdx = $state<number | null>(existing?.columnMapping.details ?? null);
+	// Story 27-2 (#624) : colonne Devise facultative ; un champ vidé rend `null`
+	// (Svelte 5), envoyé `undefined`, donc omis par `JSON.stringify`.
+	let currencyIdx = $state<number | null>(existing?.columnMapping.currency ?? null);
 	// Story 26-1 (#620) : sens des débits, réglage explicite du mode séparé.
 	// État local : décocher puis recocher le mode séparé garde le choix fait.
 	let debitSign = $state<DebitSign>(existing?.debitSign ?? 'positive');
@@ -54,18 +76,23 @@
 		errorMessage = null;
 		isLoading = true;
 
+		const unowned = keepUnownedKeys(existing?.columnMapping);
 		const columnMapping = useDebitCreditSplit
 			? {
+					...unowned,
 					date: dateIdx,
 					debit_credit_split: [debitIdx, creditIdx] as [number, number],
 					reference: referenceIdx ?? undefined,
 					details: detailsIdx ?? undefined,
+					currency: currencyIdx ?? undefined,
 				}
 			: {
+					...unowned,
 					date: dateIdx,
 					amount: amountIdx,
 					reference: referenceIdx ?? undefined,
 					details: detailsIdx ?? undefined,
+					currency: currencyIdx ?? undefined,
 				};
 
 		const req: CreateOrUpdateBankProfileRequest = {
@@ -281,6 +308,25 @@
 			<div>
 				<label for="col-details-input">détails</label>
 				<input id="col-details-input" data-testid="col-details-input" type="number" min="0" bind:value={detailsIdx} />
+			</div>
+			<div>
+				<label for="col-currency-input">
+					{i18nMsg('bank-import-profile-labels-col-currency', 'devise (facultative)')}
+				</label>
+				<input
+					id="col-currency-input"
+					data-testid="col-currency-input"
+					type="number"
+					min="0"
+					aria-describedby="col-currency-help"
+					bind:value={currencyIdx}
+				/>
+				<p id="col-currency-help" class="mt-1 text-xs text-text-muted">
+					{i18nMsg(
+						'bank-import-profile-labels-col-currency-help',
+						"Colonne qui porte la devise de chaque ligne. Sans elle, le relevé est supposé en francs suisses (CHF). Relevé CSV d'UBS : 4.",
+					)}
+				</p>
 			</div>
 		</div>
 	</fieldset>

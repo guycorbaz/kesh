@@ -130,3 +130,125 @@ describe('BankProfileForm — sens des débits (Story 26-1)', () => {
 		);
 	});
 });
+
+// Story 27-2 (#624), AC8 et AC8-bis — la colonne Devise, et les clés que le
+// formulaire ne montre pas (aujourd'hui `counterparty`, réglable par l'API).
+describe('BankProfileForm — colonne Devise et clés non montrées (Story 27-2)', () => {
+	beforeEach(() => {
+		mockApi.createBankProfile.mockReset();
+		mockApi.updateBankProfile.mockReset();
+		mockApi.createBankProfile.mockResolvedValue(existingProfile());
+		mockApi.updateBankProfile.mockResolvedValue(existingProfile());
+	});
+	afterEach(() => cleanup());
+
+	function currencyInput(container: HTMLElement): HTMLInputElement {
+		const el = container.querySelector('[data-testid="col-currency-input"]');
+		expect(el).not.toBeNull();
+		return el as HTMLInputElement;
+	}
+
+	async function setCurrency(container: HTMLElement, value: string): Promise<void> {
+		await fireEvent.input(currencyInput(container), { target: { value } });
+	}
+
+	function splitToggle(container: HTMLElement): Element {
+		return container.querySelector('[data-testid="use-debit-credit-split"]')!;
+	}
+
+	it('(v1) devise 4 en mode séparé → columnMapping.currency === 4', async () => {
+		const { container } = render(BankProfileForm, { props: {} });
+		await fireEvent.click(splitToggle(container));
+		await setCurrency(container, '4');
+		await submit(container);
+		const req = mockApi.createBankProfile.mock.calls[0][0];
+		expect(req.columnMapping.debit_credit_split).toBeDefined();
+		expect(req.columnMapping.currency).toBe(4);
+	});
+
+	it('(v2) devise 4 en colonne unique → columnMapping.currency === 4', async () => {
+		const { container } = render(BankProfileForm, { props: {} });
+		await setCurrency(container, '4');
+		await submit(container);
+		const req = mockApi.createBankProfile.mock.calls[0][0];
+		expect(req.columnMapping.amount).toBeDefined();
+		expect(req.columnMapping.currency).toBe(4);
+	});
+
+	it('(v3) champ vidé → currency undefined, absent du JSON envoyé', async () => {
+		const { container } = render(BankProfileForm, { props: {} });
+		await setCurrency(container, '4');
+		await setCurrency(container, '');
+		await submit(container);
+		const req = mockApi.createBankProfile.mock.calls[0][0];
+		expect(req.columnMapping.currency).toBeUndefined();
+		expect(JSON.stringify(req)).not.toContain('"currency"');
+	});
+
+	it('(v4) profil existant currency 4 → le champ s’ouvre à 4 et le PUT le renvoie', async () => {
+		const existing = existingProfile({
+			columnMapping: { date: 2, debit_credit_split: [5, 6], reference: 9, details: 10, currency: 4 },
+		});
+		const { container } = render(BankProfileForm, { props: { existing } });
+		expect(currencyInput(container).value).toBe('4');
+		await submit(container);
+		expect(mockApi.updateBankProfile.mock.calls[0][1].columnMapping.currency).toBe(4);
+	});
+
+	it('(v5) profil existant sans devise → champ vide', () => {
+		const { container } = render(BankProfileForm, { props: { existing: existingProfile() } });
+		expect(currencyInput(container).value).toBe('');
+	});
+
+	it('(v6) counterparty posé par l’API, enregistré sans y toucher, dans les deux modes → gardé', async () => {
+		for (const mapping of [
+			{ date: 2, debit_credit_split: [5, 6] as [number, number], counterparty: 3 },
+			{ date: 2, amount: 1, counterparty: 3 },
+		]) {
+			mockApi.updateBankProfile.mockClear();
+			const { container, unmount } = render(BankProfileForm, {
+				props: { existing: existingProfile({ columnMapping: mapping }) },
+			});
+			await submit(container);
+			const req = mockApi.updateBankProfile.mock.calls[0][1];
+			expect(req.columnMapping.counterparty, JSON.stringify(mapping)).toBe(3);
+			unmount();
+		}
+	});
+
+	it('(v7) colonne unique → mode séparé : debit_credit_split et counterparty, plus d’amount', async () => {
+		const existing = existingProfile({
+			debitSign: 'positive',
+			columnMapping: { date: 2, amount: 1, counterparty: 3 },
+		});
+		const { container } = render(BankProfileForm, { props: { existing } });
+		await fireEvent.click(splitToggle(container));
+		await submit(container);
+		const req = mockApi.updateBankProfile.mock.calls[0][1];
+		expect(req.columnMapping.debit_credit_split).toBeDefined();
+		expect(req.columnMapping.counterparty).toBe(3);
+		expect(req.columnMapping.amount).toBeUndefined();
+		expect(JSON.stringify(req)).not.toContain('"amount"');
+	});
+
+	it('(v8) mode séparé → colonne unique : amount et counterparty, plus de debit_credit_split', async () => {
+		const existing = existingProfile({
+			columnMapping: { date: 2, debit_credit_split: [5, 6], counterparty: 3 },
+		});
+		const { container } = render(BankProfileForm, { props: { existing } });
+		await fireEvent.click(splitToggle(container));
+		await submit(container);
+		const req = mockApi.updateBankProfile.mock.calls[0][1];
+		expect(req.columnMapping.amount).toBeDefined();
+		expect(req.columnMapping.counterparty).toBe(3);
+		expect(JSON.stringify(req)).not.toContain('debit_credit_split');
+	});
+
+	it('(v9) création → la requête ne porte que les clés du formulaire', async () => {
+		const { container } = render(BankProfileForm, { props: {} });
+		await submit(container);
+		const req = mockApi.createBankProfile.mock.calls[0][0];
+		const sent = Object.keys(JSON.parse(JSON.stringify(req.columnMapping))).sort();
+		expect(sent).toEqual(['amount', 'date']);
+	});
+});
