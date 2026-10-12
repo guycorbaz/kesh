@@ -50,11 +50,12 @@ en autonomie, sur `aadace40` (kickoff de l'Epic 27).
   donne déjà).
 - **Réversible** : oui.
 
-### C-27-1-3 — La route : `DELETE /api/v1/bank-imports/{id}`, Comptable+, ouverte aux clés `read-write`, 204 / 404 / 409
+### C-27-1-3 — La route : `DELETE /api/v1/bank-imports/{id}`, Comptable+, ouverte aux clés `read-write`, 204 / 404 / 409 — (révisé : fermée aux clés, voir C-27-1-16)
 
 - **Contexte** : `POST /api/v1/bank-imports` vit dans `comptable_routes` (`lib.rs:629-633`), donc
   Comptable et Admin, et ouverte aux clés d'API `read-write` (la seule route mutante fermée aux clés hors
-  administration est la gestion des clés). Précédent de forme : `DELETE /api/v1/bank-profiles/{id}` rend
+  administration est la gestion des clés — *inexact, relevé en validation P3 (R3-10) : la consultation du journal
+  d'audit l'était déjà, `routes/audit_log.rs:6-14`*). Précédent de forme : `DELETE /api/v1/bank-profiles/{id}` rend
   `204`. Le détail d'un import d'une autre société rend `404 NOT_FOUND` (`DbError::NotFound`).
 - **Retenu** : montée dans `comptable_routes` à côté du `POST` ; `204 No Content` ; import inconnu ou d'une
   autre société → `404 NOT_FOUND` (anti-énumération, KF-002) ; une transaction rapprochée →
@@ -277,3 +278,28 @@ en autonomie, sur `aadace40` (kickoff de l'Epic 27).
   d'erreur `BANK_ACCOUNT_HAS_TRANSACTIONS`. L'arbitrage de fond de C-27-1-12 (CO 958f) est signalé à Guy par
   l'orchestrateur.
 - **Réversible** : oui.
+
+### Complément à C-27-1-16 — le précédent contraire d'`audit_log.rs` (validation P3, R3-9/F3-6)
+
+- `routes/audit_log.rs:6-14` est le seul précédent d'une route **Comptable** fermée aux clés, et il a fait le choix
+  inverse : `ensure_not_pat` en première instruction, code `API_KEY_MANAGEMENT_FORBIDDEN` **réutilisé** (« un variant
+  de plus pour un libellé serait du bruit »). C-27-1-16 garde le code neuf : ce précédent documente lui-même, dans
+  `api-external.md` § 4, que son libellé « parle de gestion de clés pour des raisons historiques » — c'est la
+  confusion que D2 veut éviter, et le libellé générique neuf servira la prochaine route fermée sans mentir.
+  L'alternative écartée est donc ce précédent. Comme celui de D2 (`loader.rs:663`), le message neuf est tenu par un
+  test qui l'exige distinct de ses deux voisins (mutation M19).
+
+### C-27-1-20 — L'angle mort « restauration contre suppression » réduit à sa phrase minimale (arbitrage de l'orchestrateur, validation P3)
+
+- **Contexte** (revue P3, R3-1/F3-1) : écrit en P1, réécrit en P1 (F4) et en P2 (F2-3/R2-9), cet angle mort était
+  faux en P3 — la remédiation P2 faisait vider `audit_log` par la restauration, que `backup.rs:493` saute. Un défaut
+  né du correctif précédent, sur le même texte : critère de **recyclage** (amendement D5).
+- **Retenu** : sortie par **retrait**, non par une quatrième réécriture. La fiche et le doc-comment prescrit ne
+  disent plus que : la restauration supprime les lignes de `bank_transactions` puis celles de `bank_imports`
+  (`backup.rs:492-500`, ordre des l. 67-68), la suppression verrouille l'entête puis les lignes ; un interblocage est
+  possible, rejoué côté suppression par `retry_app_on_deadlock` ; la restauration n'étant exclusive que des autres
+  imports (15-12b), une suppression concurrente d'une restauration n'est pas gardée au-delà. Aucune mécanique interne
+  de `backup.rs` au-delà de ce que ces lignes disent. La ligne du bilan P2 de la fiche porte « corrigé en P3 ».
+- **Écartée** : une quatrième réécriture détaillée (victime, attente, installation restaurée) — chaque réécriture a
+  introduit une erreur, et aucune n'était exigée par une garde ni par le code.
+- **Réversible** : oui. Le constat est déclaré au Project Lead par l'orchestrateur.

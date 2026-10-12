@@ -17,6 +17,12 @@ d'une sauvegarde — que Guy écarte (« sans passer par un restaure de la base 
 Le réimport du même fichier est en outre **bloqué** par l'unicité
 `uq_bank_imports_company_hash (company_id, file_hash)` : un import fautif empêche de le refaire.
 
+> ⚠️ **Rectification (2026-10-12, fiche 27-1, choix C-27-1-8).** Cette unicité **n'existe plus** depuis la
+> migration `20260507000001_bank_imports_relax_hash_unique.sql` (Story 8-3), qui l'a remplacée par un index non
+> unique. Le blocage du réimport est **applicatif** : l'import refuse un fichier déjà importé en `422
+> BANK_IMPORT_DUPLICATE_FILE` tant que `confirmDuplicateFile` n'est pas posé. Supprimer l'import suffit à le lever ;
+> aucune migration n'est en jeu. Le paragraphe ci-dessus est conservé tel qu'écrit au kickoff.
+
 ## Décision du Project Lead (2026-10-12)
 
 « J'aimerais que tu ajoutes une fonction pour **supprimer les imports non rapprochés**. »
