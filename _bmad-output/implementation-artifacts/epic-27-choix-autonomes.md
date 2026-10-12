@@ -1594,3 +1594,132 @@ aux revues de code P1, P2 ciblée et P3 ciblée. Tenus d'abord dans un fichier s
 - **Écarté** : la formulation proposée par la lentille, fausse dans le cas même qu'elle visait ; relancer d'office
   le recalcul sans profil (déjà écarté par C-27-3-57).
 - **Réversible** : oui (manuel seul).
+## Story 27-4 — Un lot de réconciliation qui contient une transaction disparue (#634)
+
+Fiche : `27-4-lot-reconciliation-transaction-disparue.md`. Choix faits à la création de la fiche (2026-10-12),
+en autonomie, sur `f9725c29` (merge de la 27-1).
+
+### C-27-4-1 — Une classification unique, en quatre lignes, partagée par les deux lots et la reprise sous verrou
+
+- **Contexte** : le pré-vol (`find_pending_by_ids`) ne sait dire que « présent et éligible » ou « absent » ; le
+  traitement sous verrou de l'acceptation a ses propres codes, le rejet n'en a pas d'exacts.
+- **Retenu** : une fonction pure classe la ligne lue (ou son absence) : absente → `BANK_TRANSACTION_NOT_FOUND` ;
+  rapprochée → `RECONCILIATION_ALREADY_RECONCILED` ; rejetée → `RECONCILIATION_ALREADY_REJECTED` ; sinon éligible.
+  `match` exhaustif sur le statut. Elle sert aux deux pré-vols et à la reprise du rejet (AC4).
+- **Écartées** : garder la lecture filtrée et rendre `BANK_TRANSACTION_NOT_FOUND` pour toute absence (un utilisateur
+  lirait « introuvable » pour une transaction qu'il vient de rapprocher dans un autre onglet) ; une fonction par
+  route (deux copies divergent).
+- **Réversible** : oui.
+
+### C-27-4-2 — Autre compte, autre société, supprimée : un seul refus par proposition, sans détail
+
+- **Contexte** : l'issue demande si un identifiant d'un autre compte relève d'un refus global.
+- **Retenu** : `failed[]`, `BANK_TRANSACTION_NOT_FOUND`, `details: null`, par la même requête scopée société et
+  compte. Le § *Pattern batch* range le « FK manquant » par proposition ; le compte bancaire du corps, lui, reste
+  contrôlé globalement (`404`). Aucune différence observable entre supprimée et étrangère : pas d'énumération.
+- **Écartées** : refus global `400` pour un autre compte (garde la faille de l'issue pour un client qui mélange deux
+  comptes, et un identifiant d'autre société devrait alors rendre la même chose qu'un supprimé — donc aussi un refus
+  global, ce qui ramène au défaut) ; `details.bankAccountId` (révèlerait le compte d'une transaction étrangère).
+- **Réversible** : oui (code publié : un changement ultérieur serait un changement de contrat).
+
+### C-27-4-3 — Transaction rejetée : refusée par proposition, code neuf `RECONCILIATION_ALREADY_REJECTED`
+
+- **Contexte** : le pré-vol refusait (en `400` global) une transaction rejetée, à l'acceptation comme au rejet ; le
+  manuel dit « l'acceptation d'une proposition la refuse » (`user-manual.tex:1920`).
+- **Retenu** : refus par proposition, code dédié, aux deux routes. Le comportement voulu (refuser) est conservé,
+  seule sa portée change. Re-rejeter n'est pas idempotent : la ligne dit qu'elle l'était déjà.
+- **Écartées** : accepter une transaction rejetée (contredit le manuel et ouvre un chemin d'acceptation que
+  l'interface ne montre pas) ; réutiliser `RECONCILIATION_ALREADY_RECONCILED` (faux) ou
+  `RECONCILIATION_TRANSACTION_NOT_PENDING` (faux : elle est `pending`).
+- **Réversible** : oui.
+
+### C-27-4-4 — Un lot sans proposition éligible ne prend ni transaction ni verrou
+
+- **Retenu** : `200` immédiat, `failed[]` seul. Le verrou du compte peut être tenu cinq secondes par un autre lot :
+  un lot dont rien n'est à faire n'a pas à attendre ni à rendre `409`. Testable (verrou tenu par le test) : la
+  mutation qui retire le court-circuit rend `409` en 5 s.
+- **Écartée** : un seul chemin, verrou compris (plus simple, mais un `409` pour un lot sans travail).
+- **Réversible** : oui.
+
+### C-27-4-5 — Ordre de `failed[]` : celui du lot reçu pour `accept`, croissant pour `reject`
+
+- **Retenu** : `accept` rend ses refus dans l'ordre des propositions reçues (le lot y est traité dans cet ordre) ;
+  `reject` les rend triés par identifiant croissant, prolongeant le contrat publié par la 27-1 (« `rejected[]` et
+  `failed[]` sortent triés »).
+- **Écartée** : refus du pré-vol en tête, puis ceux du verrou (ordre dépendant d'un détail d'implémentation).
+- **Réversible** : oui.
+
+### C-27-4-6 — `batch_size` de la trace d'acceptation : la taille du lot reçu
+
+- **Retenu** : `body.proposals.len()`, passé explicitement à `accept_batch` — le sens du champ d'audit ne change pas
+  parce qu'une proposition a été écartée au pré-vol.
+- **Écartée** : taille du sous-lot éligible (changerait en silence la lecture des traces existantes).
+- **Réversible** : oui.
+
+### C-27-4-7 — Rejet : garde de l'`UPDATE` élargie et reprise exacte par lecture verrouillante
+
+- **Contexte** : `reject_batch` ne recharge pas la transaction sous verrou ; une suppression ou un rejet concurrent
+  entre le pré-vol et l'`UPDATE` sortait en `RECONCILIATION_ALREADY_RECONCILED` (« déjà réconciliée ») ou, pour un
+  rejet concurrent, ré-horodatait la ligne et la tracait deux fois.
+- **Retenu** : `UPDATE … AND bank_account_id = ? AND auto_match_rejected_at IS NULL` ; à 0 ligne, relecture
+  `FOR UPDATE` (lecture courante, pas la vue cohérente) et reclassement par C-27-4-1. Même ligne, même ordre de
+  verrous que l'`UPDATE` qui précède : aucun cycle neuf avec la suppression d'import.
+- **Écartées** : relecture ordinaire (lirait l'instantané, d'avant la suppression) ; ne rien changer et compter sur
+  le libellé (le code publié resterait faux pour un client d'API).
+- **Réversible** : oui.
+
+### C-27-4-8 — Acceptation : les trois sites `race_during_update` restent au serveur, le libellé devient honnête
+
+- **Contexte** : `accept_one_invoice`, `accept_one_split` et `accept_one_rule` rendent
+  `RECONCILIATION_ALREADY_RECONCILED` + `details.reason = "race_during_update"` quand l'`UPDATE` de la transaction ne
+  touche aucune ligne — y compris quand elle vient d'être supprimée.
+- **Retenu** : serveur inchangé ; l'écran lit `details.reason` et affiche « La transaction a été modifiée pendant le
+  traitement — rapprochée, rejetée ou supprimée par une autre opération. » La fenêtre est de quelques millisecondes,
+  la reprise toucherait le flux d'acceptation de facture (lettrage, audit, rejeu).
+- **Écartée** : reprise exacte dans les trois flux (gain marginal, rayon d'impact large).
+- **Réversible** : oui. Site non résolu, écrit à la fiche.
+
+### C-27-4-9 — Plus de 500 identifiants : `400` global à la validation du corps
+
+- **Contexte** : au-delà de `MAX_IN_CLAUSE_IDS`, le dépôt rend une erreur `Protocol`, qui sort en `500`.
+- **Retenu** : `400 VALIDATION_ERROR` avant toute lecture, borne lue d'une seule constante `pub` de `kesh-db`. C'est
+  un défaut du corps de la requête, exception explicite du § *Pattern batch*.
+- **Écartée** : laisser le `500` (hors du sujet de l'issue, mais sur la ligne même qu'on réécrit).
+- **Réversible** : oui.
+
+### C-27-4-10 — `find_pending_by_ids` remplacée par une lecture sans filtre de statut
+
+- **Retenu** : `find_by_ids_for_account` (nom proposé), même scope et même plafond, sans `status` ni
+  `auto_match_rejected_at` ; l'ancienne fonction, sans autre appelant, est retirée (pas de code mort). Contrat API
+  et CHANGELOG écrits comme un changement (`400` → `200` + `failed[]`).
+- **Écartée** : garder la lecture filtrée et une seconde requête pour les absents (deux lectures, deux instants).
+- **Réversible** : oui.
+
+### C-27-4-11 — `RECONCILIATION_TRANSACTION_NOT_PENDING` des variantes ventilée et règle : non harmonisé
+
+- **Retenu** : inchangé. Déjà par proposition, libellé juste ; le remplacer par les trois codes de C-27-4-1
+  changerait un code publié sans bénéfice pour l'issue. Site non résolu, écrit à la fiche.
+- **Réversible** : oui.
+
+### C-27-4-12 — L'écran ne change pas de structure
+
+- **Contexte** : `ReconciliationProposals.svelte` affiche déjà `failed[]` ligne par ligne, avec la transaction
+  relevée avant le lot, et recharge la liste après.
+- **Retenu** : libellés seulement (AC7) ; un Vitest et un E2E prouvent le comportement. Pas de rechargement de la
+  liste **avant** l'envoi (il ferait disparaître une ligne cochée sans dire pourquoi).
+- **Réversible** : oui.
+
+### C-27-4-13 — Pas de découpage ; manuel FR seul
+
+- **Retenu** : cinq modules au plus (dépôt, route, frontend, catalogues, documentation) — sous le seuil du
+  découpage préventif. Seul le manuel FR existe (`docs/manual/{de,en,it}/` ne portent qu'un `README.md`).
+- **Réversible** : —
+
+### C-27-4-14 — E2E par *Rejeter* et une règle d'affectation
+
+- **Contexte** : une ligne n'est cochable que si elle a une candidate ; le rejet n'écrit rien au grand livre.
+- **Retenu** : deux imports CAMT par l'API, une règle qui couvre les deux transactions, suppression de l'un après
+  l'ouverture de la page, clic *Rejeter*. Le montant et les références sont uniques à chaque exécution (base E2E
+  partagée).
+- **Écartée** : *Accepter* contre des factures (fixtures plus lourdes, même preuve de traversée HTTP).
+- **Réversible** : oui.
