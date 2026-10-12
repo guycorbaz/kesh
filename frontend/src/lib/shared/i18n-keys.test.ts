@@ -582,7 +582,18 @@ const ATTENDU = {
 	// `-col-currency-help`). Recompté par `grep -o "i18nMsg("` aux deux bornes (`a2743fd4` et la
 	// branche), puis à la fusion sur la 27-1. `sitesNonResolus`, `relais`, `sitesGabarit`
 	// inchangés (que des littéraux).
-	sitesTotal: 2043,
+	// Story 27-3 (#626) : **+30** (2032 → 2062 sur sa branche, 2043 → 2073 rebasée sur la 27-2), recompté par `grep -o "i18nMsg("` aux deux
+	// bornes (`a2743fd4` et la branche ; aucun `i18nMsg(` en commentaire dans ces fichiers) :
+	// `features/bank-import/BankImportUpload.svelte` (23 → 48, +25) — 2 pour le défaut (texte
+	// du recalcul, avis du 409) et 23 libellés jusque-là en dur (AC17 : placeholder du compte,
+	// compte requis, `error-unexpected` — UN site : les deux `catch` partagent `setError` —,
+	// `common-loading`, six en-têtes des deux tables de lignes, six termes de l'aperçu, trois
+	// colonnes des doublons, relevés ignorés, trois colonnes des transactions) ;
+	// `BankImportList.svelte` (1 → 5, +4 : en-têtes) ; `routes/(app)/bank-import/+page.svelte`
+	// (3 → 4, +1 : `common-loading`). La fiche prévoyait +31 : l'écart d'un site est la
+	// fusion des deux `catch`. `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (que des
+	// littéraux), mesurés. À la fusion sur la 27-2, la garde a confirmé 2073.
+	sitesTotal: 2073,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

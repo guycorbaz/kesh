@@ -1042,6 +1042,32 @@ bank-import-labels-bank-profile-selector = CSV bank profile
 bank-import-labels-bank-profile-auto-matched = auto-detected
 # L6 / M8 (Pass 1 review)
 bank-import-labels-bank-profile-auto-detect-placeholder = Auto-detect
+# Story 27-3 (#626) — aperçu recalculé au changement de profil, empreinte périmée.
+bank-import-errors-preview-stale = The profile, file or account has changed since the preview: recompute it before importing.
+bank-import-labels-preview-recomputing = Recomputing the preview…
+bank-import-labels-preview-recomputed = The profile, file or account has changed since the preview: Kesh recomputes it. Check the result before confirming.
+# Story 27-3 (C-27-3-25) — libellés de l'écran d'import, jusque-là en dur.
+bank-import-labels-bank-account-placeholder = Select an account
+bank-import-errors-bank-account-required = Select a bank account first.
+bank-import-labels-col-line = Line
+bank-import-labels-col-code = Code
+bank-import-labels-col-value = Value
+bank-import-labels-iban = IBAN
+bank-import-labels-period = Period
+bank-import-labels-currency = Currency
+bank-import-labels-opening-balance = Opening balance
+bank-import-labels-closing-balance = Closing balance
+bank-import-labels-transaction-count = Number of transactions
+bank-import-labels-duplicate-col-index = Index
+bank-import-labels-duplicate-col-existing-id = Existing ID
+bank-import-labels-duplicate-col-key = Key
+bank-import-labels-ignored-statements-summary = statement(s) ignored (other IBANs in the file).
+bank-import-labels-tx-col-date = Date
+bank-import-labels-tx-col-amount = Amount
+bank-import-labels-tx-col-details = Details
+bank-import-labels-list-col-imported-at = Import date
+bank-import-labels-list-col-filename = File
+bank-import-labels-list-col-transactions = Transactions
 bank-import-info-bank-csv-profile-auto-matched = Bank profile auto-detected from the filename.
 bank-import-info-bank-csv-multiple-profile-matches = Multiple profiles match the filename ; the first one was selected.
 bank-import-info-bank-csv-currency-assumed = The profile reads no Currency column: the statement is assumed to be in Swiss francs (CHF).

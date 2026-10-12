@@ -1042,6 +1042,32 @@ bank-import-labels-bank-profile-selector = Profilo bancario CSV
 bank-import-labels-bank-profile-auto-matched = rilevato automaticamente
 # L6 / M8 (Pass 1 review)
 bank-import-labels-bank-profile-auto-detect-placeholder = Rilevamento automatico
+# Story 27-3 (#626) — aperçu recalculé au changement de profil, empreinte périmée.
+bank-import-errors-preview-stale = Il profilo, il file o il conto sono cambiati dopo l'anteprima: ricalcolatela prima di importare.
+bank-import-labels-preview-recomputing = Ricalcolo dell'anteprima…
+bank-import-labels-preview-recomputed = Il profilo, il file o il conto sono cambiati dopo l'anteprima: Kesh la ricalcola. Verificate il risultato prima di confermare.
+# Story 27-3 (C-27-3-25) — libellés de l'écran d'import, jusque-là en dur.
+bank-import-labels-bank-account-placeholder = Selezionare un conto
+bank-import-errors-bank-account-required = Selezionate prima un conto bancario.
+bank-import-labels-col-line = Riga
+bank-import-labels-col-code = Codice
+bank-import-labels-col-value = Valore
+bank-import-labels-iban = IBAN
+bank-import-labels-period = Periodo
+bank-import-labels-currency = Valuta
+bank-import-labels-opening-balance = Saldo iniziale
+bank-import-labels-closing-balance = Saldo finale
+bank-import-labels-transaction-count = Numero di transazioni
+bank-import-labels-duplicate-col-index = Indice
+bank-import-labels-duplicate-col-existing-id = ID esistente
+bank-import-labels-duplicate-col-key = Chiave
+bank-import-labels-ignored-statements-summary = estratto/i ignorato/i (altri IBAN nel file).
+bank-import-labels-tx-col-date = Data
+bank-import-labels-tx-col-amount = Importo
+bank-import-labels-tx-col-details = Dettagli
+bank-import-labels-list-col-imported-at = Data importazione
+bank-import-labels-list-col-filename = File
+bank-import-labels-list-col-transactions = Transazioni
 bank-import-info-bank-csv-profile-auto-matched = Profilo bancario rilevato automaticamente dal nome del file.
 bank-import-info-bank-csv-multiple-profile-matches = Più profili corrispondono al nome del file ; è stato selezionato il primo.
 bank-import-info-bank-csv-currency-assumed = Il profilo non legge alcuna colonna Valuta: l'estratto è considerato in franchi svizzeri (CHF).

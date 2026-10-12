@@ -1695,8 +1695,8 @@ banque à l'autre. Si l'e-banking ne le propose pas, exportez le relevé en CSV
     \item Choisir le compte du relevé dans \textbf{Compte bancaire cible}. La liste propose les
     comptes bancaires non archivés déclarés dans \emph{Administration} → \emph{Comptes
     bancaires} (\S\ref{sec:ajout-compte}).
-    \item Pour un fichier CSV, si des profils existent, choisir le \textbf{Profil bancaire CSV}
-    \emph{avant} de déposer le fichier (\S\ref{sec:import-csv-profil}).
+    \item Pour un fichier CSV, si des profils existent, choisir le \textbf{Profil bancaire CSV},
+    avant ou après le dépôt du fichier (\S\ref{sec:import-csv-profil}).
     \item Glisser-déposer le fichier dans la zone de dépôt, ou cliquer dessus pour le choisir.
     \item Vérifier la \textbf{Prévisualisation} et confirmer ses avertissements (ci-dessous).
     \item Cliquer sur \emph{Confirmer l'import}.
@@ -1840,7 +1840,7 @@ Colonne devise & \textbf{4} (« Devise ») \\
 \begin{enumerate}
     \item \emph{Quotidien} → \emph{Importer des relevés}.
     \item Choisir le \textbf{Compte bancaire cible}.
-    \item Choisir le profil dans \textbf{Profil bancaire CSV}, \emph{avant} de déposer le fichier.
+    \item Choisir le profil dans \textbf{Profil bancaire CSV}, avant ou après le dépôt du fichier.
     Laissé sur \emph{Auto-détection}, Kesh présélectionne après la prévisualisation le profil
     qu'il reconnaît (mention « auto-détecté »).
     \item Déposer le fichier CSV, vérifier la prévisualisation et confirmer ses avertissements.
@@ -1848,11 +1848,32 @@ Colonne devise & \textbf{4} (« Devise ») \\
 \end{enumerate}
 
 \begin{keshwarning}
-La prévisualisation est calculée au dépôt du fichier, avec le profil alors choisi. Changer de
-profil ensuite ne la recalcule pas, et \emph{Confirmer l'import} enverrait le nouveau profil avec
-l'aperçu de l'ancien. Si le profil proposé n'est pas le bon : cliquer sur \emph{Annuler}, choisir
-le bon profil, puis redéposer le fichier. Après \emph{Annuler}, le profil choisi ou présélectionné
-reste choisi pour le fichier suivant.
+\textbf{La prévisualisation est toujours celle du profil choisi.} Changer de profil après le dépôt
+la recalcule aussitôt (« Recalcul de la prévisualisation… »), y compris après un refus : inutile de
+redéposer le fichier pour essayer un autre profil. Les avertissements déjà confirmés sont alors
+\emph{à confirmer de nouveau} : les cases cochées sur l'ancienne prévisualisation sont décochées.
+
+Si le profil, ou l'IBAN du compte bancaire, est modifié ailleurs (dans un autre onglet, par un
+autre utilisateur) entre la prévisualisation et la confirmation, Kesh \textbf{n'importe pas} : il
+relit la liste des profils, recalcule la prévisualisation et l'annonce (« Le profil, le fichier ou
+le compte a changé depuis la prévisualisation… »). L'avis ne dit pas ce qui a changé : l'écran ne
+le sait pas. Vérifiez le résultat, puis confirmez de nouveau. Si le recalcul échoue --- le profil a
+été supprimé, ou ne convient plus au fichier ---, le message d'erreur s'affiche avec l'avis :
+choisissez un autre profil, ou \emph{Auto-détection}, dans le sélecteur : la prévisualisation se
+recalcule sans redéposer le fichier. Un profil supprimé disparaît du sélecteur, qui revient de
+lui-même sur \emph{Auto-détection}~; comme cette option est alors déjà choisie, la choisir de
+nouveau ne relance rien : choisissez un autre profil, ou, pour l'auto-détection, redéposez le
+fichier. Redéposer est aussi la marche à suivre si plus aucun profil n'existe, le sélecteur n'étant
+alors plus affiché. Les autres
+changements du compte (nom de la banque, description) ne bloquent pas l'import.
+
+Si c'est le \emph{fichier} qui est modifié sur le disque après la prévisualisation, Kesh n'importe
+pas non plus, mais la suite dépend du navigateur : selon le navigateur, il recalcule la
+prévisualisation, ou l'envoi échoue avec un message d'erreur de connexion (« Impossible de
+contacter le serveur… ») qui se répète à chaque clic. Dans ce cas, cliquer sur \emph{Annuler}, puis
+redéposer le fichier.
+
+Après \emph{Annuler}, le profil choisi ou présélectionné reste choisi pour le fichier suivant.
 \end{keshwarning}
 
 Un import CSV déjà confirmé avec un mauvais profil se supprime comme un import CAMT.053, tant

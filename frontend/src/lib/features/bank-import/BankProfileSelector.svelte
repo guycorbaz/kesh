@@ -17,8 +17,10 @@
 		autoMatchedId: number | null;
 		value: number | null;
 		onChange: (id: number | null) => void;
+		/** Story 27-3 (AC3) — désactivé pendant une confirmation en vol. */
+		disabled?: boolean;
 	};
-	let { profiles, autoMatchedId, value, onChange }: Props = $props();
+	let { profiles, autoMatchedId, value, onChange, disabled = false }: Props = $props();
 
 	function handleChange(event: Event): void {
 		const target = event.currentTarget as HTMLSelectElement;
@@ -39,6 +41,7 @@
 	data-testid="bank-profile-select"
 	value={value ?? ''}
 	onchange={handleChange}
+	{disabled}
 	class="mt-1 block w-full rounded border-border bg-surface p-2 text-text"
 >
 	<!-- L6 (Pass 1 review) — clés i18n distinctes pour le placeholder
