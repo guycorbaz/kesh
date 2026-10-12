@@ -104,14 +104,23 @@
 		};
 	}
 
-	onMount(async () => {
+	/**
+	 * Charge la liste des profils du sélecteur. Appelée au montage et après un
+	 * `409 BANK_IMPORT_PREVIEW_STALE` (revue de code P1, B-1, C-27-3-51) : le
+	 * profil a pu être renommé, supprimé ou créé ailleurs. En cas d'échec, la
+	 * liste en place est gardée (vide au montage) : un rafraîchissement raté ne
+	 * doit pas faire disparaître le sélecteur.
+	 */
+	async function loadProfiles(): Promise<void> {
 		try {
 			const list = await listBankProfiles(1, 50);
 			availableProfiles = list.items;
 		} catch {
-			availableProfiles = [];
+			// liste en place gardée
 		}
-	});
+	}
+
+	onMount(loadProfiles);
 
 	let lastSeenAccountId: number | null = null;
 	$effect(() => {
@@ -278,6 +287,9 @@
 				isConfirming = false;
 				showRecomputedNotice = true;
 				void runPreview(snap.file, snap.accountId, snap.bankProfileId ?? null, 'stale');
+				// Le sélecteur relit les profils : un profil renommé ou supprimé
+				// ailleurs n'y garde pas son ancien nom (B-1, C-27-3-51).
+				void loadProfiles();
 			} else {
 				setError(err);
 			}

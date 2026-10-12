@@ -3068,7 +3068,8 @@ async fn create_refuses_another_file_or_another_account(pool: MySqlPool) {
     assert_eq!(write_counts(&pool).await, before);
 }
 
-/// I8 — empreinte mal formée → 400 ; champ dupliqué → 400.
+/// I8 — empreinte mal formée (courte, majuscules, hors hex, vide) → 400 ;
+/// champ dupliqué → 400.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn create_rejects_malformed_or_duplicated_fingerprint(pool: MySqlPool) {
     let s = setup(&pool).await;
@@ -3082,6 +3083,8 @@ async fn create_rejects_malformed_or_duplicated_fingerprint(pool: MySqlPool) {
             vec![("previewFingerprint", fp.to_uppercase())],
         ),
         ("hors hex", vec![("previewFingerprint", "g".repeat(64))]),
+        // Revue de code P1, E-5 : présent mais vide n'est pas « absent ».
+        ("vide", vec![("previewFingerprint", String::new())]),
         (
             "dupliquée",
             vec![

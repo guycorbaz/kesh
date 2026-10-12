@@ -565,6 +565,16 @@ function ubsFixtureIn(year: string, name: string) {
 	};
 }
 
+/**
+ * Revue de code P1, E-6 — rend E1 et E2 rejouables sur une base non remise à
+ * zéro : noms de profils (`UNIQUE (company_id, bank_name)`) et nom de fichier
+ * propres au passage, et, pour E1 qui importe, une année propre au passage
+ * (2100 à 9099 : jamais 2026-2028, années des autres tests d'import) — sans
+ * quoi le second passage rencontrerait son propre fichier en doublon.
+ */
+const RUN = Date.now().toString(36);
+const E1_YEAR = String(2100 + (Date.now() % 7000));
+
 /** Crée un profil UBS (motif vide : jamais auto-détecté) ; rend son id. */
 async function createUbsProfile(page: Page, name: string, debitSign: 'positive' | 'negative') {
 	await createProfileViaUi(page, {
@@ -604,14 +614,15 @@ test('changing the profile after a refusal recomputes the preview, without re-up
 }) => {
 	await login(page);
 	await ensureBankAccount(page);
-	const minus = await createUbsProfile(page, '27-3 moins', 'negative');
-	const noSign = await createUbsProfile(page, '27-3 sans signe', 'positive');
+	const minus = await createUbsProfile(page, `27-3 moins ${RUN}`, 'negative');
+	const noSign = await createUbsProfile(page, `27-3 sans signe ${RUN}`, 'positive');
+	const e1File = `ubs_273_e1_${RUN}.csv`;
 
 	await page.goto('/bank-import');
 	await expect(page.getByTestId('bank-import-page-title')).toBeVisible();
 	await page.getByTestId('bank-account-select').selectOption({ index: 1 });
 	await page.getByTestId('bank-profile-select').selectOption(String(noSign));
-	await page.getByTestId('bank-import-file-input').setInputFiles(ubsFixtureIn('2027', 'ubs_273_e1.csv'));
+	await page.getByTestId('bank-import-file-input').setInputFiles(ubsFixtureIn(E1_YEAR, e1File));
 
 	const error = page.getByTestId('bank-import-error');
 	await expect(error).toHaveAttribute('data-error-code', 'BANK_CSV_AMOUNT_SIGN_MISMATCH');
@@ -625,7 +636,7 @@ test('changing the profile after a refusal recomputes the preview, without re-up
 	await page.getByTestId('bank-import-confirm').click();
 	await expect(page.getByTestId('bank-import-preview')).toBeHidden();
 
-	const amounts = await importedAmounts(page, 'ubs_273_e1.csv');
+	const amounts = await importedAmounts(page, e1File);
 	expect(amounts).toHaveLength(11);
 	expect(amounts.filter((a) => a < 0)).toHaveLength(9);
 	expect(amounts.reduce((a, b) => a + b, 0)).toBe(-23625);
@@ -636,14 +647,14 @@ test('a profile modified elsewhere after the preview is not imported: the previe
 }) => {
 	await login(page);
 	await ensureBankAccount(page);
-	const id = await createUbsProfile(page, '27-3 E2 moins', 'negative');
+	const id = await createUbsProfile(page, `27-3 E2 moins ${RUN}`, 'negative');
 	const before = await importTotal(page);
 
 	await page.goto('/bank-import');
 	await expect(page.getByTestId('bank-import-page-title')).toBeVisible();
 	await page.getByTestId('bank-account-select').selectOption({ index: 1 });
 	await page.getByTestId('bank-profile-select').selectOption(String(id));
-	await page.getByTestId('bank-import-file-input').setInputFiles(ubsFixtureIn('2028', 'ubs_273_e2.csv'));
+	await page.getByTestId('bank-import-file-input').setInputFiles(ubsFixtureIn('2028', `ubs_273_e2_${RUN}.csv`));
 	await expect(page.getByTestId('preview-tx-count')).toHaveText('11');
 
 	// L'« autre onglet » : le profil passe à « sans signe » par l'API. Le PUT est

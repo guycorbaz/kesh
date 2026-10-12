@@ -208,6 +208,8 @@ async function previewWithA(c: HTMLElement, o: PreviewOpts = {}): Promise<void> 
 	await chooseProfile(c, A);
 	expect(mockApi.previewBankImport.mock.calls.length, 'aucun fichier : pas d’aperçu').toBe(calls);
 	await chooseFile(c);
+	// Revue P1, E-4 : le profil choisi AVANT le dépôt part avec le premier aperçu.
+	expect(profileFlag(calls), 'profil choisi avant le dépôt').toBe(A);
 	expect(q(c, 'bank-import-preview'), 'montage : aperçu A affiché').not.toBeNull();
 }
 
@@ -331,6 +333,14 @@ describe('BankImportUpload — changer de profil recalcule l’aperçu (Story 27
 		expect(optionB?.textContent).toContain('(auto-détecté)');
 		const optionA = select.querySelector(`option[value="${A}"]`);
 		expect(optionA?.textContent).not.toContain('auto-détecté');
+
+		// Revue P1, E-2 (AC5) : la confirmation envoie le profil RÉSOLU par
+		// l'aperçu (B), pas le profil demandé (aucun, Auto-détection).
+		mockApi.createBankImport.mockResolvedValueOnce({ id: 1 } as BankImportResponse);
+		await confirm(c);
+		const flags = mockApi.createBankImport.mock.calls[0][2];
+		expect(flags?.bankProfileId).toBe(B);
+		expect(flags?.previewFingerprint).toBe(fp('a'));
 	});
 
 	it('V5 — aperçu en échec, puis autre profil : relancé avec le même fichier, erreur effacée', async () => {
@@ -421,10 +431,33 @@ describe('BankImportUpload — séquence, compte et confirmation (Story 27-3)', 
 		expect(get<HTMLSelectElement>(c, 'bank-account-select').disabled).toBe(true);
 		expect(get<HTMLSelectElement>(c, 'bank-profile-select').disabled).toBe(true);
 		expect(get<HTMLButtonElement>(c, 'bank-import-cancel').disabled).toBe(true);
+		// Revue P1, E-3 : garde anti-double-clic.
+		expect(get<HTMLButtonElement>(c, 'bank-import-confirm').disabled).toBe(true);
 		expect(get(c, 'bank-import-loading').textContent?.trim()).toBe('Chargement…');
 
 		pending.resolve({ id: 1 } as BankImportResponse);
 		await flush();
+	});
+
+	it('V14 — confirmation rejetée autrement qu’en 409 : l’écran n’est pas figé', async () => {
+		// Revue P1, E-1 : seule la clause `finally` éteint `isConfirming` sur
+		// cette voie.
+		const { c, onSuccess } = await mount();
+		await previewWithA(c);
+		mockApi.createBankImport.mockRejectedValueOnce(apiError('BANK_IMPORT_DUPLICATE_FILE', 422));
+		await confirm(c);
+
+		expect(get(c, 'bank-import-error').getAttribute('data-error-code')).toBe(
+			'BANK_IMPORT_DUPLICATE_FILE',
+		);
+		expect(q(c, 'bank-import-loading')).toBeNull();
+		expect(get<HTMLSelectElement>(c, 'bank-account-select').disabled).toBe(false);
+		expect(get<HTMLSelectElement>(c, 'bank-profile-select').disabled).toBe(false);
+		expect(get<HTMLButtonElement>(c, 'bank-import-cancel').disabled).toBe(false);
+		expect(get<HTMLButtonElement>(c, 'bank-import-confirm').disabled).toBe(false);
+		expect(get(c, 'bank-import-preview').textContent).toContain('tx-A');
+		expect(mockApi.previewBankImport, 'aucun recalcul hors 409').toHaveBeenCalledTimes(1);
+		expect(onSuccess).not.toHaveBeenCalled();
 	});
 
 	it('V10 — CAMT : le sélecteur vaut A, la confirmation part sans bankProfileId (instantané)', async () => {
@@ -523,6 +556,38 @@ describe('BankImportUpload — refus 409 BANK_IMPORT_PREVIEW_STALE (Story 27-3, 
 		expect(get(c, 'bank-import-preview').textContent).toContain('tx-A2');
 		expect(get<HTMLInputElement>(c, 'confirm-duplicate-file').checked).toBe(false);
 		expect(get<HTMLButtonElement>(c, 'bank-import-confirm').disabled).toBe(true);
+	});
+
+	it('V6-ter — après un 409, le sélecteur relit la liste des profils', async () => {
+		// Revue P1, B-1 (C-27-3-51) : un profil renommé ailleurs n'y garde pas
+		// son ancien nom.
+		const { c } = await mount();
+		expect(mockProfileApi.listBankProfiles).toHaveBeenCalledTimes(1);
+		mockProfileApi.listBankProfiles.mockResolvedValueOnce({
+			items: [profile(A, 'Profil A renommé'), profile(B, 'Profil B')],
+			total: 2,
+			page: 1,
+			perPage: 50,
+		} as never);
+		await staleConfirm(c, () =>
+			mockApi.previewBankImport.mockResolvedValueOnce(previewResp({ tag: 'A2' })),
+		);
+		expect(mockProfileApi.listBankProfiles).toHaveBeenCalledTimes(2);
+		const select = get<HTMLSelectElement>(c, 'bank-profile-select');
+		expect(select.querySelector(`option[value="${A}"]`)?.textContent).toContain('Profil A renommé');
+		expect(select.querySelector(`option[value="${C}"]`)).toBeNull();
+	});
+
+	it('V6-ter (variante) — la relecture échoue : la liste en place est gardée', async () => {
+		const { c } = await mount();
+		mockProfileApi.listBankProfiles.mockRejectedValueOnce(apiError('INTERNAL_ERROR', 500));
+		await staleConfirm(c, () =>
+			mockApi.previewBankImport.mockResolvedValueOnce(previewResp({ tag: 'A2' })),
+		);
+		expect(mockProfileApi.listBankProfiles).toHaveBeenCalledTimes(2);
+		const select = get<HTMLSelectElement>(c, 'bank-profile-select');
+		expect(select.querySelector(`option[value="${C}"]`)?.textContent).toContain('Profil C');
+		expect(get(c, 'bank-import-preview').textContent).toContain('tx-A2');
 	});
 
 	it('V6-bis (a) — changer de profil efface l’avis dès le geste', async () => {
