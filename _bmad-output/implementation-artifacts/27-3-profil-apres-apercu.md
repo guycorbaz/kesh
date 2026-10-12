@@ -1,10 +1,11 @@
-# Story 27.3 : changer de profil après l'aperçu recalcule l'aperçu — et le serveur refuse un import jamais prévisualisé
+# Story 27.3 : changer de profil après l'aperçu recalcule l'aperçu — et le serveur refuse un import dont le profil a changé depuis l'aperçu
 
 Status: ready-for-dev
 
 <!-- Fiche créée le 2026-10-12 par bmad-create-story, en autonomie (aucune question). Choix au registre
-`epic-27-choix-autonomes-27-3.md` (C-27-3-1 à C-27-3-19), à fusionner par l'orchestrateur dans
-`epic-27-choix-autonomes.md` (branche de la 27-1). Validation P1 : `27-3-validate-prompt-p1.md`. -->
+`epic-27-choix-autonomes-27-3.md` (C-27-3-1 à C-27-3-27), à fusionner par l'orchestrateur dans
+`epic-27-choix-autonomes.md` (branche de la 27-1). Validation P1 : `27-3-validate-prompt-p1.md` ;
+P2 : `27-3-validate-prompt-p2.md`. -->
 
 **Issue** : [#626](https://github.com/guycorbaz/kesh/issues/626) (`bug`, `P2`). **PR : `closes #626`.**
 **Epic** : 27 — recette de la v0.13.1, cible **v0.13.2** (décision de Guy, 2026-10-12 : la v0.13.2 ferme aussi
@@ -58,10 +59,13 @@ de droite dit ce qui la ferme. **Un chemin absent de ce tableau est un finding.*
 | D8 | Choisir *Auto-détection* après un aperçu | aucun recalcul | aperçu relancé sans profil (AC1) ; la présélection qui suit ne relance pas (AC4) |
 | D9 | Aperçu **en échec** (refus de signe, aucun profil reconnu…), puis changer de profil | rien : il faut redéposer | aperçu relancé avec le fichier retenu (AC1-bis) |
 | D10 | Changer de profil **pendant la confirmation** (requête `POST` en vol) | possible (rien n'est désactivé) | sélecteurs désactivés pendant la confirmation (AC3) |
-| D11 | *Annuler* pendant un aperçu en cours | — | réponse en vol ignorée (AC3) |
+| D11 | *Annuler* pendant un aperçu en cours | — | **inatteignable** : le bouton `bank-import-cancel` (`:665`) est dans le bloc `{#if preview}` (`:354`), que l'AC2 retire pendant tout aperçu ; la sortie pendant un aperçu est le changement de compte (D5), qui passe par `reset()` (AC3). Aucun *Annuler* n'est ajouté à l'état de chargement (C-27-3-21) |
 | D12 | Client qui confirme **sans** passer par l'aperçu (clé d'API, script, ancien onglet chargé avant la mise à jour) | importe | inchangé : l'empreinte est **facultative** (C-27-3-9) — **angle mort assumé**, écrit à `docs/api-external.md` (AC13) ; l'écran livré l'envoie toujours |
 | D13 | Base qui change entre l'aperçu et la confirmation (un autre import ajoute des doublons, un fichier identique est importé) | la création **recalcule** doublons de fichier (`create_csv:1781-1792`, `create:1108-1117`) et de lignes | inchangé — hors empreinte (C-27-3-12) |
 | D14 | Cases de confirmation cochées sur l'ancien aperçu | — | remises à zéro à chaque recalcul (AC2) |
+| D15 | *Annuler* **pendant la confirmation**, puis la réponse revient en `409` | *Annuler* actif (`onclick={reset}`, seul *Confirmer* dépend de `isLoading`, `:658`) ; la branche `409` prescrite aurait relancé l'aperçu depuis l'instantané **après** l'annulation | *Annuler* désactivé pendant la confirmation, comme les sélecteurs (AC3, C-27-3-21) — le chemin n'existe plus |
+| D16 | Après un aperçu en **échec**, re-choisir **le même fichier** par « cliquer pour parcourir » (le manuel dit « redéposez le fichier », `user-manual.tex:1743`, `:1784`) | l'`<input type=file>` reste monté (zone visible, `preview` nul) et garde sa valeur : un navigateur n'émet pas `change` pour une sélection identique — **aucun aperçu** ; le glisser-déposer, lui, fonctionne | `handleFileInput` vide `input.value` après lecture du fichier (AC16, C-27-3-26) ; l'AC2 démonte en outre la zone pendant tout aperçu, ce qui remonte un `<input>` vierge |
+| D17 | Un client d'API envoie l'empreinte **sans** `bankProfileId` (auto-détection), et un **autre** profil à motif concordant est modifié entre-temps | — | `find_matching_profiles_for_filename` trie par `updated_at DESC` (`crates/kesh-db/src/repositories/bank_profiles.rs:180`) : le profil résolu peut changer → `409`, **légitime** (le mapping appliqué a changé). L'écran n'est pas concerné : il envoie l'id résolu (AC5). Écrit à `docs/api-external.md` (AC13) |
 
 ## Acceptance Criteria
 
@@ -86,18 +90,29 @@ retenu) ne relance rien.
   un second fichier déposé pendant le chargement lançait un aperçu concurrent) ;
 - l'indicateur `bank-import-loading` est affiché, `role="status"`, avec le texte
   `bank-import-labels-preview-recomputing` (« Recalcul de la prévisualisation avec le profil choisi… ») quand il
-  s'agit d'un **recalcul** (AC1, AC1-bis, AC9), et le « Chargement… » actuel au dépôt d'un fichier ;
+  s'agit d'un **recalcul** (AC1, AC1-bis, AC9), et, au dépôt d'un fichier, le « Chargement… » actuel — **traduit**
+  par la clé globale existante `common-loading` (AC17 ; aujourd'hui en dur, `:305`) ;
 - l'erreur précédente (`bank-import-error`) est effacée ;
 - **les cases et le choix de doublons** (`confirmBalanceMismatch`, `confirmDuplicateFile`, `confirmDuplicateLines`
   remis à `skip`, `confirmPartialImport`, `confirmEncodingMismatch`) sont **remis à zéro** — les avertissements du
   nouvel aperçu ne sont pas ceux de l'ancien (même raison que F1 Pass 3, `:114-125`).
 
-**AC3 — Le dernier demandé gagne ; rien de périmé ne s'affiche (D2, D5, D10, D11).** Chaque demande d'aperçu porte
+**AC3 — Le dernier demandé gagne ; rien de périmé ne s'affiche (D2, D5, D10, D15).** Chaque demande d'aperçu porte
 un numéro de séquence ; une réponse (succès **ou** erreur) dont le numéro n'est plus le dernier est **ignorée** —
-elle ne pose ni `preview`, ni l'erreur, ni la présélection, ni ne termine l'indicateur de chargement. `reset()`
-(*Annuler*, changement de compte, succès de l'import) **invalide** la séquence en cours. Pendant une **confirmation**
-en vol, les sélecteurs de compte (`bank-account-select`) et de profil (`bank-profile-select`) sont **désactivés**
-(`disabled`) ; pendant un **aperçu**, ils restent actifs (C-27-3-3).
+elle ne pose ni `preview`, ni l'erreur, ni la présélection, ni ne termine l'indicateur de chargement. Le compteur
+de séquence est une variable **ordinaire** (`let seq = 0`), **jamais** un `$state` : `reset()` est appelée depuis le
+`$effect` du compte (`:75-81`), qui dépendrait sinon du compteur.
+
+`reset()` (changement de compte, *Annuler*, succès de l'import) **invalide** la séquence en cours **et** remet
+`isPreviewing` et `isConfirming` à faux et efface l'avis de l'AC9 (C-27-3-20) : la réponse ignorée ne pouvant plus
+éteindre l'indicateur, c'est `reset()` qui le fait — sans quoi un changement de compte pendant un aperçu laisserait
+l'indicateur allumé et la zone de dépôt masquée (AC2) jusqu'au rechargement de la page.
+
+Pendant une **confirmation** en vol, les sélecteurs de compte (`bank-account-select`) et de profil
+(`bank-profile-select`) **et** le bouton *Annuler* (`bank-import-cancel`) sont **désactivés** (`disabled`) : un geste
+à ce moment ne peut plus rien corriger, et *Annuler* suivi d'un `409` aurait fait réapparaître l'aperçu après
+l'annulation (D15, C-27-3-21). Pendant un **aperçu**, les sélecteurs restent actifs (C-27-3-3) ; *Annuler* n'y est
+pas rendu (D11).
 
 **AC4 — La présélection automatique ne relance pas l'aperçu.** Le comportement KF #70 (`:135-142`) est conservé :
 après un aperçu demandé sur *Auto-détection* et rendu `autoMatched`, `bankProfileId` prend `csvProfileMatch.profileId`
@@ -153,14 +168,22 @@ entre elles rendrait tout import `409`).
 - **Précédence** : les refus qui précèdent la résolution du profil restent prioritaires — `400` multipart,
   `404 BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND`, et pour un CSV le `422 BANK_IMPORT_DUPLICATE_FILE` non confirmé
   (`:1781-1792`) et le `404 BANK_CSV_NO_PROFILE_MATCH` (D4). Le `409` vient ensuite, **avant** tout parse.
+- ⚠️ **Asymétrie assumée entre CSV et CAMT** (C-27-3-24) : pour un CAMT, le `409` précède le
+  `422 BANK_IMPORT_DUPLICATE_FILE`, dont la détection se fait **dans** la transaction (`create`, `:1105-1117`) ;
+  pour un CSV, il le suit. Aucune incidence (les deux refusent sans importer) ; l'ordre est écrit à
+  `docs/api-external.md` (AC13) et tenu par I10.
+- La comparaison CSV est **sans fenêtre par construction** : la même variable `profile`, lue dans la transaction,
+  est comparée puis parsée (`:1795-1809`). Ce n'est pas testable sans injection de concurrence, et ce n'est pas
+  compté comme mutation (C-27-3-23).
 - Un aperçu sur *Auto-détection* (profil `X` résolu par le nom du fichier) suivi d'une création avec
   `bankProfileId = X` explicite donne la **même** empreinte : `201`.
 
 ### Réaction de l'écran au refus
 
 **AC9 — Sur `409 BANK_IMPORT_PREVIEW_STALE`, l'écran recalcule et le dit.** Si la confirmation reçoit ce code,
-l'écran **relance l'aperçu** (même fichier, même compte, profil de l'instantané — AC5) et affiche, au-dessus de
-l'aperçu, l'avis `bank-import-preview-recomputed` (`role="status"`, clé `bank-import-labels-preview-recomputed` :
+l'écran **relance l'aperçu** (même fichier, même compte, profil de l'instantané — AC5) et affiche l'avis
+`bank-import-preview-recomputed` — rendu **hors** du bloc `{#if preview}` (`:354`), au-dessus de l'aperçu s'il y en
+a un et au-dessus de l'erreur sinon, puisqu'il doit rester visible quand le recalcul échoue (E2) — (`role="status"`, clé `bank-import-labels-preview-recomputed` :
 « Le profil a été modifié depuis la prévisualisation : elle a été recalculée. Vérifiez-la avant de confirmer. »).
 **Aucune nouvelle confirmation automatique** : l'utilisateur reconfirme. `onSuccess` n'est pas appelé. L'avis
 disparaît au prochain geste de l'utilisateur (dépôt, changement de profil ou de compte, *Annuler*, nouvelle
@@ -169,24 +192,40 @@ confirmation). Si ce recalcul échoue (profil devenu inadapté : refus de signe,
 
 ### Textes
 
-**AC10 — i18n, quatre locales.** Trois clés neuves, dans `crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`,
-placées après `bank-import-labels-bank-profile-auto-detect-placeholder` (fr-CH `:1094` — **hors** des hunks de la
-27-1, qui ajoute après `:1057` et `:1078`) :
+**AC10 — i18n, quatre locales : trois clés pour le défaut.** Trois clés neuves, dans
+`crates/kesh-i18n/locales/{fr,de,it,en}-CH/messages.ftl`, placées après
+`bank-import-labels-bank-profile-auto-detect-placeholder` — fr-CH `:1094`, de-CH / it-CH / en-CH `:1033` —, **hors**
+des hunks de la 27-1 (fr-CH après `:1059` et `:1080` ; de/it/en-CH après `:1002` et `:1021`) :
 
-| Clé | fr-CH |
-|---|---|
-| `bank-import-errors-preview-stale` | Le profil, le fichier ou le compte a changé depuis la prévisualisation : recalculez-la avant d'importer. |
-| `bank-import-labels-preview-recomputing` | Recalcul de la prévisualisation avec le profil choisi… |
-| `bank-import-labels-preview-recomputed` | Le profil a été modifié depuis la prévisualisation : elle a été recalculée. Vérifiez-la avant de confirmer. |
+| Clé | fr-CH | de-CH | it-CH | en-CH |
+|---|---|---|---|---|
+| `bank-import-errors-preview-stale` | Le profil, le fichier ou le compte a changé depuis la prévisualisation : recalculez-la avant d'importer. | Profil, Datei oder Konto haben sich seit der Vorschau geändert: Berechnen Sie die Vorschau vor dem Import neu. | Il profilo, il file o il conto sono cambiati dopo l'anteprima: ricalcolatela prima di importare. | The profile, file or account has changed since the preview: recompute it before importing. |
+| `bank-import-labels-preview-recomputing` | Recalcul de la prévisualisation avec le profil choisi… | Die Vorschau wird mit dem gewählten Profil neu berechnet… | Ricalcolo dell'anteprima con il profilo scelto… | Recomputing the preview with the selected profile… |
+| `bank-import-labels-preview-recomputed` | Le profil a été modifié depuis la prévisualisation : elle a été recalculée. Vérifiez-la avant de confirmer. | Das Profil wurde seit der Vorschau geändert: Sie wurde neu berechnet. Prüfen Sie sie vor dem Bestätigen. | Il profilo è stato modificato dopo l'anteprima: è stata ricalcolata. Verificatela prima di confermare. | The profile was modified since the preview: it has been recomputed. Check it before confirming. |
 
 Les replis des `i18nMsg` sont **identiques** au texte fr-CH (garde du moissonneur). Préfixe `bank-import-` :
-conforme à `lint-i18n-ownership` (feature `bank-import`). Le repli serveur de `t()` est le texte fr-CH.
+conforme à `lint-i18n-ownership` (feature `bank-import`). Le repli serveur de `t()` est le texte fr-CH, **et il
+est inscrit** à la `TABLE` de `les_replis_rust_suivent_le_catalogue`
+(`crates/kesh-api/tests/textes_coherents.rs:679-735`, groupe `crates/kesh-api/src/errors.rs`) :
+`("bank-import-errors-preview-stale", 1, &[])` — c'est le seul repli Rust neuf de la story (les autres textes neufs
+sont des replis `i18nMsg`, tenus par le moissonneur). La 27-1 ajoute trois entrées au même groupe (`:699`) : union à
+la fusion.
 
-**AC11 — Borne `sitesTotal`.** Deux sites `i18nMsg(` neufs dans `BankImportUpload.svelte` (23 aujourd'hui,
-`grep -o "i18nMsg(" … | wc -l`) → **25** ; `sitesTotal` de `frontend/src/lib/shared/i18n-keys.test.ts` passe de
-**2032 à 2034** sur la base `a2743fd4`, avec son commentaire ventilé (le patron du fichier). ⚠️ La 27-1 le porte à
-2041 : à la fusion, **2043** — l'orchestrateur additionne les deltas, il ne prend pas l'un des deux nombres.
-Recompter au dernier commit, ne pas recopier ce chiffre.
+**AC11 — Borne `sitesTotal`.** Sites `i18nMsg(` neufs, recomptés par `grep -o "i18nMsg(" <fichier> | wc -l` sur la
+base `a2743fd4` puis au dernier commit :
+
+| Fichier | base | après | delta | ventilation |
+|---|---|---|---|---|
+| `features/bank-import/BankImportUpload.svelte` | 23 | 49 | **+26** | 2 pour le défaut (AC10 : recalcul, avis) ; 24 pour l'AC17 (table ci-dessous, lignes H1-H9) |
+| `features/bank-import/BankImportList.svelte` | 1 | 5 | **+4** | AC17, H10 |
+| `routes/(app)/bank-import/+page.svelte` | 3 | 4 | **+1** | AC17, H11 |
+
+`sitesTotal` de `frontend/src/lib/shared/i18n-keys.test.ts` passe donc de **2032 à 2063** (+31) sur la base
+`a2743fd4`, avec son commentaire ventilé (le patron du fichier). ⚠️ La 27-1 le porte à 2041 (+9) : à la fusion,
+2032 + 31 + 9 = **2072** — l'orchestrateur additionne les deltas, il ne prend pas l'un des deux nombres. Le
+refactor de `BankImportUpload.svelte` (T3) peut fusionner ou dédoubler des sites (deux `catch`, par exemple) :
+**recompter au dernier commit et ventiler l'écart**, ne pas recopier ces chiffres. `sitesNonResolus`, `relais`,
+`sitesGabarit` inchangés (que des littéraux), à mesurer.
 
 **AC12 — Manuel utilisateur (FR, `.tex` **et** PDF régénéré).** `docs/manual/fr/user-manual.tex` :
 
@@ -214,18 +253,96 @@ Recompter au dernier commit, ne pas recopier ce chiffre.
 
 - `CHANGELOG.md`, section `## [0.13.2] — Non publié` (à **créer** sur cette branche si absente : elle n'existe pas
   sur `a2743fd4` ; la 27-1 la crée aussi → conflit de fusion à résoudre par union), sous `### Corrigé` : changer de
-  profil après la prévisualisation la recalcule ; un import ne se fait plus avec un profil modifié depuis la
-  prévisualisation (`409 BANK_IMPORT_PREVIEW_STALE`, champ `previewFingerprint`) ([#626](…/issues/626)).
+  profil après la prévisualisation la recalcule ; **depuis l'écran**, un import ne se fait plus avec un profil
+  modifié depuis la prévisualisation (`409 BANK_IMPORT_PREVIEW_STALE`, champ `previewFingerprint`, facultatif pour un
+  client d'API) ; re-choisir le même fichier après un refus relance la prévisualisation ; les libellés de l'écran
+  d'import qui restaient en français sont traduits ([#626](…/issues/626)).
 - `docs/api-external.md` : sous § 7 (après la sous-section *Annuler un rapprochement bancaire* ou en sous-section
   propre *Importer un relevé*), décrire `previewFingerprint` (rendu par l'aperçu, facultatif à la création,
-  conseillé ; `409` / `400`), et l'**angle mort assumé** D12 : une création sans empreinte n'est pas contrôlée.
+  conseillé ; `409` / `400`), l'**angle mort assumé** D12 (une création sans empreinte n'est pas contrôlée), l'ordre
+  des refus et son **asymétrie** CSV / CAMT (AC8, C-27-3-24), et le cas D17 (empreinte envoyée **sans**
+  `bankProfileId` : un autre profil à motif concordant modifié entre-temps peut changer le profil résolu et rendre
+  `409`, à juste titre).
 
 ### Tests
 
-**AC14 — Chaque AC a un test qui rougirait** (§ Tests ci-dessous), et les mutations M1-M16 rougissent.
+**AC14 — Chaque AC a un test qui rougirait** (§ Tests ci-dessous), et les vingt mutations M1-M19 (M16 en deux,
+M16a et M16b) rougissent.
 
 **AC15 — Aucune migration, aucun bump.** Ni fichier sous `crates/kesh-db/migrations/`, ni `kesh_version_min_required`,
 ni version Cargo (la release 0.13.2 s'en charge). Une migration au diff signale une dérive.
+
+### Ajouts de la validation P1
+
+**AC16 — Re-choisir le même fichier relance l'aperçu (D16).** `handleFileInput` lit `input.files?.[0]`, puis remet
+`input.value = ''` **avant** d'appeler `handleFileSelect` : une nouvelle sélection du même fichier par « cliquer pour
+parcourir » émet alors `change`. C'est ce que promettent le manuel (« redéposez le fichier », `:1743`, `:1784`) et le
+message serveur `bank-import-csv-errors-amount-sign-refused-profile` (C-27-3-14, C-27-3-26). ⚠️ Constat **raisonné,
+non exécuté** à la validation : à la base `a2743fd4`, après un refus (`preview` nul), la zone et son `<input>` restent
+montés avec leur valeur, et les navigateurs n'émettent pas `change` pour une sélection identique ; l'AC2 démonte en
+outre la zone pendant tout aperçu, ce qui suffirait en pratique — la ligne explicite tient la promesse sans dépendre
+du rendu.
+
+**AC17 — Les libellés restés en dur sur l'écran d'import sont traduits (C-27-3-25).** Périmètre : l'écran
+`/bank-import` — `routes/(app)/bank-import/+page.svelte` et les trois composants qu'il rend,
+`BankImportUpload.svelte`, `BankImportList.svelte`, `BankProfileSelector.svelte`. **Inventaire clos** des nœuds de
+texte et littéraux affichés qui n'appellent pas `i18nMsg` à la base `a2743fd4` (relevé par
+`grep -nE ">[^<{}]*[A-Za-zé]{2,}[^<{}]*<"` et lecture des `errorMessage = '…'`), chacun résolu ou écrit comme non
+résolu. Les textes fr-CH sont **repris à l'identique** (aucune reformulation : le manuel, les E2E et les captures
+restent vrais) ; aucun E2E ne lit ces libellés (`grep` des `bank-*.spec.ts` : aucun).
+
+| # | Site (base `a2743fd4`) | Texte | Clé | Sites |
+|---|---|---|---|---|
+| H1 | `BankImportUpload.svelte:241` | `— Sélectionner un compte —` | `bank-import-labels-bank-account-placeholder` (« Sélectionner un compte » ; cadratins dans le balisage, patron `BankProfileSelector.svelte:50`) | 1 |
+| H2 | `:110` | `Sélectionnez d'abord un compte bancaire.` | `bank-import-errors-bank-account-required` | 1 |
+| H3 | `:150`, `:185` | `Erreur inattendue.` | **`error-unexpected`** (globale existante, repli identique) | 2 |
+| H4 | `:305` | `Chargement…` | **`common-loading`** (globale existante, repli identique) | 1 |
+| H5 | `:331-333`, `:503-505` | `Ligne`, `Code`, `Valeur` (deux tables : refus de signe, lignes invalides) | `bank-import-labels-col-line`, `-col-code`, `-col-value` | 6 |
+| H6 | `:360-371` | `IBAN`, `Période`, `Devise`, `Solde ouverture`, `Solde clôture`, `Nombre de transactions` | `bank-import-labels-iban`, `-period`, `-currency`, `-opening-balance`, `-closing-balance`, `-transaction-count` | 6 |
+| H7 | `:426-428` | `Index`, `ID existant`, `Clé` | `bank-import-labels-duplicate-col-index`, `-duplicate-col-existing-id`, `-duplicate-col-key` | 3 |
+| H8 | `:629` | `statement(s) ignoré(s) (autres IBAN dans le fichier).` (précédé du nombre) | `bank-import-labels-ignored-statements-summary` — le nombre reste **hors** du message, patron de `bank-import-warnings-duplicate-lines-summary` (`:416-421`) : aucune variable Fluent | 1 |
+| H9 | `:637-639` | `Date`, `Montant`, `Détails` | `bank-import-labels-tx-col-date`, `-tx-col-amount`, `-tx-col-details` | 3 |
+| H10 | `BankImportList.svelte:24-27` | `Date import`, `Fichier`, `Période`, `Transactions` | `bank-import-labels-list-col-imported-at`, `-list-col-filename`, **`-period`** (la clé de H6, même sens), `-list-col-transactions` | 4 |
+| H11 | `routes/(app)/bank-import/+page.svelte:54` | `Chargement…` | **`common-loading`** | 1 |
+
+**Non résolus, assumés** : `Δ =` (`BankImportUpload.svelte:579`, avertissement d'écart de solde — symbole), les
+cadratins `—` et flèches `→` des cellules, les codes bruts `<code>{line.code}</code>` (le libellé traduit est
+juste à côté, `csvLineErrorLabel`) et le repli brut du gabarit `bank-import-info-*` (existant, borné par
+`sitesGabarit`). `BankProfileSelector.svelte` n'a aucun libellé en dur. **Hors périmètre** : la fiche d'import
+`routes/(app)/bank-import/[id]/+page.svelte` (une quinzaine de libellés en dur, `:55-101`) et `profiles/[id]/+page.svelte:40`
+— autres écrans ; la 27-1 modifie la fiche d'import juste après le bloc `<dl>` (`@@ -93,6 +103,8 @@`), d'où un conflit
+certain. Signalé à l'orchestrateur (C-27-3-25).
+
+Clés neuves de l'AC17, placées avec celles de l'AC10 :
+
+| Clé | fr-CH | de-CH | it-CH | en-CH |
+|---|---|---|---|---|
+| `bank-import-labels-bank-account-placeholder` | Sélectionner un compte | Konto auswählen | Selezionare un conto | Select an account |
+| `bank-import-errors-bank-account-required` | Sélectionnez d'abord un compte bancaire. | Wählen Sie zuerst ein Bankkonto aus. | Selezionate prima un conto bancario. | Select a bank account first. |
+| `bank-import-labels-col-line` | Ligne | Zeile | Riga | Line |
+| `bank-import-labels-col-code` | Code | Code | Codice | Code |
+| `bank-import-labels-col-value` | Valeur | Wert | Valore | Value |
+| `bank-import-labels-iban` | IBAN | IBAN | IBAN | IBAN |
+| `bank-import-labels-period` | Période | Zeitraum | Periodo | Period |
+| `bank-import-labels-currency` | Devise | Währung | Valuta | Currency |
+| `bank-import-labels-opening-balance` | Solde ouverture | Anfangssaldo | Saldo iniziale | Opening balance |
+| `bank-import-labels-closing-balance` | Solde clôture | Schlusssaldo | Saldo finale | Closing balance |
+| `bank-import-labels-transaction-count` | Nombre de transactions | Anzahl Transaktionen | Numero di transazioni | Number of transactions |
+| `bank-import-labels-duplicate-col-index` | Index | Index | Indice | Index |
+| `bank-import-labels-duplicate-col-existing-id` | ID existant | Bestehende ID | ID esistente | Existing ID |
+| `bank-import-labels-duplicate-col-key` | Clé | Schlüssel | Chiave | Key |
+| `bank-import-labels-ignored-statements-summary` | statement(s) ignoré(s) (autres IBAN dans le fichier). | Auszug/Auszüge ignoriert (andere IBAN in der Datei). | estratto/i ignorato/i (altri IBAN nel file). | statement(s) ignored (other IBANs in the file). |
+| `bank-import-labels-tx-col-date` | Date | Datum | Data | Date |
+| `bank-import-labels-tx-col-amount` | Montant | Betrag | Importo | Amount |
+| `bank-import-labels-tx-col-details` | Détails | Details | Dettagli | Details |
+| `bank-import-labels-list-col-imported-at` | Date import | Importdatum | Data importazione | Import date |
+| `bank-import-labels-list-col-filename` | Fichier | Datei | File | File |
+| `bank-import-labels-list-col-transactions` | Transactions | Transaktionen | Transazioni | Transactions |
+
+Soit **21** clés neuves pour l'AC17 (H1 1, H2 1, H5 3, H6 6, H7 3, H8 1, H9 3, H10 3 — `-period` y est partagée
+avec H6 — = **21**, une ligne de table chacune) et **24** avec l'AC10, dans chacune des quatre locales ; deux
+clés globales réutilisées (`common-loading`, `error-unexpected`), sans clé neuve. Les replis sont identiques au
+fr-CH, y compris l'apostrophe droite de « d'abord » (texte actuel du site).
 
 ## Tasks / Subtasks
 
@@ -237,20 +354,21 @@ ni version Cargo (la release 0.13.2 s'en charge). Une migration au diff signale 
   - [ ] `MultipartFields` + `parse_multipart` : `preview_fingerprint: Option<String>`, garde de doublon, validation de forme.
   - [ ] `create` (CAMT) et `create_csv` (après `resolve_csv_profile`) : comparaison → `AppError::BankImportPreviewStale`.
   - [ ] `errors.rs` : variante `BankImportPreviewStale` (placée près de `BankCsvProfileNotFound`, `:740`, **pas** après `BankImportDuplicateFile` où la 27-1 insère) ; mapping `409`, code `BANK_IMPORT_PREVIEW_STALE`, `t("bank-import-errors-preview-stale", …)` (placé près de `:2237`).
-  - [ ] Tests unitaires dans le module neuf (U1-U4) ; tests d'intégration dans `crates/kesh-api/tests/bank_imports_e2e.rs` (I1-I10).
+  - [ ] `crates/kesh-api/tests/textes_coherents.rs` : entrée `("bank-import-errors-preview-stale", 1, &[])` dans la `TABLE` de `les_replis_rust_suivent_le_catalogue`, groupe `errors.rs` (AC10).
+  - [ ] Tests unitaires dans le module neuf (U1-U4) ; tests d'intégration dans `crates/kesh-api/tests/bank_imports_e2e.rs` (I1-I12), avec un helper **neuf** pour I6 (multipart **sans** `bankProfileId`, nom de fichier choisi) — sans modifier la signature de `send_csv` / `build_csv_multipart`, que la 27-1 emploie aussi.
 - [ ] **T2 — Client API et types** (AC5, AC6)
   - [ ] `bank-import.types.ts` : `previewFingerprint: string` dans `BankImportPreviewResponse`.
   - [ ] `bank-import.api.ts` : `BankImportFlags.previewFingerprint?: string`, ajouté par `appendFlags` ; test dans `bank-import.api.test.ts` (V11).
 - [ ] **T3 — Écran** (AC1-AC5, AC9)
-  - [ ] `BankImportUpload.svelte` : séparer `runPreview(file, reason)` (séquence, retrait de l'ancien aperçu, remise à zéro des cases, instantané à la réception, présélection AC4) des gestes `handleFileSelect` (dépôt) et `handleProfileChange(id)` (sélecteur) ; états `isPreviewing` / `isConfirming` (l'indicateur et le `disabled` du bouton en dérivent) ; `reset()` invalide la séquence ; `handleConfirm` depuis l'instantané, branche `BANK_IMPORT_PREVIEW_STALE` → `runPreview(…, 'stale')` + avis.
+  - [ ] `BankImportUpload.svelte` : séparer `runPreview(file, reason)` (séquence, retrait de l'ancien aperçu, remise à zéro des cases, instantané à la réception, présélection AC4) des gestes `handleFileSelect` (dépôt) et `handleProfileChange(id)` (sélecteur) ; états `isPreviewing` / `isConfirming` (l'indicateur et le `disabled` du bouton en dérivent) ; compteur de séquence en variable ordinaire (`let seq = 0`, pas `$state`) ; `reset()` invalide la séquence **et** remet `isPreviewing`, `isConfirming` et l'avis à leur état initial (AC3) ; `handleConfirm` depuis l'instantané, branche `BANK_IMPORT_PREVIEW_STALE` → `runPreview(…, 'stale')` + avis rendu hors du bloc `{#if preview}` (AC9) ; *Annuler* `disabled={isConfirming}` ; `handleFileInput` vide `input.value` (AC16).
   - [ ] `BankProfileSelector.svelte` : prop `disabled` (défaut `false`) ; le `<select>` de compte reçoit `disabled={isConfirming}`.
   - [ ] Mettre à jour le commentaire d'en-tête (machine d'état) et le commentaire L3 de `handleConfirm` (`:160-167`).
-  - [ ] Nouveau `BankImportUpload.test.ts` (V1-V10), patron `BankProfileForm.test.ts` (mocks avant import).
-- [ ] **T4 — i18n** (AC10, AC11) : trois clés × quatre locales ; `sitesTotal` 2032 → 2034 recompté.
+  - [ ] Nouveau `BankImportUpload.test.ts` (V1-V10, V12, V13), patron `BankProfileForm.test.ts` (mocks avant import).
+- [ ] **T4 — i18n** (AC10, AC11, AC17) : 24 clés × quatre locales (3 de l'AC10, 21 de l'AC17) ; sites H1-H11 de l'AC17 dans `BankImportUpload.svelte`, `BankImportList.svelte`, `routes/(app)/bank-import/+page.svelte` (deux clés globales réutilisées) ; `sitesTotal` 2032 → 2063 recompté et ventilé.
 - [ ] **T5 — E2E** (AC1, AC6, AC9) : deux tests dans `frontend/tests/e2e/bank-csv-import.spec.ts` (E1, E2).
 - [ ] **T6 — Manuel** (AC12) : `.tex`, `make fr`, PDF aplati contrôlé.
 - [ ] **T7 — CHANGELOG, `docs/api-external.md`** (AC13).
-- [ ] **T8 — Mutations** M1-M16 : chacune appliquée, test rouge constaté, restaurée (et le fichier **touché** après restauration : cargo garde sinon le binaire muté) ; tableau au Dev Agent Record.
+- [ ] **T8 — Mutations** M1-M19 (vingt, M16 en deux) : chacune appliquée, test rouge constaté, restaurée (et le fichier **touché** après restauration : cargo garde sinon le binaire muté) ; tableau au Dev Agent Record.
 - [ ] **T9 — Gates** au dernier commit de code : `scripts/test-fast.sh` (sous `flock`), `npm run check`, `npm run lint-i18n-ownership`, `npm run test:unit`, `npm run build`, **E2E complet** (8 échecs attendus de `docs/testing.md`, jugés fichier par fichier). Base remise à zéro avant le gate complet.
 
 ## Tests prescrits
@@ -266,7 +384,12 @@ ni version Cargo (la release 0.13.2 s'en charge). Une migration au diff signale 
 
 ### Intégration (`crates/kesh-api/tests/bank_imports_e2e.rs`, `#[sqlx::test(migrations = "../kesh-db/test-schema")]`)
 
-Helpers existants : `send_csv` (`:1607`), `create_test_bank_profile_csv` (`:690`), `build_csv_multipart` (`:711`).
+Helpers existants : `send_csv` (`:1607`), `create_test_bank_profile_csv` (`:690`), `build_csv_multipart` (`:711`),
+`post_ubs_profile` (`:1568`). L'empreinte passe par le paramètre `extra` (`("previewFingerprint", fp)`). ⚠️ `send_csv`
+envoie **toujours** `bankProfileId` et fixe le nom `ubs_synthetique.csv`, et `post_ubs_profile` crée le profil avec
+`"filenamePattern": null` : I6 (aperçu sur *Auto-détection*) exige un helper **neuf** — multipart sans
+`bankProfileId`, nom de fichier choisi, profil à motif posé (par `UPDATE` ou par un `POST` dédié). Ne pas modifier
+la signature des helpers existants (la 27-1 les emploie).
 
 - **I1** l'aperçu CSV **et** CAMT rend `previewFingerprint` (64 hex) ; deux aperçus identiques → même valeur.
 - **I2** création avec l'empreinte de l'aperçu → `201`.
@@ -281,8 +404,13 @@ Helpers existants : `send_csv` (`:1607`), `create_test_bank_profile_csv` (`:690`
   société → `409`.
 - **I8** empreinte mal formée → `400` ; champ dupliqué → `400`.
 - **I9** seul `updated_at` modifié entre aperçu et création → `201`.
-- **I10** précédence : fichier déjà importé **et** empreinte périmée, sans `confirmDuplicateFile` → `422
-  BANK_IMPORT_DUPLICATE_FILE` (AC8) ; CAMT avec empreinte d'un autre fichier → `409`.
+- **I10** précédence : CSV déjà importé **et** empreinte périmée, sans `confirmDuplicateFile` → `422
+  BANK_IMPORT_DUPLICATE_FILE` (AC8) ; CAMT avec empreinte d'un autre fichier → `409` ; CAMT déjà importé **et**
+  empreinte périmée, sans `confirmDuplicateFile` → `409` (l'asymétrie assumée de l'AC8, C-27-3-24).
+- **I11** profil **supprimé** entre l'aperçu et la création (D4), empreinte de l'aperçu envoyée → `404
+  BANK_CSV_NO_PROFILE_MATCH`, et non `409` (précédence AC8, mutation M16a).
+- **I12** compte bancaire inconnu de la société, empreinte quelconque bien formée → `404
+  BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` (précédence AC8).
 
 ### Vitest (`frontend/src/lib/features/bank-import/BankImportUpload.test.ts`, neuf)
 
@@ -300,13 +428,33 @@ profils), `$lib/shared/utils/i18n.svelte` (repli), et un `File` synthétique.
 - **V5** aperçu en erreur (`BANK_CSV_AMOUNT_SIGN_MISMATCH`), puis choix d'un autre profil → aperçu relancé avec le
   même fichier, erreur effacée.
 - **V6** *Confirmer* → `409 BANK_IMPORT_PREVIEW_STALE` → `previewBankImport` rappelé, avis
-  `bank-import-preview-recomputed` visible, `createBankImport` appelé **une** fois, `onSuccess` non appelé.
+  `bank-import-preview-recomputed` visible, `createBankImport` appelé **une** fois, `onSuccess` non appelé. L'erreur
+  simulée porte `status: 409` **numérique** en plus de `code` : `isApiError` (`api-client.ts:19-27`) exige les deux,
+  faute de quoi la branche n'est jamais prise. Variante : le recalcul échoue (refus de signe) → l'avis **et**
+  l'erreur sont visibles (AC9).
 - **V7** case `confirm-duplicate-file` cochée, puis changement de profil → la case du nouvel aperçu est **décochée**
   et *Confirmer* désactivé.
-- **V8** changement de compte pendant un aperçu en vol → la réponse tardive n'affiche rien.
-- **V9** pendant la confirmation (promesse retenue) : `bank-account-select` et `bank-profile-select` `disabled`.
-- **V10** *Annuler* pendant un aperçu en vol → rien ne s'affiche à la réponse.
+- **V8** changement de compte pendant un aperçu en vol (promesse retenue) → dès le changement,
+  `bank-import-loading` **absent** et `bank-import-drop-zone` **présente** ; la réponse tardive résolue ensuite
+  n'affiche ni aperçu ni erreur, et laisse la zone de dépôt affichée (AC3, C-27-3-20).
+- **V9** pendant la confirmation (promesse retenue) : `bank-account-select`, `bank-profile-select` **et**
+  `bank-import-cancel` `disabled` (D10, D15).
+- **V10** CAMT : aperçu rendu **sans** `csvProfileMatch`, sélecteur sur le profil A, *Confirmer* →
+  `createBankImport` appelé **sans** `bankProfileId` (instantané, AC5). C'est le seul état atteignable où le
+  sélecteur et l'instantané divergent ; il tue M6.
 - **V11** (`bank-import.api.test.ts`) `createBankImport(…, { previewFingerprint })` ajoute le champ ; absent sinon.
+- **V12** (AC16) choisir un fichier par l'`<input>` `bank-import-file-input` : le **setter** de `value` de cet élément
+  (espionné par `Object.defineProperty(input, 'value', { set, get, configurable: true })` avant l'événement) est
+  appelé avec `''`, après que `handleFileSelect` a reçu le fichier. Le dépôt ne passe pas par `@testing-library/user-event`
+  (absent de `frontend/package.json`) : `files` posé par `Object.defineProperty`, puis `fireEvent.change`.
+- **V13** (AC17) rendus avec un `i18nMsg` simulé qui rend **la clé** (mode du mock basculé pour ce seul test) :
+  (a) glisser un fichier **sans** compte choisi → `bank-import-errors-bank-account-required` ; (b) aperçu en vol →
+  `common-loading` ; (c) aperçu rejeté par une erreur qui n'est pas une `ApiError` → `error-unexpected` ; (d) aperçu
+  qui porte doublons de lignes, lignes invalides et relevés ignorés ; (e) refus de signe avec lignes ; (f)
+  `BankImportList` avec un import. Chacune des 21 clés de l'AC17 et les deux clés globales apparaissent dans le DOM
+  d'au moins un rendu, et aucun des textes fr de H1-H10 (`Ligne`, `Période`, `Nombre de transactions`…) n'y figure.
+  Le site H11 (`routes/(app)/bank-import/+page.svelte`) n'est tenu que par la borne `sitesTotal` (aucun test de
+  route dans ce dossier).
 
 ### E2E (`frontend/tests/e2e/bank-csv-import.spec.ts`)
 
@@ -314,15 +462,23 @@ Patron des tests 26-1 (`:315-404`, `createProfileViaUi`, `UBS_COLUMNS`, `importT
 `ubs_synthetique.csv` a déjà été **importée** par le test 26-1 (`:315`) : la réutiliser telle quelle ferait
 apparaître l'avertissement « fichier déjà importé » et ignorer les 11 lignes comme doublons. Dériver le contenu
 **en mémoire** (`buffer` de `setInputFiles`) en remplaçant l'année des dates (`2026-` → `2027-` pour E1, `2028-`
-pour E2 ; vérifier que l'année n'apparaît nulle part ailleurs dans la fixture) et un nom de fichier propre à chaque
-test (C-27-3-17). Noms de profils propres (`bank_name` unique par société).
+pour E2) et un nom de fichier propre à chaque test (C-27-3-17). Constaté à la validation P1 :
+`grep -o "2026-" crates/kesh-import/tests/fixtures/csv/ubs_synthetique.csv | wc -l` → 36, dont une seule occurrence
+hors date (le libellé `Facture 2026-014`, texte libre) : le remplacement global est inoffensif. Le dédoublonnage de
+lignes porte sur une plage de dates (`find_in_dedup_window`) : 2027 et 2028 sont disjointes de 2026. Noms de
+profils propres (`bank_name` unique par société), **motif vide** (`pattern: ''`, enregistré `null` par
+`BankProfileForm.svelte:73`) : aucun profil des deux tests n'est auto-détecté.
 
 - **E1** deux profils (« 27-3 moins » `negative`, « 27-3 sans signe » `positive`) ; choisir *sans signe*, déposer →
   refus `BANK_CSV_AMOUNT_SIGN_MISMATCH`, aucun aperçu ; choisir *moins* **sans redéposer** → aperçu, 11 transactions ;
   confirmer → l'import porte 11 montants dont 9 négatifs (somme en centimes, comme `:345-352`).
-- **E2** profil *moins*, dépôt → aperçu de 11 ; modifier le profil **par l'API** (`PUT /api/v1/bank-profiles/{id}`,
-  `debitSign: 'positive'`) — l'« autre onglet » ; *Confirmer* → avis `bank-import-preview-recomputed` visible, refus de
-  signe affiché, `importTotal` inchangé.
+- **E2** profil *moins*, dépôt → aperçu de 11 ; modifier le profil **par l'API** — l'« autre onglet » :
+  `GET /api/v1/bank-profiles/{id}`, puis `PUT` du même chemin avec un corps **complet** reconstruit des seuls champs de
+  `CreateOrUpdateBankProfileRequest` (`bankName`, `filenamePattern`, `columnMapping`, `dateFormat`,
+  `decimalSeparator`, `fieldSeparator`, `encoding`, `headerRowCount`, `debitSign: 'positive'`). ⚠️ Le `PUT` est un
+  remplacement complet en `deny_unknown_fields` (`crates/kesh-api/src/routes/bank_profiles.rs:86-100`), sans défaut pour `debitSign` : renvoyer
+  la réponse du `GET` telle quelle (`id`, `createdAt`, `updatedAt`) est refusé. *Confirmer* → avis
+  `bank-import-preview-recomputed` visible, refus de signe affiché, `importTotal` inchangé.
 
 ## Mutations (T8) — chacune doit faire rougir au moins le test nommé
 
@@ -330,12 +486,12 @@ test (C-27-3-17). Noms de profils propres (`bank_name` unique par société).
 |---|---|---|
 | M1 | `handleProfileChange` ne relance plus l'aperçu (pose seulement `bankProfileId`) | V1, V5, E1 |
 | M2 | relance par `$effect` sur `bankProfileId` au lieu du geste | V4 (deux appels) |
-| M3 | garde de séquence retirée (toute réponse s'applique) | V3, V8, V10 |
+| M3 | garde de séquence retirée (toute réponse s'applique) | V3, V8 |
 | M4 | l'ancien aperçu n'est pas retiré au début du recalcul | V2 |
 | M5 | cases non remises à zéro au recalcul | V7 |
-| M6 | `handleConfirm` envoie `bankProfileId` du sélecteur au lieu de l'instantané | V1 (variante : sélecteur changé pendant un recalcul en vol, confirmer impossible) — à défaut, I5 côté serveur |
+| M6 | `handleConfirm` envoie `bankProfileId` du sélecteur au lieu de l'instantané | V10 (CAMT : le sélecteur vaut A, l'instantané n'a aucun profil) |
 | M7 | branche `BANK_IMPORT_PREVIEW_STALE` retirée (erreur affichée comme une autre) | V6, E2 |
-| M8 | sélecteurs non désactivés pendant la confirmation | V9 |
+| M8 | sélecteurs **ou** *Annuler* non désactivés pendant la confirmation | V9 |
 | M9 | `appendFlags` n'envoie pas `previewFingerprint` | V11 |
 | M10 | création : comparaison d'empreinte retirée | I4, I5, I7, E2 |
 | M11 | empreinte : `debit_sign` lié à `_` (champ omis) | U2, I4 (ligne `debit_sign`) |
@@ -343,7 +499,16 @@ test (C-27-3-17). Noms de profils propres (`bank_name` unique par société).
 | M13 | empreinte : hash du fichier omis | U2, I7 |
 | M14 | empreinte : compte omis | U2, I7 |
 | M15 | empreinte : horodatages **inclus** | U3, I9 |
-| M16 | création CSV : comparaison **avant** `resolve_csv_profile`, sur un profil relu hors transaction — ou empreinte calculée sur le `bankProfileId` demandé au lieu du profil résolu | I6 |
+| M16a | création CSV : comparaison déplacée **avant** `resolve_csv_profile` (profil relu par l'id demandé hors transaction ; absent → `null` dans l'empreinte), si bien qu'un profil supprimé rend `409` au lieu de `404` | I11 |
+| M16b | création CSV : empreinte calculée sur le `bankProfileId` **demandé** au lieu du profil **résolu** | I6 (aperçu sans id, création avec l'id résolu → `409` au lieu de `201`) |
+| M17 | `handleFileInput` ne vide plus `input.value` | V12 |
+| M18 | un libellé de l'AC17 rendu en dur (par exemple `Ligne` remis dans la table du refus de signe) | V13, borne `sitesTotal` |
+| M19 | `reset()` ne remet plus `isPreviewing` à faux | V8 |
+
+Vingt mutations (M1-M15, M16a, M16b, M17-M19). ⚠️ **Non comptée, et écrite comme telle** : la variante « profil
+comparé relu **hors** transaction mais présent » est **équivalente** dans tout scénario déterministe — même valeur
+lue —, et la fenêtre qu'elle ouvrirait n'est observable que par une course ; elle est tenue par construction (une
+seule variable `profile`, comparée puis parsée, AC8, C-27-3-23).
 
 Une mutation qui survit se documente (équivalente, ou test ajouté), jamais en silence.
 
@@ -377,17 +542,20 @@ menace est le client **périmé**, pas le client malveillant (qui a le rôle d'i
 |---|---|---|---|
 | `crates/kesh-api/src/routes/bank_imports.rs` | `DELETE` après `detail` (~`:1339`), imports (`:9`, `:33`) | champ de réponse `:54`, multipart `:296-545`, `preview`/`create`/`preview_csv`/`create_csv` | hunks distincts ; vérifier le bloc `use` |
 | `crates/kesh-api/src/errors.rs` | variantes `:216`, `:693` ; mappings `:1496`, `:2180`, `:2466` | variante près de `:740`, mapping près de `:2237` | faible si l'emplacement prescrit est tenu |
-| `crates/kesh-i18n/locales/*/messages.ftl` | après `:1057`, `:1078`, `:1248`, `:2362`, `:11` | après `:1094` | faible |
+| `crates/kesh-i18n/locales/*/messages.ftl` | fr-CH après `:13`, `:1059`, `:1080`, `:1251`, `:2364` ; de/it/en-CH après `:13`, `:1002`, `:1021`, `:1187`, `:2310`-`:2316` | 24 clés après l'auto-détection : fr-CH `:1094`, de/it/en-CH `:1033` | faible (hunks distincts) |
+| `crates/kesh-api/tests/textes_coherents.rs` | trois entrées dans la `TABLE` de `les_replis_rust_suivent_le_catalogue`, groupe `errors.rs` (`@@ -699,6 +699,15 @@`) | une entrée dans le même groupe | **conflit probable** (même liste) → union des entrées |
+| `crates/kesh-i18n/src/loader.rs` | test `operation_forbidden_message_is_translated_and_distinct_from_its_neighbours` (+38) | non touché | aucun (listé pour que l'inventaire soit complet) |
 | `docs/manual/fr/user-manual.tex` + `.pdf` | `:248`, `:270`, `:1640`, insertion de 40 lignes après `:1718`, `:1870` | `:1697-1698`, `:1794-1807` | `.tex` : faible ; **PDF : conflit binaire certain** → régénérer après fusion |
 | `CHANGELOG.md` | crée `## [0.13.2] — Non publié` | idem | conflit certain → union |
 | `docs/api-external.md` | route `DELETE` | `previewFingerprint` | à vérifier |
-| `frontend/src/lib/shared/i18n-keys.test.ts` | `sitesTotal` 2032 → 2041 | 2032 → 2034 | conflit certain → **2043**, commentaires des deux |
+| `frontend/src/lib/shared/i18n-keys.test.ts` | `sitesTotal` 2032 → 2041 | 2032 → 2063 | conflit certain → **2072**, commentaires des deux |
 | `frontend/src/lib/features/bank-import/bank-import.api.ts` (+ `.test.ts`) | `deleteBankImport` | `previewFingerprint` | faible |
-| `crates/kesh-api/tests/bank_imports_e2e.rs` | +327 lignes | I1-I10 | ajout en fin de fichier des deux côtés → conflit probable, union |
+| `crates/kesh-api/tests/bank_imports_e2e.rs` | +327 lignes | I1-I12 | ajout en fin de fichier des deux côtés → conflit probable, union |
 | `_bmad-output/implementation-artifacts/sprint-status.yaml` | section `epic-27` | section `epic-27` créée ici aussi | conflit certain → union |
 
-`BankImportUpload.svelte`, `BankProfileSelector.svelte`, le module d'empreinte et `bank-csv-import.spec.ts` ne sont
-pas touchés par la 27-1.
+`BankImportUpload.svelte`, `BankProfileSelector.svelte`, `BankImportList.svelte`, `routes/(app)/bank-import/+page.svelte`,
+le module d'empreinte, `BankImportUpload.test.ts` et `bank-csv-import.spec.ts` ne sont pas touchés par la 27-1. La 27-1
+touche en revanche `routes/(app)/bank-import/[id]/+page.svelte`, que la 27-3 laisse tel quel (AC17, hors périmètre).
 
 ### Pièges
 
@@ -396,8 +564,12 @@ pas touchés par la 27-1.
   l'affectation programmatique (AC4).
 - `isLoading` sert aujourd'hui aux deux requêtes ; une réponse d'aperçu périmée qui l'éteint en `finally` rallumerait
   le bouton pendant que le dernier aperçu est en vol — d'où l'extinction conditionnée à la séquence (AC3, V3).
-- Le texte « Chargement… » (`:305`) est en dur : hors périmètre (pas de nouvelle clé pour lui), mais l'élément porte
-  désormais `role="status"`.
+- Le texte « Chargement… » (`:305`) était en dur : il passe par la clé globale `common-loading` (AC17, H4), et
+  l'élément porte désormais `role="status"`.
+- Le compteur de séquence en `$state` ferait dépendre le `$effect` du compte (`:75-81`) de lui, via `reset()` :
+  variable ordinaire (AC3).
+- *Annuler* n'est rendu qu'avec un aperçu (`:354`, `:665`) : ne pas tester ni documenter un *Annuler* pendant un aperçu
+  en vol (D11).
 - `serde_json::to_vec(&json!([...]))` est déterministe pour un tableau ; ne pas sérialiser un `HashMap`.
 - Après une mutation restaurée par `cp`/`mv`, **toucher** le fichier (mémoire « mutation restaurée, binaire périmé »).
 
@@ -431,3 +603,43 @@ composant (patron du dossier). Aucune dépendance neuve (`sha2`, `serde_json` d�
 - 2026-10-12 — Fiche créée (bmad-create-story, Opus 5.5, autonomie) : 16 AC (AC1-AC15 + AC1-bis), tâches T0-T9,
   tests U1-U4 / I1-I10 / V1-V11 / E1-E2, mutations M1-M16, inventaire D1-D14 ; choix C-27-3-1 à 19. Validation P1 à
   lancer (`27-3-validate-prompt-p1.md`).
+
+### Validation P1 (2026-10-12) — Sonnet, lentilles R et F
+
+Rapports hors dépôt : `kesh-gate-logs/27-3-validate-p1-F.md` (0 CRITICAL, 1 HIGH, 3 MEDIUM, 4 LOW) et
+`27-3-validate-p1-R.md` (0 CRITICAL, 0 HIGH, 4 MEDIUM, 8 LOW). Sept convergences (F1 = R3, F2 = R1, F3 = R2, F4 ≈ R4,
+F5 = R6, F6 ≈ R7, F7 = R11) : **4 défauts distincts au-dessus de LOW** (1 HIGH, 3 MEDIUM — les quatre MEDIUM de R
+recoupent le HIGH et les trois MEDIUM de F), tous appliqués, ainsi que les 9 LOW distincts. Remédiation par l'agent de
+remédiation (Opus 5.5), aucun code, aucun gate.
+
+| Finding | Sévérité | Décision |
+|---|---|---|
+| F1 / R3 — `reset()` n'éteint pas `isPreviewing` : écran figé après un changement de compte pendant un aperçu | HIGH | **Appliqué** : AC3 (reset éteint `isPreviewing`, `isConfirming`, l'avis) ; V8 asserte indicateur absent et zone présente ; T3 ; mutation M19 ; C-27-3-20 |
+| F2 / R1 — D11 / V10 inatteignables (*Annuler* n'existe pas pendant un aperçu) | MEDIUM | **Appliqué** : D11 réécrit « inatteignable » ; V10 retiré de M3 et réaffecté (F3) ; aucun *Annuler* ajouté à l'état de chargement ; C-27-3-21 |
+| F3 / R2 — M6 survit ; « à défaut, I5 » est une erreur de catégorie (test Rust contre une mutation Svelte) | MEDIUM | **Appliqué** : V10 = test CAMT (sélecteur sur A, instantané sans profil, `createBankImport` sans `bankProfileId`) ; M6 → V10 ; C-27-3-22 |
+| F4 / R4 — M16 (première forme) tuée par aucun test ; précédence 404 non testée | MEDIUM | **Appliqué** : I11 (profil supprimé → `404`), I12 (compte inconnu → `404`) ; M16 → M16a (→ I11) et M16b (→ I6) ; variante « hors transaction mais présent » écrite équivalente, non comptée, tenue par construction (AC8) ; C-27-3-23 |
+| F5 / R6 — *Annuler* pendant la confirmation, puis `409` : l'aperçu ressuscite | LOW | **Appliqué** : *Annuler* désactivé pendant la confirmation (AC3) ; ligne D15 ; V9 et M8 étendus ; C-27-3-21 |
+| F6 / R7 — `PUT` complet en `deny_unknown_fields` ; motif des profils E2E ; fixture ; `status` numérique de V6 ; avis hors `{#if preview}` | LOW | **Appliqué** : E2 décrit le corps reconstruit ; motif vide pour E1/E2 ; constat de la fixture écrit (36 « 2026- », un hors date, inoffensif) ; V6 exige `status: 409` ; AC9 rend l'avis hors du bloc |
+| F7 / R11 — précédence asymétrique CSV / CAMT, non documentée | LOW | **Appliqué** : asymétrie écrite à l'AC8 et à l'AC13 (`docs/api-external.md`), I10 étendu au CAMT ; C-27-3-24 |
+| F8 — compteur de séquence réactif | LOW | **Appliqué** : `let seq = 0` prescrit (AC3, T3, Pièges) |
+| F (note) — auto-détection côté API, `updated_at DESC` | — | **Appliqué** : ligne D17, écrite à l'AC13 |
+| R5 — repli `bank-import-errors-preview-stale` hors de la table des replis ; `textes_coherents.rs` / `loader.rs` absents des recouvrements | LOW | **Appliqué** : entrée à la `TABLE` de `les_replis_rust_suivent_le_catalogue` (AC10, T1) ; deux lignes au tableau des recouvrements (`textes_coherents.rs` : conflit probable, union ; `loader.rs` : non touché par la 27-3) |
+| R8 — I6 ne s'écrit pas avec les helpers existants | LOW | **Appliqué** : helper neuf prescrit, signatures existantes intactes (T1, § Intégration) |
+| R9 — titre et CHANGELOG sur-promettent (D12) | LOW | **Appliqué** : titre reformulé, CHANGELOG « depuis l'écran » ; C-27-3-27 |
+| R10 — numéros de lignes `.ftl` mélangés entre locales | LOW | **Appliqué** : numéros par locale (AC10, recouvrements) |
+| R12 — `handleFileInput` ne vide pas `input.value` | LOW | **Appliqué**, sur consigne de l'orchestrateur : défaut **réel au raisonnement** à la base (non exécuté — validation en lecture seule) ; AC16, D16, V12, M17 ; C-27-3-26 |
+
+**Élargissement du périmètre (consigne de l'orchestrateur)** : les libellés restés en dur sur l'écran d'import sont
+traduits ici (AC17, inventaire clos H1-H11, 21 clés neuves, deux globales réutilisées) au lieu d'être laissés hors
+périmètre — C-27-3-19 révisé par C-27-3-25. La fiche d'import `/bank-import/{id}` reste hors périmètre (conflit
+certain avec la 27-1) et est **signalée à l'orchestrateur**.
+
+**Nouveaux décomptes**, recomptés depuis la fiche (`grep -cE "^\*\*AC[0-9]+(-bis)? "`, `grep -oE "^- \*\*[UIVE][0-9]+\*\*"`,
+`grep -cE "^\| M[0-9]+[ab]? \|"`, `grep -cE "^\| D[0-9]+ \|"`, `grep -c "^### C-27-3-"` du registre) : **18 AC**
+(AC1-AC17 + AC1-bis), tests **U1-U4 / I1-I12 / V1-V13 / E1-E2** (31), **20 mutations** (M1-M15, M16a, M16b,
+M17-M19), inventaire **D1-D17**, choix **C-27-3-1 à 27**. i18n : **24 clés** neuves × 4 locales ; `sitesTotal`
+**2032 → 2063** (+31 : `BankImportUpload.svelte` 23 → 49, `BankImportList.svelte` 1 → 5,
+`routes/(app)/bank-import/+page.svelte` 3 → 4, comptés par `grep -o "i18nMsg("` sur `a2743fd4`), **2072** à la fusion
+avec la 27-1 (+9). Signal de découpage (CLAUDE.md, § splitting préventif) : non levé — première passe ; le périmètre
+grandit d'un écran (trois fichiers Svelte et les quatre `.ftl`), sans module neuf. Prompt de la P2 :
+`27-3-validate-prompt-p2.md` (Opus, lentilles R et F).

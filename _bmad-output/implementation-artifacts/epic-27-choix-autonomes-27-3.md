@@ -1,6 +1,7 @@
 # Epic 27 — choix autonomes de la Story 27-3 (à fusionner dans `epic-27-choix-autonomes.md`)
 
-*Écrit le 2026-10-12 par l'agent de spécification (Opus 5.5), en autonomie. Le registre de l'epic vit sur la branche
+*Écrit le 2026-10-12 par l'agent de spécification (Opus 5.5), en autonomie ; C-27-3-20 à 27 ajoutés le même jour
+par l'agent de remédiation de la validation P1. Le registre de l'epic vit sur la branche
 de la 27-1 (`story/27-1-supprimer-import`, non mergée) : l'orchestrateur fusionne ce fichier par **union**, sans
 renuméroter (préfixe `C-27-3-`, propre à cette story). Chaque choix : contexte, retenu, écarté, réversibilité.*
 
@@ -31,6 +32,9 @@ Fiche : `27-3-profil-apres-apercu.md`. Issue #626 (P2).
   deux sélecteurs sont `disabled` (un changement à ce moment ne peut plus rien corriger).
 - **Écarté** : anti-rebond (délai arbitraire, test plus fragile) ; désactiver les sélecteurs pendant l'aperçu
   (perte du focus clavier à chaque flèche).
+- **Précisé à la validation P1** : *Annuler* n'est jamais rendu pendant un aperçu (il vit dans le bloc
+  `{#if preview}`) — seul le changement de compte invalide un aperçu en vol ; *Annuler* est désactivé avec les
+  sélecteurs pendant la confirmation (C-27-3-21).
 - **Réversible** : oui.
 
 ### C-27-3-4 — Pendant le recalcul : ancien aperçu retiré, zone de dépôt masquée, texte « Recalcul… », cases remises à zéro
@@ -164,3 +168,98 @@ Fiche : `27-3-profil-apres-apercu.md`. Issue #626 (P2).
   `sitesTotal` +2 (AC11).
 - **Réversible** : oui. **À signaler à l'orchestrateur** : issue P4 éventuelle pour les libellés en dur de l'écran
   d'import.
+- **Révisé à la validation P1 (2026-10-12)** : sur consigne de l'orchestrateur (le nombre de bugs doit baisser à la
+  release, pas de nouvelle issue), les libellés en dur de l'écran d'import sont **traduits dans cette story** —
+  C-27-3-25. Ce choix-ci reste pour l'historique ; la proposition d'issue P4 est retirée.
+
+## Validation P1 (2026-10-12) — choix de remédiation
+
+### C-27-3-20 — `reset()` éteint les indicateurs et l'avis, en plus d'invalider la séquence
+
+- **Contexte** : F1 (HIGH) / R3. Une réponse périmée n'éteint plus l'indicateur (AC3) ; si `reset()` (changement de
+  compte pendant un aperçu) ne le fait pas non plus, `isPreviewing` reste vrai, la zone de dépôt reste masquée
+  (AC2) et l'écran est bloqué jusqu'au rechargement.
+- **Retenu** : `reset()` remet `isPreviewing` et `isConfirming` à faux et efface l'avis de l'AC9 ; V8 asserte
+  l'indicateur absent et la zone présente, dès le changement et après la réponse tardive ; mutation M19.
+- **Écarté** : éteindre l'indicateur dans le `finally` de toute réponse (rallume *Confirmer* pendant qu'un aperçu
+  plus récent est en vol — le piège déjà écrit aux Dev Notes).
+- **Réversible** : oui.
+
+### C-27-3-21 — Pas d'*Annuler* pendant un aperçu ; *Annuler* désactivé pendant la confirmation
+
+- **Contexte** : F2 / R1 — D11 et V10 supposaient un *Annuler* pendant un aperçu en vol, or le bouton n'est rendu
+  qu'avec un aperçu (`:354`) que l'AC2 retire. F5 / R6 — pendant une confirmation, *Annuler* reste actif ; suivi d'un
+  `409`, il ferait réapparaître l'aperçu après l'annulation.
+- **Retenu** : D11 réécrit « inatteignable » (la sortie pendant un aperçu est le changement de compte, D5) ; V10 et la
+  mention de V10 en M3 retirées, V10 réaffecté (C-27-3-22) ; *Annuler* `disabled` pendant la confirmation, comme les
+  sélecteurs (AC3, D15, V9, M8).
+- **Écarté** : rendre un *Annuler* dans l'état de chargement (un site d'invalidation de plus à tester, pour un
+  aperçu qui dure une requête sans écriture) ; garder *Annuler* actif et garder la relance `409` par un jeton de
+  séquence capturé au début de la confirmation (deux mécanismes là où un `disabled` suffit, et plus aucun geste ne
+  peut invalider la confirmation une fois les trois contrôles désactivés).
+- **Réversible** : oui.
+
+### C-27-3-22 — M6 est tuée par un test CAMT, et non par un test serveur
+
+- **Contexte** : F3 / R2 — M6 renvoyait à I5, test Rust qui ne peut pas tuer une mutation du Svelte (erreur de
+  catégorie), et à une variante de V1 contradictoire avec l'AC2. Sélecteur et instantané ne divergent que pour un
+  CAMT (l'instantané n'envoie aucun profil).
+- **Retenu** : V10 réécrit — aperçu sans `csvProfileMatch`, sélecteur sur A, *Confirmer* → `createBankImport` sans
+  `bankProfileId`.
+- **Écarté** : déclarer M6 équivalente (elle ne l'est pas : le CAMT la distingue).
+- **Réversible** : oui.
+
+### C-27-3-23 — M16 en deux ; la fenêtre transactionnelle est tenue par construction, non par un test
+
+- **Contexte** : F4 / R4 — la première forme de M16 (comparaison avant la résolution, profil relu hors transaction)
+  n'était tuée par aucun test, et la précédence de l'AC8 n'était testée qu'à moitié.
+- **Retenu** : I11 (profil supprimé → `404`, non `409`) et I12 (compte inconnu → `404`) ; M16a (comparaison déplacée
+  avant la résolution, un profil supprimé rend `409`) → I11 ; M16b (empreinte sur l'id demandé) → I6. La variante
+  « relu hors transaction mais présent » est écrite **équivalente** en test déterministe, non comptée, tenue par
+  construction (une seule variable `profile` comparée puis parsée).
+- **Écarté** : un test de concurrence (injection d'un `UPDATE` entre lecture et parse : outillage absent, test
+  fragile pour une fenêtre que le code ferme par construction).
+- **Réversible** : oui.
+
+### C-27-3-24 — Précédence asymétrique entre CSV et CAMT : conservée, écrite et testée
+
+- **Contexte** : F7 / R11 — CSV : `422 DUPLICATE_FILE` avant `409` ; CAMT : `409` avant `422 DUPLICATE_FILE` (la
+  détection de doublon CAMT se fait dans la transaction, la comparaison avant).
+- **Retenu** : conserver ; écrire l'ordre à `docs/api-external.md` (AC13) ; I10 teste le cumul pour les deux formats.
+- **Écarté** : déplacer la comparaison CAMT dans la transaction après la détection de doublon (aligne l'ordre, mais
+  ouvre une transaction pour rien sur un import refusé) ; aucune incidence fonctionnelle à aligner.
+- **Réversible** : oui.
+
+### C-27-3-25 — Les libellés en dur de l'écran d'import sont traduits dans cette story
+
+- **Contexte** : C-27-3-19 les laissait hors périmètre ; l'orchestrateur demande de les traduire ici, dans les quatre
+  locales, sans ouvrir d'issue.
+- **Retenu** : AC17 — périmètre l'écran `/bank-import` (page et trois composants), inventaire clos H1-H11 avec ses
+  non-résolus assumés (symboles, codes bruts, gabarit `bank-import-info-*`) ; textes fr-CH repris à l'identique ; deux
+  clés globales réutilisées (`common-loading`, `error-unexpected`, autorisées par `lint-i18n-ownership`), 21 clés
+  neuves, une clé partagée entre l'aperçu et la liste (`bank-import-labels-period`) ; `sitesTotal` 2032 → 2063, 2072
+  à la fusion avec la 27-1.
+- **Écarté** : traduire aussi la fiche d'import `/bank-import/{id}` (une quinzaine de libellés en dur) — autre écran,
+  modifié par la 27-1 au bloc adjacent : conflit certain. **Signalé à l'orchestrateur**, qui décide (après la fusion
+  de la 27-1 : une story ou une issue). Reformuler les textes fr (« Solde d'ouverture », « relevé(s) ») — hors du
+  défaut, et ferait mentir des captures.
+- **Réversible** : oui.
+
+### C-27-3-26 — `handleFileInput` vide `input.value`
+
+- **Contexte** : R12 — l'`<input type=file>` n'est jamais vidé ; après un refus, la zone reste montée et re-choisir
+  le même fichier n'émet pas `change`, alors que le manuel et le message serveur disent « redéposez le fichier ».
+  Constat raisonné, non exécuté (la validation est en lecture seule) ; l'AC2 démonte la zone pendant tout aperçu,
+  ce qui le ferme en pratique, mais par accident de rendu.
+- **Retenu** : AC16 — une ligne, `input.value = ''` après lecture du fichier ; V12 (espion du setter, `user-event`
+  absent) ; mutation M17.
+- **Écarté** : s'en remettre au démontage de l'AC2 (une évolution du rendu rouvrirait le défaut en silence).
+- **Réversible** : oui.
+
+### C-27-3-27 — Le titre et le CHANGELOG disent « depuis l'écran »
+
+- **Contexte** : R9 — « le serveur refuse un import jamais prévisualisé » sur-promet : un client sans empreinte
+  importe (D12).
+- **Retenu** : titre « … refuse un import dont le profil a changé depuis l'aperçu » ; CHANGELOG « depuis l'écran » et
+  « facultatif pour un client d'API ». Le nom du fichier de la fiche ne change pas.
+- **Réversible** : oui.
