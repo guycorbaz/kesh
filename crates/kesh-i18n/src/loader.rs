@@ -689,6 +689,44 @@ mod tests {
         }
     }
 
+    /// Story 27-1 (C-27-1-16, #632) — même patron, pour le troisième code de
+    /// refus des clés d'API : `error-api-key-operation-forbidden` (la
+    /// suppression d'un import bancaire, route Comptable). Présent et traduit
+    /// dans les quatre locales, et **distinct** de ses deux voisins : un calque
+    /// qui copierait le message de gestion de clés ou celui d'administration
+    /// satisferait toutes les autres clauses, et mentirait à l'appelant.
+    #[test]
+    fn operation_forbidden_message_is_translated_and_distinct_from_its_neighbours() {
+        let bundle = I18nBundle::load(&locales_dir()).unwrap();
+        const KEY: &str = "error-api-key-operation-forbidden";
+        const NEIGHBOURS: [&str; 2] = [
+            "error-api-key-management-forbidden",
+            "error-api-key-admin-forbidden",
+        ];
+
+        let fr = bundle.format(&Locale::FrCh, KEY, None);
+        assert_ne!(fr, KEY, "{KEY} doit exister en fr-CH");
+        for locale in [Locale::DeCh, Locale::ItCh, Locale::EnCh] {
+            let msg = bundle.format(&locale, KEY, None);
+            assert_ne!(msg, KEY, "{KEY} doit exister en {locale:?}");
+            assert_ne!(
+                msg, fr,
+                "{KEY} en {locale:?} vaut le libellé FRANÇAIS — la clé est \
+                 absente de cette locale et le loader replie en silence"
+            );
+        }
+        for locale in [Locale::FrCh, Locale::DeCh, Locale::ItCh, Locale::EnCh] {
+            for neighbour in NEIGHBOURS {
+                assert_ne!(
+                    bundle.format(&locale, KEY, None),
+                    bundle.format(&locale, neighbour, None),
+                    "en {locale:?}, le message d'opération interdite est IDENTIQUE \
+                     à {neighbour}"
+                );
+            }
+        }
+    }
+
     #[test]
     fn format_unknown_key_returns_key() {
         let bundle = I18nBundle::load(&locales_dir()).unwrap();

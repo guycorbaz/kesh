@@ -11,6 +11,7 @@ error-forbidden = Accès interdit
 error-api-key-read-only = Cette clé API est en lecture seule (scope « read »). Seules les requêtes GET sont autorisées.
 error-api-key-management-forbidden = La gestion des clés API n'est pas autorisée via une clé API. Utilisez l'interface web.
 error-api-key-admin-forbidden = Les routes d'administration ne sont pas accessibles via une clé API, quel que soit le rôle de son créateur. Utilisez l'interface web.
+error-api-key-operation-forbidden = Cette opération n'est pas accessible via une clé API. Utilisez l'interface web.
 error-cannot-disable-self = Impossible de désactiver son propre compte
 error-cannot-disable-last-admin = Impossible de désactiver le dernier administrateur
 
@@ -1057,6 +1058,7 @@ bank-import-errors-balance-mismatch = Le solde de clôture ne correspond pas à 
 bank-import-errors-unsupported-currency = Devise non supportée. Seul le franc suisse (CHF) est pris en charge dans cette version.
 bank-import-errors-no-matching-statement = Aucun statement du fichier ne correspond au compte bancaire sélectionné.
 bank-import-errors-duplicate-file = Ce fichier a déjà été importé pour cette entreprise.
+bank-import-errors-has-reconciled-transactions = { $count } transaction(s) de cet import sont rapprochées : annulez d'abord leur rapprochement pour pouvoir le supprimer.
 bank-import-errors-bank-account-not-found = Compte bancaire introuvable.
 bank-import-errors-parse-failed = Le fichier CAMT.053 n'a pas pu être analysé.
 
@@ -1078,6 +1080,15 @@ bank-import-labels-drop-zone = Glissez votre fichier CAMT.053 ou CSV ici ou cliq
 bank-import-labels-preview-title = Prévisualisation
 bank-import-labels-confirm-import = Confirmer l'import
 bank-import-labels-cancel = Annuler
+# Story 27-1 (#632) — supprimer un import dont aucune transaction n'est rapprochée
+bank-import-delete-button = Supprimer l'import
+bank-import-delete-blocked = { $count } transaction(s) de cet import sont rapprochées. Pour supprimer l'import, annulez d'abord leur rapprochement.
+bank-import-delete-dialog-title = Supprimer cet import ?
+bank-import-delete-dialog-body = Le fichier { $filename } (période du { $from } au { $to }) et ses { $count } transaction(s) seront supprimés. Vous pourrez ensuite réimporter le même fichier. Cette suppression ne peut pas être annulée.
+bank-import-delete-dialog-confirm = Supprimer définitivement
+bank-import-delete-error-reconciled = Une transaction de cet import a été rapprochée entre-temps ({ $count }) : rechargez la page.
+bank-import-delete-error-not-found = Cet import n'existe plus : il a peut-être déjà été supprimé.
+bank-import-delete-success = Import { $filename } supprimé.
 bank-import-labels-confirm-balance-mismatch = Importer malgré l'écart de solde
 # Story 8-3 — labels confirm flags + KF #70
 bank-import-labels-confirm-duplicate-file = Importer malgré le fichier déjà importé
@@ -1248,7 +1259,7 @@ bank-accounts-actions-submit = Lier
 bank-accounts-errors-account-not-found = Compte du plan comptable non trouvé.
 bank-accounts-errors-invalid-account-type = Type de compte invalide (Actif ou Passif requis).
 # Story v014-1 — CRUD bank_accounts post-onboarding
-bank-accounts-errors-has-transactions = Le compte bancaire contient des transactions — archivage refusé pour préserver l'audit comptable.
+bank-accounts-errors-has-transactions = Le compte bancaire contient des transactions — archivage refusé pour préserver l'audit comptable. Les imports dont aucune transaction n'est rapprochée peuvent être supprimés (Quotidien → Importer des relevés).
 bank-accounts-errors-cannot-archive-primary = Le compte principal ne peut pas être archivé tant qu'un autre compte non-archivé existe. Définissez d'abord un autre compte comme principal, puis archivez celui-ci.
 bank-accounts-errors-onboarding-not-complete = L'onboarding doit être terminé (étape 7 complétée) avant de pouvoir gérer les comptes bancaires.
 # Story v014-1 — CRUD UI labels & actions
@@ -2362,6 +2373,7 @@ audit-log-action-bank-account-created = Compte bancaire créé
 audit-log-action-bank-account-updated = Compte bancaire modifié
 audit-log-action-bank-account-archived = Compte bancaire archivé
 audit-log-action-bank-import-created = Import bancaire effectué
+audit-log-action-bank-import-deleted = Import bancaire supprimé
 audit-log-action-bank-profile-created = Profil bancaire créé
 audit-log-action-bank-profile-updated = Profil bancaire modifié
 audit-log-action-bank-profile-deleted = Profil bancaire supprimé

@@ -1622,7 +1622,8 @@ async fn post_reject_marks_transactions_as_manually_reviewed(pool: MySqlPool) {
     .unwrap();
     assert_eq!(count, 2);
 
-    // 1 entrée audit log (batch) avec entity_id = tx_ids[0] + count = 2.
+    // 1 entrée audit log (batch) avec entity_id = plus petit ID du lot
+    // (lot trié, Story 27-1 AC4-bis ; ici `tx_ids` est déjà croissant) + count = 2.
     let row: (String, String, i64, Value) = sqlx::query_as(
         "SELECT action, entity_type, entity_id, details_json FROM audit_log \
          WHERE action = 'reconciliation.rejected' ORDER BY id DESC LIMIT 1",
@@ -1632,10 +1633,92 @@ async fn post_reject_marks_transactions_as_manually_reviewed(pool: MySqlPool) {
     .unwrap();
     assert_eq!(row.0, "reconciliation.rejected");
     assert_eq!(row.1, "bank_transaction");
-    assert_eq!(row.2, tx_ids[0], "entity_id = 1er ID du batch");
+    assert_eq!(row.2, tx_ids[0], "entity_id = plus petit ID du lot");
     assert_eq!(row.3["count"].as_i64().unwrap(), 2);
     let ids_json = row.3["bank_transaction_ids"].as_array().unwrap();
     assert_eq!(ids_json.len(), 2);
+}
+
+/// Story 27-1 (AC4-bis, H7, #632) — le lot de rejet est traité par
+/// identifiant **croissant**, quel que soit l'ordre reçu : `rejected[]` sort
+/// trié, et la trace prend le plus petit identifiant pour `entity_id`. C'est
+/// ce qui ferme le cycle avec la suppression d'un import, qui verrouille ses
+/// transactions dans le même ordre.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn post_reject_processes_the_batch_by_increasing_id(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("reject_sorted"),
+        day,
+        day,
+        vec![
+            make_new_tx(
+                ctx.company_id,
+                ctx.bank_account_id,
+                day,
+                Some(day),
+                dec!(100.00),
+                "CHF",
+                "REF-1",
+                None,
+            ),
+            make_new_tx(
+                ctx.company_id,
+                ctx.bank_account_id,
+                day,
+                Some(day),
+                dec!(200.00),
+                "CHF",
+                "REF-2",
+                None,
+            ),
+        ],
+    )
+    .await;
+    let (lo, hi) = (tx_ids[0].min(tx_ids[1]), tx_ids[0].max(tx_ids[1]));
+
+    let app = spawn_app(pool.clone()).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/reject"))
+        .bearer_auth(&ctx.jwt)
+        .json(&serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "bankTransactionIds": [hi, lo],
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let got: Vec<i64> = body["rejected"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["bankTransactionId"].as_i64().unwrap())
+        .collect();
+    assert_eq!(got, vec![lo, hi], "rejected[] par identifiant croissant");
+
+    let row: (i64, Value) = sqlx::query_as(
+        "SELECT entity_id, details_json FROM audit_log \
+         WHERE action = 'reconciliation.rejected' ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(row.0, lo, "entity_id = plus petit identifiant du lot");
+    let traced: Vec<i64> = row.1["bank_transaction_ids"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_i64().unwrap())
+        .collect();
+    assert_eq!(traced, vec![lo, hi], "details_json trié");
 }
 
 /// AC #54 — POST reject sur tx déjà reconciled → failed +

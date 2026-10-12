@@ -3076,7 +3076,14 @@ pub async fn post_reject(
     // Story 17-2a (DC5 cat ii) — attribution PAT propagée dans les helpers/closures.
     let actor_api_key_id = current_user.api_key_id;
     let company_id = current_user.company_id;
-    let ids = body.bank_transaction_ids.clone();
+    // Story 27-1 (AC4-bis, #632) — verrouiller par identifiant CROISSANT, comme
+    // la suppression d'un import (`bank_imports::delete_unreconciled_in_tx`) :
+    // un lot `[7, 3]` contre une suppression qui tient 3 et attend 7 formerait
+    // un cycle, et cette route n'est pas rejouée (une 1213 rendrait 500). Les
+    // doublons sont refusés plus haut : le tri ne change pas l'ensemble traité.
+    // Effets : `rejected[]`, `failed[]` et la trace sortent triés.
+    let mut ids = body.bank_transaction_ids.clone();
+    ids.sort_unstable();
 
     let lock_result = with_account_lock(
         &mut tx_outer,
@@ -3254,7 +3261,8 @@ async fn reject_batch(
         });
     }
 
-    // Audit log unique pour le batch (HP3-2 Pass 3 — entity_id = first id).
+    // Audit log unique pour le batch (HP3-2 Pass 3 — entity_id = plus petit
+    // identifiant rejeté, le lot étant trié — Story 27-1, AC4-bis).
     if !rejected.is_empty() {
         let success_ids: Vec<i64> = rejected.iter().map(|r| r.bank_transaction_id).collect();
         let details = serde_json::json!({

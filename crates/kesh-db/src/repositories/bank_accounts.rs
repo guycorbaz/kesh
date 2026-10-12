@@ -734,6 +734,13 @@ pub async fn flip_primary_off_for_company(
 /// BANK_ACCOUNT_HAS_TRANSACTIONS si une transaction (pending ou reconciled)
 /// existe. `bank_transactions` n'a pas de colonne `archived` — comptage
 /// inconditionnel (auditabilité CO Art. 958f).
+///
+/// ⚠️ La garde compte les lignes **présentes** : depuis la Story 27-1 (#632),
+/// la suppression d'un import non rapproché
+/// (`bank_imports::delete_unreconciled_in_tx`) en retire — tracée
+/// `bank_import.deleted` (fichier, empreinte, période, nombres). Un compte dont
+/// tous les imports ont été supprimés peut donc s'archiver ; l'auditabilité
+/// passe alors par la trace, non par la conservation des lignes (C-27-1-12).
 pub async fn count_transactions_for_bank_account(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,

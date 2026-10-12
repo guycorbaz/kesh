@@ -11,6 +11,7 @@ error-forbidden = Access denied
 error-api-key-read-only = This API key is read-only (scope "read"). Only GET requests are allowed.
 error-api-key-management-forbidden = API key management is not allowed via an API key. Use the web interface.
 error-api-key-admin-forbidden = Administration routes are not reachable with an API key, whatever the role of its creator. Use the web interface.
+error-api-key-operation-forbidden = This operation is not reachable with an API key. Use the web interface.
 error-cannot-disable-self = Cannot disable your own account
 error-cannot-disable-last-admin = Cannot disable the last administrator
 
@@ -1000,6 +1001,7 @@ bank-import-errors-balance-mismatch = The closing balance does not match the sum
 bank-import-errors-unsupported-currency = Unsupported currency. Only Swiss francs (CHF) are accepted in this version.
 bank-import-errors-no-matching-statement = No statement in the file matches the selected bank account.
 bank-import-errors-duplicate-file = This file has already been imported for this company.
+bank-import-errors-has-reconciled-transactions = { $count } transaction(s) of this bank import are reconciled: cancel their reconciliation first to be able to delete it.
 bank-import-errors-bank-account-not-found = Bank account not found.
 bank-import-errors-parse-failed = The CAMT.053 file could not be parsed.
 
@@ -1019,6 +1021,15 @@ bank-import-labels-drop-zone = Drop your CAMT.053 or CSV file here or click to b
 bank-import-labels-preview-title = Preview
 bank-import-labels-confirm-import = Confirm import
 bank-import-labels-cancel = Cancel
+# Story 27-1 (#632) — delete a bank import none of whose transactions is reconciled
+bank-import-delete-button = Delete the import
+bank-import-delete-blocked = { $count } transaction(s) of this bank import are reconciled. To delete the import, cancel their reconciliation first.
+bank-import-delete-dialog-title = Delete this import?
+bank-import-delete-dialog-body = The file { $filename } (period from { $from } to { $to }) and its { $count } transaction(s) will be deleted. You can then import the same file again. This deletion cannot be undone.
+bank-import-delete-dialog-confirm = Delete permanently
+bank-import-delete-error-reconciled = A transaction of this import has been reconciled in the meantime ({ $count }): reload the page.
+bank-import-delete-error-not-found = This import no longer exists: it may already have been deleted.
+bank-import-delete-success = Import { $filename } deleted.
 bank-import-labels-confirm-balance-mismatch = Import despite balance mismatch
 # Story 8-3 — confirm flags + KF #70
 bank-import-labels-confirm-duplicate-file = Import despite duplicate file
@@ -1184,7 +1195,7 @@ bank-accounts-actions-submit = Link
 bank-accounts-errors-account-not-found = Ledger account not found.
 bank-accounts-errors-invalid-account-type = Invalid account type (Asset or Liability required).
 # Story v014-1 — CRUD bank_accounts post-onboarding
-bank-accounts-errors-has-transactions = Bank account has transactions — archive refused to preserve accounting audit.
+bank-accounts-errors-has-transactions = Bank account has transactions — archive refused to preserve accounting audit. Bank imports with no reconciled transaction can be deleted (Daily → Import statements).
 bank-accounts-errors-cannot-archive-primary = The primary account cannot be archived while another non-archived account exists. First set another account as primary, then archive this one.
 bank-accounts-errors-onboarding-not-complete = Onboarding must be completed (step 7) before bank accounts can be managed.
 # Story v014-1 — CRUD UI labels & actions (F3 Pass 1 code review parity DE/IT/EN)
@@ -2314,6 +2325,7 @@ audit-log-action-bank-account-created = Bank account created
 audit-log-action-bank-account-updated = Bank account updated
 audit-log-action-bank-account-archived = Bank account archived
 audit-log-action-bank-import-created = Bank import completed
+audit-log-action-bank-import-deleted = Bank import deleted
 audit-log-action-bank-profile-created = Bank profile created
 audit-log-action-bank-profile-updated = Bank profile updated
 audit-log-action-bank-profile-deleted = Bank profile deleted

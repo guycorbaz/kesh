@@ -11,6 +11,7 @@ error-forbidden = Zugriff verweigert
 error-api-key-read-only = Dieser API-Schlüssel ist schreibgeschützt (Scope «read»). Nur GET-Anfragen sind erlaubt.
 error-api-key-management-forbidden = Die Verwaltung von API-Schlüsseln ist über einen API-Schlüssel nicht erlaubt. Verwenden Sie die Weboberfläche.
 error-api-key-admin-forbidden = Administrationsrouten sind über einen API-Schlüssel nicht zugänglich, unabhängig von der Rolle seines Erstellers. Verwenden Sie die Weboberfläche.
+error-api-key-operation-forbidden = Dieser Vorgang ist über einen API-Schlüssel nicht zugänglich. Verwenden Sie die Weboberfläche.
 error-cannot-disable-self = Das eigene Konto kann nicht deaktiviert werden
 error-cannot-disable-last-admin = Der letzte Administrator kann nicht deaktiviert werden
 
@@ -1000,6 +1001,7 @@ bank-import-errors-balance-mismatch = Der Schlusssaldo entspricht nicht der Summ
 bank-import-errors-unsupported-currency = Währung nicht unterstützt. In dieser Version wird nur der Schweizer Franken (CHF) akzeptiert.
 bank-import-errors-no-matching-statement = Kein Auszug der Datei entspricht dem ausgewählten Bankkonto.
 bank-import-errors-duplicate-file = Diese Datei wurde bereits für dieses Unternehmen importiert.
+bank-import-errors-has-reconciled-transactions = { $count } Transaktion(en) dieses Bankimports sind abgeglichen: Heben Sie zuerst deren Abgleich auf, um den Bankimport löschen zu können.
 bank-import-errors-bank-account-not-found = Bankkonto nicht gefunden.
 bank-import-errors-parse-failed = Die CAMT.053-Datei konnte nicht verarbeitet werden.
 
@@ -1019,6 +1021,15 @@ bank-import-labels-drop-zone = CAMT.053- oder CSV-Datei hier ablegen oder klicke
 bank-import-labels-preview-title = Vorschau
 bank-import-labels-confirm-import = Import bestätigen
 bank-import-labels-cancel = Abbrechen
+# Story 27-1 (#632) — Bankimport löschen, von dem keine Transaktion abgeglichen ist
+bank-import-delete-button = Bankimport löschen
+bank-import-delete-blocked = { $count } Transaktion(en) dieses Bankimports sind abgeglichen. Um den Bankimport zu löschen, heben Sie zuerst deren Abgleich auf.
+bank-import-delete-dialog-title = Diesen Bankimport löschen?
+bank-import-delete-dialog-body = Die Datei { $filename } (Zeitraum vom { $from } bis { $to }) und ihre { $count } Transaktion(en) werden gelöscht. Danach können Sie dieselbe Datei erneut importieren. Diese Löschung kann nicht rückgängig gemacht werden.
+bank-import-delete-dialog-confirm = Endgültig löschen
+bank-import-delete-error-reconciled = Eine Transaktion dieses Bankimports wurde inzwischen abgeglichen ({ $count }): Laden Sie die Seite neu.
+bank-import-delete-error-not-found = Dieser Bankimport existiert nicht mehr: Er wurde vielleicht bereits gelöscht.
+bank-import-delete-success = Bankimport { $filename } gelöscht.
 bank-import-labels-confirm-balance-mismatch = Trotz Saldoabweichung importieren
 # Story 8-3 — Bestätigungs-Flags + KF #70
 bank-import-labels-confirm-duplicate-file = Trotz bereits importierter Datei importieren
@@ -1184,7 +1195,7 @@ bank-accounts-actions-submit = Verbinden
 bank-accounts-errors-account-not-found = Buchhaltungskonto nicht gefunden.
 bank-accounts-errors-invalid-account-type = Ungültiger Kontotyp (Aktiv- oder Passivkonto erforderlich).
 # Story v014-1 — CRUD bank_accounts post-onboarding
-bank-accounts-errors-has-transactions = Das Bankkonto enthält Transaktionen — Archivierung verweigert, um die Buchhaltungsprüfung zu wahren.
+bank-accounts-errors-has-transactions = Das Bankkonto enthält Transaktionen — Archivierung verweigert, um die Buchhaltungsprüfung zu wahren. Bankimporte, von denen keine Transaktion abgeglichen ist, können gelöscht werden (Täglich → Kontoauszüge importieren).
 bank-accounts-errors-cannot-archive-primary = Das Hauptkonto kann nicht archiviert werden, solange ein anderes nicht-archiviertes Konto besteht. Setzen Sie zuerst ein anderes Konto als Hauptkonto und archivieren Sie dieses dann.
 bank-accounts-errors-onboarding-not-complete = Das Onboarding muss abgeschlossen sein (Schritt 7), bevor Bankkonten verwaltet werden können.
 # Story v014-1 — CRUD UI labels & actions (F3 Pass 1 code review parity DE/IT/EN)
@@ -2308,6 +2319,7 @@ audit-log-action-bank-account-created = Bankkonto erstellt
 audit-log-action-bank-account-updated = Bankkonto aktualisiert
 audit-log-action-bank-account-archived = Bankkonto archiviert
 audit-log-action-bank-import-created = Bankimport durchgeführt
+audit-log-action-bank-import-deleted = Bankimport gelöscht
 audit-log-action-bank-profile-created = Bankprofil erstellt
 audit-log-action-bank-profile-updated = Bankprofil aktualisiert
 audit-log-action-bank-profile-deleted = Bankprofil gelöscht

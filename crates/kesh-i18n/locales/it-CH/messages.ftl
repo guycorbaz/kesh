@@ -11,6 +11,7 @@ error-forbidden = Accesso negato
 error-api-key-read-only = Questa chiave API è in sola lettura (scope «read»). Sono consentite solo le richieste GET.
 error-api-key-management-forbidden = La gestione delle chiavi API non è consentita tramite una chiave API. Utilizzare l'interfaccia web.
 error-api-key-admin-forbidden = Le rotte di amministrazione non sono accessibili tramite una chiave API, indipendentemente dal ruolo del suo creatore. Utilizzare l'interfaccia web.
+error-api-key-operation-forbidden = Questa operazione non è accessibile tramite una chiave API. Utilizzare l'interfaccia web.
 error-cannot-disable-self = Impossibile disattivare il proprio account
 error-cannot-disable-last-admin = Impossibile disattivare l'ultimo amministratore
 
@@ -1000,6 +1001,7 @@ bank-import-errors-balance-mismatch = Il saldo finale non corrisponde alla somma
 bank-import-errors-unsupported-currency = Valuta non supportata. In questa versione è accettato solo il franco svizzero (CHF).
 bank-import-errors-no-matching-statement = Nessun estratto del file corrisponde al conto bancario selezionato.
 bank-import-errors-duplicate-file = Questo file è già stato importato per questa azienda.
+bank-import-errors-has-reconciled-transactions = { $count } transazione/i di questa importazione bancaria sono riconciliate: annullare prima la loro riconciliazione per poterla eliminare.
 bank-import-errors-bank-account-not-found = Conto bancario non trovato.
 bank-import-errors-parse-failed = Il file CAMT.053 non ha potuto essere analizzato.
 
@@ -1019,6 +1021,15 @@ bank-import-labels-drop-zone = Trascinare il file CAMT.053 o CSV qui o fare clic
 bank-import-labels-preview-title = Anteprima
 bank-import-labels-confirm-import = Conferma importazione
 bank-import-labels-cancel = Annulla
+# Story 27-1 (#632) — eliminare un'importazione bancaria di cui nessuna transazione è riconciliata
+bank-import-delete-button = Elimina l'importazione
+bank-import-delete-blocked = { $count } transazione/i di questa importazione bancaria sono riconciliate. Per eliminare l'importazione, annullare prima la loro riconciliazione.
+bank-import-delete-dialog-title = Eliminare questa importazione?
+bank-import-delete-dialog-body = Il file { $filename } (periodo dal { $from } al { $to }) e le sue { $count } transazione/i saranno eliminati. Sarà poi possibile reimportare lo stesso file. Questa eliminazione non può essere annullata.
+bank-import-delete-dialog-confirm = Elimina definitivamente
+bank-import-delete-error-reconciled = Una transazione di questa importazione è stata riconciliata nel frattempo ({ $count }): ricaricare la pagina.
+bank-import-delete-error-not-found = Questa importazione non esiste più: forse è già stata eliminata.
+bank-import-delete-success = Importazione { $filename } eliminata.
 bank-import-labels-confirm-balance-mismatch = Importa nonostante lo scarto di saldo
 # Story 8-3 — flag di conferma + KF #70
 bank-import-labels-confirm-duplicate-file = Importa nonostante il file già importato
@@ -1184,7 +1195,7 @@ bank-accounts-actions-submit = Collega
 bank-accounts-errors-account-not-found = Conto contabile non trovato.
 bank-accounts-errors-invalid-account-type = Tipo di conto non valido (Attivo o Passivo richiesto).
 # Story v014-1 — CRUD bank_accounts post-onboarding
-bank-accounts-errors-has-transactions = Il conto bancario contiene transazioni — archiviazione rifiutata per preservare l'audit contabile.
+bank-accounts-errors-has-transactions = Il conto bancario contiene transazioni — archiviazione rifiutata per preservare l'audit contabile. Le importazioni bancarie di cui nessuna transazione è riconciliata possono essere eliminate (Quotidiano → Importa estratti conto).
 bank-accounts-errors-cannot-archive-primary = Il conto principale non può essere archiviato finché esiste un altro conto non archiviato. Definire prima un altro conto come principale, poi archiviare questo.
 bank-accounts-errors-onboarding-not-complete = L'onboarding deve essere completato (passo 7) prima di poter gestire i conti bancari.
 # Story v014-1 — CRUD UI labels & actions (F3 Pass 1 code review parity DE/IT/EN)
@@ -2309,6 +2320,7 @@ audit-log-action-bank-account-created = Conto bancario creato
 audit-log-action-bank-account-updated = Conto bancario aggiornato
 audit-log-action-bank-account-archived = Conto bancario archiviato
 audit-log-action-bank-import-created = Importazione bancaria effettuata
+audit-log-action-bank-import-deleted = Importazione bancaria eliminata
 audit-log-action-bank-profile-created = Profilo bancario creato
 audit-log-action-bank-profile-updated = Profilo bancario aggiornato
 audit-log-action-bank-profile-deleted = Profilo bancario eliminato

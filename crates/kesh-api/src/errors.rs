@@ -216,6 +216,23 @@ pub enum AppError {
     #[error("Administration interdite via clé API")]
     ApiKeyAdminForbidden,
 
+    // --- Story 27-1 — une opération réservée à l'interface web (#632) ---
+    /// Une requête authentifiée par clé d'API (`read-write` : une clé `read`
+    /// est arrêtée avant, `API_KEY_READ_ONLY`) atteint une opération réservée
+    /// à l'interface web → `403` code `API_KEY_OPERATION_FORBIDDEN`.
+    /// Aujourd'hui : la suppression d'un import bancaire
+    /// (`DELETE /api/v1/bank-imports/{id}`, décision du Project Lead du
+    /// 2026-10-12, C-27-1-16).
+    ///
+    /// **Distincte des deux précédentes à dessein** (doctrine D2 de la 22-4a) :
+    /// [`AppError::ApiKeyManagementForbidden`] parle de gestion de clés,
+    /// [`AppError::ApiKeyAdminForbidden`] de routes d'administration — or la
+    /// suppression est une route Comptable. Rendue par le handler lui-même
+    /// (pas de `require_not_pat`, dont la garde d'`admin_pat_denied_e2e`
+    /// interdit un second consommateur).
+    #[error("Opération interdite via clé API")]
+    ApiKeyOperationForbidden,
+
     /// L'administrateur tente de désactiver son propre compte (400).
     #[error("Impossible de désactiver son propre compte")]
     CannotDisableSelf,
@@ -691,6 +708,17 @@ pub enum AppError {
     BankImportDuplicateFile {
         existing_import_id: i64,
         existing_filename: String,
+    },
+
+    /// Story 27-1 (#632) — suppression d'un import refusée : au moins une de
+    /// ses transactions est rapprochée (`status <> 'pending'` ou
+    /// `matched_entry_id` posé, cf. `bank_imports::is_reconciled`) → `409`
+    /// code `BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS`, `details` portant
+    /// `reconciledCount` et `transactionCount` (comptés sous verrou).
+    #[error("Import portant des transactions rapprochées")]
+    BankImportHasReconciledTransactions {
+        reconciled_count: i64,
+        transaction_count: i64,
     },
 
     /// Le `bankAccountId` fourni n'existe pas / appartient à une autre
@@ -1496,6 +1524,16 @@ impl IntoResponse for AppError {
                 ),
             ),
 
+            // Story 27-1 — opération réservée à l'interface web (#632).
+            AppError::ApiKeyOperationForbidden => build_response(
+                StatusCode::FORBIDDEN,
+                "API_KEY_OPERATION_FORBIDDEN",
+                &t(
+                    "error-api-key-operation-forbidden",
+                    "Cette opération n'est pas accessible via une clé API. Utilisez l'interface web.",
+                ),
+            ),
+
             AppError::CannotDisableSelf => build_response(
                 StatusCode::BAD_REQUEST,
                 "CANNOT_DISABLE_SELF",
@@ -2180,6 +2218,33 @@ impl IntoResponse for AppError {
                 (StatusCode::UNPROCESSABLE_ENTITY, Json(body)).into_response()
             }
 
+            // Story 27-1 — suppression refusée, transactions rapprochées (#632).
+            AppError::BankImportHasReconciledTransactions {
+                reconciled_count,
+                transaction_count,
+            } => {
+                let mut args = FluentArgs::new();
+                args.set("count", reconciled_count);
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS",
+                        "message": t_args(
+                            "bank-import-errors-has-reconciled-transactions",
+                            &format!(
+                                "{reconciled_count} transaction(s) de cet import sont rapprochées : \
+                                 annulez d'abord leur rapprochement pour pouvoir le supprimer."
+                            ),
+                            &args,
+                        ),
+                        "details": {
+                            "reconciledCount": reconciled_count,
+                            "transactionCount": transaction_count,
+                        }
+                    }
+                });
+                (StatusCode::CONFLICT, Json(body)).into_response()
+            }
+
             AppError::BankAccountNotFound => build_response(
                 StatusCode::NOT_FOUND,
                 "BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND",
@@ -2466,7 +2531,9 @@ impl IntoResponse for AppError {
                 let msg = t(
                     "bank-accounts-errors-has-transactions",
                     "Le compte bancaire contient des transactions — \
-                     archivage refusé pour préserver l'audit comptable.",
+                     archivage refusé pour préserver l'audit comptable. \
+                     Les imports dont aucune transaction n'est rapprochée peuvent être \
+                     supprimés (Quotidien → Importer des relevés).",
                 );
                 let body = serde_json::json!({
                     "error": {
