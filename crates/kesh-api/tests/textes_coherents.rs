@@ -728,6 +728,8 @@ fn les_replis_rust_suivent_le_catalogue() {
                 // Story 27-2 (#624) — le refus de devise, chemin CSV compris.
                 ("bank-import-errors-unsupported-currency", 1, &[]),
                 ("bank-import-csv-errors-mixed-currencies", 1, DEVISES),
+                // Story 27-3 (#626) — refus d'une empreinte d'aperçu périmée.
+                ("bank-import-errors-preview-stale", 1, &[]),
             ],
         ),
         (

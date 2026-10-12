@@ -2681,3 +2681,607 @@ async fn camt_information_amounts_do_not_change_transaction_currency(pool: MySql
     assert_eq!(currencies.len(), 3, "une transaction par entrée");
     assert!(currencies.iter().all(|c| c == "CHF"), "{currencies:?}");
 }
+
+// =========================================================================
+// Story 27-3 (#626) — empreinte d'aperçu : la création refuse un profil, un
+// compte ou un fichier qui a changé depuis l'aperçu (409
+// BANK_IMPORT_PREVIEW_STALE). Tests I1-I12 et I6-bis de la fiche.
+// =========================================================================
+
+const STALE_CODE: &str = "BANK_IMPORT_PREVIEW_STALE";
+
+/// Empreinte rendue par un aperçu (64 hex minuscules, assertion de montage).
+fn fingerprint_of(body: &Value) -> String {
+    let fp = body["previewFingerprint"]
+        .as_str()
+        .unwrap_or_else(|| panic!("aperçu sans previewFingerprint : {body}"))
+        .to_string();
+    assert_eq!(fp.len(), 64, "{fp}");
+    assert!(
+        fp.bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b)),
+        "{fp}"
+    );
+    fp
+}
+
+// `write_counts` (imports, transactions, audit) : celui de la Story 27-2, plus haut.
+
+/// Aperçu CSV de la fixture UBS sous `profile_id` ; rend l'empreinte.
+async fn ubs_preview_fingerprint(app: &TestApp, s: &TestSetup, profile_id: i64) -> String {
+    let (status, body) = send_csv(
+        app,
+        &s.jwt,
+        true,
+        ubs_fixture(),
+        s.bank_account_id,
+        profile_id,
+        &[],
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    fingerprint_of(&body)
+}
+
+/// POST d'un multipart quelconque ; rend (statut, corps).
+async fn post_form(app: &TestApp, jwt: &str, path: &str, form: multipart::Form) -> (u16, Value) {
+    let r = app
+        .client
+        .post(app.url(path))
+        .bearer_auth(jwt)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    let status = r.status().as_u16();
+    (status, r.json().await.unwrap())
+}
+
+/// I1 — l'aperçu CSV et l'aperçu CAMT rendent une empreinte ; deux aperçus
+/// identiques rendent la même ; CSV et CAMT diffèrent.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn preview_returns_a_stable_fingerprint_for_csv_and_camt(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let profile_id = post_ubs_profile(&app, &s.jwt, "UBS négatif", "negative", 9).await;
+
+    let a = ubs_preview_fingerprint(&app, &s, profile_id).await;
+    let b = ubs_preview_fingerprint(&app, &s, profile_id).await;
+    assert_eq!(a, b, "deux aperçus CSV identiques");
+
+    let camt = || {
+        post_form(
+            &app,
+            &s.jwt,
+            "/api/v1/bank-imports/preview",
+            build_multipart(
+                read_fixture("v04_minimal.xml"),
+                "v04_minimal.xml",
+                s.bank_account_id,
+            ),
+        )
+    };
+    let (st1, b1) = camt().await;
+    let (st2, b2) = camt().await;
+    assert_eq!((st1, st2), (200, 200), "{b1} {b2}");
+    let c1 = fingerprint_of(&b1);
+    assert_eq!(c1, fingerprint_of(&b2), "deux aperçus CAMT identiques");
+    assert_ne!(c1, a);
+}
+
+/// I2 + I3 — création avec l'empreinte de l'aperçu → 201 ; sans empreinte → 201
+/// (compatibilité, D12). CSV et CAMT.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn create_accepts_matching_fingerprint_and_absent_fingerprint(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let profile_id = post_ubs_profile(&app, &s.jwt, "UBS négatif", "negative", 9).await;
+
+    // CSV, empreinte de l'aperçu.
+    let fp = ubs_preview_fingerprint(&app, &s, profile_id).await;
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        false,
+        ubs_fixture(),
+        s.bank_account_id,
+        profile_id,
+        &[("previewFingerprint", fp)],
+    )
+    .await;
+    assert_eq!(status, 201, "{body}");
+    assert_eq!(body["transactionCount"], 11);
+
+    // CSV, sans empreinte (autre contenu : dates 2027, pour éviter le doublon).
+    let text = String::from_utf8(ubs_fixture())
+        .unwrap()
+        .replace("2026-", "2027-");
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        false,
+        text.into_bytes(),
+        s.bank_account_id,
+        profile_id,
+        &[],
+    )
+    .await;
+    assert_eq!(status, 201, "{body}");
+
+    // CAMT, empreinte de l'aperçu puis création.
+    let (status, body) = post_form(
+        &app,
+        &s.jwt,
+        "/api/v1/bank-imports/preview",
+        build_multipart(
+            read_fixture("v04_minimal.xml"),
+            "v04_minimal.xml",
+            s.bank_account_id,
+        ),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    let fp = fingerprint_of(&body);
+    let (status, body) = post_form(
+        &app,
+        &s.jwt,
+        "/api/v1/bank-imports",
+        build_multipart_with_text_fields(
+            read_fixture("v04_minimal.xml"),
+            "v04_minimal.xml",
+            s.bank_account_id,
+            &[("previewFingerprint", fp)],
+        ),
+    )
+    .await;
+    assert_eq!(status, 201, "{body}");
+}
+
+/// I4 — chaque colonne modifiable du profil, changée par `UPDATE` entre l'aperçu
+/// et la création → 409, sans aucune écriture.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn create_refuses_when_any_profile_column_changed_since_preview(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let profile_id = post_ubs_profile(&app, &s.jwt, "UBS négatif", "negative", 9).await;
+
+    // (colonne, nouvelle valeur) — chacune respecte les CHECK de la table et
+    // diffère de la valeur posée par `post_ubs_profile`.
+    let changes: [(&str, &str); 9] = [
+        ("bank_name", "'UBS renommé'"),
+        ("filename_pattern", "'^zzz'"),
+        (
+            "column_mapping",
+            r#"'{"date": 2, "debit_credit_split": [5, 6], "reference": 9}'"#,
+        ),
+        ("date_format", "'%d.%m.%Y'"),
+        ("decimal_separator", "','"),
+        ("field_separator", "'\\t'"),
+        ("encoding", "'UTF-8'"),
+        ("header_row_count", "8"),
+        ("debit_sign", "'positive'"),
+    ];
+    for (column, value) in changes {
+        let fp = ubs_preview_fingerprint(&app, &s, profile_id).await;
+        let before = write_counts(&pool).await;
+        let updated = sqlx::query(&format!(
+            "UPDATE bank_profiles SET {column} = {value} WHERE id = ?"
+        ))
+        .bind(profile_id)
+        .execute(&pool)
+        .await
+        .unwrap_or_else(|e| panic!("montage {column} : {e}"));
+        assert_eq!(updated.rows_affected(), 1, "montage : {column} inchangé");
+
+        let (status, body) = send_csv(
+            &app,
+            &s.jwt,
+            false,
+            ubs_fixture(),
+            s.bank_account_id,
+            profile_id,
+            &[("previewFingerprint", fp)],
+        )
+        .await;
+        assert_eq!(status, 409, "{column} : {body}");
+        assert_eq!(body["error"]["code"], STALE_CODE, "{column}");
+        assert_eq!(write_counts(&pool).await, before, "{column} : écriture");
+
+        // Restaure le profil d'origine pour le cas suivant.
+        sqlx::query(
+            "UPDATE bank_profiles SET bank_name = 'UBS négatif', filename_pattern = NULL, \
+             column_mapping = '{\"date\": 2, \"debit_credit_split\": [5, 6], \"reference\": 9, \"details\": 10}', \
+             date_format = '%Y-%m-%d', decimal_separator = '.', field_separator = ';', \
+             encoding = NULL, header_row_count = 9, debit_sign = 'negative' WHERE id = ?",
+        )
+        .bind(profile_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    }
+    // Montage : restauré, le profil importe de nouveau avec l'empreinte d'aperçu.
+    let fp = ubs_preview_fingerprint(&app, &s, profile_id).await;
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        false,
+        ubs_fixture(),
+        s.bank_account_id,
+        profile_id,
+        &[("previewFingerprint", fp)],
+    )
+    .await;
+    assert_eq!(status, 201, "{body}");
+}
+
+/// I5 — création avec un autre `bankProfileId` que celui de l'aperçu → 409.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn create_refuses_another_profile_than_the_previewed_one(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let a = post_ubs_profile(&app, &s.jwt, "UBS A", "negative", 9).await;
+    let b = post_ubs_profile(&app, &s.jwt, "UBS B", "negative", 9).await;
+    let fp = ubs_preview_fingerprint(&app, &s, a).await;
+    let before = write_counts(&pool).await;
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        false,
+        ubs_fixture(),
+        s.bank_account_id,
+        b,
+        &[("previewFingerprint", fp)],
+    )
+    .await;
+    assert_eq!(status, 409, "{body}");
+    assert_eq!(body["error"]["code"], STALE_CODE);
+    assert!(
+        body["error"]["message"]
+            .as_str()
+            .unwrap()
+            .contains("recalculez-la avant d'importer"),
+        "{body}"
+    );
+    assert_eq!(write_counts(&pool).await, before);
+}
+
+/// Pose un motif de nom de fichier sur le profil (auto-détection).
+async fn set_filename_pattern(pool: &MySqlPool, profile_id: i64, pattern: &str) {
+    sqlx::query("UPDATE bank_profiles SET filename_pattern = ? WHERE id = ?")
+        .bind(pattern)
+        .bind(profile_id)
+        .execute(pool)
+        .await
+        .unwrap();
+}
+
+/// Aperçu sur *Auto-détection* (aucun `bankProfileId`) ; rend l'empreinte après
+/// avoir vérifié que le profil `expected` a été résolu par le nom du fichier.
+async fn auto_preview_fingerprint(
+    app: &TestApp,
+    s: &TestSetup,
+    filename: &str,
+    expected: i64,
+) -> String {
+    let (status, body) = post_form(
+        app,
+        &s.jwt,
+        "/api/v1/bank-imports/preview",
+        build_multipart_with_text_fields(ubs_fixture(), filename, s.bank_account_id, &[]),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body["csvProfileMatch"]["profileId"], expected, "{body}");
+    assert_eq!(body["csvProfileMatch"]["autoMatched"], true, "{body}");
+    fingerprint_of(&body)
+}
+
+/// I6 — aperçu sur *Auto-détection*, création avec l'id résolu → 201 (même
+/// empreinte : le nom du fichier n'y entre pas, le profil résolu oui).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn auto_detected_preview_then_explicit_create_matches(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let profile_id = post_ubs_profile(&app, &s.jwt, "UBS auto", "negative", 9).await;
+    set_filename_pattern(&pool, profile_id, "^auto_ubs").await;
+    let fp = auto_preview_fingerprint(&app, &s, "auto_ubs_2026.csv", profile_id).await;
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        false,
+        ubs_fixture(),
+        s.bank_account_id,
+        profile_id,
+        &[("previewFingerprint", fp)],
+    )
+    .await;
+    assert_eq!(status, 201, "{body}");
+}
+
+/// I6-bis — aperçu ET création sur *Auto-détection* (aucun id des deux côtés),
+/// un seul profil concordant → 201. Seul cas où l'id demandé (`None`) diffère du
+/// profil résolu : l'empreinte doit porter le profil RÉSOLU (M16b).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn auto_detected_preview_and_create_match(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let profile_id = post_ubs_profile(&app, &s.jwt, "UBS auto", "negative", 9).await;
+    set_filename_pattern(&pool, profile_id, "^auto_ubs").await;
+    let fp = auto_preview_fingerprint(&app, &s, "auto_ubs_2026.csv", profile_id).await;
+    let (status, body) = post_form(
+        &app,
+        &s.jwt,
+        "/api/v1/bank-imports",
+        build_multipart_with_text_fields(
+            ubs_fixture(),
+            "auto_ubs_2026.csv",
+            s.bank_account_id,
+            &[("previewFingerprint", fp)],
+        ),
+    )
+    .await;
+    assert_eq!(status, 201, "{body}");
+    assert_eq!(body["transactionCount"], 11);
+}
+
+/// I7 — autre fichier avec l'empreinte du premier → 409 ; autre compte de la
+/// même société → 409.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn create_refuses_another_file_or_another_account(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let profile_id = post_ubs_profile(&app, &s.jwt, "UBS négatif", "negative", 9).await;
+    let fp = ubs_preview_fingerprint(&app, &s, profile_id).await;
+    let before = write_counts(&pool).await;
+
+    let other_bytes = String::from_utf8(ubs_fixture())
+        .unwrap()
+        .replace("2026-", "2027-")
+        .into_bytes();
+    assert_ne!(other_bytes, ubs_fixture(), "montage : octets différents");
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        false,
+        other_bytes,
+        s.bank_account_id,
+        profile_id,
+        &[("previewFingerprint", fp.clone())],
+    )
+    .await;
+    assert_eq!(status, 409, "autre fichier : {body}");
+    assert_eq!(body["error"]["code"], STALE_CODE);
+
+    let other_account = create_bank_account(&pool, s.company_id, "CH9300762011623852957").await;
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        false,
+        ubs_fixture(),
+        other_account,
+        profile_id,
+        &[("previewFingerprint", fp)],
+    )
+    .await;
+    assert_eq!(status, 409, "autre compte : {body}");
+    assert_eq!(body["error"]["code"], STALE_CODE);
+    assert_eq!(write_counts(&pool).await, before);
+}
+
+/// I8 — empreinte mal formée → 400 ; champ dupliqué → 400.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn create_rejects_malformed_or_duplicated_fingerprint(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let profile_id = post_ubs_profile(&app, &s.jwt, "UBS négatif", "negative", 9).await;
+    let fp = ubs_preview_fingerprint(&app, &s, profile_id).await;
+    for (case, extra) in [
+        ("courte", vec![("previewFingerprint", "a".repeat(63))]),
+        (
+            "majuscules",
+            vec![("previewFingerprint", fp.to_uppercase())],
+        ),
+        ("hors hex", vec![("previewFingerprint", "g".repeat(64))]),
+        (
+            "dupliquée",
+            vec![
+                ("previewFingerprint", fp.clone()),
+                ("previewFingerprint", fp.clone()),
+            ],
+        ),
+    ] {
+        let (status, body) = send_csv(
+            &app,
+            &s.jwt,
+            false,
+            ubs_fixture(),
+            s.bank_account_id,
+            profile_id,
+            &extra,
+        )
+        .await;
+        assert_eq!(status, 400, "{case} : {body}");
+        assert_eq!(body["error"]["code"], "VALIDATION_ERROR", "{case}");
+        assert!(
+            body["error"]["message"]
+                .as_str()
+                .unwrap()
+                .contains("previewFingerprint"),
+            "{case} : {body}"
+        );
+    }
+    assert_eq!(tx_count(&pool).await, 0);
+}
+
+/// I9 — seul `updated_at` du profil modifié entre l'aperçu et la création → 201.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn profile_touched_without_change_does_not_stale_the_preview(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let profile_id = post_ubs_profile(&app, &s.jwt, "UBS négatif", "negative", 9).await;
+    let fp = ubs_preview_fingerprint(&app, &s, profile_id).await;
+    let touched = sqlx::query(
+        "UPDATE bank_profiles SET updated_at = updated_at + INTERVAL 1 HOUR, \
+         created_at = created_at - INTERVAL 1 HOUR WHERE id = ?",
+    )
+    .bind(profile_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    assert_eq!(touched.rows_affected(), 1, "montage : horodatages changés");
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        false,
+        ubs_fixture(),
+        s.bank_account_id,
+        profile_id,
+        &[("previewFingerprint", fp)],
+    )
+    .await;
+    assert_eq!(status, 201, "{body}");
+}
+
+/// I10 — précédence, et son asymétrie CSV / CAMT (AC8, C-27-3-24) :
+/// CSV déjà importé + empreinte périmée, sans confirmation → 422 doublon ;
+/// CAMT avec l'empreinte d'un autre fichier → 409 ;
+/// CAMT déjà importé + empreinte périmée, sans confirmation → 409.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn fingerprint_precedence_csv_and_camt(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let profile_id = post_ubs_profile(&app, &s.jwt, "UBS négatif", "negative", 9).await;
+    let stale = "0".repeat(64);
+
+    // CSV déjà importé.
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        false,
+        ubs_fixture(),
+        s.bank_account_id,
+        profile_id,
+        &[],
+    )
+    .await;
+    assert_eq!(status, 201, "montage : {body}");
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        false,
+        ubs_fixture(),
+        s.bank_account_id,
+        profile_id,
+        &[("previewFingerprint", stale.clone())],
+    )
+    .await;
+    assert_eq!(status, 422, "{body}");
+    assert_eq!(body["error"]["code"], "BANK_IMPORT_DUPLICATE_FILE");
+
+    // CAMT : empreinte de v04_minimal envoyée avec d'autres octets.
+    let (status, body) = post_form(
+        &app,
+        &s.jwt,
+        "/api/v1/bank-imports/preview",
+        build_multipart(
+            read_fixture("v04_minimal.xml"),
+            "v04_minimal.xml",
+            s.bank_account_id,
+        ),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    let camt_fp = fingerprint_of(&body);
+    let mut other = read_fixture("v04_minimal.xml");
+    other.extend_from_slice(b"\n");
+    let before = write_counts(&pool).await;
+    let (status, body) = post_form(
+        &app,
+        &s.jwt,
+        "/api/v1/bank-imports",
+        build_multipart_with_text_fields(
+            other.clone(),
+            "v04_minimal.xml",
+            s.bank_account_id,
+            &[("previewFingerprint", camt_fp)],
+        ),
+    )
+    .await;
+    assert_eq!(status, 409, "CAMT autre fichier : {body}");
+    assert_eq!(body["error"]["code"], STALE_CODE);
+    assert_eq!(write_counts(&pool).await, before);
+    // Montage : sans empreinte, ces octets-là s'importent (le 409 venait d'elle).
+    let (status, body) = post_form(
+        &app,
+        &s.jwt,
+        "/api/v1/bank-imports",
+        build_multipart(other.clone(), "v04_minimal.xml", s.bank_account_id),
+    )
+    .await;
+    assert_eq!(status, 201, "montage : {body}");
+
+    // CAMT déjà importé + empreinte périmée, sans confirmation → 409 d'abord.
+    let (status, body) = post_form(
+        &app,
+        &s.jwt,
+        "/api/v1/bank-imports",
+        build_multipart_with_text_fields(
+            other,
+            "v04_minimal.xml",
+            s.bank_account_id,
+            &[("previewFingerprint", stale)],
+        ),
+    )
+    .await;
+    assert_eq!(status, 409, "CAMT doublon + périmé : {body}");
+    assert_eq!(body["error"]["code"], STALE_CODE);
+}
+
+/// I11 — profil supprimé entre l'aperçu et la création, empreinte de l'aperçu
+/// envoyée → 404 BANK_CSV_NO_PROFILE_MATCH, et non 409 (précédence, M16a).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn deleted_profile_wins_over_stale_fingerprint(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let profile_id = post_ubs_profile(&app, &s.jwt, "UBS négatif", "negative", 9).await;
+    let fp = ubs_preview_fingerprint(&app, &s, profile_id).await;
+    let deleted = sqlx::query("DELETE FROM bank_profiles WHERE id = ?")
+        .bind(profile_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+    assert_eq!(deleted.rows_affected(), 1, "montage : profil supprimé");
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        false,
+        ubs_fixture(),
+        s.bank_account_id,
+        profile_id,
+        &[("previewFingerprint", fp)],
+    )
+    .await;
+    assert_eq!(status, 404, "{body}");
+    assert_eq!(body["error"]["code"], "BANK_CSV_NO_PROFILE_MATCH");
+}
+
+/// I12 — compte bancaire inconnu de la société, empreinte bien formée → 404
+/// BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND (précédence).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn unknown_bank_account_wins_over_fingerprint(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let profile_id = post_ubs_profile(&app, &s.jwt, "UBS négatif", "negative", 9).await;
+    let (status, body) = send_csv(
+        &app,
+        &s.jwt,
+        false,
+        ubs_fixture(),
+        s.bank_account_id + 100_000,
+        profile_id,
+        &[("previewFingerprint", "a".repeat(64))],
+    )
+    .await;
+    assert_eq!(status, 404, "{body}");
+    assert_eq!(body["error"]["code"], "BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND");
+}

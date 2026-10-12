@@ -79,6 +79,11 @@ pub struct BankImportPreviewResponse {
     /// auto-matché et de basculer vers une sélection explicite.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub csv_profile_match: Option<CsvProfileMatch>,
+    /// Story 27-3 (#626) — empreinte des entrées de cet aperçu (64 hex), à
+    /// renvoyer à la création en champ `previewFingerprint` : la création la
+    /// recalcule et refuse (`409 BANK_IMPORT_PREVIEW_STALE`) si le profil, le
+    /// compte ou le fichier a changé. Cf. `bank_import_fingerprint`.
+    pub preview_fingerprint: String,
 }
 
 /// Warnings non-bloquants exposés par `POST /preview` (Story 8-3
@@ -324,6 +329,10 @@ struct MultipartFields {
     /// Story 8-3 — autorise la persistance des lignes valides d'un
     /// CSV partiellement défaillant (warnings.invalidLines retourné).
     confirm_partial_import: bool,
+    /// Story 27-3 (#626) — empreinte de l'aperçu vu par le client (facultative,
+    /// validée à la forme par `parse_fingerprint_field`). Ignorée par l'aperçu,
+    /// comparée par la création.
+    preview_fingerprint: Option<String>,
 }
 
 /// Story 8-3 — comportement face aux doublons ligne-par-ligne.
@@ -398,6 +407,7 @@ async fn parse_multipart(mut multipart: Multipart) -> Result<MultipartFields, Ap
     // and confirmEncodingMismatch (parity with the rest of the family).
     let mut confirm_balance_mismatch_seen = false;
     let mut confirm_encoding_mismatch_seen = false;
+    let mut preview_fingerprint: Option<String> = None;
 
     while let Some(field) = multipart.next_field().await.map_err(map_multipart_err)? {
         let name = field.name().unwrap_or("").to_string();
@@ -517,6 +527,17 @@ async fn parse_multipart(mut multipart: Multipart) -> Result<MultipartFields, Ap
                 confirm_partial_import =
                     parse_strict_bool_multipart("confirmPartialImport", &text)?;
             }
+            "previewFingerprint" => {
+                // Story 27-3 (#626) — garde de doublon, parité avec la famille.
+                if preview_fingerprint.is_some() {
+                    return Err(AppError::Validation(
+                        "Champ 'previewFingerprint' dupliqué dans le multipart".into(),
+                    ));
+                }
+                let text = field.text().await.map_err(map_multipart_err)?;
+                preview_fingerprint =
+                    Some(crate::routes::bank_import_fingerprint::parse_fingerprint_field(&text)?);
+            }
             _ => {
                 // Review code Pass 1 M2 : propager l'erreur sur les
                 // champs inconnus aussi — sinon un PAYLOAD_TOO_LARGE
@@ -546,6 +567,7 @@ async fn parse_multipart(mut multipart: Multipart) -> Result<MultipartFields, Ap
         confirm_duplicate_file,
         confirm_duplicate_lines,
         confirm_partial_import,
+        preview_fingerprint,
     })
 }
 
@@ -840,7 +862,7 @@ fn money_to_string(m: kesh_core::types::Money) -> String {
 // ---------------------------------------------------------------------------
 
 /// Normalise un IBAN pour comparaison stricte (espaces retirés, uppercase).
-fn normalize_iban(s: &str) -> String {
+pub(crate) fn normalize_iban(s: &str) -> String {
     s.chars()
         .filter(|c| !c.is_whitespace())
         .collect::<String>()
@@ -956,6 +978,14 @@ pub async fn preview(
 
     // Hash + parse CAMT.053.
     let file_hash = compute_sha256_hex(&fields.file_bytes);
+    // Story 27-3 (#626) — empreinte des entrées de l'aperçu (aucun profil en CAMT).
+    let preview_fingerprint = crate::routes::bank_import_fingerprint::preview_fingerprint(
+        current_user.company_id,
+        &bank_account,
+        &file_hash,
+        crate::routes::bank_import_fingerprint::FingerprintFormat::Camt053,
+        None,
+    );
     let stmts = parse_camt053(&fields.file_bytes).map_err(map_camt_error)?;
     let selection = select_statement_by_iban(stmts, &bank_account.iban)?;
     let stmt = selection.selected;
@@ -1057,6 +1087,7 @@ pub async fn preview(
         warnings,
         transactions: preview_txs,
         csv_profile_match: None,
+        preview_fingerprint,
     }))
 }
 
@@ -1095,6 +1126,20 @@ pub async fn create(
     }
 
     let file_hash = compute_sha256_hex(&fields.file_bytes);
+
+    // Story 27-3 (#626) — empreinte d'aperçu : comparée AVANT la transaction
+    // (aucun profil en jeu). Précède donc le 422 BANK_IMPORT_DUPLICATE_FILE,
+    // détecté dans la transaction — asymétrie assumée avec le CSV (C-27-3-24).
+    crate::routes::bank_import_fingerprint::check_preview_fingerprint(
+        fields.preview_fingerprint.as_deref(),
+        &crate::routes::bank_import_fingerprint::preview_fingerprint(
+            current_user.company_id,
+            &bank_account,
+            &file_hash,
+            crate::routes::bank_import_fingerprint::FingerprintFormat::Camt053,
+            None,
+        ),
+    )?;
 
     // Story 8-3 — ouvre la transaction AVANT le check applicatif
     // duplicate file pour que le check + INSERT vivent dans la même tx
@@ -1840,6 +1885,14 @@ async fn preview_csv(
     }
 
     let file_hash = compute_sha256_hex(&fields.file_bytes);
+    // Story 27-3 (#626) — empreinte des entrées de l'aperçu, profil RÉSOLU compris.
+    let preview_fingerprint = crate::routes::bank_import_fingerprint::preview_fingerprint(
+        company_id,
+        bank_account,
+        &file_hash,
+        crate::routes::bank_import_fingerprint::FingerprintFormat::Csv,
+        Some(&profile),
+    );
 
     // Story 8-3 — détection fichier déjà importé (FR43 partie 1).
     if let Some(existing) =
@@ -1894,6 +1947,7 @@ async fn preview_csv(
         warnings,
         transactions: preview_txs,
         csv_profile_match,
+        preview_fingerprint,
     }))
 }
 
@@ -1942,6 +1996,21 @@ async fn create_csv(
         &fields.filename,
     )
     .await?;
+
+    // Story 27-3 (#626) — empreinte d'aperçu comparée sur le profil lu DANS la
+    // transaction, celui-là même qui sert au parse ci-dessous : aucune fenêtre
+    // entre la comparaison et l'usage. Les refus qui précèdent (doublon de
+    // fichier non confirmé, profil introuvable) restent prioritaires.
+    crate::routes::bank_import_fingerprint::check_preview_fingerprint(
+        fields.preview_fingerprint.as_deref(),
+        &crate::routes::bank_import_fingerprint::preview_fingerprint(
+            current_user.company_id,
+            bank_account,
+            &file_hash,
+            crate::routes::bank_import_fingerprint::FingerprintFormat::Csv,
+            Some(&profile),
+        ),
+    )?;
 
     let csv_profile = db_profile_to_csv_profile(&profile)?;
 

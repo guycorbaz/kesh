@@ -770,6 +770,13 @@ pub enum AppError {
         available_profiles: Vec<BankProfileSummary>,
     },
 
+    /// Story 27-3 (#626) — l'empreinte d'aperçu envoyée à la création
+    /// (`previewFingerprint`) ne correspond plus aux entrées de la création :
+    /// le profil, le compte ou le fichier a changé depuis l'aperçu → `409`
+    /// `BANK_IMPORT_PREVIEW_STALE`, aucun import.
+    #[error("Aperçu d'import périmé")]
+    BankImportPreviewStale,
+
     /// Encoding détecté n'est pas dans `{UTF-8, ISO-8859-1}` v0.1 → `422`.
     #[error("Encoding non supporté v0.1")]
     BankCsvUnsupportedEncoding { detected: Option<String> },
@@ -2320,6 +2327,20 @@ impl IntoResponse for AppError {
                     }
                 });
                 (StatusCode::NOT_FOUND, Json(body)).into_response()
+            }
+
+            // Story 27-3 (#626) — empreinte d'aperçu périmée.
+            AppError::BankImportPreviewStale => {
+                let body = serde_json::json!({
+                    "error": {
+                        "code": "BANK_IMPORT_PREVIEW_STALE",
+                        "message": t(
+                            "bank-import-errors-preview-stale",
+                            "Le profil, le fichier ou le compte a changé depuis la prévisualisation : recalculez-la avant d'importer.",
+                        ),
+                    }
+                });
+                (StatusCode::CONFLICT, Json(body)).into_response()
             }
 
             AppError::BankCsvUnsupportedEncoding { detected } => {

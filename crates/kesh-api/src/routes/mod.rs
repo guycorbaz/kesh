@@ -4,6 +4,7 @@ pub mod api_keys;
 pub mod audit_log;
 pub mod auth;
 pub mod bank_accounts;
+pub(crate) mod bank_import_fingerprint;
 pub mod bank_imports;
 pub mod bank_profiles;
 pub mod companies;

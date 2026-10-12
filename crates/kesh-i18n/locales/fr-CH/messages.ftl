@@ -1103,6 +1103,32 @@ bank-import-labels-bank-profile-auto-matched = auto-détecté
 # l'annotation `auto-matched` ci-dessus pour permettre des traductions
 # divergentes (ex. EN: "Auto-detect" placeholder vs "(auto-matched)" annotation).
 bank-import-labels-bank-profile-auto-detect-placeholder = Auto-détection
+# Story 27-3 (#626) — aperçu recalculé au changement de profil, empreinte périmée.
+bank-import-errors-preview-stale = Le profil, le fichier ou le compte a changé depuis la prévisualisation : recalculez-la avant d'importer.
+bank-import-labels-preview-recomputing = Recalcul de la prévisualisation…
+bank-import-labels-preview-recomputed = Le profil, le fichier ou le compte a changé depuis la prévisualisation : Kesh la recalcule. Vérifiez le résultat avant de confirmer.
+# Story 27-3 (C-27-3-25) — libellés de l'écran d'import, jusque-là en dur.
+bank-import-labels-bank-account-placeholder = Sélectionner un compte
+bank-import-errors-bank-account-required = Sélectionnez d'abord un compte bancaire.
+bank-import-labels-col-line = Ligne
+bank-import-labels-col-code = Code
+bank-import-labels-col-value = Valeur
+bank-import-labels-iban = IBAN
+bank-import-labels-period = Période
+bank-import-labels-currency = Devise
+bank-import-labels-opening-balance = Solde ouverture
+bank-import-labels-closing-balance = Solde clôture
+bank-import-labels-transaction-count = Nombre de transactions
+bank-import-labels-duplicate-col-index = Index
+bank-import-labels-duplicate-col-existing-id = ID existant
+bank-import-labels-duplicate-col-key = Clé
+bank-import-labels-ignored-statements-summary = statement(s) ignoré(s) (autres IBAN dans le fichier).
+bank-import-labels-tx-col-date = Date
+bank-import-labels-tx-col-amount = Montant
+bank-import-labels-tx-col-details = Détails
+bank-import-labels-list-col-imported-at = Date import
+bank-import-labels-list-col-filename = Fichier
+bank-import-labels-list-col-transactions = Transactions
 # M8 (Pass 1 review) — clés i18n pour les codes informationnels remontés
 # via `warnings.informational[]` (snake_case → kebab-case côté frontend).
 bank-import-info-bank-csv-profile-auto-matched = Profil bancaire détecté automatiquement par le nom du fichier.
