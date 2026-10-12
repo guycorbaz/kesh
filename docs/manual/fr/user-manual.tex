@@ -248,7 +248,7 @@ ou un règlement. Le total ne compte qu'une fois un
 compte du grand livre partagé par plusieurs comptes bancaires.
 
 Quand un relevé a été importé, la tuile affiche aussi \emph{Relevé du \dots} : le solde de
-clôture du relevé CAMT.053 \textbf{de plus grande période} (et non du dernier importé), à sa
+clôture du relevé CAMT.053 \textbf{dont la période se termine le plus tard} (et non du dernier importé), à sa
 date --- il se recalcule quand un import est supprimé (\S\ref{sec:supprimer-import}). Seuls les relevés \textbf{CAMT.053}
 portent un solde de clôture — un import CSV n'en a pas (\S\ref{sec:import-bancaire}). Si
 le solde comptable à cette date diffère du relevé, la tuile affiche l'\textbf{écart}
@@ -271,7 +271,7 @@ de valeur postérieure, ne crée donc pas d'écart. Trois limites :
 \end{itemize}
 
 Un compte bancaire sans compte du grand livre lié n'a pas de solde comptable ; la tuile
-affiche tout de même son relevé de plus grande période. Si les comptes bancaires ne peuvent pas être
+affiche tout de même son relevé dont la période se termine le plus tard. Si les comptes bancaires ne peuvent pas être
 chargés, la tuile le dit au lieu de disparaître.
 
 \begin{keshnote}
@@ -1745,9 +1745,11 @@ même fichier peut ensuite être réimporté.
     \item \textbf{Ce qui reste}~: une trace \emph{Import bancaire supprimé} au journal
           d'audit, avec le fichier, la période et le nombre de transactions.
     \item \textbf{Ce qui suit}~: le même fichier se réimporte sans l'avertissement «~fichier
-          déjà importé~». La tuile \emph{Relevé du \dots} de \emph{Comptes bancaires} reprend le
-          relevé restant de plus grande période \textbf{portant un solde de clôture} (un
-          CAMT.053), ou disparaît s'il n'en reste aucun (\S\ref{sec:solde-comptable}). Un
+          déjà importé~», s'il n'en reste aucun autre import (un fichier importé deux fois
+          garde l'avertissement tant que l'un des deux imports subsiste). La tuile
+          \emph{Relevé du \dots} de \emph{Comptes bancaires} reprend le relevé restant
+          \textbf{portant un solde de clôture} (un CAMT.053) dont la période se termine le plus
+          tard, ou disparaît s'il n'en reste aucun (\S\ref{sec:solde-comptable}). Un
           compte bancaire qui porte des transactions importées ne s'archive pas~; supprimer ses
           imports peut le rendre archivable \textbf{s'il ne lui reste aucune transaction}, sous
           les autres conditions de l'archivage (dont celle du compte principal).

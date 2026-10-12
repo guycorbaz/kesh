@@ -2327,7 +2327,8 @@ async fn deleting_the_imports_lifts_the_archive_guard(pool: MySqlPool) {
 }
 
 /// H9 (revue P3, R3-7) — la tuile « Relevé du … » se recalcule sur le relevé
-/// restant de plus grande période portant un solde de clôture, puis disparaît.
+/// restant portant un solde de clôture dont la période se termine le plus tard,
+/// puis disparaît.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn deleting_a_statement_recomputes_the_last_statement(pool: MySqlPool) {
     let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;

@@ -218,7 +218,7 @@ Les principales ressources accessibles via l'API (liste non exhaustive — toute
 | Postes ouverts et rapprochements proposés | `GET /accounts/{id}/open-items` ⁶, `GET /accounts/{id}/lettering-proposals` ⁶ | — (accepter une proposition : `POST /letterings`) |
 | Taux de TVA | `GET /vat-rates` | — ¹ |
 | Comptes bancaires | `GET /bank-accounts` | `POST /bank-accounts`, `PUT /bank-accounts/{id}` ⁷, `PATCH /bank-accounts/{id}` (lien au grand livre), `DELETE /bank-accounts/{id}` (archivage) |
-| Imports bancaires | `GET /bank-imports`, `GET /bank-imports/{id}` | `POST /bank-imports` ⁸ |
+| Imports bancaires | `GET /bank-imports`, `GET /bank-imports/{id}` | `POST /bank-imports/preview`, `POST /bank-imports` ⁸ |
 
 *(Préfixe `…/api/v1` omis dans le tableau. Les corps de requête d'écriture peuvent différer des champs renvoyés en lecture : référez-vous aux formulaires correspondants de l'interface web pour les champs attendus.)*
 
