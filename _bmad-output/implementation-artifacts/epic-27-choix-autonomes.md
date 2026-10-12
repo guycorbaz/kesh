@@ -1926,3 +1926,70 @@ Consigne de l'orchestrateur : simplifier, ne pas ajouter de mécanisme fragile.
 - **Écartée** : un paramètre booléen « verrouillante » sur la fonction existante (change la signature d'une
   fonction générique sur l'exécuteur, appelée par `accept_one_invoice` et par un test de dépôt, pour un seul besoin).
 - **Réversible** : oui.
+
+### C-27-4-33 — Développement : une seule fonction de fusion de `failed[]` pour les deux routes
+
+- **Contexte** : l'AC2 veut l'ordre des propositions reçues (`accept`), l'AC4 l'ordre croissant (`reject`) ; deux
+  fusions écrites à part pouvaient diverger.
+- **Retenu** : `merge_failed_in_order(ids, preflight, locked)` — les refus du pré-vol dans une `HashMap` par
+  identifiant, ceux du verrou y sont ajoutés, puis la liste suit `ids` (lot reçu pour `accept`, lot trié pour
+  `reject`). Les doublons étant refusés en `400` avant, chaque identifiant n'a qu'une source. Testée en unitaire et
+  par l'AC2 (a) et l'AC6-7.
+- **Écartée** : concaténer puis trier (le tri d'`accept` n'est pas un tri par clé).
+- **Réversible** : oui.
+
+### C-27-4-34 — Développement : la classification rend `Option<FailedProposal>`, le plafond est une fonction
+
+- **Contexte** : l'AC1 veut une fonction pure, codes écrits au site ; l'AC5, une borne unique lue par les deux routes.
+- **Retenu** : `classify_batch_transaction(id, Option<&BankTransaction>) -> Option<FailedProposal>` (`None` =
+  éligible) ; `check_batch_size(len)`, appelée juste après le contrôle « lot vide » des deux routes, message
+  « un lot ne peut pas dépasser 500 transactions » (la valeur lue de `MAX_IN_CLAUSE_IDS`).
+- **Écartée** : un `enum` intermédiaire (Éligible / Refus(code)) — il aurait déplacé la construction des codes hors du
+  site que compte l'AC7.
+- **Réversible** : oui.
+
+### C-27-4-35 — Développement : `find_by_id_for_account_for_update` générique sur l'exécuteur
+
+- **Contexte** : la fiche écrit la signature avec `tx` ; ses voisines du dépôt prennent un `Executor` générique.
+- **Retenu** : générique, comme `find_pending_by_id_for_account` dont elle partage le texte SQL ; le doc-comment
+  avertit qu'appelée en autocommit elle ne verrouille rien au-delà de l'instruction. Seul appelant : `reject_batch`,
+  avec `&mut **tx_outer`.
+- **Écartée** : `&mut Transaction` imposé (s'écarte du patron du fichier pour une garantie que le seul appelant tient).
+- **Réversible** : oui.
+
+### C-27-4-36 — Développement : l'AC6-3 en un seul test, l'AC3 en un seul test
+
+- **Contexte** : l'AC6-3 demande la réécriture du test « autre compte » et un jumeau « autre société » comparé en
+  JSON ; l'AC3 admet un test qui appelle `/accept` puis `/reject` sous le même verrou tenu.
+- **Retenu** : `post_accept_refuses_cross_account_and_cross_company_transactions_identically` (renommé, les deux cas,
+  une aide qui vérifie que rien n'est écrit et une qui neutralise l'identifiant avant comparaison) ;
+  `batches_without_eligible_transaction_take_no_lock` (les deux routes, statut seul, sans borne de temps — F3-4).
+- **Réversible** : oui (tests seuls).
+
+### C-27-4-37 — Développement : montage de l'AC2 (a)
+
+- **Contexte** : il faut, dans un lot non trié, un absent d'identifiant bas, une éligible refusée sous verrou et un
+  absent d'identifiant haut.
+- **Retenu** : absent bas = une transaction d'un **autre compte** de la même société, créée la première ; éligible
+  refusée sous verrou = facture `draft` (`RECONCILIATION_INVOICE_NOT_ELIGIBLE`) ; absent haut = identifiant
+  inexistant. Assertion de montage `low_absent < mid`.
+- **Réversible** : oui (test seul).
+
+### C-27-4-38 — Développement : l'E2E constate le rejet par la liste et le statut, non par un champ de rejet
+
+- **Contexte** : `GET /api/v1/reconciliation/transactions/{id}` ne porte pas `auto_match_rejected_at`
+  (`TransactionResponse`, `bank_imports.rs:245`).
+- **Retenu** : l'E2E asserte le compteur `1`, l'*Échec partiel* de A (`data-error-code`, libellé récrit), l'absence de
+  `reconciliation-error`, l'absence des deux lignes dans la liste rechargée, et le statut `pending` de B côté serveur.
+  Le rejet lui-même est prouvé côté Rust (AC6-1). La règle (`POST /api/v1/reconciliation/rules`,
+  `counterparty_contains` sur une contrepartie unique) et l'import B sont supprimés en `finally`.
+- **Écartée** : ajouter le champ à la réponse (changement de contrat hors périmètre).
+- **Réversible** : oui (test seul).
+
+### C-27-4-39 — Développement : un test unitaire hors du décompte `error_code: "…"` de l'AC7
+
+- **Contexte** : le test de `merge_failed_in_order` construit des `FailedProposal` ; écrit `error_code: "X"…`, il
+  aurait ajouté un 28ᵉ littéral au décompte de la méthode de l'AC7.
+- **Retenu** : `error_code: String::from("TEST")`, commenté ; le décompte rend 27 (`grep -ohE 'error_code: "[A-Z_]+"' …
+  | sort -u | wc -l`).
+- **Réversible** : oui.

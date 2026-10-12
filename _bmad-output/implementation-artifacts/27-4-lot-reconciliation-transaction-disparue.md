@@ -2,11 +2,12 @@
 
 ## Status
 
-**in-progress** — fiche créée le 2026-10-12 en autonomie (`bmad-create-story`), sur `f9725c29` (merge de la
+**review** — fiche créée le 2026-10-12 en autonomie (`bmad-create-story`), sur `f9725c29` (merge de la
 Story 27-1, #635), branche `story/27-4-lot-reconciliation-transaction-disparue`, worktree
-`/home/gcorbaz/devel/kesh-27-4`. Choix consignés au registre `epic-27-choix-autonomes.md`, **C-27-4-1 à C-27-4-32**.
+`/home/gcorbaz/devel/kesh-27-4`. Choix consignés au registre `epic-27-choix-autonomes.md`, **C-27-4-1 à C-27-4-39**.
 13 AC (AC1 à AC13). Validation **close** en trois passes (P1 Sonnet 4 MEDIUM → P2 Opus 5 MEDIUM → P3 Sonnet
-0 MEDIUM), LOW de la P3 appliqués ; développement en cours.
+0 MEDIUM), LOW de la P3 appliqués. Développement fait le 2026-10-12/13 (Opus) ; gates complets verts au dernier
+commit de code ; prompt de la revue de code P1 : `27-4-review-prompt-p1.md`.
 PR : **`closes #634`**.
 
 ## Story
@@ -468,29 +469,29 @@ sinon le binaire muté.
 
 ## Tasks / Subtasks
 
-- [ ] **T0 — Montage** (AC —) : base `kesh_274` et `kesh_e2e_274` (migrations du worktree, seed
+- [x] **T0 — Montage** (AC —) : base `kesh_274` et `kesh_e2e_274` (migrations du worktree, seed
   `scripts/seed-dev-db.sql`), port `3034`, `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-27-4/target`,
   `node_modules` par `cp -al` depuis le dépôt principal. Gates lourds sous `flock
   /home/gcorbaz/devel/kesh-gate-logs/.gate.lock`.
-- [ ] **T1 — Dépôt** (AC11, AC5) : `find_by_ids_for_account` à la place de `find_pending_by_ids`, constante de
+- [x] **T1 — Dépôt** (AC11, AC5) : `find_by_ids_for_account` à la place de `find_pending_by_ids`, constante de
   plafond `pub` sous son nom (C-27-4-20), `find_by_id_for_account_for_update` (AC4, C-27-4-21) ; tests de dépôt.
-- [ ] **T2 — Classification** (AC1) : fonction pure appelant `is_reconciled` (C-27-4-19) + tests unitaires ;
+- [x] **T2 — Classification** (AC1) : fonction pure appelant `is_reconciled` (C-27-4-19) + tests unitaires ;
   doc-comment d'`is_reconciled` complété.
-- [ ] **T3 — `post_accept`** (AC2, AC3, AC5) : pré-vol classant, sous-lot éligible, `batch_size` explicite,
+- [x] **T3 — `post_accept`** (AC2, AC3, AC5) : pré-vol classant, sous-lot éligible, `batch_size` explicite,
   fusion de `failed[]` dans l'ordre reçu, court-circuit, plafond — **avec leurs tests** : AC2 (a) ordre, AC2 (b)
   `batch_size`, AC3 route `/accept` (verrou tenu), AC5 route `/accept` (500 passe, 501 → `400`).
-- [ ] **T4 — `post_reject`** (AC4, AC3, AC5) : pré-vol classant, `reject_batch` sans `tx_map` et avec
+- [x] **T4 — `post_reject`** (AC4, AC3, AC5) : pré-vol classant, `reject_batch` sans `tx_map` et avec
   `bank_account_id`, garde de l'`UPDATE`, relecture verrouillante (fonction de dépôt de T1) et reclassement,
   `failed[]` trié en entier — **avec leurs tests** : AC3 route `/reject`, AC5 route `/reject`.
-- [ ] **T5 — Tests d'intégration** (AC6, AC12) : huit scénarios (AC6-1 à AC6-8, le 5. en deux cas (a) et (b)),
+- [x] **T5 — Tests d'intégration** (AC6, AC12) : huit scénarios (AC6-1 à AC6-8, le 5. en deux cas (a) et (b)),
   trois tests existants réécrits,
   commentaire `:1734-1737`.
-- [ ] **T6 — Frontend** (AC7, AC8) : libellés, quatre catalogues, `sitesTotal`, doc-comment « Cinq codes »,
+- [x] **T6 — Frontend** (AC7, AC8) : libellés, quatre catalogues, `sitesTotal`, doc-comment « Cinq codes »,
   Vitest (filets `i18n-repli-divergent-actif` et `i18n-un-repli-par-cle` verts), E2E à valeur de règle unique et
   nettoyage en `finally`.
-- [ ] **T7 — Documentation** (AC9, AC10, AC12) : manuel + PDF aplati et normalisé (« refusé en entier » 2 → 1),
+- [x] **T7 — Documentation** (AC9, AC10, AC12) : manuel + PDF aplati et normalisé (« refusé en entier » 2 → 1),
   `api-external.md`, CHANGELOG, doc-comments ; grep de propagation.
-- [ ] **T8 — Mutations et gates** (AC13) : campagne M1-M19 (M7a et M7b ; M18 et M19 déclarées équivalentes ; M11 rejouée
+- [x] **T8 — Mutations et gates** (AC13) : campagne M1-M19 (M7a et M7b ; M18 et M19 déclarées équivalentes ; M11 rejouée
   avant d'être déclarée survivante) ; gate complet (`scripts/test-fast.sh`), Vitest
   complet, `npm run check`, `npm run lint-i18n-ownership`, `npm run build`, **E2E complet au dernier commit de
   code** ; la base remise à zéro avant le gate complet.
@@ -663,11 +664,169 @@ sans conflit textuel attendu.
 
 ### Agent Model Used
 
+Claude Opus 5.5 (`claude-opus-5-5`), en autonomie, worktree `/home/gcorbaz/devel/kesh-27-4`, port 3034, bases
+`kesh_274` / `kesh_e2e_274`.
+
 ### Debug Log References
+
+Journaux hors dépôt, `/home/gcorbaz/devel/kesh-gate-logs/` : `27-4-gate-backend.log` (gate complet),
+`27-4-gate-frontend.log`, `27-4-e2e-full.log`, `27-4-mutations.log` et `27-4-mut/<Mn>.txt` (une sortie par
+mutation), `27-4-make-user.log`, `27-4-dev-user-manual-flat.txt` (PDF aplati et normalisé).
 
 ### Completion Notes List
 
+**Ce qui a été fait, par tâche.**
+
+- **T1 — dépôt** (`crates/kesh-db/src/repositories/reconciliation.rs`) : `find_pending_by_ids` remplacée par
+  `find_by_ids_for_account` (scope société et compte, **sans** filtre de statut ni de rejet, même plafond, même
+  `HashMap`) ; `MAX_IN_CLAUSE_IDS` rendue `pub` sous son nom (C-27-4-20) ; `find_by_id_for_account_for_update`, dont le
+  texte SQL est construit par la fonction privée `bank_tx_by_id_for_account_sql(suffix)`, partagée avec
+  `find_pending_by_id_for_account` (C-27-4-32, F3-3) ; doc du module (l. 18) et de `find_pending_by_id_for_account` au
+  nom neuf. Deux tests de dépôt : `find_by_ids_for_account_returns_every_status_and_nothing_out_of_scope` (pending,
+  reconciled, rejetée rendues ; autre compte, autre société, inexistant non ; vide → vide ; 500 passent, 501 → erreur)
+  et `find_by_id_for_account_for_update_scopes_without_status_filter`.
+- **T2 — classification** (`routes/reconciliation.rs`) : `classify_batch_transaction(id, Option<&BankTransaction>) ->
+  Option<FailedProposal>` (C-27-4-34), qui appelle `is_reconciled` ; codes écrits au site. Module
+  `batch_classification_tests` : les quatre lignes de l'AC1, « rapprochée et rejetée », « `pending` avec lien »,
+  « `reconciled` sans lien », plus `check_batch_size` (500 / 501) et `merge_failed_in_order` — **9** tests unitaires.
+  Doc-comment d'`is_reconciled` complété du second appelant (`bank_imports.rs`), et son jumeau écran
+  (`bank-import-deletion.ts`).
+- **T3 — `post_accept`** : plafond (`check_batch_size`) à l'étape 0 ; pré-vol `find_by_ids_for_account` + classification ;
+  sous-lot éligible cloné dans la fermeture de `retry_with` ; court-circuit sans transaction ni verrou ;
+  `batch_size` du lot reçu passé à `accept_once` → `accept_batch` ; `failed[]` fusionné dans l'ordre reçu
+  (`merge_failed_in_order`, C-27-4-33). Message « n'appartiennent pas au bankAccountId » retiré.
+- **T4 — `post_reject`** : plafond ; tri croissant **avant** le pré-vol ; classification ; court-circuit ;
+  `reject_batch(…, bank_account_id, …, ids)` sans `tx_map` (ses deux branches mortes retirées) ; `UPDATE` gardé par
+  `bank_account_id = ?`, `matched_entry_id IS NULL`, `auto_match_rejected_at IS NULL` ; à 0 ligne, relecture
+  `find_by_id_for_account_for_update` et reclassement ; repli « relue éligible » `warn!` + `race_during_update` ;
+  `failed[]` fusionné trié en entier.
+- **T5 — tests d'intégration** (`crates/kesh-api/tests/reconciliation_e2e.rs`) : **14 tests neufs** —
+  AC6-1 (`post_accept_refuses_a_transaction_deleted_with_its_import_and_accepts_the_rest`,
+  `post_reject_refuses_a_transaction_deleted_with_its_import_and_rejects_the_rest`), AC6-2
+  (`post_accept_…` et `post_reject_refuses_a_transaction_deleted_while_the_batch_waits_for_the_lock`), AC6-4
+  (`post_reject_mixed_batch_of_the_four_classes`), AC6-5 (a) (`post_reject_does_not_reject_twice_a_transaction_rejected_meanwhile`),
+  AC6-5 (b) (`post_reject_does_not_reject_a_transaction_moved_to_another_account`), AC6-6
+  (`post_accept_refuses_a_rejected_transaction`), AC6-7 (`post_reject_failed_merges_preflight_and_locked_refusals_by_id`),
+  AC6-8 (`post_reject_locking_reread_sees_a_deletion_committed_after_the_snapshot`, observation durable et angle mort
+  écrits au doc-comment), AC2 (a) (`post_accept_failed_follows_the_received_order`), AC2 (b)
+  (`post_accept_trace_batch_size_is_the_received_batch`), AC3 (`batches_without_eligible_transaction_take_no_lock`, les
+  deux routes, statut seul) et AC5 (`batches_over_500_transactions_are_refused_in_400`, les deux routes) ; **un test
+  réécrit et renommé** : `post_accept_returns_400_on_cross_account_proposal` →
+  `post_accept_refuses_cross_account_and_cross_company_transactions_identically` (AC6-3 et son jumeau, C-27-4-36) ;
+  **deux réécrits** : `post_reject_skips_reconciled_transactions` et
+  `post_reject_after_accept_returns_already_reconciled_failed` (`200` + `RECONCILIATION_ALREADY_RECONCILED`) ;
+  commentaires `:1734-1737`, `:1195-1196`, `:2106` et `:4339` (ex-`:4325-4326`) corrigés. Le motif `GET_LOCK`
+  (R3-9) a été vérifié à la première exécution : il voit bien le lot bloqué dans `with_account_lock`.
+- **T6 — frontend** : `failed-proposal-label.ts` (`RECONCILIATION_ALREADY_REJECTED`, `race_during_update` lu,
+  `BANK_TRANSACTION_NOT_FOUND` récrit, « 29 codes », « 27 littéraux », « Cinq codes », doc-comment de
+  `failedProposalLabel`) ; quatre catalogues (deux clés neuves, une récrite ; DE/IT/EN des Dev Notes, cohérents avec
+  le glossaire et les clés voisines : *abgeglichen*, *riconciliata*, *Bankkonto*, *conto bancario*) ;
+  `failed-proposal-label.test.ts` (`EXPECTED_KEYS` à 29, titre, en-tête, trois tests) ;
+  `ReconciliationProposals.test.ts` (test existant mis au texte récrit, un test neuf : transaction supprimée désignée
+  par sa date et son montant relevés, `reconciliation-error` absent) ; `sitesTotal` 2041 → **2043** ; E2E
+  `reconciliation-deleted-import.spec.ts` (C-27-4-24, C-27-4-38).
+- **T7 — documentation** : manuel utilisateur, puce *Supprimer un import* récrite par la conduite et motifs d'« Un
+  refus n'empêche pas les autres » complétés ; `make user` (3 passes, stable) ; `api-external.md` (paragraphes
+  « Transaction disparue, rapprochée ou rejetée » et « Plafond », rejet trié en entier) ; CHANGELOG `[0.13.2]` :
+  une ligne sous *Modifié* (contrat), un `### Corrigé` créé (aucun n'existait sur `f9725c29`).
+- **T8 — mutations et gates** : ci-dessous.
+
+**Mutations (AC13)** — journal `kesh-gate-logs/27-4-mutations.log`, une par une sur arbre propre, motif unique
+(l'outil d'édition refuse un motif non unique), restauration `git checkout --` puis `touch`, sous `flock`. Tests
+exécutés à chaque fois : `binary(reconciliation_e2e)` et `batch_classification` (87 tests), ou le Vitest du module.
+
+| # | Résultat | Rougit |
+|---|---|---|
+| M1 | tuée | AC6-1 (accept), AC6-3, AC2 (a)(b), AC3, AC5 |
+| M2 | tuée | AC6-1 (reject), AC6-4, AC3, AC5 |
+| M3 | tuée | unitaires « rapprochée » ×4, AC6-4, `post_reject_skips_reconciled_transactions` |
+| M4 | tuée | unitaire « rejetée », AC6-6, AC6-4, AC6-5 (a), AC6-7 |
+| M5 | tuée | unitaire « rapprochée et rejetée » |
+| M6 | tuée | unitaire « absente », AC6-1, AC6-3 et 8 autres |
+| M7a | tuée | AC3 (`/accept` : `409`) |
+| M7b | tuée | AC3 (`/reject` : `409`, l. 7410) |
+| M8 | tuée (en fin et en tête) | AC2 (a) |
+| M9 | tuée (pré-vol puis verrou ; verrou puis pré-vol ; sans tri) | AC6-7 ; AC6-4 pour la variante sans tri |
+| M10 | tuée | AC6-5 (a) |
+| M11 | tuée au premier passage | AC6-8 (`race_during_update` lu dans la vue cohérente) — aucun rejeu nécessaire |
+| M12 | tuée | AC2 (b) |
+| M13 | tuée | AC5, unitaire du plafond |
+| M14 | tuée | Vitest `race_during_update` |
+| M15 | tuée | Vitest `EXPECTED_KEYS` |
+| M16 | tuée | unitaire « `pending` avec lien » |
+| M17 | tuée | AC6-5 (b) |
+| M18 | survit — **équivalente**, vérifiée | non atteignable sous la lecture courante ; la sortie de M11 montre que c'est **cette** branche qui répond quand la relecture n'est plus verrouillante |
+| M19 | survit — **équivalente**, vérifiée | les cinq `UPDATE` qui posent `matched_entry_id` posent `status = 'reconciled'` en même temps (`reconciliation.rs:2039, 2538, 2990, 3801, 4258`) |
+
+**17 mutations numérotées sur 19 tuées** (18 lignes sur 20, M7 comptant deux lignes) ; M18 et M19 équivalentes.
+
+**Gates au dernier commit de code** (`ff74bacc` ; le commit `3a293f36` qui suit ne porte que `.tex`, PDF et Markdown),
+bases `kesh_274` et `kesh_e2e_274` recréées avant :
+
+- `scripts/test-fast.sh` complet (fmt, clippy `-D warnings`, nextest) : **3465 tests passés, 6 ignorés**, 0 échec.
+- Frontend : `npm run check` 0 erreur (28 avertissements préexistants) ; `lint-i18n-ownership` PASS ;
+  `npm run test:unit` **132 fichiers, 1359 tests** passés ; `npm run build` vert.
+- E2E complet (port 3034) : **264 passés, 7 échecs, 19 ignorés** ; les 7 sont exactement la KF-029 (#97) —
+  `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ;
+  aucun hors liste ; `reconciliation-deleted-import.spec.ts` vert (aussi rejoué seul auparavant).
+- Manuel : PDF aplati et normalisé — « refusé en entier » **2 → 1** (reste l'import CSV, l. 1786), « les autres
+  propositions du lot sont traitées » 1, « rapprochée ou rejetée » 1, « Rechargez la page » 0.
+
+**Décomptes** (commandes au dépôt) : littéraux `error_code: "…"` de `reconciliation.rs` 26 → **27** (`grep -ohE
+'error_code: "[A-Z_]+"' … | sort -u | wc -l`, aux deux bornes) ; codes du Vitest 28 → **29** ; tests ajoutés
+**de `f9725c29` à `HEAD`** (`grep -c`) : `reconciliation_e2e.rs` `sqlx::test` 66 → 80 (+14, le test renommé compté
+une fois), `reconciliation_repository.rs` 12 → 14 (+2), `#[test]` de `reconciliation.rs` 5 → 14 (+9) ; Vitest
+`it(` de `failed-proposal-label.test.ts` 12 → 15 (+3, et un cas de plus généré par `EXPECTED_KEYS`),
+`ReconciliationProposals.test.ts` 15 → 16 (+1) ; `sitesTotal` 2041 → 2043 (collecte du test : rouge à 2043 contre
+2041 attendu, puis `grep -o "i18nMsg("` du module 32 → 34) ; 19 fichiers hors `_bmad-output` (`git diff --stat`).
+
+**Propagation** (AC12, valeurs) : `grep -rnE "appartiennent pas|find_pending_by_ids|fail-fast 400|en entier"` et
+`grep -nE "→ 400|\(400|batch-level 400"` — résidus triés **légitimes** : « en entier » dans d'autres sens (Olico,
+rejeu, import CSV `user-manual.tex:1786`, `admin-manual.tex:1990`), mentions historiques du nom remplacé
+(`repositories/reconciliation.rs:20`, `:273`, `:336`), `reconciliation_e2e.rs:2792` (corps sans `type`, `400`
+légitime), montants `400.00` ; `errors.rs:2618` (« Transaction bancaire introuvable ou déjà réconciliée. ») sert la
+route **unitaire** `/manual`, hors périmètre.
+
+**Écarts à la fiche** : aucun sur le fond. Formes choisies là où la fiche laissait le choix : AC3 et AC6-3 en un test
+chacun (C-27-4-36) ; signature générique de la relecture (C-27-4-35) ; l'E2E constate le rejet par la liste et le
+statut, `GET /reconciliation/transactions/{id}` ne portant pas le champ de rejet (C-27-4-38) ; un test unitaire
+écrit `String::from` pour rester hors du décompte de l'AC7 (C-27-4-39).
+
+**Fichiers communs avec les branches sœurs** (recalculés au `HEAD` de chacune, `git diff --name-only
+origin/main...<branche>`) : 27-2 (`633f6c6f`, PR #636) — `CHANGELOG.md` (elle crée aussi un `### Corrigé` : **à
+réunir en un seul**), `reconciliation.rs` (son hunk `@@ -626` de `get_proposals`, disjoint), `reconciliation_e2e.rs`,
+quatre `messages.ftl`, `user-manual.tex` + PDF (**régénérer**, jamais fusionner le binaire), `i18n-keys.test.ts`
+(`sitesTotal` **2043** chez elle aussi : la même ligne, valeur finale à recompter — 2045 attendu si les deux deltas
+de +2 s'ajoutent), registre et `sprint-status.yaml`. 27-3 (`59abbe1f`) — `CHANGELOG.md` (un `### Corrigé`),
+`api-external.md`, quatre `messages.ftl`, manuel + PDF, `i18n-keys.test.ts` (`sitesTotal` **2073** chez elle, et non
+plus 2062 comme l'écrit le § *Fichiers communs*), `sprint-status.yaml`, registre (le sien est propre à la 27-3,
+mais elle touche aussi `epic-27-choix-autonomes.md`).
+
 ### File List
+
+- `CHANGELOG.md`
+- `crates/kesh-api/src/routes/reconciliation.rs`
+- `crates/kesh-api/tests/reconciliation_e2e.rs`
+- `crates/kesh-db/src/repositories/bank_imports.rs`
+- `crates/kesh-db/src/repositories/reconciliation.rs`
+- `crates/kesh-db/tests/reconciliation_repository.rs`
+- `crates/kesh-i18n/locales/de-CH/messages.ftl`
+- `crates/kesh-i18n/locales/en-CH/messages.ftl`
+- `crates/kesh-i18n/locales/fr-CH/messages.ftl`
+- `crates/kesh-i18n/locales/it-CH/messages.ftl`
+- `docs/api-external.md`
+- `docs/manual/fr/user-manual.pdf`
+- `docs/manual/fr/user-manual.tex`
+- `frontend/src/lib/features/bank-import/bank-import-deletion.ts`
+- `frontend/src/lib/features/reconciliation/ReconciliationProposals.test.ts`
+- `frontend/src/lib/features/reconciliation/failed-proposal-label.test.ts`
+- `frontend/src/lib/features/reconciliation/failed-proposal-label.ts`
+- `frontend/src/lib/shared/i18n-keys.test.ts`
+- `frontend/tests/e2e/reconciliation-deleted-import.spec.ts` (neuf)
+- `_bmad-output/implementation-artifacts/27-4-lot-reconciliation-transaction-disparue.md`
+- `_bmad-output/implementation-artifacts/27-4-review-prompt-p1.md` (neuf)
+- `_bmad-output/implementation-artifacts/epic-27-choix-autonomes.md`
+- `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
 
@@ -740,3 +899,9 @@ sans conflit textuel attendu.
     `rejetée entre-temps`, `utilisateur des tests` — résidus : l'entrée P2 de ce Change Log (historique) et la
     phrase du manuel prescrite à l'AC9 (« rapprochée ou rejetée entre-temps », qui contient le témoin).
   - Statut : `in-progress`.
+- 2026-10-12/13 — **développement** (`bmad-dev-story`, Opus, autonomie) : T0 à T8, commits `79b66ffd` (backend),
+  `ff74bacc` (frontend, dernier commit de code), `3a293f36` (manuel, PDF, contrat d'API, CHANGELOG). Choix
+  **C-27-4-33 à C-27-4-39**. Mutations : 17 sur 19 tuées, M18 et M19 équivalentes vérifiées. Gates complets au dernier
+  commit de code, bases recréées : backend 3465/3465 (6 ignorés), Vitest 1359/1359, `check` 0 erreur, `build` vert,
+  E2E 264 passés et 7 échecs, tous KF-029. Détail au Dev Agent Record. Prompt de la revue de code P1 :
+  `27-4-review-prompt-p1.md` (trois lentilles Sonnet B/E/A). Statut : `review`.
