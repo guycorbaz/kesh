@@ -58,4 +58,31 @@ PR : `closes #632`.
 Après la story : `scripts/prepare-release.sh`, macros des manuels, CHANGELOG, tag annoté —
 **sur accord de Guy** (push, PR, merge et tag ne sont pas autorisés d'office pour cet epic).
 
+## Amendement du 2026-10-12
+
+*Le texte du kickoff ci-dessus est laissé tel quel ; cette section le complète.*
+
+**Demande de Guy : chaque release compte au moins un bug de moins que la précédente.** À la
+v0.13.1, le décompte était de **55** (rétrospective de l'Epic 26). Deux bugs ont été ouverts
+pendant la spécification de la 27-1 — [#633] et [#634] —, d'où **57** au 2026-10-12 (recompté par
+la commande du `CLAUDE.md`, § *Priorités des défauts*). [#632] porte le label `enhancement` : sa
+fermeture ne fait pas baisser le décompte.
+
+La v0.13.2 ferme donc aussi trois bugs, chacun par sa story :
+
+| Story | Issue | Priorité | Objet | Ordre |
+|---|---|---|---|---|
+| 27-2 | [#624] | P1 | devise des imports CSV et CAMT | prête |
+| 27-3 | [#626] | P2 | profil changé après l'aperçu | prête |
+| 27-4 | [#634] | P2 | lot de réconciliation refusé en entier quand une transaction a disparu | **après le merge de la 27-1** |
+
+**La release attend les quatre stories** (27-1 à 27-4). **Avant le tag**, le nombre de bugs se
+recompte depuis GitHub et doit valoir **au plus 54** (57 − 3) ; s'il dépasse — un bug ouvert
+entre-temps —, la release attend d'en fermer autant.
+
+[#624]: https://github.com/guycorbaz/kesh/issues/624
+[#626]: https://github.com/guycorbaz/kesh/issues/626
+[#633]: https://github.com/guycorbaz/kesh/issues/633
+[#634]: https://github.com/guycorbaz/kesh/issues/634
+
 [#632]: https://github.com/guycorbaz/kesh/issues/632
