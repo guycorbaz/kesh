@@ -166,14 +166,24 @@ pub(crate) fn parse_with_version<R: std::io::BufRead>(
                         }
                     }
                     "Amt" => {
+                        // La devise d'un montant se lit sur l'élément qui porte
+                        // CE montant (Story 27-2, AC19) : `TxDtls/Amt` et
+                        // `Ntry/Amt`, les deux seuls ancrages du montant
+                        // (`handle_txdtls_text`, `handle_ntry_text` — à ne pas
+                        // laisser diverger). Les montants d'information
+                        // (`AmtDtls/InstdAmt/Amt`, `Chrgs/Rcrd/Amt`,
+                        // `Intrst`…) portent la devise d'origine : ignorés ici.
+                        // À l'ouverture, `Amt` n'est pas encore poussé sur
+                        // `path` : `path.last()` est son parent.
+                        let parent = path.last().map(String::as_str);
                         if let Some(ccy) = attr_string(&start, b"Ccy")?
                             && let Some(s) = sb.as_mut()
                             && let Some(n) = s.ntry.as_mut()
                         {
-                            if let Some(t) = n.current_txdtls.as_mut() {
-                                t.currency = Some(ccy);
-                            } else {
-                                n.currency = Some(ccy);
+                            match (parent, n.current_txdtls.as_mut()) {
+                                (Some("TxDtls"), Some(t)) => t.currency = Some(ccy),
+                                (Some("Ntry"), None) => n.currency = Some(ccy),
+                                _ => {}
                             }
                         }
                     }

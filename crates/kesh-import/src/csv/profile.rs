@@ -9,7 +9,8 @@
 //! [`CsvProfile::validate`] applique **toutes** les règles
 //! métier avant insertion DB ou usage parser :
 //! - XOR `amount` vs `debit_credit_split` (Pass 1 H6 + M13)
-//! - Indices `column_mapping` deux à deux distincts (Pass 1 M13 collision)
+//! - Indices `column_mapping` deux à deux distincts (Pass 1 M13 collision),
+//!   colonne Devise facultative comprise (Story 27-2, #624)
 //! - `date_format` chrono compilable
 //! - `field_separator` ∈ {',', ';', '\t'}
 //! - `decimal_separator` ∈ {'.', ','}
@@ -33,6 +34,15 @@ pub const MAX_HEADER_ROW_COUNT: u8 = 20;
 
 /// Mapping colonnes vers les champs `ImportedTransaction`. Indices
 /// 0-based sur les colonnes du CSV (post header skip).
+///
+/// ⛔ **`deny_unknown_fields` est un contrat de compatibilité, pas un
+/// détail** (Story 27-2, choix C-27-2-1 et C-27-2-15). Ajouter un champ
+/// rend les profils qui s'en servent illisibles par les binaires
+/// antérieurs : refus bruyant, sans bump. Retirer `deny_unknown_fields`
+/// rendrait **silencieux** le retour depuis une version ultérieure — un
+/// champ inconnu serait ignoré, et c'est le downgrade corrupteur que la
+/// politique de migration interdit. Le test
+/// `unknown_key_is_rejected_so_older_binaries_refuse_loudly` le garde.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ColumnMapping {
@@ -57,6 +67,13 @@ pub struct ColumnMapping {
     /// `ImportedTransaction.counterparty_name`).
     #[serde(skip_serializing_if = "Option::is_none", default)]
     pub counterparty: Option<usize>,
+    /// Index de la colonne Devise (facultatif) ; sans elle, le relevé est
+    /// supposé en [`DEFAULT_CSV_CURRENCY`](crate::csv::DEFAULT_CSV_CURRENCY)
+    /// (Story 27-2, #624). Réglée, la cellule de chaque ligne est lue
+    /// (trois lettres ASCII, casse normalisée) et le relevé doit être dans
+    /// une seule devise.
+    #[serde(skip_serializing_if = "Option::is_none", default)]
+    pub currency: Option<usize>,
 }
 
 impl ColumnMapping {
@@ -79,6 +96,9 @@ impl ColumnMapping {
         }
         if let Some(i) = self.counterparty {
             out.push(("counterparty", i));
+        }
+        if let Some(i) = self.currency {
+            out.push(("currency", i));
         }
         out
     }
@@ -333,6 +353,7 @@ mod tests {
                 reference: Some(2),
                 details: Some(3),
                 counterparty: None,
+                currency: None,
             },
             date_format: "%d.%m.%Y".to_string(),
             decimal_separator: '.',
@@ -542,6 +563,7 @@ mod tests {
             reference: Some(2),
             details: Some(3),
             counterparty: None,
+            currency: None,
         };
         let json = serde_json::to_string(&cm).unwrap();
         // amount présent, debit_credit_split + counterparty omis (skip None)
@@ -561,11 +583,62 @@ mod tests {
             reference: None,
             details: None,
             counterparty: None,
+            currency: None,
         };
         let json = serde_json::to_string(&cm).unwrap();
         assert!(json.contains("\"debit_credit_split\":[1,2]"));
         assert!(!json.contains("\"amount\""));
         let cm2: ColumnMapping = serde_json::from_str(&json).unwrap();
         assert_eq!(cm, cm2);
+    }
+
+    // ── Story 27-2 (#624) : colonne Devise facultative ─────────────────
+
+    #[test]
+    fn rejects_collision_currency_date_same_index() {
+        let mut p = valid_profile();
+        p.column_mapping.currency = Some(0);
+        match p.validate().unwrap_err() {
+            CsvError::ProfileMisconfigured(msg) => {
+                assert!(msg.contains("column_mapping.currency"), "{msg}");
+                assert!(msg.contains("column_mapping.date"), "{msg}");
+            }
+            other => panic!("expected ProfileMisconfigured, got {other:?}"),
+        }
+    }
+
+    /// Un mapping sans devise se sérialise SANS la clé : c'est ce qui garde
+    /// le retour à une 0.13.1 indolore pour les profils qui ne lisent pas la
+    /// devise (C-27-2-1).
+    #[test]
+    fn mapping_without_currency_serializes_without_the_key() {
+        let m = valid_profile().column_mapping;
+        assert!(!serde_json::to_string(&m).unwrap().contains("currency"));
+    }
+
+    #[test]
+    fn currency_key_deserializes() {
+        let m: ColumnMapping =
+            serde_json::from_str(r#"{"date":0,"amount":1,"currency":2}"#).unwrap();
+        assert_eq!(m.currency, Some(2));
+        assert!(m.all_indices().contains(&("currency", 2)));
+    }
+
+    #[test]
+    fn legacy_json_without_currency_gives_none() {
+        let m: ColumnMapping =
+            serde_json::from_str(r#"{"date":2,"debit_credit_split":[5,6]}"#).unwrap();
+        assert_eq!(m.currency, None);
+    }
+
+    /// ⛔ `deny_unknown_fields` est la prémisse de C-27-2-1 (aucune
+    /// migration, aucun bump pour la colonne Devise) : un binaire antérieur
+    /// doit REFUSER une clé qu'il ne connaît pas, jamais l'ignorer. Ce test
+    /// le garde pour la clé suivante (C-27-2-15).
+    #[test]
+    fn unknown_key_is_rejected_so_older_binaries_refuse_loudly() {
+        assert!(
+            serde_json::from_str::<ColumnMapping>(r#"{"date":0,"amount":1,"bogus":2}"#).is_err()
+        );
     }
 }

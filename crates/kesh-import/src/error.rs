@@ -2,7 +2,7 @@
 //!
 //! `CamtError` représente uniquement les défaillances à la frontière du
 //! parseur CAMT.053 (XML mal formé, version non supportée, champ requis
-//! manquant). Les violations métier (devise non supportée par la v0.1,
+//! manquant). Les violations métier (devise non supportée par cette version,
 //! balance check échoué) appartiennent à `kesh-core::CoreError` et ne
 //! transitent pas par cette enum — la séparation reflète la décision
 //! architecture #7 : `kesh-import` est publiable indépendamment et ne
@@ -192,6 +192,24 @@ pub enum CsvError {
     )]
     HeaderSkipsData { line: usize },
 
+    /// Le relevé porte **plusieurs devises** parmi ses lignes valides
+    /// (Story 27-2, #624) — seulement quand le profil lit une colonne
+    /// Devise (`ColumnMapping::currency`).
+    ///
+    /// **Refus de l'import entier, non confirmable**, comme
+    /// [`CsvError::AmountSignMismatch`] : un relevé de compte est dans une
+    /// seule devise ; importer les seules lignes de l'une d'elles ferait
+    /// mentir le solde sans un mot.
+    ///
+    /// `currencies` : les devises distinctes, **triées**, au plus
+    /// [`MAX_REPORTED_CURRENCIES`](crate::csv::parser::MAX_REPORTED_CURRENCIES)
+    /// — les premières de l'ensemble complet trié, sans indicateur de
+    /// troncature (C-27-2-13). Seules les lignes **valides** révèlent leur
+    /// devise : une ligne écartée pour sa date ou son montant n'est pas
+    /// lue jusqu'à sa devise (C-27-2-14).
+    #[error("Le relevé porte plusieurs devises ({}) : un relevé CSV doit être dans une seule devise", currencies.join(", "))]
+    MixedCurrencies { currencies: Vec<String> },
+
     /// Erreur I/O sous-jacente (lecture buffer, etc.).
     #[error("I/O CSV : {0}")]
     Io(String),
@@ -213,6 +231,10 @@ pub enum CsvLineErrorCode {
     /// [`CsvError::PartialFailure`] : il refuse l'import entier par
     /// [`CsvError::AmountSignMismatch`] (pourquoi : cf. ce variant).
     AmountSignMismatch,
+    /// Cellule Devise illisible (Story 27-2, #624) : autre chose que trois
+    /// lettres ASCII (`Fr.`, `€`, `CH`, `CHF1`). Erreur de ligne ordinaire
+    /// (rejet partiel, confirmable).
+    InvalidCurrency,
 }
 
 impl CsvLineErrorCode {
@@ -230,6 +252,7 @@ impl CsvLineErrorCode {
             CsvLineErrorCode::EmptyMandatoryField,
             CsvLineErrorCode::RowTooShort,
             CsvLineErrorCode::AmountSignMismatch,
+            CsvLineErrorCode::InvalidCurrency,
         ]
     }
 
@@ -246,6 +269,7 @@ impl CsvLineErrorCode {
             CsvLineErrorCode::EmptyMandatoryField => "EMPTY_MANDATORY_FIELD",
             CsvLineErrorCode::RowTooShort => "ROW_TOO_SHORT",
             CsvLineErrorCode::AmountSignMismatch => "AMOUNT_SIGN_MISMATCH",
+            CsvLineErrorCode::InvalidCurrency => "INVALID_CURRENCY",
         }
     }
 
@@ -260,6 +284,7 @@ impl CsvLineErrorCode {
             CsvLineErrorCode::EmptyMandatoryField => "bank-import-csv-errors-empty-mandatory-field",
             CsvLineErrorCode::RowTooShort => "bank-import-csv-errors-row-too-short",
             CsvLineErrorCode::AmountSignMismatch => "bank-import-csv-errors-amount-sign-mismatch",
+            CsvLineErrorCode::InvalidCurrency => "bank-import-csv-errors-invalid-currency",
         }
     }
 }
@@ -403,6 +428,18 @@ mod tests {
         assert_eq!(
             CsvLineErrorCode::AmountSignMismatch.i18n_key(),
             "bank-import-csv-errors-amount-sign-mismatch"
+        );
+    }
+
+    #[test]
+    fn invalid_currency_i18n_key() {
+        assert_eq!(
+            CsvLineErrorCode::InvalidCurrency.i18n_key(),
+            "bank-import-csv-errors-invalid-currency"
+        );
+        assert_eq!(
+            CsvLineErrorCode::InvalidCurrency.as_str(),
+            "INVALID_CURRENCY"
         );
     }
 }

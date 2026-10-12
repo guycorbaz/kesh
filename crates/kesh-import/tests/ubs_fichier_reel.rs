@@ -23,13 +23,15 @@
 //! signés = solde final − solde initial, au centime ; chaque transaction
 //! issue de la colonne Débit est `≤ 0` (n'est pas positive), chaque
 //! transaction issue de la colonne Crédit `≥ 0` (n'est pas négative) — un
-//! montant nul est accepté sous les deux colonnes (revue P1, E-6).
+//! montant nul est accepté sous les deux colonnes (revue P1, E-6) ; le
+//! relevé et **chaque** transaction sont en CHF, la colonne Devise (4) étant
+//! lue (Story 27-2, AC16, C-27-2-8).
 
 use kesh_import::{ColumnMapping, CsvProfile, DebitSign, ParseCsvOutcome, parse_csv_collect};
 use rust_decimal::Decimal;
 use std::str::FromStr;
 
-/// Profil UBS recommandé (C-26-1-13).
+/// Profil UBS recommandé (C-26-1-13), colonne Devise comprise (C-27-2-8).
 fn ubs_profile() -> CsvProfile {
     CsvProfile {
         bank_name: "UBS".to_string(),
@@ -41,6 +43,7 @@ fn ubs_profile() -> CsvProfile {
             reference: Some(9),
             details: Some(10),
             counterparty: None,
+            currency: Some(4),
         },
         date_format: "%Y-%m-%d".to_string(),
         decimal_separator: '.',
@@ -101,11 +104,22 @@ fn ubs_real_statement_is_conform() {
                     .collect::<Vec<_>>()
                     .join(", "),
                 kesh_import::CsvError::HeaderSkipsData { line } => format!("ligne {line}"),
+                // Les codes de devise ne sont pas des données du relevé ; ce
+                // refus vient APRÈS la lecture des lignes (Story 27-2).
+                kesh_import::CsvError::MixedCurrencies { currencies } => {
+                    format!("plusieurs devises ({})", currencies.join(", "))
+                }
                 _ => "refus avant la lecture des lignes".to_string(),
             };
             panic!("import refusé : {detail}");
         }
     };
+
+    assert!(stmt.currency == "CHF", "relevé : devise ≠ CHF");
+    assert!(
+        stmt.transactions.iter().all(|t| t.currency == "CHF"),
+        "une transaction n'est pas en CHF"
+    );
 
     let announced: usize = preamble(text, "Nombre de transactions")
         .parse()

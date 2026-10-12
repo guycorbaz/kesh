@@ -31,8 +31,9 @@ pub mod types;
 
 pub use camt053::parse as parse_camt053;
 pub use csv::{
-    ColumnMapping, CsvProfile, DebitSign, DetectedEncoding, MAX_HEADER_ROW_COUNT, ParseCsvOutcome,
-    empty_valid_sentinel_date, parse_csv, parse_csv_collect,
+    ColumnMapping, CsvProfile, DEFAULT_CSV_CURRENCY, DebitSign, DetectedEncoding,
+    MAX_HEADER_ROW_COUNT, MAX_REPORTED_CURRENCIES, ParseCsvOutcome, empty_valid_sentinel_date,
+    parse_csv, parse_csv_collect,
 };
 pub use error::{
     CamtError, CsvError, CsvLineError, CsvLineErrorCode, ImportError,
