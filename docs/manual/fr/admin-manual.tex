@@ -1990,7 +1990,7 @@ La 0.13.1 relève \texttt{kesh\_version\_min\_required} à \texttt{0.13.1} : une
 Un profil CSV en \emph{colonnes débit/crédit séparées} porte désormais le \textbf{sens des débits} : « débits écrits sans signe (500.00) » --- Kesh les rend négatifs --- ou « débits écrits avec un signe moins (−500.00) » --- Kesh les garde. À la mise à jour, \textbf{tous les profils existants reçoivent « sans signe »}, le comportement d'avant. Pour une banque qui écrit déjà ses débits avec un signe moins --- UBS, notamment ---, ouvrez \emph{Administration → Profils bancaires} et choisissez « Débits écrits avec un signe moins » : sans ce réglage, l'import de ses relevés est \textbf{refusé en entier} (\texttt{BANK\_CSV\_AMOUNT\_SIGN\_MISMATCH}), là où la 0.13.0 transformait chaque dépense en encaissement sans rien dire. Plus généralement, un relevé dont un montant a un signe contraire à sa colonne --- un crédit négatif, une extourne écrite ainsi --- est désormais refusé. Les profils en colonne unique ne changent pas. Le détail est au manuel utilisateur, \emph{Profils banque} et \emph{Le relevé CSV d'UBS}.
 \end{sloppypar}
 
-\textbf{Transactions déjà importées} : un relevé importé avant la mise à jour avec un profil débit/crédit dont la banque écrit ses débits avec un signe moins porte ses dépenses en positif, comme des encaissements. La mise à jour ne les corrige pas : vérifiez le signe de ces transactions avant de les rapprocher.
+\textbf{Transactions déjà importées} : un relevé importé avant la mise à jour avec un profil débit/crédit dont la banque écrit ses débits avec un signe moins porte ses dépenses en positif, comme des encaissements. La mise à jour ne les corrige pas : vérifiez le signe de ces transactions avant de les rapprocher. Depuis la v0.13.2, un tel import dont aucune transaction n'est rapprochée se supprime et se réimporte une fois le profil réglé (manuel utilisateur, section \emph{Supprimer un import}).
 
 \paragraph{Sur Synology : re-télécharger \keshpath{kesh-restore.sh}.}\mbox{}\\
 \begin{sloppypar}
@@ -2302,7 +2302,7 @@ La quasi-totalité des actions métier mutantes est enregistrée dans la table \
 \begin{itemize}
     \item Contrainte \textbf{insert-only} : aucune route API ne permet de modifier ou supprimer une entrée \texttt{audit\_log}, et \textbf{aucune ne permet d'effacer la table} sur une installation finalisée. \emph{La formulation antérieure ne parlait que d'«~une entrée~»~: elle était exacte au mot près et trompeuse en substance, une route effaçant alors la table entière.}
     \item Champs : \texttt{id}, \texttt{user\_id}, \texttt{actor\_label} (le nom de l'auteur \emph{au moment} de l'écriture), \texttt{actor\_type} et \texttt{actor\_api\_key\_id}, \texttt{company\_id} (la société de l'auteur au moment de l'écriture, vide quand elle est indéterminable), \texttt{action}, \texttt{entity\_type}, \texttt{entity\_id}, \texttt{details\_json}, \texttt{created\_at}. ⚠️ \emph{Chaque entrée porte la société de son auteur. Le journal se \textbf{consulte} désormais depuis l'API~: une liste paginée et filtrable, un vocabulaire des codes traduits, et un export CSV --- réservés aux rôles \textbf{Comptable} et \textbf{Administrateur}, et refusés aux clés API. L'\textbf{écran} existe aussi~: \emph{Administration} → \emph{Journal d'audit}, pour les mêmes rôles. La consultation ne filtre que votre société, et ne s'inscrit pas elle-même au journal.}
-    \item Conservation 10 ans (selon CO Art. 958f al. 1).
+    \item Conservation 10 ans (selon CO Art. 958f al. 1). Depuis la v0.13.2, un import bancaire dont aucune transaction n'est rapprochée peut être supprimé avec ses transactions (aucune n'a été écrite au grand livre)~; l'entrée \texttt{bank\_import.deleted} reste au journal.
 \end{itemize}
 
 \subsection{Conformité OLICo Art. 9 — intégrité des supports modifiables}
@@ -2460,7 +2460,7 @@ Synthèse :
 \subsection{Code des obligations Art. 958f — Conservation 10 ans}
 
 \begin{itemize}
-    \item al. 1 : conservation 10 ans à compter de la fin de l'exercice → garanti par la persistance MariaDB (sous réserve d'admin DB + backup approprié).
+    \item al. 1 : conservation 10 ans à compter de la fin de l'exercice → garanti par la persistance MariaDB (sous réserve d'admin DB + backup approprié). Depuis la v0.13.2, un import bancaire dont aucune transaction n'est rapprochée --- donc rien d'écrit au grand livre --- peut être supprimé avec ses transactions~; sa trace (\texttt{bank\_import.deleted} : fichier, empreinte, période, nombres) reste au journal d'audit.
     \item al. 2 : rapport de gestion imprimé et signé → \textbf{responsabilité de la PME utilisatrice}, hors scope logiciel.
     \item al. 3 : support libre + lien garanti + lisibilité possible → garanti par \texttt{audit\_log} + SHA-256 + format CSV ouvert du ZIP d'export. \textbf{Depuis la v0.12.1, le journal d'audit VOYAGE avec l'export} (\texttt{audit\_log.csv}, issue \#386)~: il n'est plus seulement conservé dans l'instance, il part avec les livres.
 \end{itemize}
