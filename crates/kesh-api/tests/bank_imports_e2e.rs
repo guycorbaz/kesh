@@ -1891,6 +1891,26 @@ async fn delete_import_removes_it_traces_it_and_allows_reimport(pool: MySqlPool)
     let app = spawn_app(pool.clone()).await;
     let (id, n) = import_minimal(&app, &s).await;
     assert!(n > 0);
+    // Une transaction rejetée par l'utilisateur : elle part avec l'import, et
+    // la trace la compte (`rejected_count` propagé du dépôt jusqu'au journal).
+    sqlx::query(
+        "UPDATE bank_transactions SET auto_match_rejected_at = NOW(3) \
+         WHERE import_id = ? ORDER BY id LIMIT 1",
+    )
+    .bind(id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    // L'entête tel que la base le porte, pour comparer la trace valeur par valeur.
+    let (file_hash, source_format, period_from, period_to): (String, String, String, String) =
+        sqlx::query_as(
+            "SELECT file_hash, source_format, DATE_FORMAT(period_from, '%Y-%m-%d'), \
+             DATE_FORMAT(period_to, '%Y-%m-%d') FROM bank_imports WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
 
     let resp = delete_import(&app, &s.jwt, id).await;
     assert_eq!(resp.status(), 204);
@@ -1932,10 +1952,29 @@ async fn delete_import_removes_it_traces_it_and_allows_reimport(pool: MySqlPool)
         "les huit clés de l'AC6"
     );
     assert_eq!(obj["transaction_count"].as_i64().unwrap(), n);
-    assert_eq!(obj["rejected_count"].as_i64().unwrap(), 0);
+    assert_eq!(
+        obj["rejected_count"].as_i64().unwrap(),
+        1,
+        "la rejetée est comptée"
+    );
     assert_eq!(obj["filename"], "v04_minimal.xml");
     assert_eq!(obj["bank_account_id"].as_i64().unwrap(), s.bank_account_id);
-    assert_eq!(obj["file_hash"].as_str().unwrap().len(), 64);
+    assert_eq!(file_hash.len(), 64);
+    assert_eq!(obj["file_hash"], file_hash.as_str());
+    assert_eq!(obj["source_format"], source_format.as_str());
+    // AAAA-MM-JJ, et non le format d'affichage suisse.
+    for (key, expected) in [("period_from", &period_from), ("period_to", &period_to)] {
+        let got = obj[key].as_str().unwrap();
+        assert_eq!(got, expected.as_str(), "{key}");
+        let b = got.as_bytes();
+        assert!(
+            got.len() == 10
+                && b[4] == b'-'
+                && b[7] == b'-'
+                && got.chars().filter(char::is_ascii_digit).count() == 8,
+            "{key} au format AAAA-MM-JJ : {got}"
+        );
+    }
 
     // AC7 — le même fichier, sans confirmation : ni avertissement ni refus.
     let preview = app
