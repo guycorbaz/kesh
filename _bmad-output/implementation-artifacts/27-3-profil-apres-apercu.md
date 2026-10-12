@@ -3,8 +3,8 @@
 Status: review
 
 <!-- Fiche créée le 2026-10-12 par bmad-create-story, en autonomie (aucune question). Choix au registre
-`epic-27-choix-autonomes-27-3.md` (C-27-3-1 à C-27-3-45), à fusionner par l'orchestrateur dans
-`epic-27-choix-autonomes.md` (branche de la 27-1). Validation P1 : `27-3-validate-prompt-p1.md` ;
+`epic-27-choix-autonomes.md`, § *Story 27-3* (C-27-3-1 à C-27-3-59) — tenus d'abord dans
+`epic-27-choix-autonomes-27-3.md`, versé par union au rebase sur la 27-2, puis supprimé. Validation P1 : `27-3-validate-prompt-p1.md` ;
 P2 : `27-3-validate-prompt-p2.md` ; P3 : `27-3-validate-prompt-p3.md` ; P4 ciblée : `27-3-validate-prompt-p4-ciblee.md`. -->
 
 **Issue** : [#626](https://github.com/guycorbaz/kesh/issues/626) (`bug`, `P2`). **PR : `closes #626`.**
@@ -280,7 +280,7 @@ refactor de `BankImportUpload.svelte` (T3) peut fusionner ou dédoubler des site
 > ⚠️ **Livré : 2062, et non 2063 — 2071 à la fusion, et non 2072** (C-27-3-46, propagé en revue de code P1, A2).
 > `BankImportUpload.svelte` passe de 23 à **48** (+25, et non +26) : les deux sites H3 (`error-unexpected`) n'en font
 > qu'un, les deux `catch` partageant `setError`. Total **+30** : 2032 → **2062** ; à la fusion avec la 27-1,
-> 2032 + 30 + 9 = **2071**. La table et le paragraphe ci-dessus gardent la prévision de la validation.
+> 2032 + 30 + 9 = **2071** ; rebasée sur la 27-2 (+2), **2073**, confirmé par la garde. La table et le paragraphe ci-dessus gardent la prévision de la validation.
 
 **AC12 — Manuel utilisateur (FR, `.tex` **et** PDF régénéré).** `docs/manual/fr/user-manual.tex` :
 
@@ -675,7 +675,7 @@ menace est le client **périmé**, pas le client malveillant (qui a le rôle d'i
 | `docs/manual/fr/admin-manual.tex` + `.pdf`, `marketing-brochure.pdf` | modifiés | **non committés** : `make user`, pas `make fr` (AC12, C-27-3-42) | aucun, si seul `user-manual.pdf` est committé |
 | `CHANGELOG.md` | crée `## [0.13.2] — Non publié` | idem | conflit certain → union |
 | `docs/api-external.md` | +11 / −1 : § 4 (note, `@@ -84,0 +85,2 @@`), § 7 (phrase d'intro « trois exceptions », `@@ -205 +207 @@` ; ligne « Imports bancaires » du tableau et note ⁸, `@@ -218,0 +221 @@` et `@@ -229,0 +233,2 @@` ; rejet en lot, `@@ -542,0 +548,2 @@`), § 9 (deux lignes, `@@ -622,0 +630,2 @@`), § 10 (ligne `403 API_KEY_OPERATION_FORBIDDEN`, `@@ -648,0 +658 @@`) | sous-section § 7 après *Annuler un rapprochement bancaire* ; ligne `409` au § 10 (AC13) | § 7 : faible (hunks distincts) ; **§ 10 : conflit probable** (deux lignes ajoutées au même tableau) → union |
-| `frontend/src/lib/shared/i18n-keys.test.ts` | `sitesTotal` 2032 → 2041 | 2032 → 2062 (prévu 2063, C-27-3-46) | conflit certain → **2071** (prévu 2072), commentaires des deux |
+| `frontend/src/lib/shared/i18n-keys.test.ts` | `sitesTotal` 2032 → 2041 | 2032 → 2062 (prévu 2063, C-27-3-46) | conflit certain → **2071** (prévu 2072), commentaires des deux ; **2073** avec la 27-2 (rebase) |
 | `frontend/src/lib/features/bank-import/bank-import.api.ts` (+ `.test.ts`) | `deleteBankImport` | `previewFingerprint` | faible |
 | `crates/kesh-api/tests/bank_imports_e2e.rs` | +384 / −2 (`@@ -550,2 +550,3 @@`, et ajout de 381 lignes en fin de fichier, `@@ -1825,0 +1827,381 @@`) | I1-I12 | ajout en fin de fichier des deux côtés → conflit probable, union |
 | `_bmad-output/implementation-artifacts/sprint-status.yaml` | section `epic-27` | section `epic-27` créée ici aussi | conflit certain → union |
@@ -788,7 +788,7 @@ préfixe par `awk`), diff relu hunk par hunk.
 
 1. `sitesTotal` **2062** et non 2063 : les deux sites H3 (`error-unexpected`) n'en font qu'un, les deux `catch` partageant
    `setError` (C-27-3-46). V13 (c) tient toujours les deux chemins. **À la fusion avec la 27-1 : 2032 + 30 + 9 = 2071**
-   (la fiche disait 2072).
+   (la fiche disait 2072) ; rebasée sur la 27-2 (+2) : **2073**, confirmé par la garde.
 2. Une troisième fonction au module, `check_preview_fingerprint` (C-27-3-49), avec son test unitaire.
 3. Le recalcul d'un `409` envoie l'id **résolu** de l'instantané : après un aperçu auto-détecté, la mention
    « (auto-détecté) » ne réapparaît pas au recalcul (C-27-3-47).
@@ -866,7 +866,7 @@ C-27-3-1 à 50 (`grep -c "^### C-27-3-"` → 50). AC15 : aucun fichier sous `mig
 **Fichiers communs avec la 27-1 — conflits attendus à la fusion** : `bank_imports.rs` (hunks distincts, bloc `use`
 intact), `errors.rs` (variante et réponse près de `BankCsvProfileNotFound`), les quatre `.ftl` (bloc après
 l'auto-détection), `textes_coherents.rs` (**même `TABLE`** : union), `bank_imports_e2e.rs` (ajouts en fin de fichier
-des deux côtés : union), `i18n-keys.test.ts` (**2071**, commentaires des deux), `bank-import.api.ts` (+ test),
+des deux côtés : union), `i18n-keys.test.ts` (**2071**, commentaires des deux ; **2073** une fois la 27-2 mergée aussi), `bank-import.api.ts` (+ test),
 `BankImportList.svelte` (en-têtes contre `data-testid` du lien, six lignes d'écart), `CHANGELOG.md` (section 0.13.2 des
 deux côtés : union), `docs/api-external.md` (§ 10 : union des deux lignes), `user-manual.tex` (faible) et
 **`user-manual.pdf` (conflit binaire certain : régénérer après fusion par `make user`)**, `sprint-status.yaml` (section
@@ -909,7 +909,8 @@ cette story (sa branche n'a pas été lue).
 - `_bmad-output/implementation-artifacts/27-3-review-prompt-p1.md` (neuf)
 - `_bmad-output/implementation-artifacts/27-3-review-prompt-p2-ciblee.md` (neuf, revue de code P1)
 - `_bmad-output/implementation-artifacts/27-3-review-prompt-p3-ciblee.md` (neuf, revue de code P2 ciblée)
-- `_bmad-output/implementation-artifacts/epic-27-choix-autonomes-27-3.md`
+- `_bmad-output/implementation-artifacts/epic-27-choix-autonomes.md` (§ *Story 27-3*, versé par union depuis
+  `epic-27-choix-autonomes-27-3.md`, supprimé au rebase sur la 27-2)
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
 ## Change Log
