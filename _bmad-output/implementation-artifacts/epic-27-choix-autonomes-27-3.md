@@ -476,3 +476,14 @@ Fiche : `27-3-profil-apres-apercu.md`. Issue #626 (P2).
 - **Écarté** : laisser le titre sur le seul profil au motif qu'il énonce le défaut de l'issue (la PR le reprend tel
   quel, et il promettrait moins que ce qui est livré).
 - **Réversible** : oui.
+
+### C-27-3-45 — L'indicateur donne la priorité à la confirmation
+
+- **Contexte** : validation P4 ciblée, P4-1 (Haiku, vérifié par l'orchestrateur) — le texte de l'indicateur était lu
+  dans `previewReason` seul, qui n'a pas de valeur « confirmation » et garde sa valeur après l'aperçu : après un
+  changement de profil, *Confirmer* aurait affiché « Recalcul de la prévisualisation… » pendant l'import (AC2, V9).
+- **Retenu** : `isConfirming` d'abord (→ `common-loading`), `previewReason` ensuite. V9 se joue après un recalcul ;
+  mutation M27 (priorité retirée) tuée par V9.
+- **Écarté** : une quatrième valeur `'confirm'` dans `previewReason` (deux états diraient la même chose, et
+  `reset()` devrait la remettre à zéro).
+- **Réversible** : oui.

@@ -97,9 +97,12 @@ retenu) ne relance rien.
   après un `409` sur un CAMT, aucun profil n'est en jeu, C-27-3-28) quand il s'agit d'un **recalcul** (AC1, AC1-bis,
   AC9), et, au dépôt d'un fichier **comme pendant une confirmation**, le « Chargement… » actuel — **traduit** par la
   clé globale existante `common-loading` (AC17 ; aujourd'hui en dur, `:305`, affiché pour les deux requêtes). Le
-  gabarit lit la raison dans un état `previewReason` (`$state`, `'drop' | 'profile' | 'stale'`), que **chaque** appel
-  de `runPreview` pose avant son premier `await` : il n'est jamais lu périmé, et `reset()` n'a pas à y toucher
-  (C-27-3-41). Le texte est tenu par V2 (recalcul) et V13 (b) (dépôt, `common-loading`) ;
+  gabarit choisit le texte ainsi : **`isConfirming` d'abord** (→ `common-loading`), puis la raison de l'aperçu, lue
+  dans un état `previewReason` (`$state`, `'drop' | 'profile' | 'stale'`) que **chaque** appel de `runPreview` pose
+  avant son premier `await` ; `reset()` n'a pas à y toucher (C-27-3-41). ⚠️ `previewReason` garde sa valeur après
+  l'aperçu : sans la priorité à `isConfirming`, une confirmation qui suit un recalcul afficherait « Recalcul de la
+  prévisualisation… » pendant l'import (validation P4, P4-1 ; C-27-3-45). Le texte est tenu par V2 (recalcul), V9
+  (confirmation après un recalcul) et V13 (b) (dépôt, `common-loading`) ;
 - l'erreur précédente (`bank-import-error`) est effacée ;
 - **les cases et le choix de doublons** (`confirmBalanceMismatch`, `confirmDuplicateFile`, `confirmDuplicateLines`
   remis à `skip`, `confirmPartialImport`, `confirmEncodingMismatch`) sont **remis à zéro** — les avertissements du
@@ -340,7 +343,7 @@ refactor de `BankImportUpload.svelte` (T3) peut fusionner ou dédoubler des site
 
 ### Tests
 
-**AC14 — Chaque AC a un test qui rougirait** (§ Tests ci-dessous), et les vingt-huit mutations M1-M26 (M10 et M16 en
+**AC14 — Chaque AC a un test qui rougirait** (§ Tests ci-dessous), et les vingt-neuf mutations M1-M27 (M10 et M16 en
 deux : M10a, M10b, M16a, M16b) rougissent.
 
 **AC15 — Aucune migration, aucun bump.** Ni fichier sous `crates/kesh-db/migrations/`, ni `kesh_version_min_required`,
@@ -443,7 +446,7 @@ fr-CH, y compris l'apostrophe droite de « d'abord » (texte actuel du site).
 - [ ] **T5 — E2E** (AC1, AC6, AC9) : deux tests dans `frontend/tests/e2e/bank-csv-import.spec.ts` (E1, E2).
 - [ ] **T6 — Manuel** (AC12) : `.tex`, `make user` (sous `flock`), seul `user-manual.pdf` committé, PDF aplati contrôlé (table des matières comprise : Makefile de la base à deux passes fixes, C-27-3-42).
 - [ ] **T7 — CHANGELOG, `docs/api-external.md`** (AC13).
-- [ ] **T8 — Mutations** M1-M26 (vingt-huit, M10 et M16 en deux) : chacune appliquée, test rouge constaté, restaurée (et le fichier **touché** après restauration : cargo garde sinon le binaire muté) ; tableau au Dev Agent Record.
+- [ ] **T8 — Mutations** M1-M27 (vingt-neuf, M10 et M16 en deux) : chacune appliquée, test rouge constaté, restaurée (et le fichier **touché** après restauration : cargo garde sinon le binaire muté) ; tableau au Dev Agent Record.
 - [ ] **T9 — Gates** au dernier commit de code : `scripts/test-fast.sh` (sous `flock`), `npm run check`, `npm run lint-i18n-ownership`, `npm run test:unit`, `npm run build`, **E2E complet** (8 échecs attendus de `docs/testing.md`, jugés fichier par fichier). Base remise à zéro avant le gate complet. Les gardes de l'AC10 (`parity_between_locales` dans le gate Rust, `i18n-repli-divergent-actif` et `i18n-keys` dans Vitest) y passent.
 
 ## Tests prescrits
@@ -537,7 +540,9 @@ profils), `$lib/shared/utils/i18n.svelte` (repli), et un `File` synthétique.
   dépôt affichée (une garde de séquence posée sur la seule branche de succès laisserait passer l'erreur,
   C-27-3-30).
 - **V9** pendant la confirmation (promesse retenue) : `bank-account-select`, `bank-profile-select` **et**
-  `bank-import-cancel` `disabled` (D10, D15) ; `bank-import-loading` porte le texte de `common-loading` (AC2).
+  `bank-import-cancel` `disabled` (D10, D15) ; `bank-import-loading` porte le texte de `common-loading` (AC2). La
+  confirmation est lancée **après un recalcul** (changement de profil, puis *Confirmer*) : c'est le seul ordre où
+  `previewReason` vaut `'profile'` pendant la confirmation, donc le seul qui tue M27 (C-27-3-45).
 - **V10** CAMT : aperçu rendu **sans** `csvProfileMatch`, sélecteur sur le profil A, *Confirmer* →
   `createBankImport` appelé **sans** `bankProfileId` (instantané, AC5). C'est le seul état atteignable où le
   sélecteur et l'instantané divergent ; il tue M6.
@@ -613,6 +618,7 @@ profils propres (`bank_name` unique par société), **motif vide** (`pattern: ''
 | M24 | branche `409` : `await runPreview(…, 'stale')` avant le `finally` — `isConfirming` reste vrai pendant le recalcul | V6 (sélecteurs désactivés pendant le recalcul retenu) |
 | M25 | `reset()` n'efface plus l'avis de l'AC9 (les deux autres sites restent) | V6-bis (c) (avis encore visible après le changement de compte, C-27-3-38) |
 | M26 | `runPreview` ne remet pas les cases à zéro pour `reason === 'stale'` (les autres raisons restent) | V6, variante « cases » (case `confirm-duplicate-file` encore cochée après le recalcul, C-27-3-37) |
+| M27 | le texte de l'indicateur ne donne pas la priorité à `isConfirming` (lit `previewReason` seul) | V9 (confirmation après un recalcul : « Recalcul de la prévisualisation… » au lieu de `common-loading`, C-27-3-45) |
 
 Vingt-huit mutations (M1-M9, M10a, M10b, M11-M15, M16a, M16b, M17-M26). ⚠️ **Non comptée, et écrite comme telle** : la variante « profil
 comparé relu **hors** transaction mais présent » est **équivalente** dans tout scénario déterministe — même valeur
@@ -871,8 +877,23 @@ touche aucune ligne de production — est ici sans objet (la story est en spéci
 prescriptions comme du comportement, pas comme du texte.
 
 **Nouveaux décomptes**, recomptés depuis la fiche (mêmes commandes que la P2) : **18 AC** ; tests **U1-U4 / I1-I12 +
-I6-bis / V1-V13 + V6-bis / E1-E2** (**33** — la variante « cases » vit dans V6, sans numéro neuf) ; **28 mutations**
+I6-bis / V1-V13 + V6-bis / E1-E2** (**33** — la variante « cases » vit dans V6, sans numéro neuf) ; **29 mutations**
 (M1-M9, M10a, M10b, M11-M15, M16a, M16b, M17-M26 ; `grep -cE "^\| M[0-9]+[ab]? \|"` → 28) ; inventaire **D1-D19** ;
-choix **C-27-3-1 à 44** (`grep -c "^### C-27-3-"` du registre → 44) ; **24 clés** neuves (`grep -cE "^\| \`bank-import-"`
+choix **C-27-3-1 à 45** (`grep -c "^### C-27-3-"` du registre → 45) ; **24 clés** neuves (`grep -cE "^\| \`bank-import-"`
 → 24) ; aucun site `i18nMsg(` neuf ni retiré par la P3 (textes et prescriptions seuls), donc `sitesTotal`
 **2032 → 2063** inchangé, **2072** à la fusion. Prompt de la P4 : `27-3-validate-prompt-p4-ciblee.md` (Haiku, une lentille).
+
+### Validation P4 ciblée (Haiku, une lentille, sur `aeb75b4c`) — 2026-10-12
+
+Rapport : `kesh-gate-logs/27-3-validate-p4-ciblee.md` — 2 MEDIUM, 2 LOW. Vérifiés par l'orchestrateur au `grep` :
+
+| Finding | Sév. | Décision |
+|---|---|---|
+| P4-1 — l'indicateur lit `previewReason` seul : « Recalcul… » pendant une confirmation qui suit un recalcul | MEDIUM | **Appliqué** : priorité à `isConfirming` (AC2), V9 après un recalcul, mutation M27 ; C-27-3-45 |
+| P4-2 — le contrôle « ne contient plus « avant de déposer » » resterait rouge | MEDIUM | **Réfuté** : l'AC12 prescrit le retrait des deux occurrences (`:1697-1698`, `:1794-1796`, fiche l. 279 et 281) — erreur de catégorie (livrable prescrit, pas encore écrit) |
+| P4-3 — « selon le navigateur » non exhaustif (un navigateur qui renverrait les octets de l'aperçu importerait sans erreur) | LOW | Laissé : le serveur reste fermé (l'empreinte couvre le hash), seule la phrase de l'écran serait incomplète ; le dev la nuance s'il le juge utile |
+| P4-4 — `fetchWithRetry` passe l'API en mode dégradé sur toute erreur réseau, POST compris | LOW | Noté : comportement préexistant, hors périmètre |
+
+Trend de la validation : P1 1 HIGH + 3 MEDIUM → P2 4 MEDIUM → P3 1 MEDIUM → P4 ciblée 1 MEDIUM réel (1 réfuté). Décision
+de Guy (2026-10-12) sur le signal D5 : **ne pas découper**. La remédiation P4 ne touche que la fiche et le registre ;
+une passe ciblée P5 (Haiku) la relit avant le développement.
