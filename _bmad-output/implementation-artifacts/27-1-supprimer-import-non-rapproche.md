@@ -2,13 +2,13 @@
 
 ## Status
 
-**ready-for-dev** — fiche créée le 2026-10-12 en autonomie (`bmad-create-story`), sur `aadace40` (kickoff de
+**in-progress** — validation close (P4 ciblée : 0 MEDIUM, 2 LOW appliqués). Fiche créée le 2026-10-12 en autonomie (`bmad-create-story`), sur `aadace40` (kickoff de
 l'Epic 27), branche `story/27-1-supprimer-import`. Validation **P1** (Sonnet, lentilles R et F : 0 HIGH,
 10 MEDIUM dont 7 distincts, 14 LOW) **remédiée** ; validation **P2** (Opus, R et F : 0 HIGH, 4 MEDIUM distincts,
 16 LOW) **remédiée** le 2026-10-12, avec la **décision du Project Lead** de fermer la suppression aux clés d'API
 (C-27-1-16) ; validation **P3** (Sonnet, complète, R et F : 0 HIGH, 2 MEDIUM distincts, 13 LOW) **remédiée** — dont
-une sortie par **retrait** sur un angle mort recyclé (C-27-1-20) ; passe **P4 ciblée** à lancer (Haiku, une lentille,
-prompt `27-1-validate-prompt-p4-ciblee.md`). Choix consignés au registre `epic-27-choix-autonomes.md`, **C-27-1-1 à
+une sortie par **retrait** sur un angle mort recyclé (C-27-1-20) ; passe **P4 ciblée** (Haiku, une lentille,
+prompt `27-1-validate-prompt-p4-ciblee.md`) **rendue : 0 MEDIUM, 2 LOW appliqués — validation close**. Choix consignés au registre `epic-27-choix-autonomes.md`, **C-27-1-1 à
 C-27-1-20** (C-27-1-7 remplacé par C-27-1-12 ; C-27-1-3 et C-27-1-13 révisés ; C-27-1-16 complété). 17 AC (AC1-AC16 et AC4-bis). PR : **`closes #632`**.
 
 ## Story
@@ -572,7 +572,9 @@ Gate : la suite E2E **complète** au dernier commit de code, jugée fichier par 
   - § 7, phrase d'introduction (l. 205) : « **à deux exceptions près, toutes deux fermées aux clés API** : les
     routes d'administration, et la consultation du journal d'audit […] » devient **trois** exceptions — les routes
     d'administration, la consultation du journal d'audit et la suppression d'un import bancaire —, avec leurs trois
-    codes (§ 4 pour l'administration et la suppression, § 10 pour le journal) (revue P3, R3-2/F3-2) ;
+    codes — § 4 pour la fermeture (administration, journal d'audit et suppression), § 10 pour le code d'erreur
+    (revue P3, R3-2/F3-2 ; revue P4, P4-2 : la fermeture du journal s'énonce au § 4, l. 83, le § 10 n'en porte
+    que le code, l. 647) ;
   - § 7, ligne neuve du tableau (l. 207-218) — *Imports bancaires* | `GET /bank-imports`, `GET /bank-imports/{id}`
     | `POST /bank-imports` ⁸ ; note ⁸ : la suppression d'un import existe à l'interface web et n'est **pas**
     ouverte aux clés (§ 4) ; un import supprimé disparaît des lectures, et une fois **tous** ses imports supprimés
@@ -1064,3 +1066,20 @@ grepés : « DELETE FROM audit_log », « `audit_log` avant », « deux exceptio
 réécrire), « non concernés », « ne filtre pas le rejet », « dernier relevé », « C-27-1-1 à 19 » — ne restent que les
 mentions voulues (citations, bilans historiques). « quelques millisecondes » subsiste pour la **création**
 concurrente (autre fenêtre, juste).
+
+### Validation P4 ciblée — validation close
+
+Passe P4 (Haiku, **ciblée** : une lentille R, contexte frais, lecture seule, sur le seul commit de remédiation P3
+`269bb704` ; prompt `27-1-validate-prompt-p4-ciblee.md`, rapport `kesh-gate-logs/27-1-validate-p4-R.md`) :
+0 CRITICAL / 0 HIGH / **0 MEDIUM** / 2 LOW, axes exercés et non exercés déclarés (six exercés, quatre non exercés
+dont toute exécution, interdite par le prompt).
+
+| Finding | Sév. | Traitement |
+|---|---|---|
+| P4-1 — qualification du « recyclage » de R3-1/F3-1 | LOW | **deux lectures, nommées ici, arbitrage au Project Lead** : celle de l'orchestrateur (fiche, § Découpage préventif, et bilan P3) — R3-1/F3-1 est un **recyclage** au sens de l'amendement D5, puisqu'il « naît du correctif précédent » sur le même texte ; celle de la lentille R de la P3 (`27-1-validate-p3-R.md` l. 17-18) — « aucun des deux ne recycle un défaut antérieur au sens de la règle de découpage ». La fiche suit la lettre de D5, la lentille la conteste. La décision de sortie par **retrait** (C-27-1-20) ne dépend pas de l'arbitrage et reste inchangée |
+| P4-2 — pointeur « § 10 pour le journal » (`api-external.md:205`) | LOW | phrase prescrite à l'AC14 corrigée : « § 4 pour la fermeture, § 10 pour le code d'erreur » (la fermeture du journal s'énonce au § 4, l. 83 ; le § 10 n'en porte que le code, l. 647) |
+
+**Validation close.** Trend des MEDIUM distincts : **P1 7 → P2 4 → P3 2 → P4 ciblée 0**, 0 HIGH partout. Modèles :
+Sonnet (P1, complète), Opus (P2, complète), Sonnet (P3, complète), Haiku (P4, ciblée sur la remédiation P3).
+Reclassements : aucun. Décision du Project Lead intégrée en P2 (C-27-1-16). La remédiation P4 ne touche aucune
+ligne de code (fiche seule) : la boucle se clôt.
