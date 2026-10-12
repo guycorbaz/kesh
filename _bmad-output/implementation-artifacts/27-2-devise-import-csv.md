@@ -5,8 +5,9 @@
 **ready-for-dev** — fiche créée le 2026-10-12 en autonomie (skill `bmad-create-story`), sur `a2743fd4`
 (`origin/main`, rétrospective de l'Epic 26). Validation P1 faite (Sonnet, lentilles R et F : 3 MEDIUM, 14 LOW),
 remédiée le 2026-10-12 — périmètre élargi par l'orchestrateur au formulaire qui perd la contrepartie (AC8-bis) et à
-la devise des transactions CAMT.053 (AC19). Validation P2 à lancer : prompt `27-2-validate-prompt-p2.md`. Choix
-tranchés : **C-27-2-1 à C-27-2-14**, registre `_bmad-output/implementation-artifacts/epic-27-choix-autonomes-27-2.md`
+la devise des transactions CAMT.053 (AC19). Validation P2 faite (Opus, lentilles R et F : 3 MEDIUM, 18 LOW), remédiée
+le 2026-10-12 ; validation P3 à lancer : prompt `27-2-validate-prompt-p3.md` (Sonnet). Choix
+tranchés : **C-27-2-1 à C-27-2-19**, registre `_bmad-output/implementation-artifacts/epic-27-choix-autonomes-27-2.md`
 (à fusionner par union dans `epic-27-choix-autonomes.md`, qui vit sur la branche de la 27-1).
 
 **Issue** : [#624](https://github.com/guycorbaz/kesh/issues/624) (**P1**, `bug` — montant faux en comptabilité).
@@ -86,6 +87,12 @@ la famille (i).)*
 - Champ `pub currency: Option<usize>`, doc-comment « index de la colonne Devise (facultatif) ; sans elle, le relevé est
   supposé en [`DEFAULT_CSV_CURRENCY`] », attributs **exactement** ceux de `reference` / `details` / `counterparty` :
   `#[serde(skip_serializing_if = "Option::is_none", default)]`. `deny_unknown_fields` **reste** sur la struct.
+- ⛔ **`deny_unknown_fields` est la prémisse de C-27-2-1, et il est figé** (validation P2, F1 = R10 ; C-27-2-15) : le
+  doc-comment `///` de `ColumnMapping` le dit, à l'intention de qui ajoutera la clé suivante — « ajouter un champ rend
+  les profils qui s'en servent illisibles par les binaires antérieurs : refus bruyant, sans bump (C-27-2-1, Story
+  27-2). Retirer `deny_unknown_fields` rendrait **silencieux** le retour depuis une version ultérieure — un champ
+  inconnu serait ignoré, et c'est le downgrade corrupteur que la politique de migration interdit. » ; et un test le
+  garde (5, ci-dessous), que tue la mutation M23.
 - `all_indices()` le pousse sous le nom `"currency"` → la collision (`validate()`) et le hors-borne au premier
   enregistrement (`parse_csv_collect_inner`, étape 6.b) le couvrent **sans code neuf**.
 - Doc-module de `profile.rs` et de `parser.rs` : la colonne Devise est citée.
@@ -93,7 +100,9 @@ la famille (i).)*
   `column_mapping.currency` ; (2) **un mapping sans devise se sérialise sans la clé** :
   `!serde_json::to_string(&m).unwrap().contains("currency")` — c'est ce qui garde le retour à une 0.13.1 indolore pour
   les profils qui ne lisent pas la devise (C-27-2-1) ; (3) `{"date":0,"amount":1,"currency":2}` se désérialise en
-  `Some(2)` ; (4) l'ancien JSON `{"date":2,"debit_credit_split":[5,6]}` donne `currency: None`.
+  `Some(2)` ; (4) l'ancien JSON `{"date":2,"debit_credit_split":[5,6]}` donne `currency: None` ; (5)
+  `unknown_key_is_rejected_so_older_binaries_refuse_loudly` : `serde_json::from_str::<ColumnMapping>(
+  r#"{"date":0,"amount":1,"bogus":2}"#)` → `Err`, avec un commentaire qui renvoie à C-27-2-1 (tue M23).
 
 **AC1-bis — Aucune migration.** Le JSON `bank_profiles.column_mapping` porte la clé ; `CHECK (JSON_VALID(…))` suffit.
 ⛔ **Une migration au diff signalerait une dérive** : pas de fichier sous `crates/kesh-db/migrations/`, pas de
@@ -160,8 +169,8 @@ Les deux littéraux de (a) et (b) disparaissent au profit de cette constante. Co
   `AppError::Internal`, **sur le patron exact** du chemin CAMT (`:961-971`). **Factoriser** ce bloc (CAMT + CSV) dans
   un helper plutôt que le copier (règle DRY).
 - `create_csv` : même appel sur le relevé, **avant** le test de `confirm_partial_import` — appelé **dans chacun des
-  deux bras** du `match` (`AllValid`, et `PartialFailure` sur `valid` **avant** `if !fields.confirm_partial_import`,
-  `:1825`) ; un appel unique placé après le `match` ne convient pas (validation P1, R5-1) → `Err(AppError::BankImportUnsupportedCurrency(c))`, `422 BANK_IMPORT_UNSUPPORTED_CURRENCY`,
+  deux bras** du `match` (`AllValid`, et `PartialFailure` — bras ouvert `:1825` — sur `valid` **avant**
+  `if !fields.confirm_partial_import`, `:1831`) ; un appel unique placé après le `match` ne convient pas (validation P1, R5-1) → `Err(AppError::BankImportUnsupportedCurrency(c))`, `422 BANK_IMPORT_UNSUPPORTED_CURRENCY`,
   `details.currency`, **rien d'écrit** (la transaction est abandonnée). Le refus de fichier déjà importé
   (`BANK_IMPORT_DUPLICATE_FILE`), qui précède le parse, garde sa place.
 - `map_csv_error` : bras **explicite** `CsvError::MixedCurrencies { currencies } => AppError::BankCsvMixedCurrencies
@@ -196,12 +205,14 @@ aussi (JSON brut).
 - ⚠️ Un champ `number` vidé par l'utilisateur rend `null` en Svelte 5 (`to_number('') = null`,
   `node_modules/svelte/src/internal/client/dom/elements/bindings/input.js:288-289`, Svelte 5.55.1 — lu par la lentille F
   en P1 ; l'hypothèse « ou `''` » était fausse) : `null ?? undefined` donne une clé de valeur `undefined`, que
-  `JSON.stringify` omet. Le test (c) l'établit.
-- **Vitest** (`BankProfileForm.test.ts`, patron existant) : (a) devise 4 en mode séparé → requête
-  `columnMapping.currency === 4` ; (b) idem en colonne unique ; (c) champ laissé vide →
+  `JSON.stringify` omet. Le test (v3) l'établit.
+- **Vitest** (`BankProfileForm.test.ts`, patron existant). ⚠️ Le fichier porte **déjà** des cas `(a)` à `(e)`
+  (26-1, l. 66-109) : les cas neufs sont libellés `(v1)`… `(v9)`, en tête du titre `it('(v1) …')`, et AC17 les cite
+  ainsi (validation P2, F5). (v1) devise 4 en mode séparé → requête
+  `columnMapping.currency === 4` ; (v2) idem en colonne unique ; (v3) champ laissé vide →
   `expect(req.columnMapping.currency).toBeUndefined()` **et** `JSON.stringify(req)` ne contient pas `"currency"` (la clé
-  est présente en JS, de valeur `undefined` : un `'currency' in …` serait vrai — validation P1, F2) ; (d) profil
-  existant `currency: 4` → le champ s'ouvre à 4, et l'enregistrer sans y toucher le renvoie ; (e) profil existant sans
+  est présente en JS, de valeur `undefined` : un `'currency' in …` serait vrai — validation P1, F2) ; (v4) profil
+  existant `currency: 4` → le champ s'ouvre à 4, et l'enregistrer sans y toucher le renvoie ; (v5) profil existant sans
   devise → champ vide.
 
 **AC8-bis — Le formulaire ne perd aucune clé qu'il ne montre pas** (validation P1, F1 ; périmètre élargi par
@@ -211,17 +222,41 @@ l'orchestrateur, C-27-2-12). Aujourd'hui `columnMapping` est reconstruit des seu
 ajouter la colonne Devise.
 
 - Le mapping envoyé part du mapping existant **privé des clés que le formulaire possède** (`date`, `amount`,
-  `debit_credit_split`, `reference`, `details`, `currency`), puis reçoit les valeurs du formulaire : déstructuration
-  `const { date, amount, debit_credit_split, reference, details, currency, ...rest } = existing?.columnMapping ?? {}`
-  (ou équivalent), `{ ...rest, ...champsDuFormulaire }`, dans les **deux** branches. La liste des clés possédées est
-  **une** constante nommée et documentée (JSDoc), partagée par les deux branches (DRY).
+  `debit_credit_split`, `reference`, `details`, `currency`), puis reçoit les valeurs du formulaire,
+  `{ ...keepUnownedKeys(existing?.columnMapping), ...champsDuFormulaire }`, dans les **deux** branches.
+- ⛔ **Une seule source de vérité des clés possédées** (validation P2, F4 = R2 ; C-27-2-17) : la constante, et non une
+  déstructuration qui récrirait la liste dans son motif. Forme prescrite, typée sans `any` ni cast :
+
+  ```ts
+  /** Clés de `columnMapping` que ce formulaire écrit ; toute autre clé du profil existant est gardée telle quelle
+   *  (Story 27-2, AC8-bis). Une clé neuve montrée par le formulaire s'ajoute ICI, sinon elle serait recopiée de
+   *  l'ancien profil à côté de la valeur saisie. */
+  const OWNED_COLUMN_MAPPING_KEYS = [
+  	'date', 'amount', 'debit_credit_split', 'reference', 'details', 'currency',
+  ] as const satisfies readonly (keyof ColumnMapping)[];
+
+  /** Le mapping existant privé des clés que le formulaire possède. */
+  function keepUnownedKeys(existing?: ColumnMapping): Partial<ColumnMapping> {
+  	const rest: Partial<ColumnMapping> = { ...existing };
+  	for (const key of OWNED_COLUMN_MAPPING_KEYS) delete rest[key];
+  	return rest;
+  }
+  ```
+
+  Toutes les propriétés de `Partial<ColumnMapping>` sont facultatives, ce qui rend le `delete` licite en `strict`
+  (`frontend/tsconfig.json`) ; le spread suivant fournit `date`, d'où un type compatible avec
+  `CreateOrUpdateBankProfileRequest.columnMapping`. *Non compilé à la rédaction : `npm run check` le confirme en T4 ; si
+  `svelte-check` refuse, garder la constante et adapter la fonction, jamais revenir à deux listes.*
 - Ce n'est pas une recopie de tout le mapping existant : `amount` et `debit_credit_split` s'excluent (`validate()`), et
-  un passage de la colonne unique au mode séparé laisserait sinon les deux clés — refus `422`.
-- **Vitest** : (f) profil existant `counterparty: 3`, enregistré sans y toucher, en colonne unique **et** en mode séparé
-  → `req.columnMapping.counterparty === 3` ; (g) profil existant en colonne unique (`amount: 1`, `counterparty: 3`),
+  un passage de la colonne unique au mode séparé laisserait sinon les deux clés — refus `422` ; **le passage inverse
+  aussi** (mode séparé → colonne unique : `debit_credit_split` resterait à côté du nouvel `amount`).
+- **Vitest** : (v6) profil existant `counterparty: 3`, enregistré sans y toucher, en colonne unique **et** en mode séparé
+  → `req.columnMapping.counterparty === 3` ; (v7) profil existant en colonne unique (`amount: 1`, `counterparty: 3`),
   passé au mode séparé → la requête porte `debit_credit_split` et `counterparty: 3`, et `amount` y est `undefined`
-  (absent de `JSON.stringify(req)`) ; (h) création (pas de profil existant) → la requête ne porte que les clés du
-  formulaire.
+  (absent de `JSON.stringify(req)`) ; (v8) **sens inverse** (validation P2, R1) : profil existant en mode séparé
+  (`debit_credit_split: [5, 6]`, `counterparty: 3`), case décochée → la requête porte `amount` et `counterparty: 3`, et
+  `JSON.stringify(req)` ne contient pas `debit_credit_split` ; (v9) création (pas de profil existant) → la requête ne
+  porte que les clés du formulaire.
 
 **AC9 — Aperçu d'import (`BankImportUpload.svelte`).** Rien de neuf à afficher : `warning-unsupported-currency` et
 `warning-informational` existent (l. 596, 617). Seul le texte de l'avertissement change (AC10). `csv-line-error-label.ts`
@@ -234,8 +269,18 @@ P1, R3-1).
 **AC10 — Quatre locales** (`crates/kesh-i18n/locales/{fr-CH,de-CH,it-CH,en-CH}/messages.ftl`), clés présentes dans les
 **quatre** fichiers ; `frontend/src/lib/shared/i18n-keys.test.ts` (dont `sitesTotal`, l. 575, **recompté** par le
 test, jamais incrémenté de confiance ; la famille `'bank-import-info-'` l. 628 et son compte l. 680 ; la famille
-`'bank-import-csv-errors-'` l. 631), `i18n-un-repli-par-cle.test.ts` (`MOTIFS_DYNAMIQUES`, cf. commentaire de
-`csv-line-error-label.ts`) et `npm run lint-i18n-ownership` verts.
+`'bank-import-csv-errors-'` l. 630), `i18n-un-repli-par-cle.test.ts` (`MOTIFS_DYNAMIQUES`, cf. commentaire de
+`csv-line-error-label.ts`) et `npm run lint-i18n-ownership` verts. Les deux gestes qu'impose `i18n-keys.test.ts`
+(validation P2, R6) : la famille `'bank-import-info-'` gagne `'bank-csv-currency-assumed'` (trois valeurs) **et** son
+compte écrit passe de `2` à `3` (l. 680) ; la famille `'bank-import-csv-errors-'`, énumérée en dur (l. 630-633), gagne
+`'invalid-currency'`, faute de quoi elle rougit contre sa cardinalité lue de `CSV_LINE_ERROR_LABELS` (l. 682).
+
+**Garde G9 des replis Rust** (`crates/kesh-api/tests/textes_coherents.rs`, `les_replis_rust_suivent_le_catalogue`,
+l. 679 — table fermée ; validation P2, R6) : l'entrée `crates/kesh-api/src/errors.rs` gagne
+`("bank-import-errors-unsupported-currency", 1, &[])` et `("bank-import-csv-errors-mixed-currencies", 1, DEVISES)`,
+avec `const DEVISES: &[(&str, &str)] = &[("{ $currencies }", "{currencies}")];` — le repli de la seconde est un
+`format!` dont la variable s'appelle `currencies` (patron de `NOM`). C'est ce qui donne un test à l'affirmation
+« replis identiques aux textes `fr-CH` » ci-dessous.
 
 | Clé | Rôle | Texte fr-CH (indicatif) |
 |---|---|---|
@@ -252,10 +297,17 @@ Les replis français passés à `i18nMsg` / `t` / `t_args` sont **identiques** a
 `#[error("Devise non supportée v0.1 : {0}")]` → `"Devise non supportée : {0}"`), `:2141` (repli de
 `bank-import-errors-unsupported-currency` → le texte `fr-CH` de la clé, `messages.ftl:1057` : « Devise non supportée.
 Seul le franc suisse (CHF) est pris en charge dans cette version. »), `docs/i18n-glossaire.md:161` (exemple de la ligne
-*devise* → le nouveau texte de l'avertissement). **Greper la valeur** après coup : `grep -rnF "v0.1"
+*devise* → le nouveau texte de l'avertissement). S'y ajoutent (validation P2, R7 ; C-27-2-19) le message du même
+refus côté `kesh-core`, qui va au journal — `crates/kesh-core/src/errors.rs:93`
+(`#[error("devise non supportée v0.1 : {0} (seul CHF est accepté)")]` → `"devise non supportée : {0} (seul CHF est
+accepté)"`) et son doc-comment `:91` — et les doc-comments qui décrivent ce refus : `crates/kesh-import/src/error.rs:5`,
+`crates/kesh-core/src/bank_imports.rs:25` et `:457` (« v0.1 » → « cette version »). Le **nom**
+`validate_currency_supported_v0_1` reste (C-27-2-3), et les mentions historiques « v0.1 mono-CHF » des tests et de la
+réconciliation (`reconciliation.rs:628`, `reconciliation_e2e.rs`, `bank_imports_e2e.rs:443`, `bank_imports.rs:1125`)
+restent : elles décrivent une convention toujours vraie, non ce refus. **Greper la valeur** après coup : `grep -rnF "v0.1"
 frontend/src/lib/features/bank-import crates/kesh-i18n/locales docs/i18n-glossaire.md` ne rend plus
-`unsupported-currency` ni `Devise non supportée`, et `grep -nF "Devise non supportée v0.1" crates/kesh-api/src/errors.rs`
-ne rend rien.
+`unsupported-currency` ni `Devise non supportée`, `grep -rniF "devise non supportée v0.1" crates` ne rend rien, et
+`grep -rnF "v0.1" crates --include=*.rs | grep -i "devise\|currency"` ne rend plus que les sites gardés ci-dessus.
 
 ### La documentation
 
@@ -280,7 +332,9 @@ ne rend rien.
   typographique, un motif en `'` droit rend 0 avant comme après le correctif) :
   `pdftotext docs/manual/fr/user-manual.pdf - | tr '\n' ' ' | tr -s ' ' | grep -oE "colonne Devise n.est pas lue" | wc -l`
   → **1 avant** le correctif (à relever et écrire au Dev Agent Record), **0 après** ; et une assertion **positive** sur
-  la phrase neuve, même aplatissement, motif tolérant à l'apostrophe (`.` à la place de `'`/`’`) → **1 après**.
+  la phrase neuve, **fixée ici** (validation P2, F9) : la note remplacée contient mot pour mot « le relevé est supposé
+  en CHF » ; même aplatissement, `grep -oE "le relevé est supposé en CHF" | wc -l` → **0 avant**, **≥ 1 après** (la
+  même phrase peut revenir dans une autre puce : un compte exact échouerait sans défaut).
 
 **AC12 — CHANGELOG** (`CHANGELOG.md`, section `## [0.13.2] — Non publié`, créée ici sous `---` en tête si absente — la
 branche de la 27-1 la porte déjà : l'orchestrateur fusionnera) :
@@ -293,8 +347,20 @@ branche de la 27-1 la porte déjà : l'orchestrateur fusionnera) :
   `INVALID_CURRENCY`). Sans colonne Devise, le relevé reste supposé en CHF et l'aperçu le dit.
 - `### Corrigé` — **La devise d'une transaction CAMT.053 est celle de son montant** (AC19). Avant, la devise d'un
   montant d'information — montant d'origine d'un paiement par carte (`<AmtDtls>`), frais (`<Chrgs>`) — remplaçait celle
-  de la transaction : sur un compte en CHF, un paiement en euros était enregistré « en EUR » au montant en francs, et
-  la réconciliation l'écartait.
+  de la transaction quand il était le **dernier** montant de la transaction à porter une devise : sur un compte en CHF,
+  un paiement en euros **pouvait** ainsi être enregistré « en EUR » au montant en francs, et la réconciliation
+  l'écartait (validation P2, R8 : un `<AmtDtls>` complet, qui finit par `<TxAmt>` en devise du compte, n'y exposait
+  pas).
+- **Transactions déjà importées** (validation P2, F2 ; C-27-2-16 — patron du paragraphe de la 0.13.1) : la mise à jour
+  ne les corrige pas, et réimporter le même fichier ne les remplace pas (fichier signalé en doublon, lignes signalées
+  en doublon : l'empreinte de ligne ignore la devise). Remède : **supprimer l'import** (fonction de la 0.13.2, permise
+  tant qu'aucune de ses transactions n'est rapprochée), puis le réimporter. Si l'import a déjà des transactions
+  rapprochées, la suppression est refusée (`409 BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS`) : annuler d'abord leur
+  rapprochement (*Annuler le rapprochement*, qui contre-passe l'écriture ou annule le règlement qu'il avait produit),
+  puis supprimer et réimporter. CAMT : les transactions restées « en EUR » ne sont pas rapprochables, elles sont donc
+  supprimables avec leur import — sauf si une autre transaction du même import est rapprochée. CSV d'un compte en
+  devise : vérifier les montants ; réimporté avec la colonne Devise réglée, le relevé est **refusé** (devise non
+  supportée) — il n'a pas sa place dans Kesh, qui ne tient que des comptes en CHF.
 - `### Corrigé` — **Modifier un profil bancaire à l'écran ne perd plus sa colonne contrepartie** (AC8-bis), réglable
   par l'API seulement : le formulaire la supprimait au premier enregistrement.
 - **À faire** : ajouter la colonne Devise (4 pour UBS) aux profils existants dont le fichier en porte une ; sans elle,
@@ -303,8 +369,14 @@ branche de la 27-1 la porte déjà : l'orchestrateur fusionnera) :
   profil qui lit la colonne Devise fait échouer `GET /api/v1/bank-profiles` (500) pour **toute la société** sous la
   0.13.1 : l'écran *Profils bancaires* est inutilisable, et l'écran d'import affiche un sélecteur de profil **vide,
   sans message** ; les imports par ce profil sont refusés (rien n'est importé à tort). Le profil ne se corrige plus à
-  l'écran sous la 0.13.1 : **retirer la colonne Devise de tous les profils avant le retour** (sous la 0.13.2). Une
-  sauvegarde d'installation prise sous la 0.13.2 s'importe dans une 0.13.1, avec la même conséquence.
+  l'écran sous la 0.13.1 : **retirer la colonne Devise de tous les profils avant le retour** (sous la 0.13.2). Oublié,
+  il se répare encore **par l'API** de la 0.13.1 (validation P2, F7) : un `PUT /api/v1/bank-profiles/{id}` complet sans
+  `columnMapping.currency`, ou un `DELETE` — ni l'un ni l'autre ne désérialise le profil enregistré (`git show
+  v0.13.1:crates/kesh-db/src/repositories/bank_profiles.rs`, l. 264 : comparaison de la chaîne brute) ; le SQL reste le
+  dernier recours. Une sauvegarde d'installation prise sous la 0.13.2 s'importe dans une 0.13.1, avec la même
+  conséquence. ⚠️ Ce paragraphe ne vaut que si **aucune** migration de la 0.13.2 ne relève
+  `kesh_version_min_required` (validation P2, F10) : vrai pour les branches 27-1, 27-2 et 27-3 au 2026-10-12, à
+  revérifier par l'orchestrateur à la fusion.
 - **API** : `columnMapping.currency` (facultatif) dans `POST`/`PUT`/`GET /api/v1/bank-profiles` ; la colonne
   `column_mapping_json` de l'export global peut porter la clé `currency`.
 
@@ -323,14 +395,25 @@ contrôlé aplati) :
   celle de la 0.13.1 (`:1972`), sur son patron : ni compose ni `.env` neufs ; **ajouter la colonne Devise** aux profils
   existants dont le fichier en porte une — **le profil UBS en colonne 4** (renvoi au manuel utilisateur, *Profils banque*
   et *Le relevé CSV d'UBS*) — sans quoi le relevé reste supposé en CHF ; modifier un profil à l'écran garde désormais sa
-  colonne contrepartie ; un paragraphe **« Retour à la 0.13.1 »** qui porte la réserve de l'AC12 (un profil à colonne
-  Devise rend la liste des profils de toute la société en erreur sous la 0.13.1, sélecteur d'import vide sans message :
-  retirer la colonne de tous les profils **avant** le retour ; sinon par SQL) ;
+  colonne contrepartie ; un paragraphe **« Transactions déjà importées »** sur le patron de celui de la 0.13.1
+  (`admin-manual.tex:1993`), qui porte le remède de l'AC12 (validation P2, F2 ; C-27-2-16) : la mise à jour ne corrige
+  rien, le réimport seul non plus ; supprimer l'import non rapproché puis le réimporter ; s'il est rapproché, annuler
+  d'abord le rapprochement de ses transactions (renvoi au manuel utilisateur, *Annuler le rapprochement*) ; un CSV
+  d'un compte en devise réimporté avec la colonne Devise est refusé ; un paragraphe **« Retour à la 0.13.1 »** qui
+  porte la réserve de l'AC12 (un profil à colonne Devise rend la liste des profils de toute la société en erreur sous
+  la 0.13.1, sélecteur d'import vide sans message : retirer la colonne de tous les profils **avant** le retour ; oublié,
+  le profil se répare par l'API de la 0.13.1 — `PUT` complet sans `columnMapping.currency`, ou `DELETE` —, le SQL en
+  dernier recours ; validation P2, F7) ;
 - § *Rollback en cas d'échec* (`:2223`, « le retour à la version précédente n'est possible que si aucune autre migration
   de la release ne relève la version minimale exigée ») : y porter la réserve, par renvoi à `\S\ref{sec:maj-0-13-2}` —
-  pour la 0.13.2, le retour exige en plus que les profils CSV ne lisent plus la colonne Devise ;
+  pour la 0.13.2, le retour exige en plus que les profils CSV ne lisent plus la colonne Devise. ⚠️ Cette réserve et le
+  paragraphe « Retour à la 0.13.1 » supposent qu'**aucune** migration de la 0.13.2 ne relève
+  `kesh_version_min_required` (vrai pour les branches 27-1, 27-2 et 27-3 au 2026-10-12 : `git diff --stat a2743fd4
+  <branche> -- crates/kesh-db/migrations` vide) ; si une story de la release en ajoute une, le retour devient
+  impossible et le paragraphe se récrit — à revérifier par l'orchestrateur à la fusion (validation P2, F10) ;
 - contrôle PDF aplati (`pdftotext docs/manual/fr/admin-manual.pdf - | tr '\n' ' ' | tr -s ' '`) : `grep -oE "Passer à la
-  0.13.2"` et `grep -oE "colonne Devise"` rendent chacun au moins 1.
+  0.13.2"`, `grep -oE "colonne Devise"` et `grep -oE "supprimer l.import"` rendent chacun au moins 1 (le troisième :
+  le remède des transactions déjà importées).
 - ⚠️ Fusion : la branche de la 27-1 modifie le même fichier (`:1993`, `:2270`, `:2305`, `:2463`) sans créer cette
   section ; l'orchestrateur réunit les apports de la 27-1 et de la 27-3 sous la même `\subsubsection` à la fusion.
 
@@ -340,8 +423,14 @@ contrôlé aplati) :
 `include_bytes!(…"/tests/fixtures/csv/ubs_synthetique.csv")`, dont la colonne 4 vaut `CHF` sur les 11 lignes ;
 variantes **dérivées dans le test** par remplacement de `;CHF;` **sur les seules lignes de données** — C-27-2-9. Le
 préambule porte aussi `;CHF;` (`Évaluation en:;CHF;`, ligne 7 : 12 occurrences pour 11 lignes de données) : le helper
-de dérivation saute les lignes du préambule et de l'en-tête (`header_row_count` du profil UBS) et asserte qu'il a
-remplacé exactement le nombre de cellules voulu — validation P1, R9-1) :
+de dérivation saute les lignes du préambule et de l'en-tête et asserte qu'il a remplacé exactement le nombre de
+cellules voulu — validation P1, R9-1). ⚠️ **Sauter `header_row_count` lignes NON VIDES, pas lignes physiques**
+(validation P2, R5) : le profil UBS porte `header_row_count = 9`, mais la fixture a **10** lignes physiques avant la
+première donnée — la ligne 9 est vide, et le lecteur `csv` l'avale sans la compter (doc-module de `parser.rs`, l. 14-17 :
+« une ligne vide […] n'entre pas dans le compte (relevé UBS : 9) »). Un helper qui sauterait 9 lignes physiques prendrait
+la ligne de titres pour la première donnée et décalerait d'une unité les indices de AC13-11 et AC13-12. Le helper
+applique donc la règle du lecteur (ignorer les lignes vides, compter les autres) ; l'assertion du nombre de
+remplacements reste :
 
 1. profil UBS (26-1) + `currency: Some(4)` → `AllValid`, `stmt.currency == "CHF"`, les 11 `tx.currency == "CHF"` ;
 2. même profil, fixture passée en `EUR` sur **toutes** les lignes → `AllValid`, `stmt.currency == "EUR"`, chaque
@@ -349,12 +438,16 @@ remplacé exactement le nombre de cellules voulu — validation P1, R9-1) :
 3. **une seule** ligne passée en `EUR` → `HardFailure(MixedCurrencies { currencies: ["CHF", "EUR"] })` ;
 4. une ligne en `eur` sur un fichier tout `eur` → `"EUR"` (casse) ;
 5. une cellule vide → `PartialFailure`, une erreur `EMPTY_MANDATORY_FIELD` valeur `"currency"`, 10 valides en CHF ;
-6. une cellule `Fr.` → `PartialFailure`, une erreur `INVALID_CURRENCY` ; `€`, `CHF1`, **`ÉUR`** et **`ÉU`** idem —
-   `ÉUR` (trois caractères, quatre octets) tue un contrôle « alphabétique Unicode sur trois caractères », `ÉU` (deux
-   caractères, trois octets) un contrôle « alphabétique Unicode sur trois octets », que `Fr.`, `€` et `CHF1` laisseraient
-   vivre (validation P1, R6-1) ;
+6. une cellule `Fr.` → `PartialFailure`, une erreur `INVALID_CURRENCY` ; `€`, `CHF1`, **`ÉUR`**, **`ÉU`**, **`CH1`**
+   et **`CH`** idem — `ÉUR` (trois caractères, quatre octets) tue un contrôle « alphabétique Unicode sur trois
+   caractères », `ÉU` (deux caractères, trois octets) un contrôle « alphabétique Unicode sur trois octets », que `Fr.`,
+   `€` et `CHF1` laisseraient vivre (validation P1, R6-1) ; `CH1` tue un contrôle « trois caractères ASCII
+   **alphanumériques** », `CH` une borne « **au plus** trois lettres » (validation P2, F3 = R3) ;
 7. mélange **et** erreur de ligne dans le même fichier → `MixedCurrencies` l'emporte ;
-8. un débit de signe contraire **et** une ligne `EUR` → `AmountSignMismatch` l'emporte (ordre de l'AC3) ;
+8. un débit de signe contraire **et** une **autre** ligne, **valide**, passée en `EUR` → `AmountSignMismatch`
+   l'emporte (ordre de l'AC3). ⚠️ Pas la même ligne (validation P2, R4) : une ligne de signe contraire sort avant la
+   lecture de sa devise (`parser.rs:597-602` pour un débit, `:629` pour un crédit — et non `:578-583`, cité à tort
+   par le rapport R de P2) : il n'y aurait plus de mélange parmi les lignes valides, et M12 ne rougirait pas ;
 9. `currency: None` → `stmt.currency == DEFAULT_CSV_CURRENCY` et chaque `tx.currency` aussi (comportement d'avant,
    désormais nommé) ;
 10. `currency` hors borne (`Some(40)`) → `ProfileMisconfigured` nommant `column_mapping.currency` ;
@@ -424,20 +517,22 @@ fichier — mémoire « mutation restaurée, binaire périmé ») :
 | M6 | contrôle du mélange retiré | AC13-3, AC14-4 |
 | M7 | pas de mise en majuscules | AC13-4 |
 | M8 | cellule vide acceptée en CHF | AC13-5 |
-| M9 | forme non contrôlée (`Fr.` acceptée), ou contrôle alphabétique Unicode (`ÉUR` accepté) / sur la longueur en octets (`ÉU` accepté) | AC13-6 |
+| M9 | forme non contrôlée (`Fr.` acceptée), ou contrôle alphabétique Unicode (`ÉUR` accepté) / sur la longueur en octets (`ÉU` accepté) / ASCII alphanumérique (`CH1` accepté) / longueur `≤ 3` (`CH` accepté) | AC13-6 |
 | M10 | `currency` absent de `all_indices()` | AC1-(1), AC13-10 |
 | M11 | `skip_serializing_if` retiré du champ | AC1-(2) |
 | M12 | `MixedCurrencies` évalué avant le refus de signe | AC13-8 |
 | M13 | `bank_csv_currency_assumed` toujours poussé / jamais poussé | AC14-5 / AC14-6, AC15-1 / AC15-3 |
-| M14 | le formulaire n'envoie pas `currency` | AC8-(a)(b), AC15-1 |
-| M15 | le formulaire ne relit pas `existing.columnMapping.currency` | AC8-(d) |
+| M14 | le formulaire n'envoie pas `currency` | AC8-(v1)(v2), AC15-1 |
+| M15 | le formulaire ne relit pas `existing.columnMapping.currency` | AC8-(v4) |
 | M16 | `map_csv_error` sans bras `MixedCurrencies` (repli `other`) | AC14-4 (code ≠ `BANK_CSV_MIXED_CURRENCIES`) |
 | M17 | plafond des devises rapportées retiré, ou troncature aux 10 premières **rencontrées** | AC13-11 |
 | M18 | l'erreur de devise rendue par `RowParse::err` (observation de débit perdue) | AC13-12 |
 | M19 | CAMT : la devise de transaction reprise de **tout** `<Amt Ccy>` sous `<TxDtls>` (code d'avant) | AC19-1 |
 | M20 | CAMT : la devise d'entrée reprise de tout `<Amt Ccy>` sous `<Ntry>` hors `<TxDtls>` (code d'avant) | AC19-2 |
-| M21 | le formulaire ne recopie pas les clés qu'il ne montre pas (`...rest` retiré) | AC8-(f) |
-| M22 | le formulaire recopie **tout** le mapping existant, sans en retirer ses propres clés | AC8-(g) |
+| M21 | le formulaire ne recopie pas les clés qu'il ne montre pas (`keepUnownedKeys` retiré du spread) | AC8-bis-(v6) |
+| M22 | le formulaire recopie **tout** le mapping existant, sans en retirer ses propres clés | AC8-bis-(v7), (v8) |
+| M23 | `#[serde(deny_unknown_fields)]` retiré de `ColumnMapping` | AC1-(5) |
+| M24 | `OWNED_COLUMN_MAPPING_KEYS` privée de `debit_credit_split` (resp. de `amount`) | AC8-bis-(v8) (resp. (v7)) |
 
 **AC18 — Gates** (au **dernier commit de code**, sous `flock /home/gcorbaz/devel/kesh-gate-logs/.gate.lock`) :
 `scripts/test-fast.sh` complet (base remise à zéro avant — base `kesh_272`), `cargo publish --dry-run -p kesh-import`
@@ -465,7 +560,10 @@ et la réconciliation écarte ensuite la transaction (`reconciliation.rs:631`, `
 - Repli inchangé : un `<TxDtls>` sans `Amt` propre prend le montant **et** la devise de l'entrée (`:603`, `:618`).
 - **Fixture synthétique** neuve `crates/kesh-import/tests/fixtures/camt053/v04_amtdtls_foreign_currency.xml`, sur le
   patron de `v04_with_subtxs.xml` (même IBAN de test, compte `CHF`, soldes d'ouverture et de clôture cohérents avec les
-  entrées, ordre des éléments du schéma 001.04 — `AmtDtls` après `CdtDbtInd`, `Chrgs` après `BkTxCd`) : entrée 1 avec un
+  entrées ; ordre des éléments de `EntryTransaction10` dans le seul XSD versionné, celui de la 001.08 —
+  `docs/six-references/ig-cash-managment-xml-schemas-v2.0.2-en/camt.053.001.08.xsd:705` : `Refs`, `Amt`, `CdtDbtInd`,
+  `AmtDtls`, `Avlbty`, `BkTxCd`, `Chrgs`… —, que le parseur lit sans distinction de version ; aucun XSD 001.04 n'est au
+  dépôt, la fiche n'en affirme donc pas l'ordre — validation P2, R9) : entrée 1 avec un
   `<TxDtls>` `<Amt Ccy="CHF">` suivi de `<AmtDtls><InstdAmt><Amt Ccy="EUR">` (et son `CcyXchg`) et de
   `<Chrgs><Rcrd><Amt Ccy="EUR">` ; entrée 2 **sans** `<TxDtls>`, `<Amt Ccy="CHF">` suivi de
   `<AmtDtls><InstdAmt><Amt Ccy="EUR">`. Valeurs inventées.
@@ -476,7 +574,15 @@ et la réconciliation écarte ensuite la transaction (`reconciliation.rs:631`, `
   **avant** la correction et lancés sur le code d'avant : ils doivent rougir (`"EUR"` au lieu de `"CHF"`) — le rouge est
   noté au Dev Agent Record, sinon le test ne prouve rien. Test d'intégration : AC14-8.
 - L'en-tête de `camt053_tests.rs` (« Les 10 fixtures couvrent », pour 13 fichiers à `a2743fd4`) est **recompté** depuis
-  `ls crates/kesh-import/tests/fixtures/camt053/ | wc -l` et gagne la ligne de la fixture neuve.
+  `ls crates/kesh-import/tests/fixtures/camt053/ | wc -l` et gagne la ligne de la fixture neuve. **Même geste** au
+  catalogue `crates/kesh-import/tests/fixtures/README.md:25-39` (validation P2, R6) : « Les 10 fichiers » recompté, une
+  ligne pour la fixture neuve, et une pour chacun des trois fichiers qui y manquent déjà (`v04_ntry_sign_fallback.xml`,
+  `v04_overlap.xml`, `v04_truncated_after_stmt_close.xml`).
+- ⚠️ **Angle mort assumé** (validation P2, F8 ; C-27-2-11) : une entrée dont l'`Amt` **direct** n'a pas de `Ccy`, mais
+  dont un montant d'information en porte un, prenait jusqu'ici la devise de ce dernier ; elle est désormais refusée
+  (`MissingRequiredField(currency)`, `camt053/mod.rs:572-575`) — et avec elle **tout le relevé**. Le XSD rend `Ccy`
+  obligatoire (exporteur non conforme), le refus est bruyant, et prendre la devise d'un montant d'information serait le
+  défaut même. Pas de test exigé.
 - Ni `validate_currency_supported_v0_1` ni le contrôle par transaction ne changent (C-27-2-3, alternative toujours
   écartée).
 
@@ -486,12 +592,12 @@ et la réconciliation écarte ensuite la transaction (`reconciliation.rs:631`, `
   `node_modules` par `cp -al` depuis le dépôt principal ; `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-27-2/target` ;
   bases `kesh_272` / `kesh_e2e_272` créées, migrées, seedées.
 - [ ] **T1** — `kesh-import` : AC1, AC2, AC3, AC4, AC19 ; tests AC1, AC13 et AC19 (AC19-1/2 rouges d'abord) ; mutations
-  M1, M2, M6-M12, M17-M20.
+  M1, M2, M6-M12, M17-M20, M23 ; catalogue `tests/fixtures/README.md` (AC19).
 - [ ] **T2** — `kesh-api` : AC5, AC6, AC7 (helper de contrôle factorisé, variant d'erreur, bras explicite) ; tests
-  AC14 (dont AC14-8, CAMT) ; mutations M3-M5, M13, M16 ; textes « v0.1 » de `errors.rs` (AC10).
+  AC14 (dont AC14-8, CAMT) ; mutations M3-M5, M13, M16 ; textes « v0.1 » de `errors.rs` et de `kesh-core` (AC10) ; garde G9 de `textes_coherents.rs` (AC10).
 - [ ] **T3** — i18n : AC10 (quatre locales, gardes Vitest et lint).
 - [ ] **T4** — Frontend : AC8, AC8-bis, AC9 ; Vitest (dont `csv-line-error-label.test.ts`) ; mutations M14, M15,
-  M21, M22.
+  M21, M22, M24.
 - [ ] **T5** — E2E : AC15.
 - [ ] **T6** — `ubs_fichier_reel.rs` : AC16 (compilé, **non lancé** par l'agent).
 - [ ] **T7** — Manuel utilisateur (AC11) et manuel d'administration (AC12-bis), PDF régénérés + contrôles aplatis ;
@@ -500,7 +606,7 @@ et la réconciliation écarte ensuite la transaction (`reconciliation.rs:631`, `
 - [ ] **T8** — Propagation : `grep -rnF '"CHF"' crates/kesh-import/src` (AC4) ; `grep -rnE "n.est pas lue" docs/manual/fr
   CHANGELOG.md` (la phrase de 0.13.1 dans le CHANGELOG **reste** : c'est l'histoire) ; `grep -rnF "v0.1"` sur les
   clés et sites modifiés (AC10) ; `grep -rn "counterparty" frontend/src/lib/features/bank-import` (AC8-bis) ; gates
-  AC18 ; mutations M1-M22 ; Dev Agent Record.
+  AC18 ; mutations M1-M24 ; Dev Agent Record.
 
 ## Dev Notes
 
@@ -511,15 +617,15 @@ et la réconciliation écarte ensuite la transaction (`reconciliation.rs:631`, `
   (l. 190-310). **À préserver** : l'ordre et les messages des contrôles existants, `DebitSign` intact.
 - `crates/kesh-import/src/csv/parser.rs` (2056 l.) — `parse_csv_collect_inner` (l. 157-392) : validate, encodage, saut
   des lignes, garde de surcomptage, premier enregistrement, hors-borne, boucle, refus de signe (7.b, l. 303-315),
-  construction du relevé (l. 357-367), discrimination (l. 369-391). `parse_row` (l. 519-690). `RowAccumulator`
-  (l. 451-514). **À préserver** : la priorité du refus de signe, `whole_debit_column`, la sentinelle de période, les
+  construction du relevé (l. 357-367), discrimination (l. 369-391). `parse_row` (l. 519-690, doc l. 501-518).
+  `RowAccumulator` (struct l. 451-461, `impl` l. 463-500). **À préserver** : la priorité du refus de signe, `whole_debit_column`, la sentinelle de période, les
   plafonds `MAX_CSV_LINE_ERRORS`.
 - `crates/kesh-import/src/error.rs` — `CsvError` (l. 59-198), `CsvLineErrorCode` (l. 204-265), `all_is_complete`
   (l. 379).
 - `crates/kesh-api/src/routes/bank_imports.rs` (1999 l.) — `map_csv_error` (l. 624-673), `db_profile_to_csv_profile`
   (l. 1590-1607, inchangé : il passe le `ColumnMapping` entier), `preview` CAMT (l. 896-1043, bloc devise
   l. 961-971 à factoriser), `create` CAMT (l. 1048-…, l. 1126-1130), `preview_csv` (l. 1609-1756), `create_csv`
-  (l. 1758-1999 ; branche `PartialFailure` l. 1825-1861).
+  (l. 1758-1999 ; branche `PartialFailure` l. 1825-1861, `if !fields.confirm_partial_import` l. 1831).
 - `crates/kesh-api/src/errors.rs` — `BankImportUnsupportedCurrency` (l. 675, réponse l. 2135-2147),
   `BankCsvHeaderSkipsData` (l. 806, réponse l. 2395-2411).
 - `frontend/src/lib/features/bank-import/BankProfileForm.svelte` (304 l.) — état l. 26-47, `columnMapping` l. 56-69,
@@ -535,8 +641,10 @@ et la réconciliation écarte ensuite la transaction (`reconciliation.rs:631`, `
 
 ### Points de vigilance
 
-- **29 littéraux `ColumnMapping { … }`** à compléter de `currency: None` (`grep -rn "ColumnMapping {" crates` : 23 dans
-  `parser.rs`, 5 dans `profile.rs`, 1 dans `tests/ubs_fichier_reel.rs`) — le compilateur les trouve, mais
+- **27 littéraux `ColumnMapping { … }`** à compléter de `currency: None` (`grep -rn "ColumnMapping {" crates` rend
+  29 lignes, dont la définition `profile.rs:38` et le bloc `impl` `:62` : 23 littéraux dans `parser.rs`, 3 dans
+  `profile.rs` — l. 329, 538, 557 —, 1 dans `tests/ubs_fichier_reel.rs` ; recompté en validation P2, F6) — le
+  compilateur les trouve, mais
   `ubs_fichier_reel.rs` est un test **ignoré** : `cargo build --workspace --all-targets` le compile, `nextest` ne
   l'exécute pas.
 - **Ordre des refus**, à tenir exactement : fichier déjà importé (avant parse, `create_csv`) → erreurs fatales du
@@ -558,6 +666,12 @@ et la réconciliation écarte ensuite la transaction (`reconciliation.rs:631`, `
 - Fusion avec la 27-1 (orchestrateur) : conflits attendus sur `CHANGELOG.md` (§ 0.13.2), `sprint-status.yaml`,
   `i18n-keys.test.ts` (`sitesTotal` : la 27-1 en ajoute 9), les quatre `messages.ftl`, le registre des choix,
   `admin-manual.tex` (la 27-1 y touche la section de la 0.13.1, AC12-bis).
+- Fusion avec la 27-3 (`story/27-3-profil-apres-apercu` ; validation P2, F10) : elle touche les mêmes sites —
+  `preview_csv` / `create_csv` (champ `previewFingerprint`, refus `409 BANK_IMPORT_PREVIEW_STALE`, à **insérer dans
+  l'ordre des refus** ci-dessus, que la 27-2 tient), `i18n-keys.test.ts` (`sitesTotal`), les `messages.ftl`, le manuel
+  utilisateur aux lignes voisines (`:1794-1807`). Son empreinte couvre `column_mapping_json` en chaîne brute : la clé
+  `currency` y entre d'elle-même, sans interaction défectueuse. Aucune migration portée par la 27-1 ni la 27-3 au
+  2026-10-12 — condition du paragraphe « Retour à la 0.13.1 » (AC12, AC12-bis).
 
 ### Ce qui reste hors périmètre
 
@@ -652,3 +766,63 @@ AC13-AC19) ; tâches **T0-T8** ; **12** tests de parseur AC13 ; **8** items AC14
 citation du texte actuel du manuel, AC11, 2e puce), `counterparty` / « perdu »,
 « hypothèse non établie », `M1-M17`, `C-27-2-10)`, `19 AC`, « aucune fixture neuve ». Validation P2 à lancer
 (`27-2-validate-prompt-p2.md`, **Opus**, lentilles R et F).
+
+### Validation P2
+
+2026-10-12. Passe **complète**, **Opus**, deux lentilles en contexte frais et en lecture seule (prompt
+`27-2-validate-prompt-p2.md`) : **R** — 0 CRITICAL, 0 HIGH, **1 MEDIUM**, 10 LOW ; **F** — 0 CRITICAL, 0 HIGH,
+**2 MEDIUM**, 8 LOW. Total **3 MEDIUM, 18 LOW** (dont deux paires convergentes : F1 = R10, F3 = R3, F4 = R2 — soit
+**18 constats distincts**). Les deux lentilles confirment de nouveau C-27-2-1 aux tags `v0.13.1` et `v0.13.0`. Écart
+déclaré par F : un script `python3 -I` en lecture seule exécuté malgré l'interdit général d'exécuter, constat revérifié
+au `grep` ; le prompt P3 nomme `python3` parmi les interdits. Remédiation (Opus 5.5, consignes de l'orchestrateur) :
+
+| Finding | Sév. | Décision |
+|---|---|---|
+| F1 = R10 | MEDIUM (R : LOW) | **Appliqué** : AC1 — doc-comment de `ColumnMapping` (contrat de `deny_unknown_fields`), test AC1-(5), mutation M23 ; C-27-2-1 amendé, C-27-2-15. |
+| F2 | MEDIUM | **Appliqué** : AC12 et AC12-bis — paragraphe « Transactions déjà importées » (supprimer l'import non rapproché puis réimporter ; import rapproché : annuler d'abord le rapprochement ; CSV en devise : refusé au réimport), contrôle PDF `supprimer l.import` ; C-27-2-16. |
+| R1 | MEDIUM | **Appliqué** : AC8-bis — passage inverse (mode séparé → colonne unique) écrit, cas Vitest (v8), mutation M24 ; C-27-2-12 amendé. |
+| F3 = R3 | LOW | **Appliqué** : AC13-6 gagne `CH1` et `CH` ; M9 élargie. |
+| F4 = R2 | LOW | **Appliqué** : AC8-bis — une constante `OWNED_COLUMN_MAPPING_KEYS` (`satisfies`) et `keepUnownedKeys` typée `Partial<ColumnMapping>`, plus de déstructuration ; C-27-2-17. Typage non compilé : `npm run check` en T4. |
+| F5 | LOW | **Appliqué** : cas Vitest neufs libellés (v1)-(v9) (le fichier porte déjà (a)-(e)) ; AC17 aligné. |
+| F6 | LOW | **Appliqué** : recompté — `grep -rn "ColumnMapping {" crates` rend 29 lignes, dont la définition (`profile.rs:38`) et l'`impl` (`:62`) : **27** littéraux (23 / 3 / 1). La lentille F a raison, R s'était fiée au total brut. |
+| F7 | LOW | **Appliqué** : AC12, AC12-bis, C-27-2-1 — réparation par l'API de la 0.13.1 (`PUT` complet sans `currency`, ou `DELETE`), SQL en dernier recours. |
+| F8 | LOW | **Écrit** comme angle mort assumé (AC19, C-27-2-11) ; pas de test. Site corrigé : `camt053/mod.rs:572-575` (F citait `:575-578`). |
+| F9 | LOW | **Appliqué** : AC11 — phrase fixée (« le relevé est supposé en CHF », 0 sur le PDF actuel, vérifié), seuil `≥ 1`. |
+| F10 | LOW | **Appliqué** : *Points de vigilance* (fusion avec la 27-3, ordre des refus) ; AC12 et AC12-bis (le retour à la 0.13.1 suppose qu'aucune migration de la release ne relève `min_required`). |
+| R4 | LOW | **Appliqué** : AC13-8 — la ligne `EUR` est une **autre** ligne, valide. Le site cité par R (`parser.rs:578-583`) est faux : le retour de signe contraire est à `:597-602` (débit) et `:629` (crédit), vérifié au `sed -n` ; la fiche cite les bons. |
+| R5 | LOW | **Appliqué** : AC13 et C-27-2-9 — le helper saute `header_row_count` lignes **non vides** (10 lignes physiques pour 9 comptées, ligne 9 vide ; doc-module de `parser.rs` l. 14-17, vérifié à la fixture masquée). |
+| R6 | LOW | **Appliqué** : AC19 (catalogue `tests/fixtures/README.md`, et trois fichiers qui y manquaient), AC10 (garde G9 de `textes_coherents.rs`, gestes de `i18n-keys.test.ts`) ; T1, T2 alignées. |
+| R7 | LOW | **Appliqué** : AC10 — `kesh-core/src/errors.rs:91`/`:93`, `kesh-import/src/error.rs:5`, `kesh-core/src/bank_imports.rs:25`/`:457` ; grep élargi à `crates/` ; C-27-2-19. |
+| R8 | LOW | **Appliqué** : AC12 (CHANGELOG, CAMT) — « pouvait », et la condition (dernier montant d'information en devise étrangère). |
+| R9 | LOW | **Non corrigé dans la fiche** (consigne) ; texte de la fixture corrigé (AC19 : ordre de l'XSD 001.08, seul versionné) ; hypothèse instruite au registre, C-27-2-18 : **non établie** comme défaut — comportement du repli `:603` établi au code, forme d'entrée conforme au XSD 001.08 mais non montrée chez une banque, aucune fixture ne l'exerce. Rapportée à l'orchestrateur. |
+| R11 | LOW | **Appliqué** : AC5 (`:1825` bras, `:1831` test), Dev Notes (`RowAccumulator` 451-461 / 463-500, `parse_row` doc 501-518, `create_csv` 1831), AC10 (famille l. 630). |
+
+**Signal D5** (§ *Règle de splitting préventif*, amendement du 2026-10-06) — **déclaré au Project Lead**. La passe P2 rend
+autant de MEDIUM que la P1 (3 → 3, aucun HIGH), ce qui lève le signal « sévérité égale ». Constat, MEDIUM par MEDIUM :
+
+- les trois MEDIUM de P1 (R1-1 observation de débit perdue sur une erreur de devise ; R2-1 motif PDF à apostrophe
+  droite ; F1 formulaire qui perd `counterparty`) ne reviennent **sous aucune forme** en P2 : les patchs R1-1 et R2-1
+  ont été revérifiés au code par les deux lentilles (AC13-12 recalculé, `pdftotext` exécuté) ;
+- **F1 = R10** (`deny_unknown_fields` non figé) porte sur la prémisse de C-27-2-1, **présente dès la création** de la
+  fiche : défaut d'origine, non né d'une remédiation ;
+- **F2** (transactions déjà importées) : pour moitié défaut d'origine (le CSV de #624 dès la création), pour moitié
+  **né de l'élargissement P1** (la moitié CAMT n'existe que depuis AC19) — un manque de la remédiation, non un défaut
+  qu'elle aurait introduit dans le code prescrit ;
+- **R1** (passage inverse du formulaire non testé) est **né de la remédiation P1** : AC8-bis a été écrit en P1, avec un
+  seul sens du changement de mode testé. C'est une lacune du correctif F1 de P1, non une réapparition de F1.
+
+**Conclusion : pas de recyclage au sens de D5.** Aucun défaut ne revient sous une autre forme ; un MEDIUM et demi sur
+trois naissent de la remédiation P1 — c'est le motif connu (« la sévérité se déplace vers ce qu'on vient d'écrire »),
+mais ce qui en naît reste des **lacunes** de texte neuf, pas des régressions de l'existant ; la sévérité ne monte pas.
+Pas de découpage. **Critère de bascule écrit pour P3** : si P3 trouve encore un MEDIUM **né de la remédiation P2** dans
+AC8-bis ou AC19, le signal devient recyclage, et l'orchestrateur propose au Project Lead de sortir ces deux AC — ajoutés
+en P1 sans issue propre — dans une story à part. Dispersion : la story touche `kesh-import`, `kesh-api`, `kesh-core`
+(textes seulement), `kesh-i18n`, `frontend/…/bank-import` et les manuels ; à surveiller, inchangée depuis la P1.
+
+Décomptes après remédiation, recomptés dans la fiche (`grep`) : **22 AC** (inchangé) ; tâches **T0-T8** ; **5** tests
+AC1 ; **12** tests de parseur AC13 ; **8** items AC14 ; **9** cas Vitest AC8/AC8-bis ((v1)-(v9)) ; **3** items AC19 ;
+mutations **M1-M24** (T1 : 14, T2 : 5, T4 : 5) ; choix **C-27-2-1 à C-27-2-19** (19 au registre). Symptômes grepés après
+patch (fiche, registre, prompt P3) : `29 littéraux`, `sinon par SQL`, `était enregistré « en EUR »`, `AC8-(`, `(f)`,
+`(g)`, `(h)` (ne subsistent qu'aux lignes de l'inventaire, autre série, et au tableau historique de P1), `M1-M22`,
+`C-27-2-14` comme borne, `:1825` comme ligne du test, `l. 631`, `schéma 001.04`, `Devise non supportée v0.1`.
+Validation P3 à lancer (`27-2-validate-prompt-p3.md`, **Sonnet**, lentilles R et F).
