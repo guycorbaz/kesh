@@ -564,3 +564,10 @@ Fiche : `27-3-profil-apres-apercu.md`. Issue #626 (P2).
 - **Retenu** : ne rien changer. L'ordre `onSuccess` puis `reset()` est celui de la base, et le seul appelant (`+page.svelte`, `void refresh()`) ne peut pas lever. Héritage, hors du défaut de la story.
 - **Écarté** : appeler `reset()` avant `onSuccess` (change l'ordre que l'appelant observe, sans cas réel).
 - **Réversible** : oui.
+
+### C-27-3-57 — Profil supprimé ailleurs : le choix revient à l'auto-détection, sans recalcul automatique
+
+- **Contexte** : revue de code P2 ciblée, M1 (MEDIUM) — après la relecture des profils au `409` (C-27-3-51), un profil choisi puis supprimé ailleurs n'est plus une option : le sélecteur affichait « Auto-détection » pendant que `bankProfileId` gardait l'id supprimé, si bien qu'un redépôt repartait avec lui (404) ; liste vide, le sélecteur disparaissait sans issue.
+- **Retenu** : dans `loadProfiles()`, après une relecture réussie, un `bankProfileId` absent de la liste revient à `null`. Le recalcul déjà en vol garde son profil (pris dans l'instantané), échoue, et son erreur s'affiche avec l'avis : l'utilisateur choisit un autre profil, ou redépose le fichier pour l'auto-détection — seule issue quand la liste est vide. Le manuel le dit. Garde de séquence ajoutée à `loadProfiles()` (L4) : seule la dernière relecture pose la liste. Tenu par V6-quater (trois cas) ; mutations M36, M37.
+- **Écarté** : relancer d'office le recalcul sans profil quand le profil a disparu — l'auto-détection choisirait un profil que personne n'a demandé, et le manuel ne pourrait plus dire « si le recalcul échoue … le profil a été supprimé » ; un recalcul en double en course avec celui du `409`.
+- **Réversible** : oui.

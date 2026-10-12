@@ -908,6 +908,7 @@ cette story (sa branche n'a pas été lue).
 - `_bmad-output/implementation-artifacts/27-3-validate-prompt-p5-ciblee.md` (neuf, validation)
 - `_bmad-output/implementation-artifacts/27-3-review-prompt-p1.md` (neuf)
 - `_bmad-output/implementation-artifacts/27-3-review-prompt-p2-ciblee.md` (neuf, revue de code P1)
+- `_bmad-output/implementation-artifacts/27-3-review-prompt-p3-ciblee.md` (neuf, revue de code P2 ciblée)
 - `_bmad-output/implementation-artifacts/epic-27-choix-autonomes-27-3.md`
 - `_bmad-output/implementation-artifacts/sprint-status.yaml`
 
@@ -1168,3 +1169,45 @@ passe **P2 ciblée** (Haiku, une lentille, diff aplati `3800e4d0..8c53cf80`) —
 Incident d'outillage : les ajouts de `BankImportUpload.test.ts` ont été faits par un script de remplacement
 (`python3`, chaque motif vérifié unique avant écriture) au lieu de l'outil d'édition demandé ; le diff a été relu hunk
 par hunk avant commit, sans défaut.
+
+### Revue de code P2 ciblée (2026-10-12) — Haiku, une lentille ; remédiation Opus 5.5
+
+**Trend** : P1 = 3 MEDIUM, 13 LOW → **P2 ciblée = 0 CRITICAL, 0 HIGH, 1 MEDIUM (M1), 4 LOW** (L1 à L4). Diff relu :
+`3800e4d0..8c53cf80`, aplati. Rapport : `kesh-gate-logs/27-3-review-p2-ciblee.md`. M1 vérifié par l'orchestrateur avant
+remédiation. Remédiation : `5632a2bf` (code et tests), `0e5b4d54` (manuel, PDF), puis ce Change Log, la fiche, le
+registre et le prompt de la P3. Le MEDIUM **vient de la remédiation P1** (B-1, la relecture des profils) : c'est le
+motif « la sévérité se déplace vers ce qu'on vient d'écrire ».
+
+| Finding | Sév. | Traitement |
+|---|---|---|
+| M1 — profil choisi supprimé ailleurs : sélecteur sur « Auto-détection », `bankProfileId` gardant l'id supprimé ; liste vide sans issue | MEDIUM | **Code de production** : `loadProfiles()` remet `bankProfileId` à `null` s'il n'est plus dans la liste relue ; le recalcul en vol garde le profil de l'instantané et son erreur s'affiche (C-27-3-57). **V6-quater** (profil supprimé : option absente, valeur `''`, avis et erreur, redépôt sans `bankProfileId`) et **V6-quater (liste vide)** (sélecteur absent, redépôt sans `bankProfileId`) ; **M36** tuée par les deux. Manuel : la phrase « choisissez un autre profil » est complétée (profil supprimé → *Auto-détection* ; redéposer pour l'auto-détection, seule issue sans profil) |
+| L1 — relecture hors `409` non détectée | LOW | V14 et V1 assertent un seul appel de `listBankProfiles` ; **M38** (relecture au changement de profil) tuée par V1, V14 et cinq autres ; **M39** (relecture à un refus non-`409`) tuée par V14 |
+| L2 — `toContain('common-loading')` | LOW | Texte exact d'un paragraphe ; **M40** (clé `common-loading-autre`, que l'ancienne assertion laissait passer) tuée |
+| L3 — hash d'E1 identique si deux passages tirent la même année | LOW | `ubsFixtureIn` marque le libellé `Facture …-014` du passage (`RUN`) et lève si la marque manque : le contenu, donc le hash, est propre au passage |
+| L4 — `loadProfiles()` sans garde de séquence | LOW | `profilesSeq` (variable ordinaire) : seule la dernière relecture pose la liste. **V6-quater (séquence)** (deux `409`, réponses inversées) ; **M37** tuée |
+
+**Propagation** : `grep -rnF "choisissez un autre profil"` hors `node_modules`, `target` → le `.tex` (corrigé) et le
+registre (C-27-3-51, qui cite le manuel au 2026-10-12 et reste vrai pour un profil qui « ne convient plus ») ; le
+CHANGELOG ne décrit pas le cas d'un profil supprimé. PDF aplati : la phrase neuve présente une fois.
+
+**Mutations neuves** (journal `kesh-gate-logs/27-3-mutations.log`, sur `5632a2bf`, restauration `git checkout --` puis
+`touch`, sous `flock`) : **5 jouées, 5 tuées** (M36 à M40). Cumul de la story : **43/43**.
+
+**Gates, au dernier commit de code `5632a2bf`** (arbre de `0e5b4d54`, qui n'ajoute que le manuel ; bases `kesh_273` et
+`kesh_e2e_273` recréées, migrées — 80 — et `kesh_273` seedée juste avant ; conteneur non touché) :
+
+- `scripts/test-fast.sh` (fmt, clippy `-D warnings`, nextest, sous `flock`) : vert — **3436 exécutés, 3436 verts,
+  6 ignorés** (inchangé : la remédiation ne touche pas le backend).
+- Frontend : `npm run check` 0 erreur, 28 avertissements (aucun sur un fichier de la story) ; `lint-i18n-ownership`
+  PASS ; `npm run test:unit` **1360 verts sur 131 fichiers** (+3 depuis `f8241d38` : les trois V6-quater ;
+  `BankImportUpload.test.ts` 21 → 24 `it(`) ; `npm run build` vert.
+- **E2E complet** (port 3036, recette `docs/testing.md` intégrale, `smtpConfigured: true`) : **264 verts, 7 rouges,
+  19 ignorés** — les sept de la KF-029 (`mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et `:92`,
+  `onboarding.spec.ts:57`, `:77`, `:150`), aucun huitième ; E1 et E2 verts, puis **rejoués seuls sur la même base** :
+  2/2 verts (L3).
+- Manuel : `make user` sous `flock`, une passe sans « Rerun » ; seul `user-manual.pdf` committé.
+
+**La remédiation touche du code de production** : oui, un seul fichier,
+`frontend/src/lib/features/bank-import/BankImportUpload.svelte` (`loadProfiles`, `profilesSeq`). La boucle n'est donc
+pas close : passe **P3 ciblée** (Haiku, une lentille, diff aplati `f8241d38..5632a2bf`) — prompt versionné
+`27-3-review-prompt-p3-ciblee.md`, rapport attendu `kesh-gate-logs/27-3-review-p3-ciblee.md`. Choix C-27-3-57.
