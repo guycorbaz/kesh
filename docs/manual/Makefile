@@ -18,7 +18,16 @@
 
 LATEX        := xelatex
 LATEX_FLAGS  := -interaction=nonstopmode -halt-on-error -file-line-error
-PASSES       := 2  # 2 passes pour résoudre toc + références croisées
+# Passes jusqu'à STABILISATION (Story 27-1, revue de code P2, C-27-1-27) : deux
+# passes fixes laissaient des tables des matières périmées — LaTeX ne signale
+# PAS une `.toc` qui a changé, seulement certaines références (« Rerun »). On
+# relance donc tant que `.aux`, `.toc` ou `.out` diffèrent de la passe
+# précédente, ou que le journal réclame une nouvelle passe (« Rerun to get… »,
+# « Rerun LaTeX », « Please rerun » — non le mot seul, que porte la bannière du
+# paquet `rerunfilecheck`) ; au-delà de
+# MAX_PASSES, échec bruyant plutôt qu'un PDF faux.
+MIN_PASSES   := 2
+MAX_PASSES   := 6
 
 LANGS_AVAILABLE := fr
 LANGS_FUTURE    := de it en
@@ -66,12 +75,22 @@ all-langs:
 		echo "  - $$lang/ : voir $$lang/README.md pour ajouter la traduction"; \
 	done
 
-# Règle générique : *.tex → *.pdf via xelatex (2 passes)
+# Règle générique : *.tex → *.pdf via xelatex, passes jusqu'à stabilisation
 %.pdf: %.tex shared/kesh-style.sty shared/kesh-logo.svg
-	@echo "═══ Building $@ (2 passes) ═══"
-	cd $(dir $<) && $(LATEX) $(LATEX_FLAGS) -output-directory=. $(notdir $<)
-	cd $(dir $<) && $(LATEX) $(LATEX_FLAGS) -output-directory=. $(notdir $<)
-	@echo "✓ $@ généré"
+	@echo "═══ Building $@ (passes jusqu'à stabilisation, $(MAX_PASSES) au plus) ═══"
+	@cd $(dir $<) && b=$(basename $(notdir $<)) && n=0 && prev= && \
+	while :; do \
+		n=$$((n+1)); \
+		$(LATEX) $(LATEX_FLAGS) -output-directory=. $(notdir $<) > /dev/null \
+			|| { tail -40 $$b.log; echo "✗ $@ : xelatex a échoué (passe $$n)" >&2; exit 1; }; \
+		cur=$$(cat $$b.aux $$b.toc $$b.out 2>/dev/null | md5sum); \
+		if [ $$n -ge $(MIN_PASSES) ] && [ "$$cur" = "$$prev" ] \
+			&& ! grep -qE 'Rerun to get|Rerun LaTeX|Please rerun|Label\(s\) may have changed' $$b.log; then break; fi; \
+		if [ $$n -ge $(MAX_PASSES) ]; then \
+			echo "✗ $@ : instable après $$n passes" >&2; exit 1; fi; \
+		prev=$$cur; \
+	done; \
+	echo "✓ $@ généré ($$n passes, stable)"
 
 # Cleanup
 clean:

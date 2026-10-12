@@ -81,6 +81,7 @@ pub const ACTIONS: &[&str] = &[
     "bank_account.created",
     "bank_account.updated",
     "bank_import.created",
+    "bank_import.deleted",
     "bank_profile.created",
     "bank_profile.deleted",
     "bank_profile.updated",

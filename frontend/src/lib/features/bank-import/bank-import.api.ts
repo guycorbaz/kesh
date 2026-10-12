@@ -87,3 +87,12 @@ export async function listBankImports(
 export async function getBankImportDetail(id: number): Promise<BankImportDetailResponse> {
 	return apiClient.get<BankImportDetailResponse>(`/api/v1/bank-imports/${id}`);
 }
+
+/**
+ * Story 27-1 (#632) — `DELETE /api/v1/bank-imports/{id}` : supprime l'import et
+ * toutes ses transactions si aucune n'est rapprochée (`204`). Refus : `404`,
+ * `409 BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS` (`details.reconciledCount`).
+ */
+export async function deleteBankImport(id: number): Promise<void> {
+	return apiClient.delete<void>(`/api/v1/bank-imports/${id}`);
+}

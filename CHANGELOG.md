@@ -8,6 +8,18 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
 
 ---
 
+## [0.13.2] — Non publié
+
+### Ajouté
+
+- **Supprimer un import bancaire dont aucune transaction n'est rapprochée ([#632](https://github.com/guycorbaz/kesh/issues/632)).** Dans le détail d'un import (*Quotidien → Importer des relevés*, liste *Imports précédents*, nom du fichier), le bouton *Supprimer l'import* supprime l'import **et toutes ses transactions** — rejetées comprises —, réservé au Comptable et à l'Administrateur. Il n'est actif que si **aucune** transaction de l'import n'est rapprochée ; sinon il est grisé avec leur nombre, et il faut d'abord annuler leur rapprochement. Le même fichier se **réimporte** ensuite sans l'avertissement « fichier déjà importé », s'il n'en reste aucun autre import. La suppression laisse une trace *Import bancaire supprimé* au journal d'audit (fichier, empreinte, période, nombre de transactions) et ne peut pas être annulée. Un compte bancaire dont tous les imports ont été supprimés — il ne lui reste alors aucune transaction — peut s'archiver, sous les autres conditions de l'archivage (un compte principal ne s'archive que s'il ne reste aucun autre compte bancaire actif) : le message du refus d'archivage nomme désormais ce remède. Route `DELETE /api/v1/bank-imports/{id}` (`204`, `409 BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS`), **réservée à l'interface web** : refusée à toute clé d'API, en `403 API_KEY_OPERATION_FORBIDDEN` pour une clé `read-write`.
+
+### Modifié
+
+- `POST /api/v1/reconciliation/reject` traite et rend ses transactions **par identifiant croissant**, quel que soit l'ordre reçu ; la trace `reconciliation.rejected` prend le plus petit identifiant rejeté ([#632](https://github.com/guycorbaz/kesh/issues/632)).
+
+---
+
 ## [0.13.1] — 2026-10-11
 
 ⚠️ **Cette version n'est toujours pas destinée à tenir une comptabilité réelle.** Correctif de la 0.13.0, issu de sa recette (Epic 26) : le relevé CSV d'UBS s'importe tel quel, sans que ses dépenses deviennent des encaissements ; un compte bancaire peut porter une courte description ; la restauration Synology refuse de recharger la base sous un Kesh en marche ; le manuel décrit les écrans réels. Le **bouclement d'exercice** ([#232](https://github.com/guycorbaz/kesh/issues/232)) et les **pièces justificatives** ([#235](https://github.com/guycorbaz/kesh/issues/235)) manquent encore.

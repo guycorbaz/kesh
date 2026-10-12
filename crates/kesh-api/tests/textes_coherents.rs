@@ -699,6 +699,31 @@ fn les_replis_rust_suivent_le_catalogue() {
                 ("error-lettering-is-document", 1, &[]),
                 ("error-fiscal-year-create-later-closed", 1, NOM),
                 ("error-later-fiscal-year-closed", 1, NOM),
+                // Story 27-1 (#632) — revue de code P1, E4 : les trois
+                // replis neufs ou modifiés de la suppression d'import.
+                ("error-api-key-operation-forbidden", 1, &[]),
+                (
+                    "bank-import-errors-has-reconciled-transactions",
+                    1,
+                    &[("{ $count }", "{reconciled_count}")],
+                ),
+                ("bank-accounts-errors-has-transactions", 1, &[]),
+                // Story 27-1 — revue de code P2, E-P2-3 : les trois messages de
+                // la 26-1 qu'assertent les tests `ubs_*` de `bank_imports_e2e`.
+                // H2 y charge le catalogue `fr-CH` pour tout le processus : sous
+                // `cargo test` ces tests lisent le catalogue, sous nextest le
+                // repli — les deux doivent rester égaux.
+                ("bank-import-csv-errors-amount-sign-refused-profile", 1, &[]),
+                (
+                    "bank-import-csv-errors-amount-sign-refused-lines",
+                    1,
+                    &[("{ $count }", "{total_errors}")],
+                ),
+                (
+                    "bank-import-csv-errors-header-skips-data",
+                    1,
+                    &[("{ $line }", "{line}")],
+                ),
             ],
         ),
         (

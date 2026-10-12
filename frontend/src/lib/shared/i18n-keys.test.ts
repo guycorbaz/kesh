@@ -572,7 +572,12 @@ const ATTENDU = {
 	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (que des littéraux).
 	// Fusion de la 26-2a dans la 26-1 (2026-10-11), deltas additionnés depuis la base
 	// commune `fe162504` (2020) : 26-3 +2, 26-1 +6, 26-2a +4 = **2032**.
-	sitesTotal: 2032,
+	// Story 27-1 (#632) : **2032 → 2041** (+9), recompté par `grep -o "i18nMsg("` aux deux
+	// bornes (`aadace40` et la branche) : `features/bank-import/DeleteBankImportAction.svelte`
+	// (neuf, 8 : bouton, motif, titre, corps, *Annuler*, confirmation, deux erreurs) et
+	// `routes/(app)/bank-import/[id]/+page.svelte` (3 → 4 : la notification de succès).
+	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (que des littéraux).
+	sitesTotal: 2041,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

@@ -547,8 +547,9 @@ async fn get_imports_lists_only_own_company(pool: MySqlPool) {
     let jwt_b = forge_jwt(user_b, "Comptable", company_b);
     let app = spawn_app(pool).await;
 
-    // Les deux companies importent la même fixture (hashes distincts par
-    // tenant car uq_bank_imports_company_hash est composite).
+    // Les deux companies importent la même fixture, même empreinte : la
+    // détection du doublon de fichier (`find_by_company_and_hash`) est scopée
+    // par société.
     let xml = read_fixture("v04_minimal.xml");
     for (jwt, bank_id) in [(&jwt_a, bank_a), (&jwt_b, bank_b)] {
         let form = build_multipart(xml.clone(), "v04_minimal.xml", bank_id);
@@ -1822,4 +1823,397 @@ async fn ubs_fixture_with_ten_skipped_rows_is_refused(pool: MySqlPool) {
         );
     }
     assert_eq!(tx_count(&pool).await, 0);
+}
+
+// =========================================================================
+// Story 27-1 (#632) — supprimer un import dont aucune transaction n'est
+// rapprochée : `DELETE /api/v1/bank-imports/{id}`.
+// =========================================================================
+
+/// Importe `v04_minimal.xml` sur le compte du montage ; rend `(id, transactionCount)`.
+async fn import_minimal(app: &TestApp, s: &TestSetup) -> (i64, i64) {
+    let form = build_multipart(
+        read_fixture("v04_minimal.xml"),
+        "v04_minimal.xml",
+        s.bank_account_id,
+    );
+    let resp = app
+        .client
+        .post(app.url("/api/v1/bank-imports"))
+        .bearer_auth(&s.jwt)
+        .multipart(form)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 201, "montage : import");
+    let body: Value = resp.json().await.unwrap();
+    (
+        body["id"].as_i64().unwrap(),
+        body["transactionCount"].as_i64().unwrap(),
+    )
+}
+
+async fn delete_import(app: &TestApp, bearer: &str, id: i64) -> reqwest::Response {
+    app.client
+        .delete(app.url(&format!("/api/v1/bank-imports/{id}")))
+        .bearer_auth(bearer)
+        .send()
+        .await
+        .unwrap()
+}
+
+/// `(entêtes, lignes)` de l'import `id`.
+async fn import_rows(pool: &MySqlPool, id: i64) -> (i64, i64) {
+    let h: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bank_imports WHERE id = ?")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    let l: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM bank_transactions WHERE import_id = ?")
+        .bind(id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    (h, l)
+}
+
+/// Ajoute `k` lignes à l'import `id`, copies de sa première ligne, **sans**
+/// toucher à l'entête : `bank_imports.transaction_count` garde le nombre du
+/// fichier. Sert à rendre distincts le nombre de l'entête, le nombre de lignes
+/// et les sous-comptes (rapprochées, rejetées) — revue de code P2, E-P2-1 et
+/// E-P2-2 : avec la seule ligne de `v04_minimal.xml`, tous valaient 1, et une
+/// inversion de champs restait verte.
+async fn add_lines(pool: &MySqlPool, id: i64, k: usize) {
+    for _ in 0..k {
+        sqlx::query(
+            "INSERT INTO bank_transactions (company_id, import_id, bank_account_id, \
+             booking_date, value_date, amount, currency, reference, details) \
+             SELECT company_id, import_id, bank_account_id, booking_date, value_date, \
+             amount, currency, reference, details FROM bank_transactions \
+             WHERE import_id = ? ORDER BY id LIMIT 1",
+        )
+        .bind(id)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+}
+
+async fn deleted_traces(pool: &MySqlPool) -> i64 {
+    sqlx::query_scalar("SELECT COUNT(*) FROM audit_log WHERE action = 'bank_import.deleted'")
+        .fetch_one(pool)
+        .await
+        .unwrap()
+}
+
+/// H1 — suppression, trace, puis réimport du même fichier sans
+/// `confirmDuplicateFile` (AC6, AC7).
+///
+/// Trois nombres distincts (revue de code P2, E-P2-2 ; P3, E3-1) : l'entête
+/// dit `n` (1, le fichier), l'import porte `n + 2` lignes, dont **deux**
+/// rejetées. La trace doit compter les lignes lues sous verrou (`n + 2`), non
+/// l'entête (`n`), et les rejetées (`2`) à part : une inversion des deux
+/// champs, un `transaction_count` ou un `rejected_count` pris à l'entête,
+/// rougit (mutations M31 à M33, M40).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn delete_import_removes_it_traces_it_and_allows_reimport(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let (id, n) = import_minimal(&app, &s).await;
+    assert!(n > 0);
+    add_lines(&pool, id, 2).await;
+    let lines = n + 2;
+    assert_eq!(
+        import_rows(&pool, id).await,
+        (1, lines),
+        "montage : n + 2 lignes"
+    );
+    let rejected = 2;
+    assert!(
+        rejected != lines && rejected != n,
+        "montage : rejetées ≠ lignes ≠ entête"
+    );
+    // Deux transactions rejetées par l'utilisateur : elles partent avec
+    // l'import, et la trace les compte (`rejected_count` propagé du dépôt
+    // jusqu'au journal).
+    sqlx::query(
+        "UPDATE bank_transactions SET auto_match_rejected_at = NOW(3) \
+         WHERE import_id = ? ORDER BY id LIMIT 2",
+    )
+    .bind(id)
+    .execute(&pool)
+    .await
+    .unwrap();
+    // L'entête tel que la base le porte, pour comparer la trace valeur par valeur.
+    let (file_hash, source_format, period_from, period_to): (String, String, String, String) =
+        sqlx::query_as(
+            "SELECT file_hash, source_format, DATE_FORMAT(period_from, '%Y-%m-%d'), \
+             DATE_FORMAT(period_to, '%Y-%m-%d') FROM bank_imports WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
+
+    let resp = delete_import(&app, &s.jwt, id).await;
+    assert_eq!(resp.status(), 204);
+    let detail = app
+        .client
+        .get(app.url(&format!("/api/v1/bank-imports/{id}")))
+        .bearer_auth(&s.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(detail.status(), 404, "le détail n'existe plus");
+    assert_eq!(import_rows(&pool, id).await, (0, 0));
+
+    let (user_id, entity_type, entity_id, details): (i64, String, i64, Value) = sqlx::query_as(
+        "SELECT user_id, entity_type, entity_id, details_json FROM audit_log \
+         WHERE action = 'bank_import.deleted'",
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(user_id, s.user_id);
+    assert_eq!(entity_type, "bank_imports");
+    assert_eq!(entity_id, id);
+    let obj = details.as_object().unwrap();
+    let mut keys: Vec<&str> = obj.keys().map(String::as_str).collect();
+    keys.sort_unstable();
+    assert_eq!(
+        keys,
+        vec![
+            "bank_account_id",
+            "file_hash",
+            "filename",
+            "period_from",
+            "period_to",
+            "rejected_count",
+            "source_format",
+            "transaction_count",
+        ],
+        "les huit clés de l'AC6"
+    );
+    assert_eq!(
+        obj["transaction_count"].as_i64().unwrap(),
+        lines,
+        "les lignes comptées sous verrou, non l'entête ({n})"
+    );
+    assert_eq!(
+        obj["rejected_count"].as_i64().unwrap(),
+        rejected,
+        "les rejetées sont comptées, non l'entête ({n})"
+    );
+    assert_eq!(obj["filename"], "v04_minimal.xml");
+    assert_eq!(obj["bank_account_id"].as_i64().unwrap(), s.bank_account_id);
+    assert_eq!(file_hash.len(), 64);
+    assert_eq!(obj["file_hash"], file_hash.as_str());
+    assert_eq!(obj["source_format"], source_format.as_str());
+    // AAAA-MM-JJ, et non le format d'affichage suisse.
+    for (key, expected) in [("period_from", &period_from), ("period_to", &period_to)] {
+        let got = obj[key].as_str().unwrap();
+        assert_eq!(got, expected.as_str(), "{key}");
+        let b = got.as_bytes();
+        assert!(
+            got.len() == 10
+                && b[4] == b'-'
+                && b[7] == b'-'
+                && got.chars().filter(char::is_ascii_digit).count() == 8,
+            "{key} au format AAAA-MM-JJ : {got}"
+        );
+    }
+
+    // AC7 — le même fichier, sans confirmation : ni avertissement ni refus.
+    let preview = app
+        .client
+        .post(app.url("/api/v1/bank-imports/preview"))
+        .bearer_auth(&s.jwt)
+        .multipart(build_multipart(
+            read_fixture("v04_minimal.xml"),
+            "v04_minimal.xml",
+            s.bank_account_id,
+        ))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(preview.status(), 200);
+    let pv: Value = preview.json().await.unwrap();
+    assert!(
+        pv["warnings"]["duplicateFile"].is_null(),
+        "plus d'avertissement de doublon : {pv}"
+    );
+    let (_, n2) = import_minimal(&app, &s).await;
+    assert_eq!(n2, n, "le réimport compte les mêmes transactions");
+}
+
+/// H2 — deux transactions `reconciled` (sans lien) sur trois : `409`, rien
+/// n'est écrit. Trois lignes, deux rapprochées, un entête qui dit 1 (revue de
+/// code P2, E-P2-1 ; P3, E3-1) : `reconciledCount` (2), `transactionCount` (3)
+/// et l'entête diffèrent deux à deux. Une inversion des deux champs — dans
+/// `delete_once`, dans `details` ou à l'argument `count` du message —, ou un
+/// `reconciled_count` pris à l'entête, rougit (mutations M29, M30, M41).
+///
+/// Le message passe par le catalogue `fr-CH` (revue de code P1, E4) : sans
+/// `init_error_i18n`, ce binaire lirait le **repli** Rust, et une clé fautive
+/// dans `t_args` ou un `{ $count }` mal nommé au catalogue resteraient verts.
+/// Catalogue chargé, une clé absente rend la clé brute, un argument mal nommé
+/// un texte sans le nombre : l'égalité exacte rougit dans les deux cas. La
+/// langue est globale au processus ; sous `cargo test`, les tests suivants de
+/// ce binaire liront le catalogue `fr-CH` — l'égalité des replis et du
+/// catalogue est tenue par la garde G9 (`textes_coherents.rs`) pour les trois
+/// messages de la story **et** pour les trois messages de la 26-1 qu'assertent
+/// les tests `ubs_*` de ce binaire (revue de code P2, E-P2-3) : ceux-ci lisent
+/// le catalogue sous `cargo test` et le repli sous nextest.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn delete_import_refuses_when_a_transaction_is_reconciled(pool: MySqlPool) {
+    let bundle = Arc::new(
+        kesh_i18n::I18nBundle::load(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("kesh-i18n/locales")
+                .as_path(),
+        )
+        .expect("load test i18n"),
+    );
+    kesh_api::errors::init_error_i18n(bundle, kesh_i18n::Locale::FrCh);
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let (id, n) = import_minimal(&app, &s).await;
+    add_lines(&pool, id, 2).await;
+    let lines = n + 2;
+    let reconciled = 2;
+    assert!(
+        reconciled != lines && reconciled != n,
+        "montage : rapprochées ≠ lignes ≠ entête"
+    );
+    sqlx::query(
+        "UPDATE bank_transactions SET status = 'reconciled' WHERE import_id = ? ORDER BY id LIMIT 2",
+    )
+    .bind(id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    let resp = delete_import(&app, &s.jwt, id).await;
+    assert_eq!(resp.status(), 409);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(
+        body["error"]["code"],
+        "BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS"
+    );
+    assert_eq!(
+        body["error"]["details"]["reconciledCount"]
+            .as_i64()
+            .unwrap(),
+        reconciled
+    );
+    assert_eq!(
+        body["error"]["details"]["transactionCount"]
+            .as_i64()
+            .unwrap(),
+        lines
+    );
+    assert_eq!(
+        body["error"]["message"],
+        "2 transaction(s) de cet import sont rapprochées : annulez d'abord leur \
+         rapprochement pour pouvoir le supprimer.",
+        "message du catalogue fr-CH, nombre interpolé, sans marques d'isolation"
+    );
+    assert_eq!(import_rows(&pool, id).await, (1, lines), "import intact");
+    assert_eq!(deleted_traces(&pool).await, 0, "aucune trace");
+}
+
+/// H3 — étanchéité : l'import d'une autre société, un identifiant inconnu,
+/// l'identifiant `0` rendent `404 NOT_FOUND`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn delete_import_of_other_company_or_unknown_is_404(pool: MySqlPool) {
+    let a = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let (id, n) = import_minimal(&app, &a).await;
+
+    let company_b = create_company(&pool, "Beta").await;
+    let user_b = create_user(&pool, "bob", Role::Comptable, company_b).await;
+    let jwt_b = forge_jwt(user_b, "Comptable", company_b);
+
+    for target in [id, id + 10_000, 0] {
+        let resp = delete_import(&app, &jwt_b, target).await;
+        assert_eq!(resp.status(), 404, "cible {target}");
+        let body: Value = resp.json().await.unwrap();
+        assert_eq!(body["error"]["code"], "NOT_FOUND", "cible {target}");
+    }
+    assert_eq!(
+        import_rows(&pool, id).await,
+        (1, n),
+        "l'import de A est intact"
+    );
+    assert_eq!(deleted_traces(&pool).await, 0);
+}
+
+/// H4 — rôle Consultation : `403`, import intact.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn delete_import_is_forbidden_to_consultation(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let (id, n) = import_minimal(&app, &s).await;
+    let viewer = create_user(&pool, "carol", Role::Consultation, s.company_id).await;
+    let jwt = forge_jwt(viewer, "Consultation", s.company_id);
+
+    let resp = delete_import(&app, &jwt, id).await;
+    assert_eq!(resp.status(), 403);
+    assert_eq!(import_rows(&pool, id).await, (1, n));
+    assert_eq!(deleted_traces(&pool).await, 0);
+}
+
+/// H5 — un second `DELETE` du même identifiant rend `404`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn delete_import_twice_is_404_the_second_time(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let (id, _) = import_minimal(&app, &s).await;
+    assert_eq!(delete_import(&app, &s.jwt, id).await.status(), 204);
+    assert_eq!(delete_import(&app, &s.jwt, id).await.status(), 404);
+    assert_eq!(deleted_traces(&pool).await, 1, "une seule trace");
+}
+
+/// H8 (C-27-1-16) — aucune clé d'API ne supprime un import : `read-write` ⇒
+/// `403 API_KEY_OPERATION_FORBIDDEN`, `read` ⇒ `403 API_KEY_READ_ONLY` (arrêtée
+/// avant, par le middleware). Rien n'est supprimé, rien n'est tracé.
+///
+/// L'ordre de l'AC5 est tenu sur un identifiant **inconnu** (revue de code
+/// P2, E-P2-4) : la clé est refusée **avant** la recherche de l'import, elle
+/// ne reçoit jamais `404`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn delete_import_is_refused_to_every_api_key(pool: MySqlPool) {
+    let s = setup(&pool).await;
+    let app = spawn_app(pool.clone()).await;
+    let (id, n) = import_minimal(&app, &s).await;
+
+    for (scope, code) in [
+        ("read-write", "API_KEY_OPERATION_FORBIDDEN"),
+        ("read", "API_KEY_READ_ONLY"),
+    ] {
+        let create = app
+            .client
+            .post(app.url("/api/v1/settings/api-keys"))
+            .bearer_auth(&s.jwt)
+            .json(&serde_json::json!({ "name": format!("cle-{scope}"), "scope": scope }))
+            .send()
+            .await
+            .unwrap();
+        assert_eq!(create.status(), 201, "montage : clé {scope}");
+        let key = create.json::<Value>().await.unwrap()["key"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        for target in [id, id + 10_000] {
+            let resp = delete_import(&app, &key, target).await;
+            assert_eq!(resp.status(), 403, "clé {scope}, cible {target}");
+            let body: Value = resp.json().await.unwrap();
+            assert_eq!(body["error"]["code"], code, "clé {scope}, cible {target}");
+        }
+    }
+    assert_eq!(import_rows(&pool, id).await, (1, n), "import intact");
+    assert_eq!(deleted_traces(&pool).await, 0, "aucune trace");
 }

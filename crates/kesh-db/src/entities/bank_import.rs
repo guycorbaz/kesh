@@ -2,9 +2,12 @@
 //!
 //! Story 8-1b : pendant la persistance, l'entête `bank_imports` est créée
 //! atomiquement avec les `bank_transactions` filles via
-//! [`crate::repositories::bank_imports::create_with_transactions`]. La
-//! contrainte UNIQUE `(company_id, file_hash)` bloque le réimport silent
-//! d'un même fichier (mappée vers `409 BANK_IMPORT_DUPLICATE_FILE` côté API).
+//! [`crate::repositories::bank_imports::create_with_transactions`]. Le
+//! réimport d'un même fichier n'est pas bloqué par la base — l'unicité
+//! `(company_id, file_hash)` a été retirée par la Story 8-3 (index non unique
+//! `idx_bank_imports_company_hash`) : la route le refuse en
+//! `422 BANK_IMPORT_DUPLICATE_FILE` sans `confirmDuplicateFile=true`, et la
+//! suppression de l'import (Story 27-1) lève ce refus.
 
 use chrono::{NaiveDate, NaiveDateTime};
 use rust_decimal::Decimal;

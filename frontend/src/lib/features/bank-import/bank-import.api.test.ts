@@ -10,6 +10,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { authState } from '$lib/app/stores/auth.svelte';
 import {
 	createBankImport,
+	deleteBankImport,
 	previewBankImport,
 } from './bank-import.api';
 
@@ -129,5 +130,19 @@ describe('bank-import.api', () => {
 		const [, init] = mockFetch.mock.calls[0] as [string, RequestInit];
 		const form = init.body as FormData;
 		expect(form.get('bankProfileId')).toBe('99');
+	});
+
+	// Story 27-1 (#632) — la suppression vise l'identifiant reçu.
+	it('deleteBankImport appelle DELETE /api/v1/bank-imports/{id}', async () => {
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			status: 204,
+			json: () => Promise.resolve(undefined),
+			headers: new Headers(),
+		} as Response);
+		await deleteBankImport(42);
+		const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+		expect(url).toContain('/api/v1/bank-imports/42');
+		expect(init.method).toBe('DELETE');
 	});
 });

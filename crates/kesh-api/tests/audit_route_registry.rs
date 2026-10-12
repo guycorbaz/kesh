@@ -24,12 +24,12 @@
 //! ⚠️ Comparer des NOMBRES ne détecterait pas une route retirée pendant qu'une
 //! autre est ajoutée : le compte resterait égal et la dérive invisible. Le test
 //! `admin_pat_denied_e2e` peut compter, lui, parce qu'il opère sur un bloc clos
-//! entre marqueurs ; les 114 routes sont réparties dans tout le fichier.
+//! entre marqueurs ; les 115 routes sont réparties dans tout le fichier.
 //!
 //! # Deux fichiers, deux volets
 //!
-//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (114 routes) ; celui du
-//! REGISTRE est plus large (117), car trois routes mutantes vivent dans
+//! L'ensemble clos de l'INVENTAIRE est celui de `lib.rs` (115 routes) ; celui du
+//! REGISTRE est plus large (118), car trois routes mutantes vivent dans
 //! `routes/test_endpoints.rs` et sont montées par un `nest()`. D'où :
 //!
 //! - volet « route absente du registre » → sur les **deux** fichiers, faute de
@@ -108,7 +108,10 @@
 //!   exercice au nom d'un antérieur pendant sa clôture peut faire du renommage
 //!   la victime, en 500, sur un renommage que le pré-contrôle aurait refusé.
 //!   `POST /fiscal-years/{id}/close` n'est plus de la liste : elle est rejouée
-//!   (point (vi)).
+//!   (point (vi)). Le lot de **rejet** (`reconciliation::post_reject`, non
+//!   rejoué) verrouille ses transactions par identifiant croissant depuis la
+//!   Story 27-1 (AC4-bis), comme la suppression d'un import, ce qui ferme leur
+//!   cycle.
 //!   S'y ajoutent, **par choix** (Story 15-7a2, revue P1 B-4 = E-4, choix
 //!   C-15-7a2-4), les **huit routes d'étape de l'onboarding** autres que
 //!   `finalize` (`language`, `mode`, `start-production`, `org-type`,
@@ -123,7 +126,7 @@
 //!   `post`, `put`, `delete` et `patch`. Aucune route `GET` n'écrit au journal
 //!   aujourd'hui (remontée de l'AC1 : des `POST` et un `DELETE`) ; l'angle mort
 //!   est du même ordre que celui de l'audit (`GET /invoices/{id}/pdf`, plus bas).
-//! - **(vi)** **six routes `SansEcritureAuJournal` sont rejouées quand
+//! - **(vi)** **sept routes `SansEcritureAuJournal` sont rejouées quand
 //!   même** : `onboarding::finalize` (enveloppe `AppError`, Story 15-5e2 — la
 //!   seule des neuf routes d'étape à l'être, cf. (iv)),
 //!   `company_invoice_settings::update_invoice_settings` (enveloppe `DbError`,
@@ -149,7 +152,12 @@
 //!   est une transaction unique rejouée **dans `kesh-seed`** (`reset_demo`,
 //!   `retry_with`, même prédicat), tenue par `reset_replays_a_deadlocked_attempt`
 //!   et `is_seed_retryable_on_a_real_deadlock` (`onboarding_audit_e2e.rs`) —
-//!   choix C-15-7b2-1.
+//!   choix C-15-7b2-1. Et — Story 27-1, #632 — `bank_imports::delete`
+//!   (enveloppe `AppError` `crate::retry::retry_app_on_deadlock`, opération
+//!   `bank_imports::delete`) : un lot d'acceptation verrouille plusieurs
+//!   transactions du même import dans l'ordre des propositions, la suppression
+//!   par identifiant croissant — un cycle est possible (choix C-27-1-2) ; tenue
+//!   par sa revue, aucune preuve dynamique.
 //! - **(vii)** — **angles morts assumés du volet (c bis)** (revue P1 de la
 //!   15-5e2, L-3 = B-4 = A5). Le volet reconnaît un appel au **dernier
 //!   segment** du chemin appelé (`retry_with`) dans un arbre `syn` ; il ne voit
@@ -302,6 +310,7 @@ const LIB_ROUTES: &[(&str, &str, Status, Rejeu)] = &[
     ("post", "fiscal_years::close_fiscal_year", Traced, SansEcritureAuJournal),
     ("post", "bank_imports::preview", NoMatter("parse et valide sans persistance — aucune mutation"), SansEcritureAuJournal),
     ("post", "bank_imports::create", Traced, SansEcritureAuJournal),
+    ("delete", "bank_imports::delete", Traced, SansEcritureAuJournal),
     ("post", "bank_profiles::create", Traced, SansEcritureAuJournal),
     ("put", "bank_profiles::update", Traced, SansEcritureAuJournal),
     ("delete", "bank_profiles::delete", Traced, SansEcritureAuJournal),
@@ -633,10 +642,10 @@ fn the_registry_partition_is_what_the_story_declares() {
         .filter(|(_, _, s, _)| matches!(s, NoMatter(_)))
         .count();
 
-    assert_eq!(LIB_ROUTES.len(), 114, "l'inventaire porte sur 114 routes");
+    assert_eq!(LIB_ROUTES.len(), 115, "l'inventaire porte sur 115 routes");
     assert_eq!(traced + exempt + no_matter, LIB_ROUTES.len());
     assert_eq!(
-        traced, 108,
+        traced, 109,
         "73 tracées avant la 25-1b, plus ses 14, plus la dévalidation (25-2-b-1, #440), \
          plus l'annulation d'un règlement client (25-3-a-1) et fournisseur (25-3-a-2, #414), \
          plus l'annulation d'un rapprochement (25-3-b, #418), plus le solde du reste \
@@ -645,7 +654,8 @@ fn the_registry_partition_is_what_the_story_declares() {
          (15-8a, #532 — le `PUT` gelé par la 24-4b ne mutait rien), plus les neuf routes \
          de configuration de l'installation (15-7a2, #434), plus le peuplement de \
          démonstration (15-7b1, #434), plus le lettrage et le délettrage manuels \
-         (15-1a-i, #518), plus la remise à zéro (15-7b2, #434)"
+         (15-1a-i, #518), plus la remise à zéro (15-7b2, #434), plus la suppression d'un \
+         import non rapproché (27-1, #632)"
     );
     assert_eq!(exempt, 4, "4 routes d'auth (#435)");
     assert_eq!(
@@ -654,7 +664,7 @@ fn the_registry_partition_is_what_the_story_declares() {
     );
     assert_eq!(
         LIB_ROUTES.len() + TEST_ENDPOINT_ROUTES.len(),
-        117,
+        118,
         "le registre est plus large que l'inventaire, et c'est voulu"
     );
 }
@@ -978,12 +988,13 @@ fn the_replay_partition_is_what_the_story_declares() {
     );
     assert_eq!(exemptees, 3, "full_import, /seed, /reset");
     assert_eq!(
-        sans_ecriture, 90,
-        "89 routes de lib.rs (la remise à zéro y est entrée, 15-7b2), plus \
+        sans_ecriture, 91,
+        "90 routes de lib.rs (la remise à zéro y est entrée, 15-7b2 ; la suppression d'un \
+         import, 27-1), plus \
          /password-reset-token de test_endpoints.rs"
     );
     assert_eq!(rejouees + exemptees + sans_ecriture, tout.len());
-    assert_eq!(tout.len(), 117);
+    assert_eq!(tout.len(), 118);
 }
 
 /// Visiteur `syn` d'un fichier de routes : relève chaque appel à la primitive

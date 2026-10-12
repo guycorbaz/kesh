@@ -9,6 +9,12 @@
 //!   multi-tenant (KF-002).
 //! - `GET /api/v1/bank-imports/{id}` (tout rôle) — détail import +
 //!   transactions filles.
+//! - `DELETE /api/v1/bank-imports/{id}` (Comptable+, Story 27-1, #632) —
+//!   supprime un import **et toutes ses transactions** tant qu'aucune n'est
+//!   rapprochée (`409 BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS` sinon), trace
+//!   `bank_import.deleted` dans la même transaction, rejouée sur
+//!   interblocage. Refusée à **toute** clé d'API
+//!   (`403 API_KEY_OPERATION_FORBIDDEN`) : réservée à l'interface web.
 //!
 //! **Multi-tenant scoping** : tous les handlers utilisent
 //! `current_user.company_id` du JWT. Le `bankAccountId` du formulaire
@@ -33,7 +39,7 @@ use kesh_core::bank_imports::{
 use kesh_db::entities::{
     BankImport, BankImportSourceFormat, NewAuditLogEntry, NewBankImport, NewBankTransaction,
 };
-use kesh_db::errors::DbError;
+use kesh_db::errors::{DbError, map_db_error};
 use kesh_db::repositories::{audit_log, bank_accounts, bank_imports, bank_transactions};
 use kesh_import::{
     CamtError, CsvError, CsvLineError, ImportedStatement, ParseCsvOutcome, parse_camt053,
@@ -1337,6 +1343,117 @@ pub async fn detail(
         import: import_resp,
         transactions: tx_resps,
     }))
+}
+
+/// `DELETE /api/v1/bank-imports/{id}` — Story 27-1 (#632) : supprime un
+/// import bancaire et toutes ses transactions, à condition qu'**aucune** ne
+/// soit rapprochée (définition : `bank_imports::is_reconciled`). Rend
+/// `204 No Content`.
+///
+/// Ordre des refus, chacun **sans aucune écriture** (ni suppression ni
+/// trace) : rôle et portée de clé (middlewares, `403`) ; clé d'API
+/// `read-write` (`403 API_KEY_OPERATION_FORBIDDEN`, ci-dessous) ; import
+/// inconnu ou d'une autre société (`404 NOT_FOUND`, comme le détail — un
+/// `id <= 0` aussi) ; transaction rapprochée
+/// (`409 BANK_IMPORT_HAS_RECONCILED_TRANSACTIONS`).
+///
+/// ⚠️ **Rejouée sur interblocage** par [`crate::retry::retry_app_on_deadlock`]
+/// (patron `imported_supplier_invoices::complete_import`) : un lot
+/// d'acceptation verrouille ses transactions dans l'ordre des propositions,
+/// la suppression par identifiant croissant — un cycle est possible, InnoDB en
+/// tue un, et la victime se rejoue. La transaction vit dans [`delete_once`].
+pub async fn delete(
+    State(state): State<AppState>,
+    Extension(current_user): Extension<CurrentUser>,
+    Path(id): Path<i64>,
+) -> Result<StatusCode, AppError> {
+    // Décision du Project Lead du 2026-10-12 (C-27-1-16) : aucune clé d'API ne
+    // supprime un import. Une clé `read` est arrêtée avant, par le middleware.
+    if current_user.api_key_id.is_some() {
+        return Err(AppError::ApiKeyOperationForbidden);
+    }
+    crate::retry::retry_app_on_deadlock("bank_imports::delete", || {
+        delete_once(&state.pool, &current_user, id)
+    })
+    .await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Une tentative de la suppression : ouvre la transaction, appelle
+/// `bank_imports::delete_unreconciled_in_tx`, écrit la trace
+/// `bank_import.deleted` **dans la même transaction**, conclut. Sur refus,
+/// `rollback` explicite **avant** de rendre l'erreur : la transaction tient
+/// alors l'entête et toutes les lignes sous `FOR UPDATE`, qu'un abandon
+/// implicite ne rendrait qu'au retour de la connexion au pool.
+async fn delete_once(
+    pool: &sqlx::MySqlPool,
+    current_user: &CurrentUser,
+    id: i64,
+) -> Result<(), AppError> {
+    if id <= 0 {
+        return Err(AppError::Database(DbError::NotFound));
+    }
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|e| AppError::Database(map_db_error(e)))?;
+
+    let result = async {
+        let deleted =
+            match bank_imports::delete_unreconciled_in_tx(&mut tx, current_user.company_id, id)
+                .await?
+            {
+                bank_imports::DeleteBankImportOutcome::Deleted(d) => d,
+                bank_imports::DeleteBankImportOutcome::NotFound => {
+                    return Err(AppError::Database(DbError::NotFound));
+                }
+                bank_imports::DeleteBankImportOutcome::HasReconciled {
+                    reconciled_count,
+                    transaction_count,
+                } => {
+                    return Err(AppError::BankImportHasReconciledTransactions {
+                        reconciled_count,
+                        transaction_count,
+                    });
+                }
+            };
+        let import = &deleted.import;
+        let details = serde_json::json!({
+            "filename": import.filename,
+            "file_hash": import.file_hash,
+            "source_format": import.source_format.as_str(),
+            "bank_account_id": import.bank_account_id,
+            "period_from": import.period_from.format("%Y-%m-%d").to_string(),
+            "period_to": import.period_to.format("%Y-%m-%d").to_string(),
+            "transaction_count": deleted.transaction_count,
+            "rejected_count": deleted.rejected_count,
+        });
+        audit_log::insert_in_tx(
+            &mut tx,
+            NewAuditLogEntry::for_actor(
+                current_user.user_id,
+                current_user.api_key_id,
+                "bank_import.deleted",
+                "bank_imports",
+                import.id,
+                Some(details),
+            ),
+        )
+        .await?;
+        Ok(())
+    }
+    .await;
+
+    match result {
+        Ok(()) => tx
+            .commit()
+            .await
+            .map_err(|e| AppError::Database(map_db_error(e))),
+        Err(e) => {
+            let _ = tx.rollback().await;
+            Err(e)
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

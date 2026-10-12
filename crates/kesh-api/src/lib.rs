@@ -619,6 +619,8 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
         // pour les mutations — POST preview + POST create).
         // DefaultBodyLimit appliqué localement pour ces deux endpoints
         // multipart (cf. KESH_BANK_IMPORT_MAX_MB / config.bank_import_max_mib).
+        // Story 27-1 : suppression d'un import non rapproché (Comptable+) ;
+        // le GET du même chemin reste dans `authenticated_routes`.
         .route(
             "/api/v1/bank-imports/preview",
             post(routes::bank_imports::preview).layer(axum::extract::DefaultBodyLimit::max(
@@ -630,6 +632,10 @@ pub fn build_router(state: AppState, static_dir: String) -> Router {
             post(routes::bank_imports::create).layer(axum::extract::DefaultBodyLimit::max(
                 (state.config.bank_import_max_mib as usize) * 1024 * 1024,
             )),
+        )
+        .route(
+            "/api/v1/bank-imports/{id}",
+            delete(routes::bank_imports::delete),
         )
         // Story 8-2 : write profils CSV (Comptable+).
         .route("/api/v1/bank-profiles", post(routes::bank_profiles::create))

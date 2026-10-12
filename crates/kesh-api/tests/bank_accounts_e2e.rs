@@ -2202,3 +2202,188 @@ async fn messages_des_extracteurs_nomment_la_description(pool: MySqlPool) {
         "message : {message}"
     );
 }
+
+// ============================================================
+// Story 27-1 (#632) — la suppression d'un import non rapproché et ses effets
+// sur le compte bancaire : archivage (H6), tuile du relevé (H9).
+// ============================================================
+
+/// Insère un import (`closing_balance` facultatif) portant `n` transactions
+/// `pending` ; rend son identifiant.
+async fn insert_import(
+    pool: &MySqlPool,
+    ctx: &Ctx,
+    hash_char: char,
+    period: (&str, &str),
+    closing: Option<&str>,
+    n: usize,
+) -> i64 {
+    let id = sqlx::query(
+        "INSERT INTO bank_imports \
+         (company_id, bank_account_id, filename, file_hash, source_format, period_from, period_to, \
+          closing_balance, transaction_count, imported_by_user_id) \
+         VALUES (?, ?, 'r.xml', REPEAT(?, 64), 'CAMT053_V04', ?, ?, ?, ?, ?)",
+    )
+    .bind(ctx.company_id)
+    .bind(ctx.bank_account_id)
+    .bind(hash_char.to_string())
+    .bind(period.0)
+    .bind(period.1)
+    .bind(closing)
+    .bind(n as i32)
+    .bind(ctx.user_id)
+    .execute(pool)
+    .await
+    .unwrap()
+    .last_insert_id() as i64;
+    for _ in 0..n {
+        sqlx::query(
+            "INSERT INTO bank_transactions \
+             (company_id, import_id, bank_account_id, booking_date, amount, currency, details) \
+             VALUES (?, ?, ?, ?, 10.00, 'CHF', 'test')",
+        )
+        .bind(ctx.company_id)
+        .bind(id)
+        .bind(ctx.bank_account_id)
+        .bind(period.0)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+    id
+}
+
+async fn delete_import_as(app: &TestApp, ctx: &Ctx, id: i64) -> u16 {
+    app.client
+        .delete(app.url(&format!("/api/v1/bank-imports/{id}")))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap()
+        .status()
+        .as_u16()
+}
+
+async fn archive(app: &TestApp, pool: &MySqlPool, ctx: &Ctx) -> reqwest::Response {
+    let version = read_bank_account_version(pool, ctx.bank_account_id).await;
+    app.client
+        .delete(app.url(&format!("/api/v1/bank-accounts/{}", ctx.bank_account_id)))
+        .bearer_auth(&ctx.jwt)
+        .json(&json!({ "version": version }))
+        .send()
+        .await
+        .unwrap()
+}
+
+/// H6 (C-27-1-12) — la garde d'archivage se lève une fois les imports
+/// supprimés, et son message nomme ce remède. Le test fige le comportement
+/// accepté, dans les deux sens.
+///
+/// ⚠️ Le montage de ce fichier n'initialise pas la langue des erreurs : sans
+/// `init_error_i18n`, le message lu serait le **repli** Rust, et la phrase du
+/// catalogue pourrait disparaître sans que rien ne rougisse (mutation M20,
+/// survivante au premier passage de la campagne). D'où le catalogue `fr-CH`
+/// posé ici. La langue est globale au processus : sous `cargo test` (un
+/// processus par binaire), les tests suivants liront le catalogue `fr-CH`.
+/// La garde G9 (`textes_coherents.rs`) tient égal au catalogue le repli de
+/// ce message et ceux des deux autres messages de la story — depuis la revue
+/// de code P1 (E4) seulement : elle ne couvre pas tous les replis de ce
+/// binaire, et un test qui lirait un repli différent de son catalogue y
+/// changerait de résultat selon l'ordre d'exécution.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn deleting_the_imports_lifts_the_archive_guard(pool: MySqlPool) {
+    let bundle = Arc::new(
+        kesh_i18n::I18nBundle::load(
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .parent()
+                .unwrap()
+                .join("kesh-i18n/locales")
+                .as_path(),
+        )
+        .expect("load test i18n"),
+    );
+    kesh_api::errors::init_error_i18n(bundle, kesh_i18n::Locale::FrCh);
+    complete_onboarding(&pool).await;
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let app = spawn_app(pool.clone()).await;
+    let import_id = insert_import(&pool, &ctx, 'e', ("2026-01-01", "2026-01-31"), None, 2).await;
+
+    let resp = archive(&app, &pool, &ctx).await;
+    assert_eq!(resp.status(), 412);
+    let body: Value = resp.json().await.unwrap();
+    assert_eq!(body["error"]["code"], "BANK_ACCOUNT_HAS_TRANSACTIONS");
+    let msg = body["error"]["message"].as_str().unwrap();
+    assert!(
+        msg.contains(
+            "Les imports dont aucune transaction n'est rapprochée peuvent être supprimés \
+             (Quotidien → Importer des relevés)."
+        ),
+        "le message du 412 nomme le remède : {msg}"
+    );
+
+    assert_eq!(delete_import_as(&app, &ctx, import_id).await, 204);
+    let resp = archive(&app, &pool, &ctx).await;
+    assert_eq!(resp.status(), 200, "plus aucune transaction : archivable");
+}
+
+/// H9 (revue P3, R3-7) — la tuile « Relevé du … » se recalcule sur le relevé
+/// restant portant un solde de clôture dont la période se termine le plus tard,
+/// puis disparaît.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn deleting_a_statement_recomputes_the_last_statement(pool: MySqlPool) {
+    let ctx = setup_full(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let march = insert_import(
+        &pool,
+        &ctx,
+        'f',
+        ("2026-03-01", "2026-03-31"),
+        Some("480.00"),
+        1,
+    )
+    .await;
+    let april = insert_import(
+        &pool,
+        &ctx,
+        'g',
+        ("2026-04-01", "2026-04-30"),
+        Some("520.00"),
+        1,
+    )
+    .await;
+    let app = spawn_app(pool.clone()).await;
+    let tile = || async {
+        let body: Value = app
+            .client
+            .get(app.url("/api/v1/bank-accounts"))
+            .bearer_auth(&ctx.jwt)
+            .send()
+            .await
+            .unwrap()
+            .json()
+            .await
+            .unwrap();
+        let a = body.as_array().expect("liste")[0].clone();
+        (
+            a["statementClosingBalance"].clone(),
+            a["statementDate"].clone(),
+        )
+    };
+
+    assert_eq!(
+        tile().await,
+        (json!("520.00"), json!("2026-04-30")),
+        "montage"
+    );
+    assert_eq!(delete_import_as(&app, &ctx, april).await, 204);
+    assert_eq!(
+        tile().await,
+        (json!("480.00"), json!("2026-03-31")),
+        "le relevé restant"
+    );
+    assert_eq!(delete_import_as(&app, &ctx, march).await, 204);
+    let (balance, date) = tile().await;
+    assert!(
+        balance.is_null() && date.is_null(),
+        "plus de relevé exposé : {balance} {date}"
+    );
+}
