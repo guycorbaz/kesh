@@ -2968,6 +2968,10 @@ consigne de l'orchestrateur).*
 - **Écartée** : refermer le mode quand son `id` manque après `reload()` (plus général, mais efface le message d'un
   refus que l'utilisateur n'a pas encore lu).
 - **Réversible** : oui.
+- *Annotation du 2026-10-14 (passe ciblée P2, M1 et L1)* : **remplacé en partie par C-28-4-51**. L'option écartée était
+  la bonne : la correction par site laissait la classe ouverte (le conflit de version reproduisait le mode orphelin),
+  et l'objection — le message du refus perdu — se lève par un message neutre. `toggleAndReload` n'appelle plus
+  `closeForm()` ; `refreshAfterVersionConflict` reste.
 
 ### C-28-4-49 — Liste vide : un message qui renvoie aux bascules tant qu'une des deux masque des comptes (A-L6)
 
@@ -2989,6 +2993,34 @@ consigne de l'orchestrateur).*
   montage (jour local 14, jour UTC 13), puis la date préremplie `2026-10-14`. Mutation M33 (date UTC) : à tuer.
 - **Écartée** : un `vi.mock` de `todayLocal` (prouverait l'appel, non la date).
 - **Réversible** : oui (test).
+- *Annotation du 2026-10-14* : la mutation a été jouée sous le nom **P1-M1** (la M33 existe déjà dans la 28-4a), tuée.
+
+*Choix C-28-4-51 à C-28-4-52 : remédiation de la passe ciblée P2 de la 28-4b (2026-10-14, Opus 5.5, sur décision de
+l'orchestrateur).*
+
+### C-28-4-51 — La classe « mode orphelin » fermée à la fin de `reload()` (M1, L1)
+
+- **Contexte** : passe ciblée P2, M1 — la remédiation B-1 corrigeait un site (la bascule) ; le conflit de version
+  (B-2) recréait le défaut quand le compte relu n'était plus dans la liste. L1 : la bascule effaçait un formulaire de
+  création, qui ne vise aucun compte.
+- **Retenu** : `closeOrphanMode`, appelé par `reload()` après la relecture de la liste, et nulle part ailleurs : tout
+  mode qui porte un `id` (`edit-full`, `edit-journal`, `archive-confirm`, `close-confirm`, `reopen-confirm`, soit tous
+  les modes sauf `none` et `create`, inventaire tenu par le type `Mode`) dont le compte manque se referme, avec un
+  message neutre `bank-accounts-notice-stale` (quatre locales). `toggleAndReload` n'appelle plus `closeForm()`. Les
+  trois gestes qui retirent eux-mêmes leur compte (archivage, clôture, réouverture réussis) referment leur mode
+  **avant** de recharger, pour que la garde ne présente pas un geste réussi comme un changement survenu ailleurs. Le
+  message s'efface au rechargement suivant.
+- **Écartées** : une garde par site (la cause du défaut) ; une clé existante (aucune ne disait « n'est plus
+  affiché »).
+- **Réversible** : oui.
+
+### C-28-4-52 — Liste vide : trois messages, selon la bascule active (L2)
+
+- **Contexte** : passe ciblée P2, L2 — une seule bascule active, le message nommait « clos ou archivés ».
+- **Retenu** : `bank-accounts-labels-empty-hidden` (les deux masqués), `-hidden-archived` (seuls les archivés),
+  `-hidden-closed` (seuls les clos), `bank-accounts-labels-empty` (rien de masqué) — quatre locales ; complète
+  C-28-4-49.
+- **Réversible** : oui.
 
 [#651]: https://github.com/guycorbaz/kesh/issues/651
 [#642]: https://github.com/guycorbaz/kesh/issues/642

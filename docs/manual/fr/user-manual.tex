@@ -1718,7 +1718,10 @@ l'export CSV (\texttt{bank\_accounts.csv} porte la date de clôture, colonne
 ouvert}~: une écriture de correction --- frais de clôture, virement du solde --- s'y passe au
 journal, et ce compte s'archive par son propre geste (\S\ref{sec:plan-comptable-archivage}).
 Sur cette page, \emph{Afficher les comptes clos} fait réapparaître le compte, atténué, avec la
-mention «~Clos le JJ.MM.AAAA~».
+mention «~Clos le JJ.MM.AAAA~». Si le compte d'une action ouverte sur cette page (modification,
+clôture, réouverture, archivage) quitte la liste --- clos ou archivé entre-temps dans un autre onglet,
+ou masqué par l'un des deux boutons d'affichage ---, l'action se referme et la page le dit~; un
+formulaire de création, lui, reste ouvert avec sa saisie.
 
 \paragraph{Le solde.} Si le solde comptable du compte lié n'est pas nul, le dialogue de clôture
 l'affiche et invite à le vérifier --- il reste souvent une écriture de virement ou de frais à
@@ -1754,9 +1757,8 @@ ne se rouvre pas~; il n'est permis qu'à un compte sans transaction importée. L
 geste pour un compte qui a servi. Un compte clos ne s'archive pas~: rouvrez-le d'abord. Le
 \textbf{compte principal} s'archive quand tous les autres comptes sont archivés \emph{ou clos}~:
 la société reste alors sans compte principal, donc sans IBAN pour la QR-facture, et
-\emph{Paramètres} affiche «~Aucun compte bancaire configuré~» --- cette page-ci, tant que les
-comptes clos sont masqués, dit qu'aucun compte n'est ouvert et renvoie aux deux boutons
-d'affichage. Pour en sortir, rouvrez un compte clos et désignez-le compte principal.
+\emph{Paramètres} affiche «~Aucun compte bancaire configuré~» --- cette page-ci, tant que des
+comptes clos ou archivés sont masqués, dit lesquels et renvoie au bouton qui les affiche. Pour en sortir, rouvrez un compte clos et désignez-le compte principal.
 
 %%─────────────────────────────────────────────────────────────────────────────
 \section{Import bancaire}\label{sec:import-bancaire}
