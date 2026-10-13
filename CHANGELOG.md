@@ -33,7 +33,6 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   `RECONCILIATION_TRANSACTION_NOT_CREDIT`, avec un libellé à l'écran. Intégrations par clé d'API : nouveau code,
   détail dans `docs/api-external.md`.
 - Une transaction bancaire rejetée se retrouve et redevient proposable ([#526](https://github.com/guycorbaz/kesh/issues/526)). Rejeter une proposition la faisait quitter la liste de la réconciliation sans qu'aucun geste de l'interface ne l'y remette : il fallait supprimer et réimporter tout le relevé, si aucune transaction de l'import n'était rapprochée. La page *Réconciliation* dit désormais où la retrouver, et le refus d'un lot qui contient une transaction déjà rejetée dit où annuler ce rejet.
-
 - **Un compte bancaire archivé ne reçoit plus de règlement.** Un règlement de facture ou un paiement fournisseur par virement vers un compte archivé étaient acceptés ; ils sont refusés comme vers un compte inexistant. L'annulation d'un règlement ancien de ce compte reste possible.
 - **Les boutons d'action destructive se voient ([#640](https://github.com/guycorbaz/kesh/issues/640)).**
   *Supprimer l'import*, les confirmations de suppression, d'archivage, de révocation ou de désactivation
