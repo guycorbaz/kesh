@@ -2824,3 +2824,103 @@ reclassement de L1 sont des annotations de C-28-4-21, non des choix neufs.*
 
 [#651]: https://github.com/guycorbaz/kesh/issues/651
 [#642]: https://github.com/guycorbaz/kesh/issues/642
+
+---
+
+
+---
+
+## Story 28-7 — Une facture postérieure au paiement n'est plus proposée ([#548], P3)
+
+Choix faits à la création de la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
+`28-7-facture-posterieure-paiement.md`.
+
+### C-28-7-1 — L'acceptation fait foi, la proposition s'y aligne
+
+- **Contexte** : deux fenêtres — proposition `F ∈ [B−30, B+30]` sur la date de comptabilisation, acceptation
+  `F ∈ [D−30, D+1]` sur la date de valeur (à défaut de comptabilisation). Il faut en garder une.
+- **Retenu** : la fenêtre de l'acceptation, inchangée (mêmes raisons, mêmes `details`) ; la proposition la reprend.
+  Acompte : pas de modèle dans Kesh, un paiement antérieur de plus d'un jour ne règle pas la facture (rapprochement
+  manuel) ; facture antidatée : plus ancienne, reste dans la fenêtre ; facture postdatée au-delà du lendemain :
+  plus proposée, remède = corriger sa date. Tolérance d'un jour conservée (fuseau, comme `settle_invoice`).
+- **Écartées** : élargir l'acceptation (règlement daté avant sa créance, risque P1, rupture avec le règlement
+  depuis la fiche) ; garder la proposition et expliquer le refus à l'écran (déjà fait par la 15-5c, C-15-5c-3 :
+  c'est ce que #548 demande de dépasser).
+- **Réversible** : oui (une fonction).
+
+### C-28-7-2 — Une fonction pure partagée, dans `kesh-db`, plutôt qu'une requête ou deux règles alignées
+
+- **Contexte** : « une seule borne partagée » (fichier d'epic). La proposition est du SQL, l'acceptation du Rust.
+- **Retenu** : `InvoiceDateWindow` (bornes calculées en Rust) dans `repositories/reconciliation.rs`, liée au SQL
+  par `BETWEEN ? AND ?` et lue par `accept_one_invoice` via `check`. La requête ne prend plus de `window_days` :
+  aucun appelant ne peut choisir sa fenêtre. `WINDOW_DAYS` quitte `routes/reconciliation.rs`.
+- **Écartées** : `kesh-core` (le module dépend de `BankTransaction`, entité de `kesh-db`, et un module neuf pour
+  quatre éléments élargit le diff) ; garder `DATE_SUB/DATE_ADD` en SQL avec des constantes partagées (deux
+  arithmétiques, l'une SQL l'autre Rust : l'accord tiendrait aux constantes, pas au calcul) ; une méthode sur
+  l'entité `BankTransaction` (touche un fichier d'entité de plus, pour rien).
+- **Réversible** : oui.
+
+### C-28-7-3 — Même date de référence : la date de valeur, à défaut la date de comptabilisation
+
+- **Contexte** : la proposition lisait `booking_date`, l'acceptation `value_date ?? booking_date`.
+- **Retenu** : `payment_date(tx)` = `value_date ?? booking_date` pour les deux — c'est aussi la date du règlement
+  écrit (`paid_at_dt`). Cas couverts par l'AC5 (date de valeur avant et après la date de comptabilisation).
+- **Écartée** : `booking_date` partout (changerait l'acceptation et la date du règlement).
+- **Réversible** : oui.
+
+### C-28-7-4 — Bornes ramenées à la plage d'une colonne `DATE`
+
+- **Contexte** : l'ancien SQL (`DATE_ADD('9999-12-31', INTERVAL 30 DAY)` → `NULL`) rendait « aucune candidate » pour
+  une date extrême ; une borne calculée en Rust (`10000-01-01`) liée au SQL risquerait une erreur, donc un `500`.
+- **Retenu** : `checked_*_days`, résultat ramené à `[1000-01-01, 9999-12-31]` ; un test unitaire par extrémité.
+- **Écartée** : ignorer (régression théorique, de « vide » à `500`, introduite par la story elle-même).
+- **Réversible** : oui.
+
+### C-28-7-5 — Le libellé du refus perd « même si elle a été proposée »
+
+- **Contexte** : `reconciliation-failed-payment-before-invoice` (15-5c) décrivait #548. Après la story, la raison
+  ne se rencontre plus que par une facture redatée entre l'affichage et l'acceptation, ou par un appel d'API.
+- **Retenu** : même clé, texte raccourci dans les quatre locales et le repli ; doc-comment et commentaire de test
+  réécrits. Aucune clé ajoutée ni retirée.
+- **Écartées** : garder le texte (vrai à la lettre, trompeur dans les faits) ; retirer le libellé dédié (la raison
+  reste atteignable et lisible).
+- **Réversible** : oui.
+
+### C-28-7-6 — #529 non absorbé, démontré non aggravé
+
+- **Contexte** : #529 (P2, paiement plus de 30 jours après la facture) touche la même borne ; il n'est pas dans
+  l'epic.
+- **Retenu** : la borne haute de 30 jours reste où elle est. Démonstration à la fiche (ancienne proposition ∩
+  acceptation ⊆ nouvelle proposition) ; le test de parité fige `F = D−30` (proposée, acceptée) et `F = D−31` (ni
+  l'une ni l'autre). Le CHANGELOG redit que #529 reste ouvert.
+- **Écartée** : élargir la fenêtre à l'échéance (c'est #529, une décision de produit).
+- **Réversible** : sans objet.
+
+### C-28-7-7 — Le règlement depuis la fiche de la facture garde sa propre borne
+
+- **Contexte** : `invoice_settlements_write.rs:115` et `:489` portent la même tolérance d'un jour
+  (`settled_on < invoice_date − 1`), sur une date saisie, sans borne haute.
+- **Retenu** : non modifiés — sites non résolus assumés, nommés au doc-comment de `InvoiceDateWindow`. Ils ne
+  choisissent pas de facture pour une transaction : hors de #548, et les y brancher étendrait le diff à un
+  troisième fichier de `kesh-db` pour une égalité qui tient déjà.
+- **Écartée** : leur faire lire `PAYMENT_BEFORE_INVOICE_TOLERANCE_DAYS` (DRY plus strict, périmètre plus large ;
+  à reprendre si la tolérance devait changer un jour).
+- **Réversible** : oui.
+
+### C-28-7-8 — Pas de capture d'écran
+
+- **Contexte** : B2 de l'Epic 27 — captures si la story change ce que l'écran affiche.
+- **Retenu** : aucune capture : l'écran des propositions ne change ni de contrôle ni de texte ; seules changent
+  les candidates retenues (couvertes par les tests HTTP) et le libellé d'un refus devenu rare.
+- **Réversible** : oui (une capture se prend en revue si une lentille la juge utile).
+
+### C-28-7-9 — Pas de spec Playwright neuve
+
+- **Contexte** : `CLAUDE.md` — un E2E est le seul test qui voit une valeur traverser la frontière HTTP.
+- **Retenu** : les tests de l'AC4 et de l'AC5 passent par `spawn_app` (requêtes HTTP réelles sur le binaire) ; le
+  changement est serveur seulement, le frontend ne reçoit que moins de candidates. Suite E2E complète au dernier
+  commit de code.
+- **Écartée** : une spec Playwright de parité (même preuve, plus lente, fixtures CAMT datées à construire).
+- **Réversible** : oui.
+
+[#548]: https://github.com/guycorbaz/kesh/issues/548
