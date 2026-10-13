@@ -2760,3 +2760,156 @@ async fn supplier_cancels_are_refused_under_a_frozen_lettering(pool: MySqlPool) 
         "les marques sont intactes"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Story 28-4a (#642) — le compte bancaire clos : T-a48 (b) et (c)
+// ---------------------------------------------------------------------------
+mod compte_bancaire_clos {
+    use super::*;
+
+    /// Comme [`monter`], mais la facture est payée **par virement** vers un
+    /// compte bancaire ouvert (non principal) : sans quoi la garde du compte
+    /// clos ne passe pas, et le test ne verrait pas sa position — le défaut
+    /// des tests d'entrelacement existants, réglés en espèces. Achat à
+    /// `D − 20`, paiement à `D − 10`, dans l'exercice seedé raccourci à `D`.
+    async fn monter_par_virement(pool: &MySqlPool) -> (Ctx, i64) {
+        let ctx = setup(pool).await;
+        let today = chrono::Utc::now().date_naive();
+        let dd = today - chrono::Duration::days(60);
+        sqlx::query("UPDATE fiscal_years SET end_date = ? WHERE id = ?")
+            .bind(dd)
+            .bind(ctx.seeded.fiscal_year_id)
+            .execute(pool)
+            .await
+            .expect("raccourcir l'exercice");
+        fiscal_years::create(
+            pool,
+            ctx.seeded.admin_user_id,
+            kesh_db::entities::NewFiscalYear {
+                company_id: ctx.seeded.company_id,
+                name: "Courant".into(),
+                start_date: dd + chrono::Duration::days(1),
+                end_date: d(2030, 12, 31),
+            },
+        )
+        .await
+        .expect("exercice courant");
+        let bank = bank_accounts::create(
+            pool,
+            NewBankAccount {
+                company_id: ctx.seeded.company_id,
+                bank_name: "Banque Test".into(),
+                iban: "CH9300762011623852957".into(),
+                qr_iban: None,
+                is_primary: false,
+            },
+        )
+        .await
+        .unwrap();
+        sqlx::query("UPDATE bank_accounts SET journal_account_id = ? WHERE id = ?")
+            .bind(ctx.seeded.accounts["1100"])
+            .bind(bank.id)
+            .execute(pool)
+            .await
+            .unwrap();
+        let mut new = one_line(&ctx, dec!(100.00), dec!(0));
+        new.invoice_date = dd - chrono::Duration::days(20);
+        new.due_date = Some(new.invoice_date);
+        let created = supplier_invoices::create(pool, new, ctx.seeded.admin_user_id)
+            .await
+            .expect("création");
+        supplier_invoices::pay(
+            pool,
+            ctx.seeded.company_id,
+            created.invoice.id,
+            SettlementChoice::BankTransfer {
+                bank_account_id: bank.id,
+            },
+            dd - chrono::Duration::days(10),
+            ctx.seeded.admin_user_id,
+        )
+        .await
+        .expect("paiement par virement");
+        (ctx, created.invoice.id)
+    }
+
+    /// Lance `geste` pendant qu'une clôture de l'exercice seedé est en cours,
+    /// ne valide la clôture qu'une fois le geste vu en attente d'un verrou sur
+    /// `fiscal_years`, et rend son issue.
+    async fn pendant_une_cloture<F>(pool: &MySqlPool, ctx: &Ctx, geste: F) -> Result<(), DbError>
+    where
+        F: std::future::Future<Output = Result<(), DbError>> + Send + 'static,
+    {
+        let mut closing = pool.begin().await.unwrap();
+        sqlx::query("UPDATE fiscal_years SET status = 'Closed' WHERE id = ?")
+            .bind(ctx.seeded.fiscal_year_id)
+            .execute(&mut *closing)
+            .await
+            .unwrap();
+        let tache = tokio::spawn(geste);
+        let vue = kesh_db::test_fixtures::attendre_une_requete_en_cours(
+            pool,
+            &["fiscal_years", "FOR UPDATE"],
+            || tache.is_finished(),
+        )
+        .await;
+        if !vue {
+            panic!(
+                "le geste a fini sans attendre de verrou : {:?}",
+                tache.await
+            );
+        }
+        closing.commit().await.unwrap();
+        tache.await.expect("tâche")
+    }
+
+    /// T-a48 (b) (AC7, second volet, W29) — l'annulation du règlement d'une
+    /// facture payée par virement attend la clôture concurrente de l'exercice
+    /// du règlement, puis refuse. Garde avancée avant (1-bis) : la vue naîtrait
+    /// avant l'attente et l'annulation passerait (tue M38).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn w29_attend_la_cloture_par_virement(pool: MySqlPool) {
+        let (ctx, id) = monter_par_virement(&pool).await;
+        let p = pool.clone();
+        let (c, u) = (ctx.seeded.company_id, ctx.seeded.admin_user_id);
+        let result = pendant_une_cloture(&pool, &ctx, async move {
+            supplier_invoices::cancel_settlement(&p, c, id, u)
+                .await
+                .map(|_| ())
+        })
+        .await;
+        assert!(
+            matches!(
+                result,
+                Err(DbError::SettlementNotCancellable {
+                    blocker: SettlementCancelBlocker::FiscalYearClosed
+                })
+            ),
+            "l'annulation devait attendre la clôture puis refuser — reçu {result:?}"
+        );
+    }
+
+    /// T-a48 (c) (AC7, second volet, W28) — l'annulation d'une facture payée
+    /// par virement attend la clôture concurrente de l'exercice d'**achat**,
+    /// puis refuse. Garde avancée avant le verrou de l'écriture d'achat et de
+    /// son exercice : l'annulation passerait (tue M39).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn w28_attend_la_cloture_par_virement(pool: MySqlPool) {
+        let (ctx, id) = monter_par_virement(&pool).await;
+        let p = pool.clone();
+        let (c, u) = (ctx.seeded.company_id, ctx.seeded.admin_user_id);
+        let result = pendant_une_cloture(&pool, &ctx, async move {
+            supplier_invoices::cancel(&p, c, id, u).await.map(|_| ())
+        })
+        .await;
+        assert!(
+            matches!(
+                result,
+                Err(DbError::SupplierInvoiceNotCancellable {
+                    blocker: SettlementCancelBlocker::FiscalYearClosed
+                })
+            ),
+            "l'annulation devait attendre la clôture puis refuser — reçu {result:?}"
+        );
+    }
+}

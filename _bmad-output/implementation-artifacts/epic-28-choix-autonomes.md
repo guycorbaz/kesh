@@ -2709,5 +2709,83 @@ reclassement de L1 sont des annotations de C-28-4-21, non des choix neufs.*
   et la règle « une entrée sans site rougit » interdirait de lui donner un site factice).
 - **Réversible** : oui (une variante).
 
+*Choix C-28-4-26 à C-28-4-31 : développement de la 28-4a (2026-10-13, Opus 5.5, autonomie, `bmad-dev-story`).*
+
+### C-28-4-26 — Montage des tests HTTP de l'AC6 : l'état préalable par le dépôt, le geste refusé par HTTP
+
+- **Contexte** : T-a27 prescrit « une ligne par route », l'état « construit par l'API » sauf les lignes qui cassent un
+  invariant (SQL direct). Construire chaque état par HTTP aurait demandé un relevé CAMT par ligne, des factures validées
+  et des rapprochements par la route pour chaque cas.
+- **Retenu** : l'état qui **précède** le geste refusé se pose par les **fonctions du dépôt que les routes appellent**
+  (`bank_imports::create_with_transactions`, `supplier_invoices::create`) ou par les routes quand c'est simple
+  (rapprochement manuel, facture validée, règlement, paiement, création de lot) ; le geste refusé, la clôture et la
+  réouverture passent **toujours** par HTTP. Les lignes qui contredisent I1/I2 posent `closed_on` par SQL direct,
+  comme prescrit. Écrit en tête de `bank_accounts_closed_e2e.rs`.
+- **Écartées** : tout par HTTP (multipart CAMT à chaque ligne : coût sans objet, le refus testé est celui du geste) ;
+  tout par SQL (ne prouverait pas qu'un état réel atteint la garde).
+- **Réversible** : oui (montage de test).
+
+### C-28-4-27 — Texte du refus « compte clos » : « rouvrez d'abord le compte », non « rouvrez-le d'abord »
+
+- **Contexte** : la garde G9 de `textes_coherents.rs` (Story 15-14a) interdit la chaîne `rouvrez-le` dans
+  `crates/kesh-api/src/errors.rs` (formule périmée d'un message d'exercice). Le texte prescrit par l'AC9 la contient.
+- **Retenu** : « Pour y enregistrer une opération, **rouvrez d'abord le compte** (Administration → Comptes
+  bancaires). » en fr-CH et dans le repli Rust ; le sens est inchangé, les trois autres locales aussi. La 28-4b reprend
+  ce texte s'il apparaît à l'écran ou au manuel.
+- **Écartées** : affaiblir la garde G9 (elle protège un autre message) ; écrire un repli Rust différent du catalogue
+  (G9 l'interdit aussi).
+- **Réversible** : oui (une phrase).
+
+### C-28-4-28 — `write_closed_on`, l'écrivain neuf du registre : 31 sites, non 30
+
+- **Contexte** : l'AC8 annonce 30 sites (W1-W30) après le rebase sur la 28-5. La story ajoute elle-même une écriture
+  `UPDATE bank_accounts` (`closed_on`), dans l'auxiliaire `write_closed_on` partagé par la clôture et la réouverture.
+- **Retenu** : l'entrée `Gardee("le geste lui-même …")` au registre, et l'assertion anti-muet à **31** sites. Le
+  registre a vu exactement les 30 sites de la fiche plus celui-ci : l'inventaire W1-W30 est confirmé par l'extraction.
+- **Écartées** : écrire l'`UPDATE` dans `close_in_tx` et `reopen_in_tx` (deux sites, duplication) ; le classer
+  `SansCompteBancaire` (faux : il écrit le compte).
+- **Réversible** : oui.
+
+### C-28-4-29 — L'analyseur lexical des tests structurels, partagé
+
+- **Contexte** : le registre de l'AC8 a besoin du découpage lexical (`decouper`, `blocs_de_test`, `fonctions`…) que
+  `crates/kesh-db/tests/letterings_lexical.rs` définit ; la fiche nomme ce précédent « extracteur à réutiliser ».
+- **Retenu** : le code est **déplacé à l'identique** dans `crates/kesh-db/tests/lexique/mod.rs`, inclus par
+  `letterings_lexical.rs` (`mod lexique;`) et par `crates/kesh-api/tests/bank_account_closed_inventory.rs`
+  (`#[path]`). Aucun changement de sens ; `letterings_lexical` reste vert.
+- **Écartées** : copier ~200 lignes (règle DRY) ; une crate de test partagée (dépendance neuve pour un test).
+- **Réversible** : oui.
+
+### C-28-4-30 — `ClosureOutcome` porte des comptes en `Box`
+
+- **Contexte** : `clippy::large_enum_variant` (`-D warnings`) refuse un enum dont une variante porte deux
+  `BankAccount` et l'autre un refus d'un mot.
+- **Retenu** : `Done { after: Box<BankAccount>, before: Box<BankAccount> }`.
+- **Écartées** : `#[allow]` (masquer l'avertissement) ; rendre `(after, before)` et les refus en `DbError` neufs (élargir
+  `DbError` de quatre variantes propres à un seul chemin).
+- **Réversible** : oui.
+
+### C-28-4-31 — Les refus de la clôture : un enum du dépôt, non des `DbError`
+
+- **Contexte** : la fiche nomme cinq variantes `AppError` neuves et une seule `DbError` (`BankAccountClosed`).
+- **Retenu** : `close_in_tx` / `reopen_in_tx` rendent `ClosureOutcome::Refused(ClosureRefusal)` pour le principal, les
+  transactions `pending`, les lots ouverts et « pas clos » ; la route les traduit (`closure_refusal_error`). Version et
+  existence restent des `DbError` ; « déjà clos » est `DbError::BankAccountClosed`, rendu par la fonction partagée.
+- **Écartées** : quatre `DbError` neuves (rendues par le bras générique `AppError::Database`, dont le `match`
+  exhaustif en aurait gagné quatre de plus).
+- **Réversible** : oui.
+
+### C-28-4-32 — Le compte clos en allemand : « aufgelöst », et une exemption nommée pour « rouvrir »
+
+- **Contexte** : deux gardes du catalogue (`kesh-i18n/src/loader.rs`, Story 15-14a) visent l'**exercice** : G11
+  réserve « geschlossen / schliessen » nu aux panneaux (KF-041), G8 / G10 exigent l'ordre et la borne de toute
+  prescription de « rouvrir » en fr-CH. Les messages du compte clos tombaient dans leurs deux domaines.
+- **Retenu** : en de-CH, le vocabulaire bancaire d'un compte soldé — « aufgelöst », « auflösen », « wieder
+  eröffnen » (étiquettes d'audit comprises) ; en fr-CH, `bank-accounts-errors-closed` entre aux deux listes
+  `EXEMPTEES` (« autre objet », comme `error-reminder-amounts-changed`), le compte bancaire n'ayant ni ordre ni borne.
+  La 28-4b reprend ces termes à l'écran et au glossaire.
+- **Écartées** : élargir les gardes (elles protègent l'exercice) ; « schreibgeschützt » seul (ne nomme pas le geste).
+- **Réversible** : oui (textes, deux entrées d'exemption).
+
 [#651]: https://github.com/guycorbaz/kesh/issues/651
 [#642]: https://github.com/guycorbaz/kesh/issues/642

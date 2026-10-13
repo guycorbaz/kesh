@@ -732,6 +732,15 @@ fn les_replis_rust_suivent_le_catalogue() {
                 ("bank-import-errors-preview-stale", 1, &[]),
                 // Story 28-5a (#526) — refus de l'annulation d'un rejet.
                 ("reconciliation-errors-transaction-not-rejected", 1, &[]),
+                // Story 28-4a (#642) — le compte bancaire clos : les cinq clés
+                // neuves, et le message du principal qui ne s'archive pas
+                // (« ni archivé ni clos »).
+                ("bank-accounts-errors-closed", 1, &[]),
+                ("bank-accounts-errors-not-closed", 1, &[]),
+                ("bank-accounts-errors-cannot-close-primary", 1, &[]),
+                ("bank-accounts-errors-has-pending-transactions", 1, &[]),
+                ("bank-accounts-errors-has-open-payment-batches", 1, &[]),
+                ("bank-accounts-errors-cannot-archive-primary", 1, &[]),
             ],
         ),
         (

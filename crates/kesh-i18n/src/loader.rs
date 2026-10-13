@@ -1084,8 +1084,10 @@ mod tests {
             ("it-CH", "cominciando dal più recente"),
             ("en-CH", "starting with the most recent"),
         ];
-        // Nomment l'acte, le décrivent, nomment l'exercice à rouvrir, ou autre objet.
-        const EXEMPTEES: [&str; 10] = [
+        // Nomment l'acte, le décrivent, nomment l'exercice à rouvrir, ou autre objet
+        // (`bank-accounts-errors-closed` : rouvrir un COMPTE BANCAIRE clos, Story
+        // 28-4a, #642 — aucun exercice, aucun ordre).
+        const EXEMPTEES: [&str; 11] = [
             "fiscal-year-reopen-button",
             "fiscal-year-reopen-confirmation-title",
             "fiscal-year-reopen-confirmation-action",
@@ -1096,6 +1098,7 @@ mod tests {
             "fiscal-year-reopen-confirmation-body",
             "fiscal-year-reopen-blocked-later-closed",
             "error-reminder-amounts-changed",
+            "bank-accounts-errors-closed",
         ];
         // Les six clés de #569 (anti-test-muet : nommées, elles doivent être au domaine).
         const CLES_569: [&str; 6] = [
@@ -1195,7 +1198,7 @@ mod tests {
             "fiscal-year-out-of-order-warning",
         ];
         // Même domaine et mêmes exemptions que G8 (`les_prescriptions_de_reouverture_disent_l_ordre`).
-        const EXEMPTEES: [&str; 10] = [
+        const EXEMPTEES: [&str; 11] = [
             "fiscal-year-reopen-button",
             "fiscal-year-reopen-confirmation-title",
             "fiscal-year-reopen-confirmation-action",
@@ -1206,6 +1209,7 @@ mod tests {
             "fiscal-year-reopen-confirmation-body",
             "fiscal-year-reopen-blocked-later-closed",
             "error-reminder-amounts-changed",
+            "bank-accounts-errors-closed",
         ];
         let verbe = regex::Regex::new(r"[Rr]ouvr|[Rr]éouv").unwrap();
         let catalogues: HashMap<&str, HashMap<String, String>> =

@@ -162,6 +162,23 @@ struct Rattrapage {
     c104: (i64, i64),
 }
 
+/// Pose (`true`) ou retire (`false`) `bank_accounts.closed_on` — colonne de la
+/// migration `20261013000001_bank_accounts_closed_on` (Story 28-4a), postérieure
+/// à la fenêtre de ce montage, mais lue par les gestes vivants qu'il exerce.
+/// ⚠️ Le retrait est **obligatoire** avant `MIGRATOR.run()` : la migration la
+/// recrée (sans `IF NOT EXISTS`), et le schéma comparé reste celui du dépôt.
+async fn colonne_posterieure(pool: &MySqlPool, poser: bool) {
+    let sql = if poser {
+        "ALTER TABLE bank_accounts ADD COLUMN closed_on DATE NULL"
+    } else {
+        "ALTER TABLE bank_accounts DROP COLUMN closed_on"
+    };
+    sqlx::query(sql)
+        .execute(pool)
+        .await
+        .expect("colonne postérieure à la fenêtre");
+}
+
 /// La fixture étendue, puis (a), (b), (c). La base doit être montée jusqu'à M1
 /// exclue.
 ///
@@ -173,6 +190,8 @@ struct Rattrapage {
 /// levée le temps des pièces anciennes, puis — `verrou` — reposée à
 /// `aujourd'hui − 250`.
 ///
+/// Voir `colonne_posterieure` pour la colonne posée le temps de la fixture.
+///
 /// ⚠️ **Deux montages, et c'est nécessaire** (mutations MU8, MU9 survivantes
 /// au premier passage) : la borne couvre aussi les exercices 2019 et 2022, si
 /// bien qu'avec elle la règle « exercice clos » et « exercice postérieur clos »
@@ -181,6 +200,13 @@ struct Rattrapage {
 /// ouverte, donc relettrées comme le vivant (d-i), et seules les deux pièces
 /// figées par un exercice restent en (d-ii).
 async fn rattrapage(pool: &MySqlPool, verrou: bool) -> Rattrapage {
+    // ⚠️ Story 28-4a (#642) — les gestes vivants de ce montage (paiement
+    // fournisseur par virement) lisent `bank_accounts.closed_on`, colonne d'une
+    // migration POSTÉRIEURE à la fenêtre (`migrations_before(M1)`) : sans elle,
+    // `1054 Unknown column`. Elle est posée ici, le temps de la fixture, et
+    // retirée avant `MIGRATOR.run()`, qui la recrée par sa propre migration —
+    // même geste que l'`INSERT` de `achats` pour `description` (Story 26-2a).
+    colonne_posterieure(pool, true).await;
     let base = seed_lettering_documents(pool).await;
     let seeded = base.seeded;
     let societe_id = seeded.company_id;
@@ -472,6 +498,7 @@ async fn rattrapage(pool: &MySqlPool, verrou: bool) -> Rattrapage {
     .await
     .expect("effacement")
     .rows_affected();
+    colonne_posterieure(pool, false).await;
     kesh_db::MIGRATOR.run(pool).await.expect("M1 et M2");
     let rattrape = marques(pool, societe_id).await;
 

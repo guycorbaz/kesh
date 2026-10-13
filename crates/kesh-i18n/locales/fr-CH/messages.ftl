@@ -1303,7 +1303,7 @@ bank-accounts-errors-invalid-account-type = Type de compte invalide (Actif ou Pa
 bank-accounts-errors-has-transactions = Le compte bancaire contient des transactions — archivage refusé pour préserver l'audit comptable. Les imports dont aucune transaction n'est rapprochée peuvent être supprimés (Quotidien → Importer des relevés). Sinon, pour retirer le compte de l'usage, clore le compte : il passe en lecture seule et garde son historique.
 bank-accounts-errors-cannot-archive-primary = Le compte principal ne peut pas être archivé tant qu'un autre compte ni archivé ni clos existe. Définissez d'abord un autre compte comme principal, puis archivez celui-ci.
 # Story 28-4a (#642) — compte bancaire clos, en lecture seule
-bank-accounts-errors-closed = Ce compte bancaire est clos : il est en lecture seule. Pour y enregistrer une opération, rouvrez-le d'abord (Administration → Comptes bancaires).
+bank-accounts-errors-closed = Ce compte bancaire est clos : il est en lecture seule. Pour y enregistrer une opération, rouvrez d'abord le compte (Administration → Comptes bancaires).
 bank-accounts-errors-not-closed = Ce compte bancaire n'est pas clos.
 bank-accounts-errors-cannot-close-primary = Le compte principal ne peut pas être clos : désignez d'abord un autre compte comme principal (c'est lui que porte la QR-facture).
 bank-accounts-errors-has-pending-transactions = Ce compte porte des transactions importées qui ne sont pas rapprochées. Rapprochez-les, ou supprimez l'import s'il ne contient aucune transaction rapprochée, avant de clore le compte.

@@ -1186,7 +1186,7 @@ pub(crate) fn bank_account_closed_response(bank_account_id: i64) -> Response {
     let msg = t(
         "bank-accounts-errors-closed",
         "Ce compte bancaire est clos : il est en lecture seule. Pour y enregistrer \
-         une opération, rouvrez-le d'abord (Administration → Comptes bancaires).",
+         une opération, rouvrez d'abord le compte (Administration → Comptes bancaires).",
     );
     let body = serde_json::json!({
         "error": {
