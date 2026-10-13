@@ -259,10 +259,13 @@ test.describe('Factures — suspension & historique sur la fiche (21-6c)', () =>
 	): Promise<void> {
 		const ctx = await authedApiContext(page);
 		try {
-			const today = new Date().toISOString().slice(0, 10);
+			// #421 : la route refuse une date d'envoi future, comparée à l'heure
+			// UTC ; un midi fixe était futur avant 12:00 UTC. Une heure avant
+			// l'appel est passée à toute heure.
+			const sentAt = new Date(Date.now() - 3_600_000).toISOString().slice(0, 19);
 			const res = await ctx.post(`/api/v1/invoices/${invoiceId}/reminders/manual`, {
 				// #249 : sentAt = NaiveDateTime (jamais date nue).
-				data: { levelNumber, sentAt: `${today}T12:00:00`, note },
+				data: { levelNumber, sentAt, note },
 			});
 			expect(res.ok(), `manual reminder failed: ${res.status()}`).toBeTruthy();
 		} finally {
