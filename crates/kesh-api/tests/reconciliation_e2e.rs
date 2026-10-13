@@ -2116,15 +2116,16 @@ async fn get_proposals_paginates_at_100_default(pool: MySqlPool) {
     );
 }
 
-/// AC #66 — sign filter : tx débit `amount = -100.00` n'a pas de
-/// candidate. POST accept retourne `RECONCILIATION_SCORE_TOO_LOW` car
-/// le scoring serveur-side trouve `amount_score=0.0` (signed mismatch).
+/// AC #66 — sign filter : une transaction de débit (`-100.00`) ne règle
+/// jamais une facture, même proposée directement à `POST /accept`.
 ///
-/// Note déviation spec : la spec dit « POST accept retourne 404
-/// BANK_TRANSACTION_NOT_FOUND ». En pratique, le pré-vol
-/// (`find_by_ids_for_account`, Story 27-4) ne filtre pas par sign et la tx débit traverse jusqu'à `accept_one` qui
-/// score 0.0 → step 7bis P3-H4 min-score guard. Le brief autorise
-/// d'ajuster l'attendu selon le comportement réel.
+/// Story 28-6 (#482, AC2-3) : la garde de sens d'`accept_one_invoice` précède
+/// celle du score, et le refus est **exactement**
+/// `RECONCILIATION_TRANSACTION_NOT_CREDIT`. Avant elle, ce test admettait deux
+/// codes (`RECONCILIATION_SCORE_TOO_LOW` ou `BANK_TRANSACTION_NOT_FOUND`) :
+/// le débit n'était arrêté que par le score nul de sa référence `ANY-REF`, et
+/// un débit dont la référence ressemblait à la facture passait la garde de
+/// score — c'est cette tolérance à deux codes qui a laissé #482 ouverte.
 #[sqlx::test(migrations = "../kesh-db/test-schema")]
 async fn post_accept_filters_signed_amount(pool: MySqlPool) {
     let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
@@ -2177,14 +2178,14 @@ async fn post_accept_filters_signed_amount(pool: MySqlPool) {
     let body: Value = resp.json().await.unwrap();
     let failed = body["failed"].as_array().unwrap();
     assert_eq!(failed.len(), 1);
-    let err_code = failed[0]["errorCode"].as_str().unwrap();
-    // Comportement réel : score=0 → P3-H4 min-score guard (RECONCILIATION_SCORE_TOO_LOW).
-    assert!(
-        matches!(
-            err_code,
-            "RECONCILIATION_SCORE_TOO_LOW" | "BANK_TRANSACTION_NOT_FOUND"
-        ),
-        "errorCode inattendu pour tx débit : {err_code}"
+    assert_eq!(
+        failed[0]["errorCode"].as_str().unwrap(),
+        "RECONCILIATION_TRANSACTION_NOT_CREDIT",
+        "un débit est refusé pour son sens, avant le score : {body}"
+    );
+    assert_eq!(
+        failed[0]["details"]["reason"], "debit_transaction",
+        "{body}"
     );
 }
 
@@ -8148,4 +8149,313 @@ async fn unreject_of_a_transaction_deleted_under_the_lock_is_not_found(pool: MyS
     assert_eq!(st, 404, "{body}");
     assert_eq!(body["error"]["code"], "NOT_FOUND", "{body}");
     assert!(unrejected_traces_285(&pool, tx_id).await.is_empty());
+}
+
+// ============================================================
+// Story 28-6 (#482) — un débit, ou un montant nul, ne règle jamais une
+// facture client.
+//
+// L'écran ne propose jamais de facture pour un débit (`get_proposals` les
+// écarte), mais `POST /accept` est appelable directement — par une clé d'API
+// comme par un appel forgé. Avant la story, un débit dont la référence ou la
+// contrepartie ressemblait à la facture passait la garde de score, et seule
+// une contrainte de la base (`chk_jel_*`) arrêtait l'écriture : le refus
+// arrivait en « erreur de la base de données », qui invite au rejeu.
+//
+// Les codes sont écrits en dur, jamais relus d'une constante de production.
+// ============================================================
+
+/// Ce qu'un refus doit laisser intact : l'état comptable de la société, la
+/// transaction, la facture et la piste d'audit.
+///
+/// Le compteur de numéros d'écriture (`journal_entry_number_sequences`) et
+/// l'en-tête d'écriture sont ce qui s'écrit **avant** la ligne refusée par la
+/// base : sans la garde, seul le `ROLLBACK TO SAVEPOINT` de la proposition les
+/// annule. Ils sont relevés pour que le constat « rien d'écrit » ne repose pas
+/// sur ce seul point de sauvegarde sans le voir.
+#[derive(Debug, PartialEq)]
+struct Etat286 {
+    journal_entries: i64,
+    journal_entry_lines: i64,
+    invoice_settlements: i64,
+    /// `(fiscal_year_id, next_number)` de la société, dans l'ordre.
+    sequences: Vec<(i64, i64)>,
+    /// `(status, matched_entry_id, version)` de la transaction.
+    transaction: (String, Option<i64>, i64),
+    /// `(paid_at, version)` de la facture, `None` si elle n'existe pas.
+    invoice: Option<(Option<NaiveDateTime>, i64)>,
+    /// Traces `reconciliation.accepted`, `invoice.paid`, `invoice.partially_settled`.
+    traces: i64,
+}
+
+async fn etat_286(pool: &MySqlPool, company_id: i64, tx_id: i64, inv_id: i64) -> Etat286 {
+    async fn count(pool: &MySqlPool, sql: &str, company_id: i64) -> i64 {
+        sqlx::query_scalar(sql)
+            .bind(company_id)
+            .fetch_one(pool)
+            .await
+            .unwrap()
+    }
+    let journal_entries = count(
+        pool,
+        "SELECT COUNT(*) FROM journal_entries WHERE company_id = ?",
+        company_id,
+    )
+    .await;
+    let journal_entry_lines = count(
+        pool,
+        "SELECT COUNT(*) FROM journal_entry_lines l JOIN journal_entries e ON e.id = l.entry_id \
+         WHERE e.company_id = ?",
+        company_id,
+    )
+    .await;
+    let invoice_settlements = count(
+        pool,
+        "SELECT COUNT(*) FROM invoice_settlements s JOIN invoices i ON i.id = s.invoice_id \
+         WHERE i.company_id = ?",
+        company_id,
+    )
+    .await;
+    let sequences: Vec<(i64, i64)> = sqlx::query_as(
+        "SELECT fiscal_year_id, next_number FROM journal_entry_number_sequences \
+         WHERE company_id = ? ORDER BY fiscal_year_id",
+    )
+    .bind(company_id)
+    .fetch_all(pool)
+    .await
+    .unwrap();
+    let transaction: (String, Option<i64>, i64) = sqlx::query_as(
+        "SELECT status, matched_entry_id, CAST(version AS SIGNED) FROM bank_transactions WHERE id = ?",
+    )
+    .bind(tx_id)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    let invoice: Option<(Option<NaiveDateTime>, i64)> =
+        sqlx::query_as("SELECT paid_at, CAST(version AS SIGNED) FROM invoices WHERE id = ?")
+            .bind(inv_id)
+            .fetch_optional(pool)
+            .await
+            .unwrap();
+    let traces: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM audit_log WHERE action IN \
+         ('reconciliation.accepted', 'invoice.paid', 'invoice.partially_settled')",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    Etat286 {
+        journal_entries,
+        journal_entry_lines,
+        invoice_settlements,
+        sequences,
+        transaction,
+        invoice,
+        traces,
+    }
+}
+
+/// Facture `invoice_number` validée de 100.00, sans règlement (reste dû > 0),
+/// et une transaction de `amount` dont la référence est le numéro de la
+/// facture et la contrepartie le nom du client : le score de référence (0,40)
+/// et celui du contact (0,10) dépassent la garde de score — c'est le cas de
+/// l'issue.
+async fn montage_286(
+    pool: &MySqlPool,
+    ctx: &CompanyCtx,
+    label: &str,
+    invoice_number: &str,
+    amount: Decimal,
+) -> (i64, i64) {
+    let day = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let inv_date = NaiveDate::from_ymd_opt(2026, 5, 1).unwrap();
+    let (inv_id, _) = seed_validated_invoice(
+        pool,
+        ctx.company_id,
+        ctx.contact_id,
+        invoice_number,
+        inv_date,
+        dec!(100.00),
+    )
+    .await;
+    let counterparty = format!("{label} Client");
+    let tx_ids = seed_bank_transactions(
+        pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash(&format!("286-{invoice_number}")),
+        day,
+        day,
+        vec![make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            day,
+            Some(day),
+            amount,
+            "CHF",
+            invoice_number,
+            Some(&counterparty),
+        )],
+    )
+    .await;
+    (tx_ids[0], inv_id)
+}
+
+/// Le refus attendu, et lui seul : aucune acceptation, une proposition dans
+/// `failed[]` pour cette transaction, sous le code neuf et le `reason` donné.
+fn assert_not_credit_286(body: &Value, tx_id: i64, reason: &str, amount: Decimal) {
+    assert!(
+        body["accepted"].as_array().unwrap().is_empty(),
+        "rien d'accepté : {body}"
+    );
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(
+        failed[0]["bankTransactionId"].as_i64(),
+        Some(tx_id),
+        "{body}"
+    );
+    assert_eq!(
+        failed[0]["errorCode"], "RECONCILIATION_TRANSACTION_NOT_CREDIT",
+        "{body}"
+    );
+    assert_eq!(failed[0]["details"]["reason"], reason, "{body}");
+    // Même forme que le champ homonyme de `RECONCILIATION_OVERPAYMENT`.
+    assert_eq!(
+        failed[0]["details"]["transactionAmount"],
+        serde_json::json!(amount),
+        "{body}"
+    );
+}
+
+/// AC2-1 — le cas de l'issue : un débit de −100.00 à la référence et à la
+/// contrepartie reconnues est refusé pour son sens, et rien n'est écrit.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_debit_with_a_recognised_reference_never_settles_an_invoice(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Debit", "CH4431999123000889012", Role::Comptable).await;
+    let (tx_id, inv_id) = montage_286(&pool, &ctx, "Debit", "INV-DEBIT", dec!(-100.00)).await;
+    let avant = etat_286(&pool, ctx.company_id, tx_id, inv_id).await;
+    assert_eq!(
+        avant.transaction.0, "pending",
+        "montage : transaction en attente"
+    );
+    assert_eq!(
+        avant.invoice.unwrap().0,
+        None,
+        "montage : facture non payée"
+    );
+
+    let app = spawn_app(pool.clone()).await;
+    let body = post_accept_one(&app, &ctx, tx_id, inv_id).await;
+
+    // L'état d'abord : « rien d'écrit » se constate indépendamment du code de
+    // refus — c'est ce qui l'a établi AVANT le correctif, quand le refus
+    // venait de la base (`DATABASE_ERROR`, `chk_jel_debit_credit_exclusive`).
+    assert_eq!(
+        etat_286(&pool, ctx.company_id, tx_id, inv_id).await,
+        avant,
+        "rien d'écrit : {body}"
+    );
+    assert_not_credit_286(&body, tx_id, "debit_transaction", dec!(-100.00));
+}
+
+/// AC2-2 — un montant nul suit le même refus, sous `zero_amount_transaction`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_zero_amount_transaction_never_settles_an_invoice(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Nul", "CH4431999123000889012", Role::Comptable).await;
+    let (tx_id, inv_id) = montage_286(&pool, &ctx, "Nul", "INV-NUL", dec!(0.00)).await;
+    let avant = etat_286(&pool, ctx.company_id, tx_id, inv_id).await;
+
+    let app = spawn_app(pool.clone()).await;
+    let body = post_accept_one(&app, &ctx, tx_id, inv_id).await;
+
+    assert_eq!(
+        etat_286(&pool, ctx.company_id, tx_id, inv_id).await,
+        avant,
+        "rien d'écrit : {body}"
+    );
+    assert_not_credit_286(&body, tx_id, "zero_amount_transaction", dec!(0.00));
+}
+
+/// AC2-4 — un refus n'empêche pas les autres : dans un même lot, l'encaissement
+/// valable est accepté et le débit seul va dans `failed[]` (pattern batch).
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_refused_debit_does_not_block_a_valid_payment_in_the_same_batch(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Lot", "CH4431999123000889012", Role::Comptable).await;
+    let (debit_tx, debit_inv) = montage_286(&pool, &ctx, "Lot", "INV-DEBIT", dec!(-100.00)).await;
+    let (credit_tx, credit_inv) = montage_286(&pool, &ctx, "Lot", "INV-OK", dec!(100.00)).await;
+    let debit_avant = etat_286(&pool, ctx.company_id, debit_tx, debit_inv).await;
+
+    let app = spawn_app(pool.clone()).await;
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/accept"))
+        .bearer_auth(&ctx.jwt)
+        .json(&serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "proposals": [
+                { "type": "invoice", "bankTransactionId": debit_tx, "invoiceId": debit_inv },
+                { "type": "invoice", "bankTransactionId": credit_tx, "invoiceId": credit_inv },
+            ],
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+
+    let accepted = body["accepted"].as_array().unwrap();
+    assert_eq!(accepted.len(), 1, "{body}");
+    assert_eq!(accepted[0]["bankTransactionId"].as_i64(), Some(credit_tx));
+    let failed = body["failed"].as_array().unwrap();
+    assert_eq!(failed.len(), 1, "{body}");
+    assert_eq!(failed[0]["bankTransactionId"].as_i64(), Some(debit_tx));
+
+    let debit_apres = etat_286(&pool, ctx.company_id, debit_tx, debit_inv).await;
+    assert_eq!(debit_apres.transaction, debit_avant.transaction);
+    assert_eq!(debit_apres.invoice, debit_avant.invoice);
+    let settled: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM invoice_settlements WHERE invoice_id = ?")
+            .bind(debit_inv)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(settled, 0, "la facture du débit n'est pas réglée");
+    let credit_status: String =
+        sqlx::query_scalar("SELECT status FROM bank_transactions WHERE id = ?")
+            .bind(credit_tx)
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(credit_status, "reconciled", "l'encaissement est rapproché");
+    assert_eq!(
+        failed[0]["errorCode"], "RECONCILIATION_TRANSACTION_NOT_CREDIT",
+        "{body}"
+    );
+}
+
+/// AC2-5 — la garde de sens précède la lecture de la facture : un débit
+/// proposé contre une facture inexistante rend le code du sens, non
+/// `INVOICE_NOT_FOUND`.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn a_debit_is_refused_for_its_direction_before_the_invoice_is_read(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Avant", "CH4431999123000889012", Role::Comptable).await;
+    let (tx_id, inv_id) = montage_286(&pool, &ctx, "Avant", "INV-AVANT", dec!(-100.00)).await;
+    let missing_invoice = inv_id + 100_000;
+    let avant = etat_286(&pool, ctx.company_id, tx_id, missing_invoice).await;
+    assert_eq!(
+        avant.invoice, None,
+        "montage : la facture proposée n'existe pas"
+    );
+
+    let app = spawn_app(pool.clone()).await;
+    let body = post_accept_one(&app, &ctx, tx_id, missing_invoice).await;
+
+    assert_eq!(
+        etat_286(&pool, ctx.company_id, tx_id, missing_invoice).await,
+        avant,
+        "rien d'écrit : {body}"
+    );
+    assert_not_credit_286(&body, tx_id, "debit_transaction", dec!(-100.00));
 }
