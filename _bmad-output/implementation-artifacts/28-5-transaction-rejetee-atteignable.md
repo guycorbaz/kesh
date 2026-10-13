@@ -116,7 +116,7 @@ faux.
 | `crates/kesh-db/src/repositories/bank_imports.rs` | a | doc-comment d’`is_reconciled` (l. 338-355 : l'inventaire « clos » des écrivains, l. 338-344, et la liste des appelants, l. 350-355) | |
 | `frontend/src/lib/features/bank-import/bank-import-deletion.ts` | **b** | doc-comment l. 12-16 (appelants serveur d'`is_reconciled`) | commentaire seulement (C-28-5-26) |
 | `crates/kesh-i18n/locales/*/messages.ftl` | a, b | section `reconciliation-*` : a — `reconciliation-errors-transaction-not-rejected`, `audit-log-action-reconciliation-unrejected` ; b — quatre clés d'interface et `reconciliation-failed-already-rejected` **réécrite** (fr-CH l. 1219, de/it/en l. 1156) | la 28-6 y ajoute un libellé : union au rebase |
-| `docs/api-external.md` | a | § *Accepter des propositions*, paragraphe **« Transaction disparue, rapprochée ou rejetée »** (l. 540, une phrase de renvoi — C-28-5-27) ; sous-section neuve après « Annuler un rapprochement bancaire » (l. 554 et suiv.) ; ligne `GET /api/v1/bank-imports/{id}` (l. 575) | la 28-6 ajoute un refus au § l. 536-552 : contigu, union |
+| `docs/api-external.md` | a | § *Accepter des propositions*, paragraphe **« Transaction disparue, rapprochée ou rejetée »** (l. 540, une phrase de renvoi — C-28-5-27) ; sous-section neuve après « Annuler un rapprochement bancaire » (l. 554 et suiv.) ; ligne `GET /api/v1/bank-imports/{id}` (l. 574) | la 28-6 ajoute un refus au § l. 536-552 : contigu, union |
 | `frontend/src/lib/features/reconciliation/failed-proposal-label.ts` | b | repli de `RECONCILIATION_ALREADY_REJECTED` (l. 210-214) | la 28-6 y ajoute un code : union |
 | `frontend/src/lib/features/reconciliation/failed-proposal-label.test.ts` | b | V6 | la 28-6 y teste son code : union |
 | `frontend/src/lib/shared/i18n-keys.test.ts` | b | `sitesTotal` (l. 601) | recompté, jamais incrémenté ; la 28-6 le modifie aussi si elle ajoute un `i18nMsg` : **recompté par la seconde fusionnée** |
@@ -197,7 +197,7 @@ le `409 OPTIMISTIC_LOCK_CONFLICT` défensif, dit inatteignable), clés `read-wri
 `autoMatchRejectedAt` *(depuis la v0.13.3)*, rappel de la limite de `GET …/proposals` ; une phrase au paragraphe
 **« Transaction disparue, rapprochée ou rejetée »** (l. 540, là où est décrit le refus
 `RECONCILIATION_ALREADY_REJECTED`) qui renvoie à cette sous-section (C-28-5-27) ; et `autoMatchRejectedAt` cité à la
-ligne `GET /api/v1/bank-imports/{id}` (l. 575).
+ligne `GET /api/v1/bank-imports/{id}` (l. 574).
 
 **AC10 — Les gardes existantes suivent, et les commentaires disent vrai.**
 - `crates/kesh-api/tests/audit_route_registry.rs` : ligne
@@ -223,9 +223,9 @@ ligne `GET /api/v1/bank-imports/{id}` (l. 575).
   `` post_split` n' `` (doc-comments et commentaires d'appelants), `inventaire clos`, les valeurs `\b115\b`,
   `\b118\b`, `\b109\b`, `\b91\b`.
 
-**AC12 (a) — Mutations.** M1-M8, **M15** et **M17** font rougir au moins un test chacune (M15 : B10, C-28-5-25) ;
-M13 et M14 sont déclarées **équivalentes** avec leur preuve (§ Tests, C-28-5-19), au Debug Log. Aucune survivante
-assumée.
+**AC12 (a) — Mutations.** M1-M8 et **M15** font rougir au moins un test chacune (M15 : B10, C-28-5-25) ;
+M13, M14 et **M17** sont déclarées **équivalentes** avec leur preuve (§ Tests, C-28-5-19 ; M17 : `updated_at` porte
+`ON UPDATE CURRENT_TIMESTAMP(3)`), au Debug Log. Aucune survivante assumée.
 
 ### Partie b — `28-5b-annuler-rejet-ecran` (PR `closes #526`)
 
@@ -337,7 +337,7 @@ test ajouté, soit déclarée **équivalente** avec sa preuve au Debug Log.
       chaque passe, ciblage interdit** (règle `CLAUDE.md`, § *Pendant une boucle de revue*, exception `kesh-db`) — y
       compris en cours de boucle de revue.
 - [ ] **T5a — Documentation** (AC9 a) : `docs/api-external.md`.
-- [ ] **T6a — Mutations** (AC12 a) M1-M8, M13-M15, M17, sous verrou ; restauration `git checkout -- <f>` **puis
+- [ ] **T6a — Mutations** (AC12 a) M1-M8, M13-M15, M17 (M13, M14 et M17 équivalentes : preuve au Debug Log, pas de rejeu), sous verrou ; restauration `git checkout -- <f>` **puis
       `touch <f>`**.
 - [ ] **T7a — Gate et comptes rendus** : gate complet **et** suite E2E complète au dernier commit de code (verrou de
       gate, recette de `docs/testing.md`, échecs jugés fichier par fichier) ; la 28-5a ne touche **aucun** fichier
@@ -372,7 +372,7 @@ du verrou tenu de `post_accept_returns_409_on_account_lock_contention` l. 1435 ;
 
 | # | Test | Établit |
 |---|---|---|
-| B1 | `unreject_puts_a_rejected_transaction_back_in_the_proposals` | rejet par la route ; `updated_at` **forcé** à une valeur passée au montage (un rejet et son annulation peuvent tomber dans la même milliseconde) ; `204` ; marqueur `NULL`, `version` +1, `updated_at` **postérieur** à la valeur forcée, `status`/`matched_entry_id` inchangés ; nombre de lignes de `journal_entries` et d'`invoice_settlements` de la société **inchangé** (aucune écriture, aucun règlement) ; la transaction est dans `GET /proposals` (absente avant) ; **une** ligne `reconciliation.unrejected` dont `previouslyRejectedAt` est **la même chaîne** que l'`autoMatchRejectedAt` lu par `GET /bank-imports/{id}` avant l'annulation ; puis **cycle** (AC13) : `POST /reject` du même id → `rejected[]` le contient, `failed[]` vide, marqueur reposé ; `…/unreject` → `204` |
+| B1 | `unreject_puts_a_rejected_transaction_back_in_the_proposals` | rejet par la route ; `updated_at` **forcé** à une valeur passée au montage (un rejet et son annulation peuvent tomber dans la même milliseconde) ; `204` ; marqueur `NULL`, `version` +1, `updated_at` **postérieur** à la valeur forcée (établit que la ligne a bien été écrite par l'annulation ; ne tue **pas** M17, la colonne étant renouvelée par `ON UPDATE`), `status`/`matched_entry_id` inchangés ; nombre de lignes de `journal_entries` et d'`invoice_settlements` de la société **inchangé** (aucune écriture, aucun règlement) ; la transaction est dans `GET /proposals` (absente avant) ; **une** ligne `reconciliation.unrejected` dont `previouslyRejectedAt` est **la même chaîne** que l'`autoMatchRejectedAt` lu par `GET /bank-imports/{id}` avant l'annulation ; puis **cycle** (AC13) : `POST /reject` du même id → `rejected[]` le contient, `failed[]` vide, marqueur reposé ; `…/unreject` → `204` |
 | B2 | `unreject_refuses_a_transaction_that_is_not_rejected` | jamais rejetée → `409` code ; un second appel après succès → `409` ; ni `version` ni `audit_log` ne bougent |
 | B3 | `unreject_refuses_a_reconciled_transaction_even_if_marked` | état **forgé, et dit tel** (`status='reconciled'`, `matched_entry_id`, marqueur posé — patron du test l. 4438) → `409` ; marqueur intact |
 | B4 | `unreject_roles_and_scope` | Consultation → `403` ; autre société → `404` et rien d'écrit (comptes de lignes avant/après, patron l. 4385) ; Administrateur → `204` |
@@ -409,7 +409,7 @@ du verrou tenu de `post_accept_returns_409_on_account_lock_contention` l. 1435 ;
 | M13 | a | garde `rows_affected() != 1` retirée | **équivalente** : la ligne est lue `FOR UPDATE` sous verrou, scopée par sa clé primaire ; l'`UPDATE` ne peut toucher qu'elle (C-28-5-19) |
 | M14 | a | `UPDATE` scopé par le seul `id` (sans `company_id` ni `bank_account_id`) | **équivalente** : `id` est la clé primaire, et la ligne a été lue scopée société et compte sous verrou — la portée est déjà établie ; les deux prédicats restent comme défense en profondeur (patron du dépôt) |
 | M15 | a | lecture **non** verrouillante (`find_pending_by_id_for_account`, l. 351) au lieu de `find_by_id_for_account_for_update` | **B10** : la suppression d'import ne prend pas le verrou nommé, sa transaction entière est la fenêtre, et le test la tient ouverte ; code juste → `404`, M15 → `409 OPTIMISTIC_LOCK_CONFLICT` (C-28-5-25, qui remplace C-28-5-23). M15 garde aussi M13 : l'équivalence de M13 suppose la lecture verrouillante |
-| M17 | a | `UPDATE` : retirer `updated_at = NOW(3)` | B1 |
+| M17 | a | `UPDATE` : retirer `updated_at = NOW(3)` | **équivalente** : `bank_transactions.updated_at` est `DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)` (`20260504000001_bank_imports.sql:74` ; même définition dans le squash `crates/kesh-db/test-schema/0001_schema_squash.sql`) : l'`UPDATE` change `auto_match_rejected_at` et `version`, le moteur renouvelle donc la colonne même sans l'affectation explicite. L'affectation reste dans la requête (lisibilité, patron du dépôt) |
 | M9 | b | `isRejected` sans `!isReconciled(tx)` | V1 |
 | M10 | b | bouton rendu sans condition `canManage` | V2 |
 | M11 | b | `onUnrejected` non appelé sur échec | V2 |
@@ -627,3 +627,17 @@ pas », « rejetées comprises ») reste vrai — il l'est, la story ne change p
   **B1-B10**, **V1-V6**, **M1-M17**, choix C-28-5-1 à C-28-5-30 (C-28-5-11, 12 et 23 remplacés) ; six clés i18n
   neuves et une réécrite, × quatre locales (inchangé). Passe **ciblée P3** à lancer
   (`28-5-validate-prompt-p3-ciblee.md`, Haiku, une lentille sur le seul diff de cette remédiation).
+- 2026-10-13 — **Validation P3 ciblée** (Haiku 5.5, une lentille sur le diff de la remédiation P2, rapport
+  `$GATE_LOGS/28-5-validate-p3-ciblee.md`) : **0 CRITICAL, 0 HIGH, 1 MEDIUM, 2 LOW**. Le MEDIUM (P3-1) est issu de la
+  remédiation P2 (R8) et confirmé par l'orchestrateur. Remédiation : **P3-1** — M17 (retirer `updated_at = NOW(3)`)
+  est **équivalente**, non « tuée par B1 » : `bank_transactions.updated_at` porte
+  `ON UPDATE CURRENT_TIMESTAMP(3)` (`20260504000001_bank_imports.sql:74` ; squash `test-schema/0001_schema_squash.sql`,
+  colonne `updated_at` de `bank_transactions`, même définition), et l'`UPDATE` change `auto_match_rejected_at` et
+  `version` : le moteur renouvelle la colonne seul. AC12 (a), tableau des mutations, T6a, `sprint-status.yaml` (28-5a)
+  alignés ; l'assertion de B1 sur `updated_at` est **conservée** mais ne prouve que l'écriture de la ligne (elle ne
+  tue aucune mutation) ; **P3-2** — la ligne `GET /api/v1/bank-imports/{id}` de `docs/api-external.md` est à l. **574**
+  (région du tableau et AC9 (a)) ; **P3-3** — « (nuancé, C-28-5-30) » au *Retenu* de C-28-5-4. L'entrée P2 ci-dessus
+  n'est pas réécrite : son « B1 tue M17 » et ses « M1-M17 tuées » sont **annotés** par la présente entrée (règle B4).
+  Recompte après remédiation (inchangé) : **13 AC**, tâches T0a-T7a et T0b-T14, **B1-B10**, **V1-V6**, **M1-M17**
+  (dont **trois équivalentes** en partie a : M13, M14, M17), choix C-28-5-1 à C-28-5-30. Passe **ciblée P4** à lancer
+  (`28-5-validate-prompt-p4-ciblee.md`, une lentille sur le seul diff de cette remédiation).

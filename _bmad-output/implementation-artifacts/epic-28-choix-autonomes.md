@@ -1106,7 +1106,7 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
 - **Retenu** : verrou pris (sérialise avec accept, reject, manual, split, cancel du même compte : un rapprochement
   manuel concurrent ne bute pas sur un conflit de `version`) ; classement `SansEcritureAuJournal`, sans enveloppe de
   rejeu. Raisonnement d'interblocage : une ligne de `bank_transactions` verrouillée, puis une insertion d'audit ; la
-  suppression d'import (27-1) verrouille ses lignes par identifiant croissant sans le verrou nommé — aucun cycle.
+  suppression d'import (27-1) verrouille ses lignes par identifiant croissant sans le verrou nommé — aucun cycle (nuancé, C-28-5-30).
 - **Écartée** : pas de verrou (l'`UPDATE` conditionnel suffirait à l'atomicité, mais ferait échouer en
   `OPTIMISTIC_LOCK_CONFLICT` un geste concurrent qui n'a rien de fautif).
 - **Réversible** : oui.
