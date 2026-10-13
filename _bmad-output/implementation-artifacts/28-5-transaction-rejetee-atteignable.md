@@ -727,6 +727,22 @@ Journaux hors dépôt, sous `/home/gcorbaz/devel/kesh-gate-logs/28-5b/` ; script
     nominativement les sept KF-029 (#97) de `docs/testing.md` § *Les échecs attendus* : `mode-expert.spec.ts:26`,
     `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`. Aucun huitième de
     pollution. 273 = 269 (`eab77cf1`, gate de la 28-5a rebasée) + les 4 tests neufs. Aucune régression.
+- **Rebase sur `origin/main` `c28d0a20`** (28-1 fusionnée, PR #654), 2026-10-13, après la clôture de la revue :
+  conflits sur le **registre des choix** (union : les C-28-1 de `main`, puis C-28-5-36 à 40 ; aucun numéro en double,
+  `grep -oE "^### C-[0-9-]+" | sort | uniq -d` vide) et sur le **PDF du manuel utilisateur** (binaire : celui de `main`
+  repris, puis `make user` sous le verrou après `touch` du `.tex` fusionné — `make fr` le jugeait à jour par les
+  dates ; PDF aplati : `Annuler le rejet` 1, anciennes phrases 0 ; le PDF du manuel d'administration, recompilé au
+  passage avec un texte identique, a été restauré). Fusionnés sans conflit : `CHANGELOG.md` (une seule section
+  `[0.13.3]`), `user-manual.tex`, catalogues, `sprint-status.yaml` (relu par `yaml.safe_load`, aucune clé en double).
+  `sitesTotal` : **2083** inchangé — la garde `i18n-keys.test.ts` est verte au HEAD rebasé, la 28-1 n'ajoutant aucun
+  site `i18nMsg`. Bases `kesh_285` et `kesh_e2e_285` remises à zéro, puis sous le verrou, au **HEAD rebasé
+  `027be5fd`** (journaux `final-*.log` ; ceux du `31df9d74` archivés dans `kesh-gate-logs/28-5b/gate-31df9d74/`) :
+  `scripts/test-fast.sh` **3541 passés, 0 échec, 6 ignorés** ; frontend `check` 0 erreur (29 avertissements
+  préexistants), `lint-i18n-ownership` PASS, `test:unit` **1565 passés, 146 fichiers** (1516 + les tests de la 28-1),
+  `build` vert ; E2E complet (port 3038) **277 passés, 7 échecs, 19 ignorés** — les sept KF-029 (#97), nommément
+  `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ;
+  aucun huitième, aucune régression ; les six captures de la 28-5b sont dans `kesh-gate-logs/28-5b-captures/`, à côté
+  de celles de la 28-1 et de la 28-2, écrites par leurs propres specs.
 
 ### Completion Notes List
 
