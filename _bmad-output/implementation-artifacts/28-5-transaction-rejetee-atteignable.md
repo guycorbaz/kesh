@@ -743,6 +743,19 @@ Journaux hors dépôt, sous `/home/gcorbaz/devel/kesh-gate-logs/28-5b/` ; script
   `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ;
   aucun huitième, aucune régression ; les six captures de la 28-5b sont dans `kesh-gate-logs/28-5b-captures/`, à côté
   de celles de la 28-1 et de la 28-2, écrites par leurs propres specs.
+- **Second rebase, sur `origin/main` `5629acc2`** (28-6 fusionnée, PR #656 ; fusionnée en seconde, C-28-5-29),
+  2026-10-13 : conflits résolus par union — `failed-proposal-label.ts` (doc-comment : les deux phrases, 28-5b puis 28-6),
+  `i18n-keys.test.ts` (**`sitesTotal` 2080 → 2084**, les deux commentaires gardés, valeur confirmée par la collecte du
+  test, garde verte), `CHANGELOG.md` (les deux entrées *Corrigé*, la nôtre dans sa version bornée de la revue P1),
+  `sprint-status.yaml` (union par clé : 28-6 `done` de `main`, 28-5b de la branche ; les en-têtes de la 28-5b
+  renumérotés **123 à 125**, au-dessus des 119 à 122 de la 28-6, consigne 7 ; `yaml.safe_load`, aucune clé en double).
+  Manuel non touché par la 28-6 : PDF non régénéré. Bases `kesh_285` et `kesh_e2e_285` remises à zéro, puis sous le
+  verrou au **HEAD rebasé `e5cd33c9`** (journaux `final-*.log` ; ceux du `027be5fd` archivés dans
+  `kesh-gate-logs/28-5b/gate-027be5fd/`) : `scripts/test-fast.sh` **3553 passés, 0 échec, 6 ignorés** ; `check`
+  0 erreur (29 avertissements préexistants), `lint-i18n-ownership` PASS, `test:unit` **1566 passés, 146 fichiers**,
+  `build` vert ; E2E complet (port 3038) **277 passés, 7 échecs, 19 ignorés** — les sept KF-029 (#97), nommément
+  `mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150` ;
+  aucune régression ; six captures de la 28-5b dans `kesh-gate-logs/28-5b-captures/`.
 
 ### Completion Notes List
 
