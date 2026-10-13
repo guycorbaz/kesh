@@ -2789,6 +2789,279 @@ async fn post_accept_rejects_payment_date_outside_window(pool: MySqlPool) {
 }
 
 // ============================================================
+// Story 28-7 (#548) — la proposition et l'acceptation partagent la fenêtre
+// de dates `InvoiceDateWindow` : `D − 30 ≤ F ≤ D + 1`, `D` étant la date de
+// valeur de la transaction (à défaut sa date de comptabilisation).
+// ============================================================
+
+/// Les couples `(transaction, facture)` que `GET /proposals` propose, toutes
+/// candidates confondues (Story 28-7).
+async fn proposed_couples_287(
+    app: &TestApp,
+    ctx: &CompanyCtx,
+) -> std::collections::BTreeSet<(i64, i64)> {
+    let resp = app
+        .client
+        .get(app.url(&format!(
+            "/api/v1/reconciliation/proposals?bankAccountId={}",
+            ctx.bank_account_id
+        )))
+        .bearer_auth(&ctx.jwt)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let mut couples = std::collections::BTreeSet::new();
+    for p in body["proposals"].as_array().expect("proposals array") {
+        let tx_id = p["bankTransactionId"].as_i64().unwrap();
+        for c in p["candidates"].as_array().unwrap() {
+            couples.insert((tx_id, c["invoiceId"].as_i64().unwrap()));
+        }
+    }
+    couples
+}
+
+/// `POST /accept` de tous les couples en un lot ; rend les couples acceptés
+/// et, par transaction refusée, la raison `details.reason` (Story 28-7).
+async fn accept_couples_287(
+    app: &TestApp,
+    ctx: &CompanyCtx,
+    couples: &[(i64, i64)],
+) -> (
+    std::collections::BTreeSet<(i64, i64)>,
+    std::collections::BTreeMap<i64, String>,
+) {
+    let proposals: Vec<Value> = couples
+        .iter()
+        .map(|(tx_id, inv_id)| {
+            serde_json::json!({ "type": "invoice", "bankTransactionId": tx_id, "invoiceId": inv_id })
+        })
+        .collect();
+    let resp = app
+        .client
+        .post(app.url("/api/v1/reconciliation/accept"))
+        .bearer_auth(&ctx.jwt)
+        .json(&serde_json::json!({
+            "bankAccountId": ctx.bank_account_id,
+            "proposals": proposals,
+        }))
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(resp.status(), 200);
+    let body: Value = resp.json().await.unwrap();
+    let accepted = body["accepted"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| {
+            (
+                a["bankTransactionId"].as_i64().unwrap(),
+                a["invoiceId"].as_i64().unwrap(),
+            )
+        })
+        .collect();
+    let mut failed = std::collections::BTreeMap::new();
+    for f in body["failed"].as_array().unwrap() {
+        assert_eq!(
+            f["errorCode"].as_str().unwrap(),
+            "RECONCILIATION_INVOICE_NOT_ELIGIBLE",
+            "seul un refus de date est attendu : {f}"
+        );
+        failed.insert(
+            f["bankTransactionId"].as_i64().unwrap(),
+            f["details"]["reason"].as_str().unwrap().to_string(),
+        );
+    }
+    (accepted, failed)
+}
+
+/// Story 28-7 (#548), AC4 — parité proposition ⇔ acceptation, aux bords.
+///
+/// Une transaction au jour `D` et une facture datée `D + k` par décalage `k`,
+/// montants et références propres à `k` (écarts de 10 CHF, bien au-delà de la
+/// tolérance de 0.05 : aucune facture n'est candidate d'une autre transaction).
+/// Ce qui est proposé est exactement ce que l'acceptation admet. Le cas `+2`
+/// est celui de #548 (proposé puis refusé avant la story) ; `+30` le pire cas
+/// de l'ancienne fenêtre `± 30` ; `−30` / `−31` figent la borne de #529.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn proposal_and_acceptance_share_the_invoice_date_window(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    // En plein exercice 2026 : `D − 31` et `D + 30` restent dans l'exercice
+    // ouvert par `insert_fake_fiscal_year`.
+    let d = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+    let offsets: [i64; 7] = [-31, -30, -1, 0, 1, 2, 30];
+
+    let mut by_offset = std::collections::BTreeMap::new();
+    let mut new_txs = Vec::new();
+    for (i, k) in offsets.iter().enumerate() {
+        let amount = Decimal::new(10_000 + 1_000 * i as i64, 2);
+        let reference = format!("INV-W{i}");
+        let (inv_id, _) = seed_validated_invoice(
+            &pool,
+            ctx.company_id,
+            ctx.contact_id,
+            &reference,
+            d + TimeDelta::days(*k),
+            amount,
+        )
+        .await;
+        by_offset.insert(*k, inv_id);
+        new_txs.push(make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            d,
+            Some(d),
+            amount,
+            "CHF",
+            &reference,
+            Some("Acme Client"),
+        ));
+    }
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("shared_window_287"),
+        d,
+        d,
+        new_txs,
+    )
+    .await;
+    let couple_of = |k: i64| {
+        let i = offsets.iter().position(|o| *o == k).unwrap();
+        (tx_ids[i], by_offset[&k])
+    };
+
+    let app = spawn_app(pool).await;
+    let proposed = proposed_couples_287(&app, &ctx).await;
+    let all: Vec<(i64, i64)> = offsets.iter().map(|k| couple_of(*k)).collect();
+    let (accepted, failed) = accept_couples_287(&app, &ctx, &all).await;
+
+    assert_eq!(
+        proposed, accepted,
+        "ce qui est proposé doit être exactement ce que l'acceptation admet"
+    );
+    let expected: std::collections::BTreeSet<(i64, i64)> =
+        [-30, -1, 0, 1].iter().map(|k| couple_of(*k)).collect();
+    assert_eq!(proposed, expected, "décalages proposés : −30, −1, 0, +1");
+    for (k, reason) in [
+        (2, "payment_date_before_invoice_date"),
+        (30, "payment_date_before_invoice_date"),
+        (-31, "payment_date_outside_window"),
+    ] {
+        assert_eq!(
+            failed.get(&couple_of(k).0).map(String::as_str),
+            Some(reason),
+            "décalage {k} : raison du refus"
+        );
+    }
+    assert_eq!(failed.len(), 3, "trois refus exactement : {failed:?}");
+}
+
+/// Story 28-7 (#548), AC5 — la proposition lit la date de valeur, comme
+/// l'acceptation (à défaut, la date de comptabilisation).
+///
+/// | cas | valeur  | facture | fenêtre `[D−30, D+1]` | attendu                    |
+/// |-----|---------|---------|------------------------|----------------------------|
+/// | a   | B − 5   | B       | [B−35, B−4]            | ni proposée ni acceptée    |
+/// | b   | B − 5   | B − 34  | [B−35, B−4]            | proposée et acceptée       |
+/// | c   | B + 5   | B − 28  | [B−25, B+6]            | ni proposée ni acceptée    |
+/// | d   | absente | B + 1   | [B−30, B+1]            | proposée et acceptée       |
+/// | e   | absente | B + 2   | [B−30, B+1]            | ni proposée ni acceptée    |
+///
+/// Le cas (b) asserte en outre la date du règlement écrit : la date de
+/// valeur, distincte de la date de comptabilisation.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn proposals_use_the_value_date_like_the_acceptance(pool: MySqlPool) {
+    let ctx = setup_company(&pool, "Acme", "CH4431999123000889012", Role::Comptable).await;
+    let b = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+    let day = |k: i64| b + TimeDelta::days(k);
+    // (valeur, date de la facture), dans l'ordre a, b, c, d, e.
+    let cases: [(Option<i64>, i64); 5] = [
+        (Some(-5), 0),
+        (Some(-5), -34),
+        (Some(5), -28),
+        (None, 1),
+        (None, 2),
+    ];
+
+    let mut inv_ids = Vec::new();
+    let mut new_txs = Vec::new();
+    for (i, (value, invoice)) in cases.iter().enumerate() {
+        let amount = Decimal::new(20_000 + 1_000 * i as i64, 2);
+        let reference = format!("INV-V{i}");
+        let (inv_id, _) = seed_validated_invoice(
+            &pool,
+            ctx.company_id,
+            ctx.contact_id,
+            &reference,
+            day(*invoice),
+            amount,
+        )
+        .await;
+        inv_ids.push(inv_id);
+        new_txs.push(make_new_tx(
+            ctx.company_id,
+            ctx.bank_account_id,
+            b,
+            value.map(day),
+            amount,
+            "CHF",
+            &reference,
+            Some("Acme Client"),
+        ));
+    }
+    let tx_ids = seed_bank_transactions(
+        &pool,
+        ctx.company_id,
+        ctx.bank_account_id,
+        ctx.user_id,
+        &unique_hash("value_date_287"),
+        day(-40),
+        day(10),
+        new_txs,
+    )
+    .await;
+    let couple = |i: usize| (tx_ids[i], inv_ids[i]);
+
+    let app = spawn_app(pool.clone()).await;
+    let proposed = proposed_couples_287(&app, &ctx).await;
+    let expected: std::collections::BTreeSet<(i64, i64)> =
+        [1, 3].iter().map(|i| couple(*i)).collect();
+    assert_eq!(proposed, expected, "seuls (b) et (d) sont proposés");
+
+    let all: Vec<(i64, i64)> = (0..cases.len()).map(couple).collect();
+    let (accepted, failed) = accept_couples_287(&app, &ctx, &all).await;
+    assert_eq!(accepted, expected, "seuls (b) et (d) sont acceptés");
+    for (i, reason) in [
+        (0, "payment_date_before_invoice_date"),
+        (2, "payment_date_outside_window"),
+        (4, "payment_date_before_invoice_date"),
+    ] {
+        assert_eq!(
+            failed.get(&tx_ids[i]).map(String::as_str),
+            Some(reason),
+            "cas {i} : raison du refus"
+        );
+    }
+
+    // Le règlement écrit est daté par la date de valeur — (b) — et, à défaut,
+    // par la date de comptabilisation — (d).
+    for (i, settled) in [(1, day(-5)), (3, b)] {
+        let settled_on: NaiveDate =
+            sqlx::query_scalar("SELECT settled_on FROM invoice_settlements WHERE invoice_id = ?")
+                .bind(inv_ids[i])
+                .fetch_one(&pool)
+                .await
+                .expect("un règlement écrit");
+        assert_eq!(settled_on, settled, "cas {i} : date du règlement");
+    }
+}
+
+// ============================================================
 // Story 8-5a-bis Q2 — breaking change POST /accept discriminator type
 // ============================================================
 

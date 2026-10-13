@@ -326,6 +326,71 @@ async fn find_unpaid_invoices_filters_by_30_day_window(pool: MySqlPool) {
     );
 }
 
+/// Story 28-7 (C-28-7-10) — le `LIMIT 50` de la proposition est déterministe :
+/// les candidates sortent par `(date, id)` croissants, et ce sont les plus
+/// récentes qui sont écartées au-delà de 50.
+///
+/// 52 factures de même reste dû, datées sur `[D − 30, D + 1]` (plusieurs par
+/// jour), insérées dans l'ordre des dates **décroissantes** : `id ASC` et
+/// `date ASC` divergent, si bien qu'un tri sur le seul `id` (ou un parcours en
+/// ordre de clé primaire) ne rend pas les mêmes 50.
+#[sqlx::test(migrations = "./test-schema")]
+async fn find_unpaid_invoices_orders_by_date_then_id_before_limit(pool: MySqlPool) {
+    let company_id = create_test_company(&pool, "Acme").await;
+    let user_id = create_test_user(&pool, "alice", company_id).await;
+    let contact_id = create_test_contact(&pool, company_id, user_id, "Client A").await;
+    let fy_id = insert_fake_fiscal_year(&pool, company_id).await;
+    let je_id = insert_fake_journal_entry(&pool, company_id, fy_id).await;
+    let d = NaiveDate::from_ymd_opt(2026, 6, 15).unwrap();
+
+    let mut inserted: Vec<(NaiveDate, i64)> = Vec::new();
+    for j in 0..52i64 {
+        // De `D + 1` (j = 0) à `D − 30` (j = 51), en dates décroissantes.
+        let date = d + chrono::Duration::days(1 - j * 31 / 51);
+        let id = insert_test_invoice(
+            &pool,
+            company_id,
+            contact_id,
+            date,
+            dec!(100.00),
+            "validated",
+            Some(je_id),
+            None,
+        )
+        .await;
+        inserted.push((date, id));
+    }
+    // Montage : l'insertion en dates décroissantes fait bien diverger les deux
+    // ordres — sinon le test passerait à vide sur un tri par `id`.
+    let mut by_id = inserted.clone();
+    by_id.sort_by_key(|(_, id)| *id);
+    let mut by_date_id = inserted.clone();
+    by_date_id.sort();
+    assert_ne!(by_id, by_date_id, "montage : `id ASC` ≠ `(date, id) ASC`");
+
+    let candidates = reconciliation_repo::find_unpaid_invoices_for_window(
+        &pool,
+        company_id,
+        d,
+        dec!(100.00),
+        30,
+        dec!(0.05),
+    )
+    .await
+    .expect("find_unpaid_invoices_for_window");
+
+    let got: Vec<i64> = candidates.iter().map(|c| c.invoice.id).collect();
+    let expected: Vec<i64> = by_date_id.iter().take(50).map(|(_, id)| *id).collect();
+    assert_eq!(got.len(), 50, "le plafond de 50 candidates");
+    assert_eq!(
+        got, expected,
+        "les 50 premières de (date, id) croissants, dans cet ordre"
+    );
+    for (_, id) in by_date_id.iter().skip(50) {
+        assert!(!got.contains(id), "les deux plus récentes sont écartées");
+    }
+}
+
 /// AC #38 + AC #59 — multi-tenant scoping (KF-002 Pattern 1) :
 /// `find_unpaid_invoices_for_window(company_A)` ne doit pas retourner
 /// les invoices de company_B même si elles sont dans la même fenêtre.
