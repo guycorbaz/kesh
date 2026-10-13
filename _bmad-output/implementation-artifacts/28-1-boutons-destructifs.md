@@ -1073,6 +1073,16 @@ sans mutation — axe tronque le `html` d'un élément long avant le `data-testi
   `onboarding-path-b:65`, `:92`, `onboarding:57`, `:77`, `:150`. Aucun huitième ; KF-045 (`invoices:415`, `:439`)
   verte, l'heure passée midi UTC. 271 = 267 (référence 27-4) + 4 de la spec neuve.
 
+**Rebase sur `origin/main` `eab77cf1` (28-3, 28-2, 28-5a mergées), 2026-10-13** — HEAD rebasé `e5a3c198`. Conflits :
+`sprint-status.yaml` (union par clé, `yaml.safe_load` vérifié), registre (union : sections 28-2, 28-3, 28-5 de `main`
+puis 28-1 ; 44 choix C-28-1, aucun doublon), `CHANGELOG.md` (une seule section `## [0.13.3] — Non publié`, un seul
+`### Corrigé`, l'entrée 28-1 après celles de la 28-3 et de la 28-2), PDF des manuels FR (régénérés par `make fr` sous
+`flock`, `.tex` fusionnés sans conflit). Gardes de la 28-1 sur le code de la 28-2 : vertes, 25 usages de la variante,
+table de 14 entrées inchangée. Gates au HEAD rebasé, sous `flock`, bases remises à zéro (journaux
+`kesh-gate-logs/28-1-rebase-*`) : `test-fast.sh` 3541/3541 (6 ignorés) ; Vitest 1546/1546, 144 fichiers
+(1497 de `main` + 49 de la 28-1) ; `check` 0 erreur, 29 avertissements ; `lint-i18n-ownership` PASS ; `build` vert ;
+E2E complet **273 passés, 7 échoués = les 7 KF-029**, 19 ignorés (fin 15:13 UTC ; 273 = 269 de `main` + 4).
+
 ## Change Log
 
 - 2026-10-13 — Fiche créée en autonomie (Opus 5.5), `ready-for-dev`. Prémisse de l'issue corrigée (C-28-1-1 :
