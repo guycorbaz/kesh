@@ -1434,7 +1434,7 @@ du dépôt), C-28-4-32 (allemand, exemption). Écart de méthode : trois ajouts 
 
 **Documentation de la 28-4a** : `### Corrigé` du CHANGELOG (`[0.13.3]`, archivé refusé aux règlements) ; deux notes
 « *Depuis la v0.13.3* » dans `docs/api-external.md` (règlement client, paiement fournisseur : `404 NOT_FOUND` pour
-l'archivé, `409 BANK_ACCOUNT_CLOSED` pour le clos, borne de #651). Manuels et reste de l'API : 28-4b.
+l'archivé, `409 BANK_ACCOUNT_CLOSED` pour le clos — sans réserve de #651 depuis la revue P1, A-M1 : W8 et W27 lisent le compte sous `FOR UPDATE`). Manuels et reste de l'API : 28-4b.
 
 **Gates au dernier commit de code `01af1c0e`** (sous `flock`, bases `kesh_284` et `kesh_e2e_284` remises à zéro
 avant, port 3037) : `scripts/test-fast.sh` — fmt et clippy `-D warnings` verts, **nextest 3579 / 3579, 6 ignorés** ;

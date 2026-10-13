@@ -827,6 +827,15 @@ const ENSURE_OPEN_UNARCHIVED_SQL: &str =
 /// peut porter des règlements et des lots, et **il ne se rouvre pas** :
 /// refuser l'annulation d'un de ses règlements la rendrait définitivement
 /// impossible.
+///
+/// # Angle mort assumé — un compte à la fois archivé et clos (revue P1, B-3)
+///
+/// Aucun geste ne produit cet état : la clôture refuse un archivé, l'archivage
+/// refuse un clos, et les deux passent par le `FOR UPDATE` de la même ligne. Il
+/// ne naît que d'une écriture **SQL directe**. Ses annulations rendent alors
+/// `409 BANK_ACCOUNT_CLOSED`, et le compte ne se rouvre pas (la réouverture
+/// filtre `archived = FALSE`) : impasse. Remède, à la main :
+/// `UPDATE bank_accounts SET closed_on = NULL WHERE id = …`.
 pub async fn ensure_open_in_tx(
     tx: &mut Transaction<'_, MySql>,
     company_id: i64,

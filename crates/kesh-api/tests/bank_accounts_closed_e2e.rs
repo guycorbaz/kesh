@@ -519,8 +519,17 @@ fn assert_clos(status: u16, corps: &Value, bank: i64) {
 }
 
 /// Un instantané des tables qu'un geste refusé ne doit pas toucher.
-async fn etat(ctx: &Ctx) -> [i64; 8] {
+/// Les traces d'audit en DERNIER (index 9). Revue P1 (E-6) : les rejets
+/// (`auto_match_rejected_at`, seul effet de `reject` et d'`unreject`) et les
+/// lots confirmés y sont entrés.
+async fn etat(ctx: &Ctx) -> [i64; 10] {
     [
+        ctx.compter(
+            "SELECT COUNT(*) FROM bank_transactions WHERE auto_match_rejected_at IS NOT NULL",
+        )
+        .await,
+        ctx.compter("SELECT COUNT(*) FROM payment_batches WHERE status = 'confirmed'")
+            .await,
         ctx.compter("SELECT COUNT(*) FROM bank_imports").await,
         ctx.compter("SELECT COUNT(*) FROM bank_transactions").await,
         ctx.compter("SELECT COUNT(*) FROM bank_transactions WHERE status = 'reconciled'")
@@ -700,6 +709,20 @@ async fn les_refus_de_la_cloture_dans_l_ordre(pool: MySqlPool) {
     assert_eq!(s, 400);
     let (s, _) = clore(a, json!({})).await;
     assert_eq!(s, 400);
+    // Revue P1 (B-1) — année hors du domaine de `DATE` (1000..=9999), avec une
+    // version VALIDE : sans la borne, la date partirait à la base (500).
+    let v = ctx.version(a).await;
+    for date in ["+10000-01-01", "0999-12-31"] {
+        let (s, b) = clore(a, json!({ "version": v, "closedOn": date })).await;
+        assert_eq!(
+            (s, b["error"]["code"].clone()),
+            (400, json!("VALIDATION_ERROR")),
+            "{date} : {b}"
+        );
+    }
+    // Revue P1 (E-5) — la forme passe avant l'existence.
+    let (s, _) = clore(999_999, json!({ "version": 0 })).await;
+    assert_eq!(s, 400, "forme avant 404");
 
     // T-a16 — archivé, autre société.
     let archive = ctx.compte("CH5604835012345678009", false).await;
@@ -757,8 +780,19 @@ async fn les_refus_de_la_cloture_dans_l_ordre(pool: MySqlPool) {
             .contains("QR-facture")
     );
 
-    // T-a20 — pending, avec son décompte (une rejetée compte aussi).
+    // T-a20 — pending, avec son décompte (une rejetée compte aussi) ; et
+    // l'ORDRE (revue P1, E-5) : pending ET lot `generated` → le pending.
     ctx.import_pending(a, "-2.00", "pend").await;
+    sqlx::query(
+        "INSERT INTO payment_batches (company_id, bank_account_id, status, \
+         requested_execution_date, msg_id, payment_info_id) \
+         VALUES (?, ?, 'generated', '2026-02-01', 'M', 'P')",
+    )
+    .bind(ctx.company_id())
+    .bind(a)
+    .execute(&pool)
+    .await
+    .unwrap();
     sqlx::query(
         "UPDATE bank_transactions SET auto_match_rejected_at = NOW(3) WHERE bank_account_id = ?",
     )
@@ -774,22 +808,12 @@ async fn les_refus_de_la_cloture_dans_l_ordre(pool: MySqlPool) {
     );
     assert_eq!(b["error"]["details"]["pendingCount"], 1);
 
-    // T-a21 — lot `generated`.
+    // T-a21 — lot `generated` (posé plus haut), une fois les pending levées.
     sqlx::query("UPDATE bank_transactions SET status = 'reconciled' WHERE bank_account_id = ?")
         .bind(a)
         .execute(&pool)
         .await
         .unwrap();
-    sqlx::query(
-        "INSERT INTO payment_batches (company_id, bank_account_id, status, \
-         requested_execution_date, msg_id, payment_info_id) \
-         VALUES (?, ?, 'generated', '2026-02-01', 'M', 'P')",
-    )
-    .bind(ctx.company_id())
-    .bind(a)
-    .execute(&pool)
-    .await
-    .unwrap();
     let (s, b) = clore(a, json!({ "version": ctx.version(a).await })).await;
     assert_eq!(
         (s, b["error"]["code"].clone()),
@@ -810,6 +834,13 @@ async fn les_refus_de_la_cloture_dans_l_ordre(pool: MySqlPool) {
     ctx.clore(a).await;
     let (s, b) = clore(a, json!({ "version": ctx.version(a).await })).await;
     assert_clos(s, &b, a);
+    // Revue P1 (E-5) — la version passe avant « déjà clos ».
+    let (s, b) = clore(a, json!({ "version": ctx.version(a).await + 5 })).await;
+    assert_eq!(
+        (s, b["error"]["code"].clone()),
+        (409, json!("OPTIMISTIC_LOCK_CONFLICT")),
+        "{b}"
+    );
 }
 
 /// T-a22 (AC3) — rôles et clés : Consultation `403`, clé `read` `403
@@ -1192,56 +1223,69 @@ async fn accepter_et_rejeter_sur_un_compte_clos(pool: MySqlPool) {
     let ctx = monter(&pool).await;
     let a = ctx.compte(IBAN_RELEVE, false).await;
     let (_, t1) = ctx.import_pending(a, "-7.00", "acc").await;
+    let (_, t1b) = ctx.import_pending(a, "-5.00", "acc2").await;
     let (_, t2) = ctx.import_pending(a, "-8.00", "rej").await;
+    let (_, t2b) = ctx.import_pending(a, "-9.00", "rej2").await;
     ctx.clore_sql(a).await;
     let avant = etat(&ctx).await;
+    let ventilation = |t: i64, x: &str, y: &str| {
+        json!({
+            "type": "split",
+            "bankTransactionId": t,
+            "splits": [
+                { "counterpartyAccountId": ctx.seeded.accounts["4000"], "amount": x, "description": "Frais A" },
+                { "counterpartyAccountId": ctx.seeded.accounts["4000"], "amount": y, "description": "Frais B" }
+            ]
+        })
+    };
+    // Revue P1 (E-4) — DEUX propositions, et deux identifiants NON triés pour le
+    // rejet : chacune doit sortir en `failed[]`, dans l'ordre du lot (accept) ou
+    // trié (reject).
     let accepter = json!({
         "bankAccountId": a,
-        "proposals": [{
-            "type": "split",
-            "bankTransactionId": t1,
-            "splits": [
-                { "counterpartyAccountId": ctx.seeded.accounts["4000"], "amount": "3.00", "description": "Frais A" },
-                { "counterpartyAccountId": ctx.seeded.accounts["4000"], "amount": "4.00", "description": "Frais B" }
-            ]
-        }]
+        "proposals": [ventilation(t1b, "2.00", "3.00"), ventilation(t1, "3.00", "4.00")]
     });
-    let rejeter = json!({ "bankAccountId": a, "bankTransactionIds": [t2] });
+    let rejeter = json!({ "bankAccountId": a, "bankTransactionIds": [t2b, t2] });
 
     let (s, b) = ctx
         .post("/api/v1/reconciliation/accept", accepter.clone())
         .await;
     assert_eq!(s, 200, "{b}");
     assert_eq!(b["accepted"].as_array().unwrap().len(), 0);
-    assert_eq!(b["failed"][0]["bankTransactionId"], t1);
-    assert_eq!(b["failed"][0]["errorCode"], "BANK_ACCOUNT_CLOSED");
-    assert_eq!(b["failed"][0]["details"]["bankAccountId"], a);
+    let ids = |v: &Value| -> Vec<i64> {
+        v.as_array()
+            .unwrap()
+            .iter()
+            .map(|f| f["bankTransactionId"].as_i64().unwrap())
+            .collect()
+    };
+    assert_eq!(ids(&b["failed"]), vec![t1b, t1], "{b}");
+    for f in b["failed"].as_array().unwrap() {
+        assert_eq!(f["errorCode"], "BANK_ACCOUNT_CLOSED");
+        assert_eq!(f["details"]["bankAccountId"], a);
+    }
     let (s, b) = ctx
         .post("/api/v1/reconciliation/reject", rejeter.clone())
         .await;
     assert_eq!(s, 200, "{b}");
     assert_eq!(b["rejected"].as_array().unwrap().len(), 0);
-    assert_eq!(b["failed"][0]["errorCode"], "BANK_ACCOUNT_CLOSED");
+    assert_eq!(ids(&b["failed"]), vec![t2, t2b], "triés : {b}");
+    for f in b["failed"].as_array().unwrap() {
+        assert_eq!(f["errorCode"], "BANK_ACCOUNT_CLOSED");
+    }
     assert_eq!(etat(&ctx).await, avant);
-    let rejetee: Option<chrono::NaiveDateTime> =
-        sqlx::query_scalar("SELECT auto_match_rejected_at FROM bank_transactions WHERE id = ?")
-            .bind(t2)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
-    assert!(rejetee.is_none());
 
     ctx.rouvrir(a).await;
     let (s, b) = ctx.post("/api/v1/reconciliation/accept", accepter).await;
     assert_eq!(
         (s, b["accepted"].as_array().unwrap().len()),
-        (200, 1),
+        (200, 2),
         "{b}"
     );
     let (s, b) = ctx.post("/api/v1/reconciliation/reject", rejeter).await;
     assert_eq!(
         (s, b["rejected"].as_array().unwrap().len()),
-        (200, 1),
+        (200, 2),
         "{b}"
     );
 }
@@ -1307,6 +1351,65 @@ async fn annuler_un_rejet_refuse(pool: MySqlPool) {
     ctx.rouvrir(a).await;
     let (s, b) = ctx.req(reqwest::Method::POST, &chemin, None).await;
     assert_eq!(s, 204, "{b}");
+}
+
+/// Revue P1 (E-1) — **W30 seule**, sans R8 : une clôture commitée ENTRE le
+/// pré-vol (R8, compte encore ouvert) et la garde de la transaction.
+/// Montage déterministe : une transaction de test tient la ligne de la
+/// transaction bancaire ; l'annulation de rejet passe R8, puis attend ce verrou
+/// (`find_by_id_for_account_for_update`, vue sur la sonde) ; on clôt le compte
+/// par SQL direct (une rejetée est `pending`, I1), on relâche : la garde W30,
+/// première lecture non verrouillante de la transaction, voit le compte clos.
+/// Le refus sort par `conclude_locked_attempt` en `409 BANK_ACCOUNT_CLOSED`,
+/// rien d'écrit. Tue M33-b (W30 retirée), que R8 ne voit pas.
+#[sqlx::test(migrations = "../kesh-db/test-schema")]
+async fn annuler_un_rejet_pendant_une_cloture_refuse_par_w30(pool: MySqlPool) {
+    let ctx = monter(&pool).await;
+    let a = ctx.compte(IBAN_RELEVE, false).await;
+    let (_, t) = ctx.import_pending(a, "-11.00", "w30").await;
+    sqlx::query("UPDATE bank_transactions SET auto_match_rejected_at = NOW(3) WHERE id = ?")
+        .bind(t)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let mut tenue = pool.begin().await.unwrap();
+    sqlx::query("SELECT id FROM bank_transactions WHERE id = ? FOR UPDATE")
+        .bind(t)
+        .fetch_one(&mut *tenue)
+        .await
+        .unwrap();
+
+    let url = ctx
+        .app
+        .url(&format!("/api/v1/reconciliation/transactions/{t}/unreject"));
+    let (client, jwt) = (ctx.app.client.clone(), ctx.jwt.clone());
+    let requete = tokio::spawn(async move {
+        let resp = client.post(url).bearer_auth(jwt).send().await.unwrap();
+        let s = resp.status().as_u16();
+        (s, resp.json::<Value>().await.unwrap_or(Value::Null))
+    });
+    let vue = kesh_db::test_fixtures::attendre_une_requete_en_cours(
+        &pool,
+        &[
+            "FROM bank_transactions",
+            "AND bank_account_id = ? AND id = ? FOR UPDATE",
+        ],
+        || requete.is_finished(),
+    )
+    .await;
+    assert!(
+        vue,
+        "l'annulation devait attendre le verrou de la ligne : {:?}",
+        requete.await
+    );
+    ctx.clore_sql(a).await;
+    let avant = etat(&ctx).await;
+    tenue.commit().await.unwrap();
+
+    let (s, b) = requete.await.unwrap();
+    assert_clos(s, &b, a);
+    assert_eq!(etat(&ctx).await, avant, "rien d'écrit");
 }
 
 /// Lignes W9 — annuler un rapprochement de type `Entry` (manuel), puis un
@@ -1536,7 +1639,7 @@ async fn les_gestes_qui_creent_refusent_l_archive(pool: MySqlPool) {
     )
     .await;
     let avant_cle = etat(&ctx).await;
-    let (s, _) = ctx
+    let (s, b) = ctx
         .req_as(
             &cle,
             reqwest::Method::POST,
@@ -1549,7 +1652,12 @@ async fn les_gestes_qui_creent_refusent_l_archive(pool: MySqlPool) {
             })),
         )
         .await;
-    assert_eq!(s, 404);
+    // Revue P1 (A-L6) — le code aussi, pas seulement le statut.
+    assert_eq!(
+        (s, b["error"]["code"].clone()),
+        (404, json!("NOT_FOUND")),
+        "{b}"
+    );
     assert_eq!(etat(&ctx).await, avant_cle);
-    assert_eq!(avant[..7], avant_cle[..7], "aucune écriture métier");
+    assert_eq!(avant[..9], avant_cle[..9], "aucune écriture métier");
 }

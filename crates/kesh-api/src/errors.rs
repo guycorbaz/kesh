@@ -893,7 +893,7 @@ pub enum AppError {
     BankAccountHasTransactions { transaction_count: i64 },
 
     /// Tentative d'archivage du compte principal alors qu'au moins un autre
-    /// compte non-archivé existe → `412 Precondition Failed`, code
+    /// compte ni archivé ni clos existe (Story 28-4a) → `412 Precondition Failed`, code
     /// `BANK_ACCOUNT_CANNOT_ARCHIVE_PRIMARY`. AC#9 — l'utilisateur doit
     /// d'abord transférer le primary à un autre compte.
     #[error("Compte principal — définir un autre compte comme principal avant d'archiver celui-ci")]

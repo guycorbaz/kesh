@@ -54,12 +54,14 @@ const TX_COLUMNS: &str = "id, company_id, import_id, bank_account_id, booking_da
 /// - Aucune sur une empreinte déjà importée : `(company_id, file_hash)` n'est
 ///   plus unique depuis la Story 8-3 ; le doublon de fichier est refusé par la
 ///   route, **avant** cet appel (`422 BANK_IMPORT_DUPLICATE_FILE`).
-/// - [`DbError::ForeignKeyViolation`] si `bank_account_id` ou
-///   `imported_by_user_id` n'existe pas / appartient à une autre company.
-/// - [`DbError::NotFound`] si le compte bancaire est **archivé** (Story 28-4a,
-///   AC6-bis) — l'appelant le traduit en `404 BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` ;
-///   hors ce cas, `NotFound` ne naît que du `fetch_one` de relecture de
-///   l'entête, sur une ligne insérée dans la même transaction (inatteignable).
+/// - [`DbError::ForeignKeyViolation`] si `imported_by_user_id` n'existe pas /
+///   appartient à une autre company (le compte bancaire est contrôlé avant, par
+///   la garde de tête).
+/// - [`DbError::NotFound`] si le compte bancaire est **absent, d'une autre
+///   société ou archivé** (Story 28-4a, AC6-bis) — l'appelant le traduit en
+///   `404 BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND` ; hors ces cas, `NotFound` ne naît
+///   que du `fetch_one` de relecture de l'entête, sur une ligne insérée dans la
+///   même transaction (inatteignable).
 /// - [`DbError::BankAccountClosed`] si le compte bancaire est **clos** (Story
 ///   28-4a, #642).
 pub async fn create_with_transactions(

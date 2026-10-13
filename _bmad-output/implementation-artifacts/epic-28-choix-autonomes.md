@@ -2709,7 +2709,7 @@ reclassement de L1 sont des annotations de C-28-4-21, non des choix neufs.*
   et la règle « une entrée sans site rougit » interdirait de lui donner un site factice).
 - **Réversible** : oui (une variante).
 
-*Choix C-28-4-26 à C-28-4-31 : développement de la 28-4a (2026-10-13, Opus 5.5, autonomie, `bmad-dev-story`).*
+*Choix C-28-4-26 à C-28-4-32 : développement de la 28-4a (2026-10-13, Opus 5.5, autonomie, `bmad-dev-story`).*
 
 ### C-28-4-26 — Montage des tests HTTP de l'AC6 : l'état préalable par le dépôt, le geste refusé par HTTP
 

@@ -2042,6 +2042,55 @@ mod compte_bancaire_clos {
         assert_eq!(paid, None);
     }
 
+    /// Revue P1 (E-2) — l'« Interdit » des annulations : un règlement par virement
+    /// vers un compte bancaire **archivé** s'annule (un archivé ne se rouvre pas ;
+    /// le refuser rendrait l'annulation définitivement impossible). Tue la
+    /// mutation « `ensure_open_unarchived_in_tx` à la place de `ensure_open_in_tx` »
+    /// au site W25.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn l_annulation_d_un_virement_vers_un_compte_archive_passe(pool: MySqlPool) {
+        let seeded = seed_accounting_company(&pool).await.expect("seed");
+        let bank = compte_bancaire(&pool, &seeded).await;
+        let inv_id = validated_invoice(&pool, &seeded, dec!(100.00), ymd(2026, 3, 1)).await;
+        let out = invoice_settlements_write::settle_invoice(
+            &pool,
+            seeded.admin_user_id,
+            seeded.company_id,
+            inv_id,
+            SettlementChoice::BankTransfer {
+                bank_account_id: bank,
+            },
+            dec!(40.00),
+            ymd(2026, 3, 5),
+        )
+        .await
+        .expect("règlement par virement");
+        let sid: i64 =
+            sqlx::query_scalar("SELECT id FROM invoice_settlements WHERE journal_entry_id = ?")
+                .bind(out.journal_entry_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+        sqlx::query("UPDATE bank_accounts SET archived = TRUE WHERE id = ?")
+            .bind(bank)
+            .execute(&pool)
+            .await
+            .unwrap();
+        invoice_settlements_write::cancel_settlement(
+            &pool,
+            seeded.admin_user_id,
+            seeded.company_id,
+            inv_id,
+            sid,
+        )
+        .await
+        .expect("l'annulation d'un règlement vers un compte archivé doit passer");
+        assert_eq!(
+            count(&pool, "SELECT COUNT(*) FROM invoice_settlements").await,
+            0
+        );
+    }
+
     /// T-a48 (a) (AC7, second volet, W25) — **entrelacement par virement** :
     /// une clôture d'exercice concurrente contre l'annulation d'un règlement par
     /// virement vers un compte bancaire **ouvert** (sans quoi la garde ne passe

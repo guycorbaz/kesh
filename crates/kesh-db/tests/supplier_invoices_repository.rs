@@ -2863,6 +2863,54 @@ mod compte_bancaire_clos {
         tache.await.expect("tâche")
     }
 
+    /// Le compte bancaire du paiement de la facture `id` (montage).
+    async fn compte_du_paiement(pool: &MySqlPool, id: i64) -> i64 {
+        sqlx::query_scalar("SELECT settlement_bank_account_id FROM supplier_invoices WHERE id = ?")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+            .expect("compte du paiement")
+    }
+
+    async fn archiver(pool: &MySqlPool, bank: i64) {
+        sqlx::query("UPDATE bank_accounts SET archived = TRUE WHERE id = ?")
+            .bind(bank)
+            .execute(pool)
+            .await
+            .unwrap();
+    }
+
+    /// Revue P1 (E-2) — l'« Interdit » des annulations, W29 : le règlement d'une
+    /// facture payée par virement vers un compte **archivé** s'annule. Tue la
+    /// mutation « `ensure_open_unarchived_in_tx` » au site W29.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn w29_annule_un_virement_vers_un_compte_archive(pool: MySqlPool) {
+        let (ctx, id) = monter_par_virement(&pool).await;
+        archiver(&pool, compte_du_paiement(&pool, id).await).await;
+        let done = supplier_invoices::cancel_settlement(
+            &pool,
+            ctx.seeded.company_id,
+            id,
+            ctx.seeded.admin_user_id,
+        )
+        .await
+        .expect("annulation du paiement vers un compte archivé");
+        assert_eq!(done.invoice.invoice.status, "open");
+    }
+
+    /// Revue P1 (E-2) — idem, W28 : la facture payée par virement vers un compte
+    /// **archivé** s'annule. Tue la mutation au site W28.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn w28_annule_une_facture_payee_vers_un_compte_archive(pool: MySqlPool) {
+        let (ctx, id) = monter_par_virement(&pool).await;
+        archiver(&pool, compte_du_paiement(&pool, id).await).await;
+        let done =
+            supplier_invoices::cancel(&pool, ctx.seeded.company_id, id, ctx.seeded.admin_user_id)
+                .await
+                .expect("annulation de la facture payée vers un compte archivé");
+        assert_eq!(done.invoice.status, "cancelled");
+    }
+
     /// T-a48 (b) (AC7, second volet, W29) — l'annulation du règlement d'une
     /// facture payée par virement attend la clôture concurrente de l'exercice
     /// du règlement, puis refuse. Garde avancée avant (1-bis) : la vue naîtrait
