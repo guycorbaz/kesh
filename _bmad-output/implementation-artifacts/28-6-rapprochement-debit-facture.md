@@ -2,9 +2,7 @@
 
 ## Status
 
-**review** — développement fait le 2026-10-13 (`bmad-dev-story`, Opus 5.5, autonomie), sur `eab77cf1` (28-2, 28-3 et
-28-5a fusionnées) ; dernier commit de code `3c3d0a86`. Gates complets au `4908ae62` (code identique). Revue de code
-P1 à lancer : `28-6-review-prompt-p1.md` (Sonnet, lentilles B, E et A).
+**done** — revue de code P1 close le 2026-10-13 (Sonnet, B/E/A : 0 CRITICAL, 0 HIGH, 0 MEDIUM, 11 LOW, remédiés sans ligne de production exécutée) ; branche rebasée sur `c28d0a20` ; dernier commit de code `ee83eafc` ; gates complets verts au HEAD rebasé.
 *Historique : fiche créée le 2026-10-13 sur `5aad8b35`, branche `story/28-6`, worktree `/home/gcorbaz/devel/kesh-28-6`
 (port **3039**, bases `kesh_286` / `kesh_e2e_286`) ; 9 AC ; choix C-28-6-1 à C-28-6-15 au registre
 `epic-28-choix-autonomes.md` ; validation P1 (R et F, Sonnet : 1 MEDIUM, 9 LOW) remédiée, passe ciblée P2 (Haiku :
@@ -499,6 +497,48 @@ scratchpad `28-6/` (`reset-db-28-6.sh`, `mutations-28-6.py`, `gates-28-6.sh`, `e
   Vitest +1 cas (`EXPECTED_KEYS`) ; littéraux `error_code:` distincts du fichier de routes **28** ; **11** fichiers hors
   `_bmad-output` (`git diff --stat`, 495 insertions, 28 suppressions). Aucun fichier de `kesh-db`, de migrations, de
   `test-schema`, ni `Cargo.toml`, ni `docs/manual/`.
+  *Annotation du 2026-10-13 (revue de code P1, A2)* : périmètre de « 90 → 94 » = `grep -c '#\[sqlx::test'`, qui compte
+  aussi le commentaire de tête du fichier (l. 19) ; en attributs (`grep -c '^#\[sqlx::test'`), **89 → 93** tests. Le
+  delta +4 est le même. Les hashes de cette entrée sont ceux d'avant le rebase sur `c28d0a20` (correspondance plus
+  bas).
+- **Revue de code P1 — remédiation** (Opus 5.5, aucune ligne de production exécutée ne change) :
+  - B-LOW-1 = E1 : `montage_286` amorce `journal_entry_number_sequences` à 10, AC2-1 l'asserte au montage ;
+    doc-comment d'`Etat286` borné à ce qu'il prouve (un filet contre une écriture partielle, non la garde) ;
+    **M9** (garde retirée et `ROLLBACK TO SAVEPOINT` remplacé par `RELEASE SAVEPOINT`) rougit 8 tests, dont AC2-1
+    sur l'état (`sequences [(1, 11)]` contre `[(1, 10)]`, `journal_entries` 2 contre 1) et AC2-4 sur les écarts
+    (`(2, 2, 1, 2)` contre `(1, 2, 1, 2)`) (C-28-6-16).
+  - E2 : facture brouillon de décalage dans `montage_286`, `tx_id != inv_id` asserté ; **M10** (`invoice_id` passé à
+    la garde) rougit AC2-1, -2, -4, -5.
+  - E3 : test de course `a_debit_reconciled_while_waiting_for_the_lock_is_refused_for_its_status` (verrou du compte
+    tenu, transaction passée `reconciled` pendant l'attente → `RECONCILIATION_ALREADY_RECONCILED`, `details` nul,
+    rien d'écrit) ; **M11** (garde avant l'étape 4) le rougit seul.
+  - E4 : AC2-4 compare les écarts (écritures, lignes, règlements, traces = 1, 2, 1, 2 ; numéro 10 → 11).
+  - E5 : commentaire de `post_accept_filters_signed_amount` borné ; doc-comment de `refuse_non_credit_settlement` et
+    `docs/api-external.md` réduits aux cas exécutés (référence **et** contrepartie ; ni l'une ni l'autre), et le
+    contrat dit le cas « rapprochée pendant l'attente du verrou ».
+  - A1 : ligne M7 ajoutée à `kesh-gate-logs/28-6-mutations.txt` ; A2 : annotation ci-dessus ; A3 : annotation datée
+    de C-28-6-5 ; A4 : annotations datées de C-28-6-12 et de l'AC3 (renvoi à C-28-6-15) ; A5 : liste ci-dessous.
+  - Campagne rejouée sur les tests renforcés (`kesh-gate-logs/28-6-mutations-p1.txt`) : M1-M6, M8, M9, M10, M11
+    **10/10 tuées** (M7, frontend, inchangée).
+  - ⚠️ Incident : la restauration `git checkout --` du script de mutations a effacé la retouche du doc-comment de
+    `reconciliation.rs`, non commitée ; réappliquée dans un commit séparé (`ee83eafc`). Leçon : commiter avant toute
+    campagne de mutations.
+- **Rebase sur `c28d0a20`** (28-1 fusionnée) : un seul conflit, au registre, réuni par union ; `sprint-status.yaml`,
+  CHANGELOG (une section `[0.13.3]`), catalogues et `sitesTotal` (2079 sur `main`, 2080 ici) sans conflit.
+  Correspondance des commits : `3c3d0a86` → `4eafec4f` (code), `88ff9d62` → `270403d9`, `289a7fed` → `2e662035`,
+  `3d9753fc` → `be796cbd` ; remédiation P1 `ce5e8eb7` (tests) et `ee83eafc` (doc-comment), dernier commit de code.
+- **Gates au HEAD rebasé** : au `ee83eafc` (dernier commit de code), sous `flock`, bases `kesh_286` / `kesh_e2e_286` remises à zéro (drop/create, 80 migrations, seed ; conteneur non redémarré) : `scripts/test-fast.sh` vert — fmt, clippy, nextest **3553/3553** (6 ignorés) ; `npm run check` 0 erreur (29 avertissements) ; `lint-i18n-ownership` PASS ; `test:unit` **1547/1547** (144 fichiers) ; `npm run build` vert ; **E2E complet** (port 3039) : **273 passés, 7 échecs, 19 ignorés** — les 7 de la KF-029 (#97) : `mode-expert.spec.ts:26` et `:41`, `onboarding-path-b.spec.ts:65` et `:92`, `onboarding.spec.ts:57`, `:77` et `:150` ; aucun échec hors liste. Journaux `kesh-gate-logs/28-6-rb-*`.
+- Décomptes au HEAD rebasé : 94 attributs `#[sqlx::test]` (95 au grep commentaire compris) ; 27 `#[test]` dans
+  `reconciliation.rs` ; de `3d9753fc` (avant rebase) au HEAD : **+5** tests d'intégration, **+7** unitaires.
+
+### Actions demandées à l'orchestrateur
+
+1. Un **commentaire sur #482** avec le code observé au rouge (`DATABASE_ERROR`, contrainte
+   `chk_jel_debit_credit_exclusive`, rien d'écrit — la prémisse de l'issue « règlement négatif écrit » est corrigée,
+   C-28-6-1).
+2. La PR porte **`closes #482`** au titre ou au corps (jamais dans un commit).
+3. À la préparation de la release v0.13.3 : la ligne **C-28-6-11** au paragraphe d'intégrations de la sous-section
+   « Passer à la 0.13.3 » du manuel d'administration (`RECONCILIATION_TRANSACTION_NOT_CREDIT`), puis `make fr`.
 
 ### File List
 
@@ -548,3 +588,11 @@ scratchpad `28-6/` (`reset-db-28-6.sh`, `mutations-28-6.py`, `gates-28-6.sh`, `e
   (C-28-6-15). Mutations 8/8 tuées. Gates au dernier commit de code : nextest 3552/3552, Vitest 1498/1498, check,
   lint, build verts, E2E 269 passés + 7 KF-029. Statut **review** ; revue de code P1 à lancer
   (`28-6-review-prompt-p1.md`, Sonnet, B/E/A).
+- 2026-10-13 — **Revue de code P1** (Sonnet 5.5, lentilles B, E et A ; rapports `kesh-gate-logs/28-6-review-p1-{B,E,A}.md`) :
+  **0 CRITICAL, 0 HIGH, 0 MEDIUM, 11 LOW** (B : 1 ; E : 5 ; A : 5 ; B-LOW-1 = E1). Remédiés (Opus 5.5), tests, fiche,
+  registre et documentation seulement : compteur de numéros amorcé et `Etat286` borné (M9), identifiants décalés (M10),
+  test de course statut → sens (M11), écarts d'écritures d'AC2-4, comptes rendus bornés aux cas exécutés, ligne M7
+  au journal, périmètre des décomptes, annotations datées de C-28-6-5, C-28-6-12 et de l'AC3, actions demandées ;
+  C-28-6-16. Mutations M1-M6 et M8-M11 rejouées, 10/10 tuées. Rebase sur `c28d0a20` (28-1). Gates au HEAD rebasé :
+  nextest 3553/3553, Vitest 1547/1547, check, lint, build verts, E2E 273 passés + 7 KF-029. **Boucle close** (aucun
+  MEDIUM). Statut **done**.
