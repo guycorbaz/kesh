@@ -2193,4 +2193,17 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
   n'écrit pas ; les tests nommés suffisent à la tenir).
 - **Réversible** : oui.
 
+### C-28-6-15 — Le zéro négatif de l'AC3 se construit par `set_sign_negative`, non par `dec!(-0.00)` (développement)
+
+- **Contexte** : l'AC3 prescrivait `dec!(-0.00)`, avec une précondition `assert!(dec!(-0.00).is_sign_negative())`.
+  Au premier run du module `non_credit_settlement_tests`, **la précondition a rougi** : le macro de
+  `rust_decimal_macros` normalise `-0.00` en un zéro sans signe. Le cas aurait été un doublon de `0.00`, passant à
+  vide — exactement ce que la précondition devait empêcher.
+- **Retenu** : `Decimal::new(0, 2)` puis `set_sign_negative(true)` ; la précondition (`is_sign_negative()` et
+  `is_zero()`) est gardée telle quelle, et un commentaire dit pourquoi le macro n'est pas employé. La mutation M8
+  (test de signe) est jouée sur ce montage.
+- **Écartées** : supprimer le cas (la défense en profondeur de C-28-6-12 tomberait) ; `Decimal::from_str("-0.00")`
+  (comportement de normalisation non vérifié, même risque que le macro).
+- **Réversible** : oui (test seul).
+
 [#482]: https://github.com/guycorbaz/kesh/issues/482
