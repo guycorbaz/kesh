@@ -307,7 +307,9 @@ async fn find_unpaid_invoices_filters_by_30_day_window(pool: MySqlPool) {
 /// 52 factures de même reste dû, datées sur `[D − 30, D + 1]` (plusieurs par
 /// jour), insérées dans l'ordre des dates **décroissantes** : `id ASC` et
 /// `date ASC` divergent, si bien qu'un tri sur le seul `id` (ou un parcours en
-/// ordre de clé primaire) ne rend pas les mêmes 50.
+/// ordre de clé primaire) ne rend pas les mêmes 50. Trois factures sont datées
+/// `D + 1` : la coupure du `LIMIT 50` **traverse** ce groupe (une retenue, deux
+/// écartées), et c'est le départage `id ASC` qui désigne la retenue.
 #[sqlx::test(migrations = "./test-schema")]
 async fn find_unpaid_invoices_orders_by_date_then_id_before_limit(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Acme").await;
@@ -319,8 +321,10 @@ async fn find_unpaid_invoices_orders_by_date_then_id_before_limit(pool: MySqlPoo
 
     let mut inserted: Vec<(NaiveDate, i64)> = Vec::new();
     for j in 0..52i64 {
-        // De `D + 1` (j = 0) à `D − 30` (j = 51), en dates décroissantes.
-        let date = d + chrono::Duration::days(1 - j * 31 / 51);
+        // Trois à `D + 1` (j = 0, 1, 2), puis de `D` (j = 3) à `D − 30`
+        // (j = 51), en dates décroissantes.
+        let back = if j < 3 { 0 } else { 1 + (j - 3) * 30 / 48 };
+        let date = d + chrono::Duration::days(1 - back);
         let id = insert_test_invoice(
             &pool,
             company_id,
@@ -341,6 +345,17 @@ async fn find_unpaid_invoices_orders_by_date_then_id_before_limit(pool: MySqlPoo
     let mut by_date_id = inserted.clone();
     by_date_id.sort();
     assert_ne!(by_id, by_date_id, "montage : `id ASC` ≠ `(date, id) ASC`");
+    // Montage : la coupure tombe au milieu du groupe `D + 1` — la 50e est la
+    // première de ce groupe, les 51e et 52e en sont aussi.
+    let latest = d + chrono::Duration::days(1);
+    assert_eq!(
+        by_date_id.first().unwrap().0,
+        d - chrono::Duration::days(30)
+    );
+    assert!(
+        by_date_id[49..].iter().all(|(date, _)| *date == latest) && by_date_id[48].0 < latest,
+        "montage : la coupure traverse le groupe de D + 1"
+    );
 
     let candidates = reconciliation_repo::find_unpaid_invoices_for_window(
         &pool,

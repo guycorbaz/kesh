@@ -3049,7 +3049,9 @@ async fn proposals_use_the_value_date_like_the_acceptance(pool: MySqlPool) {
     }
 
     // Le règlement écrit est daté par la date de valeur — (b) — et, à défaut,
-    // par la date de comptabilisation — (d).
+    // par la date de comptabilisation — (d) : le règlement (`settled_on`), le
+    // paiement de la facture (`paid_at`, à minuit) et l'écriture d'encaissement
+    // rapprochée de la transaction (`entry_date`).
     for (i, settled) in [(1, day(-5)), (3, b)] {
         let settled_on: NaiveDate =
             sqlx::query_scalar("SELECT settled_on FROM invoice_settlements WHERE invoice_id = ?")
@@ -3058,6 +3060,29 @@ async fn proposals_use_the_value_date_like_the_acceptance(pool: MySqlPool) {
                 .await
                 .expect("un règlement écrit");
         assert_eq!(settled_on, settled, "cas {i} : date du règlement");
+        let paid_at: Option<NaiveDateTime> =
+            sqlx::query_scalar("SELECT paid_at FROM invoices WHERE id = ?")
+                .bind(inv_ids[i])
+                .fetch_one(&pool)
+                .await
+                .expect("la facture");
+        assert_eq!(
+            paid_at,
+            Some(settled.and_hms_opt(0, 0, 0).unwrap()),
+            "cas {i} : paid_at de la facture"
+        );
+        let entry_date: NaiveDate = sqlx::query_scalar(
+            "SELECT je.entry_date FROM bank_transactions bt \
+             JOIN journal_entries je ON je.id = bt.matched_entry_id WHERE bt.id = ?",
+        )
+        .bind(tx_ids[i])
+        .fetch_one(&pool)
+        .await
+        .expect("l'écriture d'encaissement rapprochée");
+        assert_eq!(
+            entry_date, settled,
+            "cas {i} : date de l'écriture d'encaissement"
+        );
     }
 }
 
