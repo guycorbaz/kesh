@@ -1590,4 +1590,238 @@ mod tests {
         let snap = ReadSnapshot::begin(&pool).await.expect("instantané");
         sauvegarder_pendant_suppression(&pool, snap, Etape::Ouvert, company_id, import_id).await;
     }
+
+    /// Numéro d'erreur MariaDB d'une erreur sqlx (`number()`, non le SQLSTATE
+    /// que rend `code()`).
+    fn numero_mariadb(err: &sqlx::Error) -> Option<u16> {
+        err.as_database_error()
+            .and_then(|d| d.try_downcast_ref::<sqlx::mysql::MySqlDatabaseError>())
+            .map(|d| d.number())
+    }
+
+    /// Un pool d'une seule connexion sur la base du test : la connexion
+    /// réacquise après l'instantané est nécessairement celle qui l'a porté.
+    async fn pool_d_une_connexion(pool: &MySqlPool) -> MySqlPool {
+        sqlx::mysql::MySqlPoolOptions::new()
+            .max_connections(1)
+            .connect_with((*pool.connect_options()).clone())
+            .await
+            .expect("pool d'une connexion")
+    }
+
+    /// `CONNECTION_ID()` (`BIGINT UNSIGNED`, d'où le `CAST`).
+    async fn id_de_connexion(conn: &mut sqlx::MySqlConnection) -> i64 {
+        sqlx::query_scalar("SELECT CAST(CONNECTION_ID() AS SIGNED)")
+            .fetch_one(conn)
+            .await
+            .expect("CONNECTION_ID()")
+    }
+
+    /// `@@in_transaction` de la connexion : 1 dans une transaction ouverte.
+    async fn en_transaction(conn: &mut sqlx::MySqlConnection) -> i64 {
+        sqlx::query_scalar("SELECT CAST(@@in_transaction AS SIGNED)")
+            .fetch_one(conn)
+            .await
+            .expect("@@in_transaction")
+    }
+
+    /// AC5 (d1)/(d2) : instantané ouvert sur la connexion unique d'un pool, une
+    /// lecture, puis `finish` (d1) ou abandon (d2) ; la connexion réacquise est
+    /// la même, et n'est plus en transaction.
+    async fn connexion_rendue_hors_transaction(pool: &MySqlPool, avec_finish: bool) {
+        let p1 = pool_d_une_connexion(pool).await;
+        let mut conn = p1.acquire().await.expect("connexion");
+        let id_avant = id_de_connexion(&mut conn).await;
+        let mut snap = ReadSnapshot::begin_on(conn).await.expect("instantané");
+        assert_eq!(
+            en_transaction(snap.conn()).await,
+            1,
+            "assertion de montage : l'instantané est une transaction ouverte"
+        );
+        read_min_required(&mut snap).await.expect("lecture");
+        if avec_finish {
+            snap.finish().await.expect("finish");
+        } else {
+            drop(snap);
+        }
+        let mut conn = p1.acquire().await.expect("réacquisition");
+        assert_eq!(
+            id_de_connexion(&mut conn).await,
+            id_avant,
+            "assertion de montage : la connexion réacquise doit être celle de l'instantané"
+        );
+        assert_eq!(
+            en_transaction(&mut conn).await,
+            0,
+            "la connexion revient au pool en transaction (finish = {avec_finish})"
+        );
+        drop(conn);
+        p1.close().await;
+    }
+
+    /// AC5 (c) — une écriture dans l'instantané est refusée par le serveur
+    /// (`1792`, `ER_CANT_EXECUTE_IN_READ_ONLY_TRANSACTION`).
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn instantane_refuse_toute_ecriture(pool: MySqlPool) {
+        crate::test_fixtures::seed_accounting_company(&pool)
+            .await
+            .expect("seed société");
+        let mut snap = ReadSnapshot::begin(&pool).await.expect("instantané");
+        let err = sqlx::query("UPDATE companies SET name = name")
+            .execute(snap.conn())
+            .await
+            .expect_err("une écriture dans l'instantané doit être refusée");
+        assert_eq!(
+            numero_mariadb(&err),
+            Some(1792),
+            "erreur inattendue : {err}"
+        );
+        snap.finish().await.expect("finish");
+    }
+
+    /// AC5 (d1) — après `finish`, la connexion revient au pool hors transaction.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn instantane_clos_rend_une_connexion_hors_transaction(pool: MySqlPool) {
+        connexion_rendue_hors_transaction(&pool, true).await;
+    }
+
+    /// AC5 (d2) — abandonné sans `finish` (chemin d'erreur), l'instantané est
+    /// annulé et la connexion revient hors transaction.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn instantane_abandonne_rend_une_connexion_hors_transaction(pool: MySqlPool) {
+        connexion_rendue_hors_transaction(&pool, false).await;
+    }
+
+    /// AC5 (e) — toutes les tables sauvegardées sont InnoDB sur la base de test
+    /// (garde de test, non d'exécution : C-28-3-25), et `export_installation`
+    /// les rend toutes, dans l'ordre de [`TABLES_TO_TRUNCATE`].
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn tables_sauvegardees_innodb_et_toutes_exportees(pool: MySqlPool) {
+        let moteurs: std::collections::HashMap<String, Option<String>> = sqlx::query_as(
+            "SELECT TABLE_NAME, ENGINE FROM information_schema.TABLES \
+             WHERE TABLE_SCHEMA = DATABASE()",
+        )
+        .fetch_all(&pool)
+        .await
+        .expect("information_schema.TABLES")
+        .into_iter()
+        .collect();
+        let attendues: Vec<&str> = TABLES_TO_TRUNCATE
+            .iter()
+            .copied()
+            .chain(["_kesh_version"])
+            .collect();
+        let trouvees = attendues
+            .iter()
+            .filter(|t| moteurs.contains_key(**t))
+            .count();
+        assert_eq!(
+            trouvees,
+            TABLES_TO_TRUNCATE.len() + 1,
+            "assertion de montage : tables attendues trouvées dans le schéma"
+        );
+        for table in &attendues {
+            let moteur = moteurs.get(*table).cloned().flatten();
+            assert_eq!(
+                moteur.as_deref(),
+                Some("InnoDB"),
+                "table {table} : moteur {moteur:?} — l'instantané ne la couvrirait pas"
+            );
+        }
+
+        let export = export_installation(&pool)
+            .await
+            .expect("export_installation");
+        let noms: Vec<&str> = export.tables.iter().map(|(nom, _)| *nom).collect();
+        assert_eq!(noms, TABLES_TO_TRUNCATE);
+    }
+
+    /// AC5 (f) — le niveau d'isolation de la **session** n'est pas modifié par
+    /// l'instantané : le `SET TRANSACTION` ne vaut que pour sa transaction.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn instantane_ne_change_pas_l_isolation_de_la_session(pool: MySqlPool) {
+        let p1 = pool_d_une_connexion(&pool).await;
+        let mut conn = p1.acquire().await.expect("connexion");
+        sqlx::Executor::execute(
+            &mut *conn,
+            "SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED",
+        )
+        .await
+        .expect("session READ COMMITTED");
+        let id_avant = id_de_connexion(&mut conn).await;
+        let mut snap = ReadSnapshot::begin_on(conn).await.expect("instantané");
+        read_min_required(&mut snap).await.expect("lecture");
+        snap.finish().await.expect("finish");
+
+        let mut conn = p1.acquire().await.expect("réacquisition");
+        assert_eq!(
+            id_de_connexion(&mut conn).await,
+            id_avant,
+            "assertion de montage : même connexion"
+        );
+        let niveau: String = sqlx::query_scalar("SELECT @@tx_isolation")
+            .fetch_one(&mut *conn)
+            .await
+            .expect("@@tx_isolation");
+        assert_eq!(niveau, "READ-COMMITTED", "niveau de session modifié");
+        drop(conn);
+        p1.close().await;
+    }
+
+    /// AC5 (h) — une erreur du `ROLLBACK` final est rendue par `finish` : la
+    /// connexion de l'instantané est tuée (`KILL`) depuis une autre connexion.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn finish_rend_l_erreur_du_rollback(pool: MySqlPool) {
+        let mut snap = ReadSnapshot::begin(&pool).await.expect("instantané");
+        read_min_required(&mut snap).await.expect("lecture");
+        let id = id_de_connexion(snap.conn()).await;
+        sqlx::Executor::execute(&pool, format!("KILL {id}").as_str())
+            .await
+            .expect("assertion de montage : KILL de la connexion de l'instantané");
+        assert!(
+            snap.finish().await.is_err(),
+            "finish doit rendre l'erreur du ROLLBACK sur une connexion tuée"
+        );
+    }
+
+    /// Corps de production d'une fonction de `source` : code avant la première
+    /// ligne `#[cfg(test)]`, lignes `//` (donc `///`) écartées, de la ligne qui
+    /// commence par `entete` jusqu'à la première ligne réduite à `}`.
+    fn corps_de_production(source: &str, entete: &str) -> String {
+        let prod: Vec<&str> = source
+            .lines()
+            .take_while(|l| l.trim() != "#[cfg(test)]")
+            .filter(|l| !l.trim_start().starts_with("//"))
+            .collect();
+        let debut = prod
+            .iter()
+            .position(|l| l.starts_with(entete))
+            .unwrap_or_else(|| panic!("assertion de montage : `{entete}` introuvable"));
+        let fin = debut
+            + prod[debut..]
+                .iter()
+                .position(|l| *l == "}")
+                .expect("assertion de montage : fin de fonction introuvable");
+        assert!(fin > debut + 1, "assertion de montage : corps vide");
+        prod[debut..=fin].join("\n")
+    }
+
+    /// AC5 (g)(i) — garde lexicale : `export_installation` ne nomme le pool que
+    /// deux fois — son paramètre et l'unique `ReadSnapshot::begin(pool)` — et
+    /// n'ouvre donc qu'un instantané (M11).
+    #[test]
+    fn export_installation_n_ouvre_qu_un_instantane() {
+        let corps = corps_de_production(
+            include_str!("backup.rs"),
+            "pub async fn export_installation(",
+        );
+        let n = regex::Regex::new(r"\bpool\b")
+            .expect("regex")
+            .find_iter(&corps)
+            .count();
+        assert_eq!(
+            n, 2,
+            "`pool` doit apparaître exactement deux fois (paramètre, ReadSnapshot::begin) :\n{corps}"
+        );
+    }
 }

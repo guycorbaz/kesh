@@ -786,7 +786,34 @@ porté le périmètre à **24** modules de dépôt (C-28-3-1) : c'est le motif d
 
 ### Agent Model Used
 
+Opus 5.5 (`bmad-dev-story`, autonomie), worktree `/home/gcorbaz/devel/kesh-28-3`, port 3036, bases `kesh_283` /
+`kesh_e2e_283`.
+
 ### Debug Log References
+
+**T1 — rouge avant la correction** (commit `a914762b`, `ReadSnapshot` dégradé : aucune transaction ; commande
+`cargo nextest run -p kesh-db --lib --no-fail-fast -E 'test(/sauvegarde_/)'`, journal complet
+`kesh-gate-logs/28-3-t1-rouge.log`, sortie copiée) :
+
+```text
+thread 'backup::tests::sauvegarde_ignore_une_suppression_en_session_read_committed' panicked at crates/kesh-db/src/backup.rs:1545:9:
+assertion `left == right` failed: la sauvegarde doit porter l'import et ses deux transactions (orphelins : ["bank_transactions.import_id=1 → bank_imports.id absent", "bank_transactions.import_id=1 → bank_imports.id absent"])
+  left: (0, 2)
+ right: (1, 2)
+thread 'backup::tests::sauvegarde_ignore_une_suppression_entre_deux_tables' panicked at crates/kesh-db/src/backup.rs:1545:9:
+assertion `left == right` failed: la sauvegarde doit porter l'import et ses deux transactions (orphelins : ["bank_transactions.import_id=1 → bank_imports.id absent", "bank_transactions.import_id=1 → bank_imports.id absent"])
+  left: (0, 2)
+ right: (1, 2)
+thread 'backup::tests::sauvegarde_prend_l_instantane_a_l_ouverture' panicked at crates/kesh-db/src/backup.rs:1545:9:
+assertion `left == right` failed: la sauvegarde doit porter l'import et ses deux transactions (orphelins : [])
+  left: (0, 0)
+ right: (1, 2)
+     Summary [   1.475s] 3 tests run: 0 passed, 3 failed, 384 skipped
+```
+
+(a-défaut) et (a-RC) : les deux transactions lues avant la suppression, l'import absent — deux orphelins, exactement
+le défaut de #633. (b) : la suppression faite avant la première lecture est vue (vue prise par requête) — ni import
+ni transactions.
 
 ### Completion Notes List
 
