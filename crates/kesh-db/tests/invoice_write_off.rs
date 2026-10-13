@@ -785,9 +785,8 @@ async fn a_written_off_invoice_is_no_reconciliation_candidate(pool: MySqlPool) {
     let before = reconciliation::find_unpaid_invoices_for_window(
         &pool,
         seeded.company_id,
-        D(),
+        reconciliation::InvoiceDateWindow::for_payment_date(D()),
         dec!(2.00),
-        30,
         dec!(0),
     )
     .await
@@ -802,9 +801,8 @@ async fn a_written_off_invoice_is_no_reconciliation_candidate(pool: MySqlPool) {
     let after = reconciliation::find_unpaid_invoices_for_window(
         &pool,
         seeded.company_id,
-        D(),
+        reconciliation::InvoiceDateWindow::for_payment_date(D()),
         dec!(2.00),
-        30,
         dec!(0),
     )
     .await

@@ -20,6 +20,7 @@ use kesh_db::entities::{
     BankImportSourceFormat, ContactType, NewBankAccount, NewBankImport, NewBankTransaction,
     NewContact, NewUser, OrgType, Role,
 };
+use kesh_db::repositories::reconciliation::InvoiceDateWindow;
 use kesh_db::repositories::{
     bank_accounts, bank_imports, contacts, reconciliation as reconciliation_repo, users,
 };
@@ -251,9 +252,11 @@ const HASH_X: &str = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123
 // Tests
 // ---------------------------------------------------------------------------
 
-/// AC #38 — fenêtre temporelle ± 30 jours autour de la booking_date
-/// de la transaction. Une invoice 31 jours avant ou après la tx
-/// n'est PAS retournée.
+/// AC #38, réécrit par la Story 28-7 (#548) — la fenêtre de dates est celle
+/// de l'acceptation, [`InvoiceDateWindow`] : une facture datée de `D − 30`
+/// à `D + 1` est candidate, `D` étant la date de paiement ; `D − 31` (paiement
+/// plus de 30 jours après la facture) et `D + 2` (paiement plus d'un jour
+/// avant la facture) ne le sont pas. Les deux bornes, de part et d'autre.
 #[sqlx::test(migrations = "./test-schema")]
 async fn find_unpaid_invoices_filters_by_30_day_window(pool: MySqlPool) {
     let company_id = create_test_company(&pool, "Acme").await;
@@ -262,67 +265,38 @@ async fn find_unpaid_invoices_filters_by_30_day_window(pool: MySqlPool) {
     let fy_id = insert_fake_fiscal_year(&pool, company_id).await;
     let je_id = insert_fake_journal_entry(&pool, company_id, fy_id).await;
 
-    let tx_date = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
-
-    // Inside window : tx_date - 15 jours.
-    let inv_in = insert_test_invoice(
-        &pool,
-        company_id,
-        contact_id,
-        NaiveDate::from_ymd_opt(2026, 4, 30).unwrap(),
-        dec!(100.00),
-        "validated",
-        Some(je_id),
-        None,
-    )
-    .await;
-
-    // Outside window : tx_date - 31 jours (avant la fenêtre).
-    let _inv_out_before = insert_test_invoice(
-        &pool,
-        company_id,
-        contact_id,
-        NaiveDate::from_ymd_opt(2026, 4, 14).unwrap(),
-        dec!(100.00),
-        "validated",
-        Some(je_id),
-        None,
-    )
-    .await;
-
-    // Outside window : tx_date + 31 jours (après la fenêtre).
-    let _inv_out_after = insert_test_invoice(
-        &pool,
-        company_id,
-        contact_id,
-        NaiveDate::from_ymd_opt(2026, 6, 15).unwrap(),
-        dec!(100.00),
-        "validated",
-        Some(je_id),
-        None,
-    )
-    .await;
+    let d = NaiveDate::from_ymd_opt(2026, 5, 15).unwrap();
+    let mut by_offset = std::collections::BTreeMap::new();
+    for k in [-31i64, -30, 1, 2] {
+        let id = insert_test_invoice(
+            &pool,
+            company_id,
+            contact_id,
+            d + chrono::Duration::days(k),
+            dec!(100.00),
+            "validated",
+            Some(je_id),
+            None,
+        )
+        .await;
+        by_offset.insert(k, id);
+    }
 
     let candidates = reconciliation_repo::find_unpaid_invoices_for_window(
         &pool,
         company_id,
-        tx_date,
+        InvoiceDateWindow::for_payment_date(d),
         dec!(100.00),
-        30,
         dec!(0.05),
     )
     .await
     .expect("find_unpaid_invoices_for_window");
 
     let ids: Vec<i64> = candidates.iter().map(|c| c.invoice.id).collect();
-    assert!(
-        ids.contains(&inv_in),
-        "inv_in (within window) doit être candidat"
-    );
     assert_eq!(
-        candidates.len(),
-        1,
-        "seulement l'invoice dans la fenêtre ± 30j doit être retournée"
+        ids,
+        vec![by_offset[&-30], by_offset[&1]],
+        "seules D − 30 et D + 1 sont dans la fenêtre, par date croissante"
     );
 }
 
@@ -371,9 +345,8 @@ async fn find_unpaid_invoices_orders_by_date_then_id_before_limit(pool: MySqlPoo
     let candidates = reconciliation_repo::find_unpaid_invoices_for_window(
         &pool,
         company_id,
-        d,
+        InvoiceDateWindow::for_payment_date(d),
         dec!(100.00),
-        30,
         dec!(0.05),
     )
     .await
@@ -435,9 +408,8 @@ async fn find_unpaid_invoices_filters_by_company_id(pool: MySqlPool) {
     let candidates_a = reconciliation_repo::find_unpaid_invoices_for_window(
         &pool,
         company_a,
-        day,
+        InvoiceDateWindow::for_payment_date(day),
         dec!(100.00),
-        30,
         dec!(0.05),
     )
     .await
@@ -450,9 +422,8 @@ async fn find_unpaid_invoices_filters_by_company_id(pool: MySqlPool) {
     let candidates_b = reconciliation_repo::find_unpaid_invoices_for_window(
         &pool,
         company_b,
-        day,
+        InvoiceDateWindow::for_payment_date(day),
         dec!(100.00),
-        30,
         dec!(0.05),
     )
     .await
@@ -527,9 +498,8 @@ async fn find_unpaid_invoices_filters_status_validated_and_unpaid(pool: MySqlPoo
     let candidates = reconciliation_repo::find_unpaid_invoices_for_window(
         &pool,
         company_id,
-        day,
+        InvoiceDateWindow::for_payment_date(day),
         dec!(100.00),
-        30,
         dec!(0.05),
     )
     .await
@@ -581,9 +551,8 @@ async fn find_unpaid_invoices_filters_amount_within_tolerance(pool: MySqlPool) {
     let candidates = reconciliation_repo::find_unpaid_invoices_for_window(
         &pool,
         company_id,
-        day,
+        InvoiceDateWindow::for_payment_date(day),
         dec!(100.00),
-        30,
         dec!(0.05),
     )
     .await
@@ -858,9 +827,8 @@ async fn find_unpaid_matches_on_ttc_not_ht(pool: MySqlPool) {
     let found_ttc = reconciliation_repo::find_unpaid_invoices_for_window(
         &pool,
         company_id,
-        tx_date,
+        InvoiceDateWindow::for_payment_date(tx_date),
         dec!(108.10),
-        30,
         dec!(0.05),
     )
     .await
@@ -879,9 +847,8 @@ async fn find_unpaid_matches_on_ttc_not_ht(pool: MySqlPool) {
     let found_ht = reconciliation_repo::find_unpaid_invoices_for_window(
         &pool,
         company_id,
-        tx_date,
+        InvoiceDateWindow::for_payment_date(tx_date),
         dec!(100.00),
-        30,
         dec!(0.05),
     )
     .await
@@ -963,9 +930,8 @@ async fn find_unpaid_matches_on_amount_due_of_partially_settled_invoice(pool: My
     let found_due = reconciliation_repo::find_unpaid_invoices_for_window(
         &pool,
         company_id,
-        tx_date,
+        InvoiceDateWindow::for_payment_date(tx_date),
         dec!(600.00),
-        30,
         dec!(0.05),
     )
     .await
@@ -981,9 +947,8 @@ async fn find_unpaid_matches_on_amount_due_of_partially_settled_invoice(pool: My
     let found_ttc = reconciliation_repo::find_unpaid_invoices_for_window(
         &pool,
         company_id,
-        tx_date,
+        InvoiceDateWindow::for_payment_date(tx_date),
         dec!(1000.00),
-        30,
         dec!(0.05),
     )
     .await
