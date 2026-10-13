@@ -612,6 +612,32 @@ describe('page des comptes bancaires — clôture (Story 28-4b, AC11)', () => {
 		expect(r.queryByTestId('bank-accounts-stale-notice')).toBeNull();
 	});
 
+	// P3 ciblée (M1) — de même pour l'archivage : le compte archivé quitte la liste
+	// (archivés masqués), sans message.
+	it('un archivage réussi, archivés masqués, ne déclenche pas le message « n’est plus affiché »', async () => {
+		archiveBankAccountMock.mockResolvedValue({});
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('archive-button-6'));
+		listBankAccountsMock.mockResolvedValue([PRINCIPAL, CLOS]);
+		await fireEvent.click(await r.findByTestId('archive-confirm-button'));
+		await waitFor(() => expect(r.queryByTestId('bank-account-row-6')).toBeNull());
+		expect(r.queryByTestId('archive-confirm')).toBeNull();
+		expect(r.queryByTestId('bank-accounts-stale-notice')).toBeNull();
+	});
+
+	// P3 ciblée (L1) — le message s'efface à la relecture réussie suivante.
+	it('le message « n’est plus affiché » s’efface au rechargement suivant', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('reopen-7'));
+		listBankAccountsMock.mockResolvedValue([PRINCIPAL, OUVERT]);
+		await fireEvent.click(r.getByTestId('toggle-closed'));
+		await r.findByTestId('bank-accounts-stale-notice');
+		await fireEvent.click(r.getByTestId('toggle-closed'));
+		await waitFor(() => expect(listBankAccountsMock).toHaveBeenLastCalledWith(false, false));
+		await r.findByTestId('close-6');
+		expect(r.queryByTestId('bank-accounts-stale-notice')).toBeNull();
+	});
+
 	// P2 ciblée (L1) — une bascule ne referme plus un mode dont le compte reste visible,
 	// ni un formulaire de création, qui ne vise aucun compte.
 	it('une bascule conserve le formulaire de création et sa saisie', async () => {
