@@ -5126,6 +5126,23 @@ mod unreject_classification_tests {
         assert_eq!(classify_unreject(Some(&t)), UnrejectOutcome::NotRejected);
     }
 
+    /// `pending` **avec** lien, marquée : rapprochée au sens d'`is_reconciled`
+    /// (tue M18 — bras « rapprochée » sur le statut seul). État qu'aucun chemin
+    /// vivant ne produit (revue de code P1, E-1).
+    #[test]
+    fn pending_row_with_matched_entry_is_not_rejected_even_if_marked() {
+        let t = tx(BankTransactionStatus::Pending, Some(3), true);
+        assert_eq!(classify_unreject(Some(&t)), UnrejectOutcome::NotRejected);
+    }
+
+    /// `reconciled` **sans** lien, marquée : rapprochée aussi
+    /// (`status <> 'pending'` ; tue M19 — bras « rapprochée » sur le lien seul).
+    #[test]
+    fn reconciled_row_without_link_is_not_rejected_even_if_marked() {
+        let t = tx(BankTransactionStatus::Reconciled, None, true);
+        assert_eq!(classify_unreject(Some(&t)), UnrejectOutcome::NotRejected);
+    }
+
     #[test]
     fn rejected_row_is_unrejected() {
         let t = tx(BankTransactionStatus::Pending, None, true);
