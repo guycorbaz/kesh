@@ -3,7 +3,7 @@
 ## Status
 
 **28-4a : done** (développée le 2026-10-13, Opus 5.5 ; revue P1 remédiée, passe ciblée P2 0/0/0/2 — boucle close) —
-**28-4b : review** (développée le 2026-10-13, Opus 5.5, rebasée sur `4687af69` ; revue P1 à lancer :
+**28-4b : review** (développée le 2026-10-13, Opus 5.5, rebasée sur `6de5a7ff` — 28-4a, 28-5b, 28-7 ; revue P1 à lancer :
 `28-4b-review-prompt-p1.md`, Sonnet, lentilles B, E, A). Historique : **ready-for-dev** (deux clés) — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur
 `5aad8b35` (kickoff de l'Epic 28), worktree `/home/gcorbaz/devel/kesh-28-4`, branche `story/28-4`. Validation P1
 faite (Sonnet, lentilles R et F : 4 HIGH, 9 MEDIUM, 12 LOW, trois convergences) et remédiée ; validation P2 faite
@@ -1610,6 +1610,21 @@ complet : 279 passés, 8 échecs, 19 ignorés** — les 7 KF-029 et le **huitiè
 pollution d'état entre specs, non la KF-046 (déterministe, elle échoue seule). Conforme à `docs/testing.md`. Les
 commits suivant `62758c39` ne portent que la fiche, le registre de sprint et le prompt de revue.
 
+**Second rebase, sur la 28-7 (2026-10-13)** — `origin/main` `6de5a7ff` (PR #659), par
+`git rebase --onto origin/main 4687af69 story/28-4b` (huit commits rejoués) : conflits de documentation seulement
+(`sprint-status.yaml`, par union, ma ligne d'en-tête renumérotée ; PDF du manuel utilisateur, **régénéré**, non
+fusionné — `make fr` forcé par `touch` des sources, l'horodatage du rebase faisant croire les PDF à jour) ; aucun sur
+le code ni les catalogues. `sitesTotal` reste à **2103** (la 28-7 n'y touche pas, mesuré par la collecte) ; tests
+neufs recomptés de `6de5a7ff` à `8008d86b` : mêmes chiffres qu'au-dessus. Les SHA cités plus haut sont ceux d'avant
+ce rebase ; **après** : code `549e75d5`, `612ea7b3`, `27c48f79`, `8008d86b` (**dernier commit de code**, le
+doc-comment) ; documentation `55aca746` ; PDF `b7e9c240`. **Gate au HEAD rebasé `b7e9c240`** (sous `flock`, bases
+`kesh_284b` et `kesh_e2e_284b` remises à zéro, journal `28-4b-final-4.txt`) : `scripts/test-fast.sh` — fmt et clippy
+verts, **nextest 3603 / 3603, 6 ignorés** (la 28-7 en ajoute) ; frontend — `check` 0 erreur (29 avertissements),
+`lint-i18n-ownership` PASS, **Vitest 146 fichiers, 1592 tests**, `build` vert ; **E2E complet (port 3041) : 280
+passés, 7 échecs = exactement les 7 KF-029, 19 ignorés** ; les deux specs bancaires 12 / 12. PDF recontrôlés aplatis
+(mêmes phrases, et « Rejet de réconciliation annulé » de la 28-5b présent). La campagne de mutations n'est pas
+rejouée : aucun des fichiers mutés ne change par ce rebase.
+
 **Demandé à l'orchestrateur** : push de `story/28-4b` et PR de la 28-4b, corps en **`closes #642`** et, à côté,
 **`refs #651`** — ⛔ jamais `closes #651` ; aucun commit ne porte « closes » ; revue de code P1 par le prompt
 versionné `28-4b-review-prompt-p1.md` (Sonnet, lentilles B, E, A, axe manuel et PDF).
@@ -1664,7 +1679,7 @@ versionné `28-4b-review-prompt-p1.md` (Sonnet, lentilles B, E, A, axe manuel et
 - `docs/migrations-idempotence-audit.md`
 - `_bmad-output/implementation-artifacts/28-4-cloture-compte-bancaire.md`, `epic-28-choix-autonomes.md`, `sprint-status.yaml`, `28-4a-review-prompt-p1.md` *(neuf)*
 
-**28-4b** (de `4687af69` à `4b45ec1b`) :
+**28-4b** (de `6de5a7ff` à `b7e9c240`) :
 
 - `CHANGELOG.md`
 - `crates/kesh-i18n/locales/{de-CH,en-CH,fr-CH,it-CH}/messages.ftl`
@@ -1698,4 +1713,4 @@ versionné `28-4b-review-prompt-p1.md` (Sonnet, lentilles B, E, A, axe manuel et
 | 2026-10-13 | Développement de la 28-4a (`bmad-dev-story`, Opus 5.5, autonomie) | Rebase sur `eab77cf1` (28-2, 28-3, 28-5a), 4 conflits par union. Commits de code `bafa4f80` (production) et `01af1c0e` (tests et gardes, **dernier commit de code**). Migration `20261013000001_bank_accounts_closed_on`, non-breaking, sans bump ; routes `close` / `reopen` ; gardes W8-W30 et pré-vols R1-R8 sans verrou ajouté ni vue déplacée ; registre statique (31 sites). **38 tests neufs** (`eab77cf1` → `01af1c0e`) ; **mutations : 42 à tuer, 42 tuées**, 3 équivalentes confirmées, M56 assumée et survivante ; aucun repli InnoDB. Gates à `01af1c0e` : nextest 3579 / 3579 ; Vitest 1497 ; E2E 268 passés, 8 échecs attendus (7 KF-029 + pollution, rejouée seule verte). Relectures de T0 au Dev Agent Record (trois énoncés sur #633 devenus faux). Choix C-28-4-26 à C-28-4-32. Clé `28-4a-cloture-serveur` : `review`. |
 | 2026-10-13 | Revue de code P1 (Opus 5.5, lentilles B, E, A) et sa remédiation (Opus 5.5) | **Bilan 0/0/4/17** (CRIT/HIGH/MED/LOW) : B 0/0/0/5, E 0/0/3/6, A 0/0/1/6 (rapports `kesh-gate-logs/28-4a-review-p1-{B,E,A}.md`, hors dépôt). **MEDIUM** — A-M1 (réserve de #651 sur W8 / W27, retirée d'`api-external.md`) ; E-1 (M33 scindée : M33-b tuée par une course déterministe qui atteint W30 sans R8, M33-a équivalente, C-28-4-34) ; E-2 (annulations vers un compte archivé pour W25, W28, W29, trois mutations tuées) ; E-3 (export d'un compte clos non archivé, mutation tuée). **LOW** — B-1 traité en **production** sur décision de l'orchestrateur (borne de `closedOn`, C-28-4-35) ; B-3, B-6 (C-28-4-33) écrits comme angles morts ; B-5 au registre de sprint ; A-L1 à A-L6, E-4 à E-9 appliqués ou écrits ; E-8 = B-4 légué à la 28-4b. Rebase sur `c28d0a20` (28-1). Commit de code `8d73a9a4` ; **5 tests neufs** (`fdd6f94c` → `8d73a9a4`) ; mutations de la remédiation **10 / 10** ; gates : nextest 3584 / 3584, Vitest 1546, E2E 272 + 8 attendus. Signal D5 : non levé (aucun MEDIUM ne naît d'une remédiation, aucun HIGH). **Boucle ouverte** : la remédiation touche la production (B-1) — passe ciblée P2 (Sonnet) : `28-4a-review-prompt-p2-ciblee.md`. Choix C-28-4-33 à C-28-4-35. |
 | 2026-10-13 | Revue de code P2 **ciblée** (Sonnet 5.5, une lentille, diff de la remédiation `fdd6f94c..8d73a9a4`) — **boucle close** | **Trend** (CRIT/HIGH/MED/LOW) : P1 — 0/0/4/17 (B 0/0/0/5, E 0/0/3/6, A 0/0/1/6) ; **P2 ciblée — 0/0/0/2** (rapport `kesh-gate-logs/28-4a-review-p2-ciblee.md`, hors dépôt). LOW-1 et LOW-2 appliqués en commentaires seulement (aucune ligne de production) : la remédiation qu'ils produisent ne touche pas la production — **boucle close** (§ *La passe ciblée*). Modèles : Opus (P1, trois lentilles), Sonnet (P2 ciblée). Signal D5 : non levé. Rebase sur `5629acc2` (28-6), sans conflit de code ; gates au HEAD `3676a5ab` : nextest 3596 / 3596, Vitest 1547, E2E 273 + 7 KF-029. Clé `28-4a-cloture-serveur` : **done** ; la 28-4b reste `ready-for-dev`. |
-| 2026-10-13 | Développement de la 28-4b (`bmad-dev-story`, Opus 5.5, autonomie) | Partie de `92087366`, rebasée sur `4687af69` (28-4a, 28-5b ; conflits : `sitesTotal`, CHANGELOG, PDF — régénéré). Commits de code `a2f26355`, `37a2d499`, `b32390f9`, `62758c39` (doc-comment seul, **dernier commit de code**) ; documentation `3654606c`, PDF `4b45ec1b`. Écran, dialogues, bascule, réglages de facturation, libellé ; 16 clés × 4 ; manuels et PDF ; `api-external.md` ; CHANGELOG. **23 tests neufs rouges d'abord** ; 19 déclarations Vitest neuves + 3 E2E (`4687af69` → `b32390f9`) ; **mutations M25-M32 : 9 / 9 tuées** ; `sitesTotal` 2103. Deux défauts vus au premier gate (G18, sélecteur E2E traduit), corrigés. Gates à `4b45ec1b` : nextest 3596 / 3596 ; Vitest 1592 ; E2E 280 passés + les 7 KF-029 ; rejoués au dernier commit de code `62758c39` : nextest 3596 / 3596, Vitest 1592, E2E 279 passés + 7 KF-029 + `sidebar-navigation.spec.ts:75` (rejouée seule 4 / 4). Choix C-28-4-36 à C-28-4-46. Clé `28-4b-cloture-ecran` : `review` ; revue P1 : `28-4b-review-prompt-p1.md` (Sonnet, B, E, A). |
+| 2026-10-13 | Développement de la 28-4b (`bmad-dev-story`, Opus 5.5, autonomie) | Partie de `92087366`, rebasée sur `4687af69` (28-4a, 28-5b ; conflits : `sitesTotal`, CHANGELOG, PDF — régénéré), puis sur `6de5a7ff` (28-7 ; registre de sprint, PDF). Commits de code (après le second rebase) `549e75d5`, `612ea7b3`, `27c48f79`, `8008d86b` (doc-comment seul, **dernier commit de code**) ; documentation `55aca746`, PDF `b7e9c240`. Écran, dialogues, bascule, réglages de facturation, libellé ; 16 clés × 4 ; manuels et PDF ; `api-external.md` ; CHANGELOG. **23 tests neufs rouges d'abord** ; 19 déclarations Vitest neuves + 3 E2E (`4687af69` → `b32390f9`) ; **mutations M25-M32 : 9 / 9 tuées** ; `sitesTotal` 2103. Deux défauts vus au premier gate (G18, sélecteur E2E traduit), corrigés. Gates à `4b45ec1b` : nextest 3596 / 3596 ; Vitest 1592 ; E2E 280 passés + les 7 KF-029 ; rejoués au dernier commit de code `62758c39` : nextest 3596 / 3596, Vitest 1592, E2E 279 passés + 7 KF-029 + `sidebar-navigation.spec.ts:75` (rejouée seule 4 / 4) ; **au HEAD rebasé sur la 28-7, `b7e9c240`** : nextest 3603 / 3603, Vitest 1592, E2E 280 passés + exactement les 7 KF-029. Choix C-28-4-36 à C-28-4-46. Clé `28-4b-cloture-ecran` : `review` ; revue P1 : `28-4b-review-prompt-p1.md` (Sonnet, B, E, A). |

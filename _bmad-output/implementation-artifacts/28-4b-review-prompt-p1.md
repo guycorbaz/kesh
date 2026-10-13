@@ -4,10 +4,10 @@
 Sonnet ↔ Opus pour les passes complètes), contexte frais chacune, lecture seule.*
 
 Dépôt (worktree) `/home/gcorbaz/devel/kesh-28-4b`, branche `story/28-4b`.
-**Le diff à revoir** : `git diff 4687af69 b32390f9 -- . ':(exclude)_bmad-output'` (`4687af69` = `origin/main`, qui
-porte la 28-4a et la 28-5b ; `b32390f9` = **dernier commit de code** ; le commit suivant, `4b45ec1b`, ne porte que les
-PDF régénérés, et les commits qui suivent la fiche, le registre des choix, le registre de sprint et ce prompt). Les
-PDF se contrôlent à `4b45ec1b`. ⚠️ Pathspec `':(exclude)…'` et **non** `':!…'`. Fiche :
+**Le diff à revoir** : `git diff 6de5a7ff 8008d86b -- . ':(exclude)_bmad-output'` (`6de5a7ff` = `origin/main`, qui
+porte la 28-4a, la 28-5b et la 28-7 ; `8008d86b` = **dernier commit de code** — un doc-comment ; les commits qui
+suivent ne portent que la fiche, le registre de sprint, ce prompt et les PDF régénérés). Les PDF se contrôlent à
+`b7e9c240`. ⚠️ Pathspec `':(exclude)…'` et **non** `':!…'`. Fiche :
 `_bmad-output/implementation-artifacts/28-4-cloture-compte-bancaire.md` — **partie b seulement** : AC11 à AC17 ;
 tâches T10-T15 ; Dev Notes § *Tests* (T-b1 à T-b14) et § *Mutations* (M25 à M32) ; et le **Dev Agent Record**,
 section *28-4b* (campagne de mutations, gates, décomptes, captures). Choix C-28-4-36 à C-28-4-46 au registre
@@ -68,7 +68,7 @@ dans un commit) et #651 (L1, `refs` seulement).
    l'entrée « Ajouté » de #642 à côté de celle de #526.
 6. **Gardes et décomptes.** `boutons-rouges-inventory.test.ts` (garde f), `erreurs-en-texte.test.ts`,
    `e2e-selecteurs-traduits.test.ts`, `lint-i18n-ownership`, G18 et G9 (`textes_coherents.rs`). **Recompte depuis la
-   source** tout décompte du Dev Agent Record (tests neufs par fichier aux **deux** bornes `4687af69` / `b32390f9`,
+   source** tout décompte du Dev Agent Record (tests neufs par fichier aux **deux** bornes `6de5a7ff` / `8008d86b`,
    fichiers au `git diff --stat`, mutations) et vérifie le **périmètre** déclaré de chaque nombre.
 
 ## Lentilles
@@ -90,7 +90,7 @@ dans un commit) et #651 (L1, `refs` seulement).
   `user-manual.tex` « non archivés », textes de C-28-4-27 et C-28-4-32, `docs/api-external.md` pour `closedOn` et
   les routes, la limite #651 au manuel) sont-ils tous repris ? Les captures (AC17) existent-elles pour les quatre écrans
   demandés, clair et sombre — et que vaut le « sombre » (Kesh n'a pas de thème sombre, C-28-1-7) ? Les chiffres de
-  gates et d'E2E déclarés correspondent-ils aux journaux (`kesh-gate-logs/28-4b-final-2*`) ? Les choix C-28-4-36 à
+  gates et d'E2E déclarés correspondent-ils aux journaux (`kesh-gate-logs/28-4b-final-{2,3,4}*`, le 4 au HEAD final) ? Les choix C-28-4-36 à
   46 : justifiés, ou défaut ? README et `website/` : une ligne à compléter a-t-elle été manquée ?
 
 ## Ce que tu rends
