@@ -386,6 +386,13 @@ cause : sur ce test, elle donne deux réponses, et c'est le rejeu qui tranche.*
 ⇒ **Le compte attendu est `7 + (1 si la KF-052 se déclenche) + 0 à 2 de pollution`**, soit
 **7 à 10** — la borne basse est 7 parce qu'un run sans aucune pollution est observé (registre de
 sprint, 28-4a : « E2E 273 + 7 KF-029 »).
+
+**Relevé du 2026-10-13** (Story 28-8, 22:33 UTC, après 12:00 UTC ; base `kesh_e2e_288` reconstruite) :
+**277 passés / 7 échoués / 19 ignorés** — les sept KF-029 seuls, ni KF-052 ni pollution ; `invoices.spec.ts`
+« historique des rappels » et « axe-core sur la fiche » passent. Un run après 12:00 UTC ne prouve pas la disparition
+du défaut du matin ; la preuve est la mutation (rappel daté une heure **après** l'appel : les deux tests rougissent en
+`manual reminder failed: 422`).
+
 Deux relevés du 2026-08-30, base `kesh_e2e` reconstruite, tous deux **212 passés / 11 échoués** :
 
 | run | les 7 fixes | KF-045 | pollution — **change d'identité** |

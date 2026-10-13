@@ -2,7 +2,7 @@
 
 ## Status
 
-**ready-for-dev** — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `6de5a7ff`
+**review** — développée le 2026-10-14 (`bmad-dev-story`, Sonnet 5.5, autonomie), cinq commits de code/doc `ebb9bc81`..`7d69e5ab` puis le relevé et le Dev Agent Record. Historique : fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur `6de5a7ff`
 (`origin/main`, 28-7 fusionnée), branche `story/28-8`, worktree `/home/gcorbaz/devel/kesh-28-8`. Validation close en P1
 (Sonnet, une lentille R+F : 0 CRITICAL, 0 HIGH, 2 MEDIUM, 8 LOW — tous remédiés, cf. Change Log). Choix consignés au registre `epic-28-choix-autonomes.md`, **C-28-8-1 à C-28-8-8**.
 
@@ -262,21 +262,21 @@ et le Dev Agent Record copie la sortie. Les sites restés tels quels sont écrit
 
 ## Tasks / Subtasks
 
-- [ ] **T0** — Montage : `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-28-8/target` ; `node_modules` par `cp -al` depuis
+- [x] **T0** — Montage : `CARGO_TARGET_DIR=/home/gcorbaz/devel/kesh-28-8/target` ; `node_modules` par `cp -al` depuis
   le dépôt principal ; bases `kesh_288` et `kesh_e2e_288` créées (migrations du worktree, seed
   `scripts/seed-dev-db.sql`) ; relire les numéros de ligne de cette fiche si `origin/main` a bougé (rebase).
-- [ ] **T1** — #421 (AC1) : grep des jumeaux (copié), correction du helper, commentaire ; M1 (mutation) puis
+- [x] **T1** — #421 (AC1) : grep des jumeaux (copié), correction du helper, commentaire ; M1 (mutation) puis
   restauration (`git checkout -- f && touch f`) ; commit `test(28-8): … (refs #421)`.
-- [ ] **T2** — #561 (AC3) : grep copié et classé ; suppression ; `cargo build --workspace --all-targets` + clippy ;
+- [x] **T2** — #561 (AC3) : grep copié et classé ; suppression ; `cargo build --workspace --all-targets` + clippy ;
   commit `refactor(kesh-db): … (refs #561)`.
-- [ ] **T3** — #421 doc (AC2) : `docs/testing.md` ; commit `docs(testing): … (refs #421)` — ou avec T1.
-- [ ] **T4** — #595 (AC4) : relire la chaîne au code (sed -n copiés), deux insertions ; commit `docs(api): … (refs #595)`.
-- [ ] **T5** — #612 (AC5) : brochure, `make brochure`, contrôle aplati ; commit `docs(brochure): … (refs #612)`.
-- [ ] **T6** — #615 (AC6) : manuel d'administration, `make admin`, contrôle aplati ; commit `docs(admin): … (refs #615)`.
-- [ ] **T7** — CHANGELOG (AC7) ; propagation (AC8) ; puis gates complets au HEAD (AC9) : test-fast complet sur base
+- [x] **T3** — #421 doc (AC2) : `docs/testing.md` ; commit `docs(testing): … (refs #421)` — ou avec T1.
+- [x] **T4** — #595 (AC4) : relire la chaîne au code (sed -n copiés), deux insertions ; commit `docs(api): … (refs #595)`.
+- [x] **T5** — #612 (AC5) : brochure, `make brochure`, contrôle aplati ; commit `docs(brochure): … (refs #612)`.
+- [x] **T6** — #615 (AC6) : manuel d'administration, `make admin`, contrôle aplati ; commit `docs(admin): … (refs #615)`.
+- [x] **T7** — CHANGELOG (AC7) ; propagation (AC8) ; puis gates complets au HEAD (AC9) : test-fast complet sur base
   remise à zéro, frontend, E2E complet ; relevé E2E versé à `docs/testing.md` (AC2, dernière puce) ; commit
   `docs: … (refs #421, refs #595, refs #612, refs #615)`.
-- [ ] **T8** — Dev Agent Record, File List, Change Log ; statut `review` ; registre de sprint. Rapport : demander à
+- [x] **T8** — Dev Agent Record, File List, Change Log ; statut `review` ; registre de sprint. Rapport : demander à
   l'orchestrateur le push, la PR (`closes #421 #561 #595 #612 #615`) et l'issue de C-28-8-6.
 
 ## Dev Notes
@@ -384,11 +384,29 @@ Six emplacements, trois modules au sens de la règle : cf. § *Dérogation*.
 
 ### Agent Model Used
 
+Sonnet 5.5 (`bmad-dev-story`, autonomie, 2026-10-14). Aucun choix nouveau : le registre `epic-28-choix-autonomes.md` (C-28-8-1 à 8) est inchangé.
+
 ### Debug Log References
+
+Journaux sous `/home/gcorbaz/devel/kesh-gate-logs/28-8/` : `build.log`, `test-fast.log`, `fe-*.log`, `m1.log`, `solo.log`, `e2e-full.log`, `make.log`.
 
 ### Completion Notes List
 
+- **Commits** : `ebb9bc81` (#421 test), `e5370eb6` (#561), `df40a6a5` (testing.md + api-external, #421/#595), `cf4c0604` (brochure + manuel admin + PDF, #612/#615), `7d69e5ab` (CHANGELOG), puis relevé E2E de `docs/testing.md`, fiche et prompt de revue. Tous en `refs`, aucun `closes`. Base : `origin/main` = `6de5a7ff`, inchangé (aucun rebase nécessaire).
+- **#421 (AC1)** : `sentAt` = `new Date(Date.now() - 3_600_000).toISOString().slice(0, 19)`. Jumeaux relevés : `git grep -n "T12:00:00" frontend/tests/e2e` ne rend plus rien ; `git grep -nE "T[0-9]{2}:[0-9]{2}:[0-9]{2}" frontend/tests/e2e` ne rend, hors fixtures CAMT, que les commentaires du site corrigé ; seul ce helper poste `reminders/manual`. Jumeau produit (`reminder-sent-at.ts`) : déjà corrigé par #259 (`CHANGELOG.md:602`), rien à changer.
+- **M1** (`- 3_600_000` -> `+ 3_600_000`, appliquée : `grep -c` = 1) : `invoices.spec.ts:418` et `:442` rougissent toutes deux, `Error: manual reminder failed: 422` (`m1.log`, exit 1) ; restaurée par `git checkout -- f && touch f` ; rejeu seul des deux tests : 2 passés (`solo.log`). **Heure du run : 22:33 UTC, donc après 12:00 UTC : la preuve « matin » directe reste à faire** ; la mutation M1 est la preuve de substitution (elle rend le défaut d'origine à toute heure).
+- **#561 (AC3)** : avant suppression, `git grep -nw delete_all_by_company` ne rend, hors `journal_entries.rs`, que `journal_entry_reversal_e2e.rs:905` (`journal_entries::`), des commentaires (`letterings.rs:30`, `letterings_lexical.rs:23`, `invoices.rs:4493`, migration `20260828000002`, `docs/testing.md:36`, `docs/migrations-idempotence-audit.md:86`, `CLAUDE.md:511`) et des archives `_bmad-output`. Après suppression : `cargo build --workspace --all-targets` vert, `cargo clippy --workspace --all-targets -- -D warnings` vert, `cargo fmt --check` vert.
+- **#595 (AC4)** : chaîne relue au code (`supplier_invoices.rs:1343-1355`, `journal_entries.rs:2534-2549` et `2664-2677`, `errors.rs:1303-1305`), conforme à la fiche ; deux insertions ; `grep -c MATCHED_BANK_TRANSACTION docs/api-external.md` : 6 -> 8.
+- **#612 (AC5)** : puce sortie du Backlog, bloc « Report à-nouveau automatique (Epic 14, v0.8, livré) » entre TVA et lettrage ; PDF aplati : bloc présent, « Backlog (Epic 13 à 15) • Budgets annuels + suivi. • Justificatifs, journaux personnalisables. ».
+- **#615 (AC6)** : listing suivant `.env.example` ; prose « décommentez … » et « Décommentée sans valeur … » ; chaînes 0.13.0-0.13.2 ajoutées au paragraphe des bases déjà créées. `git grep -nE "MARIADB_(ROOT_)?PASSWORD=<" -- ':(exclude)_bmad-output'` : vide. PDF aplati : `#MARIADB_ROOT_PASSWORD=` présent, `MARIADB_ROOT_PASSWORD=<sortie` absent, `autre sortie de openssl rand` seulement dans le paragraphe des bases déjà créées. `make admin brochure` sous flock : 3 et 2 passes, stables.
+- **AC2** : `docs/testing.md` mis à jour selon la fiche (chapeau, deux lignes retirées, KF-052, note datée, note historique, formule 7 à 10, annotation du tableau du 2026-08-30 laissé intact, relevé du 2026-10-13). `git grep -nE "KF-045|KF-046" -- ':(exclude)_bmad-output'` : tableau historique, son annotation, la note historique et `CLAUDE.md:706`.
+- **AC7** : une puce dans la section unique `## [0.13.3] — Non publié`, liens en ligne.
+- **Gates (au HEAD de code `7d69e5ab`, tous sous flock, bases `kesh_288`/`kesh_e2e_288` remises à zéro juste avant, conteneur non redémarré)** : `scripts/test-fast.sh` : fmt + clippy verts, **3603 tests exécutés, 3603 passés, 6 ignorés** (145,6 s) ; `npm run check` 0, `lint-i18n-ownership` 0, `test:unit` **146 fichiers / 1566 tests passés**, `build` 0 ; **E2E complet** port 3042 : **277 passés / 7 échoués / 19 ignorés** (11,0 min), les sept échecs sont exactement les sept KF-029 de `docs/testing.md` mis à jour (`mode-expert.spec.ts:26`, `:41`, `onboarding-path-b.spec.ts:65`, `:92`, `onboarding.spec.ts:57`, `:77`, `:150`) ; ni KF-052 ni pollution ; `invoices.spec.ts:418`/`:442` (ex-:415/:439) passent. Les commits suivants (relevé de `testing.md`, fiche, prompt) ne touchent aucun code ni `.tex`.
+- **Aucun** `closes` dans les messages de commit ; aucune donnée réelle dans le dépôt.
+
 ### File List
+
+`frontend/tests/e2e/invoices.spec.ts` ; `crates/kesh-db/src/repositories/accounts.rs` ; `docs/testing.md` ; `docs/api-external.md` ; `docs/manual/fr/marketing-brochure.tex` et `.pdf` ; `docs/manual/fr/admin-manual.tex` et `.pdf` ; `CHANGELOG.md` ; `_bmad-output/implementation-artifacts/28-8-petits-correctifs.md`, `28-8-review-prompt-p1.md`, `sprint-status.yaml`.
 
 ## Change Log
 
@@ -414,6 +432,8 @@ Six emplacements, trois modules au sens de la règle : cf. § *Dérogation*.
   - Propagation : valeurs corrigées grepées dans la fiche et le prompt (`1158`, « avant le bloc », liens nus).
   - **Clôture** : plus aucun finding au-dessus de LOW ; la remédiation ne touche que la fiche et le registre, aucune
     ligne de code — la boucle se clôt sans passe ciblée. Statut **ready-for-dev**.
+
+- **2026-10-14 — Développement** (`bmad-dev-story`, Sonnet 5.5) : T0-T8 faits, cf. Dev Agent Record. Statut **review** ; revue de code P1 : `28-8-review-prompt-p1.md` (Sonnet, une lentille B+E+A).
 
 [#232]: https://github.com/guycorbaz/kesh/issues/232
 [#421]: https://github.com/guycorbaz/kesh/issues/421
