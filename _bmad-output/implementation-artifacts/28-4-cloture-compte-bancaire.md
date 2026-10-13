@@ -1625,6 +1625,41 @@ passés, 7 échecs = exactement les 7 KF-029, 19 ignorés** ; les deux specs ban
 (mêmes phrases, et « Rejet de réconciliation annulé » de la 28-5b présent). La campagne de mutations n'est pas
 rejouée : aucun des fichiers mutés ne change par ce rebase.
 
+**Annotation de la revue de code P1 (2026-10-14)** — bilan **0/0/2/14** (CRIT/HIGH/MED/LOW) : B 0/0/0/4, E 0/0/1/4,
+A 0/0/1/6 (rapports `kesh-gate-logs/28-4b-review-p1-{B,E,A}.md`, hors dépôt). Remédié sur `6de5a7ff` (inchangé),
+commit de code **`929bd0ef`** (dernier commit de code), manuel `8a6a96ad`, PDF `25fbeede`.
+
+- **Production** (voulue par l'orchestrateur) : A-M1 — `bank-accounts-actions-close` = « Chiudi il conto » / « Close
+  account » (C-28-4-47) ; B-1 = E-4 — `toggleAndReload` referme le mode ouvert avant chaque bascule ; B-2 —
+  `refreshAfterVersionConflict` relit la liste après un `409 OPTIMISTIC_LOCK_CONFLICT` (C-28-4-48) ; A-L6 — clé
+  `bank-accounts-labels-empty-hidden` × 4 tant qu'une bascule masque (C-28-4-49). ⚠️ Effet assumé de B-1 : un
+  formulaire de création ou de modification ouvert se referme aussi, saisie perdue, si l'on clique une bascule.
+- **Garde neuve** : G11-bis `la_cloture_d_un_compte_bancaire_ne_parle_pas_comme_un_panneau` (`kesh-i18n/src/loader.rs`),
+  quatre locales ; angle mort (domaine nommé, suffixe de panneau) au doc-comment. Glossaire : deux entrées.
+- **Tests** (déclarations, `da9fde6a` → `929bd0ef`, `bank-accounts-page.test.ts` 31 → 39, +8, dont un `it.each` à 2 cas :
+  9 exécutés) : bascules (×2), conflit de version, date locale à 00:30 à Zurich (E-1, C-28-4-50), date vidée (E-2),
+  composition des bascules et compte archivé et clos (E-3), liste vide (×2) ; plus G11-bis (Rust, +1).
+- **Mutations de la remédiation** (`mutations-28-4b-p1.py`, journal `28-4b-mutations-p1.log`, sous `flock`) :
+  **7 / 7 tuées** — P1-M1 date UTC (E-1, la « M33 » demandée ; renommée pour ne pas heurter les M33 à M56 de la 28-4a),
+  P1-M2 bascule sans `closeForm`, P1-M3 conflit sans rechargement, P1-M4 garde de date vide, P1-M5 message vide
+  constant, P1-M6 bascule des archivés sans effet, P1-M7 verbe nu en it-CH (G11-bis).
+- **Documentation** : manuel — A-L3 (l'archivage retire des sélecteurs, non « de toute vue »), A-L4 (limites :
+  *Annuler le rapprochement*, *Annuler le rejet*, *Annuler la facture* ; renvoi du solde déplacé ; encadré du lot
+  confirmé), A-L6 (liste vide) ; PDF régénérés, contrôlés aplatis (« retire un compte des sélecteurs et de l’usage » 1,
+  « Annuler le rapprochement et Annuler le rejet (détail d’un import) » 1, « l’annulation est refusée tant qu’il n’est
+  pas rouvert » 1, « dit qu’aucun compte n’est ouvert » 1, renvoi « comptes clos, §12.2 » placé). Commentaires : B-3
+  (angle mort, doc-comment de `toggleAndReload`), B-4 (`ReconciliationProposals.svelte`), E-5 (spec E2E). A-L2 :
+  en-tête du registre. A-L5 : écart déjà assumé (C-28-4-36).
+- **Captures refaites** (A-L1) après C-28-4-46 et B-1 : *Rouvrir* pleinement lisible (capture 03). ⚠️ Les captures
+  « sombre » sont des **copies** du clair : Kesh n'a pas de thème sombre (C-28-1-7) ; seule la 03 diffère de quelques
+  octets (rendu du toast).
+- **Gates au dernier commit de code** (HEAD `25fbeede` ; `origin/main` inchangé à `6de5a7ff`), sous `flock`, bases
+  `kesh_284b` / `kesh_e2e_284b` remises à zéro, journal `28-4b-final-5.txt` : **nextest 3604 / 3604, 6 ignorés** (G11-bis
+  en plus) ; `check` 0 erreur (29 avertissements), `lint-i18n-ownership` PASS, **Vitest 146 fichiers, 1601 tests**,
+  `build` vert ; **E2E complet : 280 passés, 7 échecs = exactement les 7 KF-029, 19 ignorés** ; specs bancaires 12 / 12.
+- Signal D5 : non levé (aucun HIGH, les deux MEDIUM distincts, aucun ne naît d'une remédiation antérieure).
+  **Boucle ouverte** : la remédiation touche la production — passe ciblée P2 (Sonnet) : `28-4b-review-prompt-p2-ciblee.md`.
+
 **Demandé à l'orchestrateur** : push de `story/28-4b` et PR de la 28-4b, corps en **`closes #642`** et, à côté,
 **`refs #651`** — ⛔ jamais `closes #651` ; aucun commit ne porte « closes » ; revue de code P1 par le prompt
 versionné `28-4b-review-prompt-p1.md` (Sonnet, lentilles B, E, A, axe manuel et PDF).
@@ -1714,3 +1749,4 @@ versionné `28-4b-review-prompt-p1.md` (Sonnet, lentilles B, E, A, axe manuel et
 | 2026-10-13 | Revue de code P1 (Opus 5.5, lentilles B, E, A) et sa remédiation (Opus 5.5) | **Bilan 0/0/4/17** (CRIT/HIGH/MED/LOW) : B 0/0/0/5, E 0/0/3/6, A 0/0/1/6 (rapports `kesh-gate-logs/28-4a-review-p1-{B,E,A}.md`, hors dépôt). **MEDIUM** — A-M1 (réserve de #651 sur W8 / W27, retirée d'`api-external.md`) ; E-1 (M33 scindée : M33-b tuée par une course déterministe qui atteint W30 sans R8, M33-a équivalente, C-28-4-34) ; E-2 (annulations vers un compte archivé pour W25, W28, W29, trois mutations tuées) ; E-3 (export d'un compte clos non archivé, mutation tuée). **LOW** — B-1 traité en **production** sur décision de l'orchestrateur (borne de `closedOn`, C-28-4-35) ; B-3, B-6 (C-28-4-33) écrits comme angles morts ; B-5 au registre de sprint ; A-L1 à A-L6, E-4 à E-9 appliqués ou écrits ; E-8 = B-4 légué à la 28-4b. Rebase sur `c28d0a20` (28-1). Commit de code `8d73a9a4` ; **5 tests neufs** (`fdd6f94c` → `8d73a9a4`) ; mutations de la remédiation **10 / 10** ; gates : nextest 3584 / 3584, Vitest 1546, E2E 272 + 8 attendus. Signal D5 : non levé (aucun MEDIUM ne naît d'une remédiation, aucun HIGH). **Boucle ouverte** : la remédiation touche la production (B-1) — passe ciblée P2 (Sonnet) : `28-4a-review-prompt-p2-ciblee.md`. Choix C-28-4-33 à C-28-4-35. |
 | 2026-10-13 | Revue de code P2 **ciblée** (Sonnet 5.5, une lentille, diff de la remédiation `fdd6f94c..8d73a9a4`) — **boucle close** | **Trend** (CRIT/HIGH/MED/LOW) : P1 — 0/0/4/17 (B 0/0/0/5, E 0/0/3/6, A 0/0/1/6) ; **P2 ciblée — 0/0/0/2** (rapport `kesh-gate-logs/28-4a-review-p2-ciblee.md`, hors dépôt). LOW-1 et LOW-2 appliqués en commentaires seulement (aucune ligne de production) : la remédiation qu'ils produisent ne touche pas la production — **boucle close** (§ *La passe ciblée*). Modèles : Opus (P1, trois lentilles), Sonnet (P2 ciblée). Signal D5 : non levé. Rebase sur `5629acc2` (28-6), sans conflit de code ; gates au HEAD `3676a5ab` : nextest 3596 / 3596, Vitest 1547, E2E 273 + 7 KF-029. Clé `28-4a-cloture-serveur` : **done** ; la 28-4b reste `ready-for-dev`. |
 | 2026-10-13 | Développement de la 28-4b (`bmad-dev-story`, Opus 5.5, autonomie) | Partie de `92087366`, rebasée sur `4687af69` (28-4a, 28-5b ; conflits : `sitesTotal`, CHANGELOG, PDF — régénéré), puis sur `6de5a7ff` (28-7 ; registre de sprint, PDF). Commits de code (après le second rebase) `549e75d5`, `612ea7b3`, `27c48f79`, `8008d86b` (doc-comment seul, **dernier commit de code**) ; documentation `55aca746`, PDF `b7e9c240`. Écran, dialogues, bascule, réglages de facturation, libellé ; 16 clés × 4 ; manuels et PDF ; `api-external.md` ; CHANGELOG. **23 tests neufs rouges d'abord** ; 19 déclarations Vitest neuves + 3 E2E (`4687af69` → `b32390f9`) ; **mutations M25-M32 : 9 / 9 tuées** ; `sitesTotal` 2103. Deux défauts vus au premier gate (G18, sélecteur E2E traduit), corrigés. Gates à `4b45ec1b` : nextest 3596 / 3596 ; Vitest 1592 ; E2E 280 passés + les 7 KF-029 ; rejoués au dernier commit de code `62758c39` : nextest 3596 / 3596, Vitest 1592, E2E 279 passés + 7 KF-029 + `sidebar-navigation.spec.ts:75` (rejouée seule 4 / 4) ; **au HEAD rebasé sur la 28-7, `b7e9c240`** : nextest 3603 / 3603, Vitest 1592, E2E 280 passés + exactement les 7 KF-029. Choix C-28-4-36 à C-28-4-46. Clé `28-4b-cloture-ecran` : `review` ; revue P1 : `28-4b-review-prompt-p1.md` (Sonnet, B, E, A). |
+| 2026-10-14 | Revue de code P1 (Sonnet, lentilles B, E, A) et sa remédiation (Opus 5.5) | **Bilan 0/0/2/14** (CRIT/HIGH/MED/LOW) : B 0/0/0/4, E 0/0/1/4, A 0/0/1/6 (rapports `kesh-gate-logs/28-4b-review-p1-{B,E,A}.md`, hors dépôt). **MEDIUM** — A-M1 (verbes nus « Chiudi » / « Close » du panneau pour *Clore* ; glossaire promis par C-28-4-32 non repris) : libellés qualifiés, glossaire, garde G11-bis (C-28-4-47) ; E-1 (date UTC indétectable) : test à horloge et fuseau figés (C-28-4-50). **LOW** — B-1 = E-4 (mode orphelin après une bascule) et B-2 (version périmée après un conflit) traités en **production** (C-28-4-48) ; A-L6 (liste vide) en production (C-28-4-49) ; B-3 écrit en angle mort ; B-4, E-5 en commentaires ; E-2, E-3 par des tests ; A-L1 (captures refaites) ; A-L2 (en-tête du registre) ; A-L3, A-L4 (manuel, PDF) ; A-L5 assumé (C-28-4-36). Commit de code `929bd0ef` ; 8 déclarations Vitest neuves (9 cas) + 1 test Rust ; mutations de la remédiation **7 / 7** ; `sitesTotal` 2104. Gates au HEAD `25fbeede` : nextest 3604 / 3604 ; Vitest 1601 ; E2E 280 passés + les 7 KF-029. Signal D5 : non levé. **Boucle ouverte** : la remédiation touche la production — passe ciblée P2 (Sonnet) : `28-4b-review-prompt-p2-ciblee.md`, rapport `kesh-gate-logs/28-4b-review-p2-ciblee.md`. Choix C-28-4-47 à C-28-4-50. |
