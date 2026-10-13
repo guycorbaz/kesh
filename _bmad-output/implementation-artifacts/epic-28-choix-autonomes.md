@@ -2389,6 +2389,11 @@ Choix faits à la fiche (2026-10-13), en autonomie, sur `5aad8b35`. Fiche :
 
 ### C-28-4-10 — Rien ne s'écrit sur un compte clos, archivage compris, sauf la réouverture
 
+> *Annotation de la validation P5 (2026-10-13, Opus 5.5, R5) — la règle ci-dessous, écrite absolue, est **bornée**
+> depuis par deux décisions ultérieures : l'annulation d'un lot généré reste permise (C-28-4-23, exception dite comme
+> telle) ; et une écriture en cours au moment de la clôture peut encore aboutir (L1, C-28-4-21, tracée par [#651]).
+> Le texte reste celui de sa date.*
+
 - **Contexte** : « lecture seule » admet des exceptions tentantes (corriger la description, archiver, annuler un
   règlement ancien).
 - **Retenu** : une seule règle, décidable : toute écriture qui vise le compte ou une ligne qui lui est rattachée est
@@ -2582,6 +2587,12 @@ l'orchestrateur).*
 > 4. ***L1 tracée par [#651]*** (R3 = F-M2) — la décision laissée à l'orchestrateur au point 4 de l'annotation P3 est
 >    prise : #651 (`bug`, `P2`), avec la piste du rejeu. La 28-4a et la 28-4b la citent en `refs #651` ; la promesse
 >    de #642, « toute écriture … refusée côté serveur », vaut hors de la fenêtre que #651 décrit.
+>
+> *Annotation de la validation P5 (2026-10-13, Opus 5.5, sur décision de l'orchestrateur) — le point 3 de l'annotation
+> P4 est **corrigé** : M54 n'est tuée que par T-a27 ; T-a49 est retiré (prémisse InnoDB réfutée en P5 : l'étape 2,
+> sur un import vide, ne pose qu'un verrou d'intervalle, qui n'attend pas une insertion non validée), et M56 est
+> « non tuée, assumée », bornée à MariaDB 10.11 (CI et dev). Le texte de #651 a été aligné par l'orchestrateur sur la
+> fenêtre et les huit chemins de l'AC7.*
 
 - **Contexte** : la validation P2 rend 1 HIGH et 9 MEDIUM, presque tous nés de la remédiation P1 — le verrou exclusif
   de la garde, combiné aux verrous partagés que les `INSERT` à clé étrangère posent sur `companies`, ouvrait des cycles
@@ -2641,6 +2652,9 @@ reclassement de L1 sont des annotations de C-28-4-21, non des choix neufs.*
 
 ### C-28-4-23 — `cancel_batch` (W21) : une sortie d'état autorisée, et non un invariant
 
+> *Annotation de la validation P5 (2026-10-13, Opus 5.5, R7, C-28-4-25) — `HorsPerimetre` est retiré du registre :
+> `SortieAutorisee` en est désormais le **quatrième** statut, non plus le cinquième.*
+
 - **Contexte** : F8 de la P3 — le registre de l'AC8 classait W21 `Invariant("I2", "un compte clos n'a aucun lot
   generated")`. Sous L1, un lot `generated` peut exister sur un compte clos, et `cancel_batch`, non gardé, est
   précisément le geste qui l'en fait sortir (c'est le remède de L1). La raison écrite était donc fausse.
@@ -2656,6 +2670,11 @@ reclassement de L1 sont des annotations de C-28-4-21, non des choix neufs.*
 *Choix C-28-4-24 : remédiation de la validation P4 (2026-10-13, Opus 5.5, sur décision de l'orchestrateur).*
 
 ### C-28-4-24 — W24 : la garde « compte clos » après le comptage ; l'import rapproché rend le refus du sol
+
+> *Annotation de la validation P5 (2026-10-13, Opus 5.5) — (1) R3 : l'ordre des refus **ne va pas** dans la note
+> d'`api-external.md` — la route `DELETE /bank-imports/{id}` est fermée aux clés d'API ; il reste à l'AC6 et au manuel
+> utilisateur. (2) F1 = R6 : T-a49 est retiré (prémisse InnoDB réfutée) ; M56 « non tuée, assumée » ; la position de
+> la garde reste tenue par T-a27 (b), qui tue M54 et M55. Le texte ci-dessous reste celui de sa date.*
 
 - **Contexte** : R1 (MEDIUM) et F-L3 de la P4 — la garde de W24, posée entre l'étape 2 et le comptage (P3), passait
   avant le refus du sol `HasReconciled`. Par I1, tout import non vide d'un compte clos ne porte que des transactions
@@ -2673,6 +2692,22 @@ reclassement de L1 sont des annotations de C-28-4-21, non des choix neufs.*
   (AC5), mais le refus « clos » n'y apprend rien à l'utilisateur, alors que celui du sol le met sur la voie ; masquer le
   bouton (table *Dehors* de la fiche).
 - **Réversible** : oui (une ligne, un site).
+
+*Choix C-28-4-25 : remédiation de la validation P5 (2026-10-13, Opus 5.5, autonomie).*
+
+### C-28-4-25 — Le registre de l'AC8 perd le statut `HorsPerimetre`
+
+- **Contexte** : R7 de la P5 — depuis la P4, le statut ne visait plus que « les routes de test et tout écrivain hors
+  périmètre que l'extraction voit » ; or aucun n'existe : restauration d'installation et `kesh-seed` ont un nom de
+  table variable, le rejeu post-restauration est du SQL, `routes/test_endpoints.rs` n'écrit aucune des sept tables.
+  La variante n'aurait jamais de site.
+- **Retenu** : la **retirer** ; quatre statuts (`Gardee`, `Invariant`, `SansCompteBancaire`, `SortieAutorisee`) ; les
+  écrivains hors périmètre vivent tous dans la liste des angles morts du doc-comment, avec leur raison. Si l'un d'eux
+  devient visible de l'extraction, le statut se crée avec son premier site.
+- **Écartées** : la garder et la construire dans T-a34 (une variante dont le seul usage est un test qui prouve qu'elle
+  ne sert à rien — variante morte déguisée) ; la garder sans la construire (`dead_code` sous `clippy -D warnings`,
+  et la règle « une entrée sans site rougit » interdirait de lui donner un site factice).
+- **Réversible** : oui (une variante).
 
 [#651]: https://github.com/guycorbaz/kesh/issues/651
 [#642]: https://github.com/guycorbaz/kesh/issues/642
