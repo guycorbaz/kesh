@@ -1,3 +1,5 @@
+# last_updated: 2026-10-13 (128) (28-7 — revue de code P1 close (Sonnet B/E/A : 0/0/0/9, remédiés sans ligne de production), test-fast 3560, Vitest 1547, statut done ; #548)
+# last_updated: 2026-10-13 (128) (28-7 — développement fait, mutations 14/15 (M10 équivalente au plan), rebasée sur origin/main 5629acc2, gates complets verts au HEAD 0d94fdc7 (nextest 3560, Vitest 1547, E2E 273 + 7 KF-029), statut review, prompt de revue P1 versionné ; #548)
 # last_updated: 2026-10-13 (127) (28-7 — revue de code P1 close (Sonnet B/E/A : 0/0/0/9, remédiés sans ligne de production), test-fast 3560, Vitest 1547, statut done ; #548)
 # last_updated: 2026-10-13 (127) (28-7 — développement fait, mutations 14/15 (M10 équivalente au plan), rebasée sur origin/main 5629acc2, gates complets verts au HEAD 0d94fdc7 (nextest 3560, Vitest 1547, E2E 273 + 7 KF-029), statut review, prompt de revue P1 versionné ; #548)
 # last_updated: 2026-10-13 (127) (28-7 — validation close (P3 ciblée Haiku : 1 MEDIUM de rédaction du registre, 7 LOW, remédiés à l étape 0) ; rebasée sur story/28-6 (8ba4e168) ; développement commencé, in-progress ; #548)

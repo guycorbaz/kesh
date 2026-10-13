@@ -857,3 +857,12 @@ seed) — `kesh-gate-logs/28-7-gates.txt` :
     13 — inchangés (assertions ajoutées à deux tests existants). Mutations : 18 distinctes, 16 tuées, 2 équivalentes à
     l'ordre observé.
   - Trend de la revue : P1 0 MEDIUM → close. Modèle : Sonnet.
+- **2026-10-13 — Rebase après la revue P1.** `origin/main` a avancé pendant la finalisation (`5629acc2` →
+  `d86832f2`, Story 28-5b) : branche rebasée ; conflits du registre de sprint (union par clé, en-tête reconstruit
+  depuis celui de `main`) et du CHANGELOG (union : l'entrée #526 de la 28-5b et celle de #548 dans la même section
+  `## [0.13.3]`) ; PDF du manuel pris de `main` puis régénéré depuis le `.tex` fusionné (28-5b et 28-7), contrôlé
+  aplati (formule absolue et ancienne phrase absentes, aucun `??`). Gates complets **et** E2E au HEAD rebasé, sous le
+  verrou, après remise à zéro des bases (`kesh-gate-logs/28-7-r2-gates.txt`) : `scripts/test-fast.sh` **3560/3560**
+  (6 ignorés), Vitest **1566/1566**, check, lint-i18n-ownership et build verts, E2E **277 passés, 7 échecs — les sept
+  de la KF-029** (#97, `docs/testing.md`), 19 ignorés. Aucune ligne de production modifiée depuis le dernier commit
+  de code (`git diff --stat` vide sur `crates/*/src` et `frontend/src` hors tests).
