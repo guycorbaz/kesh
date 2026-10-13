@@ -861,6 +861,10 @@ reconciliation-cancel-dismiss = Fermer
 reconciliation-cancel-done = Rapprochement annulé.
 reconciliation-cancel-entry-link = Voir l'écriture
 reconciliation-cancel-column = Rapprochement
+# Story 28-5b (#526) — annuler le rejet d'une transaction, depuis le détail de son import.
+reconciliation-unreject-button = Annuler le rejet
+reconciliation-unreject-rejected-on = Rejetée le { $date }
+reconciliation-unreject-success = Rejet annulé : la transaction est de nouveau proposée à la réconciliation, dont la liste montre les 100 plus récentes en attente.
 invoice-settle-success-full = Règlement enregistré — facture soldée
 invoice-settle-success-partial = Règlement partiel enregistré
 invoice-error-settled-on-required = Date de règlement obligatoire
@@ -1209,6 +1213,7 @@ reconciliation-labels-no-candidate = Aucune correspondance
 reconciliation-labels-amount-due-of = reste dû sur { $total }
 reconciliation-labels-success-suffix = opération(s) réussie(s).
 reconciliation-labels-failed = Échecs partiels
+reconciliation-labels-rejected-hint = Une transaction rejetée quitte cette liste. Elle reste dans le détail de son import (Importer des relevés), où son rejet peut être annulé si votre rôle le permet.
 # Story 15-5c (#492) — libellés des refus d'un lot de rapprochement (`failed[]`).
 reconciliation-failed-account-not-found = Un compte de contrepartie est introuvable ou archivé.
 reconciliation-failed-account-not-postable = Compte non imputable : { $numbers }. Un compte de regroupement, de résultat ou de clôture ne reçoit pas d’écriture : choisissez un compte imputable.
@@ -1216,7 +1221,7 @@ reconciliation-failed-account-not-postable-generic = Un compte de contrepartie n
 reconciliation-failed-bank-account-not-configured = Le compte bancaire n’est lié à aucun compte comptable actif : liez-en un dans Administration → Comptes bancaires.
 reconciliation-failed-bank-account-not-found = Compte bancaire introuvable.
 reconciliation-failed-bank-transaction-not-found = Transaction introuvable : elle a été supprimée avec son import, ou n’appartient pas à ce compte bancaire.
-reconciliation-failed-already-rejected = Cette transaction a déjà été rejetée : elle n’est plus proposée.
+reconciliation-failed-already-rejected = Cette transaction a déjà été rejetée : elle n’est plus proposée. Son rejet s’annule depuis le détail de son import (Importer des relevés).
 reconciliation-failed-changed-during-batch = La transaction a été modifiée pendant le traitement — rapprochée, rejetée ou supprimée par une autre opération.
 reconciliation-failed-database-error = Erreur de la base de données : réessayez ; si le problème persiste, contactez le support.
 reconciliation-failed-invoice-not-found = Facture introuvable.

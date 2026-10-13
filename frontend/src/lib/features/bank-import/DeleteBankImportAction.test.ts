@@ -35,6 +35,7 @@ function tx(id: number, status = 'pending', matchedEntryId: number | null = null
 		counterpartyName: null,
 		status,
 		matchedEntryId,
+		autoMatchRejectedAt: null,
 	};
 }
 

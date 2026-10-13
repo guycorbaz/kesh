@@ -121,6 +121,13 @@ export interface BankTransactionDto {
 	status: string;
 	/** L'écriture liée par le rapprochement, `null` si la transaction n'est pas rapprochée (Story 25-3-b). */
 	matchedEntryId: number | null;
+	/**
+	 * Date du rejet de la proposition de réconciliation (ISO 8601 UTC), `null`
+	 * si la transaction n'est pas rejetée (Story 28-5, #526). Une rejetée quitte
+	 * la liste de la réconciliation ; son rejet s'annule depuis le détail de son
+	 * import (cf. `isRejected`, `reconciliation-unreject.ts`).
+	 */
+	autoMatchRejectedAt: string | null;
 }
 
 export interface BankImportDetailResponse extends BankImportResponse {

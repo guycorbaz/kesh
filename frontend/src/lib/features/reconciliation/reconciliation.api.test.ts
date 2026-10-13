@@ -8,6 +8,7 @@ import {
 	manualMatchTransaction,
 	rejectProposals,
 	splitTransaction,
+	unrejectTransaction,
 } from './reconciliation.api';
 
 function fakeJwt(): string {
@@ -83,6 +84,21 @@ describe('reconciliation.api', () => {
 		const body = JSON.parse(init.body as string);
 		expect(body.bankAccountId).toBe(7);
 		expect(body.bankTransactionIds).toEqual([10, 11]);
+	});
+
+	// Story 28-5b (#526, V5) — annuler le rejet : POST sans corps utile, réponse 204.
+	it('unrejectTransaction poste {} à /reconciliation/transactions/{id}/unreject et accepte un 204', async () => {
+		mockFetch.mockResolvedValueOnce({
+			ok: true,
+			status: 204,
+			json: () => Promise.reject(new Error('204 sans corps')),
+			headers: new Headers(),
+		} as unknown as Response);
+		await expect(unrejectTransaction(7)).resolves.toBeUndefined();
+		const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+		expect(url).toMatch(/\/api\/v1\/reconciliation\/transactions\/7\/unreject$/);
+		expect(init.method).toBe('POST');
+		expect(JSON.parse(init.body as string)).toEqual({});
 	});
 
 	// Story 8-5a-base FR45 — manual match.

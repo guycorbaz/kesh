@@ -25,9 +25,10 @@
  * Le littéral ajouté par la Story 27-4 (#634) (ce qui portait le compte à 27) est
  * `RECONCILIATION_ALREADY_REJECTED` : une
  * transaction rejetée refusée par le pré-vol d'un lot (auparavant, le lot entier était refusé
- * en `400`). Depuis la Story 28-6 (#482), le littéral ajouté en dernier, qui porte le compte à
- * 28, est `RECONCILIATION_TRANSACTION_NOT_CREDIT` : un débit ou un montant nul proposé contre
- * une facture (un seul libellé pour ses deux `details.reason`).
+ * en `400`). Depuis la Story 28-5b (#526), son libellé dit où annuler le rejet : le détail de
+ * l'import de la transaction. Depuis la Story 28-6 (#482), le littéral ajouté en dernier, qui
+ * porte le compte à 28, est `RECONCILIATION_TRANSACTION_NOT_CREDIT` : un débit ou un montant nul
+ * proposé contre une facture (un seul libellé pour ses deux `details.reason`).
  *
  * ⚠️ **Cinq codes seulement lisent leur `details`** : `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT`
  * (Story 15-6b), pour son `role` — le compte de banque lié au compte débiteurs et le compte
@@ -212,7 +213,7 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 		case 'RECONCILIATION_ALREADY_REJECTED':
 			return i18nMsg(
 				'reconciliation-failed-already-rejected',
-				'Cette transaction a déjà été rejetée : elle n’est plus proposée.'
+				'Cette transaction a déjà été rejetée : elle n’est plus proposée. Son rejet s’annule depuis le détail de son import (Importer des relevés).'
 			);
 		case 'RECONCILIATION_CURRENCY_MISMATCH':
 			return i18nMsg(

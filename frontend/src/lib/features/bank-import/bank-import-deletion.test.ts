@@ -21,6 +21,7 @@ function tx(status: string, matchedEntryId: number | null): BankTransactionDto {
 		counterpartyName: null,
 		status,
 		matchedEntryId,
+		autoMatchRejectedAt: null,
 	};
 }
 

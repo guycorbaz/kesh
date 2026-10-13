@@ -609,7 +609,14 @@ const ATTENDU = {
 	// `features/reconciliation/failed-proposal-label.ts` gagne un appel
 	// (`reconciliation-failed-transaction-not-credit`). `sitesNonResolus`, `relais`,
 	// `sitesGabarit` inchangés (un littéral), mesurés.
-	sitesTotal: 2080,
+	// Story 28-5b (#526) : **+4**, mesuré par la collecte de ce test et recompté par
+	// `grep -o "i18nMsg("` aux deux bornes : `features/reconciliation/UnrejectTransactionAction.svelte`
+	// (neuf, 3 : bouton, mention datée, succès) et `ReconciliationProposals.svelte` (18 → 19 :
+	// l'indication des rejetées). La réécriture du repli de `reconciliation-failed-already-rejected`
+	// n'ajoute aucun site. Sur sa branche (borne `eab77cf1`, 2079) : 2083 ; fusionnée en SECONDE,
+	// après la 28-6 (C-28-5-29), rebasée sur `5629acc2` (2080) : **2084**, recompté par la collecte.
+	// `sitesNonResolus`, `relais`, `sitesGabarit` inchangés (que des littéraux), mesurés.
+	sitesTotal: 2084,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

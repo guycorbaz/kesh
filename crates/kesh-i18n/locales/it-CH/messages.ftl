@@ -813,6 +813,10 @@ reconciliation-cancel-dismiss = Chiudi
 reconciliation-cancel-done = Riconciliazione annullata.
 reconciliation-cancel-entry-link = Vedi la scrittura
 reconciliation-cancel-column = Riconciliazione
+# Story 28-5b (#526) — annuler le rejet d'une transaction, depuis le détail de son import.
+reconciliation-unreject-button = Annulla il rifiuto
+reconciliation-unreject-rejected-on = Rifiutata il { $date }
+reconciliation-unreject-success = Rifiuto annullato: la transazione è di nuovo proposta per la riconciliazione, il cui elenco mostra le 100 più recenti in sospeso.
 invoice-settle-success-full = Pagamento registrato — fattura saldata
 invoice-settle-success-partial = Pagamento parziale registrato
 invoice-error-settled-on-required = Data del pagamento obbligatoria
@@ -1146,6 +1150,7 @@ reconciliation-labels-no-candidate = Nessuna corrispondenza
 reconciliation-labels-amount-due-of = residuo su { $total }
 reconciliation-labels-success-suffix = operazione/i riuscita/e.
 reconciliation-labels-failed = Errori parziali
+reconciliation-labels-rejected-hint = Una transazione rifiutata lascia questo elenco. Resta nel dettaglio della sua importazione (Importa estratti conto), dove il rifiuto si può annullare se il suo ruolo lo consente.
 # Story 15-5c (#492) — etichette dei rifiuti di un lotto di riconciliazione (`failed[]`).
 reconciliation-failed-account-not-found = Un conto di contropartita è introvabile o archiviato.
 reconciliation-failed-account-not-postable = Conto non registrabile: { $numbers }. Un conto di raggruppamento, di risultato o di chiusura non riceve scritture: scegliere un conto registrabile.
@@ -1153,7 +1158,7 @@ reconciliation-failed-account-not-postable-generic = Un conto di contropartita n
 reconciliation-failed-bank-account-not-configured = Il conto bancario non è collegato ad alcun conto contabile attivo: collegarne uno in Amministrazione → Conti bancari.
 reconciliation-failed-bank-account-not-found = Conto bancario introvabile.
 reconciliation-failed-bank-transaction-not-found = Transazione introvabile: è stata eliminata con la sua importazione o non appartiene a questo conto bancario.
-reconciliation-failed-already-rejected = Questa transazione è già stata rifiutata: non viene più proposta.
+reconciliation-failed-already-rejected = Questa transazione è già stata rifiutata: non viene più proposta. Il rifiuto si annulla dal dettaglio della sua importazione (Importa estratti conto).
 reconciliation-failed-changed-during-batch = La transazione è stata modificata durante l’elaborazione — riconciliata, rifiutata o eliminata da un’altra operazione.
 reconciliation-failed-database-error = Errore della banca dati: riprovare; se il problema persiste, contattare il supporto.
 reconciliation-failed-invoice-not-found = Fattura introvabile.
