@@ -427,6 +427,7 @@ du verrou tenu de `post_accept_returns_409_on_account_lock_contention` l. 1435 ;
 | M21 | b | garde `if (submitting) return` retirée — *ajoutée en revue de code P1 de la 28-5b, E-2 = A-1 = B-L3* | V2 (succès : `disabled` levé à la main, le second clic ne doit rien envoyer) |
 | M22 | b | `finally { submitting = false }` retiré — *revue P1, B-L3* | V2 (échec : le bouton redevient actif) |
 | M23 | b | `new Date()` au lieu de `new Date(tx.autoMatchRejectedAt)` — *revue P1, E-1* | V2 (`canManage=false` : texte exact « Rejetée le 4 mars 2026 ») |
+| M24 | b | `errorMessage = null` retiré de `load()` (page du détail d'import) — *revue P2 ciblée, P2-1* | V3 (relecture en échec puis relecture réussie : les lignes reviennent, sans bannière) |
 
 ## Dev Notes
 
@@ -984,3 +985,24 @@ Journaux hors dépôt, sous `/home/gcorbaz/devel/kesh-gate-logs/28-5b/` ; script
   test neuf des replis ; les autres ajouts sont des assertions dans des tests existants). E2E non rejoué : ni la production ni la spec E2E ne bougent. Trend : P1 = 1 MEDIUM,
   11 LOW → remédiés sur les tests seuls ; passe **ciblée P2** à lancer (`28-5b-review-prompt-p2-ciblee.md`, Haiku, une
   lentille sur le seul diff de la remédiation).
+- 2026-10-13 — **Revue de code P2 ciblée de la 28-5b** (Haiku, une lentille sur le diff `e6675f30..201b8edb` ; rapport
+  `kesh-gate-logs/28-5b-review-p2-ciblee.md`, prompt `28-5b-review-prompt-p2-ciblee.md`) : **0 CRITICAL, 0 HIGH,
+  0 MEDIUM, 2 LOW**, tous deux issus de la remédiation P1. Remédiation (décision de l'orchestrateur) :
+  - **P2-1 (LOW)** — la raison écrite pour **B-L2** était fausse : la bannière d'erreur de la page de détail **masque
+    les lignes** (branche `{:else if errorMessage}`), il n'y a donc plus de bouton à cliquer, et seul un rechargement
+    réparait la page. **B-L2 est corrigé, et n'est plus assumé** : `errorMessage = null` en tête de `load()`
+    (`frontend/src/routes/(app)/bank-import/[id]/+page.svelte`) — **une ligne de production, voulue**. Test V3 neuf :
+    deux annulations lancées coup sur coup, la relecture de la première échoue (bannière), celle de la seconde réussit
+    — les lignes reviennent, sans bannière. Mutation **M24** (ligne retirée) jouée sous verrou : **tuée**
+    (`mutations-p2-run.txt`, `mutations/M24.log`). *Annuler le rapprochement* en bénéficie de la même façon : le
+    `onSuccess` de son dialogue appelle le même `load()` (`+page.svelte:176`) — vérifié au code, non par un test du
+    dialogue. L'entrée P1 ci-dessus n'est pas réécrite : sa phrase sur B-L2 est **annotée** par la présente (règle B4).
+  - **P2-2 (LOW)** — le commentaire de la fixture de V2 disait que « les tests tournent dans ces fuseaux » : il dit
+    désormais que la suite ne fixe aucun fuseau, tourne dans celui du runner, et que l'assertion rougirait en UTC+13
+    ou UTC+14.
+  Gates : Vitest ciblé (2 fichiers, 12 passés) ; M24 tuée ; `check` et `test:unit` complets sous verrou
+  (`p2-remed-frontend.log`) : `check` 0 erreur (29 avertissements préexistants), **1516 passés, 142 fichiers**
+  (1515 + le test neuf de V3). E2E complet **à rejouer au rebase** (la production a bougé).
+  **La boucle n'est pas close** : la remédiation touche une ligne de production ; passe **ciblée P3** à lancer
+  (`28-5b-review-prompt-p3-ciblee.md`, Haiku, une lentille sur le seul diff de cette correction). Trend : P1 = 1 MEDIUM,
+  11 LOW → P2 ciblée = 0 MEDIUM, 2 LOW.
