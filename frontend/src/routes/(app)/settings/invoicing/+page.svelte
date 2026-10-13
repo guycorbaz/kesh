@@ -36,9 +36,11 @@
 	let settings = $state<InvoiceSettingsResponse | null>(null);
 	let accounts = $state<AccountResponse[]>([]);
 	// Story 15-6c (#474, AC8) : les comptes du grand livre liés à un compte
-	// bancaire non archivé (`listBankAccounts()` exclut les archivés). Ensemble
-	// vide si la liste n'a pas pu être lue : pas de filtre, le refus serveur
-	// reste le filet.
+	// bancaire non archivé (`listBankAccounts` exclut les archivés). Story 28-4b
+	// (#642, AC12, C-28-4-7) : CLOS compris — le serveur compte un compte bancaire
+	// clos comme lié à son compte comptable (`first_active_bank_account_linked_to`),
+	// d'où le second paramètre `includeClosed = true`. Ensemble vide si la liste
+	// n'a pas pu être lue : pas de filtre, le refus serveur reste le filet.
 	let bankLinkedAccountIds = $state<Set<number>>(new Set());
 	let loading = $state(true);
 	let submitting = $state(false);
@@ -145,7 +147,7 @@
 		try {
 			// Story 15-6c (AC8) : lancée avec les deux autres, mais son échec n'est
 			// pas une erreur de chargement — il laisse simplement les menus non filtrés.
-			const banks = listBankAccounts().catch(() => []);
+			const banks = listBankAccounts(false, true).catch(() => []);
 			const [s, a] = await Promise.all([getInvoiceSettings(), fetchAccounts(false)]);
 			bankLinkedAccountIds = new Set(
 				(await banks)

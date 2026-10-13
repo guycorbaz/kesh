@@ -3,7 +3,7 @@
 ## Status
 
 **28-4a : done** (développée le 2026-10-13, Opus 5.5 ; revue P1 remédiée, passe ciblée P2 0/0/0/2 — boucle close) —
-**28-4b : ready-for-dev**. Historique : **ready-for-dev** (deux clés) — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur
+**28-4b : in-progress** (développement commencé le 2026-10-13, Opus 5.5). Historique : **ready-for-dev** (deux clés) — fiche créée le 2026-10-13 en autonomie (`bmad-create-story`, Opus 5.5), sur
 `5aad8b35` (kickoff de l'Epic 28), worktree `/home/gcorbaz/devel/kesh-28-4`, branche `story/28-4`. Validation P1
 faite (Sonnet, lentilles R et F : 4 HIGH, 9 MEDIUM, 12 LOW, trois convergences) et remédiée ; validation P2 faite
 (Opus, lentilles R et F : 1 HIGH, 9 MEDIUM, 9 LOW) et remédiée par **simplification de la conception** (C-28-4-21 :

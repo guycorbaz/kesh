@@ -1220,6 +1220,7 @@ reconciliation-failed-account-not-postable = Compte non imputable : { $numbers }
 reconciliation-failed-account-not-postable-generic = Un compte de contrepartie n’est pas imputable : un compte de regroupement, de résultat ou de clôture ne reçoit pas d’écriture. Choisissez un compte imputable.
 reconciliation-failed-bank-account-not-configured = Le compte bancaire n’est lié à aucun compte comptable actif : liez-en un dans Administration → Comptes bancaires.
 reconciliation-failed-bank-account-not-found = Compte bancaire introuvable.
+reconciliation-failed-bank-account-closed = Le compte bancaire est clos : il est en lecture seule. Pour y enregistrer une opération, rouvrez d’abord le compte (Administration → Comptes bancaires).
 reconciliation-failed-bank-transaction-not-found = Transaction introuvable : elle a été supprimée avec son import, ou n’appartient pas à ce compte bancaire.
 reconciliation-failed-already-rejected = Cette transaction a déjà été rejetée : elle n’est plus proposée. Son rejet s’annule depuis le détail de son import (Importer des relevés).
 reconciliation-failed-changed-during-batch = La transaction a été modifiée pendant le traitement — rapprochée, rejetée ou supprimée par une autre opération.
@@ -1333,6 +1334,22 @@ bank-accounts-tooltip-journal-account = Lie ce compte bancaire à un compte du p
 bank-accounts-toast-create-success = Compte bancaire créé.
 bank-accounts-toast-update-success = Compte bancaire modifié.
 bank-accounts-toast-archive-success = Compte bancaire archivé.
+# Story 28-4b (#642) — clore et rouvrir un compte bancaire (écran Comptes bancaires).
+bank-accounts-actions-close = Clore
+bank-accounts-actions-reopen = Rouvrir
+bank-accounts-actions-show-closed = Afficher les comptes clos
+bank-accounts-actions-hide-closed = Masquer les comptes clos
+bank-accounts-labels-closed-badge = Clos le { $date }
+bank-accounts-close-dialog-title = Clore ce compte bancaire ?
+bank-accounts-close-dialog-body = Le compte passe en lecture seule : plus aucun import, rapprochement, règlement ni lot de paiement ne s'y enregistre. Son historique reste entier et consultable (imports, écritures, rapports, export). Vous pourrez le rouvrir.
+bank-accounts-close-dialog-date = Date de clôture
+bank-accounts-close-dialog-balance-warning = Le solde comptable du compte lié est de { $amount } : vérifiez-le avant de clore (écriture de virement ou de frais).
+bank-accounts-close-dialog-confirm = Clore le compte
+bank-accounts-reopen-dialog-body = Rouvrir ce compte bancaire ? Il redevient utilisable pour les imports, les rapprochements et les règlements ; il ne redevient pas compte principal.
+bank-accounts-close-primary-hint = Le compte principal ne se clôt pas : désignez d'abord un autre compte principal.
+bank-accounts-toast-close-success = Compte bancaire clos.
+bank-accounts-toast-close-success-hidden = Compte clos. Affichez les comptes clos pour le retrouver.
+bank-accounts-toast-reopen-success = Compte bancaire rouvert.
 
 # Story v014-1 — Homepage widget bank accounts (F14 Pass 1 code review)
 homepage-bank-total-partial = (comptes liés uniquement)
@@ -1351,7 +1368,7 @@ homepage-bank-gap = Écart : { $amount }
 homepage-bank-gap-unavailable = Écart non calculable : compte du grand livre partagé
 homepage-bank-unavailable = Comptes bancaires indisponibles pour le moment.
 settings-bank-manage = Gérer dans Administration → Comptes bancaires
-settings-bank-manage-hint = Pour ajouter, modifier ou archiver un compte bancaire, utilisez la page dédiée Administration → Comptes bancaires.
+settings-bank-manage-hint = Pour ajouter, modifier, clore ou archiver un compte bancaire, utilisez la page dédiée Administration → Comptes bancaires.
 bank-accounts-toast-link-success = Compte bancaire lié avec succès au plan comptable.
 bank-accounts-toast-unlink-success = Compte bancaire délié du plan comptable.
 

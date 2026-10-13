@@ -17,8 +17,11 @@ import type { BankAccountSummary } from '$lib/features/bank-accounts/bank-accoun
 
 vi.mock('$app/environment', () => ({ browser: true }));
 
+// Story 28-4b — le repli est interpolé (`{ $date }`, `{ $amount }`), comme le
+// ferait Fluent : le badge et l'avertissement de solde portent leur valeur.
 vi.mock('$lib/shared/utils/i18n.svelte', () => ({
-	i18nMsg: (_key: string, fallback: string) => fallback,
+	i18nMsg: (_key: string, fallback: string, args?: Record<string, string | number>) =>
+		args ? fallback.replace(/\{\s*\$(\w+)\s*\}/g, (_, k) => String(args[k] ?? '')) : fallback,
 }));
 
 vi.mock('svelte-sonner', () => ({
@@ -30,17 +33,27 @@ vi.mock('$lib/features/accounts/accounts.api', () => ({
 	fetchAccounts: () => fetchAccountsMock(),
 }));
 
-const listBankAccountsMock = vi.fn<() => Promise<BankAccountSummary[]>>();
+// Story 28-4b (#642) — les deux booléens du filtre sont transmis au mock (T-b9).
+const listBankAccountsMock =
+	vi.fn<(includeArchived?: boolean, includeClosed?: boolean) => Promise<BankAccountSummary[]>>();
 // Story 26-2a — les payloads de création et de modification sont inspectés.
 const createBankAccountMock = vi.fn<(payload: unknown) => Promise<unknown>>();
 const updateBankAccountMock = vi.fn<(id: number, payload: unknown) => Promise<unknown>>();
 // Story 28-2 (revue P1 E-L5) — l'archivage est piloté pour le cas B4.
 const archiveBankAccountMock = vi.fn<(id: number, version: number) => Promise<unknown>>();
+// Story 28-4b (#642, AC11) — clôture et réouverture.
+const closeBankAccountMock =
+	vi.fn<(id: number, version: number, closedOn: string) => Promise<unknown>>();
+const reopenBankAccountMock = vi.fn<(id: number, version: number) => Promise<unknown>>();
 vi.mock('$lib/features/bank-accounts/bank-accounts.api', () => ({
-	listBankAccounts: () => listBankAccountsMock(),
+	listBankAccounts: (includeArchived?: boolean, includeClosed?: boolean) =>
+		listBankAccountsMock(includeArchived, includeClosed),
 	createBankAccount: (payload: unknown) => createBankAccountMock(payload),
 	updateBankAccount: (id: number, payload: unknown) => updateBankAccountMock(id, payload),
 	archiveBankAccount: (id: number, version: number) => archiveBankAccountMock(id, version),
+	closeBankAccount: (id: number, version: number, closedOn: string) =>
+		closeBankAccountMock(id, version, closedOn),
+	reopenBankAccount: (id: number, version: number) => reopenBankAccountMock(id, version),
 	updateBankAccountJournalLink: vi.fn(),
 }));
 
@@ -91,6 +104,7 @@ const bankAccount: BankAccountSummary = {
 	journalAccountId: LINKED_NON_POSTABLE.id,
 	version: 2,
 	archived: false,
+	closedOn: null,
 	currentBalance: '0.00',
 	lastTransactionDate: null,
 	statementClosingBalance: null,
@@ -359,5 +373,204 @@ describe('page des comptes bancaires — échec imprévu d’une écriture (Stor
 		await fireEvent.click(await r.findByTestId('archive-confirm-button'));
 		await waitFor(() => expect(archiveBankAccountMock).toHaveBeenCalledWith(5, 2));
 		await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Erreur inattendue.'));
+	});
+});
+
+// Story 28-4b (#642, AC11) — clore et rouvrir un compte bancaire. T-b5 à T-b9 de la
+// fiche. Trois comptes synthétiques : le principal (5), un compte ouvert (6), un
+// compte clos (7). IBAN de test, aucune donnée réelle.
+describe('page des comptes bancaires — clôture (Story 28-4b, AC11)', () => {
+	const PRINCIPAL: BankAccountSummary = { ...bankAccount, id: 5, isPrimary: true, version: 2 };
+	const OUVERT: BankAccountSummary = {
+		...bankAccount,
+		id: 6,
+		bankName: 'UBS',
+		iban: 'CH5604835012345678009',
+		isPrimary: false,
+		journalAccountId: null,
+		version: 3,
+		currentBalance: '125.50',
+	};
+	const CLOS: BankAccountSummary = {
+		...bankAccount,
+		id: 7,
+		bankName: 'PostFinance',
+		iban: 'CH4431999123000889012',
+		isPrimary: false,
+		journalAccountId: null,
+		version: 4,
+		closedOn: '2026-09-30',
+	};
+
+	/** La date locale du jour, `AAAA-MM-JJ` (ce que le champ doit préremplir). */
+	function aujourdhui(): string {
+		const d = new Date();
+		return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+	}
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		vi.spyOn(console, 'error').mockImplementation(() => {});
+		fetchAccountsMock.mockResolvedValue(accounts);
+		listBankAccountsMock.mockResolvedValue([PRINCIPAL, OUVERT, CLOS]);
+		getInvoiceSettingsMock.mockResolvedValue({
+			defaultReceivableAccountId: null,
+			defaultPayableAccountId: null,
+		});
+		closeBankAccountMock.mockResolvedValue({});
+		reopenBankAccountMock.mockResolvedValue({});
+	});
+
+	// T-b5 — une ligne close : badge daté au format suisse, seule action « Rouvrir ».
+	it('une ligne close porte le badge daté et la seule action Rouvrir', async () => {
+		const r = render(Page);
+		const badge = await r.findByTestId('closed-badge-7');
+		expect(badge.textContent?.trim()).toBe('Clos le 30.09.2026');
+		expect(r.getByTestId('reopen-7')).toBeTruthy();
+		for (const absent of ['close-7', 'link-button-7', 'edit-button-7', 'archive-button-7']) {
+			expect(r.queryByTestId(absent)).toBeNull();
+		}
+		expect(r.getByTestId('bank-account-row-7').className).toContain('opacity-50');
+		// Une ligne ouverte : « Clore », et pas « Rouvrir ».
+		expect(r.getByTestId('close-6')).toBeTruthy();
+		expect(r.queryByTestId('reopen-6')).toBeNull();
+		expect(r.queryByTestId('closed-badge-6')).toBeNull();
+	});
+
+	// T-b6 — le principal : « Clore » désactivé, expliqué en `title` et en aide.
+	it('sur le compte principal, Clore est désactivé et expliqué', async () => {
+		const r = render(Page);
+		const bouton = (await r.findByTestId('close-5')) as HTMLButtonElement;
+		expect(bouton.disabled).toBe(true);
+		expect(bouton.getAttribute('title')).toContain("désignez d'abord un autre compte principal");
+		expect(r.getByTestId('close-primary-hint-5').textContent).toContain(
+			"désignez d'abord un autre compte principal",
+		);
+		expect((r.getByTestId('close-6') as HTMLButtonElement).disabled).toBe(false);
+		expect(r.queryByTestId('close-primary-hint-6')).toBeNull();
+	});
+
+	// T-b7 — dialogue : date locale préremplie ; avertissement si solde ≠ 0.
+	it('le dialogue préremplit la date du jour et avertit d’un solde non nul', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('close-6'));
+		const date = (await r.findByTestId('close-date')) as HTMLInputElement;
+		expect(date.type).toBe('date');
+		expect(date.value).toBe(aujourdhui());
+		const avertissement = r.getByTestId('close-balance-warning');
+		expect(avertissement.textContent).toContain('125.50');
+		expect(avertissement.textContent).toContain('vérifiez-le avant de clore');
+	});
+
+	it.each([
+		['nul', '0.00'],
+		['nul négatif', '-0.00'],
+		['absent', null],
+	])('solde %s : aucun avertissement', async (_cas, solde) => {
+		listBankAccountsMock.mockResolvedValue([PRINCIPAL, { ...OUVERT, currentBalance: solde }]);
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('close-6'));
+		await r.findByTestId('close-confirm');
+		expect(r.queryByTestId('close-balance-warning')).toBeNull();
+	});
+
+	// T-b3 côté écran — la date saisie part au serveur avec la version.
+	it('confirmer envoie la version et la date choisie', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('close-6'));
+		await fireEvent.input(await r.findByTestId('close-date'), { target: { value: '2026-08-31' } });
+		await fireEvent.click(r.getByTestId('close-confirm-button'));
+		await waitFor(() => expect(closeBankAccountMock).toHaveBeenCalledWith(6, 3, '2026-08-31'));
+	});
+
+	it('Annuler ferme le dialogue sans rien envoyer', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('close-6'));
+		await fireEvent.click(await r.findByTestId('close-cancel-button'));
+		expect(r.queryByTestId('close-confirm')).toBeNull();
+		expect(closeBankAccountMock).not.toHaveBeenCalled();
+	});
+
+	// T-b8 — un refus du serveur s'affiche par son message, jamais « [object Object] ».
+	it('un refus 412 s’affiche par le message du serveur', async () => {
+		const message =
+			"Ce compte porte des transactions importées qui ne sont pas rapprochées. Rapprochez-les, ou supprimez l'import s'il ne contient aucune transaction rapprochée, avant de clore le compte.";
+		closeBankAccountMock.mockRejectedValue({
+			code: 'BANK_ACCOUNT_HAS_PENDING_TRANSACTIONS',
+			message,
+			status: 412,
+		});
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('close-6'));
+		await fireEvent.click(await r.findByTestId('close-confirm-button'));
+		const erreur = await r.findByTestId('close-error');
+		expect(erreur.textContent).toBe(message);
+		expect(erreur.textContent).not.toContain('[object Object]');
+		// Le dialogue reste ouvert : l'utilisateur lit le refus là où il a agi.
+		expect(r.getByTestId('close-confirm')).toBeTruthy();
+	});
+
+	it('un rejet hors ApiError s’affiche par le générique', async () => {
+		closeBankAccountMock.mockRejectedValue(new Error('boom'));
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('close-6'));
+		await fireEvent.click(await r.findByTestId('close-confirm-button'));
+		expect((await r.findByTestId('close-error')).textContent).toBe('Erreur inattendue.');
+	});
+
+	// T-b9 — la bascule des clos : masqués par défaut, demandés au clic.
+	it('la bascule Afficher les comptes clos recharge la liste avec includeClosed', async () => {
+		const r = render(Page);
+		const bascule = await r.findByTestId('toggle-closed');
+		await waitFor(() => expect(listBankAccountsMock).toHaveBeenCalledWith(false, false));
+		expect(bascule.textContent?.trim()).toBe('Afficher les comptes clos');
+		await fireEvent.click(bascule);
+		await waitFor(() => expect(listBankAccountsMock).toHaveBeenLastCalledWith(false, true));
+		expect((await r.findByTestId('toggle-closed')).textContent?.trim()).toBe('Masquer les comptes clos');
+	});
+
+	// Toast de succès : il dit où retrouver le compte quand les clos sont masqués.
+	it('après clôture, clos masqués : le toast dit comment retrouver le compte', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('close-6'));
+		await fireEvent.click(await r.findByTestId('close-confirm-button'));
+		await waitFor(() =>
+			expect(toast.success).toHaveBeenCalledWith(
+				'Compte clos. Affichez les comptes clos pour le retrouver.',
+			),
+		);
+	});
+
+	it('après clôture, clos affichés : le toast simple', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('toggle-closed'));
+		await waitFor(() => expect(listBankAccountsMock).toHaveBeenLastCalledWith(false, true));
+		await fireEvent.click(await r.findByTestId('close-6'));
+		await fireEvent.click(await r.findByTestId('close-confirm-button'));
+		await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Compte bancaire clos.'));
+	});
+
+	// Réouverture : une phrase, Annuler / Rouvrir ; le geste part avec la version.
+	it('rouvrir un compte clos envoie sa version', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('reopen-7'));
+		expect((await r.findByTestId('reopen-confirm')).textContent).toContain('Rouvrir ce compte bancaire');
+		await fireEvent.click(r.getByTestId('reopen-confirm-button'));
+		await waitFor(() => expect(reopenBankAccountMock).toHaveBeenCalledWith(7, 4));
+		await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Compte bancaire rouvert.'));
+	});
+
+	it('un refus de la réouverture s’affiche par le message du serveur', async () => {
+		reopenBankAccountMock.mockRejectedValue({
+			code: 'OPTIMISTIC_LOCK_CONFLICT',
+			message: 'Le compte a été modifié entre-temps.',
+			status: 409,
+		});
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('reopen-7'));
+		await fireEvent.click(await r.findByTestId('reopen-confirm-button'));
+		expect((await r.findByTestId('reopen-error')).textContent).toBe(
+			'Le compte a été modifié entre-temps.',
+		);
 	});
 });

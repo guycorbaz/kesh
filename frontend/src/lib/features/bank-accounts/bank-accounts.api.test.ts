@@ -2,7 +2,12 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { authState } from '$lib/app/stores/auth.svelte';
-import { listBankAccounts, updateBankAccountJournalLink } from './bank-accounts.api';
+import {
+	closeBankAccount,
+	listBankAccounts,
+	reopenBankAccount,
+	updateBankAccountJournalLink,
+} from './bank-accounts.api';
 
 function fakeJwt(): string {
 	const part = btoa(JSON.stringify({ alg: 'HS256', typ: 'JWT' }))
@@ -187,5 +192,89 @@ describe('bank-accounts.api — champs du relevé dont la période se termine le
 		const [a, b] = await listBankAccounts();
 		expect(a.description).toBe('Personnel');
 		expect(b.description).toBeNull();
+	});
+});
+
+// Story 28-4b (#642, AC11) — clôture d'un compte bancaire : le filtre des clos,
+// `closedOn`, et les deux gestes. T-b1 à T-b4 de la fiche.
+describe('bank-accounts.api — comptes clos (28-4b)', () => {
+	let mockFetch: ReturnType<typeof vi.fn>;
+
+	const COMPTE = {
+		id: 7,
+		bankName: 'UBS',
+		description: null,
+		iban: 'CH9300762011623852957',
+		qrIban: null,
+		isPrimary: false,
+		journalAccountId: null,
+		version: 3,
+		archived: false,
+		closedOn: '2026-09-30',
+	};
+
+	function reponse(body: unknown) {
+		return {
+			ok: true,
+			status: 200,
+			json: () => Promise.resolve(body),
+			headers: new Headers(),
+		} as Response;
+	}
+
+	beforeEach(() => {
+		authState.clearSession();
+		authState.login({ userId: '1', username: 'test', role: 'Admin', expiresIn: 900 });
+		mockFetch = vi.fn().mockResolvedValue(reponse(COMPTE));
+		vi.stubGlobal('fetch', mockFetch);
+	});
+	afterEach(() => {
+		vi.unstubAllGlobals();
+		authState.clearSession();
+	});
+
+	// T-b1 — les combinaisons des deux booléens (C-28-4-20) ; les appelants
+	// existants (aucun argument, `false`) gardent l'URL d'avant.
+	it.each([
+		[undefined, undefined, '/api/v1/bank-accounts'],
+		[false, false, '/api/v1/bank-accounts'],
+		[true, false, '/api/v1/bank-accounts?includeArchived=true'],
+		[false, true, '/api/v1/bank-accounts?includeClosed=true'],
+		[true, true, '/api/v1/bank-accounts?includeArchived=true&includeClosed=true'],
+	])('listBankAccounts(%s, %s) → %s', async (archives, clos, attendu) => {
+		mockFetch.mockResolvedValueOnce(reponse([]));
+		await listBankAccounts(archives, clos);
+		const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+		expect(url).toBe(attendu);
+		expect(init.method).toBe('GET');
+	});
+
+	// T-b2 — `closedOn` traverse le mappage ; absent (serveur antérieur) → null.
+	it('parseBankAccount porte closedOn, et le rend à null s’il manque', async () => {
+		mockFetch.mockResolvedValueOnce(reponse([COMPTE, { ...COMPTE, id: 8, closedOn: undefined }]));
+		const [clos, sans] = await listBankAccounts(false, true);
+		expect(clos.closedOn).toBe('2026-09-30');
+		expect(sans.closedOn).toBeNull();
+	});
+
+	// T-b3 — clôture : POST, corps { version, closedOn }.
+	it('closeBankAccount envoie POST /close avec version et closedOn', async () => {
+		const a = await closeBankAccount(7, 3, '2026-09-30');
+		const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+		expect(url).toBe('/api/v1/bank-accounts/7/close');
+		expect(init.method).toBe('POST');
+		expect(JSON.parse(init.body as string)).toEqual({ version: 3, closedOn: '2026-09-30' });
+		expect(a.closedOn).toBe('2026-09-30');
+	});
+
+	// T-b4 — réouverture : POST, corps { version } seul.
+	it('reopenBankAccount envoie POST /reopen avec la seule version', async () => {
+		mockFetch.mockResolvedValueOnce(reponse({ ...COMPTE, version: 4, closedOn: null }));
+		const a = await reopenBankAccount(7, 3);
+		const [url, init] = mockFetch.mock.calls[0] as [string, RequestInit];
+		expect(url).toBe('/api/v1/bank-accounts/7/reopen');
+		expect(init.method).toBe('POST');
+		expect(JSON.parse(init.body as string)).toEqual({ version: 3 });
+		expect(a.closedOn).toBeNull();
 	});
 });

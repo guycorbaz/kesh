@@ -1086,8 +1086,10 @@ mod tests {
         ];
         // Nomment l'acte, le décrivent, nomment l'exercice à rouvrir, ou autre objet
         // (`bank-accounts-errors-closed` : rouvrir un COMPTE BANCAIRE clos, Story
-        // 28-4a, #642 — aucun exercice, aucun ordre).
-        const EXEMPTEES: [&str; 11] = [
+        // 28-4a, #642 — aucun exercice, aucun ordre ; et les quatre clés d'écran de la
+        // Story 28-4b, même objet : l'action « Rouvrir », les deux dialogues, le refus
+        // d'une proposition de rapprochement).
+        const EXEMPTEES: [&str; 15] = [
             "fiscal-year-reopen-button",
             "fiscal-year-reopen-confirmation-title",
             "fiscal-year-reopen-confirmation-action",
@@ -1099,6 +1101,10 @@ mod tests {
             "fiscal-year-reopen-blocked-later-closed",
             "error-reminder-amounts-changed",
             "bank-accounts-errors-closed",
+            "bank-accounts-actions-reopen",
+            "bank-accounts-close-dialog-body",
+            "bank-accounts-reopen-dialog-body",
+            "reconciliation-failed-bank-account-closed",
         ];
         // Les six clés de #569 (anti-test-muet : nommées, elles doivent être au domaine).
         const CLES_569: [&str; 6] = [
@@ -1198,7 +1204,7 @@ mod tests {
             "fiscal-year-out-of-order-warning",
         ];
         // Même domaine et mêmes exemptions que G8 (`les_prescriptions_de_reouverture_disent_l_ordre`).
-        const EXEMPTEES: [&str; 11] = [
+        const EXEMPTEES: [&str; 15] = [
             "fiscal-year-reopen-button",
             "fiscal-year-reopen-confirmation-title",
             "fiscal-year-reopen-confirmation-action",
@@ -1210,6 +1216,10 @@ mod tests {
             "fiscal-year-reopen-blocked-later-closed",
             "error-reminder-amounts-changed",
             "bank-accounts-errors-closed",
+            "bank-accounts-actions-reopen",
+            "bank-accounts-close-dialog-body",
+            "bank-accounts-reopen-dialog-body",
+            "reconciliation-failed-bank-account-closed",
         ];
         let verbe = regex::Regex::new(r"[Rr]ouvr|[Rr]éouv").unwrap();
         let catalogues: HashMap<&str, HashMap<String, String>> =

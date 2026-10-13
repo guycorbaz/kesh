@@ -16,6 +16,7 @@ function account(over: Partial<BankAccountSummary> = {}): BankAccountSummary {
 		journalAccountId: 10,
 		version: 1,
 		archived: false,
+		closedOn: null,
 		currentBalance: '0',
 		lastTransactionDate: null,
 		statementClosingBalance: null,

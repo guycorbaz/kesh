@@ -140,6 +140,13 @@ export function failedProposalLabel(code: string, details?: unknown): string {
 				'Un compte de contrepartie n’est pas imputable : un compte de regroupement, de résultat ou de clôture ne reçoit pas d’écriture. Choisissez un compte imputable.'
 			);
 		}
+		// Story 28-4b (#642, AC13) — compte clos (pré-vols R1, R2 de la 28-4a) ; atteignable
+		// par une course seulement (compte clos dans un autre onglet). Texte de C-28-4-27.
+		case 'BANK_ACCOUNT_CLOSED':
+			return i18nMsg(
+				'reconciliation-failed-bank-account-closed',
+				'Le compte bancaire est clos : il est en lecture seule. Pour y enregistrer une opération, rouvrez d’abord le compte (Administration → Comptes bancaires).'
+			);
 		case 'BANK_ACCOUNT_NOT_CONFIGURED':
 			return i18nMsg(
 				'reconciliation-failed-bank-account-not-configured',

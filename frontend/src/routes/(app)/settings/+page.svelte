@@ -463,7 +463,7 @@
 			<p class="mt-2 text-xs text-text-muted">
 				{msg(
 					'settings-bank-manage-hint',
-					'Pour ajouter, modifier ou archiver un compte bancaire, utilisez la page dédiée Administration → Comptes bancaires.',
+					'Pour ajouter, modifier, clore ou archiver un compte bancaire, utilisez la page dédiée Administration → Comptes bancaires.',
 				)}
 			</p>
 			{#if data.bankAccounts.length > 0}

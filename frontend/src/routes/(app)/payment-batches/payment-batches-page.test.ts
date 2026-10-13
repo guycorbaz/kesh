@@ -37,6 +37,7 @@ function compte(id: number, description: string | null): BankAccountSummary {
 		journalAccountId: 1020,
 		version: 1,
 		archived: false,
+		closedOn: null,
 		currentBalance: null,
 		lastTransactionDate: null,
 		statementClosingBalance: null,

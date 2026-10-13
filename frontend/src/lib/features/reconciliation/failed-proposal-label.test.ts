@@ -7,7 +7,8 @@
 // `ACCOUNT_NOT_POSTABLE` et `SETTLEMENT_COUNTERPARTY_IS_CLAIM_ACCOUNT` (Story 15-6b) — 30 codes.
 // Story 15-12b : `LATER_FISCAL_YEAR_CLOSED` est l'un des 28 littéraux ; Story 27-4 :
 // `RECONCILIATION_ALREADY_REJECTED` aussi ; Story 28-6 : `RECONCILIATION_TRANSACTION_NOT_CREDIT`
-// aussi.
+// aussi. Story 28-4b (#642, AC13) : `BANK_ACCOUNT_CLOSED` (pré-vols R1 et R2 de la 28-4a) —
+// 29 littéraux, recomptés par `grep -oE 'error_code: "[A-Z_]+"' … | sort -u | wc -l` ; 31 codes.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { readFileSync } from 'node:fs';
@@ -44,6 +45,7 @@ import {
 const EXPECTED_KEYS: Record<string, string> = {
 	ACCOUNT_NOT_FOUND: 'reconciliation-failed-account-not-found',
 	ACCOUNT_NOT_POSTABLE: 'reconciliation-failed-account-not-postable-generic',
+	BANK_ACCOUNT_CLOSED: 'reconciliation-failed-bank-account-closed',
 	BANK_ACCOUNT_NOT_CONFIGURED: 'reconciliation-failed-bank-account-not-configured',
 	BANK_ACCOUNT_NOT_FOUND: 'reconciliation-failed-bank-account-not-found',
 	BANK_TRANSACTION_NOT_FOUND: 'reconciliation-failed-bank-transaction-not-found',
@@ -79,8 +81,17 @@ describe('failedProposalLabel', () => {
 		calls.length = 0;
 	});
 
-	it('couvre les 30 codes relevés', () => {
-		expect(Object.keys(EXPECTED_KEYS)).toHaveLength(30);
+	it('couvre les 31 codes relevés', () => {
+		expect(Object.keys(EXPECTED_KEYS)).toHaveLength(31);
+	});
+
+	// Story 28-4b (#642, AC13) — le refus d'un compte clos (compte clos dans un autre
+	// onglet pendant l'examen des propositions) dit le geste qui le lève.
+	it('BANK_ACCOUNT_CLOSED → le compte est clos, « rouvrez d’abord le compte » (C-28-4-27)', () => {
+		const label = failedProposalLabel('BANK_ACCOUNT_CLOSED', { bankAccountId: 7 });
+		expect(calls).toEqual(['reconciliation-failed-bank-account-closed']);
+		expect(label).toContain('clos');
+		expect(label).toContain('rouvrez d’abord le compte');
 	});
 
 	// Story 27-4 (#634, C-27-4-8) — `race_during_update` : la transaction a changé pendant le
