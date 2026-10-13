@@ -22,7 +22,7 @@ use crate::admin_backup::manifest::{BackupManifest, BackupTableMeta, build_backu
 use crate::errors::AppError;
 use crate::exports::metadata::sha256_hex;
 
-use kesh_db::backup::{TABLES_TO_TRUNCATE, export_table, read_instance_id, read_min_required};
+use kesh_db::backup::{InstallationExport, TABLES_TO_TRUNCATE, export_installation};
 
 /// Métadonnées retournées au handler (audit + tracing).
 #[derive(Debug, Clone, Copy)]
@@ -43,8 +43,11 @@ pub struct KeshBackupMeta {
 /// `routes::admin::avant_sauvegarde` en `AdminPreImportBackupFailed`
 /// (Story 15-13b, #576) ; l'export, lui, le rend tel quel.
 pub async fn build_keshbackup(pool: &MySqlPool) -> Result<(Vec<u8>, KeshBackupMeta), AppError> {
-    let min_required = read_min_required(pool).await.map_err(map_db)?;
-    let instance_id = read_instance_id(pool).await.map_err(map_db)?;
+    let InstallationExport {
+        min_required,
+        instance_id,
+        tables,
+    } = export_installation(pool).await.map_err(map_db)?;
 
     let mut tables_meta: BTreeMap<String, BackupTableMeta> = BTreeMap::new();
     let mut total_rows = 0usize;
@@ -57,8 +60,7 @@ pub async fn build_keshbackup(pool: &MySqlPool) -> Result<(Vec<u8>, KeshBackupMe
             .unix_permissions(0o644);
 
         // Une entrée NDJSON par table (ordre TABLES_TO_TRUNCATE).
-        for &table in TABLES_TO_TRUNCATE {
-            let export = export_table(pool, table).await.map_err(map_db)?;
+        for (table, export) in tables {
             let sha = sha256_hex(&export.ndjson);
             total_rows += export.row_count;
             tables_meta.insert(

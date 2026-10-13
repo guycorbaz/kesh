@@ -17,11 +17,14 @@
 //! (précision sub-seconde préservée — colonnes `DATETIME(3)`), entiers → nombre JSON.
 
 use std::collections::BTreeMap;
+use std::future::Future;
+use std::pin::Pin;
 
 use serde_json::Value;
 use sqlx::{MySql, MySqlPool, Row, Transaction};
 
 use crate::errors::{DbError, map_db_error};
+use crate::snapshot::ReadSnapshot;
 
 /// Liste canonique des tables applicatives Kesh, ordonnée **enfants → parents**
 /// (ordre de suppression FK-safe). Exclut les tables système `_sqlx_migrations`
@@ -143,7 +146,7 @@ pub struct TableExport {
 /// GENERATED (réinsertion interdite). Les colonnes `auto_increment` sont
 /// conservées (on exporte/réimporte les `id` explicites).
 async fn non_generated_columns(
-    pool: &MySqlPool,
+    snap: &mut ReadSnapshot,
     table: &str,
 ) -> Result<Vec<(String, String)>, DbError> {
     let rows = sqlx::query_as::<_, (String, String)>(
@@ -154,7 +157,7 @@ async fn non_generated_columns(
          ORDER BY ORDINAL_POSITION",
     )
     .bind(table)
-    .fetch_all(pool)
+    .fetch_all(snap.conn())
     .await
     .map_err(map_db_error)?;
     Ok(rows)
@@ -170,8 +173,8 @@ async fn non_generated_columns(
 ///
 /// L'ordre des clés de chaque objet JSON suit `column_names` (déterministe,
 /// garantit la stabilité du SHA-256 entre export et import).
-pub async fn export_table(pool: &MySqlPool, table: &str) -> Result<TableExport, DbError> {
-    let columns = non_generated_columns(pool, table).await?;
+pub async fn export_table(snap: &mut ReadSnapshot, table: &str) -> Result<TableExport, DbError> {
+    let columns = non_generated_columns(snap, table).await?;
     if columns.is_empty() {
         return Err(DbError::Invariant(format!(
             "table '{table}' has no non-generated columns (unexpected)"
@@ -198,7 +201,7 @@ pub async fn export_table(pool: &MySqlPool, table: &str) -> Result<TableExport, 
     let sql = format!("SELECT {select_cols} FROM `{table}`");
 
     let rows = sqlx::query(&sql)
-        .fetch_all(pool)
+        .fetch_all(snap.conn())
         .await
         .map_err(map_db_error)?;
     let row_count = rows.len();
@@ -304,11 +307,11 @@ fn decode_cell(row: &sqlx::mysql::MySqlRow, idx: usize, data_type: &str) -> Resu
 }
 
 /// Lit `kesh_version_min_required` de la row singleton `_kesh_version`.
-pub async fn read_min_required(pool: &MySqlPool) -> Result<String, DbError> {
+pub async fn read_min_required(snap: &mut ReadSnapshot) -> Result<String, DbError> {
     sqlx::query_scalar::<_, String>(
         "SELECT kesh_version_min_required FROM _kesh_version WHERE id = 1",
     )
-    .fetch_one(pool)
+    .fetch_one(snap.conn())
     .await
     .map_err(map_db_error)
 }
@@ -318,12 +321,84 @@ pub async fn read_min_required(pool: &MySqlPool) -> Result<String, DbError> {
 /// Invariant : ≥ 1 (l'endpoint export exige un Admin authentifié, et
 /// `users.company_id` est `NOT NULL` ⇒ au moins une company existe). Retourne 0
 /// défensivement si la table est vide (cas dégénéré impossible en pratique).
-pub async fn read_instance_id(pool: &MySqlPool) -> Result<i64, DbError> {
+pub async fn read_instance_id(snap: &mut ReadSnapshot) -> Result<i64, DbError> {
     let v: Option<i64> = sqlx::query_scalar("SELECT MIN(id) FROM companies")
-        .fetch_one(pool)
+        .fetch_one(snap.conn())
         .await
         .map_err(map_db_error)?;
     Ok(v.unwrap_or(0))
+}
+
+/// Toutes les données d'une installation, lues dans **un seul instantané**
+/// (Story 28-3, #633) — ce que `kesh-api` assemble en `.keshbackup`.
+#[derive(Debug, Clone)]
+pub struct InstallationExport {
+    /// `kesh_version_min_required` de `_kesh_version`.
+    pub min_required: String,
+    /// Identifiant informatif de l'installation ([`read_instance_id`]).
+    pub instance_id: i64,
+    /// Une entrée par table de [`TABLES_TO_TRUNCATE`], dans son ordre.
+    pub tables: Vec<(&'static str, TableExport)>,
+}
+
+/// Futur boxé `Send`, alias local (std seule : `kesh-db` ne dépend pas du crate
+/// `futures`).
+type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// Étape du cœur de la sauvegarde, signalée à l'observateur de
+/// [`export_installation_in`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Etape {
+    /// L'instantané est ouvert, aucune lecture n'a eu lieu.
+    Ouvert,
+    /// La table nommée vient d'être lue.
+    ///
+    /// Le champ n'est lu que par les tests (la production passe un observateur
+    /// vide) : sans l'attribut, `clippy -D warnings` rougirait sur la cible lib.
+    ApresTable(#[cfg_attr(not(test), allow(dead_code))] &'static str),
+}
+
+/// Lit toute l'installation — `min_required`, `instance_id`, puis chaque table
+/// de [`TABLES_TO_TRUNCATE`] dans son ordre — dans **un seul**
+/// [`ReadSnapshot`], clos avant de rendre la main (Story 28-3, #633).
+///
+/// Une saisie, une suppression ou une validation committée pendant la lecture
+/// n'apparaît pas dans le résultat : aucune ligne fille n'y figure sans sa ligne
+/// parente. La garantie vaut pour les tables InnoDB (manuel d'administration).
+///
+/// Une erreur de clôture de l'instantané (`finish`) fait échouer la lecture,
+/// même si toutes les tables ont été lues (C-28-3-20).
+pub async fn export_installation(pool: &MySqlPool) -> Result<InstallationExport, DbError> {
+    let mut snap = ReadSnapshot::begin(pool).await?;
+    let export = export_installation_in(&mut snap, &mut |_| Box::pin(async {})).await?;
+    snap.finish().await?;
+    Ok(export)
+}
+
+/// Cœur de [`export_installation`] : emprunte l'instantané (sans le clore) et
+/// appelle l'observateur après l'ouverture puis après chaque table.
+///
+/// Il ne reçoit **aucun pool** : une lecture neuve écrite ici n'a d'autre
+/// exécuteur que l'instantané. L'observateur est vide en production ; les
+/// tests y placent une écriture concurrente, sur une autre connexion.
+async fn export_installation_in(
+    snap: &mut ReadSnapshot,
+    obs: &mut (dyn FnMut(Etape) -> BoxFuture<'static, ()> + Send),
+) -> Result<InstallationExport, DbError> {
+    obs(Etape::Ouvert).await;
+    let min_required = read_min_required(snap).await?;
+    let instance_id = read_instance_id(snap).await?;
+    let mut tables = Vec::with_capacity(TABLES_TO_TRUNCATE.len());
+    for &table in TABLES_TO_TRUNCATE {
+        let export = export_table(snap, table).await?;
+        tables.push((table, export));
+        obs(Etape::ApresTable(table)).await;
+    }
+    Ok(InstallationExport {
+        min_required,
+        instance_id,
+        tables,
+    })
 }
 
 // ===========================================================================
@@ -881,9 +956,11 @@ mod tests {
     /// `export_table` exclut les colonnes générées (`active_uniq` VIRTUAL).
     #[sqlx::test(migrations = "./test-schema")]
     async fn export_table_excludes_generated_columns(pool: MySqlPool) {
-        let export = export_table(&pool, "reconciliation_rules")
+        let mut snap = ReadSnapshot::begin(&pool).await.expect("snapshot");
+        let export = export_table(&mut snap, "reconciliation_rules")
             .await
             .expect("export reconciliation_rules");
+        snap.finish().await.expect("finish");
         assert!(
             !export.column_names.iter().any(|c| c == "active_uniq"),
             "colonne générée active_uniq doit être exclue, colonnes : {:?}",
@@ -907,9 +984,11 @@ mod tests {
         .await
         .expect("insert company");
 
-        let export = export_table(&pool, "companies")
+        let mut snap = ReadSnapshot::begin(&pool).await.expect("snapshot");
+        let export = export_table(&mut snap, "companies")
             .await
             .expect("export companies");
+        snap.finish().await.expect("finish");
         assert_eq!(export.row_count, 1);
 
         let line = String::from_utf8(export.ndjson.clone()).unwrap();
@@ -1206,7 +1285,9 @@ mod tests {
         }
 
         // Snapshot via export_table.
-        let export = export_table(&pool, "companies").await.expect("export");
+        let mut snap = ReadSnapshot::begin(&pool).await.expect("snapshot");
+        let export = export_table(&mut snap, "companies").await.expect("export");
+        snap.finish().await.expect("finish");
         let rows = parse_ndjson_rows(&export.ndjson, &export.column_names).expect("parse");
         assert_eq!(rows.len(), 2);
 
@@ -1247,5 +1328,266 @@ mod tests {
         // FOREIGN_KEY_CHECKS rétabli sur la connexion (vérif via une nouvelle
         // requête : la valeur de session est 1 par défaut sur une conn fraîche
         // du pool — ce test garantit surtout que le restore a committé propre).
+    }
+
+    // --- Story 28-3 (#633) : la sauvegarde lit ses tables dans un instantané ---
+
+    /// Montage commun de l'AC5 : une société comptable, un compte bancaire, un
+    /// import portant deux transactions. Rend `(company_id, import_id)`.
+    async fn monter_import(pool: &MySqlPool) -> (i64, i64) {
+        use crate::entities::{
+            BankImportSourceFormat, NewBankAccount, NewBankImport, NewBankTransaction,
+        };
+        use crate::repositories::{bank_accounts, bank_imports};
+
+        let seeded = crate::test_fixtures::seed_accounting_company(pool)
+            .await
+            .expect("seed société");
+        let company_id = seeded.company_id;
+        let bank_account_id = bank_accounts::create(
+            pool,
+            NewBankAccount {
+                company_id,
+                bank_name: "Banque test".into(),
+                iban: "CH4431999123000889012".into(),
+                qr_iban: None,
+                is_primary: true,
+            },
+        )
+        .await
+        .expect("compte bancaire")
+        .id;
+        let jour = chrono::NaiveDate::from_ymd_opt(2026, 5, 15).expect("date");
+        let txs: Vec<NewBankTransaction> = (1..=2)
+            .map(|i| NewBankTransaction {
+                company_id,
+                bank_account_id,
+                booking_date: jour,
+                value_date: Some(jour),
+                amount: rust_decimal::Decimal::new(100 * i, 0),
+                currency: "CHF".into(),
+                reference: Some(format!("REF-{i}")),
+                details: format!("Transaction de test {i}"),
+                end_to_end_id: None,
+                transaction_id: None,
+                counterparty_iban: None,
+                counterparty_name: None,
+            })
+            .collect();
+        let mut tx = pool.begin().await.expect("begin import");
+        let (import, _) = bank_imports::create_with_transactions(
+            &mut tx,
+            NewBankImport {
+                company_id,
+                bank_account_id,
+                filename: "releve.xml".into(),
+                file_hash: "28".repeat(32),
+                source_format: BankImportSourceFormat::Camt053V04,
+                statement_id: Some("STMT-283".into()),
+                period_from: jour,
+                period_to: jour,
+                opening_balance: None,
+                closing_balance: None,
+                transaction_count: 2,
+                imported_by_user_id: seeded.admin_user_id,
+            },
+            txs,
+        )
+        .await
+        .expect("import");
+        tx.commit().await.expect("commit import");
+        (company_id, import.id)
+    }
+
+    /// Les lignes NDJSON d'une table de la sauvegarde, décodées.
+    fn lignes(export: &InstallationExport, table: &str) -> Vec<Value> {
+        let (_, t) = export
+            .tables
+            .iter()
+            .find(|(nom, _)| *nom == table)
+            .unwrap_or_else(|| panic!("table {table} absente de la sauvegarde"));
+        String::from_utf8(t.ndjson.clone())
+            .expect("NDJSON UTF-8")
+            .lines()
+            .map(|l| serde_json::from_str(l).expect("ligne NDJSON"))
+            .collect()
+    }
+
+    /// Lignes orphelines de la sauvegarde : pour chaque clé étrangère du schéma
+    /// (`information_schema.KEY_COLUMN_USAGE`), toute valeur non nulle de la
+    /// colonne fille doit figurer parmi celles de la colonne référencée, **dans
+    /// le fichier**. Rend la liste des violations.
+    async fn orphelins(pool: &MySqlPool, export: &InstallationExport) -> Vec<String> {
+        let fks: Vec<(String, String, String, String)> = sqlx::query_as(
+            "SELECT TABLE_NAME, COLUMN_NAME, REFERENCED_TABLE_NAME, REFERENCED_COLUMN_NAME \
+             FROM information_schema.KEY_COLUMN_USAGE \
+             WHERE TABLE_SCHEMA = DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL \
+             ORDER BY TABLE_NAME, COLUMN_NAME",
+        )
+        .fetch_all(pool)
+        .await
+        .expect("clés étrangères");
+        // Assertion de montage : sans la clé de l'import, le helper serait muet.
+        assert!(
+            fks.iter().any(|(t, c, rt, _)| t == "bank_transactions"
+                && c == "import_id"
+                && rt == "bank_imports"),
+            "assertion de montage : orphelins() ne voit pas fk_bank_transactions_import \
+             ({} clés lues)",
+            fks.len()
+        );
+        let mut violations = Vec::new();
+        for (table, col, ref_table, ref_col) in &fks {
+            let parents: std::collections::HashSet<String> = lignes(export, ref_table)
+                .iter()
+                .map(|l| l[ref_col.as_str()].to_string())
+                .collect();
+            for ligne in lignes(export, table) {
+                let v = &ligne[col.as_str()];
+                if !v.is_null() && !parents.contains(&v.to_string()) {
+                    violations.push(format!("{table}.{col}={v} → {ref_table}.{ref_col} absent"));
+                }
+            }
+        }
+        violations
+    }
+
+    /// Observateur des tests (a) et (b) : à l'étape `cible`, supprime l'import
+    /// par l'écrivain réel (`delete_unreconciled_in_tx`), dans une transaction
+    /// neuve du pool — donc sur une **autre** connexion que l'instantané —,
+    /// validée ; compte ses déclenchements.
+    fn observateur_qui_supprime(
+        pool: MySqlPool,
+        cible: Etape,
+        company_id: i64,
+        import_id: i64,
+        compteur: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+    ) -> impl FnMut(Etape) -> BoxFuture<'static, ()> + Send {
+        move |etape: Etape| -> BoxFuture<'static, ()> {
+            if etape != cible {
+                return Box::pin(async {});
+            }
+            let pool = pool.clone();
+            let compteur = std::sync::Arc::clone(&compteur);
+            Box::pin(async move {
+                let mut tx = pool.begin().await.expect("begin suppression");
+                let issue = crate::repositories::bank_imports::delete_unreconciled_in_tx(
+                    &mut tx, company_id, import_id,
+                )
+                .await
+                .expect("suppression de l'import");
+                assert!(
+                    matches!(
+                        issue,
+                        crate::repositories::bank_imports::DeleteBankImportOutcome::Deleted(_)
+                    ),
+                    "assertion de montage : l'import devait être supprimé"
+                );
+                tx.commit().await.expect("commit suppression");
+                compteur.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            })
+        }
+    }
+
+    /// Les tests (a) et (b) : sauvegarde par le cœur sur `snap`, suppression
+    /// concurrente de l'import à l'étape `cible`, puis les trois attendus de
+    /// l'AC5 (a) — montage, import et transactions présents, aucun orphelin.
+    async fn sauvegarder_pendant_suppression(
+        pool: &MySqlPool,
+        mut snap: ReadSnapshot,
+        cible: Etape,
+        company_id: i64,
+        import_id: i64,
+    ) {
+        let compteur = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let mut obs = observateur_qui_supprime(
+            pool.clone(),
+            cible,
+            company_id,
+            import_id,
+            std::sync::Arc::clone(&compteur),
+        );
+        let export = export_installation_in(&mut snap, &mut obs)
+            .await
+            .expect("sauvegarde");
+        snap.finish().await.expect("clôture de l'instantané");
+
+        // 1. Assertion de montage : le geste concurrent a bien eu lieu.
+        assert_eq!(
+            compteur.load(std::sync::atomic::Ordering::SeqCst),
+            1,
+            "assertion de montage : l'observateur n'a pas supprimé à l'étape {cible:?}"
+        );
+        let restants: i64 = sqlx::query_scalar(
+            "SELECT (SELECT COUNT(*) FROM bank_imports WHERE id = ?) \
+                  + (SELECT COUNT(*) FROM bank_transactions WHERE import_id = ?)",
+        )
+        .bind(import_id)
+        .bind(import_id)
+        .fetch_one(pool)
+        .await
+        .expect("comptage après suppression");
+        assert_eq!(
+            restants, 0,
+            "assertion de montage : la base porte encore l'import ou ses transactions"
+        );
+
+        // 2. La sauvegarde montre la base d'avant la suppression ; 3. sans orphelin.
+        let violations = orphelins(pool, &export).await;
+        let imports = lignes(&export, "bank_imports")
+            .iter()
+            .filter(|l| l["id"] == import_id)
+            .count();
+        let txs = lignes(&export, "bank_transactions")
+            .iter()
+            .filter(|l| l["import_id"] == import_id)
+            .count();
+        assert_eq!(
+            (imports, txs),
+            (1, 2),
+            "la sauvegarde doit porter l'import et ses deux transactions (orphelins : {violations:?})"
+        );
+        assert!(
+            violations.is_empty(),
+            "lignes orphelines dans la sauvegarde : {violations:?}"
+        );
+    }
+
+    /// AC5 (a-défaut) — une suppression d'import committée entre la lecture de
+    /// `bank_transactions` et celle de `bank_imports` n'apparaît pas dans la
+    /// sauvegarde, et n'y laisse aucun orphelin.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn sauvegarde_ignore_une_suppression_entre_deux_tables(pool: MySqlPool) {
+        let (company_id, import_id) = monter_import(&pool).await;
+        let snap = ReadSnapshot::begin(&pool).await.expect("instantané");
+        let cible = Etape::ApresTable("bank_transactions");
+        sauvegarder_pendant_suppression(&pool, snap, cible, company_id, import_id).await;
+    }
+
+    /// AC5 (a-RC) — même scénario sur une connexion dont la **session** est en
+    /// `READ COMMITTED` : le `SET TRANSACTION … REPEATABLE READ` de l'instantané
+    /// est effectif.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn sauvegarde_ignore_une_suppression_en_session_read_committed(pool: MySqlPool) {
+        let (company_id, import_id) = monter_import(&pool).await;
+        let mut conn = pool.acquire().await.expect("connexion");
+        sqlx::Executor::execute(
+            &mut *conn,
+            "SET SESSION TRANSACTION ISOLATION LEVEL READ COMMITTED",
+        )
+        .await
+        .expect("session READ COMMITTED");
+        let snap = ReadSnapshot::begin_on(conn).await.expect("instantané");
+        let cible = Etape::ApresTable("bank_transactions");
+        sauvegarder_pendant_suppression(&pool, snap, cible, company_id, import_id).await;
+    }
+
+    /// AC5 (b) — l'instantané est pris à l'ouverture : une suppression faite
+    /// avant la première lecture n'apparaît pas dans la sauvegarde.
+    #[sqlx::test(migrations = "./test-schema")]
+    async fn sauvegarde_prend_l_instantane_a_l_ouverture(pool: MySqlPool) {
+        let (company_id, import_id) = monter_import(&pool).await;
+        let snap = ReadSnapshot::begin(&pool).await.expect("instantané");
+        sauvegarder_pendant_suppression(&pool, snap, Etape::Ouvert, company_id, import_id).await;
     }
 }

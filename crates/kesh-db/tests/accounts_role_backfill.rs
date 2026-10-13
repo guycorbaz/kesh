@@ -234,9 +234,13 @@ async fn backfill_skips_archived_accounts(pool: MySqlPool) {
 // code ; la spec avait tranché « reste exclu » sans distinguer ce cas.)*
 #[sqlx::test(migrations = "./test-schema")]
 async fn generated_column_is_excluded_from_backup(pool: MySqlPool) {
-    let export = kesh_db::backup::export_table(&pool, "accounts")
+    let mut snap = kesh_db::snapshot::ReadSnapshot::begin(&pool)
+        .await
+        .expect("snapshot");
+    let export = kesh_db::backup::export_table(&mut snap, "accounts")
         .await
         .expect("export_table accounts");
+    snap.finish().await.expect("finish");
 
     assert!(
         !export.column_names.iter().any(|c| c == "singleton_role"),
