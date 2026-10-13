@@ -82,6 +82,30 @@
 	let closeDate = $state('');
 	let closeError = $state<string | null>(null);
 	let reopenError = $state<string | null>(null);
+	// Story 28-4b (passe ciblée P2, M1) — vrai quand `reload()` a refermé un mode dont le
+	// compte visé n'est plus dans la liste relue (voir `closeOrphanMode`).
+	let staleNotice = $state(false);
+
+	/**
+	 * Story 28-4b (passe ciblée P2, M1) — ferme la classe « mode orphelin » là où elle
+	 * naît : à la fin de `reload()`, et nulle part ailleurs. Un mode qui vise un compte —
+	 * `edit-full`, `edit-journal`, `archive-confirm`, `close-confirm`, `reopen-confirm`, soit
+	 * tous ceux qui portent un `id` — et dont le compte n'est plus dans la liste relue (clos
+	 * ou archivé ailleurs, ou masqué par une bascule) se referme, avec un message neutre :
+	 * sans quoi son dialogue disparaissait avec la ligne et le mode, resté ouvert, masquait
+	 * les actions de toutes les lignes. `create` ne vise aucun compte : il reste ouvert.
+	 *
+	 * Les gestes qui retirent eux-mêmes leur compte de la liste (archivage, clôture,
+	 * réouverture) referment leur mode AVANT de recharger : la garde ne parle pas d'un geste
+	 * réussi.
+	 */
+	function closeOrphanMode() {
+		const cible = 'id' in mode ? mode.id : null;
+		if (cible !== null && !bankAccounts.some((b) => b.id === cible)) {
+			closeForm();
+			staleNotice = true;
+		}
+	}
 
 	async function reload() {
 		const [baResult, accResult, settingsResult] = await Promise.allSettled([
@@ -92,6 +116,8 @@
 		if (baResult.status === 'fulfilled') {
 			bankAccounts = baResult.value;
 			loadError = null;
+			staleNotice = false;
+			closeOrphanMode();
 		} else {
 			loadError = errorMessageOf(baResult.reason);
 		}
@@ -334,8 +360,10 @@
 			if (!ba) return;
 			await archiveBankAccount(id, ba.version);
 			toast.success(i18nMsg('bank-accounts-toast-archive-success', 'Compte bancaire archivé.'));
-			await reload();
+			// Mode refermé AVANT le rechargement : le compte archivé quitte la liste, et
+			// `closeOrphanMode` ne doit pas annoncer un geste réussi comme un changement.
 			closeForm();
+			await reload();
 		} catch (err) {
 			toast.error(errorMessageOf(err));
 		} finally {
@@ -363,8 +391,8 @@
 							'Compte clos. Affichez les comptes clos pour le retrouver.',
 						),
 			);
+			closeForm(); // avant le rechargement, comme l'archivage (`closeOrphanMode`)
 			await reload();
-			closeForm();
 		} catch (err) {
 			closeError = errorMessageOf(err);
 			await refreshAfterVersionConflict(err);
@@ -382,8 +410,8 @@
 		try {
 			await reopenBankAccount(id, ba.version);
 			toast.success(i18nMsg('bank-accounts-toast-reopen-success', 'Compte bancaire rouvert.'));
+			closeForm(); // avant le rechargement, comme l'archivage (`closeOrphanMode`)
 			await reload();
-			closeForm();
 		} catch (err) {
 			reopenError = errorMessageOf(err);
 			await refreshAfterVersionConflict(err);
@@ -395,8 +423,9 @@
 	/**
 	 * Story 28-4b (revue P1, B-2) — après un `409 OPTIMISTIC_LOCK_CONFLICT`, la liste est
 	 * relue : le dialogue reste ouvert avec son message, et le second essai part avec la
-	 * version relue au lieu de rejouer la périmée. Les autres refus ne rechargent rien
-	 * (un compte déjà clos, par exemple, disparaîtrait de la liste sous le dialogue).
+	 * version relue au lieu de rejouer la périmée. Si le compte n'est plus dans la liste
+	 * relue (clos ailleurs, clos masqués ici), `closeOrphanMode` referme le dialogue avec
+	 * un message (passe ciblée P2, M1). Les autres refus ne rechargent rien.
 	 */
 	async function refreshAfterVersionConflict(err: unknown): Promise<void> {
 		if (isApiError(err) && err.code === 'OPTIMISTIC_LOCK_CONFLICT') await reload();
@@ -404,9 +433,10 @@
 
 	/**
 	 * Une bascule (archivés, clos) recharge la liste sous un indicateur de chargement.
-	 * Story 28-4b (revue P1, B-1 = E-4) : elle referme d'abord le formulaire ou le
-	 * dialogue ouvert — sa ligne peut disparaître de la liste rechargée, et le mode resté
-	 * ouvert masquait alors les actions de toutes les lignes.
+	 * Story 28-4b : elle ne referme RIEN elle-même (passe ciblée P2, L1) — un mode dont le
+	 * compte disparaît de la liste relue est refermé par `closeOrphanMode`, à la fin de
+	 * `reload()` ; un formulaire de création, ou un mode dont le compte reste visible, est
+	 * conservé avec sa saisie.
 	 *
 	 * ⚠️ Angle mort assumé (B-3) : un `reload()` lancé par une clôture ou une réouverture
 	 * réussie et celui d'une bascule cliquée pendant ce temps ne sont pas ordonnés — la
@@ -415,7 +445,6 @@
 	 * liste attendue.
 	 */
 	async function toggleAndReload(flip: () => void) {
-		closeForm();
 		flip();
 		loading = true;
 		try {
@@ -490,6 +519,15 @@
 	{:else if loadError}
 		<p class="text-red-600" role="alert" data-testid="load-error">{loadError}</p>
 	{:else}
+		{#if staleNotice}
+			<!-- Story 28-4b (passe ciblée P2, M1) — un mode a été refermé par `closeOrphanMode`. -->
+			<p class="mb-4 rounded border border-warning bg-warning-soft p-2 text-sm text-text" role="status" data-testid="bank-accounts-stale-notice">
+				{i18nMsg(
+					'bank-accounts-notice-stale',
+					"Le compte visé n'est plus affiché : il a été modifié entre-temps, ou il est désormais masqué. L'action en cours a été refermée.",
+				)}
+			</p>
+		{/if}
 		<!-- Formulaire création inline -->
 		{#if mode.kind === 'create'}
 			<form
@@ -569,12 +607,25 @@
 			     message dit où les trouver (une société dont les seuls comptes restants sont
 			     clos voyait « Aucun compte bancaire configuré » sur l'écran de gestion). -->
 			<p class="text-text-muted" data-testid="bank-accounts-empty">
-				{includeClosed && includeArchived
-					? i18nMsg('bank-accounts-labels-empty', 'Aucun compte bancaire configuré.')
-					: i18nMsg(
-							'bank-accounts-labels-empty-hidden',
-							'Aucun compte bancaire ouvert. Les comptes clos ou archivés éventuels sont masqués : affichez-les par les boutons ci-dessus.',
-						)}
+				<!-- Passe ciblée P2 (L2) : le message ne nomme que ce qui reste masqué. -->
+				{#if includeClosed && includeArchived}
+					{i18nMsg('bank-accounts-labels-empty', 'Aucun compte bancaire configuré.')}
+				{:else if includeClosed}
+					{i18nMsg(
+						'bank-accounts-labels-empty-hidden-archived',
+						'Aucun compte bancaire à afficher. Les comptes archivés éventuels sont masqués : affichez-les par « Afficher les archivés ».',
+					)}
+				{:else if includeArchived}
+					{i18nMsg(
+						'bank-accounts-labels-empty-hidden-closed',
+						'Aucun compte bancaire à afficher. Les comptes clos éventuels sont masqués : affichez-les par « Afficher les comptes clos ».',
+					)}
+				{:else}
+					{i18nMsg(
+						'bank-accounts-labels-empty-hidden',
+						'Aucun compte bancaire ouvert. Les comptes clos ou archivés éventuels sont masqués : affichez-les par les boutons ci-dessus.',
+					)}
+				{/if}
 			</p>
 		{:else}
 			<table class="w-full text-sm" data-testid="bank-accounts-list">

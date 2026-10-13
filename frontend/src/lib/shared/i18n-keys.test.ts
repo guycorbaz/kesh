@@ -628,7 +628,10 @@ const ATTENDU = {
 	// Revue de code P1 de la 28-4b (A-L6) : **2103 → 2104** (+1, `bank-accounts/+page.svelte`
 	// 69 → 70 : `bank-accounts-labels-empty-hidden`), mesuré par la collecte et par
 	// `grep -o "i18nMsg("`. `sitesNonResolus`, `relais`, `sitesGabarit` inchangés.
-	sitesTotal: 2104,
+	// Passe ciblée P2 de la 28-4b (M1, L2) : **2104 → 2107** (+3, `bank-accounts/+page.svelte`
+	// 70 → 73 : `bank-accounts-notice-stale`, `-labels-empty-hidden-archived`, `-hidden-closed`),
+	// mesuré par la collecte et par `grep -o "i18nMsg("`. Les autres compteurs inchangés.
+	sitesTotal: 2107,
 	sitesNonResolus: 31,
 	relais: 6,
 	// Story 26-1 (#620, AC3-bis) : **10 → 11** — `lib/features/bank-import/

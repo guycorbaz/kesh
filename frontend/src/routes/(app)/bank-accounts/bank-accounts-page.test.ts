@@ -580,20 +580,64 @@ describe('page des comptes bancaires — clôture (Story 28-4b, AC11)', () => {
 
 	// ── Revue de code P1 (2026-10-13) ────────────────────────────────────────────
 
-	// B-1 = E-4 — une bascule referme le dialogue ouvert : sans quoi, la ligne masquée,
-	// le mode restait ouvert sur un compte absent et les actions de TOUTES les lignes
-	// disparaissaient (garde `mode.kind === 'none'`).
+	// B-1 = E-4, refait à la passe ciblée P2 (M1) — la classe « mode orphelin » se ferme
+	// à la fin de `reload()` : un mode qui vise un compte absent de la liste relue se
+	// referme, avec un message ; sans quoi les actions de TOUTES les lignes disparaissaient
+	// (garde `mode.kind === 'none'`). Ici par une bascule qui masque le compte visé.
 	it.each([['toggle-closed'], ['toggle-archived']])(
-		'%s referme le dialogue ouvert et rend les actions des lignes',
+		'%s qui masque le compte d’un dialogue ouvert le referme, avec un message',
 		async (bascule) => {
 			const r = render(Page);
 			await fireEvent.click(await r.findByTestId('reopen-7'));
 			await r.findByTestId('reopen-confirm');
+			listBankAccountsMock.mockResolvedValue([PRINCIPAL, OUVERT]);
 			await fireEvent.click(r.getByTestId(bascule));
 			await waitFor(() => expect(r.queryByTestId('reopen-confirm')).toBeNull());
 			expect(await r.findByTestId('close-6')).toBeTruthy();
+			expect((await r.findByTestId('bank-accounts-stale-notice')).textContent).toContain(
+				"n'est plus affiché",
+			);
 		},
 	);
+
+	// P2 ciblée (L1) — une bascule ne referme plus un mode dont le compte reste visible,
+	// ni un formulaire de création, qui ne vise aucun compte.
+	it('une bascule conserve le formulaire de création et sa saisie', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('create-bank-account-button'));
+		await fireEvent.input(await r.findByTestId('form-bank-name'), { target: { value: 'UBS' } });
+		await fireEvent.click(r.getByTestId('toggle-closed'));
+		await waitFor(() => expect(listBankAccountsMock).toHaveBeenLastCalledWith(false, true));
+		expect(((await r.findByTestId('form-bank-name')) as HTMLInputElement).value).toBe('UBS');
+		expect(r.queryByTestId('bank-accounts-stale-notice')).toBeNull();
+	});
+
+	it('une bascule conserve un dialogue dont le compte reste visible', async () => {
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('close-6'));
+		await r.findByTestId('close-confirm');
+		await fireEvent.click(r.getByTestId('toggle-archived'));
+		await waitFor(() => expect(listBankAccountsMock).toHaveBeenLastCalledWith(true, false));
+		expect(await r.findByTestId('close-confirm')).toBeTruthy();
+		expect(r.queryByTestId('bank-accounts-stale-notice')).toBeNull();
+	});
+
+	// P2 ciblée (M1) — le conflit de version recharge la liste ; si le compte n'y est plus
+	// (clos ailleurs, clos masqués ici), le dialogue se referme avec le message.
+	it('un conflit de version dont le compte a disparu referme le dialogue, avec un message', async () => {
+		closeBankAccountMock.mockRejectedValueOnce({
+			code: 'OPTIMISTIC_LOCK_CONFLICT',
+			message: 'Conflit de version — la ressource a été modifiée',
+			status: 409,
+		});
+		const r = render(Page);
+		await fireEvent.click(await r.findByTestId('close-6'));
+		listBankAccountsMock.mockResolvedValue([PRINCIPAL]);
+		await fireEvent.click(await r.findByTestId('close-confirm-button'));
+		await waitFor(() => expect(r.queryByTestId('close-confirm')).toBeNull());
+		expect(await r.findByTestId('bank-accounts-stale-notice')).toBeTruthy();
+		expect(await r.findByTestId('edit-button-5')).toBeTruthy();
+	});
 
 	// B-2 — un conflit de version recharge la liste : le second essai part avec la
 	// version relue, non avec la périmée.
@@ -674,6 +718,23 @@ describe('page des comptes bancaires — clôture (Story 28-4b, AC11)', () => {
 			'Les comptes clos ou archivés éventuels sont masqués',
 		);
 	});
+
+	// P2 ciblée (L2) — une seule bascule active : le message ne nomme que ce qui est masqué.
+	it.each([
+		['toggle-closed', [false, true], 'Les comptes archivés éventuels sont masqués'],
+		['toggle-archived', [true, false], 'Les comptes clos éventuels sont masqués'],
+	] as const)(
+		'liste vide après %s : le message ne nomme que ce qui reste masqué',
+		async (bascule, appel, attendu) => {
+			listBankAccountsMock.mockResolvedValue([]);
+			const r = render(Page);
+			await fireEvent.click(await r.findByTestId(bascule));
+			await waitFor(() => expect(listBankAccountsMock).toHaveBeenLastCalledWith(...appel));
+			const texte = (await r.findByTestId('bank-accounts-empty')).textContent ?? '';
+			expect(texte).toContain(attendu);
+			expect(texte).not.toContain('clos ou archivés');
+		},
+	);
 
 	it('liste vide, clos et archivés affichés : aucun compte configuré', async () => {
 		listBankAccountsMock.mockResolvedValue([]);
