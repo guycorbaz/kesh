@@ -989,7 +989,9 @@ fn closure_refusal_error(refusal: bank_accounts::ClosureRefusal) -> AppError {
 /// **UTC** (l'écran l'envoie toujours). Effet : `closed_on = <date>`,
 /// `version + 1`, rien d'autre. Trace `bank_account.closed`.
 ///
-/// **Ordre des refus** : forme (`400`) → `404 BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND`
+/// **Ordre des refus** : forme (`400` : `version < 1`, date illisible, ou année
+/// de `closedOn` hors de `1000..=9999`, le domaine de `DATE`) →
+/// `404 BANK_IMPORT_BANK_ACCOUNT_NOT_FOUND`
 /// (inexistant, autre société, archivé) → sous verrou : `409
 /// OPTIMISTIC_LOCK_CONFLICT` → `409 BANK_ACCOUNT_CLOSED` (déjà clos) → `412
 /// BANK_ACCOUNT_CANNOT_CLOSE_PRIMARY` → `412 BANK_ACCOUNT_HAS_PENDING_TRANSACTIONS`

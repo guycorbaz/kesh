@@ -184,7 +184,8 @@ export async function updateBankAccount(
 /**
  * DELETE /api/v1/bank-accounts/{id} — soft-delete (archive) un compte bancaire
  * (Comptable+). Refus 412 si transactions existent OU si primary + autres
- * comptes non-archivés.
+ * comptes ni archivés ni clos (Story 28-4a) ; refus 409 BANK_ACCOUNT_CLOSED
+ * d'un compte clos.
  */
 export async function archiveBankAccount(
 	id: number,
