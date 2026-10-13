@@ -8,7 +8,9 @@
  *   survolé, focalisé au clavier, et l'exemple désactivé (valeurs de l'AC3).
  * - (b) le détail d'un import : *Supprimer l'import* — le symptôme de la recette
  *   de la v0.13.2 — et son dialogue de confirmation, *Annuler* `outline` à côté de
- *   *Supprimer définitivement*, analysé par axe (`color-contrast`).
+ *   *Supprimer définitivement*, analysé par axe (`color-contrast`) une fois
+ *   l'animation d'ouverture finie — sans violation, ET évalué (dans `passes`, non
+ *   dans `incomplete` : revue de code P1, E1).
  *
  * Chaque scénario tourne deux fois, en clair et en sombre émulé (C-28-1-7 : la
  * variante n'a aucune classe `dark:` et doit rendre la même chose) — deux tests
@@ -230,6 +232,24 @@ test.describe("b — Supprimer l'import", () => {
 				try {
 					await supprimer.click();
 					await expect(dialogue).toBeVisible();
+					// Fin du fondu et du zoom d'ouverture (`data-open:animate-in`) avant toute
+					// mesure : axe lancé à mi-fondu rendrait un contraste faux ou « incomplete »
+					// (revue de code P1, E1). Animations finies seules : une animation infinie
+					// (indicateur de chargement) ne finit jamais.
+					await expect
+						.poll(() =>
+							page.evaluate(
+								() =>
+									document
+										.getAnimations()
+										.filter(
+											(a) =>
+												a.playState === 'running' &&
+												a.effect?.getComputedTiming().iterations !== Infinity,
+										).length,
+							),
+						)
+						.toBe(0);
 					const confirmer = page.getByTestId('bank-import-delete-submit');
 					// *Annuler* n'a pas de data-testid : sélecteur structurel, sans libellé.
 					const annuler = dialogue.locator(
@@ -245,6 +265,32 @@ test.describe("b — Supprimer l'import", () => {
 						.withRules(['color-contrast'])
 						.analyze();
 					softExpect(axe.violations, JSON.stringify(axe.violations, null, 2)).toEqual([]);
+					// `violations` vide ne suffit pas : un nœud dont axe n'a pas pu déterminer le
+					// fond tombe dans `incomplete`, et la règle passerait à vide. Exiger que
+					// *Supprimer définitivement* ait été ÉVALUÉ et soit dans `passes` (E1). Le nœud
+					// se reconnaît en résolvant dans la page le sélecteur `target` qu'axe en donne :
+					// son `html` est tronqué (classe longue) avant le `data-testid`.
+					const evalueDans = (resultats: typeof axe.passes): Promise<boolean> =>
+						page.evaluate(
+							(cibles) =>
+								cibles.some(
+									(c) =>
+										document.querySelector(c)?.getAttribute('data-testid') ===
+										'bank-import-delete-submit',
+								),
+							resultats
+								.filter((r) => r.id === 'color-contrast')
+								.flatMap((r) => r.nodes)
+								.map((n) => String(n.target[0])),
+						);
+					softExpect(
+						await evalueDans(axe.passes),
+						'color-contrast : Supprimer définitivement absent de passes',
+					).toBe(true);
+					softExpect(
+						await evalueDans(axe.incomplete),
+						`color-contrast incomplete : ${JSON.stringify(axe.incomplete, null, 2)}`,
+					).toBe(false);
 				} finally {
 					await capturerElement(dialogue, testInfo, `b-dialogue-${s}.png`);
 				}

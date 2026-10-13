@@ -10,8 +10,10 @@
  * - (1) lit la variante SEULE (`buttonVariants.variants.variant.destructive`), non
  *   la sortie fusionnée, qui contient la base — et ses `dark:aria-invalid:…`
  *   (C-28-1-18) ; (1-bis) vérifie, sur la sortie fusionnée, que tailwind-merge a
- *   bien remplacé la bordure de focus de la base (C-28-1-20).
- * - (2) chaque jeton de couleur employé par la variante est défini dans `app.css`.
+ *   bien remplacé la bordure ET l'anneau de focus de la base (C-28-1-20 ; l'anneau
+ *   depuis la revue de code P1, E2 — sa couleur rendue reste vue à l'œil seulement).
+ * - (2) chaque jeton de couleur employé par la variante est défini dans `app.css`
+ *   — lu dans le `@theme` sans ses commentaires (revue de code P1, E6).
  * - (3) les contrastes, recalculés depuis les valeurs LUES dans `app.css` par le
  *   helper `tests/e2e/helpers/contrast.ts` (seule méthode de calcul, C-28-1-27).
  *
@@ -28,20 +30,30 @@ const VARIANTE: string = (buttonVariants as unknown as { variants: { variant: Re
 	.variants.variant.destructive;
 const CSS = readFileSync('src/app.css', 'utf8');
 
-/** Bloc `@theme { … }` d'`app.css` (le premier, le seul du fichier). */
+/**
+ * Bloc `@theme { … }` d'`app.css` (le premier, le seul du fichier), **commentaires
+ * retirés** : un jeton écrit en commentaire (`/* --color-card: #fff; *\/`) n'est
+ * pas défini, et les gardes (2) et (3) ne doivent pas le lire (revue de code P1, E6).
+ */
 function blocTheme(css: string): string {
-	const debut = css.indexOf('@theme');
+	const sansCommentaires = css.replace(/\/\*[\s\S]*?\*\//g, '');
+	const debut = sansCommentaires.indexOf('@theme');
 	if (debut < 0) throw new Error('app.css : bloc @theme introuvable');
-	const ouverture = css.indexOf('{', debut);
-	const fermeture = css.indexOf('\n}', ouverture);
-	return css.slice(ouverture + 1, fermeture);
+	const ouverture = sansCommentaires.indexOf('{', debut);
+	const fermeture = sansCommentaires.indexOf('\n}', ouverture);
+	return sansCommentaires.slice(ouverture + 1, fermeture);
 }
 const THEME = blocTheme(CSS);
 
 /** Valeur `#rrggbb` d'un jeton `--color-<nom>` du `@theme`, ou `undefined`. */
-function jeton(nom: string): string | undefined {
-	const m = new RegExp(`--color-${nom}:\\s*(#[0-9a-f]{6})\\s*;`, 'i').exec(THEME);
+function jeton(nom: string, theme: string = THEME): string | undefined {
+	const m = new RegExp(`--color-${nom}:\\s*(#[0-9a-f]{6})\\s*;`, 'i').exec(theme);
 	return m?.[1];
+}
+
+/** Le jeton `--color-<nom>` est-il déclaré dans le bloc `theme` (toute valeur) ? */
+function declare(nom: string, theme: string = THEME): boolean {
+	return new RegExp(`--color-${nom}\\s*:`).test(theme);
 }
 
 function motEntier(classes: string, mot: string): boolean {
@@ -60,6 +72,9 @@ describe('AC7 (1) — la variante destructive a un fond plein, sans dark:', () =
 		'text-destructive-foreground',
 		'hover:bg-destructive-hover',
 		'focus-visible:border-destructive',
+		// L'anneau de focus : sans lui, la base laisse `focus-visible:ring-ring/50`, jeton non
+		// défini (#645) — l'anneau retombe sur `currentcolor` (revue de code P1, E2).
+		'focus-visible:ring-destructive/40',
 	]) {
 		it(`contient « ${mot} » comme mot entier`, () => {
 			expect(motEntier(VARIANTE, mot), VARIANTE).toBe(true);
@@ -76,11 +91,22 @@ describe('AC7 (1) — la variante destructive a un fond plein, sans dark:', () =
 		expect(classes.filter((c) => /(^|:)bg-destructive\/\d+$/.test(c))).toEqual([]);
 	});
 
-	it('(1-bis) la sortie fusionnée remplace la bordure de focus de la base', () => {
+	it("(1-bis) la sortie fusionnée remplace la bordure et l'anneau de focus de la base", () => {
 		const fusion = buttonVariants({ variant: 'destructive' });
 		expect(motEntier(fusion, 'bg-destructive'), fusion).toBe(true);
 		expect(motEntier(fusion, 'focus-visible:border-destructive'), fusion).toBe(true);
 		expect(motEntier(fusion, 'focus-visible:border-ring'), fusion).toBe(false);
+		expect(motEntier(fusion, 'focus-visible:ring-destructive/40'), fusion).toBe(true);
+		expect(motEntier(fusion, 'focus-visible:ring-ring/50'), fusion).toBe(false);
+	});
+});
+
+describe('lecture du @theme — auto-tests sur source synthétique', () => {
+	it('un jeton écrit en commentaire n’est pas lu comme défini', () => {
+		const theme = blocTheme('@theme {\n  /* --color-card: #ffffff; */\n  --color-x: #000000;\n}\n');
+		expect(jeton('card', theme)).toBeUndefined();
+		expect(declare('card', theme)).toBe(false);
+		expect(jeton('x', theme)).toBe('#000000');
 	});
 });
 
@@ -98,7 +124,7 @@ describe("AC7 (2) — les jetons de la variante sont définis dans app.css", () 
 			.map((c) => /^(bg|text|border|ring)-(.+)$/.exec(c)?.[2])
 			.filter((n): n is string => n !== undefined);
 		expect(noms.length).toBeGreaterThan(0);
-		const absents = noms.filter((n) => !new RegExp(`--color-${n}\\s*:`).test(THEME));
+		const absents = noms.filter((n) => !declare(n));
 		expect(absents, `jetons non définis dans @theme : ${absents.join(', ')}`).toEqual([]);
 	});
 });

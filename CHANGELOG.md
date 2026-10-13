@@ -32,7 +32,8 @@ Le contenu est rédigé en français à destination des **fiduciaires, PME, ind�
   Les messages, cadres et champs d'erreur qui emploient cette même couleur, censés être rouges, le deviennent
   aussi — de même que le lien *Annuler le rapprochement* du détail d'un import, les boutons bordés *Annuler le
   lot*, *Annuler le règlement* et *Annuler la facture* (factures fournisseurs, lots de paiement) et les croix de
-  retrait d'une ligne de saisie, qui passent du gris foncé au rouge. Deux familles de cadres
+  retrait d'une ligne de saisie des factures fournisseurs, qui passent du gris foncé au rouge ; la croix de
+  retrait d'une ligne d'écriture, elle, ne rougit qu'au survol. Deux familles de cadres
   emploient d'autres couleurs, elles aussi non définies, et ne changent pas encore : les cadres d'erreur de la
   sauvegarde et de la restauration restent sans couleur, trois cadres d'erreur de l'import bancaire gardent leur
   bordure rouge sans fond ([#645](https://github.com/guycorbaz/kesh/issues/645)).

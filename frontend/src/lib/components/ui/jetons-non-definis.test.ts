@@ -15,8 +15,8 @@
  *    (hors `.test.`), le texte est découpé sur `` [\s"'`{}()=] `` — le `=` compris,
  *    pour que la directive `class:bg-x={…}` livre `bg-x` (C-28-1-34). Pour chaque
  *    morceau : préfixes de variante retirés (tout ce qui précède le dernier `:`,
- *    `class:` compris), puis un `!` initial, puis une opacité `/<n>` finale ; il est
- *    retenu s'il s'écrit `<préfixe de couleur>-<nom>` (`MOTIF` ci-dessous).
+ *    `class:` compris), puis un `!` initial ou final, puis une opacité `/<n>` finale ;
+ *    il est retenu s'il s'écrit `<préfixe de couleur>-<nom>` (`MOTIF` ci-dessous).
  * 2. **Décision par Tailwind lui-même** : `__unstable__loadDesignSystem` de
  *    `@tailwindcss/node`, chargé sur `app.css`, puis `candidatesToCss`, qui rend
  *    `null` pour un candidat que rien ne résout. Les candidats qui ne sont pas des
@@ -31,7 +31,11 @@
  * - un nom suivi d'une ponctuation de prose (`text-foo.`) : l'ancre `$` l'écarte
  *   (angle mort 12) ; aucune classe ne s'écrit ainsi dans un attribut ;
  * - une classe construite par concaténation (`'bg-' + couleur`) ;
- * - un jeton défini mais mal choisi (contraste) : c'est l'objet d'autres gardes.
+ * - un jeton défini mais mal choisi (contraste) : c'est l'objet d'autres gardes ;
+ * - les fichiers `.js` de `src/` et `app.html`, non lus (aucune classe de couleur au
+ *   2026-10-13) ;
+ * - la table tient des NOMS, non des classes : un `bg-danger` neuf passe, `danger`
+ *   y étant déjà (voulu : #645 traite le nom, quelle que soit l'utilité).
  *
  * ## Mettre la table à jour
  *
@@ -54,9 +58,14 @@ import { join, resolve } from 'node:path';
 
 const RACINE = 'src';
 
-/** Préfixes d'utilités de couleur relevés. */
+/**
+ * Préfixes d'utilités de couleur relevés ; groupe 2 = le nom de couleur. Les
+ * préfixes composés (`ring-offset`, `inset-ring`, `inset-shadow`) précèdent leur
+ * racine pour que le nom ne commence pas par `offset-`. `shadow`, `from`, `via`,
+ * `to` depuis la revue de code P1 (E4).
+ */
 const MOTIF =
-	/^(bg|text|border|ring|outline|fill|stroke|divide|placeholder|decoration|caret|accent)-[a-z][a-z0-9-]*$/;
+	/^(ring-offset|inset-ring|inset-shadow|bg|text|border|ring|outline|fill|stroke|divide|placeholder|decoration|caret|accent|shadow|from|via|to)-([a-z][a-z0-9-]*)$/;
 
 /** Séparateurs de jetons — le `=` compris (C-28-1-34). */
 const SEPARATEURS = /[\s"'`{}()=]+/;
@@ -71,15 +80,17 @@ export function releverCandidats(source: string): string[] {
 		const candidat = morceau
 			.slice(morceau.lastIndexOf(':') + 1)
 			.replace(/^!/, '')
+			// `!` final : forme canonique de l'important en Tailwind v4 (revue de code P1, E4).
+			.replace(/!$/, '')
 			.replace(/\/\d+$/, '');
 		if (MOTIF.test(candidat)) out.push(candidat);
 	}
 	return out;
 }
 
-/** Nom de couleur d'un candidat : ce qui suit le préfixe (`bg-error-soft` → `error-soft`). */
+/** Nom de couleur d'un candidat : ce qui suit le préfixe (`bg-error-soft` → `error-soft`, `ring-offset-x` → `x`). */
 export function nomDe(candidat: string): string {
-	return candidat.slice(candidat.indexOf('-') + 1);
+	return MOTIF.exec(candidat)?.[2] ?? candidat.slice(candidat.indexOf('-') + 1);
 }
 
 /**
@@ -127,6 +138,16 @@ describe('relevé des candidats — auto-tests sur source synthétique', () => {
 
 	it('préfixes de variante, ! et opacité retirés', () => {
 		expect(releverCandidats('<p class="hover:!bg-foo/40">').map(nomDe)).toEqual(['foo']);
+	});
+
+	it('le ! final de Tailwind v4 est retiré, avec ou sans opacité', () => {
+		expect(releverCandidats('<p class="bg-foo! hover:text-bar/40!">').map(nomDe)).toEqual(['foo', 'bar']);
+	});
+
+	it('shadow-, from-, via-, to- et ring-offset- livrent leur nom de couleur', () => {
+		expect(
+			releverCandidats('<p class="shadow-a from-b via-c to-d ring-offset-e inset-ring-f">').map(nomDe),
+		).toEqual(['a', 'b', 'c', 'd', 'e', 'f']);
 	});
 });
 

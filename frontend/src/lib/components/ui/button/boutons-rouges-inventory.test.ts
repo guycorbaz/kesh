@@ -13,8 +13,8 @@
  * Une entrée en trop, en moins, ou des jetons changés font rougir.
  *
  * Elle exige aussi (f) qu'aucun `<Button variant="destructive">` ne porte
- * d'attribut `class` : c'est ce qui rend vrai, par construction, que tous les
- * usages de la variante rendent le style de la variante.
+ * d'attribut `class` ni de directive `class:` : c'est ce qui rend vrai, par
+ * construction, que tous les usages de la variante rendent le style de la variante.
  *
  * ## Méthode
  *
@@ -146,16 +146,25 @@ export function releverBoutonsRouges(source: string, chemin: string): BoutonRoug
 	return out;
 }
 
-/** `<Button variant="destructive">` qui portent un attribut `class` (AC6 (f)). */
+/** Les `<Button variant="destructive">` du source, relevés par l'analyseur, dans l'ordre. */
+export function boutonsDestructifs(source: string): Noeud[] {
+	return elements(parse(source, { modern: true })).filter((el) => {
+		if (el.type !== 'Component') return false;
+		const variante = (el.attributes ?? []).find((a) => a.type === 'Attribute' && a.name === 'variant');
+		return variante !== undefined && valeurSource(source, variante) === 'destructive';
+	});
+}
+
+/**
+ * `<Button variant="destructive">` qui portent un attribut `class` ou une directive
+ * `class:` (AC6 (f) ; la directive depuis la revue de code P1, B2 : `class:bg-transparent={x}`
+ * réécrirait le fond de la variante aussi sûrement qu'un attribut).
+ */
 export function destructifsAvecClasse(source: string, chemin: string): string[] {
-	const ast = parse(source, { modern: true });
 	const out: string[] = [];
-	for (const el of elements(ast)) {
-		if (el.type !== 'Component') continue;
+	for (const el of boutonsDestructifs(source)) {
 		const attrs = el.attributes ?? [];
-		const variante = attrs.find((a) => a.type === 'Attribute' && a.name === 'variant');
-		if (!variante || valeurSource(source, variante) !== 'destructive') continue;
-		if (attrs.some((a) => a.type === 'Attribute' && a.name === 'class')) {
+		if (attrs.some((a) => (a.type === 'Attribute' && a.name === 'class') || a.type === 'ClassDirective')) {
 			out.push(`${chemin}:${source.slice(0, el.start).split('\n').length}`);
 		}
 	}
@@ -275,6 +284,27 @@ describe('relevé — auto-tests sur source synthétique', () => {
 	});
 });
 
+describe('(f) — auto-tests sur source synthétique (revue de code P1, B2 et E3)', () => {
+	it('un <Button variant="destructive" class="…"> est fautif, à sa ligne', () => {
+		const src = '<p>a</p>\n<Button variant="destructive" class="x">b</Button>';
+		expect(destructifsAvecClasse(src, 'x.svelte')).toEqual(['x.svelte:2']);
+	});
+
+	it('une directive class: sur un <Button variant="destructive"> est fautive', () => {
+		const src = '<Button variant="destructive" class:bg-transparent={x}>b</Button>';
+		expect(destructifsAvecClasse(src, 'x.svelte')).toEqual(['x.svelte:1']);
+	});
+
+	it('sans class ni directive, ou sur une autre variante, rien n’est fautif', () => {
+		const src =
+			'<Button variant="destructive" onclick={() => f(a > b)}>a</Button>' +
+			'<Button variant="outline" class="x">b</Button>' +
+			'<button class="x">c</button>';
+		expect(destructifsAvecClasse(src, 'x.svelte')).toEqual([]);
+		expect(boutonsDestructifs(src)).toHaveLength(1);
+	});
+});
+
 describe('AC6 — inventaire clos des boutons rouges posés à la main', () => {
 	const fichiers = fichiersSvelte(RACINE);
 
@@ -303,12 +333,20 @@ describe('AC6 — inventaire clos des boutons rouges posés à la main', () => {
 		expect(fautifs).toEqual([]);
 	});
 
-	it('(f) montage : la variante destructive est bien relevée (au moins 24 usages)', () => {
-		let n = 0;
+	// Montage de (f), relevé PAR L'ANALYSEUR — celui que (f) emploie — et confronté au compte
+	// textuel : un analyseur aveuglé (comparaison inversée, type mal posé) rendrait moins que
+	// le texte. Seuil au compte du 2026-10-13 (25, C-28-1-38) et non à l'égalité : un usage
+	// AJOUTÉ est déjà tenu par (f) ; seul un usage RETIRÉ doit rougir, et un `>=` le voit
+	// tant que personne n'en ajoute (C-28-1-41).
+	it('(f) montage : la variante destructive est bien relevée (au moins 25 usages)', () => {
+		let parAnalyseur = 0;
+		let parTexte = 0;
 		for (const f of fichiers) {
 			const src = readFileSync(f, 'utf8');
-			n += (src.match(/variant="destructive"/g) ?? []).length;
+			parAnalyseur += boutonsDestructifs(src).length;
+			parTexte += (src.match(/variant="destructive"/g) ?? []).length;
 		}
-		expect(n).toBeGreaterThanOrEqual(24);
+		expect(parAnalyseur).toBe(parTexte);
+		expect(parAnalyseur).toBeGreaterThanOrEqual(25);
 	});
 });
